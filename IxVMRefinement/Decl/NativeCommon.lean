@@ -1050,7 +1050,7 @@ theorem PosSortLift.of_range {env : Ix.Kernel.Env .anon} {cv' : ConstantVal .ano
 `cv` (`ValStored cv' cv`) to `ConstantValCheckJ rulesJ c.env cv cv'`, also returning the heap sort
 level `ℓ` and its semantic agreement `LvEq u₀ ℓ` with the sort `u₀` of `posOf cv'.levelParams cv'.type`. -/
 theorem constantValCheckJ_of_checked_mapped {J : Ix.Kernel.Semantics.Judgements .anon}
-    (M : JudgementsMap rulesJ J) (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+    (M : JudgementsMap rulesJ J) (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     {Γ : Nat → KExpr} {cv cv' : ConstantVal .anon}
     {nl ty rc types r₁ r₂ : SourceValue F} {h h₁ h₂ h₃ : Heap F} {cs₁ cs₂ : List (Call F)}
     (hvs : IxVM.Consistency.ValStored cv' cv)
@@ -1102,7 +1102,7 @@ theorem constantValCheckJ_of_checked_mapped {J : Ix.Kernel.Semantics.Judgements 
     ⟨sty, u, hinf, hred⟩⟩, hcv_eq⟩, sty₀, u₀, ℓ, hinf₀, hred₀, hℓ, hu₀⟩
 
 /-- A checked constant at an actual selected-call context. The sort derivation comes from
-the scoped registry; no unrestricted load or public S0.ctx witness is used. -/
+the scoped registry; no unrestricted load or public BaseSeams.ctx witness is used. -/
 theorem constantValCheckJ_of_scoped_mapped {J : Ix.Kernel.Semantics.Judgements .anon}
     (M : JudgementsMap rulesJ J) {c : ScopedCtx}
     {Γ : Nat → KExpr} {cv cv' : ConstantVal .anon}
@@ -1157,7 +1157,7 @@ theorem constantValCheckJ_of_scoped_mapped {J : Ix.Kernel.Semantics.Judgements .
 
 
 /-- Compatibility with the raw rules judgement package. -/
-theorem constantValCheckJ_of_checked (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+theorem constantValCheckJ_of_checked (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     {Γ : Nat → KExpr} {cv cv' : ConstantVal .anon}
     {nl ty rc types r₁ r₂ : SourceValue F} {h h₁ h₂ h₃ : Heap F} {cs₁ cs₂ : List (Call F)}
     (hvs : IxVM.Consistency.ValStored cv' cv)

@@ -130,7 +130,7 @@ theorem family_recs_bound {calls : List (Call F)} {E₀ : Ixon.Env}
   | .Recr (cs12 := cs12) (ev14 := ev14) (hc209 := hc) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
     obtain ⟨-, bytes, c, hsz, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded hb ev14
+      Ingress.load_verified_constant_decode_bounded hb ev14
     have haddr' : _root_.Address.blake3Pure ⟨bytes.toArray⟩ = ixAddr b := haddr
     have hrecb : recordOf E₀ (ixAddr b) = some c := by
       rw [← haddr']
@@ -139,7 +139,7 @@ theorem family_recs_bound {calls : List (Call F)} {E₀ : Ixon.Env}
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
     have hinfo_eq := (List.cons.inj (Value.construct.inj hc_eq).2.2).1
     rw [← hinfo_eq] at hinfoRep
-    obtain ⟨rcr, hrc, -⟩ := L1.repConstantInfo_recr_inv hinfoRep
+    obtain ⟨rcr, hrc, -⟩ := Ingress.repConstantInfo_recr_inv hinfoRep
     have e1 : c = crb := Option.some.inj (hrecb.symm.trans hrb.record)
     subst e1
     rw [hrb.muts] at hrc
@@ -225,7 +225,7 @@ theorem family_payload_stream {xb xrb v113 x_rb x_s1 v181 x_n_a x_s2 x_advice x_
     (ev309 : ObsFn W "KernelModeled::get_count" [x_s3] m254 (.tuple [x_n_w, x_s4]) m297 cs307)
     (ev344 : ObsFn W "KernelModeled::check_witnesses" [x_rc, xb, x_s4, x_n_w] m297
       (.tuple [x_outside, x_s5]) m332 cs342) :
-    ∃ bytes : List UInt8, L1.Stream m332 bytes x_s5 := by
+    ∃ bytes : List UInt8, Ingress.Stream m332 bytes x_s5 := by
   obtain ⟨-, b0, hs0⟩ := read_payload_stream ev126
   obtain ⟨a, rem, x_t, x_s1', -, htup, -, hs1, -, -⟩ := Decl.get_address_spec hs0 ev148
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
@@ -236,8 +236,8 @@ theorem family_payload_stream {xb xrb v113 x_rb x_s1 v181 x_n_a x_s2 x_advice x_
   obtain ⟨b4, hs4⟩ := get_count_stream hs3 ev309
   exact check_witnesses_stream hs4 ev344
 
-private theorem repMutConst_heapMono' : HeapMono₂ L1.RepMutConst :=
-  fun _ _ _ _ ext r => L1.RepMutConst.mono ext r
+private theorem repMutConst_heapMono' : HeapMono₂ Ingress.RepMutConst :=
+  fun _ _ _ _ ext r => Ingress.RepMutConst.mono ext r
 
 /-- **The tables of a family check, from the steps that build them**: the block's load
 (`Ingress::load_verified_constant`), identified with the block's record; the types
@@ -258,7 +258,7 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
     {cs511 cs599 cs632 cs662 cs684 cs714 cs757 cs815 cs794 cs850 cs_nr cs_ntr cs872 cs894 cs958 cs937
       cs1009 cs988 : List (Call F)}
     (hb : Bytes.RepAddressRef addrTy m453 b xb) (hrb : Bytes.RepAddressRef addrTy m453 b' xrb)
-    (hs5 : L1.Stream m453 bytes x_s5)
+    (hs5 : Ingress.Stream m453 bytes x_s5)
     (ev513 : ObsFn W "Ingress::load_verified_constant" [xb] m453
       (.construct "Ixon::Constant" "Mk"
         [.construct "Ixon::ConstantInfo" "Muts" [x_members], w538, w539, w540, w541]) m501 cs511)
@@ -290,7 +290,7 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
     ∃ typeAs ctorAs recAs typeMs ctorMs recMs : List Bytes.Address,
       FamilyTables (ixAddr b) (ixAddr b') ms rs m978 typeAs ctorAs recAs typeMs ctorMs recMs
         v673 v746 v839 x_type_models x_ctor_models x_rec_models v926 v977 ∧
-      v861 = .field (recAs.length : F) ∧ ∃ bytes' : List UInt8, L1.Stream m978 bytes' x_s8 := by
+      v861 = .field (recAs.length : F) ∧ ∃ bytes' : List UInt8, Ingress.Stream m978 bytes' x_s8 := by
   have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
   have x874 : Heap.Extends m840 m862 :=
     evNoRole.heap_extends.trans (evNoTypeRole.heap_extends.trans ev874.heap_extends)
@@ -325,14 +325,14 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
       [x_members] m501 v588 m589 cs599 := by
     rw [Obs.Names.«Lists::length<Ixon::MutConst>».symbol]; exact ev601
   have hl' : RepList (Instance.mk "Lists::Node" [.named "Ixon::MutConst" []]).symbol
-      L1.RepMutConst m501 ms.toList x_members := by
+      Ingress.RepMutConst m501 ms.toList x_members := by
     rw [Obs.Names.«Lists::Node<Ixon::MutConst>».symbol]; exact hrep
   obtain ⟨hv588, -⟩ := Lib.Lists.length_spec ev601' hl'
   subst hv588
   -- the types
   have hmems := Route.membersRep_of_repMutConstList
     (RepLinkedList.mono repMutConst_heapMono' x652 hrep)
-  obtain ⟨-, typeAs, htA, htmap⟩ := L1.build_recur_addrs_spec hmems
+  obtain ⟨-, typeAs, htA, htmap⟩ := Ingress.build_recur_addrs_spec hmems
     (Bytes.repAddressRef_heapMono₂ addrTy (ev513.heap_extends.trans x652) hb) ev686
   have htlen : typeAs.length = ms.toList.length := by
     have e := congrArg List.length htmap
@@ -427,7 +427,7 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
 member as a field element below `2^56`. -/
 theorem block_nparams_spec {h h' : Heap F} {ms : Array Ixon.MutConst}
     {x_members r : SourceValue F} {cs : List (Call F)}
-    (hrep : RepList Obs.Names.«Lists::Node<Ixon::MutConst>» L1.RepMutConst h ms.toList x_members)
+    (hrep : RepList Obs.Names.«Lists::Node<Ixon::MutConst>» Ingress.RepMutConst h ms.toList x_members)
     (ev : ObsFn W "KernelModeled::block_nparams" [x_members] h r h' cs) :
     ∀ ind₀, ms[0]? = some (.indc ind₀) →
       ind₀.params.toNat < 72057594037927936 ∧ r = .field (ind₀.params.toNat : F) := by

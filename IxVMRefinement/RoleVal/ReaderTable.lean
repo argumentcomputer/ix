@@ -8,7 +8,7 @@ import Ix.Cert.Stream
 import Ix.CompileCert.InductiveReading
 import Ix.CompileCert.ReaderIndex
 import Ix.IxVM.Consistency.Statement
-import IxVMRefinement.L1.Decode
+import IxVMRefinement.Ingress.Decode
 import IxVMRefinement.RoleVal.CommittedData
 import IxVMRefinement.RoleVal.ReaderTableDecide
 
@@ -2372,13 +2372,13 @@ theorem fallback_record_agree_of_loadedBy {md : Ix.Kernel.Mode}
   · exact .inl hcol
   · exact .inr ⟨hraw, hwf⟩
 
-/-- When `E₀` also satisfies `L1.EnvDecoded E₀`, any record at `a` in `E₀` decodes to the
+/-- When `E₀` also satisfies `Ingress.EnvDecoded E₀`, any record at `a` in `E₀` decodes to the
 committed fallback constant `c` (`Ix.Cert.recordAt E₀ a = some c`), unless `HashedCollision`. -/
 theorem fallback_recordAt_of_loadedBy {md : Ix.Kernel.Mode}
     {V : View} {extra : List ByteArray} {calls : List (Call IxVM.F)} {E₀ : Ixon.Env}
     (hsub : ∀ img ∈ IxVM.Consistency.committedImages, img ∈ extra)
     (hload : IxVM.Consistency.LoadedBy calls E₀)
-    (hdec : L1.EnvDecoded E₀)
+    (hdec : Ingress.EnvDecoded E₀)
     {t : Ix.Kernel.RoleTable} {pre : Prelude md} (hpre : preludeFor t = .ok pre)
     {a : _root_.Address} {c : Ixon.Constant} (hmem : (a, c) ∈ pre.records ++ pre.evidence)
     {lc : Ixon.LazyConstant} (hget : E₀.consts.get? a = some lc) :

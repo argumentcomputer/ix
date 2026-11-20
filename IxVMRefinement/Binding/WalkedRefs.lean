@@ -188,7 +188,7 @@ private theorem walkedRole_needOk (hC : CollisionFreeRun calls E₀)
   have hcx : recordOf E₀ x = some c' := by
     rw [← hab', ← hba]
     exact Claim.recordOf_hashed hC.runStore hC.hashedStored (Core.hashed_mono hsub hh) hsz
-      (L1.deConstant_of_deConstantExact hx') hx'
+      (Ingress.deConstant_of_deConstantExact hx') hx'
   exact ⟨c', hcx, fun ⟨ms, hms⟩ => hhead.notMuts ms hms, (hsafe c' hcx).1, (hsafe c' hcx).2⟩
 
 /-- **A reference a walk-reached record uses is one a step needs stored** (module docstring). -/

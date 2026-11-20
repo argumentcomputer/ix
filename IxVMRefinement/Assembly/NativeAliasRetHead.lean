@@ -44,7 +44,7 @@ theorem blockCtorIxonRetHead_of_raw {calls : List (Call F)} {t : Ix.Kernel.RoleT
   rw [Nat.cast_zero] at ev
   have hg : Core.Good ⟨E, ⟨[]⟩, t, none⟩ cs := hgood.sub hsub
   obtain ⟨-, -, -, blkBytes, cb', ms', ind', ct', blobs, v, hhB, haB, hexB, -, hcb', hms', hct',
-    -, hldv, raw⟩ := L1.get_ci_cprj_spec hg.2 hrep ev
+    -, hldv, raw⟩ := Ingress.get_ci_cprj_spec hg.2 hrep ev
   -- the block record the load decoded is `cb`
   have hblock : recordOf E (Core.ixAddr b) = some cb := by
     rw [hbB]

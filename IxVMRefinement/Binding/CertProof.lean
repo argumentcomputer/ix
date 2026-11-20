@@ -6,7 +6,7 @@ import IxVMRefinement.Binding.OpEquations
 value (`Ingress::get_ci`), replacing the operation by its value (`KernelSubst::subst_const`) and
 checking the result closed and level-free (`KernelCheck::validate_expr_well_scoped(p, 0, 0)`).
 The theorem's record is not walked, so its value is known only as the conversion the load built:
-its universe levels as converted (parameters below `2^56`, `L1.RawKLevel`), its variables of any
+its universe levels as converted (parameters below `2^56`, `Ingress.RawKLevel`), its variables of any
 index. This file reads that pointer as a term and carries the reading through the replacement and
 the check.
 
@@ -48,12 +48,12 @@ inductive TmR (κ : _root_.Address → KKey) (h : Heap F) : KExpr → SourceValu
       TmR κ h (.bvar (ZMod.val i)) (.ptr (.enum kexprEnum) addr)
   | sort {addr : Nat} {lp : SourceValue F} {l : KLevel}
       (cell : h[addr]? = some (.construct kexprEnum "Srt" [lp]))
-      (rl : L1.RawKLevel h l lp) :
+      (rl : Ingress.RawKLevel h l lp) :
       TmR κ h (.sort l) (.ptr (.enum kexprEnum) addr)
   | const {addr : Nat} {ap lsp : SourceValue F} {a : Bytes.Address} {ls : List KLevel}
       [res : Resolved (κ (ixAddr a))]
       (cell : h[addr]? = some (.construct kexprEnum "Const" [ap, lsp]))
-      (ra : Bytes.RepAddressRef addrTy h a ap) (rls : L1.RawKLevelList h ls lsp) :
+      (ra : Bytes.RepAddressRef addrTy h a ap) (rls : Ingress.RawKLevelList h ls lsp) :
       TmR κ h (.const (κ (ixAddr a)) ls) (.ptr (.enum kexprEnum) addr)
   | app {addr : Nat} {fp ap : SourceValue F} {Ef Ea : KExpr}
       (cell : h[addr]? = some (.construct kexprEnum "App" [fp, ap]))
@@ -135,7 +135,7 @@ theorem TmR.cell_of_load {v : SourceValue F} (rep : TmR κ h E p) (hl : loadValu
 theorem TmR.const_of_load {ap lsp : SourceValue F} (rep : TmR κ h E p)
     (hl : loadValue h p = .ok (.construct kexprEnum "Const" [ap, lsp])) :
     ∃ a ls, E = .const (κ (ixAddr a)) ls ∧ Bytes.RepAddressRef addrTy h a ap ∧
-      L1.RawKLevelList h ls lsp := by
+      Ingress.RawKLevelList h ls lsp := by
   cases rep with
   | const cell ra rls =>
     obtain ⟨_, hxs⟩ := load_cell cell hl
@@ -225,7 +225,7 @@ private theorem cert_val_lt {n : Nat} (h : n < 72057594037927936) : ZMod.val (n 
 theorem rawConv_tmR {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)]
     {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ} {sharing : List Ixon.Expr}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat} {e : Ixon.Expr}
-    {p : SourceValue F} (raw : L1.RawConvExpr refs recurAddrs univs sharing blobs h bound e p) :
+    {p : SourceValue F} (raw : Ingress.RawConvExpr refs recurAddrs univs sharing blobs h bound e p) :
     ∃ E, TmR κ h E p := by
   induction raw with
   | var hidx cell =>
@@ -260,7 +260,7 @@ theorem rawConv_tmR {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)]
   | share hidx hsh _ ih => exact ih
 
 private theorem repKLevel_raw {h : Heap F} {l : KLevel} {p : SourceValue F}
-    (rep : KernelLevels.RepKLevel h l p) : L1.RawKLevel h l p := by
+    (rep : KernelLevels.RepKLevel h l p) : Ingress.RawKLevel h l p := by
   induction rep with
   | zero cell => exact .zero cell
   | succ cell _ ih => exact .succ cell ih
@@ -269,10 +269,10 @@ private theorem repKLevel_raw {h : Heap F} {l : KLevel} {p : SourceValue F}
   | param hn cell => exact .param (by omega) cell
 
 private theorem repKLevelList_raw {h : Heap F} {ls : List KLevel} {p : SourceValue F}
-    (rep : KernelLevels.RepKLevelList h ls p) : L1.RawKLevelList h ls p := by
-  have h1 : RepList KernelLevels.klevelListEnum L1.RawKLevel h ls p :=
+    (rep : KernelLevels.RepKLevelList h ls p) : Ingress.RawKLevelList h ls p := by
+  have h1 : RepList KernelLevels.klevelListEnum Ingress.RawKLevel h ls p :=
     OpOpen.repList_imp (fun _ _ _ x => repKLevel_raw x) rep
-  unfold L1.RawKLevelList
+  unfold Ingress.RawKLevelList
   rw [Core.klevelListEnum_eq]
   exact h1
 
@@ -552,7 +552,7 @@ theorem subst_const_raw {κ : _root_.Address → KKey} {h h' : Heap F} {X val : 
 
 /-- `validate_univ_params_seen(l, nl)` on a converted level: its parameters are below `2^32`. -/
 theorem raw_univ_params_seen {h : Heap F} {u : KLevel} {pu : SourceValue F}
-    (hu : L1.RawKLevel h u pu) :
+    (hu : Ingress.RawKLevel h u pu) :
     ∀ {nl : Nat} {h₁ h₂ : Heap F} {r : SourceValue F} {cs : List (Call F)},
       Heap.Extends h h₁ →
       ObsFn W "KernelCheck::validate_univ_params_seen" [pu, .field (nl : F)] h₁ r h₂ cs →
@@ -616,7 +616,7 @@ theorem raw_univ_params_seen {h : Heap F} {u : KLevel} {pu : SourceValue F}
 
 /-- `validate_univ_params_list(ls, nl)` on converted levels: their parameters are below `2^32`. -/
 theorem raw_univ_params_list {us : List KLevel} :
-    ∀ {h : Heap F} {pus : SourceValue F}, L1.RawKLevelList h us pus →
+    ∀ {h : Heap F} {pus : SourceValue F}, Ingress.RawKLevelList h us pus →
       ∀ {nl : Nat} {h₁ h₂ : Heap F} {r : SourceValue F} {cs : List (Call F)},
         Heap.Extends h h₁ →
         ObsFn W "KernelCheck::validate_univ_params_list" [pus, .field (nl : F)] h₁ r h₂ cs →
@@ -625,8 +625,8 @@ theorem raw_univ_params_list {us : List KLevel} :
   | nil => intros; simp_all
   | cons u rest ih =>
     intro h pus hus nl h₁ h₂ r cs ext ev
-    have hrep : RepList Core.klevelListEnum L1.RawKLevel h₁ (u :: rest) pus :=
-      L1.RawKLevelList.mono ext hus
+    have hrep : RepList Core.klevelListEnum Ingress.RawKLevel h₁ (u :: rest) pus :=
+      Ingress.RawKLevelList.mono ext hus
     rcases Obs.«KernelCheck::validate_univ_params_list».obs ev with
       ⟨ld12, _, _, _⟩ | ⟨x_u, x_rest, v42, m43, cs53, cs75, ld12, ev55, ev77, hc94⟩
     · have hn := Core.RepList.nil_of_load hrep ld12
@@ -634,7 +634,7 @@ theorem raw_univ_params_list {us : List KLevel} :
     · obtain ⟨u', rest', heq, hu, hrest⟩ := Core.RepList.cons_of_load hrep ld12
       injection heq with e1 e2
       subst e1 e2
-      have hrest' : L1.RawKLevelList h₁ rest x_rest := hrest
+      have hrest' : Ingress.RawKLevelList h₁ rest x_rest := hrest
       intro l hl
       rcases List.mem_cons.mp hl with rfl | hl
       · exact raw_univ_params_seen hu (Heap.Extends.refl _) ev55

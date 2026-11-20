@@ -377,7 +377,7 @@ theorem storedLoads_append {c : Ctx} {new : List (ConstantInfo .anon)}
         rcases appCtx_fam h₁ hext hfam with hold | hn
         · obtain ⟨⟨ci, hf, hrep⟩, htab⟩ :=
             h₁.projTables bp ip ptr h h' cs b i ev trivial good hb hip hold
-              (famPerm (L1.hashedBlockAt_of_proj_ctor good ev hb hip) hold)
+              (famPerm (Ingress.hashedBlockAt_of_proj_ctor good ev hb hip) hold)
           refine ⟨⟨ci, ?_, hrep.rekey_mono keep (Decl.stored_name_ne h₁ hf)⟩, ?_⟩
           · rw [keep _ (h₁.findRes _ _ hf)]
             exact hext.find hf
@@ -390,7 +390,7 @@ theorem storedLoads_append {c : Ctx} {new : List (ConstantInfo .anon)}
               obtain ⟨tbl, ht1, ht2, ht3, ht4, ht5, ht6, ht7, ht8, ht9, ht10, ht11⟩ :=
                 htab sap sptr nl ty np u blk h1 h2 cs1 s evS gS hsS hldS hbS j cvC nP nF hc₁ hbind
               have ei := keep _
-                (h₁.ctorIndRes _ _ _ _ _ _ (L1.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
+                (h₁.ctorIndRes _ _ _ _ _ _ (Ingress.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
               refine ⟨tbl, ?_, ?_, ?_, ht4, ht5, ht6, ht7, ?_, ht9, ht10, ht11⟩
               · rw [ei]
                 exact hext.find ht1
@@ -413,7 +413,7 @@ theorem storedLoads_append {c : Ctx} {new : List (ConstantInfo .anon)}
             h₁.projTablesAt bp sap ptr nl ty np u blk h h' h1 h2 cs cs1 b s i evM hgM hb evG hgG
               hs hld hblk j cvC nP nF hc₁ hnF
           have ei := keep _ (h₁.ctorIndRes _ _ _ _ _ _
-            (L1.hashedBlockAt_of_get_ci_induct hgG evG hs hld hblk) hc₁)
+            (Ingress.hashedBlockAt_of_get_ci_induct hgG evG hs hld hblk) hc₁)
           refine ⟨tbl, ?_, ?_, ?_, ht4, ht5, ht6, ht7, ?_, ht9, ht10, ht11⟩
           · rw [ei]
             exact hext.find ht1
@@ -502,7 +502,7 @@ theorem storedLoads_append {c : Ctx} {new : List (ConstantInfo .anon)}
             htbl hm
         · obtain ⟨hc₁, -⟩ := old hctor' (fun e => hm (Or.inl e))
           have ei := keep _
-            (h₁.ctorIndRes _ _ _ _ _ _ (L1.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
+            (h₁.ctorIndRes _ _ _ _ _ _ (Ingress.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
           rw [ei] at htbl
           have htbl₁ : c.env.find? (Ix.Kernel.projTableName
               (c.stored.κ (iprjAddr (ixAddr b) (ZMod.val i)))) = some (.projInfo tbl) := by

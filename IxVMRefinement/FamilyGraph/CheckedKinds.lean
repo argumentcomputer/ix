@@ -242,7 +242,7 @@ theorem innerUnitStep_of_checked (hG : TopGraph t E₀ seeds Top rank)
     (hI : InnerChecked calls bAddr t envT E₀ lim Top rank fam twin Inner)
     (hctx : StepCtx.{u} calls t R envT E₀ E) (ht : t.check = .ok ())
     (hS : LoadedReads.RunStore calls E₀) (hcov : LoadedReads.HashedRecordsStored calls E₀)
-    (hcanon : L1.CanonicalHashCoverage E calls)
+    (hcanon : Ingress.CanonicalHashCoverage E calls)
     {X : Ix.Kernel.RoleTable → Ixon.Env → Ix.Kernel.Env .anon → Prop}
     {Kind : List (Call F) → Ix.Kernel.RoleTable → Ixon.Env → _root_.Address → Ixon.Constant →
       Prop}
@@ -280,14 +280,14 @@ theorem innerUnitSteps_of_kinds
       recordOf E₀ A = some c → InLogic c → UnitKind c → fam A = none → twin A = none →
       UnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt t E) t envT E₀ E lim A c := by
   intro E hctx A c hIA hU hc hlog hk hfa htw
-  have hcanon₀ : L1.CanonicalHashCoverage E₀ calls := by
+  have hcanon₀ : Ingress.CanonicalHashCoverage E₀ calls := by
     intro bytes value hashed size exactRead
     obtain ⟨entry, stored, bytesEq, cached⟩ := hcov bytes value hashed size
-      (L1.deConstant_of_deConstantExact exactRead) exactRead
+      (Ingress.deConstant_of_deConstantExact exactRead) exactRead
     refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
     rw [bytesEq]
     exact exactRead
-  have hcanon : L1.CanonicalHashCoverage E calls :=
+  have hcanon : Ingress.CanonicalHashCoverage E calls :=
     Assembly.canonicalHashCoverage_frame hcanon₀ hctx.recordsFor.1
       (fun a v h => hctx.runRecord a v ((hS.recordOf_eq_recordAt a).trans h))
   have step : ∀ {Kind : List (Call F) → Ix.Kernel.RoleTable → Ixon.Env → _root_.Address →

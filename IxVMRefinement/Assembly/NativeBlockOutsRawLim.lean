@@ -48,7 +48,7 @@ theorem ctorOuts_of_member_raw_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
-    (hcov : L1.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env) :
+    (hcov : Ingress.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env) :
     ∃ (ty₀ ty' : Ix.Kernel.Expr .anon) (cvS : ConstantVal .anon)
       (bsT : List (Ix.Kernel.Expr .anon × Ix.Kernel.BinderMeta))
       (ctorsA : List (ConstantVal .anon × Nat)) (rawTypes : List (Ix.Kernel.Expr .anon)),
@@ -57,7 +57,7 @@ theorem ctorOuts_of_member_raw_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTa
       ty₀.looseBVarsBounded 0 = true ∧
       ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
       LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-        ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ =
+        ((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ =
         some ty' ∧
       p₀.cvT = ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty₀⟩ ∧
       cvS = ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ ∧
@@ -73,7 +73,7 @@ theorem ctorOuts_of_member_raw_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTa
         c.1.type.looseBVarsBounded 0 = true ∧
         c.1.type.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
         LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-          (((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val (0 : F)) :
+          (((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val (0 : F)) :
             Nat) : F) + 1 + ((j : Nat) : F)) ct.typ c.1.type = some cty' ∧
         ctorsA[j]? = some (⟨c.1.name, c.1.levelParams, cty'⟩, c.2)) ∧
       Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ env p₀.cvT cvS ∧
@@ -98,7 +98,7 @@ theorem ctorOuts_of_member_raw_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTa
       (∀ j c, p₀.ctors[j]? = some c → ∃ (ct : Ixon.Constructor) (R' : Ix.Kernel.Expr .anon),
         ind.ctors[j]? = some ct ∧
         canonRawAnn cb (List.range ct.lvls.toNat)
-          (((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val (0 : F)) :
+          (((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val (0 : F)) :
             Nat) : F) + 1 + ((j : Nat) : F)) ct.typ c.1.type = some R' ∧
         rawTypes[j]? = some (Core.posOf (List.range ct.lvls.toNat) R')) ∧
       (∀ j < ind.ctors.size, ∃ (bp ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
@@ -166,7 +166,7 @@ theorem ctorOuts_of_member_raw_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTa
   have h0' : (⟨(0 : Nat).toUInt64, B⟩ : Ixon.InductiveProj).idx.toNat = 0 := by
     show ((0 : Nat).toUInt64).toNat = 0
     decide
-  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := L1.get_ci_block_trace_spec hg_ld.2 ha ev_ld
+  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := Ingress.get_ci_block_trace_spec hg_ld.2 ha ev_ld
   have hrecA : recordOf E (Core.ixAddr a) = some (memberProjection B 0 (.indc ind)) := by
     rw [hax, LoadedReads.memberAddr_indc]
     exact hprojE
@@ -176,7 +176,7 @@ theorem ctorOuts_of_member_raw_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     rw [hb, hdecA] at hex
     exact (Except.ok.inj hex).symm
   subst hc
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
   rw [hinfo] at hres
   obtain ⟨hidx, blkBytes, cb', ms', ind', blobs, tree, plan, v₀, hhB, haB, hexB, hcb, hms,
@@ -233,7 +233,7 @@ theorem ctorOuts_of_member_raw_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     · rw [hty'']
       exact hcr'
   -- the dispatch is native
-  have hsafeF : L1.repBoolField ind.isUnsafe = .field 0 := by
+  have hsafeF : Ingress.repBoolField ind.isUnsafe = .field 0 := by
     rw [hinlogic.1]
     rfl
   rw [hsafeF, Nat.cast_zero] at ev_chk
@@ -261,13 +261,13 @@ theorem ctorOuts_of_member_raw_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     rw [hsrcA]
     rfl
   obtain ⟨par, parArg, mid, inner, hparEq, -, hparRep, hdirect, hinner, -⟩ :=
-    L1.get_ci_iPrj_subcall (base := ⟨E, env, t, lim⟩) srcA hshapeA ha hg_ld ev_ld
+    Ingress.get_ci_iPrj_subcall (base := ⟨E, env, t, lim⟩) srcA hshapeA ha hg_ld ev_ld
   rw [h0', Nat.cast_zero] at hdirect
   have hblockPar : recordOf E (Core.ixAddr par) = some cb := by
     rw [hparEq]
     exact hblockE
   obtain ⟨srcB, hsrcB⟩ := canonicalRecord_value hst.decoded hblockPar
-  obtain ⟨-, -, -, hc39⟩ := L1.get_ci_iprj_header_bounds (base := ⟨E, env, t, lim⟩) (i := 0)
+  obtain ⟨-, -, -, hc39⟩ := Ingress.get_ci_iprj_header_bounds (base := ⟨E, env, t, lim⟩) (i := 0)
     (members := #[.indc ind]) srcB (by rw [hsrcB]; exact hrec.muts)
     (by rw [ZMod.val_zero]; rfl) (hg_ld.sub hinner) hparRep hdirect
   -- each slot of the loop loads its constructor and scopes its type
@@ -336,7 +336,7 @@ theorem ctorOuts_of_member_raw_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     obtain ⟨ci, hci⟩ := hstored i hi x hx
     exact ctorStage_of_find (cvF := cvS) hfreshT hnt hci
   have hrecur : ∀ caps₁ : Ix.Kernel.IndCaps .anon,
-      ∀ x ∈ L1.blockRecurAddrs B (#[.indc ind] : Array Ixon.MutConst).toList,
+      ∀ x ∈ Ingress.blockRecurAddrs B (#[.indc ind] : Array Ixon.MutConst).toList,
       (Decl.ctorStage ⟨E, env, t, lim⟩ cvS caps₁).κ x = Core.keyOf t x := by
     intro caps₁ x hx
     obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hx
@@ -369,24 +369,24 @@ theorem ctorOuts_of_member_raw_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     have hinfo' := congrArg Ixon.Constant.info (Option.some.inj h1)
     simp [memberProjection, constructorProjection] at hinfo'
   -- the raw facts of the walked trace, at the prefix's store
-  have hcovChk : L1.CanonicalHashCoverage E cs_chk := fun bytes value hh hsz hdec =>
+  have hcovChk : Ingress.CanonicalHashCoverage E cs_chk := fun bytes value hh hsz hdec =>
     hcov bytes value (Core.hashed_mono hsub_chk hh) hsz hdec
   have hraw_at : ∀ env' : Ix.Kernel.Env .anon,
-      Core.RawRecordFacts (L1.traceRecordCtx ⟨E, env', t, lim⟩ cs_chk) ∧
-      Decl.OneTypePeerReads (L1.traceRecordCtx ⟨E, env', t, lim⟩ cs_chk) b p₀.cvT.name
+      Core.RawRecordFacts (Ingress.traceRecordCtx ⟨E, env', t, lim⟩ cs_chk) ∧
+      Decl.OneTypePeerReads (Ingress.traceRecordCtx ⟨E, env', t, lim⟩ cs_chk) b p₀.cvT.name
         p₀.cvT.levelParams.length p₀.nP p₀.nIdx p₀.ctors.length 0 := by
     intro env'
-    refine ⟨L1.rawRecordFacts_of_hashed_trace (base := ⟨E, env', t, lim⟩) ev_chk hg_chk hcovChk,
+    refine ⟨Ingress.rawRecordFacts_of_hashed_trace (base := ⟨E, env', t, lim⟩) ev_chk hg_chk hcovChk,
       ?_⟩
     obtain ⟨srcF, hsrcF⟩ := canonicalRecord_value hst.decoded
       (show recordOf E (Core.iprjAddr (Core.ixAddr b) (ZMod.val (0 : F))) =
         some (memberProjection B 0 (.indc ind)) by rw [ZMod.val_zero, hb_eq]; exact hprojE)
     obtain ⟨srcB', hsrcB'⟩ := canonicalRecord_value hst.decoded hblockB
-    have hpeer := Assembly.native_peer_reads (raw := L1.traceRecordCtx ⟨E, env', t, lim⟩ cs_chk)
+    have hpeer := Assembly.native_peer_reads (raw := Ingress.traceRecordCtx ⟨E, env', t, lim⟩ cs_chk)
       (block := b) (i := 0) srcB' srcF
       (by rw [hsrcF, ZMod.val_zero, hb_eq]; rfl) (by rw [hsrcB']; exact hrec.muts) hmem0
       (Assembly.native_inductives_singleton (Nat.le_of_eq rfl) hmem0) htwf
-    have hT : (L1.traceRecordCtx ⟨E, env', t, lim⟩ cs_chk).κ
+    have hT : (Ingress.traceRecordCtx ⟨E, env', t, lim⟩ cs_chk).κ
         (Core.iprjAddr (Core.ixAddr b) (ZMod.val (0 : F))) = p₀.cvT.name := by
       rw [hcvT, ZMod.val_zero, hb_eq]
       rfl
@@ -566,7 +566,7 @@ theorem ctorOuts_of_member_raw_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTa
         c.1.type.looseBVarsBounded 0 = true ∧
         c.1.type.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
         LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-          (((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val (0 : F)) :
+          (((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val (0 : F)) :
             Nat) : F) + 1 + ((j : Nat) : F)) ct.typ c.1.type = some cty' ∧
         ctorsA[j]? = some (⟨c.1.name, c.1.levelParams, cty'⟩, c.2) := by
     intro j c hc
@@ -635,15 +635,15 @@ theorem ctorOuts_of_member_raw_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTa
   obtain ⟨-, htyv, -⟩ := hval
   have hlpsA : cvCa₀.levelParams = List.range ind.lvls.toNat := by
     rw [hvs.2.1, (hlps_ctors c (List.mem_of_getElem? hc)).1, hcvT]
-  have hcty : Decl.RawTmExact (L1.traceRecordCtx ⟨E, env, t, lim⟩ cs_chk).κ 0
+  have hcty : Decl.RawTmExact (Ingress.traceRecordCtx ⟨E, env, t, lim⟩ cs_chk).κ 0
       (fun _ => default) h2 0 (rawTypes.getD j default) cvCa₀.type tyv := by
     have h := (hrawT 0 (fun _ => default)).mono e12
     rw [hlpsA, Decl.posOf_range, ← htyv] at h
     exact h
   rw [← hnP] at ev_pos
-  exact Decl.check_positivity_later_spec (c := L1.traceRecordCtx ⟨E, env, t, lim⟩ cs_chk)
+  exact Decl.check_positivity_later_spec (c := Ingress.traceRecordCtx ⟨E, env, t, lim⟩ cs_chk)
     (by rw [hnP]; omega) (hraw_at env).2 (hraw_at env).1 (hg_chk.sub hsub2)
-    (L1.traceRecordCtx_coverage _ hsub2) hcty hout_j.noProj hstR hstA
+    (Ingress.traceRecordCtx_coverage _ hsub2) hcty hout_j.noProj hstR hstA
     (Bytes.repAddressRef_heapMono₂ Core.addrTy (ev_load.heap_extends.trans e12) hbp) ev_pos
     i hi hmen
 

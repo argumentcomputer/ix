@@ -2,8 +2,8 @@ import IxVMRefinement.Obs.KernelModeled9
 import IxVMRefinement.Obs.KernelWhnf
 import IxVMRefinement.Obs.KernelCheck
 import IxVMRefinement.Assembly.GuardRawInst
-import IxVMRefinement.L1.CanonicalRawAnnotation
-import IxVMRefinement.L1.HashedBlock
+import IxVMRefinement.Ingress.CanonicalRawAnnotation
+import IxVMRefinement.Ingress.HashedBlock
 import IxVMRefinement.StatementRel.LoadedReadsCanonInd
 import IxVMRefinement.StatementRel.LoadedReadsCanonCtor
 import IxVMRefinement.Binding.FamilyReconWhnf
@@ -787,12 +787,12 @@ theorem get_ci_iprj_rawOExact {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {B : _roo
         [.field (ind.lvls.toNat : F), tyPtr, .field (ind.params.toNat : F),
           .field (ind.indices.toNat : F), .field (ind.ctors.size : F),
           .field (if ind.isUnsafe then 1 else 0), blkPtr, .field (i.val : F)]) ∧
-      L1.canonicalRawAnnotation cb (List.range ind.lvls.toNat)
-        ((L1.mutsRootOffset ms.toList i.val : Nat) : F) ind.typ (indTy₀ i.val) = some raw ∧
+      Ingress.canonicalRawAnnotation cb (List.range ind.lvls.toNat)
+        ((Ingress.mutsRootOffset ms.toList i.val : Nat) : F) ind.typ (indTy₀ i.val) = some raw ∧
       raw.eraseMeta = (indTy₀ i.val).eraseMeta ∧
       RawOExact (Core.keyOf t) h' raw tyPtr := by
   obtain ⟨-, -, blkBytes, cb', ms', ind', blobs, v, hhB, haB, hexB, -, hcb, hms, hhp, hld,
-    hraw, tree, plan, built, planned, hlev⟩ := L1.get_ci_iprj_origin_spec hbd hb ev
+    hraw, tree, plan, built, planned, hlev⟩ := Ingress.get_ci_iprj_origin_spec hbd hb ev
   obtain ⟨lcB, hgetB, hdecB⟩ := LoadedReads.recordOf_inv hR.record
   have hbB' : blkBytes = lcB.rawBytes := Core.load_escape hgetB hnc blkBytes hhB (haB.trans hbB)
   have hcB : cb = cb' := by rw [hbB', hdecB] at hexB; exact Except.ok.inj hexB
@@ -813,10 +813,10 @@ theorem get_ci_iprj_rawOExact {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {B : _roo
       cb (Ix.Kernel.Reader.recParam (List.range ind'.lvls.toNat))
       (blockSelf t B ms)).read ind'.typ = .ok (indTy₀ i.val) := by
     rw [Assembly.recParam_range]; exact hty
-  have hselfk : ∀ idx x m k, (L1.blockRecurAddrs B ms.toList)[idx]? = some x →
+  have hselfk : ∀ idx x m k, (Ingress.blockRecurAddrs B ms.toList)[idx]? = some x →
       blockSelf t B ms idx = some m → m = .ok k → k = Core.keyOf t x :=
     LoadedReads.blockSelf_key t B ms
-  have rtyB : L1.RawConvExpr cb.refs.toList (L1.blockRecurAddrs B ms.toList) cb.univs.toList
+  have rtyB : Ingress.RawConvExpr cb.refs.toList (Ingress.blockRecurAddrs B ms.toList) cb.univs.toList
       cb.sharing.toList blobs h' 4294967295 ind'.typ tyPtr := by
     rw [← hbB]; exact rty
   obtain ⟨raw, sem, -, hrep, -, htrace⟩ :=
@@ -825,15 +825,15 @@ theorem get_ci_iprj_rawOExact {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {B : _roo
       (LoadedReads.readCtx_keyAt_inv hR.check _) hselfk hagree hread' hlbb hdef
   have htr := htrace plan trace []
   rw [List.append_nil] at htr
-  have hcan : L1.canonicalRawAnnotation cb (List.range ind'.lvls.toNat)
-      ((L1.mutsRootOffset ms.toList i.val : Nat) : F) ind'.typ (indTy₀ i.val) = some raw := by
-    unfold L1.canonicalRawAnnotation
-    rw [L1.canonicalRawTree_of_built built, planned]
-    change (L1.applyRawBinderTrace (fun level => Core.bmeta (L1.invPosLevel (List.range ind'.lvls.toNat) level))
+  have hcan : Ingress.canonicalRawAnnotation cb (List.range ind'.lvls.toNat)
+      ((Ingress.mutsRootOffset ms.toList i.val : Nat) : F) ind'.typ (indTy₀ i.val) = some raw := by
+    unfold Ingress.canonicalRawAnnotation
+    rw [Ingress.canonicalRawTree_of_built built, planned]
+    change (Ingress.applyRawBinderTrace (fun level => Core.bmeta (Ingress.invPosLevel (List.range ind'.lvls.toNat) level))
       (indTy₀ i.val) plan).bind (fun result => some result.1) = some raw
     rw [htr]; rfl
   have herase : raw.eraseMeta = (indTy₀ i.val).eraseMeta :=
-    L1.applyRawBinderTrace_eraseMeta (indTy₀ i.val) htr
+    Ingress.applyRawBinderTrace_eraseMeta (indTy₀ i.val) htr
   have hraw_eq : Core.posOf (List.range ind'.lvls.toNat) raw = raw :=
     Decl.posOf_range ind'.lvls.toNat raw
   have hrep0 := hrep 0 (fun _ => default)
@@ -858,12 +858,12 @@ theorem get_ci_cprj_rawOExact {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {B : _roo
         [.field (ct.lvls.toNat : F), tyPtr, blkPtr, .field (i.val : F), .field (ct.cidx.toNat : F),
           .field (ct.params.toNat : F), .field (ct.fields.toNat : F),
           .field (if ct.isUnsafe then 1 else 0)]) ∧
-      L1.canonicalRawAnnotation cb (List.range ct.lvls.toNat)
-        (((L1.mutsRootOffset ms.toList i.val : Nat) : F) + 1 + ((j.val : Nat) : F))
+      Ingress.canonicalRawAnnotation cb (List.range ct.lvls.toNat)
+        (((Ingress.mutsRootOffset ms.toList i.val : Nat) : F) + 1 + ((j.val : Nat) : F))
         ct.typ (ctorTy₀ i.val j.val) = some raw ∧
       RawOExact (Core.keyOf t) h' raw tyPtr := by
   obtain ⟨-, -, -, blkBytes, cb', ms', ind', ct', blobs, v, hhB, haB, hexB, -, hcb, hms, hcts,
-    hhp, hld, hraw, tree, plan, built, planned, hlev⟩ := L1.get_ci_cprj_origin_spec hbd hb ev
+    hhp, hld, hraw, tree, plan, built, planned, hlev⟩ := Ingress.get_ci_cprj_origin_spec hbd hb ev
   rw [← ZMod.natCast_zmod_val j] at planned
   obtain ⟨lcB, hgetB, hdecB⟩ := LoadedReads.recordOf_inv hR.record
   have hbB' : blkBytes = lcB.rawBytes := Core.load_escape hgetB hnc blkBytes hhB (haB.trans hbB)
@@ -887,10 +887,10 @@ theorem get_ci_cprj_rawOExact {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {B : _roo
       cb (Ix.Kernel.Reader.recParam (List.range ct'.lvls.toNat))
       (blockSelf t B ms)).read ct'.typ = .ok (ctorTy₀ i.val j.val) := by
     rw [Assembly.recParam_range]; exact hty
-  have hselfk : ∀ idx x m k, (L1.blockRecurAddrs B ms.toList)[idx]? = some x →
+  have hselfk : ∀ idx x m k, (Ingress.blockRecurAddrs B ms.toList)[idx]? = some x →
       blockSelf t B ms idx = some m → m = .ok k → k = Core.keyOf t x :=
     LoadedReads.blockSelf_key t B ms
-  have rtyB : L1.RawConvExpr cb.refs.toList (L1.blockRecurAddrs B ms.toList) cb.univs.toList
+  have rtyB : Ingress.RawConvExpr cb.refs.toList (Ingress.blockRecurAddrs B ms.toList) cb.univs.toList
       cb.sharing.toList blobs h' 4294967295 ct'.typ tyPtr := by
     rw [← hbB]; exact rty
   obtain ⟨raw, sem, -, hrep, -, htrace⟩ :=
@@ -899,12 +899,12 @@ theorem get_ci_cprj_rawOExact {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {B : _roo
       (LoadedReads.readCtx_keyAt_inv hR.check _) hselfk hagree hread' hlbb hdef
   have htr := htrace plan trace []
   rw [List.append_nil] at htr
-  have hcan : L1.canonicalRawAnnotation cb (List.range ct'.lvls.toNat)
-      (((L1.mutsRootOffset ms.toList i.val : Nat) : F) + 1 + ((j.val : Nat) : F))
+  have hcan : Ingress.canonicalRawAnnotation cb (List.range ct'.lvls.toNat)
+      (((Ingress.mutsRootOffset ms.toList i.val : Nat) : F) + 1 + ((j.val : Nat) : F))
       ct'.typ (ctorTy₀ i.val j.val) = some raw := by
-    unfold L1.canonicalRawAnnotation
-    rw [L1.canonicalRawTree_of_built built, planned]
-    change (L1.applyRawBinderTrace (fun level => Core.bmeta (L1.invPosLevel (List.range ct'.lvls.toNat) level))
+    unfold Ingress.canonicalRawAnnotation
+    rw [Ingress.canonicalRawTree_of_built built, planned]
+    change (Ingress.applyRawBinderTrace (fun level => Core.bmeta (Ingress.invPosLevel (List.range ct'.lvls.toNat) level))
       (ctorTy₀ i.val j.val) plan).bind (fun result => some result.1) = some raw
     rw [htr]; rfl
   have hraw_eq : Core.posOf (List.range ct'.lvls.toNat) raw = raw :=
@@ -1095,11 +1095,11 @@ termination_by cs₁.length
 private theorem ctorList_length_spec {xs : List Ixon.Constructor} {l r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W Obs.Names.«Lists::length<Ixon::Constructor>» [l] h r h' cs)
-    (hl : RepList L1.constructorListEnum L1.RepConstructor h xs l) :
+    (hl : RepList Ingress.constructorListEnum Ingress.RepConstructor h xs l) :
     r = .field (xs.length : F) ∧ h' = h := by
   rw [← Obs.Names.«Lists::length<Ixon::Constructor>».symbol] at ev
   have hl' : RepList (Instance.mk "Lists::Node" [.named "Ixon::Constructor" []]).symbol
-      L1.RepConstructor h xs l := by
+      Ingress.RepConstructor h xs l := by
     rw [Obs.Names.«Lists::Node<Ixon::Constructor>».symbol]
     exact hl
   exact Lib.Lists.length_spec ev hl'
@@ -1115,8 +1115,8 @@ private theorem members_have_neg_det {t : Ix.Kernel.RoleTable} {E₁ E₂ : Ixon
       {cs₁ cs₂ : List (Call F)},
       ms₁.map ixAddr = ms₂.map ixAddr →
       Bytes.RepAddressRef addrTy h₁ b₁ bp₁ → Bytes.RepAddressRef addrTy h₂ b₂ bp₂ →
-      RepList L1.mutConstListEnum L1.RepMutConst h₁ rem xm₁ →
-      RepList L1.mutConstListEnum L1.RepMutConst h₂ rem xm₂ →
+      RepList Ingress.mutConstListEnum Ingress.RepMutConst h₁ rem xm₁ →
+      RepList Ingress.mutConstListEnum Ingress.RepMutConst h₂ rem xm₂ →
       RepList addrListEnum (Bytes.RepAddressRef addrTy) h₁ ms₁ xs₁ →
       RepList addrListEnum (Bytes.RepAddressRef addrTy) h₂ ms₂ xs₂ →
       ¬ View.HashedCollision { env := E₁ } [] cs₁ → Bounded cs₁ →
@@ -1234,8 +1234,8 @@ private theorem members_have_neg_det {t : Ix.Kernel.RoleTable} {E₁ E₂ : Ixon
           exact members_have_neg_det hR₁ hR₂ hb₁B hb₂B rem hmsEq
             (Bytes.repAddressRef_heapMono₂ addrTy ec1.heap_extends hbp₁)
             (Bytes.repAddressRef_heapMono₂ addrTy ec2.heap_extends hbp₂)
-            (RepLinkedList.mono L1.repMutConst_heapMono₂ ec1.heap_extends hrest1)
-            (RepLinkedList.mono L1.repMutConst_heapMono₂ ec2.heap_extends hrest2)
+            (RepLinkedList.mono Ingress.repMutConst_heapMono₂ ec1.heap_extends hrest1)
+            (RepLinkedList.mono Ingress.repMutConst_heapMono₂ ec2.heap_extends hrest2)
             (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ec1.heap_extends hms₁)
             (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ec2.heap_extends hms₂)
             (fun hc => hnc₁ (Core.collision_mono (fun c h => by rw [hc1]; simp [h]) hc))
@@ -1273,14 +1273,14 @@ private theorem members_have_neg_det {t : Ix.Kernel.RoleTable} {E₁ E₂ : Ixon
           (Core.bounded_sub (fun c h => by rw [hc2]; simp [h]) hbd₂) er1 er2
 
 private theorem repMutConst_toMutShape {h : Heap F} {m : Ixon.MutConst} {v : SourceValue F}
-    (hm : L1.RepMutConst h m v) : Core.Specs.Callees.MutShape h m v := by
+    (hm : Ingress.RepMutConst h m v) : Core.Specs.Callees.MutShape h m v := by
   cases m with
   | defn _ => obtain ⟨x, rfl, -⟩ := hm; exact ⟨x, rfl⟩
   | indc _ => obtain ⟨x, rfl, -⟩ := hm; exact ⟨x, rfl⟩
   | recr _ => obtain ⟨x, rfl, -⟩ := hm; exact ⟨x, rfl⟩
 
 private theorem repList_mutShape_of_repMutConst {h : Heap F} {ms : List Ixon.MutConst}
-    {v : SourceValue F} (hr : RepList L1.mutConstListEnum L1.RepMutConst h ms v) :
+    {v : SourceValue F} (hr : RepList Ingress.mutConstListEnum Ingress.RepMutConst h ms v) :
     Core.Specs.Callees.MembersRep h ms v := by
   induction hr with
   | nil cell => exact .nil cell
@@ -1307,10 +1307,10 @@ theorem block_has_neg_occ_det {t : Ix.Kernel.RoleTable} {E₁ E₂ : Ixon.Env}
       Bytes.RepAddressRef addrTy h b bp → ixAddr b = B →
       ¬ View.HashedCollision { env := E } [] cs →
       ObsFn W "Ingress::load_verified_constant" [bp] h r m cs →
-      Heap.Extends h m ∧ L1.RepConstant m cb r := by
+      Heap.Extends h m ∧ Ingress.RepConstant m cb r := by
     intro E hrec b bp r h m cs hbp hbB hnc ev
     obtain ⟨ext, bytes, c', -, hh, ha, hex, -, -, -, -, -, -, hrep⟩ :=
-      L1.load_verified_constant_decode_bounded hbp ev
+      Ingress.load_verified_constant_decode_bounded hbp ev
     obtain ⟨lc, hget, hdec⟩ := LoadedReads.recordOf_inv hrec
     have hb_eq : (⟨bytes.toArray⟩ : ByteArray) = lc.rawBytes :=
       Core.load_escape hget hnc _ hh (ha.trans hbB)
@@ -1337,7 +1337,7 @@ theorem block_has_neg_occ_det {t : Ix.Kernel.RoleTable} {E₁ E₂ : Ixon.Env}
     have hbp1' := Bytes.repAddressRef_heapMono₂ addrTy ext1l hbp₁
     have hmems1 : Core.Specs.Callees.MembersRep m1l ms.toList xm1 :=
       repList_mutShape_of_repMutConst hms1_rep
-    obtain ⟨ext1b, as1, has1, hmap1⟩ := L1.build_recur_addrs_spec hmems1 hbp1' eb1
+    obtain ⟨ext1b, as1, has1, hmap1⟩ := Ingress.build_recur_addrs_spec hmems1 hbp1' eb1
     match Obs.«KernelModeled::block_has_neg_occ».obs ev₂ with
     | .other (ev_crkizsgj := el2) (hne_odfbwlsl := hne2) (hc_kjrxaxhl := hc2) .. =>
       obtain ⟨_, infoV2, _, _, _, _, hv2, hinfo2, -⟩ := decodeBlk hR₂.record hbp₂ hb₂B
@@ -1357,14 +1357,14 @@ theorem block_has_neg_occ_det {t : Ix.Kernel.RoleTable} {E₁ E₂ : Ixon.Env}
       have hbp2' := Bytes.repAddressRef_heapMono₂ addrTy ext2l hbp₂
       have hmems2 : Core.Specs.Callees.MembersRep m2l ms.toList xm2 :=
         repList_mutShape_of_repMutConst hms2_rep
-      obtain ⟨ext2b, as2, has2, hmap2⟩ := L1.build_recur_addrs_spec hmems2 hbp2' eb2
+      obtain ⟨ext2b, as2, has2, hmap2⟩ := Ingress.build_recur_addrs_spec hmems2 hbp2' eb2
       have hmapEq : as1.map ixAddr = as2.map ixAddr := by
         rw [hmap1, hmap2, hb₁B, hb₂B]
       exact members_have_neg_det hR₁ hR₂ hb₁B hb₂B ms.toList hmapEq
         (Bytes.repAddressRef_heapMono₂ addrTy ext1b hbp1')
         (Bytes.repAddressRef_heapMono₂ addrTy ext2b hbp2')
-        (RepLinkedList.mono L1.repMutConst_heapMono₂ ext1b hms1_rep)
-        (RepLinkedList.mono L1.repMutConst_heapMono₂ ext2b hms2_rep)
+        (RepLinkedList.mono Ingress.repMutConst_heapMono₂ ext1b hms1_rep)
+        (RepLinkedList.mono Ingress.repMutConst_heapMono₂ ext2b hms2_rep)
         has1 has2
         (fun hc => hnc₁ (Core.collision_mono (fun c h => by rw [hc1]; simp [h]) hc))
         (Core.bounded_sub (fun c h => by rw [hc1]; simp [h]) hbd₁)
@@ -1630,8 +1630,8 @@ theorem modeled_proj_eligible_det {t : Ix.Kernel.RoleTable} {E₁ E₂ : Ixon.En
       (hnc : ¬ View.HashedCollision { env := E } [] cs) (hbd : Bounded cs)
       (ev : ObsFn W "KernelModeled::modeled_proj_eligible" [bp, .field i] h r h' cs),
       ∃ (ind : Ixon.Inductive) (raw : KExpr), ms[i.val]? = some (.indc ind) ∧
-        L1.canonicalRawAnnotation cb (List.range ind.lvls.toNat)
-          ((L1.mutsRootOffset ms.toList i.val : Nat) : F) ind.typ (indTy₀ i.val) = some raw ∧
+        Ingress.canonicalRawAnnotation cb (List.range ind.lvls.toNat)
+          ((Ingress.mutsRootOffset ms.toList i.val : Nat) : F) ind.typ (indTy₀ i.val) = some raw ∧
       ((ind.indices.toNat = 0 ∧ ind.ctors.size = 1 ∧
         typeSortNeverNoLet raw ind.params.toNat
           ((List.range ind.lvls.toNat).map Ix.Kernel.Level.param) = true ∧

@@ -3069,7 +3069,7 @@ theorem rawTypedList_to_posRulesJ {ps : List LevelParam}
 
 /-! ## `defeq_list_ok`, `assert_index_vars`, `lower_pins`, and `rec_major_pins` -/
 
-theorem defeq_list_ok_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+theorem defeq_list_ok_spec (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     {Γ : Nat → KExpr} {d : Nat} {Xs : List KExpr} :
     ∀ {Ys : List KExpr} {rc xs_ptr ys_ptr types : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
@@ -3549,7 +3549,7 @@ theorem inst_params_tm {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KE
         ev_rec hinst (RepLinkedList.mono tmE_heapMono₂ ev_inst.heap_extends hPs)
       exact ⟨T :: ds, rem, by simp [Expr.instPisAt, hds], hrem⟩
 
-theorem inst_params_typed_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+theorem inst_params_typed_spec (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     (hsc_env : Ix.Kernel.StoreClosed c.env)
     {Γ₁ Γ₂ : Nat → KExpr} {d₁ d₂ depth : Nat} (hle : d₁ ≤ depth) {Ps₁ : List KExpr} :
     ∀ {Ps₂ : List KExpr} {E₁ E₂ : KExpr} {rc e ps_ptr ctx r : SourceValue F}
@@ -3616,7 +3616,7 @@ theorem inst_params_typed_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
         by simp [Expr.instPisAt, hds₁], by simp [Expr.instPisAt, hds₂],
         hrem₁, hrem₂, ⟨⟨tt, hinf_d, hde_d⟩, htyped⟩⟩
 
-theorem defeq_tele_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+theorem defeq_tele_spec (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     (hsc_env : Ix.Kernel.StoreClosed c.env) (m : Nat) :
     ∀ {Γ : Nat → KExpr} {d depth : Nat} {Ea Eb : KExpr}
       {rc a b ctx r : SourceValue F} {n : F} {h h' : Heap F} {cs : List (Call F)},
@@ -3678,7 +3678,7 @@ theorem defeq_tele_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
         by simp [Expr.instPisAt, hinst],
         ⟨hde_d, hlist⟩⟩
 
-theorem defeq_lam_tele_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+theorem defeq_lam_tele_spec (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     (hsc_env : Ix.Kernel.StoreClosed c.env) (m : Nat) :
     ∀ {Γ : Nat → KExpr} {d depth : Nat} {El Ep : KExpr}
       {rc l p ctx r : SourceValue F} {n : F} {h h' : Heap F} {cs : List (Call F)},

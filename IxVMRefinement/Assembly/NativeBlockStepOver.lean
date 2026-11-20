@@ -94,7 +94,7 @@ theorem nativeUnitStep_of_member_holds {L : Ix.Kernel.Env .anon → NativeFam .a
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hcov : L1.CanonicalHashCoverage Ec calls)
+    (hcov : Ingress.CanonicalHashCoverage Ec calls)
     (hread : Core.ProjGuardRunReading)
     (hholds : ∀ E, Stores E → HoldsBlock E₀ E B cb ind)
     (hcert : ind.ctors.size = 1 → ind.indices.toNat = 0 →
@@ -187,7 +187,7 @@ theorem overUnitStep_nativeBlockTele {L : Ix.Kernel.Env .anon → NativeFam .ano
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hcov : L1.CanonicalHashCoverage Ec calls)
+    (hcov : Ingress.CanonicalHashCoverage Ec calls)
     (hread : Core.ProjGuardRunReading) (hfieldsR : Guard.CheckedSortsReadingAtBlock calls R B) :
     OverUnitStep.{u} L t G R envT E₀ B cb :=
   NativeUnitStep.overUnitStep (Stores := fun E => RecordsFor R E) hRc hcn hln (fun E hE => hE)
@@ -222,7 +222,7 @@ theorem overUnitStep_nativeBlockTele_closed {L : Ix.Kernel.Env .anon → NativeF
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hcov : L1.CanonicalHashCoverage Ec calls)
+    (hcov : Ingress.CanonicalHashCoverage Ec calls)
     (hread : Core.ProjGuardRunReading) :
     OverUnitStep.{u} L t G R envT E₀ B cb :=
   overUnitStep_nativeBlockTele hL ht hS hRc hst hrec hRblock hRformer hRctors hblobs hchk hcn hln

@@ -3,7 +3,7 @@ import IxVMRefinement.Obs.KernelModeled3
 import IxVMRefinement.Callees.ProjAddr
 import IxVMRefinement.Callees.RouteDispatch
 import IxVMRefinement.Claim.TopProj
-import IxVMRefinement.L1.Ingress
+import IxVMRefinement.Ingress.Ingress
 import IxVMRefinement.Assembly.FamilyFold
 
 /-! # The address lists `check_family` renames over
@@ -39,15 +39,15 @@ private theorem bytes_to_addr_bounded {bp r : SourceValue F} {bytes : List UInt8
     (hbd : Bounded calls) (hbytes : RepBytes h bytes bp) :
     ∃ a : Bytes.Address, Bytes.RepAddressRef addrTy h' a r ∧
       ixAddr a = Address.blake3Pure ⟨bytes.toArray⟩ := by
-  have hstream : L1.Stream h bytes bp := by
+  have hstream : Ingress.Stream h bytes bp := by
     change Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h bytes bp
     have e : (IxVM.Refinement.byteStreamEnum : String) = byteListEnum := rfl
     rw [e]
     exact hbytes
   obtain ⟨v1, m2, cs12, v23, m24, cs31, ev14, he27, hm26, ev33, hc42⟩ :=
     Obs.«Blake3::bytes_to_addr».obs ev
-  obtain ⟨-, rfl⟩ := L1.hash_spec hstream ev14
-  obtain ⟨rfl, hm24⟩ := L1.digest_bytes_spec ev33
+  obtain ⟨-, rfl⟩ := Ingress.hash_spec hstream ev14
+  obtain ⟨rfl, hm24⟩ := Ingress.digest_bytes_spec ev33
   subst m24
   have hcall : (⟨"Blake3::hash", [bp], h⟩ : Call F) ∈ calls := by
     rw [hc42]; simp
@@ -57,15 +57,15 @@ private theorem bytes_to_addr_bounded {bp r : SourceValue F} {bytes : List UInt8
   let d : Bytes.Address := Blake3.Pure.cvBytes (Aiur.Library.Blake3.hashModel bytes)
   have hd_eq : d = Blake3.Pure.digest bytes :=
     Aiur.Library.Blake3.hash_model_spec bytes hnat
-  have hty : (L1.digestV d).type = addrTy := by
-    have hf : (Value.type ∘ L1.bv : UInt8 → Aiur.Ty) = fun _ => .field :=
-      funext fun b => by rw [Function.comp_apply, L1.bv, Value.type]
-    rw [L1.digestV, L1.type_tuple, List.map_map, hf, List.map_const', Vector.length_toList]
+  have hty : (Ingress.digestV d).type = addrTy := by
+    have hf : (Value.type ∘ Ingress.bv : UInt8 → Aiur.Ty) = fun _ => .field :=
+      funext fun b => by rw [Function.comp_apply, Ingress.bv, Value.type]
+    rw [Ingress.digestV, Ingress.type_tuple, List.map_map, hf, List.map_const', Vector.length_toList]
   refine ⟨d, ?_, ?_⟩
-  · refine ⟨m2.length, L1.digestV d, ?_, ?_, ?_⟩
+  · refine ⟨m2.length, Ingress.digestV d, ?_, ?_, ?_⟩
     · rw [he27]; exact congrArg (fun t => Value.ptr t m2.length) hty
     · rw [hm26, List.getElem?_append_right (Nat.le_refl _), Nat.sub_self]; rfl
-    · exact L1.repAddress_iff.mpr rfl
+    · exact Ingress.repAddress_iff.mpr rfl
   · rw [hd_eq, ProjAddrAux.blake3Pure_eq_ixAddr]
 
 theorem projection_addr_ctor_bounded {i j : F} {bp r : SourceValue F}
@@ -183,8 +183,8 @@ theorem member_ctor_addrs_spec {b : Bytes.Address} {xb : SourceValue F} {p n : F
 
 /-! ## The block's constructors -/
 
-private theorem repMutConst_heapMono : HeapMono₂ L1.RepMutConst :=
-  fun _ _ _ _ ext r => L1.RepMutConst.mono ext r
+private theorem repMutConst_heapMono : HeapMono₂ Ingress.RepMutConst :=
+  fun _ _ _ _ ext r => Ingress.RepMutConst.mono ext r
 
 /-- **The constructor addresses of a block's inductive members from position `p` on**, member by
 member, each member's in order. -/
@@ -204,7 +204,7 @@ theorem block_ctor_addrs_spec {b : Bytes.Address} {xb : SourceValue F} :
       p + ms.length < 1099511627776 →
       (∀ ind, Ixon.MutConst.indc ind ∈ ms → ind.ctors.size < 1099511627776) →
       Bounded cs → Bytes.RepAddressRef addrTy h b xb →
-      RepList L1.mutConstListEnum L1.RepMutConst h ms x_members →
+      RepList Ingress.mutConstListEnum Ingress.RepMutConst h ms x_members →
       ObsFn W "KernelModeled::block_ctor_addrs" [x_members, xb, .field (p : F)] h r h' cs →
       ∃ as : List Bytes.Address, RepList addrListEnum (Bytes.RepAddressRef addrTy) h' as r ∧
         as.map ixAddr = ctorAddrsFrom (ixAddr b) ms p ∧ Heap.Extends h h'
@@ -251,7 +251,7 @@ theorem block_ctor_addrs_spec {b : Bytes.Address} {xb : SourceValue F} :
           rw [Obs.Names.«Lists::length<Ixon::Constructor>».symbol]
           exact e1
         have hl' : RepList (Instance.mk "Lists::Node" [.named "Ixon::Constructor" []]).symbol
-            L1.RepConstructor h ind.ctors.toList x_ctors := by
+            Ingress.RepConstructor h ind.ctors.toList x_ctors := by
           rw [Obs.Names.«Lists::Node<Ixon::Constructor>».symbol]
           exact hctors
         obtain ⟨hv140, hm157⟩ := Lib.Lists.length_spec e1' hl'
@@ -315,12 +315,12 @@ theorem family_recs_list {calls : List (Call F)} {E₀ : Ixon.Env}
       Route.membersRep_of_repMutConstList (RepLinkedList.mono repMutConst_heapMono ext hrep)
     have hb2 : Bytes.RepAddressRef addrTy m123 b x_rb :=
       Bytes.repAddressRef_heapMono₂ addrTy (ev14.heap_extends.trans ext) hb
-    obtain ⟨-, as, has, hmap⟩ := L1.build_recur_addrs_spec hmems hb2 ev148
+    obtain ⟨-, as, has, hmap⟩ := Ingress.build_recur_addrs_spec hmems hb2 ev148
     exact ⟨as, has, hmap⟩
   | .Recr (cs12 := cs12) (ev14 := ev14) (hc209 := hc) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
     obtain ⟨-, bytes, c, hsz, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded hb ev14
+      Ingress.load_verified_constant_decode_bounded hb ev14
     have haddr' : _root_.Address.blake3Pure ⟨bytes.toArray⟩ = ixAddr b := haddr
     have hrecb : recordOf E₀ (ixAddr b) = some c := by
       rw [← haddr']
@@ -329,7 +329,7 @@ theorem family_recs_list {calls : List (Call F)} {E₀ : Ixon.Env}
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
     have hinfo_eq := (List.cons.inj (Value.construct.inj hc_eq).2.2).1
     rw [← hinfo_eq] at hinfoRep
-    obtain ⟨rcr, hrc, -⟩ := L1.repConstantInfo_recr_inv hinfoRep
+    obtain ⟨rcr, hrc, -⟩ := Ingress.repConstantInfo_recr_inv hinfoRep
     have e1 : c = crb := Option.some.inj (hrecb.symm.trans hrb.record)
     subst e1
     rw [hrb.muts] at hrc

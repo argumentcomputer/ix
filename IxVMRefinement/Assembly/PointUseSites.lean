@@ -1,6 +1,6 @@
 import IxVMRefinement.Assembly.PointRecord
 import IxVMRefinement.Core.AllSteps
-import IxVMRefinement.L1.HashedBlock
+import IxVMRefinement.Ingress.HashedBlock
 
 /-! # The circuit's use sites at a block on the constructors-only route
 

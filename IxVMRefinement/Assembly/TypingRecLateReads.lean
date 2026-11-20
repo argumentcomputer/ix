@@ -90,10 +90,10 @@ theorem rec_major_indKeyAt {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
   obtain ⟨a', ha'_ref, haA⟩ := ha_pre
   subst haA
   obtain ⟨rawBytes, c', hh, hba, hex, -, hres'⟩ :=
-    L1.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
+    Ingress.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
   have hcc : c' = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hh) hba hex
   subst c'
-  unfold L1.GetCIBlockTraceResult at hres'
+  unfold Ingress.GetCIBlockTraceResult at hres'
   rw [hinfo] at hres'
   obtain ⟨blobs, tree, v, hhp, built, hldv, htr⟩ := hres'
   rw [hld] at hldv
@@ -165,7 +165,7 @@ theorem rec_major_indKeyAt {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
   have hPa : P = Core.ixAddr a := keyOf_inj hroles hkeys
   subst hPa
   have hgL : Core.Good ⟨E, env, t, lim⟩ loadCalls := hgood.sub hsLoad'
-  obtain ⟨rawP, cP, hhP, hbaP, hexP, htvP, hresP⟩ := L1.get_ci_block_trace_spec hgL.2 ha evLoad
+  obtain ⟨rawP, cP, hhP, hbaP, hexP, htvP, hresP⟩ := Ingress.get_ci_block_trace_spec hgL.2 ha evLoad
   have hrecP : recordOf E (Core.ixAddr a) = some cm := by
     rw [recordOf_eq_recordAt_of_decoded hst.decoded]
     exact hcm
@@ -175,7 +175,7 @@ theorem rec_major_indKeyAt {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
     rw [hbP, hdec] at hexP
     exact (Except.ok.inj hexP).symm
   subst hcP
-  unfold L1.GetCIBlockTraceResult at hresP
+  unfold Ingress.GetCIBlockTraceResult at hresP
   rw [hcmi] at hresP
   obtain ⟨-, blkBytes, cb', ms', ind', blobs', tree', plan', v₀, hhB', haB', hexB', hcb', hms',
     -, -, -, hld₀, hraw, -⟩ := hresP
@@ -211,7 +211,7 @@ theorem rec_major_indKeyAt {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
   -- the parent's block record in the run's store, from the route's verified block load
   obtain ⟨vB, midB, chB, verB, hsubB⟩ := block_is_modeled_verified_subcall evRoute
   obtain ⟨-, bytesB, c2, hszB2, hhB2, haddrB2, hexB2, hdeB2, -⟩ :=
-    L1.load_verified_constant_decode_bounded hblkP verB
+    Ingress.load_verified_constant_decode_bounded hblkP verB
   have hsubB' : ∀ cl ∈ chB, cl ∈ calls :=
     fun cl hm => hsub_chk cl (hsubM cl (hsRoute cl (hsubB cl hm)))
   obtain ⟨lcB2, hgetB2, -, hcB2⟩ := hcov ⟨bytesB.toArray⟩ c2 (Core.hashed_mono hsubB' hhB2)

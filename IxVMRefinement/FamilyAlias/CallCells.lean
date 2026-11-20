@@ -6,7 +6,7 @@ import IxVMRefinement.FamilyAlias.FamilyCall
 `rename_stored_of_members` represents a renamed term at the keying of a step's prefix once each
 cell of the term is stored or is a member of the family (in `src`). A cell of a term the check
 loads is a reference the block or the family record uses, or a recursion address of one of them
-(`L1.RawConvExpr.addrIn_used`); a recursion address is in `src` (`FamilyTables`). This module
+(`Ingress.RawConvExpr.addrIn_used`); a recursion address is in `src` (`FamilyTables`). This module
 places a used reference:
 
 * `usedRef_stored_or_src`: at an environment a step of the block is handed (`FamilyStepEnv`), a

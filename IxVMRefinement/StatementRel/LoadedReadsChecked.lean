@@ -49,7 +49,7 @@ private theorem is_unsafe_ci_defnValShape_safe {d : Ixon.Definition}
     {tyPtr valPtr hint v1 : SourceValue F} {h m2 : Heap F} {cs : List (Call F)}
     (hsafe : Ix.Kernel.Reader.safetyDecline d = none)
     (ev : ObsFn Core.W "KernelCheck::is_unsafe_ci"
-      [L1.defnValShape d tyPtr valPtr hint] h v1 m2 cs) :
+      [Ingress.defnValShape d tyPtr valPtr hint] h v1 m2 cs) :
     v1 = .field 0 ∧ m2 = h := by
   cases hk : d.kind with
   | defn =>
@@ -59,13 +59,13 @@ private theorem is_unsafe_ci_defnValShape_safe {d : Ixon.Definition}
       | safe => rfl
       | unsaf => rw [hds] at hsafe; exact absurd hsafe (by decide)
       | part => rw [hds] at hsafe; exact absurd hsafe (by decide)
-    simp only [L1.defnValShape, hk, hs] at ev
+    simp only [Ingress.defnValShape, hk, hs] at ev
     cases «KernelCheck::is_unsafe_ci».obs ev with
     | Defn_Safe _ _ _ _ _ _ he hr _ => exact ⟨he, hr⟩
     | Defn_other _ _ _ _ _ _ hv hne _ _ _ =>
       simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
       rcases hv with ⟨_, _, _, _, _, hs_eq, _⟩
-      exact (hne [] rfl (by simpa [L1.repDefSafetyVal] using hs_eq.symm)).elim
+      exact (hne [] rfl (by simpa [Ingress.repDefSafetyVal] using hs_eq.symm)).elim
     | Axiom _ _ _ hv | Thm _ _ _ _ _ hv | Opaque _ _ _ _ _ _ _ hv | Quot _ _ _ _ _ _ _ hv
     | Induct _ _ _ _ _ _ _ _ _ _ _ _ _ hv | Ctor _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv
     | Rec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv =>
@@ -73,7 +73,7 @@ private theorem is_unsafe_ci_defnValShape_safe {d : Ixon.Definition}
   | opaq =>
     have hns : (d.safety == .unsaf) = false := by
       simpa [Ix.Kernel.Reader.safetyDecline, Ix.Kernel.Reader.safetyDeclineOf, hk] using hsafe
-    simp only [L1.defnValShape, hk, hns] at ev
+    simp only [Ingress.defnValShape, hk, hns] at ev
     cases «KernelCheck::is_unsafe_ci».obs ev with
     | Opaque _ _ _ _ _ _ _ hv he hr _ =>
       simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
@@ -86,7 +86,7 @@ private theorem is_unsafe_ci_defnValShape_safe {d : Ixon.Definition}
     | Rec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv =>
       simp [Core.kciEnum] at hv
   | thm =>
-    simp only [L1.defnValShape, hk] at ev
+    simp only [Ingress.defnValShape, hk] at ev
     cases «KernelCheck::is_unsafe_ci».obs ev with
     | Thm _ _ _ _ _ _ he hr _ => exact ⟨he, hr⟩
     | Axiom _ _ _ hv | Defn_Safe _ _ _ _ _ hv | Defn_other _ _ _ _ _ _ hv
@@ -100,13 +100,13 @@ private theorem is_unsafe_ci_axio_safe {ax : Ixon.Axiom}
     (hsafe : ax.isUnsafe = false)
     (ev : ObsFn Core.W "KernelCheck::is_unsafe_ci"
       [.construct Core.kciEnum "Axiom"
-        [.field (ax.lvls.toNat : F), tyPtr, L1.repBoolField ax.isUnsafe]] h v1 m2 cs) :
+        [.field (ax.lvls.toNat : F), tyPtr, Ingress.repBoolField ax.isUnsafe]] h v1 m2 cs) :
     v1 = .field 0 ∧ m2 = h := by
   cases «KernelCheck::is_unsafe_ci».obs ev with
   | Axiom _ _ _ hv he hr _ =>
     simp only [Core.kciEnum, Value.construct.injEq, List.cons.injEq, and_true, true_and] at hv
     rcases hv with ⟨_, _, hu⟩
-    simp [hsafe, L1.repBoolField] at hu
+    simp [hsafe, Ingress.repBoolField] at hu
     exact ⟨he.trans hu.symm, hr⟩
   | Defn_Safe _ _ _ _ _ hv | Defn_other _ _ _ _ _ _ hv
   | Thm _ _ _ _ _ hv | Opaque _ _ _ _ _ _ _ hv | Quot _ _ _ _ _ _ _ hv
@@ -135,7 +135,7 @@ theorem checkedDefn_core (ht : t.check = .ok ()) (hbound : Bounded calls)
     {cs_chk : List (Call F)} {blobs : List (_root_.Address × ByteArray)}
     (hrc_m : Claim.RCFullRep t bAddr lim m_chk rc)
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
-    (hraw_d : L1.RawDefnValRep src.refs.toList [] src.univs.toList src.sharing.toList blobs
+    (hraw_d : Ingress.RawDefnValRep src.refs.toList [] src.univs.toList src.sharing.toList blobs
       m_chk d v)
     (hty : (exprReader t blob src id self).read d.typ = .ok ty₀)
     (hval : (exprReader t blob src id self).read d.value = .ok val₀)
@@ -161,17 +161,17 @@ theorem checkedDefn_core (ht : t.check = .ok ()) (hbound : Bounded calls)
     exact hval
   cases hk : d.kind with
   | defn =>
-    have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
+    have hv_shape : Ingress.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Defn"
-          [.field (d.lvls.toNat : F), tyPtr, valPtr, L1.repDefSafetyVal d.safety, hintVal] := by
-      simp [L1.defnValShape, hk]
+          [.field (d.lvls.toNat : F), tyPtr, valPtr, Ingress.repDefSafetyVal d.safety, hintVal] := by
+      simp [Ingress.defnValShape, hk]
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other
     | Thm | Opaque | Quot
     | Induct_n0 | Induct_other_n0 | Induct_other_other
     | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
     | Rec_n0 | Rec_other =>
-      simp_all [L1.defnValShape, Core.kciEnum]
+      simp_all [Ingress.defnValShape, Core.kciEnum]
     | Defn v1 m2 cs12 x_nlvls x_ty x_val _ _ _ m299 cs309 _ m336 cs346 v372 m373 cs383 m404
         _ m417 cs427 _ m447 cs457 cs479 m508
         ev14 _ hv269 ev311 ev348 hm412 ev385 ev429 ev459 hm516 ev481 hc520 =>
@@ -234,16 +234,16 @@ theorem checkedDefn_core (ht : t.check = .ok ()) (hbound : Bounded calls)
           ext_373_508 hm516 (Core.TmC.mono ext_404_508 hty_tmc_404) hval_tmc_508
           (hrc_m.mono ext_m_508) ev481 hcl_kc hsub_kc, rfl⟩
   | thm =>
-    have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
+    have hv_shape : Ingress.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Thm" [.field (d.lvls.toNat : F), tyPtr, valPtr] := by
-      simp [L1.defnValShape, hk]
+      simp [Ingress.defnValShape, hk]
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Defn
     | Opaque | Quot
     | Induct_n0 | Induct_other_n0 | Induct_other_other
     | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
     | Rec_n0 | Rec_other =>
-      simp_all [L1.defnValShape, Core.kciEnum]
+      simp_all [Ingress.defnValShape, Core.kciEnum]
     | Thm v1 m2 cs12 x_nlvls x_ty x_val _ m544 cs554 _ m581 cs591 v617 m618 cs628 m649
         v672 m675 cs683 m696 _ m716 cs726 _ m746 cs756 cs778 m807
         ev14 _ _ hv526 ev556 ev593 hm657 ev630 hm704 ev685 heq714 ev728 ev758 hm815 ev780 hc819 =>
@@ -315,17 +315,17 @@ theorem checkedDefn_core (ht : t.check = .ok ()) (hbound : Bounded calls)
           ext_675_807 hm815 (Core.TmC.mono ext_649_807 hty_tmc_649) hval_tmc_807
           (hrc_m.mono ext_m_807) ev780 hcl_kc hsub_kc, rfl⟩
   | opaq =>
-    have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
+    have hv_shape : Ingress.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Opaque"
-          [.field (d.lvls.toNat : F), tyPtr, valPtr, L1.repBoolField (d.safety == .unsaf)] := by
-      simp [L1.defnValShape, hk]
+          [.field (d.lvls.toNat : F), tyPtr, valPtr, Ingress.repBoolField (d.safety == .unsaf)] := by
+      simp [Ingress.defnValShape, hk]
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Defn | Thm
     | Quot
     | Induct_n0 | Induct_other_n0 | Induct_other_other
     | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
     | Rec_n0 | Rec_other =>
-      simp_all [L1.defnValShape, Core.kciEnum]
+      simp_all [Ingress.defnValShape, Core.kciEnum]
     | Opaque v1 m2 cs12 x_nlvls x_ty x_val _ _ m849 cs859 _ m886 cs896 v922 m923 cs933 m954
         _ m967 cs977 _ m997 cs1007 cs1029 m1058
         ev14 _ _ _ hv825 ev861 ev898 hm962 ev935 ev979 ev1009 hm1066 ev1031 hc1070 =>
@@ -425,12 +425,12 @@ theorem checkedAtFull_defn (ht : t.check = .ok ()) (hbound : Bounded calls)
     exact hl
   obtain ⟨lim, h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     bytes, E_ld, hrc_pre, hrc_m, ha_pre, ha_m, hhash_ld, hblake_ld, hload_ld, hL1,
-    hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := Assembly.checkedAtFull_loadedL1 hbound hchk
-  obtain ⟨-, -, v', hld', hraw⟩ := loadedL1_record hS hsub_ld hhash_ld hblake_ld hL1 hrec
+    hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := Assembly.checkedAtFull_loadedRecords hbound hchk
+  obtain ⟨-, -, v', hld', hraw⟩ := loadedRecords_record hS hsub_ld hhash_ld hblake_ld hL1 hrec
   rw [hld] at hld'
   injection hld' with hvv
   subst hvv
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨blobs, hb_ld, raw⟩ := hraw
   have hblob := hS.blob_of_table hload_ld hsub_ld hb_ld
@@ -467,12 +467,12 @@ theorem checkedAtFull_axiom (ht : t.check = .ok ()) (hbound : Bounded calls)
     exact hl
   obtain ⟨lim, h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     bytes, E_ld, hrc_pre, hrc_m, ha_pre, ha_m, hhash_ld, hblake_ld, hload_ld, hL1,
-    hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := Assembly.checkedAtFull_loadedL1 hbound hchk
-  obtain ⟨-, -, v', hld', hraw⟩ := loadedL1_record hS hsub_ld hhash_ld hblake_ld hL1 hrec
+    hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := Assembly.checkedAtFull_loadedRecords hbound hchk
+  obtain ⟨-, -, v', hld', hraw⟩ := loadedRecords_record hS hsub_ld hhash_ld hblake_ld hL1 hrec
   rw [hld] at hld'
   injection hld' with hvv
   subst hvv
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨blobs, hb_ld, raw⟩ := hraw
   have hblob := hS.blob_of_table hload_ld hsub_ld hb_ld
@@ -533,28 +533,28 @@ theorem checkedAtFull_axiom (ht : t.check = .ok ()) (hbound : Bounded calls)
     exact ⟨ty₀, hty, hty_lbb, hty_def,
       .axiomDecl hnot_role hrec hinfo hsafe hnlvls hty_lbb hty_def hty_ann
         hm132 hty_tmc (hrc_m.mono ext_m_m124) ev105 hcl_es hsub_es
-        ev_sr.heap_extends (hrc_m.mono ext_m_m137) (Core.S0.addr_mono ext_m_m137 ha_m)
+        ev_sr.heap_extends (hrc_m.mono ext_m_m137) (Core.BaseSeams.addr_mono ext_m_m137 ha_m)
         ev203 hne255 hcl_ax hsub_ax, hreads⟩
 
 /-! ## Over the claim walk
 
 The claim phase's store is a run store, and every address the walk reached holds a record
-there with its check (`Claim.WalkedL6`). So for every walked standalone definition, theorem
+there with its check (`Claim.WalkedClaim`). So for every walked standalone definition, theorem
 or opaque record in Lean's logic, the evidence and the reading exist over the one store of
 records the run hashed. -/
 
 /-- The role table the walk ran under is well formed. -/
-theorem walkedL6_tableCheck {E₀ : Ixon.Env} {seeds : List _root_.Address}
-    (hw : Claim.WalkedL6 calls t E₀ seeds) : t.check = .ok () := by
+theorem walkedClaim_tableCheck {E₀ : Ixon.Env} {seeds : List _root_.Address}
+    (hw : Claim.WalkedClaim calls t E₀ seeds) : t.check = .ok () := by
   obtain ⟨bAddr, ⟨rb, -, -, hadm⟩, -⟩ := hw
   exact ((Ix.Kernel.Admission.admitBinding_ok_iff _ _ t).mp hadm).wellFormed
 
 /-- **Every walked standalone definition, theorem or opaque record has its check evidence
 and its reading over the run's store.** `E₀` is the claim phase's store (`LoadedBy calls E₀`,
-`Claim.WalkedL6`): every record and blob in it is a byte string the run hashed. -/
-theorem walkedL6_defn_reads (hbound : Bounded calls) {E₀ : Ixon.Env}
+`Claim.WalkedClaim`): every record and blob in it is a byte string the run hashed. -/
+theorem walkedClaim_defn_reads (hbound : Bounded calls) {E₀ : Ixon.Env}
     {seeds : List _root_.Address} (hload : LoadedBy calls E₀)
-    (hw : Claim.WalkedL6 calls t E₀ seeds) :
+    (hw : Claim.WalkedClaim calls t E₀ seeds) :
     ∃ (bAddr : _root_.Address) (Wk : _root_.Address → Prop), (∀ a ∈ seeds, Wk a) ∧
       ∀ (a : _root_.Address) (c : Ixon.Constant) (d : Ixon.Definition)
         (order_role : List _root_.Address),
@@ -566,8 +566,8 @@ theorem walkedL6_defn_reads (hbound : Bounded calls) {E₀ : Ixon.Env}
             IxVM.Consistency.installs decl =
               [defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn] ∧
             Reads t E₀ a (defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn) := by
-  have ht := walkedL6_tableCheck hw
-  have hS := RunStore.of_walkedL6 hload hw
+  have ht := walkedClaim_tableCheck hw
+  have hS := RunStore.of_walkedClaim hload hw
   obtain ⟨bAddr, -, -, -, -, -, Wk, rank, hseeds, -, hchecked⟩ := hw
   refine ⟨bAddr, Wk, hseeds, fun a c d order_role hwk hrec hinfo hlogic hnot_role => ?_⟩
   obtain ⟨c', hrec', hchk⟩ := hchecked a hwk

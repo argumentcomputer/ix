@@ -1,6 +1,6 @@
 import IxVMRefinement.Subst.Spine
 
-/-! # The substitution family: its induction closed, its registry steps, and `Terms S₀`
+/-! # The substitution family: its induction closed, its registry steps, and `Terms baseSeams`
 
 `gall κ`: every observed derivation of a function of the family meets its spec at the keying
 `κ` (`Subst/Spec.lean`), by the family's own induction over the step lemmas of
@@ -10,7 +10,7 @@ import IxVMRefinement.Subst.Spine
 registry spec of the family (`Core/Specs/Subst.lean`): `<f>_step` for each of the 39 functions,
 and `subst_step`, the family's part of the registry harness's `Steps`.
 
-**`Terms S₀`** (`IxVM.Consistency.Terms`, obligation L3): `expr_inst1(e, arg, 0)` is the
+**`Terms baseSeams`** (`IxVM.Consistency.Terms`, `TermsObligation`): `expr_inst1(e, arg, 0)` is the
 kernel's `instantiate1`, and `expr_lift(e, 1, 0)` reads the same image under one more opened
 variable; at the keying of any ghost, with the derivation's ROM bound alone. -/
 
@@ -254,12 +254,12 @@ theorem subst_step (c : ScopedCtx) :
   | .expr_inst_levels, _, _, _, _, _, ev, ih => expr_inst_levels_step c ev ih
   | .expr_inst_levels_walk, _, _, _, _, _, ev, ih => expr_inst_levels_walk_step c ev ih
 
-/-! ## `Terms S₀` -/
+/-! ## `Terms baseSeams` -/
 
-/-- **Obligation L3's content at `S₀`**: instantiating a binder body at depth `0`, and lifting
+/-- **`Terms` at `baseSeams`**: instantiating a binder body at depth `0`, and lifting
 a top-level term by one opened variable, are the kernel's operations on the images, for every
 ghost, with the derivation's ROM bound. -/
-theorem terms_S₀ : IxVM.Consistency.Terms S₀ := by
+theorem terms_baseSeams : IxVM.Consistency.Terms baseSeams := by
   refine ⟨?_, ?_⟩
   · intro E env g n e arg r heap after cs tb ta ev bd he ha
     have := SubstAux.gall (Ghost.κ g) .expr_inst1 _ _ _ _ _ ev e arg 0 rfl bd n (Ghost.Γ g) tb ta
@@ -273,7 +273,7 @@ theorem terms_S₀ : IxVM.Consistency.Terms S₀ := by
     rw [ZMod.val_zero] at this
     exact this
 
-/-- **Obligation L3 at `S₀`.** -/
-theorem l3_S₀ : IxVM.Consistency.L3 S₀ := fun _ => terms_S₀
+/-- **`TermsObligation` at `baseSeams`.** -/
+theorem termsObligation_baseSeams : IxVM.Consistency.TermsObligation baseSeams := fun _ => terms_baseSeams
 
 end IxVM.Refinement.Core

@@ -1701,7 +1701,7 @@ theorem check_const_rec_paths {c : Ctx}
 /-- Assemble `ConstantValCheckJ twinPosRulesJ` unconditionally from `ValStored`, `ValRepExact`,
 `validate_expr_well_scoped`, and `k_ensure_sort` (supporting any `Perm` of `List.range`, including
 `large = true` recursors). -/
-theorem constantValCheckJ_twinPos_of_checked (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+theorem constantValCheckJ_twinPos_of_checked (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     {cv cv' : KConstantVal} {nl ty rc v_sc v_sort : SourceValue F}
     {h m_sc m_nil m_sort : Heap F} {cs_sc cs_sort : List (Call F)}
     (hvs : IxVM.Consistency.ValStored cv' cv)
@@ -1759,7 +1759,7 @@ theorem constantValCheckJ_twinPos_of_checked (hCore : IxVM.Consistency.Core S₀
 `ConstantValCheckJ twinPosRulesJ` unconditionally, `ConstantValCheckJ rulesJ` under `PosSortLift`,
 `letFree` on the checked recursor type and all checked rule right-hand sides, `RuleStored`
 correspondence, and `TwinCheckRoute` (`.native` or `.modeled`). -/
-theorem check_const_rec_inv (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+theorem check_const_rec_inv (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     {rc nl ty np ni nm nmi rules k_flag rec_uns rec_block rec_idx ap r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
     {cvW cvW' : KConstantVal} {mI rP : Nat} {rulesW rulesW' : List (RecRule .anon)}
@@ -2159,7 +2159,7 @@ def NativeTwinInputs (J : Judgements .anon) (env : Ix.Kernel.Env .anon)
     w.model? = lookupModelInfo? env w.kC →
     nm = .field 1 →
     RCRep c.t c.lim h_mid rc →
-    S0.addr h_mid ap a →
+    BaseSeams.addr h_mid ap a →
     c.κ a = w.cvW.name →
     CIRepExact c.κ h_mid v (.recInfo w.cvW' w.mI w.rP w.rulesW') →
     Heap.Extends h h_fam →
@@ -2224,7 +2224,7 @@ def ModeledTwinInputs (J : Judgements .anon) (env : Ix.Kernel.Env .anon)
     rec_uns = .field 0 →
     v_mod ≠ .field 0 →
     RCRep c.t c.lim h_mid rc →
-    S0.addr h_mid ap a →
+    BaseSeams.addr h_mid ap a →
     c.κ a = w.cvW.name →
     CIRepExact c.κ h_mid v (.recInfo w.cvW' w.mI w.rP w.rulesW') →
     Heap.Extends h h_fam →
@@ -2259,7 +2259,7 @@ structure TwinMemberWitness (E : Ixon.Env) (env : Ix.Kernel.Env .anon) (t : Ix.K
       (h h' : Heap F) (cs : List (Call F)),
       keyOf t a = d.cvW.name ∧
       RCRep t lim h rc ∧
-      S0.addr h ap a ∧
+      BaseSeams.addr h ap a ∧
       CIRepExact (keyOf t) h
         (.construct kciEnum "Rec"
           [nl, ty, np, ni, nm, nmi, rules, k_flag, rec_uns, rec_block, rec_idx])
@@ -2292,7 +2292,7 @@ a `TwinBlockWitness` together with `NativeTwinInputs twinPosRulesJ` and
 `ModeledTwinInputs twinPosRulesJ` to `InstallStep`, `DeclRecTwinRunJ twinPosRulesJ`, and
 `DeclStoreInv env₂` (supporting both `large = false` and `large = true` twin recursors without
 `PosSortLift`). -/
-theorem twinRec_step_pos (hCore : IxVM.Consistency.Core S₀)
+theorem twinRec_step_pos (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {block : List KConstantInfo} (nP : Nat)
     (hS : DeclStoreInv env)
@@ -2386,7 +2386,7 @@ theorem twinRec_step_pos (hCore : IxVM.Consistency.Core S₀)
         h h_fam h_fam' h_mid h' cs_fam cs_mod cs_sub
         (List.mem_map.mpr ⟨d, hd_mem, rfl⟩) rfl wb.tableWf hS hS_self hef hlf_c
         hcv_pos hlf_ty hlf_rls hm.canon_stored hm.lps_eq rfl hnm
-        (hrc.mono e_mid) (S0.addr_mono e_mid hadr) hkey (hci.mono e_mid)
+        (hrc.mono e_mid) (BaseSeams.addr_mono e_mid hadr) hkey (hci.mono e_mid)
         e1 e2 e3 ev_fam ev_mod ev_sub hg_fam hg_mod hg_sub
       refine ⟨hcv_pos, hlf_ty, hm.canon_stored, hm.lps_eq, ?_,
         (let ⟨g, hw1, hw2, hg⟩ := hout.ty_gen; ⟨g, hw1, hw2, hg.imp id Or.inl⟩), hlen_eq,
@@ -2402,7 +2402,7 @@ theorem twinRec_step_pos (hCore : IxVM.Consistency.Core S₀)
         h h_fam h_fam' h_mid h' cs_fam cs_mod cs_sub
         (List.mem_map.mpr ⟨d, hd_mem, rfl⟩) rfl wb.tableWf hS hS_self hef hlf_c
         hcv_pos hlf_ty hlf_rls hm.canon_stored hm.lps_eq rfl hk_zero huns_zero hv_mod
-        (hrc.mono e_mid) (S0.addr_mono e_mid hadr) hkey (hci.mono e_mid)
+        (hrc.mono e_mid) (BaseSeams.addr_mono e_mid hadr) hkey (hci.mono e_mid)
         e1 e2 e3 ev_fam ev_mod ev_sub hg_fam hg_mod hg_sub
       refine ⟨hcv_pos, hlf_ty, hm.canon_stored, hm.lps_eq, ?_,
         (let ⟨g, hw1, hw2, hg⟩ := hout.ty_gen; ⟨g, hw1, hw2, hg.imp id Or.inl⟩), hlen_eq,
@@ -2419,10 +2419,10 @@ theorem twinRec_step_pos (hCore : IxVM.Consistency.Core S₀)
 
 /-- **`Decls`-compatible `DeclInv` step for a twin recursor block** via `twinPosRulesJ`
 (quantifying `∃ env₂` outside `∀ V, DeclInv V env → DeclInv V env₂`). -/
-theorem twinRec_declInv_step_pos (hCore : IxVM.Consistency.Core S₀)
+theorem twinRec_declInv_step_pos (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {block : List KConstantInfo} {nP : Nat}
-    (hchk : S0.Checked calls env (.indDecl block nP))
+    (hchk : BaseSeams.Checked calls env (.indDecl block nP))
     (hnodup : ((IxVM.Consistency.installs (.indDecl block nP)).map (·.name)).Nodup)
     (hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs (.indDecl block nP), env.find? ci₀.name = none)
     (hextra : DeclStoreInv env →
@@ -2440,7 +2440,7 @@ theorem twinRec_declInv_step_pos (hCore : IxVM.Consistency.Core S₀)
 
 /-- **End-to-end twin recursor refinement at `rulesJ`** (producing `DeclRecTwinRunJ rulesJ` and
 `DeclRunJ rulesJ (IndRoutesJ rulesJ env) env (.indDecl block nP) env₂` directly). -/
-theorem twinRec_step_rulesJ (hCore : IxVM.Consistency.Core S₀)
+theorem twinRec_step_rulesJ (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {block : List KConstantInfo} (nP : Nat)
     (hS : DeclStoreInv env)
@@ -2535,7 +2535,7 @@ theorem twinRec_step_rulesJ (hCore : IxVM.Consistency.Core S₀)
         h h_fam h_fam' h_mid h' cs_fam cs_mod cs_sub
         (List.mem_map.mpr ⟨d, hd_mem, rfl⟩) rfl wb.tableWf hS hS_self hef hlf_c
         hcv_r hlf_ty hlf_rls hm.canon_stored hm.lps_eq rfl hnm
-        (hrc.mono e_mid) (S0.addr_mono e_mid hadr) hkey (hci.mono e_mid)
+        (hrc.mono e_mid) (BaseSeams.addr_mono e_mid hadr) hkey (hci.mono e_mid)
         e1 e2 e3 ev_fam ev_mod ev_sub hg_fam hg_mod hg_sub
       refine ⟨hcv_r, hlf_ty, hm.canon_stored, hm.lps_eq, ?_,
         (let ⟨g, hw1, hw2, hg⟩ := hout.ty_gen; ⟨g, hw1, hw2, hg.imp id Or.inl⟩), hlen_eq,
@@ -2551,7 +2551,7 @@ theorem twinRec_step_rulesJ (hCore : IxVM.Consistency.Core S₀)
         h h_fam h_fam' h_mid h' cs_fam cs_mod cs_sub
         (List.mem_map.mpr ⟨d, hd_mem, rfl⟩) rfl wb.tableWf hS hS_self hef hlf_c
         hcv_r hlf_ty hlf_rls hm.canon_stored hm.lps_eq rfl hk_zero huns_zero hv_mod
-        (hrc.mono e_mid) (S0.addr_mono e_mid hadr) hkey (hci.mono e_mid)
+        (hrc.mono e_mid) (BaseSeams.addr_mono e_mid hadr) hkey (hci.mono e_mid)
         e1 e2 e3 ev_fam ev_mod ev_sub hg_fam hg_mod hg_sub
       refine ⟨hcv_r, hlf_ty, hm.canon_stored, hm.lps_eq, ?_,
         (let ⟨g, hw1, hw2, hg⟩ := hout.ty_gen; ⟨g, hw1, hw2, hg.imp id Or.inl⟩), hlen_eq,
@@ -2569,10 +2569,10 @@ theorem twinRec_step_rulesJ (hCore : IxVM.Consistency.Core S₀)
   exact ⟨hinst, hrun, hdecl, hS.step_twin_rulesJ hrun⟩
 
 /-- **`Decls`-compatible `DeclInv` step for a twin recursor block** via `rulesJ` (`decls_step_of_store`). -/
-theorem twinRec_declInv_step_rulesJ (hCore : IxVM.Consistency.Core S₀)
+theorem twinRec_declInv_step_rulesJ (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {block : List KConstantInfo} {nP : Nat}
-    (hchk : S0.Checked calls env (.indDecl block nP))
+    (hchk : BaseSeams.Checked calls env (.indDecl block nP))
     (hnodup : ((IxVM.Consistency.installs (.indDecl block nP)).map (·.name)).Nodup)
     (hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs (.indDecl block nP), env.find? ci₀.name = none)
     (hextra : DeclStoreInv env →

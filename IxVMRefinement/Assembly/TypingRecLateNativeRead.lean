@@ -1,5 +1,5 @@
 import IxVMRefinement.StatementRel.LoadedReads
-import IxVMRefinement.L1.ConvertExpr
+import IxVMRefinement.Ingress.ConvertExpr
 import IxVMRefinement.Decl.Common
 import IxC.Kernel.Verify.InstLevels
 
@@ -42,7 +42,7 @@ open IxVM.Consistency (exprReader readCtx)
 reading under `id`. -/
 theorem convUniv_recParam_invPos (ps : List Ix.Kernel.LevelParam) :
     ∀ u : Ixon.Univ, Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u =
-      L1.invPosLevel ps (Ix.Kernel.Reader.convUniv id u)
+      Ingress.invPosLevel ps (Ix.Kernel.Reader.convUniv id u)
   | .zero => rfl
   | .succ u => congrArg Ix.Kernel.Level.succ (convUniv_recParam_invPos ps u)
   | .max a b =>
@@ -52,8 +52,8 @@ theorem convUniv_recParam_invPos (ps : List Ix.Kernel.LevelParam) :
       (convUniv_recParam_invPos ps b)
   | .var i => by
     show Ix.Kernel.Level.param (ps.getD i.toNat i.toNat) =
-      L1.invPosLevel ps (Ix.Kernel.Level.param i.toNat)
-    unfold L1.invPosLevel
+      Ingress.invPosLevel ps (Ix.Kernel.Level.param i.toNat)
+    unfold Ingress.invPosLevel
     split
     · next hi =>
       rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi] <;> rfl
@@ -69,7 +69,7 @@ theorem subst_convUniv_recParam {ps : List Ix.Kernel.LevelParam}
         (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps) u) =
       Ix.Kernel.Reader.convUniv id u := by
   rw [convUniv_recParam_invPos ps u]
-  exact L1.subst_posLevels_invPosLevel hperm _
+  exact Ingress.subst_posLevels_invPosLevel hperm _
 
 /-- The universe tables under `id` and under `recParam ps`, entrywise. -/
 theorem univs_recParam {ps : List Ix.Kernel.LevelParam}
@@ -242,14 +242,14 @@ theorem convExpr_readPos {ps : List Ix.Kernel.LevelParam}
 theorem buildShareTblGo_readPos {ps : List Ix.Kernel.LevelParam}
     {ecx₁ ecx₂ : Ix.Kernel.Reader.ECx .anon} (R : ReadPosRel ps ecx₁ ecx₂) :
     ∀ (es : List Ixon.Expr) (acc : Array (Ix.Kernel.Reader.ReadM Core.KExpr)),
-      L1.buildShareTblGo ecx₂ (acc.map (readPos ps)) es =
-        (L1.buildShareTblGo ecx₁ acc es).map (readPos ps) := by
+      Ingress.buildShareTblGo ecx₂ (acc.map (readPos ps)) es =
+        (Ingress.buildShareTblGo ecx₁ acc es).map (readPos ps) := by
   intro es
   induction es with
   | nil => intro acc; rfl
   | cons e es ih =>
     intro acc
-    simp only [L1.buildShareTblGo]
+    simp only [Ingress.buildShareTblGo]
     rw [convExpr_readPos R acc e, ← Array.map_push (f := readPos ps)]
     exact ih _
 
@@ -258,7 +258,7 @@ renamed entrywise. -/
 theorem buildShareTbl_readPos {ps : List Ix.Kernel.LevelParam}
     {ecx₁ ecx₂ : Ix.Kernel.Reader.ECx .anon} (R : ReadPosRel ps ecx₁ ecx₂)
     (L : List Ixon.Expr) :
-    L1.buildShareTbl ecx₂ L = (L1.buildShareTbl ecx₁ L).map (readPos ps) := by
+    Ingress.buildShareTbl ecx₂ L = (Ingress.buildShareTbl ecx₁ L).map (readPos ps) := by
   have h := buildShareTblGo_readPos R L #[]
   rw [Array.map_empty] at h
   exact h
@@ -272,8 +272,8 @@ theorem mk'_read_recParam {ps : List Ix.Kernel.LevelParam}
     (Ix.Kernel.Reader.MemberReader.mk' cx src id self).read e =
       readPos ps
         ((Ix.Kernel.Reader.MemberReader.mk' cx src (Ix.Kernel.Reader.recParam ps) self).read e) := by
-  obtain ⟨he₁, ht₁⟩ := L1.memberReader_mk'_eq cx src (Ix.Kernel.Reader.recParam ps) self
-  obtain ⟨he₂, ht₂⟩ := L1.memberReader_mk'_eq cx src id self
+  obtain ⟨he₁, ht₁⟩ := Ingress.memberReader_mk'_eq cx src (Ix.Kernel.Reader.recParam ps) self
+  obtain ⟨he₂, ht₂⟩ := Ingress.memberReader_mk'_eq cx src id self
   have R := readPosRel_recParam hperm cx src self
   unfold Ix.Kernel.Reader.MemberReader.read
   rw [he₁, ht₁, he₂, ht₂, buildShareTbl_readPos R]

@@ -16,7 +16,7 @@ open IxVM (F)
 /-- Actual conversion of one selected dictionary root, at its physical payload pointer. -/
 def RootConverted (blob : Blobs) (root : Root) (h : Heap F) (p : SourceValue F) : Prop :=
   ∃ (recurAddrs : List _root_.Address) (blobs : List (_root_.Address × ByteArray)),
-    L1.RawConvExpr root.source.refs.toList recurAddrs root.source.univs.toList
+    Ingress.RawConvExpr root.source.refs.toList recurAddrs root.source.univs.toList
       root.source.sharing.toList blobs h 4294967295 root.expression p ∧
     (∀ i a, recurAddrs[i]? = some a → ∃ m key, root.self i = some m ∧ m = .ok key) ∧
     (∀ i a m key, recurAddrs[i]? = some a → root.self i = some m → m = .ok key →
@@ -39,35 +39,35 @@ theorem RootConverted.exact {blob : Blobs} {root : Root} {h : Heap F} {p : Sourc
   rwa [same] at read
 
 private theorem solo_self_complete (a : _root_.Address) (d : Ixon.Definition) :
-    ∀ i x, (L1.defnRecurAddrs d a)[i]? = some x →
+    ∀ i x, (Ingress.defnRecurAddrs d a)[i]? = some x →
       ∃ m key, soloSelf addressTable a i = some m ∧ m = .ok key := by
-  unfold L1.defnRecurAddrs
+  unfold Ingress.defnRecurAddrs
   split
   · exact LoadedReads.soloSelf_ok addressTable a
   · intro i x impossible; simp at impossible
 
 private theorem solo_self_keyed (a : _root_.Address) (d : Ixon.Definition) :
-    ∀ i x m key, (L1.defnRecurAddrs d a)[i]? = some x → soloSelf addressTable a i = some m →
+    ∀ i x m key, (Ingress.defnRecurAddrs d a)[i]? = some x → soloSelf addressTable a i = some m →
       m = .ok key → key = Core.keyOf addressTable x := by
-  unfold L1.defnRecurAddrs
+  unfold Ingress.defnRecurAddrs
   split
   · exact LoadedReads.soloSelf_key addressTable a
   · intro i x m key impossible; simp at impossible
 
 private theorem member_self_complete (B : _root_.Address) (ms : Array Ixon.MutConst)
     (d : Ixon.Definition) :
-    ∀ i x, (L1.defnMemberRecurAddrs d B ms.toList)[i]? = some x →
+    ∀ i x, (Ingress.defnMemberRecurAddrs d B ms.toList)[i]? = some x →
       ∃ m key, blockSelf addressTable B ms i = some m ∧ m = .ok key := by
-  unfold L1.defnMemberRecurAddrs
+  unfold Ingress.defnMemberRecurAddrs
   split
   · exact LoadedReads.blockSelf_ok addressTable B ms
   · intro i x impossible; simp at impossible
 
 private theorem member_self_keyed (B : _root_.Address) (ms : Array Ixon.MutConst)
     (d : Ixon.Definition) :
-    ∀ i x m key, (L1.defnMemberRecurAddrs d B ms.toList)[i]? = some x →
+    ∀ i x m key, (Ingress.defnMemberRecurAddrs d B ms.toList)[i]? = some x →
       blockSelf addressTable B ms i = some m → m = .ok key → key = Core.keyOf addressTable x := by
-  unfold L1.defnMemberRecurAddrs
+  unfold Ingress.defnMemberRecurAddrs
   split
   · exact LoadedReads.blockSelf_key addressTable B ms
   · intro i x m key impossible; simp at impossible
@@ -77,15 +77,15 @@ theorem valueRoot_converted_defn {E : Ixon.Env} {h : Heap F} {a : _root_.Address
     {c : Ixon.Constant} {d : Ixon.Definition} {v nl ty value flag hint : SourceValue F}
     (record : recordOf E a = some c) (info : c.info = .defn d)
     (shape : v = .construct Core.kciEnum "Defn" [nl, ty, value, flag, hint])
-    (raw : L1.RawCIRep E h a c v) :
-    L1.EnvInternalCollision E ∨ ∃ root,
+    (raw : Ingress.RawCIRep E h a c v) :
+    Ingress.EnvInternalCollision E ∨ ∃ root,
       valueRoot (recordOf E) a = some root ∧ root.levels < 4294967296 ∧
       nl = .field (root.levels : F) ∧ RootConverted (fun x => E.blobs.get? x) root h value := by
-  rw [L1.RawCIRep, info] at raw
+  rw [Ingress.RawCIRep, info] at raw
   obtain ⟨blobs, stored, bound, tp, vp, hint', observedShape, _, converted⟩ := raw
   have kind := definition_kind_of_shape (observedShape.symm.trans shape)
   have same := observedShape.symm.trans shape
-  simp only [L1.defnValShape, kind, Value.construct.injEq, List.cons.injEq, and_true, true_and] at same
+  simp only [Ingress.defnValShape, kind, Value.construct.injEq, List.cons.injEq, and_true, true_and] at same
   obtain ⟨count, _, valueEq, _, _⟩ := same
   cases valueEq
   rcases stored with stored | collision
@@ -102,23 +102,23 @@ theorem valueRoot_converted_dprj {E : Ixon.Env} {h : Heap F} {a : _root_.Address
     {c : Ixon.Constant} {p : Ixon.DefinitionProj} {v nl ty value flag hint : SourceValue F}
     (record : recordOf E a = some c) (info : c.info = .dPrj p)
     (shape : v = .construct Core.kciEnum "Defn" [nl, ty, value, flag, hint])
-    (raw : L1.RawCIRep E h a c v) :
-    L1.EnvInternalCollision E ∨ ∃ root,
+    (raw : Ingress.RawCIRep E h a c v) :
+    Ingress.EnvInternalCollision E ∨ ∃ root,
       valueRoot (recordOf E) a = some root ∧ root.levels < 4294967296 ∧
       nl = .field (root.levels : F) ∧ RootConverted (fun x => E.blobs.get? x) root h value := by
-  rw [L1.RawCIRep, info] at raw
+  rw [Ingress.RawCIRep, info] at raw
   obtain ⟨_, lc, cb, ms, d, blobs, getOwner, _, _, decoded, _, members, member, stored,
     bound, tp, vp, hint', observedShape, _, converted⟩ := raw
   have kind := definition_kind_of_shape (observedShape.symm.trans shape)
   have same := observedShape.symm.trans shape
-  simp only [L1.defnValShape, kind, Value.construct.injEq, List.cons.injEq, and_true, true_and] at same
+  simp only [Ingress.defnValShape, kind, Value.construct.injEq, List.cons.injEq, and_true, true_and] at same
   obtain ⟨count, _, valueEq, _, _⟩ := same
   cases valueEq
   have owner := Typing.recordOf_of_get getOwner decoded
   have member' : ms[p.idx.toNat]? = some (.defn d) := by simpa only [Array.getElem?_toList] using member
   rcases stored with stored | collision
   · let root : Root := ⟨cb, blockSelf addressTable p.block ms,
-        L1.mutsRootOffset ms.toList p.idx.toNat + 1, d.lvls.toNat, d.value⟩
+        Ingress.mutsRootOffset ms.toList p.idx.toNat + 1, d.lvls.toNat, d.value⟩
     refine Or.inr ⟨root, ?_, bound, count.symm, ?_⟩
     · simp [valueRoot, record, info, memberRoot, owner, members, member', definitionValue, kind, root]
     · exact ⟨_, blobs, converted, member_self_complete p.block ms d, member_self_keyed p.block ms d,
@@ -131,42 +131,42 @@ theorem valueRoot_converted {E : Ixon.Env} {h : Heap F} {a : _root_.Address}
     {c : Ixon.Constant} {v nl ty value flag hint : SourceValue F}
     (record : recordOf E a = some c)
     (shape : v = .construct Core.kciEnum "Defn" [nl, ty, value, flag, hint])
-    (raw : L1.RawCIRep E h a c v) :
-    L1.EnvInternalCollision E ∨ ∃ root,
+    (raw : Ingress.RawCIRep E h a c v) :
+    Ingress.EnvInternalCollision E ∨ ∃ root,
       valueRoot (recordOf E) a = some root ∧ root.levels < 4294967296 ∧
       nl = .field (root.levels : F) ∧ RootConverted (fun x => E.blobs.get? x) root h value := by
   cases info : c.info with
   | defn d => exact valueRoot_converted_defn record info shape raw
   | dPrj p => exact valueRoot_converted_dprj record info shape raw
   | axio ax =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     obtain ⟨_, _, _, _, observedShape, _⟩ := raw
     simp [shape] at observedShape
   | quot q =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     obtain ⟨_, _, _, _, observedShape, _⟩ := raw
     simp [shape] at observedShape
   | recr rc =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, observedShape, _, _⟩ := raw
     simp [shape] at observedShape
   | iPrj p =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _,
       _, _, _, _, _, _, _, _, _, _, observedShape, _⟩ := raw
     simp [shape] at observedShape
   | cPrj p =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
       _, _, _, _, _, _, _, _, _, _, observedShape, _⟩ := raw
     simp [shape] at observedShape
   | rPrj p =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _,
       _, _, _, _, _, _, _, _, _, _, _, _, observedShape, _, _⟩ := raw
     simp [shape] at observedShape
   | muts ms =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     exact raw.elim
 
 /-- Actual raw payload agreement and the actual universe count identify a delta lookup answer. -/
@@ -175,10 +175,10 @@ theorem value_lookup_exact {E : Ixon.Env} {h : Heap F} {a : _root_.Address}
     {Γ : Nat → Core.KExpr} {k : Nat} {R semantic : Core.KExpr} {ps : List Core.KLevel}
     (record : recordOf E a = some c)
     (shape : v = .construct Core.kciEnum "Defn" [nl, ty, value, flag, hint])
-    (raw : L1.RawCIRep E h a c v)
+    (raw : Ingress.RawCIRep E h a c v)
     (physical : Decl.RawTmExact (Core.keyOf addressTable) 0 Γ h k R semantic value)
     (arity : nl = .field (ps.length : F)) (small : ps.length < 549755813888) :
-    L1.EnvInternalCollision E ∨
+    Ingress.EnvInternalCollision E ∨
       (ofStore E).valueOf (.id a) ps =
         some (R.instantiateLevelParams (List.range ps.length) ps).eraseMeta := by
   rcases valueRoot_converted record shape raw with collision | ⟨root, selected, bound, count, converted⟩
@@ -200,24 +200,24 @@ def typeFields : SourceValue F → Option (SourceValue F × SourceValue F)
 and universe count. The recursor type uses its actual empty recur table. -/
 theorem typeRoot_converted {E : Ixon.Env} {h : Heap F} {a : _root_.Address}
     {c : Ixon.Constant} {v : SourceValue F}
-    (record : recordOf E a = some c) (raw : L1.RawCIRep E h a c v) :
-    L1.EnvInternalCollision E ∨ ∃ root p,
+    (record : recordOf E a = some c) (raw : Ingress.RawCIRep E h a c v) :
+    Ingress.EnvInternalCollision E ∨ ∃ root p,
       typeRoot (recordOf E) a = some root ∧ root.levels < 4294967296 ∧
       typeFields v = some (.field (root.levels : F), p) ∧
       RootConverted (fun x => E.blobs.get? x) root h p := by
   cases info : c.info with
   | defn d =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     obtain ⟨blobs, stored, bound, tp, vp, hint, shape, converted, _⟩ := raw
     rcases stored with stored | collision
     · let root : Root := ⟨c, soloSelf addressTable a, 0, d.lvls.toNat, d.typ⟩
       refine Or.inr ⟨root, tp, by simp [typeRoot, record, info, root], bound, ?_, ?_⟩
-      · cases kind : d.kind <;> simp [typeFields, shape, L1.defnValShape, kind, root]
+      · cases kind : d.kind <;> simp [typeFields, shape, Ingress.defnValShape, kind, root]
       · exact ⟨_, blobs, converted, solo_self_complete a d, solo_self_keyed a d,
           fun x bytes member => (stored x bytes member).1⟩
     · exact Or.inl collision
   | axio ax =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     obtain ⟨blobs, stored, bound, tp, shape, converted⟩ := raw
     rcases stored with stored | collision
     · let root : Root := ⟨c, fun _ => none, 0, ax.lvls.toNat, ax.typ⟩
@@ -227,7 +227,7 @@ theorem typeRoot_converted {E : Ixon.Env} {h : Heap F} {a : _root_.Address}
         (fun i x m key impossible => by simp at impossible), fun x bytes member => (stored x bytes member).1⟩
     · exact Or.inl collision
   | quot q =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     obtain ⟨blobs, stored, bound, tp, shape, converted⟩ := raw
     rcases stored with stored | collision
     · let root : Root := ⟨c, fun _ => none, 0, q.lvls.toNat, q.typ⟩
@@ -237,7 +237,7 @@ theorem typeRoot_converted {E : Ixon.Env} {h : Heap F} {a : _root_.Address}
         (fun i x m key impossible => by simp at impossible), fun x bytes member => (stored x bytes member).1⟩
     · exact Or.inl collision
   | recr rc =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     obtain ⟨blobs, stored, bound, _, _, _, _, _, tp, _, _, _, _, _, shape, converted, _⟩ := raw
     rcases stored with stored | collision
     · let root : Root := ⟨c, soloSelf addressTable a, 0, rc.lvls.toNat, rc.typ⟩
@@ -247,36 +247,36 @@ theorem typeRoot_converted {E : Ixon.Env} {h : Heap F} {a : _root_.Address}
         (fun i x m key impossible => by simp at impossible), fun x bytes member => (stored x bytes member).1⟩
     · exact Or.inl collision
   | dPrj p =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     obtain ⟨_, lc, cb, ms, d, blobs, getOwner, _, _, decoded, _, members, member, stored,
       bound, tp, vp, hint, shape, converted, _⟩ := raw
     have owner := Typing.recordOf_of_get getOwner decoded
     have member' : ms[p.idx.toNat]? = some (.defn d) := by simpa only [Array.getElem?_toList] using member
     rcases stored with stored | collision
     · let root : Root := ⟨cb, blockSelf addressTable p.block ms,
-          L1.mutsRootOffset ms.toList p.idx.toNat, d.lvls.toNat, d.typ⟩
+          Ingress.mutsRootOffset ms.toList p.idx.toNat, d.lvls.toNat, d.typ⟩
       refine Or.inr ⟨root, tp, ?_, bound, ?_, ?_⟩
       · simp [typeRoot, record, info, memberRoot, owner, members, member', definitionType, root]
-      · cases kind : d.kind <;> simp [typeFields, shape, L1.defnValShape, kind, root]
+      · cases kind : d.kind <;> simp [typeFields, shape, Ingress.defnValShape, kind, root]
       · exact ⟨_, blobs, converted, member_self_complete p.block ms d, member_self_keyed p.block ms d,
           fun x bytes belongs => (stored x bytes belongs).1⟩
     · exact Or.inl collision
   | iPrj p =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     obtain ⟨_, lc, cb, ms, ind, blobs, getOwner, _, _, decoded, _, members, member, stored,
       bound, _, _, _, _, tp, _, _, _, _, shape, converted⟩ := raw
     have owner := Typing.recordOf_of_get getOwner decoded
     have member' : ms[p.idx.toNat]? = some (.indc ind) := by simpa only [Array.getElem?_toList] using member
     rcases stored with stored | collision
     · let root : Root := ⟨cb, blockSelf addressTable p.block ms,
-          L1.mutsRootOffset ms.toList p.idx.toNat, ind.lvls.toNat, ind.typ⟩
+          Ingress.mutsRootOffset ms.toList p.idx.toNat, ind.lvls.toNat, ind.typ⟩
       refine Or.inr ⟨root, tp, ?_, bound, by rw [shape]; rfl, ?_⟩
       · simp [typeRoot, record, info, memberRoot, owner, members, member', inductiveType, root]
       · exact ⟨_, blobs, converted, LoadedReads.blockSelf_ok addressTable p.block ms,
           LoadedReads.blockSelf_key addressTable p.block ms, fun x bytes belongs => (stored x bytes belongs).1⟩
     · exact Or.inl collision
   | cPrj p =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     obtain ⟨_, _, lc, cb, ms, ind, ct, blobs, getOwner, _, _, decoded, _, members, member, ctor, stored,
       bound, _, _, _, _, tp, _, _, _, _, shape, converted⟩ := raw
     have owner := Typing.recordOf_of_get getOwner decoded
@@ -284,39 +284,39 @@ theorem typeRoot_converted {E : Ixon.Env} {h : Heap F} {a : _root_.Address}
     have ctor' : ind.ctors[p.cidx.toNat]? = some ct := by simpa only [Array.getElem?_toList] using ctor
     rcases stored with stored | collision
     · let root : Root := ⟨cb, blockSelf addressTable p.block ms,
-          L1.mutsRootOffset ms.toList p.idx.toNat + (1 + p.cidx.toNat), ct.lvls.toNat, ct.typ⟩
+          Ingress.mutsRootOffset ms.toList p.idx.toNat + (1 + p.cidx.toNat), ct.lvls.toNat, ct.typ⟩
       refine Or.inr ⟨root, tp, ?_, bound, by rw [shape]; rfl, ?_⟩
       · simp [typeRoot, record, info, memberRoot, owner, members, member', constructorType, ctor', root]
       · exact ⟨_, blobs, converted, LoadedReads.blockSelf_ok addressTable p.block ms,
           LoadedReads.blockSelf_key addressTable p.block ms, fun x bytes belongs => (stored x bytes belongs).1⟩
     · exact Or.inl collision
   | rPrj p =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     obtain ⟨_, lc, cb, ms, rc, blobs, getOwner, _, _, decoded, _, members, member, stored,
       bound, _, _, _, _, _, tp, _, _, _, _, _, shape, converted, _⟩ := raw
     have owner := Typing.recordOf_of_get getOwner decoded
     have member' : ms[p.idx.toNat]? = some (.recr rc) := by simpa only [Array.getElem?_toList] using member
     rcases stored with stored | collision
     · let root : Root := ⟨cb, blockSelf addressTable p.block ms,
-          L1.mutsRootOffset ms.toList p.idx.toNat, rc.lvls.toNat, rc.typ⟩
+          Ingress.mutsRootOffset ms.toList p.idx.toNat, rc.lvls.toNat, rc.typ⟩
       refine Or.inr ⟨root, tp, ?_, bound, by rw [shape]; rfl, ?_⟩
       · simp [typeRoot, record, info, memberRoot, owner, members, member', recursorType, root]
       · exact ⟨[], blobs, converted, (fun i x impossible => by simp at impossible),
           (fun i x m key impossible => by simp at impossible), fun x bytes belongs => (stored x bytes belongs).1⟩
     · exact Or.inl collision
   | muts ms =>
-    rw [L1.RawCIRep, info] at raw
+    rw [Ingress.RawCIRep, info] at raw
     exact raw.elim
 
 /-- Actual count and type-pointer agreement identify every declared-type dictionary answer. -/
 theorem type_lookup_exact {E : Ixon.Env} {h : Heap F} {a : _root_.Address}
     {c : Ixon.Constant} {v typePtr : SourceValue F}
     {Γ : Nat → Core.KExpr} {k : Nat} {R semantic : Core.KExpr} {ps : List Core.KLevel}
-    (record : recordOf E a = some c) (raw : L1.RawCIRep E h a c v)
+    (record : recordOf E a = some c) (raw : Ingress.RawCIRep E h a c v)
     (physical : Decl.RawTmExact (Core.keyOf addressTable) 0 Γ h k R semantic typePtr)
     (fields : typeFields v = some (.field (ps.length : F), typePtr))
     (small : ps.length < 549755813888) :
-    L1.EnvInternalCollision E ∨
+    Ingress.EnvInternalCollision E ∨
       (ofStore E).typeOf (.id a) ps =
         some (R.instantiateLevelParams (List.range ps.length) ps).eraseMeta := by
   rcases typeRoot_converted record raw with collision | ⟨root, p, selected, bound, rootFields, converted⟩

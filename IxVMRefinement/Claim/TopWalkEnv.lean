@@ -43,15 +43,15 @@ set_option linter.unnecessarySimpa false
 /-! ## Helpers -/
 
 private theorem addrVal_of_load_env {h : Heap F} {p v : SourceValue F} {a : _root_.Address}
-    (ha : S0.addr h p a) (hl : loadValue h p = .ok v) :
-    ∃ d : Bytes.Address, v = L1.digestV d ∧ ixAddr d = a := by
+    (ha : BaseSeams.addr h p a) (hl : loadValue h p = .ok v) :
+    ∃ d : Bytes.Address, v = Ingress.digestV d ∧ ixAddr d = a := by
   obtain ⟨d, hd, hix⟩ := ha
-  exact ⟨d, L1.load_repAddressRef hd hl, hix⟩
+  exact ⟨d, Ingress.load_repAddressRef hd hl, hix⟩
 
 private theorem addr_of_snoc_env {h : Heap F} {d : Bytes.Address} {a : _root_.Address}
     (hix : ixAddr d = a) :
-    S0.addr (h ++ [L1.digestV d]) (.ptr (L1.digestV d).type h.length) a :=
-  ⟨d, repAddressRef_of_load_digestV (L1.loadValue_snoc h (L1.digestV d)), hix⟩
+    BaseSeams.addr (h ++ [Ingress.digestV d]) (.ptr (Ingress.digestV d).type h.length) a :=
+  ⟨d, repAddressRef_of_load_digestV (Ingress.loadValue_snoc h (Ingress.digestV d)), hix⟩
 
 private theorem mutShape_of_repMutConst_env {h : Heap F} {m : Ixon.MutConst}
     {v : SourceValue F} (hr : RepMutConst h m v) : Specs.Callees.MutShape h m v := by
@@ -107,7 +107,7 @@ private theorem topRecsClosed_cons_env {calls : List (Call F)} {bAddr : _root_.A
     (hrest : TopRecsClosed rest)
     (hown : IsProjRec r₀.c →
       ∃ r' ∈ r₀ :: rest, r'.addr = Ix.Cert.ownerOf r₀.addr r₀.c ∧ r'.depth < r₀.depth)
-    (hrefs : ∀ i ∈ S0.usedRefIdxs r₀.c, ∀ x, r₀.c.refs[i]? = some x →
+    (hrefs : ∀ i ∈ BaseSeams.usedRefIdxs r₀.c, ∀ x, r₀.c.refs[i]? = some x →
       RefAllowedIn calls t bAddr lim x ∧
       ((NotBlockIn calls x ∧ ∃ r' ∈ r₀ :: rest, r'.addr = x ∧ r'.depth < r₀.depth) ∨
         CoveredAt t lim x)) :
@@ -121,7 +121,7 @@ private theorem topRecsClosed_cons_env {calls : List (Call F)} {bAddr : _root_.A
 record. -/
 private theorem assert_not_block_ref_env {a : _root_.Address} {x_a r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
-    (ha : S0.addr h x_a a)
+    (ha : BaseSeams.addr h x_a a)
     (ev : ObsFn Obs.W "KernelClaim::assert_not_block_ref" [x_a] h r h' calls) :
     Heap.Extends h h' ∧ NotBlockIn calls a := by
   have ext := ev.heap_extends
@@ -173,7 +173,7 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
          ixAddr d_a = addr →
          (((∃ n, lim = some n) ∧ x_v = .field 3) ∨ (lim = none ∧ x_v = .field 4)) →
          ObsFn Obs.W "IxVMCompat::check_owned"
-           [L1.digestV d_b, x_v, L1.digestV d_a] h r h' calls →
+           [Ingress.digestV d_b, x_v, Ingress.digestV d_a] h r h' calls →
          V.HashedCollision extra calls ∨
          (Heap.Extends h h' ∧
           ClaimableSeed calls t addr ∧
@@ -185,7 +185,7 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
          {h h' : Heap F} {calls : List (Call F)},
          calls.length ≤ fuel →
          RCLimRep t b.address lim h x_rc →
-         S0.addr h x_addr addr →
+         BaseSeams.addr h x_addr addr →
          ObsFn Obs.W "KernelClaim::env_walk_all" [x_rc, x_addr] h r h' calls →
          V.HashedCollision extra calls ∨
          (Heap.Extends h h' ∧
@@ -220,16 +220,16 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
     · intro d_b d_a x_v r addr h h' calls hfuel hix_b hix_a hv ev
       obtain ⟨v1, m2, cs12, m18, v35, m36, cs46, m59, cs72, m85,
         rfl, ev14, rfl, ev48, rfl, ev74, hc95⟩ := Obs.«IxVMCompat::check_owned».obs ev
-      have ext_s1 := Heap.Extends.snoc h (L1.digestV d_b)
+      have ext_s1 := Heap.Extends.snoc h (Ingress.digestV d_b)
       rcases role_ctx_for_validator_lim_spec (V := V) hadm hb_extra (addr_of_snoc_env hix_b)
           ev14 with
         hcoll | ⟨ext_rc, hrc_v⟩
       · exact .inl (hashedCollision_mono (fun cl hcl => by rw [hc95]; simp [hcl]) hcoll)
       have hrc := rcLim_of_validator hlim hv hrc_v
-      have ext_s2 := Heap.Extends.snoc m2 (L1.digestV d_a)
+      have ext_s2 := Heap.Extends.snoc m2 (Ingress.digestV d_a)
       obtain ⟨ext_ac, hseed⟩ :=
         assert_claimable_lim_spec (hrc.mono ext_s2) (addr_of_snoc_env hix_a) ev48
-      have ext_s3 := Heap.Extends.snoc m36 (L1.digestV d_a)
+      have ext_s3 := Heap.Extends.snoc m36 (Ingress.digestV d_a)
       have hlt_ewa_calls : cs72.length < calls.length := by
         rw [hc95]
         simp only [List.length_cons, List.length_append]
@@ -277,7 +277,7 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
             simp only [List.cons.injEq, and_true] at hargs_m
             rw [← hargs_m] at hms_rep
             obtain ⟨ext_muts, hchk_muts⟩ :=
-              check_muts_all_lim_spec (hrc.mono ext1) (S0.addr_mono ext1 ha)
+              check_muts_all_lim_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha)
                 (membersRep_of_repMutConstList_env hms_rep) ev93
             have hsub_m : ∀ cl ∈ cs91, cl ∈ calls := fun cl hcl => by
               rw [hc796, hc133]; simp [hcl]
@@ -300,13 +300,13 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ :=
-              run_check_lim_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev186
+              run_check_lim_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev186
             have hrc' := hrc.mono (ext1.trans ext_rc)
             obtain ⟨rfl, hp_b⟩ := role_ctx_binding_lim_spec hrc' ev226
             obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load_env hp_b ld220
             obtain ⟨rfl, hv⟩ := role_ctx_validator_lim_spec hrc' ev246
             obtain ⟨d_blk, rfl, hix_blk⟩ :=
-              addrVal_of_load_env (S0.addr_mono ext_rc hblk_addr) ld263
+              addrVal_of_load_env (BaseSeams.addr_mono ext_rc hblk_addr) ld263
             have hlt_calls : cs206.length < calls.length := by
               rw [hc796, hc265]
               simp only [List.length_cons, List.length_append]
@@ -340,13 +340,13 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ :=
-              run_check_lim_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev319
+              run_check_lim_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev319
             have hrc' := hrc.mono (ext1.trans ext_rc)
             obtain ⟨rfl, hp_b⟩ := role_ctx_binding_lim_spec hrc' ev359
             obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load_env hp_b ld353
             obtain ⟨rfl, hv⟩ := role_ctx_validator_lim_spec hrc' ev379
             obtain ⟨d_blk, rfl, hix_blk⟩ :=
-              addrVal_of_load_env (S0.addr_mono ext_rc hblk_addr) ld396
+              addrVal_of_load_env (BaseSeams.addr_mono ext_rc hblk_addr) ld396
             have hlt_calls : cs339.length < calls.length := by
               rw [hc796, hc398]
               simp only [List.length_cons, List.length_append]
@@ -380,13 +380,13 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ :=
-              run_check_lim_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev458
+              run_check_lim_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev458
             have hrc' := hrc.mono (ext1.trans ext_rc)
             obtain ⟨rfl, hp_b⟩ := role_ctx_binding_lim_spec hrc' ev498
             obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load_env hp_b ld492
             obtain ⟨rfl, hv⟩ := role_ctx_validator_lim_spec hrc' ev518
             obtain ⟨d_blk, rfl, hix_blk⟩ :=
-              addrVal_of_load_env (S0.addr_mono ext_rc hblk_addr) ld535
+              addrVal_of_load_env (BaseSeams.addr_mono ext_rc hblk_addr) ld535
             have hlt_calls : cs478.length < calls.length := by
               rw [hc796, hc537]
               simp only [List.length_cons, List.length_append]
@@ -420,13 +420,13 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ :=
-              run_check_lim_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev591
+              run_check_lim_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev591
             have hrc' := hrc.mono (ext1.trans ext_rc)
             obtain ⟨rfl, hp_b⟩ := role_ctx_binding_lim_spec hrc' ev631
             obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load_env hp_b ld625
             obtain ⟨rfl, hv⟩ := role_ctx_validator_lim_spec hrc' ev651
             obtain ⟨d_blk, rfl, hix_blk⟩ :=
-              addrVal_of_load_env (S0.addr_mono ext_rc hblk_addr) ld668
+              addrVal_of_load_env (BaseSeams.addr_mono ext_rc hblk_addr) ld668
             have hlt_calls : cs611.length < calls.length := by
               rw [hc796, hc670]
               simp only [List.length_cons, List.length_append]
@@ -449,7 +449,7 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
         | .other (hne134 := hne134) (hne267 := hne267) (hne400 := hne400)
             (hne539 := hne539) (hne672 := hne672) (ev681 := ev681) (hc698 := hc698) .. =>
           obtain ⟨ext_rc, hchk⟩ :=
-            run_check_lim_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev681
+            run_check_lim_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev681
           have hnp : ¬ IsProjRec c := by
             intro hp
             rcases hp with ⟨p, hc_i⟩ | ⟨p, hc_i⟩ | ⟨p, hc_i⟩ | ⟨p, hc_i⟩ <;>
@@ -501,12 +501,12 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
         hchecked := hchk_self
         hguard := ⟨m700, m709, x_rc, x_addr,
           .construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41], v708, cs719,
-          hrc.mono (ext1.trans ext_seg), S0.addr_mono (ext1.trans ext_seg) ha,
+          hrc.mono (ext1.trans ext_seg), BaseSeams.addr_mono (ext1.trans ext_seg) ha,
           hrep.mono ext_seg, ev721, fun cl hcl => by rw [hc796]; simp [hcl]⟩
         hquot := ⟨m709, m_quot, x_rc, x_addr,
           .construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41], v_quot, cs_quot,
           hrc.mono (ext1.trans (ext_seg.trans ev721.heap_extends)),
-          S0.addr_mono (ext1.trans (ext_seg.trans ev721.heap_extends)) ha,
+          BaseSeams.addr_mono (ext1.trans (ext_seg.trans ev721.heap_extends)) ha,
           hrep.mono (ext_seg.trans ev721.heap_extends), ev_quot,
           fun cl hcl => by rw [hc796]; simp [hcl]⟩
       }
@@ -571,14 +571,14 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
             have ext_ra := ev90.heap_extends
             have ext_cov := ev121.heap_extends
             obtain ⟨ext_nb, hnb⟩ :=
-              assert_not_block_ref_env (S0.addr_mono (ext_ra.trans ext_cov) ha_head) ev155
+              assert_not_block_ref_env (BaseSeams.addr_mono (ext_ra.trans ext_cov) ha_head) ev155
             have ext_pre := ext_ra.trans (ext_cov.trans (ext_nb.trans
               (ev177.heap_extends.trans (ev216.heap_extends.trans ev230.heap_extends))))
             have hrc' := hrc.mono ext_pre
             obtain ⟨rfl, hp_b⟩ := role_ctx_binding_lim_spec hrc' ev266
             obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load_env hp_b ld260
             obtain ⟨rfl, hv⟩ := role_ctx_validator_lim_spec hrc' ev286
-            obtain ⟨d_a, rfl, hix_a⟩ := addrVal_of_load_env (S0.addr_mono ext_pre ha_head) ld303
+            obtain ⟨d_a, rfl, hix_a⟩ := addrVal_of_load_env (BaseSeams.addr_mono ext_pre ha_head) ld303
             have hlt_calls : cs246.length < calls.length := by
               rw [hc406, hc305]
               simp only [List.length_cons, List.length_append]
@@ -612,7 +612,7 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
             have ext_nb := ev155.heap_extends
             have ext_pre := ext_ra.trans (ext_cov.trans ext_nb)
             obtain ⟨ext_wc, hwc⟩ :=
-              walk_ctx_lim_spec (hrc.mono ext_pre) (S0.addr_mono ext_pre ha_head) ev177
+              walk_ctx_lim_spec (hrc.mono ext_pre) (BaseSeams.addr_mono ext_pre ha_head) ev177
             have ext_l1 := ev216.heap_extends
             have ext_l2 := ev230.heap_extends
             rcases hwc with rfl | ⟨hcov, -⟩
@@ -635,7 +635,7 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
             have ext_ra := ev90.heap_extends
             have ext_cov := ev121.heap_extends
             obtain ⟨-, hv⟩ :=
-              walk_covered_lim_spec (hrc.mono ext_ra) (S0.addr_mono ext_ra ha_head) ev121
+              walk_covered_lim_spec (hrc.mono ext_ra) (BaseSeams.addr_mono ext_ra ha_head) ev121
             rcases hv with hv0 | hcov
             · exact absurd hv0 hne333
             · have hsub_ra : ∀ cl ∈ cs88, cl ∈ calls := fun cl hcl => by
@@ -711,7 +711,7 @@ theorem check_owned_lim_spec {V : View} {extra : List ByteArray}
     {h h' : Heap F} {calls : List (Call F)}
     (hix_b : ixAddr d_b = b.address) (hix_a : ixAddr d_a = addr)
     (hv : ((∃ n, lim = some n) ∧ x_v = .field 3) ∨ (lim = none ∧ x_v = .field 4))
-    (ev : ObsFn W "IxVMCompat::check_owned" [L1.digestV d_b, x_v, L1.digestV d_a] h r h' calls) :
+    (ev : ObsFn W "IxVMCompat::check_owned" [Ingress.digestV d_b, x_v, Ingress.digestV d_a] h r h' calls) :
     V.HashedCollision extra calls ∨
     (Heap.Extends h h' ∧ ClaimableSeed calls t addr ∧
       ∃ recs : List (TopRec calls b.address t lim),
@@ -727,7 +727,7 @@ theorem env_walk_all_lim_spec {V : View} {extra : List ByteArray}
     (hb_extra : b.bytes ∈ extra) {lim : Option Nat} (hlim : lim = some 77 ∨ lim = none)
     {x_rc x_addr r : SourceValue F} {addr : _root_.Address}
     {h h' : Heap F} {calls : List (Call F)}
-    (hrc : RCLimRep t b.address lim h x_rc) (ha : S0.addr h x_addr addr)
+    (hrc : RCLimRep t b.address lim h x_rc) (ha : BaseSeams.addr h x_addr addr)
     (ev : ObsFn W "KernelClaim::env_walk_all" [x_rc, x_addr] h r h' calls) :
     V.HashedCollision extra calls ∨
     (Heap.Extends h h' ∧
@@ -802,7 +802,7 @@ private theorem walk_leaves_owned_lim_aux {V : View} {extra : List ByteArray}
       obtain ⟨rfl, hp_b⟩ := role_ctx_binding_lim_spec hrc ev73
       obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load_env hp_b ld67
       obtain ⟨rfl, hv⟩ := role_ctx_validator_lim_spec hrc ev93
-      have hv58 := L1.load_repAddressRef ha_ref ld110
+      have hv58 := Ingress.load_repAddressRef ha_ref ld110
       subst hv58
       rcases check_owned_lim_spec (V := V) hadm hb_extra hlim hix_b rfl hv ev55 with
         hcoll | ⟨ext1, hseed_hd, recs₁, hmem₁, hcl₁, hdep₁⟩

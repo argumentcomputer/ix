@@ -39,7 +39,7 @@ set_option linter.unnecessarySimpa false
 
 /-! ## Level zero-ness, `isEquiv`, `Levels` wrapper, and recogniser inversions -/
 
-/-- Wrapper for `KernelLevels::level_leq` returning `1` from `L2` (`IxVM.Consistency.Levels`). -/
+/-- Wrapper for `KernelLevels::level_leq` returning `1` from `IxVM.Consistency.Levels`. -/
 theorem levels_leq_one (hLevels : IxVM.Consistency.Levels) {a b : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)} {la lb : KLevel}
     (ev : ObsFn W "KernelLevels::level_leq" [a, b] h (.field 1) h' cs)
@@ -1404,7 +1404,7 @@ theorem get_result_sort_level_scoped_spec {c : ScopedCtx} [c.TableKeyed] :
   intro n d Γ E rc pe types r h h' cs bound roles typesRep scopeProof facts loads good represented observed
   exact get_result_sort_level_scoped_bounded_spec n (by omega) roles typesRep scopeProof facts loads good represented observed
 
-theorem get_result_sort_level_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx} :
+theorem get_result_sort_level_spec (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx} :
     ∀ (n : Nat) {d : Nat} {Γ : Nat → KExpr} {E : KExpr}
       {rc pe types r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       n < 549755813888 →
@@ -2537,7 +2537,7 @@ theorem check_param_agreement_scoped_spec {c : ScopedCtx} [c.TableKeyed]
     rw [Nat.zero_add, List.nil_append] at hde
     exact ⟨cbs, cbody, fv, hst, hfv, hde⟩
 
-theorem check_param_agreement_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+theorem check_param_agreement_spec (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     {Γ : Nat → KExpr} {ta tb : KExpr} {n : Nat}
     {rc pta ptb r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hn : n < 4294967296)
@@ -2899,7 +2899,7 @@ theorem check_field_universes_scoped_spec (hLevels : IxVM.Consistency.Levels)
     exact ⟨fv, ty, u, hfv, hu, hinf, hred, (fun _ => hleq), (fun _ hlarge => nomatch hlarge)⟩
 
 theorem check_field_universes_spec (hLevels : IxVM.Consistency.Levels)
-    (hCore : IxVM.Consistency.Core S₀) {c : Ctx} {T : KKey} {us : List KLevel}
+    (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx} {T : KKey} {us : List KLevel}
     {resSort ind_lvl : KLevel} {nP nF : Nat} {Γ : Nat → KExpr}
     {cty stype_cty crest : KExpr} {fvsP xFvs idxArgs : List KExpr}
     {rc pcty pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -3954,7 +3954,7 @@ theorem CIRepExact.ctor_count_bounds {κ : _root_.Address → KKey} {h : Heap F}
     exact absurd tag (by decide)
 
 private theorem check_inductive_shape_ctors_go (hLevels : IxVM.Consistency.Levels)
-    (hCore : IxVM.Consistency.Core S₀) {c₁ : Ctx}
+    (hCore : IxVM.Consistency.Core baseSeams) {c₁ : Ctx}
     {b₀ : Bytes.Address} {T : KKey} {lps : List LevelParam}
     {nP nIdx : Nat} {ta : KExpr} {resSort ind_lvl : KLevel}
     {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal × Nat)}
@@ -4270,7 +4270,7 @@ structure NativeFrontOut (env : Ix.Kernel.Env .anon) (p₀ : Ix.Kernel.NativePar
 
 /-- Execute the non-modeled `Induct` arm of `KernelCheck::check_const`, establishing
 `ConstantValCheckJ` on the former, `former_decl_ok`, and `NativeCtorOut` for all constructors. -/
-theorem nativeFront_pass (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core S₀)
+theorem nativeFront_pass (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon} {p₀ : Ix.Kernel.NativeParts .anon}
     (hS : DeclStoreInv env) (w : OneTypeBlockWitness calls env p₀) :
     ∃ (ind_lvl : KLevel) (sortss : List (List KLevel)),
@@ -4517,7 +4517,7 @@ theorem nativeFront_pass (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
       simp only [Nat.zero_add] at hc hcA hout
       exact ⟨c, cA, sorts, hc, hcA, hs, hout⟩
 
-/-- Hypothesis bundle for the recursor-less native one-type inductive slice (`L5-N` no-recursor). -/
+/-- Hypothesis bundle for the recursor-less native one-type inductive slice. -/
 structure NativeNoRecExtra (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
     (p₀ : Ix.Kernel.NativeParts .anon) where
   witness : OneTypeBlockWitness calls env p₀
@@ -4531,10 +4531,10 @@ structure NativeNoRecExtra (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
            (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
         Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false
 
-/-- **Deliverable 2 (`L5` Recursor-Less Native One-Type Block)**:
+/-- **Recursor-Less Native One-Type Block**:
 Refines an unpinned `.indDecl block nP` with `nativePartsNoRec? nP block = some p₀` to
 `InstallStep env (.indDecl block nP) env₂` and `DeclNativeNoRecRunJ rulesJ env p₀ env₂`. -/
-theorem nativeNoRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core S₀)
+theorem nativeNoRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {block : List KConstantInfo} {nP : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
     (hpin : Ix.Kernel.basisPinHit block = none)
@@ -4858,10 +4858,10 @@ theorem nativeNoRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
 
 /-- `DeclInv`-preserving wrapper for Deliverable 2 (`nativeNoRec_step`). -/
 theorem nativeNoRec_declInv_step (hLevels : IxVM.Consistency.Levels)
-    (hCore : IxVM.Consistency.Core S₀)
+    (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {block : List KConstantInfo} {nP : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
-    (hchk : S0.Checked calls env (.indDecl block nP))
+    (hchk : BaseSeams.Checked calls env (.indDecl block nP))
     (hpin : Ix.Kernel.basisPinHit block = none)
     (hparts : nativePartsNoRec? nP block = some p₀)
     (extra : NativeNoRecExtra calls env p₀) :

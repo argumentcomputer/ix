@@ -26,7 +26,7 @@ set_option linter.unnecessarySimpa false
 theorem role_index_of_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address} {lim : Option Nat}
     {x_rc x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCLimRep t bAddr lim h x_rc)
-    (ha : S0.addr h x_a a)
+    (ha : BaseSeams.addr h x_a a)
     (ev : ObsFn W "KernelRoles::role_index_of" [x_rc, x_a] h r h' calls) :
     h' = h ∧
     ((r = .field 0 ∧ ∀ ro, t.addressOf? ro ≠ some a) ∨
@@ -58,7 +58,7 @@ theorem role_index_of_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Addre
 theorem role_is_inert_zero_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address} {lim : Option Nat}
     {x_rc x_a : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCLimRep t bAddr lim h x_rc)
-    (ha : S0.addr h x_a a)
+    (ha : BaseSeams.addr h x_a a)
     (ev : ObsFn W "KernelRoles::role_is_inert" [x_rc, x_a] h (.field 0) h' calls) :
     h' = h ∧ ¬ IxVM.Consistency.InertAt t a := by
   rcases Obs.«KernelRoles::role_is_inert».obs ev with
@@ -91,7 +91,7 @@ theorem assert_claimable_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
     {x_rc x_addr r : SourceValue F} {addr : _root_.Address}
     {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCLimRep t bAddr lim h x_rc)
-    (ha : S0.addr h x_addr addr)
+    (ha : BaseSeams.addr h x_addr addr)
     (ev : ObsFn Obs.W "KernelClaim::assert_claimable" [x_rc, x_addr] h r h' calls) :
     Heap.Extends h h' ∧ ClaimableSeed calls t addr := by
   rcases Obs.«KernelClaim::assert_claimable».obs ev with
@@ -120,12 +120,12 @@ theorem assert_claimable_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
       simp only [List.cons.injEq, and_true] at hpargs
       rw [← hpargs.2] at hblk_addr
       obtain ⟨ext2, raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext1 ha) ev149
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext1 ha) ev149
       obtain ⟨ext3, rawB, cb, hhB, hbB, hdB, hlB⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext2 hblk_addr) ev189
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext2 hblk_addr) ev189
       obtain ⟨rfl, hn_inert⟩ :=
         role_is_inert_zero_lim_spec (hrc.mono (ext1.trans (ext2.trans ext3)))
-          (S0.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev229
+          (BaseSeams.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev229
       refine ⟨ext1.trans (ext2.trans ext3), hn_inert,
         ⟨raw₁, c₁, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₁, hb₁, hd₁, hl₁⟩,
         ⟨raw₀, c₀, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₀, hb₀, hd₀,
@@ -147,12 +147,12 @@ theorem assert_claimable_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
       simp only [List.cons.injEq, and_true] at hpargs
       rw [← hpargs.2] at hblk_addr
       obtain ⟨ext2, raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext1 ha) ev323
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext1 ha) ev323
       obtain ⟨ext3, rawB, cb, hhB, hbB, hdB, hlB⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext2 hblk_addr) ev363
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext2 hblk_addr) ev363
       obtain ⟨rfl, hn_inert⟩ :=
         role_is_inert_zero_lim_spec (hrc.mono (ext1.trans (ext2.trans ext3)))
-          (S0.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev403
+          (BaseSeams.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev403
       refine ⟨ext1.trans (ext2.trans ext3), hn_inert,
         ⟨raw₁, c₁, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₁, hb₁, hd₁, hl₁⟩,
         ⟨raw₀, c₀, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₀, hb₀, hd₀,
@@ -174,12 +174,12 @@ theorem assert_claimable_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
       simp only [List.cons.injEq, and_true] at hpargs
       rw [← hpargs.2.2] at hblk_addr
       obtain ⟨ext2, raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext1 ha) ev503
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext1 ha) ev503
       obtain ⟨ext3, rawB, cb, hhB, hbB, hdB, hlB⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext2 hblk_addr) ev543
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext2 hblk_addr) ev543
       obtain ⟨rfl, hn_inert⟩ :=
         role_is_inert_zero_lim_spec (hrc.mono (ext1.trans (ext2.trans ext3)))
-          (S0.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev583
+          (BaseSeams.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev583
       refine ⟨ext1.trans (ext2.trans ext3), hn_inert,
         ⟨raw₁, c₁, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₁, hb₁, hd₁, hl₁⟩,
         ⟨raw₀, c₀, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₀, hb₀, hd₀,
@@ -201,12 +201,12 @@ theorem assert_claimable_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
       simp only [List.cons.injEq, and_true] at hpargs
       rw [← hpargs.2] at hblk_addr
       obtain ⟨ext2, raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext1 ha) ev677
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext1 ha) ev677
       obtain ⟨ext3, rawB, cb, hhB, hbB, hdB, hlB⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext2 hblk_addr) ev717
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext2 hblk_addr) ev717
       obtain ⟨rfl, hn_inert⟩ :=
         role_is_inert_zero_lim_spec (hrc.mono (ext1.trans (ext2.trans ext3)))
-          (S0.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev757
+          (BaseSeams.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev757
       refine ⟨ext1.trans (ext2.trans ext3), hn_inert,
         ⟨raw₁, c₁, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₁, hb₁, hd₁, hl₁⟩,
         ⟨raw₀, c₀, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₀, hb₀, hd₀,
@@ -226,11 +226,11 @@ theorem assert_claimable_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
       case rPrj _ => obtain ⟨_, hv', _⟩ := hinfo; exact absurd hv' (hne787 [_] rfl)
       all_goals simp [Ix.Cert.ownerOf, hc_info]
     obtain ⟨ext2, raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ :=
-      record_unsafe_zero_spec (S0.addr_mono ext1 ha) ev816
+      record_unsafe_zero_spec (BaseSeams.addr_mono ext1 ha) ev816
     have ext3 := ev856.heap_extends
     obtain ⟨rfl, hn_inert⟩ :=
       role_is_inert_zero_lim_spec (hrc.mono (ext1.trans (ext2.trans ext3)))
-        (S0.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev896
+        (BaseSeams.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev896
     exact ⟨ext1.trans (ext2.trans ext3), hn_inert,
       ⟨raw₁, c₁, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₁, hb₁, hd₁, hl₁⟩,
       ⟨raw₀, c₀, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₀, hb₀, hd₀, .inl hown_self⟩⟩

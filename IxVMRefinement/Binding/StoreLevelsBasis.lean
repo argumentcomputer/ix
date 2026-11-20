@@ -1,6 +1,6 @@
 import IxVMRefinement.Binding.StoreLevelsDef
 import IxVMRefinement.StatementRel.StoreInhabit
-import IxVMRefinement.L1.ConvertExpr
+import IxVMRefinement.Ingress.ConvertExpr
 
 /-! # Decidable level-parameter and inductive-parameter coherence for the basis store
 
@@ -285,7 +285,7 @@ private theorem buildUnivsOkTblGo_sound {ecx : Ix.Kernel.Reader.ECx .anon}
       shareAcc.size = okAcc.size →
       (∀ i E_rd, shareAcc[i]? = some (.ok E_rd) → okAcc.getD i true = true →
         E_rd.allLevelParamsDefined (List.range n) = true) →
-      ∀ i E_rd, (L1.buildShareTblGo ecx shareAcc es)[i]? = some (.ok E_rd) →
+      ∀ i E_rd, (Ingress.buildShareTblGo ecx shareAcc es)[i]? = some (.ok E_rd) →
         (buildUnivsOkTblGo univs n okAcc es).getD i true = true →
         E_rd.allLevelParamsDefined (List.range n) = true
   | [], shareAcc, okAcc, _, hinv, i, E_rd, hs, hok => hinv i E_rd hs hok
@@ -318,7 +318,7 @@ private theorem exprUnivsOk_sound {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.
     (hok : exprUnivsOk src n e = true)
     (hread : (Ix.Kernel.Reader.MemberReader.mk' cx src id self).read e = .ok E_rd) :
     E_rd.allLevelParamsDefined (List.range n) = true := by
-  obtain ⟨hecx, htbl⟩ := L1.memberReader_mk'_eq cx src id self
+  obtain ⟨hecx, htbl⟩ := Ingress.memberReader_mk'_eq cx src id self
   unfold Ix.Kernel.Reader.MemberReader.read at hread
   rw [hecx, htbl] at hread
   have hinv := buildUnivsOkTblGo_sound

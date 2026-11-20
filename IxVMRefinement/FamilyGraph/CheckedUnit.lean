@@ -66,7 +66,7 @@ def CheckedUnitFact
     ∀ (A : _root_.Address) (c : Ixon.Constant),
       recordOf E₀ A = some c → InLogic c → Kind calls t E₀ A c →
       t.check = .ok () → LoadedReads.RunStore calls E₀ →
-      LoadedReads.HashedRecordsStored calls E₀ → L1.CanonicalHashCoverage E calls →
+      LoadedReads.HashedRecordsStored calls E₀ → Ingress.CanonicalHashCoverage E calls →
       CheckedUnit calls bAddr t envT E₀ lim A c →
       Goal calls t envT E₀ E lim A c
 

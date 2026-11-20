@@ -1327,9 +1327,9 @@ private theorem convExpr_unshare_pr {c : Ixon.Constant} {ecx : Ix.Kernel.Reader.
     (hsrc : ecx.src = c) :
     ∀ (k n : Nat) (e : Ixon.Expr) (E : KExpr),
       n ≤ k → n ≤ c.sharing.size →
-      Ix.Kernel.Reader.convExpr ecx (L1.buildShareTbl ecx (c.sharing.toList.take n)) e = .ok E →
+      Ix.Kernel.Reader.convExpr ecx (Ingress.buildShareTbl ecx (c.sharing.toList.take n)) e = .ok E →
       ∃ n', n' ≤ n ∧
-        Ix.Kernel.Reader.convExpr ecx (L1.buildShareTbl ecx (c.sharing.toList.take n'))
+        Ix.Kernel.Reader.convExpr ecx (Ingress.buildShareTbl ecx (c.sharing.toList.take n'))
           (Binding.FamilyOf.unshare c k e) = .ok E ∧
         ∀ i, Binding.FamilyOf.unshare c k e ≠ .share i
   | 0, n, e, E, hnk, _, hconv => by
@@ -1337,7 +1337,7 @@ private theorem convExpr_unshare_pr {c : Ixon.Constant} {ecx : Ix.Kernel.Reader.
     subst hn0
     cases e with
     | share i =>
-      simp [Ix.Kernel.Reader.convExpr, L1.buildShareTbl, L1.buildShareTblGo,
+      simp [Ix.Kernel.Reader.convExpr, Ingress.buildShareTbl, Ingress.buildShareTblGo,
         Ix.Kernel.Reader.malformed] at hconv
     | var _ | sort _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _
     | app _ _ | lam _ _ | all _ _ | letE _ _ _ _ _ =>
@@ -1345,22 +1345,22 @@ private theorem convExpr_unshare_pr {c : Ixon.Constant} {ecx : Ix.Kernel.Reader.
   | k + 1, n, e, E, hnk, hns, hconv => by
     cases e with
     | share i =>
-      have hsz : (L1.buildShareTbl ecx (c.sharing.toList.take n)).size = n := by
-        rw [L1.buildShareTbl_size, List.length_take, Array.length_toList, Nat.min_eq_left hns]
+      have hsz : (Ingress.buildShareTbl ecx (c.sharing.toList.take n)).size = n := by
+        rw [Ingress.buildShareTbl_size, List.length_take, Array.length_toList, Nat.min_eq_left hns]
       by_cases hi : i.toNat < n
       · have hlt_sh : i.toNat < c.sharing.size := by omega
         have hget_arr : c.sharing[i.toNat]? = some c.sharing[i.toNat] :=
           Array.getElem?_eq_getElem hlt_sh
         have hget_list : c.sharing.toList[i.toNat]? = some c.sharing[i.toNat] := by
           rw [Array.getElem?_toList]; exact hget_arr
-        have htbl_get := L1.buildShareTbl_take_getElem? ecx c.sharing.toList hi hget_list
+        have htbl_get := Ingress.buildShareTbl_take_getElem? ecx c.sharing.toList hi hget_list
         simp only [Ix.Kernel.Reader.convExpr, htbl_get] at hconv
         obtain ⟨n', hn'le, hconv', hns'⟩ :=
           convExpr_unshare_pr hsrc k i.toNat c.sharing[i.toNat] E (by omega) (by omega) hconv
         refine ⟨n', by omega, ?_, ?_⟩
         · simpa only [Binding.FamilyOf.unshare, hget_arr] using hconv'
         · simpa only [Binding.FamilyOf.unshare, hget_arr] using hns'
-      · have hnone : (L1.buildShareTbl ecx (c.sharing.toList.take n))[i.toNat]? = none :=
+      · have hnone : (Ingress.buildShareTbl ecx (c.sharing.toList.take n))[i.toNat]? = none :=
           Array.getElem?_eq_none (by omega)
         simp [Ix.Kernel.Reader.convExpr, hnone, Ix.Kernel.Reader.malformed] at hconv
     | var _ | sort _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _
@@ -1370,9 +1370,9 @@ private theorem convExpr_unshare_pr {c : Ixon.Constant} {ecx : Ix.Kernel.Reader.
 private theorem convExpr_node_pr {c : Ixon.Constant} {ecx : Ix.Kernel.Reader.ECx .anon}
     (hsrc : ecx.src = c) {n : Nat} {e : Ixon.Expr} {E : KExpr}
     (hns : n ≤ c.sharing.size)
-    (hconv : Ix.Kernel.Reader.convExpr ecx (L1.buildShareTbl ecx (c.sharing.toList.take n)) e = .ok E) :
+    (hconv : Ix.Kernel.Reader.convExpr ecx (Ingress.buildShareTbl ecx (c.sharing.toList.take n)) e = .ok E) :
     ∃ n', n' ≤ n ∧
-      Ix.Kernel.Reader.convExpr ecx (L1.buildShareTbl ecx (c.sharing.toList.take n'))
+      Ix.Kernel.Reader.convExpr ecx (Ingress.buildShareTbl ecx (c.sharing.toList.take n'))
         (Binding.FamilyOf.node c e) = .ok E ∧
       ∀ i, Binding.FamilyOf.node c e ≠ .share i :=
   convExpr_unshare_pr hsrc (c.sharing.size + 1) n e E (by omega) hns hconv
@@ -1381,10 +1381,10 @@ private theorem convExpr_peel_pr {c : Ixon.Constant} {ecx : Ix.Kernel.Reader.ECx
     (hsrc : ecx.src = c) :
     ∀ (m n : Nat) (e e' : Ixon.Expr) (E : KExpr),
       n ≤ c.sharing.size →
-      Ix.Kernel.Reader.convExpr ecx (L1.buildShareTbl ecx (c.sharing.toList.take n)) e = .ok E →
+      Ix.Kernel.Reader.convExpr ecx (Ingress.buildShareTbl ecx (c.sharing.toList.take n)) e = .ok E →
       Binding.FamilyOf.peel c m e = some e' →
       ∃ bs E' n', n' ≤ n ∧ E.stripPis m = some (bs, E') ∧
-        Ix.Kernel.Reader.convExpr ecx (L1.buildShareTbl ecx (c.sharing.toList.take n')) e' = .ok E'
+        Ix.Kernel.Reader.convExpr ecx (Ingress.buildShareTbl ecx (c.sharing.toList.take n')) e' = .ok E'
   | 0, n, e, e', E, _, hconv, hpeel => by
     simp only [Binding.FamilyOf.peel, Option.some.injEq] at hpeel
     subst hpeel
@@ -1475,10 +1475,10 @@ private theorem convExpr_lastDom_pr {c : Ixon.Constant} {ecx : Ix.Kernel.Reader.
     (hsrc : ecx.src = c) :
     ∀ (k n : Nat) (e d : Ixon.Expr) (E : KExpr),
       n ≤ c.sharing.size →
-      Ix.Kernel.Reader.convExpr ecx (L1.buildShareTbl ecx (c.sharing.toList.take n)) e = .ok E →
+      Ix.Kernel.Reader.convExpr ecx (Ingress.buildShareTbl ecx (c.sharing.toList.take n)) e = .ok E →
       Binding.FamilyOf.lastDom c k e = some d →
       ∃ dE n', n' ≤ n ∧ lastBinderDom E = some dE ∧
-        Ix.Kernel.Reader.convExpr ecx (L1.buildShareTbl ecx (c.sharing.toList.take n')) d = .ok dE
+        Ix.Kernel.Reader.convExpr ecx (Ingress.buildShareTbl ecx (c.sharing.toList.take n')) d = .ok dE
   | 0, _, _, _, _, _, _, hld => by simp [Binding.FamilyOf.lastDom] at hld
   | k + 1, n, e, d, E, hns, hconv, hld => by
     obtain ⟨n₁, hn₁, hconv₁, -⟩ := convExpr_node_pr hsrc hns hconv
@@ -1530,7 +1530,7 @@ private theorem convExpr_spineHead_ref_pr {t : Ix.Kernel.RoleTable}
       ⟨readCtx t blob, c, c.univs.map (Ix.Kernel.Reader.convUniv param), self⟩
     ∀ (k n : Nat) (e : Ixon.Expr) (E : KExpr),
       n ≤ c.sharing.size →
-      Ix.Kernel.Reader.convExpr ecx (L1.buildShareTbl ecx (c.sharing.toList.take n)) e = .ok E →
+      Ix.Kernel.Reader.convExpr ecx (Ingress.buildShareTbl ecx (c.sharing.toList.take n)) e = .ok E →
       Binding.FamilyOf.spineHead c k e = .ref rIdx uIdxs →
       headKey E = some (keyOf t a) := by
   intro ecx k
@@ -1589,7 +1589,7 @@ private theorem familyKey_of_motiveCarrierAt_pr {t : Ix.Kernel.RoleTable} (ht : 
     (hread : (exprReader t blob c param self).read rc.typ = .ok ty)
     (hmot : Binding.FamilyOf.motiveCarrierAt c rc 0 nf = some a) :
     familyKey rc ty = some (keyOf t a) := by
-  obtain ⟨hecx, htbl⟩ := L1.memberReader_mk'_eq (readCtx t blob) c param self
+  obtain ⟨hecx, htbl⟩ := Ingress.memberReader_mk'_eq (readCtx t blob) c param self
   unfold exprReader Ix.Kernel.Reader.MemberReader.read at hread
   rw [hecx, htbl, ← List.take_length (l := c.sharing.toList), Array.length_toList] at hread
   unfold Binding.FamilyOf.motiveCarrierAt at hmot
@@ -3674,7 +3674,7 @@ theorem twin_newRecNotNative {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
     {B A : _root_.Address} {cA : Ixon.Constant} {rs' : Array Ixon.MutConst}
     {ind₀ : Ixon.Inductive} {blk : List (ConstantInfo .anon)}
     {ws : List (TwinRecPart .anon)}
-    (hdec : L1.EnvDecoded E)
+    (hdec : Ingress.EnvDecoded E)
     (hA : FamRecRecord E₀ A cA rs')
     (hEA : recordOf E A = some cA)
     (hEA_mem : ∀ k m, rs'[k]? = some m → recordOf E (memberAddr A k m) = some (memberProjection A k m))
@@ -4149,13 +4149,13 @@ theorem familyTwin_step_core
       have hm0 : Claim.MemberCheckedLimAt calls bAddrW t B ms 0 lim :=
         Claim.membersChecked_of_block hRS hcb hms hchk 0 hpos
       have hobs := Claim.MemberCheckedLimAt.dispatch hRS hind hm0
-      have hcanon₀ : L1.CanonicalHashCoverage E₀ calls := by
+      have hcanon₀ : Ingress.CanonicalHashCoverage E₀ calls := by
         intro bytes value hashed size exactRead
         obtain ⟨entry, stored, bytesEq, cached⟩ := hH bytes value hashed size
-          (L1.deConstant_of_deConstantExact exactRead) exactRead
+          (Ingress.deConstant_of_deConstantExact exactRead) exactRead
         refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
         rw [bytesEq]; exact exactRead
-      have hcanonE : L1.CanonicalHashCoverage E calls :=
+      have hcanonE : Ingress.CanonicalHashCoverage E calls :=
         Assembly.canonicalHashCoverage_frame hcanon₀ hctx.recordsFor.1
           (fun a v h => hctx.runRecord a v ((hRS.recordOf_eq_recordAt a).trans h))
       exact modeledAt_of_modeledRoute (c := ⟨E, Ix.Kernel.Env.empty, t, none⟩)

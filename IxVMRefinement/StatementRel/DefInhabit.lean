@@ -182,7 +182,7 @@ theorem read_ref {cx : Ctx .anon} {src : Ixon.Constant} {param : Nat → LevelPa
     {self : Nat → Option (ReadM (CName .anon))} {i : UInt64} {a : _root_.Address}
     {k : CName .anon} (hr : src.refs[i.toNat]? = some a) (hk : cx.keyAt a = .ok k) :
     (MemberReader.mk' cx src param self).read (.ref i #[]) = .ok (.const k []) := by
-  obtain ⟨hecx, -⟩ := L1.memberReader_mk'_eq cx src param self
+  obtain ⟨hecx, -⟩ := Ingress.memberReader_mk'_eq cx src param self
   unfold MemberReader.read
   rw [hecx]
   simp only [convExpr]

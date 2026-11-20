@@ -1,4 +1,4 @@
-import IxVMRefinement.L1.Ingress
+import IxVMRefinement.Ingress.Ingress
 
 /-! # The binder plans of a loaded definition, axiom or definition projection
 
@@ -34,7 +34,7 @@ set_option linter.unnecessarySeqFocus false
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics Aiur.Library Aiur.Library.List
 
-namespace IxVM.Refinement.L1
+namespace IxVM.Refinement.Ingress
 
 open IxVM (F)
 open IxVM.Refinement.Obs
@@ -743,4 +743,4 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
       haddr, hexact, ?_⟩
     simp only [GetCITraceResult, hc_info]
 
-end IxVM.Refinement.L1
+end IxVM.Refinement.Ingress

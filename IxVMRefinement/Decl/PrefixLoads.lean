@@ -110,7 +110,7 @@ private theorem noFind {c : Ctx} (henv : ∀ k, c.env.find? k = none) {k : KKey}
   rw [henv] at h
   cases h
 
-private theorem decoded_of_recordAt {E : Ixon.Env} (hdec : L1.EnvDecoded E)
+private theorem decoded_of_recordAt {E : Ixon.Env} (hdec : Ingress.EnvDecoded E)
     {x : _root_.Address} {cm : Ixon.Constant} (hrec : Ix.Cert.recordAt E x = some cm) :
     ∀ lc, E.consts.get? x = some lc → Ixon.deConstantExact lc.rawBytes = .ok cm := by
   intro lc hlc
@@ -121,8 +121,8 @@ private theorem decoded_of_recordAt {E : Ixon.Env} (hdec : L1.EnvDecoded E)
 
 /-- **The prefix contract holds where nothing is stored**, from the decoding of the records. Its
 installed-lookup claims are vacuous there; its record claims (`indRecord`, `recordShape`,
-`canonical`) are L1's. -/
-theorem prefixLoadFacts_of_empty {c : Ctx} (hdec : L1.EnvDecoded c.E)
+`canonical`) come from record ingress. -/
+theorem prefixLoadFacts_of_empty {c : Ctx} (hdec : Ingress.EnvDecoded c.E)
     (henv : ∀ k, c.env.find? k = none) : PrefixLoadFacts c := by
   intro allowed hres
   refine
@@ -147,7 +147,7 @@ theorem prefixLoadFacts_of_empty {c : Ctx} (hdec : L1.EnvDecoded c.E)
     have hcm' : Ix.Cert.recordAt c.E (ixAddr a) = some cm := hcm
     have hcb' : Ix.Cert.recordAt c.E p.block = some cb := hcb
     have hg' : Good c cs := hg
-    exact L1.indRecord_of_deConstantExact (c := c) (decoded_of_recordAt hdec hcm')
+    exact Ingress.indRecord_of_deConstantExact (c := c) (decoded_of_recordAt hdec hcm')
       (decoded_of_recordAt hdec hcb') ev hg' ha hcm' hcm_info hcb' hcb_info hxs
   · intro addr ptr h h' cs a nl ty np ni nc u blk idx ev hall _ hg ha hld
     obtain ⟨ci, hci⟩ := hres.getCI addr h a hall ha
@@ -170,7 +170,7 @@ theorem prefixLoadFacts_of_empty {c : Ctx} (hdec : L1.EnvDecoded c.E)
     have hrec' : Ix.Cert.recordAt c.E (ixAddr a) = some cst := hrec
     have hg' : Good c cs := hg
     obtain ⟨lc₀, hlc₀, _, _, hde₀⟩ := hdec.recordAt_deConstantExact hrec'
-    refine L1.recordShape_of_deConstant (c := c) (fun lc hlc => ?_) ev hg' ha hrec'
+    refine Ingress.recordShape_of_deConstant (c := c) (fun lc hlc => ?_) ev hg' ha hrec'
     rw [hlc₀] at hlc
     cases hlc
     exact hde₀
@@ -179,10 +179,10 @@ theorem prefixLoadFacts_of_empty {c : Ctx} (hdec : L1.EnvDecoded c.E)
     exact (noFind henv hci).elim
   · intro bp ip ptr h h' cs b i _ _ _ _ j cvC nP nF tbl hctor
     exact (noFind henv hctor).elim
-  · exact fun x lc info hwf hlc hraw cm hget => L1.canonical_of_wireWF hdec hwf hlc hraw hget
+  · exact fun x lc info hwf hlc hraw cm hget => Ingress.canonical_of_wireWF hdec hwf hlc hraw hget
 
 /-- The prefix contract at the empty environment. -/
-theorem prefixLoadFacts_empty {E : Ixon.Env} (hdec : L1.EnvDecoded E) (t : Ix.Kernel.RoleTable)
+theorem prefixLoadFacts_empty {E : Ixon.Env} (hdec : Ingress.EnvDecoded E) (t : Ix.Kernel.RoleTable)
     (lim : Option Nat) : PrefixLoadFacts ⟨E, Ix.Kernel.Env.empty, t, lim⟩ :=
   prefixLoadFacts_of_empty hdec (fun _ => rfl)
 

@@ -1,8 +1,8 @@
 import IxVMRefinement.Decl.ModeledTele
 import IxVMRefinement.Decl.ModeledSound
 import IxVMRefinement.Decl.Value
-import IxVMRefinement.L1.ByteStream
-import IxVMRefinement.L1.Stream
+import IxVMRefinement.Ingress.ByteStream
+import IxVMRefinement.Ingress.Stream
 import IxVMRefinement.Core.Specs.Callees
 import IxVMRefinement.Obs.KernelClaim
 /-! # Modeled Recursor Rule Verification Helpers
@@ -162,7 +162,7 @@ theorem eq_addr_key_spec {c : Ctx} {rc eqa v_role v_raddr : SourceValue F} {a_eq
   subst ha_same
   exact ⟨keyOf_of_addressOf hwf haddr_of, hh₃⟩
 
-/-! ## `IxonDeserialize::get_address` over `L1.Stream` -/
+/-! ## `IxonDeserialize::get_address` over `Ingress.Stream` -/
 
 /-- The 32 byte variable names `b0` … `b31` bound by `IxonDeserialize::get_address`. -/
 private def gaNames : List String :=
@@ -176,7 +176,7 @@ private def gaEnd : Aiur.Generic.Expr F :=
 
 private def gaFrom : List String → String → Aiur.Generic.Expr F
   | [], _ => gaEnd
-  | b :: bs, scr => .letValue (L1.consPat b "s") (.load (.var scr)) (gaFrom bs "s")
+  | b :: bs, scr => .letValue (Ingress.consPat b "s") (.load (.var scr)) (gaFrom bs "s")
 
 private theorem get_address_body :
     IxVM.IxonDeserialize.get_address.body = gaFrom gaNames "stream" := rfl
@@ -189,7 +189,7 @@ private theorem gaNames_nodup : gaNames.Nodup := by
 
 private theorem gaVars_inv {locals : Environment F Nat} :
     ∀ (names : List String) (xs : List UInt8),
-      L1.Bound locals names xs →
+      Ingress.Bound locals names xs →
       ∀ {before after : Heap F} {vs : List (SourceValue F)} {cs : List (Call F)},
         ObsArgs W [] locals (names.map .var) before vs after cs →
         vs = xs.map (fun b => .field (b.toNat : F)) ∧ after = before ∧ cs = []
@@ -206,13 +206,13 @@ private theorem gaVars_inv {locals : Environment F Nat} :
       injection l₁ with l₁; injection l₁ with _ hv
       subst hv
       obtain ⟨hvs, rfl, rfl⟩ := gaVars_inv ns xs' hrest av
-      have hbv : L1.bv x = .field (x.toNat : F) := rfl
+      have hbv : Ingress.bv x = .field (x.toNat : F) := rfl
       rw [hbv, hvs]
       exact ⟨rfl, rfl, rfl⟩
 
 private theorem gaEnd_inv {locals : Environment F Nat} {xs : List UInt8}
     (hxlen : xs.length = 32)
-    (hb : L1.Bound locals gaNames xs)
+    (hb : Ingress.Bound locals gaNames xs)
     {s_ptr : SourceValue F}
     (hs : locals.find? (·.1 == "s") = some ("s", s_ptr))
     {h h' : Heap F} {r : SourceValue F} {cs : List (Call F)}
@@ -256,17 +256,17 @@ private theorem gaEnd_inv {locals : Environment F Nat} {xs : List UInt8}
     halist, rfl, ?_, Heap.Extends.snoc h _, hcs_eq⟩
   rw [hty]
   exact ⟨h.length, Value.tuple (xs.map bfn), rfl, by simp,
-    L1.repAddress_iff.mpr (by simp [L1.digestV, L1.bv, bfn, halist])⟩
+    Ingress.repAddress_iff.mpr (by simp [Ingress.digestV, Ingress.bv, bfn, halist])⟩
 
 private theorem gaFrom_inv :
     ∀ (bs pre : List String) (ys : List UInt8)
       {locals : Environment F Nat} {scr : String} {ptr : SourceValue F}
       {bytes : List UInt8} {h h' : Heap F} {r : SourceValue F} {cs : List (Call F)},
       pre.reverse ++ bs = gaNames →
-      L1.Bound locals pre ys →
+      Ingress.Bound locals pre ys →
       (bs = [] → locals.find? (·.1 == "s") = some ("s", ptr)) →
       (bs ≠ [] → locals.find? (·.1 == scr) = some (scr, ptr)) →
-      L1.Stream h bytes ptr →
+      Ingress.Stream h bytes ptr →
       ObsExpr W [] locals (gaFrom bs scr) h r h' cs →
       ∃ (a : Bytes.Address) (xs rem : List UInt8) (x_t x_s2 : SourceValue F),
         xs.length = bs.length ∧
@@ -274,11 +274,11 @@ private theorem gaFrom_inv :
         a.toList = ys.reverse ++ xs ∧
         r = .tuple [x_t, x_s2] ∧
         Bytes.RepAddressRef addrTy h' a x_t ∧
-        L1.Stream h' rem x_s2 ∧
+        Ingress.Stream h' rem x_s2 ∧
         Heap.Extends h h' ∧ cs = []
   | [], pre, ys, locals, _, ptr, bytes, h, h', r, cs, hga, hb, hs0, _, hstr, ev => by
     rw [List.append_nil] at hga
-    have hb_rev : L1.Bound locals gaNames ys.reverse :=
+    have hb_rev : Ingress.Bound locals gaNames ys.reverse :=
       hga ▸ List.forall₂_reverse_iff.mpr hb
     have hylen : ys.reverse.length = 32 := hb_rev.length_eq.symm
     obtain ⟨a, x_t, halist, hr, hrep, ext, hcs⟩ := gaEnd_inv hylen hb_rev (hs0 rfl) ev
@@ -291,9 +291,9 @@ private theorem gaFrom_inv :
     rw [hscr (by simp)] at lp
     injection lp with lp; injection lp with _ hp
     subst hp
-    rcases L1.stream_inv hstr ld with ⟨rfl, rfl⟩ | ⟨x, rem0, tail, rfl, rfl, htail⟩
-    · rw [L1.consPat, L1.match_cons_nil] at mt; cases mt
-    · rw [L1.consPat, L1.match_cons_cons] at mt
+    rcases Ingress.stream_inv hstr ld with ⟨rfl, rfl⟩ | ⟨x, rem0, tail, rfl, rfl, htail⟩
+    · rw [Ingress.consPat, Ingress.match_cons_nil] at mt; cases mt
+    · rw [Ingress.consPat, Ingress.match_cons_cons] at mt
       injection mt with mt; injection mt with hbnd
       subst hbnd
       have hnd : (pre.reverse ++ b :: bs).Nodup := hga ▸ gaNames_nodup
@@ -308,14 +308,14 @@ private theorem gaFrom_inv :
         apply s_notMem_gaNames
         rw [← hga]
         exact List.mem_append_left _ (List.mem_reverse.mpr hm)
-      have hb_next : L1.Bound ([(b, L1.bv x), ("s", tail)] ++ locals) (b :: pre) (x :: ys) := by
-        refine .cons (by simp [List.find?_cons]) (L1.bound_skip _ ?_ hb)
+      have hb_next : Ingress.Bound ([(b, Ingress.bv x), ("s", tail)] ++ locals) (b :: pre) (x :: ys) := by
+        refine .cons (by simp [List.find?_cons]) (Ingress.bound_skip _ ?_ hb)
         intro n hn e he
         simp only [List.mem_cons, List.not_mem_nil, or_false] at he
         rcases he with rfl | rfl
         · intro heq; simp only at heq; exact hb_not_pre (heq ▸ hn)
         · intro heq; simp only at heq; exact hs_not_pre (heq ▸ hn)
-      have hs_find : ([(b, L1.bv x), ("s", tail)] ++ locals).find? (·.1 == "s") = some ("s", tail) := by
+      have hs_find : ([(b, Ingress.bv x), ("s", tail)] ++ locals).find? (·.1 == "s") = some ("s", tail) := by
         have hbn : (b == "s") = false := beq_false_of_ne hs_ne_b.symm
         simp [List.find?_cons, hbn]
       have hga' : (b :: pre).reverse ++ bs = gaNames := by
@@ -326,17 +326,17 @@ private theorem gaFrom_inv :
       exact ⟨a, x :: xs', rem, x_t, x_s2, by simp [hxslen], by simp [hrem_eq],
         by simpa using halist, hr, hrep, hstr', ext, by simp [hcs]⟩
 
-/-- **`IxonDeserialize::get_address`** peels 32 bytes off an `L1.Stream`, allocates their
+/-- **`IxonDeserialize::get_address`** peels 32 bytes off an `Ingress.Stream`, allocates their
 `Bytes.RepAddressRef`, and returns `(addr_ptr, rest_stream)`. -/
 theorem get_address_spec {s_ptr r : SourceValue F} {bytes : List UInt8}
     {h h' : Heap F} {cs : List (Call F)}
-    (hs : L1.Stream h bytes s_ptr)
+    (hs : Ingress.Stream h bytes s_ptr)
     (ev : ObsFn W "IxonDeserialize::get_address" [s_ptr] h r h' cs) :
     ∃ (a : Bytes.Address) (rem : List UInt8) (x_t x_s2 : SourceValue F),
       bytes = a.toList ++ rem ∧
       r = .tuple [x_t, x_s2] ∧
       Bytes.RepAddressRef addrTy h' a x_t ∧
-      L1.Stream h' rem x_s2 ∧
+      Ingress.Stream h' rem x_s2 ∧
       Heap.Extends h h' ∧
       cs = [] := by
   have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.IxonDeserialize.get_address.lookup

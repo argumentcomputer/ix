@@ -42,7 +42,7 @@ context**: the load of the former's projection record (`Ingress::get_ci` at its 
 def FormerCheckObs (calls : List (Call F)) (B : _root_.Address) (ind : Ixon.Inductive) : Prop :=
   ∃ (h_pre m_chk h'_chk : Heap F) (rc ap ptr v r_chk : SourceValue F)
     (cs_load cs_chk : List (Call F)),
-    Core.S0.addr h_pre ap (memberAddr B 0 (.indc ind)) ∧
+    Core.BaseSeams.addr h_pre ap (memberAddr B 0 (.indc ind)) ∧
     ObsFn Obs.W "Ingress::get_ci" [ap] h_pre ptr m_chk cs_load ∧ (∀ cl ∈ cs_load, cl ∈ calls) ∧
     loadValue m_chk ptr = .ok v ∧
     ObsFn Obs.W "KernelCheck::check_const" [rc, v, ap] m_chk r_chk h'_chk cs_chk ∧
@@ -59,19 +59,19 @@ private theorem idx_zero' (B : _root_.Address) :
   decide
 
 /-- **The load of the former in its observed check**, at a bounded derivation
-(`L1.get_ci_loadedL1_spec`), as `Assembly.checkedAtFull_loadedL1` reads it. -/
+(`Ingress.get_ci_loadedRecords_spec`), as `Assembly.checkedAtFull_loadedRecords` reads it. -/
 theorem FormerCheckObs.loaded (hbound : Bounded calls) (hobs : FormerCheckObs calls B ind) :
     ∃ (m_chk h'_chk : Heap F) (rc ap ptr v r_chk : SourceValue F)
       (cs_load cs_chk : List (Call F)) (bytes : ByteArray) (E_ld : Ixon.Env),
       Hashed cs_load bytes ∧ Address.blake3Pure bytes = memberAddr B 0 (.indc ind) ∧
-      LoadedBy cs_load E_ld ∧ L1.LoadedL1 E_ld m_chk ptr bytes ∧
+      LoadedBy cs_load E_ld ∧ Ingress.LoadedRecords E_ld m_chk ptr bytes ∧
       (∀ cl ∈ cs_load, cl ∈ calls) ∧ loadValue m_chk ptr = .ok v ∧
       ObsFn Obs.W "KernelCheck::check_const" [rc, v, ap] m_chk r_chk h'_chk cs_chk ∧
       (∀ cl ∈ cs_chk, cl ∈ calls) := by
   obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk, ⟨a', ha', he⟩, ev_ld,
     hsub_ld, hld, ev_chk, hsub_chk⟩ := hobs
   obtain ⟨-, bytes, E_ld, hhash, hblake, hloaded, hL1⟩ :=
-    L1.get_ci_loadedL1_spec (RomBound.bounded_mono hbound hsub_ld) ha' ev_ld
+    Ingress.get_ci_loadedRecords_spec (RomBound.bounded_mono hbound hsub_ld) ha' ev_ld
   exact ⟨m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk, bytes, E_ld, hhash,
     hblake.trans he, hloaded, hL1, hsub_ld, hld, ev_chk, hsub_chk⟩
 
@@ -90,11 +90,11 @@ theorem ctorSlots_of_formerObs (hbound : Bounded calls) (hS : LoadedReads.RunSto
     (hS.recordOf_eq_recordAt _).symm.trans hrec.former
   have hrecB : Ix.Cert.recordAt E₀ B = some cb :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.record
-  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedL1_record hS hsub_ld hhash hblake hL1 hrecP
+  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedRecords_record hS hsub_ld hhash hblake hL1 hrecP
   have hvv : v' = v := Except.ok.inj (hld'.symm.trans hld)
   subst hvv
   have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨-, lcB, cb', ms', ind', blobs, hgetB, -, -, hexB, -, hcb', hms', -, raw⟩ := hraw
   obtain ⟨hhB, haB⟩ := hload_ld.1 _ lcB hgetB
@@ -113,7 +113,7 @@ theorem ctorSlots_of_formerObs (hbound : Bounded calls) (hS : LoadedReads.RunSto
     have hl := hrec.logic
     simp only [IxVM.Consistency.InLogic, hrec.muts] at hl
     exact (hl (.indc ind) (by simp)).1
-  simp only [L1.repBoolField, hsafe, Bool.false_eq_true, ↓reduceIte] at ev_chk
+  simp only [Ingress.repBoolField, hsafe, Bool.false_eq_true, ↓reduceIte] at ev_chk
   refine ⟨b, hb_eq, hlv, hnp, hnc, ?_⟩
   intro j hj
   match Obs.«KernelCheck::check_const».obs ev_chk with
@@ -224,7 +224,7 @@ theorem former_reads_of_obs (ht : t.check = .ok ()) (hbound : Bounded calls)
   have hrecB : Ix.Cert.recordAt E₀ B = some cb :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.record
   obtain ⟨ms', ind', ty₀, h1, h2, -, hty, hreads, -⟩ :=
-    LoadedReads.loadedL1_ind_reads (p := ⟨(0 : Nat).toUInt64, B⟩) ht hS hload_ld hsub_ld hhash
+    LoadedReads.loadedRecords_ind_reads (p := ⟨(0 : Nat).toUInt64, B⟩) ht hS hload_ld hsub_ld hhash
       hblake hL1 hrecP rfl hrecB hrec.logic
   have hms : ms' = #[.indc ind] := Ixon.ConstantInfo.muts.inj (h1.symm.trans hrec.muts)
   subst hms
@@ -282,7 +282,7 @@ theorem formerCheckObs_of_advice {calls cs : List (Call F)} {E₀ : Ixon.Env}
         (ev683.heap_extends.trans ev723.heap_extends))
       have hsubm : ∀ cl ∈ csm, cl ∈ calls := fun cl hcl => hsub947 cl (by rw [hcs]; simp [hcl])
       have hmems := Decl.membersRep_of_repMutConstList
-        (RepLinkedList.mono L1.repMutConst_heapMono₂ ext2 hlist)
+        (RepLinkedList.mono Ingress.repMutConst_heapMono₂ ext2 hlist)
       have ha2 := Bytes.repAddressRef_heapMono₂ Core.addrTy (ext1.trans ext2) ha
       rcases Obs.«KernelClaim::check_muts_all».obs evm with
         ⟨ld12, -⟩ |
@@ -295,7 +295,7 @@ theorem formerCheckObs_of_advice {calls cs : List (Call F)} {E₀ : Ixon.Env}
         have hsubld : ∀ cl ∈ csld, cl ∈ calls := fun cl hcl => hsub53 cl (by rw [hcm]; simp [hcl])
         have hsubchk : ∀ cl ∈ cschk, cl ∈ calls :=
           fun cl hcl => hsub53 cl (by rw [hcm]; simp [hcl])
-        obtain ⟨-, -, -, mc, a', hget, ha', hproj, -⟩ := L1.projection_addr_hashed_spec hmems ha2 evpa
+        obtain ⟨-, -, -, mc, a', hget, ha', hproj, -⟩ := Ingress.projection_addr_hashed_spec hmems ha2 evpa
         have hz : ZMod.val (0 : F) = 0 := by simp
         rw [hz] at hget hproj
         have hmc : mc = .indc ind := (Option.some.inj hget).symm

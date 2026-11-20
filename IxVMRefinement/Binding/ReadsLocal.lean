@@ -174,7 +174,7 @@ theorem buildShareTblGo_keys
     ∀ (es : List Ixon.Expr) (acc : Array (ReadM (CExpr .anon))),
       (∀ e ∈ es, ∀ i ∈ exprRefIdxs e, S i) →
       (∀ (i : Nat) (v : CExpr .anon), acc[i]? = some (Except.ok v) → ∀ k, KeyIn k v → P k) →
-      ∀ (i : Nat) (v : CExpr .anon), (L1.buildShareTblGo ecx acc es)[i]? = some (Except.ok v) →
+      ∀ (i : Nat) (v : CExpr .anon), (Ingress.buildShareTblGo ecx acc es)[i]? = some (Except.ok v) →
         ∀ k, KeyIn k v → P k := by
   intro es
   induction es with
@@ -183,7 +183,7 @@ theorem buildShareTblGo_keys
     exact hacc
   | cons e es ih =>
     intro acc hes hacc
-    simp only [L1.buildShareTblGo]
+    simp only [Ingress.buildShareTblGo]
     apply ih _ (fun e' he' => hes e' (List.mem_cons_of_mem _ he'))
     intro i v hi
     rw [Array.getElem?_push] at hi
@@ -204,7 +204,7 @@ theorem read_keys {t : RoleTable} (checked : t.check = .ok ())
     (hself : ∀ (i : Nat) (k : Key .anon), self i = some (Except.ok k) → P k)
     {e : Ixon.Expr} (he : ∀ i ∈ exprRefIdxs e, i ∈ usedRefIdxs src) {v : CExpr .anon}
     (h : (exprReader t blob src param self).read e = .ok v) : ∀ k, KeyIn k v → P k := by
-  obtain ⟨hecx, htbl⟩ := L1.memberReader_mk'_eq (readCtx t blob) src param self
+  obtain ⟨hecx, htbl⟩ := Ingress.memberReader_mk'_eq (readCtx t blob) src param self
   unfold exprReader MemberReader.read at h
   rw [hecx, htbl] at h
   have hkey : ∀ (i : UInt64) (k : Key .anon), i.toNat ∈ usedRefIdxs src →

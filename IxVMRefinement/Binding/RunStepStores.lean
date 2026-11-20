@@ -75,7 +75,7 @@ theorem runStepStores_of_noCollision {V : View} {extra : List ByteArray}
     · obtain ⟨blk, cb, ms, hblk, hdec, hms, hform⟩ := himg
       exact hnc (Or.inr (Or.inl ⟨x, held, image, blk, cb, ms,
         Or.inr (Or.inr (hheld x held hh)), hblk, hdec, hms, hform, hne, hx⟩))
-  have hdec : L1.EnvDecoded E₀ := fun a lc h => hS.decoded a lc h
+  have hdec : Ingress.EnvDecoded E₀ := fun a lc h => hS.decoded a lc h
   exact ⟨E, hM.recordsFor hS.loaded hdec hcomm hextra hnc',
     ⟨hM.decoded hdec, fun a c h => hM.run_record hS.loaded hdec hextra hnc' h,
       fun a b h => hM.run_blob hS.loaded hnc' h,
@@ -85,11 +85,11 @@ theorem runStepStores_of_noCollision {V : View} {extra : List ByteArray}
 theorem stepStore_canonicalHashCoverage {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ Ec : Ixon.Env} (hS : LoadedReads.RunStore calls E₀)
     (hcov : LoadedReads.HashedRecordsStored calls E₀) (hst : StepStore calls t E₀ Ec) :
-    L1.CanonicalHashCoverage Ec calls := by
-  have hcanon₀ : L1.CanonicalHashCoverage E₀ calls := by
+    Ingress.CanonicalHashCoverage Ec calls := by
+  have hcanon₀ : Ingress.CanonicalHashCoverage E₀ calls := by
     intro bytes value hashed size exactRead
     obtain ⟨entry, stored, bytesEq, cached⟩ := hcov bytes value hashed size
-      (L1.deConstant_of_deConstantExact exactRead) exactRead
+      (Ingress.deConstant_of_deConstantExact exactRead) exactRead
     refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
     rw [bytesEq]
     exact exactRead

@@ -82,7 +82,7 @@ def FormerRead (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.Address)
   blockRead t E B cb ms ind.typ = .ok ty₀ ∧ ty₀.looseBVarsBounded 0 = true ∧
     ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
     LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-      ((L1.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some ty'
+      ((Ingress.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some ty'
 
 /-- **The reading of constructor `j` of member `i` over `E`, and its canonical annotation**; the
 constructor's stored index is its position. -/
@@ -93,7 +93,7 @@ def CtorRead (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.Address)
     cty₀.looseBVarsBounded 0 = true ∧
     cty₀.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
     LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-      (((L1.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ cty₀ =
+      (((Ingress.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ cty₀ =
       some cty'
 
 /-- **The formers and constructors are the block's**, each the reading of its record over `E`
@@ -131,7 +131,7 @@ the longer environment finds at its name. -/
 structure PointInstall (c : Core.Ctx) (new : List (ConstantInfo .anon)) (B : _root_.Address)
     (cb : Ixon.Constant) (ms : Array Ixon.MutConst) : Prop where
   check : c.t.check = .ok ()
-  decoded : L1.EnvDecoded c.E
+  decoded : Ingress.EnvDecoded c.E
   held : HashedBlockProjectionsHeld c.E
   block : recordOf c.E B = some cb
   muts : cb.info = .muts ms
@@ -148,7 +148,7 @@ structure PointInstall (c : Core.Ctx) (new : List (ConstantInfo .anon)) (B : _ro
     ty₀.looseBVarsBounded 0 = true ∧
     ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
     LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-      ((L1.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some ty' ∧
+      ((Ingress.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some ty' ∧
     (appCtx c new).env.find? (Core.keyOf c.t (Core.iprjAddr B i)) =
       some (.indInfo ⟨Core.keyOf c.t (Core.iprjAddr B i), List.range ind.lvls.toNat, ty'⟩ {})
   ctor : ∀ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) → ∀ j < ind.ctors.size,
@@ -158,7 +158,7 @@ structure PointInstall (c : Core.Ctx) (new : List (ConstantInfo .anon)) (B : _ro
     cty.looseBVarsBounded 0 = true ∧
     cty.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
     LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-      (((L1.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ cty = some cty' ∧
+      (((Ingress.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ cty = some cty' ∧
     (appCtx c new).env.find? (Core.keyOf c.t (Core.cprjAddr B i j)) =
       some (.ctorInfo ⟨Core.keyOf c.t (Core.cprjAddr B i j), List.range ct.lvls.toNat, cty'⟩
         ct.params.toNat ct.fields.toNat)

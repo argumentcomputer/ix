@@ -143,7 +143,7 @@ def RuleStepsR (κ : _root_.Address → KKey) (ps : List LevelParam)
       (a_t : Bytes.Address) (rem : List UInt8),
       RuleRepExact κ h ps j (.construct krrEnum "Mk" [st.w_idx, st.rnf, st.rhs]) rl ∧
       bytes = a_t.toList ++ rem ∧ Bytes.RepAddressRef addrTy st.h_ga a_t st.t ∧
-      L1.Stream st.h_ga rem st.s2 ∧ st.cs_ga = [] ∧
+      Ingress.Stream st.h_ga rem st.s2 ∧ st.cs_ga = [] ∧
       RuleStepsR κ ps rc rm nl ty rp ni iblock iidx inp ilvls pins src dst aset s_out h' calls
         (j + 1) rls st.rest st.h_iota rem st.s2
 
@@ -157,7 +157,7 @@ theorem check_rules_go_stepsR {κ : _root_.Address → KKey} {ps : List LevelPar
       {h : Heap F} {cs calls : List (Call F)},
       SubCalls calls cs →
       RulesRepExact κ h ps j rules rls →
-      L1.Stream h bytes s →
+      Ingress.Stream h bytes s →
       ObsFn W "KernelModeled::check_rules_go"
         [rc, rm, nl, ty, rp, ni, rules, iblock, iidx, inp, ilvls, pins, src, dst, aset, s,
           .field (j : F)]
@@ -245,7 +245,7 @@ theorem check_rules_stepsR {κ : _root_.Address → KKey} {ps : List LevelParam}
     {bytes : List UInt8} {h h' : Heap F} {calls : List (Call F)}
     (hbd : IxVM.Consistency.Bounded calls)
     (hrls : RulesRepExact κ h ps 0 rules rls)
-    (hstr : L1.Stream h bytes s)
+    (hstr : Ingress.Stream h bytes s)
     (ev : ObsFn W "KernelModeled::check_rules" [rc, rm, nl, ty, rp, ni, rules, src, dst, aset, s]
       h s_out h' calls) :
     ∃ (iaddr ilvls pins : SourceValue F) (h_rmp : Heap F) (cs_rmp : List (Call F))

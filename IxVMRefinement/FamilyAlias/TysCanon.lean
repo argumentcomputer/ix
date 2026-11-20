@@ -351,7 +351,7 @@ and a plain rule satisfies `Expr.recRulePlain`), and the non-K record witness (`
 `FamRecsCompanion`'s unroled condition). -/
 theorem recCompanionFacts_of_tys {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {lim : Option Nat}
     {A rb : _root_.Address} {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
-    (htwf : t.wf = true) (hdec : L1.EnvDecoded E)
+    (htwf : t.wf = true) (hdec : Ingress.EnvDecoded E)
     (hB : FamBlockRecord E₀ A cb ms) (hrb : FamRecRecord E₀ rb crb rs)
     (hEmemA : ∀ i m, ms[i]? = some m → recordOf E (memberAddr A i m) = some (memberProjection A i m))
     (hErb : recordOf E rb = some crb)

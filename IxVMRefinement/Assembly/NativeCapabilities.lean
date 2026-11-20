@@ -18,7 +18,7 @@ open IxVM (F)
 /-- A successful raw zero-field query proves the canonical first constructor has zero fields.
 No constructor lookup or semantic type reading is required. -/
 theorem native_zero_field_metadata {context : Core.ScopedCtx} {block : Bytes.Address} {i : F}
-    (source : L1.CanonicalRecordAt context.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt context.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -26,7 +26,7 @@ theorem native_zero_field_metadata {context : Core.ScopedCtx} {block : Bytes.Add
     ∃ ctor, ind.ctors.toList[0]? = some ctor ∧ ctor.fields.toNat = 0 := by
   obtain ⟨_, _, _, bytes, src, ms, member, ctor, _, value, hashed, address, decoded, _,
     shape, atMember, atCtor, _, valueAt, raw⟩ :=
-    L1.get_ci_cprj_spec zero.good.2 zero.blockRep zero.observed
+    Ingress.get_ci_cprj_spec zero.good.2 zero.blockRep zero.observed
   have bytesEq := Core.load_escape source.stored zero.good.1 bytes hashed address
   rw [bytesEq, source.decoded] at decoded
   injection decoded with sourceEq
@@ -50,7 +50,7 @@ theorem native_zero_field_metadata {context : Core.ScopedCtx} {block : Bytes.Add
 /-- The actual reader frame transfers the observed zero-field count into the staged native
 capabilities. It applies equally while the constructor key is still fresh. -/
 theorem native_unitLikeCaps_of_reader {context : Core.ScopedCtx} {block : Bytes.Address} {i : F}
-    (source : L1.CanonicalRecordAt context.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt context.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -79,7 +79,7 @@ theorem native_unitLikeCaps_of_reader {context : Core.ScopedCtx} {block : Bytes.
 
 /-- A selected semantic stage keeps the exact native environment and caller scope. -/
 abbrev NativeFormerRunInput.scopedStageCtx {base : Core.Ctx} {block : Bytes.Address} {i : F}
-    {source : L1.CanonicalRecordAt base.E (Core.ixAddr block)}
+    {source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block)}
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {rawType : Core.KExpr} {calls : List (Call F)}
     (input : NativeFormerRunInput base block i source members ind rawType calls)
     (parts : Ix.Kernel.InductiveShape .anon) (isRec : Bool) (allowed : Call F → Prop) : Core.ScopedCtx :=
@@ -88,7 +88,7 @@ abbrev NativeFormerRunInput.scopedStageCtx {base : Core.Ctx} {block : Bytes.Addr
 /-- The current former's unit-like load obligation follows from actual raw metadata and
 reader frames at its native capabilities. The constructor may still be fresh in this stage. -/
 theorem NativeFormerRunInput.unitLikeRaw_current {base : Core.Ctx} {block : Bytes.Address} {i : F}
-    {source : L1.CanonicalRecordAt base.E (Core.ixAddr block)}
+    {source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block)}
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {rawType : Core.KExpr} {rootCalls : List (Call F)}
     (input : NativeFormerRunInput base block i source members ind rawType rootCalls)
     (native : input.NativeCall) (rootGood : Core.Good base rootCalls) (tableWf : base.t.wf = true)

@@ -25,7 +25,7 @@ set_option linter.unusedVariables false
 
 /-- A member represented in full is represented by kind. -/
 theorem mutShape_of_repMutConst {h : Heap F} {m : Ixon.MutConst} {v : SourceValue F}
-    (hr : L1.RepMutConst h m v) : Specs.Callees.MutShape h m v := by
+    (hr : Ingress.RepMutConst h m v) : Specs.Callees.MutShape h m v := by
   cases m with
   | defn d => obtain ⟨dv, hv, _⟩ := hr; exact ⟨dv, hv⟩
   | indc i => obtain ⟨iv, hv, _⟩ := hr; exact ⟨iv, hv⟩
@@ -33,7 +33,7 @@ theorem mutShape_of_repMutConst {h : Heap F} {m : Ixon.MutConst} {v : SourceValu
 
 /-- A block's members represented in full are represented by kind. -/
 theorem membersRep_of_repMutConstList {h : Heap F} {xs : List Ixon.MutConst} {p : SourceValue F}
-    (hrep : RepList Obs.Names.«Lists::Node<Ixon::MutConst>» L1.RepMutConst h xs p) :
+    (hrep : RepList Obs.Names.«Lists::Node<Ixon::MutConst>» Ingress.RepMutConst h xs p) :
     Specs.Callees.MembersRep h xs p := by
   induction hrep with
   | nil cell => exact .nil cell
@@ -45,7 +45,7 @@ theorem containerRec_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     {lim : Option Nat} {calls cs : List (Call F)} {E₀ : Ixon.Env}
     (hS : LoadedReads.RunStore calls E₀)
     {x_rc x_x x_ib r : SourceValue F} {h h' : Heap F} {a : _root_.Address}
-    (hrc : Claim.RCLimRep t bAddr lim h x_rc) (ha : S0.addr h x_x a)
+    (hrc : Claim.RCLimRep t bAddr lim h x_rc) (ha : BaseSeams.addr h x_x a)
     (ev : ObsFn Obs.W "KernelModeled::check_container_rec" [x_rc, x_x, x_ib] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     Claim.CheckedLimAt calls bAddr t a lim ∧
@@ -54,7 +54,7 @@ theorem containerRec_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
   | .run (ev39 := ev39) (ev25 := ev25) (ev_nqhglzzq := ev_ci) (ev75 := ev75) (hc96 := hc96) .. =>
     have ext : Heap.Extends h _ :=
       ev39.heap_extends.trans (ev25.heap_extends.trans ev_ci.heap_extends)
-    refine ⟨(Claim.run_check_lim_spec (hrc.mono ext) (S0.addr_mono ext ha) ev75).2.mono
+    refine ⟨(Claim.run_check_lim_spec (hrc.mono ext) (BaseSeams.addr_mono ext ha) ev75).2.mono
       (fun cl hcl => hsub cl (by rw [hc96]; simp [hcl])), ?_⟩
     intro c hc ms hms
     match Obs.«KernelModeled::rec_family_block».obs ev39 with
@@ -75,7 +75,7 @@ while `get_ci` answers an axiom record with `Axiom` and a quotient record with `
 theorem containerRec_kind {calls cs : List (Call F)} {E₀ : Ixon.Env}
     (hS : LoadedReads.RunStore calls E₀)
     {x_rc x_x x_ib r : SourceValue F} {h h' : Heap F} {a : _root_.Address}
-    (ha : S0.addr h x_x a)
+    (ha : BaseSeams.addr h x_x a)
     (ev : ObsFn Obs.W "KernelModeled::check_container_rec" [x_rc, x_x, x_ib] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) {c : Ixon.Constant}
     (hc : IxVM.Consistency.recordOf E₀ a = some c) :
@@ -120,7 +120,7 @@ theorem adviceBlock_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     have hsub947 : ∀ cl ∈ cs947, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     have ext0 := ev_ord.heap_extends
     obtain ⟨ext1, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha) ev14
+      Ingress.load_verified_constant_decode_bounded (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha) ev14
     replace ext1 := ext0.trans ext1
     have hrec₀ : Ix.Cert.recordAt E₀ (ixAddr ab) = some c :=
       (hS.recordOf_eq_recordAt _).symm.trans hc
@@ -133,7 +133,7 @@ theorem adviceBlock_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     rw [← hinfo_eq, hms] at hinfoRep
     obtain ⟨msPtr, hxm, hlist⟩ := hinfoRep
     have hrc2 : Claim.RCLimRep t bAddr lim m2 x_rc := hrc.mono ext1
-    have ha2 : S0.addr m2 x_a (ixAddr ab) :=
+    have ha2 : BaseSeams.addr m2 x_a (ixAddr ab) :=
       ⟨ab, Bytes.repAddressRef_heapMono₂ addrTy ext1 ha, rfl⟩
     match sg952 with
     | .Defn_Definition_Safe (hv81 := hv) .. =>
@@ -160,10 +160,10 @@ theorem adviceBlock_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
           (ev683.heap_extends.trans ev723.heap_extends))
       have hmem : Specs.Callees.MembersRep _ ms.toList xm :=
         membersRep_of_repMutConstList
-          (RepLinkedList.mono L1.repMutConst_heapMono₂ ext2 hlist)
+          (RepLinkedList.mono Ingress.repMutConst_heapMono₂ ext2 hlist)
       have hsubm : ∀ cl ∈ cs947, cl ∈ calls := hsub947
       refine ⟨fun k hk => ?_, ?_⟩
-      · exact ((Claim.check_muts_all_lim_spec (hrc2.mono ext2) (S0.addr_mono ext2 ha2) hmem
+      · exact ((Claim.check_muts_all_lim_spec (hrc2.mono ext2) (BaseSeams.addr_mono ext2 ha2) hmem
           ev744).2 k hk).mono (fun cl hcl => hsub947 cl (by rw [hcs]; simp [hcl]))
       · have ext3 : Heap.Extends m2 _ := ev629.heap_extends.trans ev649.heap_extends
         rw [heq698] at ev683
@@ -183,10 +183,10 @@ theorem load_block_info {calls cs12 : List (Call F)} {E₀ : Ixon.Env}
     (hc : IxVM.Consistency.recordOf E₀ (ixAddr ab) = some c) {ms : Array Ixon.MutConst}
     (hms : c.info = .muts ms) :
     ∃ msPtr, infoV = .construct "Ixon::ConstantInfo" "Muts" [msPtr] ∧
-      RepList Obs.Names.«Lists::Node<Ixon::MutConst>» L1.RepMutConst m2 ms.toList msPtr ∧
+      RepList Obs.Names.«Lists::Node<Ixon::MutConst>» Ingress.RepMutConst m2 ms.toList msPtr ∧
       ms.size < 8589934592 := by
   obtain ⟨-, bytes, c', hlen, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-    L1.load_verified_constant_decode_bounded ha evl
+    Ingress.load_verified_constant_decode_bounded ha evl
   have hrec₀ : Ix.Cert.recordAt E₀ (ixAddr ab) = some c :=
     (hS.recordOf_eq_recordAt _).symm.trans hc
   have hcc : c' = c := hS.record_eq hrec₀ (hashed_mono hsub hh) haddr hexact
@@ -293,7 +293,7 @@ theorem adviceBlock_shape {lim : Option Nat} {calls cs : List (Call F)} {E₀ : 
           [xm] m619 v617 m639 cs647 := by
         rw [Obs.Names.«Lists::length<Ixon::MutConst>».symbol]; exact ev649
       have hl' : RepList (Instance.mk "Lists::Node" [.named "Ixon::MutConst" []]).symbol
-          L1.RepMutConst m619 ms.toList xm := by
+          Ingress.RepMutConst m619 ms.toList xm := by
         rw [Obs.Names.«Lists::Node<Ixon::MutConst>».symbol, hm619]; exact hlist
       obtain ⟨hv617, hm639⟩ := Lib.Lists.length_spec ev' hl'
       have ha' : Bytes.RepAddressRef addrTy m639 ab x_a := by

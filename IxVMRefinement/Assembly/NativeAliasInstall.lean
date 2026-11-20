@@ -214,7 +214,7 @@ theorem nativeAtFacts_of_alias_member {calls : List (Call F)} {t : Ix.Kernel.Rol
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
-    (hcov : L1.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env) :
+    (hcov : Ingress.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env) :
     ∃ p₀ env₂ fam, NativeAtFacts env env₂ blk ind.params.toNat ind.indices.toNat p₀ fam := by
   obtain ⟨p₀, recognised, constructorNames, indices⟩ :=
     nativePartsAt_of_member_lim ht (hst.good env none).2 hS hrec hchk halias hblk hfree

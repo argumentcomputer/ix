@@ -395,7 +395,7 @@ in `fam.ctorsA` and the store holds each constructor projection record of the bl
 stored constructor matches its constructor projection record. -/
 theorem newCtor_of_blockInstall {fam : NativeFam .anon} {B : _root_.Address}
     {ind : Ixon.Inductive}
-    (htwf : t.wf = true) (hdec : L1.EnvDecoded E)
+    (htwf : t.wf = true) (hdec : Ingress.EnvDecoded E)
     (hctors : ∀ j < ind.ctors.size,
       recordOf E (Core.cprjAddr B 0 j) = some (constructorProjection B 0 j))
     (hsz56 : ind.ctors.size < 72057594037927936)

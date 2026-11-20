@@ -6,7 +6,7 @@ import IxVMRefinement.Callees.ProjAddr
 import IxVMRefinement.Callees.Modeled
 import IxVMRefinement.Obs.KernelCheck
 /-!
-# Native One-Type Inductive Blocks with Recursor (`L5` Native Recursor Rules & Assembly)
+# Native One-Type Inductive Blocks with Recursor (Native Recursor Rules & Assembly)
 
 Circuit refinement specifications for `nat_rule_rhs`, `nat_check_rules`,
 `find_peer_recursor_with_spec`, `nat_rec_check`, `check_recursor_canonical_full`, and
@@ -2162,9 +2162,9 @@ theorem natCtorLoad_of_ctorLoadAt {t : Ix.Kernel.RoleTable} {b₀ : Bytes.Addres
   · rw [hcA_fst]; exact hname_eq
   · rw [hcA_snd]; exact hnf_f
 
-/-! ## Section 4: Top-Level Witness, Bridges, & Deliverable 1 (`nativeWithRec_step`) -/
+/-! ## Section 4: Top-Level Witness, Bridges, & `nativeWithRec_step` -/
 
-/-- Circuit/record witness for a one-type native inductive block with recursor (`L5-N` with recursor).
+/-- Circuit/record witness for a one-type native inductive block with recursor.
 Extends `OneTypeBlockWitness` (which packages the `Induct` `check_const` pass and constructor loads)
 with the `Rec` `check_const` pass on the block's recursor member (`rprjAddr (ixAddr b₀) 1`). -/
 structure NativeWithRecWitness (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
@@ -2339,7 +2339,7 @@ structure NativeWithRecExtra (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
 upgrade (`is_large_eliminator_one_spec` when `large = true`) and delegates to `nat_rec_check_spec`
 to establish `structRecTyR` and `structRecRhsR` up to `WrapRelSem`. -/
 theorem check_recursor_canonical_full_spec
-    (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core S₀)
+    (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core baseSeams)
     {t : Ix.Kernel.RoleTable} {lim₀ : Option Nat}
     {E₁ E_rec : Ixon.Env} {envI₀ env_base₀ : Ix.Kernel.Env .anon}
     {cst : Ixon.Constant} {ind : Ixon.Inductive} {rec_m : Ixon.Recursor}
@@ -2860,7 +2860,7 @@ private theorem rec_to_parent_addr_head_lvls {κ : _root_.Address → KKey}
 + `Ingress::get_ci`, verifies rule count and non-aux parameter/index counts (`Seg1.other`), and
 delegates to `check_recursor_canonical_full_spec`. -/
 theorem check_recursor_member_spec
-    (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core S₀)
+    (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core baseSeams)
     {t : Ix.Kernel.RoleTable} {lim₀ : Option Nat}
     {E₁ E_rec : Ixon.Env} {envI₀ env_base₀ : Ix.Kernel.Env .anon}
     {cst : Ixon.Constant} {ind : Ixon.Inductive} {rec_m : Ixon.Recursor}
@@ -3150,7 +3150,7 @@ theorem nativeWithRec_step_mapped {J : Judgements .anon}
       {before after : Ix.Kernel.Env .anon} {cv cv' : KConstantVal},
       CapsUpgradeAt T cvS caps before after →
       ConstantValCheckJ J before cv cv' → ConstantValCheckJ J after cv cv')
-    (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core S₀)
+    (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {block : List KConstantInfo} {nPd : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
     (hpin : Ix.Kernel.basisPinHit block = none)
@@ -4276,7 +4276,7 @@ theorem nativeWithRec_step_mapped {J : Judgements .anon}
   exact ⟨env₂, hinst, hNativeRun⟩
 
 /-- Compatibility with the original raw recursor sort certificate. -/
-theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core S₀)
+theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {block : List KConstantInfo} {nPd : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
     (hpin : Ix.Kernel.basisPinHit block = none)
@@ -4292,7 +4292,7 @@ theorem nativeWithRec_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Con
 
 /-- The native recursor front uses its actual positional typing certificate, without a
 syntactic universe-transport premise. -/
-theorem nativeWithRec_step_pos (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core S₀)
+theorem nativeWithRec_step_pos (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {block : List KConstantInfo} {nPd : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
     (hpin : Ix.Kernel.basisPinHit block = none)
@@ -4308,10 +4308,10 @@ theorem nativeWithRec_step_pos (hLevels : IxVM.Consistency.Levels) (hCore : IxVM
 
 /-- `DeclInv`-preserving wrapper for Deliverable 1 (`nativeWithRec_step`). -/
 theorem nativeWithRec_declInv_step (hLevels : IxVM.Consistency.Levels)
-    (hCore : IxVM.Consistency.Core S₀)
+    (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {block : List KConstantInfo} {nPd : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
-    (hchk : S0.Checked calls env (.indDecl block nPd))
+    (hchk : BaseSeams.Checked calls env (.indDecl block nPd))
     (hpin : Ix.Kernel.basisPinHit block = none)
     (hparts : Ix.Kernel.nativeParts? nPd block = some p₀)
     (extra : NativeWithRecExtra calls env block p₀) :

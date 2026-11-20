@@ -1,5 +1,5 @@
 import IxVMRefinement.Decl.LateNatCtorT
-import IxVMRefinement.L1.Ingress
+import IxVMRefinement.Ingress.Ingress
 import Ix.IxVM.Consistency.StatementRel
 
 /-! # The literal return position of a family's constructors, as a fact about its block record
@@ -11,7 +11,7 @@ The native recursor comparison (`late_nat_rec_check_spec_of_tele`) needs `NatCto
 the spine). The shape is what `check_ctor_return_type` asserts when the native block's step
 admits the constructor, on that step's own load.
 
-Every load converts the same Ixon expression (`L1.RawConvExpr`, which follows the record's
+Every load converts the same Ixon expression (`Ingress.RawConvExpr`, which follows the record's
 sharing table and maps `all`, `app`, `ref`/`recur` to `Forall`, `App`, `Const` cells), so the
 shape is a fact about the block record: `CtorRetHeadAt cb ind` says that constructor `j`'s Ixon
 type is, through the sharing table, `ind.params + fields` literal `all` binders and then an
@@ -63,7 +63,7 @@ theorem natAppHeadConstT_of_ixon {refs recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {e : Ixon.Expr}
     (he : IxonAppHeadRef sharing e) :
     ∀ {bound : Nat} {p : SourceValue F},
-      L1.RawConvExpr refs recurAddrs univs sharing blobs h bound e p → NatAppHeadConstT h p := by
+      Ingress.RawConvExpr refs recurAddrs univs sharing blobs h bound e p → NatAppHeadConstT h p := by
   induction he with
   | ref =>
     intro bound p raw
@@ -92,7 +92,7 @@ theorem natRetHeadT_of_ixon {refs recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {n : Nat} {e : Ixon.Expr}
     (he : IxonRetHead sharing n e) :
     ∀ {bound : Nat} {p : SourceValue F},
-      L1.RawConvExpr refs recurAddrs univs sharing blobs h bound e p → NatRetHeadT h n p := by
+      Ingress.RawConvExpr refs recurAddrs univs sharing blobs h bound e p → NatRetHeadT h n p := by
   induction he with
   | zero ha =>
     intro bound p raw
@@ -127,7 +127,7 @@ theorem natCtorRetHeadT_of_ixon {c : Ctx} {b₀ : Bytes.Address} {cb : Ixon.Cons
   intro j hj p9 h m2 cs15 w45 x_cty0 w46 w47 w48 w49 x_nf w50 hsub hb ev hld info hinfo
   have hg15 : Good c cs15 := hg.sub hsub
   obtain ⟨_, _, _, blkBytes, cb', ms', ind', ct, blobs, v, hhB, haB, hexB, _, hcb', hms', hct,
-    _, hldv, raw⟩ := L1.get_ci_cprj_spec hg15.2 hb ev
+    _, hldv, raw⟩ := Ingress.get_ci_cprj_spec hg15.2 hb ev
   -- the block record the load decoded is `cb`
   unfold IxVM.Consistency.recordOf at hrecB
   cases hgetB : c.E.consts.get? (ixAddr b₀) with

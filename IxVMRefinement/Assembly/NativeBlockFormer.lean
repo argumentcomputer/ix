@@ -104,17 +104,17 @@ theorem annotation_canon_exact {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
     {self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon))}
     {recurAddrs : List _root_.Address} {n : Nat}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {e : Ixon.Expr}
-    {kp : SourceValue F} {E_rd : Ix.Kernel.Expr .anon} {root : F} {tree : L1.BinderTreeData}
+    {kp : SourceValue F} {E_rd : Ix.Kernel.Expr .anon} {root : F} {tree : Ingress.BinderTreeData}
     {plan : List Core.KLevel}
     (hn : n < 4294967296)
     (hselfk : ∀ i x m k, recurAddrs[i]? = some x → self i = some m → m = .ok k →
       k = Core.keyOf t x)
-    (hagree : L1.BlobReadAgreement (readCtx t blob).blob blobs)
-    (raw : L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+    (hagree : Ingress.BlobReadAgreement (readCtx t blob).blob blobs)
+    (raw : Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
       h 4294967295 e kp)
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData src.binders.toList) tree)
-    (planned : L1.binderRootPlan tree src.sharing.toList root e = some plan)
-    (levels : L1.HeapBinderLevels h kp plan)
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData src.binders.toList) tree)
+    (planned : Ingress.binderRootPlan tree src.sharing.toList root e = some plan)
+    (levels : Ingress.HeapBinderLevels h kp plan)
     (hread : (exprReader t blob src id self).read e = .ok E_rd)
     (hlbb : E_rd.looseBVarsBounded 0 = true)
     (hdef : E_rd.allLevelParamsDefined (List.range n) = true) :
@@ -136,7 +136,7 @@ theorem annotation_canon_exact {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
   refine ⟨E', ?_, hann, htm⟩
   unfold canonAnn
   rw [canonTree_eq built, planned]
-  show (L1.applyBinderTrace (fun level => Core.bmeta (L1.invPosLevel (List.range n) level))
+  show (Ingress.applyBinderTrace (fun level => Core.bmeta (Ingress.invPosLevel (List.range n) level))
     E_rd plan).map Prod.fst = some E'
   rw [hap]
   rfl
@@ -158,7 +158,7 @@ variable {c : Core.Ctx} {B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.In
 
 /-- **A constant the peer test answers `0` for is not the block's member**, where the store holds
 the block and its member's projection record. -/
-theorem peer_zero_not_former (hdec : L1.EnvDecoded c.E)
+theorem peer_zero_not_former (hdec : Ingress.EnvDecoded c.E)
     (hblock : recordOf c.E B = some cb) (hmuts : cb.info = .muts #[.indc ind])
     (hproj : recordOf c.E (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind)))
     {b₀ : Bytes.Address} (hb₀ : Core.ixAddr b₀ = B)
@@ -188,7 +188,7 @@ theorem peer_zero_not_former (hdec : L1.EnvDecoded c.E)
     subst hc
     have hg1 : Core.Good c cs15 := hg.sub (fun x hx => by simp [hx])
     obtain ⟨nl', ty', u', blk', b', hld', hb', hbB', -, -⟩ :=
-      L1.indRecord_of_deConstantExact (c := c) (p := ⟨(0 : Nat).toUInt64, B⟩) hdecA
+      Ingress.indRecord_of_deConstantExact (c := c) (p := ⟨(0 : Nat).toUInt64, B⟩) hdecA
         (decoded_at_of_recordOf hblock) ev_ci hg1 ha hrecA rfl
         (recordAt_of_recordOf hdec hblock) hmuts hmem0
     rw [hld'] at ld
@@ -207,7 +207,7 @@ theorem peer_zero_not_former (hdec : L1.EnvDecoded c.E)
     subst hc
     have hg1 : Core.Good c cs15 := hg.sub (fun x hx => by simp [hx])
     obtain ⟨nl', ty', u', blk', b', hld', -, -, -, -⟩ :=
-      L1.indRecord_of_deConstantExact (c := c) (p := ⟨(0 : Nat).toUInt64, B⟩) hdecA
+      Ingress.indRecord_of_deConstantExact (c := c) (p := ⟨(0 : Nat).toUInt64, B⟩) hdecA
         (decoded_at_of_recordOf hblock) ev_ci hg1 ha hrecA rfl
         (recordAt_of_recordOf hdec hblock) hmuts hmem0
     rw [ld] at hld'
@@ -216,7 +216,7 @@ theorem peer_zero_not_former (hdec : L1.EnvDecoded c.E)
 
 /-- **A cell of a term the scan answers `0` for is no member of the block, or heads a
 projection.** The scan runs on the heap term (every `let`'s type, value and body). -/
-theorem mentions_block_cells (hdec : L1.EnvDecoded c.E)
+theorem mentions_block_cells (hdec : Ingress.EnvDecoded c.E)
     (hblock : recordOf c.E B = some cb) (hmuts : cb.info = .muts #[.indc ind])
     (hproj : recordOf c.E (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind)))
     {b₀ : Bytes.Address} (hb₀ : Core.ixAddr b₀ = B) {h : Heap F} :
@@ -471,7 +471,7 @@ theorem formerChecked_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable
     (hfree : Decl.KeyFree (Core.keyOf t (Core.iprjAddr B 0))) :
     ∃ ty' : Ix.Kernel.Expr .anon,
       LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-        ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ =
+        ((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ =
         some ty' ∧ Annotates ty' ty₀ ∧
       Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ env
         ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty₀⟩
@@ -490,7 +490,7 @@ theorem formerChecked_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable
     show ((0 : Nat).toUInt64).toNat = 0
     decide
   -- the load of the member's projection record, traced
-  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := L1.get_ci_block_trace_spec hg_ld.2 ha ev_ld
+  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := Ingress.get_ci_block_trace_spec hg_ld.2 ha ev_ld
   have hrec : recordOf E (Core.ixAddr a) = some (memberProjection B 0 (.indc ind)) := by
     rw [hax, LoadedReads.memberAddr_indc]
     exact hproj
@@ -500,7 +500,7 @@ theorem formerChecked_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable
     rw [hb, hdecA] at hex
     exact (Except.ok.inj hex).symm
   subst hc
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
   rw [hinfo] at hres
   obtain ⟨hidx, blkBytes, cb', ms', ind', blobs, tree, plan, v₀, hhB, haB, hexB, hcb, hms,
@@ -534,7 +534,7 @@ theorem formerChecked_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable
   -- the prelude of the check
   obtain ⟨prelude⟩ := Decl.native_prelude_calls ev_chk
   -- the references the block uses are stored in the prefix
-  have used : ∀ x, L1.RefUsed cb.refs.toList cb.sharing.toList ind.typ x →
+  have used : ∀ x, Ingress.RefUsed cb.refs.toList cb.sharing.toList ind.typ x →
       ∃ ci, env.find? (Core.keyOf t x) = some ci := by
     have hmem' : Ixon.MutConst.indc ind ∈ (#[.indc ind] : Array Ixon.MutConst).toList :=
       List.mem_singleton.mpr rfl

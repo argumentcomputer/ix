@@ -302,7 +302,7 @@ def expr_lower_let : SpecFn := fun c args h r h' calls =>
 
 /-- `KernelSubst::expr_inst1(e, arg, depth)`: **the kernel's `instantiate1` at index `depth`**:
 `e` read at local depth `depth + 1`, the top-level `arg`, the result at local depth `depth`
-(L3's `Terms` is the case `depth = 0`). No hypothesis on indices: the function compares its
+(`TermsObligation`'s `Terms` is the case `depth = 0`). No hypothesis on indices: the function compares its
 depth first (so it is below `2^32`), and lifts the argument by it. -/
 def expr_inst1 : SpecFn := fun c args h r h' calls =>
   ∀ e arg (j : F), args = [e, arg, .field j] → CoreGood c calls →

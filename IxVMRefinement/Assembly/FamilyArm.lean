@@ -1,6 +1,6 @@
 import IxVMRefinement.Assembly.NativeBlockReads
 import IxVMRefinement.Decl.ModeledRules
-import IxVMRefinement.L1.ByteStream
+import IxVMRefinement.Ingress.ByteStream
 import IxVMRefinement.Obs.KernelModeled1
 import IxVMRefinement.Obs.KernelModeled2
 
@@ -49,7 +49,7 @@ and its calls in the run. -/
 def FamilyCallAt (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
     (B rb : _root_.Address) (lim : Nat) (cs : List (Call F)) : Prop :=
   ∃ (h h' : Heap F) (rc xb xrb r : SourceValue F),
-    Claim.RCFullRep t bAddr lim h rc ∧ Core.S0.addr h xb B ∧ Core.S0.addr h xrb rb ∧
+    Claim.RCFullRep t bAddr lim h rc ∧ Core.BaseSeams.addr h xb B ∧ Core.BaseSeams.addr h xrb rb ∧
     ObsFn Obs.W "KernelModeled::check_family" [rc, xb, xrb] h r h' cs ∧
     (⟨"KernelModeled::check_family", [rc, xb, xrb], h⟩ : Call F) ∈ calls ∧
     (∀ cl ∈ cs, cl ∈ calls)
@@ -59,15 +59,15 @@ def FamilyCallAt (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel
 /-- **`read_payload` returns a byte stream**, at an extension of the heap. -/
 theorem read_payload_stream {x_block r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn Obs.W "KernelModeled::read_payload" [x_block] h r h' cs) :
-    Heap.Extends h h' ∧ ∃ bytes : List UInt8, L1.Stream h' bytes r := by
+    Heap.Extends h h' ∧ ∃ bytes : List UInt8, Ingress.Stream h' bytes r := by
   match Obs.«KernelModeled::read_payload».obs ev with
   | .Nil (heq136 := heq136) .. =>
     exact absurd (Value.field.inj heq136) zero_ne_one
   | .other (m14 := m14) (ev26 := ev26) (ev68 := ev68) (he146 := he146) (he147 := he147) .. =>
     subst he146 he147
-    have h14 : m14 = h := L1.io_get_info_spec ev26
+    have h14 : m14 = h := Ingress.io_get_info_spec ev26
     subst h14
-    obtain ⟨ext, bytes, -, -, hst⟩ := L1.read_finite_byte_stream_spec ev68
+    obtain ⟨ext, bytes, -, -, hst⟩ := Ingress.read_finite_byte_stream_spec ev68
     exact ⟨ext, bytes, hst⟩
 
 /-- **`check_modeled_block` runs the family check on the family record its payload names**: the
@@ -116,7 +116,7 @@ theorem familyCall_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore
   obtain ⟨a', ha'_ref, ha'_eq⟩ := ha_pre
   have hbound_ld : Bounded cs_ld := RomBound.bounded_mono hbound hsub_ld
   obtain ⟨-, bytes, E_ld, hhash, hblake, hload_ld, hL1⟩ :=
-    L1.get_ci_loadedL1_spec hbound_ld ha'_ref ev_ld
+    Ingress.get_ci_loadedRecords_spec hbound_ld ha'_ref ev_ld
   rw [ha'_eq] at hblake
   have hrecP' : Ix.Cert.recordAt E₀ (memberAddr B k (.indc ind)) =
       some (memberProjection B k (.indc ind)) :=
@@ -124,11 +124,11 @@ theorem familyCall_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore
   have hrecB' : Ix.Cert.recordAt E₀ B = some cb :=
     (hS.recordOf_eq_recordAt _).symm.trans hrecB
   obtain ⟨-, -, v', hld', hraw⟩ :=
-    LoadedReads.loadedL1_record hS hsub_ld hhash hblake hL1 hrecP'
+    LoadedReads.loadedRecords_record hS hsub_ld hhash hblake hL1 hrecP'
   have hvv : v' = v := Except.ok.inj (hld'.symm.trans hld)
   subst hvv
   have hinfo : (memberProjection B k (.indc ind)).info = .iPrj ⟨k.toUInt64, B⟩ := rfl
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨-, lcB, cb', ms', ind', blobs, hgetB, -, -, hexB, -, hcb', hms', -, raw⟩ := hraw
   obtain ⟨hhB, haB⟩ := hload_ld.1 _ lcB hgetB
@@ -142,7 +142,7 @@ theorem familyCall_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore
     have hl := hlogic
     simp only [IxVM.Consistency.InLogic, hmuts] at hl
     exact (hl (.indc ind') (List.mem_of_getElem? hms')).1
-  simp only [L1.repBoolField, hsafe, Bool.false_eq_true, ↓reduceIte] at ev_chk
+  simp only [Ingress.repBoolField, hsafe, Bool.false_eq_true, ↓reduceIte] at ev_chk
   match Obs.«KernelCheck::check_const».obs ev_chk with
   | .Axiom_n1 (hv37 := hv) .. | .Axiom_other_n0 (hv37 := hv) ..
   | .Axiom_other_other (hv37 := hv) ..

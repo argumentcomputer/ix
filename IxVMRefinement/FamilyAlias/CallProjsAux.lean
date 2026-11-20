@@ -27,7 +27,7 @@ Provides the helper specifications and witness structures used to invert
 tables and bounded-graph chain axioms on eligible modeled inductive members
 (`ProjTableInstall.lean`):
 
-* `check_recs_stream`: tracks `L1.Stream` from `s8` to `s9` across `KernelModeled::check_recs`;
+* `check_recs_stream`: tracks `Ingress.Stream` from `s8` to `s9` across `KernelModeled::check_recs`;
 * explicit-symbol `Lib.Lists` wrappers for `KExpr`, `KLevel`, and `KRecRule` lists;
 * `Core.Tm` / `ExprSemEq` helpers: `tm_monoK`, `tm_liftD_closed`, `tm_stored_to_famKey`,
   `openDummiesP`, `tm_openDummiesP`, `peel_n_lams_collect_tm`, `collect_spine_tm`,
@@ -92,21 +92,21 @@ theorem check_rules_go_stream :
       ObsFn Obs.W "KernelModeled::check_rules_go" args h r h' cs →
       ∀ rc rm nl ty rp ni rules ib iidx inp ilvls pins src dst aset s j bytes,
         args = [rc, rm, nl, ty, rp, ni, rules, ib, iidx, inp, ilvls, pins, src, dst, aset, s, j] →
-        L1.Stream h bytes s →
-        ∃ bytes', L1.Stream h' bytes' r := by
+        Ingress.Stream h bytes s →
+        ∃ bytes', Ingress.Stream h' bytes' r := by
   have hmain : ∀ (fname : String) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)),
       ObsFn Obs.W fname args h r h' cs → fname = "KernelModeled::check_rules_go" →
       ∀ rc rm nl ty rp ni rules ib iidx inp ilvls pins src dst aset s j bytes,
         args = [rc, rm, nl, ty, rp, ni, rules, ib, iidx, inp, ilvls, pins, src, dst, aset, s, j] →
-        L1.Stream h bytes s →
-        ∃ bytes', L1.Stream h' bytes' r :=
+        Ingress.Stream h bytes s →
+        ∃ bytes', Ingress.Stream h' bytes' r :=
     ObsFn.strong_induction (world := Obs.W)
       (fun fname args h r h' cs => fname = "KernelModeled::check_rules_go" →
         ∀ rc rm nl ty rp ni rules ib iidx inp ilvls pins src dst aset s j bytes,
           args = [rc, rm, nl, ty, rp, ni, rules, ib, iidx, inp, ilvls, pins, src, dst, aset, s, j] →
-          L1.Stream h bytes s →
-          ∃ bytes', L1.Stream h' bytes' r)
+          Ingress.Stream h bytes s →
+          ∃ bytes', Ingress.Stream h' bytes' r)
       (fun fname args h r h' cs ev ih hfn rc rm nl ty rp ni rules ib iidx inp ilvls pins src dst
           aset s j bytes hargs hstr => by
         subst hfn hargs
@@ -131,10 +131,10 @@ theorem check_rules_go_stream :
 
 theorem check_rules_stream {rc rm nl ty rp ni rules src dst aset s r : SourceValue F}
     {bytes : List UInt8} {h h' : Heap F} {cs : List (Call F)}
-    (hstr : L1.Stream h bytes s)
+    (hstr : Ingress.Stream h bytes s)
     (ev : ObsFn Obs.W "KernelModeled::check_rules"
       [rc, rm, nl, ty, rp, ni, rules, src, dst, aset, s] h r h' cs) :
-    ∃ bytes', L1.Stream h' bytes' r := by
+    ∃ bytes', Ingress.Stream h' bytes' r := by
   match Obs.«KernelModeled::check_rules».obs ev with
   | .run (ev14 := ePins) (ev74 := eCi) (ev157 := eLen) (ev179 := eGo) .. =>
     have ext := ePins.heap_extends.trans (eCi.heap_extends.trans eLen.heap_extends)
@@ -144,10 +144,10 @@ theorem check_recs_stream {recAs : List Bytes.Address} :
     ∀ {rc tys recs models src dst aset s n k np uo bnl fam form r : SourceValue F}
       {bytes : List UInt8} {h h' : Heap F} {cs : List (Call F)},
       RepList addrListEnum (Bytes.RepAddressRef addrTy) h recAs recs →
-      L1.Stream h bytes s →
+      Ingress.Stream h bytes s →
       ObsFn Obs.W "KernelModeled::check_recs"
         [rc, tys, recs, models, src, dst, aset, s, n, k, np, uo, bnl, fam, form] h r h' cs →
-      ∃ bytes', L1.Stream h' bytes' r := by
+      ∃ bytes', Ingress.Stream h' bytes' r := by
   induction recAs with
   | nil =>
     intro rc tys recs models src dst aset s n k np uo bnl fam form r bytes h h' cs hrep hstr ev
@@ -878,15 +878,15 @@ theorem type_sort_fixed_zeta_tm {κ : _root_.Address → KKey} :
 /-! ## Section 4: Constructor record extraction and reserved-basis exclusion -/
 
 private theorem defnValShape_ne_ctor (d : Ixon.Definition) (a1 a2 a3 a4 a5 a6 a7 a8 b1 b2 b3 : SourceValue F)
-    (h : L1.defnValShape d b1 b2 b3 = .construct Core.kciEnum "Ctor" [a1, a2, a3, a4, a5, a6, a7, a8]) :
+    (h : Ingress.defnValShape d b1 b2 b3 = .construct Core.kciEnum "Ctor" [a1, a2, a3, a4, a5, a6, a7, a8]) :
     False := by
-  unfold L1.defnValShape at h
+  unfold Ingress.defnValShape at h
   cases hk : d.kind with
   | defn => rw [hk] at h; simp at h
   | opaq => rw [hk] at h; simp at h
   | thm => rw [hk] at h; simp at h
 
-/-- **Constructor record extraction from `Ingress::get_ci`**: mirrors `L1.inductRecord_raw_of_get_ci`
+/-- **Constructor record extraction from `Ingress::get_ci`**: mirrors `Ingress.inductRecord_raw_of_get_ci`
 when the returned `KConstantInfo` cell is `Ctor`. -/
 theorem ctorRecord_raw_of_get_ci {addr ptr : SourceValue F} {h h' : Heap F}
     {cs : List (Call F)} {a : Bytes.Address}
@@ -915,8 +915,8 @@ theorem ctorRecord_raw_of_get_ci {addr ptr : SourceValue F} {h h' : Heap F}
       xs[ZMod.val i]? = some (.indc ind) ∧
       ind.ctors[ZMod.val j]? = some ct := by
   obtain ⟨_, rawBytes, cm, _, hhA, haA, hexA, hdeA, _, _, hres⟩ :=
-    L1.get_ci_spec hbounded ha ev
-  unfold L1.GetCIRawResult at hres
+    Ingress.get_ci_spec hbounded ha ev
+  unfold Ingress.GetCIRawResult at hres
   cases hinfo : cm.info with
   | defn d =>
     rw [hinfo] at hres

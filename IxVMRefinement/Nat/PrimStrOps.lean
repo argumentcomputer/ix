@@ -52,7 +52,7 @@ theorem utf8EncodeChar_prefix_inj {c₁ c₂ : Char} {t₁ t₂ : List UInt8}
   have hbyte : ∀ {a b : Nat}, a < 256 → b < 256 → UInt8.ofNat a = UInt8.ofNat b → a = b := by
     intro a b ha hb heq
     have := congrArg UInt8.toNat heq
-    rwa [L1.toNat_ofNat_lt ha, L1.toNat_ofNat_lt hb] at this
+    rwa [Ingress.toNat_ofNat_lt ha, Ingress.toNat_ofNat_lt hb] at this
   rw [Utf8Aux.utf8EncodeChar_eq, Utf8Aux.utf8EncodeChar_eq] at h
   by_cases h1a : c₁.toNat ≤ 127 <;> by_cases h2a : c₂.toNat ≤ 127
   · simp only [h1a, h2a, ↓reduceIte, List.cons_append, List.nil_append, List.cons.injEq] at h
@@ -420,9 +420,9 @@ theorem u32_fromField_4x {n : Nat} {v_mul v_u32 w0 w1 w2 w3 : SourceValue F}
       4 * n = c0.toNat + 256 * (c1.toNat + 256 * (c2.toNat + 256 * c3.toNat)) := by
   have hm := PrimInt.field_mul_eq op_mul
   subst hm
-  obtain ⟨c0, c1, c2, c3, rfl, rfl, hval, _⟩ := L1.u32_fromField ev_ff
-  obtain ⟨hbytes, rfl⟩ := L1.u32_toBytes ev_tb
-  simp only [L1.w4, L1.bv, Value.tuple.injEq, List.cons.injEq, and_true] at hbytes
+  obtain ⟨c0, c1, c2, c3, rfl, rfl, hval, _⟩ := Ingress.u32_fromField ev_ff
+  obtain ⟨hbytes, rfl⟩ := Ingress.u32_toBytes ev_tb
+  simp only [Ingress.w4, Ingress.bv, Value.tuple.injEq, List.cons.injEq, and_true] at hbytes
   obtain ⟨rfl, rfl, rfl, rfl⟩ := hbytes
   have hcast : ((n : F) * (4 : F)) = ((4 * n : Nat) : F) := by push_cast; ring
   rw [hcast, NatAux.val_natCast (by show _ < 18446744069414584321; omega), Aiur.Library.Blake3.wordOfBytes_toNat] at hval
@@ -432,10 +432,10 @@ theorem u32_fromField_4x {n : Nat} {v_mul v_u32 w0 w1 w2 w3 : SourceValue F}
 theorem u8_fromField_nat {k : Nat} {v : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hk : k < 256) (ev : ObsFn W "UInt8::from_field" [.field (k : F)] h v h' cs) :
     v = .field ((UInt8.ofNat k).toNat : F) ∧ RepU8 h (UInt8.ofNat k) v ∧ h' = h := by
-  obtain ⟨b, hbv, rfl, rfl⟩ := L1.u8_fromField ev
+  obtain ⟨b, hbv, rfl, rfl⟩ := Ingress.u8_fromField ev
   have hbk : b.toNat = k :=
-    L1.natCast_byte_inj (L1.byte_lt b) hk (Value.field.inj hbv.symm)
-  have hbe : b = UInt8.ofNat k := UInt8.ext (by rw [hbk, L1.toNat_ofNat_lt hk])
+    Ingress.natCast_byte_inj (Ingress.byte_lt b) hk (Value.field.inj hbv.symm)
+  have hbe : b = UInt8.ofNat k := UInt8.ext (by rw [hbk, Ingress.toNat_ofNat_lt hk])
   subst hbe
   exact ⟨rfl, rfl, rfl⟩
 
@@ -576,7 +576,7 @@ theorem utf8_encode_prepend_step (c : ScopedCtx)
       u32_fromField_4x (by omega) op_m1 ev_ff1 ev_tb1
     have hc0 := c0.toNat_lt; have hc1 := c1.toNat_lt; have hc2 := c2.toNat_lt; have hc3 := c3.toNat_lt
     have hq_eq : c1.toNat = ch.toNat / 64 := by omega
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_x1
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_x1
     have hm64 := PrimInt.field_mul_eq op_64q; subst hm64
     have hrem := PrimInt.field_sub_eq op_rem; subst hrem
     rw [cast_sub_mul64 (by omega)] at op_a1
@@ -601,8 +601,8 @@ theorem utf8_encode_prepend_step (c : ScopedCtx)
     obtain ⟨c0, c1, c2, c3, rfl, rfl, rfl, rfl, rfl, rfl, hpack1⟩ :=
       u32_fromField_4x (by omega) op_m1 ev_ff1 ev_tb1
     have hc0 := c0.toNat_lt; have hc1 := c1.toNat_lt; have hc2 := c2.toNat_lt; have hc3 := c3.toNat_lt
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_x1
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_x2
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_x1
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_x2
     have hm256 := PrimInt.field_mul_eq op_256x2; subst hm256
     have hq1_f := PrimInt.field_add_eq op_q1; subst hq1_f
     have hq1_cast : (c1.toNat : F) + 256 * (c2.toNat : F) = ((c1.toNat + 256 * c2.toNat : Nat) : F) := by
@@ -616,7 +616,7 @@ theorem utf8_encode_prepend_step (c : ScopedCtx)
       u32_fromField_4x (by omega) op_m2 ev_ff2 ev_tb2
     have hd0 := d0.toNat_lt; have hd1 := d1.toNat_lt; have hd2 := d2.toNat_lt; have hd3 := d3.toNat_lt
     have hq2_val : d1.toNat = ch.toNat / 4096 := by omega
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_y1
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_y1
     have hm64_2 := PrimInt.field_mul_eq op_64q2; subst hm64_2
     have hr1 := PrimInt.field_sub_eq op_r1; subst hr1
     rw [cast_sub_mul64 (by omega)] at op_a1
@@ -651,8 +651,8 @@ theorem utf8_encode_prepend_step (c : ScopedCtx)
     obtain ⟨c0, c1, c2, c3, rfl, rfl, rfl, rfl, rfl, rfl, hpack1⟩ :=
       u32_fromField_4x (by omega) op_m1 ev_ff1 ev_tb1
     have hc0 := c0.toNat_lt; have hc1 := c1.toNat_lt; have hc2 := c2.toNat_lt; have hc3 := c3.toNat_lt
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_x1
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_x2
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_x1
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_x2
     have hm256 := PrimInt.field_mul_eq op_256x2; subst hm256
     have hq1_f := PrimInt.field_add_eq op_q1; subst hq1_f
     have hq1_cast : (c1.toNat : F) + 256 * (c2.toNat : F) = ((c1.toNat + 256 * c2.toNat : Nat) : F) := by
@@ -666,8 +666,8 @@ theorem utf8_encode_prepend_step (c : ScopedCtx)
     obtain ⟨d0, d1, d2, d3, rfl, rfl, rfl, rfl, rfl, rfl, hpack2⟩ :=
       u32_fromField_4x (by omega) op_m2 ev_ff2 ev_tb2
     have hd0 := d0.toNat_lt; have hd1 := d1.toNat_lt; have hd2 := d2.toNat_lt; have hd3 := d3.toNat_lt
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_y1
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_y2
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_y1
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_y2
     have hm256_2 := PrimInt.field_mul_eq op_256y2; subst hm256_2
     have hq2_f := PrimInt.field_add_eq op_q2; subst hq2_f
     have hq2_cast : (d1.toNat : F) + 256 * (d2.toNat : F) = ((d1.toNat + 256 * d2.toNat : Nat) : F) := by
@@ -682,7 +682,7 @@ theorem utf8_encode_prepend_step (c : ScopedCtx)
       u32_fromField_4x (by omega) op_m3 ev_ff3 ev_tb3
     have he0 := e0.toNat_lt; have he1 := e1.toNat_lt; have he2 := e2.toNat_lt; have he3 := e3.toNat_lt
     have hq3_val : e1.toNat = ch.toNat / 262144 := by omega
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_z1
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_z1
     have hm64_3 := PrimInt.field_mul_eq op_64q3; subst hm64_3
     have hr2 := PrimInt.field_sub_eq op_r2; subst hr2
     rw [cast_sub_mul64 (by omega)] at op_a1
@@ -759,14 +759,14 @@ theorem klimbs_scalar_value_step (c : ScopedCtx)
         TagN.u64Value w.toNat := Lib.repU64_eq hw
     simp only [TagN.u64Value, Value.tuple.injEq, List.cons.injEq, and_true] at hwu
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hwu
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b3
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b4
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b3
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b4
     have hh1 := PrimInt.field_add_eq op_h1; subst hh1
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b5
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b5
     have hh2 := PrimInt.field_add_eq op_h2; subst hh2
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b6
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b6
     have hh3 := PrimInt.field_add_eq op_h3; subst hh3
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b7
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b7
     have hh4 := PrimInt.field_add_eq op_h4; subst hh4
     obtain ⟨hiz_r, rfl⟩ := Lib.is_zero_field ev_iz
     have hhi_zero :
@@ -789,11 +789,11 @@ theorem klimbs_scalar_value_step (c : ScopedCtx)
         simpa [Nat.cast_add] using hhi_zero
       exact (NatAux.natCast_inj (by show _ < 18446744069414584321; omega) (by show _ < 18446744069414584321; omega)).mp hcast
     have hw_lt24 : w.toNat < 16777216 := u64_lt_24_of_hi_zero hwn hhi_sum
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b0
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b1
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b0
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b1
     have hb1s := PrimInt.field_mul_eq op_b1s; subst hb1s
     have hlo1 := PrimInt.field_add_eq op_lo1; subst hlo1
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b2
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b2
     have hb2s := PrimInt.field_mul_eq op_b2s; subst hb2s
     have hcp := PrimInt.field_add_eq op_cp; subst hcp
     have hcp_eq :
@@ -818,14 +818,14 @@ theorem klimbs_scalar_value_step (c : ScopedCtx)
         TagN.u64Value w.toNat := Lib.repU64_eq hw
     simp only [TagN.u64Value, Value.tuple.injEq, List.cons.injEq, and_true] at hwu
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hwu
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b3
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b4
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b3
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b4
     have hh1 := PrimInt.field_add_eq op_h1; subst hh1
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b5
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b5
     have hh2 := PrimInt.field_add_eq op_h2; subst hh2
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b6
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b6
     have hh3 := PrimInt.field_add_eq op_h3; subst hh3
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b7
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b7
     have hh4 := PrimInt.field_add_eq op_h4; subst hh4
     obtain ⟨hiz_r, rfl⟩ := Lib.is_zero_field ev_iz
     have hhi_zero :
@@ -848,11 +848,11 @@ theorem klimbs_scalar_value_step (c : ScopedCtx)
         simpa [Nat.cast_add] using hhi_zero
       exact (NatAux.natCast_inj (by show _ < 18446744069414584321; omega) (by show _ < 18446744069414584321; omega)).mp hcast
     have hw_lt24 : w.toNat < 16777216 := u64_lt_24_of_hi_zero hwn hhi_sum
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b0
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b1
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b0
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b1
     have hb1s := PrimInt.field_mul_eq op_b1s; subst hb1s
     have hlo1 := PrimInt.field_add_eq op_lo1; subst hlo1
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_b2
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_b2
     have hb2s := PrimInt.field_mul_eq op_b2s; subst hb2s
     have hcp := PrimInt.field_add_eq op_cp; subst hcp
     have hcp_eq :

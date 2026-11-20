@@ -1,7 +1,7 @@
 import IxVMRefinement.FamilyAlias.CallLists
 import IxVMRefinement.Obs.KernelModeled1
 import IxVMRefinement.Obs.IxonDeserialize0
-import IxVMRefinement.L1.Stream
+import IxVMRefinement.Ingress.Stream
 import Ix.IxVM.Refinement.TagNWide
 
 /-! # The payload stream `check_family` reads
@@ -36,9 +36,9 @@ set_option linter.unusedVariables false
 /-- **`KernelModeled::get_count`** leaves a stream: `IxonDeserialize::get_tagn0` reads a header
 off it (`TagN.getTagN0_refines`) and `UInt64::to_field` only extends the heap. -/
 theorem get_count_stream {s x_n x_s2 : SourceValue F} {bytes : List UInt8} {h h' : Heap F}
-    {cs : List (Call F)} (hs : L1.Stream h bytes s)
+    {cs : List (Call F)} (hs : Ingress.Stream h bytes s)
     (ev : ObsFn W "KernelModeled::get_count" [s] h (.tuple [x_n, x_s2]) h' cs) :
-    ∃ bytes' : List UInt8, L1.Stream h' bytes' x_s2 := by
+    ∃ bytes' : List UInt8, Ingress.Stream h' bytes' x_s2 := by
   match Obs.«KernelModeled::get_count».obs ev with
   | .run (x_s2 := y) (ev14 := e1) (he40 := hr) (ev52 := e2) (he68 := hh) .. =>
     obtain ⟨hm, t, n, restPtr, -, -, hrest, htup⟩ := TagN.getTagN0_refines hs e1.erase
@@ -47,19 +47,19 @@ theorem get_count_stream {s x_n x_s2 : SourceValue F} {bytes : List UInt8} {h h'
     obtain ⟨-, hx⟩ := hr
     subst hh hm
     rw [hx, hy]
-    exact ⟨_, L1.Stream.mono e2.heap_extends hrest⟩
+    exact ⟨_, Ingress.Stream.mono e2.heap_extends hrest⟩
 
 /-- **`IxonDeserialize::read_byte`** leaves a stream: the tail of the stream's first cell. -/
 theorem read_byte_stream {s x_b x_s2 : SourceValue F} {bytes : List UInt8} {h h' : Heap F}
-    {cs : List (Call F)} (hs : L1.Stream h bytes s)
+    {cs : List (Call F)} (hs : Ingress.Stream h bytes s)
     (ev : ObsFn W "IxonDeserialize::read_byte" [s] h (.tuple [x_b, x_s2]) h' cs) :
-    ∃ bytes' : List UInt8, L1.Stream h' bytes' x_s2 := by
+    ∃ bytes' : List UInt8, Ingress.Stream h' bytes' x_s2 := by
   match Obs.«IxonDeserialize::read_byte».obs ev with
   | .run (ld11 := ld) (he30 := hr) (he45 := hh) .. =>
     subst hh
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr
     obtain ⟨-, hx⟩ := hr
-    rcases L1.stream_inv hs ld with ⟨-, hv⟩ | ⟨b, bs, tail, -, hv, htail⟩
+    rcases Ingress.stream_inv hs ld with ⟨-, hv⟩ | ⟨b, bs, tail, -, hv, htail⟩
     · injection hv with _ hc
       exact absurd hc (by decide)
     · injection hv with _ _ hargs
@@ -82,10 +82,10 @@ count). -/
 theorem walk_path_stream_field :
     ∀ (k : Nat) {rc cur s passed r : SourceValue F} {n : F} {bytes : List UInt8}
       {h h' : Heap F} {cs : List (Call F)},
-      ZMod.val n = k → L1.Stream h bytes s →
+      ZMod.val n = k → Ingress.Stream h bytes s →
       ObsFn W "KernelModeled::walk_path" [rc, cur, s, .field n, passed] h r h' cs →
       ∃ (x s' p : SourceValue F) (bytes' : List UInt8), r = .tuple [x, s', p] ∧
-        L1.Stream h' bytes' s'
+        Ingress.Stream h' bytes' s'
   | 0, rc, cur, s, passed, r, n, bytes, h, h', cs, hk, hs, ev => by
     match Obs.«KernelModeled::walk_path».obs ev with
     | .n0 (ev_qmmrohoe := e1) (he19 := hr) (he34 := hh) .. =>
@@ -112,10 +112,10 @@ theorem walk_path_stream_field :
 
 /-- **`KernelModeled::walk_path`** leaves a stream. -/
 theorem walk_path_stream {rc cur s x_n passed r : SourceValue F} {bytes : List UInt8}
-    {h h' : Heap F} {cs : List (Call F)} (hs : L1.Stream h bytes s)
+    {h h' : Heap F} {cs : List (Call F)} (hs : Ingress.Stream h bytes s)
     (ev : ObsFn W "KernelModeled::walk_path" [rc, cur, s, x_n, passed] h r h' cs) :
     ∃ (x s' p : SourceValue F) (bytes' : List UInt8), r = .tuple [x, s', p] ∧
-      L1.Stream h' bytes' s' := by
+      Ingress.Stream h' bytes' s' := by
   match Obs.«KernelModeled::walk_path».obs ev with
   | .n0 (hv14 := hv) .. =>
     subst hv
@@ -126,10 +126,10 @@ theorem walk_path_stream {rc cur s x_n passed r : SourceValue F} {bytes : List U
 
 /-- **`KernelModeled::walk_from_block`** leaves a stream. -/
 theorem walk_from_block_stream {rc blk s x_n x_stop x_s2 x_passed : SourceValue F}
-    {bytes : List UInt8} {h h' : Heap F} {cs : List (Call F)} (hs : L1.Stream h bytes s)
+    {bytes : List UInt8} {h h' : Heap F} {cs : List (Call F)} (hs : Ingress.Stream h bytes s)
     (ev : ObsFn W "KernelModeled::walk_from_block" [rc, blk, s, x_n] h
       (.tuple [x_stop, x_s2, x_passed]) h' cs) :
-    ∃ bytes' : List UInt8, L1.Stream h' bytes' x_s2 := by
+    ∃ bytes' : List UInt8, Ingress.Stream h' bytes' x_s2 := by
   match Obs.«KernelModeled::walk_from_block».obs ev with
   | .run (ev25 := e1) (ev46 := e2) .. =>
     obtain ⟨x, s', p, b', hr, hs'⟩ := walk_path_stream (hs.mono e1.heap_extends) e2
@@ -150,9 +150,9 @@ private theorem check_witness_seg1_extends {c1 s5 idx s4 iblock s3 passed n s2 r
 role's reference (the stream as given), a dependency path's stop, a container's recursor, and a
 projection of a block a path reaches. -/
 theorem check_witness_stream {rc blk x kind s r : SourceValue F} {bytes : List UInt8}
-    {h h' : Heap F} {cs : List (Call F)} (hs : L1.Stream h bytes s)
+    {h h' : Heap F} {cs : List (Call F)} (hs : Ingress.Stream h bytes s)
     (ev : ObsFn W "KernelModeled::check_witness" [rc, blk, x, kind, s] h r h' cs) :
-    ∃ bytes' : List UInt8, L1.Stream h' bytes' r := by
+    ∃ bytes' : List UInt8, Ingress.Stream h' bytes' r := by
   match Obs.«KernelModeled::check_witness».obs ev with
   | .n0 (ev28 := e1) (ev69 := e2) (ev109 := e3) (ev146 := e4) (he164 := hr) (he165 := hh) .. =>
     subst hr hh
@@ -187,10 +187,10 @@ induction on the count). -/
 theorem check_witnesses_stream_field :
     ∀ (k : Nat) {rc blk s r : SourceValue F} {n : F} {bytes : List UInt8} {h h' : Heap F}
       {cs : List (Call F)},
-      ZMod.val n = k → L1.Stream h bytes s →
+      ZMod.val n = k → Ingress.Stream h bytes s →
       ObsFn W "KernelModeled::check_witnesses" [rc, blk, s, .field n] h r h' cs →
       ∃ (xs s' : SourceValue F) (bytes' : List UInt8), r = .tuple [xs, s'] ∧
-        L1.Stream h' bytes' s'
+        Ingress.Stream h' bytes' s'
   | 0, rc, blk, s, r, n, bytes, h, h', cs, hk, hs, ev => by
     match Obs.«KernelModeled::check_witnesses».obs ev with
     | .n0 (he19 := hr) (hm29 := hm) (he40 := hh) .. =>
@@ -227,11 +227,11 @@ theorem check_witnesses_stream_field :
 
 /-- **`KernelModeled::check_witnesses`** leaves a stream. -/
 theorem check_witnesses_stream {rc blk s x_n x_out x_s5 : SourceValue F} {bytes : List UInt8}
-    {h h' : Heap F} {cs : List (Call F)} (hs : L1.Stream h bytes s)
+    {h h' : Heap F} {cs : List (Call F)} (hs : Ingress.Stream h bytes s)
     (ev : ObsFn W "KernelModeled::check_witnesses" [rc, blk, s, x_n] h (.tuple [x_out, x_s5]) h'
       cs) :
-    ∃ bytes' : List UInt8, L1.Stream h' bytes' x_s5 := by
-  have key : ∀ n : F, x_n = .field n → ∃ bytes' : List UInt8, L1.Stream h' bytes' x_s5 := by
+    ∃ bytes' : List UInt8, Ingress.Stream h' bytes' x_s5 := by
+  have key : ∀ n : F, x_n = .field n → ∃ bytes' : List UInt8, Ingress.Stream h' bytes' x_s5 := by
     intro n hn
     subst hn
     obtain ⟨xs, s', b', hr, hs'⟩ := check_witnesses_stream_field _ rfl hs ev

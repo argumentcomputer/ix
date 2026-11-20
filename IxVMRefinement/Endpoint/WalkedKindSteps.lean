@@ -1,4 +1,4 @@
-import Ix.IxVM.Consistency.L0
+import Ix.IxVM.Consistency.CircuitToSource
 import IxVMRefinement.Binding.ClaimDecode
 import IxVMRefinement.Claim.TopSafeExport
 import IxVMRefinement.Assembly.NativeAliasFormer
@@ -114,14 +114,14 @@ theorem unitSteps_of_kinds
   have hinert : InertClause t c := hW.inertClause hT hc
   have hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c :=
     coverAt_of_graph hG hctx.shape htwf hT hc hneed
-  have hcanon₀ : L1.CanonicalHashCoverage E₀ calls := by
+  have hcanon₀ : Ingress.CanonicalHashCoverage E₀ calls := by
     intro bytes value hashed size exactRead
     obtain ⟨entry, stored, bytesEq, cached⟩ := hW.hashedStored bytes value hashed size
-      (L1.deConstant_of_deConstantExact exactRead) exactRead
+      (Ingress.deConstant_of_deConstantExact exactRead) exactRead
     refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
     rw [bytesEq]
     exact exactRead
-  have hcanon : L1.CanonicalHashCoverage E calls :=
+  have hcanon : Ingress.CanonicalHashCoverage E calls :=
     Assembly.canonicalHashCoverage_frame hcanon₀ hctx.recordsFor.1
       (fun a v h => hctx.runRecord a v ((hW.runStore.recordOf_eq_recordAt a).trans h))
   have hchk : (∃ ms, c.info = .muts ms ∧

@@ -17,7 +17,7 @@ annotations and raw types are chosen from the actual guarded reads produced by t
 theorem native_ctor_load_family_of_blobAgreement {base : Core.Ctx} {block : Bytes.Address} {i : F}
     {params indices levels : Nat} {rootCalls loopCalls : List (Call F)}
     {rc former bp sortLevel result : SourceValue F} {h h' : Heap F}
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -40,9 +40,9 @@ theorem native_ctor_load_family_of_blobAgreement {base : Core.Ctx} {block : Byte
     (good : Core.Good base rootCalls)
     (keyed : ∀ a k, cx.keyAt a = .ok k → k = base.κ a)
     (selfKeyed : ∀ k a m name,
-      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
+      (Ingress.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
       self k = some m → m = .ok name → name = base.κ a)
-    (blobReads : L1.HashedBlobReadAgreement cx.blob rootCalls) :
+    (blobReads : Ingress.HashedBlobReadAgreement cx.blob rootCalls) :
     ∃ (annotated : List (Ix.Kernel.ConstantVal .anon × Nat)) (rawTypes : List Core.KExpr),
       Decl.CtorLoadAtIndex base.t block params i rootCalls
         (rows.map (fun row => (row.1, row.2.2))) annotated rawTypes ∧
@@ -118,7 +118,7 @@ theorem native_ctor_load_family_of_blobAgreement {base : Core.Ctx} {block : Byte
 theorem native_ctor_load_family {base : Core.Ctx} {block : Bytes.Address} {i : F}
     {params indices levels : Nat} {rootCalls loopCalls : List (Call F)}
     {rc former bp sortLevel result : SourceValue F} {h h' : Heap F}
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -141,7 +141,7 @@ theorem native_ctor_load_family {base : Core.Ctx} {block : Bytes.Address} {i : F
     (good : Core.Good base rootCalls)
     (keyed : ∀ a k, cx.keyAt a = .ok k → k = base.κ a)
     (selfKeyed : ∀ k a m name,
-      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
+      (Ingress.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
       self k = some m → m = .ok name → name = base.κ a)
     (blobReads : ∀ a bytes, Hashed rootCalls bytes → Address.blake3Pure bytes = a →
       cx.blob a = some bytes) :
@@ -151,6 +151,6 @@ theorem native_ctor_load_family {base : Core.Ctx} {block : Bytes.Address} {i : F
       (∀ row ∈ rows, row.2.1 = params ∧ row.1.levelParams = List.range levels) := by
   exact native_ctor_load_family_of_blobAgreement source blockShape memberAt countBound paramsBound
     levelsBound blockRep subset loop frames memberKeys good keyed selfKeyed
-    (L1.HashedBlobReadAgreement.of_stored blobReads)
+    (Ingress.HashedBlobReadAgreement.of_stored blobReads)
 
 end IxVM.Refinement.Assembly

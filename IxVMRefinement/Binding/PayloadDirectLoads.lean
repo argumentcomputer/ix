@@ -56,7 +56,7 @@ def MemberCheckObs (calls : List (Call F)) (addr : _root_.Address) (ms : Array I
     (rc x_members x_block ap ptr v r_chk : SourceValue F)
     (cs_pa cs_load cs_chk : List (Call F)),
     Specs.Callees.MembersRep h_pa ms.toList x_members ∧
-    S0.addr h_pa x_block addr ∧
+    BaseSeams.addr h_pa x_block addr ∧
     ObsFn Obs.W "Ingress::projection_addr" [x_members, x_block, .field (k : F)] h_pa ap h_pre
       cs_pa ∧
     (∀ cl ∈ cs_pa, cl ∈ calls) ∧
@@ -101,7 +101,7 @@ theorem MemberCheckObs.records (t : Ix.Kernel.RoleTable) (hS : LoadedReads.RunSt
     hsub_chk⟩ := hchk
   obtain ⟨b', hb', rfl⟩ := hblk
   obtain ⟨-, -, -, mc, a', hget', ha', hproj, hhashed⟩ :=
-    L1.projection_addr_hashed_spec hmem hb' ev_pa
+    Ingress.projection_addr_hashed_spec hmem hb' ev_pa
   obtain ⟨iv, hiv⟩ : ∃ iv, ((i : F)).val = iv := ⟨_, rfl⟩
   rw [hiv] at hget' hproj hhashed
   -- the projection record the check loaded is the one `projection_addr` hashed
@@ -117,9 +117,9 @@ theorem MemberCheckObs.records (t : Ix.Kernel.RoleTable) (hS : LoadedReads.RunSt
   have hwf : (⟨Core.Specs.Callees.memberProjInfo (Core.ixAddr b') iv mc, #[], #[], #[], #[]⟩ :
       Ixon.Constant).wireWF := by
     cases mc with
-    | defn d => exact L1.projConstant_wireWF_dPrj iv.toUInt64 b'
-    | indc ind => exact L1.projConstant_wireWF_iPrj iv.toUInt64 b'
-    | recr rc => exact L1.projConstant_wireWF_rPrj iv.toUInt64 b'
+    | defn d => exact Ingress.projConstant_wireWF_dPrj iv.toUInt64 b'
+    | indc ind => exact Ingress.projConstant_wireWF_iPrj iv.toUInt64 b'
+    | recr rc => exact Ingress.projConstant_wireWF_rPrj iv.toUInt64 b'
   rw [hraw, Ixon.Verify.deConstantExact_serConstant _ hwf] at hx
   injection hx with hcp
   subst hcp
@@ -134,7 +134,7 @@ theorem MemberCheckObs.records (t : Ix.Kernel.RoleTable) (hS : LoadedReads.RunSt
   have hsize := muts_size_le hms
   have hi : i < ms.size := (Array.getElem?_eq_some_iff.mp hm).1
   have hi' : i < 72057594037927936 := by omega
-  have hiv' : iv = i := hiv.symm.trans (L1.val_cast_u56_ing hi')
+  have hiv' : iv = i := hiv.symm.trans (Ingress.val_cast_u56_ing hi')
   clear hiv
   subst iv
   have hmc : mc = m := by
@@ -177,7 +177,7 @@ theorem MemberCheckObs.records (t : Ix.Kernel.RoleTable) (hS : LoadedReads.RunSt
     rw [hb''eq] at hhash
     exact recordOf_of_hashed hcov (Core.hashed_mono hsub_chk hhash)
       (serConstant_cprj_size_lt i.toUInt64 j.toUInt64 b')
-      (Ixon.Verify.deConstantExact_serConstant _ (L1.projConstant_wireWF_cPrj i.toUInt64
+      (Ixon.Verify.deConstantExact_serConstant _ (Ingress.projConstant_wireWF_cPrj i.toUInt64
         j.toUInt64 b'))
 
 /-- **A projection record the run loaded is at a member's or a constructor's address of its
@@ -394,7 +394,7 @@ private theorem build_recur_addrs_walk_hashed {ms : List Ixon.MutConst} {b : Byt
       injection he with hm_eq hrest_eq
       subst m' rest'
       obtain ⟨ext1, hk_lt, _, mc, a₀, hget_mc, -, -, hhash⟩ :=
-        L1.projection_addr_hashed_spec hms hb ev68
+        Ingress.projection_addr_hashed_spec hms hb ev68
       rw [val_cast_le_u56 hk] at hk_lt hget_mc hhash
       have hmc_eq : mc = m := by
         have h0 := hsuf 0 m rfl
@@ -655,7 +655,7 @@ private theorem familyRecs_facts (hS : LoadedReads.RunStore calls E₀)
         [x_members] m2 v101 m123 cs131 := by
       rw [Obs.Names.«Lists::length<Ixon::MutConst>».symbol]; exact ev133
     have hl' : RepList (Instance.mk "Lists::Node" [.named "Ixon::MutConst" []]).symbol
-        L1.RepMutConst m2 ms.toList x_members := by
+        Ingress.RepMutConst m2 ms.toList x_members := by
       rw [Obs.Names.«Lists::Node<Ixon::MutConst>».symbol]; exact hrep
     obtain ⟨hv101, hm123⟩ := Lib.Lists.length_spec ev' hl'
     subst m123
@@ -670,7 +670,7 @@ private theorem familyRecs_facts (hS : LoadedReads.RunStore calls E₀)
         (by rw [hlen]; exact Nat.lt_trans hlt (by decide)) e
     have hb2 : Bytes.RepAddressRef Core.addrTy m2 b x_rb :=
       Bytes.repAddressRef_heapMono₂ Core.addrTy ev14.heap_extends hb
-    obtain ⟨-, as, has, hmap⟩ := L1.build_recur_addrs_spec hmems hb2 ev148
+    obtain ⟨-, as, has, hmap⟩ := Ingress.build_recur_addrs_spec hmems hb2 ev148
     have hhash := build_recur_addrs_hashed hmems hb2 ev148
     refine ⟨cb, hrec, Or.inr ⟨ms, hinfo, hres, all_recr_of_count ms.toList hcnt,
       fun i m hm => Core.hashed_mono hsub146 (hhash i m ?_), as, has, hmap⟩⟩
@@ -680,7 +680,7 @@ private theorem familyRecs_facts (hS : LoadedReads.RunStore calls E₀)
       (hm182 := hm182) (hm205 := hm205) (hc209 := hc) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
     obtain ⟨-, bytes, c, hsz, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded hb ev14
+      Ingress.load_verified_constant_decode_bounded hb ev14
     have haddr' : Address.blake3Pure ⟨bytes.toArray⟩ = Core.ixAddr b := haddr
     have hrecb : recordOf E₀ (Core.ixAddr b) = some c := by
       rw [← haddr']
@@ -689,7 +689,7 @@ private theorem familyRecs_facts (hS : LoadedReads.RunStore calls E₀)
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
     have hinfo_eq := (List.cons.inj (Value.construct.inj hc_eq).2.2).1
     rw [← hinfo_eq] at hinfoRep
-    obtain ⟨rcr, hrc, -⟩ := L1.repConstantInfo_recr_inv hinfoRep
+    obtain ⟨rcr, hrc, -⟩ := Ingress.repConstantInfo_recr_inv hinfoRep
     refine ⟨c, hrecb, Or.inl ⟨rcr, hrc, ?_⟩⟩
     subst hm205
     subst he183
@@ -757,7 +757,7 @@ theorem familyCall_record_facts (hS : LoadedReads.RunStore calls E₀)
         hS.hashed_inj hh' (hhash i (.recr r) hm) (hba.trans hb'e)
       have hrecraw := Claim.recordOf_of_hashed hH hh' hsz hx
       have hwf : (⟨Core.Specs.Callees.memberProjInfo (Core.ixAddr b) i (.recr r), #[], #[], #[],
-          #[]⟩ : Ixon.Constant).wireWF := L1.projConstant_wireWF_rPrj i.toUInt64 b
+          #[]⟩ : Ixon.Constant).wireWF := Ingress.projConstant_wireWF_rPrj i.toUInt64 b
       rw [hraw, Ixon.Verify.deConstantExact_serConstant _ hwf] at hx
       injection hx with hcp
       subst hcp
@@ -803,38 +803,38 @@ variable {calls : List (Call F)} {E₀ : Ixon.Env}
 
 /-- A definition the advice check admits as a safe definition is one the reader accepts. -/
 private theorem safetyDecline_of_defn_safe {d : Ixon.Definition}
-    (hk : (.construct "Ixon::DefKind" "Definition" [] : SourceValue F) = L1.repDefKindVal d.kind)
+    (hk : (.construct "Ixon::DefKind" "Definition" [] : SourceValue F) = Ingress.repDefKindVal d.kind)
     (hs : (.construct "Ixon::DefinitionSafety" "Safe" [] : SourceValue F) =
-      L1.repDefSafetyVal d.safety) :
+      Ingress.repDefSafetyVal d.safety) :
     Ix.Kernel.Reader.safetyDecline d = none := by
   have hkd : d.kind = .defn := by
     cases hkd : d.kind with
     | defn => rfl
-    | opaq => rw [hkd] at hk; simp [L1.repDefKindVal] at hk
-    | thm => rw [hkd] at hk; simp [L1.repDefKindVal] at hk
+    | opaq => rw [hkd] at hk; simp [Ingress.repDefKindVal] at hk
+    | thm => rw [hkd] at hk; simp [Ingress.repDefKindVal] at hk
   have hsd : d.safety = .safe := by
     cases hsd : d.safety with
     | safe => rfl
-    | unsaf => rw [hsd] at hs; simp [L1.repDefSafetyVal] at hs
-    | part => rw [hsd] at hs; simp [L1.repDefSafetyVal] at hs
+    | unsaf => rw [hsd] at hs; simp [Ingress.repDefSafetyVal] at hs
+    | part => rw [hsd] at hs; simp [Ingress.repDefSafetyVal] at hs
   rw [Ix.Kernel.Reader.safetyDecline, hkd, hsd]
   decide
 
 /-- A definition the advice check admits as a theorem is one the reader accepts. -/
 private theorem safetyDecline_of_thm {d : Ixon.Definition}
-    (hk : (.construct "Ixon::DefKind" "Theorem" [] : SourceValue F) = L1.repDefKindVal d.kind) :
+    (hk : (.construct "Ixon::DefKind" "Theorem" [] : SourceValue F) = Ingress.repDefKindVal d.kind) :
     Ix.Kernel.Reader.safetyDecline d = none := by
   cases hkd : d.kind with
   | thm =>
     rw [Ix.Kernel.Reader.safetyDecline, hkd]
     cases d.safety <;> decide
-  | defn => rw [hkd] at hk; simp [L1.repDefKindVal] at hk
-  | opaq => rw [hkd] at hk; simp [L1.repDefKindVal] at hk
+  | defn => rw [hkd] at hk; simp [Ingress.repDefKindVal] at hk
+  | opaq => rw [hkd] at hk; simp [Ingress.repDefKindVal] at hk
 
 /-- A recursor whose represented unsafe flag is `0` is safe. -/
 private theorem recr_unsafe_false {h : Heap F} {rcr : Ixon.Recursor}
     {w₁ u w₂ w₃ w₄ w₅ w₆ w₇ w₈ : SourceValue F}
-    (hrep : L1.RepRecursor h rcr
+    (hrep : Ingress.RepRecursor h rcr
       (.construct "Ixon::Recursor" "Mk" [w₁, u, w₂, w₃, w₄, w₅, w₆, w₇, w₈]))
     (hu : u = .field 0) : rcr.isUnsafe = false := by
   obtain ⟨typPtr, rulesPtr, hv, -, -⟩ := hrep
@@ -848,7 +848,7 @@ private theorem recr_unsafe_false {h : Heap F} {rcr : Ixon.Recursor}
 block's is in Lean's logic. -/
 private theorem inLogic_of_tag {h : Heap F} {c : Ixon.Constant} {tag : String}
     {args : List (SourceValue F)}
-    (hrep : L1.RepConstantInfo h c.info (.construct "Ixon::ConstantInfo" tag args))
+    (hrep : Ingress.RepConstantInfo h c.info (.construct "Ixon::ConstantInfo" tag args))
     (hd : tag ≠ "Defn") (hr : tag ≠ "Recr") (ha : tag ≠ "Axio") (hm : tag ≠ "Muts") :
     InLogic c := by
   cases hci : c.info with
@@ -888,7 +888,7 @@ theorem adviceRecord_logic (hS : LoadedReads.RunStore calls E₀)
       (ev_yqjbwijz := ev_ord) (sg952 := sg952) (hc1011 := hc1011) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     obtain ⟨-, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded
+      Ingress.load_verified_constant_decode_bounded
         (Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ord.heap_extends ha) ev14
     have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
       (Core.hashed_mono hsub12 hh) haddr hexact
@@ -899,7 +899,7 @@ theorem adviceRecord_logic (hS : LoadedReads.RunStore calls E₀)
     match sg952 with
     | .Defn_Definition_Safe (hv81 := hv) .. =>
       rw [hv] at hinfoRep
-      obtain ⟨d, hd, typPtr, valPtr, hdv, -, -⟩ := L1.repConstantInfo_defn_inv hinfoRep
+      obtain ⟨d, hd, typPtr, valPtr, hdv, -, -⟩ := Ingress.repConstantInfo_defn_inv hinfoRep
       injection hdv with _ _ hargs
       injection hargs with hk hargs
       injection hargs with hs _
@@ -909,7 +909,7 @@ theorem adviceRecord_logic (hS : LoadedReads.RunStore calls E₀)
       exact absurd (Value.field.inj heq) zero_ne_one
     | .Defn_Theorem (hv81 := hv) .. =>
       rw [hv] at hinfoRep
-      obtain ⟨d, hd, typPtr, valPtr, hdv, -, -⟩ := L1.repConstantInfo_defn_inv hinfoRep
+      obtain ⟨d, hd, typPtr, valPtr, hdv, -, -⟩ := Ingress.repConstantInfo_defn_inv hinfoRep
       injection hdv with _ _ hargs
       injection hargs with hk _
       simp only [InLogic, hd]
@@ -918,12 +918,12 @@ theorem adviceRecord_logic (hS : LoadedReads.RunStore calls E₀)
       exact absurd (Value.field.inj heq) zero_ne_one
     | .Recr (hv403 := hv) (heq513 := hu) .. =>
       rw [hv] at hinfoRep
-      obtain ⟨rcr, hrc, hrep⟩ := L1.repConstantInfo_recr_inv hinfoRep
+      obtain ⟨rcr, hrc, hrep⟩ := Ingress.repConstantInfo_recr_inv hinfoRep
       simp only [InLogic, hrc]
       exact recr_unsafe_false hrep hu
     | .Muts (hv598 := hv) .. =>
       rw [hv] at hinfoRep
-      obtain ⟨ms, hms, -⟩ := L1.repConstantInfo_muts_inv hinfoRep
+      obtain ⟨ms, hms, -⟩ := Ingress.repConstantInfo_muts_inv hinfoRep
       exact absurd hms (hnb ms)
     | .IPrj (hv790 := hv) .. =>
       rw [hv] at hinfoRep
@@ -936,7 +936,7 @@ theorem adviceRecord_logic (hS : LoadedReads.RunStore calls E₀)
 the unsafe flag `0`. -/
 private theorem muts_all_safe_head {h h' : Heap F} {ms : List Ixon.MutConst}
     {x : SourceValue F} {cs : List (Call F)}
-    (hrep : RepList Obs.Names.«Lists::Node<Ixon::MutConst>» L1.RepMutConst h ms x)
+    (hrep : RepList Obs.Names.«Lists::Node<Ixon::MutConst>» Ingress.RepMutConst h ms x)
     (ev : ObsFn Obs.W "KernelModeled::muts_all_safe" [x] h (.field 1) h' cs) :
     ∀ ind, ms.head? = some (.indc ind) → ind.isUnsafe = false := by
   intro ind hhd
@@ -1005,10 +1005,10 @@ theorem adviceBlock_memberObs (hS : LoadedReads.RunStore calls E₀)
         ev683.heap_extends)
       have hflag : ∀ ind, ms.toList.head? = some (.indc ind) → ind.isUnsafe = false := by
         rw [heq738] at ev723
-        exact muts_all_safe_head (RepLinkedList.mono L1.repMutConst_heapMono₂ ext2a hlist) ev723
+        exact muts_all_safe_head (RepLinkedList.mono Ingress.repMutConst_heapMono₂ ext2a hlist) ev723
       have ext2 : Heap.Extends m2 _ := ext2a.trans ev723.heap_extends
       have hsubm : ∀ cl ∈ csm, cl ∈ calls := fun cl hcl => hsub947 cl (by rw [hcs]; simp [hcl])
-      have hlist2 := RepLinkedList.mono L1.repMutConst_heapMono₂ ext2 hlist
+      have hlist2 := RepLinkedList.mono Ingress.repMutConst_heapMono₂ ext2 hlist
       have hmems := Decl.membersRep_of_repMutConstList hlist2
       have ha2 := Bytes.repAddressRef_heapMono₂ Core.addrTy (ext1.trans ext2) ha
       refine ⟨?_, hflag⟩

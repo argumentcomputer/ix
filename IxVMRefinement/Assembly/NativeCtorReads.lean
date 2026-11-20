@@ -219,7 +219,7 @@ theorem CtorScopeRead.load_contract_of_blobAgreement {base : Core.Ctx} {block : 
     {params levels : Nat} {calls : List (Call F)}
     (checked : CtorScopeRead block i j 0 params levels calls)
     (paramsBound : params < 72057594037927936) (levelsBound : levels < 4294967296)
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {ctor : Ixon.Constructor}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -232,9 +232,9 @@ theorem CtorScopeRead.load_contract_of_blobAgreement {base : Core.Ctx} {block : 
     (good : Core.Good base calls)
     (keyed : ∀ a k, cx.keyAt a = .ok k → k = base.κ a)
     (selfKeyed : ∀ k a m name,
-      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
+      (Ingress.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
       self k = some m → m = .ok name → name = base.κ a)
-    (blobReads : L1.HashedBlobReadAgreement cx.blob calls) :
+    (blobReads : Ingress.HashedBlobReadAgreement cx.blob calls) :
     ∃ (annotated : Ix.Kernel.ConstantVal .anon) (rawSyntax : Core.KExpr),
       IxVM.Consistency.ValStored annotated row.1 ∧
       row.2.1 = params ∧ row.1.levelParams = List.range levels ∧
@@ -293,7 +293,7 @@ theorem CtorScopeRead.load_contract_of_blobAgreement {base : Core.Ctx} {block : 
   have shape : value = .construct Core.kciEnum "Ctor"
       [.field (levels : F), typePtr, parentPtr, .field i, .field j,
         .field (params : F), .field (row.2.2 : F), .field 0] := by
-    simpa [levelCount, paramCount, fieldsCount, safe, L1.repBoolField] using valueShape
+    simpa [levelCount, paramCount, fieldsCount, safe, Ingress.repBoolField] using valueShape
   refine ⟨typePtr, parentPtr, parent, valueAt.trans (congrArg Except.ok shape), parentRep, parentEq, ?_, ?_⟩
   · intro d Γ
     simpa only [stored.2.1, Decl.posOf_range] using rawAt _ _ _ _ _ _ _ _ shape d Γ
@@ -304,7 +304,7 @@ theorem CtorScopeRead.load_contract {base : Core.Ctx} {block : Bytes.Address} {i
     {params levels : Nat} {calls : List (Call F)}
     (checked : CtorScopeRead block i j 0 params levels calls)
     (paramsBound : params < 72057594037927936) (levelsBound : levels < 4294967296)
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {ctor : Ixon.Constructor}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -317,7 +317,7 @@ theorem CtorScopeRead.load_contract {base : Core.Ctx} {block : Bytes.Address} {i
     (good : Core.Good base calls)
     (keyed : ∀ a k, cx.keyAt a = .ok k → k = base.κ a)
     (selfKeyed : ∀ k a m name,
-      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
+      (Ingress.blockRecurAddrs (Core.ixAddr block) members.toList)[k]? = some a →
       self k = some m → m = .ok name → name = base.κ a)
     (blobReads : ∀ a bytes, Hashed calls bytes → Address.blake3Pure bytes = a → cx.blob a = some bytes) :
     ∃ (annotated : Ix.Kernel.ConstantVal .anon) (rawSyntax : Core.KExpr),
@@ -339,6 +339,6 @@ theorem CtorScopeRead.load_contract {base : Core.Ctx} {block : Bytes.Address} {i
             (.ctorInfo annotated params row.2.2) := by
   exact CtorScopeRead.load_contract_of_blobAgreement checked paramsBound levelsBound source blockShape
     memberAt ctorAt reader nameKeyed good keyed selfKeyed
-    (L1.HashedBlobReadAgreement.of_stored blobReads)
+    (Ingress.HashedBlobReadAgreement.of_stored blobReads)
 
 end IxVM.Refinement.Assembly

@@ -1,11 +1,11 @@
 import IxVMRefinement.Core.Registry
-import IxVMRefinement.L1.Hashed
+import IxVMRefinement.Ingress.Hashed
 
 /-! # Record loads (`Ingress::get_ci`, `get_ci_cprj`, `get_ci_iprj`, `load_verified_constant`)
 
 Step lemmas for the four record-load functions of `Specs.Callees.Fn`.
 * `get_ci`, `get_ci_cprj`, `get_ci_iprj`: discharged directly from `hc.loads` (`LoadFacts`).
-* `load_verified_constant`: combines `L1.load_verified_constant_addr` (giving `Hashed` and the
+* `load_verified_constant`: combines `Ingress.load_verified_constant_addr` (giving `Hashed` and the
   `Address.blake3Pure` identity) with `LoadFacts.recordShape` (the shallow decoded record shape
   `ConstShapeRep` at `Ix.Cert.recordAt c.E`). -/
 
@@ -43,7 +43,7 @@ theorem get_ci_iprj_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (S
   subst hargs
   exact hc.loads.getIprj bp r i h h' calls b ev allowed res good hb
 
-/-- `Ingress::load_verified_constant`: combines `L1.load_verified_constant_addr` with
+/-- `Ingress::load_verified_constant`: combines `Ingress.load_verified_constant_addr` with
 `LoadFacts.recordShape`. -/
 theorem load_verified_constant_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
@@ -51,7 +51,7 @@ theorem load_verified_constant_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     Specs.Callees.load_verified_constant c args h r h' calls := by
   intro ap a hargs good ha
   subst hargs
-  obtain ⟨bytes, _, _, _, _, -, -, hashed, hblake, -⟩ := L1.load_verified_constant_addr ha ev
+  obtain ⟨bytes, _, _, _, _, -, -, hashed, hblake, -⟩ := Ingress.load_verified_constant_addr ha ev
   exact ⟨⟨bytes, hashed, hblake⟩,
     fun cst hcst => hc.loads.recordShape ap r h h' calls a cst ev good.raw ha hcst⟩
 

@@ -130,7 +130,7 @@ theorem basisRows_of_run {b : Ix.Kernel.Admission.Binding}
           hval _ (RoleVal.groupOf_lt_77 r) r (role_mem_roleGroup r))
       have e : a' = a := Option.some.inj (had.symm.trans hta)
       subst e
-      exact ⟨raw, c', hh, hbl, hsz, L1.deConstant_of_deConstantExact hx, hx⟩
+      exact ⟨raw, c', hh, hbl, hsz, Ingress.deConstant_of_deConstantExact hx, hx⟩
     · have hta : t.addressOf? r = some e'.1 := (addressOf_basis hpin hr).trans hra
       obtain ⟨a', raw, c', had, hsz, hh, hbl, hx, hproj⟩ :=
         RoleVal.ValidateRoleIn.bound_loaded (show RoleVal.ValidateRoleIn calls bAddr t _ r from
@@ -140,7 +140,7 @@ theorem basisRows_of_run {b : Ix.Kernel.Admission.Binding}
       obtain ⟨-, hc'⟩ := hrow_eq he' hh hbl hx
       subst hc'
       obtain ⟨cb, ms, bytesB, hszB, hhB, hblB, hxB, -⟩ := hproj a hpb
-      exact ⟨bytesB, cb, hhB, hblB, hszB, L1.deConstant_of_deConstantExact hxB, hxB⟩
+      exact ⟨bytesB, cb, hhB, hblB, hszB, Ingress.deConstant_of_deConstantExact hxB, hxB⟩
   intro a lc hget
   obtain ⟨c, hrow, rfl⟩ := StoreInhabit.store_get?_inv hget
   obtain ⟨bytes, c', hh, hbl, hcan⟩ := hloaded a c hrow

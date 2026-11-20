@@ -1,12 +1,12 @@
-import IxVMRefinement.Assembly.ClaimsL1L6
+import IxVMRefinement.Assembly.LayerSeams
 import Ix.Cert.Order
 
-/-! # Used-reference closure ordering and sub-store selection from `WalkedL6`
+/-! # Used-reference closure ordering and sub-store selection from `WalkedClaim`
 
 Constructs the walked sub-environment `E` (`Draws E E₀`) and the topological record order
-`order : List Address` satisfying `IxVM.Consistency.UsedClosureOrderAt` from `Claim.WalkedL6`:
+`order : List Address` satisfying `IxVM.Consistency.UsedClosureOrderAt` from `Claim.WalkedClaim`:
 
-* `exprRefIdxs_eq`, `mutRefIdxs_eq`, `usedRefIdxs_eq`: syntactic equality between `Core.S0`'s
+* `exprRefIdxs_eq`, `mutRefIdxs_eq`, `usedRefIdxs_eq`: syntactic equality between `Core.BaseSeams`'s
   used-reference index extractors and `IxVM.Consistency`'s;
 * `subEnv`: restricts `E₀.consts` to a chosen checked predicate `Keep : Address → Prop` (preventing
   unwalked records in `E₀.consts` from being pulled in by unused role-table evidence entries) and
@@ -24,7 +24,7 @@ namespace IxVM.Refinement.Assembly
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 
-/-! ## Agreement of `usedRefIdxs` between `Core.S0` and `IxVM.Consistency` -/
+/-! ## Agreement of `usedRefIdxs` between `Core.BaseSeams` and `IxVM.Consistency` -/
 
 private theorem flatMap_congr_all {α β : Type _} {f g : α → List β}
     (h : ∀ x, f x = g x) : ∀ xs : List α, xs.flatMap f = xs.flatMap g
@@ -32,79 +32,79 @@ private theorem flatMap_congr_all {α β : Type _} {f g : α → List β}
   | x :: xs => by
     simp only [List.flatMap_cons, h x, flatMap_congr_all h xs]
 
-/-- `Core.S0.exprRefIdxs` is definitionally identical to `IxVM.Consistency.exprRefIdxs`. -/
+/-- `Core.BaseSeams.exprRefIdxs` is definitionally identical to `IxVM.Consistency.exprRefIdxs`. -/
 theorem exprRefIdxs_eq : ∀ e : Ixon.Expr,
-    Core.S0.exprRefIdxs e = IxVM.Consistency.exprRefIdxs e
+    Core.BaseSeams.exprRefIdxs e = IxVM.Consistency.exprRefIdxs e
   | .sort _ => rfl
   | .var _ => rfl
   | .ref _ _ => rfl
   | .recur _ _ => rfl
   | .prj _ _ e => by
-    simp only [Core.S0.exprRefIdxs, IxVM.Consistency.exprRefIdxs, exprRefIdxs_eq e]
+    simp only [Core.BaseSeams.exprRefIdxs, IxVM.Consistency.exprRefIdxs, exprRefIdxs_eq e]
   | .str _ => rfl
   | .nat _ => rfl
   | .app f a => by
-    simp only [Core.S0.exprRefIdxs, IxVM.Consistency.exprRefIdxs,
+    simp only [Core.BaseSeams.exprRefIdxs, IxVM.Consistency.exprRefIdxs,
       exprRefIdxs_eq f, exprRefIdxs_eq a]
   | .lam t b => by
-    simp only [Core.S0.exprRefIdxs, IxVM.Consistency.exprRefIdxs,
+    simp only [Core.BaseSeams.exprRefIdxs, IxVM.Consistency.exprRefIdxs,
       exprRefIdxs_eq t, exprRefIdxs_eq b]
   | .all t b => by
-    simp only [Core.S0.exprRefIdxs, IxVM.Consistency.exprRefIdxs,
+    simp only [Core.BaseSeams.exprRefIdxs, IxVM.Consistency.exprRefIdxs,
       exprRefIdxs_eq t, exprRefIdxs_eq b]
   | .letE _ _ t v b => by
-    simp only [Core.S0.exprRefIdxs, IxVM.Consistency.exprRefIdxs,
+    simp only [Core.BaseSeams.exprRefIdxs, IxVM.Consistency.exprRefIdxs,
       exprRefIdxs_eq t, exprRefIdxs_eq v, exprRefIdxs_eq b]
   | .share _ => rfl
 
-/-- `Core.S0.mutRefIdxs` is identical to `IxVM.Consistency.mutRefIdxs`. -/
+/-- `Core.BaseSeams.mutRefIdxs` is identical to `IxVM.Consistency.mutRefIdxs`. -/
 theorem mutRefIdxs_eq : ∀ m : Ixon.MutConst,
-    Core.S0.mutRefIdxs m = IxVM.Consistency.mutRefIdxs m
+    Core.BaseSeams.mutRefIdxs m = IxVM.Consistency.mutRefIdxs m
   | .defn d => by
-    simp only [Core.S0.mutRefIdxs, IxVM.Consistency.mutRefIdxs,
+    simp only [Core.BaseSeams.mutRefIdxs, IxVM.Consistency.mutRefIdxs,
       exprRefIdxs_eq d.typ, exprRefIdxs_eq d.value]
   | .indc i => by
     have hctors :
-        (i.ctors.toList.flatMap fun c => Core.S0.exprRefIdxs c.typ) =
+        (i.ctors.toList.flatMap fun c => Core.BaseSeams.exprRefIdxs c.typ) =
         (i.ctors.toList.flatMap fun c => IxVM.Consistency.exprRefIdxs c.typ) :=
       flatMap_congr_all (fun c => exprRefIdxs_eq c.typ) i.ctors.toList
-    simp only [Core.S0.mutRefIdxs, IxVM.Consistency.mutRefIdxs, exprRefIdxs_eq i.typ, hctors]
+    simp only [Core.BaseSeams.mutRefIdxs, IxVM.Consistency.mutRefIdxs, exprRefIdxs_eq i.typ, hctors]
   | .recr r => by
     have hrules :
-        (r.rules.toList.flatMap fun rl => Core.S0.exprRefIdxs rl.rhs) =
+        (r.rules.toList.flatMap fun rl => Core.BaseSeams.exprRefIdxs rl.rhs) =
         (r.rules.toList.flatMap fun rl => IxVM.Consistency.exprRefIdxs rl.rhs) :=
       flatMap_congr_all (fun rl => exprRefIdxs_eq rl.rhs) r.rules.toList
-    simp only [Core.S0.mutRefIdxs, IxVM.Consistency.mutRefIdxs, exprRefIdxs_eq r.typ, hrules]
+    simp only [Core.BaseSeams.mutRefIdxs, IxVM.Consistency.mutRefIdxs, exprRefIdxs_eq r.typ, hrules]
 
-/-- `Core.S0.usedRefIdxs` is identical to `IxVM.Consistency.usedRefIdxs`. -/
+/-- `Core.BaseSeams.usedRefIdxs` is identical to `IxVM.Consistency.usedRefIdxs`. -/
 theorem usedRefIdxs_eq (c : Ixon.Constant) :
-    Core.S0.usedRefIdxs c = IxVM.Consistency.usedRefIdxs c := by
+    Core.BaseSeams.usedRefIdxs c = IxVM.Consistency.usedRefIdxs c := by
   have hsh :
-      c.sharing.toList.flatMap Core.S0.exprRefIdxs =
+      c.sharing.toList.flatMap Core.BaseSeams.exprRefIdxs =
       c.sharing.toList.flatMap IxVM.Consistency.exprRefIdxs :=
     flatMap_congr_all exprRefIdxs_eq c.sharing.toList
   cases hinfo : c.info with
   | defn d =>
-    simp only [Core.S0.usedRefIdxs, IxVM.Consistency.usedRefIdxs, hinfo, hsh,
+    simp only [Core.BaseSeams.usedRefIdxs, IxVM.Consistency.usedRefIdxs, hinfo, hsh,
       exprRefIdxs_eq d.typ, exprRefIdxs_eq d.value]
   | recr r =>
     have hrules :
-        (r.rules.toList.flatMap fun rl => Core.S0.exprRefIdxs rl.rhs) =
+        (r.rules.toList.flatMap fun rl => Core.BaseSeams.exprRefIdxs rl.rhs) =
         (r.rules.toList.flatMap fun rl => IxVM.Consistency.exprRefIdxs rl.rhs) :=
       flatMap_congr_all (fun rl => exprRefIdxs_eq rl.rhs) r.rules.toList
-    simp only [Core.S0.usedRefIdxs, IxVM.Consistency.usedRefIdxs, hinfo, hsh,
+    simp only [Core.BaseSeams.usedRefIdxs, IxVM.Consistency.usedRefIdxs, hinfo, hsh,
       exprRefIdxs_eq r.typ, hrules]
   | axio a =>
-    simp only [Core.S0.usedRefIdxs, IxVM.Consistency.usedRefIdxs, hinfo, hsh, exprRefIdxs_eq a.typ]
+    simp only [Core.BaseSeams.usedRefIdxs, IxVM.Consistency.usedRefIdxs, hinfo, hsh, exprRefIdxs_eq a.typ]
   | quot q =>
-    simp only [Core.S0.usedRefIdxs, IxVM.Consistency.usedRefIdxs, hinfo, hsh, exprRefIdxs_eq q.typ]
+    simp only [Core.BaseSeams.usedRefIdxs, IxVM.Consistency.usedRefIdxs, hinfo, hsh, exprRefIdxs_eq q.typ]
   | muts ms =>
     have hms :
-        ms.toList.flatMap Core.S0.mutRefIdxs = ms.toList.flatMap IxVM.Consistency.mutRefIdxs :=
+        ms.toList.flatMap Core.BaseSeams.mutRefIdxs = ms.toList.flatMap IxVM.Consistency.mutRefIdxs :=
       flatMap_congr_all mutRefIdxs_eq ms.toList
-    simp only [Core.S0.usedRefIdxs, IxVM.Consistency.usedRefIdxs, hinfo, hsh, hms]
+    simp only [Core.BaseSeams.usedRefIdxs, IxVM.Consistency.usedRefIdxs, hinfo, hsh, hms]
   | cPrj _ | rPrj _ | iPrj _ | dPrj _ =>
-    simp only [Core.S0.usedRefIdxs, IxVM.Consistency.usedRefIdxs, hinfo, hsh]
+    simp only [Core.BaseSeams.usedRefIdxs, IxVM.Consistency.usedRefIdxs, hinfo, hsh]
 
 /-! ## Sub-environment builder (`subEnv`) and `Draws` -/
 
@@ -485,7 +485,7 @@ theorem usedClosureOrderAt_closureOrderByRank {t : Ix.Kernel.RoleTable} {E : Ixo
     simp only [decide_eq_true_eq] at hab
     omega
 
-/-! ## Two-tier rank from `WalkedL6` (`2 * rank` on `Wk`, `2 * rank (iblock a) + 1` on extra recs) -/
+/-! ## Two-tier rank from `WalkedClaim` (`2 * rank` on `Wk`, `2 * rank (iblock a) + 1` on extra recs) -/
 
 /-- Two-tier rank placing walked records at even ranks `2 * rank a` and extra recursor records at
 odd ranks `2 * rank (iblock a) + 1` immediately after their inductive block `iblock a`. -/
@@ -499,7 +499,7 @@ resolves to a walked address `b` with `rank b < rank a`. -/
 theorem usedRecordRef_of_wk {E₀ : Ixon.Env} {Keep : _root_.Address → Prop}
     {supp : List SuppEntry} {Wk : _root_.Address → Prop} {rank : _root_.Address → Nat}
     (hwk_keep : ∀ x, Wk x → Keep x)
-    (hwk_step : ∀ x y, Wk x → Core.S0.WalkEdge E₀ x y → Wk y ∧ rank y < rank x)
+    (hwk_step : ∀ x y, Wk x → Core.BaseSeams.WalkEdge E₀ x y → Wk y ∧ rank y < rank x)
     (hwk_rec : ∀ x, Wk x → ∃ c, Ix.Cert.recordAt E₀ x = some c)
     {a b : _root_.Address} (hwa : Wk a)
     (href : IxVM.Consistency.UsedRecordRef (subEnv E₀ Keep supp) a b) :
@@ -510,10 +510,10 @@ theorem usedRecordRef_of_wk {E₀ : Ixon.Env} {Keep : _root_.Address → Prop}
   rw [hrec_a] at hrec_a'
   injection hrec_a' with hc_eq
   subst hc_eq
-  have hi_s0 : i ∈ Core.S0.usedRefIdxs c := by
+  have hi_s0 : i ∈ Core.BaseSeams.usedRefIdxs c := by
     rw [usedRefIdxs_eq]
     exact hi
-  have hedge_ar : Core.S0.WalkEdge E₀ a r := ⟨c, hrec_a0, Or.inr ⟨i, hi_s0, hr⟩⟩
+  have hedge_ar : Core.BaseSeams.WalkEdge E₀ a r := ⟨c, hrec_a0, Or.inr ⟨i, hi_s0, hr⟩⟩
   obtain ⟨hwr, hlt_ra⟩ := hwk_step a r hwa hedge_ar
   obtain ⟨cr₀, hrec_r0⟩ := hwk_rec r hwr
   have hrec_r' := recordAt_subEnv_of_keep E₀ Keep supp (hwk_keep r hwr) hrec_r0
@@ -523,7 +523,7 @@ theorem usedRecordRef_of_wk {E₀ : Ixon.Env} {Keep : _root_.Address → Prop}
   by_cases hbr : b = r
   · subst hbr
     exact ⟨hwr, hlt_ra⟩
-  · have hedge_rb : Core.S0.WalkEdge E₀ r b := ⟨cr, hrec_r0, Or.inl ⟨hown_r, hbr⟩⟩
+  · have hedge_rb : Core.BaseSeams.WalkEdge E₀ r b := ⟨cr, hrec_r0, Or.inl ⟨hown_r, hbr⟩⟩
     obtain ⟨hwb, hlt_br⟩ := hwk_step r b hwr hedge_rb
     exact ⟨hwb, Nat.lt_trans hlt_br hlt_ra⟩
 
@@ -532,7 +532,7 @@ is a recursor record (`IsRecursorRecord`). -/
 theorem subEnv_ownerClosed_of_walked {E₀ : Ixon.Env} {Keep : _root_.Address → Prop}
     {supp : List SuppEntry} {Wk : _root_.Address → Prop} {rank : _root_.Address → Nat}
     (hwk_keep : ∀ x, Wk x → Keep x)
-    (hwk_step : ∀ x y, Wk x → Core.S0.WalkEdge E₀ x y → Wk y ∧ rank y < rank x)
+    (hwk_step : ∀ x y, Wk x → Core.BaseSeams.WalkEdge E₀ x y → Wk y ∧ rank y < rank x)
     (hwk_rec : ∀ x, Wk x → ∃ c, Ix.Cert.recordAt E₀ x = some c)
     (hextra_rec : ∀ x c, ¬ Wk x → Ix.Cert.recordAt (subEnv E₀ Keep supp) x = some c →
       IxVM.Refinement.IsRecursorRecord c) :
@@ -548,7 +548,7 @@ theorem subEnv_ownerClosed_of_walked {E₀ : Ixon.Env} {Keep : _root_.Address �
     by_cases hown : Ix.Cert.ownerOf a c = a
     · rw [hown]
       exact contains_of_recordAt hrec
-    · have hedge : Core.S0.WalkEdge E₀ a (Ix.Cert.ownerOf a c) :=
+    · have hedge : Core.BaseSeams.WalkEdge E₀ a (Ix.Cert.ownerOf a c) :=
         ⟨c, hrec₀, Or.inl ⟨rfl, hown⟩⟩
       obtain ⟨hwb, _⟩ := hwk_step a (Ix.Cert.ownerOf a c) hwa hedge
       obtain ⟨cb, hrec_b⟩ := hwk_rec _ hwb
@@ -562,7 +562,7 @@ theorem twoTierRank_lt_of_usedRecordRef {E₀ : Ixon.Env} {Keep : _root_.Address
     {supp : List SuppEntry} {Wk : _root_.Address → Prop} {rank : _root_.Address → Nat}
     {iblock : _root_.Address → _root_.Address}
     (hwk_keep : ∀ x, Wk x → Keep x)
-    (hwk_step : ∀ x y, Wk x → Core.S0.WalkEdge E₀ x y → Wk y ∧ rank y < rank x)
+    (hwk_step : ∀ x y, Wk x → Core.BaseSeams.WalkEdge E₀ x y → Wk y ∧ rank y < rank x)
     (hwk_rec : ∀ x, Wk x → ∃ c, Ix.Cert.recordAt E₀ x = some c)
     (hextra_refs : ∀ a c, ¬ Wk a → Ix.Cert.recordAt (subEnv E₀ Keep supp) a = some c →
       ∀ i ∈ IxVM.Consistency.usedRefIdxs c, ∀ r cr,
@@ -587,13 +587,13 @@ theorem twoTierRank_lt_of_usedRecordRef {E₀ : Ixon.Env} {Keep : _root_.Address
     · simp only [twoTierRank, hwa, hnwb, ↓reduceIte]
       omega
 
-/-- **`UsedClosureOrderAt` for `subEnv E₀ Keep supp`** under the two-tier rank from `WalkedL6`. -/
+/-- **`UsedClosureOrderAt` for `subEnv E₀ Keep supp`** under the two-tier rank from `WalkedClaim`. -/
 theorem subEnv_twoTier_usedClosureOrderAt (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
     (Keep : _root_.Address → Prop) (supp : List SuppEntry) (S : _root_.Address → Prop)
     {Wk : _root_.Address → Prop} {rank : _root_.Address → Nat}
     (iblock : _root_.Address → _root_.Address)
     (hwk_keep : ∀ x, Wk x → Keep x)
-    (hwk_step : ∀ x y, Wk x → Core.S0.WalkEdge E₀ x y → Wk y ∧ rank y < rank x)
+    (hwk_step : ∀ x y, Wk x → Core.BaseSeams.WalkEdge E₀ x y → Wk y ∧ rank y < rank x)
     (hwk_rec : ∀ x, Wk x → ∃ c, Ix.Cert.recordAt E₀ x = some c)
     (hextra_rec : ∀ x c, ¬ Wk x → Ix.Cert.recordAt (subEnv E₀ Keep supp) x = some c →
       IxVM.Refinement.IsRecursorRecord c)
@@ -611,10 +611,10 @@ theorem subEnv_twoTier_usedClosureOrderAt (t : Ix.Kernel.RoleTable) (E₀ : Ixon
     (fun _ _ _ _ href => twoTierRank_lt_of_usedRecordRef hwk_keep hwk_step hwk_rec hextra_refs href)
 
 /-- **`UsedClosureOrderAt` on the pure walked sub-environment `subEnv E₀ Wk []`** directly from
-`Claim.WalkedL6`, for any seed predicate `S`. -/
+`Claim.WalkedClaim`, for any seed predicate `S`. -/
 theorem walkedSubEnv_usedClosureOrderAt {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ : Ixon.Env} {seeds : List _root_.Address}
-    (hwalk : Claim.WalkedL6 calls t E₀ seeds) (S : _root_.Address → Prop) :
+    (hwalk : Claim.WalkedClaim calls t E₀ seeds) (S : _root_.Address → Prop) :
     ∃ (E : Ixon.Env) (order : List _root_.Address),
       IxVM.Refinement.Draws E E₀ ∧
       IxVM.Consistency.UsedClosureOrderAt t E S order := by

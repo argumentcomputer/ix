@@ -1,5 +1,5 @@
 import IxVMRefinement.Decl.NativeFront
-import IxVMRefinement.L1.Records
+import IxVMRefinement.Ingress.Records
 
 /-! # Constructor witnesses from canonical raw loads
 
@@ -13,7 +13,7 @@ namespace IxVM.Refinement.Decl
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
-open IxVM.Refinement.L1 (blockRecurAddrs blockRecurAddrsAux)
+open IxVM.Refinement.Ingress (blockRecurAddrs blockRecurAddrsAux)
 open IxVM.Refinement.KernelLevels (RepKLevelList)
 
 set_option maxHeartbeats 2000000
@@ -47,13 +47,13 @@ theorem nullary_of_record {c : Ctx} {b₀ : Bytes.Address} {cb : Ixon.Constant}
   intro bp ptr h h' cs hsub hbp ev
   have hg := hgood.sub hsub
   obtain ⟨_, _, _, bytes, cb', ms, ind', ct, blobs, v, hh, ha, hex, _,
-    hcb, hms, hct, _, hld, hraw⟩ := L1.get_ci_cprj_spec hg.2 hbp ev
+    hcb, hms, hct, _, hld, hraw⟩ := Ingress.get_ci_cprj_spec hg.2 hbp ev
   unfold Ix.Cert.recordAt at hrec
   cases hget : c.E.consts.get? (ixAddr b₀) with
   | none => rw [hget] at hrec; cases hrec
   | some lc =>
     have hlc : lc.get? = some cb := by rw [hget] at hrec; exact hrec
-    have hdec := L1.deConstantExact_of_storedCanonical hcan horder hget hlc
+    have hdec := Ingress.deConstantExact_of_storedCanonical hcan horder hget hlc
     have hbytes := load_escape hget hg.1 bytes hh ha
     rw [hbytes, hdec] at hex
     injection hex with heq

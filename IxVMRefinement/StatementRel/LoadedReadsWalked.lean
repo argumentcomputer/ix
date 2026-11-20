@@ -1,5 +1,5 @@
 import IxVMRefinement.StatementRel.LoadedReadsChecked
-import IxVMRefinement.L1.TraceRecords
+import IxVMRefinement.Ingress.TraceRecords
 
 /-! # Readings of block members, over the claim walk and the core's projection loads
 
@@ -18,7 +18,7 @@ of a block by the block's address and the member's position (`Ingress::get_ci_ip
 * `get_ci_iprj_reads`, `get_ci_cprj_reads`: what the core's projection loads return
   represents the reading of the member at its constant address, where the store holds the
   member's projection record.
-* `walkedL6_ind_reads`: every inductive member of a walked block has its reading over the
+* `walkedClaim_ind_reads`: every inductive member of a walked block has its reading over the
   claim phase's store.
 -/
 
@@ -40,15 +40,15 @@ private theorem toUInt64_toNat' {n : Nat} (hn : n < UInt64.size) : n.toUInt64.to
 
 /-- **The run's store holds every record the run hashed**: a byte string the run hashed,
 below `2^32` bytes, that decodes exactly is stored under its address. The claim phase's
-store is one (`hashedRecordsStored_of_walkedL6`). -/
+store is one (`hashedRecordsStored_of_walkedClaim`). -/
 def HashedRecordsStored (calls : List (Call F)) (E : Ixon.Env) : Prop :=
   ∀ (bytes : ByteArray) (c : Ixon.Constant), Hashed calls bytes → bytes.size < 4294967296 →
     Ixon.deConstant bytes = .ok c → Ixon.deConstantExact bytes = .ok c →
     ∃ lc, E.consts.get? (Address.blake3Pure bytes) = some lc ∧ lc.rawBytes = bytes ∧
       lc.get? = some c
 
-theorem hashedRecordsStored_of_walkedL6 {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
-    {E₀ : Ixon.Env} {seeds : List _root_.Address} (hw : Claim.WalkedL6 calls t E₀ seeds) :
+theorem hashedRecordsStored_of_walkedClaim {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {E₀ : Ixon.Env} {seeds : List _root_.Address} (hw : Claim.WalkedClaim calls t E₀ seeds) :
     HashedRecordsStored calls E₀ := by
   obtain ⟨bAddr, -, -, -, -, hcov, -⟩ := hw
   exact hcov
@@ -60,12 +60,12 @@ variable {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {E : Ixon.Env}
 /-- **The store holds a record at every address the run loaded a constant from.** -/
 theorem recordAt_of_get_ci (hcov : HashedRecordsStored calls E) {a : _root_.Address}
     {addr ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (ha : Core.S0.addr h addr a) (ev : ObsFn Core.W "Ingress::get_ci" [addr] h ptr h' cs)
+    (ha : Core.BaseSeams.addr h addr a) (ev : ObsFn Core.W "Ingress::get_ci" [addr] h ptr h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) : ∃ c, Ix.Cert.recordAt E a = some c := by
   obtain ⟨a', ha', rfl⟩ := ha
-  obtain ⟨value, middle, children, verified, vsub⟩ := L1.get_ci_verified_subcall ev
+  obtain ⟨value, middle, children, verified, vsub⟩ := Ingress.get_ci_verified_subcall ev
   obtain ⟨-, bytes, c, hsz, hh, haddr, hex, hde, -⟩ :=
-    L1.load_verified_constant_decode_bounded ha' verified
+    Ingress.load_verified_constant_decode_bounded ha' verified
   obtain ⟨lc, hget, -, hc⟩ := hcov ⟨bytes.toArray⟩ c
     (Core.hashed_mono (fun cl hm => hsub cl (vsub cl hm)) hh)
     (by simpa only [ByteArray.size, List.size_toArray] using hsz) hde hex
@@ -95,23 +95,23 @@ theorem mutsMember_record (hbound : Bounded calls) (hS : RunStore calls E)
     ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
   obtain ⟨b', hb', rfl⟩ := hblk
   obtain ⟨-, -, -, mc', a', hget', ha', hproj, hhashed⟩ :=
-    L1.projection_addr_hashed_spec hmem hb' ev_pa
+    Ingress.projection_addr_hashed_spec hmem hb' ev_pa
   rw [hk_val] at hget' hproj hhashed
   have hget_list : ms.toList[k]? = some mc := by simpa using hk
   rw [hget_list] at hget'
   cases hget'
-  have haddr : Core.S0.addr h_pre ap (memberAddr (Core.ixAddr b') k mc) :=
+  have haddr : Core.BaseSeams.addr h_pre ap (memberAddr (Core.ixAddr b') k mc) :=
     ⟨a', ha', hproj.trans (memberAddr_eq_projAddr _ k mc).symm⟩
   have hchk : Claim.CheckedAtFull calls bAddr t (memberAddr (Core.ixAddr b') k mc) :=
     ⟨lim, h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
-      hrc_pre, hrc_m, haddr, Core.S0.addr_mono ev_ld.heap_extends haddr,
+      hrc_pre, hrc_m, haddr, Core.BaseSeams.addr_mono ev_ld.heap_extends haddr,
       ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩
   obtain ⟨c, hrec⟩ := recordAt_of_get_ci hcov haddr ev_ld hsub_ld
   have hwf : (memberProjection (Core.ixAddr b') k mc).wireWF := by
     cases mc with
-    | defn d => exact L1.projConstant_wireWF_dPrj k.toUInt64 b'
-    | indc ind => exact L1.projConstant_wireWF_iPrj k.toUInt64 b'
-    | recr rc => exact L1.projConstant_wireWF_rPrj k.toUInt64 b'
+    | defn d => exact Ingress.projConstant_wireWF_dPrj k.toUInt64 b'
+    | indc ind => exact Ingress.projConstant_wireWF_iPrj k.toUInt64 b'
+    | recr rc => exact Ingress.projConstant_wireWF_rPrj k.toUInt64 b'
   have hdx := Ixon.Verify.deConstantExact_serConstant _ hwf
   have hhashed' : Hashed calls (Ixon.serConstant (memberProjection (Core.ixAddr b') k mc)) := by
     have hrun := Core.hashed_mono hsub_pa hhashed
@@ -139,10 +139,10 @@ theorem mutsMember_ind_reads (ht : t.check = .ok ()) (hbound : Bounded calls)
   obtain ⟨hk64, hchk, hrec⟩ := mutsMember_record hbound hS hcov hm hk
   obtain ⟨lim, h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     bytes, E_ld, hrc_pre, hrc_m, ha_pre, ha_m, hhash_ld, hblake_ld, hload_ld, hL1,
-    hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := Assembly.checkedAtFull_loadedL1 hbound hchk
+    hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := Assembly.checkedAtFull_loadedRecords hbound hchk
   have hinfo : (memberProjection B k (.indc ind)).info = .iPrj ⟨k.toUInt64, B⟩ := rfl
   obtain ⟨ms', ind', ty₀, h1, h2, -, hty, hreads, -⟩ :=
-    loadedL1_ind_reads (p := ⟨k.toUInt64, B⟩) ht hS hload_ld hsub_ld hhash_ld hblake_ld hL1
+    loadedRecords_ind_reads (p := ⟨k.toUInt64, B⟩) ht hS hload_ld hsub_ld hhash_ld hblake_ld hL1
       hrec hinfo hrecB hlogic
   have hms : ms' = ms := (Ixon.ConstantInfo.muts.inj (hmuts.symm.trans h1)).symm
   subst hms
@@ -181,13 +181,13 @@ theorem mutsMember_defn (ht : t.check = .ok ()) (hbound : Bounded calls)
     exact hl (.defn d) hmem'
   obtain ⟨lim, h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     bytes, E_ld, hrc_pre, hrc_m, ha_pre, ha_m, hhash_ld, hblake_ld, hload_ld, hL1,
-    hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := Assembly.checkedAtFull_loadedL1 hbound hchk
-  obtain ⟨-, -, v', hld', hraw⟩ := loadedL1_record hS hsub_ld hhash_ld hblake_ld hL1 hrec
+    hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := Assembly.checkedAtFull_loadedRecords hbound hchk
+  obtain ⟨-, -, v', hld', hraw⟩ := loadedRecords_record hS hsub_ld hhash_ld hblake_ld hL1 hrec
   rw [hld] at hld'
   injection hld' with hvv
   subst hvv
   have hinfo : (memberProjection B k (.defn d)).info = .dPrj ⟨k.toUInt64, B⟩ := rfl
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨hidx, lcB, cb', ms', d', blobs, hgetB, -, -, hexB, -, hcb, hms, hb, raw⟩ := hraw
   obtain ⟨hhB, haB⟩ := hload_ld.1 B lcB hgetB
@@ -244,7 +244,7 @@ theorem get_ci_iprj_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
             List.range ind.lvls.toNat, ty₀⟩ caps) ∧
           Decl.CIRepExact (Core.keyOf t) h' v ci) := by
   obtain ⟨-, hidx, blkBytes, cb', ms, ind, blobs, v, hhB, haB, hexB, -, hcb, hms, hhp, hld,
-    raw⟩ := L1.get_ci_iprj_spec hbound hb ev
+    raw⟩ := Ingress.get_ci_iprj_spec hbound hb ev
   have hcb_eq : cb' = cb := hS.record_eq hrecB (Core.hashed_mono hsub hhB) haB hexB
   subst hcb_eq
   have hblob : ∀ x bs, (x, bs) ∈ blobs → E.blobs.get? x = some bs := by
@@ -298,7 +298,7 @@ theorem get_ci_cprj_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
             List.range ct.lvls.toNat, ty₀⟩ ct.params.toNat ct.fields.toNat) ∧
           Decl.CIRepExact (Core.keyOf t) h' v ci) := by
   obtain ⟨-, hidx, hcidx56, blkBytes, cb', ms, ind, ct, blobs, v, hhB, haB, hexB, -, hcb, hms,
-    hct, hhp, hld, raw⟩ := L1.get_ci_cprj_spec hbound hb ev
+    hct, hhp, hld, raw⟩ := Ingress.get_ci_cprj_spec hbound hb ev
   have hcb_eq : cb' = cb := hS.record_eq hrecB (Core.hashed_mono hsub hhB) haB hexB
   subst hcb_eq
   have hblob : ∀ x bs, (x, bs) ∈ blobs → E.blobs.get? x = some bs := by
@@ -329,10 +329,10 @@ theorem get_ci_cprj_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
 /-! ## Over the claim walk -/
 
 /-- **Every inductive member of a walked block has its reading over the run's store.** `E₀`
-is the claim phase's store (`LoadedBy calls E₀`, `Claim.WalkedL6`). -/
-theorem walkedL6_ind_reads (hbound : Bounded calls) {E₀ : Ixon.Env}
+is the claim phase's store (`LoadedBy calls E₀`, `Claim.WalkedClaim`). -/
+theorem walkedClaim_ind_reads (hbound : Bounded calls) {E₀ : Ixon.Env}
     {seeds : List _root_.Address} (hload : LoadedBy calls E₀)
-    (hw : Claim.WalkedL6 calls t E₀ seeds) :
+    (hw : Claim.WalkedClaim calls t E₀ seeds) :
     ∃ Wk : _root_.Address → Prop, (∀ a ∈ seeds, Wk a) ∧
       ∀ (B : _root_.Address) (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (k : Nat)
         (ind : Ixon.Inductive),
@@ -342,9 +342,9 @@ theorem walkedL6_ind_reads (hbound : Bounded calls) {E₀ : Ixon.Env}
           Reads t E₀ (memberAddr B k (.indc ind))
             (.indInfo ⟨keyOf t (memberAddr B k (.indc ind)), List.range ind.lvls.toNat, ty₀⟩
               caps) := by
-  have ht := walkedL6_tableCheck hw
-  have hS := RunStore.of_walkedL6 hload hw
-  have hcov := hashedRecordsStored_of_walkedL6 hw
+  have ht := walkedClaim_tableCheck hw
+  have hS := RunStore.of_walkedClaim hload hw
+  have hcov := hashedRecordsStored_of_walkedClaim hw
   obtain ⟨bAddr, -, -, -, -, -, Wk, rank, hseeds, -, hchecked⟩ := hw
   refine ⟨Wk, hseeds, fun B cb ms k ind hwk hrecB hmuts hk hlogic => ?_⟩
   obtain ⟨c', hrec', hchk⟩ := hchecked B hwk
@@ -360,9 +360,9 @@ theorem walkedL6_ind_reads (hbound : Bounded calls) {E₀ : Ixon.Env}
     exact ⟨ty₀, hreads⟩
   · obtain ⟨lim, h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
       bytes, E_ld, hrc_pre, hrc_m, ha_pre, ha_m, hhash_ld, hblake_ld, hload_ld, hL1,
-      hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := Assembly.checkedAtFull_loadedL1 hbound hchk
-    obtain ⟨-, -, v', -, hraw⟩ := loadedL1_record hS hsub_ld hhash_ld hblake_ld hL1 hrecB
-    unfold L1.RawCIRep at hraw
+      hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := Assembly.checkedAtFull_loadedRecords hbound hchk
+    obtain ⟨-, -, v', -, hraw⟩ := loadedRecords_record hS hsub_ld hhash_ld hblake_ld hL1 hrecB
+    unfold Ingress.RawCIRep at hraw
     rw [hmuts] at hraw
     exact False.elim hraw
 
@@ -388,7 +388,7 @@ theorem inLogic_block_of_not_outside {a : _root_.Address} {c cb : Ixon.Constant}
 evidence and its reading**, from the claim phase's conclusion alone: the store it built, the
 walk over it, and its refusal of seeds outside Lean's logic. -/
 theorem seed_defn_reads (hbound : Bounded calls) {E₀ : Ixon.Env} {seeds : List _root_.Address}
-    (hload : LoadedBy calls E₀) (hw : Claim.WalkedL6 calls t E₀ seeds)
+    (hload : LoadedBy calls E₀) (hw : Claim.WalkedClaim calls t E₀ seeds)
     (hseedOk : ∀ a ∈ seeds, ¬ OutsideLogicAt E₀ a ∧ ¬ InertAt t a) :
     ∃ bAddr : _root_.Address, ∀ a ∈ seeds, ∀ (c : Ixon.Constant) (d : Ixon.Definition)
       (order_role : List _root_.Address),
@@ -399,7 +399,7 @@ theorem seed_defn_reads (hbound : Bounded calls) {E₀ : Ixon.Env} {seeds : List
           IxVM.Consistency.installs decl =
             [defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn] ∧
           Reads t E₀ a (defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn) := by
-  obtain ⟨bAddr, Wk, hseeds, hall⟩ := walkedL6_defn_reads hbound hload hw
+  obtain ⟨bAddr, Wk, hseeds, hall⟩ := walkedClaim_defn_reads hbound hload hw
   exact ⟨bAddr, fun a ha c d order_role hrec hinfo hnr =>
     hall a c d order_role (hseeds a ha) hrec hinfo
       (inLogic_of_not_outside hrec (hseedOk a ha).1) hnr⟩

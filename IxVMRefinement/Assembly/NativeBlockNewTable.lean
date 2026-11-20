@@ -86,13 +86,13 @@ theorem BlockInstall.newGetCprjFound (hI : BlockInstall c new B cb ind caps)
     ∃ ci, (appCtx c new).env.find? ((appCtx c new).stored.κ
         (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) (ZMod.val j))) = some ci ∧
       Core.CIPtrRep (appCtx c new).stored.κ h' ptr ci := by
-  have hbh := L1.hashedBlockAt_of_get_ci_cprj (c := appCtx c new) good hb ev
+  have hbh := Ingress.hashedBlockAt_of_get_ci_cprj (c := appCtx c new) good hb ev
   obtain ⟨hbB, hi0⟩ := hI.famNew hbh (val_lt_uint64 i) hfam
   have hblock' : recordOf c.E (Core.ixAddr b) = some cb := by
     rw [hbB]
     exact hI.block
   obtain ⟨-, -, -, blkBytes, cb', ms', ind', ct', blobs, v, hhB, haB, hexB, -, hcb, hms, hcts,
-    -⟩ := L1.get_ci_cprj_origin_spec good.2 hb ev
+    -⟩ := Ingress.get_ci_cprj_origin_spec good.2 hb ev
   obtain ⟨lcB, hgetB, hdecB⟩ := LoadedReads.recordOf_inv hblock'
   have hbB' : blkBytes = lcB.rawBytes := Core.load_escape hgetB good.1 blkBytes hhB haB
   have hcB : cb = cb' := by
@@ -188,7 +188,7 @@ theorem BlockInstall.tableAt (hI : BlockInstall c new B cb ind caps) (hT : Block
         tbl.guards = Ix.Kernel.structProjGuards cvC.type nP nF sorts) ∧
       ∃ bs body, cvC.type.stripPis (nP + nF) = some (bs, body) ∧
         ∀ bm ∈ bs, bm.2.pw = Ix.Kernel.Level.zeronessOf tbl.structSort := by
-  have hbh := L1.hashedBlockAt_of_get_ci_induct (c := appCtx c new) gS evS hsS hldS hbS
+  have hbh := Ingress.hashedBlockAt_of_get_ci_induct (c := appCtx c new) gS evS hsS hldS hbS
   have hxs := get_ci_induct_addr evS gS.2 hsS hldS hbS
   have hxs' : Core.ixAddr s = Core.iprjAddr B 0 := by rw [hxs, hbB, hi0]
   obtain ⟨tyPtr, blkPtr, hld₀, hp56, hi56, hc56⟩ := former_get_ci_value gS.1 gS.2 hsS evS
@@ -265,7 +265,7 @@ theorem BlockInstall.newProjTables (hI : BlockInstall c new B cb ind caps)
               ∀ bm ∈ bs, bm.2.pw = Ix.Kernel.Level.zeronessOf tbl.structSort := by
   intro bp ip ptr h h' cs b i ev good hb hip hfam hperm
   subst hip
-  have hbh := L1.hashedBlockAt_of_proj_ctor (c := appCtx c new) good ev hb rfl
+  have hbh := Ingress.hashedBlockAt_of_proj_ctor (c := appCtx c new) good ev hb rfl
   obtain ⟨hbB, hi0⟩ := hI.famNew hbh (val_lt_uint64 i) hfam
   obtain ⟨v, mid, cs_assert, cs_load, ev_assert, _, ev_load, hcalls⟩ :=
     Obs.«KernelModeled::proj_ctor».obs ev
@@ -310,7 +310,7 @@ theorem BlockInstall.newProjTablesAt (hI : BlockInstall c new B cb ind caps)
             ∀ bm ∈ bs, bm.2.pw = Ix.Kernel.Level.zeronessOf tbl.structSort := by
   intro bp sap ptr nl ty np u blk h h' h1 h2 cs cs1 b s i evM hgM hb evG hgG hs hld hblk
     j cvC nP nF hctor hm hnF
-  have hbh := L1.hashedBlockAt_of_get_ci_induct (c := appCtx c new) hgG evG hs hld hblk
+  have hbh := Ingress.hashedBlockAt_of_get_ci_induct (c := appCtx c new) hgG evG hs hld hblk
   obtain ⟨j', hj', hk⟩ := hI.newCtor hctor hm
   obtain ⟨hbB, hi0, -⟩ := cprj_key_block hI.wf hI.decoded hI.held (hI.ctorRec j' hj') hbh hk
   exact hI.tableAt hT evG hgG hs hld hblk hbB (toUInt64_zero_of_lt (val_lt_uint64 i) hi0) hctor
@@ -351,7 +351,7 @@ theorem BlockInstall.newProjCtorTele (hI : BlockInstall c new B cb ind caps)
         Ix.Kernel.Expr.ctorTeleOk cvC.type (nP + nF) = true := by
   intro bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hctor htbl hm
   subst hip
-  have hbh := L1.hashedBlockAt_of_proj_ctor (c := appCtx c new) good ev hb rfl
+  have hbh := Ingress.hashedBlockAt_of_proj_ctor (c := appCtx c new) good ev hb rfl
   have hBi : Core.ixAddr b = B ∧ ZMod.val i = 0 := by
     rcases hm with hm | hm
     · obtain ⟨j', hj', hk⟩ := hI.newCtor hctor hm

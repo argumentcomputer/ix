@@ -71,7 +71,7 @@ theorem unit_load {E : Ixon.Env} (hE : RecordsFor StoreInhabit.basisStore E) {li
       keyOf ctab (cprjAddr (ixAddr b) (ZMod.val i) 0) = Ix.Kernel.Key.role .punitUnit := by
   obtain ⟨cm₀, hmem₀, hrec₀⟩ := stored_row hE hres (ixAddr_not_marker a)
   obtain ⟨rawBytes, blkBytes, cm, cb, xs, ind, b', i', hhA, haA, hexA, -, hhB, haB, hexB, -,
-    hbrep, hidx, hi56, hinfo, hcb, hxs⟩ := L1.inductRecord_raw_of_get_ci ev hg.2 ha hld
+    hbrep, hidx, hi56, hinfo, hcb, hxs⟩ := Ingress.inductRecord_raw_of_get_ci ev hg.2 ha hld
   have hcm : cm = cm₀ := record_escape hE.1 hg.1 hrec₀ hhA haA hexA
   subst hcm
   have hbb : b = b' := addr_det hb hbrep

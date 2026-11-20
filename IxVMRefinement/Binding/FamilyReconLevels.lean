@@ -82,7 +82,7 @@ private theorem validate_reader_levels {calls : List (Call F)} {t : Ix.Kernel.Ro
     {nlvls : Nat} {e : Ixon.Expr} {kp r : SourceValue F} {h₀ h h' : Heap F}
     {cs : List (Call F)}
     (hbd : Bounded calls) (hnl : nlvls < 4294967296)
-    (raw : L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+    (raw : Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
       h₀ 4294967295 e kp)
     (hext : Heap.Extends h₀ h)
     (ev : ObsFn W "KernelCheck::validate_expr_well_scoped"
@@ -109,13 +109,13 @@ theorem checkedLimAt_defnVal_levelsOk_blob {calls : List (Call F)} {bAddr : _roo
     -, -, ⟨ab, rab, hab⟩, -, ev_ld, -, hsub_ld, hld, ev_chk, -, hsub_chk⟩ := hchk
   subst hab
   obtain ⟨-, rawBytes, c', blobs, hh, ha, hde, -, -, -, hrawRes⟩ :=
-    L1.get_ci_spec (RomBound.bounded_mono hbd hsub_ld) rab ev_ld
+    Ingress.get_ci_spec (RomBound.bounded_mono hbd hsub_ld) rab ev_ld
   have hc_eq : c' = c := record_eq_of_hashed_l hS hsub_ld hrec hh ha hde
   subst hc_eq
-  simp only [L1.GetCIRawResult, hci] at hrawRes
+  simp only [Ingress.GetCIRawResult, hci] at hrawRes
   obtain ⟨v', hld', hnl, tyPtr, valPtr, hint, rfl, -, raw_val⟩ := hrawRes
   rw [hld'] at hld; injection hld with hv; subst hv
-  simp only [L1.defnValShape, hdk] at ev_chk
+  simp only [Ingress.defnValShape, hdk] at ev_chk
   match Obs.«KernelCheck::check_const».obs ev_chk with
   | .Defn (ev14 := ev14) (ev311 := ev311) (ev348 := ev348) (hv269 := hv) (hc520 := hc) .. =>
     injection hv with _ _ hl
@@ -163,7 +163,7 @@ private theorem memberChecked_unpack {calls : List (Call F)} {bAddr : _root_.Add
         ⟨Core.Specs.Callees.memberProjInfo b k m, #[], #[], #[], #[]⟩) ∧
       Bytes.RepAddressRef addrTy m_chk ba ap ∧
       loadValue m_chk ptr = .ok v ∧
-      L1.GetCIRawResult cs_load blobs m_chk (ixAddr ba)
+      Ingress.GetCIRawResult cs_load blobs m_chk (ixAddr ba)
         ⟨Core.Specs.Callees.memberProjInfo b k m, #[], #[], #[], #[]⟩ ptr ∧
       (∀ cl ∈ cs_load, cl ∈ calls) ∧
       ObsFn W "KernelCheck::check_const" [rc, v, ap] m_chk r_chk h'_chk cs_chk ∧
@@ -173,7 +173,7 @@ private theorem memberChecked_unpack {calls : List (Call F)} {bAddr : _root_.Add
     -, -, ev_ld, -, hsub_ld, hld, ev_chk, -, hsub_chk⟩ := hmc
   subst hbb
   obtain ⟨-, -, -, mc', ba, hget', rba, hba_eq, hh_proj⟩ :=
-    L1.projection_addr_hashed_spec hmem_rep rbb ev_pa
+    Ingress.projection_addr_hashed_spec hmem_rep rbb ev_pa
   obtain ⟨iv, hiv⟩ : ∃ iv, ((k : F)).val = iv := ⟨_, rfl⟩
   rw [hiv] at hget' hba_eq hh_proj
   obtain ⟨raw, cp, hsz, hh_h, hba_h, hx_h, -, hhead⟩ := Claim.get_ci_head rba ev_ld
@@ -187,9 +187,9 @@ private theorem memberChecked_unpack {calls : List (Call F)} {bAddr : _root_.Add
   have hwf : (⟨Core.Specs.Callees.memberProjInfo (ixAddr bb) iv mc', #[], #[], #[], #[]⟩ :
       Ixon.Constant).wireWF := by
     cases mc' with
-    | defn _ => exact L1.projConstant_wireWF_dPrj iv.toUInt64 bb
-    | indc _ => exact L1.projConstant_wireWF_iPrj iv.toUInt64 bb
-    | recr _ => exact L1.projConstant_wireWF_rPrj iv.toUInt64 bb
+    | defn _ => exact Ingress.projConstant_wireWF_dPrj iv.toUInt64 bb
+    | indc _ => exact Ingress.projConstant_wireWF_iPrj iv.toUInt64 bb
+    | recr _ => exact Ingress.projConstant_wireWF_rPrj iv.toUInt64 bb
   rw [hraw, Ixon.Verify.deConstantExact_serConstant _ hwf] at hx_h
   injection hx_h with hcp; subst hcp
   have hblock : ∃ cb' ms', Claim.BlockLoad cs_load (ixAddr bb) cb' ms' := by
@@ -202,14 +202,14 @@ private theorem memberChecked_unpack {calls : List (Call F)} {bAddr : _root_.Add
   have hsize := Claim.muts_size_le hms
   have hk_lt : k < ms.size := (Array.getElem?_eq_some_iff.mp hk).1
   have hk56 : k < 72057594037927936 := by omega
-  have hiv' : iv = k := hiv.symm.trans (L1.val_cast_u56_ing hk56)
+  have hiv' : iv = k := hiv.symm.trans (Ingress.val_cast_u56_ing hk56)
   subst hiv'
   have hmc_eq : mc' = m := by
     rw [Array.getElem?_toList] at hget'
     exact Option.some.inj (hget'.symm.trans hk)
   subst hmc_eq
   obtain ⟨ext_ld, rawBytes, c_ld, blobs, hh_ld, ha_ld, hde_ld, -, -, -, hrawRes⟩ :=
-    L1.get_ci_spec (RomBound.bounded_mono hbd hsub_ld) rba ev_ld
+    Ingress.get_ci_spec (RomBound.bounded_mono hbd hsub_ld) rba ev_ld
   have hbytes_eq : rawBytes = raw :=
     hS.hashed_inj (Core.hashed_mono hsub_ld hh_ld) (Core.hashed_mono hsub_ld hh_h)
       (ha_ld.trans hba_h.symm)
@@ -234,7 +234,7 @@ theorem memberCheckedLimAt_defnVal_levelsOk_blob {calls : List (Call F)} {bAddr 
   obtain ⟨hk56, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk, ba, blobs,
     -, -, -, hld, hrawRes, hsub_ld, ev_chk, hsub_chk⟩ :=
     memberChecked_unpack hS hbd hcb hms hk hmc
-  simp only [L1.GetCIRawResult, Core.Specs.Callees.memberProjInfo] at hrawRes
+  simp only [Ingress.GetCIRawResult, Core.Specs.Callees.memberProjInfo] at hrawRes
   obtain ⟨-, blkBytes, cb', ms', d', v', hhB, haB, hdeB, -, hms', hd', hld', hnl, tyPtr, valPtr,
     hint, hv', -, raw_val⟩ := hrawRes
   have hcb_eq : cb' = cb := record_eq_of_hashed_l hS hsub_ld hcb hhB haB hdeB
@@ -246,7 +246,7 @@ theorem memberCheckedLimAt_defnVal_levelsOk_blob {calls : List (Call F)} {bAddr 
   rw [hidx_eq, Array.getElem?_toList, hk] at hd'
   injection hd' with hd_mc; injection hd_mc with hd_eq; subst hd_eq
   rw [hld'] at hld; injection hld with hv_eq; subst hv_eq; subst hv'
-  simp only [L1.defnValShape, hdk] at ev_chk
+  simp only [Ingress.defnValShape, hdk] at ev_chk
   match Obs.«KernelCheck::check_const».obs ev_chk with
   | .Defn (ev14 := ev14) (ev311 := ev311) (ev348 := ev348) (hv269 := hv) (hc520 := hc) .. =>
     injection hv with _ _ hl
@@ -322,14 +322,14 @@ private theorem check_inductive_shape_ctors_levelsOk {calls : List (Call F)}
       have sub1 : ∀ cl ∈ cs1, cl ∈ calls := fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem))
       obtain ⟨ext1, -, -, blkBytes, cb', ms', ind', ct', blobs, v', hhB, haB, hdeB, -, hms',
         hind', hct', -, hld', hraw_ct⟩ :=
-        L1.get_ci_cprj_spec (RomBound.bounded_mono hbd sub1) rba evc
+        Ingress.get_ci_cprj_spec (RomBound.bounded_mono hbd sub1) rba evc
       have hcb_eq : cb' = cb := record_eq_of_hashed_l hS sub1 hcb hhB haB hdeB
       subst cb'
       have hms_eq : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hms)
       subst ms'
-      rw [L1.val_cast_u56_ing hk56, Array.getElem?_toList, hk] at hind'
+      rw [Ingress.val_cast_u56_ing hk56, Array.getElem?_toList, hk] at hind'
       injection hind' with hi_mc; injection hi_mc with hi_eq; subst hi_eq
-      rw [L1.val_cast_u56_ing (by omega : c < 72057594037927936), Array.getElem?_toList] at hct'
+      rw [Ingress.val_cast_u56_ing (by omega : c < 72057594037927936), Array.getElem?_toList] at hct'
       rw [hld'] at ldc; injection ldc with hv_eq
       obtain ⟨hcnl32, -, hcnp56, -, -, ctyPtr, _, _, -, -, hshape, raw_cty⟩ := hraw_ct
       rw [hshape] at hv_eq
@@ -338,9 +338,9 @@ private theorem check_inductive_shape_ctors_levelsOk {calls : List (Call F)}
       injection hl with _ hl; injection hl with _ hl; injection hl with h6 _
       subst h1 h2 h6
       have hnl_nat : ct'.lvls.toNat = ind.lvls.toNat :=
-        L1.natCast_inj_56 (by omega) (by omega) (Value.field.inj hnl_eq)
+        Ingress.natCast_inj_56 (by omega) (by omega) (Value.field.inj hnl_eq)
       have hnp_nat : ct'.params.toNat = ind.params.toNat :=
-        L1.natCast_inj_56 hcnp56 hnp56 (Value.field.inj hnp_eq)
+        Ingress.natCast_inj_56 hcnp56 hnp56 (Value.field.inj hnp_eq)
       have hnp_u64 : ct'.params = ind.params := by
         calc ct'.params = ct'.params.toNat.toUInt64 := UInt64.ofNat_toNat.symm
           _ = ind.params.toNat.toUInt64 := by rw [hnp_nat]
@@ -413,14 +413,14 @@ private theorem check_modeled_ctors_levelsOk {calls : List (Call F)}
       have sub1 : ∀ cl ∈ cs1, cl ∈ calls := fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem))
       obtain ⟨ext1, -, -, blkBytes, cb', ms', ind', ct', blobs, v', hhB, haB, hdeB, -, hms',
         hind', hct', -, hld', hraw_ct⟩ :=
-        L1.get_ci_cprj_spec (RomBound.bounded_mono hbd sub1) rba evc
+        Ingress.get_ci_cprj_spec (RomBound.bounded_mono hbd sub1) rba evc
       have hcb_eq : cb' = cb := record_eq_of_hashed_l hS sub1 hcb hhB haB hdeB
       subst cb'
       have hms_eq : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hms)
       subst ms'
-      rw [L1.val_cast_u56_ing hk56, Array.getElem?_toList, hk] at hind'
+      rw [Ingress.val_cast_u56_ing hk56, Array.getElem?_toList, hk] at hind'
       injection hind' with hi_mc; injection hi_mc with hi_eq; subst hi_eq
-      rw [L1.val_cast_u56_ing (by omega : c < 72057594037927936), Array.getElem?_toList] at hct'
+      rw [Ingress.val_cast_u56_ing (by omega : c < 72057594037927936), Array.getElem?_toList] at hct'
       rw [hld'] at ldc; injection ldc with hv_eq
       obtain ⟨hcnl32, -, hcnp56, -, -, ctyPtr, _, _, -, -, hshape, raw_cty⟩ := hraw_ct
       rw [hshape] at hv_eq
@@ -429,9 +429,9 @@ private theorem check_modeled_ctors_levelsOk {calls : List (Call F)}
       injection hl with _ hl; injection hl with _ hl; injection hl with h6 _
       subst h1 h2 h6
       have hnl_nat : ct'.lvls.toNat = ind.lvls.toNat :=
-        L1.natCast_inj_56 (by omega) (by omega) (Value.field.inj hnl_eq)
+        Ingress.natCast_inj_56 (by omega) (by omega) (Value.field.inj hnl_eq)
       have hnp_nat : ct'.params.toNat = ind.params.toNat :=
-        L1.natCast_inj_56 hcnp56 hnp56 (Value.field.inj hnp_eq)
+        Ingress.natCast_inj_56 hcnp56 hnp56 (Value.field.inj hnp_eq)
       have hnp_u64 : ct'.params = ind.params := by
         calc ct'.params = ct'.params.toNat.toUInt64 := UInt64.ofNat_toNat.symm
           _ = ind.params.toNat.toUInt64 := by rw [hnp_nat]
@@ -461,7 +461,7 @@ private theorem check_modeled_ctors_levelsOk {calls : List (Call F)}
 
 private theorem nparams_agree_spec {np : Nat} (hnp56 : np < 72057594037927936) :
     ∀ (rest : List Ixon.MutConst) {xm : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
-      RepList L1.mutConstListEnum L1.RepMutConst h rest xm →
+      RepList Ingress.mutConstListEnum Ingress.RepMutConst h rest xm →
       ObsFn W "KernelModeled::nparams_agree" [xm, .field (np : F)] h (.field 1) h' cs →
       ∀ ind, .indc ind ∈ rest → ind.params.toNat = np := by
   intro rest
@@ -484,7 +484,7 @@ private theorem nparams_agree_spec {np : Nat} (hnp56 : np < 72057594037927936) :
         injection hiv with _ _ hil
         injection hil with _ hil; injection hil with _ hil; injection hil with hxp _
         subst hxp
-        obtain ⟨hnp0_56, rfl, hm1⟩ := L1.u64ToField_refines ind0.params.toNat_lt evu.erase
+        obtain ⟨hnp0_56, rfl, hm1⟩ := Ingress.u64ToField_refines ind0.params.toNat_lt evu.erase
         subst hm1
         have hEq0 : ind0.params.toNat = np := binop_sub_eq_zero_nat (by omega) (by omega) opsub
         have htail := ih hrest evrec
@@ -499,7 +499,7 @@ private theorem nparams_agree_spec {np : Nat} (hnp56 : np < 72057594037927936) :
 parameter count (and returns it). -/
 theorem block_nparams_spec {ms : List Ixon.MutConst} {xm r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
-    (hrep : RepList L1.mutConstListEnum L1.RepMutConst h ms xm)
+    (hrep : RepList Ingress.mutConstListEnum Ingress.RepMutConst h ms xm)
     (ev : ObsFn W "KernelModeled::block_nparams" [xm] h r h' cs) :
     ∃ np : Nat, np < 72057594037927936 ∧ r = .field (np : F) ∧
       ∀ ind, .indc ind ∈ ms → ind.params.toNat = np := by
@@ -515,7 +515,7 @@ theorem block_nparams_spec {ms : List Ixon.MutConst} {xm r : SourceValue F}
       injection hiv with _ _ hil
       injection hil with _ hil; injection hil with _ hil; injection hil with hxp _
       subst hxp
-      obtain ⟨hnp0_56, rfl, hm1⟩ := L1.u64ToField_refines ind0.params.toNat_lt evu.erase
+      obtain ⟨hnp0_56, rfl, hm1⟩ := Ingress.u64ToField_refines ind0.params.toNat_lt evu.erase
       subst hm1
       have htail := nparams_agree_spec hnp0_56 rest hrest evag
       refine ⟨ind0.params.toNat, hnp0_56, rfl, fun ind hmem => ?_⟩
@@ -538,7 +538,7 @@ private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       (∀ i m, rest[i]? = some m → ms[pos + i]? = some m) →
       ∀ {xm r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
         (∀ cl ∈ cs, cl ∈ calls) →
-        RepList L1.mutConstListEnum L1.RepMutConst h rest xm →
+        RepList Ingress.mutConstListEnum Ingress.RepMutConst h rest xm →
         Bytes.RepAddressRef addrTy h ba xblk →
         ObsFn W "KernelCheck::peer_agree_walk"
           [xrc, xm, xsty, .field (selfNp : F), xsni, .field (selfIdx : F), .field (pos : F), xblk]
@@ -586,7 +586,7 @@ private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       have hpos_eq : pos = selfIdx := binop_sub_eq_zero_nat (by omega) (by omega) opsub
       have htail := ih (pos + 1) (by simp only [List.length_cons] at hlen; omega) hidx'
         (fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem)))
-        (RepLinkedList.mono L1.repMutConst_heapMono₂ evz.heap_extends hrest)
+        (RepLinkedList.mono Ingress.repMutConst_heapMono₂ evz.heap_extends hrest)
         (Bytes.repAddressRef_heapMono₂ addrTy evz.heap_extends rba) evrec
       intro i ind hi
       cases i with
@@ -606,13 +606,13 @@ private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       have sub2 : ∀ cl ∈ cs2, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       obtain ⟨ext2, -, blkBytes, cb', ms', ind', blobs, v', hhB, haB, hdeB, -, hms', hind', -,
         hld', hraw_i⟩ :=
-        L1.get_ci_iprj_spec (RomBound.bounded_mono hbd sub2)
+        Ingress.get_ci_iprj_spec (RomBound.bounded_mono hbd sub2)
           (Bytes.repAddressRef_heapMono₂ addrTy evz.heap_extends rba) evip
       have hcb_eq : cb' = cb := record_eq_of_hashed_l hS sub2 hcb hhB haB hdeB
       subst hcb_eq
       have hms_eq : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hms)
       subst hms_eq
-      rw [L1.val_cast_u56_ing hpos56, Array.getElem?_toList, hpos_at] at hind'
+      rw [Ingress.val_cast_u56_ing hpos56, Array.getElem?_toList, hpos_at] at hind'
       rw [hld'] at ldip; injection ldip with hv_eq
       obtain ⟨-, hnp'_56, -, -, -, _, _, _, -, -, hshape, -⟩ := hraw_i
       rw [hshape] at hv_eq
@@ -620,7 +620,7 @@ private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       injection hl with _ hl; injection hl with _ hl; injection hl with h3 _
       subst h3
       have hnp_nat : ind'.params.toNat = selfNp :=
-        L1.natCast_inj_56 hnp'_56 hselfNp56 (Value.field.inj hnp_eq)
+        Ingress.natCast_inj_56 hnp'_56 hselfNp56 (Value.field.inj hnp_eq)
       obtain rfl := binop_add_one_nat op1
       have ext3a : Heap.Extends m3 m3a := by rw [hm3a]; exact Heap.Extends.snoc _ _
       have ext4a : Heap.Extends m4 m4a := by rw [hm4a]; exact Heap.Extends.snoc _ _
@@ -629,7 +629,7 @@ private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
           (evrs1.heap_extends.trans (ext4a.trans (evrs2.heap_extends.trans evle.heap_extends))))))
       have htail := ih (pos + 1) (by simp only [List.length_cons] at hlen; omega) hidx'
         (fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem)))
-        (RepLinkedList.mono L1.repMutConst_heapMono₂ ext06 hrest)
+        (RepLinkedList.mono Ingress.repMutConst_heapMono₂ ext06 hrest)
         (Bytes.repAddressRef_heapMono₂ addrTy ext06 rba) evrec
       intro i ind hi
       cases i with
@@ -643,7 +643,7 @@ private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
         (hc691 := hcs) .. =>
       have sub2 : ∀ cl ∈ cs2, cl ∈ calls := fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem))
       obtain ⟨-, -, _, _, _, _, _, v', -, -, -, -, -, -, -, hld', hraw_i⟩ :=
-        L1.get_ci_iprj_spec (RomBound.bounded_mono hbd sub2)
+        Ingress.get_ci_iprj_spec (RomBound.bounded_mono hbd sub2)
           (Bytes.repAddressRef_heapMono₂ addrTy evz.heap_extends rba) evip
       rw [hld'] at ldip; injection ldip with hv_eq; subst hv_eq
       obtain ⟨-, -, -, -, -, _, _, _, -, -, hshape, -⟩ := hraw_i
@@ -675,7 +675,7 @@ theorem memberCheckedLimAt_ind_levelsOk_blob {calls : List (Call F)} {bAddr : _r
   obtain ⟨hk56, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk, ba_p, blobs,
     hba_p_eq, hh_proj, rba_p, hld, hrawRes, hsub_ld, ev_chk, hsub_chk⟩ :=
     memberChecked_unpack hS hbd hcb hms hk hmc
-  simp only [L1.GetCIRawResult, Core.Specs.Callees.memberProjInfo] at hrawRes
+  simp only [Ingress.GetCIRawResult, Core.Specs.Callees.memberProjInfo] at hrawRes
   obtain ⟨-, blkBytes, cb', ms', ind', v', hhB, haB, hdeB, -, hms', hind', hld',
     hnl32, hnp56, hni56, hnc56, hidx56, tyPtr, blkPtr, ba_b, hba_b_eq, rba_b, hv', raw_ty⟩ := hrawRes
   have hcb_eq : cb' = cb := record_eq_of_hashed_l hS hsub_ld hcb hhB haB hdeB
@@ -703,7 +703,7 @@ theorem memberCheckedLimAt_ind_levelsOk_blob {calls : List (Call F)} {bAddr : _r
     have hwf : (⟨Core.Specs.Callees.memberProjInfo b k (.indc ind), #[], #[], #[], #[]⟩ :
         Ixon.Constant).wireWF := by
       rw [← hba_b_eq]
-      exact L1.projConstant_wireWF_iPrj k.toUInt64 ba_b
+      exact Ingress.projConstant_wireWF_iPrj k.toUInt64 ba_b
     rw [hraw, Ixon.Verify.deConstantExact_serConstant _ hwf] at hdeB
     injection hdeB with hce; rw [← hce] at hms; cases hms
   match Obs.«KernelCheck::check_const».obs ev_chk with
@@ -793,10 +793,10 @@ theorem memberCheckedLimAt_ind_levelsOk_blob {calls : List (Call F)} {bAddr : _r
             have h1 : cl ∈ cs_pa := mem_of_eq hc_pa (by call_mem)
             exact hsub_chk cl (mem_of_eq hc (by call_mem))
         obtain ⟨-, bytes', c'', -, hh', ha', hde', -, -, -, -, -, -, cRep⟩ :=
-          L1.load_verified_constant_decode_bounded
+          Ingress.load_verified_constant_decode_bounded
             (Bytes.repAddressRef_heapMono₂ addrTy (ext08.trans evaeq.heap_extends) rba_b) evlvc
         have hc'' : c'' = cb := record_eq_of_hashed_l hS sub_lvc
-          (show recordOf E₀ (L1.ixAddr ba_b) = some cb from by
+          (show recordOf E₀ (Ingress.ixAddr ba_b) = some cb from by
             change recordOf E₀ (ixAddr ba_b) = some cb; rwa [hba_b_eq])
           hh' ha' hde'
         subst hc''
@@ -921,7 +921,7 @@ theorem memberCheckedLimAt_ind_levelsOk_blob {calls : List (Call F)} {bAddr : _r
           subst ms''
           have ext_m := evlen.heap_extends.trans evmic.heap_extends
           obtain ⟨np, -, -, hall_np⟩ := block_nparams_spec
-            (hrepM.mono L1.repMutConst_heapMono₂ ext_m) evbnp
+            (hrepM.mono Ingress.repMutConst_heapMono₂ ext_m) evbnp
           intro i₂ ind₂ hi₂
           have h1 := hall_np ind (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hk))
           have h2 := hall_np ind₂ (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hi₂))
@@ -1050,7 +1050,7 @@ private theorem check_rules_go_levelsOk {calls : List (Call F)} {t : Ix.Kernel.R
     ∀ (rus : List Ixon.RecursorRule) (j : Nat) {xrules xs xj r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
       (∀ cl ∈ cs, cl ∈ calls) →
-      L1.RawRulesRep crb.refs.toList (L1.blockRecurAddrs rb rs.toList) crb.univs.toList
+      Ingress.RawRulesRep crb.refs.toList (Ingress.blockRecurAddrs rb rs.toList) crb.univs.toList
         crb.sharing.toList blobs h j rus xrules →
       ObsFn W "KernelModeled::check_rules_go"
         [xrc, xrm, .field (nl : F), xty, xrp, xni, xrules, xib, xiidx, xinp, xilvls, xpins,
@@ -1138,7 +1138,7 @@ private theorem build_recur_addrs_walk_hashed_spec {ms : List Ixon.MutConst} {b 
       obtain ⟨m', rest', he, _, hrest⟩ := Lib.rep_cons_of_load hcur ld12
       injection he with hm_eq hrest_eq; subst hm_eq hrest_eq
       obtain ⟨ext1, hk_lt, -, mc, a₀, hget_mc, ha₀, ha₀_eq, hh₀⟩ :=
-        L1.projection_addr_hashed_spec hms hb ev68
+        Ingress.projection_addr_hashed_spec hms hb ev68
       have hk_val : ((k : F)).val = k :=
         ZMod.val_natCast_of_lt (Nat.lt_of_le_of_lt hk (by decide))
       rw [hk_val] at hk_lt hget_mc ha₀_eq hh₀
@@ -1233,7 +1233,7 @@ theorem family_recs_muts_list {calls : List (Call F)} {E₀ : Ixon.Env}
     subst ms
     have ext : Heap.Extends m2 m123 := ev113.heap_extends.trans ev133.heap_extends
     have hmems :=
-      Route.membersRep_of_repMutConstList (RepLinkedList.mono L1.repMutConst_heapMono₂ ext hrep)
+      Route.membersRep_of_repMutConstList (RepLinkedList.mono Ingress.repMutConst_heapMono₂ ext hrep)
     have hb2 : Bytes.RepAddressRef addrTy m123 b x_rb :=
       Bytes.repAddressRef_heapMono₂ addrTy (ev14.heap_extends.trans ext) hb
     obtain ⟨-, as, has, hlen, hmem⟩ := build_recur_addrs_hashed_spec hmems hb2 ev148
@@ -1243,7 +1243,7 @@ theorem family_recs_muts_list {calls : List (Call F)} {E₀ : Ixon.Env}
   | .Recr (cs12 := cs12) (ev14 := ev14) (hc209 := hc) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (mem_of_eq hc (by call_mem))
     obtain ⟨-, bytes, c, -, hh, ha, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded hb ev14
+      Ingress.load_verified_constant_decode_bounded hb ev14
     have hc_eq : c = crb := record_eq_of_hashed_l hS hsub12 hrec hh ha hexact
     subst c
     obtain ⟨infoVal, _, _, _, _, hceq, hinfoRep, -, -, -, -⟩ := cRep
@@ -1307,7 +1307,7 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
       injection hcons with h1 h2; subst h1 h2
       have sub1 : ∀ cl ∈ cs1, cl ∈ calls := fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem))
       obtain ⟨ext1, rawBytes, cp, blobs, hh_p, ha_p, hde_p, -, -, -, hrawRes⟩ :=
-        L1.get_ci_spec (RomBound.bounded_mono hbd sub1) ra evci
+        Ingress.get_ci_spec (RomBound.bounded_mono hbd sub1) ra evci
       obtain ⟨m0, hm0, hpos56, ha0, hh0⟩ := hat 0 a rfl
       simp only [Nat.add_zero] at hm0 hpos56 ha0 hh0
       have ext1_6 : Heap.Extends m1 m6 :=
@@ -1348,9 +1348,9 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
             ⟨.rPrj ⟨pos.toUInt64, ixAddr rb_b⟩, #[], #[], #[], #[]⟩ :=
           hS.hashed_inj (Core.hashed_mono sub1 hh_p) hh0 (ha_p.trans ha0)
         rw [hraw_eq, Ixon.Verify.deConstantExact_serConstant _
-          (L1.projConstant_wireWF_rPrj pos.toUInt64 rb_b)] at hde_p
+          (Ingress.projConstant_wireWF_rPrj pos.toUInt64 rb_b)] at hde_p
         injection hde_p with hcp_eq; subst hcp_eq
-        simp only [L1.GetCIRawResult] at hrawRes
+        simp only [Ingress.GetCIRawResult] at hrawRes
         obtain ⟨-, blkBytes, crb', rs', rc', v', hhB, haB, hdeB, -, hrs', hrc', hld', hrawR⟩ := hrawRes
         have hcrb_eq : crb' = crb := record_eq_of_hashed_l hS sub1 hcrb hhB haB hdeB
         subst crb'
@@ -1486,7 +1486,7 @@ private theorem check_rec_rules_wellscoped_levelsOk {calls : List (Call F)}
     ∀ (rus : List Ixon.RecursorRule) (j : Nat) {xrules r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
       (∀ cl ∈ cs, cl ∈ calls) →
-      L1.RawRulesRep crb.refs.toList (L1.blockRecurAddrs rb rs.toList) crb.univs.toList
+      Ingress.RawRulesRep crb.refs.toList (Ingress.blockRecurAddrs rb rs.toList) crb.univs.toList
         crb.sharing.toList blobs h j rus xrules →
       ObsFn W "KernelCheck::check_rec_rules_wellscoped" [xrules, xod, .field (nl : F)] h r h' cs →
       ∀ ru ∈ rus, ∀ E_rd,
@@ -1542,7 +1542,7 @@ theorem memberCheckedLimAt_recr_levelsOk_blob {calls : List (Call F)} {bAddr : _
   obtain ⟨hk56, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk, ba_p, blobs,
     -, -, -, hld, hrawRes, hsub_ld, ev_chk, hsub_chk⟩ :=
     memberChecked_unpack hS hbd hcb hms hk hmc
-  simp only [L1.GetCIRawResult, Core.Specs.Callees.memberProjInfo] at hrawRes
+  simp only [Ingress.GetCIRawResult, Core.Specs.Callees.memberProjInfo] at hrawRes
   obtain ⟨-, blkBytes, cb', ms', rc', v', hhB, haB, hdeB, -, hms', hrc', hld', hrawR⟩ := hrawRes
   have hcb_eq : cb' = cb := record_eq_of_hashed_l hS hsub_ld hcb hhB haB hdeB
   subst cb'

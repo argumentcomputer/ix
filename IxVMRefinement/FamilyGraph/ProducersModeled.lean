@@ -49,7 +49,7 @@ theorem familyCallLim_of_member {calls : List (Call F)} {E₀ : Ixon.Env}
     -, hrc_m, ev_ld, -, hsub_ld, hld, ev_chk, -, hsub_chk⟩ := hchk
   obtain ⟨b', hb', rfl⟩ := hblk
   obtain ⟨-, -, -, mc, a', hget', ha', hproj, hhashed⟩ :=
-    L1.projection_addr_hashed_spec hmem hb' ev_pa
+    Ingress.projection_addr_hashed_spec hmem hb' ev_pa
   obtain ⟨iv, hiv⟩ : ∃ iv, ((i : F)).val = iv := ⟨_, rfl⟩
   rw [hiv] at hget' hproj hhashed
   obtain ⟨ind, rfl⟩ := hall mc (List.mem_of_getElem? hget')
@@ -64,7 +64,7 @@ theorem familyCallLim_of_member {calls : List (Call F)} {E₀ : Ixon.Env}
       (hba.trans hX.symm)
   have hwf : (⟨Core.Specs.Callees.memberProjInfo (Core.ixAddr b') iv (.indc ind),
       #[], #[], #[], #[]⟩ : Ixon.Constant).wireWF :=
-    L1.projConstant_wireWF_iPrj iv.toUInt64 b'
+    Ingress.projConstant_wireWF_iPrj iv.toUInt64 b'
   rw [hraw, Ixon.Verify.deConstantExact_serConstant _ hwf] at hx
   injection hx with hcp
   subst hcp
@@ -82,7 +82,7 @@ theorem familyCallLim_of_member {calls : List (Call F)} {E₀ : Ixon.Env}
     have hl := hlogic
     simp only [IxVM.Consistency.InLogic, hmuts] at hl
     exact (hl (.indc ind') (List.mem_of_getElem? hmem')).1
-  simp only [L1.repBoolField, hsafe, Bool.false_eq_true, ↓reduceIte] at ev_chk
+  simp only [Ingress.repBoolField, hsafe, Bool.false_eq_true, ↓reduceIte] at ev_chk
   match Obs.«KernelCheck::check_const».obs ev_chk with
   | .Axiom_n1 (hv37 := hv) .. | .Axiom_other_n0 (hv37 := hv) ..
   | .Axiom_other_other (hv37 := hv) ..

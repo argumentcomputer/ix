@@ -1,6 +1,6 @@
-import IxVMRefinement.L1.TraceRecords
+import IxVMRefinement.Ingress.TraceRecords
 import IxVMRefinement.Assembly.AdmittedOverlay
-import IxVMRefinement.Claim.Phase
+import IxVMRefinement.Claim.ClaimSeam
 
 /-! # Actual claim-phase coverage for raw record queries
 
@@ -16,9 +16,9 @@ open IxVM (F)
 
 /-- A decoded stored record supplies its canonical source object. -/
 theorem canonicalRecordAt_of_recordAt {env : Ixon.Env}
-    (decoded : L1.EnvDecoded env) {address : _root_.Address} {value : Ixon.Constant}
+    (decoded : Ingress.EnvDecoded env) {address : _root_.Address} {value : Ixon.Constant}
     (record : Ix.Cert.recordAt env address = some value) :
-    ∃ source : L1.CanonicalRecordAt env address, source.value = value := by
+    ∃ source : Ingress.CanonicalRecordAt env address, source.value = value := by
   unfold Ix.Cert.recordAt at record
   cases saved : env.consts.get? address with
   | none => rw [saved] at record; cases record
@@ -31,10 +31,10 @@ theorem canonicalRecordAt_of_recordAt {env : Ixon.Env}
 
 /-- Literal record preservation transports actual trace coverage into a decoded overlay. -/
 theorem canonicalHashCoverage_frame {env target : Ixon.Env} {calls : List (Call F)}
-    (coverage : L1.CanonicalHashCoverage env calls) (decoded : L1.EnvDecoded target)
+    (coverage : Ingress.CanonicalHashCoverage env calls) (decoded : Ingress.EnvDecoded target)
     (preserved : ∀ address value, Ix.Cert.recordAt env address = some value →
       Ix.Cert.recordAt target address = some value) :
-    L1.CanonicalHashCoverage target calls := by
+    Ingress.CanonicalHashCoverage target calls := by
   intro bytes value hashed size read
   obtain ⟨source, same⟩ := coverage bytes value hashed size read
   have record := source.recordAt
@@ -44,20 +44,20 @@ theorem canonicalHashCoverage_frame {env target : Ixon.Env} {calls : List (Call 
 /-- The actual claim-phase witness supplies exact canonical coverage of its root hashes. -/
 theorem walked_canonicalHashCoverage {calls : List (Call F)} {table : Ix.Kernel.RoleTable}
     {trace : Ixon.Env} {seeds : List _root_.Address}
-    (walked : Claim.WalkedL6 calls table trace seeds) :
-    L1.CanonicalHashCoverage trace calls := by
+    (walked : Claim.WalkedClaim calls table trace seeds) :
+    Ingress.CanonicalHashCoverage trace calls := by
   obtain ⟨_, _, _, _, _, complete, _⟩ := walked
   intro bytes value hashed size exactRead
   obtain ⟨entry, stored, bytesEq, cached⟩ := complete bytes value hashed size
-    (L1.deConstant_of_deConstantExact exactRead) exactRead
+    (Ingress.deConstant_of_deConstantExact exactRead) exactRead
   refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
   rw [bytesEq]
   exact exactRead
 
-/-- The claim-phase exact record cache is the L1 decoded-environment invariant. -/
+/-- The claim-phase exact record cache is the ingress decoded-environment invariant. -/
 theorem walked_envDecoded {calls : List (Call F)} {table : Ix.Kernel.RoleTable}
     {trace : Ixon.Env} {seeds : List _root_.Address}
-    (walked : Claim.WalkedL6 calls table trace seeds) : L1.EnvDecoded trace := by
+    (walked : Claim.WalkedClaim calls table trace seeds) : Ingress.EnvDecoded trace := by
   obtain ⟨_, _, _, exactRecords, _⟩ := walked
   intro address entry stored
   obtain ⟨_, value, cached, _, exactRead⟩ := exactRecords address entry stored
@@ -76,8 +76,8 @@ theorem admittedCore_trace_recordAt {V : IxVM.Refinement.View} {binding : Ix.Ker
 theorem admitted_canonicalHashCoverage {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
     (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
     {calls : List (Call F)} {table : Ix.Kernel.RoleTable} {trace : Ixon.Env}
-    {seeds : List _root_.Address} (walked : Claim.WalkedL6 calls table trace seeds) :
-    L1.CanonicalHashCoverage (admittedCore witness trace (fun _ => True)) calls := by
+    {seeds : List _root_.Address} (walked : Claim.WalkedClaim calls table trace seeds) :
+    Ingress.CanonicalHashCoverage (admittedCore witness trace (fun _ => True)) calls := by
   apply canonicalHashCoverage_frame (walked_canonicalHashCoverage walked)
     (admittedCore_decoded witness (fun _ => True) (walked_envDecoded walked))
   intro address value record
@@ -88,7 +88,7 @@ admitted reader data. Only the public collision alternative and existing memory 
 theorem admitted_trace_raw_records {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
     (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
     {calls : List (Call F)} {trace : Ixon.Env} {seeds : List _root_.Address}
-    (walked : Claim.WalkedL6 calls witness.table trace seeds)
+    (walked : Claim.WalkedClaim calls witness.table trace seeds)
     (loaded : IxVM.Consistency.LoadedBy calls trace)
     (bounded : IxVM.Consistency.Bounded calls)
     {name : String} {args : List (SourceValue F)} {before after : Heap F} {result : SourceValue F}
@@ -96,9 +96,9 @@ theorem admitted_trace_raw_records {V : IxVM.Refinement.View} {binding : Ix.Kern
     (env : Ix.Kernel.Env .anon) (lim : Option Nat) (claimBytes : ByteArray)
     (noCollision : ¬ V.HashedCollision
       (claimBytes :: binding.bytes :: IxVM.Consistency.readerImages V) calls) :
-    Core.RawRecordFacts (L1.traceRecordCtx
+    Core.RawRecordFacts (Ingress.traceRecordCtx
       ⟨admittedCore witness trace (fun _ => True), env, witness.table, lim⟩ calls) :=
-  L1.rawRecordFacts_of_hashed_trace observed
+  Ingress.rawRecordFacts_of_hashed_trace observed
     (admittedCore_good witness (fun _ => True) env lim claimBytes loaded bounded noCollision)
     (admitted_canonicalHashCoverage witness walked)
 

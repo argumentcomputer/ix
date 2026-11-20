@@ -49,7 +49,7 @@ theorem stored_row {E : Ixon.Env} (hE : RecordsFor StoreInhabit.basisStore E) {l
 
 /-- **A record loaded at an address the store holds is the store's record there**, in calls
 that hash no collision with the store. -/
-theorem record_escape {E : Ixon.Env} (hdec : L1.EnvDecoded E) {cs : List (Call F)}
+theorem record_escape {E : Ixon.Env} (hdec : Ingress.EnvDecoded E) {cs : List (Call F)}
     (hnc : ¬ View.HashedCollision { env := E } [] cs) {x : _root_.Address}
     {cm₀ cm : Ixon.Constant} (hrec : Ix.Cert.recordAt E x = some cm₀) {raw : ByteArray}
     (hh : Hashed cs raw) (ha : Address.blake3Pure raw = x)
@@ -129,12 +129,12 @@ abbrev emptyScope (E : Ixon.Env) (lim : Option Nat) : ScopedCtx where
 
 /-- The record fields hold for every decoded store at every scope (the empty prefix's
 contract, whose record fields do not read the environment). -/
-theorem decoded_loads {E : Ixon.Env} (hdec : L1.EnvDecoded E) (lim : Option Nat) :
+theorem decoded_loads {E : Ixon.Env} (hdec : Ingress.EnvDecoded E) (lim : Option Nat) :
     ScopedLoadFacts (emptyScope E lim) :=
   Decl.prefixLoadFacts_of_empty (c := ⟨E, Ix.Kernel.Env.empty, ctab, lim⟩) hdec (fun _ => rfl)
     (fun _ => False) (Decl.ScopeResolved.of_no_loads fun _ h => h.elim)
 
-theorem basis_indRecord {E : Ixon.Env} (hdec : L1.EnvDecoded E) (lim : Option Nat) :
+theorem basis_indRecord {E : Ixon.Env} (hdec : Ingress.EnvDecoded E) (lim : Option Nat) :
     ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address)
       (cm cb : Ixon.Constant) (p : Ixon.InductiveProj) (xs : Array Ixon.MutConst)
       (ind : Ixon.Inductive),
@@ -151,7 +151,7 @@ theorem basis_indRecord {E : Ixon.Env} (hdec : L1.EnvDecoded E) (lim : Option Na
       p.idx.toNat < 2 ^ 56 ∧ ind.ctors.size < 2 ^ 56 :=
   (decoded_loads hdec lim).indRecord
 
-theorem basis_recordShape {E : Ixon.Env} (hdec : L1.EnvDecoded E) (lim : Option Nat) :
+theorem basis_recordShape {E : Ixon.Env} (hdec : Ingress.EnvDecoded E) (lim : Option Nat) :
     ∀ (ap r : SourceValue F) (h h' : Heap F) (cs : List (Call F))
       (a : Bytes.Address) (cst : Ixon.Constant),
     ObsFn W "Ingress::load_verified_constant" [ap] h r h' cs → Good (bctx E lim).stored.toCtx cs →
@@ -160,7 +160,7 @@ theorem basis_recordShape {E : Ixon.Env} (hdec : L1.EnvDecoded E) (lim : Option 
     Specs.Callees.ConstShapeRep h' cst r :=
   (decoded_loads hdec lim).recordShape
 
-theorem basis_canonical {E : Ixon.Env} (hdec : L1.EnvDecoded E) (lim : Option Nat) :
+theorem basis_canonical {E : Ixon.Env} (hdec : Ingress.EnvDecoded E) (lim : Option Nat) :
     ∀ (x : _root_.Address) (lc : Ixon.LazyConstant) (info : Ixon.ConstantInfo),
     (⟨info, #[], #[], #[], #[]⟩ : Ixon.Constant).wireWF →
     (bctx E lim).stored.E.consts.get? x = some lc →
@@ -217,7 +217,7 @@ theorem basis_inductRecord {E : Ixon.Env} (hE : RecordsFor StoreInhabit.basisSto
   intro addr ptr h h' cs a nl ty np ni nc u blk idx ev _ hres hg ha hld
   obtain ⟨cm₀, -, hrec₀⟩ := stored_row hE hres (ixAddr_not_marker a)
   obtain ⟨rawBytes, blkBytes, cm, cb, xs, ind, b, i, hhA, haA, hexA, -, -, -, -, -, hbrep,
-    hidx, -, hinfo, -, -⟩ := L1.inductRecord_raw_of_get_ci ev hg.2 ha hld
+    hidx, -, hinfo, -, -⟩ := Ingress.inductRecord_raw_of_get_ci ev hg.2 ha hld
   have hcm : cm = cm₀ := record_escape hE.1 hg.1 hrec₀ hhA haA hexA
   subst hcm
   exact ⟨cm, b, i, hrec₀, hbrep, hidx, hinfo⟩
@@ -238,7 +238,7 @@ theorem basis_inductBlock {E : Ixon.Env} (hE : RecordsFor StoreInhabit.basisStor
   intro addr ptr h h' cs a b nl ty np ni nc u blk i ev _ hres hg ha hld hb
   obtain ⟨cm₀, hmem₀, hrec₀⟩ := stored_row hE hres (ixAddr_not_marker a)
   obtain ⟨rawBytes, blkBytes, cm, cb, xs, ind, b', i', hhA, haA, hexA, -, hhB, haB, hexB, -,
-    hbrep, hidx, -, hinfo, hcb, hxs⟩ := L1.inductRecord_raw_of_get_ci ev hg.2 ha hld
+    hbrep, hidx, -, hinfo, hcb, hxs⟩ := Ingress.inductRecord_raw_of_get_ci ev hg.2 ha hld
   have hcm : cm = cm₀ := record_escape hE.1 hg.1 hrec₀ hhA haA hexA
   subst hcm
   have hbb : b = b' := addr_det hb hbrep

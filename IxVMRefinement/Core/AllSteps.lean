@@ -7,15 +7,15 @@ import IxVMRefinement.Infer.Steps
 import IxVMRefinement.Roles.Steps
 import IxVMRefinement.Callees.Steps
 
-/-! # Registry step closure and `L4` at `S₀`
+/-! # Registry step closure and `CoreObligation` at `baseSeams`
 
 `scoped_steps_base` combines the step theorems of all nine registry families (`Fn`) into
 `Steps c`, closing the strong induction (`Registry.induction`), from the facts stated before the
 registry and the firing of the projection guards at the context. `scoped_steps` is the same from
 the facts a prefix carries. `all_steps` explicitly embeds the historical unrestricted package.
 From that induction on call-list length,
-`core_S₀` discharges `IxVM.Consistency.Core S₀` (`whnf`, `k_is_def_eq`, `k_infer` up to
-`View.HashedCollision`), giving `l4_S₀ : IxVM.Consistency.L4 S₀`. -/
+`core_baseSeams` discharges `IxVM.Consistency.Core baseSeams` (`whnf`, `k_is_def_eq`, `k_infer` up to
+`View.HashedCollision`), giving `coreObligation_baseSeams : IxVM.Consistency.CoreObligation baseSeams`. -/
 
 namespace IxVM.Refinement.Core
 
@@ -61,9 +61,9 @@ theorem all_steps (c : Ctx) (hc : CoreFacts c) : Steps (ScopedCtx.unrestricted c
   scoped_steps_base (ScopedCtx.unrestricted c) (ScopedCoreBase.ofUnrestricted hc)
     hc.loads.projGuardFires
 
-/-- **Obligation L4's content at `S₀`**: weak head normalization, definitional equality, and
+/-- **`Core` at `baseSeams`**: weak head normalization, definitional equality, and
 full-grade type inference refine `Ix.Kernel.Rules.{Red,DefEq,Infer}` up to hashed collision. -/
-theorem core_S₀ : IxVM.Consistency.Core S₀ := by
+theorem core_baseSeams : IxVM.Consistency.Core baseSeams := by
   rintro E env ⟨κ, Γ⟩ d rc types heap after cs ⟨t, lim, hκ, hrc, hty, hs, henv, hloads⟩ hbd
   dsimp only [Ghost.κ, Ghost.Γ] at hκ hty hs
   subst hκ
@@ -86,7 +86,7 @@ theorem core_S₀ : IxVM.Consistency.Core S₀ := by
       exact .inr (Registry.induction sc (all_steps c hc) (.infer .k_infer)
         [rc, e, types] heap r after cs ev rc e types rfl hgood hrc d Γ htypes te hte)
 
-/-- **Obligation L4 at `S₀`.** -/
-theorem l4_S₀ : IxVM.Consistency.L4 S₀ := fun _ _ _ => core_S₀
+/-- **`CoreObligation` at `baseSeams`.** -/
+theorem coreObligation_baseSeams : IxVM.Consistency.CoreObligation baseSeams := fun _ _ _ => core_baseSeams
 
 end IxVM.Refinement.Core

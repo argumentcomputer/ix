@@ -105,16 +105,16 @@ theorem rec_k_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E :
   match Obs.«KernelCheck::compute_k_target».obs evK with
   | .Induct_n0 (he103 := he) .. =>
     rw [← hkEq] at he
-    exact absurd he (by simp [L1.repBoolField])
+    exact absurd he (by simp [Ingress.repBoolField])
   | .Induct_other_n0 (he212 := he) .. =>
     rw [← hkEq] at he
-    exact absurd he (by simp [L1.repBoolField])
+    exact absurd he (by simp [Ingress.repBoolField])
   | .Induct_other_other_n1_other (he355 := he) .. =>
     rw [← hkEq] at he
-    exact absurd he (by simp [L1.repBoolField])
+    exact absurd he (by simp [Ingress.repBoolField])
   | .Induct_other_other_other (he362 := he) .. =>
     rw [← hkEq] at he
-    exact absurd he (by simp [L1.repBoolField])
+    exact absurd he (by simp [Ingress.repBoolField])
   | .other (hne365 := hne) .. =>
     exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
   | .Induct_other_other_n1_Ctor (m60 := m60) (m111 := m111) (m159 := m159) (m196 := m196)
@@ -193,7 +193,7 @@ theorem rec_k_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E :
       have hz' : ((.field (cA.2 : F)) : SourceValue F) = .field 0 := by
         by_contra hne
         rw [ite_eq_right hne] at hz
-        exact absurd hz (by simp [L1.repBoolField])
+        exact absurd hz (by simp [Ingress.repBoolField])
       exact field_nat_eq_zero (by omega) hz'
     exact ⟨hrules.trans hsize, hlenA, hfields, eval_eq_zero_of_posOf hperm hsort0⟩
 

@@ -141,7 +141,7 @@ theorem GroupReach.root_or_allowed (hC : CollisionFreeRun calls E₀) {g : Nat}
     rw [ec] at hi hx
     obtain ⟨hlt, hxe⟩ := Array.getElem?_eq_some_iff.mp hx
     have hlt' : i < c.refs.toList.length := by simpa using hlt
-    have hused : i ∈ Core.S0.usedRefIdxs c := by
+    have hused : i ∈ Core.BaseSeams.usedRefIdxs c := by
       rw [Assembly.usedRefIdxs_eq]
       exact hi
     have hxl : c.refs.toList[i]'hlt' = a := by simpa using hxe
@@ -184,7 +184,7 @@ theorem GroupReach.root_or_allowed (hC : CollisionFreeRun calls E₀) {g : Nat}
       have hrec : recordOf E₀ thm = some c := by
         rw [← hbl]
         exact Claim.recordOf_hashed hC.runStore hC.hashedStored hh hsz
-          (L1.deConstant_of_deConstantExact hde) hde
+          (Ingress.deConstant_of_deConstantExact hde) hde
       obtain ⟨c', i, hc', hi, hx⟩ := hu
       have ec : c' = c := Option.some.inj (hc'.symm.trans hrec)
       rw [ec] at hi hx

@@ -428,12 +428,12 @@ theorem check_container_rec_rec_family_block (hC : CollisionFreeRun calls E₀)
     (hbd : IxVM.Consistency.Bounded calls)
     {x ib : _root_.Address} {rc xx xib r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
-    (hx : Core.S0.addr h xx x) (hib : Core.S0.addr h xib ib)
+    (hx : Core.BaseSeams.addr h xx x) (hib : Core.BaseSeams.addr h xib ib)
     (ev : ObsFn Obs.W "KernelModeled::check_container_rec" [rc, xx, xib] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     ∃ (v26 : SourceValue F) (m29 : Heap F) (cs37 : List (Call F)),
       ObsFn Obs.W "KernelModeled::rec_family_block" [xx] h v26 m29 cs37 ∧
-      Core.S0.addr m29 v26 ib ∧
+      Core.BaseSeams.addr m29 v26 ib ∧
       (∀ cl ∈ cs37, cl ∈ calls) := by
   match Obs.«KernelModeled::check_container_rec».obs ev with
   | .run (v26 := v26) (m29 := m29) (cs37 := cs37) (ev39 := ev39) (ev25 := ev25)
@@ -457,7 +457,7 @@ theorem check_container_rec_shape (hC : CollisionFreeRun calls E₀)
     (hbd : IxVM.Consistency.Bounded calls)
     {x ib : _root_.Address} {rc xx xib r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
-    (hx : Core.S0.addr h xx x) (hib : Core.S0.addr h xib ib)
+    (hx : Core.BaseSeams.addr h xx x) (hib : Core.BaseSeams.addr h xib ib)
     (ev : ObsFn Obs.W "KernelModeled::check_container_rec" [rc, xx, xib] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) {c : Ixon.Constant} (hc : recordOf E₀ x = some c) :
     (∃ rc, c.info = .recr rc) ∨ (∃ rp, c.info = .rPrj rp) := by
@@ -636,7 +636,7 @@ theorem covered_needOk (hC : CollisionFreeRun calls E₀)
   have hcx : recordOf E₀ x = some c' := by
     rw [← hab', ← hba]
     exact Claim.recordOf_hashed hC.runStore hC.hashedStored (Core.hashed_mono hsub hh) hsz
-      (L1.deConstant_of_deConstantExact hx') hx'
+      (Ingress.deConstant_of_deConstantExact hx') hx'
   exact ⟨c', hcx, fun ⟨ms, hms⟩ => hhead.notMuts ms hms, (hsafe c' hcx).1, (hsafe c' hcx).2⟩
 
 /-- From `NotBlockIn`, `¬ CoveredAt → SourceSafe`, and a stored record in `E₀`, derive `NeedOk`. -/
@@ -664,7 +664,7 @@ theorem needOk_of_notBlock_sourceSafe (hC : CollisionFreeRun calls E₀)
         | ok cx' =>
           simp only [hdeE, Except.toOption, Option.some.injEq] at hcx
           subst cx'
-          have hde' := L1.deConstant_of_deConstantExact hdeE
+          have hde' := Ingress.deConstant_of_deConstantExact hdeE
           rw [← eraw, hde] at hde'
           exact Except.ok.inj hde'
     subst ec
@@ -748,7 +748,7 @@ private theorem witness_in_payClass (hC : CollisionFreeRun calls E₀)
         ∃ ib, PathPos E₀ B ib ∧
           ∃ (h₁ h₂ : Heap F) (rc₁ xx₁ xib₁ r₁ : SourceValue F) (cs₁ : List (Call F)),
             Claim.RCLimRep t bAddr (some (valLimit g)) h₁ rc₁ ∧
-            Core.S0.addr h₁ xx₁ w ∧ Core.S0.addr h₁ xib₁ ib ∧
+            Core.BaseSeams.addr h₁ xx₁ w ∧ Core.BaseSeams.addr h₁ xib₁ ib ∧
             ObsFn Obs.W "KernelModeled::check_container_rec" [rc₁, xx₁, xib₁] h₁ r₁ h₂ cs₁ ∧
             (∀ cl ∈ cs₁, cl ∈ calls) ∧ cs₁.length < cs.length) ∨
       (∃ ib c cib, PathPos E₀ B ib ∧ recordOf E₀ w = some c ∧ IsProj c ∧

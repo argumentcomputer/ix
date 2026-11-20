@@ -1,11 +1,11 @@
 import IxVMRefinement.Core.Seams
-import IxVMRefinement.L1.Hashed
+import IxVMRefinement.Ingress.Hashed
 import IxVMRefinement.Obs.IxonDeserialize
 import Ix.IxVM.Refinement.DeserializeBinders
 import IxC.Ixon.Verify.ConstantBounds
 import IxC.Ixon.Verify.ConstantTables
 
-/-! # Constant deserialization refinement for L6 (`IxonDeserialize::get_constant`)
+/-! # Claim-phase constant deserialization refinement (`IxonDeserialize::get_constant`)
 
 Connects `IxonDeserialize::get_constant` and `Ingress::load_verified_constant` to `Ixon.getConstant`
 and `Ixon.deConstant`, tracking the exact heap representation (`RepConstant`) consumed by
@@ -177,46 +177,46 @@ theorem RepInductive.mono {h₁ h₂ : Heap F} {ind : Ixon.Inductive} {v : Sourc
 def RepInductiveProj (h : Heap F) (p : Ixon.InductiveProj) (v : SourceValue F) : Prop :=
   ∃ blkPtr,
     v = .construct "Ixon::InductiveProj" "Mk" [TagN.u64Value p.idx.toNat, blkPtr] ∧
-    S0.addr h blkPtr p.block
+    BaseSeams.addr h blkPtr p.block
 
 theorem RepInductiveProj.mono {h₁ h₂ : Heap F} {p : Ixon.InductiveProj} {v : SourceValue F}
     (ext : Heap.Extends h₁ h₂) (r : RepInductiveProj h₁ p v) : RepInductiveProj h₂ p v := by
   obtain ⟨blkPtr, hv, hb⟩ := r
-  exact ⟨blkPtr, hv, S0.addr_mono ext hb⟩
+  exact ⟨blkPtr, hv, BaseSeams.addr_mono ext hb⟩
 
 /-- Representation of `Ixon.ConstructorProj` (`Ixon::ConstructorProj::Mk`). -/
 def RepConstructorProj (h : Heap F) (p : Ixon.ConstructorProj) (v : SourceValue F) : Prop :=
   ∃ blkPtr,
     v = .construct "Ixon::ConstructorProj" "Mk"
       [TagN.u64Value p.idx.toNat, TagN.u64Value p.cidx.toNat, blkPtr] ∧
-    S0.addr h blkPtr p.block
+    BaseSeams.addr h blkPtr p.block
 
 theorem RepConstructorProj.mono {h₁ h₂ : Heap F} {p : Ixon.ConstructorProj} {v : SourceValue F}
     (ext : Heap.Extends h₁ h₂) (r : RepConstructorProj h₁ p v) : RepConstructorProj h₂ p v := by
   obtain ⟨blkPtr, hv, hb⟩ := r
-  exact ⟨blkPtr, hv, S0.addr_mono ext hb⟩
+  exact ⟨blkPtr, hv, BaseSeams.addr_mono ext hb⟩
 
 /-- Representation of `Ixon.RecursorProj` (`Ixon::RecursorProj::Mk`). -/
 def RepRecursorProj (h : Heap F) (p : Ixon.RecursorProj) (v : SourceValue F) : Prop :=
   ∃ blkPtr,
     v = .construct "Ixon::RecursorProj" "Mk" [TagN.u64Value p.idx.toNat, blkPtr] ∧
-    S0.addr h blkPtr p.block
+    BaseSeams.addr h blkPtr p.block
 
 theorem RepRecursorProj.mono {h₁ h₂ : Heap F} {p : Ixon.RecursorProj} {v : SourceValue F}
     (ext : Heap.Extends h₁ h₂) (r : RepRecursorProj h₁ p v) : RepRecursorProj h₂ p v := by
   obtain ⟨blkPtr, hv, hb⟩ := r
-  exact ⟨blkPtr, hv, S0.addr_mono ext hb⟩
+  exact ⟨blkPtr, hv, BaseSeams.addr_mono ext hb⟩
 
 /-- Representation of `Ixon.DefinitionProj` (`Ixon::DefinitionProj::Mk`). -/
 def RepDefinitionProj (h : Heap F) (p : Ixon.DefinitionProj) (v : SourceValue F) : Prop :=
   ∃ blkPtr,
     v = .construct "Ixon::DefinitionProj" "Mk" [TagN.u64Value p.idx.toNat, blkPtr] ∧
-    S0.addr h blkPtr p.block
+    BaseSeams.addr h blkPtr p.block
 
 theorem RepDefinitionProj.mono {h₁ h₂ : Heap F} {p : Ixon.DefinitionProj} {v : SourceValue F}
     (ext : Heap.Extends h₁ h₂) (r : RepDefinitionProj h₁ p v) : RepDefinitionProj h₂ p v := by
   obtain ⟨blkPtr, hv, hb⟩ := r
-  exact ⟨blkPtr, hv, S0.addr_mono ext hb⟩
+  exact ⟨blkPtr, hv, BaseSeams.addr_mono ext hb⟩
 
 /-- Representation of `Ixon.MutConst` (`Ixon::MutConst`). -/
 def RepMutConst (h : Heap F) : Ixon.MutConst → SourceValue F → Prop
@@ -263,12 +263,12 @@ theorem RepConstantInfo.mono {h₁ h₂ : Heap F} {ci : Ixon.ConstantInfo} {v : 
       obtain ⟨mv, hv, hms⟩ := r
       exact ⟨mv, hv, repList_heapMono₂ _ repMutConst_heapMono₂ ext hms⟩
 
-/-- Address-reference element relation `fun h a av => S0.addr h av a` and its heap monotonicity. -/
+/-- Address-reference element relation `fun h a av => BaseSeams.addr h av a` and its heap monotonicity. -/
 abbrev RepAddrElem (h : Heap F) (a : _root_.Address) (av : SourceValue F) : Prop :=
-  S0.addr h av a
+  BaseSeams.addr h av a
 
 theorem repAddrElem_heapMono₂ : HeapMono₂ RepAddrElem :=
-  fun _ _ _ _ ext r => S0.addr_mono ext r
+  fun _ _ _ _ ext r => BaseSeams.addr_mono ext r
 
 /-- Representation of `Ixon.Constant` (`Ixon::Constant::Mk`). -/
 def RepConstant (h : Heap F) (c : Ixon.Constant) (v : SourceValue F) : Prop :=
@@ -308,7 +308,7 @@ structure ConstantWireFacts (c : Ixon.Constant) : Prop where
 
 private theorem getTagN0_progress {bytes : List UInt8} {i : Nat}
     {stream r : SourceValue F} {h h' : Heap F}
-    (rep : L1.Stream h (bytes.drop i) stream)
+    (rep : Ingress.Stream h (bytes.drop i) stream)
     (ev : EvalFn Obs.W "IxonDeserialize::get_tagn0" [stream] h r h') :
     h' = h ∧ ∃ (t : Ixon.TagN) (n : Nat) (restPtr : SourceValue F),
       0 < n ∧
@@ -316,7 +316,7 @@ private theorem getTagN0_progress {bytes : List UInt8} {i : Nat}
       Ixon.getTagN 0 { idx := i, bytes := ⟨bytes.toArray⟩ } =
         .ok t { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       t.flag = 0 ∧
-      L1.Stream h (bytes.drop (i + n)) restPtr ∧
+      Ingress.Stream h (bytes.drop (i + n)) restPtr ∧
       r = .tuple [TagN.u64Value t.value.toNat, restPtr] := by
   obtain ⟨rfl, t, n, restPtr, hok0, hflag, hrep, hr⟩ := TagN.getTagN0_refines rep ev
   have hlt := Deserialize.drop_length_lt_of_getTagN hok0
@@ -812,7 +812,7 @@ theorem unpack_def_kind_safety_spec {b : UInt8} {r : SourceValue F} {h h' : Heap
 
 theorem get_definition_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_definition" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (d : Ixon.Definition) (n : Nat) (dVal restPtr : SourceValue F),
@@ -820,7 +820,7 @@ theorem get_definition_spec {bytes : List UInt8} {i : Nat}
         .ok d { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [dVal, restPtr] ∧
       RepDefinition h' d dVal ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   obtain ⟨m2, cs12, x_packed, x_s, m37, cs47, x_kind, x_safety, x_asserts, m77, cs87,
     x_lvls, x_s2, m112, cs122, x_typ, x_s3, m147, cs157, x_value, x_s4,
     ev14, ev49, ev89, ev124, ev159, he185, he250, -⟩ :=
@@ -863,7 +863,7 @@ theorem get_definition_spec {bytes : List UInt8} {i : Nat}
 
 theorem get_recursor_rule_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_recursor_rule" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (rl : Ixon.RecursorRule) (n : Nat) (rlVal restPtr : SourceValue F),
@@ -872,7 +872,7 @@ theorem get_recursor_rule_spec {bytes : List UInt8} {i : Nat}
         .ok rl { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [rlVal, restPtr] ∧
       RepRecursorRule h' rl rlVal ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   obtain ⟨m2, cs12, x_fields, x_s, m37, cs47, x_rhs, x_s2, ev14, ev49, he75, he108, -⟩ :=
     Obs.«IxonDeserialize::get_recursor_rule».obs ev
   obtain ⟨hm2, fTag, n1, restPtr1, _, hlt1, hf_ok, _, hs1, hf_tup⟩ :=
@@ -894,7 +894,7 @@ theorem get_recursor_rule_spec {bytes : List UInt8} {i : Nat}
 theorem get_recursor_rule_list_spec (count : Nat) (hcount : count < 18446744073709551616)
     {bytes : List UInt8} {i : Nat} {x_stream r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_recursor_rule_list"
       [x_stream, TagN.u64Value count] h r h' calls) :
     Heap.Extends h h' ∧
@@ -904,7 +904,7 @@ theorem get_recursor_rule_list_spec (count : Nat) (hcount : count < 184467440737
         .ok rules { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [listPtr, restPtr] ∧
       RepList Obs.Names.«Lists::Node<Ixon::RecursorRule>» RepRecursorRule h' rules.toList listPtr ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   induction count generalizing i x_stream r h h' calls with
   | zero =>
     rcases Obs.«IxonDeserialize::get_recursor_rule_list».obs ev with
@@ -914,7 +914,7 @@ theorem get_recursor_rule_list_spec (count : Nat) (hcount : count < 184467440737
     · obtain ⟨_, hm2⟩ := Deserialize.u64IsZero_refines hcount ev14.erase
       subst m2
       have ext := allocNil_extends Obs.Names.«Lists::Node<Ixon::RecursorRule>» h
-      have hs' := L1.Stream.mono ext hs
+      have hs' := Ingress.Stream.mono ext hs
       have hm_nil : h' = (allocNil Obs.Names.«Lists::Node<Ixon::RecursorRule>» h).2 :=
         he62.trans hm51
       rw [hm_nil]
@@ -954,13 +954,13 @@ theorem get_recursor_rule_list_spec (count : Nat) (hcount : count < 184467440737
       refine ⟨(ext1.trans ext2).trans ext3, #[rl] ++ tailRules, n1 + n2,
         (allocCons Obs.Names.«Lists::Node<Ixon::RecursorRule>» x_rule x_rest m105).1, x_s2,
         by omega, ?_, he164, by rw [singleton_append_toList]; exact consRep,
-        L1.Stream.mono ext3 hs2⟩
+        Ingress.Stream.mono ext3 hs2⟩
       rw [Ixon.Verify.BoundedConstant.getArray_succ]
       simp [bind, EStateM.bind, hok1, hok2, pure, EStateM.pure]
 
 theorem get_recursor_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_recursor" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (rc : Ixon.Recursor) (n : Nat) (rcVal restPtr : SourceValue F),
@@ -968,7 +968,7 @@ theorem get_recursor_spec {bytes : List UInt8} {i : Nat}
         .ok rc { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [rcVal, restPtr] ∧
       RepRecursor h' rc rcVal ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   obtain ⟨m2, cs12, x_bools_byte, x_s, v47, m50, cs58, v83, m84, cs94, v105, v117,
     m130, cs140, x_lvls, x_s2, m165, cs175, x_params, x_s3, m200, cs210, x_indices, x_s4,
     m235, cs245, x_motives, x_s5, m270, cs280, x_minors, x_s6, m305, cs315, x_typ, x_s7,
@@ -1073,7 +1073,7 @@ theorem get_recursor_spec {bytes : List UInt8} {i : Nat}
 
 theorem get_axiom_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_axiom" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (a : Ixon.Axiom) (n : Nat) (aVal restPtr : SourceValue F),
@@ -1081,7 +1081,7 @@ theorem get_axiom_spec {bytes : List UInt8} {i : Nat}
         .ok a { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [aVal, restPtr] ∧
       RepAxiom h' a aVal ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   obtain ⟨m2, cs12, x_is_unsafe, x_s, v36, m37, cs47, m59, cs69, x_lvls, x_s2, m94, cs104,
     x_typ, x_s3, v142, m146, cs154, ev14, ev49, ev71, ev106, he132, ev156, he186, -⟩ :=
     Obs.«IxonDeserialize::get_axiom».obs ev
@@ -1116,7 +1116,7 @@ theorem get_axiom_spec {bytes : List UInt8} {i : Nat}
 
 theorem get_quotient_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_quotient" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (q : Ixon.Quotient) (n : Nat) (qVal restPtr : SourceValue F),
@@ -1124,7 +1124,7 @@ theorem get_quotient_spec {bytes : List UInt8} {i : Nat}
         .ok q { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [qVal, restPtr] ∧
       RepQuotient h' q qVal ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   obtain ⟨m2, cs12, x_kind_byte, x_s, v36, m37, cs47, m59, cs69, x_lvls, x_s2, m94, cs104,
     x_typ, x_s3, ev14, ev49, ev71, ev106, he132, he173, -⟩ :=
     Obs.«IxonDeserialize::get_quotient».obs ev
@@ -1168,7 +1168,7 @@ theorem get_quotient_spec {bytes : List UInt8} {i : Nat}
 theorem get_field_mode_list_spec (count : Nat) (hcount : count < 18446744073709551616)
     {bytes : List UInt8} {i : Nat} {x_stream r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_field_mode_list"
       [x_stream, TagN.u64Value count] h r h' calls) :
     Heap.Extends h h' ∧
@@ -1180,7 +1180,7 @@ theorem get_field_mode_list_spec (count : Nat) (hcount : count < 184467440737095
       r = .tuple [listPtr, sharedVal, restPtr] ∧
       sharedVal = .field (if modes.any (· == .shared) then 1 else 0) ∧
       RepList Obs.Names.«Lists::Node<Field>» (fun _ => RepFieldMode) h' modes.toList listPtr ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   induction count generalizing i x_stream r h h' calls with
   | zero =>
     rcases Obs.«IxonDeserialize::get_field_mode_list».obs ev with
@@ -1192,7 +1192,7 @@ theorem get_field_mode_list_spec (count : Nat) (hcount : count < 184467440737095
     · obtain ⟨_, hm2⟩ := Deserialize.u64IsZero_refines hcount ev14.erase
       subst m2
       have ext := allocNil_extends Obs.Names.«Lists::Node<Field>» h
-      have hs' := L1.Stream.mono ext hs
+      have hs' := Ingress.Stream.mono ext hs
       have hm_nil : h' = (allocNil Obs.Names.«Lists::Node<Field>» h).2 := he69.trans hm52
       rw [hm_nil]
       refine ⟨ext, #[], 0, (allocNil Obs.Names.«Lists::Node<Field>» h).1, .field 0, x_stream,
@@ -1246,7 +1246,7 @@ theorem get_field_mode_list_spec (count : Nat) (hcount : count < 184467440737095
         (allocCons Obs.Names.«Lists::Node<Field>» (.field 0) x_rest m112).1, x_shared, x_s2,
         by simp [hsz2]; omega, by omega, ?_, he204, ?_,
         by rw [singleton_append_toList]; exact consRep,
-        L1.Stream.mono ext3 hs2⟩
+        Ingress.Stream.mono ext3 hs2⟩
       · rw [Ixon.Verify.BoundedConstant.getArray_succ]
         simp [bind, EStateM.bind, hfm_ok, hok2, pure, EStateM.pure]
       · rw [hsh_eq]; simp
@@ -1286,7 +1286,7 @@ theorem get_field_mode_list_spec (count : Nat) (hcount : count < 184467440737095
         (allocCons Obs.Names.«Lists::Node<Field>» (.field 1) x_rest m112).1, .field 1, x_s2,
         by simp [hsz2]; omega, by omega, ?_, he259, by simp,
         by rw [singleton_append_toList]; exact consRep,
-        L1.Stream.mono ext3 hs2⟩
+        Ingress.Stream.mono ext3 hs2⟩
       rw [Ixon.Verify.BoundedConstant.getArray_succ]
       simp [bind, EStateM.bind, hfm_ok, hok2, pure, EStateM.pure]
 
@@ -1294,7 +1294,7 @@ theorem get_constructor_modes_spec {listed : Bool} {fields : UInt64}
     {bytes : List UInt8} {i : Nat} {x_listed x_s r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
     (hl : RepBool listed x_listed)
-    (hs : L1.Stream h (bytes.drop i) x_s)
+    (hs : Ingress.Stream h (bytes.drop i) x_s)
     (ev : ObsFn Obs.W "IxonDeserialize::get_constructor_modes"
       [x_listed, TagN.u64Value fields.toNat, x_s] h r h' calls) :
     Heap.Extends h h' ∧
@@ -1305,7 +1305,7 @@ theorem get_constructor_modes_spec {listed : Bool} {fields : UInt64}
       r = .tuple [modesPtr, restPtr] ∧
       RepList Obs.Names.«Lists::Node<Field>» (fun _ => RepFieldMode) h'
         fm.toArray.toList modesPtr ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   rcases Obs.«IxonDeserialize::get_constructor_modes».obs ev with
     ⟨m21, hv14, he19, hm29, he40, -⟩ |
     ⟨m48, cs58, x_modes, x_shared, x_s2, hne42, hv46, ev60, heq121, he126, he141, -⟩
@@ -1315,7 +1315,7 @@ theorem get_constructor_modes_spec {listed : Bool} {fields : UInt64}
       | true => rw [RepBool] at hl; rw [hl] at hv14; simp at hv14
     subst hfalse
     have ext := allocNil_extends Obs.Names.«Lists::Node<Field>» h
-    have hs' := L1.Stream.mono ext hs
+    have hs' := Ingress.Stream.mono ext hs
     have hm_nil : h' = (allocNil Obs.Names.«Lists::Node<Field>» h).2 := he40.trans hm29
     rw [hm_nil]
     refine ⟨ext, .inherited, 0, (allocNil Obs.Names.«Lists::Node<Field>» h).1, x_s,
@@ -1352,7 +1352,7 @@ theorem get_constructor_modes_spec {listed : Bool} {fields : UInt64}
 
 theorem get_constructor_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_constructor" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (c : Ixon.Constructor) (n : Nat) (cVal restPtr : SourceValue F),
@@ -1361,7 +1361,7 @@ theorem get_constructor_spec {bytes : List UInt8} {i : Nat}
         .ok c { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [cVal, restPtr] ∧
       RepConstructor h' c cVal ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   obtain ⟨m2, cs12, x_flags, x_s, v47, m50, cs58, v83, m84, cs94, m106, cs116, x_lvls, x_s2,
     m141, cs151, x_cidx, x_s3, m176, cs186, x_params, x_s4, m211, cs221, x_fields, x_s5,
     m246, cs256, v259, x_modes, x_s6, m300, cs310, x_typ, x_s7, v348,
@@ -1439,7 +1439,7 @@ theorem get_constructor_spec {bytes : List UInt8} {i : Nat}
 theorem get_constructor_list_spec (count : Nat) (hcount : count < 18446744073709551616)
     {bytes : List UInt8} {i : Nat} {x_stream r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_constructor_list"
       [x_stream, TagN.u64Value count] h r h' calls) :
     Heap.Extends h h' ∧
@@ -1449,7 +1449,7 @@ theorem get_constructor_list_spec (count : Nat) (hcount : count < 18446744073709
         .ok ctors { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [listPtr, restPtr] ∧
       RepList Obs.Names.«Lists::Node<Ixon::Constructor>» RepConstructor h' ctors.toList listPtr ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   induction count generalizing i x_stream r h h' calls with
   | zero =>
     rcases Obs.«IxonDeserialize::get_constructor_list».obs ev with
@@ -1459,7 +1459,7 @@ theorem get_constructor_list_spec (count : Nat) (hcount : count < 18446744073709
     · obtain ⟨_, hm2⟩ := Deserialize.u64IsZero_refines hcount ev14.erase
       subst m2
       have ext := allocNil_extends Obs.Names.«Lists::Node<Ixon::Constructor>» h
-      have hs' := L1.Stream.mono ext hs
+      have hs' := Ingress.Stream.mono ext hs
       have hm_nil : h' = (allocNil Obs.Names.«Lists::Node<Ixon::Constructor>» h).2 :=
         he62.trans hm51
       rw [hm_nil]
@@ -1499,13 +1499,13 @@ theorem get_constructor_list_spec (count : Nat) (hcount : count < 18446744073709
       refine ⟨(ext1.trans ext2).trans ext3, #[c] ++ tailCtors, n1 + n2,
         (allocCons Obs.Names.«Lists::Node<Ixon::Constructor>» x_ctor x_rest m105).1, x_s2,
         by omega, ?_, he164, by rw [singleton_append_toList]; exact consRep,
-        L1.Stream.mono ext3 hs2⟩
+        Ingress.Stream.mono ext3 hs2⟩
       rw [Ixon.Verify.BoundedConstant.getArray_succ]
       simp [bind, EStateM.bind, hok1, hok2, pure, EStateM.pure]
 
 theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_inductive" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (ind : Ixon.Inductive) (n : Nat) (indVal restPtr : SourceValue F),
@@ -1513,7 +1513,7 @@ theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
         .ok ind { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [indVal, restPtr] ∧
       RepInductive h' ind indVal ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   obtain ⟨m2, cs12, x_bools_byte, x_s, v36, m37, cs47, v58, m59, cs69, v80,
     m93, cs103, x_lvls, x_s2, m128, cs138, x_params, x_s3, m163, cs173, x_indices, x_s4,
     m198, cs208, x_typ, x_s5, m233, cs243, x_ctors_len, x_s6, m268, cs278, x_ctors, x_s7,
@@ -1589,7 +1589,7 @@ theorem get_inductive_spec {bytes : List UInt8} {i : Nat}
 
 theorem get_inductive_proj_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_inductive_proj" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (p : Ixon.InductiveProj) (n : Nat) (pVal restPtr : SourceValue F),
@@ -1597,7 +1597,7 @@ theorem get_inductive_proj_spec {bytes : List UInt8} {i : Nat}
         .ok p { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [pVal, restPtr] ∧
       RepInductiveProj h' p pVal ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   obtain ⟨m2, cs12, x_idx, x_s, m37, cs47, x_block, x_s2, ev14, ev49, he75, he108, -⟩ :=
     Obs.«IxonDeserialize::get_inductive_proj».obs ev
   obtain ⟨hm2, idxT, n1, sPtr, _, _, hidx_ok, _, hs1, hidx_tup⟩ :=
@@ -1620,7 +1620,7 @@ theorem get_inductive_proj_spec {bytes : List UInt8} {i : Nat}
 
 theorem get_constructor_proj_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_constructor_proj" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (p : Ixon.ConstructorProj) (n : Nat) (pVal restPtr : SourceValue F),
@@ -1628,7 +1628,7 @@ theorem get_constructor_proj_spec {bytes : List UInt8} {i : Nat}
         .ok p { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [pVal, restPtr] ∧
       RepConstructorProj h' p pVal ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   obtain ⟨m2, cs12, x_idx, x_s, m37, cs47, x_cidx, x_s2, m72, cs82, x_block, x_s3,
     ev14, ev49, ev84, he110, he151, -⟩ :=
     Obs.«IxonDeserialize::get_constructor_proj».obs ev
@@ -1659,7 +1659,7 @@ theorem get_constructor_proj_spec {bytes : List UInt8} {i : Nat}
 
 theorem get_recursor_proj_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_recursor_proj" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (p : Ixon.RecursorProj) (n : Nat) (pVal restPtr : SourceValue F),
@@ -1667,7 +1667,7 @@ theorem get_recursor_proj_spec {bytes : List UInt8} {i : Nat}
         .ok p { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [pVal, restPtr] ∧
       RepRecursorProj h' p pVal ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   obtain ⟨m2, cs12, x_idx, x_s, m37, cs47, x_block, x_s2, ev14, ev49, he75, he108, -⟩ :=
     Obs.«IxonDeserialize::get_recursor_proj».obs ev
   obtain ⟨hm2, idxT, n1, sPtr, _, _, hidx_ok, _, hs1, hidx_tup⟩ :=
@@ -1690,7 +1690,7 @@ theorem get_recursor_proj_spec {bytes : List UInt8} {i : Nat}
 
 theorem get_definition_proj_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_definition_proj" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (p : Ixon.DefinitionProj) (n : Nat) (pVal restPtr : SourceValue F),
@@ -1698,7 +1698,7 @@ theorem get_definition_proj_spec {bytes : List UInt8} {i : Nat}
         .ok p { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [pVal, restPtr] ∧
       RepDefinitionProj h' p pVal ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   obtain ⟨m2, cs12, x_idx, x_s, m37, cs47, x_block, x_s2, ev14, ev49, he75, he108, -⟩ :=
     Obs.«IxonDeserialize::get_definition_proj».obs ev
   obtain ⟨hm2, idxT, n1, sPtr, _, _, hidx_ok, _, hs1, hidx_tup⟩ :=
@@ -1721,7 +1721,7 @@ theorem get_definition_proj_spec {bytes : List UInt8} {i : Nat}
 
 theorem get_mut_const_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_mut_const" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (mc : Ixon.MutConst) (n : Nat) (mcVal restPtr : SourceValue F),
@@ -1729,7 +1729,7 @@ theorem get_mut_const_spec {bytes : List UInt8} {i : Nat}
         .ok mc { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [mcVal, restPtr] ∧
       RepMutConst h' mc mcVal ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   rcases Obs.«IxonDeserialize::get_mut_const».obs ev with
     ⟨m2, cs12, x_tag, x_s, m37, cs48, m64, cs74, x_defn, x_s2, ev14, ev50, ev76, he102, he127, -⟩ |
     ⟨m2, cs12, x_tag, x_s, m37, cs48, m135, cs145, x_indc, x_s2, ev14, ev50, ev147, he173, he198, -⟩ |
@@ -1789,7 +1789,7 @@ theorem get_mut_const_spec {bytes : List UInt8} {i : Nat}
 theorem get_mut_const_list_spec (count : Nat) (hcount : count < 18446744073709551616)
     {bytes : List UInt8} {i : Nat} {x_stream r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_mut_const_list"
       [x_stream, TagN.u64Value count] h r h' calls) :
     Heap.Extends h h' ∧
@@ -1798,7 +1798,7 @@ theorem get_mut_const_list_spec (count : Nat) (hcount : count < 1844674407370955
         .ok ms { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [listPtr, restPtr] ∧
       RepList Obs.Names.«Lists::Node<Ixon::MutConst>» RepMutConst h' ms.toList listPtr ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   induction count generalizing i x_stream r h h' calls with
   | zero =>
     rcases Obs.«IxonDeserialize::get_mut_const_list».obs ev with
@@ -1808,7 +1808,7 @@ theorem get_mut_const_list_spec (count : Nat) (hcount : count < 1844674407370955
     · obtain ⟨_, hm2⟩ := Deserialize.u64IsZero_refines hcount ev14.erase
       subst m2
       have ext := allocNil_extends Obs.Names.«Lists::Node<Ixon::MutConst>» h
-      have hs' := L1.Stream.mono ext hs
+      have hs' := Ingress.Stream.mono ext hs
       have hm_nil : h' = (allocNil Obs.Names.«Lists::Node<Ixon::MutConst>» h).2 :=
         he62.trans hm51
       rw [hm_nil]
@@ -1844,14 +1844,14 @@ theorem get_mut_const_list_spec (count : Nat) (hcount : count < 1844674407370955
       rw [show i + n1 + n2 = i + (n1 + n2) by omega] at hok2 hs2
       refine ⟨(ext1.trans ext2).trans ext3, #[mc] ++ tailMs, n1 + n2,
         (allocCons Obs.Names.«Lists::Node<Ixon::MutConst>» x_mc x_rest m105).1, x_s2, ?_,
-        he164, by rw [singleton_append_toList]; exact consRep, L1.Stream.mono ext3 hs2⟩
+        he164, by rw [singleton_append_toList]; exact consRep, Ingress.Stream.mono ext3 hs2⟩
       rw [Ixon.Verify.BoundedConstant.getArray_succ]
       simp [bind, EStateM.bind, hok1, hok2, pure, EStateM.pure]
 
 theorem get_constant_info_by_variant_spec {v : UInt64} (hv_lt : v.toNat < 256)
     {bytes : List UInt8} {i : Nat} {x_stream r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_constant_info_by_variant"
       [.field ((v.toNat : Nat) : F), x_stream] h r h' calls) :
     Heap.Extends h h' ∧
@@ -1861,7 +1861,7 @@ theorem get_constant_info_by_variant_spec {v : UInt64} (hv_lt : v.toNat < 256)
         .ok ci { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [ciVal, restPtr] ∧
       RepConstantInfo h' ci ciVal ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   rcases Obs.«IxonDeserialize::get_constant_info_by_variant».obs ev with
     ⟨m16, cs26, x_defn, x_s, hv14, ev28, he54, he79, -⟩ |
     ⟨m87, cs97, x_recr, x_s, -, hv85, ev99, he125, he150, -⟩ |
@@ -1952,7 +1952,7 @@ theorem get_constant_info_by_variant_spec {v : UInt64} (hv_lt : v.toNat < 256)
 
 theorem get_constant_info_spec {t : Ixon.TagN} {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_constant_info"
       [.field ((t.flag.toNat : Nat) : F), TagN.u64Value t.value.toNat, x_stream] h r h' calls) :
     Heap.Extends h h' ∧
@@ -1961,7 +1961,7 @@ theorem get_constant_info_spec {t : Ixon.TagN} {bytes : List UInt8} {i : Nat}
         .ok ci { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [ciVal, restPtr] ∧
       RepConstantInfo h' ci ciVal ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   rcases Obs.«IxonDeserialize::get_constant_info».obs ev with
     ⟨m16, cs26, x_mutuals, x_s, hv14, ev28, he62, he87, -⟩ |
     ⟨w106, x_sz1, x_sz2, x_sz3, x_sz4, x_sz5, x_sz6, x_sz7, v158, m161,
@@ -2044,7 +2044,7 @@ theorem get_constant_info_spec {t : Ixon.TagN} {bytes : List UInt8} {i : Nat}
 theorem get_address_list_spec (count : Nat) (hcount : count < 18446744073709551616)
     {bytes : List UInt8} {i : Nat} {x_stream r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_address_list"
       [x_stream, TagN.u64Value count] h r h' calls) :
     Heap.Extends h h' ∧
@@ -2055,7 +2055,7 @@ theorem get_address_list_spec (count : Nat) (hcount : count < 184467440737095516
         .ok addrs { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [listPtr, restPtr] ∧
       RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h' addrs.toList listPtr ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   induction count generalizing i x_stream r h h' calls with
   | zero =>
     rcases Obs.«IxonDeserialize::get_address_list».obs ev with
@@ -2065,7 +2065,7 @@ theorem get_address_list_spec (count : Nat) (hcount : count < 184467440737095516
     · obtain ⟨_, hm2⟩ := Deserialize.u64IsZero_refines hcount ev14.erase
       subst m2
       have ext := allocNil_extends Obs.Names.«Lists::Node<&[Field; 32]>» h
-      have hs' := L1.Stream.mono ext hs
+      have hs' := Ingress.Stream.mono ext hs
       have hm_nil : h' = (allocNil Obs.Names.«Lists::Node<&[Field; 32]>» h).2 :=
         he62.trans hm51
       rw [hm_nil]
@@ -2099,7 +2099,7 @@ theorem get_address_list_spec (count : Nat) (hcount : count < 184467440737095516
         ⟨Deserialize.takeAddress (bytes.drop i) hlen, haddrRep, rfl⟩
       have ext3 := allocCons_extends Obs.Names.«Lists::Node<&[Field; 32]>» x_addr x_rest m105
       have consRep := allocCons_rep Obs.Names.«Lists::Node<&[Field; 32]>»
-        repAddrElem_heapMono₂ (S0.addr_mono ext2 hheadRep) htailRep
+        repAddrElem_heapMono₂ (BaseSeams.addr_mono ext2 hheadRep) htailRep
       have hm_cons :
           h' = (allocCons Obs.Names.«Lists::Node<&[Field; 32]>» x_addr x_rest m105).2 :=
         he201.trans hm174
@@ -2109,14 +2109,14 @@ theorem get_address_list_spec (count : Nat) (hcount : count < 184467440737095516
         (allocCons Obs.Names.«Lists::Node<&[Field; 32]>» x_addr x_rest m105).1, x_s2,
         by rw [Array.size_append, hsz2]; change 1 + count = count + 1; omega,
         ?_, he164, by rw [singleton_append_toList]; exact consRep,
-        L1.Stream.mono ext3 hs2⟩
+        Ingress.Stream.mono ext3 hs2⟩
       rw [Ixon.Verify.BoundedConstant.getArray_succ]
       simp only [bind, EStateM.bind, haddr_ok, hok2, pure, EStateM.pure]
       rfl
 
 theorem get_refs_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_refs" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (t : Ixon.TagN) (addrs : Array _root_.Address) (n1 n2 : Nat)
@@ -2129,7 +2129,7 @@ theorem get_refs_spec {bytes : List UInt8} {i : Nat}
         .ok addrs { idx := i + n1 + n2, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [listPtr, restPtr] ∧
       RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h' addrs.toList listPtr ∧
-      L1.Stream h' (bytes.drop (i + n1 + n2)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n1 + n2)) restPtr := by
   obtain ⟨m2, cs12, x_len, x_s, cs39, ev14, ev41, -⟩ := Obs.«IxonDeserialize::get_refs».obs ev
   obtain ⟨hm2, t, n1, sPtr, _, _, ht_ok, _, hs1, ht_tup⟩ := getTagN0_progress hs ev14.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at ht_tup
@@ -2140,7 +2140,7 @@ theorem get_refs_spec {bytes : List UInt8} {i : Nat}
 
 theorem get_univs_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_univs" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (t : Ixon.TagN) (univs : Array Ixon.Univ) (n1 n2 : Nat)
@@ -2153,7 +2153,7 @@ theorem get_univs_spec {bytes : List UInt8} {i : Nat}
         .ok univs { idx := i + n1 + n2, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [listPtr, restPtr] ∧
       RepList Deserialize.univListEnum Deserialize.RepUnivPtr h' univs.toList listPtr ∧
-      L1.Stream h' (bytes.drop (i + n1 + n2)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n1 + n2)) restPtr := by
   obtain ⟨m2, cs12, x_len, x_s, cs39, ev14, ev41, -⟩ := Obs.«IxonDeserialize::get_univs».obs ev
   obtain ⟨hm2, t, n1, sPtr, _, _, ht_ok, _, hs1, ht_tup⟩ := getTagN0_progress hs ev14.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at ht_tup
@@ -2278,7 +2278,7 @@ theorem assert_prj_empty_tables_spec {ci : Ixon.ConstantInfo}
 `Ixon.getConstant` at `i`, producing a `RepConstant` value with `ConstantWireFacts`. -/
 theorem get_constant_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn Obs.W "IxonDeserialize::get_constant" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (c : Ixon.Constant) (n : Nat) (cVal restPtr : SourceValue F),
@@ -2287,7 +2287,7 @@ theorem get_constant_spec {bytes : List UInt8} {i : Nat}
       r = .tuple [cVal, restPtr] ∧
       RepConstant h' c cVal ∧
       ConstantWireFacts c ∧
-      L1.Stream h' (bytes.drop (i + n)) restPtr := by
+      Ingress.Stream h' (bytes.drop (i + n)) restPtr := by
   obtain ⟨m2, cs12, x_s, x_flag, x_size, m59, cs69, x_info, x_s2, m110, cs120, x_sharing, x_s3,
     m145, cs155, x_refs, x_s4, m180, cs190, x_univs, x_s5, m215, cs225, v229, m238, cs246,
     x_binders, x_s6, v270, m271, cs281,
@@ -2324,7 +2324,7 @@ theorem get_constant_spec {bytes : List UInt8} {i : Nat}
   rw [show i + (n0 + n1 + n2a + n2b + n3a + n3b) + n4a + n4b =
     i + (n0 + n1 + n2a + n2b + n3a + n3b + n4a + n4b) by omega] at hunivsArr_ok hs5
   have ext_max := ev248.heap_extends
-  have hs5' := L1.Stream.mono ext_max hs5
+  have hs5' := Ingress.Stream.mono ext_max hs5
   obtain ⟨ext_binders, bindersArr, n5, bindersPtr, s6Ptr, hbinders_ok, hbinders_tup,
     hbindersRep, hs6⟩ := Deserialize.getBinders_refines_at hs5' ev227.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hbinders_tup
@@ -2358,12 +2358,12 @@ theorem get_constant_spec {bytes : List UInt8} {i : Nat}
 
 /-! ## Top-level `Ingress::load_verified_constant` refinement -/
 
-/-- **`Ingress::load_verified_constant` on a represented address (`S0.addr`)** hashes raw bytes
+/-- **`Ingress::load_verified_constant` on a represented address (`BaseSeams.addr`)** hashes raw bytes
 whose BLAKE3 digest is `addr`, decodes them to `c : Ixon.Constant` (`Ixon.deConstant = .ok c` and
 `Ixon.deConstantExact = .ok c`), and returns a `RepConstant` value with `ConstantWireFacts c`. -/
 theorem load_verified_constant_de {addr : _root_.Address} {ap r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
-    (ha : S0.addr h ap addr)
+    (ha : BaseSeams.addr h ap addr)
     (ev : ObsFn Obs.W "Ingress::load_verified_constant" [ap] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (rawBytes : ByteArray) (c : Ixon.Constant),
@@ -2375,23 +2375,23 @@ theorem load_verified_constant_de {addr : _root_.Address} {ap r : SourceValue F}
       RepConstant h' c r ∧
       ConstantWireFacts c := by
   obtain ⟨aVec, haRep, rfl⟩ := ha
-  have ld_ap : ∃ raw, loadValue h ap = .ok raw ∧ raw = L1.digestV aVec := by
+  have ld_ap : ∃ raw, loadValue h ap = .ok raw ∧ raw = Ingress.digestV aVec := by
     obtain ⟨n, v, rfl, cell, hv⟩ := haRep
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld11, -⟩ :=
       Obs.«Ingress::load_verified_constant».obs ev
-    have e := L1.load_of_cell cell ld11
+    have e := Ingress.load_of_cell cell ld11
     exact ⟨_, ld11, e.trans hv⟩
   obtain ⟨raw, hld_ap, hraw_eq⟩ := ld_ap
   obtain ⟨bytes, inp, rest, m, cs', hlen_lt, ext1, hst, hashed, hproj, hget, hrest, -⟩ :=
-    L1.load_verified_constant_spec hld_ap ev
-  have hdigest : Address.blake3Pure ⟨bytes.toArray⟩ = L1.ixAddr aVec := by
-    rw [L1.blake3Pure_eq, L1.digest_eq_of_proj hraw_eq hproj]
+    Ingress.load_verified_constant_spec hld_ap ev
+  have hdigest : Address.blake3Pure ⟨bytes.toArray⟩ = Ingress.ixAddr aVec := by
+    rw [Ingress.blake3Pure_eq, Ingress.digest_eq_of_proj hraw_eq hproj]
   obtain ⟨ext2, c, n, cVal, restPtr, hok, htup, hcRep, hwf, hs_rest⟩ :=
     get_constant_spec (i := 0) (by simpa using hst) hget
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
   rcases htup with ⟨rfl, rfl⟩
   simp only [Nat.zero_add] at hok hs_rest
-  obtain ⟨hnil, -⟩ | ⟨_, _, _, _, hbad, -⟩ := L1.stream_inv hs_rest hrest
+  obtain ⟨hnil, -⟩ | ⟨_, _, _, _, hbad, -⟩ := Ingress.stream_inv hs_rest hrest
   · have hlen_le : bytes.length ≤ n := List.drop_eq_nil_iff.mp hnil
     have hsp := Ixon.Verify.ConstantBounds.getConstant_bound
       { idx := 0, bytes := ⟨bytes.toArray⟩ } { idx := n, bytes := ⟨bytes.toArray⟩ } c

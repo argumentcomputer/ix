@@ -1,7 +1,7 @@
 import IxVMRefinement.Claim.TopBase
 import IxVMRefinement.Assembly.FamilyAdviceWalk
 import IxVMRefinement.Assembly.TypingSkeleton
-import IxVMRefinement.L1.Decode
+import IxVMRefinement.Ingress.Decode
 import IxVMRefinement.Obs.KernelModeled1
 import IxVMRefinement.Obs.KernelModeled2
 
@@ -55,7 +55,7 @@ theorem adviceRecord_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     have hsub947 : ∀ cl ∈ cs947, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     have ext0 := ev_ord.heap_extends
     obtain ⟨ext1, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha) ev14
+      Ingress.load_verified_constant_decode_bounded (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha) ev14
     replace ext1 := ext0.trans ext1
     have hrec₀ : Ix.Cert.recordAt E₀ (ixAddr ab) = some c :=
       (hS.recordOf_eq_recordAt _).symm.trans hc
@@ -89,7 +89,7 @@ theorem adviceRecord_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
         rw [hx] at hv
         exact Or.inr (Or.inr (Or.inr (Value.construct.inj hv).2.1))
     have hrc2 : Claim.RCLimRep t bAddr lim m2 x_rc := hrc.mono ext1
-    have ha2 : S0.addr m2 x_a (ixAddr ab) :=
+    have ha2 : BaseSeams.addr m2 x_a (ixAddr ab) :=
       ⟨ab, Bytes.repAddressRef_heapMono₂ addrTy ext1 ha, rfl⟩
     match sg952 with
     | .Defn_Definition_Safe (ev210 := evr) (hc227 := hcs) .. =>
@@ -104,7 +104,7 @@ theorem adviceRecord_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
       exact absurd (Value.field.inj heq) zero_ne_one
     | .Recr (ev553 := evf) (ev540 := evm) (ev574 := evr) (hc591 := hcs) .. =>
       have ext : Heap.Extends m2 _ := evf.heap_extends.trans evm.heap_extends
-      exact (Claim.run_check_lim_spec (hrc2.mono ext) (S0.addr_mono ext ha2) evr).2.mono
+      exact (Claim.run_check_lim_spec (hrc2.mono ext) (BaseSeams.addr_mono ext ha2) evr).2.mono
         (fun cl hcl => hsub947 cl (by rw [hcs]; simp [hcl]))
     | .Muts (hv598 := hv) .. =>
       rcases htagOf _ _ hv with e | e | e | e <;> exact absurd e (by decide)
@@ -129,7 +129,7 @@ theorem adviceRecord_kind {calls cs : List (Call F)} {E₀ : Ixon.Env}
       (ev_yqjbwijz := ev_ord) (sg952 := sg952) (hc1011 := hc1011) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     obtain ⟨ext1, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded
+      Ingress.load_verified_constant_decode_bounded
         (Bytes.repAddressRef_heapMono₂ addrTy ev_ord.heap_extends ha) ev14
     have hrec₀ : Ix.Cert.recordAt E₀ (ixAddr ab) = some c :=
       (hS.recordOf_eq_recordAt _).symm.trans hc

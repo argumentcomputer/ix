@@ -51,7 +51,7 @@ set_option linter.unusedVariables false
 root, its value at the next; an inductive's type at the root, its constructor `j` at the root plus
 `1 + j`; a recursor's type at the root, its rule `j` at the root plus `1 + j`. -/
 abbrev mutsRoot (ms : Array Ixon.MutConst) (i : Nat) : IxVM.F :=
-  ((IxVM.Refinement.L1.mutsRootOffset ms.toList i : Nat) : IxVM.F)
+  ((IxVM.Refinement.Ingress.mutsRootOffset ms.toList i : Nat) : IxVM.F)
 
 /-- **The circuit's loaded form of an expression `e` of the record `src`**, converted at root
 `root` with `nl` level parameters: the kernel reader's conversion (universe variable `i` read as

@@ -1,4 +1,4 @@
-import IxVMRefinement.Claim.Phase
+import IxVMRefinement.Claim.ClaimSeam
 import IxVMRefinement.RoleVal.GroupAdmit
 import IxVMRefinement.Roles.Tables
 import Ix.IxVM.Consistency.TableValid
@@ -267,7 +267,7 @@ theorem role_admission_checks_walks {ro : Ix.Kernel.Role} {r : SourceValue F} {h
 or nothing when it binds none. -/
 theorem addr_index_lookup {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {x_tbl x_a v51 v36 : SourceValue F} {h m61 m37 : Heap F} {cs69 cs47 : List (Call F)}
-    (htbl : TableFullRep t bAddr h x_tbl) (ha : S0.addr h x_a a)
+    (htbl : TableFullRep t bAddr h x_tbl) (ha : BaseSeams.addr h x_a a)
     (ev71 : ObsFn W "KernelRoles::role_addr_index" [x_tbl] h v51 m61 cs69)
     (ev49 : ObsFn W Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>»
       [x_a, v51, .field 0] m61 v36 m37 cs47) :
@@ -307,7 +307,7 @@ private theorem sub_one_roleNum {ro : Ix.Kernel.Role} {v : SourceValue F}
 under `Assumed`: under `Mk` it is always `0`). -/
 theorem walk_covered_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {lim : Option Nat} {x_rc x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hrc : RCLimRep t bAddr lim h x_rc) (ha : S0.addr h x_a a)
+    (hrc : RCLimRep t bAddr lim h x_rc) (ha : BaseSeams.addr h x_a a)
     (ev : ObsFn W "KernelRoles::walk_covered" [x_rc, x_a] h r h' calls) :
     h' = h ∧ (r = .field 0 ∨ CoveredAt t lim a) := by
   obtain ⟨tbl, htbl, ⟨n, rfl, -, hl⟩ | ⟨rfl, hl⟩⟩ := hrc.cases
@@ -398,7 +398,7 @@ private theorem groupValLimit_le_self (g : Nat) : RoleVal.groupValLimit g ≤ g 
 limit gets a validation context at a smaller limit. -/
 theorem walk_ctx_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {lim : Option Nat} {x_rc x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hrc : RCLimRep t bAddr lim h x_rc) (ha : S0.addr h x_a a)
+    (hrc : RCLimRep t bAddr lim h x_rc) (ha : BaseSeams.addr h x_a a)
     (ev : ObsFn W "KernelRoles::walk_ctx" [x_rc, x_a] h r h' calls) :
     Heap.Extends h h' ∧
       (r = x_rc ∨
@@ -488,7 +488,7 @@ theorem role_ctx_binding_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
     {lim : Option Nat} {x_rc r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCLimRep t bAddr lim h x_rc)
     (ev : ObsFn W "KernelRoles::role_ctx_binding" [x_rc] h r h' calls) :
-    h' = h ∧ S0.addr h r bAddr := by
+    h' = h ∧ BaseSeams.addr h r bAddr := by
   obtain ⟨m2, p10, _, x_binding, _, _, _, ev18, ld12, rfl, rfl, -⟩ :=
     Obs.«KernelRoles::role_ctx_binding».obs ev
   obtain ⟨rfl, _, bp, _, _, _, hl_tbl, hbp, -, -, -⟩ := role_ctx_table_lim_spec hrc ev18
@@ -554,7 +554,7 @@ theorem load_role_ctx_lim_spec {V : View} {extra : List ByteArray}
     (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t)
     (hb_extra : b.bytes ∈ extra)
     {x_binding x_v r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hb : S0.addr h x_binding b.address)
+    (hb : BaseSeams.addr h x_binding b.address)
     (ev : ObsFn W "KernelRoles::load_role_ctx"
       [x_binding, x_v,
        .construct Obs.Names.«Options::Option<&[Field; 32]>» "None" []] h r h' calls) :
@@ -599,7 +599,7 @@ theorem role_ctx_for_validator_lim_spec {V : View} {extra : List ByteArray}
     (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t)
     (hb_extra : b.bytes ∈ extra)
     {x_binding x_v r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hb : S0.addr h x_binding b.address)
+    (hb : BaseSeams.addr h x_binding b.address)
     (ev : ObsFn W "KernelRoles::role_ctx_for_validator" [x_binding, x_v] h r h' calls) :
     V.HashedCollision extra calls ∨
     (Heap.Extends h h' ∧
@@ -620,8 +620,8 @@ def CheckedLimAt (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel
     (cs_load cs_chk : List (Call F)),
     RCLimRep t bAddr lim h_pre rc ∧
     RCLimRep t bAddr lim m_chk rc ∧
-    S0.addr h_pre ap a ∧
-    S0.addr m_chk ap a ∧
+    BaseSeams.addr h_pre ap a ∧
+    BaseSeams.addr m_chk ap a ∧
     ObsFn Obs.W "Ingress::get_ci" [ap] h_pre ptr m_chk cs_load ∧
     (⟨"Ingress::get_ci", [ap], h_pre⟩ : Call F) ∈ calls ∧
     (∀ cl ∈ cs_load, cl ∈ calls) ∧
@@ -639,7 +639,7 @@ def MemberCheckedLimAt (calls : List (Call F)) (bAddr : _root_.Address)
     (rc x_members x_block ap ptr v r_chk : SourceValue F)
     (cs_pa cs_load cs_chk : List (Call F)),
     Specs.Callees.MembersRep h_pa ms.toList x_members ∧
-    S0.addr h_pa x_block addr ∧
+    BaseSeams.addr h_pa x_block addr ∧
     ObsFn Obs.W "Ingress::projection_addr" [x_members, x_block, .field (k : F)] h_pa ap h_pre cs_pa ∧
     (⟨"Ingress::projection_addr", [x_members, x_block, .field (k : F)], h_pa⟩ : Call F) ∈ calls ∧
     (∀ cl ∈ cs_pa, cl ∈ calls) ∧
@@ -683,7 +683,7 @@ theorem run_check_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {l
     {x_rc x_addr r : SourceValue F} {addr : _root_.Address}
     {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCLimRep t bAddr lim h x_rc)
-    (ha : S0.addr h x_addr addr)
+    (ha : BaseSeams.addr h x_addr addr)
     (ev : ObsFn Obs.W "KernelClaim::run_check" [x_rc, x_addr] h r h' calls) :
     Heap.Extends h h' ∧ CheckedLimAt calls bAddr t addr lim := by
   obtain ⟨v1, m2, p9, cs15, cs29, ev17, ld11, ev31, hc56⟩ := Obs.«KernelClaim::run_check».obs ev
@@ -691,7 +691,7 @@ theorem run_check_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {l
   have ext2 := ev31.heap_extends
   refine ⟨ext1.trans ext2,
     h, m2, h', x_rc, x_addr, p9, v1, r, cs15, cs29,
-    hrc, hrc.mono ext1, ha, S0.addr_mono ext1 ha,
+    hrc, hrc.mono ext1, ha, BaseSeams.addr_mono ext1 ha,
     ev17, by rw [hc56]; simp, fun cl hcl => by rw [hc56]; simp [hcl],
     ld11,
     ev31, by rw [hc56]; simp, fun cl hcl => by rw [hc56]; simp [hcl]⟩
@@ -701,7 +701,7 @@ theorem check_muts_member_at_lim_spec {t : Ix.Kernel.RoleTable} {bAddr addr : _r
     {x_rc x_block_addr x_all_members x_m r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCLimRep t bAddr lim h x_rc)
-    (ha : S0.addr h x_block_addr addr)
+    (ha : BaseSeams.addr h x_block_addr addr)
     (hmems : Specs.Callees.MembersRep h ms.toList x_all_members)
     (ev : ObsFn Obs.W "KernelClaim::check_muts_member_at"
       [x_rc, x_block_addr, x_all_members, x_m, .field (k : F)] h r h' calls) :
@@ -729,7 +729,7 @@ private theorem check_muts_all_lim_aux {t : Ix.Kernel.RoleTable} {bAddr addr : _
     ∀ {pos : Nat} {x_rc x_block_addr x_all_members x_cur r : SourceValue F}
       {h h' : Heap F} {calls : List (Call F)},
       RCLimRep t bAddr lim h x_rc →
-      S0.addr h x_block_addr addr →
+      BaseSeams.addr h x_block_addr addr →
       Specs.Callees.MembersRep h ms.toList x_all_members →
       Specs.Callees.MembersRep h cur x_cur →
       ObsFn Obs.W "KernelClaim::check_muts_all"
@@ -759,7 +759,7 @@ private theorem check_muts_all_lim_aux {t : Ix.Kernel.RoleTable} {bAddr addr : _
       have hv_inc : ((pos : F) + 1) = ((pos + 1 : Nat) : F) := by push_cast; rfl
       rw [hv_inc] at ev101
       obtain ⟨ext2, hchk_tl⟩ :=
-        ih (hrc.mono ext1) (S0.addr_mono ext1 ha)
+        ih (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha)
           (repList_heapMono₂ _ mutShape_heapMono₂' ext1 hall)
           (repList_heapMono₂ _ mutShape_heapMono₂' ext1 hrest)
           ev101
@@ -781,7 +781,7 @@ theorem check_muts_all_lim_spec {t : Ix.Kernel.RoleTable} {bAddr addr : _root_.A
     {x_rc x_block_addr x_members r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCLimRep t bAddr lim h x_rc)
-    (ha : S0.addr h x_block_addr addr)
+    (ha : BaseSeams.addr h x_block_addr addr)
     (hmems : Specs.Callees.MembersRep h ms.toList x_members)
     (ev : ObsFn Obs.W "KernelClaim::check_muts_all"
       [x_rc, x_block_addr, x_members, x_members, .field 0] h r h' calls) :
@@ -802,7 +802,7 @@ returned. `TopRefs` reads what that excludes (an inert axiom in force). -/
 def RefAllowedIn (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (bAddr : _root_.Address)
     (lim : Option Nat) (b : _root_.Address) : Prop :=
   ∃ (h h' : Heap F) (rc x_b r : SourceValue F) (cs : List (Call F)),
-    RCLimRep t bAddr lim h rc ∧ S0.addr h x_b b ∧
+    RCLimRep t bAddr lim h rc ∧ BaseSeams.addr h x_b b ∧
     ObsFn Obs.W "KernelRoles::assert_ref_allowed" [rc, x_b] h r h' cs ∧
     (∀ cl ∈ cs, cl ∈ calls)
 
@@ -827,7 +827,7 @@ The represented record is retained so that repeated loads can be tied through th
 def RecordRefsIn (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (bAddr : _root_.Address)
     (lim : Option Nat) (a : _root_.Address) (c : Ixon.Constant) : Prop :=
   ∃ (h h' : Heap F) (rc ap cp r : SourceValue F) (cs : List (Call F)),
-    RCLimRep t bAddr lim h rc ∧ S0.addr h ap a ∧ RepConstant h c cp ∧
+    RCLimRep t bAddr lim h rc ∧ BaseSeams.addr h ap a ∧ RepConstant h c cp ∧
     ObsFn Obs.W "KernelClaim::assert_safe_record_refs" [rc, ap, cp] h r h' cs ∧
     ∀ cl ∈ cs, cl ∈ calls
 
@@ -843,7 +843,7 @@ theorem RecordRefsIn.mono {cs₁ cs₂ : List (Call F)} {t : Ix.Kernel.RoleTable
 def QuotRecordRefsIn (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (bAddr : _root_.Address)
     (lim : Option Nat) (a : _root_.Address) (c : Ixon.Constant) : Prop :=
   ∃ (h h' : Heap F) (rc ap cp r : SourceValue F) (cs : List (Call F)),
-    RCLimRep t bAddr lim h rc ∧ S0.addr h ap a ∧ RepConstant h c cp ∧
+    RCLimRep t bAddr lim h rc ∧ BaseSeams.addr h ap a ∧ RepConstant h c cp ∧
     ObsFn Obs.W "KernelClaim::assert_quot_record_refs" [rc, ap, cp] h r h' cs ∧
     ∀ cl ∈ cs, cl ∈ calls
 
@@ -916,7 +916,7 @@ def TopRecsClosed {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kerne
   ∀ r ∈ recs,
     (IsProjRec r.c →
       ∃ r' ∈ recs, r'.addr = Ix.Cert.ownerOf r.addr r.c ∧ r'.depth < r.depth) ∧
-    (∀ i ∈ S0.usedRefIdxs r.c, ∀ b, r.c.refs[i]? = some b →
+    (∀ i ∈ BaseSeams.usedRefIdxs r.c, ∀ b, r.c.refs[i]? = some b →
       RefAllowedIn calls t bAddr lim b ∧
       ((NotBlockIn calls b ∧ ∃ r' ∈ recs, r'.addr = b ∧ r'.depth < r.depth) ∨
         CoveredAt t lim b))
@@ -943,7 +943,7 @@ def TopRecsClosedIn {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Ker
   ∀ r ∈ xs,
     (IsProjRec r.c →
       ∃ r' ∈ ys, r'.addr = Ix.Cert.ownerOf r.addr r.c ∧ r'.depth < r.depth) ∧
-    (∀ i ∈ S0.usedRefIdxs r.c, ∀ b, r.c.refs[i]? = some b →
+    (∀ i ∈ BaseSeams.usedRefIdxs r.c, ∀ b, r.c.refs[i]? = some b →
       RefAllowedIn calls t bAddr lim b ∧
       ((NotBlockIn calls b ∧ ∃ r' ∈ ys, r'.addr = b ∧ r'.depth < r.depth) ∨
         CoveredAt t lim b))

@@ -179,7 +179,7 @@ entry `i` against the table of the entries before it. -/
 def ShareOk (ecx : ECx .anon) (sharing : List Ixon.Expr) (vs : Array (CExpr .anon)) : Prop :=
   ∀ (i : Nat) (v : CExpr .anon), vs[i]? = some v →
     i < vs.size ∧ ∃ s, sharing[i]? = some s ∧
-      convExpr ecx (L1.buildShareTbl ecx (sharing.take i)) s = .ok v
+      convExpr ecx (Ingress.buildShareTbl ecx (sharing.take i)) s = .ok v
 
 theorem shareOk_empty {sharing : List Ixon.Expr} : ShareOk ecx sharing #[] := by
   intro i v h
@@ -188,7 +188,7 @@ theorem shareOk_empty {sharing : List Ixon.Expr} : ShareOk ecx sharing #[] := by
 
 theorem shareOk_push {sharing : List Ixon.Expr} {vs : Array (CExpr .anon)} {s : Ixon.Expr}
     {v : CExpr .anon} (h : ShareOk ecx sharing vs) (hs : sharing[vs.size]? = some s)
-    (hv : convExpr ecx (L1.buildShareTbl ecx (sharing.take vs.size)) s = .ok v) :
+    (hv : convExpr ecx (Ingress.buildShareTbl ecx (sharing.take vs.size)) s = .ok v) :
     ShareOk ecx sharing (vs.push v) := by
   intro i w hi
   rw [Array.getElem?_push] at hi
@@ -204,19 +204,19 @@ theorem shareOk_push {sharing : List Ixon.Expr} {vs : Array (CExpr .anon)} {s : 
 /-- The known entries, in the table of the entries read so far. -/
 theorem shareOk_tbl {sharing : List Ixon.Expr} {vs : Array (CExpr .anon)}
     (h : ShareOk ecx sharing vs) : ∀ (i : Nat) (v : CExpr .anon), vs[i]? = some v →
-      (L1.buildShareTbl ecx (sharing.take vs.size))[i]? = some (Except.ok v) := by
+      (Ingress.buildShareTbl ecx (sharing.take vs.size))[i]? = some (Except.ok v) := by
   intro i v hi
   obtain ⟨hlt, s, hs, hv⟩ := h i v hi
-  rw [L1.buildShareTbl_take_getElem? ecx sharing hlt hs, hv]
+  rw [Ingress.buildShareTbl_take_getElem? ecx sharing hlt hs, hv]
 
 /-- The known entries, in the record's whole table. -/
 theorem shareOk_final {sharing : List Ixon.Expr} {vs : Array (CExpr .anon)}
     (h : ShareOk ecx sharing vs) : ∀ (i : Nat) (v : CExpr .anon), vs[i]? = some v →
-      (L1.buildShareTbl ecx sharing)[i]? = some (Except.ok v) := by
+      (Ingress.buildShareTbl ecx sharing)[i]? = some (Except.ok v) := by
   intro i v hi
   obtain ⟨-, s, hs, hv⟩ := h i v hi
   have hlen : i < sharing.length := (List.getElem?_eq_some_iff.mp hs).1
-  have h2 := L1.buildShareTbl_take_getElem? ecx sharing hlen hs
+  have h2 := Ingress.buildShareTbl_take_getElem? ecx sharing hlen hs
   rw [List.take_length] at h2
   rw [h2, hv]
 
@@ -229,7 +229,7 @@ def sharesGo (o : Oracle ecx) (sharing : List Ixon.Expr) :
     match hs : sharing[vs.size]? with
     | none => some ⟨vs, h⟩
     | some s =>
-      match convCheck o (L1.buildShareTbl ecx (sharing.take vs.size)) vs (shareOk_tbl h) s with
+      match convCheck o (Ingress.buildShareTbl ecx (sharing.take vs.size)) vs (shareOk_tbl h) s with
       | some r => sharesGo o sharing k (vs.push r.1) (shareOk_push h hs r.2)
       | none => none
 
@@ -246,10 +246,10 @@ end Check
 theorem read_of_conv {cx : Ctx .anon} {src : Ixon.Constant} {param : Nat → LevelParam}
     {self : Nat → Option (ReadM (CName .anon))} {e : Ixon.Expr} {v : CExpr .anon}
     (h : convExpr (⟨cx, src, src.univs.map (convUniv param), self⟩ : ECx .anon)
-      (L1.buildShareTbl ⟨cx, src, src.univs.map (convUniv param), self⟩ src.sharing.toList) e =
+      (Ingress.buildShareTbl ⟨cx, src, src.univs.map (convUniv param), self⟩ src.sharing.toList) e =
         .ok v) :
     (MemberReader.mk' cx src param self).read e = .ok v := by
-  obtain ⟨hecx, htbl⟩ := L1.memberReader_mk'_eq cx src param self
+  obtain ⟨hecx, htbl⟩ := Ingress.memberReader_mk'_eq cx src param self
   unfold MemberReader.read
   rw [hecx, htbl]
   exact h
@@ -263,7 +263,7 @@ def readCheck {cx : Ctx .anon} {src : Ixon.Constant} {param : Nat → LevelParam
       ShareOk ⟨cx, src, src.univs.map (convUniv param), self⟩ src.sharing.toList ws })
     (e : Ixon.Expr) :
     Option { v : CExpr .anon // (MemberReader.mk' cx src param self).read e = .ok v } :=
-  match convCheck o (L1.buildShareTbl _ src.sharing.toList) sh.1 (shareOk_final sh.2) e with
+  match convCheck o (Ingress.buildShareTbl _ src.sharing.toList) sh.1 (shareOk_final sh.2) e with
   | some r => some ⟨r.1, read_of_conv r.2⟩
   | none => none
 

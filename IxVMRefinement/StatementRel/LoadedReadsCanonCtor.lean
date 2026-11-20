@@ -93,23 +93,23 @@ theorem ctor_value_canon (ht : t.check = .ok ()) {blob : _root_.Address → Opti
     {ind : Ixon.Inductive} {ct : Ixon.Constructor} (hmuts : cb.info = .muts ms)
     (hmem : ms[k]? = some (.indc ind)) (hctm : ct ∈ ind.ctors.toList) (hcidx : ct.cidx.toNat = j)
     {blobs : List (_root_.Address × ByteArray)}
-    (hagree : L1.BlobReadAgreement (readCtx t blob).blob blobs)
-    {tree : L1.BinderTreeData}
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData cb.binders.toList) tree)
+    (hagree : Ingress.BlobReadAgreement (readCtx t blob).blob blobs)
+    {tree : Ingress.BinderTreeData}
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData cb.binders.toList) tree)
     {plan : List Core.KLevel}
-    (planned : L1.binderRootPlan tree cb.sharing.toList
-      (((L1.mutsRootOffset ms.toList k : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ = some plan)
+    (planned : Ingress.binderRootPlan tree cb.sharing.toList
+      (((Ingress.mutsRootOffset ms.toList k : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ = some plan)
     {h : Heap F} {v : SourceValue F}
-    (raw : L1.RawCtorValRep cb.refs.toList (L1.blockRecurAddrs B ms.toList) cb.univs.toList
+    (raw : Ingress.RawCtorValRep cb.refs.toList (Ingress.blockRecurAddrs B ms.toList) cb.univs.toList
       cb.sharing.toList blobs h ct B k v)
-    (levels : L1.CITypeBinderLevels "Ctor" h v plan)
+    (levels : Ingress.CITypeBinderLevels "Ctor" h v plan)
     {ty₀ : Ix.Kernel.Expr .anon}
     (hty : (exprReader t blob cb id (blockSelf t B ms)).read ct.typ = .ok ty₀)
     (hty_lbb : ty₀.looseBVarsBounded 0 = true)
     (hty_def : ty₀.allLevelParamsDefined (List.range ct.lvls.toNat) = true) :
     ∃ ty' : Ix.Kernel.Expr .anon,
       canonAnn cb (List.range ct.lvls.toNat)
-        (((L1.mutsRootOffset ms.toList k : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ =
+        (((Ingress.mutsRootOffset ms.toList k : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ =
         some ty' ∧ Annotates ty' ty₀ ∧
       Core.CIRep (Core.keyOf t) h v
         (.ctorInfo ⟨Core.keyOf t (Core.cprjAddr B k j), List.range ct.lvls.toNat, ty'⟩
@@ -140,7 +140,7 @@ theorem ctor_value_canon (ht : t.check = .ok ()) {blob : _root_.Address → Opti
           κ (Core.cprjAddr (Core.ixAddr b') (ZMod.val i) (ZMod.val j')) := by
     intro κ hκ
     refine ⟨b, ((k : Nat) : F), ((ct.cidx.toNat : Nat) : F), hb_rep, rfl, rfl, ?_⟩
-    rw [hb_eq, L1.val_cast_u56_ing hidx56, L1.val_cast_u56_ing hcidx56, hcidx, hκ]
+    rw [hb_eq, Ingress.val_cast_u56_ing hidx56, Ingress.val_cast_u56_ing hcidx56, hcidx, hκ]
   refine ⟨ty', hcT, hannT, ?_, fun E₀ env lim hstored hblk hself => ?_⟩
   · exact .ctor (valRep_range hlvls htmT) rfl rfl ⟨hp56, hf56⟩ (hkey (Core.keyOf t) rfl)
   · have hmem' : Ixon.MutConst.indc ind ∈ ms.toList :=
@@ -187,7 +187,7 @@ theorem get_ci_cprj_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Cal
     Core.ixAddr a = ctorAddr p.block p.idx.toNat p.cidx.toNat ∧
     ∃ ty' : Ix.Kernel.Expr .anon,
       canonAnn cb (List.range ct.lvls.toNat)
-        (((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1 + ((p.cidx.toNat : Nat) : F))
+        (((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1 + ((p.cidx.toNat : Nat) : F))
         ct.typ ty₀ = some ty' ∧
       Annotates ty' ty₀ ∧
       Core.CIPtrRep (Core.keyOf t) h' ptr
@@ -199,7 +199,7 @@ theorem get_ci_cprj_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Cal
           Core.CIPtrRep (Core.Ctx.stored ⟨E, env, t, lim⟩).κ h' ptr
             (.ctorInfo ⟨keyOf t (Core.ixAddr a), List.range ct.lvls.toNat, ty'⟩ ct.params.toNat
               ct.fields.toNat)) := by
-  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := L1.get_ci_block_trace_spec hbound ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := Ingress.get_ci_block_trace_spec hbound ha ev
   obtain ⟨lc, hget, hdec⟩ := recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
   have hc : c = c' := by
@@ -211,7 +211,7 @@ theorem get_ci_cprj_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Cal
   have hkey : keyOf t (Core.ixAddr a) =
       Core.keyOf t (Core.cprjAddr p.block p.idx.toNat p.cidx.toNat) := by
     rw [haddr', ctorAddr_eq_cprjAddr, keyOf_eq]
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   rw [hinfo] at hres
   obtain ⟨hidx, hcidx56, blkBytes, cb', ms', ind', ct', blobs, tree, plan, v, hhB, haB, hexB,
     hcb, hms, hcts, hhp, built, planned, hld, hraw, hlev⟩ := hres
@@ -263,7 +263,7 @@ theorem get_ci_cprj_load_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List
     (hty_def : ty₀.allLevelParamsDefined (List.range ct.lvls.toNat) = true) :
     ∃ ty' : Ix.Kernel.Expr .anon,
       canonAnn cb (List.range ct.lvls.toNat)
-        (((L1.mutsRootOffset ms.toList i.val : Nat) : F) + 1 + ((j.val : Nat) : F))
+        (((Ingress.mutsRootOffset ms.toList i.val : Nat) : F) + 1 + ((j.val : Nat) : F))
         ct.typ ty₀ = some ty' ∧
       Annotates ty' ty₀ ∧
       Core.CIPtrRep (Core.keyOf t) h' ptr
@@ -276,7 +276,7 @@ theorem get_ci_cprj_load_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List
             (.ctorInfo ⟨Core.keyOf t (Core.cprjAddr (Core.ixAddr b) i.val j.val),
               List.range ct.lvls.toNat, ty'⟩ ct.params.toNat ct.fields.toNat)) := by
   obtain ⟨-, -, -, blkBytes, cb', ms', ind', ct', blobs, v, hhB, haB, hexB, -, hcb, hms, hcts,
-    hhp, hld, hraw, tree, plan, built, planned, hlev⟩ := L1.get_ci_cprj_origin_spec hbound hb ev
+    hhp, hld, hraw, tree, plan, built, planned, hlev⟩ := Ingress.get_ci_cprj_origin_spec hbound hb ev
   rw [← ZMod.natCast_zmod_val j] at planned
   obtain ⟨lcB, hgetB, hdecB⟩ := recordOf_inv hblock
   have hbB : blkBytes = lcB.rawBytes := Core.load_escape hgetB hnc blkBytes hhB haB
@@ -323,7 +323,7 @@ theorem reloadsAs_ctor (ht : t.check = .ok ()) {E' : Ixon.Env} {env : Ix.Kernel.
     (hself : ∃ ci, env.find? (Core.keyOf t a) = some ci)
     {cn : Ix.Kernel.ConstantInfo .anon}
     (hcn : canonCtor (keyOf t a) cb
-      (((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1 + ((p.cidx.toNat : Nat) : F))
+      (((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1 + ((p.cidx.toNat : Nat) : F))
       ct ty₀ = some cn) :
     Decl.ReloadsAs E' t env cn := by
   obtain ⟨ty', hcT, hcn'⟩ := canonCtor_inv hcn
@@ -361,7 +361,7 @@ theorem reloadsAs_ctor_cons (ht : t.check = .ok ()) {E E' : Ixon.Env}
     (hstored : Decl.UsedRefsStored t env cb) (hblk : BlockStored t env B ms)
     {cn : Ix.Kernel.ConstantInfo .anon}
     (hcn : canonCtor (keyOf t (ctorAddr B k j)) cb
-      (((L1.mutsRootOffset ms.toList k : Nat) : F) + 1 + ((j : Nat) : F)) ct ty₀ = some cn) :
+      (((Ingress.mutsRootOffset ms.toList k : Nat) : F) + 1 + ((j : Nat) : F)) ct ty₀ = some cn) :
     Decl.ReloadsAs E' t ⟨cn :: env.consts⟩ cn := by
   have hkk : k.toUInt64.toNat = k := toUInt64_toNat_k hk64
   have hjj : j.toUInt64.toNat = j := toUInt64_toNat_k hj64
@@ -381,12 +381,12 @@ theorem reloadsAs_ctor_cons (ht : t.check = .ok ()) {E E' : Ixon.Env}
     rw [hjj]
     exact hcidx
   have hcn' : canonCtor (keyOf t (ctorAddr B k j)) cb
-      (((L1.mutsRootOffset ms.toList
+      (((Ingress.mutsRootOffset ms.toList
         (⟨k.toUInt64, j.toUInt64, B⟩ : Ixon.ConstructorProj).idx.toNat : Nat) : F) + 1 +
         (((⟨k.toUInt64, j.toUInt64, B⟩ : Ixon.ConstructorProj).cidx.toNat : Nat) : F))
       ct ty₀ = some cn := by
     show canonCtor (keyOf t (ctorAddr B k j)) cb
-      (((L1.mutsRootOffset ms.toList k.toUInt64.toNat : Nat) : F) + 1 +
+      (((Ingress.mutsRootOffset ms.toList k.toUInt64.toNat : Nat) : F) + 1 +
         ((j.toUInt64.toNat : Nat) : F)) ct ty₀ = some cn
     rw [hkk, hjj]
     exact hcn

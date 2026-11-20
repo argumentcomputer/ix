@@ -307,7 +307,7 @@ private theorem is_unsafe_ci_defnValShape_safe {d : Ixon.Definition}
     {tyPtr valPtr hint v1 : SourceValue F} {h m2 : Heap F} {cs : List (Call F)}
     (hsafe : Ix.Kernel.Reader.safetyDecline d = none)
     (ev : ObsFn Obs.W "KernelCheck::is_unsafe_ci"
-      [L1.defnValShape d tyPtr valPtr hint] h v1 m2 cs) :
+      [Ingress.defnValShape d tyPtr valPtr hint] h v1 m2 cs) :
     v1 = .field 0 ∧ m2 = h := by
   cases hk : d.kind with
   | defn =>
@@ -317,19 +317,19 @@ private theorem is_unsafe_ci_defnValShape_safe {d : Ixon.Definition}
       | safe => rfl
       | unsaf => rw [hds] at hsafe; exact absurd hsafe (by decide)
       | part => rw [hds] at hsafe; exact absurd hsafe (by decide)
-    simp only [L1.defnValShape, hk, hs] at ev
+    simp only [Ingress.defnValShape, hk, hs] at ev
     cases Obs.«KernelCheck::is_unsafe_ci».obs ev with
     | Defn_Safe _ _ _ _ _ _ he hr _ => exact ⟨he, hr⟩
     | Defn_other _ _ _ _ _ _ hv hne _ _ _ =>
       simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
       rcases hv with ⟨_, _, _, _, _, hs_eq, _⟩
-      exact (hne [] rfl (by simpa [L1.repDefSafetyVal] using hs_eq.symm)).elim
+      exact (hne [] rfl (by simpa [Ingress.repDefSafetyVal] using hs_eq.symm)).elim
     | Axiom _ _ _ hv | Thm _ _ _ _ _ hv | Opaque _ _ _ _ _ _ _ hv | Quot _ _ _ _ _ _ _ hv
     | Induct _ _ _ _ _ _ _ _ _ _ _ _ _ hv | Ctor _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv
     | Rec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv =>
       simp [Core.kciEnum] at hv
   | thm =>
-    simp only [L1.defnValShape, hk] at ev
+    simp only [Ingress.defnValShape, hk] at ev
     cases Obs.«KernelCheck::is_unsafe_ci».obs ev with
     | Thm _ _ _ _ _ _ he hr _ => exact ⟨he, hr⟩
     | Axiom _ _ _ hv | Defn_Safe _ _ _ _ _ hv | Defn_other _ _ _ _ _ _ hv
@@ -340,7 +340,7 @@ private theorem is_unsafe_ci_defnValShape_safe {d : Ixon.Definition}
   | opaq =>
     have hns : (d.safety == .unsaf) = false := by
       simpa [Ix.Kernel.Reader.safetyDecline, Ix.Kernel.Reader.safetyDeclineOf, hk] using hsafe
-    simp only [L1.defnValShape, hk, hns] at ev
+    simp only [Ingress.defnValShape, hk, hns] at ev
     cases Obs.«KernelCheck::is_unsafe_ci».obs ev with
     | Opaque _ _ _ _ _ _ _ hv he hr _ =>
       simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
@@ -388,7 +388,7 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
       exact Claim.recordOf_hashed hS hH (Core.hashed_mono hsubLd hh) hsz hde hex
     -- `get_ci` loads the same record `c`
     obtain ⟨-, bytes2, c2, blobs2, hh2, hb2, hex2, _, _, _, hraw⟩ :=
-      L1.get_ci_spec (RomBound.bounded_mono hbound hsub_ci) ha ev_ci
+      Ingress.get_ci_spec (RomBound.bounded_mono hbound hsub_ci) ha ev_ci
     have hrecAt : Ix.Cert.recordAt E₀ (ixAddr a) = some c :=
       (hS.recordOf_eq_recordAt (ixAddr a)).symm.trans hrec
     have hc2 : c2 = c := hS.record_eq hrecAt (Core.hashed_mono hsub_ci hh2) hb2 hex2
@@ -398,7 +398,7 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
     injection hv_c with _ _ hargs_c
     simp only [List.cons.injEq] at hargs_c
     rw [← hargs_c.1] at hinfoRep
-    unfold L1.GetCIRawResult at hraw
+    unfold Ingress.GetCIRawResult at hraw
     -- Case split on `sg`: only `Defn_Definition_Safe` and `Defn_Theorem` match `tag ∈ {Defn, Thm}`
     match sg with
     | .Defn_Definition_Safe (hv81 := hv81) (ev210 := evRc) (hc227 := hcsg) .. =>
@@ -423,7 +423,7 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
         rw [hld] at hld'
         injection hld' with hveq
         have htagEq : tag = "Defn" := by
-          simp [L1.defnValShape, hdk, Core.kciEnum] at hveq
+          simp [Ingress.defnValShape, hdk, Core.kciEnum] at hveq
           exact hveq.1
         have hlog : InLogic c := by
           unfold InLogic
@@ -457,7 +457,7 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
         rw [hld] at hld'
         injection hld' with hveq
         have htagEq : tag = "Thm" := by
-          simp [L1.defnValShape, hdk, Core.kciEnum] at hveq
+          simp [Ingress.defnValShape, hdk, Core.kciEnum] at hveq
           exact hveq.1
         have hlog : InLogic c := by
           unfold InLogic
@@ -582,10 +582,10 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
   obtain ⟨a', ha'_ref, hix'⟩ := ha_pre
   have ha_eq : a' = a := Decl.ixAddr_injective hix'
   subst a'
-  obtain ⟨raw1, c1, hh1, hba1, hex1, hres1⟩ := L1.get_ci_trace_spec ha'_ref ev_ld
+  obtain ⟨raw1, c1, hh1, hba1, hex1, hres1⟩ := Ingress.get_ci_trace_spec ha'_ref ev_ld
   have hc1 : c = c1 := (hS.record_eq hrecAt (Core.hashed_mono hsub_ld hh1) hba1 hex1).symm
   subst hc1
-  unfold L1.GetCITraceResult at hres1
+  unfold Ingress.GetCITraceResult at hres1
   rw [hinfo] at hres1
   obtain ⟨blobs1, tree1, v1', hhp1, built1, hld1', htr1⟩ := hres1
   rw [hld₁] at hld1'; injection hld1' with hvv1; subst hvv1
@@ -597,9 +597,9 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
   obtain ⟨raw1', ty₀, val₀, hty, hval, -, -⟩ :=
     LoadedReads.defn_reading (store := recordOf E₀) (blob := fun x => E₀.blobs.get? x) ht
       hrec hinfo hlogic hblob1 htr1.toRaw
-  have hrecur : L1.defnRecurAddrs d (ixAddr a) = [] := by
-    have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
-    simp [L1.defnRecurAddrs, hf]
+  have hrecur : Ingress.defnRecurAddrs d (ixAddr a) = [] := by
+    have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+    simp [Ingress.defnRecurAddrs, hf]
   rw [hrecur] at htr1
   obtain ⟨hnlvls, tyPtr1, valPtr1, hint1, planT1, planV1, hv1_eq, rty1, rval1, hpT1, hpV1, hlT1,
     hlV1⟩ := htr1
@@ -618,15 +618,15 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
           [rc, tyPtr1, .ptr (.enum kexprListEnum) m_pre.length] m_es v_sort m_es' cs_es ∧
         ∀ cl ∈ cs_es, cl ∈ calls := by
     rcases hkind with hk | hk
-    · have hv_shape : L1.defnValShape d tyPtr1 valPtr1 hint1 =
+    · have hv_shape : Ingress.defnValShape d tyPtr1 valPtr1 hint1 =
           .construct kciEnum "Defn"
-            [.field (d.lvls.toNat : F), tyPtr1, valPtr1, L1.repDefSafetyVal d.safety, hint1] := by
-        simp [L1.defnValShape, hk]
+            [.field (d.lvls.toNat : F), tyPtr1, valPtr1, Ingress.repDefSafetyVal d.safety, hint1] := by
+        simp [Ingress.defnValShape, hk]
       cases Obs.«KernelCheck::check_const».obs ev_chk with
       | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Thm | Opaque | Quot
       | Induct_n0 | Induct_other_n0 | Induct_other_other
       | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
-      | Rec_n0 | Rec_other => simp_all [L1.defnValShape, kciEnum]
+      | Rec_n0 | Rec_other => simp_all [Ingress.defnValShape, kciEnum]
       | Defn v1 m2 cs12 x_nlvls x_ty x_val _ _ _ m299 cs309 _ m336 cs346 v372 m373 cs383 m404
           _ m417 cs427 _ m447 cs457 cs479 m508
           ev14 _ hv269 ev311 ev348 hm412 ev385 _ _ _ _ hc520 =>
@@ -648,14 +648,14 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
           ev311.heap_extends.trans (ev348.heap_extends.trans (by rw [hm412]; exact Heap.Extends.snoc _ _))
         exact ⟨hty_lbb, hty_def, m299, m336, m404, m373, _, v372, cs309, cs383,
           ev311, ext_m_404, hm412, ev385, hsub_es⟩
-    · have hv_shape : L1.defnValShape d tyPtr1 valPtr1 hint1 =
+    · have hv_shape : Ingress.defnValShape d tyPtr1 valPtr1 hint1 =
           .construct kciEnum "Thm" [.field (d.lvls.toNat : F), tyPtr1, valPtr1] := by
-        simp [L1.defnValShape, hk]
+        simp [Ingress.defnValShape, hk]
       cases Obs.«KernelCheck::check_const».obs ev_chk with
       | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Defn | Opaque | Quot
       | Induct_n0 | Induct_other_n0 | Induct_other_other
       | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
-      | Rec_n0 | Rec_other => simp_all [L1.defnValShape, kciEnum]
+      | Rec_n0 | Rec_other => simp_all [Ingress.defnValShape, kciEnum]
       | Thm v1 m2 cs12 x_nlvls x_ty x_val _ m544 cs554 _ m581 cs591 v617 m618 cs628 m649
           _ _ _ _ _ _ _ _ _ _ _ _
           ev14 _ _ hv526 ev556 ev593 hm657 ev630 _ _ _ _ _ _ _ hc819 =>
@@ -680,8 +680,8 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
   obtain ⟨hty_lbb, hty_def, m_ws, m_pre, m_es, m_es', v_ws, v_sort, cs_ws, cs_es,
     ev_ws, ext_chk_es, hm_es, ev_es, hsub_es⟩ := hchk_res
   -- Canonical exact annotation at `ev_ld`
-  have hagree1 : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs1 :=
-    L1.BlobReadAgreement.of_mem hblob1
+  have hagree1 : Ingress.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs1 :=
+    Ingress.BlobReadAgreement.of_mem hblob1
   obtain ⟨ty', hcT1, -, htm1⟩ :=
     LoadedReads.annotation_canon_exact (recurAddrs := []) ht hnlvls
       (fun _ _ _ _ hx => by simp at hx) hagree1 rty1 built1 hpT1 hlT1 hty hty_lbb hty_def
@@ -689,10 +689,10 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
   have hty'_def : ty'.allLevelParamsDefined (List.range d.lvls.toNat) = true :=
     Decl.validate_expr_well_scoped_spec hnlvls (htm1 0 (fun _ => .sort .zero)) ev_ws
   -- Second `get_ci` (`ev_ci`): same canonical annotation `ty'`!
-  obtain ⟨raw2, c2, hh2, hba2, hex2, hres2⟩ := L1.get_ci_trace_spec ha ev_ci
+  obtain ⟨raw2, c2, hh2, hba2, hex2, hres2⟩ := Ingress.get_ci_trace_spec ha ev_ci
   have hc2 : c = c2 := (hS.record_eq hrecAt (Core.hashed_mono hsub_ci hh2) hba2 hex2).symm
   subst hc2
-  unfold L1.GetCITraceResult at hres2
+  unfold Ingress.GetCITraceResult at hres2
   rw [hinfo] at hres2
   obtain ⟨blobs2, tree2, v2, hhp2, built2, hld2', htr2⟩ := hres2
   have hblob2 : ∀ x bs, (x, bs) ∈ blobs2 → E₀.blobs.get? x = some bs := by
@@ -703,8 +703,8 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
   rw [hrecur] at htr2
   obtain ⟨-, tyPtr2, valPtr2, hint2, planT2, planV2, hv2_eq, rty2, -, hpT2, -, hlT2, -⟩ := htr2
   subst hv2_eq
-  have hagree2 : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs2 :=
-    L1.BlobReadAgreement.of_mem hblob2
+  have hagree2 : Ingress.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs2 :=
+    Ingress.BlobReadAgreement.of_mem hblob2
   obtain ⟨ty'', hcT2, -, htm2⟩ :=
     LoadedReads.annotation_canon_exact (recurAddrs := []) ht hnlvls
       (fun _ _ _ _ hx => by simp at hx) hagree2 rty2 built2 hpT2 hlT2 hty hty_lbb hty_def
@@ -717,25 +717,25 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
     · rw [hld2] at hld2'
       injection hld2' with hvv
       rcases hkind with hk | hk
-      · simp [L1.defnValShape, hk, kciEnum] at hvv
+      · simp [Ingress.defnValShape, hk, kciEnum] at hvv
         exact ⟨hvv.1, hvv.2.1⟩
-      · simp [L1.defnValShape, hk, kciEnum] at hvv
+      · simp [Ingress.defnValShape, hk, kciEnum] at hvv
     · rw [hld2] at hld2'
       injection hld2' with hvv
       rcases hkind with hk | hk
-      · simp [L1.defnValShape, hk, kciEnum] at hvv
-      · simp [L1.defnValShape, hk, kciEnum] at hvv
+      · simp [Ingress.defnValShape, hk, kciEnum] at hvv
+      · simp [Ingress.defnValShape, hk, kciEnum] at hvv
         exact ⟨hvv.1, hvv.2.1⟩
   obtain ⟨hnl_eq, hmty_eq⟩ := hnm
   subst hmty_eq
   have hv1_cases :
-      (∃ w1 w2 w3, L1.defnValShape d tyPtr1 valPtr1 hint1 =
+      (∃ w1 w2 w3, Ingress.defnValShape d tyPtr1 valPtr1 hint1 =
         .construct kciEnum "Defn" [.field (d.lvls.toNat : F), tyPtr1, w1, w2, w3]) ∨
-      (∃ w1, L1.defnValShape d tyPtr1 valPtr1 hint1 =
+      (∃ w1, Ingress.defnValShape d tyPtr1 valPtr1 hint1 =
         .construct kciEnum "Thm" [.field (d.lvls.toNat : F), tyPtr1, w1]) := by
     rcases hkind with hk | hk
-    · exact Or.inl ⟨valPtr1, L1.repDefSafetyVal d.safety, hint1, by simp [L1.defnValShape, hk]⟩
-    · exact Or.inr ⟨valPtr1, by simp [L1.defnValShape, hk]⟩
+    · exact Or.inl ⟨valPtr1, Ingress.repDefSafetyVal d.safety, hint1, by simp [Ingress.defnValShape, hk]⟩
+    · exact Or.inr ⟨valPtr1, by simp [Ingress.defnValShape, hk]⟩
   exact ⟨ty',
     ⟨{ nlvls_lt := hnlvls
        nl_eq := hnl_eq
@@ -749,7 +749,7 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
        m_es' := m_es'
        x_a := ap
        ptr₁ := ptr₁
-       v₁ := L1.defnValShape d tyPtr1 valPtr1 hint1
+       v₁ := Ingress.defnValShape d tyPtr1 valPtr1 hint1
        x_rc := rc
        x_ty₁ := tyPtr1
        v_sort := v_sort

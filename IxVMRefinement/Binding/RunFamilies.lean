@@ -325,7 +325,7 @@ theorem familyCall_block_nonempty (hS : LoadedReads.RunStore calls E₀)
       (ev403.heap_extends.trans (ev435.heap_extends.trans ev465.heap_extends))))))))))
     have hsub511 : ∀ cl ∈ cs511, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
     obtain ⟨-, bytes, c, hsz, hh, haddr, hex, hde, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded
+      Ingress.load_verified_constant_decode_bounded
         (Bytes.repAddressRef_heapMono₂ Core.addrTy e453 hb) ev513
     obtain ⟨lc, hget, -, hlc⟩ := hH ⟨bytes.toArray⟩ c (Core.hashed_mono hsub511 hh)
       (by simpa only [ByteArray.size, List.size_toArray] using hsz) hde hex
@@ -338,13 +338,13 @@ theorem familyCall_block_nonempty (hS : LoadedReads.RunStore calls E₀)
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
     have hinfo_eq := (List.cons.inj (Value.construct.inj hc_eq).2.2).1
     rw [← hinfo_eq] at hinfoRep
-    obtain ⟨ms, hms, hrep⟩ := L1.repConstantInfo_muts_inv hinfoRep
+    obtain ⟨ms, hms, hrep⟩ := Ingress.repConstantInfo_muts_inv hinfoRep
     refine ⟨c, ms, hrec, hms, ?_⟩
     match Obs.«KernelModeled::block_nparams».obs ev664 with
     | .run (ld12 := ld12) .. =>
       have e624 : Heap.Extends m501 m624 := ev601.heap_extends.trans ev634.heap_extends
       obtain ⟨z, zs, hz, -, -⟩ :=
-        Lib.rep_cons_of_load (RepLinkedList.mono L1.repMutConst_heapMono₂ e624 hrep) ld12
+        Lib.rep_cons_of_load (RepLinkedList.mono Ingress.repMutConst_heapMono₂ e624 hrep) ld12
       have hlen : ms.toList.length = zs.length + 1 := by rw [hz]; rfl
       rw [← Array.length_toList, hlen]
       exact Nat.succ_pos _

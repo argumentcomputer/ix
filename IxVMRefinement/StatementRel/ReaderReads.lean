@@ -1,6 +1,6 @@
 import IxVMRefinement.Assembly.NativeFormerReader
 import IxVMRefinement.Assembly.RecursorReadInputs
-import IxVMRefinement.L1.ConvertExpr
+import IxVMRefinement.Ingress.ConvertExpr
 import Ix.IxVM.Consistency.ReadsKeys
 
 /-! # What the kernel's reader reads is a `Reads`
@@ -193,9 +193,9 @@ theorem buildShareTblGo_le (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂.keyA
       (∀ (i : Nat) (v : CExpr .anon), acc₁[i]? = some (Except.ok v) →
         acc₂[i]? = some (Except.ok v)) →
       ∀ (i : Nat) (v : CExpr .anon),
-        (L1.buildShareTblGo (⟨cx₁, src, univs, self₁⟩ : ECx .anon) acc₁ es)[i]? =
+        (Ingress.buildShareTblGo (⟨cx₁, src, univs, self₁⟩ : ECx .anon) acc₁ es)[i]? =
           some (Except.ok v) →
-        (L1.buildShareTblGo (⟨cx₂, src, univs, self₂⟩ : ECx .anon) acc₂ es)[i]? =
+        (Ingress.buildShareTblGo (⟨cx₂, src, univs, self₂⟩ : ECx .anon) acc₂ es)[i]? =
           some (Except.ok v) := by
   intro es
   induction es with
@@ -204,7 +204,7 @@ theorem buildShareTblGo_le (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂.keyA
     exact hacc
   | cons e es ih =>
     intro acc₁ acc₂ hsz hacc
-    simp only [L1.buildShareTblGo]
+    simp only [Ingress.buildShareTblGo]
     apply ih
     · simp [hsz]
     · intro i v hi
@@ -232,8 +232,8 @@ theorem read_le {cx₁ cx₂ : Ctx .anon} {src : Ixon.Constant}
     {param : Nat → LevelParam} {e : Ixon.Expr} {v : CExpr .anon}
     (h : (MemberReader.mk' cx₁ src param self₁).read e = .ok v) :
     (MemberReader.mk' cx₂ src param self₂).read e = .ok v := by
-  obtain ⟨hecx₁, htbl₁⟩ := L1.memberReader_mk'_eq cx₁ src param self₁
-  obtain ⟨hecx₂, htbl₂⟩ := L1.memberReader_mk'_eq cx₂ src param self₂
+  obtain ⟨hecx₁, htbl₁⟩ := Ingress.memberReader_mk'_eq cx₁ src param self₁
+  obtain ⟨hecx₂, htbl₂⟩ := Ingress.memberReader_mk'_eq cx₂ src param self₂
   unfold MemberReader.read at h ⊢
   rw [hecx₁, htbl₁] at h
   rw [hecx₂, htbl₂]

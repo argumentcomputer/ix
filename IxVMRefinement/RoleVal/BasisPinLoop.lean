@@ -231,8 +231,8 @@ theorem load_role_table_bindings {x_a x_tbl : SourceValue F} {h h₁ : Heap F}
     ld11, ev26, ev68, ev105, ev135, ev181, _, ev210, ev257, _,
     ev286, ev333, ev353, _, ev368, ev427, ev404, ev488, ev546, ev524,
     ev594, ld613, hm629, ev678, rfl, rfl, hc636⟩ := Obs.«KernelRoles::load_role_table».obs ev
-  obtain ⟨bytes, _, ext1, ext2, hst, -, -⟩ := L1.checked_read ev26 ev68 ev105
-  have hst0 : L1.Stream m93 bytes v55 := hst.mono ext2
+  obtain ⟨bytes, _, ext1, ext2, hst, -, -⟩ := Ingress.checked_read ev26 ev68 ev105
+  have hst0 : Ingress.Stream m93 bytes v55 := hst.mono ext2
   obtain ⟨rfl, b0, r0, p0, rfl, hs0, ht0⟩ := Deserialize.readByte_refines hst0 ev135.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at ht0
   obtain ⟨rfl, rfl⟩ := ht0

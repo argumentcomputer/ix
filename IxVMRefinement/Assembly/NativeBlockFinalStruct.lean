@@ -46,7 +46,7 @@ theorem unitStep_nativeBlock_struct {calls : List (Call F)} {t : Ix.Kernel.RoleT
     (hkey : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hcov : L1.CanonicalHashCoverage E calls)
+    (hcov : Ingress.CanonicalHashCoverage E calls)
     (hread : Core.ProjGuardRunReading)
     (hcert : ind.ctors.size = 1 → ind.indices.toNat = 0 →
       ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))

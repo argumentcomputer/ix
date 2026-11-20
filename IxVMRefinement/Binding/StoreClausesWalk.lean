@@ -188,7 +188,7 @@ theorem roleEvidence_walked (hH : LoadedReads.HashedRecordsStored calls E₀) {g
           RoleVal.ValidateRoleIn.op_certificate_walks hv' h2 had hm₀ he
         have hrec : recordOf E₀ thm = some c := by
           obtain ⟨lc, hget, hraw, -⟩ :=
-            hH rawBytes c hh hsz (L1.deConstant_of_deConstantExact hde) hde
+            hH rawBytes c hh hsz (Ingress.deConstant_of_deConstantExact hde) hde
           rw [hbl] at hget
           unfold recordOf
           rw [hget]
@@ -196,11 +196,11 @@ theorem roleEvidence_walked (hH : LoadedReads.HashedRecordsStored calls E₀) {g
         have hidx := topRecs_cover (calls := calls) (bAddr := bAddr) (t := t)
           (lim := some (valLimit g))
           (fun (j : Nat) (x : _root_.Address) => ∃ hj : j < c.refs.toList.length,
-            j ∈ Core.S0.usedRefIdxs c ∧ c.refs.toList[j] = x ∧ x ≠ a ∧
+            j ∈ Core.BaseSeams.usedRefIdxs c ∧ c.refs.toList[j] = x ∧ x ≠ a ∧
               ¬ Claim.CoveredAt t (some (valLimit g)) x) (List.range c.refs.toList.length)
         obtain ⟨recs, hcl, hj⟩ := hidx (by
           intro j _
-          by_cases hP : ∃ hj : j < c.refs.toList.length, j ∈ Core.S0.usedRefIdxs c ∧
+          by_cases hP : ∃ hj : j < c.refs.toList.length, j ∈ Core.BaseSeams.usedRefIdxs c ∧
               c.refs.toList[j] ≠ a ∧ ¬ Claim.CoveredAt t (some (valLimit g)) c.refs.toList[j]
           · obtain ⟨hjl, hju, hjne, hjnc⟩ := hP
             rcases (hw j hjl hju hjne).2 with hcov' | ⟨recs, hcl, hmem⟩
@@ -318,7 +318,7 @@ theorem roleWalked_exists (hH : LoadedReads.HashedRecordsStored calls E₀) {g :
       rw [ec] at hi hx
       obtain ⟨hlt, hxe⟩ := Array.getElem?_eq_some_iff.mp hx
       have hlt' : i < c.refs.toList.length := by simpa using hlt
-      have hused : i ∈ Core.S0.usedRefIdxs c := by
+      have hused : i ∈ Core.BaseSeams.usedRefIdxs c := by
         rw [Assembly.usedRefIdxs_eq]
         exact hi
       obtain ⟨-, hrest⟩ := hrefs i hlt' hused

@@ -117,14 +117,14 @@ theorem famModeledAt_of_run {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   have hm0 : Claim.MemberCheckedLimAt calls bAddr t A ms 0 lim :=
     Claim.membersChecked_of_block hW.runStore hc hmuts hchk 0 hpos
   have hobs := Claim.MemberCheckedLimAt.dispatch hW.runStore hall hm0
-  have hcanon₀ : L1.CanonicalHashCoverage E₀ calls := by
+  have hcanon₀ : Ingress.CanonicalHashCoverage E₀ calls := by
     intro bytes value hashed size exactRead
     obtain ⟨entry, stored, bytesEq, cached⟩ := hW.hashedStored bytes value hashed size
-      (L1.deConstant_of_deConstantExact exactRead) exactRead
+      (Ingress.deConstant_of_deConstantExact exactRead) exactRead
     refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
     rw [bytesEq]
     exact exactRead
-  have hcanon : L1.CanonicalHashCoverage E calls :=
+  have hcanon : Ingress.CanonicalHashCoverage E calls :=
     Assembly.canonicalHashCoverage_frame hcanon₀ hctx.recordsFor.1
       (fun a v h => hctx.runRecord a v ((hW.runStore.recordOf_eq_recordAt a).trans h))
   exact modeledAt_of_modeledRoute (c := ⟨E, Ix.Kernel.Env.empty, t, none⟩)
@@ -171,14 +171,14 @@ theorem famBlockRoute_of_run {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     Claim.membersChecked_of_block hW.runStore hc hmuts hchk 0 hpos
   obtain ⟨bp, r, h, h', cs, b, ev, hsub, hb, hbA⟩ :=
     Claim.MemberCheckedLimAt.dispatch hW.runStore hall hm0
-  have hcanon₀ : L1.CanonicalHashCoverage E₀ calls := by
+  have hcanon₀ : Ingress.CanonicalHashCoverage E₀ calls := by
     intro bytes value hashed size exactRead
     obtain ⟨entry, stored, bytesEq, cached⟩ := hW.hashedStored bytes value hashed size
-      (L1.deConstant_of_deConstantExact exactRead) exactRead
+      (Ingress.deConstant_of_deConstantExact exactRead) exactRead
     refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
     rw [bytesEq]
     exact exactRead
-  have hcanon : L1.CanonicalHashCoverage E calls :=
+  have hcanon : Ingress.CanonicalHashCoverage E calls :=
     Assembly.canonicalHashCoverage_frame hcanon₀ hctx.recordsFor.1
       (fun a v h => hctx.runRecord a v ((hW.runStore.recordOf_eq_recordAt a).trans h))
   have g : Core.Good ⟨E, Ix.Kernel.Env.empty, t, none⟩ cs :=
@@ -226,7 +226,7 @@ theorem famUnitFree_of_run {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     exact h
   have hm0 : Claim.MemberCheckedLimAt calls bAddr t A #[.indc ind] 0 lim :=
     Claim.membersChecked_of_block hW.runStore hc hmuts hchk 0 Nat.zero_lt_one
-  have hdec : L1.EnvDecoded E := hctx.recordsFor.1
+  have hdec : Ingress.EnvDecoded E := hctx.recordsFor.1
   have hrec : ∀ a d, recordOf E₀ a = some d → recordOf E a = some d := fun a d hd' =>
     (recordOf_eq_recordAt_of_decoded hdec a).trans (hctx.runRecord a d hd')
   obtain ⟨ct', T, Bd, hct', -, hET, hpeel, hhd, hlen, hat⟩ :=
@@ -272,7 +272,7 @@ theorem famCtorTrees_of_run {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
       ∃ (ct : Ixon.Constructor) (T Bd : Route.ScanTree),
         ind.ctors[j]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
         Route.ExprTree c.refs.toList
-          (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
+          (Ingress.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
           c.sharing.toList 4294967295 ct.typ T ∧
         T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
         Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
@@ -292,7 +292,7 @@ theorem famCtorTrees_of_run {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     exact h
   have hm0 : Claim.MemberCheckedLimAt calls bAddr t A #[.indc ind] 0 lim :=
     Claim.membersChecked_of_block hW.runStore hc hmuts hchk 0 Nat.zero_lt_one
-  have hdec : L1.EnvDecoded E := hctx.recordsFor.1
+  have hdec : Ingress.EnvDecoded E := hctx.recordsFor.1
   have hrec : ∀ a d, recordOf E₀ a = some d → recordOf E a = some d := fun a d hd' =>
     (recordOf_eq_recordAt_of_decoded hdec a).trans (hctx.runRecord a d hd')
   exact modeledCtor_trees (c := ⟨E, Ix.Kernel.Env.empty, t, none⟩)
@@ -455,7 +455,7 @@ constructor of a block of one inductive stored with the record's counts (its rea
 constructor (`famUnitFree_of_run`); the dispatch's answer `1` at the store
 (`famBlockRoute_of_run`); the constructors' shapes at a block of one inductive
 (`famCtorTrees_of_run`); the registry's facts at the prefix (`PrefixInv.scopedCoreFacts`). -/
-theorem famLoadCtx_at {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} (hdec : L1.EnvDecoded E)
+theorem famLoadCtx_at {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} (hdec : Ingress.EnvDecoded E)
     (hblob : ∀ a b, E₀.blobs.get? a = some b → E.blobs.get? a = some b)
     {A rb : _root_.Address} {c crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
     (hB : FamBlockRecord E₀ A c ms) (hrb : FamRecRecord E₀ rb crb rs)
@@ -474,7 +474,7 @@ theorem famLoadCtx_at {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} (hdec : L1.E
       ∃ (ct : Ixon.Constructor) (T Bd : Route.ScanTree),
         ind.ctors[j]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
         Route.ExprTree c.refs.toList
-          (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
+          (Ingress.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
           c.sharing.toList 4294967295 ct.typ T ∧
         T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
         Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
@@ -795,7 +795,7 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
       ∃ (ct : Ixon.Constructor) (T Bd : Route.ScanTree),
         ind.ctors[j]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
         Route.ExprTree c.refs.toList
-          (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
+          (Ingress.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
           c.sharing.toList 4294967295 ct.typ T ∧
         T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
         Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
@@ -814,7 +814,7 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
     (bpf : BlockProjFacts t E₀ E_bpf env A c ms blk tys g)
     (hres : BlockProjInstallResult.{u} t env ⟨new ++ env.consts⟩ Reg A ms bpf.elig pcs) :
     FamLoadCtx ⟨E, env, t, lim⟩ (pcs ++ new) A c ms rb crb rs :=
-  have hdec : L1.EnvDecoded E := hctx.recordsFor.1
+  have hdec : Ingress.EnvDecoded E := hctx.recordsFor.1
   have hrec : ∀ a d, recordOf E₀ a = some d → recordOf E a = some d := fun a d hd' =>
     (recordOf_eq_recordAt_of_decoded hdec a).trans (hctx.runRecord a d hd')
   famLoadCtx_at hdec hctx.runBlob hB hrb (hrec _ _ hB.record)

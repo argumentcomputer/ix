@@ -148,10 +148,10 @@ theorem recParent_of_arm_tied {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨a', ha'_ref, haA⟩ := ha_pre
   subst haA
   obtain ⟨rawBytes, c', hh, hba, hex, -, hres'⟩ :=
-    L1.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
+    Ingress.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
   have hcc : c' = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hh) hba hex
   subst c'
-  unfold L1.GetCIBlockTraceResult at hres'
+  unfold Ingress.GetCIBlockTraceResult at hres'
   rw [hinfo] at hres'
   obtain ⟨blobs, tree, v, hhp, built, hldv, htr⟩ := hres'
   rw [hld] at hldv

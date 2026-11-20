@@ -4,7 +4,7 @@ import IxC.Ixon.Verify.Canonical
 import IxC.Ixon.Verify.ConstantTables
 import IxC.Kernel.Ixon.RoleTableInj
 import IxVMRefinement.Claim.HexDecode
-import IxVMRefinement.L1.AddressHash
+import IxVMRefinement.Ingress.AddressHash
 import Aiur.Library.Blake3.BlockLoop
 
 /-! # Base evaluators and default table admission for `RoleData`
@@ -704,16 +704,16 @@ def checkHashChunks (chunks : List (List UInt8)) (addrBytes : List UInt8) : Bool
   ((Blake3.Pure.cvBytes (digestCV8 chunks).toCV).toList == addrBytes)
 
 private theorem ixAddr_eq_mkAddr_toList (d : Vector UInt8 32) :
-    L1.ixAddr d = mkAddr d.toList := by
+    Ingress.ixAddr d = mkAddr d.toList := by
   rcases d with ⟨arr, _⟩
-  simp [L1.ixAddr, mkAddr]
+  simp [Ingress.ixAddr, mkAddr]
 
 theorem admissionHash_of_checkHashChunks {chunks : List (List UInt8)} {addrBytes : List UInt8}
     (h : checkHashChunks chunks addrBytes = true) :
     Address.admissionHash ⟨chunks.flatten.toArray⟩ = mkAddr addrBytes := by
   simp only [checkHashChunks, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at h
   obtain ⟨⟨hv, hctr⟩, hbytes⟩ := h
-  rw [Address.admissionHash_eq, L1.blake3Pure_eq, ← digestCV8_spec chunks hv hctr,
+  rw [Address.admissionHash_eq, Ingress.blake3Pure_eq, ← digestCV8_spec chunks hv hctr,
       ixAddr_eq_mkAddr_toList, hbytes]
 
 /-! ## Proof-free structural `wireWF` checker (`validConstantFast`) -/

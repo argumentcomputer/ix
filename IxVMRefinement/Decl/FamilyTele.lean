@@ -7,7 +7,7 @@ every typing and conversion is a call of the core: `defeq_list_ok` (pairwise con
 `inst_params_typed` (each parameter typed against the domain it instantiates), `defeq_tele`
 (the domains of two Π-telescopes convert) and `defeq_lam_tele` (a λ-telescope's domains convert
 with a Π-telescope's). Their specifications in `Decl/ModeledTele.lean` read the core through the
-public `Core S₀` and an unrestricted context. The specifications below are the same walks at a
+public `Core baseSeams` and an unrestricted context. The specifications below are the same walks at a
 scoped context (`ScopedCtx`), every core call read by the scoped registry (`scoped_core_defeq`,
 `scoped_core_infer`) under `CoreEnvFacts`, `ScopedLoadFacts` and `CoreGood`; the store's closure
 comes from `CoreEnvFacts`.

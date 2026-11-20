@@ -1,6 +1,6 @@
 import IxVMRefinement.Callees.PutConstant
 import IxVMRefinement.Core.RomBound
-import IxVMRefinement.L1.Blake3
+import IxVMRefinement.Ingress.Blake3
 import IxVMRefinement.Obs.Ingress0
 import IxVMRefinement.Obs.KernelCheck
 /-! # Projection-record addresses and BLAKE3 hashing
@@ -45,15 +45,15 @@ theorem bytes_to_addr_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' :
       ∃ a : Bytes.Address, RepAddr h' a r ∧ ixAddr a = Address.blake3Pure ⟨bytes.toArray⟩ := by
   intro bp bytes hargs good hbytes
   subst hargs
-  have hstream : L1.Stream h bytes bp := by
+  have hstream : Ingress.Stream h bytes bp := by
     change Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h bytes bp
     have e : (IxVM.Refinement.byteStreamEnum : String) = byteListEnum := rfl
     rw [e]
     exact hbytes
   obtain ⟨v1, m2, cs12, v23, m24, cs31, ev14, he27, hm26, ev33, hc42⟩ :=
     Obs.«Blake3::bytes_to_addr».obs ev
-  obtain ⟨-, rfl⟩ := L1.hash_spec hstream ev14
-  obtain ⟨rfl, hm24⟩ := L1.digest_bytes_spec ev33
+  obtain ⟨-, rfl⟩ := Ingress.hash_spec hstream ev14
+  obtain ⟨rfl, hm24⟩ := Ingress.digest_bytes_spec ev33
   subst m24
   have hcall : (⟨"Blake3::hash", [bp], h⟩ : Call F) ∈ calls := by
     rw [hc42]; simp
@@ -65,15 +65,15 @@ theorem bytes_to_addr_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' :
   let d : Bytes.Address := Blake3.Pure.cvBytes (Aiur.Library.Blake3.hashModel bytes)
   have hd_eq : d = Blake3.Pure.digest bytes :=
     Aiur.Library.Blake3.hash_model_spec bytes hnat
-  have hty : (L1.digestV d).type = addrTy := by
-    have hf : (Value.type ∘ L1.bv : UInt8 → Aiur.Ty) = fun _ => .field :=
-      funext fun b => by rw [Function.comp_apply, L1.bv, Value.type]
-    rw [L1.digestV, L1.type_tuple, List.map_map, hf, List.map_const', Vector.length_toList]
+  have hty : (Ingress.digestV d).type = addrTy := by
+    have hf : (Value.type ∘ Ingress.bv : UInt8 → Aiur.Ty) = fun _ => .field :=
+      funext fun b => by rw [Function.comp_apply, Ingress.bv, Value.type]
+    rw [Ingress.digestV, Ingress.type_tuple, List.map_map, hf, List.map_const', Vector.length_toList]
   refine ⟨d, ?_, ?_⟩
-  · refine ⟨m2.length, L1.digestV d, ?_, ?_, ?_⟩
+  · refine ⟨m2.length, Ingress.digestV d, ?_, ?_, ?_⟩
     · rw [he27]; exact congrArg (fun t => Value.ptr t m2.length) hty
     · rw [hm26, List.getElem?_append_right (Nat.le_refl _), Nat.sub_self]; rfl
-    · exact L1.repAddress_iff.mpr rfl
+    · exact Ingress.repAddress_iff.mpr rfl
   · rw [hd_eq, ProjAddrAux.blake3Pure_eq_ixAddr]
 
 /-- The constructor-address operation serializes the exact wrapper before hashing it. -/
@@ -164,8 +164,8 @@ theorem projection_addr_ctor_hashed (c : ScopedCtx) {i j : F}
       ⟨.cPrj ⟨(ZMod.val i).toUInt64, (ZMod.val j).toUInt64, ixAddr b⟩, #[], #[], #[], #[]⟩) := by
   obtain ⟨hashPtr, hashHeap, hashCalls, hbytes, hhash, hsub⟩ :=
     projection_addr_ctor_bytes c ev hb
-  have hstream : L1.Stream hashHeap _ hashPtr := hbytes
-  have hcall := (L1.bytes_to_addr_spec hstream hhash).2.2
+  have hstream : Ingress.Stream hashHeap _ hashPtr := hbytes
+  have hcall := (Ingress.bytes_to_addr_spec hstream hhash).2.2
   exact ⟨_, hsub _ hcall, rfl, hashPtr, rfl, hstream⟩
 
 namespace ProjAddrAux

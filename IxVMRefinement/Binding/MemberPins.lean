@@ -1,4 +1,4 @@
-import IxVMRefinement.L1.Convert
+import IxVMRefinement.Ingress.Convert
 import IxVMRefinement.Roles.Tables
 import IxVMRefinement.Obs.KernelInfer0
 import IxVMRefinement.Obs.KernelRoles2
@@ -180,7 +180,7 @@ theorem validateMember_rawRecCounts {role : Ix.Kernel.Role} {n : Nat} (pin : Std
     (path : Obs.«KernelRoles::validate_member».Path rc tbl (.field (roleNum role)) addr ci
       h result h' calls)
     {refs recurs univs sharing blobs loadHeap block idx} {record : Ixon.Recursor}
-    (raw : L1.RawRecrValRep refs recurs univs sharing blobs loadHeap record block idx ci) :
+    (raw : Ingress.RawRecrValRep refs recurs univs sharing blobs loadHeap record block idx ci) :
     record.params.toNat + record.motives.toNat + record.minors.toNat + record.indices.toNat = n ∧
     record.params.toNat + record.motives.toNat + record.minors.toNat = n := by
   obtain ⟨-, hp, hi, hm, hq, -, _, _, _, _, -, -, rfl, -⟩ := raw

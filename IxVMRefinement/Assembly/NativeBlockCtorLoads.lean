@@ -34,8 +34,8 @@ record's binder blocks (`canonAnn`'s companion: the raw binder trace instead of 
 one). -/
 noncomputable def canonRawAnn (src : Ixon.Constant) (ps : List Ix.Kernel.LevelParam) (root : F)
     (e : Ixon.Expr) (E_rd : Ix.Kernel.Expr .anon) : Option (Ix.Kernel.Expr .anon) :=
-  (L1.binderRootPlan (canonTree src.binders.toList) src.sharing.toList root e).bind fun plan =>
-    (L1.applyRawBinderTrace (fun level => Core.bmeta (L1.invPosLevel ps level)) E_rd plan).map
+  (Ingress.binderRootPlan (canonTree src.binders.toList) src.sharing.toList root e).bind fun plan =>
+    (Ingress.applyRawBinderTrace (fun level => Core.bmeta (Ingress.invPosLevel ps level)) E_rd plan).map
       Prod.fst
 
 section
@@ -65,15 +65,15 @@ theorem ctor_load_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Call 
       loadValue h' ptr = .ok (.construct Core.kciEnum "Ctor"
         [.field (ct.lvls.toNat : F), tyPtr, blkPtr, .field i, .field j,
           .field (ct.params.toNat : F), .field (ct.fields.toNat : F),
-          L1.repBoolField ct.isUnsafe]) ∧
+          Ingress.repBoolField ct.isUnsafe]) ∧
       Aiur.Library.Bytes.RepAddressRef Core.addrTy h' b' blkPtr ∧
       Core.ixAddr b' = Core.ixAddr b ∧
       ct.lvls.toNat < 4294967296 ∧ ct.params.toNat < 72057594037927936 ∧
       ct.fields.toNat < 72057594037927936 ∧
       canonAnn cb (List.range ct.lvls.toNat)
-        (((L1.mutsRootOffset ms.toList i.val : Nat) : F) + 1 + j) ct.typ cty = some ty' ∧
+        (((Ingress.mutsRootOffset ms.toList i.val : Nat) : F) + 1 + j) ct.typ cty = some ty' ∧
       canonRawAnn cb (List.range ct.lvls.toNat)
-        (((L1.mutsRootOffset ms.toList i.val : Nat) : F) + 1 + j) ct.typ cty = some R' ∧
+        (((Ingress.mutsRootOffset ms.toList i.val : Nat) : F) + 1 + j) ct.typ cty = some R' ∧
       Annotates ty' cty ∧
       (∀ d Γ, Decl.RawTmExact (Core.keyOf t) d Γ h' 0
         (Core.posOf (List.range ct.lvls.toNat) R') (Core.posOf (List.range ct.lvls.toNat) ty')
@@ -81,10 +81,10 @@ theorem ctor_load_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Call 
       ∀ κ : _root_.Address → Core.KKey,
         (∀ i ∈ usedRefIdxs cb, ∀ x, cb.refs.toList[i]? = some x →
           κ x = Core.keyOf t x ∧ Core.ProjPermitted κ x) →
-        (∀ x ∈ L1.blockRecurAddrs (Core.ixAddr b) ms.toList, κ x = Core.keyOf t x) →
+        (∀ x ∈ Ingress.blockRecurAddrs (Core.ixAddr b) ms.toList, κ x = Core.keyOf t x) →
         Decl.TmCExact κ h' (Core.posOf (List.range ct.lvls.toNat) ty') tyPtr := by
   obtain ⟨-, -, -, blkBytes, cb', ms', ind', ct', blobs, v, hhB, haB, hexB, -, hcb, hms, hcts,
-    hhp, hld, hraw, tree, plan, built, planned, hlev⟩ := L1.get_ci_cprj_origin_spec hbound hb ev
+    hhp, hld, hraw, tree, plan, built, planned, hlev⟩ := Ingress.get_ci_cprj_origin_spec hbound hb ev
   obtain ⟨lcB, hgetB, hdecB⟩ := recordOf_inv hblock
   have hbB : blkBytes = lcB.rawBytes := Core.load_escape hgetB hnc blkBytes hhB haB
   have hcB : cb = cb' := by
@@ -129,19 +129,19 @@ theorem ctor_load_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Call 
   have hrap := hrtrace plan trace []
   rw [List.append_nil] at hrap
   have hcanon : canonAnn cb (List.range ct.lvls.toNat)
-      (((L1.mutsRootOffset ms.toList i.val : Nat) : F) + 1 + j) ct.typ cty = some E' := by
+      (((Ingress.mutsRootOffset ms.toList i.val : Nat) : F) + 1 + j) ct.typ cty = some E' := by
     unfold canonAnn
     rw [canonTree_eq built, planned]
-    show (L1.applyBinderTrace (fun level => Core.bmeta (L1.invPosLevel (List.range ct.lvls.toNat)
+    show (Ingress.applyBinderTrace (fun level => Core.bmeta (Ingress.invPosLevel (List.range ct.lvls.toNat)
       level)) cty plan).map Prod.fst = some E'
     rw [hap]
     rfl
   have hrcanon : canonRawAnn cb (List.range ct.lvls.toNat)
-      (((L1.mutsRootOffset ms.toList i.val : Nat) : F) + 1 + j) ct.typ cty = some R' := by
+      (((Ingress.mutsRootOffset ms.toList i.val : Nat) : F) + 1 + j) ct.typ cty = some R' := by
     unfold canonRawAnn
     rw [canonTree_eq built, planned]
-    show (L1.applyRawBinderTrace (fun level =>
-      Core.bmeta (L1.invPosLevel (List.range ct.lvls.toNat) level)) cty plan).map Prod.fst =
+    show (Ingress.applyRawBinderTrace (fun level =>
+      Core.bmeta (Ingress.invPosLevel (List.range ct.lvls.toNat) level)) cty plan).map Prod.fst =
       some R'
     rw [hrap]
     rfl
@@ -160,7 +160,7 @@ theorem ctor_load_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Call 
     hrawE, ?_⟩
   · rw [hld, hcidx, ZMod.natCast_zmod_val, ZMod.natCast_zmod_val]
   · intro κ hused hrecur d Γ
-    have usedOf : ∀ x, L1.RefUsed cb.refs.toList cb.sharing.toList ct.typ x →
+    have usedOf : ∀ x, Ingress.RefUsed cb.refs.toList cb.sharing.toList ct.typ x →
         κ x = Core.keyOf t x ∧ Core.ProjPermitted κ x := by
       intro x hu
       obtain ⟨i, hi | ⟨s, hs, his⟩, hr⟩ := hu
@@ -193,7 +193,7 @@ theorem ctor_scope_closed (ht : t.check = .ok ()) {c : Core.Ctx} {cs_root : List
       cty.allLevelParamsDefined (List.range ct.lvls.toNat) = true := by
   have hg := hgood.sub checked.loadSubset
   obtain ⟨-, -, -, blkBytes, cb', ms', ind', ct', blobs, v, hhB, haB, hexB, -, hcb, hms, hcts,
-    hhp, hld, hraw, -⟩ := L1.get_ci_cprj_origin_spec hg.2 checked.blockRep checked.loaded
+    hhp, hld, hraw, -⟩ := Ingress.get_ci_cprj_origin_spec hg.2 checked.blockRep checked.loaded
   obtain ⟨lcB, hgetB, hdecB⟩ := recordOf_inv hblock
   have hbB : blkBytes = lcB.rawBytes := Core.load_escape hgetB hg.1 blkBytes hhB haB
   have hcB : cb = cb' := by
@@ -268,11 +268,11 @@ theorem stagedCtorLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok (
       ∀ κ : _root_.Address → Core.KKey,
         (∀ i ∈ usedRefIdxs cb, ∀ x, cb.refs.toList[i]? = some x →
           κ x = Core.keyOf t x ∧ Core.ProjPermitted κ x) →
-        (∀ x ∈ L1.blockRecurAddrs (Core.ixAddr b₀) (#[.indc ind] : Array Ixon.MutConst).toList,
+        (∀ x ∈ Ingress.blockRecurAddrs (Core.ixAddr b₀) (#[.indc ind] : Array Ixon.MutConst).toList,
           κ x = Core.keyOf t x) →
         Decl.StagedCtorLoads κ t b₀ nP 0 cs_root ctors ctorsA rawTypes := by
   let root : Nat → F := fun j =>
-    ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val (0 : F)) : Nat) : F)
+    ((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val (0 : F)) : Nat) : F)
       + 1 + ((j : Nat) : F)
   let annOf : Nat → Ix.Kernel.ConstantVal .anon × Nat → Ix.Kernel.Expr .anon := fun j cv =>
     ((ind.ctors[j]?).bind fun ct => canonAnn cb cv.1.levelParams (root j) ct.typ cv.1.type).getD

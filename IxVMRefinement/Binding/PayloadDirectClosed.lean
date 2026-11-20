@@ -83,7 +83,7 @@ private theorem get_ci_rec_not_defn (hS : LoadedReads.RunStore calls E₀)
       (∀ cl ∈ cs12, cl ∈ calls) → tag = "Defn" := by
     intro tag iargs x_sh x_rf x_un x_bd m cs12 ev14 hsub12
     obtain ⟨-, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded hab ev14
+      Ingress.load_verified_constant_decode_bounded hab ev14
     have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
       (Core.hashed_mono hsub12 hh) haddr hexact
     subst c'
@@ -125,7 +125,7 @@ theorem adviceCheck_projMember (hS : LoadedReads.RunStore calls E₀)
     have hsub947 : ∀ cl ∈ cs947, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     have ext_m2 : Heap.Extends h m2 := ev_ord.heap_extends.trans ev14.heap_extends
     obtain ⟨-, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded
+      Ingress.load_verified_constant_decode_bounded
         (Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ord.heap_extends hab) ev14
     have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
       (Core.hashed_mono hsub12 hh) haddr hexact
@@ -137,15 +137,15 @@ theorem adviceCheck_projMember (hS : LoadedReads.RunStore calls E₀)
     | .Defn_Definition_Safe (hv81 := hv) .. | .Defn_Definition_other (hv81 := hv) ..
     | .Defn_Theorem (hv81 := hv) .. | .Defn_Opaque (hv81 := hv) .. =>
       rw [hv] at hinfoRep
-      obtain ⟨d, hd, -⟩ := L1.repConstantInfo_defn_inv hinfoRep
+      obtain ⟨d, hd, -⟩ := Ingress.repConstantInfo_defn_inv hinfoRep
       exact (standalone_not_proj (Or.inl ⟨d, hd⟩) hp).elim
     | .Recr (hv403 := hv) .. =>
       rw [hv] at hinfoRep
-      obtain ⟨rcr, hrc, -⟩ := L1.repConstantInfo_recr_inv hinfoRep
+      obtain ⟨rcr, hrc, -⟩ := Ingress.repConstantInfo_recr_inv hinfoRep
       exact (standalone_not_proj (Or.inr (Or.inl ⟨rcr, hrc⟩)) hp).elim
     | .Muts (hv598 := hv) .. =>
       rw [hv] at hinfoRep
-      obtain ⟨ms, hms, -⟩ := L1.repConstantInfo_muts_inv hinfoRep
+      obtain ⟨ms, hms, -⟩ := Ingress.repConstantInfo_muts_inv hinfoRep
       exact (proj_not_block hp ⟨ms, hms⟩).elim
     | .IPrj (cs_sopfkvlz := cs_ci) (ev836 := ev836) (ev822 := ev822)
         (ev_gjbqzffr := ev_ci) (hc863 := hc863) .. =>

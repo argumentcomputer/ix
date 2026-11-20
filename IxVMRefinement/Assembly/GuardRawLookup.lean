@@ -55,7 +55,7 @@ def memberRoot (store : Records) (B : _root_.Address) (i : Nat)
   let .muts ms := cb.info | none
   let m ← ms[i]?
   let (off, nl, e) ← select m
-  pure ⟨cb, blockSelf addressTable B ms, L1.mutsRootOffset ms.toList i + off, nl, e⟩
+  pure ⟨cb, blockSelf addressTable B ms, Ingress.mutsRootOffset ms.toList i + off, nl, e⟩
 
 def definitionType : Ixon.MutConst → Option (Nat × Nat × Ixon.Expr)
   | .defn d => some (0, d.lvls.toNat, d.typ)
@@ -113,7 +113,7 @@ def readRoot (blob : Blobs) (root : Root) : Option (Expr .anon) :=
 theorem readRoot_sort {blob : Blobs} {root : Root} {i : UInt64} {u : Ixon.Univ}
     (he : root.expression = .sort i) (hu : root.source.univs[i.toNat]? = some u) :
     readRoot blob root = some (.sort (Ix.Kernel.Reader.convUniv id u)) := by
-  have hecx := (L1.memberReader_mk'_eq (readCtx addressTable blob) root.source id root.self).1
+  have hecx := (Ingress.memberReader_mk'_eq (readCtx addressTable blob) root.source id root.self).1
   unfold readRoot exprReader Ix.Kernel.Reader.MemberReader.read
   rw [hecx, he]
   simp [Ix.Kernel.Reader.convExpr, Ix.Kernel.Reader.ECx.level, hu]
@@ -182,7 +182,7 @@ or closed-term premise. This is the data producer needed for arbitrary classifie
 theorem readRoot_of_rawConv {blob : Blobs} {root : Root}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
     {h : Aiur.Heap IxVM.F} {kp : Aiur.SourceValue IxVM.F}
-    (raw : L1.RawConvExpr root.source.refs.toList recurAddrs root.source.univs.toList
+    (raw : Ingress.RawConvExpr root.source.refs.toList recurAddrs root.source.univs.toList
       root.source.sharing.toList blobs h 4294967295 root.expression kp)
     (hself : ∀ i x, recurAddrs[i]? = some x → ∃ m k, root.self i = some m ∧ m = .ok k)
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs) :
@@ -279,7 +279,7 @@ theorem readRoot_noFvar {blob : Blobs} {root : Root} {e : Expr .anon}
   rw [Ix.Kernel.GuardClassifier.eraseMeta_hasFvar]
   exact Assembly.memberReader_read_noFvar (Typing.toOption_eq_some hv)
 
-private theorem recordOf_eq_cached {E : Ixon.Env} (hd : L1.EnvDecoded E) (a : _root_.Address) :
+private theorem recordOf_eq_cached {E : Ixon.Env} (hd : Ingress.EnvDecoded E) (a : _root_.Address) :
     recordOf E a = Ix.Cert.recordAt E a := by
   unfold recordOf Ix.Cert.recordAt
   cases hget : E.consts.get? a with

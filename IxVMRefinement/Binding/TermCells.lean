@@ -1,5 +1,5 @@
 import IxVMRefinement.Decl.Common
-import IxVMRefinement.L1.Cells
+import IxVMRefinement.Ingress.Cells
 
 /-! # The cells of a heap term
 
@@ -472,10 +472,10 @@ theorem RawConvExpr.cells_of_twin {refs recurAddrs : List _root_.Address}
     {univs : List Ixon.Univ} {sharing : List Ixon.Expr}
     {blobs₂ : List (_root_.Address × ByteArray)} {h₂ : Heap F} {bound₂ : Nat} {e : Ixon.Expr}
     {p₂ : SourceValue F}
-    (r₂ : L1.RawConvExpr refs recurAddrs univs sharing blobs₂ h₂ bound₂ e p₂) :
+    (r₂ : Ingress.RawConvExpr refs recurAddrs univs sharing blobs₂ h₂ bound₂ e p₂) :
     ∀ {blobs₁ : List (_root_.Address × ByteArray)} {h₁ : Heap F} {bound₁ : Nat}
       {p₁ : SourceValue F},
-      L1.RawConvExpr refs recurAddrs univs sharing blobs₁ h₁ bound₁ e p₁ →
+      Ingress.RawConvExpr refs recurAddrs univs sharing blobs₁ h₁ bound₁ e p₁ →
       ∀ x, AddrIn h₂ p₂ x → ∃ y, AddrIn h₁ p₁ y ∧ ixAddr y = ixAddr x := by
   induction r₂ with
   | var hidx cell =>

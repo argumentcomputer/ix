@@ -38,7 +38,7 @@ private theorem bd_blake3Pure_hash_size (b : ByteArray) :
     (Address.blake3Pure b).hash.size = 32 := by
   cases b with
   | mk arr =>
-    have h := L1.blake3Pure_eq arr.toList
+    have h := Ingress.blake3Pure_eq arr.toList
     simp only [Array.toArray_toList] at h
     rw [h]
     exact (Blake3.Pure.digest arr.toList).size_toArray
@@ -175,7 +175,7 @@ theorem verify_claim_decode_binding_spec
   obtain ⟨l_r2, rfl, rfl⟩ := d_r2.var_inv; simp at l_r2; subst l_r2
   obtain ⟨rfl, rfl, rfl⟩ := a_read3.nil_inv
   obtain rfl := matchPattern_bind_inv mt_read
-  obtain ⟨_, rawBytes, hraw_lt, -, hst_raw⟩ := L1.read_finite_byte_stream_spec ev_read
+  obtain ⟨_, rawBytes, hraw_lt, -, hst_raw⟩ := Ingress.read_finite_byte_stream_spec ev_read
   -- 3. `let h = Blake3::hash(bytes);`
   obtain ⟨x_h, m_hash, bs_hash, c_hash, c3, d_hash, mt_hash, d3, rfl⟩ := d2.letValue_inv
   obtain ⟨_, _, _, cs_hash, a_hash, ev_hash, rfl⟩ := d_hash.call_inv
@@ -185,9 +185,9 @@ theorem verify_claim_decode_binding_spec
   obtain ⟨rfl, rfl, rfl⟩ := a_hash1.nil_inv
   obtain rfl := matchPattern_bind_inv mt_hash
   obtain ⟨ext_hash, rfl, hcv_raw⟩ :=
-    L1.hash_digest_spec hst_raw (L1.native_of_lt hraw_lt) ev_hash
+    Ingress.hash_digest_spec hst_raw (Ingress.native_of_lt hraw_lt) ev_hash
   have hhashed_raw : Hashed calls ⟨rawBytes.toArray⟩ :=
-    L1.hashed_of_call (hsub_run _ (by simp [instanceName_plain_some])) hst_raw
+    Ingress.hashed_of_call (hsub_run _ (by simp [instanceName_plain_some])) hst_raw
   -- 4. `assert_eq!(Blake3::pack_digest(h), digest, ...);`
   obtain ⟨_, m_eq1, bs_eq1, c_eq1, c4, d_eq1, mt_eq1, d4, rfl⟩ := d3.letValue_inv
   obtain ⟨_, a_eq1, ap_eq1⟩ := d_eq1.builtin_inv
@@ -208,7 +208,7 @@ theorem verify_claim_decode_binding_spec
     apply packDigest_inj (bd_blake3Pure_hash_size _) (bd_blake3Pure_hash_size _)
     have hp := digestValue_inj heq_pd
     rw [← hpack] at hp
-    rw [L1.blake3Pure_eq]
+    rw [Ingress.blake3Pure_eq]
     exact hp
   by_cases heq_bytes : (⟨rawBytes.toArray⟩ : ByteArray) = bytes
   case neg =>
@@ -242,7 +242,7 @@ theorem verify_claim_decode_binding_spec
   obtain rfl := matchPattern_bind_inv mt_s0
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml_tagn2
   obtain ⟨rfl, tag, n1, restPtr1, hok_tag, hs_n1, htagn_tup⟩ :=
-    TagN.getTagN4_refines_at (i := 0) (by simpa using L1.Stream.mono ext_hash hst_raw) ev_tagn.erase
+    TagN.getTagN4_refines_at (i := 0) (by simpa using Ingress.Stream.mono ext_hash hst_raw) ev_tagn.erase
   simp only [Nat.zero_add] at hok_tag hs_n1
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htagn_tup
   obtain ⟨rfl, rfl⟩ := htagn_tup
@@ -315,7 +315,7 @@ theorem verify_claim_decode_binding_spec
   obtain rfl := matchPattern_bind_inv mt_xs1
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml_fmt2
   obtain ⟨rfl, fmtByte, restFmt, _, hcons_fmt, hs_fmt, htup_fmt⟩ :=
-    Deserialize.readByte_refines (L1.Stream.mono (ext_eq2.trans ext_eq3) hs_n1) ev_fmt.erase
+    Deserialize.readByte_refines (Ingress.Stream.mono (ext_eq2.trans ext_eq3) hs_n1) ev_fmt.erase
   injection htup_fmt with htup_fmt'; simp only [List.cons.injEq, and_true] at htup_fmt'
   obtain ⟨rfl, rfl⟩ := htup_fmt'
   obtain ⟨hu8_fmt, hdrop_fmt, -⟩ := Deserialize.getU8_of_drop_cons hcons_fmt
@@ -339,7 +339,7 @@ theorem verify_claim_decode_binding_spec
   obtain rfl := matchPattern_bind_inv mt_xs2
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml_val2
   obtain ⟨rfl, valByte, restVal, _, hcons_val, hs_val, htup_val⟩ :=
-    Deserialize.readByte_refines (L1.Stream.mono ext_eq4 hs_fmt) ev_val.erase
+    Deserialize.readByte_refines (Ingress.Stream.mono ext_eq4 hs_fmt) ev_val.erase
   injection htup_val with htup_val'; simp only [List.cons.injEq, and_true] at htup_val'
   obtain ⟨rfl, rfl⟩ := htup_val'
   obtain ⟨hu8_val, hdrop_val, -⟩ := Deserialize.getU8_of_drop_cons hcons_val
@@ -367,7 +367,7 @@ theorem verify_claim_decode_binding_spec
   obtain ⟨_, _, _, _, _, rfl, d_sc0, a_sc1, rfl⟩ := a_scrut.cons_inv
   obtain ⟨l_sc0, rfl, rfl⟩ := d_sc0.var_inv; simp at l_sc0; subst l_sc0
   obtain ⟨rfl, rfl, rfl⟩ := a_sc1.nil_inv
-  obtain ⟨hv_scrut, hm_scrut⟩ := L1.u8_toField ev_scrut
+  obtain ⟨hv_scrut, hm_scrut⟩ := Ingress.u8_toField ev_scrut
   subst v_scrut m_scrut
   have hsub_arm : ∀ cl ∈ c_arm, cl ∈ calls := fun cl hcl =>
     hsub_run cl (by simp [hcl])
@@ -456,13 +456,13 @@ theorem verify_claim_decode_binding_spec
   obtain ⟨rfl, rfl, rfl⟩ := a_vb1.nil_inv
   -- Align `getPayload 10 valByte` with the two `get_address` calls
   obtain ⟨ext_sp, hlen_sp, _, _, htup_sp, haddr_sp, hs_sp⟩ :=
-    Deserialize.getAddress_refines (L1.Stream.mono ext_b1 hs_val) ev_sp.erase
+    Deserialize.getAddress_refines (Ingress.Stream.mono ext_b1 hs_val) ev_sp.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup_sp
   obtain ⟨rfl, rfl⟩ := htup_sp
   rw [List.drop_drop] at hs_sp
   have hget_sp := getAddress_of_drop hlen_sp
   obtain ⟨ext_bd, hlen_bd, _, _, htup_bd, haddr_bd, hs_bd⟩ :=
-    Deserialize.getAddress_refines (L1.Stream.mono ext_b3 hs_sp) ev_bd.erase
+    Deserialize.getAddress_refines (Ingress.Stream.mono ext_b3 hs_sp) ev_bd.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup_bd
   obtain ⟨rfl, rfl⟩ := htup_bd
   have hget_bd := getAddress_of_drop hlen_bd

@@ -5,7 +5,7 @@ import IxVMRefinement.Decl.NativeRec
 import IxVMRefinement.Decl.NativeRecCheck
 import IxVMRefinement.Decl.NativeFront
 import IxVMRefinement.Decl.Common
-import IxVMRefinement.L1.Stream
+import IxVMRefinement.Ingress.Stream
 
 /-! # The projection guard's checked walk at a use, read inside the registry's induction
 
@@ -546,7 +546,7 @@ theorem proj_guard_traced_ih (rawKey : _root_.Address → KKey) [∀ a, Resolved
     have hm'eq : nP = m' := by
       by_contra hne
       obtain ⟨vv, hldv', hnf⟩ := hstop (by omega)
-      have hl := L1.loadValue_extend (eRest.trans e187) hldv'
+      have hl := Ingress.loadValue_extend (eRest.trans e187) hldv'
       rw [hl] at hldF
       injection hldF with hvv
       exact hnf [xa, ya, za] rfl hvv

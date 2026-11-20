@@ -1,8 +1,8 @@
 import IxVMRefinement.Iota.Scan
 import IxVMRefinement.Subst.Spine
 import IxVMRefinement.Decl.NativeCommon
-import IxVMRefinement.L1.Ingress
-import IxVMRefinement.L1.TraceRecords
+import IxVMRefinement.Ingress.Ingress
+import IxVMRefinement.Ingress.TraceRecords
 import IxVMRefinement.Claim.TopProj
 import IxVMRefinement.Obs
 
@@ -782,7 +782,7 @@ theorem Agrees.orElse_other {cov : Prop} {o₁ o₂ : Option Bool} {r₁ r : Sou
 theorem sub_good {E : Ixon.Env} {cs cs' : List (Call F)} (hsub : ∀ z ∈ cs', z ∈ cs)
     (hnc : ¬ View.HashedCollision { env := E } [] cs) (hbd : Bounded cs) :
     ¬ View.HashedCollision { env := E } [] cs' ∧ Bounded cs' ∧
-      (L1.CanonicalHashCoverage E cs → L1.CanonicalHashCoverage E cs') :=
+      (Ingress.CanonicalHashCoverage E cs → Ingress.CanonicalHashCoverage E cs') :=
   ⟨fun hcol => hnc (Core.collision_mono hsub hcol), Core.bounded_sub hsub hbd,
     fun h bytes value hh hsz hx => h bytes value (Core.hashed_mono hsub hh) hsz hx⟩
 
@@ -818,12 +818,12 @@ def isIndAt (E : Ixon.Env) (a : _root_.Address) : Option Bool :=
 record.** -/
 theorem getCIRaw_isInduct {calls : List (Call F)} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {a : _root_.Address} {c : Ixon.Constant} {r v : SourceValue F}
-    (hres : L1.GetCIRawResult calls blobs h a c r) (hlv : loadValue h r = .ok v) :
+    (hres : Ingress.GetCIRawResult calls blobs h a c r) (hlv : loadValue h r = .ok v) :
     (isIPrj c = true ∧ ∃ vs : List (SourceValue F),
         v = .construct "KernelTypes::KConstantInfo" "Induct" vs ∧ vs.length = 8) ∨
       (isIPrj c = false ∧ ∀ vs : List (SourceValue F),
         v ≠ .construct "KernelTypes::KConstantInfo" "Induct" vs) := by
-  unfold L1.GetCIRawResult at hres
+  unfold Ingress.GetCIRawResult at hres
   unfold isIPrj
   cases hinfo : c.info with
   | defn d =>
@@ -833,7 +833,7 @@ theorem getCIRaw_isInduct {calls : List (Call F)} {blobs : List (_root_.Address 
     subst e
     refine Or.inr ⟨rfl, fun vs e => ?_⟩
     rw [hv'] at e
-    cases hk : d.kind <;> simp only [L1.defnValShape, hk] at e <;>
+    cases hk : d.kind <;> simp only [Ingress.defnValShape, hk] at e <;>
       (injection e with _ htag _; exact absurd htag (by decide))
   | axio ax =>
     rw [hinfo] at hres
@@ -870,7 +870,7 @@ theorem getCIRaw_isInduct {calls : List (Call F)} {blobs : List (_root_.Address 
     subst e
     refine Or.inr ⟨rfl, fun vs e => ?_⟩
     rw [hv'] at e
-    cases hk : d.kind <;> simp only [L1.defnValShape, hk] at e <;>
+    cases hk : d.kind <;> simp only [Ingress.defnValShape, hk] at e <;>
       (injection e with _ htag _; exact absurd htag (by decide))
   | iPrj p =>
     rw [hinfo] at hres
@@ -911,7 +911,7 @@ theorem addr_is_inductive_agrees {E : Ixon.Env} {a : Bytes.Address} {ap r : Sour
     (hnc : ¬ View.HashedCollision { env := E } [] cs) (hbd : Bounded cs)
     (ha : Bytes.RepAddressRef addrTy h a ap)
     (ev : ObsFn Obs.W "KernelModeled::addr_is_inductive" [ap] h r h' cs) :
-    Agrees (L1.CanonicalHashCoverage E cs) (isIndAt E (ixAddr a)) r := by
+    Agrees (Ingress.CanonicalHashCoverage E cs) (isIndAt E (ixAddr a)) r := by
   -- the record the run loaded at the address, and the answer on it
   have key : ∃ (raw : ByteArray) (c : Ixon.Constant), raw.size < 4294967296 ∧ Hashed cs raw ∧
       Address.blake3Pure raw = ixAddr a ∧ Ixon.deConstantExact raw = .ok c ∧
@@ -925,7 +925,7 @@ theorem addr_is_inductive_agrees {E : Ixon.Env} {a : Bytes.Address} {ap r : Sour
         simp [hz]
       obtain ⟨n1, b1, -⟩ := sub_good hsub hnc hbd
       obtain ⟨raw, c, hsz, hh, hba, hx, -, -⟩ := Claim.get_ci_head ha ev18
-      obtain ⟨-, raw', c', blobs, hh', hba', hx', -, -, -, hres⟩ := L1.get_ci_spec b1 ha ev18
+      obtain ⟨-, raw', c', blobs, hh', hba', hx', -, -, -, hres⟩ := Ingress.get_ci_spec b1 ha ev18
       have eraw : raw' = raw := hashed_inj_of_noCollision n1 hh' hh (hba'.trans hba.symm)
       subst eraw
       have ec : c' = c := Except.ok.inj (hx'.symm.trans hx)
@@ -940,7 +940,7 @@ theorem addr_is_inductive_agrees {E : Ixon.Env} {a : Bytes.Address} {ap r : Sour
         simp [hz]
       obtain ⟨n1, b1, -⟩ := sub_good hsub hnc hbd
       obtain ⟨raw, c, hsz, hh, hba, hx, -, -⟩ := Claim.get_ci_head ha ev18
-      obtain ⟨-, raw', c', blobs, hh', hba', hx', -, -, -, hres⟩ := L1.get_ci_spec b1 ha ev18
+      obtain ⟨-, raw', c', blobs, hh', hba', hx', -, -, -, hres⟩ := Ingress.get_ci_spec b1 ha ev18
       have eraw : raw' = raw := hashed_inj_of_noCollision n1 hh' hh (hba'.trans hba.symm)
       subst eraw
       have ec : c' = c := Except.ok.inj (hx'.symm.trans hx)
@@ -1022,7 +1022,7 @@ def ScanSpec (E : Ixon.Env) (ms : List Bytes.Address) (n : Nat) : Prop :=
     T.size ≤ n → TreeAt h e T → RepList addrListEnum RepAddr h ms xs →
     ¬ View.HashedCollision { env := E } [] cs → Bounded cs →
     ObsFn Obs.W "KernelModeled::nested_scan" [e, xs] h r h' cs →
-    Agrees (L1.CanonicalHashCoverage E cs) (nestedN (isIndAt E) (ms.map ixAddr) n T) r
+    Agrees (Ingress.CanonicalHashCoverage E cs) (nestedN (isIndAt E) (ms.map ixAddr) n T) r
 
 /-- **`nested_scan_list` against the fold of the scan over the arguments.** -/
 theorem nested_scan_list_agrees {E : Ixon.Env} {ms : List Bytes.Address} (n : Nat)
@@ -1033,7 +1033,7 @@ theorem nested_scan_list_agrees {E : Ixon.Env} {ms : List Bytes.Address} (n : Na
       RepList addrListEnum RepAddr h ms xs →
       ¬ View.HashedCollision { env := E } [] cs → Bounded cs →
       ObsFn Obs.W "KernelModeled::nested_scan_list" [es, xs] h r h' cs →
-      Agrees (L1.CanonicalHashCoverage E cs)
+      Agrees (Ingress.CanonicalHashCoverage E cs)
         ((As.map (nestedN (isIndAt E) (ms.map ixAddr) n)).foldr orElse (some false)) r := by
   intro As
   induction As with
@@ -1090,9 +1090,9 @@ theorem nested_here_agrees {E : Ixon.Env} {ms : List Bytes.Address} {H : ScanTre
     (ihH : ∀ {r' : SourceValue F} {h'' : Heap F} {cs' : List (Call F)},
       ¬ View.HashedCollision { env := E } [] cs' → Bounded cs' →
       ObsFn Obs.W "KernelModeled::nested_scan" [hd, xs] h r' h'' cs' →
-      Agrees (L1.CanonicalHashCoverage E cs') w r')
+      Agrees (Ingress.CanonicalHashCoverage E cs') w r')
     (sg : Obs.«KernelModeled::nested_scan».Seg1 hd args e xs h r h' cs) :
-    Agrees (L1.CanonicalHashCoverage E cs)
+    Agrees (Ingress.CanonicalHashCoverage E cs)
         (hereOf (isIndAt E) (ms.map ixAddr) H (As.any fun A => A.mentions (ms.map ixAddr)) w)
         r ∧
       Heap.Extends h h' := by

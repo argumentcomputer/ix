@@ -6,7 +6,7 @@ import IxVMRefinement.Assembly.NativeBlockRetHead
 image of each constructor's reading. The same fact can be stated on the record's own syntax: the
 type of each constructor is, through the record's sharing table, `ind.params + fields` literal
 `all` binders and then an application spine over a reference. A load converts the Ixon
-expression cell for cell (`L1.RawConvExpr`: `all`, `app`, `ref`/`recur` become `Forall`, `App`,
+expression cell for cell (`Ingress.RawConvExpr`: `all`, `app`, `ref`/`recur` become `Forall`, `App`,
 `Const` cells, every other node a cell of another tag, and a `share` node the cell of its
 target), so a literal heap shape at one load reads back as the syntactic shape.
 
@@ -116,7 +116,7 @@ theorem blockIxonAppHeadRef_of_conv {refs recurAddrs : List _root_.Address}
     {univs : List Ixon.Univ} {sharing : List Ixon.Expr}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat} {e : Ixon.Expr}
     {p : SourceValue F}
-    (raw : L1.RawConvExpr refs recurAddrs univs sharing blobs h bound e p) :
+    (raw : Ingress.RawConvExpr refs recurAddrs univs sharing blobs h bound e p) :
     CtorAppHeadConstT h p → BlockIxonAppHeadRef sharing e := by
   induction raw with
   | ref => exact fun _ => .ref
@@ -150,7 +150,7 @@ theorem blockIxonRetHead_of_conv {refs recurAddrs : List _root_.Address}
     {univs : List Ixon.Univ} {sharing : List Ixon.Expr}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat} {e : Ixon.Expr}
     {p : SourceValue F}
-    (raw : L1.RawConvExpr refs recurAddrs univs sharing blobs h bound e p) :
+    (raw : Ingress.RawConvExpr refs recurAddrs univs sharing blobs h bound e p) :
     ∀ {n : Nat}, CtorRetHeadT h n p → BlockIxonRetHead sharing n e := by
   induction raw with
   | ref _ _ _ _ _ _ cell =>
@@ -210,7 +210,7 @@ theorem blockCtorIxonRetHead_of_member {calls : List (Call F)} {t : Ix.Kernel.Ro
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
-    (hcov : L1.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env) :
+    (hcov : Ingress.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env) :
     BlockCtorIxonRetHead cb ind := by
   have hR := blockRawRetHead_of_member ht hS hst hrec hchk hnat htele hblk hp₀ hinv hstored hP
     hkeys hfresh hfree hcov haux
@@ -222,7 +222,7 @@ theorem blockCtorIxonRetHead_of_member {calls : List (Call F)} {t : Ix.Kernel.Ro
   obtain ⟨bp, ptr, h, h', cs, b, ev, hsub, hrep, hbB⟩ := hloads j hj
   have hg : Core.Good ⟨E, env, t, some n⟩ cs := (hst.good env (some n)).sub hsub
   obtain ⟨-, -, -, blkBytes, cb', ms', ind', ct', blobs, v, hhB, haB, hexB, -, hcb', hms', hct',
-    -, hldv, raw⟩ := L1.get_ci_cprj_spec hg.2 hrep ev
+    -, hldv, raw⟩ := Ingress.get_ci_cprj_spec hg.2 hrep ev
   -- the block record the load decoded is `cb`
   have hblock : recordOf E (Core.ixAddr b) = some cb := by
     rw [hbB]
@@ -259,7 +259,7 @@ theorem blockCtorIxonRetHead_of_member {calls : List (Call F)} {t : Ix.Kernel.Ro
 key of the block's former, the projection record at `P` is member `0` of the block record at
 `B`, which is `cb` with the one member `ind`. -/
 theorem BlockRawRetHead.record_eq {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {B : _root_.Address}
-    {ind : Ixon.Inductive} {cb : Ixon.Constant} (ht : t.check = .ok ()) (hdec : L1.EnvDecoded E)
+    {ind : Ixon.Inductive} {cb : Ixon.Constant} (ht : t.check = .ok ()) (hdec : Ingress.EnvDecoded E)
     (hR : BlockRawRetHead t E B ind cb)
     {P : _root_.Address} {cm : Ixon.Constant} {ip : Ixon.InductiveProj} {cb' : Ixon.Constant}
     {ms : Array Ixon.MutConst} {ind' : Ixon.Inductive}
@@ -302,7 +302,7 @@ theorem BlockRawRetHead.record_eq {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {B : 
 /-- **A family named by the block's former has the syntactic fact at every record data its key
 names.** -/
 theorem famIxonRetHead_of_block {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {B : _root_.Address}
-    {ind : Ixon.Inductive} {cb : Ixon.Constant} (ht : t.check = .ok ()) (hdec : L1.EnvDecoded E)
+    {ind : Ixon.Inductive} {cb : Ixon.Constant} (ht : t.check = .ok ()) (hdec : Ingress.EnvDecoded E)
     (hR : BlockRawRetHead t E B ind cb) (hI : BlockCtorIxonRetHead cb ind)
     {fam : NativeFam .anon} (hT : fam.p.cvT.name = Core.keyOf t (Core.iprjAddr B 0)) :
     FamIxonRetHead t E fam := by
@@ -328,7 +328,7 @@ theorem famIxonRetHead_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
-    (hcov : L1.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env)
+    (hcov : Ingress.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env)
     (hO : NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps) :
     FamIxonRetHead t E
       ⟨p, ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩,

@@ -14,13 +14,13 @@ import IxC.Kernel.Model.StoreFold
 
 /-! # Declaration refinement: shared fold invariant and structural helpers
 
-Shared infrastructure for the `L5` declaration refinement at `S₀`:
+Shared infrastructure for declaration refinement (`DeclsObligation`) at `baseSeams`:
 
 * **`DeclStoreInv` and `DeclInv`**: the store-level invariant bundle (`StoreInv`, `ThmTyped`,
   `RecK`, `EtaTowers`, `TableBodies`, `RecShape`) and the full set-theoretic fold invariant
   `DeclInv V env` (`EnvModelT V .verified env ∧ DeclStoreInv env`), together with empty-environment
   initialization, `EnvModelOk` extraction, and one-step preservation along `DeclRunJ rulesJ`.
-* **`EnvFacts` projection**: `CtxRoleFacts` isolates the role/record companions owed by L6/L7,
+* **`EnvFacts` projection**: `CtxRoleFacts` isolates the role/record companions owed by the claim and assembly layers,
   and `DeclStoreInv.toEnvFacts` combines them with `DeclStoreInv` to supply `EnvFacts` to `Core`.
 * **Positional level parameters (`posOf`)**: `posOf_range`, `posOf_perm_inv`,
   `allLevelParamsDefined_of_posOf_perm`, and `constsResolve_posOf`.
@@ -30,7 +30,7 @@ Shared infrastructure for the `L5` declaration refinement at `S₀`:
 * **`InstallStep` constructors**: `InstallStep` witnesses for empty installs, single-constant
   value/axiom/opaque/theorem installs, `DeclBasisRun` basis installs, and fallback witnesses when
   `¬ DeclStoreInv env`.
-* **`Core S₀` and `Levels` wrappers**: collision-free wrappers for `whnf`, `k_is_def_eq`,
+* **`Core baseSeams` and `Levels` wrappers**: collision-free wrappers for `whnf`, `k_is_def_eq`,
   `k_infer`, `k_ensure_sort`, `k_check`, and `level_equal`.
 * **Exact heap representations and syntactic checks**: `TmExact` / `CIRepExact`,
   `validate_expr_well_scoped`, `level_list_struct_eq`, `kexpr_struct_eq`, and
@@ -107,7 +107,7 @@ theorem DeclStoreInv.step {env env₂ : Ix.Kernel.Env .anon} {d : Declaration .a
   tableBodies := Ix.Kernel.Model.tableBodies_declRunJ h.store h.tableBodies hd
   recShape := Ix.Kernel.Model.recShape_declRunJ h.store h.recShape hd
 
-/-- **The `L5` fold invariant**: the rules-tier environment model (including theorem-value
+/-- **The declaration-fold invariant**: the rules-tier environment model (including theorem-value
 denotations) together with the store-level companion invariants. -/
 structure DeclInv (V : Type u) [Ix.Kernel.SetTheory V] (env : Ix.Kernel.Env .anon) : Prop where
   model : EnvModelT V .verified env
@@ -143,7 +143,7 @@ theorem declRunJ_of_modeledInd {env env₂ : Ix.Kernel.Env .anon}
 /-! ## Supplying `EnvFacts` from `DeclStoreInv` -/
 
 /-- **Role-table and record-correspondence companions** of `EnvFacts c` owed by the role and
-assembly layers (L6/L7), complementing the store invariants carried in `DeclStoreInv c.env`. -/
+assembly layers (`Claim`/`Assembly`), complementing the store invariants carried in `DeclStoreInv c.env`. -/
 structure CtxRoleFacts (c : Ctx) : Prop where
   natLit : c.inForce .nat → c.inForce .natZero → c.inForce .natSucc →
     Ix.Kernel.natLitSupported c.env = true
@@ -1585,10 +1585,10 @@ private theorem exists_storedAs_list :
       · obtain ⟨x, hmem, hn⟩ := hextra y hytl
         exact ⟨x, List.mem_cons_of_mem _ hmem, hn⟩
 
-/-- Fallback `InstallStep` from `S0.Checked`'s `StoredAs` witnesses alone (used only in the
+/-- Fallback `InstallStep` from `BaseSeams.Checked`'s `StoredAs` witnesses alone (used only in the
 vacuous `¬ DeclStoreInv env` branch to satisfy the quantifier order of `Decls`). -/
 theorem installStep_of_checked_fresh {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
-    {d : Declaration .anon} (hchk : S0.Checked calls env d)
+    {d : Declaration .anon} (hchk : BaseSeams.Checked calls env d)
     (hnd : ((IxVM.Consistency.installs d).map (·.name)).Nodup)
     (hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs d, env.find? ci₀.name = none) :
     ∃ env₀, IxVM.Consistency.InstallStep env d env₀ := by
@@ -1607,7 +1607,7 @@ theorem installStep_of_checked_fresh {calls : List (Call F)} {env : Ix.Kernel.En
 /-- Lift a store-assumed declaration step `(DeclStoreInv env → ∃ env₂, InstallStep ∧ DeclRunJ)`
 to the full `Decls` step obligation with `∃ env₂` outside `∀ V, DeclInv V env → DeclInv V env₂`. -/
 theorem decls_step_of_store {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
-    {d : Declaration .anon} (hchk : S0.Checked calls env d)
+    {d : Declaration .anon} (hchk : BaseSeams.Checked calls env d)
     (hnd : ((IxVM.Consistency.installs d).map (·.name)).Nodup)
     (hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs d, env.find? ci₀.name = none)
     (hstep : DeclStoreInv env →
@@ -1621,7 +1621,7 @@ theorem decls_step_of_store {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
   · obtain ⟨env₀, hinst⟩ := installStep_of_checked_fresh hchk hnd hfresh
     exact ⟨env₀, hinst, fun _ _ hInv => absurd hInv.store hS⟩
 
-/-! ## `Core S₀` and `Levels` collision-free wrappers -/
+/-! ## `Core baseSeams` and `Levels` collision-free wrappers -/
 
 /-- Allocating `"Nil"` on `h` represents the empty context at depth `0` for any ghost `Γ`. -/
 theorem typesRep_alloc_nil (κ : _root_.Address → KKey) (Γ : Nat → KExpr) (h : Heap F) :
@@ -1673,7 +1673,7 @@ theorem scoped_core_defeq_of_fires {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat
     [rc, a, b, types] h (.field 1) h' cs ev rc a b types rfl hgood hrc d Γ
       ⟨hty, hsc⟩ ta tb hta htb NatAux.field_one_ne_zero
 
-/-- Actual scoped type inference uses the concrete registry, without a public `S0.ctx` witness. -/
+/-- Actual scoped type inference uses the concrete registry, without a public `BaseSeams.ctx` witness. -/
 theorem scoped_core_infer {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
     {rc types e r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {te : KExpr}
     (hrc : RCRep c.t c.lim h rc) (hty : TypesRep c.κ Γ h d types) (hsc : GhostScoped Γ d)
@@ -1725,54 +1725,54 @@ theorem scoped_core_check {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
   Registry.induction c (scoped_steps c ⟨hef, hlf⟩) (.infer .k_check)
     [rc, e, x, types] h r h' cs ev rc e x types rfl hgood hrc d Γ ⟨hty, hsc⟩ te tx hte htx
 
-/-- Legacy collision-free `whnf` compatibility through public `Core S₀`. Actual scoped
+/-- Legacy collision-free `whnf` compatibility through public `Core baseSeams`. Actual scoped
 declaration runs use `scoped_core_whnf`. -/
-theorem core_whnf (hCore : IxVM.Consistency.Core S₀) {c : Ctx} {Γ : Nat → KExpr} {d : Nat}
+theorem core_whnf (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx} {Γ : Nat → KExpr} {d : Nat}
     {rc types e r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {te : KExpr}
     (hrc : RCRep c.t c.lim h rc) (hty : TypesRep c.κ Γ h d types) (hsc : GhostScoped Γ d)
     (hef : EnvFacts c) (hlf : LoadFacts c) (hgood : Good c cs)
     (ev : ObsFn W "KernelWhnf::whnf" [rc, e, types] h r h' cs)
     (hte : Tm c.κ d Γ h 0 te e) :
     ∃ te', Tm c.κ d Γ h' 0 te' r ∧ Red c.env d te te' := by
-  have hctx : S0.ctx c.E c.env ⟨c.κ, Γ⟩ d h rc types :=
+  have hctx : BaseSeams.ctx c.E c.env ⟨c.κ, Γ⟩ d h rc types :=
     ⟨c.t, c.lim, rfl, hrc, hty, hsc, hef, hlf⟩
   rcases (hCore c.E c.env ⟨c.κ, Γ⟩ d rc types h h' cs hctx hgood.2).1 e r te ev hte with
     hcol | hres
   · exact absurd hcol hgood.1
   · exact hres
 
-/-- Collision-free `k_is_def_eq` from `Core S₀` under `Good`. -/
-theorem core_defeq (hCore : IxVM.Consistency.Core S₀) {c : Ctx} {Γ : Nat → KExpr} {d : Nat}
+/-- Collision-free `k_is_def_eq` from `Core baseSeams` under `Good`. -/
+theorem core_defeq (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx} {Γ : Nat → KExpr} {d : Nat}
     {rc types a b : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {ta tb : KExpr}
     (hrc : RCRep c.t c.lim h rc) (hty : TypesRep c.κ Γ h d types) (hsc : GhostScoped Γ d)
     (hef : EnvFacts c) (hlf : LoadFacts c) (hgood : Good c cs)
     (ev : ObsFn W "KernelDefEq::k_is_def_eq" [rc, a, b, types] h (.field 1) h' cs)
     (hta : Tm c.κ d Γ h 0 ta a) (htb : Tm c.κ d Γ h 0 tb b) :
     DefEq c.env d ta tb := by
-  have hctx : S0.ctx c.E c.env ⟨c.κ, Γ⟩ d h rc types :=
+  have hctx : BaseSeams.ctx c.E c.env ⟨c.κ, Γ⟩ d h rc types :=
     ⟨c.t, c.lim, rfl, hrc, hty, hsc, hef, hlf⟩
   rcases (hCore c.E c.env ⟨c.κ, Γ⟩ d rc types h h' cs hctx hgood.2).2.1 a b ta tb ev hta htb with
     hcol | hres
   · exact absurd hcol hgood.1
   · exact hres
 
-/-- Collision-free `k_infer` from `Core S₀` under `Good`. -/
-theorem core_infer (hCore : IxVM.Consistency.Core S₀) {c : Ctx} {Γ : Nat → KExpr} {d : Nat}
+/-- Collision-free `k_infer` from `Core baseSeams` under `Good`. -/
+theorem core_infer (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx} {Γ : Nat → KExpr} {d : Nat}
     {rc types e r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {te : KExpr}
     (hrc : RCRep c.t c.lim h rc) (hty : TypesRep c.κ Γ h d types) (hsc : GhostScoped Γ d)
     (hef : EnvFacts c) (hlf : LoadFacts c) (hgood : Good c cs)
     (ev : ObsFn W "KernelInfer::k_infer" [rc, e, types] h r h' cs)
     (hte : Tm c.κ d Γ h 0 te e) :
     ∃ tt, Tm c.κ d Γ h' 0 tt r ∧ Infer c.env .full d te tt := by
-  have hctx : S0.ctx c.E c.env ⟨c.κ, Γ⟩ d h rc types :=
+  have hctx : BaseSeams.ctx c.E c.env ⟨c.κ, Γ⟩ d h rc types :=
     ⟨c.t, c.lim, rfl, hrc, hty, hsc, hef, hlf⟩
   rcases (hCore c.E c.env ⟨c.κ, Γ⟩ d rc types h h' cs hctx hgood.2).2.2 e r te ev hte with
     hcol | hres
   · exact absurd hcol hgood.1
   · exact hres
 
-/-- Collision-free `KernelInfer::k_ensure_sort` derived from `Core S₀` (`k_infer` + `whnf`). -/
-theorem core_ensure_sort (hCore : IxVM.Consistency.Core S₀) {c : Ctx} {Γ : Nat → KExpr} {d : Nat}
+/-- Collision-free `KernelInfer::k_ensure_sort` derived from `Core baseSeams` (`k_infer` + `whnf`). -/
+theorem core_ensure_sort (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx} {Γ : Nat → KExpr} {d : Nat}
     {rc types e r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {te : KExpr}
     (hrc : RCRep c.t c.lim h rc) (hty : TypesRep c.κ Γ h d types) (hsc : GhostScoped Γ d)
     (hef : EnvFacts c) (hlf : LoadFacts c) (hgood : Good c cs)
@@ -1792,8 +1792,8 @@ theorem core_ensure_sort (hCore : IxVM.Consistency.Core S₀) {c : Ctx} {Γ : Na
   rw [he102, he103]
   exact ⟨T, u, ℓ, hinf, hred, hℓ, hu⟩
 
-/-- Collision-free `KernelInfer::k_check` derived from `Core S₀` (`k_infer` + `k_is_def_eq`). -/
-theorem core_check (hCore : IxVM.Consistency.Core S₀) {c : Ctx} {Γ : Nat → KExpr} {d : Nat}
+/-- Collision-free `KernelInfer::k_check` derived from `Core baseSeams` (`k_infer` + `k_is_def_eq`). -/
+theorem core_check (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx} {Γ : Nat → KExpr} {d : Nat}
     {rc types e x r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {te tx : KExpr}
     (hrc : RCRep c.t c.lim h rc) (hty : TypesRep c.κ Γ h d types) (hsc : GhostScoped Γ d)
     (hef : EnvFacts c) (hlf : LoadFacts c) (hgood : Good c cs)
@@ -1810,7 +1810,7 @@ theorem core_check (hCore : IxVM.Consistency.Core S₀) {c : Ctx} {Γ : Nat → 
     (hgood.sub fun z hz => by simp [hz]) ev52 hT (htx.mono e1)
   exact ⟨T, hinf, hde⟩
 
-/-- Wrapper for `KernelLevels::level_equal` returning `1` from `L2` (`IxVM.Consistency.Levels`). -/
+/-- Wrapper for `KernelLevels::level_equal` returning `1` from `IxVM.Consistency.Levels`. -/
 theorem levels_equal_one (hLevels : IxVM.Consistency.Levels) {a b : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)} {la lb : KLevel}
     (ev : ObsFn W "KernelLevels::level_equal" [a, b] h (.field 1) h' cs)

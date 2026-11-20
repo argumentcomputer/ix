@@ -59,14 +59,14 @@ theorem tmC_at_of_used {t : Ix.Kernel.RoleTable} {κ : _root_.Address → Core.K
     {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat} {e : Ixon.Expr}
     {p : SourceValue F} {X : Core.KExpr}
-    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h
+    (raw : Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h
       bound e p)
     (he : ∀ i, i ∈ exprRefIdxs e → i ∈ usedRefIdxs c)
     (hused : ∀ i ∈ usedRefIdxs c, ∀ x, c.refs.toList[i]? = some x →
       κ x = Core.keyOf t x ∧ Core.ProjPermitted κ x)
     (hrecur : ∀ x ∈ recurAddrs, κ x = Core.keyOf t x)
     (rep : Core.TmC (Core.keyOf t) h X p) : Core.TmC κ h X p := by
-  have used : ∀ x, L1.RefUsed c.refs.toList c.sharing.toList e x →
+  have used : ∀ x, Ingress.RefUsed c.refs.toList c.sharing.toList e x →
       κ x = Core.keyOf t x ∧ Core.ProjPermitted κ x := by
     intro x hu
     obtain ⟨i, hi | ⟨s, hs, his⟩, hr⟩ := hu
@@ -91,27 +91,27 @@ theorem ind_value_at (ht : t.check = .ok ()) {blob : _root_.Address → Option B
     {B : _root_.Address} {k : Nat} {cb : Ixon.Constant} {ms : Array Ixon.MutConst}
     {ind : Ixon.Inductive} (hmuts : cb.info = .muts ms) (hmem : ms[k]? = some (.indc ind))
     {blobs : List (_root_.Address × ByteArray)}
-    (hagree : L1.BlobReadAgreement (readCtx t blob).blob blobs)
-    {tree : L1.BinderTreeData}
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData cb.binders.toList) tree)
+    (hagree : Ingress.BlobReadAgreement (readCtx t blob).blob blobs)
+    {tree : Ingress.BinderTreeData}
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData cb.binders.toList) tree)
     {plan : List Core.KLevel}
-    (planned : L1.binderRootPlan tree cb.sharing.toList ((L1.mutsRootOffset ms.toList k : Nat) : F)
+    (planned : Ingress.binderRootPlan tree cb.sharing.toList ((Ingress.mutsRootOffset ms.toList k : Nat) : F)
       ind.typ = some plan)
     {h : Heap F} {v : SourceValue F}
-    (raw : L1.RawInductValRep cb.refs.toList (L1.blockRecurAddrs B ms.toList) cb.univs.toList
+    (raw : Ingress.RawInductValRep cb.refs.toList (Ingress.blockRecurAddrs B ms.toList) cb.univs.toList
       cb.sharing.toList blobs h ind B k v)
-    (levels : L1.CITypeBinderLevels "Induct" h v plan)
+    (levels : Ingress.CITypeBinderLevels "Induct" h v plan)
     {ty₀ : Ix.Kernel.Expr .anon}
     (hty : (exprReader t blob cb id (blockSelf t B ms)).read ind.typ = .ok ty₀)
     (hty_lbb : ty₀.looseBVarsBounded 0 = true)
     (hty_def : ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true) :
     ∃ ty' : Ix.Kernel.Expr .anon,
-      canonAnn cb (List.range ind.lvls.toNat) ((L1.mutsRootOffset ms.toList k : Nat) : F)
+      canonAnn cb (List.range ind.lvls.toNat) ((Ingress.mutsRootOffset ms.toList k : Nat) : F)
         ind.typ ty₀ = some ty' ∧ Annotates ty' ty₀ ∧
       ∀ κ : _root_.Address → Core.KKey,
         (∀ i ∈ usedRefIdxs cb, ∀ x, cb.refs.toList[i]? = some x →
           κ x = Core.keyOf t x ∧ Core.ProjPermitted κ x) →
-        (∀ x ∈ L1.blockRecurAddrs B ms.toList, κ x = Core.keyOf t x) →
+        (∀ x ∈ Ingress.blockRecurAddrs B ms.toList, κ x = Core.keyOf t x) →
         ∀ caps : Ix.Kernel.IndCaps .anon, Core.CIRep κ h v
           (.indInfo ⟨Core.keyOf t (Core.iprjAddr B k), List.range ind.lvls.toNat, ty'⟩ caps) := by
   obtain ⟨hlvls, hp56, hi56, hc56, hidx56, tyPtr, blkPtr, b, hb_eq, hb_rep, hv, rty⟩ := raw
@@ -139,7 +139,7 @@ theorem ind_value_at (ht : t.check = .ok ()) {blob : _root_.Address → Option B
     exact hrecur _ hin
   exact .induct (valRep_range hlvls (tmC_at_of_used rty heT hused hrecur htmT))
     ⟨ind.params.toNat, ind.indices.toNat, ind.ctors.size, rfl, rfl, rfl, hp56, hi56, hc56⟩
-    ⟨b, ((k : Nat) : F), hb_rep, rfl, by rw [hb_eq, L1.val_cast_u56_ing hidx56, hκ]⟩
+    ⟨b, ((k : Nat) : F), hb_rep, rfl, by rw [hb_eq, Ingress.val_cast_u56_ing hidx56, hκ]⟩
 
 /-- **`ctor_value_canon` at any keying**: the traced conversion of a constructor represents the
 canonical constant under every keying that agrees with the table's on the references the block
@@ -150,28 +150,28 @@ theorem ctor_value_at (ht : t.check = .ok ()) {blob : _root_.Address → Option 
     {ind : Ixon.Inductive} {ct : Ixon.Constructor} (hmuts : cb.info = .muts ms)
     (hmem : ms[k]? = some (.indc ind)) (hctm : ct ∈ ind.ctors.toList) (hcidx : ct.cidx.toNat = j)
     {blobs : List (_root_.Address × ByteArray)}
-    (hagree : L1.BlobReadAgreement (readCtx t blob).blob blobs)
-    {tree : L1.BinderTreeData}
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData cb.binders.toList) tree)
+    (hagree : Ingress.BlobReadAgreement (readCtx t blob).blob blobs)
+    {tree : Ingress.BinderTreeData}
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData cb.binders.toList) tree)
     {plan : List Core.KLevel}
-    (planned : L1.binderRootPlan tree cb.sharing.toList
-      (((L1.mutsRootOffset ms.toList k : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ = some plan)
+    (planned : Ingress.binderRootPlan tree cb.sharing.toList
+      (((Ingress.mutsRootOffset ms.toList k : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ = some plan)
     {h : Heap F} {v : SourceValue F}
-    (raw : L1.RawCtorValRep cb.refs.toList (L1.blockRecurAddrs B ms.toList) cb.univs.toList
+    (raw : Ingress.RawCtorValRep cb.refs.toList (Ingress.blockRecurAddrs B ms.toList) cb.univs.toList
       cb.sharing.toList blobs h ct B k v)
-    (levels : L1.CITypeBinderLevels "Ctor" h v plan)
+    (levels : Ingress.CITypeBinderLevels "Ctor" h v plan)
     {ty₀ : Ix.Kernel.Expr .anon}
     (hty : (exprReader t blob cb id (blockSelf t B ms)).read ct.typ = .ok ty₀)
     (hty_lbb : ty₀.looseBVarsBounded 0 = true)
     (hty_def : ty₀.allLevelParamsDefined (List.range ct.lvls.toNat) = true) :
     ∃ ty' : Ix.Kernel.Expr .anon,
       canonAnn cb (List.range ct.lvls.toNat)
-        (((L1.mutsRootOffset ms.toList k : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ =
+        (((Ingress.mutsRootOffset ms.toList k : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ =
         some ty' ∧ Annotates ty' ty₀ ∧
       ∀ κ : _root_.Address → Core.KKey,
         (∀ i ∈ usedRefIdxs cb, ∀ x, cb.refs.toList[i]? = some x →
           κ x = Core.keyOf t x ∧ Core.ProjPermitted κ x) →
-        (∀ x ∈ L1.blockRecurAddrs B ms.toList, κ x = Core.keyOf t x) →
+        (∀ x ∈ Ingress.blockRecurAddrs B ms.toList, κ x = Core.keyOf t x) →
         Core.CIRep κ h v
           (.ctorInfo ⟨κ (Core.cprjAddr B k j), List.range ct.lvls.toNat, ty'⟩
             ct.params.toNat ct.fields.toNat) := by
@@ -199,7 +199,7 @@ theorem ctor_value_at (ht : t.check = .ok ()) {blob : _root_.Address → Option 
   exact .ctor (valRep_range hlvls (tmC_at_of_used rty heT hused hrecur htmT)) rfl rfl
     ⟨hp56, hf56⟩
     ⟨b, ((k : Nat) : F), ((ct.cidx.toNat : Nat) : F), hb_rep, rfl, rfl, by
-      rw [hb_eq, L1.val_cast_u56_ing hidx56, L1.val_cast_u56_ing hcidx56, hcidx]⟩
+      rw [hb_eq, Ingress.val_cast_u56_ing hidx56, Ingress.val_cast_u56_ing hcidx56, hcidx]⟩
 
 /-- **`get_ci_iprj_canon` at any keying**: a `get_ci` at a held inductive-projection record
 represents the canonical constant under every keying that agrees with the table's on the
@@ -219,14 +219,14 @@ theorem get_ci_iprj_at (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Call F
     (hty_def : ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true) :
     ∃ ty' : Ix.Kernel.Expr .anon,
       canonAnn cb (List.range ind.lvls.toNat)
-        ((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) ind.typ ty₀ = some ty' ∧
+        ((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) ind.typ ty₀ = some ty' ∧
       ∀ κ : _root_.Address → Core.KKey,
         (∀ i ∈ usedRefIdxs cb, ∀ x, cb.refs.toList[i]? = some x →
           κ x = Core.keyOf t x ∧ Core.ProjPermitted κ x) →
-        (∀ x ∈ L1.blockRecurAddrs p.block ms.toList, κ x = Core.keyOf t x) →
+        (∀ x ∈ Ingress.blockRecurAddrs p.block ms.toList, κ x = Core.keyOf t x) →
         ∀ caps : Ix.Kernel.IndCaps .anon, Core.CIPtrRep κ h' ptr
           (.indInfo ⟨keyOf t (Core.ixAddr a), List.range ind.lvls.toNat, ty'⟩ caps) := by
-  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := L1.get_ci_block_trace_spec hbound ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := Ingress.get_ci_block_trace_spec hbound ha ev
   obtain ⟨lc, hget, hdec⟩ := recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
   have hc : c = c' := by
@@ -237,7 +237,7 @@ theorem get_ci_iprj_at (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Call F
     haddr.symm.trans (iprj_canonical ind hex htv hinfo).2
   have hkey : keyOf t (Core.ixAddr a) = Core.keyOf t (Core.iprjAddr p.block p.idx.toNat) := by
     rw [haddr', memberAddr_indc, keyOf_eq]
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   rw [hinfo] at hres
   obtain ⟨hidx, blkBytes, cb', ms', ind', blobs, tree, plan, v, hhB, haB, hexB, hcb, hms,
     hhp, built, planned, hld, hraw, hlev⟩ := hres
@@ -275,16 +275,16 @@ theorem get_ci_iprj_load_at (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (C
     (hty_def : ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true) :
     ∃ ty' : Ix.Kernel.Expr .anon,
       canonAnn cb (List.range ind.lvls.toNat)
-        ((L1.mutsRootOffset ms.toList i.val : Nat) : F) ind.typ ty₀ = some ty' ∧
+        ((Ingress.mutsRootOffset ms.toList i.val : Nat) : F) ind.typ ty₀ = some ty' ∧
       ∀ κ : _root_.Address → Core.KKey,
         (∀ i ∈ usedRefIdxs cb, ∀ x, cb.refs.toList[i]? = some x →
           κ x = Core.keyOf t x ∧ Core.ProjPermitted κ x) →
-        (∀ x ∈ L1.blockRecurAddrs (Core.ixAddr b) ms.toList, κ x = Core.keyOf t x) →
+        (∀ x ∈ Ingress.blockRecurAddrs (Core.ixAddr b) ms.toList, κ x = Core.keyOf t x) →
         ∀ caps : Ix.Kernel.IndCaps .anon, Core.CIPtrRep κ h' ptr
           (.indInfo ⟨Core.keyOf t (Core.iprjAddr (Core.ixAddr b) i.val),
             List.range ind.lvls.toNat, ty'⟩ caps) := by
   obtain ⟨-, -, blkBytes, cb', ms', ind', blobs, v, hhB, haB, hexB, -, hcb, hms, hhp, hld,
-    hraw, tree, plan, built, planned, hlev⟩ := L1.get_ci_iprj_origin_spec hbound hb ev
+    hraw, tree, plan, built, planned, hlev⟩ := Ingress.get_ci_iprj_origin_spec hbound hb ev
   obtain ⟨lcB, hgetB, hdecB⟩ := recordOf_inv hblock
   have hbB : blkBytes = lcB.rawBytes := Core.load_escape hgetB hnc blkBytes hhB haB
   have hcB : cb = cb' := by
@@ -325,12 +325,12 @@ theorem get_ci_cprj_load_at (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (C
       ∀ κ : _root_.Address → Core.KKey,
         (∀ i ∈ usedRefIdxs cb, ∀ x, cb.refs.toList[i]? = some x →
           κ x = Core.keyOf t x ∧ Core.ProjPermitted κ x) →
-        (∀ x ∈ L1.blockRecurAddrs (Core.ixAddr b) ms.toList, κ x = Core.keyOf t x) →
+        (∀ x ∈ Ingress.blockRecurAddrs (Core.ixAddr b) ms.toList, κ x = Core.keyOf t x) →
         Core.CIPtrRep κ h' ptr
           (.ctorInfo ⟨κ (Core.cprjAddr (Core.ixAddr b) i.val j.val),
             List.range ct.lvls.toNat, ty'⟩ ct.params.toNat ct.fields.toNat) := by
   obtain ⟨-, -, -, blkBytes, cb', ms', ind', ct, blobs, v, hhB, haB, hexB, -, hcb, hms, hcts,
-    hhp, hld, hraw, tree, plan, built, planned, hlev⟩ := L1.get_ci_cprj_origin_spec hbound hb ev
+    hhp, hld, hraw, tree, plan, built, planned, hlev⟩ := Ingress.get_ci_cprj_origin_spec hbound hb ev
   rw [← ZMod.natCast_zmod_val j] at planned
   obtain ⟨lcB, hgetB, hdecB⟩ := recordOf_inv hblock
   have hbB : blkBytes = lcB.rawBytes := Core.load_escape hgetB hnc blkBytes hhB haB
@@ -407,11 +407,11 @@ private theorem toUInt64_toNat_b {n : Nat} (hn : n < UInt64.size) : n.toUInt64.t
 theorem val_lt_uint64 (i : F) : ZMod.val i < UInt64.size :=
   Nat.lt_trans (ZMod.val_lt i) (by decide)
 
-theorem recordAt_of_recordOf {E : Ixon.Env} (hdec : L1.EnvDecoded E) {a : _root_.Address}
+theorem recordAt_of_recordOf {E : Ixon.Env} (hdec : Ingress.EnvDecoded E) {a : _root_.Address}
     {c : Ixon.Constant} (h : recordOf E a = some c) : Ix.Cert.recordAt E a = some c :=
   (recordOf_eq_recordAt_of_decoded hdec a).symm.trans h
 
-/-- The exact decoding at an address of the store, in the form the L1 record lemmas take. -/
+/-- The exact decoding at an address of the store, in the form the ingress record lemmas take. -/
 theorem decoded_at_of_recordOf {E : Ixon.Env} {a : _root_.Address} {c : Ixon.Constant}
     (h : recordOf E a = some c) :
     ∀ lc, E.consts.get? a = some lc → Ixon.deConstantExact lc.rawBytes = .ok c := by
@@ -422,8 +422,8 @@ theorem decoded_at_of_recordOf {E : Ixon.Env} {a : _root_.Address} {c : Ixon.Con
   exact hex
 
 /-- The canonical record at an address of a decoded store. -/
-theorem canonicalRecord_of_recordOf {E : Ixon.Env} (hdec : L1.EnvDecoded E) {a : _root_.Address}
-    {c : Ixon.Constant} (h : recordOf E a = some c) : Nonempty (L1.CanonicalRecordAt E a) := by
+theorem canonicalRecord_of_recordOf {E : Ixon.Env} (hdec : Ingress.EnvDecoded E) {a : _root_.Address}
+    {c : Ixon.Constant} (h : recordOf E a = some c) : Nonempty (Ingress.CanonicalRecordAt E a) := by
   obtain ⟨lc, hlc, hex⟩ := LoadedReads.recordOf_inv h
   obtain ⟨c', hc', hce⟩ := hdec a lc hlc
   exact ⟨⟨lc, c', hlc, hc', hce⟩⟩
@@ -432,7 +432,7 @@ theorem canonicalRecord_of_recordOf {E : Ixon.Env} (hdec : L1.EnvDecoded E) {a :
 store holds the inductive projection of member `0` of `B` at its address, a block a run hashed
 whose member `i` has that key is `B`, and `i = 0`. -/
 theorem iprj_key_block {t : Ix.Kernel.RoleTable} (htwf : t.wf = true) {E : Ixon.Env}
-    (hdec : L1.EnvDecoded E) (hP : HashedBlockProjectionsHeld E) {B b : _root_.Address}
+    (hdec : Ingress.EnvDecoded E) (hP : HashedBlockProjectionsHeld E) {B b : _root_.Address}
     {ind : Ixon.Inductive}
     (hproj : recordOf E (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind)))
     (hbh : Core.HashedBlockAt E b) {i : Nat} (hi : i < UInt64.size)
@@ -495,7 +495,7 @@ the prefix stores the references the block uses and not the former's key. The st
 the canonical one (`hcanon`); its capability record is unit-like where the record has one
 constructor, with no field, and no index (`hunit`); its key is no reserved basis name. -/
 theorem formerLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {E : Ixon.Env}
-    {env : Ix.Kernel.Env .anon} {lim : Option Nat} (hdec : L1.EnvDecoded E)
+    {env : Ix.Kernel.Env .anon} {lim : Option Nat} (hdec : Ingress.EnvDecoded E)
     (hP : HashedBlockProjectionsHeld E)
     {B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
     (hblock : recordOf E B = some cb) (hmuts : cb.info = .muts #[.indc ind])
@@ -515,7 +515,7 @@ theorem formerLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {
     (hstored : Decl.UsedRefsStored t env cb)
     {ty' : Ix.Kernel.Expr .anon}
     (hcanon : LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-      ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ = some ty')
+      ((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ = some ty')
     (hfresh : env.find? (Core.keyOf t (Core.iprjAddr B 0)) = none)
     {caps : Ix.Kernel.IndCaps .anon}
     (hunit : ind.indices.toNat = 0 → ind.ctors.size = 1 →
@@ -541,7 +541,7 @@ theorem formerLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {
     obtain ⟨ci, hci⟩ := hstored i hi x hx
     exact ctorStage_of_find (cvF := ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩)
       hfresh hnt hci
-  have hrecur : ∀ x ∈ L1.blockRecurAddrs B (#[.indc ind] : Array Ixon.MutConst).toList,
+  have hrecur : ∀ x ∈ Ingress.blockRecurAddrs B (#[.indc ind] : Array Ixon.MutConst).toList,
       κS x = Core.keyOf t x := by
     intro x hx
     obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hx
@@ -592,7 +592,7 @@ theorem formerLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {
   · intro addr ptr h h' cs a ev good ha hkey
     exact (formerLoad ev good ha hkey).2
   · intro bp ptr i h h' cs b ev good hb hkey
-    obtain ⟨hbB, hi0⟩ := memberBlock (L1.hashedBlockAt_of_get_ci_iprj good hb ev) hkey
+    obtain ⟨hbB, hi0⟩ := memberBlock (Ingress.hashedBlockAt_of_get_ci_iprj good hb ev) hkey
     have hblock' : recordOf E (Core.ixAddr b) = some cb := by
       rw [hbB]
       exact hblock
@@ -607,13 +607,13 @@ theorem formerLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {
     obtain ⟨ty'', hcT, hrep⟩ := LoadedReads.get_ci_iprj_load_at ht good.1 good.2 hb ev hblock'
       hmuts hmem' hty' hty_lbb hty_def
     have hcT' : LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-        ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ = some ty'' := by
+        ((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ = some ty'' := by
       have hv : i.val = 0 := hi0
       rw [hv] at hcT
       exact hcT
     have e : ty'' = ty' := Option.some.inj (hcT'.symm.trans hcanon)
     subst e
-    have hrecur' : ∀ x ∈ L1.blockRecurAddrs (Core.ixAddr b) (#[.indc ind] : Array Ixon.MutConst).toList,
+    have hrecur' : ∀ x ∈ Ingress.blockRecurAddrs (Core.ixAddr b) (#[.indc ind] : Array Ixon.MutConst).toList,
         κS x = Core.keyOf t x := by
       rw [hbB]
       exact hrecur
@@ -623,7 +623,7 @@ theorem formerLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {
     rw [hk] at hr
     exact hr
   · intro bp ptr i j h h' cs b ev good hb hkey
-    obtain ⟨hbB, hi0⟩ := memberBlock (L1.hashedBlockAt_of_get_ci_cprj good hb ev) hkey
+    obtain ⟨hbB, hi0⟩ := memberBlock (Ingress.hashedBlockAt_of_get_ci_cprj good hb ev) hkey
     have hblock' : recordOf E (Core.ixAddr b) = some cb := by
       rw [hbB]
       exact hblock
@@ -639,7 +639,7 @@ theorem formerLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {
           cty.allLevelParamsDefined (List.range ct.lvls.toNat) = true := by
       rw [hbB]
       exact hctys
-    have hrecur' : ∀ x ∈ L1.blockRecurAddrs (Core.ixAddr b) (#[.indc ind] : Array Ixon.MutConst).toList,
+    have hrecur' : ∀ x ∈ Ingress.blockRecurAddrs (Core.ixAddr b) (#[.indc ind] : Array Ixon.MutConst).toList,
         κS x = Core.keyOf t x := by
       rw [hbB]
       exact hrecur
@@ -649,7 +649,7 @@ theorem formerLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {
   · intro addr ptr h h' cs a nl ty np ni nc u blk idx ev good ha hkey hld
     have hx : Core.ixAddr a = Core.iprjAddr B 0 := Core.keyOf_inj htwf hkey
     obtain ⟨rawBytes, blkBytes, cm, cb', xs, ind', b, i, hhA, haA, hexA, -, hhB, haB, hexB, -,
-      hbrep, hidx, -, hinfo, hcb, hxs⟩ := L1.inductRecord_raw_of_get_ci ev good.2 ha hld
+      hbrep, hidx, -, hinfo, hcb, hxs⟩ := Ingress.inductRecord_raw_of_get_ci ev good.2 ha hld
     have hrecA : Ix.Cert.recordAt E (Core.ixAddr a) = some (memberProjection B 0 (.indc ind)) := by
       rw [hx]
       exact recordAt_of_recordOf hdec hproj
@@ -659,7 +659,7 @@ theorem formerLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {
   · intro addr ptr h h' cs a b nl ty np ni nc u blk i ev good ha hkey hld hblk
     have hx : Core.ixAddr a = Core.iprjAddr B 0 := Core.keyOf_inj htwf hkey
     obtain ⟨rawBytes, blkBytes, cm, cb', xs, ind', b', i', hhA, haA, hexA, -, hhB, haB, hexB, -,
-      hbrep, hidx, -, hinfo, hcb, hxs⟩ := L1.inductRecord_raw_of_get_ci ev good.2 ha hld
+      hbrep, hidx, -, hinfo, hcb, hxs⟩ := Ingress.inductRecord_raw_of_get_ci ev good.2 ha hld
     have hbb : b = b' := Bytes.repAddressRef_inj U32.Goldilocks.compatible hblk hbrep
     subst hbb
     have hii : i = i' := Value.field.inj hidx
@@ -689,7 +689,7 @@ theorem formerLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {
       rw [hx]
       exact decoded_at_of_recordOf hproj
     obtain ⟨nl', ty'', u', blk', b', hld', hb', hbB', -, -⟩ :=
-      L1.indRecord_of_deConstantExact (c := ⟨E, env, t, lim⟩) (p := ⟨(0 : Nat).toUInt64, B⟩)
+      Ingress.indRecord_of_deConstantExact (c := ⟨E, env, t, lim⟩) (p := ⟨(0 : Nat).toUInt64, B⟩)
         hdecA (decoded_at_of_recordOf hblock) ev good ha hrecA rfl
         (recordAt_of_recordOf hdec hblock) hmuts hmem0
     rw [hld'] at hld
@@ -748,7 +748,7 @@ the invariant: the inputs of `formerLoads_of_block`, the freshness of the former
 store clause (`HashKeyed`, for the key of the former's marker). -/
 theorem ctorStageLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {E : Ixon.Env}
     {env : Ix.Kernel.Env .anon} {lim : Option Nat} (hinv : Decl.PrefixInv E t lim env)
-    (hdec : L1.EnvDecoded E) (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
+    (hdec : Ingress.EnvDecoded E) (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     {B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
     (hblock : recordOf E B = some cb) (hmuts : cb.info = .muts #[.indc ind])
     (hproj : recordOf E (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind)))
@@ -767,7 +767,7 @@ theorem ctorStageLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()
     (hstored : Decl.UsedRefsStored t env cb)
     {ty' : Ix.Kernel.Expr .anon}
     (hcanon : LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-      ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ = some ty')
+      ((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ = some ty')
     (hfresh : env.find? (Core.keyOf t (Core.iprjAddr B 0)) = none)
     {caps : Ix.Kernel.IndCaps .anon}
     (hunit : ind.indices.toNat = 0 → ind.ctors.size = 1 →
@@ -788,7 +788,7 @@ it is a telescope of the parameters and indices: the former stage's outputs. -/
 theorem ctorStageCoreFacts_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
     {E : Ixon.Env} {env : Ix.Kernel.Env .anon} {lim : Option Nat}
     (hinv : Decl.PrefixInv E t lim env)
-    (hdec : L1.EnvDecoded E) (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
+    (hdec : Ingress.EnvDecoded E) (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     {B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
     (hblock : recordOf E B = some cb) (hmuts : cb.info = .muts #[.indc ind])
     (hproj : recordOf E (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind)))
@@ -807,7 +807,7 @@ theorem ctorStageCoreFacts_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .o
     (hstored : Decl.UsedRefsStored t env cb)
     {ty' : Ix.Kernel.Expr .anon}
     (hcanon : LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-      ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ = some ty')
+      ((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ = some ty')
     (hfresh : env.find? (Core.keyOf t (Core.iprjAddr B 0)) = none)
     {p : Ix.Kernel.InductiveShape .anon} {isRec : Bool}
     (hunit : ind.indices.toNat = 0 → ind.ctors.size = 1 →

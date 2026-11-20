@@ -73,7 +73,7 @@ the record. -/
 theorem assert_not_block_ref_stored {calls cs : List (Call F)} {E₀ : Ixon.Env}
     {a : _root_.Address} {ap r : SourceValue F} {h h' : Heap F}
     (hS : LoadedReads.RunStore calls E₀) (hH : LoadedReads.HashedRecordsStored calls E₀)
-    (ha : S0.addr h ap a)
+    (ha : BaseSeams.addr h ap a)
     (ev : ObsFn Obs.W "KernelClaim::assert_not_block_ref" [ap] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     Heap.Extends h h' ∧ ∃ c, recordOf E₀ a = some c ∧ ¬ IsBlock c := by
@@ -229,7 +229,7 @@ private theorem assert_inner_refs_of_const {calls : List (Call F)} {E₀ : Ixon.
   obtain ⟨c', i, hc', hi, hget⟩ := hu
   have heq : c' = c := Option.some.inj (hc'.symm.trans hc)
   subst c'
-  have hi' : i ∈ S0.usedRefIdxs c := by
+  have hi' : i ∈ BaseSeams.usedRefIdxs c := by
     rw [Assembly.usedRefIdxs_eq]
     exact hi
   have hgetL : c.refs.toList[i]? = some x := by simpa only [Array.getElem?_toList] using hget
@@ -284,7 +284,7 @@ theorem check_advice_record_inner_refs_safe {calls cs : List (Call F)} {E₀ : I
     have hsubSafe : ∀ cl ∈ csSafe, cl ∈ calls :=
       fun cl hcl => hsub cl (by rw [hcalls]; simp [hcl])
     obtain ⟨ext14, rawBytes, c', hsz, hh, haddr, -, he, hcRep, -⟩ :=
-      Claim.load_verified_constant_de (S0.addr_mono ev_ord.heap_extends ha) ev14
+      Claim.load_verified_constant_de (BaseSeams.addr_mono ev_ord.heap_extends ha) ev14
     have hcc : c' = c :=
       hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc) (Claim.hashed_mono hsub12 hh) haddr he
     subst c'
@@ -421,7 +421,7 @@ theorem container_recs_refs_standalone_safe {calls : List (Call F)} {E₀ : Ixon
       RepList Obs.Names.«Lists::Node<&[Field; 32]>» (fun _ u v => u = v) h elems x_xs →
       xx ∈ elems →
       Claim.RCLimRep t bAddr lim h rc →
-      S0.addr h xx a →
+      BaseSeams.addr h xx a →
       ObsFn Obs.W "KernelModeled::container_recs_refs" [rc, x_xs, wset] h r h' cs →
       (∀ cl ∈ cs, cl ∈ calls) →
       ¬ InertAt t x ∧ (Covered t x ∨ NeedOk E₀ x) := by
@@ -464,7 +464,7 @@ theorem container_recs_refs_standalone_safe {calls : List (Call F)} {E₀ : Ixon
             (hcRep.mono extPre) ev_idx ev_safe hsubSafe hu
       · have extStep : Heap.Extends h _ := ev55.heap_extends.trans ev144.heap_extends
         exact ih (repList_heapMono₂ _ (fun _ _ _ _ _ e => e) extStep hrestRep) hmemRest
-          (hrc.mono extStep) (S0.addr_mono extStep ha) ev174
+          (hrc.mono extStep) (BaseSeams.addr_mono extStep ha) ev174
           (fun cl hcl => hsub cl (by rw [hcs]; simp [hcl]))
     | .Cons_RPrj (x_x := x_x) (x_rest := x_rest) (cs53 := cs53) (cs264 := cs264)
         (ld12 := ld) (ev55 := ev55) (ev_fvuqobfi := evpb) (ev_vyniyqbz := evlb)
@@ -491,7 +491,7 @@ theorem container_recs_refs_standalone_safe {calls : List (Call F)} {E₀ : Ixon
           ev55.heap_extends.trans (evpb.heap_extends.trans
             (evlb.heap_extends.trans ev210.heap_extends))
         exact ih (repList_heapMono₂ _ (fun _ _ _ _ _ e => e) extStep hrestRep) hmemRest
-          (hrc.mono extStep) (S0.addr_mono extStep ha) ev266
+          (hrc.mono extStep) (BaseSeams.addr_mono extStep ha) ev266
           (fun cl hcl => hsub cl (by rw [hcs]; simp [hcl]))
     | .Cons_other (x_x := x_x) (x_rest := x_rest) (cs53 := cs53) (cs293 := cs293)
         (x_info := x_info) (ld12 := ld) (ev55 := ev55) (hne192 := hneRecr)
@@ -515,7 +515,7 @@ theorem container_recs_refs_standalone_safe {calls : List (Call F)} {E₀ : Ixon
         obtain ⟨rv, hrv, -⟩ := hinfoRep
         exact hneRecr [rv] rfl hrv
       · exact ih (repList_heapMono₂ _ (fun _ _ _ _ _ e => e) ev55.heap_extends hrestRep) hmemRest
-          (hrc.mono ev55.heap_extends) (S0.addr_mono ev55.heap_extends ha) ev295
+          (hrc.mono ev55.heap_extends) (BaseSeams.addr_mono ev55.heap_extends ha) ev295
           (fun cl hcl => hsub cl (by rw [hcs]; simp [hcl]))
 
 /-! ## Combined safety for every non-twin inner record -/
@@ -552,7 +552,7 @@ theorem FamRunCtx.inner_ref_safe {K : FamRunCtx} {seeds : List _root_.Address}
           have ext_ci : Heap.Extends h_w _ :=
             ev328.heap_extends.trans (ev_walk.heap_extends.trans
               (ev39.heap_extends.trans ev25.heap_extends))
-          obtain ⟨ab, hab, rfl⟩ := S0.addr_mono ext_ci hxx_w
+          obtain ⟨ab, hab, rfl⟩ := BaseSeams.addr_mono ext_ci hxx_w
           have hsub_ci : ∀ cl ∈ cs_ci, cl ∈ K.calls := fun cl hcl =>
             hsub_fam cl (sub_ws cl (sub_w cl (by rw [hcw]; simp [hccr, hcl])))
           rcases get_ci_loads_rec_is_recr_or_rPrj hW.runStore hab ev_ci hsub_ci hld hca with
@@ -564,7 +564,7 @@ theorem FamRunCtx.inner_ref_safe {K : FamRunCtx} {seeds : List _root_.Address}
       ev_w.heap_extends.trans (ext_w_ws'.trans ev_asb.heap_extends)
     exact container_recs_refs_standalone_safe hW.runStore hW.hashedStored hW.topLim hca hrcr hu
       elems (repList_heapMono₂ _ (fun _ _ _ _ _ e => e) ev_asb.heap_extends outsideRep)
-      memOutside (hrc_w.mono ext_asb) (S0.addr_mono ext_asb hxx_w) ev_cr
+      memOutside (hrc_w.mono ext_asb) (BaseSeams.addr_mono ext_asb hxx_w) ev_cr
       (fun cl hcl => hsub_fam cl (sub_cr cl hcl))
   · obtain ⟨B'', h''⟩ := FamRunCtx.nestedTwin_of hN
     rw [htw] at h''

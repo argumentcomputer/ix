@@ -58,7 +58,7 @@ def AdviceCheckIn (cs : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.R
     (lim : Option Nat) (a : _root_.Address) : Prop :=
   ∃ (h h' : Aiur.Heap F)
     (rc xa seen wset r : Aiur.SourceValue F) (cs₁ : List (Call F)),
-    Claim.RCLimRep t bAddr lim h rc ∧ Core.S0.addr h xa a ∧
+    Claim.RCLimRep t bAddr lim h rc ∧ Core.BaseSeams.addr h xa a ∧
     Aiur.Generic.SourceSemantics.ObsFn Obs.W "KernelModeled::check_advice_record"
       [rc, xa, seen, wset] h r h' cs₁ ∧ (∀ cl ∈ cs₁, cl ∈ cs)
 
@@ -68,7 +68,7 @@ def ContainerRecCheckIn (cs : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (lim : Option Nat) (a : _root_.Address) : Prop :=
   ∃ (h h' : Aiur.Heap F)
     (rc xa ib r : Aiur.SourceValue F) (cs₁ : List (Call F)),
-    Claim.RCLimRep t bAddr lim h rc ∧ Core.S0.addr h xa a ∧
+    Claim.RCLimRep t bAddr lim h rc ∧ Core.BaseSeams.addr h xa a ∧
     Aiur.Generic.SourceSemantics.ObsFn Obs.W "KernelModeled::check_container_rec"
       [rc, xa, ib] h r h' cs₁ ∧ (∀ cl ∈ cs₁, cl ∈ cs)
 
@@ -295,14 +295,14 @@ theorem topUnitSteps_family
   have hinert : InertClause t c := hW.inertClause hT hc
   have hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c :=
     coverAt_of_graph hG hctx.shape htwf hT hc hneed
-  have hcanon₀ : L1.CanonicalHashCoverage E₀ calls := by
+  have hcanon₀ : Ingress.CanonicalHashCoverage E₀ calls := by
     intro bytes value hashed size exactRead
     obtain ⟨entry, stored, bytesEq, cached⟩ := hW.hashedStored bytes value hashed size
-      (L1.deConstant_of_deConstantExact exactRead) exactRead
+      (Ingress.deConstant_of_deConstantExact exactRead) exactRead
     refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
     rw [bytesEq]
     exact exactRead
-  have hcanon : L1.CanonicalHashCoverage E calls :=
+  have hcanon : Ingress.CanonicalHashCoverage E calls :=
     Assembly.canonicalHashCoverage_frame hcanon₀ hctx.recordsFor.1
       (fun a v h => hctx.runRecord a v ((hW.runStore.recordOf_eq_recordAt a).trans h))
   have hchk : (∃ ms, c.info = .muts ms ∧

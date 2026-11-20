@@ -73,7 +73,7 @@ theorem check_container_rec_rprj_family_lt_len (hC : CollisionFreeRun calls E₀
     {lim : Option Nat} {x ib : _root_.Address} {cx : Ixon.Constant} {rp : Ixon.RecursorProj}
     {rc xx xib r : SourceValue F} {h h' : Heap F} {csCr : List (Call F)}
     (hrc : Claim.RCLimRep t bAddr lim h rc)
-    (hx : Core.S0.addr h xx x) (hib : Core.S0.addr h xib ib)
+    (hx : Core.BaseSeams.addr h xx x) (hib : Core.BaseSeams.addr h xib ib)
     (evCr : ObsFn Obs.W "KernelModeled::check_container_rec" [rc, xx, xib] h r h' csCr)
     (hsubCr : ∀ cl ∈ csCr, cl ∈ calls)
     (hc : recordOf E₀ x = some cx) (hrp : cx.info = .rPrj rp) :
@@ -95,7 +95,7 @@ theorem check_container_rec_rprj_family_lt_len (hC : CollisionFreeRun calls E₀
     have hsub15 : ∀ cl ∈ cs15, cl ∈ calls := fun cl hcl => hsubRun cl (by rw [hc56]; simp [hcl])
     have hsub29 : ∀ cl ∈ cs29, cl ∈ calls := fun cl hcl => hsubRun cl (by rw [hc56]; simp [hcl])
     have hlen29 : cs29.length < csRun.length := by rw [hc56]; simp; omega
-    obtain ⟨ab, hab, rfl⟩ := Core.S0.addr_mono ext hx
+    obtain ⟨ab, hab, rfl⟩ := Core.BaseSeams.addr_mono ext hx
     obtain ⟨raw, c', -, hh, hba, hde, -, hhead⟩ := Claim.get_ci_head hab ev17
     have ec : c' = cx := hC.runStore.record_eq ((hC.runStore.recordOf_eq_recordAt _).symm.trans hc)
       (Core.hashed_mono hsub15 hh) hba hde
@@ -106,7 +106,7 @@ theorem check_container_rec_rprj_family_lt_len (hC : CollisionFreeRun calls E₀
     injection hldR with hv
     subst hv
     obtain ⟨hrecB, hmsB⟩ := (hbl.mono hsub15).stored hC.hashedStored
-    have ha_m : Core.S0.addr m2 xx (Core.ixAddr ab) :=
+    have ha_m : Core.BaseSeams.addr m2 xx (Core.ixAddr ab) :=
       ⟨ab, Bytes.repAddressRef_heapMono₂ Core.addrTy ev17.heap_extends hab, rfl⟩
     obtain ⟨family, cs', h_rf, m_rf, ap_rf, fb_rf, cs_rf, hmod, hfc, -, hlen',
         ha_rf, hfb_rf, ev_rf, hsub_rf⟩ :=
@@ -934,7 +934,7 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
           ∃ ib, PathPos E₀ B ib ∧
             ∃ (h₁ h₂ : Heap F) (rc₁ xx₁ xib₁ r₁ : SourceValue F) (cs₁ : List (Call F)),
               Claim.RCLimRep t bAddr (some (valLimit g)) h₁ rc₁ ∧
-              Core.S0.addr h₁ xx₁ w ∧ Core.S0.addr h₁ xib₁ ib ∧
+              Core.BaseSeams.addr h₁ xx₁ w ∧ Core.BaseSeams.addr h₁ xib₁ ib ∧
               ObsFn Obs.W "KernelModeled::check_container_rec" [rc₁, xx₁, xib₁] h₁ r₁ h₂ cs₁ ∧
               (∀ cl ∈ cs₁, cl ∈ calls) ∧ cs₁.length < cs.length) ∨
         (∃ ib c cib, PathPos E₀ B ib ∧ recordOf E₀ w = some c ∧ IsProj c ∧
@@ -992,7 +992,7 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
           ∃ ib, PathPos E₀ B ib ∧
             ∃ (h₁ h₂ : Heap F) (rc₁ xx₁ xib₁ r₁ : SourceValue F) (cs₁ : List (Call F)),
               Claim.RCLimRep t bAddr (some (valLimit g)) h₁ rc₁ ∧
-              Core.S0.addr h₁ xx₁ w ∧ Core.S0.addr h₁ xib₁ ib ∧
+              Core.BaseSeams.addr h₁ xx₁ w ∧ Core.BaseSeams.addr h₁ xib₁ ib ∧
               ObsFn Obs.W "KernelModeled::check_container_rec" [rc₁, xx₁, xib₁] h₁ r₁ h₂ cs₁ ∧
               (∀ cl ∈ cs₁, cl ∈ calls) ∧ cs₁.length < cs.length) ∨
         (∃ ib c cib, PathPos E₀ B ib ∧ recordOf E₀ w = some c ∧ IsProj c ∧

@@ -1,7 +1,7 @@
 import IxVMRefinement.Claim.TopWalk
 import IxVMRefinement.Assembly.ProjSafe
-import IxVMRefinement.L1.Ingress
-import IxVMRefinement.L1.Stream
+import IxVMRefinement.Ingress.Ingress
+import IxVMRefinement.Ingress.Stream
 import IxVMRefinement.Obs
 
 /-! # What `check_const` gives of a top walk's records
@@ -186,7 +186,7 @@ theorem check_block_member_kinds_uniform {E₀ : Ixon.Env} (hS : LoadedReads.Run
     {B : _root_.Address} {c : Ixon.Constant} {ms : Array Ixon.MutConst}
     (hrec : Ix.Cert.recordAt E₀ B = some c) (hcm : c.info = .muts ms)
     {x r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (ha : S0.addr h x B)
+    (ha : BaseSeams.addr h x B)
     (ev : ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     (∀ m ∈ ms.toList, ∃ d, m = .defn d) ∨ (∀ m ∈ ms.toList, ∃ i, m = .indc i) ∨
@@ -281,7 +281,7 @@ private theorem tc_loaded_proj_eq {E₀ : Ixon.Env} (hS : LoadedReads.RunStore c
   have hraw : raw = Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩ :=
     hS.hashed_inj hh hhp (hb.trans rfl)
   subst hraw
-  have hrt := Ixon.Verify.deConstantExact_serConstant _ (L1.emptyTablesConstant_wireWF.mpr hwf)
+  have hrt := Ixon.Verify.deConstantExact_serConstant _ (Ingress.emptyTablesConstant_wireWF.mpr hwf)
   exact Except.ok.inj (hde.symm.trans hrt)
 
 /-- **`get_ci` at a definition member's projection record** runs the member-kind check of the
@@ -290,10 +290,10 @@ private theorem tc_get_ci_dprj_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunStor
     {i : UInt64} {B : _root_.Address} (hB : B.hash.size = 32)
     (hhp : Hashed calls (Ixon.serConstant ⟨.dPrj ⟨i, B⟩, #[], #[], #[], #[]⟩))
     {ap ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (ha : S0.addr h ap (Core.projAddr (.dPrj ⟨i, B⟩)))
+    (ha : BaseSeams.addr h ap (Core.projAddr (.dPrj ⟨i, B⟩)))
     (ev : ObsFn Obs.W "Ingress::get_ci" [ap] h ptr h' cs) (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     ∃ (x r : SourceValue F) (h₁ h₂ : Heap F) (cs₁ : List (Call F)),
-      S0.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
+      BaseSeams.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
       (∀ cl ∈ cs₁, cl ∈ calls) := by
   have hid : ∀ (raw : ByteArray) (c' : Ixon.Constant), Hashed calls raw →
       Address.blake3Pure raw = Core.projAddr (.dPrj ⟨i, B⟩) →
@@ -352,13 +352,13 @@ private theorem tc_get_ci_iprj_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunStor
     {i : UInt64} {B : _root_.Address} (hB : B.hash.size = 32)
     (hhp : Hashed calls (Ixon.serConstant ⟨.iPrj ⟨i, B⟩, #[], #[], #[], #[]⟩))
     {ap ptr v rc r_chk : SourceValue F} {h h' h'' : Heap F} {cs cs_chk : List (Call F)}
-    (ha : S0.addr h ap (Core.projAddr (.iPrj ⟨i, B⟩)))
+    (ha : BaseSeams.addr h ap (Core.projAddr (.iPrj ⟨i, B⟩)))
     (ev : ObsFn Obs.W "Ingress::get_ci" [ap] h ptr h' cs) (hsub : ∀ cl ∈ cs, cl ∈ calls)
     (hld : loadValue h' ptr = .ok v)
     (ev_chk : ObsFn Obs.W "KernelCheck::check_const" [rc, v, ap] h' r_chk h'' cs_chk)
     (hsub_chk : ∀ cl ∈ cs_chk, cl ∈ calls) :
     ∃ (x r : SourceValue F) (h₁ h₂ : Heap F) (cs₁ : List (Call F)),
-      S0.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
+      BaseSeams.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
       (∀ cl ∈ cs₁, cl ∈ calls) := by
   have hid : ∀ (raw : ByteArray) (c' : Ixon.Constant), Hashed calls raw →
       Address.blake3Pure raw = Core.projAddr (.iPrj ⟨i, B⟩) →
@@ -410,7 +410,7 @@ private theorem tc_get_ci_iprj_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunStor
     | .run (v166 := v166) (m167 := m167) (he170 := he170) (hm169 := hm169) (ev176 := ev176) .. =>
       match Obs.«Convert::convert_inductive».obs ev176 with
       | .run (he128 := he128) .. =>
-        rw [he170, hm169, L1.loadValue_snoc] at hld
+        rw [he170, hm169, Ingress.loadValue_snoc] at hld
         have hv : v166 = v := Except.ok.inj hld
         subst hv
         subst he128
@@ -459,7 +459,7 @@ private theorem tc_get_ci_iprj_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunStor
             ev1.heap_extends.trans (ev2.heap_extends.trans
               (e_1376.trans (e_1354.trans (ev3.heap_extends.trans
                 (e_1427.trans (ev4.heap_extends.trans ev5.heap_extends))))))
-          exact ⟨_, r_mk, m1440, m_mk, cs_mk, S0.addr_mono (ext_m2.trans hext) hblk_addr, ev_mk,
+          exact ⟨_, r_mk, m1440, m_mk, cs_mk, BaseSeams.addr_mono (ext_m2.trans hext) hblk_addr, ev_mk,
             fun cl hcl => hsub_chk cl (by rw [hc']; simp [hcl])⟩
 
 /-- **`get_ci` at a recursor member's projection record, then `check_const`**, runs the
@@ -468,13 +468,13 @@ private theorem tc_get_ci_rprj_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunStor
     {i : UInt64} {B : _root_.Address} (hB : B.hash.size = 32)
     (hhp : Hashed calls (Ixon.serConstant ⟨.rPrj ⟨i, B⟩, #[], #[], #[], #[]⟩))
     {ap ptr v rc r_chk : SourceValue F} {h h' h'' : Heap F} {cs cs_chk : List (Call F)}
-    (ha : S0.addr h ap (Core.projAddr (.rPrj ⟨i, B⟩)))
+    (ha : BaseSeams.addr h ap (Core.projAddr (.rPrj ⟨i, B⟩)))
     (ev : ObsFn Obs.W "Ingress::get_ci" [ap] h ptr h' cs) (hsub : ∀ cl ∈ cs, cl ∈ calls)
     (hld : loadValue h' ptr = .ok v)
     (ev_chk : ObsFn Obs.W "KernelCheck::check_const" [rc, v, ap] h' r_chk h'' cs_chk)
     (hsub_chk : ∀ cl ∈ cs_chk, cl ∈ calls) :
     ∃ (x r : SourceValue F) (h₁ h₂ : Heap F) (cs₁ : List (Call F)),
-      S0.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
+      BaseSeams.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
       (∀ cl ∈ cs₁, cl ∈ calls) := by
   have hid : ∀ (raw : ByteArray) (c' : Ixon.Constant), Hashed calls raw →
       Address.blake3Pure raw = Core.projAddr (.rPrj ⟨i, B⟩) →
@@ -526,7 +526,7 @@ private theorem tc_get_ci_rprj_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunStor
     | .run (v166 := v166) (m167 := m167) (he170 := he170) (hm169 := hm169) (ev176 := ev176) .. =>
       match Obs.«Convert::convert_recursor».obs ev176 with
       | .run (he237 := he237) .. =>
-        rw [he170, hm169, L1.loadValue_snoc] at hld
+        rw [he170, hm169, Ingress.loadValue_snoc] at hld
         have hv : v166 = v := Except.ok.inj hld
         subst hv
         subst he237
@@ -564,7 +564,7 @@ private theorem tc_get_ci_rprj_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunStor
             ev1.heap_extends.trans (ev2.heap_extends.trans
               (e_2705.trans (ev3.heap_extends.trans (ev4.heap_extends.trans
                 ev_rules.heap_extends))))
-          exact ⟨_, r_mk, m2718, m_mk, cs_mk, S0.addr_mono (ext_m2.trans hext) hblk_addr, ev_mk,
+          exact ⟨_, r_mk, m2718, m_mk, cs_mk, BaseSeams.addr_mono (ext_m2.trans hext) hblk_addr, ev_mk,
             fun cl hcl => hsub_chk cl (by rw [hc']; simp [hcl])⟩
 
 /-- **The check of member `0` of a block runs the block's member-kind check.** -/
@@ -572,13 +572,13 @@ private theorem tc_member_zero_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunStor
     {bAddr B : _root_.Address} {t : Ix.Kernel.RoleTable} {ms : Array Ixon.MutConst}
     {lim : Option Nat} (hm : MemberCheckedLimAt calls bAddr t B ms 0 lim) :
     ∃ (x r : SourceValue F) (h₁ h₂ : Heap F) (cs₁ : List (Call F)),
-      S0.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
+      BaseSeams.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
       (∀ cl ∈ cs₁, cl ∈ calls) := by
   obtain ⟨h_pa, h_pre, m_chk, h'_chk, rc, x_members, x_block, ap, ptr, v, r_chk,
     cs_pa, cs_load, cs_chk, hmem, hblk, ev_pa, -, hsub_pa,
     -, -, ev_ld, -, hsub_ld, hld, ev_chk, -, hsub_chk⟩ := hm
   obtain ⟨b, hb, rfl⟩ := hblk
-  obtain ⟨-, -, -, mc, a, -, ra, hixa, hhp⟩ := L1.projection_addr_hashed_spec hmem hb ev_pa
+  obtain ⟨-, -, -, mc, a, -, ra, hixa, hhp⟩ := Ingress.projection_addr_hashed_spec hmem hb ev_pa
   have hhp' := hashed_mono hsub_pa hhp
   have hB : (Core.ixAddr b).hash.size = 32 := b.size_toArray
   cases mc with
@@ -596,7 +596,7 @@ private theorem tc_get_ci_not_muts {E₀ : Ixon.Env} (hS : LoadedReads.RunStore 
     {B : _root_.Address} {c : Ixon.Constant} {ms : Array Ixon.MutConst}
     (hrec : Ix.Cert.recordAt E₀ B = some c) (hcm : c.info = .muts ms)
     {ap ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (ha : S0.addr h ap B)
+    (ha : BaseSeams.addr h ap B)
     (ev : ObsFn Obs.W "Ingress::get_ci" [ap] h ptr h' cs) (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     False := by
   match Obs.«Ingress::get_ci».obs ev with

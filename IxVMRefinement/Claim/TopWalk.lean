@@ -84,7 +84,7 @@ private theorem quotRole_iff_sub_32 (ro : Ix.Kernel.Role) :
 
 theorem addr_quot_bound_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {lim : Option Nat} {x_rc x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hrc : RCLimRep t bAddr lim h x_rc) (ha : S0.addr h x_a a)
+    (hrc : RCLimRep t bAddr lim h x_rc) (ha : BaseSeams.addr h x_a a)
     (ev : ObsFn W "KernelRoles::addr_quot_bound" [x_rc, x_a] h r h' calls) :
     h' = h ∧
       ((r = .field 0 ∧ ∀ ro, quotRole ro = true → t.addressOf? ro ≠ some a) ∨
@@ -184,7 +184,7 @@ theorem covered_of_coveredAt {t : Ix.Kernel.RoleTable} {lim : Option Nat} {x : _
 
 theorem addr_walked_role_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {lim : Option Nat} {x_rc x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hrc : RCLimRep t bAddr lim h x_rc) (ha : S0.addr h x_a a)
+    (hrc : RCLimRep t bAddr lim h x_rc) (ha : BaseSeams.addr h x_a a)
     (ev : ObsFn W "KernelRoles::addr_walked_role" [x_rc, x_a] h r h' calls) :
     h' = h ∧ (r = .field 0 ∨ (r = .field 1 ∧ Typing.Covered t a)) := by
   match Obs.«KernelRoles::addr_walked_role».obs ev with
@@ -302,7 +302,7 @@ theorem QuotRecordRefsIn.spec {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     refine ⟨hs, fun i hi y hy => ?_⟩
     have hy' : c.refs.toList[i]? = some y := by simpa only [Array.getElem?_toList] using hy
     obtain ⟨hiLt, hget⟩ := List.getElem?_eq_some_iff.mp hy'
-    have hi' : i ∈ S0.usedRefIdxs c := by rw [Assembly.usedRefIdxs_eq]; exact hi
+    have hi' : i ∈ BaseSeams.usedRefIdxs c := by rw [Assembly.usedRefIdxs_eq]; exact hi
     have hres := hloop i hiLt (by simpa only [Nat.zero_add] using hi')
     rwa [hget] at hres
 
@@ -344,13 +344,13 @@ theorem topWalkCore_of_recs
     (hseedOk : ∀ a ∈ seeds, ClaimableSeed calls t a) :
     TopWalkCore calls b.address t seeds (runEnv b (t := t) calls) lim
       (fun a => ∃ r ∈ recs, r.addr = a) (topRank recs) := by
-  have hw0 : WalkedL6 calls t (runEnv b (t := t) calls) [] :=
-    walkedL6_envOfRecs (seeds := []) hnoColl [] hadm (by simp) (by intro r hr; cases hr)
+  have hw0 : WalkedClaim calls t (runEnv b (t := t) calls) [] :=
+    walkedClaim_envOfRecs (seeds := []) hnoColl [] hadm (by simp) (by intro r hr; cases hr)
   have hload : LoadedBy calls (runEnv b (t := t) calls) := envOfRecs_loadedBy b calls []
   have hS : LoadedReads.RunStore calls (runEnv b (t := t) calls) :=
-    LoadedReads.RunStore.of_walkedL6 hload hw0
+    LoadedReads.RunStore.of_walkedClaim hload hw0
   have hH : LoadedReads.HashedRecordsStored calls (runEnv b (t := t) calls) :=
-    LoadedReads.hashedRecordsStored_of_walkedL6 hw0
+    LoadedReads.hashedRecordsStored_of_walkedClaim hw0
   have hrec : ∀ r ∈ recs, recordOf (runEnv b (t := t) calls) r.addr = some r.c := by
     intro r hr
     obtain ⟨lc, hget, hraw, -⟩ := hH r.rawBytes r.c r.hhashed r.hsz r.hde r.hdeExact
@@ -375,7 +375,7 @@ theorem topWalkCore_of_recs
     subst hra
     exact (huniq r hr c hc).symm
   have huse : ∀ (c : Ixon.Constant) (i : Nat) (x : _root_.Address), i ∈ usedRefIdxs c →
-      c.refs[i]? = some x → i ∈ S0.usedRefIdxs c := by
+      c.refs[i]? = some x → i ∈ BaseSeams.usedRefIdxs c := by
     intro c i x hi _
     rw [Assembly.usedRefIdxs_eq]
     exact hi
@@ -453,12 +453,12 @@ theorem topWalkCore_of_recs
 
 end Build
 
-/-- **Inhabitation test: the validating walk export gives `WalkedL6`'s walk data** on the
+/-- **Inhabitation test: the validating walk export gives `WalkedClaim`'s walk data** on the
 top-walked addresses: the seeds are walked, every walked address holds a record with the
-check witnesses `WalkedL6` carries (`CheckedAtFull`, `MutsMemberCheckedAtFull`), and an edge
-along a used reference decreases the rank unless it ends at a covered address (`WalkedL6`'s
+check witnesses `WalkedClaim` carries (`CheckedAtFull`, `MutsMemberCheckedAtFull`), and an edge
+along a used reference decreases the rank unless it ends at a covered address (`WalkedClaim`'s
 closure without the covered branch, which an assumed run does not have). -/
-theorem topWalkCore_walkedL6_data {calls : List (Call F)} {bAddr : _root_.Address}
+theorem topWalkCore_walkedClaim_data {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {seeds : List _root_.Address} {E₀ : Ixon.Env}
     {Top : _root_.Address → Prop} {rank : _root_.Address → Nat}
     (hW : TopWalkCore calls bAddr t seeds E₀ (some 77) Top rank) :
@@ -552,7 +552,7 @@ theorem claimPhase_typing_check
   · left
     obtain ⟨ext_ac, hseed⟩ := assert_claimable_lim_spec hrc ha ev_ac
     obtain ⟨-, recs, hmem, hcl, -⟩ :=
-      run_check_transitive_lim_spec (hrc.mono ext_ac) (S0.addr_mono ext_ac ha) ev_rct
+      run_check_transitive_lim_spec (hrc.mono ext_ac) (BaseSeams.addr_mono ext_ac ha) ev_rct
     refine ⟨_, _, _, topWalkCore_of_recs (b := ⟨ctx.binding, tb⟩) hnoColl hadm hlim
       (recs.map (TopRec.mono hsub₂)) (hcl.mono hsub₂) (seeds := [a]) ?_ ?_⟩
     · intro x hx

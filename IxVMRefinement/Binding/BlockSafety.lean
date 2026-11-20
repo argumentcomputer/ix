@@ -322,14 +322,14 @@ private theorem ctors_safety_counts_spec (cs : List Ixon.Constructor) :
       simp only [List.cons.injEq] at hargs
       have hu_eq : uVal = x_is_unsafe := hargs.1.symm
       have hv156 : v156 = .field (((n + 1 : Nat) : F)) := by
-        simpa [Nat.cast_add] using L1.binop_add op193
+        simpa [Nat.cast_add] using Ingress.binop_add op193
       subst v156
       cases sg147 with
       | n0 hv128 he129 he130 _ =>
         subst he130 he129
         have hfalse := repBool_false_of_zero hu (hu_eq.trans hv128)
         have hv155 : v155 = .field (((u + 0 : Nat) : F)) := by
-          simpa [Nat.cast_add] using L1.binop_add op177
+          simpa [Nat.cast_add] using Ingress.binop_add op177
         subst v155
         obtain ⟨hh', hr⟩ := ih (u + 0) (n + 1) hrest ev153
         refine ⟨hh', ?_⟩
@@ -341,7 +341,7 @@ private theorem ctors_safety_counts_spec (cs : List Ixon.Constructor) :
         subst he137 he136
         have htrue := repBool_true_of_ne_zero hu (fun h0 => hne132 (hu_eq.symm.trans h0))
         have hv155 : v155 = .field (((u + 1 : Nat) : F)) := by
-          simpa [Nat.cast_add] using L1.binop_add op177
+          simpa [Nat.cast_add] using Ingress.binop_add op177
         subst v155
         obtain ⟨hh', hr⟩ := ih (u + 1) (n + 1) hrest ev153
         refine ⟨hh', ?_⟩
@@ -392,9 +392,9 @@ private theorem muts_safety_counts_spec (ms : List Ixon.MutConst) :
         obtain ⟨hm146, hy152⟩ := defn_is_unsafe_ci_count_spec hk hs ev165
         subst m146 hy152
         have hv136 : v136 = .field (((u + mutUnsafeCount (.defn d) : Nat) : F)) := by
-          simpa [mutUnsafeCount, Ix.Kernel.Reader.safetyDecline, Nat.cast_add] using L1.binop_add op158
+          simpa [mutUnsafeCount, Ix.Kernel.Reader.safetyDecline, Nat.cast_add] using Ingress.binop_add op158
         have hv137 : v137 = .field (((n + 1 : Nat) : F)) := by
-          simpa [Nat.cast_add] using L1.binop_add op195
+          simpa [Nat.cast_add] using Ingress.binop_add op195
         subst v136 v137
         obtain ⟨hext, hr⟩ := ih (u + mutUnsafeCount (.defn d)) (n + 1) hrest ev134
         refine ⟨hext, ?_⟩
@@ -431,16 +431,16 @@ private theorem muts_safety_counts_spec (ms : List Ixon.MutConst) :
         simp only [Nat.zero_add, Value.tuple.injEq, List.cons.injEq, and_true] at hct_tup
         rcases hct_tup with ⟨rfl, rfl⟩
         have hx365 : x365 = .field (((u + (if ind.isUnsafe then 1 else 0) : Nat) : F)) := by
-          simpa [Nat.cast_add] using L1.binop_add op380
+          simpa [Nat.cast_add] using Ingress.binop_add op380
         subst hx365
         have hv350 : v350 = .field (((u + mutUnsafeCount (.indc ind) : Nat) : F)) := by
-          rw [L1.binop_add op372]
+          rw [Ingress.binop_add op372]
           simp only [mutUnsafeCount, Nat.cast_add, add_assoc]
         have hx390 : x390 = .field (((n + 1 : Nat) : F)) := by
-          simpa [Nat.cast_add] using L1.binop_add op405
+          simpa [Nat.cast_add] using Ingress.binop_add op405
         subst hx390
         have hv351 : v351 = .field (((n + mutConstCount (.indc ind) : Nat) : F)) := by
-          rw [L1.binop_add op397]
+          rw [Ingress.binop_add op397]
           simp only [mutConstCount, Nat.cast_add, Nat.cast_one, add_assoc]
         subst hv350 hv351
         obtain ⟨hext, hr⟩ := ih (u + mutUnsafeCount (.indc ind)) (n + mutConstCount (.indc ind)) hrest ev348
@@ -475,9 +475,9 @@ private theorem muts_safety_counts_spec (ms : List Ixon.MutConst) :
         obtain ⟨rfl, hv515⟩ := hru
         subst hv515
         have hv531 : v531 = .field (((u + mutUnsafeCount (.recr rc) : Nat) : F)) := by
-          simpa [mutUnsafeCount, Nat.cast_add] using L1.binop_add op553
+          simpa [mutUnsafeCount, Nat.cast_add] using Ingress.binop_add op553
         have hv532 : v532 = .field (((n + 1 : Nat) : F)) := by
-          simpa [Nat.cast_add] using L1.binop_add op569
+          simpa [Nat.cast_add] using Ingress.binop_add op569
         subst hv531 hv532
         obtain ⟨hext, hr⟩ := ih (u + mutUnsafeCount (.recr rc)) (n + 1) hrest ev529
         refine ⟨hext, ?_⟩
@@ -519,7 +519,7 @@ theorem block_inLogic_of_member_kinds {calls : List (Call F)} {E₀ : Ixon.Env}
     (hS : LoadedReads.RunStore calls E₀)
     {blk : _root_.Address} {cb : Ixon.Constant} {ms : Array Ixon.MutConst}
     {x_block_addr r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (ha : Core.S0.addr h x_block_addr blk)
+    (ha : Core.BaseSeams.addr h x_block_addr blk)
     (ev : ObsFn Core.W "KernelCheck::check_block_member_kinds" [x_block_addr] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls)
     (hrec_blk : Ix.Cert.recordAt E₀ blk = some cb)
@@ -563,9 +563,9 @@ theorem block_inLogic_of_member_kinds {calls : List (Call F)} {E₀ : Ixon.Env}
     obtain ⟨_, htup⟩ := muts_safety_counts_spec ms.toList 0 0 hms_rep132 ev187
     simp only [Nat.zero_add, Value.tuple.injEq, List.cons.injEq, and_true] at htup
     rcases htup with ⟨rfl, rfl⟩
-    have hy243 := L1.binop_sub op258
+    have hy243 := Ingress.binop_sub op258
     subst hy243
-    have hv234 := L1.binop_mul op249
+    have hv234 := Ingress.binop_mul op249
     have hmul0 :
         (((ms.toList.map mutUnsafeCount).sum : F)) *
           ((((ms.toList.map mutConstCount).sum : F)) - (((ms.toList.map mutUnsafeCount).sum : F))) = 0 :=
@@ -583,7 +583,7 @@ theorem block_inLogic_of_member_kinds {calls : List (Call F)} {E₀ : Ixon.Env}
 
 /-- A flag represented as the field `0` is `false`. -/
 theorem repBoolField_zero_false {b : Bool}
-    (h : L1.repBoolField b = .field 0) : b = false := by
+    (h : Ingress.repBoolField b = .field 0) : b = false := by
   cases b with
   | false => rfl
   | true => exact absurd h (fun heq => one_ne_zero (Value.field.inj heq))
@@ -593,14 +593,14 @@ accepts.** -/
 theorem safetyDecline_none_of_unsafe_ci_zero {d : Ixon.Definition}
     {tyPtr valPtr hint : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn Core.W "KernelCheck::is_unsafe_ci"
-      [L1.defnValShape d tyPtr valPtr hint] h (.field 0) h' cs) :
+      [Ingress.defnValShape d tyPtr valPtr hint] h (.field 0) h' cs) :
     Ix.Kernel.Reader.safetyDecline d = none := by
   cases hk : d.kind with
   | thm =>
     rw [Ix.Kernel.Reader.safetyDecline, hk]
     cases d.safety <;> decide
   | opaq =>
-    simp only [L1.defnValShape, hk] at ev
+    simp only [Ingress.defnValShape, hk] at ev
     cases Obs.«KernelCheck::is_unsafe_ci».obs ev with
     | Opaque _ _ _ _ _ _ _ hv he _ _ =>
       simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
@@ -617,7 +617,7 @@ theorem safetyDecline_none_of_unsafe_ci_zero {d : Ixon.Definition}
     | Rec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv =>
       simp [Core.kciEnum] at hv
   | defn =>
-    simp only [L1.defnValShape, hk] at ev
+    simp only [Ingress.defnValShape, hk] at ev
     cases Obs.«KernelCheck::is_unsafe_ci».obs ev with
     | Defn_Safe _ _ _ _ _ hv _ _ _ =>
       simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
@@ -625,8 +625,8 @@ theorem safetyDecline_none_of_unsafe_ci_zero {d : Ixon.Definition}
       have hsafe : d.safety = .safe := by
         cases hds : d.safety with
         | safe => rfl
-        | unsaf => rw [hds] at hs_eq; simp [L1.repDefSafetyVal] at hs_eq
-        | part => rw [hds] at hs_eq; simp [L1.repDefSafetyVal] at hs_eq
+        | unsaf => rw [hds] at hs_eq; simp [Ingress.repDefSafetyVal] at hs_eq
+        | part => rw [hds] at hs_eq; simp [Ingress.repDefSafetyVal] at hs_eq
       rw [Ix.Kernel.Reader.safetyDecline, hk, hsafe]
       decide
     | Defn_other _ _ _ _ _ _ _ _ he _ _ =>

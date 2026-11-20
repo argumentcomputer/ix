@@ -75,11 +75,11 @@ structure FamRecCanon (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (p : Ixon.
   /-- No recursor of a family record declares K: `KernelModeled::check_recs` reads each recursor
   of the record with `get_ci` and asserts its K flag is `0` ("modeled recursor declares K"). -/
   notK : rc.k = false
-  ty : LoadedReads.canonAnn cb ps ((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) rc.typ
+  ty : LoadedReads.canonAnn cb ps ((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) rc.typ
     ty₀ = some tyA
   rules : ∃ rls : List (RecRule .anon),
     LoadedReads.canonRules cb ps rc.k rc.params.toNat
-      (((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1) rc.rules.toList rules₀ =
+      (((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1) rc.rules.toList rules₀ =
         some rls ∧
     List.Forall₂ (fun (rl : RecRule .anon) (rhsA : KExpr) => rl.rhs = rhsA) rls rhss
 
@@ -109,7 +109,7 @@ structure FamilyTysCanon (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _root_
       ty₀.looseBVarsBounded 0 = true ∧
         ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
         LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-          ((L1.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some tyA
+          ((Ingress.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some tyA
   /-- Each constructor of the family, at position `k`, read as `ty₀` at constructor `j` of member
   `i`: the reading is closed with its level parameters defined, and its canonical annotation at
   the constructor's root is `tys[k]`. Producer: `KernelModeled::member_val` at the constructor,
@@ -125,7 +125,7 @@ structure FamilyTysCanon (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _root_
       ty₀.looseBVarsBounded 0 = true ∧
         ty₀.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
         LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-          (((L1.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ =
+          (((Ingress.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ =
           some tyA
   /-- Each recursor of the family, at position `k` of the recursors, read as the recursor
   `cv` (rules `rules₀`) at member `p` of the family record: its loaded form at its selected type

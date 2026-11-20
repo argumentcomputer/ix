@@ -8,7 +8,7 @@ import IxVMRefinement.Obs.KernelModeled7
 import IxVMRefinement.Obs.KernelModeled8
 import IxVMRefinement.Obs.KernelModeled9
 import IxVMRefinement.Obs.KernelRoleSpec0
-import IxVMRefinement.L1.TraceRecords
+import IxVMRefinement.Ingress.TraceRecords
 import IxVMRefinement.Assembly.PointUseSites
 import IxVMRefinement.FamilyGraph.ProducersRefs
 
@@ -188,7 +188,7 @@ theorem recordAt_of_get_ci (P : ProjsCtx.{u}) {a : Bytes.Address} {ap ptr : Sour
       Ix.Cert.recordAt P.E (ixAddr a) = some cm ∧
       Hashed cs raw ∧ Address.blake3Pure raw = ixAddr a ∧
       Ixon.deConstantExact raw = .ok cm ∧ Ixon.deConstant raw = .ok cm := by
-  obtain ⟨_, _, csLd, evLd, hsubLd⟩ := L1.get_ci_verified_subcall ev
+  obtain ⟨_, _, csLd, evLd, hsubLd⟩ := Ingress.get_ci_verified_subcall ev
   obtain ⟨_, raw, cm, hsz, hh, hb, hde, hex, -, -⟩ :=
     Claim.load_verified_constant_de ⟨a, ha, rfl⟩ evLd
   have hrec0 := Claim.recordOf_hashed P.hS P.hH
@@ -212,9 +212,9 @@ theorem recordAt_of_get_ci_iprj (P : ProjsCtx.{u}) {b : Bytes.Address} {i : F}
           v = .construct kciEnum "Induct"
             [.field (ind.lvls.toNat : F), tyPtr,
              .field (ind.params.toNat : F), .field (ind.indices.toNat : F),
-             .field (ind.ctors.size : F), L1.repBoolField ind.isUnsafe,
+             .field (ind.ctors.size : F), Ingress.repBoolField ind.isUnsafe,
              blkPtr, .field (ZMod.val i : F)] := by
-  obtain ⟨_, _, csLd, evLd, hsubLd⟩ := L1.get_ci_iprj_verified_subcall ev
+  obtain ⟨_, _, csLd, evLd, hsubLd⟩ := Ingress.get_ci_iprj_verified_subcall ev
   obtain ⟨_, raw, cb0, hsz, hh, hbl, hde, hex, -, -⟩ :=
     Claim.load_verified_constant_de ⟨b, hb, rfl⟩ evLd
   have hrec0 := Claim.recordOf_hashed P.hS P.hH
@@ -222,7 +222,7 @@ theorem recordAt_of_get_ci_iprj (P : ProjsCtx.{u}) {b : Bytes.Address} {i : F}
   rw [hbl] at hrec0
   have hrecE := P.hSE.store.runRecord _ _ hrec0
   obtain ⟨_, hi56, blkBytes, cb, ms, ind, _, v, hh2, hbl2, hex2, _, hmuts, hms, _, hld, hraw⟩ :=
-    L1.get_ci_iprj_spec (P.hbdSub hsub) hb ev
+    Ingress.get_ci_iprj_spec (P.hbdSub hsub) hb ev
   have hcb_eq : cb = cb0 := by
     have hrecAt0 := (P.hS.recordOf_eq_recordAt (ixAddr b)).symm.trans hrec0
     exact P.hS.record_eq hrecAt0 (Core.hashed_mono hsub hh2) hbl2 hex2
@@ -252,7 +252,7 @@ theorem ctorRecordAt_of_get_ci (P : ProjsCtx.{u}) {a : Bytes.Address} {ap ptr : 
     hh2, hb2, hex2, _, hbrep, hidx, hcidx, hi56, hj56, hinfo, hmuts, hxs, hct⟩ :=
     ctorRecord_raw_of_get_ci ev (P.hbdSub hsub) ha hld
   have hrecAt0 : Ix.Cert.recordAt P.E₀ (ixAddr a) = some cm0 := by
-    obtain ⟨_, _, csLd, evLd, hsubLd⟩ := L1.get_ci_verified_subcall ev
+    obtain ⟨_, _, csLd, evLd, hsubLd⟩ := Ingress.get_ci_verified_subcall ev
     obtain ⟨_, raw', cm', hsz', hh', hb', hde', hex', -, -⟩ :=
       Claim.load_verified_constant_de ⟨a, ha, rfl⟩ evLd
     have hr := Claim.recordOf_hashed P.hS P.hH
@@ -796,7 +796,7 @@ theorem compute_iprj_addr_hashed {c : Ctx} {bp r : SourceValue F} {b : Bytes.Add
         [.construct "Ixon::InductiveProj" "Mk" [TagN.u64Value n, bp]]) := by
     simp only [Specs.Callees.ProjInfoRep]
     exact ⟨TagN.u64Value n, bp, b, rfl, hrep, Bytes.repAddressRef_heapMono₂ addrTy E hb, rfl⟩
-  have hbytes := (L1.put_constant_proj_spec
+  have hbytes := (Ingress.put_constant_proj_spec
     ⟨_, _, _, _, _, rfl, hinfo, RepLinkedList.nil c1, RepLinkedList.nil c2,
       RepLinkedList.nil c3, RepLinkedList.nil c4⟩
     (RepLinkedList.nil c5) ev148).2
@@ -4331,11 +4331,11 @@ theorem check_proj_pure_spec (P : ProjsCtx.{u})
         rw [hfamTag_name] at hfindTI_fam
         let cTagI : Ixon.Constant := ⟨.iPrj ⟨(0 : Nat).toUInt64, ixAddr bTag⟩, #[], #[], #[], #[]⟩
         have hrecTagI : Ix.Cert.recordAt P.E (Core.iprjAddr (ixAddr bTag) 0) = some cTagI := by
-          have hwfTI := L1.projConstant_wireWF_iPrj (0 : Nat).toUInt64 bTag
+          have hwfTI := Ingress.projConstant_wireWF_iPrj (0 : Nat).toUInt64 bTag
           have hexTI : Ixon.deConstantExact (Ixon.serConstant cTagI) = .ok cTagI :=
             Ixon.Verify.deConstantExact_serConstant cTagI hwfTI
           have hdeTI : Ixon.deConstant (Ixon.serConstant cTagI) = .ok cTagI :=
-            L1.deConstant_of_deConstantExact hexTI
+            Ingress.deConstant_of_deConstantExact hexTI
           have hszTI : (Ixon.serConstant cTagI).size < 4294967296 :=
             IxVM.Refinement.Typing.serConstant_iprj_size_lt (0 : Nat).toUInt64 bTag
           have hr0 := Claim.recordOf_hashed P.hS P.hH
@@ -4503,7 +4503,7 @@ theorem check_proj_pure_spec (P : ProjsCtx.{u})
             have haux_bounds : indAux.params.toNat < 72057594037927936 ∧
                 indAux.indices.toNat < 72057594037927936 := by
               obtain ⟨_, rawA, cmA, _, hhA, haA, hexA, -, -, -, hresA⟩ :=
-                L1.get_ci_spec (P.hbdSub hsubCiAux) haAux_tsn1 evCiAux
+                Ingress.get_ci_spec (P.hbdSub hsubCiAux) haAux_tsn1 evCiAux
               have hcmA_eq : cmA = cmAux := by
                 have hrecA : Ix.Cert.recordAt P.E (ixAddr aAux) = some cmAux := hrecCmAux
                 unfold Ix.Cert.recordAt at hrecA
@@ -4516,7 +4516,7 @@ theorem check_proj_pure_spec (P : ProjsCtx.{u})
                   rw [hesc, hexA₀] at hexA
                   exact (Except.ok.inj hexA).symm.trans (Option.some.inj (hvalA.symm.trans hrecA))
               subst cmA
-              unfold L1.GetCIRawResult at hresA
+              unfold Ingress.GetCIRawResult at hresA
               rw [auxIndWit.hinfo] at hresA
               obtain ⟨-, blkBytes, cbA, xsA, indA, _, hhB, haB, hexB, -, hmutsA, hmsA, -, hrawA⟩ := hresA
               have hcbA_eq : cbA = cbAux := by

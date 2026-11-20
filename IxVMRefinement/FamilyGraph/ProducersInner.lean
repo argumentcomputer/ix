@@ -592,10 +592,10 @@ theorem circuitComposed_of_partsFamInner
         BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerTeleOther t E₀ B cb ind) :
     CircuitComposed.{u} := by
   unfold CircuitComposed
-  refine circuitSound_of_bounded l0 ?_
+  refine circuitSound_of_bounded circuitToSource ?_
   intro dB valueB heapB callsB evB hbB
   show CircuitSound fun callsA dA => ComposedSpec.{u} callsA callsB dA dB
-  refine circuitSound_of_bounded l0 ?_
+  refine circuitSound_of_bounded circuitToSource ?_
   intro dA valueA heapA callsA evA hbA
   show ComposedSpec.{u} callsA callsB dA dB
   exact composed_skeleton_over_familyW (bindingClaimExport dB valueB heapB callsB evB hbB)

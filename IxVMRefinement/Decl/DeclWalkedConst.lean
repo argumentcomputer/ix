@@ -239,11 +239,11 @@ theorem checkedConstOrigin_step
     obtain ⟨_, hty'_nfv, hty'_bvs, hty'_ann⟩ := tmC_closed_props hty_tmc_es'
     obtain ⟨_, hval'_nfv, hval'_bvs, hval'_ann⟩ := tmC_closed_props hval_tmc_kc'
     obtain ⟨stype, u, _, hinf_ty, hred_ty, _, _⟩ :=
-      core_ensure_sort Core.core_S₀ hrc_es.toRCRep (typesRep_of_nil_eq c.κ hm_es)
+      core_ensure_sort Core.core_baseSeams hrc_es.toRCRep (typesRep_of_nil_eq c.κ hm_es)
         (ghostScoped_zero zeroGhostWalked) hef hlf (hgood_c.sub hsub_es) ev_es
         (hty_tmc_es' 0 zeroGhostWalked)
     obtain ⟨vtype, hinf_val, hde_val⟩ :=
-      core_check Core.core_S₀ hrc_kc.toRCRep (typesRep_of_nil_eq c.κ hm_kc)
+      core_check Core.core_baseSeams hrc_kc.toRCRep (typesRep_of_nil_eq c.κ hm_kc)
         (ghostScoped_zero zeroGhostWalked) hef hlf (hgood_c.sub hsub_kc) ev_kc
         (hval_tmc_kc' 0 zeroGhostWalked) (hty_tmc_kc' 0 zeroGhostWalked)
     have hnrole := hne_role a hnot_role
@@ -301,14 +301,14 @@ theorem checkedConstOrigin_step
     obtain ⟨_, hty'_nfv, hty'_bvs, hty'_ann⟩ := tmC_closed_props hty_tmc_es'
     obtain ⟨_, hval'_nfv, hval'_bvs, hval'_ann⟩ := tmC_closed_props hval_tmc_kc'
     obtain ⟨stype, u, ℓ, hinf_ty, hred_ty, hℓ, hu⟩ :=
-      core_ensure_sort Core.core_S₀ hrc_es.toRCRep (typesRep_of_nil_eq c.κ hm_es)
+      core_ensure_sort Core.core_baseSeams hrc_es.toRCRep (typesRep_of_nil_eq c.κ hm_es)
         (ghostScoped_zero zeroGhostWalked) hef hlf (hgood_c.sub hsub_es) ev_es
         (hty_tmc_es' 0 zeroGhostWalked)
     have hisZero : (rulesJ (md := .anon)).isZero u :=
-      thm_isZero_of_level_equal Levels.l2
+      thm_isZero_of_level_equal Levels.levelsObligation
         (RomBound.bounded_mono hbound hsub_le) hℓ hu hm_le ev_le
     obtain ⟨vtype, hinf_val, hde_val⟩ :=
-      core_check Core.core_S₀ hrc_kc.toRCRep (typesRep_of_nil_eq c.κ hm_kc)
+      core_check Core.core_baseSeams hrc_kc.toRCRep (typesRep_of_nil_eq c.κ hm_kc)
         (ghostScoped_zero zeroGhostWalked) hef hlf (hgood_c.sub hsub_kc) ev_kc
         (hval_tmc_kc' 0 zeroGhostWalked) (hty_tmc_kc' 0 zeroGhostWalked)
     have hnrole := hne_role a hnot_role
@@ -359,11 +359,11 @@ theorem checkedConstOrigin_step
     obtain ⟨_, hty'_nfv, hty'_bvs, hty'_ann⟩ := tmC_closed_props hty_tmc_es'
     obtain ⟨_, hval'_nfv, hval'_bvs, hval'_ann⟩ := tmC_closed_props hval_tmc_kc'
     obtain ⟨stype, u, _, hinf_ty, hred_ty, _, _⟩ :=
-      core_ensure_sort Core.core_S₀ hrc_es.toRCRep (typesRep_of_nil_eq c.κ hm_es)
+      core_ensure_sort Core.core_baseSeams hrc_es.toRCRep (typesRep_of_nil_eq c.κ hm_es)
         (ghostScoped_zero zeroGhostWalked) hef hlf (hgood_c.sub hsub_es) ev_es
         (hty_tmc_es' 0 zeroGhostWalked)
     obtain ⟨vtype, hinf_val, hde_val⟩ :=
-      core_check Core.core_S₀ hrc_kc.toRCRep (typesRep_of_nil_eq c.κ hm_kc)
+      core_check Core.core_baseSeams hrc_kc.toRCRep (typesRep_of_nil_eq c.κ hm_kc)
         (ghostScoped_zero zeroGhostWalked) hef hlf (hgood_c.sub hsub_kc) ev_kc
         (hval_tmc_kc' 0 zeroGhostWalked) (hty_tmc_kc' 0 zeroGhostWalked)
     have hnrole := hne_role a hnot_role
@@ -397,7 +397,7 @@ structure PrefixContextFacts (E_core : Ixon.Env) (t : Ix.Kernel.RoleTable)
 /-- **The prefix context is inhabited at the start of a fold**: at the empty environment, for
 decoded records and a well-formed table that binds no role (with a bound role in force the
 role's constants would have to be stored first). -/
-theorem prefixContextFacts_empty {E_core : Ixon.Env} (hdec : L1.EnvDecoded E_core)
+theorem prefixContextFacts_empty {E_core : Ixon.Env} (hdec : Ingress.EnvDecoded E_core)
     {t : Ix.Kernel.RoleTable} (htwf : t.wf = true) (hnb : ∀ r, t.addressOf? r = none) :
     PrefixContextFacts E_core t Ix.Kernel.Env.empty where
   tableWf := htwf
@@ -570,7 +570,7 @@ theorem checkedConstOrigin_step_scoped
         (CoreGood.ofRaw (hgood_c.sub hsub_es) hsub_es) ev_es
         (hty_tmc_es' 0 zeroGhostWalked)
     have hisZero : (rulesJ (md := .anon)).isZero u :=
-      thm_isZero_of_level_equal Levels.l2
+      thm_isZero_of_level_equal Levels.levelsObligation
         (RomBound.bounded_mono hbound hsub_le) hℓ hu hm_le ev_le
     obtain ⟨vtype, hinf_val, hde_val⟩ :=
       scoped_core_check (c := c) hrc_kc.toRCRep (typesRep_of_nil_eq c.κ hm_kc)
@@ -686,7 +686,7 @@ theorem checkedConstOrigin_installStep_empty
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     {E_core : Ixon.Env} {order_role : List _root_.Address} {d : Declaration .anon}
     (hchk : Assembly.CheckedConstOrigin calls t bAddr E_core order_role d)
-    (hdec : L1.EnvDecoded E_core) (htwf : t.wf = true) (hnb : ∀ r, t.addressOf? r = none)
+    (hdec : Ingress.EnvDecoded E_core) (htwf : t.wf = true) (hnb : ∀ r, t.addressOf? r = none)
     (hno : ∀ cl ∈ calls, cl.name ≠ "Ingress::get_ci" ∧ cl.name ≠ "Ingress::get_ci_iprj" ∧
       cl.name ≠ "Ingress::get_ci_cprj" ∧ cl.name ≠ "KernelModeled::proj_ctor")
     (hgood : Good ⟨E_core, Ix.Kernel.Env.empty, t, none⟩ calls)
@@ -806,7 +806,7 @@ theorem annotates_zetaErase : ∀ (e : KExpr), IxVM.Consistency.Annotates (zetaE
   | .forallE ty b _ => .forallE (annotates_zetaErase ty) (annotates_zetaErase b)
   | .proj _ _ e => .proj (annotates_zetaErase e)
   | .letE _ v b _ =>
-    .letE (IxVM.Refinement.L1.annotates_instantiate1Lift
+    .letE (IxVM.Refinement.Ingress.annotates_instantiate1Lift
       (annotates_zetaErase b) (annotates_zetaErase v) 0)
 
 private def zetaEraseCV (cv : ConstantVal .anon) : ConstantVal .anon :=
@@ -914,7 +914,7 @@ inductive CheckedConstOriginAt (κ : _root_.Address → Core.KKey) (lim : Nat)
       (hsub_es : ∀ cl ∈ cs_es, cl ∈ calls)
       (hext_ax : Heap.Extends m_es' m_ax)
       (hrc_ax : Claim.RCFullRep t bAddr lim m_ax x_rc)
-      (ha_ax : Core.S0.addr m_ax x_addr a)
+      (ha_ax : Core.BaseSeams.addr m_ax x_addr a)
       (ev_ax : ObsFn Core.W "KernelRoles::axiom_standing" [x_rc, x_addr] m_ax v_ax m_ax' cs_ax)
       (hne_ax : v_ax ≠ .field 0)
       (hcl_ax : (⟨"KernelRoles::axiom_standing", [x_rc, x_addr], m_ax⟩ : Call F) ∈ calls)
@@ -1285,7 +1285,7 @@ theorem walkedConst_step
         (CoreGood.ofRaw (hgood_c.sub hsub_es) (fun _ _ => trivial)) ev_es
         (hty_tmc_es' 0 zeroGhostWalked)
     have hisZero : (rulesJ (md := .anon)).isZero u :=
-      thm_isZero_of_level_equal Levels.l2
+      thm_isZero_of_level_equal Levels.levelsObligation
         (RomBound.bounded_mono hbound hsub_le) hℓ hu hm_le ev_le
     obtain ⟨vtype, hinf_val, hde_val⟩ :=
       scoped_core_check (c := c) hrc_kc.toRCRep (typesRep_of_nil_eq c.κ hm_kc)
@@ -1382,7 +1382,7 @@ step. -/
 theorem walkedConst_step_empty
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     {E_core : Ixon.Env} {order_role : List _root_.Address} {d d' : Declaration .anon}
-    (hdec : L1.EnvDecoded E_core) (htwf : t.wf = true)
+    (hdec : Ingress.EnvDecoded E_core) (htwf : t.wf = true)
     (hchk : CheckedConstOriginAt (Ctx.stored ⟨E_core, Ix.Kernel.Env.empty, t, some 0⟩).κ 0 calls
       t bAddr E_core order_role d d')
     (hgood : Good ⟨E_core, Ix.Kernel.Env.empty, t, none⟩ calls)

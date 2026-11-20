@@ -148,7 +148,7 @@ def RecArmAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
   ∃ (rcv apv parentV tyPtr rulesPtr blkPtr tyPtrP unsP blkPtrP kTarget result pointer :
       SourceValue F)
     (bA bR bT bP : Bytes.Address) (blobs : List (_root_.Address × ByteArray))
-    (tree : L1.BinderTreeData) (scanHeap loadedHeap kHeap kAfter canonHeap final : Heap F)
+    (tree : Ingress.BinderTreeData) (scanHeap loadedHeap kHeap kAfter canonHeap final : Heap F)
     (loadCalls kCalls canonCalls : List (Call F)),
     Core.RCRep t lim loadedHeap rcv ∧
     Bytes.RepAddressRef Core.addrTy loadedHeap bA apv ∧ Core.ixAddr bA = A ∧
@@ -156,9 +156,9 @@ def RecArmAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
     Bytes.RepAddressRef Core.addrTy scanHeap bT parentV ∧ Core.ixAddr bT = P ∧
     Bytes.RepAddressRef Core.addrTy loadedHeap bP blkPtrP ∧ Core.ixAddr bP = ip.block ∧
     (∀ x bs, (x, bs) ∈ blobs → E₀.blobs.get? x = some bs) ∧
-    L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs loadedHeap 4294967295
+    Ingress.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs loadedHeap 4294967295
       rc.typ tyPtr ∧
-    L1.RulesTraceRep c.refs.toList [A] c.univs.toList c.sharing.toList blobs tree loadedHeap 0
+    Ingress.RulesTraceRep c.refs.toList [A] c.univs.toList c.sharing.toList blobs tree loadedHeap 0
       (0 + 1) rc.rules.toList rulesPtr ∧
     rc.rules.size < 8589934592 ∧ ip.idx.toNat < 72057594037927936 ∧
     rc.lvls.toNat < 4294967296 ∧ ind.lvls.toNat < 4294967296 ∧
@@ -177,14 +177,14 @@ def RecArmAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
         [.field (ind.lvls.toNat : F), tyPtrP, .field (ind.params.toNat : F),
           .field (ind.indices.toNat : F), .field (ind.ctors.size : F), unsP, blkPtrP,
           .field (ip.idx.toNat : F)], parentV] kHeap kTarget kAfter kCalls ∧
-    (∀ cl ∈ kCalls, cl ∈ calls) ∧ L1.repBoolField rc.k = kTarget ∧
+    (∀ cl ∈ kCalls, cl ∈ calls) ∧ Ingress.repBoolField rc.k = kTarget ∧
     Heap.Extends loadedHeap canonHeap ∧
     ObsFn Obs.W "KernelCheck::check_recursor_canonical_full"
       [rcv, .construct "KernelTypes::KConstantInfo" "Rec"
         [.field (rc.lvls.toNat : F), tyPtr, .field (rc.params.toNat : F),
           .field (rc.indices.toNat : F), .field (rc.motives.toNat : F),
-          .field (rc.minors.toNat : F), rulesPtr, L1.repBoolField rc.k,
-          L1.repBoolField rc.isUnsafe, blkPtr, .field ((0 : Nat) : F)], apv,
+          .field (rc.minors.toNat : F), rulesPtr, Ingress.repBoolField rc.k,
+          Ingress.repBoolField rc.isUnsafe, blkPtr, .field ((0 : Nat) : F)], apv,
         .construct "KernelTypes::KConstantInfo" "Induct"
           [.field (ind.lvls.toNat : F), tyPtrP, .field (ind.params.toNat : F),
             .field (ind.indices.toNat : F), .field (ind.ctors.size : F), unsP, blkPtrP,
@@ -225,10 +225,10 @@ theorem rec_arm_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E
   obtain ⟨a', ha'_ref, haA⟩ := ha_pre
   subst haA
   obtain ⟨rawBytes, c', hh, hba, hex, -, hres'⟩ :=
-    L1.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
+    Ingress.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
   have hcc : c' = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hh) hba hex
   subst c'
-  unfold L1.GetCIBlockTraceResult at hres'
+  unfold Ingress.GetCIBlockTraceResult at hres'
   rw [hinfo] at hres'
   obtain ⟨blobs, tree, v, hhp, built, hldv, htr⟩ := hres'
   rw [hld] at hldv
@@ -299,7 +299,7 @@ theorem rec_arm_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E
   have hPa : P = Core.ixAddr a := keyOf_inj hroles hkeys
   subst hPa
   have hgL : Core.Good ⟨E, env, t, lim⟩ loadCalls := hgood.sub hsLoad'
-  obtain ⟨rawP, cP, hhP, hbaP, hexP, -, hresP⟩ := L1.get_ci_block_trace_spec hgL.2 ha evLoad
+  obtain ⟨rawP, cP, hhP, hbaP, hexP, -, hresP⟩ := Ingress.get_ci_block_trace_spec hgL.2 ha evLoad
   have hrecP : recordOf E (Core.ixAddr a) = some cm := by
     rw [recordOf_eq_recordAt_of_decoded hst.decoded]
     exact hcm
@@ -309,7 +309,7 @@ theorem rec_arm_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E
     rw [hbP, hdec] at hexP
     exact (Except.ok.inj hexP).symm
   subst hcP
-  unfold L1.GetCIBlockTraceResult at hresP
+  unfold Ingress.GetCIBlockTraceResult at hresP
   rw [hcmi] at hresP
   obtain ⟨-, blkBytes, cb', ms', ind', blobs', tree', plan', v₀, hhB', haB', hexB', hcb', hms',
     -, -, -, hld₀, hraw, -⟩ := hresP

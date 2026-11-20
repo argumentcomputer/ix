@@ -4,11 +4,11 @@ import IxVMRefinement.Core.Specs.Callees
 import IxVMRefinement.Obs.Ingress0
 import IxVMRefinement.Obs.IxVMCompat0
 
-/-! # Claimable-seed refusals and closure walking for L6
+/-! # Claim-phase claimable-seed refusals and closure walking
 
 Refines `KernelClaim` and `IxVMCompat` claim-walk functions:
 * `const_idxs_expr`, `const_idxs_exprs`, `const_idxs_rules`, `const_idxs_ctors`,
-  `const_idxs_muts`, `const_idxs_of`, and `g_list_has` against `S0.usedRefIdxs`;
+  `const_idxs_muts`, `const_idxs_of`, and `g_list_has` against `BaseSeams.usedRefIdxs`;
 * `Ingress::defn_is_unsafe_ci`, `ctors_unsafe`, `muts_unsafe`, `record_unsafe`, and
   `assert_claimable` against `IxVM.Consistency.InLogic` and `IxVM.Consistency.InertAt`;
 * `run_check`, `run_check_transitive`, `walk_refs_transitive`, `IxVMCompat::check_owned`,
@@ -34,8 +34,8 @@ set_option linter.unnecessarySimpa false
 /-! ## Monotonicity helpers and walked-record invariants -/
 
 theorem checkedAt_mono {cs₁ cs₂ : List (Call F)} {t : Ix.Kernel.RoleTable} {a : _root_.Address}
-    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (hc : S0.CheckedAt cs₁ t a) :
-    S0.CheckedAt cs₂ t a := by
+    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (hc : BaseSeams.CheckedAt cs₁ t a) :
+    BaseSeams.CheckedAt cs₂ t a := by
   obtain ⟨cl, hmem, hname, rc, v, ap, lim, hargs, hrc, had⟩ := hc
   exact ⟨cl, hsub cl hmem, hname, rc, v, ap, lim, hargs, hrc, had⟩
 
@@ -47,8 +47,8 @@ def CheckedAtFull (calls : List (Call F)) (bAddr : _root_.Address)
     (cs_load cs_chk : List (Call F)),
     RCFullRep t bAddr lim h_pre rc ∧
     RCFullRep t bAddr lim m_chk rc ∧
-    S0.addr h_pre ap a ∧
-    S0.addr m_chk ap a ∧
+    BaseSeams.addr h_pre ap a ∧
+    BaseSeams.addr m_chk ap a ∧
     ObsFn Obs.W "Ingress::get_ci" [ap] h_pre ptr m_chk cs_load ∧
     (⟨"Ingress::get_ci", [ap], h_pre⟩ : Call F) ∈ calls ∧
     (∀ cl ∈ cs_load, cl ∈ calls) ∧
@@ -60,7 +60,7 @@ def CheckedAtFull (calls : List (Call F)) (bAddr : _root_.Address)
 theorem CheckedAtFull.toCheckedAt {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {a : _root_.Address}
     (hc : CheckedAtFull calls bAddr t a) :
-    S0.CheckedAt calls t a := by
+    BaseSeams.CheckedAt calls t a := by
   obtain ⟨lim, _, m_chk, _, rc, ap, _, v, _, _, _,
     _, hrc_m, _, ha_m, _, _, _, _, _, hmem_chk, _⟩ := hc
   exact ⟨⟨"KernelCheck::check_const", [rc, v, ap], m_chk⟩, hmem_chk, rfl,
@@ -85,7 +85,7 @@ def MutsMemberCheckedAtFull (calls : List (Call F)) (bAddr : _root_.Address)
     (rc x_members x_block ap ptr v r_chk : SourceValue F)
     (cs_pa cs_load cs_chk : List (Call F)),
     Specs.Callees.MembersRep h_pa ms.toList x_members ∧
-    S0.addr h_pa x_block addr ∧
+    BaseSeams.addr h_pa x_block addr ∧
     ObsFn Obs.W "Ingress::projection_addr" [x_members, x_block, .field (k : F)] h_pa ap h_pre cs_pa ∧
     (⟨"Ingress::projection_addr", [x_members, x_block, .field (k : F)], h_pa⟩ : Call F) ∈ calls ∧
     (∀ cl ∈ cs_pa, cl ∈ calls) ∧
@@ -122,19 +122,19 @@ theorem MutsMemberCheckedAtFull.toCheckedAtFull
     (hpa : ∀ (h_pa h_pre : Heap F) (x_members x_block ap : SourceValue F)
         (cs_pa : List (Call F)),
       Specs.Callees.MembersRep h_pa ms.toList x_members →
-      S0.addr h_pa x_block addr →
+      BaseSeams.addr h_pa x_block addr →
       ObsFn Obs.W "Ingress::projection_addr" [x_members, x_block, .field (k : F)]
         h_pa ap h_pre cs_pa →
       (⟨"Ingress::projection_addr", [x_members, x_block, .field (k : F)], h_pa⟩ : Call F) ∈ calls →
       (∀ cl ∈ cs_pa, cl ∈ calls) →
-      S0.addr h_pre ap a_proj) :
+      BaseSeams.addr h_pre ap a_proj) :
     CheckedAtFull calls bAddr t a_proj := by
   obtain ⟨lim, h_pa, h_pre, m_chk, h'_chk, rc, x_members, x_block, ap, ptr, v, r_chk,
     cs_pa, cs_load, cs_chk, hmem, hblk, ev_pa, hcl_pa, hsub_pa,
     hrc_pre, hrc_m, ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := hm
   have ha_pre := hpa h_pa h_pre x_members x_block ap cs_pa hmem hblk ev_pa hcl_pa hsub_pa
   exact ⟨lim, h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
-    hrc_pre, hrc_m, ha_pre, S0.addr_mono ev_ld.heap_extends ha_pre,
+    hrc_pre, hrc_m, ha_pre, BaseSeams.addr_mono ev_ld.heap_extends ha_pre,
     ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩
 
 /-- A record loaded, hashed, decoded, and checked (either directly via `run_check` or, for a mutual
@@ -205,13 +205,13 @@ theorem walkedRec_mono_depth_le {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Ad
   omega
 
 /-- Depth-decreasing edge-closure of a list of walked records under owner blocks and
-`S0.usedRefIdxs`. -/
+`BaseSeams.usedRefIdxs`. -/
 def RecsClosed {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
     (recs : List (WalkedRec calls bAddr t)) : Prop :=
   ∀ r ∈ recs,
     (Ix.Cert.ownerOf r.addr r.c ≠ r.addr →
       ∃ r' ∈ recs, r'.addr = Ix.Cert.ownerOf r.addr r.c ∧ r'.depth < r.depth) ∧
-    (∀ i ∈ S0.usedRefIdxs r.c, ∀ b, r.c.refs[i]? = some b →
+    (∀ i ∈ BaseSeams.usedRefIdxs r.c, ∀ b, r.c.refs[i]? = some b →
       ∃ r' ∈ recs, r'.addr = b ∧ r'.depth < r.depth)
 
 theorem RecsClosed.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Address}
@@ -253,7 +253,7 @@ theorem RecsClosed.cons {calls : List (Call F)} {bAddr : _root_.Address}
     (hrest : RecsClosed rest)
     (hown : Ix.Cert.ownerOf r₀.addr r₀.c ≠ r₀.addr →
       ∃ r' ∈ r₀ :: rest, r'.addr = Ix.Cert.ownerOf r₀.addr r₀.c ∧ r'.depth < r₀.depth)
-    (hrefs : ∀ i ∈ S0.usedRefIdxs r₀.c, ∀ b, r₀.c.refs[i]? = some b →
+    (hrefs : ∀ i ∈ BaseSeams.usedRefIdxs r₀.c, ∀ b, r₀.c.refs[i]? = some b →
       ∃ r' ∈ r₀ :: rest, r'.addr = b ∧ r'.depth < r₀.depth) :
     RecsClosed (r₀ :: rest) := by
   intro r hr
@@ -550,7 +550,7 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
       Deserialize.RepExpr h e x_e →
       ObsFn Obs.W "KernelClaim::const_idxs_expr" [x_e] h r h' calls →
       Heap.Extends h h' ∧
-      RepSortedIdx h' (S0.exprRefIdxs e) r := by
+      RepSortedIdx h' (BaseSeams.exprRefIdxs e) r := by
   induction e with
   | sort idx =>
     intro h h' x_e r calls rep ev
@@ -798,7 +798,7 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         obtain ⟨ext4, h23⟩ := sorted_merge_uniq_spec ev414 (h2.mono ext3) h3
         obtain ⟨ext5, h123⟩ :=
           sorted_merge_uniq_spec ev380 (h1.mono (ext2.trans (ext3.trans ext4))) h23
-        simp only [S0.exprRefIdxs, List.append_assoc]
+        simp only [BaseSeams.exprRefIdxs, List.append_assoc]
         exact ⟨ext1.trans (ext2.trans (ext3.trans (ext4.trans ext5))), h123⟩
       · rw [Lib.load_enum_cell cell] at ld12
         injection ld12 with hv
@@ -823,7 +823,7 @@ theorem const_idxs_exprs_spec (es : List Ixon.Expr) :
       RepList Obs.Names.«Lists::Node<&Ixon::Expr>» Deserialize.RepExpr h es x_es →
       ObsFn Obs.W "KernelClaim::const_idxs_exprs" [x_es] h r h' calls →
       Heap.Extends h h' ∧
-      RepSortedIdx h' (es.flatMap S0.exprRefIdxs) r := by
+      RepSortedIdx h' (es.flatMap BaseSeams.exprRefIdxs) r := by
   induction es with
   | nil =>
     intro h h' x_es r calls rep ev
@@ -851,7 +851,7 @@ theorem const_idxs_rules_spec (rs : List Ixon.RecursorRule) :
       RepList Obs.Names.«Lists::Node<Ixon::RecursorRule>» RepRecursorRule h rs x_rs →
       ObsFn Obs.W "KernelClaim::const_idxs_rules" [x_rs] h r h' calls →
       Heap.Extends h h' ∧
-      RepSortedIdx h' (rs.flatMap fun rl => S0.exprRefIdxs rl.rhs) r := by
+      RepSortedIdx h' (rs.flatMap fun rl => BaseSeams.exprRefIdxs rl.rhs) r := by
   induction rs with
   | nil =>
     intro h h' x_rs r calls rep ev
@@ -884,7 +884,7 @@ theorem const_idxs_ctors_spec (cs : List Ixon.Constructor) :
       RepList Obs.Names.«Lists::Node<Ixon::Constructor>» RepConstructor h cs x_cs →
       ObsFn Obs.W "KernelClaim::const_idxs_ctors" [x_cs] h r h' calls →
       Heap.Extends h h' ∧
-      RepSortedIdx h' (cs.flatMap fun c => S0.exprRefIdxs c.typ) r := by
+      RepSortedIdx h' (cs.flatMap fun c => BaseSeams.exprRefIdxs c.typ) r := by
   induction cs with
   | nil =>
     intro h h' x_cs r calls rep ev
@@ -918,7 +918,7 @@ theorem const_idxs_muts_spec (ms : List Ixon.MutConst) :
       RepList Obs.Names.«Lists::Node<Ixon::MutConst>» RepMutConst h ms x_ms →
       ObsFn Obs.W "KernelClaim::const_idxs_muts" [x_ms] h r h' calls →
       Heap.Extends h h' ∧
-      RepSortedIdx h' (ms.flatMap S0.mutRefIdxs) r := by
+      RepSortedIdx h' (ms.flatMap BaseSeams.mutRefIdxs) r := by
   induction ms with
   | nil =>
     intro h h' x_ms r calls rep ev
@@ -964,7 +964,7 @@ theorem const_idxs_muts_spec (ms : List Ixon.MutConst) :
         obtain ⟨ext4, hrest_out⟩ :=
           ih (repList_heapMono₂ _ repMutConst_heapMono₂ (ext1.trans (ext2.trans ext3)) hrest) ev190
         obtain ⟨ext5, hcat⟩ := sorted_merge_uniq_spec ev122 (h12.mono ext4) hrest_out
-        simpa only [List.flatMap_cons, S0.mutRefIdxs] using
+        simpa only [List.flatMap_cons, BaseSeams.mutRefIdxs] using
           ⟨ext1.trans (ext2.trans (ext3.trans (ext4.trans ext5))), hcat⟩
     · obtain ⟨mc', rest', heq, hmc, hrest⟩ := Lib.rep_cons_of_load rep ld12
       injection heq with he1 he2
@@ -989,7 +989,7 @@ theorem const_idxs_muts_spec (ms : List Ixon.MutConst) :
         obtain ⟨ext4, hrest_out⟩ :=
           ih (repList_heapMono₂ _ repMutConst_heapMono₂ (ext1.trans (ext2.trans ext3)) hrest) ev336
         obtain ⟨ext5, hcat⟩ := sorted_merge_uniq_spec ev268 (h12.mono ext4) hrest_out
-        simpa only [List.flatMap_cons, S0.mutRefIdxs] using
+        simpa only [List.flatMap_cons, BaseSeams.mutRefIdxs] using
           ⟨ext1.trans (ext2.trans (ext3.trans (ext4.trans ext5))), hcat⟩
     · obtain ⟨mc', rest', heq, hmc, hrest⟩ := Lib.rep_cons_of_load rep ld12
       injection heq with he1 he2
@@ -1014,7 +1014,7 @@ theorem const_idxs_muts_spec (ms : List Ixon.MutConst) :
         obtain ⟨ext4, hrest_out⟩ :=
           ih (repList_heapMono₂ _ repMutConst_heapMono₂ (ext1.trans (ext2.trans ext3)) hrest) ev500
         obtain ⟨ext5, hcat⟩ := sorted_merge_uniq_spec ev432 (h12.mono ext4) hrest_out
-        simpa only [List.flatMap_cons, S0.mutRefIdxs] using
+        simpa only [List.flatMap_cons, BaseSeams.mutRefIdxs] using
           ⟨ext1.trans (ext2.trans (ext3.trans (ext4.trans ext5))), hcat⟩
 
 theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceValue F}
@@ -1022,7 +1022,7 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
     (rep : RepConstant h c x_c)
     (ev : ObsFn Obs.W "KernelClaim::const_idxs_of" [x_c] h r h' calls) :
     Heap.Extends h h' ∧
-    RepSortedIdx h' (S0.usedRefIdxs c) r := by
+    RepSortedIdx h' (BaseSeams.usedRefIdxs c) r := by
   obtain ⟨infoVal, sharingPtr, refsPtr, univsPtr, bindersPtr, rfl, hinfo, hsh, _, _, _⟩ := rep
   have hsh' : RepList Obs.Names.«Lists::Node<&Ixon::Expr>» Deserialize.RepExpr h
       c.sharing.toList sharingPtr := by
@@ -1062,7 +1062,7 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
       obtain ⟨ext3, h12⟩ := sorted_merge_uniq_spec ev164 (h1.mono ext2) h2
       obtain ⟨ext4, hcat⟩ :=
         sorted_merge_uniq_spec ev143 (hS.mono (ext1.trans (ext2.trans ext3))) h12
-      simpa only [S0.usedRefIdxs, hc] using
+      simpa only [BaseSeams.usedRefIdxs, hc] using
         ⟨extS.trans (ext1.trans (ext2.trans (ext3.trans ext4))), hcat⟩
     all_goals (obtain ⟨_, hv, _⟩ := hinfo; simp at hv)
   · injection hv15 with _ _ hargs
@@ -1087,7 +1087,7 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
       obtain ⟨ext3, h12⟩ := sorted_merge_uniq_spec ev315 (h1.mono ext2) h2
       obtain ⟨ext4, hcat⟩ :=
         sorted_merge_uniq_spec ev294 (hS.mono (ext1.trans (ext2.trans ext3))) h12
-      simpa only [S0.usedRefIdxs, hc] using
+      simpa only [BaseSeams.usedRefIdxs, hc] using
         ⟨extS.trans (ext1.trans (ext2.trans (ext3.trans ext4))), hcat⟩
     all_goals (obtain ⟨_, hv, _⟩ := hinfo; simp at hv)
   · injection hv15 with _ _ hargs
@@ -1106,7 +1106,7 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
       obtain ⟨extS, hS⟩ := const_idxs_exprs_spec c.sharing.toList hsh' ev58
       obtain ⟨ext1, h1⟩ := const_idxs_expr_spec a.typ (htyp.mono extS) ev431
       obtain ⟨ext2, hcat⟩ := sorted_merge_uniq_spec ev410 (hS.mono ext1) h1
-      simpa only [S0.usedRefIdxs, hc] using ⟨extS.trans (ext1.trans ext2), hcat⟩
+      simpa only [BaseSeams.usedRefIdxs, hc] using ⟨extS.trans (ext1.trans ext2), hcat⟩
     all_goals (obtain ⟨_, hv, _⟩ := hinfo; simp at hv)
   · injection hv15 with _ _ hargs
     simp only [List.cons.injEq] at hargs
@@ -1124,7 +1124,7 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
       obtain ⟨extS, hS⟩ := const_idxs_exprs_spec c.sharing.toList hsh' ev58
       obtain ⟨ext1, h1⟩ := const_idxs_expr_spec q.typ (htyp.mono extS) ev513
       obtain ⟨ext2, hcat⟩ := sorted_merge_uniq_spec ev492 (hS.mono ext1) h1
-      simpa only [S0.usedRefIdxs, hc] using ⟨extS.trans (ext1.trans ext2), hcat⟩
+      simpa only [BaseSeams.usedRefIdxs, hc] using ⟨extS.trans (ext1.trans ext2), hcat⟩
     all_goals (obtain ⟨_, hv, _⟩ := hinfo; simp at hv)
   · injection hv15 with _ _ hargs
     simp only [List.cons.injEq] at hargs
@@ -1140,7 +1140,7 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
       obtain ⟨ext1, h1⟩ :=
         const_idxs_muts_spec ms.toList (repList_heapMono₂ _ repMutConst_heapMono₂ extS hms) ev562
       obtain ⟨ext2, hcat⟩ := sorted_merge_uniq_spec ev541 (hS.mono ext1) h1
-      simpa only [S0.usedRefIdxs, hc] using ⟨extS.trans (ext1.trans ext2), hcat⟩
+      simpa only [BaseSeams.usedRefIdxs, hc] using ⟨extS.trans (ext1.trans ext2), hcat⟩
     all_goals (obtain ⟨_, hv, _⟩ := hinfo; simp at hv)
   · injection hv15 with _ _ hargs
     simp only [List.cons.injEq] at hargs
@@ -1152,7 +1152,7 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
     case axio _ => obtain ⟨_, hv, _⟩ := hinfo; exact absurd hv (hne442 [_] rfl)
     case quot _ => obtain ⟨_, hv, _⟩ := hinfo; exact absurd hv (hne524 [_] rfl)
     case muts _ => obtain ⟨_, hv, _⟩ := hinfo; exact absurd hv (hne572 [_] rfl)
-    all_goals simpa only [S0.usedRefIdxs, hc, List.append_nil] using ⟨extS, hS⟩
+    all_goals simpa only [BaseSeams.usedRefIdxs, hc, List.append_nil] using ⟨extS, hS⟩
 
 theorem g_list_has_spec (idxs : List Nat) {i : Nat} (hi : i < 72057594037927936) :
     ∀ {h h' : Heap F} {x_xs r : SourceValue F} {calls : List (Call F)},
@@ -1362,7 +1362,7 @@ theorem muts_unsafe_zero_spec (ms : List Ixon.MutConst) :
 
 theorem record_unsafe_zero_spec {x_addr : SourceValue F} {addr : _root_.Address}
     {h h' : Heap F} {calls : List (Call F)}
-    (ha : S0.addr h x_addr addr)
+    (ha : BaseSeams.addr h x_addr addr)
     (ev : ObsFn Obs.W "KernelClaim::record_unsafe" [x_addr] h (.field 0) h' calls) :
     Heap.Extends h h' ∧
     ∃ rawBytes c,
@@ -1468,7 +1468,7 @@ theorem assert_claimable_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     {x_rc x_addr r : SourceValue F} {addr : _root_.Address}
     {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCFullRep t bAddr lim h x_rc)
-    (ha : S0.addr h x_addr addr)
+    (ha : BaseSeams.addr h x_addr addr)
     (ev : ObsFn Obs.W "KernelClaim::assert_claimable" [x_rc, x_addr] h r h' calls) :
     Heap.Extends h h' ∧ ClaimableSeed calls t addr := by
   rcases Obs.«KernelClaim::assert_claimable».obs ev with
@@ -1497,12 +1497,12 @@ theorem assert_claimable_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
       simp only [List.cons.injEq, and_true] at hpargs
       rw [← hpargs.2] at hblk_addr
       obtain ⟨ext2, raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext1 ha) ev149
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext1 ha) ev149
       obtain ⟨ext3, rawB, cb, hhB, hbB, hdB, hlB⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext2 hblk_addr) ev189
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext2 hblk_addr) ev189
       obtain ⟨rfl, hn_inert⟩ :=
         role_is_inert_zero_spec (hrc.mono (ext1.trans (ext2.trans ext3)))
-          (S0.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev229
+          (BaseSeams.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev229
       refine ⟨ext1.trans (ext2.trans ext3), hn_inert,
         ⟨raw₁, c₁, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₁, hb₁, hd₁, hl₁⟩,
         ⟨raw₀, c₀, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₀, hb₀, hd₀,
@@ -1524,12 +1524,12 @@ theorem assert_claimable_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
       simp only [List.cons.injEq, and_true] at hpargs
       rw [← hpargs.2] at hblk_addr
       obtain ⟨ext2, raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext1 ha) ev323
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext1 ha) ev323
       obtain ⟨ext3, rawB, cb, hhB, hbB, hdB, hlB⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext2 hblk_addr) ev363
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext2 hblk_addr) ev363
       obtain ⟨rfl, hn_inert⟩ :=
         role_is_inert_zero_spec (hrc.mono (ext1.trans (ext2.trans ext3)))
-          (S0.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev403
+          (BaseSeams.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev403
       refine ⟨ext1.trans (ext2.trans ext3), hn_inert,
         ⟨raw₁, c₁, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₁, hb₁, hd₁, hl₁⟩,
         ⟨raw₀, c₀, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₀, hb₀, hd₀,
@@ -1551,12 +1551,12 @@ theorem assert_claimable_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
       simp only [List.cons.injEq, and_true] at hpargs
       rw [← hpargs.2.2] at hblk_addr
       obtain ⟨ext2, raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext1 ha) ev503
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext1 ha) ev503
       obtain ⟨ext3, rawB, cb, hhB, hbB, hdB, hlB⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext2 hblk_addr) ev543
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext2 hblk_addr) ev543
       obtain ⟨rfl, hn_inert⟩ :=
         role_is_inert_zero_spec (hrc.mono (ext1.trans (ext2.trans ext3)))
-          (S0.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev583
+          (BaseSeams.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev583
       refine ⟨ext1.trans (ext2.trans ext3), hn_inert,
         ⟨raw₁, c₁, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₁, hb₁, hd₁, hl₁⟩,
         ⟨raw₀, c₀, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₀, hb₀, hd₀,
@@ -1578,12 +1578,12 @@ theorem assert_claimable_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
       simp only [List.cons.injEq, and_true] at hpargs
       rw [← hpargs.2] at hblk_addr
       obtain ⟨ext2, raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext1 ha) ev677
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext1 ha) ev677
       obtain ⟨ext3, rawB, cb, hhB, hbB, hdB, hlB⟩ :=
-        record_unsafe_zero_spec (S0.addr_mono ext2 hblk_addr) ev717
+        record_unsafe_zero_spec (BaseSeams.addr_mono ext2 hblk_addr) ev717
       obtain ⟨rfl, hn_inert⟩ :=
         role_is_inert_zero_spec (hrc.mono (ext1.trans (ext2.trans ext3)))
-          (S0.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev757
+          (BaseSeams.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev757
       refine ⟨ext1.trans (ext2.trans ext3), hn_inert,
         ⟨raw₁, c₁, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₁, hb₁, hd₁, hl₁⟩,
         ⟨raw₀, c₀, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₀, hb₀, hd₀,
@@ -1603,11 +1603,11 @@ theorem assert_claimable_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
       case rPrj _ => obtain ⟨_, hv', _⟩ := hinfo; exact absurd hv' (hne787 [_] rfl)
       all_goals simp [Ix.Cert.ownerOf, hc_info]
     obtain ⟨ext2, raw₁, c₁, hh₁, hb₁, hd₁, hl₁⟩ :=
-      record_unsafe_zero_spec (S0.addr_mono ext1 ha) ev816
+      record_unsafe_zero_spec (BaseSeams.addr_mono ext1 ha) ev816
     have ext3 := ev856.heap_extends
     obtain ⟨rfl, hn_inert⟩ :=
       role_is_inert_zero_spec (hrc.mono (ext1.trans (ext2.trans ext3)))
-        (S0.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev896
+        (BaseSeams.addr_mono (ext1.trans (ext2.trans ext3)) ha) ev896
     exact ⟨ext1.trans (ext2.trans ext3), hn_inert,
       ⟨raw₁, c₁, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₁, hb₁, hd₁, hl₁⟩,
       ⟨raw₀, c₀, hashed_mono (fun cl hcl => by rw [hc]; simp [hcl]) hh₀, hb₀, hd₀, .inl hown_self⟩⟩
@@ -1618,7 +1618,7 @@ theorem run_check_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim :
     {x_rc x_addr r : SourceValue F} {addr : _root_.Address}
     {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCFullRep t bAddr lim h x_rc)
-    (ha : S0.addr h x_addr addr)
+    (ha : BaseSeams.addr h x_addr addr)
     (ev : ObsFn Obs.W "KernelClaim::run_check" [x_rc, x_addr] h r h' calls) :
     Heap.Extends h h' ∧ CheckedAtFull calls bAddr t addr := by
   obtain ⟨v1, m2, p9, cs15, cs29, ev17, ld11, ev31, hc56⟩ := Obs.«KernelClaim::run_check».obs ev
@@ -1626,7 +1626,7 @@ theorem run_check_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim :
   have ext2 := ev31.heap_extends
   refine ⟨ext1.trans ext2,
     lim, h, m2, h', x_rc, x_addr, p9, v1, r, cs15, cs29,
-    hrc, hrc.mono ext1, ha, S0.addr_mono ext1 ha,
+    hrc, hrc.mono ext1, ha, BaseSeams.addr_mono ext1 ha,
     ev17, by rw [hc56]; simp, fun cl hcl => by rw [hc56]; simp [hcl],
     ld11,
     ev31, by rw [hc56]; simp, fun cl hcl => by rw [hc56]; simp [hcl]⟩
@@ -1654,7 +1654,7 @@ theorem check_muts_member_at_spec {t : Ix.Kernel.RoleTable} {bAddr addr : _root_
     {x_rc x_block_addr x_all_members x_m r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCFullRep t bAddr lim h x_rc)
-    (ha : S0.addr h x_block_addr addr)
+    (ha : BaseSeams.addr h x_block_addr addr)
     (hmems : Specs.Callees.MembersRep h ms.toList x_all_members)
     (ev : ObsFn Obs.W "KernelClaim::check_muts_member_at"
       [x_rc, x_block_addr, x_all_members, x_m, .field (k : F)] h r h' calls) :
@@ -1679,7 +1679,7 @@ private theorem check_muts_all_aux {t : Ix.Kernel.RoleTable} {bAddr addr : _root
     ∀ {lim pos : Nat} {x_rc x_block_addr x_all_members x_cur r : SourceValue F}
       {h h' : Heap F} {calls : List (Call F)},
       RCFullRep t bAddr lim h x_rc →
-      S0.addr h x_block_addr addr →
+      BaseSeams.addr h x_block_addr addr →
       Specs.Callees.MembersRep h ms.toList x_all_members →
       Specs.Callees.MembersRep h cur x_cur →
       ObsFn Obs.W "KernelClaim::check_muts_all"
@@ -1709,7 +1709,7 @@ private theorem check_muts_all_aux {t : Ix.Kernel.RoleTable} {bAddr addr : _root
       have hv_inc : ((pos : F) + 1) = ((pos + 1 : Nat) : F) := by push_cast; rfl
       rw [hv_inc] at ev101
       obtain ⟨ext2, hchk_tl⟩ :=
-        ih (hrc.mono ext1) (S0.addr_mono ext1 ha)
+        ih (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha)
           (repList_heapMono₂ _ mutShape_heapMono₂ ext1 hall)
           (repList_heapMono₂ _ mutShape_heapMono₂ ext1 hrest)
           ev101
@@ -1731,7 +1731,7 @@ theorem check_muts_all_spec {t : Ix.Kernel.RoleTable} {bAddr addr : _root_.Addre
     {x_rc x_block_addr x_members r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCFullRep t bAddr lim h x_rc)
-    (ha : S0.addr h x_block_addr addr)
+    (ha : BaseSeams.addr h x_block_addr addr)
     (hmems : Specs.Callees.MembersRep h ms.toList x_members)
     (ev : ObsFn Obs.W "KernelClaim::check_muts_all"
       [x_rc, x_block_addr, x_members, x_members, .field 0] h r h' calls) :
@@ -1785,7 +1785,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
          {h h' : Heap F} {calls : List (Call F)},
          calls.length ≤ fuel →
          RCFullRep t bAddr lim h x_rc →
-         S0.addr h x_addr addr →
+         BaseSeams.addr h x_addr addr →
          ObsFn Obs.W "KernelClaim::run_check_transitive" [x_rc, x_addr] h r h' calls →
          Heap.Extends h h' ∧
          ∃ recs : List (WalkedRec calls bAddr t),
@@ -1844,7 +1844,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             simp only [List.cons.injEq, and_true] at hargs_m
             rw [← hargs_m] at hms_rep
             obtain ⟨ext_muts, hchk_muts⟩ :=
-              check_muts_all_spec (hrc.mono ext1) (S0.addr_mono ext1 ha)
+              check_muts_all_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha)
                 (membersRep_of_repMutConstList hms_rep) ev93
             have hsub_m : ∀ cl ∈ cs91, cl ∈ calls := fun cl hcl => by
               rw [hc636, hc133]; simp [hcl]
@@ -1863,7 +1863,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2] at hblk_addr
-            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev186
+            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev186
             have hlt_calls : cs206.length < calls.length := by
               rw [hc636, hc225]
               simp only [List.length_cons, List.length_append]
@@ -1871,7 +1871,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             have hlt_sub : cs206.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
             obtain ⟨ext_blk, recs_b, hmem_b, hcl_b, hdep_b⟩ :=
               (ih cs206.length hlt_sub).1 (Nat.le_refl _)
-                (hrc.mono (ext1.trans ext_rc)) (S0.addr_mono ext_rc hblk_addr) ev208
+                (hrc.mono (ext1.trans ext_rc)) (BaseSeams.addr_mono ext_rc hblk_addr) ev208
             have hsub_b : ∀ cl ∈ cs206, cl ∈ calls := fun cl hcl => by
               rw [hc636, hc225]; simp [hcl]
             refine ⟨ext_rc.trans ext_blk,
@@ -1892,7 +1892,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2] at hblk_addr
-            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev279
+            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev279
             have hlt_calls : cs299.length < calls.length := by
               rw [hc636, hc318]
               simp only [List.length_cons, List.length_append]
@@ -1900,7 +1900,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             have hlt_sub : cs299.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
             obtain ⟨ext_blk, recs_b, hmem_b, hcl_b, hdep_b⟩ :=
               (ih cs299.length hlt_sub).1 (Nat.le_refl _)
-                (hrc.mono (ext1.trans ext_rc)) (S0.addr_mono ext_rc hblk_addr) ev301
+                (hrc.mono (ext1.trans ext_rc)) (BaseSeams.addr_mono ext_rc hblk_addr) ev301
             have hsub_b : ∀ cl ∈ cs299, cl ∈ calls := fun cl hcl => by
               rw [hc636, hc318]; simp [hcl]
             refine ⟨ext_rc.trans ext_blk,
@@ -1921,7 +1921,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2.2] at hblk_addr
-            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev378
+            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev378
             have hlt_calls : cs398.length < calls.length := by
               rw [hc636, hc417]
               simp only [List.length_cons, List.length_append]
@@ -1929,7 +1929,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             have hlt_sub : cs398.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
             obtain ⟨ext_blk, recs_b, hmem_b, hcl_b, hdep_b⟩ :=
               (ih cs398.length hlt_sub).1 (Nat.le_refl _)
-                (hrc.mono (ext1.trans ext_rc)) (S0.addr_mono ext_rc hblk_addr) ev400
+                (hrc.mono (ext1.trans ext_rc)) (BaseSeams.addr_mono ext_rc hblk_addr) ev400
             have hsub_b : ∀ cl ∈ cs398, cl ∈ calls := fun cl hcl => by
               rw [hc636, hc417]; simp [hcl]
             refine ⟨ext_rc.trans ext_blk,
@@ -1950,7 +1950,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2] at hblk_addr
-            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev471
+            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev471
             have hlt_calls : cs491.length < calls.length := by
               rw [hc636, hc510]
               simp only [List.length_cons, List.length_append]
@@ -1958,7 +1958,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             have hlt_sub : cs491.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
             obtain ⟨ext_blk, recs_b, hmem_b, hcl_b, hdep_b⟩ :=
               (ih cs491.length hlt_sub).1 (Nat.le_refl _)
-                (hrc.mono (ext1.trans ext_rc)) (S0.addr_mono ext_rc hblk_addr) ev493
+                (hrc.mono (ext1.trans ext_rc)) (BaseSeams.addr_mono ext_rc hblk_addr) ev493
             have hsub_b : ∀ cl ∈ cs491, cl ∈ calls := fun cl hcl => by
               rw [hc636, hc510]; simp [hcl]
             refine ⟨ext_rc.trans ext_blk,
@@ -1969,7 +1969,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             rw [map_addr_walkedRec_mono]
             simpa [Ix.Cert.ownerOf, hc_i] using hmem_b
           all_goals (obtain ⟨_, hv', _⟩ := hinfo; simp at hv')
-        · obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev521
+        · obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev521
           have hown_self : Ix.Cert.ownerOf addr c = addr := by
             cases hc_i : c.info <;> rw [hc_i] at hinfo
             case muts _ => obtain ⟨_, hv', _⟩ := hinfo; exact absurd hv' (hne134 [_] rfl)
@@ -2076,7 +2076,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             have hlt_sub : cs145.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
             obtain ⟨ext_sub, recs_s, hmem_s, hcl_s, hdep_s⟩ :=
               (ih cs145.length hlt_sub).1 (Nat.le_refl _) hrc'
-                (S0.addr_mono (ext_ra.trans (ext_nb.trans ext_wc)) ha_head) ev147
+                (BaseSeams.addr_mono (ext_ra.trans (ext_nb.trans ext_wc)) ha_head) ev147
             have hsub_s : ∀ cl ∈ cs145, cl ∈ calls := fun cl hcl => by
               rw [hc259, hc185]; simp [hcl]
             refine ⟨ext_ra.trans (ext_nb.trans (ext_wc.trans ext_sub)),
@@ -2133,7 +2133,7 @@ theorem run_check_transitive_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
     {x_rc x_addr r : SourceValue F} {addr : _root_.Address}
     {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCFullRep t bAddr lim h x_rc)
-    (ha : S0.addr h x_addr addr)
+    (ha : BaseSeams.addr h x_addr addr)
     (ev : ObsFn Obs.W "KernelClaim::run_check_transitive" [x_rc, x_addr] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ recs : List (WalkedRec calls bAddr t),
@@ -2145,15 +2145,15 @@ theorem run_check_transitive_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
 /-! ## `check_owned`, `env_walk_all`, `env_walk_refs_all`, and `walk_leaves_owned` -/
 
 private theorem addrVal_of_load {h : Heap F} {p v : SourceValue F} {a : _root_.Address}
-    (ha : S0.addr h p a) (hl : loadValue h p = .ok v) :
-    ∃ d : Bytes.Address, v = L1.digestV d ∧ ixAddr d = a := by
+    (ha : BaseSeams.addr h p a) (hl : loadValue h p = .ok v) :
+    ∃ d : Bytes.Address, v = Ingress.digestV d ∧ ixAddr d = a := by
   obtain ⟨d, hd, hix⟩ := ha
-  exact ⟨d, L1.load_repAddressRef hd hl, hix⟩
+  exact ⟨d, Ingress.load_repAddressRef hd hl, hix⟩
 
 private theorem addr_of_snoc {h : Heap F} {d : Bytes.Address} {a : _root_.Address}
     (hix : ixAddr d = a) :
-    S0.addr (h ++ [L1.digestV d]) (.ptr (L1.digestV d).type h.length) a :=
-  ⟨d, repAddressRef_of_load_digestV (L1.loadValue_snoc h (L1.digestV d)), hix⟩
+    BaseSeams.addr (h ++ [Ingress.digestV d]) (.ptr (Ingress.digestV d).type h.length) a :=
+  ⟨d, repAddressRef_of_load_digestV (Ingress.loadValue_snoc h (Ingress.digestV d)), hix⟩
 
 private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
     {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
@@ -2166,7 +2166,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
          ixAddr d_b = b.address →
          ixAddr d_a = addr →
          ObsFn Obs.W "IxVMCompat::check_owned"
-           [L1.digestV d_b, .field 3, L1.digestV d_a] h r h' calls →
+           [Ingress.digestV d_b, .field 3, Ingress.digestV d_a] h r h' calls →
          V.HashedCollision extra calls ∨
          (Heap.Extends h h' ∧
           ClaimableSeed calls t addr ∧
@@ -2178,7 +2178,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
          {h h' : Heap F} {calls : List (Call F)},
          calls.length ≤ fuel →
          RCFullRep t b.address lim h x_rc →
-         S0.addr h x_addr addr →
+         BaseSeams.addr h x_addr addr →
          ObsFn Obs.W "KernelClaim::env_walk_all" [x_rc, x_addr] h r h' calls →
          V.HashedCollision extra calls ∨
          (Heap.Extends h h' ∧
@@ -2209,14 +2209,14 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
     · intro d_b d_a addr r h h' calls hfuel hix_b hix_a ev
       obtain ⟨v1, m2, cs12, m18, v35, m36, cs46, m59, cs72, m85,
         rfl, ev14, rfl, ev48, rfl, ev74, hc95⟩ := Obs.«IxVMCompat::check_owned».obs ev
-      have ext_s1 := Heap.Extends.snoc h (L1.digestV d_b)
+      have ext_s1 := Heap.Extends.snoc h (Ingress.digestV d_b)
       rcases role_ctx_for_validator_spec (V := V) hadm hb_extra (addr_of_snoc hix_b) ev14 with
         hcoll | ⟨ext_rc, hrc⟩
       · exact .inl (hashedCollision_mono (fun cl hcl => by rw [hc95]; simp [hcl]) hcoll)
-      have ext_s2 := Heap.Extends.snoc m2 (L1.digestV d_a)
+      have ext_s2 := Heap.Extends.snoc m2 (Ingress.digestV d_a)
       obtain ⟨ext_ac, hseed⟩ :=
         assert_claimable_spec (hrc.mono ext_s2) (addr_of_snoc hix_a) ev48
-      have ext_s3 := Heap.Extends.snoc m36 (L1.digestV d_a)
+      have ext_s3 := Heap.Extends.snoc m36 (Ingress.digestV d_a)
       have hlt_ewa_calls : cs72.length < calls.length := by
         rw [hc95]
         simp only [List.length_cons, List.length_append]
@@ -2271,7 +2271,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             simp only [List.cons.injEq, and_true] at hargs_m
             rw [← hargs_m] at hms_rep
             obtain ⟨ext_muts, hchk_muts⟩ :=
-              check_muts_all_spec (hrc.mono ext1) (S0.addr_mono ext1 ha)
+              check_muts_all_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha)
                 (membersRep_of_repMutConstList hms_rep) ev93
             have hsub_m : ∀ cl ∈ cs91, cl ∈ calls := fun cl hcl => by
               rw [hc796, hc133]; simp [hcl]
@@ -2290,11 +2290,11 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2] at hblk_addr
-            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev186
+            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev186
             obtain ⟨rfl, hp_b⟩ := role_ctx_binding_spec (hrc.mono (ext1.trans ext_rc)) ev226
             obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load hp_b ld220
             obtain ⟨rfl, rfl⟩ := role_ctx_validator_spec (hrc.mono (ext1.trans ext_rc)) ev246
-            obtain ⟨d_blk, rfl, hix_blk⟩ := addrVal_of_load (S0.addr_mono ext_rc hblk_addr) ld263
+            obtain ⟨d_blk, rfl, hix_blk⟩ := addrVal_of_load (BaseSeams.addr_mono ext_rc hblk_addr) ld263
             have hlt_calls : cs206.length < calls.length := by
               rw [hc796, hc265]
               simp only [List.length_cons, List.length_append]
@@ -2324,11 +2324,11 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2] at hblk_addr
-            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev319
+            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev319
             obtain ⟨rfl, hp_b⟩ := role_ctx_binding_spec (hrc.mono (ext1.trans ext_rc)) ev359
             obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load hp_b ld353
             obtain ⟨rfl, rfl⟩ := role_ctx_validator_spec (hrc.mono (ext1.trans ext_rc)) ev379
-            obtain ⟨d_blk, rfl, hix_blk⟩ := addrVal_of_load (S0.addr_mono ext_rc hblk_addr) ld396
+            obtain ⟨d_blk, rfl, hix_blk⟩ := addrVal_of_load (BaseSeams.addr_mono ext_rc hblk_addr) ld396
             have hlt_calls : cs339.length < calls.length := by
               rw [hc796, hc398]
               simp only [List.length_cons, List.length_append]
@@ -2358,11 +2358,11 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2.2] at hblk_addr
-            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev458
+            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev458
             obtain ⟨rfl, hp_b⟩ := role_ctx_binding_spec (hrc.mono (ext1.trans ext_rc)) ev498
             obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load hp_b ld492
             obtain ⟨rfl, rfl⟩ := role_ctx_validator_spec (hrc.mono (ext1.trans ext_rc)) ev518
-            obtain ⟨d_blk, rfl, hix_blk⟩ := addrVal_of_load (S0.addr_mono ext_rc hblk_addr) ld535
+            obtain ⟨d_blk, rfl, hix_blk⟩ := addrVal_of_load (BaseSeams.addr_mono ext_rc hblk_addr) ld535
             have hlt_calls : cs478.length < calls.length := by
               rw [hc796, hc537]
               simp only [List.length_cons, List.length_append]
@@ -2392,11 +2392,11 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             injection h1 with _ _ hpargs
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2] at hblk_addr
-            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev591
+            obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev591
             obtain ⟨rfl, hp_b⟩ := role_ctx_binding_spec (hrc.mono (ext1.trans ext_rc)) ev631
             obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load hp_b ld625
             obtain ⟨rfl, rfl⟩ := role_ctx_validator_spec (hrc.mono (ext1.trans ext_rc)) ev651
-            obtain ⟨d_blk, rfl, hix_blk⟩ := addrVal_of_load (S0.addr_mono ext_rc hblk_addr) ld668
+            obtain ⟨d_blk, rfl, hix_blk⟩ := addrVal_of_load (BaseSeams.addr_mono ext_rc hblk_addr) ld668
             have hlt_calls : cs611.length < calls.length := by
               rw [hc796, hc670]
               simp only [List.length_cons, List.length_append]
@@ -2416,7 +2416,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             rw [map_addr_walkedRec_mono]
             simpa [Ix.Cert.ownerOf, hc_i] using hmem_b
           all_goals (obtain ⟨_, hv', _⟩ := hinfo; simp at hv')
-        · obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev681
+        · obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev681
           have hown_self : Ix.Cert.ownerOf addr c = addr := by
             cases hc_i : c.info <;> rw [hc_i] at hinfo
             case muts _ => obtain ⟨_, hv', _⟩ := hinfo; exact absurd hv' (hne134 [_] rfl)
@@ -2532,7 +2532,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             obtain ⟨rfl, rfl⟩ :=
               role_ctx_validator_spec (hrc.mono (ext_ra.trans (ext_nb.trans ext_wc))) ev264
             obtain ⟨d_a, rfl, hix_a⟩ :=
-              addrVal_of_load (S0.addr_mono (ext_ra.trans (ext_nb.trans ext_wc)) ha_head) ld281
+              addrVal_of_load (BaseSeams.addr_mono (ext_ra.trans (ext_nb.trans ext_wc)) ha_head) ld281
             have hlt_calls : cs224.length < calls.length := by
               rw [hc384, hc283]
               simp only [List.length_cons, List.length_append]
@@ -2557,7 +2557,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             obtain ⟨_, rfl⟩ := role_ctx_limit_spec hrc' ev194
             obtain ⟨_, rfl⟩ := role_ctx_limit_spec (hrc.mono (ext_ra.trans (ext_nb.trans ext_wc))) ev208
             obtain ⟨ext_sub, recs_s, hmem_s, hcl_s, hdep_s⟩ :=
-              run_check_transitive_spec hrc' (S0.addr_mono (ext_ra.trans (ext_nb.trans ext_wc)) ha_head) ev293
+              run_check_transitive_spec hrc' (BaseSeams.addr_mono (ext_ra.trans (ext_nb.trans ext_wc)) ha_head) ev293
             have hlt_calls : cs291.length < calls.length := by
               rw [hc384, hc310]
               simp only [List.length_cons, List.length_append]
@@ -2625,7 +2625,7 @@ theorem check_owned_spec {V : View} {extra : List ByteArray}
     (hix_b : ixAddr d_b = b.address)
     (hix_a : ixAddr d_a = addr)
     (ev : ObsFn Obs.W "IxVMCompat::check_owned"
-      [L1.digestV d_b, .field 3, L1.digestV d_a] h r h' calls) :
+      [Ingress.digestV d_b, .field 3, Ingress.digestV d_a] h r h' calls) :
     V.HashedCollision extra calls ∨
     (Heap.Extends h h' ∧
      ClaimableSeed calls t addr ∧
@@ -2673,7 +2673,7 @@ theorem walk_leaves_owned_spec {V : View} {extra : List ByteArray}
       obtain ⟨rfl, hp_b⟩ := role_ctx_binding_spec hrc ev73
       obtain ⟨d_b, rfl, hix_b⟩ := addrVal_of_load hp_b ld67
       obtain ⟨rfl, rfl⟩ := role_ctx_validator_spec hrc ev93
-      have hv58 : v58 = L1.digestV aB := L1.load_repAddressRef ha_ref ld110
+      have hv58 : v58 = Ingress.digestV aB := Ingress.load_repAddressRef ha_ref ld110
       subst hv58
       rcases check_owned_spec (V := V) hadm hb_extra hix_b rfl ev55 with
         hcoll | ⟨ext1, hseed_hd, recs₁, hmem₁, hcl₁, hdep₁⟩

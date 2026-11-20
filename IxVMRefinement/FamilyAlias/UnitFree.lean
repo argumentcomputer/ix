@@ -127,7 +127,7 @@ theorem blockRoute_one {E : Ixon.Env} {B : _root_.Address} {cb : Ixon.Constant}
     {ind : Ixon.Inductive} {ct : Ixon.Constructor} (hrec : recordOf E B = some cb)
     (hm : cb.info = .muts #[.indc ind]) (hct : ind.ctors.toList = [ct]) :
     blockRoute E B = orElse (ctorAnswer (isIndAt E)
-      (L1.blockRecurAddrs B (#[.indc ind] : Array Ixon.MutConst).toList) cb.refs.toList
+      (Ingress.blockRecurAddrs B (#[.indc ind] : Array Ixon.MutConst).toList) cb.refs.toList
       cb.sharing.toList ct) (some false) := by
   have h1 : blockRoute E B = recordRoute E B cb := by
     unfold blockRoute
@@ -140,7 +140,7 @@ theorem blockRoute_one {E : Ixon.Env} {B : _root_.Address} {cb : Ixon.Constant}
   have h3 : mutsRoute E B cb #[.indc ind] = oneRoute E B cb #[.indc ind] := rfl
   have h4 : oneRoute E B cb #[.indc ind] =
       (ind.ctors.toList.map (ctorAnswer (isIndAt E)
-        (L1.blockRecurAddrs B (#[.indc ind] : Array Ixon.MutConst).toList) cb.refs.toList
+        (Ingress.blockRecurAddrs B (#[.indc ind] : Array Ixon.MutConst).toList) cb.refs.toList
         cb.sharing.toList)).foldr orElse (some false) := rfl
   rw [h1, h2, h3, h4, hct]
   try rfl
@@ -253,7 +253,7 @@ theorem modeledCtor_trees {calls : List (Call F)} {c : Core.Ctx} (hg : Core.Good
     (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim) :
     ∀ j < ind.ctors.size, ∃ (ct : Ixon.Constructor) (T Bd : ScanTree),
       ind.ctors[j]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
-      ExprTree cb.refs.toList (L1.blockRecurAddrs B (#[.indc ind] : Array Ixon.MutConst).toList)
+      ExprTree cb.refs.toList (Ingress.blockRecurAddrs B (#[.indc ind] : Array Ixon.MutConst).toList)
         cb.sharing.toList 4294967295 ct.typ T ∧
       T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
       Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
@@ -263,7 +263,7 @@ theorem modeledCtor_trees {calls : List (Call F)} {c : Core.Ctx} (hg : Core.Good
     cs_pa, cs_load, cs_chk, hmem, hblk, ev_pa, -, hsub_pa, -, -, ev_ld, -, hsub_ld, hld,
     ev_chk, -, hsub_chk⟩ := hchk
   obtain ⟨b', hb', hb'B⟩ := hblk
-  obtain ⟨-, -, -, mc, a, hget, ha, hax, -⟩ := L1.projection_addr_hashed_spec hmem hb' ev_pa
+  obtain ⟨-, -, -, mc, a, hget, ha, hax, -⟩ := Ingress.projection_addr_hashed_spec hmem hb' ev_pa
   have hv0 : ZMod.val ((0 : Nat) : F) = 0 := by simp
   rw [hv0] at hget hax
   have hmc : mc = .indc ind := by
@@ -276,7 +276,7 @@ theorem modeledCtor_trees {calls : List (Call F)} {c : Core.Ctx} (hg : Core.Good
   have hg_ld : Core.Good c cs_load := hg.sub hsub_ld
   have hg_chk : Core.Good c cs_chk := hg.sub hsub_chk
   -- the load of the member's projection record
-  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := L1.get_ci_block_trace_spec hg_ld.2 ha ev_ld
+  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := Ingress.get_ci_block_trace_spec hg_ld.2 ha ev_ld
   have hrecA : recordOf c.E (Core.ixAddr a) = some (memberProjection B 0 (.indc ind)) := by
     rw [hax']
     exact hproj
@@ -286,7 +286,7 @@ theorem modeledCtor_trees {calls : List (Call F)} {c : Core.Ctx} (hg : Core.Good
     rw [hb0, hdecA] at hex
     exact (Except.ok.inj hex).symm
   subst hc
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
   rw [hinfo] at hres
   obtain ⟨hidx, blkBytes, cb', ms', ind', blobs, tree, plan, v₀, hhB, haB, hexB, hcb, hms,
@@ -331,7 +331,7 @@ theorem modeledCtor_trees {calls : List (Call F)} {c : Core.Ctx} (hg : Core.Good
     ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
   have hgL : Core.Good c st.loadCalls := hg.sub st.loadSubset
   obtain ⟨-, -, -, blkBytes₂, cb₂, ms₂, ind₂, ct, blobs₂, v₂, hhB₂, haB₂, hexB₂, -, hcb₂, hms₂,
-    hct₂, hhp₂, hldv₂, hraw₂⟩ := L1.get_ci_cprj_spec hgL.2 st.blockRep st.loaded
+    hct₂, hhp₂, hldv₂, hraw₂⟩ := Ingress.get_ci_cprj_spec hgL.2 st.blockRep st.loaded
   have hbB₂ : blkBytes₂ = lcB.rawBytes :=
     Core.load_escape hgetB hgL.1 blkBytes₂ hhB₂ (haB₂.trans hbB')
   have hcB₂ : cb₂ = cb := by

@@ -1,7 +1,7 @@
 import IxVMRefinement.FamilyAlias.BlockRow
 import IxVMRefinement.FamilyAlias.StructRecScan
 import IxVMRefinement.Assembly.NativeBlockNewFacts
-import IxVMRefinement.L1.HashedBlock
+import IxVMRefinement.Ingress.HashedBlock
 import IxVMRefinement.TwinFamily.Reload
 
 /-! # The load facts at the family step's new constants
@@ -90,7 +90,7 @@ structure FamilyMembersCanon (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _r
     ty₀.looseBVarsBounded 0 = true ∧
       ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
       LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-        ((L1.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some cv.type
+        ((Ingress.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some cv.type
   /-- Each constructor is stored in the canonical annotated form of its reading. Producer: the
   circuit side; the family check's load of the constructor (`Ingress::get_ci_cprj`), which stores
   what it loads. -/
@@ -102,7 +102,7 @@ structure FamilyMembersCanon (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _r
     ty₀.looseBVarsBounded 0 = true ∧
       ty₀.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
       LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-        (((L1.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ =
+        (((Ingress.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ =
         some cv.type
   /-- The references the family record uses are stored. Producer: the circuit side, from the
   family check: `KernelModeled::check_family` runs `family_refs_ok`, whose
@@ -142,7 +142,7 @@ structure FamLoadCtx (C : Core.Ctx) (new : List (ConstantInfo .anon)) (A : _root
     (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (rb : _root_.Address) (crb : Ixon.Constant)
     (rs : Array Ixon.MutConst) : Prop where
   wf : C.t.wf = true
-  decoded : L1.EnvDecoded C.E
+  decoded : Ingress.EnvDecoded C.E
   held : HashedBlockProjectionsHeld C.E
   muts : cb.info = .muts ms
   indcs : ∀ m ∈ ms.toList, ∃ ind, m = .indc ind
@@ -201,7 +201,7 @@ structure FamLoadCtx (C : Core.Ctx) (new : List (ConstantInfo .anon)) (A : _root
     ∃ (ct : Ixon.Constructor) (T Bd : Route.ScanTree),
       ind.ctors[j]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
       Route.ExprTree cb.refs.toList
-        (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
+        (Ingress.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
         cb.sharing.toList 4294967295 ct.typ T ∧
       T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
       Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
@@ -220,7 +220,7 @@ structure FamLoadCtx (C : Core.Ctx) (new : List (ConstantInfo .anon)) (A : _root
       ty₀.looseBVarsBounded 0 = true ∧
       ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
       LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-        ((L1.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some ty' ∧
+        ((Ingress.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some ty' ∧
       (appCtx C new).env.find? (Core.keyOf C.t (Core.iprjAddr A i)) =
         some (.indInfo ⟨Core.keyOf C.t (Core.iprjAddr A i), List.range ind.lvls.toNat, ty'⟩ caps)
   /-- Each constructor is stored at its key as the canonical constant of its reading. -/
@@ -232,7 +232,7 @@ structure FamLoadCtx (C : Core.Ctx) (new : List (ConstantInfo .anon)) (A : _root
       ty₀.looseBVarsBounded 0 = true ∧
       ty₀.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
       LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-        (((L1.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ =
+        (((Ingress.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ =
         some ty' ∧
       (appCtx C new).env.find? (Core.keyOf C.t (Core.cprjAddr A i j)) =
         some (.ctorInfo ⟨Core.keyOf C.t (Core.cprjAddr A i j), List.range ct.lvls.toNat, ty'⟩
@@ -448,7 +448,7 @@ theorem FamLoadCtx.member_of_load (hL : FamLoadCtx C new A cb ms rb crb rs)
     Core.ixAddr b = A ∧ ZMod.val i = 0 ∧
       ∃ ind, ms = #[.indc ind] ∧ Core.ixAddr a = Core.iprjAddr A 0 := by
   have hx := get_ci_induct_addr ev good.2 ha hld hb
-  have hbh := L1.hashedBlockAt_of_get_ci_induct good ev ha hld hb
+  have hbh := Ingress.hashedBlockAt_of_get_ci_induct good ev ha hld hb
   obtain ⟨hbA, i', ind, hget, hidx⟩ : Core.ixAddr b = A ∧ ∃ (i' : Nat) (ind : Ixon.Inductive),
       ms[i']? = some (.indc ind) ∧ (ZMod.val i).toUInt64 = i'.toUInt64 := by
     rcases hnew with ⟨cvT, caps, hfT, hm⟩ | ⟨cvC, nPc, nF, hfC, hm⟩
@@ -534,14 +534,14 @@ theorem FamLoadCtx.getCI_iprj (hL : FamLoadCtx C new A cb ms rb crb rs)
     exact hL.members i _ hget
   have hinfo : (memberProjection A i (.indc ind)).info = .iPrj ⟨i.toUInt64, A⟩ := rfl
   -- the member at the record's index, bounded, from the load's trace
-  obtain ⟨rawBytes, c', hh, haddr, hex, -, hres⟩ := L1.get_ci_block_trace_spec good.2 ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, -, hres⟩ := Ingress.get_ci_block_trace_spec good.2 ha ev
   obtain ⟨lc, hgetc, hdec⟩ := LoadedReads.recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hgetc good.1 rawBytes hh haddr
   have hc : c' = memberProjection A i (.indc ind) := by
     rw [hb, hdec] at hex
     exact (Except.ok.inj hex).symm
   have hinfo' : c'.info = .iPrj ⟨i.toUInt64, A⟩ := (congrArg Ixon.Constant.info hc).trans hinfo
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   rw [hinfo'] at hres
   obtain ⟨hidx, blkBytes, cb', ms', ind', _, _, _, _, hhB, haB, hexB, hcb', hms', -⟩ := hres
   rw [hL.block_eq good.1 hhB haB hexB] at hcb'
@@ -580,7 +580,7 @@ theorem FamLoadCtx.getCI_cprj (hL : FamLoadCtx C new A cb ms rb crb rs)
     exact hL.ctors i ind j hget hj
   have hinfo : (constructorProjection A i j).info = .cPrj ⟨i.toUInt64, j.toUInt64, A⟩ := rfl
   -- the member and constructor at the record's indices, bounded, from the load's trace
-  obtain ⟨rawBytes, c', hh, haddr, hex, -, hres⟩ := L1.get_ci_block_trace_spec good.2 ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, -, hres⟩ := Ingress.get_ci_block_trace_spec good.2 ha ev
   obtain ⟨lc, hgetc, hdec⟩ := LoadedReads.recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hgetc good.1 rawBytes hh haddr
   have hc : c' = constructorProjection A i j := by
@@ -588,7 +588,7 @@ theorem FamLoadCtx.getCI_cprj (hL : FamLoadCtx C new A cb ms rb crb rs)
     exact (Except.ok.inj hex).symm
   have hinfo' : c'.info = .cPrj ⟨i.toUInt64, j.toUInt64, A⟩ :=
     (congrArg Ixon.Constant.info hc).trans hinfo
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   rw [hinfo'] at hres
   obtain ⟨hidx, hcidx, blkBytes, cb', ms', ind', ct', _, _, _, _, hhB, haB, hexB, hcb', hms',
     hcts, -⟩ := hres
@@ -646,14 +646,14 @@ theorem FamLoadCtx.getCI_rprj (hL : FamLoadCtx C new A cb ms rb crb rs)
     exact hL.rmembers i _ hget
   have hinfo : (memberProjection rb i (.recr r)).info = .rPrj ⟨i.toUInt64, rb⟩ := rfl
   -- the recursor at the record's index, from the load's trace
-  obtain ⟨rawBytes, c', hh, haddr, hex, -, hres⟩ := L1.get_ci_block_trace_spec good.2 ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, -, hres⟩ := Ingress.get_ci_block_trace_spec good.2 ha ev
   obtain ⟨lc, hgetc, hdec⟩ := LoadedReads.recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hgetc good.1 rawBytes hh haddr
   have hc : c' = memberProjection rb i (.recr r) := by
     rw [hb, hdec] at hex
     exact (Except.ok.inj hex).symm
   have hinfo' : c'.info = .rPrj ⟨i.toUInt64, rb⟩ := (congrArg Ixon.Constant.info hc).trans hinfo
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   rw [hinfo'] at hres
   obtain ⟨-, blkBytes, cb', rs', rc', _, _, _, hhB, haB, hexB, hcb', hms', -⟩ := hres
   obtain ⟨lcB, hgetB, hdecB⟩ := LoadedReads.recordOf_inv hL.rrecord
@@ -868,11 +868,11 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
     · exact (keyOf_nonAux C.t (Core.ixAddr a) n d (hname.symm.trans hnd)).elim
   getCprj := by
     intro bp ptr i j h h' cs b ev hfam good hb
-    have hbh := L1.hashedBlockAt_of_get_ci_cprj good hb ev
+    have hbh := Ingress.hashedBlockAt_of_get_ci_cprj good hb ev
     have hbA := hL.famNew_block hbh hfam
     subst hbA
     obtain ⟨-, -, -, blkBytes, cb', ms', ind, ct, blobs, v, hhB, haB, hexB, -, hcb', hms', hct',
-      -, -, -⟩ := L1.get_ci_cprj_spec good.2 hb ev
+      -, -, -⟩ := Ingress.get_ci_cprj_spec good.2 hb ev
     have e1 : cb' = cb := hL.block_eq good.1 hhB haB hexB
     subst e1
     have e2 : ms' = ms := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hL.muts)
@@ -898,11 +898,11 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
     exact hrep
   getIprj := by
     intro bp ptr i h h' cs b ev hfam good hb
-    have hbh := L1.hashedBlockAt_of_get_ci_iprj good hb ev
+    have hbh := Ingress.hashedBlockAt_of_get_ci_iprj good hb ev
     have hbA := hL.famNew_block hbh hfam
     subst hbA
     obtain ⟨-, -, blkBytes, cb', ms', ind, blobs, v, hhB, haB, hexB, -, hcb', hms', -, -, -⟩ :=
-      L1.get_ci_iprj_spec good.2 hb ev
+      Ingress.get_ci_iprj_spec good.2 hb ev
     have e1 : cb' = cb := hL.block_eq good.1 hhB haB hexB
     subst e1
     have e2 : ms' = ms := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hL.muts)
@@ -936,7 +936,7 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
     intro bp ip ptr h h' cs b i ev good hb hip hfam hperm
     subst hip
     obtain ⟨elig, pcs, hms_u64, hdata, -, heligDet⟩ := hL.projModeled
-    have hbh := L1.hashedBlockAt_of_proj_ctor good ev hb rfl
+    have hbh := Ingress.hashedBlockAt_of_proj_ctor good ev hb rfl
     have hbA := hL.famNew_block hbh hfam
     subst hbA
     obtain ⟨v_a, m_a, cs_a, cs_c, ev_a, heq_a, ev_c, hc_c⟩ := Obs.«KernelModeled::proj_ctor».obs ev
@@ -946,7 +946,7 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
     have hb_a : Bytes.RepAddressRef Core.addrTy m_a b bp :=
       Bytes.repAddressRef_heapMono₂ Core.addrTy ev_a.heap_extends hb
     obtain ⟨-, -, -, blkBytes, cb', ms', ind, ct, _, _, hhB, haB, hexB, -, hcb', hms', hct',
-      -, -, -⟩ := L1.get_ci_cprj_spec good_c.2 hb_a ev_c
+      -, -, -⟩ := Ingress.get_ci_cprj_spec good_c.2 hb_a ev_c
     have e1 : cb' = cb := hL.block_eq good_c.1 hhB haB hexB
     subst e1
     have e2 : ms' = ms := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hL.muts)
@@ -977,7 +977,7 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
     intro bp sap ptr nl ty np u blk h h' h1 h2 cs cs1 b s i ev good hb ev1 good1 hs hld hb2
       j cvC nP nF hf hm hpos
     obtain ⟨elig, pcs, hms_u64, hdata, -, heligDet⟩ := hL.projModeled
-    have hbh := L1.hashedBlockAt_of_get_ci_induct good1 ev1 hs hld hb2
+    have hbh := Ingress.hashedBlockAt_of_get_ci_induct good1 ev1 hs hld hb2
     obtain ⟨x, hx, hname⟩ :=
       hL.member_name hm (fun _ _ _ h => nomatch h) (fun _ h => nomatch h) (fun _ h => nomatch h)
     have hn : cvC.name =
@@ -1026,7 +1026,7 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
       exact ⟨x, by simp [hx]⟩
     -- the zero-field load reads constructor `0` of the block's record
     obtain ⟨-, -, -, blkBytes, cb', ms', ind', ct', blobs, v', hh, haddr, hexB, -, hcb', hms',
-      hct', -, hldv, hraw⟩ := L1.get_ci_cprj_spec hz.good.2 hz.blockRep hz.observed
+      hct', -, hldv, hraw⟩ := Ingress.get_ci_cprj_spec hz.good.2 hz.blockRep hz.observed
     obtain ⟨lcB, hgetB, hdecB⟩ := LoadedReads.recordOf_inv hL.record
     have hbB : blkBytes = lcB.rawBytes :=
       Core.load_escape hgetB hz.good.1 blkBytes hh (haddr.trans hbA)
@@ -1071,7 +1071,7 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
     intro ac b sa i j cvc cvT caps cnP cnF us l bp ptr nl ty np u blk idx h1 h2 cs1 hfC hcn hpos
       ev good hb hld hfT hmod hsort hnz hrec hsa hnew
     exfalso
-    have hbh := L1.hashedBlockAt_of_get_ci_iprj good hb ev
+    have hbh := Ingress.hashedBlockAt_of_get_ci_iprj good hb ev
     have hbA : Core.ixAddr b = A := by
       rcases hnew with hm | hm
       · obtain ⟨x, hx, hname⟩ :=
@@ -1117,10 +1117,10 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
     rcases hL.newName cn hcn with ⟨x, hx, hx'⟩ | ⟨-, n, d, hnd⟩ | ⟨-, n, d, hnd⟩ | ⟨-, n, d, hnd⟩
     · have hax : Core.ixAddr a = x := Core.keyOf_inj hL.wf (hname.symm.trans hx')
       have hia := get_ci_induct_addr ev good.2 ha hld hb
-      have hbh := L1.hashedBlockAt_of_get_ci_induct good ev ha hld hb
+      have hbh := Ingress.hashedBlockAt_of_get_ci_induct good ev ha hld hb
       have hbA : Core.ixAddr b = A := hL.iprj_block hbh hx (hia.symm.trans hax)
       obtain ⟨rawBytes, blkBytes, cm, cb', xs, ind, b', i', -, -, -, -, hhb, hab, hdeb, -, hb',
-        hidx, -, -, hcb', hxs⟩ := L1.inductRecord_raw_of_get_ci ev good.2 ha hld
+        hidx, -, -, hcb', hxs⟩ := Ingress.inductRecord_raw_of_get_ci ev good.2 ha hld
       have hbb : b' = b := Bytes.repAddressRef_inj U32.Goldilocks.compatible hb' hb
       rw [hbb] at hab
       have hii : i' = i := by
@@ -1143,7 +1143,7 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
     intro bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hfC hfT hm
     subst hip
     obtain ⟨elig, pcs, hms_u64, hdata, hprojNew, heligDet⟩ := hL.projModeled
-    have hbh := L1.hashedBlockAt_of_proj_ctor good ev hb rfl
+    have hbh := Ingress.hashedBlockAt_of_proj_ctor good ev hb rfl
     obtain ⟨hbA, hi_lt⟩ : Core.ixAddr b = A ∧ ZMod.val i < ms.size := by
       rcases hm with hm | hm
       · obtain ⟨x, hx, hname⟩ :=

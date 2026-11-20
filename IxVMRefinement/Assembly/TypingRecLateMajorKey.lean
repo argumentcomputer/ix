@@ -1,5 +1,5 @@
 import IxVMRefinement.Assembly.TypingRecLateReads
-import IxVMRefinement.L1.AnnotationCorrespondence
+import IxVMRefinement.Ingress.AnnotationCorrespondence
 import IxVMRefinement.Decl.NativeRec
 import IxVMRefinement.Obs.KernelCheck
 /-! # The major key of the reading of a late recursor's type
@@ -12,7 +12,7 @@ an annotation of `tyP`, which reduces `let`s. The circuit's route supplies the l
 has no other arm), loads the next `Forall` and finds a literal `Const` at the head of its domain.
 
 * `RawShape`, `rawShape_of_rawTrace`, `majorKey_eq_of_rawShape`: the raw heap syntax `R'` of the
-  converted type is the reading with binder data replaced (`L1.applyRawBinderTrace`), so the two
+  converted type is the reading with binder data replaced (`Ingress.applyRawBinderTrace`), so the two
   have one major key;
 * `peel_n_foralls_rawTm_val`, `rec_to_parent_addr_rawTm_major`: the route's scan on the raw heap
   syntax, at any field count;
@@ -61,23 +61,23 @@ inductive RawShape : Ix.Kernel.Expr .anon → Ix.Kernel.Expr .anon → Prop
   | proj {s : Ix.Kernel.Key .anon} {i : Nat} {e e' : Ix.Kernel.Expr .anon} :
       RawShape e e' → RawShape (.proj s i e) (.proj s i e')
 
-/-- **The raw trace keeps the shape**: `L1.applyRawBinderTrace` rebuilds a term node for node,
+/-- **The raw trace keeps the shape**: `Ingress.applyRawBinderTrace` rebuilds a term node for node,
 keeping `let` cells, changing only binder data. -/
 theorem rawShape_of_rawTrace {md : Core.KLevel → Ix.Kernel.BinderMeta} :
     ∀ (e : Core.KExpr) {ls : List Core.KLevel} {R : Core.KExpr} {ls' : List Core.KLevel},
-      L1.applyRawBinderTrace md e ls = some (R, ls') → RawShape e R := by
+      Ingress.applyRawBinderTrace md e ls = some (R, ls') → RawShape e R := by
   intro e
   induction e with
   | bvar i =>
     intro ls R ls' h
-    simp only [L1.applyRawBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    simp only [Ingress.applyRawBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨hR, -⟩ := h
     subst hR
     exact .bvar i
   | fvar i ty ih =>
     intro ls R ls' h
-    simp only [L1.applyRawBinderTrace] at h
-    rcases h1 : L1.applyRawBinderTrace md ty ls with _ | ⟨ty', l1⟩
+    simp only [Ingress.applyRawBinderTrace] at h
+    rcases h1 : Ingress.applyRawBinderTrace md ty ls with _ | ⟨ty', l1⟩
     · simp [h1] at h
     · simp [h1] at h
       obtain ⟨hR, -⟩ := h
@@ -85,22 +85,22 @@ theorem rawShape_of_rawTrace {md : Core.KLevel → Ix.Kernel.BinderMeta} :
       exact .fvar i ty ty'
   | sort u =>
     intro ls R ls' h
-    simp only [L1.applyRawBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    simp only [Ingress.applyRawBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨hR, -⟩ := h
     subst hR
     exact .sort u
   | const k us =>
     intro ls R ls' h
-    simp only [L1.applyRawBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    simp only [Ingress.applyRawBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨hR, -⟩ := h
     subst hR
     exact .const k us
   | app f a ihf iha =>
     intro ls R ls' h
-    simp only [L1.applyRawBinderTrace] at h
-    rcases h1 : L1.applyRawBinderTrace md f ls with _ | ⟨f', l1⟩
+    simp only [Ingress.applyRawBinderTrace] at h
+    rcases h1 : Ingress.applyRawBinderTrace md f ls with _ | ⟨f', l1⟩
     · simp [h1] at h
-    · rcases h2 : L1.applyRawBinderTrace md a l1 with _ | ⟨a', l2⟩
+    · rcases h2 : Ingress.applyRawBinderTrace md a l1 with _ | ⟨a', l2⟩
       · simp [h1, h2] at h
       · simp [h1, h2] at h
         obtain ⟨hR, -⟩ := h
@@ -109,12 +109,12 @@ theorem rawShape_of_rawTrace {md : Core.KLevel → Ix.Kernel.BinderMeta} :
   | lam ty b m iht ihb =>
     intro ls R ls' h
     cases ls with
-    | nil => simp [L1.applyRawBinderTrace] at h
+    | nil => simp [Ingress.applyRawBinderTrace] at h
     | cons lv rest =>
-      simp only [L1.applyRawBinderTrace] at h
-      rcases h1 : L1.applyRawBinderTrace md ty rest with _ | ⟨ty', l1⟩
+      simp only [Ingress.applyRawBinderTrace] at h
+      rcases h1 : Ingress.applyRawBinderTrace md ty rest with _ | ⟨ty', l1⟩
       · simp [h1] at h
-      · rcases h2 : L1.applyRawBinderTrace md b l1 with _ | ⟨b', l2⟩
+      · rcases h2 : Ingress.applyRawBinderTrace md b l1 with _ | ⟨b', l2⟩
         · simp [h1, h2] at h
         · simp [h1, h2] at h
           obtain ⟨hR, -⟩ := h
@@ -123,12 +123,12 @@ theorem rawShape_of_rawTrace {md : Core.KLevel → Ix.Kernel.BinderMeta} :
   | forallE ty b m iht ihb =>
     intro ls R ls' h
     cases ls with
-    | nil => simp [L1.applyRawBinderTrace] at h
+    | nil => simp [Ingress.applyRawBinderTrace] at h
     | cons lv rest =>
-      simp only [L1.applyRawBinderTrace] at h
-      rcases h1 : L1.applyRawBinderTrace md ty rest with _ | ⟨ty', l1⟩
+      simp only [Ingress.applyRawBinderTrace] at h
+      rcases h1 : Ingress.applyRawBinderTrace md ty rest with _ | ⟨ty', l1⟩
       · simp [h1] at h
-      · rcases h2 : L1.applyRawBinderTrace md b l1 with _ | ⟨b', l2⟩
+      · rcases h2 : Ingress.applyRawBinderTrace md b l1 with _ | ⟨b', l2⟩
         · simp [h1, h2] at h
         · simp [h1, h2] at h
           obtain ⟨hR, -⟩ := h
@@ -136,12 +136,12 @@ theorem rawShape_of_rawTrace {md : Core.KLevel → Ix.Kernel.BinderMeta} :
           exact .forallE (iht h1) (ihb h2)
   | letE ty v b l iht ihv ihb =>
     intro ls R ls' h
-    simp only [L1.applyRawBinderTrace] at h
-    rcases h1 : L1.applyRawBinderTrace md ty ls with _ | ⟨ty', l1⟩
+    simp only [Ingress.applyRawBinderTrace] at h
+    rcases h1 : Ingress.applyRawBinderTrace md ty ls with _ | ⟨ty', l1⟩
     · simp [h1] at h
-    · rcases h2 : L1.applyRawBinderTrace md v l1 with _ | ⟨v', l2⟩
+    · rcases h2 : Ingress.applyRawBinderTrace md v l1 with _ | ⟨v', l2⟩
       · simp [h1, h2] at h
-      · rcases h3 : L1.applyRawBinderTrace md b l2 with _ | ⟨b', l3⟩
+      · rcases h3 : Ingress.applyRawBinderTrace md b l2 with _ | ⟨b', l3⟩
         · simp [h1, h2, h3] at h
         · simp [h1, h2, h3] at h
           obtain ⟨hR, -⟩ := h
@@ -149,14 +149,14 @@ theorem rawShape_of_rawTrace {md : Core.KLevel → Ix.Kernel.BinderMeta} :
           exact .letE (iht h1) (ihv h2) (ihb h3)
   | lit l =>
     intro ls R ls' h
-    simp only [L1.applyRawBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    simp only [Ingress.applyRawBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨hR, -⟩ := h
     subst hR
     exact .lit l
   | proj s i e ih =>
     intro ls R ls' h
-    simp only [L1.applyRawBinderTrace] at h
-    rcases h1 : L1.applyRawBinderTrace md e ls with _ | ⟨e', l1⟩
+    simp only [Ingress.applyRawBinderTrace] at h
+    rcases h1 : Ingress.applyRawBinderTrace md e ls with _ | ⟨e', l1⟩
     · simp [h1] at h
     · simp [h1] at h
       obtain ⟨hR, -⟩ := h
@@ -454,10 +454,10 @@ theorem rec_major_key_reading {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨a', ha'_ref, haA⟩ := ha_pre
   subst haA
   obtain ⟨rawBytes, c', hh, hba, hex, -, hres'⟩ :=
-    L1.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
+    Ingress.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
   have hcc : c' = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hh) hba hex
   subst c'
-  unfold L1.GetCIBlockTraceResult at hres'
+  unfold Ingress.GetCIBlockTraceResult at hres'
   rw [hinfo] at hres'
   obtain ⟨blobs, tree, v, hhp, built, hldv, htr⟩ := hres'
   rw [hld] at hldv

@@ -4,7 +4,7 @@ import IxVMRefinement.Core.RomBound
 import IxVMRefinement.Lib.Words
 import IxVMRefinement.Lib.WordHints
 import IxVMRefinement.Obs.Blake3
-import IxVMRefinement.L1.HashedBlock
+import IxVMRefinement.Ingress.HashedBlock
 import IxC.Kernel.Verify.InstLevels
 import IxC.Kernel.Verify.PropWhen
 
@@ -1102,7 +1102,7 @@ theorem try_eta_struct_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List
       (good.sub fun x hx => by simp [hx]) (RCRep.mono E674 hrc) d Γ (types_mono E674 htypes) TT
       TS (Tm.mono e686 hTT) hTS hne765
     have hbhR : HashedBlockAt c.E (ixAddr b) :=
-      L1.hashedBlockAt_of_get_ci_iprj (good.sub fun x hx => by simp [hx]).raw hb165 ev215
+      Ingress.hashedBlockAt_of_get_ci_iprj (good.sub fun x hx => by simp [hx]).raw hb165 ev215
     -- the fields
     have hflds := ih.get (.defEq .compare_struct_fields) (by lt_calls) ev774 rc v468 _ _ t
       x_s_args _ types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono E712 hrc) sa

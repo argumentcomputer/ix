@@ -1,6 +1,6 @@
 import IxVMRefinement.RoleVal.AxiomRefsLim
-import IxVMRefinement.L1.Decode
-import IxVMRefinement.L1.Ingress
+import IxVMRefinement.Ingress.Decode
+import IxVMRefinement.Ingress.Ingress
 
 /-! # The record a standard axiom is bound to, from the role's validation
 
@@ -102,7 +102,7 @@ theorem get_ci_axiom_record {a : Bytes.Address} {x_addr r : SourceValue F} {h h'
       rawBytes.size < 4294967296 ∧ Hashed calls rawBytes ∧
       Address.blake3Pure rawBytes = Core.ixAddr a ∧
       Ixon.deConstant rawBytes = .ok c ∧ Ixon.deConstantExact rawBytes = .ok c ∧
-      c.info = .axio ax ∧ u = L1.repBoolField ax.isUnsafe := by
+      c.info = .axio ax ∧ u = Ingress.repBoolField ax.isUnsafe := by
   match Obs.«Ingress::get_ci».obs ev with
   | .Defn_n0 (he219 := hr) (hm218 := hh) (ev225 := conv) .. =>
     rw [hr, hh, loadValue_snoc_self] at hld
@@ -139,12 +139,12 @@ theorem get_ci_axiom_record {a : Bytes.Address} {x_addr r : SourceValue F} {h h'
   | .Axio (x_axio := x_axio) (ev14 := ev14) (he441 := hr) (hm440 := hh) (ev447 := conv)
       (hc515 := hc) .. =>
     obtain ⟨-, bytes, c, hlen, hhs, haddr, hexact, hde, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      Ingress.load_verified_constant_decode_bounded ha ev14
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨ax, hci, typPtr, hav, -⟩ := L1.repConstantInfo_axio_inv hinfo
+    obtain ⟨ax, hci, typPtr, hav, -⟩ := Ingress.repConstantInfo_axio_inv hinfo
     rw [hr, hh, loadValue_snoc_self] at hld
     match Obs.«Convert::convert_axiom».obs conv with
     | .run (hv15 := hx) (he107 := he) .. =>

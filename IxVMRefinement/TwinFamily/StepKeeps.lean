@@ -2,7 +2,7 @@ import IxVMRefinement.TwinFamily.Step
 import IxVMRefinement.TwinFamily.StoreAr
 import IxVMRefinement.Assembly.NativeBlockLoads
 import IxVMRefinement.Assembly.FoldClause
-import IxVMRefinement.L1.Hashed
+import IxVMRefinement.Ingress.Hashed
 
 /-! # The carried clause across the twin record
 
@@ -340,7 +340,7 @@ theorem constAddr_hash_size_of_block {A : _root_.Address} {c : Ixon.Constant}
     intro b
     cases b with
     | mk arr =>
-      have h := L1.blake3Pure_eq arr.toList
+      have h := Ingress.blake3Pure_eq arr.toList
       simp only [Array.toArray_toList] at h
       rw [h]
       exact (Blake3.Pure.digest arr.toList).size_toArray

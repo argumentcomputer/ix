@@ -99,11 +99,11 @@ structure TwinMemberLoaded (cb : Ixon.Constant) (ms : Array Ixon.MutConst)
   rulesScoped : ∀ rl ∈ rules₀,
     rl.rhs.looseBVarsBounded 0 = true ∧ rl.rhs.allLevelParamsDefined ps = true
   notK : rc.k = false
-  ty : LoadedReads.canonAnn cb ps ((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) rc.typ
+  ty : LoadedReads.canonAnn cb ps ((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) rc.typ
     ty₀ = some cvW'.type
   rules : ∃ rls : List (RecRule .anon),
     LoadedReads.canonRules cb ps rc.k rc.params.toNat
-      (((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1) rc.rules.toList rules₀ =
+      (((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1) rc.rules.toList rules₀ =
         some rls ∧
     List.Forall₂ (fun rl rl' : RecRule .anon => rl'.nfields = rl.nfields ∧ rl'.rhs = rl.rhs)
       rls rulesW' ∧

@@ -1,5 +1,5 @@
 import IxVMRefinement.Iota.Rescue
-import IxVMRefinement.L1.HashedBlock
+import IxVMRefinement.Ingress.HashedBlock
 import IxVMRefinement.Whnf.Heads
 import IxVMRefinement.Whnf.Proj
 import IxVMRefinement.Obs.KernelWhnf2
@@ -418,7 +418,7 @@ theorem eta_iota_fab_step (c : ScopedCtx) (hc : ScopedCoreBase c)
       d Γ _ p M (cnF : F) 0 happTA (Bytes.repAddressRef_heapMono₂ addrTy X519 hp)
       (hc.res_of_find hfindI)
       (hc.loads.ctorIndPerm _ _ _ _ _ _ _ _ _
-        (L1.hashedBlockAt_of_get_ci_cprj (good.sub fun z hz => by simp [hz]).raw
+        (Ingress.hashedBlockAt_of_get_ci_cprj (good.sub fun z hz => by simp [hz]).raw
           (Bytes.repAddressRef_heapMono₂ addrTy X303 hb) ev405) hfindI hnameT hstored)
       (Tm.mono X519 hM) rfl rfl
     have hs571 := apply_n_projs_head cs581.length (Nat.le_refl _) ev583 hs519

@@ -16,7 +16,7 @@ open IxVM (F)
 theorem CtorScopeRead.type_scope_of_blobAgreement {base : Core.Ctx} {block : Bytes.Address} {i j : F}
     {params levels : Nat} {calls : List (Call F)}
     (checked : CtorScopeRead block i j 0 params levels calls)
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {ctor : Ixon.Constructor}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -28,9 +28,9 @@ theorem CtorScopeRead.type_scope_of_blobAgreement {base : Core.Ctx} {block : Byt
     (good : Core.Good base calls)
     (keyed : ∀ address key, cx.keyAt address = .ok key → key = base.κ address)
     (selfKeyed : ∀ index address reading key,
-      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
+      (Ingress.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
       self index = some reading → reading = .ok key → key = base.κ address)
-    (blobReads : L1.HashedBlobReadAgreement cx.blob calls) :
+    (blobReads : Ingress.HashedBlobReadAgreement cx.blob calls) :
     row.1.type.looseBVarsBounded 0 = true ∧
       row.1.type.allLevelParamsDefined row.1.levelParams = true ∧ row.1.type.hasFvar = false := by
   obtain ⟨_, _, _, _, _, _, varsBounded, levelsDefined, noFvars, _⟩ :=
@@ -46,7 +46,7 @@ theorem CtorScopeRead.type_scope_of_blobAgreement {base : Core.Ctx} {block : Byt
 theorem CtorScopeRead.type_scope {base : Core.Ctx} {block : Bytes.Address} {i j : F}
     {params levels : Nat} {calls : List (Call F)}
     (checked : CtorScopeRead block i j 0 params levels calls)
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {ctor : Ixon.Constructor}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -58,21 +58,21 @@ theorem CtorScopeRead.type_scope {base : Core.Ctx} {block : Bytes.Address} {i j 
     (good : Core.Good base calls)
     (keyed : ∀ address key, cx.keyAt address = .ok key → key = base.κ address)
     (selfKeyed : ∀ index address reading key,
-      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
+      (Ingress.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
       self index = some reading → reading = .ok key → key = base.κ address)
     (blobReads : ∀ address bytes, Hashed calls bytes → Address.blake3Pure bytes = address →
       cx.blob address = some bytes) :
     row.1.type.looseBVarsBounded 0 = true ∧
       row.1.type.allLevelParamsDefined row.1.levelParams = true ∧ row.1.type.hasFvar = false := by
   exact CtorScopeRead.type_scope_of_blobAgreement checked source blockShape memberAt ctorAt frame good
-    keyed selfKeyed (L1.HashedBlobReadAgreement.of_stored blobReads)
+    keyed selfKeyed (Ingress.HashedBlobReadAgreement.of_stored blobReads)
 
 /-- The successful constructor loop supplies raw scope properties for all corresponding
 reader rows; no separate well-scopedness or free-variable premise is required. -/
 theorem native_ctor_reader_scope_of_blobAgreement {base : Core.Ctx} {block : Bytes.Address} {i : F}
     {params indices levels : Nat} {rc former bp sortLevel result : SourceValue F}
     {h h' : Heap F} {rootCalls loopCalls : List (Call F)}
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -91,9 +91,9 @@ theorem native_ctor_reader_scope_of_blobAgreement {base : Core.Ctx} {block : Byt
     (good : Core.Good base rootCalls)
     (keyed : ∀ address key, cx.keyAt address = .ok key → key = base.κ address)
     (selfKeyed : ∀ index address reading key,
-      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
+      (Ingress.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
       self index = some reading → reading = .ok key → key = base.κ address)
-    (blobReads : L1.HashedBlobReadAgreement cx.blob rootCalls) :
+    (blobReads : Ingress.HashedBlobReadAgreement cx.blob rootCalls) :
     ∀ row ∈ rows, row.1.type.looseBVarsBounded 0 = true ∧
       row.1.type.allLevelParamsDefined row.1.levelParams = true ∧ row.1.type.hasFvar = false := by
   have rowLength : rows.length = ind.ctors.size := by
@@ -122,7 +122,7 @@ theorem native_ctor_reader_scope_of_blobAgreement {base : Core.Ctx} {block : Byt
 theorem native_ctor_reader_scope {base : Core.Ctx} {block : Bytes.Address} {i : F}
     {params indices levels : Nat} {rc former bp sortLevel result : SourceValue F}
     {h h' : Heap F} {rootCalls loopCalls : List (Call F)}
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -141,13 +141,13 @@ theorem native_ctor_reader_scope {base : Core.Ctx} {block : Bytes.Address} {i : 
     (good : Core.Good base rootCalls)
     (keyed : ∀ address key, cx.keyAt address = .ok key → key = base.κ address)
     (selfKeyed : ∀ index address reading key,
-      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
+      (Ingress.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
       self index = some reading → reading = .ok key → key = base.κ address)
     (blobReads : ∀ address bytes, Hashed rootCalls bytes → Address.blake3Pure bytes = address →
       cx.blob address = some bytes) :
     ∀ row ∈ rows, row.1.type.looseBVarsBounded 0 = true ∧
       row.1.type.allLevelParamsDefined row.1.levelParams = true ∧ row.1.type.hasFvar = false := by
   exact native_ctor_reader_scope_of_blobAgreement source blockShape memberAt countBound blockRep subset
-    loop frames good keyed selfKeyed (L1.HashedBlobReadAgreement.of_stored blobReads)
+    loop frames good keyed selfKeyed (Ingress.HashedBlobReadAgreement.of_stored blobReads)
 
 end IxVM.Refinement.Assembly

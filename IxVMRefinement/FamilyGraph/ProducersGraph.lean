@@ -259,7 +259,7 @@ the walk's limit with the table at its binding. Only `check_family` calls `check
 only `check_witnesses` calls `check_witness`, with the family check's own block. -/
 def ContWitness (cs : List (Call F)) (B x : _root_.Address) : Prop :=
   ∃ (h : Aiur.Heap F) (rc xb xx s : Aiur.SourceValue F),
-    Claim.RCLimRep K.t K.bAddr K.lim h rc ∧ Core.S0.addr h xb B ∧ Core.S0.addr h xx x ∧
+    Claim.RCLimRep K.t K.bAddr K.lim h rc ∧ Core.BaseSeams.addr h xb B ∧ Core.BaseSeams.addr h xx x ∧
     (⟨"KernelModeled::check_witness", [rc, xb, xx, .field 2, s], h⟩ : Call F) ∈ cs
 
 /-- **A local record of the family check of `B` with `rb` and the calls `cs`, at a position**:
@@ -517,9 +517,9 @@ open IxVM.Refinement.Obs
 /-- **`KernelModeled::get_count` returns a byte stream**: the rest of the stream it is called on,
 after the tag of the count. -/
 theorem get_count_stream {x_s x_n x_s' : SourceValue F} {bytes : List UInt8} {h h' : Heap F}
-    {cs : List (Call F)} (hs : L1.Stream h bytes x_s)
+    {cs : List (Call F)} (hs : Ingress.Stream h bytes x_s)
     (ev : ObsFn Obs.W "KernelModeled::get_count" [x_s] h (.tuple [x_n, x_s']) h' cs) :
-    ∃ bytes' : List UInt8, L1.Stream h' bytes' x_s' := by
+    ∃ bytes' : List UInt8, Ingress.Stream h' bytes' x_s' := by
   match Obs.«KernelModeled::get_count».obs ev with
   | .run (m2 := m2) (x_s2 := x_s2) (ev14 := ev14) (he40 := he40) (ev52 := ev52)
       (he68 := he68) .. =>
@@ -534,7 +534,7 @@ theorem get_count_stream {x_s x_n x_s' : SourceValue F} {bytes : List UInt8} {h 
       injection he with _ he
       injection he
     rw [e2, e1, he68]
-    exact ⟨_, L1.Stream.mono ev52.heap_extends hrep⟩
+    exact ⟨_, Ingress.Stream.mono ev52.heap_extends hrep⟩
 
 /-- **The family check's unfolding has its own advice list**: the list `KernelModeled::get_addrs`
 reads off the payload after the family record's address and the advice count, still read at the
@@ -563,7 +563,7 @@ theorem familyOwnAdvice_of_obs {x_rc x_block x_rec_block r : SourceValue F} {h h
       injection hr
     rw [← e1] at hs1
     obtain ⟨bytes₂, hs2⟩ := get_count_stream
-      (L1.Stream.mono (ev194.heap_extends.trans ev_ord.heap_extends) hs1) ev231
+      (Ingress.Stream.mono (ev194.heap_extends.trans ev_ord.heap_extends) hs1) ev231
     obtain ⟨n_f, advAs, bytes₃, -, -, hrep, hst3, -⟩ := Decl.get_addrs_spec hs2 ev266
     obtain ⟨bytes₄, hs4⟩ := get_count_stream hst3 ev309
     have e_s3_adv : Heap.Extends _ _ :=

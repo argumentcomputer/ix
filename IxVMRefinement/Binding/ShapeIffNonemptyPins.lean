@@ -131,9 +131,9 @@ private theorem nat_of_fieldCast_eq {a b : Nat}
   (RolesAux.val_natCast ha).symm.trans ((congrArg ZMod.val h).trans (RolesAux.val_natCast hb))
 
 private theorem defnValShape_tag {d : Ixon.Definition} {tyPtr valPtr hint : SourceValue F} :
-    ∃ tag fs, L1.defnValShape d tyPtr valPtr hint = .construct kciEnum tag fs ∧
+    ∃ tag fs, Ingress.defnValShape d tyPtr valPtr hint = .construct kciEnum tag fs ∧
       (tag = "Defn" ∨ tag = "Opaque" ∨ tag = "Thm") := by
-  unfold L1.defnValShape
+  unfold Ingress.defnValShape
   cases d.kind with
   | defn => exact ⟨"Defn", _, rfl, Or.inl rfl⟩
   | opaq => exact ⟨"Opaque", _, rfl, Or.inr (Or.inl rfl)⟩
@@ -143,11 +143,11 @@ private theorem defnValShape_tag {d : Ixon.Definition} {tyPtr valPtr hint : Sour
 constructor. -/
 private theorem rawCIRep_info_of_tag {E_ld : Ixon.Env} {h : Heap F} {a : _root_.Address}
     {c : Ixon.Constant} {tag : String} {fs : List (SourceValue F)}
-    (hraw : L1.RawCIRep E_ld h a c (.construct kciEnum tag fs)) :
+    (hraw : Ingress.RawCIRep E_ld h a c (.construct kciEnum tag fs)) :
     (tag = "Induct" → ∃ p, c.info = .iPrj p) ∧
     (tag = "Ctor" → ∃ p, c.info = .cPrj p) ∧
     (tag = "Rec" → (∃ rc, c.info = .recr rc) ∨ (∃ p, c.info = .rPrj p)) := by
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   cases hi : c.info with
   | defn d =>
     rw [hi] at hraw
@@ -233,7 +233,7 @@ private theorem rawType_pin_erasePw {calls cs : List (Call F)} {t : Ix.Kernel.Ro
     {blobs : List (_root_.Address × ByteArray)}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon))}
     {loaded beforeMember : Heap F} {x_tbl tyPtr : SourceValue F} {e : Ixon.Expr} {ty₀ : KExpr}
-    (raw : L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+    (raw : Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
       loaded 4294967295 e tyPtr)
     (hblob : ∀ x bs, (x, bs) ∈ blobs → E.blobs.get? x = some bs)
     (hself : ∀ i x m k, recurAddrs[i]? = some x → self i = some m → m = .ok k → k = keyOf t x)
@@ -253,7 +253,7 @@ private theorem rawType_pin_erasePw {calls cs : List (Call F)} {t : Ix.Kernel.Ro
     rw [Assembly.recParam_range]
     exact hread
   obtain ⟨ty', hvs, hrep⟩ :=
-    L1.rawConvExpr_to_valRepExact (κ := keyOf t) (name := .role r) (ps := List.range n)
+    Ingress.rawConvExpr_to_valRepExact (κ := keyOf t) (name := .role r) (ps := List.range n)
       (by simp) (by simp) hnlt
       (LoadedReads.readCtx_keyAt_inv ht (fun x => E.blobs.get? x)) hself hblob raw hread'
       hlbb hdef
@@ -289,7 +289,7 @@ private theorem stdMember_loaded {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
       IxVM.Consistency.StoredAs ci ci₀ ∧
       IxVM.Consistency.LoadedBy loadCalls E_ld ∧
       (∀ cl ∈ loadCalls, cl ∈ calls) ∧
-      L1.RawCIRep E_ld loaded a c vci ∧
+      Ingress.RawCIRep E_ld loaded a c vci ∧
       vci = .construct kciEnum tag (.field (n : F) :: tyPtr :: rest) ∧
       TableRep t loaded x_tbl ∧
       Heap.Extends loaded beforeMember ∧
@@ -328,12 +328,12 @@ private theorem stdMember_loaded {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
   obtain ⟨b, hb_rep, rfl⟩ := ha_beforeLoad
   have hboundL : IxVM.Consistency.Bounded loadCalls := RomBound.bounded_mono hrun.bounded hsubL
   obtain ⟨-, _, E_ld, hhash, hblake, hloaded, hL1⟩ :=
-    L1.get_ci_loadedL1_spec hboundL hb_rep evGet
+    Ingress.get_ci_loadedRecords_spec hboundL hb_rep evGet
   have hrecA : Ix.Cert.recordAt ρ.E₀ (ixAddr b) = some c := by
     rw [← hrun.runStore.recordOf_eq_recordAt]
     exact hcE
   obtain ⟨-, -, v, hld_v, hraw⟩ :=
-    LoadedReads.loadedL1_record hrun.runStore hsubL hhash hblake hL1 hrecA
+    LoadedReads.loadedRecords_record hrun.runStore hsubL hhash hblake hL1 hrecA
   obtain rfl : vci = v := (Except.ok.inj (hld_v.symm.trans hld)).symm
   exact ⟨ixAddr b, c, ci, ci₀, E_ld, loaded, beforeMember, h', cs, loadCalls, memberCalls,
     x_rc, x_tbl, addr, vci, tyPtr, res, tag, rest,
@@ -363,7 +363,7 @@ theorem stdInduct_stored {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {ρ :
     stdMember_loaded hrun hall hadm hle hk which hrg
   obtain ⟨_, _, _, _, _, _, _, hv_ind⟩ := validateMember_induct whichInd mpath
   obtain ⟨p, hp⟩ := (rawCIRep_info_of_tag (hv_ind ▸ hraw)).1 rfl
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hp] at hraw hrr
   dsimp only [IxVM.Consistency.ReadsRecord] at hrr
   obtain ⟨-, lcB, cb, ms, ind, blobs, hgetB, -, -, hexB, -, hcb', hms', hbl, rawInd⟩ := hraw
@@ -426,7 +426,7 @@ theorem stdCtor_stored {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {ρ : B
     stdMember_loaded hrun hall hadm hle hk which hrg
   obtain ⟨_, _, _, _, _, _, _, _, _, hv_ctor, -⟩ := validateMember_ctor pin mpath
   obtain ⟨p, hp⟩ := (rawCIRep_info_of_tag (hv_ctor ▸ hraw)).2.1 rfl
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hp] at hraw hrr
   dsimp only [IxVM.Consistency.ReadsRecord] at hrr
   obtain ⟨-, -, lcB, cb, ms, ind, ct, blobs, hgetB, -, -, hexB, -, hcb', hms', hct', hbl,
@@ -501,19 +501,19 @@ theorem stdRec_stored {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {ρ : BR
       (recurAddrs : List _root_.Address) (blobs : List (_root_.Address × ByteArray))
       (blk : _root_.Address) (idx : Nat) (rc : Ixon.Recursor),
       (∀ x bs, (x, bs) ∈ blobs → ρ.E₀.blobs.get? x = some bs) ∧
-      L1.RawRecrValRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+      Ingress.RawRecrValRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
         loaded rc blk idx vci ∧
       IxVM.Consistency.RecReads t (IxVM.Consistency.recordOf ρ.E₀)
         (fun x => ρ.E₀.blobs.get? x) src self (keyOf t a) rc ci₀ := by
     rcases (rawCIRep_info_of_tag (hv_rec ▸ hraw)).2.2 rfl with ⟨rc, hinfo⟩ | ⟨p, hinfo⟩
-    · unfold L1.RawCIRep at hraw
+    · unfold Ingress.RawCIRep at hraw
       rw [hinfo] at hraw hrr
       dsimp only [IxVM.Consistency.ReadsRecord] at hrr
       obtain ⟨blobs, hbl, rawRec⟩ := hraw
       obtain ⟨-, hrecReads⟩ := hrr
       exact ⟨c, IxVM.Consistency.soloSelf t a, [a], blobs, a, 0, rc,
         hrun.runStore.blob_of_table hloaded hsubL hbl, rawRec, hrecReads⟩
-    · unfold L1.RawCIRep at hraw
+    · unfold Ingress.RawCIRep at hraw
       rw [hinfo] at hraw hrr
       dsimp only [IxVM.Consistency.ReadsRecord] at hrr
       obtain ⟨-, lcB, cb, ms, rc, blobs, hgetB, -, -, hexB, -, hcb', hms', hbl, rawRec⟩ := hraw
@@ -524,7 +524,7 @@ theorem stdRec_stored {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {ρ : BR
         rw [← Array.getElem?_toList]
         exact hms'
       obtain rfl : rc = rc' := Ixon.MutConst.recr.inj (Option.some.inj (hm'.symm.trans hm))
-      exact ⟨cb, IxVM.Consistency.blockSelf t p.block ms, L1.blockRecurAddrs p.block ms.toList,
+      exact ⟨cb, IxVM.Consistency.blockSelf t p.block ms, Ingress.blockRecurAddrs p.block ms.toList,
         blobs, p.block, p.idx.toNat, rc,
         hrun.runStore.blob_of_table hloaded hsubL hbl, rawRec, hrecReads⟩
   obtain ⟨src, self, recurAddrs, blobs, blk, idx, rc, hblob, rawRec, hrecReads⟩ := hrecInfo

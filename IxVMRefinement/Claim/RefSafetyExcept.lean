@@ -54,7 +54,7 @@ private theorem safe_used_refs_set_seg_spec
     {S : List _root_.Address}
     {hit nextUsed ap rest rc refs used ex r : SourceValue F} {h h' : Heap F}
     (hS : LoadedReads.RunStore calls E₀) (hrc : RCLimRep t bAddr lim h rc)
-    (ha : S0.addr h ap a) (hiff : hit = .field 1 ↔ i ∈ idxs)
+    (ha : BaseSeams.addr h ap a) (hiff : hit = .field 1 ↔ i ∈ idxs)
     (hex : RepAddrSet h S ex)
     (ev : Obs.«KernelClaim::assert_safe_used_refs».Seg_fokxpuhl hit nextUsed ap rest rc refs used
       (.field (i : F)) ex h r h' cs)
@@ -72,7 +72,7 @@ private theorem safe_used_refs_set_seg_spec
       (hne_ifyzjima := hn) (he_felbweqg := hh) .. =>
     obtain ⟨_, rfl⟩ := addr_set_member_set_spec hab hex ev91
     have ext := ev134.heap_extends
-    obtain ⟨he, hc⟩ := walk_covered_lim_spec (hrc.mono ext) (S0.addr_mono ext ha) ev165
+    obtain ⟨he, hc⟩ := walk_covered_lim_spec (hrc.mono ext) (BaseSeams.addr_mono ext ha) ev165
     refine ⟨?_, fun _ _ hnc => ?_⟩
     · rw [hh, he]; exact ext
     · rcases hc with hz | hcov
@@ -87,23 +87,23 @@ private theorem safe_used_refs_set_seg_spec
         (ev262.heap_extends.trans ev302.heap_extends)))))
     refine ⟨by rw [hh]; exact extAll, fun _ _ _ c hc => ?_⟩
     have extLoad := ev91.heap_extends.trans (ev134.heap_extends.trans ev165.heap_extends)
-    have haLoad := S0.addr_mono extLoad ha
+    have haLoad := BaseSeams.addr_mono extLoad ha
     obtain ⟨extLoaded, bytes, c', _, hhash, haddr, _, he, hrep, _⟩ :=
       load_verified_constant_de haLoad ev199
     have hloadSub : ∀ cl ∈ csLoad, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     have hrecAt : Ix.Cert.recordAt E₀ a = some c := (hS.recordOf_eq_recordAt a).symm.trans hc
     have hcc : c' = c := hS.record_eq hrecAt (hashed_mono hloadSub hhash) haddr he
     subst c'
-    have haOwner := S0.addr_mono extLoaded haLoad
+    have haOwner := BaseSeams.addr_mono extLoaded haLoad
     obtain ⟨_, ho⟩ := record_owner_spec haOwner hrep ev221
     rw [hz] at ev262
     rw [hzo] at ev302
     have huSub : ∀ cl ∈ csUnsafe, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     have hoSub : ∀ cl ∈ csOwner, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     refine ⟨record_unsafe_zero_in_store hS hc
-      (S0.addr_mono ev221.heap_extends haOwner) ev262 huSub, fun cb hb => ?_⟩
+      (BaseSeams.addr_mono ev221.heap_extends haOwner) ev262 huSub, fun cb hb => ?_⟩
     exact record_unsafe_zero_in_store hS hb
-      (S0.addr_mono (ev221.heap_extends.trans ev262.heap_extends) ho) ev302 hoSub
+      (BaseSeams.addr_mono (ev221.heap_extends.trans ev262.heap_extends) ho) ev302 hoSub
 
 /-- **The guard over a represented exclusion set** proves safety at every used reference index
 whose reference is outside the set and not covered. -/
@@ -162,7 +162,7 @@ theorem assert_safe_refs_except_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     (hb : refs.length < 8589934592) (hrc : RCLimRep t bAddr lim h rc)
     (hr : RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h refs rp)
     (hi : RepSortedIdx h idxs used)
-    (ha : S0.addr h ap a)
+    (ha : BaseSeams.addr h ap a)
     (ev : ObsFn Obs.W "KernelClaim::assert_safe_refs_except" [rc, rp, used, ap] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     ∀ j, (hj : j < refs.length) → j ∈ idxs → refs[j] ≠ a → ¬ CoveredAt t lim refs[j] →

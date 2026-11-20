@@ -300,7 +300,7 @@ theorem read_role_bindings_parse :
       nxt ≤ 108 →
       Claim.RBTreeBST .field h es0 x_by_addr →
       (∀ p ∈ es0, ∃ ro : Ix.Kernel.Role, p.2 = .field (roleNum ro + 1)) →
-      L1.Stream h bs x_s →
+      Ingress.Stream h bs x_s →
       ObsFn W "KernelRoles::read_role_bindings"
         [x_s, .field (n : F), .field (nxt : F), x_by_addr] h r h' calls →
       Heap.Extends h h' ∧
@@ -310,7 +310,7 @@ theorem read_role_bindings_parse :
         r = .tuple [roleMap, byAddr', .field (nxt' : F), restPtr] ∧
         lb.length = n ∧
         bs = lb.flatMap (fun p => Ix.Kernel.RoleTable.encBound (p.1, ixAddr p.2)) ++ rest ∧
-        L1.Stream h' rest restPtr ∧
+        Ingress.Stream h' rest restPtr ∧
         lb.Pairwise (fun p q => p.1.idx < q.1.idx) ∧
         nxt ≤ nxt' ∧ nxt' ≤ 108 ∧ (∀ p ∈ lb, nxt ≤ p.1.idx ∧ p.1.idx < nxt') ∧
         RoleMapEntries roleAddrMapEnum h' ents roleMap ∧ BoundEntriesOf h' lb ents ∧
@@ -441,7 +441,7 @@ theorem read_role_bindings_parse :
         obtain ⟨extR, lbR, restR, roleR, byAddrR, sR, nxtR, entsR, esR, htupR, hlenR, hbsR, hsR,
           hascR, hnxtR1, hnxtR2, hrangeR, hentR, hbndR, hbstR, hidxR⟩ :=
           ih ((n' + 1) - ((n' + 1) / 2 + 1)) (by omega) (by omega) (ro.idx + 1) _
-            (by omega) hbstM hvalsM (L1.Stream.mono ext_ins hs2) ev537
+            (by omega) hbstM hvalsM (Ingress.Stream.mono ext_ins hs2) ev537
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupR
         obtain ⟨rfl, rfl, rfl, rfl⟩ := htupR
         -- the node
@@ -450,10 +450,10 @@ theorem read_role_bindings_parse :
         have extPost := extSnoc1.trans extSnoc2
         have extMid := ext_addr.trans (ext_ins.trans (extR.trans extPost))
         have ldL : loadValue ((m525 ++ [x_left]) ++ [x_right]) (.ptr x_left.type m525.length) =
-            .ok x_left := extSnoc2.loadValue_eq (L1.loadValue_snoc m525 x_left)
+            .ok x_left := extSnoc2.loadValue_eq (Ingress.loadValue_snoc m525 x_left)
         have ldR : loadValue ((m525 ++ [x_left]) ++ [x_right])
             (.ptr x_right.type (m525 ++ [x_left]).length) = .ok x_right :=
-          L1.loadValue_snoc (m525 ++ [x_left]) x_right
+          Ingress.loadValue_snoc (m525 ++ [x_left]) x_right
         refine ⟨extL.trans extMid, lbL ++ [(ro, a')] ++ lbR, restR, _, _, _, nxtR,
           entsL ++ [(rb.toNat, x_a)] ++ entsR, esR, rfl, ?_, ?_, hsR.mono extPost, ?_,
           by omega, hnxtR2, ?_, ?_, ?_, hbstR.mono extPost, ?_⟩

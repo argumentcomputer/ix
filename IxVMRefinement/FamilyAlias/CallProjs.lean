@@ -530,7 +530,7 @@ private theorem check_member_projs_go (P : ProjsCtx.{u})
       Tm (Core.keyOf P.t) 0 zeroGhost h (nP + fidx) cteleE x_ctele →
       AddrMapAll addrMapEnum (fun _ k _ =>
         AdvChecked P.calls P.bAddr P.t P.lim P.csFam P.advAs k) h x_aset →
-      L1.Stream h bytes x_s →
+      Ingress.Stream h bytes x_s →
       (∀ cl ∈ cs, cl ∈ P.calls) →
       ObsFn Obs.W "KernelModeled::check_member_projs"
         [x_rc, x_t_model, x_c_model, x_tty, x_cty_m, x_ftele, x_ctele,
@@ -538,7 +538,7 @@ private theorem check_member_projs_go (P : ProjsCtx.{u})
          x_aset, x_s] h r h' cs →
       ∃ (bytes' : List UInt8) (projKeyAt : Nat → KKey)
         (bsRaw : List (KExpr × Ix.Kernel.BinderMeta)) (remRaw : KExpr),
-        L1.Stream h' bytes' r ∧
+        Ingress.Stream h' bytes' r ∧
         ctyMPos.stripPis (nP + nF) = some (bsRaw, remRaw) ∧
         ∀ k (hk1 : fidx ≤ k) (hk2 : k < nF),
           ∃ (fdom frest rawDom : KExpr) (fbm : Ix.Kernel.BinderMeta),
@@ -977,7 +977,7 @@ private theorem get_ci_ind_tmCExact {calls : List (Call F)} {t : Ix.Kernel.RoleT
     (hlbb : ty₀.looseBVarsBounded 0 = true)
     (hdef : ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true)
     (hcanon : LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-      ((L1.mutsRootOffset ms.toList pos : Nat) : F) ind.typ ty₀ = some tyA)
+      ((Ingress.mutsRootOffset ms.toList pos : Nat) : F) ind.typ ty₀ = some tyA)
     {aT : Bytes.Address} {x_t_addr ptr x_tnl x_tty x_tnp x_tni x_tnc w1 w2 w3 : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
     (haT_eq : ixAddr aT = Core.iprjAddr B pos) (haT : Bytes.RepAddressRef addrTy h aT x_t_addr)
@@ -988,13 +988,13 @@ private theorem get_ci_ind_tmCExact {calls : List (Call F)} {t : Ix.Kernel.RoleT
     x_tnl = .field (ind.lvls.toNat : F) ∧ x_tnp = .field (ind.params.toNat : F) ∧
     Decl.TmCExact (Core.keyOf t) h' tyA x_tty := by
   obtain ⟨rawBytes, cM, hhM, hbaM, hexM, -, htrM⟩ :=
-    L1.get_ci_block_trace_spec (bounded_sub hsub hbd) haT ev
+    Ingress.get_ci_block_trace_spec (bounded_sub hsub hbd) haT ev
   have hrecM : recordOf E₀ (ixAddr aT) = some (memberProjection B pos (.indc ind)) := by
     rw [haT_eq, ← LoadedReads.memberAddr_indc]; exact hB.members pos (.indc ind) hmi
   have hcM_eq : cM = memberProjection B pos (.indc ind) :=
     hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hrecM) (Core.hashed_mono hsub hhM) hbaM hexM
   subst hcM_eq
-  unfold L1.GetCIBlockTraceResult at htrM; simp only [memberProjection] at htrM
+  unfold Ingress.GetCIBlockTraceResult at htrM; simp only [memberProjection] at htrM
   obtain ⟨-, blkBytes, cb', ms', ind', blobs, tree, plan, v, hhBlk, hbaBlk, hexBlk, hmuts',
     hmi', hhp, built, planned, hldv, hraw, hlevs⟩ := htrM
   have hcb_eq : cb' = cb :=
@@ -1016,8 +1016,8 @@ private theorem get_ci_ind_tmCExact {calls : List (Call F)} {t : Ix.Kernel.RoleT
   have hblob : ∀ x bs, (x, bs) ∈ blobs → E₀.blobs.get? x = some bs := fun x bs hm => by
     obtain ⟨hhx, hxa⟩ := hhp (x, bs) hm
     have hrun := hS.blobs bs (Core.hashed_mono hsub hhx); rwa [hxa] at hrun
-  have hagree : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
-    L1.BlobReadAgreement.of_mem hblob
+  have hagree : Ingress.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
+    Ingress.BlobReadAgreement.of_mem hblob
   obtain ⟨cnt, tyPtr', flds, hvc, hbl⟩ := hlevs
   rw [← hveq] at hvc
   simp only [Value.construct.injEq, List.cons.injEq] at hvc
@@ -1040,7 +1040,7 @@ private theorem get_ci_ctor_tmCExact {calls : List (Call F)} {t : Ix.Kernel.Role
     (hlbb : ty₀.looseBVarsBounded 0 = true)
     (hdef : ty₀.allLevelParamsDefined (List.range ct.lvls.toNat) = true)
     (hcanon : LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-      (((L1.mutsRootOffset ms.toList pos : Nat) : F) + 1 + ((0 : Nat) : F)) ct.typ ty₀ = some tyA)
+      (((Ingress.mutsRootOffset ms.toList pos : Nat) : F) + 1 + ((0 : Nat) : F)) ct.typ ty₀ = some tyA)
     {aC : Bytes.Address} {x_c_addr ptr x_cnl x_cty w1 w2 w3 x_cnp x_cnf w4 : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
     (haC_eq : ixAddr aC = Core.cprjAddr B pos 0) (haC : Bytes.RepAddressRef addrTy h aC x_c_addr)
@@ -1053,14 +1053,14 @@ private theorem get_ci_ctor_tmCExact {calls : List (Call F)} {t : Ix.Kernel.Role
     x_cnf = .field (ct.fields.toNat : F) ∧
     Decl.TmCExact (Core.keyOf t) h' tyA x_cty := by
   obtain ⟨rawBytes, cM, hhM, hbaM, hexM, -, htrM⟩ :=
-    L1.get_ci_block_trace_spec (bounded_sub hsub hbd) haC ev
+    Ingress.get_ci_block_trace_spec (bounded_sub hsub hbd) haC ev
   have hrecM : recordOf E₀ (ixAddr aC) = some (constructorProjection B pos 0) := by
     rw [haC_eq, ← LoadedReads.ctorAddr_eq_cprjAddr]
     exact hB.ctors pos ind 0 hmi (Array.getElem?_eq_some_iff.mp hct).1
   have hcM_eq : cM = constructorProjection B pos 0 :=
     hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hrecM) (Core.hashed_mono hsub hhM) hbaM hexM
   subst hcM_eq
-  unfold L1.GetCIBlockTraceResult at htrM; simp only [constructorProjection] at htrM
+  unfold Ingress.GetCIBlockTraceResult at htrM; simp only [constructorProjection] at htrM
   obtain ⟨-, -, blkBytes, cb', ms', ind', ct', blobs, tree, plan, v, hhBlk, hbaBlk, hexBlk, hmuts',
     hmi', hct', hhp, built, planned, hldv, hraw, hlevs⟩ := htrM
   have hcb_eq : cb' = cb :=
@@ -1086,8 +1086,8 @@ private theorem get_ci_ctor_tmCExact {calls : List (Call F)} {t : Ix.Kernel.Role
   have hblob : ∀ x bs, (x, bs) ∈ blobs → E₀.blobs.get? x = some bs := fun x bs hm => by
     obtain ⟨hhx, hxa⟩ := hhp (x, bs) hm
     have hrun := hS.blobs bs (Core.hashed_mono hsub hhx); rwa [hxa] at hrun
-  have hagree : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
-    L1.BlobReadAgreement.of_mem hblob
+  have hagree : Ingress.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
+    Ingress.BlobReadAgreement.of_mem hblob
   obtain ⟨cnt, tyPtr', flds, hvc, hbl⟩ := hlevs
   rw [← hveq] at hvc
   simp only [Value.construct.injEq, List.cons.injEq] at hvc
@@ -1119,13 +1119,13 @@ theorem check_member_projs_start_spec (P : ProjsCtx.{u})
     (hlbb_T : ty₀_T.looseBVarsBounded 0 = true)
     (hdef_T : ty₀_T.allLevelParamsDefined (List.range ind.lvls.toNat) = true)
     (hcanon_T : LoadedReads.canonAnn P.cb (List.range ind.lvls.toNat)
-      ((L1.mutsRootOffset ms.toList pos : Nat) : F) ind.typ ty₀_T = some tyA_T)
+      ((Ingress.mutsRootOffset ms.toList pos : Nat) : F) ind.typ ty₀_T = some tyA_T)
     (hA_def_T : tyA_T.allLevelParamsDefined (List.range ind.lvls.toNat) = true)
     (hread_C : (exprReader P.t (fun x => P.E₀.blobs.get? x) P.cb id (blockSelf P.t P.B ms)).read ct.typ = .ok ty₀_C)
     (hlbb_C : ty₀_C.looseBVarsBounded 0 = true)
     (hdef_C : ty₀_C.allLevelParamsDefined (List.range ct.lvls.toNat) = true)
     (hcanon_C : LoadedReads.canonAnn P.cb (List.range ct.lvls.toNat)
-      (((L1.mutsRootOffset ms.toList pos : Nat) : F) + 1 + ((0 : Nat) : F)) ct.typ ty₀_C = some tyA_C)
+      (((Ingress.mutsRootOffset ms.toList pos : Nat) : F) + 1 + ((0 : Nat) : F)) ct.typ ty₀_C = some tyA_C)
     (hA_def_C : tyA_C.allLevelParamsDefined (List.range ct.lvls.toNat) = true)
     (hbB_eq : ixAddr bB = P.B) (haT_eq : ixAddr aT = Core.iprjAddr P.B pos)
     (haTM_eq : Core.keyOf P.t (ixAddr aTM) = g (Core.keyOf P.t (Core.iprjAddr P.B pos)))
@@ -1137,12 +1137,12 @@ theorem check_member_projs_start_spec (P : ProjsCtx.{u})
     (hrm : Decl.RenameMap (Core.keyOf P.t) (Core.keyOf P.t) g h x_src x_dst)
     (haset : AddrMapAll addrMapEnum (fun _ k _ =>
       AdvChecked P.calls P.bAddr P.t P.lim P.csFam P.advAs k) h x_aset)
-    (hstr : L1.Stream h bytes x_s)
+    (hstr : Ingress.Stream h bytes x_s)
     (hsub : ∀ cl ∈ cs, cl ∈ P.calls)
     (ev : ObsFn Obs.W "KernelModeled::check_member_projs_start"
       [x_rc, x_block, .field (pos : F), x_t_addr, x_t_model, x_src, x_dst, x_aset,
        x_np, x_bnl, x_s] h r h' cs) :
-    ∃ bytes', L1.Stream h' bytes' r ∧
+    ∃ bytes', Ingress.Stream h' bytes' r ∧
       Nonempty (MemberProjFacts P.t P.E P.env P.B ms g pos tyA_T tyA_C) := by
   have : ∀ a, Resolved (Core.keyOf P.t a) := fun a => ⟨P.keyOf_ne_unresolved a⟩
   match Obs.«KernelModeled::check_member_projs_start».obs ev with
@@ -1332,11 +1332,11 @@ private theorem check_projs_loop (P : ProjsCtx.{u})
         ciC.name = Core.keyOf P.t (Core.cprjAddr P.B pos 0) ∧
         tys[kC]? = some tyA_C ∧
         LoadedReads.canonAnn P.cb (List.range ind.lvls.toNat)
-          ((L1.mutsRootOffset ms.toList pos : Nat) : F) ind.typ (indTy₀ pos) = some tyA_T ∧
+          ((Ingress.mutsRootOffset ms.toList pos : Nat) : F) ind.typ (indTy₀ pos) = some tyA_T ∧
         Annotates tyA_T (indTy₀ pos) ∧
         tyA_T.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
         LoadedReads.canonAnn P.cb (List.range ct.lvls.toNat)
-          (((L1.mutsRootOffset ms.toList pos : Nat) : F) + 1 + ((0 : Nat) : F)) ct.typ (ctorTy₀ pos 0) =
+          (((Ingress.mutsRootOffset ms.toList pos : Nat) : F) + 1 + ((0 : Nat) : F)) ct.typ (ctorTy₀ pos 0) =
           some tyA_C ∧
         tyA_C.allLevelParamsDefined (List.range ct.lvls.toNat) = true) :
     ∀ (rem pos : Nat) (hpos : pos + rem = ms.size)
@@ -1356,7 +1356,7 @@ private theorem check_projs_loop (P : ProjsCtx.{u})
       Decl.RenameMap (Core.keyOf P.t) (Core.keyOf P.t) g h x_src x_dst →
       AddrMapAll addrMapEnum (fun _ k _ =>
         AdvChecked P.calls P.bAddr P.t P.lim P.csFam P.advAs k) h x_aset →
-      L1.Stream h bytes x_s →
+      Ingress.Stream h bytes x_s →
       (∀ cl ∈ cs, cl ∈ P.calls) →
       ObsFn Obs.W "KernelModeled::check_projs"
         [x_rc, x_block, x_members, .field (pos : F), x_tys, x_tyM, x_src, x_dst, x_aset,
@@ -1435,7 +1435,7 @@ private theorem check_projs_loop (P : ProjsCtx.{u})
             have hAdvTM : AdvChecked P.calls P.bAddr P.t P.lim P.csFam P.advAs aTM := by
               simpa using htAdv 0 (Nat.zero_lt_succ rem)
             have hstep : ∃ (b0 : Bool) (bytes1 : List UInt8),
-                L1.Stream m_seg bytes1 v_snext ∧ Heap.Extends h m_seg ∧
+                Ingress.Stream m_seg bytes1 v_snext ∧ Heap.Extends h m_seg ∧
                 (∀ {E₂ : Ixon.Env}, BlockCanonReadings P.t E₂ P.B P.cb ms indTy₀ ctorTy₀ →
                   ∀ {b₂ : Bytes.Address} {bp₂ r₂ : SourceValue F} {h₂ h₂' : Heap F} {cs₂ : List (Call F)},
                     Bytes.RepAddressRef addrTy h₂ b₂ bp₂ → ixAddr b₂ = P.B →
@@ -1558,11 +1558,11 @@ theorem check_projs_facts (P : ProjsCtx.{u})
         ciC.name = Core.keyOf P.t (Core.cprjAddr P.B pos 0) ∧
         tys[kC]? = some tyA_C ∧
         LoadedReads.canonAnn P.cb (List.range ind.lvls.toNat)
-          ((L1.mutsRootOffset ms.toList pos : Nat) : F) ind.typ (indTy₀ pos) = some tyA_T ∧
+          ((Ingress.mutsRootOffset ms.toList pos : Nat) : F) ind.typ (indTy₀ pos) = some tyA_T ∧
         Annotates tyA_T (indTy₀ pos) ∧
         tyA_T.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
         LoadedReads.canonAnn P.cb (List.range ct.lvls.toNat)
-          (((L1.mutsRootOffset ms.toList pos : Nat) : F) + 1 + ((0 : Nat) : F)) ct.typ (ctorTy₀ pos 0) =
+          (((Ingress.mutsRootOffset ms.toList pos : Nat) : F) + 1 + ((0 : Nat) : F)) ct.typ (ctorTy₀ pos 0) =
           some tyA_C ∧
         tyA_C.allLevelParamsDefined (List.range ct.lvls.toNat) = true)
     (hrc : Claim.RCLimRep P.t P.bAddr P.lim h x_rc)
@@ -1573,7 +1573,7 @@ theorem check_projs_facts (P : ProjsCtx.{u})
     (hrm : Decl.RenameMap (Core.keyOf P.t) (Core.keyOf P.t) g h x_src x_dst)
     (haset : AddrMapAll addrMapEnum (fun _ k _ =>
       AdvChecked P.calls P.bAddr P.t P.lim P.csFam P.advAs k) h x_aset)
-    (hstr : L1.Stream h bytes x_s)
+    (hstr : Ingress.Stream h bytes x_s)
     (hsub : ∀ cl ∈ cs, cl ∈ P.calls)
     (ev : ObsFn Obs.W "KernelModeled::check_projs"
       [x_rc, x_block, x_members, .field 0, x_tys, x_tyM, x_src, x_dst, x_aset, x_np, x_bnl, x_s]

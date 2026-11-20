@@ -120,7 +120,7 @@ stage, under which the loaded type represents `cty'` exactly (`LoadedReads.ctor_
 constant at the former's key is at the member's address (which the member list holds), and no
 projection at the former is permitted. -/
 theorem struct_is_rec_doms {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
-    {E : Ixon.Env} (hdec : L1.EnvDecoded E) {env : Ix.Kernel.Env .anon} {lim : Option Nat}
+    {E : Ixon.Env} (hdec : Ingress.EnvDecoded E) {env : Ix.Kernel.Env .anon} {lim : Option Nat}
     (hinv : Decl.PrefixInv E t lim env) (hkeys : HashKeyed t env)
     {B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
     (hblock : recordOf E B = some cb) (hmuts : cb.info = .muts #[.indc ind])
@@ -138,7 +138,7 @@ theorem struct_is_rec_doms {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
     (hlbb : cty.looseBVarsBounded 0 = true)
     (hdef : cty.allLevelParamsDefined (List.range ct.lvls.toNat) = true)
     (hcanon : LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-      (((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) + 1 +
+      (((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) + 1 +
         ((j : Nat) : F)) ct.typ cty = some cty') :
     ∀ (n : Nat) (bs : List (Core.KExpr × Ix.Kernel.BinderMeta)) (body : Core.KExpr),
       cty'.stripPis n = some (bs, body) → ∀ i, ind.params.toNat ≤ i → i < n →
@@ -230,7 +230,7 @@ theorem struct_is_rec_doms {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
     intro i hi x hx
     obtain ⟨ci, hci⟩ := hstored i hi x hx
     exact ctorStage_of_find hfreshF hnt hci
-  have hrecur : ∀ x ∈ L1.blockRecurAddrs (Core.ixAddr b')
+  have hrecur : ∀ x ∈ Ingress.blockRecurAddrs (Core.ixAddr b')
       (#[.indc ind] : Array Ixon.MutConst).toList,
       (Decl.ctorStage ⟨E, env, t, lim⟩ cvF ({} : IndCaps .anon)).κ x = Core.keyOf t x := by
     rw [hb'B]
@@ -309,7 +309,7 @@ the classified kinds of stored constructors each of which is the canonical annot
 constructor slot's reading (as the named install stores them), at the family's key and the
 record's parameter count. -/
 theorem nativeIsRec_false_of_struct_is_rec {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
-    {E : Ixon.Env} (hdec : L1.EnvDecoded E) {env : Ix.Kernel.Env .anon} {lim : Option Nat}
+    {E : Ixon.Env} (hdec : Ingress.EnvDecoded E) {env : Ix.Kernel.Env .anon} {lim : Option Nat}
     (hinv : Decl.PrefixInv E t lim env) (hkeys : HashKeyed t env)
     {B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
     (hblock : recordOf E B = some cb) (hmuts : cb.info = .muts #[.indc ind])
@@ -332,7 +332,7 @@ theorem nativeIsRec_false_of_struct_is_rec {t : Ix.Kernel.RoleTable} (ht : t.che
       cty.looseBVarsBounded 0 = true ∧
       cty.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
       LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-        (((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) + 1 +
+        (((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) + 1 +
           ((j : Nat) : F)) ct.typ cty = some cA.1.type) :
     Ix.Kernel.nativeIsRec kinds = false := by
   subst hT hnP

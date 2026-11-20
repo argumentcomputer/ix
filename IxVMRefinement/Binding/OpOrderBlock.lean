@@ -75,7 +75,7 @@ def NotOp (t : Ix.Kernel.RoleTable) (x : _root_.Address) : Prop :=
 def ScanSeamExt (x_tbl x_lim x_needs : SourceValue F) (h₀ : Heap F)
     (t : Ix.Kernel.RoleTable) (Ok : _root_.Address → Prop) : Prop :=
   ∀ (a : _root_.Address) (x_a r : SourceValue F) (h h' : Heap F) (calls : List (Call F)),
-    Heap.Extends h₀ h → S0.addr h x_a a →
+    Heap.Extends h₀ h → BaseSeams.addr h x_a a →
     ObsFn Obs.W "KernelRoles::op_order_scan" [x_tbl, x_lim, x_needs, x_a] h r h' calls →
     Ok a ∨ (NotOp t a ∧ ∃ (r' : SourceValue F) (h₁ h₂ : Heap F) (cs : List (Call F)),
       Heap.Extends h h₁ ∧
@@ -252,7 +252,7 @@ def ScanEntryExt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (Ok : _root_.
     (∀ ms, c.info = .muts ms → ¬ ModeledRouteAt calls x) ∧
     (Ok (Ix.Cert.ownerOf x c) ∨ (Ix.Cert.ownerOf x c ∈ within ∧ NotOp t (Ix.Cert.ownerOf x c)) ∨
       (¬ IsProj c ∧ Ix.Cert.ownerOf x c = x)) ∧
-    ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ S0.usedRefIdxs c →
+    ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ BaseSeams.usedRefIdxs c →
       Ok c.refs.toList[j] ∨ (c.refs.toList[j] ∈ within ∧ NotOp t c.refs.toList[j])
 
 /-- **The extended entered records are closed.** -/
@@ -309,7 +309,7 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
     (seam : ScanSeamExt x_tbl x_lim x_needs h₀ t Ok) :
     ∀ (fuel : Nat),
       (∀ {a : _root_.Address} {x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
-         calls.length ≤ fuel → Heap.Extends h₀ h → S0.addr h x_a a →
+         calls.length ≤ fuel → Heap.Extends h₀ h → BaseSeams.addr h x_a a →
          ObsFn Obs.W "KernelRoles::op_order_scan_refs" [x_tbl, x_lim, x_needs, x_a] h r h' calls →
          ∃ entered : List _root_.Address, a ∈ entered ∧ ScanClosedExt calls t Ok entered) ∧
       (∀ {i : Nat} {refs : List _root_.Address} {idxs : List Nat}
@@ -327,7 +327,7 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
   induction fuel using Nat.strongRecOn with
   | ind fuel ih =>
     have scanAt : ∀ {b : _root_.Address} {x_b r : SourceValue F} {h h' : Heap F}
-        {cs : List (Call F)}, cs.length < fuel → Heap.Extends h₀ h → S0.addr h x_b b →
+        {cs : List (Call F)}, cs.length < fuel → Heap.Extends h₀ h → BaseSeams.addr h x_b b →
         ObsFn Obs.W "KernelRoles::op_order_scan" [x_tbl, x_lim, x_needs, x_b] h r h' cs →
         ∃ entered : List _root_.Address, ScanClosedExt cs t Ok entered ∧
           (Ok b ∨ (b ∈ entered ∧ NotOp t b)) := by
@@ -337,7 +337,7 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
       · exact ⟨[], scanClosedExt_nil cs t Ok, Or.inl hok⟩
       · obtain ⟨entered, hmem, hcl⟩ :=
           (ih cs'.length (by omega)).1 (Nat.le_refl _) (hbase.trans hext)
-            (S0.addr_mono hext hb) evr
+            (BaseSeams.addr_mono hext hb) evr
         exact ⟨entered, hcl.mono hsub, Or.inr ⟨hmem, hno⟩⟩
     refine ⟨?_, ?_⟩
     · intro a x_a r h h' calls hfuel hbase ha ev
@@ -470,7 +470,7 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
                     | exact Or.inr (Or.inr (Or.inr ⟨_, hc_i⟩))
           have hnm : ∀ ms, c.info = .muts ms → ¬ ModeledRouteAt cs410 a := by
             intro ms _ hmod
-            obtain ⟨ab, hab, hix⟩ := S0.addr_mono ext1 ha
+            obtain ⟨ab, hab, hix⟩ := BaseSeams.addr_mono ext1 ha
             exact hmod x_a vM m2 mM csM ab evM (fun cl hm => by rw [hcM]; simp [hm]) hab hix heqM
           refine ⟨by subst hhM; exact evM.heap_extends, hnm, [], scanClosedExt_nil cs410 t Ok,
             Or.inr (Or.inr ⟨hnp, hown⟩)⟩
@@ -595,7 +595,7 @@ theorem op_order_scan_refs_ext_spec {x_tbl x_lim x_needs : SourceValue F} {h₀ 
     {t : Ix.Kernel.RoleTable} {Ok : _root_.Address → Prop}
     (seam : ScanSeamExt x_tbl x_lim x_needs h₀ t Ok)
     {a : _root_.Address} {x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hbase : Heap.Extends h₀ h) (ha : S0.addr h x_a a)
+    (hbase : Heap.Extends h₀ h) (ha : BaseSeams.addr h x_a a)
     (ev : ObsFn Obs.W "KernelRoles::op_order_scan_refs" [x_tbl, x_lim, x_needs, x_a] h r h' calls) :
     ∃ entered : List _root_.Address, a ∈ entered ∧ ScanClosedExt calls t Ok entered :=
   (scan_ext_fuel_aux seam calls.length).1 (Nat.le_refl _) hbase ha ev
@@ -621,7 +621,7 @@ theorem op_order_scan_except_ext_spec {x_tbl x_lim x_needs : SourceValue F} {h�
       Heap.Extends h₀ h → i + refs.length < 8589934592 →
       RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h refs x_refs →
       Claim.RepSortedIdxFrom h idxs i x_used →
-      S0.addr h x_a a →
+      BaseSeams.addr h x_a a →
       ObsFn Obs.W "KernelRoles::op_order_scan_except"
         [x_tbl, x_lim, x_needs, x_refs, x_used, .field (i : F), x_a] h r h' calls →
       ∃ entered : List _root_.Address, ScanClosedExt calls t Ok entered ∧
@@ -657,7 +657,7 @@ theorem op_order_scan_except_ext_spec {x_tbl x_lim x_needs : SourceValue F} {h�
             hok | ⟨hno, r', h₁, h₂, cs', hext, evr, hsub, _⟩
           · exact ⟨ev120.heap_extends, [], scanClosedExt_nil cs166 t Ok, fun _ _ => Or.inl hok⟩
           · obtain ⟨entered₁, hmem, hcl⟩ :=
-              op_order_scan_refs_ext_spec seam (hbase.trans hext) (S0.addr_mono hext hb_rep) evr
+              op_order_scan_refs_ext_spec seam (hbase.trans hext) (BaseSeams.addr_mono hext hb_rep) evr
             have hsub' : ∀ cl ∈ cs', cl ∈ cs166 :=
               fun cl hm => by rw [hc153]; simp [hsub cl hm]
             exact ⟨ev120.heap_extends, entered₁, hcl.mono hsub',
@@ -676,7 +676,7 @@ theorem op_order_scan_except_ext_spec {x_tbl x_lim x_needs : SourceValue F} {h�
         op_order_scan_except_ext_spec seam rest (hbase.trans ext1) hbound'
           (repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ ext1 hrest_rep)
           (hidxs_next.mono ext1)
-          (S0.addr_mono ext1 ha) ev177
+          (BaseSeams.addr_mono ext1 ha) ev177
       have hsub1 : ∀ cl ∈ cs166, cl ∈ calls := fun cl hcl => by rw [hc242]; simp [hcl]
       have hsub2 : ∀ cl ∈ cs175, cl ∈ calls := fun cl hcl => by rw [hc242]; simp [hcl]
       refine ⟨entered₁ ++ entered₂, (hcl₁.mono hsub1).append (hcl₂.mono hsub2),
@@ -948,7 +948,7 @@ private theorem evList_length_scan {es : List (Ix.Kernel.Evidence _root_.Address
 private theorem evRep_proof_inv_scan {h : Heap F} {thm : _root_.Address}
     {x_e x_thm : SourceValue F} (hev : EvRep h (.proof thm) x_e)
     (hx : x_e = .construct "KernelRoles::RoleEvidence" "Proof" [x_thm]) :
-    S0.addr h x_thm thm := by
+    BaseSeams.addr h x_thm thm := by
   rcases hev with ⟨hdef, _⟩ | ⟨a, p, hprf, hv, ha⟩
   · cases hdef
   · injection hprf with hix
@@ -990,7 +990,7 @@ private theorem validate_op_equations_scan {t : Ix.Kernel.RoleTable} {bAddr : _r
       n < 4294967296 →
       Claim.RCFullRep t bAddr n h x_rc →
       Claim.TableFullRep t bAddr h x_tbl →
-      S0.addr h x_a a →
+      BaseSeams.addr h x_a a →
       RepList evListEnum EvRep h es x_ev →
       ObsFn Obs.W "KernelRoles::validate_op_equations"
         [x_rc, x_tbl, .field (roleNum ro), x_a, x_val, x_ev, x_k] h r h' calls →
@@ -1002,7 +1002,7 @@ private theorem validate_op_equations_scan {t : Ix.Kernel.RoleTable} {bAddr : _r
           ScanClosedExt calls t
             (RoleVal.ScanStopsAt t n (RoleVal.groupNeededRoles (Ix.SpecDigest.groupOf ro)))
             entered ∧
-          ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ S0.usedRefIdxs c →
+          ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ BaseSeams.usedRefIdxs c →
             c.refs.toList[j] ≠ a →
             RoleVal.ScanStopsAt t n (RoleVal.groupNeededRoles (Ix.SpecDigest.groupOf ro))
               c.refs.toList[j] ∨
@@ -1029,7 +1029,7 @@ private theorem validate_op_equations_scan {t : Ix.Kernel.RoleTable} {bAddr : _r
               ScanClosedExt cs1051 t
                 (RoleVal.ScanStopsAt t n (RoleVal.groupNeededRoles (Ix.SpecDigest.groupOf ro)))
                 entered ∧
-              ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ S0.usedRefIdxs c →
+              ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ BaseSeams.usedRefIdxs c →
                 c.refs.toList[j] ≠ a →
                 RoleVal.ScanStopsAt t n (RoleVal.groupNeededRoles (Ix.SpecDigest.groupOf ro))
                   c.refs.toList[j] ∨
@@ -1060,8 +1060,8 @@ private theorem validate_op_equations_scan {t : Ix.Kernel.RoleTable} {bAddr : _r
             have extRole := roleRun.heap_extends
             have extRaw := rawRun.heap_extends
             have extToScope := ciRun.heap_extends.trans (substRun.heap_extends.trans scopeRun.heap_extends)
-            have ha_raw : S0.addr roleHeap thmPtr thm₀ :=
-              S0.addr_mono extRole (evRep_proof_inv_scan he_rep proofShape)
+            have ha_raw : BaseSeams.addr roleHeap thmPtr thm₀ :=
+              BaseSeams.addr_mono extRole (evRep_proof_inv_scan he_rep proofShape)
             obtain ⟨_, rawBytes, c, hsz, hh_raw, hblk, _, hdeExact, hrep, _⟩ :=
               Claim.load_verified_constant_de ha_raw rawRun
             obtain ⟨extIdx, hidxs⟩ := Claim.const_idxs_of_spec (hrep.mono extToScope) idxRun
@@ -1092,7 +1092,7 @@ private theorem validate_op_equations_scan {t : Ix.Kernel.RoleTable} {bAddr : _r
             rw [← Nat.cast_zero (R := F)] at scanRun
             obtain ⟨entered, hcl, hscan⟩ :=
               op_order_scan_except_ext_spec seam c.refs.toList (Heap.Extends.refl _) hbound
-                hrefs_needs hidxs_needs (S0.addr_mono extToNeeds ha) scanRun
+                hrefs_needs hidxs_needs (BaseSeams.addr_mono extToNeeds ha) scanRun
             have hsub_raw : ∀ cl ∈ rawCalls, cl ∈ cs1051 := fun cl hm => by rw [segCalls]; simp [hm]
             have hsub_sc : ∀ cl ∈ scanCalls, cl ∈ cs1051 := fun cl hm => by rw [segCalls]; simp [hm]
             refine ⟨ext_seg_all, fun thm he => ?_⟩
@@ -1101,7 +1101,7 @@ private theorem validate_op_equations_scan {t : Ix.Kernel.RoleTable} {bAddr : _r
               hcl.mono hsub_sc, fun j hj hu hne => hscan j hj (by rw [Nat.zero_add]; exact hu) hne⟩
       obtain ⟨ext1, hhead⟩ := hseg
       obtain ⟨ext2, htail⟩ :=
-        validate_op_equations_scan hn (hrc.mono ext1) (htbl.mono ext1) (S0.addr_mono ext1 ha)
+        validate_op_equations_scan hn (hrc.mono ext1) (htbl.mono ext1) (BaseSeams.addr_mono ext1 ha)
           (repList_heapMono₂ evListEnum evRep_heapMono₂ ext1 hrest_rep) ev1062
       have hsub1 : ∀ cl ∈ cs1051, cl ∈ calls := fun cl hm => by rw [hc1127]; simp [hm]
       have hsub2 : ∀ cl ∈ cs1060, cl ∈ calls := fun cl hm => by rw [hc1127]; simp [hm]
@@ -1130,7 +1130,7 @@ theorem validate_role_wf_op_scans {calls : List (Call F)} {bAddr : _root_.Addres
         rawBytes.size < 4294967296 ∧ Hashed calls rawBytes ∧ Address.blake3Pure rawBytes = thm ∧
         Ixon.deConstantExact rawBytes = .ok c ∧
         ScanClosedExt calls t (RoleVal.ScanStopsAt t 33 (RoleVal.groupNeededRoles g)) entered ∧
-        ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ S0.usedRefIdxs c →
+        ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ BaseSeams.usedRefIdxs c →
           c.refs.toList[j] ≠ a →
           RoleVal.ScanStopsAt t 33 (RoleVal.groupNeededRoles g) c.refs.toList[j] ∨
           (c.refs.toList[j] ∈ entered ∧ NotOp t c.refs.toList[j])) := by
@@ -1176,8 +1176,8 @@ theorem validate_role_wf_op_scans {calls : List (Call F)} {bAddr : _root_.Addres
         rawLoad.heap_extends.trans (ext_safe.trans (ev144.heap_extends.trans ev123.heap_extends))
       have ext_162 : Heap.Extends h m162 :=
         ext_ba.trans (ext_m111.trans (ext_w.trans ev174.heap_extends))
-      have ha_162 : S0.addr m162 v1 a :=
-        S0.addr_mono (ext_m111.trans (ext_w.trans ev174.heap_extends)) ha_m2
+      have ha_162 : BaseSeams.addr m162 v1 a :=
+        BaseSeams.addr_mono (ext_m111.trans (ext_w.trans ev174.heap_extends)) ha_m2
       have hrc_162 := hrc.mono ext_162
       have htbl_162 := htbl.mono ext_162
       have hscan_bound : Heap.Extends m162 m_sg2 ∧
@@ -1195,7 +1195,7 @@ theorem validate_role_wf_op_scans {calls : List (Call F)} {bAddr : _root_.Addres
           have seam := op_order_scan_step_ext t bAddr 33 (RoleVal.groupNeededRoles g)
             x_tbl v324 m354 (by decide) (htbl_162.mono ext_gn) hneeds
           obtain ⟨entered, hmem, hcl⟩ :=
-            op_order_scan_refs_ext_spec seam (Heap.Extends.refl _) (S0.addr_mono ext_gn ha_162)
+            op_order_scan_refs_ext_spec seam (Heap.Extends.refl _) (BaseSeams.addr_mono ext_gn ha_162)
               ev_scan
           have hsub_sc : ∀ cl ∈ cs319, cl ∈ calls := fun cl hm =>
             hsub cl (by rw [hc279]; simp [show cl ∈ cs236 by
@@ -1212,7 +1212,7 @@ theorem validate_role_wf_op_scans {calls : List (Call F)} {bAddr : _root_.Addres
       have e_255 : Heap.Extends m162 m255 := ext_sg2.trans ev204.heap_extends
       obtain ⟨_, hprfs⟩ :=
         validate_op_equations_scan (by decide) (hrc_162.mono e_255) (htbl_162.mono e_255)
-          (S0.addr_mono e_255 ha_162) hlist_m192 ev280
+          (BaseSeams.addr_mono e_255 ha_162) hlist_m192 ev280
       have hsub_ev : ∀ cl ∈ cs278, cl ∈ calls := fun cl hm =>
         hsub cl (by rw [hc279]; simp [show cl ∈ cs236 by rw [hc320]; simp [hm]])
       intro arr thm a' had' hm hthm
@@ -1411,7 +1411,7 @@ theorem groupReach_in_scan_wf {calls : List (Call F)} {bAddr : _root_.Address}
     have hrec : recordOf E₀ thm = some c := by
       rw [← hbl]
       exact Claim.recordOf_hashed hC.runStore hC.hashedStored hh hsz
-        (L1.deConstant_of_deConstantExact hdeE) hdeE
+        (Ingress.deConstant_of_deConstantExact hdeE) hdeE
     have ⟨c', i, hc', hi, hy⟩ := hu
     have ec : c' = c := Option.some.inj (hc'.symm.trans hrec)
     subst ec
@@ -1471,7 +1471,7 @@ theorem blockSteps_of_run {calls : List (Call F)} {bAddr : _root_.Address}
     have hrec : recordOf E₀ thm = some c := by
       rw [← hbl]
       exact Claim.recordOf_hashed hC.runStore hC.hashedStored hh hsz
-        (L1.deConstant_of_deConstantExact hdeE) hdeE
+        (Ingress.deConstant_of_deConstantExact hdeE) hdeE
     obtain ⟨c', i, hc', hi, hy⟩ := hu
     have ec : c' = c := Option.some.inj (hc'.symm.trans hrec)
     subst ec

@@ -22,7 +22,7 @@ member address lists (`Ingress::build_recur_addrs`), and the block elimination o
 (`KernelModeled::block_elim` refining `BlockElim t E₀ B off`).
 
 Every expression read from a record at an address in `Held R` is converted directly to `TmOExact`
-and `loadedAt` via `L1.RawConvExpr.toTmExactTrace` under `StoreLevelsOk t E₀ (Held R)` (every
+and `loadedAt` via `Ingress.RawConvExpr.toTmExactTrace` under `StoreLevelsOk t E₀ (Held R)` (every
 record expression in `Held R` has its level parameters below the record's declared level count),
 with zero `looseBVarsBounded 0`, `MatchStructFaithful`, `ProjAnswers`, `UnfoldAnswers`, or
 `NoLetTele` premises. -/
@@ -47,20 +47,20 @@ set_option linter.unusedSimpArgs false
 
 /-! ## Pure helpers: `posOf (List.range n)`, `looseBVarsBounded`, `AddrIn` -/
 
-theorem invPosLevel_range (n : Nat) : ∀ ℓ : KLevel, L1.invPosLevel (List.range n) ℓ = ℓ
+theorem invPosLevel_range (n : Nat) : ∀ ℓ : KLevel, Ingress.invPosLevel (List.range n) ℓ = ℓ
   | .zero => rfl
   | .succ l => congrArg Ix.Kernel.Level.succ (invPosLevel_range n l)
   | .max a b => congrArg₂ Ix.Kernel.Level.max (invPosLevel_range n a) (invPosLevel_range n b)
   | .imax a b => congrArg₂ Ix.Kernel.Level.imax (invPosLevel_range n a) (invPosLevel_range n b)
   | .param i => by
-    simp only [L1.invPosLevel, List.length_range]
+    simp only [Ingress.invPosLevel, List.length_range]
     split
     · simp [List.getElem_range]
     · rfl
 
 theorem level_subst_posLevels_range (n : Nat) (ℓ : KLevel) :
     Ix.Kernel.Level.subst (List.range n) (Core.posLevels (List.range n)) ℓ = ℓ := by
-  have h := L1.subst_posLevels_invPosLevel (ps := List.range n) (by simp) ℓ
+  have h := Ingress.subst_posLevels_invPosLevel (ps := List.range n) (by simp) ℓ
   rwa [invPosLevel_range] at h
 
 theorem posOf_range_eq (n : Nat) : ∀ E : KExpr, Core.posOf (List.range n) E = E
@@ -226,17 +226,17 @@ theorem rawConvExpr_to_tmOExact_loadedAt {t : Ix.Kernel.RoleTable} (ht : t.check
     {self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon))}
     {recurAddrs : List _root_.Address} {nl : Nat}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {e : Ixon.Expr}
-    {kp : SourceValue F} {root : F} {tree : L1.BinderTreeData} {plan : List KLevel}
+    {kp : SourceValue F} {root : F} {tree : Ingress.BinderTreeData} {plan : List KLevel}
     (hnl : nl < 4294967296)
     (hself_ok : ∀ i x, recurAddrs[i]? = some x → ∃ m k, self i = some m ∧ m = .ok k)
     (hself_key : ∀ i x m k, recurAddrs[i]? = some x → self i = some m → m = .ok k →
       k = Core.keyOf t x)
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
-    (raw : L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+    (raw : Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
       h 4294967295 e kp)
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData src.binders.toList) tree)
-    (planned : L1.binderRootPlan tree src.sharing.toList root e = some plan)
-    (levels : L1.HeapBinderLevels h kp plan)
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData src.binders.toList) tree)
+    (planned : Ingress.binderRootPlan tree src.sharing.toList root e = some plan)
+    (levels : Ingress.HeapBinderLevels h kp plan)
     (hdef : ∀ E_rd, (exprReader t blob src id self).read e = .ok E_rd →
       E_rd.allLevelParamsDefined (List.range nl) = true) :
     ∃ E' : KExpr, loadedAt t blob src self nl root e = some E' ∧ TmOExact (Core.keyOf t) h E' kp := by
@@ -247,7 +247,7 @@ theorem rawConvExpr_to_tmOExact_loadedAt {t : Ix.Kernel.RoleTable} (ht : t.check
       (Ix.Kernel.Reader.recParam (List.range nl)) self).read e = .ok E_rd := by
     rw [Assembly.recParam_range]
     exact hread
-  obtain ⟨hecx, htbl⟩ := L1.memberReader_mk'_eq (readCtx t blob) src
+  obtain ⟨hecx, htbl⟩ := Ingress.memberReader_mk'_eq (readCtx t blob) src
     (Ix.Kernel.Reader.recParam (List.range nl)) self
   unfold Ix.Kernel.Reader.MemberReader.read at hread_rp
   rw [hecx, htbl, ← List.take_length (l := src.sharing.toList)] at hread_rp
@@ -270,7 +270,7 @@ theorem rawConvExpr_to_tmOExact_loadedAt {t : Ix.Kernel.RoleTable} (ht : t.check
 
 private theorem blobs_of_hashedPairs {rootCalls cs : List (Call F)} {E₀ : Ixon.Env}
     (hS : LoadedReads.RunStore rootCalls E₀) (hsub : ∀ c ∈ cs, c ∈ rootCalls)
-    {blobs : List (_root_.Address × ByteArray)} (hhp : L1.HashedPairs cs blobs) :
+    {blobs : List (_root_.Address × ByteArray)} (hhp : Ingress.HashedPairs cs blobs) :
     ∀ x bs, (x, bs) ∈ blobs → E₀.blobs.get? x = some bs := by
   intro x bs hm
   obtain ⟨hh, ha⟩ := hhp (x, bs) hm
@@ -301,10 +301,10 @@ private theorem get_ci_record_eq {rootCalls cs : List (Call F)} {E₀ : Ixon.Env
   exact hS.recordOf_of_recordAt hrec
 
 private theorem soloSelf_ok {t : Ix.Kernel.RoleTable} {a : _root_.Address} {d : Ixon.Definition} :
-    ∀ i x, (L1.defnRecurAddrs d a)[i]? = some x →
+    ∀ i x, (Ingress.defnRecurAddrs d a)[i]? = some x →
       ∃ m k, soloSelf t a i = some m ∧ m = .ok k := by
   intro i x hx
-  unfold L1.defnRecurAddrs at hx
+  unfold Ingress.defnRecurAddrs at hx
   split at hx
   · cases i with
     | zero => exact ⟨.ok (keyOf t a), keyOf t a, rfl, rfl⟩
@@ -312,10 +312,10 @@ private theorem soloSelf_ok {t : Ix.Kernel.RoleTable} {a : _root_.Address} {d : 
   · simp at hx
 
 private theorem soloSelf_key {t : Ix.Kernel.RoleTable} {a : _root_.Address} {d : Ixon.Definition} :
-    ∀ i x m k, (L1.defnRecurAddrs d a)[i]? = some x → soloSelf t a i = some m → m = .ok k →
+    ∀ i x m k, (Ingress.defnRecurAddrs d a)[i]? = some x → soloSelf t a i = some m → m = .ok k →
       k = Core.keyOf t x := by
   intro i x m k hx hs hm
-  unfold L1.defnRecurAddrs at hx
+  unfold Ingress.defnRecurAddrs at hx
   split at hx
   · cases i with
     | zero =>
@@ -330,20 +330,20 @@ private theorem soloSelf_key {t : Ix.Kernel.RoleTable} {a : _root_.Address} {d :
 
 private theorem defnMember_self_ok {t : Ix.Kernel.RoleTable} {B : _root_.Address}
     {ms : Array Ixon.MutConst} {d : Ixon.Definition} :
-    ∀ i x, (L1.defnMemberRecurAddrs d B ms.toList)[i]? = some x →
+    ∀ i x, (Ingress.defnMemberRecurAddrs d B ms.toList)[i]? = some x →
       ∃ m k, blockSelf t B ms i = some m ∧ m = .ok k := by
   intro i x hx
-  unfold L1.defnMemberRecurAddrs at hx
+  unfold Ingress.defnMemberRecurAddrs at hx
   split at hx
   · exact LoadedReads.blockSelf_ok t B ms i x hx
   · simp at hx
 
 private theorem defnMember_self_key {t : Ix.Kernel.RoleTable} {B : _root_.Address}
     {ms : Array Ixon.MutConst} {d : Ixon.Definition} :
-    ∀ i x m k, (L1.defnMemberRecurAddrs d B ms.toList)[i]? = some x →
+    ∀ i x m k, (Ingress.defnMemberRecurAddrs d B ms.toList)[i]? = some x →
       blockSelf t B ms i = some m → m = .ok k → k = Core.keyOf t x := by
   intro i x m k hx hs hm
-  unfold L1.defnMemberRecurAddrs at hx
+  unfold Ingress.defnMemberRecurAddrs at hx
   split at hx
   · exact LoadedReads.blockSelf_key t B ms i x m k hx hs hm
   · simp at hx
@@ -420,22 +420,22 @@ private theorem held_owner_of_proj {E₀ R : Ixon.Env}
 
 private theorem defnValShape_ne_induct {d : Ixon.Definition} {tp vp hp : SourceValue F}
     {vs : List (SourceValue F)} :
-    L1.defnValShape d tp vp hp ≠ .construct kciEnum "Induct" vs := by
-  unfold L1.defnValShape
+    Ingress.defnValShape d tp vp hp ≠ .construct kciEnum "Induct" vs := by
+  unfold Ingress.defnValShape
   cases d.kind <;> simp [kciEnum]
 
 private theorem defnValShape_ne_ctor {d : Ixon.Definition} {tp vp hp : SourceValue F}
     {vs : List (SourceValue F)} :
-    L1.defnValShape d tp vp hp ≠ .construct kciEnum "Ctor" vs := by
-  unfold L1.defnValShape
+    Ingress.defnValShape d tp vp hp ≠ .construct kciEnum "Ctor" vs := by
+  unfold Ingress.defnValShape
   cases d.kind <;> simp [kciEnum]
 
 private theorem defnValShape_defn_inv {d : Ixon.Definition} {tp vp hp : SourceValue F}
     {xnl xty xval xsf xh : SourceValue F}
-    (h : L1.defnValShape d tp vp hp =
+    (h : Ingress.defnValShape d tp vp hp =
       .construct "KernelTypes::KConstantInfo" "Defn" [xnl, xty, xval, xsf, xh]) :
     d.kind = .defn ∧ xnl = .field (d.lvls.toNat : F) ∧ xval = vp := by
-  unfold L1.defnValShape at h
+  unfold Ingress.defnValShape at h
   cases hk : d.kind with
   | defn =>
     simp only [hk, kciEnum, Value.construct.injEq, List.cons.injEq, and_true, true_and] at h
@@ -445,10 +445,10 @@ private theorem defnValShape_defn_inv {d : Ixon.Definition} {tp vp hp : SourceVa
 
 private theorem defnValShape_ne_defn_of_kind {d : Ixon.Definition} {tp vp hp : SourceValue F}
     (hne : ∀ vs : List (SourceValue F), vs.length = 5 →
-      L1.defnValShape d tp vp hp ≠ .construct "KernelTypes::KConstantInfo" "Defn" vs) :
+      Ingress.defnValShape d tp vp hp ≠ .construct "KernelTypes::KConstantInfo" "Defn" vs) :
     d.kind ≠ .defn := by
   intro hk
-  unfold L1.defnValShape at hne
+  unfold Ingress.defnValShape at hne
   rw [hk] at hne
   exact hne _ rfl rfl
 
@@ -537,15 +537,15 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
         ci ≠ .construct "KernelTypes::KConstantInfo" "Defn" vs) →
       defnAt t E₀ (ixAddr a) = some none) := by
   have hbd_cs : Bounded cs := RomBound.bounded_mono hbd hsub
-  obtain ⟨rawBytes, c, hh, ha, hex, htr⟩ := L1.get_ci_trace_spec ra ev
+  obtain ⟨rawBytes, c, hh, ha, hex, htr⟩ := Ingress.get_ci_trace_spec ra ev
   have hcE : recordOf E₀ (ixAddr a) = some c := get_ci_record_eq hS hH hsub ra ev hh ha hex
   obtain ⟨-, rawBytes', c', blobs', hh', ha', hex', -, -, -, hrawRes⟩ :=
-    L1.get_ci_spec hbd_cs ra ev
+    Ingress.get_ci_spec hbd_cs ra ev
   have hc_eq : c' = c := record_eq_of_hashed hS hsub hcE hh' ha' hex'
   rcases hc_eq.symm with rfl
   cases hci : c.info with
   | defn d =>
-    simp only [L1.GetCITraceResult, hci] at htr
+    simp only [Ingress.GetCITraceResult, hci] at htr
     obtain ⟨blobs, tree, v, hhp, built, hld, hnl, tp, vp, hp, planT, planV, hv, rty, rval,
       hpT, hpV, hlT, hlV⟩ := htr
     rw [hld] at ldci; injection ldci with hv_eq; subst hv_eq; subst hv
@@ -580,7 +580,7 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       | thm => unfold defnAt; simp only [hcE, hci, hdk]
       | opaq => unfold defnAt; simp only [hcE, hci, hdk]
   | dPrj prj =>
-    simp only [L1.GetCITraceResult, hci] at htr
+    simp only [Ingress.GetCITraceResult, hci] at htr
     obtain ⟨_, blkBytes, cb, ms, d, blobs, tree, v, hhB, haB, hexB, hcb, hms, hhp, built, hld,
       hnl, tp, vp, hp, planT, planV, hv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr
     rw [hld] at ldci; injection ldci with hv_eq; subst hv_eq; subst hv
@@ -614,46 +614,46 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       | thm => unfold defnAt; simp only [hcE, hci, hcbE, hcb, hms', hdk]
       | opaq => unfold defnAt; simp only [hcE, hci, hcbE, hcb, hms', hdk]
   | axio ax =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, tp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [defnAt, hcE, hci]⟩
   | quot q =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, tp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [defnAt, hcE, hci]⟩
   | iPrj prj =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨_, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, _, _, _, -, -, rfl, -⟩ :=
       hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [defnAt, hcE, hci]⟩
   | cPrj prj =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨_, _, _, _, _, _, _, v, -, -, -, -, -, -, -, hld, -, -, -, -, -, _, _, _, -, -, rfl,
       -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [defnAt, hcE, hci]⟩
   | recr rc =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [defnAt, hcE, hci]⟩
   | rPrj prj =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨-, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl,
       -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [defnAt, hcE, hci]⟩
   | muts ms =>
-    simp [L1.GetCIRawResult, hci] at hrawRes
+    simp [Ingress.GetCIRawResult, hci] at hrawRes
 
 /-- **`DefnAnswers` for `ReconView.ofStore t E₀`** over a used-closed sub-store `R` with
 `StoreLevelsOk t E₀ (Held R)`. -/
@@ -688,15 +688,15 @@ theorem indAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     IndAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) := by
   intro xa p ci h m cs a hsub hSa ra ev ldci
   have hbd_cs : Bounded cs := RomBound.bounded_mono hbd hsub
-  obtain ⟨rawBytes, c, hh, ha, hex, -, hblk⟩ := L1.get_ci_block_trace_spec hbd_cs ra ev
+  obtain ⟨rawBytes, c, hh, ha, hex, -, hblk⟩ := Ingress.get_ci_block_trace_spec hbd_cs ra ev
   have hcE : recordOf E₀ (ixAddr a) = some c := get_ci_record_eq hS hH hsub ra ev hh ha hex
   obtain ⟨-, rawBytes', c', blobs', hh', ha', hex', -, -, -, hrawRes⟩ :=
-    L1.get_ci_spec hbd_cs ra ev
+    Ingress.get_ci_spec hbd_cs ra ev
   have hc_eq : c' = c := record_eq_of_hashed hS hsub hcE hh' ha' hex'
   rcases hc_eq.symm with rfl
   cases hci : c.info with
   | iPrj prj =>
-    simp only [L1.GetCIBlockTraceResult, hci] at hblk
+    simp only [Ingress.GetCIBlockTraceResult, hci] at hblk
     obtain ⟨_, blkBytes, cb, ms, ind, blobs, tree, plan, v, hhB, haB, hexB, hcb, hms, hhp, built,
       planned, hld, hrawInd, hcit⟩ := hblk
     rw [hld] at ldci; injection ldci with hv_eq; subst hv_eq
@@ -734,51 +734,51 @@ theorem indAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
         rfl, rfl, rfl, hba, rba, rfl⟩
     · exact (hne _ rfl rfl).elim
   | defn d =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, tp, vp, hp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => (defnValShape_ne_induct h).elim,
       fun _ => by simp [ReconView.ofStore, indDataAt, hcE, hci]⟩
   | dPrj prj =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨_, _, _, _, _, v, -, -, -, -, -, -, hld, -, tp, vp, hp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => (defnValShape_ne_induct h).elim,
       fun _ => by simp [ReconView.ofStore, indDataAt, hcE, hci]⟩
   | axio ax =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, tp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [ReconView.ofStore, indDataAt, hcE, hci]⟩
   | quot q =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, tp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [ReconView.ofStore, indDataAt, hcE, hci]⟩
   | cPrj prj =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨_, _, _, _, _, _, _, v, -, -, -, -, -, -, -, hld, -, -, -, -, -, _, _, _, -, -, rfl,
       -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [ReconView.ofStore, indDataAt, hcE, hci]⟩
   | recr rc =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [ReconView.ofStore, indDataAt, hcE, hci]⟩
   | rPrj prj =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨-, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl,
       -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [ReconView.ofStore, indDataAt, hcE, hci]⟩
   | muts ms =>
-    simp [L1.GetCIRawResult, hci] at hrawRes
+    simp [Ingress.GetCIRawResult, hci] at hrawRes
 
 /-- **`CtorOfAnswers` for `ReconView.ofStore t E₀`** over a used-closed sub-store `R`. -/
 theorem ctorOfAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
@@ -790,11 +790,11 @@ theorem ctorOfAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTab
     CtorOfAnswers rootCalls (Held R) (ReconView.ofStore t E₀) := by
   intro xa p ci h m cs a hsub hSa ra ev ldci
   have hbd_cs : Bounded cs := RomBound.bounded_mono hbd hsub
-  obtain ⟨-, rawBytes, c, blobs, hh, ha, hex, -, -, -, hrawRes⟩ := L1.get_ci_spec hbd_cs ra ev
+  obtain ⟨-, rawBytes, c, blobs, hh, ha, hex, -, -, -, hrawRes⟩ := Ingress.get_ci_spec hbd_cs ra ev
   have hcE : recordOf E₀ (ixAddr a) = some c := get_ci_record_eq hS hH hsub ra ev hh ha hex
   cases hci : c.info with
   | cPrj prj =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨_, _, blkBytes, cb, ms, ind, ct, v, hhB, haB, hexB, -, hcb, hms, hct, hld,
       hnl, hcidx, hnp, hnf, hidx, tyPtr, blkPtr, ba, hba, rba, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
@@ -818,51 +818,51 @@ theorem ctorOfAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTab
         ba, hctAt, hnl, hidx, hnp, hnf, rfl, hba, rba, rfl, rfl, rfl⟩
     · exact (hne _ rfl rfl).elim
   | defn d =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, tp, vp, hp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => (defnValShape_ne_ctor h).elim,
       fun _ => by simp [ReconView.ofStore, ctorOfAt, hcE, hci]⟩
   | dPrj prj =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨_, _, _, _, _, v, -, -, -, -, -, -, hld, -, tp, vp, hp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => (defnValShape_ne_ctor h).elim,
       fun _ => by simp [ReconView.ofStore, ctorOfAt, hcE, hci]⟩
   | axio ax =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, tp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [ReconView.ofStore, ctorOfAt, hcE, hci]⟩
   | quot q =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, tp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [ReconView.ofStore, ctorOfAt, hcE, hci]⟩
   | iPrj prj =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨_, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, _, _, _, -, -, rfl, -⟩ :=
       hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [ReconView.ofStore, ctorOfAt, hcE, hci]⟩
   | recr rc =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [ReconView.ofStore, ctorOfAt, hcE, hci]⟩
   | rPrj prj =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨-, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl,
       -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [ReconView.ofStore, ctorOfAt, hcE, hci]⟩
   | muts ms =>
-    simp [L1.GetCIRawResult, hci] at hrawRes
+    simp [Ingress.GetCIRawResult, hci] at hrawRes
 
 /-- **`ModeledAnswers` for `ReconView.ofStore t E₀`** over a used-closed sub-store `R` backed by
 a record store `Ec` (`RecordsFor R Ec` and `StepStore rootCalls t E₀ Ec`). -/
@@ -875,7 +875,7 @@ theorem modeledAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTa
   intro xblk r h m cs ba hsub hSba rba ev
   have g := (hst.good Ix.Kernel.Env.empty none).sub hsub
   have hag := Route.block_is_modeled_agrees (E := Ec) g.1 g.2 rba ev
-  have hcov : L1.CanonicalHashCoverage Ec cs := fun bytes val hh hsz hx =>
+  have hcov : Ingress.CanonicalHashCoverage Ec cs := fun bytes val hh hsz hx =>
     (Binding.stepStore_canonicalHashCoverage hS hH hst) bytes val (Core.hashed_mono hsub hh) hsz hx
   obtain ⟨b, hbEc⟩ := hag.known hcov
   have hr_eq := hag.value b hbEc
@@ -916,11 +916,11 @@ theorem indInfo_of_get_ci {rootCalls : List (Call F)} {E₀ R : Ixon.Env}
         ci ≠ .construct "KernelTypes::KConstantInfo" "Induct" vs) →
       indInfoAt E₀ (ixAddr a) = some none) := by
   have hbd_cs : Bounded cs := RomBound.bounded_mono hbd hsub
-  obtain ⟨-, rawBytes, c, blobs, hh, ha, hex, -, -, -, hrawRes⟩ := L1.get_ci_spec hbd_cs ra ev
+  obtain ⟨-, rawBytes, c, blobs, hh, ha, hex, -, -, -, hrawRes⟩ := Ingress.get_ci_spec hbd_cs ra ev
   have hcE : recordOf E₀ (ixAddr a) = some c := get_ci_record_eq hS hH hsub ra ev hh ha hex
   cases hci : c.info with
   | iPrj prj =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨_, blkBytes, cb, ms, ind, v, hhB, haB, hexB, -, hcb, hms, hld,
       hnl, hnp, hni, hnc, hidx, tyPtr, blkPtr, ba, hba, rba, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
@@ -938,51 +938,51 @@ theorem indInfo_of_get_ci {rootCalls : List (Call F)} {E₀ R : Ixon.Env}
       ba, ?_, hnl, hnp, hnc, hidx, hpb, rfl, rfl, rfl, hba, rba, rfl⟩
     simp [indInfoAt, hcE, hci, hcbE, hcb, hms']
   | defn d =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, tp, vp, hp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => (defnValShape_ne_induct h).elim,
       fun _ => by simp [indInfoAt, hcE, hci]⟩
   | dPrj prj =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨_, _, _, _, _, v, -, -, -, -, -, -, hld, -, tp, vp, hp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => (defnValShape_ne_induct h).elim,
       fun _ => by simp [indInfoAt, hcE, hci]⟩
   | axio ax =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, tp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [indInfoAt, hcE, hci]⟩
   | quot q =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, tp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [indInfoAt, hcE, hci]⟩
   | cPrj prj =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨_, _, _, _, _, _, _, v, -, -, -, -, -, -, -, hld, -, -, -, -, -, _, _, _, -, -, rfl,
       -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [indInfoAt, hcE, hci]⟩
   | recr rc =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [indInfoAt, hcE, hci]⟩
   | rPrj prj =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
+    simp only [Ingress.GetCIRawResult, hci] at hrawRes
     obtain ⟨-, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl,
       -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [indInfoAt, hcE, hci]⟩
   | muts ms =>
-    simp [L1.GetCIRawResult, hci] at hrawRes
+    simp [Ingress.GetCIRawResult, hci] at hrawRes
 
 /-- **`Ingress::get_ci_cprj` matches `ctorAt` and `ctorTypeAt`** on `TmOExact` and `AddrIn (Held R)`. -/
 theorem ctorLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
@@ -1013,7 +1013,7 @@ theorem ctorLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
   have hbd_cs : Bounded cs := RomBound.bounded_mono hbd hsub
   obtain ⟨-, -, -, blkBytes, cb, ms, ind, ct, blobs, v, hhB, haB, hexB, -, hcb, hms, hct,
     hhp, hld, hrawC, tree, plan, built, planned, hcit⟩ :=
-    L1.get_ci_cprj_origin_spec hbd_cs rba ev
+    Ingress.get_ci_cprj_origin_spec hbd_cs rba ev
   rw [hld] at ldci; injection ldci with hv; subst hv
   have hiv : ((i : F)).val = i := fval_natCast hi
   have hjv : ((j : F)).val = j := fval_natCast hj
@@ -1043,7 +1043,7 @@ theorem ctorLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
         (fun l hl => mem_used_of_member hcb hms' l
           (List.mem_append_right _ (List.mem_flatMap.mpr ⟨ct, hcmem, hl⟩))) hloaded)
   refine ⟨ty, ct.lvls.toNat, ct.params.toNat, ct.fields.toNat, tyPtr, blkPtr, ba',
-    .field (ct.cidx.toNat : F), L1.repBoolField ct.isUnsafe, rfl, ?_, ?_, hnl', hnp, hnf,
+    .field (ct.cidx.toNat : F), Ingress.repBoolField ct.isUnsafe, rfl, ?_, ?_, hnl', hnp, hnf,
     htm, htyIn, hba', rba'⟩
   · unfold ctorAt; simp only [hcbE, hcb, hms', hct', mutsRoot, hloaded]
   · unfold ctorTypeAt; simp only [hcbE, hcb, hms', hct', mutsRoot, hloaded]
@@ -1092,18 +1092,18 @@ private theorem rulesTraceRep_to_recRulesRep {t : Ix.Kernel.RoleTable}
     {E₀ R : Ixon.Env} (ht : t.check = .ok ()) (hwf : t.wf = true)
     (hcl : UsedClosed R) {rb : _root_.Address} {crb : Ixon.Constant} {rs : Array Ixon.MutConst}
     {k : Nat} {r : Ixon.Recursor} {blobs : List (_root_.Address × ByteArray)}
-    {tree : L1.BinderTreeData} {h : Heap F}
+    {tree : Ingress.BinderTreeData} {h : Heap F}
     (hcrbR : recordOf R rb = some crb) (hmuts : crb.info = .muts rs)
     (hk : rs[k]? = some (.recr r)) (hnl : r.lvls.toNat < 4294967296)
     (hblob : ∀ x bs, (x, bs) ∈ blobs → E₀.blobs.get? x = some bs)
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData crb.binders.toList) tree)
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData crb.binders.toList) tree)
     (hdef : ∀ (j : Nat) (ru : Ixon.RecursorRule) E_rd, r.rules[j]? = some ru →
       (exprReader t (fun x => E₀.blobs.get? x) crb id (blockSelf t rb rs)).read ru.rhs =
         .ok E_rd →
       E_rd.allLevelParamsDefined (List.range r.lvls.toNat) = true) :
     ∀ {j : Nat} {rus : List Ixon.RecursorRule} {p : SourceValue F},
       (∀ i ru, rus[i]? = some ru → r.rules[j + i]? = some ru) →
-      L1.RulesTraceRep crb.refs.toList (L1.blockRecurAddrs rb rs.toList) crb.univs.toList
+      Ingress.RulesTraceRep crb.refs.toList (Ingress.blockRecurAddrs rb rs.toList) crb.univs.toList
         crb.sharing.toList blobs tree h j (mutsRoot rs k + 1 + ((j : Nat) : F)) rus p →
       RecRulesRep t E₀ (Held R) rb crb rs r.lvls.toNat (mutsRoot rs k) h j rus p := by
   intro j rus p hidx htr
@@ -1157,7 +1157,7 @@ theorem recrLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
         [.field (r.lvls.toNat : F), tyPtr,
           .field (r.params.toNat : F), .field (r.indices.toNat : F),
           .field (r.motives.toNat : F), .field (r.minors.toNat : F),
-          rulesPtr, L1.repBoolField r.k, L1.repBoolField r.isUnsafe,
+          rulesPtr, Ingress.repBoolField r.k, Ingress.repBoolField r.isUnsafe,
           blkPtr, .field (k : F)] ∧
       r.lvls.toNat < 4294967296 ∧ r.params.toNat < 72057594037927936 ∧
       r.indices.toNat < 72057594037927936 ∧ r.motives.toNat < 72057594037927936 ∧
@@ -1169,7 +1169,7 @@ theorem recrLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       RecRulesRep t E₀ (Held R) rb crb rs r.lvls.toNat (mutsRoot rs k) m 0 r.rules.toList
         rulesPtr := by
   have hbd_cs : Bounded cs := RomBound.bounded_mono hbd hsub
-  obtain ⟨rawBytes, c, hh, ha, hex, -, hblk⟩ := L1.get_ci_block_trace_spec hbd_cs ra ev
+  obtain ⟨rawBytes, c, hh, ha, hex, -, hblk⟩ := Ingress.get_ci_block_trace_spec hbd_cs ra ev
   have hcE : recordOf E₀ (ixAddr a) = some c := get_ci_record_eq hS hH hsub ra ev hh ha hex
   have hcrbR : recordOf R rb = some crb := held_of_agree hRagree hSrb hcrbE
   have hprojR : recordOf R (memberAddr rb k (.recr r)) = some (memberProjection rb k (.recr r)) :=
@@ -1177,7 +1177,7 @@ theorem recrLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
   rw [← ha_addr] at hprojR
   have hcEq : c = memberProjection rb k (.recr r) := (hRagree _ _ _ hprojR hcE).symm
   subst hcEq
-  simp only [L1.GetCIBlockTraceResult, memberProjection] at hblk
+  simp only [Ingress.GetCIBlockTraceResult, memberProjection] at hblk
   obtain ⟨hk56, blkBytes, cb, ms, rc, blobs, tree, v, hhB, haB, hexB, hcb, hms, hhp, built, hld,
     hrecr⟩ := hblk
   rw [hld] at ldci; injection ldci with hv; subst hv
@@ -1216,7 +1216,7 @@ theorem recrLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     addrIn_of_rkeysAt (E₀ := E₀) hwf
       (keys_held_of_loaded ht hwf hcl hcrbR (blockSelf_held hcl hcrbR hmuts)
         (fun l hl => mem_used_of_member hmuts hk l (List.mem_append_left _ hl)) hloadedT)
-  have hrls' : L1.RulesTraceRep cb.refs.toList (L1.blockRecurAddrs rb ms.toList) cb.univs.toList
+  have hrls' : Ingress.RulesTraceRep cb.refs.toList (Ingress.blockRecurAddrs rb ms.toList) cb.univs.toList
       cb.sharing.toList blobs tree m 0 (mutsRoot ms k + 1 + ((0 : Nat) : F)) rc.rules.toList
       rulesPtr := by
     simpa [mutsRoot] using hrls
@@ -1226,7 +1226,7 @@ theorem recrLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
   exact ⟨ty, tyPtr, rulesPtr, blkPtr, ba, rfl, hnl', hnp, hni, hnm, hnmi, hk56,
     hloadedT, htmT, htyIn, hba, rba, hrulesRep⟩
 
-/-- Companion to `recrLoad_ofStore`: exposes the raw `L1.RawConvExpr` witness for the loaded
+/-- Companion to `recrLoad_ofStore`: exposes the raw `Ingress.RawConvExpr` witness for the loaded
 recursor type `r.typ` at the same `tyPtr`. -/
 theorem recrLoad_rawConvExpr {rootCalls : List (Call F)} {E₀ R : Ixon.Env}
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
@@ -1244,10 +1244,10 @@ theorem recrLoad_rawConvExpr {rootCalls : List (Call F)} {E₀ R : Ixon.Env}
     (ev : ObsFn W "Ingress::get_ci" [xa] h p m cs) (ldci : loadValue m p = .ok ci)
     (hci : ci = .construct kciEnum "Rec"
       [xnl, tyPtr, xnp, xni, xnm, xnmi, xrules, xk, xu, xblk, xidx]) :
-    ∃ blobs, L1.RawConvExpr crb.refs.toList [] crb.univs.toList crb.sharing.toList
+    ∃ blobs, Ingress.RawConvExpr crb.refs.toList [] crb.univs.toList crb.sharing.toList
       blobs m 4294967295 r.typ tyPtr := by
   have hbd_cs : Bounded cs := RomBound.bounded_mono hbd hsub
-  obtain ⟨rawBytes, c, hh, ha, hex, -, hblk⟩ := L1.get_ci_block_trace_spec hbd_cs ra ev
+  obtain ⟨rawBytes, c, hh, ha, hex, -, hblk⟩ := Ingress.get_ci_block_trace_spec hbd_cs ra ev
   have hcE : recordOf E₀ (ixAddr a) = some c := get_ci_record_eq hS hH hsub ra ev hh ha hex
   have hcrbR : recordOf R rb = some crb := held_of_agree hRagree hSrb hcrbE
   have hprojR : recordOf R (memberAddr rb k (.recr r)) = some (memberProjection rb k (.recr r)) :=
@@ -1255,7 +1255,7 @@ theorem recrLoad_rawConvExpr {rootCalls : List (Call F)} {E₀ R : Ixon.Env}
   rw [← ha_addr] at hprojR
   have hcEq : c = memberProjection rb k (.recr r) := (hRagree _ _ _ hprojR hcE).symm
   subst hcEq
-  simp only [L1.GetCIBlockTraceResult, memberProjection] at hblk
+  simp only [Ingress.GetCIBlockTraceResult, memberProjection] at hblk
   obtain ⟨-, blkBytes, cb, ms, rc, blobs, tree, v, hhB, haB, hexB, hcb, hms, -, -, hld, hrecr⟩ :=
     hblk
   rw [hld] at ldci; injection ldci with hv; subst hv
@@ -1298,7 +1298,7 @@ private theorem mapIdx_ext {α β : Type} {f g : Nat → α → β} :
     congr 1
     exact mapIdx_ext xs (fun i y => h (i + 1) y)
 
-/-- On an all-inductive block (`muts_indc_count = length`), `L1.blockRecurAddrs B ms.toList` equals
+/-- On an all-inductive block (`muts_indc_count = length`), `Ingress.blockRecurAddrs B ms.toList` equals
 `indcAddrs B 0 ms.toList`. -/
 theorem blockRecurAddrs_eq_indcAddrs_of_all_indc (B : _root_.Address) :
     ∀ (i : Nat) (ms : List Ixon.MutConst),
@@ -1321,8 +1321,8 @@ theorem membersAt_eq_blockRecurAddrs {E₀ : Ixon.Env} {B : _root_.Address} {cb 
     {ms : Array Ixon.MutConst}
     (hB : recordOf E₀ B = some cb) (hmuts : cb.info = .muts ms)
     (hall : ∀ m ∈ ms.toList, ∃ ind, m = .indc ind) :
-    membersAt E₀ B = some (L1.blockRecurAddrs B ms.toList) := by
-  simp only [membersAt, hB, hmuts, L1.blockRecurAddrs_eq_mapIdx]
+    membersAt E₀ B = some (Ingress.blockRecurAddrs B ms.toList) := by
+  simp only [membersAt, hB, hmuts, Ingress.blockRecurAddrs_eq_mapIdx]
   congr 1
   have h := blockRecurAddrs_eq_indcAddrs_of_all_indc B 0 ms.toList hall
   simp only [Nat.zero_add] at h

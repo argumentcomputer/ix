@@ -44,8 +44,8 @@ def CheckedAtFullAt (calls : List (Call F)) (bAddr : _root_.Address)
     (cs_load cs_chk : List (Call F)),
     Claim.RCFullRep t bAddr lim h_pre rc ∧
     Claim.RCFullRep t bAddr lim m_chk rc ∧
-    Core.S0.addr h_pre ap a ∧
-    Core.S0.addr m_chk ap a ∧
+    Core.BaseSeams.addr h_pre ap a ∧
+    Core.BaseSeams.addr m_chk ap a ∧
     ObsFn Obs.W "Ingress::get_ci" [ap] h_pre ptr m_chk cs_load ∧
     (⟨"Ingress::get_ci", [ap], h_pre⟩ : Call F) ∈ calls ∧
     (∀ cl ∈ cs_load, cl ∈ calls) ∧
@@ -68,7 +68,7 @@ def MutsMemberCheckedAtFullAt (calls : List (Call F)) (bAddr : _root_.Address)
     (rc x_members x_block ap ptr v r_chk : SourceValue F)
     (cs_pa cs_load cs_chk : List (Call F)),
     Core.Specs.Callees.MembersRep h_pa ms.toList x_members ∧
-    Core.S0.addr h_pa x_block addr ∧
+    Core.BaseSeams.addr h_pa x_block addr ∧
     ObsFn Obs.W "Ingress::projection_addr" [x_members, x_block, .field (k : F)] h_pa ap h_pre
       cs_pa ∧
     (⟨"Ingress::projection_addr", [x_members, x_block, .field (k : F)], h_pa⟩ : Call F) ∈
@@ -116,15 +116,15 @@ theorem mutsMemberAt_checkedAt (hbound : Bounded calls) {bAddr B : _root_.Addres
     ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
   obtain ⟨b', hb', rfl⟩ := hblk
   obtain ⟨-, -, -, mc', a', hget', ha', hproj, hhashed⟩ :=
-    L1.projection_addr_hashed_spec hmem hb' ev_pa
+    Ingress.projection_addr_hashed_spec hmem hb' ev_pa
   rw [hk_val] at hget' hproj hhashed
   have hget_list : ms.toList[k]? = some mc := by simpa using hk
   rw [hget_list] at hget'
   cases hget'
-  have haddr : Core.S0.addr h_pre ap (memberAddr (Core.ixAddr b') k mc) :=
+  have haddr : Core.BaseSeams.addr h_pre ap (memberAddr (Core.ixAddr b') k mc) :=
     ⟨a', ha', hproj.trans (LoadedReads.memberAddr_eq_projAddr _ k mc).symm⟩
   exact ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
-    hrc_pre, hrc_m, haddr, Core.S0.addr_mono ev_ld.heap_extends haddr,
+    hrc_pre, hrc_m, haddr, Core.BaseSeams.addr_mono ev_ld.heap_extends haddr,
     ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩
 
 variable {E₀ : Ixon.Env}
@@ -164,10 +164,10 @@ theorem checkedAtFullAt_defn_step (ht : t.check = .ok ()) (hbound : Bounded call
   obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     hrc_pre, hrc_m, ha_pre, ha_m, ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := hchk
   obtain ⟨a', ha'_ref, rfl⟩ := ha_pre
-  obtain ⟨rawBytes, c', hh, hba, hex, hres⟩ := L1.get_ci_trace_spec ha'_ref ev_ld
+  obtain ⟨rawBytes, c', hh, hba, hex, hres⟩ := Ingress.get_ci_trace_spec ha'_ref ev_ld
   have hc : c = c' := (hS.record_eq hrec (Core.hashed_mono hsub_ld hh) hba hex).symm
   subst hc
-  unfold L1.GetCITraceResult at hres
+  unfold Ingress.GetCITraceResult at hres
   rw [hinfo] at hres
   obtain ⟨blobs, tree, v', hhp, built, hld', htr⟩ := hres
   rw [hld] at hld'
@@ -188,14 +188,14 @@ theorem checkedAtFullAt_defn_step (ht : t.check = .ok ()) (hbound : Bounded call
     LoadedReads.checkedDefn_core (E := Ecore) (order_role := order_role)
       (decl_addr := Core.ixAddr a') ht hbound hnot_role hsafe hrc_m hblob raw' hty hval ev_chk
       hsub_chk
-  have hrecur : L1.defnRecurAddrs d (Core.ixAddr a') = [] := by
-    have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
-    simp [L1.defnRecurAddrs, hf]
+  have hrecur : Ingress.defnRecurAddrs d (Core.ixAddr a') = [] := by
+    have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+    simp [Ingress.defnRecurAddrs, hf]
   rw [hrecur] at htr
   obtain ⟨hnlvls, tyPtr, valPtr, hint, planT, planV, hv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr
   subst hv
-  have hagree : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
-    L1.BlobReadAgreement.of_mem hblob
+  have hagree : Ingress.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
+    Ingress.BlobReadAgreement.of_mem hblob
   obtain ⟨ty', hcT, hannT, htmT⟩ :=
     LoadedReads.annotation_canon ht hnlvls hagree rty built hpT hlT hty h1 h2
   obtain ⟨val', hcV, hannV, htmV⟩ :=
@@ -273,12 +273,12 @@ theorem mutsMemberAt_defn_step (ht : t.check = .ok ()) (hbound : Bounded calls)
   obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     hrc_pre, hrc_m, ha_pre, ha_m, ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := hchk
   obtain ⟨a', ha'_ref, haddr⟩ := ha_pre
-  obtain ⟨rawBytes, c', hh, hba, hex, hres⟩ := L1.get_ci_trace_spec ha'_ref ev_ld
+  obtain ⟨rawBytes, c', hh, hba, hex, hres⟩ := Ingress.get_ci_trace_spec ha'_ref ev_ld
   have hc : memberProjection B k (.defn d) = c' :=
     (hS.record_eq hrec (Core.hashed_mono hsub_ld hh) (hba.trans haddr) hex).symm
   subst hc
   have hinfo : (memberProjection B k (.defn d)).info = .dPrj ⟨k.toUInt64, B⟩ := rfl
-  unfold L1.GetCITraceResult at hres
+  unfold Ingress.GetCITraceResult at hres
   rw [hinfo] at hres
   obtain ⟨hidx, blkBytes, cb', ms', d', blobs, tree, v', hhB, haB, hexB, hcb, hms, hhp, built,
     hld', htr⟩ := hres
@@ -296,9 +296,9 @@ theorem mutsMemberAt_defn_step (ht : t.check = .ok ()) (hbound : Bounded calls)
   rw [hld] at hld'
   injection hld' with hvv
   subst hvv
-  have htr' : L1.DefnTraceRep cb.refs.toList (L1.defnMemberRecurAddrs d B ms.toList)
+  have htr' : Ingress.DefnTraceRep cb.refs.toList (Ingress.defnMemberRecurAddrs d B ms.toList)
       cb.univs.toList cb.sharing.toList blobs tree
-      ((L1.mutsRootOffset ms.toList k.toUInt64.toNat : Nat) : F) m_chk d v := htr
+      ((Ingress.mutsRootOffset ms.toList k.toUInt64.toNat : Nat) : F) m_chk d v := htr
   rw [toUInt64_toNat_t hk64] at htr'
   have hblob : ∀ x bs, (x, bs) ∈ blobs → E₀.blobs.get? x = some bs := by
     intro x bs hm
@@ -316,14 +316,14 @@ theorem mutsMemberAt_defn_step (ht : t.check = .ok ()) (hbound : Bounded calls)
     LoadedReads.checkedDefn_core (E := Ecore) (order_role := order_role)
       (decl_addr := memberAddr B k (.defn d)) ht hbound hnot_role hsafe hrc_m hblob raw' hty
       hval ev_chk hsub_chk
-  have hrecur : L1.defnMemberRecurAddrs d B ms.toList = [] := by
-    have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
-    simp [L1.defnMemberRecurAddrs, hf]
+  have hrecur : Ingress.defnMemberRecurAddrs d B ms.toList = [] := by
+    have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+    simp [Ingress.defnMemberRecurAddrs, hf]
   rw [hrecur] at htr'
   obtain ⟨hnlvls, tyPtr, valPtr, hint, planT, planV, hv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr'
   subst hv
-  have hagree : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
-    L1.BlobReadAgreement.of_mem hblob
+  have hagree : Ingress.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
+    Ingress.BlobReadAgreement.of_mem hblob
   obtain ⟨ty', hcT, hannT, htmT⟩ :=
     LoadedReads.annotation_canon ht hnlvls hagree rty built hpT hlT hty h1 h2
   obtain ⟨val', hcV, hannV, htmV⟩ :=

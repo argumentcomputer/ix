@@ -1,7 +1,7 @@
 import IxVMRefinement.Decl.NativeRec
 import IxVMRefinement.Obs.KernelCheck
 /-!
-# Native One-Type Inductive Blocks with Recursor (`L5` Native Recursor Checker — Part 1)
+# Native One-Type Inductive Blocks with Recursor (Native Recursor Checker — Part 1)
 
 Pure kernel/circuit-frame recursor correspondence lemmas and circuit refinement specifications
 for `nat_none_mention`, `nat_rec_idx`, `nat_ctor`, `nat_minors`, `nat_former_tele`, and

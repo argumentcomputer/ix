@@ -4,7 +4,7 @@ import IxVMRefinement.Obs.KernelClaim
 import IxVMRefinement.Obs.IxonSerialize1
 import IxC.Ixon.Verify.ConstantTables
 
-/-! # Claim decoding, assumption-tree verification, and entry dispatch for L6
+/-! # Claim decoding, assumption-tree verification, and entry dispatch
 
 Connects `IxVM::verify_claim` (`KernelClaim::run_claim`) on an `InScope` claim to its decoded
 `Ix.Claim`, role-table admission (`RCFullRep`), seed extraction (`ClaimSeeds`, including Merkle
@@ -31,16 +31,16 @@ set_option linter.unnecessarySimpa false
 
 /-! ## Address representation and `ByteArray` helpers -/
 
-theorem digestV_type (d : Vector UInt8 32) : (L1.digestV d).type = addrTy := by
-  rw [L1.digestV, Value.type, addrTy]
+theorem digestV_type (d : Vector UInt8 32) : (Ingress.digestV d).type = addrTy := by
+  rw [Ingress.digestV, Value.type, addrTy]
   congr 1
   apply List.ext_getElem
     (by simp only [List.length_map, Vector.length_toList, List.length_replicate])
   intro i h1 h2
-  simp only [List.getElem_map, List.getElem_replicate, L1.bv, Value.type]
+  simp only [List.getElem_map, List.getElem_replicate, Ingress.bv, Value.type]
 
 theorem repAddressRef_of_load_digestV {h : Heap F} {r : SourceValue F} {d : Vector UInt8 32}
-    (hl : loadValue h r = .ok (L1.digestV d)) :
+    (hl : loadValue h r = .ok (Ingress.digestV d)) :
     Bytes.RepAddressRef addrTy h d r := by
   cases r with
   | ptr ty n =>
@@ -49,13 +49,13 @@ theorem repAddressRef_of_load_digestV {h : Heap F} {r : SourceValue F} {d : Vect
     | some v =>
       by_cases ht : v.type = ty
       · subst ht
-        have hv : v = L1.digestV d := by
+        have hv : v = Ingress.digestV d := by
           have e : loadValue h (.ptr v.type n) = .ok v := by
             simp [loadValue, cell, bind, Except.bind, pure, Except.pure]
           exact Except.ok.inj (e.symm.trans hl)
         subst hv
         rw [digestV_type]
-        exact ⟨n, L1.digestV d, rfl, cell, rfl⟩
+        exact ⟨n, Ingress.digestV d, rfl, cell, rfl⟩
       · simp [loadValue, cell, ht, bind, Except.bind, pure, Except.pure] at hl
   | _ => simp [loadValue] at hl
 
@@ -67,7 +67,7 @@ private theorem blake3Pure_hash_size (b : ByteArray) :
     (Address.blake3Pure b).hash.size = 32 := by
   cases b with
   | mk arr =>
-    have h := L1.blake3Pure_eq arr.toList
+    have h := Ingress.blake3Pure_eq arr.toList
     simp only [Array.toArray_toList] at h
     rw [h]
     exact (Blake3.Pure.digest arr.toList).size_toArray
@@ -99,25 +99,25 @@ private theorem vector32_toList (a : Vector UInt8 32) :
 private theorem stream_cons_step {m m' : Heap F} {v tail : SourceValue F} {b : UInt8}
     {bs : List UInt8}
     (hm : m' = m ++ [.construct Obs.Names.«Lists::Node<Field>» "Cons" [v, tail]])
-    (hv : v = L1.bv b)
-    (hs : L1.Stream m bs tail) :
-    L1.Stream m' (b :: bs) (.ptr (.enum Obs.Names.«Lists::Node<Field>») m.length) := by
+    (hv : v = Ingress.bv b)
+    (hs : Ingress.Stream m bs tail) :
+    Ingress.Stream m' (b :: bs) (.ptr (.enum Obs.Names.«Lists::Node<Field>») m.length) := by
   rw [hm, hv]
-  exact L1.stream_cons_snoc hs
+  exact Ingress.stream_cons_snoc hs
 
 private theorem proj_digestV_eq {a : Bytes.Address} {v1 v : SourceValue F}
-    (hv1 : v1 = L1.digestV a) (i : Nat) (hi : i < 32)
+    (hv1 : v1 = Ingress.digestV a) (i : Nat) (hi : i < 32)
     (hpr : projectValue v1 i = .ok v) :
-    v = L1.bv a[i] := by
+    v = Ingress.bv a[i] := by
   rw [hv1] at hpr
-  exact L1.ok_inj (hpr.symm.trans (L1.proj_digestV a i hi))
+  exact Ingress.ok_inj (hpr.symm.trans (Ingress.proj_digestV a i hi))
 
 theorem put_address_spec {a : Bytes.Address} {rest : List UInt8}
     {x_a x_rest r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (ha : Bytes.RepAddressRef addrTy h a x_a)
-    (hrest : L1.Stream h rest x_rest)
+    (hrest : Ingress.Stream h rest x_rest)
     (ev : ObsFn W "IxonSerialize::put_address" [x_a, x_rest] h r h' calls) :
-    Heap.Extends h h' ∧ L1.Stream h' (a.toList ++ rest) r := by
+    Heap.Extends h h' ∧ Ingress.Stream h' (a.toList ++ rest) r := by
   have ext := ev.heap_extends
   obtain ⟨v1, m14, v28, m48, v62, m82, v96, m116, v130, m150, v164, m184, v198, m218, v232, m252,
     v266, m286, v300, m320, v334, m354, v368, m388, v402, m422, v436, m456, v470, m490, v504, m524,
@@ -129,7 +129,7 @@ theorem put_address_spec {a : Bytes.Address} {rest : List UInt8}
     hm670, pr684, hm704, pr718, hm738, pr752, hm772, pr786, hm806, pr820, hm840, pr854, hm874,
     pr888, hm908, pr922, hm942, pr956, hm976, pr990, hm1010, pr1024, hm1044, pr1058, he1071,
     hm1070, pr1085, _⟩ := Obs.«IxonSerialize::put_address».obs ev
-  have hv1 := L1.load_repAddressRef ha ld11
+  have hv1 := Ingress.load_repAddressRef ha ld11
   have hs31 := stream_cons_step hm24 (proj_digestV_eq hv1 31 (by omega) pr38) hrest
   have hs30 := stream_cons_step hm58 (proj_digestV_eq hv1 30 (by omega) pr72) hs31
   have hs29 := stream_cons_step hm92 (proj_digestV_eq hv1 29 (by omega) pr106) hs30
@@ -184,18 +184,18 @@ theorem leaf_hash_spec {a : Bytes.Address}
   obtain ⟨v1, m2, cs12, m25, m38, cs70, hm33, ev14, hm48, ev72, hc81⟩ :=
     Obs.«KernelClaim::leaf_hash».obs ev
   have ext25 : Heap.Extends h m25 := by rw [hm33]; exact Heap.Extends.snoc h _
-  have hnil : L1.Stream m25 [] (.ptr (.enum byteStreamEnum) h.length) := by
-    rw [hm33]; exact L1.stream_nil_snoc h
+  have hnil : Ingress.Stream m25 [] (.ptr (.enum byteStreamEnum) h.length) := by
+    rw [hm33]; exact Ingress.stream_nil_snoc h
   obtain ⟨ext1, hs1⟩ := put_address_spec (Bytes.repAddressRef_heapMono₂ addrTy ext25 ha) hnil ev14
   rw [List.append_nil] at hs1
-  have hbv0 : L1.bv 0 = .field 0 := by simp [L1.bv]
+  have hbv0 : Ingress.bv 0 = .field 0 := by simp [Ingress.bv]
   have ext38 : Heap.Extends m2 m38 := by rw [hm48]; exact Heap.Extends.snoc m2 _
-  have hs0 : L1.Stream m38 (0 :: a.toList) (.ptr (.enum byteStreamEnum) m2.length) := by
-    rw [hm48, ← hbv0]; exact L1.stream_cons_snoc hs1
-  obtain ⟨ext2, hld, hcall⟩ := L1.bytes_to_addr_spec hs0 ev72
+  have hs0 : Ingress.Stream m38 (0 :: a.toList) (.ptr (.enum byteStreamEnum) m2.length) := by
+    rw [hm48, ← hbv0]; exact Ingress.stream_cons_snoc hs1
+  obtain ⟨ext2, hld, hcall⟩ := Ingress.bytes_to_addr_spec hs0 ev72
   have hmod : Blake3.Pure.cvBytes (Aiur.Library.Blake3.hashModel (0 :: a.toList)) =
       Blake3.Pure.digest (0 :: a.toList) :=
-    Aiur.Library.Blake3.hash_model_spec _ (L1.native_of_lt (by simp))
+    Aiur.Library.Blake3.hash_model_spec _ (Ingress.native_of_lt (by simp))
   rw [hmod] at hld
   have hba : (⟨(0 :: a.toList).toArray⟩ : ByteArray) = ByteArray.mk #[0] ++ (ixAddr a).hash := by
     apply byteArray_eq_of_toList
@@ -204,11 +204,11 @@ theorem leaf_hash_spec {a : Bytes.Address}
     rfl
   have hhashed : Hashed calls (ByteArray.mk #[0] ++ (ixAddr a).hash) := by
     rw [← hba]
-    exact L1.hashed_of_call (by rw [hc81]; simp [hcall]) hs0
+    exact Ingress.hashed_of_call (by rw [hc81]; simp [hcall]) hs0
   refine ⟨ext25.trans (ext1.trans (ext38.trans ext2)), hhashed,
     Blake3.Pure.digest (0 :: a.toList), repAddressRef_of_load_digestV hld, ?_⟩
-  change L1.ixAddr (Blake3.Pure.digest (0 :: a.toList)) = _
-  rw [← L1.blake3Pure_eq, hba, Ix.HostAdmission.Merkle.leaf, Address.admissionHash_eq]
+  change Ingress.ixAddr (Blake3.Pure.digest (0 :: a.toList)) = _
+  rw [← Ingress.blake3Pure_eq, hba, Ix.HostAdmission.Merkle.leaf, Address.admissionHash_eq]
 
 theorem node_hash_spec {al ar : Bytes.Address}
     {x_l x_r r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -222,20 +222,20 @@ theorem node_hash_spec {al ar : Bytes.Address}
   obtain ⟨v1, m2, cs12, v16, m25, cs33, m46, m59, cs91, hm54, ev35, ev14, hm69, ev93, hc102⟩ :=
     Obs.«KernelClaim::node_hash».obs ev
   have ext46 : Heap.Extends h m46 := by rw [hm54]; exact Heap.Extends.snoc h _
-  have hnil : L1.Stream m46 [] (.ptr (.enum byteStreamEnum) h.length) := by
-    rw [hm54]; exact L1.stream_nil_snoc h
+  have hnil : Ingress.Stream m46 [] (.ptr (.enum byteStreamEnum) h.length) := by
+    rw [hm54]; exact Ingress.stream_nil_snoc h
   obtain ⟨extR, hsR⟩ := put_address_spec (Bytes.repAddressRef_heapMono₂ addrTy ext46 hr) hnil ev35
   rw [List.append_nil] at hsR
   obtain ⟨extL, hsL⟩ :=
     put_address_spec (Bytes.repAddressRef_heapMono₂ addrTy (ext46.trans extR) hl) hsR ev14
-  have hbv1 : L1.bv 1 = .field 1 := by simp [L1.bv]
+  have hbv1 : Ingress.bv 1 = .field 1 := by simp [Ingress.bv]
   have ext59 : Heap.Extends m2 m59 := by rw [hm69]; exact Heap.Extends.snoc m2 _
-  have hs1 : L1.Stream m59 (1 :: (al.toList ++ ar.toList)) (.ptr (.enum byteStreamEnum) m2.length) := by
-    rw [hm69, ← hbv1]; exact L1.stream_cons_snoc hsL
-  obtain ⟨ext2, hld, hcall⟩ := L1.bytes_to_addr_spec hs1 ev93
+  have hs1 : Ingress.Stream m59 (1 :: (al.toList ++ ar.toList)) (.ptr (.enum byteStreamEnum) m2.length) := by
+    rw [hm69, ← hbv1]; exact Ingress.stream_cons_snoc hsL
+  obtain ⟨ext2, hld, hcall⟩ := Ingress.bytes_to_addr_spec hs1 ev93
   have hmod : Blake3.Pure.cvBytes (Aiur.Library.Blake3.hashModel (1 :: (al.toList ++ ar.toList))) =
       Blake3.Pure.digest (1 :: (al.toList ++ ar.toList)) :=
-    Aiur.Library.Blake3.hash_model_spec _ (L1.native_of_lt (by simp))
+    Aiur.Library.Blake3.hash_model_spec _ (Ingress.native_of_lt (by simp))
   rw [hmod] at hld
   have hba : (⟨(1 :: (al.toList ++ ar.toList)).toArray⟩ : ByteArray) =
       ByteArray.mk #[1] ++ (ixAddr al).hash ++ (ixAddr ar).hash := by
@@ -245,17 +245,17 @@ theorem node_hash_spec {al ar : Bytes.Address}
     rfl
   have hhashed : Hashed calls (ByteArray.mk #[1] ++ (ixAddr al).hash ++ (ixAddr ar).hash) := by
     rw [← hba]
-    exact L1.hashed_of_call (by rw [hc102]; simp [hcall]) hs1
+    exact Ingress.hashed_of_call (by rw [hc102]; simp [hcall]) hs1
   refine ⟨ext46.trans (extR.trans (extL.trans (ext59.trans ext2))), hhashed,
     Blake3.Pure.digest (1 :: (al.toList ++ ar.toList)), repAddressRef_of_load_digestV hld, ?_⟩
-  change L1.ixAddr (Blake3.Pure.digest (1 :: (al.toList ++ ar.toList))) = _
-  rw [← L1.blake3Pure_eq, hba, Ix.HostAdmission.Merkle.node, Address.admissionHash_eq]
+  change Ingress.ixAddr (Blake3.Pure.digest (1 :: (al.toList ++ ar.toList))) = _
+  rw [← Ingress.blake3Pure_eq, hba, Ix.HostAdmission.Merkle.node, Address.admissionHash_eq]
 
 /-! ## `parse_atree_body`, `load_assumption_tree`, and `addr_set_build` -/
 
 theorem parse_atree_body_spec {bytes : List UInt8}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h bytes x_stream)
+    (hs : Ingress.Stream h bytes x_stream)
     (ev : ObsFn W "KernelClaim::parse_atree_body" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (t' : AssumptionTree) (k : Nat) (rootB : Bytes.Address) (as : List Bytes.Address)
@@ -267,10 +267,10 @@ theorem parse_atree_body_spec {bytes : List UInt8}
       RepList addrListEnum (Bytes.RepAddressRef addrTy) h' as leavesPtr ∧
       as.map ixAddr = treeLeaves t' ∧
       (∀ img ∈ treeImages t', Hashed calls img) ∧
-      L1.Stream h' (bytes.drop k) restPtr := by
+      Ingress.Stream h' (bytes.drop k) restPtr := by
   suffices H : ∀ n, ∀ {bytes : List UInt8} {x_stream r : SourceValue F} {h h' : Heap F}
       {calls : List (Call F)}, bytes.length = n →
-      L1.Stream h bytes x_stream →
+      Ingress.Stream h bytes x_stream →
       ObsFn W "KernelClaim::parse_atree_body" [x_stream] h r h' calls →
       Heap.Extends h h' ∧
       ∃ (t' : AssumptionTree) (k : Nat) (rootB : Bytes.Address) (as : List Bytes.Address)
@@ -282,7 +282,7 @@ theorem parse_atree_body_spec {bytes : List UInt8}
         RepList addrListEnum (Bytes.RepAddressRef addrTy) h' as leavesPtr ∧
         as.map ixAddr = treeLeaves t' ∧
         (∀ img ∈ treeImages t', Hashed calls img) ∧
-        L1.Stream h' (bytes.drop k) restPtr from
+        Ingress.Stream h' (bytes.drop k) restPtr from
     H bytes.length rfl hs ev
   intro n
   induction n using Nat.strongRecOn with
@@ -300,7 +300,7 @@ theorem parse_atree_body_spec {bytes : List UInt8}
       obtain ⟨hm2, b, rest1, _, hb, hs1, htag⟩ := Deserialize.readByte_refines hs ev14.erase
       injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
       obtain ⟨rfl, rfl⟩ := htag'
-      obtain ⟨_, hm37⟩ := L1.u8_toField ev50
+      obtain ⟨_, hm37⟩ := Ingress.u8_toField ev50
       subst m2 m37
       obtain ⟨extA, hlenA, addrPtr, restPtr2, htupA, haddr, hs2⟩ :=
         Deserialize.getAddress_refines hs1 ev76.erase
@@ -328,24 +328,24 @@ theorem parse_atree_body_spec {bytes : List UInt8}
         subst himg
         exact hashed_mono (by intro c hc; rw [hc176]; simp [hc]) hhashed
       · rw [hb]
-        simpa using L1.Stream.mono (extH.trans extPost) hs2
+        simpa using Ingress.Stream.mono (extH.trans extPost) hs2
     · -- Padding (`tag = 1`)
       obtain ⟨hm2, b, rest1, _, hb, hs1, htag⟩ := Deserialize.readByte_refines hs ev14.erase
       injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
       obtain ⟨rfl, rfl⟩ := htag'
-      obtain ⟨_, hm37⟩ := L1.u8_toField ev50
+      obtain ⟨_, hm37⟩ := Ingress.u8_toField ev50
       subst m2 m37
       have ext189 : Heap.Extends h m189 := by rw [hm197]; exact Heap.Extends.snoc h _
       have ext201 : Heap.Extends m189 h' := by rw [hm209]; exact Heap.Extends.snoc m189 _
       have extPost := ext189.trans ext201
       let zeroB : Bytes.Address := Vector.replicate 32 0
-      have hdig0 : L1.digestV zeroB = .tuple (List.replicate 32 (.field 0)) := by
-        simp [L1.digestV, zeroB, L1.bv]
+      have hdig0 : Ingress.digestV zeroB = .tuple (List.replicate 32 (.field 0)) := by
+        simp [Ingress.digestV, zeroB, Ingress.bv]
       have hld0 : loadValue m189
           (.ptr (.tuple (List.map Value.type (List.replicate 32 ((.field 0) : SourceValue F))))
-            h.length) = .ok (L1.digestV zeroB) := by
-        rw [hdig0, hm197, ← L1.type_tuple]
-        exact L1.loadValue_snoc h (.tuple (List.replicate 32 (.field 0)))
+            h.length) = .ok (Ingress.digestV zeroB) := by
+        rw [hdig0, hm197, ← Ingress.type_tuple]
+        exact Ingress.loadValue_snoc h (.tuple (List.replicate 32 (.field 0)))
       have hroot : Bytes.RepAddressRef addrTy h' zeroB _ :=
         Bytes.repAddressRef_heapMono₂ addrTy ext201 (repAddressRef_of_load_digestV hld0)
       have hnil_l : RepList addrListEnum (Bytes.RepAddressRef addrTy) h' []
@@ -357,12 +357,12 @@ theorem parse_atree_body_spec {bytes : List UInt8}
       refine ⟨extPost, .padding, 1, zeroB, [], _, _, x_s, by omega, by rw [hb]; simp, rfl,
         hroot, hix_zero, hnil_l, rfl, by simp [treeImages], ?_⟩
       rw [hb]
-      simpa using L1.Stream.mono extPost hs1
+      simpa using Ingress.Stream.mono extPost hs1
     · -- Node (`tag = 2`)
       obtain ⟨hm2, b, rest1, _, hb, hs1, htag⟩ := Deserialize.readByte_refines hs ev14.erase
       injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
       obtain ⟨rfl, rfl⟩ := htag'
-      obtain ⟨_, hm37⟩ := L1.u8_toField ev50
+      obtain ⟨_, hm37⟩ := Ingress.u8_toField ev50
       subst m2 m37
       have hlt1 : rest1.length < n := by rw [← hlen_eq, hb]; simp
       obtain ⟨extL, tL, kL, lhB, asL, _, _, _, hkL_ge, hkL_le, htupL, hrepL, hixL, hlL, hmapL,
@@ -411,7 +411,7 @@ theorem parse_atree_body_spec {bytes : List UInt8}
         · exact hashed_mono (by intro c hc; rw [hc386]; simp [hc]) (hhashL img himgL)
         · exact hashed_mono (by intro c hc; rw [hc386]; simp [hc]) (hhashR img himgR)
       · rw [hb, show 1 + kL + kR = (kL + kR) + 1 by omega, List.drop_succ_cons, ← List.drop_drop]
-        exact L1.Stream.mono (extN.trans extCat) hsR
+        exact Ingress.Stream.mono (extN.trans extCat) hsR
 
 private theorem byte0_ne_byte1 {b₀ b₁ : ByteArray} :
     ByteArray.mk #[1] ++ b₁ ≠ ByteArray.mk #[0] ++ b₀ := by
@@ -545,7 +545,7 @@ theorem treeRoot_collision_or_eq {V : View} {extra : List ByteArray} {calls : Li
 theorem load_assumption_tree_spec {V : View} {extra : List ByteArray}
     {tTree : AssumptionTree} (htTree : tTree ∈ V.trees)
     {x_root r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hroot : S0.addr h x_root (treeRoot tTree))
+    (hroot : BaseSeams.addr h x_root (treeRoot tTree))
     (ev : ObsFn W "KernelClaim::load_assumption_tree" [x_root] h r h' calls) :
     V.HashedCollision extra calls ∨
     (Heap.Extends h h' ∧
@@ -558,27 +558,27 @@ theorem load_assumption_tree_spec {V : View} {extra : List ByteArray}
     v245, v246, m248, cs256, m268, cs276,
     ld11, ev26, ev68, ev105, ev151, _, ev180, ld217, ld232, ev258, ev278,
     heq287, rfl, rfl, hc291⟩ := Obs.«KernelClaim::load_assumption_tree».obs ev
-  have hv1 : v1 = L1.digestV rootB := L1.load_repAddressRef hrep_root ld11
-  have hm14 := L1.io_get_info_spec ev26
+  have hv1 : v1 = Ingress.digestV rootB := Ingress.load_repAddressRef hrep_root ld11
+  have hm14 := Ingress.io_get_info_spec ev26
   subst hm14
-  obtain ⟨extRead, rawBytes, _, -, hs0⟩ := L1.read_finite_byte_stream_spec ev68
+  obtain ⟨extRead, rawBytes, _, -, hs0⟩ := Ingress.read_finite_byte_stream_spec ev68
   obtain ⟨rfl, _, rest1, _, _, hs1, htag⟩ := Deserialize.readByte_refines hs0 ev105.erase
   injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
   obtain ⟨rfl, rfl⟩ := htag'
-  obtain ⟨_, rfl⟩ := L1.u8_toField ev151
+  obtain ⟨_, rfl⟩ := Ingress.u8_toField ev151
   obtain ⟨extParse, t', k, compB, as, _, _, _, _, _, htupP, hrepComp, hixComp, hlLeaves,
     hmapLeaves, hhashP, _⟩ := parse_atree_body_spec hs1 ev180
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupP
   obtain ⟨rfl, rfl, rfl⟩ := htupP
-  have hv222 : v222 = L1.digestV compB := L1.load_repAddressRef hrepComp ld232
-  obtain ⟨rfl, l1, rfl, hl1⟩ := L1.address_to_fields_spec ev258
-  obtain ⟨rfl, l2, rfl, hl2⟩ := L1.address_to_fields_spec ev278
+  have hv222 : v222 = Ingress.digestV compB := Ingress.load_repAddressRef hrepComp ld232
+  obtain ⟨rfl, l1, rfl, hl1⟩ := Ingress.address_to_fields_spec ev258
+  obtain ⟨rfl, l2, rfl, hl2⟩ := Ingress.address_to_fields_spec ev278
   have hl_eq : l1 = l2 := Value.tuple.inj heq287
   subst hl_eq
   have hcomp_eq : compB = rootB := by
-    refine L1.digest_eq_of_proj hv1 ?_
+    refine Ingress.digest_eq_of_proj hv1 ?_
     intro i hi
-    rw [hl2 i hi, ← hl1 i hi, hv222, L1.proj_digestV _ i hi]
+    rw [hl2 i hi, ← hl1 i hi, hv222, Ingress.proj_digestV _ i hi]
   subst hcomp_eq
   have hroot_eq : treeRoot tTree = treeRoot t' := hix_root.symm.trans hixComp
   have hhash_calls : ∀ img ∈ treeImages t', Hashed calls img := fun img himg =>
@@ -619,14 +619,14 @@ theorem addr_set_build_spec {as : List Bytes.Address} {S : List _root_.Address}
 /-! ## `pack_word`, `pack_digest`, and `packDigest` injectivity -/
 
 theorem pack_word_spec {w : UInt32} {r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (ev : ObsFn W "Blake3::pack_word" [L1.wv w] h r h' calls) :
+    (ev : ObsFn W "Blake3::pack_word" [Ingress.wv w] h r h' calls) :
     r = .field (((Blake3.Pure.wordBytes w)[0].toNat +
       256 * (Blake3.Pure.wordBytes w)[1].toNat +
       65536 * (Blake3.Pure.wordBytes w)[2].toNat +
       16777216 * (Blake3.Pure.wordBytes w)[3].toNat : Nat) : F) ∧ h' = h := by
   obtain ⟨cs4, v7, m9, cs17, ev19, ev6, _⟩ := Obs.«Blake3::pack_word».obs ev
   obtain ⟨rfl, rfl, _⟩ := Obs.«UInt32::compact_field».obs ev6
-  obtain ⟨hr, rfl⟩ := L1.u32_compact (b0 := (Blake3.Pure.wordBytes w)[0])
+  obtain ⟨hr, rfl⟩ := Ingress.u32_compact (b0 := (Blake3.Pure.wordBytes w)[0])
     (b1 := (Blake3.Pure.wordBytes w)[1]) (b2 := (Blake3.Pure.wordBytes w)[2])
     (b3 := (Blake3.Pure.wordBytes w)[3]) ev19
   rw [hr, Aiur.Library.Blake3.wordOfBytes_toNat]
@@ -665,20 +665,20 @@ private theorem packDigest_cv_word (cv : Blake3.Pure.CV) (k : Fin 8) :
 
 theorem pack_digest_spec {cv : Blake3.Pure.CV} {r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
-    (ev : ObsFn W "Blake3::pack_digest" [L1.vecV cv] h r h' calls) :
+    (ev : ObsFn W "Blake3::pack_digest" [Ingress.vecV cv] h r h' calls) :
     r = digestValue (packDigest (ixAddr (Blake3.Pure.cvBytes cv))) ∧ h' = h := by
   obtain ⟨v3, v4, v5, v6, v7, v8, v9, v10, m13, cs21, v24, m36, cs44, v47, m59, cs67, v70,
     m82, cs90, v93, m105, cs113, v116, m128, cs136, v139, m151, cs159, v162, m174, cs182, v185,
     rfl, pr33, ev23, pr56, ev46, pr79, ev69, pr102, ev92, pr125, ev115, pr148, ev138, pr171,
     ev161, pr194, ev184, rfl, _⟩ := Obs.«Blake3::pack_digest».obs ev
-  obtain rfl := L1.ok_inj ((L1.proj_vecV cv 0 (by decide)).symm.trans pr33)
-  obtain rfl := L1.ok_inj ((L1.proj_vecV cv 1 (by decide)).symm.trans pr56)
-  obtain rfl := L1.ok_inj ((L1.proj_vecV cv 2 (by decide)).symm.trans pr79)
-  obtain rfl := L1.ok_inj ((L1.proj_vecV cv 3 (by decide)).symm.trans pr102)
-  obtain rfl := L1.ok_inj ((L1.proj_vecV cv 4 (by decide)).symm.trans pr125)
-  obtain rfl := L1.ok_inj ((L1.proj_vecV cv 5 (by decide)).symm.trans pr148)
-  obtain rfl := L1.ok_inj ((L1.proj_vecV cv 6 (by decide)).symm.trans pr171)
-  obtain rfl := L1.ok_inj ((L1.proj_vecV cv 7 (by decide)).symm.trans pr194)
+  obtain rfl := Ingress.ok_inj ((Ingress.proj_vecV cv 0 (by decide)).symm.trans pr33)
+  obtain rfl := Ingress.ok_inj ((Ingress.proj_vecV cv 1 (by decide)).symm.trans pr56)
+  obtain rfl := Ingress.ok_inj ((Ingress.proj_vecV cv 2 (by decide)).symm.trans pr79)
+  obtain rfl := Ingress.ok_inj ((Ingress.proj_vecV cv 3 (by decide)).symm.trans pr102)
+  obtain rfl := Ingress.ok_inj ((Ingress.proj_vecV cv 4 (by decide)).symm.trans pr125)
+  obtain rfl := Ingress.ok_inj ((Ingress.proj_vecV cv 5 (by decide)).symm.trans pr148)
+  obtain rfl := Ingress.ok_inj ((Ingress.proj_vecV cv 6 (by decide)).symm.trans pr171)
+  obtain rfl := Ingress.ok_inj ((Ingress.proj_vecV cv 7 (by decide)).symm.trans pr194)
   obtain ⟨hv3, rfl⟩ := pack_word_spec ev23
   obtain ⟨hv4, rfl⟩ := pack_word_spec ev46
   obtain ⟨hv5, rfl⟩ := pack_word_spec ev69
@@ -800,7 +800,7 @@ theorem getAddress_of_drop {bytes : List UInt8} {i : Nat} (hlen : 32 ≤ (bytes.
 
 theorem get_opt_addr_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn W "KernelClaim::get_opt_addr" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (opt : Option _root_.Address) (k : Nat) (optVal restPtr : SourceValue F),
@@ -811,15 +811,15 @@ theorem get_opt_addr_spec {bytes : List UInt8} {i : Nat}
        | none => optVal = .construct Obs.Names.«Options::Option<&[Field; 32]>» "None" []
        | some a => ∃ addrPtr,
            optVal = .construct Obs.Names.«Options::Option<&[Field; 32]>» "Some" [addrPtr] ∧
-           S0.addr h' addrPtr a) ∧
-      L1.Stream h' (bytes.drop (i + k)) restPtr := by
+           BaseSeams.addr h' addrPtr a) ∧
+      Ingress.Stream h' (bytes.drop (i + k)) restPtr := by
   rcases Obs.«KernelClaim::get_opt_addr».obs ev with
     ⟨m2, cs12, x_tag, x_s, m37, cs48, ev14, ev50, rfl, rfl, _⟩ |
     ⟨m2, cs12, x_tag, x_s, m37, cs48, m92, cs102, x_addr, x_s2, ev14, ev50, ev104, rfl, rfl, _⟩
   · obtain ⟨rfl, b, rest1, _, hb, hs1, htag⟩ := Deserialize.readByte_refines hs ev14.erase
     injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
     obtain ⟨rfl, rfl⟩ := htag'
-    obtain ⟨hval, rfl⟩ := L1.u8_toField ev50
+    obtain ⟨hval, rfl⟩ := Ingress.u8_toField ev50
     have hb0 : b = 0 := by
       have h0 : (b.toNat : F) = ((0 : Nat) : F) := by simpa using Value.field.inj hval.symm
       exact UInt8.ext (natCast_inj_of_lt_u32 (by have := b.toNat_lt; omega) (by decide) h0)
@@ -830,7 +830,7 @@ theorem get_opt_addr_spec {bytes : List UInt8} {i : Nat}
   · obtain ⟨rfl, b, rest1, _, hb, hs1, htag⟩ := Deserialize.readByte_refines hs ev14.erase
     injection htag with htag'; simp only [List.cons.injEq, and_true] at htag'
     obtain ⟨rfl, rfl⟩ := htag'
-    obtain ⟨hval, rfl⟩ := L1.u8_toField ev50
+    obtain ⟨hval, rfl⟩ := Ingress.u8_toField ev50
     have hb1 : b = 1 := by
       have h1 : (b.toNat : F) = ((1 : Nat) : F) := by simpa using Value.field.inj hval.symm
       exact UInt8.ext (natCast_inj_of_lt_u32 (by have := b.toNat_lt; omega) (by decide) h1)
@@ -850,17 +850,17 @@ theorem get_opt_addr_spec {bytes : List UInt8} {i : Nat}
 
 theorem get_claim_context_spec {bytes : List UInt8} {i : Nat}
     {x_stream r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (bytes.drop i) x_stream)
+    (hs : Ingress.Stream h (bytes.drop i) x_stream)
     (ev : ObsFn W "KernelClaim::get_claim_context" [x_stream] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (ctx : ClaimContext) (k : Nat) (x_binding x_axioms x_s3 : SourceValue F),
       Claim.getContext { idx := i, bytes := ⟨bytes.toArray⟩ } =
         .ok ctx { idx := i + k, bytes := ⟨bytes.toArray⟩ } ∧
       r = .tuple [x_binding, x_axioms, x_s3] ∧
-      S0.addr h' x_binding ctx.binding ∧
+      BaseSeams.addr h' x_binding ctx.binding ∧
       (ctx.axioms = none →
         x_axioms = .construct Obs.Names.«Options::Option<&[Field; 32]>» "None" []) ∧
-      L1.Stream h' (bytes.drop (i + k)) x_s3 := by
+      Ingress.Stream h' (bytes.drop (i + k)) x_s3 := by
   obtain ⟨m2, cs12, x_spec, x_s, v47, m50, cs58, v62, m71, cs79, m90, cs100,
     x_binding, x_s2, m125, cs135, x_axioms, x_s3,
     ev14, ev81, ev60, _, ev102, ev137, rfl, rfl, _⟩ :=
@@ -872,7 +872,7 @@ theorem get_claim_context_spec {bytes : List UInt8} {i : Nat}
   have hget1 := getAddress_of_drop hlen1
   have extMid := ev81.heap_extends.trans ev60.heap_extends
   obtain ⟨ext2, hlen2, _, _, htup2, hbind, hs2⟩ :=
-    Deserialize.getAddress_refines (L1.Stream.mono extMid hs1) ev102.erase
+    Deserialize.getAddress_refines (Ingress.Stream.mono extMid hs1) ev102.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup2
   obtain ⟨rfl, rfl⟩ := htup2
   rw [List.drop_drop] at hs2
@@ -901,7 +901,7 @@ theorem run_check_env_none_spec {V : View} {extra : List ByteArray}
     {tTree : AssumptionTree} (htTree : tTree ∈ V.trees)
     {x_rc x_env_root r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCFullRep t bAddr lim h x_rc)
-    (hroot : S0.addr h x_env_root (treeRoot tTree))
+    (hroot : BaseSeams.addr h x_env_root (treeRoot tTree))
     (ev : ObsFn W "KernelClaim::run_check_env"
       [x_rc, x_env_root, .construct Obs.Names.«Options::Option<&[Field; 32]>» "None" []]
       h r h' calls) :
@@ -1069,7 +1069,7 @@ theorem verify_claim_decode_spec
           (cs₁ cs₂ : List (Call F)),
           seeds = [a] ∧
           RCFullRep t b.address 77 h₁ x_rc ∧
-          S0.addr h₁ x_a a ∧
+          BaseSeams.addr h₁ x_a a ∧
           ObsFn W "KernelClaim::assert_claimable" [x_rc, x_a] h₁ v₁ h₂ cs₁ ∧
           ObsFn W "KernelClaim::run_check_transitive" [x_rc, x_a] h₂ v₂ h₃ cs₂ ∧
           (⟨"KernelClaim::assert_claimable", [x_rc, x_a], h₁⟩ : Call F) ∈ calls ∧
@@ -1113,7 +1113,7 @@ theorem verify_claim_decode_spec
   obtain ⟨l_r2, rfl, rfl⟩ := d_r2.var_inv; simp at l_r2; subst l_r2
   obtain ⟨rfl, rfl, rfl⟩ := a_read3.nil_inv
   obtain rfl := matchPattern_bind_inv mt_read
-  obtain ⟨_, rawBytes, hraw_lt, -, hst_raw⟩ := L1.read_finite_byte_stream_spec ev_read
+  obtain ⟨_, rawBytes, hraw_lt, -, hst_raw⟩ := Ingress.read_finite_byte_stream_spec ev_read
   -- 3. `let h = Blake3::hash(bytes);`
   obtain ⟨x_h, m_hash, bs_hash, c_hash, c3, d_hash, mt_hash, d3, rfl⟩ := d2.letValue_inv
   obtain ⟨_, _, _, cs_hash, a_hash, ev_hash, rfl⟩ := d_hash.call_inv
@@ -1123,9 +1123,9 @@ theorem verify_claim_decode_spec
   obtain ⟨rfl, rfl, rfl⟩ := a_hash1.nil_inv
   obtain rfl := matchPattern_bind_inv mt_hash
   obtain ⟨ext_hash, rfl, hcv_raw⟩ :=
-    L1.hash_digest_spec hst_raw (L1.native_of_lt hraw_lt) ev_hash
+    Ingress.hash_digest_spec hst_raw (Ingress.native_of_lt hraw_lt) ev_hash
   have hhashed_raw : Hashed calls ⟨rawBytes.toArray⟩ :=
-    L1.hashed_of_call (hsub_run _ (by simp [instanceName_plain_some])) hst_raw
+    Ingress.hashed_of_call (hsub_run _ (by simp [instanceName_plain_some])) hst_raw
   -- 4. `assert_eq!(Blake3::pack_digest(h), digest, ...);`
   obtain ⟨_, m_eq1, bs_eq1, c_eq1, c4, d_eq1, mt_eq1, d4, rfl⟩ := d3.letValue_inv
   obtain ⟨_, a_eq1, ap_eq1⟩ := d_eq1.builtin_inv
@@ -1146,7 +1146,7 @@ theorem verify_claim_decode_spec
     apply packDigest_inj (blake3Pure_hash_size _) (blake3Pure_hash_size _)
     have hp := digestValue_inj heq_pd
     rw [← hpack] at hp
-    rw [L1.blake3Pure_eq]
+    rw [Ingress.blake3Pure_eq]
     exact hp
   by_cases heq_bytes : (⟨rawBytes.toArray⟩ : ByteArray) = bytes
   case neg =>
@@ -1180,7 +1180,7 @@ theorem verify_claim_decode_spec
   obtain rfl := matchPattern_bind_inv mt_s0
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml_tagn2
   obtain ⟨rfl, tag, n1, restPtr1, hok_tag, hs_n1, htagn_tup⟩ :=
-    TagN.getTagN4_refines_at (i := 0) (by simpa using L1.Stream.mono ext_hash hst_raw) ev_tagn.erase
+    TagN.getTagN4_refines_at (i := 0) (by simpa using Ingress.Stream.mono ext_hash hst_raw) ev_tagn.erase
   simp only [Nat.zero_add] at hok_tag hs_n1
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htagn_tup
   obtain ⟨rfl, rfl⟩ := htagn_tup
@@ -1253,7 +1253,7 @@ theorem verify_claim_decode_spec
   obtain rfl := matchPattern_bind_inv mt_xs1
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml_fmt2
   obtain ⟨rfl, fmtByte, restFmt, _, hcons_fmt, hs_fmt, htup_fmt⟩ :=
-    Deserialize.readByte_refines (L1.Stream.mono (ext_eq2.trans ext_eq3) hs_n1) ev_fmt.erase
+    Deserialize.readByte_refines (Ingress.Stream.mono (ext_eq2.trans ext_eq3) hs_n1) ev_fmt.erase
   injection htup_fmt with htup_fmt'; simp only [List.cons.injEq, and_true] at htup_fmt'
   obtain ⟨rfl, rfl⟩ := htup_fmt'
   obtain ⟨hu8_fmt, hdrop_fmt, -⟩ := Deserialize.getU8_of_drop_cons hcons_fmt
@@ -1277,7 +1277,7 @@ theorem verify_claim_decode_spec
   obtain rfl := matchPattern_bind_inv mt_xs2
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml_val2
   obtain ⟨rfl, valByte, restVal, _, hcons_val, hs_val, htup_val⟩ :=
-    Deserialize.readByte_refines (L1.Stream.mono ext_eq4 hs_fmt) ev_val.erase
+    Deserialize.readByte_refines (Ingress.Stream.mono ext_eq4 hs_fmt) ev_val.erase
   injection htup_val with htup_val'; simp only [List.cons.injEq, and_true] at htup_val'
   obtain ⟨rfl, rfl⟩ := htup_val'
   obtain ⟨hu8_val, hdrop_val, -⟩ := Deserialize.getU8_of_drop_cons hcons_val
@@ -1304,7 +1304,7 @@ theorem verify_claim_decode_spec
   obtain ⟨_, _, _, _, _, rfl, d_sc0, a_sc1, rfl⟩ := a_scrut.cons_inv
   obtain ⟨l_sc0, rfl, rfl⟩ := d_sc0.var_inv; simp at l_sc0; subst l_sc0
   obtain ⟨rfl, rfl, rfl⟩ := a_sc1.nil_inv
-  obtain ⟨hv_scrut, hm_scrut⟩ := L1.u8_toField ev_scrut
+  obtain ⟨hv_scrut, hm_scrut⟩ := Ingress.u8_toField ev_scrut
   subst v_scrut m_scrut
   have hsub_arm : ∀ cl ∈ c_arm, cl ∈ calls := fun cl hcl =>
     hsub_run cl (by simp [hcl])
@@ -1357,7 +1357,7 @@ theorem verify_claim_decode_spec
     obtain ⟨_, _, _, _, _, rfl, d_rcv0, a_rcv1, rfl⟩ := a_rc_v.cons_inv
     obtain ⟨l_rcv0, rfl, rfl⟩ := d_rcv0.var_inv; simp at l_rcv0; subst l_rcv0
     obtain ⟨rfl, rfl, rfl⟩ := a_rcv1.nil_inv
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_rc_v
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_rc_v
     obtain ⟨_, _, _, _, _, rfl, d_rc2, a_rc3, rfl⟩ := a_rc2.cons_inv
     obtain ⟨l_rc2, rfl, rfl⟩ := d_rc2.var_inv; simp at l_rc2; subst l_rc2
     obtain ⟨rfl, rfl, rfl⟩ := a_rc3.nil_inv
@@ -1415,7 +1415,7 @@ theorem verify_claim_decode_spec
     -- Align `getPayload 4 valByte` with `get_claim_context`, `get_address`, `get_opt_addr`
     have ext_rc0 := ev_rc.heap_extends
     obtain ⟨ext_tgt, hlen_tgt, _, _, htup_tgt, haddr_tgt, hs_tgt⟩ :=
-      Deserialize.getAddress_refines (L1.Stream.mono ext_rc0 hs_ctx) ev_tgt.erase
+      Deserialize.getAddress_refines (Ingress.Stream.mono ext_rc0 hs_ctx) ev_tgt.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup_tgt
     obtain ⟨rfl, rfl⟩ := htup_tgt
     rw [List.drop_drop] at hs_tgt
@@ -1526,7 +1526,7 @@ theorem verify_claim_decode_spec
     obtain ⟨_, _, _, _, _, rfl, d_rcv0, a_rcv1, rfl⟩ := a_rc_v.cons_inv
     obtain ⟨l_rcv0, rfl, rfl⟩ := d_rcv0.var_inv; simp at l_rcv0; subst l_rcv0
     obtain ⟨rfl, rfl, rfl⟩ := a_rcv1.nil_inv
-    obtain ⟨rfl, rfl⟩ := L1.u8_toField ev_rc_v
+    obtain ⟨rfl, rfl⟩ := Ingress.u8_toField ev_rc_v
     obtain ⟨_, _, _, _, _, rfl, d_rc2, a_rc3, rfl⟩ := a_rc2.cons_inv
     obtain ⟨l_rc2, rfl, rfl⟩ := d_rc2.var_inv; simp at l_rc2; subst l_rc2
     obtain ⟨rfl, rfl, rfl⟩ := a_rc3.nil_inv
@@ -1580,7 +1580,7 @@ theorem verify_claim_decode_spec
     -- Align `getPayload 5 valByte`
     have ext_rc0 := ev_rc.heap_extends
     obtain ⟨ext_rt, hlen_rt, _, _, htup_rt, haddr_rt, hs_rt⟩ :=
-      Deserialize.getAddress_refines (L1.Stream.mono ext_rc0 hs_ctx) ev_rt.erase
+      Deserialize.getAddress_refines (Ingress.Stream.mono ext_rc0 hs_ctx) ev_rt.erase
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup_rt
     obtain ⟨rfl, rfl⟩ := htup_rt
     rw [List.drop_drop] at hs_rt
@@ -1619,7 +1619,7 @@ theorem verify_claim_decode_spec
     subst hopt_asm
     obtain ⟨tTree, hv_trees, htree_root, hseeds_eq⟩ := hseeds
     have htTree_mem : tTree ∈ V.trees := by rw [hv_trees]; simp
-    have hroot_addr : S0.addr _ x_root (treeRoot tTree) :=
+    have hroot_addr : BaseSeams.addr _ x_root (treeRoot tTree) :=
       ⟨_, Bytes.repAddressRef_heapMono₂ addrTy ext_asm haddr_rt, htree_root.symm⟩
     rcases run_check_env_none_spec (V := V)
         (extra := bytes :: b.bytes :: IxVM.Consistency.committedImages)

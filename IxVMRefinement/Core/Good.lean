@@ -8,15 +8,15 @@ import IxC.Kernel.Verify.EnvPreds
 
 `Good c calls`: the calls hashed no collision with the records `c.E` (the escape of the
 statement's `Core`, `View.HashedCollision { env := c.E } [] calls`), and they are **bounded**:
-some valid ROM of at most `2^39` addresses carries them (the statement's `Bounded`, which L0
-provides), so every list their arguments hold is shorter than `2^39`. Raw declaration traversal
+some valid ROM of at most `2^39` addresses carries them (the statement's `Bounded`, which
+`CircuitToSource` provides), so every list their arguments hold is shorter than `2^39`. Raw declaration traversal
 uses this weak predicate. Registry specs use `CoreGood` from `CallScope.lean`, which also records
 coverage of child calls; installed loads separately require the exact top invocation.
 
 `LoadFacts c`: the record loads the core makes read the environment: a load at an address the
 table keys as `k` returns a constant representing `env`'s constant at `k`. This is the
-L1 ↔ L7 interface: L1 (`Records`) says what a load returns in terms of the bytes it hashed;
-L7 (with L5) says the environment stores, at each record's key, the constant those bytes read
+Ingress ↔ Assembly interface: `RecordIngress` (`Records`) says what a load returns in terms of the bytes it hashed;
+`AssemblyObligation` (with `Decls`) says the environment stores, at each record's key, the constant those bytes read
 as. This unrestricted interface is retained for compatibility. Actual registry runs use
 `ScopedLoadFacts`, whose installed-lookup claims apply only to selected invocations. -/
 
@@ -182,7 +182,7 @@ structure LoadFacts (c : Ctx) : Prop where
         .field (p.idx.toNat : F)]) ∧
       Bytes.RepAddressRef addrTy h' b blk ∧ ixAddr b = p.block ∧
       p.idx.toNat < 2 ^ 56 ∧ ind.ctors.size < 2 ^ 56
-  /-- (L1, L7) **A loaded inductive comes from its projection record**: an inductive `get_ci`
+  /-- (Ingress, Assembly) **A loaded inductive comes from its projection record**: an inductive `get_ci`
   returns at `a` is read from the record at `a` in `c.E`, the inductive projection of member
   `idx` of the block `blk` (the converse of `indRecord`; the loader converts only that record
   shape to an inductive). -/
@@ -266,7 +266,7 @@ structure LoadFacts (c : Ctx) : Prop where
           tbl.guards = Ix.Kernel.structProjGuards cvC.type nP nF sorts) ∧
         ∃ bs body, cvC.type.stripPis (nP + nF) = some (bs, body) ∧
           ∀ bm ∈ bs, bm.2.pw = Ix.Kernel.Level.zeronessOf tbl.structSort
-  /-- (L5) **Unit-likeness**: an inductive that `get_ci` loads with no index and one constructor
+  /-- (Decls) **Unit-likeness**: an inductive that `get_ci` loads with no index and one constructor
   (whose stored constructor, at the first constructor record of its member, has no field), at a
   block with at most one inductive, is unit-like at its loaded parameter count; at a reserved
   basis key it is the pinned `PUnit` (no parameter, `isUnitLikeTy`). Owed by the declaration
@@ -286,7 +286,7 @@ structure LoadFacts (c : Ctx) : Prop where
     caps.unitlike = true ∧ caps.unitParams = ZMod.val p ∧
       (Ix.Kernel.reservedBasisNames.contains (c.κ (ixAddr a)) = false ∨
         (ZMod.val p = 0 ∧ ∀ us, Ix.Kernel.isUnitLikeTy c.env (.const (c.κ (ixAddr a)) us) = true))
-  /-- (L5, L7) **Structure η**: the inductive member `i` of the block `b`, as `get_ci_iprj` loads
+  /-- (Decls, Assembly) **Structure η**: the inductive member `i` of the block `b`, as `get_ci_iprj` loads
   it with no index and one constructor, whose block `block_is_modeled` answers `0`, whose sort
   after the constructor's parameters is never zero at some levels, and whose projection record
   `struct_is_rec` does not find recursive, is η-capable through the constructor `c.κ ac` (a
@@ -316,7 +316,7 @@ structure LoadFacts (c : Ctx) : Prop where
     ixAddr sa = iprjAddr (ixAddr b) (ZMod.val i) →
     caps.eta = true ∧ caps.etaCtor = some (c.κ (ixAddr ac)) ∧ caps.etaFields = cnF ∧
       caps.etaParams = cnP ∧ cvc.levelParams = cvT.levelParams
-  /-- (L5, L7) **Structure η at the observations ι's η route makes** (`try_struct_eta_iota`,
+  /-- (Decls, Assembly) **Structure η at the observations ι's η route makes** (`try_struct_eta_iota`,
   `eta_iota_fab`): an inductive `get_ci` loads at `pa` with no index and one constructor, in a
   block with at most one inductive (`block_is_multi` answering `0`), not found recursive by
   `struct_is_rec`, whose sort after its loaded parameter count is never zero at some levels, and
@@ -348,7 +348,7 @@ structure LoadFacts (c : Ctx) : Prop where
     caps.eta = true ∧
       caps.etaCtor = some (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) ∧ caps.etaFields = cnF ∧
       caps.etaParams = cnP ∧ cnP = ZMod.val m ∧ cvc.levelParams = cvT.levelParams
-  /-- (L1) **A loaded record's shallow shape**: `Ingress::load_verified_constant` at an address
+  /-- (Ingress) **A loaded record's shallow shape**: `Ingress::load_verified_constant` at an address
   whose record in `c.E` is `cst` returns an `Ixon::Constant` matching `cst`'s constructor and
   block-member kinds (`Specs.Callees.ConstShapeRep`). -/
   recordShape : ∀ (ap r : SourceValue F) (h h' : Heap F) (cs : List (Call F))
@@ -357,7 +357,7 @@ structure LoadFacts (c : Ctx) : Prop where
     Bytes.RepAddressRef addrTy h a ap →
     Ix.Cert.recordAt c.E (ixAddr a) = some cst →
     Specs.Callees.ConstShapeRep h' cst r
-  /-- (L1, L6, L7) **A loaded inductive's parent block**: the block `blk` named by an inductive
+  /-- (Ingress, Claim, Assembly) **A loaded inductive's parent block**: the block `blk` named by an inductive
   `get_ci` returns is stored in `c.E` as a mutual block whose member `i` is an inductive. -/
   inductBlock : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
       (a b : Bytes.Address) (nl ty np ni nc u blk : SourceValue F) (i : F),
@@ -368,7 +368,7 @@ structure LoadFacts (c : Ctx) : Prop where
     ∃ (cb : Ixon.Constant) (xs : Array Ixon.MutConst) (ind : Ixon.Inductive),
       Ix.Cert.recordAt c.E (ixAddr b) = some cb ∧ cb.info = .muts xs ∧
       xs[ZMod.val i]? = some (.indc ind)
-  /-- (L5, L7) **A native structure's constructor telescope and `Prop`-projection guard**:
+  /-- (Decls, Assembly) **A native structure's constructor telescope and `Prop`-projection guard**:
   companion to `projTables` for `Infer.proj`. Supplies constructor-telescope shape
   (`ctorTeleOk`) at `nP + nF` and, when the structure's sort is `Prop`
   (`Level.isEquiv tbl.structSort .zero = some true`), zero-preservation from
@@ -395,7 +395,7 @@ structure LoadFacts (c : Ctx) : Prop where
             (Ix.Kernel.Level.subst (List.range us.length) us g) = 0) →
           ∀ φ, Ix.Kernel.Level.eval φ
             (Ix.Kernel.Level.subst tbl.levelParams us (tbl.entry (ZMod.val f)).fieldSort) = 0)
-  /-- (L1) **A stored record decodes as the record whose bytes it holds**: a record of `c.E`
+  /-- (Ingress) **A stored record decodes as the record whose bytes it holds**: a record of `c.E`
   whose raw bytes are the serialization of a wire-valid constant with empty tables (any kind)
   reads as that constant's payload. `Good` gives only the raw bytes (a held record at an address
   the run hashed has the hashed bytes, `load_escape`); `LazyConstant.get?` reads the cache and its
@@ -414,7 +414,7 @@ registry has one (`Registry.lean`). -/
 abbrev SpecFn : Type :=
   ScopedCtx → List (SourceValue F) → Heap F → SourceValue F → Heap F → List (Call F) → Prop
 
-/-- Unrestricted compatibility facts supplied by `S0.ctx`. Actual registry steps use
+/-- Unrestricted compatibility facts supplied by `BaseSeams.ctx`. Actual registry steps use
 `ScopedCoreBase`, including selected calls and observation-specific native eta evidence. -/
 structure CoreFacts (c : Ctx) : Prop where
   env : EnvFacts c

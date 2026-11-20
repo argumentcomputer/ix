@@ -201,7 +201,7 @@ theorem recordOf_of_hashed {calls : List (Call F)} {E : Ixon.Env}
     (hh : Hashed calls bytes) (hsz : bytes.size < 4294967296)
     (hx : Ixon.deConstantExact bytes = .ok c) :
     recordOf E (Address.blake3Pure bytes) = some c := by
-  obtain ⟨lc, hget, hraw, -⟩ := hcov bytes c hh hsz (L1.deConstant_of_deConstantExact hx) hx
+  obtain ⟨lc, hget, hraw, -⟩ := hcov bytes c hh hsz (Ingress.deConstant_of_deConstantExact hx) hx
   unfold recordOf
   rw [hget]
   simp [hraw, hx, Except.toOption]
@@ -237,14 +237,14 @@ theorem load_block_head {b : Bytes.Address}
       (.construct "Ixon::Constant" "Mk"
         [.construct "Ixon::ConstantInfo" "Muts" [x_members], x_sh, x_rf, x_un, x_bd]) m cs) :
     ∃ cb ms, BlockLoad cs (Core.ixAddr b) cb ms ∧
-      RepList L1.mutConstListEnum L1.RepMutConst m ms.toList x_members := by
+      RepList Ingress.mutConstListEnum Ingress.RepMutConst m ms.toList x_members := by
   obtain ⟨-, bytes, cb, hlen, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-    L1.load_verified_constant_decode_bounded hb ev
+    Ingress.load_verified_constant_decode_bounded hb ev
   obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfo, -, -, -, -⟩ := cRep
   simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
   rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
   subst infoVal
-  obtain ⟨ms, hcb_info, hms⟩ := L1.repConstantInfo_muts_inv hinfo
+  obtain ⟨ms, hcb_info, hms⟩ := Ingress.repConstantInfo_muts_inv hinfo
   exact ⟨cb, ms, ⟨⟨bytes.toArray⟩, by simpa only [ByteArray.size, List.size_toArray] using hlen,
     hh, haddr, hexact, hcb_info⟩, hms⟩
 
@@ -264,7 +264,7 @@ theorem get_ci_dprj_head {b : Bytes.Address} {idx : Nat}
     obtain ⟨cb, ms, hbl, hms⟩ := load_block_head hb2 ev36
     rw [← Obs.Names.«WordLists::lookup_u64<Ixon::MutConst>».symbol] at ev120
     have hms_inst : RepList (Instance.mk "Lists::Node" [.named "Ixon::MutConst" []]).symbol
-        L1.RepMutConst m24 ms.toList x_members := by
+        Ingress.RepMutConst m24 ms.toList x_members := by
       rwa [Obs.Names.«Lists::Node<Ixon::MutConst>».symbol]
     obtain ⟨⟨mc, hmc_get, hmc_rep⟩, -⟩ := Lib.lookup_u64_spec hidx_lt hx_idx ev120 hms_inst
     cases mc with
@@ -284,14 +284,14 @@ theorem get_ci_iprj_head {b : Bytes.Address} {idx : F} {x_block_addr r : SourceV
       ms.toList[idx.val]? = some (.indc ind) ∧
       ∃ nl ty np ni : SourceValue F,
         loadValue h' r = .ok (.construct "KernelTypes::KConstantInfo" "Induct"
-          [nl, ty, np, ni, .field (ind.ctors.toList.length : F), L1.repBoolField ind.isUnsafe,
+          [nl, ty, np, ni, .field (ind.ctors.toList.length : F), Ingress.repBoolField ind.isUnsafe,
             x_block_addr, .field idx]) := by
   match Obs.«Ingress::get_ci_iprj».obs ev with
   | .run (m2 := m2) (m86 := m86) (cs12 := cs12) (v166 := v166) (m167 := m167) (cs174 := cs174)
       (ev14 := ev14) (ev98 := ev98) (ev149 := ev149) (he170 := he170) (hm169 := hm169)
       (ev246 := ev246) (ev266 := ev266) (ev176 := ev176) (hc283 := hc) .. =>
     obtain ⟨cb, ms, hbl, hms⟩ := load_block_head hb ev14
-    obtain ⟨hm86, -, mc, hmc_get, hmc_rep⟩ := L1.muts_member_at_spec hms ev98
+    obtain ⟨hm86, -, mc, hmc_get, hmc_rep⟩ := Ingress.muts_member_at_spec hms ev98
     subst m86
     cases mc with
     | indc ind =>
@@ -310,8 +310,8 @@ theorem get_ci_iprj_head {b : Bytes.Address} {idx : F} {x_block_addr r : SourceV
         have member : (⟨"Convert::count_ctors", [ctorsPtr], countHeap⟩ : Call F) ∈ cs174 := by
           rw [convCalls]; simp
         have ext2 := (ev176.call_heap_bounds member).1
-        obtain ⟨hv124, -⟩ := L1.count_ctors_spec
-          (hctors.mono L1.repConstructor_heapMono₂ (ext.trans ext2)) countRun
+        obtain ⟨hv124, -⟩ := Ingress.count_ctors_spec
+          (hctors.mono Ingress.repConstructor_heapMono₂ (ext.trans ext2)) countRun
         subst hv124 hres he170 hm169
         exact ⟨cb, ms, ind, hbl.mono (by rw [hc]; intro x hx; simp [hx]), hmc_get,
           _, _, _, _, loadValue_snoc_self m167 _⟩
@@ -331,13 +331,13 @@ theorem get_ci_cprj_head {b : Bytes.Address} {idx cidx : F} {x_block_addr r : So
       ∃ ctor, ind.ctors.toList[cidx.val]? = some ctor ∧
         ∃ nl ty ci np nf : SourceValue F,
           loadValue h' r = .ok (.construct "KernelTypes::KConstantInfo" "Ctor"
-            [nl, ty, x_block_addr, .field idx, ci, np, nf, L1.repBoolField ctor.isUnsafe]) := by
+            [nl, ty, x_block_addr, .field idx, ci, np, nf, Ingress.repBoolField ctor.isUnsafe]) := by
   match Obs.«Ingress::get_ci_cprj».obs ev with
   | .run (m2 := m2) (m86 := m86) (cs12 := cs12) (v187 := v187) (m248 := m248) (ev14 := ev14)
       (ev98 := ev98) (ev200 := ev200) (he251 := hr) (hm250 := hh) (ev257 := conv)
       (hc381 := hc) .. =>
     obtain ⟨cb, ms, hbl, hms⟩ := load_block_head hb ev14
-    obtain ⟨hm86, -, mc, hmc_get, hmc_rep⟩ := L1.muts_member_at_spec hms ev98
+    obtain ⟨hm86, -, mc, hmc_get, hmc_rep⟩ := Ingress.muts_member_at_spec hms ev98
     subst m86
     cases mc with
     | indc ind =>
@@ -348,7 +348,7 @@ theorem get_ci_cprj_head {b : Bytes.Address} {idx cidx : F} {x_block_addr r : So
       simp only [Value.construct.injEq, List.cons.injEq, and_true] at hiv_mk
       rcases hiv_mk with ⟨_, _, _, _, _, _, _, hct_eq⟩
       subst ctorsPtr
-      obtain ⟨-, hlt, ct, hct_get, modesPtr, ctTypPtr, hct_rep, -⟩ := L1.ctor_at_spec hctors ev200
+      obtain ⟨-, hlt, ct, hct_get, modesPtr, ctTypPtr, hct_rep, -⟩ := Ingress.ctor_at_spec hctors ev200
       refine ⟨cb, ms, ind, hbl.mono (by rw [hc]; intro x hx; simp [hx]), hmc_get, hlt, ct,
         hct_get, ?_⟩
       match Obs.«Convert::convert_constructor».obs conv with
@@ -371,13 +371,13 @@ theorem get_ci_rprj_head {b : Bytes.Address} {idx : F} {x_block_addr r : SourceV
       ms.toList[idx.val]? = some (.recr rc) ∧
       ∃ nl ty np ni nm nmin rules k : SourceValue F,
         loadValue h' r = .ok (.construct "KernelTypes::KConstantInfo" "Rec"
-          [nl, ty, np, ni, nm, nmin, rules, k, L1.repBoolField rc.isUnsafe, x_block_addr,
+          [nl, ty, np, ni, nm, nmin, rules, k, Ingress.repBoolField rc.isUnsafe, x_block_addr,
             .field idx]) := by
   match Obs.«Ingress::get_ci_rprj».obs ev with
   | .run (cs12 := cs12) (m167 := m167) (ev14 := ev14) (ev98 := ev98) (he170 := hr)
       (hm169 := hh) (ev176 := conv) (hc283 := hc) .. =>
     obtain ⟨cb, ms, hbl, hms⟩ := load_block_head hb ev14
-    obtain ⟨-, -, mc, hmc_get, hmc_rep⟩ := L1.muts_member_at_spec hms ev98
+    obtain ⟨-, -, mc, hmc_get, hmc_rep⟩ := Ingress.muts_member_at_spec hms ev98
     cases mc with
     | recr rc =>
       obtain ⟨rv, hrv_eq, rTypPtr, rulesPtr, hrv_mk, -⟩ := hmc_rep
@@ -416,7 +416,7 @@ structure GetCIHead (calls : List (Call F)) (h : Heap F) (info : Ixon.ConstantIn
       idx.toNat < 72057594037927936 ∧
       ∃ (nl ty np ni x_blk : SourceValue F) (b : Bytes.Address),
         loadValue h r = .ok (.construct "KernelTypes::KConstantInfo" "Induct"
-          [nl, ty, np, ni, .field (ind.ctors.toList.length : F), L1.repBoolField ind.isUnsafe,
+          [nl, ty, np, ni, .field (ind.ctors.toList.length : F), Ingress.repBoolField ind.isUnsafe,
             x_blk, .field (idx.toNat : F)]) ∧
         Bytes.RepAddressRef Core.addrTy h b x_blk ∧ Core.ixAddr b = blk
   cPrj : ∀ idx cidx blk, info = .cPrj ⟨idx, cidx, blk⟩ →
@@ -425,27 +425,27 @@ structure GetCIHead (calls : List (Call F)) (h : Heap F) (info : Ixon.ConstantIn
       ∃ ctor, ind.ctors.toList[cidx.toNat]? = some ctor ∧
         ∃ (nl ty ci np nf x_blk : SourceValue F) (b : Bytes.Address),
           loadValue h r = .ok (.construct "KernelTypes::KConstantInfo" "Ctor"
-            [nl, ty, x_blk, .field (idx.toNat : F), ci, np, nf, L1.repBoolField ctor.isUnsafe]) ∧
+            [nl, ty, x_blk, .field (idx.toNat : F), ci, np, nf, Ingress.repBoolField ctor.isUnsafe]) ∧
           Bytes.RepAddressRef Core.addrTy h b x_blk ∧ Core.ixAddr b = blk
   rPrj : ∀ idx blk, info = .rPrj ⟨idx, blk⟩ →
     ∃ cb ms rc, BlockLoad calls blk cb ms ∧ ms.toList[idx.toNat]? = some (.recr rc) ∧
       ∃ (nl ty np ni nm nmin rules k x_blk : SourceValue F) (b : Bytes.Address),
         loadValue h r = .ok (.construct "KernelTypes::KConstantInfo" "Rec"
-          [nl, ty, np, ni, nm, nmin, rules, k, L1.repBoolField rc.isUnsafe, x_blk,
+          [nl, ty, np, ni, nm, nmin, rules, k, Ingress.repBoolField rc.isUnsafe, x_blk,
             .field (idx.toNat : F)]) ∧
         Bytes.RepAddressRef Core.addrTy h b x_blk ∧ Core.ixAddr b = blk
   recr : ∀ rc, info = .recr rc →
     ∃ nl ty np ni nm nmin rules k x_a : SourceValue F,
       loadValue h r = .ok (.construct "KernelTypes::KConstantInfo" "Rec"
-        [nl, ty, np, ni, nm, nmin, rules, k, L1.repBoolField rc.isUnsafe, x_a, .field 0])
+        [nl, ty, np, ni, nm, nmin, rules, k, Ingress.repBoolField rc.isUnsafe, x_a, .field 0])
   axio : ∀ ax, info = .axio ax →
     ∃ nl ty : SourceValue F,
       loadValue h r = .ok (.construct "KernelTypes::KConstantInfo" "Axiom"
-        [nl, ty, L1.repBoolField ax.isUnsafe])
+        [nl, ty, Ingress.repBoolField ax.isUnsafe])
   quot : ∀ q, info = .quot q →
     ∃ nl ty : SourceValue F,
       loadValue h r = .ok (.construct "KernelTypes::KConstantInfo" "Quot"
-        [nl, ty, L1.repQuotKindVal q.kind])
+        [nl, ty, Ingress.repQuotKindVal q.kind])
 
 theorem GetCIHead.of_defn {calls : List (Call F)} {h : Heap F} {info : Ixon.ConstantInfo}
     {r : SourceValue F} (hd : ∃ d, info = .defn d) :
@@ -463,40 +463,40 @@ theorem get_ci_head {a : Bytes.Address} {x_addr r : SourceValue F} {h h' : Heap 
     (ev : ObsFn Obs.W "Ingress::get_ci" [x_addr] h r h' calls) :
     ∃ (rawBytes : ByteArray) (c : Ixon.Constant), rawBytes.size < 4294967296 ∧
       Hashed calls rawBytes ∧ Address.blake3Pure rawBytes = Core.ixAddr a ∧
-      Ixon.deConstantExact rawBytes = .ok c ∧ L1.ConstantTablesValid c ∧
+      Ixon.deConstantExact rawBytes = .ok c ∧ Ingress.ConstantTablesValid c ∧
       GetCIHead calls h' c.info r := by
   match Obs.«Ingress::get_ci».obs ev with
   | .Defn_n0 (ev14 := ev14) (hc302 := hc) .. =>
     obtain ⟨-, bytes, c, hlen, hh, haddr, hexact, -, -, -, -, -, htv, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      Ingress.load_verified_constant_decode_bounded ha ev14
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨d, hci, -⟩ := L1.repConstantInfo_defn_inv hinfo
+    obtain ⟨d, hci, -⟩ := Ingress.repConstantInfo_defn_inv hinfo
     exact ⟨⟨bytes.toArray⟩, c, by simpa only [ByteArray.size, List.size_toArray] using hlen,
       Core.hashed_mono (by rw [hc]; intro x hx; simp [hx]) hh, haddr, hexact, htv,
       GetCIHead.of_defn ⟨d, hci⟩⟩
   | .Defn_other (ev14 := ev14) (hc423 := hc) .. =>
     obtain ⟨-, bytes, c, hlen, hh, haddr, hexact, -, -, -, -, -, htv, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      Ingress.load_verified_constant_decode_bounded ha ev14
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨d, hci, -⟩ := L1.repConstantInfo_defn_inv hinfo
+    obtain ⟨d, hci, -⟩ := Ingress.repConstantInfo_defn_inv hinfo
     exact ⟨⟨bytes.toArray⟩, c, by simpa only [ByteArray.size, List.size_toArray] using hlen,
       Core.hashed_mono (by rw [hc]; intro x hx; simp [hx]) hh, haddr, hexact, htv,
       GetCIHead.of_defn ⟨d, hci⟩⟩
   | .Axio (m438 := m438) (ev14 := ev14) (he441 := hr) (hm440 := hhv) (ev447 := conv)
       (hc515 := hc) .. =>
     obtain ⟨-, bytes, c, hlen, hh, haddr, hexact, -, -, -, -, -, htv, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      Ingress.load_verified_constant_decode_bounded ha ev14
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨ax, hci, axTypPtr, hav, -⟩ := L1.repConstantInfo_axio_inv hinfo
+    obtain ⟨ax, hci, axTypPtr, hav, -⟩ := Ingress.repConstantInfo_axio_inv hinfo
     refine ⟨⟨bytes.toArray⟩, c, by simpa only [ByteArray.size, List.size_toArray] using hlen,
       Core.hashed_mono (by rw [hc]; intro x hx; simp [hx]) hh, haddr, hexact, htv,
       ⟨(fun _ e => nomatch hci.symm.trans e), (fun _ _ e => nomatch hci.symm.trans e),
@@ -516,12 +516,12 @@ theorem get_ci_head {a : Bytes.Address} {x_addr r : SourceValue F} {h h' : Heap 
   | .Quot (m529 := m529) (ev14 := ev14) (he532 := hr) (hm531 := hhv) (ev538 := conv)
       (hc606 := hc) .. =>
     obtain ⟨-, bytes, c, hlen, hh, haddr, hexact, -, -, -, -, -, htv, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      Ingress.load_verified_constant_decode_bounded ha ev14
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨q, hci, qTypPtr, hqv, -⟩ := L1.repConstantInfo_quot_inv hinfo
+    obtain ⟨q, hci, qTypPtr, hqv, -⟩ := Ingress.repConstantInfo_quot_inv hinfo
     refine ⟨⟨bytes.toArray⟩, c, by simpa only [ByteArray.size, List.size_toArray] using hlen,
       Core.hashed_mono (by rw [hc]; intro x hx; simp [hx]) hh, haddr, hexact, htv,
       ⟨(fun _ e => nomatch hci.symm.trans e), (fun _ _ e => nomatch hci.symm.trans e),
@@ -541,12 +541,12 @@ theorem get_ci_head {a : Bytes.Address} {x_addr r : SourceValue F} {h h' : Heap 
   | .Recr (m978 := m978) (ev14 := ev14) (he981 := hr) (hm980 := hhv) (ev987 := conv)
       (hc1071 := hc) .. =>
     obtain ⟨-, bytes, c, hlen, hh, haddr, hexact, -, -, -, -, -, htv, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      Ingress.load_verified_constant_decode_bounded ha ev14
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨rc, hci, rTypPtr, rulesPtr, hrv, -⟩ := L1.repConstantInfo_recr_inv hinfo
+    obtain ⟨rc, hci, rTypPtr, rulesPtr, hrv, -⟩ := Ingress.repConstantInfo_recr_inv hinfo
     refine ⟨⟨bytes.toArray⟩, c, by simpa only [ByteArray.size, List.size_toArray] using hlen,
       Core.hashed_mono (by rw [hc]; intro x hx; simp [hx]) hh, haddr, hexact, htv,
       ⟨(fun _ e => nomatch hci.symm.trans e), (fun _ _ e => nomatch hci.symm.trans e),
@@ -567,14 +567,14 @@ theorem get_ci_head {a : Bytes.Address} {x_addr r : SourceValue F} {h h' : Heap 
   | .DPrj (m2 := m2) (x_idx := x_idx) (x_block_addr := x_blk) (cs648 := csd) (ev14 := ev14)
       (ev650 := ev650) (hc675 := hc) .. =>
     obtain ⟨-, bytes, c, hlen, hh, haddr, hexact, -, -, -, -, -, htv, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      Ingress.load_verified_constant_decode_bounded ha ev14
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨⟨idx, blk⟩, hci, hx_idx, hblk_ix⟩ := L1.repConstantInfo_dPrj_inv hinfo
+    obtain ⟨⟨idx, blk⟩, hci, hx_idx, hblk_ix⟩ := Ingress.repConstantInfo_dPrj_inv hinfo
     have hx_idx' : x_idx = TagN.u64Value idx.toNat := hx_idx
-    obtain ⟨b, hb_eq, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
+    obtain ⟨b, hb_eq, hb_rep⟩ := Ingress.repIxonAddressRef_to_core_ing hblk_ix
     have hb_eq' : Core.ixAddr b = blk := hb_eq
     obtain ⟨cb, ms, d, hbl, hmem⟩ := get_ci_dprj_head idx.toNat_lt hx_idx' hb_rep ev650
     have hsub : ∀ x ∈ csd, x ∈ calls := by rw [hc]; intro x hx; simp [hx]
@@ -592,21 +592,21 @@ theorem get_ci_head {a : Bytes.Address} {x_addr r : SourceValue F} {h h' : Heap 
   | .IPrj (m2 := m2) (x_idx := x_idx) (x_block_addr := x_blk) (cs718 := csi) (v722 := v722)
       (m731 := m731) (ev14 := ev14) (ev741 := ev741) (ev720 := ev720) (hc750 := hc) .. =>
     obtain ⟨-, bytes, c, hlen, hh, haddr, hexact, -, -, -, -, -, htv, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      Ingress.load_verified_constant_decode_bounded ha ev14
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨⟨idx, blk⟩, hci, hx_idx, hblk_ix⟩ := L1.repConstantInfo_iPrj_inv hinfo
+    obtain ⟨⟨idx, blk⟩, hci, hx_idx, hblk_ix⟩ := Ingress.repConstantInfo_iPrj_inv hinfo
     have hx_idx' : x_idx = TagN.u64Value idx.toNat := hx_idx
     subst hx_idx'
     obtain ⟨hidx56, hv722, hm731⟩ :=
       Lib.u64_to_field_spec (Deserialize.repU64_u64Value m2 idx) ev741
     subst v722 m731
-    obtain ⟨b, hb_eq, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
+    obtain ⟨b, hb_eq, hb_rep⟩ := Ingress.repIxonAddressRef_to_core_ing hblk_ix
     have hb_eq' : Core.ixAddr b = blk := hb_eq
     obtain ⟨cb, ms, ind, hbl, hmem, nl, ty, np, ni, hld⟩ := get_ci_iprj_head hb_rep ev720
-    rw [L1.val_cast_u56_ing hidx56] at hmem
+    rw [Ingress.val_cast_u56_ing hidx56] at hmem
     have hsub : ∀ x ∈ csi, x ∈ calls := by rw [hc]; intro x hx; simp [hx]
     have hbl' : BlockLoad calls blk cb ms := by rw [← hb_eq']; exact hbl.mono hsub
     have hb_rep' := Bytes.repAddressRef_heapMono₂ Core.addrTy ev720.heap_extends hb_rep
@@ -624,12 +624,12 @@ theorem get_ci_head {a : Bytes.Address} {x_addr r : SourceValue F} {h h' : Heap 
       (cs798 := csc) (v802 := v802) (v803 := v803) (m812 := m812) (m832 := m832)
       (ev14 := ev14) (ev822 := ev822) (ev842 := ev842) (ev800 := ev800) (hc851 := hc) .. =>
     obtain ⟨-, bytes, c, hlen, hh, haddr, hexact, -, -, -, -, -, htv, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      Ingress.load_verified_constant_decode_bounded ha ev14
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨⟨idx, cidx, blk⟩, hci, hx_idx, hx_cidx, hblk_ix⟩ := L1.repConstantInfo_cPrj_inv hinfo
+    obtain ⟨⟨idx, cidx, blk⟩, hci, hx_idx, hx_cidx, hblk_ix⟩ := Ingress.repConstantInfo_cPrj_inv hinfo
     have hx_idx' : x_idx = TagN.u64Value idx.toNat := hx_idx
     have hx_cidx' : x_cidx = TagN.u64Value cidx.toNat := hx_cidx
     subst hx_idx' hx_cidx'
@@ -639,12 +639,12 @@ theorem get_ci_head {a : Bytes.Address} {x_addr r : SourceValue F} {h h' : Heap 
     obtain ⟨hcidx56, hv803, hm832⟩ :=
       Lib.u64_to_field_spec (Deserialize.repU64_u64Value m2 cidx) ev842
     subst v803 m832
-    obtain ⟨b, hb_eq, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
+    obtain ⟨b, hb_eq, hb_rep⟩ := Ingress.repIxonAddressRef_to_core_ing hblk_ix
     have hb_eq' : Core.ixAddr b = blk := hb_eq
     obtain ⟨cb, ms, ind, hbl, hmem, hlt, ctor, hctor, nl, ty, ci, np, nf, hld⟩ :=
       get_ci_cprj_head hb_rep ev800
-    rw [L1.val_cast_u56_ing hidx56] at hmem
-    rw [L1.val_cast_u56_ing hcidx56] at hlt hctor
+    rw [Ingress.val_cast_u56_ing hidx56] at hmem
+    rw [Ingress.val_cast_u56_ing hcidx56] at hlt hctor
     have hsub : ∀ x ∈ csc, x ∈ calls := by rw [hc]; intro x hx; simp [hx]
     have hbl' : BlockLoad calls blk cb ms := by rw [← hb_eq']; exact hbl.mono hsub
     have hb_rep' := Bytes.repAddressRef_heapMono₂ Core.addrTy ev800.heap_extends hb_rep
@@ -662,22 +662,22 @@ theorem get_ci_head {a : Bytes.Address} {x_addr r : SourceValue F} {h h' : Heap 
   | .RPrj (m2 := m2) (x_idx := x_idx) (x_block_addr := x_blk) (cs894 := csr) (v898 := v898)
       (m907 := m907) (ev14 := ev14) (ev917 := ev917) (ev896 := ev896) (hc926 := hc) .. =>
     obtain ⟨-, bytes, c, hlen, hh, haddr, hexact, -, -, -, -, -, htv, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      Ingress.load_verified_constant_decode_bounded ha ev14
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨⟨idx, blk⟩, hci, hx_idx, hblk_ix⟩ := L1.repConstantInfo_rPrj_inv hinfo
+    obtain ⟨⟨idx, blk⟩, hci, hx_idx, hblk_ix⟩ := Ingress.repConstantInfo_rPrj_inv hinfo
     have hx_idx' : x_idx = TagN.u64Value idx.toNat := hx_idx
     subst hx_idx'
     obtain ⟨hidx56, hv898, hm907⟩ :=
       Lib.u64_to_field_spec (Deserialize.repU64_u64Value m2 idx) ev917
     subst v898 m907
-    obtain ⟨b, hb_eq, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
+    obtain ⟨b, hb_eq, hb_rep⟩ := Ingress.repIxonAddressRef_to_core_ing hblk_ix
     have hb_eq' : Core.ixAddr b = blk := hb_eq
     obtain ⟨cb, ms, rc, hbl, hmem, nl, ty, np, ni, nm, nmin, rules, k, hld⟩ :=
       get_ci_rprj_head hb_rep ev896
-    rw [L1.val_cast_u56_ing hidx56] at hmem
+    rw [Ingress.val_cast_u56_ing hidx56] at hmem
     have hsub : ∀ x ∈ csr, x ∈ calls := by rw [hc]; intro x hx; simp [hx]
     have hbl' : BlockLoad calls blk cb ms := by rw [← hb_eq']; exact hbl.mono hsub
     have hb_rep' := Bytes.repAddressRef_heapMono₂ Core.addrTy ev896.heap_extends hb_rep
@@ -858,7 +858,7 @@ theorem member_records (hS : LoadedReads.RunStore calls E₀)
     -, -, ev_ld, -, hsub_ld, hld, ev_chk, -, hsub_chk⟩ := hchk
   obtain ⟨b', hb', rfl⟩ := hblk
   obtain ⟨-, -, -, mc, a', hget', ha', hproj, hhashed⟩ :=
-    L1.projection_addr_hashed_spec hmem hb' ev_pa
+    Ingress.projection_addr_hashed_spec hmem hb' ev_pa
   obtain ⟨iv, hiv⟩ : ∃ iv, ((i : F)).val = iv := ⟨_, rfl⟩
   rw [hiv] at hget' hproj hhashed
   -- the projection record the walk loaded is the one `projection_addr` hashed
@@ -874,9 +874,9 @@ theorem member_records (hS : LoadedReads.RunStore calls E₀)
   have hwf : (⟨Core.Specs.Callees.memberProjInfo (Core.ixAddr b') iv mc, #[], #[], #[], #[]⟩ :
       Ixon.Constant).wireWF := by
     cases mc with
-    | defn d => exact L1.projConstant_wireWF_dPrj iv.toUInt64 b'
-    | indc ind => exact L1.projConstant_wireWF_iPrj iv.toUInt64 b'
-    | recr rc => exact L1.projConstant_wireWF_rPrj iv.toUInt64 b'
+    | defn d => exact Ingress.projConstant_wireWF_dPrj iv.toUInt64 b'
+    | indc ind => exact Ingress.projConstant_wireWF_iPrj iv.toUInt64 b'
+    | recr rc => exact Ingress.projConstant_wireWF_rPrj iv.toUInt64 b'
   rw [hraw, Ixon.Verify.deConstantExact_serConstant _ hwf] at hx
   injection hx with hcp
   subst hcp
@@ -891,7 +891,7 @@ theorem member_records (hS : LoadedReads.RunStore calls E₀)
   have hsize := muts_size_le hms
   have hi : i < ms.size := (Array.getElem?_eq_some_iff.mp hm).1
   have hi' : i < 72057594037927936 := by omega
-  have hiv' : iv = i := hiv.symm.trans (L1.val_cast_u56_ing hi')
+  have hiv' : iv = i := hiv.symm.trans (Ingress.val_cast_u56_ing hi')
   clear hiv
   subst iv
   have hmc : mc = m := by
@@ -934,12 +934,12 @@ theorem member_records (hS : LoadedReads.RunStore calls E₀)
     rw [hb''eq] at hhash
     exact recordOf_of_hashed hcov (Core.hashed_mono hsub_chk hhash)
       (serConstant_cprj_size_lt i.toUInt64 j.toUInt64 b')
-      (Ixon.Verify.deConstantExact_serConstant _ (L1.projConstant_wireWF_cPrj i.toUInt64
+      (Ixon.Verify.deConstantExact_serConstant _ (Ingress.projConstant_wireWF_cPrj i.toUInt64
         j.toUInt64 b'))
 
 /-! ## A5: a top-walked projection record is a constant address of its block -/
 
-private theorem tables_of_proj {c : Ixon.Constant} (htv : L1.ConstantTablesValid c)
+private theorem tables_of_proj {c : Ixon.Constant} (htv : Ingress.ConstantTablesValid c)
     (hp : Assembly.IsProjInfo c.info) : Ix.Kernel.Reader.emptyTables c = true := by
   obtain ⟨info, sh, rf, un, bd⟩ := c
   have h4 : sh = #[] ∧ rf = #[] ∧ un = #[] ∧ bd = #[] := by
@@ -960,7 +960,7 @@ private theorem tables_of_proj {c : Ixon.Constant} (htv : L1.ConstantTablesValid
 hash of its bytes. -/
 theorem proj_canon {raw : ByteArray} {c : Ixon.Constant} {a : _root_.Address}
     (hba : Address.blake3Pure raw = a) (hx : Ixon.deConstantExact raw = .ok c)
-    (htv : L1.ConstantTablesValid c) (hproj : Assembly.IsProjInfo c.info) :
+    (htv : Ingress.ConstantTablesValid c) (hproj : Assembly.IsProjInfo c.info) :
     c = ⟨c.info, #[], #[], #[], #[]⟩ ∧ a = Address.blake3Pure (Ixon.serConstant c) := by
   have hemp := tables_of_proj htv hproj
   obtain ⟨hraw, -⟩ := Assembly.deConstantExact_proj_eq_serConstant hx hemp hproj

@@ -106,7 +106,7 @@ theorem RefWalkedUnderCtxIn.lim_walks_ordered {calls : List (Call F)} {bAddr : _
     subst hrc'
     obtain ⟨-, recs, hmem, hcl, hord, -⟩ :=
       Claim.run_check_transitive_lim_ordered (lim := some n)
-        (show Claim.RCLimRep t bAddr (some n) h₂ _ from hrc.mono ext) (S0.addr_mono ext hb) evw
+        (show Claim.RCLimRep t bAddr (some n) h₂ _ from hrc.mono ext) (BaseSeams.addr_mono ext hb) evw
     refine ⟨recs.map (Claim.TopRec.mono hsub), hcl.mono hsub, hord.mono hsub, ?_⟩
     rw [Claim.map_addr_topRec_mono]
     exact hmem
@@ -124,7 +124,7 @@ theorem ValidateRoleIn.op_certificate_walks_ordered {calls : List (Call F)}
     ∃ (rawBytes : ByteArray) (c : Ixon.Constant),
       rawBytes.size < 4294967296 ∧ Hashed calls rawBytes ∧ Address.blake3Pure rawBytes = thm ∧
       Ixon.deConstantExact rawBytes = .ok c ∧
-      ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ S0.usedRefIdxs c →
+      ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ BaseSeams.usedRefIdxs c →
         c.refs.toList[j] ≠ a →
         Claim.OpOrderedAt t (some (groupValLimit g)) c.refs.toList[j] ∧
         (Claim.CoveredAt t (some (groupValLimit g)) c.refs.toList[j] ∨
@@ -162,7 +162,7 @@ theorem validate_role_axiom_refs_ordered {t : Ix.Kernel.RoleTable} {bAddr : _roo
       Address.blake3Pure rawBytes = a ∧ Ixon.deConstant rawBytes = .ok c ∧
       Ixon.deConstantExact rawBytes = .ok c ∧ Claim.TopRecsClosed recs ∧
       Claim.TopRecsOrdered recs ∧
-      ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ S0.usedRefIdxs c →
+      ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ BaseSeams.usedRefIdxs c →
         (Claim.OpOrderedAt t (some (groupValLimit g)) c.refs.toList[j] ∨
           Claim.CoveredAt t (some (groupValLimit g)) c.refs.toList[j]) ∧
         (c.refs.toList[j] ∈ recs.map (·.addr) ∨
@@ -268,7 +268,7 @@ theorem ValidateRoleIn.axiom_refs_ordered {calls : List (Call F)} {bAddr : _root
       Address.blake3Pure rawBytes = a ∧ Ixon.deConstant rawBytes = .ok c ∧
       Ixon.deConstantExact rawBytes = .ok c ∧ Claim.TopRecsClosed recs ∧
       Claim.TopRecsOrdered recs ∧
-      ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ S0.usedRefIdxs c →
+      ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ BaseSeams.usedRefIdxs c →
         (Claim.OpOrderedAt t (some (groupValLimit g)) c.refs.toList[j] ∨
           Claim.CoveredAt t (some (groupValLimit g)) c.refs.toList[j]) ∧
         (c.refs.toList[j] ∈ recs.map (·.addr) ∨

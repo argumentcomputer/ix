@@ -130,7 +130,7 @@ theorem validate_role_op_obs {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
         hsub236 cl (by rw [hca]; simp [hm])
       -- the record: a standalone definition
       obtain ⟨-, rawBytes, c, hsz, hh, hblk, hde, hdeE, hrep, -⟩ :=
-        Claim.load_verified_constant_de (S0.addr_mono ext_m111 ha_m2) rawLoad
+        Claim.load_verified_constant_de (BaseSeams.addr_mono ext_m111 ha_m2) rawLoad
       obtain ⟨iv, _, _, _, _, hmk, hiv, -⟩ := hrep
       have hargs := (Value.construct.inj hmk).2.2
       injection hargs with hiv_eq
@@ -145,10 +145,10 @@ theorem validate_role_op_obs {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
         rw [← hS.recordOf_eq_recordAt]
         exact hcE
       -- the load of `get_ci` in the role's validation
-      obtain ⟨raw', c', hh', ha', hex', hres⟩ := L1.get_ci_trace_spec hbr ev47
+      obtain ⟨raw', c', hh', ha', hex', hres⟩ := Ingress.get_ci_trace_spec hbr ev47
       have hcc : c' = c := hS.record_eq hrecA (Core.hashed_mono hsub45 hh') ha' hex'
       rw [hcc] at hres
-      unfold L1.GetCITraceResult at hres
+      unfold Ingress.GetCITraceResult at hres
       rw [hinfo] at hres
       obtain ⟨blobs, tree, v, hhp, built, hld, htr⟩ := hres
       have hv31 : v = v31 := Except.ok.inj (hld.symm.trans ld41)
@@ -159,11 +159,11 @@ theorem validate_role_op_obs {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
       have hkind : d.kind = .defn := by
         cases hk : d.kind with
         | defn => rfl
-        | opaq => simp [L1.defnValShape, hk, Core.kciEnum] at hci'
-        | thm => simp [L1.defnValShape, hk, Core.kciEnum] at hci'
-      have hsh : L1.defnValShape d tyPtr valPtr hintV = .construct Core.kciEnum "Defn"
-          [.field (d.lvls.toNat : F), tyPtr, valPtr, L1.repDefSafetyVal d.safety, hintV] := by
-        simp [L1.defnValShape, hkind]
+        | opaq => simp [Ingress.defnValShape, hk, Core.kciEnum] at hci'
+        | thm => simp [Ingress.defnValShape, hk, Core.kciEnum] at hci'
+      have hsh : Ingress.defnValShape d tyPtr valPtr hintV = .construct Core.kciEnum "Defn"
+          [.field (d.lvls.toNat : F), tyPtr, valPtr, Ingress.repDefSafetyVal d.safety, hintV] := by
+        simp [Ingress.defnValShape, hkind]
       rw [hsh] at hci'
       have hfl := (Value.construct.inj hci').2.2
       simp only [List.cons.injEq] at hfl
@@ -178,8 +178,8 @@ theorem validate_role_op_obs {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
           rw [← hxsafe] at hs
           cases hds : d.safety with
           | safe => rfl
-          | unsaf => rw [hds] at hs; simp [L1.repDefSafetyVal] at hs
-          | part => rw [hds] at hs; simp [L1.repDefSafetyVal] at hs
+          | unsaf => rw [hds] at hs; simp [Ingress.repDefSafetyVal] at hs
+          | part => rw [hds] at hs; simp [Ingress.repDefSafetyVal] at hs
         | other _ hbad _ _ _ => exact absurd (Value.field.inj hbad) zero_ne_one
       -- no universe parameter
       have ev80' := ev80
@@ -301,7 +301,7 @@ theorem op_walk_facts {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {ρ : BR
     rintro ⟨r', hr', ⟨hw', hlt'⟩ | ⟨hnone, -⟩⟩
     · exact ⟨r', hw', Nat.lt_of_lt_of_le (hlt' _ rfl) (valLimit_le g), hr'⟩
     · cases hnone
-  have hi' : i ∈ S0.usedRefIdxs ra.c := by
+  have hi' : i ∈ BaseSeams.usedRefIdxs ra.c := by
     rw [hrac, Assembly.usedRefIdxs_eq]
     exact hi
   have hx' : ra.c.refs[i]? = some x := by
@@ -409,10 +409,10 @@ theorem checkedLimAt_defn_canon (ht : t.check = .ok ()) (hbound : Bounded calls)
   obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     hrc_pre, hrc_m, ha_pre, ha_m, ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := hchk
   obtain ⟨a', ha'_ref, rfl⟩ := ha_pre
-  obtain ⟨rawBytes, c', hh, hba, hex, hres⟩ := L1.get_ci_trace_spec ha'_ref ev_ld
+  obtain ⟨rawBytes, c', hh, hba, hex, hres⟩ := Ingress.get_ci_trace_spec ha'_ref ev_ld
   have hc : c = c' := (hS.record_eq hrec (Core.hashed_mono hsub_ld hh) hba hex).symm
   subst hc
-  unfold L1.GetCITraceResult at hres
+  unfold Ingress.GetCITraceResult at hres
   rw [hinfo] at hres
   obtain ⟨blobs, tree, v', hhp, built, hld', htr⟩ := hres
   rw [hld] at hld'
@@ -432,14 +432,14 @@ theorem checkedLimAt_defn_canon (ht : t.check = .ok ()) (hbound : Bounded calls)
   obtain ⟨h1, h2, h3, h4⟩ :=
     LoadedReads.checkedDefn_scope_lim ht hbound hkind hsafe hblob raw' hty hval ev_chk
       hsub_chk
-  have hrecur : L1.defnRecurAddrs d (Core.ixAddr a') = [] := by
-    have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
-    simp [L1.defnRecurAddrs, hf]
+  have hrecur : Ingress.defnRecurAddrs d (Core.ixAddr a') = [] := by
+    have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+    simp [Ingress.defnRecurAddrs, hf]
   rw [hrecur] at htr
   obtain ⟨hnlvls, tyPtr, valPtr, hint, planT, planV, hv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr
   subst hv
-  have hagree : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
-    L1.BlobReadAgreement.of_mem hblob
+  have hagree : Ingress.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
+    Ingress.BlobReadAgreement.of_mem hblob
   obtain ⟨ty', hcT, hannT, htmT⟩ :=
     LoadedReads.annotation_canon ht hnlvls hagree rty built hpT hlT hty h1 h2
   obtain ⟨val', hcV, hannV, htmV⟩ :=

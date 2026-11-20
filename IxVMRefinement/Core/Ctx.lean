@@ -29,22 +29,22 @@ The core's functions run under a role context `rc` (`KernelRoles::RoleCtx`) and 
   represented at the depth that variable was opened at (IxVM lifts it on lookup:
   `KernelInfer::types_lookup`). Trimming outer entries (`ctx_trim`) keeps a segment with the
   same top end.
-* `EnvFacts c`: **the environment invariant the core reads** — the L4 ↔ L5/L7 interface. Each
+* `EnvFacts c`: **the environment invariant the core reads** — the `Core` ↔ `Decls`/`Assembly` interface. Each
   field names the layer that must establish it.
 
 | Field | What the core reads it for | Established by |
 |---|---|---|
-| `tableWf` | role keys are a function of addresses (no address bound twice) | L6 (the run admitted `t`), L7 (`t` is `ReadIn`'s) |
-| `storeClosed` | moving a derivation between depths (`Rules.Transport`), for the context-lowering rebases | L5 (every installed term is closed), L7 |
-| `thmTyped` | `Red.deltaThm`'s premises: a stored theorem's value, closed and typed at its own levels | L5 (each theorem's own check, carried along the fold by `Transport.weaken`) |
-| `natLit`, `strLit`, `natOps`, `natAdd` | the native rules' stored-shape guards (`natLitSupported`, `strLitSupported`, `natOpStored`, `natAddTyOk`) | L5 (the constants of the roles in force installed as their specifications), L6 (a group is admitted before its roles are in force) |
-| `eqStored` | `Red.eqProof`: `Eq` is stored when it is in force | L5 (roles in force installed as their specifications), L6 (group admission) |
-| `recRules` | `Red.iota`'s rule lookup (the firing conjunct is `Ix.Kernel.Open.recRules_fire`): distinct keys, firing rules at stored constructors with their parameter counts, the `j`-th rule for the `j`-th constructor of the member the major's `iPrj` record names | L5 (recursor install), L7 (keys from `ReadIn`) |
-| `recPlain` | a plain rule's comparands are the major premise's domain | L5 (recursor install) |
-| `recArity`, `ruleCtorArity`, `tableCtorArity`, `familyArity` | the stored telescopes the walks read have a binder for every argument (`CertsR.toCerts`): a recursor with a rule, a rule's or a projection table entry's constructor, a unit-like or η-capable family | L5 (the fold's invariants `EnvWF`, `RecCtorsStored`, `ProjOkT`; `Ix.Kernel.Open.StoredFacts`) |
+| `tableWf` | role keys are a function of addresses (no address bound twice) | Claim (the run admitted `t`), Assembly (`t` is `ReadIn`'s) |
+| `storeClosed` | moving a derivation between depths (`Rules.Transport`), for the context-lowering rebases | Decls (every installed term is closed), Assembly |
+| `thmTyped` | `Red.deltaThm`'s premises: a stored theorem's value, closed and typed at its own levels | Decls (each theorem's own check, carried along the fold by `Transport.weaken`) |
+| `natLit`, `strLit`, `natOps`, `natAdd` | the native rules' stored-shape guards (`natLitSupported`, `strLitSupported`, `natOpStored`, `natAddTyOk`) | Decls (the constants of the roles in force installed as their specifications), Claim (a group is admitted before its roles are in force) |
+| `eqStored` | `Red.eqProof`: `Eq` is stored when it is in force | Decls (roles in force installed as their specifications), Claim (group admission) |
+| `recRules` | `Red.iota`'s rule lookup (the firing conjunct is `Ix.Kernel.Open.recRules_fire`): distinct keys, firing rules at stored constructors with their parameter counts, the `j`-th rule for the `j`-th constructor of the member the major's `iPrj` record names | Decls (recursor install), Assembly (keys from `ReadIn`) |
+| `recPlain` | a plain rule's comparands are the major premise's domain | Decls (recursor install) |
+| `recArity`, `ruleCtorArity`, `tableCtorArity`, `familyArity` | the stored telescopes the walks read have a binder for every argument (`CertsR.toCerts`): a recursor with a rule, a rule's or a projection table entry's constructor, a unit-like or η-capable family | Decls (the fold's invariants `EnvWF`, `RecCtorsStored`, `ProjOkT`; `Ix.Kernel.Open.StoredFacts`) |
 
 The loads (`Ingress::get_ci` and the projection loaders) are related to `env` by `LoadFacts`
-(`Good.lean`): the L1 ↔ L7 interface. -/
+(`Good.lean`): the Ingress ↔ Assembly interface. -/
 
 namespace IxVM.Refinement.Core
 
@@ -594,37 +594,37 @@ theorem PrimEqnEnv.weaken {env env' : Ix.Kernel.Env .anon} (h : PrimEqnEnv env)
 /-- **The environment invariant the core reads** (module docstring's table, with the layer that
 establishes each field). -/
 structure EnvFacts (c : Ctx) : Prop where
-  /-- (L6, L7) The table is well formed: no address bound to two roles (`RoleTable.check`). -/
+  /-- (Claim, Assembly) The table is well formed: no address bound to two roles (`RoleTable.check`). -/
   tableWf : c.t.wf = true
-  /-- (L5, L7) Every stored term the rules read is closed (`Ix.Kernel.StoreClosed`: stored types,
+  /-- (Decls, Assembly) Every stored term the rules read is closed (`Ix.Kernel.StoreClosed`: stored types,
   definition values, rule right-hand sides, projection bodies have no opened variable), as moving
   a derivation to another depth requires. -/
   storeClosed : Ix.Kernel.StoreClosed c.env
-  /-- (L5) `Red.deltaThm`: every stored theorem's value is closed, typed at the theorem's own
+  /-- (Decls) `Red.deltaThm`: every stored theorem's value is closed, typed at the theorem's own
   levels in the empty context, against its type, which is a proposition at every assignment. -/
   thmTyped : ∀ n cv value, c.env.find? n = some (.thmInfo cv value) →
     value.hasFvar = false ∧ value.looseBVarsBounded 0 = true ∧
     ∃ vt s u, Infer c.env .full 0 value vt ∧ DefEq c.env 0 vt cv.type ∧
       Infer c.env .full 0 cv.type s ∧ Red c.env 0 s (.sort u) ∧
       ∀ φ, Ix.Kernel.Level.eval φ u = 0
-  /-- (L5, L6) The `Nat` literal support, when `Nat`, `Nat.zero`, `Nat.succ` are in force. -/
+  /-- (Decls, Claim) The `Nat` literal support, when `Nat`, `Nat.zero`, `Nat.succ` are in force. -/
   natLit : c.inForce .nat → c.inForce .natZero → c.inForce .natSucc →
     Ix.Kernel.natLitSupported c.env = true
-  /-- (L5, L6) The `String` literal support, when `String` is in force (the default table and an
+  /-- (Decls, Claim) The `String` literal support, when `String` is in force (the default table and an
   admitted one bind its literal support with it, `LiteralSupportBound`, in earlier groups). -/
   strLit : c.inForce .string → Ix.Kernel.strLitSupported c.env = true
-  /-- (L5, L6) Every native `Nat` operation (`Nat.pred` and binary ops) in force is a stored
+  /-- (Decls, Claim) Every native `Nat` operation (`Nat.pred` and binary ops) in force is a stored
   definition (`natOpStored`). -/
   natOps : ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames →
     Ix.Kernel.natOpStored c.env (.role r) = true
-  /-- (L5, L6) `Nat.add`, in force, has the shape the offset rules read (`natAddTyOk`). -/
+  /-- (Decls, Claim) `Nat.add`, in force, has the shape the offset rules read (`natAddTyOk`). -/
   natAdd : c.inForce .natAdd → Ix.Kernel.Rules.natAddTyOk (c.env.find? Ix.Kernel.natAddName) = true
-  /-- (L5, L6) `Red.eqProof`: `Eq` is stored when it is in force. -/
+  /-- (Decls, Claim) `Red.eqProof`: `Eq` is stored when it is in force. -/
   eqStored : c.inForce .eq → ∃ ci, c.env.find? Ix.Kernel.eqName = some ci
-  /-- (L6) Certified primitive reductions for equation-specified roles (`g ≥ 46`), once any
+  /-- (Claim) Certified primitive reductions for equation-specified roles (`g ≥ 46`), once any
   equation-specified role is in force. -/
   primEqn : (∃ r, 46 ≤ Ix.SpecDigest.groupOf r ∧ c.inForce r) → PrimEqnEnv c.env
-  /-- (L5, L7) `Red.iota`'s rule lookup: the rules of a stored recursor have distinct constructor
+  /-- (Decls, Assembly) `Red.iota`'s rule lookup: the rules of a stored recursor have distinct constructor
   keys; each fires (`.plain` or `.nested`, never `.inert`) at a stored constructor with the rule's
   parameter count; and when the head of the major premise's domain is the key of an address whose
   record in `c.E` is the inductive projection `ip`, the `j`-th rule is for the `j`-th constructor
@@ -638,7 +638,7 @@ structure EnvFacts (c : Ctx) : Prop where
       (piDomAt mI cv.type).map (·.getAppFn) = some (.const (c.κ p) us) →
       Ix.Cert.recordAt c.E p = some cm → cm.info = .iPrj ip →
       ∀ j rl, rls[j]? = some rl → rl.ctor = c.κ (cprjAddr ip.block ip.idx.toNat j)
-  /-- (L5) A plain rule's comparands (`recFireComparands`) are the major premise's domain: its
+  /-- (Decls) A plain rule's comparands (`recFireComparands`) are the major premise's domain: its
   head is the inductive at the constructor's level parameters, its first `nP` arguments are
   the recursor's leading bound variables (the canonical shape `Expr.recRulePlain` tests), and
   its remaining arguments are the index binders' (the trailing `mI - rP` bound variables, which
@@ -649,33 +649,33 @@ structure EnvFacts (c : Ctx) : Prop where
       D.getAppFn = .const T (cvj.levelParams.map .param) ∧
       D.getAppArgs.take nP = (List.range nP).map (fun i => .bvar (mI - 1 - i)) ∧
       D.getAppArgs.drop nP = (List.range (mI - rP)).map fun i => .bvar (mI - rP - 1 - i)
-  /-- (L5) **The store invariant** of the declaration layer's fold (`EnvWF`, `RecCtorsStored`,
+  /-- (Decls) **The store invariant** of the declaration layer's fold (`EnvWF`, `RecCtorsStored`,
   `ProjOkT`; `IxC/Kernel/Model/StoreFold.lean`, `storeFoldRoutes`): nested rules' major-domain
   shape, the stored types' level parameters defined, the projection tables' head data. The
   arity fields below and `recRules`' firing conjunct follow from it
   (`storedFacts_of_invariants`). -/
   store : Ix.Kernel.Open.StoreInv c.env
-  /-- (L7) **The major inductive of a stored recursor with a rule has a record**: the key heading
+  /-- (Assembly) **The major inductive of a stored recursor with a rule has a record**: the key heading
   the major premise's domain is that of an address the records `c.E` hold (the reader reads a
   recursor only with its block's records). -/
   recMajorRecord : ∀ k cv mI rP rls (p : _root_.Address) us,
     c.env.find? k = some (.recInfo cv mI rP rls) → rls ≠ [] →
     (piDomAt mI cv.type).map (·.getAppFn) = some (.const (c.κ p) us) →
     ∃ cm, Ix.Cert.recordAt c.E p = some cm
-  /-- (L5) **A rule's constructor builds the recursor's major inductive, or the recursor is
+  /-- (Decls) **A rule's constructor builds the recursor's major inductive, or the recursor is
   non-K at its record in `c.E`** (`RuleCtorHeadFact`). -/
   ruleCtorHead : RuleCtorHeadFact c.E c.env
-  /-- (L5, L6) **The quotient roles in force store the pinned basis**: the annotated basis
+  /-- (Decls, Claim) **The quotient roles in force store the pinned basis**: the annotated basis
   constants (`Ix.Kernel.BasisKind.declsA .quotK`: `Quot`, `Quot.mk`, `Quot.lift`, `Quot.ind`,
   `Quot.sound`) are stored at their keys once `Quot` is in force (its group admitted, the basis
   installed by the basis route). -/
   quotBasis : c.inForce .quot → ∀ ci ∈ Ix.Kernel.BasisKind.declsA (md := .anon) .quotK,
     c.env.find? ci.name = some ci
-  /-- (L5) **An η-capable stored family has a projection table entry at each of its `etaFields`
+  /-- (Decls) **An η-capable stored family has a projection table entry at each of its `etaFields`
   slots**: `Ix.Kernel.Model.EtaTowers` (`IxC/Kernel/Model/StoreCompanions.lean`), which
   `etaTowers_declsRunJ` keeps along every accepted declaration. -/
   etaTowers : Ix.Kernel.Model.EtaTowers c.env
-  /-- (L5) **The type of a full application of an η-constructor**: its io-inferred type reduces to
+  /-- (Decls) **The type of a full application of an η-constructor**: its io-inferred type reduces to
   the structure at the same levels applied to the parameters (the stored constructor's type is
   the telescope of the parameters and fields ending in the structure at the constructor's level
   parameters applied to the parameter variables), at parameters with no loose bound variable (at a
@@ -689,43 +689,43 @@ structure EnvFacts (c : Ctx) : Prop where
       (∀ s ∈ Ss.take nP, s.looseBVarsBounded 0 = true) →
       Infer c.env .io d (Ix.Kernel.Expr.mkAppN (.const kc us) Ss) ta →
       Red c.env d ta (Ix.Kernel.Expr.mkAppN (.const T us) (Ss.take nP))
-  /-- (L5) **A one-rule recursor's η bit is the install's** (`recRuleBits`): `rl.eta` is
+  /-- (Decls) **A one-rule recursor's η bit is the install's** (`recRuleBits`): `rl.eta` is
   `recRuleEtaOf` (the constructor is the η constructor of a stored η-capable inductive at its
   level parameters, and the recursor is no projection function). -/
   recEta : ∀ k cv mI rP rl, c.env.find? k = some (.recInfo cv mI rP [rl]) →
     rl.eta = Ix.Kernel.recRuleEtaOf c.env.find? k rl.ctor
-  /-- (L5) **An η-capable family's sort datum is its sort's zero-ness**: `caps.sortZ` is the
+  /-- (Decls) **An η-capable family's sort datum is its sort's zero-ness**: `caps.sortZ` is the
   zero-ness of the stored type's sort after its `etaParams` parameters (`nativeCapsAt` sets
   `sortZ := zeronessOf p.resSort`, `nativeCaps_sortZ`), so `capsNeverZero` at the use's levels is
   the never-zero test IxVM makes on that sort. -/
   etaSort : ∀ T cvT caps, c.env.find? T = some (.indInfo cvT caps) → caps.eta = true →
     ∃ bs l, cvT.type.stripPis caps.etaParams = some (bs, .sort l) ∧
       caps.sortZ = Ix.Kernel.Level.zeronessOf l
-  /-- (L5) **An η-capable family's η-constructor builds that family**: the head of the
+  /-- (Decls) **An η-capable family's η-constructor builds that family**: the head of the
   constructor type's result is `T`. -/
   etaCtorHead : ∀ (T kc : KKey) (cvT : Ix.Kernel.ConstantVal .anon)
       (caps : Ix.Kernel.IndCaps .anon) (nP nF : Nat),
     c.env.find? T = some (.indInfo cvT caps) → caps.eta = true → caps.etaCtor = some kc →
     ∀ cvc, c.env.find? kc = some (.ctorInfo cvc nP nF) →
       ∃ tus, (Ix.Kernel.Expr.piResult cvc.type).getAppFn = .const T tus
-  /-- (L5) **A stored recursor with a rule has a binder for each argument up to the major
+  /-- (Decls) **A stored recursor with a rule has a binder for each argument up to the major
   premise** (the walk `Red.iota` reads, `CertsR.toCerts`; a recursor with no rule never fires).
   `Ix.Kernel.Open.recArity_of`. A projection function is such a recursor, so this is also the
   arity premise of `EtaProjCerts.cons`. -/
   recArity : ∀ k cv mI rP rls, c.env.find? k = some (.recInfo cv mI rP rls) → ∀ rl ∈ rls,
     (cv.type.stripPis (mI + 1)).isSome = true
-  /-- (L5) **A rule's constructor has a binder for each parameter and field**, at the rule's
+  /-- (Decls) **A rule's constructor has a binder for each parameter and field**, at the rule's
   counts (the walks of `Red.iota`, `Red.rescueK`, `Red.rescueEta` over a constructor's
   arguments). `Ix.Kernel.Open.ruleCtor_arity`. -/
   ruleCtorArity : ∀ k cv mI rP rls, c.env.find? k = some (.recInfo cv mI rP rls) → ∀ rl ∈ rls,
     ∀ cvj nP nF, c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
       nP = rl.ctorParams ∧ nF = rl.nfields ∧ (cvj.type.stripPis (nP + nF)).isSome = true
-  /-- (L5) **The constructor of a stored projection table's entry has a binder for each parameter
+  /-- (Decls) **The constructor of a stored projection table's entry has a binder for each parameter
   and field**, at the entry's counts (`Red.proj`). `Ix.Kernel.Open.tableCtor_arity`. -/
   tableCtorArity : ∀ sn i entry, c.env.findProj? sn i = some entry →
     ∀ cvC nP nF, c.env.find? entry.ctor = some (.ctorInfo cvC nP nF) →
       nP = entry.numParams ∧ nF = entry.numFields ∧ (cvC.type.stripPis (nP + nF)).isSome = true
-  /-- (L5) **A unit-like or η-capable family has a binder for each parameter its flag counts**
+  /-- (Decls) **A unit-like or η-capable family has a binder for each parameter its flag counts**
   (the walks of the unit-like and η rescues over the family's arguments).
   `Ix.Kernel.Open.storedArities_of`'s first half (`EnvWF.indCaps`). -/
   familyArity : ∀ T cvT caps, c.env.find? T = some (.indInfo cvT caps) →

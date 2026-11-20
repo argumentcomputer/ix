@@ -16,7 +16,7 @@ open IxVM (F)
 
 /-- A successful direct constant check cannot load a canonical mutual-block record. -/
 theorem checkedAtFull_not_muts {base : Core.Ctx} {bindingAddr address : _root_.Address}
-    {calls : List (Call F)} (source : L1.CanonicalRecordAt base.E address)
+    {calls : List (Call F)} (source : Ingress.CanonicalRecordAt base.E address)
     {members : Array Ixon.MutConst} (shape : source.value.info = .muts members)
     (checked : Claim.CheckedAtFull calls bindingAddr base.t address)
     (good : Core.Good base calls) : False := by
@@ -24,13 +24,13 @@ theorem checkedAtFull_not_muts {base : Core.Ctx} {bindingAddr address : _root_.A
   obtain ⟨actualAddress, addressRep, addressEq⟩ := addressRep
   let sourceAt := source.reindex addressEq
   obtain ⟨_, bytes, value, _, hashed, hashEq, decoded, _, _, _, result⟩ :=
-    L1.get_ci_spec (good.sub subset).2 addressRep loaded
+    Ingress.get_ci_spec (good.sub subset).2 addressRep loaded
   have sameBytes := Core.load_escape sourceAt.stored (good.sub subset).1 bytes hashed hashEq
   rw [sameBytes, sourceAt.decoded] at decoded
   injection decoded with sameValue
   subst value
   have sourceShape : sourceAt.value.info = .muts members := shape
-  simp only [L1.GetCIRawResult, sourceShape] at result
+  simp only [Ingress.GetCIRawResult, sourceShape] at result
 
 /-- A walked mutual-block owner supplies the actual check of each present inductive member. -/
 theorem admitted_native_member_check {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
@@ -38,7 +38,7 @@ theorem admitted_native_member_check {V : IxVM.Refinement.View} {binding : Ix.Ke
     {trace : Ixon.Env} {calls : List (Call F)} {bindingAddr : _root_.Address}
     (env : Ix.Kernel.Env .anon) (lim : Option Nat)
     {block : Bytes.Address} {members : Array Ixon.MutConst} {slot : Nat} {ind : Ixon.Inductive}
-    (source : L1.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E (Core.ixAddr block))
     (shape : source.value.info = .muts members) (memberAt : members[slot]? = some (.indc ind))
     (walked : WkAll calls bindingAddr witness.table trace (Core.ixAddr block))
     (good : Core.Good (nativeOriginCtx witness trace env lim) calls) :
@@ -61,14 +61,14 @@ self-reference and blob interpretation framing remain explicit. -/
 theorem admitted_native_former_input_of_blobAgreement {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
     (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
     {trace : Ixon.Env} {calls : List (Call F)} {seeds : List _root_.Address}
-    (phase : Claim.WalkedL6 calls witness.table trace seeds)
+    (phase : Claim.WalkedClaim calls witness.table trace seeds)
     (loaded : IxVM.Consistency.LoadedBy calls trace) (bounded : IxVM.Consistency.Bounded calls)
     (env : Ix.Kernel.Env .anon) (lim : Option Nat) (claimBytes : ByteArray)
     (noCollision : ¬ V.HashedCollision
       (claimBytes :: binding.bytes :: IxVM.Consistency.readerImages V) calls)
     {bindingAddr : _root_.Address} {block : Bytes.Address} {members : Array Ixon.MutConst}
     {slot : Nat} {ind : Ixon.Inductive}
-    (source : L1.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E (Core.ixAddr block))
     (shape : source.value.info = .muts members) (memberAt : members[slot]? = some (.indc ind))
     (walked : WkAll calls bindingAddr witness.table trace (Core.ixAddr block))
     {cx : Ix.Kernel.Reader.Ctx .anon}
@@ -77,14 +77,14 @@ theorem admitted_native_former_input_of_blobAgreement {V : IxVM.Refinement.View}
     (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ind.typ = .ok rawType)
     (keyed : ∀ address key, cx.keyAt address = .ok key → key = (nativeOriginCtx witness trace env lim).κ address)
     (selfKeyed : ∀ index address reading key,
-      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
+      (Ingress.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
       self index = some reading → reading = .ok key → key = (nativeOriginCtx witness trace env lim).κ address)
-    (blobReads : L1.HashedBlobReadAgreement cx.blob calls) :
+    (blobReads : Ingress.HashedBlobReadAgreement cx.blob calls) :
     Nonempty (NativeFormerRunInput (nativeOriginCtx witness trace env lim) block (slot : F)
       source members ind rawType calls) := by
   have good : Core.Good (nativeOriginCtx witness trace env lim) calls :=
     admittedCore_good witness (fun _ => True) env lim claimBytes loaded bounded noCollision
-  have coverage : L1.CanonicalHashCoverage (nativeOriginCtx witness trace env lim).E calls :=
+  have coverage : Ingress.CanonicalHashCoverage (nativeOriginCtx witness trace env lim).E calls :=
     admitted_canonicalHashCoverage witness phase
   have member := admitted_native_member_check witness env lim source shape memberAt walked good
   exact native_former_input_of_member_of_blobAgreement source shape memberAt member good coverage caps read keyed selfKeyed blobReads
@@ -93,14 +93,14 @@ theorem admitted_native_former_input_of_blobAgreement {V : IxVM.Refinement.View}
 theorem admitted_native_former_input {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
     (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
     {trace : Ixon.Env} {calls : List (Call F)} {seeds : List _root_.Address}
-    (phase : Claim.WalkedL6 calls witness.table trace seeds)
+    (phase : Claim.WalkedClaim calls witness.table trace seeds)
     (loaded : IxVM.Consistency.LoadedBy calls trace) (bounded : IxVM.Consistency.Bounded calls)
     (env : Ix.Kernel.Env .anon) (lim : Option Nat) (claimBytes : ByteArray)
     (noCollision : ¬ V.HashedCollision
       (claimBytes :: binding.bytes :: IxVM.Consistency.readerImages V) calls)
     {bindingAddr : _root_.Address} {block : Bytes.Address} {members : Array Ixon.MutConst}
     {slot : Nat} {ind : Ixon.Inductive}
-    (source : L1.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E (Core.ixAddr block))
     (shape : source.value.info = .muts members) (memberAt : members[slot]? = some (.indc ind))
     (walked : WkAll calls bindingAddr witness.table trace (Core.ixAddr block))
     {cx : Ix.Kernel.Reader.Ctx .anon}
@@ -109,7 +109,7 @@ theorem admitted_native_former_input {V : IxVM.Refinement.View} {binding : Ix.Ke
     (read : (Ix.Kernel.Reader.MemberReader.mk' cx source.value id self).read ind.typ = .ok rawType)
     (keyed : ∀ address key, cx.keyAt address = .ok key → key = (nativeOriginCtx witness trace env lim).κ address)
     (selfKeyed : ∀ index address reading key,
-      (L1.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
+      (Ingress.blockRecurAddrs (Core.ixAddr block) members.toList)[index]? = some address →
       self index = some reading → reading = .ok key → key = (nativeOriginCtx witness trace env lim).κ address)
     (blobReads : ∀ address bytes, Hashed calls bytes → Address.blake3Pure bytes = address →
       cx.blob address = some bytes) :
@@ -117,14 +117,14 @@ theorem admitted_native_former_input {V : IxVM.Refinement.View} {binding : Ix.Ke
       source members ind rawType calls) := by
   exact admitted_native_former_input_of_blobAgreement witness phase loaded bounded env lim claimBytes
     noCollision source shape memberAt walked caps read keyed selfKeyed
-    (L1.HashedBlobReadAgreement.of_stored blobReads)
+    (Ingress.HashedBlobReadAgreement.of_stored blobReads)
 
 /-- A retained canonical source at a walked owner is the same literal record as in the trace. -/
 theorem admitted_walked_source_record {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
     (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
     {trace : Ixon.Env} {calls : List (Call F)} {bindingAddr : _root_.Address}
     (env : Ix.Kernel.Env .anon) (lim : Option Nat) {address : _root_.Address}
-    (source : L1.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E address)
+    (source : Ingress.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E address)
     (walked : WkAll calls bindingAddr witness.table trace address) :
     Ix.Cert.recordAt trace address = some source.value := by
   obtain ⟨value, stored, _⟩ := (wkAll_closedSubwalk calls bindingAddr witness.table trace).checked address walked
@@ -139,7 +139,7 @@ theorem admitted_native_ind_safe {V : IxVM.Refinement.View} {binding : Ix.Kernel
     {trace : Ixon.Env} {calls : List (Call F)} {bindingAddr : _root_.Address}
     (env : Ix.Kernel.Env .anon) (lim : Option Nat)
     {block : Bytes.Address} {members : Array Ixon.MutConst} {slot : Nat} {ind : Ixon.Inductive}
-    (source : L1.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E (Core.ixAddr block))
     (shape : source.value.info = .muts members) (memberAt : members[slot]? = some (.indc ind))
     (safe : WkSafe calls bindingAddr witness.table trace (Core.ixAddr block)) :
     ind.isUnsafe = false := by

@@ -47,7 +47,7 @@ theorem blockFamCtorNoProj_of_member {calls : List (Call F)} {t : Ix.Kernel.Role
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
-    (hcov : L1.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env)
+    (hcov : Ingress.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env)
     (hO : NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps) :
     BlockFamCtorNoProj
       ⟨p, ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩,

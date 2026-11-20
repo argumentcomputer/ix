@@ -27,7 +27,7 @@ set_option linter.unnecessarySeqFocus false
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics Aiur.Library Aiur.Library.List
 
-namespace IxVM.Refinement.L1
+namespace IxVM.Refinement.Ingress
 
 open IxVM (F)
 open IxVM.Refinement.Obs
@@ -355,4 +355,4 @@ theorem get_ci_block_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     exact ⟨blobs, tree, v977, hhp.sub (by rw [hc1071]; intro x hx; simp [hx]), built,
       loadValue_snoc m978 v977, htrace.mono ext_snoc (fun _ hm => hm)⟩
 
-end IxVM.Refinement.L1
+end IxVM.Refinement.Ingress

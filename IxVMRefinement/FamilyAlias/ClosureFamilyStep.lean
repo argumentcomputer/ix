@@ -72,7 +72,7 @@ member the run checked**: the check observed the dispatch on the block, which an
 route, known under the run's coverage, and the modeled route excludes the answer `0`. -/
 theorem blockRoute_of_modeledRoute {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ E : Ixon.Env} (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hcanon : L1.CanonicalHashCoverage E calls) {bAddr A : _root_.Address}
+    (hcanon : Ingress.CanonicalHashCoverage E calls) {bAddr A : _root_.Address}
     {ms : Array Ixon.MutConst} {lim : Option Nat}
     (hall : ∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind)
     (hm0 : Claim.MemberCheckedLimAt calls bAddr t A ms 0 lim)
@@ -158,7 +158,7 @@ theorem famCtorTrees_at {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ 
       ∃ (ct : Ixon.Constructor) (T Bd : Route.ScanTree),
         ind.ctors[j]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
         Route.ExprTree c.refs.toList
-          (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
+          (Ingress.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
           c.sharing.toList 4294967295 ct.typ T ∧
         T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
         Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
@@ -350,14 +350,14 @@ theorem closureFamilySteps_of_check
   obtain ⟨Ec, hRc, hst⟩ := hrun.stepStores R₁ hloaded
     (fun a b h => hC.admits.loadedBlobs a b (hC.store.le₂.2 a b h))
     (fun p hp lc h => hC.admits.committed p hp lc (hC.store.le₂.1 _ lc h)) ⟨hzc, hzb⟩
-  have hcanon₀ : L1.CanonicalHashCoverage ρ.E₀ calls := by
+  have hcanon₀ : Ingress.CanonicalHashCoverage ρ.E₀ calls := by
     intro bytes value hashed size exactRead
     obtain ⟨entry, stored, bytesEq, cached⟩ := hcov bytes value hashed size
-      (L1.deConstant_of_deConstantExact exactRead) exactRead
+      (Ingress.deConstant_of_deConstantExact exactRead) exactRead
     refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
     rw [bytesEq]
     exact exactRead
-  have hcanon : L1.CanonicalHashCoverage Ec calls :=
+  have hcanon : Ingress.CanonicalHashCoverage Ec calls :=
     Assembly.canonicalHashCoverage_frame hcanon₀ hst.decoded
       (fun a v h => hst.runRecord a v ((hS.recordOf_eq_recordAt a).trans h))
   -- the check of the block at the group's validation limit

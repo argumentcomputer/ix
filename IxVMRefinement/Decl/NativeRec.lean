@@ -2258,7 +2258,7 @@ theorem fvar_not_in_fvsP {nP : Nat} :
     simp [Ix.Kernel.openPisAtFvars] at hop
 
 private theorem check_large_walk_fields_go (hLevels : IxVM.Consistency.Levels)
-    (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+    (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     (hef : EnvFacts c) (hlf : LoadFacts c)
     {T : KKey} {lps : List LevelParam} {nP nF : Nat} {fvsP : List KExpr}
     (hnPF_lt : nP + nF < 2147483648)
@@ -2516,7 +2516,7 @@ private theorem check_large_walk_fields_go (hLevels : IxVM.Consistency.Levels)
               exact ⟨fv, ty, u, hfv, hu, hinf_k, hred_k, hor_k⟩
 
 private theorem check_large_prop_ctor_go (hLevels : IxVM.Consistency.Levels)
-    (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+    (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     (hef : EnvFacts c) (hlf : LoadFacts c)
     {T : KKey} {lps : List LevelParam} {nP nF : Nat}
     {fvsP crest : KExpr → Prop}
@@ -2612,7 +2612,7 @@ theorem fieldSortsJ_isProp_true_set_sort {env : Ix.Kernel.Env .anon} {s₁ s₂ 
 guard `(∀ φ, Level.eval φ resSort ≠ 0) ∨ ctors.length < 2` and upgrades `SumCtorsRunJ` from
 `large = false` to `large = true` in `c.env`. -/
 theorem is_large_eliminator_one_spec (hLevels : IxVM.Consistency.Levels)
-    (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+    (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     (hef : EnvFacts c) (hlf : LoadFacts c)
     {T : KKey} {lps : List LevelParam} {nP nIdx : Nat} {resSort ind_lvl : KLevel}
     {cvTa : KConstantVal} {ctors ctorsA : List (KConstantVal × Nat)}

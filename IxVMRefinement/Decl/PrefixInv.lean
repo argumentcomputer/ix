@@ -2,8 +2,8 @@ import IxVMRefinement.Decl.DeclSpecs
 import IxVMRefinement.Decl.PrefixLoads
 import IxVMRefinement.Core.Rekey
 import IxVMRefinement.Whnf.Proj
-import IxVMRefinement.L1.Cells
-import IxVMRefinement.L1.HashedBlock
+import IxVMRefinement.Ingress.Cells
+import IxVMRefinement.Ingress.HashedBlock
 
 /-! # The standing invariant of a prefix
 
@@ -174,8 +174,8 @@ theorem EtaStable.cons_value {env : Ix.Kernel.Env .anon} (h : EtaStable env)
 /-! ## The load contract at the empty prefix -/
 
 /-- **The load contract of the prefix context holds where nothing is stored and no role is in
-force.** Every loader fact is conditional on a stored key; the record facts are L1's. -/
-theorem storedLoads_of_empty {c : Ctx} (hdec : L1.EnvDecoded c.E)
+force.** Every loader fact is conditional on a stored key; the record facts come from record ingress. -/
+theorem storedLoads_of_empty {c : Ctx} (hdec : Ingress.EnvDecoded c.E)
     (henv : ∀ k, c.env.find? k = none) (hnf : ∀ r, ¬ c.inForce r) :
     ScopedLoadFacts c.stored := by
   have h₀ := prefixLoadFacts_of_empty hdec henv (fun _ => False)
@@ -338,7 +338,7 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
         intro bp ip ptr h h' cs b i ev _ good hb hip hfam _
         obtain ⟨⟨ci, hf, hrep⟩, htab⟩ :=
           h₁.projTables bp ip ptr h h' cs b i ev trivial good hb hip (fam hfam)
-            (famPerm (L1.hashedBlockAt_of_proj_ctor good ev hb hip) (fam hfam))
+            (famPerm (Ingress.hashedBlockAt_of_proj_ctor good ev hb hip) (fam hfam))
         refine ⟨⟨ci, ?_, hrep.rekey_mono keep (stored_name_ne h₁ hf)⟩, ?_⟩
         · rw [keep _ (h₁.findRes _ _ hf)]
           exact hext.find hf
@@ -347,7 +347,7 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
           obtain ⟨tbl, ht1, ht2, ht3, ht4, ht5, ht6, ht7, ht8, ht9, ht10, ht11⟩ :=
             htab sap sptr nl ty np u blk h1 h2 cs1 s evS gS hsS hldS hbS j cvC nP nF hc₁ hbind
           have ei := keep _
-            (h₁.ctorIndRes _ _ _ _ _ _ (L1.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
+            (h₁.ctorIndRes _ _ _ _ _ _ (Ingress.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
           refine ⟨tbl, ?_, ?_, ?_, ht4, ht5, ht6, ht7, ?_, ht9, ht10, ht11⟩
           · rw [ei]
             exact hext.find ht1
@@ -366,7 +366,7 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
           h₁.projTablesAt bp sap ptr nl ty np u blk h h' h1 h2 cs cs1 b s i evM hgM hb evG hgG
             hs hld hblk j cvC nP nF hc₁ hnF
         have ei := keep _ (h₁.ctorIndRes _ _ _ _ _ _
-          (L1.hashedBlockAt_of_get_ci_induct hgG evG hs hld hblk) hc₁)
+          (Ingress.hashedBlockAt_of_get_ci_induct hgG evG hs hld hblk) hc₁)
         refine ⟨tbl, ?_, ?_, ?_, ht4, ht5, ht6, ht7, ?_, ht9, ht10, ht11⟩
         · rw [ei]
           exact hext.find ht1
@@ -438,7 +438,7 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
         intro bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hctor' htbl
         obtain ⟨hc₁, -⟩ := old hctor' (fun e => hctor cvC nP nF e.symm)
         have ei := keep _
-          (h₁.ctorIndRes _ _ _ _ _ _ (L1.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
+          (h₁.ctorIndRes _ _ _ _ _ _ (Ingress.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
         rw [ei] at htbl
         exact h₁.projCtorTele bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hc₁
           (consCtx_find_old htbl (fun e => hproj tbl e.symm))
@@ -532,11 +532,11 @@ theorem tmC_stored_of_usedRefs {E₀ : Ixon.Env} {t : Ix.Kernel.RoleTable}
     {env : Ix.Kernel.Env .anon} {lim : Option Nat} {c : Ixon.Constant}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat} {e : Ixon.Expr}
     {p : SourceValue F} {X : KExpr}
-    (raw : L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e p)
+    (raw : Ingress.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e p)
     (he : ∀ i, i ∈ IxVM.Consistency.exprRefIdxs e → i ∈ IxVM.Consistency.usedRefIdxs c)
     (hstored : UsedRefsStored t env c) (rep : TmC (keyOf t) h X p) :
     TmC (Ctx.stored ⟨E₀, env, t, lim⟩).κ h X p := by
-  have used : ∀ x, L1.RefUsed c.refs.toList c.sharing.toList e x →
+  have used : ∀ x, Ingress.RefUsed c.refs.toList c.sharing.toList e x →
       ∃ ci, env.find? (keyOf t x) = some ci := by
     intro x hu
     obtain ⟨i, hi | ⟨s, hs, his⟩, hr⟩ := hu
@@ -585,7 +585,7 @@ structure PrefixInv (E : Ixon.Env) (t : Ix.Kernel.RoleTable) (lim : Option Nat)
 
 /-- **The invariant holds at the empty environment under the limit `0`**, for decoded records and
 any well-formed role table: nothing is stored and no role is in force. -/
-theorem prefixInv_empty {E : Ixon.Env} (hdec : L1.EnvDecoded E) {t : Ix.Kernel.RoleTable}
+theorem prefixInv_empty {E : Ixon.Env} (hdec : Ingress.EnvDecoded E) {t : Ix.Kernel.RoleTable}
     (htwf : t.wf = true) : PrefixInv.{u} E t (some 0) Ix.Kernel.Env.empty where
   decl := FullDeclInv.empty
   store := foldStoreInv_empty

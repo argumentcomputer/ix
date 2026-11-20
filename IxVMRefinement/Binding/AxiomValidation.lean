@@ -66,17 +66,17 @@ theorem get_ci_axio_canon_raw (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List 
       (∃ u, loadValue h' ptr =
         .ok (.construct Core.kciEnum "Axiom" [.field (ax.lvls.toNat : F), tyPtr, u])) ∧
       ax.lvls.toNat < 4294967296 ∧
-      L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h' 4294967295
+      Ingress.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h' 4294967295
         ax.typ tyPtr ∧
       Decl.TmCExact (Core.keyOf t) h' ty' tyPtr := by
-  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := L1.get_ci_trace_spec ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := Ingress.get_ci_trace_spec ha ev
   obtain ⟨lc, hget, hdec⟩ := recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
   have hc : c = c' := by
     rw [hb, hdec] at hex
     exact Except.ok.inj hex
   subst hc
-  unfold L1.GetCITraceResult at hres
+  unfold Ingress.GetCITraceResult at hres
   rw [hinfo] at hres
   obtain ⟨blobs, tree, v, hhp, built, hld, htr⟩ := hres
   obtain ⟨hnlvls, tyPtr, plan, hv, rty, hp, hl⟩ := htr
@@ -227,14 +227,14 @@ theorem axiomValidationFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
     -- the load, read over `R'`
     have hbound45 : IxVM.Consistency.Bounded cs45 := RomBound.bounded_mono hrun.bounded hsub45
     obtain ⟨-, bytes, E_ld, hhash, hblake, hloaded, hL1⟩ :=
-      L1.get_ci_loadedL1_spec hbound45 hbr ev47
+      Ingress.get_ci_loadedRecords_spec hbound45 hbr ev47
     have hrecA : Ix.Cert.recordAt ρ.E₀ (ixAddr b) = some c := by
       rw [← hrun.runStore.recordOf_eq_recordAt, hba]
       exact hcE
     obtain ⟨-, -, v, hld, hraw⟩ :=
-      LoadedReads.loadedL1_record hrun.runStore hsub45 hhash hblake hL1 hrecA
+      LoadedReads.loadedRecords_record hrun.runStore hsub45 hhash hblake hL1 hrecA
     have hvv31 : v = v31 := Except.ok.inj (hld.symm.trans ld41)
-    unfold L1.RawCIRep at hraw
+    unfold Ingress.RawCIRep at hraw
     rw [hinfo] at hraw
     obtain ⟨blobs, hbt, hrawV⟩ := hraw
     have hblobR : ∀ x bs, (x, bs) ∈ blobs → R'.blobs.get? x = some bs := fun x bs hm =>

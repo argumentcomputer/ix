@@ -60,7 +60,7 @@ private theorem rs_loaded_proj_eq {E₀ : Ixon.Env} (hS : LoadedReads.RunStore c
   have hraw : raw = Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩ :=
     hS.hashed_inj hh hhp (hb.trans rfl)
   subst hraw
-  have hrt := Ixon.Verify.deConstantExact_serConstant _ (L1.emptyTablesConstant_wireWF.mpr hwf)
+  have hrt := Ixon.Verify.deConstantExact_serConstant _ (Ingress.emptyTablesConstant_wireWF.mpr hwf)
   exact Except.ok.inj (hde.symm.trans hrt)
 
 /-- **`get_ci` at a definition member's projection record** runs the member-kind check of the
@@ -69,10 +69,10 @@ private theorem get_ci_dprj_block_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunS
     {i : UInt64} {B : _root_.Address} (hB : B.hash.size = 32)
     (hhp : Hashed calls (Ixon.serConstant ⟨.dPrj ⟨i, B⟩, #[], #[], #[], #[]⟩))
     {ap ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (ha : S0.addr h ap (Core.projAddr (.dPrj ⟨i, B⟩)))
+    (ha : BaseSeams.addr h ap (Core.projAddr (.dPrj ⟨i, B⟩)))
     (ev : ObsFn Obs.W "Ingress::get_ci" [ap] h ptr h' cs) (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     ∃ (x r : SourceValue F) (h₁ h₂ : Heap F) (cs₁ : List (Call F)),
-      S0.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
+      BaseSeams.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
       (∀ cl ∈ cs₁, cl ∈ calls) := by
   have hid : ∀ (raw : ByteArray) (c' : Ixon.Constant), Hashed calls raw →
       Address.blake3Pure raw = Core.projAddr (.dPrj ⟨i, B⟩) →
@@ -131,13 +131,13 @@ private theorem get_ci_iprj_block_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunS
     {i : UInt64} {B : _root_.Address} (hB : B.hash.size = 32)
     (hhp : Hashed calls (Ixon.serConstant ⟨.iPrj ⟨i, B⟩, #[], #[], #[], #[]⟩))
     {ap ptr v rc r_chk : SourceValue F} {h h' h'' : Heap F} {cs cs_chk : List (Call F)}
-    (ha : S0.addr h ap (Core.projAddr (.iPrj ⟨i, B⟩)))
+    (ha : BaseSeams.addr h ap (Core.projAddr (.iPrj ⟨i, B⟩)))
     (ev : ObsFn Obs.W "Ingress::get_ci" [ap] h ptr h' cs) (hsub : ∀ cl ∈ cs, cl ∈ calls)
     (hld : loadValue h' ptr = .ok v)
     (ev_chk : ObsFn Obs.W "KernelCheck::check_const" [rc, v, ap] h' r_chk h'' cs_chk)
     (hsub_chk : ∀ cl ∈ cs_chk, cl ∈ calls) :
     ∃ (x r : SourceValue F) (h₁ h₂ : Heap F) (cs₁ : List (Call F)),
-      S0.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
+      BaseSeams.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
       (∀ cl ∈ cs₁, cl ∈ calls) := by
   have hid : ∀ (raw : ByteArray) (c' : Ixon.Constant), Hashed calls raw →
       Address.blake3Pure raw = Core.projAddr (.iPrj ⟨i, B⟩) →
@@ -189,7 +189,7 @@ private theorem get_ci_iprj_block_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunS
     | .run (v166 := v166) (m167 := m167) (he170 := he170) (hm169 := hm169) (ev176 := ev176) .. =>
       match Obs.«Convert::convert_inductive».obs ev176 with
       | .run (he128 := he128) .. =>
-        rw [he170, hm169, L1.loadValue_snoc] at hld
+        rw [he170, hm169, Ingress.loadValue_snoc] at hld
         have hv : v166 = v := Except.ok.inj hld
         subst hv
         subst he128
@@ -238,7 +238,7 @@ private theorem get_ci_iprj_block_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunS
             ev1.heap_extends.trans (ev2.heap_extends.trans
               (e_1376.trans (e_1354.trans (ev3.heap_extends.trans
                 (e_1427.trans (ev4.heap_extends.trans ev5.heap_extends))))))
-          exact ⟨_, r_mk, m1440, m_mk, cs_mk, S0.addr_mono (ext_m2.trans hext) hblk_addr, ev_mk,
+          exact ⟨_, r_mk, m1440, m_mk, cs_mk, BaseSeams.addr_mono (ext_m2.trans hext) hblk_addr, ev_mk,
             fun cl hcl => hsub_chk cl (by rw [hc']; simp [hcl])⟩
 
 /-- **`get_ci` at a recursor member's projection record, then `check_const`**, runs the
@@ -247,13 +247,13 @@ private theorem get_ci_rprj_block_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunS
     {i : UInt64} {B : _root_.Address} (hB : B.hash.size = 32)
     (hhp : Hashed calls (Ixon.serConstant ⟨.rPrj ⟨i, B⟩, #[], #[], #[], #[]⟩))
     {ap ptr v rc r_chk : SourceValue F} {h h' h'' : Heap F} {cs cs_chk : List (Call F)}
-    (ha : S0.addr h ap (Core.projAddr (.rPrj ⟨i, B⟩)))
+    (ha : BaseSeams.addr h ap (Core.projAddr (.rPrj ⟨i, B⟩)))
     (ev : ObsFn Obs.W "Ingress::get_ci" [ap] h ptr h' cs) (hsub : ∀ cl ∈ cs, cl ∈ calls)
     (hld : loadValue h' ptr = .ok v)
     (ev_chk : ObsFn Obs.W "KernelCheck::check_const" [rc, v, ap] h' r_chk h'' cs_chk)
     (hsub_chk : ∀ cl ∈ cs_chk, cl ∈ calls) :
     ∃ (x r : SourceValue F) (h₁ h₂ : Heap F) (cs₁ : List (Call F)),
-      S0.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
+      BaseSeams.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
       (∀ cl ∈ cs₁, cl ∈ calls) := by
   have hid : ∀ (raw : ByteArray) (c' : Ixon.Constant), Hashed calls raw →
       Address.blake3Pure raw = Core.projAddr (.rPrj ⟨i, B⟩) →
@@ -305,7 +305,7 @@ private theorem get_ci_rprj_block_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunS
     | .run (v166 := v166) (m167 := m167) (he170 := he170) (hm169 := hm169) (ev176 := ev176) .. =>
       match Obs.«Convert::convert_recursor».obs ev176 with
       | .run (he237 := he237) .. =>
-        rw [he170, hm169, L1.loadValue_snoc] at hld
+        rw [he170, hm169, Ingress.loadValue_snoc] at hld
         have hv : v166 = v := Except.ok.inj hld
         subst hv
         subst he237
@@ -343,7 +343,7 @@ private theorem get_ci_rprj_block_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunS
             ev1.heap_extends.trans (ev2.heap_extends.trans
               (e_2705.trans (ev3.heap_extends.trans (ev4.heap_extends.trans
                 ev_rules.heap_extends))))
-          exact ⟨_, r_mk, m2718, m_mk, cs_mk, S0.addr_mono (ext_m2.trans hext) hblk_addr, ev_mk,
+          exact ⟨_, r_mk, m2718, m_mk, cs_mk, BaseSeams.addr_mono (ext_m2.trans hext) hblk_addr, ev_mk,
             fun cl hcl => hsub_chk cl (by rw [hc']; simp [hcl])⟩
 
 /-- **The check of member `0` of a block runs the block's member-kind check.** -/
@@ -351,13 +351,13 @@ private theorem member_zero_block_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunS
     {bAddr B : _root_.Address} {t : Ix.Kernel.RoleTable} {ms : Array Ixon.MutConst}
     {lim : Option Nat} (hm : MemberCheckedLimAt calls bAddr t B ms 0 lim) :
     ∃ (x r : SourceValue F) (h₁ h₂ : Heap F) (cs₁ : List (Call F)),
-      S0.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
+      BaseSeams.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
       (∀ cl ∈ cs₁, cl ∈ calls) := by
   obtain ⟨h_pa, h_pre, m_chk, h'_chk, rc, x_members, x_block, ap, ptr, v, r_chk,
     cs_pa, cs_load, cs_chk, hmem, hblk, ev_pa, -, hsub_pa,
     -, -, ev_ld, -, hsub_ld, hld, ev_chk, -, hsub_chk⟩ := hm
   obtain ⟨b, hb, rfl⟩ := hblk
-  obtain ⟨-, -, -, mc, a, -, ra, hixa, hhp⟩ := L1.projection_addr_hashed_spec hmem hb ev_pa
+  obtain ⟨-, -, -, mc, a, -, ra, hixa, hhp⟩ := Ingress.projection_addr_hashed_spec hmem hb ev_pa
   have hhp' := hashed_mono hsub_pa hhp
   have hB : (Core.ixAddr b).hash.size = 32 := b.size_toArray
   cases mc with
@@ -376,14 +376,14 @@ private theorem member_zero_block_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunS
 `KernelCheck::check_block_member_kinds` on `B` among `calls`. -/
 def BlockKindsChecked (calls : List (Call F)) (B : _root_.Address) : Prop :=
   ∃ (x r : SourceValue F) (h₁ h₂ : Heap F) (cs₁ : List (Call F)),
-    S0.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
+    BaseSeams.addr h₁ x B ∧ ObsFn Obs.W "KernelCheck::check_block_member_kinds" [x] h₁ r h₂ cs₁ ∧
     (∀ cl ∈ cs₁, cl ∈ calls)
 
 /-- A projection record the run loaded at `A` is its canonical serialization, which the run
 hashed, and `A` is its projection address. -/
 private theorem loaded_proj_canonical {raw : ByteArray} {c : Ixon.Constant} {A : _root_.Address}
     (hh : Hashed calls raw) (hba : Address.blake3Pure raw = A)
-    (hx : Ixon.deConstantExact raw = .ok c) (htv : L1.ConstantTablesValid c)
+    (hx : Ixon.deConstantExact raw = .ok c) (htv : Ingress.ConstantTablesValid c)
     (hproj : Assembly.IsProjInfo c.info) :
     Hashed calls (Ixon.serConstant ⟨c.info, #[], #[], #[], #[]⟩) ∧ A = Core.projAddr c.info := by
   obtain ⟨hcanon, hA⟩ := proj_canon hba hx htv hproj
@@ -404,7 +404,7 @@ theorem get_ci_dprj_kinds_at {E₀ : Ixon.Env} (hS : LoadedReads.RunStore calls 
     {A : _root_.Address} {c : Ixon.Constant} {p : Ixon.DefinitionProj}
     (hrec : recordOf E₀ A = some c) (hinfo : c.info = .dPrj p)
     {ap ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (ha : S0.addr h ap A) (ev : ObsFn Obs.W "Ingress::get_ci" [ap] h ptr h' cs)
+    (ha : BaseSeams.addr h ap A) (ev : ObsFn Obs.W "Ingress::get_ci" [ap] h ptr h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) : BlockKindsChecked calls p.block := by
   obtain ⟨ab, hab, rfl⟩ := ha
   obtain ⟨raw, c', hsz, hh, hba, hx, htv, hhead⟩ := get_ci_head hab ev
@@ -483,7 +483,7 @@ as observed (`MemberCheckedLimAt.block_kinds` without the context). -/
 theorem member_zero_block_kinds_of {E₀ : Ixon.Env} (hS : LoadedReads.RunStore calls E₀)
     {B : _root_.Address} {ms : Array Ixon.MutConst} {h_pa h_pre m_chk h'_chk : Heap F}
     {rc x_members x_block ap ptr v r_chk : SourceValue F} {cs_pa cs_load cs_chk : List (Call F)}
-    (hmem : Specs.Callees.MembersRep h_pa ms.toList x_members) (hblk : S0.addr h_pa x_block B)
+    (hmem : Specs.Callees.MembersRep h_pa ms.toList x_members) (hblk : BaseSeams.addr h_pa x_block B)
     (ev_pa : ObsFn Obs.W "Ingress::projection_addr" [x_members, x_block, .field ((0 : Nat) : F)]
       h_pa ap h_pre cs_pa)
     (hsub_pa : ∀ cl ∈ cs_pa, cl ∈ calls)
@@ -492,7 +492,7 @@ theorem member_zero_block_kinds_of {E₀ : Ixon.Env} (hS : LoadedReads.RunStore 
     (ev_chk : ObsFn Obs.W "KernelCheck::check_const" [rc, v, ap] m_chk r_chk h'_chk cs_chk)
     (hsub_chk : ∀ cl ∈ cs_chk, cl ∈ calls) : BlockKindsChecked calls B := by
   obtain ⟨b, hb, rfl⟩ := hblk
-  obtain ⟨-, -, -, mc, a, -, ra, hixa, hhp⟩ := L1.projection_addr_hashed_spec hmem hb ev_pa
+  obtain ⟨-, -, -, mc, a, -, ra, hixa, hhp⟩ := Ingress.projection_addr_hashed_spec hmem hb ev_pa
   have hhp' := hashed_mono hsub_pa hhp
   have hB : (Core.ixAddr b).hash.size = 32 := b.size_toArray
   cases mc with
@@ -623,12 +623,12 @@ private theorem bound_safe_rec {a₁ a₂ a₃ a₄ a₅ a₆ a₇ a₈ u a₁�
 accepts. -/
 private theorem safetyDecline_none_of_defn_safe {d : Ixon.Definition}
     {tyPtr valPtr hint nl ty val hint' : SourceValue F}
-    (hv : L1.defnValShape d tyPtr valPtr hint = .construct "KernelTypes::KConstantInfo" "Defn"
+    (hv : Ingress.defnValShape d tyPtr valPtr hint = .construct "KernelTypes::KConstantInfo" "Defn"
       [nl, ty, val, .construct "Ixon::DefinitionSafety" "Safe" [], hint']) :
     Ix.Kernel.Reader.safetyDecline d = none := by
   cases hk : d.kind with
   | defn =>
-    simp only [L1.defnValShape, hk] at hv
+    simp only [Ingress.defnValShape, hk] at hv
     injection hv with _ _ hargs
     injection hargs with _ hargs
     injection hargs with _ hargs
@@ -637,23 +637,23 @@ private theorem safetyDecline_none_of_defn_safe {d : Ixon.Definition}
     have hsafe : d.safety = .safe := by
       cases hds : d.safety with
       | safe => rfl
-      | unsaf => rw [hds] at hs; simp [L1.repDefSafetyVal] at hs
-      | part => rw [hds] at hs; simp [L1.repDefSafetyVal] at hs
+      | unsaf => rw [hds] at hs; simp [Ingress.repDefSafetyVal] at hs
+      | part => rw [hds] at hs; simp [Ingress.repDefSafetyVal] at hs
     rw [Ix.Kernel.Reader.safetyDecline, hk, hsafe]
     decide
   | opaq =>
-    simp only [L1.defnValShape, hk] at hv
+    simp only [Ingress.defnValShape, hk] at hv
     injection hv with _ htag _
     exact absurd htag (by decide)
   | thm =>
-    simp only [L1.defnValShape, hk] at hv
+    simp only [Ingress.defnValShape, hk] at hv
     injection hv with _ htag _
     exact absurd htag (by decide)
 
 /-- A converted definition loaded as a `Thm` value is a theorem, which the reader accepts. -/
 private theorem safetyDecline_none_of_thm_shape {d : Ixon.Definition}
     {tyPtr valPtr hint nl ty val : SourceValue F}
-    (hv : L1.defnValShape d tyPtr valPtr hint =
+    (hv : Ingress.defnValShape d tyPtr valPtr hint =
       .construct "KernelTypes::KConstantInfo" "Thm" [nl, ty, val]) :
     Ix.Kernel.Reader.safetyDecline d = none := by
   cases hk : d.kind with
@@ -661,16 +661,16 @@ private theorem safetyDecline_none_of_thm_shape {d : Ixon.Definition}
     rw [Ix.Kernel.Reader.safetyDecline, hk]
     cases d.safety <;> decide
   | defn =>
-    simp only [L1.defnValShape, hk] at hv
+    simp only [Ingress.defnValShape, hk] at hv
     injection hv with _ htag _
     exact absurd htag (by decide)
   | opaq =>
-    simp only [L1.defnValShape, hk] at hv
+    simp only [Ingress.defnValShape, hk] at hv
     injection hv with _ htag _
     exact absurd htag (by decide)
 
 private theorem defn_safe_of_bound {d : Ixon.Definition} {tyPtr valPtr hint : SourceValue F}
-    (hvs : RoleVal.BoundValueSafe (L1.defnValShape d tyPtr valPtr hint)) :
+    (hvs : RoleVal.BoundValueSafe (Ingress.defnValShape d tyPtr valPtr hint)) :
     Ix.Kernel.Reader.safetyDecline d = none := by
   rcases hvs with ⟨h, h', cs, ev⟩ | ⟨nl, ty, val, hint', hv⟩
   · exact Assembly.safetyDecline_none_of_unsafe_ci_zero ev
@@ -713,7 +713,7 @@ theorem sourceSafe_of_bound_load {E₀ : Ixon.Env} (hS : LoadedReads.RunStore ca
     exact recordOf_of_hashed hH hhc hsz hx
   have hrecAt : Ix.Cert.recordAt E₀ (Core.ixAddr ab) = some c :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec
-  obtain ⟨raw', c', hh', hba', hx', htrace⟩ := L1.get_ci_trace_spec hab ev
+  obtain ⟨raw', c', hh', hba', hx', htrace⟩ := Ingress.get_ci_trace_spec hab ev
   have hc' : c' = c := hS.record_eq hrecAt (Core.hashed_mono hsub hh') hba' hx'
   subst c'
   obtain ⟨r, hr, hra⟩ := List.mem_map.mp hA
@@ -735,7 +735,7 @@ theorem sourceSafe_of_bound_load {E₀ : Ixon.Env} (hS : LoadedReads.RunStore ca
   cases hci : c.info with
   | muts ms => exact absurd hci (hhead.notMuts ms)
   | defn d =>
-    unfold L1.GetCITraceResult at htrace
+    unfold Ingress.GetCITraceResult at htrace
     rw [hci] at htrace
     obtain ⟨blobs, tree, v', -, -, hld', htr⟩ := htrace
     have hv : v' = v := Except.ok.inj (hld'.symm.trans hld)
@@ -767,7 +767,7 @@ theorem sourceSafe_of_bound_load {E₀ : Ixon.Env} (hS : LoadedReads.RunStore ca
     have hk := get_ci_dprj_kinds_at hS hrec hci ⟨ab, hab, rfl⟩ ev hsub
     obtain ⟨i, B⟩ := p
     obtain ⟨cb, ms, d, hbl, hmem⟩ := hhead.dPrj i B hci
-    unfold L1.GetCITraceResult at htrace
+    unfold Ingress.GetCITraceResult at htrace
     rw [hci] at htrace
     obtain ⟨-, blkBytes, cbt, mst, dt, blobs, tree, v', hhb, hbb, hxb, hinfot, hmemt, -, -, hld',
       htr⟩ := htrace
@@ -868,7 +868,7 @@ theorem sourceSafe_of_thm_load {E₀ : Ixon.Env} (hS : LoadedReads.RunStore call
     exact recordOf_of_hashed hH hhc hsz hx
   have hrecAt : Ix.Cert.recordAt E₀ (Core.ixAddr ab) = some c :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec
-  obtain ⟨raw', c', hh', hba', hx', htrace⟩ := L1.get_ci_trace_spec hab ev
+  obtain ⟨raw', c', hh', hba', hx', htrace⟩ := Ingress.get_ci_trace_spec hab ev
   have hc' : c' = c := hS.record_eq hrecAt (Core.hashed_mono hsub hh') hba' hx'
   subst c'
   suffices hmain : InLogic c ∧
@@ -885,7 +885,7 @@ theorem sourceSafe_of_thm_load {E₀ : Ixon.Env} (hS : LoadedReads.RunStore call
   cases hci : c.info with
   | muts ms => exact absurd hci (hhead.notMuts ms)
   | defn d =>
-    unfold L1.GetCITraceResult at htrace
+    unfold Ingress.GetCITraceResult at htrace
     rw [hci] at htrace
     obtain ⟨blobs, tree, v', -, -, hld', htr⟩ := htrace
     obtain ⟨-, tyPtr, valPtr, hint, -, -, hvshape, -⟩ := htr
@@ -922,7 +922,7 @@ theorem sourceSafe_of_thm_load {E₀ : Ixon.Env} (hS : LoadedReads.RunStore call
     have hk := get_ci_dprj_kinds_at hS hrec hci ⟨ab, hab, rfl⟩ ev hsub
     obtain ⟨i, B⟩ := p
     obtain ⟨cb, ms, d, hbl, hmem⟩ := hhead.dPrj i B hci
-    unfold L1.GetCITraceResult at htrace
+    unfold Ingress.GetCITraceResult at htrace
     rw [hci] at htrace
     obtain ⟨-, blkBytes, cbt, mst, dt, blobs, tree, v', hhb, hbb, hxb, hinfot, hmemt, -, -, hld',
       htr⟩ := htrace

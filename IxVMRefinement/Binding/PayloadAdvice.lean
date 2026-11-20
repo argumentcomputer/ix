@@ -40,7 +40,7 @@ theorem adviceIn_record (hS : LoadedReads.RunStore calls E₀)
   | .run (cs12 := cs12) (ev14 := ev14) (ev_yqjbwijz := ev_ord) (hc1011 := hc1011) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     obtain ⟨-, bytes, c, hsz, hh, haddr, hex, hde, -, -, -, -, -, -⟩ :=
-      L1.load_verified_constant_decode_bounded
+      Ingress.load_verified_constant_decode_bounded
         (Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ord.heap_extends hab) ev14
     obtain ⟨lc, hget, -, hlc⟩ := hH ⟨bytes.toArray⟩ c (Core.hashed_mono hsub12 hh)
       (by simpa only [ByteArray.size, List.size_toArray] using hsz) hde hex
@@ -92,7 +92,7 @@ theorem containerRecIn_record (hS : LoadedReads.RunStore calls E₀)
   obtain ⟨h, h', ab, ap, ptr, cs', args, hab, rfl, ev, hsub, -⟩ := containerRecIn_load hfc hx
   obtain ⟨rawBytes, c, hsz, hh, hbl, hde, -, -⟩ := Claim.get_ci_head hab ev
   obtain ⟨lc, hget, -, hlc⟩ := hH rawBytes c (Core.hashed_mono hsub hh) hsz
-    (L1.deConstant_of_deConstantExact hde) hde
+    (Ingress.deConstant_of_deConstantExact hde) hde
   refine ⟨c, ?_⟩
   rw [hS.recordOf_eq_recordAt]
   unfold Ix.Cert.recordAt

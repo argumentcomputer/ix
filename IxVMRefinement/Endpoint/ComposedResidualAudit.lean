@@ -66,7 +66,7 @@ fun Kind Goal =>
                         IxVM.Refinement.LoadedReads.RunStore calls E₀ →
                           IxVM.Refinement.LoadedReads.HashedRecordsStored calls E₀ →
                             IxVM.Refinement.Typing.StepStore calls t E₀ E →
-                              IxVM.Refinement.L1.CanonicalHashCoverage E calls →
+                              IxVM.Refinement.Ingress.CanonicalHashCoverage E calls →
                                 IxVM.Refinement.Typing.InertClause t c →
                                   (∀ (env : Ix.Kernel.Env Ix.Kernel.Mode.anon),
                                       IxVM.Refinement.Typing.HandedRefs t envT E₀ A c env →
@@ -117,7 +117,7 @@ fun Kind Goal =>
               t.check = Except.ok () →
                 IxVM.Refinement.LoadedReads.RunStore calls E₀ →
                   IxVM.Refinement.LoadedReads.HashedRecordsStored calls E₀ →
-                    IxVM.Refinement.L1.CanonicalHashCoverage E calls →
+                    IxVM.Refinement.Ingress.CanonicalHashCoverage E calls →
                       IxVM.Refinement.Typing.CheckedUnit calls bAddr t envT E₀ lim A c → Goal calls t envT E₀ E lim A c
 -/
 #guard_msgs in

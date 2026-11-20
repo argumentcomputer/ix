@@ -56,19 +56,19 @@ theorem ciRepExact_defnValShape {κ : _root_.Address → Core.KKey} {h : Heap F}
     (hty : Decl.TmCExact κ h (Core.posOf (List.range d.lvls.toNat) ty') tyPtr)
     (hval : Decl.TmCExact κ h (Core.posOf (List.range d.lvls.toNat) val') valPtr)
     (hn : Ix.Kernel.ReducibilityHint) :
-    Decl.CIRepExact κ h (L1.defnValShape d tyPtr valPtr hint)
+    Decl.CIRepExact κ h (Ingress.defnValShape d tyPtr valPtr hint)
       (defnConst d.kind ⟨key, List.range d.lvls.toNat, ty'⟩ val' hn) := by
   have hvr : Decl.ValRepExact κ h (.field (d.lvls.toNat : F)) tyPtr
       ⟨key, List.range d.lvls.toNat, ty'⟩ := valRepExact_range hnlvls hty
   cases hk : d.kind with
   | defn =>
-    simp only [L1.defnValShape, hk]
+    simp only [Ingress.defnValShape, hk]
     exact .defn hvr hval
   | thm =>
-    simp only [L1.defnValShape, hk]
+    simp only [Ingress.defnValShape, hk]
     exact .thm hvr hval
   | opaq =>
-    simp only [L1.defnValShape, hk]
+    simp only [Ingress.defnValShape, hk]
     exact .opaq hvr hval
 
 section Exact
@@ -99,14 +99,14 @@ theorem get_ci_defn_canon_exact (ht : t.check = .ok ()) {E : Ixon.Env} {cs : Lis
       Annotates ty' ty₀ ∧ Annotates val' val₀ ∧
       ∀ hn : Ix.Kernel.ReducibilityHint, Decl.CIPtrRepExact (Core.keyOf t) h' ptr
         (defnConst d.kind ⟨keyOf t (Core.ixAddr a), List.range d.lvls.toNat, ty'⟩ val' hn) := by
-  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := L1.get_ci_trace_spec ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := Ingress.get_ci_trace_spec ha ev
   obtain ⟨lc, hget, hdec⟩ := recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
   have hc : c = c' := by
     rw [hb, hdec] at hex
     exact Except.ok.inj hex
   subst hc
-  unfold L1.GetCITraceResult at hres
+  unfold Ingress.GetCITraceResult at hres
   rw [hinfo] at hres
   obtain ⟨blobs, tree, v, hhp, built, hld, htr⟩ := hres
   have hsafe : Ix.Kernel.Reader.safetyDecline d = none := by
@@ -114,9 +114,9 @@ theorem get_ci_defn_canon_exact (ht : t.check = .ok ()) {E : Ixon.Env} {cs : Lis
     unfold InLogic at hl
     rw [hinfo] at hl
     exact hl
-  have hrecur : L1.defnRecurAddrs d (Core.ixAddr a) = [] := by
-    have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
-    simp [L1.defnRecurAddrs, hf]
+  have hrecur : Ingress.defnRecurAddrs d (Core.ixAddr a) = [] := by
+    have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+    simp [Ingress.defnRecurAddrs, hf]
   rw [hrecur] at htr
   obtain ⟨hnlvls, tyPtr, valPtr, hint, planT, planV, hv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr
   subst hv
@@ -147,14 +147,14 @@ theorem get_ci_axio_canon_exact (ht : t.check = .ok ()) {E : Ixon.Env} {cs : Lis
       canonAnn c (List.range ax.lvls.toNat) 0 ax.typ ty₀ = some ty' ∧ Annotates ty' ty₀ ∧
       Decl.CIPtrRepExact (Core.keyOf t) h' ptr
         (.axiomInfo ⟨keyOf t (Core.ixAddr a), List.range ax.lvls.toNat, ty'⟩) := by
-  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := L1.get_ci_trace_spec ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := Ingress.get_ci_trace_spec ha ev
   obtain ⟨lc, hget, hdec⟩ := recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
   have hc : c = c' := by
     rw [hb, hdec] at hex
     exact Except.ok.inj hex
   subst hc
-  unfold L1.GetCITraceResult at hres
+  unfold Ingress.GetCITraceResult at hres
   rw [hinfo] at hres
   obtain ⟨blobs, tree, v, hhp, built, hld, htr⟩ := hres
   obtain ⟨hnlvls, tyPtr, plan, hv, rty, hp, hl⟩ := htr

@@ -1,4 +1,4 @@
-import IxVMRefinement.Assembly.ClaimsL1L6
+import IxVMRefinement.Assembly.LayerSeams
 import IxVMRefinement.RoleVal.CommittedBase
 import Ix.IxVM.Consistency.TableValid
 import Ix.Cert.AcceptedKeys

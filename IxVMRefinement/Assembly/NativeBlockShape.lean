@@ -1,5 +1,5 @@
 import IxVMRefinement.Assembly.NativeReaderShape
-import IxVMRefinement.L1.ScopedRecords
+import IxVMRefinement.Ingress.ScopedRecords
 import IxVMRefinement.Callees.Modeled
 
 /-! # One-family shape from the actual native route
@@ -16,7 +16,7 @@ open IxVM (F)
 
 /-- The native route's actual answer bounds the decoded block's inductive count. -/
 theorem native_block_inductive_count {base : Core.Ctx} {block : Bytes.Address}
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block)) {members : Array Ixon.MutConst}
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block)) {members : Array Ixon.MutConst}
     (shape : source.value.info = .muts members)
     {bp : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (good : Core.Good base calls) (blockRep : Bytes.RepAddressRef Core.addrTy h block bp)
@@ -26,7 +26,7 @@ theorem native_block_inductive_count {base : Core.Ctx} {block : Bytes.Address}
       ObsFn Core.W "Ingress::load_verified_constant" [bp] h value middle cs →
       (∀ call ∈ cs, call ∈ calls) → Core.Specs.Callees.ConstShapeRep middle source.value value := by
     intro value middle cs loaded subset
-    exact (L1.load_verified_constant_of_record source blockRep (good.sub subset) loaded).2.toConstShapeRep
+    exact (Ingress.load_verified_constant_of_record source blockRep (good.sub subset) loaded).2.toConstShapeRep
   have memberRep : ∀ {middle : Heap F} {cs : List (Call F)}
       {sharing refs univs binders ptr : SourceValue F},
       ObsFn Core.W "Ingress::load_verified_constant" [bp] h

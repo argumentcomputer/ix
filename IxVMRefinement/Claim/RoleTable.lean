@@ -1,14 +1,14 @@
 import IxVMRefinement.Claim.RBTree
 import IxVMRefinement.Core.Roles
 import IxVMRefinement.Core.Seams
-import IxVMRefinement.L1.Hashed
+import IxVMRefinement.Ingress.Hashed
 import IxVMRefinement.Obs.KernelRoles
 import IxVMRefinement.Obs.KernelRoleSpec0
 import Ix.IxVM.Consistency.Statement
 import Ix.Cert.RoleClosure
 import IxC.Kernel.Ixon.RoleTableInj
 
-/-! # Role-table decoding, context loading, and role lookups for L6
+/-! # Claim-phase role-table decoding, context loading, and role lookups
 
 Refinement of `KernelRoles` and `KernelRoleSpec` operations exercised during `ClaimPhase`:
 * `admitBinding_inv` and `readerTable_admits`: an admitted binding `b` has
@@ -197,7 +197,7 @@ def TableFullRep (t : Ix.Kernel.RoleTable) (bAddr : _root_.Address)
   t.wf = true ∧
   ∃ bp byRole byAddr ev,
     loadValue h tbl = .ok (.construct rtEnum "Mk" [bp, byRole, byAddr, ev]) ∧
-    S0.addr h bp bAddr ∧
+    BaseSeams.addr h bp bAddr ∧
     RoleMapAll roleAddrMapEnum (BoundEntry t) h byRole ∧
     ByAddrInv t t.bound.toList h byAddr ∧
     RoleMapAll roleEvMapEnum (EvidenceEntry t) h ev
@@ -365,14 +365,14 @@ theorem read_evidence_entries_spec (es : List (Ix.Kernel.Evidence _root_.Address
     (hwide : ∀ e ∈ es, Ix.Kernel.RoleTable.Evidence.wide e = true)
     (hlt : es.length < 256)
     {rest : List UInt8} {x_s r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hs : L1.Stream h (es.flatMap Ix.Kernel.RoleTable.encEvidence ++ rest) x_s)
+    (hs : Ingress.Stream h (es.flatMap Ix.Kernel.RoleTable.encEvidence ++ rest) x_s)
     (ev : ObsFn W "KernelRoles::read_evidence_entries"
       [x_s, .field (es.length : F)] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ entriesPtr restPtr,
       r = .tuple [entriesPtr, restPtr] ∧
       RepList evListEnum EvRep h' es entriesPtr ∧
-      L1.Stream h' rest restPtr := by
+      Ingress.Stream h' rest restPtr := by
   induction es generalizing h x_s r h' calls with
   | nil =>
     rcases Obs.«KernelRoles::read_evidence_entries».obs ev with
@@ -496,13 +496,13 @@ private theorem read_role_evidence_aux (t : Ix.Kernel.RoleTable) :
       (∀ p ∈ l, p ∈ t.evidence.toList) →
       (∀ p ∈ l, p.2.size < 256 ∧ ∀ e ∈ p.2.toList, Ix.Kernel.RoleTable.Evidence.wide e = true) →
       ∀ {rest : List UInt8} {x_s x_next r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
-        L1.Stream h (l.flatMap Ix.Kernel.RoleTable.encEntry ++ rest) x_s →
+        Ingress.Stream h (l.flatMap Ix.Kernel.RoleTable.encEntry ++ rest) x_s →
         ObsFn W "KernelRoles::read_role_evidence" [x_s, .field (n : F), x_next] h r h' calls →
         Heap.Extends h h' ∧
         ∃ evMap next' restPtr,
           r = .tuple [evMap, next', restPtr] ∧
           RoleMapAll roleEvMapEnum (EvidenceEntry t) h' evMap ∧
-          L1.Stream h' rest restPtr := by
+          Ingress.Stream h' rest restPtr := by
   intro n
   induction n using Nat.strongRecOn with
   | ind n ih =>
@@ -596,9 +596,9 @@ private theorem read_role_evidence_aux (t : Ix.Kernel.RoleTable) :
         have extPost := extSnoc1.trans extSnoc2
         let hfinal := (m459 ++ [x_left]) ++ [x_right]
         have ldL : loadValue hfinal (.ptr x_left.type m459.length) = .ok x_left :=
-          extSnoc2.loadValue_eq (L1.loadValue_snoc m459 x_left)
+          extSnoc2.loadValue_eq (Ingress.loadValue_snoc m459 x_left)
         have ldR : loadValue hfinal (.ptr x_right.type (m459 ++ [x_left]).length) = .ok x_right :=
-          L1.loadValue_snoc (m459 ++ [x_left]) x_right
+          Ingress.loadValue_snoc (m459 ++ [x_left]) x_right
         have hmapL' : RoleMapAll roleEvMapEnum (EvidenceEntry t) hfinal x_left := by
           refine RoleMapAll.mono ?_ (extE.trans (extR.trans extPost)) hmapL
           intro _ _ _ _ ext' ⟨r', es', hk, hm, hl'⟩
@@ -621,7 +621,7 @@ private theorem read_role_bindings_aux (t : Ix.Kernel.RoleTable) (hchk : t.check
       ∀ (seen : List (Ix.Kernel.Role × _root_.Address)) {rest : List UInt8}
         {x_s x_next x_by_addr r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
         ByAddrInv t seen h x_by_addr →
-        L1.Stream h (l.flatMap Ix.Kernel.RoleTable.encBound ++ rest) x_s →
+        Ingress.Stream h (l.flatMap Ix.Kernel.RoleTable.encBound ++ rest) x_s →
         ObsFn W "KernelRoles::read_role_bindings"
           [x_s, .field (n : F), x_next, x_by_addr] h r h' calls →
         Heap.Extends h h' ∧
@@ -629,7 +629,7 @@ private theorem read_role_bindings_aux (t : Ix.Kernel.RoleTable) (hchk : t.check
           r = .tuple [roleMap, byAddr', next', restPtr] ∧
           RoleMapAll roleAddrMapEnum (BoundEntry t) h' roleMap ∧
           ByAddrInv t (seen ++ l) h' byAddr' ∧
-          L1.Stream h' rest restPtr := by
+          Ingress.Stream h' rest restPtr := by
   intro n
   induction n using Nat.strongRecOn with
   | ind n ih =>
@@ -742,7 +742,7 @@ private theorem read_role_bindings_aux (t : Ix.Kernel.RoleTable) (hchk : t.check
           ih ((n' + 1) - (m + 1)) (by omega) l₂ hl2_len (by omega)
             (fun q hq => hsub q (by rw [hl_split]; simp [hq]))
             (fun q hq => hsz q (by rw [hl_split]; simp [hq]))
-            (seen ++ l₁ ++ [(ro, a)]) hinvM (L1.Stream.mono ext_ins hs2) ev537
+            (seen ++ l₁ ++ [(ro, a)]) hinvM (Ingress.Stream.mono ext_ins hs2) ev537
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupR
         obtain ⟨rfl, rfl, rfl, rfl⟩ := htupR
         have extSnoc1 := Heap.Extends.snoc m525 x_left
@@ -750,9 +750,9 @@ private theorem read_role_bindings_aux (t : Ix.Kernel.RoleTable) (hchk : t.check
         have extPost := extSnoc1.trans extSnoc2
         let hfinal := (m525 ++ [x_left]) ++ [x_right]
         have ldL : loadValue hfinal (.ptr x_left.type m525.length) = .ok x_left :=
-          extSnoc2.loadValue_eq (L1.loadValue_snoc m525 x_left)
+          extSnoc2.loadValue_eq (Ingress.loadValue_snoc m525 x_left)
         have ldR : loadValue hfinal (.ptr x_right.type (m525 ++ [x_left]).length) = .ok x_right :=
-          L1.loadValue_snoc (m525 ++ [x_left]) x_right
+          Ingress.loadValue_snoc (m525 ++ [x_left]) x_right
         have hmapL' : RoleMapAll roleAddrMapEnum (BoundEntry t) hfinal x_left := by
           refine RoleMapAll.mono ?_ (ext_addr.trans (ext_ins.trans (extR.trans extPost))) hmapL
           intro _ _ _ _ ext' ⟨r', ab, hk, hab, hbof⟩
@@ -781,7 +781,7 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
     (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t)
     (hb_extra : b.bytes ∈ extra)
     {x_binding r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hb : S0.addr h x_binding b.address)
+    (hb : BaseSeams.addr h x_binding b.address)
     (ev : ObsFn W "KernelRoles::load_role_table" [x_binding] h r h' calls) :
     V.HashedCollision extra calls ∨
     (Heap.Extends h h' ∧ TableFullRep t b.address h' r) := by
@@ -799,12 +799,12 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
     ld11, ev26, ev68, ev105, ev135, ev181, _, ev210, ev257, _,
     ev286, ev333, ev353, _, ev368, ev427, ev404, ev488, ev546, ev524,
     ev594, ld613, hm629, ev678, rfl, rfl, hc636⟩ := Obs.«KernelRoles::load_role_table».obs ev
-  have hv1 : v1 = L1.digestV ab := L1.load_repAddressRef hab ld11
-  obtain ⟨bytes, _, ext1, ext2, hst, hcall, hproj⟩ := L1.checked_read ev26 ev68 ev105
+  have hv1 : v1 = Ingress.digestV ab := Ingress.load_repAddressRef hab ld11
+  obtain ⟨bytes, _, ext1, ext2, hst, hcall, hproj⟩ := Ingress.checked_read ev26 ev68 ev105
   have hhashed : Hashed calls ⟨bytes.toArray⟩ :=
-    L1.hashed_of_call (by rw [hc636]; simp [hcall]) hst
+    Ingress.hashed_of_call (by rw [hc636]; simp [hcall]) hst
   have hblk : Address.blake3Pure ⟨bytes.toArray⟩ = b.address := by
-    rw [L1.blake3Pure_eq, L1.digest_eq_of_proj hv1 hproj]
+    rw [Ingress.blake3Pure_eq, Ingress.digest_eq_of_proj hv1 hproj]
     exact hix_b
   by_cases heq_bytes : (⟨bytes.toArray⟩ : ByteArray) = b.bytes
   case neg =>
@@ -816,7 +816,7 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
       congrArg (fun x : ByteArray => x.data.toList) heq_bytes
     simpa [hlist] using this
   subst hbytes_eq
-  have hst0 : L1.Stream m93 t.encode v55 := hst.mono ext2
+  have hst0 : Ingress.Stream m93 t.encode v55 := hst.mono ext2
   unfold Ix.Kernel.RoleTable.encode at hst0
   obtain ⟨rfl, _, _, _, hb0, hst1, ht0⟩ := Deserialize.readByte_refines hst0 ev135.erase
   injection ht0 with ht0'; simp only [List.cons.injEq, and_true] at ht0'; obtain ⟨rfl, rfl⟩ := ht0'
@@ -889,7 +889,7 @@ theorem load_role_ctx_spec {V : View} {extra : List ByteArray}
     (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t)
     (hb_extra : b.bytes ∈ extra)
     {x_binding r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hb : S0.addr h x_binding b.address)
+    (hb : BaseSeams.addr h x_binding b.address)
     (ev : ObsFn W "KernelRoles::load_role_ctx"
       [x_binding, .field 3,
        .construct Obs.Names.«Options::Option<&[Field; 32]>» "None" []] h r h' calls) :
@@ -921,7 +921,7 @@ theorem role_ctx_for_validator_spec {V : View} {extra : List ByteArray}
     (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t)
     (hb_extra : b.bytes ∈ extra)
     {x_binding r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hb : S0.addr h x_binding b.address)
+    (hb : BaseSeams.addr h x_binding b.address)
     (ev : ObsFn W "KernelRoles::role_ctx_for_validator" [x_binding, .field 3] h r h' calls) :
     V.HashedCollision extra calls ∨
     (Heap.Extends h h' ∧ RCFullRep t b.address 77 h' r) := by
@@ -953,7 +953,7 @@ theorem role_ctx_binding_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     {x_rc r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCFullRep t bAddr lim h x_rc)
     (ev : ObsFn W "KernelRoles::role_ctx_binding" [x_rc] h r h' calls) :
-    h' = h ∧ S0.addr h r bAddr := by
+    h' = h ∧ BaseSeams.addr h r bAddr := by
   obtain ⟨m2, p10, _, x_binding, _, _, _, ev18, ld12, rfl, rfl, -⟩ :=
     Obs.«KernelRoles::role_ctx_binding».obs ev
   obtain ⟨rfl, _, bp, _, _, _, hl_tbl, hbp, -, -, -⟩ := role_ctx_table_full_spec hrc ev18
@@ -1027,7 +1027,7 @@ theorem role_addr_index_full_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
 theorem role_index_of_full_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address} {lim : Nat}
     {x_rc x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCFullRep t bAddr lim h x_rc)
-    (ha : S0.addr h x_a a)
+    (ha : BaseSeams.addr h x_a a)
     (ev : ObsFn W "KernelRoles::role_index_of" [x_rc, x_a] h r h' calls) :
     h' = h ∧
     ((r = .field 0 ∧ ∀ ro, t.addressOf? ro ≠ some a) ∨
@@ -1158,7 +1158,7 @@ private theorem role_spec_kind_heap_eq {v r : SourceValue F} {h h' : Heap F} {ca
 theorem role_is_inert_zero_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address} {lim : Nat}
     {x_rc x_a : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCFullRep t bAddr lim h x_rc)
-    (ha : S0.addr h x_a a)
+    (ha : BaseSeams.addr h x_a a)
     (ev : ObsFn W "KernelRoles::role_is_inert" [x_rc, x_a] h (.field 0) h' calls) :
     h' = h ∧ ¬ IxVM.Consistency.InertAt t a := by
   rcases Obs.«KernelRoles::role_is_inert».obs ev with

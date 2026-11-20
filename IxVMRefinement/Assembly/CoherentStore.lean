@@ -1,6 +1,6 @@
 import IxC.Ixon.Verify.Canonical
 import Ix.Cert.TableAdmission
-import IxVMRefinement.L1.Records
+import IxVMRefinement.Ingress.Records
 import Ix.IxVM.Refinement.Claim
 
 /-! # A reader store constructed from bytes
@@ -31,7 +31,7 @@ def decodeReaderConsts : List (_root_.Address × Ixon.LazyConstant) →
   | [] => {}
   | (a, lc) :: rest =>
     match decodeReaderConstant lc.rawBytes with
-    | .ok c => (decodeReaderConsts rest).insert a (L1.mkLazyConst lc.rawBytes c)
+    | .ok c => (decodeReaderConsts rest).insert a (Ingress.mkLazyConst lc.rawBytes c)
     | .error _ => decodeReaderConsts rest
 
 theorem decodeReaderConsts_get?_inv :
@@ -39,7 +39,7 @@ theorem decodeReaderConsts_get?_inv :
       {a : _root_.Address} {lc' : Ixon.LazyConstant},
       (decodeReaderConsts rows).get? a = some lc' →
       ∃ lc c, (a, lc) ∈ rows ∧ decodeReaderConstant lc.rawBytes = .ok c ∧
-        lc' = L1.mkLazyConst lc.rawBytes c
+        lc' = Ingress.mkLazyConst lc.rawBytes c
   | [], _, _, h => by
     rw [decodeReaderConsts, Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h
     cases h
@@ -72,7 +72,7 @@ theorem decodeReaderEnv_exact (E : Ixon.Env) {a : _root_.Address} {lc : Ixon.Laz
     (hget : (decodeReaderEnv E).consts.get? a = some lc) :
     ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c := by
   obtain ⟨old, c, _, hdec, rfl⟩ := decodeReaderConsts_get?_inv E.consts.toList hget
-  exact ⟨c, L1.mkLazyConst_get? _ _, by simpa only [L1.mkLazyConst_rawBytes] using decodeReaderConstant_exact hdec⟩
+  exact ⟨c, Ingress.mkLazyConst_get? _ _, by simpa only [Ingress.mkLazyConst_rawBytes] using decodeReaderConstant_exact hdec⟩
 
 theorem decodeReaderEnv_coherent (E : Ixon.Env) {a : _root_.Address} {lc : Ixon.LazyConstant}
     (hget : (decodeReaderEnv E).consts.get? a = some lc) :
@@ -90,7 +90,7 @@ theorem decodeReaderEnv_draws (E : Ixon.Env) : IxVM.Refinement.Draws (decodeRead
     have hsource : E.consts.get? a = some old := by
       rw [Std.HashMap.get?_eq_getElem?]
       exact Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hm
-    exact .inl ⟨old, hsource, (L1.mkLazyConst_rawBytes _ _).symm⟩
+    exact .inl ⟨old, hsource, (Ingress.mkLazyConst_rawBytes _ _).symm⟩
   · intro a bytes hget
     exact hget
 

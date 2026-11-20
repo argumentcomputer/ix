@@ -65,7 +65,7 @@ theorem nativeBlockAlias_walked :
             BlockUnitRecord E₀ A c ind ∧ NativeRouteAt calls A ∧ FormerAtAlias t E₀ A c ind) →
           t.check = .ok () → LoadedReads.RunStore calls E₀ →
           LoadedReads.HashedRecordsStored calls E₀ → StepStore calls t E₀ E →
-          L1.CanonicalHashCoverage E calls →
+          Ingress.CanonicalHashCoverage E calls →
           InertClause t c → (∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c) →
           ((∃ ms, c.info = .muts ms ∧
               ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t A ms k lim) ∨

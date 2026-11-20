@@ -99,7 +99,7 @@ theorem aliasInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTab
     (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
-    (hcov : L1.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env) :
+    (hcov : Ingress.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env) :
     ∃ (blk : List (ConstantInfo .anon)) (p₀ : Ix.Kernel.NativeParts .anon)
       (new : List (ConstantInfo .anon)) (fam : NativeFam .anon) (caps : IndCaps .anon),
       AliasInstallOut t E₀ env B cb ind blk p₀ new fam caps := by
@@ -481,7 +481,7 @@ theorem aliasUnitStep_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hcov : L1.CanonicalHashCoverage E calls) :
+    (hcov : Ingress.CanonicalHashCoverage E calls) :
     AliasUnitStep.{u} t envT E₀ (fun E' => HoldsBlock E₀ E' B cb ind) E lim B cb :=
   aliasUnitStep_of_install ht hrec fun env Reg hext hnd hC href hfresh =>
     aliasInstallOut_of_member ht hS hst hrec hchk hnat halias hliterals hnd hC.prefixInv
@@ -502,7 +502,7 @@ theorem unitStep_nativeBlockAlias {calls : List (Call F)} {t : Ix.Kernel.RoleTab
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hcov : L1.CanonicalHashCoverage E calls) :
+    (hcov : Ingress.CanonicalHashCoverage E calls) :
     UnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt t E) t envT E₀ E lim B cb := by
   have hst : StepStore calls t E₀ E := hctx.toStepStore
   have htwf : t.wf = true := by

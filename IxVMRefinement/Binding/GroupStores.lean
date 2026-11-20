@@ -182,13 +182,13 @@ theorem groupStoresOfRun_of_remainingNC {calls : List (Call F)}
     rcases Claim.noColl_or_hashedCollision V extra calls with h | h
     · exact absurd h hcol
     · exact h
-  have hw0 : Claim.WalkedL6 calls t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) [] :=
-    Claim.walkedL6_envOfRecs (seeds := []) hnoColl [] hadm (by simp)
+  have hw0 : Claim.WalkedClaim calls t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) [] :=
+    Claim.walkedClaim_envOfRecs (seeds := []) hnoColl [] hadm (by simp)
       (by intro r hr; cases hr)
   have hload : LoadedBy calls (Claim.runEnv ⟨a, tb⟩ (t := t) calls) :=
     Claim.envOfRecs_loadedBy (t := t) ⟨a, tb⟩ calls []
-  have hS := LoadedReads.RunStore.of_walkedL6 hload hw0
-  have hH := LoadedReads.hashedRecordsStored_of_walkedL6 hw0
+  have hS := LoadedReads.RunStore.of_walkedClaim hload hw0
+  have hH := LoadedReads.hashedRecordsStored_of_walkedClaim hw0
   have hC : CollisionFreeRun calls (Claim.runEnv ⟨a, tb⟩ (t := t) calls) :=
     collisionFreeRun_of_no_collision hextra hcol hS hH
   have hb := basisRows_of_run hC hpin hval

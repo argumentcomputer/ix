@@ -1,5 +1,5 @@
 import IxVMRefinement.Core.Good
-import IxVMRefinement.L1.Records
+import IxVMRefinement.Ingress.Records
 import IxC.Ixon.Verify.Framing
 import IxC.Kernel.Model.StoreCompanions
 import IxC.Kernel.Model.Open.StoredFacts
@@ -7,13 +7,13 @@ import IxC.Kernel.Model.Open.StoredFacts
 /-! # Prefix sentinel store (`sentinelEnv`), `DeclStoreFacts`, and `Core.LoadFacts` assembly
 
 Constructs the prefix sentinel store `sentinelEnv E InstalledAddr` and assembles all 14 fields of
-`IxVM.Refinement.Core.LoadFacts` from `L1` (`Records` / `Decode`), the store invariants
+`IxVM.Refinement.Core.LoadFacts` from the ingress layer (`Records` / `Decode`), the store invariants
 (`Ix.Kernel.Open.StoreInv` and `Ix.Kernel.Model.TableBodies`), and a clean declaration-store
 interface `DeclStoreFacts`:
 
 1. **`sentinelEnv E InstalledAddr`**:
    keeps `E.consts[a]` at every `a` with `InstalledAddr a` and replaces every uninstalled entry
-   `a ∈ E.consts` (`¬ InstalledAddr a`) with `sentinelLazy := L1.mkLazyConst ByteArray.empty dummyConst`.
+   `a ∈ E.consts` (`¬ InstalledAddr a`) with `sentinelLazy := Ingress.mkLazyConst ByteArray.empty dummyConst`.
    Because `Ixon.deConstant ByteArray.empty` and `Ixon.deConstantExact ByteArray.empty` fail and
    `Ixon.serConstant` on any wire-valid constant is non-empty, `Core.Good` (`Core.load_escape`)
    immediately rules out any `Ingress::get_ci` or `Ingress::load_verified_constant` call on an
@@ -24,7 +24,7 @@ interface `DeclStoreFacts`:
    to `StoreInv c.env`, `TableBodies c.env`, `decodedOnHashed`, `canonicalAt`, and the crisp
    per-loader / native-structure properties supplied by the declaration and assembly layers.
 3. **`loadFacts_withLim` and `DeclStoreFacts` store bridges**:
-   supplies `decodedOnHashed` and `canonicalAt` automatically for both `L1.EnvDecoded E` and
+   supplies `decodedOnHashed` and `canonicalAt` automatically for both `Ingress.EnvDecoded E` and
    `sentinelEnv E InstalledAddr`, and transports `Core.LoadFacts` across `c.lim` changes when
    `projTablesGuard` is established uniformly across limits. -/
 
@@ -46,12 +46,12 @@ def dummyConst : Ixon.Constant :=
 
 /-- Sentinel `LazyConstant` holding `ByteArray.empty` as `rawBytes`. -/
 def sentinelLazy : Ixon.LazyConstant :=
-  L1.mkLazyConst ByteArray.empty dummyConst
+  Ingress.mkLazyConst ByteArray.empty dummyConst
 
 @[simp] theorem sentinelLazy_get? : sentinelLazy.get? = some dummyConst := rfl
 
 @[simp] theorem sentinelLazy_rawBytes : sentinelLazy.rawBytes = ByteArray.empty :=
-  L1.mkLazyConst_rawBytes ByteArray.empty dummyConst
+  Ingress.mkLazyConst_rawBytes ByteArray.empty dummyConst
 
 /-- `Ixon.deConstant` never succeeds on `ByteArray.empty`. -/
 theorem deConstant_empty_ne_ok (c : Ixon.Constant) :
@@ -295,7 +295,7 @@ theorem sentinelEnv_installed_of_good_deConstantExact {E : Ixon.Env}
     (hex : Ixon.deConstantExact bytes = .ok cm) :
     InstalledAddr x :=
   sentinelEnv_installed_of_good_deConstant hE hmem hg hh haddr
-    (L1.deConstant_of_deConstantExact hex)
+    (Ingress.deConstant_of_deConstantExact hex)
 
 /-- Direct `Ingress::get_ci` corollary: any good `get_ci` at an address `a` in `E.consts` against
 `sentinelEnv E InstalledAddr` forces `InstalledAddr (Core.ixAddr a)`. -/
@@ -308,7 +308,7 @@ theorem sentinelEnv_installed_of_good_get_ci {E : Ixon.Env}
     (hg : Core.Good c cs)
     (ha : Bytes.RepAddressRef Core.addrTy h a addr) :
     InstalledAddr (Core.ixAddr a) := by
-  obtain ⟨_, rawBytes, cm, _, hh, haddr, hex, _, _, _, _⟩ := L1.get_ci_spec hg.2 ha ev
+  obtain ⟨_, rawBytes, cm, _, hh, haddr, hex, _, _, _, _⟩ := Ingress.get_ci_spec hg.2 ha ev
   exact sentinelEnv_installed_of_good_deConstantExact hE hmem hg hh haddr hex
 
 /-- Any entry in `sentinelEnv E InstalledAddr` whose `rawBytes` equal `Ixon.serConstant cst` for a
@@ -369,8 +369,8 @@ def ProjTableCoreFact (c : Core.Ctx) (b : Bytes.Address) (i : F) : Prop :=
       ∃ bs body, cvC.type.stripPis (nP + nF) = some (bs, body) ∧
         ∀ bm ∈ bs, bm.2.pw = Ix.Kernel.Level.zeronessOf tbl.structSort
 
-/-- Crisp interface bundling the store invariants, `L1` decoded-record bridge, loader environment
-matches, and `L5` native-inductive store facts required to assemble `Core.LoadFacts c`. -/
+/-- Crisp interface bundling the store invariants, ingress decoded-record bridge, loader environment
+matches, and declaration-layer native-inductive store facts required to assemble `Core.LoadFacts c`. -/
 structure DeclStoreFacts (c : Core.Ctx) : Prop where
   storeInv : Ix.Kernel.Open.StoreInv c.env
   tableBodies : Ix.Kernel.Model.TableBodies c.env
@@ -542,7 +542,7 @@ theorem loadFacts_of_declStoreFacts {c : Core.Ctx} (hd : DeclStoreFacts c) :
   getIprj := hd.getIprj
   indRecord := by
     intro addr ptr h h' cs a cm cb p xs ind ev hg ha hcm hcm_info hcb hcb_info hxs
-    obtain ⟨_, rawBytes, cm', _, hhA, haA, hexA, _, _, _, hres⟩ := L1.get_ci_spec hg.2 ha ev
+    obtain ⟨_, rawBytes, cm', _, hhA, haA, hexA, _, _, _, hres⟩ := Ingress.get_ci_spec hg.2 ha ev
     obtain ⟨lcA, hlcA, hgetA, hex_lcA, _⟩ :=
       hd.decodedOnHashed cs (Core.ixAddr a) rawBytes cm' hg hhA haA hexA
     have hcm_eq : cm' = cm := by
@@ -550,7 +550,7 @@ theorem loadFacts_of_declStoreFacts {c : Core.Ctx} (hd : DeclStoreFacts c) :
       rw [hlcA, Option.bind_some, hgetA] at hcm
       exact Option.some.inj hcm
     subst hcm_eq
-    simp only [L1.GetCIRawResult, hcm_info] at hres
+    simp only [Ingress.GetCIRawResult, hcm_info] at hres
     obtain ⟨_, blkBytes, cb', _, _, _, hhB, haB, hexB, _, _, _, _, _⟩ := hres
     obtain ⟨lcB, hlcB, hgetB, hex_lcB, _⟩ :=
       hd.decodedOnHashed cs p.block blkBytes cb' hg hhB haB hexB
@@ -559,7 +559,7 @@ theorem loadFacts_of_declStoreFacts {c : Core.Ctx} (hd : DeclStoreFacts c) :
       rw [hlcB, Option.bind_some, hgetB] at hcb
       exact Option.some.inj hcb
     subst hcb_eq
-    refine L1.indRecord_of_deConstantExact ?_ ?_ ev hg ha hcm hcm_info hcb hcb_info hxs
+    refine Ingress.indRecord_of_deConstantExact ?_ ?_ ev hg ha hcm hcm_info hcb hcb_info hxs
     · intro lc hget
       rw [hlcA] at hget
       injection hget with e
@@ -574,7 +574,7 @@ theorem loadFacts_of_declStoreFacts {c : Core.Ctx} (hd : DeclStoreFacts c) :
     intro addr ptr h h' cs a nl ty np ni nc u blk idx ev hg ha hld
     obtain ⟨rawBytes, _, cm, _, _, _, b, i,
       hhA, haA, hexA, _, _, _, _, _, hb_rep, hidx_eq, _, hcm_info, _, _⟩ :=
-      L1.inductRecord_raw_of_get_ci ev hg.2 ha hld
+      Ingress.inductRecord_raw_of_get_ci ev hg.2 ha hld
     obtain ⟨lcA, hlcA, hgetA, _, _⟩ :=
       hd.decodedOnHashed cs (Core.ixAddr a) rawBytes cm hg hhA haA hexA
     refine ⟨cm, b, i, ?_, hb_rep, hidx_eq, hcm_info⟩
@@ -595,7 +595,7 @@ theorem loadFacts_of_declStoreFacts {c : Core.Ctx} (hd : DeclStoreFacts c) :
   recordShape := by
     intro ap r h h' cs a cst ev hg ha hrec
     obtain ⟨_, bytes, c', hh, haddr, hex, _, _, _, _, _, _, cRep⟩ :=
-      L1.load_verified_constant_decode ha ev
+      Ingress.load_verified_constant_decode ha ev
     have haddr' : _root_.Address.blake3Pure ⟨bytes.toArray⟩ = Core.ixAddr a := haddr
     obtain ⟨lc, hlc, hget, _, _⟩ :=
       hd.decodedOnHashed cs (Core.ixAddr a) ⟨bytes.toArray⟩ c' hg hh haddr' hex
@@ -609,7 +609,7 @@ theorem loadFacts_of_declStoreFacts {c : Core.Ctx} (hd : DeclStoreFacts c) :
     intro addr ptr h h' cs a b nl ty np ni nc u blk i ev hg ha hld hblk
     obtain ⟨_, blkBytes, _, cb, xs, ind, b', i',
       _, _, _, _, hhB, haB, hexB, _, hb'_rep, hidx_eq, _, _, hcb_info, hxs⟩ :=
-      L1.inductRecord_raw_of_get_ci ev hg.2 ha hld
+      Ingress.inductRecord_raw_of_get_ci ev hg.2 ha hld
     have hb_eq : b' = b := Bytes.repAddressRef_inj U32.Goldilocks.compatible hb'_rep hblk
     have hi_eq : i' = i := Value.field.inj hidx_eq.symm
     subst hb_eq hi_eq
@@ -624,9 +624,9 @@ theorem loadFacts_of_declStoreFacts {c : Core.Ctx} (hd : DeclStoreFacts c) :
 
 /-! ## Section 4: `DecodedOnHashed`, `CanonicalAt`, and `loadFacts_withLim` bridges -/
 
-/-- `L1.EnvDecoded c.E` together with hashed-address coverage yields `DecodedOnHashed c`. -/
+/-- `Ingress.EnvDecoded c.E` together with hashed-address coverage yields `DecodedOnHashed c`. -/
 theorem decodedOnHashed_of_envDecoded {c : Core.Ctx}
-    (hdec : L1.EnvDecoded c.E)
+    (hdec : Ingress.EnvDecoded c.E)
     (hmem : ∀ cs x bytes cm,
       Core.Good c cs → Hashed cs bytes → _root_.Address.blake3Pure bytes = x →
       Ixon.deConstantExact bytes = .ok cm → (c.E.consts.get? x).isSome = true) :
@@ -638,14 +638,14 @@ theorem decodedOnHashed_of_envDecoded {c : Core.Ctx}
   rw [hesc, hex₀] at hex
   injection hex with hcm_eq
   subst hcm_eq
-  exact ⟨lc, hlc, hget₀, hex₀, L1.deConstant_of_deConstantExact hex₀⟩
+  exact ⟨lc, hlc, hget₀, hex₀, Ingress.deConstant_of_deConstantExact hex₀⟩
 
-/-- On `sentinelEnv E InstalledAddr`, `L1.EnvDecoded E` and membership in `E.consts` automatically
+/-- On `sentinelEnv E InstalledAddr`, `Ingress.EnvDecoded E` and membership in `E.consts` automatically
 establish BOTH `InstalledAddr x` AND `DecodedOnHashed c` (via `sentinelEnv_installed_of_good_deConstantExact`). -/
 theorem decodedOnHashed_sentinelEnv {E : Ixon.Env} {InstalledAddr : _root_.Address → Prop}
     {c : Core.Ctx}
     (hE : c.E = sentinelEnv E InstalledAddr)
-    (hdec : L1.EnvDecoded E)
+    (hdec : Ingress.EnvDecoded E)
     (hmem : ∀ cs x bytes cm,
       Core.Good c cs → Hashed cs bytes → _root_.Address.blake3Pure bytes = x →
       Ixon.deConstantExact bytes = .ok cm → (E.consts.get? x).isSome = true) :
@@ -663,12 +663,12 @@ theorem decodedOnHashed_sentinelEnv {E : Ixon.Env} {InstalledAddr : _root_.Addre
   rw [hesc, hex₀] at hex
   injection hex with hcm_eq
   subst hcm_eq
-  exact ⟨lc, hlc, hget₀, hex₀, L1.deConstant_of_deConstantExact hex₀⟩
+  exact ⟨lc, hlc, hget₀, hex₀, Ingress.deConstant_of_deConstantExact hex₀⟩
 
-/-- `L1.EnvDecoded E` directly implies `CanonicalAt E`. -/
-theorem canonicalAt_of_envDecoded {E : Ixon.Env} (hdec : L1.EnvDecoded E) :
+/-- `Ingress.EnvDecoded E` directly implies `CanonicalAt E`. -/
+theorem canonicalAt_of_envDecoded {E : Ixon.Env} (hdec : Ingress.EnvDecoded E) :
     CanonicalAt E :=
-  fun _ _ _ hwf hlc hraw _ hget => L1.canonical_of_wireWF hdec hwf hlc hraw hget
+  fun _ _ _ hwf hlc hraw _ hget => Ingress.canonical_of_wireWF hdec hwf hlc hraw hget
 
 /-- `CanonicalAt` holds on `sentinelEnv E InstalledAddr` whenever it holds on `E`: any serialized
 wire-valid constant is non-empty, forcing `InstalledAddr x` via `sentinelEnv_installed_of_serConstant`. -/
@@ -679,9 +679,9 @@ theorem canonicalAt_sentinelEnv {E : Ixon.Env} {InstalledAddr : _root_.Address �
   obtain ⟨_, hlcE⟩ := sentinelEnv_installed_of_serConstant hwf hlc hraw
   exact hcan x lc info hwf hlcE hraw cm hget
 
-/-- `CanonicalAt (sentinelEnv E InstalledAddr)` directly from `L1.EnvDecoded E`. -/
+/-- `CanonicalAt (sentinelEnv E InstalledAddr)` directly from `Ingress.EnvDecoded E`. -/
 theorem canonicalAt_sentinelEnv_of_envDecoded {E : Ixon.Env}
-    {InstalledAddr : _root_.Address → Prop} (hdec : L1.EnvDecoded E) :
+    {InstalledAddr : _root_.Address → Prop} (hdec : Ingress.EnvDecoded E) :
     CanonicalAt (sentinelEnv E InstalledAddr) :=
   canonicalAt_sentinelEnv (canonicalAt_of_envDecoded hdec)
 

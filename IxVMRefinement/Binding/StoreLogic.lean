@@ -265,7 +265,7 @@ theorem certRefs_of_run (hC : CollisionFreeRun calls E₀)
   have hrec : recordOf E₀ thm = some c := by
     rw [← hbl]
     exact Claim.recordOf_hashed hC.runStore hC.hashedStored hh hsz
-      (L1.deConstant_of_deConstantExact hde) hde
+      (Ingress.deConstant_of_deConstantExact hde) hde
   obtain ⟨c', i, hc', hi, hx⟩ := hu
   have ec : c' = c := Option.some.inj (hc'.symm.trans hrec)
   rw [ec] at hi hx

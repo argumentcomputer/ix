@@ -75,7 +75,7 @@ private theorem sub_one_roleNum_ord {ro : Ix.Kernel.Role} {v : SourceValue F}
 force, when the limit is below the well-founded block. -/
 theorem walk_ctx_ordered {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {lim : Option Nat} {x_rc x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hrc : RCLimRep t bAddr lim h x_rc) (ha : S0.addr h x_a a)
+    (hrc : RCLimRep t bAddr lim h x_rc) (ha : BaseSeams.addr h x_a a)
     (ev : ObsFn W "KernelRoles::walk_ctx" [x_rc, x_a] h r h' calls) : OpOrderedAt t lim a := by
   intro ro hro h2 n hn h33
   obtain ⟨tbl, htbl, ⟨n', rfl, hn', hl⟩ | ⟨rfl, hl⟩⟩ := hrc.cases
@@ -135,7 +135,7 @@ theorem walk_ctx_ordered {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
 /-- **Every used reference of a record of the walk is ordered or covered** at the limit. -/
 def TopRecsOrdered {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
     {lim : Option Nat} (recs : List (TopRec calls bAddr t lim)) : Prop :=
-  ∀ r ∈ recs, ∀ i ∈ S0.usedRefIdxs r.c, ∀ b, r.c.refs[i]? = some b →
+  ∀ r ∈ recs, ∀ i ∈ BaseSeams.usedRefIdxs r.c, ∀ b, r.c.refs[i]? = some b →
     OpOrderedAt t lim b ∨ CoveredAt t lim b
 
 theorem TopRecsOrdered.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Address}
@@ -215,7 +215,7 @@ private theorem topRecsClosed_cons_ord {calls : List (Call F)} {bAddr : _root_.A
     (hrest : TopRecsClosed rest)
     (hown : IsProjRec r₀.c →
       ∃ r' ∈ r₀ :: rest, r'.addr = Ix.Cert.ownerOf r₀.addr r₀.c ∧ r'.depth < r₀.depth)
-    (hrefs : ∀ i ∈ S0.usedRefIdxs r₀.c, ∀ b, r₀.c.refs[i]? = some b →
+    (hrefs : ∀ i ∈ BaseSeams.usedRefIdxs r₀.c, ∀ b, r₀.c.refs[i]? = some b →
       RefAllowedIn calls t bAddr lim b ∧
       ((NotBlockIn calls b ∧ ∃ r' ∈ r₀ :: rest, r'.addr = b ∧ r'.depth < r₀.depth) ∨
         CoveredAt t lim b)) :
@@ -234,7 +234,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
          {h h' : Heap F} {calls : List (Call F)},
          calls.length ≤ fuel →
          RCLimRep t bAddr lim h x_rc →
-         S0.addr h x_addr addr →
+         BaseSeams.addr h x_addr addr →
          ObsFn Obs.W "KernelClaim::run_check_transitive" [x_rc, x_addr] h r h' calls →
          Heap.Extends h h' ∧
          ∃ recs : List (TopRec calls bAddr t lim),
@@ -301,7 +301,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
             simp only [List.cons.injEq, and_true] at hargs_m
             rw [← hargs_m] at hms_rep
             obtain ⟨ext_muts, hchk_muts⟩ :=
-              check_muts_all_lim_spec (hrc.mono ext1) (S0.addr_mono ext1 ha)
+              check_muts_all_lim_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha)
                 (membersRep_of_repMutConstList_ord hms_rep) ev93
             have hsub_m : ∀ cl ∈ cs91, cl ∈ calls := fun cl hcl => by
               rw [hc636, hc133]; simp [hcl]
@@ -321,7 +321,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ :=
-              run_check_lim_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev186
+              run_check_lim_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev186
             have hlt_calls : cs206.length < calls.length := by
               rw [hc636, hc225]
               simp only [List.length_cons, List.length_append]
@@ -329,7 +329,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
             have hlt_sub : cs206.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
             obtain ⟨ext_blk, recs_b, hmem_b, hcl_b, hord_b, hdep_b⟩ :=
               (ih cs206.length hlt_sub).1 (Nat.le_refl _)
-                (hrc.mono (ext1.trans ext_rc)) (S0.addr_mono ext_rc hblk_addr) ev208
+                (hrc.mono (ext1.trans ext_rc)) (BaseSeams.addr_mono ext_rc hblk_addr) ev208
             have hsub_b : ∀ cl ∈ cs206, cl ∈ calls := fun cl hcl => by
               rw [hc636, hc225]; simp [hcl]
             refine ⟨ext_rc.trans ext_blk,
@@ -351,7 +351,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ :=
-              run_check_lim_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev279
+              run_check_lim_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev279
             have hlt_calls : cs299.length < calls.length := by
               rw [hc636, hc318]
               simp only [List.length_cons, List.length_append]
@@ -359,7 +359,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
             have hlt_sub : cs299.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
             obtain ⟨ext_blk, recs_b, hmem_b, hcl_b, hord_b, hdep_b⟩ :=
               (ih cs299.length hlt_sub).1 (Nat.le_refl _)
-                (hrc.mono (ext1.trans ext_rc)) (S0.addr_mono ext_rc hblk_addr) ev301
+                (hrc.mono (ext1.trans ext_rc)) (BaseSeams.addr_mono ext_rc hblk_addr) ev301
             have hsub_b : ∀ cl ∈ cs299, cl ∈ calls := fun cl hcl => by
               rw [hc636, hc318]; simp [hcl]
             refine ⟨ext_rc.trans ext_blk,
@@ -381,7 +381,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ :=
-              run_check_lim_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev378
+              run_check_lim_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev378
             have hlt_calls : cs398.length < calls.length := by
               rw [hc636, hc417]
               simp only [List.length_cons, List.length_append]
@@ -389,7 +389,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
             have hlt_sub : cs398.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
             obtain ⟨ext_blk, recs_b, hmem_b, hcl_b, hord_b, hdep_b⟩ :=
               (ih cs398.length hlt_sub).1 (Nat.le_refl _)
-                (hrc.mono (ext1.trans ext_rc)) (S0.addr_mono ext_rc hblk_addr) ev400
+                (hrc.mono (ext1.trans ext_rc)) (BaseSeams.addr_mono ext_rc hblk_addr) ev400
             have hsub_b : ∀ cl ∈ cs398, cl ∈ calls := fun cl hcl => by
               rw [hc636, hc417]; simp [hcl]
             refine ⟨ext_rc.trans ext_blk,
@@ -411,7 +411,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
             simp only [List.cons.injEq, and_true] at hpargs
             rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ :=
-              run_check_lim_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev471
+              run_check_lim_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev471
             have hlt_calls : cs491.length < calls.length := by
               rw [hc636, hc510]
               simp only [List.length_cons, List.length_append]
@@ -419,7 +419,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
             have hlt_sub : cs491.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
             obtain ⟨ext_blk, recs_b, hmem_b, hcl_b, hord_b, hdep_b⟩ :=
               (ih cs491.length hlt_sub).1 (Nat.le_refl _)
-                (hrc.mono (ext1.trans ext_rc)) (S0.addr_mono ext_rc hblk_addr) ev493
+                (hrc.mono (ext1.trans ext_rc)) (BaseSeams.addr_mono ext_rc hblk_addr) ev493
             have hsub_b : ∀ cl ∈ cs491, cl ∈ calls := fun cl hcl => by
               rw [hc636, hc510]; simp [hcl]
             refine ⟨ext_rc.trans ext_blk,
@@ -431,7 +431,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
             simpa [Ix.Cert.ownerOf, hc_i] using hmem_b
           all_goals (obtain ⟨_, hv', _⟩ := hinfo; simp at hv')
         · obtain ⟨ext_rc, hchk⟩ :=
-            run_check_lim_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev521
+            run_check_lim_spec (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha) ev521
           have hnp : ¬ IsProjRec c := by
             intro hp
             rcases hp with ⟨p, hc_i⟩ | ⟨p, hc_i⟩ | ⟨p, hc_i⟩ | ⟨p, hc_i⟩ <;>
@@ -481,12 +481,12 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
         hchecked := hchk_self
         hguard := ⟨m540, m549, x_rc, x_addr,
           .construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41], v548, cs559,
-          hrc.mono (ext1.trans ext_seg), S0.addr_mono (ext1.trans ext_seg) ha,
+          hrc.mono (ext1.trans ext_seg), BaseSeams.addr_mono (ext1.trans ext_seg) ha,
           hrep.mono ext_seg, ev561, fun cl hcl => by rw [hc636]; simp [hcl]⟩
         hquot := ⟨m549, m_quot, x_rc, x_addr,
           .construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41], v_quot, cs_quot,
           hrc.mono (ext1.trans (ext_seg.trans ev561.heap_extends)),
-          S0.addr_mono (ext1.trans (ext_seg.trans ev561.heap_extends)) ha,
+          BaseSeams.addr_mono (ext1.trans (ext_seg.trans ev561.heap_extends)) ha,
           hrep.mono (ext_seg.trans ev561.heap_extends), ev_quot,
           fun cl hcl => by rw [hc636]; simp [hcl]⟩
       }
@@ -562,11 +562,11 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
             have ext_ra := ev90.heap_extends
             have ext_cov := ev121.heap_extends
             obtain ⟨ext_nb, hnb⟩ :=
-              assert_not_block_ref_notBlock (S0.addr_mono (ext_ra.trans ext_cov) ha_head) ev155
+              assert_not_block_ref_notBlock (BaseSeams.addr_mono (ext_ra.trans ext_cov) ha_head) ev155
             have ext_pre := ext_ra.trans (ext_cov.trans ext_nb)
             obtain ⟨ext_wc, hwc⟩ :=
-              walk_ctx_lim_spec (hrc.mono ext_pre) (S0.addr_mono ext_pre ha_head) ev183
-            have hordA := walk_ctx_ordered (hrc.mono ext_pre) (S0.addr_mono ext_pre ha_head) ev183
+              walk_ctx_lim_spec (hrc.mono ext_pre) (BaseSeams.addr_mono ext_pre ha_head) ev183
+            have hordA := walk_ctx_ordered (hrc.mono ext_pre) (BaseSeams.addr_mono ext_pre ha_head) ev183
             have hsub_ra : ∀ cl ∈ cs88, cl ∈ calls := fun cl hcl => by
               rw [hc281, hc207]; simp [hcl]
             have hsub_nb : ∀ cl ∈ cs153, cl ∈ calls := fun cl hcl => by
@@ -582,7 +582,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
               have ext_pre' := ext_pre.trans ext_wc
               obtain ⟨ext_sub, recs_s, hmem_s, hcl_s, hord_s, hdep_s⟩ :=
                 (ih cs167.length hlt_sub).1 (Nat.le_refl _) (hrc.mono ext_pre')
-                  (S0.addr_mono ext_pre' ha_head) ev169
+                  (BaseSeams.addr_mono ext_pre' ha_head) ev169
               have hsub_s : ∀ cl ∈ cs167, cl ∈ calls := fun cl hcl => by
                 rw [hc281, hc207]; simp [hcl]
               refine ⟨ext_pre'.trans ext_sub, recs_s.map (TopRec.mono hsub_s), ?_,
@@ -600,7 +600,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
             have ext_ra := ev90.heap_extends
             have ext_cov := ev121.heap_extends
             obtain ⟨-, hv⟩ :=
-              walk_covered_lim_spec (hrc.mono ext_ra) (S0.addr_mono ext_ra ha_head) ev121
+              walk_covered_lim_spec (hrc.mono ext_ra) (BaseSeams.addr_mono ext_ra ha_head) ev121
             rcases hv with hv0 | hcov
             · exact absurd hv0 hne208
             · have hsub_ra : ∀ cl ∈ cs88, cl ∈ calls := fun cl hcl => by
@@ -682,7 +682,7 @@ theorem run_check_transitive_lim_ordered {t : Ix.Kernel.RoleTable} {bAddr : _roo
     {lim : Option Nat} {x_rc x_addr r : SourceValue F} {addr : _root_.Address}
     {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCLimRep t bAddr lim h x_rc)
-    (ha : S0.addr h x_addr addr)
+    (ha : BaseSeams.addr h x_addr addr)
     (ev : ObsFn Obs.W "KernelClaim::run_check_transitive" [x_rc, x_addr] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ recs : List (TopRec calls bAddr t lim),

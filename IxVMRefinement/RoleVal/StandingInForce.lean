@@ -24,7 +24,7 @@ open IxVM (F)
 address, and at a limit `n` its group is below `n`. -/
 theorem axiom_standing_inForce_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {lim : Option Nat} {rc ap r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hrc : RCLimRep t bAddr lim h rc) (ha : S0.addr h ap a) (hin : ¬ InertAt t a)
+    (hrc : RCLimRep t bAddr lim h rc) (ha : BaseSeams.addr h ap a) (hin : ¬ InertAt t a)
     (ev : ObsFn W "KernelRoles::axiom_standing" [rc, ap] h r h' cs) (hne : r ≠ .field 0) :
     ∃ ro ∈ Typing.standingRoles, t.addressOf? ro = some a ∧
       ∀ n, lim = some n → Ix.SpecDigest.groupOf ro < n := by
@@ -49,7 +49,7 @@ theorem axiom_standing_inForce_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _ro
     · exact (hn hz).elim
     · have ext := ev147.heap_extends
       obtain ⟨-, hof⟩ :=
-        RoleVal.role_of_admit_spec (hrc.mono ext).toRCRep (S0.addr_mono ext ha) ev191
+        RoleVal.role_of_admit_spec (hrc.mono ext).toRCRep (BaseSeams.addr_mono ext ha) ev191
       have hforce : ∀ n, lim = some n → Ix.SpecDigest.groupOf ro < n := by
         rcases hof with hz | ⟨ro', -, hb', hn'⟩
         · exact (hro hz).elim
@@ -67,7 +67,7 @@ theorem axiom_standing_inForce_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _ro
 /-- The standing answer's old specification, as a corollary. -/
 theorem axiom_standing_lim_spec_of_inForce {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {lim : Option Nat} {rc ap r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hrc : RCLimRep t bAddr lim h rc) (ha : S0.addr h ap a) (hin : ¬ InertAt t a)
+    (hrc : RCLimRep t bAddr lim h rc) (ha : BaseSeams.addr h ap a) (hin : ¬ InertAt t a)
     (ev : ObsFn W "KernelRoles::axiom_standing" [rc, ap] h r h' cs) (hne : r ≠ .field 0) :
     ∃ ro ∈ Typing.standingRoles, t.addressOf? ro = some a := by
   obtain ⟨ro, hm, hb, -⟩ := axiom_standing_inForce_lim_spec hrc ha hin ev hne
@@ -92,33 +92,33 @@ theorem checkedLimAt_standing_inForce {calls : List (Call F)} {t : Ix.Kernel.Rol
   obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     _, hrc, ha_pre, ha_chk, ev_ld, _, hsub_ld, hld, ev_chk, _, _⟩ := hchk
   obtain ⟨ab, hab, rfl⟩ := ha_pre
-  obtain ⟨bytes, c', hh, hba, hde, htrace⟩ := L1.get_ci_trace_spec hab ev_ld
+  obtain ⟨bytes, c', hh, hba, hde, htrace⟩ := Ingress.get_ci_trace_spec hab ev_ld
   have hr : Ix.Cert.recordAt E₀ (ixAddr ab) = some c :=
     (hS.recordOf_eq_recordAt _).symm.trans hc
   have hcc : c' = c := hS.record_eq hr (Core.hashed_mono hsub_ld hh) hba hde
   subst c'
   · have hsafe : ax.isUnsafe = false := by simpa only [InLogic, hax] using hl
-    simp only [L1.GetCITraceResult, hax] at htrace
+    simp only [Ingress.GetCITraceResult, hax] at htrace
     obtain ⟨_, _, v', _, _, hld', htr⟩ := htrace
     have hv : v' = v := Except.ok.inj (hld'.symm.trans hld)
     subst v'
     obtain ⟨_, tp, _, hv, _⟩ := htr
     rw [hv] at ev_chk
-    simp only [hsafe, L1.repBoolField] at ev_chk
+    simp only [hsafe, Ingress.repBoolField] at ev_chk
     obtain ⟨_, _, _, vstand, mscope, _, malloc, _, _, _, _, _, _, evscope, hm,
       evsort, evsafe, evstand, hne, _⟩ := Decl.check_const_axiom_inv ev_chk
     have ext : Heap.Extends mscope malloc := by rw [hm]; exact Heap.Extends.snoc _ _
     have ext' := evscope.heap_extends.trans (ext.trans (evsort.heap_extends.trans
       evsafe.heap_extends))
     obtain ⟨ro, hm', hb, hforce⟩ :=
-      axiom_standing_inForce_lim_spec (hrc.mono ext') (S0.addr_mono ext' ha_chk) hin evstand hne
+      axiom_standing_inForce_lim_spec (hrc.mono ext') (BaseSeams.addr_mono ext' ha_chk) hin evstand hne
     exact ⟨ro, hm', hb, fun _ => hforce⟩
 
 /-- **A nonzero standing answer, with no premise on inert roles**: a role bound at the address
 whose group is below the limit, a standing role or an inert role. -/
 theorem axiom_standing_role_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {lim : Option Nat} {rc ap r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hrc : RCLimRep t bAddr lim h rc) (ha : S0.addr h ap a)
+    (hrc : RCLimRep t bAddr lim h rc) (ha : BaseSeams.addr h ap a)
     (ev : ObsFn W "KernelRoles::axiom_standing" [rc, ap] h r h' cs) (hne : r ≠ .field 0) :
     ∃ ro, t.addressOf? ro = some a ∧ (∀ n, lim = some n → Ix.SpecDigest.groupOf ro < n) ∧
       (ro ∈ Typing.standingRoles ∨ ro.inert = true) := by
@@ -143,7 +143,7 @@ theorem axiom_standing_role_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_
     · exact (hn hz).elim
     · have ext := ev147.heap_extends
       obtain ⟨-, hof⟩ :=
-        RoleVal.role_of_admit_spec (hrc.mono ext).toRCRep (S0.addr_mono ext ha) ev191
+        RoleVal.role_of_admit_spec (hrc.mono ext).toRCRep (BaseSeams.addr_mono ext ha) ev191
       have hforce : ∀ n, lim = some n → Ix.SpecDigest.groupOf ro < n := by
         rcases hof with hz | ⟨ro', -, hb', hn'⟩
         · exact (hro hz).elim
@@ -174,29 +174,29 @@ theorem checkedLimAt_standing_role {calls : List (Call F)} {t : Ix.Kernel.RoleTa
   obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     _, hrc, ha_pre, ha_chk, ev_ld, _, hsub_ld, hld, ev_chk, _, _⟩ := hchk
   obtain ⟨ab, hab, rfl⟩ := ha_pre
-  obtain ⟨bytes, c', hh, hba, hde, htrace⟩ := L1.get_ci_trace_spec hab ev_ld
+  obtain ⟨bytes, c', hh, hba, hde, htrace⟩ := Ingress.get_ci_trace_spec hab ev_ld
   have hr : Ix.Cert.recordAt E₀ (ixAddr ab) = some c :=
     (hS.recordOf_eq_recordAt _).symm.trans hc
   have hcc : c' = c := hS.record_eq hr (Core.hashed_mono hsub_ld hh) hba hde
   subst c'
   rcases hk with ⟨ax, hax⟩ | ⟨q, hq⟩
   · have hsafe : ax.isUnsafe = false := by simpa only [InLogic, hax] using hl
-    simp only [L1.GetCITraceResult, hax] at htrace
+    simp only [Ingress.GetCITraceResult, hax] at htrace
     obtain ⟨_, _, v', _, _, hld', htr⟩ := htrace
     have hv : v' = v := Except.ok.inj (hld'.symm.trans hld)
     subst v'
     obtain ⟨_, tp, _, hv, _⟩ := htr
     rw [hv] at ev_chk
-    simp only [hsafe, L1.repBoolField] at ev_chk
+    simp only [hsafe, Ingress.repBoolField] at ev_chk
     obtain ⟨_, _, _, vstand, mscope, _, malloc, _, _, _, _, _, _, evscope, hm,
       evsort, evsafe, evstand, hne, _⟩ := Decl.check_const_axiom_inv ev_chk
     have ext : Heap.Extends mscope malloc := by rw [hm]; exact Heap.Extends.snoc _ _
     have ext' := evscope.heap_extends.trans (ext.trans (evsort.heap_extends.trans
       evsafe.heap_extends))
     obtain ⟨ro, hb, hforce, hrole⟩ :=
-      axiom_standing_role_lim_spec (hrc.mono ext') (S0.addr_mono ext' ha_chk) evstand hne
+      axiom_standing_role_lim_spec (hrc.mono ext') (BaseSeams.addr_mono ext' ha_chk) evstand hne
     exact ⟨ro, hb, Or.inl ⟨⟨ax, hax⟩, hforce, hrole⟩⟩
-  · simp only [L1.GetCITraceResult, hq] at htrace
+  · simp only [Ingress.GetCITraceResult, hq] at htrace
     obtain ⟨_, _, v', _, _, hld', htr⟩ := htrace
     have hv : v' = v := Except.ok.inj (hld'.symm.trans hld)
     subst v'
@@ -207,7 +207,7 @@ theorem checkedLimAt_standing_role {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     have ext : Heap.Extends mscope malloc := by rw [hm]; exact Heap.Extends.snoc _ _
     have ext' := evscope.heap_extends.trans (ext.trans (evsort.heap_extends.trans
       evsafe.heap_extends))
-    obtain ⟨ro, hm', hb⟩ := check_quot_lim_standing (hrc.mono ext') (S0.addr_mono ext' ha_chk) evquot
+    obtain ⟨ro, hm', hb⟩ := check_quot_lim_standing (hrc.mono ext') (BaseSeams.addr_mono ext' ha_chk) evquot
     exact ⟨ro, hb, Or.inr ⟨⟨q, hq⟩, hm'⟩⟩
 
 /-- The checked record's old standing specification, as a corollary. -/

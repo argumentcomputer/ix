@@ -7,7 +7,7 @@ import IxVMRefinement.Binding.FamilyOf
 import IxVMRefinement.Binding.PayloadDirectLoads
 import IxVMRefinement.Claim.TopSeed
 import IxVMRefinement.FamilyAlias.CallLists
-import IxVMRefinement.L1.Ingress
+import IxVMRefinement.Ingress.Ingress
 import IxVMRefinement.Obs.Convert1
 import IxVMRefinement.Obs.Ingress0
 import IxVMRefinement.Obs.KernelCheck0
@@ -33,7 +33,7 @@ run-level bounds or collision-freedom beyond `TopWalkCore`:
   type both to `Binding.FamilyOf.motiveCarrierAt` at motive `0` and to a `KExprSub` witness for
   its head `Const` cell;
 * `safe_refs_only_raw_sub`: boolean dichotomy and subexpression descent for
-  `KernelCheck::safe_refs_only` on any `L1.RawConvExpr`, yielding `ind₀.isUnsafe = false` from
+  `KernelCheck::safe_refs_only` on any `Ingress.RawConvExpr`, yielding `ind₀.isUnsafe = false` from
   `KernelCheck::assert_safety` on a family recursor type;
 * `assert_no_role_spec`: `KernelModeled::assert_no_role` certifies that no listed recursor
   projection address is bound to any role;
@@ -57,12 +57,12 @@ open IxVM (F)
 /-! ## `motiveCarrierAt` yields a used reference of the family record -/
 
 private def CarrierExprRefsIn (c : Ixon.Constant) (e : Ixon.Expr) : Prop :=
-  ∀ i ∈ S0.exprRefIdxs e, i ∈ S0.usedRefIdxs c
+  ∀ i ∈ BaseSeams.exprRefIdxs e, i ∈ BaseSeams.usedRefIdxs c
 
 private theorem carrierExprRefsIn_sharing (c : Ixon.Constant) {i : Nat} {e : Ixon.Expr}
     (h : c.sharing[i]? = some e) : CarrierExprRefsIn c e := by
   intro j hj
-  unfold S0.usedRefIdxs
+  unfold BaseSeams.usedRefIdxs
   apply List.mem_append_left
   rw [List.mem_flatMap]
   refine ⟨e, ?_, hj⟩
@@ -155,7 +155,7 @@ theorem motiveCarrierAt_usedRef {E₀ : Ixon.Env} {rb a : _root_.Address} {crb :
     UsedRef E₀ rb a := by
   have htyp : CarrierExprRefsIn crb r.typ := by
     intro j hj
-    unfold S0.usedRefIdxs
+    unfold BaseSeams.usedRefIdxs
     rw [hmuts]
     apply List.mem_append_right
     rw [List.mem_flatMap]
@@ -224,7 +224,7 @@ theorem get_ci_rprj_raw_uncond {b : Bytes.Address} {idx : F}
         cb.info = .muts ms ∧
         ms.toList[idx.val]? = some (.recr rc) ∧
         loadValue h' r = .ok v ∧
-        L1.RawRecrValRep cb.refs.toList (L1.blockRecurAddrs (Core.ixAddr b) ms.toList)
+        Ingress.RawRecrValRep cb.refs.toList (Ingress.blockRecurAddrs (Core.ixAddr b) ms.toList)
           cb.univs.toList cb.sharing.toList blobs h' rc (Core.ixAddr b) idx.val v := by
   obtain ⟨m2, cs12, x_sharing, x_refs, x_univs, x_binders, x_members,
       m86, cs96, x_r, v136, m137, cs147, v166, m167, cs174,
@@ -233,13 +233,13 @@ theorem get_ci_rprj_raw_uncond {b : Bytes.Address} {idx : F}
     Obs.«Ingress::get_ci_rprj».obs ev
   obtain ⟨ext1, blkList, cb, hlen_blk, hhash_blk, haddr_blk, hexact_blk, -,
       -, -, -, hbd32, -, cRep⟩ :=
-    L1.load_verified_constant_decode_bounded hb ev14
+    Ingress.load_verified_constant_decode_bounded hb ev14
   obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfo, hsh, hrf, hun, hbd⟩ := cRep
   simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
   rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
   subst infoVal shPtr rfPtr unPtr bdPtr
-  obtain ⟨ms, hcb_info, hms⟩ := L1.repConstantInfo_muts_inv hinfo
-  obtain ⟨hm86, hidx_lt_ms, mc, hmc_get, hmc_rep⟩ := L1.muts_member_at_spec hms ev98
+  obtain ⟨ms, hcb_info, hms⟩ := Ingress.repConstantInfo_muts_inv hinfo
+  obtain ⟨hm86, hidx_lt_ms, mc, hmc_get, hmc_rep⟩ := Ingress.muts_member_at_spec hms ev98
   subst m86
   have hres := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound ⟨blkList.toArray⟩ cb hexact_blk
   have hms_le := Claim.muts_size_le hcb_info
@@ -247,7 +247,7 @@ theorem get_ci_rprj_raw_uncond {b : Bytes.Address} {idx : F}
     simp only [ByteArray.size, List.size_toArray] at hres
     rw [Array.length_toList] at hidx_lt_ms
     omega
-  have hrecr : ∃ rc : Ixon.Recursor, mc = .recr rc ∧ L1.RepRecursor m2 rc x_r := by
+  have hrecr : ∃ rc : Ixon.Recursor, mc = .recr rc ∧ Ingress.RepRecursor m2 rc x_r := by
     cases mc with
     | recr rc =>
       obtain ⟨rv, hrv_eq, hrv⟩ := hmc_rep
@@ -258,23 +258,23 @@ theorem get_ci_rprj_raw_uncond {b : Bytes.Address} {idx : F}
     | indc _ => obtain ⟨iv, hiv, _⟩ := hmc_rep; simp at hiv
   obtain ⟨rc, rfl, hrc_rep⟩ := hrecr
   have hb2 := Bytes.repAddressRef_heapMono₂ Core.addrTy ext1 hb
-  obtain ⟨ext2, hrecs⟩ := L1.build_recur_addrs_ixon_spec hms hb2 ev149
-  obtain ⟨ext3, htbl⟩ := L1.binder_table_spec (hbd.mono Deserialize.repBinderBlock_heapMono₂ ext2) hbd32 ev246
+  obtain ⟨ext2, hrecs⟩ := Ingress.build_recur_addrs_ixon_spec hms hb2 ev149
+  obtain ⟨ext3, htbl⟩ := Ingress.binder_table_spec (hbd.mono Deserialize.repBinderBlock_heapMono₂ ext2) hbd32 ev246
   have ext23 := ext2.trans ext3
-  obtain ⟨_, _, hm256⟩ := L1.muts_root_offset_spec (hms.mono L1.repMutConst_heapMono₂ ext23) ev266
+  obtain ⟨_, _, hm256⟩ := Ingress.muts_root_offset_spec (hms.mono Ingress.repMutConst_heapMono₂ ext23) ev266
   subst m256
   have ev176' : ObsFn Obs.W "Convert::convert_recursor"
       [x_r, x_block_addr, .field ((idx.val : Nat) : F), x_sharing, x_refs, v136,
        x_univs, v184, v185] m236 v166 m167 cs174 := by
     rwa [ZMod.natCast_zmod_val idx]
   obtain ⟨ext4, blobs, -, hraw⟩ :=
-    L1.convert_recursor_spec
+    Ingress.convert_recursor_spec
       (hrc_rep.mono ext23)
-      ((L1.core_to_repIxonAddressRef hb2).mono ext23)
+      ((Ingress.core_to_repIxonAddressRef hb2).mono ext23)
       hidx56
       (Deserialize.RepShareVec.mono ext23 hsh)
-      (hrf.mono L1.repIxonAddressRef_heapMono₂ ext23)
-      (hrecs.mono L1.repIxonAddressRef_heapMono₂ ext3)
+      (hrf.mono Ingress.repIxonAddressRef_heapMono₂ ext23)
+      (hrecs.mono Ingress.repIxonAddressRef_heapMono₂ ext3)
       (hun.mono Deserialize.repUnivPtr_heapMono₂ ext23)
       htbl ev176'
   rw [he170, hm169]
@@ -300,7 +300,7 @@ private theorem get_ci_of_rPrj_raw {calls cs : List (Call F)} {E₀ : Ixon.Env}
     (hsub : ∀ cl ∈ cs, cl ∈ calls)
     (hld : loadValue h' ptr = .ok v) :
     ∃ blobs,
-      L1.RawRecrValRep crb.refs.toList (L1.blockRecurAddrs rb rs.toList)
+      Ingress.RawRecrValRep crb.refs.toList (Ingress.blockRecurAddrs rb rs.toList)
         crb.univs.toList crb.sharing.toList blobs h' rc rb k v := by
   have hprojRec : recordOf E₀ (Core.ixAddr ab) = some (memberProjection rb k (.recr rc)) := by
     rw [hix]
@@ -311,7 +311,7 @@ private theorem get_ci_of_rPrj_raw {calls cs : List (Call F)} {E₀ : Ixon.Env}
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     have hsub894 : ∀ cl ∈ cs894, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     obtain ⟨-, rawList, c, -, hhash, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded hab ev14
+      Ingress.load_verified_constant_decode_bounded hab ev14
     have hc_eq_proj : c = memberProjection rb k (.recr rc) :=
       hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hprojRec)
         (Core.hashed_mono hsub12 hhash) haddr hexact
@@ -320,14 +320,14 @@ private theorem get_ci_of_rPrj_raw {calls cs : List (Call F)} {E₀ : Ixon.Env}
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_mk
     rcases hc_mk with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨p, hp_eq, hx_idx, hblk_ix⟩ := L1.repConstantInfo_rPrj_inv hinfo
+    obtain ⟨p, hp_eq, hx_idx, hblk_ix⟩ := Ingress.repConstantInfo_rPrj_inv hinfo
     have hp_val : p = ⟨k.toUInt64, rb⟩ := Ixon.ConstantInfo.rPrj.inj hp_eq.symm
     subst hp_val
     subst hx_idx
     obtain ⟨hidx56, hv898, hm907⟩ :=
       Lib.u64_to_field_spec (Deserialize.repU64_u64Value _ k.toUInt64) ev917
     subst hv898 hm907
-    obtain ⟨b_blk, hb_eq, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
+    obtain ⟨b_blk, hb_eq, hb_rep⟩ := Ingress.repIxonAddressRef_to_core_ing hblk_ix
     obtain ⟨-, -, blkBytes, cb, ms, rc', blobs, v',
         hhash_blk, haddr_blk, hexact_blk, hcb_info, hmc_get, hld', hraw⟩ :=
       get_ci_rprj_raw_uncond hb_rep ev896
@@ -391,9 +391,9 @@ theorem KExprSub.mono {h h' : Heap F} (ext : Heap.Extends h h') {p q : SourceVal
     (hs : KExprSub h p q) : KExprSub h' p q := by
   induction hs with
   | refl p => exact .refl p
-  | forallDom ld _ ih => exact .forallDom (L1.loadValue_extend ext ld) ih
-  | forallBody ld _ ih => exact .forallBody (L1.loadValue_extend ext ld) ih
-  | appFn ld _ ih => exact .appFn (L1.loadValue_extend ext ld) ih
+  | forallDom ld _ ih => exact .forallDom (Ingress.loadValue_extend ext ld) ih
+  | forallBody ld _ ih => exact .forallBody (Ingress.loadValue_extend ext ld) ih
+  | appFn ld _ ih => exact .appFn (Ingress.loadValue_extend ext ld) ih
 
 theorem KExprSub.trans {h : Heap F} {p q r : SourceValue F}
     (h1 : KExprSub h p q) (h2 : KExprSub h q r) : KExprSub h p r := by
@@ -406,9 +406,9 @@ theorem KExprSub.trans {h : Heap F} {p q r : SourceValue F}
 private theorem rawConvExpr_unshare {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F} :
-    L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
+    Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
     ∀ k, (bound ≤ k ∨ c.sharing.size ≤ k) →
-      ∃ b', L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
+      ∃ b', Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
         (Binding.FamilyOf.unshare c k e) kp ∧
         (∀ i, Binding.FamilyOf.unshare c k e ≠ .share i)
   | .share (idx := idx) (s := s) hidx hsh rs, k, hk => by
@@ -428,8 +428,8 @@ private theorem rawConvExpr_unshare {c : Ixon.Constant} {recurAddrs : List _root
 private theorem rawConvExpr_node {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp) :
-    ∃ b', L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
+    (raw : Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp) :
+    ∃ b', Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
       (Binding.FamilyOf.node c e) kp ∧
       (∀ i, Binding.FamilyOf.node c e ≠ .share i) :=
   rawConvExpr_unshare raw (c.sharing.size + 1) (Or.inr (Nat.le_succ _))
@@ -437,11 +437,11 @@ private theorem rawConvExpr_node {c : Ixon.Constant} {recurAddrs : List _root_.A
 theorem rawConvExpr_forall_inv {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp d b bi : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
+    (raw : Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
     (ld : loadValue h kp = .ok (.construct "KernelTypes::KExprNode" "Forall" [d, b, bi])) :
     ∃ b' ed eb, Binding.FamilyOf.node c e = .all ed eb ∧
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ed d ∧
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' eb b := by
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ed d ∧
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' eb b := by
   obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
   generalize he' : Binding.FamilyOf.node c e = e' at raw' hns
   cases raw' with
@@ -459,7 +459,7 @@ theorem rawConvExpr_forall_inv {c : Ixon.Constant} {recurAddrs : List _root_.Add
 private theorem rawConvExpr_not_forall_inv {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat}
     {e : Ixon.Expr} {kp v : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
+    (raw : Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
     (ld : loadValue h kp = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 3 →
       v ≠ .construct "KernelTypes::KExprNode" "Forall" vs) :
@@ -479,11 +479,11 @@ private theorem rawConvExpr_not_forall_inv {c : Ixon.Constant} {recurAddrs : Lis
 private theorem rawConvExpr_app_inv {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp f a : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
+    (raw : Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
     (ld : loadValue h kp = .ok (.construct "KernelTypes::KExprNode" "App" [f, a])) :
     ∃ b' ef ea, Binding.FamilyOf.node c e = .app ef ea ∧
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ef f ∧
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ea a := by
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ef f ∧
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ea a := by
   obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
   generalize he' : Binding.FamilyOf.node c e = e' at raw' hns
   cases raw' with
@@ -501,7 +501,7 @@ private theorem rawConvExpr_app_inv {c : Ixon.Constant} {recurAddrs : List _root
 theorem rawConvExpr_const_inv_any {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp x_c w : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
+    (raw : Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
     (ld : loadValue h kp = .ok (.construct "KernelTypes::KExprNode" "Const" [x_c, w])) :
     (∃ rIdx uIdxs a d, Binding.FamilyOf.node c e = .ref rIdx uIdxs ∧
       c.refs[rIdx.toNat]? = some a ∧ Core.ixAddr d = a ∧
@@ -529,7 +529,7 @@ theorem rawConvExpr_const_inv_any {c : Ixon.Constant} {recurAddrs : List _root_.
 
 theorem rawConvExpr_const_inv {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp x_c w : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp)
+    (raw : Ingress.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp)
     (ld : loadValue h kp = .ok (.construct "KernelTypes::KExprNode" "Const" [x_c, w])) :
     ∃ rIdx uIdxs a d, Binding.FamilyOf.node c e = .ref rIdx uIdxs ∧
       c.refs[rIdx.toNat]? = some a ∧
@@ -544,11 +544,11 @@ theorem peel_n_foralls_raw {c : Ixon.Constant} {recurAddrs : List _root_.Address
     ∀ (n : Nat) {bound : Nat} {e : Ixon.Expr} {kp r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
       n < 72057594037927936 →
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
       ObsFn Obs.W "KernelCheck::peel_n_foralls" [kp, .field (n : F)] h r h' cs →
       h' = h ∧ KExprSub h kp r ∧
         ∃ b' e', Binding.FamilyOf.peel c n e = some e' ∧
-          L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' e' r
+          Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' e' r
   | 0, bound, e, kp, r, h, h', cs, _, raw, ev => by
     match Obs.«KernelCheck::peel_n_foralls».obs ev with
     | .n0 (he16 := hr) (he17 := hh) .. =>
@@ -582,11 +582,11 @@ theorem last_binder_dom_raw_aux {c : Ixon.Constant} {recurAddrs : List _root_.Ad
     ∀ (m : Nat) {bound : Nat} {e : Ixon.Expr} {kp r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
       cs.length ≤ m →
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
       ObsFn Obs.W "KernelModeled::last_binder_dom" [kp] h r h' cs →
       h' = h ∧ KExprSub h kp r ∧
         ∃ n b' ed, Binding.FamilyOf.lastDom c n e = some ed ∧
-          L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ed r
+          Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ed r
   | 0, bound, e, kp, r, h, h', cs, hlen, raw, ev => by
     match Obs.«KernelModeled::last_binder_dom».obs ev with
     | .Forall (hc87 := hc) .. => simp [hc] at hlen
@@ -634,11 +634,11 @@ theorem collect_spine_raw_aux {c : Ixon.Constant} {recurAddrs : List _root_.Addr
     ∀ (m : Nat) {bound : Nat} {e : Ixon.Expr} {kp hd sp : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
       cs.length ≤ m →
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
       ObsFn Obs.W "KernelTypes::collect_spine" [kp] h (.tuple [hd, sp]) h' cs →
       Heap.Extends h h' ∧ KExprSub h kp hd ∧
         ∃ n b',
-          L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h' b'
+          Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h' b'
             (Binding.FamilyOf.spineHead c n e) hd ∧
           (∀ i, Binding.FamilyOf.spineHead c n e ≠ .share i)
   | _, bound, e, kp, hd, sp, h, h', cs, _, raw, ev => by
@@ -648,10 +648,10 @@ theorem collect_spine_raw_aux {c : Ixon.Constant} {recurAddrs : List _root_.Addr
         ∀ {kp hd' : SourceValue F} {ps : List (SourceValue F)},
           Core.SpineChain h kp hd' ps →
           ∀ {bound : Nat} {e : Ixon.Expr},
-            L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
+            Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
             KExprSub h kp hd' ∧
               ∃ n b',
-                L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
+                Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
                   (Binding.FamilyOf.spineHead c n e) hd' ∧
                 (∀ i, Binding.FamilyOf.spineHead c n e ≠ .share i) := by
       intro kp hd' ps sc
@@ -684,7 +684,7 @@ private theorem check_carriers_raw_head {crb : Ixon.Constant} {rc : Ixon.Recurso
     {blobs : List (_root_.Address × ByteArray)} {b₀ : Bytes.Address} {bs : List Bytes.Address}
     {x_ty x_ta r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hnp : rc.params.toNat < 72057594037927936)
-    (raw : L1.RawConvExpr crb.refs.toList [] crb.univs.toList crb.sharing.toList blobs h
+    (raw : Ingress.RawConvExpr crb.refs.toList [] crb.univs.toList crb.sharing.toList blobs h
       4294967295 rc.typ x_ty)
     (hta : RepList Core.addrListEnum (Bytes.RepAddressRef Core.addrTy) h (b₀ :: bs) x_ta)
     (ev : ObsFn Obs.W "KernelModeled::check_carriers"
@@ -721,7 +721,7 @@ private theorem check_carriers_raw_head {crb : Ixon.Constant} {rc : Ixon.Recurso
           exact absurd (Value.field.inj (heq203.symm.trans heq_c)) (by decide)
       subst hd_eq
       have ext_tail : Heap.Extends _ h' := ev209.heap_extends
-      refine ⟨⟨max n₁ n₂, ?_⟩, x_head, x_c, w145, ?_, L1.loadValue_extend ext_tail ld137,
+      refine ⟨⟨max n₁ n₂, ?_⟩, x_head, x_c, w145, ?_, Ingress.loadValue_extend ext_tail ld137,
         Bytes.repAddressRef_heapMono₂ Core.addrTy ext_tail hra_c⟩
       · unfold Binding.FamilyOf.motiveCarrierAt
         rw [Nat.add_zero, hpeel]
@@ -744,8 +744,8 @@ private theorem check_carriers_raw_head {crb : Ixon.Constant} {rc : Ixon.Recurso
 /-! ## `safe_refs_only` boolean dichotomy and subexpression descent -/
 
 private theorem repBoolField_dichot (b : Bool) :
-    L1.repBoolField b = .field 0 ∨ L1.repBoolField b = .field 1 := by
-  cases b <;> simp [L1.repBoolField]
+    Ingress.repBoolField b = .field 0 ∨ Ingress.repBoolField b = .field 1 := by
+  cases b <;> simp [Ingress.repBoolField]
 
 private theorem is_unsafe_ci_of_convert_definition_bool
     {x_d x_sh x_rf x_ra x_un x_ht x_tb x_bs ci r : SourceValue F}
@@ -791,14 +791,14 @@ private theorem is_unsafe_ci_of_bool_field {ci r : SourceValue F} {h h' : Heap F
     {cs : List (Call F)} {b : Bool}
     (ev_u : ObsFn Obs.W "KernelCheck::is_unsafe_ci" [ci] h r h' cs)
     (hci : (∃ a1 a2, ci = .construct "KernelTypes::KConstantInfo" "Axiom"
-              [a1, a2, L1.repBoolField b]) ∨
+              [a1, a2, Ingress.repBoolField b]) ∨
            (∃ a1 a2 a3, ci = .construct "KernelTypes::KConstantInfo" "Quot" [a1, a2, a3]) ∨
            (∃ a1 a2 a3 a4 a5 a6 a7, ci = .construct "KernelTypes::KConstantInfo" "Induct"
-              [a1, a2, a3, a4, a5, L1.repBoolField b, a6, a7]) ∨
+              [a1, a2, a3, a4, a5, Ingress.repBoolField b, a6, a7]) ∨
            (∃ a1 a2 a3 a4 a5 a6 a7, ci = .construct "KernelTypes::KConstantInfo" "Ctor"
-              [a1, a2, a3, a4, a5, a6, a7, L1.repBoolField b]) ∨
+              [a1, a2, a3, a4, a5, a6, a7, Ingress.repBoolField b]) ∨
            (∃ a1 a2 a3 a4 a5 a6 a7 a8 a9 a10, ci = .construct "KernelTypes::KConstantInfo" "Rec"
-              [a1, a2, a3, a4, a5, a6, a7, a8, L1.repBoolField b, a9, a10])) :
+              [a1, a2, a3, a4, a5, a6, a7, a8, Ingress.repBoolField b, a9, a10])) :
     r = .field 0 ∨ r = .field 1 := by
   rcases hci with ⟨_, _, rfl⟩ | ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, _, _, _, rfl⟩ |
       ⟨_, _, _, _, _, _, _, rfl⟩ | ⟨_, _, _, _, _, _, _, _, _, _, rfl⟩
@@ -868,12 +868,12 @@ private theorem get_ci_is_unsafe_bool {ab : Bytes.Address} {x_addr ptr ci r : So
       exact is_unsafe_ci_of_convert_definition_bool evc ev_u
   | .Axio (m438 := m) (ev14 := ev14) (he441 := he) (hm440 := hm) (ev447 := conv) .. =>
     obtain ⟨-, _, c, -, -, -, -, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded hab ev14
+      Ingress.load_verified_constant_decode_bounded hab ev14
     obtain ⟨infoVal, _, _, _, _, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨ax, -, _, hav, -⟩ := L1.repConstantInfo_axio_inv hinfo
+    obtain ⟨ax, -, _, hav, -⟩ := Ingress.repConstantInfo_axio_inv hinfo
     match Obs.«Convert::convert_axiom».obs conv with
     | .run (hv15 := hx) (he107 := hcv) .. =>
       have hu := hav.symm.trans hx
@@ -890,28 +890,28 @@ private theorem get_ci_is_unsafe_bool {ab : Bytes.Address} {x_addr ptr ci r : So
         (Or.inr (Or.inl ⟨_, _, _, (Except.ok.inj hld).symm⟩))
   | .IPrj (ev14 := ev14) (ev741 := ev741) (ev720 := ev720) .. =>
     obtain ⟨-, _, c, -, -, -, -, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded hab ev14
+      Ingress.load_verified_constant_decode_bounded hab ev14
     obtain ⟨infoVal, _, _, _, _, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨p, -, hx_idx, hblk_ix⟩ := L1.repConstantInfo_iPrj_inv hinfo
+    obtain ⟨p, -, hx_idx, hblk_ix⟩ := Ingress.repConstantInfo_iPrj_inv hinfo
     subst hx_idx
     obtain ⟨-, hv722, hm731⟩ :=
       Lib.u64_to_field_spec (Deserialize.repU64_u64Value _ p.idx) ev741
     subst hv722 hm731
-    obtain ⟨b_blk, -, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
+    obtain ⟨b_blk, -, hb_rep⟩ := Ingress.repIxonAddressRef_to_core_ing hblk_ix
     obtain ⟨_, _, ind, -, -, _, _, _, _, hld'⟩ := Claim.get_ci_iprj_head hb_rep ev720
     exact is_unsafe_ci_of_bool_field (b := ind.isUnsafe) ev_u
       (Or.inr (Or.inr (Or.inl ⟨_, _, _, _, _, _, _, Except.ok.inj (hld.symm.trans hld')⟩)))
   | .CPrj (ev14 := ev14) (ev822 := ev822) (ev842 := ev842) (ev800 := ev800) .. =>
     obtain ⟨-, _, c, -, -, -, -, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded hab ev14
+      Ingress.load_verified_constant_decode_bounded hab ev14
     obtain ⟨infoVal, _, _, _, _, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨p, -, hx_idx, hx_cidx, hblk_ix⟩ := L1.repConstantInfo_cPrj_inv hinfo
+    obtain ⟨p, -, hx_idx, hx_cidx, hblk_ix⟩ := Ingress.repConstantInfo_cPrj_inv hinfo
     subst hx_idx hx_cidx
     obtain ⟨-, hv802, hm812⟩ :=
       Lib.u64_to_field_spec (Deserialize.repU64_u64Value _ p.idx) ev822
@@ -919,36 +919,36 @@ private theorem get_ci_is_unsafe_bool {ab : Bytes.Address} {x_addr ptr ci r : So
     obtain ⟨-, hv803, hm832⟩ :=
       Lib.u64_to_field_spec (Deserialize.repU64_u64Value _ p.cidx) ev842
     subst hv803 hm832
-    obtain ⟨b_blk, -, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
+    obtain ⟨b_blk, -, hb_rep⟩ := Ingress.repIxonAddressRef_to_core_ing hblk_ix
     obtain ⟨_, _, _, -, -, -, ct, -, _, _, _, _, _, hld'⟩ := Claim.get_ci_cprj_head hb_rep ev800
     exact is_unsafe_ci_of_bool_field (b := ct.isUnsafe) ev_u
       (Or.inr (Or.inr (Or.inr (Or.inl ⟨_, _, _, _, _, _, _,
         Except.ok.inj (hld.symm.trans hld')⟩))))
   | .RPrj (ev14 := ev14) (ev917 := ev917) (ev896 := ev896) .. =>
     obtain ⟨-, _, c, -, -, -, -, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded hab ev14
+      Ingress.load_verified_constant_decode_bounded hab ev14
     obtain ⟨infoVal, _, _, _, _, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨p, -, hx_idx, hblk_ix⟩ := L1.repConstantInfo_rPrj_inv hinfo
+    obtain ⟨p, -, hx_idx, hblk_ix⟩ := Ingress.repConstantInfo_rPrj_inv hinfo
     subst hx_idx
     obtain ⟨-, hv898, hm907⟩ :=
       Lib.u64_to_field_spec (Deserialize.repU64_u64Value _ p.idx) ev917
     subst hv898 hm907
-    obtain ⟨b_blk, -, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
+    obtain ⟨b_blk, -, hb_rep⟩ := Ingress.repIxonAddressRef_to_core_ing hblk_ix
     obtain ⟨_, _, rc, -, -, _, _, _, _, _, _, _, _, hld'⟩ := Claim.get_ci_rprj_head hb_rep ev896
     exact is_unsafe_ci_of_bool_field (b := rc.isUnsafe) ev_u
       (Or.inr (Or.inr (Or.inr (Or.inr ⟨_, _, _, _, _, _, _, _, _, _,
         Except.ok.inj (hld.symm.trans hld')⟩))))
   | .Recr (m978 := m) (ev14 := ev14) (he981 := he) (hm980 := hm) (ev987 := conv) .. =>
     obtain ⟨-, _, c, -, -, -, -, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded hab ev14
+      Ingress.load_verified_constant_decode_bounded hab ev14
     obtain ⟨infoVal, _, _, _, _, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨rc, -, _, _, hrv, -⟩ := L1.repConstantInfo_recr_inv hinfo
+    obtain ⟨rc, -, _, _, hrv, -⟩ := Ingress.repConstantInfo_recr_inv hinfo
     match Obs.«Convert::convert_recursor».obs conv with
     | .run (hv15 := hx) (he237 := hcv) .. =>
       have hu := hrv.symm.trans hx
@@ -986,7 +986,7 @@ private theorem safe_refs_only_raw_sub {refs recurAddrs : List _root_.Address}
     {univs : List Ixon.Univ} {sharing : List Ixon.Expr}
     {blobs : List (_root_.Address × ByteArray)} {h₀ : Heap F} {bound : Nat}
     {e : Ixon.Expr} {kp : SourceValue F}
-    (raw : L1.RawConvExpr refs recurAddrs univs sharing blobs h₀ bound e kp) :
+    (raw : Ingress.RawConvExpr refs recurAddrs univs sharing blobs h₀ bound e kp) :
     ∀ {h h' : Heap F} {r : SourceValue F} {cs : List (Call F)},
       Heap.Extends h₀ h →
       ObsFn Obs.W "KernelCheck::safe_refs_only" [kp] h r h' cs →
@@ -1237,7 +1237,7 @@ private theorem safe_refs_only_const_ind0_safe {calls cs : List (Call F)} {E₀ 
         Ixon.Constant).wireWF := by
       have hB' : Core.ixAddr b_blk = B := hb_blk
       rw [← hB']
-      exact L1.projConstant_wireWF_iPrj (0 : Nat).toUInt64 b_blk
+      exact Ingress.projConstant_wireWF_iPrj (0 : Nat).toUInt64 b_blk
     rw [hraw, Ixon.Verify.deConstantExact_serConstant _ hwf] at hx
     injection hx with hcp
     subst hcp
@@ -1255,7 +1255,7 @@ private theorem safe_refs_only_const_ind0_safe {calls cs : List (Call F)} {E₀ 
     subst ind'
     have hv63 := Except.ok.inj (hld.symm.trans hldv)
     rw [hv63] at ev_u
-    have hy0 : y89 = L1.repBoolField ind₀.isUnsafe := by
+    have hy0 : y89 = Ingress.repBoolField ind₀.isUnsafe := by
       match Obs.«KernelCheck::is_unsafe_ci».obs ev_u with
       | .Induct (hv195 := hv) (he245 := hr) .. =>
         simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
@@ -1368,7 +1368,7 @@ private theorem build_recur_addrs_walk_hashed {ms : List Ixon.MutConst} {b : Byt
       injection he with hm_eq hrest_eq
       subst m' rest'
       obtain ⟨ext1, hk_lt, -, mc, -, hget_mc, -, -, hhash⟩ :=
-        L1.projection_addr_hashed_spec hms hb ev68
+        Ingress.projection_addr_hashed_spec hms hb ev68
       rw [val_cast_le_u56 hk] at hk_lt hget_mc hhash
       have hmc_eq : mc = m := by
         have h0 := hsuf 0 m rfl
@@ -1595,7 +1595,7 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
     have hBrec : recordOf K.E₀ B = some cb := hb_blk_ix ▸ hBrec_blk
     -- Member 0 is an inductive (`block_nparams`)
     have hind0 : ∃ ind₀, ms[0]? = some (.indc ind₀) := by
-      have hms624 := hms_rep.mono L1.repMutConst_heapMono₂ ext_501_624
+      have hms624 := hms_rep.mono Ingress.repMutConst_heapMono₂ ext_501_624
       match Obs.«KernelModeled::block_nparams».obs ev664 with
       | .run (ld12 := ld12) .. =>
         obtain ⟨m0, rest, hms_cons, hm0_rep, -⟩ := Lib.rep_cons_of_load hms624 ld12
@@ -1608,11 +1608,11 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
         | recr _ => obtain ⟨rv, hrv, -⟩ := hm0_rep; simp at hrv
     -- Type address list (`build_recur_addrs`) and hash of `iprjAddr B 0`
     have hmems652 : Core.Specs.Callees.MembersRep m652 ms.toList x_members :=
-      Route.membersRep_of_repMutConstList (hms_rep.mono L1.repMutConst_heapMono₂ ext_501_652)
+      Route.membersRep_of_repMutConstList (hms_rep.mono Ingress.repMutConst_heapMono₂ ext_501_652)
     have hb_blk652 : Bytes.RepAddressRef Core.addrTy m652 b_blk xb₀ :=
       Bytes.repAddressRef_heapMono₂ Core.addrTy
         (ext_0_453.trans (ev513.heap_extends.trans ext_501_652)) hb_blk_rep
-    obtain ⟨-, as_ty, has_ty, hmap_ty⟩ := L1.build_recur_addrs_spec hmems652 hb_blk652 ev686
+    obtain ⟨-, as_ty, has_ty, hmap_ty⟩ := Ingress.build_recur_addrs_spec hmems652 hb_blk652 ev686
     have hhash_ty := build_recur_addrs_hashed hmems652 hb_blk652 ev686
     have hhashIPrj0 : ∀ ind₀, ms[0]? = some (.indc ind₀) →
         Hashed K.calls (Ixon.serConstant
@@ -1716,7 +1716,7 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
           have hsub_fr12 : ∀ cl ∈ cs_fr12, cl ∈ K.calls :=
             fun cl hcl => hsub850 cl (by rw [hfr_c]; simp [hcl])
           obtain ⟨-, raw_l, crb_l, hsz_l, hh_l, hba_l, hde_l, -, -, -, -, -, -, -⟩ :=
-            L1.load_verified_constant_decode_bounded hb_rb784 ev_fr14
+            Ingress.load_verified_constant_decode_bounded hb_rb784 ev_fr14
           have hcrb_eq : crb_l = crb :=
             hW.runStore.record_eq ((hW.runStore.recordOf_eq_recordAt _).symm.trans
               (by change recordOf K.E₀ (Core.ixAddr b_rb) = some crb; rw [hb_rb_ix]; exact hrb.record))
@@ -1731,7 +1731,7 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
           have hsub_fr12 : ∀ cl ∈ cs_fr12, cl ∈ K.calls :=
             fun cl hcl => hsub850 cl (by rw [hfr_c]; simp [hcl])
           obtain ⟨-, raw_l, crb_l, -, hh_l, hba_l, hde_l, -, -, -, -, -, -, cRep_l⟩ :=
-            L1.load_verified_constant_decode_bounded hb_rb784 ev_fr14
+            Ingress.load_verified_constant_decode_bounded hb_rb784 ev_fr14
           have hcrb_eq : crb_l = crb :=
             hW.runStore.record_eq ((hW.runStore.recordOf_eq_recordAt _).symm.trans
               (by change recordOf K.E₀ (Core.ixAddr b_rb) = some crb; rw [hb_rb_ix]; exact hrb.record))
@@ -1765,7 +1765,7 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
         hsub_cr cl (hsub650 cl (by rw [hcs650]; simp [sub_q cl hcl]))
       exact safe_refs_only_const_ind0_safe hW.runStore hBrec hBmuts hind₀ hb_blk_ix hb_i0_eq
         (hhashIPrj0 ind₀ hind₀)
-        (L1.loadValue_extend (ext_473_596.trans ext_q) hld_head)
+        (Ingress.loadValue_extend (ext_473_596.trans ext_q) hld_head)
         (Bytes.repAddressRef_heapMono₂ Core.addrTy (ext_473_596.trans ext_q) hb0_473)
         ev_q hsub_q_all
     refine ⟨cb, crb, ms, rs,
@@ -1860,12 +1860,12 @@ theorem FamRunCtx.blockOf_of {K : FamRunCtx} {seeds : List _root_.Address}
       Ixon.Constant).wireWF := by
     obtain ⟨b1, hb1⟩ := hcar1.blockBytes
     rw [← hb1]
-    exact L1.projConstant_wireWF_iPrj (0 : Nat).toUInt64 b1
+    exact Ingress.projConstant_wireWF_iPrj (0 : Nat).toUInt64 b1
   have hwf2 : (⟨Core.Specs.Callees.memberProjInfo B' 0 (.indc ind2), #[], #[], #[], #[]⟩ :
       Ixon.Constant).wireWF := by
     obtain ⟨b2, hb2⟩ := hcar2.blockBytes
     rw [← hb2]
-    exact L1.projConstant_wireWF_iPrj (0 : Nat).toUInt64 b2
+    exact Ingress.projConstant_wireWF_iPrj (0 : Nat).toUInt64 b2
   have hde := congrArg Ixon.deConstantExact hser_eq
   rw [Ixon.Verify.deConstantExact_serConstant _ hwf1,
       Ixon.Verify.deConstantExact_serConstant _ hwf2] at hde

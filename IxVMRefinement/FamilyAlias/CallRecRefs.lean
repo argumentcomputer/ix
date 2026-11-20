@@ -29,7 +29,7 @@ set_option linter.unusedVariables false
 private theorem assert_not_block_ref_store {calls : List (Call F)} {E₀ : Ixon.Env}
     (hS : LoadedReads.RunStore calls E₀) (hH : LoadedReads.HashedRecordsStored calls E₀)
     {a : _root_.Address} {x_a r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (ha : S0.addr h x_a a)
+    (ha : BaseSeams.addr h x_a a)
     (ev : ObsFn Obs.W "KernelClaim::assert_not_block_ref" [x_a] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     Heap.Extends h h' ∧ ∃ c, recordOf E₀ a = some c ∧ ¬ IsBlock c := by
@@ -57,7 +57,7 @@ private theorem assert_used_not_block_seg_spec {calls cs : List (Call F)} {E₀ 
     (hS : LoadedReads.RunStore calls E₀) (hH : LoadedReads.HashedRecordsStored calls E₀)
     {a : _root_.Address} {i : Nat} {idxs : List Nat}
     {hit nextUsed ap rest refs used r : SourceValue F} {h h' : Heap F}
-    (ha : S0.addr h ap a)
+    (ha : BaseSeams.addr h ap a)
     (hiff : hit = .field 1 ↔ i ∈ idxs)
     (ev : Obs.«KernelModeled::assert_used_not_block».Seg_fokxpuhl hit nextUsed ap rest refs used
       (.field (i : F)) h r h' cs)
@@ -133,7 +133,7 @@ theorem family_recRefs {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Kernel.
     (hS : LoadedReads.RunStore calls E₀) (hH : LoadedReads.HashedRecordsStored calls E₀)
     (hR : FamRecRecord E₀ rb crb rs)
     {rc xrb xb wset r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hrc : Claim.RCLimRep t bAddr lim h rc) (hrb : S0.addr h xrb rb)
+    (hrc : Claim.RCLimRep t bAddr lim h rc) (hrb : BaseSeams.addr h xrb rb)
     (ev : ObsFn Obs.W "KernelModeled::family_refs_ok" [rc, xrb, xb, wset] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     ∀ x, UsedRef E₀ rb x → Claim.CoveredAt t lim x ∨ NeedOk E₀ x := by
@@ -174,7 +174,7 @@ theorem family_recRefs {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Kernel.
     rw [Array.getElem?_toList]
     exact hget
   obtain ⟨hiLt, hgetElem⟩ := List.getElem?_eq_some_iff.mp hgetL
-  have hi' : i ∈ S0.usedRefIdxs crb := by
+  have hi' : i ∈ BaseSeams.usedRefIdxs crb := by
     rw [Assembly.usedRefIdxs_eq]
     exact hi
   by_cases hcov : Claim.CoveredAt t lim x

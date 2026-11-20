@@ -1,7 +1,7 @@
 import IxVMRefinement.Decl.NativeFront
 import IxVMRefinement.Assembly.NativeBlockShape
 import IxVMRefinement.Assembly.ProjSafe
-import IxVMRefinement.L1.NativeBounds
+import IxVMRefinement.Ingress.NativeBounds
 
 /-! # Native peer facts from actual projection reads
 
@@ -17,7 +17,7 @@ open Aiur.Library
 open IxVM (F)
 
 private def canonicalRecordAt_reindex {env : Ixon.Env} {a b : _root_.Address}
-    (source : L1.CanonicalRecordAt env a) (same : b = a) : L1.CanonicalRecordAt env b where
+    (source : Ingress.CanonicalRecordAt env a) (same : b = a) : Ingress.CanonicalRecordAt env b where
   entry := source.entry
   value := source.value
   stored := (congrArg (fun address => env.consts.get? address) same).trans source.stored
@@ -26,7 +26,7 @@ private def canonicalRecordAt_reindex {env : Ixon.Env} {a b : _root_.Address}
 
 /-- A successful direct former read has the exact header of its canonical member. -/
 theorem native_former_header_exact {base : Core.Ctx} {block : Bytes.Address} {i : F}
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -36,10 +36,10 @@ theorem native_former_header_exact {base : Core.Ctx} {block : Bytes.Address} {i 
     ∃ (ty parentPtr : SourceValue F) (parent : Bytes.Address),
       loadValue h' ptr = .ok (.construct Core.kciEnum "Induct"
         [.field (ind.lvls.toNat : F), ty, .field (ind.params.toNat : F),
-          .field (ind.indices.toNat : F), .field (ind.ctors.size : F), L1.repBoolField ind.isUnsafe, parentPtr, .field i]) ∧
+          .field (ind.indices.toNat : F), .field (ind.ctors.size : F), Ingress.repBoolField ind.isUnsafe, parentPtr, .field i]) ∧
       Bytes.RepAddressRef Core.addrTy h' parent parentPtr ∧ Core.ixAddr parent = Core.ixAddr block := by
   obtain ⟨_, _, bytes, src, ms, member, _, value, hashed, address, decoded, _,
-    shape, atMember, _, valueAt, raw⟩ := L1.get_ci_iprj_spec good.2 blockRep loaded
+    shape, atMember, _, valueAt, raw⟩ := Ingress.get_ci_iprj_spec good.2 blockRep loaded
   have bytesEq := Core.load_escape source.stored good.1 bytes hashed address
   rw [bytesEq, source.decoded] at decoded
   injection decoded with sourceEq
@@ -57,7 +57,7 @@ theorem native_former_header_exact {base : Core.Ctx} {block : Bytes.Address} {i 
 
 /-- Compatibility with an existential safety field. -/
 theorem native_former_header_of_record {base : Core.Ctx} {block : Bytes.Address} {i : F}
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -71,13 +71,13 @@ theorem native_former_header_of_record {base : Core.Ctx} {block : Bytes.Address}
       Bytes.RepAddressRef Core.addrTy h' parent parentPtr ∧ Core.ixAddr parent = Core.ixAddr block := by
   obtain ⟨ty, parentPtr, parent, loadedValue, parentRep, parentEq⟩ :=
     native_former_header_exact source blockShape memberAt good blockRep loaded
-  exact ⟨ty, L1.repBoolField ind.isUnsafe, parentPtr, parent, loadedValue, parentRep, parentEq⟩
+  exact ⟨ty, Ingress.repBoolField ind.isUnsafe, parentPtr, parent, loadedValue, parentRep, parentEq⟩
 
 /-- The actual one-family block and canonical former projection supply raw peer facts at
 its real member index. Projection identities use the successful read's decoder guard. -/
 theorem native_peer_reads {raw : Core.ScopedCtx} [raw.TableKeyed] {block : Bytes.Address} {i : F}
-    (source : L1.CanonicalRecordAt raw.E (Core.ixAddr block))
-    (former : L1.CanonicalRecordAt raw.E (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
+    (source : Ingress.CanonicalRecordAt raw.E (Core.ixAddr block))
+    (former : Ingress.CanonicalRecordAt raw.E (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
     (formerShape : former.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩)
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
@@ -98,7 +98,7 @@ theorem native_peer_reads {raw : Core.ScopedCtx} [raw.TableKeyed] {block : Bytes
       change former.value.info = _
       exact formerShape
     obtain ⟨parent, blockArg, middle, inner, parentEq, _, parentRep, observed, subset, _⟩ :=
-      L1.get_ci_iPrj_subcall (base := raw.toCtx) formerAt projection addressRep good loaded
+      Ingress.get_ci_iPrj_subcall (base := raw.toCtx) formerAt projection addressRep good loaded
     have parentSame : parent = block := Decl.ixAddr_inj parentEq
     subst parent
     have index64 : ZMod.val i < UInt64.size :=
@@ -116,7 +116,7 @@ theorem native_peer_reads {raw : Core.ScopedCtx} [raw.TableKeyed] {block : Bytes
     obtain ⟨bytes, blockBytes, cm, cb, xs, actual, parent', actualIndex, hashed, address,
       decoded, _, blockHashed, blockAddress, blockDecoded, _, parentRep', _, _,
       projection, blockInfo, atMember, tables⟩ :=
-      L1.inductRecord_raw_tables_of_get_ci loaded good.2 addressRep payload
+      Ingress.inductRecord_raw_tables_of_get_ci loaded good.2 addressRep payload
     have parentSame : parent' = parent :=
       Bytes.repAddressRef_inj U32.Goldilocks.compatible parentRep' parentRep
     subst parent'
@@ -135,7 +135,7 @@ theorem native_peer_reads {raw : Core.ScopedCtx} [raw.TableKeyed] {block : Bytes
     have sameEntry : (ZMod.val actualIndex, actual) = (ZMod.val i, ind) := by simpa using present
     have sameIndex := congrArg Prod.fst sameEntry
     have tableFields := tables
-    rw [L1.ConstantTablesValid, projection] at tableFields
+    rw [Ingress.ConstantTablesValid, projection] at tableFields
     have empty : Ix.Kernel.Reader.emptyTables cm = true := by
       simp [Ix.Kernel.Reader.emptyTables, tableFields.1, tableFields.2.1,
         tableFields.2.2.1, tableFields.2.2.2]

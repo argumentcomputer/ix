@@ -1,4 +1,4 @@
-import IxVMRefinement.Assembly.L7
+import IxVMRefinement.Assembly.ClaimedModelAssembly
 import IxVMRefinement.Decl.PrefixInv
 import IxVMRefinement.StatementRel.ReadsMono
 import Ix.IxVM.Consistency.TableValid

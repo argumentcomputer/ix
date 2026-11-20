@@ -1,4 +1,4 @@
-import IxVMRefinement.L1.TraceRecords
+import IxVMRefinement.Ingress.TraceRecords
 import IxVMRefinement.Assembly.NativeCtorReads
 import IxVMRefinement.Assembly.NativePeerInputs
 import IxVMRefinement.Decl.NativeCtorScoped
@@ -23,8 +23,8 @@ record and peer packages are constructed here; the base semantic facts and scope
 loads remain explicit. -/
 theorem native_ctor_scoped_of_records (hLevels : IxVM.Consistency.Levels)
     {base : Core.Ctx} {block : Bytes.Address} {i : F} {T : KKey}
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
-    (former : L1.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
+    (former : Ingress.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
     (formerShape : former.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩)
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
@@ -53,7 +53,7 @@ theorem native_ctor_scoped_of_records (hLevels : IxVM.Consistency.Levels)
     {rc pta bp pind result : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (subset : ∀ call ∈ calls, call ∈ rootCalls)
     (good : Core.Good base calls)
-    (known : L1.CanonicalQueryCoverage base.E calls)
+    (known : Ingress.CanonicalQueryCoverage base.E calls)
     (roleContext : Core.RCRep base.t base.lim h rc)
     (formerRep : Core.Tm base.κ 0 (fun _ => default) h 0 ta pta)
     (blockRep : Bytes.RepAddressRef Core.addrTy h block bp)
@@ -71,14 +71,14 @@ theorem native_ctor_scoped_of_records (hLevels : IxVM.Consistency.Levels)
           Decl.NativeCtorOut base.env T (List.range ind.lvls.toNat) ind.params.toNat
             ind.indices.toNat resSort ta (rawTypes.getD slot default) ctor annotated sorts := by
   subst T
-  obtain ⟨queries, rawFacts, covered⟩ := L1.rawRecordFacts_of_trace (base := base) observed known
-  let raw := L1.rawQueryCtx base queries
+  obtain ⟨queries, rawFacts, covered⟩ := Ingress.rawRecordFacts_of_trace (base := base) observed known
+  let raw := Ingress.rawQueryCtx base queries
   have rawKeyed : raw.TableKeyed := ⟨rfl⟩
   have peer := native_peer_reads (raw := raw) source former formerShape blockShape memberAt one tableWf
   have peer' : Decl.OneTypePeerReads raw block
       (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
       (List.range ind.lvls.toNat).length ind.params.toNat ind.indices.toNat ctors.length i := by
-    simpa only [List.length_range, countEq, raw, L1.rawQueryCtx, Core.ScopedCtx.κ, Core.Ctx.κ] using peer
+    simpa only [List.length_range, countEq, raw, Ingress.rawQueryCtx, Core.ScopedCtx.κ, Core.Ctx.κ] using peer
   exact Decl.native_ctor_scoped hLevels (cR := raw) (indIndex := i)
     (by simp) (by simpa only [List.length_range] using levelsBound)
     paramsBound indicesBound countBound fieldsBound sortEq family levels varsBounded noFvars
@@ -90,8 +90,8 @@ theorem native_ctor_scoped_of_records (hLevels : IxVM.Consistency.Levels)
 scoped constructor proof. -/
 theorem native_ctor_scoped_of_observed_bounds (hLevels : IxVM.Consistency.Levels)
     {base : Core.Ctx} {block : Bytes.Address} {i : F} {T : KKey}
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
-    (former : L1.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
+    (former : Ingress.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
     (formerShape : former.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩)
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
@@ -121,7 +121,7 @@ theorem native_ctor_scoped_of_observed_bounds (hLevels : IxVM.Consistency.Levels
     {rc pta bp pind result : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (subset : ∀ call ∈ calls, call ∈ rootCalls)
     (good : Core.Good base calls)
-    (known : L1.CanonicalQueryCoverage base.E calls)
+    (known : Ingress.CanonicalQueryCoverage base.E calls)
     (roleContext : Core.RCRep base.t base.lim h rc)
     (formerRep : Core.Tm base.κ 0 (fun _ => default) h 0 ta pta)
     (blockRep : Bytes.RepAddressRef Core.addrTy h block bp)
@@ -139,7 +139,7 @@ theorem native_ctor_scoped_of_observed_bounds (hLevels : IxVM.Consistency.Levels
           Decl.NativeCtorOut base.env T (List.range ind.lvls.toNat) ind.params.toNat
             ind.indices.toNat resSort ta (rawTypes.getD slot default) ctor annotated sorts := by
   obtain ⟨levelsBound, paramsBound, indicesBound, sourceCountBound⟩ :=
-    L1.get_ci_iprj_header_bounds (base := base) source blockShape
+    Ingress.get_ci_iprj_header_bounds (base := base) source blockShape
       (by simpa only [Array.getElem?_toList] using memberAt) formerGood formerBlockRep formerLoad
   have countBound : ctors.length < 549755813888 := by
     rw [countEq]
@@ -155,8 +155,8 @@ theorem native_ctor_scoped_of_observed_bounds (hLevels : IxVM.Consistency.Levels
 constructor pass. Canonical hash coverage is supplied by the actual claim-phase witness. -/
 theorem native_ctor_scoped_of_root (hLevels : IxVM.Consistency.Levels)
     {base : Core.Ctx} {block : Bytes.Address} {i : F} {T : KKey}
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
-    (former : L1.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
+    (former : Ingress.CanonicalRecordAt base.E (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
     (formerShape : former.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩)
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
@@ -168,7 +168,7 @@ theorem native_ctor_scoped_of_root (hLevels : IxVM.Consistency.Levels)
     {rootBefore rootAfter : Heap F} {rootResult : SourceValue F}
     (rootObserved : ObsFn Core.W rootName rootArgs rootBefore rootResult rootAfter rootCalls)
     (rootGood : Core.Good base rootCalls)
-    (rootCoverage : L1.CanonicalHashCoverage base.E rootCalls)
+    (rootCoverage : Ingress.CanonicalHashCoverage base.E rootCalls)
     {rawTypes : List KExpr} {ta : KExpr} {resSort indLevel : KLevel}
     (family : Decl.CtorLoadAtIndex base.t block ind.params.toNat i rootCalls ctors ctorsA rawTypes)
     (countEq : ctors.length = ind.ctors.size)
@@ -207,22 +207,22 @@ theorem native_ctor_scoped_of_root (hLevels : IxVM.Consistency.Levels)
             ind.indices.toNat resSort ta (rawTypes.getD slot default) ctor annotated sorts := by
   subst T
   obtain ⟨levelsBound, paramsBound, indicesBound, sourceCountBound⟩ :=
-    L1.get_ci_iprj_header_bounds (base := base) source blockShape
+    Ingress.get_ci_iprj_header_bounds (base := base) source blockShape
       (by simpa only [Array.getElem?_toList] using memberAt)
       (rootGood.sub formerSubset) formerBlockRep formerLoad
   have countBound : ctors.length < 549755813888 := by
     rw [countEq]
     exact sourceCountBound
   have fieldsBound := native_ctor_field_bounds (base := base) family countBound blockRep subset observed
-  let raw := L1.traceRecordCtx base rootCalls
+  let raw := Ingress.traceRecordCtx base rootCalls
   have rawKeyed : raw.TableKeyed := ⟨rfl⟩
-  have rawFacts := L1.rawRecordFacts_of_hashed_trace rootObserved rootGood rootCoverage
-  have covered := L1.traceRecordCtx_coverage base subset
+  have rawFacts := Ingress.rawRecordFacts_of_hashed_trace rootObserved rootGood rootCoverage
+  have covered := Ingress.traceRecordCtx_coverage base subset
   have peer := native_peer_reads (raw := raw) source former formerShape blockShape memberAt one envFacts.tableWf
   have peer' : Decl.OneTypePeerReads raw block
       (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
       (List.range ind.lvls.toNat).length ind.params.toNat ind.indices.toNat ctors.length i := by
-    simpa only [List.length_range, countEq, raw, L1.traceRecordCtx, Core.ScopedCtx.κ, Core.Ctx.κ] using peer
+    simpa only [List.length_range, countEq, raw, Ingress.traceRecordCtx, Core.ScopedCtx.κ, Core.Ctx.κ] using peer
   exact Decl.native_ctor_scoped hLevels (cR := raw) (indIndex := i)
     (by simp) (by simpa only [List.length_range] using levelsBound)
     paramsBound indicesBound countBound fieldsBound sortEq family levels varsBounded noFvars

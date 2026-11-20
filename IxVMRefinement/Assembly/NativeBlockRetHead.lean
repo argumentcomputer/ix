@@ -175,7 +175,7 @@ structure BlockRawRetHead (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.A
     cty.looseBVarsBounded 0 = true ∧
     cty.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
     canonRawAnn cb (List.range ct.lvls.toNat)
-      (((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val (0 : F)) :
+      (((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val (0 : F)) :
         Nat) : F) + 1 + ((j : Nat) : F)) ct.typ cty = some R' ∧
     (Core.posOf (List.range ct.lvls.toNat) R').stripPis (ind.params.toNat + ct.fields.toNat) =
       some (rcbs, Ix.Kernel.Expr.mkAppN
@@ -278,7 +278,7 @@ theorem blockRawRetHead_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTab
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
-    (hcov : L1.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env) :
+    (hcov : Ingress.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env) :
     BlockRawRetHead t E B ind cb := by
   obtain ⟨ty₀, ty', cvS, bsT, ctorsA, rawTypes, hty, hlbb, hdef, hcT, hcvT, hcvS, hnP₀, hnIdx₀,
     hlenP, hper, hT, hstT, hname, hlenA, hout, hun, hc56, hrawL, -⟩ :=
@@ -338,7 +338,7 @@ whose address is `ip.block`, at `idx = ip.idx`, `nP` the family's parameter coun
 `ctors_info` whose entries carry the member's field counts, in calls that hash no collision with
 the store and are bounded. -/
 theorem FamRetHead.ctorRetHeadAt_of_record {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
-    {fam : NativeFam .anon} (ht : t.check = .ok ()) (hdec : L1.EnvDecoded E)
+    {fam : NativeFam .anon} (ht : t.check = .ok ()) (hdec : Ingress.EnvDecoded E)
     (hF : FamRetHead t E fam)
     {P : _root_.Address} {cm : Ixon.Constant} {ip : Ixon.InductiveProj} {cb : Ixon.Constant}
     {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}

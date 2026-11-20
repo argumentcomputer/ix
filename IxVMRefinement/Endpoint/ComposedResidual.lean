@@ -48,8 +48,8 @@ the run routes as modeled is stepped together
 with its family record, a second family record of a block (a twin) is a unit of its own, the
 records a family check checks are units, and every other top-walked unit has a plain step. Its
 premise is `FamilySteps`: the graph and those four kinds of step at every walk and witness. The
-circuit statement follows through `L0`, once for each derivation (`circuitSound_of_bounded`,
-`l0`). `L` is the link between a registered family's stored former and its telescope constant;
+circuit statement follows through `CircuitToSource`, once for each derivation (`circuitSound_of_bounded`,
+`circuitToSource`). `L` is the link between a registered family's stored former and its telescope constant;
 a typing step keeps the part of the clause beside the prefix invariant (`FoldExtra L`), and the
 family block's and the twin's steps keep the family recursors' model companions beside it
 (`TwinFamily.FamilyRecsModeled`). `circuitComposed_of_partsFam` is the composition for any link;
@@ -59,7 +59,7 @@ without its family form, `binding_skeleton_over`.)
 
 Proved inside, with no hypothesis left:
 
-* the circuit-to-source step (`l0`), at both derivations;
+* the circuit-to-source step (`circuitToSource`), at both derivations;
 * the typing claim's export, the walk's limit and the assembly's reading of the walk
   (`Claim.claimPhase_typing`, `TopWalkCore.topLim`, `Claim.TopWalk.graph`);
 * the typing half's premise from its parts (`familySteps_of_graphInner`), and in it the step of every
@@ -226,10 +226,10 @@ theorem circuitComposed_of_parts
         BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerTeleOther t E₀ B cb ind) :
     CircuitComposed.{u} := by
   unfold CircuitComposed
-  refine circuitSound_of_bounded l0 ?_
+  refine circuitSound_of_bounded circuitToSource ?_
   intro dB valueB heapB callsB evB hbB
   show CircuitSound fun callsA dA => ComposedSpec.{u} callsA callsB dA dB
-  refine circuitSound_of_bounded l0 ?_
+  refine circuitSound_of_bounded circuitToSource ?_
   intro dA valueA heapA callsA evA hbA
   show ComposedSpec.{u} callsA callsB dA dB
   exact composed_skeleton_over_family (bindingClaimExport dB valueB heapB callsB evB hbB)
@@ -303,10 +303,10 @@ theorem circuitComposed_of_partsFam
         BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerTeleOther t E₀ B cb ind) :
     CircuitComposed.{u} := by
   unfold CircuitComposed
-  refine circuitSound_of_bounded l0 ?_
+  refine circuitSound_of_bounded circuitToSource ?_
   intro dB valueB heapB callsB evB hbB
   show CircuitSound fun callsA dA => ComposedSpec.{u} callsA callsB dA dB
-  refine circuitSound_of_bounded l0 ?_
+  refine circuitSound_of_bounded circuitToSource ?_
   intro dA valueA heapA callsA evA hbA
   show ComposedSpec.{u} callsA callsB dA dB
   exact composed_skeleton_over_familyW (bindingClaimExport dB valueB heapB callsB evB hbB)

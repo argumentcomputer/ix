@@ -1,7 +1,7 @@
 import Ix.Cert.RoleClosure
 import IxC.Kernel.Ixon.RoleTableInj
 import IxVMRefinement.Claim.HexDecode
-import IxVMRefinement.L1.Hashed
+import IxVMRefinement.Ingress.Hashed
 
 /-! # Kernel proof of `Ix.Cert.RoleClosure.DefaultAdmits`
 
@@ -41,7 +41,7 @@ private def defaultAddrVec : Vector UInt8 32 :=
 private def defaultAddrBytes : List UInt8 :=
   [0xc6, 0x0d, 0xd3, 0x12, 0x6e, 0x86, 0xfe, 0x6d, 0x52, 0x21, 0xf5, 0x14, 0xa2, 0x29, 0x56, 0x9a, 0x30, 0xd1, 0xc1, 0x07, 0x5f, 0x88, 0xf3, 0xb2, 0x32, 0x43, 0xdf, 0x82, 0xda, 0x81, 0x94, 0xb7]
 
-private def defaultAddr : _root_.Address := L1.ixAddr defaultAddrVec
+private def defaultAddr : _root_.Address := Ingress.ixAddr defaultAddrVec
 
 private def defaultRoleTable : Ix.Kernel.RoleTable :=
   { version := 4
@@ -1399,8 +1399,8 @@ private theorem admissionHash_of_five_chunks
     (hc4 : CV8.ofCV cv4 = cv4N)
     (htree : treeRootCV5 cv0N cv1N cv2N cv3N cv4N = rootN)
     (hbytes : Blake3.Pure.cvBytes rootN.toCV = addrVec) :
-    Address.admissionHash t.toBytes = L1.ixAddr addrVec := by
-  rw [Address.admissionHash_eq, Ix.Kernel.RoleTable.toBytes, L1.blake3Pure_eq,
+    Address.admissionHash t.toBytes = Ingress.ixAddr addrVec := by
+  rw [Address.admissionHash_eq, Ix.Kernel.RoleTable.toBytes, Ingress.blake3Pure_eq,
       henc, Blake3.Pure.digest_eq_mergeLevels, hchunks, mergeLevels_five,
       hcv0, hcv1, hcv2, hcv3, hcv4]
   have hroot :
@@ -1410,7 +1410,7 @@ private theorem admissionHash_of_five_chunks
           (Blake3.Pure.parentOutput cv2 cv3).chainingValue).chainingValue
         cv4).rootHash = addrVec := by
     rw [← treeRootCV5_eq, hc0, hc1, hc2, hc3, hc4, htree, hbytes]
-  exact congrArg L1.ixAddr hroot
+  exact congrArg Ingress.ixAddr hroot
 
 private theorem defaultRoleTable_hash :
     Address.admissionHash defaultRoleTable.toBytes = defaultAddr :=

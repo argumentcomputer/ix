@@ -404,7 +404,7 @@ theorem storedTwinReads_of_walk {K : FamRunCtx} {seeds : List _root_.Address}
     rw [hcheck]
     rfl
   have hroles : (K.t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup hcheck).1
-  have hdecE : L1.EnvDecoded E := hctx.recordsFor.1
+  have hdecE : Ingress.EnvDecoded E := hctx.recordsFor.1
   have hrunE : ∀ a c, recordOf K.E₀ a = some c → recordOf E a = some c := fun a c h =>
     (recordOf_eq_recordAt_of_decoded hdecE a).trans (hctx.runRecord a c h)
   have hEb : RecordsFor StoreInhabit.basisStore E := recordsFor_basisStore hctx.recordsFor
@@ -426,14 +426,14 @@ theorem storedTwinReads_of_walk {K : FamRunCtx} {seeds : List _root_.Address}
       exact h
     have hm0 : Claim.MemberCheckedLimAt K.calls K.bAddr K.t B ms 0 K.lim :=
       Claim.membersChecked_of_block hW.runStore hcb hms hchk 0 hpos
-    have hcanon₀ : L1.CanonicalHashCoverage K.E₀ K.calls := by
+    have hcanon₀ : Ingress.CanonicalHashCoverage K.E₀ K.calls := by
       intro bytes value hashed size exactRead
       obtain ⟨entry, stored, bytesEq, cached⟩ := hW.hashedStored bytes value hashed size
-        (L1.deConstant_of_deConstantExact exactRead) exactRead
+        (Ingress.deConstant_of_deConstantExact exactRead) exactRead
       refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
       rw [bytesEq]
       exact exactRead
-    have hcanon : L1.CanonicalHashCoverage E K.calls :=
+    have hcanon : Ingress.CanonicalHashCoverage E K.calls :=
       Assembly.canonicalHashCoverage_frame hcanon₀ hdecE
         (fun a v h => hctx.runRecord a v ((hW.runStore.recordOf_eq_recordAt a).trans h))
     have hRE : Route.blockRoute E B = some true :=
@@ -633,10 +633,10 @@ theorem circuitComposed_of_partsFamInnerW
         BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerTeleOther t E₀ B cb ind) :
     CircuitComposed.{u} := by
   unfold CircuitComposed
-  refine circuitSound_of_bounded l0 ?_
+  refine circuitSound_of_bounded circuitToSource ?_
   intro dB valueB heapB callsB evB hbB
   show CircuitSound fun callsA dA => ComposedSpec.{u} callsA callsB dA dB
-  refine circuitSound_of_bounded l0 ?_
+  refine circuitSound_of_bounded circuitToSource ?_
   intro dA valueA heapA callsA evA hbA
   show ComposedSpec.{u} callsA callsB dA dB
   exact composed_skeleton_over_familyWFam (bindingClaimExport dB valueB heapB callsB evB hbB)
@@ -764,10 +764,10 @@ theorem circuitComposed_of_partsFamInnerWT
         BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerTeleOther t E₀ B cb ind) :
     CircuitComposed.{u} := by
   unfold CircuitComposed
-  refine circuitSound_of_bounded l0 ?_
+  refine circuitSound_of_bounded circuitToSource ?_
   intro dB valueB heapB callsB evB hbB
   show CircuitSound fun callsA dA => ComposedSpec.{u} callsA callsB dA dB
-  refine circuitSound_of_bounded l0 ?_
+  refine circuitSound_of_bounded circuitToSource ?_
   intro dA valueA heapA callsA evA hbA
   show ComposedSpec.{u} callsA callsB dA dB
   exact composed_skeleton_over_familyWFam (bindingClaimExport dB valueB heapB callsB evB hbB)

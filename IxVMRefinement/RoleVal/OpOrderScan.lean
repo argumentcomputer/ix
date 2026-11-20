@@ -100,7 +100,7 @@ def ScanEntry (calls : List (Call F)) (Ok : _root_.Address → Prop)
     rawBytes.size < 4294967296 ∧ Hashed calls rawBytes ∧ Address.blake3Pure rawBytes = x ∧
     Ixon.deConstant rawBytes = .ok c ∧ Ixon.deConstantExact rawBytes = .ok c ∧
     (Ok (Ix.Cert.ownerOf x c) ∨ Ix.Cert.ownerOf x c ∈ within) ∧
-    ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ S0.usedRefIdxs c →
+    ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ BaseSeams.usedRefIdxs c →
       Ok c.refs.toList[j] ∨ c.refs.toList[j] ∈ within
 
 /-- **The entered records are closed.** -/
@@ -148,7 +148,7 @@ call. -/
 def ScanSeam (x_tbl x_lim x_needs : SourceValue F) (h₀ : Heap F)
     (Ok : _root_.Address → Prop) : Prop :=
   ∀ (a : _root_.Address) (x_a r : SourceValue F) (h h' : Heap F) (calls : List (Call F)),
-    Heap.Extends h₀ h → S0.addr h x_a a →
+    Heap.Extends h₀ h → BaseSeams.addr h x_a a →
     ObsFn W "KernelRoles::op_order_scan" [x_tbl, x_lim, x_needs, x_a] h r h' calls →
     Ok a ∨ ∃ (r' : SourceValue F) (h₁ h₂ : Heap F) (cs : List (Call F)),
       Heap.Extends h h₁ ∧
@@ -171,7 +171,7 @@ private theorem scan_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : Heap
     {Ok : _root_.Address → Prop} (seam : ScanSeam x_tbl x_lim x_needs h₀ Ok) :
     ∀ (fuel : Nat),
       (∀ {a : _root_.Address} {x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
-         calls.length ≤ fuel → Heap.Extends h₀ h → S0.addr h x_a a →
+         calls.length ≤ fuel → Heap.Extends h₀ h → BaseSeams.addr h x_a a →
          ObsFn W "KernelRoles::op_order_scan_refs" [x_tbl, x_lim, x_needs, x_a] h r h' calls →
          ∃ entered : List _root_.Address, a ∈ entered ∧ ScanClosed calls Ok entered) ∧
       (∀ {i : Nat} {refs : List _root_.Address} {idxs : List Nat}
@@ -190,7 +190,7 @@ private theorem scan_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : Heap
   | ind fuel ih =>
     -- one address: the seam, then the scan of its record's references
     have scanAt : ∀ {b : _root_.Address} {x_b r : SourceValue F} {h h' : Heap F}
-        {cs : List (Call F)}, cs.length < fuel → Heap.Extends h₀ h → S0.addr h x_b b →
+        {cs : List (Call F)}, cs.length < fuel → Heap.Extends h₀ h → BaseSeams.addr h x_b b →
         ObsFn W "KernelRoles::op_order_scan" [x_tbl, x_lim, x_needs, x_b] h r h' cs →
         ∃ entered : List _root_.Address, ScanClosed cs Ok entered ∧ (Ok b ∨ b ∈ entered) := by
       intro b x_b r h h' cs hlt hbase hb evs
@@ -198,7 +198,7 @@ private theorem scan_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : Heap
       · exact ⟨[], scanClosed_nil cs Ok, Or.inl hok⟩
       · obtain ⟨entered, hmem, hcl⟩ :=
           (ih cs'.length (by omega)).1 (Nat.le_refl _) (hbase.trans hext)
-            (S0.addr_mono hext hb) evr
+            (BaseSeams.addr_mono hext hb) evr
         exact ⟨entered, hcl.mono hsub, Or.inr hmem⟩
     refine ⟨?_, ?_⟩
     · intro a x_a r h h' calls hfuel hbase ha ev
@@ -448,7 +448,7 @@ records holding the record. -/
 theorem op_order_scan_refs_spec {x_tbl x_lim x_needs : SourceValue F} {h₀ : Heap F}
     {Ok : _root_.Address → Prop} (seam : ScanSeam x_tbl x_lim x_needs h₀ Ok)
     {a : _root_.Address} {x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (hbase : Heap.Extends h₀ h) (ha : S0.addr h x_a a)
+    (hbase : Heap.Extends h₀ h) (ha : BaseSeams.addr h x_a a)
     (ev : ObsFn W "KernelRoles::op_order_scan_refs" [x_tbl, x_lim, x_needs, x_a] h r h' calls) :
     ∃ entered : List _root_.Address, a ∈ entered ∧ ScanClosed calls Ok entered :=
   (scan_fuel_aux seam calls.length).1 (Nat.le_refl _) hbase ha ev

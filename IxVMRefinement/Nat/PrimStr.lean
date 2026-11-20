@@ -1,7 +1,7 @@
 import IxVMRefinement.Nat.Basic
 import IxVMRefinement.Nat.Utf8
 import IxVMRefinement.Core.Steps.Whnf
-import IxVMRefinement.L1.Prim
+import IxVMRefinement.Ingress.Prim
 
 /-! # `KernelNatPrim`: constructions, the `u32` split, and the string-literal expansion
 
@@ -365,9 +365,9 @@ theorem klimbs_from_g_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' :
   obtain ⟨m1, cs1, v_u32, m2, cs2, x_b0, x_b1, x_b2, x_b3, cs272, m277, m360,
     ev_ff, ev_tb, hm285, hm368, ev274, hc372⟩ := Obs.«KernelNatPrim::klimbs_from_g».obs ev
   subst hc372
-  obtain ⟨c0, c1, c2, c3, rfl, rfl, hval, hlt⟩ := L1.u32_fromField ev_ff
-  obtain ⟨hbytes, rfl⟩ := L1.u32_toBytes ev_tb
-  simp only [L1.w4, L1.bv, Value.tuple.injEq, List.cons.injEq, and_true] at hbytes
+  obtain ⟨c0, c1, c2, c3, rfl, rfl, hval, hlt⟩ := Ingress.u32_fromField ev_ff
+  obtain ⟨hbytes, rfl⟩ := Ingress.u32_toBytes ev_tb
+  simp only [Ingress.w4, Ingress.bv, Value.tuple.injEq, List.cons.injEq, and_true] at hbytes
   obtain ⟨rfl, rfl, rfl, rfl⟩ := hbytes
   have hpack : ZMod.val x =
       c0.toNat + 256 * (c1.toNat + 256 * (c2.toNat + 256 * c3.toNat)) := by

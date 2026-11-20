@@ -148,19 +148,19 @@ theorem loadParentsHeld_of_runStore {calls : List (Call F)} {E₀ : Ixon.Env}
   obtain ⟨info, sharing, refs, univs, binders, middle, cs', observed, subset, parents⟩ :=
     get_ci_parent_load load
   obtain ⟨-, bytes, c', -, hashed, address, exact, -, -, -, -, -, -, rep⟩ :=
-    L1.load_verified_constant_decode_bounded addressRep observed
+    Ingress.load_verified_constant_decode_bounded addressRep observed
   have same : c = c' := (hS.record_eq stored
     (Core.hashed_mono (fun cl member => hsub cl (subset cl member)) hashed) address exact).symm
   subst same
   obtain ⟨infoVal, sh, rf, un, bd, fields, infoRep, -, -, -, -⟩ := rep
   simp only [Value.construct.injEq, List.cons.injEq, and_true] at fields
   obtain ⟨_, _, rfl, rfl, rfl, rfl, rfl⟩ := fields
-  have finish : ∀ blockArg, L1.RepIxonAddressRef middle B blockArg →
+  have finish : ∀ blockArg, Ingress.RepIxonAddressRef middle B blockArg →
       ParentLoad cs middle blockArg → (E₀.consts.get? B).isSome := by
     intro blockArg ⟨parent, parentAddress, represented⟩
       ⟨value, mid, after, children, ext, verified, childSub⟩
     obtain ⟨-, bytes', cb, size, hashed', address', exact', decoded', -⟩ :=
-      L1.load_verified_constant_decode_bounded
+      Ingress.load_verified_constant_decode_bounded
         (Bytes.repAddressRef_heapMono₂ _ ext represented) verified
     obtain ⟨lc, storedBlock, -, -⟩ := hcov ⟨bytes'.toArray⟩ cb
       (Core.hashed_mono (fun cl member => hsub cl (childSub cl member)) hashed')

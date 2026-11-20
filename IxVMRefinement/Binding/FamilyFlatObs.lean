@@ -884,7 +884,7 @@ theorem load_verified_muts_of_record {rootCalls cs : List (Call F)} {E₀ : Ixon
         [.construct "Ixon::ConstantInfo" "Muts" [x_members], w1, w2, w3, w4] ∧
       Core.Specs.Callees.MembersRep h' ms.toList x_members := by
   obtain ⟨-, bytes, c, hh, ha, hex, -, -, -, -, -, -, rep⟩ :=
-    L1.load_verified_constant_decode rba ev
+    Ingress.load_verified_constant_decode rba ev
   have hcEq := record_eq_of_hashed_flat hS hsub hcbE hh ha hex
   subst hcEq
   obtain ⟨iv, sh, rf, un, bd, rfl, hinfo⟩ := rep.toConstShapeRep
@@ -1301,12 +1301,12 @@ private theorem flat_originals_walk_spec {rootCalls : List (Call F)} {t : Ix.Ker
       | recr _ => obtain ⟨_, hshape⟩ := hm'; simp [Core.Specs.Callees.mutCtor] at hshape
       | indc ind =>
         obtain ⟨ext1, hpos56, -, mc, ma, hmc, rma, hma, hh_proj⟩ :=
-          L1.projection_addr_hashed_spec hall rba evpa
+          Ingress.projection_addr_hashed_spec hall rba evpa
         have hpos_val : ((pos : F)).val = pos := by
           have hsz : pos < ms.size := (Array.getElem?_eq_some_iff.mp hm_at).1
           have hbd2 : Bounded cs2 := RomBound.bounded_mono hbd (fun c hc' => hsub c (by rw [hc]; simp [hc']))
           obtain ⟨-, -, blkBytes, cb', _, _, _, _, hhB, haB, hexB, -, -, -, -, -, -⟩ :=
-            L1.get_ci_iprj_spec hbd2 (Bytes.repAddressRef_heapMono₂ addrTy ext1 rba) eviprj
+            Ingress.get_ci_iprj_spec hbd2 (Bytes.repAddressRef_heapMono₂ addrTy ext1 rba) eviprj
           have hcb_eq : cb' = cb :=
             record_eq_of_hashed_flat hS (fun c hc' => hsub c (by rw [hc]; simp [hc']))
               hcbE hhB haB hexB
@@ -1328,7 +1328,7 @@ private theorem flat_originals_walk_spec {rootCalls : List (Call F)} {t : Ix.Ker
         have hbd2 : Bounded cs2 := RomBound.bounded_mono hbd (fun c hc' => hsub c (by rw [hc]; simp [hc']))
         obtain ⟨ext2, -, blkBytes, cb', ms', ind', blobs, vci', hhB, haB, hexB, -, hcb', hms',
           -, hld', hrawI⟩ :=
-          L1.get_ci_iprj_spec hbd2 (Bytes.repAddressRef_heapMono₂ addrTy ext1 rba) eviprj
+          Ingress.get_ci_iprj_spec hbd2 (Bytes.repAddressRef_heapMono₂ addrTy ext1 rba) eviprj
         rw [hpos_val] at hms' hrawI
         rw [hld'] at ldci; injection ldci with hv; subst hv
         have hcb_eq : cb' = cb :=
@@ -1370,7 +1370,7 @@ private theorem flat_originals_walk_spec {rootCalls : List (Call F)} {t : Ix.Ker
         have hprojR := (hcl.2 (ixAddr ba) cb ms hcbR hmuts pos (.indc ind) hm_at).1
         have hprojE : recordOf E₀ (memberAddr (ixAddr ba) pos (.indc ind)) =
             some (memberProjection (ixAddr ba) pos (.indc ind)) := by
-          have hwf_p := L1.projConstant_wireWF_iPrj pos.toUInt64 ba
+          have hwf_p := Ingress.projConstant_wireWF_iPrj pos.toUInt64 ba
           have hex_p := Ixon.Verify.deConstantExact_serConstant _ hwf_p
           have hsz_p := serConstant_iprj_size_lt pos.toUInt64 ba
           have hh_p : Hashed rootCalls (Ixon.serConstant (memberProjection (ixAddr ba) pos (.indc ind))) :=
@@ -2890,7 +2890,7 @@ theorem is_muts_block_spec {rootCalls : List (Call F)} {E₀ : Ixon.Env}
   | .Muts (cs12 := cs1) (ev14 := evld) (he90 := hr0) (hc92 := hc) .. =>
     cases hr0
     obtain ⟨-, bytes, c, hh, ha, hex, -, -, -, -, -, -, rep⟩ :=
-      L1.load_verified_constant_decode rba evld
+      Ingress.load_verified_constant_decode rba evld
     have hcEq := record_eq_of_hashed_flat hS (fun c' hc' => hsub c' (by rw [hc]; simp [hc']))
       hcbE hh ha hex
     subst hcEq
@@ -2906,7 +2906,7 @@ theorem is_muts_block_spec {rootCalls : List (Call F)} {E₀ : Ixon.Env}
   | .other (cs12 := cs1) (ev14 := evld) (hne93 := hne) (he97 := hr0) (hc99 := hc) .. =>
     cases hr0
     obtain ⟨-, bytes, c, hh, ha, hex, -, -, -, -, -, -, rep⟩ :=
-      L1.load_verified_constant_decode rba evld
+      Ingress.load_verified_constant_decode rba evld
     have hcEq := record_eq_of_hashed_flat hS (fun c' hc' => hsub c' (by rw [hc]; simp [hc']))
       hcbE hh ha hex
     subst hcEq
@@ -3566,7 +3566,7 @@ private theorem first_recr_parent_block_spec {rootCalls : List (Call F)} {t : Ix
           simpa using hlt
         have hpos_lt : pos < 2 ^ 39 := by
           have := (Array.getElem?_eq_some_iff.mp hm_at).1; omega
-        obtain ⟨ext1, -, -, mc, ma, hmc, rma, hma⟩ := L1.projection_addr_spec hall rrba evpa
+        obtain ⟨ext1, -, -, mc, ma, hmc, rma, hma⟩ := Ingress.projection_addr_spec hall rrba evpa
         rw [fval_natCast (by omega)] at hmc hma
         have hmc' : rs[pos]? = some mc := by rw [← Array.getElem?_toList]; exact hmc
         have hmc_eq : mc = .recr rc := Option.some.inj (hmc'.symm.trans hm_at)
@@ -3640,7 +3640,7 @@ private theorem first_recr_parent_block_spec {rootCalls : List (Call F)} {t : Ix
           simpa using hlt
         have hpos_lt : pos < 2 ^ 39 := by
           have := (Array.getElem?_eq_some_iff.mp hm_at).1; omega
-        obtain ⟨ext1, -, -, mc, ma, hmc, rma, hma⟩ := L1.projection_addr_spec hall rrba evpa
+        obtain ⟨ext1, -, -, mc, ma, hmc, rma, hma⟩ := Ingress.projection_addr_spec hall rrba evpa
         rw [fval_natCast (by omega)] at hmc hma
         have hmc' : rs[pos]? = some mc := by rw [← Array.getElem?_toList]; exact hmc
         have hmc_eq : mc = .recr rc := Option.some.inj (hmc'.symm.trans hm_at)
@@ -3682,7 +3682,7 @@ private theorem first_recr_parent_block_spec {rootCalls : List (Call F)} {t : Ix
           simpa using hlt
         have hpos_lt : pos < 2 ^ 39 := by
           have := (Array.getElem?_eq_some_iff.mp hm_at).1; omega
-        obtain ⟨-, -, -, mc, ma, hmc, rma, hma⟩ := L1.projection_addr_spec hall rrba evpa
+        obtain ⟨-, -, -, mc, ma, hmc, rma, hma⟩ := Ingress.projection_addr_spec hall rrba evpa
         rw [fval_natCast (by omega)] at hmc hma
         have hmc' : rs[pos]? = some mc := by rw [← Array.getElem?_toList]; exact hmc
         have hmc_eq : mc = .recr rc := Option.some.inj (hmc'.symm.trans hm_at)
@@ -3817,7 +3817,7 @@ private theorem aux_from_recrs_walk_ex_spec {rootCalls : List (Call F)}
           simpa using hlt
         have hpos_lt : pos < 2 ^ 39 := by
           have := (Array.getElem?_eq_some_iff.mp hm_at).1; omega
-        obtain ⟨ext1, -, -, mc, ma, hmc, rma, hma⟩ := L1.projection_addr_spec hall rrba evpa
+        obtain ⟨ext1, -, -, mc, ma, hmc, rma, hma⟩ := Ingress.projection_addr_spec hall rrba evpa
         rw [fval_natCast (by omega)] at hmc hma
         have hmc' : rs[pos]? = some mc := by rw [← Array.getElem?_toList]; exact hmc
         have hmc_eq : mc = .recr rc := Option.some.inj (hmc'.symm.trans hm_at)
@@ -3911,7 +3911,7 @@ private theorem aux_from_recrs_walk_ex_spec {rootCalls : List (Call F)}
           simpa using hlt
         have hpos_lt : pos < 2 ^ 39 := by
           have := (Array.getElem?_eq_some_iff.mp hm_at).1; omega
-        obtain ⟨ext1, -, -, mc, ma, hmc, rma, hma⟩ := L1.projection_addr_spec hall rrba evpa
+        obtain ⟨ext1, -, -, mc, ma, hmc, rma, hma⟩ := Ingress.projection_addr_spec hall rrba evpa
         rw [fval_natCast (by omega)] at hmc hma
         have hmc' : rs[pos]? = some mc := by rw [← Array.getElem?_toList]; exact hmc
         have hmc_eq : mc = .recr rc := Option.some.inj (hmc'.symm.trans hm_at)
@@ -4031,7 +4031,7 @@ private theorem aux_from_recrs_walk_ex_spec {rootCalls : List (Call F)}
           simpa using hlt
         have hpos_lt : pos < 2 ^ 39 := by
           have := (Array.getElem?_eq_some_iff.mp hm_at).1; omega
-        obtain ⟨ext1, -, -, mc, ma, hmc, rma, hma⟩ := L1.projection_addr_spec hall rrba evpa
+        obtain ⟨ext1, -, -, mc, ma, hmc, rma, hma⟩ := Ingress.projection_addr_spec hall rrba evpa
         rw [fval_natCast (by omega)] at hmc hma
         have hmc' : rs[pos]? = some mc := by rw [← Array.getElem?_toList]; exact hmc
         have hmc_eq : mc = .recr rc := Option.some.inj (hmc'.symm.trans hm_at)

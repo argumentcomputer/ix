@@ -1,5 +1,5 @@
 import IxVMRefinement.Claim.TopWalk
-import IxVMRefinement.L1.TraceRecords
+import IxVMRefinement.Ingress.TraceRecords
 
 /-! # The shape of a fact about every top-walked unit of one kind
 
@@ -48,7 +48,7 @@ def WalkedUnit
         Top A → recordOf E₀ A = some c → InLogic c → Kind calls t E₀ A c →
         t.check = .ok () → LoadedReads.RunStore calls E₀ →
         LoadedReads.HashedRecordsStored calls E₀ → StepStore calls t E₀ E →
-        L1.CanonicalHashCoverage E calls →
+        Ingress.CanonicalHashCoverage E calls →
         InertClause t c → (∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c) →
         ((∃ ms, c.info = .muts ms ∧
             ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t A ms k lim) ∨

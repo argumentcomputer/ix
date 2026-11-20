@@ -229,7 +229,7 @@ theorem recMajorTie_held {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) (hwf 
 over the step's store is modeled, or the run observed a native answer. -/
 theorem route_or_nativeObs {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ Ec : Ixon.Env}
     (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ Ec)
-    (hcov : L1.CanonicalHashCoverage Ec calls) {bAddr B : _root_.Address}
+    (hcov : Ingress.CanonicalHashCoverage Ec calls) {bAddr B : _root_.Address}
     {ms : Array Ixon.MutConst} {lim : Option Nat}
     (hall : ∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind)
     (hchk : Claim.MemberCheckedLimAt calls bAddr t B ms 0 lim) :
@@ -441,14 +441,14 @@ theorem closureUnitSteps_of_run {calls : List (Call F)} {t : Ix.Kernel.RoleTable
   obtain ⟨Ec, hRc, hst⟩ := hrun.stepStores R₁ hloaded
     (fun a b h => hC.admits.loadedBlobs a b (hC.store.le₂.2 a b h))
     (fun p hp lc h => hC.admits.committed p hp lc (hC.store.le₂.1 _ lc h)) ⟨hzc, hzb⟩
-  have hcanon₀ : L1.CanonicalHashCoverage ρ.E₀ calls := by
+  have hcanon₀ : Ingress.CanonicalHashCoverage ρ.E₀ calls := by
     intro bytes value hashed size exactRead
     obtain ⟨entry, stored, bytesEq, cached⟩ := hcov bytes value hashed size
-      (L1.deConstant_of_deConstantExact exactRead) exactRead
+      (Ingress.deConstant_of_deConstantExact exactRead) exactRead
     refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
     rw [bytesEq]
     exact exactRead
-  have hcanon : L1.CanonicalHashCoverage Ec calls :=
+  have hcanon : Ingress.CanonicalHashCoverage Ec calls :=
     Assembly.canonicalHashCoverage_frame hcanon₀ hst.decoded
       (fun a v h => hst.runRecord a v ((hS.recordOf_eq_recordAt a).trans h))
   -- the unit is a plain unit of the group

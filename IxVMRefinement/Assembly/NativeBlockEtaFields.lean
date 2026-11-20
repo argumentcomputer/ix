@@ -69,12 +69,12 @@ theorem iprj_get_ci_value {E : Ixon.Env} {bp ptr : SourceValue F} {h h' : Heap F
     ∃ tyPtr blkPtr : SourceValue F,
       loadValue h' ptr = .ok (.construct Core.kciEnum "Induct"
         [.field (ind.lvls.toNat : F), tyPtr, .field (ind.params.toNat : F),
-          .field (ind.indices.toNat : F), .field (ind.ctors.size : F), L1.repBoolField ind.isUnsafe,
+          .field (ind.indices.toNat : F), .field (ind.ctors.size : F), Ingress.repBoolField ind.isUnsafe,
           blkPtr, .field ((ZMod.val i : Nat) : F)]) ∧
       ind.params.toNat < 72057594037927936 ∧ ind.indices.toNat < 72057594037927936 ∧
       ind.ctors.size < 72057594037927936 := by
   obtain ⟨-, -, blkBytes, cb', ms', ind', blobs, v, hhB, haB, hexB, -, hcb, hms, -, hld,
-    hraw, -⟩ := L1.get_ci_iprj_origin_spec hbound hb ev
+    hraw, -⟩ := Ingress.get_ci_iprj_origin_spec hbound hb ev
   obtain ⟨lcB, hgetB, hdecB⟩ := LoadedReads.recordOf_inv hblock
   have hbB : blkBytes = lcB.rawBytes := Core.load_escape hgetB hnc blkBytes hhB haB
   have hcB : cb = cb' := by
@@ -126,7 +126,7 @@ theorem NativeInstallOut.ctorsCanon
       cty.looseBVarsBounded 0 = true ∧
       cty.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
       LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-        (((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) + 1 +
+        (((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) + 1 +
           ((j : Nat) : F)) ct.typ cty = some cA.1.type := by
   have hI := hO.install
   intro cA hcA
@@ -287,7 +287,7 @@ theorem blockEta_of_install (hrec : BlockUnitRecord E₀ B cb ind)
   · -- `eta`: a direct load of the member
     intro ac b sa i j cvc cvT caps' cnP cnF us l bp ptr nl ty np u blk' idx h1 h2 cs1 hfC hname
       hpos ev good hb hld hfT hmod hpi hnz hsr hsa hm
-    have hbh := L1.hashedBlockAt_of_get_ci_iprj (c := appCtx ⟨E, env, t, some n⟩ new) good hb ev
+    have hbh := Ingress.hashedBlockAt_of_get_ci_iprj (c := appCtx ⟨E, env, t, some n⟩ new) good hb ev
     have hnC : cvc.name = (appCtx ⟨E, env, t, some n⟩ new).stored.κ (Core.ixAddr ac) :=
       Core.WhnfAux.name_of_find hfC
     -- the member is the new block's member `0`
@@ -394,7 +394,7 @@ theorem blockEta_of_install (hrec : BlockUnitRecord E₀ B cb ind)
     intro pp ptr nl ty u blk' h1 h2 cs1 pa b i m cvT cvc caps' cnP cnF us l ev good hpa hld hb
       hfT hfC hmulti hsr hpi hnz hm
     have hx := get_ci_induct_addr ev good.2 hpa hld hb
-    have hbh := L1.hashedBlockAt_of_get_ci_induct (c := appCtx ⟨E, env, t, some n⟩ new) good ev
+    have hbh := Ingress.hashedBlockAt_of_get_ci_induct (c := appCtx ⟨E, env, t, some n⟩ new) good ev
       hpa hld hb
     -- the member is the new block's member `0`
     have hBi : Core.ixAddr b = B ∧ ZMod.val i = 0 := by

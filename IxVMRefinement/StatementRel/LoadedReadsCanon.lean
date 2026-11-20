@@ -1,7 +1,7 @@
 import IxVMRefinement.StatementRel.LoadedReadsReload
 import IxVMRefinement.StatementRel.LoadedReadsTrace
 import IxVMRefinement.StatementRel.ReadsMono
-import IxVMRefinement.L1.AnnotationCorrespondence
+import IxVMRefinement.Ingress.AnnotationCorrespondence
 import IxVMRefinement.Assembly.RecordReadBare
 import IxVMRefinement.Decl.PrefixInv
 
@@ -15,7 +15,7 @@ reading, and shows that every load of the record represents it.
 
 * `canonAnn src ps root e E_rd`: the annotation of the reading `E_rd` of the expression `e` of
   the record `src`, converted at root `root`. It applies the binder plan of the root
-  (`L1.binderRootPlan`, in the tree built from `src`'s binder blocks) to the reading. Nothing
+  (`Ingress.binderRootPlan`, in the tree built from `src`'s binder blocks) to the reading. Nothing
   outside the record and the reading enters.
 * `canonDefn key src base d ty₀ val₀ hn`: the constant of the definition payload `d` under the
   key `key`, with the annotations of its read type (root `base`) and value (root `base + 1`).
@@ -46,14 +46,14 @@ open IxVM.Consistency
 
 open Classical in
 /-- **The binder tree of a record's binder blocks**: the tree `Convert::binder_table` builds
-from them (`L1.BinderTreeBuilt`, which determines it: `canonTree_eq`). -/
-noncomputable def canonTree (blocks : List Ixon.BinderBlock) : L1.BinderTreeData :=
-  if h : ∃ tree, L1.BinderTreeBuilt (L1.binderLeavesData blocks) tree then Classical.choose h
+from them (`Ingress.BinderTreeBuilt`, which determines it: `canonTree_eq`). -/
+noncomputable def canonTree (blocks : List Ixon.BinderBlock) : Ingress.BinderTreeData :=
+  if h : ∃ tree, Ingress.BinderTreeBuilt (Ingress.binderLeavesData blocks) tree then Classical.choose h
   else .empty
 
-theorem canonTree_eq {blocks : List Ixon.BinderBlock} {tree : L1.BinderTreeData}
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData blocks) tree) : canonTree blocks = tree := by
-  have h : ∃ tree, L1.BinderTreeBuilt (L1.binderLeavesData blocks) tree := ⟨tree, built⟩
+theorem canonTree_eq {blocks : List Ixon.BinderBlock} {tree : Ingress.BinderTreeData}
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData blocks) tree) : canonTree blocks = tree := by
+  have h : ∃ tree, Ingress.BinderTreeBuilt (Ingress.binderLeavesData blocks) tree := ⟨tree, built⟩
   unfold canonTree
   rw [dite_eq_left h]
   exact (Classical.choose_spec h).unique built
@@ -65,8 +65,8 @@ for the root or the plan does not fit the reading (neither happens for a record 
 converted: `annotation_canon`). -/
 noncomputable def canonAnn (src : Ixon.Constant) (ps : List Ix.Kernel.LevelParam) (root : F)
     (e : Ixon.Expr) (E_rd : Ix.Kernel.Expr .anon) : Option (Ix.Kernel.Expr .anon) :=
-  (L1.binderRootPlan (canonTree src.binders.toList) src.sharing.toList root e).bind fun plan =>
-    (L1.applyBinderTrace (fun level => Core.bmeta (L1.invPosLevel ps level)) E_rd plan).map
+  (Ingress.binderRootPlan (canonTree src.binders.toList) src.sharing.toList root e).bind fun plan =>
+    (Ingress.applyBinderTrace (fun level => Core.bmeta (Ingress.invPosLevel ps level)) E_rd plan).map
       Prod.fst
 
 /-- **A converted root represents the canonical annotation of its reading.** The root was
@@ -78,15 +78,15 @@ theorem annotation_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
     {blob : _root_.Address → Option ByteArray} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon))} {n : Nat}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {e : Ixon.Expr}
-    {kp : SourceValue F} {E_rd : Ix.Kernel.Expr .anon} {root : F} {tree : L1.BinderTreeData}
+    {kp : SourceValue F} {E_rd : Ix.Kernel.Expr .anon} {root : F} {tree : Ingress.BinderTreeData}
     {plan : List Core.KLevel}
     (hn : n < 4294967296)
-    (hagree : L1.BlobReadAgreement (readCtx t blob).blob blobs)
-    (raw : L1.RawConvExpr src.refs.toList [] src.univs.toList src.sharing.toList blobs
+    (hagree : Ingress.BlobReadAgreement (readCtx t blob).blob blobs)
+    (raw : Ingress.RawConvExpr src.refs.toList [] src.univs.toList src.sharing.toList blobs
       h 4294967295 e kp)
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData src.binders.toList) tree)
-    (planned : L1.binderRootPlan tree src.sharing.toList root e = some plan)
-    (levels : L1.HeapBinderLevels h kp plan)
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData src.binders.toList) tree)
+    (planned : Ingress.binderRootPlan tree src.sharing.toList root e = some plan)
+    (levels : Ingress.HeapBinderLevels h kp plan)
     (hread : (exprReader t blob src id self).read e = .ok E_rd)
     (hlbb : E_rd.looseBVarsBounded 0 = true)
     (hdef : E_rd.allLevelParamsDefined (List.range n) = true) :
@@ -106,7 +106,7 @@ theorem annotation_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
   refine ⟨E', ?_, hann, htm.toTmC⟩
   unfold canonAnn
   rw [canonTree_eq built, planned]
-  show (L1.applyBinderTrace (fun level => Core.bmeta (L1.invPosLevel (List.range n) level))
+  show (Ingress.applyBinderTrace (fun level => Core.bmeta (Ingress.invPosLevel (List.range n) level))
     E_rd plan).map Prod.fst = some E'
   rw [hap]
   rfl
@@ -232,7 +232,7 @@ theorem ciRep_defnValShape {κ : _root_.Address → Core.KKey} {h : Heap F}
     (hty : Core.TmC κ h (Core.posOf (List.range d.lvls.toNat) ty') tyPtr)
     (hval : Core.TmC κ h (Core.posOf (List.range d.lvls.toNat) val') valPtr)
     (hn : Ix.Kernel.ReducibilityHint) :
-    Core.CIRep κ h (L1.defnValShape d tyPtr valPtr hint)
+    Core.CIRep κ h (Ingress.defnValShape d tyPtr valPtr hint)
       (defnConst d.kind ⟨key, List.range d.lvls.toNat, ty'⟩ val' hn) := by
   have hlen : d.lvls.toNat = (List.range d.lvls.toNat).length := by simp
   have hvr : Core.ValRep κ h (.field (d.lvls.toNat : F)) tyPtr
@@ -241,13 +241,13 @@ theorem ciRep_defnValShape {κ : _root_.Address → Core.KKey} {h : Heap F}
       by simpa using hnlvls, by simp, hty⟩
   cases hk : d.kind with
   | defn =>
-    simp only [L1.defnValShape, hk]
+    simp only [Ingress.defnValShape, hk]
     exact .defn hvr hval
   | thm =>
-    simp only [L1.defnValShape, hk]
+    simp only [Ingress.defnValShape, hk]
     exact .thm hvr hval
   | opaq =>
-    simp only [L1.defnValShape, hk]
+    simp only [Ingress.defnValShape, hk]
     exact .opaq hvr
 
 /-- The references a record uses stay stored when one more constant is stored. -/
@@ -299,14 +299,14 @@ theorem get_ci_defn_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Cal
           Core.CIPtrRep (Core.Ctx.stored ⟨E, env, t, lim⟩).κ h' ptr
             (defnConst d.kind ⟨keyOf t (Core.ixAddr a), List.range d.lvls.toNat, ty'⟩ val'
               hn)) := by
-  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := L1.get_ci_trace_spec ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := Ingress.get_ci_trace_spec ha ev
   obtain ⟨lc, hget, hdec⟩ := recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
   have hc : c = c' := by
     rw [hb, hdec] at hex
     exact Except.ok.inj hex
   subst hc
-  unfold L1.GetCITraceResult at hres
+  unfold Ingress.GetCITraceResult at hres
   rw [hinfo] at hres
   obtain ⟨blobs, tree, v, hhp, built, hld, htr⟩ := hres
   have hsafe : Ix.Kernel.Reader.safetyDecline d = none := by
@@ -314,9 +314,9 @@ theorem get_ci_defn_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Cal
     unfold InLogic at hl
     rw [hinfo] at hl
     exact hl
-  have hrecur : L1.defnRecurAddrs d (Core.ixAddr a) = [] := by
-    have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
-    simp [L1.defnRecurAddrs, hf]
+  have hrecur : Ingress.defnRecurAddrs d (Core.ixAddr a) = [] := by
+    have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+    simp [Ingress.defnRecurAddrs, hf]
   rw [hrecur] at htr
   obtain ⟨hnlvls, tyPtr, valPtr, hint, planT, planV, hv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr
   subst hv
@@ -441,9 +441,9 @@ theorem get_ci_dprj_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Cal
     (hval_def : val₀.allLevelParamsDefined (List.range d.lvls.toNat) = true) :
     ∃ ty' val' : Ix.Kernel.Expr .anon,
       canonAnn cb (List.range d.lvls.toNat)
-        ((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) d.typ ty₀ = some ty' ∧
+        ((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) d.typ ty₀ = some ty' ∧
       canonAnn cb (List.range d.lvls.toNat)
-        (((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1) d.value val₀ = some val' ∧
+        (((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1) d.value val₀ = some val' ∧
       Annotates ty' ty₀ ∧ Annotates val' val₀ ∧
       (∀ hn : Ix.Kernel.ReducibilityHint, Core.CIPtrRep (Core.keyOf t) h' ptr
         (defnConst d.kind ⟨keyOf t (Core.ixAddr a), List.range d.lvls.toNat, ty'⟩ val' hn)) ∧
@@ -452,14 +452,14 @@ theorem get_ci_dprj_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Cal
           Core.CIPtrRep (Core.Ctx.stored ⟨E, env, t, lim⟩).κ h' ptr
             (defnConst d.kind ⟨keyOf t (Core.ixAddr a), List.range d.lvls.toNat, ty'⟩ val'
               hn)) := by
-  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := L1.get_ci_trace_spec ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := Ingress.get_ci_trace_spec ha ev
   obtain ⟨lc, hget, hdec⟩ := recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
   have hc : c = c' := by
     rw [hb, hdec] at hex
     exact Except.ok.inj hex
   subst hc
-  unfold L1.GetCITraceResult at hres
+  unfold Ingress.GetCITraceResult at hres
   rw [hinfo] at hres
   obtain ⟨hidx, blkBytes, cb', ms', d', blobs, tree, v, hhB, haB, hexB, hcb, hms, hhp, built,
     hld, htr⟩ := hres
@@ -483,9 +483,9 @@ theorem get_ci_dprj_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Cal
     unfold InLogic at hl
     rw [hmuts] at hl
     exact hl (.defn d) hmem'
-  have hrecur : L1.defnMemberRecurAddrs d p.block ms.toList = [] := by
-    have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
-    simp [L1.defnMemberRecurAddrs, hf]
+  have hrecur : Ingress.defnMemberRecurAddrs d p.block ms.toList = [] := by
+    have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+    simp [Ingress.defnMemberRecurAddrs, hf]
   rw [hrecur] at htr
   obtain ⟨hnlvls, tyPtr, valPtr, hint, planT, planV, hv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr
   subst hv
@@ -529,7 +529,7 @@ theorem reloadsAs_dprj (ht : t.check = .ok ()) {E' : Ixon.Env} {env : Ix.Kernel.
     (hval_def : val₀.allLevelParamsDefined (List.range d.lvls.toNat) = true)
     (hstored : Decl.UsedRefsStored t env cb)
     {hn : Ix.Kernel.ReducibilityHint} {cn : Ix.Kernel.ConstantInfo .anon}
-    (hcn : canonDefn (keyOf t a) cb ((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) d
+    (hcn : canonDefn (keyOf t a) cb ((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) d
       ty₀ val₀ hn = some cn) :
     Decl.ReloadsAs E' t env cn := by
   obtain ⟨ty', val', hcT, hcV, hcn'⟩ := canonDefn_inv hcn
@@ -572,7 +572,7 @@ theorem reloadsAs_member_cons (ht : t.check = .ok ()) {E E' : Ixon.Env}
     (hstored : Decl.UsedRefsStored t env cb)
     {hn : Ix.Kernel.ReducibilityHint} {cn : Ix.Kernel.ConstantInfo .anon}
     (hcn : canonDefn (keyOf t (memberAddr B k (.defn d))) cb
-      ((L1.mutsRootOffset ms.toList k : Nat) : F) d ty₀ val₀ hn = some cn) :
+      ((Ingress.mutsRootOffset ms.toList k : Nat) : F) d ty₀ val₀ hn = some cn) :
     Decl.ReloadsAs E' t ⟨cn :: env.consts⟩ cn := by
   have hkk : k.toUInt64.toNat = k := toUInt64_toNat_c hk64
   have hinfo : (memberProjection B k (.defn d)).info = .dPrj ⟨k.toUInt64, B⟩ := rfl
@@ -581,10 +581,10 @@ theorem reloadsAs_member_cons (ht : t.check = .ok ()) {E E' : Ixon.Env}
     rw [hkk]
     exact hmem
   have hcn' : canonDefn (keyOf t (memberAddr B k (.defn d))) cb
-      ((L1.mutsRootOffset ms.toList (⟨k.toUInt64, B⟩ : Ixon.DefinitionProj).idx.toNat : Nat) : F)
+      ((Ingress.mutsRootOffset ms.toList (⟨k.toUInt64, B⟩ : Ixon.DefinitionProj).idx.toNat : Nat) : F)
       d ty₀ val₀ hn = some cn := by
     show canonDefn (keyOf t (memberAddr B k (.defn d))) cb
-      ((L1.mutsRootOffset ms.toList k.toUInt64.toNat : Nat) : F) d ty₀ val₀ hn = some cn
+      ((Ingress.mutsRootOffset ms.toList k.toUInt64.toNat : Nat) : F) d ty₀ val₀ hn = some cn
     rw [hkk]
     exact hcn
   exact reloadsAs_dprj (p := ⟨k.toUInt64, B⟩) ht hproj hinfo hblock hmuts hmem' hlogic
@@ -625,14 +625,14 @@ theorem get_ci_axio_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Cal
       (∀ (env : Ix.Kernel.Env .anon) (lim : Option Nat), Decl.UsedRefsStored t env c →
         Core.CIPtrRep (Core.Ctx.stored ⟨E, env, t, lim⟩).κ h' ptr
           (.axiomInfo ⟨keyOf t (Core.ixAddr a), List.range ax.lvls.toNat, ty'⟩)) := by
-  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := L1.get_ci_trace_spec ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := Ingress.get_ci_trace_spec ha ev
   obtain ⟨lc, hget, hdec⟩ := recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
   have hc : c = c' := by
     rw [hb, hdec] at hex
     exact Except.ok.inj hex
   subst hc
-  unfold L1.GetCITraceResult at hres
+  unfold Ingress.GetCITraceResult at hres
   rw [hinfo] at hres
   obtain ⟨blobs, tree, v, hhp, built, hld, htr⟩ := hres
   obtain ⟨hnlvls, tyPtr, plan, hv, rty, hp, hl⟩ := htr

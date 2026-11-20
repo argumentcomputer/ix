@@ -45,14 +45,14 @@ variable {c : Core.Ctx} {calls : List (Call F)}
 
 /-- **One native observation in the run puts the block on the native route.** -/
 theorem nativeRouteAt_of_nativeObs (hg : Core.Good c calls)
-    (hcov : L1.CanonicalHashCoverage c.E calls) {B : _root_.Address}
+    (hcov : Ingress.CanonicalHashCoverage c.E calls) {B : _root_.Address}
     (hobs : Claim.NativeObsAt calls B) : NativeRouteAt calls B :=
   nativeRouteAt_of_obs (blockRouteFunctional c.E) hg hcov hobs
 
 /-- **The run-level modeled route gives the store-level one**, where the run observed the
 dispatch on the block. -/
 theorem modeledAt_of_modeledRoute (hg : Core.Good c calls)
-    (hcov : L1.CanonicalHashCoverage c.E calls) {B : _root_.Address}
+    (hcov : Ingress.CanonicalHashCoverage c.E calls) {B : _root_.Address}
     (hroute : ModeledRouteAt calls B)
     (hobs : ∃ (bp r : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (b : Bytes.Address),
       ObsFn Core.W "KernelModeled::block_is_modeled" [bp] h r h' cs ∧
@@ -70,7 +70,7 @@ variable {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
 /-- **The two routes of a top-walked block of one inductive type**: native in the run and at
 the step's store, or modeled in the run and at the step's store. -/
 theorem oneTypeBlock_routes (hS : LoadedReads.RunStore calls E₀)
-    (hst : StepStore calls t E₀ E) (hcov : L1.CanonicalHashCoverage E calls)
+    (hst : StepStore calls t E₀ E) (hcov : Ingress.CanonicalHashCoverage E calls)
     {ind : Ixon.Inductive} (hrec : BlockUnitRecord E₀ B cb ind)
     (hchk : (∃ ms, cb.info = .muts ms ∧
         ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t B ms k lim) ∨
@@ -81,7 +81,7 @@ theorem oneTypeBlock_routes (hS : LoadedReads.RunStore calls E₀)
 /-- **A top-walked block of one inductive type off the native route is on the modeled route**,
 in the run and at the step's store. -/
 theorem modeled_of_offNativeRoute (hS : LoadedReads.RunStore calls E₀)
-    (hst : StepStore calls t E₀ E) (hcov : L1.CanonicalHashCoverage E calls)
+    (hst : StepStore calls t E₀ E) (hcov : Ingress.CanonicalHashCoverage E calls)
     {ind : Ixon.Inductive} (hrec : BlockUnitRecord E₀ B cb ind)
     (hchk : (∃ ms, cb.info = .muts ms ∧
         ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t B ms k lim) ∨
@@ -105,7 +105,7 @@ the run and at a store the run is good for and that covers it, at every limit. -
 theorem TopWalkCore.recFamily_native {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {seeds : List _root_.Address} {E₀ : Ixon.Env}
     {lim : Option Nat} {Top : _root_.Address → Prop} {rank : _root_.Address → Nat}
-    {c : Core.Ctx} (hg : Core.Good c calls) (hcov : L1.CanonicalHashCoverage c.E calls)
+    {c : Core.Ctx} (hg : Core.Good c calls) (hcov : Ingress.CanonicalHashCoverage c.E calls)
     (hW : TopWalkCore calls bAddr t seeds E₀ lim Top rank) {A : _root_.Address}
     {c₀ : Ixon.Constant} {rc : Ixon.Recursor}
     (hT : Top A) (hc : recordOf E₀ A = some c₀) (hinfo : c₀.info = .recr rc) :

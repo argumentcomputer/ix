@@ -4,7 +4,7 @@ import IxVMRefinement.Assembly.TypingRecLateKeying
 import IxVMRefinement.Assembly.TypingRecLateOut
 import IxVMRefinement.Assembly.NativeBlockFormer
 import IxVMRefinement.Assembly.BareState
-import IxVMRefinement.L1.AnnotationCorrespondence
+import IxVMRefinement.Ingress.AnnotationCorrespondence
 import IxVMRefinement.StatementRel.ReadsMono
 import IxVMRefinement.StatementRel.LoadedReadsCanonRec
 import IxVMRefinement.Decl.NativeRecRules
@@ -331,21 +331,21 @@ def RecFrontAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.En
   ∃ (rcv apv parentV tyPtr rulesPtr blkPtr tyPtrP unsP blkPtrP pointer result scopeResult
       sortResult : SourceValue F)
     (bA bR bT bP : Bytes.Address) (blobs : List (_root_.Address × ByteArray))
-    (tree : L1.BinderTreeData) (planT : List Core.KLevel)
+    (tree : Ingress.BinderTreeData) (planT : List Core.KLevel)
     (ldHeap scopeBefore scopeAfter sortAfter memberHeap scanHeap loadedHeap canonHeap
       final : Heap F)
     (ldCalls scopeCalls sortCalls scanCalls loadCalls canonCalls : List (Call F)),
     Core.RCRep t lim ldHeap rcv ∧
     Bytes.RepAddressRef Core.addrTy ldHeap bA apv ∧ Core.ixAddr bA = A ∧
     Bytes.RepAddressRef Core.addrTy ldHeap bR blkPtr ∧ Core.ixAddr bR = A ∧
-    L1.HashedPairs ldCalls blobs ∧ (∀ cl ∈ ldCalls, cl ∈ calls) ∧
+    Ingress.HashedPairs ldCalls blobs ∧ (∀ cl ∈ ldCalls, cl ∈ calls) ∧
     (∀ x bs, (x, bs) ∈ blobs → E₀.blobs.get? x = some bs) ∧
-    L1.BinderTreeBuilt (L1.binderLeavesData c.binders.toList) tree ∧
-    L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs ldHeap 4294967295
+    Ingress.BinderTreeBuilt (Ingress.binderLeavesData c.binders.toList) tree ∧
+    Ingress.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs ldHeap 4294967295
       rc.typ tyPtr ∧
-    L1.binderRootPlan tree c.sharing.toList 0 rc.typ = some planT ∧
-    L1.HeapBinderLevels ldHeap tyPtr planT ∧
-    L1.RulesTraceRep c.refs.toList [A] c.univs.toList c.sharing.toList blobs tree ldHeap 0
+    Ingress.binderRootPlan tree c.sharing.toList 0 rc.typ = some planT ∧
+    Ingress.HeapBinderLevels ldHeap tyPtr planT ∧
+    Ingress.RulesTraceRep c.refs.toList [A] c.univs.toList c.sharing.toList blobs tree ldHeap 0
       (0 + 1) rc.rules.toList rulesPtr ∧
     rc.rules.size < 8589934592 ∧ ip.idx.toNat < 72057594037927936 ∧
     rc.lvls.toNat < 4294967296 ∧ rc.params.toNat < 72057594037927936 ∧
@@ -383,8 +383,8 @@ def RecFrontAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.En
       [rcv, .construct "KernelTypes::KConstantInfo" "Rec"
         [.field (rc.lvls.toNat : F), tyPtr, .field (rc.params.toNat : F),
           .field (rc.indices.toNat : F), .field (rc.motives.toNat : F),
-          .field (rc.minors.toNat : F), rulesPtr, L1.repBoolField rc.k,
-          L1.repBoolField rc.isUnsafe, blkPtr, .field ((0 : Nat) : F)], apv,
+          .field (rc.minors.toNat : F), rulesPtr, Ingress.repBoolField rc.k,
+          Ingress.repBoolField rc.isUnsafe, blkPtr, .field ((0 : Nat) : F)], apv,
         .construct "KernelTypes::KConstantInfo" "Induct"
           [.field (ind.lvls.toNat : F), tyPtrP, .field (ind.params.toNat : F),
             .field (ind.indices.toNat : F), .field (ind.ctors.size : F), unsP, blkPtrP,
@@ -425,10 +425,10 @@ theorem rec_front_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E 
   obtain ⟨a', ha'_ref, haA⟩ := ha_pre
   subst haA
   obtain ⟨rawBytes, c', hh, hba, hex, -, hres'⟩ :=
-    L1.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
+    Ingress.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
   have hcc : c' = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hh) hba hex
   subst c'
-  unfold L1.GetCIBlockTraceResult at hres'
+  unfold Ingress.GetCIBlockTraceResult at hres'
   rw [hinfo] at hres'
   obtain ⟨blobs, tree, v, hhp, built, hldv, htr⟩ := hres'
   rw [hld] at hldv
@@ -503,7 +503,7 @@ theorem rec_front_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E 
   have hPa : P = Core.ixAddr a := keyOf_inj hroles hkeys
   subst hPa
   have hgL : Core.Good ⟨E, env, t, lim⟩ loadCalls := hgood.sub hsLoad'
-  obtain ⟨rawP, cP, hhP, hbaP, hexP, -, hresP⟩ := L1.get_ci_block_trace_spec hgL.2 ha evLoad
+  obtain ⟨rawP, cP, hhP, hbaP, hexP, -, hresP⟩ := Ingress.get_ci_block_trace_spec hgL.2 ha evLoad
   have hrecP : recordOf E (Core.ixAddr a) = some cm := by
     rw [recordOf_eq_recordAt_of_decoded hst.decoded]
     exact hcm
@@ -513,7 +513,7 @@ theorem rec_front_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E 
     rw [hbP, hdec] at hexP
     exact (Except.ok.inj hexP).symm
   subst hcP
-  unfold L1.GetCIBlockTraceResult at hresP
+  unfold Ingress.GetCIBlockTraceResult at hresP
   rw [hcmi] at hresP
   obtain ⟨-, blkBytes, cb', ms', ind', blobs', tree', plan', v₀, hhB', haB', hexB', hcb', hms',
     -, -, -, hld₀, hraw, -⟩ := hresP
@@ -562,14 +562,14 @@ theorem front_type_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
     (hrunBlob : ∀ a b, E₀.blobs.get? a = some b → E.blobs.get? a = some b)
     {ps : List Ix.Kernel.LevelParam} (hperm : ps.Perm (List.range ps.length))
     (hps : ps.length < 4294967296)
-    {blobs : List (_root_.Address × ByteArray)} {tree : L1.BinderTreeData}
+    {blobs : List (_root_.Address × ByteArray)} {tree : Ingress.BinderTreeData}
     {planT : List Core.KLevel} {h : Heap F} {tyPtr : SourceValue F}
-    (hagree : L1.BlobReadAgreement (readCtx t (fun x => E.blobs.get? x)).blob blobs)
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData c.binders.toList) tree)
-    (rty : L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h 4294967295
+    (hagree : Ingress.BlobReadAgreement (readCtx t (fun x => E.blobs.get? x)).blob blobs)
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData c.binders.toList) tree)
+    (rty : Ingress.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h 4294967295
       rc.typ tyPtr)
-    (hpT : L1.binderRootPlan tree c.sharing.toList 0 rc.typ = some planT)
-    (hlT : L1.HeapBinderLevels h tyPtr planT)
+    (hpT : Ingress.binderRootPlan tree c.sharing.toList 0 rc.typ = some planT)
+    (hlT : Ingress.HeapBinderLevels h tyPtr planT)
     {ty : Ix.Kernel.Expr .anon}
     (hty : (exprReader t (fun x => E₀.blobs.get? x) c (Ix.Kernel.Reader.recParam ps)
       (soloSelf t A)).read rc.typ = .ok ty)
@@ -589,7 +589,7 @@ theorem front_type_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
   refine ⟨tyC, ?_, hann, ?_⟩
   · unfold LoadedReads.canonAnn
     rw [LoadedReads.canonTree_eq built, hpT]
-    show (L1.applyBinderTrace (fun level => Core.bmeta (L1.invPosLevel ps level)) ty
+    show (Ingress.applyBinderTrace (fun level => Core.bmeta (Ingress.invPosLevel ps level)) ty
       planT).map Prod.fst = some tyC
     rw [hap]
     rfl
@@ -658,11 +658,11 @@ theorem front_rules_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
     (hrunBlob : ∀ a b, E₀.blobs.get? a = some b → E.blobs.get? a = some b)
     {ps : List Ix.Kernel.LevelParam} (hperm : ps.Perm (List.range ps.length))
     (hps : ps.length < 4294967296)
-    {blobs : List (_root_.Address × ByteArray)} {tree : L1.BinderTreeData}
+    {blobs : List (_root_.Address × ByteArray)} {tree : Ingress.BinderTreeData}
     {h : Heap F} {rulesPtr : SourceValue F}
-    (hagree : L1.BlobReadAgreement (readCtx t (fun x => E.blobs.get? x)).blob blobs)
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData c.binders.toList) tree)
-    (hrulesTr : L1.RulesTraceRep c.refs.toList [A] c.univs.toList c.sharing.toList blobs tree h
+    (hagree : Ingress.BlobReadAgreement (readCtx t (fun x => E.blobs.get? x)).blob blobs)
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData c.binders.toList) tree)
+    (hrulesTr : Ingress.RulesTraceRep c.refs.toList [A] c.univs.toList c.sharing.toList blobs tree h
       0 (0 + 1) rc.rules.toList rulesPtr)
     {rules : List (Ix.Kernel.RecRule .anon)}
     (hrd : List.Forall₂ (fun ru rl₀ => rl₀.nfields = ru.fields.toNat ∧
@@ -685,11 +685,11 @@ theorem front_rules_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
       soloSelf t A i = some m → m = .ok k → k = Core.keyOf t x :=
     LoadedReads.soloSelf_key t A
   have hre : ∀ ru ∈ rc.rules.toList, ∀ (q : SourceValue F) (X : Core.KExpr),
-      L1.RawConvExpr c.refs.toList [A] c.univs.toList c.sharing.toList blobs h 4294967295
+      Ingress.RawConvExpr c.refs.toList [A] c.univs.toList c.sharing.toList blobs h 4294967295
         ru.rhs q → Core.TmC (Core.keyOf t) h X q →
         Core.TmC (lateRuleKey ⟨E, env, t, lim⟩ A) h X q := by
     intro ru hru q X raw rep
-    have used : ∀ x, L1.RefUsed c.refs.toList c.sharing.toList ru.rhs x →
+    have used : ∀ x, Ingress.RefUsed c.refs.toList c.sharing.toList ru.rhs x →
         ∃ ci, env.find? (Core.keyOf t x) = some ci := by
       intro x hu
       obtain ⟨i, hi | ⟨s, hs, his⟩, hr⟩ := hu

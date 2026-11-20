@@ -52,7 +52,7 @@ def RecArmObs (calls : List (Call F)) (A : _root_.Address) : Prop :=
     (levels type parameters indices motives minors rules k unsafeFlag block position :
       SourceValue F)
     (cs_load cs_chk : List (Call F)),
-    Core.S0.addr h_pre ap A ∧
+    Core.BaseSeams.addr h_pre ap A ∧
     ObsFn Obs.W "Ingress::get_ci" [ap] h_pre ptr m_chk cs_load ∧
     (∀ cl ∈ cs_load, cl ∈ calls) ∧
     loadValue m_chk ptr = .ok (.construct "KernelTypes::KConstantInfo" "Rec"
@@ -147,10 +147,10 @@ theorem recArmRunBounds_of_obs {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨a', ha'_ref, haA⟩ := ha_pre
   subst haA
   obtain ⟨rawBytes, c', hh, hba, hex, -, hres'⟩ :=
-    L1.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
+    Ingress.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
   have hcc : c' = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hh) hba hex
   subst c'
-  unfold L1.GetCIBlockTraceResult at hres'
+  unfold Ingress.GetCIBlockTraceResult at hres'
   rw [hinfo] at hres'
   obtain ⟨blobs, tree, v, hhp, built, hldv, htr⟩ := hres'
   rw [hld] at hldv
@@ -225,7 +225,7 @@ theorem recArmRunBounds_of_obs {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   have hPa : P = Core.ixAddr a := keyOf_inj hroles hkeys
   subst hPa
   have hgL : Core.Good ⟨E, env, t, lim⟩ loadCalls := hgood.sub hsLoad'
-  obtain ⟨rawP, cP, hhP, hbaP, hexP, -, hresP⟩ := L1.get_ci_block_trace_spec hgL.2 ha evLoad
+  obtain ⟨rawP, cP, hhP, hbaP, hexP, -, hresP⟩ := Ingress.get_ci_block_trace_spec hgL.2 ha evLoad
   have hrecP : recordOf E (Core.ixAddr a) = some cm := by
     rw [recordOf_eq_recordAt_of_decoded hst.decoded]
     exact hcm
@@ -235,7 +235,7 @@ theorem recArmRunBounds_of_obs {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     rw [hbP, hdec] at hexP
     exact (Except.ok.inj hexP).symm
   subst hcP
-  unfold L1.GetCIBlockTraceResult at hresP
+  unfold Ingress.GetCIBlockTraceResult at hresP
   rw [hcmi] at hresP
   obtain ⟨-, blkBytes, cb', ms', ind', blobs', tree', plan', v₀, hhB', haB', hexB', hcb', hms',
     -, -, -, hld₀, hraw, -⟩ := hresP

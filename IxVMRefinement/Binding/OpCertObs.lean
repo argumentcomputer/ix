@@ -28,7 +28,7 @@ universe u
 
 set_option linter.unusedVariables false
 
-namespace IxVM.Refinement.L1
+namespace IxVM.Refinement.Ingress
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
@@ -192,7 +192,7 @@ theorem RawConvExpr.projIn_prj {refs recurAddrs : List _root_.Address} {univs : 
     · exact ⟨i, Or.inr ⟨s, List.mem_of_getElem? hsh, hi⟩, hr⟩
     · exact ⟨i, Or.inr hs, hr⟩
 
-end IxVM.Refinement.L1
+end IxVM.Refinement.Ingress
 
 namespace IxVM.Refinement.Binding
 
@@ -244,7 +244,7 @@ theorem walk_refs_except_notBlock {t : Ix.Kernel.RoleTable} {n : Nat} {a : _root
       RCRep t (some n) h x_rc →
       RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h refs x_refs →
       Claim.RepSortedIdxFrom h idxs i x_used →
-      S0.addr h x_a a →
+      BaseSeams.addr h x_a a →
       ObsFn W "KernelRoles::walk_refs_except" [x_rc, x_refs, x_used, .field (i : F), x_a]
         h r h' calls →
       Heap.Extends h h' ∧
@@ -278,7 +278,7 @@ theorem walk_refs_except_notBlock {t : Ix.Kernel.RoleTable} {n : Nat} {a : _root
           have hh43' : h = m43 := hh43.symm
           subst hh43'
           have e1 : Heap.Extends h m146 := ev128.heap_extends.trans ev159.heap_extends
-          obtain ⟨e2, hnb⟩ := Claim.assert_not_block_ref_notBlock (S0.addr_mono e1 hb_rep) ev193
+          obtain ⟨e2, hnb⟩ := Claim.assert_not_block_ref_notBlock (BaseSeams.addr_mono e1 hb_rep) ev193
           exact ⟨e1.trans (e2.trans (ev221.heap_extends.trans ev207.heap_extends)),
             fun _ _ => hnb.mono (fun cl hm => by rw [hc245]; simp [hm])⟩
         | n1_other m43 y52 y82 cs92 v115 m116 cs126 v145 m146 cs157
@@ -306,7 +306,7 @@ theorem walk_refs_except_notBlock {t : Ix.Kernel.RoleTable} {n : Nat} {a : _root
         walk_refs_except_notBlock rest hbound' (hrc.mono ext1)
           (repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ ext1 hrest_rep)
           (hidxs_next.mono ext1)
-          (S0.addr_mono ext1 ha) ev278
+          (BaseSeams.addr_mono ext1 ha) ev278
       have hsub1 : ∀ cl ∈ cs267, cl ∈ calls := fun cl hm => by rw [hc327]; simp [hm]
       have hsub2 : ∀ cl ∈ cs276, cl ∈ calls := fun cl hm => by rw [hc327]; simp [hm]
       refine ⟨ext1.trans ext2, fun j hj hij hne => ?_⟩
@@ -364,7 +364,7 @@ def CertProjFreeAt (calls : List (Call F)) (b : Bytes.Address) (thm : _root_.Add
     ∀ d : Ixon.Definition, c.info = .defn d →
     ∀ (recurAddrs : List _root_.Address) (univs : List Ixon.Univ)
       (blobs : List (_root_.Address × ByteArray)) (bound : Nat) (h : Heap F) (p : SourceValue F),
-      L1.RawConvExpr c.refs.toList recurAddrs univs c.sharing.toList blobs h bound d.value p →
+      Ingress.RawConvExpr c.refs.toList recurAddrs univs c.sharing.toList blobs h bound d.value p →
     ∀ (x_a x_v res : SourceValue F) (h' : Heap F) (cs : List (Call F)),
       (⟨"KernelSubst::subst_const", [p, x_a, x_v], h⟩ : Call F) ∈ calls →
       ObsFn W "KernelSubst::subst_const" [p, x_a, x_v] h res h' cs →
@@ -470,33 +470,33 @@ theorem certObs_of_seg {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {r : Ro
     rw [← hargs_c.2.2.1] at hr_list
     obtain ⟨d, hinfo'⟩ := claimInfo_defn' hinfo
     obtain ⟨rawBytes, c, hh, haddr, hex, hres⟩ :=
-      L1.get_ci_trace_spec (Bytes.repAddressRef_heapMono₂ addrTy e462 hthB) ev631
+      Ingress.get_ci_trace_spec (Bytes.repAddressRef_heapMono₂ addrTy e462 hthB) ev631
     have hraw : rawBytes = rawBytes' := hS.hashed_inj (Claim.hashed_mono hsub629 hh)
       (Claim.hashed_mono hsub460 hh') (haddr.trans hbl'.symm)
     subst hraw
     have hcc : c = c' := Except.ok.inj (hex.symm.trans hdeE')
     subst hcc
     -- the proof's conversion
-    unfold L1.GetCITraceResult at hres
+    unfold Ingress.GetCITraceResult at hres
     rw [hinfo'] at hres
     obtain ⟨blobs, tree, v, hhp, built, hld, htr⟩ := hres
     obtain ⟨hnlvls, tyPtr, valPtr, hint, planT, planV, hvv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr
     subst hvv
-    have hshape : L1.defnValShape d tyPtr valPtr hint =
+    have hshape : Ingress.defnValShape d tyPtr valPtr hint =
         .construct "KernelTypes::KConstantInfo" "Thm" [xnl, w646, xpval] :=
       Except.ok.inj (hld.symm.trans ld625)
     have hkind : d.kind = .thm := by
       cases hk : d.kind with
       | thm => rfl
-      | defn => simp [L1.defnValShape, hk, Core.kciEnum] at hshape
-      | opaq => simp [L1.defnValShape, hk, Core.kciEnum] at hshape
+      | defn => simp [Ingress.defnValShape, hk, Core.kciEnum] at hshape
+      | opaq => simp [Ingress.defnValShape, hk, Core.kciEnum] at hshape
     have hxp : valPtr = xpval := by
-      simp only [L1.defnValShape, hkind] at hshape
+      simp only [Ingress.defnValShape, hkind] at hshape
       injection hshape with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
       exact hargs.2.2
-    have hrecur : L1.defnRecurAddrs d (ixAddr thmB) = [] := by
-      simp [L1.defnRecurAddrs, L1.defnIsUnsafeCI, hkind]
+    have hrecur : Ingress.defnRecurAddrs d (ixAddr thmB) = [] := by
+      simp [Ingress.defnRecurAddrs, Ingress.defnIsUnsafeCI, hkind]
     rw [hrecur, hxp] at rval
     -- the proof term, read, replaced and scope-checked
     obtain ⟨X, hX⟩ := rawConv_tmR (κ := keyOf t) rval
@@ -556,14 +556,14 @@ theorem certObs_of_seg {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {r : Ro
       intro x hin
       rcases hcells m690 (Heap.Extends.refl _) x hin with h1 | ⟨h1, hne⟩ | h1
       · exact hvcells m690 (ext615.trans e702) x h1
-      · rcases L1.RawConvExpr.addrIn_used rval690 x h1 with hr | hr
+      · rcases Ingress.RawConvExpr.addrIn_used rval690 x h1 with hr | hr
         · exact huse_of x hr hne
         · cases hr
       · -- a projection the substitution meets: read off its own call
         have hne : x ≠ b := hnoproj (ixAddr thmB) hev0 rawBytes c (Claim.hashed_mono hsub629 hh)
           hsz' haddr hex d hinfo' _ _ _ _ _ _ rval _ _ _ _ _ hcallS ev702
           (Bytes.repAddressRef_heapMono₂ addrTy ext615 hb) x h1
-        exact huse_of x (L1.RawConvExpr.projIn_used rval690 x h1) hne
+        exact huse_of x (Ingress.RawConvExpr.projIn_used rval690 x h1) hne
     -- the proof term at the closure's keying
     have hPs : TmC cx.stored.κ m690 (Expr.substConstAll (.role r) val X) v689 :=
       hPC.rekey
@@ -687,7 +687,7 @@ def CertProjFree (calls : List (Call F)) : Prop :=
       c.info = .defn d →
     ∀ (recurAddrs : List _root_.Address) (univs : List Ixon.Univ)
       (blobs : List (_root_.Address × ByteArray)) (bound : Nat) (h : Heap F) (p : SourceValue F),
-      L1.RawConvExpr c.refs.toList recurAddrs univs c.sharing.toList blobs h bound d.value p →
+      Ingress.RawConvExpr c.refs.toList recurAddrs univs c.sharing.toList blobs h bound d.value p →
     ∀ (x_a x_v res : SourceValue F) (h' : Heap F) (cs : List (Call F)),
       (⟨"KernelSubst::subst_const", [p, x_a, x_v], h⟩ : Call F) ∈ calls →
       ObsFn W "KernelSubst::subst_const" [p, x_a, x_v] h res h' cs →
@@ -720,12 +720,12 @@ theorem certProjFree_of_inventory {calls : List (Call F)}
         (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
       ∀ (c : Ixon.Constant) (d : Ixon.Definition),
         IxVM.Consistency.recordOf ρ.E₀ thm = some c → c.info = .defn d →
-      ∀ x : _root_.Address, L1.PrjUsed c.refs.toList c.sharing.toList d.value x → x ≠ a) :
+      ∀ x : _root_.Address, Ingress.PrjUsed c.refs.toList c.sharing.toList d.value x → x ≠ a) :
     CertProjFree calls := by
   intro t ρ Rs hrun r a hr ha arr thm harr hthm c d hc hd recurAddrs univs blobs bound h p rp
     x_a x_v res h' cs _ ev b hb _ x hx hxb
   exact hinv t ρ Rs hrun r a hr ha arr thm harr hthm c d hc hd (ixAddr x)
-    (L1.RawConvExpr.projIn_prj (rp.mono ev.heap_extends (fun _ hm => hm)) x hx)
+    (Ingress.RawConvExpr.projIn_prj (rp.mono ev.heap_extends (fun _ hm => hm)) x hx)
     (by rw [hxb]; exact hb)
 
 private theorem evList_length'' {es : List (Ix.Kernel.Evidence _root_.Address)}
@@ -830,7 +830,7 @@ theorem opCertFacts_of_projFree {calls : List (Call F)} (hpf : CertProjFree call
       rw [hlv0] at hcV'
       exact Option.some.inj (hcV'.symm.trans hcV)
     rw [hvv, hlv0, Decl.posOf_range] at htmV
-    have hv31 : v31 = L1.defnValShape d tyPtr valPtr hintV :=
+    have hv31 : v31 = Ingress.defnValShape d tyPtr valPtr hintV :=
       Except.ok.inj (ld41.symm.trans hldv)
     match Obs.«KernelRoles::validate_op».obs ev238 with
     | .other (heq575 := hbad) .. => exact (zero_ne_one (Value.field.inj hbad)).elim
@@ -854,11 +854,11 @@ theorem opCertFacts_of_projFree {calls : List (Call F)} (hpf : CertProjFree call
       have hkind : d.kind = .defn := by
         cases hk : d.kind with
         | defn => rfl
-        | opaq => simp [L1.defnValShape, hk, Core.kciEnum] at hci
-        | thm => simp [L1.defnValShape, hk, Core.kciEnum] at hci
-      have hsh : L1.defnValShape d tyPtr valPtr hintV = .construct Core.kciEnum "Defn"
-          [.field (d.lvls.toNat : F), tyPtr, valPtr, L1.repDefSafetyVal d.safety, hintV] := by
-        simp [L1.defnValShape, hkind]
+        | opaq => simp [Ingress.defnValShape, hk, Core.kciEnum] at hci
+        | thm => simp [Ingress.defnValShape, hk, Core.kciEnum] at hci
+      have hsh : Ingress.defnValShape d tyPtr valPtr hintV = .construct Core.kciEnum "Defn"
+          [.field (d.lvls.toNat : F), tyPtr, valPtr, Ingress.repDefSafetyVal d.safety, hintV] := by
+        simp [Ingress.defnValShape, hkind]
       rw [hsh] at hci
       have hfl := (Value.construct.inj hci).2.2
       simp only [List.cons.injEq] at hfl
@@ -887,7 +887,7 @@ theorem opCertFacts_of_projFree {calls : List (Call F)} (hpf : CertProjFree call
         intro h₂ e₂ x hin
         have hin32 := TmExact.addrIn_back (htmV 0 (fun _ => .sort .zero)) (ext32_463.trans e₂)
           x hin
-        rcases L1.RawConvExpr.addrIn_used rval x hin32 with ⟨i, hi, hr⟩ | hr
+        rcases Ingress.RawConvExpr.addrIn_used rval x hin32 with ⟨i, hi, hr⟩ | hr
         · have hu : i ∈ IxVM.Consistency.usedRefIdxs c := by
             unfold IxVM.Consistency.usedRefIdxs
             rw [hinfo]
@@ -937,14 +937,14 @@ theorem opCertFacts_of_projFree {calls : List (Call F)} (hpf : CertProjFree call
         have hxa : ixAddr x ≠ ixAddr b := fun e' => hne (Decl.ixAddr_injective e')
         have hlt : i < c₁.refs.toList.length := (List.getElem?_eq_some_iff.mp hx).1
         have hxe : c₁.refs.toList[i] = ixAddr x := (List.getElem?_eq_some_iff.mp hx).2
-        have hu' : i ∈ S0.usedRefIdxs c₁ := by rw [Assembly.usedRefIdxs_eq]; exact hu
+        have hu' : i ∈ BaseSeams.usedRefIdxs c₁ := by rw [Assembly.usedRefIdxs_eq]; exact hu
         obtain ⟨-, hcov⟩ := hw i hlt hu' (by rw [hxe]; exact hxa)
         rw [hxe] at hcov
         -- the certificate's record and the record at `x`
         have hrecThm : IxVM.Consistency.recordOf ρ.E₀ thm = some c₁ := by
           rw [← hbl]
           exact Claim.recordOf_hashed hrun.runStore hrun.hashedStored hh hsz
-            (L1.deConstant_of_deConstantExact hde) hde
+            (Ingress.deConstant_of_deConstantExact hde) hde
         have hU : Typing.UsedRef ρ.E₀ thm (ixAddr x) :=
           ⟨c₁, i, hrecThm, hu, by rw [← Array.getElem?_toList]; exact hx⟩
         have hR' := hadm.evidenceRefs r hrg arr thm (ixAddr x) harr hthmA hU
@@ -1007,7 +1007,7 @@ theorem opCertFacts_of_projFree {calls : List (Call F)} (hpf : CertProjFree call
         have hrecThm : IxVM.Consistency.recordOf ρ.E₀ thm = some c₁ := by
           rw [← hbl]
           exact Claim.recordOf_hashed hrun.runStore hrun.hashedStored hh hsz
-            (L1.deConstant_of_deConstantExact hde) hde
+            (Ingress.deConstant_of_deConstantExact hde) hde
         exact hpf t ρ Rs hrun r (ixAddr b) hop had arr thm harr hthmA c₁ d₁ hrecThm hinfo₁
           rA uA bA nA hS pS rS xA xV rV hS' csS hmS evS b rfl hbS x hpj
       have hall := certObs_of_evidence (Ec := Ec) (env := env₁) (lim := valLimit g) (val := val)

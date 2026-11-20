@@ -38,7 +38,7 @@ def LoadedNode (h : Heap F) (tbl : SourceValue F) (a : _root_.Address)
   ∃ (bp byRole byAddr ev : SourceValue F) (ents : List (Nat × SourceValue F))
     (es : List (Bytes.Address × SourceValue F)) (evEnts : List (Nat × SourceValue F)),
     loadValue h tbl = .ok (.construct rtEnum "Mk" [bp, byRole, byAddr, ev]) ∧
-    S0.addr h bp a ∧
+    BaseSeams.addr h bp a ∧
     RoleMapEntries roleAddrMapEnum h ents byRole ∧ BoundEntriesOf h lb ents ∧
     Claim.RBTreeBST .field h es byAddr ∧ IndexEntriesOf [] lb es ∧
     RoleMapEntries roleEvMapEnum h evEnts ev ∧ EvidenceEntriesOf h le evEnts
@@ -49,7 +49,7 @@ theorem LoadedNode.mono {h₁ h₂ : Heap F} (ext : Heap.Extends h₁ h₂) {tbl
     (hn : LoadedNode h₁ tbl a lb le) : LoadedNode h₂ tbl a lb le := by
   obtain ⟨bp, byRole, byAddr, ev, ents, es, evEnts, hl, hbp, hent, hbnd, hbst, hidx, hevm,
     hev⟩ := hn
-  exact ⟨bp, byRole, byAddr, ev, ents, es, evEnts, ext.loadValue_eq hl, S0.addr_mono ext hbp,
+  exact ⟨bp, byRole, byAddr, ev, ents, es, evEnts, ext.loadValue_eq hl, BaseSeams.addr_mono ext hbp,
     hent.mono ext, hbnd.mono ext, hbst.mono ext, hidx, hevm.mono ext, hev.mono ext⟩
 
 theorem flatMap_map' {α β γ : Type} (f : α → β) (g : β → List γ) :
@@ -70,7 +70,7 @@ theorem ascending_of_pairwise {α : Type} :
 
 /-- **`KernelRoles::load_role_table`, parsed.** -/
 theorem load_role_table_parse {x_a x_tbl : SourceValue F} {h h₁ : Heap F}
-    {cs : List (Call F)} {a : _root_.Address} (ha : S0.addr h x_a a)
+    {cs : List (Call F)} {a : _root_.Address} (ha : BaseSeams.addr h x_a a)
     (ev : ObsFn W "KernelRoles::load_role_table" [x_a] h x_tbl h₁ cs) :
     ∃ (bytes : List UInt8) (lb : List (Ix.Kernel.Role × Bytes.Address))
       (le : List (Ix.Kernel.Role × List (Ix.Kernel.Evidence _root_.Address)))
@@ -85,7 +85,7 @@ theorem load_role_table_parse {x_a x_tbl : SourceValue F} {h h₁ : Heap F}
       RoleMapEntries roleEvMapEnum hE evEnts evMap ∧ EvidenceEntriesOf hE le evEnts ∧
       ObsFn W "KernelRoles::evidence_roles_have_equations" [evMap] hE v hE' csE := by
   have hext : Heap.Extends h h₁ := ev.heap_extends
-  have ha₁ : S0.addr h₁ x_a a := S0.addr_mono hext ha
+  have ha₁ : BaseSeams.addr h₁ x_a a := BaseSeams.addr_mono hext ha
   obtain ⟨v1, m14, cs24, x_idx, x_len, v55, m56, cs66, v92, m93, cs103,
     m123, cs133, x_t0, x_s, v168, m171, cs179, m198, cs208, x_t1, x_s_222,
     v244, m247, cs255, m274, cs284, x_version, x_s_298, v320, v321, m323, cs331,
@@ -97,14 +97,14 @@ theorem load_role_table_parse {x_a x_tbl : SourceValue F} {h h₁ : Heap F}
     ev286, ev333, ev353, heq354, ev368, ev427, ev404, ev488, ev546, ev524,
     ev594, ld613, hm629, ev678, rfl, rfl, hc636⟩ := Obs.«KernelRoles::load_role_table».obs ev
   obtain ⟨ab, hab, hix_b⟩ := ha
-  have hv1 : v1 = L1.digestV ab := L1.load_repAddressRef hab ld11
-  obtain ⟨bytes, _, ext1, ext2, hst, hcall, hproj⟩ := L1.checked_read ev26 ev68 ev105
+  have hv1 : v1 = Ingress.digestV ab := Ingress.load_repAddressRef hab ld11
+  obtain ⟨bytes, _, ext1, ext2, hst, hcall, hproj⟩ := Ingress.checked_read ev26 ev68 ev105
   have hhashed : Hashed cs ⟨bytes.toArray⟩ :=
-    L1.hashed_of_call (by rw [hc636]; simp [hcall]) hst
+    Ingress.hashed_of_call (by rw [hc636]; simp [hcall]) hst
   have hblk : Address.blake3Pure ⟨bytes.toArray⟩ = a := by
-    rw [L1.blake3Pure_eq, L1.digest_eq_of_proj hv1 hproj]
+    rw [Ingress.blake3Pure_eq, Ingress.digest_eq_of_proj hv1 hproj]
     exact hix_b
-  have hst0 : L1.Stream m93 bytes v55 := hst.mono ext2
+  have hst0 : Ingress.Stream m93 bytes v55 := hst.mono ext2
   -- the header
   obtain ⟨rfl, b0, r0, p0, rfl, hs0, ht0⟩ := Deserialize.readByte_refines hst0 ev135.erase
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at ht0
@@ -156,7 +156,7 @@ theorem load_role_table_parse {x_a x_tbl : SourceValue F} {h h₁ : Heap F}
   obtain ⟨rfl, -, rfl⟩ := htupE
   subst hbsE
   -- the end of the stream
-  rcases L1.stream_inv (hsE.mono ev594.heap_extends) ld613 with ⟨rfl, -⟩ | ⟨x, xs, tl, -, hv, -⟩
+  rcases Ingress.stream_inv (hsE.mono ev594.heap_extends) ld613 with ⟨rfl, -⟩ | ⟨x, xs, tl, -, hv, -⟩
   swap
   · injection hv with _ hc _
     exact absurd hc (by decide)

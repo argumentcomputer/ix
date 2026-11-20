@@ -6,7 +6,7 @@ import Ix.Cert.SourcePrelude
 
 /-! # Walked non-role record bare reading and full stream assembly (`RecordReadBare`)
 
-Discharges per-record `Ix.Kernel.Reader.readRecordBare` completeness, `L1.RecordReadsAs`, and
+Discharges per-record `Ix.Kernel.Reader.readRecordBare` completeness, `Ingress.RecordReadsAs`, and
 prefix-ordered `CheckedConstOrigin` / `CheckedIndOrigin` witnesses across the combined role+walked
 closure `(E, order)`:
 
@@ -73,7 +73,7 @@ inductive CheckedConstOrigin (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
       (hsub_es : ∀ cl ∈ cs_es, cl ∈ calls)
       (hext_ax : Heap.Extends m_es' m_ax)
       (hrc_ax : Claim.RCFullRep t bAddr lim m_ax x_rc)
-      (ha_ax : Core.S0.addr m_ax x_addr a)
+      (ha_ax : Core.BaseSeams.addr m_ax x_addr a)
       (ev_ax : ObsFn Core.W "KernelRoles::axiom_standing" [x_rc, x_addr] m_ax v_ax m_ax' cs_ax)
       (hne_ax : v_ax ≠ .field 0)
       (hcl_ax : (⟨"KernelRoles::axiom_standing", [x_rc, x_addr], m_ax⟩ : Call F) ∈ calls)
@@ -978,8 +978,8 @@ theorem rawConvExpr_filter_refs
     {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
     {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
-    (raw : L1.RawConvExpr refs recurAddrs univs sharing blobs h bound e kp) :
-    L1.RawConvExpr refs recurAddrs univs sharing
+    (raw : Ingress.RawConvExpr refs recurAddrs univs sharing blobs h bound e kp) :
+    Ingress.RawConvExpr refs recurAddrs univs sharing
       (blobs.filter (fun p => refs.contains p.1)) h bound e kp := by
   induction raw with
   | var h1 h2 => exact .var h1 h2
@@ -1012,12 +1012,12 @@ theorem memberReader_read_congr_of_rawConvExpr
       ∃ k, self₁ i = some (.ok k) ∧ self₂ i = some (.ok k))
     (hblob : ∀ a bs, (a, bs) ∈ blobs → cx₁.blob a = some bs ∧ cx₂.blob a = some bs)
     {h : Heap F} {e : Ixon.Expr} {kp : SourceValue F} {E_rd : Core.KExpr}
-    (raw : L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+    (raw : Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
       h 4294967295 e kp)
     (hrd₁ : (Ix.Kernel.Reader.MemberReader.mk' cx₁ src param self₁).read e = .ok E_rd) :
     (Ix.Kernel.Reader.MemberReader.mk' cx₂ src param self₂).read e = .ok E_rd := by
-  obtain ⟨hecx₁, htbl₁⟩ := L1.memberReader_mk'_eq cx₁ src param self₁
-  obtain ⟨hecx₂, htbl₂⟩ := L1.memberReader_mk'_eq cx₂ src param self₂
+  obtain ⟨hecx₁, htbl₁⟩ := Ingress.memberReader_mk'_eq cx₁ src param self₁
+  obtain ⟨hecx₂, htbl₂⟩ := Ingress.memberReader_mk'_eq cx₂ src param self₂
   unfold Ix.Kernel.Reader.MemberReader.read at hrd₁ ⊢
   rw [hecx₁, htbl₁, ← List.take_length (l := src.sharing.toList)] at hrd₁
   rw [hecx₂, htbl₂, ← List.take_length (l := src.sharing.toList)]
@@ -1026,14 +1026,14 @@ theorem memberReader_read_congr_of_rawConvExpr
   let ecx₂ : Ix.Kernel.Reader.ECx .anon :=
     ⟨cx₂, src, src.univs.map (Ix.Kernel.Reader.convUniv param), self₂⟩
   have hgo : ∀ {bnd : Nat} {e' : Ixon.Expr} {kp' : SourceValue F},
-      L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+      Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
         h bnd e' kp' →
       ∀ {n : Nat} {E' : Core.KExpr},
         n ≤ src.sharing.toList.length →
         (bnd ≤ n ∨ n = src.sharing.toList.length) →
-        Ix.Kernel.Reader.convExpr ecx₁ (L1.buildShareTbl ecx₁ (src.sharing.toList.take n)) e' =
+        Ix.Kernel.Reader.convExpr ecx₁ (Ingress.buildShareTbl ecx₁ (src.sharing.toList.take n)) e' =
           .ok E' →
-        Ix.Kernel.Reader.convExpr ecx₂ (L1.buildShareTbl ecx₂ (src.sharing.toList.take n)) e' =
+        Ix.Kernel.Reader.convExpr ecx₂ (Ingress.buildShareTbl ecx₂ (src.sharing.toList.take n)) e' =
           .ok E' := by
     intro bnd e' kp' r'
     induction r' with
@@ -1064,7 +1064,7 @@ theorem memberReader_read_congr_of_rawConvExpr
         rw [hk2] at h1
         simp only [bind, Except.bind] at h1
         cases hsub : Ix.Kernel.Reader.convExpr ecx₁
-            (L1.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
+            (Ingress.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
         | error _ => rw [hsub] at h1; cases h1
         | ok Ein =>
           rw [hsub] at h1
@@ -1091,13 +1091,13 @@ theorem memberReader_read_congr_of_rawConvExpr
       intro n _ hn hbnd h1
       simp only [Ix.Kernel.Reader.convExpr] at h1 ⊢
       cases hf : Ix.Kernel.Reader.convExpr ecx₁
-          (L1.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
+          (Ingress.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
       | error _ => rw [hf] at h1; simp [bind, Except.bind] at h1
       | ok Ef =>
         rw [hf] at h1
         simp only [bind, Except.bind] at h1
         cases ha : Ix.Kernel.Reader.convExpr ecx₁
-            (L1.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
+            (Ingress.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
         | error _ => rw [ha] at h1; cases h1
         | ok Ea =>
           rw [ha] at h1
@@ -1107,13 +1107,13 @@ theorem memberReader_read_congr_of_rawConvExpr
       intro n _ hn hbnd h1
       simp only [Ix.Kernel.Reader.convExpr] at h1 ⊢
       cases ht : Ix.Kernel.Reader.convExpr ecx₁
-          (L1.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
+          (Ingress.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
       | error _ => rw [ht] at h1; simp [bind, Except.bind] at h1
       | ok Et =>
         rw [ht] at h1
         simp only [bind, Except.bind] at h1
         cases hb : Ix.Kernel.Reader.convExpr ecx₁
-            (L1.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
+            (Ingress.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
         | error _ => rw [hb] at h1; cases h1
         | ok Eb =>
           rw [hb] at h1
@@ -1123,13 +1123,13 @@ theorem memberReader_read_congr_of_rawConvExpr
       intro n _ hn hbnd h1
       simp only [Ix.Kernel.Reader.convExpr] at h1 ⊢
       cases ht : Ix.Kernel.Reader.convExpr ecx₁
-          (L1.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
+          (Ingress.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
       | error _ => rw [ht] at h1; simp [bind, Except.bind] at h1
       | ok Et =>
         rw [ht] at h1
         simp only [bind, Except.bind] at h1
         cases hb : Ix.Kernel.Reader.convExpr ecx₁
-            (L1.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
+            (Ingress.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
         | error _ => rw [hb] at h1; cases h1
         | ok Eb =>
           rw [hb] at h1
@@ -1139,18 +1139,18 @@ theorem memberReader_read_congr_of_rawConvExpr
       intro n _ hn hbnd h1
       simp only [Ix.Kernel.Reader.convExpr] at h1 ⊢
       cases ht : Ix.Kernel.Reader.convExpr ecx₁
-          (L1.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
+          (Ingress.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
       | error _ => rw [ht] at h1; simp [bind, Except.bind] at h1
       | ok Et =>
         rw [ht] at h1
         simp only [bind, Except.bind] at h1
         cases hv : Ix.Kernel.Reader.convExpr ecx₁
-            (L1.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
+            (Ingress.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
         | error _ => rw [hv] at h1; cases h1
         | ok Ev =>
           rw [hv] at h1
           cases hb : Ix.Kernel.Reader.convExpr ecx₁
-              (L1.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
+              (Ingress.buildShareTbl ecx₁ (src.sharing.toList.take n)) _ with
           | error _ => rw [hb] at h1; cases h1
           | ok Eb =>
             rw [hb] at h1
@@ -1162,8 +1162,8 @@ theorem memberReader_read_congr_of_rawConvExpr
         (List.getElem?_eq_some_iff.mp hsh2).1
       have hi_n : idx2.toNat < n := by rcases hbnd with hb | rfl <;> omega
       simp only [Ix.Kernel.Reader.convExpr] at h1 ⊢
-      rw [L1.buildShareTbl_take_getElem? ecx₁ src.sharing.toList hi_n hsh2] at h1
-      rw [L1.buildShareTbl_take_getElem? ecx₂ src.sharing.toList hi_n hsh2]
+      rw [Ingress.buildShareTbl_take_getElem? ecx₁ src.sharing.toList hi_n hsh2] at h1
+      rw [Ingress.buildShareTbl_take_getElem? ecx₂ src.sharing.toList hi_n hsh2]
       exact ih (Nat.le_of_lt hi_len) (Or.inl (Nat.le_refl _)) h1
   exact hgo raw (Nat.le_refl _) (Or.inr rfl) hrd₁
 
@@ -1180,7 +1180,7 @@ private theorem memberReader_read_with_blob
     {blobs : List (_root_.Address × ByteArray)}
     (hblob : ∀ a bs, (a, bs) ∈ blobs → cx.blob a = some bs ∧ b' a = some bs)
     {h : Heap F} {e : Ixon.Expr} {kp : SourceValue F} {E_rd : Core.KExpr}
-    (raw : L1.RawConvExpr src.refs.toList [] src.univs.toList src.sharing.toList blobs
+    (raw : Ingress.RawConvExpr src.refs.toList [] src.univs.toList src.sharing.toList blobs
       h 4294967295 e kp)
     (hrd : (Ix.Kernel.Reader.MemberReader.mk' cx src param self).read e = .ok E_rd) :
     (Ix.Kernel.Reader.MemberReader.mk' { cx with blob := b' } src param self).read e = .ok E_rd :=
@@ -1350,7 +1350,7 @@ theorem not_quot_of_nonRole_checked
     False := by
   obtain ⟨lim, h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     bytes, E_ld, hrc_pre, hrc_m, ha_pre, ha_m, hhash_ld, hblake_ld, _, hL1,
-    hsub_ld, hld, ev_chk, _, _⟩ := checkedAtFull_loadedL1 hbound hchk
+    hsub_ld, hld, ev_chk, _, _⟩ := checkedAtFull_loadedRecords hbound hchk
   obtain ⟨c_ld, hdec_ld, _, _, v', hld', hraw⟩ := hL1
   rw [hld] at hld'; injection hld' with hvv; subst hvv
   unfold Ix.Cert.recordAt at hrec₀
@@ -1370,7 +1370,7 @@ theorem not_quot_of_nonRole_checked
     injection hdec_ld with hcld
     subst c_ld
     rw [hblake_ld] at hraw
-    unfold L1.RawCIRep at hraw
+    unfold Ingress.RawCIRep at hraw
     rw [hq] at hraw
     obtain ⟨_, _, _, tyPtr, rfl, _⟩ := hraw
     cases «KernelCheck::check_const».obs ev_chk with
@@ -1419,7 +1419,7 @@ theorem not_quot_of_nonRole_checked
           have hx10 : x10 = .field (Core.roleNum ro + 1) := hx1.trans hx2.symm
           obtain ⟨_, hidx⟩ :=
             Claim.role_index_of_full_spec (hrc_m.mono ext_all)
-              (Core.S0.addr_mono ext_all ha_m) ev23
+              (Core.BaseSeams.addr_mono ext_all ha_m) ev23
           rcases hidx with ⟨hx0, _⟩ | ⟨ro₁, hxr, haddr₁⟩
           · exact Core.RolesAux.roleNum_add_one_ne_zero ro
               (Value.field.inj (hx10.symm.trans hx0))
@@ -1428,7 +1428,7 @@ theorem not_quot_of_nonRole_checked
             have hb : IxVM.Refinement.BindingSeeds t a := Or.inl ⟨ro, hct, haddr₁⟩
             exact hnot_role ((hadm.closureOrder.complete a).mpr (.seed hb (hadm.seeds_in a hb)))
 
-/-! ## Section 5: Per-record `readRecordBare` + `CheckedConstOrigin` + `L1.RecordReadsAs` -/
+/-! ## Section 5: Per-record `readRecordBare` + `CheckedConstOrigin` + `Ingress.RecordReadsAs` -/
 
 /-- Helper: in `(E, order)` built via `Keep := fun x => x ∈ order_role ∨ WkSafe calls b.address t E₀ x`,
 any `RawConvExpr` on `src` (at `src_addr ∈ order` with `WkAll calls b.address t E₀ src_addr` and
@@ -1481,8 +1481,8 @@ private theorem safe_rawConvExpr_ctx_ready
     (hdir : ∀ x ∈ IxVM.Consistency.exprRefIdxs e, x ∈ IxVM.Consistency.usedRefIdxs src)
     (hload_ld : IxVM.Consistency.LoadedBy cs_load E_ld)
     (hsub_ld : ∀ cl ∈ cs_load, cl ∈ calls)
-    (hb_ld : L1.BlobTableLoaded E_ld blobs)
-    (raw : L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+    (hb_ld : Ingress.BlobTableLoaded E_ld blobs)
+    (raw : Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
       h₀ 4294967295 e kp)
     (hext_sr : Heap.Extends h₀ h_sr)
     (ev_sr : ObsFn Core.W "KernelCheck::safe_refs_only" [kp] h_sr (.field 1) h'_sr cs_sr)
@@ -1494,13 +1494,13 @@ private theorem safe_rawConvExpr_ctx_ready
     let cx := Ix.Kernel.Admission.streamContext _root_.Address.admissionHash t pre
       (Ix.Cert.Stream.decodedOf E order) (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E)
     let blobs' := blobs.filter (fun p => src.refs.toList.contains p.1)
-    L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs'
+    Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs'
       h₀ 4294967295 e kp ∧
     (∀ x bs, (x, bs) ∈ blobs' → cx.blob x = some bs ∧ E_core.blobs.get? x = some bs) ∧
     (∀ idx ∈ reachRefsExpr (buildReachRefsTbl src.sharing.toList) e,
       ∀ r, src.refs[idx]? = some r → cx.keyAt r = .ok (Core.keyOf t r)) := by
   intro Keep E E_core cx blobs'
-  have hnoCol_ld : ¬ L1.EnvInternalCollision E_ld := by
+  have hnoCol_ld : ¬ Ingress.EnvInternalCollision E_ld := by
     rintro ⟨x, d, lc, hbl, hcn, hne⟩
     obtain ⟨hh_d, hblk_d⟩ := hload_ld.2 x d hbl
     obtain ⟨hh_c, hblk_c⟩ := hload_ld.1 x lc hcn
@@ -1538,8 +1538,8 @@ private theorem safe_rawConvExpr_ctx_ready
     have raw_sr := raw.mono hext_sr (fun _ hm => hm)
     have hidx_used : idx ∈ IxVM.Consistency.usedRefIdxs src :=
       reachRefs_subset_usedRefIdxs hdir idx hidx
-    have hidx_s0 : idx ∈ Core.S0.usedRefIdxs src := by rwa [usedRefIdxs_eq]
-    have hedge_r : Core.S0.WalkEdge E₀ src_addr r := ⟨src, hsrc_rec₀, Or.inr ⟨idx, hidx_s0, hr⟩⟩
+    have hidx_s0 : idx ∈ Core.BaseSeams.usedRefIdxs src := by rwa [usedRefIdxs_eq]
+    have hedge_r : Core.BaseSeams.WalkEdge E₀ src_addr r := ⟨src, hsrc_rec₀, Or.inr ⟨idx, hidx_s0, hr⟩⟩
     obtain ⟨hwk_r, _⟩ := (wkAll_closedSubwalk calls b.address t E₀).step src_addr r hsrc_wk hedge_r
     obtain ⟨hnot_out_r, hres₀_r⟩ :=
       hSR.safe_expr_refs_resolve hbound hload hexact₀ hnoCol (Or.inr rfl) ev_sr hsub_sr raw_sr
@@ -1667,7 +1667,7 @@ private theorem is_unsafe_ci_defnValShape_safe {d : Ixon.Definition}
     {tyPtr valPtr hint v1 : SourceValue F} {h m2 : Heap F} {cs : List (Call F)}
     (hsafe : Ix.Kernel.Reader.safetyDecline d = none)
     (ev : ObsFn Core.W "KernelCheck::is_unsafe_ci"
-      [L1.defnValShape d tyPtr valPtr hint] h v1 m2 cs) :
+      [Ingress.defnValShape d tyPtr valPtr hint] h v1 m2 cs) :
     v1 = .field 0 ∧ m2 = h := by
   cases hk : d.kind with
   | defn =>
@@ -1677,13 +1677,13 @@ private theorem is_unsafe_ci_defnValShape_safe {d : Ixon.Definition}
       | safe => rfl
       | unsaf => rw [hds] at hsafe; exact absurd hsafe (by decide)
       | part => rw [hds] at hsafe; exact absurd hsafe (by decide)
-    simp only [L1.defnValShape, hk, hs] at ev
+    simp only [Ingress.defnValShape, hk, hs] at ev
     cases «KernelCheck::is_unsafe_ci».obs ev with
     | Defn_Safe _ _ _ _ _ _ he hr _ => exact ⟨he, hr⟩
     | Defn_other _ _ _ _ _ _ hv hne _ _ _ =>
       simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
       rcases hv with ⟨_, _, _, _, _, hs_eq, _⟩
-      exact (hne [] rfl (by simpa [L1.repDefSafetyVal] using hs_eq.symm)).elim
+      exact (hne [] rfl (by simpa [Ingress.repDefSafetyVal] using hs_eq.symm)).elim
     | Axiom _ _ _ hv | Thm _ _ _ _ _ hv | Opaque _ _ _ _ _ _ _ hv | Quot _ _ _ _ _ _ _ hv
     | Induct _ _ _ _ _ _ _ _ _ _ _ _ _ hv | Ctor _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv
     | Rec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv =>
@@ -1691,7 +1691,7 @@ private theorem is_unsafe_ci_defnValShape_safe {d : Ixon.Definition}
   | opaq =>
     have hns : (d.safety == .unsaf) = false := by
       simpa [Ix.Kernel.Reader.safetyDecline, Ix.Kernel.Reader.safetyDeclineOf, hk] using hsafe
-    simp only [L1.defnValShape, hk, hns] at ev
+    simp only [Ingress.defnValShape, hk, hns] at ev
     cases «KernelCheck::is_unsafe_ci».obs ev with
     | Opaque _ _ _ _ _ _ _ hv he hr _ =>
       simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
@@ -1704,7 +1704,7 @@ private theorem is_unsafe_ci_defnValShape_safe {d : Ixon.Definition}
     | Rec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv =>
       simp [Core.kciEnum] at hv
   | thm =>
-    simp only [L1.defnValShape, hk] at ev
+    simp only [Ingress.defnValShape, hk] at ev
     cases «KernelCheck::is_unsafe_ci».obs ev with
     | Thm _ _ _ _ _ _ he hr _ => exact ⟨he, hr⟩
     | Axiom _ _ _ hv | Defn_Safe _ _ _ _ _ hv | Defn_other _ _ _ _ _ _ hv
@@ -1718,13 +1718,13 @@ private theorem is_unsafe_ci_axio_safe {ax : Ixon.Axiom}
     (hsafe : ax.isUnsafe = false)
     (ev : ObsFn Core.W "KernelCheck::is_unsafe_ci"
       [.construct Core.kciEnum "Axiom"
-        [.field (ax.lvls.toNat : F), tyPtr, L1.repBoolField ax.isUnsafe]] h v1 m2 cs) :
+        [.field (ax.lvls.toNat : F), tyPtr, Ingress.repBoolField ax.isUnsafe]] h v1 m2 cs) :
     v1 = .field 0 ∧ m2 = h := by
   cases «KernelCheck::is_unsafe_ci».obs ev with
   | Axiom _ _ _ hv he hr _ =>
     simp only [Core.kciEnum, Value.construct.injEq, List.cons.injEq, and_true, true_and] at hv
     rcases hv with ⟨_, _, hu⟩
-    simp [hsafe, L1.repBoolField] at hu
+    simp [hsafe, Ingress.repBoolField] at hu
     exact ⟨he.trans hu.symm, hr⟩
   | Defn_Safe _ _ _ _ _ hv | Defn_other _ _ _ _ _ _ hv
   | Thm _ _ _ _ _ hv | Opaque _ _ _ _ _ _ _ hv | Quot _ _ _ _ _ _ _ hv
@@ -1732,7 +1732,7 @@ private theorem is_unsafe_ci_axio_safe {ax : Ixon.Axiom}
   | Rec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv =>
     simp [Core.kciEnum] at hv
 
-/-- Standalone `.axio ax` bare reading + `CheckedConstOrigin.axiomDecl` + `L1.RecordReadsAs`. -/
+/-- Standalone `.axio ax` bare reading + `CheckedConstOrigin.axiomDecl` + `Ingress.RecordReadsAs`. -/
 private theorem checkedAxiom_of_checkedAtFull
     (hSR : SafeRefsInputs)
     {V : IxVM.Refinement.View} {extra : List ByteArray} {calls : List (Call F)}
@@ -1752,7 +1752,7 @@ private theorem checkedAxiom_of_checkedAtFull
     (hblobs₀ : ∀ bytes, Hashed calls bytes →
       E₀.blobs.get? (_root_.Address.blake3Pure bytes) = some bytes)
     (hnoCol : ¬ V.HashedCollision extra calls)
-    (hnoInt_core : ¬ L1.EnvInternalCollision
+    (hnoInt_core : ¬ Ingress.EnvInternalCollision
       (coreEnvRole E₀ (fun x => x ∈ order_role ∨ WkSafe calls b.address t E₀ x)
         (roleSuppOf E_role order_role) (Ix.Cert.blobsOf E_role order_role) pre))
     (hsub_rec : ∀ x c_x,
@@ -1797,7 +1797,7 @@ private theorem checkedAxiom_of_checkedAtFull
       let ci₀ : Ix.Kernel.ConstantInfo .anon := .axiomInfo cv
       Ix.Kernel.Reader.readRecordBare cx st a c = .ok { decls := #[decl] } ∧
       CheckedConstOrigin calls t b.address E_core order_role decl ∧
-      L1.RecordReadsAs t E_core a c ci₀ ∧
+      Ingress.RecordReadsAs t E_core a c ci₀ ∧
       (IxVM.Consistency.inertKey (Core.keyOf t a) = false →
         ci₀ ∈ IxVM.Consistency.installs decl) := by
   intro Keep E E_core cx
@@ -1807,7 +1807,7 @@ private theorem checkedAxiom_of_checkedAtFull
   have hsafe : ax.isUnsafe = false := by simpa [IxVM.Consistency.InLogic, hinfo] using hinLogic
   obtain ⟨lim, h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     bytes, E_ld, hrc_pre, hrc_m, ha_pre, ha_m, hhash_ld, hblake_ld, hload_ld, hL1,
-    hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := checkedAtFull_loadedL1 hbound hchk
+    hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := checkedAtFull_loadedRecords hbound hchk
   obtain ⟨c_ld, hdec_ld, _, _, v', hld', hraw⟩ := hL1
   rw [hld] at hld'; injection hld' with hvv; subst hvv
   have hc_ld_eq : c_ld = c := by
@@ -1828,7 +1828,7 @@ private theorem checkedAxiom_of_checkedAtFull
       exact Option.some.inj (hlc₀.symm.trans hrec₀)
   subst c_ld
   rw [hblake_ld] at hraw
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨blobs, hb_ld, hnlvls, tyPtr, rfl, raw_ty⟩ := hraw
   cases «KernelCheck::check_const».obs ev_chk with
@@ -1925,7 +1925,7 @@ private theorem checkedAxiom_of_checkedAtFull
         (.axiomDecl ⟨Core.keyOf t a, List.range ax.lvls.toNat, ty₀⟩) :=
       .axiomDecl ha_not_role (hsub_rec a c hrecE) hinfo hsafe hnlvls hty_lbb hty_def hty_ann
         hm132 hty_tmc (hrc_m.mono ext_m_m124) ev105 hcl_es hsub_es
-        ev_sr.heap_extends (hrc_m.mono ext_m_m137) (Core.S0.addr_mono ext_m_m137 ha_m)
+        ev_sr.heap_extends (hrc_m.mono ext_m_m137) (Core.BaseSeams.addr_mono ext_m_m137 ha_m)
         ev203 hne255 hcl_ax hsub_ax
     let cx' : Ix.Kernel.Reader.Ctx .anon := { cx with blob := E_core.blobs.get? }
     have hrd_ty_cx' :
@@ -1933,7 +1933,7 @@ private theorem checkedAxiom_of_checkedAtFull
           (Ix.Kernel.Reader.recParam (List.range ax.lvls.toNat)) (fun _ => none)).read ax.typ =
           .ok ty₀ :=
       memberReader_read_with_blob cx E_core.blobs.get? hblobs_ok raw_ty' hrd_ty_rp
-    have hrra : L1.RecordReadsAs t E_core a c
+    have hrra : Ingress.RecordReadsAs t E_core a c
         (.axiomInfo ⟨Core.keyOf t a, List.range ax.lvls.toNat, ty₀⟩) := by
       refine ⟨hnoInt_core, ?_⟩
       rw [hinfo]
@@ -2022,8 +2022,8 @@ private theorem checkedDefnCore
     (hrc_m : Claim.RCFullRep t b.address lim m_chk rc)
     (hload_ld : IxVM.Consistency.LoadedBy cs_load E_ld)
     (hsub_ld : ∀ cl ∈ cs_load, cl ∈ calls)
-    (hb_ld : L1.BlobTableLoaded E_ld blobs)
-    (hraw_d : L1.RawDefnValRep src.refs.toList [] src.univs.toList src.sharing.toList blobs
+    (hb_ld : Ingress.BlobTableLoaded E_ld blobs)
+    (hraw_d : Ingress.RawDefnValRep src.refs.toList [] src.univs.toList src.sharing.toList blobs
       m_chk d v)
     (ev_chk : ObsFn Core.W "KernelCheck::check_const" [rc, v, ap] m_chk r_chk h'_chk cs_chk)
     (hsub_chk : ∀ cl ∈ cs_chk, cl ∈ calls) :
@@ -2064,17 +2064,17 @@ private theorem checkedDefnCore
     recurDeps_empty_of_rawConvExpr raw_ty raw_val
   cases hk : d.kind with
   | defn =>
-    have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
+    have hv_shape : Ingress.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Defn"
-          [.field (d.lvls.toNat : F), tyPtr, valPtr, L1.repDefSafetyVal d.safety, hintVal] := by
-      simp [L1.defnValShape, hk]
+          [.field (d.lvls.toNat : F), tyPtr, valPtr, Ingress.repDefSafetyVal d.safety, hintVal] := by
+      simp [Ingress.defnValShape, hk]
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other
     | Thm | Opaque | Quot
     | Induct_n0 | Induct_other_n0 | Induct_other_other
     | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
     | Rec_n0 | Rec_other =>
-      simp_all [L1.defnValShape, Core.kciEnum]
+      simp_all [Ingress.defnValShape, Core.kciEnum]
     | Defn v1 m2 cs12 x_nlvls x_ty x_val _ _ _ m299 cs309 _ m336 cs346 v372 m373 cs383 m404
         _ m417 cs427 _ m447 cs457 cs479 m508
         ev14 _ hv269 ev311 ev348 hm412 ev385 ev429 ev459 hm516 ev481 hc520 =>
@@ -2202,16 +2202,16 @@ private theorem checkedDefnCore
       exact ⟨.defnDecl cv val₀ hn, .defnInfo cv val₀ hn, hn, hrd_def, hcco,
         rfl, rfl, rfl, (fun _ h => nomatch h), rfl⟩
   | thm =>
-    have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
+    have hv_shape : Ingress.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Thm" [.field (d.lvls.toNat : F), tyPtr, valPtr] := by
-      simp [L1.defnValShape, hk]
+      simp [Ingress.defnValShape, hk]
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Defn
     | Opaque | Quot
     | Induct_n0 | Induct_other_n0 | Induct_other_other
     | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
     | Rec_n0 | Rec_other =>
-      simp_all [L1.defnValShape, Core.kciEnum]
+      simp_all [Ingress.defnValShape, Core.kciEnum]
     | Thm v1 m2 cs12 x_nlvls x_ty x_val _ m544 cs554 _ m581 cs591 v617 m618 cs628 m649
         v672 m675 cs683 m696 _ m716 cs726 _ m746 cs756 cs778 m807
         ev14 _ _ hv526 ev556 ev593 hm657 ev630 hm704 ev685 heq714 ev728 ev758 hm815 ev780 hc819 =>
@@ -2345,17 +2345,17 @@ private theorem checkedDefnCore
       exact ⟨.thmDecl cv val₀, .thmInfo cv val₀, .opaque, hrd_def, hcco,
         rfl, rfl, rfl, (fun _ h => nomatch h), rfl⟩
   | opaq =>
-    have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
+    have hv_shape : Ingress.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Opaque"
-          [.field (d.lvls.toNat : F), tyPtr, valPtr, L1.repBoolField (d.safety == .unsaf)] := by
-      simp [L1.defnValShape, hk]
+          [.field (d.lvls.toNat : F), tyPtr, valPtr, Ingress.repBoolField (d.safety == .unsaf)] := by
+      simp [Ingress.defnValShape, hk]
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Defn | Thm
     | Quot
     | Induct_n0 | Induct_other_n0 | Induct_other_other
     | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
     | Rec_n0 | Rec_other =>
-      simp_all [L1.defnValShape, Core.kciEnum]
+      simp_all [Ingress.defnValShape, Core.kciEnum]
     | Opaque v1 m2 cs12 x_nlvls x_ty x_val _ _ m849 cs859 _ m886 cs896 v922 m923 cs933 m954
         _ m967 cs977 _ m997 cs1007 cs1029 m1058
         ev14 _ _ _ hv825 ev861 ev898 hm962 ev935 ev979 ev1009 hm1066 ev1031 hc1070 =>
@@ -2631,7 +2631,7 @@ theorem dprjAddr_inj_of_mutsMemberChecked
     simpa only [Core.Specs.Callees.memberProjInfo, Core.dprjAddr] using h0
   obtain ⟨_, _, _, _, _, _, _, _, _, cs_load, _, bytes, _,
     _, _, _, _, hhash_ld, hblake_ld, _, hL1, hsub_ld, _, _, _, _⟩ :=
-    checkedAtFull_loadedL1 hbound hchk₁
+    checkedAtFull_loadedRecords hbound hchk₁
   obtain ⟨c_ld, hdec_ld, _, _, _, _, _⟩ := hL1
   have hh_calls : Hashed calls bytes := Core.hashed_mono hsub_ld hhash_ld
   have hc₁ := huniq₁ bytes c_ld hblake_ld hdec_ld (Or.inr (Or.inr hh_calls))
@@ -2749,7 +2749,7 @@ private theorem dprj_nonRole_and_memberKey (hRP : RolePreludeInputs)
   exact ⟨hi, hd_not_role,
     streamContext_memberKey_dprj_at hauth hba.wellFormed hst_own hinfo hms hi hbound_at hdprj_eq⟩
 
-/-- Standalone `.defn d` bare reading + `CheckedConstOrigin` + `L1.RecordReadsAs`. -/
+/-- Standalone `.defn d` bare reading + `CheckedConstOrigin` + `Ingress.RecordReadsAs`. -/
 private theorem checkedDefn_standalone
     (hSR : SafeRefsInputs)
     {V : IxVM.Refinement.View} {extra : List ByteArray} {calls : List (Call F)}
@@ -2769,7 +2769,7 @@ private theorem checkedDefn_standalone
     (hblobs₀ : ∀ bytes, Hashed calls bytes →
       E₀.blobs.get? (_root_.Address.blake3Pure bytes) = some bytes)
     (hnoCol : ¬ V.HashedCollision extra calls)
-    (hnoInt_core : ¬ L1.EnvInternalCollision
+    (hnoInt_core : ¬ Ingress.EnvInternalCollision
       (coreEnvRole E₀ (fun x => x ∈ order_role ∨ WkSafe calls b.address t E₀ x)
         (roleSuppOf E_role order_role) (Ix.Cert.blobsOf E_role order_role) pre))
     (hord : IxVM.Consistency.UsedClosureOrderAt t
@@ -2811,17 +2811,17 @@ private theorem checkedDefn_standalone
       ci₀.name = Core.keyOf t a ∧
       decl.names = [Core.keyOf t a] ∧
       (∀ kb, decl ≠ .basisDecl kb) ∧
-      L1.RecordReadsAs t E_core a c ci₀ := by
+      Ingress.RecordReadsAs t E_core a c ci₀ := by
   intro Keep E E_core cx
   have hinLogic : IxVM.Consistency.InLogic c := by
     by_contra hnin
     exact hnot_out ⟨c, hrec₀, Or.inl hnin⟩
   have hsafe : Ix.Kernel.Reader.safetyDecline d = none := by
     simpa [IxVM.Consistency.InLogic, hinfo] using hinLogic
-  have hnu : L1.defnIsUnsafeCI d = false := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+  have hnu : Ingress.defnIsUnsafeCI d = false := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
   obtain ⟨lim, h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     bytes, E_ld, _, hrc_m, _, _, hhash_ld, hblake_ld, hload_ld, hL1,
-    hsub_ld, hld, ev_chk, _, hsub_chk⟩ := checkedAtFull_loadedL1 hbound hchk
+    hsub_ld, hld, ev_chk, _, hsub_chk⟩ := checkedAtFull_loadedRecords hbound hchk
   obtain ⟨c_ld, hdec_ld, _, _, v', hld', hraw⟩ := hL1
   rw [hld] at hld'; injection hld' with hvv; subst hvv
   have hc_ld_eq : c_ld = c := by
@@ -2842,10 +2842,10 @@ private theorem checkedDefn_standalone
       exact Option.some.inj (hlc₀.symm.trans hrec₀)
   subst c_ld
   rw [hblake_ld] at hraw
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨blobs, hb_ld, hraw_d⟩ := hraw
-  have hrec_nil : L1.defnRecurAddrs d a = [] := by simp [L1.defnRecurAddrs, hnu]
+  have hrec_nil : Ingress.defnRecurAddrs d a = [] := by simp [Ingress.defnRecurAddrs, hnu]
   rw [hrec_nil] at hraw_d
   have hnd_dec : ((Ix.Cert.Stream.decodedOf E order).map Prod.fst).Nodup :=
     hord.nodup.sublist (Ix.Cert.Stream.decodedOf_keys E order)
@@ -2885,7 +2885,7 @@ private theorem checkedDefn_standalone
       rw [hrd₀]
       rfl
     exact haux cx st a c d decl hinfo hrd_def
-  have hrra : L1.RecordReadsAs t E_core a c ci₀ := by
+  have hrra : Ingress.RecordReadsAs t E_core a c ci₀ := by
     refine ⟨hnoInt_core, ?_⟩
     rw [hinfo]
     exact ⟨{ cx with blob := E_core.blobs.get? }, self,
@@ -2900,7 +2900,7 @@ private theorem checkedDefn_standalone
 
 /-- Single `.defn` member `i` of a walked `.muts ms` block `c` at `a ∉ order_role`: supplies
 `(recurDeps c d).toList = []`, `readDefinition = .ok (decl, false)` for every `heights`,
-`CheckedConstOrigin`, and `L1.RecordReadsAs t E_core (Core.dprjAddr a i) c_dprj ci₀`. -/
+`CheckedConstOrigin`, and `Ingress.RecordReadsAs t E_core (Core.dprjAddr a i) c_dprj ci₀`. -/
 private theorem checkedMutsDefn_member
     (hRP : RolePreludeInputs) (hSR : SafeRefsInputs)
     {V : IxVM.Refinement.View} {extra : List ByteArray} {calls : List (Call F)}
@@ -2922,7 +2922,7 @@ private theorem checkedMutsDefn_member
     (hblobs₀ : ∀ bytes, Hashed calls bytes →
       E₀.blobs.get? (_root_.Address.blake3Pure bytes) = some bytes)
     (hnoCol : ¬ V.HashedCollision extra calls)
-    (hnoInt_core : ¬ L1.EnvInternalCollision
+    (hnoInt_core : ¬ Ingress.EnvInternalCollision
       (coreEnvRole E₀ (fun x => x ∈ order_role ∨ WkSafe calls b.address t E₀ x)
         (roleSuppOf E_role order_role) (Ix.Cert.blobsOf E_role order_role) pre))
     (hsub_rec : ∀ x c_x,
@@ -2977,7 +2977,7 @@ private theorem checkedMutsDefn_member
         ci₀.name = Core.keyOf t (Core.dprjAddr a i) ∧
         decl.names = [Core.keyOf t (Core.dprjAddr a i)] ∧
         (∀ kb, decl ≠ .basisDecl kb) ∧
-        L1.RecordReadsAs t E_core (Core.dprjAddr a i)
+        Ingress.RecordReadsAs t E_core (Core.dprjAddr a i)
           ⟨.dPrj ⟨i.toUInt64, a⟩, #[], #[], #[], #[]⟩ ci₀ := by
   intro Keep E E_core cx self
   have hinLogic : IxVM.Consistency.InLogic c := by
@@ -2988,7 +2988,7 @@ private theorem checkedMutsDefn_member
   have hsafe : Ix.Kernel.Reader.safetyDecline d = none := by
     rw [IxVM.Consistency.InLogic, hinfo] at hinLogic
     exact hinLogic (.defn d) hmem_ms
-  have hnu : L1.defnIsUnsafeCI d = false := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+  have hnu : Ingress.defnIsUnsafeCI d = false := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
   obtain ⟨hi, hd_not_role, hmkey⟩ :=
     dprj_nonRole_and_memberKey hRP hbound hadm hba hcomm_extra hload hexact₀ hnoCol hord hauth
       ha_ord ha_not_role hrecE hinfo hms hm
@@ -2998,14 +2998,14 @@ private theorem checkedMutsDefn_member
     simpa only [Core.Specs.Callees.memberProjInfo, Core.dprjAddr] using h0
   obtain ⟨lim, h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     bytes, E_ld, _, hrc_m, _, _, hhash_ld, hblake_ld, hload_ld, hL1,
-    hsub_ld, hld, ev_chk, _, hsub_chk⟩ := checkedAtFull_loadedL1 hbound hchk_i
+    hsub_ld, hld, ev_chk, _, hsub_chk⟩ := checkedAtFull_loadedRecords hbound hchk_i
   obtain ⟨c_ld, hdec_ld, _, _, v', hld', hraw⟩ := hL1
   rw [hld] at hld'; injection hld' with hvv; subst hvv
   have hc_ld_eq : c_ld = ⟨.dPrj ⟨i.toUInt64, a⟩, #[], #[], #[], #[]⟩ :=
     huniq_dprj bytes c_ld hblake_ld hdec_ld (Or.inr (Or.inr (Core.hashed_mono hsub_ld hhash_ld)))
   subst c_ld
   rw [hblake_ld] at hraw
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   dsimp only at hraw
   obtain ⟨_, lcB, cb_ld, ms_ld, d_ld, blobs, hgetB, hlcB, _, hexB, _, hcb_info, hms_ld, hb_ld, hraw_d⟩ := hraw
   have hcb_eq : cb_ld = c := by
@@ -3037,8 +3037,8 @@ private theorem checkedMutsDefn_member
   injection hms_ld with hmc_eq
   injection hmc_eq with hd_eq
   subst d_ld
-  have hrec_nil : L1.defnMemberRecurAddrs d a ms.toList = [] := by
-    simp [L1.defnMemberRecurAddrs, hnu]
+  have hrec_nil : Ingress.defnMemberRecurAddrs d a ms.toList = [] := by
+    simp [Ingress.defnMemberRecurAddrs, hnu]
   rw [hrec_nil] at hraw_d
   have hdir_ty : ∀ x ∈ IxVM.Consistency.exprRefIdxs d.typ, x ∈ IxVM.Consistency.usedRefIdxs c := by
     intro x hx
@@ -3057,7 +3057,7 @@ private theorem checkedMutsDefn_member
   refine ⟨hi, hd_not_role, hrecDeps, fun heights => ?_⟩
   obtain ⟨decl, ci₀, hn, hrd_def, hcco, hinst, hname, hdnames, hnb, hci₀_eq⟩ := hheights heights
   have hrec_core : Ix.Cert.recordAt E_core a = some c := hsub_rec a c hrecE
-  have hrra : L1.RecordReadsAs t E_core (Core.dprjAddr a i)
+  have hrra : Ingress.RecordReadsAs t E_core (Core.dprjAddr a i)
       ⟨.dPrj ⟨i.toUInt64, a⟩, #[], #[], #[], #[]⟩ ci₀ := by
     refine ⟨hnoInt_core, ?_⟩
     dsimp only
@@ -3209,7 +3209,7 @@ private theorem proj_ownerOf_ne_self
   intro heq
   obtain ⟨_, _, _, _, _, _, _, _, _, cs_load, _,
     bytes, E_ld, _, _, _, _, hhash_ld, hblake_ld, hload_ld, hL1,
-    hsub_ld, hld, _, _, _⟩ := checkedAtFull_loadedL1 hbound hchk
+    hsub_ld, hld, _, _, _⟩ := checkedAtFull_loadedRecords hbound hchk
   obtain ⟨c_ld, hdec_ld, _, _, _, hld', hraw⟩ := hL1
   rw [hld] at hld'; injection hld' with hvv; subst hvv
   unfold Ix.Cert.recordAt at hrec₀
@@ -3244,7 +3244,7 @@ private theorem proj_ownerOf_ne_self
       subst cb
       rw [hcb_info] at hprojInfo
       cases hprojInfo
-    unfold L1.RawCIRep at hraw
+    unfold Ingress.RawCIRep at hraw
     cases hc : c.info with
     | defn _ | axio _ | quot _ | recr _ | muts _ =>
       simp [IsProjInfo, hc] at hprojInfo
@@ -3299,7 +3299,7 @@ private theorem wkSafe_owner_of_proj
       · exact hchk
     obtain ⟨_, _, _, _, _, _, _, _, _, cs_load, _,
       bytes, E_ld, _, _, _, _, hhash_ld, hblake_ld, hload_ld, hL1,
-      hsub_ld, _, _, _, _⟩ := checkedAtFull_loadedL1 hbound hchk
+      hsub_ld, _, _, _, _⟩ := checkedAtFull_loadedRecords hbound hchk
     obtain ⟨c_ld, hdec_ld, _, _, _, _, hraw⟩ := hL1
     have hc_ld_eq : c_ld = c := by
       unfold Ix.Cert.recordAt at hrec₀
@@ -3320,7 +3320,7 @@ private theorem wkSafe_owner_of_proj
     subst c_ld
     rw [hblake_ld] at hraw
     obtain ⟨lcB, cb, ms, hgetB_ld, _, _, hexB_ld, _, hcb_info⟩ := hraw.owner_recordAt hproj
-    have hedge_own : Core.S0.WalkEdge E₀ a (Ix.Cert.ownerOf a c) :=
+    have hedge_own : Core.BaseSeams.WalkEdge E₀ a (Ix.Cert.ownerOf a c) :=
       ⟨c, hrec₀, Or.inl ⟨rfl, hproj⟩⟩
     obtain ⟨hwk_own, _⟩ := (wkAll_closedSubwalk calls bAddr t E₀).step a _ hwkSafe.1 hedge_own
     obtain ⟨cb₀, hrec₀_own, _⟩ := (wkAll_closedSubwalk calls bAddr t E₀).checked _ hwk_own
@@ -3403,7 +3403,7 @@ private theorem walkedProjResolveOk
     wkSafe_owner_of_proj hbound hload hexact₀ hnoCol ⟨hwk, hnot_out⟩ hrec₀ hproj
   obtain ⟨_, _, _, _, _, _, _, _, _, cs_load, _,
     bytes, E_ld, _, _, _, _, hhash_ld, hblake_ld, hload_ld, hL1,
-    hsub_ld, hld, _, _, _⟩ := checkedAtFull_loadedL1 hbound hchk
+    hsub_ld, hld, _, _, _⟩ := checkedAtFull_loadedRecords hbound hchk
   obtain ⟨c_ld, hdec_ld, _, htv, _, hld', hraw⟩ := hL1
   rw [hld] at hld'; injection hld' with hvv; subst hvv
   have hc_ld_eq : c_ld = c := by
@@ -3459,8 +3459,8 @@ private theorem walkedProjResolveOk
           ms[i]? = some (.defn d_m) ∧
           a = Core.dprjAddr (Ix.Cert.ownerOf a c) i ∧
           c = ⟨.dPrj ⟨i.toUInt64, Ix.Cert.ownerOf a c⟩, #[], #[], #[], #[]⟩) := by
-    unfold L1.ConstantTablesValid at htv
-    unfold L1.RawCIRep at hraw
+    unfold Ingress.ConstantTablesValid at htv
+    unfold Ingress.RawCIRep at hraw
     cases hc : c.info with
     | defn _ | axio _ | quot _ | recr _ | muts _ =>
       simp [Ix.Cert.ownerOf, hc] at hproj
@@ -3738,7 +3738,7 @@ private theorem readRecordBare_muts_defn
 /-- Full `.muts ms` definition block (`ms.all (.defn) = true`) bare reading at `a ∉ order_role`:
 `readRecordBare cx st a c` succeeds with `owners = []`, `blocks = []`, `generated = 0`,
 `projRewrites = 0`, `CheckedConstOrigin` for every emitted declaration, distinct installed keys
-`Core.keyOf t (Core.dprjAddr a k)` (`k < ms.size`), and `L1.RecordReadsAs` at every member. -/
+`Core.keyOf t (Core.dprjAddr a k)` (`k < ms.size`), and `Ingress.RecordReadsAs` at every member. -/
 private theorem checkedMutsDefn_block
     (hRP : RolePreludeInputs) (hSR : SafeRefsInputs)
     {V : IxVM.Refinement.View} {extra : List ByteArray} {calls : List (Call F)}
@@ -3759,7 +3759,7 @@ private theorem checkedMutsDefn_block
     (hblobs₀ : ∀ bytes, Hashed calls bytes →
       E₀.blobs.get? (_root_.Address.blake3Pure bytes) = some bytes)
     (hnoCol : ¬ V.HashedCollision extra calls)
-    (hnoInt_core : ¬ L1.EnvInternalCollision
+    (hnoInt_core : ¬ Ingress.EnvInternalCollision
       (coreEnvRole E₀ (fun x => x ∈ order_role ∨ WkSafe calls b.address t E₀ x)
         (roleSuppOf E_role order_role) (Ix.Cert.blobsOf E_role order_role) pre))
     (hsub_rec : ∀ x c_x,
@@ -3818,7 +3818,7 @@ private theorem checkedMutsDefn_block
         ∃ d ∈ r.decls.toList, ∃ ci₀,
           ci₀ ∈ IxVM.Consistency.installs d ∧
           ci₀.name = Core.keyOf t (Core.dprjAddr a k) ∧
-          L1.RecordReadsAs t E_core (Core.dprjAddr a k)
+          Ingress.RecordReadsAs t E_core (Core.dprjAddr a k)
             ⟨.dPrj ⟨k.toUInt64, a⟩, #[], #[], #[], #[]⟩ ci₀) := by
   intro Keep E E_core cx
   obtain ⟨ts, hts⟩ := list_all_defn_eq_map ms.toList (by rwa [← Array.all_toList] at hall)
@@ -3896,7 +3896,7 @@ private theorem checkedMutsDefn_block
             decl.names = [Core.keyOf t (Core.dprjAddr a k)] ∧
             Core.dprjAddr a k ∉ order_role ∧
             (∀ kb, decl ≠ .basisDecl kb) ∧
-            L1.RecordReadsAs t E_core (Core.dprjAddr a k)
+            Ingress.RecordReadsAs t E_core (Core.dprjAddr a k)
               ⟨.dPrj ⟨k.toUInt64, a⟩, #[], #[], #[], #[]⟩ ci₀
     have hloop :
         ∃ res, forIn (Array.range ts.length) ({}, #[], 0) F_step = .ok res ∧
@@ -4091,7 +4091,7 @@ inductive WalkedStepOrigin (calls : List (Call F)) (b : Ix.Kernel.Admission.Bind
             (∃ blk ∈ order_role ++ pre_w, OwnedOrProjOf E blk x c_x)) →
           ∃ ci₀,
             ci₀.name = Core.keyOf t x ∧
-            L1.RecordReadsAs t E_core x c_x ci₀ ∧
+            Ingress.RecordReadsAs t E_core x c_x ci₀ ∧
             (IxVM.Consistency.inertKey (Core.keyOf t x) = false →
               ∃ ci, env_pre.find? (Core.keyOf t x) = some ci ∧
                 IxVM.Consistency.StoredAs ci ci₀))
@@ -4226,8 +4226,8 @@ private theorem usedRef_mem_prev_of_nonRole
   let Keep := fun x => x ∈ order_role ∨ WkSafe calls b.address t E₀ x
   let E := subEnvRole E₀ Keep (roleSuppOf E_role order_role) (Ix.Cert.blobsOf E_role order_role)
   let blk := Ix.Cert.ownerOf r c_r
-  have hi_s0 : i ∈ Core.S0.usedRefIdxs c := by rwa [usedRefIdxs_eq]
-  have hedge_ar : Core.S0.WalkEdge E₀ a r := ⟨c, hrec₀, Or.inr ⟨i, hi_s0, hr⟩⟩
+  have hi_s0 : i ∈ Core.BaseSeams.usedRefIdxs c := by rwa [usedRefIdxs_eq]
+  have hedge_ar : Core.BaseSeams.WalkEdge E₀ a r := ⟨c, hrec₀, Or.inr ⟨i, hi_s0, hr⟩⟩
   obtain ⟨hwk_r, hlt_ra⟩ := (wkAll_closedSubwalk calls b.address t E₀).step a r hwk hedge_ar
   have hblk_ne_a : blk ≠ a := by
     intro heq
@@ -4248,7 +4248,7 @@ private theorem usedRef_mem_prev_of_nonRole
             hkp | ⟨_, _, hm_supp⟩
           · exact hkp.2
           · exact absurd (mem_roleSuppOf_iff.mp hm_supp).1 hr_role
-        have hedge_ra : Core.S0.WalkEdge E₀ r a := ⟨c_r, hrec₀_r, Or.inl ⟨heq, fun h => hr_eq_a h.symm⟩⟩
+        have hedge_ra : Core.BaseSeams.WalkEdge E₀ r a := ⟨c_r, hrec₀_r, Or.inl ⟨heq, fun h => hr_eq_a h.symm⟩⟩
         obtain ⟨_, hlt_ar⟩ := (wkAll_closedSubwalk calls b.address t E₀).step r a hwk_r hedge_ra
         exact Nat.lt_asymm hlt_ra hlt_ar
   have href_blk : IxVM.Consistency.UsedRecordRef E a blk :=
@@ -4275,7 +4275,7 @@ private theorem usedRef_mem_prev_of_nonRole
       exact absurd href_blk (hpw.2.1.1 blk hsuf)
 
 /-- **Full role + walked `StreamReadBare` assembly**: combines `RolePreludeInputs`,
-`SafeRefsInputs`, `TableAdmittedComplete V b`, and `Claim.WalkedL6` into `DrawsRoleLocal`,
+`SafeRefsInputs`, `TableAdmittedComplete V b`, and `Claim.WalkedClaim` into `DrawsRoleLocal`,
 `UsedClosureOrderAt`, `StreamReadBare`, `keepsPrelude`, per-declaration role/walked origin
 witnesses, and seed coverage. -/
 theorem walkedStreamReadBare
@@ -4288,7 +4288,7 @@ theorem walkedStreamReadBare
     (hadm_b : Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b = .ok t)
     (hload : IxVM.Consistency.LoadedBy calls E₀)
     (hseedOk : ∀ a ∈ seeds, ¬ IxVM.Consistency.OutsideLogicAt E₀ a ∧ ¬ IxVM.Consistency.InertAt t a)
-    (hwalk : Claim.WalkedL6 calls t E₀ seeds)
+    (hwalk : Claim.WalkedClaim calls t E₀ seeds)
     (hcomm_extra : ∀ img ∈ IxVM.Consistency.committedImages, img ∈ extra)
     (hnoCol : ¬ V.HashedCollision extra calls) :
     ∃ (E E_role E_core : Ixon.Env) (limits : Ix.Kernel.Admission.Limits)
@@ -4305,8 +4305,8 @@ theorem walkedStreamReadBare
       (∀ a bytes, E.blobs.get? a = some bytes → _root_.Address.blake3Pure bytes = a) ∧
       (∀ a ∈ order, ∀ lc, E.consts.get? a = some lc →
         ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c) ∧
-      L1.EnvDecoded E_core ∧
-      ¬ L1.EnvInternalCollision E_core ∧
+      Ingress.EnvDecoded E_core ∧
+      ¬ Ingress.EnvInternalCollision E_core ∧
       (∀ env_pre : Ix.Kernel.Env .anon, Core.Good ⟨E_core, env_pre, t, none⟩ calls) ∧
       (∀ x c_x, Ix.Cert.recordAt E x = some c_x → Ix.Cert.recordAt E_core x = some c_x) ∧
       (∀ a c_f, (a, c_f) ∈ pre.records ++ pre.evidence → Ix.Cert.recordAt E_core a = some c_f) ∧
@@ -4450,10 +4450,10 @@ theorem walkedStreamReadBare
       rw [heq_i, hgb] at hga
       exact hne (Option.some.inj hga).symm
     omega
-  have hdec_core : L1.EnvDecoded E_core :=
+  have hdec_core : Ingress.EnvDecoded E_core :=
     coreEnvRole_envDecoded hRP hwalk_orig hadm.preludeFor
       (fun a raw c hm => (hsupp_spec a raw c hm).2.2.1)
-  have hnoInt_core : ¬ L1.EnvInternalCollision E_core :=
+  have hnoInt_core : ¬ Ingress.EnvInternalCollision E_core :=
     coreEnvRole_not_internalCollision hRP hadm hcomm_extra hload hnoCol
   have hgood_core : ∀ env_pre : Ix.Kernel.Env .anon, Core.Good ⟨E_core, env_pre, t, none⟩ calls :=
     fun env_pre => coreEnvRole_good hRP env_pre none hcomm_extra hload hadm.preludeFor
@@ -4558,7 +4558,7 @@ theorem walkedStreamReadBare
             (∃ blk ∈ order_role ++ pre_w, OwnedOrProjOf E blk x c_x)) →
           ∃ ci₀,
             ci₀.name = Core.keyOf t x ∧
-            L1.RecordReadsAs t E_core x c_x ci₀ ∧
+            Ingress.RecordReadsAs t E_core x c_x ci₀ ∧
             (IxVM.Consistency.inertKey (Core.keyOf t x) = false →
               ∃ d ∈ ds_role ++ decls_w.toList, ci₀ ∈ IxVM.Consistency.installs d)) →
         (∀ ds_pre d ds_suf env_pre,
@@ -4580,7 +4580,7 @@ theorem walkedStreamReadBare
               (∃ blk ∈ order, OwnedOrProjOf E blk x c_x)) →
             ∃ ci₀,
               ci₀.name = Core.keyOf t x ∧
-              L1.RecordReadsAs t E_core x c_x ci₀ ∧
+              Ingress.RecordReadsAs t E_core x c_x ci₀ ∧
               (IxVM.Consistency.inertKey (Core.keyOf t x) = false →
                 ∃ d ∈ ds_role ++ decls_w_final.toList, ci₀ ∈ IxVM.Consistency.installs d)) ∧
           (∀ ds_pre d ds_suf env_pre,
@@ -4699,7 +4699,7 @@ theorem walkedStreamReadBare
                 OwnedOrProjOf E a x c_x) →
               ∃ ci₀,
                 ci₀.name = Core.keyOf t x ∧
-                L1.RecordReadsAs t E_core x c_x ci₀ ∧
+                Ingress.RecordReadsAs t E_core x c_x ci₀ ∧
                 (IxVM.Consistency.inertKey (Core.keyOf t x) = false →
                   ∃ d ∈ (ds_role ++ decls_w.toList) ++ r.decls.toList,
                     ci₀ ∈ IxVM.Consistency.installs d)) := by
@@ -4907,7 +4907,7 @@ theorem walkedStreamReadBare
               exact hm_k
             · obtain ⟨_, _, _, _, _, _, _, _, _, _, _,
                 bytes, _, _, _, _, _, hhash_ld, hblake_ld, _, hL1,
-                hsub_ld, hld, _, _, _⟩ := checkedAtFull_loadedL1 hbound hchk
+                hsub_ld, hld, _, _, _⟩ := checkedAtFull_loadedRecords hbound hchk
               obtain ⟨c_ld, hdec_ld, _, _, _, hld', hraw⟩ := hL1
               rw [hld] at hld'; injection hld' with hvv; subst hvv
               unfold Ix.Cert.recordAt at hrec₀
@@ -4925,7 +4925,7 @@ theorem walkedStreamReadBare
                 have hcc : c_ld = c :=
                   (Except.ok.inj hdec_ld).symm.trans (Option.some.inj (hlc₀.symm.trans hrec₀))
                 subst c_ld
-                unfold L1.RawCIRep at hraw
+                unfold Ingress.RawCIRep at hraw
                 rw [hinfo] at hraw
                 cases hraw
           by_cases hall : ms.all (fun | .defn _ => true | _ => false) = true
@@ -5083,7 +5083,7 @@ theorem walkedStreamReadBare
               (∃ blk ∈ order_role ++ (pre_w ++ [a]), OwnedOrProjOf E blk x c_x)) →
             ∃ ci₀,
               ci₀.name = Core.keyOf t x ∧
-              L1.RecordReadsAs t E_core x c_x ci₀ ∧
+              Ingress.RecordReadsAs t E_core x c_x ci₀ ∧
               (IxVM.Consistency.inertKey (Core.keyOf t x) = false →
                 ∃ d ∈ ds_role ++ (decls_w ++ r.decls).toList, ci₀ ∈ IxVM.Consistency.installs d) := by
         intro x c_x hx

@@ -454,27 +454,27 @@ theorem keyIn_of_occParamsLower : ∀ (xs : List (Ix.Kernel.Expr .anon)) (d : Na
         · obtain ⟨x', hx', hk'⟩ := keyIn_of_occParamsLower xs d hr y hy hk
           exact ⟨x', List.mem_cons_of_mem _ hx', hk'⟩
 
-/-- **A key of a binder-annotated term is a key of the term** (`L1.applyBinderTrace`: the binder
+/-- **A key of a binder-annotated term is a key of the term** (`Ingress.applyBinderTrace`: the binder
 data rewritten, each `let` read as its reduct). -/
 theorem keyIn_of_applyBinderTrace (md : Ix.Kernel.Level → Ix.Kernel.BinderMeta) :
     ∀ (e : Ix.Kernel.Expr .anon) (levels : List Ix.Kernel.Level) (e' : Ix.Kernel.Expr .anon)
       (rest : List Ix.Kernel.Level),
-      L1.applyBinderTrace md e levels = some (e', rest) → KeyIn k e' → KeyIn k e := by
+      Ingress.applyBinderTrace md e levels = some (e', rest) → KeyIn k e' → KeyIn k e := by
   intro e
   induction e with
   | bvar i =>
     intro levels e' rest h hk
-    simp only [L1.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    simp only [Ingress.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨h1, -⟩ := h
     subst h1
     exact hk
   | fvar i ty ih =>
     intro levels e' rest h hk
-    cases hx : L1.applyBinderTrace md ty levels with
-    | none => simp [L1.applyBinderTrace, hx] at h
+    cases hx : Ingress.applyBinderTrace md ty levels with
+    | none => simp [Ingress.applyBinderTrace, hx] at h
     | some r =>
       obtain ⟨ty', rem⟩ := r
-      simp only [L1.applyBinderTrace, hx, Option.bind_eq_bind, Option.bind_some, Option.pure_def,
+      simp only [Ingress.applyBinderTrace, hx, Option.bind_eq_bind, Option.bind_some, Option.pure_def,
         Option.some.injEq, Prod.mk.injEq] at h
       obtain ⟨h1, -⟩ := h
       subst h1
@@ -482,27 +482,27 @@ theorem keyIn_of_applyBinderTrace (md : Ix.Kernel.Level → Ix.Kernel.BinderMeta
       | fvarTy h2 => exact .fvarTy (ih _ _ _ hx h2)
   | sort l =>
     intro levels e' rest h hk
-    simp only [L1.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    simp only [Ingress.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨h1, -⟩ := h
     subst h1
     exact hk
   | const c us =>
     intro levels e' rest h hk
-    simp only [L1.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    simp only [Ingress.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨h1, -⟩ := h
     subst h1
     exact hk
   | app f a ihf iha =>
     intro levels e' rest h hk
-    cases h1 : L1.applyBinderTrace md f levels with
-    | none => simp [L1.applyBinderTrace, h1] at h
+    cases h1 : Ingress.applyBinderTrace md f levels with
+    | none => simp [Ingress.applyBinderTrace, h1] at h
     | some r1 =>
       obtain ⟨f', a1⟩ := r1
-      cases h2 : L1.applyBinderTrace md a a1 with
-      | none => simp [L1.applyBinderTrace, h1, h2] at h
+      cases h2 : Ingress.applyBinderTrace md a a1 with
+      | none => simp [Ingress.applyBinderTrace, h1, h2] at h
       | some r2 =>
         obtain ⟨a', a2⟩ := r2
-        simp only [L1.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
+        simp only [Ingress.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
           Option.pure_def, Option.some.injEq, Prod.mk.injEq] at h
         obtain ⟨h3, -⟩ := h
         subst h3
@@ -512,17 +512,17 @@ theorem keyIn_of_applyBinderTrace (md : Ix.Kernel.Level → Ix.Kernel.BinderMeta
   | lam dom body m ihd ihb =>
     intro levels e' rest h hk
     cases levels with
-    | nil => simp [L1.applyBinderTrace] at h
+    | nil => simp [Ingress.applyBinderTrace] at h
     | cons level remaining =>
-      cases h1 : L1.applyBinderTrace md dom remaining with
-      | none => simp [L1.applyBinderTrace, h1] at h
+      cases h1 : Ingress.applyBinderTrace md dom remaining with
+      | none => simp [Ingress.applyBinderTrace, h1] at h
       | some r1 =>
         obtain ⟨d', a1⟩ := r1
-        cases h2 : L1.applyBinderTrace md body a1 with
-        | none => simp [L1.applyBinderTrace, h1, h2] at h
+        cases h2 : Ingress.applyBinderTrace md body a1 with
+        | none => simp [Ingress.applyBinderTrace, h1, h2] at h
         | some r2 =>
           obtain ⟨b', a2⟩ := r2
-          simp only [L1.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
+          simp only [Ingress.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
             Option.pure_def, Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨h3, -⟩ := h
           subst h3
@@ -532,17 +532,17 @@ theorem keyIn_of_applyBinderTrace (md : Ix.Kernel.Level → Ix.Kernel.BinderMeta
   | forallE dom body m ihd ihb =>
     intro levels e' rest h hk
     cases levels with
-    | nil => simp [L1.applyBinderTrace] at h
+    | nil => simp [Ingress.applyBinderTrace] at h
     | cons level remaining =>
-      cases h1 : L1.applyBinderTrace md dom remaining with
-      | none => simp [L1.applyBinderTrace, h1] at h
+      cases h1 : Ingress.applyBinderTrace md dom remaining with
+      | none => simp [Ingress.applyBinderTrace, h1] at h
       | some r1 =>
         obtain ⟨d', a1⟩ := r1
-        cases h2 : L1.applyBinderTrace md body a1 with
-        | none => simp [L1.applyBinderTrace, h1, h2] at h
+        cases h2 : Ingress.applyBinderTrace md body a1 with
+        | none => simp [Ingress.applyBinderTrace, h1, h2] at h
         | some r2 =>
           obtain ⟨b', a2⟩ := r2
-          simp only [L1.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
+          simp only [Ingress.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
             Option.pure_def, Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨h3, -⟩ := h
           subst h3
@@ -551,19 +551,19 @@ theorem keyIn_of_applyBinderTrace (md : Ix.Kernel.Level → Ix.Kernel.BinderMeta
           | allBody h4 => exact .allBody (ihb _ _ _ h2 h4)
   | letE ty v b m ihty ihv ihb =>
     intro levels e' rest h hk
-    cases h1 : L1.applyBinderTrace md ty levels with
-    | none => simp [L1.applyBinderTrace, h1] at h
+    cases h1 : Ingress.applyBinderTrace md ty levels with
+    | none => simp [Ingress.applyBinderTrace, h1] at h
     | some r1 =>
       obtain ⟨ty', a1⟩ := r1
-      cases h2 : L1.applyBinderTrace md v a1 with
-      | none => simp [L1.applyBinderTrace, h1, h2] at h
+      cases h2 : Ingress.applyBinderTrace md v a1 with
+      | none => simp [Ingress.applyBinderTrace, h1, h2] at h
       | some r2 =>
         obtain ⟨v', a2⟩ := r2
-        cases h3 : L1.applyBinderTrace md b a2 with
-        | none => simp [L1.applyBinderTrace, h1, h2, h3] at h
+        cases h3 : Ingress.applyBinderTrace md b a2 with
+        | none => simp [Ingress.applyBinderTrace, h1, h2, h3] at h
         | some r3 =>
           obtain ⟨b', a3⟩ := r3
-          simp only [L1.applyBinderTrace, h1, h2, h3, Option.bind_eq_bind, Option.bind_some,
+          simp only [Ingress.applyBinderTrace, h1, h2, h3, Option.bind_eq_bind, Option.bind_some,
             Option.pure_def, Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨h4, -⟩ := h
           subst h4
@@ -572,17 +572,17 @@ theorem keyIn_of_applyBinderTrace (md : Ix.Kernel.Level → Ix.Kernel.BinderMeta
           · exact .letVal (ihv _ _ _ h2 h5)
   | lit l =>
     intro levels e' rest h hk
-    simp only [L1.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    simp only [Ingress.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨h1, -⟩ := h
     subst h1
     exact hk
   | proj s i inner ih =>
     intro levels e' rest h hk
-    cases hx : L1.applyBinderTrace md inner levels with
-    | none => simp [L1.applyBinderTrace, hx] at h
+    cases hx : Ingress.applyBinderTrace md inner levels with
+    | none => simp [Ingress.applyBinderTrace, hx] at h
     | some r =>
       obtain ⟨inner', rem⟩ := r
-      simp only [L1.applyBinderTrace, hx, Option.bind_eq_bind, Option.bind_some, Option.pure_def,
+      simp only [Ingress.applyBinderTrace, hx, Option.bind_eq_bind, Option.bind_some, Option.pure_def,
         Option.some.injEq, Prod.mk.injEq] at h
       obtain ⟨h1, -⟩ := h
       subst h1

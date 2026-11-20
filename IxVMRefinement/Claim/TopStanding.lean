@@ -31,7 +31,7 @@ theorem RCLimRep.axiomsNil {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
 theorem role_is_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {lim : Option Nat} {ro : Ix.Kernel.Role} {rc ap : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
-    (hrc : RCLimRep t bAddr lim h rc) (ha : S0.addr h ap a)
+    (hrc : RCLimRep t bAddr lim h rc) (ha : BaseSeams.addr h ap a)
     (ev : ObsFn W "KernelRoles::role_is" [rc, ap, .field (roleNum ro)] h (.field 1) h' cs) :
     t.addressOf? ro = some a := by
   match Obs.«KernelRoles::role_is».obs ev with
@@ -50,7 +50,7 @@ theorem role_is_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
 /-- Without user axioms or an inert role, a nonzero standing answer is a standard axiom role. -/
 theorem axiom_standing_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {lim : Option Nat} {rc ap r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hrc : RCLimRep t bAddr lim h rc) (ha : S0.addr h ap a) (hin : ¬ InertAt t a)
+    (hrc : RCLimRep t bAddr lim h rc) (ha : BaseSeams.addr h ap a) (hin : ¬ InertAt t a)
     (ev : ObsFn W "KernelRoles::axiom_standing" [rc, ap] h r h' cs) (hne : r ≠ .field 0) :
     ∃ ro ∈ Typing.standingRoles, t.addressOf? ro = some a := by
   match Obs.«KernelRoles::axiom_standing».obs ev with
@@ -82,7 +82,7 @@ theorem axiom_standing_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Addr
 /-- Every successful quotient check pins the address to the quotient role of its kind. -/
 theorem check_quot_lim_standing {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {lim : Option Nat} {rc ap kind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hrc : RCLimRep t bAddr lim h rc) (ha : S0.addr h ap a)
+    (hrc : RCLimRep t bAddr lim h rc) (ha : BaseSeams.addr h ap a)
     (ev : ObsFn W "KernelCheck::check_quot" [rc, ap, kind] h r h' cs) :
     ∃ ro ∈ Typing.standingRoles, t.addressOf? ro = some a := by
   obtain ⟨_, _, _, _, _, _, seg, ev100, heq, -, -, -⟩ := Obs.«KernelCheck::check_quot».obs ev
@@ -112,26 +112,26 @@ theorem checkedLimAt_standing {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     _, hrc, ha_pre, ha_chk, ev_ld, _, hsub_ld, hld, ev_chk, _, _⟩ := hchk
   obtain ⟨ab, hab, rfl⟩ := ha_pre
-  obtain ⟨bytes, c', hh, hba, hde, htrace⟩ := L1.get_ci_trace_spec hab ev_ld
+  obtain ⟨bytes, c', hh, hba, hde, htrace⟩ := Ingress.get_ci_trace_spec hab ev_ld
   have hr : Ix.Cert.recordAt E₀ (ixAddr ab) = some c :=
     (hS.recordOf_eq_recordAt _).symm.trans hc
   have hcc : c' = c := hS.record_eq hr (Core.hashed_mono hsub_ld hh) hba hde
   subst c'
   rcases hk with ⟨ax, hax⟩ | ⟨q, hq⟩
   · have hsafe : ax.isUnsafe = false := by simpa only [InLogic, hax] using hl
-    simp only [L1.GetCITraceResult, hax] at htrace
+    simp only [Ingress.GetCITraceResult, hax] at htrace
     obtain ⟨_, _, v', _, _, hld', htr⟩ := htrace
     have hv : v' = v := Except.ok.inj (hld'.symm.trans hld)
     subst v'
     obtain ⟨_, tp, _, hv, _⟩ := htr
     rw [hv] at ev_chk
-    simp only [hsafe, L1.repBoolField] at ev_chk
+    simp only [hsafe, Ingress.repBoolField] at ev_chk
     obtain ⟨_, _, _, vstand, mscope, _, malloc, _, _, _, _, _, _, evscope, hm,
       evsort, evsafe, evstand, hne, _⟩ := Decl.check_const_axiom_inv ev_chk
     have ext : Heap.Extends mscope malloc := by rw [hm]; exact Heap.Extends.snoc _ _
     have ext' := evscope.heap_extends.trans (ext.trans (evsort.heap_extends.trans evsafe.heap_extends))
-    exact axiom_standing_lim_spec (hrc.mono ext') (S0.addr_mono ext' ha_chk) hin evstand hne
-  · simp only [L1.GetCITraceResult, hq] at htrace
+    exact axiom_standing_lim_spec (hrc.mono ext') (BaseSeams.addr_mono ext' ha_chk) hin evstand hne
+  · simp only [Ingress.GetCITraceResult, hq] at htrace
     obtain ⟨_, _, v', _, _, hld', htr⟩ := htrace
     have hv : v' = v := Except.ok.inj (hld'.symm.trans hld)
     subst v'
@@ -141,7 +141,7 @@ theorem checkedLimAt_standing {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
       evsort, evsafe, evquot, _⟩ := Decl.check_const_quot_inv ev_chk
     have ext : Heap.Extends mscope malloc := by rw [hm]; exact Heap.Extends.snoc _ _
     have ext' := evscope.heap_extends.trans (ext.trans (evsort.heap_extends.trans evsafe.heap_extends))
-    exact check_quot_lim_standing (hrc.mono ext') (S0.addr_mono ext' ha_chk) evquot
+    exact check_quot_lim_standing (hrc.mono ext') (BaseSeams.addr_mono ext' ha_chk) evquot
 
 /-- Reached axioms/quotients have standing once their safety is produced. No standing
 hypothesis is assumed: checks and the seed/ref/owner origins supply it. -/

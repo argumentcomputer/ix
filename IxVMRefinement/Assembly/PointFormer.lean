@@ -70,7 +70,7 @@ variable {c : Core.Ctx} {B : _root_.Address} {cb : Ixon.Constant}
 /-- **A constant the peer test answers `0` for is not member `k` of the block**, where the store
 holds the block and member `k`'s projection record. -/
 theorem peer_zero_not_member {ms : Array Ixon.MutConst} {k : Nat} {ind : Ixon.Inductive}
-    (hdec : L1.EnvDecoded c.E)
+    (hdec : Ingress.EnvDecoded c.E)
     (hblock : recordOf c.E B = some cb) (hmuts : cb.info = .muts ms)
     (hk : k < UInt64.size) (hmem : ms[k]? = some (.indc ind))
     (hproj : recordOf c.E (Core.iprjAddr B k) = some (memberProjection B k (.indc ind)))
@@ -98,7 +98,7 @@ theorem peer_zero_not_member {ms : Array Ixon.MutConst} {k : Nat} {ind : Ixon.In
     subst hc
     have hg1 : Core.Good c cs15 := hg.sub (fun x hx => by simp [hx])
     obtain ⟨nl', ty', u', blk', b', hld', hb', hbB', -, -⟩ :=
-      L1.indRecord_of_deConstantExact (c := c) (p := ⟨k.toUInt64, B⟩) hdecA
+      Ingress.indRecord_of_deConstantExact (c := c) (p := ⟨k.toUInt64, B⟩) hdecA
         (decoded_at_of_recordOf hblock) ev_ci hg1 ha hrecA rfl
         (recordAt_of_recordOf hdec hblock) hmuts hmemk
     rw [hld'] at ld
@@ -117,7 +117,7 @@ theorem peer_zero_not_member {ms : Array Ixon.MutConst} {k : Nat} {ind : Ixon.In
     subst hc
     have hg1 : Core.Good c cs15 := hg.sub (fun x hx => by simp [hx])
     obtain ⟨nl', ty', u', blk', b', hld', -, -, -, -⟩ :=
-      L1.indRecord_of_deConstantExact (c := c) (p := ⟨k.toUInt64, B⟩) hdecA
+      Ingress.indRecord_of_deConstantExact (c := c) (p := ⟨k.toUInt64, B⟩) hdecA
         (decoded_at_of_recordOf hblock) ev_ci hg1 ha hrecA rfl
         (recordAt_of_recordOf hdec hblock) hmuts hmemk
     rw [ld] at hld'
@@ -497,7 +497,7 @@ theorem pointFormer_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     (hfree : Decl.KeyFree (Core.keyOf t (Core.iprjAddr B i))) :
     ∃ ty' : Ix.Kernel.Expr .anon,
       LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-        ((L1.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some ty' ∧
+        ((Ingress.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some ty' ∧
       Annotates ty' ty₀ ∧
       Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ env
         ⟨Core.keyOf t (Core.iprjAddr B i), List.range ind.lvls.toNat, ty₀⟩
@@ -517,7 +517,7 @@ theorem pointFormer_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   have hg_chk : Core.Good ⟨E, env, t, some n⟩ cs_chk := hgood.sub hsub_chk
   have hi' : (⟨i.toUInt64, B⟩ : Ixon.InductiveProj).idx.toNat = i := toUInt64_toNat_pf hi64
   -- the load of the member's projection record, traced
-  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := L1.get_ci_block_trace_spec hg_ld.2 ha ev_ld
+  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := Ingress.get_ci_block_trace_spec hg_ld.2 ha ev_ld
   have hrec : recordOf E (Core.ixAddr a) = some (memberProjection B i (.indc ind)) := by
     rw [hax, LoadedReads.memberAddr_indc]
     exact hproj i ind hmem
@@ -527,7 +527,7 @@ theorem pointFormer_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     rw [hb, hdecA] at hex
     exact (Except.ok.inj hex).symm
   subst hc
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   have hinfo : (memberProjection B i (.indc ind)).info = .iPrj ⟨i.toUInt64, B⟩ := rfl
   rw [hinfo] at hres
   obtain ⟨hidx, blkBytes, cb', ms', ind', blobs, tree, plan, v₀, hhB, haB, hexB, hcb, hms,
@@ -563,7 +563,7 @@ theorem pointFormer_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   -- the references the block uses are stored in the prefix
   have hmem' : Ixon.MutConst.indc ind ∈ ms.toList :=
     List.mem_of_getElem? (by rw [Array.getElem?_toList]; exact hmem)
-  have used : ∀ x, L1.RefUsed cb.refs.toList cb.sharing.toList ind.typ x →
+  have used : ∀ x, Ingress.RefUsed cb.refs.toList cb.sharing.toList ind.typ x →
       ∃ ci, env.find? (Core.keyOf t x) = some ci := by
     intro x hu
     obtain ⟨j, hj | ⟨s, hs, hjs⟩, hr⟩ := hu

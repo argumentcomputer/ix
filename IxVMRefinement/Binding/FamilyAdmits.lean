@@ -6,7 +6,7 @@ import IxVMRefinement.Binding.FamilyRecon
 import IxVMRefinement.Binding.StoreLevelsDef
 import IxVMRefinement.Assembly.AdviceListed
 import IxVMRefinement.Obs.KernelModeled1
-import IxVMRefinement.L1.Stream
+import IxVMRefinement.Ingress.Stream
 
 /-! # A group's admission with modeled blocks: the family checks and the store
 
@@ -54,7 +54,7 @@ set_option linter.unusedVariables false
 def ContainerRecIn (cs : List (Call F)) (x : _root_.Address) : Prop :=
   ∃ (rc xa ib : SourceValue F) (h : Heap F),
     (⟨"KernelModeled::check_container_rec", [rc, xa, ib], h⟩ : Call F) ∈ cs ∧
-    Core.S0.addr h xa x
+    Core.BaseSeams.addr h xa x
 
 /-- **A container recursor witnessed directly by a `KernelModeled::check_witnesses` walk**:
 some step of this walk checked `x` under `KernelModeled::check_witness` with kind `2` (rather than
@@ -76,7 +76,7 @@ inductive DirectContWitness (x_rc x_block : SourceValue F) (x : _root_.Address) 
       (op235 : evalBinOp .sub x_n (.field 1) = .ok v200)
       (ev196 : ObsFn Obs.W "KernelModeled::check_witnesses" [x_rc, x_block, v_ns, v200]
         m117 (.tuple [x_rest, x_s']) m184 cs194)
-      (hx : Core.S0.addr m157 x_x x)
+      (hx : Core.BaseSeams.addr m157 x_x x)
       (hr : x_out = .ptr (.enum Obs.Names.«Lists::Node<&[Field; 32]>») m184.length)
       (hm : m256 = m184 ++ [.construct Obs.Names.«Lists::Node<&[Field; 32]>» "Cons" [x_x, x_rest]])
       (hh : h' = m256)
@@ -138,7 +138,7 @@ inductive AdviceChainAnchor (calls : List (Call F)) (m_adv : Heap F) (x_advice :
 
 /-- **The witness, advice, container, and family reference guards extracted from a single unfolding
 of `KernelModeled::check_family`**: packs `path`, the `assert_in_order` on `rec_block`, the
-`L1.Stream` feeding `check_witnesses`, `ev_ws`, `ev_asb`, `ev_crr`, `ev_adv` (with `advRep` for
+`Ingress.Stream` feeding `check_witnesses`, `ev_ws`, `ev_asb`, `ev_crr`, `ev_adv` (with `advRep` for
 `advAs`), `ev_fro` (`family_refs_ok` on the same witness set), call memberships in `cs`, and an
 optional `DirectContWitness` for `optCont`. -/
 inductive CheckFamilyGuards (x_rc x_block x_rec_block : SourceValue F) (h : Heap F)
@@ -153,7 +153,7 @@ inductive CheckFamilyGuards (x_rc x_block x_rec_block : SourceValue F) (h : Heap
       (m_ws m_ws' : Heap F) (nw : Nat) (bytes4 : List UInt8)
       (x_s4 x_outside x_s5 : SourceValue F) (cs_ws : List (Call F))
       (ext_h_ws : Heap.Extends h m_ws)
-      (hs4 : L1.Stream m_ws bytes4 x_s4)
+      (hs4 : Ingress.Stream m_ws bytes4 x_s4)
       (ev_ws : ObsFn Obs.W "KernelModeled::check_witnesses" [x_rc, x_block, x_s4, .field (nw : F)]
         m_ws (.tuple [x_outside, x_s5]) m_ws' cs_ws)
       (x_wset : SourceValue F) (m_asb : Heap F) (cs_asb : List (Call F))
@@ -188,7 +188,7 @@ def FamilyCallExact (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (B rb : _root_.Address) (lim : Option Nat)
     (cs : List (Call F)) (advAs : List Bytes.Address) : Prop :=
   ∃ (h h' : Heap F) (rc xb xrb r : SourceValue F),
-    Claim.RCLimRep t bAddr lim h rc ∧ Core.S0.addr h xb B ∧ Core.S0.addr h xrb rb ∧
+    Claim.RCLimRep t bAddr lim h rc ∧ Core.BaseSeams.addr h xb B ∧ Core.BaseSeams.addr h xrb rb ∧
     ObsFn Obs.W "KernelModeled::check_family" [rc, xb, xrb] h r h' cs ∧
     CheckFamilyGuards rc xb xrb h r h' cs advAs none ∧
     (⟨"KernelModeled::check_family", [rc, xb, xrb], h⟩ : Call F) ∈ calls ∧
@@ -200,7 +200,7 @@ def DirectContOwn (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (B rb : _root_.Address) (lim : Option Nat)
     (cs : List (Call F)) (advAs : List Bytes.Address) (x : _root_.Address) : Prop :=
   ∃ (h h' : Heap F) (rc xb xrb r : SourceValue F),
-    Claim.RCLimRep t bAddr lim h rc ∧ Core.S0.addr h xb B ∧ Core.S0.addr h xrb rb ∧
+    Claim.RCLimRep t bAddr lim h rc ∧ Core.BaseSeams.addr h xb B ∧ Core.BaseSeams.addr h xrb rb ∧
     ObsFn Obs.W "KernelModeled::check_family" [rc, xb, xrb] h r h' cs ∧
     CheckFamilyGuards rc xb xrb h r h' cs advAs (some x) ∧
     (⟨"KernelModeled::check_family", [rc, xb, xrb], h⟩ : Call F) ∈ calls ∧

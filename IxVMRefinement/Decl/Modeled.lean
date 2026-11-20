@@ -4,11 +4,11 @@ import IxVMRefinement.Obs.RBTreeMap
 import IxVMRefinement.Obs.KernelCheck
 import IxVMRefinement.Obs.KernelModeled
 
-/-! # Modeled Inductive Block Dispatch & Top-Level `L5` Assembly (`Modeled.lean`)
+/-! # Modeled Inductive Block Dispatch & Top-Level Declaration Assembly (`Modeled.lean`)
 
-Completes the modeled-inductive slice (`L5-M`) and joins it with `L5-V` (`Value.lean`,
+Completes the modeled-inductive slice and joins it with standalone value declarations (`Value.lean`,
 `ModeledInstall.lean`) and the native-inductive seam (`NativeIndStep`) to discharge
-`IxVM.Consistency.Decls.{u} S₀` and `IxVM.Consistency.L5.{u} S₀`:
+`IxVM.Consistency.Decls.{u} baseSeams` and `IxVM.Consistency.DeclsObligation.{u} baseSeams`:
 
 1. **`AddrMapAll` & `RBTreeMap` insertion (`rbtree_map_insert_field_addrMapAll`)**: proves from
    the generated path lemmas for `rbtree_map_balance_fix`, `rbtree_map_balance`, `rbtree_map_ins`,
@@ -519,13 +519,13 @@ private theorem get_addrs_go :
     ∀ (cnt : Nat) {n_f : F} {x_s r : SourceValue F} {bytes_in : List UInt8}
       {h h' : Heap F} {cs : List (Call F)},
       ZMod.val n_f = cnt →
-      L1.Stream h bytes_in x_s →
+      Ingress.Stream h bytes_in x_s →
       ObsFn W "KernelModeled::get_addrs" [x_s, .field n_f] h r h' cs →
       ∃ (as_ : List Bytes.Address) (bytes_out : List UInt8) (x_as x_s' : SourceValue F),
         r = .tuple [x_as, x_s'] ∧
         as_.length = cnt ∧
         RepList addrListEnum (Bytes.RepAddressRef addrTy) h' as_ x_as ∧
-        L1.Stream h' bytes_out x_s' ∧
+        Ingress.Stream h' bytes_out x_s' ∧
         Heap.Extends h h'
   | 0, n_f, x_s, r, bytes_in, h, h', cs, hcnt, hs, ev => by
     cases Obs.«KernelModeled::get_addrs».obs ev with
@@ -568,17 +568,17 @@ private theorem get_addrs_go :
       exact Lib.rep_store_cons (Bytes.repAddressRef_heapMono₂ addrTy)
         (Bytes.repAddressRef_heapMono₂ addrTy ext2 ha_rep) hrest_rep
 
-/-- **`KernelModeled::get_addrs`**: peels `n` addresses off an `L1.Stream`, returning a
+/-- **`KernelModeled::get_addrs`**: peels `n` addresses off an `Ingress.Stream`, returning a
 `RepList addrListEnum` of length `ZMod.val n` and the remaining stream. -/
 theorem get_addrs_spec {x_s x_n x_as x_s' : SourceValue F} {bytes_in : List UInt8}
     {h h' : Heap F} {cs : List (Call F)}
-    (hs : L1.Stream h bytes_in x_s)
+    (hs : Ingress.Stream h bytes_in x_s)
     (ev : ObsFn W "KernelModeled::get_addrs" [x_s, x_n] h (.tuple [x_as, x_s']) h' cs) :
     ∃ (n_f : F) (as_ : List Bytes.Address) (bytes_out : List UInt8),
       x_n = .field n_f ∧
       as_.length = ZMod.val n_f ∧
       RepList addrListEnum (Bytes.RepAddressRef addrTy) h' as_ x_as ∧
-      L1.Stream h' bytes_out x_s' ∧
+      Ingress.Stream h' bytes_out x_s' ∧
       Heap.Extends h h' := by
   obtain ⟨n_f, rfl⟩ := field_of_get_addrs ev
   obtain ⟨as_, bytes_out, x_as', x_s'', htup, hlen, hrep, hs', ext⟩ :=
@@ -840,7 +840,7 @@ theorem check_family_seg1_inv {rc iblk rblk v104 : SourceValue F} {h m105 : Heap
     injection heq97 with hf
     exact absurd hf zero_ne_one
 
-/-- L7 step oracle for `KernelModeled::check_advice_records`: given the current validated advice
+/-- Assembly step oracle for `KernelModeled::check_advice_records`: given the current validated advice
 prefix `(seenSet, c_cur)`, an unvisited advice address `a` (`addr_set_member(a, seen) = 0`), and
 an observed `check_advice_record(rc, a, seen, wset)` sub-derivation, advances `c_cur` to `c_next`
 via `ModelExtStep` and installs `a` as a `.defnInfo` in `c_next.env`. -/
@@ -1779,7 +1779,7 @@ private theorem declStoreInv_push_pos_specs_prov :
     obtain ⟨hb', htf', htp', htr', htb'⟩ := hwf s' (List.mem_cons_of_mem s hs')
     exact ⟨hb', htf', htp', Ix.Kernel.Expr.constsResolve_mono htr', htb'⟩
 
-/-- Parallel native-inductive seam (`L5-N`, `block_is_modeled = 0`). -/
+/-- Parallel native-inductive seam (`block_is_modeled = 0`). -/
 def NativeIndStep (calls : List (Call F)) (env : Env .anon)
     (block₀ : List (ConstantInfo .anon)) (nP : Nat) : Prop :=
   ∃ env₂, CleanInstallStep env (.indDecl block₀ nP) env₂ ∧

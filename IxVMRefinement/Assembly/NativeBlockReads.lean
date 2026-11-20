@@ -1,5 +1,5 @@
 import IxVMRefinement.Assembly.NativeBlockFormer
-import IxVMRefinement.Assembly.ClaimsL1L6
+import IxVMRefinement.Assembly.LayerSeams
 import IxVMRefinement.Assembly.ReadBare
 import IxVMRefinement.StatementRel.LoadedReadsWalked
 import IxVMRefinement.Core.CallHeaps
@@ -341,17 +341,17 @@ theorem ctorSlots_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore 
   have hchkA := mutsMemberAt_checkedAt (mc := .indc ind) hbound hchk rfl
   obtain ⟨_, _, m_chk, _, rc, ap, ptr, v, r_chk, cs_ld, cs_chk, bytes, E_ld,
     _, _, _, _, hhash, hblake, hload_ld, hL1, hsub_ld, hld, ev_chk, _, hsub_chk⟩ :=
-    Assembly.checkedAtFull_loadedL1 hbound ⟨n, hchkA⟩
+    Assembly.checkedAtFull_loadedRecords hbound ⟨n, hchkA⟩
   have hrecP : Ix.Cert.recordAt E₀ (memberAddr B 0 (.indc ind)) =
       some (memberProjection B 0 (.indc ind)) :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.former
   have hrecB : Ix.Cert.recordAt E₀ B = some cb :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.record
-  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedL1_record hS hsub_ld hhash hblake hL1 hrecP
+  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedRecords_record hS hsub_ld hhash hblake hL1 hrecP
   have hvv : v' = v := Except.ok.inj (hld'.symm.trans hld)
   subst hvv
   have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨-, lcB, cb', ms', ind', blobs, hgetB, -, -, hexB, -, hcb', hms', -, raw⟩ := hraw
   obtain ⟨hhB, haB⟩ := hload_ld.1 _ lcB hgetB
@@ -370,7 +370,7 @@ theorem ctorSlots_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore 
     have hl := hrec.logic
     simp only [IxVM.Consistency.InLogic, hrec.muts] at hl
     exact (hl (.indc ind) (by simp)).1
-  simp only [L1.repBoolField, hsafe, Bool.false_eq_true, ↓reduceIte] at ev_chk
+  simp only [Ingress.repBoolField, hsafe, Bool.false_eq_true, ↓reduceIte] at ev_chk
   refine ⟨b, hb_eq, hlv, hnp, hnc, ?_⟩
   intro j hj
   match Obs.«KernelCheck::check_const».obs ev_chk with
@@ -475,14 +475,14 @@ theorem former_reads (ht : t.check = .ok ()) (hbound : Bounded calls)
   have hchkA := mutsMemberAt_checkedAt (mc := .indc ind) hbound hchk rfl
   obtain ⟨_, _, m_chk, _, rc, ap, ptr, v, r_chk, cs_ld, cs_chk, bytes, E_ld,
     _, _, _, _, hhash, hblake, hload_ld, hL1, hsub_ld, hld, ev_chk, _, hsub_chk⟩ :=
-    Assembly.checkedAtFull_loadedL1 hbound ⟨n, hchkA⟩
+    Assembly.checkedAtFull_loadedRecords hbound ⟨n, hchkA⟩
   have hrecP : Ix.Cert.recordAt E₀ (memberAddr B 0 (.indc ind)) =
       some (memberProjection B 0 (.indc ind)) :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.former
   have hrecB : Ix.Cert.recordAt E₀ B = some cb :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.record
   obtain ⟨ms', ind', ty₀, h1, h2, -, hty, hreads, -⟩ :=
-    LoadedReads.loadedL1_ind_reads (p := ⟨(0 : Nat).toUInt64, B⟩) ht hS hload_ld hsub_ld hhash
+    LoadedReads.loadedRecords_ind_reads (p := ⟨(0 : Nat).toUInt64, B⟩) ht hS hload_ld hsub_ld hhash
       hblake hL1 hrecP rfl hrecB hrec.logic
   have hms : ms' = #[.indc ind] := Ixon.ConstantInfo.muts.inj (h1.symm.trans hrec.muts)
   subst hms
@@ -519,7 +519,7 @@ theorem ctorSlot_reads (ht : t.check = .ok ()) (hbound : Bounded calls)
   have hjv : ZMod.val ((j : Nat) : F) = j :=
     ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
   obtain ⟨-, -, -, blkBytes, cb', ms', ind', ct', blobs, v, hhB, haB, hexB, -, hcb', hms', hct',
-    -, hldv, hraw⟩ := L1.get_ci_cprj_spec hbcs hbp ev
+    -, hldv, hraw⟩ := Ingress.get_ci_cprj_spec hbcs hbp ev
   have hcb_eq : cb' = cb := hS.record_eq hrecB (Core.hashed_mono hsub hhB) haB hexB
   subst cb'
   have hms_eq : ms' = #[.indc ind] := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hrec.muts)
@@ -905,17 +905,17 @@ theorem former_scope (hbound : Bounded calls) (hS : LoadedReads.RunStore calls E
   have hchkA := mutsMemberAt_checkedAt (mc := .indc ind) hbound hchk rfl
   obtain ⟨_, _, m_chk, _, rc, ap, ptr, v, r_chk, cs_ld, cs_chk, bytes, E_ld,
     _, _, _, _, hhash, hblake, hload_ld, hL1, hsub_ld, hld, ev_chk, _, hsub_chk⟩ :=
-    Assembly.checkedAtFull_loadedL1 hbound ⟨n, hchkA⟩
+    Assembly.checkedAtFull_loadedRecords hbound ⟨n, hchkA⟩
   have hrecP : Ix.Cert.recordAt E₀ (memberAddr B 0 (.indc ind)) =
       some (memberProjection B 0 (.indc ind)) :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.former
   have hrecB : Ix.Cert.recordAt E₀ B = some cb :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.record
-  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedL1_record hS hsub_ld hhash hblake hL1 hrecP
+  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedRecords_record hS hsub_ld hhash hblake hL1 hrecP
   have hvv : v' = v := Except.ok.inj (hld'.symm.trans hld)
   subst hvv
   have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨-, lcB, cb', ms', ind', blobs, hgetB, -, -, hexB, -, hcb', hms', -, raw⟩ := hraw
   obtain ⟨hhB, haB⟩ := hload_ld.1 _ lcB hgetB

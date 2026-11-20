@@ -16,7 +16,7 @@ open IxVM (F)
 open IxVM.Refinement.Core
 
 private theorem addr_snoc (h : Heap F) (bs : List UInt8) (hlen : bs.length = 32) :
-    S0.addr (h ++ [.tuple (bs.map fun b => .field (b.toNat : F))])
+    BaseSeams.addr (h ++ [.tuple (bs.map fun b => .field (b.toNat : F))])
       (.ptr addrTy h.length) (mkAddr bs) := by
   let a : Bytes.Address := ⟨bs.toArray, by simpa using hlen⟩
   refine ⟨a, ?_, ?_⟩
@@ -30,7 +30,7 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
     (ev : ObsFn Obs.W "KernelRoles::basis_pin" [.field (roleNum ro)] h
       (.tuple [.field 1, ptr]) h' calls) :
-    ∃ a, committedDefaultRoleTable.addressOf? ro = some a ∧ S0.addr h' ptr a := by
+    ∃ a, committedDefaultRoleTable.addressOf? ro = some a ∧ BaseSeams.addr h' ptr a := by
   match Obs.«KernelRoles::basis_pin».obs ev with
   | .n0 (hv14 := hi) (he19 := hp) (hm35 := hm) (he262 := hh) .. =>
     have hr : ro = .nat := RolesAux.roleNum_inj (Value.field.inj hi)
@@ -517,7 +517,7 @@ theorem basis_pin_prelude {ro : Ix.Kernel.Role}
     (ev : ObsFn Obs.W "KernelRoles::basis_pin" [.field (roleNum ro)] h
       (.tuple [flag, ptr]) h' calls) :
     flag = .field 1 ∧
-      ∃ a, committedDefaultRoleTable.addressOf? ro = some a ∧ S0.addr h' ptr a := by
+      ∃ a, committedDefaultRoleTable.addressOf? ro = some a ∧ BaseSeams.addr h' ptr a := by
   have hf := basis_pin_prelude_flag hr ev
   subst flag
   exact ⟨rfl, basis_pin_bound ev⟩

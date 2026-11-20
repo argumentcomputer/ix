@@ -96,7 +96,7 @@ among the family check's calls. -/
 def AdviceIn (cs : List (Call F)) (a : _root_.Address) : Prop :=
   ∃ (rc xa seen wset : SourceValue F) (h : Heap F),
     (⟨"KernelModeled::check_advice_record", [rc, xa, seen, wset], h⟩ : Call F) ∈ cs ∧
-    Core.S0.addr h xa a
+    Core.BaseSeams.addr h xa a
 
 /-- **A constant address of the block or of its family record.** -/
 def FamAddr (B : _root_.Address) (cb : Ixon.Constant) (rb : _root_.Address)
@@ -633,7 +633,7 @@ theorem typing_skeleton_core_fam {V : View} {extra : List ByteArray}
     rfl
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
   have hload : LoadedBy calls E₀ := hS.loaded
-  have hdec : L1.EnvDecoded E₀ := hS.decoded
+  have hdec : Ingress.EnvDecoded E₀ := hS.decoded
   obtain ⟨E, hM⟩ := merged_exists E₀ R
   have hrf : RecordsFor R E := hM.recordsFor hload hdec hshape.committed hextra hnc
   have hrun : ∀ a c, recordOf E₀ a = some c → Ix.Cert.recordAt E a = some c :=

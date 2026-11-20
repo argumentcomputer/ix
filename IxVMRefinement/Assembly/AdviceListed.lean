@@ -86,7 +86,7 @@ def FamilyCallOwn (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kerne
     (B rb : _root_.Address) (lim : Option Nat) (cs : List (Call F))
     (advAs : List Bytes.Address) : Prop :=
   ∃ (h h' : Heap F) (rc xb xrb r : SourceValue F),
-    Claim.RCLimRep t bAddr lim h rc ∧ S0.addr h xb B ∧ S0.addr h xrb rb ∧
+    Claim.RCLimRep t bAddr lim h rc ∧ BaseSeams.addr h xb B ∧ BaseSeams.addr h xrb rb ∧
     ObsFn Obs.W "KernelModeled::check_family" [rc, xb, xrb] h r h' cs ∧
     FamilyOwnAdvice rc xb xrb h r h' cs advAs ∧
     (⟨"KernelModeled::check_family", [rc, xb, xrb], h⟩ : Call F) ∈ calls ∧

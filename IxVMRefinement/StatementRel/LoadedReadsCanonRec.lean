@@ -139,16 +139,16 @@ theorem rules_canon (ht : t.check = .ok ()) {blob : _root_.Address → Option By
     (hselfk : ∀ i x m k, recurAddrs[i]? = some x → self i = some m → m = .ok k →
       k = Core.keyOf t x)
     {blobs : List (_root_.Address × ByteArray)}
-    (hagree : L1.BlobReadAgreement (readCtx t blob).blob blobs)
-    {tree : L1.BinderTreeData}
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData src.binders.toList) tree)
+    (hagree : Ingress.BlobReadAgreement (readCtx t blob).blob blobs)
+    {tree : Ingress.BinderTreeData}
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData src.binders.toList) tree)
     {h : Heap F} (κ : _root_.Address → Core.KKey) (kFlag : Bool) (cParams : Nat) :
     ∀ {j : Nat} {root : F} {rus : List Ixon.RecursorRule} {p : SourceValue F}
       {rules₀ : List (Ix.Kernel.RecRule .anon)},
-      L1.RulesTraceRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs tree
+      Ingress.RulesTraceRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs tree
         h j root rus p →
       (∀ ru ∈ rus, ∀ (q : SourceValue F) (X : Core.KExpr),
-        L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs h
+        Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs h
           4294967295 ru.rhs q → Core.TmC (Core.keyOf t) h X q → Core.TmC κ h X q) →
       List.Forall₂ (fun ru rl₀ => rl₀.nfields = ru.fields.toNat ∧
         (exprReader t blob src (Ix.Kernel.Reader.recParam ps) self).read ru.rhs = .ok rl₀.rhs ∧
@@ -203,11 +203,11 @@ theorem recr_value_canon (ht : t.check = .ok ()) {blob : _root_.Address → Opti
     (hselfk : ∀ i x m k, recurAddrs[i]? = some x → self i = some m → m = .ok k →
       k = Core.keyOf t x)
     {blobs : List (_root_.Address × ByteArray)}
-    (hagree : L1.BlobReadAgreement (readCtx t blob).blob blobs)
-    {tree : L1.BinderTreeData}
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData src.binders.toList) tree)
+    (hagree : Ingress.BlobReadAgreement (readCtx t blob).blob blobs)
+    {tree : Ingress.BinderTreeData}
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData src.binders.toList) tree)
     {root : F} {h : Heap F} {v : SourceValue F} {blkAddr : _root_.Address} {recIdx : Nat}
-    (rep : L1.RecrTraceRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+    (rep : Ingress.RecrTraceRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
       tree root h rc blkAddr recIdx v)
     {ty₀ : Ix.Kernel.Expr .anon}
     (hty : (exprReader t blob src (Ix.Kernel.Reader.recParam ps) self).read rc.typ = .ok ty₀)
@@ -221,10 +221,10 @@ theorem recr_value_canon (ht : t.check = .ok ()) {blob : _root_.Address → Opti
     (κ : _root_.Address → Core.KKey) (name : Ix.Kernel.Key .anon)
     (hname : name = κ blkAddr ∨ name = κ (Core.rprjAddr blkAddr recIdx))
     (hreT : ∀ (q : SourceValue F) (X : Core.KExpr),
-      L1.RawConvExpr src.refs.toList [] src.univs.toList src.sharing.toList blobs h 4294967295
+      Ingress.RawConvExpr src.refs.toList [] src.univs.toList src.sharing.toList blobs h 4294967295
         rc.typ q → Core.TmC (Core.keyOf t) h X q → Core.TmC κ h X q)
     (hreR : ∀ ru ∈ rc.rules.toList, ∀ (q : SourceValue F) (X : Core.KExpr),
-      L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs h
+      Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs h
         4294967295 ru.rhs q → Core.TmC (Core.keyOf t) h X q → Core.TmC κ h X q) :
     ∃ (ty' : Ix.Kernel.Expr .anon) (rls : List (Ix.Kernel.RecRule .anon)),
       canonAnn src ps root rc.typ ty₀ = some ty' ∧
@@ -249,7 +249,7 @@ theorem recr_value_canon (ht : t.check = .ok ()) {blob : _root_.Address → Opti
     ⟨b, ((recIdx : Nat) : F), hb_rep, rfl, ?_⟩
   · intro hk1
     have hrck : rc.k = true := by
-      cases hkc : rc.k <;> simp [L1.repBoolField, hkc] at hk1
+      cases hkc : rc.k <;> simp [Ingress.repBoolField, hkc] at hk1
       rfl
     have hlen1 : rls.length = 1 := by
       have hl1 := hst.length_eq
@@ -259,10 +259,10 @@ theorem recr_value_canon (ht : t.check = .ok ()) {blob : _root_.Address → Opti
     · simp at hlen1
     · obtain ⟨hrlk, hrlp⟩ := hprops rl (List.mem_singleton.mpr rfl)
       rw [hrck] at hrlk
-      rw [← L1.val_cast_u56_ing hp56] at hrlp
+      rw [← Ingress.val_cast_u56_ing hp56] at hrlp
       exact ⟨rl, rfl, hrlk, hrlp⟩
     · simp at hlen1
-  · rw [hb_eq, L1.val_cast_u56_ing hidx56]
+  · rw [hb_eq, Ingress.val_cast_u56_ing hidx56]
     exact hname
 
 /-- The references a recursor record's type uses are references the record uses. -/
@@ -348,14 +348,14 @@ theorem get_ci_recr_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Cal
             (.recInfo ⟨keyOf t (Core.ixAddr a), ps, ty'⟩
               (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat)
               (rc.params.toNat + rc.motives.toNat + rc.minors.toNat) rls)) := by
-  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := L1.get_ci_block_trace_spec hbound ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := Ingress.get_ci_block_trace_spec hbound ha ev
   obtain ⟨lc, hget, hdec⟩ := recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
   have hc : c = c' := by
     rw [hb, hdec] at hex
     exact Except.ok.inj hex
   subst hc
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   rw [hinfo] at hres
   obtain ⟨blobs, tree, v, hhp, built, hld, htr⟩ := hres
   have hagree := blobReadAgreement_of_noCollision hnc hhp t
@@ -493,10 +493,10 @@ theorem get_ci_rprj_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Cal
     (hk : rc.k = true → rc.rules.size = 1) :
     Core.ixAddr a = memberAddr p.block p.idx.toNat (.recr rc) ∧
     ∃ (ty' : Ix.Kernel.Expr .anon) (rls : List (Ix.Kernel.RecRule .anon)),
-      canonAnn cb ps ((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) rc.typ ty₀ =
+      canonAnn cb ps ((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) rc.typ ty₀ =
         some ty' ∧
       canonRules cb ps rc.k rc.params.toNat
-        (((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1) rc.rules.toList rules₀ =
+        (((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1) rc.rules.toList rules₀ =
         some rls ∧
       Annotates ty' ty₀ ∧ List.Forall₂ RuleStored rls rules₀ ∧
       Core.CIPtrRep (Core.keyOf t) h' ptr (.recInfo ⟨keyOf t (Core.ixAddr a), ps, ty'⟩
@@ -508,7 +508,7 @@ theorem get_ci_rprj_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Cal
             (.recInfo ⟨keyOf t (Core.ixAddr a), ps, ty'⟩
               (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat)
               (rc.params.toNat + rc.motives.toNat + rc.minors.toNat) rls)) := by
-  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := L1.get_ci_block_trace_spec hbound ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := Ingress.get_ci_block_trace_spec hbound ha ev
   obtain ⟨lc, hget, hdec⟩ := recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
   have hc : c = c' := by
@@ -519,7 +519,7 @@ theorem get_ci_rprj_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Cal
     haddr.symm.trans (rprj_canonical rc hex htv hinfo).2
   have hkey : keyOf t (Core.ixAddr a) = Core.keyOf t (Core.rprjAddr p.block p.idx.toNat) := by
     rw [haddr', memberAddr_recr, keyOf_eq]
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   rw [hinfo] at hres
   obtain ⟨hidx, blkBytes, cb', ms', rc', blobs, tree, v, hhB, haB, hexB, hcb, hms, hhp, built,
     hld, htr⟩ := hres
@@ -586,7 +586,7 @@ theorem reloadsAs_rprj (ht : t.check = .ok ()) {E' : Ixon.Env} {env : Ix.Kernel.
     (hk : rc.k = true → rc.rules.size = 1)
     (hstored : Decl.UsedRefsStored t env cb) (hblk : BlockStored t env p.block ms)
     {cn : Ix.Kernel.ConstantInfo .anon}
-    (hcn : canonRec (keyOf t a) cb ((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) rc ps
+    (hcn : canonRec (keyOf t a) cb ((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) rc ps
       ty₀ rules₀ = some cn) :
     Decl.ReloadsAs E' t env cn := by
   obtain ⟨ty', rls, hcT, hcR, hcn'⟩ := canonRec_inv hcn
@@ -633,7 +633,7 @@ theorem reloadsAs_rprj_cons (ht : t.check = .ok ()) {E E' : Ixon.Env}
     {cn : Ix.Kernel.ConstantInfo .anon}
     (hblk : BlockStored t ⟨cn :: env.consts⟩ B ms)
     (hcn : canonRec (keyOf t (memberAddr B k (.recr rc))) cb
-      ((L1.mutsRootOffset ms.toList k : Nat) : F) rc ps ty₀ rules₀ = some cn) :
+      ((Ingress.mutsRootOffset ms.toList k : Nat) : F) rc ps ty₀ rules₀ = some cn) :
     Decl.ReloadsAs E' t ⟨cn :: env.consts⟩ cn := by
   have hkk : k.toUInt64.toNat = k := toUInt64_toNat_r hk64
   have hinfo : (memberProjection B k (.recr rc)).info = .rPrj ⟨k.toUInt64, B⟩ := rfl
@@ -642,10 +642,10 @@ theorem reloadsAs_rprj_cons (ht : t.check = .ok ()) {E E' : Ixon.Env}
     rw [hkk]
     exact hmem
   have hcn' : canonRec (keyOf t (memberAddr B k (.recr rc))) cb
-      ((L1.mutsRootOffset ms.toList (⟨k.toUInt64, B⟩ : Ixon.RecursorProj).idx.toNat : Nat) : F)
+      ((Ingress.mutsRootOffset ms.toList (⟨k.toUInt64, B⟩ : Ixon.RecursorProj).idx.toNat : Nat) : F)
       rc ps ty₀ rules₀ = some cn := by
     show canonRec (keyOf t (memberAddr B k (.recr rc))) cb
-      ((L1.mutsRootOffset ms.toList k.toUInt64.toNat : Nat) : F) rc ps ty₀ rules₀ = some cn
+      ((Ingress.mutsRootOffset ms.toList k.toUInt64.toNat : Nat) : F) rc ps ty₀ rules₀ = some cn
     rw [hkk]
     exact hcn
   exact reloadsAs_rprj (p := ⟨k.toUInt64, B⟩) ht hproj hinfo hblock hmuts hmem' hlen hperm

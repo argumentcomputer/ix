@@ -139,15 +139,15 @@ theorem memberCheckedLim_checkedLim {t : Ix.Kernel.RoleTable} {calls : List (Cal
     ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
   obtain ⟨b', hb', rfl⟩ := hblk
   obtain ⟨-, -, -, mc', a', hget', ha', hproj, hhashed⟩ :=
-    L1.projection_addr_hashed_spec hmem hb' ev_pa
+    Ingress.projection_addr_hashed_spec hmem hb' ev_pa
   rw [hk_val] at hget' hproj hhashed
   have hget_list : ms.toList[k]? = some mc := by simpa using hk
   rw [hget_list] at hget'
   cases hget'
-  have haddr : Core.S0.addr h_pre ap (memberAddr (Core.ixAddr b') k mc) :=
+  have haddr : Core.BaseSeams.addr h_pre ap (memberAddr (Core.ixAddr b') k mc) :=
     ⟨a', ha', hproj.trans (LoadedReads.memberAddr_eq_projAddr _ k mc).symm⟩
   exact ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
-    hrc_pre, hrc_m, haddr, Core.S0.addr_mono ev_ld.heap_extends haddr,
+    hrc_pre, hrc_m, haddr, Core.BaseSeams.addr_mono ev_ld.heap_extends haddr,
     ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩
 
 /-- **On the native route, a former whose reading is a syntactic telescope into a sort has the
@@ -193,7 +193,7 @@ theorem formerTele_length {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     show ((0 : Nat).toUInt64).toNat = 0
     decide
   -- the load of the member's projection record, traced
-  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := L1.get_ci_block_trace_spec hg_ld.2 ha ev_ld
+  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := Ingress.get_ci_block_trace_spec hg_ld.2 ha ev_ld
   have hrecA : recordOf E (Core.ixAddr a) = some (memberProjection B 0 (.indc ind)) := by
     rw [hax, LoadedReads.memberAddr_indc]
     exact hproj
@@ -203,7 +203,7 @@ theorem formerTele_length {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     rw [hb, hdecA] at hex
     exact (Except.ok.inj hex).symm
   subst hc
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
   rw [hinfo] at hres
   obtain ⟨hidx, blkBytes, cb', ms', ind', blobs, tree, plan, v₀, hhB, haB, hexB, hcb, hms,
@@ -240,7 +240,7 @@ theorem formerTele_length {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     LoadedReads.annotation_canon_exact ht hlvls (LoadedReads.blockSelf_key t B #[.indc ind])
       hagree rty built planned trace hty hty_lbb hty_def
   -- the references the block uses are stored in the prefix
-  have used : ∀ x, L1.RefUsed cb.refs.toList cb.sharing.toList ind.typ x →
+  have used : ∀ x, Ingress.RefUsed cb.refs.toList cb.sharing.toList ind.typ x →
       ∃ ci, env.find? (Core.keyOf t x) = some ci := by
     have hmem' : Ixon.MutConst.indc ind ∈ (#[.indc ind] : Array Ixon.MutConst).toList :=
       List.mem_singleton.mpr rfl

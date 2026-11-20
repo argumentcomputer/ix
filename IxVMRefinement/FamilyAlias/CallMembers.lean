@@ -58,17 +58,17 @@ theorem annotation_canon_gen_exact {t : Ix.Kernel.RoleTable} (ht : t.check = .ok
     {self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon))}
     {recurAddrs : List _root_.Address} {ps : List LevelParam}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {e : Ixon.Expr}
-    {kp : SourceValue F} {E_rd : KExpr} {root : F} {tree : L1.BinderTreeData}
+    {kp : SourceValue F} {E_rd : KExpr} {root : F} {tree : Ingress.BinderTreeData}
     {plan : List Core.KLevel}
     (hperm : ps.Perm (List.range ps.length)) (hps : ps.length < 4294967296)
     (hselfk : ∀ i x m k, recurAddrs[i]? = some x → self i = some m → m = .ok k →
       k = Core.keyOf t x)
-    (hagree : L1.BlobReadAgreement (readCtx t blob).blob blobs)
-    (raw : L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+    (hagree : Ingress.BlobReadAgreement (readCtx t blob).blob blobs)
+    (raw : Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
       h 4294967295 e kp)
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData src.binders.toList) tree)
-    (planned : L1.binderRootPlan tree src.sharing.toList root e = some plan)
-    (levels : L1.HeapBinderLevels h kp plan)
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData src.binders.toList) tree)
+    (planned : Ingress.binderRootPlan tree src.sharing.toList root e = some plan)
+    (levels : Ingress.HeapBinderLevels h kp plan)
     (hread : (exprReader t blob src (Ix.Kernel.Reader.recParam ps) self).read e = .ok E_rd)
     (hlbb : E_rd.looseBVarsBounded 0 = true)
     (hdef : E_rd.allLevelParamsDefined ps = true) :
@@ -85,7 +85,7 @@ theorem annotation_canon_gen_exact {t : Ix.Kernel.RoleTable} (ht : t.check = .ok
   refine ⟨E', ?_, hann, htm⟩
   unfold LoadedReads.canonAnn
   rw [LoadedReads.canonTree_eq built, planned]
-  show (L1.applyBinderTrace (fun level => Core.bmeta (L1.invPosLevel ps level))
+  show (Ingress.applyBinderTrace (fun level => Core.bmeta (Ingress.invPosLevel ps level))
     E_rd plan).map Prod.fst = some E'
   rw [hap]
   rfl
@@ -96,17 +96,17 @@ theorem annotation_canon_range_exact {t : Ix.Kernel.RoleTable} (ht : t.check = .
     {self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon))}
     {recurAddrs : List _root_.Address} {n : Nat}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {e : Ixon.Expr}
-    {kp : SourceValue F} {E_rd : KExpr} {root : F} {tree : L1.BinderTreeData}
+    {kp : SourceValue F} {E_rd : KExpr} {root : F} {tree : Ingress.BinderTreeData}
     {plan : List Core.KLevel}
     (hn : n < 4294967296)
     (hselfk : ∀ i x m k, recurAddrs[i]? = some x → self i = some m → m = .ok k →
       k = Core.keyOf t x)
-    (hagree : L1.BlobReadAgreement (readCtx t blob).blob blobs)
-    (raw : L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+    (hagree : Ingress.BlobReadAgreement (readCtx t blob).blob blobs)
+    (raw : Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
       h 4294967295 e kp)
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData src.binders.toList) tree)
-    (planned : L1.binderRootPlan tree src.sharing.toList root e = some plan)
-    (levels : L1.HeapBinderLevels h kp plan)
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData src.binders.toList) tree)
+    (planned : Ingress.binderRootPlan tree src.sharing.toList root e = some plan)
+    (levels : Ingress.HeapBinderLevels h kp plan)
     (hread : (exprReader t blob src id self).read e = .ok E_rd)
     (hlbb : E_rd.looseBVarsBounded 0 = true)
     (hdef : E_rd.allLevelParamsDefined (List.range n) = true) :
@@ -869,7 +869,7 @@ structure IndMemberData (calls : List (Call F)) (bAddr : _root_.Address)
   hlbb : ty₀.looseBVarsBounded 0 = true
   hdef : ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true
   hcanon : LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-    ((L1.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some tyA
+    ((Ingress.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some tyA
   hann : Annotates tyA ty₀
   hA_def : tyA.allLevelParamsDefined (List.range ind.lvls.toNat) = true
   hA_fv : tyA.hasFvar = false
@@ -916,7 +916,7 @@ theorem indMember_of_item {calls : List (Call F)} {bAddr : _root_.Address}
     Bytes.repAddressRef_heapMono₂ addrTy I.chain.evInAset.extends I.haM
   have hbdM : Bounded I.chain.evGetM.cs := bounded_sub I.chain.evGetM.sub hbd
   obtain ⟨rawBytes, cM, hhM, hbaM, hexM, -, htrM⟩ :=
-    L1.get_ci_block_trace_spec hbdM haM_m15 I.chain.evGetM.obs
+    Ingress.get_ci_block_trace_spec hbdM haM_m15 I.chain.evGetM.obs
   have hrecM : recordOf E₀ (ixAddr aM) = some (memberProjection B i (.indc ind)) := by
     rw [haM_eq, ← LoadedReads.memberAddr_indc]
     exact hB.members i (.indc ind) hmi
@@ -925,7 +925,7 @@ theorem indMember_of_item {calls : List (Call F)} {bAddr : _root_.Address}
   have hcM_eq : cM = memberProjection B i (.indc ind) :=
     hS.record_eq hrecAtM (Core.hashed_mono I.chain.evGetM.sub hhM) hbaM hexM
   subst hcM_eq
-  unfold L1.GetCIBlockTraceResult at htrM
+  unfold Ingress.GetCIBlockTraceResult at htrM
   simp only [memberProjection] at htrM
   obtain ⟨-, blkBytes, cb', ms', ind', blobs, tree, plan, v, hhBlk, hbaBlk, hexBlk, hmuts',
     hmi', hhp, built, planned, hldv, hraw, hlevs⟩ := htrM
@@ -954,8 +954,8 @@ theorem indMember_of_item {calls : List (Call F)} {bAddr : _root_.Address}
     obtain ⟨hhx, hxa⟩ := hhp (x, bs) hm
     have hrun := hS.blobs bs (Core.hashed_mono I.chain.evGetM.sub hhx)
     rwa [hxa] at hrun
-  have hagree : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
-    L1.BlobReadAgreement.of_mem hblob
+  have hagree : Ingress.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
+    Ingress.BlobReadAgreement.of_mem hblob
   obtain ⟨ty₀, hread⟩ :=
     LoadedReads.exprReader_read_ok ht rty (LoadedReads.blockSelf_ok t B ms) hblob
   have htySc : HeapExprScoped I.hEnd ind.lvls.toNat 0 I.chain.ty := by
@@ -1003,7 +1003,7 @@ structure CtorMemberData (calls : List (Call F)) (bAddr : _root_.Address)
   hlbb : ty₀.looseBVarsBounded 0 = true
   hdef : ty₀.allLevelParamsDefined (List.range ct.lvls.toNat) = true
   hcanon : LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-    (((L1.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ = some tyA
+    (((Ingress.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ = some tyA
   hann : Annotates tyA ty₀
   hA_def : tyA.allLevelParamsDefined (List.range ct.lvls.toNat) = true
   hA_fv : tyA.hasFvar = false
@@ -1053,7 +1053,7 @@ theorem ctorMember_of_item {calls : List (Call F)} {bAddr : _root_.Address}
     Bytes.repAddressRef_heapMono₂ addrTy I.chain.evInAset.extends I.haM
   have hbdM : Bounded I.chain.evGetM.cs := bounded_sub I.chain.evGetM.sub hbd
   obtain ⟨rawBytes, cM, hhM, hbaM, hexM, -, htrM⟩ :=
-    L1.get_ci_block_trace_spec hbdM haM_m15 I.chain.evGetM.obs
+    Ingress.get_ci_block_trace_spec hbdM haM_m15 I.chain.evGetM.obs
   have hjLt : j < ind.ctors.size := (Array.getElem?_eq_some_iff.mp hct).1
   have hrecM : recordOf E₀ (ixAddr aM) = some (constructorProjection B i j) := by
     rw [haM_eq, ← LoadedReads.ctorAddr_eq_cprjAddr]
@@ -1063,7 +1063,7 @@ theorem ctorMember_of_item {calls : List (Call F)} {bAddr : _root_.Address}
   have hcM_eq : cM = constructorProjection B i j :=
     hS.record_eq hrecAtM (Core.hashed_mono I.chain.evGetM.sub hhM) hbaM hexM
   subst hcM_eq
-  unfold L1.GetCIBlockTraceResult at htrM
+  unfold Ingress.GetCIBlockTraceResult at htrM
   simp only [constructorProjection] at htrM
   obtain ⟨-, -, blkBytes, cb', ms', ind', ct', blobs, tree, plan, v, hhBlk, hbaBlk, hexBlk,
     hmuts', hmi', hct', hhp, built, planned, hldv, hraw, hlevs⟩ := htrM
@@ -1096,8 +1096,8 @@ theorem ctorMember_of_item {calls : List (Call F)} {bAddr : _root_.Address}
     obtain ⟨hhx, hxa⟩ := hhp (x, bs) hm
     have hrun := hS.blobs bs (Core.hashed_mono I.chain.evGetM.sub hhx)
     rwa [hxa] at hrun
-  have hagree : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
-    L1.BlobReadAgreement.of_mem hblob
+  have hagree : Ingress.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
+    Ingress.BlobReadAgreement.of_mem hblob
   obtain ⟨ty₀, hread⟩ :=
     LoadedReads.exprReader_read_ok ht rty (LoadedReads.blockSelf_ok t B ms) hblob
   have htySc : HeapExprScoped I.hEnd ct.lvls.toNat 0 I.chain.ty := by
@@ -1155,7 +1155,7 @@ theorem recMemberVal_of_item {calls : List (Call F)} {bAddr : _root_.Address}
       (blockSelf t rb rs)).read rc.typ = .ok ty₀)
     (hlbb : ty₀.looseBVarsBounded 0 = true)
     (hdef : ty₀.allLevelParamsDefined ps = true)
-    (hcanon : LoadedReads.canonAnn crb ps ((L1.mutsRootOffset rs.toList k : Nat) : F) rc.typ ty₀ =
+    (hcanon : LoadedReads.canonAnn crb ps ((Ingress.mutsRootOffset rs.toList k : Nat) : F) rc.typ ty₀ =
       some tyA) :
     let srcKeys := srcAs.map fun b => Core.keyOf t (ixAddr b)
     let dstKeys := dstAs.map fun b => Core.keyOf t (ixAddr b)
@@ -1178,7 +1178,7 @@ theorem recMemberVal_of_item {calls : List (Call F)} {bAddr : _root_.Address}
     Bytes.repAddressRef_heapMono₂ addrTy I.chain.evInAset.extends I.haM
   have hbdM : Bounded I.chain.evGetM.cs := bounded_sub I.chain.evGetM.sub hbd
   obtain ⟨rawBytes, cM, hhM, hbaM, hexM, -, htrM⟩ :=
-    L1.get_ci_block_trace_spec hbdM haM_m15 I.chain.evGetM.obs
+    Ingress.get_ci_block_trace_spec hbdM haM_m15 I.chain.evGetM.obs
   have hrecM : recordOf E₀ (ixAddr aM) = some (memberProjection rb k (.recr rc)) := by
     rw [haM_eq, ← LoadedReads.memberAddr_recr]
     exact hR.members k (.recr rc) hrk
@@ -1187,7 +1187,7 @@ theorem recMemberVal_of_item {calls : List (Call F)} {bAddr : _root_.Address}
   have hcM_eq : cM = memberProjection rb k (.recr rc) :=
     hS.record_eq hrecAtM (Core.hashed_mono I.chain.evGetM.sub hhM) hbaM hexM
   subst hcM_eq
-  unfold L1.GetCIBlockTraceResult at htrM
+  unfold Ingress.GetCIBlockTraceResult at htrM
   simp only [memberProjection] at htrM
   obtain ⟨-, blkBytes, crb', rs', rc', blobs, tree, v, hhBlk, hbaBlk, hexBlk, hmuts',
     hrk', hhp, built, hldv, hrep⟩ := htrM
@@ -1217,8 +1217,8 @@ theorem recMemberVal_of_item {calls : List (Call F)} {bAddr : _root_.Address}
     obtain ⟨hhx, hxa⟩ := hhp (x, bs) hm
     have hrun := hS.blobs bs (Core.hashed_mono I.chain.evGetM.sub hhx)
     rwa [hxa] at hrun
-  have hagree : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
-    L1.BlobReadAgreement.of_mem hblob
+  have hagree : Ingress.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
+    Ingress.BlobReadAgreement.of_mem hblob
   have hself_nil : ∀ i x m k', ([] : List _root_.Address)[i]? = some x →
       blockSelf t rb rs i = some m → m = .ok k' → k' = Core.keyOf t x := fun _ _ _ _ hx => by
     simp at hx

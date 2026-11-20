@@ -207,7 +207,7 @@ private theorem decoded_recordsInView (E : Ixon.Env) {owner : _root_.Address}
     ∃ original, E.consts.get? owner = some original ∧ original.rawBytes = lc.rawBytes := by
   obtain ⟨original, constant, hmem, _, rfl⟩ := decodeReaderConsts_get?_inv E.consts.toList hget
   exact ⟨original, Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hmem,
-    (L1.mkLazyConst_rawBytes _ _).symm⟩
+    (Ingress.mkLazyConst_rawBytes _ _).symm⟩
 
 theorem checkAt_sound (W : Type u) [SetTheory W]
     {V : IxVM.Refinement.View} {b : Binding} {t : RoleTable} {E : Ixon.Env}

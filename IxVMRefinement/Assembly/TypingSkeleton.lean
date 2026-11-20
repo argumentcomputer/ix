@@ -713,7 +713,7 @@ theorem typing_skeleton_core {V : View} {extra : List ByteArray}
     rfl
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
   have hload : LoadedBy calls E₀ := hS.loaded
-  have hdec : L1.EnvDecoded E₀ := hS.decoded
+  have hdec : Ingress.EnvDecoded E₀ := hS.decoded
   obtain ⟨E, hM⟩ := merged_exists E₀ R
   have hrf : RecordsFor R E := hM.recordsFor hload hdec hshape.committed hextra hnc
   have hrun : ∀ a c, recordOf E₀ a = some c → Ix.Cert.recordAt E a = some c :=
@@ -882,14 +882,14 @@ theorem typing_def_instance (calls : List (Call F)) :
 /-! ## The walk interface at the existing claim layer -/
 
 /-- **The existing claim layer gives five of the clauses of `TopGraph`** for a run that
-validates its table: its walked set and rank (`Claim.WalkedL6`) hold the seeds, hold a record
+validates its table: its walked set and rank (`Claim.WalkedClaim`) hold the seeds, hold a record
 at every address, decrease strictly along every used reference and along the edge from a
 record to a block that is not itself, and the seeds are in Lean's logic. The other three
 clauses (`members`, `projMember`, `standing`) and the covered branch of `closed` are not
 exported by it. -/
-theorem walkedL6_graph {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
+theorem walkedClaim_graph {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     {seeds : List _root_.Address} (hload : LoadedBy calls E₀)
-    (hw : Claim.WalkedL6 calls t E₀ seeds) (hseedOk : ∀ a ∈ seeds, ¬ OutsideLogicAt E₀ a) :
+    (hw : Claim.WalkedClaim calls t E₀ seeds) (hseedOk : ∀ a ∈ seeds, ¬ OutsideLogicAt E₀ a) :
     ∃ (Top : _root_.Address → Prop) (rank : _root_.Address → Nat),
       (∀ a ∈ seeds, Top a) ∧
       (∀ a, Top a → ∃ c, recordOf E₀ a = some c) ∧
@@ -898,7 +898,7 @@ theorem walkedL6_graph {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ :
         Top (Ix.Cert.ownerOf a c) ∧ rank (Ix.Cert.ownerOf a c) < rank a) ∧
       ∀ a ∈ seeds, ∀ c, recordOf E₀ a = some c →
         InLogic c ∧ ∀ cb, recordOf E₀ (Ix.Cert.ownerOf a c) = some cb → InLogic cb := by
-  have hS := LoadedReads.RunStore.of_walkedL6 hload hw
+  have hS := LoadedReads.RunStore.of_walkedClaim hload hw
   have hat : ∀ {a : _root_.Address} {c : Ixon.Constant}, recordOf E₀ a = some c →
       Ix.Cert.recordAt E₀ a = some c :=
     fun {a c} h => (hS.recordOf_eq_recordAt a).symm.trans h
@@ -909,7 +909,7 @@ theorem walkedL6_graph {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ :
     exact ⟨c, hS.recordOf_of_recordAt hc⟩
   · intro a x hTa hused
     obtain ⟨c, i, hc, hi, hx⟩ := hused
-    have hi' : i ∈ Core.S0.usedRefIdxs c := by
+    have hi' : i ∈ Core.BaseSeams.usedRefIdxs c := by
       rw [Assembly.usedRefIdxs_eq]
       exact hi
     exact hclosed a x hTa ⟨c, hat hc, Or.inr ⟨i, hi', hx⟩⟩

@@ -37,7 +37,7 @@ returned represents them. -/
 theorem read_evidence_entries_parse :
     ∀ (k : Nat), k < 256 →
       ∀ {bs : List UInt8} {x_s r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
-        L1.Stream h bs x_s →
+        Ingress.Stream h bs x_s →
         ObsFn W "KernelRoles::read_evidence_entries" [x_s, .field (k : F)] h r h' calls →
         Heap.Extends h h' ∧
         ∃ (es : List (Ix.Kernel.Evidence _root_.Address)) (rest : List UInt8)
@@ -45,7 +45,7 @@ theorem read_evidence_entries_parse :
           r = .tuple [entriesPtr, restPtr] ∧ es.length = k ∧
           (∀ e ∈ es, Ix.Kernel.RoleTable.Evidence.wide e = true) ∧
           bs = es.flatMap Ix.Kernel.RoleTable.encEvidence ++ rest ∧
-          RepList evListEnum EvRep h' es entriesPtr ∧ L1.Stream h' rest restPtr := by
+          RepList evListEnum EvRep h' es entriesPtr ∧ Ingress.Stream h' rest restPtr := by
   intro k
   induction k with
   | zero =>
@@ -154,7 +154,7 @@ theorem read_role_evidence_parse :
     ∀ (n : Nat), n < 256 →
     ∀ (nxt : Nat) {bs : List UInt8} {x_s r : SourceValue F} {h h' : Heap F}
       {calls : List (Call F)},
-      nxt ≤ 108 → L1.Stream h bs x_s →
+      nxt ≤ 108 → Ingress.Stream h bs x_s →
       ObsFn W "KernelRoles::read_role_evidence" [x_s, .field (n : F), .field (nxt : F)] h r h'
         calls →
       Heap.Extends h h' ∧
@@ -163,7 +163,7 @@ theorem read_role_evidence_parse :
         (ents : List (Nat × SourceValue F)),
         r = .tuple [evMap, .field (nxt' : F), restPtr] ∧ le.length = n ∧
         bs = le.flatMap (fun p => Ix.Kernel.RoleTable.encEntry (p.1, p.2.toArray)) ++ rest ∧
-        L1.Stream h' rest restPtr ∧
+        Ingress.Stream h' rest restPtr ∧
         le.Pairwise (fun p q => p.1.idx < q.1.idx) ∧
         nxt ≤ nxt' ∧ nxt' ≤ 108 ∧ (∀ p ∈ le, nxt ≤ p.1.idx ∧ p.1.idx < nxt') ∧
         (∀ p ∈ le, p.2.length < 256 ∧ ∀ e ∈ p.2, Ix.Kernel.RoleTable.Evidence.wide e = true) ∧
@@ -242,10 +242,10 @@ theorem read_role_evidence_parse :
         have extPost := extSnoc1.trans extSnoc2
         have extMid := extE.trans (extR.trans extPost)
         have ldL : loadValue ((m459 ++ [x_left]) ++ [x_right]) (.ptr x_left.type m459.length) =
-            .ok x_left := extSnoc2.loadValue_eq (L1.loadValue_snoc m459 x_left)
+            .ok x_left := extSnoc2.loadValue_eq (Ingress.loadValue_snoc m459 x_left)
         have ldR : loadValue ((m459 ++ [x_left]) ++ [x_right])
             (.ptr x_right.type (m459 ++ [x_left]).length) = .ok x_right :=
-          L1.loadValue_snoc (m459 ++ [x_left]) x_right
+          Ingress.loadValue_snoc (m459 ++ [x_left]) x_right
         refine ⟨extL.trans extMid, leL ++ [(ro, es)] ++ leR, restR, _, _, nxtR,
           entsL ++ [(rb.toNat, x_entries)] ++ entsR, rfl, ?_, ?_, hsR.mono extPost, ?_,
           by omega, hnxtR2, ?_, ?_, ?_, ?_⟩

@@ -41,48 +41,48 @@ universe u
 /-- A positional binder trace applied to an expression annotates it. -/
 theorem applyBinderTrace_annotates (md : Core.KLevel → Ix.Kernel.BinderMeta) (e : Core.KExpr) :
     ∀ (levels : List Core.KLevel) (e' : Core.KExpr) (rest : List Core.KLevel),
-      L1.applyBinderTrace md e levels = some (e', rest) → Annotates e' e := by
+      Ingress.applyBinderTrace md e levels = some (e', rest) → Annotates e' e := by
   induction e with
   | bvar i =>
     intro levels e' rest h
-    simp only [L1.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    simp only [Ingress.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨h1, -⟩ := h
     subst h1
     exact .bvar
   | fvar i ty ih =>
     intro levels e' rest h
-    cases hx : L1.applyBinderTrace md ty levels with
-    | none => simp [L1.applyBinderTrace, hx] at h
+    cases hx : Ingress.applyBinderTrace md ty levels with
+    | none => simp [Ingress.applyBinderTrace, hx] at h
     | some r =>
       obtain ⟨ty', rem⟩ := r
-      simp only [L1.applyBinderTrace, hx, Option.bind_eq_bind, Option.bind_some, Option.pure_def,
+      simp only [Ingress.applyBinderTrace, hx, Option.bind_eq_bind, Option.bind_some, Option.pure_def,
         Option.some.injEq, Prod.mk.injEq] at h
       obtain ⟨h1, -⟩ := h
       subst h1
       exact .fvar (ih _ _ _ hx)
   | sort l =>
     intro levels e' rest h
-    simp only [L1.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    simp only [Ingress.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨h1, -⟩ := h
     subst h1
     exact .sort
   | const k us =>
     intro levels e' rest h
-    simp only [L1.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    simp only [Ingress.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨h1, -⟩ := h
     subst h1
     exact .const
   | app f a ihf iha =>
     intro levels e' rest h
-    cases h1 : L1.applyBinderTrace md f levels with
-    | none => simp [L1.applyBinderTrace, h1] at h
+    cases h1 : Ingress.applyBinderTrace md f levels with
+    | none => simp [Ingress.applyBinderTrace, h1] at h
     | some r1 =>
       obtain ⟨f', a1⟩ := r1
-      cases h2 : L1.applyBinderTrace md a a1 with
-      | none => simp [L1.applyBinderTrace, h1, h2] at h
+      cases h2 : Ingress.applyBinderTrace md a a1 with
+      | none => simp [Ingress.applyBinderTrace, h1, h2] at h
       | some r2 =>
         obtain ⟨a', a2⟩ := r2
-        simp only [L1.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
+        simp only [Ingress.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
           Option.pure_def, Option.some.injEq, Prod.mk.injEq] at h
         obtain ⟨h3, -⟩ := h
         subst h3
@@ -90,17 +90,17 @@ theorem applyBinderTrace_annotates (md : Core.KLevel → Ix.Kernel.BinderMeta) (
   | lam dom body m ihd ihb =>
     intro levels e' rest h
     cases levels with
-    | nil => simp [L1.applyBinderTrace] at h
+    | nil => simp [Ingress.applyBinderTrace] at h
     | cons level remaining =>
-      cases h1 : L1.applyBinderTrace md dom remaining with
-      | none => simp [L1.applyBinderTrace, h1] at h
+      cases h1 : Ingress.applyBinderTrace md dom remaining with
+      | none => simp [Ingress.applyBinderTrace, h1] at h
       | some r1 =>
         obtain ⟨d', a1⟩ := r1
-        cases h2 : L1.applyBinderTrace md body a1 with
-        | none => simp [L1.applyBinderTrace, h1, h2] at h
+        cases h2 : Ingress.applyBinderTrace md body a1 with
+        | none => simp [Ingress.applyBinderTrace, h1, h2] at h
         | some r2 =>
           obtain ⟨b', a2⟩ := r2
-          simp only [L1.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
+          simp only [Ingress.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
             Option.pure_def, Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨h3, -⟩ := h
           subst h3
@@ -108,53 +108,53 @@ theorem applyBinderTrace_annotates (md : Core.KLevel → Ix.Kernel.BinderMeta) (
   | forallE dom body m ihd ihb =>
     intro levels e' rest h
     cases levels with
-    | nil => simp [L1.applyBinderTrace] at h
+    | nil => simp [Ingress.applyBinderTrace] at h
     | cons level remaining =>
-      cases h1 : L1.applyBinderTrace md dom remaining with
-      | none => simp [L1.applyBinderTrace, h1] at h
+      cases h1 : Ingress.applyBinderTrace md dom remaining with
+      | none => simp [Ingress.applyBinderTrace, h1] at h
       | some r1 =>
         obtain ⟨d', a1⟩ := r1
-        cases h2 : L1.applyBinderTrace md body a1 with
-        | none => simp [L1.applyBinderTrace, h1, h2] at h
+        cases h2 : Ingress.applyBinderTrace md body a1 with
+        | none => simp [Ingress.applyBinderTrace, h1, h2] at h
         | some r2 =>
           obtain ⟨b', a2⟩ := r2
-          simp only [L1.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
+          simp only [Ingress.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
             Option.pure_def, Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨h3, -⟩ := h
           subst h3
           exact .forallE (ihd _ _ _ h1) (ihb _ _ _ h2)
   | letE ty v b m ihty ihv ihb =>
     intro levels e' rest h
-    cases h1 : L1.applyBinderTrace md ty levels with
-    | none => simp [L1.applyBinderTrace, h1] at h
+    cases h1 : Ingress.applyBinderTrace md ty levels with
+    | none => simp [Ingress.applyBinderTrace, h1] at h
     | some r1 =>
       obtain ⟨ty', a1⟩ := r1
-      cases h2 : L1.applyBinderTrace md v a1 with
-      | none => simp [L1.applyBinderTrace, h1, h2] at h
+      cases h2 : Ingress.applyBinderTrace md v a1 with
+      | none => simp [Ingress.applyBinderTrace, h1, h2] at h
       | some r2 =>
         obtain ⟨v', a2⟩ := r2
-        cases h3 : L1.applyBinderTrace md b a2 with
-        | none => simp [L1.applyBinderTrace, h1, h2, h3] at h
+        cases h3 : Ingress.applyBinderTrace md b a2 with
+        | none => simp [Ingress.applyBinderTrace, h1, h2, h3] at h
         | some r3 =>
           obtain ⟨b', a3⟩ := r3
-          simp only [L1.applyBinderTrace, h1, h2, h3, Option.bind_eq_bind, Option.bind_some,
+          simp only [Ingress.applyBinderTrace, h1, h2, h3, Option.bind_eq_bind, Option.bind_some,
             Option.pure_def, Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨h4, -⟩ := h
           subst h4
-          exact .letE (L1.annotates_instantiate1Lift (ihb _ _ _ h3) (ihv _ _ _ h2) 0)
+          exact .letE (Ingress.annotates_instantiate1Lift (ihb _ _ _ h3) (ihv _ _ _ h2) 0)
   | lit l =>
     intro levels e' rest h
-    simp only [L1.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    simp only [Ingress.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨h1, -⟩ := h
     subst h1
     exact .lit
   | proj s i inner ih =>
     intro levels e' rest h
-    cases hx : L1.applyBinderTrace md inner levels with
-    | none => simp [L1.applyBinderTrace, hx] at h
+    cases hx : Ingress.applyBinderTrace md inner levels with
+    | none => simp [Ingress.applyBinderTrace, hx] at h
     | some r =>
       obtain ⟨inner', rem⟩ := r
-      simp only [L1.applyBinderTrace, hx, Option.bind_eq_bind, Option.bind_some, Option.pure_def,
+      simp only [Ingress.applyBinderTrace, hx, Option.bind_eq_bind, Option.bind_some, Option.pure_def,
         Option.some.injEq, Prod.mk.injEq] at h
       obtain ⟨h1, -⟩ := h
       subst h1
@@ -259,17 +259,17 @@ theorem member_bounds {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {E₀ : 
   have hchkA := mutsMemberAt_checkedAt (mc := .indc ind) hbound hchk rfl
   obtain ⟨_, _, m_chk, _, rc, ap, ptr, v, r_chk, cs_ld, cs_chk, bytes, E_ld,
     _, _, _, _, hhash, hblake, hload_ld, hL1, hsub_ld, hld, ev_chk, _, hsub_chk⟩ :=
-    Assembly.checkedAtFull_loadedL1 hbound ⟨n, hchkA⟩
+    Assembly.checkedAtFull_loadedRecords hbound ⟨n, hchkA⟩
   have hrecP : Ix.Cert.recordAt E₀ (memberAddr B 0 (.indc ind)) =
       some (memberProjection B 0 (.indc ind)) :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.former
   have hrecB : Ix.Cert.recordAt E₀ B = some cb :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.record
-  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedL1_record hS hsub_ld hhash hblake hL1 hrecP
+  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedRecords_record hS hsub_ld hhash hblake hL1 hrecP
   have hvv : v' = v := Except.ok.inj (hld'.symm.trans hld)
   subst hvv
   have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨-, lcB, cb', ms', ind', blobs, hgetB, -, -, hexB, -, hcb', hms', -, raw⟩ := hraw
   obtain ⟨hhB, haB⟩ := hload_ld.1 _ lcB hgetB
@@ -365,7 +365,7 @@ theorem nativeInstallOut_of_member_checked {calls : List (Call F)} {t : Ix.Kerne
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
-    (hcov : L1.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env)
+    (hcov : Ingress.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env)
     (hndE : (env.consts.map (·.name)).Nodup) :
     ∃ (new : List (ConstantInfo .anon)) (p : Ix.Kernel.NativeParts .anon)
       (ty' : Ix.Kernel.Expr .anon) (ctorsA : List (ConstantVal .anon × Nat))
@@ -708,7 +708,7 @@ theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
-    (hcov : L1.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env)
+    (hcov : Ingress.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env)
     (hndE : (env.consts.map (·.name)).Nodup) :
     ∃ (new : List (ConstantInfo .anon)) (p : Ix.Kernel.NativeParts .anon)
       (ty' : Ix.Kernel.Expr .anon) (ctorsA : List (ConstantVal .anon × Nat))

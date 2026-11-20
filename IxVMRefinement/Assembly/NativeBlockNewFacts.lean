@@ -50,7 +50,7 @@ theorem get_ci_induct_addr {addr ptr : SourceValue F} {h h' : Heap F} {cs : List
     (hb : Bytes.RepAddressRef Core.addrTy h' b blk) :
     Core.ixAddr a = Core.iprjAddr (Core.ixAddr b) (ZMod.val i) := by
   obtain ⟨rawBytes, blkBytes, cm, cb, xs, ind, b', i', -, haddr, hde, -, -, -, -, -, hb', hidx, -,
-    hinfo, -, -, htv⟩ := L1.inductRecord_raw_tables_of_get_ci ev hbound ha hld
+    hinfo, -, -, htv⟩ := Ingress.inductRecord_raw_tables_of_get_ci ev hbound ha hld
   have hbb : b' = b := IxVMRep.repAddressRef_det U32.Goldilocks.compatible hb' hb
   rw [hbb] at hinfo
   have hii : i = i' := by
@@ -69,7 +69,7 @@ theorem get_ci_induct_addr {addr ptr : SourceValue F} {h h' : Heap F} {cs : List
 is that constructor's**: the twin of `iprj_key_block` (the store holds the constructor's
 projection at its address; the projections a hashed block's addresses hold are its own). -/
 theorem cprj_key_block {t : Ix.Kernel.RoleTable} (htwf : t.wf = true) {E : Ixon.Env}
-    (hdec : L1.EnvDecoded E) (hP : HashedBlockProjectionsHeld E) {B b : _root_.Address}
+    (hdec : Ingress.EnvDecoded E) (hP : HashedBlockProjectionsHeld E) {B b : _root_.Address}
     {j' : Nat} (hproj : recordOf E (ctorAddr B 0 j') = some (constructorProjection B 0 j'))
     (hbh : Core.HashedBlockAt E b) {i j : Nat}
     (hkey : Core.keyOf t (Core.cprjAddr b i j) = Core.keyOf t (Core.cprjAddr B 0 j')) :
@@ -118,7 +118,7 @@ constant the longer environment finds at its name. -/
 structure BlockInstall (c : Core.Ctx) (new : List (ConstantInfo .anon)) (B : _root_.Address)
     (cb : Ixon.Constant) (ind : Ixon.Inductive) (caps : IndCaps .anon) : Prop where
   check : c.t.check = .ok ()
-  decoded : L1.EnvDecoded c.E
+  decoded : Ingress.EnvDecoded c.E
   held : HashedBlockProjectionsHeld c.E
   block : recordOf c.E B = some cb
   muts : cb.info = .muts #[.indc ind]
@@ -133,7 +133,7 @@ structure BlockInstall (c : Core.Ctx) (new : List (ConstantInfo .anon)) (B : _ro
     ty₀.looseBVarsBounded 0 = true ∧
     ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
     LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-      ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ =
+      ((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ =
       some ty' ∧
     (appCtx c new).env.find? (Core.keyOf c.t (Core.iprjAddr B 0)) =
       some (.indInfo ⟨Core.keyOf c.t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ caps)
@@ -144,7 +144,7 @@ structure BlockInstall (c : Core.Ctx) (new : List (ConstantInfo .anon)) (B : _ro
     cty.looseBVarsBounded 0 = true ∧
     cty.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
     LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-      (((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) + 1 +
+      (((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) + 1 +
         ((j : Nat) : F)) ct.typ cty = some cty' ∧
     (appCtx c new).env.find? (Core.keyOf c.t (Core.cprjAddr B 0 j)) =
       some (.ctorInfo ⟨Core.keyOf c.t (Core.cprjAddr B 0 j), List.range ct.lvls.toNat, cty'⟩
@@ -290,18 +290,18 @@ theorem former_get_ci_value {E : Ixon.Env} {addr ptr : SourceValue F} {h h' : He
     ∃ tyPtr blkPtr : SourceValue F,
       loadValue h' ptr = .ok (.construct Core.kciEnum "Induct"
         [.field (ind.lvls.toNat : F), tyPtr, .field (ind.params.toNat : F),
-          .field (ind.indices.toNat : F), .field (ind.ctors.size : F), L1.repBoolField ind.isUnsafe,
+          .field (ind.indices.toNat : F), .field (ind.ctors.size : F), Ingress.repBoolField ind.isUnsafe,
           blkPtr, .field ((0 : Nat) : F)]) ∧
       ind.params.toNat < 72057594037927936 ∧ ind.indices.toNat < 72057594037927936 ∧
       ind.ctors.size < 72057594037927936 := by
-  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := L1.get_ci_block_trace_spec hbound ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := Ingress.get_ci_block_trace_spec hbound ha ev
   obtain ⟨lc, hget, hdecA⟩ := LoadedReads.recordOf_inv hrecA
   have hb : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
   have hc : c' = memberProjection B 0 (.indc ind) := by
     rw [hb, hdecA] at hex
     exact (Except.ok.inj hex).symm
   subst hc
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
   rw [hinfo] at hres
   obtain ⟨hidx, blkBytes, cb', ms', ind', blobs, tree, plan, v₀, hhB, haB, hexB, hcb, hms,
@@ -329,7 +329,7 @@ theorem former_get_ci_value {E : Ixon.Env} {addr ptr : SourceValue F} {h h' : He
 load named. -/
 theorem get_ci_induct_record {E : Ixon.Env} {addr ptr : SourceValue F} {h h' : Heap F}
     {cs : List (Call F)} {a : Bytes.Address} {nl ty np ni nc u blk idx : SourceValue F}
-    (hdec : L1.EnvDecoded E) (hnc : ¬ View.HashedCollision { env := E } [] cs)
+    (hdec : Ingress.EnvDecoded E) (hnc : ¬ View.HashedCollision { env := E } [] cs)
     (hbound : Bounded cs) (ev : ObsFn Core.W "Ingress::get_ci" [addr] h ptr h' cs)
     (ha : Bytes.RepAddressRef Core.addrTy h a addr)
     (hld : loadValue h' ptr =
@@ -339,7 +339,7 @@ theorem get_ci_induct_record {E : Ixon.Env} {addr ptr : SourceValue F} {h h' : H
       Bytes.RepAddressRef Core.addrTy h' b blk ∧ idx = .field i ∧
       c₀.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr b⟩ := by
   obtain ⟨rawBytes, blkBytes, cm, cb', xs, ind', b, i, hh, haddr, hde, -, -, -, -, -, hb, hidx,
-    -, hinfo, -, -⟩ := L1.inductRecord_raw_of_get_ci ev hbound ha hld
+    -, hinfo, -, -⟩ := Ingress.inductRecord_raw_of_get_ci ev hbound ha hld
   obtain ⟨lc, hget, hdec₀⟩ := LoadedReads.recordOf_inv hrec
   have hbytes : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
   have hcm : cm = c₀ := by
@@ -375,7 +375,7 @@ theorem BlockInstall.newGetCI (hI : BlockInstall c new B cb ind caps) :
         rfl)
       hty hlbb hdef
     have hcan'' : LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-        ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList
+        ((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList
           ((0 : Nat).toUInt64).toNat : Nat) : F) ind.typ ty₀ = some ty'' := hcan'
     rw [h0] at hcan''
     have e : ty'' = ty' := Option.some.inj (hcan''.symm.trans hcan)
@@ -409,7 +409,7 @@ theorem BlockInstall.newGetCI (hI : BlockInstall c new B cb ind caps) :
         exact hcidx)
       hty hlbb hdef
     have hcan'' : LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-        (((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList
+        (((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList
           ((0 : Nat).toUInt64).toNat : Nat) : F) + 1 + ((j.toUInt64.toNat : Nat) : F))
         ct.typ cty = some ty'' := hcan'
     rw [h0, hjj] at hcan''
@@ -434,7 +434,7 @@ theorem BlockInstall.newGetIprj (hI : BlockInstall c new B cb ind caps) :
             ((appCtx c new).stored.κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val i))) = some ci ∧
           Core.CIPtrRep (appCtx c new).stored.κ h' ptr ci := by
   intro bp ptr i h h' cs b ev hfam good hb
-  have hbh := L1.hashedBlockAt_of_get_ci_iprj (c := appCtx c new) good hb ev
+  have hbh := Ingress.hashedBlockAt_of_get_ci_iprj (c := appCtx c new) good hb ev
   obtain ⟨hbB, hi0⟩ := hI.famNew hbh (val_lt_uint64 i) hfam
   obtain ⟨ty₀, ty', hty, hlbb, hdef, hcan, hfT⟩ := hI.former
   have hblock' : recordOf c.E (Core.ixAddr b) = some cb := by
@@ -450,7 +450,7 @@ theorem BlockInstall.newGetIprj (hI : BlockInstall c new B cb ind caps) :
   obtain ⟨ty'', hcan', -, -, hrep⟩ := LoadedReads.get_ci_iprj_load_canon hI.check good.1 good.2
     hb ev hblock' hI.muts hmem hty' hlbb hdef
   have hcan'' : LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-      ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val i) : Nat) : F)
+      ((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val i) : Nat) : F)
       ind.typ ty₀ = some ty'' := hcan'
   rw [hi0] at hcan''
   have e : ty'' = ty' := Option.some.inj (hcan''.symm.trans hcan)
@@ -479,14 +479,14 @@ theorem BlockInstall.newGetCprj (hI : BlockInstall c new B cb ind caps) :
             some (.ctorInfo cv nP nF) →
           Core.CIPtrRep (appCtx c new).stored.κ h' ptr (.ctorInfo cv nP nF) := by
   intro bp ptr i j h h' cs b ev hfam good hb
-  have hbh := L1.hashedBlockAt_of_get_ci_cprj (c := appCtx c new) good hb ev
+  have hbh := Ingress.hashedBlockAt_of_get_ci_cprj (c := appCtx c new) good hb ev
   obtain ⟨hbB, hi0⟩ := hI.famNew hbh (val_lt_uint64 i) hfam
   have hblock' : recordOf c.E (Core.ixAddr b) = some cb := by
     rw [hbB]
     exact hI.block
   -- the slot exists in the record
   obtain ⟨-, -, -, blkBytes, cb', ms', ind', ct', blobs, v, hhB, haB, hexB, -, hcb, hms, hcts,
-    -⟩ := L1.get_ci_cprj_origin_spec good.2 hb ev
+    -⟩ := Ingress.get_ci_cprj_origin_spec good.2 hb ev
   obtain ⟨lcB, hgetB, hdecB⟩ := LoadedReads.recordOf_inv hblock'
   have hbB' : blkBytes = lcB.rawBytes := Core.load_escape hgetB good.1 blkBytes hhB haB
   have hcB : cb = cb' := by
@@ -516,7 +516,7 @@ theorem BlockInstall.newGetCprj (hI : BlockInstall c new B cb ind caps) :
   obtain ⟨ty'', hcan', -, -, hrep⟩ := LoadedReads.get_ci_cprj_load_canon hI.check good.1 good.2
     hb ev hblock' hI.muts hmem hct₀ hcidx hty' hlbb hdef
   have hcan'' : LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-      (((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val i) : Nat) : F) +
+      (((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val i) : Nat) : F) +
         1 + ((ZMod.val j : Nat) : F)) ct.typ cty = some ty'' := hcan'
   rw [hi0] at hcan''
   have e : ty'' = cty' := Option.some.inj (hcan''.symm.trans hcan)
@@ -572,7 +572,7 @@ theorem BlockInstall.newInductBlock (hI : BlockInstall c new B cb ind caps) :
   intro addr ptr h h' cs a b nl ty np ni nc u blk i ev hn good ha hld hb
   have hx := get_ci_induct_addr ev good.2 ha hld hb
   rcases hI.newKey hn with hxT | ⟨j, hj, hxC⟩
-  · have hbh := L1.hashedBlockAt_of_get_ci_induct (c := appCtx c new) good ev ha hld hb
+  · have hbh := Ingress.hashedBlockAt_of_get_ci_induct (c := appCtx c new) good ev ha hld hb
     obtain ⟨hbB, hi0⟩ := iprj_key_block hI.wf hI.decoded hI.held hI.formerRec hbh
       (val_lt_uint64 i) (by rw [← hx, hxT])
     refine ⟨cb, #[.indc ind], ind, ?_, hI.muts, ?_⟩
@@ -655,7 +655,7 @@ theorem BlockInstall.newUnitLike (hI : BlockInstall c new B cb ind caps) :
             (.const ((appCtx c new).stored.κ (Core.ixAddr a)) us) = true)) := by
   intro ap ptr h h' cs a nl ty u blk p i b cvT caps' cvC nPc ev good ha hld hb hfT hfew hfC hm
   have hx := get_ci_induct_addr ev good.2 ha hld hb
-  have hbh := L1.hashedBlockAt_of_get_ci_induct (c := appCtx c new) good ev ha hld hb
+  have hbh := Ingress.hashedBlockAt_of_get_ci_induct (c := appCtx c new) good ev ha hld hb
   have hBi : Core.ixAddr b = B ∧ ZMod.val i = 0 := by
     rcases hm with hm | hm
     · obtain ⟨hk, -⟩ := hI.newInd hfT hm
@@ -711,7 +711,7 @@ theorem BlockInstall.newUnitLikeRaw (hI : BlockInstall c new B cb ind caps) :
             (.const ((appCtx c new).stored.κ (Core.ixAddr a)) us) = true)) := by
   intro ap ptr h h' cs a nl ty u blk p i b cvT caps' ev good ha hld hb hfT hm hfew hz hn
   have hx := get_ci_induct_addr ev good.2 ha hld hb
-  have hbh := L1.hashedBlockAt_of_get_ci_induct (c := appCtx c new) good ev ha hld hb
+  have hbh := Ingress.hashedBlockAt_of_get_ci_induct (c := appCtx c new) good ev ha hld hb
   obtain ⟨hk, ty', hcv, hcaps⟩ := hI.newInd hfT hm
   subst hcaps
   have hxa : Core.ixAddr a = Core.iprjAddr B 0 := Core.keyOf_inj hI.wf hk

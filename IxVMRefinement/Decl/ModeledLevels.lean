@@ -420,7 +420,7 @@ private def zeroGhostPos : Nat → KExpr := fun _ => .sort .zero
 /-- Assemble `ConstantValRunJ posRulesJ` from `validate_expr_well_scoped` + `k_ensure_sort` on an
 exact closed type representation with `cv.levelParams.Perm (List.range cv.levelParams.length)`
 (carried directly in `ValRepExact`). -/
-theorem constantValRunJ_pos_of_front (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+theorem constantValRunJ_pos_of_front (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     {env : Ix.Kernel.Env .anon} {cv : ConstantVal .anon} {type' : KExpr}
     {rc nl ty v55 v92 : SourceValue F} {h m56 m93 m124 : Heap F}
     {cs66 cs103 : List (Call F)}
@@ -469,7 +469,7 @@ theorem constantValRunJ_pos_of_front (hCore : IxVM.Consistency.Core S₀) {c : C
 
 /-- Assemble `ValueFrontRunJ posRulesJ` from `validate_expr_well_scoped` + `k_check` on exact closed
 type and value representations in positional space (`posOf cv.levelParams`). -/
-theorem valueFrontRunJ_pos_of_front (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+theorem valueFrontRunJ_pos_of_front (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     {env : Ix.Kernel.Env .anon} {cv : ConstantVal .anon} {value type' value' : KExpr}
     {rc ty val v_sc r_chk : SourceValue F} {h₀ h_sc h_pre h_chk h_chk' h' : Heap F}
     {cs_sc cs_chk : List (Call F)}
@@ -649,7 +649,7 @@ theorem DeclInv.step_modeled_pos {V : Type u} [Ix.Kernel.SetTheory V]
 obligation (`∃ env₂, InstallStep env (.indDecl block nP) env₂ ∧ ∀ V, DeclInv V env → DeclInv V env₂`). -/
 theorem decls_step_of_modeled_pos {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {block : List (ConstantInfo .anon)} {nP : Nat}
-    (hchk : S0.Checked calls env (.indDecl block nP))
+    (hchk : BaseSeams.Checked calls env (.indDecl block nP))
     (hnodup : ((IxVM.Consistency.installs (.indDecl block nP)).map (·.name)).Nodup)
     (hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs (.indDecl block nP), env.find? ci₀.name = none)
     (hstep : DeclStoreInv env → ∃ env₂,

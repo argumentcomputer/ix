@@ -9,7 +9,7 @@ type expression, and the reading of the record (`ReadsRecord`) reads the same ex
 file states that correspondence once for all record kinds, so that a user can turn the
 circuit's well-scoping check of the type into the reading's well-scopedness
 (`Assembly.validate_expr_well_scoped_spec`) and then the heap term into an exact representation
-of an annotation of the reading (`L1.rawConvExpr_to_valRepExact`).
+of an annotation of the reading (`Ingress.rawConvExpr_to_valRepExact`).
 
 * `LoadedTypeReads t E h v a ci₀`: the loaded value `v` has the level count `n` and the type
   pointer `tyPtr` as its first fields; `tyPtr` is the raw conversion of an expression `e` of a
@@ -38,7 +38,7 @@ def LoadedTypeReads (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (h : Heap F) (v : S
     (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon))) (e : Ixon.Expr)
     (ty₀ : Ix.Kernel.Expr .anon),
     v = .construct Core.kciEnum tag (.field (n : F) :: tyPtr :: rest) ∧ n < 4294967296 ∧
-    L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs h
+    Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs h
       4294967295 e tyPtr ∧
     (∀ x bs, (x, bs) ∈ blobs → E.blobs.get? x = some bs) ∧
     (∀ i x m k, recurAddrs[i]? = some x → self i = some m → m = .ok k → k = Core.keyOf t x) ∧
@@ -48,9 +48,9 @@ def LoadedTypeReads (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (h : Heap F) (v : S
       ci₀ ∈ (Ix.Kernel.BasisKind.quotK.declsA : List (Ix.Kernel.ConstantInfo .anon)))
 
 private theorem defnValShape_fields (d : Ixon.Definition) (tyPtr valPtr hint : SourceValue F) :
-    ∃ (tag : String) (rest : List (SourceValue F)), L1.defnValShape d tyPtr valPtr hint =
+    ∃ (tag : String) (rest : List (SourceValue F)), Ingress.defnValShape d tyPtr valPtr hint =
       .construct Core.kciEnum tag (.field (d.lvls.toNat : F) :: tyPtr :: rest) := by
-  unfold L1.defnValShape
+  unfold Ingress.defnValShape
   cases d.kind <;> exact ⟨_, _, rfl⟩
 
 private theorem defnShape_cv {kind : Ix.DefKind} {cv : Ix.Kernel.ConstantVal .anon}
@@ -96,16 +96,16 @@ private theorem safe_of_member {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {
   exact hl (.defn d) hmem
 
 /-- **Every load of a record the run's store holds, against the record's reading** (module
-docstring). The load's evidence is the record layer's (`L1.RawCIRep` over the load's own store,
-`L1.get_ci_loadedL1_spec`); the reading is over the run's store. -/
+docstring). The load's evidence is the record layer's (`Ingress.RawCIRep` over the load's own store,
+`Ingress.get_ci_loadedRecords_spec`); the reading is over the run's store. -/
 theorem loadedTypeReads (hS : RunStore calls E) {cs_ld : List (Call F)} {E_ld : Ixon.Env}
     {h : Heap F} {a : _root_.Address} {c : Ixon.Constant} {v : SourceValue F}
     {ci₀ : Ix.Kernel.ConstantInfo .anon}
     (hload : LoadedBy cs_ld E_ld) (hsub : ∀ cl ∈ cs_ld, cl ∈ calls)
-    (hraw : L1.RawCIRep E_ld h a c v)
+    (hraw : Ingress.RawCIRep E_ld h a c v)
     (hrd : ReadsRecord t (recordOf E) (fun x => E.blobs.get? x) a c ci₀ c.info) :
     LoadedTypeReads t E h v a ci₀ := by
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   have hlog : c.info = c.info → InLogic c → InLogic c := fun _ h => h
   generalize hinfo : c.info = info at hraw hrd
   cases info with
@@ -117,9 +117,9 @@ theorem loadedTypeReads (hS : RunStore calls E) {cs_ld : List (Call F)} {E_ld : 
       unfold InLogic at hl
       rw [hinfo] at hl
       exact hl
-    have hrecur : L1.defnRecurAddrs d a = [] := by
-      have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
-      simp [L1.defnRecurAddrs, hf]
+    have hrecur : Ingress.defnRecurAddrs d a = [] := by
+      have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+      simp [Ingress.defnRecurAddrs, hf]
     rw [hrecur] at hty_raw
     obtain ⟨tag, rest, hv⟩ := defnValShape_fields d tyPtr valPtr hint
     exact ⟨tag, d.lvls.toNat, tyPtr, rest, c, [], blobs, soloSelf t a, d.typ, ty, hv, hlvls,
@@ -154,9 +154,9 @@ theorem loadedTypeReads (hS : RunStore calls E) {cs_ld : List (Call F)} {E_ld : 
       exact hms'
     obtain rfl : d' = d := Ixon.MutConst.defn.inj (Option.some.inj (hm'.symm.trans hm))
     obtain ⟨hlvls, tyPtr, valPtr, hint, rfl, hty_raw, -⟩ := raw
-    have hrecur : L1.defnMemberRecurAddrs d' p.block ms'.toList = [] := by
-      have hf := (L1.defnIsUnsafeCI_eq_false_iff d').mpr (safe_of_member hlogic hmuts hm)
-      simp [L1.defnMemberRecurAddrs, hf]
+    have hrecur : Ingress.defnMemberRecurAddrs d' p.block ms'.toList = [] := by
+      have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d').mpr (safe_of_member hlogic hmuts hm)
+      simp [Ingress.defnMemberRecurAddrs, hf]
     rw [hrecur] at hty_raw
     obtain ⟨tag, rest, hv⟩ := defnValShape_fields d' tyPtr valPtr hint
     exact ⟨tag, d'.lvls.toNat, tyPtr, rest, cb', [], blobs, blockSelf t p.block ms', d'.typ, ty,
@@ -172,7 +172,7 @@ theorem loadedTypeReads (hS : RunStore calls E) {cs_ld : List (Call F)} {E_ld : 
       exact hms'
     obtain rfl : ind' = ind := Ixon.MutConst.indc.inj (Option.some.inj (hm'.symm.trans hm))
     obtain ⟨hlvls, -, -, -, -, tyPtr, blkPtr, b, -, -, rfl, hty_raw⟩ := raw
-    exact ⟨_, ind'.lvls.toNat, tyPtr, _, cb', L1.blockRecurAddrs p.block ms'.toList, blobs,
+    exact ⟨_, ind'.lvls.toNat, tyPtr, _, cb', Ingress.blockRecurAddrs p.block ms'.toList, blobs,
       blockSelf t p.block ms', ind'.typ, ty, rfl, hlvls, hty_raw,
       hS.blob_of_table hload hsub hb, blockSelf_key t p.block ms', hty, Or.inl rfl⟩
   | cPrj p =>
@@ -190,7 +190,7 @@ theorem loadedTypeReads (hS : RunStore calls E) {cs_ld : List (Call F)} {E_ld : 
       exact hct'
     obtain rfl : ct' = ct := Option.some.inj (hct''.symm.trans hct)
     obtain ⟨hlvls, -, -, -, -, tyPtr, blkPtr, b, -, -, rfl, hty_raw⟩ := raw
-    exact ⟨_, ct'.lvls.toNat, tyPtr, _, cb', L1.blockRecurAddrs p.block ms'.toList, blobs,
+    exact ⟨_, ct'.lvls.toNat, tyPtr, _, cb', Ingress.blockRecurAddrs p.block ms'.toList, blobs,
       blockSelf t p.block ms', ct'.typ, ty, rfl, hlvls, hty_raw,
       hS.blob_of_table hload hsub hb, blockSelf_key t p.block ms', hty, Or.inl rfl⟩
   | rPrj p =>

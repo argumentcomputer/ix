@@ -1,5 +1,5 @@
 import IxVMRefinement.Core.Ctx
-import IxVMRefinement.Assembly.ClaimsL1L6
+import IxVMRefinement.Assembly.LayerSeams
 import Ix.IxVM.Consistency.Restrict
 import IxC.Kernel.Model.JudgeRules
 import IxC.Kernel.Model.StoreCompanions
@@ -409,7 +409,7 @@ theorem strongEnvProps_step_noProj {env env₂ : Ix.Kernel.Env .anon}
       · rw [hold] at hn; cases hn
       · exact absurd rfl (hnp tbl)
 
-/-- Strengthened `L5` fold obligation carrying `StrongEnvProps` alongside `EnvModelOk`. -/
+/-- Strengthened declaration-fold obligation carrying `StrongEnvProps` alongside `EnvModelOk`. -/
 def DeclsStrong
     (Checked : List (Call F) → Ix.Kernel.Env .anon → Ix.Kernel.Declaration .anon → Prop) : Prop :=
   ∃ Inv : (V : Type u) → [Ix.Kernel.SetTheory V] → Ix.Kernel.Env .anon → Prop,

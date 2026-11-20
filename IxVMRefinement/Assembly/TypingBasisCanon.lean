@@ -13,7 +13,7 @@ give it for the canonical annotated constant of each record, and the canonical c
 the pin, by evaluation.
 
 * `canonAnnC`: `LoadedReads.canonAnn` with the binder tree computed (`buildTree`, which
-  `L1.BinderTreeBuilt` accepts: `buildTree_built`) and the binder plan by structural
+  `Ingress.BinderTreeBuilt` accepts: `buildTree_built`) and the binder plan by structural
   recursion with fuel (`needsF`, `planStepF`, `rootPlanF`; the originals are well-founded and
   do not evaluate in the kernel), so that it evaluates; every value it returns is the
   original's (`canonAnn_of_C`, `canonRules_of_C`, `canonRec_of_C`).
@@ -50,21 +50,21 @@ set_option linter.unreachableTactic false
 
 /-- Adjacent pairing of binder-tree entries, by structural recursion with the pending first
 element of a pair. -/
-def pairsAux : Option L1.BinderTreeEntryData → List L1.BinderTreeEntryData →
-    List L1.BinderTreeEntryData
+def pairsAux : Option Ingress.BinderTreeEntryData → List Ingress.BinderTreeEntryData →
+    List Ingress.BinderTreeEntryData
   | none, [] => []
   | some e, [] => [e]
   | none, e :: rest => pairsAux (some e) rest
   | some f, s :: rest => (f.1, .node s.1 f.2 s.2) :: pairsAux none rest
 
-theorem pairsAux_eq : ∀ es : List L1.BinderTreeEntryData,
-    pairsAux none es = L1.binderPairsData es
-  | [] => by simp [pairsAux, L1.binderPairsData]
-  | [_] => by simp [pairsAux, L1.binderPairsData]
+theorem pairsAux_eq : ∀ es : List Ingress.BinderTreeEntryData,
+    pairsAux none es = Ingress.binderPairsData es
+  | [] => by simp [pairsAux, Ingress.binderPairsData]
+  | [_] => by simp [pairsAux, Ingress.binderPairsData]
   | _ :: _ :: rest => by
-    simp only [pairsAux, L1.binderPairsData, pairsAux_eq rest]
+    simp only [pairsAux, Ingress.binderPairsData, pairsAux_eq rest]
 
-theorem pairsAux_length : ∀ es : List L1.BinderTreeEntryData,
+theorem pairsAux_length : ∀ es : List Ingress.BinderTreeEntryData,
     (pairsAux none es).length = (es.length + 1) / 2
   | [] => by simp [pairsAux]
   | [_] => by simp [pairsAux]
@@ -73,7 +73,7 @@ theorem pairsAux_length : ∀ es : List L1.BinderTreeEntryData,
     omega
 
 /-- The binder tree of a list of entries by repeated adjacent pairing, with fuel. -/
-def buildTree (n : Nat) (es : List L1.BinderTreeEntryData) : L1.BinderTreeData :=
+def buildTree (n : Nat) (es : List Ingress.BinderTreeEntryData) : Ingress.BinderTreeData :=
   match es with
   | [] => .empty
   | [e] => e.2
@@ -82,8 +82,8 @@ def buildTree (n : Nat) (es : List L1.BinderTreeEntryData) : L1.BinderTreeData :
     | 0 => .empty
     | n + 1 => buildTree n (pairsAux none (e₁ :: e₂ :: rest))
 
-theorem buildTree_built : ∀ (n : Nat) (es : List L1.BinderTreeEntryData), es.length ≤ n + 1 →
-    L1.BinderTreeBuilt es (buildTree n es)
+theorem buildTree_built : ∀ (n : Nat) (es : List Ingress.BinderTreeEntryData), es.length ≤ n + 1 →
+    Ingress.BinderTreeBuilt es (buildTree n es)
   | _, [], _ => by
     unfold buildTree
     exact .empty
@@ -103,16 +103,16 @@ theorem buildTree_built : ∀ (n : Nat) (es : List L1.BinderTreeEntryData), es.l
     omega
 
 /-- The binder tree of a record's binder blocks, computed. -/
-def treeOf (c : Ixon.Constant) : L1.BinderTreeData :=
-  buildTree (L1.binderLeavesData c.binders.toList).length (L1.binderLeavesData c.binders.toList)
+def treeOf (c : Ixon.Constant) : Ingress.BinderTreeData :=
+  buildTree (Ingress.binderLeavesData c.binders.toList).length (Ingress.binderLeavesData c.binders.toList)
 
 theorem treeOf_built (c : Ixon.Constant) :
-    L1.BinderTreeBuilt (L1.binderLeavesData c.binders.toList) (treeOf c) :=
+    Ingress.BinderTreeBuilt (Ingress.binderLeavesData c.binders.toList) (treeOf c) :=
   buildTree_built _ _ (Nat.le_succ _)
 
 /-! ## The binder plan with fuel
 
-`L1.needsBinderAt` and `L1.binderPlanStep` are defined by well-founded recursion, which the
+`Ingress.needsBinderAt` and `Ingress.binderPlanStep` are defined by well-founded recursion, which the
 kernel does not evaluate. `needsF` and `planStepF` compute the same by structural recursion on
 a fuel argument, and return `none` when the fuel runs out or at a node kind no basis record
 has (`prj`, `letE`); every `some` they return is the original function's
@@ -142,16 +142,16 @@ def needsF : Nat → List Ixon.Expr → Nat → Ixon.Expr → Option Bool
 
 theorem needsF_sound : ∀ (fuel : Nat) (sharing : List Ixon.Expr) (bound : Nat)
     (expr : Ixon.Expr) (v : Bool), needsF fuel sharing bound expr = some v →
-      L1.needsBinderAt sharing bound expr = v
+      Ingress.needsBinderAt sharing bound expr = v
   | 0, _, _, _, _, h => by simp [needsF] at h
   | _ + 1, _, _, .lam _ _, v, h => by
     simp only [needsF, Option.some.injEq] at h
     subst h
-    simp [L1.needsBinderAt]
+    simp [Ingress.needsBinderAt]
   | _ + 1, _, _, .all _ _, v, h => by
     simp only [needsF, Option.some.injEq] at h
     subst h
-    simp [L1.needsBinderAt]
+    simp [Ingress.needsBinderAt]
   | fuel + 1, sharing, bound, .app func arg, v, h => by
     simp only [needsF] at h
     cases h1 : needsF fuel sharing bound func with
@@ -162,7 +162,7 @@ theorem needsF_sound : ∀ (fuel : Nat) (sharing : List Ixon.Expr) (bound : Nat)
       | some b =>
         simp only [h1, h2, Option.bind, Option.map, Option.some.injEq] at h
         subst h
-        simp only [L1.needsBinderAt, needsF_sound fuel _ _ _ _ h1, needsF_sound fuel _ _ _ _ h2]
+        simp only [Ingress.needsBinderAt, needsF_sound fuel _ _ _ _ h1, needsF_sound fuel _ _ _ _ h2]
   | fuel + 1, sharing, bound, .share index, v, h => by
     simp only [needsF] at h
     by_cases hidx : index.toNat < bound
@@ -171,43 +171,43 @@ theorem needsF_sound : ∀ (fuel : Nat) (sharing : List Ixon.Expr) (bound : Nat)
       | none =>
         simp only [hb, Option.some.injEq] at h
         subst h
-        simp [L1.needsBinderAt, hidx, hb]
+        simp [Ingress.needsBinderAt, hidx, hb]
       | some entry =>
         simp only [hb] at h
-        have e : L1.needsBinderAt sharing bound (.share index) =
-            L1.needsBinderAt sharing index.toNat entry := by
-          simp [L1.needsBinderAt, hidx, hb]
+        have e : Ingress.needsBinderAt sharing bound (.share index) =
+            Ingress.needsBinderAt sharing index.toNat entry := by
+          simp [Ingress.needsBinderAt, hidx, hb]
         rw [e]
         exact needsF_sound fuel _ _ _ _ h
     · simp only [hidx, ↓reduceIte, Option.some.injEq] at h
       subst h
-      simp [L1.needsBinderAt, hidx]
+      simp [Ingress.needsBinderAt, hidx]
   | _ + 1, _, _, .prj _ _ _, _, h => by simp [needsF] at h
   | _ + 1, _, _, .letE _ _ _ _ _, _, h => by simp [needsF] at h
   | _ + 1, _, _, .sort _, v, h => by
     simp only [needsF, Option.some.injEq] at h
     subst h
-    simp [L1.needsBinderAt]
+    simp [Ingress.needsBinderAt]
   | _ + 1, _, _, .var _, v, h => by
     simp only [needsF, Option.some.injEq] at h
     subst h
-    simp [L1.needsBinderAt]
+    simp [Ingress.needsBinderAt]
   | _ + 1, _, _, .ref _ _, v, h => by
     simp only [needsF, Option.some.injEq] at h
     subst h
-    simp [L1.needsBinderAt]
+    simp [Ingress.needsBinderAt]
   | _ + 1, _, _, .recur _ _, v, h => by
     simp only [needsF, Option.some.injEq] at h
     subst h
-    simp [L1.needsBinderAt]
+    simp [Ingress.needsBinderAt]
   | _ + 1, _, _, .str _, v, h => by
     simp only [needsF, Option.some.injEq] at h
     subst h
-    simp [L1.needsBinderAt]
+    simp [Ingress.needsBinderAt]
   | _ + 1, _, _, .nat _, v, h => by
     simp only [needsF, Option.some.injEq] at h
     subst h
-    simp [L1.needsBinderAt]
+    simp [Ingress.needsBinderAt]
 
 /-- A child's step, when it needs a binder plan. -/
 def condF (needs : Option Bool) (step : Option (List Core.KLevel × List Ixon.BinderNode))
@@ -217,14 +217,14 @@ def condF (needs : Option Bool) (step : Option (List Core.KLevel × List Ixon.Bi
   | some false => some ([], ns)
   | none => none
 
-theorem condF_sound {tree : L1.BinderTreeData} {sharing : List Ixon.Expr} {bound : Nat}
+theorem condF_sound {tree : Ingress.BinderTreeData} {sharing : List Ixon.Expr} {bound : Nat}
     {e : Ixon.Expr} {ns : List Ixon.BinderNode} {needs : Option Bool}
     {step : Option (List Core.KLevel × List Ixon.BinderNode)}
     {r : List Core.KLevel × List Ixon.BinderNode}
-    (hn : ∀ v, needs = some v → L1.needsBinderAt sharing bound e = v)
-    (hs : step = some r → L1.binderPlanStep tree sharing bound e ns = some r)
+    (hn : ∀ v, needs = some v → Ingress.needsBinderAt sharing bound e = v)
+    (hs : step = some r → Ingress.binderPlanStep tree sharing bound e ns = some r)
     (h : condF needs step ns = some r) :
-    (if L1.needsBinderAt sharing bound e then L1.binderPlanStep tree sharing bound e ns
+    (if Ingress.needsBinderAt sharing bound e then Ingress.binderPlanStep tree sharing bound e ns
       else some ([], ns)) = some r := by
   cases needs with
   | none => simp [condF] at h
@@ -238,17 +238,17 @@ theorem condF_sound {tree : L1.BinderTreeData} {sharing : List Ixon.Expr} {bound
       simp only [condF] at h
       simpa using h
 
-def planStepF : Nat → L1.BinderTreeData → List Ixon.Expr → Nat → Ixon.Expr →
+def planStepF : Nat → Ingress.BinderTreeData → List Ixon.Expr → Nat → Ixon.Expr →
     List Ixon.BinderNode → Option (List Core.KLevel × List Ixon.BinderNode)
   | 0, _, _, _, _, _ => none
   | fuel + 1, tree, sharing, bound, .lam dom body, node :: rest =>
     (condF (needsF fuel sharing bound dom) (planStepF fuel tree sharing bound dom rest) rest).bind
       fun p => (condF (needsF fuel sharing bound body) (planStepF fuel tree sharing bound body p.2)
-        p.2).bind fun q => some (L1.binderLevel node :: (p.1 ++ q.1), q.2)
+        p.2).bind fun q => some (Ingress.binderLevel node :: (p.1 ++ q.1), q.2)
   | fuel + 1, tree, sharing, bound, .all dom body, node :: rest =>
     (condF (needsF fuel sharing bound dom) (planStepF fuel tree sharing bound dom rest) rest).bind
       fun p => (condF (needsF fuel sharing bound body) (planStepF fuel tree sharing bound body p.2)
-        p.2).bind fun q => some (L1.binderLevel node :: (p.1 ++ q.1), q.2)
+        p.2).bind fun q => some (Ingress.binderLevel node :: (p.1 ++ q.1), q.2)
   | fuel + 1, tree, sharing, bound, .app func arg, nodes =>
     (condF (needsF fuel sharing bound func) (planStepF fuel tree sharing bound func nodes)
       nodes).bind fun p => (condF (needsF fuel sharing bound arg)
@@ -263,11 +263,11 @@ def planStepF : Nat → L1.BinderTreeData → List Ixon.Expr → Nat → Ixon.Ex
     else none
   | _ + 1, _, _, _, _, _ => none
 
-theorem planStepF_sound : ∀ (fuel : Nat) (tree : L1.BinderTreeData) (sharing : List Ixon.Expr)
+theorem planStepF_sound : ∀ (fuel : Nat) (tree : Ingress.BinderTreeData) (sharing : List Ixon.Expr)
     (bound : Nat) (expr : Ixon.Expr) (nodes : List Ixon.BinderNode)
     (r : List Core.KLevel × List Ixon.BinderNode),
     planStepF fuel tree sharing bound expr nodes = some r →
-      L1.binderPlanStep tree sharing bound expr nodes = some r := by
+      Ingress.binderPlanStep tree sharing bound expr nodes = some r := by
   intro fuel
   induction fuel with
   | zero => intro _ _ _ _ _ _ h; simp [planStepF] at h
@@ -276,7 +276,7 @@ theorem planStepF_sound : ∀ (fuel : Nat) (tree : L1.BinderTreeData) (sharing :
     have hc : ∀ (e : Ixon.Expr) (ns : List Ixon.BinderNode)
         (q : List Core.KLevel × List Ixon.BinderNode),
         condF (needsF fuel sharing bound e) (planStepF fuel tree sharing bound e ns) ns = some q →
-        (if L1.needsBinderAt sharing bound e then L1.binderPlanStep tree sharing bound e ns
+        (if Ingress.needsBinderAt sharing bound e then Ingress.binderPlanStep tree sharing bound e ns
           else some ([], ns)) = some q :=
       fun e ns q hq => condF_sound (fun v hv => needsF_sound fuel _ _ _ _ hv)
         (ih tree sharing bound e ns q) hq
@@ -301,11 +301,11 @@ theorem planStepF_sound : ∀ (fuel : Nat) (tree : L1.BinderTreeData) (sharing :
         | some q =>
           obtain ⟨bodyPlan, after⟩ := q
           have h' : planStepF (fuel + 1) tree sharing bound (.lam dom body) (node :: rest) =
-              some (L1.binderLevel node :: (domPlan ++ bodyPlan), after) := by
+              some (Ingress.binderLevel node :: (domPlan ++ bodyPlan), after) := by
             simp only [planStepF, h1, h2, Option.bind]
           rw [h'] at h
           cases h
-          exact L1.binderPlanStep_lam (hc _ _ _ h1) (hc _ _ _ h2)
+          exact Ingress.binderPlanStep_lam (hc _ _ _ h1) (hc _ _ _ h2)
     | .all dom body, node :: rest, h =>
       cases h1 : condF (needsF fuel sharing bound dom) (planStepF fuel tree sharing bound dom rest)
           rest with
@@ -326,11 +326,11 @@ theorem planStepF_sound : ∀ (fuel : Nat) (tree : L1.BinderTreeData) (sharing :
         | some q =>
           obtain ⟨bodyPlan, after⟩ := q
           have h' : planStepF (fuel + 1) tree sharing bound (.all dom body) (node :: rest) =
-              some (L1.binderLevel node :: (domPlan ++ bodyPlan), after) := by
+              some (Ingress.binderLevel node :: (domPlan ++ bodyPlan), after) := by
             simp only [planStepF, h1, h2, Option.bind]
           rw [h'] at h
           cases h
-          exact L1.binderPlanStep_all (hc _ _ _ h1) (hc _ _ _ h2)
+          exact Ingress.binderPlanStep_all (hc _ _ _ h1) (hc _ _ _ h2)
     | .app func arg, nodes, h =>
       cases h1 : condF (needsF fuel sharing bound func) (planStepF fuel tree sharing bound func nodes)
           nodes with
@@ -355,7 +355,7 @@ theorem planStepF_sound : ∀ (fuel : Nat) (tree : L1.BinderTreeData) (sharing :
             simp only [planStepF, h1, h2, Option.bind]
           rw [h'] at h
           cases h
-          exact L1.binderPlanStep_app (hc _ _ _ h1) (hc _ _ _ h2)
+          exact Ingress.binderPlanStep_app (hc _ _ _ h1) (hc _ _ _ h2)
     | .share index, .share variant :: rest, h =>
       by_cases hidx : index.toNat < bound
       · cases hb : sharing[index.toNat]? with
@@ -397,7 +397,7 @@ theorem planStepF_sound : ∀ (fuel : Nat) (tree : L1.BinderTreeData) (sharing :
                 rw [h'] at h
                 cases h
                 have hrec := ih tree sharing index.toNat body entryNodes (plan, []) hp
-                simp [L1.binderPlanStep, hidx, hb, hl, hrec]
+                simp [Ingress.binderPlanStep, hidx, hb, hl, hrec]
       · have h' : planStepF (fuel + 1) tree sharing bound (.share index)
             (.share variant :: rest) = none := by
           simp only [planStepF, hidx, ↓reduceIte]
@@ -419,8 +419,8 @@ theorem planStepF_sound : ∀ (fuel : Nat) (tree : L1.BinderTreeData) (sharing :
     | .nat _, _, h => simp [planStepF] at h
     | .letE _ _ _ _ _, _, h => simp [planStepF] at h
 
-/-- `L1.binderRootPlan` with fuel. -/
-def rootPlanF (fuel : Nat) (tree : L1.BinderTreeData) (sharing : List Ixon.Expr) (root : F)
+/-- `Ingress.binderRootPlan` with fuel. -/
+def rootPlanF (fuel : Nat) (tree : Ingress.BinderTreeData) (sharing : List Ixon.Expr) (root : F)
     (expr : Ixon.Expr) : Option (List Core.KLevel) :=
   match needsF fuel sharing 4294967295 expr with
   | some true =>
@@ -431,10 +431,10 @@ def rootPlanF (fuel : Nat) (tree : L1.BinderTreeData) (sharing : List Ixon.Expr)
   | some false => some []
   | none => none
 
-theorem rootPlanF_sound {fuel : Nat} {tree : L1.BinderTreeData} {sharing : List Ixon.Expr}
+theorem rootPlanF_sound {fuel : Nat} {tree : Ingress.BinderTreeData} {sharing : List Ixon.Expr}
     {root : F} {expr : Ixon.Expr} {plan : List Core.KLevel}
     (h : rootPlanF fuel tree sharing root expr = some plan) :
-    L1.binderRootPlan tree sharing root expr = some plan := by
+    Ingress.binderRootPlan tree sharing root expr = some plan := by
   unfold rootPlanF at h
   cases hn : needsF fuel sharing 4294967295 expr with
   | none => simp [hn] at h
@@ -444,7 +444,7 @@ theorem rootPlanF_sound {fuel : Nat} {tree : L1.BinderTreeData} {sharing : List 
     | false =>
       simp only [hn, Option.some.injEq] at h
       subst h
-      simp [L1.binderRootPlan, hv]
+      simp [Ingress.binderRootPlan, hv]
     | true =>
       simp only [hn] at h
       cases hl : tree.lookup (0, root, 0) with
@@ -461,7 +461,7 @@ theorem rootPlanF_sound {fuel : Nat} {tree : L1.BinderTreeData} {sharing : List 
             simp only [hp, Option.some.injEq] at h
             subst h
             have hs := planStepF_sound fuel _ _ _ _ _ _ hp
-            simp [L1.binderRootPlan, hv, hl, hs]
+            simp [Ingress.binderRootPlan, hv, hl, hs]
 
 /-- The fuel the basis records need, with room. -/
 def planFuel : Nat := 512
@@ -470,7 +470,7 @@ def planFuel : Nat := 512
 def canonAnnC (src : Ixon.Constant) (ps : List Ix.Kernel.LevelParam) (root : F)
     (e : Ixon.Expr) (E_rd : Ix.Kernel.Expr .anon) : Option (Ix.Kernel.Expr .anon) :=
   (rootPlanF planFuel (treeOf src) src.sharing.toList root e).bind fun plan =>
-    (L1.applyBinderTrace (fun level => Core.bmeta (L1.invPosLevel ps level)) E_rd plan).map
+    (Ingress.applyBinderTrace (fun level => Core.bmeta (Ingress.invPosLevel ps level)) E_rd plan).map
       Prod.fst
 
 theorem canonAnn_of_C {src : Ixon.Constant} {ps : List Ix.Kernel.LevelParam} {root : F}
@@ -715,7 +715,7 @@ def indReload? (a : _root_.Address) (c : Ixon.Constant)
                 match hp : basisEnv.find? (Core.keyOf ctab a) with
                 | some (ConstantInfo.indInfo cv caps) =>
                   if h3 : canonAnnC eb.2 (List.range ind.lvls.toNat)
-                      ((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) ind.typ ty.1 =
+                      ((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) ind.typ ty.1 =
                         some cv.type ∧
                       cv = ⟨Core.keyOf ctab a, List.range ind.lvls.toNat, cv.type⟩ then
                     some ⟨fun E hE pin hpin => by
@@ -724,7 +724,7 @@ def indReload? (a : _root_.Address) (c : Ixon.Constant)
                       have e : (⟨IxVM.Consistency.keyOf ctab a, List.range ind.lvls.toNat,
                           cv.type⟩ : ConstantVal .anon) = cv := h3.2.symm
                       have hcn : LoadedReads.canonInd (IxVM.Consistency.keyOf ctab a) eb.2
-                          ((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) ind ty.1 caps =
+                          ((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) ind ty.1 caps =
                             some (.indInfo cv caps) := by
                         rw [LoadedReads.canonInd_eq (canonAnn_of_C h3.1), e]
                       exact LoadedReads.reloadsAs_ind RoleVal.committedDefaultRoleTable_check
@@ -768,7 +768,7 @@ def ctorReload? (a : _root_.Address) (c : Ixon.Constant)
                     match hp : basisEnv.find? (Core.keyOf ctab a) with
                     | some (ConstantInfo.ctorInfo cv nP nF) =>
                       if h3 : canonAnnC eb.2 (List.range ct.lvls.toNat)
-                          (((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1 +
+                          (((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1 +
                             ((p.cidx.toNat : Nat) : F)) ct.typ ty.1 = some cv.type ∧
                           cv = ⟨Core.keyOf ctab a, List.range ct.lvls.toNat, cv.type⟩ ∧
                           nP = ct.params.toNat ∧ nF = ct.fields.toNat then
@@ -779,7 +779,7 @@ def ctorReload? (a : _root_.Address) (c : Ixon.Constant)
                           have e : (⟨IxVM.Consistency.keyOf ctab a, List.range ct.lvls.toNat,
                               cv.type⟩ : ConstantVal .anon) = cv := hcv.symm
                           have hcn : LoadedReads.canonCtor (IxVM.Consistency.keyOf ctab a) eb.2
-                              (((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1 +
+                              (((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1 +
                                 ((p.cidx.toNat : Nat) : F)) ct ty.1 =
                                 some (.ctorInfo cv nP nF) := by
                             rw [LoadedReads.canonCtor_eq (canonAnn_of_C hT), e,

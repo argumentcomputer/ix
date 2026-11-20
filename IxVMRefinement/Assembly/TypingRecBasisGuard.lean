@@ -58,7 +58,7 @@ theorem basis_rec_pair_spec {fam rcr : Ix.Kernel.Role} {f g : F}
     {P A : _root_.Address}
     (ev : ObsFn Obs.W "KernelRoles::basis_rec_pair" [parent, addr, .field f, .field g]
       h r h' cs)
-    (hP : Core.S0.addr h parent P) (hA : Core.S0.addr h addr A) :
+    (hP : Core.BaseSeams.addr h parent P) (hA : Core.BaseSeams.addr h addr A) :
     RoleVal.committedDefaultRoleTable.addressOf? fam = some P →
       RoleVal.committedDefaultRoleTable.addressOf? rcr = some A := by
   subst hf hg
@@ -67,7 +67,7 @@ theorem basis_rec_pair_spec {fam rcr : Ix.Kernel.Role} {f g : F}
   | .n1 (ev14 := pinFam) (ev51 := eqFam) (ev85 := pinRec) (ev132 := eqRec)
       (heq155 := asserted) .. =>
     obtain ⟨-, aR, haR, r', hr', hrR⟩ := RoleVal.basis_pin_prelude hrcr pinRec
-    obtain ⟨a', ha', haA⟩ := Core.S0.addr_mono
+    obtain ⟨a', ha', haA⟩ := Core.BaseSeams.addr_mono
       (pinFam.heap_extends.trans (eqFam.heap_extends.trans pinRec.heap_extends)) hA
     obtain ⟨hv, -⟩ := Lib.address_eq_spec eqRec ha' hr'
     have hsame : a' = r' := by
@@ -79,7 +79,7 @@ theorem basis_rec_pair_spec {fam rcr : Ix.Kernel.Role} {f g : F}
     rw [haR, e]
   | .other (ev14 := pinFam) (ev51 := eqFam) (hne161 := differs) .. =>
     obtain ⟨-, aF, haF, f', hf', hfF⟩ := RoleVal.basis_pin_prelude hfam pinFam
-    obtain ⟨p', hp', hpP⟩ := Core.S0.addr_mono pinFam.heap_extends hP
+    obtain ⟨p', hp', hpP⟩ := Core.BaseSeams.addr_mono pinFam.heap_extends hP
     obtain ⟨hv, -⟩ := Lib.address_eq_spec eqFam hp' hf'
     have hPF : P = aF := Option.some.inj (hbound.symm.trans haF)
     have hsame : p' = f' := Decl.ixAddr_injective (hpP.trans (hPF.trans hfF.symm))
@@ -92,7 +92,7 @@ binds the family's recursor at the record's address. -/
 theorem basis_rec_at_pin_spec {parent addr r : SourceValue F} {h h' : Heap F}
     {cs : List (Call F)} {P A : _root_.Address}
     (ev : ObsFn Obs.W "KernelRoles::basis_rec_at_pin" [parent, addr] h r h' cs)
-    (hP : Core.S0.addr h parent P) (hA : Core.S0.addr h addr A) :
+    (hP : Core.BaseSeams.addr h parent P) (hA : Core.BaseSeams.addr h addr A) :
     ∀ p ∈ basisRecPairs, RoleVal.committedDefaultRoleTable.addressOf? p.1 = some P →
       RoleVal.committedDefaultRoleTable.addressOf? p.2 = some A := by
   match Obs.«KernelRoles::basis_rec_at_pin».obs ev with
@@ -105,16 +105,16 @@ theorem basis_rec_at_pin_spec {parent addr r : SourceValue F} {h h' : Heap F}
     have s₁ := basis_rec_pair_spec (fam := .nat) (rcr := .natRec) (f := 0) (g := 3) rfl rfl
       (by decide) (by decide) natRun hP hA
     have s₂ := basis_rec_pair_spec (fam := .eq) (rcr := .eqRec) (f := 8) (g := 10) rfl rfl
-      (by decide) (by decide) eqRun (Core.S0.addr_mono x₁ hP) (Core.S0.addr_mono x₁ hA)
+      (by decide) (by decide) eqRun (Core.BaseSeams.addr_mono x₁ hP) (Core.BaseSeams.addr_mono x₁ hA)
     have s₃ := basis_rec_pair_spec (fam := .punit) (rcr := .punitRec) (f := 11) (g := 13)
-      rfl rfl (by decide) (by decide) punitRun (Core.S0.addr_mono x₂ hP)
-      (Core.S0.addr_mono x₂ hA)
+      rfl rfl (by decide) (by decide) punitRun (Core.BaseSeams.addr_mono x₂ hP)
+      (Core.BaseSeams.addr_mono x₂ hA)
     have s₄ := basis_rec_pair_spec (fam := .empty) (rcr := .emptyRec) (f := 14) (g := 15)
-      rfl rfl (by decide) (by decide) emptyRun (Core.S0.addr_mono x₃ hP)
-      (Core.S0.addr_mono x₃ hA)
+      rfl rfl (by decide) (by decide) emptyRun (Core.BaseSeams.addr_mono x₃ hP)
+      (Core.BaseSeams.addr_mono x₃ hA)
     have s₅ := basis_rec_pair_spec (fam := .false) (rcr := .falseRec) (f := 16) (g := 17)
-      rfl rfl (by decide) (by decide) falseRun (Core.S0.addr_mono x₄ hP)
-      (Core.S0.addr_mono x₄ hA)
+      rfl rfl (by decide) (by decide) falseRun (Core.BaseSeams.addr_mono x₄ hP)
+      (Core.BaseSeams.addr_mono x₄ hA)
     intro p hp
     unfold basisRecPairs at hp
     rcases List.mem_cons.mp hp with rfl | hp
@@ -223,7 +223,7 @@ theorem recGuard_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     ∃ (a : Bytes.Address) (parent addr result : SourceValue F) (guardHeap final : Heap F)
       (guardCalls : List (Call F)),
       RecMajorTie t E₀ A c rc (Core.ixAddr a) ∧
-      Core.S0.addr guardHeap parent (Core.ixAddr a) ∧ Core.S0.addr guardHeap addr A ∧
+      Core.BaseSeams.addr guardHeap parent (Core.ixAddr a) ∧ Core.BaseSeams.addr guardHeap addr A ∧
       ObsFn Obs.W "KernelRoles::basis_rec_at_pin" [parent, addr] guardHeap result final
         guardCalls := by
   have hgood : Core.Good ⟨E, env, t, lim⟩ calls := hst.good env lim
@@ -237,10 +237,10 @@ theorem recGuard_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨a', ha'_ref, haA⟩ := ha_pre
   subst haA
   obtain ⟨rawBytes, c', hh, hba, hex, -, hres'⟩ :=
-    L1.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
+    Ingress.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
   have hcc : c' = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hh) hba hex
   subst c'
-  unfold L1.GetCIBlockTraceResult at hres'
+  unfold Ingress.GetCIBlockTraceResult at hres'
   rw [hinfo] at hres'
   obtain ⟨blobs, tree, v, hhp, built, hldv, htr⟩ := hres'
   rw [hld] at hldv
@@ -290,6 +290,6 @@ theorem recGuard_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   exact ⟨a, parent, ap, r_chk, guardHeap, h'_chk, guardCalls,
     ⟨tyP, E', htyP, hann, majorKey_of_piDomAt (by rw [← hsum]; exact hpi) hhead⟩,
     ⟨a, Bytes.repAddressRef_heapMono₂ Core.addrTy hextG ha, rfl⟩,
-    Core.S0.addr_mono (hextM.trans (evScan.heap_extends.trans hextG)) ha_m, evGuard⟩
+    Core.BaseSeams.addr_mono (hextM.trans (evScan.heap_extends.trans hextG)) ha_m, evGuard⟩
 
 end IxVM.Refinement.Typing

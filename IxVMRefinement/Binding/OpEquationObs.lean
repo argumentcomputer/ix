@@ -51,18 +51,18 @@ theorem get_ci_defn_value_exact {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()
     ∃ (tyPtr valPtr hint : SourceValue F) (blobs : List (_root_.Address × ByteArray))
       (val' : Ix.Kernel.Expr .anon),
       canonAnn c (List.range d.lvls.toNat) (0 + 1) d.value val₀ = some val' ∧
-      loadValue h' ptr = .ok (L1.defnValShape d tyPtr valPtr hint) ∧
+      loadValue h' ptr = .ok (Ingress.defnValShape d tyPtr valPtr hint) ∧
       Decl.TmCExact (Core.keyOf t) h' (Core.posOf (List.range d.lvls.toNat) val') valPtr ∧
-      L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h' 4294967295
+      Ingress.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h' 4294967295
         d.value valPtr := by
-  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := L1.get_ci_trace_spec ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := Ingress.get_ci_trace_spec ha ev
   obtain ⟨lc, hget, hdec⟩ := recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
   have hc : c = c' := by
     rw [hb, hdec] at hex
     exact Except.ok.inj hex
   subst hc
-  unfold L1.GetCITraceResult at hres
+  unfold Ingress.GetCITraceResult at hres
   rw [hinfo] at hres
   obtain ⟨blobs, tree, v, hhp, built, hld, htr⟩ := hres
   have hsafe : Ix.Kernel.Reader.safetyDecline d = none := by
@@ -70,9 +70,9 @@ theorem get_ci_defn_value_exact {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()
     unfold InLogic at hl
     rw [hinfo] at hl
     exact hl
-  have hrecur : L1.defnRecurAddrs d (Core.ixAddr a) = [] := by
-    have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
-    simp [L1.defnRecurAddrs, hf]
+  have hrecur : Ingress.defnRecurAddrs d (Core.ixAddr a) = [] := by
+    have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+    simp [Ingress.defnRecurAddrs, hf]
   rw [hrecur] at htr
   obtain ⟨hnlvls, tyPtr, valPtr, hint, planT, planV, hv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr
   subst hv
@@ -586,7 +586,7 @@ theorem opEquationFacts_struct {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
       rw [hlv0] at hcV'
       exact Option.some.inj (hcV'.symm.trans hcV)
     rw [hvv, hlv0, Decl.posOf_range] at htmV
-    have hv31 : v31 = L1.defnValShape d tyPtr valPtr hintV :=
+    have hv31 : v31 = Ingress.defnValShape d tyPtr valPtr hintV :=
       Except.ok.inj (ld41.symm.trans hldv)
     match Obs.«KernelRoles::validate_op».obs ev238 with
     | .other (heq575 := hbad) .. => exact (zero_ne_one (Value.field.inj hbad)).elim
@@ -609,11 +609,11 @@ theorem opEquationFacts_struct {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
       have hkind : d.kind = .defn := by
         cases hk : d.kind with
         | defn => rfl
-        | opaq => simp [L1.defnValShape, hk, Core.kciEnum] at hci
-        | thm => simp [L1.defnValShape, hk, Core.kciEnum] at hci
-      have hsh : L1.defnValShape d tyPtr valPtr hintV = .construct Core.kciEnum "Defn"
-          [.field (d.lvls.toNat : F), tyPtr, valPtr, L1.repDefSafetyVal d.safety, hintV] := by
-        simp [L1.defnValShape, hkind]
+        | opaq => simp [Ingress.defnValShape, hk, Core.kciEnum] at hci
+        | thm => simp [Ingress.defnValShape, hk, Core.kciEnum] at hci
+      have hsh : Ingress.defnValShape d tyPtr valPtr hintV = .construct Core.kciEnum "Defn"
+          [.field (d.lvls.toNat : F), tyPtr, valPtr, Ingress.repDefSafetyVal d.safety, hintV] := by
+        simp [Ingress.defnValShape, hkind]
       rw [hsh] at hci
       have hfl := (Value.construct.inj hci).2.2
       simp only [List.cons.injEq] at hfl
@@ -637,7 +637,7 @@ theorem opEquationFacts_struct {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
         intro h₂ e₂ x hin
         have hin32 := TmExact.addrIn_back (htmV 0 (fun _ => .sort .zero)) (ext32_463.trans e₂)
           x hin
-        rcases L1.RawConvExpr.addrIn_used rval x hin32 with ⟨i, hi, hr⟩ | hr
+        rcases Ingress.RawConvExpr.addrIn_used rval x hin32 with ⟨i, hi, hr⟩ | hr
         · have hu : i ∈ IxVM.Consistency.usedRefIdxs c := by
             unfold IxVM.Consistency.usedRefIdxs
             rw [hinfo]

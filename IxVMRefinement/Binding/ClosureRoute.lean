@@ -262,14 +262,14 @@ theorem blockRoute_congr {E E' : Ixon.Env} {B : _root_.Address} {cb : Ixon.Const
       | some p =>
         obtain ⟨j, ind⟩ := p
         obtain ⟨k, -, hmk⟩ := firstIndc_spec hf
-        show (ind.ctors.toList.map (ctorAnswer (isIndAt E') (L1.blockRecurAddrs B ms.toList)
+        show (ind.ctors.toList.map (ctorAnswer (isIndAt E') (Ingress.blockRecurAddrs B ms.toList)
             cb.refs.toList cb.sharing.toList)).foldr orElse (some false) =
-          (ind.ctors.toList.map (ctorAnswer (isIndAt E) (L1.blockRecurAddrs B ms.toList)
+          (ind.ctors.toList.map (ctorAnswer (isIndAt E) (Ingress.blockRecurAddrs B ms.toList)
             cb.refs.toList cb.sharing.toList)).foldr orElse (some false)
         have hmem : Ixon.MutConst.indc ind ∈ ms.toList := List.mem_of_getElem? hmk
-        have e : ind.ctors.toList.map (ctorAnswer (isIndAt E') (L1.blockRecurAddrs B ms.toList)
+        have e : ind.ctors.toList.map (ctorAnswer (isIndAt E') (Ingress.blockRecurAddrs B ms.toList)
               cb.refs.toList cb.sharing.toList) =
-            ind.ctors.toList.map (ctorAnswer (isIndAt E) (L1.blockRecurAddrs B ms.toList)
+            ind.ctors.toList.map (ctorAnswer (isIndAt E) (Ingress.blockRecurAddrs B ms.toList)
               cb.refs.toList cb.sharing.toList) := by
           refine List.map_congr_left (fun ct hct => ctorAnswer_congr (fun a ha => hiso a ?_))
           rcases ha with ⟨i, hi, hin | ⟨s, hs, hin⟩⟩ | hrec

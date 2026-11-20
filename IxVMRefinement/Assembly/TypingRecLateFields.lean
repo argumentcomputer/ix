@@ -10,7 +10,7 @@ At a large eliminator of a propositional family the circuit's `is_large_eliminat
 single constructor's fields (`check_large_prop_ctor` → `check_large_walk_fields`): each field's
 domain has its sort checked (`k_ensure_sort`), a field whose sort is not zero is data, and every
 data field must be an index argument of the residual. This module ports the legacy walk
-(`Decl/NativeRec.lean`, stated over `Core S₀`) to the scoped core:
+(`Decl/NativeRec.lean`, stated over `Core baseSeams`) to the scoped core:
 
 * `scoped_large_walk_fields_go`, `scoped_large_prop_ctor_go`: the walk's specification under
   `ScopedCoreFacts` (`scoped_core_ensure_sort` for each domain; the level comparison's soundness
@@ -537,7 +537,7 @@ restriction) opened at its parameters and fields has its fields' sorts, each a p
 every assignment or an index argument of the residual, at the step's environment. From the
 canonical comparison's `is_large_eliminator` run: its arm that walks the constructor loaded by
 `get_ci_cprj(block, idx, 0)` (the stored constructor under the prefix keying, read at positions
-that are its own level parameters, the registry's `L1`), the scoped walk, and the stored
+that are its own level parameters via the registry's ingress load), the scoped walk, and the stored
 constructor's opened residual. -/
 theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}

@@ -1,5 +1,5 @@
 import IxVMRefinement.Claim.Walk
-import IxVMRefinement.L1.Ingress
+import IxVMRefinement.Ingress.Ingress
 import IxVMRefinement.Obs.KernelClaim
 
 /-! # Observed record-owner and safety queries
@@ -26,16 +26,16 @@ theorem defn_is_unsafe_ci_safe_spec {d : Ixon.Definition} {xk xs r : SourceValue
     (hlogic : Ix.Kernel.Reader.safetyDecline d = none)
     (ev : ObsFn Obs.W "Ingress::defn_is_unsafe_ci" [xk, xs] h r h' calls) :
     r = .field 0 ∧ h' = h := by
-  have hk' : xk = L1.repDefKindVal d.kind := by
-    cases he : d.kind <;> simpa only [RepDefKind, L1.repDefKindVal, he] using hk
-  have hs' : xs = L1.repDefSafetyVal d.safety := by
-    cases he : d.safety <;> simpa only [RepDefinitionSafety, L1.repDefSafetyVal, he] using hs
+  have hk' : xk = Ingress.repDefKindVal d.kind := by
+    cases he : d.kind <;> simpa only [RepDefKind, Ingress.repDefKindVal, he] using hk
+  have hs' : xs = Ingress.repDefSafetyVal d.safety := by
+    cases he : d.safety <;> simpa only [RepDefinitionSafety, Ingress.repDefSafetyVal, he] using hs
   rw [hk', hs'] at ev
-  have hf : L1.defnIsUnsafeCI d = false := by
+  have hf : Ingress.defnIsUnsafeCI d = false := by
     rcases d with ⟨kind, safety, asserts, lvls, typ, val⟩
     cases kind <;> cases safety <;> first | rfl | cases hlogic
-  obtain ⟨hr, hh⟩ := L1.defn_is_unsafe_ci_spec ev
-  exact ⟨by simpa [hf, L1.repBoolField] using hr, hh⟩
+  obtain ⟨hr, hh⟩ := Ingress.defn_is_unsafe_ci_spec ev
+  exact ⟨by simpa [hf, Ingress.repBoolField] using hr, hh⟩
 
 /-- A list of safe constructors reports zero, without changing the heap. -/
 theorem ctors_unsafe_safe_spec (ctors : List Ixon.Constructor) :
@@ -169,9 +169,9 @@ private theorem repConstant_info_of_shape {h : Heap F} {c : Ixon.Constant}
 /-- The source helper returns the record's actual owner address and does not allocate. -/
 theorem record_owner_spec {a : _root_.Address} {c : Ixon.Constant}
     {ap cp r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (ha : S0.addr h ap a) (hc : RepConstant h c cp)
+    (ha : BaseSeams.addr h ap a) (hc : RepConstant h c cp)
     (ev : ObsFn Obs.W "KernelClaim::record_owner" [ap, cp] h r h' calls) :
-    h' = h ∧ S0.addr h r (Ix.Cert.ownerOf a c) := by
+    h' = h ∧ BaseSeams.addr h r (Ix.Cert.ownerOf a c) := by
   match Obs.«KernelClaim::record_owner».obs ev with
   | .DPrj (hv15 := hv) (he95 := hr) (he96 := hh) .. =>
     subst hh
@@ -242,7 +242,7 @@ theorem record_owner_spec {a : _root_.Address} {c : Ixon.Constant}
 /-- The record actually loaded by a safety query; if that record is in logic, its answer is zero. -/
 theorem record_unsafe_safe_spec {x_addr : SourceValue F} {addr : _root_.Address}
     {r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
-    (ha : S0.addr h x_addr addr)
+    (ha : BaseSeams.addr h x_addr addr)
     (ev : ObsFn Obs.W "KernelClaim::record_unsafe" [x_addr] h r h' calls) :
     Heap.Extends h h' ∧
     ∃ (rawBytes : ByteArray) (c : Ixon.Constant),

@@ -1,7 +1,7 @@
 import IxVMRefinement.Claim.TopProj
 import IxVMRefinement.Assembly.TypingRecParentArm
 import IxVMRefinement.Callees.Modeled
-import IxVMRefinement.L1.Decode
+import IxVMRefinement.Ingress.Decode
 
 /-! # A top-walked recursor record: the arm its check took and its family block
 
@@ -65,7 +65,7 @@ private theorem lvc_tag {a : Bytes.Address} {x_addr : SourceValue F} {tag : Stri
       Address.blake3Pure rawBytes = Core.ixAddr a ∧ Ixon.deConstantExact rawBytes = .ok c ∧
       ∀ rc : Ixon.Recursor, c.info = .recr rc → tag = "Recr" := by
   obtain ⟨-, bytes, c, -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-    L1.load_verified_constant_decode_bounded ha ev
+    Ingress.load_verified_constant_decode_bounded ha ev
   obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfo, -, -, -, -⟩ := cRep
   simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
   rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
@@ -80,21 +80,21 @@ that decode exactly to a record the returned value represents. -/
 private theorem lvc_decode_any {a r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn Obs.W "Ingress::load_verified_constant" [a] h r h' cs) :
     ∃ (raw : ByteArray) (c : Ixon.Constant), raw.size < 4294967296 ∧ Hashed cs raw ∧
-      Ixon.deConstantExact raw = .ok c ∧ L1.RepConstant h' c r := by
+      Ixon.deConstantExact raw = .ok c ∧ Ingress.RepConstant h' c r := by
   obtain ⟨v1, m14, cs24, x_idx, x_len, v55, m56, cs66, v92, m93, cs103, m123, cs133, x_constant,
     x_rest, ld11, -⟩ := Obs.«Ingress::load_verified_constant».obs ev
   obtain ⟨bytes, inp, rest, m, cs', length, -, hst, hashed, -, hget, hrest, -⟩ :=
-    L1.load_verified_constant_spec ld11 ev
-  have hst0 : L1.Stream m (bytes.drop 0) inp := by
+    Ingress.load_verified_constant_spec ld11 ev
+  have hst0 : Ingress.Stream m (bytes.drop 0) inp := by
     rw [List.drop_zero]
     exact hst
   obtain ⟨-, c, n, cVal, restPtr, hok, heq, -, -, -, -, -, cRep, hdropRep⟩ :=
-    L1.get_constant_spec hst0 hget
+    Ingress.get_constant_spec hst0 hget
   simp only [Nat.zero_add] at hok hdropRep
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at heq
   obtain ⟨_, _⟩ := heq
   subst cVal restPtr
-  have hdrop_nil : bytes.drop n = [] := L1.repList_nil_of_load hdropRep hrest
+  have hdrop_nil : bytes.drop n = [] := Ingress.repList_nil_of_load hdropRep hrest
   have hlen_le : bytes.length ≤ n := List.drop_eq_nil_iff.mp hdrop_nil
   have hspan := Ixon.Verify.ConstantBounds.getConstant_bound
     { idx := 0, bytes := ⟨bytes.toArray⟩ } { idx := n, bytes := ⟨bytes.toArray⟩ } c
@@ -273,16 +273,16 @@ theorem get_ci_induct_head {x_addr r : SourceValue F} {h h' : Heap F} {calls : L
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
     subst infoVal
-    obtain ⟨⟨idx', blk⟩, hci, hx_idx, hblk_ix⟩ := L1.repConstantInfo_iPrj_inv hinfo
+    obtain ⟨⟨idx', blk⟩, hci, hx_idx, hblk_ix⟩ := Ingress.repConstantInfo_iPrj_inv hinfo
     have hx_idx' : x_idx = TagN.u64Value idx'.toNat := hx_idx
     subst hx_idx'
     obtain ⟨hidx56, hv722, hm731⟩ :=
       Lib.u64_to_field_spec (Deserialize.repU64_u64Value m2 idx') ev741
     subst v722 m731
-    obtain ⟨b, hb_eq, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
+    obtain ⟨b, hb_eq, hb_rep⟩ := Ingress.repIxonAddressRef_to_core_ing hblk_ix
     have hb_eq' : Core.ixAddr b = blk := hb_eq
     obtain ⟨cb, ms, ind, hbl, hmem, nl', ty', np', ni', hld'⟩ := get_ci_iprj_head hb_rep ev720
-    rw [L1.val_cast_u56_ing hidx56] at hmem
+    rw [Ingress.val_cast_u56_ing hidx56] at hmem
     have hv := Except.ok.inj (hld.symm.trans hld')
     injection hv with _ _ hargs
     injection hargs with _ hargs
@@ -302,7 +302,7 @@ theorem get_ci_induct_head {x_addr r : SourceValue F} {h h' : Heap F} {calls : L
 /-! ## The dispatch on a block of one inductive -/
 
 private theorem mutShape_of_repMutConst_rec {h : Heap F} {m : Ixon.MutConst}
-    {v : SourceValue F} (hr : L1.RepMutConst h m v) : Specs.Callees.MutShape h m v := by
+    {v : SourceValue F} (hr : Ingress.RepMutConst h m v) : Specs.Callees.MutShape h m v := by
   cases m with
   | defn d => obtain ⟨dv, hv, _⟩ := hr; exact ⟨dv, hv⟩
   | indc i => obtain ⟨iv, hv, _⟩ := hr; exact ⟨iv, hv⟩
@@ -310,7 +310,7 @@ private theorem mutShape_of_repMutConst_rec {h : Heap F} {m : Ixon.MutConst}
 
 private theorem membersRep_of_repMutConstList_rec {h : Heap F}
     {xs : List Ixon.MutConst} {p : SourceValue F}
-    (hrep : RepList Obs.Names.«Lists::Node<Ixon::MutConst>» L1.RepMutConst h xs p) :
+    (hrep : RepList Obs.Names.«Lists::Node<Ixon::MutConst>» Ingress.RepMutConst h xs p) :
     Specs.Callees.MembersRep h xs p := by
   induction hrep with
   | nil cell => exact .nil cell
@@ -334,10 +334,10 @@ theorem block_is_modeled_zero_count {fb : SourceValue F} {h h' : Heap F}
   have hload : ∀ {x_info w39 w40 w41 w42 : SourceValue F} {m2 : Heap F} {cs12 : List (Call F)},
       ObsFn Obs.W "Ingress::load_verified_constant" [fb] h
         (.construct "Ixon::Constant" "Mk" [x_info, w39, w40, w41, w42]) m2 cs12 →
-      (∀ cl ∈ cs12, cl ∈ calls) → L1.RepConstantInfo m2 cb.info x_info := by
+      (∀ cl ∈ cs12, cl ∈ calls) → Ingress.RepConstantInfo m2 cb.info x_info := by
     intro x_info w39 w40 w41 w42 m2 cs12 ev14 hs12
     obtain ⟨-, bytes, c, -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded hb ev14
+      Ingress.load_verified_constant_decode_bounded hb ev14
     have hraw : (⟨bytes.toArray⟩ : ByteArray) = bytes₀ :=
       hS.hashed_inj (Core.hashed_mono hs12 hh) hh₀ (haddr.trans hb₀.symm)
     rw [hraw, hx₀] at hexact
@@ -349,7 +349,7 @@ theorem block_is_modeled_zero_count {fb : SourceValue F} {h h' : Heap F}
     subst infoVal
     exact hinfo
   have hmembers : ∀ {x_members : SourceValue F} {m2 : Heap F},
-      L1.RepConstantInfo m2 cb.info (.construct "Ixon::ConstantInfo" "Muts" [x_members]) →
+      Ingress.RepConstantInfo m2 cb.info (.construct "Ixon::ConstantInfo" "Muts" [x_members]) →
       Specs.Callees.MembersRep m2 ms.toList x_members := by
     intro x_members m2 hrep
     rw [hinfo₀] at hrep
@@ -413,7 +413,7 @@ theorem NativeObsAt.nativeAt {calls : List (Call F)} {B : _root_.Address} {c : C
 `KernelModeled::block_is_modeled` on that pointer answered `0`, each within the run. -/
 def RecFamilyNativeObs (calls : List (Call F)) (A B : _root_.Address) : Prop :=
   ∃ (h₁ h₂ : Heap F) (ap fb : SourceValue F) (cs₁ : List (Call F)) (b : Bytes.Address),
-    S0.addr h₁ ap A ∧
+    BaseSeams.addr h₁ ap A ∧
     ObsFn Obs.W "KernelModeled::rec_family_block" [ap] h₁ fb h₂ cs₁ ∧
     (∀ cl ∈ cs₁, cl ∈ calls) ∧
     Bytes.RepAddressRef Core.addrTy h₂ b fb ∧ Core.ixAddr b = B ∧
@@ -438,7 +438,7 @@ def RecArmLimAt (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.
       SourceValue F)
     (cs_load cs_chk : List (Call F)),
     RCLimRep t bAddr lim h_pre rc ∧ RCLimRep t bAddr lim m_chk rc ∧
-    S0.addr h_pre ap A ∧ S0.addr m_chk ap A ∧
+    BaseSeams.addr h_pre ap A ∧ BaseSeams.addr m_chk ap A ∧
     ObsFn Obs.W "Ingress::get_ci" [ap] h_pre ptr m_chk cs_load ∧
     (∀ cl ∈ cs_load, cl ∈ calls) ∧
     loadValue m_chk ptr = .ok (.construct "KernelTypes::KConstantInfo" "Rec"
@@ -579,7 +579,7 @@ theorem TopWalkCore.recFamilyNative {lim : Option Nat}
       obtain ⟨hrecB, hcbi⟩ := hbl'.stored hW.hashedStored
       have hcount := block_is_modeled_zero_count hW.runStore hsubM hbrep modeledRun hbl' hmem
       exact ⟨Core.ixAddr b, cb, ms,
-        ⟨_, _, ap, _, famCalls, b, S0.addr_mono hext ha_m, familyRun, hsubF, hbrep, rfl,
+        ⟨_, _, ap, _, famCalls, b, BaseSeams.addr_mono hext ha_m, familyRun, hsubF, hbrep, rfl,
           _, modCalls, modeledRun, hsubM⟩,
         hrecB, hcbi, hcount, Address.blake3Pure raw, c₀, ip,
         recordOf_of_hashed hW.hashedStored (Core.hashed_mono hsubH hh) hsz hx, hci, hblk,

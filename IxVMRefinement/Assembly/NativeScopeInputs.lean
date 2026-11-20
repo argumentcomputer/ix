@@ -20,7 +20,7 @@ theorem observed_native_ctor_type_scope {base : Core.Ctx}
     {calls loadCalls scopeCalls : List (Call F)} {h₀ h₁ h₂ h₃ : Heap F}
     {block : Bytes.Address} {i j : F} {blockArg ptr result : SourceValue F}
     {nl ty blk indIdx ctorIdx np nf safe : SourceValue F}
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {ctor : Ixon.Constructor}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -45,7 +45,7 @@ theorem observed_native_ctor_type_scope {base : Core.Ctx}
       rawType.allLevelParamsDefined (List.range ctor.lvls.toNat) = true ∧ rawType.hasFvar = false := by
   obtain ⟨_, _, _, bytes, src, ms, member, ct, blobs, value, hh, ha, decoded, _,
     srcShape, memberAt', ctorAt', hashedBlobs, valueAt, raw, tree, plan, built, planned, levels⟩ :=
-    L1.get_ci_cprj_origin_spec goodLoad.2 blockRep loaded
+    Ingress.get_ci_cprj_origin_spec goodLoad.2 blockRep loaded
   have bytesEq := Core.load_escape source.stored goodLoad.1 bytes hh ha
   rw [bytesEq, source.decoded] at decoded
   injection decoded with sourceEq
@@ -74,7 +74,7 @@ theorem observed_native_former_type_scope {base : Core.Ctx}
     {calls loadCalls scopeCalls : List (Call F)} {h₀ h₁ h₂ h₃ : Heap F}
     {block : Bytes.Address} {i : F} {blockArg ptr result : SourceValue F}
     {nl ty np ni nc safe parent memberIndex : SourceValue F}
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -98,7 +98,7 @@ theorem observed_native_former_type_scope {base : Core.Ctx}
       rawType.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧ rawType.hasFvar = false := by
   obtain ⟨_, _, bytes, src, ms, member, blobs, value, hashed, address, decoded, _,
     srcShape, memberAt', hashedBlobs, valueAt, raw, tree, plan, built, planned, levels⟩ :=
-    L1.get_ci_iprj_origin_spec goodLoad.2 blockRep loaded
+    Ingress.get_ci_iprj_origin_spec goodLoad.2 blockRep loaded
   have bytesEq := Core.load_escape source.stored goodLoad.1 bytes hashed address
   rw [bytesEq, source.decoded] at decoded
   injection decoded with sourceEq
@@ -123,7 +123,7 @@ theorem observed_native_former_type_scope {base : Core.Ctx}
 theorem CtorScopeRead.type_scope_of_observations {base : Core.Ctx} {block : Bytes.Address} {i j : F}
     {params levels : Nat} {calls : List (Call F)}
     (checked : CtorScopeRead block i j 0 params levels calls)
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive} {ctor : Ixon.Constructor}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))
@@ -145,7 +145,7 @@ theorem CtorScopeRead.type_scope_of_observations {base : Core.Ctx} {block : Byte
 theorem native_ctor_reader_scope_of_observations {base : Core.Ctx} {block : Bytes.Address} {i : F}
     {params indices levels : Nat} {rc former bp sortLevel result : SourceValue F}
     {h h' : Heap F} {rootCalls loopCalls : List (Call F)}
-    (source : L1.CanonicalRecordAt base.E (Core.ixAddr block))
+    (source : Ingress.CanonicalRecordAt base.E (Core.ixAddr block))
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
     (memberAt : members.toList[ZMod.val i]? = some (.indc ind))

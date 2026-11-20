@@ -1,7 +1,7 @@
 import IxVMRefinement.Assembly.NativeBlockCtorSpecs
 import IxVMRefinement.Guard.CheckedFields
 import IxVMRefinement.Decl.NativeCtorScoped
-import IxVMRefinement.L1.TraceRecords
+import IxVMRefinement.Ingress.TraceRecords
 
 /-! # The constructor loop of a native block at the constructor stage
 
@@ -11,7 +11,7 @@ iteration (`k_ensure_sort` on the constructor's type, `check_param_agreement`,
 `check_field_universes`) are read at a scoped context `cS` of any keying whose load contract
 holds and which allows every call (the stage `Decl.ctorStage` is of this kind); the raw scans
 (`check_ctor_return_type`, `check_positivity`) are read at the table-keyed record context of the
-same base (`L1.traceRecordCtx`), as before.
+same base (`Ingress.traceRecordCtx`), as before.
 
 * `StagedCtorLoads`: the family of constructor loads, with the stored constructor's value
   represented exactly under the stage's keying and its raw type under the table's;
@@ -82,7 +82,7 @@ constructor of the family is checked at the stage `cS`: its stored value is chec
 (`ConstantValCheckJ`), its type is a sort there, its parameter domains are the former's, its
 fields have their sorts, and the raw scans give its residual and its field kinds. The typed calls
 are read at `cS` (any keying, every call allowed, its load contract `loads`); the raw scans at the
-record context of the run (`L1.traceRecordCtx`). At a structure-like proposition the sorts are
+record context of the run (`Ingress.traceRecordCtx`). At a structure-like proposition the sorts are
 those of the classifier's field loop, with its run data (module docstring). -/
 theorem native_ctor_staged_runs_checked (hLevels : IxVM.Consistency.Levels)
     {cS : ScopedCtx} (hall : ∀ call, cS.allowed call) {indIndex : F}
@@ -108,8 +108,8 @@ theorem native_ctor_staged_runs_checked (hLevels : IxVM.Consistency.Levels)
     (hstore₁ : Ix.Kernel.Open.StoreInv cS.env)
     (hef₁ : CoreEnvFacts cS.toCtx)
     (loads : ScopedLoadFacts cS)
-    (rawFacts : RawRecordFacts (L1.traceRecordCtx cS.toCtx cs_root))
-    (hpeer₁ : OneTypePeerReads (L1.traceRecordCtx cS.toCtx cs_root) b₀ T lps.length nP nIdx
+    (rawFacts : RawRecordFacts (Ingress.traceRecordCtx cS.toCtx cs_root))
+    (hpeer₁ : OneTypePeerReads (Ingress.traceRecordCtx cS.toCtx cs_root) b₀ T lps.length nP nIdx
       ctors.length indIndex) :
     ∀ (m j : Nat) {rc pta bp pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       m + j = ctors.length →
@@ -248,9 +248,9 @@ theorem native_ctor_staged_runs_checked (hLevels : IxVM.Consistency.Levels)
         rw [hnf_f] at ev_rt
         obtain ⟨hnt_476, rcbs, rargs, cbs, es, hstR_c, hrcbs_len, hstrip_c, hcbs_len,
             hes_len, hes_noT⟩ :=
-          check_ctor_return_type_observed_spec (c := L1.traceRecordCtx cS.toCtx cs_root)
+          check_ctor_return_type_observed_spec (c := Ingress.traceRecordCtx cS.toCtx cs_root)
             hlps hlps_lt (by omega) (by omega) hpeer₁ rawFacts
-            hg_rt (L1.traceRecordCtx_coverage cS.toCtx (fun x hx => hsub x (by simp [hc, hx])))
+            hg_rt (Ingress.traceRecordCtx_coverage cS.toCtx (fun x hx => hsub x (by simp [hc, hx])))
             (hcty_raw_m34.mono e_from_m34_to_m430) hnp_ca
             (Bytes.repAddressRef_heapMono₂ addrTy e_to_rt hbp) ev_rt
         obtain ⟨fvsP, crest, xFvs, idxArgs, hopP, hopF, hopAll, hidx_len⟩ :=
@@ -331,10 +331,10 @@ theorem native_ctor_staged_runs_checked (hLevels : IxVM.Consistency.Levels)
           | n0 cs_pos _ ev_pos hc_sg =>
             have hg_pos : Good cS.toCtx cs_pos :=
               hgood.sub (fun x hx => by simp [hc, hc_sg, hx])
-            exact ⟨check_positivity_observed_spec (c := L1.traceRecordCtx cS.toCtx cs_root)
+            exact ⟨check_positivity_observed_spec (c := Ingress.traceRecordCtx cS.toCtx cs_root)
               hlps hlps_lt (by omega) (by omega) hpeer₁
               rawFacts hg_pos
-              (L1.traceRecordCtx_coverage cS.toCtx
+              (Ingress.traceRecordCtx_coverage cS.toCtx
                 (fun x hx => hsub x (by simp [hc, hc_sg, hx])))
               (hcty_raw_m34.mono e_from_m34_to_m546) hnp_ca hstR_c hstrip_c
               (Bytes.repAddressRef_heapMono₂ addrTy e_to_pos hbp) ev_pos,
@@ -386,8 +386,8 @@ theorem native_ctor_staged_checked (hLevels : IxVM.Consistency.Levels)
     (hstore₁ : Ix.Kernel.Open.StoreInv cS.env)
     (hef₁ : CoreEnvFacts cS.toCtx)
     (loads : ScopedLoadFacts cS)
-    (rawFacts : RawRecordFacts (L1.traceRecordCtx cS.toCtx cs_root))
-    (hpeer₁ : OneTypePeerReads (L1.traceRecordCtx cS.toCtx cs_root) b₀ T lps.length nP nIdx
+    (rawFacts : RawRecordFacts (Ingress.traceRecordCtx cS.toCtx cs_root))
+    (hpeer₁ : OneTypePeerReads (Ingress.traceRecordCtx cS.toCtx cs_root) b₀ T lps.length nP nIdx
       ctors.length indIndex)
     {rc pta bp pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (subset : ∀ call ∈ cs, call ∈ cs_root) (good : Good cS.toCtx cs)
@@ -437,8 +437,8 @@ theorem native_ctor_staged (hLevels : IxVM.Consistency.Levels)
     (hstore₁ : Ix.Kernel.Open.StoreInv cS.env)
     (hef₁ : CoreEnvFacts cS.toCtx)
     (loads : ScopedLoadFacts cS)
-    (rawFacts : RawRecordFacts (L1.traceRecordCtx cS.toCtx cs_root))
-    (hpeer₁ : OneTypePeerReads (L1.traceRecordCtx cS.toCtx cs_root) b₀ T lps.length nP nIdx
+    (rawFacts : RawRecordFacts (Ingress.traceRecordCtx cS.toCtx cs_root))
+    (hpeer₁ : OneTypePeerReads (Ingress.traceRecordCtx cS.toCtx cs_root) b₀ T lps.length nP nIdx
       ctors.length indIndex)
     {rc pta bp pind r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (subset : ∀ call ∈ cs, call ∈ cs_root) (good : Good cS.toCtx cs)

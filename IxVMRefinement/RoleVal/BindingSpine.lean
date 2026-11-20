@@ -143,7 +143,7 @@ theorem admit_all_groups_observed {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
 on the address `a`, among `calls`. -/
 def ValidateBindingIn (calls : List (Call F)) (a : _root_.Address) : Prop :=
   ∃ (h h' : Heap F) (x_a res : SourceValue F) (cs : List (Call F)),
-    S0.addr h x_a a ∧ ObsFn W "KernelRoles::validate_binding" [x_a] h res h' cs ∧
+    BaseSeams.addr h x_a a ∧ ObsFn W "KernelRoles::validate_binding" [x_a] h res h' cs ∧
     ∀ cl ∈ cs, cl ∈ calls
 
 theorem ValidateBindingIn.mono {cs₁ cs₂ : List (Call F)} {a : _root_.Address}

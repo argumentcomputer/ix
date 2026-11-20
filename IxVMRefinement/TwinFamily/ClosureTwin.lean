@@ -446,14 +446,14 @@ theorem closureTwinSteps_at
   have hRc_R : RecordsFor R Ec :=
     ⟨hRc.1, fun a d hd => hRc.2.1 a d (hR_R₁_rec a d hd),
       fun y b hb => hRc.2.2.1 y b (hC.store.le₁.2 y b hb), hRc.2.2.2⟩
-  have hcanon₀ : L1.CanonicalHashCoverage ρ.E₀ calls := by
+  have hcanon₀ : Ingress.CanonicalHashCoverage ρ.E₀ calls := by
     intro bytes value hashed size exactRead
     obtain ⟨entry, stored, bytesEq, cached⟩ := hH bytes value hashed size
-      (L1.deConstant_of_deConstantExact exactRead) exactRead
+      (Ingress.deConstant_of_deConstantExact exactRead) exactRead
     refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
     rw [bytesEq]
     exact exactRead
-  have hcanon : L1.CanonicalHashCoverage Ec calls :=
+  have hcanon : Ingress.CanonicalHashCoverage Ec calls :=
     Assembly.canonicalHashCoverage_frame hcanon₀ hst.decoded
       (fun a v h => hst.runRecord a v ((hRS.recordOf_eq_recordAt a).trans h))
   -- Build `FamRecRecord ρ.E₀ A c rs'`

@@ -3,7 +3,7 @@ import IxVMRefinement.Levels.Smart
 /-! # The level layer: the consistency statement's `Levels`, and the level functions' specs
 
 `levels` discharges the consistency statement's level obligation (`IxVM.Consistency.Levels`,
-obligation `L2`): on bounded observed derivations and represented levels, `level_leq = 1`
+`LevelsObligation`): on bounded observed derivations and represented levels, `level_leq = 1`
 gives `≤` and `level_equal = 1` gives `=` at every assignment, and `level_equal(l, Zero) = 0`
 refutes that `l` is zero at every assignment. No hypothesis on the depth of the levels: the
 offsets the normalizer reaches are bounded by the level's height, which the trace's memory
@@ -25,7 +25,7 @@ open IxVM.Consistency (Bounded)
 
 /-! ## The consistency statement's level obligation -/
 
-/-- **The level layer of `IxVM.consistent`** (`L2`). -/
+/-- **The level layer of `IxVM.consistent`**. -/
 theorem levels : IxVM.Consistency.Levels := by
   refine ⟨?_, ?_, ?_⟩
   · intro a b heap after cs la lb ev hb repA repB φ
@@ -48,8 +48,8 @@ theorem levels : IxVM.Consistency.Levels := by
       · simp [hbe] at hr
     exact not_eval_zero_of_levelEqual_false hf
 
-/-- **Obligation `L2` is discharged.** -/
-theorem l2 : IxVM.Consistency.L2 := levels
+/-- **`LevelsObligation` is discharged.** -/
+theorem levelsObligation : IxVM.Consistency.LevelsObligation := levels
 
 /-! ## The level functions' specs, in registry form
 

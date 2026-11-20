@@ -81,7 +81,7 @@ every record of `R` that decodes is `E`'s record at its address; every blob of `
 and `E` holds every committed prelude row. The rows are asked for because an environment can
 store a pinned constant whose record `R` does not hold. -/
 def RecordsFor (R E : Ixon.Env) : Prop :=
-  L1.EnvDecoded E ∧
+  Ingress.EnvDecoded E ∧
   (∀ a c, recordOf R a = some c → Ix.Cert.recordAt E a = some c) ∧
   (∀ x b, R.blobs.get? x = some b → E.blobs.get? x = some b) ∧
   ∀ p ∈ committedRows, ∃ lc, E.consts.get? p.1 = some lc ∧ lc.rawBytes = p.2
@@ -469,7 +469,7 @@ theorem blobs_agree (hload : LoadedBy calls E₀) (hnc : ¬ CollisionWith V extr
 variable {E : Ixon.Env}
 
 /-- A merged store decodes its records. -/
-theorem Merged.decoded (hM : Merged E₀ R E) (hdec : L1.EnvDecoded E₀) : L1.EnvDecoded E := by
+theorem Merged.decoded (hM : Merged E₀ R E) (hdec : Ingress.EnvDecoded E₀) : Ingress.EnvDecoded E := by
   intro x lc h
   rcases hM.src x lc h with h0 | ⟨lcR, c, -, hd, hraw, hget⟩ | ⟨p, c, -, -, hd, hraw, hget⟩
   · exact hdec x lc h0
@@ -553,7 +553,7 @@ theorem Merged.good (hM : Merged E₀ R E) (hload : LoadedBy calls E₀)
 
 /-- **A merged store is a record store for the witness store.** -/
 theorem Merged.recordsFor (hM : Merged E₀ R E) (hload : LoadedBy calls E₀)
-    (hdec : L1.EnvDecoded E₀) (hcomm : AgreesCommitted R)
+    (hdec : Ingress.EnvDecoded E₀) (hcomm : AgreesCommitted R)
     (hextra : ∀ x ∈ committedFootprint, x ∈ extra) (hnc : ¬ CollisionWith V extra R calls) :
     RecordsFor R E := by
   refine ⟨hM.decoded hdec, ?_, ?_, ?_⟩
@@ -608,7 +608,7 @@ theorem Merged.recordsFor (hM : Merged E₀ R E) (hload : LoadedBy calls E₀)
 
 /-- **A merged store holds the run's records.** -/
 theorem Merged.run_record (hM : Merged E₀ R E) (hload : LoadedBy calls E₀)
-    (hdec : L1.EnvDecoded E₀) (hextra : ∀ x ∈ committedFootprint, x ∈ extra)
+    (hdec : Ingress.EnvDecoded E₀) (hextra : ∀ x ∈ committedFootprint, x ∈ extra)
     (hnc : ¬ CollisionWith V extra R calls) {a : _root_.Address} {c : Ixon.Constant}
     (h : recordOf E₀ a = some c) : Ix.Cert.recordAt E a = some c := by
   obtain ⟨lc0, hl0, hd0⟩ := recordOf_some h

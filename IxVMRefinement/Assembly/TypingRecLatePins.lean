@@ -165,7 +165,7 @@ theorem majorKey_annotates_eq {rc : Ixon.Recursor} {E' E'' T : Ix.Kernel.Expr .a
 /-- **The record `get_ci` loaded**: bytes fewer than `2^32`, hashed in the run, at the address,
 decoding exactly to a record (every arm of `get_ci` starts with `load_verified_constant`). -/
 theorem get_ci_bytes_bound {A : _root_.Address} {x_addr r : SourceValue F} {h h' : Heap F}
-    {calls : List (Call F)} (ha : Core.S0.addr h x_addr A)
+    {calls : List (Call F)} (ha : Core.BaseSeams.addr h x_addr A)
     (ev : ObsFn Obs.W "Ingress::get_ci" [x_addr] h r h' calls) :
     ∃ (rawBytes : ByteArray) (c : Ixon.Constant), rawBytes.size < 4294967296 ∧
       Hashed calls rawBytes ∧ Address.blake3Pure rawBytes = A ∧
@@ -243,9 +243,9 @@ theorem field_nat_inj {a b : Nat} (ha : a < 18446744069414584321)
 /-- A converted rule list is a list of its cells. -/
 theorem RulesTraceRep.toRepListTrue {refs recurAddrs : List _root_.Address}
     {univs : List Ixon.Univ} {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)}
-    {tree : L1.BinderTreeData} {h : Heap F} {j : Nat} {root : F}
+    {tree : Ingress.BinderTreeData} {h : Heap F} {j : Nat} {root : F}
     {rus : List Ixon.RecursorRule} {p : SourceValue F}
-    (r : L1.RulesTraceRep refs recurAddrs univs sharing blobs tree h j root rus p) :
+    (r : Ingress.RulesTraceRep refs recurAddrs univs sharing blobs tree h j root rus p) :
     RepList Core.krrListEnum (fun _ _ _ => True) h rus p := by
   induction r with
   | nil cell => exact .nil cell
@@ -254,10 +254,10 @@ theorem RulesTraceRep.toRepListTrue {refs recurAddrs : List _root_.Address}
 /-- `Lists::length` of a converted rule list is its length. -/
 theorem rulesTrace_length_spec {refs recurAddrs : List _root_.Address}
     {univs : List Ixon.Univ} {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)}
-    {tree : L1.BinderTreeData} {j : Nat} {root : F} {rus : List Ixon.RecursorRule}
+    {tree : Ingress.BinderTreeData} {j : Nat} {root : F} {rus : List Ixon.RecursorRule}
     {p r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn Obs.W Obs.Names.«Lists::length<KernelTypes::KRecRule>» [p] h r h' cs)
-    (hr : L1.RulesTraceRep refs recurAddrs univs sharing blobs tree h j root rus p) :
+    (hr : Ingress.RulesTraceRep refs recurAddrs univs sharing blobs tree h j root rus p) :
     r = .field (rus.length : F) := by
   have ev' : ObsFn Obs.W
       (Instance.mk "Lists::length" [(.named "KernelTypes::KRecRule" [])]).symbol
@@ -343,10 +343,10 @@ theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
   subst haA
   -- the load of the record, traced
   obtain ⟨rawBytes, c', hh, hba, hex, -, hres'⟩ :=
-    L1.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
+    Ingress.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
   have hcc : c' = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hh) hba hex
   subst c'
-  unfold L1.GetCIBlockTraceResult at hres'
+  unfold Ingress.GetCIBlockTraceResult at hres'
   rw [hinfo] at hres'
   obtain ⟨blobs, tree, v, hhp, built, hldv, htr⟩ := hres'
   rw [hld] at hldv
@@ -420,7 +420,7 @@ theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
   subst hPa
   -- the parent's load, traced: the member `ind` of the block `cb`
   have hgL : Core.Good ⟨E, env, t, lim⟩ loadCalls := hgood.sub hsLoad'
-  obtain ⟨rawP, cP, hhP, hbaP, hexP, -, hresP⟩ := L1.get_ci_block_trace_spec hgL.2 ha evLoad
+  obtain ⟨rawP, cP, hhP, hbaP, hexP, -, hresP⟩ := Ingress.get_ci_block_trace_spec hgL.2 ha evLoad
   have hrecP : recordOf E (Core.ixAddr a) = some cm := by
     rw [recordOf_eq_recordAt_of_decoded hst.decoded]
     exact hcm
@@ -430,7 +430,7 @@ theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
     rw [hbP, hdec] at hexP
     exact (Except.ok.inj hexP).symm
   subst hcP
-  unfold L1.GetCIBlockTraceResult at hresP
+  unfold Ingress.GetCIBlockTraceResult at hresP
   rw [hcmi] at hresP
   obtain ⟨-, blkBytes, cb', ms', ind', blobs', tree', plan', v₀, hhB', haB', hexB', hcb', hms',
     -, -, -, hld₀, hraw, -⟩ := hresP

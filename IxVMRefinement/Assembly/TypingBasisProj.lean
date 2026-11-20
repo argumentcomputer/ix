@@ -1,7 +1,7 @@
 import IxVMRefinement.Assembly.TypingBasisFacts
 import IxVMRefinement.Assembly.TypingDefnInhabit
-import IxVMRefinement.L1.HashedBlock
-import IxVMRefinement.L1.Hashed
+import IxVMRefinement.Ingress.HashedBlock
+import IxVMRefinement.Ingress.Hashed
 
 /-! # The projection fields at the environment of the pins
 
@@ -103,9 +103,9 @@ theorem nat_of_field_one {n : Nat} (hn : n < 72057594037927936)
 
 private theorem defnValShape_ne_induct' (d : Ixon.Definition)
     (tyPtr valPtr hint nl ty np ni nc u blk idx : SourceValue F) :
-    L1.defnValShape d tyPtr valPtr hint ≠
+    Ingress.defnValShape d tyPtr valPtr hint ≠
       .construct Core.kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx] := by
-  cases hk : d.kind <;> simp [L1.defnValShape, hk]
+  cases hk : d.kind <;> simp [Ingress.defnValShape, hk]
 
 /-- **A load returning an inductive reads the member of a block it hashed**, with the member's
 index and its index and constructor counts. -/
@@ -123,45 +123,45 @@ theorem induct_counts {cs : List (Call F)} (hbound : IxVM.Consistency.Bounded cs
       ms[ZMod.val i]? = some (.indc ind) ∧ ni = .field (ind.indices.toNat : F) ∧
       nc = .field (ind.ctors.size : F) ∧ ind.indices.toNat < 72057594037927936 ∧
       ind.ctors.size < 72057594037927936 := by
-  obtain ⟨_, rawBytes, cm, _, _, _, _, _, _, _, hres⟩ := L1.get_ci_spec hbound ha ev
-  unfold L1.GetCIRawResult at hres
+  obtain ⟨_, rawBytes, cm, _, _, _, _, _, _, _, hres⟩ := Ingress.get_ci_spec hbound ha ev
+  unfold Ingress.GetCIRawResult at hres
   cases hinfo : cm.info with
   | defn d =>
     rw [hinfo] at hres
     obtain ⟨_, hld', _, _, _, _, rfl, _, _⟩ := hres
-    exact absurd (L1.ok_inj (hld'.symm.trans hld))
+    exact absurd (Ingress.ok_inj (hld'.symm.trans hld))
       (defnValShape_ne_induct' d _ _ _ _ _ _ _ _ _ _ _)
   | axio _ =>
     rw [hinfo] at hres
     obtain ⟨_, hld', _, _, rfl, _⟩ := hres
-    have heq := L1.ok_inj (hld'.symm.trans hld)
+    have heq := Ingress.ok_inj (hld'.symm.trans hld)
     simp at heq
   | quot _ =>
     rw [hinfo] at hres
     obtain ⟨_, hld', _, _, rfl, _⟩ := hres
-    have heq := L1.ok_inj (hld'.symm.trans hld)
+    have heq := Ingress.ok_inj (hld'.symm.trans hld)
     simp at heq
   | recr _ =>
     rw [hinfo] at hres
     obtain ⟨_, hld', _, _, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := hres
-    have heq := L1.ok_inj (hld'.symm.trans hld)
+    have heq := Ingress.ok_inj (hld'.symm.trans hld)
     simp at heq
   | dPrj _ =>
     rw [hinfo] at hres
     obtain ⟨_, _, _, _, d, _, _, _, _, _, _, _, hld', _, _, _, _, rfl, _, _⟩ := hres
-    exact absurd (L1.ok_inj (hld'.symm.trans hld))
+    exact absurd (Ingress.ok_inj (hld'.symm.trans hld))
       (defnValShape_ne_induct' d _ _ _ _ _ _ _ _ _ _ _)
   | cPrj _ =>
     rw [hinfo] at hres
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hld',
       _, _, _, _, _, _, _, _, _, _, rfl, _⟩ := hres
-    have heq := L1.ok_inj (hld'.symm.trans hld)
+    have heq := Ingress.ok_inj (hld'.symm.trans hld)
     simp at heq
   | rPrj _ =>
     rw [hinfo] at hres
     obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hld',
       _, _, _, _, _, _, _, _, _, _, _, _, rfl, _, _⟩ := hres
-    have heq := L1.ok_inj (hld'.symm.trans hld)
+    have heq := Ingress.ok_inj (hld'.symm.trans hld)
     simp at heq
   | muts _ =>
     rw [hinfo] at hres
@@ -170,7 +170,7 @@ theorem induct_counts {cs : List (Call F)} (hbound : IxVM.Consistency.Bounded cs
     rw [hinfo] at hres
     obtain ⟨hidx56, blkBytes, cb, xs, ind, _, hhB, haB, hexB, _, hcb, hxs, hld',
       _, _, hi, hc, _, _, blkPtr, b', hb_eq, hb_rep, rfl, _⟩ := hres
-    have hv := L1.ok_inj (hld'.symm.trans hld)
+    have hv := Ingress.ok_inj (hld'.symm.trans hld)
     injection hv with _ _ hl
     injection hl with _ hl
     injection hl with _ hl
@@ -207,9 +207,9 @@ theorem iprj_counts {cs : List (Call F)} (hbound : IxVM.Consistency.Bounded cs)
       nc = .field (ind.ctors.size : F) ∧ ind.indices.toNat < 72057594037927936 ∧
       ind.ctors.size < 72057594037927936 := by
   obtain ⟨_, _, blkBytes, cb, ms, ind, _, v, hh, ha, hex, _, hms, hmem, _, hldv, hraw, _⟩ :=
-    L1.get_ci_iprj_origin_spec hbound hb ev
+    Ingress.get_ci_iprj_origin_spec hbound hb ev
   obtain ⟨_, _, hi, hc, _, _, _, _, _, _, rfl, _⟩ := hraw
-  have hv := L1.ok_inj (hldv.symm.trans hld)
+  have hv := Ingress.ok_inj (hldv.symm.trans hld)
   injection hv with _ _ hl
   injection hl with _ hl
   injection hl with _ hl
@@ -292,7 +292,7 @@ def iprjRow? (a : _root_.Address) (c : Ixon.Constant)
                 match hp : basisEnv.find? (Core.keyOf ctab a) with
                 | some (ConstantInfo.indInfo cv caps) =>
                   if h3 : canonAnnC eb.2 (List.range ind.lvls.toNat)
-                      ((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) ind.typ ty.1 =
+                      ((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) ind.typ ty.1 =
                         some cv.type ∧
                       cv = ⟨Core.keyOf ctab a, List.range ind.lvls.toNat, cv.type⟩ then
                     some ⟨fun p' hinfo' => by
@@ -357,7 +357,7 @@ def cprjRow? (a : _root_.Address) (c : Ixon.Constant)
                     match hp : basisEnv.find? (Core.keyOf ctab a) with
                     | some (ConstantInfo.ctorInfo cv nP nF) =>
                       if h3 : canonAnnC eb.2 (List.range ct.lvls.toNat)
-                          (((L1.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1 +
+                          (((Ingress.mutsRootOffset ms.toList p.idx.toNat : Nat) : F) + 1 +
                             ((p.cidx.toNat : Nat) : F)) ct.typ ty.1 = some cv.type ∧
                           cv = ⟨Core.keyOf ctab a, List.range ct.lvls.toNat, cv.type⟩ ∧
                           nP = ct.params.toNat ∧ nF = ct.fields.toNat then
@@ -579,10 +579,10 @@ theorem basis_cprj_core {bp ptr : SourceValue F} {i j : F} {h h' : Heap F} {cs :
     ∃ cv nP nF, (bctx E lim).stored.env.find? ((bctx E lim).stored.κ
         (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j))) = some (.ctorInfo cv nP nF) ∧
       CIPtrRep (bctx E lim).stored.κ h' ptr (.ctorInfo cv nP nF) := by
-  have hbh : HashedBlockAt E (ixAddr b) := L1.hashedBlockAt_of_get_ci_cprj hg hb ev
+  have hbh : HashedBlockAt E (ixAddr b) := Ingress.hashedBlockAt_of_get_ci_cprj hg hb ev
   obtain ⟨eb, heb⟩ := fam_block hE (hP _ hbh) hfam
   obtain ⟨_, _, _, blkBytes, cb, ms, ind, ct, _, _, hh, ha, hex, _, hms, hmem, hct, _⟩ :=
-    L1.get_ci_cprj_origin_spec hg.2 hb ev
+    Ingress.get_ci_cprj_origin_spec hg.2 hb ev
   have hcb : cb = eb.2 := hashed_block_eq hE hg.1 hh ha hex heb
   subst hcb
   have hmem' : ms[ZMod.val i]? = some (.indc ind) := by
@@ -621,10 +621,10 @@ theorem basis_iprj_core {bp ptr : SourceValue F} {i : F} {h h' : Heap F} {cs : L
     ∃ ci, (bctx E lim).stored.env.find? ((bctx E lim).stored.κ
         (iprjAddr (ixAddr b) (ZMod.val i))) = some ci ∧
       CIPtrRep (bctx E lim).stored.κ h' ptr ci := by
-  have hbh : HashedBlockAt E (ixAddr b) := L1.hashedBlockAt_of_get_ci_iprj hg hb ev
+  have hbh : HashedBlockAt E (ixAddr b) := Ingress.hashedBlockAt_of_get_ci_iprj hg hb ev
   obtain ⟨eb, heb⟩ := fam_block hE (hP _ hbh) hfam
   obtain ⟨_, _, blkBytes, cb, ms, ind, _, _, hh, ha, hex, _, hms, hmem, _⟩ :=
-    L1.get_ci_iprj_origin_spec hg.2 hb ev
+    Ingress.get_ci_iprj_origin_spec hg.2 hb ev
   have hcb : cb = eb.2 := hashed_block_eq hE hg.1 hh ha hex heb
   subst hcb
   have hmem' : ms[ZMod.val i]? = some (.indc ind) := by
@@ -752,7 +752,7 @@ private theorem blake3Pure_hash_size' (b : ByteArray) :
     (Address.blake3Pure b).hash.size = 32 := by
   cases b with
   | mk arr =>
-    have h := L1.blake3Pure_eq arr.toList
+    have h := Ingress.blake3Pure_eq arr.toList
     simp only [Array.toArray_toList] at h
     rw [h]
     exact (Blake3.Pure.digest arr.toList).size_toArray
@@ -773,7 +773,7 @@ def ProjectionCollision (V : View) (calls : List (Call F)) : Prop :=
 
 /-- **Without the collision, the store holds the projections of a hashed block**, for a store
 whose records decode. -/
-theorem projectionsHeldAt_of_noProjectionCollision {E : Ixon.Env} (hdec : L1.EnvDecoded E)
+theorem projectionsHeldAt_of_noProjectionCollision {E : Ixon.Env} (hdec : Ingress.EnvDecoded E)
     {cs : List (Call F)} (hnp : ¬ ProjectionCollision { env := E } cs) {blk : ByteArray}
     {cb : Ixon.Constant} {ms : Array Ixon.MutConst} (hh : Hashed cs blk)
     (hex : Ixon.deConstantExact blk = .ok cb) (hms : cb.info = .muts ms) :
@@ -797,10 +797,10 @@ theorem projectionsHeldAt_of_noProjectionCollision {E : Ixon.Env} (hdec : L1.Env
           Or.inl ⟨i.toUInt64, rfl⟩, ⟨lc, hg, rfl⟩, rfl, hne⟩
       have hwf : (⟨.iPrj ⟨i.toUInt64, Address.blake3Pure blk⟩, #[], #[], #[], #[]⟩ :
           Ixon.Constant).wireWF := by
-        rw [L1.emptyTablesConstant_wireWF]
+        rw [Ingress.emptyTablesConstant_wireWF]
         show (Address.blake3Pure blk).hash.size = 32
         exact hsz
-      exact L1.canonical_of_wireWF hdec hwf hg hraw hlc
+      exact Ingress.canonical_of_wireWF hdec hwf hg hraw hlc
   · have hrec' : (E.consts.get? (Core.cprjAddr (Address.blake3Pure blk) i j)).bind (·.get?) =
         some cm := hrec
     cases hg : E.consts.get? (Core.cprjAddr (Address.blake3Pure blk) i j) with
@@ -818,15 +818,15 @@ theorem projectionsHeldAt_of_noProjectionCollision {E : Ixon.Env} (hdec : L1.Env
           Or.inr ⟨i.toUInt64, j.toUInt64, rfl⟩, ⟨lc, hg, rfl⟩, rfl, hne⟩
       have hwf : (⟨.cPrj ⟨i.toUInt64, j.toUInt64, Address.blake3Pure blk⟩, #[], #[], #[], #[]⟩ :
           Ixon.Constant).wireWF := by
-        rw [L1.emptyTablesConstant_wireWF]
+        rw [Ingress.emptyTablesConstant_wireWF]
         show (Address.blake3Pure blk).hash.size = 32
         exact hsz
-      exact L1.canonical_of_wireWF hdec hwf hg hraw hlc
+      exact Ingress.canonical_of_wireWF hdec hwf hg hraw hlc
 
 /-- **The predicate from the collision clause**: if no calls that hash no collision with the
 store hash a projection collision, the store holds the projections of every hashed block. -/
 theorem hashedBlockProjectionsHeld_of_noProjectionCollision {E : Ixon.Env}
-    (hdec : L1.EnvDecoded E)
+    (hdec : Ingress.EnvDecoded E)
     (hnp : ∀ cs : List (Call F), ¬ View.HashedCollision { env := E } [] cs →
       ¬ ProjectionCollision { env := E } cs) :
     HashedBlockProjectionsHeld E := by
@@ -849,7 +849,7 @@ theorem hashedCollision_of_projectionCollision {V : View} {calls : List (Call F)
 /-- **A store whose records decode holds the projections of every hashed block**: the runs
 `Core.HashedBlockAt` ranges over hash no collision with the store, and the collision clause is a
 case of the collision alternative. -/
-theorem hashedBlockProjectionsHeld_of_decoded {E : Ixon.Env} (hdec : L1.EnvDecoded E) :
+theorem hashedBlockProjectionsHeld_of_decoded {E : Ixon.Env} (hdec : Ingress.EnvDecoded E) :
     HashedBlockProjectionsHeld E :=
   hashedBlockProjectionsHeld_of_noProjectionCollision hdec
     fun _ hnc hpc => hnc (hashedCollision_of_projectionCollision hpc)

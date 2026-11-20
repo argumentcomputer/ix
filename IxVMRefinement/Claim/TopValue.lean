@@ -244,7 +244,7 @@ theorem walkedValue_step_lim_run
         (CoreGood.ofRaw (hgood_c.sub hsub_es) (fun _ _ => trivial)) ev_es
         (hty_tmc_es' 0 zeroGhostWalked_v)
     have hisZero : (rulesJ (md := .anon)).isZero u :=
-      thm_isZero_of_level_equal Levels.l2
+      thm_isZero_of_level_equal Levels.levelsObligation
         (RomBound.bounded_mono hbound hsub_le) hℓ hu hm_le ev_le
     obtain ⟨vtype, hinf_val, hde_val⟩ :=
       scoped_core_check (c := c) hrc_kc (typesRep_of_nil_eq_v c.κ hm_kc)
@@ -356,14 +356,14 @@ private theorem is_unsafe_ci_thmOpaqueShape_safe {d : Ixon.Definition}
     {tyPtr valPtr hint v1 : SourceValue F} {h m2 : Heap F} {cs : List (Call F)}
     (hsafe : Ix.Kernel.Reader.safetyDecline d = none) (hkind : d.kind ≠ .defn)
     (ev : ObsFn Core.W "KernelCheck::is_unsafe_ci"
-      [L1.defnValShape d tyPtr valPtr hint] h v1 m2 cs) :
+      [Ingress.defnValShape d tyPtr valPtr hint] h v1 m2 cs) :
     v1 = .field 0 ∧ m2 = h := by
   cases hk : d.kind with
   | defn => exact absurd hk hkind
   | opaq =>
     have hns : (d.safety == .unsaf) = false := by
       simpa [Ix.Kernel.Reader.safetyDecline, Ix.Kernel.Reader.safetyDeclineOf, hk] using hsafe
-    simp only [L1.defnValShape, hk, hns] at ev
+    simp only [Ingress.defnValShape, hk, hns] at ev
     cases «KernelCheck::is_unsafe_ci».obs ev with
     | Opaque _ _ _ _ _ _ _ hv he hr _ =>
       simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
@@ -376,7 +376,7 @@ private theorem is_unsafe_ci_thmOpaqueShape_safe {d : Ixon.Definition}
     | Rec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv =>
       simp [Core.kciEnum] at hv
   | thm =>
-    simp only [L1.defnValShape, hk] at ev
+    simp only [Ingress.defnValShape, hk] at ev
     cases «KernelCheck::is_unsafe_ci».obs ev with
     | Thm _ _ _ _ _ _ he hr _ => exact ⟨he, hr⟩
     | Axiom _ _ _ hv | Defn_Safe _ _ _ _ _ hv | Defn_other _ _ _ _ _ _ hv
@@ -397,7 +397,7 @@ theorem checkedValue_scope_lim (ht : t.check = .ok ()) (hbound : Bounded calls)
     {m_chk h'_chk : Heap F} {rc ap v r_chk : SourceValue F}
     {cs_chk : List (Call F)} {blobs : List (_root_.Address × ByteArray)}
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
-    (hraw_d : L1.RawDefnValRep src.refs.toList [] src.univs.toList src.sharing.toList blobs
+    (hraw_d : Ingress.RawDefnValRep src.refs.toList [] src.univs.toList src.sharing.toList blobs
       m_chk d v)
     (hty : (exprReader t blob src id self).read d.typ = .ok ty₀)
     (hval : (exprReader t blob src id self).read d.value = .ok val₀)
@@ -413,16 +413,16 @@ theorem checkedValue_scope_lim (ht : t.check = .ok ()) (hbound : Bounded calls)
   cases hk : d.kind with
   | defn => exact absurd hk hkd
   | thm =>
-    have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
+    have hv_shape : Ingress.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Thm" [.field (d.lvls.toNat : F), tyPtr, valPtr] := by
-      simp [L1.defnValShape, hk]
+      simp [Ingress.defnValShape, hk]
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Defn
     | Opaque | Quot
     | Induct_n0 | Induct_other_n0 | Induct_other_other
     | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
     | Rec_n0 | Rec_other =>
-      simp_all [L1.defnValShape, Core.kciEnum]
+      simp_all [Ingress.defnValShape, Core.kciEnum]
     | Thm v1 m2 cs12 x_nlvls x_ty x_val _ m544 cs554 _ m581 cs591 v617 m618 cs628 m649
         v672 m675 cs683 m696 _ m716 cs726 _ m746 cs756 cs778 m807
         ev14 _ _ hv526 ev556 ev593 hm657 ev630 hm704 ev685 heq714 ev728 ev758 hm815 ev780 hc819 =>
@@ -445,17 +445,17 @@ theorem checkedValue_scope_lim (ht : t.check = .ok ()) (hbound : Bounded calls)
           hnlvls raw_val ev556.heap_extends hval ev593 hcl_v2
       exact ⟨hty_lbb, hty_def, hval_lbb, hval_def⟩
   | opaq =>
-    have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
+    have hv_shape : Ingress.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Opaque"
-          [.field (d.lvls.toNat : F), tyPtr, valPtr, L1.repBoolField (d.safety == .unsaf)] := by
-      simp [L1.defnValShape, hk]
+          [.field (d.lvls.toNat : F), tyPtr, valPtr, Ingress.repBoolField (d.safety == .unsaf)] := by
+      simp [Ingress.defnValShape, hk]
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Defn | Thm
     | Quot
     | Induct_n0 | Induct_other_n0 | Induct_other_other
     | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
     | Rec_n0 | Rec_other =>
-      simp_all [L1.defnValShape, Core.kciEnum]
+      simp_all [Ingress.defnValShape, Core.kciEnum]
     | Opaque v1 m2 cs12 x_nlvls x_ty x_val _ _ m849 cs859 _ m886 cs896 v922 m923 cs933 m954
         _ m967 cs977 _ m997 cs1007 cs1029 m1058
         ev14 _ _ _ hv825 ev861 ev898 hm962 ev935 ev979 ev1009 hm1066 ev1031 hc1070 =>
@@ -497,7 +497,7 @@ theorem checkedValue_at_lim {κ : _root_.Address → Core.KKey}
     (hty_tmc_m : Core.TmC κ m_chk (Core.posOf (List.range d.lvls.toNat) ty') tyPtr)
     (hval_tmc_m : Core.TmC κ m_chk (Core.posOf (List.range d.lvls.toNat) val') valPtr)
     (ev_chk : ObsFn Core.W "KernelCheck::check_const"
-      [rc, L1.defnValShape d tyPtr valPtr hintVal, ap] m_chk r_chk h'_chk cs_chk)
+      [rc, Ingress.defnValShape d tyPtr valPtr hintVal, ap] m_chk r_chk h'_chk cs_chk)
     (hsub_chk : ∀ cl ∈ cs_chk, cl ∈ calls) :
     ∀ hn : Ix.Kernel.ReducibilityHint,
       Decl.CheckedValueAtLim κ lim calls t bAddr E order_role
@@ -510,16 +510,16 @@ theorem checkedValue_at_lim {κ : _root_.Address → Core.KKey}
   cases hk : d.kind with
   | defn => exact absurd hk hkd
   | thm =>
-    have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
+    have hv_shape : Ingress.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Thm" [.field (d.lvls.toNat : F), tyPtr, valPtr] := by
-      simp [L1.defnValShape, hk]
+      simp [Ingress.defnValShape, hk]
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Defn
     | Opaque | Quot
     | Induct_n0 | Induct_other_n0 | Induct_other_other
     | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
     | Rec_n0 | Rec_other =>
-      simp_all [L1.defnValShape, Core.kciEnum]
+      simp_all [Ingress.defnValShape, Core.kciEnum]
     | Thm v1 m2 cs12 x_nlvls x_ty x_val _ m544 cs554 _ m581 cs591 v617 m618 cs628 m649
         v672 m675 cs683 m696 _ m716 cs726 _ m746 cs756 cs778 m807
         ev14 _ _ hv526 ev556 ev593 hm657 ev630 hm704 ev685 heq714 ev728 ev758 hm815 ev780 hc819 =>
@@ -574,17 +574,17 @@ theorem checkedValue_at_lim {κ : _root_.Address → Core.KKey}
           ext_675_807 hm815 (Core.TmC.mono ext_649_807 hty_tmc_649) hval_tmc_807
           (Core.RCRep.mono ext_m_807 hrc_m) ev780 hcl_kc hsub_kc
   | opaq =>
-    have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
+    have hv_shape : Ingress.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Opaque"
-          [.field (d.lvls.toNat : F), tyPtr, valPtr, L1.repBoolField (d.safety == .unsaf)] := by
-      simp [L1.defnValShape, hk]
+          [.field (d.lvls.toNat : F), tyPtr, valPtr, Ingress.repBoolField (d.safety == .unsaf)] := by
+      simp [Ingress.defnValShape, hk]
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Defn | Thm
     | Quot
     | Induct_n0 | Induct_other_n0 | Induct_other_other
     | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
     | Rec_n0 | Rec_other =>
-      simp_all [L1.defnValShape, Core.kciEnum]
+      simp_all [Ingress.defnValShape, Core.kciEnum]
     | Opaque v1 m2 cs12 x_nlvls x_ty x_val _ _ m849 cs859 _ m886 cs896 v922 m923 cs933 m954
         _ m967 cs977 _ m997 cs1007 cs1029 m1058
         ev14 _ _ _ hv825 ev861 ev898 hm962 ev935 ev979 ev1009 hm1066 ev1031 hc1070 =>
@@ -652,19 +652,19 @@ theorem memberCheckedLimAt_record (hbound : Bounded calls) (hS : RunStore calls 
     ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
   obtain ⟨b', hb', rfl⟩ := hblk
   obtain ⟨-, -, -, mc', a', hget', ha', hproj, hhashed⟩ :=
-    L1.projection_addr_hashed_spec hmem hb' ev_pa
+    Ingress.projection_addr_hashed_spec hmem hb' ev_pa
   rw [hk_val] at hget' hproj hhashed
   have hget_list : ms.toList[k]? = some mc := by simpa using hk
   rw [hget_list] at hget'
   cases hget'
-  have haddr : Core.S0.addr h_pre ap (memberAddr (Core.ixAddr b') k mc) :=
+  have haddr : Core.BaseSeams.addr h_pre ap (memberAddr (Core.ixAddr b') k mc) :=
     ⟨a', ha', hproj.trans (memberAddr_eq_projAddr _ k mc).symm⟩
   obtain ⟨c, hrec⟩ := recordAt_of_get_ci hcov haddr ev_ld hsub_ld
   have hwf : (memberProjection (Core.ixAddr b') k mc).wireWF := by
     cases mc with
-    | defn d => exact L1.projConstant_wireWF_dPrj k.toUInt64 b'
-    | indc ind => exact L1.projConstant_wireWF_iPrj k.toUInt64 b'
-    | recr rc => exact L1.projConstant_wireWF_rPrj k.toUInt64 b'
+    | defn d => exact Ingress.projConstant_wireWF_dPrj k.toUInt64 b'
+    | indc ind => exact Ingress.projConstant_wireWF_iPrj k.toUInt64 b'
+    | recr rc => exact Ingress.projConstant_wireWF_rPrj k.toUInt64 b'
   have hdx := Ixon.Verify.deConstantExact_serConstant _ hwf
   have hhashed' : Hashed calls (Ixon.serConstant (memberProjection (Core.ixAddr b') k mc)) := by
     have hrun := Core.hashed_mono hsub_pa hhashed
@@ -709,15 +709,15 @@ theorem memberCheckedLimAt_checkedLimAt (hbound : Bounded calls) {bAddr B : _roo
     ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
   obtain ⟨b', hb', rfl⟩ := hblk
   obtain ⟨-, -, -, mc', a', hget', ha', hproj, hhashed⟩ :=
-    L1.projection_addr_hashed_spec hmem hb' ev_pa
+    Ingress.projection_addr_hashed_spec hmem hb' ev_pa
   rw [hk_val] at hget' hproj hhashed
   have hget_list : ms.toList[k]? = some mc := by simpa using hk
   rw [hget_list] at hget'
   cases hget'
-  have haddr : Core.S0.addr h_pre ap (memberAddr (Core.ixAddr b') k mc) :=
+  have haddr : Core.BaseSeams.addr h_pre ap (memberAddr (Core.ixAddr b') k mc) :=
     ⟨a', ha', hproj.trans (LoadedReads.memberAddr_eq_projAddr _ k mc).symm⟩
   exact ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
-    hrc_pre, hrc_m, haddr, Core.S0.addr_mono ev_ld.heap_extends haddr,
+    hrc_pre, hrc_m, haddr, Core.BaseSeams.addr_mono ev_ld.heap_extends haddr,
     ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩
 
 /-- **A checked standalone definition, theorem or opaque record, at the actual limit of its
@@ -754,10 +754,10 @@ theorem checkedLimAt_value_step (ht : t.check = .ok ()) (hbound : Bounded calls)
   obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     hrc_pre, hrc_m, ha_pre, ha_m, ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := hchk
   obtain ⟨a', ha'_ref, rfl⟩ := ha_pre
-  obtain ⟨rawBytes, c', hh, hba, hex, hres⟩ := L1.get_ci_trace_spec ha'_ref ev_ld
+  obtain ⟨rawBytes, c', hh, hba, hex, hres⟩ := Ingress.get_ci_trace_spec ha'_ref ev_ld
   have hc : c = c' := (hS.record_eq hrec (Core.hashed_mono hsub_ld hh) hba hex).symm
   subst hc
-  unfold L1.GetCITraceResult at hres
+  unfold Ingress.GetCITraceResult at hres
   rw [hinfo] at hres
   obtain ⟨blobs, tree, v', hhp, built, hld', htr⟩ := hres
   rw [hld] at hld'
@@ -776,14 +776,14 @@ theorem checkedLimAt_value_step (ht : t.check = .ok ()) (hbound : Bounded calls)
       (hS.recordOf_of_recordAt hrec) hinfo hlogic hblob htr.toRaw
   obtain ⟨h1, h2, h3, h4⟩ :=
     LoadedReads.checkedValue_scope_lim ht hbound hsafe hblob raw' hty hval ev_chk hsub_chk
-  have hrecur : L1.defnRecurAddrs d (Core.ixAddr a') = [] := by
-    have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
-    simp [L1.defnRecurAddrs, hf]
+  have hrecur : Ingress.defnRecurAddrs d (Core.ixAddr a') = [] := by
+    have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+    simp [Ingress.defnRecurAddrs, hf]
   rw [hrecur] at htr
   obtain ⟨hnlvls, tyPtr, valPtr, hint, planT, planV, hv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr
   subst hv
-  have hagree : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
-    L1.BlobReadAgreement.of_mem hblob
+  have hagree : Ingress.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
+    Ingress.BlobReadAgreement.of_mem hblob
   obtain ⟨ty', hcT, hannT, htmT⟩ :=
     LoadedReads.annotation_canon ht hnlvls hagree rty built hpT hlT hty h1 h2
   obtain ⟨val', hcV, hannV, htmV⟩ :=
@@ -858,12 +858,12 @@ theorem memberCheckedLimAt_value_step (ht : t.check = .ok ()) (hbound : Bounded 
   obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     hrc_pre, hrc_m, ha_pre, ha_m, ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := hchk
   obtain ⟨a', ha'_ref, haddr⟩ := ha_pre
-  obtain ⟨rawBytes, c', hh, hba, hex, hres⟩ := L1.get_ci_trace_spec ha'_ref ev_ld
+  obtain ⟨rawBytes, c', hh, hba, hex, hres⟩ := Ingress.get_ci_trace_spec ha'_ref ev_ld
   have hc : memberProjection B k (.defn d) = c' :=
     (hS.record_eq hrec (Core.hashed_mono hsub_ld hh) (hba.trans haddr) hex).symm
   subst hc
   have hinfo : (memberProjection B k (.defn d)).info = .dPrj ⟨k.toUInt64, B⟩ := rfl
-  unfold L1.GetCITraceResult at hres
+  unfold Ingress.GetCITraceResult at hres
   rw [hinfo] at hres
   obtain ⟨hidx, blkBytes, cb', ms', d', blobs, tree, v', hhB, haB, hexB, hcb, hms, hhp, built,
     hld', htr⟩ := hres
@@ -881,9 +881,9 @@ theorem memberCheckedLimAt_value_step (ht : t.check = .ok ()) (hbound : Bounded 
   rw [hld] at hld'
   injection hld' with hvv
   subst hvv
-  have htr' : L1.DefnTraceRep cb.refs.toList (L1.defnMemberRecurAddrs d B ms.toList)
+  have htr' : Ingress.DefnTraceRep cb.refs.toList (Ingress.defnMemberRecurAddrs d B ms.toList)
       cb.univs.toList cb.sharing.toList blobs tree
-      ((L1.mutsRootOffset ms.toList k.toUInt64.toNat : Nat) : F) m_chk d v := htr
+      ((Ingress.mutsRootOffset ms.toList k.toUInt64.toNat : Nat) : F) m_chk d v := htr
   rw [toUInt64_toNat_v hk64] at htr'
   have hblob : ∀ x bs, (x, bs) ∈ blobs → E₀.blobs.get? x = some bs := by
     intro x bs hm
@@ -899,14 +899,14 @@ theorem memberCheckedLimAt_value_step (ht : t.check = .ok ()) (hbound : Bounded 
       htr'.toRaw
   obtain ⟨h1, h2, h3, h4⟩ :=
     LoadedReads.checkedValue_scope_lim ht hbound hsafe hblob raw' hty hval ev_chk hsub_chk
-  have hrecur : L1.defnMemberRecurAddrs d B ms.toList = [] := by
-    have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
-    simp [L1.defnMemberRecurAddrs, hf]
+  have hrecur : Ingress.defnMemberRecurAddrs d B ms.toList = [] := by
+    have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+    simp [Ingress.defnMemberRecurAddrs, hf]
   rw [hrecur] at htr'
   obtain ⟨hnlvls, tyPtr, valPtr, hint, planT, planV, hv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr'
   subst hv
-  have hagree : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
-    L1.BlobReadAgreement.of_mem hblob
+  have hagree : Ingress.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
+    Ingress.BlobReadAgreement.of_mem hblob
   obtain ⟨ty', hcT, hannT, htmT⟩ :=
     LoadedReads.annotation_canon ht hnlvls hagree rty built hpT hlT hty h1 h2
   obtain ⟨val', hcV, hannV, htmV⟩ :=

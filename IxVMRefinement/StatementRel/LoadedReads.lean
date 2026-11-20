@@ -1,12 +1,12 @@
 import IxVMRefinement.Assembly.ProjSafe
-import IxVMRefinement.Claim.Phase
+import IxVMRefinement.Claim.ClaimSeam
 import Ix.IxVM.Consistency.ReadsKeys
 
 /-! # From a record the circuit loaded to its reading
 
 The record-loading layer proves, for a `get_ci` on an address, that the run hashed bytes with
 that address and that the heap holds the circuit's conversion of the record they decode to
-(`L1.LoadedL1`, `L1.RawCIRep`). The public statement speaks of what the record at an address
+(`Ingress.LoadedRecords`, `Ingress.RawCIRep`). The public statement speaks of what the record at an address
 declares (`IxVM.Consistency.ReadsIn`): the kernel reader's own conversion of the record's
 expressions, in a context that keys every address by the role table.
 
@@ -30,7 +30,7 @@ constant (`KernelCheck::validate_expr_well_scoped`, the first step of every arm 
 later load of the same record.
 
 The store is the run's one store of hashed records (`RunStore`): what the claim phase builds
-(`Claim.WalkedL6`). In it two byte strings the run hashed under one address are equal, so two
+(`Claim.WalkedClaim`). In it two byte strings the run hashed under one address are equal, so two
 loads of an address read one record, and a per-load store's blobs and blocks are the run
 store's.
 
@@ -85,9 +85,9 @@ private theorem toUInt64_toNat {n : Nat} (hn : n < UInt64.size) : n.toUInt64.toN
 /-- The `i`-th entry of the circuit's table of a block's member addresses is member `i`'s
 constant address. -/
 theorem blockRecurAddrs_get {B : _root_.Address} {ms : Array Ixon.MutConst} {i : Nat}
-    {x : _root_.Address} (h : (L1.blockRecurAddrs B ms.toList)[i]? = some x) :
+    {x : _root_.Address} (h : (Ingress.blockRecurAddrs B ms.toList)[i]? = some x) :
     ∃ m, ms[i]? = some m ∧ x = memberAddr B i m := by
-  rw [L1.blockRecurAddrs_eq_mapIdx, List.getElem?_mapIdx] at h
+  rw [Ingress.blockRecurAddrs_eq_mapIdx, List.getElem?_mapIdx] at h
   cases hm : ms.toList[i]? with
   | none =>
     rw [hm] at h
@@ -101,7 +101,7 @@ theorem blockRecurAddrs_get {B : _root_.Address} {ms : Array Ixon.MutConst} {i :
 
 /-- A `recur` the circuit accepted in a block is one the reading resolves. -/
 theorem blockSelf_ok (t : Ix.Kernel.RoleTable) (B : _root_.Address) (ms : Array Ixon.MutConst) :
-    ∀ i x, (L1.blockRecurAddrs B ms.toList)[i]? = some x →
+    ∀ i x, (Ingress.blockRecurAddrs B ms.toList)[i]? = some x →
       ∃ m k, blockSelf t B ms i = some m ∧ m = .ok k := by
   intro i x hx
   obtain ⟨m₀, hm₀, -⟩ := blockRecurAddrs_get hx
@@ -113,7 +113,7 @@ theorem blockSelf_ok (t : Ix.Kernel.RoleTable) (B : _root_.Address) (ms : Array 
 /-- The reading's `recur k` in a block is the key of the address the circuit's table holds
 at `k`. -/
 theorem blockSelf_key (t : Ix.Kernel.RoleTable) (B : _root_.Address) (ms : Array Ixon.MutConst) :
-    ∀ i x m k, (L1.blockRecurAddrs B ms.toList)[i]? = some x → blockSelf t B ms i = some m →
+    ∀ i x m k, (Ingress.blockRecurAddrs B ms.toList)[i]? = some x → blockSelf t B ms i = some m →
       m = .ok k → k = Core.keyOf t x := by
   intro i x m k hx hs hm
   obtain ⟨m₀, hm₀, rfl⟩ := blockRecurAddrs_get hx
@@ -139,7 +139,7 @@ its address (`LoadedBy`); every stored record's decoded cache is the exact decod
 bytes; and every byte string the run hashed is stored as a blob under its address. The last
 makes the hash injective on what the run hashed, so the collision alternative has already
 been split off where such a store exists. The claim phase's store is one
-(`RunStore.of_walkedL6`). -/
+(`RunStore.of_walkedClaim`). -/
 structure RunStore (calls : List (Call F)) (E : Ixon.Env) : Prop where
   loaded : LoadedBy calls E
   decoded : ∀ a lc, E.consts.get? a = some lc →
@@ -147,9 +147,9 @@ structure RunStore (calls : List (Call F)) (E : Ixon.Env) : Prop where
   blobs : ∀ bytes, Hashed calls bytes → E.blobs.get? (Address.blake3Pure bytes) = some bytes
 
 /-- The claim phase's store is a run store. -/
-theorem RunStore.of_walkedL6 {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
+theorem RunStore.of_walkedClaim {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     {seeds : List _root_.Address} (hload : LoadedBy calls E₀)
-    (hw : Claim.WalkedL6 calls t E₀ seeds) : RunStore calls E₀ := by
+    (hw : Claim.WalkedClaim calls t E₀ seeds) : RunStore calls E₀ := by
   obtain ⟨bAddr, -, -, hex, hbl, -, -⟩ := hw
   refine ⟨hload, fun a lc hget => ?_, hbl⟩
   obtain ⟨-, c, hc, -, hce⟩ := hex a lc hget
@@ -170,7 +170,7 @@ theorem RunStore.hashed_inj (hS : RunStore calls E) {b₁ b₂ : ByteArray}
 
 /-- A run store holds no blob and record with different bytes at one address. -/
 theorem RunStore.no_internal_collision (hS : RunStore calls E) :
-    ¬ L1.EnvInternalCollision E := by
+    ¬ Ingress.EnvInternalCollision E := by
   rintro ⟨x, d, lc, hb, hc, hne⟩
   obtain ⟨hh_c, ha_c⟩ := hS.loaded.1 x lc hc
   obtain ⟨hh_b, ha_b⟩ := hS.loaded.2 x d hb
@@ -220,7 +220,7 @@ theorem RunStore.record_eq (hS : RunStore calls E) {a : _root_.Address} {c c' : 
 the run's store. -/
 theorem RunStore.blob_of_table (hS : RunStore calls E) {cs : List (Call F)} {E_ld : Ixon.Env}
     {blobs : List (_root_.Address × ByteArray)} (hload : LoadedBy cs E_ld)
-    (hsub : ∀ cl ∈ cs, cl ∈ calls) (hb : L1.BlobTableLoaded E_ld blobs) :
+    (hsub : ∀ cl ∈ cs, cl ∈ calls) (hb : Ingress.BlobTableLoaded E_ld blobs) :
     ∀ x bs, (x, bs) ∈ blobs → E.blobs.get? x = some bs := by
   intro x bs hm
   rcases hb with hok | ⟨y, d, lc, hbl, hco, hne⟩
@@ -239,10 +239,10 @@ end Store
 /-! ## A loaded projection record is the canonical one -/
 
 /-- A loaded projection record has empty tables. -/
-theorem proj_record_eq {c : Ixon.Constant} (htv : L1.ConstantTablesValid c)
+theorem proj_record_eq {c : Ixon.Constant} (htv : Ingress.ConstantTablesValid c)
     (hproj : Assembly.IsProjInfo c.info) : c = ⟨c.info, #[], #[], #[], #[]⟩ := by
   have h : c.sharing = #[] ∧ c.refs = #[] ∧ c.univs = #[] ∧ c.binders = #[] := by
-    unfold L1.ConstantTablesValid at htv
+    unfold Ingress.ConstantTablesValid at htv
     cases hi : c.info with
     | dPrj p => rw [hi] at htv; exact htv
     | iPrj p => rw [hi] at htv; exact htv
@@ -264,7 +264,7 @@ theorem proj_record_eq {c : Ixon.Constant} (htv : L1.ConstantTablesValid c)
 
 /-- The bytes of a loaded projection record are its canonical serialization. -/
 theorem proj_bytes_eq {bytes : ByteArray} {c : Ixon.Constant}
-    (hde : Ixon.deConstantExact bytes = .ok c) (htv : L1.ConstantTablesValid c)
+    (hde : Ixon.deConstantExact bytes = .ok c) (htv : Ingress.ConstantTablesValid c)
     (hproj : Assembly.IsProjInfo c.info) :
     bytes = Ixon.serConstant ⟨c.info, #[], #[], #[], #[]⟩ := by
   have hc := proj_record_eq htv hproj
@@ -279,7 +279,7 @@ theorem proj_bytes_eq {bytes : ByteArray} {c : Ixon.Constant}
 member's constant address.** -/
 theorem iprj_canonical {bytes : ByteArray} {c : Ixon.Constant} {p : Ixon.InductiveProj}
     (ind : Ixon.Inductive) (hde : Ixon.deConstantExact bytes = .ok c)
-    (htv : L1.ConstantTablesValid c) (hinfo : c.info = .iPrj p) :
+    (htv : Ingress.ConstantTablesValid c) (hinfo : c.info = .iPrj p) :
     c = memberProjection p.block p.idx.toNat (.indc ind) ∧
       Address.blake3Pure bytes = memberAddr p.block p.idx.toNat (.indc ind) := by
   have hproj : Assembly.IsProjInfo c.info := by rw [hinfo]; trivial
@@ -298,7 +298,7 @@ theorem iprj_canonical {bytes : ByteArray} {c : Ixon.Constant} {p : Ixon.Inducti
 constant address. -/
 theorem dprj_canonical {bytes : ByteArray} {c : Ixon.Constant} {p : Ixon.DefinitionProj}
     (d : Ixon.Definition) (hde : Ixon.deConstantExact bytes = .ok c)
-    (htv : L1.ConstantTablesValid c) (hinfo : c.info = .dPrj p) :
+    (htv : Ingress.ConstantTablesValid c) (hinfo : c.info = .dPrj p) :
     c = memberProjection p.block p.idx.toNat (.defn d) ∧
       Address.blake3Pure bytes = memberAddr p.block p.idx.toNat (.defn d) := by
   have hproj : Assembly.IsProjInfo c.info := by rw [hinfo]; trivial
@@ -317,7 +317,7 @@ theorem dprj_canonical {bytes : ByteArray} {c : Ixon.Constant} {p : Ixon.Definit
 constant address. -/
 theorem rprj_canonical {bytes : ByteArray} {c : Ixon.Constant} {p : Ixon.RecursorProj}
     (rc : Ixon.Recursor) (hde : Ixon.deConstantExact bytes = .ok c)
-    (htv : L1.ConstantTablesValid c) (hinfo : c.info = .rPrj p) :
+    (htv : Ingress.ConstantTablesValid c) (hinfo : c.info = .rPrj p) :
     c = memberProjection p.block p.idx.toNat (.recr rc) ∧
       Address.blake3Pure bytes = memberAddr p.block p.idx.toNat (.recr rc) := by
   have hproj : Assembly.IsProjInfo c.info := by rw [hinfo]; trivial
@@ -335,7 +335,7 @@ theorem rprj_canonical {bytes : ByteArray} {c : Ixon.Constant} {p : Ixon.Recurso
 /-- A loaded constructor projection record is the constructor's projection record, at the
 constructor's constant address. -/
 theorem cprj_canonical {bytes : ByteArray} {c : Ixon.Constant} {p : Ixon.ConstructorProj}
-    (hde : Ixon.deConstantExact bytes = .ok c) (htv : L1.ConstantTablesValid c)
+    (hde : Ixon.deConstantExact bytes = .ok c) (htv : Ingress.ConstantTablesValid c)
     (hinfo : c.info = .cPrj p) :
     c = constructorProjection p.block p.idx.toNat p.cidx.toNat ∧
       Address.blake3Pure bytes = ctorAddr p.block p.idx.toNat p.cidx.toNat := by
@@ -370,7 +370,7 @@ theorem exprReader_read_ok (ht : t.check = .ok ()) {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon))}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {e : Ixon.Expr} {kp : SourceValue F}
-    (raw : L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+    (raw : Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
       h 4294967295 e kp)
     (hself : ∀ i x, recurAddrs[i]? = some x → ∃ m k, self i = some m ∧ m = .ok k)
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs) :
@@ -406,7 +406,7 @@ theorem defnPayload_reading (ht : t.check = .ok ()) {src : Ixon.Constant}
     {name : Ix.Kernel.Key .anon} {d : Ixon.Definition}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {v : SourceValue F}
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
-    (raw : L1.RawDefnValRep src.refs.toList [] src.univs.toList src.sharing.toList blobs h d v) :
+    (raw : Ingress.RawDefnValRep src.refs.toList [] src.univs.toList src.sharing.toList blobs h d v) :
     ∃ ty₀ val₀ : Ix.Kernel.Expr .anon,
       (exprReader t blob src id self).read d.typ = .ok ty₀ ∧
       (exprReader t blob src id self).read d.value = .ok val₀ ∧
@@ -456,9 +456,9 @@ theorem defn_reading (ht : t.check = .ok ()) {a : _root_.Address} {c : Ixon.Cons
     {d : Ixon.Definition} {blobs : List (_root_.Address × ByteArray)} {h : Heap F}
     {v : SourceValue F} (hstore : store a = some c) (hinfo : c.info = .defn d)
     (hlogic : InLogic c) (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
-    (raw : L1.RawDefnValRep c.refs.toList (L1.defnRecurAddrs d a) c.univs.toList
+    (raw : Ingress.RawDefnValRep c.refs.toList (Ingress.defnRecurAddrs d a) c.univs.toList
       c.sharing.toList blobs h d v) :
-    L1.RawDefnValRep c.refs.toList [] c.univs.toList c.sharing.toList blobs h d v ∧
+    Ingress.RawDefnValRep c.refs.toList [] c.univs.toList c.sharing.toList blobs h d v ∧
     ∃ ty₀ val₀ : Ix.Kernel.Expr .anon,
       (exprReader t blob c id (soloSelf t a)).read d.typ = .ok ty₀ ∧
       (exprReader t blob c id (soloSelf t a)).read d.value = .ok val₀ ∧
@@ -476,9 +476,9 @@ theorem defn_reading (ht : t.check = .ok ()) {a : _root_.Address} {c : Ixon.Cons
     unfold InLogic at hl
     rw [hinfo] at hl
     exact hl
-  have hrec : L1.defnRecurAddrs d a = [] := by
-    have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
-    simp [L1.defnRecurAddrs, hf]
+  have hrec : Ingress.defnRecurAddrs d a = [] := by
+    have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+    simp [Ingress.defnRecurAddrs, hf]
   rw [hrec] at raw
   obtain ⟨ty₀, val₀, hty, hval, hreads, hrep⟩ :=
     defnPayload_reading (blob := blob) (self := soloSelf t a) (name := keyOf t a) ht hblob raw
@@ -514,9 +514,9 @@ theorem dprj_reading (ht : t.check = .ok ()) {B : _root_.Address} {i : Nat}
     (hmem : ms[i]? = some (.defn d)) (hlogic : InLogic cb)
     (hproj : store (memberAddr B i (.defn d)) = some (memberProjection B i (.defn d)))
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
-    (raw : L1.RawDefnValRep cb.refs.toList (L1.defnMemberRecurAddrs d B ms.toList)
+    (raw : Ingress.RawDefnValRep cb.refs.toList (Ingress.defnMemberRecurAddrs d B ms.toList)
       cb.univs.toList cb.sharing.toList blobs h d v) :
-    L1.RawDefnValRep cb.refs.toList [] cb.univs.toList cb.sharing.toList blobs h d v ∧
+    Ingress.RawDefnValRep cb.refs.toList [] cb.univs.toList cb.sharing.toList blobs h d v ∧
     ∃ ty₀ val₀ : Ix.Kernel.Expr .anon,
       (exprReader t blob cb id (blockSelf t B ms)).read d.typ = .ok ty₀ ∧
       (exprReader t blob cb id (blockSelf t B ms)).read d.value = .ok val₀ ∧
@@ -538,9 +538,9 @@ theorem dprj_reading (ht : t.check = .ok ()) {B : _root_.Address} {i : Nat}
     have hmem' : Ixon.MutConst.defn d ∈ ms.toList :=
       List.mem_of_getElem? (by rw [Array.getElem?_toList]; exact hmem)
     exact hl (.defn d) hmem'
-  have hrec : L1.defnMemberRecurAddrs d B ms.toList = [] := by
-    have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
-    simp [L1.defnMemberRecurAddrs, hf]
+  have hrec : Ingress.defnMemberRecurAddrs d B ms.toList = [] := by
+    have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+    simp [Ingress.defnMemberRecurAddrs, hf]
   rw [hrec] at raw
   obtain ⟨ty₀, val₀, hty, hval, hreads, hrep⟩ :=
     defnPayload_reading (blob := blob) (self := blockSelf t B ms)
@@ -569,7 +569,7 @@ theorem axio_reading (ht : t.check = .ok ()) {a : _root_.Address} {c : Ixon.Cons
     {v : SourceValue F} (hstore : store a = some c) (hinfo : c.info = .axio ax)
     (hlogic : InLogic c) (hinert : inertKey (keyOf t a) = false)
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
-    (raw : L1.RawAxioValRep c.refs.toList [] c.univs.toList c.sharing.toList blobs h ax v) :
+    (raw : Ingress.RawAxioValRep c.refs.toList [] c.univs.toList c.sharing.toList blobs h ax v) :
     ∃ ty₀ : Ix.Kernel.Expr .anon,
       (exprReader t blob c id (fun _ => none)).read ax.typ = .ok ty₀ ∧
       ReadsIn t store blob a (.axiomInfo ⟨keyOf t a, List.range ax.lvls.toNat, ty₀⟩) ∧
@@ -604,7 +604,7 @@ theorem ind_reading (ht : t.check = .ok ()) {B : _root_.Address} {i : Nat}
     (hmem : ms[i]? = some (.indc ind)) (hlogic : InLogic cb)
     (hproj : store (memberAddr B i (.indc ind)) = some (memberProjection B i (.indc ind)))
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
-    (raw : L1.RawInductValRep cb.refs.toList (L1.blockRecurAddrs B ms.toList) cb.univs.toList
+    (raw : Ingress.RawInductValRep cb.refs.toList (Ingress.blockRecurAddrs B ms.toList) cb.univs.toList
       cb.sharing.toList blobs h ind B i v) :
     ∃ ty₀ : Ix.Kernel.Expr .anon,
       (exprReader t blob cb id (blockSelf t B ms)).read ind.typ = .ok ty₀ ∧
@@ -645,7 +645,7 @@ theorem ctor_reading (ht : t.check = .ok ()) {B : _root_.Address} {i j : Nat}
     (hcidx : ct.cidx.toNat = j) (hlogic : InLogic cb)
     (hproj : store (ctorAddr B i j) = some (constructorProjection B i j))
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
-    (raw : L1.RawCtorValRep cb.refs.toList (L1.blockRecurAddrs B ms.toList) cb.univs.toList
+    (raw : Ingress.RawCtorValRep cb.refs.toList (Ingress.blockRecurAddrs B ms.toList) cb.univs.toList
       cb.sharing.toList blobs h ct B i v) :
     ∃ ty₀ : Ix.Kernel.Expr .anon,
       (exprReader t blob cb id (blockSelf t B ms)).read ct.typ = .ok ty₀ ∧
@@ -688,7 +688,7 @@ theorem rules_reading (ht : t.check = .ok ()) {src : Ixon.Constant}
     {h : Heap F} (hself : ∀ i x, recurAddrs[i]? = some x → ∃ m k, self i = some m ∧ m = .ok k)
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs) (Bm : _root_.Address) (im : Nat)
     {j : Nat} {rus : List Ixon.RecursorRule} {p : SourceValue F}
-    (raw : L1.RawRulesRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+    (raw : Ingress.RawRulesRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
       h j rus p) :
     ∃ rules : List (Ix.Kernel.RecRule .anon),
       List.Forall₂ (RuleReads t (exprReader t blob src param self) Bm im) (rus.zipIdx j) rules ∧
@@ -748,7 +748,7 @@ theorem recrPayload_reading (ht : t.check = .ok ()) {src : Ixon.Constant}
     {h : Heap F} {v : SourceValue F}
     (hself : ∀ i x, recurAddrs[i]? = some x → ∃ m k, self i = some m ∧ m = .ok k)
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
-    (raw : L1.RawRecrValRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList
+    (raw : Ingress.RawRecrValRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList
       blobs h rc blkAddr recIdx v) :
     ∃ tyP : Ix.Kernel.Expr .anon,
       (exprReader t blob src id self).read rc.typ = .ok tyP ∧
@@ -797,7 +797,7 @@ theorem recrPayload_rep (ht : t.check = .ok ()) {src : Ixon.Constant}
     (hselfk : ∀ i x m k, recurAddrs[i]? = some x → self i = some m → m = .ok k →
       k = Core.keyOf t x)
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
-    (raw : L1.RawRecrValRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList
+    (raw : Ingress.RawRecrValRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList
       blobs h rc blkAddr recIdx v)
     (hty : (exprReader t blob src (Ix.Kernel.Reader.recParam ps) self).read rc.typ = .ok ty₀)
     (hty_lbb : ty₀.looseBVarsBounded 0 = true) (hty_def : ty₀.allLevelParamsDefined ps = true)
@@ -843,7 +843,7 @@ theorem recr_reading (ht : t.check = .ok ()) {a : _root_.Address} {c : Ixon.Cons
     {rc : Ixon.Recursor} {blobs : List (_root_.Address × ByteArray)} {h : Heap F}
     {v : SourceValue F} (hstore : store a = some c) (hinfo : c.info = .recr rc)
     (hlogic : InLogic c) (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
-    (raw : L1.RawRecrValRep c.refs.toList [a] c.univs.toList c.sharing.toList blobs h rc a 0 v) :
+    (raw : Ingress.RawRecrValRep c.refs.toList [a] c.univs.toList c.sharing.toList blobs h rc a 0 v) :
     ∃ tyP : Ix.Kernel.Expr .anon,
       (exprReader t blob c id (soloSelf t a)).read rc.typ = .ok tyP ∧
       ∀ (kF kM : Ix.Kernel.Key .anon) (B Bm : _root_.Address) (i im : Nat)
@@ -882,7 +882,7 @@ theorem rprj_reading (ht : t.check = .ok ()) {B : _root_.Address} {i₀ : Nat}
     (hmem : ms[i₀]? = some (.recr rc)) (hlogic : InLogic cb)
     (hproj : store (memberAddr B i₀ (.recr rc)) = some (memberProjection B i₀ (.recr rc)))
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
-    (raw : L1.RawRecrValRep cb.refs.toList (L1.blockRecurAddrs B ms.toList) cb.univs.toList
+    (raw : Ingress.RawRecrValRep cb.refs.toList (Ingress.blockRecurAddrs B ms.toList) cb.univs.toList
       cb.sharing.toList blobs h rc B i₀ v) :
     ∃ tyP : Ix.Kernel.Expr .anon,
       (exprReader t blob cb id (blockSelf t B ms)).read rc.typ = .ok tyP ∧
@@ -929,7 +929,7 @@ theorem quot_reading (ht : t.check = .ok ()) {a : _root_.Address} {c : Ixon.Cons
     {q : Ixon.Quotient} {blobs : List (_root_.Address × ByteArray)} {h : Heap F}
     {v : SourceValue F} (hstore : store a = some c) (hinfo : c.info = .quot q)
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
-    (raw : L1.RawQuotValRep c.refs.toList [] c.univs.toList c.sharing.toList blobs h q v) :
+    (raw : Ingress.RawQuotValRep c.refs.toList [] c.univs.toList c.sharing.toList blobs h q v) :
     ∃ ty₀ : Ix.Kernel.Expr .anon,
       (exprReader t blob c id (fun _ => none)).read q.typ = .ok ty₀ ∧
       ∀ ci₀ : Ix.Kernel.ConstantInfo .anon,
@@ -998,7 +998,7 @@ theorem storedAs_defn_hint {ci : Ix.Kernel.ConstantInfo .anon}
 
 /-! ## From the record layer's evidence for a load
 
-The record-loading layer's conclusion for a `get_ci` at `a` (`L1.LoadedL1` over the load's own
+The record-loading layer's conclusion for a `get_ci` at `a` (`Ingress.LoadedRecords` over the load's own
 store `E_ld`, with the bytes it hashed), read against the run's store `E`. The record at `a`
 (and, for a projection record, its block) is one the store holds: the claim walk gives that
 for every address it checks. -/
@@ -1008,13 +1008,13 @@ section Loaded
 variable {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {E : Ixon.Env}
 
 /-- **A load of `a` decodes the record the run's store holds at `a`.** -/
-theorem loadedL1_record (hS : RunStore calls E) {cs_ld : List (Call F)} {E_ld : Ixon.Env}
+theorem loadedRecords_record (hS : RunStore calls E) {cs_ld : List (Call F)} {E_ld : Ixon.Env}
     {h : Heap F} {ptr : SourceValue F} {bytes : ByteArray} {a : _root_.Address}
     {c : Ixon.Constant} (hsub : ∀ cl ∈ cs_ld, cl ∈ calls) (hh : Hashed cs_ld bytes)
-    (ha : Address.blake3Pure bytes = a) (hl : L1.LoadedL1 E_ld h ptr bytes)
+    (ha : Address.blake3Pure bytes = a) (hl : Ingress.LoadedRecords E_ld h ptr bytes)
     (hrec : Ix.Cert.recordAt E a = some c) :
-    Ixon.deConstantExact bytes = .ok c ∧ L1.ConstantTablesValid c ∧
-      L1.RawCIPtrRep E_ld h ptr a c := by
+    Ixon.deConstantExact bytes = .ok c ∧ Ingress.ConstantTablesValid c ∧
+      Ingress.RawCIPtrRep E_ld h ptr a c := by
   obtain ⟨c', hex, -, htv, hptr⟩ := hl
   have hc : c' = c := hS.record_eq hrec (Core.hashed_mono hsub hh) ha hex
   subst hc
@@ -1025,11 +1025,11 @@ theorem loadedL1_record (hS : RunStore calls E) {cs_ld : List (Call F)} {E_ld : 
 under every hint, and where the reading is well scoped the pointer represents an annotation
 of it, under every hint. The readings `ty₀`, `val₀` are the kernel reader's conversions in
 the reading context, so they are the same for every load of `a`. -/
-theorem loadedL1_defn_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
+theorem loadedRecords_defn_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
     {cs_ld : List (Call F)} {E_ld : Ixon.Env} {h : Heap F} {ptr : SourceValue F}
     {bytes : ByteArray} {a : _root_.Address} {c : Ixon.Constant} {d : Ixon.Definition}
     (hload : LoadedBy cs_ld E_ld) (hsub : ∀ cl ∈ cs_ld, cl ∈ calls) (hh : Hashed cs_ld bytes)
-    (ha : Address.blake3Pure bytes = a) (hl : L1.LoadedL1 E_ld h ptr bytes)
+    (ha : Address.blake3Pure bytes = a) (hl : Ingress.LoadedRecords E_ld h ptr bytes)
     (hrec : Ix.Cert.recordAt E a = some c) (hinfo : c.info = .defn d) (hlogic : InLogic c) :
     ∃ ty₀ val₀ : Ix.Kernel.Expr .anon,
       (exprReader t (fun x => E.blobs.get? x) c id (soloSelf t a)).read d.typ = .ok ty₀ ∧
@@ -1042,8 +1042,8 @@ theorem loadedL1_defn_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
         ∀ hn, ∃ ci,
           StoredAs ci (defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn) ∧
           Core.CIPtrRep (Core.keyOf t) h ptr ci) := by
-  obtain ⟨-, -, v, hld, hraw⟩ := loadedL1_record hS hsub hh ha hl hrec
-  unfold L1.RawCIRep at hraw
+  obtain ⟨-, -, v, hld, hraw⟩ := loadedRecords_record hS hsub hh ha hl hrec
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨blobs, hb, raw⟩ := hraw
   have hblob := hS.blob_of_table hload hsub hb
@@ -1055,11 +1055,11 @@ theorem loadedL1_defn_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
   exact ⟨ci, hst, v, hld, hci⟩
 
 /-- **A loaded axiom**, at an address no inert role is bound to. -/
-theorem loadedL1_axio_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
+theorem loadedRecords_axio_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
     {cs_ld : List (Call F)} {E_ld : Ixon.Env} {h : Heap F} {ptr : SourceValue F}
     {bytes : ByteArray} {a : _root_.Address} {c : Ixon.Constant} {ax : Ixon.Axiom}
     (hload : LoadedBy cs_ld E_ld) (hsub : ∀ cl ∈ cs_ld, cl ∈ calls) (hh : Hashed cs_ld bytes)
-    (ha : Address.blake3Pure bytes = a) (hl : L1.LoadedL1 E_ld h ptr bytes)
+    (ha : Address.blake3Pure bytes = a) (hl : Ingress.LoadedRecords E_ld h ptr bytes)
     (hrec : Ix.Cert.recordAt E a = some c) (hinfo : c.info = .axio ax) (hlogic : InLogic c)
     (hinert : ¬ InertAt t a) :
     ∃ ty₀ : Ix.Kernel.Expr .anon,
@@ -1069,8 +1069,8 @@ theorem loadedL1_axio_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
         ty₀.allLevelParamsDefined (List.range ax.lvls.toNat) = true →
         ∃ ci, StoredAs ci (.axiomInfo ⟨keyOf t a, List.range ax.lvls.toNat, ty₀⟩) ∧
           Core.CIPtrRep (Core.keyOf t) h ptr ci) := by
-  obtain ⟨-, -, v, hld, hraw⟩ := loadedL1_record hS hsub hh ha hl hrec
-  unfold L1.RawCIRep at hraw
+  obtain ⟨-, -, v, hld, hraw⟩ := loadedRecords_record hS hsub hh ha hl hrec
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨blobs, hb, raw⟩ := hraw
   have hblob := hS.blob_of_table hload hsub hb
@@ -1084,11 +1084,11 @@ theorem loadedL1_axio_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
 
 /-- **A loaded member of a definition block**, through its projection record at `a`. The
 store holds the block, in Lean's logic. -/
-theorem loadedL1_dprj_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
+theorem loadedRecords_dprj_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
     {cs_ld : List (Call F)} {E_ld : Ixon.Env} {h : Heap F} {ptr : SourceValue F}
     {bytes : ByteArray} {a : _root_.Address} {c cb : Ixon.Constant} {p : Ixon.DefinitionProj}
     (hload : LoadedBy cs_ld E_ld) (hsub : ∀ cl ∈ cs_ld, cl ∈ calls) (hh : Hashed cs_ld bytes)
-    (ha : Address.blake3Pure bytes = a) (hl : L1.LoadedL1 E_ld h ptr bytes)
+    (ha : Address.blake3Pure bytes = a) (hl : Ingress.LoadedRecords E_ld h ptr bytes)
     (hrec : Ix.Cert.recordAt E a = some c) (hinfo : c.info = .dPrj p)
     (hrecB : Ix.Cert.recordAt E p.block = some cb) (hlogic : InLogic cb) :
     ∃ (ms : Array Ixon.MutConst) (d : Ixon.Definition) (ty₀ val₀ : Ix.Kernel.Expr .anon),
@@ -1106,8 +1106,8 @@ theorem loadedL1_dprj_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
         ∀ hn, ∃ ci,
           StoredAs ci (defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn) ∧
           Core.CIPtrRep (Core.keyOf t) h ptr ci) := by
-  obtain ⟨hex, htv, v, hld, hraw⟩ := loadedL1_record hS hsub hh ha hl hrec
-  unfold L1.RawCIRep at hraw
+  obtain ⟨hex, htv, v, hld, hraw⟩ := loadedRecords_record hS hsub hh ha hl hrec
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨hidx, lcB, cb', ms, d, blobs, hgetB, -, -, hexB, -, hcb, hms, hb, raw⟩ := hraw
   obtain ⟨hhB, haB⟩ := hload.1 p.block lcB hgetB
@@ -1136,11 +1136,11 @@ theorem loadedL1_dprj_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
 
 /-- **A loaded inductive type**, through its projection record at `a`. The store holds the
 block, in Lean's logic. -/
-theorem loadedL1_ind_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
+theorem loadedRecords_ind_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
     {cs_ld : List (Call F)} {E_ld : Ixon.Env} {h : Heap F} {ptr : SourceValue F}
     {bytes : ByteArray} {a : _root_.Address} {c cb : Ixon.Constant} {p : Ixon.InductiveProj}
     (hload : LoadedBy cs_ld E_ld) (hsub : ∀ cl ∈ cs_ld, cl ∈ calls) (hh : Hashed cs_ld bytes)
-    (ha : Address.blake3Pure bytes = a) (hl : L1.LoadedL1 E_ld h ptr bytes)
+    (ha : Address.blake3Pure bytes = a) (hl : Ingress.LoadedRecords E_ld h ptr bytes)
     (hrec : Ix.Cert.recordAt E a = some c) (hinfo : c.info = .iPrj p)
     (hrecB : Ix.Cert.recordAt E p.block = some cb) (hlogic : InLogic cb) :
     ∃ (ms : Array Ixon.MutConst) (ind : Ixon.Inductive) (ty₀ : Ix.Kernel.Expr .anon),
@@ -1154,8 +1154,8 @@ theorem loadedL1_ind_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
         ∀ caps, ∃ ci,
           StoredAs ci (.indInfo ⟨keyOf t a, List.range ind.lvls.toNat, ty₀⟩ caps) ∧
           Core.CIPtrRep (Core.keyOf t) h ptr ci) := by
-  obtain ⟨hex, htv, v, hld, hraw⟩ := loadedL1_record hS hsub hh ha hl hrec
-  unfold L1.RawCIRep at hraw
+  obtain ⟨hex, htv, v, hld, hraw⟩ := loadedRecords_record hS hsub hh ha hl hrec
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨hidx, lcB, cb', ms, ind, blobs, hgetB, -, -, hexB, -, hcb, hms, hb, raw⟩ := hraw
   obtain ⟨hhB, haB⟩ := hload.1 p.block lcB hgetB
@@ -1185,11 +1185,11 @@ theorem loadedL1_ind_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
 /-- **A loaded constructor**, through its projection record at `a`. The store holds the
 block, in Lean's logic, and the block's constructors are stored at their positions (`hcidx`:
 `Assembly.indBlockCtorIdx_of_exact_noCollision`, for a walked block). -/
-theorem loadedL1_ctor_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
+theorem loadedRecords_ctor_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
     {cs_ld : List (Call F)} {E_ld : Ixon.Env} {h : Heap F} {ptr : SourceValue F}
     {bytes : ByteArray} {a : _root_.Address} {c cb : Ixon.Constant} {p : Ixon.ConstructorProj}
     (hload : LoadedBy cs_ld E_ld) (hsub : ∀ cl ∈ cs_ld, cl ∈ calls) (hh : Hashed cs_ld bytes)
-    (ha : Address.blake3Pure bytes = a) (hl : L1.LoadedL1 E_ld h ptr bytes)
+    (ha : Address.blake3Pure bytes = a) (hl : Ingress.LoadedRecords E_ld h ptr bytes)
     (hrec : Ix.Cert.recordAt E a = some c) (hinfo : c.info = .cPrj p)
     (hrecB : Ix.Cert.recordAt E p.block = some cb) (hlogic : InLogic cb)
     (hcidx : ∀ (ms : Array Ixon.MutConst) (ind : Ixon.Inductive) (ct : Ixon.Constructor),
@@ -1210,8 +1210,8 @@ theorem loadedL1_ctor_reads (ht : t.check = .ok ()) (hS : RunStore calls E)
           StoredAs ci (.ctorInfo ⟨keyOf t a, List.range ct.lvls.toNat, ty₀⟩ ct.params.toNat
             ct.fields.toNat) ∧
           Core.CIPtrRep (Core.keyOf t) h ptr ci) := by
-  obtain ⟨hex, htv, v, hld, hraw⟩ := loadedL1_record hS hsub hh ha hl hrec
-  unfold L1.RawCIRep at hraw
+  obtain ⟨hex, htv, v, hld, hraw⟩ := loadedRecords_record hS hsub hh ha hl hrec
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨hidx, hcidx56, lcB, cb', ms, ind, ct, blobs, hgetB, -, -, hexB, -, hcb, hms, hct, hb,
     raw⟩ := hraw

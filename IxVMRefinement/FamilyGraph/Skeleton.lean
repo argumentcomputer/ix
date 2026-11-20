@@ -387,7 +387,7 @@ theorem typing_skeleton_core_family {V : View} {extra : List ByteArray}
     rfl
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
   have hload : LoadedBy calls E₀ := hS.loaded
-  have hdec : L1.EnvDecoded E₀ := hS.decoded
+  have hdec : Ingress.EnvDecoded E₀ := hS.decoded
   obtain ⟨E, hM⟩ := merged_exists E₀ R
   have hrf : RecordsFor R E := hM.recordsFor hload hdec hshape.committed hextra hnc
   have hrun : ∀ a c, recordOf E₀ a = some c → Ix.Cert.recordAt E a = some c :=

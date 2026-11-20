@@ -81,7 +81,7 @@ open Ix.Kernel (Expr ProjTable ConstantVal ProjGuardCert)
 
 /-- In a store whose records decode exactly, the exact decoding of the stored bytes is the
 decoded cache. -/
-private theorem recordOf_eq_recordAt_decoded {E : Ixon.Env} (hd : L1.EnvDecoded E)
+private theorem recordOf_eq_recordAt_decoded {E : Ixon.Env} (hd : Ingress.EnvDecoded E)
     (a : _root_.Address) : recordOf E a = Ix.Cert.recordAt E a := by
   unfold recordOf Ix.Cert.recordAt
   cases hget : E.consts.get? a with
@@ -102,7 +102,7 @@ that context are arbitrary. The member the run names is the member the certifica
 because the store's record at the member's projection address is that member's projection, as
 the projection step's own load read it; the use's raw telescope is then the certificate's. -/
 theorem projTableFires_of_cert_at (hread : Core.ProjGuardRunReading) {t : Ix.Kernel.RoleTable}
-    {E : Ixon.Env} (hdec : L1.EnvDecoded E)
+    {E : Ixon.Env} (hdec : Ingress.EnvDecoded E)
     {B : _root_.Address} {i : Nat} {tbl : ProjTable .anon} {cvC : ConstantVal .anon}
     {raw : Expr .anon} (hmem : MemberRecordAt E B i) (hraw : ctorRaw E B i 0 = some raw)
     (hpos : tbl.levelParams = List.range tbl.levelParams.length)

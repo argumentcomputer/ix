@@ -1,5 +1,5 @@
 import IxVMRefinement.Decl.PrefixInv
-import IxVMRefinement.L1.HashedBlock
+import IxVMRefinement.Ingress.HashedBlock
 
 /-! # The load contract of the stages of a native block
 
@@ -63,7 +63,7 @@ from the prefix. Each is produced by the native route from the walked block reco
   the prefix stores);
 * `getCprj`: a constructor load at the former's member represents a constant under the stage's
   keying (`Decl.CtorLoadAtIndex` and the conversion of the constructor record: its cells are used
-  references and the former, its `Proj` heads used references by `L1.RawConvExpr.projIn_used`);
+  references and the former, its `Proj` heads used references by `Ingress.RawConvExpr.projIn_used`);
 * `inductRecord`, `inductBlock`: the record at the former's address is the inductive projection
   of the block (the walked record);
 * `unitLikeRaw`: the staged capability record is the final one
@@ -291,7 +291,7 @@ theorem stagedLoads_cons_former {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
           exfalso
           obtain ⟨hf₁, -⟩ := ctorOld hf
           exact notFormer (iprjAddr_not_marker _ _)
-            (h₁.ctorIndRes _ _ _ _ _ _ (L1.hashedBlockAt_of_get_ci_cprj good.raw hb ev) hf₁) hnew
+            (h₁.ctorIndRes _ _ _ _ _ _ (Ingress.hashedBlockAt_of_get_ci_cprj good.raw hb ev) hf₁) hnew
         · obtain ⟨⟨ci₀, hrep₀⟩, hall⟩ :=
             h₁.getCprj bp ptr i j h h' cs b ev trivial (fam hfam hnew) (good₁ good) hb
           refine ⟨hrep₀.rekey_exists keep, fun cv nP nF hf => ?_⟩
@@ -329,7 +329,7 @@ theorem stagedLoads_cons_former {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
         · exact absurd hperm (formerNoProj hnew (iprjAddr_not_marker _ _))
         · obtain ⟨⟨ci, hf, hrep⟩, htab⟩ :=
             h₁.projTables bp ip ptr h h' cs b i ev trivial good hb hip (fam hfam hnew)
-              (famPerm (L1.hashedBlockAt_of_proj_ctor good ev hb hip) (fam hfam hnew))
+              (famPerm (Ingress.hashedBlockAt_of_proj_ctor good ev hb hip) (fam hfam hnew))
           refine ⟨⟨ci, ?_, hrep.rekey_mono keep (stored_name_ne h₁ hf)⟩, ?_⟩
           · rw [keep _ (h₁.findRes _ _ hf)]
             exact hext.find hf
@@ -338,7 +338,7 @@ theorem stagedLoads_cons_former {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
             obtain ⟨tbl, ht1, ht2, ht3, ht4, ht5, ht6, ht7, ht8, ht9, ht10, ht11⟩ :=
               htab sap sptr nl ty np u blk h1 h2 cs1 s evS gS hsS hldS hbS j cvC nP nF hc₁ hbind
             have ei := keep _
-              (h₁.ctorIndRes _ _ _ _ _ _ (L1.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
+              (h₁.ctorIndRes _ _ _ _ _ _ (Ingress.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
             refine ⟨tbl, ?_, ?_, ?_, ht4, ht5, ht6, ht7, ?_, ht9, ht10, ht11⟩
             · rw [ei]
               exact hext.find ht1
@@ -357,7 +357,7 @@ theorem stagedLoads_cons_former {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
           h₁.projTablesAt bp sap ptr nl ty np u blk h h' h1 h2 cs cs1 b s i evM hgM hb evG hgG
             hs hld hblk j cvC nP nF hc₁ hnF
         have ei := keep _ (h₁.ctorIndRes _ _ _ _ _ _
-          (L1.hashedBlockAt_of_get_ci_induct hgG evG hs hld hblk) hc₁)
+          (Ingress.hashedBlockAt_of_get_ci_induct hgG evG hs hld hblk) hc₁)
         refine ⟨tbl, ?_, ?_, ?_, ht4, ht5, ht6, ht7, ?_, ht9, ht10, ht11⟩
         · rw [ei]
           exact hext.find ht1
@@ -375,7 +375,7 @@ theorem stagedLoads_cons_former {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
           intro e
           rw [e] at hfT
           exact notFormer (iprjAddr_not_marker _ _)
-            (h₁.ctorIndRes _ _ _ _ _ _ (L1.hashedBlockAt_of_get_ci_induct good ev ha hld hb) hC₁)
+            (h₁.ctorIndRes _ _ _ _ _ _ (Ingress.hashedBlockAt_of_get_ci_induct good ev ha hld hb) hC₁)
             (formerMember ev good ha (formerKey hfT) hld hb)
         obtain ⟨hT₁, eT⟩ := old hfT hne
         obtain ⟨hu1, hu2, hu3⟩ := h₁.unitLike ap ptr h h' cs a nl ty u blk p i b cvT caps' cvC
@@ -413,7 +413,7 @@ theorem stagedLoads_cons_former {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
           rw [← hnm, hnC]
           exact hfC
         obtain ⟨hCj, eN⟩ := ctorOld hfC'
-        have hrI := h₁.ctorIndRes _ _ _ _ _ _ (L1.hashedBlockAt_of_get_ci_iprj good hb ev) hCj
+        have hrI := h₁.ctorIndRes _ _ _ _ _ _ (Ingress.hashedBlockAt_of_get_ci_iprj good hb ev) hCj
         have hne : (ConstantInfo.indInfo cvT caps') ≠ .indInfo cvF caps := by
           intro e
           rw [e] at hfT
@@ -434,7 +434,7 @@ theorem stagedLoads_cons_former {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
           intro e
           rw [e] at hfT
           exact notFormer (iprjAddr_not_marker _ _)
-            (h₁.ctorIndRes _ _ _ _ _ _ (L1.hashedBlockAt_of_get_ci_induct good ev hpa hld hb) hC₁)
+            (h₁.ctorIndRes _ _ _ _ _ _ (Ingress.hashedBlockAt_of_get_ci_induct good ev hpa hld hb) hC₁)
             (formerMember ev good hpa (formerKey hfT) hld hb)
         obtain ⟨hT₁, eT⟩ := old hfT hne
         obtain ⟨⟨he1, he2, he3, he4, he5, he6⟩, huse⟩ := h₁.etaIota pp ptr nl ty u blk h1 h2 cs1
@@ -455,7 +455,7 @@ theorem stagedLoads_cons_former {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
         intro bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hctor' htbl
         obtain ⟨hc₁, -⟩ := ctorOld hctor'
         have ei := keep _
-          (h₁.ctorIndRes _ _ _ _ _ _ (L1.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
+          (h₁.ctorIndRes _ _ _ _ _ _ (Ingress.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
         rw [ei] at htbl
         exact h₁.projCtorTele bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hc₁
           (consCtx_find_old (c := c) (cn := .indInfo cvF caps) htbl (fun e => by cases e))

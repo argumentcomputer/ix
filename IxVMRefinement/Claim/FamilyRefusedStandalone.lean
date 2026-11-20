@@ -1,4 +1,4 @@
-import IxVMRefinement.L1.Decode
+import IxVMRefinement.Ingress.Decode
 import IxVMRefinement.StatementRel.LoadedReads
 import IxVMRefinement.Lib.Lists
 import IxVMRefinement.Lib.Words
@@ -112,7 +112,7 @@ theorem check_family_standalone_refused {calls cs : List (Call F)} {E₀ : Ixon.
         have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl =>
           hsub cl (by rw [hc1474]; simp [show cl ∈ cs850 by rw [hcf]; simp [hcl]])
         obtain ⟨-, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-          L1.load_verified_constant_decode_bounded hrb784 ev14
+          Ingress.load_verified_constant_decode_bounded hrb784 ev14
         have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
           (Core.hashed_mono hsub12 hh) haddr hexact
         subst hcc
@@ -191,7 +191,7 @@ private theorem load_recr_tag {calls cs : List (Call F)} {E₀ : Ixon.Env}
     (hc : IxVM.Consistency.recordOf E₀ (ixAddr ab) = some c) (hinfo : c.info = .recr rcr) :
     tag = "Recr" := by
   obtain ⟨-, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-    L1.load_verified_constant_decode_bounded ha ev
+    Ingress.load_verified_constant_decode_bounded ha ev
   have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
     (Core.hashed_mono hsub hh) haddr hexact
   subst hcc
@@ -239,7 +239,7 @@ theorem familyCheckRefused_of_recr {calls cs_load cs_chk : List (Call F)} {E₀ 
     (hS : LoadedReads.RunStore calls E₀) {A : _root_.Address} {c : Ixon.Constant}
     {rcr : Ixon.Recursor} (hc : IxVM.Consistency.recordOf E₀ A = some c)
     (hinfo : c.info = .recr rcr) {h_pre m_chk : Heap F} {rc ap ptr : SourceValue F}
-    (ha : S0.addr h_pre ap A) (ev_ld : ObsFn Obs.W "Ingress::get_ci" [ap] h_pre ptr m_chk cs_load)
+    (ha : BaseSeams.addr h_pre ap A) (ev_ld : ObsFn Obs.W "Ingress::get_ci" [ap] h_pre ptr m_chk cs_load)
     (hsub_ld : ∀ cl ∈ cs_load, cl ∈ calls)
     {levels type parameters indices motives minors rules k unsafeFlag block position :
       SourceValue F}

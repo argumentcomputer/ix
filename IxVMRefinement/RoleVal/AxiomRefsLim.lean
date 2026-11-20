@@ -56,7 +56,7 @@ theorem validate_role_axiom_refs {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
       t.addressOf? ro = some a ∧ rawBytes.size < 4294967296 ∧ Hashed calls rawBytes ∧
       Address.blake3Pure rawBytes = a ∧ Ixon.deConstant rawBytes = .ok c ∧
       Ixon.deConstantExact rawBytes = .ok c ∧ Claim.TopRecsClosed recs ∧
-      ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ S0.usedRefIdxs c →
+      ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ BaseSeams.usedRefIdxs c →
         Claim.RefAllowedIn calls t bAddr (some (groupValLimit g)) c.refs.toList[j] ∧
         ((Claim.NotBlockIn calls c.refs.toList[j] ∧ c.refs.toList[j] ∈ recs.map (·.addr)) ∨
           Claim.CoveredAt t (some (groupValLimit g)) c.refs.toList[j]) := by
@@ -160,7 +160,7 @@ theorem ValidateRoleIn.axiom_refs {calls : List (Call F)} {bAddr : _root_.Addres
       t.addressOf? ro = some a ∧ rawBytes.size < 4294967296 ∧ Hashed calls rawBytes ∧
       Address.blake3Pure rawBytes = a ∧ Ixon.deConstant rawBytes = .ok c ∧
       Ixon.deConstantExact rawBytes = .ok c ∧ Claim.TopRecsClosed recs ∧
-      ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ S0.usedRefIdxs c →
+      ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ BaseSeams.usedRefIdxs c →
         Claim.RefAllowedIn calls t bAddr (some (groupValLimit g)) c.refs.toList[j] ∧
         ((Claim.NotBlockIn calls c.refs.toList[j] ∧ c.refs.toList[j] ∈ recs.map (·.addr)) ∨
           Claim.CoveredAt t (some (groupValLimit g)) c.refs.toList[j]) := by

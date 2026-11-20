@@ -42,7 +42,7 @@ open Ix.Kernel (ConstantInfo)
 records and blobs, and the calls are good for it at every environment and limit. -/
 structure StepStore (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ E : Ixon.Env) :
     Prop where
-  decoded : L1.EnvDecoded E
+  decoded : Ingress.EnvDecoded E
   runRecord : ∀ a c, recordOf E₀ a = some c → Ix.Cert.recordAt E a = some c
   runBlob : ∀ a b, E₀.blobs.get? a = some b → E.blobs.get? a = some b
   good : ∀ (env : Ix.Kernel.Env .anon) (lim : Option Nat), Core.Good ⟨E, env, t, lim⟩ calls
@@ -54,7 +54,7 @@ theorem StepCtx.toStepStore {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
 
 /-- In a store whose records decode exactly, the exact decoding of the stored bytes is the
 decoded cache. -/
-theorem recordOf_eq_recordAt_of_decoded {E : Ixon.Env} (hdec : L1.EnvDecoded E)
+theorem recordOf_eq_recordAt_of_decoded {E : Ixon.Env} (hdec : Ingress.EnvDecoded E)
     (a : _root_.Address) : recordOf E a = Ix.Cert.recordAt E a := by
   unfold recordOf Ix.Cert.recordAt
   cases hget : E.consts.get? a with

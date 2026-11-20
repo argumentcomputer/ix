@@ -431,7 +431,7 @@ theorem nativeInstall_of_member {L : Ix.Kernel.Env .anon → NativeFam .anon →
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hcov : L1.CanonicalHashCoverage E calls)
+    (hcov : Ingress.CanonicalHashCoverage E calls)
     {env : Ix.Kernel.Env .anon} {Reg : NativeFam .anon → Prop}
     (hext : ∀ ci ∈ envT.consts, ci ∈ env.consts) (hnd : (env.consts.map (·.name)).Nodup)
     (hC : FoldClauseWith.{u} L t E lim env Reg)
@@ -600,7 +600,7 @@ theorem nativeUnitStep_of_member {L : Ix.Kernel.Env .anon → NativeFam .anon �
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hcov : L1.CanonicalHashCoverage E calls)
+    (hcov : Ingress.CanonicalHashCoverage E calls)
     (hrecs : LoadedReads.HashedRecordsStored calls E₀) (hread : Core.ProjGuardRunReading) :
     NativeUnitStep.{u} L t envT E₀ (fun E' => E' = E) E lim B cb := by
   refine nativeUnitStep_of_install hL ht hread hS hrec
@@ -631,7 +631,7 @@ theorem unitStep_nativeBlockTele {L : Ix.Kernel.Env .anon → NativeFam .anon �
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hcov : L1.CanonicalHashCoverage E calls)
+    (hcov : Ingress.CanonicalHashCoverage E calls)
     (hrecs : LoadedReads.HashedRecordsStored calls E₀) (hread : Core.ProjGuardRunReading) :
     UnitStep.{u} (FoldExtra.{u} L t E) t envT E₀ E lim B cb :=
   NativeUnitStep.unitStep (Stores := fun E' => E' = E) rfl

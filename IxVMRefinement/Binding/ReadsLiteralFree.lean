@@ -193,9 +193,9 @@ theorem buildShareTblGo_litFree (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂
       (∀ (i : Nat) (v : CExpr .anon), acc₁[i]? = some (Except.ok v) →
         acc₂[i]? = some (Except.ok v)) →
       ∀ (i : Nat) (v : CExpr .anon),
-        (L1.buildShareTblGo (⟨cx₁, src, univs, self₁⟩ : ECx .anon) acc₁ es)[i]? =
+        (Ingress.buildShareTblGo (⟨cx₁, src, univs, self₁⟩ : ECx .anon) acc₁ es)[i]? =
           some (Except.ok v) →
-        (L1.buildShareTblGo (⟨cx₂, src, univs, self₂⟩ : ECx .anon) acc₂ es)[i]? =
+        (Ingress.buildShareTblGo (⟨cx₂, src, univs, self₂⟩ : ECx .anon) acc₂ es)[i]? =
           some (Except.ok v) := by
   intro es
   induction es with
@@ -204,7 +204,7 @@ theorem buildShareTblGo_litFree (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂
     exact hacc
   | cons e es ih =>
     intro hes acc₁ acc₂ hsz hacc
-    simp only [L1.buildShareTblGo]
+    simp only [Ingress.buildShareTblGo]
     apply ih (fun x hx => hes x (List.mem_cons_of_mem _ hx))
     · simp [hsz]
     · intro i v hi
@@ -230,8 +230,8 @@ theorem read_litFree {cx₁ cx₂ : Ctx .anon} {src : Ixon.Constant}
     {param : Nat → LevelParam} {e : Ixon.Expr} (he : exprLitFree e = true) {v : CExpr .anon}
     (h : (MemberReader.mk' cx₁ src param self₁).read e = .ok v) :
     (MemberReader.mk' cx₂ src param self₂).read e = .ok v := by
-  obtain ⟨hecx₁, htbl₁⟩ := L1.memberReader_mk'_eq cx₁ src param self₁
-  obtain ⟨hecx₂, htbl₂⟩ := L1.memberReader_mk'_eq cx₂ src param self₂
+  obtain ⟨hecx₁, htbl₁⟩ := Ingress.memberReader_mk'_eq cx₁ src param self₁
+  obtain ⟨hecx₂, htbl₂⟩ := Ingress.memberReader_mk'_eq cx₂ src param self₂
   unfold MemberReader.read at h ⊢
   rw [hecx₁, htbl₁] at h
   rw [hecx₂, htbl₂]

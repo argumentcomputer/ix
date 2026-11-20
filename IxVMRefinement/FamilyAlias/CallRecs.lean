@@ -24,7 +24,7 @@ Reads the elimination-level check (`block_elim`) and the recursor loop (`check_r
   `lower_pins`, proves `LeavesFixed g` on every instantiated major-premise pin;
 * `addrIn_rec_major_pins`: carries `AddrIn` back from the lowered major pins to the recursor's
   converted type;
-* `rulesTrace_walk`: single-pass walk of `L1.RulesTraceRep` alongside `KernelModeled::check_rules_go`,
+* `rulesTrace_walk`: single-pass walk of `Ingress.RulesTraceRep` alongside `KernelModeled::check_rules_go`,
   producing the read rules, their canonical annotations (`LoadedReads.canonRules`), their
   constructor-projection hash witnesses, and `RulesFacts` via `CallIotaRule.check_iota_rule_facts`;
 * `recMember_of_cons` and `checkRecs_walk`: walk `KernelModeled::check_recs` over `(recAs, recMs)`
@@ -156,14 +156,14 @@ theorem block_elim_spec {calls : List (Call F)} {E₀ : Ixon.Env} {B : _root_.Ad
       exact h0
     have hsub41 : CallSub cs41 calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
     obtain ⟨_, c0, hh0, hba0, hex0, -, htr0⟩ :=
-      L1.get_ci_block_trace_spec (bounded_sub hsub41 hbd) ha0 ev43
+      Ingress.get_ci_block_trace_spec (bounded_sub hsub41 hbd) ha0 ev43
     have hrec0 : Ix.Cert.recordAt E₀ (ixAddr a0) = some (memberProjection B 0 (.indc ind0)) := by
       rw [← hS.recordOf_eq_recordAt, ha0_eq, ← LoadedReads.memberAddr_indc]
       exact hB.members 0 (.indc ind0) hms0_ind
     have hc0_eq : c0 = memberProjection B 0 (.indc ind0) :=
       hS.record_eq hrec0 (Core.hashed_mono hsub41 hh0) hba0 hex0
     subst hc0_eq
-    unfold L1.GetCIBlockTraceResult at htr0
+    unfold Ingress.GetCIBlockTraceResult at htr0
     simp only [memberProjection] at htr0
     obtain ⟨-, _, cb', ms', ind', _, _, _, v, hhBlk, hbaBlk, hexBlk, hmuts', hmi', -, -, -,
       hldv, hraw, -⟩ := htr0
@@ -376,7 +376,7 @@ private theorem check_carriers_recMotiveCarrier0 {crb : Ixon.Constant} {rc : Ixo
     {blobs : List (_root_.Address × ByteArray)} {b₀ : Bytes.Address} {bs : List Bytes.Address}
     {x_ty x_ta r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hnp : rc.params.toNat < 72057594037927936)
-    (raw : L1.RawConvExpr crb.refs.toList [] crb.univs.toList crb.sharing.toList blobs h
+    (raw : Ingress.RawConvExpr crb.refs.toList [] crb.univs.toList crb.sharing.toList blobs h
       4294967295 rc.typ x_ty)
     (hta : RepList addrListEnum (Bytes.RepAddressRef addrTy) h (b₀ :: bs) x_ta)
     (ev : ObsFn Obs.W "KernelModeled::check_carriers"
@@ -1996,17 +1996,17 @@ theorem get_ci_induct_record {calls : List (Call F)} {E₀ : Ixon.Env}
       Bytes.RepAddressRef addrTy h' bBlkM x_iblk ∧
       ixAddr bBlkM = ip.block ∧
       x_iidx = .field (ip.idx.toNat : F) := by
-  -- Step 1: `L1.get_ci_spec` identifies `c.info = .iPrj ip` from the `"Induct"` tag.
+  -- Step 1: `Ingress.get_ci_spec` identifies `c.info = .iPrj ip` from the `"Induct"` tag.
   obtain ⟨-, rawBytes, cm, blobs, hh, hba, hex, -, htv, -, hraw⟩ :=
-    L1.get_ci_spec (bounded_sub hsub hbd) ha ev
+    Ingress.get_ci_spec (bounded_sub hsub hbd) ha ev
   have hip : ∃ ip : Ixon.InductiveProj, cm.info = .iPrj ip := by
-    unfold L1.GetCIRawResult at hraw
+    unfold Ingress.GetCIRawResult at hraw
     cases hinfo : cm.info with
     | iPrj ip => exact ⟨ip, rfl⟩
     | defn d =>
       rw [hinfo] at hraw; obtain ⟨v, hldv, _, _, _, _, hv, _, _⟩ := hraw
       have he := Except.ok.inj (hld.symm.trans hldv); rw [hv] at he
-      unfold L1.defnValShape at he
+      unfold Ingress.defnValShape at he
       cases hdk : d.kind <;> simp [hdk] at he
     | axio ax =>
       rw [hinfo] at hraw; obtain ⟨v, hldv, _, _, hv, _⟩ := hraw
@@ -2024,7 +2024,7 @@ theorem get_ci_induct_record {calls : List (Call F)} {E₀ : Ixon.Env}
       rw [hinfo] at hraw
       obtain ⟨_, _, _, _, d, v, _, _, _, _, _, _, hldv, _, _, _, _, hv, _, _⟩ := hraw
       have he := Except.ok.inj (hld.symm.trans hldv); rw [hv] at he
-      unfold L1.defnValShape at he
+      unfold Ingress.defnValShape at he
       cases hdk : d.kind <;> simp [hdk] at he
     | cPrj p =>
       rw [hinfo] at hraw
@@ -2101,8 +2101,8 @@ theorem get_ci_induct_record {calls : List (Call F)} {E₀ : Ixon.Env}
       match Obs.«Ingress::get_ci_iprj».obs evIprj with
       | .run (cs12 := csB) (ev14 := evBlk) (hc283 := hcB) .. =>
         have hsubB : CallSub csB calls := fun cl hcl => hsub718 cl (by rw [hcB]; simp [hcl])
-        have hblkRef731 : Core.S0.addr _ xblk ip.block :=
-          Core.S0.addr_mono ev741.heap_extends hblkAddr
+        have hblkRef731 : Core.BaseSeams.addr _ xblk ip.block :=
+          Core.BaseSeams.addr_mono ev741.heap_extends hblkAddr
         obtain ⟨-, bsB, cbM, hszB, hhB, hbB, hdeB, hexB, -, -⟩ :=
           Claim.load_verified_constant_de hblkRef731 evBlk
         have hrecB : recordOf E₀ ip.block = some cbM := by
@@ -2111,7 +2111,7 @@ theorem get_ci_induct_record {calls : List (Call F)} {E₀ : Ixon.Env}
         exact ⟨by rwa [← hcm1] at hrec1, cbM, hrecB⟩
   obtain ⟨hrecM, cbM0, hrecB0⟩ := hrec_and_blk
   -- Step 3: unpack `hraw` at `.iPrj ip` and match `cbM0` with `cbM`.
-  unfold L1.GetCIRawResult at hraw
+  unfold Ingress.GetCIRawResult at hraw
   rw [hinfo] at hraw
   obtain ⟨hidx_lt, blkBytes, cbM, msM, indM, v, hhBlk, hbaBlk, hexBlk, -, hmutsM, hmsM, hldv,
       hrawInd⟩ := hraw
@@ -2213,7 +2213,7 @@ abbrev CtorLookupFn (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Ker
       ty₀C.looseBVarsBounded 0 = true ∧
       ty₀C.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
       LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-        (((L1.mutsRootOffset ms.toList im : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀C =
+        (((Ingress.mutsRootOffset ms.toList im : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀C =
           some tyAC ∧
       tyAC.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
       ∀ {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
@@ -2398,17 +2398,17 @@ private theorem repList_map_pred {en : String} {α : Type}
   | cons c hx _ ih => exact .cons c (f _ _ hx) ih
 
 private theorem blockRecurAddrs_eq_mapIdx (B : _root_.Address) (ms : List Ixon.MutConst) :
-    L1.blockRecurAddrs B ms =
+    Ingress.blockRecurAddrs B ms =
       ms.mapIdx fun i m => projAddr (Specs.Callees.memberProjInfo B i m) := by
-  unfold L1.blockRecurAddrs
+  unfold Ingress.blockRecurAddrs
   have hgo : ∀ (l : List Ixon.MutConst) (p : Nat),
-      L1.blockRecurAddrsAux B p l =
+      Ingress.blockRecurAddrsAux B p l =
         l.mapIdx fun i m => projAddr (Specs.Callees.memberProjInfo B (p + i) m) := by
     intro l; induction l with
     | nil => intro _; rfl
     | cons m rest ih' =>
       intro p
-      simp only [L1.blockRecurAddrsAux, List.mapIdx_cons, Nat.add_zero]
+      simp only [Ingress.blockRecurAddrsAux, List.mapIdx_cons, Nat.add_zero]
       congr 1
       have h2 := ih' (p + 1)
       simpa [Nat.add_assoc, Nat.add_comm 1] using h2
@@ -2436,7 +2436,7 @@ private theorem usedRef_stored_or_src_lists {L : Ix.Kernel.Env .anon → NativeF
     · exact Or.inl (Option.isSome_iff_exists.mp (hSE.covered x hcov))
     · exact absurd hneed hn
 
-/-- Single-pass walk of `KernelModeled::check_rules_go` along `L1.RulesTraceRep`: builds the read
+/-- Single-pass walk of `KernelModeled::check_rules_go` along `Ingress.RulesTraceRep`: builds the read
 rules `rules₀`, their canonical right-hand sides `rhss`, their advice theorem keys `thms`, their
 constructor-projection records in `E₀`, and `RulesFacts` at any `FamilyStepEnv`. -/
 theorem rulesTrace_walk
@@ -2472,9 +2472,9 @@ theorem rulesTrace_walk
     (hlvls_def : lvls.all (Level.allParamsDefined ps) = true)
     (hpins_ok : pins.all (fun p => !p.hasFvar && p.looseBVarsBounded rP &&
       p.allLevelParamsDefined ps) = true)
-    {blobs : List (_root_.Address × ByteArray)} {tree : L1.BinderTreeData}
+    {blobs : List (_root_.Address × ByteArray)} {tree : Ingress.BinderTreeData}
     (hblob : ∀ x bs, (x, bs) ∈ blobs → E₀.blobs.get? x = some bs)
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData crb.binders.toList) tree)
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData crb.binders.toList) tree)
     {a_rm bBlkM : Bytes.Address}
     {rcV rm ty_r iblock ilvls pins_ptr src dst aset s_out : SourceValue F}
     (hbBlkM_eq : ixAddr bBlkM = Bm)
@@ -2501,16 +2501,16 @@ theorem rulesTrace_walk
         (fun h P p => Decl.TmExact (Core.keyOf t) 0 zeroGhost h rP P p ∧
           ∀ a, AddrIn h p a → UsedRef E₀ rb (ixAddr a)) h
         (pins.map (Core.posOf ps)) pins_ptr →
-      L1.RulesTraceRep crb.refs.toList (L1.blockRecurAddrs rb rs.toList) crb.univs.toList
+      Ingress.RulesTraceRep crb.refs.toList (Ingress.blockRecurAddrs rb rs.toList) crb.univs.toList
         crb.sharing.toList blobs tree h j root rus rules_ptr →
-      L1.Stream h bytes s_in →
+      Ingress.Stream h bytes s_in →
       ObsFn Obs.W "KernelModeled::check_rules_go"
         [rcV, rm, .field (ps.length : F), ty_r, .field (rP : F), .field ((mI - rP : Nat) : F),
           rules_ptr, iblock, .field (im : F), .field (indM.params.toNat : F), ilvls, pins_ptr,
           src, dst, aset, s_in, .field (j : F)] h s_out h' cs_go →
       ∃ (rules₀ : List (RecRule .anon)) (rhss : List KExpr) (thms : List KKey)
         (rlsCan : List (RecRule .anon)) (remBytes : List UInt8),
-        L1.Stream h' remBytes s_out ∧
+        Ingress.Stream h' remBytes s_out ∧
         List.Forall₂ (RuleReads t (exprReader t (fun x => E₀.blobs.get? x) crb
           (Ix.Kernel.Reader.recParam ps) (blockSelf t rb rs)) Bm im) (rus.zipIdx j) rules₀ ∧
         (∀ rl ∈ rules₀, rl.rhs.looseBVarsBounded 0 = true ∧ rl.rhs.allLevelParamsDefined ps = true) ∧
@@ -2546,8 +2546,8 @@ theorem rulesTrace_walk
   let srcKeys := srcAs.map fun b => Core.keyOf t (ixAddr b)
   let dstKeys := dstAs.map fun b => Core.keyOf t (ixAddr b)
   let g := aliasMap (srcKeys.zip dstKeys)
-  have hagree : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
-    L1.BlobReadAgreement.of_mem hblob
+  have hagree : Ingress.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
+    Ingress.BlobReadAgreement.of_mem hblob
   induction rus with
   | nil =>
     intro j root rules_ptr s_in bytes h h' cs_go _ _ _ _ _ _ _ _ _ _ _ _ _ hrls hstr ev
@@ -2643,14 +2643,14 @@ theorem rulesTrace_walk
               exact hof (fun cl hcl => hsub_ci cl (by rw [hci]; simp [hcl])) e14
           obtain ⟨c_ld, hrec_ld⟩ := hload_rec
           rw [ha_cprj_eq] at hrec_ld
-          have hwfC := L1.projConstant_wireWF_cPrj im.toUInt64 j.toUInt64 bBlkM
+          have hwfC := Ingress.projConstant_wireWF_cPrj im.toUInt64 j.toUInt64 bBlkM
           rw [hbBlkM_eq] at hwfC
           have hc_eq : (⟨.cPrj ⟨im.toUInt64, j.toUInt64, Bm⟩, #[], #[], #[], #[]⟩ : Ixon.Constant) = c_ld :=
             hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hrec_ld) hhash_cprj rfl
               (Ixon.Verify.deConstantExact_serConstant _ hwfC)
           rwa [← hc_eq] at hrec_ld
         -- 3. Read `ru.rhs` under `id` and `recParam ps`, and get scope + canonical annotation.
-        have hself_ok : ∀ i x, (L1.blockRecurAddrs rb rs.toList)[i]? = some x →
+        have hself_ok : ∀ i x, (Ingress.blockRecurAddrs rb rs.toList)[i]? = some x →
             ∃ m k, blockSelf t rb rs i = some m ∧ m = .ok k := LoadedReads.blockSelf_ok t rb rs
         obtain ⟨rhsP, hreadP⟩ := LoadedReads.exprReader_read_ok ht hraw_rhs hself_ok hblob
         obtain ⟨rhs₀, hread₀⟩ := LoadedReads.exprReader_read_ok ht (param := Ix.Kernel.Reader.recParam ps)
@@ -2741,7 +2741,7 @@ theorem rulesTrace_walk
               (∃ ci, env.find? (Core.keyOf t (ixAddr a)) = some ci) ∨ ixAddr a ∈ srcAs.map ixAddr := by
             intro a ha
             have ha_h := Binding.TmExact.addrIn_back (htm_rhs 0 zeroGhost) ext_h_m155 a ha
-            rcases L1.RawConvExpr.addrIn_used hraw_rhs a ha_h with ⟨i, hi_used, hi_ref⟩ | hrec_mem
+            rcases Ingress.RawConvExpr.addrIn_used hraw_rhs a ha_h with ⟨i, hi_used, hi_ref⟩ | hrec_mem
             · have hu : UsedRef E₀ rb (ixAddr a) := by
                 refine ⟨crb, i, hR.record, ?_, by rw [← Array.getElem?_toList]; exact hi_ref⟩
                 unfold usedRefIdxs; rw [hR.muts]
@@ -2792,16 +2792,16 @@ theorem rulesTrace_walk
               obtain ⟨pos, ty₀C, tyAC, hpos_lt, hblk_pos, htys_pos, hreadC, hlbbC, hdefC, hcanC,
                   hA_defC, hstepC⟩ := hctorLookup im j indM indM.ctors[j] hmsM hct_get
               obtain ⟨hnpC, hlvls_gc⟩ := hstepC hSE hadvHyp hdefSrc
-              -- Load `ev_ci` via `L1.get_ci_block_trace_spec` to obtain `TmExact` for `x_cty`
+              -- Load `ev_ci` via `Ingress.get_ci_block_trace_spec` to obtain `TmExact` for `x_cty`
               obtain ⟨_, cC, hhC, hbaC, hexC, -, htrC⟩ :=
-                L1.get_ci_block_trace_spec (bounded_sub hsub_ci hbd) ha_cprj_m117 ev_ci
+                Ingress.get_ci_block_trace_spec (bounded_sub hsub_ci hbd) ha_cprj_m117 ev_ci
               have hrecAtC : Ix.Cert.recordAt E₀ (ixAddr a_cprj) =
                   some ⟨.cPrj ⟨im.toUInt64, j.toUInt64, B⟩, #[], #[], #[], #[]⟩ := by
                 rw [← hS.recordOf_eq_recordAt, ha_cprj_eq']; exact hrec_cprj'
               have hcC_eq : cC = ⟨.cPrj ⟨im.toUInt64, j.toUInt64, B⟩, #[], #[], #[], #[]⟩ :=
                 hS.record_eq hrecAtC (Core.hashed_mono hsub_ci hhC) hbaC hexC
               subst hcC_eq
-              unfold L1.GetCIBlockTraceResult at htrC
+              unfold Ingress.GetCIBlockTraceResult at htrC
               simp only at htrC
               obtain ⟨_, _, blkBytesC, cb', ms', ind', ct', blobsC, treeC, planC, vC, hhBlkC,
                   hbaBlkC, hexBlkC, hmuts', hmi', hct', hhpC, builtC, hplanC, hldvC, hrawC, hlevC⟩ := htrC
@@ -2850,7 +2850,7 @@ theorem rulesTrace_walk
               subst htp'
               obtain ⟨tyAC', hcanC', _, htmC'⟩ :=
                 annotation_canon_range_exact ht hct_lvls_lt (LoadedReads.blockSelf_key t B ms)
-                  (L1.BlobReadAgreement.of_mem hblobC) rtyC builtC hplanC hblC hreadC hlbbC hdefC
+                  (Ingress.BlobReadAgreement.of_mem hblobC) rtyC builtC hplanC hblC hreadC hlbbC hdefC
               have htyAC_eq : tyAC' = tyAC := Option.some.inj (hcanC'.symm.trans hcanC)
               subst tyAC'
               have htmC_pos : Decl.TmExact (Core.keyOf t) 0 zeroGhost m155 0
@@ -2860,7 +2860,7 @@ theorem rulesTrace_walk
               have hcty_cells : ∀ a, AddrIn m155 x_cty a →
                   (∃ ci, env.find? (Core.keyOf t (ixAddr a)) = some ci) ∨ ixAddr a ∈ srcAs.map ixAddr := by
                 intro a ha
-                rcases L1.RawConvExpr.addrIn_used rtyC a ha with ⟨i_r, hi_u, hi_ref⟩ | hrec_mem
+                rcases Ingress.RawConvExpr.addrIn_used rtyC a ha with ⟨i_r, hi_u, hi_ref⟩ | hrec_mem
                 · have huB : UsedRef E₀ B (ixAddr a) := by
                     refine ⟨cb, i_r, hB.record, ?_, by rw [← Array.getElem?_toList]; exact hi_ref⟩
                     unfold usedRefIdxs; rw [hB.muts]
@@ -3046,10 +3046,10 @@ structure RecMemberData (calls : List (Call F)) (bAddr : _root_.Address)
   hty_lbb : ty₀.looseBVarsBounded 0 = true
   hty_def : ty₀.allLevelParamsDefined ps = true
   hrules_sc : ∀ rl ∈ rules₀, rl.rhs.looseBVarsBounded 0 = true ∧ rl.rhs.allLevelParamsDefined ps = true
-  hcanon_ty : LoadedReads.canonAnn crb ps ((L1.mutsRootOffset rs.toList k : Nat) : F) rc.typ ty₀ = some tyA
+  hcanon_ty : LoadedReads.canonAnn crb ps ((Ingress.mutsRootOffset rs.toList k : Nat) : F) rc.typ ty₀ = some tyA
   hcanon_rules : ∃ rlsCan,
     LoadedReads.canonRules crb ps rc.k rc.params.toNat
-      (((L1.mutsRootOffset rs.toList k : Nat) : F) + 1) rc.rules.toList rules₀ = some rlsCan ∧
+      (((Ingress.mutsRootOffset rs.toList k : Nat) : F) + 1) rc.rules.toList rules₀ = some rlsCan ∧
     List.Forall₂ (fun (rl : RecRule .anon) (rhsA : KExpr) => rl.rhs = rhsA) rlsCan rhss
   -- Scoping (`typesScoped`) and `check_recs` header counts
   hment : ∀ b ∈ recAs, tyA.mentionsConst (Core.keyOf t (ixAddr b)) = false
@@ -3436,14 +3436,14 @@ private theorem looseBVarsBounded_getAppArgs (d : Nat) :
 
 private theorem rules_length_eq
     {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ} {sharing : List Ixon.Expr}
-    {blobs : List (_root_.Address × ByteArray)} {tree : L1.BinderTreeData}
+    {blobs : List (_root_.Address × ByteArray)} {tree : Ingress.BinderTreeData}
     {j : Nat} {root : F} {rus : List Ixon.RecursorRule} {p r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
-    (hr : L1.RulesTraceRep refs recurAddrs univs sharing blobs tree h j root rus p)
+    (hr : Ingress.RulesTraceRep refs recurAddrs univs sharing blobs tree h j root rus p)
     (ev : ObsFn Obs.W Obs.Names.«Lists::length<KernelTypes::KRecRule>» [p] h r h' cs) :
     r = .field (rus.length : F) ∧ h' = h := by
   have htoRep : ∀ {j' : Nat} {root' : F} {l : List Ixon.RecursorRule} {q : SourceValue F},
-      L1.RulesTraceRep refs recurAddrs univs sharing blobs tree h j' root' l q →
+      Ingress.RulesTraceRep refs recurAddrs univs sharing blobs tree h j' root' l q →
       RepList krrListEnum (fun _ _ _ => True) h l q := by
     intro j' root' l q htr
     induction htr with
@@ -3515,26 +3515,26 @@ theorem recMember_of_cons
     (hsrc_rep : RepList addrListEnum (Bytes.RepAddressRef addrTy) h (typeAs ++ ctorAs ++ recAs) src)
     (hdst_rep : RepList addrListEnum (Bytes.RepAddressRef addrTy) h dstAs dst)
     (haset_rep : AddrMapAll addrMapEnum (fun _ k _ => AdvChecked calls bAddr t lim csFam advAs k) h aset)
-    {bytes : List UInt8} (hstr_s : L1.Stream h bytes s)
+    {bytes : List UInt8} (hstr_s : Ingress.Stream h bytes s)
     (hvalItem : MemberValItem calls bAddr t E₀ lim csFam advAs
       (typeAs ++ ctorAs ++ recAs) dstAs recAs aRec aMd) :
     Nonempty (RecMemberData.{u} calls bAddr t E₀ lim csFam B rb cb crb ms rs advAs
       (typeAs ++ ctorAs ++ recAs) dstAs recAs nonrecsBlk nonrecsTys k rc aRec aMd) ∧
-    ∃ remBytes, L1.Stream C.m892 remBytes C.s' := by
+    ∃ remBytes, Ingress.Stream C.m892 remBytes C.s' := by
   have htwf : t.wf = true := by unfold Ix.Kernel.RoleTable.wf; rw [ht]; rfl
   have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
   let srcAs := typeAs ++ ctorAs ++ recAs
   -- 1. Unpack `C.evGetRec` (`Ingress::get_ci [C.x]`)
   have hsub_getRec : CallSub C.evGetRec.cs calls := fun cl hcl => hsub cl (C.evGetRec.sub cl hcl)
   obtain ⟨_, cRec, hhRec, hbaRec, hexRec, -, htrRec⟩ :=
-    L1.get_ci_block_trace_spec (bounded_sub hsub_getRec hbd) haRec_rep C.evGetRec.obs
+    Ingress.get_ci_block_trace_spec (bounded_sub hsub_getRec hbd) haRec_rep C.evGetRec.obs
   have hrecAtRec : Ix.Cert.recordAt E₀ (ixAddr aRec) = some (memberProjection rb k (.recr rc)) := by
     rw [← hS.recordOf_eq_recordAt, haRec_eq, ← LoadedReads.memberAddr_recr]
     exact hR.members k (.recr rc) hrk
   have hcRec_eq : cRec = memberProjection rb k (.recr rc) :=
     hS.record_eq hrecAtRec (Core.hashed_mono hsub_getRec hhRec) hbaRec hexRec
   subst hcRec_eq
-  unfold L1.GetCIBlockTraceResult at htrRec
+  unfold Ingress.GetCIBlockTraceResult at htrRec
   simp only [memberProjection] at htrRec
   obtain ⟨_, _, crb', rs', rc', blobs, tree, vRec, hhBlk, hbaBlk, hexBlk, hmuts', hrk', hhp,
       built, hldv, hrepRec⟩ := htrRec
@@ -3566,14 +3566,14 @@ theorem recMember_of_cons
   have hnotK : rc.k = false := by
     cases hk_b : rc.k with
     | false => rfl
-    | true => rw [hk_b] at hkf_eq; simp [L1.repBoolField] at hkf_eq
+    | true => rw [hk_b] at hkf_eq; simp [Ingress.repBoolField] at hkf_eq
   have hblob : ∀ x bs, (x, bs) ∈ blobs → E₀.blobs.get? x = some bs := by
     intro x bs hm
     obtain ⟨hhx, hxa⟩ := hhp (x, bs) hm
     have hrun := hS.blobs bs (Core.hashed_mono hsub_getRec hhx)
     rwa [hxa] at hrun
-  have hagree : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
-    L1.BlobReadAgreement.of_mem hblob
+  have hagree : Ingress.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
+    Ingress.BlobReadAgreement.of_mem hblob
   let rP := rc.params.toNat + rc.motives.toNat + rc.minors.toNat
   let mI := rP + rc.indices.toNat
   have hrp_eq : C.rp = .field (rP : F) := by
@@ -3726,13 +3726,13 @@ theorem recMember_of_cons
       have hsub_par : CallSub C.evGetParent.cs calls :=
         fun cl hcl => hsub cl (C.evGetParent.sub cl hcl)
       obtain ⟨-, _, cPar, _, hhPar, hbaPar, hexPar, -, -, -, hrawPar⟩ :=
-        L1.get_ci_spec (bounded_sub hsub_par hbd) haPar_ref C.evGetParent.obs
+        Ingress.get_ci_spec (bounded_sub hsub_par hbd) haPar_ref C.evGetParent.obs
       have hrecAtPar : Ix.Cert.recordAt E₀ (ixAddr aPar) = some cmM := by
         rw [haPar_eq_indM, ← hS.recordOf_eq_recordAt]; exact hrecM
       have hcPar_eq : cPar = cmM :=
         hS.record_eq hrecAtPar (Core.hashed_mono hsub_par hhPar) hbaPar hexPar
       subst hcPar_eq
-      unfold L1.GetCIRawResult at hrawPar
+      unfold Ingress.GetCIRawResult at hrawPar
       rw [hinfoM] at hrawPar
       obtain ⟨_, _, _, _, _, vPar, _, _, _, _, _, _, hldPar, hrawIndPar⟩ := hrawPar
       obtain ⟨_, _, _, _, _, _, _, _, _, _, hvPar_eq, _⟩ := hrawIndPar
@@ -3827,7 +3827,7 @@ theorem recMember_of_cons
     subst mLen
     have hrules_len_lt : rc.rules.size < 72057594037927936 := by
       have htoRep : ∀ {j' : Nat} {root' : F} {l : List Ixon.RecursorRule} {q : SourceValue F},
-          L1.RulesTraceRep crb.refs.toList (L1.blockRecurAddrs rb rs.toList) crb.univs.toList
+          Ingress.RulesTraceRep crb.refs.toList (Ingress.blockRecurAddrs rb rs.toList) crb.univs.toList
             crb.sharing.toList blobs tree C.m838 j' root' l q →
           RepList krrListEnum (fun _ _ _ => True) C.m838 l q := by
         intro j' root' l q htr
@@ -3896,12 +3896,12 @@ theorem recMember_of_cons
         -- `eCi` loads `aInd0` (same record `cmM` as `aIndM`), so `xinp = .field (indM.params.toNat : F)`
         have hsub155 : CallSub cs155 calls := fun cl hcl => hsub_rmp cl (by rw [hcE]; simp [hcl])
         obtain ⟨-, _, cI, _, hhI, hbaI, hexI, -, -, -, hrawI⟩ :=
-          L1.get_ci_spec (bounded_sub hsub155 hbd) haInd0 eCi
+          Ingress.get_ci_spec (bounded_sub hsub155 hbd) haInd0 eCi
         have hrecAtI : Ix.Cert.recordAt E₀ (ixAddr aInd0) = some cmM := by
           rw [haInd0_eq, ← hS.recordOf_eq_recordAt]; exact hrecM
         have hcI_eq : cI = cmM := hS.record_eq hrecAtI (Core.hashed_mono hsub155 hhI) hbaI hexI
         subst hcI_eq
-        unfold L1.GetCIRawResult at hrawI
+        unfold Ingress.GetCIRawResult at hrawI
         rw [hinfoM] at hrawI
         obtain ⟨_, _, cbI, msI, indI, vI, hhBI, hbaBI, hexBI, -, hmutsI, hmsI, hldI, hrawIndI⟩ := hrawI
         have hcbI_eq : cbI = cbM :=
@@ -4050,7 +4050,7 @@ theorem recMember_of_cons
     -- `UsedRef E₀ rb` for every `AddrIn C.m67 C.ty a`, and in particular for `ixAddr aIndM`
     have hty_used_67 : ∀ a, AddrIn C.m67 C.ty a → UsedRef E₀ rb (ixAddr a) := by
       intro a ha
-      rcases L1.RawConvExpr.addrIn_used rty a ha with ⟨i_r, hi_u, hi_ref⟩ | hnil
+      rcases Ingress.RawConvExpr.addrIn_used rty a ha with ⟨i_r, hi_u, hi_ref⟩ | hnil
       · refine ⟨crb, i_r, hR.record, ?_, by rw [← Array.getElem?_toList]; exact hi_ref⟩
         unfold usedRefIdxs; rw [hR.muts]
         rcases hi_u with hi_e | ⟨s_sh, hs_sh, hi_s⟩
@@ -4104,7 +4104,7 @@ theorem recMember_of_cons
         hlenNR hctorLookup hrecRefs hrk hperm hps_len hlvls_lt (by omega) (by omega) hindM_np_lt
         hmajA hlvls_def hpins_ok hblob built hbBlkM_eq hg_eq.symm haMd_in_dst
         (rus := rc.rules.toList) (fun _ hm => hm)
-        (j := 0) (root := ((L1.mutsRootOffset rs.toList k : Nat) : F) + 1)
+        (j := 0) (root := ((Ingress.mutsRootOffset rs.toList k : Nat) : F) + 1)
         (by rw [Nat.zero_add, Array.length_toList]; exact hcntRules) hindM_nc_lt hsub_go
         (RCRep.mono ext_h_mInd hrc) (Bytes.repAddressRef_heapMono₂ addrTy ext_h_mInd haMd_rep)
         hbBlkM_ref (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_mInd hsrc_rep)
@@ -4246,7 +4246,7 @@ theorem checkRecs_walk
       RepList addrListEnum (Bytes.RepAddressRef addrTy) h (typeAs ++ ctorAs ++ recAs) src →
       RepList addrListEnum (Bytes.RepAddressRef addrTy) h dstAs dst →
       AddrMapAll addrMapEnum (fun _ k _ => AdvChecked calls bAddr t lim csFam advAs k) h aset →
-      L1.Stream h bytes s →
+      Ingress.Stream h bytes s →
       ObsFn Obs.W "KernelModeled::check_recs"
         [rcV, tys, recsPtr, modsPtr, src, dst, aset, s, n, .field (k0 : F), np, uo, bnl, fam, form]
         h r h' cs →

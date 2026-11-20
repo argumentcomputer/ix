@@ -69,7 +69,7 @@ theorem admittedOverlay_draws {V : IxVM.Refinement.View} {b : Admission.Binding}
 theorem admittedOverlay_authentic_exact {V : IxVM.Refinement.View} {b : Admission.Binding}
     (w : ReaderAdmissionWitness V b) {calls : List (Call F)} {trace : Ixon.Env}
     (keepTrace : _root_.Address → Prop) (hload : IxVM.Consistency.LoadedBy calls trace)
-    (hdecoded : L1.EnvDecoded trace) :
+    (hdecoded : Ingress.EnvDecoded trace) :
     (∀ a lc, (admittedOverlay w trace keepTrace).consts.get? a = some lc →
       _root_.Address.blake3Pure lc.rawBytes = a ∧
       ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c) ∧
@@ -84,7 +84,7 @@ address in the role order was stored in the witness environment. -/
 theorem admittedOverlay_recordAt {V : IxVM.Refinement.View} {b : Admission.Binding}
     (w : ReaderAdmissionWitness V b) {calls : List (Call F)} {trace : Ixon.Env}
     (keepTrace : _root_.Address → Prop) (hload : IxVM.Consistency.LoadedBy calls trace)
-    (hdecoded : L1.EnvDecoded trace) {extra : List ByteArray}
+    (hdecoded : Ingress.EnvDecoded trace) {extra : List ByteArray}
     (hno : ¬ V.HashedCollision extra calls)
     {a : _root_.Address} (ha : a ∈ w.order) {c : Ixon.Constant}
     (hrecord : Ix.Cert.recordAt w.env a = some c) :
@@ -122,7 +122,7 @@ theorem admittedOverlay_recordAt {V : IxVM.Refinement.View} {b : Admission.Bindi
 presence in the admission store was initially known. -/
 theorem admitted_trace_recordAt {V : IxVM.Refinement.View} {b : Admission.Binding}
     (w : ReaderAdmissionWitness V b) {calls : List (Call F)} {trace : Ixon.Env}
-    (hload : IxVM.Consistency.LoadedBy calls trace) (hdecoded : L1.EnvDecoded trace)
+    (hload : IxVM.Consistency.LoadedBy calls trace) (hdecoded : Ingress.EnvDecoded trace)
     {extra : List ByteArray} (hno : ¬ V.HashedCollision extra calls)
     {a : _root_.Address} (ha : a ∈ w.order) (hpresent : w.env.consts.contains a = true)
     {c : Ixon.Constant} (hrecord : Ix.Cert.recordAt trace a = some c) :
@@ -148,7 +148,7 @@ retained trace record. Missing role-order owners do not retain unrelated trace r
 theorem admittedOverlay_recordAt_inv {V : IxVM.Refinement.View} {b : Admission.Binding}
     (w : ReaderAdmissionWitness V b) {calls : List (Call F)} {trace : Ixon.Env}
     (keepTrace : _root_.Address → Prop) (hload : IxVM.Consistency.LoadedBy calls trace)
-    (hdecoded : L1.EnvDecoded trace) {extra : List ByteArray}
+    (hdecoded : Ingress.EnvDecoded trace) {extra : List ByteArray}
     (hno : ¬ V.HashedCollision extra calls) {a : _root_.Address} {c : Ixon.Constant}
     (hrecord : Ix.Cert.recordAt (admittedOverlay w trace keepTrace) a = some c) :
     (a ∈ w.order ∧ Ix.Cert.recordAt w.env a = some c) ∨
@@ -204,7 +204,7 @@ theorem admittedCore_good {V : IxVM.Refinement.View} {b : Admission.Binding}
 
 theorem admittedCore_decoded {V : IxVM.Refinement.View} {b : Admission.Binding}
     (w : ReaderAdmissionWitness V b) {trace : Ixon.Env} (keepTrace : _root_.Address → Prop)
-    (hdecoded : L1.EnvDecoded trace) : L1.EnvDecoded (admittedCore w trace keepTrace) := by
+    (hdecoded : Ingress.EnvDecoded trace) : Ingress.EnvDecoded (admittedCore w trace keepTrace) := by
   apply subEnv_envDecoded hdecoded
   intro a raw c hm
   rcases List.mem_append.mp hm with role | fallback
@@ -225,7 +225,7 @@ theorem admittedCore_not_internalCollision {V : IxVM.Refinement.View} {b : Admis
     (keepTrace : _root_.Address → Prop) (claimBytes : ByteArray)
     (hload : IxVM.Consistency.LoadedBy calls trace)
     (hno : ¬ V.HashedCollision (claimBytes :: b.bytes :: IxVM.Consistency.readerImages V) calls) :
-    ¬ L1.EnvInternalCollision (admittedCore w trace keepTrace) := by
+    ¬ Ingress.EnvInternalCollision (admittedCore w trace keepTrace) := by
   rintro ⟨a, bytes, lc, hblob, hconst, hdifferent⟩
   rcases addBlobSupplements_get?_some_inv trace.blobs (Ix.Cert.blobsOf w.env w.order) hblob with
     htraceBlob | ⟨_, hroleBlob⟩

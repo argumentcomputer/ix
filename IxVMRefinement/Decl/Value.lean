@@ -689,7 +689,7 @@ private def zeroGhost : Nat → KExpr := fun _ => .sort .zero
 
 /-- Assemble `ConstantValRunJ rulesJ` from `validate_expr_well_scoped` + `k_ensure_sort` on an
 exact closed type representation with positional level parameters `List.range n`. -/
-theorem constantValRunJ_of_front (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+theorem constantValRunJ_of_front (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     {env : Ix.Kernel.Env .anon} {cv : ConstantVal .anon} {type' : KExpr}
     {rc nl ty v55 v92 : SourceValue F} {h m56 m93 m124 : Heap F}
     {cs66 cs103 : List (Call F)}
@@ -742,7 +742,7 @@ theorem constantValRunJ_of_front (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
 
 /-- Assemble `ValueFrontRunJ rulesJ` from `validate_expr_well_scoped` + `k_check` on exact closed
 type and value representations with positional level parameters `List.range n`. -/
-theorem valueFrontRunJ_of_front (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
+theorem valueFrontRunJ_of_front (hCore : IxVM.Consistency.Core baseSeams) {c : Ctx}
     {env : Ix.Kernel.Env .anon} {cv : ConstantVal .anon} {value type' value' : KExpr}
     {rc ty val v_sc r_chk : SourceValue F} {h₀ h_sc h_pre h_chk h_chk' h' : Heap F}
     {cs_sc cs_chk : List (Call F)}
@@ -802,15 +802,15 @@ theorem thm_isZero_of_level_equal (hLevels : IxVM.Consistency.Levels)
 
 /-! ## Assembly, loader, and role-validation companions (`DeclValueExtraFacts`) -/
 
-/-- Companions owed by the record loader (L1), role/standing validation (L6), and declaration-order
-assembly (L7) for standalone value, axiom, theorem, opaque, quotient, and pinned-basis steps. -/
+/-- Companions owed by record ingress, role/standing validation (`Claim`), and declaration-order
+assembly (`Assembly`) for standalone value, axiom, theorem, opaque, quotient, and pinned-basis steps. -/
 structure DeclValueExtraFacts (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
     (d : Declaration .anon) : Prop where
-  /-- L6 role-lookup family specifications (`Core.Specs.Roles.Fn.spec`). -/
+  /-- Claim-phase role-lookup family specifications (`Core.Specs.Roles.Fn.spec`). -/
   rolesSpec : RolesSpec
   /-- Distinct names in `installs d` (reader block/basis invariant). -/
   installsNodup : ((IxVM.Consistency.installs d).map (·.name)).Nodup
-  /-- Freshness of `installs d` in the prefix `env` (L7 assembly topological order). -/
+  /-- Freshness of `installs d` in the prefix `env` (assembly topological order). -/
   installsFresh : ∀ ci₀ ∈ IxVM.Consistency.installs d, env.find? ci₀.name = none
   /-- For `.quotDecl .type`, `.basisDecl .quotK`, or pinned `.quotK` block, `Eq` is already stored
   as `eqA` (validated in an earlier role group before `.quot`). -/
@@ -819,7 +819,7 @@ structure DeclValueExtraFacts (calls : List (Call F)) (env : Ix.Kernel.Env .anon
       ∃ block nP, d = .indDecl block nP ∧ Ix.Kernel.basisPinHit block = some .quotK) →
       env.find? Ix.Kernel.eqName = some Ix.Kernel.eqA
   /-- Observed sub-derivation, exact loader witness, safety tag, empty user-axiom map, and
-  role-context companions for a `check_const` call in `S0.Checked` on standalone value/axiom
+  role-context companions for a `check_const` call in `BaseSeams.Checked` on standalone value/axiom
   declarations. -/
   checkedValue :
     ∀ (E : Ixon.Env) (t : Ix.Kernel.RoleTable) (cl : Call F)
@@ -828,7 +828,7 @@ structure DeclValueExtraFacts (calls : List (Call F)) (env : Ix.Kernel.Env .anon
       t.wf = true →
       Good ⟨E, env, t, none⟩ calls →
       cl ∈ calls → cl.name = "KernelCheck::check_const" → cl.args = [rc, v, ap] →
-      RCRep t lim cl.heap rc → S0.addr cl.heap ap a → keyOf t a = ci₀.name →
+      RCRep t lim cl.heap rc → BaseSeams.addr cl.heap ap a → keyOf t a = ci₀.name →
       CIRep (keyOf t) cl.heap v ci → IxVM.Consistency.StoredAs ci ci₀ →
       ci₀ ∈ IxVM.Consistency.installs d →
       (DeclStoreInv env → CtxRoleFacts ⟨E, env, t, lim⟩ ∧ LoadFacts ⟨E, env, t, lim⟩) ∧
@@ -856,7 +856,7 @@ structure DeclValueExtraFacts (calls : List (Call F)) (env : Ix.Kernel.Env .anon
           ValRepExact (keyOf t) cl.heap nl ty ci.toConstantVal ∧
           TmCExact (keyOf t) cl.heap (posOf ci.toConstantVal.levelParams value') val ∧
           IxVM.Consistency.Annotates value' value)
-  /-- L6 role-group validation (`validate_typed` / `validate_group`) pins `propext` and `choice`
+  /-- Claim-phase role-group validation (`validate_typed` / `validate_group`) pins `propext` and `choice`
   against their standard signatures once their role is in force. -/
   stdAxiomPinned :
     ∀ (E : Ixon.Env) (t : Ix.Kernel.RoleTable) (lim : Option Nat)
@@ -865,7 +865,7 @@ structure DeclValueExtraFacts (calls : List (Call F)) (env : Ix.Kernel.Env .anon
       Ctx.inForce ⟨E, env, t, lim⟩ ro →
       (ro = .propext ∨ ro = .choice) → cvA.name = .role ro →
       Ix.Kernel.stdAxiomOk env cvA = true
-  /-- L6 operation validation (`KernelRoles::validate_op`) supplies the structural `Nat`
+  /-- Claim-phase operation validation (`KernelRoles::validate_op`) supplies the structural `Nat`
   recurrence equations and `div`/`mod` certificate derivations when `cv.name` is a certified
   `Nat` operation. -/
   defnOpCertified :
@@ -890,9 +890,9 @@ structure DeclValueExtraFacts (calls : List (Call F)) (env : Ix.Kernel.Env .anon
 
 /-- Step preservation for `.axiomDecl cv` (both empty installs at `quotSoundName` / `inertKey` and
 certified standard axioms `propext` / `choice`). -/
-theorem axiomDecl_step (hCore : IxVM.Consistency.Core S₀)
+theorem axiomDecl_step (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon} {cv : ConstantVal .anon}
-    (hchk : S0.Checked calls env (.axiomDecl cv))
+    (hchk : BaseSeams.Checked calls env (.axiomDecl cv))
     (hx : DeclValueExtraFacts calls env (.axiomDecl cv)) :
     ∃ env₂, IxVM.Consistency.InstallStep env (.axiomDecl cv) env₂ ∧
       ∀ (V : Type u) [Ix.Kernel.SetTheory V], DeclInv V env → DeclInv V env₂ := by
@@ -978,10 +978,10 @@ theorem axiomDecl_step (hCore : IxVM.Consistency.Core S₀)
       rw [← hcvA_eq]
 
 /-- Step preservation for `.defnDecl cv value hint`. -/
-theorem defnDecl_step (hCore : IxVM.Consistency.Core S₀)
+theorem defnDecl_step (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {cv : ConstantVal .anon} {value : KExpr} {hint : Ix.Kernel.ReducibilityHint}
-    (hchk : S0.Checked calls env (.defnDecl cv value hint))
+    (hchk : BaseSeams.Checked calls env (.defnDecl cv value hint))
     (hx : DeclValueExtraFacts calls env (.defnDecl cv value hint)) :
     ∃ env₂, IxVM.Consistency.InstallStep env (.defnDecl cv value hint) env₂ ∧
       ∀ (V : Type u) [Ix.Kernel.SetTheory V], DeclInv V env → DeclInv V env₂ := by
@@ -1085,10 +1085,10 @@ theorem defnDecl_step (hCore : IxVM.Consistency.Core S₀)
 
 /-- Step preservation for `.thmDecl cv value`, storing the annotated theorem value `value'` so
 `ThmValOk` and `IxVM.Consistency.ThmVal` hold. -/
-theorem thmDecl_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core S₀)
+theorem thmDecl_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {cv : ConstantVal .anon} {value : KExpr}
-    (hchk : S0.Checked calls env (.thmDecl cv value))
+    (hchk : BaseSeams.Checked calls env (.thmDecl cv value))
     (hx : DeclValueExtraFacts calls env (.thmDecl cv value)) :
     ∃ env₂, IxVM.Consistency.InstallStep env (.thmDecl cv value) env₂ ∧
       ∀ (V : Type u) [Ix.Kernel.SetTheory V], DeclInv V env → DeclInv V env₂ := by
@@ -1189,10 +1189,10 @@ theorem thmDecl_step (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consisten
       rw [← hcvA_eq]; rfl
 
 /-- Step preservation for `.opaqueDecl cv value` (installed as `.axiomInfo cvA`). -/
-theorem opaqueDecl_step (hCore : IxVM.Consistency.Core S₀)
+theorem opaqueDecl_step (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {cv : ConstantVal .anon} {value : KExpr}
-    (hchk : S0.Checked calls env (.opaqueDecl cv value))
+    (hchk : BaseSeams.Checked calls env (.opaqueDecl cv value))
     (hx : DeclValueExtraFacts calls env (.opaqueDecl cv value)) :
     ∃ env₂, IxVM.Consistency.InstallStep env (.opaqueDecl cv value) env₂ ∧
       ∀ (V : Type u) [Ix.Kernel.SetTheory V], DeclInv V env → DeclInv V env₂ := by
@@ -1340,9 +1340,9 @@ theorem pinnedIndDecl_step {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
 leaving only unpinned `.indDecl` (`basisPinHit block = none`) for the modeled and native inductive
 routes. -/
 theorem valueOrPinnedDecl_step (hLevels : IxVM.Consistency.Levels)
-    (hCore : IxVM.Consistency.Core S₀)
+    (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon} {d : Declaration .anon}
-    (hchk : S0.Checked calls env d)
+    (hchk : BaseSeams.Checked calls env d)
     (hx : DeclValueExtraFacts calls env d)
     (hind : ∀ block nP, d = .indDecl block nP → Ix.Kernel.basisPinHit block = none →
       ∃ env₂, IxVM.Consistency.InstallStep env (.indDecl block nP) env₂ ∧

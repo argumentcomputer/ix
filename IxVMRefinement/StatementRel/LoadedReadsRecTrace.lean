@@ -25,7 +25,7 @@ set_option linter.unnecessarySeqFocus false
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics Aiur.Library Aiur.Library.List
 
-namespace IxVM.Refinement.L1
+namespace IxVM.Refinement.Ingress
 
 open IxVM (F)
 open IxVM.Refinement.Obs
@@ -393,4 +393,4 @@ theorem get_ci_rprj_trace_spec {b : Bytes.Address} {idx : F}
     built, loadValue_snoc m167 v166,
     htrace.mono ext_snoc (fun _ hm => hm)⟩
 
-end IxVM.Refinement.L1
+end IxVM.Refinement.Ingress

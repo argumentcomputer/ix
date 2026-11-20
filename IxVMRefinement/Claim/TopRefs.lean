@@ -82,7 +82,7 @@ under `Mk(tbl, n, Nil)` with `n` at most the group of the role bound there; neve
 theorem role_of_zero_lim {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {lim : Option Nat} {ro : Ix.Kernel.Role} {x_rc x_a : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
-    (hrc : RCLimRep t bAddr lim h x_rc) (ha : S0.addr h x_a a)
+    (hrc : RCLimRep t bAddr lim h x_rc) (ha : BaseSeams.addr h x_a a)
     (hof : t.addressOf? ro = some a)
     (ev : ObsFn W "KernelRoles::role_of" [x_rc, x_a] h (.field 0) h' calls) :
     ∃ n, lim = some n ∧ n ≤ Ix.SpecDigest.groupOf ro := by
@@ -173,7 +173,7 @@ theorem refAllowed_inert {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
       obtain ⟨rfl, htbl⟩ := role_ctx_table_lim_spec hrc ev14
       obtain ⟨rfl, rfl, -⟩ := addr_index_lookup htbl hb ev58 ev36
       have ext := ev147.heap_extends
-      exact role_of_zero_lim (hrc.mono ext) (S0.addr_mono ext hb) hof ev191
+      exact role_of_zero_lim (hrc.mono ext) (BaseSeams.addr_mono ext hb) hof ev191
     | .other_other_other (ev14 := ev14) (ev58 := ev58) (ev36 := ev36) (hne130 := hne)
         (ev147 := ev147) (he220 := he) .. =>
       obtain ⟨rfl, htbl⟩ := role_ctx_table_lim_spec hrc ev14

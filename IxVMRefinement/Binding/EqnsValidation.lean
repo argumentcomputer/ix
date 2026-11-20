@@ -289,7 +289,7 @@ private theorem notMuts_of_get_ci {calls : List (Call F)} {t : Ix.Kernel.RoleTab
     (hrec : recordOf R' (ixAddr a) = some c) :
     ∀ ms, c.info ≠ .muts ms := by
   have hbound : Bounded cs := RomBound.bounded_mono hrun.bounded hsub
-  obtain ⟨-, bytes, E_ld, hhash, hblake, -, hL1⟩ := L1.get_ci_loadedL1_spec hbound ha ev
+  obtain ⟨-, bytes, E_ld, hhash, hblake, -, hL1⟩ := Ingress.get_ci_loadedRecords_spec hbound ha ev
   have hrecA : Ix.Cert.recordAt ρ.E₀ (ixAddr a) = some c := by
     rw [← hrun.runStore.recordOf_eq_recordAt]
     unfold recordOf at hrec ⊢
@@ -297,9 +297,9 @@ private theorem notMuts_of_get_ci {calls : List (Call F)} {t : Ix.Kernel.RoleTab
     | none => rw [hg_c] at hrec; cases hrec
     | some lc => rw [hg_c] at hrec; rw [hadm.loaded _ _ hg_c]; exact hrec
   obtain ⟨-, -, _, _, hraw⟩ :=
-    LoadedReads.loadedL1_record hrun.runStore hsub hhash hblake hL1 hrecA
+    LoadedReads.loadedRecords_record hrun.runStore hsub hhash hblake hL1 hrecA
   intro ms hms
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hms] at hraw
   exact hraw
 

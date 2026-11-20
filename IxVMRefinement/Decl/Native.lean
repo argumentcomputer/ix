@@ -10,7 +10,7 @@ combining:
 * **Recursor-less native blocks** (`nativePartsNoRec? nPd block = some p₀`), refined to
   `DeclNativeNoRecRunJ` + `InstallStep` + `DeclInv` in `IxVMRefinement.Decl.NativeFront`.
 * **Post-install native structure & capability lemmas** (`nativeCapsAt`, `nativeCaps`,
-  `checkNativeTable`, `ctorTeleOk`, `ctorZeroOk`, `FieldSortsJ`) used by `L7` when discharging
+  `checkNativeTable`, `ctorTeleOk`, `ctorZeroOk`, `FieldSortsJ`) used by `Assembly` when discharging
   `LoadFacts` (`projTables`, `projTablesAt`, `projTablesGuard`, `unitLike`, `eta`, `etaIota`).
 -/
 
@@ -48,7 +48,7 @@ theorem nativeParts?_and_nativePartsNoRec?_disjoint {nPd : Nat} {block : List KC
 
 /-! ## Section 2: Unified `NativeCheckedExtra` & Top-Level Native Block Dispatcher -/
 
-/-- Extra `L7 → L5` record/role and specification-bridge hypotheses for an unpinned canonical
+/-- Extra `Assembly → Decls` record/role and specification-bridge hypotheses for an unpinned canonical
 native `.indDecl block nPd` declaration (either with a recursor record or recursor-less). -/
 inductive NativeCheckedExtra (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
     (block : List KConstantInfo) (nPd : Nat) : Prop where
@@ -66,7 +66,7 @@ inductive NativeCheckedExtra (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
 /-- Unified `DeclRunJ` + `InstallStep` refinement for unpinned canonical native `.indDecl` blocks
 (covering both `nativeParts?` with recursor and `nativePartsNoRec?` without recursor). -/
 theorem nativeInd_step (hLevels : IxVM.Consistency.Levels)
-    (hCore : IxVM.Consistency.Core S₀)
+    (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {block : List KConstantInfo} {nPd : Nat}
     (hS : DeclStoreInv env)
@@ -80,12 +80,12 @@ theorem nativeInd_step (hLevels : IxVM.Consistency.Levels)
   · obtain ⟨env₂, hinst, hrun⟩ := nativeNoRec_step hLevels hCore hpin hparts hS hex
     exact ⟨env₂, hinst, declRunJ_of_nativeNoRec hpin hparts hrun⟩
 
-/-- Unified `DeclInv`-preserving `L5` step for unpinned canonical native `.indDecl` blocks. -/
+/-- Unified `DeclInv`-preserving declaration step for unpinned canonical native `.indDecl` blocks. -/
 theorem nativeInd_declInv_step (hLevels : IxVM.Consistency.Levels)
-    (hCore : IxVM.Consistency.Core S₀)
+    (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Ix.Kernel.Env .anon}
     {block : List KConstantInfo} {nPd : Nat}
-    (hchk : S0.Checked calls env (.indDecl block nPd))
+    (hchk : BaseSeams.Checked calls env (.indDecl block nPd))
     (extra : NativeCheckedExtra calls env block nPd) :
     ∃ env₂,
       IxVM.Consistency.InstallStep env (.indDecl block nPd) env₂ ∧

@@ -188,7 +188,7 @@ def NativeRecArm (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel
     (levels type parameters indices motives minors rules k unsafeFlag block position : SourceValue F)
     (cs_load cs_chk : List (Call F)),
     Claim.RCFullRep t bAddr n h_pre rc ∧ Claim.RCFullRep t bAddr n m_chk rc ∧
-    Core.S0.addr h_pre ap A ∧ Core.S0.addr m_chk ap A ∧
+    Core.BaseSeams.addr h_pre ap A ∧ Core.BaseSeams.addr m_chk ap A ∧
     ObsFn Obs.W "Ingress::get_ci" [ap] h_pre ptr m_chk cs_load ∧
     (∀ cl ∈ cs_load, cl ∈ calls) ∧
     loadValue m_chk ptr = .ok (.construct "KernelTypes::KConstantInfo" "Rec"
@@ -210,7 +210,7 @@ def RecArmRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (A : _root_.Addr
     (levels type parameters indices motives minors rules k unsafeFlag block position : SourceValue F)
     (cs_load cs_chk : List (Call F)),
     Core.RCRep t lim h_pre rc ∧ Core.RCRep t lim m_chk rc ∧
-    Core.S0.addr h_pre ap A ∧ Core.S0.addr m_chk ap A ∧
+    Core.BaseSeams.addr h_pre ap A ∧ Core.BaseSeams.addr m_chk ap A ∧
     ObsFn Obs.W "Ingress::get_ci" [ap] h_pre ptr m_chk cs_load ∧
     (∀ cl ∈ cs_load, cl ∈ calls) ∧
     loadValue m_chk ptr = .ok (.construct "KernelTypes::KConstantInfo" "Rec"
@@ -298,10 +298,10 @@ theorem recParent_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
   subst haA
   -- the load of the record, traced
   obtain ⟨rawBytes, c', hh, hba, hex, -, hres'⟩ :=
-    L1.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
+    Ingress.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
   have hcc : c' = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hh) hba hex
   subst c'
-  unfold L1.GetCIBlockTraceResult at hres'
+  unfold Ingress.GetCIBlockTraceResult at hres'
   rw [hinfo] at hres'
   obtain ⟨blobs, tree, v, hhp, built, hldv, htr⟩ := hres'
   rw [hld] at hldv

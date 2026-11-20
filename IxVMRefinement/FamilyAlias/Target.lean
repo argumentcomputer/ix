@@ -50,7 +50,7 @@ a group limit, or assumed), the call and its calls in the run. -/
 def FamilyCallAtLim (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
     (B rb : _root_.Address) (lim : Option Nat) (cs : List (Call F)) : Prop :=
   ∃ (h h' : Heap F) (rc xb xrb r : SourceValue F),
-    Claim.RCLimRep t bAddr lim h rc ∧ Core.S0.addr h xb B ∧ Core.S0.addr h xrb rb ∧
+    Claim.RCLimRep t bAddr lim h rc ∧ Core.BaseSeams.addr h xb B ∧ Core.BaseSeams.addr h xrb rb ∧
     ObsFn Obs.W "KernelModeled::check_family" [rc, xb, xrb] h r h' cs ∧
     (⟨"KernelModeled::check_family", [rc, xb, xrb], h⟩ : Call F) ∈ calls ∧
     (∀ cl ∈ cs, cl ∈ calls)

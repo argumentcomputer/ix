@@ -215,7 +215,7 @@ theorem check_ctor_return_type_head {κ : _root_.Address → Core.KKey} {Γ : Na
         have hbcs : Bounded csp1 := RomBound.bounded_mono hbound (fun x hx => by simp [hx])
         subst heq_ii
         obtain ⟨-, -, -, -, -, -, b', -, -, -, -, -, -, -, -, -, hb', -⟩ :=
-          L1.inductRecord_raw_tables_of_get_ci ev_ci hbcs ha_hd ld_ind
+          Ingress.inductRecord_raw_tables_of_get_ci ev_ci hbcs ha_hd ld_ind
         have haddr := get_ci_induct_addr ev_ci hbcs ha_hd ld_ind hb'
         obtain ⟨hv_eq, -⟩ := Lib.address_eq_spec ev_aeq hb'
           (Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ci.heap_extends hblk41)
@@ -487,7 +487,7 @@ theorem pointCtors_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   have hg_chk : Core.Good ⟨E, env, t, some n⟩ cs_chk := hgood.sub hsub_chk
   have hi' : (⟨i.toUInt64, B⟩ : Ixon.InductiveProj).idx.toNat = i := toUInt64_toNat_ct hi64
   -- the load of the member's projection record
-  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := L1.get_ci_block_trace_spec hg_ld.2 ha ev_ld
+  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := Ingress.get_ci_block_trace_spec hg_ld.2 ha ev_ld
   have hrec : recordOf E (Core.ixAddr a) = some (memberProjection B i (.indc ind)) := by
     rw [hax, LoadedReads.memberAddr_indc]
     exact hproj
@@ -497,7 +497,7 @@ theorem pointCtors_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     rw [hb0, hdecA] at hex
     exact (Except.ok.inj hex).symm
   subst hc
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   have hinfo : (memberProjection B i (.indc ind)).info = .iPrj ⟨i.toUInt64, B⟩ := rfl
   rw [hinfo] at hres
   obtain ⟨hidx, blkBytes, cb', ms', ind', blobs, tree, plan, v₀, hhB, haB, hexB, hcb, hms,
@@ -539,7 +539,7 @@ theorem pointCtors_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
   have hgL : Core.Good ⟨E, env, t, some n⟩ st.loadCalls := hgood.sub st.loadSubset
   obtain ⟨-, -, -, blkBytes₂, cb₂, ms₂, ind₂, ct, blobs₂, v₂, hhB₂, haB₂, hexB₂, -, hcb₂, hms₂,
-    hct₂, hhp₂, hldv₂, hraw₂⟩ := L1.get_ci_cprj_spec hgL.2 st.blockRep st.loaded
+    hct₂, hhp₂, hldv₂, hraw₂⟩ := Ingress.get_ci_cprj_spec hgL.2 st.blockRep st.loaded
   have hblock_b : recordOf E (Core.ixAddr b) = some cb := by
     rw [hbB']
     exact hblock
@@ -624,7 +624,7 @@ theorem pointCtors_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     rw [hfn] at hci
     exact Core.Ctx.stagedOver_key_of_find (c := ⟨E, Decl.Point.stage env formers, t, some n⟩)
       (pre := env) hci
-  have hκrec : ∀ x ∈ L1.blockRecurAddrs (Core.ixAddr b) ms.toList, S.κ x = Core.keyOf t x := by
+  have hκrec : ∀ x ∈ Ingress.blockRecurAddrs (Core.ixAddr b) ms.toList, S.κ x = Core.keyOf t x := by
     intro x hx
     obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hx
     obtain ⟨m, hm, hxm⟩ := LoadedReads.blockRecurAddrs_get hk

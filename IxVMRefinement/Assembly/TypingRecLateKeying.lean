@@ -49,7 +49,7 @@ theorem lateRuleKey_self_resolved (c : Core.Ctx) (A : _root_.Address) :
 answers the stored constant (the prefix's load contract, rekeyed), and at the recursor's own
 address answers a `Rec`, not a definition (the record there is a recursor). -/
 theorem wrapLoads_late {c : Core.Ctx} (hcS : ScopedCoreFacts c.stored)
-    (hdec : L1.EnvDecoded c.E) {A : _root_.Address} {cr : Ixon.Constant} {rc : Ixon.Recursor}
+    (hdec : Ingress.EnvDecoded c.E) {A : _root_.Address} {cr : Ixon.Constant} {rc : Ixon.Recursor}
     (hrecA : Ix.Cert.recordAt c.E A = some cr) (hinfo : cr.info = .recr rc) :
     Decl.WrapLoads c (lateRuleKey c A) c.env.find? := by
   intro addr ptr h h' cs a ev hgood ha hres
@@ -69,7 +69,7 @@ theorem wrapLoads_late {c : Core.Ctx} (hcS : ScopedCoreFacts c.stored)
     rw [hκ₂]
     exact hfind
   · right
-    obtain ⟨rawB, c', hh, hba, hex, -, hres'⟩ := L1.get_ci_block_trace_spec hgood.2 ha ev
+    obtain ⟨rawB, c', hh, hba, hex, -, hres'⟩ := Ingress.get_ci_block_trace_spec hgood.2 ha ev
     have hrec : recordOf c.E (ixAddr a) = some cr := by
       rw [recordOf_eq_recordAt_of_decoded hdec, hA]
       exact hrecA
@@ -79,7 +79,7 @@ theorem wrapLoads_late {c : Core.Ctx} (hcS : ScopedCoreFacts c.stored)
       rw [hb, hdecl] at hex
       exact (Except.ok.inj hex).symm
     rw [hcc] at hres'
-    unfold L1.GetCIBlockTraceResult at hres'
+    unfold Ingress.GetCIBlockTraceResult at hres'
     rw [hinfo] at hres'
     obtain ⟨blobs, tree, v, -, -, hldv, htr⟩ := hres'
     obtain ⟨-, -, -, -, -, -, tyPtr, rulesPtr, blkPtr, bR, planT, -, -, hv, -⟩ := htr

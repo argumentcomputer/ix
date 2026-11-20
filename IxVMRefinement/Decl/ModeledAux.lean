@@ -174,7 +174,7 @@ theorem AuxRootSynced.cons_of_root_stored {env : Env .anon} (h : AuxRootSynced e
     exact env_find?_isSome_of_mem_prefix (new := [c₀]) List.mem_cons_self
   · exact env_find?_isSome_of_tail (new := [c₀]) hold
 
-/-- Extended `L5` fold invariant pairing `DeclInv` with `AuxRootSynced`. -/
+/-- Extended declaration-fold invariant pairing `DeclInv` with `AuxRootSynced`. -/
 structure DeclInvM (V : Type u) [Ix.Kernel.SetTheory V] (env : Env .anon) : Prop where
   inv : DeclInv V env
   auxSynced : AuxRootSynced env

@@ -5,7 +5,7 @@ import IxC.Kernel.Semantics.EnvFacts
 import IxC.Kernel.Verify.Rename.Installs
 
 /-!
-# The claimed sub-environment's model (for obligation L7)
+# The claimed sub-environment's model (for `AssemblyObligation`)
 
 `ConsistentRead`'s model conjunct is over `claimedEnv env`: the installed
 environment without the model families' constants. The fold gives a model of the
@@ -15,7 +15,7 @@ The sub-environment agrees with the environment on every key whose entry is not
 a model-family constant (`KeptKey`): `claimedEnv_find?`. Every input and role key
 is such a key, and so is every projection table's (`keptKey_of_not_aux`, and a
 table is not a model-family constant). With distinct names, the two agree on
-projection tables too (`claimedEnv_findProj?`). What L7 discharges: distinct
+projection tables too (`claimedEnv_findProj?`). What assembly discharges: distinct
 names (from `InstallStep`), and that every claimed constant's type and every
 claimed definition's value mention only kept keys (`RefsIn (KeptKey env)`; reader
 output references input and role keys, a projection table's type is a closed
@@ -183,7 +183,7 @@ theorem Installs.claimed {ds : List (Declaration .anon)} {env : Env .anon} (h : 
   obtain ⟨ci, hf, hs⟩ := h.stored hd hci₀
   exact ⟨ci, by rw [claimedEnv_find? (keptKey_of_not_aux hk)]; exact hf, hs⟩
 
-/-- **The claimed sub-environment's model** (for L7): a model of the installed
+/-- **The claimed sub-environment's model** (for assembly): a model of the installed
 environment, with distinct names, whose claimed constants' types, claimed
 definitions' values and claimed recursor rules' right-hand sides mention only kept
 keys, and whose kept structures' projection tables name kept constructors and store field

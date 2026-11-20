@@ -30,15 +30,15 @@ theorem admitted_native_ctor_scoped (hLevels : IxVM.Consistency.Levels)
     {V : IxVM.Refinement.View} {binding : Ix.Kernel.Admission.Binding}
     (witness : IxVM.Consistency.ReaderAdmissionWitness V binding)
     {rootCalls : List (Call F)} {trace : Ixon.Env} {seeds : List _root_.Address}
-    (walked : Claim.WalkedL6 rootCalls witness.table trace seeds)
+    (walked : Claim.WalkedClaim rootCalls witness.table trace seeds)
     (loaded : IxVM.Consistency.LoadedBy rootCalls trace)
     (bounded : IxVM.Consistency.Bounded rootCalls)
     (env : Ix.Kernel.Env .anon) (lim : Option Nat) (claimBytes : ByteArray)
     (noCollision : ¬ V.HashedCollision
       (claimBytes :: binding.bytes :: IxVM.Consistency.readerImages V) rootCalls)
     {block : Bytes.Address} {i : F} {T : KKey}
-    (source : L1.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E (Core.ixAddr block))
-    (former : L1.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
+    (source : Ingress.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E (Core.ixAddr block))
+    (former : Ingress.CanonicalRecordAt (nativeOriginCtx witness trace env lim).E (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
     (formerShape : former.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩)
     {members : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (blockShape : source.value.info = .muts members)
@@ -87,7 +87,7 @@ theorem admitted_native_ctor_scoped (hLevels : IxVM.Consistency.Levels)
             ind.indices.toNat resSort ta (rawTypes.getD slot default) ctor annotated sorts := by
   have rootGood : Core.Good (nativeOriginCtx witness trace env lim) rootCalls :=
     admittedCore_good witness (fun _ => True) env lim claimBytes loaded bounded noCollision
-  have rootCoverage : L1.CanonicalHashCoverage
+  have rootCoverage : Ingress.CanonicalHashCoverage
       (nativeOriginCtx witness trace env lim).E rootCalls :=
     admitted_canonicalHashCoverage witness walked
   exact native_ctor_scoped_of_root hLevels source former formerShape blockShape memberAt one key

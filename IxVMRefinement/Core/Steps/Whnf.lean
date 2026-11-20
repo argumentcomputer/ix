@@ -1,6 +1,6 @@
 import IxVMRefinement.Core.Registry
 import IxVMRefinement.Core.Open
-import IxVMRefinement.L1.Ingress
+import IxVMRefinement.Ingress.Ingress
 import IxVMRefinement.Obs.KernelWhnf
 import IxVMRefinement.Obs.KernelTypes
 import IxVMRefinement.Obs.KernelLevels
@@ -527,7 +527,7 @@ theorem field_one_ne_two : (1 : F) ≠ 2 := by
 /-- **A loaded `Rec` with `kf = .field 1` satisfies the rule-constructor-head clause**:
 `RuleCtorHeadFact` gives either that clause directly, or `RecNotKAt c.E (c.κ (ixAddr a))`,
 which pins the record at `ixAddr a` in `c.E` to a recursor projection with `rc.k = false`;
-by `L1.get_ci_spec` and `load_escape`, `get_ci` then loads `kf = .field 0`, contradicting
+by `Ingress.get_ci_spec` and `load_escape`, `get_ci` then loads `kf = .field 0`, contradicting
 `kf = .field 1`. -/
 theorem recHead_of_getCI {c : ScopedCtx} (hc : ScopedCoreBase c)
     {addr ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {a : Bytes.Address}
@@ -556,12 +556,12 @@ theorem recHead_of_getCI {c : ScopedCtx} (hc : ScopedCoreBase c)
       | none => rw [hf] at hkey; exact Ix.Kernel.Key.id.inj hkey
     subst haeq
     obtain ⟨_, rawBytes, c_ld, blobs, hhash, haddr, hexact, _, _, _, hrawRes⟩ :=
-      L1.get_ci_spec good.bounded ha ev
+      Ingress.get_ci_spec good.bounded ha ev
     have hbytes := load_escape hlc0 good.noCollision rawBytes hhash haddr
     rw [hbytes, hd0] at hexact
     have hc_eq : c_ld = c0 := (Except.ok.inj hexact).symm
     subst hc_eq
-    simp only [L1.GetCIRawResult, hinfo] at hrawRes
+    simp only [Ingress.GetCIRawResult, hinfo] at hrawRes
     obtain ⟨_, blkBytes, cb', ms', rc', v', hhash_b, haddr_b, hexact_b, _, hcb_info, hmc_get,
       hld', hraw⟩ := hrawRes
     have hbbytes := load_escape hlcb good.noCollision blkBytes hhash_b haddr_b
@@ -581,7 +581,7 @@ theorem recHead_of_getCI {c : ScopedCtx} (hc : ScopedCoreBase c)
     simp only [List.cons.injEq, and_true] at hargs
     obtain ⟨_, _, _, _, _, _, _, hk_eq, _, _, _⟩ := hargs
     rw [hkf, hnotK] at hk_eq
-    simp only [L1.repBoolField, Bool.false_eq_true, ↓reduceIte] at hk_eq
+    simp only [Ingress.repBoolField, Bool.false_eq_true, ↓reduceIte] at hk_eq
     exact absurd hk_eq field_one_ne_zero
 
 private theorem const_seg_prim_ext {e0 e1 e2 e3 e4 e5 e6 e7 v : SourceValue F} {h m : Heap F}

@@ -704,7 +704,7 @@ theorem projection_addr_ctor_exact {i j : Nat} {ba : Bytes.Address}
           [TagN.u64Value ni, TagN.u64Value nj, xblk]]) :=
     ⟨TagN.u64Value ni, TagN.u64Value nj, xblk, ba, rfl, hrepi, hrepj,
       Bytes.repAddressRef_heapMono₂ addrTy extH rba, rfl⟩
-  obtain ⟨_, hbytes⟩ := L1.put_constant_proj_spec (info := info) (rest := [])
+  obtain ⟨_, hbytes⟩ := Ingress.put_constant_proj_spec (info := info) (rest := [])
     ⟨_, _, _, _, _, rfl, hinfo, RepLinkedList.nil c1, RepLinkedList.nil c2,
       RepLinkedList.nil c3, RepLinkedList.nil c4⟩
     (RepLinkedList.nil c5) ev178
@@ -712,7 +712,7 @@ theorem projection_addr_ctor_exact {i j : Nat} {ba : Bytes.Address}
   have hlen : ((Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩).data.toList).length < 4294967296 := by
     simpa only [ByteArray.size, Array.length_toList] using
       Claim.serConstant_cprj_size_lt ni.toUInt64 nj.toUInt64 ba
-  obtain ⟨_, a, ha, ha_eq⟩ := L1.bytes_to_addr_native_spec hlen hbytes ev206
+  obtain ⟨_, a, ha, ha_eq⟩ := Ingress.bytes_to_addr_native_spec hlen hbytes ev206
   refine ⟨a, ha, ?_⟩
   rw [ha_eq, Array.toArray_toList]
   rfl
@@ -1315,7 +1315,7 @@ theorem find_peer_rec_spec_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.
       have hrs_lt : rs.size < 2 ^ 39 := by
         have hlt := repList_length_lt_obs hbd hsub evpa (by rw [hc]; simp) (by simp) hall
         simpa using hlt
-      obtain ⟨ext1, -, -, mc, ma, hmc, rma, hma⟩ := L1.projection_addr_spec hall rrba evpa
+      obtain ⟨ext1, -, -, mc, ma, hmc, rma, hma⟩ := Ingress.projection_addr_spec hall rrba evpa
       rw [fval_natCast (by omega)] at hmc hma
       have hmc' : rs[pos]? = some mc := by rw [← Array.getElem?_toList]; exact hmc
       have hmc_eq : mc = .recr rc := Option.some.inj (hmc'.symm.trans hrc_at)
@@ -1491,7 +1491,7 @@ theorem find_peer_rec_spec_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.
       have hrs_lt : rs.size < 2 ^ 39 := by
         have hlt := repList_length_lt_obs hbd hsub evpa (by rw [hc]; simp) (by simp) hall
         simpa using hlt
-      obtain ⟨ext1, -, -, mc, ma, hmc, rma, hma⟩ := L1.projection_addr_spec hall rrba evpa
+      obtain ⟨ext1, -, -, mc, ma, hmc, rma, hma⟩ := Ingress.projection_addr_spec hall rrba evpa
       rw [fval_natCast (by omega)] at hmc hma
       have hmc' : rs[pos]? = some mc := by rw [← Array.getElem?_toList]; exact hmc
       have hmc_eq : mc = .recr rc := Option.some.inj (hmc'.symm.trans hrc_at)

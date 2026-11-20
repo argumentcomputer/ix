@@ -1958,7 +1958,7 @@ theorem DeclInv.step_modeled_vm {V : Type w} [Ix.Kernel.SetTheory V]
 obligation (`∃ env₂, InstallStep env (.indDecl block nP) env₂ ∧ ∀ V, DeclInv V env → DeclInv V env₂`). -/
 theorem decls_step_of_modeled_vm {calls : List (Call F)} {env : Env .anon}
     {block : List (ConstantInfo .anon)} {nP : Nat}
-    (hchk : S0.Checked calls env (.indDecl block nP))
+    (hchk : BaseSeams.Checked calls env (.indDecl block nP))
     (hnodup : ((IxVM.Consistency.installs (.indDecl block nP)).map (·.name)).Nodup)
     (hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs (.indDecl block nP), env.find? ci₀.name = none)
     (hstep : DeclStoreInv env → ∃ env₂,

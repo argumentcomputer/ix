@@ -91,7 +91,7 @@ theorem ScopedLoadBase.rawRecords {c : ScopedCtx} (hres : ∀ a, c.κ a ≠ unre
     exact ⟨cm, cb, xs, ind, b, i, hcm, hb, rfl, hp, hcb, hxs, hind⟩
 
 /-- Explicit compatibility for callers that still carry the historical unrestricted load
-contract. Actual raw scopes are produced from canonical observed queries in L1. -/
+contract. Actual raw scopes are produced from canonical observed queries in Ingress. -/
 theorem RawRecordFacts.ofUnrestricted {c : ScopedCtx} (facts : LoadFacts c.toCtx) :
     RawRecordFacts c where
   inductiveRead := by

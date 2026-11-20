@@ -5,7 +5,7 @@ import IxVMRefinement.Assembly.TypingRecLatePins
 import IxVMRefinement.Assembly.TypingDefnBlock
 import IxVMRefinement.Claim.TopRec
 import IxVMRefinement.Claim.TopCheckFacts
-import IxVMRefinement.L1.TraceRecords
+import IxVMRefinement.Ingress.TraceRecords
 
 /-! # The circuit's dispatch on a block, in a run and at a store
 
@@ -19,7 +19,7 @@ They are tied together where the answer is a function of the store's records. Go
 run is relative to a store: nothing relates the bytes two separate runs hash at an address the
 store does not hold. So the functionality that can be asked is `BlockRouteFunctional E`: two
 good observations at one block agree where the store holds every canonical record the first
-one hashed (`L1.CanonicalHashCoverage`). A step's store covers its run, so one observation in
+one hashed (`Ingress.CanonicalHashCoverage`). A step's store covers its run, so one observation in
 the run fixes the answer of every other observation in the run and of every good run:
 
 * `Claim.induct_dispatch_obs`, `Claim.MemberCheckedLimAt.dispatch`: the walk's check of an
@@ -140,7 +140,7 @@ theorem MemberCheckedLimAt.dispatch {calls : List (Call F)} {E₀ : Ixon.Env}
     -, -, ev_ld, -, hsub_ld, hld, ev_chk, -, hsub_chk⟩ := hchk
   obtain ⟨b', hb', rfl⟩ := hblk
   obtain ⟨-, -, -, mc, a', hget', ha', hproj, hhashed⟩ :=
-    L1.projection_addr_hashed_spec hmem hb' ev_pa
+    Ingress.projection_addr_hashed_spec hmem hb' ev_pa
   obtain ⟨iv, hiv⟩ : ∃ iv, ((i : F)).val = iv := ⟨_, rfl⟩
   rw [hiv] at hget' hproj hhashed
   obtain ⟨ind, rfl⟩ := hall mc (List.mem_of_getElem? hget')
@@ -155,7 +155,7 @@ theorem MemberCheckedLimAt.dispatch {calls : List (Call F)} {E₀ : Ixon.Env}
       (hba.trans hX.symm)
   have hwf : (⟨Core.Specs.Callees.memberProjInfo (Core.ixAddr b') iv (.indc ind),
       #[], #[], #[], #[]⟩ : Ixon.Constant).wireWF :=
-    L1.projConstant_wireWF_iPrj iv.toUInt64 b'
+    Ingress.projConstant_wireWF_iPrj iv.toUInt64 b'
   rw [hraw, Ixon.Verify.deConstantExact_serConstant _ hwf] at hx
   injection hx with hcp
   subst hcp
@@ -267,15 +267,15 @@ def BlockRouteFunctional (E : Ixon.Env) : Prop :=
     ObsFn Core.W "KernelModeled::block_is_modeled" [bq₁] h₁ r₁ h₁' cs₁ →
     ObsFn Core.W "KernelModeled::block_is_modeled" [bq₂] h₂ r₂ h₂' cs₂ →
     ¬ View.HashedCollision { env := E } [] cs₁ → Bounded cs₁ →
-    L1.CanonicalHashCoverage E cs₁ →
+    Ingress.CanonicalHashCoverage E cs₁ →
     ¬ View.HashedCollision { env := E } [] cs₂ → Bounded cs₂ →
     Bytes.RepAddressRef Core.addrTy h₁ bb₁ bq₁ → Bytes.RepAddressRef Core.addrTy h₂ bb₂ bq₂ →
     Core.ixAddr bb₁ = Core.ixAddr bb₂ → r₁ = r₂
 
 /-- A store that covers a run's canonical records covers those of a part of the run. -/
 theorem canonicalHashCoverage_sub {E : Ixon.Env} {cs calls : List (Call F)}
-    (hsub : ∀ cl ∈ cs, cl ∈ calls) (h : L1.CanonicalHashCoverage E calls) :
-    L1.CanonicalHashCoverage E cs :=
+    (hsub : ∀ cl ∈ cs, cl ∈ calls) (h : Ingress.CanonicalHashCoverage E calls) :
+    Ingress.CanonicalHashCoverage E cs :=
   fun bytes value hh hsz hx => h bytes value (Core.hashed_mono hsub hh) hsz hx
 
 section Route
@@ -285,7 +285,7 @@ variable {c : Core.Ctx} {calls : List (Call F)}
 /-- **One native observation in the run puts the block on the native route**: every other
 observation of the dispatch on the block in the run answers `0`. -/
 theorem nativeRouteAt_of_obs (hfun : BlockRouteFunctional c.E) (hg : Core.Good c calls)
-    (hcov : L1.CanonicalHashCoverage c.E calls) {B : _root_.Address}
+    (hcov : Ingress.CanonicalHashCoverage c.E calls) {B : _root_.Address}
     (hobs : Claim.NativeObsAt calls B) : NativeRouteAt calls B := by
   obtain ⟨bp, h, h', cs, b, ev, hsub, hb, rfl⟩ := hobs
   intro bp' r' h₂ h₂' cs' b' ev' hsub' hb' hB
@@ -296,7 +296,7 @@ theorem nativeRouteAt_of_obs (hfun : BlockRouteFunctional c.E) (hg : Core.Good c
 
 /-- **One modeled observation in the run puts the block on the modeled route.** -/
 theorem modeledRouteAt_of_obs (hfun : BlockRouteFunctional c.E) (hg : Core.Good c calls)
-    (hcov : L1.CanonicalHashCoverage c.E calls) {bp r : SourceValue F} {h h' : Heap F}
+    (hcov : Ingress.CanonicalHashCoverage c.E calls) {bp r : SourceValue F} {h h' : Heap F}
     {cs : List (Call F)} {b : Bytes.Address}
     (ev : ObsFn Core.W "KernelModeled::block_is_modeled" [bp] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) (hb : Bytes.RepAddressRef Core.addrTy h b bp)
@@ -312,7 +312,7 @@ theorem modeledRouteAt_of_obs (hfun : BlockRouteFunctional c.E) (hg : Core.Good 
 /-- **One modeled observation in the run makes the block modeled at the store**: no good run
 answers `0` on it. -/
 theorem modeledAt_of_obs (hfun : BlockRouteFunctional c.E) (hg : Core.Good c calls)
-    (hcov : L1.CanonicalHashCoverage c.E calls) {bp r : SourceValue F} {h h' : Heap F}
+    (hcov : Ingress.CanonicalHashCoverage c.E calls) {bp r : SourceValue F} {h h' : Heap F}
     {cs : List (Call F)} {b : Bytes.Address}
     (ev : ObsFn Core.W "KernelModeled::block_is_modeled" [bp] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) (hb : Bytes.RepAddressRef Core.addrTy h b bp)
@@ -325,7 +325,7 @@ theorem modeledAt_of_obs (hfun : BlockRouteFunctional c.E) (hg : Core.Good c cal
 /-- **The two routes of a block the run dispatched on**: native in the run and at the store,
 or modeled in the run and at the store. -/
 theorem route_cases (hfun : BlockRouteFunctional c.E) (hg : Core.Good c calls)
-    (hcov : L1.CanonicalHashCoverage c.E calls) {B : _root_.Address}
+    (hcov : Ingress.CanonicalHashCoverage c.E calls) {B : _root_.Address}
     (hobs : ∃ (bp r : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (b : Bytes.Address),
       ObsFn Core.W "KernelModeled::block_is_modeled" [bp] h r h' cs ∧
       (∀ cl ∈ cs, cl ∈ calls) ∧ Bytes.RepAddressRef Core.addrTy h b bp ∧
@@ -343,7 +343,7 @@ theorem route_cases (hfun : BlockRouteFunctional c.E) (hg : Core.Good c calls)
 observed the dispatch on the block and every observation in the run answers non-zero, no good
 run answers `0`. -/
 theorem modeledAt_of_route (hfun : BlockRouteFunctional c.E) (hg : Core.Good c calls)
-    (hcov : L1.CanonicalHashCoverage c.E calls) {B : _root_.Address}
+    (hcov : Ingress.CanonicalHashCoverage c.E calls) {B : _root_.Address}
     (hroute : ModeledRouteAt calls B)
     (hobs : ∃ (bp r : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (b : Bytes.Address),
       ObsFn Core.W "KernelModeled::block_is_modeled" [bp] h r h' cs ∧
@@ -376,7 +376,7 @@ modeled in the run and at the step's store. The premises are those a top-walked 
 handed. -/
 theorem oneTypeBlock_route_cases (hfun : BlockRouteFunctional E)
     (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hcov : L1.CanonicalHashCoverage E calls) {ind : Ixon.Inductive}
+    (hcov : Ingress.CanonicalHashCoverage E calls) {ind : Ixon.Inductive}
     (hrec : BlockUnitRecord E₀ B cb ind)
     (hchk : (∃ ms, cb.info = .muts ms ∧
         ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t B ms k lim) ∨
@@ -393,7 +393,7 @@ theorem oneTypeBlock_route_cases (hfun : BlockRouteFunctional E)
 route**, in the run and at the step's store. -/
 theorem modeled_of_not_nativeRoute (hfun : BlockRouteFunctional E)
     (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hcov : L1.CanonicalHashCoverage E calls) {ind : Ixon.Inductive}
+    (hcov : Ingress.CanonicalHashCoverage E calls) {ind : Ixon.Inductive}
     (hrec : BlockUnitRecord E₀ B cb ind)
     (hchk : (∃ ms, cb.info = .muts ms ∧
         ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t B ms k lim) ∨
@@ -533,7 +533,7 @@ theorem TopWalkCore.recFamily_nativeRoute {calls : List (Call F)} {bAddr : _root
     {t : Ix.Kernel.RoleTable} {seeds : List _root_.Address} {E₀ : Ixon.Env}
     {lim : Option Nat} {Top : _root_.Address → Prop} {rank : _root_.Address → Nat}
     {c : Core.Ctx} (hfun : Typing.BlockRouteFunctional c.E) (hg : Core.Good c calls)
-    (hcov : L1.CanonicalHashCoverage c.E calls)
+    (hcov : Ingress.CanonicalHashCoverage c.E calls)
     (hW : TopWalkCore calls bAddr t seeds E₀ lim Top rank) {A : _root_.Address}
     {c₀ : Ixon.Constant} {rc : Ixon.Recursor}
     (hT : Top A) (hc : recordOf E₀ A = some c₀) (hinfo : c₀.info = .recr rc) :

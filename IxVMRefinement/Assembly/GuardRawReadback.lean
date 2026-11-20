@@ -1,5 +1,5 @@
 import IxVMRefinement.Assembly.GuardRawLookup
-import IxVMRefinement.L1.RawDataPlan
+import IxVMRefinement.Ingress.RawDataPlan
 
 /-! # Actual physical roots agree with the address-keyed raw dictionary
 
@@ -19,7 +19,7 @@ theorem readRoot_exact {blob : Blobs} {root : Root}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap IxVM.F} {p : SourceValue IxVM.F} {readValue R E : Expr .anon}
     {Γ : Nat → Core.KExpr} {k : Nat}
-    (converted : L1.RawConvExpr root.source.refs.toList recurAddrs root.source.univs.toList
+    (converted : Ingress.RawConvExpr root.source.refs.toList recurAddrs root.source.univs.toList
       root.source.sharing.toList blobs h 4294967295 root.expression p)
     (selfKeyed : ∀ i a m key, recurAddrs[i]? = some a → root.self i = some m →
       m = .ok key → key = Core.keyOf addressTable a)
@@ -30,7 +30,7 @@ theorem readRoot_exact {blob : Blobs} {root : Root}
   have sourceRead := Typing.toOption_eq_some readerRead
   have data := converted.memberReader_rawData (LoadedReads.readCtx_keyAt_inv addressTable_check blob)
     selfKeyed blobAgreement sourceRead
-  exact data.det (L1.rawData_of_exact physical)
+  exact data.det (Ingress.rawData_of_exact physical)
 
 /-- Exact root identification commutes with the dictionary's literal universe substitution. -/
 theorem answer_exact {blob : Blobs} {root : Root} {R : Expr .anon} {ps : List Level}
@@ -47,7 +47,7 @@ theorem answer_exact {blob : Blobs} {root : Root} {R : Expr .anon} {ps : List Le
 /-- The rich root reader keeps exactly the serialized binder metadata and raw let cells. -/
 noncomputable def readCanonicalRoot (blob : Blobs) (root : Root) : Option (Expr .anon) := do
   let reader ← (exprReader addressTable blob root.source id root.self).read root.expression |>.toOption
-  L1.canonicalRawAnnotation root.source (List.range root.levels) (root.offset : IxVM.F)
+  Ingress.canonicalRawAnnotation root.source (List.range root.levels) (root.offset : IxVM.F)
     root.expression reader
 
 /-- Positive literal-store extension preserves the rich canonical raw reading. -/
@@ -68,17 +68,17 @@ theorem readCanonicalRoot_exact {blob : Blobs} {root : Root}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap IxVM.F} {p : SourceValue IxVM.F} {reader R E : Expr .anon}
     {Γ : Nat → Core.KExpr} {k : Nat}
-    (converted : L1.RawConvExpr root.source.refs.toList recurAddrs root.source.univs.toList
+    (converted : Ingress.RawConvExpr root.source.refs.toList recurAddrs root.source.univs.toList
       root.source.sharing.toList blobs h 4294967295 root.expression p)
     (selfKeyed : ∀ i a m key, recurAddrs[i]? = some a → root.self i = some m →
       m = .ok key → key = Core.keyOf addressTable a)
     (blobAgreement : ∀ a bytes, (a, bytes) ∈ blobs → blob a = some bytes)
     (physical : Decl.RawTmExact (Core.keyOf addressTable) 0 Γ h k R E p)
-    {tree : L1.BinderTreeData} {plan : List Core.KLevel}
-    (built : L1.BinderTreeBuilt (L1.binderLeavesData root.source.binders.toList) tree)
-    (planned : L1.binderRootPlan tree root.source.sharing.toList (root.offset : IxVM.F)
+    {tree : Ingress.BinderTreeData} {plan : List Core.KLevel}
+    (built : Ingress.BinderTreeBuilt (Ingress.binderLeavesData root.source.binders.toList) tree)
+    (planned : Ingress.binderRootPlan tree root.source.sharing.toList (root.offset : IxVM.F)
       root.expression = some plan)
-    (levels : L1.HeapBinderLevels h p plan)
+    (levels : Ingress.HeapBinderLevels h p plan)
     (read : (exprReader addressTable blob root.source id root.self).read root.expression = .ok reader) :
     readCanonicalRoot blob root = some R := by
   have canonical := converted.canonical_raw_exact (LoadedReads.readCtx_keyAt_inv addressTable_check blob)

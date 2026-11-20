@@ -111,7 +111,7 @@ record it holds; it holds the block `cb` of the one inductive member `ind` at `B
 projection record and each constructor's; and every blob of the run's store. -/
 structure HoldsBlock (E₀ E : Ixon.Env) (B : _root_.Address) (cb : Ixon.Constant)
     (ind : Ixon.Inductive) : Prop where
-  decoded : L1.EnvDecoded E
+  decoded : Ingress.EnvDecoded E
   block : recordOf E B = some cb
   former : recordOf E (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind))
   ctors : ∀ j < ind.ctors.size,
@@ -193,7 +193,7 @@ theorem blockEta_of_indexed (hI : BlockInstall c new B cb ind caps)
   · intro ac b sa i j cvc cvT caps' cnP cnF us l bp ptr nl ty np u blk' idx h1 h2 cs1 hfC hname
       hpos ev good hb hld hfT hmod hpi hnz hsr hsa hm
     exfalso
-    have hbh := L1.hashedBlockAt_of_get_ci_iprj (c := appCtx c new) good hb ev
+    have hbh := Ingress.hashedBlockAt_of_get_ci_iprj (c := appCtx c new) good hb ev
     have hnC : cvc.name = (appCtx c new).stored.κ (Core.ixAddr ac) :=
       Core.WhnfAux.name_of_find hfC
     have hfam : FamNew (appCtx c new).stored new (Core.ixAddr b) (ZMod.val i) := by
@@ -222,7 +222,7 @@ theorem blockEta_of_indexed (hI : BlockInstall c new B cb ind caps)
       hfT hfC hmulti hsr hpi hnz hm
     exfalso
     have hx := get_ci_induct_addr ev good.2 hpa hld hb
-    have hbh := L1.hashedBlockAt_of_get_ci_induct (c := appCtx c new) good ev hpa hld hb
+    have hbh := Ingress.hashedBlockAt_of_get_ci_induct (c := appCtx c new) good ev hpa hld hb
     have hBi : Core.ixAddr b = B ∧ ZMod.val i = 0 := by
       rcases hm with hm | hm
       · obtain ⟨hk, -⟩ := hI.newInd hfT hm

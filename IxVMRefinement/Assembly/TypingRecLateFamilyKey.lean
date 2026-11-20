@@ -617,9 +617,9 @@ theorem buildShareTblGo_keyShape :
       (∀ (i : Nat) (x y : Ix.Kernel.Reader.CExpr .anon), acc₁[i]? = some (Except.ok x) →
         acc₂[i]? = some (Except.ok y) → KeyShape x y) →
       ∀ (i : Nat) (x y : Ix.Kernel.Reader.CExpr .anon),
-        (L1.buildShareTblGo (⟨cx, src, u₁, self⟩ : Ix.Kernel.Reader.ECx .anon) acc₁ es)[i]? =
+        (Ingress.buildShareTblGo (⟨cx, src, u₁, self⟩ : Ix.Kernel.Reader.ECx .anon) acc₁ es)[i]? =
           some (Except.ok x) →
-        (L1.buildShareTblGo (⟨cx, src, u₂, self⟩ : Ix.Kernel.Reader.ECx .anon) acc₂ es)[i]? =
+        (Ingress.buildShareTblGo (⟨cx, src, u₂, self⟩ : Ix.Kernel.Reader.ECx .anon) acc₂ es)[i]? =
           some (Except.ok y) →
         KeyShape x y := by
   intro es
@@ -629,7 +629,7 @@ theorem buildShareTblGo_keyShape :
     exact hacc
   | cons e es ih =>
     intro acc₁ acc₂ hsz hacc
-    simp only [L1.buildShareTblGo]
+    simp only [Ingress.buildShareTblGo]
     apply ih
     · simp [hsz]
     · intro i x y h1 h2
@@ -652,8 +652,8 @@ theorem exprReader_keyShape {t : Ix.Kernel.RoleTable} {blob : _root_.Address →
     (h1 : (exprReader t blob src p₁ self).read e = .ok a)
     (h2 : (exprReader t blob src p₂ self).read e = .ok b) : KeyShape a b := by
   unfold exprReader at h1 h2
-  obtain ⟨hecx₁, htbl₁⟩ := L1.memberReader_mk'_eq (readCtx t blob) src p₁ self
-  obtain ⟨hecx₂, htbl₂⟩ := L1.memberReader_mk'_eq (readCtx t blob) src p₂ self
+  obtain ⟨hecx₁, htbl₁⟩ := Ingress.memberReader_mk'_eq (readCtx t blob) src p₁ self
+  obtain ⟨hecx₂, htbl₂⟩ := Ingress.memberReader_mk'_eq (readCtx t blob) src p₂ self
   unfold Ix.Kernel.Reader.MemberReader.read at h1 h2
   rw [hecx₁, htbl₁] at h1
   rw [hecx₂, htbl₂] at h2
@@ -949,10 +949,10 @@ theorem rec_motive_letFree_reading {calls : List (Call F)} {t : Ix.Kernel.RoleTa
   obtain ⟨a', ha'_ref, haA⟩ := ha_pre
   subst haA
   obtain ⟨rawBytes, c', hh, hba, hex, -, hres'⟩ :=
-    L1.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
+    Ingress.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
   have hcc : c' = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hh) hba hex
   subst c'
-  unfold L1.GetCIBlockTraceResult at hres'
+  unfold Ingress.GetCIBlockTraceResult at hres'
   rw [hinfo] at hres'
   obtain ⟨blobs, tree, v, hhp, built, hldv, htr⟩ := hres'
   rw [hld] at hldv

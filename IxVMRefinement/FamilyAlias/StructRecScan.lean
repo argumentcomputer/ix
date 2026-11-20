@@ -557,14 +557,14 @@ address (`struct_block_member_addrs`), and scans the constructor loaded at slot 
 has the shape of `ct`'s (`get_ci_cprj`, `ExprTree.functional`): its field scan answers `0`
 (`scan_ctors_tree`). -/
 theorem struct_is_rec_one {C : Core.Ctx} (core : Core.ScopedCoreFacts (Core.Ctx.stored C))
-    (hdec : L1.EnvDecoded C.E) {A : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
+    (hdec : Ingress.EnvDecoded C.E) {A : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
     (hrecord : recordOf C.E A = some cb) (hmuts : cb.info = .muts #[.indc ind])
     (hproj : recordOf C.E (Core.iprjAddr A 0) = some (memberProjection A 0 (.indc ind)))
     (hroute : blockRoute C.E A = some true)
     (hidx : ind.indices.toNat = 0) (hsz : ind.ctors.size = 1)
     (hshape : ∃ (ct : Ixon.Constructor) (T Bd : ScanTree),
       ind.ctors[0]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
-      ExprTree cb.refs.toList (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
+      ExprTree cb.refs.toList (Ingress.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
         cb.sharing.toList 4294967295 ct.typ T ∧
       T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
       Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
@@ -583,7 +583,7 @@ theorem struct_is_rec_one {C : Core.Ctx} (core : Core.ScopedCoreFacts (Core.Ctx.
   have hR := hroute
   rw [blockRoute_one hrecord hmuts hctl] at hR
   have hans : ctorAnswer (isIndAt C.E)
-      (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList) cb.refs.toList
+      (Ingress.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList) cb.refs.toList
       cb.sharing.toList ct = some true := by
     rcases orElse_eq_true hR with h1 | h1
     · exact h1
@@ -601,7 +601,7 @@ theorem struct_is_rec_one {C : Core.Ctx} (core : Core.ScopedCoreFacts (Core.Ctx.
     exact (Option.some.inj hk).symm
   rw [peel_add ct.params.toNat ct.fields.toNat hpeelP] at hpeel'
   have hfs : Bd.fieldsScan
-      (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList) = true :=
+      (Ingress.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList) = true :=
     fieldsScan_of_nested (isIndAt C.E) _ hhd hargs ct.fields.toNat Bd.size Bd hpeel' hnest
   -- the observed recursion scan: the parent's load, the member list, the member scan
   obtain ⟨m2, p9, cs15, w42, w43, w44, w45, w46, w47, x_block, w48, m90, v116, m117, cs127, cs149,
@@ -650,7 +650,7 @@ theorem struct_is_rec_one {C : Core.Ctx} (core : Core.ScopedCoreFacts (Core.Ctx.
   have gc := good.sub (fun x hx => hs149 x (hs3 x (hsc x hx)))
   have hb'1 : Bytes.RepAddressRef Core.addrTy hh1 b' blkPtr := Core.se_addrRep_mono ehc hb'2
   obtain ⟨-, -, -, blkBytes, cb₂, ms₂, ind₂, ct₂, blobs, v₂, hhB, haB, hexB, -, hcb₂, hms₂, hct₂,
-    -, hldv₂, hraw₂⟩ := L1.get_ci_cprj_spec gc.2 hb'1 evc
+    -, hldv₂, hraw₂⟩ := Ingress.get_ci_cprj_spec gc.2 hb'1 evc
   obtain ⟨lcB, hgetB, hdecB⟩ := LoadedReads.recordOf_inv hrecord
   have hbB : blkBytes = lcB.rawBytes := Core.load_escape hgetB gc.1 blkBytes hhB (haB.trans hb'A)
   have e1 : cb₂ = cb := by
@@ -689,7 +689,7 @@ theorem struct_is_rec_one {C : Core.Ctx} (core : Core.ScopedCoreFacts (Core.Ctx.
   rw [ZMod.val_natCast_of_lt (Nat.lt_trans hp56 (by decide)), ← hparN,
     peelTol_of_peel _ hpeelP] at hf
   -- the member list holds the member's address
-  have hMM : ∀ x ∈ L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList,
+  have hMM : ∀ x ∈ Ingress.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList,
       x ∈ xs.map Core.ixAddr := by
     intro x hx
     obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hx

@@ -11,7 +11,7 @@ limit only (`MutsMemberCheckedAtFullAt … n`). This module states them for eith
 beside the earlier ones, with the same proofs: none of them reads the role context's limit,
 and the one that types the former does so at the context of the given limit.
 
-* `Assembly.checkedLimAt_loadedL1`: a checked record's load, with the check on the loaded value.
+* `Assembly.checkedLimAt_loadedRecords`: a checked record's load, with the check on the loaded value.
 * A checked member is checked at its constant address: `memberCheckedLimAt_checkedLimAt`, stated
   in `Claim/TopValue.lean`.
 * `ctorSlots_of_member_lim`, `former_reads_lim`, `blockReads_of_member_lim`,
@@ -39,9 +39,9 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 
 /-- Under `Bounded calls`, a check of the record at `a` under the role context at `lim` pairs
-its `Ingress::get_ci` sub-derivation with `L1.get_ci_loadedL1_spec` to produce `LoadedL1`
+its `Ingress::get_ci` sub-derivation with `Ingress.get_ci_loadedRecords_spec` to produce `LoadedRecords`
 alongside the `KernelCheck::check_const` call on the loaded heap value. -/
-theorem checkedLimAt_loadedL1
+theorem checkedLimAt_loadedRecords
     {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {a : _root_.Address} {lim : Option Nat}
     (hbound : IxVM.Consistency.Bounded calls)
@@ -50,12 +50,12 @@ theorem checkedLimAt_loadedL1
       (cs_load cs_chk : List (Call F)) (bytes : ByteArray) (E_ld : Ixon.Env),
       Claim.RCLimRep t bAddr lim h_pre rc ∧
       Claim.RCLimRep t bAddr lim m_chk rc ∧
-      Core.S0.addr h_pre ap a ∧
-      Core.S0.addr m_chk ap a ∧
+      Core.BaseSeams.addr h_pre ap a ∧
+      Core.BaseSeams.addr m_chk ap a ∧
       Hashed cs_load bytes ∧
       Address.blake3Pure bytes = a ∧
       IxVM.Consistency.LoadedBy cs_load E_ld ∧
-      L1.LoadedL1 E_ld m_chk ptr bytes ∧
+      Ingress.LoadedRecords E_ld m_chk ptr bytes ∧
       (∀ cl ∈ cs_load, cl ∈ calls) ∧
       loadValue m_chk ptr = .ok v ∧
       ObsFn Core.W "KernelCheck::check_const" [rc, v, ap] m_chk r_chk h'_chk cs_chk ∧
@@ -66,7 +66,7 @@ theorem checkedLimAt_loadedL1
   obtain ⟨a', ha'_ref, rfl⟩ := ha_pre
   have hbound_ld : IxVM.Consistency.Bounded cs_load := RomBound.bounded_mono hbound hsub_ld
   obtain ⟨_ext, bytes, E_ld, hhash, hblake, hloaded, hL1⟩ :=
-    L1.get_ci_loadedL1_spec hbound_ld ha'_ref ev_ld
+    Ingress.get_ci_loadedRecords_spec hbound_ld ha'_ref ev_ld
   exact ⟨lim, h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk, bytes, E_ld,
     hrc_pre, hrc_m, ⟨a', ha'_ref, rfl⟩, ha_m,
     hhash, hblake, hloaded, hL1, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩
@@ -103,17 +103,17 @@ theorem ctorSlots_of_member_lim (hbound : Bounded calls) (hS : LoadedReads.RunSt
   have hchkA := memberCheckedLimAt_checkedLimAt (mc := .indc ind) hbound hchk rfl
   obtain ⟨_, _, m_chk, _, rc, ap, ptr, v, r_chk, cs_ld, cs_chk, bytes, E_ld,
     _, _, _, _, hhash, hblake, hload_ld, hL1, hsub_ld, hld, ev_chk, _, hsub_chk⟩ :=
-    Assembly.checkedLimAt_loadedL1 hbound hchkA
+    Assembly.checkedLimAt_loadedRecords hbound hchkA
   have hrecP : Ix.Cert.recordAt E₀ (memberAddr B 0 (.indc ind)) =
       some (memberProjection B 0 (.indc ind)) :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.former
   have hrecB : Ix.Cert.recordAt E₀ B = some cb :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.record
-  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedL1_record hS hsub_ld hhash hblake hL1 hrecP
+  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedRecords_record hS hsub_ld hhash hblake hL1 hrecP
   have hvv : v' = v := Except.ok.inj (hld'.symm.trans hld)
   subst hvv
   have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨-, lcB, cb', ms', ind', blobs, hgetB, -, -, hexB, -, hcb', hms', -, raw⟩ := hraw
   obtain ⟨hhB, haB⟩ := hload_ld.1 _ lcB hgetB
@@ -132,7 +132,7 @@ theorem ctorSlots_of_member_lim (hbound : Bounded calls) (hS : LoadedReads.RunSt
     have hl := hrec.logic
     simp only [IxVM.Consistency.InLogic, hrec.muts] at hl
     exact (hl (.indc ind) (by simp)).1
-  simp only [L1.repBoolField, hsafe, Bool.false_eq_true, ↓reduceIte] at ev_chk
+  simp only [Ingress.repBoolField, hsafe, Bool.false_eq_true, ↓reduceIte] at ev_chk
   refine ⟨b, hb_eq, hlv, hnp, hnc, ?_⟩
   intro j hj
   match Obs.«KernelCheck::check_const».obs ev_chk with
@@ -237,14 +237,14 @@ theorem former_reads_lim (ht : t.check = .ok ()) (hbound : Bounded calls)
   have hchkA := memberCheckedLimAt_checkedLimAt (mc := .indc ind) hbound hchk rfl
   obtain ⟨_, _, m_chk, _, rc, ap, ptr, v, r_chk, cs_ld, cs_chk, bytes, E_ld,
     _, _, _, _, hhash, hblake, hload_ld, hL1, hsub_ld, hld, ev_chk, _, hsub_chk⟩ :=
-    Assembly.checkedLimAt_loadedL1 hbound hchkA
+    Assembly.checkedLimAt_loadedRecords hbound hchkA
   have hrecP : Ix.Cert.recordAt E₀ (memberAddr B 0 (.indc ind)) =
       some (memberProjection B 0 (.indc ind)) :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.former
   have hrecB : Ix.Cert.recordAt E₀ B = some cb :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.record
   obtain ⟨ms', ind', ty₀, h1, h2, -, hty, hreads, -⟩ :=
-    LoadedReads.loadedL1_ind_reads (p := ⟨(0 : Nat).toUInt64, B⟩) ht hS hload_ld hsub_ld hhash
+    LoadedReads.loadedRecords_ind_reads (p := ⟨(0 : Nat).toUInt64, B⟩) ht hS hload_ld hsub_ld hhash
       hblake hL1 hrecP rfl hrecB hrec.logic
   have hms : ms' = #[.indc ind] := Ixon.ConstantInfo.muts.inj (h1.symm.trans hrec.muts)
   subst hms
@@ -473,17 +473,17 @@ theorem former_scope_lim (hbound : Bounded calls) (hS : LoadedReads.RunStore cal
   have hchkA := memberCheckedLimAt_checkedLimAt (mc := .indc ind) hbound hchk rfl
   obtain ⟨_, _, m_chk, _, rc, ap, ptr, v, r_chk, cs_ld, cs_chk, bytes, E_ld,
     _, _, _, _, hhash, hblake, hload_ld, hL1, hsub_ld, hld, ev_chk, _, hsub_chk⟩ :=
-    Assembly.checkedLimAt_loadedL1 hbound hchkA
+    Assembly.checkedLimAt_loadedRecords hbound hchkA
   have hrecP : Ix.Cert.recordAt E₀ (memberAddr B 0 (.indc ind)) =
       some (memberProjection B 0 (.indc ind)) :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.former
   have hrecB : Ix.Cert.recordAt E₀ B = some cb :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.record
-  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedL1_record hS hsub_ld hhash hblake hL1 hrecP
+  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedRecords_record hS hsub_ld hhash hblake hL1 hrecP
   have hvv : v' = v := Except.ok.inj (hld'.symm.trans hld)
   subst hvv
   have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨-, lcB, cb', ms', ind', blobs, hgetB, -, -, hexB, -, hcb', hms', -, raw⟩ := hraw
   obtain ⟨hhB, haB⟩ := hload_ld.1 _ lcB hgetB
@@ -515,17 +515,17 @@ theorem member_bounds_lim {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {E�
   have hchkA := memberCheckedLimAt_checkedLimAt (mc := .indc ind) hbound hchk rfl
   obtain ⟨_, _, m_chk, _, rc, ap, ptr, v, r_chk, cs_ld, cs_chk, bytes, E_ld,
     _, _, _, _, hhash, hblake, hload_ld, hL1, hsub_ld, hld, ev_chk, _, hsub_chk⟩ :=
-    Assembly.checkedLimAt_loadedL1 hbound hchkA
+    Assembly.checkedLimAt_loadedRecords hbound hchkA
   have hrecP : Ix.Cert.recordAt E₀ (memberAddr B 0 (.indc ind)) =
       some (memberProjection B 0 (.indc ind)) :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.former
   have hrecB : Ix.Cert.recordAt E₀ B = some cb :=
     (hS.recordOf_eq_recordAt _).symm.trans hrec.record
-  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedL1_record hS hsub_ld hhash hblake hL1 hrecP
+  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedRecords_record hS hsub_ld hhash hblake hL1 hrecP
   have hvv : v' = v := Except.ok.inj (hld'.symm.trans hld)
   subst hvv
   have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
-  unfold L1.RawCIRep at hraw
+  unfold Ingress.RawCIRep at hraw
   rw [hinfo] at hraw
   obtain ⟨-, lcB, cb', ms', ind', blobs, hgetB, -, -, hexB, -, hcb', hms', -, raw⟩ := hraw
   obtain ⟨hhB, haB⟩ := hload_ld.1 _ lcB hgetB
@@ -572,7 +572,7 @@ theorem formerChecked_of_member_lim {calls : List (Call F)} {t : Ix.Kernel.RoleT
     (hfree : Decl.KeyFree (Core.keyOf t (Core.iprjAddr B 0))) :
     ∃ ty' : Ix.Kernel.Expr .anon,
       LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-        ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ =
+        ((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ =
         some ty' ∧ Annotates ty' ty₀ ∧
       Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ env
         ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty₀⟩
@@ -591,7 +591,7 @@ theorem formerChecked_of_member_lim {calls : List (Call F)} {t : Ix.Kernel.RoleT
     show ((0 : Nat).toUInt64).toNat = 0
     decide
   -- the load of the member's projection record, traced
-  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := L1.get_ci_block_trace_spec hg_ld.2 ha ev_ld
+  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := Ingress.get_ci_block_trace_spec hg_ld.2 ha ev_ld
   have hrec : recordOf E (Core.ixAddr a) = some (memberProjection B 0 (.indc ind)) := by
     rw [hax, LoadedReads.memberAddr_indc]
     exact hproj
@@ -601,7 +601,7 @@ theorem formerChecked_of_member_lim {calls : List (Call F)} {t : Ix.Kernel.RoleT
     rw [hb, hdecA] at hex
     exact (Except.ok.inj hex).symm
   subst hc
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
   rw [hinfo] at hres
   obtain ⟨hidx, blkBytes, cb', ms', ind', blobs, tree, plan, v₀, hhB, haB, hexB, hcb, hms,
@@ -635,7 +635,7 @@ theorem formerChecked_of_member_lim {calls : List (Call F)} {t : Ix.Kernel.RoleT
   -- the prelude of the check
   obtain ⟨prelude⟩ := Decl.native_prelude_calls ev_chk
   -- the references the block uses are stored in the prefix
-  have used : ∀ x, L1.RefUsed cb.refs.toList cb.sharing.toList ind.typ x →
+  have used : ∀ x, Ingress.RefUsed cb.refs.toList cb.sharing.toList ind.typ x →
       ∃ ci, env.find? (Core.keyOf t x) = some ci := by
     have hmem' : Ixon.MutConst.indc ind ∈ (#[.indc ind] : Array Ixon.MutConst).toList :=
       List.mem_singleton.mpr rfl

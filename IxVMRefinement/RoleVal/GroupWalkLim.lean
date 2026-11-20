@@ -124,7 +124,7 @@ theorem validate_role_bound_walk {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
       (cs_w : List (Call F)),
       t.addressOf? ro = some a ∧
       Claim.RCFullRep t bAddr (groupValLimit g) h_w x_rc ∧
-      S0.addr h_w x_a a ∧
+      BaseSeams.addr h_w x_a a ∧
       ObsFn W "KernelClaim::run_check_transitive" [x_rc, x_a] h_w r_w h_w' cs_w ∧
       ∀ cl ∈ cs_w, cl ∈ calls := by
   cases Obs.«KernelRoles::validate_role».obs ev with
@@ -139,7 +139,7 @@ theorem validate_role_bound_walk {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
       ev47.heap_extends.trans (ev80.heap_extends.trans
         (ev100.heap_extends.trans ev124.heap_extends))
     have hrc_m111 := hrc.mono (ext_ba.trans ext_m111)
-    have ha_m111 := S0.addr_mono ext_m111 ha_m2
+    have ha_m111 := BaseSeams.addr_mono ext_m111 ha_m2
     match Obs.«KernelRoles::validate_member».obs ev142 with
     | .n0 (m198 := m198') (cs221 := cs221') (ev14 := ev14') (ev_wwewoqqa := evT')
         (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50') (ev70 := ev70')
@@ -151,7 +151,7 @@ theorem validate_role_bound_walk {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
             (ev36'.heap_extends.trans (ev101'.heap_extends.trans ev208'.heap_extends)))))))
       have hsub : ∀ cl ∈ cs221', cl ∈ calls := fun cl hm => by
         rw [hc183]; simp [show cl ∈ cs140 by rw [hc240']; simp [hm]]
-      exact ⟨a, _, _, _, _, _, had, hrc_m111.mono ext_w, S0.addr_mono ext_w ha_m111, ev223',
+      exact ⟨a, _, _, _, _, _, had, hrc_m111.mono ext_w, BaseSeams.addr_mono ext_w ha_m111, ev223',
         hsub⟩
     | .n1 (m472 := m472') (cs623 := cs623') (ev14 := ev14') (ev_wwewoqqa := evT')
         (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50') (ev70 := ev70')
@@ -164,7 +164,7 @@ theorem validate_role_bound_walk {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
               (ev389'.heap_extends.trans (ev376'.heap_extends.trans ev482'.heap_extends))))))))))
       have hsub : ∀ cl ∈ cs623', cl ∈ calls := fun cl hm => by
         rw [hc183]; simp [show cl ∈ cs140 by rw [hc642']; simp [hm]]
-      exact ⟨a, _, _, _, _, _, had, hrc_m111.mono ext_w, S0.addr_mono ext_w ha_m111, ev625',
+      exact ⟨a, _, _, _, _, _, had, hrc_m111.mono ext_w, BaseSeams.addr_mono ext_w ha_m111, ev625',
         hsub⟩
     | .n2 (m88 := m88') (m_jareqtgy := mR') (cs735 := cs735') (ev14 := ev14')
         (ev_wwewoqqa := evT') (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50')
@@ -178,7 +178,7 @@ theorem validate_role_bound_walk {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
             (ev36'.heap_extends.trans ev101'.heap_extends))))))
       have hsub : ∀ cl ∈ cs735', cl ∈ calls := fun cl hm => by
         rw [hc183]; simp [show cl ∈ cs140 by rw [hc754']; simp [hm]]
-      exact ⟨a, _, _, _, _, _, had, hrc_m111.mono ext_w, S0.addr_mono ext_w ha_m111, ev737',
+      exact ⟨a, _, _, _, _, _, had, hrc_m111.mono ext_w, BaseSeams.addr_mono ext_w ha_m111, ev737',
         hsub⟩
     | .n3 (ev101 := ev101') .. | .n4 (ev101 := ev101') .. | .n5 (ev101 := ev101') ..
     | .n6 (ev101 := ev101') .. | .n7 (ev101 := ev101') .. =>
@@ -245,7 +245,7 @@ theorem validate_role_bound_walk {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
       have hsub_a : ∀ cl ∈ cs172, cl ∈ calls := fun cl hm => by
         rw [hc279]; simp [show cl ∈ cs236 by rw [hc320]; simp [hm]]
       exact ⟨a, _, _, _, _, _, had, hrc.mono (ext_ba.trans (ext_m111.trans ext_w)),
-        S0.addr_mono (ext_m111.trans ext_w) ha_m2, ev174, hsub_a⟩
+        BaseSeams.addr_mono (ext_m111.trans ext_w) ha_m2, ev174, hsub_a⟩
   | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
     obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
     have hsk : roleSpecKindNat ro = 3 := by
@@ -277,7 +277,7 @@ theorem validate_role_bound_walk {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
     have hsub_a : ∀ cl ∈ cs220, cl ∈ calls := fun cl hm => by
       rw [hc419]; simp [show cl ∈ cs376 by rw [hc368]; simp [hm]]
     exact ⟨a, _, _, _, _, _, had, hrc.mono (ext_ba.trans (ext_m111.trans ext_w)),
-      S0.addr_mono (ext_m111.trans ext_w) ha_m2, ev222, hsub_a⟩
+      BaseSeams.addr_mono (ext_m111.trans ext_w) ha_m2, ev222, hsub_a⟩
 
 /-! ## The walked records, at the limit -/
 
@@ -383,7 +383,7 @@ theorem RefWalkedUnderCtxIn.lim_walks {calls : List (Call F)} {bAddr : _root_.Ad
     subst hrc'
     obtain ⟨-, recs, hmem, hcl, -⟩ :=
       Claim.run_check_transitive_lim_spec (lim := some n)
-        (show Claim.RCLimRep t bAddr (some n) h₂ _ from hrc.mono ext) (S0.addr_mono ext hb) evw
+        (show Claim.RCLimRep t bAddr (some n) h₂ _ from hrc.mono ext) (BaseSeams.addr_mono ext hb) evw
     refine ⟨recs.map (Claim.TopRec.mono hsub), hcl.mono hsub, ?_⟩
     rw [Claim.map_addr_topRec_mono]
     exact hmem
@@ -406,7 +406,7 @@ theorem ValidateRoleIn.op_certificate_walks {calls : List (Call F)} {bAddr : _ro
       rawBytes.size < 4294967296 ∧ Hashed calls rawBytes ∧ Address.blake3Pure rawBytes = thm ∧
       Ixon.deConstantExact rawBytes = .ok c ∧
       CertRefsGuardedIn calls bAddr t (groupValLimit g) a c ∧
-      ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ S0.usedRefIdxs c →
+      ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ BaseSeams.usedRefIdxs c →
         c.refs.toList[j] ≠ a →
         Claim.RefAllowedIn calls t bAddr (some (groupValLimit g)) c.refs.toList[j] ∧
         (Claim.CoveredAt t (some (groupValLimit g)) c.refs.toList[j] ∨

@@ -362,12 +362,12 @@ theorem anchor_stored_matchesPin {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
     -- the load
     have hbound45 : IxVM.Consistency.Bounded cs45 := RomBound.bounded_mono hrun.bounded hsub45
     obtain ⟨-, bytes, E_ld, hhash, hblake, hloaded, hL1⟩ :=
-      L1.get_ci_loadedL1_spec hbound45 hb ev47
+      Ingress.get_ci_loadedRecords_spec hbound45 hb ev47
     have hrecA : Ix.Cert.recordAt ρ.E₀ (ixAddr b) = some c := by
       rw [← hrun.runStore.recordOf_eq_recordAt]
       exact hcE
     obtain ⟨-, -, v, hld, hraw⟩ :=
-      LoadedReads.loadedL1_record hrun.runStore hsub45 hhash hblake hL1 hrecA
+      LoadedReads.loadedRecords_record hrun.runStore hsub45 hhash hblake hL1 hrecA
     obtain rfl : v = v31 := Except.ok.inj (hld.symm.trans ld41)
     obtain ⟨tag, n, tyPtr, rest, src, recurAddrs, blobs, self, e, ty₀, hv, hnlt, raw, hblob,
       hself, hread, hcases⟩ := LoadedReads.loadedTypeReads hrun.runStore hloaded hsub45 hraw hrr
@@ -401,7 +401,7 @@ theorem anchor_stored_matchesPin {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
       rw [Assembly.recParam_range]
       exact hread
     obtain ⟨ty', hvs, hrep⟩ :=
-      L1.rawConvExpr_to_valRepExact (κ := keyOf t) (name := keyOf t (ixAddr b))
+      Ingress.rawConvExpr_to_valRepExact (κ := keyOf t) (name := keyOf t (ixAddr b))
         (ps := List.range n) (by simp) (by simp) hnlt
         (LoadedReads.readCtx_keyAt_inv ht (fun x => ρ.E₀.blobs.get? x)) hself hblob raw hread'
         hlbb hdef

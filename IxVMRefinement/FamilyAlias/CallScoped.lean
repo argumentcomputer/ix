@@ -579,7 +579,7 @@ decreasing_by
 /-! ## Bridge between `RawConvExpr` / `exprReader` and `HeapExprScoped` -/
 
 private theorem heapLevelScoped_of_rawKLevel {h : Heap F} {nl : Nat} {l : Core.KLevel}
-    {p : SourceValue F} (rl : L1.RawKLevel h l p)
+    {p : SourceValue F} (rl : Ingress.RawKLevel h l p)
     (hdef : l.allParamsDefined (List.range nl) = true) :
     HeapLevelScoped h nl p := by
   induction rl with
@@ -596,7 +596,7 @@ private theorem heapLevelScoped_of_rawKLevel {h : Heap F} {nl : Nat} {l : Core.K
     exact .param hdef hn (loadValue_enum_cell' cell)
 
 private theorem heapLevelListScoped_of_rawKLevelList {h : Heap F} {nl : Nat}
-    {ls : List Core.KLevel} {p : SourceValue F} (rls : L1.RawKLevelList h ls p)
+    {ls : List Core.KLevel} {p : SourceValue F} (rls : Ingress.RawKLevelList h ls p)
     (hdef : ls.all (Ix.Kernel.Level.allParamsDefined (List.range nl)) = true) :
     HeapLevelListScoped h nl p := by
   induction rls with
@@ -608,7 +608,7 @@ private theorem heapLevelListScoped_of_rawKLevelList {h : Heap F} {nl : Nat}
 
 private theorem rawKLevel_allParamsDefined_of_scoped {h hSup : Heap F} {nl : Nat}
     {l : Core.KLevel} {p : SourceValue F}
-    (ext : Heap.Extends h hSup) (rl : L1.RawKLevel h l p) (hs : HeapLevelScoped hSup nl p) :
+    (ext : Heap.Extends h hSup) (rl : Ingress.RawKLevel h l p) (hs : HeapLevelScoped hSup nl p) :
     l.allParamsDefined (List.range nl) = true := by
   induction rl with
   | zero cell => rfl
@@ -655,7 +655,7 @@ private theorem rawKLevel_allParamsDefined_of_scoped {h hSup : Heap F} {nl : Nat
 
 private theorem rawKLevelList_allParamsDefined_of_scoped {h hSup : Heap F} {nl : Nat}
     {ls : List Core.KLevel} {p : SourceValue F}
-    (ext : Heap.Extends h hSup) (rls : L1.RawKLevelList h ls p)
+    (ext : Heap.Extends h hSup) (rls : Ingress.RawKLevelList h ls p)
     (hs : HeapLevelListScoped hSup nl p) :
     ls.all (Ix.Kernel.Level.allParamsDefined (List.range nl)) = true := by
   induction rls with
@@ -708,11 +708,11 @@ private theorem heapExprScoped_of_rawConvExpr_go
     {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)}
     (hunivs : ecx.univs = univs.toArray.map (Ix.Kernel.Reader.convUniv id))
     {h₀ : Heap F} {nl : Nat} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
-    (raw : L1.RawConvExpr refs recurAddrs univs sharing blobs h₀ bound e kp) :
+    (raw : Ingress.RawConvExpr refs recurAddrs univs sharing blobs h₀ bound e kp) :
     ∀ {n k : Nat} {E_rd : Core.KExpr},
       n ≤ sharing.length →
       (bound ≤ n ∨ n = sharing.length) →
-      Ix.Kernel.Reader.convExpr ecx (L1.buildShareTbl ecx (sharing.take n)) e = .ok E_rd →
+      Ix.Kernel.Reader.convExpr ecx (Ingress.buildShareTbl ecx (sharing.take n)) e = .ok E_rd →
       E_rd.looseBVarsBounded k = true →
       E_rd.allLevelParamsDefined (List.range nl) = true →
       HeapExprScoped h₀ nl k kp := by
@@ -814,7 +814,7 @@ private theorem heapExprScoped_of_rawConvExpr_go
     have hi_len : idx.toNat < sharing.length := (List.getElem?_eq_some_iff.mp hsh_get).1
     have hi_n : idx.toNat < n := by rcases hbnd with hb | rfl <;> omega
     simp only [Ix.Kernel.Reader.convExpr] at hconv
-    rw [L1.buildShareTbl_take_getElem? ecx sharing hi_n hsh_get] at hconv
+    rw [Ingress.buildShareTbl_take_getElem? ecx sharing hi_n hsh_get] at hconv
     exact ih (Nat.le_of_lt hi_len) (Or.inl (Nat.le_refl _)) hconv hlbb hdef
 
 /-- Any `RawConvExpr` whose `MemberReader` reading is closed and level-scoped in `List.range nl`
@@ -824,13 +824,13 @@ theorem heapExprScoped_of_rawConvExpr
     {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
     {h₀ : Heap F} {nl : Nat} {e : Ixon.Expr} {kp : SourceValue F} {E_rd : Core.KExpr}
-    (raw : L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+    (raw : Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
       h₀ 4294967295 e kp)
     (hread : (Ix.Kernel.Reader.MemberReader.mk' cx src id self).read e = .ok E_rd)
     (hlbb : E_rd.looseBVarsBounded 0 = true)
     (hdef : E_rd.allLevelParamsDefined (List.range nl) = true) :
     HeapExprScoped h₀ nl 0 kp := by
-  obtain ⟨hecx, htbl⟩ := L1.memberReader_mk'_eq cx src id self
+  obtain ⟨hecx, htbl⟩ := Ingress.memberReader_mk'_eq cx src id self
   unfold Ix.Kernel.Reader.MemberReader.read at hread
   rw [hecx, htbl, ← List.take_length (l := src.sharing.toList)] at hread
   exact heapExprScoped_of_rawConvExpr_go (by simp) raw (Nat.le_refl _) (Or.inr rfl)
@@ -843,11 +843,11 @@ private theorem rawConvExpr_scoped_of_heapExprScoped_go
     (hunivs : ecx.univs = univs.toArray.map (Ix.Kernel.Reader.convUniv id))
     {h₀ hSup : Heap F} (ext : Heap.Extends h₀ hSup) {nl : Nat}
     {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
-    (raw : L1.RawConvExpr refs recurAddrs univs sharing blobs h₀ bound e kp) :
+    (raw : Ingress.RawConvExpr refs recurAddrs univs sharing blobs h₀ bound e kp) :
     ∀ {n k : Nat} {E_rd : Core.KExpr},
       n ≤ sharing.length →
       (bound ≤ n ∨ n = sharing.length) →
-      Ix.Kernel.Reader.convExpr ecx (L1.buildShareTbl ecx (sharing.take n)) e = .ok E_rd →
+      Ix.Kernel.Reader.convExpr ecx (Ingress.buildShareTbl ecx (sharing.take n)) e = .ok E_rd →
       HeapExprScoped hSup nl k kp →
       E_rd.looseBVarsBounded k = true ∧ E_rd.allLevelParamsDefined (List.range nl) = true := by
   induction raw with
@@ -1042,7 +1042,7 @@ private theorem rawConvExpr_scoped_of_heapExprScoped_go
     have hi_len : idx.toNat < sharing.length := (List.getElem?_eq_some_iff.mp hsh_get).1
     have hi_n : idx.toNat < n := by rcases hbnd with hb | rfl <;> omega
     simp only [Ix.Kernel.Reader.convExpr] at hconv
-    rw [L1.buildShareTbl_take_getElem? ecx sharing hi_n hsh_get] at hconv
+    rw [Ingress.buildShareTbl_take_getElem? ecx sharing hi_n hsh_get] at hconv
     exact ih (Nat.le_of_lt hi_len) (Or.inl (Nat.le_refl _)) hconv hs
 
 /-- Any `RawConvExpr` whose heap pointer satisfies `HeapExprScoped hSup nl 0 kp` at a super-heap
@@ -1052,13 +1052,13 @@ theorem rawConvExpr_scoped_of_heapExprScoped
     {self : Nat → Option (Ix.Kernel.Reader.ReadM Core.KKey)}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
     {h₀ hSup : Heap F} {nl : Nat} {e : Ixon.Expr} {kp : SourceValue F} {E_rd : Core.KExpr}
-    (raw : L1.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+    (raw : Ingress.RawConvExpr src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
       h₀ 4294967295 e kp)
     (ext : Heap.Extends h₀ hSup)
     (hread : (Ix.Kernel.Reader.MemberReader.mk' cx src id self).read e = .ok E_rd)
     (hs : HeapExprScoped hSup nl 0 kp) :
     E_rd.looseBVarsBounded 0 = true ∧ E_rd.allLevelParamsDefined (List.range nl) = true := by
-  obtain ⟨hecx, htbl⟩ := L1.memberReader_mk'_eq cx src id self
+  obtain ⟨hecx, htbl⟩ := Ingress.memberReader_mk'_eq cx src id self
   unfold Ix.Kernel.Reader.MemberReader.read at hread
   rw [hecx, htbl, ← List.take_length (l := src.sharing.toList)] at hread
   exact rawConvExpr_scoped_of_heapExprScoped_go (by simp) ext raw (Nat.le_refl _) (Or.inr rfl)

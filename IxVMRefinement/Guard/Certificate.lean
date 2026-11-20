@@ -251,7 +251,7 @@ def ProjGuardUseReading : Prop :=
       some (.projInfo tbl))
     (hprop : Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true)
     (hf : ZMod.val f < nF) {g : KLevel} (hg : RepKLevel h' g r),
-    L1.EnvInternalCollision c.E ∨
+    Ingress.EnvInternalCollision c.E ∨
     ∃ raw, Guard.ctorRaw c.E (ixAddr b) (ZMod.val i) 0 = some raw ∧
       Ix.Kernel.ProjGuardUse (GuardRaw.ofStore c.E) raw cvC.type tbl.numParams (ZMod.val f) g
 
@@ -280,7 +280,7 @@ def CheckedFieldsReading : Prop :=
     (good₀ : CoreGood c cs₀) (hb : Bytes.RepAddressRef addrTy h₀ b bp)
     (ld : loadValue m ptr = .ok (.construct kciEnum "Ctor" [w₁, p, w₃, w₄, w₅, w₆, w₇, w₈]))
     (hext : Heap.Extends m h),
-    L1.EnvInternalCollision c.E ∨
+    Ingress.EnvInternalCollision c.E ∨
     ∃ (sorts sigs : List KLevel) (fuel : Nat) (raw : KExpr),
       Ix.Kernel.Semantics.FieldSortsJ Ix.Kernel.Model.rulesJ c.env true false u nP fvs [] nF
         sorts ∧

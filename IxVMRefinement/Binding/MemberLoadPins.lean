@@ -105,7 +105,7 @@ theorem validateMember_storedRecCounts {role : Ix.Kernel.Role} {n : Nat} (pin : 
     (path : Obs.«KernelRoles::validate_member».Path rc tbl (.field (roleNum role)) addr ci
       h result h' calls)
     {refs recurs univs sharing blobs loadHeap block idx} {record : Ixon.Recursor}
-    (raw : L1.RawRecrValRep refs recurs univs sharing blobs loadHeap record block idx ci)
+    (raw : Ingress.RawRecrValRep refs recurs univs sharing blobs loadHeap record block idx ci)
     {t store blob src self name declared stored}
     (read : RecReads t store blob src self name record declared) (kept : StoredAs stored declared) :
     ∃ cv rules, stored = .recInfo cv n n rules ∧ cv.name = name ∧

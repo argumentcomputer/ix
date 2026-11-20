@@ -82,10 +82,10 @@ theorem rules_wellscoped_reads {calls : List (Call F)} (hbound : Bounded calls)
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon))}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
-    {tree : L1.BinderTreeData} {h₀ : Heap F} {nlvls : Nat} (hn : nlvls < 4294967296) :
+    {tree : Ingress.BinderTreeData} {h₀ : Heap F} {nlvls : Nat} (hn : nlvls < 4294967296) :
     ∀ (rus : List Ixon.RecursorRule) {j : Nat} {root : F} {p depth r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
-      L1.RulesTraceRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
+      Ingress.RulesTraceRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs
         tree h₀ j root rus p →
       Heap.Extends h₀ h →
       ObsFn Obs.W "KernelCheck::check_rec_rules_wellscoped" [p, depth, .field (nlvls : F)]
@@ -148,10 +148,10 @@ theorem rec_rules_reads_scoped {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨a', ha'_ref, haA⟩ := ha_pre
   subst haA
   obtain ⟨rawBytes, c', hh, hba, hex, -, hres'⟩ :=
-    L1.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
+    Ingress.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
   have hcc : c' = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hh) hba hex
   subst c'
-  unfold L1.GetCIBlockTraceResult at hres'
+  unfold Ingress.GetCIBlockTraceResult at hres'
   rw [hinfo] at hres'
   obtain ⟨blobs, tree, v, -, -, hldv, htr⟩ := hres'
   rw [hld] at hldv

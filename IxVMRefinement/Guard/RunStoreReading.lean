@@ -93,14 +93,14 @@ theorem rawCIRep_runStore {calls cs : List (Call F)} {E E_ld : Ixon.Env}
     (hsub : ∀ cl ∈ cs, cl ∈ calls) {h : Heap F} {a : _root_.Address} {c : Ixon.Constant}
     {v : SourceValue F}
     (hparent : ∀ B, projBlock c.info = some B → (E.consts.get? B).isSome)
-    (raw : L1.RawCIRep E_ld h a c v) : L1.RawCIRep E h a c v := by
+    (raw : Ingress.RawCIRep E_ld h a c v) : Ingress.RawCIRep E h a c v := by
   have blobs : ∀ {table : List (_root_.Address × ByteArray)},
-      L1.BlobTableLoaded E_ld table → L1.BlobTableLoaded E table := by
+      Ingress.BlobTableLoaded E_ld table → Ingress.BlobTableLoaded E table := by
     intro table loaded
     refine Or.inl fun x bs member => ?_
     have held := hS.blob_of_table hload hsub loaded x bs member
     exact ⟨held, (hS.loaded.2 x bs held).2⟩
-  unfold L1.RawCIRep at raw ⊢
+  unfold Ingress.RawCIRep at raw ⊢
   cases hc : c.info with
   | defn d =>
     rw [hc] at raw
@@ -163,13 +163,13 @@ theorem get_ci_rawCIRep_runStore {calls : List (Call F)} {E₀ : Ixon.Env}
     (load : ObsFn W "Ingress::get_ci" [ap] before ptr loaded loadCalls)
     (node : loadValue loaded ptr = .ok value) :
     ∃ record, recordOf E₀ (ixAddr address) = some record ∧
-      L1.RawCIRep E₀ loaded (ixAddr address) record value := by
+      Ingress.RawCIRep E₀ loaded (ixAddr address) record value := by
   obtain ⟨-, bytes, E_ld, hashed, hashAddress, loadedBy, loadedL1⟩ :=
-    L1.get_ci_loadedL1_spec hbound addressRep load
+    Ingress.get_ci_loadedRecords_spec hbound addressRep load
   obtain ⟨record, stored⟩ :=
     LoadedReads.recordAt_of_get_ci hcov ⟨address, addressRep, rfl⟩ load hsub
   obtain ⟨-, -, v, loadedValue, rawCI⟩ :=
-    LoadedReads.loadedL1_record hS hsub hashed hashAddress loadedL1 stored
+    LoadedReads.loadedRecords_record hS hsub hashed hashAddress loadedL1 stored
   rw [node] at loadedValue
   have sameValue : value = v := Except.ok.inj loadedValue
   subst sameValue
@@ -200,7 +200,7 @@ theorem typeAnswer_runStore {c : ScopedCtx} {calls rootCalls : List (Call F)} {E
   have same := countFields.symm.trans typeFields
   have pointer : countPtr = typePtr := (Prod.mk.inj (Option.some.inj same)).2
   rw [pointer] at countFields
-  rcases GuardRaw.type_lookup_exact stored (L1.RawCIRep.mono extension rawCI) physical
+  rcases GuardRaw.type_lookup_exact stored (Ingress.RawCIRep.mono extension rawCI) physical
     countFields small with collision | found
   · exact absurd collision hS.no_internal_collision
   · exact found
@@ -253,11 +253,11 @@ theorem ctorRaw_runStore {calls cs₀ : List (Call F)} {E₀ : Ixon.Env}
     Guard.ctorRaw E₀ (ixAddr b) (ZMod.val i) 0 = some R.eraseMeta := by
   obtain ⟨-, -, -, blkBytes, cb, ms, ind, ct, table, v, hashedBlock, blockAddress, exact,
     -, shape, member, constructor, hashedBlobs, loadedValue, rawCtor⟩ :=
-    L1.get_ci_cprj_spec hbound hb load
+    Ingress.get_ci_cprj_spec hbound hb load
   -- the run's store holds the block the load read
   obtain ⟨value, middle, children, verified, verifiedSub⟩ := get_ci_cprj_verified_subcall load
   obtain ⟨-, bytes, c', size, hashed', address', exact', decoded', -⟩ :=
-    L1.load_verified_constant_decode_bounded hb verified
+    Ingress.load_verified_constant_decode_bounded hb verified
   have hashedRun' : Hashed calls ⟨bytes.toArray⟩ :=
     Core.hashed_mono (fun cl member => hsub cl (verifiedSub cl member)) hashed'
   obtain ⟨lc, stored, bytesEq, -⟩ := hcov ⟨bytes.toArray⟩ c' hashedRun'
@@ -286,7 +286,7 @@ theorem ctorRaw_runStore {calls cs₀ : List (Call F)} {E₀ : Ixon.Env}
   have ctor' : ind.ctors[0]? = some ct := by
     simpa only [Array.getElem?_toList, ZMod.val_zero] using constructor
   let root : GuardRaw.Root := ⟨cb, blockSelf GuardRaw.addressTable (ixAddr b) ms,
-    L1.mutsRootOffset ms.toList (ZMod.val i) + (1 + 0), ct.lvls.toNat, ct.typ⟩
+    Ingress.mutsRootOffset ms.toList (ZMod.val i) + (1 + 0), ct.lvls.toNat, ct.typ⟩
   have selected : GuardRaw.memberRoot (recordOf E₀) (ixAddr b) (ZMod.val i)
       (GuardRaw.constructorType 0) = some root := by
     simp [GuardRaw.memberRoot, record, shape, member', GuardRaw.constructorType, ctor', root]

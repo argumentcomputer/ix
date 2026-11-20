@@ -130,7 +130,7 @@ well-formedness, whose evidence clauses the circuit establishes in the roles' va
 def LoadedTableAdmits : Prop :=
   ∀ (a : _root_.Address) (x_a x_tbl v r : SourceValue F) (h h₁ h₂ h' : Heap F)
     (cs₁ cs₂ cs₃ : List (Call F)),
-    Core.S0.addr h x_a a →
+    Core.BaseSeams.addr h x_a a →
     ObsFn Core.W "KernelRoles::load_role_table" [x_a] h x_tbl h₁ cs₁ →
     ObsFn Core.W "KernelRoles::assert_all_roles_bound" [x_tbl, .field 0] h₁ v h₂ cs₂ →
     ObsFn Core.W "KernelRoles::admit_all_groups" [x_tbl, .field 0] h₂ r h' cs₃ →
@@ -267,8 +267,8 @@ theorem bindingClaimExportObs_of_parts {calls : List (Call F)} {d : Digest}
   · exact Or.inl hcol
   by_cases hnc : V.HashedCollision (bytes :: committedFootprint) calls
   · exact Or.inl hnc
-  have hw0 : Claim.WalkedL6 calls t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) [] :=
-    Claim.walkedL6_envOfRecs (seeds := []) hnoColl [] hadm (by simp)
+  have hw0 : Claim.WalkedClaim calls t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) [] :=
+    Claim.walkedClaim_envOfRecs (seeds := []) hnoColl [] hadm (by simp)
       (by intro r hr; cases hr)
   have hload : LoadedBy calls (Claim.runEnv ⟨a, tb⟩ (t := t) calls) :=
     Claim.envOfRecs_loadedBy (t := t) ⟨a, tb⟩ calls []
@@ -277,15 +277,15 @@ theorem bindingClaimExportObs_of_parts {calls : List (Call F)} {d : Digest}
   exact
     { bounded := hb
       observed := ⟨a, tb, htb, hadm, rfl⟩
-      runStore := LoadedReads.RunStore.of_walkedL6 hload hw0
-      hashedStored := LoadedReads.hashedRecordsStored_of_walkedL6 hw0
+      runStore := LoadedReads.RunStore.of_walkedClaim hload hw0
+      hashedStored := LoadedReads.hashedRecordsStored_of_walkedClaim hw0
       preludePinned := hpin
       basisConsts := hbc
       basisBlobs := hbb
       admits := fun g hg6 hg =>
         admits_observed_of_checked (hgs g hg6 hg).1 (hval g hg)
       reads := fun g hg6 hg => admitsReads_observed_of_checked (hgs g hg6 hg).2.1
-      stepStores := runStepStores_of_noCollision t (LoadedReads.RunStore.of_walkedL6 hload hw0) hb
+      stepStores := runStepStores_of_noCollision t (LoadedReads.RunStore.of_walkedClaim hload hw0) hb
         (fun x hx => List.mem_cons_of_mem _ hx) hnc
       families := fun g hg6 hg => (hgs g hg6 hg).2.2
       famCallsModeled := hfamMod }

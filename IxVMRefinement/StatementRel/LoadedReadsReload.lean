@@ -29,9 +29,9 @@ open IxVM.Consistency
 collision with the store: at an address the store holds a blob, the load hashed those bytes. -/
 theorem blobReadAgreement_of_noCollision {E : Ixon.Env} {cs : List (Call F)}
     (hnc : ¬ View.HashedCollision { env := E } [] cs)
-    {blobs : List (_root_.Address × ByteArray)} (hhp : L1.HashedPairs cs blobs)
+    {blobs : List (_root_.Address × ByteArray)} (hhp : Ingress.HashedPairs cs blobs)
     (t : Ix.Kernel.RoleTable) :
-    L1.BlobReadAgreement (readCtx t (fun x => E.blobs.get? x)).blob blobs := by
+    Ingress.BlobReadAgreement (readCtx t (fun x => E.blobs.get? x)).blob blobs := by
   intro x observed hmem declared hfound
   obtain ⟨hhx, hxa⟩ := hhp (x, observed) hmem
   apply Classical.byContradiction
@@ -47,7 +47,7 @@ collision with `E`, there are annotations `ty'`, `val'` of `ty₀`, `val₀` suc
 returned pointer represents the constant with type `ty'` and value `val'`, under every
 hint. -/
 theorem get_ci_defn_rep {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {E : Ixon.Env}
-    (hdec : L1.EnvDecoded E) {cs : List (Call F)} (hbound : Bounded cs)
+    (hdec : Ingress.EnvDecoded E) {cs : List (Call F)} (hbound : Bounded cs)
     (hnc : ¬ View.HashedCollision { env := E } [] cs) {a : Aiur.Library.Bytes.Address}
     {addr ptr : SourceValue F} {h h' : Heap F}
     (ha : Aiur.Library.Bytes.RepAddressRef Core.addrTy h a addr)
@@ -66,7 +66,7 @@ theorem get_ci_defn_rep {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {E : I
       ∀ hn : Ix.Kernel.ReducibilityHint,
         Core.CIPtrRep (Core.keyOf t) h' ptr
           (defnConst d.kind ⟨keyOf t (Core.ixAddr a), List.range d.lvls.toNat, ty'⟩ val' hn) := by
-  obtain ⟨-, rawBytes, c', blobs, hh, haddr, hex, -, -, hhp, hres⟩ := L1.get_ci_spec hbound ha ev
+  obtain ⟨-, rawBytes, c', blobs, hh, haddr, hex, -, -, hhp, hres⟩ := Ingress.get_ci_spec hbound ha ev
   have hc : c' = c := by
     unfold Ix.Cert.recordAt at hrec
     cases hget : E.consts.get? (Core.ixAddr a) with
@@ -84,7 +84,7 @@ theorem get_ci_defn_rep {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {E : I
       rw [← h1]
       exact Option.some.inj h2
   subst hc
-  unfold L1.GetCIRawResult at hres
+  unfold Ingress.GetCIRawResult at hres
   rw [hinfo] at hres
   obtain ⟨v, hld, raw⟩ := hres
   have hsafe : Ix.Kernel.Reader.safetyDecline d = none := by
@@ -92,9 +92,9 @@ theorem get_ci_defn_rep {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {E : I
     unfold InLogic at hl
     rw [hinfo] at hl
     exact hl
-  have hrecur : L1.defnRecurAddrs d (Core.ixAddr a) = [] := by
-    have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
-    simp [L1.defnRecurAddrs, hf]
+  have hrecur : Ingress.defnRecurAddrs d (Core.ixAddr a) = [] := by
+    have hf := (Ingress.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+    simp [Ingress.defnRecurAddrs, hf]
   rw [hrecur] at raw
   obtain ⟨hnlvls, tyPtr, valPtr, hint, rfl, rty, rval⟩ := raw
   have hagree := blobReadAgreement_of_noCollision hnc hhp t
@@ -125,13 +125,13 @@ theorem get_ci_defn_rep {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {E : I
       by simpa using hnlvls, by simp, hty_tm.toTmC⟩
   cases hk : d.kind with
   | defn =>
-    simp only [L1.defnValShape, hk]
+    simp only [Ingress.defnValShape, hk]
     exact .defn hvr hval_tm.toTmC
   | thm =>
-    simp only [L1.defnValShape, hk]
+    simp only [Ingress.defnValShape, hk]
     exact .thm hvr hval_tm.toTmC
   | opaq =>
-    simp only [L1.defnValShape, hk]
+    simp only [Ingress.defnValShape, hk]
     exact .opaq hvr
 
 end IxVM.Refinement.LoadedReads

@@ -257,7 +257,7 @@ theorem cidx_eq_of_modeled_checked {calls : List (Call F)} {bAddr : _root_.Addre
     {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {lim : Option Nat}
     {B : _root_.Address} {cb : Ixon.Constant} {ms : Array Ixon.MutConst}
     (hB : FamBlockRecord E₀ B cb ms) (hst : StepStore calls t E₀ E)
-    (hdec : L1.EnvDecoded E) (hmod : ModeledAt E B)
+    (hdec : Ingress.EnvDecoded E) (hmod : ModeledAt E B)
     (hms_lt : ms.size < 8589934592)
     (hmem : ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t B ms k lim) :
     ∀ (i : Nat) (ind : Ixon.Inductive) (j : Nat) (ct : Ixon.Constructor),
@@ -274,7 +274,7 @@ theorem cidx_eq_of_modeled_checked {calls : List (Call F)} {bAddr : _root_.Addre
     cs_pa, cs_load, cs_chk, hmemRep, hblk, ev_pa, -, -, -, -, ev_ld, -, hsub_ld, hld,
     ev_chk, -, hsub_chk⟩ := hchk
   obtain ⟨b', hb', hb'B⟩ := hblk
-  obtain ⟨-, -, -, mc, a, hget, ha, hax, -⟩ := L1.projection_addr_hashed_spec hmemRep hb' ev_pa
+  obtain ⟨-, -, -, mc, a, hget, ha, hax, -⟩ := Ingress.projection_addr_hashed_spec hmemRep hb' ev_pa
   rw [hval_i] at hget hax
   have hmc : mc = .indc ind := by
     rw [Array.getElem?_toList, hmi] at hget
@@ -293,7 +293,7 @@ theorem cidx_eq_of_modeled_checked {calls : List (Call F)} {bAddr : _root_.Addre
     rw [← LoadedReads.memberAddr_indc]
     exact (recordOf_eq_recordAt_of_decoded hdec _).trans
       (hst.runRecord _ _ (hB.members i (.indc ind) hmi))
-  obtain ⟨rawBytes, c', hh, haddr, hex, -, hres⟩ := L1.get_ci_block_trace_spec hg_ld.2 ha ev_ld
+  obtain ⟨rawBytes, c', hh, haddr, hex, -, hres⟩ := Ingress.get_ci_block_trace_spec hg_ld.2 ha ev_ld
   have hrecA : recordOf E (Core.ixAddr a) = some (memberProjection B i (.indc ind)) := by
     rw [hax']; exact hrecE_ip
   obtain ⟨lc, hgetA, hdecA⟩ := LoadedReads.recordOf_inv hrecA
@@ -301,7 +301,7 @@ theorem cidx_eq_of_modeled_checked {calls : List (Call F)} {bAddr : _root_.Addre
   have hc : c' = memberProjection B i (.indc ind) := by
     rw [hb0, hdecA] at hex; exact (Except.ok.inj hex).symm
   subst hc
-  unfold L1.GetCIBlockTraceResult at hres
+  unfold Ingress.GetCIBlockTraceResult at hres
   have hinfo : (memberProjection B i (.indc ind)).info = .iPrj ⟨i.toUInt64, B⟩ := rfl
   rw [hinfo] at hres
   obtain ⟨-, blkBytes, cb', ms', ind', _, _, _, v₀, hhB, haB, hexB, hcb, hms,
@@ -339,7 +339,7 @@ theorem cidx_eq_of_modeled_checked {calls : List (Call F)} {bAddr : _root_.Addre
     ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
   have hgL : Core.Good c0 st.loadCalls := hg.sub st.loadSubset
   obtain ⟨-, -, -, blkBytes₂, cb₂, ms₂, ind₂, ct₂, _, v₂, hhB₂, haB₂, hexB₂, -, hcb₂, hms₂,
-    hct₂, -, hldv₂, hraw₂⟩ := L1.get_ci_cprj_spec hgL.2 st.blockRep st.loaded
+    hct₂, -, hldv₂, hraw₂⟩ := Ingress.get_ci_cprj_spec hgL.2 st.blockRep st.loaded
   have hbB₂ : blkBytes₂ = lcB.rawBytes :=
     Core.load_escape hgetB hgL.1 blkBytes₂ hhB₂ (haB₂.trans hb_eq)
   have hcB₂ : cb₂ = cb := by rw [hbB₂, hdecB] at hexB₂; exact (Except.ok.inj hexB₂).symm
@@ -521,7 +521,7 @@ theorem familyCall_checked_of_chain
     (ht : t.check = .ok ()) (hbd : Bounded calls)
     (hS : LoadedReads.RunStore calls E₀) (hH : LoadedReads.HashedRecordsStored calls E₀)
     (hB : FamBlockRecord E₀ B cb ms) (hR : FamRecRecord E₀ rb crb rs)
-    (hrc : Claim.RCLimRep t bAddr lim h rc) (hxb : S0.addr h xb B) (hxrb : S0.addr h xrb rb)
+    (hrc : Claim.RCLimRep t bAddr lim h rc) (hxb : BaseSeams.addr h xb B) (hxrb : BaseSeams.addr h xrb rb)
     (hsub : CallSub csFam calls)
     (C : CheckFamilyChain rc xb xrb h h' csFam)
     (hadvHyp : (∀ a, AdviceIn csFam a → adv a) ∨
@@ -598,7 +598,7 @@ theorem familyCall_checked_of_chain
     Bytes.repAddressRef_heapMono₂ addrTy ext_h_453 hbB_rep
   have hbR453 : Bytes.RepAddressRef addrTy C.m453 bR xrb :=
     Bytes.repAddressRef_heapMono₂ addrTy ext_h_453 hbR_rep
-  have hs5_453 : L1.Stream C.m453 b5 C.s5 :=
+  have hs5_453 : Ingress.Stream C.m453 b5 C.s5 :=
     hs5.mono (C.evWset.extends.trans (C.evContRefs.extends.trans C.evCheckAdv.extends))
   obtain ⟨typeAs, ctorAs, recAs, typeMs, ctorMs, recMs, T_raw, hnRecs_eq, b8, hs8_978⟩ :=
     family_tables hS hH hB' hR' hbB453 hbR453 hs5_453
@@ -959,7 +959,7 @@ theorem familyCall_checked_of_chain
     have e2 : ms = ms' := Ixon.ConstantInfo.muts.inj (hB'.muts.symm.trans hmuts')
     subst e2
     have hrepM' : RepList Obs.Names.«Lists::Node<Ixon::MutConst>»
-        L1.RepMutConst C.m624 ms.toList C.members :=
+        Ingress.RepMutConst C.m624 ms.toList C.members :=
       RepLinkedList.mono (fun _ _ _ _ ext r => r.mono ext)
         (C.evLenMem.extends.trans C.evIndcCnt.extends) hrepM
     exact block_nparams_spec hrepM' C.evNParams.obs
@@ -1681,11 +1681,11 @@ theorem familyCall_checked_of_chain
           ciC.name = Core.keyOf t (cprjAddr B pos 0) ∧
           tys[kC]? = some tyA_C ∧
           LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-            ((L1.mutsRootOffset ms.toList pos : Nat) : F) ind.typ (indTy₀ pos) = some tyA_T ∧
+            ((Ingress.mutsRootOffset ms.toList pos : Nat) : F) ind.typ (indTy₀ pos) = some tyA_T ∧
           Annotates tyA_T (indTy₀ pos) ∧
           tyA_T.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
           LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
-            (((L1.mutsRootOffset ms.toList pos : Nat) : F) + 1 + ((0 : Nat) : F)) ct.typ (ctorTy₀ pos 0) =
+            (((Ingress.mutsRootOffset ms.toList pos : Nat) : F) + 1 + ((0 : Nat) : F)) ct.typ (ctorTy₀ pos 0) =
             some tyA_C ∧
           tyA_C.allLevelParamsDefined (List.range ct.lvls.toNat) = true := by
       intro pos hpos ind ct hmi hct
@@ -1728,7 +1728,7 @@ theorem familyCall_checked_of_chain
               (C.evNoRole.extends.trans (C.evNoTypeRole.extends.trans (C.evLenRecs.extends.trans
                 (C.evRecMods.extends.trans (C.evSrcTail.extends.trans (C.evSrc.extends.trans
                   (C.evDstTail.extends.trans C.evDst.extends)))))))))))))))
-      have hme : L1.mutConstListEnum = Obs.Names.«Lists::Node<Ixon::MutConst>» := by decide +kernel
+      have hme : Ingress.mutConstListEnum = Obs.Names.«Lists::Node<Ixon::MutConst>» := by decide +kernel
       rw [hme] at hrepM
       exact RepLinkedList.mono (fun _ _ _ _ _ _ => trivial)
         (ext_501_978.trans (C.ext_m978_m1293.trans C.evCheckRecs.extends)) (repList_true hrepM)
@@ -1762,12 +1762,12 @@ theorem familyCall_checked_of_chain
 /-! ## Payload-stream determinism: identifying `FamilyOwnAdvice`'s advice list with `C.advList` -/
 
 private theorem get_count_spec_bytes {s x_n x_s2 : SourceValue F} {bytes : List UInt8}
-    {h h' : Heap F} {cs : List (Call F)} (hs : L1.Stream h bytes s)
+    {h h' : Heap F} {cs : List (Call F)} (hs : Ingress.Stream h bytes s)
     (ev : ObsFn Obs.W "KernelModeled::get_count" [s] h (.tuple [x_n, x_s2]) h' cs) :
     ∃ (tg : Ixon.TagN) (k : Nat),
       Ixon.getTagN 0 (TagN.start bytes) = .ok tg { idx := k, bytes := ⟨bytes.toArray⟩ } ∧
       x_n = .field (tg.value.toNat : F) ∧
-      L1.Stream h' (bytes.drop k) x_s2 := by
+      Ingress.Stream h' (bytes.drop k) x_s2 := by
   match Obs.«KernelModeled::get_count».obs ev with
   | .run (m2 := m2) (x_n := x_w) (x_s2 := y) (v38 := v38) (ev14 := e1) (he40 := hr)
       (ev52 := e2) (he68 := hh) .. =>
@@ -1784,14 +1784,14 @@ private theorem get_addrs_bytes_go :
     ∀ (cnt : Nat) {n_f : F} {x_s r : SourceValue F} {bytes_in : List UInt8}
       {h h' : Heap F} {cs : List (Call F)},
       ZMod.val n_f = cnt →
-      L1.Stream h bytes_in x_s →
+      Ingress.Stream h bytes_in x_s →
       ObsFn Obs.W "KernelModeled::get_addrs" [x_s, .field n_f] h r h' cs →
       ∃ (as_ : List Bytes.Address) (bytes_out : List UInt8) (x_as x_s' : SourceValue F),
         r = .tuple [x_as, x_s'] ∧
         as_.length = cnt ∧
         bytes_in = as_.flatMap (·.toList) ++ bytes_out ∧
         RepList addrListEnum (Bytes.RepAddressRef addrTy) h' as_ x_as ∧
-        L1.Stream h' bytes_out x_s'
+        Ingress.Stream h' bytes_out x_s'
   | 0, n_f, x_s, r, bytes_in, h, h', cs, hcnt, hs, ev => by
     cases Obs.«KernelModeled::get_addrs».obs ev with
     | n0 m21 _ he19 hm29 he40 _ =>
@@ -1871,7 +1871,7 @@ theorem advAs_eq_of_familyOwnAdvice {rc xb xrb r : SourceValue F} {h h' : Heap F
     have hvpl : v_pl = C.payload := (List.cons.inj (congrArg Call.args hcall_eq)).1
     have hmpl : m_pl = C.m114 := congrArg Call.heap hcall_eq
     subst hvpl hmpl
-    have hs_pl : L1.Stream C.m114 bytes_pl C.payload := pl_stream
+    have hs_pl : Ingress.Stream C.m114 bytes_pl C.payload := pl_stream
     obtain ⟨a_rb_w, rem1_w, x_t_w, x_s1_w', hbytes_rb_w, htup_rb_w, -, hs_rem1_w, -, -⟩ :=
       Decl.get_address_spec hs_pl ev_rb
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup_rb_w
@@ -1885,9 +1885,9 @@ theorem advAs_eq_of_familyOwnAdvice {rc xb xrb r : SourceValue F} {h h' : Heap F
         hbytes_rb_w.symm.trans hbytes_rb_C
       exact (List.append_inj h12 (by simp only [Vector.length_toList])).2
     subst hrem1_eq
-    have hs_s1_w : L1.Stream m_na_w rem1_w x_s1_w := hs_rem1_w.mono ext_s1_na
+    have hs_s1_w : Ingress.Stream m_na_w rem1_w x_s1_w := hs_rem1_w.mono ext_s1_na
     have ext_136_ord : Heap.Extends C.m136 C.mOrd := C.evRbEq.extends.trans C.evInOrder.extends
-    have hs_s1_C : L1.Stream C.mOrd rem1_w C.s1 := by
+    have hs_s1_C : Ingress.Stream C.mOrd rem1_w C.s1 := by
       rw [hxs1_C]; exact hs_rem1_C.mono ext_136_ord
     obtain ⟨tg_w, k_w, htag_w, hxna_w, hs_s2_w⟩ := get_count_spec_bytes hs_s1_w ev_na
     obtain ⟨tg_C, k_C, htag_C, hxna_C, hs_s2_C⟩ := get_count_spec_bytes hs_s1_C C.evCountAdv.obs
@@ -2002,13 +2002,13 @@ theorem closureFamilyCheck_of_run :
     have e : cb₂ = cb := Option.some.inj (hcb₂.symm.trans hcb₀)
     rw [e, hFB.block.muts] at hms₂
     rw [Ixon.ConstantInfo.muts.inj hms₂]; exact hpos₂
-  have hcanon₀ : L1.CanonicalHashCoverage ρ.E₀ calls := by
+  have hcanon₀ : Ingress.CanonicalHashCoverage ρ.E₀ calls := by
     intro bytes value hashed size exactRead
     obtain ⟨entry, stored, bytesEq, cached⟩ := hH bytes value hashed size
-      (L1.deConstant_of_deConstantExact exactRead) exactRead
+      (Ingress.deConstant_of_deConstantExact exactRead) exactRead
     refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
     rw [bytesEq]; exact exactRead
-  have hcanon0 : L1.CanonicalHashCoverage Ec0 calls :=
+  have hcanon0 : Ingress.CanonicalHashCoverage Ec0 calls :=
     Assembly.canonicalHashCoverage_frame hcanon₀ hst0.decoded
       (fun a v h => hst0.runRecord a v ((hS.recordOf_eq_recordAt a).trans h))
   have hmod0 : ModeledAt Ec0 B :=

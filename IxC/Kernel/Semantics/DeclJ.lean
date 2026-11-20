@@ -26,7 +26,7 @@ instances are
   `DeclRun` changes;
 * the rules tier's derivations (`Rules.Infer`, `Rules.DefEq`, `Rules.Red`, an
   annotation relation, semantic level tests), the record an IxVM refinement
-  produces (`IxVM.consistent`'s obligation L5).
+  produces (`IxVM.consistent`'s `DeclsObligation`).
 
 A model-tier proof stated once over a package and the facts it needs about it
 serves both. The one place the records differ by design is a theorem's stored

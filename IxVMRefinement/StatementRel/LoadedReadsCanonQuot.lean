@@ -4,7 +4,7 @@ import IxVMRefinement.StatementRel.LoadedReadsCanon
 
 The analogue of the axiom case (`get_ci_axio_canon`, `reloadsAs_axio`) for a quotient record
 (`Ixon.ConstantInfo.quot`): the circuit converts its type at root `0` with no `recur` address
-(`Convert::convert_quotient`, traced by `L1.convert_quotient_trace_spec`), and the loaded value
+(`Convert::convert_quotient`, traced by `Ingress.convert_quotient_trace_spec`), and the loaded value
 is `Quot [nl, ty, kind]`. A kernel constant `ci` is represented by it when its constant value is
 the record's level count and the canonical annotation of the reading, and its kind matches the
 record's (`Core.QuotKindRep`: the type former is an inductive, `Quot.mk` a constructor,
@@ -32,8 +32,8 @@ def quotKindOk : Ix.QuotKind → Ix.Kernel.ConstantInfo .anon → Bool
   | _, _ => false
 
 theorem quotKindRep_of_ok {k : Ix.QuotKind} {ci : Ix.Kernel.ConstantInfo .anon}
-    (h : quotKindOk k ci = true) : Core.QuotKindRep (L1.repQuotKindVal k) ci := by
-  cases k <;> cases ci <;> simp [quotKindOk] at h <;> simp [Core.QuotKindRep, L1.repQuotKindVal]
+    (h : quotKindOk k ci = true) : Core.QuotKindRep (Ingress.repQuotKindVal k) ci := by
+  cases k <;> cases ci <;> simp [quotKindOk] at h <;> simp [Core.QuotKindRep, Ingress.repQuotKindVal]
 
 section Quot
 
@@ -61,18 +61,18 @@ theorem get_ci_quot_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Cal
       canonAnn c (List.range q.lvls.toNat) 0 q.typ ty₀ = some ty' ∧ Annotates ty' ty₀ ∧
       ∀ ci : Ix.Kernel.ConstantInfo .anon,
         ci.toConstantVal = ⟨keyOf t (Core.ixAddr a), List.range q.lvls.toNat, ty'⟩ →
-        Core.QuotKindRep (L1.repQuotKindVal q.kind) ci →
+        Core.QuotKindRep (Ingress.repQuotKindVal q.kind) ci →
         Core.CIPtrRep (Core.keyOf t) h' ptr ci ∧
         ∀ (env : Ix.Kernel.Env .anon) (lim : Option Nat), Decl.UsedRefsStored t env c →
           Core.CIPtrRep (Core.Ctx.stored ⟨E, env, t, lim⟩).κ h' ptr ci := by
-  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := L1.get_ci_trace_spec ha ev
+  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := Ingress.get_ci_trace_spec ha ev
   obtain ⟨lc, hget, hdec⟩ := recordOf_inv hrec
   have hb : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
   have hc : c = c' := by
     rw [hb, hdec] at hex
     exact Except.ok.inj hex
   subst hc
-  unfold L1.GetCITraceResult at hres
+  unfold Ingress.GetCITraceResult at hres
   rw [hinfo] at hres
   obtain ⟨blobs, tree, v, hhp, built, hld, htr⟩ := hres
   obtain ⟨hnlvls, tyPtr, plan, hv, rty, hp, hl⟩ := htr

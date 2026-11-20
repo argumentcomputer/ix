@@ -1,20 +1,20 @@
 import IxVMRefinement.Assembly.ReadBare
 import IxVMRefinement.Core.Good
-import IxVMRefinement.L1.Records
+import IxVMRefinement.Ingress.Records
 import IxC.Ixon.Verify.Framing
 import Ix.IxVM.Consistency.Restrict
 
-/-! # Collision lifting, `L1.EnvDecoded` on sub-stores, and prefix `Installs` helpers
+/-! # Collision lifting, `Ingress.EnvDecoded` on sub-stores, and prefix `Installs` helpers
 
 Connects the walked sub-environment `subEnv E₀ Keep supp` (`Assembly.Closure`) and prefix
-environments built by `IxVM.Consistency.Installs` to the `L1` / `Core` / `L5` hypotheses:
+environments built by `IxVM.Consistency.Installs` to the `Ingress` / `Core` / `Decl` hypotheses:
 
 * `hashedCollision_subEnv_to_view`, `good_subEnv_of_noCollision`, `good_subEnv_of_hashed_supp`,
   and `good_walkedSubEnv_of_noCollision`: lift `View.HashedCollision { env := subEnv E₀ Keep supp }
   [] calls` to `V.HashedCollision extra calls`, discharging `Core.Good` on any `Ctx` backed by
   `subEnv E₀ Keep supp`;
-* `subEnv_envDecoded`, `subEnv_envDecoded_of_serConstant`, and `subEnv_envDecoded_of_walkedL6`:
-  establish `L1.EnvDecoded (subEnv E₀ Keep supp)` from `WalkedL6` and exact/serialized supplements;
+* `subEnv_envDecoded`, `subEnv_envDecoded_of_serConstant`, and `subEnv_envDecoded_of_walkedClaim`:
+  establish `Ingress.EnvDecoded (subEnv E₀ Keep supp)` from `WalkedClaim` and exact/serialized supplements;
 * `installs_consts_origin`, `installs_find?_none_of_not_installed`, `installs_prefix_fresh`, and
   `installs_prefix_stored`: characterize every constant in an `Installs` prefix as either declared
   by an earlier declaration or auxiliary (`Key.aux`), discharging `InstallStep` freshness and
@@ -136,40 +136,40 @@ theorem good_walkedSubEnv_of_noCollision {V : IxVM.Refinement.View} {extra : Lis
     Core.Good ⟨subEnv E₀ Keep [], env, t, lim⟩ calls :=
   good_subEnv_of_hashed_supp env t lim hload (fun _ _ _ hm => nomatch hm) hno hbound
 
-/-! ## `L1.EnvDecoded` on `subEnv E₀ Keep supp` -/
+/-! ## `Ingress.EnvDecoded` on `subEnv E₀ Keep supp` -/
 
-/-- **`L1.EnvDecoded (subEnv E₀ Keep supp)`** from exact decoding on `E₀` and on `supp`. -/
+/-- **`Ingress.EnvDecoded (subEnv E₀ Keep supp)`** from exact decoding on `E₀` and on `supp`. -/
 theorem subEnv_envDecoded {E₀ : Ixon.Env} {Keep : _root_.Address → Prop}
     {supp : List SuppEntry}
     (hexact₀ : ∀ a lc, E₀.consts.get? a = some lc →
       ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c)
     (hsupp : ∀ a raw c, (a, raw, c) ∈ supp → Ixon.deConstantExact raw = .ok c) :
-    L1.EnvDecoded (subEnv E₀ Keep supp) := by
+    Ingress.EnvDecoded (subEnv E₀ Keep supp) := by
   intro x lc hget
   rcases subEnv_get?_some_inv E₀ Keep supp hget with ⟨_, hget₀⟩ | ⟨_, raw, c, hm, rfl⟩
   · exact hexact₀ x lc hget₀
   · exact ⟨c, rfl, by simpa only [Claim.mkLazy_rawBytes] using hsupp x raw c hm⟩
 
-/-- `L1.EnvDecoded (subEnv E₀ Keep supp)` when each supplement entry's bytes are `Ixon.serConstant c`
+/-- `Ingress.EnvDecoded (subEnv E₀ Keep supp)` when each supplement entry's bytes are `Ixon.serConstant c`
 for a wire-well-formed constant `c`. -/
 theorem subEnv_envDecoded_of_serConstant {E₀ : Ixon.Env} {Keep : _root_.Address → Prop}
     {supp : List SuppEntry}
     (hexact₀ : ∀ a lc, E₀.consts.get? a = some lc →
       ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c)
     (hsupp : ∀ a raw c, (a, raw, c) ∈ supp → raw = Ixon.serConstant c ∧ c.wireWF) :
-    L1.EnvDecoded (subEnv E₀ Keep supp) :=
+    Ingress.EnvDecoded (subEnv E₀ Keep supp) :=
   subEnv_envDecoded hexact₀ fun a raw c hm => by
     obtain ⟨rfl, hwf⟩ := hsupp a raw c hm
     exact Ixon.Verify.deConstantExact_serConstant c hwf
 
-/-- **`L1.EnvDecoded (subEnv E₀ Keep supp)`** directly from `Claim.WalkedL6` and exact-decoded
+/-- **`Ingress.EnvDecoded (subEnv E₀ Keep supp)`** directly from `Claim.WalkedClaim` and exact-decoded
 supplements. -/
-theorem subEnv_envDecoded_of_walkedL6 {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+theorem subEnv_envDecoded_of_walkedClaim {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ : Ixon.Env} {seeds : List _root_.Address}
     (Keep : _root_.Address → Prop) {supp : List SuppEntry}
-    (hwalk : Claim.WalkedL6 calls t E₀ seeds)
+    (hwalk : Claim.WalkedClaim calls t E₀ seeds)
     (hsupp : ∀ a raw c, (a, raw, c) ∈ supp → Ixon.deConstantExact raw = .ok c) :
-    L1.EnvDecoded (subEnv E₀ Keep supp) := by
+    Ingress.EnvDecoded (subEnv E₀ Keep supp) := by
   obtain ⟨_, _, _, hdec₀, _, _, _, _, _, _, _⟩ := hwalk
   exact subEnv_envDecoded
     (fun a lc hget =>

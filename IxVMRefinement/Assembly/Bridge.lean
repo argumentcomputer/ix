@@ -8,10 +8,10 @@ zero `Core.LoadFacts` inside `DeclOrigin`, since `LoadFacts` is carried by the p
 
 1. **`DeclOriginAt` & `DeclOrigin`**: packages `DeclNonAux`, installed-name `Nodup` and prefix
    freshness in `env_pre`, `TableAdmittedAt` on the admitted role table `b`, `Core.Good`,
-   `L1.EnvDecoded`, and `¬ L1.EnvInternalCollision` on the shared store `E_core`, the full bare
+   `Ingress.EnvDecoded`, and `¬ Ingress.EnvInternalCollision` on the shared store `E_core`, the full bare
    stream witness `StreamReadBare`, `Installs ds_pre env_pre`, and the disjunction between role
    declarations (`preparePrelude pre.ix decls_role`) and walked declarations (`WalkedStepOrigin`,
-   carrying `CheckedConstOrigin ∨ CheckedIndOrigin` and prefix `L1.RecordReadsAs` + `StoredAs`).
+   carrying `CheckedConstOrigin ∨ CheckedIndOrigin` and prefix `Ingress.RecordReadsAs` + `StoredAs`).
 2. **`walkedBareBridgeRole_declOrigin`**: discharges `WalkedBareBridgeRole DeclOrigin` from
    `RolePreludeInputs` and `SafeRefsInputs` via `walkedStreamReadBare`, `preparePrelude_declNonAux`,
    and `installs_prefix_fresh`.
@@ -50,7 +50,7 @@ structure DeclOriginAt
   tableAdmitted : TableAdmittedAt V b t E_role limits order_role envA pre st_role decls_role
   loadedBy : IxVM.Consistency.LoadedBy calls E₀
   seedOk : ∀ a ∈ seeds, ¬ IxVM.Consistency.OutsideLogicAt E₀ a ∧ ¬ IxVM.Consistency.InertAt t a
-  walkedL6 : Claim.WalkedL6 calls t E₀ seeds
+  walkedL6 : Claim.WalkedClaim calls t E₀ seeds
   binding_extra : b.bytes ∈ extra
   committed_extra : ∀ img ∈ IxVM.Consistency.committedImages, img ∈ extra
   noCollision : ¬ V.HashedCollision extra calls
@@ -64,8 +64,8 @@ structure DeclOriginAt
     ∀ a ∈ order, ∀ lc, E.consts.get? a = some lc →
       ∃ c, lc.get? = some c ∧ Ixon.deConstantExact lc.rawBytes = .ok c
   good_core : Core.Good ⟨E_core, env_pre, t, none⟩ calls
-  envDecoded_core : L1.EnvDecoded E_core
-  noInternalCollision_core : ¬ L1.EnvInternalCollision E_core
+  envDecoded_core : Ingress.EnvDecoded E_core
+  noInternalCollision_core : ¬ Ingress.EnvInternalCollision E_core
   sub_recordAt_core :
     ∀ x c_x, Ix.Cert.recordAt E x = some c_x → Ix.Cert.recordAt E_core x = some c_x
   fallback_recordAt_core :
@@ -164,7 +164,7 @@ theorem consistentReadRole_of_rolePrelude_declsStrong
     (hadm : Ix.Kernel.Admission.admitBinding _root_.Address.admissionHash b = .ok t)
     (hload : IxVM.Consistency.LoadedBy calls E₀)
     (hseedOk : ∀ a ∈ seeds, ¬ IxVM.Consistency.OutsideLogicAt E₀ a ∧ ¬ IxVM.Consistency.InertAt t a)
-    (hwalk : Claim.WalkedL6 calls t E₀ seeds)
+    (hwalk : Claim.WalkedClaim calls t E₀ seeds)
     (hb_extra : b.bytes ∈ extra)
     (hcomm_extra : ∀ img ∈ IxVM.Consistency.committedImages, img ∈ extra)
     (hnoCol : ¬ V.HashedCollision extra calls) :

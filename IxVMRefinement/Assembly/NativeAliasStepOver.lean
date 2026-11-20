@@ -100,7 +100,7 @@ theorem overUnitStep_nativeBlockAlias {calls : List (Aiur.Generic.SourceSemantic
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hcov : L1.CanonicalHashCoverage Ec calls) :
+    (hcov : Ingress.CanonicalHashCoverage Ec calls) :
     OverUnitStep.{u} FormerOpenTraceAt t G R envT E₀ B cb :=
   AliasUnitStep.overUnitStep hRc hcn hln
     (fun E hE => holdsBlock_of_recordsFor hE hRblock hRformer hRctors hblobs) hfree

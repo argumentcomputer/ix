@@ -178,7 +178,7 @@ theorem walkedConst_declRunJ
         (CoreGood.ofRaw (hgood_c.sub hsub_es) (fun _ _ => trivial)) ev_es
         (hty_tmc_es' 0 zeroGhostWalked_w)
     have hisZero : (rulesJ (md := .anon)).isZero u :=
-      thm_isZero_of_level_equal Levels.l2
+      thm_isZero_of_level_equal Levels.levelsObligation
         (RomBound.bounded_mono hbound hsub_le) hℓ hu hm_le ev_le
     obtain ⟨vtype, hinf_val, hde_val⟩ :=
       scoped_core_check (c := c) hrc_kc.toRCRep (typesRep_of_nil_eq_w c.κ hm_kc)

@@ -43,7 +43,7 @@ def BoundValueSafe (v : SourceValue F) : Prop :=
 an observed `Ingress::get_ci` at `a` among `calls` whose value is `BoundValueSafe`. -/
 def BoundLoadSafeIn (calls : List (Call F)) (a : _root_.Address) : Prop :=
   ∃ (h h' : Heap F) (ap ptr v : SourceValue F) (cs : List (Call F)),
-    S0.addr h ap a ∧ ObsFn W "Ingress::get_ci" [ap] h ptr h' cs ∧ (∀ cl ∈ cs, cl ∈ calls) ∧
+    BaseSeams.addr h ap a ∧ ObsFn W "Ingress::get_ci" [ap] h ptr h' cs ∧ (∀ cl ∈ cs, cl ∈ calls) ∧
     loadValue h' ptr = .ok v ∧ BoundValueSafe v
 
 private theorem assert_safe_role_zero {x_ci r : SourceValue F} {h h' : Heap F}

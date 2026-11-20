@@ -147,10 +147,10 @@ theorem modeledAnswers_of_stepStore {rootCalls : List (Call F)} {t : Ix.Kernel.R
     fun hc => hnc_root (Core.collision_mono hsub hc)
   have hbd_cs : Bounded cs := RomBound.bounded_mono hbd_root hsub
   have hag := Route.block_is_modeled_agrees (E := E₀') hnc_cs hbd_cs rba ev
-  have hcov : L1.CanonicalHashCoverage E₀' cs := by
+  have hcov : Ingress.CanonicalHashCoverage E₀' cs := by
     intro bytes val hh hsz hex
     obtain ⟨entry, stored, bytesEq, cached⟩ := hH bytes val (Core.hashed_mono hsub hh) hsz
-      (L1.deConstant_of_deConstantExact hex) hex
+      (Ingress.deConstant_of_deConstantExact hex) hex
     refine ⟨⟨entry, val, stored, cached, ?_⟩, rfl⟩
     rw [bytesEq]; exact hex
   obtain ⟨b, hbE₀'⟩ := hag.known hcov
@@ -509,7 +509,7 @@ private theorem loadValue_store_snoc (h : Heap F) {name ctor : String}
     (args : List (SourceValue F)) :
     loadValue (h ++ [.construct name ctor args]) (.ptr (.enum name) h.length) =
       .ok (.construct name ctor args) := by
-  simpa [Value.type] using L1.loadValue_snoc h (.construct name ctor args)
+  simpa [Value.type] using Ingress.loadValue_snoc h (.construct name ctor args)
 
 /-- Literal chain of heap `"App"` cells down to a `"BVar"` head with field value `idx`. -/
 private inductive HeapAppBVar (h : Heap F) : SourceValue F → F → Prop
@@ -1735,17 +1735,17 @@ private theorem last_binder_dom_rawConvExpr {c : Ixon.Constant}
       ∀ xe, args = [xe] →
         h' = h ∧
         ∀ {bound : Nat} {e : Ixon.Expr},
-          L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e xe →
+          Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e xe →
           ∃ b' ed n_dom, FamilyOf.lastDom c n_dom e = some ed ∧
-            L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ed r :=
+            Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ed r :=
   ObsFn.strong_induction (world := W)
     (fun fname args h r h' cs => fname = "KernelModeled::last_binder_dom" →
       ∀ xe, args = [xe] →
         h' = h ∧
         ∀ {bound : Nat} {e : Ixon.Expr},
-          L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e xe →
+          Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e xe →
           ∃ b' ed n_dom, FamilyOf.lastDom c n_dom e = some ed ∧
-            L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ed r)
+            Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ed r)
     (fun fname args h r h' cs ev ih hnm xe hargs => by
       subst hnm hargs
       match Obs.«KernelModeled::last_binder_dom».obs ev with
@@ -1774,7 +1774,7 @@ private theorem collect_spine_rawConvExpr {c : Ixon.Constant}
       ∀ p xh xargs, args = [p] → r = .tuple [xh, xargs] →
         ∀ {h_fin : Heap F} {bound : Nat} {e : Ixon.Expr} {xc xus : SourceValue F},
           Heap.Extends h' h_fin →
-          L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e p →
+          Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e p →
           loadValue h_fin xh = .ok (.construct kexprEnum "Const" [xc, xus]) →
           ∃ da : Bytes.Address, Bytes.RepAddressRef addrTy h_fin da xc ∧
             (ixAddr da ∉ recurAddrs → ∃ fuel, FamilyOf.refHeadAt c fuel e = some (ixAddr da)) :=
@@ -1783,7 +1783,7 @@ private theorem collect_spine_rawConvExpr {c : Ixon.Constant}
       ∀ p xh xargs, args = [p] → r = .tuple [xh, xargs] →
         ∀ {h_fin : Heap F} {bound : Nat} {e : Ixon.Expr} {xc xus : SourceValue F},
           Heap.Extends h' h_fin →
-          L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e p →
+          Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e p →
           loadValue h_fin xh = .ok (.construct kexprEnum "Const" [xc, xus]) →
           ∃ da : Bytes.Address, Bytes.RepAddressRef addrTy h_fin da xc ∧
             (ixAddr da ∉ recurAddrs → ∃ fuel, FamilyOf.refHeadAt c fuel e = some (ixAddr da)))
@@ -1796,7 +1796,7 @@ private theorem collect_spine_rawConvExpr {c : Ixon.Constant}
             Core.SpineChain h p xh' ps →
             loadValue h_fin xh' = .ok (.construct kexprEnum "Const" [xc, xus]) →
             ∀ {bound : Nat} {e : Ixon.Expr},
-              L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e p →
+              Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e p →
               ∃ da : Bytes.Address, Bytes.RepAddressRef addrTy h_fin da xc ∧
                 (ixAddr da ∉ recurAddrs → ∃ fuel, FamilyOf.refHeadAt c fuel e = some (ixAddr da)) := by
         intro p xh' ps sc
@@ -1823,9 +1823,9 @@ private theorem rawConvExpr_peel_of_heapForalls {c : Ixon.Constant}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)} {h : Heap F} :
     ∀ (n : Nat) {bound : Nat} {e : Ixon.Expr} {kp q : SourceValue F},
       HeapForalls h n kp q →
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
       ∃ b' e', FamilyOf.peel c n e = some e' ∧
-        L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' e' q := by
+        Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' e' q := by
   intro n
   induction n with
   | zero =>
@@ -1848,7 +1848,7 @@ private theorem check_carriers_motive0 {crb : Ixon.Constant} {rc : Ixon.Recursor
     (hnp : rc.params.toNat < 9223372036854775808)
     (hnot_rec : ixAddr t0 ∉ recurAddrs)
     (hta : RepList addrListEnum (Bytes.RepAddressRef addrTy) h (t0 :: trest) xta)
-    (raw : L1.RawConvExpr crb.refs.toList recurAddrs crb.univs.toList crb.sharing.toList
+    (raw : Ingress.RawConvExpr crb.refs.toList recurAddrs crb.univs.toList crb.sharing.toList
       blobs h 4294967295 rc.typ xty)
     (ev : ObsFn W "KernelModeled::check_carriers"
       [xty, .field (rc.params.toNat : F), xta] h r h' cs) :
@@ -2117,10 +2117,10 @@ private theorem stored_of_hashed_cprj {calls : List (Call F)} {E₀ : Ixon.Env}
     {b : Bytes.Address} {i j : Nat}
     (hh : Hashed calls (Ixon.serConstant (constructorProjection (ixAddr b) i j))) :
     recordOf E₀ (ctorAddr (ixAddr b) i j) = some (constructorProjection (ixAddr b) i j) := by
-  have hwf := L1.projConstant_wireWF_cPrj i.toUInt64 j.toUInt64 b
+  have hwf := Ingress.projConstant_wireWF_cPrj i.toUInt64 j.toUInt64 b
   have hsz := serConstant_cprj_size_lt i.toUInt64 j.toUInt64 b
   have hex := Ixon.Verify.deConstantExact_serConstant _ hwf
-  obtain ⟨lc, hget, hbytes, -⟩ := hH _ _ hh hsz (L1.deConstant_of_deConstantExact hex) hex
+  obtain ⟨lc, hget, hbytes, -⟩ := hH _ _ hh hsz (Ingress.deConstant_of_deConstantExact hex) hex
   unfold recordOf
   change (E₀.consts.get? (Address.blake3Pure (Ixon.serConstant (constructorProjection (ixAddr b) i j)))).bind
     (fun lc => (Ixon.deConstantExact lc.rawBytes).toOption) = _
@@ -2135,10 +2135,10 @@ private theorem stored_of_hashed_iprj {calls : List (Call F)} {E₀ : Ixon.Env}
     (hh : Hashed calls (Ixon.serConstant (memberProjection (ixAddr b) i (.indc ind)))) :
     recordOf E₀ (memberAddr (ixAddr b) i (.indc ind)) =
       some (memberProjection (ixAddr b) i (.indc ind)) := by
-  have hwf := L1.projConstant_wireWF_iPrj i.toUInt64 b
+  have hwf := Ingress.projConstant_wireWF_iPrj i.toUInt64 b
   have hsz := serConstant_iprj_size_lt i.toUInt64 b
   have hex := Ixon.Verify.deConstantExact_serConstant _ hwf
-  obtain ⟨lc, hget, hbytes, -⟩ := hH _ _ hh hsz (L1.deConstant_of_deConstantExact hex) hex
+  obtain ⟨lc, hget, hbytes, -⟩ := hH _ _ hh hsz (Ingress.deConstant_of_deConstantExact hex) hex
   unfold recordOf
   change (E₀.consts.get? (Address.blake3Pure (Ixon.serConstant (memberProjection (ixAddr b) i (.indc ind))))).bind
     (fun lc => (Ixon.deConstantExact lc.rawBytes).toOption) = _
@@ -2191,7 +2191,7 @@ private theorem block_ctor_addrs_hashed_spec {t : Ix.Kernel.RoleTable}
       pos + ms.length < 72057594037927936 →
       (∀ m ∈ ms, ∀ ind, m = .indc ind → ind.ctors.size < 72057594037927936) →
       ∀ {xmem xblk r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
-        RepList (Obs.Names.«Lists::Node<Ixon::MutConst>») L1.RepMutConst h ms xmem →
+        RepList (Obs.Names.«Lists::Node<Ixon::MutConst>») Ingress.RepMutConst h ms xmem →
         Bytes.RepAddressRef addrTy h b xblk →
         ObsFn W "KernelModeled::block_ctor_addrs" [xmem, xblk, .field (pos : F)] h r h' cs →
         ∀ i ind j, ms[i]? = some (.indc ind) → j < ind.ctors.size →
@@ -2220,7 +2220,7 @@ private theorem block_ctor_addrs_hashed_spec {t : Ix.Kernel.RoleTable}
         subst xct'
         have hct_rep' : RepList
             (Instance.mk "Lists::Node" [.named "Ixon::Constructor" []]).symbol
-            L1.RepConstructor h ind0.ctors.toList xct := by
+            Ingress.RepConstructor h ind0.ctors.toList xct := by
           rw [Obs.Names.«Lists::Node<Ixon::Constructor>».symbol]; exact hct_rep
         obtain ⟨hvlen, -⟩ := Lib.Lists.length_spec
           (by rw [Obs.Names.«Lists::length<Ixon::Constructor>».symbol]; exact evlen) hct_rep'
@@ -2241,7 +2241,7 @@ private theorem block_ctor_addrs_hashed_spec {t : Ix.Kernel.RoleTable}
           have ext_r := evlen.heap_extends.trans evmca.heap_extends
           have hrec := ih (pos + 1) (by simp at hpos; omega)
             (fun m' hm' => hcsz m' (List.mem_cons_of_mem _ hm'))
-            (repList_heapMono₂ _ L1.repMutConst_heapMono₂ ext_r hrest_rep)
+            (repList_heapMono₂ _ Ingress.repMutConst_heapMono₂ ext_r hrest_rep)
             (Bytes.repAddressRef_heapMono₂ addrTy ext_r rb) evrec i' ind j hi hj
           rw [show pos + (i' + 1) = pos + 1 + i' by omega]
           exact Core.hashed_mono (fun cl hcl => mem_of_eq hc (by call_mem)) hrec
@@ -3181,7 +3181,7 @@ private structure CheckRecsStep (calls : List (Call F)) (t : Ix.Kernel.RoleTable
   x_ty : SourceValue F
   blobs : List (_root_.Address × ByteArray)
   ext_h_car : Heap.Extends h m_car
-  raw_ty : L1.RawConvExpr crb.refs.toList [] crb.univs.toList
+  raw_ty : Ingress.RawConvExpr crb.refs.toList [] crb.univs.toList
     crb.sharing.toList blobs m_car 4294967295 rc.typ x_ty
   ev_carriers : ∃ r_c m_c cs_c, ObsFn W "KernelModeled::check_carriers"
     [x_ty, .field (rc.params.toNat : F), xta] m_car r_c m_c cs_c
@@ -4731,11 +4731,11 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
           [x_members] m501 v588 m589 cs599 := by
         rw [Obs.Names.«Lists::length<Ixon::MutConst>».symbol]; exact ev_mlen
       have hr' : RepList (Instance.mk "Lists::Node" [.named "Ixon::MutConst" []]).symbol
-          L1.RepMutConst m501 msB.toList x_members := by
+          Ingress.RepMutConst m501 msB.toList x_members := by
         rw [Obs.Names.«Lists::Node<Ixon::MutConst>».symbol]; exact hrep_msB
       exact (Lib.Lists.length_spec ev' hr').1
     obtain ⟨hindV, -⟩ := Core.ModeledAux.muts_indc_count_spec
-      (Route.membersRep_of_repMutConstList (RepLinkedList.mono L1.repMutConst_heapMono₂ ev_mlen.heap_extends hrep_msB))
+      (Route.membersRep_of_repMutConstList (RepLinkedList.mono Ingress.repMutConst_heapMono₂ ev_mlen.heap_extends hrep_msB))
       ev_icnt
     have hall_indc : ∀ m ∈ msB.toList, ∃ ind, m = .indc ind := by
       have hfilt_len : (msB.toList.filter Core.Specs.Callees.isIndc).length = msB.toList.length := by
@@ -4757,7 +4757,7 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
       match Obs.«KernelModeled::block_nparams».obs ev_bnp with
       | .run (ld12 := ld12) .. =>
         obtain ⟨z, zs, hz, -, -⟩ := Lib.rep_cons_of_load
-          (RepLinkedList.mono L1.repMutConst_heapMono₂
+          (RepLinkedList.mono Ingress.repMutConst_heapMono₂
             (ev_mlen.heap_extends.trans ev_icnt.heap_extends) hrep_msB) ld12
         have hlen : msB.toList.length = zs.length + 1 := by rw [hz]; rfl
         rw [← Array.length_toList, hlen]; exact Nat.succ_pos _
@@ -4767,13 +4767,13 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
       rw [hind₀] at h0; exact ⟨ind₀, h0⟩
     -- block_nparams_spec
     obtain ⟨np, hnp_lt, hnp_v, hnp_all⟩ := block_nparams_spec
-      (RepLinkedList.mono L1.repMutConst_heapMono₂
+      (RepLinkedList.mono Ingress.repMutConst_heapMono₂
         (ev_mlen.heap_extends.trans ev_icnt.heap_extends) hrep_msB) ev_bnp
     subst hnp_v
     -- build_recur_addrs_hashed_spec => type_addrs + FamBlockRecord.members in E₀
     obtain ⟨-, as_t, has_t, has_t_len, has_t_mem⟩ := build_recur_addrs_hashed_spec
       (Route.membersRep_of_repMutConstList
-        (RepLinkedList.mono L1.repMutConst_heapMono₂ ext_501_652 hrep_msB))
+        (RepLinkedList.mono Ingress.repMutConst_heapMono₂ ext_501_652 hrep_msB))
       (Bytes.repAddressRef_heapMono₂ addrTy (ext_h_453.trans (ev_blk.heap_extends.trans ext_501_652)) hbB)
       ev_bra
     have hB_members : ∀ i m, msB[i]? = some m →
@@ -4800,7 +4800,7 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
       intro i ind j hi hj
       have hh := block_ctor_addrs_hashed_spec (t := t) msB.toList 0
         (by rw [Nat.zero_add, Array.length_toList]; exact Nat.lt_trans hmsB_lt (by decide)) hct_sz
-        (RepLinkedList.mono L1.repMutConst_heapMono₂ (ext_501_652.trans ext_652_704) hrep_msB)
+        (RepLinkedList.mono Ingress.repMutConst_heapMono₂ (ext_501_652.trans ext_652_704) hrep_msB)
         (Bytes.repAddressRef_heapMono₂ addrTy (ext_h_453.trans (ev_blk.heap_extends.trans (ext_501_652.trans ext_652_704))) hbB)
         (by rw [Nat.cast_zero]; exact ev_bca) i ind j (by rw [Array.getElem?_toList]; exact hi) hj
       rw [Nat.zero_add] at hh

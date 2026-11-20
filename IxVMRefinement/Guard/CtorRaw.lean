@@ -21,7 +21,7 @@ def ctorRaw (E : Ixon.Env) (B : _root_.Address) (i j : Nat) : Option (Expr .anon
   (GuardRaw.memberRoot (recordOf E) B i (GuardRaw.constructorType j)).bind
     (GuardRaw.readRoot (fun x => E.blobs.get? x))
 
-private theorem recordOf_eq_recordAt {E : Ixon.Env} (hd : L1.EnvDecoded E)
+private theorem recordOf_eq_recordAt {E : Ixon.Env} (hd : Ingress.EnvDecoded E)
     (a : _root_.Address) : recordOf E a = Ix.Cert.recordAt E a := by
   unfold recordOf Ix.Cert.recordAt
   cases hget : E.consts.get? a with

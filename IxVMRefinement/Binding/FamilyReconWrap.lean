@@ -20,7 +20,7 @@ Refines the circuit's comparison and search helpers used by `KernelModeled::chec
 * `flat_find_pos_spec`, `flat_find_pos_kind_spec`, `flat_find_pos_kind_complete`: exact lookup
   and completeness on `FlatEntryRepExact` lists.
 * `rawConvExpr_tmOExact_majorHeadAt` and `rawConvExpr_tmOExact_motiveCarrierAt`: connect
-  `TmOExact` + `L1.RawConvExpr` on a recursor's heap type directly to `FamilyOf.majorHeadAt` and
+  `TmOExact` + `Ingress.RawConvExpr` on a recursor's heap type directly to `FamilyOf.majorHeadAt` and
   `FamilyOf.motiveCarrierAt`. -/
 
 namespace IxVM.Refinement.Binding.FamilyRecon
@@ -1812,14 +1812,14 @@ theorem flat_find_pos_kind_spec {κ : _root_.Address → KKey} (hinj : Function.
         · exact he_not
         · exact hall x hx'
 
-/-! ## `L1.RawConvExpr` + `TmOExact` → `FamilyOf.majorHeadAt` and `FamilyOf.motiveCarrierAt` -/
+/-! ## `Ingress.RawConvExpr` + `TmOExact` → `FamilyOf.majorHeadAt` and `FamilyOf.motiveCarrierAt` -/
 
 private theorem unshare_ge_wrap (c : Ixon.Constant) {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} :
     ∀ (n : Nat) {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F},
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
       min bound c.sharing.size + 1 ≤ n →
-      ∃ b', L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
+      ∃ b', Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
           (FamilyOf.unshare c n e) kp ∧
         ∀ i, FamilyOf.unshare c n e ≠ .share i
   | 0, _, _, _, _, hn => by omega
@@ -1841,8 +1841,8 @@ private theorem unshare_ge_wrap (c : Ixon.Constant) {recurAddrs : List _root_.Ad
 private theorem rawConvExpr_node_wrap {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat} {e : Ixon.Expr}
     {kp : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp) :
-    ∃ b', L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
+    (raw : Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp) :
+    ∃ b', Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
         (FamilyOf.node c e) kp ∧
       ∀ i, FamilyOf.node c e ≠ .share i :=
   unshare_ge_wrap c (c.sharing.size + 1) raw (by omega)
@@ -1850,11 +1850,11 @@ private theorem rawConvExpr_node_wrap {c : Ixon.Constant} {recurAddrs : List _ro
 theorem rawConvExpr_forall_inv_wrap {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat} {e : Ixon.Expr}
     {kp dp bp lp : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
+    (raw : Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
     (ld : loadValue h kp = .ok (.construct kexprEnum "Forall" [dp, bp, lp])) :
     ∃ b' ed eb, FamilyOf.node c e = .all ed eb ∧
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ed dp ∧
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' eb bp := by
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ed dp ∧
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' eb bp := by
   obtain ⟨b', raw', hns⟩ := rawConvExpr_node_wrap raw
   generalize he' : FamilyOf.node c e = e' at raw' hns
   cases raw' with
@@ -1872,7 +1872,7 @@ theorem rawConvExpr_forall_inv_wrap {c : Ixon.Constant} {recurAddrs : List _root
 theorem rawConvExpr_not_forall_of_nonForall {c : Ixon.Constant}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F} {v : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
+    (raw : Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
     (ld : loadValue h kp = .ok v)
     (hne : ∀ dp bp lp, v ≠ .construct kexprEnum "Forall" [dp, bp, lp]) :
     ∀ ed eb, FamilyOf.node c e ≠ .all ed eb := by
@@ -1890,11 +1890,11 @@ theorem rawConvExpr_not_forall_of_nonForall {c : Ixon.Constant}
 theorem rawConvExpr_app_inv_wrap {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat} {e : Ixon.Expr}
     {kp fp ap : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
+    (raw : Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
     (ld : loadValue h kp = .ok (.construct kexprEnum "App" [fp, ap])) :
     ∃ b' ef ea, FamilyOf.node c e = .app ef ea ∧
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ef fp ∧
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ea ap := by
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ef fp ∧
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ea ap := by
   obtain ⟨b', raw', hns⟩ := rawConvExpr_node_wrap raw
   generalize he' : FamilyOf.node c e = e' at raw' hns
   cases raw' with
@@ -1912,7 +1912,7 @@ theorem rawConvExpr_app_inv_wrap {c : Ixon.Constant} {recurAddrs : List _root_.A
 theorem rawConvExpr_const_inv_any_wrap {c : Ixon.Constant}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp xa xus : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
+    (raw : Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
     (ld : loadValue h kp = .ok (.construct kexprEnum "Const" [xa, xus])) :
     (∃ rIdx uIdxs a d, FamilyOf.node c e = .ref rIdx uIdxs ∧
       c.refs[rIdx.toNat]? = some a ∧ ixAddr d = a ∧ Bytes.RepAddressRef addrTy h d xa) ∨
@@ -2090,12 +2090,12 @@ theorem consume_wrapper_not_one_of_iprj {rootCalls : List (Call F)} {E₀ : Ixon
     have sub_ci : ∀ cl ∈ cs110, cl ∈ rootCalls := fun cl hcl' => hsub cl (by rw [hc]; call_mem)
     have hbd_ci : Bounded cs110 := RomBound.bounded_mono hbd sub_ci
     obtain ⟨-, rawBytes, c', blobs', hh', ha', hex', -, -, -, hrawRes⟩ :=
-      L1.get_ci_spec hbd_ci ra ev112
+      Ingress.get_ci_spec hbd_ci ra ev112
     have hc_eq : c' = c := by
       have hrec := (hS.recordOf_eq_recordAt (ixAddr da)).symm.trans (ha_eq.symm ▸ hcE)
       exact hS.record_eq hrec (Core.hashed_mono sub_ci hh') ha' hex'
     subst hc_eq
-    simp only [L1.GetCIRawResult, hi] at hrawRes
+    simp only [Ingress.GetCIRawResult, hi] at hrawRes
     obtain ⟨_, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, _, _, _, -, -, rfl, -⟩ :=
       hrawRes
     rw [hld] at ld106
@@ -2276,11 +2276,11 @@ theorem heapForalls_rawConvExpr_peel {rootCalls : List (Call F)}
     ∀ {n bound : Nat} {h : Heap F} {e : Ixon.Expr} {xg yg xd : SourceValue F},
       HeapForalls h n xg yg →
       HeapEqOrWrap rootCalls h xg xd →
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e xd →
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e xd →
       ∃ (yd : SourceValue F) (h_out : Heap F) (b' : Nat) (e' : Ixon.Expr),
         Heap.Extends h h_out ∧
         FamilyOf.peel c n e = some e' ∧
-        L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h_out b' e' yd ∧
+        Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h_out b' e' yd ∧
         HeapEqOrWrap rootCalls h_out yg yd := by
   intro n
   induction n with
@@ -2309,7 +2309,7 @@ theorem heapAppConst_rawConvExpr_refHeadAt {rootCalls : List (Call F)}
     ∀ {bound : Nat} {h : Heap F} {e : Ixon.Expr} {xg xd : SourceValue F},
       HeapAppConst h xg a →
       HeapEqOrWrap rootCalls h xg xd →
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e xd →
+      Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e xd →
       ∃ fuel, FamilyOf.refHeadAt c fuel e = some a := by
   intro bound h e xg xd hac
   induction hac generalizing bound e xd with
@@ -2440,7 +2440,7 @@ theorem heapAppConst_rawConvExpr_refHeadAt_dom {rootCalls : List (Call F)} {E₀
     (hcE : recordOf E₀ a = some ca) (hi : ca.info = .iPrj p) (hnot_rec : a ∉ recurAddrs)
     {bound : Nat} {h : Heap F} {e : Ixon.Expr} {xg xd : SourceValue F}
     (hac : HeapAppConst h xg a) (hrel : HeapDomRel rootCalls h xg xd)
-    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e xd) :
+    (raw : Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e xd) :
     ∃ fuel, FamilyOf.refHeadAt c fuel e = some a := by
   rcases hrel with hrel_eq | ⟨xsm, h', cs, hsub, ev⟩
   · exact heapAppConst_rawConvExpr_refHeadAt hnot_rec hac hrel_eq raw
@@ -2477,7 +2477,7 @@ theorem heapMotiveCarrier_rawConvExpr_lastDom {rootCalls : List (Call F)} {E₀ 
     {bound : Nat} {h : Heap F} {e : Ixon.Expr} {xg xd : SourceValue F}
     (hm : HeapMotiveCarrier h xg a)
     (hdom : HeapDomRel rootCalls h xg xd)
-    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e xd) :
+    (raw : Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e xd) :
     ∃ ed n_dom n_ref, FamilyOf.lastDom c n_dom e = some ed ∧
       FamilyOf.refHeadAt c n_ref ed = some a := by
   have to_eq : ∀ {h : Heap F} {xg xd dp bp lp : SourceValue F},
@@ -2506,7 +2506,7 @@ theorem heapMotiveCarrier_rawConvExpr_lastDom {rootCalls : List (Call F)} {E₀ 
       ∀ {h' : Heap F} {bound : Nat} {e : Ixon.Expr} {xd : SourceValue F},
         Heap.Extends h h' →
         HeapDomRel rootCalls h' xg xd →
-        L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h' bound e xd →
+        Ingress.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h' bound e xd →
         ∃ ed n_dom n_ref, FamilyOf.lastDom c n_dom e = some ed ∧
           FamilyOf.refHeadAt c n_ref ed = some a := by
     clear hm hdom raw
@@ -2559,7 +2559,7 @@ theorem heapEqOrWrap_motiveCarrierAt {rootCalls : List (Call F)} {E₀ : Ixon.En
     (ld : loadValue h q = .ok (.construct kexprEnum "Forall" [dp, bp, lp]))
     (hm : HeapMotiveCarrier h dp a)
     (hrel : HeapEqOrWrap rootCalls h xg xd)
-    (raw : L1.RawConvExpr crb.refs.toList recurAddrs crb.univs.toList crb.sharing.toList
+    (raw : Ingress.RawConvExpr crb.refs.toList recurAddrs crb.univs.toList crb.sharing.toList
       blobs h 4294967295 rc.typ xd) :
     ∃ fuel, FamilyOf.motiveCarrierAt crb rc j fuel = some a := by
   obtain ⟨yd, h_out, b', e', ext_out, hpeel, raw_y, hrel_y⟩ :=
@@ -2591,7 +2591,7 @@ theorem heapEqOrWrap_majorHeadAt {rootCalls : List (Call F)} {E₀ : Ixon.Env}
     (ld : loadValue h q = .ok (.construct kexprEnum "Forall" [dp, bp, lp]))
     (hac : HeapAppConst h dp a)
     (hrel : HeapEqOrWrap rootCalls h xg xd)
-    (raw : L1.RawConvExpr crb.refs.toList recurAddrs crb.univs.toList crb.sharing.toList
+    (raw : Ingress.RawConvExpr crb.refs.toList recurAddrs crb.univs.toList crb.sharing.toList
       blobs h 4294967295 rc.typ xd) :
     ∃ fuel, FamilyOf.majorHeadAt crb rc fuel = some a := by
   obtain ⟨yd, h_out, b', e', ext_out, hpeel, raw_y, hrel_y⟩ :=

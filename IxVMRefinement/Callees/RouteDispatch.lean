@@ -1,7 +1,7 @@
 import IxVMRefinement.Callees.RouteScan
 import IxVMRefinement.Callees.Modeled
 import IxVMRefinement.Decl.NativeFront
-import IxVMRefinement.L1.Decode
+import IxVMRefinement.Ingress.Decode
 
 /-! # The dispatch on a block, as a function of the record store
 
@@ -173,7 +173,7 @@ theorem ExprTree.functional {refs recurAddrs : List _root_.Address} {sharing : L
 theorem treeAt_of_rawConv {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
     {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)} {h : Heap F} :
     ∀ {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F},
-      L1.RawConvExpr refs recurAddrs univs sharing blobs h bound e kp →
+      Ingress.RawConvExpr refs recurAddrs univs sharing blobs h bound e kp →
       ∃ T, ExprTree refs recurAddrs sharing bound e T ∧ TreeAt h kp T := by
   intro bound e kp hr
   induction hr with
@@ -260,7 +260,7 @@ theorem ctor_scan_agrees {E : Ixon.Env} {b : Bytes.Address} {raw : ByteArray}
     (hraw : Hashed calls raw) (hx : Ixon.deConstantExact raw = .ok c)
     (haddr : Address.blake3Pure raw = ixAddr b) (hinfo : c.info = .muts ms)
     (hp : ms.toList[p]? = some (.indc ind)) (hplt : p < 549755813888)
-    (hmems : mems.map ixAddr = L1.blockRecurAddrs (ixAddr b) ms.toList)
+    (hmems : mems.map ixAddr = Ingress.blockRecurAddrs (ixAddr b) ms.toList)
     {cidx : Nat} (hcidx : cidx < 549755813888)
     {bp xs p39 w88 x_cty w89 w90 w91 x_np w92 w93 v134 rseg nc : SourceValue F}
     {h m32 m135 m230 : Heap F} {cs45 cs145 cs232 : List (Call F)}
@@ -275,13 +275,13 @@ theorem ctor_scan_agrees {E : Ixon.Env} {b : Bytes.Address} {raw : ByteArray}
       (.construct "KernelTypes::KConstantInfo" "Ctor" [w88, x_cty, w89, w90, w91, x_np, w92, w93])
       bp (.field (p : F)) nc xs (.field (cidx : F)) m135 rseg m230 cs232) :
     ∃ ct, ind.ctors.toList[cidx]? = some ct ∧
-      Agrees (L1.CanonicalHashCoverage E calls)
-        (ctorAnswer (isIndAt E) (L1.blockRecurAddrs (ixAddr b) ms.toList) c.refs.toList
+      Agrees (Ingress.CanonicalHashCoverage E calls)
+        (ctorAnswer (isIndAt E) (Ingress.blockRecurAddrs (ixAddr b) ms.toList) c.refs.toList
           c.sharing.toList ct) rseg ∧
       Heap.Extends h m230 := by
   obtain ⟨n45, b45, -⟩ := sub_good hs45 hnc hbd
   obtain ⟨ext1, -, -, blkBytes, cb', ms', ind', ct', blobs, v, hhB, haB, hexB, -, hcb', hms',
-    hct', -, hldv, hrawC⟩ := L1.get_ci_cprj_spec b45 hbp ev47
+    hct', -, hldv, hrawC⟩ := Ingress.get_ci_cprj_spec b45 hbp ev47
   have eraw : raw = blkBytes :=
     hashed_inj_of_noCollision hnc hraw (Core.hashed_mono hs45 hhB) (haddr.trans haB.symm)
   subst eraw
@@ -352,16 +352,16 @@ theorem ctors_nested_agrees {E : Ixon.Env} {b : Bytes.Address} {raw : ByteArray}
     (haddr : Address.blake3Pure raw = ixAddr b) (hinfo : c.info = .muts ms)
     (hp : ms.toList[p]? = some (.indc ind)) (hplt : p < 549755813888)
     (hn : ind.ctors.toList.length < 549755813888)
-    (hmems : mems.map ixAddr = L1.blockRecurAddrs (ixAddr b) ms.toList) :
+    (hmems : mems.map ixAddr = Ingress.blockRecurAddrs (ixAddr b) ms.toList) :
     ∀ (k cidx : Nat) {bp xs r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       cidx + k = ind.ctors.toList.length → (∀ z ∈ cs, z ∈ calls) →
       Bytes.RepAddressRef addrTy h b bp → RepList addrListEnum RepAddr h mems xs →
       ObsFn Obs.W "KernelModeled::ctors_nested"
         [bp, .field (p : F), .field (ind.ctors.toList.length : F), xs, .field (cidx : F)]
         h r h' cs →
-      Agrees (L1.CanonicalHashCoverage E calls)
+      Agrees (Ingress.CanonicalHashCoverage E calls)
         (((ind.ctors.toList.drop cidx).map (ctorAnswer (isIndAt E)
-          (L1.blockRecurAddrs (ixAddr b) ms.toList) c.refs.toList c.sharing.toList)).foldr
+          (Ingress.blockRecurAddrs (ixAddr b) ms.toList) c.refs.toList c.sharing.toList)).foldr
           orElse (some false)) r := by
   intro k
   induction k with
@@ -464,7 +464,7 @@ theorem ctor_list_length_spec {R : Heap F → Ixon.Constructor → SourceValue F
   exact Lib.Lists.length_spec ev' hl'
 
 theorem mutShape_of_repMutConst {h : Heap F} {m : Ixon.MutConst} {v : SourceValue F}
-    (hr : L1.RepMutConst h m v) : Specs.Callees.MutShape h m v := by
+    (hr : Ingress.RepMutConst h m v) : Specs.Callees.MutShape h m v := by
   cases m with
   | defn d => obtain ⟨dv, hv, _⟩ := hr; exact ⟨dv, hv⟩
   | indc i => obtain ⟨iv, hv, _⟩ := hr; exact ⟨iv, hv⟩
@@ -472,7 +472,7 @@ theorem mutShape_of_repMutConst {h : Heap F} {m : Ixon.MutConst} {v : SourceValu
 
 theorem membersRep_of_repMutConstList {h : Heap F} {xs : List Ixon.MutConst}
     {p : SourceValue F}
-    (hrep : RepList Obs.Names.«Lists::Node<Ixon::MutConst>» L1.RepMutConst h xs p) :
+    (hrep : RepList Obs.Names.«Lists::Node<Ixon::MutConst>» Ingress.RepMutConst h xs p) :
     Specs.Callees.MembersRep h xs p := by
   induction hrep with
   | nil cell => exact .nil cell
@@ -484,7 +484,7 @@ theorem first_indc_pos_spec {calls : List (Call F)} (hbd : Bounded calls) :
     ∀ {ms : List Ixon.MutConst} {pos : Nat} {x_members r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
       (∀ z ∈ cs, z ∈ calls) →
-      RepList L1.mutConstListEnum L1.RepMutConst h ms x_members →
+      RepList Ingress.mutConstListEnum Ingress.RepMutConst h ms x_members →
       ObsFn Obs.W "KernelModeled::first_indc_pos" [x_members, .field (pos : F)] h r h' cs →
       ∃ (p : Nat) (ind : Ixon.Inductive), firstIndc ms pos = some (p, ind) ∧
         r = .tuple [.field (p : F), .field (ind.ctors.toList.length : F)] ∧ h' = h ∧
@@ -561,7 +561,7 @@ def oneRoute (E : Ixon.Env) (B : _root_.Address) (cb : Ixon.Constant)
     (ms : Array Ixon.MutConst) : Option Bool :=
   match firstIndc ms.toList 0 with
   | some (_, ind) =>
-    (ind.ctors.toList.map (ctorAnswer (isIndAt E) (L1.blockRecurAddrs B ms.toList)
+    (ind.ctors.toList.map (ctorAnswer (isIndAt E) (Ingress.blockRecurAddrs B ms.toList)
       cb.refs.toList cb.sharing.toList)).foldr orElse (some false)
   | none => none
 
@@ -614,7 +614,7 @@ theorem record_route_agrees {E : Ixon.Env} {b : Bytes.Address} {bp r : SourceVal
     (ev : ObsFn Obs.W "KernelModeled::block_is_modeled" [bp] h r h' cs) :
     ∃ (raw : ByteArray) (c : Ixon.Constant), raw.size < 4294967296 ∧ Hashed cs raw ∧
       Address.blake3Pure raw = ixAddr b ∧ Ixon.deConstantExact raw = .ok c ∧
-      Agrees (L1.CanonicalHashCoverage E cs) (recordRoute E (ixAddr b) c) r := by
+      Agrees (Ingress.CanonicalHashCoverage E cs) (recordRoute E (ixAddr b) c) r := by
   -- the dispatch's load of the record
   have hload : ∀ {x_info w39 w40 w41 w42 : SourceValue F} {m2 : Heap F} {cs12 : List (Call F)},
       ObsFn Obs.W "Ingress::load_verified_constant" [bp] h
@@ -622,10 +622,10 @@ theorem record_route_agrees {E : Ixon.Env} {b : Bytes.Address} {bp r : SourceVal
       (∀ z ∈ cs12, z ∈ cs) →
       ∃ (raw : ByteArray) (c : Ixon.Constant), raw.size < 4294967296 ∧ Hashed cs raw ∧
         Address.blake3Pure raw = ixAddr b ∧ Ixon.deConstantExact raw = .ok c ∧
-        L1.RepConstantInfo m2 c.info x_info := by
+        Ingress.RepConstantInfo m2 c.info x_info := by
     intro x_info w39 w40 w41 w42 m2 cs12 ev14 hs12
     obtain ⟨-, bytes, c, hlen, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded hb ev14
+      Ingress.load_verified_constant_decode_bounded hb ev14
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfo, -, -, -, -⟩ := cRep
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hc_eq
     rcases hc_eq with ⟨_, _, hinfo_eq, _, _, _, _⟩
@@ -642,11 +642,11 @@ theorem record_route_agrees {E : Ixon.Env} {b : Bytes.Address} {bp r : SourceVal
       ∃ (raw : ByteArray) (c : Ixon.Constant) (ms : Array Ixon.MutConst),
         raw.size < 4294967296 ∧ Hashed cs raw ∧
         Address.blake3Pure raw = ixAddr b ∧ Ixon.deConstantExact raw = .ok c ∧
-        c.info = .muts ms ∧ RepList L1.mutConstListEnum L1.RepMutConst m2 ms.toList x_members ∧
+        c.info = .muts ms ∧ RepList Ingress.mutConstListEnum Ingress.RepMutConst m2 ms.toList x_members ∧
         ms.size < 549755813888 := by
     intro x_members w39 w40 w41 w42 m2 cs12 ev14 hs12
     obtain ⟨raw, c, hsz, hh, haddr, hx, hrep⟩ := hload ev14 hs12
-    obtain ⟨ms, hinfo, hmsRep⟩ := L1.repConstantInfo_muts_inv hrep
+    obtain ⟨ms, hinfo, hmsRep⟩ := Ingress.repConstantInfo_muts_inv hrep
     have hres := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound raw c hx
     have hsize := Claim.muts_size_le hinfo
     exact ⟨raw, c, ms, hsz, hh, haddr, hx, hinfo, hmsRep, by omega⟩
@@ -706,9 +706,9 @@ theorem record_route_agrees {E : Ixon.Env} {b : Bytes.Address} {bp r : SourceVal
       omega
     -- the members' addresses
     have ext2 := ev14.heap_extends
-    obtain ⟨ext3, mems, hmemsRep, hmap⟩ := L1.build_recur_addrs_spec
+    obtain ⟨ext3, mems, hmemsRep, hmap⟩ := Ingress.build_recur_addrs_spec
       (membersRep_of_repMutConstList hmsRep) (Bytes.repAddressRef_heapMono₂ addrTy ext2 hb) ev179
-    rw [← L1.blockRecurAddrs_eq_mapIdx] at hmap
+    rw [← Ingress.blockRecurAddrs_eq_mapIdx] at hmap
     have ev201' : ObsFn Obs.W "KernelModeled::ctors_nested"
         [bp, .field (p : F), .field (ind.ctors.toList.length : F), v166,
           .field ((0 : Nat) : F)] m167 r h' cs199 := ev201
@@ -754,7 +754,7 @@ theorem block_is_modeled_agrees {E : Ixon.Env} {b : Bytes.Address} {bp r : Sourc
     (hnc : ¬ View.HashedCollision { env := E } [] cs) (hbd : Bounded cs)
     (hb : Bytes.RepAddressRef addrTy h b bp)
     (ev : ObsFn Obs.W "KernelModeled::block_is_modeled" [bp] h r h' cs) :
-    Agrees (L1.CanonicalHashCoverage E cs) (blockRoute E (ixAddr b)) r := by
+    Agrees (Ingress.CanonicalHashCoverage E cs) (blockRoute E (ixAddr b)) r := by
   obtain ⟨raw, c, hsz, hh, haddr, hx, ha⟩ := record_route_agrees hnc hbd hb ev
   constructor
   · intro v hv

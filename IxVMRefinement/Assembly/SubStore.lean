@@ -1,4 +1,4 @@
-import IxVMRefinement.Assembly.L7
+import IxVMRefinement.Assembly.ClaimedModelAssembly
 import Ix.Cert.FallbackStore
 
 /-! # Role-aware sub-store construction, `RolePreludeInputs`, multi-walk union, and `coreEnvRole`
@@ -12,10 +12,10 @@ Provides the Phase-2 store infrastructure backing `WalkedBareBridgeRole`:
 * `TableAdmittedAt` unpacking: authentic bytes, `Ixon.deConstantExact`, `recordAt E_role` on
   `order_role`, `pre.records ⊆ order_role`, and `UsedRecordRef` → `idxOf` decrease on `order_role`;
 * `ClosedSubwalk`, `WkAll`, `rankAll`, `SeedReach`, and `closedSubwalk_of_recsClosed`: combines
-  `WalkedL6`'s seed closure with `Claim.RecsClosed` sub-walks;
+  `WalkedClaim`'s seed closure with `Claim.RecsClosed` sub-walks;
 * `addBlobSupplements`, `roleSuppOf`, `subEnvRole`, `roleTwoTierRank`, and `coreEnvRole`: builds
   the combined role+seed store `E` and core-backing store `coreEnvRole`, proving `DrawsRoleLocal`,
-  authenticated records/blobs, `UsedClosureOrderAt`, `Core.Good`, and `L1.EnvDecoded`. -/
+  authenticated records/blobs, `UsedClosureOrderAt`, `Core.Good`, and `Ingress.EnvDecoded`. -/
 
 namespace IxVM.Refinement.Assembly
 
@@ -312,13 +312,13 @@ theorem TableAdmittedAt.prelude_mem_orderRole (hRP : RolePreludeInputs)
         (.step ha'_reach ⟨c', hrec', Or.inl ⟨hown, hne⟩⟩)
   exact ⟨ha_ord, hadm.order_agrees_with_fallback hRP ha_ord (Array.mem_append_left _ hmem)⟩
 
-/-! ## `ClosedSubwalk` union (`WkAll`, `rankAll`) across `WalkedL6` and `RecsClosed` sub-walks -/
+/-! ## `ClosedSubwalk` union (`WkAll`, `rankAll`) across `WalkedClaim` and `RecsClosed` sub-walks -/
 
 /-- A `WalkEdge`-closed, rank-decreasing, checked subset of `E₀`. -/
 structure ClosedSubwalk (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
     (W : _root_.Address → Prop) (rk : _root_.Address → Nat) : Prop where
-  step : ∀ x y, W x → Core.S0.WalkEdge E₀ x y → W y ∧ rk y < rk x
+  step : ∀ x y, W x → Core.BaseSeams.WalkEdge E₀ x y → W y ∧ rk y < rk x
   checked : ∀ x, W x → ∃ c, Ix.Cert.recordAt E₀ x = some c ∧
     ((∃ ms, c.info = .muts ms ∧
       ∀ (k : Nat), k < ms.size → Claim.MutsMemberCheckedAtFull calls bAddr t x ms k) ∨
@@ -397,7 +397,7 @@ theorem wkSafe_owner_of_nonproj {calls : List (Call F)} {bAddr : _root_.Address}
       Ix.Cert.ownerOf (Ix.Cert.ownerOf x cx) cb = Ix.Cert.ownerOf x cx) :
     WkSafe calls bAddr t E₀ (Ix.Cert.ownerOf x cx) ∧
       rankAll calls bAddr t E₀ (Ix.Cert.ownerOf x cx) < rankAll calls bAddr t E₀ x := by
-  have hedge : Core.S0.WalkEdge E₀ x (Ix.Cert.ownerOf x cx) :=
+  have hedge : Core.BaseSeams.WalkEdge E₀ x (Ix.Cert.ownerOf x cx) :=
     ⟨cx, hrec, Or.inl ⟨rfl, hne⟩⟩
   obtain ⟨hwk_own, hlt⟩ := (wkAll_closedSubwalk calls bAddr t E₀).step x _ hx.1 hedge
   refine ⟨⟨hwk_own, ?_⟩, hlt⟩
@@ -412,11 +412,11 @@ theorem wkSafe_owner_of_nonproj {calls : List (Call F)} {bAddr : _root_.Address}
     subst heq
     exact hnin2
 
-/-- `(Wk, rank)` from `WalkedL6` directly forms a `ClosedSubwalk`. -/
+/-- `(Wk, rank)` from `WalkedClaim` directly forms a `ClosedSubwalk`. -/
 theorem closedSubwalk_of_walked {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     {Wk : _root_.Address → Prop} {rank : _root_.Address → Nat}
-    (hwk_step : ∀ a b, Wk a → Core.S0.WalkEdge E₀ a b → Wk b ∧ rank b < rank a)
+    (hwk_step : ∀ a b, Wk a → Core.BaseSeams.WalkEdge E₀ a b → Wk b ∧ rank b < rank a)
     (hwk_chk : ∀ a, Wk a → ∃ c, Ix.Cert.recordAt E₀ a = some c ∧
       ((∃ ms, c.info = .muts ms ∧
         ∀ (k : Nat), k < ms.size → Claim.MutsMemberCheckedAtFull calls bAddr t a ms k) ∨
@@ -869,7 +869,7 @@ theorem subEnvRole_usedClosureOrderAt
     (hwk_keep : ∀ x, Wk x → Keep x)
     (hwk_owner : ∀ x c, Wk x → Ix.Cert.recordAt E₀ x = some c → Ix.Cert.ownerOf x c ≠ x →
       Wk (Ix.Cert.ownerOf x c) ∧ rank (Ix.Cert.ownerOf x c) < rank x)
-    (hwk_edge_keep : ∀ x y, Wk x → Core.S0.WalkEdge E₀ x y → y ∉ order_role → Keep y →
+    (hwk_edge_keep : ∀ x y, Wk x → Core.BaseSeams.WalkEdge E₀ x y → y ∉ order_role → Keep y →
       Wk y ∧ rank y < rank x)
     (hwk_rec : ∀ x, Wk x → ∃ c, Ix.Cert.recordAt E₀ x = some c)
     (hextra_kind : ∀ x c, x ∉ order_role → ¬ Wk x →
@@ -975,10 +975,10 @@ theorem subEnvRole_usedClosureOrderAt
         rw [hrec_a] at hrec_a'
         injection hrec_a' with hc_eq
         subst hc_eq
-        have hi_s0 : i ∈ Core.S0.usedRefIdxs c := by
+        have hi_s0 : i ∈ Core.BaseSeams.usedRefIdxs c := by
           rw [usedRefIdxs_eq]
           exact hi
-        have hedge_ar : Core.S0.WalkEdge E₀ a r := ⟨c, hrec_a0, Or.inr ⟨i, hi_s0, hr⟩⟩
+        have hedge_ar : Core.BaseSeams.WalkEdge E₀ a r := ⟨c, hrec_a0, Or.inr ⟨i, hi_s0, hr⟩⟩
         have hr_not_role : r ∉ order_role := by
           intro hr_role
           have hrec_role_r : Ix.Cert.recordAt E_role r = some cr :=
@@ -1017,7 +1017,7 @@ theorem subEnvRole_usedClosureOrderAt
         · rw [hrefs_emp] at hr
           simp at hr
 
-/-! ## Core-backing environment (`coreEnvRole`) for `Core.Good` and `L1.EnvDecoded` -/
+/-! ## Core-backing environment (`coreEnvRole`) for `Core.Good` and `Ingress.EnvDecoded` -/
 
 /-- All committed fallback records (`pre.records ++ pre.evidence`) packaged as `SuppEntry` items. -/
 def fallbackSupp (pre : Ix.Kernel.Reader.Prelude .anon) : List SuppEntry :=
@@ -1146,17 +1146,17 @@ theorem coreEnvRole_good (hRP : RolePreludeInputs)
       hRP.serConstant_mem_committedImages hpre (Array.mem_toList_iff.mp hmem)
     exact ⟨hblk, Or.inr (Or.inr ⟨hcomm_extra _ himg, hnotPad⟩)⟩
 
-/-- **`L1.EnvDecoded` on `coreEnvRole E₀ Keep supp roleBlobs pre`**. -/
+/-- **`Ingress.EnvDecoded` on `coreEnvRole E₀ Keep supp roleBlobs pre`**. -/
 theorem coreEnvRole_envDecoded (hRP : RolePreludeInputs)
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     {seeds : List _root_.Address} {Keep : _root_.Address → Prop} {supp : List SuppEntry}
     {roleBlobs : List (_root_.Address × ByteArray)}
     {pre : Ix.Kernel.Reader.Prelude .anon}
-    (hwalk : Claim.WalkedL6 calls t E₀ seeds)
+    (hwalk : Claim.WalkedClaim calls t E₀ seeds)
     (hpre : Ix.Kernel.Reader.preludeFor t = .ok pre)
     (hsupp : ∀ a raw c, (a, raw, c) ∈ supp → Ixon.deConstantExact raw = .ok c) :
-    L1.EnvDecoded (coreEnvRole E₀ Keep supp roleBlobs pre) := by
-  apply subEnv_envDecoded_of_walkedL6 _ hwalk
+    Ingress.EnvDecoded (coreEnvRole E₀ Keep supp roleBlobs pre) := by
+  apply subEnv_envDecoded_of_walkedClaim _ hwalk
   intro a raw c hm
   rcases List.mem_append.mp hm with h1 | h2
   · exact hsupp a raw c h1
@@ -1258,7 +1258,7 @@ theorem blobs_coreEnvRole (E₀ : Ixon.Env) (Keep : _root_.Address → Prop)
       (subEnvRole E₀ Keep supp roleBlobs).blobs :=
   rfl
 
-/-- **`¬ L1.EnvInternalCollision` on `coreEnvRole`** from `RolePreludeInputs`, `TableAdmittedAt`,
+/-- **`¬ Ingress.EnvInternalCollision` on `coreEnvRole`** from `RolePreludeInputs`, `TableAdmittedAt`,
 and `¬ V.HashedCollision extra calls`. -/
 theorem coreEnvRole_not_internalCollision (hRP : RolePreludeInputs)
     {V : IxVM.Refinement.View} {extra : List ByteArray} {calls : List (Call F)} {E₀ : Ixon.Env}
@@ -1272,7 +1272,7 @@ theorem coreEnvRole_not_internalCollision (hRP : RolePreludeInputs)
     (hcomm_extra : ∀ img ∈ IxVM.Consistency.committedImages, img ∈ extra)
     (hload : IxVM.Consistency.LoadedBy calls E₀)
     (hnoCol : ¬ V.HashedCollision extra calls) :
-    ¬ L1.EnvInternalCollision
+    ¬ Ingress.EnvInternalCollision
         (coreEnvRole E₀ Keep (roleSuppOf E_role order_role)
           (Ix.Cert.blobsOf E_role order_role) pre) := by
   rintro ⟨x, d, lc, hblob, hconst, hne⟩

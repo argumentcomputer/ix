@@ -56,7 +56,7 @@ universe u
 /-! ## `CleanInstallStep` and `DeclInvM` Step Combinators -/
 
 /-- `InstallStep` paired with `AuxRootSynced` preservation, `NoNewProjForOld`, and `isSome`
-monotonicity (needed both along the main `L5` fold and across advice steps). -/
+monotonicity (needed both along the main declaration fold and across advice steps). -/
 structure CleanInstallStep (env : Env .anon) (d : Declaration .anon) (env₂ : Env .anon) : Prop where
   step : IxVM.Consistency.InstallStep env d env₂
   auxSynced : AuxRootSynced env → AuxRootSynced env₂
@@ -102,7 +102,7 @@ theorem basis_declsA_isBaseKey (kind : BasisKind) :
   cases kind <;> decide
 
 theorem s0Checked_installs_isBaseKey {calls : List (Call F)} {env : Env .anon}
-    {d : Declaration .anon} (hchk : S0.Checked calls env d) :
+    {d : Declaration .anon} (hchk : BaseSeams.Checked calls env d) :
     ∀ ci₀ ∈ IxVM.Consistency.installs d, isBaseKey ci₀.name = true := by
   obtain ⟨_, t, _, _, _, hall⟩ := hchk
   intro ci₀ hmem
@@ -111,7 +111,7 @@ theorem s0Checked_installs_isBaseKey {calls : List (Call F)} {env : Env .anon}
   exact isBaseKey_keyOf t a
 
 theorem cleanInstallStep_of_checked_fresh {calls : List (Call F)} {env : Env .anon}
-    {d : Declaration .anon} (hchk : S0.Checked calls env d)
+    {d : Declaration .anon} (hchk : BaseSeams.Checked calls env d)
     (hnd : ((IxVM.Consistency.installs d).map (·.name)).Nodup)
     (hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs d, env.find? ci₀.name = none) :
     ∃ env₀, CleanInstallStep env d env₀ := by
@@ -159,7 +159,7 @@ theorem cleanInstallStep_of_checked_fresh {calls : List (Call F)} {env : Env .an
 
 /-- Lift a store-assumed `CleanInstallStep` + `DeclRunJ` step to `DeclInvM`. -/
 theorem declsM_step_of_store {calls : List (Call F)} {env : Env .anon}
-    {d : Declaration .anon} (hchk : S0.Checked calls env d)
+    {d : Declaration .anon} (hchk : BaseSeams.Checked calls env d)
     (hnd : ((IxVM.Consistency.installs d).map (·.name)).Nodup)
     (hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs d, env.find? ci₀.name = none)
     (hstep : DeclStoreInv env →
@@ -175,10 +175,10 @@ theorem declsM_step_of_store {calls : List (Call F)} {env : Env .anon}
     exact ⟨env₀, hclean, fun _ _ hInvM => absurd hInvM.inv.store hS⟩
 
 /-- Step preservation for standalone `.defnDecl` in `DeclInvM` (also used for advice definitions). -/
-theorem defnDecl_step_M (hCore : IxVM.Consistency.Core S₀)
+theorem defnDecl_step_M (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Env .anon}
     {cv : ConstantVal .anon} {value : KExpr} {hint : ReducibilityHint}
-    (hchk : S0.Checked calls env (.defnDecl cv value hint))
+    (hchk : BaseSeams.Checked calls env (.defnDecl cv value hint))
     (hx : DeclValueExtraFacts calls env (.defnDecl cv value hint)) :
     ∃ env₂, CleanInstallStep env (.defnDecl cv value hint) env₂ ∧
       ∀ (V : Type u) [Ix.Kernel.SetTheory V], DeclInvM V env → DeclInvM V env₂ := by
@@ -276,10 +276,10 @@ theorem defnDecl_step_M (hCore : IxVM.Consistency.Core S₀)
       exact ⟨cvA.type, value', hcv_run, hv_run, rfl, hop, hdm⟩
 
 /-- Step preservation for standalone `.thmDecl` in `DeclInvM` (also used for advice theorems). -/
-theorem thmDecl_step_M (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core S₀)
+theorem thmDecl_step_M (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Env .anon}
     {cv : ConstantVal .anon} {value : KExpr}
-    (hchk : S0.Checked calls env (.thmDecl cv value))
+    (hchk : BaseSeams.Checked calls env (.thmDecl cv value))
     (hx : DeclValueExtraFacts calls env (.thmDecl cv value)) :
     ∃ env₂, CleanInstallStep env (.thmDecl cv value) env₂ ∧
       ∀ (V : Type u) [Ix.Kernel.SetTheory V], DeclInvM V env → DeclInvM V env₂ := by
@@ -378,9 +378,9 @@ theorem thmDecl_step_M (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consist
       rw [← hcvA_eq]; rfl
 
 /-- Step preservation for `.axiomDecl` in `DeclInvM`. -/
-theorem axiomDecl_step_M (hCore : IxVM.Consistency.Core S₀)
+theorem axiomDecl_step_M (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Env .anon} {cv : ConstantVal .anon}
-    (hchk : S0.Checked calls env (.axiomDecl cv))
+    (hchk : BaseSeams.Checked calls env (.axiomDecl cv))
     (hx : DeclValueExtraFacts calls env (.axiomDecl cv)) :
     ∃ env₂, CleanInstallStep env (.axiomDecl cv) env₂ ∧
       ∀ (V : Type u) [Ix.Kernel.SetTheory V], DeclInvM V env → DeclInvM V env₂ := by
@@ -467,10 +467,10 @@ theorem axiomDecl_step_M (hCore : IxVM.Consistency.Core S₀)
       rw [← hcvA_eq]
 
 /-- Step preservation for `.opaqueDecl` in `DeclInvM`. -/
-theorem opaqueDecl_step_M (hCore : IxVM.Consistency.Core S₀)
+theorem opaqueDecl_step_M (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Env .anon}
     {cv : ConstantVal .anon} {value : KExpr}
-    (hchk : S0.Checked calls env (.opaqueDecl cv value))
+    (hchk : BaseSeams.Checked calls env (.opaqueDecl cv value))
     (hx : DeclValueExtraFacts calls env (.opaqueDecl cv value)) :
     ∃ env₂, CleanInstallStep env (.opaqueDecl cv value) env₂ ∧
       ∀ (V : Type u) [Ix.Kernel.SetTheory V], DeclInvM V env → DeclInvM V env₂ := by
@@ -616,9 +616,9 @@ theorem pinnedIndDecl_step_M {calls : List (Call F)} {env : Env .anon}
 
 /-- Unified `DeclInvM` step preservation across all non-inductive and pinned declarations. -/
 theorem valueOrPinnedDecl_step_M (hLevels : IxVM.Consistency.Levels)
-    (hCore : IxVM.Consistency.Core S₀)
+    (hCore : IxVM.Consistency.Core baseSeams)
     {calls : List (Call F)} {env : Env .anon} {d : Declaration .anon}
-    (hchk : S0.Checked calls env d)
+    (hchk : BaseSeams.Checked calls env d)
     (hx : DeclValueExtraFacts calls env d)
     (hind : ∀ block nP, d = .indDecl block nP → Ix.Kernel.basisPinHit block = none →
       ∃ env₂, CleanInstallStep env (.indDecl block nP) env₂ ∧
@@ -3335,7 +3335,7 @@ set_option maxHeartbeats 6400000 in
 `CleanInstallStep env (.indDecl block₀ nP) env₂` and `∀ V [SetTheory V], DeclInvM V env → DeclInvM V env₂`. -/
 theorem modeledBlock_install_step {calls : List (Call F)} {env : Env .anon}
     {block₀ : List (ConstantInfo .anon)} {nP : Nat}
-    (hchk : S0.Checked calls env (.indDecl block₀ nP))
+    (hchk : BaseSeams.Checked calls env (.indDecl block₀ nP))
     (hnodup : ((IxVM.Consistency.installs (.indDecl block₀ nP)).map (·.name)).Nodup)
     (hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs (.indDecl block₀ nP), env.find? ci₀.name = none)
     (hwit : DeclStoreInv env → AuxRootSynced env →

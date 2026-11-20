@@ -401,7 +401,7 @@ def FormerAliasTele (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.Address
     (exprReader t (fun x => E.blobs.get? x) cb id (blockSelf t B #[.indc ind])).read ind.typ
       = .ok ty₀ →
     LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
-      ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀
+      ((Ingress.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀
       = some ty' →
     ∃ (cvTa : ConstantVal .anon) (s : Ix.Kernel.Level),
       AliasTele env ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty₀⟩
