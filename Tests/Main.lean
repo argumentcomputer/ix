@@ -61,6 +61,7 @@ import Tests.Ix.IxVM.FieldReduction
 import Tests.Ix.IxVM.MustReject
 import Tests.Ix.IxVM.IndVariations
 import Tests.Ix.IxVM.SyntheticRegressions
+import Tests.Ix.IxVM.ProjectionRewrite
 import Tests.Ix.Kernel.ReaderCoverage
 import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
@@ -251,6 +252,7 @@ def registry : List Entry := [
   -- controls exercising the Rust executor and circuit-verdict deferred assertions.
   .env "ixvm-must-reject" (.manual "hand-built must-reject fixtures and their controls, checked against Lean's kernel") Tests.Ix.IxVM.MustReject.run,
   .env "ixvm-ind-variations" (.manual "inductive variations through Lean, the certified kernel and IxVM; IX_IV_ONLY") Tests.Ix.IxVM.IndVariations.run,
+  .env "ixvm-projection-rewrite" (.manual "check IxC's recursor bodies for modeled structure accessors in IxVM") Tests.Ix.IxVM.ProjectionRewrite.run,
   .env "ixvm-model-report" (.manual "model advice per mutual or nested block of IX_MODEL_IXE") Tests.Ix.IxVM.ModelAdvice.report,
   .env "ixvm-model-coverage" (.manual "every modeled block of IX_MODEL_IXE through IxVM") Tests.Ix.IxVM.ModelAdvice.coverage,
   .env "ixvm-model-proj" (.manual "records of IX_MODEL_IXE that project at a modeled block") Tests.Ix.IxVM.ModelAdvice.projUse,

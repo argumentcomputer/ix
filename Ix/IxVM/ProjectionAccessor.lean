@@ -1,3 +1,4 @@
+import Ix.Ixon
 import IxC.Kernel.Ixon.ReaderSpec
 
 namespace IxVM.ProjectionAccessor
@@ -145,5 +146,25 @@ theorem read?_sound {cx : Ctx md} {st : State md} {addr : Address} {c : Ixon.Con
   cases found : fieldFor? cx st addr c with
   | none => simp [read?, found] at selected
   | some f => exact f.read_sound (fieldFor?_agrees found) (by simpa [read?, found] using selected)
+
+/-- Reconstruct from the exact bytes committed by an accessor address. -/
+def readStored? (cx : Ctx md) (st : State md) (addr : Address) (bytes : ByteArray) :
+    Option (CDecl md) := do
+  guard (Address.blake3 bytes == addr)
+  let c ← (Ixon.deConstantExact bytes).toOption
+  read? cx st addr c
+
+theorem readStored?_sound {cx : Ctx md} {st : State md} {addr : Address} {bytes : ByteArray}
+    {decl : CDecl md} (selected : readStored? cx st addr bytes = some decl) :
+    Address.blake3 bytes = addr ∧ ∃ c, Ixon.deConstantExact bytes = .ok c ∧
+      readRecord cx st addr c = .ok { decls := #[decl], projRewrites := 1 } := by
+  unfold readStored? at selected
+  by_cases hash : Address.blake3 bytes = addr
+  · refine ⟨hash, ?_⟩
+    cases decoded : Ixon.deConstantExact bytes with
+    | error e => simp [hash, decoded, guard, Except.toOption, bind, Option.bind] at selected
+    | ok c =>
+      exact ⟨c, rfl, read?_sound (by simpa [hash, decoded, guard, Except.toOption] using selected)⟩
+  · simp [hash, guard, bind, Option.bind] at selected
 
 end IxVM.ProjectionAccessor
