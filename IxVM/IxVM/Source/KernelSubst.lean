@@ -208,9 +208,12 @@ def expr_glb_walk := aiur_fn⟦
         KernelTypes::KExprNode::Srt(_) => {  4294967295 } ,
         KernelTypes::KExprNode::Const(_, _) => {  4294967295 } ,
         KernelTypes::KExprNode::Lit(_) => {  4294967295 } ,
-        KernelTypes::KExprNode::App(f, a) => {  match expr_glb(f, c) {
+        -- The argument is searched first: in a spine the innermost variables tend to
+        -- occur in the last arguments, so a zero gap is found before the head and the
+        -- earlier arguments are walked.
+        KernelTypes::KExprNode::App(f, a) => {  match expr_glb(a, c) {
           0 => {  0 } ,
-          n => {  lbr_min(n, expr_glb(a, c)) } ,
+          n => {  lbr_min(n, expr_glb(f, c)) } ,
         } } ,
         KernelTypes::KExprNode::Lam(ty, body) => {  expr_glb_binder(ty, body, c) } ,
         KernelTypes::KExprNode::Forall(ty, body) => {  expr_glb_binder(ty, body, c) } ,
