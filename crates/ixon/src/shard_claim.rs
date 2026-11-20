@@ -223,29 +223,29 @@ pub fn outside_logic_at(env: &Env, addr: &Address) -> bool {
 
 /// The constants of `env` that use an inert axiom: the axioms its role binding
 /// binds to inert roles ([`crate::role_table::Role::is_inert`]: `sorryAx` and
-/// Lean's compiler-trust axioms), and every constant whose walk edges
-/// ([`walk_edges`]) reach one, transitively. IxVM refuses each as a claim
+/// Lean's compiler-trust axioms), Lean 4's native-evaluation auxiliary axioms
+/// ([`ClaimContext::native_eval_axiom_addrs`]), and every constant whose walk
+/// edges ([`walk_edges`]) reach one, transitively. IxVM refuses each as a claim
 /// seed: an inert axiom itself (`KernelClaim::assert_claimable`), any other
-/// because its walk meets a use (`KernelRoles::assert_ref_allowed`). Empty
-/// when `env` carries no binding, one that does not decode, or none of the
-/// inert axioms.
+/// because its walk meets a use (`KernelRoles::assert_ref_allowed`) or an
+/// unbound compiler-trust axiom (`KernelCheck::check_const`). Empty when `env`
+/// holds none of these axioms.
 ///
-/// Mirror of `IxVM.ClaimHarness.inertUsers` (`Ix/IxVM/ClaimHarness.lean`),
+/// Mirror of `IxVM.ClaimHarness.inertUsers` (`Ix/IxVM/ClaimSeeds.lean`),
 /// which reads the default table when `env` carries no binding.
 pub fn inert_users(env: &Env) -> FxHashSet<Address> {
-  let Some(binding) = &env.role_binding else {
-    return FxHashSet::default();
-  };
-  let Ok(table) = crate::role_table::RoleTable::from_bytes(&binding.bytes)
-  else {
-    return FxHashSet::default();
-  };
-  let roots: Vec<Address> = table
-    .bound
-    .iter()
-    .filter(|(r, a)| r.is_inert() && env.consts.get(a).is_some())
-    .map(|(_, a)| a.clone())
-    .collect();
+  let mut root_set: FxHashSet<Address> =
+    ClaimContext::native_eval_axiom_addrs(env);
+  if let Some(binding) = &env.role_binding
+    && let Ok(table) = crate::role_table::RoleTable::from_bytes(&binding.bytes)
+  {
+    for (r, a) in table.bound {
+      if r.is_inert() && env.consts.get(&a).is_some() {
+        root_set.insert(a);
+      }
+    }
+  }
+  let roots: Vec<Address> = root_set.into_iter().collect();
   if roots.is_empty() {
     return FxHashSet::default();
   }
@@ -639,5 +639,132 @@ mod tests {
     // never visits it.
     let cl = env.bfs_closure(&[a]);
     assert!(cl.contains(&c));
+  }
+
+  #[test]
+  fn native_decide_auxiliary_axioms_classified_as_inert() {
+    use crate::constant::{Axiom, Constant, ConstantInfo, DefKind, Definition};
+    use crate::env::{Named, RoleBinding};
+    use crate::expr::Expr;
+    use crate::modes::DefAsserts;
+    use crate::role_table::RoleTable;
+    use crate::univ::Univ;
+    use ix_common::env::{DefinitionSafety, Name};
+
+    let mut env = Env::new();
+    let table_bytes =
+      RoleTable { version: 5, bound: vec![], evidence: vec![] }
+        .to_bytes()
+        .unwrap();
+    env.role_binding = Some(RoleBinding {
+      address: Address::hash(&table_bytes),
+      bytes: table_bytes.into(),
+    });
+
+    let store = |env: &mut Env, c: Constant| -> Address {
+      let mut bytes = Vec::new();
+      c.put(&mut bytes);
+      let addr = Address::hash(&bytes);
+      env.store_const(addr.clone(), c);
+      addr
+    };
+
+    let safe_def = store(
+      &mut env,
+      Constant {
+        info: ConstantInfo::Defn(Definition {
+          kind: DefKind::Definition,
+          safety: DefinitionSafety::Safe,
+          asserts: DefAsserts::default(),
+          lvls: 0,
+          typ: Expr::sort(0),
+          value: Expr::sort(0),
+        }),
+        sharing: vec![],
+        refs: vec![],
+        univs: vec![Univ::zero()],
+        binders: vec![],
+      },
+    );
+
+    // Safe axiom for `t._native.native_decide.ax_1`
+    let nd_ax = store(
+      &mut env,
+      Constant {
+        info: ConstantInfo::Axio(Axiom {
+          is_unsafe: false,
+          lvls: 0,
+          typ: Expr::sort(0),
+        }),
+        sharing: vec![],
+        refs: vec![],
+        univs: vec![Univ::zero()],
+        binders: vec![],
+      },
+    );
+    let nd_name = Name::str(
+      Name::str(
+        Name::str(Name::str(Name::anon(), "t".into()), "_native".into()),
+        "native_decide".into(),
+      ),
+      "ax_1".into(),
+    );
+    env.register_name(nd_name, Named::with_addr(nd_ax.clone()));
+    let nd_user = store(
+      &mut env,
+      Constant {
+        info: ConstantInfo::Defn(Definition {
+          kind: DefKind::Theorem,
+          safety: DefinitionSafety::Safe,
+          asserts: DefAsserts::default(),
+          lvls: 0,
+          typ: Expr::sort(0),
+          value: Expr::reference(0, vec![]),
+        }),
+        sharing: vec![],
+        refs: vec![nd_ax.clone()],
+        univs: vec![Univ::zero()],
+        binders: vec![],
+      },
+    );
+
+    // Distinct custom user axiom `Custom.seed`
+    let user_ax = store(
+      &mut env,
+      Constant {
+        info: ConstantInfo::Axio(Axiom {
+          is_unsafe: false,
+          lvls: 1,
+          typ: Expr::sort(0),
+        }),
+        sharing: vec![],
+        refs: vec![],
+        univs: vec![Univ::zero()],
+        binders: vec![],
+      },
+    );
+    let user_name =
+      Name::str(Name::str(Name::anon(), "Custom".into()), "seed".into());
+    env.register_name(user_name, Named::with_addr(user_ax.clone()));
+
+    let inert = inert_users(&env);
+    assert!(inert.contains(&nd_ax));
+    assert!(inert.contains(&nd_user));
+    assert!(!inert.contains(&user_ax));
+    assert!(!inert.contains(&safe_def));
+
+    let uax = ClaimContext::user_axioms(&env);
+    assert_eq!(uax, vec![user_ax.clone()]);
+
+    // If a custom user axiom shares the same alpha-invariant address as a
+    // native_decide auxiliary axiom, it must NOT be hidden as compiler-trust.
+    let shared_name =
+      Name::str(Name::str(Name::anon(), "Custom".into()), "sameProp".into());
+    env.register_name(shared_name, Named::with_addr(nd_ax.clone()));
+    let inert_after = inert_users(&env);
+    assert!(!inert_after.contains(&nd_ax));
+    let uax_after = ClaimContext::user_axioms(&env);
+    assert!(uax_after.contains(&nd_ax));
+    assert!(uax_after.contains(&user_ax));
   }
 }
