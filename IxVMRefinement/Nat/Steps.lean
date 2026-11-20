@@ -2,6 +2,9 @@ import IxVMRefinement.Nat.KlimbsMul
 import IxVMRefinement.Nat.Utf8
 import IxVMRefinement.Nat.PrimStr
 import IxVMRefinement.Nat.PrimNat
+import IxVMRefinement.Nat.PrimInt
+import IxVMRefinement.Nat.PrimStrOps
+import IxVMRefinement.Nat.PrimBitVec
 import IxVMRefinement.Nat.Levels
 
 /-! # The `Nat` family's steps
@@ -61,7 +64,7 @@ theorem nat_step (c : ScopedCtx) (hc : ScopedCoreBase c) :
   | .build_char_list, _, _, _, _, _, ev, ih => build_char_list_step c ev ih
   | .str_lit_to_ctor, _, _, _, _, _, ev, ih => str_lit_to_ctor_step c hc ev ih
   | .str_lit_delta_step, _, _, _, _, _, ev, ih => str_lit_delta_step_step c ev ih
-  | .str_lit_to_ctor_app_or_self, _, _, _, _, _, ev, ih => str_lit_to_ctor_app_or_self_step c ev ih
+  | .str_lit_to_ctor_app_or_self, _, _, _, _, _, ev, ih => str_lit_to_ctor_app_or_self_step c hc ev ih
   | .try_extract_nat, _, _, _, _, _, ev, ih => try_extract_nat_step c hc ev ih
   | .try_extract_nat_app, _, _, _, _, _, ev, ih => try_extract_nat_app_step c hc ev ih
   | .try_nat_binop_addr, _, _, _, _, _, ev, ih => try_nat_binop_addr_step c ev ih
@@ -70,5 +73,43 @@ theorem nat_step (c : ScopedCtx) (hc : ScopedCoreBase c) :
   | .try_nat_offset_dispatch, _, _, _, _, _, ev, ih => try_nat_offset_dispatch_step c hc ev ih
   | .try_nat_binop_dispatch, _, _, _, _, _, ev, ih => try_nat_binop_dispatch_step c hc ev ih
   | .try_nat_dispatch, _, _, _, _, _, ev, ih => try_nat_dispatch_step c hc ev ih
+  | .try_extract_nat_or_whnf, _, _, _, _, _, ev, ih => try_extract_nat_or_whnf_step c ev ih
+  | .try_extract_int_prim, _, _, _, _, _, ev, ih => try_extract_int_prim_step c hc ev ih
+  | .mk_int_prim, _, _, _, _, _, ev, ih => mk_int_prim_step c hc ev ih
+  | .int_add_prim, _, _, _, _, _, ev, ih => int_add_prim_step c ev ih
+  | .int_emod_prim, _, _, _, _, _, ev, ih => int_emod_prim_step c ev ih
+  | .int_ediv_prim, _, _, _, _, _, ev, ih => int_ediv_prim_step c ev ih
+  | .int_bmod_prim, _, _, _, _, _, ev, ih => int_bmod_prim_step c ev ih
+  | .int_bdiv_prim, _, _, _, _, _, ev, ih => int_bdiv_prim_step c ev ih
+  | .try_int_unop_dispatch, _, _, _, _, _, ev, ih => try_int_unop_dispatch_step c hc ev ih
+  | .try_int_nat_arg_prim, _, _, _, _, _, ev, ih => try_int_nat_arg_prim_step c hc ev ih
+  | .try_int_int_arg_prim, _, _, _, _, _, ev, ih => try_int_int_arg_prim_step c hc ev ih
+  | .try_int_binop_second, _, _, _, _, _, ev, ih => try_int_binop_second_step c hc ev ih
+  | .try_int_prim_dispatch, _, _, _, _, _, ev, ih => try_int_prim_dispatch_step c ev ih
+  | .utf8_last_go, _, _, _, _, _, ev, ih => utf8_last_go_step c ev ih
+  | .utf8_last_codepoint, _, _, _, _, _, ev, ih => utf8_last_codepoint_step c ev ih
+  | .utf8_encode_prepend, _, _, _, _, _, ev, ih => utf8_encode_prepend_step c ev ih
+  | .klimbs_scalar_value, _, _, _, _, _, ev, ih => klimbs_scalar_value_step c ev ih
+  | .lvls_is_zero1, _, _, _, _, _, ev, ih => lvls_is_zero1_step c ev ih
+  | .is_char_const, _, _, _, _, _, ev, ih => is_char_const_step c hc ev ih
+  | .is_char_const_or_whnf, _, _, _, _, _, ev, ih => is_char_const_or_whnf_step c ev ih
+  | .char_lit_codepoint_syn, _, _, _, _, _, ev, ih => char_lit_codepoint_syn_step c hc ev ih
+  | .char_lit_codepoint, _, _, _, _, _, ev, ih => char_lit_codepoint_step c ev ih
+  | .match_char_list_head_syn, _, _, _, _, _, ev, ih => match_char_list_head_syn_step c hc ev ih
+  | .walk_char_list_bytes, _, _, _, _, _, ev, ih => walk_char_list_bytes_step c ev ih
+  | .try_str_of_list, _, _, _, _, _, ev, ih => try_str_of_list_step c ev ih
+  | .try_str_utf8_byte_size, _, _, _, _, _, ev, ih => try_str_utf8_byte_size_step c ev ih
+  | .try_str_back, _, _, _, _, _, ev, ih => try_str_back_step c hc ev ih
+  | .try_str_to_byte_array, _, _, _, _, _, ev, ih => try_str_to_byte_array_step c hc ev ih
+  | .try_str_dec_eq, _, _, _, _, _, ev, ih => try_str_dec_eq_step c hc ev ih
+  | .try_str_append, _, _, _, _, _, ev, ih => try_str_append_step c ev ih
+  | .try_char_utf8_size, _, _, _, _, _, ev, ih => try_char_utf8_size_step c ev ih
+  | .try_str_dispatch, _, _, _, _, _, ev, ih => try_str_dispatch_step c hc ev ih
+  | .bitvec_of_nat_args_direct, _, _, _, _, _, ev, ih => bitvec_of_nat_args_direct_step c hc ev ih
+  | .bv_extract_of_nat, _, _, _, _, _, ev, ih => bv_extract_of_nat_step c ev ih
+  | .bv_extract_checked_val, _, _, _, _, _, ev, ih => bv_extract_checked_val_step c ev ih
+  | .try_bitvec_to_nat, _, _, _, _, _, ev, ih => try_bitvec_to_nat_step c ev ih
+  | .try_bitvec_ult, _, _, _, _, _, ev, ih => try_bitvec_ult_step c ev ih
+  | .try_bitvec_dispatch, _, _, _, _, _, ev, ih => try_bitvec_dispatch_step c hc ev ih
 
 end IxVM.Refinement.Core

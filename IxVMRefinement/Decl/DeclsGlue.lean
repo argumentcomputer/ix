@@ -1739,10 +1739,11 @@ structure FoldEnvCompanions (c : Ctx) : Prop where
   natLit : c.inForce .nat → c.inForce .natZero → c.inForce .natSucc →
     Ix.Kernel.natLitSupported c.env = true
   strLit : c.inForce .string → Ix.Kernel.strLitSupported c.env = true
-  natOps : ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.Rules.natBinOpNames →
+  natOps : ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames →
     Ix.Kernel.natOpStored c.env (.role r) = true
   natAdd : c.inForce .natAdd → Ix.Kernel.Rules.natAddTyOk (c.env.find? Ix.Kernel.natAddName) = true
   eqStored : c.inForce .eq → ∃ ci, c.env.find? Ix.Kernel.eqName = some ci
+  primEqn : (∃ r, 46 ≤ Ix.SpecDigest.groupOf r ∧ c.inForce r) → Core.PrimEqnEnv c.env
   quotBasis : c.inForce .quot → ∀ ci ∈ BasisKind.declsA (md := .anon) .quotK,
     c.env.find? ci.name = some ci
   recMajorRecord : ∀ k cv mI rP rls (p : _root_.Address) us,
@@ -1782,6 +1783,7 @@ theorem FoldStoreInv.toEnvFacts {c : Ctx} (hS : FoldStoreInv c.env) (htwf : c.t.
   natOps := hR.natOps
   natAdd := hR.natAdd
   eqStored := hR.eqStored
+  primEqn := hR.primEqn
   recRules := fun k cv mI rP rls hf =>
     let ⟨hnodup, hprj⟩ := hR.recRulesNodupAndProj k cv mI rP rls hf
     ⟨hnodup, fun rl hrl => hS.store.recRules_fire hf hrl, hprj⟩

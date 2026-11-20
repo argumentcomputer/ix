@@ -196,10 +196,11 @@ structure CoreCompanions (c : Ctx) : Prop where
   natLit : c.inForce .nat → c.inForce .natZero → c.inForce .natSucc →
     Ix.Kernel.natLitSupported c.env = true
   strLit : c.inForce .string → Ix.Kernel.strLitSupported c.env = true
-  natOps : ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.Rules.natBinOpNames →
+  natOps : ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames →
     Ix.Kernel.natOpStored c.env (.role r) = true
   natAdd : c.inForce .natAdd → Ix.Kernel.Rules.natAddTyOk (c.env.find? Ix.Kernel.natAddName) = true
   eqStored : c.inForce .eq → ∃ ci, c.env.find? Ix.Kernel.eqName = some ci
+  primEqn : (∃ r, 46 ≤ Ix.SpecDigest.groupOf r ∧ c.inForce r) → Core.PrimEqnEnv c.env
   quotBasis : c.inForce .quot → ∀ ci ∈ BasisKind.declsA (md := .anon) .quotK,
     c.env.find? ci.name = some ci
   recMajorRecord : ∀ k cv mI rP rls (p : _root_.Address) us,
@@ -232,6 +233,7 @@ theorem FoldStoreInv.toCoreEnvFacts {c : Ctx} (hS : FoldStoreInv c.env) (htwf : 
   natOps := hR.natOps
   natAdd := hR.natAdd
   eqStored := hR.eqStored
+  primEqn := hR.primEqn
   recRules := fun k cv mI rP rls hf =>
     let ⟨hnodup, hprj⟩ := hR.recRulesNodupAndProj k cv mI rP rls hf
     ⟨hnodup, fun rl hrl => hS.store.recRules_fire hf hrl, hprj⟩
@@ -254,6 +256,7 @@ theorem coreCompanions_of_empty {c : Ctx} (henv : ∀ k, c.env.find? k = none)
   natOps := fun r h _ => absurd h (hnf r)
   natAdd := fun h => absurd h (hnf _)
   eqStored := fun h => absurd h (hnf _)
+  primEqn := fun ⟨r, _, h⟩ => absurd h (hnf r)
   quotBasis := fun h => absurd h (hnf _)
   recMajorRecord := fun k cv mI rP rls p us hf _ _ => (noFind henv hf).elim
   recRulesNodupAndProj := fun k cv mI rP rls hf => (noFind henv hf).elim
@@ -288,6 +291,7 @@ theorem CoreCompanions.cons_value {c : Ctx} (h : CoreCompanions c) {ci : Constan
       eqStored := fun h1 =>
         let ⟨ci', hci'⟩ := h.eqStored h1
         ⟨ci', hext.find hci'⟩
+      primEqn := fun h1 => (h.primEqn h1).weaken hext
       quotBasis := fun h1 ci' hm => hext.find (h.quotBasis h1 ci' hm)
       recMajorRecord := fun k cv mI rP rls p us hf hne hdom =>
         h.recMajorRecord k cv mI rP rls p us

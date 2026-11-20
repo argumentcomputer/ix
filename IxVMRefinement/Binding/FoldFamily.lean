@@ -1,6 +1,7 @@
 import IxVMRefinement.Binding.WalkedStored
 import IxVMRefinement.Binding.ClosureFoldProof
 import IxVMRefinement.Binding.ClauseFold
+import IxVMRefinement.Binding.BitVecEqns
 
 /-! # The binding fold with its modeled blocks' families: the invariant, the group step, the fold
 
@@ -315,8 +316,11 @@ theorem bndOver_succ_of_noUnit {L : Ix.Kernel.Env .anon → NativeFam .anon → 
           rw [← hgr]
           exact role_mem_roleGroup r
         exact hfab r hmem hf a ha
+  have htail : g = 76 → Core.PrimEqnEnv env₁ := fun h76 => by
+    subst h76
+    exact primEqnEnv_of_bndOver hall hb₁ hshapes
   have hraise : RaiseAt t env₁ g :=
-    raiseAt_of_noOps hg6 (fun r hr hop' => hnu r hr (Or.inl hop')) hfab hlit
+    raiseAt_of_noOps hg6 (fun r hr hop' => hnu r hr (Or.inl hop')) hfab hlit htail
   have hB : BeforeRaise.{u} L t g R₁ env₁ :=
     beforeRaise_of_kept hall hb₁ (fun r hr hkr a ha => hkept.1 r hr hkr (hnu r hr) a ha)
       hkept.2 hshapes hraise
@@ -366,13 +370,6 @@ theorem groupStepOverW_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon →
           recordsStored_roleUnit htwf hr (Or.inr hk') ha hadds hext' hB' hrs₁, famOf₁, hsf'⟩⟩
   · have hnu : ∀ r ∈ roleGroup g, ¬ (r ∈ RoleOps.opRoles ∨ r ∈ standardAxioms) :=
       fun r hr hk => hu ⟨r, hr, hk⟩
-    have hshapes : Shapes (· < g + 1) env₁ := hnone hnu R R₁ R' env₁ hadm hrd hR₁R' hb₁ hkept
-    have hb₂ : BndOver.{u} L t (· < g + 1) R₁ env₁ :=
-      bndOver_succ_of_noUnit hall htwf hg6 hg hnu hb₁ hkept hshapes
-    have hws₂ : WalkedStored ρ t (· < g + 1) R₁ env₁ :=
-      walkedStored_succ_of_kept htwf hws₁ (fun r hr hkr a ha => by
-        obtain ⟨ci, hci, -⟩ := hkept.1 r hr hkr (hnu r hr) a ha
-        exact ⟨ci, hci⟩)
     have hsame : ∀ x, R₁.consts.get? x = R'.consts.get? x := by
       intro x
       cases h₁ : R₁.consts.get? x with
@@ -383,6 +380,18 @@ theorem groupStepOverW_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon →
         | some lc =>
           obtain ⟨r', hr', -, hk'⟩ := hunit x (by rw [h']; rfl) h₁
           exact absurd hk' (hnu r' hr')
+    have hrec' : ∀ x c, recordOf R' x = some c → (∀ ms, c.info ≠ .muts ms) →
+        (env₁.find? (keyOf t x)).isSome = true := by
+      intro x c hrc hnm
+      rw [← recordOf_storeCongr hsame] at hrc
+      exact hrs₁ x c hrc hnm
+    have hshapes : Shapes (· < g + 1) env₁ := hnone hnu R R₁ R' env₁ hadm hrd hR₁R' hb₁ hkept hrec'
+    have hb₂ : BndOver.{u} L t (· < g + 1) R₁ env₁ :=
+      bndOver_succ_of_noUnit hall htwf hg6 hg hnu hb₁ hkept hshapes
+    have hws₂ : WalkedStored ρ t (· < g + 1) R₁ env₁ :=
+      walkedStored_succ_of_kept htwf hws₁ (fun r hr hkr a ha => by
+        obtain ⟨ci, hci, -⟩ := hkept.1 r hr hkr (hnu r hr) a ha
+        exact ⟨ci, hci⟩)
     have hsameB : ∀ x, R₁.blobs.get? x = R'.blobs.get? x := by
       intro x
       cases h₁ : R₁.blobs.get? x with

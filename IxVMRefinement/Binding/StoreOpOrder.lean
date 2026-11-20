@@ -257,6 +257,20 @@ theorem GroupReach.orderedListed (hC : CollisionFreeRun calls E₀) {g : Nat}
       rcases hrest with ⟨-, r', hr', e, -⟩ | hcov
       · exact ⟨recs, hcl, hord, r', hr', e⟩
       · exact absurd hcov hnc
+  | @eqnsProof r arr thm hr h5 hm hthm =>
+    obtain ⟨recs, hcl, hord, hmem⟩ :=
+      RoleVal.ValidateRoleIn.eqns_evidence_walks_ordered
+        (show RoleVal.ValidateRoleIn calls bAddr t g r from hval r hr) h5 hm hthm
+    obtain ⟨y, hy, hya⟩ := List.mem_map.mp hmem
+    exact ⟨recs, hcl, hord, y, hy, hya⟩
+  | @eqnsAnchor r ar a hr h5 har had =>
+    obtain ⟨a₁, recs, had₁, hcl, hord, hmem⟩ :=
+      RoleVal.ValidateRoleIn.eqns_anchors_walks_ordered
+        (show RoleVal.ValidateRoleIn calls bAddr t g r from hval r hr) h5 har
+    have e : a₁ = a := Option.some.inj (had₁.symm.trans had)
+    rw [e] at hmem
+    obtain ⟨y, hy, hya⟩ := List.mem_map.mp hmem
+    exact ⟨recs, hcl, hord, y, hy, hya⟩
 
 /-- **The references the walk follows are ordered, below the well-founded block and from limit 41
 on**: below 33 by `walk_ctx`'s assertion on every walked record and every certificate reference;
@@ -363,6 +377,18 @@ theorem GroupReach.root_or_earlier {g : Nat} (hsteps : WalkStepsOrdered t E₀ g
   | evidenceRef hr hm hthm hu hne hns =>
     exact Or.inr (Or.inl (hsteps.evidence _ hr _ _ _ hm hthm hu hne
       (AlreadyStoredRole.not_covered hns)))
+  | eqnsProof hr h5 _ _ =>
+    refine Or.inr (Or.inl fun r' _ hop => ?_)
+    have hgr := groupOf_of_mem_roleGroup hr
+    have h46 := specKind5_group_ge_46 _ h5
+    have h40 := (op_group_bounds hop).2
+    omega
+  | eqnsAnchor hr h5 _ _ =>
+    refine Or.inr (Or.inl fun r' _ hop => ?_)
+    have hgr := groupOf_of_mem_roleGroup hr
+    have h46 := specKind5_group_ge_46 _ h5
+    have h40 := (op_group_bounds hop).2
+    omega
 
 /-- **The block of a reached projection record holds a block record.** -/
 theorem GroupReach.owner_block (hC : CollisionFreeRun calls E₀) {g : Nat}

@@ -110,6 +110,29 @@ theorem Red.natSucc_sound {d n : Nat} {a w : Expr md} (hr : RedS M φ d a w)
     obtain ⟨hXw, -⟩ := k σ (hC.of_subset fun l hl => by simp [Expr.fvarLeaves, hl]) _ hX hga
     exact ⟨.natLit (.app hS (rawNatLit_den hw hXw)), True.intro⟩
 
+/-- **`Nat.pred` acceleration** (`Red.natPred`): the literal law (`Model.lit_ops.1`). -/
+theorem Red.natPred_sound {d : Nat} {a w : Expr md} {n : Nat}
+    (hst : natOpStored env natPredName = true)
+    (ha : RedS M φ d a w) (hw : rawNatLit? w = some n) :
+    RedS M φ d (.app (.const natPredName []) a) (.lit (.natVal (n - 1))) := by
+  obtain ⟨cv, val, hint, hfc⟩ : ∃ cv val hint, env.find? natPredName = some (.defnInfo cv val hint) := by
+    cases hf : env.find? natPredName with
+    | none => simp [natOpStored, hf] at hst
+    | some ci =>
+      cases ci with
+      | defnInfo cv val hint => exact ⟨cv, val, hint, rfl⟩
+      | _ => simp [natOpStored, hf] at hst
+  intro hfr
+  obtain ⟨-, hfa⟩ := Frame.app_iff.1 hfr
+  obtain ⟨-, -, ka⟩ := ha hfa
+  refine ⟨Frame.of_closed rfl rfl, LeavesSub.of_closed rfl, fun σ hC v hv hg => ?_⟩
+  obtain ⟨-, hga, -⟩ := Gr.app_iff.1 hg
+  cases hv with
+  | app hc' hA =>
+    obtain ⟨hA', -⟩ := ka σ (hC.of_subset fun l hl => by simp [Expr.fvarLeaves, hl]) _ hA hga
+    have hD := DenotesO.to_denotes (.app hc' (rawNatLit_den hw hA')) (by rfl)
+    exact ⟨DenotesO.of_denotes (M.lit_ops.1 cv val hint hfc φ ρ₀ n _ hD), True.intro⟩
+
 /-- **The result of a binary literal operation, as the literal law states it.** -/
 theorem natOpResult_law {c : Key md} {a b : Nat} {r : Expr md} (hc : c ∈ natBinOpNames)
     (hr : natOpResult c a b = some r) :

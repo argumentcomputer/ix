@@ -230,6 +230,7 @@ theorem Shapes.mono {G G' : Nat → Prop} {env : Ix.Kernel.Env .anon}
   stringOfList := fun hg => h.stringOfList (hG _ hg)
   iff := fun hg => h.iff (hG _ hg)
   nonempty := fun hg => h.nonempty (hG _ hg)
+  eqns := fun r h46 hg => h.eqns r h46 (hG r hg)
 
 /-- **The internal invariant on the 77 groups is the internal invariant on every group**: every
 limit is within the 77 groups, and every role's group is one of them. -/

@@ -64,7 +64,7 @@ set_option maxRecDepth 100000 in
 private theorem std_facts : ∀ r ∈ standardAxioms,
     Ix.SpecDigest.groupOf r ≠ 40 ∧ Ix.SpecDigest.groupOf r ≠ 45 ∧ r ∉ preludeRoles ∧
       r ∈ axiomRoles ∧ r ∉ companionRoles ∧
-      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.Rules.natBinOpNames ∧
+      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames ∧
       Core.fabricatedRole r = false ∧ r ∉ RoleOps.opRoles := by
   decide +kernel
 
@@ -171,7 +171,17 @@ theorem shapes_axiom {g : Nat} {r : Ix.Kernel.Role} {env env' : Ix.Kernel.Env .a
       exact hs.iff (below .iff (nr _ (by decide)) h) cvA hn hm
     nonempty := fun h cvA hn hm => by
       rw [stdAxiomOk_congr_ax hr hfr cvA]
-      exact hs.nonempty (below .nonempty (nr _ (by decide)) h) cvA hn hm }
+      exact hs.nonempty (below .nonempty (nr _ (by decide)) h) cvA hn hm
+    eqns := fun r' h46 h => by
+      have hg19 : g < 46 := by
+        have hgr : Ix.SpecDigest.groupOf r = g :=
+          groupOf_of_mem_roleGroup (by rw [hgrp]; exact List.mem_singleton.mpr rfl)
+        rcases hr with rfl | rfl
+        · have : Ix.SpecDigest.groupOf .propext < 46 := by decide
+          omega
+        · have : Ix.SpecDigest.groupOf .choice < 46 := by decide
+          omega
+      exact (hs.eqns r' h46 (by show Ix.SpecDigest.groupOf r' < g; omega)).weaken hext }
 
 /-- **The raise past a standard axiom's group needs nothing of the environment.** -/
 theorem raise_axiom {t : Ix.Kernel.RoleTable} {env : Ix.Kernel.Env .anon} {g : Nat}
@@ -180,13 +190,18 @@ theorem raise_axiom {t : Ix.Kernel.RoleTable} {env : Ix.Kernel.Env .anon} {g : N
   obtain ⟨h40, h45, -, -, hcomp, hbin, hfab, -⟩ := std_facts r hstd
   have hgr : Ix.SpecDigest.groupOf r = g :=
     groupOf_of_mem_roleGroup (by rw [hgrp]; exact List.mem_singleton.mpr rfl)
+  have h76 : Ix.SpecDigest.groupOf r ≠ 76 := by
+    rcases List.mem_cons.mp hstd with rfl | h1
+    · decide
+    · rw [List.mem_singleton.mp h1]; decide
   exact {
     succ := fun _ r'' hr'' _ => by
       rw [hgrp, List.mem_singleton] at hr''
       subst hr''
       exact ⟨Or.inr (Or.inr ⟨hcomp, hbin⟩), fun h => by rw [hfab] at h; cases h⟩
     wf := fun h => absurd (hgr.trans h) h40
-    literal := fun h => absurd (hgr.trans h) h45 }
+    literal := fun h => absurd (hgr.trans h) h45
+    tail := fun h => absurd (hgr.trans h) h76 }
 
 /-- **A reading of `R'` at another address than the new record's is a reading of `R₁`**, the
 new record being an axiom. -/

@@ -28,10 +28,11 @@ structure CoreEnvFacts (c : Ctx) : Prop where
   natLit : c.inForce .nat → c.inForce .natZero → c.inForce .natSucc →
     Ix.Kernel.natLitSupported c.env = true
   strLit : c.inForce .string → Ix.Kernel.strLitSupported c.env = true
-  natOps : ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.Rules.natBinOpNames →
+  natOps : ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames →
     Ix.Kernel.natOpStored c.env (.role r) = true
   natAdd : c.inForce .natAdd → Ix.Kernel.Rules.natAddTyOk (c.env.find? Ix.Kernel.natAddName) = true
   eqStored : c.inForce .eq → ∃ ci, c.env.find? Ix.Kernel.eqName = some ci
+  primEqn : (∃ r, 46 ≤ Ix.SpecDigest.groupOf r ∧ c.inForce r) → PrimEqnEnv c.env
   recRules : ∀ k cv mI rP rls, c.env.find? k = some (.recInfo cv mI rP rls) →
     (rls.map (·.ctor)).Nodup ∧
     (∀ rl ∈ rls, rl.fire ≠ .inert ∧
@@ -77,6 +78,7 @@ theorem EnvFacts.toCoreEnvFacts {c : Ctx} (h : EnvFacts c) : CoreEnvFacts c wher
   natOps := h.natOps
   natAdd := h.natAdd
   eqStored := h.eqStored
+  primEqn := h.primEqn
   recRules := h.recRules
   recPlain := h.recPlain
   store := h.store

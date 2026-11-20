@@ -335,6 +335,13 @@ theorem Red.strLit_sound {d : Nat} {s : String} (hs : strLitSupported env = true
   cases hv with
   | strLit h => exact ⟨h, hg⟩
 
+/-- **A `String` constructor form folds to its literal** (`Red.strLitFold`). -/
+theorem Red.strLitFold_sound {d : Nat} {s : String} :
+    RedS M φ d (strLitToConstructor s) (.lit (.strVal s)) := by
+  intro _
+  exact ⟨Frame.of_closed rfl rfl, LeavesSub.of_closed rfl,
+    fun _ _ _ hv _ => ⟨.strLit hv, True.intro⟩⟩
+
 /-- **A `String` literal is typed `String`** (`Infer.strLit`). -/
 theorem Infer.strLit_sound {g : Grade} {d : Nat} {s : String}
     (hs : strLitSupported env = true) :

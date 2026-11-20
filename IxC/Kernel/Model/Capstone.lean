@@ -170,6 +170,6 @@ transports and so cannot be projections down there.  Successor of
 `Rules.RulesInputs.ofSem` (task #305 closing). -/
 theorem Rules.RulesInputs.ofSem (mp : EnvModelM V μ env) (φ : LevelParam → Nat) :
     Rules.RulesInputs V mp.base2 φ :=
-  Rules.RulesInputs.ofEnvModelM mp (natSuccRow_of mp φ) (natOpRow_of mp φ)
+  Rules.RulesInputs.ofEnvModelM mp (natSuccRow_of mp φ) (natPredRow_of mp φ) (natOpRow_of mp φ)
 
 end Ix.Kernel.Model

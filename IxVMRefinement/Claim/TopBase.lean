@@ -172,6 +172,7 @@ set_option maxRecDepth 100000 in
 private theorem anchorCovered_of_anchorWalked (ro : Ix.Kernel.Role) :
     anchorWalkedF ro = 1 →
       roleNum ro ≠ 29 → roleNum ro ≠ 30 → roleNum ro ≠ 31 →
+      roleNum ro ≠ 63 → roleNum ro ≠ 64 →
       anchorCoveredRole ro = true := by
   cases ro <;> decide
 
@@ -225,8 +226,17 @@ theorem role_admission_checks_walks {ro : Ix.Kernel.Role} {r : SourceValue F} {h
     obtain ⟨-, rfl⟩ := RoleVal.role_spec_kind_spec ev15
     obtain ⟨-, rfl⟩ := anchor_walked_full' ev_aw
     exact ⟨hh, .inl he⟩
+  | .n1_n1_n63 (ev15 := ev15) (ev_psnyrwee := ev_aw) (he_wcwlxvhp := he) (he_zgfqwczs := hh) .. =>
+    obtain ⟨-, rfl⟩ := RoleVal.role_spec_kind_spec ev15
+    obtain ⟨-, rfl⟩ := anchor_walked_full' ev_aw
+    exact ⟨hh, .inl he⟩
+  | .n1_n1_n64 (ev15 := ev15) (ev_psnyrwee := ev_aw) (he_xgoanxyc := he) (he_imkoxsjt := hh) .. =>
+    obtain ⟨-, rfl⟩ := RoleVal.role_spec_kind_spec ev15
+    obtain ⟨-, rfl⟩ := anchor_walked_full' ev_aw
+    exact ⟨hh, .inl he⟩
   | .n1_n1_other (ev15 := ev15) (ev_psnyrwee := ev_aw)
       (hne_fljbtzga := h29) (hne_vgqyttvl := h30) (hne_bmtzwnqi := h31)
+      (hne_wbdmcvtd := h63) (hne_lgrmvijy := h64)
       (he_ekhbzpqp := he) (he_zhglxwnx := hh) .. =>
     obtain ⟨-, rfl⟩ := RoleVal.role_spec_kind_spec ev15
     obtain ⟨haw, rfl⟩ := anchor_walked_full' ev_aw
@@ -234,6 +244,8 @@ theorem role_admission_checks_walks {ro : Ix.Kernel.Role} {r : SourceValue F} {h
       (fun h => h29 (congrArg Value.field h))
       (fun h => h30 (congrArg Value.field h))
       (fun h => h31 (congrArg Value.field h))
+      (fun h => h63 (congrArg Value.field h))
+      (fun h => h64 (congrArg Value.field h))
     exact ⟨hh, .inr ⟨he, .inr hanc⟩⟩
   | .n1_other (ev15 := ev15) (ev_psnyrwee := ev_aw) (he_flopnzhy := he) (he_dpyfurir := hh) .. =>
     obtain ⟨-, rfl⟩ := RoleVal.role_spec_kind_spec ev15

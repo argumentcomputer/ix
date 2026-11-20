@@ -229,7 +229,7 @@ theorem inForce_lt6 {E : Ixon.Env} {env : Ix.Kernel.Env .anon} {lim : Option Nat
 set_option maxRecDepth 8192 in
 /-- No `Nat` operation the core accelerates is of a basis group (decided over the roles). -/
 theorem natOp_not_basis (r : Role) :
-    (Key.role r : Key .anon) ∈ Ix.Kernel.Rules.natBinOpNames →
+    (Key.role r : Key .anon) ∈ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames →
       Ix.SpecDigest.groupOf r < 6 → False := by
   cases r <;> decide +kernel
 
@@ -510,6 +510,7 @@ theorem basisEnv_companions {E : Ixon.Env} (hE : RecordsFor StoreInhabit.basisSt
   natAdd := fun h => absurd (inForce_lt6 hlim h) natAdd_group
   eqStored := fun _ =>
     ⟨_, basisEnv_find_self (TableInhabit.basisEnv_pins .eqK _ List.mem_cons_self)⟩
+  primEqn := fun ⟨r, hge, hf⟩ => absurd (inForce_lt6 hlim hf) (by omega)
   quotBasis := fun _ ci hci => basisEnv_find_self (TableInhabit.basisEnv_pins .quotK ci hci)
   recMajorRecord := by
     intro k cv mI rP rls p us hf _ hdom

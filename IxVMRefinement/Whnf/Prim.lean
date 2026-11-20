@@ -46,14 +46,61 @@ theorem natOpOf_nativeOp (ro : Ix.Kernel.Role) (h1 : (Ix.SpecDigest.nativeOp ro)
     Specs.Whnf.natOpOf (Ix.SpecDigest.nativeOp ro).2 = some ro := by
   cases ro <;> first | rfl | exact absurd h1 (by decide)
 
+/-- The native rule table at a `String`/`Char` operation (family `2`) names the operation `strOpOf`
+reads. -/
+theorem strOpOf_nativeOp (ro : Ix.Kernel.Role) (h2 : (Ix.SpecDigest.nativeOp ro).1 = 2) :
+    Specs.Whnf.strOpOf (Ix.SpecDigest.nativeOp ro).2 = some ro := by
+  cases ro <;> first | rfl | exact absurd h2 (by decide)
+
+/-- The native rule table at a `BitVec` operation (family `3`) names the operation `bvOpOf`
+reads. -/
+theorem bvOpOf_nativeOp (ro : Ix.Kernel.Role) (h3 : (Ix.SpecDigest.nativeOp ro).1 = 3) :
+    Specs.Whnf.bvOpOf (Ix.SpecDigest.nativeOp ro).2 = some ro := by
+  cases ro <;> first | rfl | exact absurd h3 (by decide)
+
+/-- The native rule table at an `Int` operation (family `6`) names the operation `intOpOf`
+reads. -/
+theorem intOpOf_nativeOp (ro : Ix.Kernel.Role) (h6 : (Ix.SpecDigest.nativeOp ro).1 = 6) :
+    Specs.Whnf.intOpOf (Ix.SpecDigest.nativeOp ro).2 = some ro := by
+  cases ro <;> first | rfl | exact absurd h6 (by decide)
+
 theorem nativeOp_lt (ro : Ix.Kernel.Role) :
     (Ix.SpecDigest.nativeOp ro).1 < 7 ∧ (Ix.SpecDigest.nativeOp ro).2 < 17 := by
   cases ro <;> decide
+
+theorem role_idx_lt (ro : Ix.Kernel.Role) : ro.idx < 1024 := by
+  cases ro <;> decide
+
+theorem role_of_num_plus_one_101 {ro : Ix.Kernel.Role} (h : roleNum ro + 1 = 101) :
+    ro = .charUtf8Size := by
+  have hsub : (ro.idx : F) = (100 : Nat) := by
+    have := congrArg (· - (1 : F)) h
+    simpa [roleNum] using this.trans (by norm_num : (101 : F) - 1 = (100 : Nat))
+  have hidx : ro.idx = 100 := IxVM.natCast_inj (role_idx_lt ro) (by decide) hsub
+  cases ro <;> first | rfl | exact absurd hidx (by decide)
 
 /-- The operation code `natOpOf` reads is the role's `Nat` primitive code. -/
 theorem natPrimOp_of_natOpOf {k : Nat} {ro : Ix.Kernel.Role}
     (h : Specs.Whnf.natOpOf k = some ro) : Specs.Nat.natPrimOp ro = some k := by
   unfold Specs.Whnf.natOpOf at h
+  split at h <;> first | (cases h; rfl) | cases h
+
+/-- The operation code `strOpOf` reads is the role's `String`/`Char` primitive code. -/
+theorem strPrimOp_of_strOpOf {k : Nat} {ro : Ix.Kernel.Role}
+    (h : Specs.Whnf.strOpOf k = some ro) : Specs.Nat.strPrimOp ro = some k := by
+  unfold Specs.Whnf.strOpOf at h
+  split at h <;> first | (cases h; rfl) | cases h
+
+/-- The operation code `bvOpOf` reads is the role's `BitVec` primitive code. -/
+theorem bvPrimOp_of_bvOpOf {k : Nat} {ro : Ix.Kernel.Role}
+    (h : Specs.Whnf.bvOpOf k = some ro) : Specs.Nat.bvPrimOp ro = some k := by
+  unfold Specs.Whnf.bvOpOf at h
+  split at h <;> first | (cases h; rfl) | cases h
+
+/-- The operation code `intOpOf` reads is the role's `Int` primitive code. -/
+theorem intPrimOp_of_intOpOf {k : Nat} {ro : Ix.Kernel.Role}
+    (h : Specs.Whnf.intOpOf k = some ro) : Specs.Nat.intPrimOp ro = some k := by
+  unfold Specs.Whnf.intOpOf at h
   split at h <;> first | (cases h; rfl) | cases h
 
 /-- **A spine of reducts**: an application's arguments reduce pointwise (`Red.appArg` under
@@ -82,30 +129,59 @@ theorem lvListRep_nil {h : Heap F} {us : List KLevel} {lp : SourceValue F} (hus 
     have h0 := hEq (fun _ => 0)
     simp [Ix.Kernel.Level.EvalEqList] at h0
 
-/-- **`prim_family`, with its result's shape**: a pair of field elements, and the registered
-claim. -/
-theorem prim_family_full (c : ScopedCtx) (hc : ScopedCoreBase c) {rc ap : SourceValue F} {a : Bytes.Address}
+end WhnfAux
+
+/-- `KernelWhnf::prim_family`: returns a field pair `(f, op)`; a nonzero family witnesses
+`PrimAt c a f op`. -/
+theorem prim_family_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelWhnf::prim_family" [rc, ap] h r h' calls) (ih : IH c calls)
-    (good : CoreGood c calls) (hrc : c.rc h rc) (ha : RepAddr h a ap) :
-    ∃ f o : F, r = .tuple [.field f, .field o] ∧ (f ≠ 0 →
-      (∃ role, c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
-      (f = 1 → ∃ role, Specs.Whnf.natOpOf (ZMod.val o) = some role ∧
-        c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role)) := by
+    (ev : ObsFn W "KernelWhnf::prim_family" args h r h' calls) (ih : IH c calls) :
+    Specs.Whnf.prim_family c args h r h' calls := by
+  intro rc ap hargs good hrc a ha
+  subst hargs
   rcases Obs.«KernelWhnf::prim_family».obs ev with
     ⟨v1, m2, cs12, m92, cs94, x_op, ev14, sg99, he131, he144, hc145⟩ |
-    ⟨v1, m2, cs12, m92, cs94, x_f, x_op, m151, cs162, ev14, sg99, hne146, ev164, he189, he202,
-      hc203⟩ |
-    ⟨v1, m2, cs12, m92, cs94, x_f, x_op, v150, m151, cs162, ev14, sg99, hne146, ev164, hne204,
-      he212, he227, hc228⟩
+    ⟨v1, m2, cs12, m92, cs94, x_op, ev14, sg99, he_r5, he_h5, hc_c5⟩ |
+    ⟨v1, m2, cs12, m92, cs94, x_f, x_op, m151, cs162, ev14, sg99, hne146, hne5, ev164, he189,
+      he202, hc203⟩ |
+    ⟨v1, m2, cs12, m92, cs94, x_f, x_op, v150, m151, cs162, ev14, sg99, hne146, hne5, ev164,
+      hne204, he212, he227, hc228⟩
   · exact ⟨0, 0, he131, fun h0 => (h0 rfl).elim⟩
+  · exact ⟨0, 0, he_r5, fun h0 => (h0 rfl).elim⟩
   · exact ⟨0, 0, he189, fun h0 => (h0 rfl).elim⟩
   · subst hc228 he212
     rcases sg99 with ⟨hv44, he49, he62, hc63⟩ |
-      ⟨cs71, v74, hne64, op88, ev73, hc90⟩
+      ⟨hne64, hv101, he101, he_h101, hc_c101⟩ |
+      ⟨cs71, v74, hne64, hne101, op88, ev73, hc90⟩
     · simp only [Value.tuple.injEq, List.cons.injEq] at he49
       exact (hne146 he49.1).elim
-    · subst hc90
+    · -- `r1 = 101` (`Char.utf8Size`): `(2, 7)`
+      subst hc_c101 he_h101
+      rcases ih.get (.roles .role_index_of) (by lt_calls) ev14 rc ap a rfl
+          (good.sub fun x hx => by simp [hx]) hrc ha with h0 | ⟨ro, hro_eq, hb⟩
+      · exact (hne64 h0).elim
+      have hro_char : ro = .charUtf8Size :=
+        WhnfAux.role_of_num_plus_one_101 (Value.field.inj (hro_eq.symm.trans hv101))
+      subst hro_char
+      have e0 := ObsFn.heap_extends ev14
+      rcases ih.get (.roles .role_of) (by lt_calls) ev164 rc ap a rfl
+          (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc)
+          (Bytes.repAddressRef_heapMono₂ addrTy e0 ha) with h0 | ⟨ro', rfl, hb', hf'⟩
+      · exact (hne204 h0).elim
+      have hro : Ix.Kernel.Role.charUtf8Size = ro' := by
+        have e := (keyOf_of_addressOf hc.env.tableWf hb).symm.trans
+          (keyOf_of_addressOf hc.env.tableWf hb')
+        simpa using e
+      subst hro
+      refine ⟨2, 7, he101, fun _ => ⟨⟨.charUtf8Size, hb', hf'⟩,
+        fun h1 => absurd h1 (by decide),
+        fun _ => ⟨.charUtf8Size, by
+          have hv7 : ZMod.val (7 : F) = 7 := NatAux.val_natCast (by norm_num)
+          rw [hv7]; rfl, hb', hf'⟩,
+        fun h3 => absurd h3 (by decide),
+        fun h6 => absurd h6 (by decide)⟩⟩
+    · -- general role from `role_prim_family`
+      subst hc90
       rcases ih.get (.roles .role_index_of) (by lt_calls) ev14 rc ap a rfl
           (good.sub fun x hx => by simp [hx]) hrc ha with h0 | ⟨ro, rfl, hb⟩
       · exact (hne64 h0).elim
@@ -123,30 +199,40 @@ theorem prim_family_full (c : ScopedCtx) (hc : ScopedCoreBase c) {rc ap : Source
         simpa using e
       subst hro
       refine ⟨((Ix.SpecDigest.nativeOp ro).1 : F), ((Ix.SpecDigest.nativeOp ro).2 : F), hpf,
-        fun _ => ⟨⟨ro, hb', hf'⟩, fun h1 => ⟨ro, ?_, hb', hf'⟩⟩⟩
-      obtain ⟨hl1, hl2⟩ := nativeOp_lt ro
-      have h1' : (Ix.SpecDigest.nativeOp ro).1 = 1 := by
-        have := congrArg ZMod.val h1
-        rwa [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).1) (by omega), NatAux.val_one]
-          at this
-      rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).2) (by omega)]
-      exact natOpOf_nativeOp ro h1'
-
-end WhnfAux
-
-/-- `KernelWhnf::prim_family`: a nonzero family is a role bound to the address and in force;
-family `1` is the `Nat` operation `natOpOf op`. -/
-theorem prim_family_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
-    {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelWhnf::prim_family" args h r h' calls) (ih : IH c calls) :
-    Specs.Whnf.prim_family c args h r h' calls := by
-  intro rc ap hargs good hrc a f op ha hr hf
-  subst hargs
-  obtain ⟨f', o', hr', hspec⟩ := WhnfAux.prim_family_full c hc ev ih good hrc ha
-  rw [hr] at hr'
-  simp only [Value.tuple.injEq, List.cons.injEq, Value.field.injEq, and_true] at hr'
-  obtain ⟨rfl, rfl⟩ := hr'
-  exact hspec hf
+        fun _ => ⟨⟨ro, hb', hf'⟩, fun h1 => ⟨ro, ?_, hb', hf'⟩,
+          fun h2 => ⟨ro, ?_, hb', hf'⟩, fun h3 => ⟨ro, ?_, hb', hf'⟩,
+          fun h6 => ⟨ro, ?_, hb', hf'⟩⟩⟩
+      · obtain ⟨hl1, hl2⟩ := WhnfAux.nativeOp_lt ro
+        have h1' : (Ix.SpecDigest.nativeOp ro).1 = 1 := by
+          have := congrArg ZMod.val h1
+          rwa [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).1) (by omega), NatAux.val_one]
+            at this
+        rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).2) (by omega)]
+        exact WhnfAux.natOpOf_nativeOp ro h1'
+      · obtain ⟨hl1, hl2⟩ := WhnfAux.nativeOp_lt ro
+        have h2' : (Ix.SpecDigest.nativeOp ro).1 = 2 := by
+          have := congrArg ZMod.val h2
+          rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).1) (by omega)] at this
+          have h2v : ZMod.val ((2 : Nat) : F) = 2 := NatAux.val_natCast (by norm_num)
+          simpa using this.trans h2v
+        rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).2) (by omega)]
+        exact WhnfAux.strOpOf_nativeOp ro h2'
+      · obtain ⟨hl1, hl2⟩ := WhnfAux.nativeOp_lt ro
+        have h3' : (Ix.SpecDigest.nativeOp ro).1 = 3 := by
+          have := congrArg ZMod.val h3
+          rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).1) (by omega)] at this
+          have h3v : ZMod.val ((3 : Nat) : F) = 3 := NatAux.val_natCast (by norm_num)
+          simpa using this.trans h3v
+        rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).2) (by omega)]
+        exact WhnfAux.bvOpOf_nativeOp ro h3'
+      · obtain ⟨hl1, hl2⟩ := WhnfAux.nativeOp_lt ro
+        have h6' : (Ix.SpecDigest.nativeOp ro).1 = 6 := by
+          have := congrArg ZMod.val h6
+          rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).1) (by omega)] at this
+          have h6v : ZMod.val ((6 : Nat) : F) = 6 := NatAux.val_natCast (by norm_num)
+          simpa using this.trans h6v
+        rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).2) (by omega)]
+        exact WhnfAux.intOpOf_nativeOp ro h6'
 
 /-- `KernelWhnf::try_nat_dispatch_prewhnf`: the spine head-normalized (`whnf_spine`, a reduct
 argument by argument), then `KernelNatPrim::try_nat_dispatch`. -/
@@ -169,33 +255,63 @@ theorem try_nat_dispatch_prewhnf_step (c : ScopedCtx) {args : List (SourceValue 
     x hr (WhnfAux.tag12_ne_zero ht)
   exact ⟨E', hE', .trans (WhnfAux.red_mkAppN_args hreds _) hred⟩
 
-/-- `KernelWhnf::try_prim_dispatch`: at an empty level list, a head the role table binds to a
-`Nat` operation in force (`prim_family`'s family `1`) goes to `try_nat_dispatch_prewhnf`; any
-other head answers `0`. -/
-theorem try_prim_dispatch_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
+/-- `KernelWhnf::try_prim_dispatch`: at an empty level list, dispatches families `1` (`Nat`),
+`2` (`String`/`Char`), `3` (`BitVec`), and `6` (`Int`) using the `(fam, op)` witness from
+`prim_family`. -/
+theorem try_prim_dispatch_step (c : ScopedCtx) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::try_prim_dispatch" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.try_prim_dispatch c args h r h' calls := by
-  intro rc addr lvls sp types hargs good hrc d Γ htypes a us As ha hus hAs t x hr ht
+  intro rc f o addr lvls sp types hargs good hrc d Γ htypes a us As ha hprim hus hAs t x hr ht
   subst hargs
   rcases Obs.«KernelWhnf::try_prim_dispatch».obs ev with
-    ⟨m21, cs31, x_op, cs80, ld12, ev33, ev82, hc123⟩ |
-    ⟨m21, cs31, x_fam, x_op, m140, ld12, ev33, hne124, he132, hm148, he159, hc160⟩ |
+    ⟨cs80, ld12, hf1, ev82, hc123⟩ |
+    ⟨cs_str, ld12, _, hf2, ev_str, hc_str⟩ |
+    ⟨cs_bv, ld12, _, _, hf3, ev_bv, hc_bv⟩ |
+    ⟨cs_int, ld12, _, _, _, hf6, ev_int, hc_int⟩ |
+    ⟨m140, ld12, _, _, _, _, he132, hm148, he159, hc160⟩ |
     ⟨v1, m177, ld12, hne161, he169, hm185, he196, hc197⟩
-  · subst hc123
+  · -- family 1 (`Nat`)
+    subst hc123
     obtain rfl := WhnfAux.lvListRep_nil hus ld12
-    obtain ⟨f, o, hfo, hspec⟩ := WhnfAux.prim_family_full c hc ev33 (ih.mono (by lt_calls))
-      (good.sub fun x hx => by simp [hx]) hrc ha
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hfo
-    obtain ⟨hf, rfl⟩ := hfo
-    have hf1 : f = 1 := (Value.field.inj hf).symm
-    obtain ⟨-, hnat⟩ := hspec (by rw [hf1]; exact one_ne_zero)
-    obtain ⟨role, hrole, haddr, hforce⟩ := hnat hf1
-    have e0 := ObsFn.heap_extends ev33
+    have hf1' : f = 1 := Value.field.inj hf1
+    obtain ⟨-, hnat, -, -, -⟩ := hprim (by rw [hf1']; exact one_ne_zero)
+    obtain ⟨role, hrole, haddr, hforce⟩ := hnat hf1'
     exact ih.get (.whnf .try_nat_dispatch_prewhnf) (by lt_calls) ev82 rc addr _ sp types rfl
-      (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ (types_mono e0 htypes) a o role
-      As (Bytes.repAddressRef_heapMono₂ addrTy e0 ha) rfl hrole haddr hforce (tml_mono e0 hAs) t x
-      hr ht
+      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes a o role As ha rfl hrole haddr hforce
+      hAs t x hr ht
+  · -- family 2 (`String` / `Char`)
+    subst hc_str
+    obtain rfl := WhnfAux.lvListRep_nil hus ld12
+    have hf2' : f = 2 := Value.field.inj hf2
+    obtain ⟨-, -, hstr, -, -⟩ := hprim (by rw [hf2']; exact WhnfAux.field_two_ne_zero)
+    obtain ⟨role, hrole, haddr, hforce⟩ := hstr hf2'
+    exact ih.get (.nat .try_str_dispatch) (by lt_calls) ev_str rc o sp types rfl
+      (good.sub fun x hx => by simp [hx]) hrc a
+      ⟨role, WhnfAux.strPrimOp_of_strOpOf hrole, haddr, hforce⟩ d Γ htypes As hAs t x hr
+      (WhnfAux.tag12_ne_zero ht)
+  · -- family 3 (`BitVec`)
+    subst hc_bv
+    obtain rfl := WhnfAux.lvListRep_nil hus ld12
+    have hf3' : f = 3 := Value.field.inj hf3
+    have h3nz : (3 : F) ≠ 0 := by decide
+    obtain ⟨-, -, -, hbv, -⟩ := hprim (by rw [hf3']; exact h3nz)
+    obtain ⟨role, hrole, haddr, hforce⟩ := hbv hf3'
+    exact ih.get (.nat .try_bitvec_dispatch) (by lt_calls) ev_bv rc o sp types rfl
+      (good.sub fun x hx => by simp [hx]) hrc a
+      ⟨role, WhnfAux.bvPrimOp_of_bvOpOf hrole, haddr, hforce⟩ d Γ htypes As hAs t x hr
+      (WhnfAux.tag12_ne_zero ht)
+  · -- family 6 (`Int`)
+    subst hc_int
+    obtain rfl := WhnfAux.lvListRep_nil hus ld12
+    have hf6' : f = 6 := Value.field.inj hf6
+    have h6nz : (6 : F) ≠ 0 := by decide
+    obtain ⟨-, -, -, -, hint⟩ := hprim (by rw [hf6']; exact h6nz)
+    obtain ⟨role, hrole, haddr, hforce⟩ := hint hf6'
+    exact ih.get (.nat .try_int_prim_dispatch) (by lt_calls) ev_int rc o sp types rfl
+      (good.sub fun x hx => by simp [hx]) hrc a
+      ⟨role, WhnfAux.intPrimOp_of_intOpOf hrole, haddr, hforce⟩ d Γ htypes As hAs t x hr
+      (WhnfAux.tag12_ne_zero ht)
   · exact (WhnfAux.tag12_absurd ht (hr.symm.trans he132)).elim
   · exact (WhnfAux.tag12_absurd ht (hr.symm.trans he169)).elim
 
@@ -274,5 +390,25 @@ theorem nat_lit_to_ctor_or_self_step (c : ScopedCtx) (hc : ScopedCoreBase c) {ar
     · simp at hx
   · subst he295 he296; exact ⟨E, hE, .refl⟩
   · subst he303 he304; exact ⟨E, hE, .refl⟩
+
+/-- `KernelWhnf::lit_to_ctor_or_self`: a `Nat` or `String` literal becomes constructor form; any
+other term is returned. -/
+theorem lit_to_ctor_or_self_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
+    {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelWhnf::lit_to_ctor_or_self" args h r h' calls) (ih : IH c calls) :
+    Specs.Whnf.lit_to_ctor_or_self c args h r h' calls := by
+  intro rc e hargs good hrc d Γ E hE
+  subst hargs
+  rcases Obs.«KernelWhnf::lit_to_ctor_or_self».obs ev with
+    ⟨_, cs_n, _, ev_n, hc_c⟩ |
+    ⟨_, cs_s, _, ev_s, hc_c⟩ |
+    ⟨_, _, _, he_r, he_h, _⟩
+  · subst hc_c
+    exact ih.get (.whnf .nat_lit_to_ctor_or_self) (by lt_calls) ev_n rc e rfl
+      (good.sub fun x hx => by simp [hx]) hrc d Γ E hE
+  · subst hc_c
+    exact ih.get (.nat .str_lit_to_ctor_app_or_self) (by lt_calls) ev_s rc e rfl
+      (good.sub fun x hx => by simp [hx]) hrc d Γ E hE
+  · subst he_r he_h; exact ⟨E, hE, .refl⟩
 
 end IxVM.Refinement.Core

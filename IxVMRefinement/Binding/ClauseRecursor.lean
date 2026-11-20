@@ -90,7 +90,10 @@ theorem overUnitStep_recLate_tied {L : Ix.Kernel.Env .anon → NativeFam .anon �
       (hreload E hE)
   obtain ⟨hfreshN, -, -, -⟩ := late_head hrun
   have hown : ConstAddrOf A c A := Or.inl ⟨rfl, Or.inr (Or.inl ⟨rc, hinfo⟩)⟩
-  refine ⟨[cn], Reg, List.nodup_singleton _, ?_, hall, ?_, ?_, ?_⟩
+  refine ⟨[cn], Reg, List.nodup_singleton _, ?_, hall, ?_, ?_, ?_,
+    Ix.Kernel.EnvExt.cons hfreshN fun _ => by
+      rw [hname]
+      exact Decl.ne_projTableName_of_isBaseKey (Decl.isBaseKey_keyOf t A)⟩
   · intro ci hci
     obtain rfl := List.mem_singleton.mp hci
     exact hfreshN

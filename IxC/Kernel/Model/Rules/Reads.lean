@@ -21,7 +21,7 @@ open Ix.Kernel.SetModel
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
 open Ix.Kernel (Env Expr Key Level)
-open Ix.Kernel.Rules (Infer DefEq Red Certs DefEqList EtaProjCerts Grade)
+open Ix.Kernel.Rules (Infer DefEq Red Certs DefEqList EtaProjCerts PiRed Grade)
 
 universe w
 
@@ -108,6 +108,10 @@ theorem infer_reads_etaProjCerts {env : Env md} :
       {lpsT : List LevelParam} {idxs : List Nat},
       EtaProjCerts env d T us' targs b lpsT idxs → True
   | _, _, _, _, _, _, _, _ => trivial
+
+theorem infer_reads_piRed {env : Env md} :
+    ∀ {d : Nat} {e e' : Expr md}, PiRed env d e e' → True
+  | _, _, _, _ => trivial
 
 end
 

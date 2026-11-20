@@ -62,6 +62,19 @@ graded. -/
       Graded V Δa ra ∧
       ∀ ρ : Nat → V, Sat V Δa ρ → interp V ρ ea = interp V ρ ra
 
+/-- **The predecessor acceleration's semantic row**: a stored `Nat.pred` on
+a literal reading interprets as `n - 1`, which reads and is graded. -/
+@[expose] def NatPredRow {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat) :
+    Prop :=
+  ∀ {d : Nat} {w : Expr md} {n : Nat} {Δa : List AnnotTerm} {ea : AnnotTerm},
+    Ix.Kernel.natOpStored env natPredName = true →
+    Ix.Kernel.rawNatLit? w = some n →
+    denoteMeta m.acval env φ d (.app (.const natPredName []) w) = some ea →
+    Graded V Δa ea →
+    ∃ ra, denoteMeta m.acval env φ d (.lit (.natVal (n - 1))) = some ra ∧
+      Graded V Δa ra ∧
+      ∀ ρ : Nat → V, Sat V Δa ρ → interp V ρ ea = interp V ρ ra
+
 /-- **The binary acceleration's semantic row**: a stored operation on
 two literal readings interprets as `natOpResult`, which reads and is
 graded. -/
@@ -98,6 +111,8 @@ structure RulesInputs (V : Type w) [SetTheory V] {env : Env md}
   caps_ok : CapsOk m
   /-- literal tier: successor packing -/
   nat_succ : NatSuccRow m φ
+  /-- literal tier: predecessor acceleration -/
+  nat_pred : NatPredRow m φ
   /-- literal tier: the binary operations -/
   nat_op : NatOpRow m φ
   /-- install tier: the structural-`Nat` recurrence laws (an `EnvModelM` field) -/
@@ -113,7 +128,7 @@ supplies them.  Replaces `TierInputsAt.ofEnvModelM` (task #305
 closing). -/
 theorem RulesInputs.ofEnvModelM {env : Env md} {φ : LevelParam → Nat}
     (mp : EnvModelM V μ env)
-    (hsucc : NatSuccRow mp.base2 φ) (hop : NatOpRow mp.base2 φ) :
+    (hsucc : NatSuccRow mp.base2 φ) (hpred : NatPredRow mp.base2 φ) (hop : NatOpRow mp.base2 φ) :
     RulesInputs V mp.base2 φ where
   const_ty := mp.constType
   leaf_valid := mp.acvalValid
@@ -123,6 +138,7 @@ theorem RulesInputs.ofEnvModelM {env : Env md} {φ : LevelParam → Nat}
   rec_rules := mp.rec_rules φ
   caps_ok := mp.caps_ok
   nat_succ := hsucc
+  nat_pred := hpred
   nat_op := hop
   nat_ops := mp.nat_ops φ
   eq_law := mp.eq_law

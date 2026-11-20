@@ -68,9 +68,10 @@ theorem closure_finish
     (hinst : ∀ rb crb, famOf A = some rb → recordOf R₁ rb = some crb →
       FamilyInstalled t ⟨new ++ s.consts⟩ rb crb)
     (hrecs : ∀ cb rb crb, famOf A = some rb → recordOf R₁ A = some cb → recordOf R₁ rb = some crb →
-      StoredFamilyRecs t R₁ ⟨new ++ s.consts⟩ A cb rb crb) :
+      StoredFamilyRecs t R₁ ⟨new ++ s.consts⟩ A cb rb crb)
+    (hextE : Ix.Kernel.EnvExt s ⟨new ++ s.consts⟩) :
     ∃ s', ClosureFoldInv.{u} L t g R₁ env famOf₀ famOf s' ∧
-      (∀ ci ∈ s.consts, ci ∈ s'.consts) ∧
+      ((∀ ci ∈ s.consts, ci ∈ s'.consts) ∧ Ix.Kernel.EnvExt s s') ∧
       (∀ x, FamOwns R₁ famOf A x → StoredAt t s' x) ∧
       (∀ x, FamOwns R₁ famOf A x →
         ∃ ci ∈ s'.consts, ci.name = keyOf t x ∧ ∃ ci₀, Reads t R₁ x ci₀ ∧ StoredAs ci ci₀) ∧
@@ -182,7 +183,7 @@ theorem closure_finish
             subst e
             exact hA0 hfa
       exact (hI.famRecs B0 rb0 cb0 crb0 hor hcb0 hcrb0 hall_s).mono_env hext hnd'
-  refine ⟨⟨new ++ s.consts⟩, ⟨hnd', ⟨Reg', hcl⟩, hprov, hops', hfamInst, hfamRecs⟩, hext, ?_, ?_,
+  refine ⟨⟨new ++ s.consts⟩, ⟨hnd', ⟨Reg', hcl⟩, hprov, hops', hfamInst, hfamRecs⟩, ⟨hext, hextE⟩, ?_, ?_,
     hframe⟩
   · intro x hx
     obtain ⟨ci, hci, hname, -⟩ := hreads₁ x hx
@@ -222,7 +223,7 @@ theorem closureFold_steps
   intro s A hAu hinv hext hneed hfr
   have hA := (hus A).mp hAu
   have hI : ClosureFoldInv.{u} L t g R₁ env famOf₀ famOf s := hinv
-  have hextT : ∀ ci ∈ env.consts, ci ∈ s.consts := hext
+  have hextT : ∀ ci ∈ env.consts, ci ∈ s.consts := hext.1
   have hneed' : ∀ x, ClosureFoldNeeds ρ.E₀ R₁ famOf₀ famOf adv (ρ.rank g) A x →
       StoredAt t s x ∨ FamOwns R₁ famOf A x := hneed
   have hfr' : ∀ x, FamOwns R₁ famOf A x → ¬ StoredAt t s x := hfr
@@ -289,7 +290,7 @@ theorem closureFold_steps
         · exact Or.inl (find_isSome_of_storedAt hs)
         · exact Or.inr (Or.inl ((hown x).mp ho))
       · exact Or.inr (Or.inr hok)
-    obtain ⟨new, Reg', hnd, hfresh, hcl, hops, hreads, hinst, hrecs, hnames⟩ :=
+    obtain ⟨new, Reg', hnd, hfresh, hcl, hops, hreads, hinst, hrecs, hnames, hextE⟩ :=
       step s Reg (fun ci h => h) hI.nodup hReg hrefsF hadvA hadvU
         (fun x hx => find_none_of_not_storedAt (hfr' x ((hown x).mpr hx)))
     exact closure_finish hC htwf hI hA new Reg' hnd hfresh hcl hops
@@ -312,6 +313,7 @@ theorem closureFold_steps
         have e3 : crb = crb' := rec_eq hcrb hcrb'
         subst e3
         exact hrecs)
+      hextE
   | none =>
     have hown : ∀ x, FamOwns R₁ famOf A x ↔ ConstAddrOf A c x := famOwns_none hfa hc
     have hrefs' : ∀ x, UsedRef ρ.E₀ A x →
@@ -328,8 +330,9 @@ theorem closureFold_steps
         (∀ ci ∈ new, ci.name ∉ RoleOps.opNames) ∧
         (∀ x, ConstAddrOf A c x →
           ∃ ci ∈ new, ∃ ci₀, ci.name = keyOf t x ∧ Reads t ρ.E₀ x ci₀ ∧ StoredAs ci ci₀) ∧
-        ∀ ci ∈ new, (∃ x, ConstAddrOf A c x ∧ ci.name = keyOf t x) ∨
-          ∃ k s, ci.name = .aux k s := by
+        (∀ ci ∈ new, (∃ x, ConstAddrOf A c x ∧ ci.name = keyOf t x) ∨
+          ∃ k s, ci.name = .aux k s) ∧
+        Ix.Kernel.EnvExt s ⟨new ++ s.consts⟩ := by
       by_cases htw : IsTwinShape c
       · obtain ⟨B, rb, crb, hcrb, hor, hst⟩ :=
           htwin R R' R₁ env famOf₀ famOf adv cont bAddr A c hC hA.1 hc htw hfa hA.2.1
@@ -409,7 +412,7 @@ theorem closureFold_steps
       · obtain ⟨hk, hca⟩ := closureUnit_kind hC hA hc hfa
         exact hunit R R' R₁ env s famOf₀ famOf adv cont bAddr A c hC hextT hI.nodup hA.1 hc hk
           hca hfa hA.2.1 htw hfreshS s Reg (fun ci h => h) hI.nodup hReg hrefs' hfresh₀
-    obtain ⟨new, Reg', hnd, hfresh, hcl, hops, hreads, hnames⟩ := hstepped
+    obtain ⟨new, Reg', hnd, hfresh, hcl, hops, hreads, hnames, hextE⟩ := hstepped
     exact closure_finish hC htwf hI hA new Reg' hnd hfresh hcl hops
       (fun x hx => hreads x ((hown x).mp hx))
       (fun ci hci => (hnames ci hci).imp
@@ -420,6 +423,7 @@ theorem closureFold_steps
       (fun cb rb crb hfa' => by
         rw [hfa] at hfa'
         cases hfa')
+      hextE
 
 /-- **A record store for the closure's store is one for `R`.** -/
 theorem recordsFor_R_of_closureStore (hadm : Admits ρ t g R R') {E : Ixon.Env}
@@ -496,6 +500,7 @@ theorem closureFold_run
     (hfam : ClosureFamilySteps.{u} L calls ρ t g) (htwin : ClosureTwinSteps.{u} L calls ρ t g) :
     ∃ env₁ : Ix.Kernel.Env .anon, ClosureFoldInv.{u} L t g R₁ env famOf₀ famOf env₁ ∧
       (∀ ci ∈ env.consts, ci ∈ env₁.consts) ∧
+      Ix.Kernel.EnvExt env env₁ ∧
       (∀ A, IsClosureUnit R R₁ famOf A → ∀ x, FamOwns R₁ famOf A x →
         ∃ ci ∈ env₁.consts, ci.name = keyOf t x ∧ ∃ ci₀, Reads t R₁ x ci₀ ∧ StoredAs ci ci₀) ∧
       ∀ x, StoredAt t env₁ x → StoredAt t env x ∨
@@ -509,7 +514,7 @@ theorem closureFold_run
       (fun a ha x hx => owned_not_stored hC htwf ((hus a).mp ha) hx)
       (closureFold_needsEarlier hC hus)
       (closureFold_steps hC htwf hunit hfam htwin hus)
-  refine ⟨s, hinv, hext, fun A hA x hx => (hdone A ((hus A).mpr hA)).2 x hx, fun x hx => ?_⟩
+  refine ⟨s, hinv, hext.1, hext.2, fun A hA x hx => (hdone A ((hus A).mpr hA)).2 x hx, fun x hx => ?_⟩
   rcases hframe x hx with h | ⟨A, hAu, hown⟩
   · exact Or.inl h
   · exact Or.inr ⟨A, (hus A).mp hAu, hown⟩

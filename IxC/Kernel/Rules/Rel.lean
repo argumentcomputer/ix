@@ -176,6 +176,11 @@ def natOffsetAdd : Expr md → Bool
   | .app (.app (.const c _) _) (.lit (.natVal _)) => if c = natAddName then true else false
   | _ => false
 
+/-- A sort or a `∀`: the subjects no rule rewrites. -/
+def isSortOrPi : Expr md → Bool
+  | .sort _ | .forallE .. => true
+  | _ => false
+
 mutual
 
 /-- **Reduction**: the head steps of `whnfCore` and the `whnf` loop,
@@ -266,6 +271,20 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
       Infer env .full d T sT → Red env d sT (.sort v) →
       (∀ φ : LevelParam → Nat, Level.eval φ v = Level.eval φ u) →
       Red env d a b
+  /-- **Closed conversion between reduced forms**: closed terms `a'` and `b'`
+  that type at the full grade in the empty context, reduce to `a` and `b`
+  (with `a` neither a sort nor a `∀`), and are definitionally equal, let `a`
+  reduce to `b` at any depth. -/
+  | defEqClosed {d : Nat} {a a' b b' ta tb : Expr md} :
+      isSortOrPi a = false →
+      a.hasFvar = false → a.looseBVarsBounded 0 = true →
+      b.hasFvar = false → b.looseBVarsBounded 0 = true →
+      a'.hasFvar = false → a'.looseBVarsBounded 0 = true →
+      b'.hasFvar = false → b'.looseBVarsBounded 0 = true →
+      Infer env .full 0 a' ta → Red env 0 a' a →
+      Infer env .full 0 b' tb → Red env 0 b' b →
+      DefEq env 0 a' b' →
+      Red env d a b
   /-- A `Nat`-literal major converts to constructor form, one layer
   (`litMajorToCtor`'s `litToCtorIfNat` arm, `Core.lean:739`). -/
   | natLit {d : Nat} {n : Nat} :
@@ -283,12 +302,23 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
   | strLit {d : Nat} {s : String} :
       strLitSupported env = true →
       Red env d (.lit (.strVal s)) (strLitToConstructor s)
+  /-- A `String` constructor form (`String.ofList` of a `Char.ofNat` list) folds back
+  to its `String` literal (`strLit`'s converse). -/
+  | strLitFold {d : Nat} {s : String} :
+      strLitSupported env = true →
+      Red env d (strLitToConstructor s) (.lit (.strVal s))
   /-- **`Nat.succ` packing** (`reduceNat`, `Core.lean:171-178`): the
   argument reduces to a literal reading. -/
   | natSucc {d : Nat} {a w : Expr md} {n : Nat} :
       natLitSupported env = true →
       Red env d a w → rawNatLit? w = some n →
       Red env d (.app (.const natSuccName []) a) (.lit (.natVal (n + 1)))
+  /-- **`Nat.pred` acceleration**: a stored `Nat.pred` on an argument that reduces
+  to a literal reading `n` folds to `n - 1`. -/
+  | natPred {d : Nat} {a w : Expr md} {n : Nat} :
+      natOpStored env natPredName = true →
+      Red env d a w → rawNatLit? w = some n →
+      Red env d (.app (.const natPredName []) a) (.lit (.natVal (n - 1)))
   /-- **Binary `Nat` acceleration** (`reduceNat`, `Core.lean:181-201`):
   a stored operation on two arguments that reduce to literal readings
   folds to `natOpResult`. -/
@@ -700,6 +730,57 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
       Infer env .io d b tb → DefEq env d tb ta →
       DefEqList env d ((List.range cnF).map fun i => .proj T i b) (a.getAppArgs.drop cnP) →
       DefEq env d b a
+  /-- **Closed equality reflection**: closed terms `a` and `b` are definitionally
+  equal at any depth given a closed proof `p` of `@Eq.{u} T a b` in the empty
+  context, typings of `a` and `b` at `T`, and `T`'s sort at `u`. -/
+  | eqProof {d : Nat} {a b p T ta tb sT : Expr md} {u v : Level} {ci : ConstantInfo md} :
+      env.find? eqName = some ci →
+      a.hasFvar = false → a.looseBVarsBounded 0 = true →
+      b.hasFvar = false → b.looseBVarsBounded 0 = true →
+      p.hasFvar = false → p.looseBVarsBounded 0 = true →
+      Infer env .full 0 p (.app (.app (.app (.const eqName [u]) T) a) b) →
+      Infer env .full 0 a ta → DefEq env 0 ta T →
+      Infer env .full 0 b tb → DefEq env 0 tb T →
+      Infer env .full 0 T sT → Red env 0 sT (.sort v) →
+      (∀ φ : LevelParam → Nat, Level.eval φ v = Level.eval φ u) →
+      DefEq env d a b
+  /-- **Closed level instantiation of a conversion**: closed terms `a` and `b`
+  whose level parameters lie in `ks` and that are definitionally equal at depth
+  `0` stay definitionally equal at any depth when `ks` are instantiated to `us`. -/
+  | instClosed {d : Nat} {ks : List LevelParam} {us : List Level} {a b : Expr md} :
+      us.length = ks.length →
+      a.allLevelParamsDefined ks = true → b.allLevelParamsDefined ks = true →
+      a.hasFvar = false → a.looseBVarsBounded 0 = true →
+      b.hasFvar = false → b.looseBVarsBounded 0 = true →
+      DefEq env 0 a b →
+      DefEq env d (a.instantiateLevelParams ks us) (b.instantiateLevelParams ks us)
+  /-- **Closed well-typed transitivity**: when the middle term `b` is closed and
+  obtained by `PiRed` from a closed well-typed term `b'` in the empty context,
+  `b` reads and is graded in every model, so `DefEq env d a b` and `DefEq env d b c`
+  compose to `DefEq env d a c`. -/
+  | transClosed {d : Nat} {a b b' c tb : Expr md} :
+      b.hasFvar = false → b.looseBVarsBounded 0 = true →
+      b'.hasFvar = false → b'.looseBVarsBounded 0 = true →
+      Infer env .full 0 b' tb → PiRed env 0 b' b →
+      DefEq env d a b → DefEq env d b c →
+      DefEq env d a c
+
+/-- **Reduction lifted under `∀` binders**: preserves reading, grading, and denotation
+in every model without altering `Red.rigid`. -/
+inductive PiRed (env : Env md) : Nat → Expr md → Expr md → Prop where
+  | ofRed {d : Nat} {e e' : Expr md} : Red env d e e' → PiRed env d e e'
+  | app {d : Nat} {f f' a a' : Expr md} :
+      PiRed env d f f' → PiRed env d a a' → PiRed env d (.app f a) (.app f' a')
+  | forallE {d : Nat} {A A' B B' : Expr md} {mb : BinderMeta} :
+      B'.wscopedB d = true →
+      PiRed env d A A' →
+      PiRed env (d + 1) (B.instantiate1 (.fvar d A)) (B'.instantiate1 (.fvar d A)) →
+      PiRed env d (.forallE A B mb) (.forallE A' B' mb)
+  | lam {d : Nat} {A A' B B' : Expr md} {mb : BinderMeta} :
+      B'.wscopedB d = true →
+      PiRed env d A A' →
+      PiRed env (d + 1) (B.instantiate1 (.fvar d A)) (B'.instantiate1 (.fvar d A)) →
+      PiRed env d (.lam A B mb) (.lam A' B' mb)
 
 /-- **Type inference** at a grade. -/
 inductive Infer (env : Env md) : Grade → Nat → Expr md → Expr md → Prop where

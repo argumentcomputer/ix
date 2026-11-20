@@ -88,6 +88,7 @@ theorem coreCompanions_lower (h : Decl.CoreCompanions ⟨E, env, t, lim⟩)
   natOps := fun r hr hm => h.natOps r (hsub r hr) hm
   natAdd := fun h1 => h.natAdd (hsub _ h1)
   eqStored := fun h1 => h.eqStored (hsub _ h1)
+  primEqn := fun ⟨r, hge, hf⟩ => h.primEqn ⟨r, hge, hsub r hf⟩
   quotBasis := fun h1 => h.quotBasis (hsub _ h1)
   recMajorRecord := h.recMajorRecord
   recRulesNodupAndProj := h.recRulesNodupAndProj
@@ -107,7 +108,8 @@ def basicRoles : List Ix.Kernel.Role := [.nat, .natZero, .natSucc, .eq, .quot]
 facts, `String` with the whole literal support, or a role no companion field reads. -/
 def RaiseOk (env : Ix.Kernel.Env .anon) (r : Ix.Kernel.Role) : Prop :=
   RoleOps.OpCompanion env r ∨ (r = .string ∧ Ix.Kernel.strLitSupported env = true) ∨
-    (r ∉ companionRoles ∧ (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.Rules.natBinOpNames)
+    (r ∉ companionRoles ∧
+      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames)
 
 theorem mem_opRoles_of_opCompanion {env : Ix.Kernel.Env .anon} {r : Ix.Kernel.Role}
     (hc : RoleOps.OpCompanion env r) : r ∈ RoleOps.opRoles := by
@@ -154,7 +156,9 @@ theorem old_of_basic
 fact. -/
 theorem coreCompanions_raise (h : Decl.CoreCompanions ⟨E, env, t, lim⟩)
     (hnew : ∀ r, Core.Ctx.inForce ⟨E, env, t, lim'⟩ r → ¬ Core.Ctx.inForce ⟨E, env, t, lim⟩ r →
-      RaiseOk env r) :
+      RaiseOk env r)
+    (hprim : (∃ r, 46 ≤ Ix.SpecDigest.groupOf r ∧ Core.Ctx.inForce ⟨E, env, t, lim'⟩ r ∧
+      ¬ Core.Ctx.inForce ⟨E, env, t, lim⟩ r) → Core.PrimEqnEnv env) :
     Decl.CoreCompanions ⟨E, env, t, lim'⟩ where
   natLit := fun h1 h2 h3 => h.natLit (old_of_basic hnew (by decide) h1)
     (old_of_basic hnew (by decide) h2) (old_of_basic hnew (by decide) h3)
@@ -181,6 +185,10 @@ theorem coreCompanions_raise (h : Decl.CoreCompanions ⟨E, env, t, lim⟩)
       · exact absurd he (by decide)
       · exact absurd (by decide : Ix.Kernel.Role.natAdd ∈ companionRoles) hm
   eqStored := fun h1 => h.eqStored (old_of_basic hnew (by decide) h1)
+  primEqn := fun ⟨r, hge, hf⟩ => by
+    by_cases hold : Core.Ctx.inForce ⟨E, env, t, lim⟩ r
+    · exact h.primEqn ⟨r, hge, hold⟩
+    · exact hprim ⟨r, hge, hf, hold⟩
   quotBasis := fun h1 => h.quotBasis (old_of_basic hnew (by decide) h1)
   recMajorRecord := h.recMajorRecord
   recRulesNodupAndProj := h.recRulesNodupAndProj
@@ -236,9 +244,11 @@ its key stored. -/
 theorem prefixInv_raise (h : Decl.PrefixInv.{u} E t lim env)
     (hnew : ∀ r, Core.Ctx.inForce ⟨E, env, t, lim'⟩ r → ¬ Core.Ctx.inForce ⟨E, env, t, lim⟩ r →
       RaiseOk env r ∧ (Core.fabricatedRole r = true → ∀ a, t.addressOf? r = some a →
-        ∃ ci, env.find? (Core.keyOf t a) = some ci)) :
+        ∃ ci, env.find? (Core.keyOf t a) = some ci))
+    (hprim : (∃ r, 46 ≤ Ix.SpecDigest.groupOf r ∧ Core.Ctx.inForce ⟨E, env, t, lim'⟩ r ∧
+      ¬ Core.Ctx.inForce ⟨E, env, t, lim⟩ r) → Core.PrimEqnEnv env) :
     Decl.PrefixInv.{u} E t lim' env :=
-  prefixInv_withLim h (coreCompanions_raise h.companions fun r hf hn => (hnew r hf hn).1)
+  prefixInv_withLim h (coreCompanions_raise h.companions (fun r hf hn => (hnew r hf hn).1) hprim)
     (roleResAt_raise (roleResAt_of_loads h.loads)
       fun r a hf hn hfab ha => (hnew r hf hn).2 hfab a ha)
 
@@ -294,14 +304,15 @@ theorem literal_block {r : Ix.Kernel.Role} (h1 : 41 ≤ Ix.SpecDigest.groupOf r)
 set_option maxRecDepth 100000 in
 private theorem tail_free_all : Ix.Kernel.Role.all.all (fun r =>
     decide (46 ≤ Ix.SpecDigest.groupOf r → r ∉ companionRoles ∧
-      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.Rules.natBinOpNames ∧
+      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames ∧
       Core.fabricatedRole r = false)) = true := by
   decide +kernel
 
 /-- **The roles of the groups from 46 on are read by no companion field and are not
 fabricated.** -/
 theorem tail_free {r : Ix.Kernel.Role} (h : 46 ≤ Ix.SpecDigest.groupOf r) :
-    r ∉ companionRoles ∧ (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.Rules.natBinOpNames ∧
+    r ∉ companionRoles ∧
+      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames ∧
       Core.fabricatedRole r = false :=
   of_decide_eq_true (List.all_eq_true.mp tail_free_all r (Ix.Kernel.Role.mem_all r)) h
 
@@ -310,7 +321,8 @@ private theorem wf_sub_op : ∀ r ∈ wfOpRoles, r ∈ RoleOps.opRoles := by dec
 private theorem wf_ne_add : ∀ r ∈ wfOpRoles, r ≠ .natAdd := by decide
 
 private theorem literal_free : ∀ r ∈ literalRoles, r ≠ .string →
-    r ∉ companionRoles ∧ (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.Rules.natBinOpNames := by
+    r ∉ companionRoles ∧
+      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames := by
   decide
 
 /-! ## The raises between groups -/
@@ -319,14 +331,15 @@ section Raises
 
 variable {E : Ixon.Env} {env : Ix.Kernel.Env .anon} {t : Ix.Kernel.RoleTable}
 
-/-- **Past one group**: every role of group `g` has its companion fact and, if fabricated, its
-key stored. -/
-theorem prefixInv_raise_succ {g : Nat} (h : Decl.PrefixInv.{u} E t (some g) env)
+/-- **Past one group**: every role of group `g` (below 46) has its companion fact and, if
+fabricated, its key stored. -/
+theorem prefixInv_raise_succ {g : Nat} (hg : g < 46) (h : Decl.PrefixInv.{u} E t (some g) env)
     (hnew : ∀ r ∈ roleGroup g, (t.addressOf? r).isSome = true →
       RaiseOk env r ∧ (Core.fabricatedRole r = true → ∀ a, t.addressOf? r = some a →
         ∃ ci, env.find? (Core.keyOf t a) = some ci)) :
     Decl.PrefixInv.{u} E t (some (g + 1)) env := by
-  refine prefixInv_raise h (fun r hf hn => ?_)
+  refine prefixInv_raise h (fun r hf hn => ?_) (fun ⟨r, hge, hf, _⟩ => by
+    have := hf.2 (g + 1) rfl; omega)
   obtain ⟨hlo, hhi⟩ := inForce_new_some hf hn
   have hgr : Ix.SpecDigest.groupOf r = g := by omega
   have hmem : r ∈ roleGroup g := hgr ▸ role_mem_roleGroup r
@@ -338,7 +351,8 @@ theorem prefixInv_raise_wf (h : Decl.PrefixInv.{u} E t (some 33) env)
     (hops : ∀ r ∈ wfOpRoles, (t.addressOf? r).isSome = true →
       Ix.Kernel.natOpStoredOk env (.role r) = true) :
     Decl.PrefixInv.{u} E t (some 41) env := by
-  refine prefixInv_raise h (fun r hf hn => ?_)
+  refine prefixInv_raise h (fun r hf hn => ?_) (fun ⟨r, hge, hf, _⟩ => by
+    have := hf.2 41 rfl; omega)
   obtain ⟨hlo, hhi⟩ := inForce_new_some hf hn
   have hr := wf_block hlo hhi
   have hok := hops r hr hf.1
@@ -371,7 +385,8 @@ theorem prefixInv_raise_literal (h : Decl.PrefixInv.{u} E t (some 41) env)
     (hst : ∀ r ∈ literalRoles, Core.fabricatedRole r = true → ∀ a, t.addressOf? r = some a →
       ∃ ci, env.find? (Core.keyOf t a) = some ci) :
     Decl.PrefixInv.{u} E t (some 46) env := by
-  refine prefixInv_raise h (fun r hf hn => ?_)
+  refine prefixInv_raise h (fun r hf hn => ?_) (fun ⟨r, hge, hf, _⟩ => by
+    have := hf.2 46 rfl; omega)
   obtain ⟨hlo, hhi⟩ := inForce_new_some hf hn
   have hr := literal_block hlo hhi
   refine ⟨?_, hst r hr⟩
@@ -379,11 +394,12 @@ theorem prefixInv_raise_literal (h : Decl.PrefixInv.{u} E t (some 41) env)
   · exact Or.inr (Or.inl ⟨hs, hstr⟩)
   · exact Or.inr (Or.inr (literal_free r hr hs))
 
-/-- **Past the equation groups at once** (46 to any limit): their roles are read by no
-companion field and are not fabricated. -/
-theorem prefixInv_raise_tail (h : Decl.PrefixInv.{u} E t (some 46) env) (lim' : Option Nat) :
+/-- **Past the equation groups at once** (46 to any limit): their roles are not fabricated,
+and certified primitive reductions (`PrimEqnEnv`) hold for the equation-specified families. -/
+theorem prefixInv_raise_tail (h : Decl.PrefixInv.{u} E t (some 46) env) (lim' : Option Nat)
+    (hprim : Core.PrimEqnEnv env) :
     Decl.PrefixInv.{u} E t lim' env := by
-  refine prefixInv_raise h (fun r hf hn => ?_)
+  refine prefixInv_raise h (fun r hf hn => ?_) (fun _ => hprim)
   obtain ⟨hc, hb, hfab⟩ := tail_free (inForce_new_ge hf hn)
   exact ⟨Or.inr (Or.inr ⟨hc, hb⟩),
     fun hf' => (Bool.false_ne_true (hfab.symm.trans hf')).elim⟩

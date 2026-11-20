@@ -959,6 +959,14 @@ private theorem roleHasEquations_of_kind5 (r : Ix.Kernel.Role) :
     RoleVal.roleSpecKindNat r = 5 → RoleVal.roleHasEquations r = true := by
   cases r <;> decide
 
+set_option maxRecDepth 100000 in
+private theorem eqnsAnchor_specKind_one (r ar : Ix.Kernel.Role) :
+    ar ∈ RoleVal.eqnsAnchorsOf r → RoleVal.roleSpecKindNat ar = 1 := by
+  have hall : ∀ r, (RoleVal.eqnsAnchorsOf r).all (fun x => RoleVal.roleSpecKindNat x == 1) = true := by
+    intro r; cases r <;> decide
+  intro h
+  exact beq_iff_eq.mp (List.all_eq_true.mp (hall r) ar h)
+
 /-- **The walked roots and the equation theorems of a run are in Lean's logic**
 (`RootsAndTheoremsSafe`), for a run that validates every role of the 77 groups and has a
 collision-free store, with no further premise. -/
@@ -985,5 +993,18 @@ theorem rootsAndTheoremsSafe_of_run {calls : List (Call F)} {bAddr : _root_.Addr
     have harr : arr = arr₀ := RoleVal.evidence_eq_of_wf hv.wf hm hm₀
     subst harr
     exact Claim.sourceSafe_of_thm_load hC.runStore hC.hashedStored (hprf thm hthm).1
+  eqnsAnchors := by
+    intro r ar a h5 har had
+    have hvAr := hval _ (groupOf_lt_groups ar) ar (role_mem_roleGroup ar)
+    have hvAr' : RoleVal.ValidateRoleIn calls bAddr t (Ix.SpecDigest.groupOf ar) ar := hvAr
+    obtain ⟨a', had', hsafe⟩ :=
+      RoleVal.ValidateRoleIn.bound_load_safe hvAr' (Or.inr (Or.inl (eqnsAnchor_specKind_one r ar har)))
+    have hvR := hval _ (groupOf_lt_groups r) r (role_mem_roleGroup r)
+    have hvR' : RoleVal.ValidateRoleIn calls bAddr t (Ix.SpecDigest.groupOf r) r := hvR
+    obtain ⟨a'', recs, had'', hcl, hmem⟩ := RoleVal.ValidateRoleIn.eqns_anchors_walks hvR' h5 har
+    have e1 : a' = a := Option.some.inj (had'.symm.trans had)
+    have e2 : a'' = a := Option.some.inj (had''.symm.trans had)
+    subst e1 e2
+    exact Claim.sourceSafe_of_bound_load hC.runStore hC.hashedStored hcl hmem hsafe
 
 end IxVM.Refinement.Binding

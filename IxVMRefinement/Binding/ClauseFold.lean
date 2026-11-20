@@ -1,5 +1,6 @@
 import IxVMRefinement.Binding.ClauseInvariant
 import IxVMRefinement.Binding.OpInstall
+import IxVMRefinement.Binding.BitVecEqns
 
 /-! # The binding fold over the fold's clause: the step from its parts, the fold, both halves
 
@@ -159,7 +160,7 @@ theorem groupStepOver_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon → 
     (hax : RoleUnitStepOver.{u} (· ∈ standardAxioms) L ρ t g) :
     GroupStepOver.{u} L ρ t g := by
   intro R R' env hb hadm hrd
-  obtain ⟨R₁, env₁, hRR₁, hR₁R', hblobs, hunit, hext, hb₁, hkept⟩ := hcl R R' env hb hadm hrd
+  obtain ⟨R₁, env₁, hRR₁, hR₁R', hblobs, hunit, hext, hb₁, hkept, hrec₁⟩ := hcl R R' env hb hadm hrd
   by_cases hu : ∃ r ∈ roleGroup g, r ∈ RoleOps.opRoles ∨ r ∈ standardAxioms
   · obtain ⟨r, hr, hk⟩ := hu
     have hsingle : roleGroup g = [r] := roleGroup_unit hr hk
@@ -185,7 +186,22 @@ theorem groupStepOver_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon → 
         bndOver_of_beforeRaise hall hg hb'⟩
   · have hnu : ∀ r ∈ roleGroup g, ¬ (r ∈ RoleOps.opRoles ∨ r ∈ standardAxioms) :=
       fun r hr hk => hu ⟨r, hr, hk⟩
-    have hshapes : Shapes (· < g + 1) env₁ := hnone hnu R R₁ R' env₁ hadm hrd hR₁R' hb₁ hkept
+    have hsame : ∀ x, R₁.consts.get? x = R'.consts.get? x := by
+      intro x
+      cases h₁ : R₁.consts.get? x with
+      | some lc => exact (hR₁R'.1 x lc h₁).symm
+      | none =>
+        cases h' : R'.consts.get? x with
+        | none => rfl
+        | some lc =>
+          obtain ⟨r', hr', -, hk'⟩ := hunit x (by rw [h']; rfl) h₁
+          exact absurd hk' (hnu r' hr')
+    have hrec' : ∀ x c, recordOf R' x = some c → (∀ ms, c.info ≠ .muts ms) →
+        (env₁.find? (keyOf t x)).isSome = true := by
+      intro x c hrc hnm
+      rw [← recordOf_storeCongr hsame] at hrc
+      exact hrec₁ x c hrc hnm
+    have hshapes : Shapes (· < g + 1) env₁ := hnone hnu R R₁ R' env₁ hadm hrd hR₁R' hb₁ hkept hrec'
     have hfab := fabKeys_of_groupKept htwf hg6 hnu hkept
     have hlit : g = 45 → Ix.Kernel.strLitSupported env₁ = true ∧
         ∀ r ∈ literalRoles, Core.fabricatedRole r = true → ∀ a, t.addressOf? r = some a →
@@ -219,23 +235,16 @@ theorem groupStepOver_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon → 
             rw [← hgr]
             exact role_mem_roleGroup r
           exact hfab r hmem hf a ha
+    have htail : g = 76 → Core.PrimEqnEnv env₁ := fun h76 => by
+      subst h76
+      exact primEqnEnv_of_bndOver hall hb₁ hshapes
     have hraise : RaiseAt t env₁ g :=
-      raiseAt_of_noOps hg6 (fun r hr hop' => hnu r hr (Or.inl hop')) hfab hlit
+      raiseAt_of_noOps hg6 (fun r hr hop' => hnu r hr (Or.inl hop')) hfab hlit htail
     have hB : BeforeRaise.{u} L t g R₁ env₁ :=
       beforeRaise_of_kept hall hb₁ (fun r hr hkr a ha => hkept.1 r hr hkr (hnu r hr) a ha)
         hkept.2 hshapes hraise
     have hb₂ : BndOver.{u} L t (· < g + 1) R₁ env₁ :=
       bndOver_of_beforeRaise hall hg hB
-    have hsame : ∀ x, R₁.consts.get? x = R'.consts.get? x := by
-      intro x
-      cases h₁ : R₁.consts.get? x with
-      | some lc => exact (hR₁R'.1 x lc h₁).symm
-      | none =>
-        cases h' : R'.consts.get? x with
-        | none => rfl
-        | some lc =>
-          obtain ⟨r', hr', -, hk'⟩ := hunit x (by rw [h']; rfl) h₁
-          exact absurd hk' (hnu r' hr')
     have hsameB : ∀ x, R₁.blobs.get? x = R'.blobs.get? x := by
       intro x
       cases h₁ : R₁.blobs.get? x with

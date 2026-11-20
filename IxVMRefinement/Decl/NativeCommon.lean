@@ -39,7 +39,7 @@ open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList repKLevel_heapMono₂
   levelExplicitVal levelOffsetOf levelMaxOffsets levelMaxSubsumes levelMaxGo levelMax levelIMax
   levelReduce substLevel substLevelList ParamsLt)
 open Ix.Kernel (Expr Level LevelParam ConstantVal ConstantInfo Declaration RecRule)
-open Ix.Kernel.Rules (Annot Red DefEq Infer Certs DefEqList EtaProjCerts Grade)
+open Ix.Kernel.Rules (Annot Red DefEq Infer Certs DefEqList EtaProjCerts PiRed Grade)
 open Ix.Kernel.Semantics (DeclRunJ IndRoutesJ DeclNativeRunJ DeclNativeNoRecRunJ DeclRecTwinRunJ
   ConstantValRunJ ConstantValCheckJ letFree nativePartsNoRec?)
 open Ix.Kernel.Model (rulesJ NewSat)
@@ -634,10 +634,15 @@ theorem upgradeRed (h : CapsUpgradeAt T cvS caps envₐ envᵦ) :
       (h.upgradeInfer ha) (h.upgradeDefEq hda)
       (h.upgradeInfer hb) (h.upgradeDefEq hdb)
       (h.upgradeInfer hT) (h.upgradeRed hrT) hev
+  | _, _, _, .defEqClosed hsp haf hab hbf hbb ha'f ha'b hb'f hb'b hia hra hib hrb hde =>
+    .defEqClosed hsp haf hab hbf hbb ha'f ha'b hb'f hb'b (h.upgradeInfer hia) (h.upgradeRed hra)
+      (h.upgradeInfer hib) (h.upgradeRed hrb) (h.upgradeDefEq hde)
   | _, _, _, .natLit hn => .natLit (by rwa [h.natLitSupported_eq])
   | _, _, _, .natZeroLit hn => .natZeroLit (by rwa [h.natLitSupported_eq])
   | _, _, _, .strLit hs => .strLit (by rwa [h.strLitSupported_eq])
+  | _, _, _, .strLitFold hs => .strLitFold (by rwa [h.strLitSupported_eq])
   | _, _, _, .natSucc hn hr hraw => .natSucc (by rwa [h.natLitSupported_eq]) (h.upgradeRed hr) hraw
+  | _, _, _, .natPred hst hr hraw => .natPred (by rwa [h.natOpStored_eq]) (h.upgradeRed hr) hraw
   | _, _, _, .natOp hm hs hra hna hrb hnb hres =>
     .natOp hm (by rwa [h.natOpStored_eq]) (h.upgradeRed hra) hna (h.upgradeRed hrb) hnb hres
   | _, _, _, .natAddSucc hn ha =>
@@ -736,6 +741,19 @@ theorem upgradeDefEq (h : CapsUpgradeAt T cvS caps envₐ envᵦ) :
     exact .structEtaTy hafn (h.find_non_ind hc fun _ _ e => nomatch e) halen hT' heta hec hpos
       (by rwa [h.towerSlotsAll_eq]) (h.upgradeInfer hia) (h.upgradeRed hra)
       (h.upgradeCerts hcerts) (h.upgradeInfer hib) (h.upgradeDefEq hde) (h.upgradeDefEqList hdf)
+  | _, _, _, .eqProof heq haf hab hbf hbb hpf hpb hp ha hda hb hdb hT hrT hev => by
+    have heq' : ∃ ci', envᵦ.find? Ix.Kernel.eqName = some ci' := by
+      rw [h.find_basis (by simp [Ix.Kernel.reservedBasisNames])]
+      exact ⟨_, heq⟩
+    obtain ⟨ci', heq'⟩ := heq'
+    exact .eqProof heq' haf hab hbf hbb hpf hpb (h.upgradeInfer hp)
+      (h.upgradeInfer ha) (h.upgradeDefEq hda) (h.upgradeInfer hb) (h.upgradeDefEq hdb)
+      (h.upgradeInfer hT) (h.upgradeRed hrT) hev
+  | _, _, _, .instClosed hlen haLv hbLv haf hab hbf hbb hde =>
+    .instClosed hlen haLv hbLv haf hab hbf hbb (h.upgradeDefEq hde)
+  | _, _, _, .transClosed hbf hbb hb'f hb'b hib hpb hab hbc =>
+    .transClosed hbf hbb hb'f hb'b (h.upgradeInfer hib) (h.upgradePiRed hpb)
+      (h.upgradeDefEq hab) (h.upgradeDefEq hbc)
 
 theorem upgradeInfer (h : CapsUpgradeAt T cvS caps envₐ envᵦ) :
     ∀ {g : Grade} {d : Nat} {e t : KExpr}, Infer envₐ g d e t → Infer envᵦ g d e t
@@ -779,6 +797,13 @@ theorem upgradeEtaProjCerts (h : CapsUpgradeAt T cvS caps envₐ envᵦ) :
   | _, _, _, _, _, _, _, .cons hf hlps hsp hc hrest =>
     .cons (h.find_non_ind hf fun _ _ e => nomatch e) hlps hsp (h.upgradeCerts hc)
       (h.upgradeEtaProjCerts hrest)
+
+theorem upgradePiRed (h : CapsUpgradeAt T cvS caps envₐ envᵦ) :
+    ∀ {d : Nat} {e e' : KExpr}, PiRed envₐ d e e' → PiRed envᵦ d e e'
+  | _, _, _, .ofRed hr => .ofRed (h.upgradeRed hr)
+  | _, _, _, .app hf ha => .app (h.upgradePiRed hf) (h.upgradePiRed ha)
+  | _, _, _, .forallE hws hA hB => .forallE hws (h.upgradePiRed hA) (h.upgradePiRed hB)
+  | _, _, _, .lam hws hA hB => .lam hws (h.upgradePiRed hA) (h.upgradePiRed hB)
 
 end
 

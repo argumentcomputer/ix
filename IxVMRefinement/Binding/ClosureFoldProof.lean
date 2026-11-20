@@ -166,24 +166,24 @@ theorem stdAxiomOk_findExt
 
 /-- **The stored shapes are kept.** -/
 theorem shapes_findExt
-    (hfind : ∀ {k : Ix.Kernel.Key .anon} {c : ConstantInfo .anon},
-      env.find? k = some c → env'.find? k = some c)
+    (hext : Ix.Kernel.EnvExt env env')
     {G : Nat → Prop} (hs : Shapes G env) : Shapes G env' where
   bool := fun h => by
     obtain ⟨⟨ci, hf, hl, ht⟩, ⟨⟨a, ha, hla⟩, ⟨b, hb, hlb⟩⟩, ⟨⟨a', ha', hta⟩, ⟨b', hb', htb⟩⟩⟩ :=
       hs.bool h
-    exact ⟨⟨ci, hfind hf, hl, ht⟩, ⟨⟨a, hfind ha, hla⟩, ⟨b, hfind hb, hlb⟩⟩,
-      ⟨⟨a', hfind ha', hta⟩, ⟨b', hfind hb', htb⟩⟩⟩
-  char := fun h => testFind_findExt hfind (hs.char h) rfl
-  string := fun h => testFind_findExt hfind (hs.string h) rfl
+    exact ⟨⟨ci, hext.find hf, hl, ht⟩, ⟨⟨a, hext.find ha, hla⟩, ⟨b, hext.find hb, hlb⟩⟩,
+      ⟨⟨a', hext.find ha', hta⟩, ⟨b', hext.find hb', htb⟩⟩⟩
+  char := fun h => testFind_findExt hext.find (hs.char h) rfl
+  string := fun h => testFind_findExt hext.find (hs.string h) rfl
   list := fun h => by
     obtain ⟨h1, h2, h3⟩ := hs.list h
-    exact ⟨testFind_findExt hfind h1 rfl, testFind_findExt hfind h2 rfl,
-      testFind_findExt hfind h3 rfl⟩
-  charOfNat := fun h => testFind_findExt hfind (hs.charOfNat h) rfl
-  stringOfList := fun h => testFind_findExt hfind (hs.stringOfList h) rfl
-  iff := fun h cvA hn hm => stdAxiomOk_findExt hfind (hs.iff h cvA hn hm)
-  nonempty := fun h cvA hn hm => stdAxiomOk_findExt hfind (hs.nonempty h cvA hn hm)
+    exact ⟨testFind_findExt hext.find h1 rfl, testFind_findExt hext.find h2 rfl,
+      testFind_findExt hext.find h3 rfl⟩
+  charOfNat := fun h => testFind_findExt hext.find (hs.charOfNat h) rfl
+  stringOfList := fun h => testFind_findExt hext.find (hs.stringOfList h) rfl
+  iff := fun h cvA hn hm => stdAxiomOk_findExt hext.find (hs.iff h cvA hn hm)
+  nonempty := fun h cvA hn hm => stdAxiomOk_findExt hext.find (hs.nonempty h cvA hn hm)
+  eqns := fun r h46 h => (hs.eqns r h46 h).weaken hext
 
 end FindExt
 
@@ -254,7 +254,7 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       run := hRF, famAdmits := hFA, store := hspec,
       closed := closureStore_usedClosed hadm hb.shape.usedClosed hRF.roleUnitForm,
       noUnit := fun a hu hn => closureStore_none ⟨hu, hn⟩ }
-  obtain ⟨env₁, hI, hext, hdone, hframe⟩ := closureFold_run hC htwf hunit hfam htwin
+  obtain ⟨env₁, hI, hext, hextE, hdone, hframe⟩ := closureFold_run hC htwf hunit hfam htwin
   have hfind : ∀ {k : Ix.Kernel.Key .anon} {c : ConstantInfo .anon},
       env.find? k = some c → env₁.find? k = some c :=
     fun h => find_of_ext hext hI.nodup h
@@ -361,7 +361,7 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
             exact List.mem_map.mpr ⟨r, hr, rfl⟩
           rw [hI.ops _ hn] at hs
           exact hs),
-        shapes_findExt hfind hb.facts.shapes⟩
+        shapes_findExt hextE hb.facts.shapes⟩
       by_cases hsa : StoredAt t env a
       · have hbs := hb.facts.whole E (recordsFor_R_of_closureStore hadm hE) a B c cb ms
           (find_isSome_of_storedAt hsa) hrec hown hne hrecB hmuts

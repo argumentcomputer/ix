@@ -20,7 +20,7 @@ fabrication built from the major's inferred, reduced type. -/
 
 namespace IxVM.Refinement.Core
 
-open Ix.Kernel.Rules (Red DefEq Infer Certs DefEqList EtaProjCerts Grade)
+open Ix.Kernel.Rules (Red DefEq Infer Certs DefEqList EtaProjCerts PiRed Grade)
 open Ix.Kernel.Expr (fvarLeaves fvarLeaves_eq_nil_of_not_hasFvar fvarLeaves_instantiate1
   hasFvar_instantiateLevelParams)
 
@@ -227,6 +227,7 @@ theorem red_leaves {env : Ix.Kernel.Env .anon} (hs : Ix.Kernel.StoreClosed env) 
     (leaves_closed (by rw [hasFvar_instantiateLevelParams]; exact hvf) hl).elim
   | _, _, _, .eqProof _ _ hp _ _ hlp _ _ _ _ _ _ _ => fun l hl =>
     hlp l (infer_leaves hs hp l (by simp only [fvarLeaves, List.mem_append]; exact .inr hl))
+  | _, _, _, .defEqClosed _ _ _ hbf .. => fun l hl => (leaves_closed hbf hl).elim
   | _, _, _, .natLit _ => fun l hl => by
     rw [Ix.Kernel.natLitToConstructor_fvarLeaves] at hl
     cases hl
@@ -234,7 +235,9 @@ theorem red_leaves {env : Ix.Kernel.Env .anon} (hs : Ix.Kernel.StoreClosed env) 
   | _, _, _, .strLit _ => fun l hl => by
     rw [Ix.Kernel.strLitToConstructor_fvarLeaves] at hl
     cases hl
+  | _, _, _, .strLitFold _ => fun l hl => by simp [fvarLeaves] at hl
   | _, _, _, .natSucc _ _ _ => fun l hl => by simp [fvarLeaves] at hl
+  | _, _, _, .natPred _ _ _ => fun l hl => by simp [fvarLeaves] at hl
   | _, _, _, .natOp _ _ _ _ _ _ hr => fun l hl => by
     rw [leaves_nil_of_renFV_fix (Ix.Kernel.Expr.renFV_of_natOpResult hr)] at hl
     cases hl
@@ -339,6 +342,10 @@ theorem etaProjCerts_leaves_aux {env : Ix.Kernel.Env .anon} (hs : Ix.Kernel.Stor
       EtaProjCerts env d T us targs b lps is → True
   | _, _, _, _, _, _, _, _ => trivial
 
+theorem piRed_leaves_aux {env : Ix.Kernel.Env .anon} (hs : Ix.Kernel.StoreClosed env) :
+    ∀ {d : Nat} {e e' : KExpr}, PiRed env d e e' → True
+  | _, _, _, _ => trivial
+
 end
 
 /-! ## Grades -/
@@ -382,6 +389,10 @@ theorem etaProjCerts_toIo_aux {env : Ix.Kernel.Env .anon} :
       {lps : List Ix.Kernel.LevelParam} {is : List Nat},
       EtaProjCerts env d T us targs b lps is → True
   | _, _, _, _, _, _, _, _ => trivial
+
+theorem piRed_toIo_aux {env : Ix.Kernel.Env .anon} :
+    ∀ {d : Nat} {e e' : KExpr}, PiRed env d e e' → True
+  | _, _, _, _ => trivial
 
 end
 

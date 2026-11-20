@@ -44,19 +44,26 @@ structure RootsSafe (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
   eqnsEvidence : ∀ (r : Ix.Kernel.Role) (arr : Array (Ix.Kernel.Evidence _root_.Address))
     (thm : _root_.Address), RoleVal.roleSpecKindNat r = 5 → (r, arr) ∈ t.evidence.toList →
     Ix.Kernel.Evidence.proof thm ∈ arr.toList → Claim.SourceSafe E₀ thm
+  eqnsAnchors : ∀ (r ar : Ix.Kernel.Role) (a : _root_.Address),
+    RoleVal.roleSpecKindNat r = 5 → ar ∈ RoleVal.eqnsAnchorsOf r →
+    t.addressOf? ar = some a → Claim.SourceSafe E₀ a
   certRefs : ∀ (r : Ix.Kernel.Role) (arr : Array (Ix.Kernel.Evidence _root_.Address))
     (thm x : _root_.Address), RoleVal.roleSpecKindNat r = 2 → (r, arr) ∈ t.evidence.toList →
     Ix.Kernel.Evidence.proof thm ∈ arr.toList → UsedRef E₀ thm x → t.addressOf? r ≠ some x →
     ¬ Claim.CoveredAt t (some (valLimit (Ix.SpecDigest.groupOf r))) x → Claim.SourceSafe E₀ x
 
-/-- **The walked roots and the equation theorems are in Lean's logic**: the fields `bound` and
-`eqnsEvidence` of `RootsSafe`. Its third field is a theorem of every run (`certRefs_of_run`). -/
+/-- **The walked roots and the equation theorems are in Lean's logic**: the fields `bound`,
+`eqnsEvidence`, and `eqnsAnchors` of `RootsSafe`. Its fourth field is a theorem of every run
+(`certRefs_of_run`). -/
 structure RootsAndTheoremsSafe (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
   bound : ∀ r, (RoleVal.roleWalksBound r = true ∨ RoleVal.anchorWalked r = true) →
     ∀ a, t.addressOf? r = some a → Claim.SourceSafe E₀ a
   eqnsEvidence : ∀ (r : Ix.Kernel.Role) (arr : Array (Ix.Kernel.Evidence _root_.Address))
     (thm : _root_.Address), RoleVal.roleSpecKindNat r = 5 → (r, arr) ∈ t.evidence.toList →
     Ix.Kernel.Evidence.proof thm ∈ arr.toList → Claim.SourceSafe E₀ thm
+  eqnsAnchors : ∀ (r ar : Ix.Kernel.Role) (a : _root_.Address),
+    RoleVal.roleSpecKindNat r = 5 → ar ∈ RoleVal.eqnsAnchorsOf r →
+    t.addressOf? ar = some a → Claim.SourceSafe E₀ a
 
 /-- **Every role's group is one of the 77.** -/
 theorem groupOf_lt_groups (r : Ix.Kernel.Role) : Ix.SpecDigest.groupOf r < 77 := by
@@ -113,6 +120,8 @@ theorem groupReach_sourceSafe (hC : CollisionFreeRun calls E₀) (hax : AxiomRol
   intro a ha
   induction ha with
   | root hr hwk had => exact hroots.bound _ hwk _ had
+  | eqnsProof _ h5 hm hthm => exact hroots.eqnsEvidence _ _ _ h5 hm hthm
+  | eqnsAnchor _ h5 har had => exact hroots.eqnsAnchors _ _ _ h5 har had
   | @evidenceRef r arr thm x hr hm hthm hu hne hns =>
     have hnc := AlreadyStoredRole.not_covered hns
     rcases hkind r hr arr hm with h2 | h5
@@ -284,7 +293,7 @@ certificates' references are a theorem of the run (`certRefs_of_run`). -/
 theorem RootsSafe.of_run (hC : CollisionFreeRun calls E₀)
     (hval : ∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls bAddr t g r)
     (h : RootsAndTheoremsSafe t E₀) : RootsSafe t E₀ :=
-  ⟨h.bound, h.eqnsEvidence, certRefs_of_run hC hval⟩
+  ⟨h.bound, h.eqnsEvidence, h.eqnsAnchors, certRefs_of_run hC hval⟩
 
 end Run
 

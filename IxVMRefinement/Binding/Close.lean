@@ -60,6 +60,7 @@ structure RaiseAt (t : Ix.Kernel.RoleTable) (env : Ix.Kernel.Env .anon) (g : Nat
   literal : g = 45 → Ix.Kernel.strLitSupported env = true ∧
     ∀ r ∈ literalRoles, Core.fabricatedRole r = true → ∀ a, t.addressOf? r = some a →
       ∃ ci, env.find? (Core.keyOf t a) = some ci
+  tail : g = 76 → Core.PrimEqnEnv env
 
 /-- **The prefix invariant from the top limit below `g` to the top limit below `g + 1`**, by
 block. -/
@@ -69,7 +70,7 @@ theorem prefixInv_top_succ {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {env : Ix.Ke
   by_cases h1 : g < 33
   · rw [topLim_le33 (Nat.le_of_lt h1)] at h
     rw [topLim_le33 (show g + 1 ≤ 33 by omega)]
-    exact prefixInv_raise_succ h (hr.succ h1)
+    exact prefixInv_raise_succ (by omega) h (hr.succ h1)
   by_cases h2 : g < 40
   · rw [topLim_wfBlock (show 33 ≤ g by omega) (show g ≤ 40 by omega)] at h
     rw [topLim_wfBlock (show 33 ≤ g + 1 by omega) (show g + 1 ≤ 40 by omega)]
@@ -96,7 +97,7 @@ theorem prefixInv_top_succ {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {env : Ix.Ke
     subst h7
     rw [topLim_tailBlock (show 46 ≤ 76 by omega) (show 76 ≤ 76 by omega)] at h
     rw [topLim_none (show 77 ≤ 76 + 1 by omega)]
-    exact prefixInv_raise_tail h none
+    exact prefixInv_raise_tail h none (hr.tail rfl)
 
 /-! ## Closing a group -/
 
@@ -168,14 +169,16 @@ set_option maxRecDepth 100000 in
 private theorem mid_free_all : Ix.Kernel.Role.all.all (fun r =>
     decide (6 ≤ Ix.SpecDigest.groupOf r → Ix.SpecDigest.groupOf r < 33 →
       r ∉ RoleOps.opRoles →
-      r ∉ companionRoles ∧ (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.Rules.natBinOpNames)) =
+      r ∉ companionRoles ∧
+        (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames)) =
     true := by
   decide +kernel
 
 /-- **The roles of the groups 6 to 32 that are no operation are read by no companion field.** -/
 theorem mid_free {r : Ix.Kernel.Role} (h1 : 6 ≤ Ix.SpecDigest.groupOf r)
     (h2 : Ix.SpecDigest.groupOf r < 33) (h3 : r ∉ RoleOps.opRoles) :
-    r ∉ companionRoles ∧ (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.Rules.natBinOpNames :=
+    r ∉ companionRoles ∧
+      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames :=
   of_decide_eq_true (List.all_eq_true.mp mid_free_all r (Ix.Kernel.Role.mem_all r)) h1 h2 h3
 
 set_option maxRecDepth 100000 in
@@ -203,7 +206,8 @@ theorem raiseAt_of_noOps {t : Ix.Kernel.RoleTable} {env : Ix.Kernel.Env .anon} {
       ∃ ci, env.find? (Core.keyOf t a) = some ci)
     (hlit : g = 45 → Ix.Kernel.strLitSupported env = true ∧
       ∀ r ∈ literalRoles, Core.fabricatedRole r = true → ∀ a, t.addressOf? r = some a →
-        ∃ ci, env.find? (Core.keyOf t a) = some ci) :
+        ∃ ci, env.find? (Core.keyOf t a) = some ci)
+    (htail : g = 76 → Core.PrimEqnEnv env) :
     RaiseAt t env g where
   succ := fun hg r hr _ => by
     have hgr : Ix.SpecDigest.groupOf r = g := groupOf_of_mem_roleGroup hr
@@ -213,5 +217,6 @@ theorem raiseAt_of_noOps {t : Ix.Kernel.RoleTable} {env : Ix.Kernel.Env .anon} {
     obtain ⟨r, hr, hop⟩ := group40_op
     exact absurd hop (hnone r hr)
   literal := hlit
+  tail := htail
 
 end IxVM.Refinement.Binding

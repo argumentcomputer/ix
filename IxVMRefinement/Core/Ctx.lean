@@ -1,5 +1,6 @@
 import IxVMRefinement.Core.Loaded
 import IxC.Kernel.Rules.Rel
+import IxC.Kernel.Rules.Transport
 import IxC.Kernel.Rules.TransportKit
 import IxC.Kernel.Ixon.RoleTable
 import IxC.Kernel.Roles
@@ -465,6 +466,131 @@ def RuleCtorHeadFact (E : Ixon.Env) (env : Ix.Kernel.Env .anon) : Prop :=
       ∃ tus, (Ix.Kernel.Expr.piResult cvj.type).getAppFn = .const T tus) ∨
     RecNotKAt E k
 
+/-- The canonical kernel expression for a signed integer: `Int.ofNat n` or `Int.negSucc n`
+at a `Nat` literal. -/
+def intLitExpr : Int → KExpr
+  | .ofNat n => .app (.const (.role .intOfNat) []) (.lit (.natVal n))
+  | .negSucc n => .app (.const (.role .intNegSucc) []) (.lit (.natVal n))
+
+/-- **Certified primitive reductions from validated equation groups (`g ≥ 46`)**: once any
+equation-specified role is in force (only after group 76 raises the limit past 46), the
+constructor anchors are stored and each accelerated equation-specified operation reduces
+literal arguments to its certified result at every depth. -/
+structure PrimEqnEnv (env : Ix.Kernel.Env .anon) : Prop where
+  intOfNatStored : ∃ ci, env.find? (.role .intOfNat) = some ci
+  intNegSuccStored : ∃ ci, env.find? (.role .intNegSucc) = some ci
+  intOpStored : ∀ r : Ix.Kernel.Role,
+    r ∈ [.intNeg, .intNatAbs, .intAdd, .intSub, .intMul, .intEdiv, .intEmod, .intPow, .intBmod, .intBdiv] →
+    ∃ ci, env.find? (.role r) = some ci
+  intNeg : ∀ d (x : Int),
+    Red env d (.app (.const (.role .intNeg) []) (intLitExpr x)) (intLitExpr (-x))
+  intNatAbs : ∀ d (x : Int),
+    Red env d (.app (.const (.role .intNatAbs) []) (intLitExpr x)) (.lit (.natVal x.natAbs))
+  intAdd : ∀ d (x y : Int),
+    Red env d (.app (.app (.const (.role .intAdd) []) (intLitExpr x)) (intLitExpr y))
+      (intLitExpr (x + y))
+  intSub : ∀ d (x y : Int),
+    Red env d (.app (.app (.const (.role .intSub) []) (intLitExpr x)) (intLitExpr y))
+      (intLitExpr (x - y))
+  intMul : ∀ d (x y : Int),
+    Red env d (.app (.app (.const (.role .intMul) []) (intLitExpr x)) (intLitExpr y))
+      (intLitExpr (x * y))
+  intEdiv : ∀ d (x y : Int),
+    Red env d (.app (.app (.const (.role .intEdiv) []) (intLitExpr x)) (intLitExpr y))
+      (intLitExpr (x.ediv y))
+  intEmod : ∀ d (x y : Int),
+    Red env d (.app (.app (.const (.role .intEmod) []) (intLitExpr x)) (intLitExpr y))
+      (intLitExpr (x.emod y))
+  intPow : ∀ d (x : Int) (n : Nat), n ≤ 2 ^ 24 →
+    Red env d (.app (.app (.const (.role .intPow) []) (intLitExpr x)) (.lit (.natVal n)))
+      (intLitExpr (x ^ n))
+  intBmod : ∀ d (x : Int) (m : Nat),
+    Red env d (.app (.app (.const (.role .intBmod) []) (intLitExpr x)) (.lit (.natVal m)))
+      (intLitExpr (x.bmod m))
+  intBdiv : ∀ d (x : Int) (m : Nat),
+    Red env d (.app (.app (.const (.role .intBdiv) []) (intLitExpr x)) (.lit (.natVal m)))
+      (intLitExpr (x.bdiv m))
+  strOpStored : ∀ r : Ix.Kernel.Role,
+    r ∈ [.stringUtf8ByteSize, .stringBack, .stringToByteArray, .stringDecEq, .stringAppend,
+      .charUtf8Size] →
+    ∃ ci, env.find? (.role r) = some ci
+  charOfNatStored : ∃ ci, env.find? (.role .charOfNat) = some ci
+  byteArrayEmptyStored : ∃ ci, env.find? (.role .byteArrayEmpty) = some ci
+  stringStored : ∃ ci, env.find? (.role .string) = some ci
+  eqStored : ∃ ci, env.find? (.role .eq) = some ci
+  eqReflStored : ∃ ci, env.find? (.role .eqRefl) = some ci
+  decidableIsTrueStored : ∃ ci, env.find? (.role .decidableIsTrue) = some ci
+  charUtf8Size : ∀ d (c : Char),
+    Red env d
+      (.app (.const (.role .charUtf8Size) []) (.app (.const (.role .charOfNat) []) (.lit (.natVal c.toNat))))
+      (.lit (.natVal c.utf8Size))
+  strUtf8ByteSize : ∀ d (s : String),
+    Red env d (.app (.const (.role .stringUtf8ByteSize) []) (.lit (.strVal s)))
+      (.lit (.natVal s.utf8ByteSize))
+  strBack : ∀ d (s : String),
+    Red env d (.app (.const (.role .stringBack) []) (.lit (.strVal s)))
+      (.app (.const (.role .charOfNat) []) (.lit (.natVal (s.toList.getLastD 'A').toNat)))
+  strToByteArrayEmpty : ∀ d,
+    Red env d (.app (.const (.role .stringToByteArray) []) (.lit (.strVal "")))
+      (.const (.role .byteArrayEmpty) [])
+  strDecEqRefl : ∀ d (s : String),
+    Red env d (.app (.app (.const (.role .stringDecEq) []) (.lit (.strVal s))) (.lit (.strVal s)))
+      (.app (.app (.const (.role .decidableIsTrue) [])
+        (.app (.app (.app (.const (.role .eq) [.succ .zero]) (.const (.role .string) []))
+          (.lit (.strVal s))) (.lit (.strVal s))))
+        (.app (.app (.const (.role .eqRefl) [.succ .zero]) (.const (.role .string) []))
+          (.lit (.strVal s))))
+  strAppend : ∀ d (s₁ s₂ : String),
+    Red env d (.app (.app (.const (.role .stringAppend) []) (.lit (.strVal s₁))) (.lit (.strVal s₂)))
+      (.lit (.strVal (s₁ ++ s₂)))
+  bitVecOpStored : ∀ r : Ix.Kernel.Role, r ∈ [.bitVecToNat, .bitVecUlt] →
+    ∃ ci, env.find? (.role r) = some ci
+  bitVecOfNatStored : ∃ ci, env.find? (.role .bitVecOfNat) = some ci
+  bitVecToNat : ∀ d (w n : Nat), w ≤ 2 ^ 24 →
+    Red env d
+      (.app (.app (.const (.role .bitVecToNat) []) (.lit (.natVal w)))
+        (.app (.app (.const (.role .bitVecOfNat) []) (.lit (.natVal w))) (.lit (.natVal n))))
+      (.lit (.natVal (n % 2 ^ w)))
+  bitVecUlt : ∀ d (w n₁ n₂ : Nat), w ≤ 2 ^ 24 →
+    Red env d
+      (.app (.app (.app (.const (.role .bitVecUlt) []) (.lit (.natVal w)))
+        (.app (.app (.const (.role .bitVecOfNat) []) (.lit (.natVal w))) (.lit (.natVal n₁))))
+        (.app (.app (.const (.role .bitVecOfNat) []) (.lit (.natVal w))) (.lit (.natVal n₂))))
+      (.const (if n₁ % 2 ^ w < n₂ % 2 ^ w then Ix.Kernel.boolTrueName else Ix.Kernel.boolFalseName) [])
+
+theorem PrimEqnEnv.weaken {env env' : Ix.Kernel.Env .anon} (h : PrimEqnEnv env)
+    (hext : Ix.Kernel.EnvExt env env') : PrimEqnEnv env' where
+  intOfNatStored := let ⟨ci, hci⟩ := h.intOfNatStored; ⟨ci, hext.find hci⟩
+  intNegSuccStored := let ⟨ci, hci⟩ := h.intNegSuccStored; ⟨ci, hext.find hci⟩
+  intOpStored := fun r hr => let ⟨ci, hci⟩ := h.intOpStored r hr; ⟨ci, hext.find hci⟩
+  intNeg := fun d x => Ix.Kernel.Rules.Red.weaken hext (h.intNeg d x)
+  intNatAbs := fun d x => Ix.Kernel.Rules.Red.weaken hext (h.intNatAbs d x)
+  intAdd := fun d x y => Ix.Kernel.Rules.Red.weaken hext (h.intAdd d x y)
+  intSub := fun d x y => Ix.Kernel.Rules.Red.weaken hext (h.intSub d x y)
+  intMul := fun d x y => Ix.Kernel.Rules.Red.weaken hext (h.intMul d x y)
+  intEdiv := fun d x y => Ix.Kernel.Rules.Red.weaken hext (h.intEdiv d x y)
+  intEmod := fun d x y => Ix.Kernel.Rules.Red.weaken hext (h.intEmod d x y)
+  intPow := fun d x n hn => Ix.Kernel.Rules.Red.weaken hext (h.intPow d x n hn)
+  intBmod := fun d x m => Ix.Kernel.Rules.Red.weaken hext (h.intBmod d x m)
+  intBdiv := fun d x m => Ix.Kernel.Rules.Red.weaken hext (h.intBdiv d x m)
+  strOpStored := fun r hr => let ⟨ci, hci⟩ := h.strOpStored r hr; ⟨ci, hext.find hci⟩
+  charOfNatStored := let ⟨ci, hci⟩ := h.charOfNatStored; ⟨ci, hext.find hci⟩
+  byteArrayEmptyStored := let ⟨ci, hci⟩ := h.byteArrayEmptyStored; ⟨ci, hext.find hci⟩
+  stringStored := let ⟨ci, hci⟩ := h.stringStored; ⟨ci, hext.find hci⟩
+  eqStored := let ⟨ci, hci⟩ := h.eqStored; ⟨ci, hext.find hci⟩
+  eqReflStored := let ⟨ci, hci⟩ := h.eqReflStored; ⟨ci, hext.find hci⟩
+  decidableIsTrueStored := let ⟨ci, hci⟩ := h.decidableIsTrueStored; ⟨ci, hext.find hci⟩
+  charUtf8Size := fun d c => Ix.Kernel.Rules.Red.weaken hext (h.charUtf8Size d c)
+  strUtf8ByteSize := fun d s => Ix.Kernel.Rules.Red.weaken hext (h.strUtf8ByteSize d s)
+  strBack := fun d s => Ix.Kernel.Rules.Red.weaken hext (h.strBack d s)
+  strToByteArrayEmpty := fun d => Ix.Kernel.Rules.Red.weaken hext (h.strToByteArrayEmpty d)
+  strDecEqRefl := fun d s => Ix.Kernel.Rules.Red.weaken hext (h.strDecEqRefl d s)
+  strAppend := fun d s₁ s₂ => Ix.Kernel.Rules.Red.weaken hext (h.strAppend d s₁ s₂)
+  bitVecOpStored := fun r hr => let ⟨ci, hci⟩ := h.bitVecOpStored r hr; ⟨ci, hext.find hci⟩
+  bitVecOfNatStored := let ⟨ci, hci⟩ := h.bitVecOfNatStored; ⟨ci, hext.find hci⟩
+  bitVecToNat := fun d w n hw => Ix.Kernel.Rules.Red.weaken hext (h.bitVecToNat d w n hw)
+  bitVecUlt := fun d w n₁ n₂ hw => Ix.Kernel.Rules.Red.weaken hext (h.bitVecUlt d w n₁ n₂ hw)
+
 /-- **The environment invariant the core reads** (module docstring's table, with the layer that
 establishes each field). -/
 structure EnvFacts (c : Ctx) : Prop where
@@ -487,13 +613,17 @@ structure EnvFacts (c : Ctx) : Prop where
   /-- (L5, L6) The `String` literal support, when `String` is in force (the default table and an
   admitted one bind its literal support with it, `LiteralSupportBound`, in earlier groups). -/
   strLit : c.inForce .string → Ix.Kernel.strLitSupported c.env = true
-  /-- (L5, L6) Every binary `Nat` operation in force is a stored definition (`natOpStored`). -/
-  natOps : ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.Rules.natBinOpNames →
+  /-- (L5, L6) Every native `Nat` operation (`Nat.pred` and binary ops) in force is a stored
+  definition (`natOpStored`). -/
+  natOps : ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames →
     Ix.Kernel.natOpStored c.env (.role r) = true
   /-- (L5, L6) `Nat.add`, in force, has the shape the offset rules read (`natAddTyOk`). -/
   natAdd : c.inForce .natAdd → Ix.Kernel.Rules.natAddTyOk (c.env.find? Ix.Kernel.natAddName) = true
   /-- (L5, L6) `Red.eqProof`: `Eq` is stored when it is in force. -/
   eqStored : c.inForce .eq → ∃ ci, c.env.find? Ix.Kernel.eqName = some ci
+  /-- (L6) Certified primitive reductions for equation-specified roles (`g ≥ 46`), once any
+  equation-specified role is in force. -/
+  primEqn : (∃ r, 46 ≤ Ix.SpecDigest.groupOf r ∧ c.inForce r) → PrimEqnEnv c.env
   /-- (L5, L7) `Red.iota`'s rule lookup: the rules of a stored recursor have distinct constructor
   keys; each fires (`.plain` or `.nested`, never `.inert`) at a stored constructor with the rule's
   parameter count; and when the head of the major premise's domain is the key of an address whose

@@ -704,6 +704,7 @@ theorem coreCompanions_of_noRec {c : Ctx} (h : CoreCompanions c)
       eqStored := fun h1 =>
         let ⟨ci', hci'⟩ := h.eqStored h1
         ⟨ci', hext.find hci'⟩
+      primEqn := fun h1 => (h.primEqn h1).weaken hext
       quotBasis := fun h1 ci' hm => hext.find (h.quotBasis h1 ci' hm)
       recMajorRecord := fun k cv mI rP rls p us hf hne hdom =>
         h.recMajorRecord k cv mI rP rls p us (hold hf) hne hdom

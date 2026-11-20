@@ -507,6 +507,22 @@ theorem u32_compact_wv {a : UInt32} {r : SourceValue F} {h h' : Heap F} {cs : Li
     (b2 := (Blake3.Pure.wordBytes a)[2]) (b3 := (Blake3.Pure.wordBytes a)[3]) ev
   rwa [wv_bytes] at this
 
+/-- **`UInt32::from_field` unpacks a field element below `2^32` into its four little-endian bytes.** -/
+theorem u32_fromField {x : F} {r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsFn W "UInt32::from_field" [.field x] h r h' cs) :
+    ∃ c0 c1 c2 c3 : UInt8, r = w4 c0 c1 c2 c3 ∧ h' = h ∧
+      ZMod.val x = (wordOfBytes c0 c1 c2 c3).toNat ∧ ZMod.val x < 4294967296 := by
+  obtain ⟨k10, v14, m15, cs25, v47, m50, cs58, -, ev27, ev60, heq76, rfl, rfl, -⟩ :=
+    «UInt32::from_field».obs ev
+  obtain ⟨c0, c1, c2, c3, rfl, rfl⟩ := u32_fromFields ev27
+  obtain ⟨rfl, rfl⟩ := u32_compact ev60
+  have hlt : (wordOfBytes c0 c1 c2 c3).toNat < 4294967296 := (wordOfBytes c0 c1 c2 c3).toNat_lt
+  have hx : ((wordOfBytes c0 c1 c2 c3).toNat : F) = x := Value.field.inj heq76
+  have hval : ZMod.val x = (wordOfBytes c0 c1 c2 c3).toNat := by
+    rw [← hx]
+    exact ZMod.val_natCast_of_lt (lt_trans hlt (by decide))
+  exact ⟨c0, c1, c2, c3, rfl, rfl, hval, hval ▸ hlt⟩
+
 theorem word_lt (w : UInt32) : w.toNat < Aiur.Library.U32.base := by
   have := w.toNat_lt
   simp only [Aiur.Library.U32.base]

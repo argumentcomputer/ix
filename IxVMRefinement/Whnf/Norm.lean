@@ -75,7 +75,7 @@ theorem whnf_nd_with_spine_step (c : ScopedCtx) {args : List (SourceValue F)} {h
   intro rc hd sp types hargs good hrc d Γ htypes H As hH hAs
   subst hargs
   rcases Obs.«KernelWhnf::whnf_nd_with_spine».obs ev with
-    ⟨x_f, x_a, m31, cs42, x_ih, x_is, cs72, v77, m94, cs102, ld12, ev44, ev104, ev74, hc128⟩ |
+    ⟨x_f, x_a, m31, cs42, x_ih, x_is, v_comb, m_comb, cs_seg, cs72, ld12, ev44, sg, ev74, hc128⟩ |
     ⟨x_ty, x_body, w137, m154, cs165, x_reduct, x_rest, cs226, ld12, ev167, ev228, hc261⟩ |
     ⟨x_ty, x_body, w137, v153, m154, cs165, cs268, ld12, ev167, ev270, hc287⟩ |
     ⟨x_addr, x_lvls, cs308, ld12, ev310, hc359⟩ |
@@ -85,20 +85,27 @@ theorem whnf_nd_with_spine_step (c : ScopedCtx) {args : List (SourceValue F)} {h
   · -- an application: collect its spine and go on with the appended spine
     subst hc128
     have e0 := ObsFn.heap_extends ev44
-    have e1 := ObsFn.heap_extends ev104
     obtain ⟨ih', is', H', As', he, hH', hAs', rfl⟩ :=
       ih.get (.subst .collect_spine) (by lt_calls) ev44 hd rfl
         (good.sub fun x hx => by simp [hx]) d Γ 0 H hH
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at he
     obtain ⟨rfl, rfl⟩ := he
-    have hcat := Lib.Lists.concat_spec (t := .ptr (.named "KernelTypes::KExprNode" []))
-      (R := TmE c.κ d Γ) tmE_heapMono₂ (xs := As') (ys := As)
-      (by rw [Obs.Names.«Lists::concat<&KernelTypes::KExprNode>».symbol]; exact ev104)
-      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact hAs')
-      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono e0 hAs)
-    rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hcat
+    have ⟨e1, hcat⟩ : Heap.Extends m31 m_comb ∧ c.tml d Γ m_comb (As' ++ As) v_comb := by
+      cases sg with
+      | Nil ld he_r he_h hc_s =>
+        obtain rfl := RepList.nil_of_load (tml_mono e0 hAs) ld
+        subst he_r he_h
+        exact ⟨Heap.Extends.refl _, by simpa using hAs'⟩
+      | other _ _ _ _ ev104 _ =>
+        have hcat := Lib.Lists.concat_spec (t := .ptr (.named "KernelTypes::KExprNode" []))
+          (R := TmE c.κ d Γ) tmE_heapMono₂ (xs := As') (ys := As)
+          (by rw [Obs.Names.«Lists::concat<&KernelTypes::KExprNode>».symbol]; exact ev104)
+          (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact hAs')
+          (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono e0 hAs)
+        rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hcat
+        exact ⟨ObsFn.heap_extends ev104, hcat⟩
     have ext := e0.trans e1
-    obtain ⟨E', hE', hred⟩ := ih.get (.whnf .whnf_nd_with_spine) (by lt_calls) ev74 rc _ v77 types
+    obtain ⟨E', hE', hred⟩ := ih.get (.whnf .whnf_nd_with_spine) (by lt_calls) ev74 rc _ v_comb types
       rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ (types_mono ext htypes)
       H' (As' ++ As) (Tm.mono e1 hH') hcat
     refine ⟨E', hE', ?_⟩
@@ -197,7 +204,7 @@ theorem whnf_struct_core_spine_step (c : ScopedCtx) {args : List (SourceValue F)
   intro rc hd sp types hargs good hrc d Γ htypes H As hH hAs
   subst hargs
   rcases Obs.«KernelWhnf::whnf_struct_core_spine».obs ev with
-    ⟨w20, w21, m33, cs44, x_h, x_s, cs74, v79, m96, cs104, ld12, ev46, ev106, ev76, hc130⟩ |
+    ⟨w20, w21, m33, cs44, x_h, x_s, v_comb, m_comb, cs_seg, cs74, ld12, ev46, sg, ev76, hc130⟩ |
     ⟨w139, w140, w141, m158, cs169, x_reduct, x_rest, cs230, ld12, ev171, ev232, hc265⟩ |
     ⟨w139, w140, w141, v157, m158, cs169, cs272, ld12, ev171, ev274, hc291⟩ |
     ⟨w299, x_val, x_body, cs318, v322, m333, cs341, ld12, ev343, ev320, hc381⟩ |
@@ -207,20 +214,27 @@ theorem whnf_struct_core_spine_step (c : ScopedCtx) {args : List (SourceValue F)
   · -- an application: collect its spine and go on with the appended spine
     subst hc130
     have e0 := ObsFn.heap_extends ev46
-    have e1 := ObsFn.heap_extends ev106
     obtain ⟨ih', is', H', As', he, hH', hAs', rfl⟩ :=
       ih.get (.subst .collect_spine) (by lt_calls) ev46 hd rfl
         (good.sub fun x hx => by simp [hx]) d Γ 0 H hH
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at he
     obtain ⟨rfl, rfl⟩ := he
-    have hcat := Lib.Lists.concat_spec (t := .ptr (.named "KernelTypes::KExprNode" []))
-      (R := TmE c.κ d Γ) tmE_heapMono₂ (xs := As') (ys := As)
-      (by rw [Obs.Names.«Lists::concat<&KernelTypes::KExprNode>».symbol]; exact ev106)
-      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact hAs')
-      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono e0 hAs)
-    rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hcat
+    have ⟨e1, hcat⟩ : Heap.Extends m33 m_comb ∧ c.tml d Γ m_comb (As' ++ As) v_comb := by
+      cases sg with
+      | Nil ld he_r he_h hc_s =>
+        obtain rfl := RepList.nil_of_load (tml_mono e0 hAs) ld
+        subst he_r he_h
+        exact ⟨Heap.Extends.refl _, by simpa using hAs'⟩
+      | other _ _ _ _ ev106 _ =>
+        have hcat := Lib.Lists.concat_spec (t := .ptr (.named "KernelTypes::KExprNode" []))
+          (R := TmE c.κ d Γ) tmE_heapMono₂ (xs := As') (ys := As)
+          (by rw [Obs.Names.«Lists::concat<&KernelTypes::KExprNode>».symbol]; exact ev106)
+          (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact hAs')
+          (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact tml_mono e0 hAs)
+        rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hcat
+        exact ⟨ObsFn.heap_extends ev106, hcat⟩
     have ext := e0.trans e1
-    obtain ⟨E', hE', hred⟩ := ih.get (.whnf .whnf_struct_core_spine) (by lt_calls) ev76 rc _ v79
+    obtain ⟨E', hE', hred⟩ := ih.get (.whnf .whnf_struct_core_spine) (by lt_calls) ev76 rc _ v_comb
       types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ
       (types_mono ext htypes) H' (As' ++ As) (Tm.mono e1 hH') hcat
     refine ⟨E', hE', ?_⟩
@@ -314,7 +328,7 @@ theorem proj_head_step (c : ScopedCtx) (norm cont : Specs.Whnf.Fn)
           (m40 : Heap F) (cs50 : List (Call F)) (m78 : Heap F) (cs89 : List (Call F))
           (x_field : SourceValue F) (cs153 : List (Call F)),
         ObsFn W (Fn.whnf norm).name [rc, inner, types] h v1 m2 cs12 ∧
-        ObsFn W "KernelNatPrim::str_lit_to_ctor_app_or_self" [rc, v1, types] m2 v39 m40 cs50 ∧
+        ObsFn W "KernelNatPrim::str_lit_to_ctor_app_or_self" [rc, v1] m2 v39 m40 cs50 ∧
         ObsFn W "KernelWhnf::red_proj" [rc, sa, .field i, v39, types] m40
           (.tuple [(.field 1), x_field]) m78 cs89 ∧
         ObsFn W (Fn.whnf cont).name [rc, x_field, sp, types] m78 r h' cs153 ∧
@@ -325,7 +339,7 @@ theorem proj_head_step (c : ScopedCtx) (norm cont : Specs.Whnf.Fn)
           (m40 : Heap F) (cs50 : List (Call F)) (v77 : SourceValue F) (m78 : Heap F)
           (cs89 : List (Call F)) (cs234 : List (Call F)),
         ObsFn W (Fn.whnf norm).name [rc, inner, types] h v1 m2 cs12 ∧
-        ObsFn W "KernelNatPrim::str_lit_to_ctor_app_or_self" [rc, v1, types] m2 v39 m40 cs50 ∧
+        ObsFn W "KernelNatPrim::str_lit_to_ctor_app_or_self" [rc, v1] m2 v39 m40 cs50 ∧
         ObsFn W "KernelWhnf::red_proj" [rc, sa, .field i, v39, types] m40 v77 m78 cs89 ∧
         ObsFn W "KernelWhnf::apply_spine"
           [(.ptr (.enum "KernelTypes::KExprNode") (m78).length), sp]
@@ -350,8 +364,8 @@ theorem proj_head_step (c : ScopedCtx) (norm cont : Specs.Whnf.Fn)
       rwa [show (Fn.whnf norm).spec = Specs.Whnf.NormSpec from hnorm] at this
     obtain ⟨S1, hS1, hred1⟩ := hn rc inner types rfl (good.sub s1) hrc d Γ htypes S hS
     have e0 := ObsFn.heap_extends ev14
-    obtain ⟨S2, hS2, hred2⟩ := ih.get (.nat .str_lit_to_ctor_app_or_self) l2 ev52 rc v1 types rfl
-      (good.sub s2) (RCRep.mono e0 hrc) d Γ (types_mono e0 htypes) S1 hS1
+    obtain ⟨S2, hS2, hred2⟩ := ih.get (.nat .str_lit_to_ctor_app_or_self) l2 ev52 rc v1 rfl
+      (good.sub s2) (RCRep.mono e0 hrc) d Γ S1 hS1
     have ext := e0.trans (ObsFn.heap_extends ev52)
     obtain ⟨E, hE, hredp⟩ := ih.get (.whnf .red_proj) l3 ev91 rc sa (.field i) v39 types rfl
       (good.sub s3) (RCRep.mono ext hrc) d Γ (types_mono ext htypes) s i S2

@@ -149,7 +149,8 @@ def OverUnitStep (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (t : Ix.
       (∀ ci ∈ new, ci.name ∉ RoleOps.opNames) ∧
       (∀ x, ConstAddrOf A c x →
         ∃ ci ∈ new, ∃ ci₀, ci.name = keyOf t x ∧ Reads t E₀ x ci₀ ∧ StoredAs ci ci₀) ∧
-      ∀ ci ∈ new, (∃ x, ConstAddrOf A c x ∧ ci.name = keyOf t x) ∨ ∃ k s, ci.name = .aux k s
+      (∀ ci ∈ new, (∃ x, ConstAddrOf A c x ∧ ci.name = keyOf t x) ∨ ∃ k s, ci.name = .aux k s) ∧
+      Ix.Kernel.EnvExt env ⟨new ++ env.consts⟩
 
 /-! ## The parts of a group's step -/
 
@@ -166,19 +167,24 @@ def ClosureStepOver (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (ρ :
       (∀ x b, R'.blobs.get? x = some b → R₁.blobs.get? x = some b) ∧
       (∀ a, (R'.consts.get? a).isSome = true → R₁.consts.get? a = none → RoleUnitAt t g a) ∧
       (∀ ci ∈ env.consts, ci ∈ env₁.consts) ∧
-      BndOver.{u} L t (· < g) R₁ env₁ ∧ GroupKept t g R₁ env₁
+      BndOver.{u} L t (· < g) R₁ env₁ ∧ GroupKept t g R₁ env₁ ∧
+      (∀ x c, recordOf R₁ x = some c → (∀ ms, c.info ≠ .muts ms) →
+        (env₁.find? (keyOf t x)).isSome = true)
 
 /-- **The stored shapes after the closure of a group with no role unit** (module docstring).
 Where no role of `g` is an operation or a standard axiom: from the admission of `g` by the run
 (with the validation of each role of `g` and `R' ⊆ ρ.E₀`), its reading clause, a store `R₁`
-within `R'` and an environment with the invariant below `g` and the group's roles stored as
-their records declare them, the stored shapes below `g + 1`. -/
+within `R'` and an environment with the invariant below `g`, the group's roles stored as
+their records declare them, and every non-block record of `R'` stored, the stored shapes
+below `g + 1`. -/
 def RoleFreeShapes (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (ρ : BRun)
     (t : Ix.Kernel.RoleTable) (g : Nat) : Prop :=
   (∀ r ∈ roleGroup g, ¬ (r ∈ RoleOps.opRoles ∨ r ∈ standardAxioms)) →
   ∀ (R R₁ R' : Ixon.Env) (env₁ : Ix.Kernel.Env .anon),
     Admits ρ t g R R' → AdmitsReads ρ t R R' → StoreLe R₁ R' →
     BndOver.{u} L t (· < g) R₁ env₁ → GroupKept t g R₁ env₁ →
+    (∀ x c, recordOf R' x = some c → (∀ ms, c.info ≠ .muts ms) →
+      (env₁.find? (keyOf t x)).isSome = true) →
       Shapes (· < g + 1) env₁
 
 /-- **The invariant on the groups up to `g`, before the raise past `g`**: the public shape and

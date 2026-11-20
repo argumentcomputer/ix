@@ -254,7 +254,11 @@ theorem groupStoresOfRun_of_remainingNC {calls : List (Call F)}
         unitsLast := groupStore_unitsLast hC hb hax hP hpin hws hg6 (hvalAll g) hw
           (walkStepsOrdered_all hC hvalAll hblock g)
           (payloadOpEarlier_all hpayOps g hg6)
-        evidenceRefs := groupStore_evidenceRefs hC hb hbr hax hP hws hg6 hw }
+        evidenceRefs := groupStore_evidenceRefs hC hb hbr hax hP hws hg6 hw
+        eqnsBound := groupStore_eqnsBound hC hb hg6 hw
+        eqnsProofs := groupStore_eqnsProofs hC hb hg6 hw
+        eqnsAnchors := groupStore_eqnsAnchors hC hb hg6 hw
+        walkedAnchors := groupStore_walkedAnchors hC hb hg6 hw }
   · exact
       { blobs := groupStore_reads_blobs (Nat.lt_succ_of_le hg6)
         reads := groupStore_reads hcheck hC hb hbr hax hP hws hg6 }

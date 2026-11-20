@@ -568,11 +568,13 @@ theorem red_forallE_inv {env : Ix.Kernel.Env .anon} {d : Nat}
     w = .forallE ty body mb :=
   Ix.Kernel.Rules.Red.rigid h rfl
 
-/-- `EnvFacts.natOps` when any in-force binary `Nat` operation is stored as `.defnInfo`. -/
+/-- `EnvFacts.natOps` when any in-force native `Nat` operation is stored as `.defnInfo`. -/
 theorem natOps_of_defn {c : Ctx}
-    (h : ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.Rules.natBinOpNames →
+    (h : ∀ r, c.inForce r →
+      (.role r : KKey) ∈ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames →
       ∃ cv v hint, c.env.find? (.role r) = some (.defnInfo cv v hint)) :
-    ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.Rules.natBinOpNames →
+    ∀ r, c.inForce r →
+      (.role r : KKey) ∈ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames →
       Ix.Kernel.natOpStored c.env (.role r) = true := by
   intro r hinf hmem
   obtain ⟨cv, v, hint, hf⟩ := h r hinf hmem
@@ -661,7 +663,7 @@ structure ThmSim (envA env : Ix.Kernel.Env .anon) : Prop where
     env.find? k = some ciA ∨
       ∃ cv value,
         ciA = .defnInfo cv value .opaque ∧
-        k ∉ Ix.Kernel.Rules.natBinOpNames ∧
+        k ∉ (Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames) ∧
         k.isProjFnShape = false ∧
         k ≠ Ix.Kernel.punitName ∧
         k ≠ Ix.Kernel.punitRecName ∧
@@ -689,7 +691,7 @@ structure ThmSimAt (envA env : Ix.Kernel.Env .anon) : Prop where
     env.find? k = some ciA ∨
       ∃ cv value,
         ciA = .defnInfo cv value .opaque ∧
-        k ∉ Ix.Kernel.Rules.natBinOpNames ∧
+        k ∉ (Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames) ∧
         k.isProjFnShape = false ∧
         k ≠ Ix.Kernel.punitName ∧
         k ≠ Ix.Kernel.punitRecName ∧
@@ -840,7 +842,7 @@ theorem strLitSupported_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA
     strTyPred_mono h (fun _ _ he => by simp [Ix.Kernel.charOfNatTyOk, he]) rfl h7⟩
 
 theorem natOpStored_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
-    {c : KKey} (hc : c ∈ Ix.Kernel.Rules.natBinOpNames)
+    {c : KKey} (hc : c ∈ (Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames))
     (hs : Ix.Kernel.natOpStored envA c = true) :
     Ix.Kernel.natOpStored env c = true := by
   unfold Ix.Kernel.natOpStored at hs ⊢
@@ -857,7 +859,7 @@ theorem natAddTyOk_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSimAt envA env)
   cases hf : envA.find? Ix.Kernel.natAddName with
   | none => rw [hf] at ht; cases ht
   | some ciA =>
-    have hmem : (Ix.Kernel.natAddName : KKey) ∈ Ix.Kernel.Rules.natBinOpNames := by
+    have hmem : (Ix.Kernel.natAddName : KKey) ∈ (Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames) := by
       simp [Ix.Kernel.Rules.natBinOpNames]
     rcases h.find_sim hf with hf' | ⟨_, _, _, hnot, -⟩
     · rw [hf']; rw [hf] at ht; exact ht
@@ -1052,12 +1054,18 @@ theorem red {envA env : Ix.Kernel.Env .anon} (hS : ThmSimAt envA env) :
     exact .eqProof hhead hfE' (infer hS hp) hwp hbp hlp
       (infer hS ha) (defEq hS hda) (infer hS hb) (defEq hS hdb)
       (infer hS hTT) (red hS hred) hv
+  | _, _, _, .defEqClosed hsp haf hab hbf hbb ha'f ha'b hb'f hb'b hia hra hib hrb hde =>
+    .defEqClosed hsp haf hab hbf hbb ha'f ha'b hb'f hb'b (infer hS hia) (red hS hra)
+      (infer hS hib) (red hS hrb) (defEq hS hde)
   | _, _, _, .natLit h => .natLit (hS.natLitSupported_mono h)
   | _, _, _, .natZeroLit h => .natZeroLit (hS.natLitSupported_mono h)
   | _, _, _, .strLit h => .strLit (hS.strLitSupported_mono h)
+  | _, _, _, .strLitFold h => .strLitFold (hS.strLitSupported_mono h)
   | _, _, _, .natSucc hsup hw hn => .natSucc (hS.natLitSupported_mono hsup) (red hS hw) hn
+  | _, _, _, .natPred hst hw hn =>
+    .natPred (hS.natOpStored_mono (List.mem_cons_self) hst) (red hS hw) hn
   | _, _, _, .natOp hc hst hwa hn₁ hwb hn₂ hr =>
-    .natOp hc (hS.natOpStored_mono hc hst) (red hS hwa) hn₁ (red hS hwb) hn₂ hr
+    .natOp hc (hS.natOpStored_mono (List.mem_cons_of_mem _ hc) hst) (red hS hwa) hn₁ (red hS hwb) hn₂ hr
   | _, _, _, .natAddSucc hs ht =>
     .natAddSucc (hS.natLitSupported_mono hs) (hS.natAddTyOk_mono ht)
   | _, _, _, .natAddZero hs ht hw hn =>
@@ -1165,6 +1173,19 @@ theorem defEq {envA env : Ix.Kernel.Env .anon} (hS : ThmSimAt envA env) :
       (hS.find_nonDefn hind (fun _ _ heq => nomatch heq)) heta hetaCtor hpos
       (by rw [hS.towerSlotsAll_eq hind]; exact htow) (infer hS hta) (red hS hwta)
       (certs hS hcerts) (infer hS htb) (defEq hS hd') (defEqList hS hfields)
+  | _, _, _, .eqProof (ci := ciA) hfE haf hab hbf hbb hpf hpb hp ha hda hb hdb hTT hred hv => by
+    have hfE' : ∃ ci, env.find? Ix.Kernel.eqName = some ci := by
+      rcases hS.find_sim hfE with hf' | ⟨cv, val, _, _, _, _, _, hf'⟩
+      · exact ⟨ciA, hf'⟩
+      · exact ⟨.thmInfo cv val, hf'⟩
+    obtain ⟨ci, hfE'⟩ := hfE'
+    exact .eqProof hfE' haf hab hbf hbb hpf hpb (infer hS hp)
+      (infer hS ha) (defEq hS hda) (infer hS hb) (defEq hS hdb)
+      (infer hS hTT) (red hS hred) hv
+  | _, _, _, .instClosed hlen haLv hbLv haf hab hbf hbb hde =>
+    .instClosed hlen haLv hbLv haf hab hbf hbb (defEq hS hde)
+  | _, _, _, .transClosed hbf hbb hb'f hb'b hib hpb hab hbc =>
+    .transClosed hbf hbb hb'f hb'b (infer hS hib) (piRed hS hpb) (defEq hS hab) (defEq hS hbc)
 
 /-- Transfer `Rules.Infer` from `envA` to `env` across `ThmSimAt`. -/
 theorem infer {envA env : Ix.Kernel.Env .anon} (hS : ThmSimAt envA env) :
@@ -1217,6 +1238,15 @@ theorem etaProjCerts {envA env : Ix.Kernel.Env .anon} (hS : ThmSimAt envA env) :
   | _, _, _, _, _, _, _, .cons hf hlps hstrip hcerts hrest =>
     .cons (hS.find_nonDefn hf (fun _ _ heq => nomatch heq)) hlps hstrip
       (certs hS hcerts) (etaProjCerts hS hrest)
+
+/-- Transfer `Rules.PiRed` from `envA` to `env` across `ThmSimAt`. -/
+theorem piRed {envA env : Ix.Kernel.Env .anon} (hS : ThmSimAt envA env) :
+    ∀ {d : Nat} {e e' : KExpr},
+      Ix.Kernel.Rules.PiRed envA d e e' → Ix.Kernel.Rules.PiRed env d e e'
+  | _, _, _, .ofRed hr => .ofRed (red hS hr)
+  | _, _, _, .app hf ha => .app (piRed hS hf) (piRed hS ha)
+  | _, _, _, .forallE hws hA hB => .forallE hws (piRed hS hA) (piRed hS hB)
+  | _, _, _, .lam hws hA hB => .lam hws (piRed hS hA) (piRed hS hB)
 
 end
 
@@ -1293,7 +1323,7 @@ theorem strLitSupported_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA e
   exact ThmSimAt.strLitSupported_mono h.toAt hs
 
 theorem natOpStored_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
-    {c : KKey} (hc : c ∈ Ix.Kernel.Rules.natBinOpNames)
+    {c : KKey} (hc : c ∈ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames)
     (hs : Ix.Kernel.natOpStored envA c = true) :
     Ix.Kernel.natOpStored env c = true := by
   exact ThmSimAt.natOpStored_mono h.toAt hc hs

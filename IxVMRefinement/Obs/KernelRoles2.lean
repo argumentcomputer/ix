@@ -572,6 +572,29 @@ inductive «KernelRoles::role_admission_checks».Path (x_r : SourceValue F) (h :
       (he_xidupilt : r = (.field 0))
       (he_indzhais : h' = m_leonmkbq)
       (hc_cjzknqzu : calls = ((⟨"KernelRoleSpec::role_spec_kind", [x_r], h⟩ : Call F) :: (cs13 ++ ((⟨"KernelRoles::anchor_walked", [x_r], m2⟩ : Call F) :: cs_cqzqijuq))))
+  | n1_n1_n63
+      (m2 : Heap F) (cs13 : List (Call F)) (m_leonmkbq : Heap F) (cs_cqzqijuq : List (Call F))
+      (ev15 : ObsFn W "KernelRoleSpec::role_spec_kind" [x_r] h (.field 1) m2 cs13)
+      (ev_psnyrwee : ObsFn W "KernelRoles::anchor_walked" [x_r] m2 (.field 1) m_leonmkbq cs_cqzqijuq)
+      (hne_fljbtzga : (x_r : SourceValue F) ≠ (.field 29))
+      (hne_vgqyttvl : (x_r : SourceValue F) ≠ (.field 30))
+      (hne_bmtzwnqi : (x_r : SourceValue F) ≠ (.field 31))
+      (hv_sheypcdf : x_r = (.field 63))
+      (he_wcwlxvhp : r = (.field 0))
+      (he_zgfqwczs : h' = m_leonmkbq)
+      (hc_jvwgrjmf : calls = ((⟨"KernelRoleSpec::role_spec_kind", [x_r], h⟩ : Call F) :: (cs13 ++ ((⟨"KernelRoles::anchor_walked", [x_r], m2⟩ : Call F) :: cs_cqzqijuq))))
+  | n1_n1_n64
+      (m2 : Heap F) (cs13 : List (Call F)) (m_leonmkbq : Heap F) (cs_cqzqijuq : List (Call F))
+      (ev15 : ObsFn W "KernelRoleSpec::role_spec_kind" [x_r] h (.field 1) m2 cs13)
+      (ev_psnyrwee : ObsFn W "KernelRoles::anchor_walked" [x_r] m2 (.field 1) m_leonmkbq cs_cqzqijuq)
+      (hne_fljbtzga : (x_r : SourceValue F) ≠ (.field 29))
+      (hne_vgqyttvl : (x_r : SourceValue F) ≠ (.field 30))
+      (hne_bmtzwnqi : (x_r : SourceValue F) ≠ (.field 31))
+      (hne_wbdmcvtd : (x_r : SourceValue F) ≠ (.field 63))
+      (hv_aoevhukj : x_r = (.field 64))
+      (he_xgoanxyc : r = (.field 0))
+      (he_imkoxsjt : h' = m_leonmkbq)
+      (hc_slhibwzg : calls = ((⟨"KernelRoleSpec::role_spec_kind", [x_r], h⟩ : Call F) :: (cs13 ++ ((⟨"KernelRoles::anchor_walked", [x_r], m2⟩ : Call F) :: cs_cqzqijuq))))
   | n1_n1_other
       (m2 : Heap F) (cs13 : List (Call F)) (m_leonmkbq : Heap F) (cs_cqzqijuq : List (Call F))
       (ev15 : ObsFn W "KernelRoleSpec::role_spec_kind" [x_r] h (.field 1) m2 cs13)
@@ -579,6 +602,8 @@ inductive «KernelRoles::role_admission_checks».Path (x_r : SourceValue F) (h :
       (hne_fljbtzga : (x_r : SourceValue F) ≠ (.field 29))
       (hne_vgqyttvl : (x_r : SourceValue F) ≠ (.field 30))
       (hne_bmtzwnqi : (x_r : SourceValue F) ≠ (.field 31))
+      (hne_wbdmcvtd : (x_r : SourceValue F) ≠ (.field 63))
+      (hne_lgrmvijy : (x_r : SourceValue F) ≠ (.field 64))
       (he_ekhbzpqp : r = (.field 1))
       (he_zhglxwnx : h' = m_leonmkbq)
       (hc_aynotxpb : calls = ((⟨"KernelRoleSpec::role_spec_kind", [x_r], h⟩ : Call F) :: (cs13 ++ ((⟨"KernelRoles::anchor_walked", [x_r], m2⟩ : Call F) :: cs_cqzqijuq))))
@@ -697,34 +722,44 @@ theorem «KernelRoles::role_admission_checks».obs {x_r : SourceValue F} {h h' :
               exact «KernelRoles::role_admission_checks».Path.n1_n1_n31 _ _ _ _ ev15 ev_psnyrwee hne_fljbtzga hne_vgqyttvl hv_jvyfexwb rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
             · have hne_bmtzwnqi := MatchesConst.none_inv (MatchesConst.literal 31) nm140
               rcases selectArm_cons_inv sel141 with ⟨mt147, rfl⟩ | ⟨nm148, sel149⟩
-              · obtain rfl := matchPattern_wildcard_inv mt147
+              · obtain ⟨hv_sheypcdf, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 63) mt147
                 obtain ⟨rfl, rfl, rfl⟩ := d121.literal_inv
-                exact «KernelRoles::role_admission_checks».Path.n1_n1_other _ _ _ _ ev15 ev_psnyrwee hne_fljbtzga hne_vgqyttvl hne_bmtzwnqi rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-              · exact (matchPattern_wildcard_none nm148).elim
+                exact «KernelRoles::role_admission_checks».Path.n1_n1_n63 _ _ _ _ ev15 ev_psnyrwee hne_fljbtzga hne_vgqyttvl hne_bmtzwnqi hv_sheypcdf rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+              · have hne_wbdmcvtd := MatchesConst.none_inv (MatchesConst.literal 63) nm148
+                rcases selectArm_cons_inv sel149 with ⟨mt155, rfl⟩ | ⟨nm156, sel157⟩
+                · obtain ⟨hv_aoevhukj, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 64) mt155
+                  obtain ⟨rfl, rfl, rfl⟩ := d121.literal_inv
+                  exact «KernelRoles::role_admission_checks».Path.n1_n1_n64 _ _ _ _ ev15 ev_psnyrwee hne_fljbtzga hne_vgqyttvl hne_bmtzwnqi hne_wbdmcvtd hv_aoevhukj rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                · have hne_lgrmvijy := MatchesConst.none_inv (MatchesConst.literal 64) nm156
+                  rcases selectArm_cons_inv sel157 with ⟨mt163, rfl⟩ | ⟨nm164, sel165⟩
+                  · obtain rfl := matchPattern_wildcard_inv mt163
+                    obtain ⟨rfl, rfl, rfl⟩ := d121.literal_inv
+                    exact «KernelRoles::role_admission_checks».Path.n1_n1_other _ _ _ _ ev15 ev_psnyrwee hne_fljbtzga hne_vgqyttvl hne_bmtzwnqi hne_wbdmcvtd hne_lgrmvijy rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                  · exact (matchPattern_wildcard_none nm164).elim
       · have hne_qnsahksn := MatchesConst.none_inv (MatchesConst.literal 1) nm110
-        rcases selectArm_cons_inv sel111 with ⟨mt154, rfl⟩ | ⟨nm155, sel156⟩
-        · obtain rfl := matchPattern_wildcard_inv mt154
+        rcases selectArm_cons_inv sel111 with ⟨mt170, rfl⟩ | ⟨nm171, sel172⟩
+        · obtain rfl := matchPattern_wildcard_inv mt170
           obtain ⟨rfl, rfl, rfl⟩ := d94.literal_inv
           exact «KernelRoles::role_admission_checks».Path.n1_other _ _ _ _ _ ev15 ev_psnyrwee hne_qnsahksn rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-        · exact (matchPattern_wildcard_none nm155).elim
+        · exact (matchPattern_wildcard_none nm171).elim
     · have hne_rehascgg := MatchesConst.none_inv (MatchesConst.literal 1) nm83
-      rcases selectArm_cons_inv sel84 with ⟨mt161, rfl⟩ | ⟨nm162, sel163⟩
-      · obtain ⟨hv164, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 2) mt161
-        subst hv164
+      rcases selectArm_cons_inv sel84 with ⟨mt177, rfl⟩ | ⟨nm178, sel179⟩
+      · obtain ⟨hv180, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 2) mt177
+        subst hv180
         obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
         exact «KernelRoles::role_admission_checks».Path.n2 _ _ ev15 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-      · have hne89 := MatchesConst.none_inv (MatchesConst.literal 2) nm162
-        rcases selectArm_cons_inv sel163 with ⟨mt169, rfl⟩ | ⟨nm170, sel171⟩
-        · obtain ⟨hv172, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 5) mt169
-          subst hv172
+      · have hne89 := MatchesConst.none_inv (MatchesConst.literal 2) nm178
+        rcases selectArm_cons_inv sel179 with ⟨mt185, rfl⟩ | ⟨nm186, sel187⟩
+        · obtain ⟨hv188, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 5) mt185
+          subst hv188
           obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
           exact «KernelRoles::role_admission_checks».Path.n5 _ _ ev15 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-        · have hne97 := MatchesConst.none_inv (MatchesConst.literal 5) nm170
-          rcases selectArm_cons_inv sel171 with ⟨mt177, rfl⟩ | ⟨nm178, sel179⟩
-          · obtain rfl := matchPattern_wildcard_inv mt177
+        · have hne97 := MatchesConst.none_inv (MatchesConst.literal 5) nm186
+          rcases selectArm_cons_inv sel187 with ⟨mt193, rfl⟩ | ⟨nm194, sel195⟩
+          · obtain rfl := matchPattern_wildcard_inv mt193
             obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
             exact «KernelRoles::role_admission_checks».Path.other _ _ _ ev15 hne81 hne_rehascgg hne89 hne97 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-          · exact (matchPattern_wildcard_none nm178).elim
+          · exact (matchPattern_wildcard_none nm194).elim
 
 /-- The evaluation paths of `KernelRoles::addr_quot_bound`: one constructor per combination of selected arms. -/
 inductive «KernelRoles::addr_quot_bound».Path (x_rc x_a : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)

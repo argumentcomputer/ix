@@ -59,6 +59,10 @@ def RedS (M : Model V env) (φ : LevelParam → Nat) (d : Nat) (e e' : Expr md) 
   Frame d e → Frame d e' ∧ LeavesSub e' e ∧
     ∀ σ, Ctx M φ σ e → ∀ v, Den M φ σ e v → Gr M φ σ e → Den M φ σ e' v ∧ Gr M φ σ e'
 
+/-- **`PiRed`'s motive**: preserves denotation and grading (including under `∀`). -/
+def PiRedS (M : Model V env) (φ : LevelParam → Nat) (d : Nat) (e e' : Expr md) : Prop :=
+  Frame d e → ∀ σ, Ctx M φ σ e → ∀ v, Den M φ σ e v → Gr M φ σ e → Den M φ σ e' v ∧ Gr M φ σ e'
+
 /-- **`DefEq`'s motive.** -/
 def DefEqS (M : Model V env) (φ : LevelParam → Nat) (d : Nat) (a b : Expr md) : Prop :=
   Frame d a → Frame d b → ∀ σ, Ctx M φ σ a → Ctx M φ σ b →

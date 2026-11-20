@@ -671,7 +671,8 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
     exact ⟨cv, mI, rP, rules₀, ⟨cv.name, cv.levelParams, tyA⟩, rules', hku, hRR₁, hf_k, rfl, rfl,
       hSA', hTML, hns, hnp, hmot,
       ⟨Bm, im, cbm, msm, indm, D, lvls, himu, hPm₁, hcbm₁, hmsm, him, hpi, hfn, hni⟩, hconcl⟩
-  refine ⟨new ++ as, Reg, hndNA, ?_, ?_, ?_, ?_, ?_, hstoredRecs, ?_⟩
+  refine ⟨new ++ as, Reg, hndNA, ?_, ?_, ?_, ?_, ?_, hstoredRecs, ?_,
+    hg.envExt.trans (Ix.Kernel.Semantics.declIndRenRunJ_envExt hd)⟩
   · -- fresh in the prefix
     intro ci hci
     rcases List.mem_append.mp hci with hci | hci

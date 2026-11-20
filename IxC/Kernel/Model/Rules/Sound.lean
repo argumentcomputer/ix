@@ -65,11 +65,17 @@ theorem red_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat} :
     Red.eqProof_sound (hin φ) hfE hp hwp hbp hlp (infer_sound hin hp) (infer_sound hin ha)
       (defeq_sound hin hda) (infer_sound hin hb) (defeq_sound hin hdb) (infer_sound hin hT)
       (red_sound hin hred) hv
+  | _, _, _, .defEqClosed _ haf hab hbf hbb ha'f ha'b hb'f hb'b hia hra hib hrb hde =>
+    Red.defEqClosed_sound haf hab hbf hbb ha'f ha'b hb'f hb'b hia hib (infer_sound hin hia)
+      (red_sound hin hra) (infer_sound hin hib) (red_sound hin hrb) (defeq_sound hin hde)
   | _, _, _, .natLit h => Red.natLit_sound h
   | _, _, _, .natZeroLit h => Red.natZeroLit_sound h
   | _, _, _, .strLit h => Red.strLit_sound h
+  | _, _, _, .strLitFold h => Red.strLitFold_sound h
   | _, _, _, .natSucc hsup hw hn =>
     Red.natSucc_sound (hin φ) hsup (red_sound hin hw) hn
+  | _, _, _, .natPred hst hw hn =>
+    Red.natPred_sound (hin φ) hst (red_sound hin hw) hn
   | _, _, _, .natOp hc hst hwa hn₁ hwb hn₂ hr =>
     Red.natOp_sound (hin φ) hc hst (red_sound hin hwa) hn₁ (red_sound hin hwb) hn₂ hr
   | _, _, _, .natAddSucc hs ht => Red.natAddSucc_sound (hin φ) hs ht
@@ -154,6 +160,15 @@ theorem defeq_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat}
     DefEq.structEtaTy_sound (hin φ) hhead hctor hlen hind heta hetaCtor hpos htow
       (infer_sound hin hta) (red_sound hin hwta) (certs_sound hin hcerts) (infer_sound hin htb)
       (defeq_sound hin hd) (defEqList_sound hin hfields)
+  | _, _, _, .eqProof hfE haf hab hbf hbb hpf hpb hp ha hda hb hdb hT hred hv =>
+    DefEq.eqProof_sound (hin φ) hfE haf hab hbf hbb hpf hpb hp (infer_sound hin hp)
+      (infer_sound hin ha) (defeq_sound hin hda) (infer_sound hin hb) (defeq_sound hin hdb)
+      (infer_sound hin hT) (red_sound hin hred) hv
+  | _, _, _, .instClosed (ks := ks) (us := us) _ _ _ haf hab hbf hbb hde =>
+    DefEq.instClosed_sound haf hab hbf hbb (defeq_sound hin (φ := Level.substFn φ ks us) hde)
+  | _, _, _, .transClosed hbf hbb hb'f hb'b hib hpb hab hbc =>
+    DefEq.transClosed_sound hbf hbb hb'f hb'b hib (infer_sound hin hib)
+      (piRed_sound hin hpb) (defeq_sound hin hab) (defeq_sound hin hbc)
 
 theorem infer_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat} :
     ∀ {g : Grade} {d : Nat} {e t : Expr md}, Infer env g d e t → InferSem m φ g d e t
@@ -206,6 +221,13 @@ theorem etaProjCerts_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam �
   | _, _, _, _, _, _, _, .cons hf hlps hstrip hcerts hrest =>
     EtaProjCerts.cons_sound hf hlps hstrip (certs_sound hin hcerts)
       (etaProjCerts_sound hin hrest)
+
+theorem piRed_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat} :
+    ∀ {d : Nat} {e e' : Expr md}, PiRed env d e e' → PiRedSem m φ d e e'
+  | _, _, _, .ofRed hr => PiRed.ofRed_sound (red_sound hin hr)
+  | _, _, _, .app hf ha => PiRed.app_sound (piRed_sound hin hf) (piRed_sound hin ha)
+  | _, _, _, .forallE _ hA hB => PiRed.forallE_sound (piRed_sound hin hA) (piRed_sound hin hB)
+  | _, _, _, .lam _ hA hB => PiRed.lam_sound (piRed_sound hin hA) (piRed_sound hin hB)
 
 end
 

@@ -329,7 +329,8 @@ private theorem admission_of_covered (ro : Ix.Kernel.Role) :
       (((RoleVal.roleSpecKindNat ro : Nat) : F) = 0 ∧
         (Claim.memberKindF ro = 0 ∨ Claim.memberKindF ro = 1 ∨ Claim.memberKindF ro = 2)) ∨
       (((RoleVal.roleSpecKindNat ro : Nat) : F) = 1 ∧ Claim.anchorWalkedF ro = 1 ∧
-        Core.roleNum ro ≠ 29 ∧ Core.roleNum ro ≠ 30 ∧ Core.roleNum ro ≠ 31) ∨
+        Core.roleNum ro ≠ 29 ∧ Core.roleNum ro ≠ 30 ∧ Core.roleNum ro ≠ 31 ∧
+        Core.roleNum ro ≠ 63 ∧ Core.roleNum ro ≠ 64) ∨
       ((RoleVal.roleSpecKindNat ro : Nat) : F) = 2 ∨
       ((RoleVal.roleSpecKindNat ro : Nat) : F) = 5 := by
   cases ro <;> decide
@@ -367,7 +368,7 @@ private theorem role_admission_checks_iff {ro : Ix.Kernel.Role} {r : SourceValue
       | .n1_n1_n29 (ev15 := ev15) (hv_rhkfrsxg := hv) .. =>
         obtain ⟨hk, _⟩ := RoleVal.role_spec_kind_spec ev15
         have hk1 : ((RoleVal.roleSpecKindNat ro : Nat) : F) = 1 := (Value.field.inj hk).symm
-        rcases hadm with ⟨hk0, -⟩ | ⟨-, -, h29, -, -⟩ | hk2 | hk5
+        rcases hadm with ⟨hk0, -⟩ | ⟨-, -, h29, -, -, -, -⟩ | hk2 | hk5
         · exact absurd (hk1.symm.trans hk0) (by decide)
         · exact h29 (Value.field.inj hv)
         · exact absurd (hk1.symm.trans hk2) (by decide)
@@ -375,7 +376,7 @@ private theorem role_admission_checks_iff {ro : Ix.Kernel.Role} {r : SourceValue
       | .n1_n1_n30 (ev15 := ev15) (hv_ptfjchii := hv) .. =>
         obtain ⟨hk, _⟩ := RoleVal.role_spec_kind_spec ev15
         have hk1 : ((RoleVal.roleSpecKindNat ro : Nat) : F) = 1 := (Value.field.inj hk).symm
-        rcases hadm with ⟨hk0, -⟩ | ⟨-, -, -, h30, -⟩ | hk2 | hk5
+        rcases hadm with ⟨hk0, -⟩ | ⟨-, -, -, h30, -, -, -⟩ | hk2 | hk5
         · exact absurd (hk1.symm.trans hk0) (by decide)
         · exact h30 (Value.field.inj hv)
         · exact absurd (hk1.symm.trans hk2) (by decide)
@@ -383,9 +384,25 @@ private theorem role_admission_checks_iff {ro : Ix.Kernel.Role} {r : SourceValue
       | .n1_n1_n31 (ev15 := ev15) (hv_jvyfexwb := hv) .. =>
         obtain ⟨hk, _⟩ := RoleVal.role_spec_kind_spec ev15
         have hk1 : ((RoleVal.roleSpecKindNat ro : Nat) : F) = 1 := (Value.field.inj hk).symm
-        rcases hadm with ⟨hk0, -⟩ | ⟨-, -, -, -, h31⟩ | hk2 | hk5
+        rcases hadm with ⟨hk0, -⟩ | ⟨-, -, -, -, h31, -, -⟩ | hk2 | hk5
         · exact absurd (hk1.symm.trans hk0) (by decide)
         · exact h31 (Value.field.inj hv)
+        · exact absurd (hk1.symm.trans hk2) (by decide)
+        · exact absurd (hk1.symm.trans hk5) (by decide)
+      | .n1_n1_n63 (ev15 := ev15) (hv_sheypcdf := hv) .. =>
+        obtain ⟨hk, _⟩ := RoleVal.role_spec_kind_spec ev15
+        have hk1 : ((RoleVal.roleSpecKindNat ro : Nat) : F) = 1 := (Value.field.inj hk).symm
+        rcases hadm with ⟨hk0, -⟩ | ⟨-, -, -, -, -, h63, -⟩ | hk2 | hk5
+        · exact absurd (hk1.symm.trans hk0) (by decide)
+        · exact h63 (Value.field.inj hv)
+        · exact absurd (hk1.symm.trans hk2) (by decide)
+        · exact absurd (hk1.symm.trans hk5) (by decide)
+      | .n1_n1_n64 (ev15 := ev15) (hv_aoevhukj := hv) .. =>
+        obtain ⟨hk, _⟩ := RoleVal.role_spec_kind_spec ev15
+        have hk1 : ((RoleVal.roleSpecKindNat ro : Nat) : F) = 1 := (Value.field.inj hk).symm
+        rcases hadm with ⟨hk0, -⟩ | ⟨-, -, -, -, -, -, h64⟩ | hk2 | hk5
+        · exact absurd (hk1.symm.trans hk0) (by decide)
+        · exact h64 (Value.field.inj hv)
         · exact absurd (hk1.symm.trans hk2) (by decide)
         · exact absurd (hk1.symm.trans hk5) (by decide)
       | .n1_other (ev15 := ev15) (ev_psnyrwee := ev_aw) (hne_qnsahksn := hne1) .. =>

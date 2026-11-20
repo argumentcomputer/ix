@@ -78,21 +78,21 @@ def closureFold (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (t : Ix.K
     (adv : _root_.Address → _root_.Address → Prop) (rank : _root_.Address → Nat) :
     UnitFold (Ix.Kernel.Env .anon) _root_.Address _root_.Address where
   Inv := ClosureFoldInv.{u} L t g R₁ env₀ famOf₀ famOf
-  Ext := fun s s' => ∀ ci ∈ s.consts, ci ∈ s'.consts
+  Ext := fun s s' => (∀ ci ∈ s.consts, ci ∈ s'.consts) ∧ Ix.Kernel.EnvExt s s'
   Stored := StoredAt t
   Post := fun A s => ∀ x, FamOwns R₁ famOf A x →
     ∃ ci ∈ s.consts, ci.name = keyOf t x ∧ ∃ ci₀, Reads t R₁ x ci₀ ∧ StoredAs ci ci₀
   owns := FamOwns R₁ famOf
   needs := ClosureFoldNeeds E₀ R₁ famOf₀ famOf adv rank
   rank := rank
-  ext_refl := fun _ _ h => h
-  ext_trans := fun h₁ h₂ ci hci => h₂ ci (h₁ ci hci)
+  ext_refl := fun s => ⟨fun _ h => h, Ix.Kernel.EnvExt.refl s⟩
+  ext_trans := fun h₁ h₂ => ⟨fun ci hci => h₂.1 ci (h₁.1 ci hci), h₁.2.trans h₂.2⟩
   stored_mono := fun x h hx => by
     obtain ⟨ci, hci, hname⟩ := hx
-    exact ⟨ci, h ci hci, hname⟩
+    exact ⟨ci, h.1 ci hci, hname⟩
   post_mono := fun A h hp x hx => by
     obtain ⟨ci, hci, hname, hr⟩ := hp x hx
-    exact ⟨ci, h ci hci, hname, hr⟩
+    exact ⟨ci, h.1 ci hci, hname, hr⟩
 
 /-- Ownership without a family record is the record's constant addresses. -/
 theorem famOwns_none {R₁ : Ixon.Env} {famOf : _root_.Address → Option _root_.Address}

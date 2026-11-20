@@ -260,7 +260,8 @@ private theorem overUnitStepTwin_of_parts {t : Ix.Kernel.RoleTable}
     unfold TwinRecPart.modelInfo? at hmi
     obtain ⟨⟨cvm, mval, hint⟩, -, rfl⟩ := Option.map_eq_some_iff.mp hmi
     exact ⟨w, hw, rfl⟩
-  refine ⟨twinRecs ws ++ twinModels ws, Reg, hnames, hfresh₂, ?_, ?_, ?_, ?_⟩
+  refine ⟨twinRecs ws ++ twinModels ws, Reg, hnames, hfresh₂, ?_, ?_, ?_, ?_,
+    by simpa only [List.append_assoc] using hext_ws⟩
   · -- 1. `FoldClauseWith` at every record store `E` for `R₁` and every carried limit
     intro E hE lim hcar hlim
     have hCE := hcl E hE lim hcar hlim

@@ -582,6 +582,8 @@ def role_admission_checks := aiur_fn⟦
                 29 => {  0 } ,
                 30 => {  0 } ,
                 31 => {  0 } ,
+                63 => {  0 } ,
+                64 => {  0 } ,
                 _ => {  1 } ,
               } } ,
             _ => {  0 } ,
@@ -1049,8 +1051,9 @@ def validate_anchor := aiur_fn⟦
 
   -- The anchors whose records role validation checks with their closures, each in its own
   -- group: `Bool`, `Bool.false`, `Bool.true`, `Bool.rec` (4-7), `And`, `And.intro`, `And.rec`
-  -- (20-22), and the literal support `List`, `List.nil`, `List.cons` (29-31), `String`,
-  -- `String.ofList`, `Char`, `Char.ofNat` (37-40).
+  -- (20-22), the literal support `List`, `List.nil`, `List.cons` (29-31), `String`,
+  -- `String.ofList`, `Char`, `Char.ofNat` (37-40), and `of_decide_eq_true`,
+  -- `of_decide_eq_false` (63-64).
 
 def anchor_walked := aiur_fn⟦
   fn anchor_walked(r: Field) -> Field {
@@ -1069,6 +1072,8 @@ def anchor_walked := aiur_fn⟦
         38 => {  1 } ,
         39 => {  1 } ,
         40 => {  1 } ,
+        63 => {  1 } ,
+        64 => {  1 } ,
         _ => {  0 } ,
       }
     }
@@ -1315,6 +1320,47 @@ def open_two_lams := aiur_fn⟦
     }
 ⟧
 
+def walk_bound_anchor := aiur_fn⟦
+  fn walk_bound_anchor(rc: RoleCtx, tbl: RoleTable, ar: Field) -> () {
+      let a = role_bound_addr(tbl, ar);
+      let ci = (*(Ingress::get_ci(a)));
+      assert_eq!(KernelInfer::const_num_lvls(ci), KernelRoleSpec::role_levels(ar),
+        "a bound anchor has another number of universe parameters");
+      KernelClaim::run_check_transitive(rc, a);
+      assert_type_meets(rc, KernelInfer::const_type_of(ci), KernelRoleSpec::role_type(tbl, ar))
+    }
+⟧
+
+  -- Anchors whose records are checked with their closures when the first equation group
+  -- that depends on them is validated (at limit 46, after the well-founded and literal blocks).
+
+def validate_eqns_anchors := aiur_fn⟦
+  fn validate_eqns_anchors(rc: RoleCtx, tbl: RoleTable, r: Field) -> () {
+      match r {
+        65 => {
+          walk_bound_anchor(rc, tbl, 59);
+          walk_bound_anchor(rc, tbl, 60);
+          walk_bound_anchor(rc, tbl, 61);
+          walk_bound_anchor(rc, tbl, 62) } ,
+        68 => {
+          walk_bound_anchor(rc, tbl, 66) } ,
+        73 => {
+          walk_bound_anchor(rc, tbl, 70);
+          walk_bound_anchor(rc, tbl, 71);
+          walk_bound_anchor(rc, tbl, 72) } ,
+        85 => {
+          walk_bound_anchor(rc, tbl, 83);
+          walk_bound_anchor(rc, tbl, 84) } ,
+        90 => {
+          walk_bound_anchor(rc, tbl, 88);
+          walk_bound_anchor(rc, tbl, 89) } ,
+        96 => {
+          walk_bound_anchor(rc, tbl, 94) } ,
+        _ => {  () } ,
+      }
+    }
+⟧
+
 def validate_eqns := aiur_fn⟦
   fn validate_eqns(rc: RoleCtx, tbl: RoleTable, r: Field, a: Bytes::AddressRef,
         ci: KernelTypes::KConstantInfo) -> () {
@@ -1329,6 +1375,7 @@ def validate_eqns := aiur_fn⟦
           assert_eq!(nlvls, KernelRoleSpec::role_levels(r),
             "a bound definition has another number of universe parameters");
           assert_type_meets(rc, ty, KernelRoleSpec::role_type(tbl, r));
+          validate_eqns_anchors(rc, tbl, r);
           KernelClaim::run_check_transitive(rc, a);
           let ev = role_evidence(tbl, r);
           assert_eq!(Lists::length(ev), KernelRoleSpec::eqns_equation_count(r),

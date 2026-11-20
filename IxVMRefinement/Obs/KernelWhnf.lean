@@ -6,5 +6,6 @@ import IxVMRefinement.Obs.KernelWhnf4
 import IxVMRefinement.Obs.KernelWhnf5
 import IxVMRefinement.Obs.KernelWhnf6
 import IxVMRefinement.Obs.KernelWhnf7
+import IxVMRefinement.Obs.KernelWhnf8
 
 /-! Generated path lemmas: the `KernelWhnf` functions (index of the parts). -/

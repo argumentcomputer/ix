@@ -67,10 +67,15 @@ theorem red_sound (hse : StoredEnv env) {φ : LevelParam → Nat} :
     Red.eqProof_sound (infer_sound hse hp) hwp hbp hlp (infer_sound hse ha)
       (defeq_sound hse hda) (infer_sound hse hb) (defeq_sound hse hdb) (infer_sound hse hT)
       (red_sound hse hred) hv
+  | _, _, _, .defEqClosed _ _ _ hbf hbb ha'f ha'b hb'f hb'b hia hra hib hrb hde =>
+    Red.defEqClosed_sound hbf hbb ha'f ha'b hb'f hb'b (infer_sound hse hia)
+      (red_sound hse hra) (infer_sound hse hib) (red_sound hse hrb) (defeq_sound hse hde)
   | _, _, _, .natLit h => Red.natLit_sound h
   | _, _, _, .natZeroLit _ => Red.natZeroLit_sound
   | _, _, _, .strLit h => Red.strLit_sound h
+  | _, _, _, .strLitFold _ => Red.strLitFold_sound
   | _, _, _, .natSucc _ hw hn => Red.natSucc_sound (red_sound hse hw) hn
+  | _, _, _, .natPred hst hw hn => Red.natPred_sound hst (red_sound hse hw) hn
   | _, _, _, .natOp hc hst hwa hn₁ hwb hn₂ hr =>
     Red.natOp_sound hc hst (red_sound hse hwa) hn₁ (red_sound hse hwb) hn₂ hr
   | _, _, _, .natAddSucc hs ht => Red.natAddSucc_sound hs ht
@@ -145,6 +150,15 @@ theorem defeq_sound (hse : StoredEnv env) {φ : LevelParam → Nat} :
     DefEq.structEtaTy_sound hse hhead hctor hlen hind heta hetaCtor hpos htow
       (infer_sound hse hta) (red_sound hse hwta) (certs_sound hse hcerts) (infer_sound hse htb)
       (defeq_sound hse hd) (defEqList_sound hse hfields)
+  | _, _, _, .eqProof _ haf hab hbf hbb hpf hpb hp ha hda hb hdb hT hred hv =>
+    DefEq.eqProof_sound haf hab hbf hbb hpf hpb (infer_sound hse hp)
+      (infer_sound hse ha) (defeq_sound hse hda) (infer_sound hse hb) (defeq_sound hse hdb)
+      (infer_sound hse hT) (red_sound hse hred) hv
+  | _, _, _, .instClosed (ks := ks) (us := us) _ _ _ haf hab hbf hbb hde =>
+    DefEq.instClosed_sound haf hab hbf hbb (defeq_sound hse (φ := Level.substFn φ ks us) hde)
+  | _, _, _, .transClosed hbf hbb hb'f hb'b hib hpb hab hbc =>
+    DefEq.transClosed_sound hbf hbb hb'f hb'b (infer_sound hse hib)
+      (piRed_sound hse hpb) (defeq_sound hse hab) (defeq_sound hse hbc)
 
 theorem infer_sound (hse : StoredEnv env) {φ : LevelParam → Nat} :
     ∀ {g : Grade} {d : Nat} {e t : Expr md}, Infer env g d e t → InferS M φ g d e t
@@ -189,6 +203,13 @@ theorem etaProjCerts_sound (hse : StoredEnv env) {φ : LevelParam → Nat} :
   | _, _, _, _, _, _, _, .cons hf hlps hstrip hcerts hrest =>
     EtaProjCerts.cons_sound hf hlps hstrip (certs_sound hse hcerts)
       (etaProjCerts_sound hse hrest)
+
+theorem piRed_sound (hse : StoredEnv env) {φ : LevelParam → Nat} :
+    ∀ {d : Nat} {e e' : Expr md}, PiRed env d e e' → PiRedS M φ d e e'
+  | _, _, _, .ofRed hr => PiRed.ofRed_sound (red_sound hse hr)
+  | _, _, _, .app hf ha => PiRed.app_sound (piRed_sound hse hf) (piRed_sound hse ha)
+  | _, _, _, .forallE hws hA hB => PiRed.forallE_sound hws (piRed_sound hse hA) (piRed_sound hse hB)
+  | _, _, _, .lam hws hA hB => PiRed.lam_sound hws (piRed_sound hse hA) (piRed_sound hse hB)
 
 end
 

@@ -32,7 +32,7 @@ theorem roleFreeShapes_iffNonempty_of_pinned {L : Ix.Kernel.Env .anon → Native
       BndOver.{u} L t (· < g) R₁ env₁ → GroupKept t g R₁ env₁ →
       (g = 16 → IffPinned env₁) ∧ (g = 17 → NonemptyPinned env₁)) :
     RoleFreeShapes.{u} L ρ t g := by
-  intro _ R R₁ R' env₁ hadm hrd hle hb hk
+  intro _ R R₁ R' env₁ hadm hrd hle hb hk _
   have hs := hb.facts.shapes
   obtain ⟨hI, hN⟩ := hpin R R₁ R' env₁ hadm hrd hle hb hk
   obtain ⟨gB, -, -, gC, gS, gL, -, -, gCN, gSL, gI, gN⟩ := anchor_groups
@@ -52,6 +52,7 @@ theorem roleFreeShapes_iffNonempty_of_pinned {L : Ix.Kernel.Env .anon → Native
     nonempty := fun h => by
       by_cases h17 : g = 17
       · exact hN h17
-      · exact hs.nonempty (below _ h (by rw [gN]; omega)) }
+      · exact hs.nonempty (below _ h (by rw [gN]; omega))
+    eqns := fun r h46 h => hs.eqns r h46 (by show Ix.SpecDigest.groupOf r < g; omega) }
 
 end IxVM.Refinement.Binding

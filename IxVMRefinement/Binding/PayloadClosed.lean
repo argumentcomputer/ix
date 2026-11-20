@@ -403,6 +403,8 @@ theorem groupReach_empty_of_ge {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {g : 
   | ref _ _ _ ih => exact ih
   | owner _ _ _ ih => exact ih
   | evidenceRef hr _ _ _ _ _ => rw [hnil] at hr; cases hr
+  | eqnsProof hr _ _ _ => rw [hnil] at hr; cases hr
+  | eqnsAnchor hr _ _ _ => rw [hnil] at hr; cases hr
 
 /-- No group at or above 77 has any payload-reached address. -/
 theorem payReach_empty_of_ge {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {Pay : PayloadRel}
@@ -506,12 +508,13 @@ theorem groupReach_new_not_axiomLike (hC : CollisionFreeRun calls E₀) (hax : A
     · rcases standingRole_cases ro hm with ⟨hs, h6⟩ | hbas
       · exact hnotStd ro hs h6 (Nat.lt_of_lt_of_le hlt (valLimit_le g)) hb'
       · exact hnotBasis ro hbas hb'
-    · rcases hra.root_or_allowed hC hval hw with ⟨r', hr', hwk, had'⟩ | ⟨cb, ms, hcb, hms⟩ | hal
-      · have hwf := (hval r' hr').wf
+    · rcases hra.root_or_allowed hC hval hw with ⟨r0, hr0, r', hni, had'⟩ | ⟨cb, ms, hcb, hms⟩ |
+        hal | ⟨-, hnotax⟩
+      · have hwf := (hval r0 hr0).wf
         have hk' := (Core.keyOf_of_addressOf hwf had').symm.trans
           (Core.keyOf_of_addressOf hwf hb')
         injection hk' with e
-        rw [← e, walked_not_inert r' hwk] at hin
+        rw [← e, hni] at hin
         cases hin
       · rw [hE] at hcb
         have e : c = cb := Option.some.inj hcb
@@ -521,6 +524,7 @@ theorem groupReach_new_not_axiomLike (hC : CollisionFreeRun calls E₀) (hax : A
         have e : n = valLimit g := (Option.some.inj hn).symm
         rw [e] at hle
         exact absurd hlt (Nat.not_lt.mpr hle)
+      · exact hnotax c ax hE hax'
   · rcases standingRole_cases ro hm with ⟨hs, -⟩ | hbas
     · obtain ⟨c₂, ax, hc₂, hi, -⟩ := hax ro hs a hb'
       rw [hE] at hc₂

@@ -77,11 +77,12 @@ theorem anchor_walked_full {ro : Ix.Kernel.Role} {r : SourceValue F} {h h' : Hea
   exact ⟨rfl, rfl⟩
 
 set_option maxRecDepth 100000 in
-/-- The walked anchors are the fourteen the source lists. -/
+/-- The walked anchors are the sixteen the source lists. -/
 theorem anchorWalked_iff (ro : Ix.Kernel.Role) :
     anchorWalked ro = true ↔
       ro ∈ [Ix.Kernel.Role.bool, .boolFalse, .boolTrue, .boolRec, .and, .andIntro, .andRec,
-        .list, .listNil, .listCons, .string, .stringOfList, .char, .charOfNat] := by
+        .list, .listNil, .listCons, .string, .stringOfList, .char, .charOfNat,
+        .ofDecideEqTrue, .ofDecideEqFalse] := by
   cases ro <;> decide
 
 set_option maxRecDepth 100000 in
@@ -262,15 +263,17 @@ theorem validate_role_bound_walk {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
       ev47.heap_extends.trans (ev80.heap_extends.trans
         (ev100.heap_extends.trans ev124.heap_extends))
     obtain ⟨_, _, _, _, _, _, m101_eq, _, _, m130_eq, _, _, m151_eq, _, _, m182_eq, _,
+      _, m_anc, _,
       v209, m210, cs220, v239, m240, cs250, v280, v281, m283, cs291, m303, cs311, cs326,
-      _, sg108, ev140, _, ev192, ev163, ev222, ev252, ev293, ev313, heq322, ev328, hc368⟩ :=
+      _, sg108, ev140, _, ev192, ev163, ev_anc, ev222, ev252, ev293, ev313, heq322, ev328, hc368⟩ :=
       Obs.«KernelRoles::validate_eqns».obs ev378
     have ext_sg : Heap.Extends m111 m101_eq := by
       cases sg108 with
       | Safe _ _ he63 _ => rw [he63]
       | other _ heq94 _ _ _ => exact absurd (Value.field.inj heq94) zero_ne_one
-    have ext_w : Heap.Extends m111 m151_eq :=
-      ext_sg.trans (ev140.heap_extends.trans (ev192.heap_extends.trans ev163.heap_extends))
+    have ext_w : Heap.Extends m111 m_anc :=
+      ext_sg.trans (ev140.heap_extends.trans (ev192.heap_extends.trans
+        (ev163.heap_extends.trans ev_anc.heap_extends)))
     have hsub_a : ∀ cl ∈ cs220, cl ∈ calls := fun cl hm => by
       rw [hc419]; simp [show cl ∈ cs376 by rw [hc368]; simp [hm]]
     exact ⟨a, _, _, _, _, _, had, hrc.mono (ext_ba.trans (ext_m111.trans ext_w)),
@@ -342,6 +345,19 @@ theorem ValidateRoleIn.eqns_evidence_walks {calls : List (Call F)} {bAddr : _roo
   obtain ⟨h, h', x_rc, x_tbl, res, cs, hrc, htbl, ev, hsub⟩ := hv
   exact ((validate_role_eqns_evidence_observed hrc htbl ev h5 arr thm hm hthm).mono
     hsub).lim_walks
+
+/-- **The anchors walked by `validate_eqns_anchors` for an equation role, walked at the group's
+validation limit.** -/
+theorem ValidateRoleIn.eqns_anchors_walks {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {g : Nat} {ro ar : Ix.Kernel.Role}
+    (hv : ValidateRoleIn calls bAddr t g ro) (h5 : roleSpecKindNat ro = 5)
+    (har : ar ∈ eqnsAnchorsOf ro) :
+    ∃ (a : _root_.Address) (recs : List (Claim.TopRec calls bAddr t (some (groupValLimit g)))),
+      t.addressOf? ar = some a ∧ Claim.TopRecsClosed recs ∧ a ∈ recs.map (·.addr) := by
+  obtain ⟨h, h', x_rc, x_tbl, res, cs, hrc, htbl, ev, hsub⟩ := hv
+  obtain ⟨a, had, hw⟩ := validate_role_eqns_anchors_observed hrc htbl ev h5 ar har
+  obtain ⟨recs, hcl, hmem⟩ := (hw.mono hsub).lim_walks
+  exact ⟨a, recs, had, hcl, hmem⟩
 
 /-! ## The references of an operation's certificates -/
 
