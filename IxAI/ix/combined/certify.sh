@@ -42,9 +42,13 @@ aggr="$ix/artifacts/aggregate-$aggr_digest.ixa"
 block="$project/.truthmines/aiur/aiurexec-block"
 run_root="$project/.truthmines/combined/run-root"
 spec="$project/.truthmines/combined/spec"
-store="$project/.truthmines/.ix/store"
+store="${IXAI_HOME:-$project/.truthmines}/.ix/store"
 cap="${STEP_CAP:-2400}"
+# MAX_RAM is the prover's whole budget in GiB and MEM_CAP the scope's hard limit above it. The
+# defaults leave room for other jobs on the machine; a run that has the machine to itself
+# should raise both (the prover's own default is MemTotal less 20%).
 ram="${MAX_RAM:-170}"
+mem_cap="${MEM_CAP:-180}"
 mkdir -p "$work"
 export IX_PROFILE=cert
 # The prover cuts a leaf whose execution record passes its ceiling into parts; the partition it
@@ -55,7 +59,7 @@ log() { echo "$(date +%T) $*" | tee -a "$work/certify.log"; }
 # One gated, timed, memory-capped job; its output goes to $work/$1.log.
 job() {
   local tag=$1; shift
-  "$ix/heavy.sh" systemd-run --user --scope -q -p MemoryMax=180G -p MemorySwapMax=0 -- \
+  "$ix/heavy.sh" systemd-run --user --scope -q -p MemoryMax="${mem_cap}G" -p MemorySwapMax=0 -- \
     /usr/bin/time -v -o "$work/$tag.time" timeout "$cap" "$@" > "$work/$tag.log" 2>&1
 }
 elapsed() { grep Elapsed "$work/$1.time" | awk '{print $NF}'; }
@@ -73,9 +77,12 @@ case "$stage" in
       log "leaf $k proved in $(elapsed "leaf$k"): ${proof##* }"
     done ;;
   aggregate)
+    # One prover run over every claim: executions overlap with proving, which separate runs per
+    # shard cannot do. PROVE_FLAGS adds flags such as --fresh (reuse no earlier proof) or --texray.
+    # shellcheck disable=SC2086
     job aggregate "$ix/ixw" prove --ixe "$env" --ixes "$manifest" --aggregate \
       --aggr-artifact "$aggr" --aggr-artifact-digest "$aggr_digest" --gpu-device 0 --max-ram "$ram" \
-      --out-ixes "$proven"
+      --out-ixes "$proven" ${PROVE_FLAGS:-}
     root=$(tail -1 "$work/aggregate.log")
     [[ "$root" =~ ^[0-9a-f]{64}$ ]] || { log "aggregation FAILED: $root"; exit 1; }
     echo "$root" > "$work/aggregate.root"

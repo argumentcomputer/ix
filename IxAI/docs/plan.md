@@ -16,6 +16,103 @@ An Ix-based harness and training framework for verifiably safe, specified AI:
   a policy was trained against;
 - BLAKE3 everywhere; the Ix store as a local Truth Mines sketch.
 
+## Current goal: one certificate in under 30 minutes (set 2026-11-20)
+
+Work is planned against one measurable goal at a time. Anything that does not move the current
+goal's number is parked (list below), not started.
+
+**Goal.** For the deployed triage decision model, one PLONK certificate that covers the training
+run, the final weights, the model's card and gate decisions, and the typechecked environment of
+the refinement and safety theorems, produced end to end in under 30 minutes on this machine's
+one GPU, and accepted by `ixai-verify combined`.
+
+**What the clock covers.** Everything a prover does, with nothing reused from an earlier run:
+environment leaf proofs, environment aggregation, the training block proofs and their
+aggregation, the join, and compression to PLONK. Reported beside it, not inside it: the Lean
+build, the certified compile (79 s today), the one-time circuit exports, and verification (7.7 s).
+The run that counts is made with no other job on the machine.
+
+**Budget.**
+
+| Stage | Certified run (M1) | Best measured so far | Needed |
+|---|---|---|---|
+| Environment leaf proofs | 99:00 | shard 0 proved: 30:26 → 16:27 (`kernel-subst`), 5:42 (experiment); all 5 shards executed under `kernel-subst`: 4.07 billion queries for 7.2 | about 13:00 |
+| Environment aggregation | 8:56 | leaves and aggregation in one prover run under `kernel-subst`: **32:52** (was 107:56) | |
+| Training: 30 block proofs | 0:23 | | |
+| Training: aggregation | 4:18 | | |
+| Join | 0:22 | | |
+| Compression to PLONK | 3:18 | | |
+| **Total** | **116:17** | **41:13** with `kernel-subst` and one prover run (32:52 measured, the other stages as in M1) | **under 30:00** |
+
+`kernel-subst` on the five shards, executed (accepted, 2026-11-20): queries 1.10, 1.76, 0.70,
+0.23, 0.27 billion (certified: 2.18, 3.03, 1.23, 0.37, 0.42); FFT cost 1.04e13, 1.68e13,
+6.14e12, 1.95e12, 2.32e12; execution 9:17, 14:45, 5:35, 2:09, 2:24, which is 34:10 if run one
+after another. M1's 99 minutes were five separate prover runs, each executing and then proving
+with the GPU idle during execution. One prover run over all claims overlaps executions with
+proving (three executions per GPU beside the proof in hand), so the wall time should approach
+the proving time alone (about 25 minutes at shard 0's rate of 40 s per 1e12 of FFT cost). That
+run, leaves and aggregation together from an empty store, is queued as G1's exit measurement
+(`cert/fullv5`).
+
+**Prover settings (checked against the fork's `docs/aiur-gpu-proving.md`, 2026-11-20).** The
+M1 run and the shard proofs so far were not set up as that guide prescribes:
+- Trace population ran on the CPU. Our builds use `IX_CUDA=1` only, and with `AIUR_GPU_TRACE`
+  unset such a build populates every circuit's main trace on the host. The logs show the cost:
+  for shard 0 under `kernel-subst`, of the 6:52 after execution, the GPU proved for 2:20 and
+  stalled 3:58 waiting for the host; in M1's shard 0, proving 3:05 and stall 12:21.
+  `AIUR_GPU_TRACE=generated` populates on the device with the same build; a build with
+  `IX_FORMAL_COMPILED_TRACE=1` adds compiled writers. Proof bytes are the same in every mode.
+- One prover run per shard, where the guide's unit is one `prove --aggregate` run over the
+  whole manifest (overlapping executions; no cutting of an over-budget shard into parts).
+- `--max-ram 170` in a 180 GiB scope, a limit chosen to leave room for other jobs; the prover's
+  own default is MemTotal less 20% (199 GiB).
+- A from-scratch run is `--fresh`, which keeps proving keys and fixed preprocessing; an empty
+  store would put key generation inside the clock.
+Native executors were in use throughout (`native-ixvm`, `native-aggregation`).
+Device population measured on shard 0 under `kernel-subst` (2026-11-20): with
+`AIUR_GPU_TRACE=generated`, 248 of 254 function circuits populate on the device ("no compiled
+bundle"; 6 stay on the host for unsupported hints), and almost nothing changes: 16:21 against
+16:27, trace 358 s against 377 s, GPU proving 136 s, stall 222 s against 238 s, device peak 95
+GiB against 70. So the stall is not removed by moving those circuits; the claim is 61 trace
+shards, populated at about 6 s each while the GPU proves one in about 2 s. Untested causes:
+the six circuits left on the host, regeneration of each shard for the second round
+(`--retention`, decided by the RAM budget), and the absence of compiled writers
+(`IX_FORMAL_COMPILED_TRACE=1` at build). What does shrink both proving and stall is a smaller
+trace (G2, G3). In hand: the whole environment in one run with `--fresh`,
+`AIUR_GPU_TRACE=generated`, `--max-ram 200` (`cert/fullv5`). Upstream's reference for scale: Init, 56,312
+constants in four claims, proved in 591 s on one GPU in one such run.
+
+**G1's exit measurement (2026-11-20, `cert/fullv5`).** The M1 environment under `kernel-subst`
+in one `prove --aggregate --fresh` run, `--max-ram 200`, `AIUR_GPU_TRACE=generated`: root
+`1f672106…` verified in 32:52 wall (1,913 s inside the prover), 198 GiB peak. The six claims
+were proved by 26:04 and the five joins and root took the rest, partly overlapped. Executions
+overlapped as intended (the two small claims ran side by side in two minutes). The two heavy
+claims still stall the GPU: 61 and 76 trace shards, proving 136 s and 118 s, stall 220 s and
+253 s, about 8 minutes of the run. The partition is M1's refined one (shard 1 cut in two for
+the old kernel's record size), which this kernel no longer needs.
+
+The stages after the leaves sum to 17:17 today, which leaves about 12:40 for the leaves unless
+aggregation also shrinks (it should, with fewer and lighter leaves; not measured). M1 did not
+include the card and decisions; their kernel cost in the environment is not measured yet.
+
+**Milestones.** Each ends with a measured number, on the full environment, not an estimate.
+
+| | Milestone | Exit criterion | State |
+|---|---|---|---|
+| G1 | Committed kernel validated and adopted | all 5 shards accepted; Ix's kernel tests pass apart from pinned costs; leaf-proof total measured | all 5 shards accepted (4.07 billion queries for 7.2); Ix's test tier: 14 of 17 suites pass, including the exploit suite (bad declarations still rejected), circuit verdicts and claim safety; the three failures are 149 pinned FFT costs (lower now) in `ixvm-eval` and `ixvm-kernel-checks`, and two generated mirror files that need regenerating (`ixvm-source`); **met**: environment proved in one run in 32:52 |
+| G2 | Generated lemmas in the cheaper shape | IxVM queries of the three worst lemmas measured against today's; environment regenerated with statements unchanged; leaf-proof total measured | measured under `kernel-subst` (own cost = closure minus statement-only floor): `transpose20x16` 528.6 → 107.6 million queries (4.9×), `deltas` 592.3 → 123.7 million (4.8×), `step` 34.9 → 22.1 million (1.6×); the string-lookup risk does not show; statements identical by text (103 declarations) and by elaborated type (307 constants); estimate for the environment about −45%; staged tree `/opt/dlami/nvme/ix-ai/combined/src-fuse`, build, compile, shard and single-run proof in hand (`cert/fuse`) |
+| G3 | Rebase cost removed without losing what it was added for | the variant passes a workload of the shape the rebase was added for, the 80 Mathlib claims and all 5 shards; leaf-proof total measured | no rebase in inference (`exp-noinferrebase`): all 5 shards accepted, 2.57 billion queries (0.52, 0.54, 0.69, 0.41, 0.41; the two library shards are 50 to 75% worse than `kernel-subst`), Mathlib +5.4%. Bounded search (`infer-rebase-shallow`): shard 0 at 386 million queries and FFT 3.33e12 (better than no rebase), Mathlib 882.5 million (+0.8%), all 80 accepted; shards 1 to 4 not run. Upstream's constant `Simps.addProjections._unsafe_rec` is not in our Mathlib snapshot, so it tests nothing here; another witness is needed |
+| G4 | Card and decisions in the environment | their leaf cost measured; `aiur_join_check` confirms the model constant is the run's final model | cost measured under `kernel-subst` (`measure_deployed.sh`): the environment with `IxAICombined.Deployed` compiles (36,835 constants, 79 s); own cost of the card 183 million queries (1:23 on its own), of one gate decision 3 million, of the model's range lemma 1.7 million: about 0.2 billion in all, a few percent of the environment. The checker's comparison of the model constant with the run's output is not written yet |
+| G5 | The timed run | one quiet end-to-end run under 30:00, `ixai-verify combined` reports `PROVED`, certificate and timings recorded | |
+
+If G1 to G3 together leave the total above 30 minutes, the next levers, in order: fewer and
+larger training blocks (aggregation 4:18), then the aggregation tree's shape. Not: more hardware.
+
+**Parked until this goal is met.** The decision library's training objective (a core change);
+Lane changes and the Lane gate prototype; the kernel redesign with free variables by level; a
+size-generic training program; a second use case; the external review's performance items
+(their agents finish what is queued in idle gaps of the machine, and start nothing new).
+
 ## Status (2026-11-18)
 
 Done:
@@ -573,16 +670,61 @@ In progress:
   | certified (`0cbcb681…`) | 30:26 | about 14:19 | 123 GiB |
   | `kernel-subst` (committed) | 16:27 | 9:35 | 74 GiB |
   | `exp-noinferrebase` (experiment) | 5:42 | 3:16 | 46 GiB |
+
+  The same experiment on the 80 Mathlib claims: all 80 accepted, 923 million queries against
+  `kernel-subst`'s 875 million (+5.4%; per claim −5.1% to +38.8%, median +2.7%, 4 claims worse
+  by more than 10%) and the certified kernel's 1,086 million. So the inference rebase pays a
+  little on ordinary Mathlib declarations and costs a great deal on the generated refinement
+  proofs; the bounded-search variant (`infer-rebase-shallow`) is meant to keep both.
  The cost
   is paid once per program and toolchain, not per training run: a run is joined to an existing
   environment root in 22 seconds.
+- Generated path lemmas, proof shape (2026-11-20, lab in `.truthmines/combined/src/Aiur/ShapeLab/`).
+  `ix/combined/obs_rewrite.py --fuse --chunk 40` (opt-in; the default mode still reproduces the
+  certified files byte for byte) rewrites the generator's inversion scripts in continuation
+  form: one lemma application per construct from a new library `IxAIRefine/Core/Fused.lean` (61
+  theorems), whole inversion of variable and `x[i]` arguments, plain calls and `let`s with flat
+  patterns, lookups by `rfl`, consumed hypotheses cleared, a cut every 40 lines. Statements are
+  unchanged and all 51 lemmas elaborate (about 2 minutes against 9). Measured on term size
+  only: distinct (subterm, binder depth) pairs fall 3.9 times and summed binder depth 8.9
+  times over all lemmas (`transpose20x16` 6.4 and 17.6, `deltas` 6.7 and 22, `step` 3.9 and
+  11). Chunk size alone changes nothing; the gain is fusing plus clearing. Weighted by the
+  survey's per-lemma cost, the path lemmas would fall to about a fifth, roughly half of the
+  environment's 7.2 billion queries, if IxVM cost follows those measures. Not yet measured in
+  IxVM at all: `ShapeLab/measure.sh run1` (baselines, statement-only floors and variants for
+  three functions) has been queued since 15:22 behind the kernel jobs; results will be in
+  `/opt/dlami/nvme/ix-ai/shapelab/run1/summary.tsv`. Open risk: `rfl` lookups make the kernel
+  compare strings about 2,000 times, which the size measures do not see. Regenerating the
+  canonical tree waits on the measurement.
 - A second combined certificate with the deployed model's card and gate decisions in the
   environment (`IxAICombined/Deployed.lean`, `envc.sh deployed`): deferred until the generated
   lemmas and the kernel are settled, so that the environment is re-proved once. Its soundness
   benefit is modest: it replaces a comparison across two certificates by one inside a single
   environment, and the checker must still confirm that the model constant encodes to the run's
   final commitment (done by script today: 331 of 331 words equal).
-- Second external review, performance (2026-11-20): in hand, split by subsystem. Premise
+- Second external review, premise selection (2026-11-20; parked behind the current goal, code
+  in the working directory, builds, not yet measured at Mathlib scale). Baseline on the code
+  as it was (all digests as recorded): module split 918 s (prepare 26.9 s, training 178 to 202 s
+  per epoch, ranking 421 s, 6.14 GB peak); time split 1,959 s (ranking 437 s, 6.48 GB). The
+  main cost was not on the review's list: `modelScore` bound the library embeddings in a `let`
+  above a lambda, and Lean compiles such a definition to take the lambda's arguments, so all
+  270,304 premises were re-embedded for every ranked theorem (confirmed in the generated C);
+  `ScoreFn` now computes them once, in parallel. `Digest`'s hash and equality copied the bytes
+  into an array on every lookup; they now read in place (`hash_digest` proves the hash values
+  unchanged). Also: reachability as a bitset (about 14 MB for about 0.9 GB), streamed
+  `decls.tsv`, list-free `ofHex?` and `normName` (both proved equal), softmax gradients summed
+  over a theorem's gold premises before one outer product (old `step` kept as the
+  specification and compared on the first 1,000 steps of each run), shared IDF overlaps
+  (proved), `top30` from the IDF top 500, allocation-free `ofOrder` (proved), `splitOf` in one
+  pass (proved), `TypedXhard` returning its timed results. Not done, with reasons: sparse
+  gradient rows (the premise gradient touches most rows, so the review's 98% figure is wrong
+  for it), `Int64` (no bound is proved in advance), candidates from import ranges (small once
+  equality is a memory compare). `bench small` is byte-identical (`dea98701…`), and ran in
+  16.1 s against 27.4 s on a light run. The Mathlib-scale run after the changes
+  (`review2-premises/job.sh after1`, about an hour) is held until the goal's jobs are done.
+  Tested but not proved: the bitset against the list reachability, `topBy` prefixes, the
+  marked pool union, the new `step` against the old.
+- Second external review, the rest (2026-11-20): in hand, split by subsystem. Premise
   selection at Mathlib scale and the typed benchmarks (`IxAIData`, `IxAIBench`); the GPU
   trainer (`gpu/cuda/step.cu`); the verification pipeline and reward path (`IxAIVerify`,
   `IxAICli/Reward.lean`); the decision library's test and training time. Done directly: one

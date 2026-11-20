@@ -50,7 +50,8 @@ case "${IX_PROFILE:-ci}" in
 esac
 export IX_BIN="${IX_BIN:-$checkout/.lake/build/bin/ix}"
 export IX_LEAN="${IX_LEAN:-/nix/store/xnh27vasww8vbnh7a18g3xkdg1r4kl6w-lean-4.34.1}"
-export HOME="$project/.truthmines"
+# IXAI_HOME moves the store, for a run that must reuse nothing from earlier ones.
+export HOME="${IXAI_HOME:-$project/.truthmines}"
 export PATH="$IX_LEAN/bin:$PATH"
 export IX_AIUR_ARTIFACT="$here/artifacts/ixvm-$digest.ixa"
 export IX_AIUR_ARTIFACT_DIGEST="$digest"

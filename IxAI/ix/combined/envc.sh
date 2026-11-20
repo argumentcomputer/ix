@@ -7,7 +7,8 @@
 set -uo pipefail
 P=/home/sam/repos/ix-ai-pipeline
 N=/opt/dlami/nvme/ix-ai/combined/compile
-SRC=$P/.truthmines/combined/src/Aiur
+# SRC is the built source tree to compile from; TAG names the outputs (default: the variant).
+SRC="${SRC:-$P/.truthmines/combined/src/Aiur}"
 cd $SRC
 file=IxAICombined.lean
 case "$1" in
@@ -20,11 +21,12 @@ case "$1" in
   whole) flags=() ;;
   *) echo "unknown variant"; exit 2 ;;
 esac
+tag="${TAG:-$1}"
 export IX_PROFILE="${IX_PROFILE:-ci}"
 nvidia-smi >/dev/null 2>&1 || true
-( while sleep 30; do echo "$(date +%T) $(ps -o rss=,etime=,time= -C ix | head -1)"; done ) > $N/$1.rss &
+( while sleep 30; do echo "$(date +%T) $(ps -o rss=,etime=,time= -C ix | head -1)"; done ) > $N/$tag.rss &
 mon=$!
-systemd-run --user --scope -q -p MemoryMax=180G -p MemorySwapMax=0 -- /usr/bin/time -v -o $N/$1.time \
+systemd-run --user --scope -q -p MemoryMax=180G -p MemorySwapMax=0 -- /usr/bin/time -v -o $N/$tag.time \
   timeout 2700 stdbuf -oL -eL $P/ix/ixw compile $file "${flags[@]}" --no-build -v --workers 24 \
-  --out $N/$1.ixe --report $N/$1.json > $N/$1.log 2>&1
-st=$?; kill $mon; tail -15 $N/$1.log; grep -E "Elapsed|Maximum" $N/$1.time; exit $st
+  --out $N/$tag.ixe --report $N/$tag.json > $N/$tag.log 2>&1
+st=$?; kill $mon; tail -15 $N/$tag.log; grep -E "Elapsed|Maximum" $N/$tag.time; exit $st
