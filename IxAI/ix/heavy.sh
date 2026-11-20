@@ -35,8 +35,13 @@ busy() {
   others=$(ps -eo pid,ppid,args | awk -v self=$$ -v anc="$ancestors" \
       '$1 != self && $2 != self && index(anc, " " $1 " ") == 0' \
     | grep -E '(/|\s)(lake build|lean |cargo build|rustc |nvcc|ix (prove|compress|aggregate)|lane (prove|prove-session|verify|submit|check|merge))' \
-    | grep -v -E 'grep|heavy\.sh' \
-    | awk '$3 != "flock" && $3 !~ /\/flock$/' || true)
+    | grep -v -E 'grep|heavy\.sh|light\.sh' \
+    | awk '$3 != "flock" && $3 !~ /\/flock$/' \
+    | while read -r pid rest; do
+        grep -q 'ixai-light' "/proc/$pid/cgroup" 2>/dev/null || echo "$pid $rest"
+      done || true)
+  # Jobs of the light lane (light.sh, in scopes named ixai-light-…) run beside heavy jobs by
+  # design and are not waited for.
   # A `flock LOCK cmd` process is waiting for the lock this script may hold, not running `cmd`;
   # counting it as busy would deadlock both sides.
   local load; load=$(cut -d' ' -f1 /proc/loadavg)

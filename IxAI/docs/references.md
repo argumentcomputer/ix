@@ -18,7 +18,9 @@ Last checked: 2026-11-18.
   scope with a 15-minute limit, and logs `light-start`/`light-end` to the same log. Not for
   proving, IxVM execution, builds of ix or Rust crates, test suites that run a prover or
   checker, or anything whose timing is reported. A timing measured while a light job ran shows
-  as an overlap in the log and should be reported as such.
+  as an overlap in the log and should be reported as such. The gate does not wait for light
+  jobs. If `light.sh` exits with status 75 it ran nothing (a heavy job queued by an older copy of
+  the gate needs a quiet moment): retry after 30 seconds.
 - While a job is queued or running, keep working: review, write the documentation, plan the
   next step. Do not end a turn to wait for a job.
 - The gate refuses to run inside the Bash sandbox (`ps` sees too little); run it unsandboxed.
