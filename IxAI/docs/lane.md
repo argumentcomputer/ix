@@ -175,6 +175,61 @@ In order of value per effort. File pointers are in the clone.
     each goal also gets an Ixon address of its type in context, which is the key the proof-search
     cache uses.
 
+11. **Outcome records, keyed by change.** A decision model around Lane (`docs/decision-library.md`,
+    "Decisions inside an agent harness") learns from what happened to a finished change: was it
+    merged, did the submission containing it pass `submit --require …` with its declarations
+    unedited, or was it changed or discarded in review. On `a97befb` none of this is recorded
+    against the change:
+    - a merge leaves activity `lane.merged` (detail: target lane ID) and `lane.absorbed-source`
+      (`Transactions.lean:316-319`) and a `merged-into` file; the change address appears only in
+      conflict records (`source_change`);
+    - `submit` stores per-declaration verify records keyed by the submitting lane's tree root,
+      only with `--require` or an `ix` binary, and only before a refusal on the checks; a broken
+      affected rebuild stores nothing; the outcome and its error code are only in stdout; success
+      leaves the `submitted` marker and activity `lane.submitted` with a list of paths;
+    - `DISCARD` leaves activity `lane.discarded` with an empty detail;
+    - activity records carry a counter, a kind and a detail: no time, no origin, no address.
+
+    The proposal: three canonical, timing-free records in the blob store, written by the server
+    only on admin-token requests (the main agent's process; a worker's report is not an outcome),
+    and filed under the address of the change record they concern, `.lane/outcomes/<change>/
+    <record address>`:
+    - `lane-merge-v1` from `MERGEBATCH` when the source lane has a change record: `change`,
+      `target_before` and `target_after` (the target lane's tree roots around the merge), `paths`,
+      `conflicts` (addresses of the conflicts it opened). The target also gets
+      `lanes/<n>/merged-changes/<change>`.
+    - `lane-submit-v1` from a new admin verb `SUBMITREC`, sent by `submitValidated` at each of its
+      three ends (rebuild broken, checks failed, `SUBMIT` answered): `state` (the lane's tree root
+      when the submission started), `required`, `accepted`, `code` (`null`,
+      `AFFECTED_PROJECT_INVALID`, `REQUIRED_CHECKS_FAILED` or `SUBMIT_REFUSED`), `verify` (the
+      verify record addresses). The server adds `changes`: the lane's merged changes and its own
+      change if it has one, and files the record under each.
+    - `lane-discard-v1` from `DISCARD` of a lane with a change record: `change`.
+    - `lane outcomes <change-address>` (admin verb `OUTCOMES`) lists them.
+
+    A label is then computed offline, from records only: a change is *clean* if a merge record
+    exists and a later accepted submit record of the target has, for every declaration in the
+    change's `edits`, the same command text in its `state` tree as in the merge's `target_after`
+    tree (both are manifests in the blob store); *edited in review* if accepted with any of those
+    declarations changed; *refused* if only refused submissions exist; *discarded* if a discard
+    record exists. No existing record format changes.
+
+    Left out: the legacy `MERGE` verb (`mergeLane`, unused by the CLI) and merges completed by
+    journal replay after a crash (`recoverMerges`) write no merge record; a change merged into an
+    intermediate lane that is finished and merged again is linked to the final submission only
+    through the intermediate change's records. Heartbeats are still not stored: a cascade or
+    budget-ladder label needs `fuel` written into the verify record, a format change (`lane-verify-v2`).
+12. **Classification by the main agent.** A change record's `edits` are computed by the finishing
+    client (`Validate.lean:266-288`) and, for a delegated lane, are a worker's report
+    (`reported_by: worker`). The code to re-derive them is already in the fork: `laneChangeContents`
+    and `laneEdits` (`Change.lean:75-102`) run in any client process with the admin token, and
+    `submit --require` already runs them in the main agent's process against the recorded bases
+    (`Analysis.lean:108-109`). Missing: a `lane classify <lane|change>` that runs them against the
+    change's base, compares with the record's `edits`, and stores a `lane-classification-v1`
+    record (`change`, `edits`, `outside_declarations`, `unclassified`, `agrees`) as another outcome
+    of the change. About 60 lines with a test; not implemented. Until then a gate must treat
+    `reported_by: worker` edits as unclassified, as `IxAIDecide/LaneGate.lean` does.
+
 Changes 1–3 are self-contained in Lane and need no Ix. Change 4 is the bridge.
 
 ## Implemented in fork
@@ -225,6 +280,14 @@ and conflicts), `633a96b` (Ix admission and Ixon-address merge equality), `830bb
   (`LEASE`/`UNLEASE`) yet.
 - **8.** `--max-heartbeats N` on every elaborating command sets Lean's `maxHeartbeats` and, by
   elaborating synchronously, reports `fuel.heartbeats` deterministically.
+
+Change 11 is on branch `outcome-records` of the same fork (one commit on `a97befb`, `f9a048d`,
+not pushed): 105 lines in `Lane/` and `Main.lean`, `tests/outcomes.sh` (merge, refused and
+accepted submit, discard, and a worker refused) and its entry in `tests/all.sh`. It has **not been
+built or tested**: on 2026-11-20 the build and the suites `outcomes`, `addresses`, `merge`,
+`semantic_actions`, `submission_recovery`, `collaboration`, `integration` did not run (the
+heavy-job queue was hours long). Treat the branch as a draft until `lake build lane` and those
+suites pass.
 
 Building the fork here needs `LIBCLANG_PATH=/usr/lib/llvm-21/lib CLANG_PATH=/usr/bin/clang-21`
 for `lean-ffi`'s bindgen (the clang bundled with Lean 4.34.1 comes first on `PATH`). Changes 9

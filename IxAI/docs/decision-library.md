@@ -694,6 +694,9 @@ model that only routes.
 
 ### The guardrail gate (`IxAIDecide/LaneGate.lean`)
 
+The module is a prototype kept in the working directory: the library does not import it and it
+is not part of the committed tree. It is checked on its own with `lake env lean`.
+
 `ChangeSummary` has one field per count above. `Leaning` (`clean | needsReview`) is the model's
 question; `gate` needs 230/256 for `clean` and has a floor of 128, set by hand because there is no
 calibration data. `reasons s` lists every exact rule `s` trips, in a fixed order, and

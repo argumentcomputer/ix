@@ -233,8 +233,9 @@ Done:
   for merge, submit and discard, keyed by change address, written only on the main agent's
   requests) and 12 (`lane classify`: main-agent reclassification, about 60 lines, not written).
   Change 11 is drafted on the fork's local branch `outcome-records` (`f9a048d`, 105 lines and a
-  test); it has not been built or tested yet (queued). The module is checked on its own and is
-  not yet imported by the library's root or test target.
+  test); it has not been built or tested. The gate module and its checks are a prototype kept in the
+  working directory: the library does not import them and they are not on the branch, which
+  carries the Lane design documents only.
 - Combined certificate verified by the consumer (2026-11-20, M1). `ixai-verify combined`
   (`IxAIVerify.Combined`) checks the 584-byte certificate `7a2a00c5…` against a job that pins
   the compression pipeline: `PROVED` in 7.7 s (checker 4.3 s, PLONK 25 ms, 4.1 GB peak).
