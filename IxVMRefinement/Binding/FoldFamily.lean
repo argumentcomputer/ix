@@ -1,7 +1,7 @@
 import IxVMRefinement.Binding.WalkedStored
 import IxVMRefinement.Binding.ClosureFoldProof
 import IxVMRefinement.Binding.ClauseFold
-import IxVMRefinement.Binding.StrEqns
+import IxVMRefinement.Binding.BitVecEqns
 
 /-! # The binding fold with its modeled blocks' families: the invariant, the group step, the fold
 

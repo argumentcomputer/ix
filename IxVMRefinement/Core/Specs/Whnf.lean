@@ -123,12 +123,20 @@ def strOpOf : Nat → Option Ix.Kernel.Role
   | 7 => some .charUtf8Size
   | _ => none
 
+/-- The `BitVec` operation a primitive-family code stands for (family `3`). -/
+def bvOpOf : Nat → Option Ix.Kernel.Role
+  | 1 => some .bitVecToNat
+  | 2 => some .bitVecUlt
+  | _ => none
+
 /-- What a nonzero `(f, op)` from `prim_family(rc, a)` witnesses about `a`. -/
 def PrimAt (c : ScopedCtx) (a : Bytes.Address) (f op : F) : Prop :=
   (∃ role, c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
   (f = 1 → ∃ role, natOpOf (ZMod.val op) = some role ∧
     c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
   (f = 2 → ∃ role, strOpOf (ZMod.val op) = some role ∧
+    c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
+  (f = 3 → ∃ role, bvOpOf (ZMod.val op) = some role ∧
     c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
   (f = 6 → ∃ role, intOpOf (ZMod.val op) = some role ∧
     c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role)

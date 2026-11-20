@@ -384,6 +384,16 @@ theorem role_int_neg_succ_step (c : ScopedCtx) {args h r h' calls}
   obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
   exact ⟨congrArg Value.field (by decide), rfl⟩
 
+theorem role_bit_vec_of_nat_step (c : ScopedCtx) {args h r h' calls}
+    (ev : ObsFn W "KernelRoleSpec::role_bit_vec_of_nat" args h r h' calls) :
+    Specs.Roles.role_bit_vec_of_nat c args h r h' calls := by
+  intro hargs; subst hargs
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_bit_vec_of_nat.lookup
+    (by simp [IxVM.KernelRoleSpec.role_bit_vec_of_nat, ControlLower.hasControl]) ev
+  simp only [IxVM.KernelRoleSpec.role_bit_vec_of_nat] at d0
+  obtain ⟨rfl, rfl, -⟩ := d0.literal_inv
+  exact ⟨congrArg Value.field (by decide), rfl⟩
+
 theorem role_prim_family_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoleSpec::role_prim_family" args h r h' calls) :
     Specs.Roles.role_prim_family c args h r h' calls := by

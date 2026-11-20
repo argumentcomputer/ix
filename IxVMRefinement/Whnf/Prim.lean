@@ -52,6 +52,12 @@ theorem strOpOf_nativeOp (ro : Ix.Kernel.Role) (h2 : (Ix.SpecDigest.nativeOp ro)
     Specs.Whnf.strOpOf (Ix.SpecDigest.nativeOp ro).2 = some ro := by
   cases ro <;> first | rfl | exact absurd h2 (by decide)
 
+/-- The native rule table at a `BitVec` operation (family `3`) names the operation `bvOpOf`
+reads. -/
+theorem bvOpOf_nativeOp (ro : Ix.Kernel.Role) (h3 : (Ix.SpecDigest.nativeOp ro).1 = 3) :
+    Specs.Whnf.bvOpOf (Ix.SpecDigest.nativeOp ro).2 = some ro := by
+  cases ro <;> first | rfl | exact absurd h3 (by decide)
+
 /-- The native rule table at an `Int` operation (family `6`) names the operation `intOpOf`
 reads. -/
 theorem intOpOf_nativeOp (ro : Ix.Kernel.Role) (h6 : (Ix.SpecDigest.nativeOp ro).1 = 6) :
@@ -83,6 +89,12 @@ theorem natPrimOp_of_natOpOf {k : Nat} {ro : Ix.Kernel.Role}
 theorem strPrimOp_of_strOpOf {k : Nat} {ro : Ix.Kernel.Role}
     (h : Specs.Whnf.strOpOf k = some ro) : Specs.Nat.strPrimOp ro = some k := by
   unfold Specs.Whnf.strOpOf at h
+  split at h <;> first | (cases h; rfl) | cases h
+
+/-- The operation code `bvOpOf` reads is the role's `BitVec` primitive code. -/
+theorem bvPrimOp_of_bvOpOf {k : Nat} {ro : Ix.Kernel.Role}
+    (h : Specs.Whnf.bvOpOf k = some ro) : Specs.Nat.bvPrimOp ro = some k := by
+  unfold Specs.Whnf.bvOpOf at h
   split at h <;> first | (cases h; rfl) | cases h
 
 /-- The operation code `intOpOf` reads is the role's `Int` primitive code. -/
@@ -166,6 +178,7 @@ theorem prim_family_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (S
         fun _ => ⟨.charUtf8Size, by
           have hv7 : ZMod.val (7 : F) = 7 := NatAux.val_natCast (by norm_num)
           rw [hv7]; rfl, hb', hf'⟩,
+        fun h3 => absurd h3 (by decide),
         fun h6 => absurd h6 (by decide)⟩⟩
     · -- general role from `role_prim_family`
       subst hc90
@@ -187,7 +200,8 @@ theorem prim_family_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (S
       subst hro
       refine ⟨((Ix.SpecDigest.nativeOp ro).1 : F), ((Ix.SpecDigest.nativeOp ro).2 : F), hpf,
         fun _ => ⟨⟨ro, hb', hf'⟩, fun h1 => ⟨ro, ?_, hb', hf'⟩,
-          fun h2 => ⟨ro, ?_, hb', hf'⟩, fun h6 => ⟨ro, ?_, hb', hf'⟩⟩⟩
+          fun h2 => ⟨ro, ?_, hb', hf'⟩, fun h3 => ⟨ro, ?_, hb', hf'⟩,
+          fun h6 => ⟨ro, ?_, hb', hf'⟩⟩⟩
       · obtain ⟨hl1, hl2⟩ := WhnfAux.nativeOp_lt ro
         have h1' : (Ix.SpecDigest.nativeOp ro).1 = 1 := by
           have := congrArg ZMod.val h1
@@ -203,6 +217,14 @@ theorem prim_family_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (S
           simpa using this.trans h2v
         rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).2) (by omega)]
         exact WhnfAux.strOpOf_nativeOp ro h2'
+      · obtain ⟨hl1, hl2⟩ := WhnfAux.nativeOp_lt ro
+        have h3' : (Ix.SpecDigest.nativeOp ro).1 = 3 := by
+          have := congrArg ZMod.val h3
+          rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).1) (by omega)] at this
+          have h3v : ZMod.val ((3 : Nat) : F) = 3 := NatAux.val_natCast (by norm_num)
+          simpa using this.trans h3v
+        rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).2) (by omega)]
+        exact WhnfAux.bvOpOf_nativeOp ro h3'
       · obtain ⟨hl1, hl2⟩ := WhnfAux.nativeOp_lt ro
         have h6' : (Ix.SpecDigest.nativeOp ro).1 = 6 := by
           have := congrArg ZMod.val h6
@@ -234,7 +256,8 @@ theorem try_nat_dispatch_prewhnf_step (c : ScopedCtx) {args : List (SourceValue 
   exact ⟨E', hE', .trans (WhnfAux.red_mkAppN_args hreds _) hred⟩
 
 /-- `KernelWhnf::try_prim_dispatch`: at an empty level list, dispatches families `1` (`Nat`),
-`2` (`String`/`Char`), and `6` (`Int`) using the `(fam, op)` witness from `prim_family`. -/
+`2` (`String`/`Char`), `3` (`BitVec`), and `6` (`Int`) using the `(fam, op)` witness from
+`prim_family`. -/
 theorem try_prim_dispatch_step (c : ScopedCtx) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::try_prim_dispatch" args h r h' calls) (ih : IH c calls) :
@@ -244,14 +267,15 @@ theorem try_prim_dispatch_step (c : ScopedCtx) {args : List (SourceValue F)}
   rcases Obs.«KernelWhnf::try_prim_dispatch».obs ev with
     ⟨cs80, ld12, hf1, ev82, hc123⟩ |
     ⟨cs_str, ld12, _, hf2, ev_str, hc_str⟩ |
-    ⟨cs_int, ld12, _, _, hf6, ev_int, hc_int⟩ |
-    ⟨m140, ld12, _, _, _, he132, hm148, he159, hc160⟩ |
+    ⟨cs_bv, ld12, _, _, hf3, ev_bv, hc_bv⟩ |
+    ⟨cs_int, ld12, _, _, _, hf6, ev_int, hc_int⟩ |
+    ⟨m140, ld12, _, _, _, _, he132, hm148, he159, hc160⟩ |
     ⟨v1, m177, ld12, hne161, he169, hm185, he196, hc197⟩
   · -- family 1 (`Nat`)
     subst hc123
     obtain rfl := WhnfAux.lvListRep_nil hus ld12
     have hf1' : f = 1 := Value.field.inj hf1
-    obtain ⟨-, hnat, -, -⟩ := hprim (by rw [hf1']; exact one_ne_zero)
+    obtain ⟨-, hnat, -, -, -⟩ := hprim (by rw [hf1']; exact one_ne_zero)
     obtain ⟨role, hrole, haddr, hforce⟩ := hnat hf1'
     exact ih.get (.whnf .try_nat_dispatch_prewhnf) (by lt_calls) ev82 rc addr _ sp types rfl
       (good.sub fun x hx => by simp [hx]) hrc d Γ htypes a o role As ha rfl hrole haddr hforce
@@ -260,18 +284,29 @@ theorem try_prim_dispatch_step (c : ScopedCtx) {args : List (SourceValue F)}
     subst hc_str
     obtain rfl := WhnfAux.lvListRep_nil hus ld12
     have hf2' : f = 2 := Value.field.inj hf2
-    obtain ⟨-, -, hstr, -⟩ := hprim (by rw [hf2']; exact WhnfAux.field_two_ne_zero)
+    obtain ⟨-, -, hstr, -, -⟩ := hprim (by rw [hf2']; exact WhnfAux.field_two_ne_zero)
     obtain ⟨role, hrole, haddr, hforce⟩ := hstr hf2'
     exact ih.get (.nat .try_str_dispatch) (by lt_calls) ev_str rc o sp types rfl
       (good.sub fun x hx => by simp [hx]) hrc a
       ⟨role, WhnfAux.strPrimOp_of_strOpOf hrole, haddr, hforce⟩ d Γ htypes As hAs t x hr
+      (WhnfAux.tag12_ne_zero ht)
+  · -- family 3 (`BitVec`)
+    subst hc_bv
+    obtain rfl := WhnfAux.lvListRep_nil hus ld12
+    have hf3' : f = 3 := Value.field.inj hf3
+    have h3nz : (3 : F) ≠ 0 := by decide
+    obtain ⟨-, -, -, hbv, -⟩ := hprim (by rw [hf3']; exact h3nz)
+    obtain ⟨role, hrole, haddr, hforce⟩ := hbv hf3'
+    exact ih.get (.nat .try_bitvec_dispatch) (by lt_calls) ev_bv rc o sp types rfl
+      (good.sub fun x hx => by simp [hx]) hrc a
+      ⟨role, WhnfAux.bvPrimOp_of_bvOpOf hrole, haddr, hforce⟩ d Γ htypes As hAs t x hr
       (WhnfAux.tag12_ne_zero ht)
   · -- family 6 (`Int`)
     subst hc_int
     obtain rfl := WhnfAux.lvListRep_nil hus ld12
     have hf6' : f = 6 := Value.field.inj hf6
     have h6nz : (6 : F) ≠ 0 := by decide
-    obtain ⟨-, -, -, hint⟩ := hprim (by rw [hf6']; exact h6nz)
+    obtain ⟨-, -, -, -, hint⟩ := hprim (by rw [hf6']; exact h6nz)
     obtain ⟨role, hrole, haddr, hforce⟩ := hint hf6'
     exact ih.get (.nat .try_int_prim_dispatch) (by lt_calls) ev_int rc o sp types rfl
       (good.sub fun x hx => by simp [hx]) hrc a

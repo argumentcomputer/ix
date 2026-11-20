@@ -1327,7 +1327,8 @@ theorem try_nat_binop_dispatch_step (c : ScopedCtx) (hc : ScopedCoreBase c) {arg
         (keyOf_of_addressOf hc.env.tableWf haddr)
     have hmem := natBinOp_mem hro hcode.1
     rw [hk]
-    exact red_mkAppN₂ Ps (.natOp hmem (hc.env.natOps ro hforce hmem) hred₁ rfl hred₂ rfl hE)
+    exact red_mkAppN₂ Ps
+      (.natOp hmem (hc.env.natOps ro hforce (List.mem_cons_of_mem _ hmem)) hred₁ rfl hred₂ rfl hE)
   · exact absurd (tag_eq_zero (hr.symm.trans hr')) ht
   · exact absurd (tag_eq_zero (hr.symm.trans hr')) ht
   · -- the second readable only: the offset dispatch
@@ -1351,24 +1352,20 @@ theorem try_nat_binop_dispatch_step (c : ScopedCtx) (hc : ScopedCoreBase c) {arg
       (Tm.mono (e1.trans e2) rA₀) hn₂ hred₂ t x hr ht
   · exact absurd (tag_eq_zero (hr.symm.trans hr')) ht
 
-/-- `try_nat_dispatch(rc, head_addr, op, spine, types)`: `Red.natSucc` for `Nat.succ` on a
-readable argument, the binary dispatch for the other operations (`Nat.pred` is not native). -/
+/-- `try_nat_dispatch(rc, head_addr, op, spine, types)`: `Red.natSucc` for `Nat.succ` and
+`Red.natPred` for `Nat.pred` on a readable argument, the binary dispatch for the other operations. -/
 theorem try_nat_dispatch_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::try_nat_dispatch" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.try_nat_dispatch c args h r h' calls := by
   intro rc ap o sp types hargs good hrc a ha hop d Γ htypes As hAs t x hr ht
   subst hargs
-  rcases Obs.«KernelNatPrim::try_nat_dispatch».obs ev with
-    ⟨_, _, _, _, _, _, _, _, _, hr', _, _, _⟩ |
-    ⟨v1, m2, cs12, v37, m38, cs49, v108, m109, cs119, m138, cs149, x_na, v186, m187, cs197, v218,
-      m227, cs235, v238, m241, cs249, v252, m254, cs262,
-      ev14, hv36, ev51, hne104, ev121, ev151, ev199, hr', ev264, ev251, ev237, hh, hcalls⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hr', _, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, hr', _, _, _⟩ |
-    ⟨v1, m2, cs12, cs363, ev14, hne318, hne356, ev365, hcalls⟩
-  · exact absurd (tag_eq_zero (hr.symm.trans hr')) ht
-  · -- `Nat.succ`
+  cases Obs.«KernelNatPrim::try_nat_dispatch».obs ev with
+  | n1_n1 _ _ _ _ _ _ _ _ _ hr' _ _ _ =>
+    exact absurd (tag_eq_zero (hr.symm.trans hr')) ht
+  | n1_other_n1_bind v1 m2 cs12 v37 m38 cs49 v108 m109 cs119 m138 cs149 x_na v186 m187 cs197 v218
+      m227 cs235 v238 m241 cs249 v252 m254 cs262
+      ev14 hv36 ev51 hne104 ev121 ev151 ev199 hr' ev264 ev251 ev237 hh hcalls =>
     subst hcalls
     have hvo : ZMod.val o = 1 := by rw [field_inj hv36]; exact val_one
     have e0 := (ObsFn.heap_extends ev14).trans (ObsFn.heap_extends ev51)
@@ -1400,9 +1397,49 @@ theorem try_nat_dispatch_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : Li
     rw [hk]
     exact red_mkAppN₁ Ps
       (.natSucc (natLit_of_natBlock hc hforce (by decide) (by decide) (by decide)) hred rfl)
-  · exact absurd (tag_eq_zero (hr.symm.trans hr')) ht
-  · exact absurd (tag_eq_zero (hr.symm.trans hr')) ht
-  · -- the binary dispatch
+  | n1_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hr' _ _ _ =>
+    exact absurd (tag_eq_zero (hr.symm.trans hr')) ht
+  | n2_n1 _ _ _ _ _ _ _ _ _ _ hr' _ _ _ =>
+    exact absurd (tag_eq_zero (hr.symm.trans hr')) ht
+  | n2_other_n1_bind v1 m2 cs12 v37 m38 cs49 v108 m109 cs119 m138 cs149 x_na v186 m187 cs197 v218
+      m227 cs235 v238 m241 cs249 v252 m254 cs262
+      ev14 _ hv322 ev51 _ ev121 ev151 ev199 hr' ev_dec ev251 ev237 hh hcalls =>
+    subst hcalls
+    have hvo : ZMod.val o = 2 := by rw [field_inj hv322]; exact val_two
+    have e0 := (ObsFn.heap_extends ev14).trans (ObsFn.heap_extends ev51)
+    obtain ⟨⟨A₀, hA₀, rA₀⟩, hm1⟩ := kl_lookup ev121 (TmL.mono e0 hAs)
+    subst m109
+    obtain ⟨Ps, rfl⟩ := spine_one hA₀
+    obtain ⟨n, hn, hred⟩ := ih.get (.nat .try_extract_nat) (by nat_lt_calls) ev151 rc v108 rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ A₀ rA₀ x_na rfl
+    have e1 := ObsFn.heap_extends ev151
+    obtain ⟨-, hpost, hm2⟩ := kl_drop ev199 (TmL.mono (e0.trans e1) hAs)
+    subst m187
+    have e11 : (A₀ :: Ps).drop (ZMod.val (1 : F)) = Ps := by rw [val_one]; rfl
+    rw [e11] at hpost
+    have hd := ih.get (.nat .klimbs_dec) (by nat_lt_calls) ev_dec x_na rfl
+      (good.sub fun x hx => by simp [hx]) n (RepLimbsC.toRepLimbs hn)
+    have hl := ih.get (.nat .mk_nat_lit) (by nat_lt_calls) ev251 v252 rfl
+      (good.sub fun x hx => by simp [hx]) (n - 1) hd
+    have e2 := (ObsFn.heap_extends ev_dec).trans (ObsFn.heap_extends ev251)
+    have hsp := ih.get (.nat .np_apply_spine) (by nat_lt_calls) ev237 v238 v186 rfl
+      (good.sub fun x hx => by simp [hx]) d Γ _ Ps (hl d Γ) (TmL.mono e2 hpost)
+    rw [hr'] at hr
+    obtain rfl := tag_snd hr
+    subst h'
+    refine ⟨_, hsp, ?_⟩
+    obtain ⟨ro, hro, haddr, hforce⟩ := hop
+    rw [hvo] at hro
+    obtain rfl := natPrimOp_role (r' := .natPred) hro (by decide)
+    have hk : c.κ (ixAddr a) = .role .natPred :=
+      (c.key_eq (hc.res_of_role haddr hforce (natPrimOp_fabricated hro))).trans
+        (keyOf_of_addressOf hc.env.tableWf haddr)
+    rw [hk]
+    exact red_mkAppN₁ Ps
+      (.natPred (hc.env.natOps .natPred hforce (List.mem_cons_self ..)) hred rfl)
+  | n2_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hr' _ _ _ =>
+    exact absurd (tag_eq_zero (hr.symm.trans hr')) ht
+  | other v1 m2 cs12 cs363 ev14 _ _ ev365 hcalls =>
     subst hcalls
     obtain ⟨-, hm1⟩ := kl_length ev14 hAs
     subst m2

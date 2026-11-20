@@ -108,7 +108,8 @@ def basicRoles : List Ix.Kernel.Role := [.nat, .natZero, .natSucc, .eq, .quot]
 facts, `String` with the whole literal support, or a role no companion field reads. -/
 def RaiseOk (env : Ix.Kernel.Env .anon) (r : Ix.Kernel.Role) : Prop :=
   RoleOps.OpCompanion env r ∨ (r = .string ∧ Ix.Kernel.strLitSupported env = true) ∨
-    (r ∉ companionRoles ∧ (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.Rules.natBinOpNames)
+    (r ∉ companionRoles ∧
+      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames)
 
 theorem mem_opRoles_of_opCompanion {env : Ix.Kernel.Env .anon} {r : Ix.Kernel.Role}
     (hc : RoleOps.OpCompanion env r) : r ∈ RoleOps.opRoles := by
@@ -303,14 +304,15 @@ theorem literal_block {r : Ix.Kernel.Role} (h1 : 41 ≤ Ix.SpecDigest.groupOf r)
 set_option maxRecDepth 100000 in
 private theorem tail_free_all : Ix.Kernel.Role.all.all (fun r =>
     decide (46 ≤ Ix.SpecDigest.groupOf r → r ∉ companionRoles ∧
-      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.Rules.natBinOpNames ∧
+      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames ∧
       Core.fabricatedRole r = false)) = true := by
   decide +kernel
 
 /-- **The roles of the groups from 46 on are read by no companion field and are not
 fabricated.** -/
 theorem tail_free {r : Ix.Kernel.Role} (h : 46 ≤ Ix.SpecDigest.groupOf r) :
-    r ∉ companionRoles ∧ (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.Rules.natBinOpNames ∧
+    r ∉ companionRoles ∧
+      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames ∧
       Core.fabricatedRole r = false :=
   of_decide_eq_true (List.all_eq_true.mp tail_free_all r (Ix.Kernel.Role.mem_all r)) h
 
@@ -319,7 +321,8 @@ private theorem wf_sub_op : ∀ r ∈ wfOpRoles, r ∈ RoleOps.opRoles := by dec
 private theorem wf_ne_add : ∀ r ∈ wfOpRoles, r ≠ .natAdd := by decide
 
 private theorem literal_free : ∀ r ∈ literalRoles, r ≠ .string →
-    r ∉ companionRoles ∧ (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.Rules.natBinOpNames := by
+    r ∉ companionRoles ∧
+      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames := by
   decide
 
 /-! ## The raises between groups -/

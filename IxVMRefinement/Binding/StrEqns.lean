@@ -2445,12 +2445,46 @@ end StrKit
 
 end StrKitSec
 
-/-! ## Assembling `Core.PrimEqnEnv` from `BaseKit`, `strLitSupported`, and `Shapes (· < 77)` -/
+/-! ## Assembling `String`/`Char` equation reductions from `BaseKit`, `strLitSupported`, and `Shapes (· < 77)` -/
 
-theorem primEqnEnv_of_shapes {env : Ix.Kernel.Env .anon}
+structure StrPrimEqns (env : Ix.Kernel.Env .anon) : Prop where
+  strOpStored : ∀ r : Role,
+    r ∈ [.stringUtf8ByteSize, .stringBack, .stringToByteArray, .stringDecEq, .stringAppend,
+      .charUtf8Size] →
+    ∃ ci, env.find? (.role r) = some ci
+  charOfNatStored : ∃ ci, env.find? (.role .charOfNat) = some ci
+  byteArrayEmptyStored : ∃ ci, env.find? (.role .byteArrayEmpty) = some ci
+  stringStored : ∃ ci, env.find? (.role .string) = some ci
+  eqStored : ∃ ci, env.find? (.role .eq) = some ci
+  eqReflStored : ∃ ci, env.find? (.role .eqRefl) = some ci
+  decidableIsTrueStored : ∃ ci, env.find? (.role .decidableIsTrue) = some ci
+  charUtf8Size : ∀ d (c : Char),
+    Red env d
+      (.app (.const (.role .charUtf8Size) []) (.app (.const (.role .charOfNat) []) (.lit (.natVal c.toNat))))
+      (.lit (.natVal c.utf8Size))
+  strUtf8ByteSize : ∀ d (s : String),
+    Red env d (.app (.const (.role .stringUtf8ByteSize) []) (.lit (.strVal s)))
+      (.lit (.natVal s.utf8ByteSize))
+  strBack : ∀ d (s : String),
+    Red env d (.app (.const (.role .stringBack) []) (.lit (.strVal s)))
+      (.app (.const (.role .charOfNat) []) (.lit (.natVal (s.toList.getLastD 'A').toNat)))
+  strToByteArrayEmpty : ∀ d,
+    Red env d (.app (.const (.role .stringToByteArray) []) (.lit (.strVal "")))
+      (.const (.role .byteArrayEmpty) [])
+  strDecEqRefl : ∀ d (s : String),
+    Red env d (.app (.app (.const (.role .stringDecEq) []) (.lit (.strVal s))) (.lit (.strVal s)))
+      (.app (.app (.const (.role .decidableIsTrue) [])
+        (.app (.app (.app (.const (.role .eq) [.succ .zero]) (.const (.role .string) []))
+          (.lit (.strVal s))) (.lit (.strVal s))))
+        (.app (.app (.const (.role .eqRefl) [.succ .zero]) (.const (.role .string) []))
+          (.lit (.strVal s))))
+  strAppend : ∀ d (s₁ s₂ : String),
+    Red env d (.app (.app (.const (.role .stringAppend) []) (.lit (.strVal s₁))) (.lit (.strVal s₂)))
+      (.lit (.strVal (s₁ ++ s₂)))
+
+theorem strPrimEqns_of_shapes {env : Ix.Kernel.Env .anon}
     (bk : BaseKit env) (hsup : Ix.Kernel.strLitSupported env = true)
-    (hs : Shapes (· < 77) env) : Core.PrimEqnEnv env := by
-  have hInt := intPrimEqns_of_shapes bk hs
+    (hs : Shapes (· < 77) env) : StrPrimEqns env := by
   obtain ⟨wDec, wNot, wDecide, wInt, wIntLe, wIntOfNat, wIntAdd, wBA, ⟨sk⟩⟩ :=
     strKit_exists bk hsup hs
   have hStrOpS : ∀ r : Role,
@@ -2487,19 +2521,6 @@ theorem primEqnEnv_of_shapes {env : Ix.Kernel.Env .anon}
       (by decide) (by decide) (by decide)
     exact ⟨ci, hf⟩
   exact {
-    intOfNatStored := hInt.intOfNatStored
-    intNegSuccStored := hInt.intNegSuccStored
-    intOpStored := hInt.intOpStored
-    intNeg := hInt.intNeg
-    intNatAbs := hInt.intNatAbs
-    intAdd := hInt.intAdd
-    intSub := hInt.intSub
-    intMul := hInt.intMul
-    intEdiv := hInt.intEdiv
-    intEmod := hInt.intEmod
-    intPow := hInt.intPow
-    intBmod := hInt.intBmod
-    intBdiv := hInt.intBdiv
     strOpStored := hStrOpS
     charOfNatStored := sk.sl.charOfNatStored
     byteArrayEmptyStored := hBAEmptyS
@@ -2544,22 +2565,5 @@ theorem primEqnEnv_of_shapes {env : Ix.Kernel.Env .anon}
       ClosedAt.red_of_defEq rfl
         ((sk.strAppendAt.app_nondep (sk.sl.strLitAt s₁) rfl).app_nondep (sk.sl.strLitAt s₂) rfl)
         (sk.sl.strLitAt (s₁ ++ s₂)) (sk.defEq_strAppend s₁ s₂) d }
-
-section FoldTailStr
-
-universe u
-
-open IxVM.Consistency
-open Ix.Kernel.Semantics (NativeFam)
-
-/-- **Certified `PrimEqnEnv` at group 76 of the binding fold**, combining `Int` and `String`/`Char`
-equations from the invariant below group 76 and the validated equation shapes below group 77. -/
-theorem primEqnEnv_of_bndOver {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    {t : Ix.Kernel.RoleTable} {R : Ixon.Env} {env : Ix.Kernel.Env .anon}
-    (hall : AllBound t) (hb : BndOver.{u} L t (· < 76) R env)
-    (hshapes : Shapes (· < 77) env) : Core.PrimEqnEnv env :=
-  primEqnEnv_of_shapes (baseKit_of_bndOver hall hb) (strLitSupported_of_bndOver hall hb) hshapes
-
-end FoldTailStr
 
 end IxVM.Refinement.Binding

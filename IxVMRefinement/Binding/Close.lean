@@ -169,14 +169,16 @@ set_option maxRecDepth 100000 in
 private theorem mid_free_all : Ix.Kernel.Role.all.all (fun r =>
     decide (6 ≤ Ix.SpecDigest.groupOf r → Ix.SpecDigest.groupOf r < 33 →
       r ∉ RoleOps.opRoles →
-      r ∉ companionRoles ∧ (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.Rules.natBinOpNames)) =
+      r ∉ companionRoles ∧
+        (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames)) =
     true := by
   decide +kernel
 
 /-- **The roles of the groups 6 to 32 that are no operation are read by no companion field.** -/
 theorem mid_free {r : Ix.Kernel.Role} (h1 : 6 ≤ Ix.SpecDigest.groupOf r)
     (h2 : Ix.SpecDigest.groupOf r < 33) (h3 : r ∉ RoleOps.opRoles) :
-    r ∉ companionRoles ∧ (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.Rules.natBinOpNames :=
+    r ∉ companionRoles ∧
+      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames :=
   of_decide_eq_true (List.all_eq_true.mp mid_free_all r (Ix.Kernel.Role.mem_all r)) h1 h2 h3
 
 set_option maxRecDepth 100000 in

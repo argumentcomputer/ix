@@ -294,6 +294,7 @@ def try_prim_dispatch := aiur_fn⟦
           match fam {
             1 => {  try_nat_dispatch_prewhnf(rc, addr, op, spine, types) } ,
             2 => {  KernelNatPrim::try_str_dispatch(rc, op, spine, types) } ,
+            3 => {  KernelNatPrim::try_bitvec_dispatch(rc, op, spine, types) } ,
             6 => {  KernelNatPrim::try_int_prim_dispatch(rc, op, spine, types) } ,
             _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
           } } ,

@@ -990,6 +990,144 @@ def try_int_prim_dispatch := aiur_fn⟦
     }
 ⟧
 
+  -- BitVec native acceleration (family 3): `BitVec.toNat` (op 1) and `BitVec.ult` (op 2).
+  -- Matches `BitVec.ofNat w n` directly or after non-delta `whnf_nd` (so `BitVec.ofNat`
+  -- is never unfolded), validates that every `BitVec.ofNat` width matches the operation's
+  -- width argument, and caps `w ≤ 2^24` matching `Nat.pow`.
+
+def bitvec_of_nat_args_direct := aiur_fn⟦
+  fn bitvec_of_nat_args_direct(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr)
+      -> (Field, KernelTypes::KExpr, KernelTypes::KExpr) {
+      match (*(e)) {
+        KernelTypes::KExprNode::App(f1, n_e) => {
+          match (*(f1)) {
+            KernelTypes::KExprNode::App(f0, w_e) => {
+              match (*(f0)) {
+                KernelTypes::KExprNode::Const(caddr, clvls) => {
+                  match lvls_empty(clvls) {
+                    1 => {
+                      match KernelRoles::role_is(rc, caddr, KernelRoleSpec::role_bit_vec_of_nat()) {
+                        1 => {  (1, w_e, n_e) } ,
+                        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0))), (&(KernelTypes::KExprNode::BVar(0)))) } ,
+                      } } ,
+                    _ => {  (0, (&(KernelTypes::KExprNode::BVar(0))), (&(KernelTypes::KExprNode::BVar(0)))) } ,
+                  } } ,
+                _ => {  (0, (&(KernelTypes::KExprNode::BVar(0))), (&(KernelTypes::KExprNode::BVar(0)))) } ,
+              } } ,
+            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0))), (&(KernelTypes::KExprNode::BVar(0)))) } ,
+          } } ,
+        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0))), (&(KernelTypes::KExprNode::BVar(0)))) } ,
+      }
+    }
+⟧
+
+def bv_extract_of_nat := aiur_fn⟦
+  fn bv_extract_of_nat(rc: KernelRoles::RoleCtx, val_e: KernelTypes::KExpr,
+                       types: Lists::List<KernelTypes::KExpr>)
+      -> (Field, KernelTypes::KExpr, KernelTypes::KExpr) {
+      match bitvec_of_nat_args_direct(rc, val_e) {
+        (1, vw_e, n_e) => {  (1, vw_e, n_e) } ,
+        _ => {  bitvec_of_nat_args_direct(rc, KernelWhnf::whnf_nd(rc, val_e, types)) } ,
+      }
+    }
+⟧
+
+def bv_extract_checked_val := aiur_fn⟦
+  fn bv_extract_checked_val(rc: KernelRoles::RoleCtx, w_kl: KernelTypes::KLimbs,
+                            val_e: KernelTypes::KExpr,
+                            types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KLimbs) {
+      match bv_extract_of_nat(rc, val_e, types) {
+        (1, vw_e, n_e) => {
+          match try_extract_nat_or_whnf(rc, vw_e, types) {
+            (1, vw_kl) => {
+              match KernelLevels::klimbs_eq(w_kl, vw_kl) {
+                1 => {  try_extract_nat_or_whnf(rc, n_e, types) } ,
+                _ => {  (0, (&(Lists::Node::Nil))) } ,
+              } } ,
+            _ => {  (0, (&(Lists::Node::Nil))) } ,
+          } } ,
+        _ => {  (0, (&(Lists::Node::Nil))) } ,
+      }
+    }
+⟧
+
+def try_bitvec_to_nat := aiur_fn⟦
+  fn try_bitvec_to_nat(rc: KernelRoles::RoleCtx, width_e: KernelTypes::KExpr,
+                       val_e: KernelTypes::KExpr, post: Lists::List<KernelTypes::KExpr>,
+                       types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
+      match try_extract_nat_or_whnf(rc, width_e, types) {
+        (1, w_kl) => {
+          match bv_extract_checked_val(rc, w_kl, val_e, types) {
+            (1, n_kl) => {
+              let cap = (&(Lists::Node::Cons([UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_1, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], (&(Lists::Node::Nil)))));
+              match KernelKlimbs::klimbs_le(w_kl, cap) {
+                1 => {
+                  let two = (&(Lists::Node::Cons([UInt8::BYTE_2, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], (&(Lists::Node::Nil)))));
+                  let modulus = KernelKlimbs::klimbs_pow(two, w_kl);
+                  (1, np_apply_spine(mk_nat_lit(KernelKlimbs::klimbs_mod(n_kl, modulus)), post)) } ,
+                _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+              } } ,
+            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+          } } ,
+        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+      }
+    }
+⟧
+
+def try_bitvec_ult := aiur_fn⟦
+  fn try_bitvec_ult(rc: KernelRoles::RoleCtx, width_e: KernelTypes::KExpr,
+                    lhs_e: KernelTypes::KExpr, rhs_e: KernelTypes::KExpr,
+                    post: Lists::List<KernelTypes::KExpr>,
+                    types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
+      match try_extract_nat_or_whnf(rc, width_e, types) {
+        (1, w_kl) => {
+          match bv_extract_checked_val(rc, w_kl, lhs_e, types) {
+            (1, ln_kl) => {
+              match bv_extract_checked_val(rc, w_kl, rhs_e, types) {
+                (1, rn_kl) => {
+                  let cap = (&(Lists::Node::Cons([UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_1, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], (&(Lists::Node::Nil)))));
+                  match KernelKlimbs::klimbs_le(w_kl, cap) {
+                    1 => {
+                      let two = (&(Lists::Node::Cons([UInt8::BYTE_2, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], (&(Lists::Node::Nil)))));
+                      let modulus = KernelKlimbs::klimbs_pow(two, w_kl);
+                      let lhs_n = KernelKlimbs::klimbs_mod(ln_kl, modulus);
+                      let rhs_n = KernelKlimbs::klimbs_mod(rn_kl, modulus);
+                      let r = 1 - KernelKlimbs::klimbs_le(rhs_n, lhs_n);
+                      (1, np_apply_spine(mk_bool(rc, r), post)) } ,
+                    _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+                  } } ,
+                _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+              } } ,
+            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+          } } ,
+        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+      }
+    }
+⟧
+
+def try_bitvec_dispatch := aiur_fn⟦
+  fn try_bitvec_dispatch(rc: KernelRoles::RoleCtx, op: Field, spine: Lists::List<KernelTypes::KExpr>,
+                         types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
+      match (*(spine)) {
+        Lists::Node::Cons(width_e, rest0) => {
+          match (*(rest0)) {
+            Lists::Node::Cons(a1, rest1) => {
+              match op {
+                1 => {  try_bitvec_to_nat(rc, width_e, a1, rest1, types) } ,
+                2 => {
+                  match (*(rest1)) {
+                    Lists::Node::Cons(a2, rest2) => {  try_bitvec_ult(rc, width_e, a1, a2, rest2, types) } ,
+                    _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+                  } } ,
+                _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+              } } ,
+            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+          } } ,
+        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+      }
+    }
+⟧
+
 def np_apply_spine := aiur_fn⟦
   fn np_apply_spine(head: KernelTypes::KExpr, spine: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       match (*(spine)) {
@@ -1142,8 +1280,18 @@ def try_nat_dispatch := aiur_fn⟦
                 _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
               } } ,
           } } ,
-        -- `Nat.pred` (A4) is not a native: it reduces by its definition.
-        2 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+        2 => {
+          match UInt32::less_than_fields(spine_len, 1) {
+            1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+            _ => {
+              let a0 = Lists::lookup(spine, 0);
+              match try_extract_nat(rc, a0) {
+                (1, na) => {
+                  let post = Lists::drop(spine, 1);
+                  (1, np_apply_spine(mk_nat_lit(KernelKlimbs::klimbs_dec(na)), post)) } ,
+                _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+              } } ,
+          } } ,
         _ => {  try_nat_binop_dispatch(rc, head_addr, op, spine, spine_len) } ,
       }
     }

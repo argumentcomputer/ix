@@ -229,7 +229,7 @@ theorem inForce_lt6 {E : Ixon.Env} {env : Ix.Kernel.Env .anon} {lim : Option Nat
 set_option maxRecDepth 8192 in
 /-- No `Nat` operation the core accelerates is of a basis group (decided over the roles). -/
 theorem natOp_not_basis (r : Role) :
-    (Key.role r : Key .anon) ∈ Ix.Kernel.Rules.natBinOpNames →
+    (Key.role r : Key .anon) ∈ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames →
       Ix.SpecDigest.groupOf r < 6 → False := by
   cases r <;> decide +kernel
 

@@ -64,7 +64,7 @@ set_option maxRecDepth 100000 in
 private theorem std_facts : ∀ r ∈ standardAxioms,
     Ix.SpecDigest.groupOf r ≠ 40 ∧ Ix.SpecDigest.groupOf r ≠ 45 ∧ r ∉ preludeRoles ∧
       r ∈ axiomRoles ∧ r ∉ companionRoles ∧
-      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.Rules.natBinOpNames ∧
+      (Ix.Kernel.Key.role r : Core.KKey) ∉ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames ∧
       Core.fabricatedRole r = false ∧ r ∉ RoleOps.opRoles := by
   decide +kernel
 

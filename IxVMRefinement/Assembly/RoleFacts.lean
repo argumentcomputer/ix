@@ -568,11 +568,13 @@ theorem red_forallE_inv {env : Ix.Kernel.Env .anon} {d : Nat}
     w = .forallE ty body mb :=
   Ix.Kernel.Rules.Red.rigid h rfl
 
-/-- `EnvFacts.natOps` when any in-force binary `Nat` operation is stored as `.defnInfo`. -/
+/-- `EnvFacts.natOps` when any in-force native `Nat` operation is stored as `.defnInfo`. -/
 theorem natOps_of_defn {c : Ctx}
-    (h : ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.Rules.natBinOpNames →
+    (h : ∀ r, c.inForce r →
+      (.role r : KKey) ∈ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames →
       ∃ cv v hint, c.env.find? (.role r) = some (.defnInfo cv v hint)) :
-    ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.Rules.natBinOpNames →
+    ∀ r, c.inForce r →
+      (.role r : KKey) ∈ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames →
       Ix.Kernel.natOpStored c.env (.role r) = true := by
   intro r hinf hmem
   obtain ⟨cv, v, hint, hf⟩ := h r hinf hmem
@@ -1321,10 +1323,10 @@ theorem strLitSupported_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA e
   exact ThmSimAt.strLitSupported_mono h.toAt hs
 
 theorem natOpStored_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
-    {c : KKey} (hc : c ∈ Ix.Kernel.Rules.natBinOpNames)
+    {c : KKey} (hc : c ∈ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames)
     (hs : Ix.Kernel.natOpStored envA c = true) :
     Ix.Kernel.natOpStored env c = true := by
-  exact ThmSimAt.natOpStored_mono h.toAt (List.mem_cons_of_mem _ hc) hs
+  exact ThmSimAt.natOpStored_mono h.toAt hc hs
 
 theorem natAddTyOk_mono {envA env : Ix.Kernel.Env .anon} (h : ThmSim envA env)
     (ht : Ix.Kernel.Rules.natAddTyOk (envA.find? Ix.Kernel.natAddName) = true) :

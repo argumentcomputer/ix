@@ -4,6 +4,7 @@ import IxVMRefinement.Nat.PrimStr
 import IxVMRefinement.Nat.PrimNat
 import IxVMRefinement.Nat.PrimInt
 import IxVMRefinement.Nat.PrimStrOps
+import IxVMRefinement.Nat.PrimBitVec
 import IxVMRefinement.Nat.Levels
 
 /-! # The `Nat` family's steps
@@ -106,5 +107,11 @@ theorem nat_step (c : ScopedCtx) (hc : ScopedCoreBase c) :
   | .try_str_append, _, _, _, _, _, ev, ih => try_str_append_step c ev ih
   | .try_char_utf8_size, _, _, _, _, _, ev, ih => try_char_utf8_size_step c ev ih
   | .try_str_dispatch, _, _, _, _, _, ev, ih => try_str_dispatch_step c hc ev ih
+  | .bitvec_of_nat_args_direct, _, _, _, _, _, ev, ih => bitvec_of_nat_args_direct_step c hc ev ih
+  | .bv_extract_of_nat, _, _, _, _, _, ev, ih => bv_extract_of_nat_step c ev ih
+  | .bv_extract_checked_val, _, _, _, _, _, ev, ih => bv_extract_checked_val_step c ev ih
+  | .try_bitvec_to_nat, _, _, _, _, _, ev, ih => try_bitvec_to_nat_step c ev ih
+  | .try_bitvec_ult, _, _, _, _, _, ev, ih => try_bitvec_ult_step c ev ih
+  | .try_bitvec_dispatch, _, _, _, _, _, ev, ih => try_bitvec_dispatch_step c hc ev ih
 
 end IxVM.Refinement.Core

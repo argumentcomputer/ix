@@ -543,6 +543,20 @@ structure PrimEqnEnv (env : Ix.Kernel.Env .anon) : Prop where
   strAppend : ∀ d (s₁ s₂ : String),
     Red env d (.app (.app (.const (.role .stringAppend) []) (.lit (.strVal s₁))) (.lit (.strVal s₂)))
       (.lit (.strVal (s₁ ++ s₂)))
+  bitVecOpStored : ∀ r : Ix.Kernel.Role, r ∈ [.bitVecToNat, .bitVecUlt] →
+    ∃ ci, env.find? (.role r) = some ci
+  bitVecOfNatStored : ∃ ci, env.find? (.role .bitVecOfNat) = some ci
+  bitVecToNat : ∀ d (w n : Nat), w ≤ 2 ^ 24 →
+    Red env d
+      (.app (.app (.const (.role .bitVecToNat) []) (.lit (.natVal w)))
+        (.app (.app (.const (.role .bitVecOfNat) []) (.lit (.natVal w))) (.lit (.natVal n))))
+      (.lit (.natVal (n % 2 ^ w)))
+  bitVecUlt : ∀ d (w n₁ n₂ : Nat), w ≤ 2 ^ 24 →
+    Red env d
+      (.app (.app (.app (.const (.role .bitVecUlt) []) (.lit (.natVal w)))
+        (.app (.app (.const (.role .bitVecOfNat) []) (.lit (.natVal w))) (.lit (.natVal n₁))))
+        (.app (.app (.const (.role .bitVecOfNat) []) (.lit (.natVal w))) (.lit (.natVal n₂))))
+      (.const (if n₁ % 2 ^ w < n₂ % 2 ^ w then Ix.Kernel.boolTrueName else Ix.Kernel.boolFalseName) [])
 
 theorem PrimEqnEnv.weaken {env env' : Ix.Kernel.Env .anon} (h : PrimEqnEnv env)
     (hext : Ix.Kernel.EnvExt env env') : PrimEqnEnv env' where
@@ -572,6 +586,10 @@ theorem PrimEqnEnv.weaken {env env' : Ix.Kernel.Env .anon} (h : PrimEqnEnv env)
   strToByteArrayEmpty := fun d => Ix.Kernel.Rules.Red.weaken hext (h.strToByteArrayEmpty d)
   strDecEqRefl := fun d s => Ix.Kernel.Rules.Red.weaken hext (h.strDecEqRefl d s)
   strAppend := fun d s₁ s₂ => Ix.Kernel.Rules.Red.weaken hext (h.strAppend d s₁ s₂)
+  bitVecOpStored := fun r hr => let ⟨ci, hci⟩ := h.bitVecOpStored r hr; ⟨ci, hext.find hci⟩
+  bitVecOfNatStored := let ⟨ci, hci⟩ := h.bitVecOfNatStored; ⟨ci, hext.find hci⟩
+  bitVecToNat := fun d w n hw => Ix.Kernel.Rules.Red.weaken hext (h.bitVecToNat d w n hw)
+  bitVecUlt := fun d w n₁ n₂ hw => Ix.Kernel.Rules.Red.weaken hext (h.bitVecUlt d w n₁ n₂ hw)
 
 /-- **The environment invariant the core reads** (module docstring's table, with the layer that
 establishes each field). -/
@@ -595,8 +613,9 @@ structure EnvFacts (c : Ctx) : Prop where
   /-- (L5, L6) The `String` literal support, when `String` is in force (the default table and an
   admitted one bind its literal support with it, `LiteralSupportBound`, in earlier groups). -/
   strLit : c.inForce .string → Ix.Kernel.strLitSupported c.env = true
-  /-- (L5, L6) Every binary `Nat` operation in force is a stored definition (`natOpStored`). -/
-  natOps : ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.Rules.natBinOpNames →
+  /-- (L5, L6) Every native `Nat` operation (`Nat.pred` and binary ops) in force is a stored
+  definition (`natOpStored`). -/
+  natOps : ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.natPredName :: Ix.Kernel.Rules.natBinOpNames →
     Ix.Kernel.natOpStored c.env (.role r) = true
   /-- (L5, L6) `Nat.add`, in force, has the shape the offset rules read (`natAddTyOk`). -/
   natAdd : c.inForce .natAdd → Ix.Kernel.Rules.natAddTyOk (c.env.find? Ix.Kernel.natAddName) = true

@@ -100,6 +100,16 @@ def strPrimOp : Ix.Kernel.Role → Option Nat
 def StrOpAt (c : ScopedCtx) (a : Bytes.Address) (o : Nat) : Prop :=
   ∃ r, strPrimOp r = some o ∧ c.t.addressOf? r = some (ixAddr a) ∧ c.inForce r
 
+/-- **The `BitVec` primitive a role is**: its operation code in family `3`, by role. -/
+def bvPrimOp : Ix.Kernel.Role → Option Nat
+  | .bitVecToNat => some 1
+  | .bitVecUlt => some 2
+  | _ => none
+
+/-- **The address `a` is bound to the `BitVec` operation with code `o`, a role in force.** -/
+def BvOpAt (c : ScopedCtx) (a : Bytes.Address) (o : Nat) : Prop :=
+  ∃ r, bvPrimOp r = some o ∧ c.t.addressOf? r = some (ixAddr a) ∧ c.inForce r
+
 /-- The signed integer represented by a sign bit `s ∈ {0, 1}` and magnitude `m : Nat`:
 zero is always `Int.ofNat 0`; `s = 0` gives `Int.ofNat m`, `s = 1` with `m > 0` gives
 `Int.negSucc (m - 1)`. -/
@@ -760,6 +770,62 @@ def try_str_dispatch : SpecFn := fun c args h r h' calls =>
           ∃ E', c.tm d Γ h' E' x ∧
             Red c.env d (mkAppN (.const (c.κ (ixAddr headAddr)) []) As) E'
 
+/-! ## `KernelNatPrim`: `BitVec` natives -/
+
+/-- `bitvec_of_nat_args_direct(rc, e)`: syntactic match on `BitVec.ofNat w_e n_e` (empty levels). -/
+def bitvec_of_nat_args_direct : SpecFn := fun c args h r h' calls =>
+  ∀ rc e, args = [rc, e] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ E, c.tm d Γ h E e → ∀ we ne, r = .tuple [.field 1, we, ne] →
+      ∃ W_E N_E, E = .app (.app (.const (.role .bitVecOfNat) []) W_E) N_E ∧
+        c.tm d Γ h' W_E we ∧ c.tm d Γ h' N_E ne
+
+/-- `bv_extract_of_nat(rc, val_e, types)`: match `BitVec.ofNat vw_e n_e`, directly or after
+`whnf_nd`. -/
+def bv_extract_of_nat : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → ∀ we ne, r = .tuple [.field 1, we, ne] →
+      ∃ W_E N_E, Red c.env d E (.app (.app (.const (.role .bitVecOfNat) []) W_E) N_E) ∧
+        c.tm d Γ h' W_E we ∧ c.tm d Γ h' N_E ne
+
+/-- `bv_extract_checked_val(rc, w_kl, val_e, types)`: extract `n` from `BitVec.ofNat w n`,
+checking that the inner width limb list equals `w_kl`. -/
+def bv_extract_checked_val : SpecFn := fun c args h r h' calls =>
+  ∀ rc wkl e types, args = [rc, wkl, e, types] → CoreGood c calls → c.rc h rc →
+    ∀ w, RepLimbsC h w wkl →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → ∀ x, r = .tuple [.field 1, x] →
+      ∃ n, RepLimbsC h' n x ∧
+        Red c.env d E (.app (.app (.const (.role .bitVecOfNat) []) (natLit w)) (natLit n))
+
+/-- `try_bitvec_to_nat(rc, width_e, val_e, post, types)`: `BitVec.toNat` on `BitVec.ofNat w n`. -/
+def try_bitvec_to_nat : SpecFn := fun c args h r h' calls =>
+  ∀ rc we ve post types, args = [rc, we, ve, post, types] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ W V Ps,
+      c.tm d Γ h W we → c.tm d Γ h V ve → c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .bitVecToNat) []) (W :: V :: Ps)) E'
+
+/-- `try_bitvec_ult(rc, width_e, lhs_e, rhs_e, post, types)`: `BitVec.ult` on two
+`BitVec.ofNat w` operands. -/
+def try_bitvec_ult : SpecFn := fun c args h r h' calls =>
+  ∀ rc we le re post types, args = [rc, we, le, re, post, types] → CoreGood c calls →
+    c.rc h rc → PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ W L R Ps,
+      c.tm d Γ h W we → c.tm d Γ h L le → c.tm d Γ h R re → c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .bitVecUlt) []) (W :: L :: R :: Ps)) E'
+
+/-- `try_bitvec_dispatch(rc, op, spine, types)`: top-level dispatcher for family `3` (`BitVec`). -/
+def try_bitvec_dispatch : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) sp types, args = [rc, .field o, sp, types] → CoreGood c calls → c.rc h rc →
+    ∀ headAddr, BvOpAt c headAddr (ZMod.val o) →
+      ∀ d Γ, c.types Γ h d types → ∀ As, c.tml d Γ h As sp →
+        ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+          ∃ E', c.tm d Γ h' E' x ∧
+            Red c.env d (mkAppN (.const (c.κ (ixAddr headAddr)) []) As) E'
+
 /-! ## The family -/
 
 /-- The functions of the family. -/
@@ -785,6 +851,8 @@ inductive Fn where
   | char_lit_codepoint | match_char_list_head_syn | walk_char_list_bytes
   | try_str_of_list | try_str_utf8_byte_size | try_str_back | try_str_to_byte_array
   | try_str_dec_eq | try_str_append | try_char_utf8_size | try_str_dispatch
+  | bitvec_of_nat_args_direct | bv_extract_of_nat | bv_extract_checked_val
+  | try_bitvec_to_nat | try_bitvec_ult | try_bitvec_dispatch
   deriving DecidableEq, Repr
 
 /-- The function's symbol, as `ObsFn` names it. -/
@@ -871,6 +939,12 @@ def Fn.name : Fn → String
   | .try_str_append => "KernelNatPrim::try_str_append"
   | .try_char_utf8_size => "KernelNatPrim::try_char_utf8_size"
   | .try_str_dispatch => "KernelNatPrim::try_str_dispatch"
+  | .bitvec_of_nat_args_direct => "KernelNatPrim::bitvec_of_nat_args_direct"
+  | .bv_extract_of_nat => "KernelNatPrim::bv_extract_of_nat"
+  | .bv_extract_checked_val => "KernelNatPrim::bv_extract_checked_val"
+  | .try_bitvec_to_nat => "KernelNatPrim::try_bitvec_to_nat"
+  | .try_bitvec_ult => "KernelNatPrim::try_bitvec_ult"
+  | .try_bitvec_dispatch => "KernelNatPrim::try_bitvec_dispatch"
 
 /-- The function's spec. -/
 def Fn.spec : Fn → SpecFn
@@ -956,5 +1030,11 @@ def Fn.spec : Fn → SpecFn
   | .try_str_append => Specs.Nat.try_str_append
   | .try_char_utf8_size => Specs.Nat.try_char_utf8_size
   | .try_str_dispatch => Specs.Nat.try_str_dispatch
+  | .bitvec_of_nat_args_direct => Specs.Nat.bitvec_of_nat_args_direct
+  | .bv_extract_of_nat => Specs.Nat.bv_extract_of_nat
+  | .bv_extract_checked_val => Specs.Nat.bv_extract_checked_val
+  | .try_bitvec_to_nat => Specs.Nat.try_bitvec_to_nat
+  | .try_bitvec_ult => Specs.Nat.try_bitvec_ult
+  | .try_bitvec_dispatch => Specs.Nat.try_bitvec_dispatch
 
 end IxVM.Refinement.Core.Specs.Nat

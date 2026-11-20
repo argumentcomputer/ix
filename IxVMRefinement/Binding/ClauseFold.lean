@@ -1,6 +1,6 @@
 import IxVMRefinement.Binding.ClauseInvariant
 import IxVMRefinement.Binding.OpInstall
-import IxVMRefinement.Binding.StrEqns
+import IxVMRefinement.Binding.BitVecEqns
 
 /-! # The binding fold over the fold's clause: the step from its parts, the fold, both halves
 
