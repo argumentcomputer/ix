@@ -419,6 +419,16 @@ abbrev «Lists::lookup<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNod
 
 theorem «Lists::lookup<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>».symbol : (Instance.mk "Lists::lookup" [(.tuple [(.ptr (.array .field 32)), .field, (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))])), (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KLevelNode" []))]))])]).symbol = «Lists::lookup<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» := by decide +kernel
 
+/-- The instance `Lists::drop<&KernelTypes::KLevelNode>`. -/
+abbrev «Lists::drop<&KernelTypes::KLevelNode>» : String := "${\"name\":\"Lists::drop\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KLevelNode\"}}}}]}"
+
+theorem «Lists::drop<&KernelTypes::KLevelNode>».symbol : (Instance.mk "Lists::drop" [(.ptr (.named "KernelTypes::KLevelNode" []))]).symbol = «Lists::drop<&KernelTypes::KLevelNode>» := by decide +kernel
+
+/-- The instance `Lists::lookup<KernelTypes::KRecRule>`. -/
+abbrev «Lists::lookup<KernelTypes::KRecRule>» : String := "${\"name\":\"Lists::lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KernelTypes::KRecRule\"}}]}"
+
+theorem «Lists::lookup<KernelTypes::KRecRule>».symbol : (Instance.mk "Lists::lookup" [(.named "KernelTypes::KRecRule" [])]).symbol = «Lists::lookup<KernelTypes::KRecRule>» := by decide +kernel
+
 theorem c9173999864893739538 : W.constant "UInt8::BYTE_0" (Generic.Ty.subst [] .field) = .ok (.literal (0 : F)) := eq_of_isLiteral (by decide +kernel)
 
 theorem c1739634508792189921 : W.constant "UInt8::BYTE_255" (Generic.Ty.subst [] .field) = .ok (.literal (255 : F)) := eq_of_isLiteral (by decide +kernel)
@@ -1220,6 +1230,10 @@ theorem n14149180230363482143 : instanceName [] "Lists::length" (some [(.named "
 theorem n2303571640435370391 : instanceName [] "Lists::length" (some [(.ptr (.array .field 32))]) = Names.«Lists::length<&[Field; 32]>» := by decide +kernel
 
 theorem n9239332686479287625 : instanceName [] "Lists::lookup" (some [(.tuple [(.ptr (.array .field 32)), .field, (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))])), (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KLevelNode" []))]))])]) = Names.«Lists::lookup<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» := by decide +kernel
+
+theorem n126417551457128745 : instanceName [] "Lists::drop" (some [(.ptr (.named "KernelTypes::KLevelNode" []))]) = Names.«Lists::drop<&KernelTypes::KLevelNode>» := by decide +kernel
+
+theorem n12782641702303575374 : instanceName [] "Lists::lookup" (some [(.named "KernelTypes::KRecRule" [])]) = Names.«Lists::lookup<KernelTypes::KRecRule>» := by decide +kernel
 
 end Names
 

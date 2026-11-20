@@ -1726,10 +1726,11 @@ theorem «KernelModeled::assert_proj_allowed».obs {x_block : SourceValue F} {h 
 inductive «KernelModeled::proj_ctor».Path (x_block x_ind_idx : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | run
-      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (cs26 : List (Call F))
-      (ev14 : ObsFn W "KernelModeled::assert_proj_allowed" [x_block] h v1 m2 cs12)
-      (ev28 : ObsFn W "Ingress::get_ci_cprj" [x_block, x_ind_idx, (.field 0)] m2 r h' cs26)
-      (hc52 : calls = ((⟨"KernelModeled::assert_proj_allowed", [x_block], h⟩ : Call F) :: (cs12 ++ ((⟨"Ingress::get_ci_cprj", [x_block, x_ind_idx, (.field 0)], m2⟩ : Call F) :: cs26))))
+      (v_fziqizxb : SourceValue F) (m_klrfvwod : Heap F) (cs_lwbjomwc : List (Call F)) (cs26 : List (Call F))
+      (ev_xmugkyfr : ObsFn W "KernelModeled::proj_allowed_at" [x_block, x_ind_idx] h v_fziqizxb m_klrfvwod cs_lwbjomwc)
+      (heq_bskspjkk : (v_fziqizxb : SourceValue F) = (.field 1))
+      (ev28 : ObsFn W "Ingress::get_ci_cprj" [x_block, x_ind_idx, (.field 0)] m_klrfvwod r h' cs26)
+      (hc52 : calls = ((⟨"KernelModeled::proj_allowed_at", [x_block, x_ind_idx], h⟩ : Call F) :: (cs_lwbjomwc ++ ((⟨"Ingress::get_ci_cprj", [x_block, x_ind_idx, (.field 0)], m_klrfvwod⟩ : Call F) :: cs26))))
 
 /-- **Every observed derivation of `KernelModeled::proj_ctor` takes one of its paths.** -/
 theorem «KernelModeled::proj_ctor».obs {x_block x_ind_idx : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -1739,28 +1740,38 @@ theorem «KernelModeled::proj_ctor».obs {x_block x_ind_idx : SourceValue F} {h 
     (by simp [IxVM.KernelModeled.proj_ctor, ControlLower.hasControl]) ev
   simp only [IxVM.KernelModeled.proj_ctor] at d0
   obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
-  obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
-  rw [instanceName_plain_some] at ev14
-  obtain ⟨v15, vs16, m17, c18, c19, rfl, d20, a21, rfl⟩ := a13.cons_inv
-  obtain ⟨l22, rfl, rfl⟩ := d20.var_inv
-  simp at l22
-  subst l22
-  obtain ⟨rfl, rfl, rfl⟩ := a21.nil_inv
+  obtain ⟨vs9, a10, ap11⟩ := d6.builtin_inv
+  obtain ⟨v_fziqizxb, vs14, m_klrfvwod, c16, c17, rfl, d18, a19, rfl⟩ := a10.cons_inv
+  obtain ⟨vs20, m21, c22, cs_lwbjomwc, a24, ev_xmugkyfr, rfl⟩ := d18.call_inv
+  rw [instanceName_plain_some] at ev_xmugkyfr
+  obtain ⟨v26, vs28, m29, c30, c31, rfl, d32, a33, rfl⟩ := a24.cons_inv
+  obtain ⟨l34, rfl, rfl⟩ := d32.var_inv
+  simp at l34
+  subst l34
+  obtain ⟨v27, vs35, m36, c37, c38, rfl, d39, a40, rfl⟩ := a33.cons_inv
+  obtain ⟨l41, rfl, rfl⟩ := d39.var_inv
+  simp at l41
+  subst l41
+  obtain ⟨rfl, rfl, rfl⟩ := a40.nil_inv
+  obtain ⟨v13, vs42, m43, c44, c45, rfl, d46, a47, rfl⟩ := a19.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d46.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a47.nil_inv
+  obtain ⟨heq_bskspjkk, rfl⟩ := Builtin.assertEq_inv ap11
   obtain rfl := matchPattern_wildcard_inv mt7
-  obtain ⟨vs23, m24, c25, cs26, a27, ev28, rfl⟩ := d8.call_inv
+  obtain ⟨vs49, m50, c51, cs26, a53, ev28, rfl⟩ := d8.call_inv
   rw [instanceName_plain_some] at ev28
-  obtain ⟨v29, vs32, m33, c34, c35, rfl, d36, a37, rfl⟩ := a27.cons_inv
-  obtain ⟨l38, rfl, rfl⟩ := d36.var_inv
-  simp at l38
-  subst l38
-  obtain ⟨v30, vs39, m40, c41, c42, rfl, d43, a44, rfl⟩ := a37.cons_inv
-  obtain ⟨l45, rfl, rfl⟩ := d43.var_inv
-  simp at l45
-  subst l45
-  obtain ⟨v31, vs46, m47, c48, c49, rfl, d50, a51, rfl⟩ := a44.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d50.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a51.nil_inv
-  exact «KernelModeled::proj_ctor».Path.run _ _ _ _ ev14 ev28 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  obtain ⟨v55, vs58, m59, c60, c61, rfl, d62, a63, rfl⟩ := a53.cons_inv
+  obtain ⟨l64, rfl, rfl⟩ := d62.var_inv
+  simp at l64
+  subst l64
+  obtain ⟨v56, vs65, m66, c67, c68, rfl, d69, a70, rfl⟩ := a63.cons_inv
+  obtain ⟨l71, rfl, rfl⟩ := d69.var_inv
+  simp at l71
+  subst l71
+  obtain ⟨v57, vs72, m73, c74, c75, rfl, d76, a77, rfl⟩ := a70.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d76.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a77.nil_inv
+  exact «KernelModeled::proj_ctor».Path.run _ _ _ _ ev_xmugkyfr heq_bskspjkk ev28 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `KernelModeled::ind_is_modeled`: one constructor per combination of selected arms. -/
 inductive «KernelModeled::ind_is_modeled».Path (x_ind_addr : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)

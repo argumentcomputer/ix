@@ -20,8 +20,10 @@ that the prover supplies as advice.
   are therefore validated together against one payload (`check_family(block, rec_block)`),
   and a recursor is accepted only through the call for its own family record.
 * **Use sites** (`KernelInfer`, `KernelInferOnly`, `KernelWhnf`, `KernelDefEq`) call
-  `assert_proj_allowed`, `block_is_modeled` and `fire_ok`: no `.proj`, structure eta or
-  unit-like conversion at a member of a modeled block, and the iota step of a modeled
+  `proj_ctor`, `proj_allowed_at`, `block_is_modeled` and `fire_ok`: `.proj` is allowed on
+  native blocks and on 1-constructor, 0-index, never-zero-sort members of modeled blocks
+  whose projection models are checked by `check_projs`; structure eta and unit-like
+  conversion stay restricted to non-recursive native blocks; and the iota step of a modeled
   recursor compares the constructor's parameters and levels with the recursor's
   (`paramsBlind := false`).
 
@@ -44,6 +46,8 @@ Payload layout (bytes; counts are TagN0, addresses 32 bytes):
     ctor models            -- one per constructor, by member then constructor index
     recursor models        -- one per member of the family record, in order
     iota theorems          -- per recursor, one per rule, in rule order
+    projection models      -- per projection-eligible member (in position order) and per
+                           --   field `i`, the pair `(proj_i, proj_i.iota)`
 
 Named Aiur declarations, elaborated together by `IxVM.Program`. -/
 
@@ -274,8 +278,7 @@ def last_binder_dom := aiur_fn⟦
 
   -- ## Use sites
 
-  -- `.proj` is typed only at members of native blocks: the kernel installs no projection
-  -- table for a mutual block, and IxVM checks no projection model.
+  -- Legacy gate kept for observation name stability.
 
 def assert_proj_allowed := aiur_fn⟦
   fn assert_proj_allowed(block: Bytes::AddressRef) -> () {
@@ -285,13 +288,14 @@ def assert_proj_allowed := aiur_fn⟦
     }
 ⟧
 
-  -- The structure's constructor, at a native block only: the projection sites call this
-  -- in place of `Ingress::get_ci_cprj`, memoized per structure, so the gate adds nothing to
-  -- their rows.
+  -- The structure's constructor, at a native block or a projection-eligible member of a
+  -- modeled block: the projection sites call this in place of `Ingress::get_ci_cprj`,
+  -- memoized per structure.
 
 def proj_ctor := aiur_fn⟦
   fn proj_ctor(block: Bytes::AddressRef, ind_idx: Field) -> &KernelTypes::KConstantInfo {
-      assert_proj_allowed(block);
+      assert_eq!(proj_allowed_at(block, ind_idx), 1,
+        "projection on a member of a mutual or nested block");
       Ingress::get_ci_cprj(block, ind_idx, 0)
     }
 ⟧
@@ -1173,7 +1177,9 @@ def check_family := aiur_fn⟦
               family_refs_ok(rc, rec_block, block, wset);
               let s9 = check_recs(rc, type_addrs, rec_addrs, rec_models, src, dst, aset, s8,
                                   n_recs, 0, np, univ_offset, bnl, rec_addrs, 0);
-              let Lists::Node::Nil = (*(s9));
+              let s10 = check_projs(rc, block, members, 0, type_addrs, type_models, src, dst,
+                                    aset, np, bnl, s9);
+              let Lists::Node::Nil = (*(s10));
               () } ,
           } } ,
       }
@@ -2249,6 +2255,850 @@ def assert_no_type_role := aiur_fn⟦
           assert_eq!(KernelRoles::role_index_of(rc, x), 0,
             "a modeled inductive is bound to a role");
           assert_no_type_role(rc, rest) } ,
+      }
+    }
+⟧
+
+  -- ## Modeled structure projections
+
+  -- Pairwise structural equality of the first `n` domains of two `∀`-telescopes (ignoring
+  -- the outer binders' `PropWhen` metadata), returning the first telescope's residual body.
+
+def struct_eq_tele := aiur_fn⟦
+  fn struct_eq_tele(a: KernelTypes::KExpr, b: KernelTypes::KExpr, n: Field) -> KernelTypes::KExpr {
+      match n {
+        0 => {  a } ,
+        _ => {
+          match (*(a)) {
+            KernelTypes::KExprNode::Forall(da, ba, _) => {
+              match (*(b)) {
+                KernelTypes::KExprNode::Forall(db, bb, _) => {
+                  assert_eq!(KernelCheck::kexpr_struct_eq(da, db), 1,
+                    "modeled projection: telescope domain mismatch");
+                  struct_eq_tele(ba, bb, n - 1) } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- Whether a type former's sort after `n` binders (stepping through `let`s), instantiated
+  -- at `lvls`, is either never zero or always zero (so the set-model representation of its
+  -- constructors is fixed across all level assignments).
+
+def type_sort_fixed_zeta := aiur_fn⟦
+  fn type_sort_fixed_zeta(ty: KernelTypes::KExpr, n: Field, lvls: Lists::List<KernelTypes::KLevel>) -> Field {
+      match (*(ty)) {
+        KernelTypes::KExprNode::Forall(_, body, _) => {
+          match n {
+            0 => {  0 } ,
+            _ => {  type_sort_fixed_zeta(body, n - 1, lvls) } ,
+          } } ,
+        KernelTypes::KExprNode::Srt(l) => {
+          match n {
+            0 => {
+              let li = KernelLevels::level_inst_params(l, lvls);
+              match KernelLevels::level_is_not_zero(li) {
+                1 => {  1 } ,
+                _ => {  KernelLevels::level_equal(li, (&(KernelTypes::KLevelNode::Zero))) } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          type_sort_fixed_zeta(KernelSubst::expr_inst1(b, v, 0), n, lvls) } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+  -- Check every projection-eligible member of the modeled block against its projection
+  -- definitions and iota theorems in the payload stream.
+
+def check_projs := aiur_fn⟦
+  fn check_projs(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef,
+                 members: Lists::List<Ixon::MutConst>, pos: Field,
+                 type_addrs: Lists::List<Bytes::AddressRef>,
+                 type_models: Lists::List<Bytes::AddressRef>,
+                 src: Lists::List<Bytes::AddressRef>, dst: Lists::List<Bytes::AddressRef>,
+                 aset: RBTreeMap::RBTreeMap<Field>, np: Field, bnl: Field,
+                 s: Bytes::Stream) -> Bytes::Stream {
+      match (*(members)) {
+        Lists::Node::Nil => {  s } ,
+        Lists::Node::Cons(_, rest) => {
+          let Lists::Node::Cons(t_addr, t_rest) = (*(type_addrs));
+          let Lists::Node::Cons(t_model, tm_rest) = (*(type_models));
+          let s2 = match modeled_proj_eligible(block, pos) {
+            1 => {
+              check_member_projs_start(rc, block, pos, t_addr, t_model, src, dst, aset, np, bnl, s) } ,
+            _ => {  s } ,
+          };
+          check_projs(rc, block, rest, pos + 1, t_rest, tm_rest, src, dst, aset, np, bnl, s2) } ,
+      }
+    }
+⟧
+
+def check_member_projs_start := aiur_fn⟦
+  fn check_member_projs_start(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, pos: Field,
+                              t_addr: Bytes::AddressRef, t_model: Bytes::AddressRef,
+                              src: Lists::List<Bytes::AddressRef>, dst: Lists::List<Bytes::AddressRef>,
+                              aset: RBTreeMap::RBTreeMap<Field>, np: Field, bnl: Field,
+                              s: Bytes::Stream) -> Bytes::Stream {
+      let c_addr = KernelCheck::projection_addr_ctor(pos, 0, block);
+      let c_model = rename_addr(c_addr, src, dst);
+      match (*(Ingress::get_ci(t_addr))) {
+        KernelTypes::KConstantInfo::Induct(tnl, tty, tnp, tni, tnc, _, _, _) => {
+          assert_eq!(tnl, bnl, "modeled projection: type level count mismatch");
+          assert_eq!(tnp, np, "modeled projection: type param count mismatch");
+          assert_eq!(tni, 0, "modeled projection: indexed member");
+          assert_eq!(tnc, 1, "modeled projection: multi-constructor member");
+          match (*(Ingress::get_ci(c_addr))) {
+            KernelTypes::KConstantInfo::Ctor(cnl, cty, _, _, _, cnp, cnf, _) => {
+              assert_eq!(cnl, bnl, "modeled projection: ctor level count mismatch");
+              assert_eq!(cnp, np, "modeled projection: ctor param count mismatch");
+              assert_eq!(Fields::is_zero(cnf), 0, "modeled projection: zero fields");
+              let (cbody, _) = peel_collect(cty, np + cnf, (&(Lists::Node::Nil)));
+              let expected_ret = KernelWhnf::apply_spine(
+                (&(KernelTypes::KExprNode::Const(t_addr, KernelCheck::build_param_lvls_range(0, bnl, 0)))),
+                bvars_desc(np + cnf, np));
+              assert_eq!(KernelCheck::kexpr_struct_eq(cbody, expected_ret), 1,
+                "modeled projection: constructor return type mismatch");
+              let cty_m = rename(cty, src, dst);
+              let ftele = inst_params(cty_m, bvars_desc(np + 1, np));
+              let ctele = KernelCheck::peel_n_foralls(cty_m, np);
+              check_member_projs(rc, t_model, c_model, tty, cty_m, ftele, ctele, np, bnl, cnf, 0, aset, s) } ,
+          } } ,
+      }
+    }
+⟧
+
+def check_member_projs := aiur_fn⟦
+  fn check_member_projs(rc: KernelRoles::RoleCtx, t_model: Bytes::AddressRef, c_model: Bytes::AddressRef,
+                        tty: KernelTypes::KExpr, cty_m: KernelTypes::KExpr,
+                        ftele: KernelTypes::KExpr, ctele: KernelTypes::KExpr,
+                        np: Field, bnl: Field, cnf: Field, fidx: Field,
+                        aset: RBTreeMap::RBTreeMap<Field>, s: Bytes::Stream) -> Bytes::Stream {
+      match cnf - fidx {
+        0 => {  s } ,
+        _ => {
+          let (proj_i, s1) = IxonDeserialize::get_address(s);
+          let (iota_i, s2) = IxonDeserialize::get_address(s1);
+          assert_eq!(KernelClaim::addr_set_member(proj_i, aset), 1,
+            "modeled projection: projection model is not advice");
+          assert_eq!(KernelClaim::addr_set_member(iota_i, aset), 1,
+            "modeled projection: iota theorem is not advice");
+          match (*(ftele)) {
+            KernelTypes::KExprNode::Forall(fdom, frest, _) => {
+              match (*(ctele)) {
+                KernelTypes::KExprNode::Forall(raw_dom, crest, _) => {
+                  let param_lvls = KernelCheck::build_param_lvls_range(0, bnl, 0);
+                  match (*(Ingress::get_ci(proj_i))) {
+                    KernelTypes::KConstantInfo::Defn(pnl, pty, pval, _, _) => {
+                      assert_eq!(pnl, bnl, "modeled projection: level count mismatch");
+                      let pty_after_p = struct_eq_tele(pty, tty, np);
+                      match (*(pty_after_p)) {
+                        KernelTypes::KExprNode::Forall(sdom, rdom, _) => {
+                          let expected_sdom = KernelWhnf::apply_spine(
+                            (&(KernelTypes::KExprNode::Const(t_model, param_lvls))),
+                            bvars_desc(np, np));
+                          assert_eq!(KernelCheck::kexpr_struct_eq(sdom, expected_sdom), 1,
+                            "modeled projection: subject domain mismatch");
+                          assert_eq!(KernelCheck::kexpr_struct_eq(rdom, fdom), 1,
+                            "modeled projection: codomain mismatch");
+                          () } ,
+                      };
+                      check_proj_iota(rc, proj_i, iota_i, c_model, cty_m, raw_dom, np, bnl, cnf, fidx);
+                      match Fields::is_zero(np) * Fields::is_zero(bnl) {
+                        1 => {  () } ,
+                        _ => {  check_proj_pure(rc, t_model, pval, np, bnl, cnf, fidx, aset) } ,
+                      };
+                      let proj_app = KernelWhnf::apply_spine(
+                        (&(KernelTypes::KExprNode::Const(proj_i, param_lvls))),
+                        Lists::snoc(bvars_desc(np + 1, np), (&(KernelTypes::KExprNode::BVar(0)))));
+                      let ftele_next = KernelSubst::expr_inst1(frest, proj_app, 0);
+                      check_member_projs(rc, t_model, c_model, tty, cty_m, ftele_next, crest,
+                                         np, bnl, cnf, fidx + 1, aset, s2) } ,
+                  } } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+def check_proj_iota := aiur_fn⟦
+  fn check_proj_iota(rc: KernelRoles::RoleCtx, proj_i: Bytes::AddressRef, iota_i: Bytes::AddressRef,
+                     c_model: Bytes::AddressRef, cty_m: KernelTypes::KExpr, raw_dom: KernelTypes::KExpr,
+                     np: Field, bnl: Field, cnf: Field, fidx: Field) -> () {
+      match (*(Ingress::get_ci(iota_i))) {
+        KernelTypes::KConstantInfo::Thm(inl, ity, _) => {
+          assert_eq!(inl, bnl, "modeled projection: iota level count mismatch");
+          let ibody = struct_eq_tele(ity, cty_m, np + cnf);
+          let (eqh, targs) = KernelTypes::collect_spine(ibody);
+          match (*(eqh)) {
+            KernelTypes::KExprNode::Const(eqa, eqls) => {
+              assert_eq!(Bytes::address_eq(eqa, KernelRoles::role_addr(rc, KernelRoleSpec::role_eq())), 1,
+                "modeled projection: iota statement is not an equation");
+              let Lists::Node::Cons(_, eqrest) = (*(eqls));
+              let Lists::Node::Nil = (*(eqrest));
+              assert_eq!(Lists::length(targs), 3, "modeled projection: iota equation arity");
+              let alpha = Lists::lookup(targs, 0);
+              let lhs = Lists::lookup(targs, 1);
+              let rhs = Lists::lookup(targs, 2);
+              let expected_alpha = KernelSubst::expr_lift(raw_dom, cnf - fidx, 0);
+              assert_eq!(KernelCheck::kexpr_struct_eq(alpha, expected_alpha), 1,
+                "modeled projection: iota type slot mismatch");
+              let param_lvls = KernelCheck::build_param_lvls_range(0, bnl, 0);
+              let pvars = bvars_desc(np + cnf, np);
+              let ctor_app = KernelWhnf::apply_spine(
+                (&(KernelTypes::KExprNode::Const(c_model, param_lvls))),
+                Lists::concat(pvars, bvars_desc(cnf, cnf)));
+              let expected_lhs = KernelWhnf::apply_spine(
+                (&(KernelTypes::KExprNode::Const(proj_i, param_lvls))),
+                Lists::snoc(pvars, ctor_app));
+              assert_eq!(KernelCheck::kexpr_struct_eq(lhs, expected_lhs), 1,
+                "modeled projection: iota lhs mismatch");
+              match (*(rhs)) {
+                KernelTypes::KExprNode::BVar(rbv) => {
+                  assert_eq!(rbv, (cnf - 1) - fidx, "modeled projection: iota rhs mismatch");
+                  () } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- Coherence gate for parameterized or universe-polymorphic modeled projections: verifies
+  -- that `t_model` unfolds to a native never-zero indexed auxiliary inductive `aux p⃗ (tag_c p⃗)`
+  -- with unique constructor `aux.c_J` for `tag_c`, and that `pval` computes field `fidx` via
+  -- `aux.rec` (either directly or through a mutual recursor model), returning either the raw
+  -- field `f_{fidx}` or a level- and parameter-independent `unpack` tree walk over `aux`.
+
+def find_aux_ctor_for_tag := aiur_fn⟦
+  fn find_aux_ctor_for_tag(aux_blk: Bytes::AddressRef, anc: Field, k: Field,
+                           np: Field, bnl: Field, aux_addr: Bytes::AddressRef,
+                           tag_blk: Bytes::AddressRef, tag_cidx: Field, cnf: Field,
+                           found_flag: Field, found_j: Field) -> Field {
+      match anc - k {
+        0 => {
+          assert_eq!(found_flag, 1, "modeled projection: no aux constructor for tag");
+          found_j } ,
+        _ => {
+          match (*(Ingress::get_ci_cprj(aux_blk, 0, k))) {
+            KernelTypes::KConstantInfo::Ctor(knl, kty, _, _, _, knp, knf, _) => {
+              assert_eq!(knl, bnl, "modeled projection: aux ctor level count");
+              assert_eq!(knp, np, "modeled projection: aux ctor param count");
+              let kres = KernelCheck::peel_n_foralls_zeta(kty, np + knf);
+              let (kh, kargs) = KernelTypes::collect_spine(kres);
+              match (*(kh)) {
+                KernelTypes::KExprNode::Const(aux_addr2, _) => {
+                  assert_eq!(Bytes::address_eq(aux_addr2, aux_addr), 1,
+                    "modeled projection: aux ctor return head");
+                  assert_eq!(Lists::length(kargs), np + 1,
+                    "modeled projection: aux ctor return arity");
+                  let kidx_arg = Lists::lookup(kargs, np);
+                  let (kth, kt_args) = KernelTypes::collect_spine(kidx_arg);
+                  match (*(kth)) {
+                    KernelTypes::KExprNode::Const(ktc_addr, kt_lvls) => {
+                      match (*(Ingress::get_ci(ktc_addr))) {
+                        KernelTypes::KConstantInfo::Ctor(ktc_nl, _, ktc_blk, ktc_ind, ktc_cidx, ktc_np, ktc_cnf, _) => {
+                          assert_eq!(Lists::length(kt_lvls), ktc_nl,
+                            "modeled projection: aux ctor tag level arity");
+                          assert_eq!(Lists::length(kt_args), ktc_np + ktc_cnf,
+                            "modeled projection: aux ctor tag arity");
+                          assert_eq!(Bytes::address_eq(ktc_blk, tag_blk), 1,
+                            "modeled projection: aux ctor tag block mismatch");
+                          assert_eq!(ktc_ind, 0, "modeled projection: aux ctor tag index mismatch");
+                          match ktc_cidx - tag_cidx {
+                            0 => {
+                              assert_eq!(found_flag, 0,
+                                "modeled projection: duplicate aux ctor for tag");
+                              assert_eq!(knf, cnf,
+                                "modeled projection: aux ctor field count mismatch");
+                              find_aux_ctor_for_tag(aux_blk, anc, k + 1, np, bnl, aux_addr,
+                                                    tag_blk, tag_cidx, cnf, 1, k) } ,
+                            _ => {
+                              find_aux_ctor_for_tag(aux_blk, anc, k + 1, np, bnl, aux_addr,
+                                                    tag_blk, tag_cidx, cnf, found_flag, found_j) } ,
+                          } } ,
+                      } } ,
+                  } } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- Extract `(rnf, ih_args)` from the `k`-th rule of `aux.rec`: checks that the rule peels
+  -- `np + 1 + anc + rnf` lambdas to `BVar((rnf + anc - 1) - k)` applied to `rnf` field vars
+  -- followed by `ih_args`.
+
+def rec_rule_ih_args := aiur_fn⟦
+  fn rec_rule_ih_args(rule: KernelTypes::KRecRule, np: Field, anc: Field, k: Field)
+        -> (Field, Lists::List<KernelTypes::KExpr>) {
+      match rule {
+        KernelTypes::KRecRule::Mk(_, rnf, rrhs) => {
+          let total = ((np + 1) + anc) + rnf;
+          let (rbody, rpeeled, _) = KernelCheck::peel_n_lams_collect(rrhs, total, 0, (&(Lists::Node::Nil)));
+          assert_eq!(rpeeled, total, "modeled projection: aux rec rule lambda arity");
+          let (rh, rargs) = KernelTypes::collect_spine(rbody);
+          match (*(rh)) {
+            KernelTypes::KExprNode::BVar(hbv) => {
+              assert_eq!(hbv, ((rnf + anc) - 1) - k, "modeled projection: aux rec rule minor head");
+              assert_eq!(UInt32::less_than_fields(rnf, Lists::length(rargs) + 1), 1,
+                "modeled projection: aux rec rule arity");
+              (rnf, Lists::drop(rargs, rnf)) } ,
+          } } ,
+      }
+    }
+⟧
+
+def check_unpack_rebuild_args := aiur_fn⟦
+  fn check_unpack_rebuild_args(fargs: Lists::List<KernelTypes::KExpr>, l: Field,
+                               rnf: Field, n_ih: Field,
+                               ih_args: Lists::List<KernelTypes::KExpr>,
+                               aux_rec_addr: Bytes::AddressRef, np: Field, bnl: Field,
+                               anc: Field) -> () {
+      match (*(fargs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(arg, rest) => {
+          match (*(arg)) {
+            KernelTypes::KExprNode::BVar(bv) => {
+              match bv - (((n_ih + rnf) - 1) - l) {
+                0 => {  () } ,
+                _ => {
+                  assert_eq!(UInt32::less_than_fields(bv, n_ih), 1,
+                    "modeled projection: unpack rebuild argument out of range");
+                  let pos = (n_ih - 1) - bv;
+                  let ih_expr = Lists::lookup(ih_args, pos);
+                  let (ih_h, ih_sargs) = KernelTypes::collect_spine(ih_expr);
+                  match (*(ih_h)) {
+                    KernelTypes::KExprNode::Const(ih_rec, ih_lvls) => {
+                      assert_eq!(Bytes::address_eq(ih_rec, aux_rec_addr), 1,
+                        "modeled projection: unpack IH head is not aux.rec");
+                      assert_eq!(KernelCheck::level_list_struct_eq(
+                        ih_lvls, KernelCheck::build_param_lvls_range(0, bnl + 1, 0)), 1,
+                        "modeled projection: unpack IH levels");
+                      assert_eq!(Lists::length(ih_sargs), ((np + 1) + anc) + 2,
+                        "modeled projection: unpack IH arity");
+                      assert_eq!(KernelCheck::spec_params_ptr_eq(
+                        Lists::take(ih_sargs, (np + 1) + anc),
+                        bvars_desc(((np + 1) + anc) + rnf, (np + 1) + anc)), 1,
+                        "modeled projection: unpack IH prefix args");
+                      let ih_major = Lists::lookup(ih_sargs, ((np + 1) + anc) + 1);
+                      match (*(ih_major)) {
+                        KernelTypes::KExprNode::BVar(mbv) => {
+                          assert_eq!(mbv, (rnf - 1) - l,
+                            "modeled projection: unpack IH field mismatch");
+                          () } ,
+                      } } ,
+                  } } ,
+              };
+              check_unpack_rebuild_args(rest, l + 1, rnf, n_ih, ih_args, aux_rec_addr, np, bnl, anc) } ,
+          } } ,
+      }
+    }
+⟧
+
+def check_unpack_minors := aiur_fn⟦
+  fn check_unpack_minors(minors: Lists::List<KernelTypes::KExpr>,
+                         arules: Lists::List<KernelTypes::KRecRule>,
+                         aux_blk: Bytes::AddressRef, aux_rec_addr: Bytes::AddressRef,
+                         np: Field, bnl: Field, anc: Field, k: Field) -> () {
+      match (*(minors)) {
+        Lists::Node::Nil => {
+          let Lists::Node::Nil = (*(arules));
+          () } ,
+        Lists::Node::Cons(minor_k, mrest) => {
+          let Lists::Node::Cons(rule_k, rrest) = (*(arules));
+          let (rnf_k, ih_args) = rec_rule_ih_args(rule_k, np, anc, k);
+          let n_ih_k = Lists::length(ih_args);
+          let (mbody_k, mpeeled_k, _) = KernelCheck::peel_n_lams_collect(
+            minor_k, rnf_k + n_ih_k, 0, (&(Lists::Node::Nil)));
+          assert_eq!(mpeeled_k, rnf_k + n_ih_k, "modeled projection: unpack minor lambda arity");
+          let (mh_k, margs_k) = KernelTypes::collect_spine(mbody_k);
+          let param_lvls = KernelCheck::build_param_lvls_range(0, bnl, 0);
+          let aux_c_k = KernelCheck::projection_addr_ctor(0, k, aux_blk);
+          match (*(mh_k)) {
+            KernelTypes::KExprNode::Const(mc_addr, mc_lvls) => {
+              match Bytes::address_eq(mc_addr, aux_c_k) {
+                1 => {
+                  assert_eq!(KernelCheck::level_list_struct_eq(mc_lvls, param_lvls), 1,
+                    "modeled projection: unpack passthrough levels");
+                  assert_eq!(Lists::length(margs_k), np + rnf_k,
+                    "modeled projection: unpack passthrough arity");
+                  assert_eq!(KernelCheck::spec_params_ptr_eq(
+                    Lists::take(margs_k, np), bvars_desc((np + rnf_k) + n_ih_k, np)), 1,
+                    "modeled projection: unpack passthrough params");
+                  assert_eq!(KernelCheck::spec_params_ptr_eq(
+                    Lists::drop(margs_k, np), bvars_desc(rnf_k + n_ih_k, rnf_k)), 1,
+                    "modeled projection: unpack passthrough fields");
+                  () } ,
+                _ => {
+                  match (*(Ingress::get_ci(mc_addr))) {
+                    KernelTypes::KConstantInfo::Ctor(cnl_k, _, cblk_k, cind_k, _, cnp_k, cnf_k, _) => {
+                      assert_eq!(cnf_k, rnf_k, "modeled projection: unpack rebuild field count");
+                      assert_eq!(block_is_modeled(cblk_k), 0,
+                        "modeled projection: unpack container is modeled");
+                      assert_eq!(Fields::is_zero(cnp_k), 0,
+                        "modeled projection: unpack container has zero params");
+                      assert_eq!(Lists::length(mc_lvls), cnl_k,
+                        "modeled projection: unpack container level arity");
+                      assert_eq!(Lists::length(margs_k), cnp_k + cnf_k,
+                        "modeled projection: unpack container arity");
+                      match (*(Ingress::get_ci_iprj(cblk_k, cind_k))) {
+                        KernelTypes::KConstantInfo::Induct(inl_k, ity_k, inp_k, ini_k, _, _, _, _) => {
+                          assert_eq!(inl_k, cnl_k, "modeled projection: unpack container ind levels");
+                          assert_eq!(inp_k, cnp_k, "modeled projection: unpack container ind params");
+                          assert_eq!(type_sort_fixed_zeta(ity_k, inp_k + ini_k, mc_lvls), 1,
+                            "modeled projection: unpack container sort is not fixed");
+                          check_unpack_rebuild_args(
+                            Lists::drop(margs_k, cnp_k), 0, rnf_k, n_ih_k, ih_args,
+                            aux_rec_addr, np, bnl, anc) } ,
+                      } } ,
+                  } } ,
+              } } ,
+          };
+          check_unpack_minors(mrest, rrest, aux_blk, aux_rec_addr, np, bnl, anc, k + 1) } ,
+      }
+    }
+⟧
+
+def check_proj_nested_minor := aiur_fn⟦
+  fn check_proj_nested_minor(mbody: KernelTypes::KExpr, aux_blk: Bytes::AddressRef,
+                             aux_rec_addr: Bytes::AddressRef,
+                             arules: Lists::List<KernelTypes::KRecRule>,
+                             np: Field, bnl: Field, anc: Field, cnf: Field, n_ih_j: Field,
+                             fidx: Field, aset: RBTreeMap::RBTreeMap<Field>) -> () {
+      let target_bv = ((n_ih_j + cnf) - 1) - fidx;
+      match (*(mbody)) {
+        KernelTypes::KExprNode::BVar(bv) => {
+          assert_eq!(bv, target_bv, "modeled projection: minor field variable mismatch");
+          () } ,
+        _ => {
+          let (uh, uargs) = KernelTypes::collect_spine(mbody);
+          let param_lvls = KernelCheck::build_param_lvls_range(0, bnl, 0);
+          match (*(uh)) {
+            KernelTypes::KExprNode::Const(u_addr, u_lvls) => {
+              assert_eq!(KernelClaim::addr_set_member(u_addr, aset), 1,
+                "modeled projection: unpack helper is not advice");
+              assert_eq!(KernelCheck::level_list_struct_eq(u_lvls, param_lvls), 1,
+                "modeled projection: unpack helper levels");
+              let ulen = Lists::length(uargs);
+              assert_eq!(UInt32::less_than_fields(np, ulen), 1,
+                "modeled projection: unpack helper arity");
+              assert_eq!(KernelCheck::spec_params_ptr_eq(
+                Lists::take(uargs, np), bvars_desc(((np + 1) + cnf) + n_ih_j, np)), 1,
+                "modeled projection: unpack helper params");
+              let ulast = Lists::lookup(uargs, ulen - 1);
+              match (*(ulast)) {
+                KernelTypes::KExprNode::BVar(ubv) => {
+                  assert_eq!(ubv, target_bv, "modeled projection: unpack helper subject mismatch");
+                  () } ,
+              };
+              match (*(Ingress::get_ci(u_addr))) {
+                KernelTypes::KConstantInfo::Defn(unl, _, uval, _, _) => {
+                  assert_eq!(unl, bnl, "modeled projection: unpack helper level count");
+                  let (ubody, upeeled, _) = KernelCheck::peel_n_lams_collect(
+                    uval, ulen, 0, (&(Lists::Node::Nil)));
+                  assert_eq!(upeeled, ulen, "modeled projection: unpack helper lambda arity");
+                  let (uah, ua_args) = KernelTypes::collect_spine(ubody);
+                  match (*(uah)) {
+                    KernelTypes::KExprNode::Const(ua_addr, ua_lvls) => {
+                      assert_eq!(KernelClaim::addr_set_member(ua_addr, aset), 1,
+                        "modeled projection: unpackAll is not advice");
+                      assert_eq!(KernelCheck::level_list_struct_eq(ua_lvls, param_lvls), 1,
+                        "modeled projection: unpackAll levels");
+                      assert_eq!(Lists::length(ua_args), np + 2,
+                        "modeled projection: unpackAll arity");
+                      assert_eq!(KernelCheck::spec_params_ptr_eq(
+                        Lists::take(ua_args, np), bvars_desc(ulen, np)), 1,
+                        "modeled projection: unpackAll params");
+                      match (*(Lists::lookup(ua_args, np + 1))) {
+                        KernelTypes::KExprNode::BVar(abv) => {
+                          assert_eq!(abv, 0, "modeled projection: unpackAll subject");
+                          () } ,
+                      };
+                      match (*(Ingress::get_ci(ua_addr))) {
+                        KernelTypes::KConstantInfo::Defn(uanl, _, uaval, _, _) => {
+                          assert_eq!(uanl, bnl, "modeled projection: unpackAll level count");
+                          let (uabody, uapeeled, _) = KernelCheck::peel_n_lams_collect(
+                            uaval, np, 0, (&(Lists::Node::Nil)));
+                          assert_eq!(uapeeled, np, "modeled projection: unpackAll lambda arity");
+                          let (uarh, uar_args) = KernelTypes::collect_spine(uabody);
+                          match (*(uarh)) {
+                            KernelTypes::KExprNode::Const(uar_addr, uar_lvls) => {
+                              assert_eq!(Bytes::address_eq(uar_addr, aux_rec_addr), 1,
+                                "modeled projection: unpackAll recursor mismatch");
+                              assert_eq!(Lists::length(uar_lvls), bnl + 1,
+                                "modeled projection: unpackAll recursor level arity");
+                              assert_eq!(KernelCheck::level_list_struct_eq(
+                                Lists::drop(uar_lvls, 1), param_lvls), 1,
+                                "modeled projection: unpackAll recursor levels");
+                              assert_eq!(Lists::length(uar_args), (np + 1) + anc,
+                                "modeled projection: unpackAll recursor arity");
+                              assert_eq!(KernelCheck::spec_params_ptr_eq(
+                                Lists::take(uar_args, np), bvars_desc(np, np)), 1,
+                                "modeled projection: unpackAll recursor params");
+                              check_unpack_minors(
+                                Lists::drop(uar_args, np + 1), arules, aux_blk, aux_rec_addr,
+                                np, bnl, anc, 0) } ,
+                          } } ,
+                      } } ,
+                  } } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+def check_proj_pure := aiur_fn⟦
+  fn check_proj_pure(rc: KernelRoles::RoleCtx, t_model: Bytes::AddressRef, pval: KernelTypes::KExpr,
+                     np: Field, bnl: Field, cnf: Field, fidx: Field,
+                     aset: RBTreeMap::RBTreeMap<Field>) -> () {
+      let param_lvls = KernelCheck::build_param_lvls_range(0, bnl, 0);
+      match (*(Ingress::get_ci(t_model))) {
+        KernelTypes::KConstantInfo::Defn(tmnl, _, tmval, _, _) => {
+          assert_eq!(tmnl, bnl, "modeled projection: type model level count");
+          let (tm_body, tm_peeled, _) = KernelCheck::peel_n_lams_collect(
+            tmval, np, 0, (&(Lists::Node::Nil)));
+          assert_eq!(tm_peeled, np, "modeled projection: type model lambda arity");
+          let (aux_h, aux_args) = KernelTypes::collect_spine(tm_body);
+          match (*(aux_h)) {
+            KernelTypes::KExprNode::Const(aux_addr, aux_lvls) => {
+              assert_eq!(KernelCheck::level_list_struct_eq(aux_lvls, param_lvls), 1,
+                "modeled projection: aux levels mismatch");
+              assert_eq!(Lists::length(aux_args), np + 1, "modeled projection: aux arity");
+              assert_eq!(KernelCheck::spec_params_ptr_eq(
+                Lists::take(aux_args, np), bvars_desc(np, np)), 1,
+                "modeled projection: aux params mismatch");
+              let tag_app = Lists::lookup(aux_args, np);
+              let (tc_h, tc_args) = KernelTypes::collect_spine(tag_app);
+              match (*(tc_h)) {
+                KernelTypes::KExprNode::Const(tag_c_addr, tc_lvls) => {
+                  assert_eq!(KernelCheck::level_list_struct_eq(tc_lvls, param_lvls), 1,
+                    "modeled projection: tag ctor levels mismatch");
+                  assert_eq!(KernelCheck::spec_params_ptr_eq(tc_args, bvars_desc(np, np)), 1,
+                    "modeled projection: tag ctor params mismatch");
+                  match (*(Ingress::get_ci(tag_c_addr))) {
+                    KernelTypes::KConstantInfo::Ctor(tcnl, _, tag_blk, tag_ind, tag_cidx, tcnp, tcnf, _) => {
+                      assert_eq!(tcnl, bnl, "modeled projection: tag ctor level count");
+                      assert_eq!(tag_ind, 0, "modeled projection: tag ind index");
+                      assert_eq!(tcnp, np, "modeled projection: tag ctor param count");
+                      assert_eq!(tcnf, 0, "modeled projection: tag ctor field count");
+                      assert_eq!(block_is_modeled(tag_blk), 0, "modeled projection: tag is modeled");
+                      let tag_addr = KernelDefEq::compute_iprj_addr(tag_blk, 0);
+                      let tag_r1 = KernelRoles::role_index_of(rc, tag_addr);
+                      assert_eq!(Fields::is_zero(tag_r1 - (KernelRoleSpec::role_nat() + 1)), 0,
+                        "modeled projection: tag is Nat");
+                      match (*(Ingress::get_ci_iprj(tag_blk, 0))) {
+                        KernelTypes::KConstantInfo::Induct(tlnl, tlty, tlnp, tlni, tlnc, _, _, _) => {
+                          assert_eq!(tlnl, bnl, "modeled projection: tag level count");
+                          assert_eq!(tlnp, np, "modeled projection: tag param count");
+                          assert_eq!(tlni, 0, "modeled projection: tag index count");
+                          assert_eq!(UInt32::less_than_fields(1, tlnc), 1,
+                            "modeled projection: tag ctor count");
+                          assert_eq!(KernelWhnf::type_sort_never(tlty, tlnp, param_lvls), 1,
+                            "modeled projection: tag sort may be zero");
+                          () } ,
+                      };
+                      match (*(Ingress::get_ci(aux_addr))) {
+                        KernelTypes::KConstantInfo::Induct(anl, aty, anp, ani, anc, _, aux_blk, aind) => {
+                          assert_eq!(anl, bnl, "modeled projection: aux level count");
+                          assert_eq!(anp, np, "modeled projection: aux param count");
+                          assert_eq!(ani, 1, "modeled projection: aux index count");
+                          assert_eq!(aind, 0, "modeled projection: aux member index");
+                          assert_eq!(block_is_modeled(aux_blk), 0, "modeled projection: aux is modeled");
+                          assert_eq!(KernelWhnf::type_sort_never(aty, anp + 1, param_lvls), 1,
+                            "modeled projection: aux sort may be zero");
+                          let j_idx = find_aux_ctor_for_tag(
+                            aux_blk, anc, 0, np, bnl, aux_addr, tag_blk, tag_cidx, cnf, 0, 0);
+                          check_proj_pure_body(
+                            pval, aux_blk, anc, tag_c_addr, np, bnl, cnf, fidx, j_idx, aset) } ,
+                      } } ,
+                  } } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+def check_proj_pure_rec := aiur_fn⟦
+  fn check_proj_pure_rec(phead_addr: Bytes::AddressRef, pargs: Lists::List<KernelTypes::KExpr>,
+                         arnl: Field, arnp: Field, arni: Field, arnmot: Field, arnmin: Field,
+                         arules: Lists::List<KernelTypes::KRecRule>,
+                         aux_blk: Bytes::AddressRef, anc: Field, tag_c_addr: Bytes::AddressRef,
+                         np: Field, bnl: Field, cnf: Field, fidx: Field, j_idx: Field,
+                         aset: RBTreeMap::RBTreeMap<Field>) -> () {
+      let param_lvls = KernelCheck::build_param_lvls_range(0, bnl, 0);
+      assert_eq!(Bytes::address_eq(rec_family_block(phead_addr), aux_blk), 1,
+        "modeled projection: recursor block mismatch");
+      assert_eq!(arnl, bnl + 1, "modeled projection: aux rec level count");
+      assert_eq!(arnp, np, "modeled projection: aux rec param count");
+      assert_eq!(arni, 1, "modeled projection: aux rec index count");
+      assert_eq!(arnmot, 1, "modeled projection: aux rec motive count");
+      assert_eq!(arnmin, anc, "modeled projection: aux rec minor count");
+      assert_eq!(Lists::length(pargs), ((np + 1) + anc) + 2,
+        "modeled projection: aux rec arity");
+      assert_eq!(KernelCheck::spec_params_ptr_eq(
+        Lists::take(pargs, np), bvars_desc(np + 1, np)), 1,
+        "modeled projection: aux rec params");
+      let expected_tag = KernelWhnf::apply_spine(
+        (&(KernelTypes::KExprNode::Const(tag_c_addr, param_lvls))),
+        bvars_desc(np + 1, np));
+      assert_eq!(KernelCheck::kexpr_struct_eq(
+        Lists::lookup(pargs, (np + 1) + anc), expected_tag), 1,
+        "modeled projection: aux rec tag arg");
+      match (*(Lists::lookup(pargs, ((np + 1) + anc) + 1))) {
+        KernelTypes::KExprNode::BVar(sbv) => {
+          assert_eq!(sbv, 0, "modeled projection: aux rec subject");
+          () } ,
+      };
+      let (rnf_j, ih_args_j) = rec_rule_ih_args(Lists::lookup(arules, j_idx), np, anc, j_idx);
+      assert_eq!(rnf_j, cnf, "modeled projection: aux rec rule field count");
+      let n_ih_j = Lists::length(ih_args_j);
+      let minor_j = Lists::lookup(pargs, (np + 1) + j_idx);
+      let (mbody, mpeeled, _) = KernelCheck::peel_n_lams_collect(
+        minor_j, cnf + n_ih_j, 0, (&(Lists::Node::Nil)));
+      assert_eq!(mpeeled, cnf + n_ih_j, "modeled projection: minor lambda arity");
+      check_proj_nested_minor(
+        mbody, aux_blk, phead_addr, arules, np, bnl, anc, cnf, n_ih_j, fidx, aset)
+    }
+⟧
+
+def check_proj_pure_defn := aiur_fn⟦
+  fn check_proj_pure_defn(phead_addr: Bytes::AddressRef, pargs: Lists::List<KernelTypes::KExpr>,
+                          rnl: Field, rval: KernelTypes::KExpr,
+                          aux_blk: Bytes::AddressRef, anc: Field, tag_c_addr: Bytes::AddressRef,
+                          np: Field, bnl: Field, cnf: Field, fidx: Field, j_idx: Field,
+                          aset: RBTreeMap::RBTreeMap<Field>) -> () {
+      assert_eq!(KernelClaim::addr_set_member(phead_addr, aset), 1,
+        "modeled projection: recursor model is not advice");
+      assert_eq!(rnl, bnl + 1, "modeled projection: recursor model level count");
+      let plen = Lists::length(pargs);
+      assert_eq!(UInt32::less_than_fields((np + anc) + 1, plen), 1,
+        "modeled projection: recursor model arity");
+      let n_mot = (plen - np) - (anc + 1);
+      assert_eq!(KernelCheck::spec_params_ptr_eq(
+        Lists::take(pargs, np), bvars_desc(np + 1, np)), 1,
+        "modeled projection: recursor model params");
+      match (*(Lists::lookup(pargs, plen - 1))) {
+        KernelTypes::KExprNode::BVar(sbv) => {
+          assert_eq!(sbv, 0, "modeled projection: recursor model subject");
+          () } ,
+      };
+      let (rbody, rpeeled, _) = KernelCheck::peel_n_lams_collect(
+        rval, plen, 0, (&(Lists::Node::Nil)));
+      assert_eq!(rpeeled, plen, "modeled projection: recursor model lambda arity");
+      let (rh, rargs) = KernelTypes::collect_spine(rbody);
+      match (*(rh)) {
+        KernelTypes::KExprNode::Const(aux_rec_addr, ar_lvls) => {
+          assert_eq!(Bytes::address_eq(rec_family_block(aux_rec_addr), aux_blk), 1,
+            "modeled projection: mutual aux rec block mismatch");
+          assert_eq!(KernelCheck::level_list_struct_eq(
+            ar_lvls, KernelCheck::build_param_lvls_range(0, bnl + 1, 0)), 1,
+            "modeled projection: mutual aux rec levels");
+          match (*(Ingress::get_ci(aux_rec_addr))) {
+            KernelTypes::KConstantInfo::Rec(arnl, _, arnp, arni, arnmot, arnmin, arules, _, _, _, _) => {
+              assert_eq!(arnl, bnl + 1, "modeled projection: mutual aux rec level count");
+              assert_eq!(arnp, np, "modeled projection: mutual aux rec param count");
+              assert_eq!(arni, 1, "modeled projection: mutual aux rec index count");
+              assert_eq!(arnmot, 1, "modeled projection: mutual aux rec motive count");
+              assert_eq!(arnmin, anc, "modeled projection: mutual aux rec minor count");
+              assert_eq!(Lists::length(rargs), ((np + 1) + anc) + 2,
+                "modeled projection: mutual aux rec arity");
+              assert_eq!(KernelCheck::spec_params_ptr_eq(
+                Lists::take(rargs, np), bvars_desc(plen, np)), 1,
+                "modeled projection: mutual aux rec params");
+              assert_eq!(KernelCheck::spec_params_ptr_eq(
+                Lists::take(Lists::drop(rargs, np + 1), anc), bvars_desc(anc + 1, anc)), 1,
+                "modeled projection: mutual aux rec minors");
+              let expected_rtag = KernelWhnf::apply_spine(
+                (&(KernelTypes::KExprNode::Const(tag_c_addr,
+                    KernelCheck::build_param_lvls_range(1, bnl, 0)))),
+                bvars_desc(plen, np));
+              assert_eq!(KernelCheck::kexpr_struct_eq(
+                Lists::lookup(rargs, (np + 1) + anc), expected_rtag), 1,
+                "modeled projection: mutual aux rec tag arg");
+              match (*(Lists::lookup(rargs, ((np + 1) + anc) + 1))) {
+                KernelTypes::KExprNode::BVar(rbv) => {
+                  assert_eq!(rbv, 0, "modeled projection: mutual aux rec subject");
+                  () } ,
+              };
+              let (rnf_j, ih_args_j) = rec_rule_ih_args(Lists::lookup(arules, j_idx), np, anc, j_idx);
+              assert_eq!(rnf_j, cnf, "modeled projection: mutual aux rec rule field count");
+              let n_ih_j = Lists::length(ih_args_j);
+              let minor_j = Lists::lookup(pargs, (np + n_mot) + j_idx);
+              let (mbody, mpeeled, _) = KernelCheck::peel_n_lams_collect(
+                minor_j, cnf + n_ih_j, 0, (&(Lists::Node::Nil)));
+              assert_eq!(mpeeled, cnf + n_ih_j, "modeled projection: mutual minor lambda arity");
+              check_proj_nested_minor(
+                mbody, aux_blk, aux_rec_addr, arules, np, bnl, anc, cnf, n_ih_j, fidx, aset) } ,
+          } } ,
+      }
+    }
+⟧
+
+def check_proj_pure_body := aiur_fn⟦
+  fn check_proj_pure_body(pval: KernelTypes::KExpr, aux_blk: Bytes::AddressRef, anc: Field,
+                          tag_c_addr: Bytes::AddressRef, np: Field, bnl: Field, cnf: Field,
+                          fidx: Field, j_idx: Field, aset: RBTreeMap::RBTreeMap<Field>) -> () {
+      let param_lvls = KernelCheck::build_param_lvls_range(0, bnl, 0);
+      let (pbody, ppeeled, _) = KernelCheck::peel_n_lams_collect(pval, np + 1, 0, (&(Lists::Node::Nil)));
+      assert_eq!(ppeeled, np + 1, "modeled projection: body lambda arity");
+      let (ph, pargs) = KernelTypes::collect_spine(pbody);
+      match (*(ph)) {
+        KernelTypes::KExprNode::Const(phead_addr, phead_lvls) => {
+          assert_eq!(Lists::length(phead_lvls), bnl + 1, "modeled projection: head level arity");
+          assert_eq!(KernelCheck::level_list_struct_eq(Lists::drop(phead_lvls, 1), param_lvls), 1,
+            "modeled projection: head levels mismatch");
+          match (*(Ingress::get_ci(phead_addr))) {
+            KernelTypes::KConstantInfo::Rec(arnl, _, arnp, arni, arnmot, arnmin, arules, _, _, _, _) => {
+              check_proj_pure_rec(phead_addr, pargs, arnl, arnp, arni, arnmot, arnmin, arules,
+                                  aux_blk, anc, tag_c_addr, np, bnl, cnf, fidx, j_idx, aset) } ,
+            KernelTypes::KConstantInfo::Defn(rnl, _, rval, _, _) => {
+              check_proj_pure_defn(phead_addr, pargs, rnl, rval,
+                                   aux_blk, anc, tag_c_addr, np, bnl, cnf, fidx, j_idx, aset) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- Negative-occurrence scan on a block's constructors, mirroring IxC's
+  -- `BlockHasNegOcc` (`IxC/Kernel/Frontend/InModel/Check.lean`): a block with any
+  -- member mentioned in a Pi domain of any constructor field has no in-process
+  -- projection models, so `modeled_proj_eligible` rejects it.
+
+def field_has_neg := aiur_fn⟦
+  fn field_has_neg(e: KernelTypes::KExpr, mems: Lists::List<Bytes::AddressRef>) -> Field {
+      match (*(e)) {
+        KernelTypes::KExprNode::Forall(dom, body, _) => {
+          match KernelWhnf::se_mentions(dom, mems) {
+            1 => {  1 } ,
+            _ => {  field_has_neg(body, mems) } ,
+          } } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          field_has_neg(KernelSubst::expr_inst1(b, v, 0), mems) } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+def fields_have_neg := aiur_fn⟦
+  fn fields_have_neg(ty: KernelTypes::KExpr, nf: Field, mems: Lists::List<Bytes::AddressRef>) -> Field {
+      match nf {
+        0 => {  0 } ,
+        _ => {
+          match (*(ty)) {
+            KernelTypes::KExprNode::Forall(dom, body, _) => {
+              match field_has_neg(dom, mems) {
+                1 => {  1 } ,
+                _ => {  fields_have_neg(body, nf - 1, mems) } ,
+              } } ,
+            KernelTypes::KExprNode::Let(_, v, b) => {
+              fields_have_neg(KernelSubst::expr_inst1(b, v, 0), nf, mems) } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
+def ctors_have_neg := aiur_fn⟦
+  fn ctors_have_neg(block: Bytes::AddressRef, pos: Field, n_ctors: Field,
+                    mems: Lists::List<Bytes::AddressRef>, cidx: Field) -> Field {
+      match n_ctors - cidx {
+        0 => {  0 } ,
+        _ => {
+          match (*(Ingress::get_ci_cprj(block, pos, cidx))) {
+            KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, np, nf, _) => {
+              let body = KernelCheck::peel_n_foralls_zeta(cty, np);
+              let found = match KernelWhnf::se_mentions(body, mems) {
+                0 => {  0 } ,
+                _ => {  fields_have_neg(body, nf, mems) } ,
+              };
+              match found {
+                1 => {  1 } ,
+                _ => {  ctors_have_neg(block, pos, n_ctors, mems, cidx + 1) } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+def members_have_neg := aiur_fn⟦
+  fn members_have_neg(block: Bytes::AddressRef, members: Lists::List<Ixon::MutConst>,
+                      pos: Field, mems: Lists::List<Bytes::AddressRef>) -> Field {
+      match (*(members)) {
+        Lists::Node::Nil => {  0 } ,
+        Lists::Node::Cons(m, rest) => {
+          match m {
+            Ixon::MutConst::Indc(ind) => {
+              match ind {
+                Ixon::Inductive::Mk(_, _, _, _, _, ctors) => {
+                  match ctors_have_neg(block, pos, Lists::length(ctors), mems, 0) {
+                    1 => {  1 } ,
+                    _ => {  members_have_neg(block, rest, pos + 1, mems) } ,
+                  } } ,
+              } } ,
+            _ => {  members_have_neg(block, rest, pos + 1, mems) } ,
+          } } ,
+      }
+    }
+⟧
+
+def block_has_neg_occ := aiur_fn⟦
+  fn block_has_neg_occ(block: Bytes::AddressRef) -> Field {
+      let c = Ingress::load_verified_constant(block);
+      match c {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
+          match info {
+            Ixon::ConstantInfo::Muts(members) => {
+              let mems = Ingress::build_recur_addrs(members, block);
+              members_have_neg(block, members, 0, mems) } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- Whether member `ind_idx` of a modeled block is eligible for `.proj`: one constructor,
+  -- zero indices, never-zero declared sort, matching constructor parameter count and at
+  -- least one field, and no syntactic negative occurrence in the block. Pure channel-2
+  -- function of `(block, ind_idx)`.
+
+def modeled_proj_eligible := aiur_fn⟦
+  fn modeled_proj_eligible(block: Bytes::AddressRef, ind_idx: Field) -> Field {
+      match (*(Ingress::get_ci_iprj(block, ind_idx))) {
+        KernelTypes::KConstantInfo::Induct(nl, ty, np, ni, nctors, _, _, _) => {
+          match Fields::is_zero(ni) * Fields::is_zero(nctors - 1) {
+            1 => {
+              match KernelWhnf::type_sort_never(ty, np, KernelCheck::build_param_lvls_range(0, nl, 0)) {
+                1 => {
+                  match (*(Ingress::get_ci_cprj(block, ind_idx, 0))) {
+                    KernelTypes::KConstantInfo::Ctor(cnl, _, _, _, _, cnp, cnf, _) => {
+                      let ok = (Fields::is_zero(cnl - nl) * Fields::is_zero(cnp - np))
+                               * (1 - Fields::is_zero(cnf));
+                      match ok {
+                        1 => {  1 - block_has_neg_occ(block) } ,
+                        _ => {  0 } ,
+                      } } ,
+                    _ => {  0 } ,
+                  } } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+  -- Whether `.proj` is allowed at member `ind_idx` of `block`: always 1 on native blocks,
+  -- and `modeled_proj_eligible` on modeled blocks.
+
+def proj_allowed_at := aiur_fn⟦
+  fn proj_allowed_at(block: Bytes::AddressRef, ind_idx: Field) -> Field {
+      match block_is_modeled(block) {
+        0 => {  1 } ,
+        _ => {  modeled_proj_eligible(block, ind_idx) } ,
       }
     }
 ⟧
