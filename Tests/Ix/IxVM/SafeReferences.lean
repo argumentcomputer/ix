@@ -1,6 +1,4 @@
 import Tests.Ix.IxVM.Harness
-import IxVM
-import Aiur.Artifact
 
 /-! # Safety of the references a claim or binding walk traverses
 
@@ -199,17 +197,6 @@ def runWithGuard (guarded : Bool) : IO UInt32 := do
   runCases "ixvm-safe-references" cases (jobs := 4) (circuit := some true)
 
 def run : IO UInt32 := runWithGuard true
-
-/-- Export a compiled package for the direct-walk preservation controls. The generic
-`ixvm export` command writes an execution package, which the multi-case test host cannot use. -/
-def exportWalkArtifact : IO UInt32 := do
-  let some path ← IO.getEnv "IX_AIUR_WALK_ARTIFACT"
-    | throw (IO.userError "IX_AIUR_WALK_ARTIFACT must name the output path")
-  IO.eprintln s!"IxVM program {_root_.IxVM.programDigest}"
-  let exported ← IO.ofExcept (_root_.IxVM.source.exportExecution ["IxVM::verify_transitive"])
-  Aiur.Artifact.write path (← IO.ofExcept (Aiur.Artifact.package exported _root_.IxVM.modulus ZMod.val))
-  IO.eprintln s!"Wrote compiled walk package {path}"
-  return 0
 
 /-- A direct transitive walk is allowed to originate outside the logic. These controls use
 `IX_AIUR_WALK_ARTIFACT`, an export containing `IxVM::verify_transitive`, rather than a claim

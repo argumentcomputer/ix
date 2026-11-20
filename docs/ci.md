@@ -204,6 +204,7 @@ Each entry below says what replaced the suite, or why it was dropped.
 - **`compile-claim-conflict`.** The compile is certified (`CompileCorrect`). The corpus compiles exercise its completeness.
 - **`decompile` and `decompile-diff`.** `fidelity-initstd`'s phase 5 is the decompile round trip on Init+Std.
 - **`kernel-read-cache`.** The read cache only serves `kernel-check-ixe`'s diagnostics. The user-axiom tests run its path.
+- **Pre-proof IxVM soundness and hypothesis-validation suites** (`ixvm-guard-certificate`, `ixvm-rec-run-bounds`, `ixvm-alias-block`, `ixvm-value-records`, `ixvm-telescope-block`, `ixvm-family-records`, `ixvm-family-graph-records`, `ixvm-twin-pair`, `ixvm-alias-formers`, `AliasParamHeads`, `ixvm-role-member-census`, `ixvm-op-order-scan`, `ixvm-decl-check-must-reject`, `ixvm-advice-must-reject`, `ixvm-quot-advice-must-reject`, `ixvm-refusal-controls`, `ixvm-recgen`, `ixvm-guard-corpus`, and `ixvm-mutator`). These manual suites tested finite fixtures for soundness properties and intermediate obligations now unconditionally proved for all inputs by `IxVM.Refinement.Endpoint.circuitComposed` (zero residual hypotheses). Completeness, parity, FFT pins, and Rust-host/FFI/circuit-verdict smoke coverage remain in `ixvm-kernel-checks`, `ixvm-eval`, `ixvm-exploits`, `ixvm-must-reject`, `ixvm-model-advice`, `ixvm-ind-variations`, `ixvm-shape-guards`, `ixvm-field-reduction`, `ixvm-circuit-verdict`, and `ixvm-differential`.
 
 **Replaced:**
 

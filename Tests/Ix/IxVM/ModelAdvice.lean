@@ -47,10 +47,11 @@ model is witness data. Two properties are tested here:
   records (`kernel-pin-gen` closes and writes them, tables in first-use order),
   and no model record is one: they are counted, not compared.
 
-The must-reject cases for advice (wrong member models, wrong iota statements,
+Soundness of corrupted model advice (wrong member models, wrong iota statements,
 axioms, self-reference, another block's payload, missing payloads, oversized
-counts) are covered by `Tests.Ix.IxVM.AdviceMustReject` and
-`Tests.Ix.IxVM.QuotAdviceMustReject`.
+counts, and non-basis quotient references) is unconditionally proved by
+`IxVM.Refinement.Endpoint.circuitComposed`; negative Rust-host smoke coverage
+remains in `Tests.Ix.IxVM.Exploits` and `Tests.Ix.IxVM.MustReject`.
 
 `ixvm-model-report` (manual) prints, for an `.ixe` file (`IX_MODEL_IXE`), what
 the modeller and the encoder produce per mutual or nested block: the advice's
