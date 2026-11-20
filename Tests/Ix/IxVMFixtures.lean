@@ -201,6 +201,25 @@ public inductive AuxTie where
   | c : WrapC AuxTie → AuxTie
   | i : WrapI AuxTie → AuxTie
 
+/-- Nested through `List` with an index domain that mentions the parameter: the
+nested occurrence's index argument `[]` is `@List.nil α`. -/
+public inductive NestIdx (α : Type) : List α → Type where
+  | mk : List (NestIdx α []) → NestIdx α []
+
+public inductive Rel2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop where
+  | nil : Rel2 R [] []
+  | cons {a b l₁ l₂} : R a b → Rel2 R l₁ l₂ → Rel2 R (a :: l₁) (b :: l₂)
+
+/-- Nested through the indexed family `Rel2`, with constructor index arguments
+that mention the parameter (`@TreeP.node α xs`). -/
+public inductive TreeP (α : Type) where
+  | leaf : α → TreeP α
+  | node : List (TreeP α) → TreeP α
+
+public inductive RelP (α : Type) : TreeP α → TreeP α → Prop where
+  | leaf {a} : RelP α (.leaf a) (.leaf a)
+  | node {xs ys} (items : Rel2 (RelP α) xs ys) : RelP α (.node xs) (.node ys)
+
 /-- A structure nested through `List`: its projection functions are `.proj` at a
 member of a modeled block, which Lean's `infer_proj` types like any other. -/
 public structure NestS where

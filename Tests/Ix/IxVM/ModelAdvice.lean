@@ -37,11 +37,13 @@ namespace Tests.Ix.IxVM.ModelAdvice
 open IxVM.ClaimHarness
 
 /-- Mutual (`Even`/`Odd`, `SoloA`/`SoloB`) and nested (`Tree`, `DedupM`,
-`AuxTie`) fixtures, types and recursors. -/
+`AuxTie`, and `NestIdx`, `RelP` with index arguments that mention the parameters)
+fixtures, types and recursors. -/
 def modeledNames : List String := [
   "IxVMInd.Even", "IxVMInd.Odd", "IxVMInd.Even.rec", "IxVMInd.Odd.rec",
   "IxVMInd.SoloA.rec", "IxVMInd.Tree", "IxVMInd.Tree.rec", "IxVMInd.Tree.rec_1",
-  "IxVMInd.DedupM", "IxVMInd.DedupM.rec", "IxVMInd.AuxTie.rec"]
+  "IxVMInd.DedupM", "IxVMInd.DedupM.rec", "IxVMInd.AuxTie.rec",
+  "IxVMInd.NestIdx", "IxVMInd.NestIdx.rec", "IxVMInd.RelP", "IxVMInd.RelP.rec"]
 
 private def nameOfString (str : String) : Lean.Name :=
   str.splitOn "." |>.foldl (init := .anonymous) fun acc s =>

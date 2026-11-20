@@ -315,6 +315,15 @@ theorem fieldIdx (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) (i o' : 
     RGL P f ((((matchCarrier fam i d).map (·.2)).getD []).map (·.liftLooseBVars o' 0))
       ((((matchCarrier (fam.mapKeys f) i d').map (·.2)).getD []).map (·.liftLooseBVars o' 0)) :=
   lifts (mc hf hfam i h) o' 0
+/-- A field's index arguments off its domain, the parameters lifted past `o` binders
+(`fieldIdxAt`). -/
+theorem fieldIdxAt (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) (i o o' : Nat) {d : Expr md}
+    {d' : Expr md'} (h : RG P f d d') :
+    RGL P f (((((matchCarrier fam i d).map (·.2)).getD []).map (·.liftLooseBVars o i)).map
+        (·.liftLooseBVars o' 0))
+      (((((matchCarrier (fam.mapKeys f) i d').map (·.2)).getD []).map (·.liftLooseBVars o i)).map
+        (·.liftLooseBVars o' 0)) :=
+  lifts (lifts (mc hf hfam i h) o i) o' 0
 
 end RGL
 
@@ -649,6 +658,7 @@ macro "rg" : tactic => `(tactic| repeat' (first
   | (with_reducible refine RG.eq ‹_› ?_ ?_ ?_)
   | (with_reducible refine RG.refl ‹_› ?_ ?_)
   | (with_reducible refine RG.eqRec ‹_› ?_ ?_ ?_ ?_ ?_ ?_)
+  | (with_reducible refine RGL.fieldIdxAt ‹_› ‹_› _ _ _ ?_)
   | (with_reducible refine RGL.fieldIdx ‹_› ‹_› _ _ ?_)
   | (with_reducible refine RGL.mc ‹_› ‹_› _ ?_)
   | (with_reducible refine RGL.cons ?_ ?_)
@@ -787,8 +797,9 @@ theorem push_thm_map {o : Array (Declaration md)} {nm : Key md} {nm' : Key md'} 
 
 -- The elaboration budget: one theorem walks all of `genNested` (about 930 lines of
 -- generator, each emitted term descended by `rg`); genMutual's 4000000 ran out at the
--- last step (the projection artifacts). It bounds elaboration only.
-set_option maxHeartbeats 10000000 in
+-- last step (the projection artifacts). It bounds elaboration only, as does the first
+-- `simp`'s step bound (it inlines every `let` of the generator).
+set_option maxHeartbeats 20000000 in
 theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ctx md'}
     (hctx : CtxAgree f P ctx ctx') {b : BlockRec md} (hb : b.Good P) :
     ExRel (fun ds ds' => ds' = ds.map (Declaration.mapKeys f))
@@ -796,8 +807,8 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
   obtain ⟨types, ctors, recs⟩ := b
   obtain ⟨hty, hct, hrc⟩ := hb
   unfold genNested
-  simp only [← Bool.cond_eq_ite, except_throw_bind, BlockRec.mapKeys_types, BlockRec.mapKeys_ctors,
-    BlockRec.mapKeys_recs, List.length_map]
+  simp (config := { maxSteps := 800000 }) only [← Bool.cond_eq_ite, except_throw_bind,
+    BlockRec.mapKeys_types, BlockRec.mapKeys_ctors, BlockRec.mapKeys_recs, List.length_map]
   cases types with
   | nil => exact ExRel.throw'
   | cons t0 rest =>
