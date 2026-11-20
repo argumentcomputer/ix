@@ -229,6 +229,15 @@ lean_exe «formal-aggregate-tests» where
 lean_exe «formal-checks» where
   root := `Tests.FormalChecks
 
+/-- Formal-package checks (`instance-symbols`, `ixvm-source`, and formal-package
+manual runners) that import the nested `Aiur`/`IxVM`/`MultiStark` proof packages
+(and therefore Mathlib). Kept separate from `IxTests` so the Nix flake and
+merge-test builds of `IxTests` do not pull in Mathlib. -/
+lean_exe «formal-package-tests» where
+  root := `Tests.FormalPackageMain
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs]
+
 @[test_driver]
 lean_exe IxTests where
   root := `Tests.Main

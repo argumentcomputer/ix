@@ -71,8 +71,9 @@ static tables. Execution and refinement proofs use that same source. Import
 `KernelRoleSpec.lean` is the one rendered module: `lake exe ix codegen` writes
 it from IxC's role specifications (`Ix/IxVM/RoleSpecGen.lean`), reading only the
 specification digest's bytes. `lake exe ix codegen --check` checks freshness.
-The `ixvm-source` test compares the public program, tables, and bytecode with
-full native preparation of the declaration metadata.
+The `ixvm-source` test (`lake exe formal-package-tests`) compares the public
+program, tables, and bytecode with full native preparation of the declaration
+metadata.
 `lake exe ixvm/ixvm-proof-gen --check` checks the derived lookup and mirror
 proof scripts; the lookup lemma for the example is `IxVM.KernelWhnf.whnf.lookup`.
 

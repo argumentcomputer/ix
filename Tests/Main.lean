@@ -34,8 +34,6 @@ import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.Kernel.FastPaths
 import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.SpecDigestRendering
-import Tests.Ix.InstanceSymbols
-import Tests.Ix.VMSource
 import Tests.Ix.Kernel.Arena
 import Tests.Ix.IxVM
 import Tests.Ix.AiurStatistics
@@ -69,12 +67,9 @@ import Tests.Ix.IxVM.AdviceMustReject
 import Tests.Ix.IxVM.QuotAdviceMustReject
 import Tests.Ix.IxVM.IndVariations
 import Tests.Ix.IxVM.RefusalControls
-import Tests.Ix.IxVM.GuardCertificate
-import Tests.Ix.IxVM.RecRunBounds
 import Tests.Ix.IxVM.OpOrderScan
 import Tests.Ix.IxVM.FamilyRecords
 import Tests.Ix.IxVM.FamilyGraphRecords
-import Tests.Ix.IxVM.TwinPairRecords
 import Tests.Ix.IxVM.AliasBlock
 import Tests.Ix.IxVM.ValueRecords
 import Tests.Ix.IxVM.TelescopeBlock
@@ -223,15 +218,6 @@ def registry : List Entry := [
   -- `KernelRoleSpec.lean` rebuilt from the specification digest's bytes; mutated
   -- bytes or a mutated file are refused (`IxVM.RoleSpecGen.checkRendering`).
   .runner "spec-digest-rendering" .primary Tests.Ix.SpecDigestRendering.run,
-  -- Instance symbols: the structural encoding agrees with the JSON form on every
-  -- deployed program (`Aiur.Generic.Instance.symbol`).
-  .runner "instance-symbols" .primary Tests.Ix.InstanceSymbols.run,
-  -- The public IxVM source agrees with native preparation of the imported
-  -- DSL declarations (`IxVM.Check`). In the `ci:ixvm` tier with the other
-  -- suites that import IxVM's modules at run time: the Nix-built test binary
-  -- (the flake's `ix-tests` check, primary tier) carries the root package's
-  -- `.olean` files but not those of the nested `Aiur`/`IxVM` packages.
-  .env "ixvm-source" (.ci .ixvm) Tests.Ix.VMSource.run,
 
   -- CLI integration tests (ci.yml's lean-test job)
   .runner "cli" (.ci .cli) Tests.Cli.suite,
@@ -282,12 +268,9 @@ def registry : List Entry := [
   .env "ixvm-quot-advice-must-reject" (.manual "model advice whose basis references leave the quotient roles") Tests.Ix.IxVM.QuotAdviceMustReject.run,
   .env "ixvm-ind-variations" (.manual "inductive variations through Lean, the certified kernel and IxVM; IX_IV_ONLY") Tests.Ix.IxVM.IndVariations.run,
   .env "ixvm-refusal-controls" (.manual "negative controls that reach the later refusals of the declaration checker, role validation and the field classifier") Tests.Ix.IxVM.RefusalControls.run,
-  .env "ixvm-guard-certificate" (.manual "the guard certificate's example against the compiled structure: the store's readings and IxC's table stage, by evaluation") Tests.Ix.IxVM.GuardCertificate.run,
-  .env "ixvm-rec-run-bounds" (.manual "three compiled native recursors through the program, and the count bounds of the run evaluated on their records") Tests.Ix.IxVM.RecRunBounds.run,
   .runner "ixvm-op-order-scan" (.manual "binding claims whose operation certificate reaches another record through the well-founded block, and their controls; IX_OP_ORDER_DEFAULT_ONLY runs the default table only") Tests.Ix.IxVM.OpOrderScan.run,
   .env "ixvm-family-records" (.manual "the compiled records and model advice of a nested and an indexed family; IX_FAMILY_RECORDS_OUT writes them") Tests.Ix.IxVM.FamilyRecords.run,
   .env "ixvm-family-graph-records" (.manual "the compiled records of two nested families and of a second recursor record of a family; IX_FAMILY_GRAPH_OUT writes them") Tests.Ix.IxVM.FamilyGraphRecords.run,
-  .env "ixvm-twin-pair" (.manual "a second recursor record of a family against the first at the compiled keys: the member comparisons and IxC's twin check in both orders; IX_TWIN_PAIR_OUT writes a fixture") Tests.Ix.IxVM.TwinPairRecords.run,
   .env "ixvm-alias-block" (.manual "a family whose former is declared at a definition, and its recursor, through the program in both validator modes") Tests.Ix.IxVM.AliasBlock.run,
   .env "ixvm-value-records" (.manual "a compiled theorem and opaque constant and an assembled block of definitions through the program, under a validated and an assumed binding") Tests.Ix.IxVM.ValueRecords.run,
   .env "ixvm-telescope-block" (.manual "an inductive type declared at its telescope, a structure-like proposition and their recursors through the program in both validator modes") Tests.Ix.IxVM.TelescopeBlock.run,
@@ -306,7 +289,6 @@ def registry : List Entry := [
   .runner "ixvm-claim-safety" (.ci .ixvm) Tests.Ix.IxVM.ClaimSafety.run,
   .runner "ixvm-safe-references" (.ci .ixvm) Tests.Ix.IxVM.SafeReferences.run,
   .runner "ixvm-unsafe-origin-walks" (.manual "IX_AIUR_WALK_ARTIFACT: a verify_transitive artifact") Tests.Ix.IxVM.SafeReferences.runUnsafeOrigins,
-  .runner "ixvm-export-safe-walk" (.manual "IX_AIUR_WALK_ARTIFACT: write a compiled direct-walk test package") Tests.Ix.IxVM.SafeReferences.exportWalkArtifact,
   .runner "ixvm-recursor-parent-route" (.ci .ixvm) Tests.Ix.IxVM.RecursorParentRoute.run,
   -- The declaration checker's shape guards: one kind of member per inductive block, no later
   -- use of a recursive field, a recursor header free of `let`.
@@ -426,8 +408,6 @@ def required : List (String × String) := [
   ("compile-ind-flags", "primary"),
   ("admission-hash-diff", "primary"),
   ("spec-digest-rendering", "primary"),
-  ("instance-symbols", "primary"),
-  ("ixvm-source", "ci:ixvm"),
   ("cli", "ci:cli"),
   ("compile-determinism", "ci:cli"),
   ("kernel-check-lean-cli", "ci:cli"),

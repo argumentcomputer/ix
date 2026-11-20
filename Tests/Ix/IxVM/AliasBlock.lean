@@ -1,6 +1,5 @@
 import Tests.Ix.IxVM.Harness
 import Tests.Ix.IxVM.AliasBlockDefs
-import Ix.IxVM.Consistency.StatementRel
 
 /-! # A family whose former is declared at a definition, through the program (executed evidence)
 
@@ -94,15 +93,18 @@ private def leadingBinders (sharing : Array Ixon.Expr) : Nat → Ixon.Expr → N
     | .all _ body => leadingBinders sharing fuel body + 1
     | _ => 0
 
+private def recordOf (E : Ixon.Env) (a : Address) : Option Ixon.Constant :=
+  (E.consts.get? a).bind fun lc => (Ixon.deConstantExact lc.rawBytes).toOption
+
 /-- The compiled record of the family: its projection record, its block and its counts. -/
 private def recordShape (env : Ixon.Env) : IO Bool := do
   let some aInd := env.getAddr? (Ix.Name.fromLeanName (defs "R"))
     | line "R: record" false "the family is not compiled"
-  let some cm := IxVM.Consistency.recordOf env aInd
+  let some cm := recordOf env aInd
     | line "R: record" false "the family's record does not decode"
   let .iPrj ip := cm.info
     | line "R: record" false "the family's record is not an inductive projection"
-  let some cb := IxVM.Consistency.recordOf env ip.block
+  let some cb := recordOf env ip.block
     | line "R: record" false "the block's record does not decode"
   let .muts ms := cb.info
     | line "R: record" false "the block's record is not a block"

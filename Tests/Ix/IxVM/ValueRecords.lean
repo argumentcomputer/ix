@@ -1,6 +1,5 @@
 import Tests.Ix.IxVM.Harness
 import Tests.Ix.IxVM.ValueRecordsDefs
-import Ix.IxVM.Consistency.StatementRel
 
 /-! # Value records through the program: a theorem, an opaque constant, a block of definitions
 
@@ -103,12 +102,15 @@ private def typingCase (env : Ixon.Env) (label : String) (target : Address) (ass
   let c ← Case.ofClaim s!"{how}: {label}{called}" env (.check ctx target none) {} accept none
   return { c with exercises := callee }
 
+private def recordOf (E : Ixon.Env) (a : Address) : Option Ixon.Constant :=
+  (E.consts.get? a).bind fun lc => (Ixon.deConstantExact lc.rawBytes).toOption
+
 /-- The record of a compiled definition record at the name `n`: its kind and whether it is in
 Lean's logic. -/
 private def standaloneRecord (env : Ixon.Env) (n : String) (kind : Ix.DefKind) : IO Bool := do
   let some a := env.getAddr? (Ix.Name.fromLeanName (defs n))
     | line s!"{n}: record" false "not compiled"
-  let some c := IxVM.Consistency.recordOf env a
+  let some c := recordOf env a
     | line s!"{n}: record" false "the record does not decode"
   let .defn d := c.info
     | line s!"{n}: record" false "the record is not a standalone definition record"
@@ -121,14 +123,14 @@ or a member of a block. Reported, not required. -/
 private def mutualRecord (env : Ixon.Env) (n : String) : IO Unit := do
   let some a := env.getAddr? (Ix.Name.fromLeanName (defs n))
     | IO.println s!"VR\tinfo\t{n}: not compiled"
-  let some c := IxVM.Consistency.recordOf env a
+  let some c := recordOf env a
     | IO.println s!"VR\tinfo\t{n}: the record does not decode"
   match c.info with
   | .defn d =>
     IO.println s!"VR\tinfo\t{n} at {a}: a standalone {kindWord d.kind} record \
       (the compiler wrote no block for the Lean mutual declaration)"
   | .dPrj p =>
-    let members := match (IxVM.Consistency.recordOf env p.block).map (·.info) with
+    let members := match (recordOf env p.block).map (·.info) with
       | some (.muts ms) => s!"{ms.size} members"
       | _ => "block not decoded"
     IO.println s!"VR\tinfo\t{n} at {a}: member {p.idx} of the definition block {p.block} \
@@ -138,7 +140,7 @@ private def mutualRecord (env : Ixon.Env) (n : String) : IO Unit := do
 /-- The assembled block's records: the block decodes as three definition members in Lean's
 logic of the three kinds, and each projection record is the member's. -/
 private def blockRecords (env : Ixon.Env) (b : Address) (ps : Array Address) : IO Bool := do
-  let some cb := IxVM.Consistency.recordOf env b
+  let some cb := recordOf env b
     | line "block: record" false "the block's record does not decode"
   let .muts ms := cb.info
     | line "block: record" false "the block's record is not a block"
@@ -154,7 +156,7 @@ private def blockRecords (env : Ixon.Env) (b : Address) (ps : Array Address) : I
     (kinds == [.defn, .opaq, .thm]) s!"{kinds.map kindWord}"
   let mut ok₃ := true
   for (p, i) in ps.zipIdx do
-    let isMember := match (IxVM.Consistency.recordOf env p).map (·.info) with
+    let isMember := match (recordOf env p).map (·.info) with
       | some (.dPrj q) => q.idx.toNat == i && q.block == b
       | _ => false
     ok₃ := (← line s!"block: the projection record of member {i}" isMember s!"at {p}") && ok₃

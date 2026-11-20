@@ -74,13 +74,14 @@ jobs:
           lake build --wfail aiur/Aiur ixvm/IxVM multiStark/MultiStark
           lake build --wfail aiur/aiur_tests aiur/execution_tests aiur/trace_tests \
             aiur/u32_tests aiur/library_tests ixvm/ixvm \
-            multiStark/stark-export aiur/axiom_sweep
+            multiStark/stark-export aiur/axiom_sweep formal-package-tests
           lake env Aiur/.lake/build/bin/axiom_sweep Aiur
           Aiur/.lake/build/bin/aiur_tests
           Aiur/.lake/build/bin/execution_tests
           Aiur/.lake/build/bin/trace_tests
           Aiur/.lake/build/bin/u32_tests
           Aiur/.lake/build/bin/library_tests
+          lake env .lake/build/bin/formal-package-tests
       # The refinement proofs and the path lemmas `lake exe ixvm/ixvm-proof-gen`
       # writes are their own library (not a default target, and skipped by
       # lint's build-all): check that the generated files are current, then

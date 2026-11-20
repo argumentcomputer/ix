@@ -1,6 +1,5 @@
 import Tests.Ix.IxVM.Harness
 import Tests.Ix.IxVM.TelescopeBlockDefs
-import Ix.IxVM.Consistency.StatementRel
 
 /-! # An inductive type declared at its telescope, through the program (executed evidence)
 

@@ -1,6 +1,4 @@
 import Tests.Ix.IxVM.Harness
-import IxVM
-import Aiur.Artifact
 
 /-! # Operation order in the well-founded block
 
