@@ -50,21 +50,6 @@ theorem few_not_multi {c : Core.Ctx} {B : _root_.Address} (hm : MultiAt c.E B)
 
 /-! ## Observations of the dispatch -/
 
-/-- **An observed projection makes its block native**: `proj_ctor` asserts that
-`block_is_modeled` answers `0` there. -/
-theorem nativeAt_of_projCtor {c : Core.Ctx} {bp ip ptr : SourceValue F} {h h' : Heap F}
-    {cs : List (Call F)} {b : Bytes.Address}
-    (ev : ObsFn Core.W "KernelModeled::proj_ctor" [bp, ip] h ptr h' cs) (hg : Core.Good c cs)
-    (hb : Bytes.RepAddressRef Core.addrTy h b bp) : NativeAt c.E (Core.ixAddr b) := by
-  obtain ⟨v1, m2, cs12, cs26, ev14, -, hc⟩ := Obs.«KernelModeled::proj_ctor».obs ev
-  obtain ⟨v12, m15, cs23, ev25, heq, -, -, hc'⟩ := Obs.«KernelModeled::assert_proj_allowed».obs ev14
-  subst heq
-  have hg1 : Core.Good c cs23 := hg.sub (by
-    intro z hz
-    rw [hc]
-    exact List.mem_cons_of_mem _ (List.mem_append_left _ (by rw [hc']; exact List.mem_cons_of_mem _ hz)))
-  exact ⟨bp, h, m15, cs23, b, ev25, hg1.1, hg1.2, hb, rfl⟩
-
 /-- An observation of `block_is_modeled` with the run's goodness gives `NativeAt` when it answers
 `0`. -/
 theorem nativeAt_of_obs {c : Core.Ctx} {bq : SourceValue F} {h h' : Heap F}

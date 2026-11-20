@@ -30,6 +30,14 @@ theorem familyEqPin_of_shape {t : Ix.Kernel.RoleTable} {G : Nat → Prop} {R : I
       env.find? Ix.Kernel.eqName = some Ix.Kernel.eqA :=
   fun _ hext hnd => eqPin_of_shape hshape hext hnd
 
+/-- **`hbasis` of the family row's step**, from the table's shape. -/
+theorem familyBasisPins_of_shape {t : Ix.Kernel.RoleTable} {G : Nat → Prop} {R : Ixon.Env}
+    {envT : Ix.Kernel.Env .anon} (hshape : TableShape.{u} t G R envT) :
+    ∀ env : Ix.Kernel.Env .anon,
+      (∀ ci ∈ envT.consts, ci ∈ env.consts) → (env.consts.map (·.name)).Nodup →
+      ∀ ci ∈ IxVM.Refinement.TableInhabit.basisEnv.consts, env.find? ci.name = some ci :=
+  fun _ hext hnd => basisPins_of_shape hshape hext hnd
+
 /-- **`hkey` of the family row's step**, from the table's shape and its check: an address that
 an environment extending the witness's does not store is not stored by the witness's. -/
 theorem familyKeyFree_of_shape {t : Ix.Kernel.RoleTable} {R : Ixon.Env}

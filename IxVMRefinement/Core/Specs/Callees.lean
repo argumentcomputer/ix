@@ -200,17 +200,15 @@ def block_is_modeled : SpecFn := fun c args h r h' calls =>
       ((∃ ms, cst.info = .muts ms ∧ 2 ≤ (ms.toList.filter isIndc).length) → r = .field 1) ∧
       ((∀ ms, cst.info = .muts ms → (ms.toList.filter isIndc).length = 0) → r = .field 0)
 
-/-- `KernelModeled::proj_ctor(block, i)` (it asserts `block_is_modeled(block) = 0`): the block
-has at most one inductive, and the result is the constant at the key of the constructor
-projection record `(i, 0, block)`. -/
+/-- `KernelModeled::proj_ctor(block, i)` (it asserts `proj_allowed_at(block, i) = 1`): the result
+is the constant at the key of the constructor projection record `(i, 0, block)`. -/
 def proj_ctor : SpecFn := fun c args h r h' calls =>
   ∀ bp (i : F) (b : Bytes.Address), args = [bp, .field i] →
     c.allowedTop "KernelModeled::proj_ctor" [bp, .field i] h →
     c.FamAt (ixAddr b) (ZMod.val i) → ProjPermitted c.κ (iprjAddr (ixAddr b) (ZMod.val i)) →
     CoreGood c calls → RepAddr h b bp →
-    FewInductives c (ixAddr b) ∧
-      ∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some ci ∧
-        CIPtrRep c.κ h' r ci
+    ∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some ci ∧
+      CIPtrRep c.κ h' r ci
 
 /-- `KernelModeled::defeq_list_ok(rc, xs, ys, types)`: a nonzero answer (the code answers `0` or
 `1`) means the two lists are pairwise definitionally equal (`DefEqList`). Nothing is claimed

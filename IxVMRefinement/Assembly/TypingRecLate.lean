@@ -453,6 +453,9 @@ theorem late_prefixInv_step {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Opti
   have hS' : Decl.FoldStoreInv ⟨cn :: env.consts⟩ :=
     { store := hSI
       thmTyped := hTT
+      defnTyped := Decl.defnTyped_step_noBaseDefn hext hS.defnTyped
+        (Ix.Kernel.Model.nativeRecLate_newSat (Q := Decl.NotBaseDefn)
+          (fun _ _ _ _ _ _ _ _ h => nomatch h) hrun)
       recK := hRK
       etaTowers := hET
       strongProps := Decl.strongEnvProps_step_noProj hext.find hS.strongProps

@@ -687,7 +687,7 @@ theorem basis_loads (hlim : LimWithin (fun g => g < 6) ctab lim) :
   projTables := by
     intro bp ip ptr h h' cs b i ev _ hg hb hip hfam _
     subst hip
-    obtain ⟨v, mid, cs_assert, cs_load, ev_assert, ev_load, hcalls⟩ :=
+    obtain ⟨v, mid, cs_assert, cs_load, ev_assert, _, ev_load, hcalls⟩ :=
       Obs.«KernelModeled::proj_ctor».obs ev
     obtain ⟨cv, nP, nF, hf, hrep⟩ := basis_cprj_core hE hP ev_load hfam
       (hg.sub fun cl hcl => by simp [hcalls, hcl])

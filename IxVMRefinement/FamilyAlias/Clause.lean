@@ -103,7 +103,7 @@ theorem foldStoreInv_installAlias {E : Env .anon} (hE : FoldStoreInv E)
     (htb : ty.looseBVarsBounded 0 = true) :
     FoldStoreInv
       ⟨.defnInfo ⟨auxKey n d, lps, ty⟩ (.const tgt (lps.map .param)) .abbrev :: E.consts⟩ := by
-  refine foldStoreInv_cons_defn hE hfresh hnpt ⟨htf, htp, htr, htb⟩ ⟨rfl, ?_, ?_, rfl⟩
+  refine foldStoreInv_cons_defn hE (fun hna => hna n d rfl) hfresh hnpt ⟨htf, htp, htr, htb⟩ ⟨rfl, ?_, ?_, rfl⟩
   · show Expr.allLevelParamsDefined lps (Expr.const tgt (lps.map Level.param)) = true
     simp only [Expr.allLevelParamsDefined, List.all_eq_true]
     intro u hu

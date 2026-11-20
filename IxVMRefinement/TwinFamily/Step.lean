@@ -85,6 +85,7 @@ def TwinStepKeeps (X : Ix.Kernel.Env .anon → Prop) (t : Ix.Kernel.RoleTable)
     Decl.CoreCompanions ⟨E, env₂, t, lim⟩ →
     (∀ ci, env₂.find? ci.name = some ci → env.find? ci.name = none →
       ∀ x, ci.name = keyOf t x → Decl.ReloadsAs E t env₂ ci) →
+    NewRecNotNative t E env env₂ →
     Decl.PrefixInv.{u} E t lim env₂ ∧ X env₂
 
 
@@ -119,12 +120,12 @@ theorem unitStepTwin_of_installed {RForm : RecordFormPred} (hT : TwinStepTarget.
     UnitStepTwin.{u} X t envT E₀ E lim A c rb crb := by
   intro env hext hnd hinv hX href hrbS hfresh
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
-  obtain ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp, hrel⟩ :=
+  obtain ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp, hrel, hnotNat⟩ :=
     hT calls bAddr t E₀ E env B rb A cb crb c ms rs' lim cs ht hRS hSS hB hrbB hA hsz hne
       hcall hpref hroute hinv (haux env hX) href (hinst env hext hnd hinv hX hrbS)
       (hstoredRb env hext hnd hinv hX hrbS) hfresh hkey
   obtain ⟨hinv₂, hX₂⟩ :=
-    hkeep env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp hrel
+    hkeep env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp hrel hnotNat
   obtain ⟨ws, henv, hnd₂, hfr₂, hnames, hrecs, hmods⟩ := twinRun_parts hrun
   subst henv
   have hrecName : ∀ ci ∈ twinRecs ws, ∃ ci₀ ∈ blk, ci₀.name = ci.name := by
@@ -162,10 +163,10 @@ theorem TwinStepKeeps.and_familyRecsModeled {X : Ix.Kernel.Env .anon → Prop}
     {A : _root_.Address} {c : Ixon.Constant} {fam : _root_.Address → Option _root_.Address}
     (h : TwinStepKeeps.{u} X t envT E₀ E lim A c) :
     TwinStepKeeps.{u} (fun env => X env ∧ FamilyRecsModeled t E₀ fam env) t envT E₀ E lim A c := by
-  intro env env₂ blk hext hnd hinv hXe href hfresh hreads hrun hstored hmodel hcomp hrel
+  intro env env₂ blk hext hnd hinv hXe href hfresh hreads hrun hstored hmodel hcomp hrel hnotNat
   obtain ⟨hX, hfm⟩ := hXe
   obtain ⟨hinv₂, hX₂⟩ :=
-    h env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp hrel
+    h env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp hrel hnotNat
   obtain ⟨ws, henv, hnd₂, hfr₂, hnames, hrecs, hmods⟩ := twinRun_parts hrun
   subst henv
   have hgrow : Ix.Kernel.Grows (fun k => env.find? k = none) env

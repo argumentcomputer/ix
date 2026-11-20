@@ -1546,7 +1546,7 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                 (ev_ittpynob := evMV2) (ev_biaifgpd := evMV3) (ev1203 := ev1203)
                 (ev_cwwgzxtj := evFlat) (ev1246 := ev1246) (ev_mitevvsv := evLenF)
                 (ev_rqpeovbn := evIz1) (ev_xrhmaojz := evIz2) (ev_whimdwjd := evVal)
-                (ev1305 := ev1305) (ev1343 := ev1343) (hc1474 := hc) .. =>
+                (ev1305 := ev1305) (ev1343 := ev1343) (ev_apltvwnk := evProjs) (hc1474 := hc) .. =>
               refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine peel_append hcl hle hsub (fun hcs107 hle107 hsub107 => ?_)
                 fun hcl hle hsub => ?_
@@ -1630,7 +1630,8 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                   refine step evIz2 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
                   refine step evVal (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
                   refine step ev1305 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
-                  exact stepLast ev1343 (by decide) (by decide) (by decide) hcl hle hsub
+                  refine step ev1343 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                  exact stepLast evProjs (by decide) (by decide) (by decide) hcl hle hsub
         · -- `f` is `KernelModeled::check_witnesses`: ruled out by `hneKey`.
           exact (hneKey key hof (hfName.symm.trans hcws)).elim
 

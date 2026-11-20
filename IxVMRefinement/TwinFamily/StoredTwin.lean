@@ -73,6 +73,7 @@ structure StoredTwinCanon (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (envT : Ix.Ke
   installed : FamilyInstalled t envT rb crb
   recs : ∀ cb, recordOf R B = some cb → Binding.StoredFamilyRecs t R envT B cb rb crb
   levelsParams : Binding.StoreLevelsParams t R
+  route : Route.blockRoute R B = some true
 
 /-- **Canonical loaded form of each stored recursor member** (`TwinMemberLoaded`), projected
 from `StoredTwinCanon`. -/
@@ -127,14 +128,15 @@ theorem storedTwinCanon_of_selected {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     {envT : Ix.Kernel.Env .anon} {famOf : _root_.Address → Option _root_.Address}
     {B rb : _root_.Address} {crb : Ixon.Constant} (h : StoredFamilies t R envT famOf)
     (hflat : StoredFamiliesFlat t R famOf)
-    (hsel : famOf B = some rb) (hcrb : recordOf R rb = some crb) :
+    (hsel : famOf B = some rb) (hcrb : recordOf R rb = some crb)
+    (hroute : Route.blockRoute R B = some true) :
     StoredTwinCanon t R envT famOf B rb crb := by
   obtain ⟨cb, crb', ms, rs, es, off, hf, hrf, hbd⟩ := hflat B rb hsel
   have e : crb' = crb := Option.some.inj (hf.record.record.symm.trans hcrb)
   rw [e] at hf hrf
   obtain ⟨hst, hinst⟩ := h.installed B rb crb hsel hcrb
   exact ⟨hsel, ⟨cb, ms, rs, es, off, hf, hrf, hbd⟩, hst, hinst,
-    fun cb' hcb' => h.recs B rb cb' crb hsel hcb' hcrb, h.levelsParams⟩
+    fun cb' hcb' => h.recs B rb cb' crb hsel hcb' hcrb, h.levelsParams, hroute⟩
 
 /-- **The witness's choice at a stored modeled block** (the first import of the typing half,
 `Binding.storedFamily_of_clause`). -/
@@ -146,7 +148,7 @@ theorem storedTwinCanon_of_block {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     (hst : ∀ x, ConstAddrOf B cb x → StoredAt t envT x) :
     ∃ rb crb, StoredTwinCanon t R envT famOf B rb crb := by
   obtain ⟨rb, ms, crb, rs, flat, hsel, hf, -, -⟩ := storedFamily_of_clause h hB hroute hst
-  exact ⟨rb, crb, storedTwinCanon_of_selected h hflat hsel hf.record.record⟩
+  exact ⟨rb, crb, storedTwinCanon_of_selected h hflat hsel hf.record.record hroute⟩
 
 /-! ## The restated stored case -/
 
@@ -218,7 +220,13 @@ def TwinSeamStored (RFormS : StoredFormPred) : Prop :=
       TwinDeclReads t E₀ rb' crb' (ds.map fun d => .recInfo d.cvW d.mI d.rP d.rulesW) ∧
       TwinPartsFacts t env rb crb (Decl.mkTwinRecParts env ds)
         (Decl.twinPeerRename (Decl.mkTwinRecParts env ds)) ∧
-      TwinLoadFacts t E₀ env rb' crb' (Decl.mkTwinRecParts env ds)
+      TwinLoadFacts t E₀ env rb' crb' (Decl.mkTwinRecParts env ds) ∧
+      ∀ w ∈ Decl.mkTwinRecParts env ds, ∀ (a : _root_.Address) (cHost : Ixon.Constant)
+        (rc : Ixon.Recursor) (n : Nat) (p : _root_.Address) (cmP : Ixon.Constant)
+        (ipP : Ixon.InductiveProj),
+        w.cvW'.name = keyOf t a → RecHostAt E a cHost rc →
+        recMotiveCarrierAt cHost rc 0 n = some p →
+        Ix.Cert.recordAt E p = some cmP → cmP.info = .iPrj ipP → ¬ NativeAt E ipP.block
 
 /-! ## The twin step from the facts of its parts, whatever supplies the canonical record -/
 
@@ -317,10 +325,10 @@ theorem twinTargetConcl_of_parts {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
         (ConstantInfo.recInfo w.cvW w.mI w.rP w.rulesW).name := (hF.front w hw).name_eq
     rw [hn] at h
     exact h
-  obtain ⟨env₂, hrun, hstored, hmodel, hcomp, hrel⟩ :=
+  obtain ⟨hrun, hstored, hmodel, hcomp, hrel⟩ :=
     twinTarget_of_facts (lim := lim) hF hblock hblk hnames hfresh₂ hmodel hinst hinv.companions
       (twinRecs_recNotKAt hSS hrb' hreads hblock hF.front hLd) hrelW
-  exact ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp, hrel⟩
+  exact ⟨blk, _, hreads, hrun, hstored, hmodel, hcomp, hrel⟩
 
 /-- **The twin's unit step from the target's conclusion at every handed environment**, and the
 keeping of the clause (the proof of `unitStepTwin_of_installed`, after its target). -/
@@ -339,15 +347,16 @@ theorem unitStepTwin_of_concl {X : Ix.Kernel.Env .anon → Prop} {t : Ix.Kernel.
         (∀ ci ∈ blk, HasModel env₂ ci.name) ∧
         Decl.CoreCompanions ⟨E, env₂, t, lim⟩ ∧
         (∀ ci, env₂.find? ci.name = some ci → env.find? ci.name = none →
-          ∀ x, ci.name = keyOf t x → Decl.ReloadsAs E t env₂ ci))
+          ∀ x, ci.name = keyOf t x → Decl.ReloadsAs E t env₂ ci) ∧
+        NewRecNotNative t E env env₂)
     (hkeep : TwinStepKeeps.{u} X t envT E₀ E lim A c) :
     UnitStepTwin.{u} X t envT E₀ E lim A c rb crb := by
   intro env hext hnd hinv hX href hrbS hfresh
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
-  obtain ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp, hrel⟩ :=
+  obtain ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp, hrel, hnotNat⟩ :=
     hconcl env hext hnd hinv hX href hfresh
   obtain ⟨hinv₂, hX₂⟩ :=
-    hkeep env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp hrel
+    hkeep env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp hrel hnotNat
   obtain ⟨ws, henv, hnd₂, hfr₂, hnames, hrecs, hmods⟩ := twinRun_parts hrun
   subst henv
   have hrecName : ∀ ci ∈ twinRecs ws, ∃ ci₀ ∈ blk, ci₀.name = ci.name := by
@@ -440,10 +449,71 @@ theorem storedTwinStepFam_of {L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
     (hcanon.recs cb hfam.block.record).mono_env hext hnd
   have hkey : ∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x) :=
     fun x hx => keyFree_of_not_stored hctx.shape ht (hns x hx)
-  exact twinTargetConcl_of_parts ht hctx.toStepStore hA hsz hinv hX.1.1.2 hinst hfresh
-    (hseam calls bAddr t E₀ E R envT env B rb A cb crb c ms rs rs' flat lim cs ht hWc.runStore
+  obtain ⟨ds, hreads, hF, hLd, hnotNat⟩ :=
+    hseam calls bAddr t E₀ E R envT env B rb A cb crb c ms rs rs' flat lim cs ht hWc.runStore
       hctx hext hnd hfam (hRF B rb hcanon.selected) hflatA hsz hne hcall hinv href hinst hrecs
-      hfresh hkey)
+      hfresh hkey
+  have hmodel : ∀ w ∈ Decl.mkTwinRecParts env ds, ∀ cvm mval hint,
+      env.find? (Ix.Kernel.auxKey w.kC .model) = some (.defnInfo cvm mval hint) →
+        w.model? = some (cvm, mval, hint) := by
+    intro w hw cvm mval hint h
+    unfold Decl.mkTwinRecParts at hw
+    obtain ⟨d, -, rfl⟩ := List.mem_map.mp hw
+    exact Decl.lookupModelInfo?_eq_some.mpr h
+  have hblock : ds.map (fun d => ConstantInfo.recInfo d.cvW d.mI d.rP d.rulesW) =
+      (Decl.mkTwinRecParts env ds).map (fun w => .recInfo w.cvW w.mI w.rP w.rulesW) := by
+    unfold Decl.mkTwinRecParts
+    simp only [List.map_map]
+    rfl
+  obtain ⟨ws, hws⟩ : ∃ ws, ws = Decl.mkTwinRecParts env ds := ⟨_, rfl⟩
+  rw [← hws] at hF hLd hmodel hblock hnotNat
+  obtain ⟨blk, hb⟩ : ∃ blk, blk = ds.map (fun d => ConstantInfo.recInfo d.cvW d.mI d.rP d.rulesW) :=
+    ⟨_, rfl⟩
+  rw [← hb] at hreads hblock
+  have hkeyOf : ∀ w ∈ ws, ∃ x, ConstAddrOf A c x ∧ w.cvW.name = keyOf t x := by
+    intro w hw
+    have hci : ConstantInfo.recInfo w.cvW w.mI w.rP w.rulesW ∈ blk := by
+      rw [hblock]; exact List.mem_map.mpr ⟨w, hw, rfl⟩
+    obtain ⟨x, hx, hn, -⟩ := hreads.2.1 _ hci
+    exact ⟨x, hx, hn⟩
+  have hname_eq : ∀ w ∈ ws, w.cvW'.name = w.cvW.name := fun w hw => (hF.front w hw).name_eq
+  have hnd₂ : (ws.map (·.cvW.name)).Nodup := by
+    have h := hreads.1; rw [hblock, List.map_map] at h; exact h
+  have hnames : ((twinRecs ws ++ twinModels ws).map (·.name)).Nodup :=
+    Decl.twinRecs_append_twinModels_nodup hnd₂ hname_eq fun w hw k tk h => by
+      obtain ⟨x, -, hn⟩ := hkeyOf w hw; exact keyOf_nonAux t x k tk (hn.symm.trans h)
+  have hfresh₂ : ∀ ci ∈ twinRecs ws ++ twinModels ws, env.find? ci.name = none :=
+    Decl.twinRecs_append_twinModels_fresh hname_eq
+      (fun w hw => by obtain ⟨x, hx, hn⟩ := hkeyOf w hw; rw [hn]; exact hfresh x hx)
+      (fun w hw _ => by
+        obtain ⟨x, hx, hn⟩ := hkeyOf w hw
+        rw [hn]
+        apply hX.1.1.2.fresh_of_base_none
+        show env.find? (keyOf t x).base = none
+        rw [keyOf_base]; exact hfresh x hx)
+  have hblk : blk ≠ [] := by
+    obtain ⟨m, hm⟩ : ∃ m, rs'[0]? = some m := ⟨rs'[0], by simp [Nat.pos_of_ne_zero hsz]⟩
+    obtain ⟨ci, hci, -⟩ := hreads.2.2 _ (Or.inr ⟨rs', 0, m, hA.muts, hm, Or.inl rfl⟩)
+    exact List.ne_nil_of_mem hci
+  have hrelW : ∀ w ∈ ws, Decl.ReloadsAs E t ⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩
+      (.recInfo w.cvW' w.mI w.rP w.rulesW') := by
+    refine twinMember_reloads ht hctx.toStepStore hA hreads hblock hF.front hLd
+      (fun k hk => find_isSome_append (find_isSome_append hk (twinModels ws)) (twinRecs ws))
+      fun ci hci => ?_
+    rw [hblock] at hci
+    obtain ⟨w, hw, rfl⟩ := List.mem_map.mp hci
+    have hmem : ConstantInfo.recInfo w.cvW' w.mI w.rP w.rulesW' ∈
+        twinRecs ws ++ (twinModels ws ++ env.consts) :=
+      List.mem_append_left _ (List.mem_map.mpr ⟨w, hw, rfl⟩)
+    have h := find_isSome_of_mem (env := ⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩) hmem
+    have hn : (ConstantInfo.recInfo w.cvW' w.mI w.rP w.rulesW').name =
+        (ConstantInfo.recInfo w.cvW w.mI w.rP w.rulesW).name := (hF.front w hw).name_eq
+    rw [hn] at h
+    exact h
+  obtain ⟨hrun, hstored, hmodel₂, hcomp, hrel⟩ :=
+    twinTarget_of_facts (lim := lim) hF hblock hblk hnames hfresh₂ hmodel hinst hinv.companions
+      (twinRecs_recNotKAt hctx.toStepStore hA hreads hblock hF.front hLd) hrelW
+  exact ⟨blk, _, hreads, hrun, hstored, hmodel₂, hcomp, hrel, newRecNotNative_of_twinParts hnotNat⟩
 
 /-! ## What the composition consumes -/
 

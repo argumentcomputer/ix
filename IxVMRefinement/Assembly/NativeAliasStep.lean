@@ -468,7 +468,9 @@ theorem AliasInstallOut.keeps {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
       retHead := famIxonRetHead_of_holds ht hH hrec.muts hO.retHead hO.famName
       noProj := hO.noProj
       link := trivial }
-  exact hC.aliasInstall hO.facts hO.pin hO.nonAux hres hloads heta hkeys₂ hread hO.trace
+  have hnewCtor := newCtor_of_blockInstall (E := E) (B := B) (ind := ind) hC.tableWf hH.decoded
+    hH.ctors hI.bounds.2.2 hO.lenA hO.famName hO.ctorNames hO.facts.newCtor
+  exact hC.aliasInstall hO.facts hO.pin hO.nonAux hres hloads heta hkeys₂ hread hO.trace hnewCtor
 
 /-! ## The step, stated once -/
 

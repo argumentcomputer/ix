@@ -81,6 +81,51 @@ theorem famModeled_at {E₀ E : Ixon.Env} {A rb : _root_.Address} {c crb : Ixon.
     rw [hind] at hr
     exact nomatch hr
 
+/-- **The route fact at each constructor the family step stores**, from the route fact at the
+block, at a store that holds the run's records at the family's addresses. -/
+theorem famModeled_ctor_at {E₀ E : Ixon.Env} {A rb : _root_.Address} {c crb : Ixon.Constant}
+    {ms rs : Array Ixon.MutConst} (hB : FamBlockRecord E₀ A c ms) (hrb : FamRecRecord E₀ rb crb rs)
+    (hrun : ∀ x, FamAddr A c rb crb x → ∀ d, recordOf E₀ x = some d →
+      Ix.Cert.recordAt E x = some d)
+    (hmod : ModeledAt E A) :
+    ∀ x, FamAddr A c rb crb x → ∀ (cm : Ixon.Constant) (cp : Ixon.ConstructorProj),
+      Ix.Cert.recordAt E x = some cm → cm.info = .cPrj cp → ¬ NativeAt E cp.block := by
+  intro x hx cm cp hcm hinfo
+  have key : ∀ {d : Ixon.Constant}, recordOf E₀ x = some d → cm = d := fun hd => by
+    have h1 := hrun x hx _ hd
+    rw [hcm] at h1
+    exact Option.some.inj h1
+  rcases hx with ⟨⟨-, hs⟩ | ⟨ms', i, m, hinfo', hget, hxm | ⟨ind, j, hind, hj, hxc⟩⟩⟩ |
+      ⟨⟨-, hs⟩ | ⟨rs', i, m, hinfo', hget, hxm | ⟨ind, j, hind, hj, hxc⟩⟩⟩
+  · exact (standalone_not_block hs ⟨ms, hB.muts⟩).elim
+  · have hmm : ms' = ms := Ixon.ConstantInfo.muts.inj (hinfo'.symm.trans hB.muts)
+    subst hmm
+    obtain ⟨ind, rfl⟩ := hB.indcs m (by simpa using Array.mem_of_getElem? hget)
+    have hc : cm = memberProjection A i (.indc ind) := key (by rw [hxm]; exact hB.members i _ hget)
+    subst hc
+    simp [memberProjection] at hinfo
+  · have hmm : ms' = ms := Ixon.ConstantInfo.muts.inj (hinfo'.symm.trans hB.muts)
+    subst hmm
+    subst hind
+    have hc : cm = constructorProjection A i j := key (by rw [hxc]; exact hB.ctors i ind j hget hj)
+    subst hc
+    have hcp : cp = ⟨i.toUInt64, j.toUInt64, A⟩ := (Ixon.ConstantInfo.cPrj.inj hinfo).symm
+    rw [hcp]
+    exact hmod
+  · exact (standalone_not_block hs ⟨rs, hrb.muts⟩).elim
+  · have hmm : rs' = rs := Ixon.ConstantInfo.muts.inj (hinfo'.symm.trans hrb.muts)
+    subst hmm
+    obtain ⟨r, rfl⟩ := hrb.recrs m (by simpa using Array.mem_of_getElem? hget)
+    have hc : cm = memberProjection rb i (.recr r) :=
+      key (by rw [hxm]; exact hrb.members i _ hget)
+    subst hc
+    simp [memberProjection] at hinfo
+  · have hmm : rs' = rs := Ixon.ConstantInfo.muts.inj (hinfo'.symm.trans hrb.muts)
+    subst hmm
+    obtain ⟨r, hr⟩ := hrb.recrs m (by simpa using Array.mem_of_getElem? hget)
+    rw [hind] at hr
+    exact nomatch hr
+
 /-- **The route fact at each inductive the family step stores**, at a store that holds the run's
 records (`famModeled_at`). -/
 theorem famModeled_of_route {E₀ E : Ixon.Env} {A rb : _root_.Address} {c crb : Ixon.Constant}
@@ -91,10 +136,20 @@ theorem famModeled_of_route {E₀ E : Ixon.Env} {A rb : _root_.Address} {c crb :
       Ix.Cert.recordAt E x = some cm → cm.info = .iPrj ip → ¬ NativeAt E ip.block :=
   famModeled_at hB hrb (fun x _ d hd => hrun x d hd) hmod
 
+/-- **The route fact at each constructor the family step stores**, at a store that holds the run's
+records (`famModeled_ctor_at`). -/
+theorem famModeled_ctor_of_route {E₀ E : Ixon.Env} {A rb : _root_.Address} {c crb : Ixon.Constant}
+    {ms rs : Array Ixon.MutConst} (hB : FamBlockRecord E₀ A c ms) (hrb : FamRecRecord E₀ rb crb rs)
+    (hrun : ∀ a d, recordOf E₀ a = some d → Ix.Cert.recordAt E a = some d)
+    (hmod : ModeledAt E A) :
+    ∀ x, FamAddr A c rb crb x → ∀ (cm : Ixon.Constant) (cp : Ixon.ConstructorProj),
+      Ix.Cert.recordAt E x = some cm → cm.info = .cPrj cp → ¬ NativeAt E cp.block :=
+  famModeled_ctor_at hB hrb (fun x _ d hd => hrun x d hd) hmod
+
 /-- **What the circuit side hands the step of the block at `A` with its family record at
 `rb`** (module docstring). The companion and load facts are asked at the record that installs the
-family check's selected forms (`SelectedInstalled`), with the check's facts and what the check
-gives of those forms (`SelectedForms`). -/
+family check's selected forms (`SelectedInstalled`) and modeled projection tables, with the check's
+facts and what the check gives of those forms (`SelectedForms`). -/
 structure FamilyBlockCircuit (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     (t : Ix.Kernel.RoleTable) (envT : Ix.Kernel.Env .anon) (E₀ E : Ixon.Env) (lim : Option Nat)
     (A : _root_.Address) (c : Ixon.Constant) (rb : _root_.Address) (crb : Ixon.Constant)
@@ -116,7 +171,7 @@ structure FamilyBlockCircuit (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       (tys : List IxVM.Refinement.Core.KExpr)
       (rhsss : List (List IxVM.Refinement.Core.KExpr)),
       FamDeclReads t E₀ A c rb crb blk ∧ FamilyCheckFacts env blk adv' tys rhsss ∧
-        SelectedForms t E₀ E A c rb crb env blk tys rhsss
+        SelectedForms t E₀ E A c rb crb env blk adv'.ren tys rhsss
   /-- The block's record is a block of inductives. -/
   block : ∃ ms, FamBlockRecord E₀ A c ms
   /-- The route fact at the block. -/
@@ -127,7 +182,8 @@ structure FamilyBlockCircuit (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
     (tys : List IxVM.Refinement.Core.KExpr) (rhsss : List (List IxVM.Refinement.Core.KExpr)),
     Decl.PrefixInv.{u} E t lim env → AliasGroup env h aliases →
     FamDeclReads t E₀ A c rb crb blk →
-    FamilyCheckFacts env blk adv' tys rhsss → SelectedForms t E₀ E A c rb crb env blk tys rhsss →
+    FamilyCheckFacts env blk adv' tys rhsss →
+    SelectedForms t E₀ E A c rb crb env blk adv'.ren tys rhsss →
     DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
     (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
       StoredAs c' ci) →
@@ -136,20 +192,27 @@ structure FamilyBlockCircuit (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       RecCompanionFacts ⟨E, ⟨new ++ env.consts⟩, t, lim⟩ cv mI rP rls
   /-- The load facts that reach the step's new constants, at an environment that extends the
   witness's and is handed what the two records use. -/
-  loads : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
-    (aliases blk new : List (ConstantInfo .anon)) (adv' : FamilyAdvice)
-    (tys : List IxVM.Refinement.Core.KExpr) (rhsss : List (List IxVM.Refinement.Core.KExpr)),
-    Decl.PrefixInv.{u} E t lim env → (∀ ci ∈ envT.consts, ci ∈ env.consts) →
-    (∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
-      (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
-    AliasGroup env h aliases →
-    FamDeclReads t E₀ A c rb crb blk →
-    FamilyCheckFacts env blk adv' tys rhsss → SelectedForms t E₀ E A c rb crb env blk tys rhsss →
-    DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
-    (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
-      StoredAs c' ci) →
-    SelectedInstalled blk tys rhsss ⟨new ++ env.consts⟩ →
-    NewLoads (appCtx ⟨E, env, t, lim⟩ new).stored new
+  loads : ∀ (ms : Array Ixon.MutConst), c.info = .muts ms →
+    ∀ (env : Ix.Kernel.Env .anon) (Reg : NativeFam .anon → Prop)
+      (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
+      (aliases blk new : List (ConstantInfo .anon)) (adv' : FamilyAdvice)
+      (tys : List IxVM.Refinement.Core.KExpr) (rhsss : List (List IxVM.Refinement.Core.KExpr))
+      (bpf : BlockProjFacts t E₀ E env A c ms blk tys adv'.ren)
+      (pcs : List (ConstantInfo .anon)),
+      Decl.PrefixInv.{u} E t lim env → (∀ ci ∈ envT.consts, ci ∈ env.consts) →
+      (∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
+        (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
+      (∀ x, FamAddr A c rb crb x → env.find? (keyOf t x) = none) →
+      AliasGroup env h aliases →
+      FamDeclReads t E₀ A c rb crb blk →
+      FamilyCheckFacts env blk adv' tys rhsss →
+      SelectedForms t E₀ E A c rb crb env blk adv'.ren tys rhsss →
+      DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
+      (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
+        StoredAs c' ci) →
+      SelectedInstalled blk tys rhsss ⟨new ++ env.consts⟩ →
+      BlockProjInstallResult.{u} t env ⟨new ++ env.consts⟩ Reg A ms bpf.elig pcs →
+      NewLoads (appCtx ⟨E, env, t, lim⟩ (pcs ++ new)).stored (pcs ++ new)
 
 /-- **The circuit side's facts at every block with a family record**, at the hypotheses of the
 row `familyBlock`. -/
@@ -187,9 +250,10 @@ def FamilyClaimRow : Prop :=
             ∀ ci ∈ blk, ci.name = keyOf t x → isRecursor ci = true
 
 /-- **The row `familyBlock` from the circuit side's facts and `hclaim`** (module docstring). -/
-theorem familyBlockRow_of_circuit {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hL : LinkLaws L) (hcirc : FamilyBlockCircuitRow.{u} L) (hclaim : FamilyClaimRow.{u}) :
-    FamilyBlockRow.{u} L := by
+theorem familyBlockRow_of_circuit
+    (hL : LinkLaws FormerOpenTraceAt) (hcirc : FamilyBlockCircuitRow.{u} FormerOpenTraceAt)
+    (hclaim : FamilyClaimRow.{u}) :
+    FamilyBlockRow.{u} FormerOpenTraceAt := by
   intro calls t seeds E₀ lim Top rank hTW R envT E fam twin adv Inner hrun hctx A c rb crb rs
     hTop hc hlog hkind hfam hrb
   have hC := hcirc calls t seeds E₀ lim Top rank hTW R envT E fam twin adv Inner hrun hctx A c rb
@@ -204,9 +268,16 @@ theorem familyBlockRow_of_circuit {L : Ix.Kernel.Env .anon → NativeFam .anon �
     rcases hx with hx | hx
     · exact TwinFamily.constAddr_hash_size_of_block hB.muts hx
     · exact TwinFamily.constAddr_hash_size_of_block hrb.muts hx
-  exact unitStepFamily_of_facts (Sel := SelectedForms t E₀ E A c rb crb) hC.seam
-    (familyKeyFree_of_shape hctx.shape ht) (familyEqPin_of_shape hctx.shape) hcl
-    (famStepKeeps_foldExtra (Sel := SelectedForms t E₀ E A c rb crb) hL hsz
-      (famModeled_of_route hB hrb hctx.runRecord hC.route) hC.recs hC.loads)
+  exact unitStepFamily_of_facts
+    (Sel := fun env blk adv' tys rhsss => SelectedForms t E₀ E A c rb crb env blk adv'.ren tys rhsss)
+    hB hC.seam
+    (familyKeyFree_of_shape hctx.shape ht) (familyEqPin_of_shape hctx.shape)
+    (familyBasisPins_of_shape hctx.shape) hcl
+    (fun _ _ _ _ _ hSel => hSel.2.2 ms hB.muts)
+    (famStepKeeps_foldExtra
+      (Sel := fun env blk adv' tys rhsss => SelectedForms t E₀ E A c rb crb env blk adv'.ren tys rhsss)
+      (ms := ms) hL hsz
+      (famModeled_of_route hB hrb hctx.runRecord hC.route)
+      (famModeled_ctor_of_route hB hrb hctx.runRecord hC.route) hC.recs (hC.loads ms hB.muts))
 
 end IxVM.Refinement.Typing.FamilyAlias

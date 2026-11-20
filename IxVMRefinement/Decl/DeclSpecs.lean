@@ -71,13 +71,14 @@ theorem projectionAddrCtorSpec (c : Ctx) {args : List (SourceValue F)} {h h' : H
 `StrongEnvProps`, `EtaCtorStored`, and `EtaShape`. -/
 structure FullDeclInv (V : Type u) [Ix.Kernel.SetTheory V] (env : Env .anon) : Prop where
   declInvM : DeclInvM V env
+  defnTyped : DefnTyped env
   strongProps : StrongEnvProps env
   etaCtorStored : EtaCtorStored env
   etaShape : EtaShape env
 
 /-- `FullDeclInv` holds of the empty environment in every set theory. -/
 theorem FullDeclInv.empty : ∀ (V : Type u) [Ix.Kernel.SetTheory V], FullDeclInv V Env.empty :=
-  fun V _ => ⟨DeclInvM.empty V, strongEnvProps_empty, EtaCtorStored.empty, EtaShape.empty⟩
+  fun V _ => ⟨DeclInvM.empty V, .empty, strongEnvProps_empty, EtaCtorStored.empty, EtaShape.empty⟩
 
 /-- `FullDeclInv` projects to `EnvModelOk V .verified env ∧ StrongEnvProps env`. -/
 theorem FullDeclInv.ok :
@@ -90,6 +91,7 @@ theorem FullDeclInv.toFoldStoreInv {V : Type u} [Ix.Kernel.SetTheory V] {env : E
     (h : FullDeclInv V env) : FoldStoreInv env where
   store := h.declInvM.inv.store.store
   thmTyped := h.declInvM.inv.store.thmTyped
+  defnTyped := h.defnTyped
   recK := h.declInvM.inv.store.recK
   etaTowers := h.declInvM.inv.store.etaTowers
   strongProps := h.strongProps
@@ -116,6 +118,7 @@ theorem declStoreInv_of_foldStoreInv {env : Env .anon} (h : FoldStoreInv env) :
 theorem FullDeclInv.ofFoldInv {V : Type u} [Ix.Kernel.SetTheory V] {env : Env .anon}
     (hf : FoldInv V env) (haux : AuxRootSynced env) : FullDeclInv V env where
   declInvM := ⟨⟨hf.model, declStoreInv_of_foldStoreInv hf.store⟩, haux⟩
+  defnTyped := hf.store.defnTyped
   strongProps := hf.store.strongProps
   etaCtorStored := hf.store.etaCtorStored
   etaShape := hf.store.etaShape

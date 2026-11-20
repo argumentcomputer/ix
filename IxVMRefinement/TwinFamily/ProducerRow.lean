@@ -3423,7 +3423,10 @@ theorem twinParts_of_canon_extracted {calls : List (Call F)} {t : Ix.Kernel.Role
       TwinDeclReads t E₀ A cA (ds.map fun d => .recInfo d.cvW d.mI d.rP d.rulesW) ∧
       TwinPartsFacts t env rb crb (Decl.mkTwinRecParts env ds)
         (Decl.twinPeerRename (Decl.mkTwinRecParts env ds)) ∧
-      TwinLoadFacts t E₀ env A cA (Decl.mkTwinRecParts env ds) := by
+      TwinLoadFacts t E₀ env A cA (Decl.mkTwinRecParts env ds) ∧
+      ∀ w ∈ Decl.mkTwinRecParts env ds, ∀ (k : Nat) (rc : Ixon.Recursor),
+        rs'[k]? = some (.recr rc) → w.cvW'.name = keyOf t (memberAddr A k (.recr rc)) →
+        ∃ nf, recMotiveCarrierAt cA rc 0 nf = some (Core.iprjAddr B 0) := by
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
   let mA_of : ∀ (i : Fin rs'.size), ExtractedTwinMember.{u} calls t E₀ lim B A cb cA ms rs' ind₀ i.val :=
     fun i => Classical.choice (hextract i.val i.isLt)
@@ -3559,7 +3562,7 @@ theorem twinParts_of_canon_extracted {calls : List (Call F)} {t : Ix.Kernel.Role
       exact ⟨i.val, (hcanon i.val i.isLt).rc, (hcanon i.val i.isLt).hmem,
         by rw [memberAddr_recr_eq]; exact hq⟩
   -- Build the 3 conclusions
-  refine ⟨ds, ?_, ?_, ?_⟩
+  refine ⟨ds, ?_, ?_, ?_, ?_⟩
   · -- `TwinDeclReads`
     refine ⟨?_, ?_, ?_⟩
     · -- `Nodup`
@@ -3650,6 +3653,171 @@ theorem twinParts_of_canon_extracted {calls : List (Call F)} {t : Ix.Kernel.Role
             exact Ixon.MutConst.recr.inj (Option.some.inj (hm.symm.trans (mA_of i).hmem))
           subst hp_eq hrc_eq
           exact (hmem_data i).2.2.2.2.2.2.2.2.2.2.1 }
+  · rw [← hws]
+    intro w hw k rc hmk hname
+    obtain ⟨i, rfl⟩ := hw_inv w hw
+    have hk_lt : k < rs'.size := (Array.getElem?_eq_some_iff.mp hmk).1
+    rw [memberAddr_recr_eq] at hname
+    have ha_eq : Core.rprjAddr A i.val = Core.rprjAddr A k := keyOf_inj hroles hname
+    have hi_eq : i.val = k :=
+      rprjAddr_inj_of_members hA.members hA.recrs hrs'_lt_u64 i.isLt hk_lt ha_eq
+    have hrc_eq : rc = (mA_of i).rc := by
+      rw [← hi_eq] at hmk
+      exact Ixon.MutConst.recr.inj (Option.some.inj (hmk.symm.trans (mA_of i).hmem))
+    subst hrc_eq
+    exact (mA_of i).hmotiveCarrier0
+
+/-- Build `NewRecNotNative` for a twin step over `E` from per-part `recMotiveCarrierAt` witnesses
+and `¬ NativeAt E B`. -/
+theorem twin_newRecNotNative {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
+    {E₀ E : Ixon.Env} {env : Ix.Kernel.Env .anon}
+    {B A : _root_.Address} {cA : Ixon.Constant} {rs' : Array Ixon.MutConst}
+    {ind₀ : Ixon.Inductive} {blk : List (ConstantInfo .anon)}
+    {ws : List (TwinRecPart .anon)}
+    (hdec : L1.EnvDecoded E)
+    (hA : FamRecRecord E₀ A cA rs')
+    (hEA : recordOf E A = some cA)
+    (hEA_mem : ∀ k m, rs'[k]? = some m → recordOf E (memberAddr A k m) = some (memberProjection A k m))
+    (hEB0 : recordOf E (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind₀)))
+    (hnotNatB : ¬ NativeAt E B)
+    (hreads : TwinDeclReads t E₀ A cA blk)
+    (hblock : blk = ws.map (fun w => .recInfo w.cvW w.mI w.rP w.rulesW))
+    (hname_eq : ∀ w ∈ ws, w.cvW'.name = w.cvW.name)
+    (hfkW : ∀ w ∈ ws, ∀ (k : Nat) (rc : Ixon.Recursor),
+      rs'[k]? = some (.recr rc) → w.cvW'.name = keyOf t (memberAddr A k (.recr rc)) →
+      ∃ nf, recMotiveCarrierAt cA rc 0 nf = some (Core.iprjAddr B 0)) :
+    NewRecNotNative t E env ⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩ := by
+  have htwf : t.wf = true := by unfold Ix.Kernel.RoleTable.wf; rw [ht]; rfl
+  refine newRecNotNative_of_twinParts fun w hw a cHost rc n p cmP ipP hna hrc hmc hcmP hipP => ?_
+  have hci : ConstantInfo.recInfo w.cvW w.mI w.rP w.rulesW ∈ blk := by
+    rw [hblock]; exact List.mem_map.mpr ⟨w, hw, rfl⟩
+  obtain ⟨x, hx, hnx, -⟩ := hreads.2.1 _ hci
+  have ha_eq : a = x := Core.keyOf_inj htwf (hna.symm.trans ((hname_eq w hw).trans hnx))
+  subst ha_eq
+  rcases hx with ⟨-, hs⟩ | ⟨rs'', k, m, hrs'', hk, hxm⟩
+  · exact (standalone_not_block hs ⟨rs', hA.muts⟩).elim
+  · have ers : rs'' = rs' := Ixon.ConstantInfo.muts.inj (hrs''.symm.trans hA.muts)
+    subst rs''
+    obtain ⟨rc_k, rfl⟩ := hA.recrs m (by simpa using Array.mem_of_getElem? hk)
+    rcases hxm with rfl | ⟨_, _, hcon, -, -⟩
+    · have hrecAk : Ix.Cert.recordAt E (memberAddr A k (.recr rc_k)) =
+          some (memberProjection A k (.recr rc_k)) :=
+        recordAt_of_recordOf hdec (hEA_mem k (.recr rc_k) hk)
+      have hrecA : Ix.Cert.recordAt E A = some cA := recordAt_of_recordOf hdec hEA
+      rcases hrc with ⟨hc0, hi0⟩ | ⟨c0, rp0, rs0, hc0, hi0, hcb0, hmut0, hrs0⟩
+      · have ec0 := Option.some.inj (hc0.symm.trans hrecAk)
+        rw [ec0] at hi0; cases hi0
+      · have ec0 := Option.some.inj (hc0.symm.trans hrecAk)
+        rw [ec0] at hi0
+        have erp0 : rp0 = ⟨k.toUInt64, A⟩ := (Ixon.ConstantInfo.rPrj.inj hi0).symm
+        subst erp0
+        have ecb0 := Option.some.inj (hcb0.symm.trans hrecA)
+        subst ecb0
+        have ers0 : rs0 = rs' := Ixon.ConstantInfo.muts.inj (hmut0.symm.trans hA.muts)
+        rw [ers0] at hrs0
+        have hma_eq : memberAddr A k (.recr rc_k) = memberAddr A k.toUInt64.toNat (.recr rc) := by
+          have hk64 : k.toUInt64.toNat.toUInt64 = k.toUInt64 := by
+            apply UInt64.ext
+            change (UInt64.ofNat k.toUInt64.toNat).toNat = k.toUInt64.toNat
+            rw [UInt64.toNat_ofNat', Nat.mod_eq_of_lt k.toUInt64.toNat_lt_size]
+          simp only [memberAddr, memberProjection, hk64]
+        obtain ⟨nf0, hmc0⟩ := hfkW w hw k.toUInt64.toNat rc hrs0 (by rwa [← hma_eq])
+        have hrecB0 : Ix.Cert.recordAt E (Core.iprjAddr B 0) =
+            some (memberProjection B 0 (.indc ind₀)) := recordAt_of_recordOf hdec hEB0
+        exact recNotNative_of_motiveCarrierAt hmc0 hmc hrecB0 rfl rfl hcmP hipP hnotNatB
+    · cases hcon
+
+/-- Lift `twinParts_of_canon_extracted`'s 4-tuple + `¬ NativeAt E B` to the full target conclusion
+including `NewRecNotNative`. -/
+private theorem twinTargetConcl_of_parts_notNat {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {E₀ E : Ixon.Env} {env : Ix.Kernel.Env .anon} {lim : Option Nat}
+    {B rb A : _root_.Address} {crb cA : Ixon.Constant} {rs' : Array Ixon.MutConst}
+    {ind₀ : Ixon.Inductive}
+    (ht : t.check = .ok ()) (hSS : StepStore calls t E₀ E) (hA : FamRecRecord E₀ A cA rs')
+    (hsz : rs'.size ≠ 0) (hinv : Decl.PrefixInv.{u} E t lim env) (haux : Decl.AuxRootSynced env)
+    (hinst : FamilyInstalled t env rb crb)
+    (hfresh : ∀ x, ConstAddrOf A cA x → env.find? (keyOf t x) = none)
+    (hEB0 : recordOf E (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind₀)))
+    (hnotNatB : ¬ NativeAt E B)
+    (hparts : ∃ ds : List Decl.TwinMemberData,
+      TwinDeclReads t E₀ A cA (ds.map fun d => .recInfo d.cvW d.mI d.rP d.rulesW) ∧
+      TwinPartsFacts t env rb crb (Decl.mkTwinRecParts env ds)
+        (Decl.twinPeerRename (Decl.mkTwinRecParts env ds)) ∧
+      TwinLoadFacts t E₀ env A cA (Decl.mkTwinRecParts env ds) ∧
+      ∀ w ∈ Decl.mkTwinRecParts env ds, ∀ (k : Nat) (rc : Ixon.Recursor),
+        rs'[k]? = some (.recr rc) → w.cvW'.name = keyOf t (memberAddr A k (.recr rc)) →
+        ∃ nf, recMotiveCarrierAt cA rc 0 nf = some (Core.iprjAddr B 0)) :
+    ∃ (blk : List (ConstantInfo .anon)) (env₂ : Ix.Kernel.Env .anon),
+      TwinDeclReads t E₀ A cA blk ∧
+      DeclRecTwinRunJ twinPosRulesJ env blk env₂ ∧
+      (∀ ci ∈ blk, ∃ c, env₂.find? ci.name = some c ∧ StoredAs c ci) ∧
+      (∀ ci ∈ blk, HasModel env₂ ci.name) ∧
+      Decl.CoreCompanions ⟨E, env₂, t, lim⟩ ∧
+      (∀ ci, env₂.find? ci.name = some ci → env.find? ci.name = none →
+        ∀ x, ci.name = keyOf t x → Decl.ReloadsAs E t env₂ ci) ∧
+      NewRecNotNative t E env env₂ := by
+  obtain ⟨ds, hreads, hF, hLd, hfkW⟩ := hparts
+  have hmodel : ∀ w ∈ Decl.mkTwinRecParts env ds, ∀ cvm mval hint,
+      env.find? (Ix.Kernel.auxKey w.kC .model) = some (.defnInfo cvm mval hint) →
+        w.model? = some (cvm, mval, hint) := by
+    intro w hw cvm mval hint h
+    unfold Decl.mkTwinRecParts at hw
+    obtain ⟨d, -, rfl⟩ := List.mem_map.mp hw
+    exact Decl.lookupModelInfo?_eq_some.mpr h
+  have hblock : ds.map (fun d => ConstantInfo.recInfo d.cvW d.mI d.rP d.rulesW) =
+      (Decl.mkTwinRecParts env ds).map (fun w => .recInfo w.cvW w.mI w.rP w.rulesW) := by
+    unfold Decl.mkTwinRecParts; simp only [List.map_map]; rfl
+  obtain ⟨ws, hws⟩ : ∃ ws, ws = Decl.mkTwinRecParts env ds := ⟨_, rfl⟩
+  rw [← hws] at hF hLd hmodel hblock hfkW
+  obtain ⟨blk, hb⟩ : ∃ blk, blk = ds.map (fun d => ConstantInfo.recInfo d.cvW d.mI d.rP d.rulesW) :=
+    ⟨_, rfl⟩
+  rw [← hb] at hreads hblock
+  have hkeyOf : ∀ w ∈ ws, ∃ x, ConstAddrOf A cA x ∧ w.cvW.name = keyOf t x := by
+    intro w hw
+    have hci : ConstantInfo.recInfo w.cvW w.mI w.rP w.rulesW ∈ blk := by
+      rw [hblock]; exact List.mem_map.mpr ⟨w, hw, rfl⟩
+    obtain ⟨x, hx, hn, -⟩ := hreads.2.1 _ hci
+    exact ⟨x, hx, hn⟩
+  have hname_eq : ∀ w ∈ ws, w.cvW'.name = w.cvW.name := fun w hw => (hF.front w hw).name_eq
+  have hnd : (ws.map (·.cvW.name)).Nodup := by
+    have h := hreads.1; rw [hblock, List.map_map] at h; exact h
+  have hnames : ((twinRecs ws ++ twinModels ws).map (·.name)).Nodup :=
+    Decl.twinRecs_append_twinModels_nodup hnd hname_eq fun w hw k tk h => by
+      obtain ⟨x, -, hn⟩ := hkeyOf w hw; exact keyOf_nonAux t x k tk (hn.symm.trans h)
+  have hfresh₂ : ∀ ci ∈ twinRecs ws ++ twinModels ws, env.find? ci.name = none :=
+    Decl.twinRecs_append_twinModels_fresh hname_eq
+      (fun w hw => by obtain ⟨x, hx, hn⟩ := hkeyOf w hw; rw [hn]; exact hfresh x hx)
+      (fun w hw _ => by
+        obtain ⟨x, hx, hn⟩ := hkeyOf w hw
+        rw [hn]
+        apply haux.fresh_of_base_none
+        show env.find? (keyOf t x).base = none
+        rw [keyOf_base]; exact hfresh x hx)
+  have hblk : blk ≠ [] := by
+    obtain ⟨m, hm⟩ : ∃ m, rs'[0]? = some m := ⟨rs'[0], by simp [Nat.pos_of_ne_zero hsz]⟩
+    obtain ⟨ci, hci, -⟩ := hreads.2.2 _ (Or.inr ⟨rs', 0, m, hA.muts, hm, Or.inl rfl⟩)
+    exact List.ne_nil_of_mem hci
+  have hrelW : ∀ w ∈ ws, Decl.ReloadsAs E t ⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩
+      (.recInfo w.cvW' w.mI w.rP w.rulesW') := by
+    refine twinMember_reloads ht hSS hA hreads hblock hF.front hLd
+      (fun k hk => find_isSome_append (find_isSome_append hk (twinModels ws)) (twinRecs ws))
+      fun ci hci => ?_
+    rw [hblock] at hci
+    obtain ⟨w, hw, rfl⟩ := List.mem_map.mp hci
+    have hmem : ConstantInfo.recInfo w.cvW' w.mI w.rP w.rulesW' ∈
+        twinRecs ws ++ (twinModels ws ++ env.consts) :=
+      List.mem_append_left _ (List.mem_map.mpr ⟨w, hw, rfl⟩)
+    have h := find_isSome_of_mem (env := ⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩) hmem
+    have hn : (ConstantInfo.recInfo w.cvW' w.mI w.rP w.rulesW').name =
+        (ConstantInfo.recInfo w.cvW w.mI w.rP w.rulesW).name := (hF.front w hw).name_eq
+    rw [hn] at h
+    exact h
+  obtain ⟨hrun, hstored, hmodel₂, hcomp, hrel⟩ :=
+    twinTarget_of_facts (lim := lim) hF hblock hblk hnames hfresh₂ hmodel hinst hinv.companions
+      (twinRecs_recNotKAt hSS hA hreads hblock hF.front hLd) hrelW
+  exact ⟨blk, _, hreads, hrun, hstored, hmodel₂, hcomp, hrel,
+    twin_newRecNotNative ht hSS.decoded hA (hSS.held hA.record)
+      (fun k m hm => hSS.held (hA.members k m hm)) hEB0 hnotNatB hreads hblock hname_eq hfkW⟩
 
 /-! ## `FamilyTwinRowFam` producer -/
 
@@ -3669,15 +3837,16 @@ private theorem unitStepTwin_of_concl_rbS {X : Ix.Kernel.Env .anon → Prop}
         (∀ ci ∈ blk, HasModel env₂ ci.name) ∧
         Decl.CoreCompanions ⟨E, env₂, t, lim⟩ ∧
         (∀ ci, env₂.find? ci.name = some ci → env.find? ci.name = none →
-          ∀ x, ci.name = keyOf t x → Decl.ReloadsAs E t env₂ ci))
+          ∀ x, ci.name = keyOf t x → Decl.ReloadsAs E t env₂ ci) ∧
+        NewRecNotNative t E env env₂)
     (hkeep : TwinStepKeeps.{u} X t envT E₀ E lim A c) :
     UnitStepTwin.{u} X t envT E₀ E lim A c rb crb := by
   intro env hext hnd hinv hX href hrbS hfresh
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
-  obtain ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp, hrel⟩ :=
+  obtain ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp, hrel, hnotNat⟩ :=
     hconcl env hext hnd hinv hX href hrbS hfresh
   obtain ⟨hinv₂, hX₂⟩ :=
-    hkeep env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp hrel
+    hkeep env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp hrel hnotNat
   obtain ⟨ws, henv, hnd₂, hfr₂, hnames, hrecs, hmods⟩ := twinRun_parts hrun
   subst henv
   have hrecName : ∀ ci ∈ twinRecs ws, ∃ ci₀ ∈ blk, ci₀.name = ci.name := by
@@ -3968,7 +4137,34 @@ theorem familyTwin_step_core
           have hx := Binding.FamilyFlat.derivedFlatAt_entryAt hS_flat hSB hn e he
           exact ⟨hx.addr, hx.params⟩
         exact ⟨hA_obs, S, hS_rec, hS_ent, hS_excl⟩
-    exact twinTargetConcl_of_parts ht hctx.toStepStore hA hszA hinv hX.1.1.2 hinst hfresh
+    have hmodeledB : ModeledAt E B := by
+      have hrouteB : ModeledRouteAt calls B := (hC.famCall B rb hfam).1
+      have hpos : 0 < ms.size := (Array.getElem?_eq_some_iff.mp hms0).1
+      have hchk : (∃ ms', cb.info = .muts ms' ∧
+            ∀ k, k < ms'.size → Claim.MemberCheckedLimAt calls bAddrW t B ms' k lim) ∨
+          Claim.CheckedLimAt calls bAddrW t B lim := by
+        obtain ⟨c', hc', h⟩ := hWc.checked B hTB
+        have e3 : c' = cb := Option.some.inj (hc'.symm.trans hcb)
+        rw [e3] at h; exact h
+      have hm0 : Claim.MemberCheckedLimAt calls bAddrW t B ms 0 lim :=
+        Claim.membersChecked_of_block hRS hcb hms hchk 0 hpos
+      have hobs := Claim.MemberCheckedLimAt.dispatch hRS hind hm0
+      have hcanon₀ : L1.CanonicalHashCoverage E₀ calls := by
+        intro bytes value hashed size exactRead
+        obtain ⟨entry, stored, bytesEq, cached⟩ := hH bytes value hashed size
+          (L1.deConstant_of_deConstantExact exactRead) exactRead
+        refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
+        rw [bytesEq]; exact exactRead
+      have hcanonE : L1.CanonicalHashCoverage E calls :=
+        Assembly.canonicalHashCoverage_frame hcanon₀ hctx.recordsFor.1
+          (fun a v h => hctx.runRecord a v ((hRS.recordOf_eq_recordAt a).trans h))
+      exact modeledAt_of_modeledRoute (c := ⟨E, Ix.Kernel.Env.empty, t, none⟩)
+        (hctx.good Ix.Kernel.Env.empty none) hcanonE hrouteB hobs
+    have hEB0 : recordOf E (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind₀)) := by
+      rw [← LoadedReads.memberAddr_indc (ind := ind₀)]
+      exact hctx.toStepStore.held (hB.members 0 (.indc ind₀) hms0)
+    exact twinTargetConcl_of_parts_notNat ht hctx.toStepStore hA hszA hinv hX.1.1.2 hinst hfresh
+      hEB0 hmodeledB
       (twinParts_of_canon_extracted ht hctx.toStepStore hinv (fun _ _ h => h) (fun _ _ h => h)
         hrb.muts hrb.members hrb.recrs hA hszA hrs_len hes_len_A hRF_rb hRF_A
         mkC hextract_A (fun k rc hr => hlvls_A ind₀ k rc hms0 hr) hMR_A_all hpair_all
@@ -4110,7 +4306,27 @@ theorem familyTwin_step_core
       have hty_e : ty1 = (mkC k hk).ty_ld := Option.some.inj (hty1.symm.trans (mkC k hk).hty_ld)
       have hR_e : R1 = (mkC k hk).R := Option.some.inj (hR1.symm.trans (mkC k hk).hR)
       rwa [hty_e, hR_e] at hlv1
-    exact twinTargetConcl_of_parts ht hctx.toStepStore hA hszA hinv hX.1.1.2 hinst hfresh
+    have hrouteE : Route.blockRoute E B = some true := by
+      have hcongr : Route.blockRoute E B = Route.blockRoute R B := by
+        refine Binding.blockRoute_congr hFOB_R.block.record (hR_rec B cb hFOB_R.block.record) (fun a ha => ?_)
+        have hRa : (recordOf R a).isSome = true := by
+          rcases ha with ⟨i, hi, hx⟩ | ⟨ms', i, m, hms', hm, hx⟩
+          · exact (hctx.shape.usedClosed.1 B cb hFOB_R.block.record).2 i hi a hx
+          · rw [hx]
+            exact Option.isSome_iff_exists.mpr ⟨_, (hctx.shape.usedClosed.2 B cb ms' hFOB_R.block.record hms' i m hm).1⟩
+        obtain ⟨ca, hca⟩ := Option.isSome_iff_exists.mp hRa
+        unfold Route.isIndAt
+        rw [hR_rec a ca hca, hca]
+      rw [hcongr]
+      exact hcanon.route
+    have hEB0 : recordOf E (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind₀)) := by
+      rw [← LoadedReads.memberAddr_indc (ind := ind₀)]
+      exact hR_rec _ _ (hFOB_R.block.members 0 (.indc ind₀) hms0)
+    exact twinTargetConcl_of_parts_notNat ht hctx.toStepStore hA hszA hinv hX.1.1.2 hinst hfresh
+      hEB0 (by
+        rintro ⟨bq, h₁, h₁', cs, bb, ev, hnc, hbd, hrep, rfl⟩
+        have hv := (Route.block_is_modeled_agrees hnc hbd hrep ev).value true hrouteE
+        exact Bool.false_ne_true (Route.bit_eq_one ((Route.bit_false.trans hv).trans Route.bit_true)))
       (twinParts_of_canon_extracted ht hctx.toStepStore hinv hE₀_rec hE₀_blob
         hFOB_R.record.muts (fun i m hm => hR_rec _ _ (hFOB_R.record.members i m hm))
         hFOB_R.record.recrs hA hszA hrs_len hes_len_A hRF_rb_E_flat hRF_A_E_flat

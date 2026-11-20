@@ -1,4 +1,5 @@
 import IxVMRefinement.FamilyAlias.Assembly
+import IxVMRefinement.FamilyAlias.ProjFacts
 import IxVMRefinement.StatementRel.LoadedReadsCanonRec
 
 /-! # The family check's selected forms
@@ -28,7 +29,7 @@ namespace IxVM.Refinement.Typing.FamilyAlias
 
 open IxVM.Consistency
 open IxVM (F)
-open IxVM.Refinement.Core (KExpr)
+open IxVM.Refinement.Core (KExpr KKey)
 open Ix.Kernel (ConstantInfo ConstantVal RecRule LevelParam)
 open IxVM.Refinement.Decl.FamilyAlias (nonrecsOf recsOf storedMember)
 
@@ -171,7 +172,9 @@ structure FamilyTysCanon (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _root_
         D.getAppFn = .const (keyOf t (memberAddr Bm im (.indc indm))) lvls ∧
         rc.indices.toNat = indm.indices.toNat) ∧
       (∃ bs concl, (Core.posOf cv.levelParams tyA).stripPis (mI + 1) = some (bs, concl) ∧
-        ∀ d b m, concl ≠ .forallE d b m)
+        ∀ d b m, concl ≠ .forallE d b m) ∧
+      (∃ ind₀, ms[0]? = some (.indc ind₀)) ∧
+      ∃ nf, recMotiveCarrierAt crb rc 0 nf = some (Core.iprjAddr A 0)
 
 /-! ## The companion facts at the selected forms -/
 
@@ -213,15 +216,18 @@ def FamRecsCompanion (E : Ixon.Env) (t : Ix.Kernel.RoleTable) (env : Ix.Kernel.E
 /-! ## The selected forms of a block with its family record -/
 
 /-- **What the family check gives of its selected forms**, for the block `c` at `A` and the
-family record `crb` at `rb`, the family as read `blk`, the selected `tys` and `rhsss`, at the
-prefix `env` and the store `E`: the selected forms are the circuit's loads (`FamilyTysCanon`, at
-the two records' members), and each recursor of the family owes the companions their four facts
-at its selected type (`FamRecsCompanion`). -/
+family record `crb` at `rb`, the family as read `blk`, the renaming `g`, the selected `tys` and
+`rhsss`, at the prefix `env` and the store `E`: the selected forms are the circuit's loads
+(`FamilyTysCanon`, at the two records' members), each recursor of the family owes the companions
+their four facts at its selected type (`FamRecsCompanion`), and the projection check yields
+`BlockProjFacts` for every eligible member of the block. -/
 def SelectedForms (t : Ix.Kernel.RoleTable) (E₀ E : Ixon.Env) (A : _root_.Address)
     (c : Ixon.Constant) (rb : _root_.Address) (crb : Ixon.Constant) (env : Ix.Kernel.Env .anon)
-    (blk : List (ConstantInfo .anon)) (tys : List KExpr) (rhsss : List (List KExpr)) : Prop :=
+    (blk : List (ConstantInfo .anon)) (g : KKey → KKey) (tys : List KExpr)
+    (rhsss : List (List KExpr)) : Prop :=
   (∀ ms rs, c.info = .muts ms → crb.info = .muts rs →
     FamilyTysCanon t E₀ A c ms rb crb rs blk tys rhsss) ∧
-  FamRecsCompanion E t env blk tys
+  FamRecsCompanion E t env blk tys ∧
+  ∀ ms, c.info = .muts ms → Nonempty (BlockProjFacts t E₀ E env A c ms blk tys g)
 
 end IxVM.Refinement.Typing.FamilyAlias

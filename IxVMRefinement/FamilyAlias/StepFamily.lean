@@ -1,6 +1,7 @@
 import IxVMRefinement.FamilyAlias.RecsModeledStep
 import IxVMRefinement.FamilyAlias.StepOfSeam
 import IxVMRefinement.FamilyAlias.Selected
+import IxVMRefinement.FamilyAlias.ProjTableInstall
 import IxVMRefinement.Assembly.FoldClause
 
 /-! # The family row's step, its model half
@@ -112,17 +113,18 @@ theorem find?_isSome_of_mem {E : Ix.Kernel.Env .anon} {c : ConstantInfo .anon}
   exact List.find?_isSome.mpr ⟨c, h, beq_self_eq_true _⟩
 
 /-- **The family row's step, its model half** (module docstring). -/
-theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+theorem unitStepFamily_of_facts
     {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env}
-    {lim : Option Nat} {A : _root_.Address} {c : Ixon.Constant} {rb : _root_.Address}
-    {crb : Ixon.Constant} {adv : _root_.Address → Prop}
+    {lim : Option Nat} {A : _root_.Address} {c : Ixon.Constant} {ms : Array Ixon.MutConst}
+    {rb : _root_.Address} {crb : Ixon.Constant} {adv : _root_.Address → Prop}
     {fam : _root_.Address → Option _root_.Address}
-    {Sel : Ix.Kernel.Env .anon → List (ConstantInfo .anon) → List IxVM.Refinement.Core.KExpr →
-      List (List IxVM.Refinement.Core.KExpr) → Prop}
+    {Sel : Ix.Kernel.Env .anon → List (ConstantInfo .anon) → FamilyAdvice →
+      List IxVM.Refinement.Core.KExpr → List (List IxVM.Refinement.Core.KExpr) → Prop}
+    (hB : FamBlockRecord E₀ A c ms)
     (hseam : ∀ env : Ix.Kernel.Env .anon,
       (∀ ci ∈ envT.consts, ci ∈ env.consts) → (env.consts.map (·.name)).Nodup →
       Decl.PrefixInv.{u} E t lim env →
-      (FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env) →
+      (FoldExtra.{u} FormerOpenTraceAt t E env ∧ FamilyRecsModeled t E₀ fam env) →
       (∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
         (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
       (∀ a, adv a → ∀ ca, recordOf E₀ a = some ca → ∀ x, ConstAddrOf a ca x →
@@ -134,44 +136,67 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
         (tys : List IxVM.Refinement.Core.KExpr)
         (rhsss : List (List IxVM.Refinement.Core.KExpr)),
         FamDeclReads t E₀ A c rb crb blk ∧ FamilyCheckFacts env blk adv' tys rhsss ∧
-          Sel env blk tys rhsss)
+          Sel env blk adv' tys rhsss)
     (hkey : ∀ env : Ix.Kernel.Env .anon, (∀ ci ∈ envT.consts, ci ∈ env.consts) →
       (∀ x, FamAddr A c rb crb x → env.find? (keyOf t x) = none) →
       ∀ x, FamAddr A c rb crb x → Decl.KeyFree (keyOf t x))
     (heqPin : ∀ env : Ix.Kernel.Env .anon,
       (∀ ci ∈ envT.consts, ci ∈ env.consts) → (env.consts.map (·.name)).Nodup →
       env.find? Ix.Kernel.eqName = some Ix.Kernel.eqA)
+    (hbasis : ∀ env : Ix.Kernel.Env .anon,
+      (∀ ci ∈ envT.consts, ci ∈ env.consts) → (env.consts.map (·.name)).Nodup →
+      ∀ ci ∈ IxVM.Refinement.TableInhabit.basisEnv.consts, env.find? ci.name = some ci)
     (hclaim : ∀ blk : List (ConstantInfo .anon), FamDeclReads t E₀ A c rb crb blk →
       ∀ (B' rb' x : _root_.Address) (crb' : Ixon.Constant), fam B' = some rb' →
         recordOf E₀ rb' = some crb' → ConstAddrOf rb' crb' x →
         ∀ ci ∈ blk, ci.name = keyOf t x → isRecursor ci = true)
-    (hkeeps : ∀ (env env₂ : Ix.Kernel.Env .anon)
+    (hbpf : ∀ env blk adv' tys rhsss, Sel env blk adv' tys rhsss →
+      Nonempty (BlockProjFacts t E₀ E env A c ms blk tys adv'.ren))
+    (hkeeps : ∀ (env env₂ : Ix.Kernel.Env .anon) (Reg : NativeFam .anon → Prop)
       (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon) (aliases blk : List (ConstantInfo .anon))
       (adv' : FamilyAdvice) (tys : List IxVM.Refinement.Core.KExpr)
-      (rhsss : List (List IxVM.Refinement.Core.KExpr)),
-      Decl.PrefixInv.{u} E t lim env → FoldExtra.{u} L t E env →
+      (rhsss : List (List IxVM.Refinement.Core.KExpr))
+      (bpf : BlockProjFacts t E₀ E env A c ms blk tys adv'.ren)
+      (pcs : List (ConstantInfo .anon)),
+      Decl.PrefixInv.{u} E t lim env → FoldExtra.{u} FormerOpenTraceAt t E env →
+      FamRegistryWith.{u} FormerOpenTraceAt t E env Reg →
       (∀ ci ∈ envT.consts, ci ∈ env.consts) →
       (∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
         (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
+      (∀ x, FamAddr A c rb crb x → env.find? (keyOf t x) = none) →
       AliasGroup env h aliases → (∀ a ∈ aliases, ∃ ci ∈ blk, a.name.base = ci.name) →
       FamDeclReads t E₀ A c rb crb blk → FamilyCheckFacts env blk adv' tys rhsss →
-      Sel env blk tys rhsss →
+      Sel env blk adv' tys rhsss →
       DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk env₂ →
       (∀ ci ∈ blk, ∃ c', env₂.find? ci.name = some c' ∧ StoredAs c' ci) →
       SelectedInstalled blk tys rhsss env₂ →
-      Decl.PrefixInv.{u} E t lim env₂ ∧ FoldExtra.{u} L t E env₂) :
-    UnitStepFamily.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
+      BlockProjInstallResult.{u} t env env₂ Reg A ms bpf.elig pcs →
+      Decl.PrefixInv.{u} E t lim ⟨pcs ++ env₂.consts⟩ ∧
+        FoldExtra.{u} FormerOpenTraceAt t E ⟨pcs ++ env₂.consts⟩) :
+    UnitStepFamily.{u} (fun env => FoldExtra.{u} FormerOpenTraceAt t E env ∧
+        FamilyRecsModeled t E₀ fam env)
       t envT E₀ E lim A c rb crb adv := by
   intro env hext hnd hinv hX hrefs hadv1 hadv2 hfresh
   obtain ⟨blk, adv', tys, rhsss, hreads, hF, hSel⟩ :=
     hseam env hext hnd hinv hX hrefs hadv1 hadv2 hfresh
-  obtain ⟨h, as, env₂, hg, hroots, hd, hst, hN, hR⟩ :=
-    famStepConclusion_installed hF hreads hinv.store.store hX.1.1.2 (heqPin env hext hnd)
+  obtain ⟨bpf⟩ := hbpf env blk adv' tys rhsss hSel
+  obtain ⟨⟨⟨⟨Reg, hReg⟩, -⟩, haux⟩, hthm, har⟩ := hX.1
+  obtain ⟨h, as, env₂, hg, hroots, hnames, htgt, hd, hst, hN, hR⟩ :=
+    famStepConclusion_installed_full hF hreads hinv.store.store haux (heqPin env hext hnd)
       hfresh (hkey env hext hfresh)
   have hI : SelectedInstalled blk tys rhsss env₂ := ⟨hN, hR⟩
+  let pcs := blockProjConsts t env₂ A ms bpf.elig
+  have hres : BlockProjInstallResult.{u} t env env₂ Reg A ms bpf.elig pcs :=
+    install_block_proj_tables hinv.tableWf (Core.RoleClosure.check_ok_of_wf hinv.tableWf)
+      hB hreads hF hg hnames htgt hroots hd hI hinv.store har hthm haux
+      (heqPin env hext hnd) (hbasis env hext hnd) hReg hfresh (hkey env hext hfresh) bpf
   obtain ⟨new, henv, hperm⟩ := declIndRunJ_names_perm hd.shape
   have henv₂ : env₂ = ⟨(new ++ as) ++ env.consts⟩ := by
     rw [henv]
+    simp [List.append_assoc]
+  have henv₃ : (⟨(pcs ++ (new ++ as)) ++ env.consts⟩ : Ix.Kernel.Env .anon) =
+      ⟨pcs ++ env₂.consts⟩ := by
+    rw [henv₂]
     simp [List.append_assoc]
   -- the members' names
   have hmemb : ∀ ci ∈ new, ∃ x, FamAddr A c rb crb x ∧ ci.name = keyOf t x := by
@@ -190,34 +215,64 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
     obtain ⟨n, d, hna⟩ := AliasGroup.name_aux hg a ha
     rw [hna] at hn
     exact auxKey_ne_of_isBaseKey hk hn
-  refine ⟨new ++ as, ?_, ?_, ?_, ⟨?_, ?_⟩, ?_, ?_⟩
-  · -- distinct names
+  have hpcsAux : ∀ ci ∈ pcs, ∃ n d, ci.name = Ix.Kernel.auxKey n d := by
+    intro ci hci
+    obtain ⟨pos, -, -, ⟨_, _, hnm, -⟩ | ⟨j, _, hnm⟩⟩ := hres.kindAndName ci hci
+    · exact ⟨Core.keyOf t (Core.iprjAddr A pos), .projTable, hnm⟩
+    · exact ⟨Ix.Kernel.projTableName (Core.keyOf t (Core.iprjAddr A pos)), .projFn j, hnm⟩
+  have hndNA : ((new ++ as).map (·.name)).Nodup := by
     rw [List.map_append]
     refine List.nodup_append.mpr ⟨hperm.nodup_iff.mpr hreads.1, AliasGroup.names_nodup hg, ?_⟩
     intro k hk k' hk' heq
     obtain ⟨ci, hci, rfl⟩ := List.mem_map.mp hk
     obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hk'
     exact hnotalias _ (hbaseN ci hci) a ha heq.symm
+  refine ⟨pcs ++ (new ++ as), ?_, ?_, ?_, ⟨?_, ?_⟩, ?_, ?_⟩
+  · -- distinct names
+    rw [List.map_append]
+    refine List.nodup_append.mpr ⟨hres.nodup, hndNA, ?_⟩
+    intro k hk k' hk' heq
+    obtain ⟨c1, hc1, rfl⟩ := List.mem_map.mp hk
+    obtain ⟨c2, hc2, rfl⟩ := List.mem_map.mp hk'
+    have hmem2 : c2 ∈ env₂.consts := by
+      rw [henv₂]
+      exact List.mem_append_left env.consts hc2
+    have hsome := find?_isSome_of_mem (E := env₂) hmem2
+    rw [← heq, hres.freshEnv₂ c1 hc1] at hsome
+    exact Bool.false_ne_true hsome
   · -- fresh in the prefix
     intro ci hci
     rcases List.mem_append.mp hci with hci | hci
-    · obtain ⟨x, hx, hk⟩ := hmemb ci hci
-      rw [hk]
-      exact hfresh x hx
-    · exact AliasGroup.fresh_prefix hg ci hci
-  · rw [← henv₂]
-    exact (hkeeps env env₂ h as blk adv' tys rhsss hinv hX.1 hext hrefs hg hroots hreads hF hSel
-      hd hst hI).1
-  · rw [← henv₂]
-    exact (hkeeps env env₂ h as blk adv' tys rhsss hinv hX.1 hext hrefs hg hroots hreads hF hSel
-      hd hst hI).2
-  · rw [← henv₂]
-    exact familyRecsModeled_famStep (A := A) (rb := rb) (c := c) (crb := crb) hX.2 hg hd hst
-      (fun ci hci x hk => by
-        obtain ⟨x', -, hk', hr⟩ := hreads.2.1 ci hci
-        rw [← IxVM.Refinement.Core.keyOf_inj hinv.tableWf (hk'.symm.trans hk)]
-        exact hr)
-      (hclaim blk hreads)
+    · exact hres.freshPrefix ci hci
+    · rcases List.mem_append.mp hci with hci | hci
+      · obtain ⟨x, hx, hk⟩ := hmemb ci hci
+        rw [hk]
+        exact hfresh x hx
+      · exact AliasGroup.fresh_prefix hg ci hci
+  · rw [henv₃]
+    exact (hkeeps env env₂ Reg h as blk adv' tys rhsss bpf pcs hinv hX.1 hReg hext hrefs hfresh
+      hg hroots hreads hF hSel hd hst hI hres).1
+  · rw [henv₃]
+    exact (hkeeps env env₂ Reg h as blk adv' tys rhsss bpf pcs hinv hX.1 hReg hext hrefs hfresh
+      hg hroots hreads hF hSel hd hst hI hres).2
+  · rw [henv₃]
+    have hFRM₂ : FamilyRecsModeled t E₀ fam env₂ :=
+      familyRecsModeled_famStep (A := A) (rb := rb) (c := c) (crb := crb) hX.2 hg hd hst
+        (fun ci hci x hk => by
+          obtain ⟨x', -, hk', hr⟩ := hreads.2.1 ci hci
+          rw [← IxVM.Refinement.Core.keyOf_inj hinv.tableWf (hk'.symm.trans hk)]
+          exact hr)
+        (hclaim blk hreads)
+    refine IxVM.Refinement.Typing.TwinFamily.FamilyRecsModeled.step hFRM₂
+      (fun hc => hres.find₂ hc) ?_
+    intro B' rb' x crb' _ _ _ hs hold
+    exfalso
+    have hnone := find?_append_none (env := env₂) pcs (fun a ha heq => by
+      obtain ⟨n, d, hn⟩ := hpcsAux a ha
+      rw [hn] at heq
+      exact auxKey_ne_of_isBaseKey (Decl.isBaseKey_keyOf t x) heq) hold
+    rw [hnone] at hs
+    exact Bool.false_ne_true hs
   · -- each address of the family, stored as its reading
     intro x hx
     obtain ⟨ci₀, hci₀, hk⟩ := hreads.2.2.1 x hx
@@ -230,7 +285,7 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
     refine ⟨c', ?_, ci₀, hname.trans hk', hr, hS⟩
     rcases List.mem_append.mp hmem with hmem | hmem
     · rcases List.mem_append.mp hmem with hmem | hmem
-      · exact List.mem_append_left _ hmem
+      · exact List.mem_append_right pcs (List.mem_append_left as hmem)
       · exfalso
         exact hnotalias (keyOf t x') (Decl.isBaseKey_keyOf t x') c' hmem
           (hname.trans hk')
@@ -241,8 +296,10 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
   · -- each new constant at an address's key or at a derived key
     intro ci hci
     rcases List.mem_append.mp hci with hci | hci
-    · exact Or.inl (hmemb ci hci)
-    · obtain ⟨n, d, hn⟩ := AliasGroup.name_aux hg ci hci
-      exact Or.inr ⟨n, d, hn⟩
+    · exact Or.inr (hpcsAux ci hci)
+    · rcases List.mem_append.mp hci with hci | hci
+      · exact Or.inl (hmemb ci hci)
+      · obtain ⟨n, d, hn⟩ := AliasGroup.name_aux hg ci hci
+        exact Or.inr ⟨n, d, hn⟩
 
 end IxVM.Refinement.Typing.FamilyAlias

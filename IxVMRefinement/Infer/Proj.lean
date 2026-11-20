@@ -1119,7 +1119,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreBase c) (hfire : ProjG
     good.allowedTop (by simp)
   have ev372' : ObsFn W "KernelModeled::proj_ctor" [x_block_addr, .field iS] m194 p364 m357 cs370 :=
     by have hobs := ev372; rw [hidx_eq] at hobs; exact hobs
-  obtain ⟨-, ciC, hfindC, vC, hldC, hciC⟩ := ih.get (.callees .proj_ctor) (by lt_calls) ev372'
+  obtain ⟨ciC, hfindC, vC, hldC, hciC⟩ := ih.get (.callees .proj_ctor) (by lt_calls) ev372'
     x_block_addr iS bS rfl (by simpa only [hidx_eq] using allowed372)
     (ScopedCtx.famAt_of_ind hfindS hnameS) hpermS g370 hbS
   rw [ld366] at hldC

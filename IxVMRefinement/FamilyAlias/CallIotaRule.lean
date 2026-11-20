@@ -398,7 +398,7 @@ private theorem stripPis_constHead_of_instantiateLevelParams (ks : List LevelPar
   | _ + 1, .proj _ _ _, _, _, _, _, hs, _ => by
     simp [Expr.instantiateLevelParams, Expr.stripPis] at hs
 
-private theorem stripPis_renameConsts (π : KKey → KKey) :
+private theorem stripPis_renameConsts_ir (π : KKey → KKey) :
     ∀ (m : Nat) (e : KExpr) {bs : List (KExpr × Ix.Kernel.BinderMeta)} {rem : KExpr},
       e.stripPis m = some (bs, rem) →
       (e.renameConsts π).stripPis m =
@@ -411,7 +411,7 @@ private theorem stripPis_renameConsts (π : KKey → KKey) :
     | none => simp [hsb] at hs
     | some p =>
       rw [hsb] at hs; injection hs with hp; injection hp with h1 h2; subst h1 h2
-      simp [Expr.renameConsts, Expr.stripPis, stripPis_renameConsts π m body hsb]
+      simp [Expr.renameConsts, Expr.stripPis, stripPis_renameConsts_ir π m body hsb]
   | _ + 1, .bvar _, _, _, hs | _ + 1, .fvar _ _, _, _, hs | _ + 1, .sort _, _, _, hs
   | _ + 1, .const _ _, _, _, hs | _ + 1, .app _ _, _, _, hs | _ + 1, .lam _ _ _, _, _, hs
   | _ + 1, .letE _ _ _ _, _, _, hs | _ + 1, .lit _, _, _, hs | _ + 1, .proj _ _ _, _, _, hs =>
@@ -1721,7 +1721,7 @@ theorem check_iota_rule_facts
       hcargs_pos_eq, List.length_map] at hv
     exact hv.symm
   have hcbody_inst_len : cbody_inst.getAppArgs.length = cnP + nI := by
-    have hstrip_ren := stripPis_renameConsts g (cnP + cnF) cty_inst hstrip_inst
+    have hstrip_ren := stripPis_renameConsts_ir g (cnP + cnF) cty_inst hstrip_inst
     have hfn_ren : (cbody_inst.renameConsts g).getAppFn =
         .const (g (famKey t env srcAs (ixAddr a_ch0))) usc_inst := by
       rw [Decl.getAppFn_renameConsts, hfn_inst]; rfl

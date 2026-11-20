@@ -2,6 +2,7 @@ import IxVMRefinement.Decl.TwinRec
 import IxVMRefinement.Decl.ModeledAux
 import IxVMRefinement.FamilyAlias.Target
 import IxVMRefinement.FamilyGraph.Graph
+import IxVMRefinement.Assembly.RecRhsPw
 import IxC.Kernel.Model.FoldLate
 import IxC.Kernel.Model.ThmLevels
 import IxC.Kernel.Model.StoreArKeep
@@ -132,7 +133,8 @@ def TwinStepTarget (RForm : RecordFormPred) : Prop :=
       (∀ ci ∈ blk, HasModel env₂ ci.name) ∧
       Decl.CoreCompanions ⟨E, env₂, t, lim⟩ ∧
       (∀ ci, env₂.find? ci.name = some ci → env.find? ci.name = none →
-        ∀ x, ci.name = keyOf t x → Decl.ReloadsAs E t env₂ ci)
+        ∀ x, ci.name = keyOf t x → Decl.ReloadsAs E t env₂ ci) ∧
+      NewRecNotNative t E env env₂
 
 /-! ## What the fold gets from the conclusion -/
 
