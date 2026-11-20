@@ -38,23 +38,15 @@ theorem gstep (κ : _root_.Address → KKey) :
   | .expr_has_bvar_at_binder, _, _, _, _, _, ev, ih => g_expr_has_bvar_at_binder κ ev ih
   | .expr_has_bvar_at_let, _, _, _, _, _, ev, ih => g_expr_has_bvar_at_let κ ev ih
   | .expr_glb, _, _, _, _, _, ev, ih => g_expr_glb κ ev ih
-  | .expr_glb_walk, _, _, _, _, _, ev, ih => g_expr_glb_walk κ ev ih
-  | .expr_glb_binder, _, _, _, _, _, ev, ih => g_expr_glb_binder κ ev ih
   | .expr_glb_let, _, _, _, _, _, ev, ih => g_expr_glb_let κ ev ih
   | .expr_lift, _, _, _, _, _, ev, ih => g_expr_lift κ ev ih
-  | .expr_lift_walk, _, _, _, _, _, ev, ih => g_expr_lift_walk κ ev ih
-  | .expr_lift_bvar, _, _, _, _, _, ev, _ => g_expr_lift_bvar κ ev
   | .expr_lift_let, _, _, _, _, _, ev, ih => g_expr_lift_let κ ev ih
   | .expr_lower, _, _, _, _, _, ev, ih => g_expr_lower κ ev ih
-  | .expr_lower_walk, _, _, _, _, _, ev, ih => g_expr_lower_walk κ ev ih
   | .expr_lower_let, _, _, _, _, _, ev, ih => g_expr_lower_let κ ev ih
   | .expr_inst1, _, _, _, _, _, ev, ih => g_expr_inst1 κ ev ih
-  | .expr_inst1_walk, _, _, _, _, _, ev, ih => g_expr_inst1_walk κ ev ih
-  | .expr_inst1_bvar, _, _, _, _, _, ev, ih => g_expr_inst1_bvar κ ev ih
   | .expr_inst1_let, _, _, _, _, _, ev, ih => g_expr_inst1_let κ ev ih
   | .expr_inst_many, _, _, _, _, _, ev, ih => g_expr_inst_many κ ev ih
-  | .expr_inst_many_bvar, _, _, _, _, _, ev, ih => g_expr_inst_many_bvar κ ev ih
-  | .expr_inst_many_walk, _, _, _, _, _, ev, ih => g_expr_inst_many_walk κ ev ih
+  | .expr_inst_many_n, _, _, _, _, _, ev, ih => g_expr_inst_many_n κ ev ih
   | .expr_inst_many_let, _, _, _, _, _, ev, ih => g_expr_inst_many_let κ ev ih
   | .ctx_trim, _, _, _, _, _, ev, ih => g_ctx_trim κ ev ih
   | .ctx_reachable, _, _, _, _, _, ev, ih => g_ctx_reachable (κ := κ) ev ih
@@ -146,14 +138,6 @@ theorem expr_glb_step (ev : ObsFn W "KernelSubst::expr_glb" args h r h' calls) (
     Specs.Subst.expr_glb c args h r h' calls :=
   fun a b hargs good => SubstAux.gall c.κ .expr_glb _ _ _ _ _ ev a b hargs good.2
 
-theorem expr_glb_walk_step (ev : ObsFn W "KernelSubst::expr_glb_walk" args h r h' calls)
-    (ih : IH c calls) : Specs.Subst.expr_glb_walk c args h r h' calls :=
-  fun a b hargs good => SubstAux.gall c.κ .expr_glb_walk _ _ _ _ _ ev a b hargs good.2
-
-theorem expr_glb_binder_step (ev : ObsFn W "KernelSubst::expr_glb_binder" args h r h' calls)
-    (ih : IH c calls) : Specs.Subst.expr_glb_binder c args h r h' calls :=
-  fun a b d hargs good => SubstAux.gall c.κ .expr_glb_binder _ _ _ _ _ ev a b d hargs good.2
-
 theorem expr_glb_let_step (ev : ObsFn W "KernelSubst::expr_glb_let" args h r h' calls)
     (ih : IH c calls) : Specs.Subst.expr_glb_let c args h r h' calls :=
   fun a b d e hargs good => SubstAux.gall c.κ .expr_glb_let _ _ _ _ _ ev a b d e hargs good.2
@@ -162,14 +146,6 @@ theorem expr_lift_step (ev : ObsFn W "KernelSubst::expr_lift" args h r h' calls)
     (ih : IH c calls) : Specs.Subst.expr_lift c args h r h' calls :=
   fun a b d hargs good => SubstAux.gall c.κ .expr_lift _ _ _ _ _ ev a b d hargs good.2
 
-theorem expr_lift_walk_step (ev : ObsFn W "KernelSubst::expr_lift_walk" args h r h' calls)
-    (ih : IH c calls) : Specs.Subst.expr_lift_walk c args h r h' calls :=
-  fun a b d hargs good => SubstAux.gall c.κ .expr_lift_walk _ _ _ _ _ ev a b d hargs good.2
-
-theorem expr_lift_bvar_step (ev : ObsFn W "KernelSubst::expr_lift_bvar" args h r h' calls)
-    (ih : IH c calls) : Specs.Subst.expr_lift_bvar c args h r h' calls :=
-  fun a b d hargs good => SubstAux.gall c.κ .expr_lift_bvar _ _ _ _ _ ev a b d hargs good.2
-
 theorem expr_lift_let_step (ev : ObsFn W "KernelSubst::expr_lift_let" args h r h' calls)
     (ih : IH c calls) : Specs.Subst.expr_lift_let c args h r h' calls :=
   fun a b d e f hargs good => SubstAux.gall c.κ .expr_lift_let _ _ _ _ _ ev a b d e f hargs good.2
@@ -177,10 +153,6 @@ theorem expr_lift_let_step (ev : ObsFn W "KernelSubst::expr_lift_let" args h r h
 theorem expr_lower_step (ev : ObsFn W "KernelSubst::expr_lower" args h r h' calls)
     (ih : IH c calls) : Specs.Subst.expr_lower c args h r h' calls :=
   fun a b d hargs good => SubstAux.gall c.κ .expr_lower _ _ _ _ _ ev a b d hargs good.2
-
-theorem expr_lower_walk_step (ev : ObsFn W "KernelSubst::expr_lower_walk" args h r h' calls)
-    (ih : IH c calls) : Specs.Subst.expr_lower_walk c args h r h' calls :=
-  fun a b d hargs good => SubstAux.gall c.κ .expr_lower_walk _ _ _ _ _ ev a b d hargs good.2
 
 theorem expr_lower_let_step (ev : ObsFn W "KernelSubst::expr_lower_let" args h r h' calls)
     (ih : IH c calls) : Specs.Subst.expr_lower_let c args h r h' calls :=
@@ -191,14 +163,6 @@ theorem expr_inst1_step (ev : ObsFn W "KernelSubst::expr_inst1" args h r h' call
     (ih : IH c calls) : Specs.Subst.expr_inst1 c args h r h' calls :=
   fun a b d hargs good => SubstAux.gall c.κ .expr_inst1 _ _ _ _ _ ev a b d hargs good.2
 
-theorem expr_inst1_walk_step (ev : ObsFn W "KernelSubst::expr_inst1_walk" args h r h' calls)
-    (ih : IH c calls) : Specs.Subst.expr_inst1_walk c args h r h' calls :=
-  fun a b d hargs good => SubstAux.gall c.κ .expr_inst1_walk _ _ _ _ _ ev a b d hargs good.2
-
-theorem expr_inst1_bvar_step (ev : ObsFn W "KernelSubst::expr_inst1_bvar" args h r h' calls)
-    (ih : IH c calls) : Specs.Subst.expr_inst1_bvar c args h r h' calls :=
-  fun a b d hargs good => SubstAux.gall c.κ .expr_inst1_bvar _ _ _ _ _ ev a b d hargs good.2
-
 theorem expr_inst1_let_step (ev : ObsFn W "KernelSubst::expr_inst1_let" args h r h' calls)
     (ih : IH c calls) : Specs.Subst.expr_inst1_let c args h r h' calls :=
   fun a b d e f hargs good =>
@@ -208,21 +172,15 @@ theorem expr_inst_many_step (ev : ObsFn W "KernelSubst::expr_inst_many" args h r
     (ih : IH c calls) : Specs.Subst.expr_inst_many c args h r h' calls :=
   fun a b d hargs good => SubstAux.gall c.κ .expr_inst_many _ _ _ _ _ ev a b d hargs good.2
 
-theorem expr_inst_many_bvar_step
-    (ev : ObsFn W "KernelSubst::expr_inst_many_bvar" args h r h' calls) (ih : IH c calls) :
-    Specs.Subst.expr_inst_many_bvar c args h r h' calls :=
-  fun a b d hargs good => SubstAux.gall c.κ .expr_inst_many_bvar _ _ _ _ _ ev a b d hargs good.2
-
-theorem expr_inst_many_walk_step
-    (ev : ObsFn W "KernelSubst::expr_inst_many_walk" args h r h' calls) (ih : IH c calls) :
-    Specs.Subst.expr_inst_many_walk c args h r h' calls :=
-  fun a b d hargs good => SubstAux.gall c.κ .expr_inst_many_walk _ _ _ _ _ ev a b d hargs good.2
+theorem expr_inst_many_n_step (ev : ObsFn W "KernelSubst::expr_inst_many_n" args h r h' calls)
+    (ih : IH c calls) : Specs.Subst.expr_inst_many_n c args h r h' calls :=
+  fun a b d e hargs good => SubstAux.gall c.κ .expr_inst_many_n _ _ _ _ _ ev a b d e hargs good.2
 
 theorem expr_inst_many_let_step
     (ev : ObsFn W "KernelSubst::expr_inst_many_let" args h r h' calls) (ih : IH c calls) :
     Specs.Subst.expr_inst_many_let c args h r h' calls :=
-  fun a b d e f hargs good =>
-    SubstAux.gall c.κ .expr_inst_many_let _ _ _ _ _ ev a b d e f hargs good.2
+  fun a b d e f g hargs good =>
+    SubstAux.gall c.κ .expr_inst_many_let _ _ _ _ _ ev a b d e f g hargs good.2
 
 theorem ctx_trim_step (ev : ObsFn W "KernelSubst::ctx_trim" args h r h' calls)
     (ih : IH c calls) : Specs.Subst.ctx_trim c args h r h' calls :=
@@ -277,23 +235,15 @@ theorem subst_step (c : ScopedCtx) :
   | .expr_has_bvar_at_binder, _, _, _, _, _, ev, ih => expr_has_bvar_at_binder_step c ev ih
   | .expr_has_bvar_at_let, _, _, _, _, _, ev, ih => expr_has_bvar_at_let_step c ev ih
   | .expr_glb, _, _, _, _, _, ev, ih => expr_glb_step c ev ih
-  | .expr_glb_walk, _, _, _, _, _, ev, ih => expr_glb_walk_step c ev ih
-  | .expr_glb_binder, _, _, _, _, _, ev, ih => expr_glb_binder_step c ev ih
   | .expr_glb_let, _, _, _, _, _, ev, ih => expr_glb_let_step c ev ih
   | .expr_lift, _, _, _, _, _, ev, ih => expr_lift_step c ev ih
-  | .expr_lift_walk, _, _, _, _, _, ev, ih => expr_lift_walk_step c ev ih
-  | .expr_lift_bvar, _, _, _, _, _, ev, ih => expr_lift_bvar_step c ev ih
   | .expr_lift_let, _, _, _, _, _, ev, ih => expr_lift_let_step c ev ih
   | .expr_lower, _, _, _, _, _, ev, ih => expr_lower_step c ev ih
-  | .expr_lower_walk, _, _, _, _, _, ev, ih => expr_lower_walk_step c ev ih
   | .expr_lower_let, _, _, _, _, _, ev, ih => expr_lower_let_step c ev ih
   | .expr_inst1, _, _, _, _, _, ev, ih => expr_inst1_step c ev ih
-  | .expr_inst1_walk, _, _, _, _, _, ev, ih => expr_inst1_walk_step c ev ih
-  | .expr_inst1_bvar, _, _, _, _, _, ev, ih => expr_inst1_bvar_step c ev ih
   | .expr_inst1_let, _, _, _, _, _, ev, ih => expr_inst1_let_step c ev ih
   | .expr_inst_many, _, _, _, _, _, ev, ih => expr_inst_many_step c ev ih
-  | .expr_inst_many_bvar, _, _, _, _, _, ev, ih => expr_inst_many_bvar_step c ev ih
-  | .expr_inst_many_walk, _, _, _, _, _, ev, ih => expr_inst_many_walk_step c ev ih
+  | .expr_inst_many_n, _, _, _, _, _, ev, ih => expr_inst_many_n_step c ev ih
   | .expr_inst_many_let, _, _, _, _, _, ev, ih => expr_inst_many_let_step c ev ih
   | .ctx_trim, _, _, _, _, _, ev, ih => ctx_trim_step c ev ih
   | .ctx_reachable, _, _, _, _, _, ev, ih => ctx_reachable_step c ev ih

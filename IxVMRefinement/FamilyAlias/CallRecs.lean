@@ -1089,9 +1089,6 @@ private theorem addrIn_expr_lower_closed :
       (fname = "KernelSubst::expr_lower" →
         ∀ e s c, args = [e, s, c] → KExprClosed h e →
           KExprClosed h' r ∧ ∀ a, AddrIn h' r a → AddrIn h e a) ∧
-      (fname = "KernelSubst::expr_lower_walk" →
-        ∀ e s c, args = [e, s, c] → KExprClosed h e →
-          KExprClosed h' r ∧ ∀ a, AddrIn h' r a → AddrIn h e a) ∧
       (fname = "KernelSubst::expr_lower_let" →
         ∀ x_ty x_val x_body s c, args = [x_ty, x_val, x_body, s, c] →
           KExprClosed h x_ty → KExprClosed h x_val → KExprClosed h x_body →
@@ -1099,7 +1096,7 @@ private theorem addrIn_expr_lower_closed :
             ∀ a, AddrIn h' r a → AddrIn h x_ty a ∨ AddrIn h x_val a ∨ AddrIn h x_body a)
   have hmain : ∀ fname args h r h' cs, ObsFn Obs.W fname args h r h' cs → P fname args h r h' cs :=
     ObsFn.strong_induction (world := Obs.W) P (fun fname args h r h' cs ev ih => by
-      refine ⟨?_, ?_, ?_⟩
+      refine ⟨?_, ?_⟩
       · intro hfn e s c hargs hc
         subst hfn hargs
         match Obs.«KernelSubst::expr_lower».obs ev with
@@ -1108,46 +1105,20 @@ private theorem addrIn_expr_lower_closed :
           subst hr hh
           have ext := ev1.heap_extends.trans ev2.heap_extends
           exact ⟨hc.mono ext, fun a ha => hc.addrIn_back ext a ha⟩
-        | .other_n1 (cs92 := cs92) (ev36 := ev1) (ev59 := ev2) (ev94 := evW) (hc119 := hc119) .. =>
-          have ext := ev1.heap_extends.trans ev2.heap_extends
-          have hlt : cs92.length < cs.length := by
-            rw [hc119]; simp only [List.length_cons, List.length_append]; omega
-          obtain ⟨hc', hsub⟩ := (ih _ _ _ _ _ _ hlt evW).2.1 rfl e s c rfl (hc.mono ext)
-          exact ⟨hc', fun a ha => hc.addrIn_back ext a (hsub a ha)⟩
-      · intro hfn e s c hargs hc
-        subst hfn hargs
-        match Obs.«KernelSubst::expr_lower_walk».obs ev with
-        | .BVar (v33 := v33) (he29 := hr) (hm28 := hh) .. =>
+        | .other_n1_BVar (m46 := m46) (v_vopytoow := v33) (he_zxuqhldl := hr) (hm_jxognspy := hh) .. =>
           subst hr hh
-          have hcell : (h ++ [.construct kexprEnum "BVar" [v33]])[h.length]? =
+          have hcell : (m46 ++ [.construct kexprEnum "BVar" [v33]])[m46.length]? =
               some (.construct kexprEnum "BVar" [v33]) := by simp
           exact ⟨.atom hcell (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
             fun a ha => (Binding.addrIn_none hcell (by decide) ha).elim⟩
-        | .Srt (x_l := xl) (he67 := hr) (hm66 := hh) .. =>
+        | .other_n1_App (x_f := xf) (x_a := xa) (v_hatcdjee := vf) (v_sltmkgjd := va)
+            (m_wobjpxnd := m1) (cs_ydspngwe := cs1) (m_ncbedsvf := m2) (cs_eyaoabpa := cs2)
+            (ev36 := evl) (ev59 := evlt) (ld_wtarinpb := ld) (he_lhthkmdy := hr)
+            (hm_lkqgdqjj := hh) (ev_ozlepaea := ev1) (ev_lnvpubyf := ev2) (hc_dlddceds := hc221) .. =>
           subst hr hh
-          have hcell : (h ++ [.construct kexprEnum "Srt" [xl]])[h.length]? =
-              some (.construct kexprEnum "Srt" [xl]) := by simp
-          exact ⟨.atom hcell (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
-            fun a ha => (Binding.addrIn_none hcell (by decide) ha).elim⟩
-        | .Lit (x_lit := xlit) (he549 := hr) (hm548 := hh) .. =>
-          subst hr hh
-          have hcell : (h ++ [.construct kexprEnum "Lit" [xlit]])[h.length]? =
-              some (.construct kexprEnum "Lit" [xlit]) := by simp
-          exact ⟨.atom hcell (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
-            fun a ha => (Binding.addrIn_none hcell (by decide) ha).elim⟩
-        | .Const (x_idx := x_idx) (x_lvls := x_lvls) (ld12 := ld) (he101 := hr) (hm100 := hh) .. =>
-          subst hr hh
-          obtain ⟨idx, i, v, rfl, hget, hp, hv⟩ := hc.load_const ld
-          have ext := Heap.Extends.snoc h (.construct kexprEnum "Const" [x_idx, x_lvls])
-          have hcell : (h ++ [.construct kexprEnum "Const" [x_idx, x_lvls]])[h.length]? =
-              some (.construct kexprEnum "Const" [x_idx, x_lvls]) := by simp
-          refine ⟨.const hcell hp (ext.getElem?_eq hv), fun a ha => ?_⟩
-          exact .const hget (repAddr_back_of_cell ext hp hv (Binding.addrIn_const_inv hcell ha))
-        | .App (x_f := xf) (x_a := xa) (v147 := vf) (v148 := va) (m150 := m1) (cs158 := cs1)
-            (m186 := m2) (cs194 := cs2) (ld12 := ld) (he143 := hr) (hm142 := hh)
-            (ev160 := ev1) (ev196 := ev2) (hc221 := hc221) .. =>
-          subst hr hh
-          obtain ⟨idx, rfl, hget, hcf, hca⟩ := hc.load_app ld
+          have ext0 := evl.heap_extends.trans evlt.heap_extends
+          have hc0 := hc.mono ext0
+          obtain ⟨idx, rfl, hget, hcf, hca⟩ := hc0.load_app ld
           have hlt1 : cs1.length < cs.length := by
             rw [hc221]; simp only [List.length_cons, List.length_append]; omega
           have hlt2 : cs2.length < cs.length := by
@@ -1159,14 +1130,19 @@ private theorem addrIn_expr_lower_closed :
           have hcell : (m2 ++ [.construct kexprEnum "App" [vf, va]])[m2.length]? =
               some (.construct kexprEnum "App" [vf, va]) := by simp
           refine ⟨.app hcell (hcvf.mono ext1S) (hcva.mono extS), fun a ha => ?_⟩
+          apply hc.addrIn_back ext0 a
           rcases Binding.addrIn_app_inv hcell ha with hf | harg
           · exact .appFn hget (hsubf a (hcvf.addrIn_back ext1S a hf))
           · exact .appArg hget (hca.addrIn_back ev1.heap_extends a (hsuba a (hcva.addrIn_back extS a harg)))
-        | .Lam (x_ty := xt) (x_body := xb) (x_bl := xbl) (v252 := vt) (v253 := vb) (m256 := m1)
-            (cs264 := cs1) (m292 := m2) (cs300 := cs2) (v305 := c1) (ld12 := ld) (he248 := hr)
-            (hm247 := hh) (ev266 := ev1) (ev302 := ev2) (hc342 := hc342) .. =>
+        | .other_n1_Lam (x_ty := xt) (x_body := xb) (x_bl := xbl) (v_bxqhvwwf := vt)
+            (v_odjiutth := vb) (m_nqgdmojz := m1) (cs_giibetqh := cs1) (m_nassqcuf := m2)
+            (cs_loqieaqd := cs2) (v_peibszmx := c1) (ev36 := evl) (ev59 := evlt)
+            (ld_wtarinpb := ld) (he_eawjwxzg := hr) (hm_fjzjufvc := hh)
+            (ev_thyntvrp := ev1) (ev_vtehlont := ev2) (hc_zxxtlxny := hc342) .. =>
           subst hr hh
-          obtain ⟨idx, rfl, hget, hct, hcb⟩ := hc.load_lam ld
+          have ext0 := evl.heap_extends.trans evlt.heap_extends
+          have hc0 := hc.mono ext0
+          obtain ⟨idx, rfl, hget, hct, hcb⟩ := hc0.load_lam ld
           have hlt1 : cs1.length < cs.length := by
             rw [hc342]; simp only [List.length_cons, List.length_append]; omega
           have hlt2 : cs2.length < cs.length := by
@@ -1178,14 +1154,19 @@ private theorem addrIn_expr_lower_closed :
           have hcell : (m2 ++ [.construct kexprEnum "Lam" [vt, vb, xbl]])[m2.length]? =
               some (.construct kexprEnum "Lam" [vt, vb, xbl]) := by simp
           refine ⟨.lam hcell (hcvt.mono ext1S) (hcvb.mono extS), fun a ha => ?_⟩
+          apply hc.addrIn_back ext0 a
           rcases Binding.addrIn_lam_inv hcell ha with ht | hb
           · exact .lamTy hget (hsubt a (hcvt.addrIn_back ext1S a ht))
           · exact .lamBody hget (hcb.addrIn_back ev1.heap_extends a (hsubb a (hcvb.addrIn_back extS a hb)))
-        | .Forall (x_ty := xt) (x_body := xb) (x_bl := xbl) (v373 := vt) (v374 := vb) (m377 := m1)
-            (cs385 := cs1) (m413 := m2) (cs421 := cs2) (v426 := c1) (ld12 := ld) (he369 := hr)
-            (hm368 := hh) (ev387 := ev1) (ev423 := ev2) (hc463 := hc463) .. =>
+        | .other_n1_Forall (x_ty := xt) (x_body := xb) (x_bl := xbl) (v_sogttdca := vt)
+            (v_yvzvhdcj := vb) (m_sbogdtmk := m1) (cs_lvupwfuc := cs1) (m_uioefiry := m2)
+            (cs_hosrilsv := cs2) (v_dykkpmfb := c1) (ev36 := evl) (ev59 := evlt)
+            (ld_wtarinpb := ld) (he_wljmpcwa := hr) (hm_lnuidxgg := hh)
+            (ev_uvqcsayu := ev1) (ev_kogtemxp := ev2) (hc_wnqbyufa := hc463) .. =>
           subst hr hh
-          obtain ⟨idx, rfl, hget, hct, hcb⟩ := hc.load_forall ld
+          have ext0 := evl.heap_extends.trans evlt.heap_extends
+          have hc0 := hc.mono ext0
+          obtain ⟨idx, rfl, hget, hct, hcb⟩ := hc0.load_forall ld
           have hlt1 : cs1.length < cs.length := by
             rw [hc463]; simp only [List.length_cons, List.length_append]; omega
           have hlt2 : cs2.length < cs.length := by
@@ -1197,33 +1178,49 @@ private theorem addrIn_expr_lower_closed :
           have hcell : (m2 ++ [.construct kexprEnum "Forall" [vt, vb, xbl]])[m2.length]? =
               some (.construct kexprEnum "Forall" [vt, vb, xbl]) := by simp
           refine ⟨.forallE hcell (hcvt.mono ext1S) (hcvb.mono extS), fun a ha => ?_⟩
+          apply hc.addrIn_back ext0 a
           rcases Binding.addrIn_forall_inv hcell ha with ht | hb
           · exact .forallTy hget (hsubt a (hcvt.addrIn_back ext1S a ht))
           · exact .forallBody hget (hcb.addrIn_back ev1.heap_extends a (hsubb a (hcvb.addrIn_back extS a hb)))
-        | .Let (x_ty := xt) (x_val := xv) (x_body := xb) (cs489 := cs1) (ld12 := ld)
-            (ev491 := evL) (hc532 := hc532) .. =>
-          obtain ⟨idx, rfl, hget, hct, hcv, hcb⟩ := hc.load_let ld
-          have hlt : cs1.length < cs.length := by rw [hc532]; simp
-          obtain ⟨hc', hsub⟩ := (ih _ _ _ _ _ _ hlt evL).2.2 rfl xt xv xb s c rfl hct hcv hcb
+        | .other_n1_Let (x_ty := xt) (x_val := xv) (x_body := xb) (cs_zfvafhzo := cs1)
+            (ev36 := evl) (ev59 := evlt) (ld_wtarinpb := ld) (ev_jxykqhji := evL)
+            (hc_imonhfda := hc532) .. =>
+          have ext0 := evl.heap_extends.trans evlt.heap_extends
+          have hc0 := hc.mono ext0
+          obtain ⟨idx, rfl, hget, hct, hcv, hcb⟩ := hc0.load_let ld
+          have hlt : cs1.length < cs.length := by
+            rw [hc532]; simp only [List.length_cons, List.length_append]; omega
+          obtain ⟨hc', hsub⟩ := (ih _ _ _ _ _ _ hlt evL).2 rfl xt xv xb s c rfl hct hcv hcb
           refine ⟨hc', fun a ha => ?_⟩
+          apply hc.addrIn_back ext0 a
           rcases hsub a ha with ht | hv | hb
           · exact .letTy hget ht
           · exact .letVal hget hv
           · exact .letBody hget hb
-        | .Proj (x_tidx := xti) (x_fidx := xfi) (x_e1 := xe) (v594 := ve) (m610 := m1)
-            (cs618 := cs1) (ld12 := ld) (he588 := hr) (hm587 := hh) (ev620 := ev1) (hc645 := hc645) .. =>
+        | .other_n1_Proj (x_tidx := xti) (x_fidx := xfi) (x_e1 := xe) (v_zucfccdb := ve)
+            (m_rmwtxtrj := m1) (cs_uaxpewwy := cs1) (ev36 := evl) (ev59 := evlt)
+            (ld_wtarinpb := ld) (he_wfuvnwup := hr) (hm_rhzmdxhb := hh)
+            (ev_skxsyodm := ev1) (hc_ufbwpkdo := hc645) .. =>
           subst hr hh
-          obtain ⟨idx, i, v, f, rfl, rfl, hget, hp, hv, hce⟩ := hc.load_proj ld
-          have hlt : cs1.length < cs.length := by rw [hc645]; simp
+          have ext0 := evl.heap_extends.trans evlt.heap_extends
+          have hc0 := hc.mono ext0
+          obtain ⟨idx, i, v, f, rfl, rfl, hget, hp, hv, hce⟩ := hc0.load_proj ld
+          have hlt : cs1.length < cs.length := by
+            rw [hc645]; simp only [List.length_cons, List.length_append]; omega
           obtain ⟨hcve, hsube⟩ := (ih _ _ _ _ _ _ hlt ev1).1 rfl xe s c rfl hce
           have extS := Heap.Extends.snoc m1 (.construct kexprEnum "Proj" [xti, .field f, ve])
           have extAll := ev1.heap_extends.trans extS
           have hcell : (m1 ++ [.construct kexprEnum "Proj" [xti, .field f, ve]])[m1.length]? =
               some (.construct kexprEnum "Proj" [xti, .field f, ve]) := by simp
           refine ⟨.proj hcell hp (extAll.getElem?_eq hv) (hcve.mono extS), fun a ha => ?_⟩
+          apply hc.addrIn_back ext0 a
           rcases Binding.addrIn_proj_inv hcell ha with hra | he
           · exact .projHead hget (repAddr_back_of_cell extAll hp hv hra)
           · exact .projArg hget (hsube a (hcve.addrIn_back extS a he))
+        | .other_n1_other (ev36 := ev1) (ev59 := ev2) (he_skulcowg := hr) (he_lgvghlmw := hh) .. =>
+          subst hr hh
+          have ext := ev1.heap_extends.trans ev2.heap_extends
+          exact ⟨hc.mono ext, fun a ha => hc.addrIn_back ext a ha⟩
       · intro hfn xt xv xb s c hargs hct hcv hcb
         subst hfn hargs
         match Obs.«KernelSubst::expr_lower_let».obs ev with

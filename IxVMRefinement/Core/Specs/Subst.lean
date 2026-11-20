@@ -32,13 +32,12 @@ indices and depths with `UInt32::less_than_fields`, which fails above `2^32`:
 
 * `expr_lbr`'s `BVar(i) ↦ i + 1` is the one index computation without a comparison; the seam's
   bound keeps it from wrapping;
-* a lifted index is below `2^32 + s` (`expr_lift_bvar` compares it first), so `expr_lift` asks
-  for a shift below `2^62`; `expr_inst1` and `expr_inst_many` lift by their depth, which their
+* a lifted index is below `2^32 + s` (`expr_lift` compares `expr_lbr` first), so `expr_lift` asks
+  for a shift below `2^62`; `expr_inst1` and `expr_inst_many_n` lift by their depth, which their
   own comparisons bound;
-* `expr_lift`, `expr_lower`, `expr_inst1` and `expr_inst_many` compare their cutoff with
-  `expr_lbr(e)` before they walk, so under a binder `cutoff + 1` does not wrap; their `_walk`,
-  `_let` and `_bvar` helpers, which a walk calls after that comparison, take `cutoff < 2^32` as
-  a hypothesis;
+* `expr_lift`, `expr_lower`, `expr_inst1` and `expr_inst_many_n` compare their cutoff with
+  `expr_lbr(e)` before they walk, so under a binder `cutoff + 1` does not wrap; their `_let`
+  helpers, which a walk calls after that comparison, take `cutoff < 2^32` as a hypothesis;
 * `expr_glb` takes `cutoff < 2^32` as a hypothesis (its callers pass `0`) and re-establishes it
   at each binder from its own comparison;
 * `has_bvar_in_range` shifts its window at a binder with no comparison; its `0` is stated for
@@ -241,23 +240,6 @@ def expr_glb : SpecFn := fun c args h r h' calls =>
     ∃ g : Nat, r = .field (g : F) ∧ g < 4294967296 ∧
       ∀ d Γ E, c.tmk d Γ (ZMod.val cut) h E e → NoIdx h (ZMod.val cut) (ZMod.val cut + g) e
 
-/-- `KernelSubst::expr_glb_walk(e, cutoff)`: as `expr_glb`, without the early exit, at a cutoff
-whose successor is below `2^32` (`expr_glb`'s comparison establishes it). -/
-def expr_glb_walk : SpecFn := fun c args h r h' calls =>
-  ∀ e (cut : F), args = [e, .field cut] → CoreGood c calls → ZMod.val cut + 1 < 4294967296 →
-    h' = h ∧ ∃ g : Nat, r = .field (g : F) ∧ g < 4294967296 ∧
-      ∀ d Γ E, c.tmk d Γ (ZMod.val cut) h E e → NoIdx h (ZMod.val cut) (ZMod.val cut + g) e
-
-/-- `KernelSubst::expr_glb_binder(ty, body, cutoff)`: from a binder's components (the body at
-`cutoff + 1`). -/
-def expr_glb_binder : SpecFn := fun c args h r h' calls =>
-  ∀ ty body (cut : F), args = [ty, body, .field cut] → CoreGood c calls →
-    ZMod.val cut + 1 < 4294967296 → h' = h ∧
-    ∃ g : Nat, r = .field (g : F) ∧ g < 4294967296 ∧
-      ∀ d Γ T B, c.tmk d Γ (ZMod.val cut) h T ty → c.tmk d Γ (ZMod.val cut + 1) h B body →
-        NoIdx h (ZMod.val cut) (ZMod.val cut + g) ty ∧
-        NoIdx h (ZMod.val cut + 1) (ZMod.val cut + 1 + g) body
-
 /-- `KernelSubst::expr_glb_let(ty, val, body, cutoff)`: from a let's components. -/
 def expr_glb_let : SpecFn := fun c args h r h' calls =>
   ∀ ty val body (cut : F), args = [ty, val, body, .field cut] → CoreGood c calls →
@@ -273,28 +255,13 @@ def expr_glb_let : SpecFn := fun c args h r h' calls =>
 
 /-- `KernelSubst::expr_lift(e, shift, cutoff)`, read at local depth `cutoff`: **the same image
 under `s` more binders**, split as `s₁` local and `s₂` opened ones (module docstring). Hypothesis:
-`s < 2^62`, so the lifted indices (below `2^32` before: `expr_lift_bvar` compares them) stay
+`s < 2^62`, so the lifted indices (below `2^32` before: `expr_lbr` bounds them) stay
 below the seam's bound; the callers lift by a context index plus one, a depth below `2^32`, or
 `1`. -/
 def expr_lift : SpecFn := fun c args h r h' calls =>
   ∀ e (s cut : F), args = [e, .field s, .field cut] → CoreGood c calls →
     ZMod.val s < 4611686018427387904 →
     ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → ∀ d Γ E, c.tmk d Γ (ZMod.val cut) h E e →
-      c.tmk (d + s₂) Γ (ZMod.val cut + s₁) h' E r
-
-/-- `KernelSubst::expr_lift_walk(e, shift, cutoff)`: as `expr_lift`, without the early exits, at
-a cutoff below `2^32` (`expr_lift`'s comparison establishes it). -/
-def expr_lift_walk : SpecFn := fun c args h r h' calls =>
-  ∀ e (s cut : F), args = [e, .field s, .field cut] → CoreGood c calls →
-    ZMod.val s < 4611686018427387904 → ZMod.val cut < 4294967296 →
-    ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → ∀ d Γ E, c.tmk d Γ (ZMod.val cut) h E e →
-      c.tmk (d + s₂) Γ (ZMod.val cut + s₁) h' E r
-
-/-- `KernelSubst::expr_lift_bvar(i, shift, cutoff)`: the index `i`, lifted. -/
-def expr_lift_bvar : SpecFn := fun c args h r h' calls =>
-  ∀ i s cut : F, args = [.field i, .field s, .field cut] → CoreGood c calls →
-    ZMod.val s < 4611686018427387904 →
-    ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → ∀ d Γ E, BVarIm d Γ (ZMod.val cut) (ZMod.val i) E →
       c.tmk (d + s₂) Γ (ZMod.val cut + s₁) h' E r
 
 /-- `KernelSubst::expr_lift_let(ty, val, body, shift, cutoff)`: the lifted let, whose image is
@@ -313,16 +280,6 @@ heap term is in the removed window `[cutoff - s₁, cutoff + s₂)` (`NoIdx`: `e
 `0`; the rebases remove opened variables, after `expr_glb`). -/
 def expr_lower : SpecFn := fun c args h r h' calls =>
   ∀ e (s cut : F), args = [e, .field s, .field cut] → CoreGood c calls →
-    ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → s₁ ≤ ZMod.val cut → ∀ d Γ E, s₂ ≤ d →
-      c.tmk d Γ (ZMod.val cut) h E e → NoIdx h (ZMod.val cut - s₁) (ZMod.val cut + s₂) e →
-      c.tmk (d - s₂) Γ (ZMod.val cut - s₁) h' E r
-
-/-- `KernelSubst::expr_lower_walk(e, shift, cutoff)`: as `expr_lower`, without the early exits,
-at a cutoff below `2^32` that does not bound the term's indices (`expr_lower` walks only when
-the cutoff is below `expr_lbr(e)`; the walk lowers a variable node without comparing it). -/
-def expr_lower_walk : SpecFn := fun c args h r h' calls =>
-  ∀ e (s cut : F), args = [e, .field s, .field cut] → CoreGood c calls →
-    ZMod.val cut < 4294967296 → ¬ IdxLt h (ZMod.val cut) e →
     ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → s₁ ≤ ZMod.val cut → ∀ d Γ E, s₂ ≤ d →
       c.tmk d Γ (ZMod.val cut) h E e → NoIdx h (ZMod.val cut - s₁) (ZMod.val cut + s₂) e →
       c.tmk (d - s₂) Γ (ZMod.val cut - s₁) h' E r
@@ -352,19 +309,6 @@ def expr_inst1 : SpecFn := fun c args h r h' calls =>
     ∀ d Γ B A, c.tmk d Γ (ZMod.val j + 1) h B e → c.tm d Γ h A arg →
       c.tmk d Γ (ZMod.val j) h' (B.instantiate1 A (ZMod.val j)) r
 
-/-- `KernelSubst::expr_inst1_walk(e, arg, depth)`: as `expr_inst1`, without the early exits, at a
-depth below `2^32`. -/
-def expr_inst1_walk : SpecFn := fun c args h r h' calls =>
-  ∀ e arg (j : F), args = [e, arg, .field j] → CoreGood c calls → ZMod.val j < 4294967296 →
-    ∀ d Γ B A, c.tmk d Γ (ZMod.val j + 1) h B e → c.tm d Γ h A arg →
-      c.tmk d Γ (ZMod.val j) h' (B.instantiate1 A (ZMod.val j)) r
-
-/-- `KernelSubst::expr_inst1_bvar(i, arg, depth)`: the index `i`, instantiated. -/
-def expr_inst1_bvar : SpecFn := fun c args h r h' calls =>
-  ∀ (i : F) arg (j : F), args = [.field i, arg, .field j] → CoreGood c calls →
-    ∀ d Γ B A, BVarIm d Γ (ZMod.val j + 1) (ZMod.val i) B → c.tm d Γ h A arg →
-      c.tmk d Γ (ZMod.val j) h' (B.instantiate1 A (ZMod.val j)) r
-
 /-- `KernelSubst::expr_inst1_let(ty, val, body, arg, depth)`: the instantiated let, whose image
 is the ζ-reduct of its components' (`instShift`), instantiated; at a depth below `2^32`. -/
 def expr_inst1_let : SpecFn := fun c args h r h' calls =>
@@ -382,27 +326,21 @@ def expr_inst_many : SpecFn := fun c args h r h' calls =>
     ∀ d Γ B As, c.tmk d Γ (ZMod.val j + As.length) h B e → c.tml d Γ h As substs →
       c.tmk d Γ (ZMod.val j) h' (B.instantiateList As (ZMod.val j)) r
 
-/-- `KernelSubst::expr_inst_many_bvar(i, substs, depth)`: the index `i`, instantiated, at a depth
-below `2^32` (the function subtracts the depth from the index before it compares). -/
-def expr_inst_many_bvar : SpecFn := fun c args h r h' calls =>
-  ∀ (i : F) substs (j : F), args = [.field i, substs, .field j] → CoreGood c calls →
-    ZMod.val j < 4294967296 →
-    ∀ d Γ B As, BVarIm d Γ (ZMod.val j + As.length) (ZMod.val i) B → c.tml d Γ h As substs →
+/-- `KernelSubst::expr_inst_many_n(e, substs, n, depth)`: `expr_inst_many` with precomputed
+substitution length `n = |substs| < 2^39`. -/
+def expr_inst_many_n : SpecFn := fun c args h r h' calls =>
+  ∀ e substs (n j : F), args = [e, substs, .field n, .field j] → CoreGood c calls →
+    ∀ d Γ B As, n = (As.length : F) → As.length < 2 ^ 39 →
+      c.tmk d Γ (ZMod.val j + As.length) h B e → c.tml d Γ h As substs →
       c.tmk d Γ (ZMod.val j) h' (B.instantiateList As (ZMod.val j)) r
 
-/-- `KernelSubst::expr_inst_many_walk(e, substs, depth)`: as `expr_inst_many`, without the early
-exits, at a depth below `2^32`. -/
-def expr_inst_many_walk : SpecFn := fun c args h r h' calls =>
-  ∀ e substs (j : F), args = [e, substs, .field j] → CoreGood c calls → ZMod.val j < 4294967296 →
-    ∀ d Γ B As, c.tmk d Γ (ZMod.val j + As.length) h B e → c.tml d Γ h As substs →
-      c.tmk d Γ (ZMod.val j) h' (B.instantiateList As (ZMod.val j)) r
-
-/-- `KernelSubst::expr_inst_many_let(ty, val, body, substs, depth)`: the instantiated let, at a
-depth below `2^32`. -/
+/-- `KernelSubst::expr_inst_many_let(ty, val, body, substs, n, depth)`: the instantiated let, at a
+depth below `2^32` with precomputed length `n = |substs| < 2^39`. -/
 def expr_inst_many_let : SpecFn := fun c args h r h' calls =>
-  ∀ ty val body substs (j : F), args = [ty, val, body, substs, .field j] → CoreGood c calls →
-    ZMod.val j < 4294967296 →
-    ∀ d Γ T V B As, c.tmk d Γ (ZMod.val j + As.length) h T ty →
+  ∀ ty val body substs (n j : F), args = [ty, val, body, substs, .field n, .field j] →
+    CoreGood c calls → ZMod.val j < 4294967296 →
+    ∀ d Γ T V B As, n = (As.length : F) → As.length < 2 ^ 39 →
+      c.tmk d Γ (ZMod.val j + As.length) h T ty →
       c.tmk d Γ (ZMod.val j + As.length) h V val →
       c.tmk d Γ (ZMod.val j + As.length + 1) h B body → c.tml d Γ h As substs →
       c.tmk d Γ (ZMod.val j) h' ((instShift V 0 B).instantiateList As (ZMod.val j)) r
@@ -469,11 +407,11 @@ inductive Fn where
   | expr_lbr | expr_lbr_let | lbr_max | lbr_dec | lbr_min
   | has_bvar_in_range | has_bvar_in_range_bvar | has_bvar_in_range_binder | has_bvar_in_range_let
   | expr_has_bvar_at | expr_has_bvar_at_binder | expr_has_bvar_at_let
-  | expr_glb | expr_glb_walk | expr_glb_binder | expr_glb_let
-  | expr_lift | expr_lift_walk | expr_lift_bvar | expr_lift_let
-  | expr_lower | expr_lower_walk | expr_lower_let
-  | expr_inst1 | expr_inst1_walk | expr_inst1_bvar | expr_inst1_let
-  | expr_inst_many | expr_inst_many_bvar | expr_inst_many_walk | expr_inst_many_let
+  | expr_glb | expr_glb_let
+  | expr_lift | expr_lift_let
+  | expr_lower | expr_lower_let
+  | expr_inst1 | expr_inst1_let
+  | expr_inst_many | expr_inst_many_n | expr_inst_many_let
   | ctx_trim | ctx_reachable | ctx_seek_cut | ctx_next_cut | ctx_close_cut
   | collect_spine | expr_inst_levels | expr_inst_levels_walk
   deriving DecidableEq, Repr
@@ -493,23 +431,15 @@ def Fn.name : Fn → String
   | .expr_has_bvar_at_binder => "KernelSubst::expr_has_bvar_at_binder"
   | .expr_has_bvar_at_let => "KernelSubst::expr_has_bvar_at_let"
   | .expr_glb => "KernelSubst::expr_glb"
-  | .expr_glb_walk => "KernelSubst::expr_glb_walk"
-  | .expr_glb_binder => "KernelSubst::expr_glb_binder"
   | .expr_glb_let => "KernelSubst::expr_glb_let"
   | .expr_lift => "KernelSubst::expr_lift"
-  | .expr_lift_walk => "KernelSubst::expr_lift_walk"
-  | .expr_lift_bvar => "KernelSubst::expr_lift_bvar"
   | .expr_lift_let => "KernelSubst::expr_lift_let"
   | .expr_lower => "KernelSubst::expr_lower"
-  | .expr_lower_walk => "KernelSubst::expr_lower_walk"
   | .expr_lower_let => "KernelSubst::expr_lower_let"
   | .expr_inst1 => "KernelSubst::expr_inst1"
-  | .expr_inst1_walk => "KernelSubst::expr_inst1_walk"
-  | .expr_inst1_bvar => "KernelSubst::expr_inst1_bvar"
   | .expr_inst1_let => "KernelSubst::expr_inst1_let"
   | .expr_inst_many => "KernelSubst::expr_inst_many"
-  | .expr_inst_many_bvar => "KernelSubst::expr_inst_many_bvar"
-  | .expr_inst_many_walk => "KernelSubst::expr_inst_many_walk"
+  | .expr_inst_many_n => "KernelSubst::expr_inst_many_n"
   | .expr_inst_many_let => "KernelSubst::expr_inst_many_let"
   | .ctx_trim => "KernelSubst::ctx_trim"
   | .ctx_reachable => "KernelSubst::ctx_reachable"
@@ -535,23 +465,15 @@ def Fn.spec : Fn → SpecFn
   | .expr_has_bvar_at_binder => Specs.Subst.expr_has_bvar_at_binder
   | .expr_has_bvar_at_let => Specs.Subst.expr_has_bvar_at_let
   | .expr_glb => Specs.Subst.expr_glb
-  | .expr_glb_walk => Specs.Subst.expr_glb_walk
-  | .expr_glb_binder => Specs.Subst.expr_glb_binder
   | .expr_glb_let => Specs.Subst.expr_glb_let
   | .expr_lift => Specs.Subst.expr_lift
-  | .expr_lift_walk => Specs.Subst.expr_lift_walk
-  | .expr_lift_bvar => Specs.Subst.expr_lift_bvar
   | .expr_lift_let => Specs.Subst.expr_lift_let
   | .expr_lower => Specs.Subst.expr_lower
-  | .expr_lower_walk => Specs.Subst.expr_lower_walk
   | .expr_lower_let => Specs.Subst.expr_lower_let
   | .expr_inst1 => Specs.Subst.expr_inst1
-  | .expr_inst1_walk => Specs.Subst.expr_inst1_walk
-  | .expr_inst1_bvar => Specs.Subst.expr_inst1_bvar
   | .expr_inst1_let => Specs.Subst.expr_inst1_let
   | .expr_inst_many => Specs.Subst.expr_inst_many
-  | .expr_inst_many_bvar => Specs.Subst.expr_inst_many_bvar
-  | .expr_inst_many_walk => Specs.Subst.expr_inst_many_walk
+  | .expr_inst_many_n => Specs.Subst.expr_inst_many_n
   | .expr_inst_many_let => Specs.Subst.expr_inst_many_let
   | .ctx_trim => Specs.Subst.ctx_trim
   | .ctx_reachable => Specs.Subst.ctx_reachable

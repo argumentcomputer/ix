@@ -134,48 +134,21 @@ end Kernel
 
 /-! ## `expr_inst1` -/
 
-theorem g_expr_inst1_bvar (κ : _root_.Address → KKey) {args : List (SourceValue F)}
-    {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelSubst::expr_inst1_bvar" args h r h' calls) (ih : GIH κ calls) :
-    G.expr_inst1_bvar κ args h r h' calls := by
-  intro i arg j hargs bd d Γ B A hB hA
-  subst hargs
-  obtain ⟨hsm, hcase⟩ := hB
-  match Obs.«KernelSubst::expr_inst1_bvar».obs ev with
-  | .n1 (ev15 := e1) (he40 := hr) (hm39 := hm) .. =>
-    obtain ⟨i', j', hi', hj', -, -, hr', rfl⟩ := ltf e1
-    injection hi' with hi'; injection hj' with hj'; subst hi' hj' hr hm
-    have hlt := ltf_one hr'.symm
-    rcases hcase with ⟨_, rfl⟩ | ⟨hk, _, _⟩
-    · rw [inst1_bvar_lt hlt]; exact tm_store_bvarLocal hsm hlt
-    · omega
-  | .n0_n0 (ev15 := e1) (op74 := op) (ev86 := e2) (hc110 := hc) .. =>
-    subst hc
-    obtain ⟨i', j', hi', hj', -, hj32, hr', rfl⟩ := ltf e1
-    injection hi' with hi'; injection hj' with hj'; subst hi' hj'
-    have hij : i = j := by
-      have := sub_ok op; injection this with h0; exact (sub_eq_zero.mp h0.symm)
-    subst hij
-    rcases hcase with ⟨_, rfl⟩ | ⟨hk, hd, _⟩
-    · rw [inst1_bvar_self]
-      have := ih.get .expr_lift lt_calls e2 _ _ _ rfl (bounded_sub sub_calls bd) (by omega)
-        (ZMod.val i) 0 (by omega) d Γ A (by rw [ZMod.val_zero]; exact hA)
-      rw [ZMod.val_zero, Nat.zero_add] at this
-      exact this
-    · omega
-  | .n0_other (ev15 := e1) (op74 := op) (hne111 := hne) (he119 := hr) (hm118 := hm)
-      (op137 := op2) (hc139 := hc) .. =>
-    subst hc hr hm
-    obtain ⟨i', j', hi', hj', hi32, hj32, hr', rfl⟩ := ltf e1
-    injection hi' with hi'; injection hj' with hj'; subst hi' hj'
-    have hge := ltf_zero hr'.symm
-    have hij : i ≠ j := fun hij => hne (by rw [sub_ok op, hij, sub_self])
-    have hv : ZMod.val i ≠ ZMod.val j := fun hv => hij (ZMod.val_injective _ hv)
-    rw [sub_ok op2]
-    have hv1 : ZMod.val (i - 1) = ZMod.val i - 1 := by rw [val_sub (by rw [val_one]; omega), val_one]
-    rcases hcase with ⟨hlt, _⟩ | ⟨hk, hd, rfl⟩
-    · omega
-    · exact tm_store_bvarFree_eq (by omega) (by omega) (by omega) (by rw [hv1]; unfold fvIdx; omega)
+private theorem inst1_seg_heap {κ : _root_.Address → KKey} {calls cs_seg : List (Call F)}
+    {l e arg r_seg : SourceValue F} {j : F} {h h' : Heap F}
+    (ih : GIH κ calls) (bd : Bounded calls)
+    (hlen : cs_seg.length < calls.length) (hsub : ∀ c ∈ cs_seg, c ∈ calls)
+    (sg : Obs.«KernelSubst::expr_inst1».Seg_lwkawbtz l e arg (.field j) h r_seg h' cs_seg) :
+    h' = h := by
+  cases sg with
+  | n0 _ _ _ _ ev _ he _ =>
+    obtain ⟨_, _, _, _, _, _, _, rfl⟩ := ltf ev
+    exact he
+  | n1 _ _ _ cs2 _ ev1 ev2 hc =>
+    obtain ⟨_, _, _, _, _, _, _, rfl⟩ := ltf ev1
+    have hlt2 : cs2.length < calls.length := by rw [hc] at hlen; simp at hlen; omega
+    have hsub2 : Bounded cs2 := bounded_sub (fun x hx => hsub x (by rw [hc]; simp [hx])) bd
+    exact (ih.get .expr_has_bvar_at hlt2 ev2 _ _ rfl hsub2).1
 
 theorem g_expr_inst1_let (κ : _root_.Address → KKey) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
@@ -199,71 +172,6 @@ theorem g_expr_inst1_let (κ : _root_.Address → KKey) {args : List (SourceValu
     rw [instShift_instantiate1 (Tm.looseBVarsBounded hA)]
     exact tm_store_letE ((x1.mono e2.heap_extends).mono e3.heap_extends) (x2.mono e3.heap_extends) x3
 
-theorem g_expr_inst1_walk (κ : _root_.Address → KKey) {args : List (SourceValue F)}
-    {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelSubst::expr_inst1_walk" args h r h' calls) (ih : GIH κ calls) :
-    G.expr_inst1_walk κ args h r h' calls := by
-  intro e arg j hargs bd hj0 d Γ E A hE hA
-  subst hargs
-  match Obs.«KernelSubst::expr_inst1_walk».obs ev with
-  | .BVar (ld12 := ld) (ev30 := e1) (hc55 := hc) .. =>
-    subst hc
-    obtain ⟨i, rfl, hsm, hcase⟩ := Tm.bvar_of_load hE ld
-    exact ih.get .expr_inst1_bvar lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) d Γ E A
-      ⟨hsm, hcase⟩ hA
-  | .Srt (ld12 := ld) (he72 := hr) (hm71 := hm) .. =>
-    subst hr hm
-    obtain ⟨u, rfl, -⟩ := Tm.sort_of_load hE ld
-    exact tm_copy_sort hE ld (Heap.Extends.refl _)
-  | .Const (ld12 := ld) (he106 := hr) (hm105 := hm) .. =>
-    subst hr hm
-    obtain ⟨a, us, rfl, -, -⟩ := Tm.const_of_load hE ld
-    exact tm_copy_const hE ld (Heap.Extends.refl _)
-  | .Lit (ld12 := ld) (he554 := hr) (hm553 := hm) .. =>
-    subst hr hm
-    rcases Tm.lit_of_load hE ld with ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, _, _, rfl⟩ <;>
-      exact tm_copy_lit hE ld (Heap.Extends.refl _)
-  | .App (ld12 := ld) (he148 := hr) (hm147 := hm) (ev165 := e1) (ev201 := e2) (hc226 := hc) .. =>
-    subst hc hr hm
-    obtain ⟨Ef, Ea, rfl, hf, ha⟩ := Tm.app_of_load hE ld
-    have sf := ih.get .expr_inst1 lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) d Γ Ef A hf hA
-    have sa := ih.get .expr_inst1 lt_calls e2 _ _ _ rfl (bounded_sub sub_calls bd) d Γ Ea A
-      (ha.mono e1.heap_extends) (hA.mono e1.heap_extends)
-    exact Tm.store_app (sf.mono e2.heap_extends) sa
-  | .Lam (ld12 := ld) (he253 := hr) (hm252 := hm) (ev271 := e1) (op338 := op) (ev307 := e2)
-      (hc347 := hc) .. =>
-    subst hc hr hm
-    rw [add_ok op] at e2
-    obtain ⟨T, B, ℓ, rfl, ht, hb, hl⟩ := Tm.lam_of_load hE ld
-    have st := ih.get .expr_inst1 lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) d Γ T A ht hA
-    have sb := ih.get .expr_inst1 lt_calls e2 _ _ _ rfl (bounded_sub sub_calls bd) d Γ B A
-      (by rw [val_succ32 hj0]; exact hb.mono e1.heap_extends) (hA.mono e1.heap_extends)
-    rw [val_succ32 hj0] at sb
-    exact tm_store_lam (st.mono e2.heap_extends) sb (hl.mono (e1.heap_extends.trans e2.heap_extends))
-  | .Forall (ld12 := ld) (he374 := hr) (hm373 := hm) (ev392 := e1) (op459 := op) (ev428 := e2)
-      (hc468 := hc) .. =>
-    subst hc hr hm
-    rw [add_ok op] at e2
-    obtain ⟨T, B, ℓ, rfl, ht, hb, hl⟩ := Tm.forallE_of_load hE ld
-    have st := ih.get .expr_inst1 lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) d Γ T A ht hA
-    have sb := ih.get .expr_inst1 lt_calls e2 _ _ _ rfl (bounded_sub sub_calls bd) d Γ B A
-      (by rw [val_succ32 hj0]; exact hb.mono e1.heap_extends) (hA.mono e1.heap_extends)
-    rw [val_succ32 hj0] at sb
-    exact tm_store_forallE (st.mono e2.heap_extends) sb
-      (hl.mono (e1.heap_extends.trans e2.heap_extends))
-  | .Let (ld12 := ld) (ev496 := e1) (hc537 := hc) .. =>
-    subst hc
-    obtain ⟨T, V, B, rfl, ht, hv, hb⟩ := Tm.letE_of_load hE ld
-    exact ih.get .expr_inst1_let lt_calls e1 _ _ _ _ _ rfl (bounded_sub sub_calls bd) hj0
-      d Γ T V B A ht hv hb hA
-  | .Proj (ld12 := ld) (he593 := hr) (hm592 := hm) (ev625 := e1) (hc650 := hc) .. =>
-    subst hc hr hm
-    obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := Tm.proj_of_load hE ld
-    have : Resolved _ := ⟨hE.proj_key_ne⟩
-    have : ProjPermitted _ _ := hE.proj_permitted ld ra
-    exact tm_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e1.heap_extends ra)
-      (ih.get .expr_inst1 lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) d Γ Es A hes hA)
-
 theorem g_expr_inst1 (κ : _root_.Address → KKey) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelSubst::expr_inst1" args h r h' calls) (ih : GIH κ calls) :
@@ -283,52 +191,236 @@ theorem g_expr_inst1 (κ : _root_.Address → KKey) {args : List (SourceValue F)
     obtain ⟨l1, -, l3⟩ := lb (by omega)
     rw [Ix.Kernel.Expr.instantiate1_eq_self (lbb_mono (by omega) l1)]
     exact l3 d Γ (ZMod.val j) (by omega)
-  | .n1_n1 (ev14 := e1) (ev37 := e2) (ev81 := e3) (ev107 := e4) (hc132 := hc) .. =>
+  | .n1_n1_BVar (ev14 := e1) (ev37 := e2) (sg_nijhquyq := sg) (ld_cazaqiwm := ld)
+      (ev_wttpotmn := e3) (hc_krxqlobb := hc) .. =>
     subst hc
     obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
-    obtain ⟨j', y, hj', -, hj32, -, -, rfl⟩ := ltf e2
+    obtain ⟨j', y, hj', hy, hj32, hy32, hr', rfl⟩ := ltf e2
     injection hj' with hj'; subst hj'
-    obtain ⟨rfl, -⟩ := ih.get .expr_has_bvar_at lt_calls e3 _ _ rfl (bounded_sub sub_calls bd)
-    exact ih.get .expr_inst1_walk lt_calls e4 _ _ _ rfl (bounded_sub sub_calls bd) hj32 d Γ B A hB hA
-  | .n1_other (ev14 := e1) (ev37 := e2) (ev81 := e3) (hne133 := hne) (op172 := op) (ev142 := e4)
-      (hc174 := hc) .. =>
+    have hlt := ltf_one hr'.symm
+    have hh := inst1_seg_heap ih bd lt_calls sub_calls sg; subst hh
+    obtain ⟨i, rfl, hsm, hcase⟩ := Tm.bvar_of_load hB ld
+    obtain ⟨-, hlbr⟩ := expr_lbr_bvar_val ld e1
+    rw [hlbr] at hy; injection hy with hy; subst hy
+    obtain ⟨hi1, hji, hi32⟩ := bvar_lbr_lt32 hlt hy32
+    have hij : i = j := by
+      cases sg with
+      | n0 _ _ _ op ev _ _ _ =>
+        rw [add_ok op] at ev
+        obtain ⟨x1, y1, hx1, hy1, -, -, hr1, -⟩ := ltf ev
+        rw [hlbr] at hy1
+        injection hx1 with hx1; injection hy1 with hy1; subst hx1 hy1
+        have hge := ltf_zero hr1.symm
+        rw [val_succ32 hj32, hi1] at hge
+        exact ZMod.val_injective _ (by omega)
+      | n1 _ _ _ _ _ ev1 ev2 _ =>
+        obtain ⟨_, _, _, _, _, _, _, rfl⟩ := ltf ev1
+        exact (expr_has_bvar_at_bvar_one ld ev2).2
+    subst hij
+    rcases hcase with ⟨_, rfl⟩ | ⟨hk, _, _⟩
+    · rw [inst1_bvar_self]
+      have := ih.get .expr_lift lt_calls e3 _ _ _ rfl (bounded_sub sub_calls bd) (by omega)
+        (ZMod.val i) 0 (by omega) d Γ A (by rw [ZMod.val_zero]; exact hA)
+      rw [ZMod.val_zero, Nat.zero_add] at this
+      exact this
+    · omega
+  | .n1_n1_App (ev14 := e1) (ev37 := e2) (sg_nijhquyq := sg) (ld_cazaqiwm := ld)
+      (he_erfbbtpw := hr) (hm_fspgjocs := hm) (ev_fjvmtqoz := e3) (ev_pqoxngrc := e4)
+      (hc_myvfxkru := hc) .. =>
+    subst hc hr hm
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', _, hj', -, -, -, -, rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
+    have hh := inst1_seg_heap ih bd lt_calls sub_calls sg; subst hh
+    obtain ⟨Ef, Ea, rfl, hf, ha⟩ := Tm.app_of_load hB ld
+    have sf := ih.get .expr_inst1 lt_calls e3 _ _ _ rfl (bounded_sub sub_calls bd) d Γ Ef A hf hA
+    have sa := ih.get .expr_inst1 lt_calls e4 _ _ _ rfl (bounded_sub sub_calls bd) d Γ Ea A
+      (ha.mono e3.heap_extends) (hA.mono e3.heap_extends)
+    exact Tm.store_app (sf.mono e4.heap_extends) sa
+  | .n1_n1_Lam (ev14 := e1) (ev37 := e2) (sg_nijhquyq := sg) (ld_cazaqiwm := ld)
+      (he_ewqmuvnh := hr) (hm_dzcuiuos := hm) (ev_jltiurnn := e3) (op_zuplncpn := op)
+      (ev_xiuhqzbf := e4) (hc_cocetlqw := hc) .. =>
+    subst hc hr hm
+    rw [add_ok op] at e4
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', _, hj', -, hj32, -, -, rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
+    have hh := inst1_seg_heap ih bd lt_calls sub_calls sg; subst hh
+    obtain ⟨T, B', ℓ, rfl, ht, hb, hl⟩ := Tm.lam_of_load hB ld
+    have st := ih.get .expr_inst1 lt_calls e3 _ _ _ rfl (bounded_sub sub_calls bd) d Γ T A ht hA
+    have sb := ih.get .expr_inst1 lt_calls e4 _ _ _ rfl (bounded_sub sub_calls bd) d Γ B' A
+      (by rw [val_succ32 hj32]; exact hb.mono e3.heap_extends) (hA.mono e3.heap_extends)
+    rw [val_succ32 hj32] at sb
+    exact tm_store_lam (st.mono e4.heap_extends) sb (hl.mono (e3.heap_extends.trans e4.heap_extends))
+  | .n1_n1_Forall (ev14 := e1) (ev37 := e2) (sg_nijhquyq := sg) (ld_cazaqiwm := ld)
+      (he_jirdvifw := hr) (hm_vlpbdsmi := hm) (ev_bdxhqrii := e3) (op_ygqucktb := op)
+      (ev_ozhmrcxq := e4) (hc_qvjuupic := hc) .. =>
+    subst hc hr hm
+    rw [add_ok op] at e4
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', _, hj', -, hj32, -, -, rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
+    have hh := inst1_seg_heap ih bd lt_calls sub_calls sg; subst hh
+    obtain ⟨T, B', ℓ, rfl, ht, hb, hl⟩ := Tm.forallE_of_load hB ld
+    have st := ih.get .expr_inst1 lt_calls e3 _ _ _ rfl (bounded_sub sub_calls bd) d Γ T A ht hA
+    have sb := ih.get .expr_inst1 lt_calls e4 _ _ _ rfl (bounded_sub sub_calls bd) d Γ B' A
+      (by rw [val_succ32 hj32]; exact hb.mono e3.heap_extends) (hA.mono e3.heap_extends)
+    rw [val_succ32 hj32] at sb
+    exact tm_store_forallE (st.mono e4.heap_extends) sb
+      (hl.mono (e3.heap_extends.trans e4.heap_extends))
+  | .n1_n1_Let (ev14 := e1) (ev37 := e2) (sg_nijhquyq := sg) (ld_cazaqiwm := ld)
+      (ev_rhrekngq := e3) (hc_icdctvkp := hc) .. =>
+    subst hc
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', _, hj', -, hj32, -, -, rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
+    have hh := inst1_seg_heap ih bd lt_calls sub_calls sg; subst hh
+    obtain ⟨T, V, B', rfl, ht, hv, hb⟩ := Tm.letE_of_load hB ld
+    exact ih.get .expr_inst1_let lt_calls e3 _ _ _ _ _ rfl (bounded_sub sub_calls bd) hj32
+      d Γ T V B' A ht hv hb hA
+  | .n1_n1_Proj (ev14 := e1) (ev37 := e2) (sg_nijhquyq := sg) (ld_cazaqiwm := ld)
+      (he_vyjrbsci := hr) (hm_iywlmnii := hm) (ev_dwrkbatj := e3) (hc_dhrzqlmk := hc) .. =>
+    subst hc hr hm
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', _, hj', -, -, -, -, rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
+    have hh := inst1_seg_heap ih bd lt_calls sub_calls sg; subst hh
+    obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := Tm.proj_of_load hB ld
+    have : Resolved _ := ⟨hB.proj_key_ne⟩
+    have : ProjPermitted _ _ := hB.proj_permitted ld ra
+    exact tm_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e3.heap_extends ra)
+      (ih.get .expr_inst1 lt_calls e3 _ _ _ rfl (bounded_sub sub_calls bd) d Γ Es A hes hA)
+  | .n1_n1_other (ev14 := e1) (ev37 := e2) (sg_nijhquyq := sg) (ld_cazaqiwm := ld)
+      (hne_mrzdkzct := n1) (hne_oicewdsa := n2) (hne_vdmlyytd := n3) (hne_wsfwgpgb := n4)
+      (hne_tasugfar := n5) (hne_otxnyqsa := n6) (hc_aynotxpb := hc) .. =>
+    subst hc
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', y, hj', hy, -, -, hr', rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
+    have hh := inst1_seg_heap ih bd lt_calls sub_calls sg; subst hh
+    obtain ⟨-, hlbr⟩ := expr_lbr_other_zero ld n1 n2 n3 n4 n5 n6 e1
+    rw [hlbr] at hy; injection hy with hy; subst hy
+    have hlt := ltf_one hr'.symm
+    rw [ZMod.val_zero] at hlt; omega
+  | .n1_other (ev14 := e1) (ev37 := e2) (sg_nijhquyq := sg) (hne133 := hne)
+      (op172 := op) (ev142 := e4) (hc174 := hc) .. =>
     subst hc
     rw [add_ok op] at e4
     obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
-    obtain ⟨j', y, hj', -, hj32, -, -, rfl⟩ := ltf e2
+    obtain ⟨j', _, hj', -, hj32, -, -, rfl⟩ := ltf e2
     injection hj' with hj'; subst hj'
-    obtain ⟨rfl, h01, sn⟩ := ih.get .expr_has_bvar_at lt_calls e3 _ _ rfl (bounded_sub sub_calls bd)
-    have hn := sn (zero_of_ne_one h01 hne) d Γ (ZMod.val j + 1) B hB
-    have hlow := ih.get .expr_lower lt_calls e4 _ _ _ rfl (bounded_sub sub_calls bd) 1 0
-      (by rw [val_one]) (by rw [val_succ32 hj32]; omega) d Γ B (Nat.zero_le _)
-      (by rw [val_succ32 hj32]; exact hB)
-      (by rw [val_succ32 hj32, Nat.add_sub_cancel, Nat.add_zero]; exact hn)
-    rw [val_succ32 hj32, Nat.add_sub_cancel, Nat.sub_zero] at hlow
-    rw [Ix.Kernel.Expr.instantiate1_eq_self (tm_lbb hB (Nat.le_succ _) hn)]
-    exact hlow
+    cases sg with
+    | n0 _ _ _ _ _ hr0 _ _ => exact absurd hr0 hne
+    | n1 _ _ _ _ _ ev1 ev2 hc_sg =>
+      subst hc_sg
+      obtain ⟨_, _, _, _, _, _, _, rfl⟩ := ltf ev1
+      obtain ⟨rfl, h01, sn⟩ := ih.get .expr_has_bvar_at lt_calls ev2 _ _ rfl (bounded_sub sub_calls bd)
+      have hn := sn (zero_of_ne_one h01 hne) d Γ (ZMod.val j + 1) B hB
+      have hlow := ih.get .expr_lower lt_calls e4 _ _ _ rfl (bounded_sub sub_calls bd) 1 0
+        (by rw [val_one]) (by rw [val_succ32 hj32]; omega) d Γ B (Nat.zero_le _)
+        (by rw [val_succ32 hj32]; exact hB)
+        (by rw [val_succ32 hj32, Nat.add_sub_cancel, Nat.add_zero]; exact hn)
+      rw [val_succ32 hj32, Nat.add_sub_cancel, Nat.sub_zero] at hlow
+      rw [Ix.Kernel.Expr.instantiate1_eq_self (tm_lbb hB (Nat.le_succ _) hn)]
+      exact hlow
 
 /-! ## `expr_inst_many` -/
 
-theorem g_expr_inst_many_bvar (κ : _root_.Address → KKey) {args : List (SourceValue F)}
+private theorem inst_many_seg_heap {κ : _root_.Address → KKey} {calls cs_seg : List (Call F)}
+    {l e substs n r_seg : SourceValue F} {j : F} {h h' : Heap F}
+    (ih : GIH κ calls) (bd : Bounded calls)
+    (hlen : cs_seg.length < calls.length) (hsub : ∀ c ∈ cs_seg, c ∈ calls)
+    (sg : Obs.«KernelSubst::expr_inst_many_n».Seg_lwkawbtz l e substs n (.field j) h r_seg h' cs_seg) :
+    h' = h := by
+  cases sg with
+  | n0 _ _ _ _ ev _ he _ =>
+    obtain ⟨_, _, _, _, _, _, _, rfl⟩ := ltf ev
+    exact he
+  | n1 _ _ _ cs2 _ _ ev1 op2 ev2 hc =>
+    obtain ⟨_, _, _, _, _, _, _, rfl⟩ := ltf ev1
+    obtain ⟨z, hz⟩ := binop_field op2
+    rw [hz] at ev2
+    have hlt2 : cs2.length < calls.length := by rw [hc] at hlen; simp at hlen; omega
+    have hsub2 : Bounded cs2 := bounded_sub (fun x hx => hsub x (by rw [hc]; simp [hx])) bd
+    exact (ih.get .has_bvar_in_range hlt2 ev2 _ _ _ rfl hsub2).1
+
+theorem g_expr_inst_many_let (κ : _root_.Address → KKey) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelSubst::expr_inst_many_bvar" args h r h' calls) (ih : GIH κ calls) :
-    G.expr_inst_many_bvar κ args h r h' calls := by
-  intro i substs j hargs bd hj0 d Γ B As hB hAs
+    (ev : ObsFn W "KernelSubst::expr_inst_many_let" args h r h' calls) (ih : GIH κ calls) :
+    G.expr_inst_many_let κ args h r h' calls := by
+  intro ty val body substs n j hargs bd hj0 d Γ T V B As hn hlen ht hv hb hAs
   subst hargs
-  obtain ⟨hsm, hcase⟩ := hB
+  match Obs.«KernelSubst::expr_inst_many_let».obs ev with
+  | .run (he5 := hr) (hm4 := hm) (ev_emcrrcjp := e1) (ev_qhoozicr := e2) (op_pioimjax := op)
+      (ev_hkvuaucb := e3) (hc128 := hc) .. =>
+    subst hc hr hm
+    rw [add_ok op] at e3
+    have x1 := ih.get .expr_inst_many_n lt_calls e1 _ _ _ _ rfl (bounded_sub sub_calls bd)
+      d Γ T As hn hlen ht hAs
+    have x2 := ih.get .expr_inst_many_n lt_calls e2 _ _ _ _ rfl (bounded_sub sub_calls bd)
+      d Γ V As hn hlen (hv.mono e1.heap_extends) (tmL_mono e1.heap_extends hAs)
+    have x3 := ih.get .expr_inst_many_n lt_calls e3 _ _ _ _ rfl (bounded_sub sub_calls bd)
+      d Γ B As hn hlen
+      (by rw [val_succ32 hj0, Nat.add_right_comm]
+          exact hb.mono (e1.heap_extends.trans e2.heap_extends))
+      (tmL_mono (e1.heap_extends.trans e2.heap_extends) hAs)
+    rw [val_succ32 hj0] at x3
+    rw [instShift_instantiateList As (tmL_closed hAs)]
+    exact tm_store_letE ((x1.mono e2.heap_extends).mono e3.heap_extends) (x2.mono e3.heap_extends) x3
+
+theorem g_expr_inst_many_n (κ : _root_.Address → KKey) {args : List (SourceValue F)}
+    {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelSubst::expr_inst_many_n" args h r h' calls) (ih : GIH κ calls) :
+    G.expr_inst_many_n κ args h r h' calls := by
+  intro e substs n j hargs bd d Γ B As hn hlen hB hAs
+  subst hargs hn
   have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
-  match Obs.«KernelSubst::expr_inst_many_bvar».obs ev with
-  | .n1 (ev14 := e1) (op38 := op) (ev55 := e2) (ev96 := e3) (ev81 := e4) (hc126 := hc) .. =>
+  match Obs.«KernelSubst::expr_inst_many_n».obs ev with
+  | .n0 (ev_qozyctmr := e1) (ev_xotwiaot := e2) (he_whiproaa := hr) (he_bzwoglyf := he)
+      (hc_fvdjlccv := hc) .. =>
+    subst hc hr he
+    obtain ⟨rfl, sl⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', y, hj', hy, -, -, hr', rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
+    have hge := ltf_zero hr'.symm
+    obtain ⟨b, hb, b1, -, -, -, lb⟩ := sl d Γ (ZMod.val j + As.length) B hB
+    rw [hb] at hy; injection hy with hy; subst hy
+    rw [val_natCast (lt_mod_of_le_idx b1)] at hge
+    obtain ⟨l1, -, l3⟩ := lb (by omega)
+    rw [Ix.Kernel.Expr.instantiateList_eq_self (lbb_mono (by omega) l1)]
+    exact l3 d Γ (ZMod.val j) (by omega)
+  | .n1_n1_BVar (ev_qozyctmr := e1) (ev_xotwiaot := e2) (sg_nijhquyq := sg) (ld_cazaqiwm := ld)
+      (op_lnzkiylo := op) (ev_sjukbdta := e3) (ev_wttpotmn := e4) (hc_krxqlobb := hc) .. =>
     subst hc
-    have hlen : As.length < 2 ^ 39 :=
-      RomBound.bounded_length_lt bd (c := ⟨Obs.Names.«Lists::length<&KernelTypes::KExprNode>», [substs], h⟩) (by simp) (by simp) hAs
-    obtain ⟨rfl, rfl⟩ := klength e1 hAs
-    rw [sub_ok op] at e2 e3
-    obtain ⟨x, y, hx, hy, hx32, -, hr', rfl⟩ := ltf e2
-    injection hx with hx; injection hy with hy; subst hx hy
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', y, hj', hy, hj32, hy32, hr', rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
     have hlt := ltf_one hr'.symm
-    rw [val_natCast (by omega)] at hlt
-    obtain ⟨hji, hval⟩ := val_sub_of_small hx32 hj0
+    have hh := inst_many_seg_heap ih bd lt_calls sub_calls sg; subst hh
+    obtain ⟨i, rfl, hsm, hcase⟩ := Tm.bvar_of_load hB ld
+    obtain ⟨-, hlbr⟩ := expr_lbr_bvar_val ld e1
+    rw [hlbr] at hy; injection hy with hy; subst hy
+    obtain ⟨hi1, hji, hi32⟩ := bvar_lbr_lt32 hlt hy32
+    have hjn : ZMod.val (j + (As.length : F)) = ZMod.val j + As.length := by
+      rw [val_add (by rw [val_natCast (by omega)]; omega), val_natCast (by omega)]
+    have hlt_hi : ZMod.val i < ZMod.val j + As.length := by
+      cases sg with
+      | n0 _ _ _ op1 ev1 _ _ _ =>
+        rw [add_ok op1] at ev1
+        obtain ⟨x1, y1, hx1, hy1, -, -, hr1, -⟩ := ltf ev1
+        rw [hlbr] at hy1
+        injection hx1 with hx1; injection hy1 with hy1; subst hx1 hy1
+        have hge := ltf_zero hr1.symm
+        rw [hjn, hi1] at hge
+        omega
+      | n1 _ _ _ _ _ _ ev1 op2 ev2 _ =>
+        obtain ⟨_, _, _, _, _, _, _, rfl⟩ := ltf ev1
+        rw [add_ok op2] at ev2
+        have hrange := (has_bvar_in_range_bvar_one ld ev2).2.2
+        rw [hjn] at hrange
+        exact hrange
+    rw [sub_ok op] at e3
+    have hval : ZMod.val (i - j) = ZMod.val i - ZMod.val j := val_sub hji
     obtain ⟨⟨A, hAget, hA⟩, rfl⟩ := klookup e3 hAs
     rw [hval] at hAget
     have hlift := ih.get .expr_lift lt_calls e4 _ _ _ rfl (bounded_sub sub_calls bd) (by omega)
@@ -341,120 +433,121 @@ theorem g_expr_inst_many_bvar (κ : _root_.Address → KKey) {args : List (Sourc
       rw [iL_bvar_mid (tmL_closed hAs) hji hlt', hAeq]
       exact hlift
     · omega
-  | .n0 (ev14 := e1) (op38 := op) (ev55 := e2) (he136 := hr) (hm135 := hm) (op154 := op2)
-      (hc157 := hc) .. =>
+  | .n1_n1_App (ev_qozyctmr := e1) (ev_xotwiaot := e2) (sg_nijhquyq := sg) (ld_cazaqiwm := ld)
+      (he_erfbbtpw := hr) (hm_fspgjocs := hm) (ev_dskjiozj := e3) (ev_mlqkcegc := e4)
+      (hc_myvfxkru := hc) .. =>
     subst hc hr hm
-    have hlen : As.length < 2 ^ 39 :=
-      RomBound.bounded_length_lt bd (c := ⟨Obs.Names.«Lists::length<&KernelTypes::KExprNode>», [substs], h⟩) (by simp) (by simp) hAs
-    obtain ⟨rfl, rfl⟩ := klength e1 hAs
-    rw [sub_ok op] at e2
-    obtain ⟨x, y, hx, hy, hx32, -, hr', rfl⟩ := ltf e2
-    injection hx with hx; injection hy with hy; subst hx hy
-    have hge := ltf_zero hr'.symm
-    rw [val_natCast (by omega)] at hge
-    obtain ⟨hji, hval⟩ := val_sub_of_small hx32 hj0
-    rw [sub_ok op2]
-    have hv : ZMod.val (i - (As.length : F)) = ZMod.val i - As.length := by
-      rw [val_sub (by rw [val_natCast (by omega)]; omega), val_natCast (by omega)]
-    rcases hcase with ⟨hlt, _⟩ | ⟨hk, hd, rfl⟩
-    · omega
-    · rw [iL_fvar]
-      exact tm_store_bvarFree_eq (by omega) (by omega) (by omega) (by rw [hv]; unfold fvIdx; omega)
-
-theorem g_expr_inst_many_let (κ : _root_.Address → KKey) {args : List (SourceValue F)}
-    {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelSubst::expr_inst_many_let" args h r h' calls) (ih : GIH κ calls) :
-    G.expr_inst_many_let κ args h r h' calls := by
-  intro ty val body substs j hargs bd hj0 d Γ T V B As ht hv hb hAs
-  subst hargs
-  match Obs.«KernelSubst::expr_inst_many_let».obs ev with
-  | .run (he5 := hr) (hm4 := hm) (ev23 := e1) (ev59 := e2) (op126 := op) (ev95 := e3)
-      (hc128 := hc) .. =>
-    subst hc hr hm
-    rw [add_ok op] at e3
-    have x1 := ih.get .expr_inst_many lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) d Γ T As ht hAs
-    have x2 := ih.get .expr_inst_many lt_calls e2 _ _ _ rfl (bounded_sub sub_calls bd) d Γ V As
-      (hv.mono e1.heap_extends) (tmL_mono e1.heap_extends hAs)
-    have x3 := ih.get .expr_inst_many lt_calls e3 _ _ _ rfl (bounded_sub sub_calls bd) d Γ B As
-      (by rw [val_succ32 hj0, Nat.add_right_comm]
-          exact hb.mono (e1.heap_extends.trans e2.heap_extends))
-      (tmL_mono (e1.heap_extends.trans e2.heap_extends) hAs)
-    rw [val_succ32 hj0] at x3
-    rw [instShift_instantiateList As (tmL_closed hAs)]
-    exact tm_store_letE ((x1.mono e2.heap_extends).mono e3.heap_extends) (x2.mono e3.heap_extends) x3
-
-theorem g_expr_inst_many_walk (κ : _root_.Address → KKey) {args : List (SourceValue F)}
-    {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelSubst::expr_inst_many_walk" args h r h' calls) (ih : GIH κ calls) :
-    G.expr_inst_many_walk κ args h r h' calls := by
-  intro e substs j hargs bd hj0 d Γ E As hE hAs
-  subst hargs
-  match Obs.«KernelSubst::expr_inst_many_walk».obs ev with
-  | .BVar (ld12 := ld) (ev30 := e1) (hc55 := hc) .. =>
-    subst hc
-    obtain ⟨i, rfl, hsm, hcase⟩ := Tm.bvar_of_load hE ld
-    exact ih.get .expr_inst_many_bvar lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) hj0
-      d Γ E As ⟨hsm, hcase⟩ hAs
-  | .Srt (ld12 := ld) (he72 := hr) (hm71 := hm) .. =>
-    subst hr hm
-    obtain ⟨u, rfl, -⟩ := Tm.sort_of_load hE ld
-    rw [iL_closed (E := .sort u) rfl]
-    exact tm_copy_sort hE ld (Heap.Extends.refl _)
-  | .Const (ld12 := ld) (he106 := hr) (hm105 := hm) .. =>
-    subst hr hm
-    obtain ⟨a, us, rfl, -, -⟩ := Tm.const_of_load hE ld
-    rw [iL_closed (E := .const _ us) rfl]
-    exact tm_copy_const hE ld (Heap.Extends.refl _)
-  | .Lit (ld12 := ld) (he554 := hr) (hm553 := hm) .. =>
-    subst hr hm
-    rcases Tm.lit_of_load hE ld with ⟨_, _, _, _, _, rfl⟩ | ⟨_, _, _, _, _, _, rfl⟩ <;>
-      (rw [iL_closed (E := .lit _) rfl]; exact tm_copy_lit hE ld (Heap.Extends.refl _))
-  | .App (ld12 := ld) (he148 := hr) (hm147 := hm) (ev165 := e1) (ev201 := e2) (hc226 := hc) .. =>
-    subst hc hr hm
-    obtain ⟨Ef, Ea, rfl, hf, ha⟩ := Tm.app_of_load hE ld
-    have sf := ih.get .expr_inst_many lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) d Γ Ef As hf hAs
-    have sa := ih.get .expr_inst_many lt_calls e2 _ _ _ rfl (bounded_sub sub_calls bd) d Γ Ea As
-      (ha.mono e1.heap_extends) (tmL_mono e1.heap_extends hAs)
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', _, hj', -, -, -, -, rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
+    have hh := inst_many_seg_heap ih bd lt_calls sub_calls sg; subst hh
+    obtain ⟨Ef, Ea, rfl, hf, ha⟩ := Tm.app_of_load hB ld
+    have sf := ih.get .expr_inst_many_n lt_calls e3 _ _ _ _ rfl (bounded_sub sub_calls bd)
+      d Γ Ef As rfl hlen hf hAs
+    have sa := ih.get .expr_inst_many_n lt_calls e4 _ _ _ _ rfl (bounded_sub sub_calls bd)
+      d Γ Ea As rfl hlen (ha.mono e3.heap_extends) (tmL_mono e3.heap_extends hAs)
     rw [iL_app]
-    exact Tm.store_app (sf.mono e2.heap_extends) sa
-  | .Lam (ld12 := ld) (he253 := hr) (hm252 := hm) (ev271 := e1) (op338 := op) (ev307 := e2)
-      (hc347 := hc) .. =>
+    exact Tm.store_app (sf.mono e4.heap_extends) sa
+  | .n1_n1_Lam (ev_qozyctmr := e1) (ev_xotwiaot := e2) (sg_nijhquyq := sg) (ld_cazaqiwm := ld)
+      (he_ewqmuvnh := hr) (hm_dzcuiuos := hm) (ev_ijbdyuez := e3) (op_fdxwyetc := op)
+      (ev_nhteuybo := e4) (hc_cocetlqw := hc) .. =>
     subst hc hr hm
-    rw [add_ok op] at e2
-    obtain ⟨T, B, ℓ, rfl, ht, hb, hl⟩ := Tm.lam_of_load hE ld
-    have st := ih.get .expr_inst_many lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) d Γ T As ht hAs
-    have sb := ih.get .expr_inst_many lt_calls e2 _ _ _ rfl (bounded_sub sub_calls bd) d Γ B As
-      (by rw [val_succ32 hj0, Nat.add_right_comm]; exact hb.mono e1.heap_extends)
-      (tmL_mono e1.heap_extends hAs)
-    rw [val_succ32 hj0] at sb
+    rw [add_ok op] at e4
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', _, hj', -, hj32, -, -, rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
+    have hh := inst_many_seg_heap ih bd lt_calls sub_calls sg; subst hh
+    obtain ⟨T, B', ℓ, rfl, ht, hb, hl⟩ := Tm.lam_of_load hB ld
+    have st := ih.get .expr_inst_many_n lt_calls e3 _ _ _ _ rfl (bounded_sub sub_calls bd)
+      d Γ T As rfl hlen ht hAs
+    have sb := ih.get .expr_inst_many_n lt_calls e4 _ _ _ _ rfl (bounded_sub sub_calls bd)
+      d Γ B' As rfl hlen
+      (by rw [val_succ32 hj32, Nat.add_right_comm]; exact hb.mono e3.heap_extends)
+      (tmL_mono e3.heap_extends hAs)
+    rw [val_succ32 hj32] at sb
     rw [iL_lam]
-    exact tm_store_lam (st.mono e2.heap_extends) sb (hl.mono (e1.heap_extends.trans e2.heap_extends))
-  | .Forall (ld12 := ld) (he374 := hr) (hm373 := hm) (ev392 := e1) (op459 := op) (ev428 := e2)
-      (hc468 := hc) .. =>
+    exact tm_store_lam (st.mono e4.heap_extends) sb (hl.mono (e3.heap_extends.trans e4.heap_extends))
+  | .n1_n1_Forall (ev_qozyctmr := e1) (ev_xotwiaot := e2) (sg_nijhquyq := sg) (ld_cazaqiwm := ld)
+      (he_jirdvifw := hr) (hm_vlpbdsmi := hm) (ev_yfxpobrf := e3) (op_fxgckqoy := op)
+      (ev_iliahjfx := e4) (hc_qvjuupic := hc) .. =>
     subst hc hr hm
-    rw [add_ok op] at e2
-    obtain ⟨T, B, ℓ, rfl, ht, hb, hl⟩ := Tm.forallE_of_load hE ld
-    have st := ih.get .expr_inst_many lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) d Γ T As ht hAs
-    have sb := ih.get .expr_inst_many lt_calls e2 _ _ _ rfl (bounded_sub sub_calls bd) d Γ B As
-      (by rw [val_succ32 hj0, Nat.add_right_comm]; exact hb.mono e1.heap_extends)
-      (tmL_mono e1.heap_extends hAs)
-    rw [val_succ32 hj0] at sb
+    rw [add_ok op] at e4
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', _, hj', -, hj32, -, -, rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
+    have hh := inst_many_seg_heap ih bd lt_calls sub_calls sg; subst hh
+    obtain ⟨T, B', ℓ, rfl, ht, hb, hl⟩ := Tm.forallE_of_load hB ld
+    have st := ih.get .expr_inst_many_n lt_calls e3 _ _ _ _ rfl (bounded_sub sub_calls bd)
+      d Γ T As rfl hlen ht hAs
+    have sb := ih.get .expr_inst_many_n lt_calls e4 _ _ _ _ rfl (bounded_sub sub_calls bd)
+      d Γ B' As rfl hlen
+      (by rw [val_succ32 hj32, Nat.add_right_comm]; exact hb.mono e3.heap_extends)
+      (tmL_mono e3.heap_extends hAs)
+    rw [val_succ32 hj32] at sb
     rw [iL_forallE]
-    exact tm_store_forallE (st.mono e2.heap_extends) sb
-      (hl.mono (e1.heap_extends.trans e2.heap_extends))
-  | .Let (ld12 := ld) (ev496 := e1) (hc537 := hc) .. =>
+    exact tm_store_forallE (st.mono e4.heap_extends) sb
+      (hl.mono (e3.heap_extends.trans e4.heap_extends))
+  | .n1_n1_Let (ev_qozyctmr := e1) (ev_xotwiaot := e2) (sg_nijhquyq := sg) (ld_cazaqiwm := ld)
+      (ev_rtosanvh := e3) (hc_icdctvkp := hc) .. =>
     subst hc
-    obtain ⟨T, V, B, rfl, ht, hv, hb⟩ := Tm.letE_of_load hE ld
-    exact ih.get .expr_inst_many_let lt_calls e1 _ _ _ _ _ rfl (bounded_sub sub_calls bd) hj0
-      d Γ T V B As ht hv hb hAs
-  | .Proj (ld12 := ld) (he593 := hr) (hm592 := hm) (ev625 := e1) (hc650 := hc) .. =>
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', _, hj', -, hj32, -, -, rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
+    have hh := inst_many_seg_heap ih bd lt_calls sub_calls sg; subst hh
+    obtain ⟨T, V, B', rfl, ht, hv, hb⟩ := Tm.letE_of_load hB ld
+    exact ih.get .expr_inst_many_let lt_calls e3 _ _ _ _ _ _ rfl (bounded_sub sub_calls bd) hj32
+      d Γ T V B' As rfl hlen ht hv hb hAs
+  | .n1_n1_Proj (ev_qozyctmr := e1) (ev_xotwiaot := e2) (sg_nijhquyq := sg) (ld_cazaqiwm := ld)
+      (he_vyjrbsci := hr) (hm_iywlmnii := hm) (ev_tfdkwozr := e3) (hc_dhrzqlmk := hc) .. =>
     subst hc hr hm
-    obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := Tm.proj_of_load hE ld
-    have : Resolved _ := ⟨hE.proj_key_ne⟩
-    have : ProjPermitted _ _ := hE.proj_permitted ld ra
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', _, hj', -, -, -, -, rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
+    have hh := inst_many_seg_heap ih bd lt_calls sub_calls sg; subst hh
+    obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := Tm.proj_of_load hB ld
+    have : Resolved _ := ⟨hB.proj_key_ne⟩
+    have : ProjPermitted _ _ := hB.proj_permitted ld ra
     rw [iL_proj]
-    exact tm_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e1.heap_extends ra)
-      (ih.get .expr_inst_many lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd) d Γ Es As hes hAs)
+    exact tm_store_proj (Bytes.repAddressRef_heapMono₂ addrTy e3.heap_extends ra)
+      (ih.get .expr_inst_many_n lt_calls e3 _ _ _ _ rfl (bounded_sub sub_calls bd)
+        d Γ Es As rfl hlen hes hAs)
+  | .n1_n1_other (ev_qozyctmr := e1) (ev_xotwiaot := e2) (sg_nijhquyq := sg) (ld_cazaqiwm := ld)
+      (hne_mrzdkzct := n1) (hne_oicewdsa := n2) (hne_vdmlyytd := n3) (hne_wsfwgpgb := n4)
+      (hne_tasugfar := n5) (hne_otxnyqsa := n6) (hc_aynotxpb := hc) .. =>
+    subst hc
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', y, hj', hy, -, -, hr', rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
+    have hh := inst_many_seg_heap ih bd lt_calls sub_calls sg; subst hh
+    obtain ⟨-, hlbr⟩ := expr_lbr_other_zero ld n1 n2 n3 n4 n5 n6 e1
+    rw [hlbr] at hy; injection hy with hy; subst hy
+    have hlt := ltf_one hr'.symm
+    rw [ZMod.val_zero] at hlt; omega
+  | .n1_other (ev_qozyctmr := e1) (ev_xotwiaot := e2) (sg_nijhquyq := sg) (hne_qnsahksn := hne)
+      (op_zfrdzcvj := op) (ev_cevvkorh := e4) (hc_lfsktsxj := hc) .. =>
+    subst hc
+    rw [add_ok op] at e4
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨j', _, hj', -, hj32, -, -, rfl⟩ := ltf e2
+    injection hj' with hj'; subst hj'
+    cases sg with
+    | n0 _ _ _ _ _ hr0 _ _ => exact absurd hr0 hne
+    | n1 _ _ _ _ _ _ ev1 op2 ev2 hc_sg =>
+      subst hc_sg
+      obtain ⟨_, _, _, _, _, _, _, rfl⟩ := ltf ev1
+      rw [add_ok op2] at ev2
+      obtain ⟨rfl, h01, sn⟩ := ih.get .has_bvar_in_range lt_calls ev2 _ _ _ rfl (bounded_sub sub_calls bd)
+      have hv : ZMod.val (j + (As.length : F)) = ZMod.val j + As.length := by
+        rw [val_add (by rw [val_natCast (by omega)]; omega), val_natCast (by omega)]
+      have hnf := sn (zero_of_ne_one h01 hne) d Γ (ZMod.val j + As.length) B hB
+      rw [hv] at hnf
+      have hn' := noIdx_of_noIdxF_tm hB (by omega) hnf
+      have hlow := ih.get .expr_lower lt_calls e4 _ _ _ rfl (bounded_sub sub_calls bd) As.length 0
+        (by rw [val_natCast (by omega), Nat.add_zero]) (by rw [hv]; omega) d Γ B (Nat.zero_le _)
+        (by rw [hv]; exact hB) (by rw [hv, Nat.add_sub_cancel, Nat.add_zero]; exact hn')
+      rw [hv, Nat.add_sub_cancel, Nat.sub_zero] at hlow
+      rw [Ix.Kernel.Expr.instantiateList_eq_self (tm_lbb hB (Nat.le_add_right _ _) hn')]
+      exact hlow
 
 theorem g_expr_inst_many (κ : _root_.Address → KKey) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
@@ -475,52 +568,12 @@ theorem g_expr_inst_many (κ : _root_.Address → KKey) {args : List (SourceValu
     obtain rfl := List.eq_nil_of_length_eq_zero hz
     rw [Ix.Kernel.Expr.instantiateList_nil]
     exact hB
-  | .other_n0 (ev14 := e1) (ev58 := e2) (ev81 := e3) (he103 := hr) (he104 := he) (hc105 := hc) .. =>
-    subst hc hr he
-    obtain ⟨rfl, rfl⟩ := klength e1 hAs
-    obtain ⟨rfl, sl⟩ := ih.get .expr_lbr lt_calls e2 _ rfl (bounded_sub sub_calls bd)
-    obtain ⟨j', y, hj', hy, -, -, hr', rfl⟩ := ltf e3
-    injection hj' with hj'; subst hj'
-    have hge := ltf_zero hr'.symm
-    obtain ⟨b, hb, b1, -, -, -, lb⟩ := sl d Γ (ZMod.val j + As.length) B hB
-    rw [hb] at hy; injection hy with hy; subst hy
-    rw [val_natCast (lt_mod_of_le_idx b1)] at hge
-    obtain ⟨l1, -, l3⟩ := lb (by omega)
-    rw [Ix.Kernel.Expr.instantiateList_eq_self (lbb_mono (by omega) l1)]
-    exact l3 d Γ (ZMod.val j) (by omega)
-  | .other_n1_n1 (ev14 := e1) (ev58 := e2) (ev81 := e3) (op156 := op) (ev125 := e4) (ev168 := e5)
-      (hc193 := hc) .. =>
-    subst hc
-    obtain ⟨rfl, rfl⟩ := klength e1 hAs
-    rw [add_ok op] at e4
-    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e2 _ rfl (bounded_sub sub_calls bd)
-    obtain ⟨j', y, hj', -, hj32, -, -, rfl⟩ := ltf e3
-    injection hj' with hj'; subst hj'
-    obtain ⟨rfl, -⟩ := ih.get .has_bvar_in_range lt_calls e4 _ _ _ rfl (bounded_sub sub_calls bd)
-    exact ih.get .expr_inst_many_walk lt_calls e5 _ _ _ rfl (bounded_sub sub_calls bd) hj32
-      d Γ B As hB hAs
-  | .other_n1_other (ev14 := e1) (ev58 := e2) (ev81 := e3) (op156 := op) (ev125 := e4)
-      (hne194 := hne) (op234 := op2) (ev203 := e5) (hc237 := hc) .. =>
+  | .other (ev14 := e1) (ev_eoqoorsc := e2) (hc_kjrxaxhl := hc) .. =>
     subst hc
     have hlen : As.length < 2 ^ 39 :=
       RomBound.bounded_length_lt bd (c := ⟨Obs.Names.«Lists::length<&KernelTypes::KExprNode>», [substs], h⟩) (by simp) (by simp) hAs
     obtain ⟨rfl, rfl⟩ := klength e1 hAs
-    rw [add_ok op] at e4
-    rw [add_ok op2] at e5
-    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e2 _ rfl (bounded_sub sub_calls bd)
-    obtain ⟨j', y, hj', -, hj32, -, -, rfl⟩ := ltf e3
-    injection hj' with hj'; subst hj'
-    obtain ⟨rfl, h01, sn⟩ := ih.get .has_bvar_in_range lt_calls e4 _ _ _ rfl (bounded_sub sub_calls bd)
-    have hv : ZMod.val (j + (As.length : F)) = ZMod.val j + As.length := by
-      rw [val_add (by rw [val_natCast (by omega)]; omega), val_natCast (by omega)]
-    have hnf := sn (zero_of_ne_one h01 hne) d Γ (ZMod.val j + As.length) B hB
-    rw [hv] at hnf
-    have hn := noIdx_of_noIdxF_tm hB (by omega) hnf
-    have hlow := ih.get .expr_lower lt_calls e5 _ _ _ rfl (bounded_sub sub_calls bd) As.length 0
-      (by rw [val_natCast (by omega), Nat.add_zero]) (by rw [hv]; omega) d Γ B (Nat.zero_le _)
-      (by rw [hv]; exact hB) (by rw [hv, Nat.add_sub_cancel, Nat.add_zero]; exact hn)
-    rw [hv, Nat.add_sub_cancel, Nat.sub_zero] at hlow
-    rw [Ix.Kernel.Expr.instantiateList_eq_self (tm_lbb hB (Nat.le_add_right _ _) hn)]
-    exact hlow
+    exact ih.get .expr_inst_many_n lt_calls e2 _ _ _ _ rfl (bounded_sub sub_calls bd)
+      d Γ B As rfl hlen hB hAs
 
 end IxVM.Refinement.Core.SubstAux

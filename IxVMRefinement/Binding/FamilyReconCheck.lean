@@ -574,16 +574,16 @@ private theorem expr_lift_srt {p xsh xcut r xl : SourceValue F} {h h' : Heap F}
     subst hr hh; exact ⟨xl, lds⟩
   | .other_n0 (ev36 := e1) (ev59 := e2) (he81 := hr) (he82 := hh) .. =>
     subst hr hh; exact ⟨xl, loadValue_mono (e1.heap_extends.trans e2.heap_extends) lds⟩
-  | .other_n1 (ev36 := e1) (ev59 := e2) (ev94 := evw) .. =>
+  | .other_n1_other (ev36 := e1) (ev59 := e2) (he_skulcowg := hr) (he_lgvghlmw := hh) .. =>
+    subst hr hh; exact ⟨xl, loadValue_mono (e1.heap_extends.trans e2.heap_extends) lds⟩
+  | .other_n1_BVar (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ld) ..
+  | .other_n1_App (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ld) ..
+  | .other_n1_Lam (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ld) ..
+  | .other_n1_Forall (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ld) ..
+  | .other_n1_Let (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ld) ..
+  | .other_n1_Proj (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ld) .. =>
     have lds2 := loadValue_mono (e1.heap_extends.trans e2.heap_extends) lds
-    match Obs.«KernelSubst::expr_lift_walk».obs evw with
-    | .Srt (x_l := xl') (he72 := hr) (hm71 := hh) .. =>
-      subst hr hh
-      exact ⟨xl', loadValue_store_snoc _ _⟩
-    | .BVar (ld12 := ld) .. | .Const (ld12 := ld) .. | .App (ld12 := ld) ..
-    | .Lam (ld12 := ld) .. | .Forall (ld12 := ld) .. | .Let (ld12 := ld) ..
-    | .Lit (ld12 := ld) .. | .Proj (ld12 := ld) .. =>
-      rw [lds2] at ld; simp [kexprEnum] at ld
+    rw [lds2] at ld; simp [kexprEnum] at ld
 
 private theorem expr_lift_heapAppConst_gen :
     ∀ {h : Heap F} {p : SourceValue F} {a : _root_.Address}, HeapAppConst h p a →
@@ -601,20 +601,17 @@ private theorem expr_lift_heapAppConst_gen :
     | .other_n0 (ev36 := e1) (ev59 := e2) (he81 := hr) (he82 := hh) .. =>
       subst hr hh
       exact (HeapAppConst.const ld ra).mono (ext.trans (e1.heap_extends.trans e2.heap_extends))
-    | .other_n1 (ev36 := e1) (ev59 := e2) (ev94 := evw) .. =>
-      have ext02 := ext.trans (e1.heap_extends.trans e2.heap_extends)
-      have ld2 := loadValue_mono ext02 ld
-      match Obs.«KernelSubst::expr_lift_walk».obs evw with
-      | .Const (x_idx := xidx) (x_lvls := xlvls) (ld12 := ldw) (he106 := hr) (hm105 := hh) .. =>
-        subst hr hh
-        rw [ld2] at ldw
-        injection ldw with hv; injection hv with _ _ hl; injection hl with h1 _; subst h1
-        exact .const (loadValue_store_snoc _ _)
-          (Bytes.repAddressRef_heapMono₂ addrTy (ext02.trans (Heap.Extends.snoc _ _)) ra)
-      | .BVar (ld12 := ldw) .. | .Srt (ld12 := ldw) .. | .App (ld12 := ldw) ..
-      | .Lam (ld12 := ldw) .. | .Forall (ld12 := ldw) .. | .Let (ld12 := ldw) ..
-      | .Lit (ld12 := ldw) .. | .Proj (ld12 := ldw) .. =>
-        rw [ld2] at ldw; simp [kexprEnum] at ldw
+    | .other_n1_other (ev36 := e1) (ev59 := e2) (he_skulcowg := hr) (he_lgvghlmw := hh) .. =>
+      subst hr hh
+      exact (HeapAppConst.const ld ra).mono (ext.trans (e1.heap_extends.trans e2.heap_extends))
+    | .other_n1_BVar (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_App (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_Lam (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_Forall (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_Let (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_Proj (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) .. =>
+      have ld2 := loadValue_mono (ext.trans (e1.heap_extends.trans e2.heap_extends)) ld
+      rw [ld2] at ldw; simp [kexprEnum] at ldw
   | @app p fp ap a ld hf ih =>
     intro h1 h' xsh xcut r cs ext ev
     match Obs.«KernelSubst::expr_lift».obs ev with
@@ -623,22 +620,27 @@ private theorem expr_lift_heapAppConst_gen :
     | .other_n0 (ev36 := e1) (ev59 := e2) (he81 := hr) (he82 := hh) .. =>
       subst hr hh
       exact (HeapAppConst.app ld hf).mono (ext.trans (e1.heap_extends.trans e2.heap_extends))
-    | .other_n1 (ev36 := e1) (ev59 := e2) (ev94 := evw) .. =>
+    | .other_n1_App (x_f := xf) (x_a := xa) (v_hatcdjee := vf') (v_sltmkgjd := va')
+        (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) (he_lhthkmdy := hr) (hm_lkqgdqjj := hh)
+        (ev_dldoddhd := evf) (ev_bretmskq := eva) .. =>
+      subst hr hh
       have ext02 := ext.trans (e1.heap_extends.trans e2.heap_extends)
       have ld2 := loadValue_mono ext02 ld
-      match Obs.«KernelSubst::expr_lift_walk».obs evw with
-      | .App (x_f := xf) (x_a := xa) (v152 := vf') (v153 := va') (ld12 := ldw)
-          (he148 := hr) (hm147 := hh) (ev165 := evf) (ev201 := eva) .. =>
-        subst hr hh
-        rw [ld2] at ldw
-        injection ldw with hv; injection hv with _ _ hl; injection hl with h1 _; subst h1
-        have hfp' := ih ext02 evf
-        exact .app (loadValue_store_snoc _ _)
-          (hfp'.mono (eva.heap_extends.trans (Heap.Extends.snoc _ _)))
-      | .BVar (ld12 := ldw) .. | .Srt (ld12 := ldw) .. | .Const (ld12 := ldw) ..
-      | .Lam (ld12 := ldw) .. | .Forall (ld12 := ldw) .. | .Let (ld12 := ldw) ..
-      | .Lit (ld12 := ldw) .. | .Proj (ld12 := ldw) .. =>
-        rw [ld2] at ldw; simp [kexprEnum] at ldw
+      rw [ld2] at ldw
+      injection ldw with hv; injection hv with _ _ hl; injection hl with h1 _; subst h1
+      have hfp' := ih ext02 evf
+      exact .app (loadValue_store_snoc _ _)
+        (hfp'.mono (eva.heap_extends.trans (Heap.Extends.snoc _ _)))
+    | .other_n1_other (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) (hne_hhkiegac := hne) .. =>
+      have ld2 := loadValue_mono (ext.trans (e1.heap_extends.trans e2.heap_extends)) ld
+      rw [ld2] at ldw; injection ldw with hv; exact (hne _ rfl hv.symm).elim
+    | .other_n1_BVar (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_Lam (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_Forall (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_Let (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_Proj (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) .. =>
+      have ld2 := loadValue_mono (ext.trans (e1.heap_extends.trans e2.heap_extends)) ld
+      rw [ld2] at ldw; simp [kexprEnum] at ldw
 
 private theorem expr_lift_heapMotiveCarrierSrt :
     ∀ {h : Heap F} {p : SourceValue F} {a : _root_.Address}, HeapMotiveCarrierSrt h p a →
@@ -657,25 +659,30 @@ private theorem expr_lift_heapMotiveCarrierSrt :
       subst hr hh
       exact (HeapMotiveCarrierSrt.last ld ldb hac).mono
         (ext.trans (e1.heap_extends.trans e2.heap_extends))
-    | .other_n1 (ev36 := e1) (ev59 := e2) (ev94 := evw) .. =>
+    | .other_n1_Forall (x_ty := xty) (x_body := xb) (v_sogttdca := vd') (v_yvzvhdcj := vb')
+        (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) (he_wljmpcwa := hr) (hm_lnuidxgg := hh)
+        (ev_hgsapotx := evd) (ev_gssmelog := evb) .. =>
+      subst hr hh
       have ext02 := ext.trans (e1.heap_extends.trans e2.heap_extends)
       have ld2 := loadValue_mono ext02 ld
-      match Obs.«KernelSubst::expr_lift_walk».obs evw with
-      | .Forall (x_ty := xty) (x_body := xb) (v378 := vd') (v379 := vb')
-          (ld12 := ldw) (he374 := hr) (hm373 := hh) (ev392 := evd) (ev428 := evb) .. =>
-        subst hr hh
-        rw [ld2] at ldw
-        injection ldw with hv; injection hv with _ _ hl
-        injection hl with h1 hl; injection hl with h2 _; subst h1 h2
-        have hd' := expr_lift_heapAppConst_gen hac ext02 evd
-        obtain ⟨xl', hxl'⟩ := expr_lift_srt (loadValue_mono (ext02.trans evd.heap_extends) ldb) evb
-        exact .last (loadValue_store_snoc _ _)
-          (loadValue_mono (Heap.Extends.snoc _ _) hxl')
-          (hd'.mono (evb.heap_extends.trans (Heap.Extends.snoc _ _)))
-      | .BVar (ld12 := ldw) .. | .Srt (ld12 := ldw) .. | .Const (ld12 := ldw) ..
-      | .App (ld12 := ldw) .. | .Lam (ld12 := ldw) .. | .Let (ld12 := ldw) ..
-      | .Lit (ld12 := ldw) .. | .Proj (ld12 := ldw) .. =>
-        rw [ld2] at ldw; simp [kexprEnum] at ldw
+      rw [ld2] at ldw
+      injection ldw with hv; injection hv with _ _ hl
+      injection hl with h1 hl; injection hl with h2 _; subst h1 h2
+      have hd' := expr_lift_heapAppConst_gen hac ext02 evd
+      obtain ⟨xl', hxl'⟩ := expr_lift_srt (loadValue_mono (ext02.trans evd.heap_extends) ldb) evb
+      exact .last (loadValue_store_snoc _ _)
+        (loadValue_mono (Heap.Extends.snoc _ _) hxl')
+        (hd'.mono (evb.heap_extends.trans (Heap.Extends.snoc _ _)))
+    | .other_n1_other (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) (hne_ttyzfnqz := hne) .. =>
+      have ld2 := loadValue_mono (ext.trans (e1.heap_extends.trans e2.heap_extends)) ld
+      rw [ld2] at ldw; injection ldw with hv; exact (hne _ rfl hv.symm).elim
+    | .other_n1_BVar (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_App (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_Lam (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_Let (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_Proj (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) .. =>
+      have ld2 := loadValue_mono (ext.trans (e1.heap_extends.trans e2.heap_extends)) ld
+      rw [ld2] at ldw; simp [kexprEnum] at ldw
   | @step p dp bp lp dp' bp' lp' a ld ldb hmb ih =>
     intro h1 h' xsh xcut r cs ext ev
     match Obs.«KernelSubst::expr_lift».obs ev with
@@ -685,28 +692,33 @@ private theorem expr_lift_heapMotiveCarrierSrt :
       subst hr hh
       exact (HeapMotiveCarrierSrt.step ld ldb hmb).mono
         (ext.trans (e1.heap_extends.trans e2.heap_extends))
-    | .other_n1 (ev36 := e1) (ev59 := e2) (ev94 := evw) .. =>
+    | .other_n1_Forall (x_ty := xty) (x_body := xb) (v_sogttdca := vd') (v_yvzvhdcj := vb')
+        (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) (he_wljmpcwa := hr) (hm_lnuidxgg := hh)
+        (ev_hgsapotx := evd) (ev_gssmelog := evb) .. =>
+      subst hr hh
       have ext02 := ext.trans (e1.heap_extends.trans e2.heap_extends)
       have ld2 := loadValue_mono ext02 ld
-      match Obs.«KernelSubst::expr_lift_walk».obs evw with
-      | .Forall (x_ty := xty) (x_body := xb) (v378 := vd') (v379 := vb')
-          (ld12 := ldw) (he374 := hr) (hm373 := hh) (ev392 := evd) (ev428 := evb) .. =>
-        subst hr hh
-        rw [ld2] at ldw
-        injection ldw with hv; injection hv with _ _ hl
-        injection hl with h1 hl; injection hl with h2 _; subst h1 h2
-        have hb' := ih (ext02.trans evd.heap_extends) evb
-        cases hb' with
-        | last ld' ldb' hac' =>
-          exact .step (loadValue_store_snoc _ _) (loadValue_mono (Heap.Extends.snoc _ _) ld')
-            ((HeapMotiveCarrierSrt.last ld' ldb' hac').mono (Heap.Extends.snoc _ _))
-        | step ld' ldb' hmb' =>
-          exact .step (loadValue_store_snoc _ _) (loadValue_mono (Heap.Extends.snoc _ _) ld')
-            ((HeapMotiveCarrierSrt.step ld' ldb' hmb').mono (Heap.Extends.snoc _ _))
-      | .BVar (ld12 := ldw) .. | .Srt (ld12 := ldw) .. | .Const (ld12 := ldw) ..
-      | .App (ld12 := ldw) .. | .Lam (ld12 := ldw) .. | .Let (ld12 := ldw) ..
-      | .Lit (ld12 := ldw) .. | .Proj (ld12 := ldw) .. =>
-        rw [ld2] at ldw; simp [kexprEnum] at ldw
+      rw [ld2] at ldw
+      injection ldw with hv; injection hv with _ _ hl
+      injection hl with h1 hl; injection hl with h2 _; subst h1 h2
+      have hb' := ih (ext02.trans evd.heap_extends) evb
+      cases hb' with
+      | last ld' ldb' hac' =>
+        exact .step (loadValue_store_snoc _ _) (loadValue_mono (Heap.Extends.snoc _ _) ld')
+          ((HeapMotiveCarrierSrt.last ld' ldb' hac').mono (Heap.Extends.snoc _ _))
+      | step ld' ldb' hmb' =>
+        exact .step (loadValue_store_snoc _ _) (loadValue_mono (Heap.Extends.snoc _ _) ld')
+          ((HeapMotiveCarrierSrt.step ld' ldb' hmb').mono (Heap.Extends.snoc _ _))
+    | .other_n1_other (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) (hne_ttyzfnqz := hne) .. =>
+      have ld2 := loadValue_mono (ext.trans (e1.heap_extends.trans e2.heap_extends)) ld
+      rw [ld2] at ldw; injection ldw with hv; exact (hne _ rfl hv.symm).elim
+    | .other_n1_BVar (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_App (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_Lam (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_Let (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) ..
+    | .other_n1_Proj (ev36 := e1) (ev59 := e2) (ld_wtarinpb := ldw) .. =>
+      have ld2 := loadValue_mono (ext.trans (e1.heap_extends.trans e2.heap_extends)) ld
+      rw [ld2] at ldw; simp [kexprEnum] at ldw
 
 private theorem apply_spec_params_lifted_heapAppConst {a : _root_.Address} :
     ∀ {sps : List (SourceValue F)} {xhd xsps xd r : SourceValue F} {h h' : Heap F}
