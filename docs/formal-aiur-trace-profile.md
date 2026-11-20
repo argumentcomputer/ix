@@ -105,7 +105,7 @@ measured in this profile.
 
 [Phase summary](benchmarks/formal-aiur-trace-profile/phase-summary.csv),
 [small-claim scaling](benchmarks/formal-aiur-trace-profile/nat-frontier.csv) and
-[manifest](benchmarks/formal-aiur-trace-profile/manifest.json) preserve the
+[manifest](../Benchmarks/FormalAiur/TraceProfile.lean) preserve the
 measurements. Raw phase spans and samples are not kept in the repository; the
 commands below reproduce them. The host reports 32 cores and 64 logical CPUs;
 the runs use the same CPU and input configuration as the scaling report.

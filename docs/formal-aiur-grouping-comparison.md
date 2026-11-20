@@ -227,7 +227,7 @@ those polynomial trees per row. Neither improvement is claimed implemented here.
 
 The checked-in [summary CSV](benchmarks/formal-aiur-grouping/summary.csv)
 contains all grouped and ungrouped timings, cells, and FFT estimates.
-[The manifest](benchmarks/formal-aiur-grouping/manifest.json) records the code
+[The manifest](../Benchmarks/FormalAiur/Grouping.lean) records the code
 revision, configuration, artifact hashes, and recursive input hashes. The
 per-circuit table and raw samples are not kept in the repository. Large
 generated artifacts and proof inputs were kept outside it, under

@@ -196,7 +196,7 @@ The comparison against `44ea8742` passed for all three applications:
 These column counts cover the function chips, before the host adds memory,
 fixed-table, and lookup-protocol columns. Those inputs also compare exactly;
 this refactor does not change circuit size or grouping. The checks and artifact
-hashes are saved in [the comparison record](benchmarks/formal-aiur-modules/summary.json).
+hashes are saved in [the comparison record](../Benchmarks/FormalAiur/ModulesSummary.lean).
 The pinned legacy program sources are unchanged between the pin and that
 baseline. Distributed workers recognize both the relocated `check_owned`
 callable and the old name used by cached artifacts.

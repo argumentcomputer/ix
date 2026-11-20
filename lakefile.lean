@@ -336,6 +336,16 @@ manifest. Needs `lake build ix` first for the `build` verb. -/
 lean_exe truthmines where
   root := `Benchmarks.TruthMinesSpec.Main
 
+/-- Typed manifest for the focused anonymous FLT regression suite
+(`Benchmarks/Kernel/AnthropicFLT/Cases.lean`). -/
+lean_lib AnthropicFLT where
+  roots := #[`Benchmarks.Kernel.AnthropicFLT.Cases]
+
+/-- Typed benchmark manifests and comparison records for formal Aiur
+(`Benchmarks/FormalAiur/`). -/
+lean_lib FormalAiurBenchmarks where
+  globs := #[.submodules `Benchmarks.FormalAiur]
+
 end Benchmarks
 
 section IxApplications

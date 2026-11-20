@@ -322,7 +322,7 @@ the claim" ("catalog: …" likewise). The in-circuit claim readers require objec
 
 Not regenerated, because their inputs are not available in the development environment:
 
-- `Benchmarks/Kernel/AnthropicFLT/cases.json` pins a 30 GB v3 artifact
+- `Benchmarks/Kernel/AnthropicFLT/Cases.lean` pins a 30 GB v3 artifact
   (`flt-after-source-hints-1.ixe`) by sha256. Its addresses must be re-derived from that
   artifact recompiled at v4; until then the harness rejects the old artifact by hash, and a v4
   binary rejects its header, so it cannot be consumed silently.

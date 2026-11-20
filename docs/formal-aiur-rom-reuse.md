@@ -115,7 +115,7 @@ including the default library build and profiled comparison build.
 ## Data and reproduction
 
 [Summary](benchmarks/formal-aiur-rom-reuse/summary.csv) and
-[manifest](benchmarks/formal-aiur-rom-reuse/manifest.json) include both binaries'
+[manifest](../Benchmarks/FormalAiur/RomReuse.lean) include both binaries'
 hashes, source and input hashes, memory measurements and all selected controls.
 [Phase medians](benchmarks/formal-aiur-rom-reuse/phase-summary.csv) preserve the
 separate instrumented run. Raw samples, circuit shapes and phase spans are not

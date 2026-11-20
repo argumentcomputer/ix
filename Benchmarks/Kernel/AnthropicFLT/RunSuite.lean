@@ -1,4 +1,5 @@
 import Lean
+import Benchmarks.Kernel.AnthropicFLT.Cases
 
 /-!
 Bounded paired anonymous FLT subject checks, orchestrated in Lean.
@@ -11,38 +12,6 @@ open Lean System
 namespace Benchmarks.AnthropicFLT
 
 def suiteDir : FilePath := "Benchmarks/Kernel/AnthropicFLT"
-
-structure Case where
-  id : String
-  address : String
-  category : String
-  core : Bool
-  fuel : Option Nat := none
-  timeout_seconds : Option Nat := none
-  deriving FromJson, ToJson, Inhabited
-
-structure Defaults where
-  fuel : Nat
-  timeout_seconds : Nat
-  memory_gib : Nat
-  workers : Nat
-  deriving FromJson, ToJson
-
-/-- The pinned artifact: its file name, size and Blake3 digest. A manifest that
-pins no Blake3 digest (the committed one still carries the v3 artifact's
-SHA-256) validates, but `run` refuses to check against it. -/
-structure Artifact where
-  filename : String
-  bytes : Nat
-  blake3 : Option String := none
-  deriving FromJson, ToJson
-
-structure Manifest where
-  schema : Nat
-  artifact : Artifact
-  defaults : Defaults
-  cases : Array Case
-  deriving FromJson
 
 structure Resolution where
   requested : String
@@ -71,7 +40,7 @@ def need (value : Except String α) : IO α :=
   | .ok a => pure a
   | .error e => throw (IO.userError e)
 
-def validate (m : Manifest) : Except String Unit := do
+def validate (m : SuiteManifest) : Except String Unit := do
   unless m.schema == 1 && m.artifact.blake3.all isHex do throw "invalid manifest/artifact"
   unless m.defaults.workers == 1 do throw "suite requires one fresh worker"
   unless 0 < m.defaults.memory_gib && m.defaults.memory_gib ≤ 96 do
@@ -89,7 +58,7 @@ def validate (m : Manifest) : Except String Unit := do
     ids := ids.push c.id
     addresses := addresses.push c.address
 
-def normalize (cases : Array Case) (rows : Array Resolution) (d : Defaults) :
+def normalize (cases : Array CaseEntry) (rows : Array Resolution) (d : SuiteDefaults) :
     Except String (Array Group) := do
   let mut groups : Array Group := #[]
   for c in cases do
@@ -262,7 +231,7 @@ structure Options where
   baseline : String := ""
   adaptive : String := ""
   output : String := ""
-  manifest : String := (suiteDir / "cases.json").toString
+  manifest : Option String := none
   all : Bool := false
   cases : Array String := #[]
   rounds : Nat := 1
@@ -277,7 +246,7 @@ def parseArgs : List String → Options → Except String Options
   | "--baseline" :: v :: rest, opts => parseArgs rest { opts with baseline := v }
   | "--adaptive" :: v :: rest, opts => parseArgs rest { opts with adaptive := v }
   | "--output" :: v :: rest, opts => parseArgs rest { opts with output := v }
-  | "--manifest" :: v :: rest, opts => parseArgs rest { opts with manifest := v }
+  | "--manifest" :: v :: rest, opts => parseArgs rest { opts with manifest := some v }
   | "--case" :: v :: rest, opts => parseArgs rest { opts with cases := opts.cases.push v }
   | "--suite" :: v :: rest, opts =>
     if v == "all" || v == "core" then parseArgs rest { opts with all := v == "all" }
@@ -291,8 +260,13 @@ def parseArgs : List String → Options → Except String Options
 def ensure (condition : Bool) (message : String) : IO Unit :=
   unless condition do throw (IO.userError message)
 
-def selfTest (m : Manifest) : IO Unit := do
+def selfTest (m : SuiteManifest) : IO Unit := do
   need (validate m)
+  ensure (m.baseline_kernel_commit == "28fc22702964058cd7cfe4eb012baf23b3af6e3a") "baseline commit"
+  ensure (m.artifact.filename == "flt-after-source-hints-1.ixe" &&
+    m.artifact.bytes == 30113168066 &&
+    m.artifact.sha256 == some "5251edf00c0050d766702cd32d777b30889c167f4e0021b5ba89496abbb2f4d8")
+    "artifact pin"
   ensure (m.cases.size == 138) "inventory size"
   let core := m.cases.filter (·.core)
   ensure (core.size == 25) "core size"
@@ -321,7 +295,7 @@ def selfTest (m : Manifest) : IO Unit := do
     ensure ((validate { m with cases := #[c] }).toOption.isNone) "manifest guard"
   let a := String.ofList (List.replicate 64 'a')
   let b := String.ofList (List.replicate 64 'b')
-  let cases : Array Case := #[
+  let cases : Array CaseEntry := #[
     { id := "one", address := a, category := "depth", core := true },
     { id := "two", address := b, category := "depth", core := true }]
   let resolutions : Array Resolution := #[
@@ -365,8 +339,11 @@ def selfTest (m : Manifest) : IO Unit := do
   announce "Lean suite self-tests passed."
 
 def run (opts : Options) : IO UInt32 := do
-  let manifestJson ← need (Json.parse (← IO.FS.readFile opts.manifest))
-  let m : Manifest ← need (fromJson? manifestJson)
+  let m : SuiteManifest ← match opts.manifest with
+    | none => pure suiteManifest
+    | some path => do
+      let manifestJson ← need (Json.parse (← IO.FS.readFile path))
+      need (fromJson? manifestJson)
   need (validate m)
   if opts.selfTest then selfTest m; return 0
   if m.artifact.blake3.isNone then
@@ -394,7 +371,7 @@ def run (opts : Options) : IO UInt32 := do
   let runId := s!"{← IO.Process.getPID}-{← IO.monoMsNow}"
   let user ← checkedOutput "id" #["-un"]
   saveJson (out / "run.json") (Json.mkObj [
-    ("schema", toJson (1 : Nat)), ("run_id", toJson runId), ("manifest", manifestJson),
+    ("schema", toJson (1 : Nat)), ("run_id", toJson runId), ("manifest", toJson m),
     ("selected_case_ids", toJson (selected.map (·.id))),
     ("paths", toJson (paths.map (·.toString))), ("blake3", toJson hashes),
     ("file_identity", toJson initial), ("rounds", toJson opts.rounds),
@@ -406,7 +383,8 @@ def run (opts : Options) : IO UInt32 := do
   -- Explicit prototype source snapshot; no unrelated worktree files.
   for relative in #["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "lean-toolchain",
     "flake.nix", "flake.lock",
-    ".cargo/config.toml", "Benchmarks/Kernel/AnthropicFLT/RunSuite.lean"] do
+    ".cargo/config.toml", "Benchmarks/Kernel/AnthropicFLT/Cases.lean",
+    "Benchmarks/Kernel/AnthropicFLT/RunSuite.lean"] do
     let src : FilePath := relative
     if ← src.pathExists then
       let dst := out / "source" / relative

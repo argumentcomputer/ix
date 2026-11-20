@@ -81,7 +81,7 @@ the recursive result shows why the scaling advantage is workload-dependent.
 The workloads are the same self-contained 342-constant IxVM environment and
 the same real 7,232,210-byte inner proof as the earlier comparisons. Artifacts,
 inputs and binaries are hashed in the
-[manifest](benchmarks/formal-aiur-trace-scaling/manifest.json). The
+[manifest](../Benchmarks/FormalAiur/TraceScaling.lean). The
 [summary CSV](benchmarks/formal-aiur-trace-scaling/summary.csv) gives every
 configuration's medians and ranges; the raw samples are not kept in the
 repository.

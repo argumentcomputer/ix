@@ -129,7 +129,7 @@ GPU timing was collected for this tuning.
 ## Data and reproduction
 
 The [summary](benchmarks/formal-aiur-grouping-tuning/summary.csv) and
-[manifest](benchmarks/formal-aiur-grouping-tuning/manifest.json) preserve the
+[manifest](../Benchmarks/FormalAiur/GroupingTuning.lean) preserve the
 results. The per-circuit table, raw samples, policies, query counts, layout
 metrics, singleton shapes and search reports are not kept in the repository:
 they describe `ade9330c`, not the programs that ship, and the commands below

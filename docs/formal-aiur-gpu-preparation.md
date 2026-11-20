@@ -101,7 +101,7 @@ valid measurement.
 ## Reproduction and validation
 
 [Summary](benchmarks/formal-aiur-gpu-preparation/summary.csv) and
-[manifest](benchmarks/formal-aiur-gpu-preparation/manifest.json) preserve the
+[manifest](../Benchmarks/FormalAiur/GpuPreparation.lean) preserve the
 measurements, binary/input hashes and proof identities. Individual runs are not
 kept in the repository; the manifest records the inputs, binaries and commands
 that reproduce them. Its revisions are commits of the migration branch, which a
