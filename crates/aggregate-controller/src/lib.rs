@@ -19,6 +19,7 @@ use std::sync::Arc;
 use ixon::shard::ShardManifest;
 
 pub mod advice;
+pub mod aiur;
 pub mod aggregate;
 pub mod backend;
 pub mod catalog;

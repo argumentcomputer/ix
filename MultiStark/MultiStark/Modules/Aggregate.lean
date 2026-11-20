@@ -2,7 +2,10 @@ import Aiur.Modules.Frontend
 
 /-! # MultiStark module `MultiStark`, aggregation
 
-The aggregator's entry point, `MultiStark::ix_aggr`. `Recursion.lean` defines the
+The aggregator's entry point, `MultiStark::ix_aggr`. Shapes 17 and 18 join an environment
+child (an IxVM or `ix_aggr` proof of an unconditional `CheckEnv` claim) with an Aiur child, a
+proof under a verifying key supplied as data, into an `AiurRun` claim
+(`Aggregation.aggr_aiur_join`). `Recursion.lean` defines the
 same module with the recursion entry point instead.
 
 Formal Aiur source, written as Lean syntax (`aiur⟦ … ⟧`). `MultiStark.recursionSource`
@@ -68,6 +71,10 @@ module MultiStark {
         15 => {  Aggregation::aggr_cross_binding(ixvm_vk_digest, self_vk_digest,
           verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
         16 => {  Aggregation::aggr_catalog_join(ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        17 => {  Aggregation::aggr_aiur_join(0, ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        18 => {  Aggregation::aggr_aiur_join(1, ixvm_vk_digest, self_vk_digest,
           verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
       }
     }

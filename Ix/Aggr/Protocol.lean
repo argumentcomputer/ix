@@ -76,6 +76,20 @@ claim or a `Catalog` claim, joined into the `Catalog` of all their member
 statements. -/
 def catalogShapeCode : Nat := 16
 
+/-! ## Aiur children -/
+
+/-- The Aiur join for an environment child of kind `env` (`17 + env.code`): slot 0 holds the
+environment's unconditional `CheckEnv` proof, slot 1 a proof of an Aiur program under a
+verifying key supplied as data (channel 1, key `aiurKeySlot`). The output is an `AiurRun` claim
+naming the environment claim, its subject root, a theorem and a binding among its subjects
+(Merkle paths on channel `aiurPathChannel`, keys 0 and 1), and the digests of the Aiur key and
+of the Aiur proof's serialized claims. -/
+def aiurJoinShapeCode (env : ChildKind) : Nat := 17 + env.code
+
+def aiurKeySlot : Nat := 2
+
+def aiurPathChannel : Nat := 7
+
 /-- The byte that opens every range statement; no `Ix.Claim` starts with it,
 so a range statement never parses as a `CheckEnv` claim. -/
 def rangeStatementTag : UInt8 := 0x52

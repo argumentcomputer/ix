@@ -237,6 +237,22 @@ pub enum Claim {
   /// discharges the condition of the typing claims that assume their binding
   /// ([`ClaimContext::binding_assumed`]), once per aggregate.
   Binding { spec: Address, binding: Address },
+  /// An Aiur program's run, justified in an environment: the unconditional
+  /// `CheckEnv` claim with digest `env` (subject root `root`) holds, the
+  /// constants `theorem` and `binding` are among its subjects, and a proof
+  /// under the verifying key with digest `key` accepts the serialized claim
+  /// list with digest `claims`. `binding` names the program key and
+  /// `theorem` states what accepted runs of the program imply; their meaning
+  /// is read from the environment, not checked by aggregation. Formed only by
+  /// aggregation (`ix_aggr` shapes 17 and 18).
+  AiurRun {
+    env: Address,
+    root: Address,
+    theorem: Address,
+    binding: Address,
+    key: Address,
+    claims: Address,
+  },
 }
 
 /// A proof of a claim.
@@ -268,6 +284,7 @@ pub struct Proof {
 /// - 8: Catalog claim (`E8 00`)
 /// - 9: Resource claim (`E8 01`)
 /// - 10: Binding claim (`E8 02`)
+/// - 11: AiurRun claim (`E8 03`)
 ///
 /// The `.ixe` header also uses flag 0xE, with its storage envelope version:
 /// legacy 4 is `0xE4` and the role-bound 5 is `0xE5`. Checked claims still bind
@@ -285,6 +302,7 @@ pub const VARIANT_CONTAINS_CLAIM: u64 = 7;
 pub const VARIANT_CATALOG_CLAIM: u64 = 8;
 pub const VARIANT_RESOURCE_CLAIM: u64 = 9;
 pub const VARIANT_BINDING_CLAIM: u64 = 10;
+pub const VARIANT_AIUR_RUN_CLAIM: u64 = 11;
 
 /// TagN flag for ZK proofs (0xF). Every variant is in rung 1, a single-byte
 /// tag (`0xF0`–`0xF7`), which uses every single byte; a later proof variant
@@ -302,6 +320,7 @@ pub const VARIANT_BINDING_CLAIM: u64 = 10;
 /// - 5: Catalog proof
 /// - 6: Resource proof
 /// - 7: Binding proof
+/// - 8: AiurRun proof (`F8 00`)
 pub const FLAG_PROOF: u8 = 0xF;
 
 pub const VARIANT_EVAL_PROOF: u64 = 0;
@@ -312,6 +331,7 @@ pub const VARIANT_CONTAINS_PROOF: u64 = 4;
 pub const VARIANT_CATALOG_PROOF: u64 = 5;
 pub const VARIANT_RESOURCE_PROOF: u64 = 6;
 pub const VARIANT_BINDING_PROOF: u64 = 7;
+pub const VARIANT_AIUR_RUN_PROOF: u64 = 8;
 
 // Backwards-compatibility re-export: many call sites refer to FLAG.
 pub const FLAG: u8 = FLAG_CLAIM;
@@ -1272,6 +1292,12 @@ impl Claim {
         buf.extend_from_slice(spec.as_bytes());
         buf.extend_from_slice(binding.as_bytes());
       },
+      Claim::AiurRun { env, root, theorem, binding, key, claims } => {
+        // A two-byte claim tag: `E8 03` on the wire.
+        for addr in [env, root, theorem, binding, key, claims] {
+          buf.extend_from_slice(addr.as_bytes());
+        }
+      },
     }
   }
 
@@ -1326,6 +1352,14 @@ impl Claim {
       VARIANT_BINDING_CLAIM => Ok(Claim::Binding {
         spec: get_address(buf)?,
         binding: get_address(buf)?,
+      }),
+      VARIANT_AIUR_RUN_CLAIM => Ok(Claim::AiurRun {
+        env: get_address(buf)?,
+        root: get_address(buf)?,
+        theorem: get_address(buf)?,
+        binding: get_address(buf)?,
+        key: get_address(buf)?,
+        claims: get_address(buf)?,
       }),
       x => {
         Err(format!("Claim::get: invalid claim variant {x} under flag 0xE",))
@@ -1397,7 +1431,8 @@ impl Claim {
       | Claim::Contains { .. }
       | Claim::Catalog { .. }
       | Claim::Resource { .. }
-      | Claim::Binding { .. } => None,
+      | Claim::Binding { .. }
+      | Claim::AiurRun { .. } => None,
     }
   }
 
@@ -1412,6 +1447,7 @@ impl Claim {
       Claim::Catalog { .. } => VARIANT_CATALOG_PROOF,
       Claim::Resource { .. } => VARIANT_RESOURCE_PROOF,
       Claim::Binding { .. } => VARIANT_BINDING_PROOF,
+      Claim::AiurRun { .. } => VARIANT_AIUR_RUN_PROOF,
     }
   }
 }
@@ -1445,7 +1481,7 @@ impl Proof {
         FLAG_PROOF, tag.flag
       ));
     }
-    if tag.value > VARIANT_BINDING_PROOF {
+    if tag.value > VARIANT_AIUR_RUN_PROOF {
       return Err(format!(
         "Proof::get: invalid proof variant {} under flag 0xF",
         tag.value
@@ -1726,7 +1762,15 @@ mod tests {
 
   impl Arbitrary for Claim {
     fn arbitrary(g: &mut Gen) -> Self {
-      match u8::arbitrary(g) % 8 {
+      match u8::arbitrary(g) % 9 {
+        7 => Claim::AiurRun {
+          env: Address::arbitrary(g),
+          root: Address::arbitrary(g),
+          theorem: Address::arbitrary(g),
+          binding: Address::arbitrary(g),
+          key: Address::arbitrary(g),
+          claims: Address::arbitrary(g),
+        },
         0 => Claim::Eval {
           ctx: ClaimContext::arbitrary(g),
           input: Address::arbitrary(g),

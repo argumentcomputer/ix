@@ -26,6 +26,21 @@ pub fn structural_shape_code(left: ChildKind, right: ChildKind) -> u8 {
   6 + 2 * left.code() + right.code()
 }
 
+/// Shapes 17 and 18 (`Aggr.aiurJoinShapeCode`): an Aiur child, a proof of
+/// an Aiur program under a verifying key supplied as data (channel 1, key
+/// [`AIUR_KEY_SLOT`]) in slot 1, joined with an environment child of kind
+/// `env` in slot 0 into an `AiurRun` claim.
+pub fn aiur_join_shape_code(env: ChildKind) -> u8 {
+  17 + env.code()
+}
+
+/// The channel-1 key under which an Aiur child's verifying key is supplied.
+pub const AIUR_KEY_SLOT: u64 = 2;
+
+/// Channel 7: the Merkle paths of an Aiur join's theorem (key 0) and
+/// binding (key 1) into the environment's subject root.
+pub const AIUR_PATH_CHANNEL: u64 = 7;
+
 /// Shapes 13 and 14 (`Aggr.dischargeShapeCode`): a child that assumes its
 /// role binding, and in slot 1 an IxVM proof of the `Binding` claim.
 pub fn discharge_shape_code(child: ChildKind) -> u8 {

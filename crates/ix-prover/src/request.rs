@@ -28,7 +28,7 @@ use std::{
   time::Instant,
 };
 
-pub(crate) const IXVM_ENTRY: &str = "IxVM::verify_claim";
+pub const IXVM_ENTRY: &str = "IxVM::verify_claim";
 pub(crate) const RECURSIVE_ENTRIES: [&str; 2] =
   ["MultiStark::verify_multi_stark_proof", "MultiStark::ix_aggr"];
 

@@ -1105,6 +1105,83 @@ module Aggregation {
         "aggr range: batch claim has the wrong entrypoint");
       aggr_assert_digest(aggr_claim_digest(claim, 2), out_claim_digest)
     }
+  fn aggr_member_path(slot: Field, constant: Bytes::AddressRef, root: Bytes::AddressRef) -> () {
+      let (pidx, plen) = hint::<(Field, Field)>("stark.io.info", (7, slot));
+      let path = StarkIO::read_byte_stream(7, pidx, plen);
+      let (present, s1) = aggr_read_byte(path);
+      assert_eq!(UInt8::to_field(present), 1, "aggr aiur: membership path is absent");
+      let (count, steps) = aggr_read_byte(s1);
+      assert_eq!(UInt8::less_than(count, UInt8::BYTE_65), 1,
+        "aggr aiur: Merkle path exceeds 64 steps");
+      let (top, stop) = aggr_fold_path(aggr_leaf_hash(constant), UInt8::to_field(count), steps);
+      let Lists::Node::Nil = (*(stop));
+      assert_eq!(Bytes::address_eq(top, root), 1,
+        "aggr aiur: the constant is not a subject of the environment claim");
+      ()
+    }
+
+  fn aggr_parse_aiur_run(bytes: Bytes::Stream)
+        -> (Bytes::AddressRef, Bytes::AddressRef, Bytes::AddressRef, Bytes::AddressRef,
+            Bytes::AddressRef, Bytes::AddressRef) {
+
+      let (tag0, s) = aggr_read_byte(bytes);
+      assert_eq!(UInt8::to_field(tag0), 232, "aggr aiur: claim is not AiurRun");
+      let (tag1, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(tag1), 3, "aggr aiur: claim is not AiurRun");
+      let (format, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(format), 4, "aggr: unsupported object format");
+      let (validator, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(validator), 3, "aggr: wrong validator identity");
+      let (env, s) = aggr_read_address(s);
+      let (root, s) = aggr_read_address(s);
+      let (theorem_addr, s) = aggr_read_address(s);
+      let (binding, s) = aggr_read_address(s);
+      let (key, s) = aggr_read_address(s);
+      let (claims, stop) = aggr_read_address(s);
+      let Lists::Node::Nil = (*(stop));
+      (env, root, theorem_addr, binding, key, claims)
+    }
+
+  fn aggr_aiur_join(env_kind: Field, ixvm_vk_digest: [Field; 8], self_vk_digest: [Field; 8],
+        verify_idx: Field, aggr_idx: Field, allowed_digest: [Field; 8],
+        out_claim_digest: [Field; 8]) -> () {
+      let env_digest = aggr_child_check_env_digest(env_kind, 0,
+        ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+      let (env_ctx, env_root, env_asm) = aggr_parse_check_env(aggr_load_preimage(env_digest));
+      let (_spec, _binding, _axioms, validator) = env_ctx;
+      assert_eq!((validator - 3) * (validator - 5), 0,
+        "aggr aiur: the environment claim assumes its role binding");
+      assert_eq!(aggr_opt_address_eq(env_asm, Options::Option::None), 1,
+        "aggr aiur: the environment claim has assumptions");
+
+      let (oidx, olen) = hint::<(Field, Field)>("stark.io.info", (2, 2));
+      let output_bytes = StarkIO::read_byte_stream(2, oidx, olen);
+      assert_eq!(Blake3::pack_digest(Blake3::hash(output_bytes)), out_claim_digest,
+        "aggr aiur: output claim digest mismatch");
+      let (env, root, theorem_addr, binding, key, claims_digest) =
+        aggr_parse_aiur_run(output_bytes);
+      aggr_assert_digest(aggr_pack_address(env), env_digest);
+      assert_eq!(Bytes::address_eq(root, env_root), 1,
+        "aggr aiur: subject root differs from the environment claim's");
+
+      let (sidx, slen) = hint::<(Field, Field)>("stark.io.info", (1, 2));
+      let sbytes = StarkIO::read_byte_stream(1, sidx, slen);
+      aggr_assert_digest(Blake3::pack_digest(Blake3::hash(sbytes)), aggr_pack_address(key));
+      let (sys, srest) = SystemDeserialize::read_system(sbytes);
+      let Lists::Node::Nil = (*(srest));
+      let (idx, len) = hint::<(Field, Field)>("stark.io.info", (0, 1));
+      let (cidx, clen) = hint::<(Field, Field)>("stark.io.info", (2, 1));
+      let cbytes = StarkIO::read_byte_stream(2, cidx, clen);
+      let (claims, crest) = StarkVerifier::read_claims(cbytes);
+      let Lists::Node::Nil = (*(crest));
+      assert_eq!(StarkVerifier::verify_batch_at(sys, idx, len, claims), 1);
+      aggr_assert_digest(Blake3::pack_digest(Blake3::hash(cbytes)),
+        aggr_pack_address(claims_digest));
+
+      aggr_member_path(0, theorem_addr, env_root);
+      aggr_member_path(1, binding, env_root);
+      ()
+    }
 }
 ⟧
 

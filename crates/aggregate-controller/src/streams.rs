@@ -10,6 +10,7 @@
 //! | 4 | packed digest | a claim preimage |
 //! | 5 | tree root | a serialized canonical tree |
 //! | 6 | 0, or a candidate | the shape byte, or a structural path |
+//! | 7 | 0 or 1 | an Aiur join's theorem and binding paths |
 //!
 //! Streams keep the order in which they are first added, and adding a key
 //! again replaces its payload in place: the advice layout, and therefore the
@@ -23,7 +24,10 @@ use rustc_hash::FxHashMap;
 
 use crate::{
   advice::{advice_trees, path_payload},
-  protocol::{ChildKind, discharge_shape_code},
+  protocol::{
+    AIUR_KEY_SLOT, AIUR_PATH_CHANNEL, ChildKind, aiur_join_shape_code,
+    discharge_shape_code,
+  },
   statement::{CanonicalTree, Statement, merge_optional_sets},
 };
 
@@ -232,6 +236,33 @@ pub fn discharge<'a>(
   streams.preimage(child_claim);
   streams.preimage(binding_claim);
   Ok(streams)
+}
+
+/// Shapes 17 and 18: the environment child in slot 0, the Aiur child's
+/// verifying key and proof in slot 1, the output `AiurRun` claim, the
+/// environment claim's preimage and the two Merkle paths.
+#[allow(clippy::too_many_arguments)]
+pub fn aiur_join<'a>(
+  keys: Keys<'a>,
+  env: Transport<'a>,
+  env_claim: &'a [u8],
+  aiur_key: &'a [u8],
+  aiur_proof: &'a [u8],
+  aiur_claims: &'a [u8],
+  output: &'a [u8],
+  theorem_path: Vec<u8>,
+  binding_path: Vec<u8>,
+) -> Streams<'a> {
+  let mut streams = Streams::default();
+  streams.identity(keys.allowed, aiur_join_shape_code(env.kind));
+  child(&mut streams, keys, 0, env);
+  streams.extend(1, vec![AIUR_KEY_SLOT], aiur_key);
+  streams.child(1, aiur_proof, aiur_claims);
+  streams.output_claim(output);
+  streams.preimage(env_claim);
+  streams.extend(AIUR_PATH_CHANNEL, vec![0], theorem_path);
+  streams.extend(AIUR_PATH_CHANNEL, vec![1], binding_path);
+  streams
 }
 
 /// Shapes 15 and 16 (`FormalAdvice.streamsCatalog`): both children,
