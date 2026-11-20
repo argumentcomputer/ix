@@ -172,10 +172,16 @@ theorem denoteMeta_shiftFrom
         dsimp only
         rcases i with _ | _ | i <;> rfl
       | some entry =>
-        show some (projAV (i + entry.off) (AnnotTerm.liftN 1 ea (d - p)))
+        show projNodeAV? acval env sn i entry (AnnotTerm.liftN 1 ea (d - p))
           = Option.map (fun x => AnnotTerm.liftN 1 x (d - p))
-            (some (projAV (i + entry.off) ea))
-        simp only [Option.map_some, projAV_liftN]
+            (projNodeAV? acval env sn i entry ea)
+        unfold projNodeAV?
+        split
+        · simp only [Option.map_some, projAV_liftN]
+        · split
+          · simp only [Option.map_some, AnnotTerm.liftN_chain]
+            congr 2; funext m; exact (hacl _ _ _).symm
+          · rfl
   | .lit (.natVal k), d, _, _ => by
     simp only [Ix.Kernel.Expr.shiftFrom, denoteMeta]
     split

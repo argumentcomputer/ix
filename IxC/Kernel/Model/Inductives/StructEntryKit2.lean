@@ -89,6 +89,13 @@ theorem WellDenoted_congr_below :
     intro k ρ ρ' hb hag
     rw [WellDenoted_snd, WellDenoted_snd, ihe k ρ ρ' hb hag,
       interp_congr_below V e k ρ ρ' hb hag]
+  | chain g e ihg ihe =>
+    intro k ρ ρ' hb hag
+    rw [WellDenoted_chain, WellDenoted_chain, ihe k ρ ρ' hb.2 hag]
+    exact and_congr (forall_congr' fun m => ihg m k ρ ρ' (hb.1 m) hag) Iff.rfl
+  | bgraph _ f ihf =>
+    intro k ρ ρ' hb hag
+    rw [WellDenoted_bgraph, WellDenoted_bgraph, ihf k ρ ρ' hb hag]
 
 theorem AnnotValid_congr_below :
     ∀ (e : AnnotTerm) (k : Nat) (ρ ρ' : Nat → V),
@@ -136,6 +143,13 @@ theorem AnnotValid_congr_below :
   | snd e ihe =>
     intro k ρ ρ' hb hag
     rw [AnnotValid_snd, AnnotValid_snd, ihe k ρ ρ' hb hag]
+  | chain g e ihg ihe =>
+    intro k ρ ρ' hb hag
+    rw [AnnotValid_chain, AnnotValid_chain, ihe k ρ ρ' hb.2 hag]
+    exact and_congr (forall_congr' fun m => ihg m k ρ ρ' (hb.1 m) hag) Iff.rfl
+  | bgraph _ f ihf =>
+    intro k ρ ρ' hb hag
+    rw [AnnotValid_bgraph, AnnotValid_bgraph, ihf k ρ ρ' hb hag]
 
 theorem WellDenotedV_congr_below (e : AnnotTerm) (k : Nat) (ρ ρ' : Nat → V)
     (hb : Term.bvarsBelow k e.erase) (hag : ∀ i, i < k → ρ i = ρ' i) :
@@ -223,6 +237,7 @@ theorem denoteMetaSpine_entryParams {acval : Key md → (LevelParam → Nat) →
 depth `nP + 1`, through the stored tower entries. -/
 theorem denoteMetaSpine_entryProjs {acval : Key md → (LevelParam → Nat) → AnnotTerm} {env : Env md}
     {φ : LevelParam → Nat} {nP off : Nat} {T : Key md} {sdom : Expr md}
+    (hoff : off ≤ 1)
     (hprev : ∀ j, j < i → ∃ entry, env.findProj? T j = some entry ∧ entry.off = off) :
     DenoteMetaSpine acval env φ (nP + 1)
       ((List.range i).map fun j => Expr.proj T j (.fvar nP sdom)) (entryProjAVs off i) := by
@@ -237,11 +252,12 @@ theorem denoteMetaSpine_entryProjs {acval : Key md → (LevelParam → Nat) → 
   | nil => intro _; exact .nil
   | cons j l ih =>
     intro hl
-    obtain ⟨entry, hfe, hoff⟩ := hprev j (hl j List.mem_cons_self)
+    obtain ⟨entry, hfe, hof⟩ := hprev j (hl j List.mem_cons_self)
     simp only [List.map_cons]
     refine .cons ?_ (ih fun j' hj' => hl j' (List.mem_cons_of_mem _ hj'))
-    rw [denoteMeta_proj_tower hfe (denoteMeta_fvar acval (nP + 1) nP sdom),
-      show nP + 1 - 1 - nP = 0 from by omega, hoff]
+    have hle : entry.off ≤ 1 := by omega
+    rw [denoteMeta_proj_tower hfe (Or.inl hle) (denoteMeta_fvar acval (nP + 1) nP sdom),
+      projNodeAV_of_le_one hle, show nP + 1 - 1 - nP = 0 from by omega, hof]
 
 /-- **The chain frame agrees with the projection spine's frame** below
 the field's depth: the parameter readings pick the frame's parameter

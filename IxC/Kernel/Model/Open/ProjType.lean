@@ -116,7 +116,7 @@ theorem proj_type_reads (hse : StoredEnv env) {d : Nat} {sn : Key md} {i : Nat}
       ∀ σ, Ctx M φ σ pe → ∀ P T, Den M φ σ pe P → Gr M φ σ pe → Den M φ σ tpe T →
         Gr M φ σ tpe → P ∈ˢ T →
         ∃ B, Den M φ σ (entry.typeAt us te.getAppArgs pe) B ∧
-          Gr M φ σ (entry.typeAt us te.getAppArgs pe) ∧ field (i + entry.off) P ∈ˢ B := by
+          Gr M φ σ (entry.typeAt us te.getAppArgs pe) ∧ projVal M.cval sn i entry P ∈ˢ B := by
   obtain ⟨hfte, hsubte, kte⟩ := hte hftpe
   obtain ⟨hbf, hbb⟩ := hse.bodies sn i entry hP
   obtain ⟨-, hO5, -, -⟩ := hse.tables sn i entry hP
@@ -216,7 +216,7 @@ theorem Infer.proj_sound (hse : StoredEnv env) {g : Grade} {d : Nat} {sn : Key m
     obtain ⟨hft, hsubt, kt⟩ := proj_type_reads hse hte hhead hP hlen hus hfire hfpe hftpe hsub
     refine ⟨hft, hsubt, fun σ hC v hv hg => ?_⟩
     have hCpe : Ctx M φ σ pe := hC.of_subset fun l hl => by simpa [Expr.fvarLeaves] using hl
-    obtain ⟨P, hPd, rfl⟩ : ∃ P, Den M φ σ pe P ∧ v = field (i + entry.off) P := by
+    obtain ⟨P, hPd, rfl⟩ : ∃ P, Den M φ σ pe P ∧ v = projVal M.cval sn i entry P := by
       cases hv with
       | proj_table ht he => rw [hP] at ht; cases ht; exact ⟨_, he, rfl⟩
       | proj_fst ht _ => rw [hP] at ht; exact nomatch ht

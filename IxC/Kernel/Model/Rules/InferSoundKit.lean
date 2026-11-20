@@ -543,6 +543,17 @@ theorem WellDenotedV_projAV_hoist {i : Nat} {e : AnnotTerm} {σ : Nat → V}
     (hok : WellDenotedV V σ (projAV i e)) : WellDenotedV V σ e :=
   ⟨WellDenoted_projAV_hoist hok.1, AnnotValid_projAV_hoist hok.2⟩
 
+theorem WellDenotedV_projNodeAV_hoist {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {sn : Key md} {i : Nat} {entry : ProjEntry md} {e : AnnotTerm} {σ : Nat → V}
+    (hok : WellDenotedV V σ (projNodeAV acval sn i entry e)) :
+    WellDenotedV V σ e := by
+  by_cases hle : entry.off ≤ 1
+  · rw [projNodeAV_of_le_one hle] at hok
+    exact WellDenotedV_projAV_hoist hok
+  · rw [projNodeAV_of_gt_one hle] at hok
+    exact ⟨((WellDenoted_chain V σ _ e) ▸ hok.1).2,
+      ((AnnotValid_chain V σ _ e) ▸ hok.2).2⟩
+
 /-! ## The tower-entry kit (`Steps/TowerKit.lean`, `Steps/Stuck.lean`)
 
 The `.proj` rule's reading walk, transplanted: the spine inversion,

@@ -685,8 +685,15 @@ theorem Red.rescueEta_sound (hin : RulesInputs V m φ) {d : Nat}
       intro j hj
       obtain ⟨entry, hfe⟩ :=
         Ix.Kernel.towerSlotsAll_slot htow j (List.mem_range.mp hj)
-      rw [← Ix.Kernel.Env.findProj?_off hfe]
-      exact denoteMeta_proj_tower hfe hea
+      obtain ⟨-, -, -, ⟨_, capsTj, hfTj, -, himpj⟩, -⟩ :=
+        hin.tower_ok T j entry hfe
+      have hcapsTj : capsTj = caps := by
+        rw [hind] at hfTj
+        exact (Ix.Kernel.ConstantInfo.indInfo.inj (Option.some.inj hfTj)).2.symm
+      obtain ⟨-, -, -, -, hoffj⟩ := himpj (by rw [hcapsTj]; exact hcapseta)
+      rw [← Ix.Kernel.Env.findProj?_off hfe,
+        ← projNodeAV_of_le_one (acval := m.acval) (sn := T) (i := j) hoffj]
+      exact denoteMeta_proj_tower hfe (Or.inl hoffj) hea
     have hokProj : ∀ j ∈ List.range caps.etaFields,
         Graded V Δa (projAV (j + env.projOff T) ea) := by
       intro j hj ρ hρ
@@ -701,7 +708,7 @@ theorem Red.rescueEta_sound (hin : RulesInputs V m φ) {d : Nat}
       have hcapsTj : capsTj = caps := by
         rw [hind] at hfTj
         exact (Ix.Kernel.ConstantInfo.indInfo.inj (Option.some.inj hfTj)).2.symm
-      obtain ⟨hnpj, -, hparj, -⟩ := himpj (by rw [hcapsTj]; exact hcapseta)
+      obtain ⟨hnpj, -, hparj, -, hoffj⟩ := himpj (by rw [hcapsTj]; exact hcapseta)
       rw [hcapsTj] at hparj
       have hlpe : entry.levelParams = cvT.levelParams := by rw [← hlpsTj, hcvTj]
       have hgj : TowerGuardAt φ entry ust :=
@@ -716,8 +723,9 @@ theorem Red.rescueEta_sound (hin : RulesInputs V m φ) {d : Nat}
           (by rw [Ix.Kernel.projTele_stripPis]; rfl) (hTad d)
       obtain ⟨restj, hpeel⟩ := peelPis_of_piChain _ hpc
       rw [hlpe, ← hvT'] at hA
-      exact (hA hgj ρ tsa ea restj hlenVs (hgTm ρ hρ) (hgM ρ hρ)
+      have hAj := (hA hgj ρ tsa ea restj hlenVs (hgTm ρ hρ) (hgM ρ hρ)
         (hmemMW ρ hρ) hpeel).1
+      rwa [projNodeAV_of_le_one hoffj] at hAj
     have hspF : DenoteMetaSpine m.acval env φ d
         (Ix.Kernel.etaFabArgsE env T ust tmaj.getAppArgs major caps.etaFields)
         (tsa ++ (List.range caps.etaFields).map fun j =>
@@ -960,13 +968,13 @@ theorem Red.rescueAnd_sound (hin : RulesInputs V m φ) {d : Nat}
     exact (Option.some.inj hvT).symm
   -- each projection: read to the tower reading, graded by the law
   have hproj : ∀ j, j < 2 →
-      denoteMeta m.acval env φ d (Expr.proj andName j major)
-          = some (projAV (j + env.projOff andName) ea) ∧
-        Graded V Δa (projAV (j + env.projOff andName) ea) := by
+      ∃ pa : AnnotTerm,
+        denoteMeta m.acval env φ d (Expr.proj andName j major) = some pa ∧
+        Graded V Δa pa := by
     intro j hj
     obtain ⟨entry, hfe, -, hnP, -, hfire⟩ := hslot j hj
-    rw [← Ix.Kernel.Env.findProj?_off hfe]
-    refine ⟨denoteMeta_proj_tower hfe hea, ?_⟩
+    refine ⟨projNodeAV m.acval andName j entry ea,
+      denoteMeta_proj_tower_ok m.proj_ok hfe hea, ?_⟩
     intro ρ hρ
     obtain ⟨-, -, -, ⟨cvTj, capsTj, hfTj, hlpsTj, -⟩, hO5j, cvCj, hfCj, hlpsCj,
       hlawj, -⟩ := hin.tower_ok andName j entry hfe
@@ -987,16 +995,17 @@ theorem Red.rescueAnd_sound (hin : RulesInputs V m φ) {d : Nat}
     rw [hlpe, ← hvT'] at hA
     exact (hA hgj ρ tsa ea restj hlenVs (hgTm ρ hρ) (hgM ρ hρ)
       (hmemMW ρ hρ) hpeel).1
+  obtain ⟨pa0, hpa0, hokpa0⟩ := hproj 0 (by decide)
+  obtain ⟨pa1, hpa1, hokpa1⟩ := hproj 1 (by decide)
   -- the fabrication reads and is graded
   have hheadCj : denoteMeta m.acval env φ d (.const rl.ctor ust)
       = some (m.acval rl.ctor (Level.substFn φ cvj.levelParams ust)) :=
     denoteMeta_const hctor (show ust.length = _ from hlv.symm)
   have hspF : DenoteMetaSpine m.acval env φ d
       (tmaj.getAppArgs ++ [.proj andName 0 major, .proj andName 1 major])
-      (tsa ++ [projAV (0 + env.projOff andName) ea,
-        projAV (1 + env.projOff andName) ea]) :=
-    hspt.append (DenoteMetaSpine.cons (hproj 0 (by decide)).1
-      (DenoteMetaSpine.cons (hproj 1 (by decide)).1 DenoteMetaSpine.nil))
+      (tsa ++ [pa0, pa1]) :=
+    hspt.append (DenoteMetaSpine.cons hpa0
+      (DenoteMetaSpine.cons hpa1 DenoteMetaSpine.nil))
   have hprFr : ∀ j, Frame d (Expr.proj andName j major) ∧
       CtxOk m φ d Δa (Expr.proj andName j major) := fun j =>
     ⟨⟨by simpa [Expr.WScoped] using hfM.1,
@@ -1013,28 +1022,25 @@ theorem Red.rescueAnd_sound (hin : RulesInputs V m φ) {d : Nat}
       · exact hprFr 0
       · rcases List.mem_singleton.mp hx'' with rfl
         exact hprFr 1
-  have hoksF : ∀ x ∈ (tsa ++ [projAV (0 + env.projOff andName) ea,
-      projAV (1 + env.projOff andName) ea]), Graded V Δa x := by
+  have hoksF : ∀ x ∈ (tsa ++ [pa0, pa1]), Graded V Δa x := by
     intro x hx
     rcases List.mem_append.mp hx with hx' | hx'
     · exact hoTs x hx'
     · rcases List.mem_cons.mp hx' with rfl | hx''
-      · exact (hproj 0 (by decide)).2
+      · exact hokpa0
       · rcases List.mem_singleton.mp hx'' with rfl
-        exact (hproj 1 (by decide)).2
+        exact hokpa1
   have hdF : denoteMeta m.acval env φ d fab
       = some (AnnotTerm.mkAppN
         (m.acval rl.ctor (Level.substFn φ cvj.levelParams ust))
-        (tsa ++ [projAV (0 + env.projOff andName) ea,
-          projAV (1 + env.projOff andName) ea])) := by
+        (tsa ++ [pa0, pa1])) := by
     rw [hfab]; exact denoteMeta_mkAppN hspF hheadCj
   obtain ⟨resta, hfit, -⟩ :=
     hcerts (fa := m.acval rl.ctor (Level.substFn φ cvj.levelParams ust))
       hfJ hCJ (hTVjaD d) (fun ρ _ => hokTVja ρ) hfrF hspF hoksF (by simp)
   have hgF : Graded V Δa (AnnotTerm.mkAppN
       (m.acval rl.ctor (Level.substFn φ cvj.levelParams ust))
-      (tsa ++ [projAV (0 + env.projOff andName) ea,
-        projAV (1 + env.projOff andName) ea])) :=
+      (tsa ++ [pa0, pa1])) :=
     fun ρ hρ => (mkAppN_of_fitA _ (hokTVja ρ)
       ⟨m.acval_wellDenoted _ _ ρ, hin.leaf_valid _ _ ρ⟩
       (fun x hx => hoksF x hx ρ hρ) (hmemCj ρ) (hfit ρ hρ)).1

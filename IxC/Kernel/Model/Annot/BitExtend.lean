@@ -60,7 +60,8 @@ theorem denoteMeta_envExtend {env₀ env : Env md}
     {acval : Key md → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
     (hF : FindPreserved env₀ env) (hG : LitGuardsAgree env₀ env)
     (hproj : ∀ (sn : Key md) (i : Nat),
-      env₀.findProj? sn i = none → env.findProj? sn i = none) :
+      env₀.findProj? sn i = none → env.findProj? sn i = none)
+    (hpok : Ix.Kernel.ProjOkT env₀) :
     DenotePEnvExtend env₀ env acval φ := by
   -- a preserved lookup carries its entry across unchanged
   have hmono : ∀ (sn : Key md) (i : Nat) (entry : Ix.Kernel.ProjEntry md),
@@ -112,13 +113,24 @@ theorem denoteMeta_envExtend {env₀ env : Env md}
     | none => rfl
     | some ea =>
       show (match env₀.findProj? sn i with
-          | some entry => some (projAV (i + entry.off) ea)
+          | some entry => projNodeAV? acval env₀ sn i entry ea
           | none => AnnotTerm.projPair? i ea)
         = (match env.findProj? sn i with
-          | some entry => some (projAV (i + entry.off) ea)
+          | some entry => projNodeAV? acval env sn i entry ea
           | none => AnnotTerm.projPair? i ea)
       cases hfp0 : env₀.findProj? sn i with
-      | some entry => rw [hmono sn i entry hfp0]
+      | some entry =>
+        rw [hmono sn i entry hfp0]
+        dsimp only
+        unfold projNodeAV?
+        split
+        · rfl
+        · rename_i hgt
+          have hs0 : (env₀.find? (Ix.Kernel.projChainKey sn i)).isSome = true :=
+            hpok.chain_isSome hfp0 hgt
+          cases hfc : env₀.find? (Ix.Kernel.projChainKey sn i) with
+          | none => rw [hfc] at hs0; exact nomatch hs0
+          | some ci => rw [hF hfc]
       | none => rw [hproj sn i hfp0]
   | case11 d n hsup =>
     intro _
@@ -242,10 +254,17 @@ theorem denoteMeta_envExtend_mono {env₀ env : Env md}
     intro hc ea h
     rw [constsBound_proj] at hc
     obtain ⟨ea', hea', hcase⟩ := denoteMeta_proj_inv h
-    rcases hcase with ⟨entry, hfp0, rfl⟩ | ⟨hnt0, hdec⟩
+    rcases hcase with ⟨entry, hfp0, hnode⟩ | ⟨hnt0, hdec⟩
     · -- a table entry at the prefix persists unchanged
       rw [denoteMeta, ihe hc hea', hmono sn i entry hfp0]
-      rfl
+      obtain ⟨hrdy, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode
+      refine projNodeAV?_eq_some_iff.mpr ⟨?_, rfl⟩
+      rcases hrdy with hle | hs0
+      · exact Or.inl hle
+      · right
+        cases hfc : env₀.find? (Ix.Kernel.projChainKey sn i) with
+        | none => rw [hfc] at hs0; exact nomatch hs0
+        | some ci => rw [hF hfc]; rfl
     · -- the table-free path: the extension adds no entry either
       rw [denoteMeta, ihe hc hea', hproj sn i hnt0]
       exact hdec

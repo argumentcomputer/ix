@@ -228,6 +228,7 @@ def BConst.typeAV : BConst → List Nat → AnnotTerm
     .pi (u + 1) m (.sort u) <|
     .pi m m (arrowA m m (arrowA u (w + 1) (.bvar 0) (.sort w)) (arrowA u (w + 1) (.bvar 0) (.sort w))) <|
     .pi u (w + 1) (.bvar 1) (.sort w)
+  | .unpackGraph _, us => .sort (lv us 0 + 1)
 
 /-! ## Faithfulness
 

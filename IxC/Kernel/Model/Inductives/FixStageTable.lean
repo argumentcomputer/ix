@@ -355,7 +355,7 @@ theorem stageFixTable (mp : EnvModelM V μ env)
   -- the head data at every field
   have hhead : ∀ i, i < nF → Ix.Kernel.TowerHead ⟨.projInfo tbl :: env.consts⟩ (tbl.entry i) :=
     fun i hi => ⟨hresT, hresC, hi, ⟨cvTa, caps, hfT₂, hlpsT, hsortT⟩,
-      ⟨cvCa, hfC₂, hlpsC, hresultC⟩⟩
+      ⟨cvCa, hfC₂, hlpsC, hresultC⟩, Or.inl (Nat.le_refl 1)⟩
   suffices hlaw : ∀ m₂ : EnvModel V ⟨.projInfo tbl :: env.consts⟩,
       m₂.acval = acvalWith mp.base2.acval (ConstantInfo.projInfo tbl).name (fun _ => .sort 0) →
       ∀ (φ : LevelParam → Nat) (i : Nat), i < tbl.numFields →
@@ -394,13 +394,14 @@ theorem stageFixTable (mp : EnvModelM V μ env)
   -- the body, opened at the variables
   obtain ⟨cds, bodyB, mbB, hcf⟩ :=
     Ix.Kernel.structProjBody_open hbodies hstripC hCb hi
-  refine ⟨rfl, rfl, hi, ⟨cvTa, caps, hfT₂, hlpsT, hcaps⟩,
+  refine ⟨rfl, rfl, hi, ⟨cvTa, caps, hfT₂, hlpsT, fun he =>
+      let ⟨h1, h2, h3, h4⟩ := hcaps he; ⟨h1, h2, h3, h4, Nat.le_refl 1⟩⟩,
     hO5 i hi, cvCa, hfC₂, hlpsC, ?_, ?_⟩
   · -- the per-instantiation laws
     intro us _
     -- the subject's frame: a member of the one-constructor fibre of
     -- the tagged union (offset 1)
-    obtain ⟨fdomA, hfdA, hokFd, hresFd⟩ := bodyFrames m₂ (off := 1) hcf hCf hCb
+    obtain ⟨fdomA, hfdA, hokFd, hresFd⟩ := bodyFrames m₂ (off := 1) (hoff := Nat.le_refl 1) hcf hCf hCb
       (fun j hj => by
         obtain ⟨entry, hfe⟩ := hprev₂ j (by omega)
         refine ⟨entry, hfe, ?_⟩
@@ -456,6 +457,7 @@ theorem stageFixTable (mp : EnvModelM V μ env)
         show m₂.acval p.cvT.name (Level.substFn φ p.cvT.levelParams us) = _
         rw [hacT, hleafT]
       rw [hacT'] at hokApp hmem
+      rw [projNodeAV_of_le_one (Nat.le_refl 1)]
       exact fixEntryTypingCore (hCDlen _) (hFD.len _) (by simp) (hiff _) (hokB _)
         (hsortsF _) (used := Ix.Kernel.structUsedLater cvCa.type p.nP) hguard' (hfree _ i hi) hi
         (hfold _) hresFd (hokFd (fun h0 => (hguard' h0).2)) ρ vs x rest hlenVs hokApp hokx hmem
@@ -476,6 +478,7 @@ theorem stageFixTable (mp : EnvModelM V μ env)
           show m₂.acval cvCa.name (Level.substFn φ p.cvT.levelParams us) = _
           rw [hacC, hleafC]
         rw [hacC'] at hok ⊢
+        rw [projNodeAV_of_le_one (Nat.le_refl 1)]
         show interp V ρ (projAV (i + 1) _) = _
         by_cases hw : p.resSort.eval (Level.substFn φ p.cvT.levelParams us) = 0
         · -- squash: the certified fit pins the selected field to a
@@ -489,7 +492,7 @@ theorem stageFixTable (mp : EnvModelM V μ env)
         · -- graph: the grading's slot chain
           exact fixEntryIotaCore hw (hCDlen _) hi (hokB _) ys hlen hok
   · -- (C)
-    intro cvT capsT hf us _
+    intro _ cvT capsT hf us _
     obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj (Option.some.inj (hfT₂.symm.trans hf))
     refine ⟨mkPisAV (pps (Level.substFn φ p.cvT.levelParams us))
       (.sort (p.resSort.eval (Level.substFn φ p.cvT.levelParams us))), ?_, hFD.okTy _, ?_⟩

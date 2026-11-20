@@ -320,6 +320,47 @@ theorem interp_congr {i : Nat} {e e' : AnnotTerm} {σ : Nat → V}
 
 end ProjAV
 
+namespace ProjNodeAV
+
+theorem hoistV {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {sn : Key md} {i : Nat} {entry : ProjEntry md} {e : AnnotTerm} {σ : Nat → V}
+    (hok : WellDenotedV V σ (projNodeAV acval sn i entry e)) :
+    WellDenotedV V σ e := by
+  by_cases hle : entry.off ≤ 1
+  · rw [projNodeAV_of_le_one hle] at hok
+    exact ProjAV.hoistV hok
+  · rw [projNodeAV_of_gt_one hle] at hok
+    exact ⟨((WellDenoted_chain V σ _ e) ▸ hok.1).2,
+      ((AnnotValid_chain V σ _ e) ▸ hok.2).2⟩
+
+theorem congrV {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {sn : Key md} {i : Nat} {entry : ProjEntry md} {e e' : AnnotTerm} {σ : Nat → V}
+    (heq : interp V σ e = interp V σ e') (hok' : WellDenotedV V σ e')
+    (hok : WellDenotedV V σ (projNodeAV acval sn i entry e)) :
+    WellDenotedV V σ (projNodeAV acval sn i entry e') := by
+  by_cases hle : entry.off ≤ 1
+  · rw [projNodeAV_of_le_one hle] at hok ⊢
+    exact ProjAV.congrV heq hok' hok
+  · rw [projNodeAV_of_gt_one hle] at hok ⊢
+    refine ⟨?_, ?_⟩
+    · rw [WellDenoted_chain]
+      exact ⟨((WellDenoted_chain V σ _ e) ▸ hok.1).1, hok'.1⟩
+    · rw [AnnotValid_chain]
+      exact ⟨((AnnotValid_chain V σ _ e) ▸ hok.2).1, hok'.2⟩
+
+theorem interp_congr {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {sn : Key md} {i : Nat} {entry : ProjEntry md} {e e' : AnnotTerm} {σ : Nat → V}
+    (heq : interp V σ e = interp V σ e') :
+    interp V σ (projNodeAV acval sn i entry e) =
+      interp V σ (projNodeAV acval sn i entry e') := by
+  by_cases hle : entry.off ≤ 1
+  · rw [projNodeAV_of_le_one hle, projNodeAV_of_le_one hle]
+    exact ProjAV.interp_congr heq
+  · rw [projNodeAV_of_gt_one hle, projNodeAV_of_gt_one hle,
+      interp_chain, interp_chain, heq]
+
+end ProjNodeAV
+
 
 /-! ## The β step at the currency (`Steps/Whnf.lean:117-161`, transplanted) -/
 
@@ -529,7 +570,7 @@ theorem piChain_succ_inv {n : Nat} {e : AnnotTerm} (h : PiChain (n + 1) e) :
   match e with
   | .pi u v A B => exact ⟨u, v, A, B, rfl, h⟩
   | .bvar _ | .sort _ | .const _ _ | .app _ _ | .lam _ _ _
-  | .eqE _ _ | .fst _ | .snd _ | .prf => exact nomatch h
+  | .eqE _ _ | .fst _ | .snd _ | .prf | .chain _ _ | .bgraph _ _ => exact nomatch h
 
 theorem PiChain.inst : ∀ {n : Nat} {e : AnnotTerm} (a : AnnotTerm) (k : Nat),
     PiChain n e → PiChain n (e.inst a k) := by

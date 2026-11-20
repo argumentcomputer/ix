@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.BasisA
 public import IxC.Kernel.Verify.EnvWF
+public import IxC.Kernel.Denotes
 
 public section
 
@@ -334,7 +335,20 @@ S1: the entry carries a *body*, not a type; the bodies' scoping is
     ∃ bs, cvC.type.stripPis (entry.numParams + entry.numFields) = some (bs,
       Expr.mkAppN (.const entry.structName (entry.levelParams.map .param))
         ((List.range entry.numParams).map fun k =>
-          .bvar (entry.numFields + entry.numParams - 1 - k))))
+          .bvar (entry.numFields + entry.numParams - 1 - k)))) ∧
+  (entry.off ≤ 1 ∨
+    ∃ cv : ConstantVal md,
+      env.find? (projChainKey entry.structName entry.idx) = some (.axiomInfo cv))
+
+/-- When a table entry has `TowerHead`, any modeled chain constant it relies on
+(`entry.off ≥ 2`) is stored in `env`. -/
+theorem TowerHead.chain_isSome {env : Env md} {entry : ProjEntry md}
+    (h : TowerHead env entry) (hgt : ¬ entry.off ≤ 1) :
+    (env.find? (projChainKey entry.structName entry.idx)).isSome = true := by
+  obtain ⟨-, -, -, -, -, hch⟩ := h
+  rcases hch with hle | ⟨cv, hf⟩
+  · exact absurd hle hgt
+  · rw [hf]; rfl
 
 /-- A table entry's constructor type is a `∀`-telescope at the entry's
 arities. -/
@@ -342,21 +356,23 @@ theorem TowerHead.ctor_stripPis_isSome {env : Env md} {entry : ProjEntry md}
     {cvC : ConstantVal md} (h : TowerHead env entry)
     (hC : env.find? entry.ctor = some (.ctorInfo cvC entry.numParams entry.numFields)) :
     (cvC.type.stripPis (entry.numParams + entry.numFields)).isSome = true := by
-  obtain ⟨-, -, -, -, ⟨cvC', hC', -, bs, hs⟩⟩ := h
+  obtain ⟨-, -, -, -, ⟨cvC', hC', -, bs, hs⟩, -⟩ := h
   rw [hC] at hC'
   obtain ⟨rfl, -, -⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hC')
   rw [hs]; rfl
 
-/-- The head data survives any extension that keeps the two lookups. -/
+/-- The head data survives any extension that keeps the stored non-recursor lookups. -/
 theorem TowerHead.mono {env env' : Env md} {entry : ProjEntry md}
     (hkeep : ∀ (n : Key md) (ci : ConstantInfo md),
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       env.find? n = some ci → env'.find? n = some ci)
     (h : TowerHead env entry) : TowerHead env' entry := by
-  obtain ⟨h2, h4, h5, ⟨cvT, caps, hT, hlT, hsT⟩, ⟨cvC, hC, hlC, hstrip⟩⟩ := h
+  obtain ⟨h2, h4, h5, ⟨cvT, caps, hT, hlT, hsT⟩, ⟨cvC, hC, hlC, hstrip⟩, hch⟩ := h
   exact ⟨h2, h4, h5,
     ⟨cvT, caps, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hT, hlT, hsT⟩,
-    ⟨cvC, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hC, hlC, hstrip⟩⟩
+    ⟨cvC, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hC, hlC, hstrip⟩,
+    hch.imp id fun ⟨cv, hf⟩ =>
+      ⟨cv, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hf⟩⟩
 
 /-- **The projection-table discipline**: every stored table carries,
 at each of its fields, the syntactic head data (`TowerHead`).
@@ -401,6 +417,18 @@ theorem ProjOkT.towerHead {env : Env md} (h : ProjOkT env)
     TowerHead env entry := by
   obtain ⟨tbl, hf', hi, rfl⟩ := Env.findProj?_some hf
   exact h _ _ hf' i hi
+
+/-- When `ProjOkT env` holds and `entry.off ≥ 2`, the chain constant for `(sn, i)` is stored in `env`. -/
+theorem ProjOkT.chain_isSome {env : Env md} (h : ProjOkT env)
+    {sn : Key md} {i : Nat} {entry : ProjEntry md}
+    (hf : env.findProj? sn i = some entry) (hgt : ¬ entry.off ≤ 1) :
+    (env.find? (projChainKey sn i)).isSome = true := by
+  obtain ⟨tbl, hf', hi, rfl⟩ := Env.findProj?_some hf
+  have hname : (ConstantInfo.projInfo tbl).name = projTableName sn :=
+    eq_of_beq (by simpa using List.find?_some hf')
+  have hsn : tbl.structName = sn := (Key.aux.inj hname).1
+  have hch := (h _ _ hf' i hi).chain_isSome hgt
+  simpa [ProjTable.entry, hsn] using hch
 
 theorem BasisBlocks.empty : (BasisBlocks (md := md)) Env.empty := by
   refine ⟨?_, ?_, ?_⟩ <;>

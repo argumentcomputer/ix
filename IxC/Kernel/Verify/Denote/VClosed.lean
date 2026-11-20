@@ -49,6 +49,8 @@ namespace Term
   | n, .fst e => bvarsBelow n e
   | n, .snd e => bvarsBelow n e
   | _, .prf => True
+  | n, .chain g e => (∀ m, bvarsBelow n (g m)) ∧ bvarsBelow n e
+  | n, .bgraph _ f => bvarsBelow n f
 
 /-- Closed: no loose de Bruijn variables at all. -/
 abbrev Closed (v : Term) : Prop := bvarsBelow 0 v
@@ -70,6 +72,8 @@ theorem bvarsBelow.mono : ∀ {v : Term} {m n : Nat}, m ≤ n →
     intro m n hmn h; exact ⟨iha hmn h.1, ihb hmn h.2⟩
   | fst e ihe => intro m n hmn h; exact ihe hmn h
   | snd e ihe => intro m n hmn h; exact ihe hmn h
+  | chain g e ihg ihe => intro m n hmn h; exact ⟨fun j => ihg j hmn (h.1 j), ihe hmn h.2⟩
+  | bgraph _ f ihf => intro m n hmn h; exact ihf hmn h
 
 /-- Lifting at a cut a term is already below is a no-op. -/
 theorem liftN_eq_self : ∀ {v : Term} {k : Nat}, bvarsBelow k v →
@@ -90,6 +94,11 @@ theorem liftN_eq_self : ∀ {v : Term} {k : Nat}, bvarsBelow k v →
     intro k h n; rw [liftN_eqE, iha h.1, ihb h.2]
   | fst e ihe => intro k h n; rw [liftN_fst, ihe h]
   | snd e ihe => intro k h n; rw [liftN_snd, ihe h]
+  | chain g e ihg ihe =>
+    intro k h n
+    rw [liftN_chain, ihe h.2]
+    congr 1; funext m; exact ihg m (h.1 m) n
+  | bgraph _ f ihf => intro k h n; rw [liftN_bgraph, ihf h]
 
 /-- Instantiating at a cut a term is already below is a no-op. -/
 theorem inst_eq_self : ∀ {v : Term} {k : Nat}, bvarsBelow k v →
@@ -110,6 +119,11 @@ theorem inst_eq_self : ∀ {v : Term} {k : Nat}, bvarsBelow k v →
     intro k h a; rw [inst_eqE, ihb h.1, ihc h.2]
   | fst e ihe => intro k h a; rw [inst_fst, ihe h]
   | snd e ihe => intro k h a; rw [inst_snd, ihe h]
+  | chain g e ihg ihe =>
+    intro k h a
+    rw [inst_chain, ihe h.2]
+    congr 1; funext m; exact ihg m (h.1 m) a
+  | bgraph _ f ihf => intro k h a; rw [inst_bgraph, ihf h]
 
 /-- A closed term is invariant under lifting at any cut. -/
 theorem liftN_eq_self_of_closed {v : Term} (h : Closed v) (n k : Nat) :

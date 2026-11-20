@@ -497,8 +497,10 @@ theorem Denotes.substPullback {P : Ix.Kernel.Mode.Id .source → Prop}
     obtain ⟨rfl, rfl, rfl⟩ := he
     rw [h.findProj? hg.1] at ht
     obtain ⟨entry₀, hentry₀, rfl⟩ := Option.map_eq_some_iff.mp ht
-    have hoff : (ProjEntry.substKeys ρf entry₀).off = entry₀.off := rfl
-    rw [hoff]
+    have hpv : Ix.Kernel.projVal cval' (Ix.LeanIngress.Key.subst ρf T₀) i
+        (ProjEntry.substKeys ρf entry₀) P₀ =
+        Ix.Kernel.projVal (substCval ρf cval') T₀ i entry₀ P₀ := rfl
+    rw [hpv]
     exact .proj_table hentry₀ (ihe rfl hg.2)
   | @proj_fst ρv T e₀ P₀ ht _ ihe =>
     intro e he hg

@@ -64,7 +64,7 @@ inductive DenotesO (cval : Key md → (LevelParam → Nat) → V) (env : Env md)
       DenotesO cval env φ σ ρ (.forallE ty body m) (piR (regime φ m.pw) A B)
   | proj_table {ρ : BVarIdx → V} {T : Key md} {i : Nat} {e : Expr md} {entry : ProjEntry md}
       {P : V} (ht : env.findProj? T i = some entry) (he : DenotesO cval env φ σ ρ e P) :
-      DenotesO cval env φ σ ρ (.proj T i e) (field (i + entry.off) P)
+      DenotesO cval env φ σ ρ (.proj T i e) (projVal cval T i entry P)
   | proj_fst {ρ : BVarIdx → V} {T : Key md} {e : Expr md} {P : V}
       (ht : env.findProj? T 0 = none) (he : DenotesO cval env φ σ ρ e P) :
       DenotesO cval env φ σ ρ (.proj T 0 e) (sfst P)

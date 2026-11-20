@@ -88,11 +88,12 @@ theorem denoteMeta_cons_fresh {acval : Key md → (LevelParam → Nat) → Annot
     (hfresh : env.find? c₀.name = none)
     (hntc : ∀ entry, c₀ ≠ .projInfo entry)
     (hlga : LitGuardsAgree env ⟨c₀ :: env.consts⟩)
+    (hpok : Ix.Kernel.ProjOkT env)
     (ψ : LevelParam → Nat) (d : Nat) (e : Expr md) (hcb : ConstsBound env e) :
     denoteMeta (acvalWith acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ d e
       = denoteMeta acval env ψ d e := by
   rw [← denoteMeta_envExtend (findPreserved_cons hfresh) hlga
-      (Ix.Kernel.Verify.findProj?_cons_of_base_none hntc)
+      (Ix.Kernel.Verify.findProj?_cons_of_base_none hntc) hpok
       d e hcb,
     denoteMeta_acvalWith_fresh hfresh d e]
 

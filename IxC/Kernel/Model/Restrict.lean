@@ -335,7 +335,7 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
     obtain ⟨hι, hη⟩ := hlaws us φ ρ Fd Kd hus (Denotes.mono_env hfind' hproj' hlit hFd hKT)
       (Denotes.mono_env hfind' hproj' hlit hKd hKC)
     refine ⟨fun hg σ R ys hys hfit => hι hg σ R ys hys ?_,
-      fun σ R ts x hts hfit hx => hη σ R ts x hts ?_ hx⟩
+      fun hoff σ R ts x hts hfit hx => hη hoff σ R ts x hts ?_ hx⟩
     · exact (Fits.mono_env hfind' hproj' hlit hfit
         (Expr.RefsIn.instantiateLevelParams _ _ (htype _ hmC))).1
     · exact (Fits.mono_env hfind' hproj' hlit hfit

@@ -673,7 +673,8 @@ dummy binders carry the reading only; the law never reads them. -/
       (Level.isEquiv entry.structSort .zero == some true) = false ∧
       capsT.etaCtor = some entry.ctor ∧
       capsT.etaParams = entry.numParams ∧
-      capsT.etaFields = entry.numFields)) ∧
+      capsT.etaFields = entry.numFields ∧
+      entry.off ≤ 1)) ∧
   TowerO5 entry ∧
   ∃ cvC : ConstantVal md,
     env.find? entry.ctor
@@ -694,8 +695,8 @@ dummy binders carry the reading only; the law never reads them. -/
           interp V ρ x ∈ˢ interp V ρ (AnnotTerm.mkAppN
             (m.acval T (Level.substFn φ entry.levelParams us)) vs) →
           Ix.Kernel.Model.AnnotTerm.peelPis Ta (vs ++ [x]) = some rest →
-          WellDenotedV V ρ (projAV (i + entry.off) x) ∧ WellDenotedV V ρ rest ∧
-            interp V ρ (projAV (i + entry.off) x) ∈ˢ interp V ρ rest)) ∧
+          WellDenotedV V ρ (projNodeAV m.acval T i entry x) ∧ WellDenotedV V ρ rest ∧
+            interp V ρ (projNodeAV m.acval T i entry x) ∈ˢ interp V ρ rest)) ∧
       -- (B) the iota law: the projection of a *graded* constructor
       -- application is the selected field, at every valuation under
       -- the guard.  Two premises: the application's
@@ -717,11 +718,11 @@ dummy binders carry the reading only; the law never reads them. -/
         WellDenotedV V ρ (AnnotTerm.mkAppN
           (m.acval entry.ctor (Level.substFn φ entry.levelParams us)) ys) →
         TeleFit V ρ TCa (ys.map (interp V ρ)) rest →
-        interp V ρ (projAV (i + entry.off) (AnnotTerm.mkAppN
+        interp V ρ (projNodeAV m.acval T i entry (AnnotTerm.mkAppN
             (m.acval entry.ctor (Level.substFn φ entry.levelParams us)) ys))
           = interp V ρ (ys.getD (entry.numParams + i) default)))) ∧
-    -- (C) the structural-η law (task #175 W4c)
-    TowerEtaLaw m φ T entry
+    -- (C) the structural-η law (task #175 W4c), on directly-installed tables
+    (entry.off ≤ 1 → TowerEtaLaw m φ T entry)
 
 /-- **The tower projection law, keyed on every stored entry**
 (`RecRules`'s sibling).  Task #175 tower-flag: every stored table is

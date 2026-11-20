@@ -54,6 +54,8 @@ theorem bvarsBelow_inst {a : Term} {n : Nat} (ha : Term.bvarsBelow n a) :
   | .fst e, k, he => bvarsBelow_inst ha e k he
   | .snd e, k, he => bvarsBelow_inst ha e k he
   | .prf, _, _ => trivial
+  | .chain g e, k, he => ⟨fun m => bvarsBelow_inst ha (g m) k (he.1 m), bvarsBelow_inst ha e k he.2⟩
+  | .bgraph _ f, k, he => bvarsBelow_inst ha f k he
 
 /-- The uniform projection of a bounded variable is bounded. -/
 theorem projAV_bvar_below {i j k : Nat} (h : j < k) :

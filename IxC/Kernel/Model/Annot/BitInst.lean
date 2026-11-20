@@ -85,6 +85,9 @@ theorem liftN_zero : ∀ (e : AnnotTerm) (k : Nat), liftN 0 e k = e := by
   | eqE a b iha ihb => intro k; rw [liftN_eqE, iha, ihb]
   | fst e ihe => intro k; rw [liftN_fst, ihe]
   | snd e ihe => intro k; rw [liftN_snd, ihe]
+  | chain g e ihg ihe =>
+    intro k; rw [liftN_chain, ihe]; congr 1; funext j; exact ihg j k
+  | bgraph _ f ihf => intro k; rw [liftN_bgraph, ihf]
 
 /-- Two lifts at the same cut compose. -/
 theorem liftN_liftN : ∀ (e : AnnotTerm) (n m k : Nat),
@@ -114,6 +117,10 @@ theorem liftN_liftN : ∀ (e : AnnotTerm) (n m k : Nat),
     intro n m k; rw [liftN_fst, liftN_fst, ihe]; rfl
   | snd e ihe =>
     intro n m k; rw [liftN_snd, liftN_snd, ihe]; rfl
+  | chain g e ihg ihe =>
+    intro n m k; rw [liftN_chain, liftN_chain, ihe]; congr 1; funext j; exact ihg j n m k
+  | bgraph _ f ihf =>
+    intro n m k; rw [liftN_bgraph, liftN_bgraph, ihf]; rfl
 
 end Ix.Kernel.Semantics.AnnotTerm
 
@@ -306,7 +313,15 @@ theorem denoteMeta_substFvarAt
     | some ea =>
       simp only [Option.map_some]
       split
-      · exact congrArg some (projAV_inst _ ea x (D - p)).symm
+      · rename_i entry
+        unfold projNodeAV?
+        split
+        · exact congrArg some (projAV_inst _ ea x (D - p)).symm
+        · split
+          · show some _ = some ((AnnotTerm.chain _ _).inst _ _)
+            rw [AnnotTerm.inst_chain]
+            congr 2; funext m; exact (hainst _ _ _ _).symm
+          · rfl
       · rcases i with _ | _ | i <;> rfl
   | .lit (.natVal k), D, hpD, hfb => by
     simp only [Ix.Kernel.Expr.substFvarAt, denoteMeta]

@@ -750,8 +750,8 @@ theorem declNativeCoreJ {J : Judgements md}
         (ksF j).getD i .ordinary ≠ .reflexive →
         ((dsF j ψ).getD (p.nP + i) default).2.2 = ((dsF₀ j ψ).getD (p.nP + i) default).2.2 := by
     intro j cA hj
-    obtain ⟨h1, -, -, -, h5, h6, h7, h8⟩ := fixCtorDataI_ident hacI' hacI₀' hTfresh' (hcf j cA hj)
-      (hcf₀ j cA hj)
+    obtain ⟨h1, -, -, -, h5, h6, h7, h8⟩ := fixCtorDataI_ident hacI' hacI₀' hTfresh'
+      (by rw [← hTname₀]; exact hpshapeT) (hcf j cA hj) (hcf₀ j cA hj)
     exact ⟨h1, h5, h6, h7, h8⟩
   have hEss : ∀ ψ, essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0) = Ess₀ ψ := by
     intro ψ

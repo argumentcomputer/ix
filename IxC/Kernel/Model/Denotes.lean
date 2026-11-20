@@ -328,10 +328,19 @@ theorem Denotes_of_denoteMeta {acval : Key md → (LevelParam → Nat) → Annot
     have hfb' : Expr.fvarsBelow d e := hfb
     have hlb' : e.looseBVarsBounded 0 = true := hlb
     show Denotes _ _ _ _ (Expr.proj sn i (closeN d e 0)) _
-    rcases hcase with ⟨entry, hfp, rfl⟩ | ⟨hfp, hdec⟩
-    · have hie := ihe hia hfb' hlb' ρ (wellDenotedV_of_projAV _ _ hw)
-      rw [projAV_interp, ← field_eq_projS]
-      exact Denotes.proj_table hfp hie
+    rcases hcase with ⟨entry, hfp, hnode⟩ | ⟨hfp, hdec⟩
+    · obtain ⟨-, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode
+      by_cases hle : entry.off ≤ 1
+      · rw [projNodeAV_of_le_one hle] at hw ⊢
+        have hie := ihe hia hfb' hlb' ρ (wellDenotedV_of_projAV _ _ hw)
+        rw [projAV_interp, ← field_eq_projS, ← projVal_of_le_one hle]
+        exact Denotes.proj_table hfp hie
+      · rw [projNodeAV_of_gt_one hle] at hw ⊢
+        have hie := ihe hia hfb' hlb' ρ
+          ⟨(WellDenoted_chain V ρ _ _ ▸ hw.1).2, (AnnotValid_chain V ρ _ _ ▸ hw.2).2⟩
+        rw [interp_chain, chainApp_congr fun n => interp_cvalOf hcl _ _ ρ,
+          ← projVal_of_gt_one hle]
+        exact Denotes.proj_table hfp hie
     · match i, hdec with
       | 0, hdec =>
         obtain rfl := Option.some.inj hdec
@@ -472,8 +481,13 @@ theorem GradedBy_of_denoteMeta {acval : Key md → (LevelParam → Nat) → Anno
     have hlb' : e.looseBVarsBounded 0 = true := hlb
     show Ix.Kernel.GradedBy _ ρ (Expr.proj sn i (closeN d e 0))
     simp only [Ix.Kernel.GradedBy]
-    rcases hcase with ⟨entry, hfp, rfl⟩ | ⟨hfp, hdec⟩
-    · exact ihe hia hfb' hlb' ρ (wellDenotedV_of_projAV _ _ hw)
+    rcases hcase with ⟨entry, hfp, hnode⟩ | ⟨hfp, hdec⟩
+    · obtain ⟨-, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode
+      unfold projNodeAV at hw
+      split at hw
+      · exact ihe hia hfb' hlb' ρ (wellDenotedV_of_projAV _ _ hw)
+      · exact ihe hia hfb' hlb' ρ
+          ⟨(WellDenoted_chain V ρ _ _ ▸ hw.1).2, (AnnotValid_chain V ρ _ _ ▸ hw.2).2⟩
     · match i, hdec with
       | 0, hdec =>
         obtain rfl := Option.some.inj hdec

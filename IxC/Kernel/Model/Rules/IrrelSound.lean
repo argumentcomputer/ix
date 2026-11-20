@@ -247,7 +247,7 @@ theorem DefEq.structEtaTy_sound (hin : RulesInputs V m φ) {d : Nat}
   have hcapsT' : capsT' = caps := by
     rw [hind] at hfT'
     exact (ConstantInfo.indInfo.inj (Option.some.inj hfT')).2.symm
-  obtain ⟨-, hctr', hpar', -⟩ := himp' (by rw [hcapsT']; exact heta)
+  obtain ⟨-, hctr', hpar', -, hoff0⟩ := himp' (by rw [hcapsT']; exact heta)
   rw [hcvT'] at hlpsT'
   rw [hcapsT'] at hctr' hpar'
   have hce : e0.ctor = c := Option.some.inj (hctr'.symm.trans hetaCtor)
@@ -307,7 +307,7 @@ theorem DefEq.structEtaTy_sound (hin : RulesInputs V m φ) {d : Nat}
       (fun σ _ => hokT σ) (fun x hx => frame_spine hfa hCa x (List.mem_of_mem_take hx))
       (hspa.take cnP) hoP (fun _ => ⟨hokW, fun σ _ => hmemT σ⟩)
   -- the tower η law at slot 0
-  obtain ⟨TVa, hTVa, -, hlaw⟩ := hetaL cvT caps hind us (by rw [← hlpsT']; exact hlvT)
+  obtain ⟨TVa, hTVa, -, hlaw⟩ := hetaL hoff0 cvT caps hind us (by rw [← hlpsT']; exact hlvT)
   have hTVeq : TVa = Ta := Option.some.inj (hTVa.symm.trans (hTa 0))
   subst hTVeq
   have hfitT : TeleFit V ρ TVa ((asa.take cnP).map (interp V ρ)) (interp V ρ resta) :=
@@ -340,20 +340,23 @@ theorem DefEq.structEtaTy_sound (hin : RulesInputs V m φ) {d : Nat}
       denoteMeta m.acval env φ d (.proj T j b) = some (projAV (j + e0.off) ba) := by
     intro j hj
     obtain ⟨entry, hfe, -⟩ := hslotE j (List.mem_range.mp hj)
-    rw [← hoffE j entry hfe]
-    exact denoteMeta_proj_tower hfe hdb
+    have hoffj : entry.off ≤ 1 := (hoffE j entry hfe) ▸ hoff0
+    rw [← hoffE j entry hfe,
+      ← projNodeAV_of_le_one (acval := m.acval) (sn := T) (i := j) hoffj]
+    exact denoteMeta_proj_tower hfe (Or.inl hoffj) hdb
   have hokProj : ∀ x ∈ (List.range cnF).map (fun j => projAV (j + e0.off) ba),
       Graded V Δa x := by
     intro x hx σ hσ
     obtain ⟨j, hj, rfl⟩ := List.mem_map.mp hx
     obtain ⟨entry, hfe, hlpe⟩ := hslotE j (List.mem_range.mp hj)
+    have hoffj : entry.off ≤ 1 := (hoffE j entry hfe) ▸ hoff0
     rw [← hoffE j entry hfe]
     obtain ⟨-, -, -, ⟨cvTj, capsTj, hfTj, -, himpj⟩, hO5j, _, -, -, hlawj, -⟩ :=
       hin.tower_ok T j entry hfe
     have hcapsTj : capsTj = caps := by
       rw [hind] at hfTj
       exact (ConstantInfo.indInfo.inj (Option.some.inj hfTj)).2.symm
-    obtain ⟨hnpj, -, hparj, -⟩ := himpj (by rw [hcapsTj]; exact heta)
+    obtain ⟨hnpj, -, hparj, -, -⟩ := himpj (by rw [hcapsTj]; exact heta)
     rw [hcapsTj] at hparj
     have hgj : TowerGuardAt φ entry us :=
       towerGuardAt_of hO5j (fun hp => by rw [hp] at hnpj; exact nomatch hnpj)
@@ -367,8 +370,9 @@ theorem DefEq.structEtaTy_sound (hin : RulesInputs V m φ) {d : Nat}
         (by rw [Ix.Kernel.projTele_stripPis]; rfl) (hTjd d)
     obtain ⟨restj, hpeel⟩ := peelPis_of_piChain _ hpc
     rw [hlpe] at hA
-    exact (hA hgj σ (asa.take cnP) ba restj hlenVs (hokW σ hσ) (hokB σ hσ)
+    have hAj := (hA hgj σ (asa.take cnP) ba restj hlenVs (hokW σ hσ) (hokB σ hσ)
       (hmemB σ hσ) hpeel).1
+    rwa [projNodeAV_of_le_one hoffj] at hAj
   have hframeProj : ∀ x ∈ (List.range cnF).map (fun j => Expr.proj T j b),
       Frame d x ∧ CtxOk m φ d Δa x := by
     intro x hx

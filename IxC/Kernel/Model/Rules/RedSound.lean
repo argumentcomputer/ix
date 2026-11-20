@@ -113,8 +113,9 @@ theorem Red.projArg_sound {d : Nat} {sn : Key md}
   obtain ⟨vp, hvp, hrd⟩ := denoteMeta_proj_inv hea
   have hokVp : Graded V Δa vp := by
     intro σ hσ
-    rcases hrd with ⟨_, -, rfl⟩ | ⟨-, hdec⟩
-    · exact ProjAV.hoistV (hg σ hσ)
+    rcases hrd with ⟨entry, -, hnode⟩ | ⟨-, hdec⟩
+    · obtain ⟨-, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode
+      exact ProjNodeAV.hoistV (hg σ hσ)
     · rcases AnnotTerm.projPair?_cases hdec with rfl | rfl
       · exact ⟨by have h1 := (hg σ hσ).1; rw [WellDenoted_fst] at h1; exact h1.1,
           by have h2 := (hg σ hσ).2; rwa [AnnotValid_fst] at h2⟩
@@ -126,11 +127,12 @@ theorem Red.projArg_sound {d : Nat} {sn : Key md}
       by simp only [Expr.looseBVarsBounded]; exact hb',
       fun l hl => hL' l (by simpa [Expr.fvarLeaves] using hl)⟩,
     fun l hl => hsube l (hsub l (by simpa [Expr.fvarLeaves] using hl)), ?_⟩
-  rcases hrd with ⟨entry, hfe, rfl⟩ | ⟨hnt, hdec⟩
-  · refine ⟨projAV (i + entry.off) vp', ?_,
-      fun σ hσ => ProjAV.congrV (heq σ hσ) (hg' σ hσ) (hg σ hσ),
-      fun σ hσ => ProjAV.interp_congr (heq σ hσ)⟩
-    rw [denoteMeta, hvp', hfe]; rfl
+  rcases hrd with ⟨entry, hfe, hnode⟩ | ⟨hnt, hdec⟩
+  · obtain ⟨hready, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode
+    refine ⟨projNodeAV m.acval sn i entry vp', ?_,
+      fun σ hσ => ProjNodeAV.congrV (heq σ hσ) (hg' σ hσ) (hg σ hσ),
+      fun σ hσ => ProjNodeAV.interp_congr (heq σ hσ)⟩
+    exact denoteMeta_proj_tower hfe hready hvp'
   · obtain ⟨x', hx'⟩ :=
       AnnotTerm.projPair?_exists_of_lt (AnnotTerm.lt_of_projPair? hdec) vp'
     have hred : denoteMeta m.acval env φ d (.proj sn i e') = some x' := by
@@ -424,7 +426,7 @@ theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Key md} {i : N
   have hgvp : Graded V Δa (AnnotTerm.mkAppN
       (m.acval entry.ctor (Level.substFn φ entry.levelParams us)) vs) := by
     rw [← hveq]
-    exact fun σ hσ => ProjAV.hoistV (hg σ hσ)
+    exact fun σ hσ => ProjNodeAV.hoistV (hg σ hσ)
   obtain ⟨-, hoA⟩ := hoist_spine vs hgvp
   have hokArg : Graded V Δa (vs.getD (entry.numParams + i) default) :=
     hoA _ (Ix.Kernel.getD_mem (by rw [hlenVs]; omega))

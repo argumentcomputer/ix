@@ -84,7 +84,7 @@ theorem infer_reads {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat
     simp only [Expr.looseBVarsBounded] at hb
     obtain ⟨pa, hpa⟩ := infer_reads m φ htpe hg hws hb (fun l hl =>
       hL l (by simpa [Expr.fvarLeaves] using hl))
-    exact ⟨_, denoteMeta_proj_tower hent hpa⟩
+    exact ⟨_, denoteMeta_proj_tower_ok m.proj_ok hent hpa⟩
 
 theorem infer_reads_red {env : Env md} :
     ∀ {d : Nat} {e e' : Expr md}, Red env d e e' → True

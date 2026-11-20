@@ -48,6 +48,8 @@ def NoBVar (P : Nat → Prop) : AnnotTerm → Prop
   | .eqE a b => NoBVar P a ∧ NoBVar P b
   | .fst e => NoBVar P e
   | .snd e => NoBVar P e
+  | .chain g e => (∀ m, NoBVar P (g m)) ∧ NoBVar P e
+  | .bgraph _ f => NoBVar P f
 
 /-- Two frames agreeing off `P`. -/
 def AgreeOff (P : Nat → Prop) (σ σ' : Nat → V) : Prop := ∀ i, ¬ P i → σ i = σ' i
@@ -100,6 +102,13 @@ theorem interp_congr_noBVar :
     intro P σ σ' h hag
     simp only [interp_snd, ihe h hag]
   | prf => intros; rfl
+  | chain g e ihg ihe =>
+    intro P σ σ' h hag
+    simp only [interp_chain, ihe h.2 hag]
+    exact chainApp_congr fun m => ihg m (h.1 m) hag
+  | bgraph m f ihf =>
+    intro P σ σ' h hag
+    simp only [interp_bgraph, ihf h hag]
 
 /-- **The grading of a term ignores the variables it does not
 mention.** -/
@@ -137,6 +146,13 @@ theorem WellDenoted_congr_noBVar :
     intro P σ σ' h hag
     rw [WellDenoted_snd, WellDenoted_snd, ihe h hag, interp_congr_noBVar e h hag]
   | prf => intros; simp
+  | chain g e ihg ihe =>
+    intro P σ σ' h hag
+    rw [WellDenoted_chain, WellDenoted_chain, ihe h.2 hag]
+    exact and_congr (forall_congr' fun m => ihg m (h.1 m) hag) Iff.rfl
+  | bgraph m f ihf =>
+    intro P σ σ' h hag
+    rw [WellDenoted_bgraph, WellDenoted_bgraph, ihf h hag]
 
 omit [SetTheory V] in
 theorem shiftP_mono {P Q : Nat → Prop} (h : ∀ i, Q i → P i) : ∀ i, shiftP Q i → shiftP P i
@@ -158,6 +174,8 @@ theorem NoBVar.mono :
   | fst e ihe => intro P Q h h'; exact ihe h h'
   | snd e ihe => intro P Q h h'; exact ihe h h'
   | prf => intros; trivial
+  | chain g e ihg ihe => intro P Q h h'; exact ⟨fun m => ihg m h (h'.1 m), ihe h h'.2⟩
+  | bgraph _ f ihf => intro P Q h h'; exact ihf h h'
 
 omit [SetTheory V] in
 /-- A term bounded below `k` mentions no variable at or above `k`. -/
@@ -196,5 +214,7 @@ theorem NoBVar_of_bvarsBelow :
   | fst e ihe => intro k P h hP; exact ihe h hP
   | snd e ihe => intro k P h hP; exact ihe h hP
   | prf => intros; trivial
+  | chain g e ihg ihe => intro k P h hP; exact ⟨fun m => ihg m (h.1 m) hP, ihe h.2 hP⟩
+  | bgraph _ f ihf => intro k P h hP; exact ihf h hP
 
 end Ix.Kernel.Semantics
