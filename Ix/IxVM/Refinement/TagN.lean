@@ -909,14 +909,14 @@ theorem splitSum_run {s : Nat} (hs : s < 768) (k : Nat) (h : Heap F) :
     Mirrors.«UInt8::split_sum» (k + 1) h (.field (s : F)) =
       some (.tuple [.field ((s % 256 : Nat) : F), .field ((s / 256 : Nat) : F)], h) := by
   have e : (s : F) = ((s % 256 : Nat) : F) + 256 * ((s / 256 : Nat) : F) := by
-    have := congrArg (Nat.cast : Nat → F) (show s = s % 256 + 256 * (s / 256) by omega)
-    push_cast at this
-    exact this
+    have := congrArg (Nat.cast : Nat → F) (Nat.mod_add_div s 256).symm
+    simpa only [Nat.cast_add, Nat.cast_mul, Nat.cast_ofNat] using this
+  have hsub : (s : F) - ((s % 256 : Nat) : F) = 256 * ((s / 256 : Nat) : F) := by
+    rw [e, add_sub_cancel_left]
   have hdiv : ((s : F) - ((s % 256 : Nat) : F)) / 256 = ((s / 256 : Nat) : F) := by
-    rw [div_eq_iff two56_ne_zero, e]
-    ring
-  simp [Mirrors.«UInt8::split_sum», mapCall, sumByte_row hs, Constant.toValue, Value.mapAddress,
-    evalBinOp, two56_ne_zero, hdiv]
+    rw [hsub, mul_div_cancel_left₀ _ two56_ne_zero]
+  simp only [Mirrors.«UInt8::split_sum», mapCall, sumByte_row hs, Constant.toValue,
+    Value.mapAddress, evalBinOp, two56_ne_zero, ↓reduceIte, hdiv, bind, Option.bind]
 
 theorem splitSum_run2 {a b : Nat} (hs : a + b < 768) (k : Nat) (h : Heap F) :
     Mirrors.«UInt8::split_sum» (k + 1) h (.field ((a : F) + (b : F))) =
