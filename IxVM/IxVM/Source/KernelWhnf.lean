@@ -198,8 +198,31 @@ def whnf_spine := aiur_fn⟦
 def try_nat_dispatch_prewhnf := aiur_fn⟦
   fn try_nat_dispatch_prewhnf(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, op: Field, spine: Lists::List<KernelTypes::KExpr>,
                                       types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
-      let spine_w = whnf_spine(rc, spine, types);
-      KernelNatPrim::try_nat_dispatch(rc, head_addr, op, spine_w, types)
+      -- Every binary dispatch (evaluation and the offset forms) needs the second
+      -- argument to reduce to a literal, so that argument is reduced first and the
+      -- rest of the spine only when it is one. The answer is the same as reducing the
+      -- whole spine up front, but an open first argument is never reduced for an
+      -- operation that cannot fire: in `Nat.add (Nat.mul x (c - 1)) x`, the unfolding
+      -- of `Nat.mul x c`, reducing the first argument would unfold `c` levels deep.
+      let gate = match op {
+        1 => {  1 } ,
+        2 => {  1 } ,
+        _ => {
+          match UInt32::less_than_fields(Lists::length(spine), 2) {
+            1 => {  1 } ,
+            _ => {
+              match KernelNatPrim::try_extract_nat(rc, whnf(rc, Lists::lookup(spine, 1), types)) {
+                (1, _) => {  1 } ,
+                _ => {  0 } ,
+              } } ,
+          } } ,
+      };
+      match gate {
+        0 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+        _ => {
+          let spine_w = whnf_spine(rc, spine, types);
+          KernelNatPrim::try_nat_dispatch(rc, head_addr, op, spine_w, types) } ,
+      }
     }
 ⟧
 
