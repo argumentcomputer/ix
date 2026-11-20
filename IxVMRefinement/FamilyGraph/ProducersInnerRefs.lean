@@ -104,7 +104,7 @@ theorem assert_used_not_block_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     ∀ (i : Nat) {idxs : List Nat} {rp used r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)}, i + refs.length < 8589934592 →
       RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h refs rp →
-      RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h idxs used →
+      Claim.RepSortedIdxFrom h idxs i used →
       ObsFn Obs.W "KernelModeled::assert_used_not_block" [rp, used, .field (i : F)] h r h' cs →
       (∀ cl ∈ cs, cl ∈ calls) →
       ∀ j, (hj : j < refs.length) → i + j ∈ idxs →
@@ -115,27 +115,25 @@ theorem assert_used_not_block_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     intro i idxs rp used r h h' cs hb hr hi ev hsub
     match Obs.«KernelModeled::assert_used_not_block».obs ev with
     | .Nil (ld_bolbylmd := ld) .. => cases Lib.rep_nil_of_load hr ld
-    | .Cons (m_yvuflqli := mSeg) (cs_juuuvegi := csHead) (cs_uirsovbz := csTail)
-        (ld_bolbylmd := ld) (sg_dugcmplc := seg) (op_urfjlksd := op)
+    | .Cons (m_sszfdvej := mSeg) (cs_bixmeype := csHead) (cs_uirsovbz := csTail)
+        (ld_bolbylmd := ld) (ev_ahqcgauk := evPop) (sg_opqpxwys := seg) (op_urfjlksd := op)
         (ev_tuyouizb := evRest) (hc_gtnunfxa := hcs) .. =>
       obtain ⟨_, _, he, ha, hrest⟩ := Lib.rep_cons_of_load hr ld
       injection he with he1 he2
       subst he1 he2
+      obtain ⟨rfl, hiff, hiNext⟩ := Claim.sorted_pop_spec idxs (by simp at hb; omega) hi evPop
       have hsegSub : ∀ cl ∈ csHead, cl ∈ calls :=
         fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have hseg : Heap.Extends h mSeg ∧
           (i ∈ idxs → ∃ c, recordOf E₀ a = some c ∧ ¬ IsBlock c) := by
         match seg with
-        | .n1 (cs_rexuxvwa := csNb) (ev_zomhduxa := evg) (ev_rewyseeq := evnb)
-            (hc_hifgrvaq := hcseg) .. =>
-          obtain ⟨rfl, _⟩ := Claim.g_list_has_spec idxs (by simp at hb; omega) hi evg
+        | .n1 (cs_hcikeilv := csNb) (ev_wlgujvgf := evnb) (hc_yfpefzhg := hcseg) .. =>
           have hnbSub : ∀ cl ∈ csNb, cl ∈ calls :=
             fun cl hcl => hsegSub cl (by rw [hcseg]; simp [hcl])
           obtain ⟨extNb, hnb⟩ := assert_not_block_ref_stored hS hH ha evnb hnbSub
           exact ⟨extNb, fun _ => hnb⟩
-        | .other (ev_zomhduxa := evg) (hne_arfngzyc := hn) (he_xtnzeqqi := hh) .. =>
-          refine ⟨by rw [hh]; exact evg.heap_extends, fun hm => ?_⟩
-          exact (hn ((Claim.g_list_has_spec idxs (by simp at hb; omega) hi evg).2.mpr hm)).elim
+        | .other (hne_yeueqpng := hn) (he_eemargwo := hh) .. =>
+          exact ⟨hh ▸ Heap.Extends.refl _, fun hm => (hn (hiff.mpr hm)).elim⟩
       obtain ⟨ext, hhead⟩ := hseg
       simp only [evalBinOp, Except.ok.injEq] at op
       subst op
@@ -145,7 +143,7 @@ theorem assert_used_not_block_spec {calls : List (Call F)} {E₀ : Ixon.Env}
         fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have htail := ih (i + 1) (by simp at hb ⊢; omega)
         (repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ ext hrest)
-        (repList_heapMono₂ _ Claim.repBoundedIdx_heapMono₂ ext hi) evRest htailSub
+        (hiNext.mono ext) evRest htailSub
       intro j hj hm
       cases j with
       | zero => exact hhead (by simpa only [Nat.add_zero] using hm)
@@ -164,7 +162,7 @@ theorem assert_inner_refs_safe_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     (hsz : refs.length < 8589934592)
     (hrc : Claim.RCLimRep t bAddr lim h rc)
     (hrp : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h refs rp)
-    (hidx : RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h idxs used)
+    (hidx : Claim.RepSortedIdx h idxs used)
     (ev : ObsFn Obs.W "KernelModeled::assert_inner_refs_safe" [rc, rp, used] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     ∀ j, (hj : j < refs.length) → j ∈ idxs →
@@ -181,7 +179,7 @@ theorem assert_inner_refs_safe_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     have hnb := assert_used_not_block_spec hS hH refs 0
       (by simpa only [Nat.zero_add] using hsz)
       (repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ evSafe.heap_extends hrp)
-      (repList_heapMono₂ _ Claim.repBoundedIdx_heapMono₂ evSafe.heap_extends hidx)
+      (hidx.mono evSafe.heap_extends)
       evNb hnbSub
     intro j hj hm
     have hm0 : 0 + j ∈ idxs := by simpa only [Nat.zero_add] using hm

@@ -150,6 +150,114 @@ theorem update_stateV (types : List (String × Aiur.Generic.Ty)) (s m : Blake3.P
   simp only [stateL]
   rw [List.set_append_left i.val (wv w) hi, ofFn_set s i.val i.isLt w]
 
+theorem update_stateV_hi (types : List (String × Aiur.Generic.Ty)) (s m : Blake3.Pure.Block)
+    (j : Fin 16) (w : UInt32) :
+    Update.value types [[.index (16 + j.val) 32]] [stateV s m, wv w] = .ok (stateV s (m.set j w)) := by
+  rw [stateV_eq, update_index types (stateL s m) (16 + j.val) 32 (wv w) (stateL_length s m), stateV_eq]
+  congr 2
+  apply List.ext_getElem (by simp [stateL])
+  intro k h1 h2
+  simp only [stateL, List.getElem_set]
+  by_cases hlt : k < 16
+  · have hne : 16 + j.val ≠ k := by omega
+    have hl : k < (List.ofFn (fun i : Fin 16 => (wv s[i] : SourceValue F))).length := by simpa using hlt
+    simp only [hne, ↓reduceIte, List.getElem_append_left hl]
+  · have hge : (List.ofFn (fun i : Fin 16 => (wv s[i] : SourceValue F))).length ≤ k := by simp; omega
+    rw [List.getElem_append_right hge, List.getElem_append_right hge]
+    simp only [List.length_ofFn, List.getElem_ofFn, Fin.getElem_fin, Vector.getElem_set]
+    by_cases heq : 16 + j.val = k
+    · subst heq; simp
+    · have hj' : j.val ≠ k - 16 := by omega
+      simp [heq, hj']
+
+theorem update_stateV_hi_inv {s m : Blake3.Pure.Block} {j : Fin 16} {w : UInt32} {v : SourceValue F}
+    (h : Update.value [] [[.index (16 + j.val) 32]] [stateV s m, wv w] = .ok v) :
+    v = stateV s (m.set j w) := by
+  rw [update_stateV_hi [] s m j w] at h
+  exact (Except.ok.inj h).symm
+
+theorem permute_eq_sets (m : Blake3.Pure.Block) :
+    ((((((((((((((((m.set 0 m[2]).set 1 m[6]).set 2 m[3]).set 3 m[10]).set 4 m[7]).set
+      5 m[0]).set 6 m[4]).set 7 m[13]).set 8 m[1]).set 9 m[11]).set 10 m[12]).set
+      11 m[5]).set 12 m[9]).set 13 m[14]).set 14 m[15]).set 15 m[8]) =
+      Aiur.Library.Blake3.permute m := by
+  apply Vector.ext
+  intro i hi
+  rcases (show i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 ∨ i = 4 ∨ i = 5 ∨ i = 6 ∨ i = 7 ∨
+      i = 8 ∨ i = 9 ∨ i = 10 ∨ i = 11 ∨ i = 12 ∨ i = 13 ∨ i = 14 ∨ i = 15 by omega) with
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp [Aiur.Library.Blake3.permute, Vector.getElem_set]
+
+theorem permute16_inv {s m s1 : Blake3.Pure.Block}
+    {x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15
+      u0 u1 u2 u3 u4 u5 u6 u7 u8 u9 u10 u11 u12 u13 u14 u15 : SourceValue F}
+    (pr0 : projectValue (stateV s m : SourceValue F) 18 = .ok x0)
+    (up0 : Update.value [] [[.index 16 32]] [stateV s1 m, x0] = .ok u0)
+    (pr1 : projectValue (stateV s m : SourceValue F) 22 = .ok x1)
+    (up1 : Update.value [] [[.index 17 32]] [u0, x1] = .ok u1)
+    (pr2 : projectValue (stateV s m : SourceValue F) 19 = .ok x2)
+    (up2 : Update.value [] [[.index 18 32]] [u1, x2] = .ok u2)
+    (pr3 : projectValue (stateV s m : SourceValue F) 26 = .ok x3)
+    (up3 : Update.value [] [[.index 19 32]] [u2, x3] = .ok u3)
+    (pr4 : projectValue (stateV s m : SourceValue F) 23 = .ok x4)
+    (up4 : Update.value [] [[.index 20 32]] [u3, x4] = .ok u4)
+    (pr5 : projectValue (stateV s m : SourceValue F) 16 = .ok x5)
+    (up5 : Update.value [] [[.index 21 32]] [u4, x5] = .ok u5)
+    (pr6 : projectValue (stateV s m : SourceValue F) 20 = .ok x6)
+    (up6 : Update.value [] [[.index 22 32]] [u5, x6] = .ok u6)
+    (pr7 : projectValue (stateV s m : SourceValue F) 29 = .ok x7)
+    (up7 : Update.value [] [[.index 23 32]] [u6, x7] = .ok u7)
+    (pr8 : projectValue (stateV s m : SourceValue F) 17 = .ok x8)
+    (up8 : Update.value [] [[.index 24 32]] [u7, x8] = .ok u8)
+    (pr9 : projectValue (stateV s m : SourceValue F) 27 = .ok x9)
+    (up9 : Update.value [] [[.index 25 32]] [u8, x9] = .ok u9)
+    (pr10 : projectValue (stateV s m : SourceValue F) 28 = .ok x10)
+    (up10 : Update.value [] [[.index 26 32]] [u9, x10] = .ok u10)
+    (pr11 : projectValue (stateV s m : SourceValue F) 21 = .ok x11)
+    (up11 : Update.value [] [[.index 27 32]] [u10, x11] = .ok u11)
+    (pr12 : projectValue (stateV s m : SourceValue F) 25 = .ok x12)
+    (up12 : Update.value [] [[.index 28 32]] [u11, x12] = .ok u12)
+    (pr13 : projectValue (stateV s m : SourceValue F) 30 = .ok x13)
+    (up13 : Update.value [] [[.index 29 32]] [u12, x13] = .ok u13)
+    (pr14 : projectValue (stateV s m : SourceValue F) 31 = .ok x14)
+    (up14 : Update.value [] [[.index 30 32]] [u13, x14] = .ok u14)
+    (pr15 : projectValue (stateV s m : SourceValue F) 24 = .ok x15)
+    (up15 : Update.value [] [[.index 31 32]] [u14, x15] = .ok u15) :
+    u15 = stateV s1 (Aiur.Library.Blake3.permute m) := by
+  obtain rfl := ok_inj ((proj_stateV_hi s m 2 (by decide)).symm.trans pr0)
+  obtain rfl := update_stateV_hi_inv (j := 0) up0
+  obtain rfl := ok_inj ((proj_stateV_hi s m 6 (by decide)).symm.trans pr1)
+  obtain rfl := update_stateV_hi_inv (j := 1) up1
+  obtain rfl := ok_inj ((proj_stateV_hi s m 3 (by decide)).symm.trans pr2)
+  obtain rfl := update_stateV_hi_inv (j := 2) up2
+  obtain rfl := ok_inj ((proj_stateV_hi s m 10 (by decide)).symm.trans pr3)
+  obtain rfl := update_stateV_hi_inv (j := 3) up3
+  obtain rfl := ok_inj ((proj_stateV_hi s m 7 (by decide)).symm.trans pr4)
+  obtain rfl := update_stateV_hi_inv (j := 4) up4
+  obtain rfl := ok_inj ((proj_stateV_hi s m 0 (by decide)).symm.trans pr5)
+  obtain rfl := update_stateV_hi_inv (j := 5) up5
+  obtain rfl := ok_inj ((proj_stateV_hi s m 4 (by decide)).symm.trans pr6)
+  obtain rfl := update_stateV_hi_inv (j := 6) up6
+  obtain rfl := ok_inj ((proj_stateV_hi s m 13 (by decide)).symm.trans pr7)
+  obtain rfl := update_stateV_hi_inv (j := 7) up7
+  obtain rfl := ok_inj ((proj_stateV_hi s m 1 (by decide)).symm.trans pr8)
+  obtain rfl := update_stateV_hi_inv (j := 8) up8
+  obtain rfl := ok_inj ((proj_stateV_hi s m 11 (by decide)).symm.trans pr9)
+  obtain rfl := update_stateV_hi_inv (j := 9) up9
+  obtain rfl := ok_inj ((proj_stateV_hi s m 12 (by decide)).symm.trans pr10)
+  obtain rfl := update_stateV_hi_inv (j := 10) up10
+  obtain rfl := ok_inj ((proj_stateV_hi s m 5 (by decide)).symm.trans pr11)
+  obtain rfl := update_stateV_hi_inv (j := 11) up11
+  obtain rfl := ok_inj ((proj_stateV_hi s m 9 (by decide)).symm.trans pr12)
+  obtain rfl := update_stateV_hi_inv (j := 12) up12
+  obtain rfl := ok_inj ((proj_stateV_hi s m 14 (by decide)).symm.trans pr13)
+  obtain rfl := update_stateV_hi_inv (j := 13) up13
+  obtain rfl := ok_inj ((proj_stateV_hi s m 15 (by decide)).symm.trans pr14)
+  obtain rfl := update_stateV_hi_inv (j := 14) up14
+  obtain rfl := ok_inj ((proj_stateV_hi s m 8 (by decide)).symm.trans pr15)
+  obtain rfl := update_stateV_hi_inv (j := 15) up15
+  exact congrArg (stateV s1) (permute_eq_sets m)
+
 /-! ## Matching the four results of `g` -/
 
 theorem matchArray4 {types : List (String × Aiur.Generic.Ty)} (heap : Heap F)
@@ -383,107 +491,122 @@ def compressRounds : Nat → Blake3.Pure.Block → Blake3.Pure.Block →
 theorem compressRounds_seven (s m : Blake3.Pure.Block) :
     (compressRounds 7 s m).1 = Aiur.Library.Blake3.compressInnerI s m := rfl
 
-theorem natCast_seven_inj {k : Nat} (hk : k < 1024) (h : (k : F) = 7) : k = 7 :=
+theorem natCast_three_inj {k : Nat} (hk : k < 1024) (h : (k : F) = 3) : k = 3 :=
   IxVM.natCast_inj hk (by omega) (by simpa using h)
 
-/-- **`Blake3::compress(stage, state)`** runs the rounds left from `stage` and finalizes. -/
+/-- **`Blake3::compress(stage, state)`** runs two rounds per row for `stage = 0, 1, 2` and the
+seventh round plus finalization on `stage = 3`. -/
 theorem compress_spec : ∀ (n : Nat) {k : Nat} {s m : Blake3.Pure.Block} {stage state : SourceValue F}
     {r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
-    k + n = 7 → stage = .field (k : F) → state = stateV s m →
+    k + n = 3 → stage = .field (k : F) → state = stateV s m →
     ObsFn W "Blake3::compress" [stage, state] h r h' cs →
-    r = vecV (Aiur.Library.Blake3.finalizeState (compressRounds n s m).1) ∧ h' = h
+    r = vecV (Aiur.Library.Blake3.finalizeState (compressRounds (2 * n + 1) s m).1) ∧ h' = h
   | 0, k, s, m, stage, state, r, h, h', cs, hk, hst, hs, ev => by
     subst hst hs
-    rcases «Blake3::compress».obs ev with
-      ⟨v15, m16, cs26, v29, v30, v51, m52, cs62, v65, v66, v87, m88, cs98, v101, v102, v123, m124,
-        cs134, v137, v138, v159, m160, cs170, v173, v174, v195, m196, cs206, v209, v210, v231,
-        m232, cs242, v245, v246, v267, m268, cs278, v281, v282, hv14, pr39, pr49, ev28, pr75, pr85,
-        ev64, pr111, pr121, ev100, pr147, pr157, ev136, pr183, pr193, ev172, pr219, pr229, ev208,
-        pr255, pr265, ev244, pr291, pr301, ev280, rfl, rfl, -⟩ |
-      ⟨v376, m377, cs387, v398, v410, v428, v440, v458, v470, v488, v500, v518, v530, v548, v560,
-        v578, v590, v608, v620, v638, v650, v668, v680, v698, v710, v728, v740, v758, v770, v788,
-        v800, v818, v830, v848, v860, cs881, v884, hne372, -⟩
-    · obtain rfl := ok_inj ((proj_stateV_lo s m 0 (by decide)).symm.trans pr39)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 8 (by decide)).symm.trans pr49)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 1 (by decide)).symm.trans pr75)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 9 (by decide)).symm.trans pr85)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 2 (by decide)).symm.trans pr111)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 10 (by decide)).symm.trans pr121)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 3 (by decide)).symm.trans pr147)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 11 (by decide)).symm.trans pr157)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 4 (by decide)).symm.trans pr183)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 12 (by decide)).symm.trans pr193)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 5 (by decide)).symm.trans pr219)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 13 (by decide)).symm.trans pr229)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 6 (by decide)).symm.trans pr255)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 14 (by decide)).symm.trans pr265)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 7 (by decide)).symm.trans pr291)
-      obtain rfl := ok_inj ((proj_stateV_lo s m 15 (by decide)).symm.trans pr301)
-      obtain ⟨rfl, rfl⟩ := u32_xor ev28
-      obtain ⟨rfl, rfl⟩ := u32_xor ev64
-      obtain ⟨rfl, rfl⟩ := u32_xor ev100
-      obtain ⟨rfl, rfl⟩ := u32_xor ev136
-      obtain ⟨rfl, rfl⟩ := u32_xor ev172
-      obtain ⟨rfl, rfl⟩ := u32_xor ev208
-      obtain ⟨rfl, rfl⟩ := u32_xor ev244
-      obtain ⟨rfl, rfl⟩ := u32_xor ev280
+    match «Blake3::compress».obs ev with
+    | .n3 (ev_dvofuqkd := ev_cij) (pr_njzqpwrp := pr0) (pr_qfwgamjs := pr8) (ev_eivanbct := ev0)
+        (pr_obofuzfz := pr1) (pr_mkyihnzl := pr9) (ev_tntdione := ev1)
+        (pr_hjgthcwx := pr2) (pr_zfjaetll := pr10) (ev_vmctzhlb := ev2)
+        (pr_fioqavae := pr3) (pr_gaktyhno := pr11) (ev_avlhnzjc := ev3)
+        (pr_yjarziwq := pr4) (pr_burzeget := pr12) (ev_ldgkpcww := ev4)
+        (pr_hzyowqlj := pr5) (pr_wzbkbmxq := pr13) (ev_udyyazlz := ev5)
+        (pr_mrczlzpg := pr6) (pr_dfrejsih := pr14) (ev_uezofdbl := ev6)
+        (pr_vkzelvai := pr7) (pr_uzfksbwl := pr15) (ev_traeuqin := ev7)
+        (he_vlxpmxsg := hr) (he_yfauhqhw := hh) .. =>
+      subst hr hh
+      obtain ⟨rfl, rfl⟩ := cij_spec ev_cij
+      let s1 := Aiur.Library.Blake3.compressInnerJ s m
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 0 (by decide)).symm.trans pr0)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 8 (by decide)).symm.trans pr8)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 1 (by decide)).symm.trans pr1)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 9 (by decide)).symm.trans pr9)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 2 (by decide)).symm.trans pr2)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 10 (by decide)).symm.trans pr10)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 3 (by decide)).symm.trans pr3)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 11 (by decide)).symm.trans pr11)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 4 (by decide)).symm.trans pr4)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 12 (by decide)).symm.trans pr12)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 5 (by decide)).symm.trans pr5)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 13 (by decide)).symm.trans pr13)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 6 (by decide)).symm.trans pr6)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 14 (by decide)).symm.trans pr14)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 7 (by decide)).symm.trans pr7)
+      obtain rfl := ok_inj ((proj_stateV_lo s1 m 15 (by decide)).symm.trans pr15)
+      obtain ⟨rfl, rfl⟩ := u32_xor ev0
+      obtain ⟨rfl, rfl⟩ := u32_xor ev1
+      obtain ⟨rfl, rfl⟩ := u32_xor ev2
+      obtain ⟨rfl, rfl⟩ := u32_xor ev3
+      obtain ⟨rfl, rfl⟩ := u32_xor ev4
+      obtain ⟨rfl, rfl⟩ := u32_xor ev5
+      obtain ⟨rfl, rfl⟩ := u32_xor ev6
+      obtain ⟨rfl, rfl⟩ := u32_xor ev7
       refine ⟨?_, rfl⟩
       first
       | rfl
       | (simp only [vecV, compressRounds, Aiur.Library.Blake3.finalizeState, List.ofFn_succ,
           List.ofFn_zero, Vector.getElem_ofFn]; rfl)
       | (simp [vecV, compressRounds, Aiur.Library.Blake3.finalizeState, List.ofFn_succ]; done)
-    · exact absurd (by rw [show k = 7 by omega]; simp) hne372
+    | .other (hne_wcyktvnc := hne) .. =>
+      exact absurd (by rw [show k = 3 by omega]; simp) hne
   | n + 1, k, s, m, stage, state, r, h, h', cs, hk, hst, hs, ev => by
     subst hst hs
-    rcases «Blake3::compress».obs ev with
-      ⟨v15, m16, cs26, v29, v30, v51, m52, cs62, v65, v66, v87, m88, cs98, v101, v102, v123, m124,
-        cs134, v137, v138, v159, m160, cs170, v173, v174, v195, m196, cs206, v209, v210, v231,
-        m232, cs242, v245, v246, v267, m268, cs278, v281, v282, hv14, -⟩ |
-      ⟨v376, m377, cs387, v398, v410, v428, v440, v458, v470, v488, v500, v518, v530, v548, v560,
-        v578, v590, v608, v620, v638, v650, v668, v680, v698, v710, v728, v740, v758, v770, v788,
-        v800, v818, v830, v848, v860, cs881, v884, hne372, ev389, pr426, up408, pr456, up438, pr486,
-        up468, pr516, up498, pr546, up528, pr576, up558, pr606, up588, pr636, up618, pr666, up648,
-        pr696, up678, pr726, up708, pr756, up738, pr786, up768, pr816, up798, pr846, up828, pr876,
-        up858, op899, ev883, -⟩
-    · exact absurd (natCast_seven_inj (by omega) (Value.field.inj hv14)) (by omega)
-    · obtain ⟨rfl, rfl⟩ := cij_spec ev389
-      obtain rfl := ok_inj ((proj_stateV_hi s m 2 (by decide)).symm.trans pr426)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 6 (by decide)).symm.trans pr456)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 3 (by decide)).symm.trans pr486)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 10 (by decide)).symm.trans pr516)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 7 (by decide)).symm.trans pr546)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 0 (by decide)).symm.trans pr576)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 4 (by decide)).symm.trans pr606)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 13 (by decide)).symm.trans pr636)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 1 (by decide)).symm.trans pr666)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 11 (by decide)).symm.trans pr696)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 12 (by decide)).symm.trans pr726)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 5 (by decide)).symm.trans pr756)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 9 (by decide)).symm.trans pr786)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 14 (by decide)).symm.trans pr816)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 15 (by decide)).symm.trans pr846)
-      obtain rfl := ok_inj ((proj_stateV_hi s m 8 (by decide)).symm.trans pr876)
-      obtain rfl := update_inv (by simp [stateL]) up408
-      obtain rfl := update_inv (by simp [stateL]) up438
-      obtain rfl := update_inv (by simp [stateL]) up468
-      obtain rfl := update_inv (by simp [stateL]) up498
-      obtain rfl := update_inv (by simp [stateL]) up528
-      obtain rfl := update_inv (by simp [stateL]) up558
-      obtain rfl := update_inv (by simp [stateL]) up588
-      obtain rfl := update_inv (by simp [stateL]) up618
-      obtain rfl := update_inv (by simp [stateL]) up648
-      obtain rfl := update_inv (by simp [stateL]) up678
-      obtain rfl := update_inv (by simp [stateL]) up708
-      obtain rfl := update_inv (by simp [stateL]) up738
-      obtain rfl := update_inv (by simp [stateL]) up768
-      obtain rfl := update_inv (by simp [stateL]) up798
-      obtain rfl := update_inv (by simp [stateL]) up828
-      obtain rfl := update_inv (by simp [stateL]) up858
+    match «Blake3::compress».obs ev with
+    | .n3 (hv_gzlcrgnw := hv) .. =>
+      exact absurd (natCast_three_inj (by omega) (Value.field.inj hv)) (by omega)
+    | .other (ev_dvofuqkd := ev_cij1)
+        (pr_sgqwmyus := pr1_0) (up_xzpdfarf := up1_0)
+        (pr_pndutyrr := pr1_1) (up_slfzhdpx := up1_1)
+        (pr_bxpolqud := pr1_2) (up_wsfuzhfm := up1_2)
+        (pr_emizxcqn := pr1_3) (up_xblbnued := up1_3)
+        (pr_xzujbylr := pr1_4) (up_rwahsmou := up1_4)
+        (pr_lnxhnhrd := pr1_5) (up_qqubcvhq := up1_5)
+        (pr_hvjojxdj := pr1_6) (up_jscbfxyw := up1_6)
+        (pr_oaqvodci := pr1_7) (up_moxtlxdi := up1_7)
+        (pr_vvosxcop := pr1_8) (up_qykirevw := up1_8)
+        (pr_bfskddqp := pr1_9) (up_hsuajdsb := up1_9)
+        (pr_wuwpcbuu := pr1_10) (up_vnzlavqv := up1_10)
+        (pr_sfatmnvo := pr1_11) (up_hvltbocb := up1_11)
+        (pr_fdtnsydw := pr1_12) (up_eeiizmdg := up1_12)
+        (pr_gictyovo := pr1_13) (up_bnydasqr := up1_13)
+        (pr_ldnsrrez := pr1_14) (up_axypzgzn := up1_14)
+        (pr_msfffviz := pr1_15) (up_rabiteud := up1_15)
+        (ev_hrylbewr := ev_cij2)
+        (pr_ugxzlhyq := pr2_0) (up_qpqqgspo := up2_0)
+        (pr_usfpkqut := pr2_1) (up_oldrnsbq := up2_1)
+        (pr_bakjnyeb := pr2_2) (up_pibrrdif := up2_2)
+        (pr_jequrpzo := pr2_3) (up_abnsggug := up2_3)
+        (pr_zhctjbrh := pr2_4) (up_zpytthqk := up2_4)
+        (pr_ikgxoafb := pr2_5) (up_xcjesrbn := up2_5)
+        (pr_iibeucwm := pr2_6) (up_kwbjymhb := up2_6)
+        (pr_gkvokumf := pr2_7) (up_eevnwvxd := up2_7)
+        (pr_hgzynked := pr2_8) (up_ufogrewt := up2_8)
+        (pr_iszgjjug := pr2_9) (up_elvfkxvk := up2_9)
+        (pr_wownnrhg := pr2_10) (up_wziwovxw := up2_10)
+        (pr_ldsuuiuo := pr2_11) (up_vadvnjyh := up2_11)
+        (pr_tsswjcdu := pr2_12) (up_djgiyexu := up2_12)
+        (pr_ypkhuztl := pr2_13) (up_lxhluajx := up2_13)
+        (pr_tldtxcku := pr2_14) (up_quardhga := up2_14)
+        (pr_crnndaqj := pr2_15) (up_mtwijpxk := up2_15)
+        (op899 := op899) (ev883 := ev883) .. =>
+      obtain ⟨rfl, rfl⟩ := cij_spec ev_cij1
+      have hst1 := permute16_inv pr1_0 up1_0 pr1_1 up1_1 pr1_2 up1_2 pr1_3 up1_3
+        pr1_4 up1_4 pr1_5 up1_5 pr1_6 up1_6 pr1_7 up1_7
+        pr1_8 up1_8 pr1_9 up1_9 pr1_10 up1_10 pr1_11 up1_11
+        pr1_12 up1_12 pr1_13 up1_13 pr1_14 up1_14 pr1_15 up1_15
+      rw [hst1] at ev_cij2 pr2_0 pr2_1 pr2_2 pr2_3 pr2_4 pr2_5 pr2_6 pr2_7
+      rw [hst1] at pr2_8 pr2_9 pr2_10 pr2_11 pr2_12 pr2_13 pr2_14 pr2_15
+      obtain ⟨rfl, rfl⟩ := cij_spec ev_cij2
+      have hst2 := permute16_inv pr2_0 up2_0 pr2_1 up2_1 pr2_2 up2_2 pr2_3 up2_3
+        pr2_4 up2_4 pr2_5 up2_5 pr2_6 up2_6 pr2_7 up2_7
+        pr2_8 up2_8 pr2_9 up2_9 pr2_10 up2_10 pr2_11 up2_11
+        pr2_12 up2_12 pr2_13 up2_13 pr2_14 up2_14 pr2_15 up2_15
       obtain rfl := binop_add op899
       have ih := compress_spec n (k := k + 1)
-        (s := Aiur.Library.Blake3.compressInnerJ s m) (m := Aiur.Library.Blake3.permute m)
-        (by omega) (by first | simp | (push_cast; rfl)) (by first | rfl | simp [stateV, stateL]) ev883
+        (s := Aiur.Library.Blake3.compressInnerJ (Aiur.Library.Blake3.compressInnerJ s m) (Aiur.Library.Blake3.permute m))
+        (m := Aiur.Library.Blake3.permute (Aiur.Library.Blake3.permute m))
+        (by omega) (by first | simp | (push_cast; rfl)) hst2 ev883
+      have h2 : 2 * (n + 1) + 1 = (2 * n + 1) + 2 := by omega
+      rw [h2]
       exact ⟨ih.1, ih.2⟩
 
 /-! ## `Blake3::compress_init` -/
@@ -603,7 +726,7 @@ theorem compress_init_spec {cv : Blake3.Pure.CV} {m : Blake3.Pure.Block} {c : UI
     rw [small_word hlen, small_word hfl, ← wv_wordOfBytes (u64b c 0), lo_word,
       ← wv_wordOfBytes (u64b c 4), hi_word]
     rfl
-  have spec := compress_spec 7 (k := 0) (by rfl) (by simp) hst ev597
+  have spec := compress_spec 3 (k := 0) (by rfl) (by simp) hst ev597
   refine ⟨?_, spec.2⟩
   rw [spec.1, compressRounds_seven, Aiur.Library.Blake3.compress_spec]
 

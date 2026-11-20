@@ -2224,70 +2224,59 @@ theorem «KernelRoles::op_group_needs».obs {x_r : SourceValue F} {h h' : Heap F
   obtain ⟨rfl, rfl, rfl⟩ := a13.nil_inv
   exact «KernelRoles::op_group_needs».Path.run _ _ _ _ ev19 ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
-/-- The `let`-bound match of `KernelRoles::op_order_scan_list` at `[2, 0]`: one constructor per combination of selected arms. -/
-inductive «KernelRoles::op_order_scan_list».Seg1 (e0_b e1_rest e2_tbl e3_limit e4_needs e5_refs e6_used e7_i : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+/-- The `let`-bound match of `KernelRoles::op_order_scan_list` at `[2, 1, 0]`: one constructor per combination of selected arms. -/
+inductive «KernelRoles::op_order_scan_list».Seg_fokxpuhl (e0_hit e1_next_used e2_b e3_rest e4_tbl e5_limit e6_needs e7_refs e8_used e9_i : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | n1
-      (m43 : Heap F) (cs54 : List (Call F)) (cs80 : List (Call F))
-      (ev56 : ObsFn W "KernelClaim::g_list_has" [e6_used, e7_i] h (.field 1) m43 cs54)
-      (ev82 : ObsFn W "KernelRoles::op_order_scan" [e2_tbl, e3_limit, e4_needs, e0_b] m43 r h' cs80)
-      (hc115 : calls = ((⟨"KernelClaim::g_list_has", [e6_used, e7_i], h⟩ : Call F) :: (cs54 ++ ((⟨"KernelRoles::op_order_scan", [e2_tbl, e3_limit, e4_needs, e0_b], m43⟩ : Call F) :: cs80))))
+      (cs_wfhrrgzi : List (Call F))
+      (hv_jbbaitvx : e0_hit = (.field 1))
+      (ev_lpcvtdzr : ObsFn W "KernelRoles::op_order_scan" [e4_tbl, e5_limit, e6_needs, e2_b] h r h' cs_wfhrrgzi)
+      (hc_yfpefzhg : calls = ((⟨"KernelRoles::op_order_scan", [e4_tbl, e5_limit, e6_needs, e2_b], h⟩ : Call F) :: cs_wfhrrgzi))
   | other
-      (v42 : SourceValue F) (m43 : Heap F) (cs54 : List (Call F))
-      (ev56 : ObsFn W "KernelClaim::g_list_has" [e6_used, e7_i] h v42 m43 cs54)
-      (hne116 : (v42 : SourceValue F) ≠ (.field 1))
-      (he122 : r = (.tuple []))
-      (he123 : h' = m43)
-      (hc124 : calls = ((⟨"KernelClaim::g_list_has", [e6_used, e7_i], h⟩ : Call F) :: cs54))
+      (hne_yeueqpng : (e0_hit : SourceValue F) ≠ (.field 1))
+      (he_dczjlpjr : r = (.tuple []))
+      (he_eemargwo : h' = h)
+      (hc_pozzbvev : calls = [])
 
-/-- **Every observed derivation of the `let`-bound match of `KernelRoles::op_order_scan_list` at `[2, 0]` takes one of its paths.** -/
-theorem «KernelRoles::op_order_scan_list».seg1 {e0_b e1_rest e2_tbl e3_limit e4_needs e5_refs e6_used e7_i : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+/-- **Every observed derivation of the `let`-bound match of `KernelRoles::op_order_scan_list` at `[2, 1, 0]` takes one of its paths.** -/
+theorem «KernelRoles::op_order_scan_list».seg_fokxpuhl {e0_hit e1_next_used e2_b e3_rest e4_tbl e5_limit e6_needs e7_refs e8_used e9_i : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)}
-    (d0 : ObsExpr W [] [("b", e0_b), ("rest", e1_rest), ("tbl", e2_tbl), ("limit", e3_limit), ("needs", e4_needs), ("refs", e5_refs), ("used", e6_used), ("i", e7_i)] (Expr.sub IxVM.KernelRoles.op_order_scan_list.body [2, 0]) h r h' calls) :
-    «KernelRoles::op_order_scan_list».Seg1 e0_b e1_rest e2_tbl e3_limit e4_needs e5_refs e6_used e7_i h r h' calls := by
+    (d0 : ObsExpr W [] [("hit", e0_hit), ("next_used", e1_next_used), ("b", e2_b), ("rest", e3_rest), ("tbl", e4_tbl), ("limit", e5_limit), ("needs", e6_needs), ("refs", e7_refs), ("used", e8_used), ("i", e9_i)] (Expr.sub IxVM.KernelRoles.op_order_scan_list.body [2, 1, 0]) h r h' calls) :
+    «KernelRoles::op_order_scan_list».Seg_fokxpuhl e0_hit e1_next_used e2_b e3_rest e4_tbl e5_limit e6_needs e7_refs e8_used e9_i h r h' calls := by
   simp only [Expr.sub, Expr.childAt, Expr.children, IxVM.KernelRoles.op_order_scan_list, List.map_cons, List.map_nil] at d0
-  obtain ⟨v42, m43, bs44, body45, c46, c47, d48, sel49, d50, rfl⟩ := d0.matchValue_inv
-  obtain ⟨vs51, m52, c53, cs54, a55, ev56, rfl⟩ := d48.call_inv
-  rw [instanceName_plain_some] at ev56
-  obtain ⟨v57, vs59, m60, c61, c62, rfl, d63, a64, rfl⟩ := a55.cons_inv
-  obtain ⟨l65, rfl, rfl⟩ := d63.var_inv
-  simp at l65
-  subst l65
-  obtain ⟨v58, vs66, m67, c68, c69, rfl, d70, a71, rfl⟩ := a64.cons_inv
-  obtain ⟨l72, rfl, rfl⟩ := d70.var_inv
-  simp at l72
-  subst l72
-  obtain ⟨rfl, rfl, rfl⟩ := a71.nil_inv
-  rcases selectArm_cons_inv sel49 with ⟨mt73, rfl⟩ | ⟨nm74, sel75⟩
-  · obtain ⟨hv76, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt73
-    subst hv76
-    obtain ⟨vs77, m78, c79, cs80, a81, ev82, rfl⟩ := d50.call_inv
-    rw [instanceName_plain_some] at ev82
-    obtain ⟨v83, vs87, m88, c89, c90, rfl, d91, a92, rfl⟩ := a81.cons_inv
-    obtain ⟨l93, rfl, rfl⟩ := d91.var_inv
-    simp at l93
-    subst l93
-    obtain ⟨v84, vs94, m95, c96, c97, rfl, d98, a99, rfl⟩ := a92.cons_inv
-    obtain ⟨l100, rfl, rfl⟩ := d98.var_inv
-    simp at l100
-    subst l100
-    obtain ⟨v85, vs101, m102, c103, c104, rfl, d105, a106, rfl⟩ := a99.cons_inv
-    obtain ⟨l107, rfl, rfl⟩ := d105.var_inv
-    simp at l107
-    subst l107
-    obtain ⟨v86, vs108, m109, c110, c111, rfl, d112, a113, rfl⟩ := a106.cons_inv
-    obtain ⟨l114, rfl, rfl⟩ := d112.var_inv
-    simp at l114
-    subst l114
-    obtain ⟨rfl, rfl, rfl⟩ := a113.nil_inv
-    exact «KernelRoles::op_order_scan_list».Seg1.n1 _ _ _ ev56 ev82 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-  · have hne116 := MatchesConst.none_inv (MatchesConst.literal 1) nm74
-    rcases selectArm_cons_inv sel75 with ⟨mt117, rfl⟩ | ⟨nm118, sel119⟩
-    · obtain rfl := matchPattern_wildcard_inv mt117
-      obtain ⟨vs120, a121, rfl⟩ := d50.tuple_inv
-      obtain ⟨rfl, rfl, rfl⟩ := a121.nil_inv
-      exact «KernelRoles::op_order_scan_list».Seg1.other _ _ _ ev56 hne116 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-    · exact (matchPattern_wildcard_none nm118).elim
+  obtain ⟨v85, m86, bs87, body88, c89, c90, d91, sel92, d93, rfl⟩ := d0.matchValue_inv
+  obtain ⟨l94, rfl, rfl⟩ := d91.var_inv
+  simp at l94
+  subst l94
+  rcases selectArm_cons_inv sel92 with ⟨mt95, rfl⟩ | ⟨nm96, sel97⟩
+  · obtain ⟨hv_jbbaitvx, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt95
+    obtain ⟨vs99, m100, c101, cs_wfhrrgzi, a103, ev_lpcvtdzr, rfl⟩ := d93.call_inv
+    rw [instanceName_plain_some] at ev_lpcvtdzr
+    obtain ⟨v105, vs109, m110, c111, c112, rfl, d113, a114, rfl⟩ := a103.cons_inv
+    obtain ⟨l115, rfl, rfl⟩ := d113.var_inv
+    simp at l115
+    subst l115
+    obtain ⟨v106, vs116, m117, c118, c119, rfl, d120, a121, rfl⟩ := a114.cons_inv
+    obtain ⟨l122, rfl, rfl⟩ := d120.var_inv
+    simp at l122
+    subst l122
+    obtain ⟨v107, vs123, m124, c125, c126, rfl, d127, a128, rfl⟩ := a121.cons_inv
+    obtain ⟨l129, rfl, rfl⟩ := d127.var_inv
+    simp at l129
+    subst l129
+    obtain ⟨v108, vs130, m131, c132, c133, rfl, d134, a135, rfl⟩ := a128.cons_inv
+    obtain ⟨l136, rfl, rfl⟩ := d134.var_inv
+    simp at l136
+    subst l136
+    obtain ⟨rfl, rfl, rfl⟩ := a135.nil_inv
+    exact «KernelRoles::op_order_scan_list».Seg_fokxpuhl.n1 _ hv_jbbaitvx ev_lpcvtdzr (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne_yeueqpng := MatchesConst.none_inv (MatchesConst.literal 1) nm96
+    rcases selectArm_cons_inv sel97 with ⟨mt139, rfl⟩ | ⟨nm140, sel141⟩
+    · obtain rfl := matchPattern_wildcard_inv mt139
+      obtain ⟨vs142, a143, rfl⟩ := d93.tuple_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a143.nil_inv
+      exact «KernelRoles::op_order_scan_list».Seg_fokxpuhl.other hne_yeueqpng rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · exact (matchPattern_wildcard_none nm140).elim
 
 /-- The evaluation paths of `KernelRoles::op_order_scan_list`: one constructor per combination of selected arms. -/
 inductive «KernelRoles::op_order_scan_list».Path (x_tbl x_limit x_needs x_refs x_used x_i : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -2298,12 +2287,13 @@ inductive «KernelRoles::op_order_scan_list».Path (x_tbl x_limit x_needs x_refs
       (he23 : h' = h)
       (hc24 : calls = [])
   | Cons
-      (x_b : SourceValue F) (x_rest : SourceValue F) (v125 : SourceValue F) (m126 : Heap F) (cs128 : List (Call F)) (cs137 : List (Call F)) (v145 : SourceValue F)
+      (x_b : SourceValue F) (x_rest : SourceValue F) (m_gxdzgomc : Heap F) (cs_oovewxia : List (Call F)) (x_hit : SourceValue F) (x_next_used : SourceValue F) (v_igtryiow : SourceValue F) (m_sszfdvej : Heap F) (cs_bixmeype : List (Call F)) (cs137 : List (Call F)) (v145 : SourceValue F)
       (ld12 : loadValue h x_refs = .ok (.construct Names.«Lists::Node<&[Field; 32]>» "Cons" [x_b, x_rest]))
-      (sg133 : «KernelRoles::op_order_scan_list».Seg1 x_b x_rest x_tbl x_limit x_needs x_refs x_used x_i h v125 m126 cs128)
+      (ev_ahqcgauk : ObsFn W "KernelClaim::sorted_pop" [x_used, x_i] h (.tuple [x_hit, x_next_used]) m_gxdzgomc cs_oovewxia)
+      (sg_opqpxwys : «KernelRoles::op_order_scan_list».Seg_fokxpuhl x_hit x_next_used x_b x_rest x_tbl x_limit x_needs x_refs x_used x_i m_gxdzgomc v_igtryiow m_sszfdvej cs_bixmeype)
       (op194 : evalBinOp .add (x_i : SourceValue F) ((.field 1) : SourceValue F) = .ok v145)
-      (ev139 : ObsFn W "KernelRoles::op_order_scan_list" [x_tbl, x_limit, x_needs, x_rest, x_used, v145] m126 r h' cs137)
-      (hc196 : calls = (cs128 ++ ((⟨"KernelRoles::op_order_scan_list", [x_tbl, x_limit, x_needs, x_rest, x_used, v145], m126⟩ : Call F) :: cs137)))
+      (ev139 : ObsFn W "KernelRoles::op_order_scan_list" [x_tbl, x_limit, x_needs, x_rest, x_next_used, v145] m_sszfdvej r h' cs137)
+      (hc196 : calls = ((⟨"KernelClaim::sorted_pop", [x_used, x_i], h⟩ : Call F) :: (cs_oovewxia ++ (cs_bixmeype ++ ((⟨"KernelRoles::op_order_scan_list", [x_tbl, x_limit, x_needs, x_rest, x_next_used, v145], m_sszfdvej⟩ : Call F) :: cs137)))))
 
 /-- **Every observed derivation of `KernelRoles::op_order_scan_list` takes one of its paths.** -/
 theorem «KernelRoles::op_order_scan_list».obs {x_tbl x_limit x_needs x_refs x_used x_i : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -2336,42 +2326,61 @@ theorem «KernelRoles::op_order_scan_list».obs {x_tbl x_limit x_needs x_refs x_
       obtain ⟨x_rest, vs37, b38, b39, rfl, mt40, ml41, rfl⟩ := matchListWith_cons_inv ml36
       obtain rfl := matchPattern_bind_inv mt40
       obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml41
-      obtain ⟨v125, m126, bs127, cs128, c129, d130, mt131, d132, rfl⟩ := d9.letValue_inv
-      have sg133 := «KernelRoles::op_order_scan_list».seg1 d130
-      clear d130
-      obtain rfl := matchPattern_wildcard_inv mt131
-      obtain ⟨vs134, m135, c136, cs137, a138, ev139, rfl⟩ := d132.call_inv
+      obtain ⟨v42, m_gxdzgomc, bs44, c45, c46, d47, mt48, d49, rfl⟩ := d9.letValue_inv
+      obtain ⟨vs50, m51, c52, cs_oovewxia, a54, ev_ahqcgauk, rfl⟩ := d47.call_inv
+      rw [instanceName_plain_some] at ev_ahqcgauk
+      obtain ⟨v56, vs58, m59, c60, c61, rfl, d62, a63, rfl⟩ := a54.cons_inv
+      obtain ⟨l64, rfl, rfl⟩ := d62.var_inv
+      simp at l64
+      subst l64
+      obtain ⟨v57, vs65, m66, c67, c68, rfl, d69, a70, rfl⟩ := a63.cons_inv
+      obtain ⟨l71, rfl, rfl⟩ := d69.var_inv
+      simp at l71
+      subst l71
+      obtain ⟨rfl, rfl, rfl⟩ := a70.nil_inv
+      obtain ⟨vs72, hv73, -, ml74⟩ := matchPattern_tuple_inv mt48
+      subst hv73
+      obtain ⟨x_hit, vs75, b76, b77, rfl, mt78, ml79, rfl⟩ := matchListWith_cons_inv ml74
+      obtain rfl := matchPattern_bind_inv mt78
+      obtain ⟨x_next_used, vs80, b81, b82, rfl, mt83, ml84, rfl⟩ := matchListWith_cons_inv ml79
+      obtain rfl := matchPattern_bind_inv mt83
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml84
+      obtain ⟨v_igtryiow, m_sszfdvej, bs149, cs_bixmeype, c151, d152, mt153, d154, rfl⟩ := d49.letValue_inv
+      have sg_opqpxwys := «KernelRoles::op_order_scan_list».seg_fokxpuhl d152
+      clear d152
+      obtain rfl := matchPattern_wildcard_inv mt153
+      obtain ⟨vs156, m157, c158, cs137, a160, ev139, rfl⟩ := d154.call_inv
       rw [instanceName_plain_some] at ev139
-      obtain ⟨v140, vs146, m147, c148, c149, rfl, d150, a151, rfl⟩ := a138.cons_inv
-      obtain ⟨l152, rfl, rfl⟩ := d150.var_inv
-      simp at l152
-      subst l152
-      obtain ⟨v141, vs153, m154, c155, c156, rfl, d157, a158, rfl⟩ := a151.cons_inv
-      obtain ⟨l159, rfl, rfl⟩ := d157.var_inv
-      simp at l159
-      subst l159
-      obtain ⟨v142, vs160, m161, c162, c163, rfl, d164, a165, rfl⟩ := a158.cons_inv
-      obtain ⟨l166, rfl, rfl⟩ := d164.var_inv
-      simp at l166
-      subst l166
-      obtain ⟨v143, vs167, m168, c169, c170, rfl, d171, a172, rfl⟩ := a165.cons_inv
-      obtain ⟨l173, rfl, rfl⟩ := d171.var_inv
-      simp at l173
-      subst l173
-      obtain ⟨v144, vs174, m175, c176, c177, rfl, d178, a179, rfl⟩ := a172.cons_inv
-      obtain ⟨l180, rfl, rfl⟩ := d178.var_inv
-      simp at l180
-      subst l180
-      obtain ⟨v145, vs181, m182, c183, c184, rfl, d185, a186, rfl⟩ := a179.cons_inv
-      obtain ⟨x187, y188, m189, c190, c191, d192, d193, op194, rfl⟩ := d185.binary_inv
-      obtain ⟨l195, rfl, rfl⟩ := d192.var_inv
+      obtain ⟨v162, vs168, m169, c170, c171, rfl, d172, a173, rfl⟩ := a160.cons_inv
+      obtain ⟨l174, rfl, rfl⟩ := d172.var_inv
+      simp at l174
+      subst l174
+      obtain ⟨v163, vs175, m176, c177, c178, rfl, d179, a180, rfl⟩ := a173.cons_inv
+      obtain ⟨l181, rfl, rfl⟩ := d179.var_inv
+      simp at l181
+      subst l181
+      obtain ⟨v164, vs182, m183, c184, c185, rfl, d186, a187, rfl⟩ := a180.cons_inv
+      obtain ⟨l188, rfl, rfl⟩ := d186.var_inv
+      simp at l188
+      subst l188
+      obtain ⟨v165, vs189, m190, c191, c192, rfl, d193, a194, rfl⟩ := a187.cons_inv
+      obtain ⟨l195, rfl, rfl⟩ := d193.var_inv
       simp at l195
       subst l195
-      obtain ⟨rfl, rfl, rfl⟩ := d193.literal_inv
-      obtain ⟨rfl, rfl, rfl⟩ := a186.nil_inv
-      exact «KernelRoles::op_order_scan_list».Path.Cons _ _ _ _ _ _ _ ld12 sg133 op194 ev139 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-    · have hne197 := matchPattern_construct_none (by trivial) nm27
-      simp only [Names.n8276273970664301260] at hne197
+      obtain ⟨v166, vs196, m197, c198, c199, rfl, d200, a201, rfl⟩ := a194.cons_inv
+      obtain ⟨l202, rfl, rfl⟩ := d200.var_inv
+      simp at l202
+      subst l202
+      obtain ⟨v145, vs203, m204, c205, c206, rfl, d207, a208, rfl⟩ := a201.cons_inv
+      obtain ⟨x209, y210, m211, c212, c213, d214, d215, op194, rfl⟩ := d207.binary_inv
+      obtain ⟨l217, rfl, rfl⟩ := d214.var_inv
+      simp at l217
+      subst l217
+      obtain ⟨rfl, rfl, rfl⟩ := d215.literal_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a208.nil_inv
+      exact «KernelRoles::op_order_scan_list».Path.Cons _ _ _ _ _ _ _ _ _ _ _ ld12 ev_ahqcgauk sg_opqpxwys op194 ev139 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne219 := matchPattern_construct_none (by trivial) nm27
+      simp only [Names.n8276273970664301260] at hne219
       exact (selectArm_nil_inv sel28).elim
 
 /-- The evaluation paths of `KernelRoles::walk_covered`: one constructor per combination of selected arms. -/

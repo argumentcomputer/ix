@@ -513,6 +513,36 @@ theorem RawTmExact.const_of_load {κ : _root_.Address → KKey} {d : Nat} {Γ : 
   | litStr cell _ _ | proj cell _ _ =>
     exact (load_cell_ne cell ld (by decide)).elim
 
+private theorem spineChain_raw {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat}
+    {h : Heap F} {e hd : SourceValue F} {ps : List (SourceValue F)}
+    (sc : Core.SpineChain h e hd ps) :
+    ∀ {R E : KExpr}, RawTmExact κ d Γ h k R E e →
+      ∃ RH EH RAs As,
+        RawTmExact κ d Γ h k RH EH hd ∧
+        (∀ rf ra, RH ≠ .app rf ra) ∧
+        List.Forall₂ (fun X p => TmExact κ d Γ h k X p) As ps ∧
+        R = Expr.mkAppN RH RAs ∧
+        E = Expr.mkAppN EH As := by
+  induction sc with
+  | head ld hne =>
+    intro R E hRaw
+    have hna : ∀ rf ra, R ≠ .app rf ra := by
+      intro rf ra hEq
+      subst hEq
+      cases hRaw with
+      | app cell _ _ =>
+        rw [loadValue_enum_cell cell] at ld
+        injection ld with hv
+        exact hne [_, _] rfl hv.symm
+    exact ⟨R, E, [], [], hRaw, hna, .nil, rfl, rfl⟩
+  | app ld _ ih =>
+    intro R E hRaw
+    obtain ⟨Rf, Ra, Ef, Ea, rfl, rfl, hf, ha⟩ := hRaw.app_of_load ld
+    obtain ⟨RH, EH, RAs, As, hH, hna, hAs, rfl, rfl⟩ := ih hf
+    exact ⟨RH, EH, RAs ++ [Ra], As ++ [Ea], hH, hna,
+      Core.forall₂_append hAs (.cons ha.toTmExact .nil),
+      (mkAppN_append_singleton RH RAs Ra).symm, (mkAppN_append_singleton EH As Ea).symm⟩
+
 theorem collect_spine_raw_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {k : Nat} {R E : KExpr} {pe r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hRaw : RawTmExact κ d Γ h k R E pe)
@@ -524,28 +554,29 @@ theorem collect_spine_raw_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Na
       RepList kexprListEnum (fun h₀ X p₀ => TmExact κ d Γ h₀ k X p₀) h' As sp ∧
       R = Expr.mkAppN RH RAs ∧
       E = Expr.mkAppN EH As := by
-  match Obs.«KernelTypes::collect_spine».obs ev with
-  | .App (ld12 := ld) (ev43 := e1) (he69 := hr) (ev88 := e2) (he105 := he) .. =>
-    subst hr he
-    obtain ⟨Rf, Ra, Ef, Ea, rfl, rfl, hf, ha⟩ := hRaw.app_of_load ld
-    obtain ⟨hd, sp, RH, EH, RAs, As, htup, hH, hna, hAs, rfl, rfl⟩ :=
-      collect_spine_raw_spec hf e1
-    injection htup with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-    refine ⟨_, _, RH, EH, RAs ++ [Ra], As ++ [Ea], rfl, hH.mono e2.heap_extends, hna, ?_,
-      (mkAppN_append_singleton RH RAs Ra).symm, (mkAppN_append_singleton EH As Ea).symm⟩
-    exact SubstAux.ksnoc tmExact_heapMono₂ e2 hAs (ha.toTmExact.mono e1.heap_extends)
-  | .other (v1 := v1) (ld12 := ld) (hne107 := hne) (he115 := hr) (hm132 := hm) (he136 := he) .. =>
-    subst hr hm he
-    have hna : ∀ rf ra, R ≠ .app rf ra := by
-      intro rf ra hEq
-      subst hEq
-      cases hRaw with
-      | app cell _ _ =>
-        rw [loadValue_enum_cell cell] at ld
-        injection ld with hv
-        exact hne [_, _] rfl hv.symm
-    exact ⟨pe, _, R, E, [], [], rfl, hRaw.mono (Heap.Extends.snoc _ _), hna, .nil (by simp),
-      rfl, rfl⟩
+  obtain ⟨hd, sp, ps, rfl, hch, -, hrep⟩ := Core.collect_spine_chain ev
+  obtain ⟨RH, EH, RAs, As, hH, hna, hAs, hR, hE⟩ :=
+    spineChain_raw (hch.mono ev.heap_extends) (hRaw.mono ev.heap_extends)
+  exact ⟨hd, sp, RH, EH, RAs, As, rfl, hH, hna, Core.repList_of_eq_forall₂ hrep hAs, hR, hE⟩
+
+private theorem spineChain_exact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat}
+    {h : Heap F} {e hd : SourceValue F} {ps : List (SourceValue F)}
+    (sc : Core.SpineChain h e hd ps) :
+    ∀ {E : KExpr}, TmExact κ d Γ h k E e →
+      ∃ H As,
+        TmExact κ d Γ h k H hd ∧
+        List.Forall₂ (fun X p => TmExact κ d Γ h k X p) As ps ∧
+        E = Expr.mkAppN H As := by
+  induction sc with
+  | head _ _ =>
+    intro E hE
+    exact ⟨E, [], hE, .nil, rfl⟩
+  | app ld _ ih =>
+    intro E hE
+    obtain ⟨Ef, Ea, rfl, hf, ha⟩ := hE.app_of_load ld
+    obtain ⟨H, As, hH, hAs, rfl⟩ := ih hf
+    exact ⟨H, As ++ [Ea], hH, Core.forall₂_append hAs (.cons ha .nil),
+      (mkAppN_append_singleton H As Ea).symm⟩
 
 theorem collect_spine_exact_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {k : Nat} {E : KExpr} {pe r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -556,18 +587,10 @@ theorem collect_spine_exact_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : 
       TmExact κ d Γ h' k H hd ∧
       RepList kexprListEnum (fun h₀ X p₀ => TmExact κ d Γ h₀ k X p₀) h' As sp ∧
       E = Expr.mkAppN H As := by
-  match Obs.«KernelTypes::collect_spine».obs ev with
-  | .App (ld12 := ld) (ev43 := e1) (he69 := hr) (ev88 := e2) (he105 := he) .. =>
-    subst hr he
-    obtain ⟨Ef, Ea, rfl, hf, ha⟩ := hE.app_of_load ld
-    obtain ⟨hd, sp, H, As, htup, hH, hAs, rfl⟩ := collect_spine_exact_spec hf e1
-    injection htup with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-    refine ⟨_, _, H, As ++ [Ea], rfl, hH.mono e2.heap_extends, ?_,
-      (mkAppN_append_singleton H As Ea).symm⟩
-    exact SubstAux.ksnoc tmExact_heapMono₂ e2 hAs (ha.mono e1.heap_extends)
-  | .other (he115 := hr) (hm132 := hm) (he136 := he) .. =>
-    subst hr hm he
-    exact ⟨pe, _, E, [], rfl, hE.mono (Heap.Extends.snoc _ _), .nil (by simp), rfl⟩
+  obtain ⟨hd, sp, ps, rfl, hch, -, hrep⟩ := Core.collect_spine_chain ev
+  obtain ⟨H, As, hH, hAs, hmk⟩ :=
+    spineChain_exact (hch.mono ev.heap_extends) (hE.mono ev.heap_extends)
+  exact ⟨hd, sp, H, As, rfl, hH, Core.repList_of_eq_forall₂ hrep hAs, hmk⟩
 
 theorem TypesRep.mono_congr {κ : _root_.Address → KKey} {h₁ h₂ : Heap F}
     {d : Nat} {Γ Γ' : Nat → KExpr} {p : SourceValue F}
@@ -1825,16 +1848,16 @@ theorem collect_spine_const_noTopLetSpine {κ : _root_.Address → KKey} {d : Na
     (ev : ObsFn W "KernelTypes::collect_spine" [pe] h (.tuple [hd, sp]) h' cs)
     (ld_hd : loadValue h' hd = .ok (.construct kexprEnum "Const" [xa, xu])) :
     NoTopLetSpine 0 h' pe := by
-  match Obs.«KernelTypes::collect_spine».obs ev with
-  | .App (ld12 := ld) .. =>
+  obtain ⟨ps, hch, -, -⟩ := Core.collect_spine_chain_tup ev
+  cases hch with
+  | app ld _ =>
     cases hRaw with
     | app cell _ _ => exact .zero (ev.heap_extends.getElem?_eq cell) (by decide)
     | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ | const cell _ _
     | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _
     | litStr cell _ _ | proj cell _ _ =>
       exact (load_cell_ne cell ld (by decide)).elim
-  | .other (he115 := hr) .. =>
-    injection hr with hl; injection hl with hpe _; subst hpe
+  | head _ _ =>
     have hRaw' := hRaw.mono ev.heap_extends
     cases hRaw' with
     | const cell _ _ => exact .zero cell (by decide)

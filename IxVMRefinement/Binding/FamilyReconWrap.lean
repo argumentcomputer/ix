@@ -1,3 +1,4 @@
+import IxVMRefinement.Core.SpineChain
 import IxVMRefinement.Binding.FamilyReconBuilders
 import IxVMRefinement.Binding.FamilyReconCons
 import IxVMRefinement.Obs.KernelCheck7
@@ -2026,40 +2027,39 @@ theorem collect_spine_heapAppConst :
         ∃ (xa xus : SourceValue F) (da : Bytes.Address),
           loadValue h' xh = .ok (.construct kexprEnum "Const" [xa, xus]) ∧
           Bytes.RepAddressRef addrTy h' da xa ∧ ixAddr da = a)
-    (fun fname args h r h' cs ev ih hfn p xh xargs a hargs hr hac => by
+    (fun fname args h r h' cs ev _ hfn p xh xargs a hargs hr hac => by
       subst hfn hargs hr
-      match Obs.«KernelTypes::collect_spine».obs ev with
-      | .App (x_f := xf) (m31 := m31) (cs41 := cs41) (x_head := xhead) (x_args := xargs')
-          (ld12 := ld12) (ev43 := ev43) (he69 := he69) (ev88 := ev88) (he105 := he105)
-          (hc106 := hc) .. =>
-        injection he69 with hxs; injection hxs with hxh _
-        subst hxh he105
-        cases hac with
-        | const ld _ =>
-          have hv := Except.ok.inj (ld.symm.trans ld12)
-          simp [kexprEnum] at hv
-        | app ld hac_f =>
-          have hv := Except.ok.inj (ld.symm.trans ld12)
-          simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hv
-          obtain ⟨rfl, rfl⟩ := hv
-          obtain ⟨xa, xus, da, ldc, ra, ha⟩ :=
-            ih _ _ _ _ _ _ (by rw [hc]; simp only [List.length_cons, List.length_append]; omega)
-              ev43 rfl _ _ _ _ rfl rfl hac_f
-          have ext := ev88.heap_extends
-          exact ⟨xa, xus, da, loadValue_mono ext ldc,
-            Bytes.repAddressRef_heapMono₂ addrTy ext ra, ha⟩
-      | .other (ld12 := ld12) (hne107 := hne107) (he115 := he115) (hm132 := hm132)
-          (he136 := he136) .. =>
-        injection he115 with hxs; injection hxs with hxh _
-        subst hxh he136 hm132
-        cases hac with
-        | app ld _ =>
-          have hv := Except.ok.inj (ld.symm.trans ld12)
-          exact False.elim (hne107 [_, _] rfl hv.symm)
-        | const ld ra =>
-          have ext := Heap.Extends.snoc h (.construct kexprListEnum "Nil" [])
-          exact ⟨_, _, _, loadValue_mono ext ld,
-            Bytes.repAddressRef_heapMono₂ addrTy ext ra, rfl⟩)
+      obtain ⟨ps, hch, -, -⟩ := Core.collect_spine_chain_tup ev
+      have haux :
+          ∀ {p xh' : SourceValue F} {ps : List (SourceValue F)},
+            Core.SpineChain h p xh' ps →
+            HeapAppConst h p a →
+            ∃ (xa xus : SourceValue F) (da : Bytes.Address),
+              loadValue h xh' = .ok (.construct kexprEnum "Const" [xa, xus]) ∧
+              Bytes.RepAddressRef addrTy h da xa ∧ ixAddr da = a := by
+        intro p xh' ps sc
+        induction sc with
+        | head ld hne =>
+          intro hac
+          cases hac with
+          | app ld0 _ =>
+            have hv := Except.ok.inj (ld0.symm.trans ld)
+            exact False.elim (hne [_, _] rfl hv.symm)
+          | const ld0 ra => exact ⟨_, _, _, ld0, ra, rfl⟩
+        | app ld _ ih =>
+          intro hac
+          cases hac with
+          | const ld0 _ =>
+            have hv := Except.ok.inj (ld0.symm.trans ld)
+            simp [kexprEnum] at hv
+          | app ld0 hac_f =>
+            have hv := Except.ok.inj (ld0.symm.trans ld)
+            simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hv
+            obtain ⟨rfl, rfl⟩ := hv
+            exact ih hac_f
+      obtain ⟨xa, xus, da, ldc, ra, ha⟩ := haux hch hac
+      exact ⟨xa, xus, da, loadValue_mono ev.heap_extends ldc,
+        Bytes.repAddressRef_heapMono₂ addrTy ev.heap_extends ra, ha⟩)
 
 /-- `KernelCheck::consume_wrapper` cannot succeed on a `HeapAppConst` headed by an inductive
 projection (`c.info = .iPrj _`) in `E₀`. -/
@@ -2116,14 +2116,13 @@ theorem consume_wrapper_not_one_of_forall {xg dp bp lp xa : SourceValue F}
     injection he with hxs; injection hxs with h01 _
     exact absurd (Value.field.inj h01) one_ne_zero
   | .Const_Cons_Defn_n1_bind_n0 (ev14 := ev14) (ld47 := ld47) .. =>
-    match Obs.«KernelTypes::collect_spine».obs ev14 with
-    | .App (ld12 := ld12) .. =>
+    obtain ⟨_, hch, -, -⟩ := Core.collect_spine_chain_tup ev14
+    cases hch with
+    | app ld12 _ =>
       have hv := Except.ok.inj (ld.symm.trans ld12)
       simp [kexprEnum] at hv
-    | .other (he115 := he115) (hm132 := hm132) (he136 := he136) .. =>
-      injection he115 with hxs; injection hxs with hxh _
-      subst hxh he136 hm132
-      have ld' := loadValue_mono (Heap.Extends.snoc h (.construct kexprListEnum "Nil" [])) ld
+    | head _ _ =>
+      have ld' := loadValue_mono ev14.heap_extends ld
       have hv := Except.ok.inj (ld'.symm.trans ld47)
       simp [kexprEnum] at hv
 

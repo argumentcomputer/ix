@@ -501,37 +501,53 @@ module Blake3 {
     stage: Field,
     state: [U32; 32]
   ) -> [U32; 8] {
+    let s1 = compress_inner_j(state);
     match stage {
-      7 => {
-        let output0 = UInt32::xor(state[0], state[8]);
-        let output1 = UInt32::xor(state[1], state[9]);
-        let output2 = UInt32::xor(state[2], state[10]);
-        let output3 = UInt32::xor(state[3], state[11]);
-        let output4 = UInt32::xor(state[4], state[12]);
-        let output5 = UInt32::xor(state[5], state[13]);
-        let output6 = UInt32::xor(state[6], state[14]);
-        let output7 = UInt32::xor(state[7], state[15]);
+      3 => {
+        let output0 = UInt32::xor(s1[0], s1[8]);
+        let output1 = UInt32::xor(s1[1], s1[9]);
+        let output2 = UInt32::xor(s1[2], s1[10]);
+        let output3 = UInt32::xor(s1[3], s1[11]);
+        let output4 = UInt32::xor(s1[4], s1[12]);
+        let output5 = UInt32::xor(s1[5], s1[13]);
+        let output6 = UInt32::xor(s1[6], s1[14]);
+        let output7 = UInt32::xor(s1[7], s1[15]);
         [output0, output1, output2, output3, output4, output5, output6, output7] },
       _ => {
-        let new_state = compress_inner_j(state);
-
-        let new_state = (new_state with { [16] = state[18] });
-        let new_state = (new_state with { [17] = state[22] });
-        let new_state = (new_state with { [18] = state[19] });
-        let new_state = (new_state with { [19] = state[26] });
-        let new_state = (new_state with { [20] = state[23] });
-        let new_state = (new_state with { [21] = state[16] });
-        let new_state = (new_state with { [22] = state[20] });
-        let new_state = (new_state with { [23] = state[29] });
-        let new_state = (new_state with { [24] = state[17] });
-        let new_state = (new_state with { [25] = state[27] });
-        let new_state = (new_state with { [26] = state[28] });
-        let new_state = (new_state with { [27] = state[21] });
-        let new_state = (new_state with { [28] = state[25] });
-        let new_state = (new_state with { [29] = state[30] });
-        let new_state = (new_state with { [30] = state[31] });
-        let new_state = (new_state with { [31] = state[24] });
-        compress(stage + 1, new_state) },
+        let s1 = (s1 with { [16] = state[18] });
+        let s1 = (s1 with { [17] = state[22] });
+        let s1 = (s1 with { [18] = state[19] });
+        let s1 = (s1 with { [19] = state[26] });
+        let s1 = (s1 with { [20] = state[23] });
+        let s1 = (s1 with { [21] = state[16] });
+        let s1 = (s1 with { [22] = state[20] });
+        let s1 = (s1 with { [23] = state[29] });
+        let s1 = (s1 with { [24] = state[17] });
+        let s1 = (s1 with { [25] = state[27] });
+        let s1 = (s1 with { [26] = state[28] });
+        let s1 = (s1 with { [27] = state[21] });
+        let s1 = (s1 with { [28] = state[25] });
+        let s1 = (s1 with { [29] = state[30] });
+        let s1 = (s1 with { [30] = state[31] });
+        let s1 = (s1 with { [31] = state[24] });
+        let s2 = compress_inner_j(s1);
+        let s2 = (s2 with { [16] = s1[18] });
+        let s2 = (s2 with { [17] = s1[22] });
+        let s2 = (s2 with { [18] = s1[19] });
+        let s2 = (s2 with { [19] = s1[26] });
+        let s2 = (s2 with { [20] = s1[23] });
+        let s2 = (s2 with { [21] = s1[16] });
+        let s2 = (s2 with { [22] = s1[20] });
+        let s2 = (s2 with { [23] = s1[29] });
+        let s2 = (s2 with { [24] = s1[17] });
+        let s2 = (s2 with { [25] = s1[27] });
+        let s2 = (s2 with { [26] = s1[28] });
+        let s2 = (s2 with { [27] = s1[21] });
+        let s2 = (s2 with { [28] = s1[25] });
+        let s2 = (s2 with { [29] = s1[30] });
+        let s2 = (s2 with { [30] = s1[31] });
+        let s2 = (s2 with { [31] = s1[24] });
+        compress(stage + 1, s2) },
     }
   }
 

@@ -34,11 +34,6 @@ abbrev «Lists::is_empty<Field>» : String := "${\"name\":\"Lists::is_empty\",\"
 
 theorem «Lists::is_empty<Field>».symbol : (Instance.mk "Lists::is_empty" [.field]).symbol = «Lists::is_empty<Field>» := by decide +kernel
 
-/-- The instance `Lists::snoc<&KernelTypes::KExprNode>`. -/
-abbrev «Lists::snoc<&KernelTypes::KExprNode>» : String := "${\"name\":\"Lists::snoc\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}}]}"
-
-theorem «Lists::snoc<&KernelTypes::KExprNode>».symbol : (Instance.mk "Lists::snoc" [(.ptr (.named "KernelTypes::KExprNode" []))]).symbol = «Lists::snoc<&KernelTypes::KExprNode>» := by decide +kernel
-
 /-- The instance `Lists::Node<&KernelTypes::KExprNode>`. -/
 abbrev «Lists::Node<&KernelTypes::KExprNode>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}}]}"
 
@@ -153,11 +148,6 @@ theorem «Lists::length<&KernelTypes::KLevelNode>».symbol : (Instance.mk "Lists
 abbrev «Lists::snoc<&KernelTypes::KLevelNode>» : String := "${\"name\":\"Lists::snoc\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KLevelNode\"}}}}]}"
 
 theorem «Lists::snoc<&KernelTypes::KLevelNode>».symbol : (Instance.mk "Lists::snoc" [(.ptr (.named "KernelTypes::KLevelNode" []))]).symbol = «Lists::snoc<&KernelTypes::KLevelNode>» := by decide +kernel
-
-/-- The instance `Lists::concat<Field>`. -/
-abbrev «Lists::concat<Field>» : String := "${\"name\":\"Lists::concat\",\"types\":[\"field\"]}"
-
-theorem «Lists::concat<Field>».symbol : (Instance.mk "Lists::concat" [.field]).symbol = «Lists::concat<Field>» := by decide +kernel
 
 /-- The instance `Lists::Node<Ixon::RecursorRule>`. -/
 abbrev «Lists::Node<Ixon::RecursorRule>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"named\":{\"args\":[],\"name\":\"Ixon::RecursorRule\"}}]}"
@@ -344,6 +334,11 @@ abbrev «Lists::concat<&KernelTypes::KExprNode>» : String := "${\"name\":\"List
 
 theorem «Lists::concat<&KernelTypes::KExprNode>».symbol : (Instance.mk "Lists::concat" [(.ptr (.named "KernelTypes::KExprNode" []))]).symbol = «Lists::concat<&KernelTypes::KExprNode>» := by decide +kernel
 
+/-- The instance `Lists::snoc<&KernelTypes::KExprNode>`. -/
+abbrev «Lists::snoc<&KernelTypes::KExprNode>» : String := "${\"name\":\"Lists::snoc\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}}]}"
+
+theorem «Lists::snoc<&KernelTypes::KExprNode>».symbol : (Instance.mk "Lists::snoc" [(.ptr (.named "KernelTypes::KExprNode" []))]).symbol = «Lists::snoc<&KernelTypes::KExprNode>» := by decide +kernel
+
 /-- The instance `Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>`. -/
 abbrev «Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"tuple\":{\"items\":[{\"ptr\":{\"target\":{\"array\":{\"element\":\"field\",\"length\":32}}}},\"field\",{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}}],\"name\":\"Lists::Node\"}}}},{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KLevelNode\"}}}}],\"name\":\"Lists::Node\"}}}}]}}]}"
 
@@ -498,8 +493,6 @@ theorem n9551417537882310672 : constructorName [] (.named "Lists::Node" [.field]
 theorem n1398977368628255516 : instanceName [] "Lists::is_empty" (some [.field]) = Names.«Lists::is_empty<Field>» := by decide +kernel
 
 theorem n14861064886094815840 : constructorName [] (.named "KernelTypes::KExprNode" []) = "KernelTypes::KExprNode" := by decide +kernel
-
-theorem n16389221028112841997 : instanceName [] "Lists::snoc" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::snoc<&KernelTypes::KExprNode>» := by decide +kernel
 
 theorem n4356648341892635848 : instanceName [] "Lists::Node" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::Node<&KernelTypes::KExprNode>» := by decide +kernel
 
@@ -1033,8 +1026,6 @@ theorem n17264845653887200752 : instanceName [] "Lists::snoc" (some [(.ptr (.nam
 
 theorem n11871363439673646749 : constructorName [] (.named "Ixon::Expr" []) = "Ixon::Expr" := by decide +kernel
 
-theorem n3632407994155229761 : instanceName [] "Lists::concat" (some [.field]) = Names.«Lists::concat<Field>» := by decide +kernel
-
 theorem n2057903310009274417 : constructorName [] (.named "Lists::Node" [(.named "Ixon::RecursorRule" [])]) = Names.«Lists::Node<Ixon::RecursorRule>» := by decide +kernel
 
 theorem n6379528803632686907 : constructorName [] (.named "Ixon::RecursorRule" []) = "Ixon::RecursorRule" := by decide +kernel
@@ -1182,6 +1173,8 @@ theorem n5758466586006354762 : instanceName [] "Lists::Node" (some [(.named "Ker
 theorem n3863982424408310192 : instanceName [] "Lists::take" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::take<&KernelTypes::KExprNode>» := by decide +kernel
 
 theorem n7100276142009841923 : instanceName [] "Lists::concat" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::concat<&KernelTypes::KExprNode>» := by decide +kernel
+
+theorem n16389221028112841997 : instanceName [] "Lists::snoc" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::snoc<&KernelTypes::KExprNode>» := by decide +kernel
 
 theorem n5388673694623393263 : constructorName [] (.named "Lists::Node" [(.named "KernelTypes::KRecRule" [])]) = Names.«Lists::Node<KernelTypes::KRecRule>» := by decide +kernel
 

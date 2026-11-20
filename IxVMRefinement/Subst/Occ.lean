@@ -338,4 +338,104 @@ theorem g_expr_has_bvar_at_let (κ : _root_.Address → KKey) {args : List (Sour
       ⟨st (zero_of_ne_one t01 hne1) d Γ k T ht, sv (zero_of_ne_one v01 hne2) d Γ k V hv, ?_⟩⟩
     exact noIdx_succ (sb hr d Γ (k + 1) B hb)
 
+/-! ## Direct node-level facts for fused substitution walks -/
+
+theorem expr_lbr_bvar_val {h h' : Heap F} {e r : SourceValue F} {i : F} {cs : List (Call F)}
+    (ld : loadValue h e = .ok (.construct kexprEnum "BVar" [.field i]))
+    (ev : ObsFn W "KernelSubst::expr_lbr" [e] h r h' cs) :
+    h' = h ∧ r = .field (i + 1) := by
+  match Obs.«KernelSubst::expr_lbr».obs ev with
+  | .BVar (ld12 := ld') (he34 := hh) (op32 := op) .. =>
+    have hsame := Except.ok.inj (ld.symm.trans ld')
+    simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hsame
+    subst hsame hh
+    exact ⟨rfl, add_ok op⟩
+  | .Srt (ld12 := ld') .. | .Const (ld12 := ld') .. | .Lit (ld12 := ld') ..
+  | .App (ld12 := ld') .. | .Lam (ld12 := ld') .. | .Forall (ld12 := ld') ..
+  | .Let (ld12 := ld') .. | .Proj (ld12 := ld') .. =>
+    have hsame := Except.ok.inj (ld.symm.trans ld')
+    simp [kexprEnum] at hsame
+
+theorem expr_lbr_other_zero {h h' : Heap F} {e v r : SourceValue F} {cs : List (Call F)}
+    (ld : loadValue h e = .ok v)
+    (n1 : ∀ vs : List (SourceValue F), vs.length = 1 → v ≠ .construct kexprEnum "BVar" vs)
+    (n2 : ∀ vs : List (SourceValue F), vs.length = 2 → v ≠ .construct kexprEnum "App" vs)
+    (n3 : ∀ vs : List (SourceValue F), vs.length = 3 → v ≠ .construct kexprEnum "Lam" vs)
+    (n4 : ∀ vs : List (SourceValue F), vs.length = 3 → v ≠ .construct kexprEnum "Forall" vs)
+    (n5 : ∀ vs : List (SourceValue F), vs.length = 3 → v ≠ .construct kexprEnum "Let" vs)
+    (n6 : ∀ vs : List (SourceValue F), vs.length = 3 → v ≠ .construct kexprEnum "Proj" vs)
+    (ev : ObsFn W "KernelSubst::expr_lbr" [e] h r h' cs) :
+    h' = h ∧ r = .field 0 := by
+  match Obs.«KernelSubst::expr_lbr».obs ev with
+  | .Srt (he49 := hr) (he50 := hh) .. => exact ⟨hh, hr⟩
+  | .Const (he71 := hr) (he72 := hh) .. => exact ⟨hh, hr⟩
+  | .Lit (he87 := hr) (he88 := hh) .. => exact ⟨hh, hr⟩
+  | .BVar (ld12 := ld') .. => exact (n1 _ rfl (Except.ok.inj (ld.symm.trans ld'))).elim
+  | .App (ld12 := ld') .. => exact (n2 _ rfl (Except.ok.inj (ld.symm.trans ld'))).elim
+  | .Lam (ld12 := ld') .. => exact (n3 _ rfl (Except.ok.inj (ld.symm.trans ld'))).elim
+  | .Forall (ld12 := ld') .. => exact (n4 _ rfl (Except.ok.inj (ld.symm.trans ld'))).elim
+  | .Let (ld12 := ld') .. => exact (n5 _ rfl (Except.ok.inj (ld.symm.trans ld'))).elim
+  | .Proj (ld12 := ld') .. => exact (n6 _ rfl (Except.ok.inj (ld.symm.trans ld'))).elim
+
+theorem expr_has_bvar_at_bvar_one {h h' : Heap F} {e : SourceValue F} {i j : F} {cs : List (Call F)}
+    (ld : loadValue h e = .ok (.construct kexprEnum "BVar" [.field i]))
+    (ev : ObsFn W "KernelSubst::expr_has_bvar_at" [e, .field j] h (.field 1) h' cs) :
+    h' = h ∧ i = j := by
+  match Obs.«KernelSubst::expr_has_bvar_at».obs ev with
+  | .BVar_n0 (ld12 := ld') (op41 := op) (he49 := hh) .. =>
+    have hsame := Except.ok.inj (ld.symm.trans ld')
+    simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hsame
+    subst hsame hh
+    have hsub := sub_ok op
+    injection hsub with h0
+    exact ⟨rfl, sub_eq_zero.mp h0.symm⟩
+  | .BVar_other (he55 := hr) .. => exact absurd hr field_one_ne_zero
+  | .other (he360 := hr) .. => exact absurd hr field_one_ne_zero
+  | .App_n1 (ld12 := ld') .. | .App_other (ld12 := ld') ..
+  | .Lam (ld12 := ld') .. | .Forall (ld12 := ld') ..
+  | .Let (ld12 := ld') .. | .Proj (ld12 := ld') .. =>
+    have hsame := Except.ok.inj (ld.symm.trans ld')
+    simp [kexprEnum] at hsame
+
+theorem has_bvar_in_range_bvar_one {h h' : Heap F} {e : SourceValue F} {i lo hi : F}
+    {cs : List (Call F)}
+    (ld : loadValue h e = .ok (.construct kexprEnum "BVar" [.field i]))
+    (ev : ObsFn W "KernelSubst::has_bvar_in_range" [e, .field lo, .field hi] h (.field 1) h' cs) :
+    h' = h ∧ ZMod.val lo ≤ ZMod.val i ∧ ZMod.val i < ZMod.val hi := by
+  match Obs.«KernelSubst::has_bvar_in_range».obs ev with
+  | .BVar (ld12 := ld') (ev30 := e1) .. =>
+    have hsame := Except.ok.inj (ld.symm.trans ld')
+    simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hsame
+    subst hsame
+    match Obs.«KernelSubst::has_bvar_in_range_bvar».obs e1 with
+    | .n1 (he36 := he36) .. => exact absurd he36 field_one_ne_zero
+    | .n0 (ev15 := ev15) (ev49 := ev49) .. =>
+      obtain ⟨i', lo', hi', hlo', -, -, hr1, rfl⟩ := ltf ev15
+      injection hi' with hi'; injection hlo' with hlo'; subst hi' hlo'
+      obtain ⟨i'', hi'', hi2, hhi2, -, -, hr2, rfl⟩ := ltf ev49
+      injection hi2 with hi2; injection hhi2 with hhi2; subst hi2 hhi2
+      exact ⟨rfl, Nat.le_of_not_lt (ltf_zero hr1.symm), ltf_one hr2.symm⟩
+  | .Srt (ld12 := ld') .. | .Const (ld12 := ld') .. | .Lit (ld12 := ld') ..
+  | .App_n1 (ld12 := ld') .. | .App_n0 (ld12 := ld') ..
+  | .Lam (ld12 := ld') .. | .Forall (ld12 := ld') ..
+  | .Let (ld12 := ld') .. | .Proj (ld12 := ld') .. =>
+    have hsame := Except.ok.inj (ld.symm.trans ld')
+    simp [kexprEnum] at hsame
+
+theorem bvar_lbr_lt32 {i cut : F} (hlt : ZMod.val cut < ZMod.val (i + 1))
+    (h32 : ZMod.val (i + 1) < 4294967296) :
+    ZMod.val (i + 1) = ZMod.val i + 1 ∧ ZMod.val cut ≤ ZMod.val i ∧ ZMod.val i < 4294967295 := by
+  rcases val_add_one_cases i with ⟨_, he⟩ | ⟨_, h0⟩
+  · omega
+  · rw [h0] at hlt; omega
+
+theorem bvar_lbr_ge32 {i c : F} (hge : ZMod.val (c + 1) ≤ ZMod.val (i + 1))
+    (hc : ZMod.val c + 1 < 4294967296) (h32 : ZMod.val (i + 1) < 4294967296) :
+    ZMod.val (i + 1) = ZMod.val i + 1 ∧ ZMod.val c ≤ ZMod.val i ∧ ZMod.val i < 4294967295 := by
+  have hc1 : ZMod.val (c + 1) = ZMod.val c + 1 :=
+    val_add_one (by have : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl; omega)
+  rcases val_add_one_cases i with ⟨_, he⟩ | ⟨_, h0⟩
+  · omega
+  · rw [h0, hc1] at hge; omega
+
 end IxVM.Refinement.Core.SubstAux

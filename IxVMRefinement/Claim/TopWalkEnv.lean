@@ -200,7 +200,7 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
          i + refs.length < 8589934592 →
          RCLimRep t b.address lim h x_rc →
          RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h refs x_refs →
-         RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h idxs x_consts →
+         RepSortedIdxFrom h idxs i x_consts →
          ObsFn Obs.W "KernelClaim::env_walk_refs_all"
            [x_rc, x_refs, x_consts, .field (i : F)] h r h' calls →
          V.HashedCollision extra calls ∨
@@ -548,11 +548,12 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
         subst he23
         exact .inr ⟨Heap.Extends.refl _, [], fun _ hj => absurd hj (Nat.not_lt_zero _),
           by simp [TopRecsClosed], by simp⟩
-      | .Cons (x_a := x_a) (x_rest := x_rest) (m352 := m352) (cs354 := cs354)
-          (cs363 := cs363) (ld12 := ld12) (sg359 := sg359) (op404 := op404)
-          (ev365 := ev365) (hc406 := hc406) .. =>
+      | .Cons (x_a := x_a) (x_rest := x_rest) (m_sszfdvej := m352) (cs_bixmeype := cs354)
+          (cs363 := cs363) (ld12 := ld12) (ev_fibarwuo := evPop) (sg_opqpxwys := sg359)
+          (op404 := op404) (ev365 := ev365) (hc406 := hc406) .. =>
         obtain ⟨a, rest, rfl, ha_head, hrest_rep⟩ := Lib.rep_cons_of_load hrefs ld12
         have hi_lt56 : i < 72057594037927936 := by simp at hbound; omega
+        obtain ⟨rfl, hiff_pop, hidxs_next⟩ := sorted_pop_spec idxs hi_lt56 hidxs evPop
         have hseg : V.HashedCollision extra calls ∨
             (Heap.Extends h m352 ∧
              ∃ recs₁ : List (TopRec calls b.address t lim),
@@ -561,13 +562,12 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
                TopRecsClosed recs₁ ∧
                (∀ r ∈ recs₁, r.depth ≤ calls.length)) := by
           match sg359 with
-          | .n1_n0_n0 (cs88 := cs88) (cs153 := cs153) (cs246 := cs246)
-              (ev56 := ev56) (ev90 := ev90) (ev121 := ev121) (ev155 := ev155)
-              (ev177 := ev177) (ev216 := ev216) (ev230 := ev230) (ev266 := ev266)
-              (ld260 := ld260) (ev286 := ev286) (ld303 := ld303) (ev248 := ev248)
-              (hc305 := hc305) .. =>
+          | .n1_n0_n0 (cs_qutgqozh := cs88) (cs_jhnvxttf := cs153) (cs_ziuzjvtk := cs246)
+              (ev_icqlvczq := ev90) (ev_qjsortre := ev121) (ev_uzqslaue := ev155)
+              (ev_ycpkbnlw := ev177) (ev_qnhmodbg := ev216) (ev_avalyevs := ev230)
+              (ev_ondlztqg := ev266) (ld_kxhlyuje := ld260) (ev_syoaqeyu := ev286)
+              (ld_dpfinybr := ld303) (ev_iecuttfo := ev248) (hc_deognqoh := hc305) .. =>
             -- `walk_ctx` kept the context's limit: the reference is walked by `check_owned`
-            obtain ⟨rfl, -⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
             have ext_ra := ev90.heap_extends
             have ext_cov := ev121.heap_extends
             obtain ⟨ext_nb, hnb⟩ :=
@@ -602,11 +602,11 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
             refine ⟨hal, .inl ⟨hnb.mono hsub_nb, ?_⟩⟩
             rw [map_addr_topRec_mono]
             exact hmem_s
-          | .n1_n0_other (cs88 := cs88) (ev56 := ev56) (ev90 := ev90) (ev121 := ev121)
-              (ev155 := ev155) (ev177 := ev177) (ev216 := ev216) (ev230 := ev230)
-              (op210 := op210) (hne306 := hne306) (ev315 := ev315) (hc332 := hc332) .. =>
+          | .n1_n0_other (cs_qutgqozh := cs88) (ev_icqlvczq := ev90) (ev_qjsortre := ev121)
+              (ev_uzqslaue := ev155) (ev_ycpkbnlw := ev177) (ev_qnhmodbg := ev216)
+              (ev_avalyevs := ev230) (op_susgienm := op210) (hne_jolytbqc := hne306)
+              (ev_lrepvcdw := ev315) (hc_fxpxruvy := hc332) .. =>
             -- `walk_ctx` changed the limit: the reference is covered at the limit
-            obtain ⟨rfl, -⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
             have ext_ra := ev90.heap_extends
             have ext_cov := ev121.heap_extends
             have ext_nb := ev155.heap_extends
@@ -629,10 +629,9 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
               exact .inr ⟨ext_pre.trans (ext_wc.trans (ext_l1.trans (ext_l2.trans
                   ev315.heap_extends))), [],
                 fun _ => ⟨hal, .inr hcov⟩, by simp [TopRecsClosed], by simp⟩
-          | .n1_other (cs88 := cs88) (ev56 := ev56) (ev90 := ev90) (ev121 := ev121)
-              (hne333 := hne333) (he340 := he340) (hc341 := hc341) .. =>
+          | .n1_other (cs_qutgqozh := cs88) (ev_icqlvczq := ev90) (ev_qjsortre := ev121)
+              (hne_kcxluxmw := hne333) (he_vvdjdbjt := he340) (hc_rftbjjug := hc341) .. =>
             -- `walk_covered` skipped the reference: it is covered at the limit
-            obtain ⟨rfl, -⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
             have ext_ra := ev90.heap_extends
             have ext_cov := ev121.heap_extends
             obtain ⟨-, hv⟩ :=
@@ -645,11 +644,10 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
                 ⟨_, _, _, _, _, _, hrc, ha_head, ev90, hsub_ra⟩
               exact .inr ⟨by rw [he340]; exact ext_ra.trans ext_cov, [],
                 fun _ => ⟨hal, .inr hcov⟩, by simp [TopRecsClosed], by simp⟩
-          | .other (ev56 := ev56) (hne342 := hne342) (he349 := he349) .. =>
+          | .other (hne_yeueqpng := hne342) (he_eemargwo := he349) .. =>
             -- the reference is not used
-            obtain ⟨rfl, hiff⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
             exact .inr ⟨by subst he349; exact Heap.Extends.refl _, [],
-              fun hi_in => absurd (hiff.mpr hi_in) hne342, by simp [TopRecsClosed], by simp⟩
+              fun hi_in => absurd (hiff_pop.mpr hi_in) hne342, by simp [TopRecsClosed], by simp⟩
         rcases hseg with hcoll | ⟨ext1, recs₁, hmem₁, hcl₁, hdep₁⟩
         · exact .inl hcoll
         simp only [evalBinOp, Except.ok.injEq] at op404
@@ -666,7 +664,7 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
         rcases (ih cs363.length hlt_tail).2.2 (i := i + 1) (Nat.le_refl _) hbound_tail
             (hrc.mono ext1)
             (repList_heapMono₂ _ repAddrElem_heapMono₂ ext1 hrest_rep)
-            (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext1 hidxs)
+            (hidxs_next.mono ext1)
             ev365 with
           hcoll | ⟨ext2, recs₂_raw, hmem₂, hcl₂, hdep₂⟩
         · exact .inl (hashedCollision_mono (fun cl hcl => by rw [hc406]; simp [hcl]) hcoll)
@@ -751,7 +749,7 @@ theorem env_walk_refs_all_lim_spec {V : View} {extra : List ByteArray}
     (hbound : i + refs.length < 8589934592)
     (hrc : RCLimRep t b.address lim h x_rc)
     (hrefs : RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h refs x_refs)
-    (hidxs : RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h idxs x_consts)
+    (hidxs : RepSortedIdxFrom h idxs i x_consts)
     (ev : ObsFn W "KernelClaim::env_walk_refs_all"
       [x_rc, x_refs, x_consts, .field (i : F)] h r h' calls) :
     V.HashedCollision extra calls ∨

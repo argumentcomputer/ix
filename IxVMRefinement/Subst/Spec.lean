@@ -105,19 +105,6 @@ def expr_glb : GSpecFn := fun args h r h' calls =>
     ∃ g : Nat, r = .field (g : F) ∧ g < 4294967296 ∧
       ∀ d Γ E, Tm κ d Γ h (ZMod.val cut) E e → NoIdx h (ZMod.val cut) (ZMod.val cut + g) e
 
-def expr_glb_walk : GSpecFn := fun args h r h' calls =>
-  ∀ e (cut : F), args = [e, .field cut] → Bounded calls → ZMod.val cut + 1 < 4294967296 →
-    h' = h ∧ ∃ g : Nat, r = .field (g : F) ∧ g < 4294967296 ∧
-      ∀ d Γ E, Tm κ d Γ h (ZMod.val cut) E e → NoIdx h (ZMod.val cut) (ZMod.val cut + g) e
-
-def expr_glb_binder : GSpecFn := fun args h r h' calls =>
-  ∀ ty body (cut : F), args = [ty, body, .field cut] → Bounded calls →
-    ZMod.val cut + 1 < 4294967296 → h' = h ∧
-    ∃ g : Nat, r = .field (g : F) ∧ g < 4294967296 ∧
-      ∀ d Γ T B, Tm κ d Γ h (ZMod.val cut) T ty → Tm κ d Γ h (ZMod.val cut + 1) B body →
-        NoIdx h (ZMod.val cut) (ZMod.val cut + g) ty ∧
-        NoIdx h (ZMod.val cut + 1) (ZMod.val cut + 1 + g) body
-
 def expr_glb_let : GSpecFn := fun args h r h' calls =>
   ∀ ty val body (cut : F), args = [ty, val, body, .field cut] → Bounded calls →
     ZMod.val cut + 1 < 4294967296 → h' = h ∧
@@ -134,18 +121,6 @@ def expr_lift : GSpecFn := fun args h r h' calls =>
     ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → ∀ d Γ E, Tm κ d Γ h (ZMod.val cut) E e →
       Tm κ (d + s₂) Γ h' (ZMod.val cut + s₁) E r
 
-def expr_lift_walk : GSpecFn := fun args h r h' calls =>
-  ∀ e (s cut : F), args = [e, .field s, .field cut] → Bounded calls →
-    ZMod.val s < 4611686018427387904 → ZMod.val cut < 4294967296 →
-    ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → ∀ d Γ E, Tm κ d Γ h (ZMod.val cut) E e →
-      Tm κ (d + s₂) Γ h' (ZMod.val cut + s₁) E r
-
-def expr_lift_bvar : GSpecFn := fun args h r h' calls =>
-  ∀ i s cut : F, args = [.field i, .field s, .field cut] → Bounded calls →
-    ZMod.val s < 4611686018427387904 →
-    ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → ∀ d Γ E, BVarIm d Γ (ZMod.val cut) (ZMod.val i) E →
-      Tm κ (d + s₂) Γ h' (ZMod.val cut + s₁) E r
-
 def expr_lift_let : GSpecFn := fun args h r h' calls =>
   ∀ ty val body (s cut : F), args = [ty, val, body, .field s, .field cut] → Bounded calls →
     ZMod.val s < 4611686018427387904 → ZMod.val cut < 4294967296 →
@@ -155,13 +130,6 @@ def expr_lift_let : GSpecFn := fun args h r h' calls =>
 
 def expr_lower : GSpecFn := fun args h r h' calls =>
   ∀ e (s cut : F), args = [e, .field s, .field cut] → Bounded calls →
-    ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → s₁ ≤ ZMod.val cut → ∀ d Γ E, s₂ ≤ d →
-      Tm κ d Γ h (ZMod.val cut) E e → NoIdx h (ZMod.val cut - s₁) (ZMod.val cut + s₂) e →
-      Tm κ (d - s₂) Γ h' (ZMod.val cut - s₁) E r
-
-def expr_lower_walk : GSpecFn := fun args h r h' calls =>
-  ∀ e (s cut : F), args = [e, .field s, .field cut] → Bounded calls →
-    ZMod.val cut < 4294967296 → ¬ IdxLt h (ZMod.val cut) e →
     ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → s₁ ≤ ZMod.val cut → ∀ d Γ E, s₂ ≤ d →
       Tm κ d Γ h (ZMod.val cut) E e → NoIdx h (ZMod.val cut - s₁) (ZMod.val cut + s₂) e →
       Tm κ (d - s₂) Γ h' (ZMod.val cut - s₁) E r
@@ -182,16 +150,6 @@ def expr_inst1 : GSpecFn := fun args h r h' calls =>
     ∀ d Γ B A, Tm κ d Γ h (ZMod.val j + 1) B e → Tm κ d Γ h 0 A arg →
       Tm κ d Γ h' (ZMod.val j) (B.instantiate1 A (ZMod.val j)) r
 
-def expr_inst1_walk : GSpecFn := fun args h r h' calls =>
-  ∀ e arg (j : F), args = [e, arg, .field j] → Bounded calls → ZMod.val j < 4294967296 →
-    ∀ d Γ B A, Tm κ d Γ h (ZMod.val j + 1) B e → Tm κ d Γ h 0 A arg →
-      Tm κ d Γ h' (ZMod.val j) (B.instantiate1 A (ZMod.val j)) r
-
-def expr_inst1_bvar : GSpecFn := fun args h r h' calls =>
-  ∀ (i : F) arg (j : F), args = [.field i, arg, .field j] → Bounded calls →
-    ∀ d Γ B A, BVarIm d Γ (ZMod.val j + 1) (ZMod.val i) B → Tm κ d Γ h 0 A arg →
-      Tm κ d Γ h' (ZMod.val j) (B.instantiate1 A (ZMod.val j)) r
-
 def expr_inst1_let : GSpecFn := fun args h r h' calls =>
   ∀ ty val body arg (j : F), args = [ty, val, body, arg, .field j] → Bounded calls →
     ZMod.val j < 4294967296 →
@@ -204,21 +162,17 @@ def expr_inst_many : GSpecFn := fun args h r h' calls =>
     ∀ d Γ B As, Tm κ d Γ h (ZMod.val j + As.length) B e → TmL κ d Γ h As substs →
       Tm κ d Γ h' (ZMod.val j) (B.instantiateList As (ZMod.val j)) r
 
-def expr_inst_many_bvar : GSpecFn := fun args h r h' calls =>
-  ∀ (i : F) substs (j : F), args = [.field i, substs, .field j] → Bounded calls →
-    ZMod.val j < 4294967296 →
-    ∀ d Γ B As, BVarIm d Γ (ZMod.val j + As.length) (ZMod.val i) B → TmL κ d Γ h As substs →
-      Tm κ d Γ h' (ZMod.val j) (B.instantiateList As (ZMod.val j)) r
-
-def expr_inst_many_walk : GSpecFn := fun args h r h' calls =>
-  ∀ e substs (j : F), args = [e, substs, .field j] → Bounded calls → ZMod.val j < 4294967296 →
-    ∀ d Γ B As, Tm κ d Γ h (ZMod.val j + As.length) B e → TmL κ d Γ h As substs →
+def expr_inst_many_n : GSpecFn := fun args h r h' calls =>
+  ∀ e substs (n j : F), args = [e, substs, .field n, .field j] → Bounded calls →
+    ∀ d Γ B As, n = (As.length : F) → As.length < 2 ^ 39 →
+      Tm κ d Γ h (ZMod.val j + As.length) B e → TmL κ d Γ h As substs →
       Tm κ d Γ h' (ZMod.val j) (B.instantiateList As (ZMod.val j)) r
 
 def expr_inst_many_let : GSpecFn := fun args h r h' calls =>
-  ∀ ty val body substs (j : F), args = [ty, val, body, substs, .field j] → Bounded calls →
-    ZMod.val j < 4294967296 →
-    ∀ d Γ T V B As, Tm κ d Γ h (ZMod.val j + As.length) T ty →
+  ∀ ty val body substs (n j : F), args = [ty, val, body, substs, .field n, .field j] →
+    Bounded calls → ZMod.val j < 4294967296 →
+    ∀ d Γ T V B As, n = (As.length : F) → As.length < 2 ^ 39 →
+      Tm κ d Γ h (ZMod.val j + As.length) T ty →
       Tm κ d Γ h (ZMod.val j + As.length) V val →
       Tm κ d Γ h (ZMod.val j + As.length + 1) B body → TmL κ d Γ h As substs →
       Tm κ d Γ h' (ZMod.val j) ((instShift V 0 B).instantiateList As (ZMod.val j)) r
@@ -272,23 +226,15 @@ def gspec (κ : _root_.Address → KKey) : Specs.Subst.Fn → GSpecFn
   | .expr_has_bvar_at_binder => G.expr_has_bvar_at_binder κ
   | .expr_has_bvar_at_let => G.expr_has_bvar_at_let κ
   | .expr_glb => G.expr_glb κ
-  | .expr_glb_walk => G.expr_glb_walk κ
-  | .expr_glb_binder => G.expr_glb_binder κ
   | .expr_glb_let => G.expr_glb_let κ
   | .expr_lift => G.expr_lift κ
-  | .expr_lift_walk => G.expr_lift_walk κ
-  | .expr_lift_bvar => G.expr_lift_bvar κ
   | .expr_lift_let => G.expr_lift_let κ
   | .expr_lower => G.expr_lower κ
-  | .expr_lower_walk => G.expr_lower_walk κ
   | .expr_lower_let => G.expr_lower_let κ
   | .expr_inst1 => G.expr_inst1 κ
-  | .expr_inst1_walk => G.expr_inst1_walk κ
-  | .expr_inst1_bvar => G.expr_inst1_bvar κ
   | .expr_inst1_let => G.expr_inst1_let κ
   | .expr_inst_many => G.expr_inst_many κ
-  | .expr_inst_many_bvar => G.expr_inst_many_bvar κ
-  | .expr_inst_many_walk => G.expr_inst_many_walk κ
+  | .expr_inst_many_n => G.expr_inst_many_n κ
   | .expr_inst_many_let => G.expr_inst_many_let κ
   | .ctx_trim => G.ctx_trim κ
   | .ctx_reachable => G.ctx_reachable

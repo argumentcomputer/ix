@@ -179,7 +179,7 @@ private theorem scan_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : Heap
          calls.length ≤ fuel → Heap.Extends h₀ h →
          i + refs.length < 8589934592 →
          RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h refs x_refs →
-         RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h idxs x_used →
+         Claim.RepSortedIdxFrom h idxs i x_used →
          ObsFn W "KernelRoles::op_order_scan_list"
            [x_tbl, x_lim, x_needs, x_refs, x_used, .field (i : F)] h r h' calls →
          ∃ entered : List _root_.Address, ScanClosed calls Ok entered ∧
@@ -388,9 +388,11 @@ private theorem scan_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : Heap
       | Nil ld12 he22 he23 hc24 =>
         obtain rfl := Lib.rep_nil_of_load hrefs ld12
         exact ⟨[], scanClosed_nil calls Ok, fun j hj => absurd hj (Nat.not_lt_zero _)⟩
-      | Cons x_b x_rest v125 m126 cs128 cs137 v145 ld12 sg133 op194 ev139 hc196 =>
+      | Cons x_b x_rest m_pop cs_pop x_hit x_next_used v125 m126 cs128 cs137 v145
+          ld12 ev_pop sg133 op194 ev139 hc196 =>
         obtain ⟨b, rest, rfl, hb_rep, hrest_rep⟩ := Lib.rep_cons_of_load hrefs ld12
         have hi : i < 72057594037927936 := by simp at hbound; omega
+        obtain ⟨rfl, hiff_pop, hidxs_next⟩ := Claim.sorted_pop_spec idxs hi hidxs ev_pop
         have hlen128 : cs128.length ≤ calls.length := by
           rw [hc196]
           simp only [List.length_cons, List.length_append]
@@ -398,9 +400,7 @@ private theorem scan_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : Heap
         have hseg : Heap.Extends h m126 ∧ ∃ entered₁ : List _root_.Address,
             ScanClosed cs128 Ok entered₁ ∧ (i ∈ idxs → Ok b ∨ b ∈ entered₁) := by
           cases sg133 with
-          | n1 m43 cs54 cs80 ev56 ev82 hc115 =>
-            obtain ⟨hh43, _⟩ := Claim.g_list_has_spec idxs hi hidxs ev56
-            subst hh43
+          | n1 cs80 _ ev82 hc115 =>
             have hlt : cs80.length < fuel := by
               have : cs80.length < cs128.length := by
                 rw [hc115]
@@ -410,11 +410,9 @@ private theorem scan_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : Heap
             obtain ⟨entered₁, hcl, hmem⟩ := scanAt hlt hbase hb_rep ev82
             exact ⟨ev82.heap_extends, entered₁,
               hcl.mono (fun cl hcl' => by rw [hc115]; simp [hcl']), fun _ => hmem⟩
-          | other v42 m43 cs54 ev56 hne116 he122 he123 hc124 =>
-            obtain ⟨hh43, hiff⟩ := Claim.g_list_has_spec idxs hi hidxs ev56
-            refine ⟨?_, [], scanClosed_nil cs128 Ok, fun hin => absurd (hiff.mpr hin) hne116⟩
+          | other hne116 he122 he123 hc124 =>
+            refine ⟨?_, [], scanClosed_nil cs128 Ok, fun hin => absurd (hiff_pop.mpr hin) hne116⟩
             subst he123
-            subst hh43
             exact Heap.Extends.refl _
         obtain ⟨ext1, entered₁, hcl₁, hhead⟩ := hseg
         obtain rfl := Decl.evalBinOp_add_one i op194
@@ -426,7 +424,7 @@ private theorem scan_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : Heap
         obtain ⟨entered₂, hcl₂, htail⟩ :=
           (ih cs137.length (by omega)).2 (Nat.le_refl _) (hbase.trans ext1) hbound'
             (repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ ext1 hrest_rep)
-            (repList_heapMono₂ _ Claim.repBoundedIdx_heapMono₂ ext1 hidxs) ev139
+            (hidxs_next.mono ext1) ev139
         have hsub1 : ∀ cl ∈ cs128, cl ∈ calls := fun cl hcl => by rw [hc196]; simp [hcl]
         have hsub2 : ∀ cl ∈ cs137, cl ∈ calls := fun cl hcl => by rw [hc196]; simp [hcl]
         refine ⟨entered₁ ++ entered₂, (hcl₁.mono hsub1).append (hcl₂.mono hsub2),
@@ -463,7 +461,7 @@ theorem op_order_scan_list_spec {x_tbl x_lim x_needs : SourceValue F} {h₀ : He
     {x_refs x_used r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hbase : Heap.Extends h₀ h) (hbound : i + refs.length < 8589934592)
     (hrefs : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h refs x_refs)
-    (hidxs : RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h idxs x_used)
+    (hidxs : Claim.RepSortedIdxFrom h idxs i x_used)
     (ev : ObsFn W "KernelRoles::op_order_scan_list"
       [x_tbl, x_lim, x_needs, x_refs, x_used, .field (i : F)] h r h' calls) :
     ∃ entered : List _root_.Address, ScanClosed calls Ok entered ∧

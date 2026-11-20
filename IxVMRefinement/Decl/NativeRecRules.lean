@@ -2702,41 +2702,39 @@ private theorem collect_spine_exact_head {κ : _root_.Address → KKey} {d : Nat
           TmExact κ d Γ h' k H x_head ∧
           (∀ h₂ a ls, Heap.Extends h' h₂ →
             AppHeadConstLvls h₂ a ls x_head → AppHeadConstLvls h₂ a ls x_e))
-    (fun fname args h r h' _ ev ih hfn k E x_e x_head x_sp hargs hr htm => by
-      subst hfn hargs
-      match Obs.«KernelTypes::collect_spine».obs ev with
-      | .other (he115 := hr') (hm132 := hm) (he136 := he) .. =>
-        subst he hm
-        rw [hr'] at hr
-        injection hr with hlist; injection hlist with hhead _
-        subst hhead
-        exact ⟨E, rfl, htm.mono (Heap.Extends.snoc _ _), fun _ _ _ _ hh => hh⟩
-      | .App (x_f := xf) (x_a := xa) (m31 := m31) (cs41 := cs41)
-          (x_head := xh) (x_args := xargs) (cs86 := cs86) (ld12 := ld) (ev43 := e1)
-          (he69 := hr') (ev88 := e2) (he105 := he) (hc106 := hc) .. =>
-        subst he hc
-        rw [hr'] at hr
-        injection hr with hlist; injection hlist with hhead _
-        subst hhead
-        cases htm with
-        | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _
-        | const cell _ _ | lam cell _ _ _ | forallE cell _ _ _
-        | letE cell _ _ _ | litNat cell _ _ | litStr cell _ _
-        | proj cell _ _ =>
-          exact (load_cell_ne cell ld (by decide)).elim
-        | app cell rf _ =>
-          obtain ⟨-, hxs⟩ := load_cell cell ld
-          injection hxs with hxf _
-          rw [hxf] at rf
-          have hlt : cs41.length <
-              (((⟨"KernelTypes::collect_spine", [xf], h⟩ : Call F) ::
-                (cs41 ++ ((⟨Obs.Names.«Lists::snoc<&KernelTypes::KExprNode>», [xargs, xa], m31⟩ : Call F) :: cs86)))).length := by
-            simp only [List.length_cons, List.length_append]; omega
-          obtain ⟨H, hfn_f, hH, hwrap⟩ := ih _ _ _ _ _ _ hlt e1 rfl k _ xf xh xargs rfl rfl rf
-          exact ⟨H, hfn_f, hH.mono e2.heap_extends,
-            fun h₂ a ls ext₂ hh =>
-              .app ((e1.heap_extends.trans (e2.heap_extends.trans ext₂)).getElem?_eq cell)
-                (by rw [hxf]; exact hwrap h₂ a ls (e2.heap_extends.trans ext₂) hh)⟩)
+    (fun fname args h r h' _ ev _ hfn k E x_e x_head x_sp hargs hr htm => by
+      subst hfn hargs hr
+      obtain ⟨ps, hch, -, -⟩ := Core.collect_spine_chain_tup ev
+      have haux :
+          ∀ {e hd : SourceValue F} {ps : List (SourceValue F)},
+            Core.SpineChain h' e hd ps →
+            ∀ {E : KExpr}, TmExact κ d Γ h' k E e →
+              ∃ H,
+                E.getAppFn = H.getAppFn ∧
+                TmExact κ d Γ h' k H hd ∧
+                (∀ h₂ a ls, Heap.Extends h' h₂ →
+                  AppHeadConstLvls h₂ a ls hd → AppHeadConstLvls h₂ a ls e) := by
+        intro e hd ps sc
+        induction sc with
+        | head _ _ =>
+          intro E hE
+          exact ⟨E, rfl, hE, fun _ _ _ _ hh => hh⟩
+        | app ld _ ih =>
+          intro E hE
+          cases hE with
+          | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _
+          | const cell _ _ | lam cell _ _ _ | forallE cell _ _ _
+          | letE cell _ _ _ | litNat cell _ _ | litStr cell _ _
+          | proj cell _ _ =>
+            exact (load_cell_ne cell ld (by decide)).elim
+          | app cell rf _ =>
+            obtain ⟨-, hxs⟩ := load_cell cell ld
+            injection hxs with hxf _
+            rw [hxf] at rf
+            obtain ⟨H, hfn_f, hH, hwrap⟩ := ih rf
+            exact ⟨H, hfn_f, hH, fun h₂ a ls ext₂ hh =>
+              .app (ext₂.getElem?_eq cell) (by rw [hxf]; exact hwrap h₂ a ls ext₂ hh)⟩
+      exact haux (hch.mono ev.heap_extends) (htm.mono ev.heap_extends))
 
 private theorem peel_n_foralls_exact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
     ∀ (m : Nat) {n : F} {x_e r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}

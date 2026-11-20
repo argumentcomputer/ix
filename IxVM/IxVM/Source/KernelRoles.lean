@@ -782,11 +782,12 @@ def op_order_scan_list := aiur_fn⟦
       match (*(refs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(b, rest) => {
-          match KernelClaim::g_list_has(used, i) {
+          let (hit, next_used) = KernelClaim::sorted_pop(used, i);
+          match hit {
             1 => {  op_order_scan(tbl, limit, needs, b) } ,
             _ => {  () } ,
           };
-          op_order_scan_list(tbl, limit, needs, rest, used, i + 1) } ,
+          op_order_scan_list(tbl, limit, needs, rest, next_used, i + 1) } ,
       }
     }
 ⟧
@@ -1263,7 +1264,8 @@ def walk_refs_except := aiur_fn⟦
       match (*(refs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(b, rest) => {
-          match KernelClaim::g_list_has(used, i) * (1 - Bytes::address_eq(b, a)) {
+          let (hit, next_used) = KernelClaim::sorted_pop(used, i);
+          match hit * (1 - Bytes::address_eq(b, a)) {
             1 => {
               assert_ref_allowed(rc, b);
               match walk_covered(rc, b) {
@@ -1274,7 +1276,7 @@ def walk_refs_except := aiur_fn⟦
               } } ,
             _ => {  () } ,
           };
-          walk_refs_except(rc, rest, used, i + 1, a) } ,
+          walk_refs_except(rc, rest, next_used, i + 1, a) } ,
       }
     }
 ⟧
@@ -1288,11 +1290,12 @@ def op_order_scan_except := aiur_fn⟦
       match (*(refs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(b, rest) => {
-          match KernelClaim::g_list_has(used, i) * (1 - Bytes::address_eq(b, a)) {
+          let (hit, next_used) = KernelClaim::sorted_pop(used, i);
+          match hit * (1 - Bytes::address_eq(b, a)) {
             1 => {  op_order_scan(tbl, limit, needs, b) } ,
             _ => {  () } ,
           };
-          op_order_scan_except(tbl, limit, needs, rest, used, i + 1, a) } ,
+          op_order_scan_except(tbl, limit, needs, rest, next_used, i + 1, a) } ,
       }
     }
 ⟧

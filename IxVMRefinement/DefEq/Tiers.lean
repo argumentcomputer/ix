@@ -335,7 +335,7 @@ theorem k_def_eq_rebase_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : Lis
     have ht := ih.get (.subst .ctx_trim) (by lt_calls) ev161 types base rfl
       (good.sub fun x hx => by simp [hx]) Γ d (types_mono x0 htypes)
     have x1 := x0.trans (ObsFn.heap_extends ev161)
-    exact ih.get (.defEq .k_is_def_eq_core) (by lt_calls) ev124 rc a b v128 rfl
+    exact ih.get (.defEq .k_is_def_eq_ordered) (by lt_calls) ev124 rc a b v128 rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono x1 hrc) d Γ ht A B (Tm.mono x1 hA)
       (Tm.mono x1 hB) hr
   · subst hc328
@@ -386,7 +386,7 @@ theorem k_def_eq_rebase_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : Lis
           (hnb d Γ B hB0))
       rwa [val_zero', Nat.sub_zero] at this
     have x271 : Heap.Extends h m271 := x236.trans (e295.trans e281)
-    have hin := ih.get (.defEq .k_is_def_eq_core) (by lt_calls) ev188 rc v190 v191 v192 rfl
+    have hin := ih.get (.defEq .k_is_def_eq_ordered) (by lt_calls) ev188 rc v190 v191 v192 rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono x271 hrc) (d - ZMod.val s) Γ ht A B
       (Tm.mono (e246.trans (e295.trans e281)) hAl) (Tm.mono (e295.trans e281) hBl) hr
     have hl := Ix.Kernel.Rules.DefEq.lift (Ix.Kernel.EnvExt.refl c.env) hc.env.storeClosed
@@ -586,196 +586,261 @@ theorem k_is_def_eq_struct_go_step (c : ScopedCtx) {args : List (SourceValue F)}
       hEA hEB hr
   · exact absurd he1266 hr
 
-/-- `KernelDefEq::k_is_def_eq_struct_bounded`: node by node with a credit of head
-normalizations (`k_is_def_eq_struct_spend` where the nodes do not match); binder bodies under
-the left domain pushed on the context list. -/
+/-- `KernelDefEq::expr_eq_fast`: context- and credit-free structural equality up to level
+equivalence and binder-level zeroness. -/
+theorem expr_eq_fast_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
+    {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelDefEq::expr_eq_fast" args h r h' calls) (ih : IH c calls) :
+    Specs.DefEq.expr_eq_fast c args h r h' calls := by
+  intro a b hargs good d Γ A B hA hB hr
+  subst hargs
+  cases Obs.«KernelDefEq::expr_eq_fast».obs ev
+  case BVar_BVar_n0 x_i x_j ldA ldB op _ _ _ =>
+    obtain ⟨k, rfl, rfl⟩ := eq_of_sub_field op
+    obtain rfl := bvar_images_eq hA ldA hB ldB rfl
+    exact .refl
+  case Srt_Srt x_la x_lb _ ldA ldB ev1 hc =>
+    subst hc
+    obtain ⟨u, rfl, l, hl, hul⟩ := hA.sort_of_load ldA
+    obtain ⟨v, rfl, m, hm, hvm⟩ := hB.sort_of_load ldB
+    obtain ⟨hy, -⟩ := ih.get (.levelOps .level_equal) (by lt_calls) ev1 x_la x_lb rfl
+      (good.sub fun x hx => by simp [hx]).2 l m hl hm
+    exact .sort (lvEq_of_levelEqual hul hvm (of_ite_field_ne_zero hy hr))
+  case Const_Const_n1 x_aa x_la x_ab x_lb _ _ _ ldA ldB ev1 ev2 hc =>
+    subst hc
+    obtain ⟨a1, us, rfl, ha1, hus⟩ := hA.const_of_load ldA
+    obtain ⟨a2, vs, rfl, ha2, hvs⟩ := hB.const_of_load ldB
+    obtain ⟨hy, -⟩ := Lib.address_eq_spec ev1 ha1 ha2
+    obtain rfl : a1 = a2 := of_ite_field_ne_zero hy field_one_ne_zero
+    have e0 := ObsFn.heap_extends ev1
+    exact .const (ih.get (.defEq .level_list_eq) (by lt_calls) ev2 x_la x_lb rfl
+      (good.sub fun x hx => by simp [hx]) us vs (LvListRep.mono e0 hus) (LvListRep.mono e0 hvs) hr)
+  case App_App_n1 x_fa x_xa x_fb x_xb _ _ _ ldA ldB ev1 ev2 hc =>
+    subst hc
+    obtain ⟨Fa, Xa, rfl, hFa, hXa⟩ := hA.app_of_load ldA
+    obtain ⟨Fb, Xb, rfl, hFb, hXb⟩ := hB.app_of_load ldB
+    have e0 := ObsFn.heap_extends ev1
+    exact .app (ih.get (.defEq .expr_eq_fast) (by lt_calls) ev1 x_fa x_fb rfl
+      (good.sub fun x hx => by simp [hx]) d Γ Fa Fb hFa hFb field_one_ne_zero)
+      (ih.get (.defEq .expr_eq_fast) (by lt_calls) ev2 x_xa x_xb rfl
+        (good.sub fun x hx => by simp [hx]) d Γ Xa Xb (Tm.mono e0 hXa) (Tm.mono e0 hXb) hr)
+  case Lam_Lam_n1_n1 x_ta x_ba x_la x_tb x_bb x_lb _ _ _ _ _ ldA ldB ev_pw ev_t ev_b hc =>
+    subst hc
+    obtain ⟨TA, BA, ℓa, rfl, hTA, hBA, hla⟩ := hA.lam_of_load ldA
+    obtain ⟨TB, BB, ℓb, rfl, hTB, hBB, hlb⟩ := hB.lam_of_load ldB
+    have e0 := ObsFn.heap_extends ev_pw
+    have x1 := e0.trans (ObsFn.heap_extends ev_t)
+    obtain ⟨hpw, -⟩ := ih.get (.levels .pw_eq) (by lt_calls) ev_pw x_la x_lb rfl
+      (good.sub fun x hx => by simp [hx]) ℓa ℓb hla hlb
+    have hz : ℓa.zeronessOf = ℓb.zeronessOf := of_ite_field_ne_zero hpw field_one_ne_zero
+    have hT := ih.get (.defEq .expr_eq_fast) (by lt_calls) ev_t x_ta x_tb rfl
+      (good.sub fun x hx => by simp [hx]) d Γ TA TB (Tm.mono e0 hTA) (Tm.mono e0 hTB)
+      field_one_ne_zero
+    have hBd := ih.get (.defEq .expr_eq_fast) (by lt_calls) ev_b x_ba x_bb rfl
+      (good.sub fun x hx => by simp [hx]) (d + 1) _ _ _
+      (tmk_open (T := TA) (Tm.mono x1 hBA)) (tmk_open (T := TA) (Tm.mono x1 hBB)) hr
+    exact defEq_lam_left hT hBd hz
+  case Forall_Forall_n1_n1 x_ta x_ba x_la x_tb x_bb x_lb _ _ _ _ _ ldA ldB ev_pw ev_t ev_b hc =>
+    subst hc
+    obtain ⟨TA, BA, ℓa, rfl, hTA, hBA, hla⟩ := hA.forallE_of_load ldA
+    obtain ⟨TB, BB, ℓb, rfl, hTB, hBB, hlb⟩ := hB.forallE_of_load ldB
+    have e0 := ObsFn.heap_extends ev_pw
+    have x1 := e0.trans (ObsFn.heap_extends ev_t)
+    obtain ⟨hpw, -⟩ := ih.get (.levels .pw_eq) (by lt_calls) ev_pw x_la x_lb rfl
+      (good.sub fun x hx => by simp [hx]) ℓa ℓb hla hlb
+    have hz : ℓa.zeronessOf = ℓb.zeronessOf := of_ite_field_ne_zero hpw field_one_ne_zero
+    have hT := ih.get (.defEq .expr_eq_fast) (by lt_calls) ev_t x_ta x_tb rfl
+      (good.sub fun x hx => by simp [hx]) d Γ TA TB (Tm.mono e0 hTA) (Tm.mono e0 hTB)
+      field_one_ne_zero
+    have hBd := ih.get (.defEq .expr_eq_fast) (by lt_calls) ev_b x_ba x_bb rfl
+      (good.sub fun x hx => by simp [hx]) (d + 1) _ _ _
+      (tmk_open (T := TA) (Tm.mono x1 hBA)) (tmk_open (T := TA) (Tm.mono x1 hBB)) hr
+    exact defEq_forallE_left hT hBd hz
+  case Lit_Lit x_la x_lb _ ldA ldB ev1 hc =>
+    subst hc
+    obtain ⟨la, hla, -⟩ := tm_lit_data hA ldA
+    obtain ⟨lb, hlb, -⟩ := tm_lit_data hB ldB
+    obtain ⟨hy, -⟩ := ih.get (.levels .literal_eq) (by lt_calls) ev1 x_la x_lb rfl
+      (good.sub fun x hx => by simp [hx]) la lb hla hlb
+    obtain rfl := lit_images_eq hA ldA hB ldB hla hlb (of_ite_field_ne_zero hy hr)
+    exact .refl
+  case Proj_Proj_n1_n0 x_sa _ x_ea x_sb _ x_eb _ _ _ ldA ldB ev_aeq op ev_e hc =>
+    subst hc
+    obtain ⟨a1, i, EA, rfl, rfl, ha1, hEA⟩ := hA.proj_of_load ldA
+    obtain ⟨b1, j, EB, rfl, rfl, hb1, hEB⟩ := hB.proj_of_load ldB
+    obtain ⟨hy, -⟩ := Lib.address_eq_spec ev_aeq ha1 hb1
+    obtain rfl : a1 = b1 := of_ite_field_ne_zero hy field_one_ne_zero
+    obtain ⟨k, hik, hjk⟩ := eq_of_sub_field op
+    injection hik with hik
+    injection hjk with hjk
+    subst hik hjk
+    have e0 := ObsFn.heap_extends ev_aeq
+    exact .proj (ih.get (.defEq .expr_eq_fast) (by lt_calls) ev_e x_ea x_eb rfl
+      (good.sub fun x hx => by simp [hx]) d Γ EA EB (Tm.mono e0 hEA) (Tm.mono e0 hEB) hr)
+  all_goals (subst_vars; exact absurd rfl hr)
+
+/-- `KernelDefEq::k_is_def_eq_struct_bounded`: fast path via `expr_eq_fast`, then node by node
+with a credit of head normalizations (`k_is_def_eq_struct_spend` where the nodes do not match);
+binder bodies under the left domain pushed on the context list. -/
 theorem k_is_def_eq_struct_bounded_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_struct_bounded" args h r h' calls)
     (ih : IH c calls) : Specs.DefEq.k_is_def_eq_struct_bounded c args h r h' calls := by
   intro rc a b credit types hargs good hrc d Γ htypes A B hA hB ans rest hr hans
   subst hargs
-  rcases Obs.«KernelDefEq::k_is_def_eq_struct_bounded».obs ev with
-    ⟨x_i, x_j, ld12, ld36, op65, he76, he90, hc91⟩ |
-    ⟨x_i, x_j, v49, ld12, ld36, op65, hne92, he100, he114, hc115⟩ |
-    ⟨x_i, v25, cs123, ld12, ld36, hne116, ev125, hc166⟩ |
-    ⟨x_la, x_lb, v205, m209, cs217, ld12, ld190, he207, ev219, he243, hc244⟩ |
-    ⟨x_la, v179, cs252, ld12, ld190, hne245, ev254, hc295⟩ |
-    ⟨x_addr_a, x_lvls_a, x_addr_b, x_lvls_b, m343, cs354, v379, m383, cs391, ld12, ld324, ev356,
-      he381, ev393, he417, hc418⟩ |
-    ⟨x_addr_a, x_lvls_a, x_addr_b, x_lvls_b, v342, m343, cs354, cs426, ld12, ld324, ev356, hne419,
-      ev428, hc469⟩ |
-    ⟨x_addr_a, x_lvls_a, v313, cs477, ld12, ld324, hne470, ev479, hc520⟩ |
-    ⟨x_fa, x_xa, x_fb, x_xb, m568, cs579, x_rest, cs643, ld12, ld549, ev581, ev645, hc686⟩ |
-    ⟨x_fa, x_xa, x_fb, x_xb, m568, cs579, w693, x_rest, ld12, ld549, ev581, he708, he722,
-      hc723⟩ |
-    ⟨x_fa, x_xa, v538, cs732, ld12, ld549, hne725, ev734, hc775⟩ |
-    ⟨x_ta, x_ba, x_la, x_tb, x_bb, x_lb, m833, cs844, m868, cs879, x_rest, m941, cs974, ld12,
-      ld809, ev846, ev881, hm951, ev976, hc1017⟩ |
-    ⟨x_ta, x_ba, x_la, x_tb, x_bb, x_lb, m833, cs844, m868, cs879, w1024, x_rest, ld12, ld809,
-      ev846, ev881, he1039, he1053, hc1054⟩ |
-    ⟨x_ta, x_ba, x_la, x_tb, x_bb, x_lb, v832, m833, cs844, ld12, ld809, ev846, hne1056, he1064,
-      he1078, hc1079⟩ |
-    ⟨x_ta, x_ba, x_la, v798, cs1087, ld12, ld809, hne1080, ev1089, hc1130⟩ |
-    ⟨x_ta, x_ba, x_la, x_tb, x_bb, x_lb, m1188, cs1199, m1223, cs1234, x_rest, m1296, cs1329,
-      ld12, ld1164, ev1201, ev1236, hm1306, ev1331, hc1372⟩ |
-    ⟨x_ta, x_ba, x_la, x_tb, x_bb, x_lb, m1188, cs1199, m1223, cs1234, w1379, x_rest, ld12,
-      ld1164, ev1201, ev1236, he1394, he1408, hc1409⟩ |
-    ⟨x_ta, x_ba, x_la, x_tb, x_bb, x_lb, v1187, m1188, cs1199, ld12, ld1164, ev1201, hne1411,
-      he1419, he1433, hc1434⟩ |
-    ⟨x_ta, x_ba, x_la, v1153, cs1442, ld12, ld1164, hne1435, ev1444, hc1485⟩ |
-    ⟨x_la, x_lb, v1524, m1528, cs1536, ld12, ld1509, he1526, ev1538, he1562, hc1563⟩ |
-    ⟨x_la, v1498, cs1571, ld12, ld1509, hne1564, ev1573, hc1614⟩ |
-    ⟨x_struct_a, x_fidx_a, x_ea, x_struct_b, x_fidx_b, x_eb, m1672, cs1683, cs1732, ld12, ld1648,
-      ev1685, op1722, ev1734, hc1775⟩ |
-    ⟨x_struct_a, x_fidx_a, x_ea, x_struct_b, x_fidx_b, x_eb, m1672, cs1683, v1706, ld12, ld1648,
-      ev1685, op1722, hne1776, he1784, he1798, hc1799⟩ |
-    ⟨x_struct_a, x_fidx_a, x_ea, x_struct_b, x_fidx_b, x_eb, v1671, m1672, cs1683, cs1807, ld12,
-      ld1648, ev1685, hne1800, ev1809, hc1850⟩ |
-    ⟨x_struct_a, x_fidx_a, x_ea, v1637, cs1858, ld12, ld1648, hne1851, ev1860, hc1901⟩ |
-    ⟨v1, cs1909, ld12, hne167, hne296, hne521, hne776, hne1131, hne1486, hne1615, hne1902, ev1911,
-      hc1952⟩
-  -- equal variables
-  · obtain ⟨k, rfl, rfl⟩ := eq_of_sub_field op65
-    obtain rfl := bvar_images_eq hA ld12 hB ld36 rfl
-    exact .refl
-  · exact (ans_contra he100 hr hans).elim
-  · subst hc166
-    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev125 rc a b credit types rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB ans rest hr hans
-  -- sorts
-  · subst he207 hc244
-    obtain ⟨rfl, -⟩ := tuple2_inj hr
-    obtain ⟨u, rfl, l, hl, hul⟩ := hA.sort_of_load ld12
-    obtain ⟨v, rfl, m, hm, hvm⟩ := hB.sort_of_load ld190
-    obtain ⟨hy, -⟩ := ih.get (.levelOps .level_equal) (by lt_calls) ev219 x_la x_lb rfl
-      (good.sub fun x hx => by simp [hx]).2 l m hl hm
-    exact .sort (lvEq_of_levelEqual hul hvm (of_ite_field_ne_zero hy hans))
-  · subst hc295
-    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev254 rc a b credit types rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB ans rest hr hans
-  -- constants
-  · subst he381 hc418
-    obtain ⟨rfl, -⟩ := tuple2_inj hr
-    obtain ⟨a1, us, rfl, ha1, hus⟩ := hA.const_of_load ld12
-    obtain ⟨a2, vs, rfl, ha2, hvs⟩ := hB.const_of_load ld324
-    obtain ⟨hy, -⟩ := Lib.address_eq_spec ev356 ha1 ha2
-    obtain rfl : a1 = a2 := of_ite_field_ne_zero hy field_one_ne_zero
-    have e0 := ObsFn.heap_extends ev356
-    exact .const (ih.get (.defEq .level_list_eq) (by lt_calls) ev393 x_lvls_a x_lvls_b rfl
-      (good.sub fun x hx => by simp [hx]) us vs (LvListRep.mono e0 hus) (LvListRep.mono e0 hvs)
-      hans)
-  · subst hc469
-    have e0 := ObsFn.heap_extends ev356
-    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev428 rc a b credit types rfl
+  cases Obs.«KernelDefEq::k_is_def_eq_struct_bounded».obs ev
+  case n1 _ _ ev_fast _ _ hc =>
+    subst hc
+    exact ih.get (.defEq .expr_eq_fast) (by lt_calls) ev_fast a b rfl
+      (good.sub fun x hx => by simp [hx]) d Γ A B hA hB field_one_ne_zero
+  case other_other_BVar_other _ _ _ _ _ _ ev_fast _ _ _ _ _ ev_sp hc =>
+    subst hc
+    have ef := ObsFn.heap_extends ev_fast
+    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev_sp rc a b credit types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ef hrc) d Γ (types_mono ef htypes) A B
+      (Tm.mono ef hA) (Tm.mono ef hB) ans rest hr hans
+  case other_other_Srt_other _ _ _ _ _ _ ev_fast _ _ _ _ _ ev_sp hc =>
+    subst hc
+    have ef := ObsFn.heap_extends ev_fast
+    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev_sp rc a b credit types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ef hrc) d Γ (types_mono ef htypes) A B
+      (Tm.mono ef hA) (Tm.mono ef hB) ans rest hr hans
+  case other_other_Const_Const_other _ _ _ _ _ _ _ _ _ _ _ ev_fast _ _ _ _ ev_aeq _ ev_sp hc =>
+    subst hc
+    have e0 := (ObsFn.heap_extends ev_fast).trans (ObsFn.heap_extends ev_aeq)
+    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev_sp rc a b credit types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ (types_mono e0 htypes) A B
       (Tm.mono e0 hA) (Tm.mono e0 hB) ans rest hr hans
-  · subst hc520
-    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev479 rc a b credit types rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB ans rest hr hans
-  -- applications
-  · subst hc686
-    obtain ⟨Fa, Xa, rfl, hFa, hXa⟩ := hA.app_of_load ld12
-    obtain ⟨Fb, Xb, rfl, hFb, hXb⟩ := hB.app_of_load ld549
-    have e0 := ObsFn.heap_extends ev581
-    exact .app (ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev581 rc x_fa x_fb credit
-      types rfl (good.sub fun x hx => by simp [hx]) hrc d Γ htypes Fa Fb hFa hFb (.field 1)
-      x_rest rfl field_one_ne_zero)
-      (ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev645 rc x_xa x_xb x_rest types
-        rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ (types_mono e0 htypes) Xa
-        Xb (Tm.mono e0 hXa) (Tm.mono e0 hXb) ans rest hr hans)
-  · exact (ans_contra he708 hr hans).elim
-  · subst hc775
-    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev734 rc a b credit types rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB ans rest hr hans
-  -- λ
-  · subst hm951 hc1017
-    obtain ⟨TA, BA, ℓa, rfl, hTA, hBA, hla⟩ := hA.lam_of_load ld12
-    obtain ⟨TB, BB, ℓb, rfl, hTB, hBB, hlb⟩ := hB.lam_of_load ld809
-    have e0 := ObsFn.heap_extends ev846
-    have x1 := e0.trans (ObsFn.heap_extends ev881)
-    obtain ⟨hpw, -⟩ := ih.get (.levels .pw_eq) (by lt_calls) ev846 x_la x_lb rfl
+  case other_other_Const_other _ _ _ _ _ _ _ ev_fast _ _ _ _ _ ev_sp hc =>
+    subst hc
+    have ef := ObsFn.heap_extends ev_fast
+    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev_sp rc a b credit types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ef hrc) d Γ (types_mono ef htypes) A B
+      (Tm.mono ef hA) (Tm.mono ef hB) ans rest hr hans
+  case other_other_App_App_n1_bind _ _ _ x_fa x_xa x_fb x_xb _ _ x_rest _ ev_fast _ _ ldA ldB
+      ev1 ev2 hc =>
+    subst hc
+    have ef := ObsFn.heap_extends ev_fast
+    obtain ⟨Fa, Xa, rfl, hFa, hXa⟩ := (Tm.mono ef hA).app_of_load ldA
+    obtain ⟨Fb, Xb, rfl, hFb, hXb⟩ := (Tm.mono ef hB).app_of_load ldB
+    have e0 := ObsFn.heap_extends ev1
+    have ef0 := ef.trans e0
+    exact .app (ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev1 rc x_fa x_fb credit
+      types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ef hrc) d Γ (types_mono ef htypes)
+      Fa Fb hFa hFb (.field 1) x_rest rfl field_one_ne_zero)
+      (ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev2 rc x_xa x_xb x_rest types
+        rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ef0 hrc) d Γ (types_mono ef0 htypes)
+        Xa Xb (Tm.mono e0 hXa) (Tm.mono e0 hXb) ans rest hr hans)
+  case other_other_App_other _ _ _ _ _ _ _ ev_fast _ _ _ _ _ ev_sp hc =>
+    subst hc
+    have ef := ObsFn.heap_extends ev_fast
+    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev_sp rc a b credit types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ef hrc) d Γ (types_mono ef htypes) A B
+      (Tm.mono ef hA) (Tm.mono ef hB) ans rest hr hans
+  case other_other_Lam_Lam_n1_n1_bind _ _ _ x_ta x_ba x_la x_tb x_bb x_lb _ _ m_t _ x_rest _ _
+      ev_fast _ _ ldA ldB ev_pw ev_t hm_cons ev_b hc =>
+    subst hm_cons hc
+    have ef := ObsFn.heap_extends ev_fast
+    obtain ⟨TA, BA, ℓa, rfl, hTA, hBA, hla⟩ := (Tm.mono ef hA).lam_of_load ldA
+    obtain ⟨TB, BB, ℓb, rfl, hTB, hBB, hlb⟩ := (Tm.mono ef hB).lam_of_load ldB
+    have e0 := ObsFn.heap_extends ev_pw
+    have x1 := e0.trans (ObsFn.heap_extends ev_t)
+    have ef0 := ef.trans e0
+    have efx1 := ef.trans x1
+    obtain ⟨hpw, -⟩ := ih.get (.levels .pw_eq) (by lt_calls) ev_pw x_la x_lb rfl
       (good.sub fun x hx => by simp [hx]) ℓa ℓb hla hlb
     have hz : ℓa.zeronessOf = ℓb.zeronessOf := of_ite_field_ne_zero hpw field_one_ne_zero
-    have hT := ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev881 rc x_ta x_tb credit
-      types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ
-      (types_mono e0 htypes) TA TB (Tm.mono e0 hTA) (Tm.mono e0 hTB) (.field 1) x_rest rfl
+    have hT := ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev_t rc x_ta x_tb credit
+      types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ef0 hrc) d Γ
+      (types_mono ef0 htypes) TA TB (Tm.mono e0 hTA) (Tm.mono e0 hTB) (.field 1) x_rest rfl
       field_one_ne_zero
-    have x2 := x1.trans (Heap.Extends.snoc m868 (.construct kexprListEnum "Cons" [x_ta, types]))
-    have hBd := ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev976 rc x_ba x_bb x_rest
-      _ rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono x2 hrc) (d + 1) _
-      (types_store_cons (types_mono x1 htypes) (Tm.mono x1 hTA)) _ _
+    have x2 := x1.trans (Heap.Extends.snoc m_t (.construct kexprListEnum "Cons" [x_ta, types]))
+    have efx2 := ef.trans x2
+    have hBd := ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev_b rc x_ba x_bb x_rest
+      _ rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono efx2 hrc) (d + 1) _
+      (types_store_cons (types_mono efx1 htypes) (Tm.mono x1 hTA)) _ _
       (tmk_open (T := TA) (Tm.mono x2 hBA)) (tmk_open (T := TA) (Tm.mono x2 hBB)) ans rest hr
       hans
     exact defEq_lam_left hT hBd hz
-  · exact (ans_contra he1039 hr hans).elim
-  · exact (ans_contra he1064 hr hans).elim
-  · subst hc1130
-    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev1089 rc a b credit types rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB ans rest hr hans
-  -- ∀
-  · subst hm1306 hc1372
-    obtain ⟨TA, BA, ℓa, rfl, hTA, hBA, hla⟩ := hA.forallE_of_load ld12
-    obtain ⟨TB, BB, ℓb, rfl, hTB, hBB, hlb⟩ := hB.forallE_of_load ld1164
-    have e0 := ObsFn.heap_extends ev1201
-    have x1 := e0.trans (ObsFn.heap_extends ev1236)
-    obtain ⟨hpw, -⟩ := ih.get (.levels .pw_eq) (by lt_calls) ev1201 x_la x_lb rfl
+  case other_other_Lam_other _ _ _ _ _ _ _ _ ev_fast _ _ _ _ _ ev_sp hc =>
+    subst hc
+    have ef := ObsFn.heap_extends ev_fast
+    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev_sp rc a b credit types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ef hrc) d Γ (types_mono ef htypes) A B
+      (Tm.mono ef hA) (Tm.mono ef hB) ans rest hr hans
+  case other_other_Forall_Forall_n1_n1_bind _ _ _ x_ta x_ba x_la x_tb x_bb x_lb _ _ m_t _ x_rest _ _
+      ev_fast _ _ ldA ldB ev_pw ev_t hm_cons ev_b hc =>
+    subst hm_cons hc
+    have ef := ObsFn.heap_extends ev_fast
+    obtain ⟨TA, BA, ℓa, rfl, hTA, hBA, hla⟩ := (Tm.mono ef hA).forallE_of_load ldA
+    obtain ⟨TB, BB, ℓb, rfl, hTB, hBB, hlb⟩ := (Tm.mono ef hB).forallE_of_load ldB
+    have e0 := ObsFn.heap_extends ev_pw
+    have x1 := e0.trans (ObsFn.heap_extends ev_t)
+    have ef0 := ef.trans e0
+    have efx1 := ef.trans x1
+    obtain ⟨hpw, -⟩ := ih.get (.levels .pw_eq) (by lt_calls) ev_pw x_la x_lb rfl
       (good.sub fun x hx => by simp [hx]) ℓa ℓb hla hlb
     have hz : ℓa.zeronessOf = ℓb.zeronessOf := of_ite_field_ne_zero hpw field_one_ne_zero
-    have hT := ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev1236 rc x_ta x_tb
-      credit types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ
-      (types_mono e0 htypes) TA TB (Tm.mono e0 hTA) (Tm.mono e0 hTB) (.field 1) x_rest rfl
+    have hT := ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev_t rc x_ta x_tb
+      credit types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ef0 hrc) d Γ
+      (types_mono ef0 htypes) TA TB (Tm.mono e0 hTA) (Tm.mono e0 hTB) (.field 1) x_rest rfl
       field_one_ne_zero
-    have x2 := x1.trans (Heap.Extends.snoc m1223 (.construct kexprListEnum "Cons" [x_ta, types]))
-    have hBd := ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev1331 rc x_ba x_bb
-      x_rest _ rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono x2 hrc) (d + 1) _
-      (types_store_cons (types_mono x1 htypes) (Tm.mono x1 hTA)) _ _
+    have x2 := x1.trans (Heap.Extends.snoc m_t (.construct kexprListEnum "Cons" [x_ta, types]))
+    have efx2 := ef.trans x2
+    have hBd := ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev_b rc x_ba x_bb
+      x_rest _ rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono efx2 hrc) (d + 1) _
+      (types_store_cons (types_mono efx1 htypes) (Tm.mono x1 hTA)) _ _
       (tmk_open (T := TA) (Tm.mono x2 hBA)) (tmk_open (T := TA) (Tm.mono x2 hBB)) ans rest hr
       hans
     exact defEq_forallE_left hT hBd hz
-  · exact (ans_contra he1394 hr hans).elim
-  · exact (ans_contra he1419 hr hans).elim
-  · subst hc1485
-    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev1444 rc a b credit types rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB ans rest hr hans
-  -- literals
-  · subst he1526 hc1563
-    obtain ⟨rfl, -⟩ := tuple2_inj hr
-    obtain ⟨la, hla, -⟩ := tm_lit_data hA ld12
-    obtain ⟨lb, hlb, -⟩ := tm_lit_data hB ld1509
-    obtain ⟨hy, -⟩ := ih.get (.levels .literal_eq) (by lt_calls) ev1538 x_la x_lb rfl
-      (good.sub fun x hx => by simp [hx]) la lb hla hlb
-    obtain rfl := lit_images_eq hA ld12 hB ld1509 hla hlb (of_ite_field_ne_zero hy hans)
-    exact .refl
-  · subst hc1614
-    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev1573 rc a b credit types rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB ans rest hr hans
-  -- projections
-  · subst hc1775
-    obtain ⟨a1, i, EA, rfl, rfl, ha1, hEA⟩ := hA.proj_of_load ld12
-    obtain ⟨b1, j, EB, rfl, rfl, hb1, hEB⟩ := hB.proj_of_load ld1648
-    obtain ⟨hy, -⟩ := Lib.address_eq_spec ev1685 ha1 hb1
+  case other_other_Forall_other _ _ _ _ _ _ _ _ ev_fast _ _ _ _ _ ev_sp hc =>
+    subst hc
+    have ef := ObsFn.heap_extends ev_fast
+    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev_sp rc a b credit types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ef hrc) d Γ (types_mono ef htypes) A B
+      (Tm.mono ef hA) (Tm.mono ef hB) ans rest hr hans
+  case other_other_Lit_other _ _ _ _ _ _ ev_fast _ _ _ _ _ ev_sp hc =>
+    subst hc
+    have ef := ObsFn.heap_extends ev_fast
+    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev_sp rc a b credit types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ef hrc) d Γ (types_mono ef htypes) A B
+      (Tm.mono ef hA) (Tm.mono ef hB) ans rest hr hans
+  case other_other_Proj_Proj_n1_n0 _ _ _ _ _ x_ea _ _ x_eb _ _ _ ev_fast _ _ ldA ldB ev_aeq op
+      ev_rec hc =>
+    subst hc
+    have ef := ObsFn.heap_extends ev_fast
+    obtain ⟨a1, i, EA, rfl, rfl, ha1, hEA⟩ := (Tm.mono ef hA).proj_of_load ldA
+    obtain ⟨b1, j, EB, rfl, rfl, hb1, hEB⟩ := (Tm.mono ef hB).proj_of_load ldB
+    obtain ⟨hy, -⟩ := Lib.address_eq_spec ev_aeq ha1 hb1
     obtain rfl : a1 = b1 := of_ite_field_ne_zero hy field_one_ne_zero
-    obtain ⟨k, hik, hjk⟩ := eq_of_sub_field op1722
+    obtain ⟨k, hik, hjk⟩ := eq_of_sub_field op
     injection hik with hik
     injection hjk with hjk
     subst hik hjk
-    have e0 := ObsFn.heap_extends ev1685
-    exact .proj (ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev1734 rc x_ea x_eb
-      credit types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ
-      (types_mono e0 htypes) EA EB (Tm.mono e0 hEA) (Tm.mono e0 hEB) ans rest hr hans)
-  · exact (ans_contra he1784 hr hans).elim
-  · subst hc1850
-    have e0 := ObsFn.heap_extends ev1685
-    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev1809 rc a b credit types rfl
+    have e0 := ObsFn.heap_extends ev_aeq
+    have ef0 := ef.trans e0
+    exact .proj (ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev_rec rc x_ea x_eb
+      credit types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ef0 hrc) d Γ
+      (types_mono ef0 htypes) EA EB (Tm.mono e0 hEA) (Tm.mono e0 hEB) ans rest hr hans)
+  case other_other_Proj_Proj_other _ _ _ _ _ _ _ _ _ _ _ _ _ ev_fast _ _ _ _ ev_aeq _ ev_sp hc =>
+    subst hc
+    have e0 := (ObsFn.heap_extends ev_fast).trans (ObsFn.heap_extends ev_aeq)
+    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev_sp rc a b credit types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ (types_mono e0 htypes) A B
       (Tm.mono e0 hA) (Tm.mono e0 hB) ans rest hr hans
-  · subst hc1901
-    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev1860 rc a b credit types rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB ans rest hr hans
-  · subst hc1952
-    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev1911 rc a b credit types rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB ans rest hr hans
+  case other_other_Proj_other _ _ _ _ _ _ _ _ ev_fast _ _ _ _ _ ev_sp hc =>
+    subst hc
+    have ef := ObsFn.heap_extends ev_fast
+    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev_sp rc a b credit types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ef hrc) d Γ (types_mono ef htypes) A B
+      (Tm.mono ef hA) (Tm.mono ef hB) ans rest hr hans
+  case other_other_other _ _ _ _ _ ev_fast _ _ _ _ _ _ _ _ _ _ _ ev_sp hc =>
+    subst hc
+    have ef := ObsFn.heap_extends ev_fast
+    exact ih.get (.defEq .k_is_def_eq_struct_spend) (by lt_calls) ev_sp rc a b credit types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ef hrc) d Γ (types_mono ef htypes) A B
+      (Tm.mono ef hA) (Tm.mono ef hB) ans rest hr hans
+  all_goals exact (ans_contra (by assumption) hr hans).elim
 
 /-- `KernelDefEq::k_is_def_eq_struct_spend`: one credit spent on head-normalizing both sides,
 then `Nat` offsets, the lazy-δ loop, or the bounded structural comparison of the loop's
@@ -885,21 +950,36 @@ theorem k_is_def_eq_structure_tree_step (c : ScopedCtx) {args : List (SourceValu
 
 /-! ## The slow tiers -/
 
-/-- `KernelDefEq::k_is_def_eq_slow`: string literals, then `k_is_def_eq_slow_nd`. -/
+private theorem k_is_def_eq_slow_seg_pure {rc a b types r : SourceValue F} {h h' : Heap F}
+    {cs : List (Call F)}
+    (sg : Obs.«KernelDefEq::k_is_def_eq_slow».Seg_ordcvglu rc a b types h r h' cs) :
+    h' = h ∧ cs = [] := by
+  cases sg <;> exact ⟨‹_›, ‹_›⟩
+
+/-- `KernelDefEq::k_is_def_eq_slow`: string literals (gated on `Lit(Str)`), then
+`k_is_def_eq_slow_nd`. -/
 theorem k_is_def_eq_slow_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_slow" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_is_def_eq_slow c args h r h' calls := by
   intro rc a b types hargs good hrc d Γ htypes A B hA hB hr
   subst hargs
-  rcases Obs.«KernelDefEq::k_is_def_eq_slow».obs ev with
-    ⟨m2, cs13, ev15, he52, he53, hc54⟩ | ⟨v1, m2, cs13, cs62, ev15, hne55, ev64, hc97⟩
-  · subst hc54
-    exact ih.get (.defEq .try_string_lit_pair) (by lt_calls) ev15 rc a b types rfl
+  cases Obs.«KernelDefEq::k_is_def_eq_slow».obs ev
+  case n0 _ _ _ sg ev_nd hc =>
+    obtain ⟨rfl, rfl⟩ := k_is_def_eq_slow_seg_pure sg
+    subst hc
+    exact ih.get (.defEq .k_is_def_eq_slow_nd) (by lt_calls) ev_nd rc a b types rfl
+      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB hr
+  case other_n1 _ _ _ _ _ sg _ ev_str _ _ hc =>
+    obtain ⟨rfl, rfl⟩ := k_is_def_eq_slow_seg_pure sg
+    subst hc
+    exact ih.get (.defEq .try_string_lit_pair) (by lt_calls) ev_str rc a b types rfl
       (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB field_one_ne_zero
-  · subst hc97
-    have e0 := ObsFn.heap_extends ev15
-    exact ih.get (.defEq .k_is_def_eq_slow_nd) (by lt_calls) ev64 rc a b types rfl
+  case other_other _ _ _ _ _ _ _ sg _ ev_str _ ev_nd hc =>
+    obtain ⟨rfl, rfl⟩ := k_is_def_eq_slow_seg_pure sg
+    subst hc
+    have e0 := ObsFn.heap_extends ev_str
+    exact ih.get (.defEq .k_is_def_eq_slow_nd) (by lt_calls) ev_nd rc a b types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ (types_mono e0 htypes) A B
       (Tm.mono e0 hA) (Tm.mono e0 hB) hr
 
@@ -1013,30 +1093,23 @@ theorem k_is_def_eq_slow2_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
       (good.sub fun x hx => by simp [hx]) (RCRep.mono x1 hrc) d Γ (types_mono x1 htypes) A0 B0 FA
       FB (Tm.mono x1 hA0) (Tm.mono x1 hB0) hFA hFB (.trans hra0 hraF) (.trans hrb0 hrbF) hr
 
-/-- `KernelDefEq::slow2_after_delta`: the bounded structural tier and the structure tree on the
-lazy-δ reducts, then the eager fallback on the originals. -/
+/-- `KernelDefEq::slow2_after_delta`: the structure tree (which opens with the bounded structural
+tier) on the lazy-δ reducts, then the eager fallback on the originals. -/
 theorem slow2_after_delta_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::slow2_after_delta" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.slow2_after_delta c args h r h' calls := by
   intro rc oa ob a b types hargs good hrc d Γ htypes A0 B0 A B hA0 hB0 hA hB hra0 hrb0 hr
   subst hargs
-  rcases Obs.«KernelDefEq::slow2_after_delta».obs ev with
-    ⟨m2, cs13, w62, ev15, he74, he75, hc76⟩ |
-    ⟨v1, m2, cs13, m81, cs92, ev15, ev94, he131, he132, hc133⟩ |
-    ⟨v1, m2, cs13, v80, m81, cs92, cs141, ev15, ev94, hne134, ev143, hc176⟩
-  · subst hc76
-    exact .redBoth hra0 hrb0 (ih.get (.defEq .k_is_def_eq_struct_bounded) (by lt_calls) ev15 rc a
-      b (.field 8) types rfl (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB
-      (.field 1) w62 rfl field_one_ne_zero)
-  · subst hc133
-    have e0 := ObsFn.heap_extends ev15
-    exact .redBoth hra0 hrb0 (ih.get (.defEq .k_is_def_eq_structure_tree) (by lt_calls) ev94 rc a
-      b types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ
-      (types_mono e0 htypes) A B (Tm.mono e0 hA) (Tm.mono e0 hB) field_one_ne_zero)
-  · subst hc176
-    have e0 := (ObsFn.heap_extends ev15).trans (ObsFn.heap_extends ev94)
-    exact ih.get (.defEq .slow2_eager_fallback) (by lt_calls) ev143 rc oa ob types rfl
+  cases Obs.«KernelDefEq::slow2_after_delta».obs ev
+  case n1 _ _ ev1 _ _ hc =>
+    subst hc
+    exact .redBoth hra0 hrb0 (ih.get (.defEq .k_is_def_eq_structure_tree) (by lt_calls) ev1 rc a
+      b types rfl (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB field_one_ne_zero)
+  case other _ _ _ _ ev1 _ ev2 hc =>
+    subst hc
+    have e0 := ObsFn.heap_extends ev1
+    exact ih.get (.defEq .slow2_eager_fallback) (by lt_calls) ev2 rc oa ob types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ (types_mono e0 htypes) A0 B0
       (Tm.mono e0 hA0) (Tm.mono e0 hB0) hr
 
