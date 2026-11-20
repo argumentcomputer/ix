@@ -1,0 +1,128 @@
+import Aiur.Generic.LookupFacts
+import Aiur.Generic.ControlLower
+import Aiur.Library.U32.Goldilocks
+
+/-! # Rendering helpers and the lookup-fact generator
+
+The renderers of `IxVM.ProofGen` (IxVM package) that the path-lemma generator uses, for any
+program over the Goldilocks field, and its lookup-fact generator with the program, its
+namespace and its Lean function names as parameters (`Target`). The output is Lean source;
+Lean checks every generated proof. -/
+
+namespace IxAIRefine.ProofGen
+open Aiur.Generic
+
+abbrev F := Aiur.Library.U32.Goldilocks.F
+
+/-- The generator's size caps. A function over a cap is reported (`skipped (…)`), not
+generated. -/
+structure Limits where
+  /-- Characters of the rendered declarations. -/
+  maxChars : Nat := 200000
+  /-- Variable lookups, weighted by the environment's length. -/
+  maxLookups : Nat := 3000
+  /-- Facts on one path (constructor fields). -/
+  maxFacts : Nat := 150
+  /-- Inversion steps. -/
+  maxWork : Nat := 20000
+  /-- Paths (constructors). -/
+  maxPaths : Nat := 256
+
+/-- What the generators are run on: an emitted program and where its definitions live. -/
+structure Target where
+  /-- The emitted program (`Modules.emitProgram`), its functions in emission order. -/
+  program : Program F
+  /-- The checked source the path lemmas are stated over (`source.program = program`). -/
+  source : Source F
+  /-- The namespace of the emitted definitions, e.g. `IxAIStep.Fixed`: it holds `functions`,
+  `program` and `source`, and the generated lookup facts. -/
+  ns : String
+  /-- The Lean constant of the field, e.g. `IxAIAiur.F`. -/
+  fieldName : String
+  /-- A function's emitted constant, relative to `ns`. -/
+  functionName : String → String
+  /-- The module the emitted program and `source` come from. -/
+  sourceModule : String
+  /-- The modules generated for this target: `<modulePrefix>.Lookup`, `<modulePrefix>.Obs.*`. -/
+  modulePrefix : String
+  /-- The directory of `<modulePrefix>`, relative to the package root. -/
+  dir : System.FilePath
+  /-- How the files are regenerated, for their headers. -/
+  command : String
+  /-- Functions generated under caps other than the defaults. -/
+  caps : List (String × Limits) := []
+
+/-- The constant `ns.c`. -/
+def Target.const (t : Target) (c : String) : String := s!"{t.ns}.{c}"
+
+/-- A function's emitted constant, fully qualified. -/
+def Target.leanName (t : Target) (symbol : String) : String := t.const (t.functionName symbol)
+
+def q (s : String) : String := s.quote
+
+def list (xs : List String) : String := "[" ++ ", ".intercalate xs ++ "]"
+
+def opt (r : α → String) : Option α → String
+  | some x => s!"(some {r x})"
+  | none => "none"
+
+def bool (b : Bool) : String := if b then "true" else "false"
+
+def field (x : F) : String := toString x.val
+
+partial def ty : Ty → String
+  | .field => ".field"
+  | .tuple ts => s!"(.tuple {list (ts.map ty)})"
+  | .array t n => s!"(.array {ty t} {n})"
+  | .ptr t => s!"(.ptr {ty t})"
+  | .param n => s!"(.param {q n})"
+  | .named n args => s!"(.named {q n} {list (args.map ty)})"
+
+def fieldRef (f : FieldRef) : String :=
+  s!"\{ name := {q f.name}, owner := {opt ty f.owner}, index := {f.index}, arity := {f.arity} }"
+
+def updateStep : UpdateStep → String
+  | .member f => s!"(.member {fieldRef f})"
+  | .project i n => s!"(.project {i} {n})"
+  | .index i n => s!"(.index {i} {n})"
+
+def listLines (xs : List String) : String :=
+  if xs.isEmpty then "[]" else "[\n    " ++ ",\n    ".intercalate xs ++ "]"
+
+/-- **The lookup facts**: for every function with no type parameters, a theorem that the
+program resolves its name to its closure, proved by `Program.sourceFunction?_of_mem` from the
+function's index and one certificate that the names' keys are distinct (`decide +kernel` on
+natural numbers, no string comparison). Generic functions get no fact here. -/
+def lookup (t : Target) : String := Id.run do
+  let fnNames := t.program.functions.map (·.name)
+  let mut facts : List String := []
+  let mut index := 0
+  for f in t.program.functions do
+    if f.typeParams.isEmpty && f.name.toList.head? != some '$' then
+      let leanName := t.functionName f.name
+      facts := facts ++ [s!"theorem {leanName}.lookup : program.sourceFunction? {q f.name} =\n" ++
+        s!"    some \{ types := [], params := {leanName}.params.map fun (n, t) => (n, (t.subst []).toCore),\n" ++
+        s!"           body := {leanName}.body } :=\n" ++
+        s!"  Program.sourceFunction?_of_mem (f := {leanName}) functionNames_nodup\n" ++
+        s!"    (List.getElem_mem (l := functions) (n := {index}) (by decide +kernel))\n" ++
+        s!"    (head_ne_of_bytes (by decide +kernel)) rfl\n"]
+    index := index + 1
+  return s!"import {t.sourceModule}\nimport Aiur.Generic.LookupFacts\n\n" ++
+    s!"/-! The emitted program's lookup facts: `{t.ns}.program` resolves each function's\n" ++
+    "name to its emitted definition.\n\n" ++
+    s!"Generated by {t.command}; do not edit. -/\n\n" ++
+    s!"set_option maxRecDepth 100000\nset_option linter.dupNamespace false\n\nnamespace {t.ns}\nopen Aiur.Generic\n\n" ++
+    "/-- The function names as numbers (`nameKey`). -/\n" ++
+    s!"def functionKeys : List Nat := {listLines (fnNames.map fun n => toString (nameKey n))}\n\n" ++
+    "/-- The keys are the names' keys: each name's key computed once. -/\n" ++
+    "theorem functionKeys_eq : functions.map (fun f => nameKey f.name) = functionKeys := by decide +kernel\n\n" ++
+    "theorem functionKeys_nodup : functionKeys.Nodup := by decide +kernel\n\n" ++
+    "/-- **The function names are distinct**, certified on their keys. -/\n" ++
+    "theorem functionNames_nodup : (functions.map (·.name)).Nodup :=\n" ++
+    "  nodup_of_nameKeys (by simpa only [List.map_map, Function.comp_def, functionKeys_eq] using functionKeys_nodup)\n\n" ++
+    "/-- **No map is named like a function.** -/\n" ++
+    "theorem mapKeys_fresh : ∀ m ∈ maps, nameKey m.name ∉ functions.map (fun f => nameKey f.name) := by\n" ++
+    "  rw [functionKeys_eq]; decide +kernel\n\n" ++
+    "\n".intercalate facts ++ "\n" ++ s!"end {t.ns}\n"
+
+end IxAIRefine.ProofGen

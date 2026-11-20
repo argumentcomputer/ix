@@ -137,3 +137,87 @@ checking that both lower to the same program (`Tools/AiurEmbed.lean`). -/
 lean_exe aiur_embed where
   root := `Tools.AiurEmbed
   supportInterpreter := true
+
+/- ix-ai-pipeline: the triage model's SGD step as a formal Aiur program (local worktree only). -/
+lean_lib IxAICore
+
+lean_lib IxAIStep
+
+/- Refinement of `IxAIStep`'s `Fixed` program: its emitted definitions and path lemmas. -/
+-- An explicit root: `IxAIRefine/Fixed/specgen` holds generator fragments that are not modules.
+lean_lib IxAIRefine
+
+lean_exe ixai_step where
+  root := `IxAIStepMain
+  moreLinkObjs := #[execution_o, aiur_rs]
+
+/- The whole training run as one execution (`FixedTree::train_tree`) and its exporter. -/
+lean_lib IxAITree
+
+lean_exe ixai_tree where
+  root := `IxAITreeMain
+  moreLinkObjs := #[execution_o, aiur_rs]
+
+/- ix-ai-pipeline: the GPU trainer. `IxAIGpuHost/cuda` holds the CUDA kernels (`step.cu`) and the
+C shim giving them Lean's object ABI (`ixai_gpu.c`); the host is `IxAIGpuHost`. -/
+
+/-- nvcc, as `crates/aiur/build.rs` finds it: `NVCC`, then `CUDA_HOME`/`CUDA_PATH`, then `PATH`,
+resolved so that the toolkit's libraries are found next to it. -/
+def nvccPath : IO FilePath := do
+  if let some nvcc ← IO.getEnv "NVCC" then return nvcc
+  for var in ["CUDA_HOME", "CUDA_PATH"] do
+    if let some root ← IO.getEnv var then
+      let candidate := FilePath.mk root / "bin" / "nvcc"
+      if ← candidate.pathExists then return candidate
+  if let some path ← IO.getEnv "PATH" then
+    for dir in path.splitOn ":" do
+      let candidate := FilePath.mk dir / "nvcc"
+      if ← candidate.pathExists then return candidate
+  return "nvcc"
+
+/-- The CUDA architectures, as `crates/aiur/build.rs` selects them: `MULTI_STARK_CUDA_ARCHS`,
+else the visible GPUs' compute capabilities, else sm_80. -/
+def cudaArchs : IO (Array String) := do
+  let configured ← match ← IO.getEnv "MULTI_STARK_CUDA_ARCHS" with
+    | some archs => pure (archs.splitOn ",")
+    | none =>
+      try
+        let out ← IO.Process.output
+          { cmd := "nvidia-smi", args := #["--query-gpu=compute_cap", "--format=csv,noheader"] }
+        pure (if out.exitCode == 0 then out.stdout.splitOn "\n" else [])
+      catch _ => pure []
+  let archs := configured.map (fun a => String.ofList (a.toList.filter Char.isDigit)) |>.filter (!·.isEmpty)
+  let archs := archs.eraseDups.toArray.qsort (· < ·)
+  return if archs.isEmpty then #["80"] else archs
+
+target ixai_gpu_step_o pkg : FilePath := do
+  let nvcc ← nvccPath
+  let gencode := (← cudaArchs).map fun a => s!"-gencode=arch=compute_{a},code=sm_{a}"
+  let source ← inputTextFile (pkg.dir / "IxAIGpuHost" / "cuda" / "step.cu")
+  buildO (pkg.buildDir / "cuda" / "step.o") source #[]
+    (#["--std=c++17", "--cudart=static", "--default-stream=per-thread", "-O3", "-lineinfo",
+      "--compiler-options=-fPIC"] ++ gencode) nvcc
+
+target ixai_gpu_shim_o pkg : FilePath := do
+  let source ← inputTextFile (pkg.dir / "IxAIGpuHost" / "cuda" / "ixai_gpu.c")
+  buildO (pkg.buildDir / "cuda" / "ixai_gpu.o") source
+    #["-I", (← getLeanIncludeDir).toString] #["-O2", "-fPIC"] "cc" getLeanTrace
+
+/-- The static CUDA runtime, from the toolkit of `nvccPath` (`lib64`, else
+`targets/x86_64-linux/lib`), as `crates/aiur/build.rs` links it. -/
+target cudart_static : FilePath := do
+  let some root := (← nvccPath).parent >>= (·.parent)
+    | error "cannot locate the CUDA toolkit: set NVCC or CUDA_HOME"
+  for dir in [root / "lib64", root / "targets" / "x86_64-linux" / "lib"] do
+    let lib := dir / "libcudart_static.a"
+    if ← lib.pathExists then return ← inputBinFile lib
+  error s!"libcudart_static.a not found under {root}"
+
+lean_lib IxAIGpu
+
+lean_lib IxAIGpuHost where
+  globs := #[.andSubmodules `IxAIGpuHost]
+
+lean_exe ixai_gpu where
+  root := `IxAIGpuMain
+  moreLinkObjs := #[execution_o, aiur_rs, ixai_gpu_shim_o, ixai_gpu_step_o, cudart_static]

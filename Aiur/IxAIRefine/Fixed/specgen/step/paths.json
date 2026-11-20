@@ -1,0 +1,3038 @@
+{
+"Fixed::shr8": [
+[
+"k10",
+"Constant F"
+],
+[
+"m15",
+"Heap F"
+],
+[
+"cs25",
+"List (Call F)"
+],
+[
+"v28",
+"SourceValue F"
+],
+[
+"v29",
+"SourceValue F"
+],
+[
+"x_r",
+"SourceValue F"
+],
+[
+"x_b0",
+"SourceValue F"
+],
+[
+"m64",
+"Heap F"
+],
+[
+"cs74",
+"List (Call F)"
+],
+[
+"v77",
+"SourceValue F"
+],
+[
+"v78",
+"SourceValue F"
+],
+[
+"x_b1",
+"SourceValue F"
+],
+[
+"x_b2",
+"SourceValue F"
+],
+[
+"m113",
+"Heap F"
+],
+[
+"cs123",
+"List (Call F)"
+],
+[
+"v126",
+"SourceValue F"
+],
+[
+"v127",
+"SourceValue F"
+],
+[
+"x_b3",
+"SourceValue F"
+],
+[
+"x_b4",
+"SourceValue F"
+],
+[
+"m162",
+"Heap F"
+],
+[
+"cs172",
+"List (Call F)"
+],
+[
+"v175",
+"SourceValue F"
+],
+[
+"v176",
+"SourceValue F"
+],
+[
+"x_b5",
+"SourceValue F"
+],
+[
+"x_z",
+"SourceValue F"
+],
+[
+"v221",
+"SourceValue F"
+],
+[
+"m224",
+"Heap F"
+],
+[
+"cs232",
+"List (Call F)"
+],
+[
+"v250",
+"SourceValue F"
+],
+[
+"m251",
+"Heap F"
+],
+[
+"x258",
+"SourceValue F"
+],
+[
+"y259",
+"SourceValue F"
+],
+[
+"m260",
+"Heap F"
+],
+[
+"x266",
+"SourceValue F"
+],
+[
+"y267",
+"SourceValue F"
+],
+[
+"m268",
+"Heap F"
+],
+[
+"x274",
+"SourceValue F"
+],
+[
+"y275",
+"SourceValue F"
+],
+[
+"m276",
+"Heap F"
+],
+[
+"x282",
+"SourceValue F"
+],
+[
+"y283",
+"SourceValue F"
+],
+[
+"m284",
+"Heap F"
+],
+[
+"x290",
+"SourceValue F"
+],
+[
+"y291",
+"SourceValue F"
+],
+[
+"m292",
+"Heap F"
+],
+[
+"cs301",
+"List (Call F)"
+],
+[
+"y313",
+"SourceValue F"
+],
+[
+"cs323",
+"List (Call F)"
+],
+[
+"y335",
+"SourceValue F"
+],
+[
+"cs345",
+"List (Call F)"
+],
+[
+"y357",
+"SourceValue F"
+],
+[
+"cs367",
+"List (Call F)"
+],
+[
+"y379",
+"SourceValue F"
+],
+[
+"cs389",
+"List (Call F)"
+],
+[
+"y401",
+"SourceValue F"
+],
+[
+"cs411",
+"List (Call F)"
+],
+[
+"v422",
+"SourceValue F"
+],
+[
+"v450",
+"SourceValue F"
+],
+[
+"m453",
+"Heap F"
+],
+[
+"x458",
+"SourceValue F"
+],
+[
+"y459",
+"SourceValue F"
+],
+[
+"cs478",
+"List (Call F)"
+],
+[
+"ty12",
+"W.typed (Generic.Ty.toCore (Generic.Ty.subst [] (.array .field 8))) k10 = true"
+],
+[
+"pr38",
+"projectValue ((Constant.toValue k10) : SourceValue F) 0 = .ok v28"
+],
+[
+"pr48",
+"projectValue ((Constant.toValue k10) : SourceValue F) 1 = .ok v29"
+],
+[
+"ev27",
+"ObsFn W \"UInt8::from_fields\" [v28, v29] h (.tuple [x_r, x_b0]) m15 cs25"
+],
+[
+"pr87",
+"projectValue ((Constant.toValue k10) : SourceValue F) 2 = .ok v77"
+],
+[
+"pr97",
+"projectValue ((Constant.toValue k10) : SourceValue F) 3 = .ok v78"
+],
+[
+"ev76",
+"ObsFn W \"UInt8::from_fields\" [v77, v78] m15 (.tuple [x_b1, x_b2]) m64 cs74"
+],
+[
+"pr136",
+"projectValue ((Constant.toValue k10) : SourceValue F) 4 = .ok v126"
+],
+[
+"pr146",
+"projectValue ((Constant.toValue k10) : SourceValue F) 5 = .ok v127"
+],
+[
+"ev125",
+"ObsFn W \"UInt8::from_fields\" [v126, v127] m64 (.tuple [x_b3, x_b4]) m113 cs123"
+],
+[
+"pr185",
+"projectValue ((Constant.toValue k10) : SourceValue F) 6 = .ok v175"
+],
+[
+"pr195",
+"projectValue ((Constant.toValue k10) : SourceValue F) 7 = .ok v176"
+],
+[
+"ev174",
+"ObsFn W \"UInt8::from_fields\" [v175, v176] m113 (.tuple [x_b5, x_z]) m162 cs172"
+],
+[
+"ev234",
+"ObsFn W \"UInt8::to_field\" [x_z] m162 v221 m224 cs232"
+],
+[
+"heq249",
+"(v221 : SourceValue F) = (.field 0)"
+],
+[
+"ev303",
+"ObsFn W \"UInt8::to_field\" [x_b0] m224 x290 m292 cs301"
+],
+[
+"ev325",
+"ObsFn W \"UInt8::to_field\" [x_b1] m292 y313 m284 cs323"
+],
+[
+"op319",
+"evalBinOp .mul ((.field 256) : SourceValue F) (y313 : SourceValue F) = .ok y291"
+],
+[
+"op297",
+"evalBinOp .add (x290 : SourceValue F) (y291 : SourceValue F) = .ok x282"
+],
+[
+"ev347",
+"ObsFn W \"UInt8::to_field\" [x_b2] m284 y335 m276 cs345"
+],
+[
+"op341",
+"evalBinOp .mul ((.field 65536) : SourceValue F) (y335 : SourceValue F) = .ok y283"
+],
+[
+"op289",
+"evalBinOp .add (x282 : SourceValue F) (y283 : SourceValue F) = .ok x274"
+],
+[
+"ev369",
+"ObsFn W \"UInt8::to_field\" [x_b3] m276 y357 m268 cs367"
+],
+[
+"op363",
+"evalBinOp .mul ((.field 16777216) : SourceValue F) (y357 : SourceValue F) = .ok y275"
+],
+[
+"op281",
+"evalBinOp .add (x274 : SourceValue F) (y275 : SourceValue F) = .ok x266"
+],
+[
+"ev391",
+"ObsFn W \"UInt8::to_field\" [x_b4] m268 y379 m260 cs389"
+],
+[
+"op385",
+"evalBinOp .mul ((.field 4294967296) : SourceValue F) (y379 : SourceValue F) = .ok y267"
+],
+[
+"op273",
+"evalBinOp .add (x266 : SourceValue F) (y267 : SourceValue F) = .ok x258"
+],
+[
+"ev413",
+"ObsFn W \"UInt8::to_field\" [x_b5] m260 y401 m251 cs411"
+],
+[
+"op407",
+"evalBinOp .mul ((.field 1099511627776) : SourceValue F) (y401 : SourceValue F) = .ok y259"
+],
+[
+"op265",
+"evalBinOp .add (x258 : SourceValue F) (y259 : SourceValue F) = .ok v250"
+],
+[
+"op437",
+"evalBinOp .sub (v250 : SourceValue F) ((.field 140737488355328) : SourceValue F) = .ok v422"
+],
+[
+"op473",
+"evalBinOp .mul ((.field 256) : SourceValue F) (v422 : SourceValue F) = .ok x458"
+],
+[
+"ev480",
+"ObsFn W \"UInt8::to_field\" [x_r] m251 y459 m453 cs478"
+],
+[
+"op465",
+"evalBinOp .add (x458 : SourceValue F) (y459 : SourceValue F) = .ok v450"
+],
+[
+"heq496",
+"(v450 : SourceValue F) = x_s"
+],
+[
+"he498",
+"r = v422"
+],
+[
+"he499",
+"h' = m453"
+],
+[
+"hc500",
+"calls = ((\u27e8\"UInt8::from_fields\", [v28, v29], h\u27e9 : Call F) :: (cs25 ++ ((\u27e8\"UInt8::from_fields\", [v77, v78], m15\u27e9 : Call F) :: (cs74 ++ ((\u27e8\"UInt8::from_fields\", [v126, v127], m64\u27e9 : Call F) :: (cs123 ++ ((\u27e8\"UInt8::from_fields\", [v175, v176], m113\u27e9 : Call F) :: (cs172 ++ ((\u27e8\"UInt8::to_field\", [x_z], m162\u27e9 : Call F) :: (cs232 ++ ((\u27e8\"UInt8::to_field\", [x_b0], m224\u27e9 : Call F) :: (cs301 ++ ((\u27e8\"UInt8::to_field\", [x_b1], m292\u27e9 : Call F) :: (cs323 ++ ((\u27e8\"UInt8::to_field\", [x_b2], m284\u27e9 : Call F) :: (cs345 ++ ((\u27e8\"UInt8::to_field\", [x_b3], m276\u27e9 : Call F) :: (cs367 ++ ((\u27e8\"UInt8::to_field\", [x_b4], m268\u27e9 : Call F) :: (cs389 ++ ((\u27e8\"UInt8::to_field\", [x_b5], m260\u27e9 : Call F) :: (cs411 ++ ((\u27e8\"UInt8::to_field\", [x_r], m251\u27e9 : Call F) :: cs478)))))))))))))))))))))))"
+]
+],
+"Fixed::sign_split": [
+[
+"k10",
+"Constant F"
+],
+[
+"m15",
+"Heap F"
+],
+[
+"cs25",
+"List (Call F)"
+],
+[
+"v28",
+"SourceValue F"
+],
+[
+"v29",
+"SourceValue F"
+],
+[
+"x_b0",
+"SourceValue F"
+],
+[
+"x_b1",
+"SourceValue F"
+],
+[
+"m64",
+"Heap F"
+],
+[
+"cs74",
+"List (Call F)"
+],
+[
+"v77",
+"SourceValue F"
+],
+[
+"v78",
+"SourceValue F"
+],
+[
+"x_b2",
+"SourceValue F"
+],
+[
+"x_b3",
+"SourceValue F"
+],
+[
+"m113",
+"Heap F"
+],
+[
+"cs123",
+"List (Call F)"
+],
+[
+"v126",
+"SourceValue F"
+],
+[
+"v127",
+"SourceValue F"
+],
+[
+"x_b4",
+"SourceValue F"
+],
+[
+"x_b5",
+"SourceValue F"
+],
+[
+"m162",
+"Heap F"
+],
+[
+"cs172",
+"List (Call F)"
+],
+[
+"v175",
+"SourceValue F"
+],
+[
+"x_b6",
+"SourceValue F"
+],
+[
+"x_z",
+"SourceValue F"
+],
+[
+"v206",
+"SourceValue F"
+],
+[
+"m207",
+"Heap F"
+],
+[
+"x214",
+"SourceValue F"
+],
+[
+"y215",
+"SourceValue F"
+],
+[
+"m216",
+"Heap F"
+],
+[
+"x222",
+"SourceValue F"
+],
+[
+"y223",
+"SourceValue F"
+],
+[
+"m224",
+"Heap F"
+],
+[
+"x230",
+"SourceValue F"
+],
+[
+"y231",
+"SourceValue F"
+],
+[
+"m232",
+"Heap F"
+],
+[
+"x238",
+"SourceValue F"
+],
+[
+"y239",
+"SourceValue F"
+],
+[
+"m240",
+"Heap F"
+],
+[
+"x246",
+"SourceValue F"
+],
+[
+"y247",
+"SourceValue F"
+],
+[
+"m248",
+"Heap F"
+],
+[
+"x254",
+"SourceValue F"
+],
+[
+"y255",
+"SourceValue F"
+],
+[
+"m256",
+"Heap F"
+],
+[
+"cs265",
+"List (Call F)"
+],
+[
+"y277",
+"SourceValue F"
+],
+[
+"cs287",
+"List (Call F)"
+],
+[
+"y299",
+"SourceValue F"
+],
+[
+"cs309",
+"List (Call F)"
+],
+[
+"y321",
+"SourceValue F"
+],
+[
+"cs331",
+"List (Call F)"
+],
+[
+"y343",
+"SourceValue F"
+],
+[
+"cs353",
+"List (Call F)"
+],
+[
+"y365",
+"SourceValue F"
+],
+[
+"cs375",
+"List (Call F)"
+],
+[
+"y387",
+"SourceValue F"
+],
+[
+"cs397",
+"List (Call F)"
+],
+[
+"v420",
+"SourceValue F"
+],
+[
+"v444",
+"SourceValue F"
+],
+[
+"m445",
+"Heap F"
+],
+[
+"cs455",
+"List (Call F)"
+],
+[
+"v466",
+"SourceValue F"
+],
+[
+"y475",
+"SourceValue F"
+],
+[
+"v498",
+"SourceValue F"
+],
+[
+"y507",
+"SourceValue F"
+],
+[
+"v533",
+"SourceValue F"
+],
+[
+"ty12",
+"W.typed (Generic.Ty.toCore (Generic.Ty.subst [] (.array .field 8))) k10 = true"
+],
+[
+"pr38",
+"projectValue ((Constant.toValue k10) : SourceValue F) 0 = .ok v28"
+],
+[
+"pr48",
+"projectValue ((Constant.toValue k10) : SourceValue F) 1 = .ok v29"
+],
+[
+"ev27",
+"ObsFn W \"UInt8::from_fields\" [v28, v29] h (.tuple [x_b0, x_b1]) m15 cs25"
+],
+[
+"pr87",
+"projectValue ((Constant.toValue k10) : SourceValue F) 2 = .ok v77"
+],
+[
+"pr97",
+"projectValue ((Constant.toValue k10) : SourceValue F) 3 = .ok v78"
+],
+[
+"ev76",
+"ObsFn W \"UInt8::from_fields\" [v77, v78] m15 (.tuple [x_b2, x_b3]) m64 cs74"
+],
+[
+"pr136",
+"projectValue ((Constant.toValue k10) : SourceValue F) 4 = .ok v126"
+],
+[
+"pr146",
+"projectValue ((Constant.toValue k10) : SourceValue F) 5 = .ok v127"
+],
+[
+"ev125",
+"ObsFn W \"UInt8::from_fields\" [v126, v127] m64 (.tuple [x_b4, x_b5]) m113 cs123"
+],
+[
+"pr185",
+"projectValue ((Constant.toValue k10) : SourceValue F) 6 = .ok v175"
+],
+[
+"ev174",
+"ObsFn W \"UInt8::from_fields\" [v175, (.field 0)] m113 (.tuple [x_b6, x_z]) m162 cs172"
+],
+[
+"ev267",
+"ObsFn W \"UInt8::to_field\" [x_b0] m162 x254 m256 cs265"
+],
+[
+"ev289",
+"ObsFn W \"UInt8::to_field\" [x_b1] m256 y277 m248 cs287"
+],
+[
+"op283",
+"evalBinOp .mul ((.field 256) : SourceValue F) (y277 : SourceValue F) = .ok y255"
+],
+[
+"op261",
+"evalBinOp .add (x254 : SourceValue F) (y255 : SourceValue F) = .ok x246"
+],
+[
+"ev311",
+"ObsFn W \"UInt8::to_field\" [x_b2] m248 y299 m240 cs309"
+],
+[
+"op305",
+"evalBinOp .mul ((.field 65536) : SourceValue F) (y299 : SourceValue F) = .ok y247"
+],
+[
+"op253",
+"evalBinOp .add (x246 : SourceValue F) (y247 : SourceValue F) = .ok x238"
+],
+[
+"ev333",
+"ObsFn W \"UInt8::to_field\" [x_b3] m240 y321 m232 cs331"
+],
+[
+"op327",
+"evalBinOp .mul ((.field 16777216) : SourceValue F) (y321 : SourceValue F) = .ok y239"
+],
+[
+"op245",
+"evalBinOp .add (x238 : SourceValue F) (y239 : SourceValue F) = .ok x230"
+],
+[
+"ev355",
+"ObsFn W \"UInt8::to_field\" [x_b4] m232 y343 m224 cs353"
+],
+[
+"op349",
+"evalBinOp .mul ((.field 4294967296) : SourceValue F) (y343 : SourceValue F) = .ok y231"
+],
+[
+"op237",
+"evalBinOp .add (x230 : SourceValue F) (y231 : SourceValue F) = .ok x222"
+],
+[
+"ev377",
+"ObsFn W \"UInt8::to_field\" [x_b5] m224 y365 m216 cs375"
+],
+[
+"op371",
+"evalBinOp .mul ((.field 1099511627776) : SourceValue F) (y365 : SourceValue F) = .ok y223"
+],
+[
+"op229",
+"evalBinOp .add (x222 : SourceValue F) (y223 : SourceValue F) = .ok x214"
+],
+[
+"ev399",
+"ObsFn W \"UInt8::to_field\" [x_b6] m216 y387 m207 cs397"
+],
+[
+"op393",
+"evalBinOp .mul ((.field 281474976710656) : SourceValue F) (y387 : SourceValue F) = .ok y215"
+],
+[
+"op221",
+"evalBinOp .add (x214 : SourceValue F) (y215 : SourceValue F) = .ok v206"
+],
+[
+"op441",
+"evalBinOp .add (x_v : SourceValue F) ((.field 36028797018963968) : SourceValue F) = .ok v420"
+],
+[
+"heq443",
+"(v206 : SourceValue F) = v420"
+],
+[
+"ev457",
+"ObsFn W \"UInt8::bit_decomposition\" [x_b6] m207 v444 m445 cs455"
+],
+[
+"pr485",
+"projectValue ((Constant.toValue k10) : SourceValue F) 7 = .ok y475"
+],
+[
+"op481",
+"evalBinOp .mul (x_v : SourceValue F) (y475 : SourceValue F) = .ok v466"
+],
+[
+"op522",
+"evalBinOp .sub ((.field 1) : SourceValue F) (v466 : SourceValue F) = .ok y507"
+],
+[
+"op513",
+"evalBinOp .mul (x_v : SourceValue F) (y507 : SourceValue F) = .ok v498"
+],
+[
+"heq530",
+"(v498 : SourceValue F) = (.field 0)"
+],
+[
+"he535",
+"r = (.tuple [v533, v466])"
+],
+[
+"pr544",
+"projectValue (v444 : SourceValue F) 7 = .ok v533"
+],
+[
+"he553",
+"h' = m445"
+],
+[
+"hc554",
+"calls = ((\u27e8\"UInt8::from_fields\", [v28, v29], h\u27e9 : Call F) :: (cs25 ++ ((\u27e8\"UInt8::from_fields\", [v77, v78], m15\u27e9 : Call F) :: (cs74 ++ ((\u27e8\"UInt8::from_fields\", [v126, v127], m64\u27e9 : Call F) :: (cs123 ++ ((\u27e8\"UInt8::from_fields\", [v175, (.field 0)], m113\u27e9 : Call F) :: (cs172 ++ ((\u27e8\"UInt8::to_field\", [x_b0], m162\u27e9 : Call F) :: (cs265 ++ ((\u27e8\"UInt8::to_field\", [x_b1], m256\u27e9 : Call F) :: (cs287 ++ ((\u27e8\"UInt8::to_field\", [x_b2], m248\u27e9 : Call F) :: (cs309 ++ ((\u27e8\"UInt8::to_field\", [x_b3], m240\u27e9 : Call F) :: (cs331 ++ ((\u27e8\"UInt8::to_field\", [x_b4], m232\u27e9 : Call F) :: (cs353 ++ ((\u27e8\"UInt8::to_field\", [x_b5], m224\u27e9 : Call F) :: (cs375 ++ ((\u27e8\"UInt8::to_field\", [x_b6], m216\u27e9 : Call F) :: (cs397 ++ ((\u27e8\"UInt8::bit_decomposition\", [x_b6], m207\u27e9 : Call F) :: cs455)))))))))))))))))))))))"
+]
+],
+"Fixed::mul": [
+[
+"cs4",
+"List (Call F)"
+],
+[
+"v7",
+"SourceValue F"
+],
+[
+"op21",
+"evalBinOp .mul (x_a : SourceValue F) (x_b : SourceValue F) = .ok v7"
+],
+[
+"ev6",
+"ObsFn W \"Fixed::shr8\" [v7] h r h' cs4"
+],
+[
+"hc24",
+"calls = ((\u27e8\"Fixed::shr8\", [v7], h\u27e9 : Call F) :: cs4)"
+]
+],
+"Fixed::relu": [
+[
+"m2",
+"Heap F"
+],
+[
+"cs12",
+"List (Call F)"
+],
+[
+"x_nonneg",
+"SourceValue F"
+],
+[
+"x__nz",
+"SourceValue F"
+],
+[
+"ev14",
+"ObsFn W \"Fixed::sign_split\" [x_v] h (.tuple [x_nonneg, x__nz]) m2 cs12"
+],
+[
+"he46",
+"h' = m2"
+],
+[
+"op43",
+"evalBinOp .mul (x_v : SourceValue F) (x_nonneg : SourceValue F) = .ok r"
+],
+[
+"hc47",
+"calls = ((\u27e8\"Fixed::sign_split\", [x_v], h\u27e9 : Call F) :: cs12)"
+]
+],
+"Fixed::pos": [
+[
+"m2",
+"Heap F"
+],
+[
+"cs12",
+"List (Call F)"
+],
+[
+"x_nonneg",
+"SourceValue F"
+],
+[
+"x_nz",
+"SourceValue F"
+],
+[
+"ev14",
+"ObsFn W \"Fixed::sign_split\" [x_v] h (.tuple [x_nonneg, x_nz]) m2 cs12"
+],
+[
+"he46",
+"h' = m2"
+],
+[
+"op43",
+"evalBinOp .mul (x_nonneg : SourceValue F) (x_nz : SourceValue F) = .ok r"
+],
+[
+"hc47",
+"calls = ((\u27e8\"Fixed::sign_split\", [x_v], h\u27e9 : Call F) :: cs12)"
+]
+],
+"Fixed::dot8": [
+[
+"cs4",
+"List (Call F)"
+],
+[
+"v7",
+"SourceValue F"
+],
+[
+"x14",
+"SourceValue F"
+],
+[
+"y15",
+"SourceValue F"
+],
+[
+"x22",
+"SourceValue F"
+],
+[
+"y23",
+"SourceValue F"
+],
+[
+"x30",
+"SourceValue F"
+],
+[
+"y31",
+"SourceValue F"
+],
+[
+"x38",
+"SourceValue F"
+],
+[
+"y39",
+"SourceValue F"
+],
+[
+"x46",
+"SourceValue F"
+],
+[
+"y47",
+"SourceValue F"
+],
+[
+"x54",
+"SourceValue F"
+],
+[
+"y55",
+"SourceValue F"
+],
+[
+"x62",
+"SourceValue F"
+],
+[
+"y63",
+"SourceValue F"
+],
+[
+"x70",
+"SourceValue F"
+],
+[
+"y71",
+"SourceValue F"
+],
+[
+"x86",
+"SourceValue F"
+],
+[
+"y87",
+"SourceValue F"
+],
+[
+"x102",
+"SourceValue F"
+],
+[
+"y103",
+"SourceValue F"
+],
+[
+"x118",
+"SourceValue F"
+],
+[
+"y119",
+"SourceValue F"
+],
+[
+"x134",
+"SourceValue F"
+],
+[
+"y135",
+"SourceValue F"
+],
+[
+"x150",
+"SourceValue F"
+],
+[
+"y151",
+"SourceValue F"
+],
+[
+"x166",
+"SourceValue F"
+],
+[
+"y167",
+"SourceValue F"
+],
+[
+"x182",
+"SourceValue F"
+],
+[
+"y183",
+"SourceValue F"
+],
+[
+"pr80",
+"projectValue (x_a : SourceValue F) 0 = .ok x70"
+],
+[
+"pr84",
+"projectValue (x_b : SourceValue F) 0 = .ok y71"
+],
+[
+"op77",
+"evalBinOp .mul (x70 : SourceValue F) (y71 : SourceValue F) = .ok x62"
+],
+[
+"pr96",
+"projectValue (x_a : SourceValue F) 1 = .ok x86"
+],
+[
+"pr100",
+"projectValue (x_b : SourceValue F) 1 = .ok y87"
+],
+[
+"op93",
+"evalBinOp .mul (x86 : SourceValue F) (y87 : SourceValue F) = .ok y63"
+],
+[
+"op69",
+"evalBinOp .add (x62 : SourceValue F) (y63 : SourceValue F) = .ok x54"
+],
+[
+"pr112",
+"projectValue (x_a : SourceValue F) 2 = .ok x102"
+],
+[
+"pr116",
+"projectValue (x_b : SourceValue F) 2 = .ok y103"
+],
+[
+"op109",
+"evalBinOp .mul (x102 : SourceValue F) (y103 : SourceValue F) = .ok y55"
+],
+[
+"op61",
+"evalBinOp .add (x54 : SourceValue F) (y55 : SourceValue F) = .ok x46"
+],
+[
+"pr128",
+"projectValue (x_a : SourceValue F) 3 = .ok x118"
+],
+[
+"pr132",
+"projectValue (x_b : SourceValue F) 3 = .ok y119"
+],
+[
+"op125",
+"evalBinOp .mul (x118 : SourceValue F) (y119 : SourceValue F) = .ok y47"
+],
+[
+"op53",
+"evalBinOp .add (x46 : SourceValue F) (y47 : SourceValue F) = .ok x38"
+],
+[
+"pr144",
+"projectValue (x_a : SourceValue F) 4 = .ok x134"
+],
+[
+"pr148",
+"projectValue (x_b : SourceValue F) 4 = .ok y135"
+],
+[
+"op141",
+"evalBinOp .mul (x134 : SourceValue F) (y135 : SourceValue F) = .ok y39"
+],
+[
+"op45",
+"evalBinOp .add (x38 : SourceValue F) (y39 : SourceValue F) = .ok x30"
+],
+[
+"pr160",
+"projectValue (x_a : SourceValue F) 5 = .ok x150"
+],
+[
+"pr164",
+"projectValue (x_b : SourceValue F) 5 = .ok y151"
+],
+[
+"op157",
+"evalBinOp .mul (x150 : SourceValue F) (y151 : SourceValue F) = .ok y31"
+],
+[
+"op37",
+"evalBinOp .add (x30 : SourceValue F) (y31 : SourceValue F) = .ok x22"
+],
+[
+"pr176",
+"projectValue (x_a : SourceValue F) 6 = .ok x166"
+],
+[
+"pr180",
+"projectValue (x_b : SourceValue F) 6 = .ok y167"
+],
+[
+"op173",
+"evalBinOp .mul (x166 : SourceValue F) (y167 : SourceValue F) = .ok y23"
+],
+[
+"op29",
+"evalBinOp .add (x22 : SourceValue F) (y23 : SourceValue F) = .ok x14"
+],
+[
+"pr192",
+"projectValue (x_a : SourceValue F) 7 = .ok x182"
+],
+[
+"pr196",
+"projectValue (x_b : SourceValue F) 7 = .ok y183"
+],
+[
+"op189",
+"evalBinOp .mul (x182 : SourceValue F) (y183 : SourceValue F) = .ok y15"
+],
+[
+"op21",
+"evalBinOp .add (x14 : SourceValue F) (y15 : SourceValue F) = .ok v7"
+],
+[
+"ev6",
+"ObsFn W \"Fixed::shr8\" [v7] h r h' cs4"
+],
+[
+"hc198",
+"calls = ((\u27e8\"Fixed::shr8\", [v7], h\u27e9 : Call F) :: cs4)"
+]
+],
+"Fixed::dot16": [
+[
+"cs4",
+"List (Call F)"
+],
+[
+"v7",
+"SourceValue F"
+],
+[
+"x14",
+"SourceValue F"
+],
+[
+"y15",
+"SourceValue F"
+],
+[
+"x22",
+"SourceValue F"
+],
+[
+"y23",
+"SourceValue F"
+],
+[
+"x30",
+"SourceValue F"
+],
+[
+"y31",
+"SourceValue F"
+],
+[
+"x38",
+"SourceValue F"
+],
+[
+"y39",
+"SourceValue F"
+],
+[
+"x46",
+"SourceValue F"
+],
+[
+"y47",
+"SourceValue F"
+],
+[
+"x54",
+"SourceValue F"
+],
+[
+"y55",
+"SourceValue F"
+],
+[
+"x62",
+"SourceValue F"
+],
+[
+"y63",
+"SourceValue F"
+],
+[
+"x70",
+"SourceValue F"
+],
+[
+"y71",
+"SourceValue F"
+],
+[
+"x78",
+"SourceValue F"
+],
+[
+"y79",
+"SourceValue F"
+],
+[
+"x86",
+"SourceValue F"
+],
+[
+"y87",
+"SourceValue F"
+],
+[
+"x94",
+"SourceValue F"
+],
+[
+"y95",
+"SourceValue F"
+],
+[
+"x102",
+"SourceValue F"
+],
+[
+"y103",
+"SourceValue F"
+],
+[
+"x110",
+"SourceValue F"
+],
+[
+"y111",
+"SourceValue F"
+],
+[
+"x118",
+"SourceValue F"
+],
+[
+"y119",
+"SourceValue F"
+],
+[
+"x126",
+"SourceValue F"
+],
+[
+"y127",
+"SourceValue F"
+],
+[
+"x134",
+"SourceValue F"
+],
+[
+"y135",
+"SourceValue F"
+],
+[
+"x150",
+"SourceValue F"
+],
+[
+"y151",
+"SourceValue F"
+],
+[
+"x166",
+"SourceValue F"
+],
+[
+"y167",
+"SourceValue F"
+],
+[
+"x182",
+"SourceValue F"
+],
+[
+"y183",
+"SourceValue F"
+],
+[
+"x198",
+"SourceValue F"
+],
+[
+"y199",
+"SourceValue F"
+],
+[
+"x214",
+"SourceValue F"
+],
+[
+"y215",
+"SourceValue F"
+],
+[
+"x230",
+"SourceValue F"
+],
+[
+"y231",
+"SourceValue F"
+],
+[
+"x246",
+"SourceValue F"
+],
+[
+"y247",
+"SourceValue F"
+],
+[
+"x262",
+"SourceValue F"
+],
+[
+"y263",
+"SourceValue F"
+],
+[
+"x278",
+"SourceValue F"
+],
+[
+"y279",
+"SourceValue F"
+],
+[
+"x294",
+"SourceValue F"
+],
+[
+"y295",
+"SourceValue F"
+],
+[
+"x310",
+"SourceValue F"
+],
+[
+"y311",
+"SourceValue F"
+],
+[
+"x326",
+"SourceValue F"
+],
+[
+"y327",
+"SourceValue F"
+],
+[
+"x342",
+"SourceValue F"
+],
+[
+"y343",
+"SourceValue F"
+],
+[
+"x358",
+"SourceValue F"
+],
+[
+"y359",
+"SourceValue F"
+],
+[
+"x374",
+"SourceValue F"
+],
+[
+"y375",
+"SourceValue F"
+],
+[
+"pr144",
+"projectValue (x_a : SourceValue F) 0 = .ok x134"
+],
+[
+"pr148",
+"projectValue (x_b : SourceValue F) 0 = .ok y135"
+],
+[
+"op141",
+"evalBinOp .mul (x134 : SourceValue F) (y135 : SourceValue F) = .ok x126"
+],
+[
+"pr160",
+"projectValue (x_a : SourceValue F) 1 = .ok x150"
+],
+[
+"pr164",
+"projectValue (x_b : SourceValue F) 1 = .ok y151"
+],
+[
+"op157",
+"evalBinOp .mul (x150 : SourceValue F) (y151 : SourceValue F) = .ok y127"
+],
+[
+"op133",
+"evalBinOp .add (x126 : SourceValue F) (y127 : SourceValue F) = .ok x118"
+],
+[
+"pr176",
+"projectValue (x_a : SourceValue F) 2 = .ok x166"
+],
+[
+"pr180",
+"projectValue (x_b : SourceValue F) 2 = .ok y167"
+],
+[
+"op173",
+"evalBinOp .mul (x166 : SourceValue F) (y167 : SourceValue F) = .ok y119"
+],
+[
+"op125",
+"evalBinOp .add (x118 : SourceValue F) (y119 : SourceValue F) = .ok x110"
+],
+[
+"pr192",
+"projectValue (x_a : SourceValue F) 3 = .ok x182"
+],
+[
+"pr196",
+"projectValue (x_b : SourceValue F) 3 = .ok y183"
+],
+[
+"op189",
+"evalBinOp .mul (x182 : SourceValue F) (y183 : SourceValue F) = .ok y111"
+],
+[
+"op117",
+"evalBinOp .add (x110 : SourceValue F) (y111 : SourceValue F) = .ok x102"
+],
+[
+"pr208",
+"projectValue (x_a : SourceValue F) 4 = .ok x198"
+],
+[
+"pr212",
+"projectValue (x_b : SourceValue F) 4 = .ok y199"
+],
+[
+"op205",
+"evalBinOp .mul (x198 : SourceValue F) (y199 : SourceValue F) = .ok y103"
+],
+[
+"op109",
+"evalBinOp .add (x102 : SourceValue F) (y103 : SourceValue F) = .ok x94"
+],
+[
+"pr224",
+"projectValue (x_a : SourceValue F) 5 = .ok x214"
+],
+[
+"pr228",
+"projectValue (x_b : SourceValue F) 5 = .ok y215"
+],
+[
+"op221",
+"evalBinOp .mul (x214 : SourceValue F) (y215 : SourceValue F) = .ok y95"
+],
+[
+"op101",
+"evalBinOp .add (x94 : SourceValue F) (y95 : SourceValue F) = .ok x86"
+],
+[
+"pr240",
+"projectValue (x_a : SourceValue F) 6 = .ok x230"
+],
+[
+"pr244",
+"projectValue (x_b : SourceValue F) 6 = .ok y231"
+],
+[
+"op237",
+"evalBinOp .mul (x230 : SourceValue F) (y231 : SourceValue F) = .ok y87"
+],
+[
+"op93",
+"evalBinOp .add (x86 : SourceValue F) (y87 : SourceValue F) = .ok x78"
+],
+[
+"pr256",
+"projectValue (x_a : SourceValue F) 7 = .ok x246"
+],
+[
+"pr260",
+"projectValue (x_b : SourceValue F) 7 = .ok y247"
+],
+[
+"op253",
+"evalBinOp .mul (x246 : SourceValue F) (y247 : SourceValue F) = .ok y79"
+],
+[
+"op85",
+"evalBinOp .add (x78 : SourceValue F) (y79 : SourceValue F) = .ok x70"
+],
+[
+"pr272",
+"projectValue (x_a : SourceValue F) 8 = .ok x262"
+],
+[
+"pr276",
+"projectValue (x_b : SourceValue F) 8 = .ok y263"
+],
+[
+"op269",
+"evalBinOp .mul (x262 : SourceValue F) (y263 : SourceValue F) = .ok y71"
+],
+[
+"op77",
+"evalBinOp .add (x70 : SourceValue F) (y71 : SourceValue F) = .ok x62"
+],
+[
+"pr288",
+"projectValue (x_a : SourceValue F) 9 = .ok x278"
+],
+[
+"pr292",
+"projectValue (x_b : SourceValue F) 9 = .ok y279"
+],
+[
+"op285",
+"evalBinOp .mul (x278 : SourceValue F) (y279 : SourceValue F) = .ok y63"
+],
+[
+"op69",
+"evalBinOp .add (x62 : SourceValue F) (y63 : SourceValue F) = .ok x54"
+],
+[
+"pr304",
+"projectValue (x_a : SourceValue F) 10 = .ok x294"
+],
+[
+"pr308",
+"projectValue (x_b : SourceValue F) 10 = .ok y295"
+],
+[
+"op301",
+"evalBinOp .mul (x294 : SourceValue F) (y295 : SourceValue F) = .ok y55"
+],
+[
+"op61",
+"evalBinOp .add (x54 : SourceValue F) (y55 : SourceValue F) = .ok x46"
+],
+[
+"pr320",
+"projectValue (x_a : SourceValue F) 11 = .ok x310"
+],
+[
+"pr324",
+"projectValue (x_b : SourceValue F) 11 = .ok y311"
+],
+[
+"op317",
+"evalBinOp .mul (x310 : SourceValue F) (y311 : SourceValue F) = .ok y47"
+],
+[
+"op53",
+"evalBinOp .add (x46 : SourceValue F) (y47 : SourceValue F) = .ok x38"
+],
+[
+"pr336",
+"projectValue (x_a : SourceValue F) 12 = .ok x326"
+],
+[
+"pr340",
+"projectValue (x_b : SourceValue F) 12 = .ok y327"
+],
+[
+"op333",
+"evalBinOp .mul (x326 : SourceValue F) (y327 : SourceValue F) = .ok y39"
+],
+[
+"op45",
+"evalBinOp .add (x38 : SourceValue F) (y39 : SourceValue F) = .ok x30"
+],
+[
+"pr352",
+"projectValue (x_a : SourceValue F) 13 = .ok x342"
+],
+[
+"pr356",
+"projectValue (x_b : SourceValue F) 13 = .ok y343"
+],
+[
+"op349",
+"evalBinOp .mul (x342 : SourceValue F) (y343 : SourceValue F) = .ok y31"
+],
+[
+"op37",
+"evalBinOp .add (x30 : SourceValue F) (y31 : SourceValue F) = .ok x22"
+],
+[
+"pr368",
+"projectValue (x_a : SourceValue F) 14 = .ok x358"
+],
+[
+"pr372",
+"projectValue (x_b : SourceValue F) 14 = .ok y359"
+],
+[
+"op365",
+"evalBinOp .mul (x358 : SourceValue F) (y359 : SourceValue F) = .ok y23"
+],
+[
+"op29",
+"evalBinOp .add (x22 : SourceValue F) (y23 : SourceValue F) = .ok x14"
+],
+[
+"pr384",
+"projectValue (x_a : SourceValue F) 15 = .ok x374"
+],
+[
+"pr388",
+"projectValue (x_b : SourceValue F) 15 = .ok y375"
+],
+[
+"op381",
+"evalBinOp .mul (x374 : SourceValue F) (y375 : SourceValue F) = .ok y15"
+],
+[
+"op21",
+"evalBinOp .add (x14 : SourceValue F) (y15 : SourceValue F) = .ok v7"
+],
+[
+"ev6",
+"ObsFn W \"Fixed::shr8\" [v7] h r h' cs4"
+],
+[
+"hc390",
+"calls = ((\u27e8\"Fixed::shr8\", [v7], h\u27e9 : Call F) :: cs4)"
+]
+],
+"Fixed::dot11": [
+[
+"cs4",
+"List (Call F)"
+],
+[
+"v7",
+"SourceValue F"
+],
+[
+"x14",
+"SourceValue F"
+],
+[
+"y15",
+"SourceValue F"
+],
+[
+"x22",
+"SourceValue F"
+],
+[
+"y23",
+"SourceValue F"
+],
+[
+"x30",
+"SourceValue F"
+],
+[
+"y31",
+"SourceValue F"
+],
+[
+"x38",
+"SourceValue F"
+],
+[
+"y39",
+"SourceValue F"
+],
+[
+"x46",
+"SourceValue F"
+],
+[
+"y47",
+"SourceValue F"
+],
+[
+"x54",
+"SourceValue F"
+],
+[
+"y55",
+"SourceValue F"
+],
+[
+"x62",
+"SourceValue F"
+],
+[
+"y63",
+"SourceValue F"
+],
+[
+"x70",
+"SourceValue F"
+],
+[
+"y71",
+"SourceValue F"
+],
+[
+"x78",
+"SourceValue F"
+],
+[
+"y79",
+"SourceValue F"
+],
+[
+"x86",
+"SourceValue F"
+],
+[
+"y87",
+"SourceValue F"
+],
+[
+"x94",
+"SourceValue F"
+],
+[
+"y95",
+"SourceValue F"
+],
+[
+"x110",
+"SourceValue F"
+],
+[
+"y111",
+"SourceValue F"
+],
+[
+"x126",
+"SourceValue F"
+],
+[
+"y127",
+"SourceValue F"
+],
+[
+"x142",
+"SourceValue F"
+],
+[
+"y143",
+"SourceValue F"
+],
+[
+"x158",
+"SourceValue F"
+],
+[
+"y159",
+"SourceValue F"
+],
+[
+"x174",
+"SourceValue F"
+],
+[
+"y175",
+"SourceValue F"
+],
+[
+"x190",
+"SourceValue F"
+],
+[
+"y191",
+"SourceValue F"
+],
+[
+"x206",
+"SourceValue F"
+],
+[
+"y207",
+"SourceValue F"
+],
+[
+"x222",
+"SourceValue F"
+],
+[
+"y223",
+"SourceValue F"
+],
+[
+"x238",
+"SourceValue F"
+],
+[
+"y239",
+"SourceValue F"
+],
+[
+"x254",
+"SourceValue F"
+],
+[
+"y255",
+"SourceValue F"
+],
+[
+"pr104",
+"projectValue (x_a : SourceValue F) 0 = .ok x94"
+],
+[
+"pr108",
+"projectValue (x_b : SourceValue F) 0 = .ok y95"
+],
+[
+"op101",
+"evalBinOp .mul (x94 : SourceValue F) (y95 : SourceValue F) = .ok x86"
+],
+[
+"pr120",
+"projectValue (x_a : SourceValue F) 1 = .ok x110"
+],
+[
+"pr124",
+"projectValue (x_b : SourceValue F) 1 = .ok y111"
+],
+[
+"op117",
+"evalBinOp .mul (x110 : SourceValue F) (y111 : SourceValue F) = .ok y87"
+],
+[
+"op93",
+"evalBinOp .add (x86 : SourceValue F) (y87 : SourceValue F) = .ok x78"
+],
+[
+"pr136",
+"projectValue (x_a : SourceValue F) 2 = .ok x126"
+],
+[
+"pr140",
+"projectValue (x_b : SourceValue F) 2 = .ok y127"
+],
+[
+"op133",
+"evalBinOp .mul (x126 : SourceValue F) (y127 : SourceValue F) = .ok y79"
+],
+[
+"op85",
+"evalBinOp .add (x78 : SourceValue F) (y79 : SourceValue F) = .ok x70"
+],
+[
+"pr152",
+"projectValue (x_a : SourceValue F) 3 = .ok x142"
+],
+[
+"pr156",
+"projectValue (x_b : SourceValue F) 3 = .ok y143"
+],
+[
+"op149",
+"evalBinOp .mul (x142 : SourceValue F) (y143 : SourceValue F) = .ok y71"
+],
+[
+"op77",
+"evalBinOp .add (x70 : SourceValue F) (y71 : SourceValue F) = .ok x62"
+],
+[
+"pr168",
+"projectValue (x_a : SourceValue F) 4 = .ok x158"
+],
+[
+"pr172",
+"projectValue (x_b : SourceValue F) 4 = .ok y159"
+],
+[
+"op165",
+"evalBinOp .mul (x158 : SourceValue F) (y159 : SourceValue F) = .ok y63"
+],
+[
+"op69",
+"evalBinOp .add (x62 : SourceValue F) (y63 : SourceValue F) = .ok x54"
+],
+[
+"pr184",
+"projectValue (x_a : SourceValue F) 5 = .ok x174"
+],
+[
+"pr188",
+"projectValue (x_b : SourceValue F) 5 = .ok y175"
+],
+[
+"op181",
+"evalBinOp .mul (x174 : SourceValue F) (y175 : SourceValue F) = .ok y55"
+],
+[
+"op61",
+"evalBinOp .add (x54 : SourceValue F) (y55 : SourceValue F) = .ok x46"
+],
+[
+"pr200",
+"projectValue (x_a : SourceValue F) 6 = .ok x190"
+],
+[
+"pr204",
+"projectValue (x_b : SourceValue F) 6 = .ok y191"
+],
+[
+"op197",
+"evalBinOp .mul (x190 : SourceValue F) (y191 : SourceValue F) = .ok y47"
+],
+[
+"op53",
+"evalBinOp .add (x46 : SourceValue F) (y47 : SourceValue F) = .ok x38"
+],
+[
+"pr216",
+"projectValue (x_a : SourceValue F) 7 = .ok x206"
+],
+[
+"pr220",
+"projectValue (x_b : SourceValue F) 7 = .ok y207"
+],
+[
+"op213",
+"evalBinOp .mul (x206 : SourceValue F) (y207 : SourceValue F) = .ok y39"
+],
+[
+"op45",
+"evalBinOp .add (x38 : SourceValue F) (y39 : SourceValue F) = .ok x30"
+],
+[
+"pr232",
+"projectValue (x_a : SourceValue F) 8 = .ok x222"
+],
+[
+"pr236",
+"projectValue (x_b : SourceValue F) 8 = .ok y223"
+],
+[
+"op229",
+"evalBinOp .mul (x222 : SourceValue F) (y223 : SourceValue F) = .ok y31"
+],
+[
+"op37",
+"evalBinOp .add (x30 : SourceValue F) (y31 : SourceValue F) = .ok x22"
+],
+[
+"pr248",
+"projectValue (x_a : SourceValue F) 9 = .ok x238"
+],
+[
+"pr252",
+"projectValue (x_b : SourceValue F) 9 = .ok y239"
+],
+[
+"op245",
+"evalBinOp .mul (x238 : SourceValue F) (y239 : SourceValue F) = .ok y23"
+],
+[
+"op29",
+"evalBinOp .add (x22 : SourceValue F) (y23 : SourceValue F) = .ok x14"
+],
+[
+"pr264",
+"projectValue (x_a : SourceValue F) 10 = .ok x254"
+],
+[
+"pr268",
+"projectValue (x_b : SourceValue F) 10 = .ok y255"
+],
+[
+"op261",
+"evalBinOp .mul (x254 : SourceValue F) (y255 : SourceValue F) = .ok y15"
+],
+[
+"op21",
+"evalBinOp .add (x14 : SourceValue F) (y15 : SourceValue F) = .ok v7"
+],
+[
+"ev6",
+"ObsFn W \"Fixed::shr8\" [v7] h r h' cs4"
+],
+[
+"hc270",
+"calls = ((\u27e8\"Fixed::shr8\", [v7], h\u27e9 : Call F) :: cs4)"
+]
+],
+"Fixed::dot20": [
+[
+"cs4",
+"List (Call F)"
+],
+[
+"v7",
+"SourceValue F"
+],
+[
+"x14",
+"SourceValue F"
+],
+[
+"y15",
+"SourceValue F"
+],
+[
+"x22",
+"SourceValue F"
+],
+[
+"y23",
+"SourceValue F"
+],
+[
+"x30",
+"SourceValue F"
+],
+[
+"y31",
+"SourceValue F"
+],
+[
+"x38",
+"SourceValue F"
+],
+[
+"y39",
+"SourceValue F"
+],
+[
+"x46",
+"SourceValue F"
+],
+[
+"y47",
+"SourceValue F"
+],
+[
+"x54",
+"SourceValue F"
+],
+[
+"y55",
+"SourceValue F"
+],
+[
+"x62",
+"SourceValue F"
+],
+[
+"y63",
+"SourceValue F"
+],
+[
+"x70",
+"SourceValue F"
+],
+[
+"y71",
+"SourceValue F"
+],
+[
+"x78",
+"SourceValue F"
+],
+[
+"y79",
+"SourceValue F"
+],
+[
+"x86",
+"SourceValue F"
+],
+[
+"y87",
+"SourceValue F"
+],
+[
+"x94",
+"SourceValue F"
+],
+[
+"y95",
+"SourceValue F"
+],
+[
+"x102",
+"SourceValue F"
+],
+[
+"y103",
+"SourceValue F"
+],
+[
+"x110",
+"SourceValue F"
+],
+[
+"y111",
+"SourceValue F"
+],
+[
+"x118",
+"SourceValue F"
+],
+[
+"y119",
+"SourceValue F"
+],
+[
+"x126",
+"SourceValue F"
+],
+[
+"y127",
+"SourceValue F"
+],
+[
+"x134",
+"SourceValue F"
+],
+[
+"y135",
+"SourceValue F"
+],
+[
+"x142",
+"SourceValue F"
+],
+[
+"y143",
+"SourceValue F"
+],
+[
+"x150",
+"SourceValue F"
+],
+[
+"y151",
+"SourceValue F"
+],
+[
+"x158",
+"SourceValue F"
+],
+[
+"y159",
+"SourceValue F"
+],
+[
+"x166",
+"SourceValue F"
+],
+[
+"y167",
+"SourceValue F"
+],
+[
+"x182",
+"SourceValue F"
+],
+[
+"y183",
+"SourceValue F"
+],
+[
+"x198",
+"SourceValue F"
+],
+[
+"y199",
+"SourceValue F"
+],
+[
+"x214",
+"SourceValue F"
+],
+[
+"y215",
+"SourceValue F"
+],
+[
+"x230",
+"SourceValue F"
+],
+[
+"y231",
+"SourceValue F"
+],
+[
+"x246",
+"SourceValue F"
+],
+[
+"y247",
+"SourceValue F"
+],
+[
+"x262",
+"SourceValue F"
+],
+[
+"y263",
+"SourceValue F"
+],
+[
+"x278",
+"SourceValue F"
+],
+[
+"y279",
+"SourceValue F"
+],
+[
+"x294",
+"SourceValue F"
+],
+[
+"y295",
+"SourceValue F"
+],
+[
+"x310",
+"SourceValue F"
+],
+[
+"y311",
+"SourceValue F"
+],
+[
+"x326",
+"SourceValue F"
+],
+[
+"y327",
+"SourceValue F"
+],
+[
+"x342",
+"SourceValue F"
+],
+[
+"y343",
+"SourceValue F"
+],
+[
+"x358",
+"SourceValue F"
+],
+[
+"y359",
+"SourceValue F"
+],
+[
+"x374",
+"SourceValue F"
+],
+[
+"y375",
+"SourceValue F"
+],
+[
+"x390",
+"SourceValue F"
+],
+[
+"y391",
+"SourceValue F"
+],
+[
+"x406",
+"SourceValue F"
+],
+[
+"y407",
+"SourceValue F"
+],
+[
+"x422",
+"SourceValue F"
+],
+[
+"y423",
+"SourceValue F"
+],
+[
+"x438",
+"SourceValue F"
+],
+[
+"y439",
+"SourceValue F"
+],
+[
+"x454",
+"SourceValue F"
+],
+[
+"y455",
+"SourceValue F"
+],
+[
+"x470",
+"SourceValue F"
+],
+[
+"y471",
+"SourceValue F"
+],
+[
+"pr176",
+"projectValue (x_a : SourceValue F) 0 = .ok x166"
+],
+[
+"pr180",
+"projectValue (x_b : SourceValue F) 0 = .ok y167"
+],
+[
+"op173",
+"evalBinOp .mul (x166 : SourceValue F) (y167 : SourceValue F) = .ok x158"
+],
+[
+"pr192",
+"projectValue (x_a : SourceValue F) 1 = .ok x182"
+],
+[
+"pr196",
+"projectValue (x_b : SourceValue F) 1 = .ok y183"
+],
+[
+"op189",
+"evalBinOp .mul (x182 : SourceValue F) (y183 : SourceValue F) = .ok y159"
+],
+[
+"op165",
+"evalBinOp .add (x158 : SourceValue F) (y159 : SourceValue F) = .ok x150"
+],
+[
+"pr208",
+"projectValue (x_a : SourceValue F) 2 = .ok x198"
+],
+[
+"pr212",
+"projectValue (x_b : SourceValue F) 2 = .ok y199"
+],
+[
+"op205",
+"evalBinOp .mul (x198 : SourceValue F) (y199 : SourceValue F) = .ok y151"
+],
+[
+"op157",
+"evalBinOp .add (x150 : SourceValue F) (y151 : SourceValue F) = .ok x142"
+],
+[
+"pr224",
+"projectValue (x_a : SourceValue F) 3 = .ok x214"
+],
+[
+"pr228",
+"projectValue (x_b : SourceValue F) 3 = .ok y215"
+],
+[
+"op221",
+"evalBinOp .mul (x214 : SourceValue F) (y215 : SourceValue F) = .ok y143"
+],
+[
+"op149",
+"evalBinOp .add (x142 : SourceValue F) (y143 : SourceValue F) = .ok x134"
+],
+[
+"pr240",
+"projectValue (x_a : SourceValue F) 4 = .ok x230"
+],
+[
+"pr244",
+"projectValue (x_b : SourceValue F) 4 = .ok y231"
+],
+[
+"op237",
+"evalBinOp .mul (x230 : SourceValue F) (y231 : SourceValue F) = .ok y135"
+],
+[
+"op141",
+"evalBinOp .add (x134 : SourceValue F) (y135 : SourceValue F) = .ok x126"
+],
+[
+"pr256",
+"projectValue (x_a : SourceValue F) 5 = .ok x246"
+],
+[
+"pr260",
+"projectValue (x_b : SourceValue F) 5 = .ok y247"
+],
+[
+"op253",
+"evalBinOp .mul (x246 : SourceValue F) (y247 : SourceValue F) = .ok y127"
+],
+[
+"op133",
+"evalBinOp .add (x126 : SourceValue F) (y127 : SourceValue F) = .ok x118"
+],
+[
+"pr272",
+"projectValue (x_a : SourceValue F) 6 = .ok x262"
+],
+[
+"pr276",
+"projectValue (x_b : SourceValue F) 6 = .ok y263"
+],
+[
+"op269",
+"evalBinOp .mul (x262 : SourceValue F) (y263 : SourceValue F) = .ok y119"
+],
+[
+"op125",
+"evalBinOp .add (x118 : SourceValue F) (y119 : SourceValue F) = .ok x110"
+],
+[
+"pr288",
+"projectValue (x_a : SourceValue F) 7 = .ok x278"
+],
+[
+"pr292",
+"projectValue (x_b : SourceValue F) 7 = .ok y279"
+],
+[
+"op285",
+"evalBinOp .mul (x278 : SourceValue F) (y279 : SourceValue F) = .ok y111"
+],
+[
+"op117",
+"evalBinOp .add (x110 : SourceValue F) (y111 : SourceValue F) = .ok x102"
+],
+[
+"pr304",
+"projectValue (x_a : SourceValue F) 8 = .ok x294"
+],
+[
+"pr308",
+"projectValue (x_b : SourceValue F) 8 = .ok y295"
+],
+[
+"op301",
+"evalBinOp .mul (x294 : SourceValue F) (y295 : SourceValue F) = .ok y103"
+],
+[
+"op109",
+"evalBinOp .add (x102 : SourceValue F) (y103 : SourceValue F) = .ok x94"
+],
+[
+"pr320",
+"projectValue (x_a : SourceValue F) 9 = .ok x310"
+],
+[
+"pr324",
+"projectValue (x_b : SourceValue F) 9 = .ok y311"
+],
+[
+"op317",
+"evalBinOp .mul (x310 : SourceValue F) (y311 : SourceValue F) = .ok y95"
+],
+[
+"op101",
+"evalBinOp .add (x94 : SourceValue F) (y95 : SourceValue F) = .ok x86"
+],
+[
+"pr336",
+"projectValue (x_a : SourceValue F) 10 = .ok x326"
+],
+[
+"pr340",
+"projectValue (x_b : SourceValue F) 10 = .ok y327"
+],
+[
+"op333",
+"evalBinOp .mul (x326 : SourceValue F) (y327 : SourceValue F) = .ok y87"
+],
+[
+"op93",
+"evalBinOp .add (x86 : SourceValue F) (y87 : SourceValue F) = .ok x78"
+],
+[
+"pr352",
+"projectValue (x_a : SourceValue F) 11 = .ok x342"
+],
+[
+"pr356",
+"projectValue (x_b : SourceValue F) 11 = .ok y343"
+],
+[
+"op349",
+"evalBinOp .mul (x342 : SourceValue F) (y343 : SourceValue F) = .ok y79"
+],
+[
+"op85",
+"evalBinOp .add (x78 : SourceValue F) (y79 : SourceValue F) = .ok x70"
+],
+[
+"pr368",
+"projectValue (x_a : SourceValue F) 12 = .ok x358"
+],
+[
+"pr372",
+"projectValue (x_b : SourceValue F) 12 = .ok y359"
+],
+[
+"op365",
+"evalBinOp .mul (x358 : SourceValue F) (y359 : SourceValue F) = .ok y71"
+],
+[
+"op77",
+"evalBinOp .add (x70 : SourceValue F) (y71 : SourceValue F) = .ok x62"
+],
+[
+"pr384",
+"projectValue (x_a : SourceValue F) 13 = .ok x374"
+],
+[
+"pr388",
+"projectValue (x_b : SourceValue F) 13 = .ok y375"
+],
+[
+"op381",
+"evalBinOp .mul (x374 : SourceValue F) (y375 : SourceValue F) = .ok y63"
+],
+[
+"op69",
+"evalBinOp .add (x62 : SourceValue F) (y63 : SourceValue F) = .ok x54"
+],
+[
+"pr400",
+"projectValue (x_a : SourceValue F) 14 = .ok x390"
+],
+[
+"pr404",
+"projectValue (x_b : SourceValue F) 14 = .ok y391"
+],
+[
+"op397",
+"evalBinOp .mul (x390 : SourceValue F) (y391 : SourceValue F) = .ok y55"
+],
+[
+"op61",
+"evalBinOp .add (x54 : SourceValue F) (y55 : SourceValue F) = .ok x46"
+],
+[
+"pr416",
+"projectValue (x_a : SourceValue F) 15 = .ok x406"
+],
+[
+"pr420",
+"projectValue (x_b : SourceValue F) 15 = .ok y407"
+],
+[
+"op413",
+"evalBinOp .mul (x406 : SourceValue F) (y407 : SourceValue F) = .ok y47"
+],
+[
+"op53",
+"evalBinOp .add (x46 : SourceValue F) (y47 : SourceValue F) = .ok x38"
+],
+[
+"pr432",
+"projectValue (x_a : SourceValue F) 16 = .ok x422"
+],
+[
+"pr436",
+"projectValue (x_b : SourceValue F) 16 = .ok y423"
+],
+[
+"op429",
+"evalBinOp .mul (x422 : SourceValue F) (y423 : SourceValue F) = .ok y39"
+],
+[
+"op45",
+"evalBinOp .add (x38 : SourceValue F) (y39 : SourceValue F) = .ok x30"
+],
+[
+"pr448",
+"projectValue (x_a : SourceValue F) 17 = .ok x438"
+],
+[
+"pr452",
+"projectValue (x_b : SourceValue F) 17 = .ok y439"
+],
+[
+"op445",
+"evalBinOp .mul (x438 : SourceValue F) (y439 : SourceValue F) = .ok y31"
+],
+[
+"op37",
+"evalBinOp .add (x30 : SourceValue F) (y31 : SourceValue F) = .ok x22"
+],
+[
+"pr464",
+"projectValue (x_a : SourceValue F) 18 = .ok x454"
+],
+[
+"pr468",
+"projectValue (x_b : SourceValue F) 18 = .ok y455"
+],
+[
+"op461",
+"evalBinOp .mul (x454 : SourceValue F) (y455 : SourceValue F) = .ok y23"
+],
+[
+"op29",
+"evalBinOp .add (x22 : SourceValue F) (y23 : SourceValue F) = .ok x14"
+],
+[
+"pr480",
+"projectValue (x_a : SourceValue F) 19 = .ok x470"
+],
+[
+"pr484",
+"projectValue (x_b : SourceValue F) 19 = .ok y471"
+],
+[
+"op477",
+"evalBinOp .mul (x470 : SourceValue F) (y471 : SourceValue F) = .ok y15"
+],
+[
+"op21",
+"evalBinOp .add (x14 : SourceValue F) (y15 : SourceValue F) = .ok v7"
+],
+[
+"ev6",
+"ObsFn W \"Fixed::shr8\" [v7] h r h' cs4"
+],
+[
+"hc486",
+"calls = ((\u27e8\"Fixed::shr8\", [v7], h\u27e9 : Call F) :: cs4)"
+]
+],
+"Fixed::sum20": [
+[
+"x1",
+"SourceValue F"
+],
+[
+"y2",
+"SourceValue F"
+],
+[
+"x9",
+"SourceValue F"
+],
+[
+"y10",
+"SourceValue F"
+],
+[
+"x17",
+"SourceValue F"
+],
+[
+"y18",
+"SourceValue F"
+],
+[
+"x25",
+"SourceValue F"
+],
+[
+"y26",
+"SourceValue F"
+],
+[
+"x33",
+"SourceValue F"
+],
+[
+"y34",
+"SourceValue F"
+],
+[
+"x41",
+"SourceValue F"
+],
+[
+"y42",
+"SourceValue F"
+],
+[
+"x49",
+"SourceValue F"
+],
+[
+"y50",
+"SourceValue F"
+],
+[
+"x57",
+"SourceValue F"
+],
+[
+"y58",
+"SourceValue F"
+],
+[
+"x65",
+"SourceValue F"
+],
+[
+"y66",
+"SourceValue F"
+],
+[
+"x73",
+"SourceValue F"
+],
+[
+"y74",
+"SourceValue F"
+],
+[
+"x81",
+"SourceValue F"
+],
+[
+"y82",
+"SourceValue F"
+],
+[
+"x89",
+"SourceValue F"
+],
+[
+"y90",
+"SourceValue F"
+],
+[
+"x97",
+"SourceValue F"
+],
+[
+"y98",
+"SourceValue F"
+],
+[
+"x105",
+"SourceValue F"
+],
+[
+"y106",
+"SourceValue F"
+],
+[
+"x113",
+"SourceValue F"
+],
+[
+"y114",
+"SourceValue F"
+],
+[
+"x121",
+"SourceValue F"
+],
+[
+"y122",
+"SourceValue F"
+],
+[
+"x129",
+"SourceValue F"
+],
+[
+"y130",
+"SourceValue F"
+],
+[
+"x137",
+"SourceValue F"
+],
+[
+"y138",
+"SourceValue F"
+],
+[
+"x145",
+"SourceValue F"
+],
+[
+"y146",
+"SourceValue F"
+],
+[
+"pr155",
+"projectValue (x_a : SourceValue F) 0 = .ok x145"
+],
+[
+"pr159",
+"projectValue (x_a : SourceValue F) 1 = .ok y146"
+],
+[
+"op152",
+"evalBinOp .add (x145 : SourceValue F) (y146 : SourceValue F) = .ok x137"
+],
+[
+"pr163",
+"projectValue (x_a : SourceValue F) 2 = .ok y138"
+],
+[
+"op144",
+"evalBinOp .add (x137 : SourceValue F) (y138 : SourceValue F) = .ok x129"
+],
+[
+"pr167",
+"projectValue (x_a : SourceValue F) 3 = .ok y130"
+],
+[
+"op136",
+"evalBinOp .add (x129 : SourceValue F) (y130 : SourceValue F) = .ok x121"
+],
+[
+"pr171",
+"projectValue (x_a : SourceValue F) 4 = .ok y122"
+],
+[
+"op128",
+"evalBinOp .add (x121 : SourceValue F) (y122 : SourceValue F) = .ok x113"
+],
+[
+"pr175",
+"projectValue (x_a : SourceValue F) 5 = .ok y114"
+],
+[
+"op120",
+"evalBinOp .add (x113 : SourceValue F) (y114 : SourceValue F) = .ok x105"
+],
+[
+"pr179",
+"projectValue (x_a : SourceValue F) 6 = .ok y106"
+],
+[
+"op112",
+"evalBinOp .add (x105 : SourceValue F) (y106 : SourceValue F) = .ok x97"
+],
+[
+"pr183",
+"projectValue (x_a : SourceValue F) 7 = .ok y98"
+],
+[
+"op104",
+"evalBinOp .add (x97 : SourceValue F) (y98 : SourceValue F) = .ok x89"
+],
+[
+"pr187",
+"projectValue (x_a : SourceValue F) 8 = .ok y90"
+],
+[
+"op96",
+"evalBinOp .add (x89 : SourceValue F) (y90 : SourceValue F) = .ok x81"
+],
+[
+"pr191",
+"projectValue (x_a : SourceValue F) 9 = .ok y82"
+],
+[
+"op88",
+"evalBinOp .add (x81 : SourceValue F) (y82 : SourceValue F) = .ok x73"
+],
+[
+"pr195",
+"projectValue (x_a : SourceValue F) 10 = .ok y74"
+],
+[
+"op80",
+"evalBinOp .add (x73 : SourceValue F) (y74 : SourceValue F) = .ok x65"
+],
+[
+"pr199",
+"projectValue (x_a : SourceValue F) 11 = .ok y66"
+],
+[
+"op72",
+"evalBinOp .add (x65 : SourceValue F) (y66 : SourceValue F) = .ok x57"
+],
+[
+"pr203",
+"projectValue (x_a : SourceValue F) 12 = .ok y58"
+],
+[
+"op64",
+"evalBinOp .add (x57 : SourceValue F) (y58 : SourceValue F) = .ok x49"
+],
+[
+"pr207",
+"projectValue (x_a : SourceValue F) 13 = .ok y50"
+],
+[
+"op56",
+"evalBinOp .add (x49 : SourceValue F) (y50 : SourceValue F) = .ok x41"
+],
+[
+"pr211",
+"projectValue (x_a : SourceValue F) 14 = .ok y42"
+],
+[
+"op48",
+"evalBinOp .add (x41 : SourceValue F) (y42 : SourceValue F) = .ok x33"
+],
+[
+"pr215",
+"projectValue (x_a : SourceValue F) 15 = .ok y34"
+],
+[
+"op40",
+"evalBinOp .add (x33 : SourceValue F) (y34 : SourceValue F) = .ok x25"
+],
+[
+"pr219",
+"projectValue (x_a : SourceValue F) 16 = .ok y26"
+],
+[
+"op32",
+"evalBinOp .add (x25 : SourceValue F) (y26 : SourceValue F) = .ok x17"
+],
+[
+"pr223",
+"projectValue (x_a : SourceValue F) 17 = .ok y18"
+],
+[
+"op24",
+"evalBinOp .add (x17 : SourceValue F) (y18 : SourceValue F) = .ok x9"
+],
+[
+"pr227",
+"projectValue (x_a : SourceValue F) 18 = .ok y10"
+],
+[
+"op16",
+"evalBinOp .add (x9 : SourceValue F) (y10 : SourceValue F) = .ok x1"
+],
+[
+"he233",
+"h' = h"
+],
+[
+"pr231",
+"projectValue (x_a : SourceValue F) 19 = .ok y2"
+],
+[
+"op8",
+"evalBinOp .add (x1 : SourceValue F) (y2 : SourceValue F) = .ok r"
+],
+[
+"hc234",
+"calls = []"
+]
+]
+}
