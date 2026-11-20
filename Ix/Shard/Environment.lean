@@ -151,10 +151,11 @@ def loadEnvAndShards (manifestPath ixePath : String) :
     therefore owned (checked) by some other shard. The constants outside Lean's
     logic, and those that use an inert axiom (`ownedConstsPer`), are set aside,
     owned by none and counted apart: no claim certifies them, and no claimable
-    constant references them, so no frontier holds one. Prints the per-shard report; returns whether the
-    partition is a valid disjoint cover (no block owned by two shards, no
+    constant references them, so no frontier holds one. Prints the per-shard report and returns the owned addresses for a valid disjoint cover (no block owned by two shards, no
     constant in Lean's logic whose block no shard owns). -/
-def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool := do
+def coveredOwners (ixonEnv : Ixon.Env) (shards : Array (Array Address)) :
+    IO (Option (Array (Array Address))) := do
+  let inert := IxVM.ClaimHarness.inertUsers ixonEnv
   -- block → shard, detecting blocks claimed by more than one shard.
   let mut blockToShard : Std.HashMap Address Nat := {}
   let mut dup : Nat := 0
@@ -165,7 +166,6 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
       | none => blockToShard := blockToShard.insert blk k
   -- each parsed const's block, the records outside Lean's logic, and the constants
   -- that use an inert axiom
-  let inert := IxVM.ClaimHarness.inertUsers ixonEnv
   let mut blockOf : Array (Address × Address) := #[]
   let mut aside : Std.HashSet Address := {}
   let mut unparsed : Nat := 0
@@ -182,7 +182,7 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
     if c.outsideLogic then aside := aside.insert addr
     blockOf := blockOf.push (addr, blockAddrOf addr c)
   -- assign every const in Lean's logic to a shard via its block; count + detect unowned.
-  let mut counts : Array Nat := Array.replicate shards.size 0
+  let mut owned : Array (Array Address) := Array.replicate shards.size #[]
   let mut unowned : Nat := 0
   let mut setAside : Nat := 0
   let mut inertAside : Nat := 0
@@ -194,11 +194,12 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
       inertAside := inertAside + 1
       continue
     match blockToShard.get? blk with
-    | some k => counts := counts.modify k (· + 1)  -- total: no-op if out of range
+    | some k => owned := owned.modify k (·.push addr)
     | none => unowned := unowned + 1
   IO.println s!"[shards] {shards.size} shards, {ixonEnv.consts.size} consts"
   for (blocks, k) in shards.mapIdx (fun k b => (b, k)) do
-    IO.println s!"  shard {k}: {blocks.size} blocks, {(counts[k]?).getD 0} consts"
+    let count := ((owned[k]?).getD #[]).size
+    IO.println s!"  shard {k}: {blocks.size} blocks, {count} consts"
   if setAside != 0 then
     IO.println s!"[shards] {setAside} const(s) outside Lean's logic (unsafe or partial) \
       set aside: owned by no shard, claimed by none"
@@ -216,8 +217,10 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
   if ok then
     IO.println s!"[shards] OK: partition covers all \
       {ixonEnv.consts.size - setAside - inertAside} claimable consts, disjoint"
-  pure ok
+  return if ok then some owned else none
 
+def shardsCover (env : Ixon.Env) (shards : Array (Array Address)) : IO Bool :=
+  return (← coveredOwners env shards).isSome
 
 end Ix.Shard
 end

@@ -422,7 +422,8 @@ under the environment's own context. An environment with user axioms is refused.
 claim's run checks every owned leaf on the record that runs the claim
 (`KernelClaim::walk_leaves_transitive`), not through the `check_owned` calls that the
 distributed prover assigns to the workers' records, so it does not divide among workers. -/
-def distributedClaim (env : Ixon.Env) (assumeBinding : Bool) :
+private def distributedClaimWithTree (env : Ixon.Env) (assumeBinding : Bool)
+    (subjects : Thunk (Option Ix.AssumptionTree)) :
     Except String (Ix.Claim × Ix.AssumptionTree) := do
   let ctx ← Ix.ClaimContext.ofEnv env assumeBinding
   if ctx.axioms.isSome then
@@ -430,8 +431,12 @@ def distributedClaim (env : Ixon.Env) (assumeBinding : Bool) :
       {(Ix.ClaimContext.userAxioms env).size} safe axiom(s) its role binding does not bind): \
       the claim then checks every constant on one record, so its work does not divide among \
       the workers. Prove the environment without --distributed."
-  let some tree := envCanonicalTree env | throw "empty environment"
+  let some tree := subjects.get | throw "empty environment"
   return (Ix.Claim.checkEnv ctx tree.root none, tree)
+
+def distributedClaim (env : Ixon.Env) (assumeBinding : Bool) :
+    Except String (Ix.Claim × Ix.AssumptionTree) :=
+  distributedClaimWithTree env assumeBinding (Thunk.mk fun _ => envCanonicalTree env)
 
 /-- The byte scope of a distributed worker that owns `owned`: the closure of its owned
 constants, the primitives and the role binding's constants. -/
@@ -444,7 +449,7 @@ which runs the claim, also `claim` and the trees its run reads (`seedClaimTrees`
 claim's owned tree `tree`). -/
 def distributedStreams (env : Ixon.Env) (claim : Ix.Claim) (tree : Ix.AssumptionTree)
     (scope : Std.HashSet Address) (first : Bool) : Except String Aiur.IOBuffer := do
-  let mut io := addEntries env scope.contains (seedBinding env default)
+  let mut io := addScopedEntries env scope (seedBinding env default)
   if first then
     let bytes := Ix.Claim.ser claim
     io := io.extend 0 (packedDigestKey (Address.blake3 bytes)) (bytes.data.map Aiur.G.ofUInt8)
@@ -458,13 +463,11 @@ private def runDistributed (p : Cli.Parsed) (artifactPath : String) (options : H
   let env ← IO.ofExcept (withDefaultRoleBinding (← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))))
   let some binding := env.roleBinding | throw (IO.userError "distributed environment carries no role binding")
   let assumeBinding := p.hasFlag "assume-binding"
-  -- the claim, or the refusal of an environment the route does not support, before any
-  -- worker starts
-  let (claim, tree) ← IO.ofExcept (distributedClaim env assumeBinding)
   let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest))
-  unless ← Ix.Shard.shardsCover env view.shards do throw (IO.userError "invalid manifest coverage")
-  -- every shard's owned constants in one pass over the environment
-  let indexed := ((Ix.Shard.ownedConstsPer env view.shards).mapIdx fun i owned => (i, owned)).filter (!·.2.isEmpty)
+  let some owned ← Ix.Shard.coveredOwners env view.shards | throw (IO.userError "invalid manifest coverage")
+  let (claim, tree) ← IO.ofExcept
+    (distributedClaimWithTree env assumeBinding (Thunk.mk fun _ => Ix.AssumptionTree.canonical owned.flatten))
+  let indexed := (owned.mapIdx fun i group => (i, group)).filter (!·.2.isEmpty)
   let owners := indexed.map (·.2)
   if owners.isEmpty then throw (IO.userError "distributed environment has no owned constants")
   let scopes := owners.map (distributedScope env)
@@ -536,7 +539,7 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
   let env ← IO.ofExcept (withDefaultRoleBinding (← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))))
   let assumeBinding := p.hasFlag "assume-binding"
   let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest))
-  unless ← Ix.Shard.shardsCover env view.shards do throw (IO.userError "invalid manifest coverage")
+  let some owners ← Ix.Shard.coveredOwners env view.shards | throw (IO.userError "invalid manifest coverage")
   if p.hasFlag "shard" && p.hasFlag "shards" then throw (IO.userError "choose --shard or --shards")
   let selected ← match (p.flag? "shard").map (·.as! Nat), (p.flag? "shards").map (·.as! String) with
     | some k, _ => pure #[k]
@@ -551,7 +554,7 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
   let jobs := max 1 (min jobs selected.size)
   -- every shard's owned constants in one pass over the environment; a split part's are
   -- divided from its shard's (`Ix.Shard.Check.cutOwned`)
-  let owners := Ix.Shard.ownedConstsPer env view.shards
+  let inputs ← IO.ofExcept (ShardWitnessInputs.ofEnv env assumeBinding)
   -- `--json` writes one benchmark results row (`Ix.Benchmark.Results`) for
   -- `ix bench run --backend aiur-sharded-env`; its peak covers the hosts.
   if p.hasFlag "json" then TracingTexray.startSampler
@@ -568,7 +571,7 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
         if owned.isEmpty then
           settled := settled.push { blocks, result := {} }
           continue
-        let (claim, witness) ← IO.ofExcept (buildShardCheckEnvWitness env owned assumeBinding)
+        let (claim, witness) ← IO.ofExcept (buildOwnedShardWitness env inputs owned)
         let result ← one p artifactPath binary options mode claim (.leanW witness) s!"shard {k} ({blocks.size} blocks)"
         let canSplit := (result.report.getObjValAs? Bool "can_split").toOption.getD true
         if result.code == 75 && canSplit && blocks.size > 1 && !p.hasFlag "trace-shards" then

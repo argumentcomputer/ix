@@ -17,41 +17,35 @@ need not import the harness.
 -/
 namespace IxVM.ClaimHarness
 
-/-- The `refs` indices `e` uses as a CONSTANT: `Ref i` and the type index
-    of `Prj i`. -/
-partial def constIdxsExpr : Ixon.Expr → Std.HashSet UInt64
-  | .ref i _ => {i}
-  | .prj i _ inner => (constIdxsExpr inner).insert i
-  | .app a b | .lam a b | .all a b =>
-    (constIdxsExpr a).union (constIdxsExpr b)
-  | .letE _ _ t v b =>
-    ((constIdxsExpr t).union (constIdxsExpr v)).union (constIdxsExpr b)
-  | _ => {}
+/-- Accumulate constant references, including the structure named by a projection.
+Shared expressions have their own entry in the record's sharing table. -/
+private partial def collectIdxs (out : Std.HashSet UInt64) : Ixon.Expr → Std.HashSet UInt64
+  | .ref i _ => out.insert i
+  | .prj i _ inner => collectIdxs (out.insert i) inner
+  | .app a b | .lam a b | .all a b => collectIdxs (collectIdxs out a) b
+  | .letE _ _ t v b => collectIdxs (collectIdxs (collectIdxs out t) v) b
+  | _ => out
 
-/-- The `refs` indices `c` uses as constants, over its `sharing` table and
-    every Expr its `ConstantInfo` carries. -/
-def constIdxsOf (c : Ixon.Constant) : Std.HashSet UInt64 := Id.run do
-  let mut out : Std.HashSet UInt64 := {}
-  for e in c.sharing do
-    out := out.union (constIdxsExpr e)
-  let ofDefn (d : Ixon.Definition) := (constIdxsExpr d.typ).union (constIdxsExpr d.value)
-  let ofRecr (r : Ixon.Recursor) := r.rules.foldl
-    (fun acc rule => acc.union (constIdxsExpr rule.rhs)) (constIdxsExpr r.typ)
-  let ofIndc (i : Ixon.Inductive) := i.ctors.foldl
-    (fun acc ctor => acc.union (constIdxsExpr ctor.typ)) (constIdxsExpr i.typ)
+def constIdxsExpr (e : Ixon.Expr) : Std.HashSet UInt64 := collectIdxs {} e
+
+/-- The constant references used by every root and sharing entry of a record. -/
+def constIdxsOf (c : Ixon.Constant) : Std.HashSet UInt64 :=
+  let out := c.sharing.foldl collectIdxs {}
+  let ofDefn (acc : Std.HashSet UInt64) (d : Ixon.Definition) := collectIdxs (collectIdxs acc d.typ) d.value
+  let ofRecr (acc : Std.HashSet UInt64) (r : Ixon.Recursor) :=
+    r.rules.foldl (fun s rule => collectIdxs s rule.rhs) (collectIdxs acc r.typ)
+  let ofIndc (acc : Std.HashSet UInt64) (i : Ixon.Inductive) :=
+    i.ctors.foldl (fun s ctor => collectIdxs s ctor.typ) (collectIdxs acc i.typ)
   match c.info with
-  | .defn d => out := out.union (ofDefn d)
-  | .recr r => out := out.union (ofRecr r)
-  | .axio a => out := out.union (constIdxsExpr a.typ)
-  | .quot q => out := out.union (constIdxsExpr q.typ)
-  | .muts members =>
-    for m in members do
-      out := out.union <| match m with
-        | .defn d => ofDefn d
-        | .indc i => ofIndc i
-        | .recr r => ofRecr r
-  | _ => pure ()
-  return out
+  | .defn d => ofDefn out d
+  | .recr r => ofRecr out r
+  | .axio a => collectIdxs out a.typ
+  | .quot q => collectIdxs out q.typ
+  | .muts members => members.foldl (fun acc m => match m with
+      | .defn d => ofDefn acc d
+      | .indc i => ofIndc acc i
+      | .recr r => ofRecr acc r) out
+  | _ => out
 
 /-! ## Seeds that use an inert axiom
 
@@ -91,6 +85,21 @@ def walkEdges (c : Ixon.Constant) : Array Address := Id.run do
   | _ => pure ()
   return out
 
+/-- Follow the same edges as `inertUsers` from a single requested seed. Only
+stored inert roots count, including when the seed itself is an inert axiom. -/
+def reachesInert (env : Ixon.Env) (seed : Address) : Bool := Id.run do
+  let roots := (inertRoleAddrs env).filter env.consts.contains
+  if roots.isEmpty then return false
+  let mut seen : Std.HashSet Address := {}
+  let mut todo := #[seed]
+  while let some a := todo.back? do
+    todo := todo.pop
+    if roots.contains a then return true
+    if seen.contains a then continue
+    seen := seen.insert a
+    if let some c := env.getConst? a then todo := todo ++ walkEdges c
+  return false
+
 /-- **The constants of `env` that use an inert axiom**: the axioms its binding
     binds to inert roles (`inertRoleAddrs`), Lean 4's native-evaluation
     auxiliary compiler-trust axioms (`Ix.ClaimContext.nativeEvalAxiomAddrs`),
@@ -107,7 +116,7 @@ def inertUsers (env : Ixon.Env) : Std.HashSet Address := Id.run do
   for (a, lc) in env.consts do
     let some c := lc.get? | continue
     for e in walkEdges c do
-      users := if users.contains e then users.modify e (·.push a) else users.insert e #[a]
+      users := users.alter e (fun xs => some ((xs.getD #[]).push a))
   let mut seen : Std.HashSet Address := roots.foldl (·.insert ·) {}
   let mut stack := roots
   repeat

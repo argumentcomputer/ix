@@ -340,6 +340,25 @@ def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     ioBuffer := ioBuffer.extend 7 key (payload.data.map .ofUInt8)
   return ioBuffer
 
+/-- Populate a known byte scope by address. Environment entries take precedence
+over model advice independently on each channel. -/
+def addScopedEntries (env : Ixon.Env) (scope : Std.HashSet Address) (io : Aiur.IOBuffer) :
+    Aiur.IOBuffer := Id.run do
+  let mut io := io
+  for a in scope do
+    let key := a.hash.data.map Aiur.G.ofUInt8
+    if let some lc := env.consts[a]? then
+      io := io.extend 2 key (lc.rawBytes.data.map .ofUInt8)
+    else if let some c := env.modelRecords[a]? then
+      io := io.extend 2 key ((Ixon.ser c).data.map .ofUInt8)
+    if let some h := env.anonHints[a]? <|> env.modelHints[a]? then
+      io := io.extend 3 key #[hintToG h]
+    if let some bytes := env.blobs[a]? <|> env.modelBlobs[a]? then
+      io := io.extend 4 key (bytes.data.map .ofUInt8)
+    if let some payload := env.models[a]? then
+      io := io.extend 7 key (payload.data.map .ofUInt8)
+  return io
+
 /-- A ready-to-run Aiur invocation: function name to dispatch, public
     input (`Array G`), and the IOBuffer pre-populated with every
     blake3-keyed witness payload the entrypoint will demand. -/
@@ -449,22 +468,21 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
   match claim with
   | .check ctx addr _ =>
-    ioBuffer := addEntries env (closureFrom env addr ctx.bindingAssumed).contains ioBuffer
+    ioBuffer := addScopedEntries env (closureFrom env addr ctx.bindingAssumed) ioBuffer
   | .eval _ input output _ =>
     let inputClosure := closureFrom env input
     let outputClosure := closureFrom env output
-    ioBuffer := addEntries env
-      (fun a => inputClosure.contains a || outputClosure.contains a) ioBuffer
+    ioBuffer := addScopedEntries env (inputClosure.union outputClosure) ioBuffer
   | .checkEnv .. =>
     ioBuffer := addEntries env (fun _ => true) ioBuffer
   | .reveal comm _info _binders =>
-    ioBuffer := addEntries env (closureFrom env comm).contains ioBuffer
+    ioBuffer := addScopedEntries env (closureFrom env comm) ioBuffer
   | .contains .. => pure ()
   | .binding _ bound =>
     unless env.roleBinding.map (·.address) == some bound do
       throw s!"the environment's role binding is not {bound}"
     let roots := Ix.primAddrSet.toArray.filter env.consts.contains ++ bindingRoots env
-    ioBuffer := addEntries env (closureFromRoots env roots).contains ioBuffer
+    ioBuffer := addScopedEntries env (closureFromRoots env roots) ioBuffer
   | .catalog .. =>
     throw "catalog claims have no single-run witness; they are formed by \
 aggregating their members' check-env claims"
@@ -489,8 +507,8 @@ def claimableOwned (env : Ixon.Env) (owned : Array Address) : Except String (Arr
 
 /-- The shard claim over `owned`, already `claimableOwned`, under the bound
     `env`. -/
-def shardCheckEnvClaimTreesOf (env : Ixon.Env) (owned : Array Address)
-    (assumeBinding : Bool) :
+private def shardTrees (env : Ixon.Env) (owned : Array Address)
+    (ctx : Ix.ClaimContext) (axioms : Option Ix.AssumptionTree) :
     Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
   let ownedSet : Std.HashSet Address := owned.foldl (·.insert ·) {}
   let frontier : Array Address := Id.run do
@@ -499,36 +517,41 @@ def shardCheckEnvClaimTreesOf (env : Ixon.Env) (owned : Array Address)
       match env.getConst? o with
       | none => pure ()
       | some c =>
-        let used := constIdxsOf c
-        for (r, i) in c.refs.zipIdx do
-          if used.contains i.toUInt64 && !ownedSet.contains r
-              && env.consts.contains r then
-            fs := fs.insert r
-        let blockOpt : Option Address := match c.info with
-          | .iPrj p => some p.block
-          | .cPrj p => some p.block
-          | .rPrj p => some p.block
-          | .dPrj p => some p.block
-          | _ => none
-        match blockOpt with
-        | some b =>
-          if !ownedSet.contains b && env.consts.contains b then
-            fs := fs.insert b
-        | none => pure ()
+        for r in walkEdges c do
+          if !ownedSet.contains r && env.consts.contains r then fs := fs.insert r
     return fs.toArray
   let some ownedTree := Ix.AssumptionTree.canonical owned
     | .error "shardCheckEnvClaim: empty owned set"
   let asmTree? := Ix.AssumptionTree.canonical frontier
-  let ctx ← ({ · with bindingAssumed := assumeBinding }) <$> Ix.ClaimContext.ofEnv env
   let claim := Ix.Claim.checkEnv ctx ownedTree.root (asmTree?.map (·.root))
   let mut trees : Std.HashMap Address Ix.AssumptionTree :=
     ({} : Std.HashMap Address Ix.AssumptionTree).insert ownedTree.root ownedTree
-  if let some axTree := Ix.ClaimContext.userAxiomTree env then
+  if let some axTree := axioms then
     trees := trees.insert axTree.root axTree
   match asmTree? with
   | some asmTree => trees := trees.insert asmTree.root asmTree
   | none => pure ()
   pure (claim, trees)
+
+/-- Data shared by all shard claims under the same binding policy. -/
+structure ShardWitnessInputs where
+  context : Ix.ClaimContext
+  axioms : Option Ix.AssumptionTree
+  commonRoots : Array Address
+
+def ShardWitnessInputs.ofEnv (env : Ixon.Env) (assumeBinding : Bool) :
+    Except String ShardWitnessInputs := do
+  let some binding := env.roleBinding | throw "claim context: the environment carries no role binding"
+  let ax := Ix.ClaimContext.userAxioms env
+  let tree := Ix.AssumptionTree.canonical ax
+  let ctx ← Ix.ClaimContext.ofBinding binding.address assumeBinding
+  return { context := { ctx with axioms := tree.map (·.root) }, axioms := tree,
+           commonRoots := Ix.primAddrSet.toArray.filter env.consts.contains ++ bindingRoots env assumeBinding ++ ax }
+
+def shardCheckEnvClaimTreesOf (env : Ixon.Env) (owned : Array Address) (assumeBinding : Bool) :
+    Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
+  let inputs ← ShardWitnessInputs.ofEnv env assumeBinding
+  shardTrees env owned inputs.context inputs.axioms
 
 /-- The kernel shard claim and its canonical subject/assumption trees, without
     constructing the witness byte closure. Its owned tree holds the
@@ -552,22 +575,26 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address)
     (owned ++ primitiveRoots ++ bindingRoots env assumeBinding ++ Ix.ClaimContext.userAxioms env)
   pure (claim, closure, trees)
 
-/-- Variant of `buildShardCheckEnvWitness`: THIN frontier asm (see
-    `shardCheckEnvClaimTrees`) with the `closureFrom` byte scope. -/
-def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address)
-    (assumeBinding : Bool := false) :
+/-- Build a shard already partitioned by `ownedConstsPer` under the same bound
+environment. A split inherits its parent's filtered owned addresses. -/
+def buildOwnedShardWitness (env : Ixon.Env) (inputs : ShardWitnessInputs) (owned : Array Address) :
     Except String (Ix.Claim × ClaimWitness) := do
-  let env ← withDefaultRoleBinding env
-  let (claim, closure, trees) ← shardCheckEnvClaim env owned assumeBinding
+  let (claim, trees) ← shardTrees env owned inputs.context inputs.axioms
+  let closure := closureFromRoots env (owned ++ inputs.commonRoots)
   let claimBytes := Ix.Claim.ser claim
   let digestKey := packedDigestKey (Address.blake3 claimBytes)
-  let mut ioBuffer : Aiur.IOBuffer := seedBinding env default
+  let mut ioBuffer := seedBinding env default
   ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
-  ioBuffer := addEntries env closure.contains ioBuffer
+  ioBuffer := addScopedEntries env closure ioBuffer
   for (root, _) in trees do
     ioBuffer ← seedTreeAt root trees ioBuffer
-  return (claim, { funcName := `verify_claim
-                   input := digestKey, inputIOBuffer := ioBuffer })
+  return (claim, { funcName := `verify_claim, input := digestKey, inputIOBuffer := ioBuffer })
+
+def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address)
+    (assumeBinding : Bool := false) : Except String (Ix.Claim × ClaimWitness) := do
+  let env ← withDefaultRoleBinding env
+  let owned ← claimableOwned env owned
+  buildOwnedShardWitness env (← ShardWitnessInputs.ofEnv env assumeBinding) owned
 
 /-- Canonical merkle tree over every const address of `env` a claim may name
     (`claimableConsts`): the owned tree of a `checkEnv` claim on the whole of
@@ -582,7 +609,7 @@ def buildVerifyConst (env : Ixon.Env) (target : Address) : Except String ClaimWi
   let some binding := env.roleBinding
     | throw "verify_const: the environment carries no role binding"
   let closure := closureFrom env target
-  let ioBuffer := addEntries env closure.contains (seedBinding env default)
+  let ioBuffer := addScopedEntries env closure (seedBinding env default)
   return { funcName := `verify_const
            input := addrKey binding.address ++ addrKey target, inputIOBuffer := ioBuffer }
 
