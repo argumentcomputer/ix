@@ -1,4 +1,5 @@
 import IxAIRefine.Fixed.Obs.Names
+import IxAIRefine.Core.Fused
 
 /-! Generated path lemmas: `Fixed` functions, part 0.
 
@@ -69,486 +70,320 @@ theorem «Fixed::shr8».obs {x_s : SourceValue F} {h h' : Heap F} {r : SourceVal
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.shr8.lookup
     (by simp [IxAIStep.Fixed.Fixed.shr8, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.shr8] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, hq1⟩ := d0.letValue_inv
+  refine Fused.let_bind d0 fun v1 m2 c4 c5 d6 d8 zq1 => ?_
   try clear d0
-  obtain ⟨x9, k10, d11, ty12, rfl⟩ := d6.hint_inv
+  refine d6.hint_elim fun x9 k10 d11 ty12 ze2 => ?_
   try clear d6
-  obtain ⟨l13, rfl, hq2⟩ := d11.var_inv
+  subst ze2
+  refine Fused.var_is d11 rfl fun l13 zm4 zq3 => ?_
   try clear d11
-  simp at l13
   subst l13
-  obtain rfl := matchPattern_bind_inv mt7
-  try clear mt7
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d8
-  obtain ⟨v14, m15, bs16, c17, c18, d19, mt20, d21, hq3⟩ := d8.letValue_inv
+  subst zm4
+  refine Fused.let_tuple_2 d8 fun x_r x_b0 m15 c17 c18 d19 d21 zq5 => ?_
   try clear d8
-  obtain ⟨vs22, m23, c24, cs25, a26, ev27, hq4⟩ := d19.call_inv
+  refine Fused.call_plain d19 fun vs22 m23 c24 cs25 a26 ev27 zq6 => ?_
   try clear d19
-  rw [instanceName_plain_some] at ev27
-  obtain ⟨v28, vs30, m31, c32, c33, hq6, d34, a35, hq5⟩ := a26.cons_inv
+  refine Fused.args_index_var_cons a26 rfl fun v28 vs30 pr38 zv7 a35 => ?_
   try clear a26
-  obtain ⟨p36, d37, pr38⟩ := d34.index_inv
-  try clear d34
-  obtain ⟨l39, rfl, hq7⟩ := d37.var_inv
-  try clear d37
-  simp at l39
-  subst l39
-  obtain ⟨v29, vs40, m41, c42, c43, hq9, d44, a45, hq8⟩ := a35.cons_inv
+  refine Fused.args_index_var_cons a35 rfl fun v29 vs40 pr48 zv8 a45 => ?_
   try clear a35
-  obtain ⟨p46, d47, pr48⟩ := d44.index_inv
-  try clear d44
-  obtain ⟨l49, rfl, hq10⟩ := d47.var_inv
-  try clear d47
-  simp at l49
-  subst l49
-  obtain ⟨hq12, rfl, hq11⟩ := a45.nil_inv
+  refine a45.nil_elim fun zv9 zm10 zq11 => ?_
   try clear a45
-  subst hq12
-  subst hq9
-  subst hq6
-  obtain ⟨vs50, hv51, -, ml52⟩ := matchPattern_tuple_inv mt20
-  try clear mt20
-  subst hv51
-  obtain ⟨x_r, vs53, b54, b55, rfl, mt56, ml57, rfl⟩ := matchListWith_cons_inv ml52
-  try clear ml52
-  obtain rfl := matchPattern_bind_inv mt56
-  try clear mt56
-  obtain ⟨x_b0, vs58, b59, b60, rfl, mt61, ml62, rfl⟩ := matchListWith_cons_inv ml57
-  try clear ml57
-  obtain rfl := matchPattern_bind_inv mt61
-  try clear mt61
-  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml62
-  try clear ml62
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d21
-  obtain ⟨v63, m64, bs65, c66, c67, d68, mt69, d70, hq13⟩ := d21.letValue_inv
+  subst zv9
+  subst zv8
+  subst zv7
+  subst zm10
+  refine Fused.let_tuple_2 d21 fun x_b1 x_b2 m64 c66 c67 d68 d70 zq12 => ?_
   try clear d21
-  obtain ⟨vs71, m72, c73, cs74, a75, ev76, hq14⟩ := d68.call_inv
+  refine Fused.call_plain d68 fun vs71 m72 c73 cs74 a75 ev76 zq13 => ?_
   try clear d68
-  rw [instanceName_plain_some] at ev76
-  obtain ⟨v77, vs79, m80, c81, c82, hq16, d83, a84, hq15⟩ := a75.cons_inv
+  refine Fused.args_index_var_cons a75 rfl fun v77 vs79 pr87 zv14 a84 => ?_
   try clear a75
-  obtain ⟨p85, d86, pr87⟩ := d83.index_inv
-  try clear d83
-  obtain ⟨l88, rfl, hq17⟩ := d86.var_inv
-  try clear d86
-  simp at l88
-  subst l88
-  obtain ⟨v78, vs89, m90, c91, c92, hq19, d93, a94, hq18⟩ := a84.cons_inv
+  refine Fused.args_index_var_cons a84 rfl fun v78 vs89 pr97 zv15 a94 => ?_
   try clear a84
-  obtain ⟨p95, d96, pr97⟩ := d93.index_inv
-  try clear d93
-  obtain ⟨l98, rfl, hq20⟩ := d96.var_inv
-  try clear d96
-  simp at l98
-  subst l98
-  obtain ⟨hq22, rfl, hq21⟩ := a94.nil_inv
+  refine a94.nil_elim fun zv16 zm17 zq18 => ?_
   try clear a94
-  subst hq22
-  subst hq19
-  subst hq16
-  obtain ⟨vs99, hv100, -, ml101⟩ := matchPattern_tuple_inv mt69
-  try clear mt69
-  subst hv100
-  obtain ⟨x_b1, vs102, b103, b104, rfl, mt105, ml106, rfl⟩ := matchListWith_cons_inv ml101
-  try clear ml101
-  obtain rfl := matchPattern_bind_inv mt105
-  try clear mt105
-  obtain ⟨x_b2, vs107, b108, b109, rfl, mt110, ml111, rfl⟩ := matchListWith_cons_inv ml106
-  try clear ml106
-  obtain rfl := matchPattern_bind_inv mt110
-  try clear mt110
-  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml111
-  try clear ml111
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d70
-  obtain ⟨v112, m113, bs114, c115, c116, d117, mt118, d119, hq23⟩ := d70.letValue_inv
+  subst zv16
+  subst zv15
+  subst zv14
+  subst zm17
+  refine Fused.let_tuple_2 d70 fun x_b3 x_b4 m113 c115 c116 d117 d119 zq19 => ?_
   try clear d70
-  obtain ⟨vs120, m121, c122, cs123, a124, ev125, hq24⟩ := d117.call_inv
-  try clear d117
-  rw [instanceName_plain_some] at ev125
-  obtain ⟨v126, vs128, m129, c130, c131, hq26, d132, a133, hq25⟩ := a124.cons_inv
-  try clear a124
-  obtain ⟨p134, d135, pr136⟩ := d132.index_inv
-  try clear d132
-  obtain ⟨l137, rfl, hq27⟩ := d135.var_inv
-  try clear d135
-  simp at l137
-  subst l137
-  obtain ⟨v127, vs138, m139, c140, c141, hq29, d142, a143, hq28⟩ := a133.cons_inv
-  try clear a133
-  obtain ⟨p144, d145, pr146⟩ := d142.index_inv
-  try clear d142
-  obtain ⟨l147, rfl, hq30⟩ := d145.var_inv
-  try clear d145
-  simp at l147
-  subst l147
-  obtain ⟨hq32, rfl, hq31⟩ := a143.nil_inv
-  try clear a143
-  subst hq32
-  subst hq29
-  subst hq26
-  obtain ⟨vs148, hv149, -, ml150⟩ := matchPattern_tuple_inv mt118
-  try clear mt118
-  subst hv149
+  refine Fused.call_plain d117 fun vs120 m121 c122 cs123 a124 ev125 zq20 => ?_
   as_aux_lemma =>
-   obtain ⟨x_b3, vs151, b152, b153, rfl, mt154, ml155, rfl⟩ := matchListWith_cons_inv ml150
-   try clear ml150
-   obtain rfl := matchPattern_bind_inv mt154
-   try clear mt154
-   obtain ⟨x_b4, vs156, b157, b158, rfl, mt159, ml160, rfl⟩ := matchListWith_cons_inv ml155
-   try clear ml155
-   obtain rfl := matchPattern_bind_inv mt159
-   try clear mt159
-   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml160
-   try clear ml160
-   try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d119
-   obtain ⟨v161, m162, bs163, c164, c165, d166, mt167, d168, hq33⟩ := d119.letValue_inv
+   try clear d117
+   refine Fused.args_index_var_cons a124 rfl fun v126 vs128 pr136 zv21 a133 => ?_
+   try clear a124
+   refine Fused.args_index_var_cons a133 rfl fun v127 vs138 pr146 zv22 a143 => ?_
+   try clear a133
+   refine a143.nil_elim fun zv23 zm24 zq25 => ?_
+   try clear a143
+   subst zv23
+   subst zv22
+   subst zv21
+   subst zm24
+   refine Fused.let_tuple_2 d119 fun x_b5 x_z m162 c164 c165 d166 d168 zq26 => ?_
    try clear d119
-   obtain ⟨vs169, m170, c171, cs172, a173, ev174, hq34⟩ := d166.call_inv
+   refine Fused.call_plain d166 fun vs169 m170 c171 cs172 a173 ev174 zq27 => ?_
    try clear d166
-   rw [instanceName_plain_some] at ev174
-   obtain ⟨v175, vs177, m178, c179, c180, hq36, d181, a182, hq35⟩ := a173.cons_inv
+   refine Fused.args_index_var_cons a173 rfl fun v175 vs177 pr185 zv28 a182 => ?_
    try clear a173
-   obtain ⟨p183, d184, pr185⟩ := d181.index_inv
-   try clear d181
-   obtain ⟨l186, rfl, hq37⟩ := d184.var_inv
-   try clear d184
-   simp at l186
-   subst l186
-   obtain ⟨v176, vs187, m188, c189, c190, hq39, d191, a192, hq38⟩ := a182.cons_inv
+   refine Fused.args_index_var_cons a182 rfl fun v176 vs187 pr195 zv29 a192 => ?_
    try clear a182
-   obtain ⟨p193, d194, pr195⟩ := d191.index_inv
-   try clear d191
-   obtain ⟨l196, rfl, hq40⟩ := d194.var_inv
-   try clear d194
-   simp at l196
-   subst l196
-   obtain ⟨hq42, rfl, hq41⟩ := a192.nil_inv
+   refine a192.nil_elim fun zv30 zm31 zq32 => ?_
    try clear a192
-   subst hq42
-   subst hq39
-   subst hq36
-   obtain ⟨vs197, hv198, -, ml199⟩ := matchPattern_tuple_inv mt167
-   try clear mt167
-   subst hv198
-   obtain ⟨x_b5, vs200, b201, b202, rfl, mt203, ml204, rfl⟩ := matchListWith_cons_inv ml199
-   try clear ml199
-   obtain rfl := matchPattern_bind_inv mt203
-   try clear mt203
-   obtain ⟨x_z, vs205, b206, b207, rfl, mt208, ml209, rfl⟩ := matchListWith_cons_inv ml204
-   try clear ml204
-   obtain rfl := matchPattern_bind_inv mt208
-   try clear mt208
-   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml209
-   try clear ml209
-   try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d168
-   obtain ⟨v210, m211, bs212, c213, c214, d215, mt216, d217, hq43⟩ := d168.letValue_inv
+   subst zv30
+   subst zv29
+   subst zv28
+   subst zm31
+   refine d168.letValue_elim fun v210 m211 bs212 c213 c214 d215 mt216 d217 zq33 => ?_
    try clear d168
-   obtain ⟨vs218, a219, ap220⟩ := d215.builtin_inv
+   refine d215.builtin_elim fun vs218 a219 ap220 => ?_
    try clear d215
-   obtain ⟨v221, vs223, m224, c225, c226, hq45, d227, a228, hq44⟩ := a219.cons_inv
+   refine a219.cons_elim fun v221 vs223 m224 c225 c226 zv34 d227 a228 zq35 => ?_
    try clear a219
-   obtain ⟨vs229, m230, c231, cs232, a233, ev234, hq46⟩ := d227.call_inv
+   refine Fused.call_plain d227 fun vs229 m230 c231 cs232 a233 ev234 zq36 => ?_
    try clear d227
-   rw [instanceName_plain_some] at ev234
-   obtain ⟨v235, vs236, m237, c238, c239, hq48, d240, a241, hq47⟩ := a233.cons_inv
+   refine Fused.args_var_cons a233 rfl fun vs236 zv37 a241 => ?_
    try clear a233
-   obtain ⟨l242, rfl, hq49⟩ := d240.var_inv
-   try clear d240
-   simp at l242
-   subst l242
-   obtain ⟨hq51, rfl, hq50⟩ := a241.nil_inv
+   refine a241.nil_elim fun zv38 zm39 zq40 => ?_
    try clear a241
-   subst hq51
-   subst hq48
-   obtain ⟨v222, vs243, m244, c245, c246, hq53, d247, a248, hq52⟩ := a228.cons_inv
-   try clear a228
-   obtain ⟨rfl, rfl, hq54⟩ := d247.literal_inv
-   try clear d247
-   obtain ⟨hq56, rfl, hq55⟩ := a248.nil_inv
-   try clear a248
-   subst hq56
-   subst hq53
-   subst hq45
-   obtain ⟨heq249, rfl⟩ := Builtin.assertEq_inv ap220
-   try clear ap220
-   obtain rfl := matchPattern_wildcard_inv mt216
-   try clear mt216
-   try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d217
-   obtain ⟨v250, m251, bs252, c253, c254, d255, mt256, d257, hq57⟩ := d217.letValue_inv
-   try clear d217
-   obtain ⟨x258, y259, m260, c261, c262, d263, d264, op265, hq58⟩ := d255.binary_inv
-   try clear d255
-   obtain ⟨x266, y267, m268, c269, c270, d271, d272, op273, hq59⟩ := d263.binary_inv
-   try clear d263
-   obtain ⟨x274, y275, m276, c277, c278, d279, d280, op281, hq60⟩ := d271.binary_inv
-   try clear d271
-   obtain ⟨x282, y283, m284, c285, c286, d287, d288, op289, hq61⟩ := d279.binary_inv
-   try clear d279
-   obtain ⟨x290, y291, m292, c293, c294, d295, d296, op297, hq62⟩ := d287.binary_inv
-   try clear d287
-   obtain ⟨vs298, m299, c300, cs301, a302, ev303, hq63⟩ := d295.call_inv
-   try clear d295
-   rw [instanceName_plain_some] at ev303
-   obtain ⟨v304, vs305, m306, c307, c308, hq65, d309, a310, hq64⟩ := a302.cons_inv
-   try clear a302
-   obtain ⟨l311, rfl, hq66⟩ := d309.var_inv
-   try clear d309
-   simp at l311
-   subst l311
-   obtain ⟨hq68, rfl, hq67⟩ := a310.nil_inv
-   try clear a310
-   subst hq68
-   subst hq65
-   obtain ⟨x312, y313, m314, c315, c316, d317, d318, op319, hq69⟩ := d296.binary_inv
-   try clear d296
-   obtain ⟨rfl, rfl, hq70⟩ := d317.literal_inv
-   try clear d317
-   obtain ⟨vs320, m321, c322, cs323, a324, ev325, hq71⟩ := d318.call_inv
-   try clear d318
-   rw [instanceName_plain_some] at ev325
-   obtain ⟨v326, vs327, m328, c329, c330, hq73, d331, a332, hq72⟩ := a324.cons_inv
-   try clear a324
-   obtain ⟨l333, rfl, hq74⟩ := d331.var_inv
-   try clear d331
+   subst zv38
+   subst zv37
+   subst zm39
    as_aux_lemma =>
-    simp at l333
-    subst l333
-    obtain ⟨hq76, rfl, hq75⟩ := a332.nil_inv
-    try clear a332
-    subst hq76
-    subst hq73
-    obtain ⟨x334, y335, m336, c337, c338, d339, d340, op341, hq77⟩ := d288.binary_inv
-    try clear d288
-    obtain ⟨rfl, rfl, hq78⟩ := d339.literal_inv
-    try clear d339
-    obtain ⟨vs342, m343, c344, cs345, a346, ev347, hq79⟩ := d340.call_inv
-    try clear d340
-    rw [instanceName_plain_some] at ev347
-    obtain ⟨v348, vs349, m350, c351, c352, hq81, d353, a354, hq80⟩ := a346.cons_inv
-    try clear a346
-    obtain ⟨l355, rfl, hq82⟩ := d353.var_inv
-    try clear d353
-    simp at l355
-    subst l355
-    obtain ⟨hq84, rfl, hq83⟩ := a354.nil_inv
-    try clear a354
-    subst hq84
-    subst hq81
-    obtain ⟨x356, y357, m358, c359, c360, d361, d362, op363, hq85⟩ := d280.binary_inv
-    try clear d280
-    obtain ⟨rfl, rfl, hq86⟩ := d361.literal_inv
-    try clear d361
-    obtain ⟨vs364, m365, c366, cs367, a368, ev369, hq87⟩ := d362.call_inv
-    try clear d362
-    rw [instanceName_plain_some] at ev369
-    obtain ⟨v370, vs371, m372, c373, c374, hq89, d375, a376, hq88⟩ := a368.cons_inv
-    try clear a368
-    obtain ⟨l377, rfl, hq90⟩ := d375.var_inv
-    try clear d375
-    simp at l377
-    subst l377
-    obtain ⟨hq92, rfl, hq91⟩ := a376.nil_inv
-    try clear a376
-    subst hq92
-    subst hq89
-    obtain ⟨x378, y379, m380, c381, c382, d383, d384, op385, hq93⟩ := d272.binary_inv
-    try clear d272
-    obtain ⟨rfl, rfl, hq94⟩ := d383.literal_inv
-    try clear d383
-    obtain ⟨vs386, m387, c388, cs389, a390, ev391, hq95⟩ := d384.call_inv
-    try clear d384
-    rw [instanceName_plain_some] at ev391
-    obtain ⟨v392, vs393, m394, c395, c396, hq97, d397, a398, hq96⟩ := a390.cons_inv
-    try clear a390
-    obtain ⟨l399, rfl, hq98⟩ := d397.var_inv
-    try clear d397
-    simp at l399
-    subst l399
-    obtain ⟨hq100, rfl, hq99⟩ := a398.nil_inv
-    try clear a398
-    subst hq100
-    subst hq97
-    obtain ⟨x400, y401, m402, c403, c404, d405, d406, op407, hq101⟩ := d264.binary_inv
-    try clear d264
-    obtain ⟨rfl, rfl, hq102⟩ := d405.literal_inv
-    try clear d405
-    obtain ⟨vs408, m409, c410, cs411, a412, ev413, hq103⟩ := d406.call_inv
-    try clear d406
-    rw [instanceName_plain_some] at ev413
-    obtain ⟨v414, vs415, m416, c417, c418, hq105, d419, a420, hq104⟩ := a412.cons_inv
-    try clear a412
-    obtain ⟨l421, rfl, hq106⟩ := d419.var_inv
-    try clear d419
-    simp at l421
-    subst l421
-    obtain ⟨hq108, rfl, hq107⟩ := a420.nil_inv
-    try clear a420
-    subst hq108
-    subst hq105
-    obtain rfl := matchPattern_bind_inv mt256
-    try clear mt256
-    try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d257
-    obtain ⟨v422, m423, bs424, c425, c426, d427, mt428, d429, hq109⟩ := d257.letValue_inv
-    try clear d257
-    obtain ⟨x430, y431, m432, c433, c434, d435, d436, op437, hq110⟩ := d427.binary_inv
-    try clear d427
-    obtain ⟨l438, rfl, hq111⟩ := d435.var_inv
-    try clear d435
-    simp at l438
-    subst l438
-    obtain ⟨rfl, rfl, hq112⟩ := d436.literal_inv
-    try clear d436
-    obtain rfl := matchPattern_bind_inv mt428
-    try clear mt428
-    try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d429
-    obtain ⟨v439, m440, bs441, c442, c443, d444, mt445, d446, hq113⟩ := d429.letValue_inv
-    try clear d429
-    obtain ⟨vs447, a448, ap449⟩ := d444.builtin_inv
-    try clear d444
-    obtain ⟨v450, vs452, m453, c454, c455, hq115, d456, a457, hq114⟩ := a448.cons_inv
-    try clear a448
-    obtain ⟨x458, y459, m460, c461, c462, d463, d464, op465, hq116⟩ := d456.binary_inv
-    try clear d456
-    obtain ⟨x466, y467, m468, c469, c470, d471, d472, op473, hq117⟩ := d463.binary_inv
-    try clear d463
-    obtain ⟨rfl, rfl, hq118⟩ := d471.literal_inv
-    try clear d471
-    obtain ⟨l474, rfl, hq119⟩ := d472.var_inv
-    try clear d472
-    simp at l474
-    subst l474
-    obtain ⟨vs475, m476, c477, cs478, a479, ev480, hq120⟩ := d464.call_inv
-    try clear d464
-    rw [instanceName_plain_some] at ev480
-    obtain ⟨v481, vs482, m483, c484, c485, hq122, d486, a487, hq121⟩ := a479.cons_inv
-    try clear a479
-    obtain ⟨l488, rfl, hq123⟩ := d486.var_inv
-    try clear d486
-    simp at l488
-    subst l488
-    obtain ⟨hq125, rfl, hq124⟩ := a487.nil_inv
-    try clear a487
-    subst hq125
-    subst hq122
-    obtain ⟨v451, vs489, m490, c491, c492, hq127, d493, a494, hq126⟩ := a457.cons_inv
+    refine a228.cons_elim fun v222 vs243 m244 c245 c246 zv41 d247 a248 zq42 => ?_
+    try clear a228
+    refine d247.literal_elim fun ze43 ze44 ze45 => ?_
+    try clear d247
+    subst ze43
+    subst ze44
+    refine a248.nil_elim fun zv46 zm47 zq48 => ?_
+    try clear a248
+    subst zv46
+    subst zv41
+    subst zv34
+    subst zm47
+    obtain ⟨heq249, rfl⟩ := Builtin.assertEq_inv ap220
+    obtain rfl := matchPattern_wildcard_inv mt216
+    refine Fused.let_bind d217 fun v250 m251 c253 c254 d255 d257 zq49 => ?_
+    try clear d217
+    refine d255.binary_elim fun x258 y259 m260 c261 c262 d263 d264 op265 ze50 => ?_
+    try clear d255
+    subst ze50
+    refine d263.binary_elim fun x266 y267 m268 c269 c270 d271 d272 op273 ze51 => ?_
+    try clear d263
+    subst ze51
+    refine d271.binary_elim fun x274 y275 m276 c277 c278 d279 d280 op281 ze52 => ?_
+    try clear d271
+    subst ze52
+    refine d279.binary_elim fun x282 y283 m284 c285 c286 d287 d288 op289 ze53 => ?_
+    try clear d279
+    subst ze53
+    refine d287.binary_elim fun x290 y291 m292 c293 c294 d295 d296 op297 ze54 => ?_
+    try clear d287
+    subst ze54
+    refine Fused.call_plain d295 fun vs298 m299 c300 cs301 a302 ev303 zq55 => ?_
+    try clear d295
+    refine Fused.args_var_cons a302 rfl fun vs305 zv56 a310 => ?_
+    try clear a302
+    refine a310.nil_elim fun zv57 zm58 zq59 => ?_
+    try clear a310
+    subst zv57
+    subst zv56
+    subst zm58
     as_aux_lemma =>
-     try clear a457
-     obtain ⟨l495, rfl, hq128⟩ := d493.var_inv
-     try clear d493
-     simp at l495
-     subst l495
-     obtain ⟨hq130, rfl, hq129⟩ := a494.nil_inv
-     try clear a494
-     subst hq130
-     subst hq127
-     subst hq115
-     obtain ⟨heq496, rfl⟩ := Builtin.assertEq_inv ap449
-     try clear ap449
-     obtain rfl := matchPattern_wildcard_inv mt445
-     try clear mt445
-     try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d446
-     obtain ⟨l497, rfl, hq131⟩ := d446.var_inv
-     try clear d446
-     simp at l497
-     subst l497
-     subst hq131
-     subst hq129
-     subst hq128
-     subst hq126
-     subst hq124
-     subst hq123
-     subst hq121
-     subst hq120
-     subst hq119
-     subst hq118
-     subst hq117
-     subst hq116
-     subst hq114
-     subst hq113
-     subst hq112
-     subst hq111
-     subst hq110
-     subst hq109
-     subst hq107
-     subst hq106
-     subst hq104
-     subst hq103
-     subst hq102
-     subst hq101
-     subst hq99
-     subst hq98
-     subst hq96
-     subst hq95
-     subst hq94
-     subst hq93
-     subst hq91
-     subst hq90
-     subst hq88
-     subst hq87
-     subst hq86
-     subst hq85
-     subst hq83
-     subst hq82
-     subst hq80
-     subst hq79
-     subst hq78
-     subst hq77
-     subst hq75
-     subst hq74
-     subst hq72
-     subst hq71
-     subst hq70
-     subst hq69
-     subst hq67
-     subst hq66
-     subst hq64
-     subst hq63
-     subst hq62
-     subst hq61
-     subst hq60
-     subst hq59
-     subst hq58
-     subst hq57
-     subst hq55
-     subst hq54
-     subst hq52
-     subst hq50
-     subst hq49
-     subst hq47
-     subst hq46
-     subst hq44
-     subst hq43
-     subst hq41
-     subst hq40
-     subst hq38
-     subst hq37
-     subst hq35
-     subst hq34
-     subst hq33
-     subst hq31
-     subst hq30
-     subst hq28
-     subst hq27
-     subst hq25
-     subst hq24
-     subst hq23
-     subst hq21
-     subst hq20
-     subst hq18
-     subst hq17
-     subst hq15
-     subst hq14
-     subst hq13
-     subst hq11
-     subst hq10
-     subst hq8
-     subst hq7
-     subst hq5
-     subst hq4
-     subst hq3
-     subst hq2
-     subst hq1
-     exact «Fixed::shr8».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ty12 pr38 pr48 ev27 pr87 pr97 ev76 pr136 pr146 ev125 pr185 pr195 ev174 ev234 heq249 ev303 ev325 op319 op297 ev347 op341 op289 ev369 op363 op281 ev391 op385 op273 ev413 op407 op265 op437 op473 ev480 op465 heq496 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+     refine d296.binary_elim fun x312 y313 m314 c315 c316 d317 d318 op319 ze60 => ?_
+     try clear d296
+     subst ze60
+     refine d317.literal_elim fun ze61 ze62 ze63 => ?_
+     try clear d317
+     subst ze61
+     subst ze62
+     refine Fused.call_plain d318 fun vs320 m321 c322 cs323 a324 ev325 zq64 => ?_
+     try clear d318
+     refine Fused.args_var_cons a324 rfl fun vs327 zv65 a332 => ?_
+     try clear a324
+     refine a332.nil_elim fun zv66 zm67 zq68 => ?_
+     try clear a332
+     subst zv66
+     subst zv65
+     subst zm67
+     refine d288.binary_elim fun x334 y335 m336 c337 c338 d339 d340 op341 ze69 => ?_
+     try clear d288
+     subst ze69
+     refine d339.literal_elim fun ze70 ze71 ze72 => ?_
+     try clear d339
+     subst ze70
+     subst ze71
+     refine Fused.call_plain d340 fun vs342 m343 c344 cs345 a346 ev347 zq73 => ?_
+     try clear d340
+     refine Fused.args_var_cons a346 rfl fun vs349 zv74 a354 => ?_
+     try clear a346
+     refine a354.nil_elim fun zv75 zm76 zq77 => ?_
+     try clear a354
+     subst zv75
+     subst zv74
+     subst zm76
+     refine d280.binary_elim fun x356 y357 m358 c359 c360 d361 d362 op363 ze78 => ?_
+     try clear d280
+     subst ze78
+     refine d361.literal_elim fun ze79 ze80 ze81 => ?_
+     try clear d361
+     subst ze79
+     subst ze80
+     refine Fused.call_plain d362 fun vs364 m365 c366 cs367 a368 ev369 zq82 => ?_
+     as_aux_lemma =>
+      try clear d362
+      refine Fused.args_var_cons a368 rfl fun vs371 zv83 a376 => ?_
+      try clear a368
+      refine a376.nil_elim fun zv84 zm85 zq86 => ?_
+      try clear a376
+      subst zv84
+      subst zv83
+      subst zm85
+      refine d272.binary_elim fun x378 y379 m380 c381 c382 d383 d384 op385 ze87 => ?_
+      try clear d272
+      subst ze87
+      refine d383.literal_elim fun ze88 ze89 ze90 => ?_
+      try clear d383
+      subst ze88
+      subst ze89
+      refine Fused.call_plain d384 fun vs386 m387 c388 cs389 a390 ev391 zq91 => ?_
+      try clear d384
+      refine Fused.args_var_cons a390 rfl fun vs393 zv92 a398 => ?_
+      try clear a390
+      refine a398.nil_elim fun zv93 zm94 zq95 => ?_
+      try clear a398
+      subst zv93
+      subst zv92
+      subst zm94
+      refine d264.binary_elim fun x400 y401 m402 c403 c404 d405 d406 op407 ze96 => ?_
+      try clear d264
+      subst ze96
+      refine d405.literal_elim fun ze97 ze98 ze99 => ?_
+      try clear d405
+      subst ze97
+      subst ze98
+      refine Fused.call_plain d406 fun vs408 m409 c410 cs411 a412 ev413 zq100 => ?_
+      try clear d406
+      refine Fused.args_var_cons a412 rfl fun vs415 zv101 a420 => ?_
+      try clear a412
+      refine a420.nil_elim fun zv102 zm103 zq104 => ?_
+      try clear a420
+      subst zv102
+      subst zv101
+      subst zm103
+      as_aux_lemma =>
+       refine Fused.let_bind d257 fun v422 m423 c425 c426 d427 d429 zq105 => ?_
+       try clear d257
+       refine d427.binary_elim fun x430 y431 m432 c433 c434 d435 d436 op437 ze106 => ?_
+       try clear d427
+       subst ze106
+       refine Fused.var_is d435 rfl fun l438 zm108 zq107 => ?_
+       try clear d435
+       subst l438
+       subst zm108
+       refine d436.literal_elim fun ze109 ze110 ze111 => ?_
+       try clear d436
+       subst ze109
+       subst ze110
+       refine d429.letValue_elim fun v439 m440 bs441 c442 c443 d444 mt445 d446 zq112 => ?_
+       try clear d429
+       refine d444.builtin_elim fun vs447 a448 ap449 => ?_
+       try clear d444
+       refine a448.cons_elim fun v450 vs452 m453 c454 c455 zv113 d456 a457 zq114 => ?_
+       try clear a448
+       refine d456.binary_elim fun x458 y459 m460 c461 c462 d463 d464 op465 ze115 => ?_
+       try clear d456
+       subst ze115
+       refine d463.binary_elim fun x466 y467 m468 c469 c470 d471 d472 op473 ze116 => ?_
+       try clear d463
+       subst ze116
+       refine d471.literal_elim fun ze117 ze118 ze119 => ?_
+       try clear d471
+       subst ze117
+       subst ze118
+       refine Fused.var_is d472 rfl fun l474 zm121 zq120 => ?_
+       try clear d472
+       subst l474
+       subst zm121
+       refine Fused.call_plain d464 fun vs475 m476 c477 cs478 a479 ev480 zq122 => ?_
+       try clear d464
+       refine Fused.args_var_cons a479 rfl fun vs482 zv123 a487 => ?_
+       try clear a479
+       refine a487.nil_elim fun zv124 zm125 zq126 => ?_
+       try clear a487
+       subst zv124
+       as_aux_lemma =>
+        subst zv123
+        subst zm125
+        refine Fused.args_var_cons a457 rfl fun vs489 zv127 a494 => ?_
+        try clear a457
+        refine a494.nil_elim fun zv128 zm129 zq130 => ?_
+        try clear a494
+        subst zv128
+        subst zv127
+        subst zv113
+        subst zm129
+        obtain ⟨heq496, rfl⟩ := Builtin.assertEq_inv ap449
+        obtain rfl := matchPattern_wildcard_inv mt445
+        refine Fused.var_is d446 rfl fun l497 zm132 zq131 => ?_
+        try clear d446
+        subst l497
+        subst zm132
+        subst zq131
+        subst zq130
+        subst zq126
+        subst zq122
+        subst zq120
+        subst ze119
+        subst zq114
+        subst zq112
+        subst ze111
+        subst zq107
+        subst zq105
+        subst zq104
+        subst zq100
+        subst ze99
+        subst zq95
+        subst zq91
+        subst ze90
+        subst zq86
+        subst zq82
+        subst ze81
+        subst zq77
+        subst zq73
+        subst ze72
+        subst zq68
+        as_aux_lemma =>
+         subst zq64
+         subst ze63
+         subst zq59
+         subst zq55
+         subst zq49
+         subst zq48
+         subst ze45
+         subst zq42
+         subst zq40
+         subst zq36
+         subst zq35
+         subst zq33
+         subst zq32
+         subst zq27
+         subst zq26
+         subst zq25
+         subst zq20
+         subst zq19
+         subst zq18
+         subst zq13
+         subst zq12
+         subst zq11
+         subst zq6
+         subst zq5
+         subst zq3
+         subst zq1
+         exact «Fixed::shr8».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ty12 pr38 pr48 ev27 pr87 pr97 ev76 pr136 pr146 ev125 pr185 pr195 ev174 ev234 heq249 ev303 ev325 op319 op297 ev347 op341 op289 ev369 op363 op281 ev391 op385 op273 ev413 op407 op265 op437 op473 ev480 op465 heq496 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::sign_split`: one constructor per combination of selected arms. -/
 inductive «Fixed::sign_split».Path (x_v : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -606,539 +441,370 @@ theorem «Fixed::sign_split».obs {x_v : SourceValue F} {h h' : Heap F} {r : Sou
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.sign_split.lookup
     (by simp [IxAIStep.Fixed.Fixed.sign_split, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.sign_split] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, hq1⟩ := d0.letValue_inv
+  refine Fused.let_bind d0 fun v1 m2 c4 c5 d6 d8 zq1 => ?_
   try clear d0
-  obtain ⟨x9, k10, d11, ty12, rfl⟩ := d6.hint_inv
+  refine d6.hint_elim fun x9 k10 d11 ty12 ze2 => ?_
   try clear d6
-  obtain ⟨l13, rfl, hq2⟩ := d11.var_inv
+  subst ze2
+  refine Fused.var_is d11 rfl fun l13 zm4 zq3 => ?_
   try clear d11
-  simp at l13
   subst l13
-  obtain rfl := matchPattern_bind_inv mt7
-  try clear mt7
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d8
-  obtain ⟨v14, m15, bs16, c17, c18, d19, mt20, d21, hq3⟩ := d8.letValue_inv
+  subst zm4
+  refine Fused.let_tuple_2 d8 fun x_b0 x_b1 m15 c17 c18 d19 d21 zq5 => ?_
   try clear d8
-  obtain ⟨vs22, m23, c24, cs25, a26, ev27, hq4⟩ := d19.call_inv
+  refine Fused.call_plain d19 fun vs22 m23 c24 cs25 a26 ev27 zq6 => ?_
   try clear d19
-  rw [instanceName_plain_some] at ev27
-  obtain ⟨v28, vs30, m31, c32, c33, hq6, d34, a35, hq5⟩ := a26.cons_inv
+  refine Fused.args_index_var_cons a26 rfl fun v28 vs30 pr38 zv7 a35 => ?_
   try clear a26
-  obtain ⟨p36, d37, pr38⟩ := d34.index_inv
-  try clear d34
-  obtain ⟨l39, rfl, hq7⟩ := d37.var_inv
-  try clear d37
-  simp at l39
-  subst l39
-  obtain ⟨v29, vs40, m41, c42, c43, hq9, d44, a45, hq8⟩ := a35.cons_inv
+  refine Fused.args_index_var_cons a35 rfl fun v29 vs40 pr48 zv8 a45 => ?_
   try clear a35
-  obtain ⟨p46, d47, pr48⟩ := d44.index_inv
-  try clear d44
-  obtain ⟨l49, rfl, hq10⟩ := d47.var_inv
-  try clear d47
-  simp at l49
-  subst l49
-  obtain ⟨hq12, rfl, hq11⟩ := a45.nil_inv
+  refine a45.nil_elim fun zv9 zm10 zq11 => ?_
   try clear a45
-  subst hq12
-  subst hq9
-  subst hq6
-  obtain ⟨vs50, hv51, -, ml52⟩ := matchPattern_tuple_inv mt20
-  try clear mt20
-  subst hv51
-  obtain ⟨x_b0, vs53, b54, b55, rfl, mt56, ml57, rfl⟩ := matchListWith_cons_inv ml52
-  try clear ml52
-  obtain rfl := matchPattern_bind_inv mt56
-  try clear mt56
-  obtain ⟨x_b1, vs58, b59, b60, rfl, mt61, ml62, rfl⟩ := matchListWith_cons_inv ml57
-  try clear ml57
-  obtain rfl := matchPattern_bind_inv mt61
-  try clear mt61
-  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml62
-  try clear ml62
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d21
-  obtain ⟨v63, m64, bs65, c66, c67, d68, mt69, d70, hq13⟩ := d21.letValue_inv
+  subst zv9
+  subst zv8
+  subst zv7
+  subst zm10
+  refine Fused.let_tuple_2 d21 fun x_b2 x_b3 m64 c66 c67 d68 d70 zq12 => ?_
   try clear d21
-  obtain ⟨vs71, m72, c73, cs74, a75, ev76, hq14⟩ := d68.call_inv
+  refine Fused.call_plain d68 fun vs71 m72 c73 cs74 a75 ev76 zq13 => ?_
   try clear d68
-  rw [instanceName_plain_some] at ev76
-  obtain ⟨v77, vs79, m80, c81, c82, hq16, d83, a84, hq15⟩ := a75.cons_inv
+  refine Fused.args_index_var_cons a75 rfl fun v77 vs79 pr87 zv14 a84 => ?_
   try clear a75
-  obtain ⟨p85, d86, pr87⟩ := d83.index_inv
-  try clear d83
-  obtain ⟨l88, rfl, hq17⟩ := d86.var_inv
-  try clear d86
-  simp at l88
-  subst l88
-  obtain ⟨v78, vs89, m90, c91, c92, hq19, d93, a94, hq18⟩ := a84.cons_inv
+  refine Fused.args_index_var_cons a84 rfl fun v78 vs89 pr97 zv15 a94 => ?_
   try clear a84
-  obtain ⟨p95, d96, pr97⟩ := d93.index_inv
-  try clear d93
-  obtain ⟨l98, rfl, hq20⟩ := d96.var_inv
-  try clear d96
-  simp at l98
-  subst l98
-  obtain ⟨hq22, rfl, hq21⟩ := a94.nil_inv
+  refine a94.nil_elim fun zv16 zm17 zq18 => ?_
   try clear a94
-  subst hq22
-  subst hq19
-  subst hq16
-  obtain ⟨vs99, hv100, -, ml101⟩ := matchPattern_tuple_inv mt69
-  try clear mt69
-  subst hv100
-  obtain ⟨x_b2, vs102, b103, b104, rfl, mt105, ml106, rfl⟩ := matchListWith_cons_inv ml101
-  try clear ml101
-  obtain rfl := matchPattern_bind_inv mt105
-  try clear mt105
-  obtain ⟨x_b3, vs107, b108, b109, rfl, mt110, ml111, rfl⟩ := matchListWith_cons_inv ml106
-  try clear ml106
-  obtain rfl := matchPattern_bind_inv mt110
-  try clear mt110
-  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml111
-  try clear ml111
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d70
-  obtain ⟨v112, m113, bs114, c115, c116, d117, mt118, d119, hq23⟩ := d70.letValue_inv
+  subst zv16
+  subst zv15
+  subst zv14
+  subst zm17
+  refine Fused.let_tuple_2 d70 fun x_b4 x_b5 m113 c115 c116 d117 d119 zq19 => ?_
   try clear d70
-  obtain ⟨vs120, m121, c122, cs123, a124, ev125, hq24⟩ := d117.call_inv
-  try clear d117
-  rw [instanceName_plain_some] at ev125
-  obtain ⟨v126, vs128, m129, c130, c131, hq26, d132, a133, hq25⟩ := a124.cons_inv
-  try clear a124
-  obtain ⟨p134, d135, pr136⟩ := d132.index_inv
-  try clear d132
-  obtain ⟨l137, rfl, hq27⟩ := d135.var_inv
-  try clear d135
-  simp at l137
-  subst l137
-  obtain ⟨v127, vs138, m139, c140, c141, hq29, d142, a143, hq28⟩ := a133.cons_inv
-  try clear a133
-  obtain ⟨p144, d145, pr146⟩ := d142.index_inv
-  try clear d142
-  obtain ⟨l147, rfl, hq30⟩ := d145.var_inv
-  try clear d145
-  simp at l147
-  subst l147
-  obtain ⟨hq32, rfl, hq31⟩ := a143.nil_inv
-  try clear a143
-  subst hq32
-  subst hq29
-  subst hq26
-  obtain ⟨vs148, hv149, -, ml150⟩ := matchPattern_tuple_inv mt118
-  try clear mt118
-  subst hv149
+  refine Fused.call_plain d117 fun vs120 m121 c122 cs123 a124 ev125 zq20 => ?_
   as_aux_lemma =>
-   obtain ⟨x_b4, vs151, b152, b153, rfl, mt154, ml155, rfl⟩ := matchListWith_cons_inv ml150
-   try clear ml150
-   obtain rfl := matchPattern_bind_inv mt154
-   try clear mt154
-   obtain ⟨x_b5, vs156, b157, b158, rfl, mt159, ml160, rfl⟩ := matchListWith_cons_inv ml155
-   try clear ml155
-   obtain rfl := matchPattern_bind_inv mt159
-   try clear mt159
-   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml160
-   try clear ml160
-   try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d119
-   obtain ⟨v161, m162, bs163, c164, c165, d166, mt167, d168, hq33⟩ := d119.letValue_inv
+   try clear d117
+   refine Fused.args_index_var_cons a124 rfl fun v126 vs128 pr136 zv21 a133 => ?_
+   try clear a124
+   refine Fused.args_index_var_cons a133 rfl fun v127 vs138 pr146 zv22 a143 => ?_
+   try clear a133
+   refine a143.nil_elim fun zv23 zm24 zq25 => ?_
+   try clear a143
+   subst zv23
+   subst zv22
+   subst zv21
+   subst zm24
+   refine Fused.let_tuple_2 d119 fun x_b6 x_z m162 c164 c165 d166 d168 zq26 => ?_
    try clear d119
-   obtain ⟨vs169, m170, c171, cs172, a173, ev174, hq34⟩ := d166.call_inv
+   refine Fused.call_plain d166 fun vs169 m170 c171 cs172 a173 ev174 zq27 => ?_
    try clear d166
-   rw [instanceName_plain_some] at ev174
-   obtain ⟨v175, vs177, m178, c179, c180, hq36, d181, a182, hq35⟩ := a173.cons_inv
+   refine Fused.args_index_var_cons a173 rfl fun v175 vs177 pr185 zv28 a182 => ?_
    try clear a173
-   obtain ⟨p183, d184, pr185⟩ := d181.index_inv
-   try clear d181
-   obtain ⟨l186, rfl, hq37⟩ := d184.var_inv
-   try clear d184
-   simp at l186
-   subst l186
-   obtain ⟨v176, vs187, m188, c189, c190, hq39, d191, a192, hq38⟩ := a182.cons_inv
+   refine a182.cons_elim fun v176 vs187 m188 c189 c190 zv29 d191 a192 zq30 => ?_
    try clear a182
-   obtain ⟨rfl, rfl, hq40⟩ := d191.literal_inv
+   refine d191.literal_elim fun ze31 ze32 ze33 => ?_
    try clear d191
-   obtain ⟨hq42, rfl, hq41⟩ := a192.nil_inv
+   subst ze31
+   subst ze32
+   refine a192.nil_elim fun zv34 zm35 zq36 => ?_
    try clear a192
-   subst hq42
-   subst hq39
-   subst hq36
-   obtain ⟨vs193, hv194, -, ml195⟩ := matchPattern_tuple_inv mt167
-   try clear mt167
-   subst hv194
-   obtain ⟨x_b6, vs196, b197, b198, rfl, mt199, ml200, rfl⟩ := matchListWith_cons_inv ml195
-   try clear ml195
-   obtain rfl := matchPattern_bind_inv mt199
-   try clear mt199
-   obtain ⟨x_z, vs201, b202, b203, rfl, mt204, ml205, rfl⟩ := matchListWith_cons_inv ml200
-   try clear ml200
-   obtain rfl := matchPattern_bind_inv mt204
-   try clear mt204
-   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml205
-   try clear ml205
-   try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d168
-   obtain ⟨v206, m207, bs208, c209, c210, d211, mt212, d213, hq43⟩ := d168.letValue_inv
+   subst zv34
+   subst zv29
+   subst zv28
+   subst zm35
+   refine Fused.let_bind d168 fun v206 m207 c209 c210 d211 d213 zq37 => ?_
    try clear d168
-   obtain ⟨x214, y215, m216, c217, c218, d219, d220, op221, hq44⟩ := d211.binary_inv
+   refine d211.binary_elim fun x214 y215 m216 c217 c218 d219 d220 op221 ze38 => ?_
    try clear d211
-   obtain ⟨x222, y223, m224, c225, c226, d227, d228, op229, hq45⟩ := d219.binary_inv
+   subst ze38
+   refine d219.binary_elim fun x222 y223 m224 c225 c226 d227 d228 op229 ze39 => ?_
    try clear d219
-   obtain ⟨x230, y231, m232, c233, c234, d235, d236, op237, hq46⟩ := d227.binary_inv
+   subst ze39
+   refine d227.binary_elim fun x230 y231 m232 c233 c234 d235 d236 op237 ze40 => ?_
    try clear d227
-   obtain ⟨x238, y239, m240, c241, c242, d243, d244, op245, hq47⟩ := d235.binary_inv
-   try clear d235
-   obtain ⟨x246, y247, m248, c249, c250, d251, d252, op253, hq48⟩ := d243.binary_inv
-   try clear d243
-   obtain ⟨x254, y255, m256, c257, c258, d259, d260, op261, hq49⟩ := d251.binary_inv
-   try clear d251
-   obtain ⟨vs262, m263, c264, cs265, a266, ev267, hq50⟩ := d259.call_inv
-   try clear d259
-   rw [instanceName_plain_some] at ev267
-   obtain ⟨v268, vs269, m270, c271, c272, hq52, d273, a274, hq51⟩ := a266.cons_inv
-   try clear a266
-   obtain ⟨l275, rfl, hq53⟩ := d273.var_inv
-   try clear d273
-   simp at l275
-   subst l275
-   obtain ⟨hq55, rfl, hq54⟩ := a274.nil_inv
-   try clear a274
-   subst hq55
-   subst hq52
-   obtain ⟨x276, y277, m278, c279, c280, d281, d282, op283, hq56⟩ := d260.binary_inv
-   try clear d260
-   obtain ⟨rfl, rfl, hq57⟩ := d281.literal_inv
-   try clear d281
-   obtain ⟨vs284, m285, c286, cs287, a288, ev289, hq58⟩ := d282.call_inv
-   try clear d282
-   rw [instanceName_plain_some] at ev289
-   obtain ⟨v290, vs291, m292, c293, c294, hq60, d295, a296, hq59⟩ := a288.cons_inv
-   try clear a288
-   obtain ⟨l297, rfl, hq61⟩ := d295.var_inv
-   try clear d295
-   simp at l297
-   subst l297
-   obtain ⟨hq63, rfl, hq62⟩ := a296.nil_inv
-   try clear a296
-   subst hq63
-   subst hq60
-   obtain ⟨x298, y299, m300, c301, c302, d303, d304, op305, hq64⟩ := d252.binary_inv
-   try clear d252
-   obtain ⟨rfl, rfl, hq65⟩ := d303.literal_inv
-   try clear d303
-   obtain ⟨vs306, m307, c308, cs309, a310, ev311, hq66⟩ := d304.call_inv
-   try clear d304
-   rw [instanceName_plain_some] at ev311
-   obtain ⟨v312, vs313, m314, c315, c316, hq68, d317, a318, hq67⟩ := a310.cons_inv
-   try clear a310
-   obtain ⟨l319, rfl, hq69⟩ := d317.var_inv
-   try clear d317
-   simp at l319
-   subst l319
-   obtain ⟨hq71, rfl, hq70⟩ := a318.nil_inv
-   try clear a318
-   subst hq71
-   subst hq68
-   obtain ⟨x320, y321, m322, c323, c324, d325, d326, op327, hq72⟩ := d244.binary_inv
-   try clear d244
-   obtain ⟨rfl, rfl, hq73⟩ := d325.literal_inv
-   try clear d325
-   obtain ⟨vs328, m329, c330, cs331, a332, ev333, hq74⟩ := d326.call_inv
-   try clear d326
-   rw [instanceName_plain_some] at ev333
-   obtain ⟨v334, vs335, m336, c337, c338, hq76, d339, a340, hq75⟩ := a332.cons_inv
-   try clear a332
-   obtain ⟨l341, rfl, hq77⟩ := d339.var_inv
-   try clear d339
-   simp at l341
+   subst ze40
    as_aux_lemma =>
-    subst l341
-    obtain ⟨hq79, rfl, hq78⟩ := a340.nil_inv
-    try clear a340
-    subst hq79
-    subst hq76
-    obtain ⟨x342, y343, m344, c345, c346, d347, d348, op349, hq80⟩ := d236.binary_inv
-    try clear d236
-    obtain ⟨rfl, rfl, hq81⟩ := d347.literal_inv
-    try clear d347
-    obtain ⟨vs350, m351, c352, cs353, a354, ev355, hq82⟩ := d348.call_inv
-    try clear d348
-    rw [instanceName_plain_some] at ev355
-    obtain ⟨v356, vs357, m358, c359, c360, hq84, d361, a362, hq83⟩ := a354.cons_inv
-    try clear a354
-    obtain ⟨l363, rfl, hq85⟩ := d361.var_inv
-    try clear d361
-    simp at l363
-    subst l363
-    obtain ⟨hq87, rfl, hq86⟩ := a362.nil_inv
-    try clear a362
-    subst hq87
-    subst hq84
-    obtain ⟨x364, y365, m366, c367, c368, d369, d370, op371, hq88⟩ := d228.binary_inv
-    try clear d228
-    obtain ⟨rfl, rfl, hq89⟩ := d369.literal_inv
-    try clear d369
-    obtain ⟨vs372, m373, c374, cs375, a376, ev377, hq90⟩ := d370.call_inv
-    try clear d370
-    rw [instanceName_plain_some] at ev377
-    obtain ⟨v378, vs379, m380, c381, c382, hq92, d383, a384, hq91⟩ := a376.cons_inv
-    try clear a376
-    obtain ⟨l385, rfl, hq93⟩ := d383.var_inv
-    try clear d383
-    simp at l385
-    subst l385
-    obtain ⟨hq95, rfl, hq94⟩ := a384.nil_inv
-    try clear a384
-    subst hq95
-    subst hq92
-    obtain ⟨x386, y387, m388, c389, c390, d391, d392, op393, hq96⟩ := d220.binary_inv
-    try clear d220
-    obtain ⟨rfl, rfl, hq97⟩ := d391.literal_inv
-    try clear d391
-    obtain ⟨vs394, m395, c396, cs397, a398, ev399, hq98⟩ := d392.call_inv
-    try clear d392
-    rw [instanceName_plain_some] at ev399
-    obtain ⟨v400, vs401, m402, c403, c404, hq100, d405, a406, hq99⟩ := a398.cons_inv
-    try clear a398
-    obtain ⟨l407, rfl, hq101⟩ := d405.var_inv
-    try clear d405
-    simp at l407
-    subst l407
-    obtain ⟨hq103, rfl, hq102⟩ := a406.nil_inv
-    try clear a406
-    subst hq103
-    subst hq100
-    obtain rfl := matchPattern_bind_inv mt212
-    try clear mt212
-    try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d213
-    obtain ⟨v408, m409, bs410, c411, c412, d413, mt414, d415, hq104⟩ := d213.letValue_inv
-    try clear d213
-    obtain ⟨vs416, a417, ap418⟩ := d413.builtin_inv
-    try clear d413
-    obtain ⟨v419, vs421, m422, c423, c424, hq106, d425, a426, hq105⟩ := a417.cons_inv
-    try clear a417
-    obtain ⟨l427, rfl, hq107⟩ := d425.var_inv
-    try clear d425
-    simp at l427
-    subst l427
-    obtain ⟨v420, vs428, m429, c430, c431, hq109, d432, a433, hq108⟩ := a426.cons_inv
-    try clear a426
-    obtain ⟨x434, y435, m436, c437, c438, d439, d440, op441, hq110⟩ := d432.binary_inv
-    try clear d432
-    obtain ⟨l442, rfl, hq111⟩ := d439.var_inv
-    try clear d439
-    simp at l442
-    subst l442
-    obtain ⟨rfl, rfl, hq112⟩ := d440.literal_inv
-    try clear d440
-    obtain ⟨hq114, rfl, hq113⟩ := a433.nil_inv
-    try clear a433
-    subst hq114
-    subst hq109
-    subst hq106
-    obtain ⟨heq443, rfl⟩ := Builtin.assertEq_inv ap418
-    try clear ap418
-    obtain rfl := matchPattern_wildcard_inv mt414
-    try clear mt414
-    try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d415
-    obtain ⟨v444, m445, bs446, c447, c448, d449, mt450, d451, hq115⟩ := d415.letValue_inv
-    try clear d415
-    obtain ⟨vs452, m453, c454, cs455, a456, ev457, hq116⟩ := d449.call_inv
-    try clear d449
-    rw [instanceName_plain_some] at ev457
-    obtain ⟨v458, vs459, m460, c461, c462, hq118, d463, a464, hq117⟩ := a456.cons_inv
-    try clear a456
-    obtain ⟨l465, rfl, hq119⟩ := d463.var_inv
-    try clear d463
-    simp at l465
-    subst l465
-    obtain ⟨hq121, rfl, hq120⟩ := a464.nil_inv
-    try clear a464
-    subst hq121
-    subst hq118
-    obtain rfl := matchPattern_bind_inv mt450
-    try clear mt450
-    try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d451
-    obtain ⟨v466, m467, bs468, c469, c470, d471, mt472, d473, hq122⟩ := d451.letValue_inv
-    try clear d451
-    obtain ⟨x474, y475, m476, c477, c478, d479, d480, op481, hq123⟩ := d471.binary_inv
-    try clear d471
-    obtain ⟨l482, rfl, hq124⟩ := d479.var_inv
-    try clear d479
-    simp at l482
-    subst l482
-    obtain ⟨p483, d484, pr485⟩ := d480.index_inv
-    try clear d480
-    obtain ⟨l486, rfl, hq125⟩ := d484.var_inv
-    try clear d484
-    simp at l486
+    refine d235.binary_elim fun x238 y239 m240 c241 c242 d243 d244 op245 ze41 => ?_
+    try clear d235
+    subst ze41
+    refine d243.binary_elim fun x246 y247 m248 c249 c250 d251 d252 op253 ze42 => ?_
+    try clear d243
+    subst ze42
+    refine d251.binary_elim fun x254 y255 m256 c257 c258 d259 d260 op261 ze43 => ?_
+    try clear d251
+    subst ze43
+    refine Fused.call_plain d259 fun vs262 m263 c264 cs265 a266 ev267 zq44 => ?_
+    try clear d259
+    refine Fused.args_var_cons a266 rfl fun vs269 zv45 a274 => ?_
+    try clear a266
+    refine a274.nil_elim fun zv46 zm47 zq48 => ?_
+    try clear a274
+    subst zv46
+    subst zv45
+    subst zm47
+    refine d260.binary_elim fun x276 y277 m278 c279 c280 d281 d282 op283 ze49 => ?_
+    try clear d260
+    subst ze49
+    refine d281.literal_elim fun ze50 ze51 ze52 => ?_
+    try clear d281
+    subst ze50
+    subst ze51
+    refine Fused.call_plain d282 fun vs284 m285 c286 cs287 a288 ev289 zq53 => ?_
+    try clear d282
+    refine Fused.args_var_cons a288 rfl fun vs291 zv54 a296 => ?_
+    try clear a288
+    refine a296.nil_elim fun zv55 zm56 zq57 => ?_
+    try clear a296
+    subst zv55
+    subst zv54
+    subst zm56
+    refine d252.binary_elim fun x298 y299 m300 c301 c302 d303 d304 op305 ze58 => ?_
+    try clear d252
+    subst ze58
+    refine d303.literal_elim fun ze59 ze60 ze61 => ?_
+    try clear d303
+    subst ze59
     as_aux_lemma =>
-     subst l486
-     obtain rfl := matchPattern_bind_inv mt472
-     try clear mt472
-     try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d473
-     obtain ⟨v487, m488, bs489, c490, c491, d492, mt493, d494, hq126⟩ := d473.letValue_inv
-     try clear d473
-     obtain ⟨vs495, a496, ap497⟩ := d492.builtin_inv
-     try clear d492
-     obtain ⟨v498, vs500, m501, c502, c503, hq128, d504, a505, hq127⟩ := a496.cons_inv
-     try clear a496
-     obtain ⟨x506, y507, m508, c509, c510, d511, d512, op513, hq129⟩ := d504.binary_inv
-     try clear d504
-     obtain ⟨l514, rfl, hq130⟩ := d511.var_inv
-     try clear d511
-     simp at l514
-     subst l514
-     obtain ⟨x515, y516, m517, c518, c519, d520, d521, op522, hq131⟩ := d512.binary_inv
-     try clear d512
-     obtain ⟨rfl, rfl, hq132⟩ := d520.literal_inv
-     try clear d520
-     obtain ⟨l523, rfl, hq133⟩ := d521.var_inv
-     try clear d521
-     simp at l523
-     subst l523
-     obtain ⟨v499, vs524, m525, c526, c527, hq135, d528, a529, hq134⟩ := a505.cons_inv
-     try clear a505
-     obtain ⟨rfl, rfl, hq136⟩ := d528.literal_inv
-     try clear d528
-     obtain ⟨hq138, rfl, hq137⟩ := a529.nil_inv
-     try clear a529
-     subst hq138
-     subst hq135
-     subst hq128
-     obtain ⟨heq530, rfl⟩ := Builtin.assertEq_inv ap497
-     try clear ap497
-     obtain rfl := matchPattern_wildcard_inv mt493
-     try clear mt493
-     try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d494
-     obtain ⟨vs531, a532, rfl⟩ := d494.tuple_inv
-     try clear d494
-     obtain ⟨v533, vs536, m537, c538, c539, hq140, d540, a541, hq139⟩ := a532.cons_inv
-     try clear a532
-     obtain ⟨p542, d543, pr544⟩ := d540.index_inv
-     try clear d540
-     obtain ⟨l545, rfl, hq141⟩ := d543.var_inv
-     try clear d543
-     simp at l545
-     subst l545
-     obtain ⟨v534, vs546, m547, c548, c549, hq143, d550, a551, hq142⟩ := a541.cons_inv
-     try clear a541
-     obtain ⟨l552, rfl, hq144⟩ := d550.var_inv
-     try clear d550
-     simp at l552
-     subst l552
-     obtain ⟨hq146, rfl, hq145⟩ := a551.nil_inv
-     try clear a551
-     subst hq146
-     subst hq143
-     subst hq140
-     subst hq145
-     subst hq144
-     subst hq142
-     subst hq141
-     subst hq139
-     subst hq137
-     subst hq136
-     subst hq134
-     subst hq133
-     subst hq132
-     subst hq131
-     subst hq130
-     subst hq129
-     subst hq127
-     subst hq126
-     subst hq125
-     subst hq124
-     subst hq123
-     subst hq122
-     subst hq120
-     subst hq119
-     subst hq117
-     subst hq116
-     subst hq115
-     subst hq113
-     subst hq112
-     subst hq111
-     subst hq110
-     subst hq108
-     subst hq107
-     subst hq105
-     subst hq104
-     subst hq102
-     subst hq101
-     subst hq99
-     subst hq98
-     subst hq97
-     subst hq96
-     subst hq94
-     subst hq93
-     subst hq91
-     subst hq90
-     subst hq89
-     subst hq88
-     subst hq86
-     subst hq85
-     subst hq83
-     subst hq82
-     subst hq81
-     subst hq80
-     subst hq78
-     subst hq77
-     subst hq75
-     subst hq74
-     subst hq73
-     subst hq72
-     subst hq70
-     subst hq69
-     subst hq67
-     subst hq66
-     subst hq65
+     subst ze60
+     refine Fused.call_plain d304 fun vs306 m307 c308 cs309 a310 ev311 zq62 => ?_
+     try clear d304
+     refine Fused.args_var_cons a310 rfl fun vs313 zv63 a318 => ?_
+     try clear a310
+     refine a318.nil_elim fun zv64 zm65 zq66 => ?_
+     try clear a318
+     subst zv64
+     subst zv63
+     subst zm65
+     refine d244.binary_elim fun x320 y321 m322 c323 c324 d325 d326 op327 ze67 => ?_
+     try clear d244
+     subst ze67
+     refine d325.literal_elim fun ze68 ze69 ze70 => ?_
+     try clear d325
+     subst ze68
+     subst ze69
+     refine Fused.call_plain d326 fun vs328 m329 c330 cs331 a332 ev333 zq71 => ?_
+     try clear d326
+     refine Fused.args_var_cons a332 rfl fun vs335 zv72 a340 => ?_
+     try clear a332
+     refine a340.nil_elim fun zv73 zm74 zq75 => ?_
+     try clear a340
+     subst zv73
+     subst zv72
+     subst zm74
+     refine d236.binary_elim fun x342 y343 m344 c345 c346 d347 d348 op349 ze76 => ?_
+     try clear d236
+     subst ze76
+     refine d347.literal_elim fun ze77 ze78 ze79 => ?_
+     try clear d347
+     subst ze77
+     subst ze78
+     refine Fused.call_plain d348 fun vs350 m351 c352 cs353 a354 ev355 zq80 => ?_
+     try clear d348
+     refine Fused.args_var_cons a354 rfl fun vs357 zv81 a362 => ?_
+     try clear a354
+     refine a362.nil_elim fun zv82 zm83 zq84 => ?_
+     try clear a362
+     subst zv82
      as_aux_lemma =>
-      subst hq64
-      subst hq62
-      subst hq61
-      subst hq59
-      subst hq58
-      subst hq57
-      subst hq56
-      subst hq54
-      subst hq53
-      subst hq51
-      subst hq50
-      subst hq49
-      subst hq48
-      subst hq47
-      subst hq46
-      subst hq45
-      subst hq44
-      subst hq43
-      subst hq41
-      subst hq40
-      subst hq38
-      subst hq37
-      subst hq35
-      subst hq34
-      subst hq33
-      subst hq31
-      subst hq30
-      subst hq28
-      subst hq27
-      subst hq25
-      subst hq24
-      subst hq23
-      subst hq21
-      subst hq20
-      subst hq18
-      subst hq17
-      subst hq15
-      subst hq14
-      subst hq13
-      subst hq11
-      subst hq10
-      subst hq8
-      subst hq7
-      subst hq5
-      subst hq4
-      subst hq3
-      subst hq2
-      subst hq1
-      exact «Fixed::sign_split».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ty12 pr38 pr48 ev27 pr87 pr97 ev76 pr136 pr146 ev125 pr185 ev174 ev267 ev289 op283 op261 ev311 op305 op253 ev333 op327 op245 ev355 op349 op237 ev377 op371 op229 ev399 op393 op221 op441 heq443 ev457 pr485 op481 op522 op513 heq530 rfl pr544 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      subst zv81
+      subst zm83
+      refine d228.binary_elim fun x364 y365 m366 c367 c368 d369 d370 op371 ze85 => ?_
+      try clear d228
+      subst ze85
+      refine d369.literal_elim fun ze86 ze87 ze88 => ?_
+      try clear d369
+      subst ze86
+      subst ze87
+      refine Fused.call_plain d370 fun vs372 m373 c374 cs375 a376 ev377 zq89 => ?_
+      try clear d370
+      refine Fused.args_var_cons a376 rfl fun vs379 zv90 a384 => ?_
+      try clear a376
+      refine a384.nil_elim fun zv91 zm92 zq93 => ?_
+      try clear a384
+      subst zv91
+      subst zv90
+      subst zm92
+      refine d220.binary_elim fun x386 y387 m388 c389 c390 d391 d392 op393 ze94 => ?_
+      try clear d220
+      subst ze94
+      refine d391.literal_elim fun ze95 ze96 ze97 => ?_
+      try clear d391
+      subst ze95
+      subst ze96
+      refine Fused.call_plain d392 fun vs394 m395 c396 cs397 a398 ev399 zq98 => ?_
+      try clear d392
+      refine Fused.args_var_cons a398 rfl fun vs401 zv99 a406 => ?_
+      try clear a398
+      refine a406.nil_elim fun zv100 zm101 zq102 => ?_
+      try clear a406
+      subst zv100
+      subst zv99
+      subst zm101
+      refine d213.letValue_elim fun v408 m409 bs410 c411 c412 d413 mt414 d415 zq103 => ?_
+      try clear d213
+      refine d413.builtin_elim fun vs416 a417 ap418 => ?_
+      try clear d413
+      refine Fused.args_var_cons a417 rfl fun vs421 zv104 a426 => ?_
+      try clear a417
+      as_aux_lemma =>
+       refine a426.cons_elim fun v420 vs428 m429 c430 c431 zv105 d432 a433 zq106 => ?_
+       try clear a426
+       refine d432.binary_elim fun x434 y435 m436 c437 c438 d439 d440 op441 ze107 => ?_
+       try clear d432
+       subst ze107
+       refine Fused.var_is d439 rfl fun l442 zm109 zq108 => ?_
+       try clear d439
+       subst l442
+       subst zm109
+       refine d440.literal_elim fun ze110 ze111 ze112 => ?_
+       try clear d440
+       subst ze110
+       subst ze111
+       refine a433.nil_elim fun zv113 zm114 zq115 => ?_
+       try clear a433
+       subst zv113
+       subst zv105
+       subst zv104
+       subst zm114
+       obtain ⟨heq443, rfl⟩ := Builtin.assertEq_inv ap418
+       obtain rfl := matchPattern_wildcard_inv mt414
+       refine Fused.let_bind d415 fun v444 m445 c447 c448 d449 d451 zq116 => ?_
+       try clear d415
+       refine Fused.call_plain d449 fun vs452 m453 c454 cs455 a456 ev457 zq117 => ?_
+       try clear d449
+       refine Fused.args_var_cons a456 rfl fun vs459 zv118 a464 => ?_
+       try clear a456
+       refine a464.nil_elim fun zv119 zm120 zq121 => ?_
+       try clear a464
+       subst zv119
+       subst zv118
+       subst zm120
+       refine Fused.let_bind d451 fun v466 m467 c469 c470 d471 d473 zq122 => ?_
+       try clear d451
+       refine d471.binary_elim fun x474 y475 m476 c477 c478 d479 d480 op481 ze123 => ?_
+       try clear d471
+       subst ze123
+       refine Fused.var_is d479 rfl fun l482 zm125 zq124 => ?_
+       try clear d479
+       subst l482
+       as_aux_lemma =>
+        subst zm125
+        refine d480.index_elim fun p483 d484 pr485 => ?_
+        try clear d480
+        refine Fused.var_is d484 rfl fun l486 zm127 zq126 => ?_
+        try clear d484
+        subst l486
+        subst zm127
+        refine d473.letValue_elim fun v487 m488 bs489 c490 c491 d492 mt493 d494 zq128 => ?_
+        try clear d473
+        refine d492.builtin_elim fun vs495 a496 ap497 => ?_
+        try clear d492
+        refine a496.cons_elim fun v498 vs500 m501 c502 c503 zv129 d504 a505 zq130 => ?_
+        try clear a496
+        refine d504.binary_elim fun x506 y507 m508 c509 c510 d511 d512 op513 ze131 => ?_
+        try clear d504
+        subst ze131
+        refine Fused.var_is d511 rfl fun l514 zm133 zq132 => ?_
+        try clear d511
+        subst l514
+        subst zm133
+        refine d512.binary_elim fun x515 y516 m517 c518 c519 d520 d521 op522 ze134 => ?_
+        try clear d512
+        subst ze134
+        refine d520.literal_elim fun ze135 ze136 ze137 => ?_
+        try clear d520
+        subst ze135
+        subst ze136
+        refine Fused.var_is d521 rfl fun l523 zm139 zq138 => ?_
+        try clear d521
+        subst l523
+        subst zm139
+        refine a505.cons_elim fun v499 vs524 m525 c526 c527 zv140 d528 a529 zq141 => ?_
+        try clear a505
+        refine d528.literal_elim fun ze142 ze143 ze144 => ?_
+        try clear d528
+        subst ze142
+        subst ze143
+        refine a529.nil_elim fun zv145 zm146 zq147 => ?_
+        try clear a529
+        subst zv145
+        as_aux_lemma =>
+         subst zv140
+         subst zv129
+         subst zm146
+         obtain ⟨heq530, rfl⟩ := Builtin.assertEq_inv ap497
+         obtain rfl := matchPattern_wildcard_inv mt493
+         refine d494.tuple_elim fun vs531 a532 zr148 => ?_
+         try clear d494
+         subst zr148
+         refine Fused.args_index_var_cons a532 rfl fun v533 vs536 pr544 zv149 a541 => ?_
+         try clear a532
+         refine Fused.args_var_cons a541 rfl fun vs546 zv150 a551 => ?_
+         try clear a541
+         refine a551.nil_elim fun zv151 zm152 zq153 => ?_
+         try clear a551
+         subst zv151
+         subst zv150
+         subst zv149
+         subst zm152
+         subst zq153
+         subst zq147
+         subst ze144
+         subst zq141
+         subst zq138
+         subst ze137
+         subst zq132
+         subst zq130
+         subst zq128
+         subst zq126
+         subst zq124
+         subst zq122
+         subst zq121
+         subst zq117
+         subst zq116
+         subst zq115
+         subst ze112
+         subst zq108
+         subst zq106
+         subst zq103
+         subst zq102
+         subst zq98
+         as_aux_lemma =>
+          subst ze97
+          subst zq93
+          subst zq89
+          subst ze88
+          subst zq84
+          subst zq80
+          subst ze79
+          subst zq75
+          subst zq71
+          subst ze70
+          subst zq66
+          subst zq62
+          subst ze61
+          subst zq57
+          subst zq53
+          subst ze52
+          subst zq48
+          subst zq44
+          subst zq37
+          subst zq36
+          subst ze33
+          subst zq30
+          subst zq27
+          subst zq26
+          subst zq25
+          subst zq20
+          subst zq19
+          subst zq18
+          subst zq13
+          subst zq12
+          subst zq11
+          subst zq6
+          subst zq5
+          subst zq3
+          subst zq1
+          exact «Fixed::sign_split».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ty12 pr38 pr48 ev27 pr87 pr97 ev76 pr136 pr146 ev125 pr185 ev174 ev267 ev289 op283 op261 ev311 op305 op253 ev333 op327 op245 ev355 op349 op237 ev377 op371 op229 ev399 op393 op221 op441 heq443 ev457 pr485 op481 op522 op513 heq530 rfl pr544 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::mul`: one constructor per combination of selected arms. -/
 inductive «Fixed::mul».Path (x_a x_b : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -1156,31 +822,31 @@ theorem «Fixed::mul».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : Source
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.mul.lookup
     (by simp [IxAIStep.Fixed.Fixed.mul, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.mul] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs8, m9, c10, c11, hq3, d12, a13, hq2⟩ := a5.cons_inv
+  refine a5.cons_elim fun v7 vs8 m9 c10 c11 zv2 d12 a13 zq3 => ?_
   try clear a5
-  obtain ⟨x14, y15, m16, c17, c18, d19, d20, op21, hq4⟩ := d12.binary_inv
+  refine d12.binary_elim fun x14 y15 m16 c17 c18 d19 d20 op21 ze4 => ?_
   try clear d12
-  obtain ⟨l22, rfl, hq5⟩ := d19.var_inv
+  subst ze4
+  refine Fused.var_is d19 rfl fun l22 zm6 zq5 => ?_
   try clear d19
-  simp at l22
   subst l22
-  obtain ⟨l23, rfl, hq6⟩ := d20.var_inv
+  subst zm6
+  refine Fused.var_is d20 rfl fun l23 zm8 zq7 => ?_
   try clear d20
-  simp at l23
   subst l23
-  obtain ⟨hq8, rfl, hq7⟩ := a13.nil_inv
+  subst zm8
+  refine a13.nil_elim fun zv9 zm10 zq11 => ?_
   try clear a13
-  subst hq8
-  subst hq3
-  subst hq7
-  subst hq6
-  subst hq5
-  subst hq4
-  subst hq2
-  subst hq1
+  subst zv9
+  subst zv2
+  subst zm10
+  subst zq11
+  subst zq7
+  subst zq5
+  subst zq3
+  subst zq1
   exact «Fixed::mul».Path.run _ _ op21 ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::relu`: one constructor per combination of selected arms. -/
@@ -1200,53 +866,33 @@ theorem «Fixed::relu».obs {x_v : SourceValue F} {h h' : Heap F} {r : SourceVal
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.relu.lookup
     (by simp [IxAIStep.Fixed.Fixed.relu, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.relu] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, hq1⟩ := d0.letValue_inv
+  refine Fused.let_tuple_2 d0 fun x_nonneg x__nz m2 c4 c5 d6 d8 zq1 => ?_
   try clear d0
-  obtain ⟨vs9, m10, c11, cs12, a13, ev14, hq2⟩ := d6.call_inv
+  refine Fused.call_plain d6 fun vs9 m10 c11 cs12 a13 ev14 zq2 => ?_
   try clear d6
-  rw [instanceName_plain_some] at ev14
-  obtain ⟨v15, vs16, m17, c18, c19, hq4, d20, a21, hq3⟩ := a13.cons_inv
+  refine Fused.args_var_cons a13 rfl fun vs16 zv3 a21 => ?_
   try clear a13
-  obtain ⟨l22, rfl, hq5⟩ := d20.var_inv
-  try clear d20
-  simp at l22
-  subst l22
-  obtain ⟨hq7, rfl, hq6⟩ := a21.nil_inv
+  refine a21.nil_elim fun zv4 zm5 zq6 => ?_
   try clear a21
-  subst hq7
-  subst hq4
-  obtain ⟨vs23, hv24, -, ml25⟩ := matchPattern_tuple_inv mt7
-  try clear mt7
-  subst hv24
-  obtain ⟨x_nonneg, vs26, b27, b28, rfl, mt29, ml30, rfl⟩ := matchListWith_cons_inv ml25
-  try clear ml25
-  obtain rfl := matchPattern_bind_inv mt29
-  try clear mt29
-  obtain ⟨x__nz, vs31, b32, b33, rfl, mt34, ml35, rfl⟩ := matchListWith_cons_inv ml30
-  try clear ml30
-  obtain rfl := matchPattern_bind_inv mt34
-  try clear mt34
-  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml35
-  try clear ml35
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d8
-  obtain ⟨x36, y37, m38, c39, c40, d41, d42, op43, hq8⟩ := d8.binary_inv
+  subst zv4
+  subst zv3
+  subst zm5
+  refine d8.binary_elim fun x36 y37 m38 c39 c40 d41 d42 op43 ze7 => ?_
   try clear d8
-  obtain ⟨l44, rfl, hq9⟩ := d41.var_inv
+  subst ze7
+  refine Fused.var_is d41 rfl fun l44 zm9 zq8 => ?_
   try clear d41
-  simp at l44
   subst l44
-  obtain ⟨l45, rfl, hq10⟩ := d42.var_inv
+  subst zm9
+  refine Fused.var_is d42 rfl fun l45 zm11 zq10 => ?_
   try clear d42
-  simp at l45
   subst l45
-  subst hq10
-  subst hq9
-  subst hq8
-  subst hq6
-  subst hq5
-  subst hq3
-  subst hq2
-  subst hq1
+  subst zm11
+  subst zq10
+  subst zq8
+  subst zq6
+  subst zq2
+  subst zq1
   exact «Fixed::relu».Path.run _ _ _ _ ev14 rfl op43 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::pos`: one constructor per combination of selected arms. -/
@@ -1266,53 +912,33 @@ theorem «Fixed::pos».obs {x_v : SourceValue F} {h h' : Heap F} {r : SourceValu
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.pos.lookup
     (by simp [IxAIStep.Fixed.Fixed.pos, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.pos] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, hq1⟩ := d0.letValue_inv
+  refine Fused.let_tuple_2 d0 fun x_nonneg x_nz m2 c4 c5 d6 d8 zq1 => ?_
   try clear d0
-  obtain ⟨vs9, m10, c11, cs12, a13, ev14, hq2⟩ := d6.call_inv
+  refine Fused.call_plain d6 fun vs9 m10 c11 cs12 a13 ev14 zq2 => ?_
   try clear d6
-  rw [instanceName_plain_some] at ev14
-  obtain ⟨v15, vs16, m17, c18, c19, hq4, d20, a21, hq3⟩ := a13.cons_inv
+  refine Fused.args_var_cons a13 rfl fun vs16 zv3 a21 => ?_
   try clear a13
-  obtain ⟨l22, rfl, hq5⟩ := d20.var_inv
-  try clear d20
-  simp at l22
-  subst l22
-  obtain ⟨hq7, rfl, hq6⟩ := a21.nil_inv
+  refine a21.nil_elim fun zv4 zm5 zq6 => ?_
   try clear a21
-  subst hq7
-  subst hq4
-  obtain ⟨vs23, hv24, -, ml25⟩ := matchPattern_tuple_inv mt7
-  try clear mt7
-  subst hv24
-  obtain ⟨x_nonneg, vs26, b27, b28, rfl, mt29, ml30, rfl⟩ := matchListWith_cons_inv ml25
-  try clear ml25
-  obtain rfl := matchPattern_bind_inv mt29
-  try clear mt29
-  obtain ⟨x_nz, vs31, b32, b33, rfl, mt34, ml35, rfl⟩ := matchListWith_cons_inv ml30
-  try clear ml30
-  obtain rfl := matchPattern_bind_inv mt34
-  try clear mt34
-  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml35
-  try clear ml35
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d8
-  obtain ⟨x36, y37, m38, c39, c40, d41, d42, op43, hq8⟩ := d8.binary_inv
+  subst zv4
+  subst zv3
+  subst zm5
+  refine d8.binary_elim fun x36 y37 m38 c39 c40 d41 d42 op43 ze7 => ?_
   try clear d8
-  obtain ⟨l44, rfl, hq9⟩ := d41.var_inv
+  subst ze7
+  refine Fused.var_is d41 rfl fun l44 zm9 zq8 => ?_
   try clear d41
-  simp at l44
   subst l44
-  obtain ⟨l45, rfl, hq10⟩ := d42.var_inv
+  subst zm9
+  refine Fused.var_is d42 rfl fun l45 zm11 zq10 => ?_
   try clear d42
-  simp at l45
   subst l45
-  subst hq10
-  subst hq9
-  subst hq8
-  subst hq6
-  subst hq5
-  subst hq3
-  subst hq2
-  subst hq1
+  subst zm11
+  subst zq10
+  subst zq8
+  subst zq6
+  subst zq2
+  subst zq1
   exact «Fixed::pos».Path.run _ _ _ _ ev14 rfl op43 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::dot8`: one constructor per combination of selected arms. -/
@@ -1361,177 +987,180 @@ theorem «Fixed::dot8».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : Sourc
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.dot8.lookup
     (by simp [IxAIStep.Fixed.Fixed.dot8, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.dot8] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs8, m9, c10, c11, hq3, d12, a13, hq2⟩ := a5.cons_inv
+  refine a5.cons_elim fun v7 vs8 m9 c10 c11 zv2 d12 a13 zq3 => ?_
   try clear a5
-  obtain ⟨x14, y15, m16, c17, c18, d19, d20, op21, hq4⟩ := d12.binary_inv
+  refine d12.binary_elim fun x14 y15 m16 c17 c18 d19 d20 op21 ze4 => ?_
   try clear d12
-  obtain ⟨x22, y23, m24, c25, c26, d27, d28, op29, hq5⟩ := d19.binary_inv
+  subst ze4
+  refine d19.binary_elim fun x22 y23 m24 c25 c26 d27 d28 op29 ze5 => ?_
   try clear d19
-  obtain ⟨x30, y31, m32, c33, c34, d35, d36, op37, hq6⟩ := d27.binary_inv
+  subst ze5
+  refine d27.binary_elim fun x30 y31 m32 c33 c34 d35 d36 op37 ze6 => ?_
   try clear d27
-  obtain ⟨x38, y39, m40, c41, c42, d43, d44, op45, hq7⟩ := d35.binary_inv
+  subst ze6
+  refine d35.binary_elim fun x38 y39 m40 c41 c42 d43 d44 op45 ze7 => ?_
   try clear d35
-  obtain ⟨x46, y47, m48, c49, c50, d51, d52, op53, hq8⟩ := d43.binary_inv
+  subst ze7
+  refine d43.binary_elim fun x46 y47 m48 c49 c50 d51 d52 op53 ze8 => ?_
   try clear d43
-  obtain ⟨x54, y55, m56, c57, c58, d59, d60, op61, hq9⟩ := d51.binary_inv
+  subst ze8
+  refine d51.binary_elim fun x54 y55 m56 c57 c58 d59 d60 op61 ze9 => ?_
   try clear d51
-  obtain ⟨x62, y63, m64, c65, c66, d67, d68, op69, hq10⟩ := d59.binary_inv
+  subst ze9
+  refine d59.binary_elim fun x62 y63 m64 c65 c66 d67 d68 op69 ze10 => ?_
   try clear d59
-  obtain ⟨x70, y71, m72, c73, c74, d75, d76, op77, hq11⟩ := d67.binary_inv
+  subst ze10
+  refine d67.binary_elim fun x70 y71 m72 c73 c74 d75 d76 op77 ze11 => ?_
   try clear d67
-  obtain ⟨p78, d79, pr80⟩ := d75.index_inv
+  subst ze11
+  refine d75.index_elim fun p78 d79 pr80 => ?_
   try clear d75
-  obtain ⟨l81, rfl, hq12⟩ := d79.var_inv
+  refine Fused.var_is d79 rfl fun l81 zm13 zq12 => ?_
   try clear d79
-  simp at l81
   subst l81
-  obtain ⟨p82, d83, pr84⟩ := d76.index_inv
+  subst zm13
+  refine d76.index_elim fun p82 d83 pr84 => ?_
   try clear d76
-  obtain ⟨l85, rfl, hq13⟩ := d83.var_inv
+  refine Fused.var_is d83 rfl fun l85 zm15 zq14 => ?_
   try clear d83
-  simp at l85
   subst l85
-  obtain ⟨x86, y87, m88, c89, c90, d91, d92, op93, hq14⟩ := d68.binary_inv
-  try clear d68
-  obtain ⟨p94, d95, pr96⟩ := d91.index_inv
-  try clear d91
-  obtain ⟨l97, rfl, hq15⟩ := d95.var_inv
-  try clear d95
-  simp at l97
-  subst l97
-  obtain ⟨p98, d99, pr100⟩ := d92.index_inv
-  try clear d92
-  obtain ⟨l101, rfl, hq16⟩ := d99.var_inv
-  try clear d99
-  simp at l101
-  subst l101
-  obtain ⟨x102, y103, m104, c105, c106, d107, d108, op109, hq17⟩ := d60.binary_inv
-  try clear d60
-  obtain ⟨p110, d111, pr112⟩ := d107.index_inv
-  try clear d107
-  obtain ⟨l113, rfl, hq18⟩ := d111.var_inv
-  try clear d111
-  simp at l113
-  subst l113
-  obtain ⟨p114, d115, pr116⟩ := d108.index_inv
-  try clear d108
-  obtain ⟨l117, rfl, hq19⟩ := d115.var_inv
-  try clear d115
-  simp at l117
-  subst l117
-  obtain ⟨x118, y119, m120, c121, c122, d123, d124, op125, hq20⟩ := d52.binary_inv
-  try clear d52
-  obtain ⟨p126, d127, pr128⟩ := d123.index_inv
-  try clear d123
-  obtain ⟨l129, rfl, hq21⟩ := d127.var_inv
-  try clear d127
-  simp at l129
-  subst l129
-  obtain ⟨p130, d131, pr132⟩ := d124.index_inv
-  try clear d124
-  obtain ⟨l133, rfl, hq22⟩ := d131.var_inv
-  try clear d131
-  simp at l133
-  subst l133
-  obtain ⟨x134, y135, m136, c137, c138, d139, d140, op141, hq23⟩ := d44.binary_inv
-  try clear d44
-  obtain ⟨p142, d143, pr144⟩ := d139.index_inv
-  try clear d139
-  obtain ⟨l145, rfl, hq24⟩ := d143.var_inv
-  try clear d143
-  simp at l145
-  subst l145
-  obtain ⟨p146, d147, pr148⟩ := d140.index_inv
-  try clear d140
-  obtain ⟨l149, rfl, hq25⟩ := d147.var_inv
-  try clear d147
-  simp at l149
-  subst l149
-  obtain ⟨x150, y151, m152, c153, c154, d155, d156, op157, hq26⟩ := d36.binary_inv
-  try clear d36
-  obtain ⟨p158, d159, pr160⟩ := d155.index_inv
-  try clear d155
-  obtain ⟨l161, rfl, hq27⟩ := d159.var_inv
-  try clear d159
-  simp at l161
-  subst l161
-  obtain ⟨p162, d163, pr164⟩ := d156.index_inv
-  try clear d156
-  obtain ⟨l165, rfl, hq28⟩ := d163.var_inv
-  try clear d163
-  simp at l165
-  subst l165
-  obtain ⟨x166, y167, m168, c169, c170, d171, d172, op173, hq29⟩ := d28.binary_inv
-  try clear d28
-  obtain ⟨p174, d175, pr176⟩ := d171.index_inv
-  try clear d171
-  obtain ⟨l177, rfl, hq30⟩ := d175.var_inv
-  try clear d175
-  simp at l177
-  subst l177
-  obtain ⟨p178, d179, pr180⟩ := d172.index_inv
-  try clear d172
-  obtain ⟨l181, rfl, hq31⟩ := d179.var_inv
-  try clear d179
-  simp at l181
-  subst l181
-  obtain ⟨x182, y183, m184, c185, c186, d187, d188, op189, hq32⟩ := d20.binary_inv
-  try clear d20
-  obtain ⟨p190, d191, pr192⟩ := d187.index_inv
+  subst zm15
   as_aux_lemma =>
-   try clear d187
-   obtain ⟨l193, rfl, hq33⟩ := d191.var_inv
-   try clear d191
-   simp at l193
-   subst l193
-   obtain ⟨p194, d195, pr196⟩ := d188.index_inv
-   try clear d188
-   obtain ⟨l197, rfl, hq34⟩ := d195.var_inv
-   try clear d195
-   simp at l197
-   subst l197
-   obtain ⟨hq36, rfl, hq35⟩ := a13.nil_inv
-   try clear a13
-   subst hq36
-   subst hq3
-   subst hq35
-   subst hq34
-   subst hq33
-   subst hq32
-   subst hq31
-   subst hq30
-   subst hq29
-   subst hq28
-   subst hq27
-   subst hq26
-   subst hq25
-   subst hq24
-   subst hq23
-   subst hq22
-   subst hq21
-   subst hq20
-   subst hq19
-   subst hq18
-   subst hq17
-   subst hq16
-   subst hq15
-   subst hq14
-   subst hq13
-   subst hq12
-   subst hq11
-   subst hq10
-   subst hq9
-   subst hq8
-   subst hq7
-   subst hq6
-   subst hq5
-   subst hq4
-   subst hq2
-   subst hq1
-   exact «Fixed::dot8».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ pr80 pr84 op77 pr96 pr100 op93 op69 pr112 pr116 op109 op61 pr128 pr132 op125 op53 pr144 pr148 op141 op45 pr160 pr164 op157 op37 pr176 pr180 op173 op29 pr192 pr196 op189 op21 ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+   refine d68.binary_elim fun x86 y87 m88 c89 c90 d91 d92 op93 ze16 => ?_
+   try clear d68
+   subst ze16
+   refine d91.index_elim fun p94 d95 pr96 => ?_
+   try clear d91
+   refine Fused.var_is d95 rfl fun l97 zm18 zq17 => ?_
+   try clear d95
+   subst l97
+   subst zm18
+   refine d92.index_elim fun p98 d99 pr100 => ?_
+   try clear d92
+   refine Fused.var_is d99 rfl fun l101 zm20 zq19 => ?_
+   try clear d99
+   subst l101
+   subst zm20
+   refine d60.binary_elim fun x102 y103 m104 c105 c106 d107 d108 op109 ze21 => ?_
+   try clear d60
+   subst ze21
+   refine d107.index_elim fun p110 d111 pr112 => ?_
+   try clear d107
+   refine Fused.var_is d111 rfl fun l113 zm23 zq22 => ?_
+   try clear d111
+   subst l113
+   subst zm23
+   refine d108.index_elim fun p114 d115 pr116 => ?_
+   try clear d108
+   refine Fused.var_is d115 rfl fun l117 zm25 zq24 => ?_
+   try clear d115
+   subst l117
+   subst zm25
+   refine d52.binary_elim fun x118 y119 m120 c121 c122 d123 d124 op125 ze26 => ?_
+   try clear d52
+   subst ze26
+   refine d123.index_elim fun p126 d127 pr128 => ?_
+   try clear d123
+   refine Fused.var_is d127 rfl fun l129 zm28 zq27 => ?_
+   try clear d127
+   subst l129
+   subst zm28
+   refine d124.index_elim fun p130 d131 pr132 => ?_
+   as_aux_lemma =>
+    try clear d124
+    refine Fused.var_is d131 rfl fun l133 zm30 zq29 => ?_
+    try clear d131
+    subst l133
+    subst zm30
+    refine d44.binary_elim fun x134 y135 m136 c137 c138 d139 d140 op141 ze31 => ?_
+    try clear d44
+    subst ze31
+    refine d139.index_elim fun p142 d143 pr144 => ?_
+    try clear d139
+    refine Fused.var_is d143 rfl fun l145 zm33 zq32 => ?_
+    try clear d143
+    subst l145
+    subst zm33
+    refine d140.index_elim fun p146 d147 pr148 => ?_
+    try clear d140
+    refine Fused.var_is d147 rfl fun l149 zm35 zq34 => ?_
+    try clear d147
+    subst l149
+    subst zm35
+    refine d36.binary_elim fun x150 y151 m152 c153 c154 d155 d156 op157 ze36 => ?_
+    try clear d36
+    subst ze36
+    refine d155.index_elim fun p158 d159 pr160 => ?_
+    try clear d155
+    refine Fused.var_is d159 rfl fun l161 zm38 zq37 => ?_
+    try clear d159
+    subst l161
+    subst zm38
+    refine d156.index_elim fun p162 d163 pr164 => ?_
+    try clear d156
+    refine Fused.var_is d163 rfl fun l165 zm40 zq39 => ?_
+    try clear d163
+    subst l165
+    subst zm40
+    refine d28.binary_elim fun x166 y167 m168 c169 c170 d171 d172 op173 ze41 => ?_
+    try clear d28
+    subst ze41
+    refine d171.index_elim fun p174 d175 pr176 => ?_
+    try clear d171
+    as_aux_lemma =>
+     refine Fused.var_is d175 rfl fun l177 zm43 zq42 => ?_
+     try clear d175
+     subst l177
+     subst zm43
+     refine d172.index_elim fun p178 d179 pr180 => ?_
+     try clear d172
+     refine Fused.var_is d179 rfl fun l181 zm45 zq44 => ?_
+     try clear d179
+     subst l181
+     subst zm45
+     refine d20.binary_elim fun x182 y183 m184 c185 c186 d187 d188 op189 ze46 => ?_
+     try clear d20
+     subst ze46
+     refine d187.index_elim fun p190 d191 pr192 => ?_
+     try clear d187
+     refine Fused.var_is d191 rfl fun l193 zm48 zq47 => ?_
+     try clear d191
+     subst l193
+     subst zm48
+     refine d188.index_elim fun p194 d195 pr196 => ?_
+     try clear d188
+     refine Fused.var_is d195 rfl fun l197 zm50 zq49 => ?_
+     try clear d195
+     subst l197
+     subst zm50
+     refine a13.nil_elim fun zv51 zm52 zq53 => ?_
+     try clear a13
+     subst zv51
+     subst zv2
+     subst zm52
+     subst zq53
+     subst zq49
+     subst zq47
+     subst zq44
+     subst zq42
+     subst zq39
+     subst zq37
+     subst zq34
+     subst zq32
+     subst zq29
+     as_aux_lemma =>
+      subst zq27
+      subst zq24
+      subst zq22
+      subst zq19
+      subst zq17
+      subst zq14
+      subst zq12
+      subst zq3
+      subst zq1
+      exact «Fixed::dot8».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ pr80 pr84 op77 pr96 pr100 op93 op69 pr112 pr116 op109 op61 pr128 pr132 op125 op53 pr144 pr148 op141 op45 pr160 pr164 op157 op37 pr176 pr180 op173 op29 pr192 pr196 op189 op21 ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::dot16`: one constructor per combination of selected arms. -/
 inductive «Fixed::dot16».Path (x_a x_b : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -1611,338 +1240,344 @@ theorem «Fixed::dot16».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : Sour
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.dot16.lookup
     (by simp [IxAIStep.Fixed.Fixed.dot16, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.dot16] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs8, m9, c10, c11, hq3, d12, a13, hq2⟩ := a5.cons_inv
+  refine a5.cons_elim fun v7 vs8 m9 c10 c11 zv2 d12 a13 zq3 => ?_
   try clear a5
-  obtain ⟨x14, y15, m16, c17, c18, d19, d20, op21, hq4⟩ := d12.binary_inv
+  refine d12.binary_elim fun x14 y15 m16 c17 c18 d19 d20 op21 ze4 => ?_
   try clear d12
-  obtain ⟨x22, y23, m24, c25, c26, d27, d28, op29, hq5⟩ := d19.binary_inv
+  subst ze4
+  refine d19.binary_elim fun x22 y23 m24 c25 c26 d27 d28 op29 ze5 => ?_
   try clear d19
-  obtain ⟨x30, y31, m32, c33, c34, d35, d36, op37, hq6⟩ := d27.binary_inv
+  subst ze5
+  refine d27.binary_elim fun x30 y31 m32 c33 c34 d35 d36 op37 ze6 => ?_
   try clear d27
-  obtain ⟨x38, y39, m40, c41, c42, d43, d44, op45, hq7⟩ := d35.binary_inv
+  subst ze6
+  refine d35.binary_elim fun x38 y39 m40 c41 c42 d43 d44 op45 ze7 => ?_
   try clear d35
-  obtain ⟨x46, y47, m48, c49, c50, d51, d52, op53, hq8⟩ := d43.binary_inv
+  subst ze7
+  refine d43.binary_elim fun x46 y47 m48 c49 c50 d51 d52 op53 ze8 => ?_
   try clear d43
-  obtain ⟨x54, y55, m56, c57, c58, d59, d60, op61, hq9⟩ := d51.binary_inv
+  subst ze8
+  refine d51.binary_elim fun x54 y55 m56 c57 c58 d59 d60 op61 ze9 => ?_
   try clear d51
-  obtain ⟨x62, y63, m64, c65, c66, d67, d68, op69, hq10⟩ := d59.binary_inv
+  subst ze9
+  refine d59.binary_elim fun x62 y63 m64 c65 c66 d67 d68 op69 ze10 => ?_
   try clear d59
-  obtain ⟨x70, y71, m72, c73, c74, d75, d76, op77, hq11⟩ := d67.binary_inv
+  subst ze10
+  refine d67.binary_elim fun x70 y71 m72 c73 c74 d75 d76 op77 ze11 => ?_
   try clear d67
-  obtain ⟨x78, y79, m80, c81, c82, d83, d84, op85, hq12⟩ := d75.binary_inv
+  subst ze11
+  refine d75.binary_elim fun x78 y79 m80 c81 c82 d83 d84 op85 ze12 => ?_
   try clear d75
-  obtain ⟨x86, y87, m88, c89, c90, d91, d92, op93, hq13⟩ := d83.binary_inv
+  subst ze12
+  refine d83.binary_elim fun x86 y87 m88 c89 c90 d91 d92 op93 ze13 => ?_
   try clear d83
-  obtain ⟨x94, y95, m96, c97, c98, d99, d100, op101, hq14⟩ := d91.binary_inv
+  subst ze13
+  refine d91.binary_elim fun x94 y95 m96 c97 c98 d99 d100 op101 ze14 => ?_
   try clear d91
-  obtain ⟨x102, y103, m104, c105, c106, d107, d108, op109, hq15⟩ := d99.binary_inv
+  subst ze14
+  refine d99.binary_elim fun x102 y103 m104 c105 c106 d107 d108 op109 ze15 => ?_
   try clear d99
-  obtain ⟨x110, y111, m112, c113, c114, d115, d116, op117, hq16⟩ := d107.binary_inv
-  try clear d107
-  obtain ⟨x118, y119, m120, c121, c122, d123, d124, op125, hq17⟩ := d115.binary_inv
-  try clear d115
-  obtain ⟨x126, y127, m128, c129, c130, d131, d132, op133, hq18⟩ := d123.binary_inv
-  try clear d123
-  obtain ⟨x134, y135, m136, c137, c138, d139, d140, op141, hq19⟩ := d131.binary_inv
-  try clear d131
-  obtain ⟨p142, d143, pr144⟩ := d139.index_inv
-  try clear d139
-  obtain ⟨l145, rfl, hq20⟩ := d143.var_inv
-  try clear d143
-  simp at l145
-  subst l145
-  obtain ⟨p146, d147, pr148⟩ := d140.index_inv
-  try clear d140
-  obtain ⟨l149, rfl, hq21⟩ := d147.var_inv
-  try clear d147
-  simp at l149
-  subst l149
-  obtain ⟨x150, y151, m152, c153, c154, d155, d156, op157, hq22⟩ := d132.binary_inv
-  try clear d132
-  obtain ⟨p158, d159, pr160⟩ := d155.index_inv
-  try clear d155
-  obtain ⟨l161, rfl, hq23⟩ := d159.var_inv
-  try clear d159
-  simp at l161
-  subst l161
-  obtain ⟨p162, d163, pr164⟩ := d156.index_inv
-  try clear d156
-  obtain ⟨l165, rfl, hq24⟩ := d163.var_inv
-  try clear d163
-  simp at l165
-  subst l165
-  obtain ⟨x166, y167, m168, c169, c170, d171, d172, op173, hq25⟩ := d124.binary_inv
-  try clear d124
-  obtain ⟨p174, d175, pr176⟩ := d171.index_inv
-  try clear d171
-  obtain ⟨l177, rfl, hq26⟩ := d175.var_inv
-  try clear d175
-  simp at l177
-  subst l177
-  obtain ⟨p178, d179, pr180⟩ := d172.index_inv
-  try clear d172
-  obtain ⟨l181, rfl, hq27⟩ := d179.var_inv
-  try clear d179
-  simp at l181
-  subst l181
-  obtain ⟨x182, y183, m184, c185, c186, d187, d188, op189, hq28⟩ := d116.binary_inv
-  try clear d116
-  obtain ⟨p190, d191, pr192⟩ := d187.index_inv
-  try clear d187
-  obtain ⟨l193, rfl, hq29⟩ := d191.var_inv
-  try clear d191
-  simp at l193
-  subst l193
-  obtain ⟨p194, d195, pr196⟩ := d188.index_inv
-  try clear d188
-  obtain ⟨l197, rfl, hq30⟩ := d195.var_inv
-  try clear d195
-  simp at l197
-  subst l197
-  obtain ⟨x198, y199, m200, c201, c202, d203, d204, op205, hq31⟩ := d108.binary_inv
-  try clear d108
-  obtain ⟨p206, d207, pr208⟩ := d203.index_inv
-  try clear d203
-  obtain ⟨l209, rfl, hq32⟩ := d207.var_inv
-  try clear d207
-  simp at l209
-  subst l209
-  obtain ⟨p210, d211, pr212⟩ := d204.index_inv
-  try clear d204
-  obtain ⟨l213, rfl, hq33⟩ := d211.var_inv
-  try clear d211
-  simp at l213
-  subst l213
-  obtain ⟨x214, y215, m216, c217, c218, d219, d220, op221, hq34⟩ := d100.binary_inv
-  try clear d100
-  obtain ⟨p222, d223, pr224⟩ := d219.index_inv
-  try clear d219
-  obtain ⟨l225, rfl, hq35⟩ := d223.var_inv
-  try clear d223
-  simp at l225
-  subst l225
-  obtain ⟨p226, d227, pr228⟩ := d220.index_inv
-  try clear d220
-  obtain ⟨l229, rfl, hq36⟩ := d227.var_inv
-  try clear d227
-  simp at l229
-  subst l229
-  obtain ⟨x230, y231, m232, c233, c234, d235, d236, op237, hq37⟩ := d92.binary_inv
+  subst ze15
   as_aux_lemma =>
-   try clear d92
-   obtain ⟨p238, d239, pr240⟩ := d235.index_inv
-   try clear d235
-   obtain ⟨l241, rfl, hq38⟩ := d239.var_inv
-   try clear d239
-   simp at l241
-   subst l241
-   obtain ⟨p242, d243, pr244⟩ := d236.index_inv
-   try clear d236
-   obtain ⟨l245, rfl, hq39⟩ := d243.var_inv
-   try clear d243
-   simp at l245
-   subst l245
-   obtain ⟨x246, y247, m248, c249, c250, d251, d252, op253, hq40⟩ := d84.binary_inv
-   try clear d84
-   obtain ⟨p254, d255, pr256⟩ := d251.index_inv
-   try clear d251
-   obtain ⟨l257, rfl, hq41⟩ := d255.var_inv
-   try clear d255
-   simp at l257
-   subst l257
-   obtain ⟨p258, d259, pr260⟩ := d252.index_inv
-   try clear d252
-   obtain ⟨l261, rfl, hq42⟩ := d259.var_inv
-   try clear d259
-   simp at l261
-   subst l261
-   obtain ⟨x262, y263, m264, c265, c266, d267, d268, op269, hq43⟩ := d76.binary_inv
-   try clear d76
-   obtain ⟨p270, d271, pr272⟩ := d267.index_inv
-   try clear d267
-   obtain ⟨l273, rfl, hq44⟩ := d271.var_inv
-   try clear d271
-   simp at l273
-   subst l273
-   obtain ⟨p274, d275, pr276⟩ := d268.index_inv
-   try clear d268
-   obtain ⟨l277, rfl, hq45⟩ := d275.var_inv
-   try clear d275
-   simp at l277
-   subst l277
-   obtain ⟨x278, y279, m280, c281, c282, d283, d284, op285, hq46⟩ := d68.binary_inv
-   try clear d68
-   obtain ⟨p286, d287, pr288⟩ := d283.index_inv
-   try clear d283
-   obtain ⟨l289, rfl, hq47⟩ := d287.var_inv
-   try clear d287
-   simp at l289
-   subst l289
-   obtain ⟨p290, d291, pr292⟩ := d284.index_inv
-   try clear d284
-   obtain ⟨l293, rfl, hq48⟩ := d291.var_inv
-   try clear d291
-   simp at l293
-   subst l293
-   obtain ⟨x294, y295, m296, c297, c298, d299, d300, op301, hq49⟩ := d60.binary_inv
-   try clear d60
-   obtain ⟨p302, d303, pr304⟩ := d299.index_inv
-   try clear d299
-   obtain ⟨l305, rfl, hq50⟩ := d303.var_inv
-   try clear d303
-   simp at l305
-   subst l305
-   obtain ⟨p306, d307, pr308⟩ := d300.index_inv
-   try clear d300
-   obtain ⟨l309, rfl, hq51⟩ := d307.var_inv
-   try clear d307
-   simp at l309
-   subst l309
-   obtain ⟨x310, y311, m312, c313, c314, d315, d316, op317, hq52⟩ := d52.binary_inv
-   try clear d52
-   obtain ⟨p318, d319, pr320⟩ := d315.index_inv
-   try clear d315
-   obtain ⟨l321, rfl, hq53⟩ := d319.var_inv
-   try clear d319
-   simp at l321
-   subst l321
-   obtain ⟨p322, d323, pr324⟩ := d316.index_inv
-   try clear d316
-   obtain ⟨l325, rfl, hq54⟩ := d323.var_inv
-   try clear d323
-   simp at l325
-   subst l325
-   obtain ⟨x326, y327, m328, c329, c330, d331, d332, op333, hq55⟩ := d44.binary_inv
-   try clear d44
-   obtain ⟨p334, d335, pr336⟩ := d331.index_inv
-   try clear d331
-   obtain ⟨l337, rfl, hq56⟩ := d335.var_inv
-   try clear d335
-   simp at l337
-   subst l337
-   obtain ⟨p338, d339, pr340⟩ := d332.index_inv
-   try clear d332
-   obtain ⟨l341, rfl, hq57⟩ := d339.var_inv
-   try clear d339
-   simp at l341
-   subst l341
-   obtain ⟨x342, y343, m344, c345, c346, d347, d348, op349, hq58⟩ := d36.binary_inv
-   try clear d36
-   obtain ⟨p350, d351, pr352⟩ := d347.index_inv
-   try clear d347
-   obtain ⟨l353, rfl, hq59⟩ := d351.var_inv
-   try clear d351
-   simp at l353
-   subst l353
-   obtain ⟨p354, d355, pr356⟩ := d348.index_inv
-   try clear d348
-   obtain ⟨l357, rfl, hq60⟩ := d355.var_inv
-   try clear d355
-   simp at l357
-   subst l357
-   obtain ⟨x358, y359, m360, c361, c362, d363, d364, op365, hq61⟩ := d28.binary_inv
-   try clear d28
-   obtain ⟨p366, d367, pr368⟩ := d363.index_inv
-   try clear d363
-   obtain ⟨l369, rfl, hq62⟩ := d367.var_inv
-   try clear d367
-   simp at l369
-   subst l369
-   obtain ⟨p370, d371, pr372⟩ := d364.index_inv
+   refine d107.binary_elim fun x110 y111 m112 c113 c114 d115 d116 op117 ze16 => ?_
+   try clear d107
+   subst ze16
+   refine d115.binary_elim fun x118 y119 m120 c121 c122 d123 d124 op125 ze17 => ?_
+   try clear d115
+   subst ze17
+   refine d123.binary_elim fun x126 y127 m128 c129 c130 d131 d132 op133 ze18 => ?_
+   try clear d123
+   subst ze18
+   refine d131.binary_elim fun x134 y135 m136 c137 c138 d139 d140 op141 ze19 => ?_
+   try clear d131
+   subst ze19
+   refine d139.index_elim fun p142 d143 pr144 => ?_
+   try clear d139
+   refine Fused.var_is d143 rfl fun l145 zm21 zq20 => ?_
+   try clear d143
+   subst l145
+   subst zm21
+   refine d140.index_elim fun p146 d147 pr148 => ?_
+   try clear d140
+   refine Fused.var_is d147 rfl fun l149 zm23 zq22 => ?_
+   try clear d147
+   subst l149
+   subst zm23
+   refine d132.binary_elim fun x150 y151 m152 c153 c154 d155 d156 op157 ze24 => ?_
+   try clear d132
+   subst ze24
+   refine d155.index_elim fun p158 d159 pr160 => ?_
+   try clear d155
+   refine Fused.var_is d159 rfl fun l161 zm26 zq25 => ?_
+   try clear d159
+   subst l161
+   subst zm26
+   refine d156.index_elim fun p162 d163 pr164 => ?_
+   try clear d156
+   refine Fused.var_is d163 rfl fun l165 zm28 zq27 => ?_
+   try clear d163
+   subst l165
+   subst zm28
+   refine d124.binary_elim fun x166 y167 m168 c169 c170 d171 d172 op173 ze29 => ?_
    as_aux_lemma =>
-    try clear d364
-    obtain ⟨l373, rfl, hq63⟩ := d371.var_inv
-    try clear d371
-    simp at l373
-    subst l373
-    obtain ⟨x374, y375, m376, c377, c378, d379, d380, op381, hq64⟩ := d20.binary_inv
-    try clear d20
-    obtain ⟨p382, d383, pr384⟩ := d379.index_inv
-    try clear d379
-    obtain ⟨l385, rfl, hq65⟩ := d383.var_inv
-    try clear d383
-    simp at l385
-    subst l385
-    obtain ⟨p386, d387, pr388⟩ := d380.index_inv
-    try clear d380
-    obtain ⟨l389, rfl, hq66⟩ := d387.var_inv
-    try clear d387
-    simp at l389
-    subst l389
-    obtain ⟨hq68, rfl, hq67⟩ := a13.nil_inv
-    try clear a13
-    subst hq68
-    subst hq3
-    subst hq67
-    subst hq66
-    subst hq65
-    subst hq64
-    subst hq63
-    subst hq62
-    subst hq61
-    subst hq60
-    subst hq59
-    subst hq58
-    subst hq57
-    subst hq56
-    subst hq55
-    subst hq54
-    subst hq53
-    subst hq52
-    subst hq51
-    subst hq50
-    subst hq49
-    subst hq48
-    subst hq47
-    subst hq46
-    subst hq45
-    subst hq44
-    subst hq43
-    subst hq42
-    subst hq41
-    subst hq40
-    subst hq39
-    subst hq38
-    subst hq37
-    subst hq36
-    subst hq35
-    subst hq34
-    subst hq33
-    subst hq32
-    subst hq31
-    subst hq30
-    subst hq29
-    subst hq28
-    subst hq27
-    subst hq26
-    subst hq25
-    subst hq24
-    subst hq23
-    subst hq22
-    subst hq21
-    subst hq20
-    subst hq19
-    subst hq18
-    subst hq17
-    subst hq16
-    subst hq15
-    subst hq14
-    subst hq13
-    subst hq12
-    subst hq11
-    subst hq10
-    subst hq9
-    subst hq8
-    subst hq7
-    subst hq6
-    subst hq5
-    subst hq4
-    subst hq2
-    subst hq1
-    exact «Fixed::dot16».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ pr144 pr148 op141 pr160 pr164 op157 op133 pr176 pr180 op173 op125 pr192 pr196 op189 op117 pr208 pr212 op205 op109 pr224 pr228 op221 op101 pr240 pr244 op237 op93 pr256 pr260 op253 op85 pr272 pr276 op269 op77 pr288 pr292 op285 op69 pr304 pr308 op301 op61 pr320 pr324 op317 op53 pr336 pr340 op333 op45 pr352 pr356 op349 op37 pr368 pr372 op365 op29 pr384 pr388 op381 op21 ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    try clear d124
+    subst ze29
+    refine d171.index_elim fun p174 d175 pr176 => ?_
+    try clear d171
+    refine Fused.var_is d175 rfl fun l177 zm31 zq30 => ?_
+    try clear d175
+    subst l177
+    subst zm31
+    refine d172.index_elim fun p178 d179 pr180 => ?_
+    try clear d172
+    refine Fused.var_is d179 rfl fun l181 zm33 zq32 => ?_
+    try clear d179
+    subst l181
+    subst zm33
+    refine d116.binary_elim fun x182 y183 m184 c185 c186 d187 d188 op189 ze34 => ?_
+    try clear d116
+    subst ze34
+    refine d187.index_elim fun p190 d191 pr192 => ?_
+    try clear d187
+    refine Fused.var_is d191 rfl fun l193 zm36 zq35 => ?_
+    try clear d191
+    subst l193
+    subst zm36
+    refine d188.index_elim fun p194 d195 pr196 => ?_
+    try clear d188
+    refine Fused.var_is d195 rfl fun l197 zm38 zq37 => ?_
+    try clear d195
+    subst l197
+    subst zm38
+    refine d108.binary_elim fun x198 y199 m200 c201 c202 d203 d204 op205 ze39 => ?_
+    try clear d108
+    subst ze39
+    refine d203.index_elim fun p206 d207 pr208 => ?_
+    try clear d203
+    refine Fused.var_is d207 rfl fun l209 zm41 zq40 => ?_
+    try clear d207
+    subst l209
+    subst zm41
+    refine d204.index_elim fun p210 d211 pr212 => ?_
+    try clear d204
+    as_aux_lemma =>
+     refine Fused.var_is d211 rfl fun l213 zm43 zq42 => ?_
+     try clear d211
+     subst l213
+     subst zm43
+     refine d100.binary_elim fun x214 y215 m216 c217 c218 d219 d220 op221 ze44 => ?_
+     try clear d100
+     subst ze44
+     refine d219.index_elim fun p222 d223 pr224 => ?_
+     try clear d219
+     refine Fused.var_is d223 rfl fun l225 zm46 zq45 => ?_
+     try clear d223
+     subst l225
+     subst zm46
+     refine d220.index_elim fun p226 d227 pr228 => ?_
+     try clear d220
+     refine Fused.var_is d227 rfl fun l229 zm48 zq47 => ?_
+     try clear d227
+     subst l229
+     subst zm48
+     refine d92.binary_elim fun x230 y231 m232 c233 c234 d235 d236 op237 ze49 => ?_
+     try clear d92
+     subst ze49
+     refine d235.index_elim fun p238 d239 pr240 => ?_
+     try clear d235
+     refine Fused.var_is d239 rfl fun l241 zm51 zq50 => ?_
+     try clear d239
+     subst l241
+     subst zm51
+     refine d236.index_elim fun p242 d243 pr244 => ?_
+     try clear d236
+     refine Fused.var_is d243 rfl fun l245 zm53 zq52 => ?_
+     try clear d243
+     subst l245
+     subst zm53
+     refine d84.binary_elim fun x246 y247 m248 c249 c250 d251 d252 op253 ze54 => ?_
+     try clear d84
+     subst ze54
+     refine d251.index_elim fun p254 d255 pr256 => ?_
+     try clear d251
+     refine Fused.var_is d255 rfl fun l257 zm56 zq55 => ?_
+     as_aux_lemma =>
+      try clear d255
+      subst l257
+      subst zm56
+      refine d252.index_elim fun p258 d259 pr260 => ?_
+      try clear d252
+      refine Fused.var_is d259 rfl fun l261 zm58 zq57 => ?_
+      try clear d259
+      subst l261
+      subst zm58
+      refine d76.binary_elim fun x262 y263 m264 c265 c266 d267 d268 op269 ze59 => ?_
+      try clear d76
+      subst ze59
+      refine d267.index_elim fun p270 d271 pr272 => ?_
+      try clear d267
+      refine Fused.var_is d271 rfl fun l273 zm61 zq60 => ?_
+      try clear d271
+      subst l273
+      subst zm61
+      refine d268.index_elim fun p274 d275 pr276 => ?_
+      try clear d268
+      refine Fused.var_is d275 rfl fun l277 zm63 zq62 => ?_
+      try clear d275
+      subst l277
+      subst zm63
+      refine d68.binary_elim fun x278 y279 m280 c281 c282 d283 d284 op285 ze64 => ?_
+      try clear d68
+      subst ze64
+      refine d283.index_elim fun p286 d287 pr288 => ?_
+      try clear d283
+      refine Fused.var_is d287 rfl fun l289 zm66 zq65 => ?_
+      try clear d287
+      subst l289
+      subst zm66
+      refine d284.index_elim fun p290 d291 pr292 => ?_
+      try clear d284
+      refine Fused.var_is d291 rfl fun l293 zm68 zq67 => ?_
+      try clear d291
+      subst l293
+      subst zm68
+      refine d60.binary_elim fun x294 y295 m296 c297 c298 d299 d300 op301 ze69 => ?_
+      as_aux_lemma =>
+       try clear d60
+       subst ze69
+       refine d299.index_elim fun p302 d303 pr304 => ?_
+       try clear d299
+       refine Fused.var_is d303 rfl fun l305 zm71 zq70 => ?_
+       try clear d303
+       subst l305
+       subst zm71
+       refine d300.index_elim fun p306 d307 pr308 => ?_
+       try clear d300
+       refine Fused.var_is d307 rfl fun l309 zm73 zq72 => ?_
+       try clear d307
+       subst l309
+       subst zm73
+       refine d52.binary_elim fun x310 y311 m312 c313 c314 d315 d316 op317 ze74 => ?_
+       try clear d52
+       subst ze74
+       refine d315.index_elim fun p318 d319 pr320 => ?_
+       try clear d315
+       refine Fused.var_is d319 rfl fun l321 zm76 zq75 => ?_
+       try clear d319
+       subst l321
+       subst zm76
+       refine d316.index_elim fun p322 d323 pr324 => ?_
+       try clear d316
+       refine Fused.var_is d323 rfl fun l325 zm78 zq77 => ?_
+       try clear d323
+       subst l325
+       subst zm78
+       refine d44.binary_elim fun x326 y327 m328 c329 c330 d331 d332 op333 ze79 => ?_
+       try clear d44
+       subst ze79
+       refine d331.index_elim fun p334 d335 pr336 => ?_
+       try clear d331
+       refine Fused.var_is d335 rfl fun l337 zm81 zq80 => ?_
+       try clear d335
+       subst l337
+       subst zm81
+       refine d332.index_elim fun p338 d339 pr340 => ?_
+       try clear d332
+       as_aux_lemma =>
+        refine Fused.var_is d339 rfl fun l341 zm83 zq82 => ?_
+        try clear d339
+        subst l341
+        subst zm83
+        refine d36.binary_elim fun x342 y343 m344 c345 c346 d347 d348 op349 ze84 => ?_
+        try clear d36
+        subst ze84
+        refine d347.index_elim fun p350 d351 pr352 => ?_
+        try clear d347
+        refine Fused.var_is d351 rfl fun l353 zm86 zq85 => ?_
+        try clear d351
+        subst l353
+        subst zm86
+        refine d348.index_elim fun p354 d355 pr356 => ?_
+        try clear d348
+        refine Fused.var_is d355 rfl fun l357 zm88 zq87 => ?_
+        try clear d355
+        subst l357
+        subst zm88
+        refine d28.binary_elim fun x358 y359 m360 c361 c362 d363 d364 op365 ze89 => ?_
+        try clear d28
+        subst ze89
+        refine d363.index_elim fun p366 d367 pr368 => ?_
+        try clear d363
+        refine Fused.var_is d367 rfl fun l369 zm91 zq90 => ?_
+        try clear d367
+        subst l369
+        subst zm91
+        refine d364.index_elim fun p370 d371 pr372 => ?_
+        try clear d364
+        refine Fused.var_is d371 rfl fun l373 zm93 zq92 => ?_
+        try clear d371
+        subst l373
+        subst zm93
+        refine d20.binary_elim fun x374 y375 m376 c377 c378 d379 d380 op381 ze94 => ?_
+        try clear d20
+        subst ze94
+        refine d379.index_elim fun p382 d383 pr384 => ?_
+        try clear d379
+        refine Fused.var_is d383 rfl fun l385 zm96 zq95 => ?_
+        as_aux_lemma =>
+         try clear d383
+         subst l385
+         subst zm96
+         refine d380.index_elim fun p386 d387 pr388 => ?_
+         try clear d380
+         refine Fused.var_is d387 rfl fun l389 zm98 zq97 => ?_
+         try clear d387
+         subst l389
+         subst zm98
+         refine a13.nil_elim fun zv99 zm100 zq101 => ?_
+         try clear a13
+         subst zv99
+         subst zv2
+         subst zm100
+         subst zq101
+         subst zq97
+         subst zq95
+         subst zq92
+         subst zq90
+         subst zq87
+         subst zq85
+         subst zq82
+         subst zq80
+         subst zq77
+         subst zq75
+         subst zq72
+         subst zq70
+         subst zq67
+         subst zq65
+         subst zq62
+         subst zq60
+         subst zq57
+         subst zq55
+         subst zq52
+         subst zq50
+         subst zq47
+         subst zq45
+         subst zq42
+         subst zq40
+         subst zq37
+         as_aux_lemma =>
+          subst zq35
+          subst zq32
+          subst zq30
+          subst zq27
+          subst zq25
+          subst zq22
+          subst zq20
+          subst zq3
+          subst zq1
+          exact «Fixed::dot16».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ pr144 pr148 op141 pr160 pr164 op157 op133 pr176 pr180 op173 op125 pr192 pr196 op189 op117 pr208 pr212 op205 op109 pr224 pr228 op221 op101 pr240 pr244 op237 op93 pr256 pr260 op253 op85 pr272 pr276 op269 op77 pr288 pr292 op285 op69 pr304 pr308 op301 op61 pr320 pr324 op317 op53 pr336 pr340 op333 op45 pr352 pr356 op349 op37 pr368 pr372 op365 op29 pr384 pr388 op381 op21 ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::dot11`: one constructor per combination of selected arms. -/
 inductive «Fixed::dot11».Path (x_a x_b : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -2002,237 +1637,241 @@ theorem «Fixed::dot11».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : Sour
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.dot11.lookup
     (by simp [IxAIStep.Fixed.Fixed.dot11, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.dot11] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs8, m9, c10, c11, hq3, d12, a13, hq2⟩ := a5.cons_inv
+  refine a5.cons_elim fun v7 vs8 m9 c10 c11 zv2 d12 a13 zq3 => ?_
   try clear a5
-  obtain ⟨x14, y15, m16, c17, c18, d19, d20, op21, hq4⟩ := d12.binary_inv
+  refine d12.binary_elim fun x14 y15 m16 c17 c18 d19 d20 op21 ze4 => ?_
   try clear d12
-  obtain ⟨x22, y23, m24, c25, c26, d27, d28, op29, hq5⟩ := d19.binary_inv
+  subst ze4
+  refine d19.binary_elim fun x22 y23 m24 c25 c26 d27 d28 op29 ze5 => ?_
   try clear d19
-  obtain ⟨x30, y31, m32, c33, c34, d35, d36, op37, hq6⟩ := d27.binary_inv
+  subst ze5
+  refine d27.binary_elim fun x30 y31 m32 c33 c34 d35 d36 op37 ze6 => ?_
   try clear d27
-  obtain ⟨x38, y39, m40, c41, c42, d43, d44, op45, hq7⟩ := d35.binary_inv
+  subst ze6
+  refine d35.binary_elim fun x38 y39 m40 c41 c42 d43 d44 op45 ze7 => ?_
   try clear d35
-  obtain ⟨x46, y47, m48, c49, c50, d51, d52, op53, hq8⟩ := d43.binary_inv
+  subst ze7
+  refine d43.binary_elim fun x46 y47 m48 c49 c50 d51 d52 op53 ze8 => ?_
   try clear d43
-  obtain ⟨x54, y55, m56, c57, c58, d59, d60, op61, hq9⟩ := d51.binary_inv
+  subst ze8
+  refine d51.binary_elim fun x54 y55 m56 c57 c58 d59 d60 op61 ze9 => ?_
   try clear d51
-  obtain ⟨x62, y63, m64, c65, c66, d67, d68, op69, hq10⟩ := d59.binary_inv
+  subst ze9
+  refine d59.binary_elim fun x62 y63 m64 c65 c66 d67 d68 op69 ze10 => ?_
   try clear d59
-  obtain ⟨x70, y71, m72, c73, c74, d75, d76, op77, hq11⟩ := d67.binary_inv
+  subst ze10
+  refine d67.binary_elim fun x70 y71 m72 c73 c74 d75 d76 op77 ze11 => ?_
   try clear d67
-  obtain ⟨x78, y79, m80, c81, c82, d83, d84, op85, hq12⟩ := d75.binary_inv
+  subst ze11
+  refine d75.binary_elim fun x78 y79 m80 c81 c82 d83 d84 op85 ze12 => ?_
   try clear d75
-  obtain ⟨x86, y87, m88, c89, c90, d91, d92, op93, hq13⟩ := d83.binary_inv
+  subst ze12
+  refine d83.binary_elim fun x86 y87 m88 c89 c90 d91 d92 op93 ze13 => ?_
   try clear d83
-  obtain ⟨x94, y95, m96, c97, c98, d99, d100, op101, hq14⟩ := d91.binary_inv
+  subst ze13
+  refine d91.binary_elim fun x94 y95 m96 c97 c98 d99 d100 op101 ze14 => ?_
   try clear d91
-  obtain ⟨p102, d103, pr104⟩ := d99.index_inv
+  subst ze14
+  refine d99.index_elim fun p102 d103 pr104 => ?_
   try clear d99
-  obtain ⟨l105, rfl, hq15⟩ := d103.var_inv
-  try clear d103
-  simp at l105
-  subst l105
-  obtain ⟨p106, d107, pr108⟩ := d100.index_inv
-  try clear d100
-  obtain ⟨l109, rfl, hq16⟩ := d107.var_inv
-  try clear d107
-  simp at l109
-  subst l109
-  obtain ⟨x110, y111, m112, c113, c114, d115, d116, op117, hq17⟩ := d92.binary_inv
-  try clear d92
-  obtain ⟨p118, d119, pr120⟩ := d115.index_inv
-  try clear d115
-  obtain ⟨l121, rfl, hq18⟩ := d119.var_inv
-  try clear d119
-  simp at l121
-  subst l121
-  obtain ⟨p122, d123, pr124⟩ := d116.index_inv
-  try clear d116
-  obtain ⟨l125, rfl, hq19⟩ := d123.var_inv
-  try clear d123
-  simp at l125
-  subst l125
-  obtain ⟨x126, y127, m128, c129, c130, d131, d132, op133, hq20⟩ := d84.binary_inv
-  try clear d84
-  obtain ⟨p134, d135, pr136⟩ := d131.index_inv
-  try clear d131
-  obtain ⟨l137, rfl, hq21⟩ := d135.var_inv
-  try clear d135
-  simp at l137
-  subst l137
-  obtain ⟨p138, d139, pr140⟩ := d132.index_inv
-  try clear d132
-  obtain ⟨l141, rfl, hq22⟩ := d139.var_inv
-  try clear d139
-  simp at l141
-  subst l141
-  obtain ⟨x142, y143, m144, c145, c146, d147, d148, op149, hq23⟩ := d76.binary_inv
-  try clear d76
-  obtain ⟨p150, d151, pr152⟩ := d147.index_inv
-  try clear d147
-  obtain ⟨l153, rfl, hq24⟩ := d151.var_inv
-  try clear d151
-  simp at l153
-  subst l153
-  obtain ⟨p154, d155, pr156⟩ := d148.index_inv
-  try clear d148
-  obtain ⟨l157, rfl, hq25⟩ := d155.var_inv
-  try clear d155
-  simp at l157
-  subst l157
-  obtain ⟨x158, y159, m160, c161, c162, d163, d164, op165, hq26⟩ := d68.binary_inv
-  try clear d68
-  obtain ⟨p166, d167, pr168⟩ := d163.index_inv
-  try clear d163
-  obtain ⟨l169, rfl, hq27⟩ := d167.var_inv
-  try clear d167
-  simp at l169
-  subst l169
-  obtain ⟨p170, d171, pr172⟩ := d164.index_inv
-  try clear d164
-  obtain ⟨l173, rfl, hq28⟩ := d171.var_inv
-  try clear d171
-  simp at l173
-  subst l173
-  obtain ⟨x174, y175, m176, c177, c178, d179, d180, op181, hq29⟩ := d60.binary_inv
-  try clear d60
-  obtain ⟨p182, d183, pr184⟩ := d179.index_inv
-  try clear d179
-  obtain ⟨l185, rfl, hq30⟩ := d183.var_inv
-  try clear d183
-  simp at l185
-  subst l185
-  obtain ⟨p186, d187, pr188⟩ := d180.index_inv
-  try clear d180
-  obtain ⟨l189, rfl, hq31⟩ := d187.var_inv
-  try clear d187
-  simp at l189
-  subst l189
-  obtain ⟨x190, y191, m192, c193, c194, d195, d196, op197, hq32⟩ := d52.binary_inv
-  try clear d52
-  obtain ⟨p198, d199, pr200⟩ := d195.index_inv
-  try clear d195
-  obtain ⟨l201, rfl, hq33⟩ := d199.var_inv
-  try clear d199
-  simp at l201
-  subst l201
-  obtain ⟨p202, d203, pr204⟩ := d196.index_inv
-  try clear d196
-  obtain ⟨l205, rfl, hq34⟩ := d203.var_inv
+  refine Fused.var_is d103 rfl fun l105 zm16 zq15 => ?_
   as_aux_lemma =>
-   try clear d203
-   simp at l205
-   subst l205
-   obtain ⟨x206, y207, m208, c209, c210, d211, d212, op213, hq35⟩ := d44.binary_inv
-   try clear d44
-   obtain ⟨p214, d215, pr216⟩ := d211.index_inv
-   try clear d211
-   obtain ⟨l217, rfl, hq36⟩ := d215.var_inv
-   try clear d215
-   simp at l217
-   subst l217
-   obtain ⟨p218, d219, pr220⟩ := d212.index_inv
-   try clear d212
-   obtain ⟨l221, rfl, hq37⟩ := d219.var_inv
-   try clear d219
-   simp at l221
-   subst l221
-   obtain ⟨x222, y223, m224, c225, c226, d227, d228, op229, hq38⟩ := d36.binary_inv
-   try clear d36
-   obtain ⟨p230, d231, pr232⟩ := d227.index_inv
-   try clear d227
-   obtain ⟨l233, rfl, hq39⟩ := d231.var_inv
-   try clear d231
-   simp at l233
-   subst l233
-   obtain ⟨p234, d235, pr236⟩ := d228.index_inv
-   try clear d228
-   obtain ⟨l237, rfl, hq40⟩ := d235.var_inv
-   try clear d235
-   simp at l237
-   subst l237
-   obtain ⟨x238, y239, m240, c241, c242, d243, d244, op245, hq41⟩ := d28.binary_inv
-   try clear d28
-   obtain ⟨p246, d247, pr248⟩ := d243.index_inv
-   try clear d243
-   obtain ⟨l249, rfl, hq42⟩ := d247.var_inv
-   try clear d247
-   simp at l249
-   subst l249
-   obtain ⟨p250, d251, pr252⟩ := d244.index_inv
-   try clear d244
-   obtain ⟨l253, rfl, hq43⟩ := d251.var_inv
-   try clear d251
-   simp at l253
-   subst l253
-   obtain ⟨x254, y255, m256, c257, c258, d259, d260, op261, hq44⟩ := d20.binary_inv
-   try clear d20
-   obtain ⟨p262, d263, pr264⟩ := d259.index_inv
-   try clear d259
-   obtain ⟨l265, rfl, hq45⟩ := d263.var_inv
-   try clear d263
-   simp at l265
-   subst l265
-   obtain ⟨p266, d267, pr268⟩ := d260.index_inv
-   try clear d260
-   obtain ⟨l269, rfl, hq46⟩ := d267.var_inv
-   try clear d267
-   simp at l269
-   subst l269
-   obtain ⟨hq48, rfl, hq47⟩ := a13.nil_inv
-   try clear a13
-   subst hq48
-   subst hq3
-   subst hq47
-   subst hq46
-   subst hq45
-   subst hq44
-   subst hq43
-   subst hq42
-   subst hq41
-   subst hq40
-   subst hq39
-   subst hq38
-   subst hq37
-   subst hq36
-   subst hq35
-   subst hq34
-   subst hq33
-   subst hq32
-   subst hq31
-   subst hq30
-   subst hq29
-   subst hq28
-   subst hq27
-   subst hq26
-   subst hq25
-   subst hq24
-   subst hq23
-   subst hq22
-   subst hq21
-   subst hq20
-   subst hq19
-   subst hq18
-   subst hq17
-   subst hq16
-   subst hq15
-   subst hq14
-   subst hq13
-   subst hq12
-   subst hq11
-   subst hq10
-   subst hq9
-   subst hq8
-   subst hq7
-   subst hq6
-   subst hq5
-   subst hq4
-   subst hq2
-   subst hq1
-   exact «Fixed::dot11».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ pr104 pr108 op101 pr120 pr124 op117 op93 pr136 pr140 op133 op85 pr152 pr156 op149 op77 pr168 pr172 op165 op69 pr184 pr188 op181 op61 pr200 pr204 op197 op53 pr216 pr220 op213 op45 pr232 pr236 op229 op37 pr248 pr252 op245 op29 pr264 pr268 op261 op21 ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+   try clear d103
+   subst l105
+   subst zm16
+   refine d100.index_elim fun p106 d107 pr108 => ?_
+   try clear d100
+   refine Fused.var_is d107 rfl fun l109 zm18 zq17 => ?_
+   try clear d107
+   subst l109
+   subst zm18
+   refine d92.binary_elim fun x110 y111 m112 c113 c114 d115 d116 op117 ze19 => ?_
+   try clear d92
+   subst ze19
+   refine d115.index_elim fun p118 d119 pr120 => ?_
+   try clear d115
+   refine Fused.var_is d119 rfl fun l121 zm21 zq20 => ?_
+   try clear d119
+   subst l121
+   subst zm21
+   refine d116.index_elim fun p122 d123 pr124 => ?_
+   try clear d116
+   refine Fused.var_is d123 rfl fun l125 zm23 zq22 => ?_
+   try clear d123
+   subst l125
+   subst zm23
+   refine d84.binary_elim fun x126 y127 m128 c129 c130 d131 d132 op133 ze24 => ?_
+   try clear d84
+   subst ze24
+   refine d131.index_elim fun p134 d135 pr136 => ?_
+   try clear d131
+   refine Fused.var_is d135 rfl fun l137 zm26 zq25 => ?_
+   try clear d135
+   subst l137
+   subst zm26
+   refine d132.index_elim fun p138 d139 pr140 => ?_
+   try clear d132
+   refine Fused.var_is d139 rfl fun l141 zm28 zq27 => ?_
+   try clear d139
+   subst l141
+   subst zm28
+   refine d76.binary_elim fun x142 y143 m144 c145 c146 d147 d148 op149 ze29 => ?_
+   as_aux_lemma =>
+    try clear d76
+    subst ze29
+    refine d147.index_elim fun p150 d151 pr152 => ?_
+    try clear d147
+    refine Fused.var_is d151 rfl fun l153 zm31 zq30 => ?_
+    try clear d151
+    subst l153
+    subst zm31
+    refine d148.index_elim fun p154 d155 pr156 => ?_
+    try clear d148
+    refine Fused.var_is d155 rfl fun l157 zm33 zq32 => ?_
+    try clear d155
+    subst l157
+    subst zm33
+    refine d68.binary_elim fun x158 y159 m160 c161 c162 d163 d164 op165 ze34 => ?_
+    try clear d68
+    subst ze34
+    refine d163.index_elim fun p166 d167 pr168 => ?_
+    try clear d163
+    refine Fused.var_is d167 rfl fun l169 zm36 zq35 => ?_
+    try clear d167
+    subst l169
+    subst zm36
+    refine d164.index_elim fun p170 d171 pr172 => ?_
+    try clear d164
+    refine Fused.var_is d171 rfl fun l173 zm38 zq37 => ?_
+    try clear d171
+    subst l173
+    subst zm38
+    refine d60.binary_elim fun x174 y175 m176 c177 c178 d179 d180 op181 ze39 => ?_
+    try clear d60
+    subst ze39
+    refine d179.index_elim fun p182 d183 pr184 => ?_
+    try clear d179
+    refine Fused.var_is d183 rfl fun l185 zm41 zq40 => ?_
+    try clear d183
+    subst l185
+    subst zm41
+    refine d180.index_elim fun p186 d187 pr188 => ?_
+    try clear d180
+    as_aux_lemma =>
+     refine Fused.var_is d187 rfl fun l189 zm43 zq42 => ?_
+     try clear d187
+     subst l189
+     subst zm43
+     refine d52.binary_elim fun x190 y191 m192 c193 c194 d195 d196 op197 ze44 => ?_
+     try clear d52
+     subst ze44
+     refine d195.index_elim fun p198 d199 pr200 => ?_
+     try clear d195
+     refine Fused.var_is d199 rfl fun l201 zm46 zq45 => ?_
+     try clear d199
+     subst l201
+     subst zm46
+     refine d196.index_elim fun p202 d203 pr204 => ?_
+     try clear d196
+     refine Fused.var_is d203 rfl fun l205 zm48 zq47 => ?_
+     try clear d203
+     subst l205
+     subst zm48
+     refine d44.binary_elim fun x206 y207 m208 c209 c210 d211 d212 op213 ze49 => ?_
+     try clear d44
+     subst ze49
+     refine d211.index_elim fun p214 d215 pr216 => ?_
+     try clear d211
+     refine Fused.var_is d215 rfl fun l217 zm51 zq50 => ?_
+     try clear d215
+     subst l217
+     subst zm51
+     refine d212.index_elim fun p218 d219 pr220 => ?_
+     try clear d212
+     refine Fused.var_is d219 rfl fun l221 zm53 zq52 => ?_
+     try clear d219
+     subst l221
+     subst zm53
+     refine d36.binary_elim fun x222 y223 m224 c225 c226 d227 d228 op229 ze54 => ?_
+     try clear d36
+     subst ze54
+     refine d227.index_elim fun p230 d231 pr232 => ?_
+     try clear d227
+     refine Fused.var_is d231 rfl fun l233 zm56 zq55 => ?_
+     as_aux_lemma =>
+      try clear d231
+      subst l233
+      subst zm56
+      refine d228.index_elim fun p234 d235 pr236 => ?_
+      try clear d228
+      refine Fused.var_is d235 rfl fun l237 zm58 zq57 => ?_
+      try clear d235
+      subst l237
+      subst zm58
+      refine d28.binary_elim fun x238 y239 m240 c241 c242 d243 d244 op245 ze59 => ?_
+      try clear d28
+      subst ze59
+      refine d243.index_elim fun p246 d247 pr248 => ?_
+      try clear d243
+      refine Fused.var_is d247 rfl fun l249 zm61 zq60 => ?_
+      try clear d247
+      subst l249
+      subst zm61
+      refine d244.index_elim fun p250 d251 pr252 => ?_
+      try clear d244
+      refine Fused.var_is d251 rfl fun l253 zm63 zq62 => ?_
+      try clear d251
+      subst l253
+      subst zm63
+      refine d20.binary_elim fun x254 y255 m256 c257 c258 d259 d260 op261 ze64 => ?_
+      try clear d20
+      subst ze64
+      refine d259.index_elim fun p262 d263 pr264 => ?_
+      try clear d259
+      refine Fused.var_is d263 rfl fun l265 zm66 zq65 => ?_
+      try clear d263
+      subst l265
+      subst zm66
+      refine d260.index_elim fun p266 d267 pr268 => ?_
+      try clear d260
+      refine Fused.var_is d267 rfl fun l269 zm68 zq67 => ?_
+      try clear d267
+      subst l269
+      subst zm68
+      refine a13.nil_elim fun zv69 zm70 zq71 => ?_
+      as_aux_lemma =>
+       try clear a13
+       subst zv69
+       subst zv2
+       subst zm70
+       subst zq71
+       subst zq67
+       subst zq65
+       subst zq62
+       subst zq60
+       subst zq57
+       subst zq55
+       subst zq52
+       subst zq50
+       subst zq47
+       subst zq45
+       subst zq42
+       subst zq40
+       subst zq37
+       subst zq35
+       subst zq32
+       subst zq30
+       subst zq27
+       subst zq25
+       subst zq22
+       subst zq20
+       subst zq17
+       subst zq15
+       subst zq3
+       subst zq1
+       exact «Fixed::dot11».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ pr104 pr108 op101 pr120 pr124 op117 op93 pr136 pr140 op133 op85 pr152 pr156 op149 op77 pr168 pr172 op165 op69 pr184 pr188 op181 op61 pr200 pr204 op197 op53 pr216 pr220 op213 op45 pr232 pr236 op229 op37 pr248 pr252 op245 op29 pr264 pr268 op261 op21 ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::dot20`: one constructor per combination of selected arms. -/
 inductive «Fixed::dot20».Path (x_a x_b : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -2328,419 +1967,426 @@ theorem «Fixed::dot20».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : Sour
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.dot20.lookup
     (by simp [IxAIStep.Fixed.Fixed.dot20, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.dot20] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs8, m9, c10, c11, hq3, d12, a13, hq2⟩ := a5.cons_inv
+  refine a5.cons_elim fun v7 vs8 m9 c10 c11 zv2 d12 a13 zq3 => ?_
   try clear a5
-  obtain ⟨x14, y15, m16, c17, c18, d19, d20, op21, hq4⟩ := d12.binary_inv
+  refine d12.binary_elim fun x14 y15 m16 c17 c18 d19 d20 op21 ze4 => ?_
   try clear d12
-  obtain ⟨x22, y23, m24, c25, c26, d27, d28, op29, hq5⟩ := d19.binary_inv
+  subst ze4
+  refine d19.binary_elim fun x22 y23 m24 c25 c26 d27 d28 op29 ze5 => ?_
   try clear d19
-  obtain ⟨x30, y31, m32, c33, c34, d35, d36, op37, hq6⟩ := d27.binary_inv
+  subst ze5
+  refine d27.binary_elim fun x30 y31 m32 c33 c34 d35 d36 op37 ze6 => ?_
   try clear d27
-  obtain ⟨x38, y39, m40, c41, c42, d43, d44, op45, hq7⟩ := d35.binary_inv
+  subst ze6
+  refine d35.binary_elim fun x38 y39 m40 c41 c42 d43 d44 op45 ze7 => ?_
   try clear d35
-  obtain ⟨x46, y47, m48, c49, c50, d51, d52, op53, hq8⟩ := d43.binary_inv
+  subst ze7
+  refine d43.binary_elim fun x46 y47 m48 c49 c50 d51 d52 op53 ze8 => ?_
   try clear d43
-  obtain ⟨x54, y55, m56, c57, c58, d59, d60, op61, hq9⟩ := d51.binary_inv
+  subst ze8
+  refine d51.binary_elim fun x54 y55 m56 c57 c58 d59 d60 op61 ze9 => ?_
   try clear d51
-  obtain ⟨x62, y63, m64, c65, c66, d67, d68, op69, hq10⟩ := d59.binary_inv
+  subst ze9
+  refine d59.binary_elim fun x62 y63 m64 c65 c66 d67 d68 op69 ze10 => ?_
   try clear d59
-  obtain ⟨x70, y71, m72, c73, c74, d75, d76, op77, hq11⟩ := d67.binary_inv
+  subst ze10
+  refine d67.binary_elim fun x70 y71 m72 c73 c74 d75 d76 op77 ze11 => ?_
   try clear d67
-  obtain ⟨x78, y79, m80, c81, c82, d83, d84, op85, hq12⟩ := d75.binary_inv
+  subst ze11
+  refine d75.binary_elim fun x78 y79 m80 c81 c82 d83 d84 op85 ze12 => ?_
   try clear d75
-  obtain ⟨x86, y87, m88, c89, c90, d91, d92, op93, hq13⟩ := d83.binary_inv
+  subst ze12
+  refine d83.binary_elim fun x86 y87 m88 c89 c90 d91 d92 op93 ze13 => ?_
   try clear d83
-  obtain ⟨x94, y95, m96, c97, c98, d99, d100, op101, hq14⟩ := d91.binary_inv
+  subst ze13
+  refine d91.binary_elim fun x94 y95 m96 c97 c98 d99 d100 op101 ze14 => ?_
   try clear d91
-  obtain ⟨x102, y103, m104, c105, c106, d107, d108, op109, hq15⟩ := d99.binary_inv
+  subst ze14
+  refine d99.binary_elim fun x102 y103 m104 c105 c106 d107 d108 op109 ze15 => ?_
   try clear d99
-  obtain ⟨x110, y111, m112, c113, c114, d115, d116, op117, hq16⟩ := d107.binary_inv
-  try clear d107
-  obtain ⟨x118, y119, m120, c121, c122, d123, d124, op125, hq17⟩ := d115.binary_inv
-  try clear d115
-  obtain ⟨x126, y127, m128, c129, c130, d131, d132, op133, hq18⟩ := d123.binary_inv
-  try clear d123
-  obtain ⟨x134, y135, m136, c137, c138, d139, d140, op141, hq19⟩ := d131.binary_inv
-  try clear d131
-  obtain ⟨x142, y143, m144, c145, c146, d147, d148, op149, hq20⟩ := d139.binary_inv
-  try clear d139
-  obtain ⟨x150, y151, m152, c153, c154, d155, d156, op157, hq21⟩ := d147.binary_inv
-  try clear d147
-  obtain ⟨x158, y159, m160, c161, c162, d163, d164, op165, hq22⟩ := d155.binary_inv
-  try clear d155
-  obtain ⟨x166, y167, m168, c169, c170, d171, d172, op173, hq23⟩ := d163.binary_inv
-  try clear d163
-  obtain ⟨p174, d175, pr176⟩ := d171.index_inv
-  try clear d171
-  obtain ⟨l177, rfl, hq24⟩ := d175.var_inv
-  try clear d175
-  simp at l177
-  subst l177
-  obtain ⟨p178, d179, pr180⟩ := d172.index_inv
-  try clear d172
-  obtain ⟨l181, rfl, hq25⟩ := d179.var_inv
-  try clear d179
-  simp at l181
-  subst l181
-  obtain ⟨x182, y183, m184, c185, c186, d187, d188, op189, hq26⟩ := d164.binary_inv
-  try clear d164
-  obtain ⟨p190, d191, pr192⟩ := d187.index_inv
-  try clear d187
-  obtain ⟨l193, rfl, hq27⟩ := d191.var_inv
-  try clear d191
-  simp at l193
-  subst l193
-  obtain ⟨p194, d195, pr196⟩ := d188.index_inv
-  try clear d188
-  obtain ⟨l197, rfl, hq28⟩ := d195.var_inv
-  try clear d195
-  simp at l197
-  subst l197
-  obtain ⟨x198, y199, m200, c201, c202, d203, d204, op205, hq29⟩ := d156.binary_inv
-  try clear d156
-  obtain ⟨p206, d207, pr208⟩ := d203.index_inv
-  try clear d203
-  obtain ⟨l209, rfl, hq30⟩ := d207.var_inv
-  try clear d207
-  simp at l209
-  subst l209
-  obtain ⟨p210, d211, pr212⟩ := d204.index_inv
-  try clear d204
-  obtain ⟨l213, rfl, hq31⟩ := d211.var_inv
-  try clear d211
-  simp at l213
-  subst l213
-  obtain ⟨x214, y215, m216, c217, c218, d219, d220, op221, hq32⟩ := d148.binary_inv
-  try clear d148
-  obtain ⟨p222, d223, pr224⟩ := d219.index_inv
-  try clear d219
-  obtain ⟨l225, rfl, hq33⟩ := d223.var_inv
-  try clear d223
-  simp at l225
-  subst l225
-  obtain ⟨p226, d227, pr228⟩ := d220.index_inv
-  try clear d220
-  obtain ⟨l229, rfl, hq34⟩ := d227.var_inv
-  try clear d227
-  simp at l229
-  subst l229
-  obtain ⟨x230, y231, m232, c233, c234, d235, d236, op237, hq35⟩ := d140.binary_inv
-  try clear d140
-  obtain ⟨p238, d239, pr240⟩ := d235.index_inv
-  try clear d235
-  obtain ⟨l241, rfl, hq36⟩ := d239.var_inv
-  try clear d239
-  simp at l241
-  subst l241
-  obtain ⟨p242, d243, pr244⟩ := d236.index_inv
-  try clear d236
-  obtain ⟨l245, rfl, hq37⟩ := d243.var_inv
-  try clear d243
-  simp at l245
-  subst l245
-  obtain ⟨x246, y247, m248, c249, c250, d251, d252, op253, hq38⟩ := d132.binary_inv
-  try clear d132
-  obtain ⟨p254, d255, pr256⟩ := d251.index_inv
-  try clear d251
-  obtain ⟨l257, rfl, hq39⟩ := d255.var_inv
-  try clear d255
-  simp at l257
+  subst ze15
   as_aux_lemma =>
-   subst l257
-   obtain ⟨p258, d259, pr260⟩ := d252.index_inv
-   try clear d252
-   obtain ⟨l261, rfl, hq40⟩ := d259.var_inv
-   try clear d259
-   simp at l261
-   subst l261
-   obtain ⟨x262, y263, m264, c265, c266, d267, d268, op269, hq41⟩ := d124.binary_inv
-   try clear d124
-   obtain ⟨p270, d271, pr272⟩ := d267.index_inv
-   try clear d267
-   obtain ⟨l273, rfl, hq42⟩ := d271.var_inv
-   try clear d271
-   simp at l273
-   subst l273
-   obtain ⟨p274, d275, pr276⟩ := d268.index_inv
-   try clear d268
-   obtain ⟨l277, rfl, hq43⟩ := d275.var_inv
-   try clear d275
-   simp at l277
-   subst l277
-   obtain ⟨x278, y279, m280, c281, c282, d283, d284, op285, hq44⟩ := d116.binary_inv
-   try clear d116
-   obtain ⟨p286, d287, pr288⟩ := d283.index_inv
-   try clear d283
-   obtain ⟨l289, rfl, hq45⟩ := d287.var_inv
-   try clear d287
-   simp at l289
-   subst l289
-   obtain ⟨p290, d291, pr292⟩ := d284.index_inv
-   try clear d284
-   obtain ⟨l293, rfl, hq46⟩ := d291.var_inv
-   try clear d291
-   simp at l293
-   subst l293
-   obtain ⟨x294, y295, m296, c297, c298, d299, d300, op301, hq47⟩ := d108.binary_inv
-   try clear d108
-   obtain ⟨p302, d303, pr304⟩ := d299.index_inv
-   try clear d299
-   obtain ⟨l305, rfl, hq48⟩ := d303.var_inv
-   try clear d303
-   simp at l305
-   subst l305
-   obtain ⟨p306, d307, pr308⟩ := d300.index_inv
-   try clear d300
-   obtain ⟨l309, rfl, hq49⟩ := d307.var_inv
-   try clear d307
-   simp at l309
-   subst l309
-   obtain ⟨x310, y311, m312, c313, c314, d315, d316, op317, hq50⟩ := d100.binary_inv
-   try clear d100
-   obtain ⟨p318, d319, pr320⟩ := d315.index_inv
-   try clear d315
-   obtain ⟨l321, rfl, hq51⟩ := d319.var_inv
-   try clear d319
-   simp at l321
-   subst l321
-   obtain ⟨p322, d323, pr324⟩ := d316.index_inv
-   try clear d316
-   obtain ⟨l325, rfl, hq52⟩ := d323.var_inv
-   try clear d323
-   simp at l325
-   subst l325
-   obtain ⟨x326, y327, m328, c329, c330, d331, d332, op333, hq53⟩ := d92.binary_inv
-   try clear d92
-   obtain ⟨p334, d335, pr336⟩ := d331.index_inv
-   try clear d331
-   obtain ⟨l337, rfl, hq54⟩ := d335.var_inv
-   try clear d335
-   simp at l337
-   subst l337
-   obtain ⟨p338, d339, pr340⟩ := d332.index_inv
-   try clear d332
-   obtain ⟨l341, rfl, hq55⟩ := d339.var_inv
-   try clear d339
-   simp at l341
-   subst l341
-   obtain ⟨x342, y343, m344, c345, c346, d347, d348, op349, hq56⟩ := d84.binary_inv
-   try clear d84
-   obtain ⟨p350, d351, pr352⟩ := d347.index_inv
-   try clear d347
-   obtain ⟨l353, rfl, hq57⟩ := d351.var_inv
-   try clear d351
-   simp at l353
-   subst l353
-   obtain ⟨p354, d355, pr356⟩ := d348.index_inv
-   try clear d348
-   obtain ⟨l357, rfl, hq58⟩ := d355.var_inv
-   try clear d355
-   simp at l357
-   subst l357
-   obtain ⟨x358, y359, m360, c361, c362, d363, d364, op365, hq59⟩ := d76.binary_inv
-   try clear d76
-   obtain ⟨p366, d367, pr368⟩ := d363.index_inv
-   try clear d363
-   obtain ⟨l369, rfl, hq60⟩ := d367.var_inv
-   try clear d367
-   simp at l369
-   subst l369
-   obtain ⟨p370, d371, pr372⟩ := d364.index_inv
-   try clear d364
-   obtain ⟨l373, rfl, hq61⟩ := d371.var_inv
-   try clear d371
-   simp at l373
-   subst l373
-   obtain ⟨x374, y375, m376, c377, c378, d379, d380, op381, hq62⟩ := d68.binary_inv
-   try clear d68
-   obtain ⟨p382, d383, pr384⟩ := d379.index_inv
-   try clear d379
-   obtain ⟨l385, rfl, hq63⟩ := d383.var_inv
-   try clear d383
-   simp at l385
-   subst l385
-   obtain ⟨p386, d387, pr388⟩ := d380.index_inv
-   try clear d380
-   obtain ⟨l389, rfl, hq64⟩ := d387.var_inv
-   try clear d387
-   simp at l389
-   subst l389
-   obtain ⟨x390, y391, m392, c393, c394, d395, d396, op397, hq65⟩ := d60.binary_inv
+   refine d107.binary_elim fun x110 y111 m112 c113 c114 d115 d116 op117 ze16 => ?_
+   try clear d107
+   subst ze16
+   refine d115.binary_elim fun x118 y119 m120 c121 c122 d123 d124 op125 ze17 => ?_
+   try clear d115
+   subst ze17
+   refine d123.binary_elim fun x126 y127 m128 c129 c130 d131 d132 op133 ze18 => ?_
+   try clear d123
+   subst ze18
+   refine d131.binary_elim fun x134 y135 m136 c137 c138 d139 d140 op141 ze19 => ?_
+   try clear d131
+   subst ze19
+   refine d139.binary_elim fun x142 y143 m144 c145 c146 d147 d148 op149 ze20 => ?_
+   try clear d139
+   subst ze20
+   refine d147.binary_elim fun x150 y151 m152 c153 c154 d155 d156 op157 ze21 => ?_
+   try clear d147
+   subst ze21
+   refine d155.binary_elim fun x158 y159 m160 c161 c162 d163 d164 op165 ze22 => ?_
+   try clear d155
+   subst ze22
+   refine d163.binary_elim fun x166 y167 m168 c169 c170 d171 d172 op173 ze23 => ?_
+   try clear d163
+   subst ze23
+   refine d171.index_elim fun p174 d175 pr176 => ?_
+   try clear d171
+   refine Fused.var_is d175 rfl fun l177 zm25 zq24 => ?_
+   try clear d175
+   subst l177
+   subst zm25
+   refine d172.index_elim fun p178 d179 pr180 => ?_
+   try clear d172
+   refine Fused.var_is d179 rfl fun l181 zm27 zq26 => ?_
+   try clear d179
+   subst l181
+   subst zm27
+   refine d164.binary_elim fun x182 y183 m184 c185 c186 d187 d188 op189 ze28 => ?_
+   try clear d164
+   subst ze28
+   refine d187.index_elim fun p190 d191 pr192 => ?_
    as_aux_lemma =>
-    try clear d60
-    obtain ⟨p398, d399, pr400⟩ := d395.index_inv
-    try clear d395
-    obtain ⟨l401, rfl, hq66⟩ := d399.var_inv
-    try clear d399
-    simp at l401
-    subst l401
-    obtain ⟨p402, d403, pr404⟩ := d396.index_inv
-    try clear d396
-    obtain ⟨l405, rfl, hq67⟩ := d403.var_inv
-    try clear d403
-    simp at l405
-    subst l405
-    obtain ⟨x406, y407, m408, c409, c410, d411, d412, op413, hq68⟩ := d52.binary_inv
-    try clear d52
-    obtain ⟨p414, d415, pr416⟩ := d411.index_inv
-    try clear d411
-    obtain ⟨l417, rfl, hq69⟩ := d415.var_inv
-    try clear d415
-    simp at l417
-    subst l417
-    obtain ⟨p418, d419, pr420⟩ := d412.index_inv
-    try clear d412
-    obtain ⟨l421, rfl, hq70⟩ := d419.var_inv
-    try clear d419
-    simp at l421
-    subst l421
-    obtain ⟨x422, y423, m424, c425, c426, d427, d428, op429, hq71⟩ := d44.binary_inv
-    try clear d44
-    obtain ⟨p430, d431, pr432⟩ := d427.index_inv
-    try clear d427
-    obtain ⟨l433, rfl, hq72⟩ := d431.var_inv
-    try clear d431
-    simp at l433
-    subst l433
-    obtain ⟨p434, d435, pr436⟩ := d428.index_inv
-    try clear d428
-    obtain ⟨l437, rfl, hq73⟩ := d435.var_inv
-    try clear d435
-    simp at l437
-    subst l437
-    obtain ⟨x438, y439, m440, c441, c442, d443, d444, op445, hq74⟩ := d36.binary_inv
-    try clear d36
-    obtain ⟨p446, d447, pr448⟩ := d443.index_inv
-    try clear d443
-    obtain ⟨l449, rfl, hq75⟩ := d447.var_inv
-    try clear d447
-    simp at l449
-    subst l449
-    obtain ⟨p450, d451, pr452⟩ := d444.index_inv
-    try clear d444
-    obtain ⟨l453, rfl, hq76⟩ := d451.var_inv
-    try clear d451
-    simp at l453
-    subst l453
-    obtain ⟨x454, y455, m456, c457, c458, d459, d460, op461, hq77⟩ := d28.binary_inv
-    try clear d28
-    obtain ⟨p462, d463, pr464⟩ := d459.index_inv
-    try clear d459
-    obtain ⟨l465, rfl, hq78⟩ := d463.var_inv
-    try clear d463
-    simp at l465
-    subst l465
-    obtain ⟨p466, d467, pr468⟩ := d460.index_inv
-    try clear d460
-    obtain ⟨l469, rfl, hq79⟩ := d467.var_inv
-    try clear d467
-    simp at l469
-    subst l469
-    obtain ⟨x470, y471, m472, c473, c474, d475, d476, op477, hq80⟩ := d20.binary_inv
-    try clear d20
-    obtain ⟨p478, d479, pr480⟩ := d475.index_inv
-    try clear d475
-    obtain ⟨l481, rfl, hq81⟩ := d479.var_inv
-    try clear d479
-    simp at l481
-    subst l481
-    obtain ⟨p482, d483, pr484⟩ := d476.index_inv
-    try clear d476
-    obtain ⟨l485, rfl, hq82⟩ := d483.var_inv
-    try clear d483
-    simp at l485
-    subst l485
-    obtain ⟨hq84, rfl, hq83⟩ := a13.nil_inv
-    try clear a13
-    subst hq84
-    subst hq3
-    subst hq83
-    subst hq82
-    subst hq81
-    subst hq80
-    subst hq79
-    subst hq78
-    subst hq77
-    subst hq76
-    subst hq75
-    subst hq74
-    subst hq73
-    subst hq72
-    subst hq71
-    subst hq70
-    subst hq69
-    subst hq68
-    subst hq67
-    subst hq66
-    subst hq65
-    subst hq64
-    subst hq63
-    subst hq62
-    subst hq61
-    subst hq60
-    subst hq59
-    subst hq58
-    subst hq57
-    subst hq56
-    subst hq55
-    subst hq54
-    subst hq53
-    subst hq52
-    subst hq51
+    try clear d187
+    refine Fused.var_is d191 rfl fun l193 zm30 zq29 => ?_
+    try clear d191
+    subst l193
+    subst zm30
+    refine d188.index_elim fun p194 d195 pr196 => ?_
+    try clear d188
+    refine Fused.var_is d195 rfl fun l197 zm32 zq31 => ?_
+    try clear d195
+    subst l197
+    subst zm32
+    refine d156.binary_elim fun x198 y199 m200 c201 c202 d203 d204 op205 ze33 => ?_
+    try clear d156
+    subst ze33
+    refine d203.index_elim fun p206 d207 pr208 => ?_
+    try clear d203
+    refine Fused.var_is d207 rfl fun l209 zm35 zq34 => ?_
+    try clear d207
+    subst l209
+    subst zm35
+    refine d204.index_elim fun p210 d211 pr212 => ?_
+    try clear d204
+    refine Fused.var_is d211 rfl fun l213 zm37 zq36 => ?_
+    try clear d211
+    subst l213
+    subst zm37
+    refine d148.binary_elim fun x214 y215 m216 c217 c218 d219 d220 op221 ze38 => ?_
+    try clear d148
+    subst ze38
+    refine d219.index_elim fun p222 d223 pr224 => ?_
+    try clear d219
+    refine Fused.var_is d223 rfl fun l225 zm40 zq39 => ?_
+    try clear d223
+    subst l225
+    subst zm40
+    refine d220.index_elim fun p226 d227 pr228 => ?_
+    try clear d220
+    refine Fused.var_is d227 rfl fun l229 zm42 zq41 => ?_
+    try clear d227
+    subst l229
     as_aux_lemma =>
-     subst hq50
-     subst hq49
-     subst hq48
-     subst hq47
-     subst hq46
-     subst hq45
-     subst hq44
-     subst hq43
-     subst hq42
-     subst hq41
-     subst hq40
-     subst hq39
-     subst hq38
-     subst hq37
-     subst hq36
-     subst hq35
-     subst hq34
-     subst hq33
-     subst hq32
-     subst hq31
-     subst hq30
-     subst hq29
-     subst hq28
-     subst hq27
-     subst hq26
-     subst hq25
-     subst hq24
-     subst hq23
-     subst hq22
-     subst hq21
-     subst hq20
-     subst hq19
-     subst hq18
-     subst hq17
-     subst hq16
-     subst hq15
-     subst hq14
-     subst hq13
-     subst hq12
-     subst hq11
-     subst hq10
-     subst hq9
-     subst hq8
-     subst hq7
-     subst hq6
-     subst hq5
-     subst hq4
-     subst hq2
-     subst hq1
-     exact «Fixed::dot20».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ pr176 pr180 op173 pr192 pr196 op189 op165 pr208 pr212 op205 op157 pr224 pr228 op221 op149 pr240 pr244 op237 op141 pr256 pr260 op253 op133 pr272 pr276 op269 op125 pr288 pr292 op285 op117 pr304 pr308 op301 op109 pr320 pr324 op317 op101 pr336 pr340 op333 op93 pr352 pr356 op349 op85 pr368 pr372 op365 op77 pr384 pr388 op381 op69 pr400 pr404 op397 op61 pr416 pr420 op413 op53 pr432 pr436 op429 op45 pr448 pr452 op445 op37 pr464 pr468 op461 op29 pr480 pr484 op477 op21 ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+     subst zm42
+     refine d140.binary_elim fun x230 y231 m232 c233 c234 d235 d236 op237 ze43 => ?_
+     try clear d140
+     subst ze43
+     refine d235.index_elim fun p238 d239 pr240 => ?_
+     try clear d235
+     refine Fused.var_is d239 rfl fun l241 zm45 zq44 => ?_
+     try clear d239
+     subst l241
+     subst zm45
+     refine d236.index_elim fun p242 d243 pr244 => ?_
+     try clear d236
+     refine Fused.var_is d243 rfl fun l245 zm47 zq46 => ?_
+     try clear d243
+     subst l245
+     subst zm47
+     refine d132.binary_elim fun x246 y247 m248 c249 c250 d251 d252 op253 ze48 => ?_
+     try clear d132
+     subst ze48
+     refine d251.index_elim fun p254 d255 pr256 => ?_
+     try clear d251
+     refine Fused.var_is d255 rfl fun l257 zm50 zq49 => ?_
+     try clear d255
+     subst l257
+     subst zm50
+     refine d252.index_elim fun p258 d259 pr260 => ?_
+     try clear d252
+     refine Fused.var_is d259 rfl fun l261 zm52 zq51 => ?_
+     try clear d259
+     subst l261
+     subst zm52
+     refine d124.binary_elim fun x262 y263 m264 c265 c266 d267 d268 op269 ze53 => ?_
+     try clear d124
+     subst ze53
+     refine d267.index_elim fun p270 d271 pr272 => ?_
+     try clear d267
+     refine Fused.var_is d271 rfl fun l273 zm55 zq54 => ?_
+     try clear d271
+     subst l273
+     subst zm55
+     as_aux_lemma =>
+      refine d268.index_elim fun p274 d275 pr276 => ?_
+      try clear d268
+      refine Fused.var_is d275 rfl fun l277 zm57 zq56 => ?_
+      try clear d275
+      subst l277
+      subst zm57
+      refine d116.binary_elim fun x278 y279 m280 c281 c282 d283 d284 op285 ze58 => ?_
+      try clear d116
+      subst ze58
+      refine d283.index_elim fun p286 d287 pr288 => ?_
+      try clear d283
+      refine Fused.var_is d287 rfl fun l289 zm60 zq59 => ?_
+      try clear d287
+      subst l289
+      subst zm60
+      refine d284.index_elim fun p290 d291 pr292 => ?_
+      try clear d284
+      refine Fused.var_is d291 rfl fun l293 zm62 zq61 => ?_
+      try clear d291
+      subst l293
+      subst zm62
+      refine d108.binary_elim fun x294 y295 m296 c297 c298 d299 d300 op301 ze63 => ?_
+      try clear d108
+      subst ze63
+      refine d299.index_elim fun p302 d303 pr304 => ?_
+      try clear d299
+      refine Fused.var_is d303 rfl fun l305 zm65 zq64 => ?_
+      try clear d303
+      subst l305
+      subst zm65
+      refine d300.index_elim fun p306 d307 pr308 => ?_
+      try clear d300
+      refine Fused.var_is d307 rfl fun l309 zm67 zq66 => ?_
+      try clear d307
+      subst l309
+      subst zm67
+      refine d100.binary_elim fun x310 y311 m312 c313 c314 d315 d316 op317 ze68 => ?_
+      try clear d100
+      subst ze68
+      refine d315.index_elim fun p318 d319 pr320 => ?_
+      as_aux_lemma =>
+       try clear d315
+       refine Fused.var_is d319 rfl fun l321 zm70 zq69 => ?_
+       try clear d319
+       subst l321
+       subst zm70
+       refine d316.index_elim fun p322 d323 pr324 => ?_
+       try clear d316
+       refine Fused.var_is d323 rfl fun l325 zm72 zq71 => ?_
+       try clear d323
+       subst l325
+       subst zm72
+       refine d92.binary_elim fun x326 y327 m328 c329 c330 d331 d332 op333 ze73 => ?_
+       try clear d92
+       subst ze73
+       refine d331.index_elim fun p334 d335 pr336 => ?_
+       try clear d331
+       refine Fused.var_is d335 rfl fun l337 zm75 zq74 => ?_
+       try clear d335
+       subst l337
+       subst zm75
+       refine d332.index_elim fun p338 d339 pr340 => ?_
+       try clear d332
+       refine Fused.var_is d339 rfl fun l341 zm77 zq76 => ?_
+       try clear d339
+       subst l341
+       subst zm77
+       refine d84.binary_elim fun x342 y343 m344 c345 c346 d347 d348 op349 ze78 => ?_
+       try clear d84
+       subst ze78
+       refine d347.index_elim fun p350 d351 pr352 => ?_
+       try clear d347
+       refine Fused.var_is d351 rfl fun l353 zm80 zq79 => ?_
+       try clear d351
+       subst l353
+       subst zm80
+       refine d348.index_elim fun p354 d355 pr356 => ?_
+       try clear d348
+       refine Fused.var_is d355 rfl fun l357 zm82 zq81 => ?_
+       try clear d355
+       subst l357
+       as_aux_lemma =>
+        subst zm82
+        refine d76.binary_elim fun x358 y359 m360 c361 c362 d363 d364 op365 ze83 => ?_
+        try clear d76
+        subst ze83
+        refine d363.index_elim fun p366 d367 pr368 => ?_
+        try clear d363
+        refine Fused.var_is d367 rfl fun l369 zm85 zq84 => ?_
+        try clear d367
+        subst l369
+        subst zm85
+        refine d364.index_elim fun p370 d371 pr372 => ?_
+        try clear d364
+        refine Fused.var_is d371 rfl fun l373 zm87 zq86 => ?_
+        try clear d371
+        subst l373
+        subst zm87
+        refine d68.binary_elim fun x374 y375 m376 c377 c378 d379 d380 op381 ze88 => ?_
+        try clear d68
+        subst ze88
+        refine d379.index_elim fun p382 d383 pr384 => ?_
+        try clear d379
+        refine Fused.var_is d383 rfl fun l385 zm90 zq89 => ?_
+        try clear d383
+        subst l385
+        subst zm90
+        refine d380.index_elim fun p386 d387 pr388 => ?_
+        try clear d380
+        refine Fused.var_is d387 rfl fun l389 zm92 zq91 => ?_
+        try clear d387
+        subst l389
+        subst zm92
+        refine d60.binary_elim fun x390 y391 m392 c393 c394 d395 d396 op397 ze93 => ?_
+        try clear d60
+        subst ze93
+        refine d395.index_elim fun p398 d399 pr400 => ?_
+        try clear d395
+        refine Fused.var_is d399 rfl fun l401 zm95 zq94 => ?_
+        try clear d399
+        subst l401
+        subst zm95
+        as_aux_lemma =>
+         refine d396.index_elim fun p402 d403 pr404 => ?_
+         try clear d396
+         refine Fused.var_is d403 rfl fun l405 zm97 zq96 => ?_
+         try clear d403
+         subst l405
+         subst zm97
+         refine d52.binary_elim fun x406 y407 m408 c409 c410 d411 d412 op413 ze98 => ?_
+         try clear d52
+         subst ze98
+         refine d411.index_elim fun p414 d415 pr416 => ?_
+         try clear d411
+         refine Fused.var_is d415 rfl fun l417 zm100 zq99 => ?_
+         try clear d415
+         subst l417
+         subst zm100
+         refine d412.index_elim fun p418 d419 pr420 => ?_
+         try clear d412
+         refine Fused.var_is d419 rfl fun l421 zm102 zq101 => ?_
+         try clear d419
+         subst l421
+         subst zm102
+         refine d44.binary_elim fun x422 y423 m424 c425 c426 d427 d428 op429 ze103 => ?_
+         try clear d44
+         subst ze103
+         refine d427.index_elim fun p430 d431 pr432 => ?_
+         try clear d427
+         refine Fused.var_is d431 rfl fun l433 zm105 zq104 => ?_
+         try clear d431
+         subst l433
+         subst zm105
+         refine d428.index_elim fun p434 d435 pr436 => ?_
+         try clear d428
+         refine Fused.var_is d435 rfl fun l437 zm107 zq106 => ?_
+         try clear d435
+         subst l437
+         subst zm107
+         refine d36.binary_elim fun x438 y439 m440 c441 c442 d443 d444 op445 ze108 => ?_
+         try clear d36
+         subst ze108
+         refine d443.index_elim fun p446 d447 pr448 => ?_
+         as_aux_lemma =>
+          try clear d443
+          refine Fused.var_is d447 rfl fun l449 zm110 zq109 => ?_
+          try clear d447
+          subst l449
+          subst zm110
+          refine d444.index_elim fun p450 d451 pr452 => ?_
+          try clear d444
+          refine Fused.var_is d451 rfl fun l453 zm112 zq111 => ?_
+          try clear d451
+          subst l453
+          subst zm112
+          refine d28.binary_elim fun x454 y455 m456 c457 c458 d459 d460 op461 ze113 => ?_
+          try clear d28
+          subst ze113
+          refine d459.index_elim fun p462 d463 pr464 => ?_
+          try clear d459
+          refine Fused.var_is d463 rfl fun l465 zm115 zq114 => ?_
+          try clear d463
+          subst l465
+          subst zm115
+          refine d460.index_elim fun p466 d467 pr468 => ?_
+          try clear d460
+          refine Fused.var_is d467 rfl fun l469 zm117 zq116 => ?_
+          try clear d467
+          subst l469
+          subst zm117
+          refine d20.binary_elim fun x470 y471 m472 c473 c474 d475 d476 op477 ze118 => ?_
+          try clear d20
+          subst ze118
+          refine d475.index_elim fun p478 d479 pr480 => ?_
+          try clear d475
+          refine Fused.var_is d479 rfl fun l481 zm120 zq119 => ?_
+          try clear d479
+          subst l481
+          subst zm120
+          refine d476.index_elim fun p482 d483 pr484 => ?_
+          try clear d476
+          refine Fused.var_is d483 rfl fun l485 zm122 zq121 => ?_
+          try clear d483
+          subst l485
+          as_aux_lemma =>
+           subst zm122
+           refine a13.nil_elim fun zv123 zm124 zq125 => ?_
+           try clear a13
+           subst zv123
+           subst zv2
+           subst zm124
+           subst zq125
+           subst zq121
+           subst zq119
+           subst zq116
+           subst zq114
+           subst zq111
+           subst zq109
+           subst zq106
+           subst zq104
+           subst zq101
+           subst zq99
+           subst zq96
+           subst zq94
+           subst zq91
+           subst zq89
+           subst zq86
+           subst zq84
+           subst zq81
+           subst zq79
+           subst zq76
+           subst zq74
+           subst zq71
+           subst zq69
+           subst zq66
+           subst zq64
+           subst zq61
+           subst zq59
+           subst zq56
+           subst zq54
+           subst zq51
+           subst zq49
+           subst zq46
+           subst zq44
+           subst zq41
+           as_aux_lemma =>
+            subst zq39
+            subst zq36
+            subst zq34
+            subst zq31
+            subst zq29
+            subst zq26
+            subst zq24
+            subst zq3
+            subst zq1
+            exact «Fixed::dot20».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ pr176 pr180 op173 pr192 pr196 op189 op165 pr208 pr212 op205 op157 pr224 pr228 op221 op149 pr240 pr244 op237 op141 pr256 pr260 op253 op133 pr272 pr276 op269 op125 pr288 pr292 op285 op117 pr304 pr308 op301 op109 pr320 pr324 op317 op101 pr336 pr340 op333 op93 pr352 pr356 op349 op85 pr368 pr372 op365 op77 pr384 pr388 op381 op69 pr400 pr404 op397 op61 pr416 pr420 op413 op53 pr432 pr436 op429 op45 pr448 pr452 op445 op37 pr464 pr468 op461 op29 pr480 pr484 op477 op21 ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::sum20`: one constructor per combination of selected arms. -/
 inductive «Fixed::sum20».Path (x_a : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -2796,205 +2442,208 @@ theorem «Fixed::sum20».obs {x_a : SourceValue F} {h h' : Heap F} {r : SourceVa
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.sum20.lookup
     (by simp [IxAIStep.Fixed.Fixed.sum20, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.sum20] at d0
-  obtain ⟨x1, y2, m3, c4, c5, d6, d7, op8, hq1⟩ := d0.binary_inv
+  refine d0.binary_elim fun x1 y2 m3 c4 c5 d6 d7 op8 ze1 => ?_
   try clear d0
-  obtain ⟨x9, y10, m11, c12, c13, d14, d15, op16, hq2⟩ := d6.binary_inv
+  subst ze1
+  refine d6.binary_elim fun x9 y10 m11 c12 c13 d14 d15 op16 ze2 => ?_
   try clear d6
-  obtain ⟨x17, y18, m19, c20, c21, d22, d23, op24, hq3⟩ := d14.binary_inv
+  subst ze2
+  refine d14.binary_elim fun x17 y18 m19 c20 c21 d22 d23 op24 ze3 => ?_
   try clear d14
-  obtain ⟨x25, y26, m27, c28, c29, d30, d31, op32, hq4⟩ := d22.binary_inv
+  subst ze3
+  refine d22.binary_elim fun x25 y26 m27 c28 c29 d30 d31 op32 ze4 => ?_
   try clear d22
-  obtain ⟨x33, y34, m35, c36, c37, d38, d39, op40, hq5⟩ := d30.binary_inv
+  subst ze4
+  refine d30.binary_elim fun x33 y34 m35 c36 c37 d38 d39 op40 ze5 => ?_
   try clear d30
-  obtain ⟨x41, y42, m43, c44, c45, d46, d47, op48, hq6⟩ := d38.binary_inv
+  subst ze5
+  refine d38.binary_elim fun x41 y42 m43 c44 c45 d46 d47 op48 ze6 => ?_
   try clear d38
-  obtain ⟨x49, y50, m51, c52, c53, d54, d55, op56, hq7⟩ := d46.binary_inv
+  subst ze6
+  refine d46.binary_elim fun x49 y50 m51 c52 c53 d54 d55 op56 ze7 => ?_
   try clear d46
-  obtain ⟨x57, y58, m59, c60, c61, d62, d63, op64, hq8⟩ := d54.binary_inv
+  subst ze7
+  refine d54.binary_elim fun x57 y58 m59 c60 c61 d62 d63 op64 ze8 => ?_
   try clear d54
-  obtain ⟨x65, y66, m67, c68, c69, d70, d71, op72, hq9⟩ := d62.binary_inv
+  subst ze8
+  refine d62.binary_elim fun x65 y66 m67 c68 c69 d70 d71 op72 ze9 => ?_
   try clear d62
-  obtain ⟨x73, y74, m75, c76, c77, d78, d79, op80, hq10⟩ := d70.binary_inv
+  subst ze9
+  refine d70.binary_elim fun x73 y74 m75 c76 c77 d78 d79 op80 ze10 => ?_
   try clear d70
-  obtain ⟨x81, y82, m83, c84, c85, d86, d87, op88, hq11⟩ := d78.binary_inv
+  subst ze10
+  refine d78.binary_elim fun x81 y82 m83 c84 c85 d86 d87 op88 ze11 => ?_
   try clear d78
-  obtain ⟨x89, y90, m91, c92, c93, d94, d95, op96, hq12⟩ := d86.binary_inv
+  subst ze11
+  refine d86.binary_elim fun x89 y90 m91 c92 c93 d94 d95 op96 ze12 => ?_
   try clear d86
-  obtain ⟨x97, y98, m99, c100, c101, d102, d103, op104, hq13⟩ := d94.binary_inv
+  subst ze12
+  refine d94.binary_elim fun x97 y98 m99 c100 c101 d102 d103 op104 ze13 => ?_
   try clear d94
-  obtain ⟨x105, y106, m107, c108, c109, d110, d111, op112, hq14⟩ := d102.binary_inv
-  try clear d102
-  obtain ⟨x113, y114, m115, c116, c117, d118, d119, op120, hq15⟩ := d110.binary_inv
-  try clear d110
-  obtain ⟨x121, y122, m123, c124, c125, d126, d127, op128, hq16⟩ := d118.binary_inv
-  try clear d118
-  obtain ⟨x129, y130, m131, c132, c133, d134, d135, op136, hq17⟩ := d126.binary_inv
-  try clear d126
-  obtain ⟨x137, y138, m139, c140, c141, d142, d143, op144, hq18⟩ := d134.binary_inv
-  try clear d134
-  obtain ⟨x145, y146, m147, c148, c149, d150, d151, op152, hq19⟩ := d142.binary_inv
-  try clear d142
-  obtain ⟨p153, d154, pr155⟩ := d150.index_inv
-  try clear d150
-  obtain ⟨l156, rfl, hq20⟩ := d154.var_inv
-  try clear d154
-  simp at l156
-  subst l156
-  obtain ⟨p157, d158, pr159⟩ := d151.index_inv
-  try clear d151
-  obtain ⟨l160, rfl, hq21⟩ := d158.var_inv
-  try clear d158
-  simp at l160
-  subst l160
-  obtain ⟨p161, d162, pr163⟩ := d143.index_inv
-  try clear d143
-  obtain ⟨l164, rfl, hq22⟩ := d162.var_inv
-  try clear d162
-  simp at l164
-  subst l164
-  obtain ⟨p165, d166, pr167⟩ := d135.index_inv
-  try clear d135
-  obtain ⟨l168, rfl, hq23⟩ := d166.var_inv
-  try clear d166
-  simp at l168
-  subst l168
-  obtain ⟨p169, d170, pr171⟩ := d127.index_inv
-  try clear d127
-  obtain ⟨l172, rfl, hq24⟩ := d170.var_inv
-  try clear d170
-  simp at l172
-  subst l172
-  obtain ⟨p173, d174, pr175⟩ := d119.index_inv
-  try clear d119
-  obtain ⟨l176, rfl, hq25⟩ := d174.var_inv
-  try clear d174
-  simp at l176
-  subst l176
-  obtain ⟨p177, d178, pr179⟩ := d111.index_inv
-  try clear d111
-  obtain ⟨l180, rfl, hq26⟩ := d178.var_inv
-  try clear d178
-  simp at l180
-  subst l180
-  obtain ⟨p181, d182, pr183⟩ := d103.index_inv
-  try clear d103
-  obtain ⟨l184, rfl, hq27⟩ := d182.var_inv
-  try clear d182
-  simp at l184
-  subst l184
-  obtain ⟨p185, d186, pr187⟩ := d95.index_inv
-  try clear d95
-  obtain ⟨l188, rfl, hq28⟩ := d186.var_inv
-  try clear d186
-  simp at l188
-  subst l188
-  obtain ⟨p189, d190, pr191⟩ := d87.index_inv
-  try clear d87
-  obtain ⟨l192, rfl, hq29⟩ := d190.var_inv
-  try clear d190
-  simp at l192
-  subst l192
-  obtain ⟨p193, d194, pr195⟩ := d79.index_inv
-  try clear d79
-  obtain ⟨l196, rfl, hq30⟩ := d194.var_inv
-  try clear d194
-  simp at l196
-  subst l196
-  obtain ⟨p197, d198, pr199⟩ := d71.index_inv
-  try clear d71
-  obtain ⟨l200, rfl, hq31⟩ := d198.var_inv
-  try clear d198
-  simp at l200
-  subst l200
-  obtain ⟨p201, d202, pr203⟩ := d63.index_inv
-  try clear d63
-  obtain ⟨l204, rfl, hq32⟩ := d202.var_inv
-  try clear d202
-  simp at l204
-  subst l204
-  obtain ⟨p205, d206, pr207⟩ := d55.index_inv
-  try clear d55
-  obtain ⟨l208, rfl, hq33⟩ := d206.var_inv
-  try clear d206
+  subst ze13
+  refine d102.binary_elim fun x105 y106 m107 c108 c109 d110 d111 op112 ze14 => ?_
   as_aux_lemma =>
-   simp at l208
-   subst l208
-   obtain ⟨p209, d210, pr211⟩ := d47.index_inv
-   try clear d47
-   obtain ⟨l212, rfl, hq34⟩ := d210.var_inv
-   try clear d210
-   simp at l212
-   subst l212
-   obtain ⟨p213, d214, pr215⟩ := d39.index_inv
-   try clear d39
-   obtain ⟨l216, rfl, hq35⟩ := d214.var_inv
-   try clear d214
-   simp at l216
-   subst l216
-   obtain ⟨p217, d218, pr219⟩ := d31.index_inv
-   try clear d31
-   obtain ⟨l220, rfl, hq36⟩ := d218.var_inv
-   try clear d218
-   simp at l220
-   subst l220
-   obtain ⟨p221, d222, pr223⟩ := d23.index_inv
-   try clear d23
-   obtain ⟨l224, rfl, hq37⟩ := d222.var_inv
-   try clear d222
-   simp at l224
-   subst l224
-   obtain ⟨p225, d226, pr227⟩ := d15.index_inv
-   try clear d15
-   obtain ⟨l228, rfl, hq38⟩ := d226.var_inv
-   try clear d226
-   simp at l228
-   subst l228
-   obtain ⟨p229, d230, pr231⟩ := d7.index_inv
-   try clear d7
-   obtain ⟨l232, rfl, hq39⟩ := d230.var_inv
-   try clear d230
-   simp at l232
-   subst l232
-   subst hq39
-   subst hq38
-   subst hq37
-   subst hq36
-   subst hq35
-   subst hq34
-   subst hq33
-   subst hq32
-   subst hq31
-   subst hq30
-   subst hq29
-   subst hq28
-   subst hq27
-   subst hq26
-   subst hq25
-   subst hq24
-   subst hq23
-   subst hq22
-   subst hq21
-   subst hq20
-   subst hq19
-   subst hq18
-   subst hq17
-   subst hq16
-   subst hq15
-   subst hq14
-   subst hq13
-   subst hq12
-   subst hq11
-   subst hq10
-   subst hq9
-   subst hq8
-   subst hq7
-   subst hq6
-   subst hq5
-   subst hq4
-   subst hq3
-   subst hq2
-   subst hq1
-   exact «Fixed::sum20».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ pr155 pr159 op152 pr163 op144 pr167 op136 pr171 op128 pr175 op120 pr179 op112 pr183 op104 pr187 op96 pr191 op88 pr195 op80 pr199 op72 pr203 op64 pr207 op56 pr211 op48 pr215 op40 pr219 op32 pr223 op24 pr227 op16 rfl pr231 op8 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+   try clear d102
+   subst ze14
+   refine d110.binary_elim fun x113 y114 m115 c116 c117 d118 d119 op120 ze15 => ?_
+   try clear d110
+   subst ze15
+   refine d118.binary_elim fun x121 y122 m123 c124 c125 d126 d127 op128 ze16 => ?_
+   try clear d118
+   subst ze16
+   refine d126.binary_elim fun x129 y130 m131 c132 c133 d134 d135 op136 ze17 => ?_
+   try clear d126
+   subst ze17
+   refine d134.binary_elim fun x137 y138 m139 c140 c141 d142 d143 op144 ze18 => ?_
+   try clear d134
+   subst ze18
+   refine d142.binary_elim fun x145 y146 m147 c148 c149 d150 d151 op152 ze19 => ?_
+   try clear d142
+   subst ze19
+   refine d150.index_elim fun p153 d154 pr155 => ?_
+   try clear d150
+   refine Fused.var_is d154 rfl fun l156 zm21 zq20 => ?_
+   try clear d154
+   subst l156
+   subst zm21
+   refine d151.index_elim fun p157 d158 pr159 => ?_
+   try clear d151
+   refine Fused.var_is d158 rfl fun l160 zm23 zq22 => ?_
+   try clear d158
+   subst l160
+   subst zm23
+   refine d143.index_elim fun p161 d162 pr163 => ?_
+   try clear d143
+   refine Fused.var_is d162 rfl fun l164 zm25 zq24 => ?_
+   try clear d162
+   subst l164
+   subst zm25
+   refine d135.index_elim fun p165 d166 pr167 => ?_
+   try clear d135
+   refine Fused.var_is d166 rfl fun l168 zm27 zq26 => ?_
+   try clear d166
+   subst l168
+   as_aux_lemma =>
+    subst zm27
+    refine d127.index_elim fun p169 d170 pr171 => ?_
+    try clear d127
+    refine Fused.var_is d170 rfl fun l172 zm29 zq28 => ?_
+    try clear d170
+    subst l172
+    subst zm29
+    refine d119.index_elim fun p173 d174 pr175 => ?_
+    try clear d119
+    refine Fused.var_is d174 rfl fun l176 zm31 zq30 => ?_
+    try clear d174
+    subst l176
+    subst zm31
+    refine d111.index_elim fun p177 d178 pr179 => ?_
+    try clear d111
+    refine Fused.var_is d178 rfl fun l180 zm33 zq32 => ?_
+    try clear d178
+    subst l180
+    subst zm33
+    refine d103.index_elim fun p181 d182 pr183 => ?_
+    try clear d103
+    refine Fused.var_is d182 rfl fun l184 zm35 zq34 => ?_
+    try clear d182
+    subst l184
+    subst zm35
+    refine d95.index_elim fun p185 d186 pr187 => ?_
+    try clear d95
+    refine Fused.var_is d186 rfl fun l188 zm37 zq36 => ?_
+    try clear d186
+    subst l188
+    subst zm37
+    refine d87.index_elim fun p189 d190 pr191 => ?_
+    try clear d87
+    refine Fused.var_is d190 rfl fun l192 zm39 zq38 => ?_
+    try clear d190
+    subst l192
+    subst zm39
+    refine d79.index_elim fun p193 d194 pr195 => ?_
+    try clear d79
+    refine Fused.var_is d194 rfl fun l196 zm41 zq40 => ?_
+    as_aux_lemma =>
+     try clear d194
+     subst l196
+     subst zm41
+     refine d71.index_elim fun p197 d198 pr199 => ?_
+     try clear d71
+     refine Fused.var_is d198 rfl fun l200 zm43 zq42 => ?_
+     try clear d198
+     subst l200
+     subst zm43
+     refine d63.index_elim fun p201 d202 pr203 => ?_
+     try clear d63
+     refine Fused.var_is d202 rfl fun l204 zm45 zq44 => ?_
+     try clear d202
+     subst l204
+     subst zm45
+     refine d55.index_elim fun p205 d206 pr207 => ?_
+     try clear d55
+     refine Fused.var_is d206 rfl fun l208 zm47 zq46 => ?_
+     try clear d206
+     subst l208
+     subst zm47
+     refine d47.index_elim fun p209 d210 pr211 => ?_
+     try clear d47
+     refine Fused.var_is d210 rfl fun l212 zm49 zq48 => ?_
+     try clear d210
+     subst l212
+     subst zm49
+     refine d39.index_elim fun p213 d214 pr215 => ?_
+     try clear d39
+     refine Fused.var_is d214 rfl fun l216 zm51 zq50 => ?_
+     try clear d214
+     subst l216
+     subst zm51
+     refine d31.index_elim fun p217 d218 pr219 => ?_
+     try clear d31
+     refine Fused.var_is d218 rfl fun l220 zm53 zq52 => ?_
+     try clear d218
+     subst l220
+     subst zm53
+     refine d23.index_elim fun p221 d222 pr223 => ?_
+     as_aux_lemma =>
+      try clear d23
+      refine Fused.var_is d222 rfl fun l224 zm55 zq54 => ?_
+      try clear d222
+      subst l224
+      subst zm55
+      refine d15.index_elim fun p225 d226 pr227 => ?_
+      try clear d15
+      refine Fused.var_is d226 rfl fun l228 zm57 zq56 => ?_
+      try clear d226
+      subst l228
+      subst zm57
+      refine d7.index_elim fun p229 d230 pr231 => ?_
+      try clear d7
+      refine Fused.var_is d230 rfl fun l232 zm59 zq58 => ?_
+      try clear d230
+      subst l232
+      subst zm59
+      subst zq58
+      subst zq56
+      subst zq54
+      subst zq52
+      subst zq50
+      subst zq48
+      subst zq46
+      subst zq44
+      subst zq42
+      subst zq40
+      subst zq38
+      subst zq36
+      subst zq34
+      subst zq32
+      subst zq30
+      subst zq28
+      subst zq26
+      subst zq24
+      subst zq22
+      subst zq20
+      exact «Fixed::sum20».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ pr155 pr159 op152 pr163 op144 pr167 op136 pr171 op128 pr175 op120 pr179 op112 pr183 op104 pr187 op96 pr191 op88 pr195 op80 pr199 op72 pr203 op64 pr207 op56 pr211 op48 pr215 op40 pr219 op32 pr223 op24 pr227 op16 rfl pr231 op8 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::hidden_unit`: one constructor per combination of selected arms. -/
 inductive «Fixed::hidden_unit».Path (x_row x_b x_x : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -3013,40 +2662,28 @@ theorem «Fixed::hidden_unit».obs {x_row x_b x_x : SourceValue F} {h h' : Heap 
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.hidden_unit.lookup
     (by simp [IxAIStep.Fixed.Fixed.hidden_unit, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.hidden_unit] at d0
-  obtain ⟨x1, y2, m3, c4, c5, d6, d7, op8, hq1⟩ := d0.binary_inv
+  refine d0.binary_elim fun x1 y2 m3 c4 c5 d6 d7 op8 ze1 => ?_
   try clear d0
-  obtain ⟨vs9, m10, c11, cs12, a13, ev14, hq2⟩ := d6.call_inv
+  subst ze1
+  refine Fused.call_plain d6 fun vs9 m10 c11 cs12 a13 ev14 zq2 => ?_
   try clear d6
-  rw [instanceName_plain_some] at ev14
-  obtain ⟨v15, vs17, m18, c19, c20, hq4, d21, a22, hq3⟩ := a13.cons_inv
+  refine Fused.args_var_cons a13 rfl fun vs17 zv3 a22 => ?_
   try clear a13
-  obtain ⟨l23, rfl, hq5⟩ := d21.var_inv
-  try clear d21
-  simp at l23
-  subst l23
-  obtain ⟨v16, vs24, m25, c26, c27, hq7, d28, a29, hq6⟩ := a22.cons_inv
+  refine Fused.args_var_cons a22 rfl fun vs24 zv4 a29 => ?_
   try clear a22
-  obtain ⟨l30, rfl, hq8⟩ := d28.var_inv
-  try clear d28
-  simp at l30
-  subst l30
-  obtain ⟨hq10, rfl, hq9⟩ := a29.nil_inv
+  refine a29.nil_elim fun zv5 zm6 zq7 => ?_
   try clear a29
-  subst hq10
-  subst hq7
-  subst hq4
-  obtain ⟨l31, rfl, hq11⟩ := d7.var_inv
+  subst zv5
+  subst zv4
+  subst zv3
+  subst zm6
+  refine Fused.var_is d7 rfl fun l31 zm9 zq8 => ?_
   try clear d7
-  simp at l31
   subst l31
-  subst hq11
-  subst hq9
-  subst hq8
-  subst hq6
-  subst hq5
-  subst hq3
-  subst hq2
-  subst hq1
+  subst zm9
+  subst zq8
+  subst zq7
+  subst zq2
   exact «Fixed::hidden_unit».Path.run _ _ _ ev14 rfl op8 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::hidden`: one constructor per combination of selected arms. -/
@@ -3099,1333 +2736,677 @@ theorem «Fixed::hidden».obs {x_w1 x_b1 x_x : SourceValue F} {h h' : Heap F} {r
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.hidden.lookup
     (by simp [IxAIStep.Fixed.Fixed.hidden, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.hidden] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, hq1⟩ := d0.letValue_inv
+  refine Fused.let_array_16 d0 fun x_r0 x_r1 x_r2 x_r3 x_r4 x_r5 x_r6 x_r7 x_r8 x_r9 x_r10 x_r11 x_r12 x_r13 x_r14 x_r15 m2 c4 c5 d6 d8 zq1 => ?_
   try clear d0
-  obtain ⟨l9, rfl, hq2⟩ := d6.var_inv
+  refine Fused.var_is d6 rfl fun hv11 zm3 zq2 => ?_
   try clear d6
-  simp at l9
-  subst l9
-  obtain ⟨vs10, hv11, -, ml12⟩ := matchPattern_array_inv mt7
-  try clear mt7
-  obtain ⟨x_r0, vs13, b14, b15, rfl, mt16, ml17, rfl⟩ := matchListWith_cons_inv ml12
-  try clear ml12
-  obtain rfl := matchPattern_bind_inv mt16
-  try clear mt16
-  obtain ⟨x_r1, vs18, b19, b20, rfl, mt21, ml22, rfl⟩ := matchListWith_cons_inv ml17
-  try clear ml17
-  obtain rfl := matchPattern_bind_inv mt21
-  try clear mt21
-  obtain ⟨x_r2, vs23, b24, b25, rfl, mt26, ml27, rfl⟩ := matchListWith_cons_inv ml22
-  try clear ml22
-  obtain rfl := matchPattern_bind_inv mt26
-  try clear mt26
-  obtain ⟨x_r3, vs28, b29, b30, rfl, mt31, ml32, rfl⟩ := matchListWith_cons_inv ml27
-  try clear ml27
-  obtain rfl := matchPattern_bind_inv mt31
-  try clear mt31
-  obtain ⟨x_r4, vs33, b34, b35, rfl, mt36, ml37, rfl⟩ := matchListWith_cons_inv ml32
-  try clear ml32
-  obtain rfl := matchPattern_bind_inv mt36
-  try clear mt36
-  obtain ⟨x_r5, vs38, b39, b40, rfl, mt41, ml42, rfl⟩ := matchListWith_cons_inv ml37
-  try clear ml37
-  obtain rfl := matchPattern_bind_inv mt41
-  try clear mt41
-  obtain ⟨x_r6, vs43, b44, b45, rfl, mt46, ml47, rfl⟩ := matchListWith_cons_inv ml42
-  try clear ml42
-  obtain rfl := matchPattern_bind_inv mt46
-  try clear mt46
-  obtain ⟨x_r7, vs48, b49, b50, rfl, mt51, ml52, rfl⟩ := matchListWith_cons_inv ml47
-  try clear ml47
-  obtain rfl := matchPattern_bind_inv mt51
-  try clear mt51
-  obtain ⟨x_r8, vs53, b54, b55, rfl, mt56, ml57, rfl⟩ := matchListWith_cons_inv ml52
-  try clear ml52
-  obtain rfl := matchPattern_bind_inv mt56
-  try clear mt56
-  obtain ⟨x_r9, vs58, b59, b60, rfl, mt61, ml62, rfl⟩ := matchListWith_cons_inv ml57
-  try clear ml57
-  obtain rfl := matchPattern_bind_inv mt61
-  try clear mt61
-  obtain ⟨x_r10, vs63, b64, b65, rfl, mt66, ml67, rfl⟩ := matchListWith_cons_inv ml62
-  try clear ml62
-  obtain rfl := matchPattern_bind_inv mt66
-  try clear mt66
-  obtain ⟨x_r11, vs68, b69, b70, rfl, mt71, ml72, rfl⟩ := matchListWith_cons_inv ml67
-  try clear ml67
-  obtain rfl := matchPattern_bind_inv mt71
-  try clear mt71
-  obtain ⟨x_r12, vs73, b74, b75, rfl, mt76, ml77, rfl⟩ := matchListWith_cons_inv ml72
-  try clear ml72
-  obtain rfl := matchPattern_bind_inv mt76
-  try clear mt76
-  obtain ⟨x_r13, vs78, b79, b80, rfl, mt81, ml82, rfl⟩ := matchListWith_cons_inv ml77
-  try clear ml77
-  obtain rfl := matchPattern_bind_inv mt81
-  try clear mt81
-  obtain ⟨x_r14, vs83, b84, b85, rfl, mt86, ml87, rfl⟩ := matchListWith_cons_inv ml82
-  try clear ml82
-  obtain rfl := matchPattern_bind_inv mt86
-  try clear mt86
-  obtain ⟨x_r15, vs88, b89, b90, rfl, mt91, ml92, rfl⟩ := matchListWith_cons_inv ml87
-  try clear ml87
-  obtain rfl := matchPattern_bind_inv mt91
-  try clear mt91
-  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml92
-  try clear ml92
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d8
-  obtain ⟨v93, m94, bs95, c96, c97, d98, mt99, d100, hq3⟩ := d8.letValue_inv
+  subst zm3
+  refine Fused.let_array_16 d8 fun x_c0 x_c1 x_c2 x_c3 x_c4 x_c5 x_c6 x_c7 x_c8 x_c9 x_c10 x_c11 x_c12 x_c13 x_c14 x_c15 m94 c96 c97 d98 d100 zq4 => ?_
   try clear d8
-  obtain ⟨l101, rfl, hq4⟩ := d98.var_inv
+  refine Fused.var_is d98 rfl fun hv103 zm6 zq5 => ?_
   try clear d98
-  simp at l101
-  subst l101
-  obtain ⟨vs102, hv103, -, ml104⟩ := matchPattern_array_inv mt99
-  try clear mt99
-  obtain ⟨x_c0, vs105, b106, b107, rfl, mt108, ml109, rfl⟩ := matchListWith_cons_inv ml104
-  try clear ml104
-  obtain rfl := matchPattern_bind_inv mt108
-  try clear mt108
-  obtain ⟨x_c1, vs110, b111, b112, rfl, mt113, ml114, rfl⟩ := matchListWith_cons_inv ml109
-  try clear ml109
-  obtain rfl := matchPattern_bind_inv mt113
-  try clear mt113
-  obtain ⟨x_c2, vs115, b116, b117, rfl, mt118, ml119, rfl⟩ := matchListWith_cons_inv ml114
-  try clear ml114
-  obtain rfl := matchPattern_bind_inv mt118
-  try clear mt118
-  obtain ⟨x_c3, vs120, b121, b122, rfl, mt123, ml124, rfl⟩ := matchListWith_cons_inv ml119
-  try clear ml119
-  obtain rfl := matchPattern_bind_inv mt123
-  try clear mt123
-  obtain ⟨x_c4, vs125, b126, b127, rfl, mt128, ml129, rfl⟩ := matchListWith_cons_inv ml124
-  try clear ml124
-  obtain rfl := matchPattern_bind_inv mt128
-  try clear mt128
-  obtain ⟨x_c5, vs130, b131, b132, rfl, mt133, ml134, rfl⟩ := matchListWith_cons_inv ml129
-  try clear ml129
-  obtain rfl := matchPattern_bind_inv mt133
-  try clear mt133
-  obtain ⟨x_c6, vs135, b136, b137, rfl, mt138, ml139, rfl⟩ := matchListWith_cons_inv ml134
-  try clear ml134
-  obtain rfl := matchPattern_bind_inv mt138
-  try clear mt138
-  obtain ⟨x_c7, vs140, b141, b142, rfl, mt143, ml144, rfl⟩ := matchListWith_cons_inv ml139
-  try clear ml139
-  obtain rfl := matchPattern_bind_inv mt143
-  try clear mt143
-  obtain ⟨x_c8, vs145, b146, b147, rfl, mt148, ml149, rfl⟩ := matchListWith_cons_inv ml144
-  try clear ml144
-  obtain rfl := matchPattern_bind_inv mt148
-  try clear mt148
-  obtain ⟨x_c9, vs150, b151, b152, rfl, mt153, ml154, rfl⟩ := matchListWith_cons_inv ml149
+  subst zm6
+  refine Fused.let_bind d100 fun v185 m186 c188 c189 d190 d192 zq7 => ?_
+  try clear d100
+  refine Fused.call_plain d190 fun vs193 m194 c195 cs196 a197 ev198 zq8 => ?_
+  try clear d190
+  refine Fused.args_var_cons a197 rfl fun vs202 zv9 a207 => ?_
+  try clear a197
+  refine Fused.args_var_cons a207 rfl fun vs209 zv10 a214 => ?_
+  try clear a207
+  refine Fused.args_var_cons a214 rfl fun vs216 zv11 a221 => ?_
+  try clear a214
+  refine a221.nil_elim fun zv12 zm13 zq14 => ?_
+  try clear a221
+  subst zv12
+  subst zv11
+  subst zv10
+  subst zv9
+  subst zm13
+  refine Fused.let_bind d192 fun v223 m224 c226 c227 d228 d230 zq15 => ?_
+  try clear d192
+  refine Fused.call_plain d228 fun vs231 m232 c233 cs234 a235 ev236 zq16 => ?_
+  try clear d228
+  refine Fused.args_var_cons a235 rfl fun vs240 zv17 a245 => ?_
+  try clear a235
+  refine Fused.args_var_cons a245 rfl fun vs247 zv18 a252 => ?_
+  try clear a245
+  refine Fused.args_var_cons a252 rfl fun vs254 zv19 a259 => ?_
+  try clear a252
+  refine a259.nil_elim fun zv20 zm21 zq22 => ?_
+  try clear a259
+  subst zv20
   as_aux_lemma =>
-   try clear ml149
-   obtain rfl := matchPattern_bind_inv mt153
-   try clear mt153
-   obtain ⟨x_c10, vs155, b156, b157, rfl, mt158, ml159, rfl⟩ := matchListWith_cons_inv ml154
-   try clear ml154
-   obtain rfl := matchPattern_bind_inv mt158
-   try clear mt158
-   obtain ⟨x_c11, vs160, b161, b162, rfl, mt163, ml164, rfl⟩ := matchListWith_cons_inv ml159
-   try clear ml159
-   obtain rfl := matchPattern_bind_inv mt163
-   try clear mt163
-   obtain ⟨x_c12, vs165, b166, b167, rfl, mt168, ml169, rfl⟩ := matchListWith_cons_inv ml164
-   try clear ml164
-   obtain rfl := matchPattern_bind_inv mt168
-   try clear mt168
-   obtain ⟨x_c13, vs170, b171, b172, rfl, mt173, ml174, rfl⟩ := matchListWith_cons_inv ml169
-   try clear ml169
-   obtain rfl := matchPattern_bind_inv mt173
-   try clear mt173
-   obtain ⟨x_c14, vs175, b176, b177, rfl, mt178, ml179, rfl⟩ := matchListWith_cons_inv ml174
-   try clear ml174
-   obtain rfl := matchPattern_bind_inv mt178
-   try clear mt178
-   obtain ⟨x_c15, vs180, b181, b182, rfl, mt183, ml184, rfl⟩ := matchListWith_cons_inv ml179
-   try clear ml179
-   obtain rfl := matchPattern_bind_inv mt183
-   try clear mt183
-   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml184
-   try clear ml184
-   try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d100
-   obtain ⟨v185, m186, bs187, c188, c189, d190, mt191, d192, hq5⟩ := d100.letValue_inv
-   try clear d100
-   obtain ⟨vs193, m194, c195, cs196, a197, ev198, hq6⟩ := d190.call_inv
-   try clear d190
-   rw [instanceName_plain_some] at ev198
-   obtain ⟨v199, vs202, m203, c204, c205, hq8, d206, a207, hq7⟩ := a197.cons_inv
-   try clear a197
-   obtain ⟨l208, rfl, hq9⟩ := d206.var_inv
-   try clear d206
-   simp at l208
-   subst l208
-   obtain ⟨v200, vs209, m210, c211, c212, hq11, d213, a214, hq10⟩ := a207.cons_inv
-   try clear a207
-   obtain ⟨l215, rfl, hq12⟩ := d213.var_inv
-   try clear d213
-   simp at l215
-   subst l215
-   obtain ⟨v201, vs216, m217, c218, c219, hq14, d220, a221, hq13⟩ := a214.cons_inv
-   try clear a214
-   obtain ⟨l222, rfl, hq15⟩ := d220.var_inv
-   try clear d220
-   simp at l222
-   subst l222
-   obtain ⟨hq17, rfl, hq16⟩ := a221.nil_inv
-   try clear a221
-   subst hq17
-   subst hq14
-   subst hq11
-   subst hq8
-   obtain rfl := matchPattern_bind_inv mt191
-   try clear mt191
-   try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d192
-   obtain ⟨v223, m224, bs225, c226, c227, d228, mt229, d230, hq18⟩ := d192.letValue_inv
-   try clear d192
-   obtain ⟨vs231, m232, c233, cs234, a235, ev236, hq19⟩ := d228.call_inv
-   try clear d228
-   rw [instanceName_plain_some] at ev236
-   obtain ⟨v237, vs240, m241, c242, c243, hq21, d244, a245, hq20⟩ := a235.cons_inv
-   try clear a235
-   obtain ⟨l246, rfl, hq22⟩ := d244.var_inv
-   try clear d244
-   simp at l246
-   subst l246
-   obtain ⟨v238, vs247, m248, c249, c250, hq24, d251, a252, hq23⟩ := a245.cons_inv
-   try clear a245
-   obtain ⟨l253, rfl, hq25⟩ := d251.var_inv
-   try clear d251
-   simp at l253
-   subst l253
-   obtain ⟨v239, vs254, m255, c256, c257, hq27, d258, a259, hq26⟩ := a252.cons_inv
-   try clear a252
-   obtain ⟨l260, rfl, hq28⟩ := d258.var_inv
-   try clear d258
-   simp at l260
-   subst l260
-   obtain ⟨hq30, rfl, hq29⟩ := a259.nil_inv
-   try clear a259
-   subst hq30
-   subst hq27
-   subst hq24
-   subst hq21
-   obtain rfl := matchPattern_bind_inv mt229
-   try clear mt229
-   try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d230
-   obtain ⟨v261, m262, bs263, c264, c265, d266, mt267, d268, hq31⟩ := d230.letValue_inv
+   subst zv19
+   subst zv18
+   subst zv17
+   subst zm21
+   refine Fused.let_bind d230 fun v261 m262 c264 c265 d266 d268 zq23 => ?_
    try clear d230
-   obtain ⟨vs269, m270, c271, cs272, a273, ev274, hq32⟩ := d266.call_inv
+   refine Fused.call_plain d266 fun vs269 m270 c271 cs272 a273 ev274 zq24 => ?_
    try clear d266
-   rw [instanceName_plain_some] at ev274
-   obtain ⟨v275, vs278, m279, c280, c281, hq34, d282, a283, hq33⟩ := a273.cons_inv
+   refine Fused.args_var_cons a273 rfl fun vs278 zv25 a283 => ?_
    try clear a273
-   obtain ⟨l284, rfl, hq35⟩ := d282.var_inv
-   try clear d282
-   simp at l284
-   subst l284
-   obtain ⟨v276, vs285, m286, c287, c288, hq37, d289, a290, hq36⟩ := a283.cons_inv
+   refine Fused.args_var_cons a283 rfl fun vs285 zv26 a290 => ?_
    try clear a283
-   obtain ⟨l291, rfl, hq38⟩ := d289.var_inv
-   try clear d289
-   simp at l291
-   subst l291
-   obtain ⟨v277, vs292, m293, c294, c295, hq40, d296, a297, hq39⟩ := a290.cons_inv
+   refine Fused.args_var_cons a290 rfl fun vs292 zv27 a297 => ?_
    try clear a290
-   obtain ⟨l298, rfl, hq41⟩ := d296.var_inv
-   try clear d296
-   simp at l298
-   subst l298
-   obtain ⟨hq43, rfl, hq42⟩ := a297.nil_inv
+   refine a297.nil_elim fun zv28 zm29 zq30 => ?_
    try clear a297
-   subst hq43
+   subst zv28
+   subst zv27
+   subst zv26
+   subst zv25
+   subst zm29
+   refine Fused.let_bind d268 fun v299 m300 c302 c303 d304 d306 zq31 => ?_
+   try clear d268
+   refine Fused.call_plain d304 fun vs307 m308 c309 cs310 a311 ev312 zq32 => ?_
+   try clear d304
+   refine Fused.args_var_cons a311 rfl fun vs316 zv33 a321 => ?_
+   try clear a311
+   refine Fused.args_var_cons a321 rfl fun vs323 zv34 a328 => ?_
+   try clear a321
+   refine Fused.args_var_cons a328 rfl fun vs330 zv35 a335 => ?_
+   try clear a328
+   refine a335.nil_elim fun zv36 zm37 zq38 => ?_
+   try clear a335
+   subst zv36
+   subst zv35
+   subst zv34
+   subst zv33
+   subst zm37
+   refine Fused.let_bind d306 fun v337 m338 c340 c341 d342 d344 zq39 => ?_
+   try clear d306
    as_aux_lemma =>
-    subst hq40
-    subst hq37
-    subst hq34
-    obtain rfl := matchPattern_bind_inv mt267
-    try clear mt267
-    try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d268
-    obtain ⟨v299, m300, bs301, c302, c303, d304, mt305, d306, hq44⟩ := d268.letValue_inv
-    try clear d268
-    obtain ⟨vs307, m308, c309, cs310, a311, ev312, hq45⟩ := d304.call_inv
-    try clear d304
-    rw [instanceName_plain_some] at ev312
-    obtain ⟨v313, vs316, m317, c318, c319, hq47, d320, a321, hq46⟩ := a311.cons_inv
-    try clear a311
-    obtain ⟨l322, rfl, hq48⟩ := d320.var_inv
-    try clear d320
-    simp at l322
-    subst l322
-    obtain ⟨v314, vs323, m324, c325, c326, hq50, d327, a328, hq49⟩ := a321.cons_inv
-    try clear a321
-    obtain ⟨l329, rfl, hq51⟩ := d327.var_inv
-    try clear d327
-    simp at l329
-    subst l329
-    obtain ⟨v315, vs330, m331, c332, c333, hq53, d334, a335, hq52⟩ := a328.cons_inv
-    try clear a328
-    obtain ⟨l336, rfl, hq54⟩ := d334.var_inv
-    try clear d334
-    simp at l336
-    subst l336
-    obtain ⟨hq56, rfl, hq55⟩ := a335.nil_inv
-    try clear a335
-    subst hq56
-    subst hq53
-    subst hq50
-    subst hq47
-    obtain rfl := matchPattern_bind_inv mt305
-    try clear mt305
-    try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d306
-    obtain ⟨v337, m338, bs339, c340, c341, d342, mt343, d344, hq57⟩ := d306.letValue_inv
-    try clear d306
-    obtain ⟨vs345, m346, c347, cs348, a349, ev350, hq58⟩ := d342.call_inv
+    refine Fused.call_plain d342 fun vs345 m346 c347 cs348 a349 ev350 zq40 => ?_
     try clear d342
-    rw [instanceName_plain_some] at ev350
-    obtain ⟨v351, vs354, m355, c356, c357, hq60, d358, a359, hq59⟩ := a349.cons_inv
+    refine Fused.args_var_cons a349 rfl fun vs354 zv41 a359 => ?_
     try clear a349
-    obtain ⟨l360, rfl, hq61⟩ := d358.var_inv
-    try clear d358
-    simp at l360
-    subst l360
-    obtain ⟨v352, vs361, m362, c363, c364, hq63, d365, a366, hq62⟩ := a359.cons_inv
+    refine Fused.args_var_cons a359 rfl fun vs361 zv42 a366 => ?_
     try clear a359
-    obtain ⟨l367, rfl, hq64⟩ := d365.var_inv
-    try clear d365
-    simp at l367
-    subst l367
-    obtain ⟨v353, vs368, m369, c370, c371, hq66, d372, a373, hq65⟩ := a366.cons_inv
+    refine Fused.args_var_cons a366 rfl fun vs368 zv43 a373 => ?_
     try clear a366
-    obtain ⟨l374, rfl, hq67⟩ := d372.var_inv
-    try clear d372
-    simp at l374
-    subst l374
-    obtain ⟨hq69, rfl, hq68⟩ := a373.nil_inv
+    refine a373.nil_elim fun zv44 zm45 zq46 => ?_
     try clear a373
-    subst hq69
-    subst hq66
-    subst hq63
-    subst hq60
-    obtain rfl := matchPattern_bind_inv mt343
-    try clear mt343
-    try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d344
-    obtain ⟨v375, m376, bs377, c378, c379, d380, mt381, d382, hq70⟩ := d344.letValue_inv
+    subst zv44
+    subst zv43
+    subst zv42
+    subst zv41
+    subst zm45
+    refine Fused.let_bind d344 fun v375 m376 c378 c379 d380 d382 zq47 => ?_
     try clear d344
-    obtain ⟨vs383, m384, c385, cs386, a387, ev388, hq71⟩ := d380.call_inv
+    refine Fused.call_plain d380 fun vs383 m384 c385 cs386 a387 ev388 zq48 => ?_
     try clear d380
-    rw [instanceName_plain_some] at ev388
-    obtain ⟨v389, vs392, m393, c394, c395, hq73, d396, a397, hq72⟩ := a387.cons_inv
+    refine Fused.args_var_cons a387 rfl fun vs392 zv49 a397 => ?_
     try clear a387
-    obtain ⟨l398, rfl, hq74⟩ := d396.var_inv
-    try clear d396
-    simp at l398
-    subst l398
-    obtain ⟨v390, vs399, m400, c401, c402, hq76, d403, a404, hq75⟩ := a397.cons_inv
+    refine Fused.args_var_cons a397 rfl fun vs399 zv50 a404 => ?_
     try clear a397
-    obtain ⟨l405, rfl, hq77⟩ := d403.var_inv
-    try clear d403
-    simp at l405
-    subst l405
-    obtain ⟨v391, vs406, m407, c408, c409, hq79, d410, a411, hq78⟩ := a404.cons_inv
+    refine Fused.args_var_cons a404 rfl fun vs406 zv51 a411 => ?_
     try clear a404
-    obtain ⟨l412, rfl, hq80⟩ := d410.var_inv
-    try clear d410
-    simp at l412
-    subst l412
-    obtain ⟨hq82, rfl, hq81⟩ := a411.nil_inv
+    refine a411.nil_elim fun zv52 zm53 zq54 => ?_
     try clear a411
-    subst hq82
-    subst hq79
-    subst hq76
-    subst hq73
-    obtain rfl := matchPattern_bind_inv mt381
-    try clear mt381
-    try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d382
-    obtain ⟨v413, m414, bs415, c416, c417, d418, mt419, d420, hq83⟩ := d382.letValue_inv
+    subst zv52
+    subst zv51
+    subst zv50
+    subst zv49
+    subst zm53
+    refine Fused.let_bind d382 fun v413 m414 c416 c417 d418 d420 zq55 => ?_
     try clear d382
-    obtain ⟨vs421, m422, c423, cs424, a425, ev426, hq84⟩ := d418.call_inv
+    refine Fused.call_plain d418 fun vs421 m422 c423 cs424 a425 ev426 zq56 => ?_
     try clear d418
-    rw [instanceName_plain_some] at ev426
-    obtain ⟨v427, vs430, m431, c432, c433, hq86, d434, a435, hq85⟩ := a425.cons_inv
+    refine Fused.args_var_cons a425 rfl fun vs430 zv57 a435 => ?_
     try clear a425
-    obtain ⟨l436, rfl, hq87⟩ := d434.var_inv
-    try clear d434
-    simp at l436
-    subst l436
-    obtain ⟨v428, vs437, m438, c439, c440, hq89, d441, a442, hq88⟩ := a435.cons_inv
+    refine Fused.args_var_cons a435 rfl fun vs437 zv58 a442 => ?_
     try clear a435
-    obtain ⟨l443, rfl, hq90⟩ := d441.var_inv
-    try clear d441
-    simp at l443
-    subst l443
-    obtain ⟨v429, vs444, m445, c446, c447, hq92, d448, a449, hq91⟩ := a442.cons_inv
     as_aux_lemma =>
+     refine Fused.args_var_cons a442 rfl fun vs444 zv59 a449 => ?_
      try clear a442
-     obtain ⟨l450, rfl, hq93⟩ := d448.var_inv
-     try clear d448
-     simp at l450
-     subst l450
-     obtain ⟨hq95, rfl, hq94⟩ := a449.nil_inv
+     refine a449.nil_elim fun zv60 zm61 zq62 => ?_
      try clear a449
-     subst hq95
-     subst hq92
-     subst hq89
-     subst hq86
-     obtain rfl := matchPattern_bind_inv mt419
-     try clear mt419
-     try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d420
-     obtain ⟨v451, m452, bs453, c454, c455, d456, mt457, d458, hq96⟩ := d420.letValue_inv
+     subst zv60
+     subst zv59
+     subst zv58
+     subst zv57
+     subst zm61
+     refine Fused.let_bind d420 fun v451 m452 c454 c455 d456 d458 zq63 => ?_
      try clear d420
-     obtain ⟨vs459, m460, c461, cs462, a463, ev464, hq97⟩ := d456.call_inv
+     refine Fused.call_plain d456 fun vs459 m460 c461 cs462 a463 ev464 zq64 => ?_
      try clear d456
-     rw [instanceName_plain_some] at ev464
-     obtain ⟨v465, vs468, m469, c470, c471, hq99, d472, a473, hq98⟩ := a463.cons_inv
+     refine Fused.args_var_cons a463 rfl fun vs468 zv65 a473 => ?_
      try clear a463
-     obtain ⟨l474, rfl, hq100⟩ := d472.var_inv
-     try clear d472
-     simp at l474
-     subst l474
-     obtain ⟨v466, vs475, m476, c477, c478, hq102, d479, a480, hq101⟩ := a473.cons_inv
+     refine Fused.args_var_cons a473 rfl fun vs475 zv66 a480 => ?_
      try clear a473
-     obtain ⟨l481, rfl, hq103⟩ := d479.var_inv
-     try clear d479
-     simp at l481
-     subst l481
-     obtain ⟨v467, vs482, m483, c484, c485, hq105, d486, a487, hq104⟩ := a480.cons_inv
+     refine Fused.args_var_cons a480 rfl fun vs482 zv67 a487 => ?_
      try clear a480
-     obtain ⟨l488, rfl, hq106⟩ := d486.var_inv
-     try clear d486
-     simp at l488
-     subst l488
-     obtain ⟨hq108, rfl, hq107⟩ := a487.nil_inv
+     refine a487.nil_elim fun zv68 zm69 zq70 => ?_
      try clear a487
-     subst hq108
-     subst hq105
-     subst hq102
-     subst hq99
-     obtain rfl := matchPattern_bind_inv mt457
-     try clear mt457
-     try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d458
-     obtain ⟨v489, m490, bs491, c492, c493, d494, mt495, d496, hq109⟩ := d458.letValue_inv
+     subst zv68
+     subst zv67
+     subst zv66
+     subst zv65
+     subst zm69
+     refine Fused.let_bind d458 fun v489 m490 c492 c493 d494 d496 zq71 => ?_
      try clear d458
-     obtain ⟨vs497, m498, c499, cs500, a501, ev502, hq110⟩ := d494.call_inv
+     refine Fused.call_plain d494 fun vs497 m498 c499 cs500 a501 ev502 zq72 => ?_
      try clear d494
-     rw [instanceName_plain_some] at ev502
-     obtain ⟨v503, vs506, m507, c508, c509, hq112, d510, a511, hq111⟩ := a501.cons_inv
+     refine Fused.args_var_cons a501 rfl fun vs506 zv73 a511 => ?_
      try clear a501
-     obtain ⟨l512, rfl, hq113⟩ := d510.var_inv
-     try clear d510
-     simp at l512
-     subst l512
-     obtain ⟨v504, vs513, m514, c515, c516, hq115, d517, a518, hq114⟩ := a511.cons_inv
+     refine Fused.args_var_cons a511 rfl fun vs513 zv74 a518 => ?_
      try clear a511
-     obtain ⟨l519, rfl, hq116⟩ := d517.var_inv
-     try clear d517
-     simp at l519
-     subst l519
-     obtain ⟨v505, vs520, m521, c522, c523, hq118, d524, a525, hq117⟩ := a518.cons_inv
+     refine Fused.args_var_cons a518 rfl fun vs520 zv75 a525 => ?_
      try clear a518
-     obtain ⟨l526, rfl, hq119⟩ := d524.var_inv
-     try clear d524
-     simp at l526
-     subst l526
-     obtain ⟨hq121, rfl, hq120⟩ := a525.nil_inv
+     refine a525.nil_elim fun zv76 zm77 zq78 => ?_
      try clear a525
-     subst hq121
-     subst hq118
-     subst hq115
-     subst hq112
-     obtain rfl := matchPattern_bind_inv mt495
-     try clear mt495
-     try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d496
-     obtain ⟨v527, m528, bs529, c530, c531, d532, mt533, d534, hq122⟩ := d496.letValue_inv
-     try clear d496
-     obtain ⟨vs535, m536, c537, cs538, a539, ev540, hq123⟩ := d532.call_inv
-     try clear d532
-     rw [instanceName_plain_some] at ev540
-     obtain ⟨v541, vs544, m545, c546, c547, hq125, d548, a549, hq124⟩ := a539.cons_inv
-     try clear a539
-     obtain ⟨l550, rfl, hq126⟩ := d548.var_inv
-     try clear d548
-     simp at l550
-     subst l550
-     obtain ⟨v542, vs551, m552, c553, c554, hq128, d555, a556, hq127⟩ := a549.cons_inv
-     try clear a549
-     obtain ⟨l557, rfl, hq129⟩ := d555.var_inv
-     try clear d555
-     simp at l557
-     subst l557
-     obtain ⟨v543, vs558, m559, c560, c561, hq131, d562, a563, hq130⟩ := a556.cons_inv
-     try clear a556
-     obtain ⟨l564, rfl, hq132⟩ := d562.var_inv
-     try clear d562
-     simp at l564
-     subst l564
-     obtain ⟨hq134, rfl, hq133⟩ := a563.nil_inv
-     try clear a563
-     subst hq134
-     subst hq131
-     subst hq128
-     subst hq125
-     obtain rfl := matchPattern_bind_inv mt533
-     try clear mt533
-     try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d534
-     obtain ⟨v565, m566, bs567, c568, c569, d570, mt571, d572, hq135⟩ := d534.letValue_inv
-     try clear d534
-     obtain ⟨vs573, m574, c575, cs576, a577, ev578, hq136⟩ := d570.call_inv
-     try clear d570
-     rw [instanceName_plain_some] at ev578
-     obtain ⟨v579, vs582, m583, c584, c585, hq138, d586, a587, hq137⟩ := a577.cons_inv
-     try clear a577
-     obtain ⟨l588, rfl, hq139⟩ := d586.var_inv
-     try clear d586
-     simp at l588
+     subst zv76
+     subst zv75
      as_aux_lemma =>
-      subst l588
-      obtain ⟨v580, vs589, m590, c591, c592, hq141, d593, a594, hq140⟩ := a587.cons_inv
+      subst zv74
+      subst zv73
+      subst zm77
+      refine Fused.let_bind d496 fun v527 m528 c530 c531 d532 d534 zq79 => ?_
+      try clear d496
+      refine Fused.call_plain d532 fun vs535 m536 c537 cs538 a539 ev540 zq80 => ?_
+      try clear d532
+      refine Fused.args_var_cons a539 rfl fun vs544 zv81 a549 => ?_
+      try clear a539
+      refine Fused.args_var_cons a549 rfl fun vs551 zv82 a556 => ?_
+      try clear a549
+      refine Fused.args_var_cons a556 rfl fun vs558 zv83 a563 => ?_
+      try clear a556
+      refine a563.nil_elim fun zv84 zm85 zq86 => ?_
+      try clear a563
+      subst zv84
+      subst zv83
+      subst zv82
+      subst zv81
+      subst zm85
+      refine Fused.let_bind d534 fun v565 m566 c568 c569 d570 d572 zq87 => ?_
+      try clear d534
+      refine Fused.call_plain d570 fun vs573 m574 c575 cs576 a577 ev578 zq88 => ?_
+      try clear d570
+      refine Fused.args_var_cons a577 rfl fun vs582 zv89 a587 => ?_
+      try clear a577
+      refine Fused.args_var_cons a587 rfl fun vs589 zv90 a594 => ?_
       try clear a587
-      obtain ⟨l595, rfl, hq142⟩ := d593.var_inv
-      try clear d593
-      simp at l595
-      subst l595
-      obtain ⟨v581, vs596, m597, c598, c599, hq144, d600, a601, hq143⟩ := a594.cons_inv
+      refine Fused.args_var_cons a594 rfl fun vs596 zv91 a601 => ?_
       try clear a594
-      obtain ⟨l602, rfl, hq145⟩ := d600.var_inv
-      try clear d600
-      simp at l602
-      subst l602
-      obtain ⟨hq147, rfl, hq146⟩ := a601.nil_inv
+      refine a601.nil_elim fun zv92 zm93 zq94 => ?_
       try clear a601
-      subst hq147
-      subst hq144
-      subst hq141
-      subst hq138
-      obtain rfl := matchPattern_bind_inv mt571
-      try clear mt571
-      try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d572
-      obtain ⟨v603, m604, bs605, c606, c607, d608, mt609, d610, hq148⟩ := d572.letValue_inv
+      subst zv92
+      subst zv91
+      subst zv90
+      subst zv89
+      subst zm93
+      refine Fused.let_bind d572 fun v603 m604 c606 c607 d608 d610 zq95 => ?_
       try clear d572
-      obtain ⟨vs611, m612, c613, cs614, a615, ev616, hq149⟩ := d608.call_inv
-      try clear d608
-      rw [instanceName_plain_some] at ev616
-      obtain ⟨v617, vs620, m621, c622, c623, hq151, d624, a625, hq150⟩ := a615.cons_inv
-      try clear a615
-      obtain ⟨l626, rfl, hq152⟩ := d624.var_inv
-      try clear d624
-      simp at l626
-      subst l626
-      obtain ⟨v618, vs627, m628, c629, c630, hq154, d631, a632, hq153⟩ := a625.cons_inv
-      try clear a625
-      obtain ⟨l633, rfl, hq155⟩ := d631.var_inv
-      try clear d631
-      simp at l633
-      subst l633
-      obtain ⟨v619, vs634, m635, c636, c637, hq157, d638, a639, hq156⟩ := a632.cons_inv
-      try clear a632
-      obtain ⟨l640, rfl, hq158⟩ := d638.var_inv
-      try clear d638
-      simp at l640
-      subst l640
-      obtain ⟨hq160, rfl, hq159⟩ := a639.nil_inv
-      try clear a639
-      subst hq160
-      subst hq157
-      subst hq154
-      subst hq151
-      obtain rfl := matchPattern_bind_inv mt609
-      try clear mt609
-      try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d610
-      obtain ⟨v641, m642, bs643, c644, c645, d646, mt647, d648, hq161⟩ := d610.letValue_inv
-      try clear d610
-      obtain ⟨vs649, m650, c651, cs652, a653, ev654, hq162⟩ := d646.call_inv
-      try clear d646
-      rw [instanceName_plain_some] at ev654
-      obtain ⟨v655, vs658, m659, c660, c661, hq164, d662, a663, hq163⟩ := a653.cons_inv
-      try clear a653
-      obtain ⟨l664, rfl, hq165⟩ := d662.var_inv
-      try clear d662
-      simp at l664
-      subst l664
-      obtain ⟨v656, vs665, m666, c667, c668, hq167, d669, a670, hq166⟩ := a663.cons_inv
-      try clear a663
-      obtain ⟨l671, rfl, hq168⟩ := d669.var_inv
-      try clear d669
-      simp at l671
-      subst l671
-      obtain ⟨v657, vs672, m673, c674, c675, hq170, d676, a677, hq169⟩ := a670.cons_inv
-      try clear a670
-      obtain ⟨l678, rfl, hq171⟩ := d676.var_inv
-      try clear d676
-      simp at l678
-      subst l678
-      obtain ⟨hq173, rfl, hq172⟩ := a677.nil_inv
-      try clear a677
-      subst hq173
-      subst hq170
-      subst hq167
-      subst hq164
-      obtain rfl := matchPattern_bind_inv mt647
-      try clear mt647
-      try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d648
-      obtain ⟨v679, m680, bs681, c682, c683, d684, mt685, d686, hq174⟩ := d648.letValue_inv
-      try clear d648
-      obtain ⟨vs687, m688, c689, cs690, a691, ev692, hq175⟩ := d684.call_inv
-      try clear d684
-      rw [instanceName_plain_some] at ev692
-      obtain ⟨v693, vs696, m697, c698, c699, hq177, d700, a701, hq176⟩ := a691.cons_inv
-      try clear a691
-      obtain ⟨l702, rfl, hq178⟩ := d700.var_inv
-      try clear d700
-      simp at l702
-      subst l702
-      obtain ⟨v694, vs703, m704, c705, c706, hq180, d707, a708, hq179⟩ := a701.cons_inv
-      try clear a701
-      obtain ⟨l709, rfl, hq181⟩ := d707.var_inv
-      try clear d707
-      simp at l709
-      subst l709
-      obtain ⟨v695, vs710, m711, c712, c713, hq183, d714, a715, hq182⟩ := a708.cons_inv
-      try clear a708
-      obtain ⟨l716, rfl, hq184⟩ := d714.var_inv
-      try clear d714
-      simp at l716
-      subst l716
-      obtain ⟨hq186, rfl, hq185⟩ := a715.nil_inv
-      try clear a715
-      subst hq186
-      subst hq183
-      subst hq180
-      subst hq177
-      obtain rfl := matchPattern_bind_inv mt685
-      try clear mt685
-      try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d686
-      obtain ⟨v717, m718, bs719, c720, c721, d722, mt723, d724, hq187⟩ := d686.letValue_inv
-      try clear d686
+      refine Fused.call_plain d608 fun vs611 m612 c613 cs614 a615 ev616 zq96 => ?_
       as_aux_lemma =>
-       obtain ⟨vs725, m726, c727, cs728, a729, ev730, hq188⟩ := d722.call_inv
-       try clear d722
-       rw [instanceName_plain_some] at ev730
-       obtain ⟨v731, vs734, m735, c736, c737, hq190, d738, a739, hq189⟩ := a729.cons_inv
-       try clear a729
-       obtain ⟨l740, rfl, hq191⟩ := d738.var_inv
-       try clear d738
-       simp at l740
-       subst l740
-       obtain ⟨v732, vs741, m742, c743, c744, hq193, d745, a746, hq192⟩ := a739.cons_inv
-       try clear a739
-       obtain ⟨l747, rfl, hq194⟩ := d745.var_inv
-       try clear d745
-       simp at l747
-       subst l747
-       obtain ⟨v733, vs748, m749, c750, c751, hq196, d752, a753, hq195⟩ := a746.cons_inv
-       try clear a746
-       obtain ⟨l754, rfl, hq197⟩ := d752.var_inv
-       try clear d752
-       simp at l754
-       subst l754
-       obtain ⟨hq199, rfl, hq198⟩ := a753.nil_inv
-       try clear a753
-       subst hq199
-       subst hq196
-       subst hq193
-       subst hq190
-       obtain rfl := matchPattern_bind_inv mt723
-       try clear mt723
-       try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d724
-       obtain ⟨v755, m756, bs757, c758, c759, d760, mt761, d762, hq200⟩ := d724.letValue_inv
-       try clear d724
-       obtain ⟨vs763, m764, c765, cs766, a767, ev768, hq201⟩ := d760.call_inv
-       try clear d760
-       rw [instanceName_plain_some] at ev768
-       obtain ⟨v769, vs772, m773, c774, c775, hq203, d776, a777, hq202⟩ := a767.cons_inv
-       try clear a767
-       obtain ⟨l778, rfl, hq204⟩ := d776.var_inv
-       try clear d776
-       simp at l778
-       subst l778
-       obtain ⟨v770, vs779, m780, c781, c782, hq206, d783, a784, hq205⟩ := a777.cons_inv
-       try clear a777
-       obtain ⟨l785, rfl, hq207⟩ := d783.var_inv
-       try clear d783
-       simp at l785
-       subst l785
-       obtain ⟨v771, vs786, m787, c788, c789, hq209, d790, a791, hq208⟩ := a784.cons_inv
-       try clear a784
-       obtain ⟨l792, rfl, hq210⟩ := d790.var_inv
-       try clear d790
-       simp at l792
-       subst l792
-       obtain ⟨hq212, rfl, hq211⟩ := a791.nil_inv
-       try clear a791
-       subst hq212
-       subst hq209
-       subst hq206
-       subst hq203
-       obtain rfl := matchPattern_bind_inv mt761
-       try clear mt761
-       try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d762
-       obtain ⟨vs793, a794, rfl⟩ := d762.tuple_inv
-       try clear d762
-       obtain ⟨v795, vs798, m799, c800, c801, hq214, d802, a803, hq213⟩ := a794.cons_inv
-       try clear a794
-       obtain ⟨vs804, a805, rfl⟩ := d802.array_inv
-       try clear d802
-       obtain ⟨v806, vs822, m823, c824, c825, hq216, d826, a827, hq215⟩ := a805.cons_inv
-       try clear a805
-       obtain ⟨l828, rfl, hq217⟩ := d826.var_inv
-       try clear d826
-       simp at l828
-       subst l828
-       obtain ⟨v807, vs829, m830, c831, c832, hq219, d833, a834, hq218⟩ := a827.cons_inv
-       try clear a827
-       obtain ⟨l835, rfl, hq220⟩ := d833.var_inv
-       try clear d833
-       simp at l835
-       subst l835
-       obtain ⟨v808, vs836, m837, c838, c839, hq222, d840, a841, hq221⟩ := a834.cons_inv
-       try clear a834
-       obtain ⟨l842, rfl, hq223⟩ := d840.var_inv
-       try clear d840
-       simp at l842
-       subst l842
-       obtain ⟨v809, vs843, m844, c845, c846, hq225, d847, a848, hq224⟩ := a841.cons_inv
-       try clear a841
-       obtain ⟨l849, rfl, hq226⟩ := d847.var_inv
-       try clear d847
-       simp at l849
-       subst l849
-       obtain ⟨v810, vs850, m851, c852, c853, hq228, d854, a855, hq227⟩ := a848.cons_inv
-       try clear a848
-       obtain ⟨l856, rfl, hq229⟩ := d854.var_inv
-       try clear d854
-       simp at l856
-       subst l856
-       obtain ⟨v811, vs857, m858, c859, c860, hq231, d861, a862, hq230⟩ := a855.cons_inv
-       try clear a855
-       obtain ⟨l863, rfl, hq232⟩ := d861.var_inv
-       try clear d861
-       simp at l863
-       subst l863
-       obtain ⟨v812, vs864, m865, c866, c867, hq234, d868, a869, hq233⟩ := a862.cons_inv
-       try clear a862
-       obtain ⟨l870, rfl, hq235⟩ := d868.var_inv
-       try clear d868
-       simp at l870
-       subst l870
-       obtain ⟨v813, vs871, m872, c873, c874, hq237, d875, a876, hq236⟩ := a869.cons_inv
-       try clear a869
-       obtain ⟨l877, rfl, hq238⟩ := d875.var_inv
-       try clear d875
-       simp at l877
-       subst l877
-       obtain ⟨v814, vs878, m879, c880, c881, hq240, d882, a883, hq239⟩ := a876.cons_inv
-       try clear a876
-       obtain ⟨l884, rfl, hq241⟩ := d882.var_inv
-       try clear d882
+       try clear d608
+       refine Fused.args_var_cons a615 rfl fun vs620 zv97 a625 => ?_
+       try clear a615
+       refine Fused.args_var_cons a625 rfl fun vs627 zv98 a632 => ?_
+       try clear a625
+       refine Fused.args_var_cons a632 rfl fun vs634 zv99 a639 => ?_
+       try clear a632
+       refine a639.nil_elim fun zv100 zm101 zq102 => ?_
+       try clear a639
+       subst zv100
+       subst zv99
+       subst zv98
+       subst zv97
+       subst zm101
+       refine Fused.let_bind d610 fun v641 m642 c644 c645 d646 d648 zq103 => ?_
+       try clear d610
+       refine Fused.call_plain d646 fun vs649 m650 c651 cs652 a653 ev654 zq104 => ?_
+       try clear d646
+       refine Fused.args_var_cons a653 rfl fun vs658 zv105 a663 => ?_
+       try clear a653
+       refine Fused.args_var_cons a663 rfl fun vs665 zv106 a670 => ?_
+       try clear a663
+       refine Fused.args_var_cons a670 rfl fun vs672 zv107 a677 => ?_
+       try clear a670
+       refine a677.nil_elim fun zv108 zm109 zq110 => ?_
+       try clear a677
+       subst zv108
+       subst zv107
+       subst zv106
+       subst zv105
+       subst zm109
+       refine Fused.let_bind d648 fun v679 m680 c682 c683 d684 d686 zq111 => ?_
+       try clear d648
+       refine Fused.call_plain d684 fun vs687 m688 c689 cs690 a691 ev692 zq112 => ?_
+       try clear d684
+       refine Fused.args_var_cons a691 rfl fun vs696 zv113 a701 => ?_
+       try clear a691
+       refine Fused.args_var_cons a701 rfl fun vs703 zv114 a708 => ?_
+       try clear a701
+       refine Fused.args_var_cons a708 rfl fun vs710 zv115 a715 => ?_
        as_aux_lemma =>
-        simp at l884
-        subst l884
-        obtain ⟨v815, vs885, m886, c887, c888, hq243, d889, a890, hq242⟩ := a883.cons_inv
-        try clear a883
-        obtain ⟨l891, rfl, hq244⟩ := d889.var_inv
-        try clear d889
-        simp at l891
-        subst l891
-        obtain ⟨v816, vs892, m893, c894, c895, hq246, d896, a897, hq245⟩ := a890.cons_inv
-        try clear a890
-        obtain ⟨l898, rfl, hq247⟩ := d896.var_inv
-        try clear d896
-        simp at l898
-        subst l898
-        obtain ⟨v817, vs899, m900, c901, c902, hq249, d903, a904, hq248⟩ := a897.cons_inv
-        try clear a897
-        obtain ⟨l905, rfl, hq250⟩ := d903.var_inv
-        try clear d903
-        simp at l905
-        subst l905
-        obtain ⟨v818, vs906, m907, c908, c909, hq252, d910, a911, hq251⟩ := a904.cons_inv
-        try clear a904
-        obtain ⟨l912, rfl, hq253⟩ := d910.var_inv
-        try clear d910
-        simp at l912
-        subst l912
-        obtain ⟨v819, vs913, m914, c915, c916, hq255, d917, a918, hq254⟩ := a911.cons_inv
-        try clear a911
-        obtain ⟨l919, rfl, hq256⟩ := d917.var_inv
-        try clear d917
-        simp at l919
-        subst l919
-        obtain ⟨v820, vs920, m921, c922, c923, hq258, d924, a925, hq257⟩ := a918.cons_inv
-        try clear a918
-        obtain ⟨l926, rfl, hq259⟩ := d924.var_inv
-        try clear d924
-        simp at l926
-        subst l926
-        obtain ⟨v821, vs927, m928, c929, c930, hq261, d931, a932, hq260⟩ := a925.cons_inv
-        try clear a925
-        obtain ⟨l933, rfl, hq262⟩ := d931.var_inv
-        try clear d931
-        simp at l933
-        subst l933
-        obtain ⟨hq264, rfl, hq263⟩ := a932.nil_inv
-        try clear a932
-        subst hq264
-        subst hq261
-        subst hq258
-        subst hq255
-        subst hq252
-        subst hq249
-        subst hq246
-        subst hq243
-        subst hq240
-        subst hq237
-        subst hq234
-        subst hq231
-        subst hq228
-        subst hq225
-        subst hq222
-        subst hq219
-        subst hq216
-        obtain ⟨v796, vs934, m935, c936, c937, hq266, d938, a939, hq265⟩ := a803.cons_inv
-        try clear a803
-        obtain ⟨vs940, a941, rfl⟩ := d938.array_inv
-        try clear d938
-        obtain ⟨v942, vs958, m959, c960, c961, hq268, d962, a963, hq267⟩ := a941.cons_inv
-        try clear a941
-        obtain ⟨vs964, m965, c966, cs967, a968, ev969, hq269⟩ := d962.call_inv
-        try clear d962
-        rw [instanceName_plain_some] at ev969
-        obtain ⟨v970, vs971, m972, c973, c974, hq271, d975, a976, hq270⟩ := a968.cons_inv
-        try clear a968
-        obtain ⟨l977, rfl, hq272⟩ := d975.var_inv
-        try clear d975
-        simp at l977
-        subst l977
-        obtain ⟨hq274, rfl, hq273⟩ := a976.nil_inv
-        try clear a976
-        subst hq274
-        subst hq271
-        obtain ⟨v943, vs978, m979, c980, c981, hq276, d982, a983, hq275⟩ := a963.cons_inv
-        try clear a963
-        obtain ⟨vs984, m985, c986, cs987, a988, ev989, hq277⟩ := d982.call_inv
-        try clear d982
-        rw [instanceName_plain_some] at ev989
-        obtain ⟨v990, vs991, m992, c993, c994, hq279, d995, a996, hq278⟩ := a988.cons_inv
-        try clear a988
-        obtain ⟨l997, rfl, hq280⟩ := d995.var_inv
-        try clear d995
-        simp at l997
-        subst l997
-        obtain ⟨hq282, rfl, hq281⟩ := a996.nil_inv
-        try clear a996
-        subst hq282
-        subst hq279
-        obtain ⟨v944, vs998, m999, c1000, c1001, hq284, d1002, a1003, hq283⟩ := a983.cons_inv
-        try clear a983
-        obtain ⟨vs1004, m1005, c1006, cs1007, a1008, ev1009, hq285⟩ := d1002.call_inv
-        try clear d1002
-        rw [instanceName_plain_some] at ev1009
-        obtain ⟨v1010, vs1011, m1012, c1013, c1014, hq287, d1015, a1016, hq286⟩ := a1008.cons_inv
-        try clear a1008
-        obtain ⟨l1017, rfl, hq288⟩ := d1015.var_inv
-        try clear d1015
-        simp at l1017
-        subst l1017
-        obtain ⟨hq290, rfl, hq289⟩ := a1016.nil_inv
-        try clear a1016
-        subst hq290
-        subst hq287
-        obtain ⟨v945, vs1018, m1019, c1020, c1021, hq292, d1022, a1023, hq291⟩ := a1003.cons_inv
-        try clear a1003
-        obtain ⟨vs1024, m1025, c1026, cs1027, a1028, ev1029, hq293⟩ := d1022.call_inv
-        try clear d1022
-        rw [instanceName_plain_some] at ev1029
-        obtain ⟨v1030, vs1031, m1032, c1033, c1034, hq295, d1035, a1036, hq294⟩ := a1028.cons_inv
-        try clear a1028
-        obtain ⟨l1037, rfl, hq296⟩ := d1035.var_inv
+        try clear a708
+        refine a715.nil_elim fun zv116 zm117 zq118 => ?_
+        try clear a715
+        subst zv116
+        subst zv115
+        subst zv114
+        subst zv113
+        subst zm117
+        refine Fused.let_bind d686 fun v717 m718 c720 c721 d722 d724 zq119 => ?_
+        try clear d686
+        refine Fused.call_plain d722 fun vs725 m726 c727 cs728 a729 ev730 zq120 => ?_
+        try clear d722
+        refine Fused.args_var_cons a729 rfl fun vs734 zv121 a739 => ?_
+        try clear a729
+        refine Fused.args_var_cons a739 rfl fun vs741 zv122 a746 => ?_
+        try clear a739
+        refine Fused.args_var_cons a746 rfl fun vs748 zv123 a753 => ?_
+        try clear a746
+        refine a753.nil_elim fun zv124 zm125 zq126 => ?_
+        try clear a753
+        subst zv124
+        subst zv123
+        subst zv122
+        subst zv121
+        subst zm125
+        refine Fused.let_bind d724 fun v755 m756 c758 c759 d760 d762 zq127 => ?_
+        try clear d724
+        refine Fused.call_plain d760 fun vs763 m764 c765 cs766 a767 ev768 zq128 => ?_
+        try clear d760
+        refine Fused.args_var_cons a767 rfl fun vs772 zv129 a777 => ?_
+        try clear a767
+        refine Fused.args_var_cons a777 rfl fun vs779 zv130 a784 => ?_
+        try clear a777
+        refine Fused.args_var_cons a784 rfl fun vs786 zv131 a791 => ?_
+        try clear a784
+        refine a791.nil_elim fun zv132 zm133 zq134 => ?_
+        try clear a791
+        subst zv132
+        subst zv131
+        subst zv130
         as_aux_lemma =>
-         try clear d1035
-         simp at l1037
-         subst l1037
-         obtain ⟨hq298, rfl, hq297⟩ := a1036.nil_inv
-         try clear a1036
-         subst hq298
-         subst hq295
-         obtain ⟨v946, vs1038, m1039, c1040, c1041, hq300, d1042, a1043, hq299⟩ := a1023.cons_inv
-         try clear a1023
-         obtain ⟨vs1044, m1045, c1046, cs1047, a1048, ev1049, hq301⟩ := d1042.call_inv
-         try clear d1042
-         rw [instanceName_plain_some] at ev1049
-         obtain ⟨v1050, vs1051, m1052, c1053, c1054, hq303, d1055, a1056, hq302⟩ := a1048.cons_inv
-         try clear a1048
-         obtain ⟨l1057, rfl, hq304⟩ := d1055.var_inv
-         try clear d1055
-         simp at l1057
-         subst l1057
-         obtain ⟨hq306, rfl, hq305⟩ := a1056.nil_inv
-         try clear a1056
-         subst hq306
-         subst hq303
-         obtain ⟨v947, vs1058, m1059, c1060, c1061, hq308, d1062, a1063, hq307⟩ := a1043.cons_inv
-         try clear a1043
-         obtain ⟨vs1064, m1065, c1066, cs1067, a1068, ev1069, hq309⟩ := d1062.call_inv
-         try clear d1062
-         rw [instanceName_plain_some] at ev1069
-         obtain ⟨v1070, vs1071, m1072, c1073, c1074, hq311, d1075, a1076, hq310⟩ := a1068.cons_inv
-         try clear a1068
-         obtain ⟨l1077, rfl, hq312⟩ := d1075.var_inv
-         try clear d1075
-         simp at l1077
-         subst l1077
-         obtain ⟨hq314, rfl, hq313⟩ := a1076.nil_inv
-         try clear a1076
-         subst hq314
-         subst hq311
-         obtain ⟨v948, vs1078, m1079, c1080, c1081, hq316, d1082, a1083, hq315⟩ := a1063.cons_inv
-         try clear a1063
-         obtain ⟨vs1084, m1085, c1086, cs1087, a1088, ev1089, hq317⟩ := d1082.call_inv
-         try clear d1082
-         rw [instanceName_plain_some] at ev1089
-         obtain ⟨v1090, vs1091, m1092, c1093, c1094, hq319, d1095, a1096, hq318⟩ := a1088.cons_inv
-         try clear a1088
-         obtain ⟨l1097, rfl, hq320⟩ := d1095.var_inv
-         try clear d1095
-         simp at l1097
-         subst l1097
-         obtain ⟨hq322, rfl, hq321⟩ := a1096.nil_inv
-         try clear a1096
-         subst hq322
-         subst hq319
-         obtain ⟨v949, vs1098, m1099, c1100, c1101, hq324, d1102, a1103, hq323⟩ := a1083.cons_inv
-         try clear a1083
-         obtain ⟨vs1104, m1105, c1106, cs1107, a1108, ev1109, hq325⟩ := d1102.call_inv
-         try clear d1102
-         rw [instanceName_plain_some] at ev1109
-         obtain ⟨v1110, vs1111, m1112, c1113, c1114, hq327, d1115, a1116, hq326⟩ := a1108.cons_inv
-         try clear a1108
-         obtain ⟨l1117, rfl, hq328⟩ := d1115.var_inv
-         try clear d1115
-         simp at l1117
-         subst l1117
-         obtain ⟨hq330, rfl, hq329⟩ := a1116.nil_inv
-         try clear a1116
-         subst hq330
-         subst hq327
-         obtain ⟨v950, vs1118, m1119, c1120, c1121, hq332, d1122, a1123, hq331⟩ := a1103.cons_inv
-         try clear a1103
-         obtain ⟨vs1124, m1125, c1126, cs1127, a1128, ev1129, hq333⟩ := d1122.call_inv
-         try clear d1122
-         rw [instanceName_plain_some] at ev1129
-         obtain ⟨v1130, vs1131, m1132, c1133, c1134, hq335, d1135, a1136, hq334⟩ := a1128.cons_inv
-         try clear a1128
-         obtain ⟨l1137, rfl, hq336⟩ := d1135.var_inv
-         try clear d1135
-         simp at l1137
-         subst l1137
-         obtain ⟨hq338, rfl, hq337⟩ := a1136.nil_inv
-         try clear a1136
-         subst hq338
-         subst hq335
-         obtain ⟨v951, vs1138, m1139, c1140, c1141, hq340, d1142, a1143, hq339⟩ := a1123.cons_inv
-         try clear a1123
-         obtain ⟨vs1144, m1145, c1146, cs1147, a1148, ev1149, hq341⟩ := d1142.call_inv
-         try clear d1142
-         rw [instanceName_plain_some] at ev1149
-         obtain ⟨v1150, vs1151, m1152, c1153, c1154, hq343, d1155, a1156, hq342⟩ := a1148.cons_inv
-         try clear a1148
-         obtain ⟨l1157, rfl, hq344⟩ := d1155.var_inv
-         try clear d1155
-         simp at l1157
-         subst l1157
-         obtain ⟨hq346, rfl, hq345⟩ := a1156.nil_inv
-         try clear a1156
-         subst hq346
-         subst hq343
-         obtain ⟨v952, vs1158, m1159, c1160, c1161, hq348, d1162, a1163, hq347⟩ := a1143.cons_inv
-         try clear a1143
-         obtain ⟨vs1164, m1165, c1166, cs1167, a1168, ev1169, hq349⟩ := d1162.call_inv
-         try clear d1162
-         rw [instanceName_plain_some] at ev1169
-         obtain ⟨v1170, vs1171, m1172, c1173, c1174, hq351, d1175, a1176, hq350⟩ := a1168.cons_inv
-         try clear a1168
-         obtain ⟨l1177, rfl, hq352⟩ := d1175.var_inv
-         try clear d1175
-         simp at l1177
-         subst l1177
-         obtain ⟨hq354, rfl, hq353⟩ := a1176.nil_inv
-         try clear a1176
-         subst hq354
-         subst hq351
-         obtain ⟨v953, vs1178, m1179, c1180, c1181, hq356, d1182, a1183, hq355⟩ := a1163.cons_inv
-         try clear a1163
-         obtain ⟨vs1184, m1185, c1186, cs1187, a1188, ev1189, hq357⟩ := d1182.call_inv
-         try clear d1182
-         rw [instanceName_plain_some] at ev1189
-         obtain ⟨v1190, vs1191, m1192, c1193, c1194, hq359, d1195, a1196, hq358⟩ := a1188.cons_inv
-         try clear a1188
-         obtain ⟨l1197, rfl, hq360⟩ := d1195.var_inv
+         subst zv129
+         subst zm133
+         refine d762.tuple_elim fun vs793 a794 zr135 => ?_
+         try clear d762
+         subst zr135
+         refine a794.cons_elim fun v795 vs798 m799 c800 c801 zv136 d802 a803 zq137 => ?_
+         try clear a794
+         refine d802.array_elim fun vs804 a805 zr138 => ?_
+         try clear d802
+         subst zr138
+         refine Fused.args_var_cons a805 rfl fun vs822 zv139 a827 => ?_
+         try clear a805
+         refine Fused.args_var_cons a827 rfl fun vs829 zv140 a834 => ?_
+         try clear a827
+         refine Fused.args_var_cons a834 rfl fun vs836 zv141 a841 => ?_
+         try clear a834
+         refine Fused.args_var_cons a841 rfl fun vs843 zv142 a848 => ?_
+         try clear a841
+         refine Fused.args_var_cons a848 rfl fun vs850 zv143 a855 => ?_
+         try clear a848
+         refine Fused.args_var_cons a855 rfl fun vs857 zv144 a862 => ?_
+         try clear a855
+         refine Fused.args_var_cons a862 rfl fun vs864 zv145 a869 => ?_
+         try clear a862
+         refine Fused.args_var_cons a869 rfl fun vs871 zv146 a876 => ?_
+         try clear a869
+         refine Fused.args_var_cons a876 rfl fun vs878 zv147 a883 => ?_
+         try clear a876
+         refine Fused.args_var_cons a883 rfl fun vs885 zv148 a890 => ?_
+         try clear a883
+         refine Fused.args_var_cons a890 rfl fun vs892 zv149 a897 => ?_
+         try clear a890
+         refine Fused.args_var_cons a897 rfl fun vs899 zv150 a904 => ?_
+         try clear a897
+         refine Fused.args_var_cons a904 rfl fun vs906 zv151 a911 => ?_
+         try clear a904
+         refine Fused.args_var_cons a911 rfl fun vs913 zv152 a918 => ?_
+         try clear a911
+         refine Fused.args_var_cons a918 rfl fun vs920 zv153 a925 => ?_
+         try clear a918
          as_aux_lemma =>
-          try clear d1195
-          simp at l1197
-          subst l1197
-          obtain ⟨hq362, rfl, hq361⟩ := a1196.nil_inv
-          try clear a1196
-          subst hq362
-          subst hq359
-          obtain ⟨v954, vs1198, m1199, c1200, c1201, hq364, d1202, a1203, hq363⟩ := a1183.cons_inv
-          try clear a1183
-          obtain ⟨vs1204, m1205, c1206, cs1207, a1208, ev1209, hq365⟩ := d1202.call_inv
-          try clear d1202
-          rw [instanceName_plain_some] at ev1209
-          obtain ⟨v1210, vs1211, m1212, c1213, c1214, hq367, d1215, a1216, hq366⟩ := a1208.cons_inv
-          try clear a1208
-          obtain ⟨l1217, rfl, hq368⟩ := d1215.var_inv
-          try clear d1215
-          simp at l1217
-          subst l1217
-          obtain ⟨hq370, rfl, hq369⟩ := a1216.nil_inv
-          try clear a1216
-          subst hq370
-          subst hq367
-          obtain ⟨v955, vs1218, m1219, c1220, c1221, hq372, d1222, a1223, hq371⟩ := a1203.cons_inv
-          try clear a1203
-          obtain ⟨vs1224, m1225, c1226, cs1227, a1228, ev1229, hq373⟩ := d1222.call_inv
-          try clear d1222
-          rw [instanceName_plain_some] at ev1229
-          obtain ⟨v1230, vs1231, m1232, c1233, c1234, hq375, d1235, a1236, hq374⟩ := a1228.cons_inv
-          try clear a1228
-          obtain ⟨l1237, rfl, hq376⟩ := d1235.var_inv
-          try clear d1235
-          simp at l1237
-          subst l1237
-          obtain ⟨hq378, rfl, hq377⟩ := a1236.nil_inv
-          try clear a1236
-          subst hq378
-          subst hq375
-          obtain ⟨v956, vs1238, m1239, c1240, c1241, hq380, d1242, a1243, hq379⟩ := a1223.cons_inv
-          try clear a1223
-          obtain ⟨vs1244, m1245, c1246, cs1247, a1248, ev1249, hq381⟩ := d1242.call_inv
-          try clear d1242
-          rw [instanceName_plain_some] at ev1249
-          obtain ⟨v1250, vs1251, m1252, c1253, c1254, hq383, d1255, a1256, hq382⟩ := a1248.cons_inv
-          try clear a1248
-          obtain ⟨l1257, rfl, hq384⟩ := d1255.var_inv
-          try clear d1255
-          simp at l1257
-          subst l1257
-          obtain ⟨hq386, rfl, hq385⟩ := a1256.nil_inv
-          try clear a1256
-          subst hq386
-          subst hq383
-          obtain ⟨v957, vs1258, m1259, c1260, c1261, hq388, d1262, a1263, hq387⟩ := a1243.cons_inv
-          try clear a1243
-          obtain ⟨vs1264, m1265, c1266, cs1267, a1268, ev1269, hq389⟩ := d1262.call_inv
-          try clear d1262
-          rw [instanceName_plain_some] at ev1269
-          obtain ⟨v1270, vs1271, m1272, c1273, c1274, hq391, d1275, a1276, hq390⟩ := a1268.cons_inv
-          try clear a1268
-          obtain ⟨l1277, rfl, hq392⟩ := d1275.var_inv
-          try clear d1275
-          simp at l1277
-          subst l1277
-          obtain ⟨hq394, rfl, hq393⟩ := a1276.nil_inv
-          try clear a1276
-          subst hq394
-          subst hq391
-          obtain ⟨hq396, rfl, hq395⟩ := a1263.nil_inv
-          try clear a1263
-          subst hq396
-          subst hq388
-          subst hq380
-          subst hq372
-          subst hq364
-          subst hq356
-          subst hq348
-          subst hq340
-          subst hq332
-          subst hq324
-          subst hq316
-          subst hq308
-          subst hq300
-          subst hq292
-          subst hq284
-          subst hq276
-          subst hq268
-          obtain ⟨hq398, rfl, hq397⟩ := a939.nil_inv
-          try clear a939
-          subst hq398
-          subst hq266
-          subst hq214
-          subst hq397
-          subst hq395
-          subst hq393
-          subst hq392
-          subst hq390
-          subst hq389
-          subst hq387
-          subst hq385
-          subst hq384
-          subst hq382
-          subst hq381
-          subst hq379
-          subst hq377
-          subst hq376
-          subst hq374
-          subst hq373
-          subst hq371
-          subst hq369
-          subst hq368
-          subst hq366
-          subst hq365
-          subst hq363
-          subst hq361
-          subst hq360
-          subst hq358
-          subst hq357
-          subst hq355
-          subst hq353
-          subst hq352
+          refine Fused.args_var_cons a925 rfl fun vs927 zv154 a932 => ?_
+          try clear a925
+          refine a932.nil_elim fun zv155 zm156 zq157 => ?_
+          try clear a932
+          subst zv155
+          subst zv154
+          subst zv153
+          subst zv152
+          subst zv151
+          subst zv150
+          subst zv149
+          subst zv148
+          subst zv147
+          subst zv146
+          subst zv145
+          subst zv144
+          subst zv143
+          subst zv142
+          subst zv141
+          subst zv140
+          subst zv139
+          subst zm156
+          refine a803.cons_elim fun v796 vs934 m935 c936 c937 zv158 d938 a939 zq159 => ?_
+          try clear a803
+          refine d938.array_elim fun vs940 a941 zr160 => ?_
+          try clear d938
+          subst zr160
+          refine a941.cons_elim fun v942 vs958 m959 c960 c961 zv161 d962 a963 zq162 => ?_
+          try clear a941
+          refine Fused.call_plain d962 fun vs964 m965 c966 cs967 a968 ev969 zq163 => ?_
+          try clear d962
+          refine Fused.args_var_cons a968 rfl fun vs971 zv164 a976 => ?_
+          try clear a968
+          refine a976.nil_elim fun zv165 zm166 zq167 => ?_
+          try clear a976
+          subst zv165
+          subst zv164
+          subst zm166
+          refine a963.cons_elim fun v943 vs978 m979 c980 c981 zv168 d982 a983 zq169 => ?_
+          try clear a963
           as_aux_lemma =>
-           subst hq350
-           subst hq349
-           subst hq347
-           subst hq345
-           subst hq344
-           subst hq342
-           subst hq341
-           subst hq339
-           subst hq337
-           subst hq336
-           subst hq334
-           subst hq333
-           subst hq331
-           subst hq329
-           subst hq328
-           subst hq326
-           subst hq325
-           subst hq323
-           subst hq321
-           subst hq320
-           subst hq318
-           subst hq317
-           subst hq315
-           subst hq313
-           subst hq312
-           subst hq310
-           subst hq309
-           subst hq307
-           subst hq305
-           subst hq304
-           subst hq302
-           subst hq301
-           subst hq299
-           subst hq297
-           subst hq296
-           subst hq294
-           subst hq293
-           subst hq291
-           subst hq289
-           subst hq288
-           subst hq286
-           subst hq285
-           subst hq283
-           subst hq281
-           subst hq280
-           subst hq278
-           subst hq277
-           subst hq275
-           subst hq273
-           subst hq272
-           subst hq270
-           subst hq269
-           subst hq267
-           subst hq265
-           subst hq263
-           subst hq262
-           subst hq260
-           subst hq259
-           subst hq257
-           subst hq256
-           subst hq254
-           subst hq253
-           subst hq251
-           subst hq250
-           subst hq248
-           subst hq247
-           subst hq245
-           subst hq244
-           subst hq242
-           subst hq241
-           subst hq239
-           subst hq238
-           subst hq236
-           subst hq235
-           subst hq233
-           subst hq232
-           subst hq230
-           subst hq229
-           subst hq227
-           subst hq226
-           subst hq224
-           subst hq223
-           subst hq221
-           subst hq220
-           subst hq218
-           subst hq217
-           subst hq215
-           subst hq213
-           subst hq211
-           subst hq210
-           subst hq208
-           subst hq207
-           subst hq205
-           subst hq204
-           subst hq202
-           subst hq201
-           subst hq200
-           subst hq198
-           subst hq197
-           subst hq195
-           subst hq194
-           subst hq192
-           subst hq191
-           subst hq189
-           subst hq188
-           subst hq187
-           subst hq185
-           subst hq184
-           subst hq182
-           subst hq181
-           subst hq179
-           subst hq178
-           subst hq176
-           subst hq175
-           subst hq174
-           subst hq172
-           subst hq171
-           subst hq169
-           subst hq168
-           subst hq166
+           refine Fused.call_plain d982 fun vs984 m985 c986 cs987 a988 ev989 zq170 => ?_
+           try clear d982
+           refine Fused.args_var_cons a988 rfl fun vs991 zv171 a996 => ?_
+           try clear a988
+           refine a996.nil_elim fun zv172 zm173 zq174 => ?_
+           try clear a996
+           subst zv172
+           subst zv171
+           subst zm173
+           refine a983.cons_elim fun v944 vs998 m999 c1000 c1001 zv175 d1002 a1003 zq176 => ?_
+           try clear a983
+           refine Fused.call_plain d1002 fun vs1004 m1005 c1006 cs1007 a1008 ev1009 zq177 => ?_
+           try clear d1002
+           refine Fused.args_var_cons a1008 rfl fun vs1011 zv178 a1016 => ?_
+           try clear a1008
+           refine a1016.nil_elim fun zv179 zm180 zq181 => ?_
+           try clear a1016
+           subst zv179
+           subst zv178
+           subst zm180
+           refine a1003.cons_elim fun v945 vs1018 m1019 c1020 c1021 zv182 d1022 a1023 zq183 => ?_
+           try clear a1003
+           refine Fused.call_plain d1022 fun vs1024 m1025 c1026 cs1027 a1028 ev1029 zq184 => ?_
+           try clear d1022
+           refine Fused.args_var_cons a1028 rfl fun vs1031 zv185 a1036 => ?_
+           try clear a1028
+           refine a1036.nil_elim fun zv186 zm187 zq188 => ?_
+           try clear a1036
+           subst zv186
+           subst zv185
+           subst zm187
+           refine a1023.cons_elim fun v946 vs1038 m1039 c1040 c1041 zv189 d1042 a1043 zq190 => ?_
+           try clear a1023
+           refine Fused.call_plain d1042 fun vs1044 m1045 c1046 cs1047 a1048 ev1049 zq191 => ?_
+           try clear d1042
+           refine Fused.args_var_cons a1048 rfl fun vs1051 zv192 a1056 => ?_
+           try clear a1048
+           refine a1056.nil_elim fun zv193 zm194 zq195 => ?_
+           try clear a1056
+           subst zv193
            as_aux_lemma =>
-            subst hq165
-            subst hq163
-            subst hq162
-            subst hq161
-            subst hq159
-            subst hq158
-            subst hq156
-            subst hq155
-            subst hq153
-            subst hq152
-            subst hq150
-            subst hq149
-            subst hq148
-            subst hq146
-            subst hq145
-            subst hq143
-            subst hq142
-            subst hq140
-            subst hq139
-            subst hq137
-            subst hq136
-            subst hq135
-            subst hq133
-            subst hq132
-            subst hq130
-            subst hq129
-            subst hq127
-            subst hq126
-            subst hq124
-            subst hq123
-            subst hq122
-            subst hq120
-            subst hq119
-            subst hq117
-            subst hq116
-            subst hq114
-            subst hq113
-            subst hq111
-            subst hq110
-            subst hq109
-            subst hq107
-            subst hq106
-            subst hq104
-            subst hq103
-            subst hq101
-            subst hq100
-            subst hq98
-            subst hq97
-            subst hq96
-            subst hq94
-            subst hq93
-            subst hq91
-            subst hq90
-            subst hq88
-            subst hq87
-            subst hq85
-            subst hq84
-            subst hq83
-            subst hq81
-            subst hq80
-            subst hq78
-            subst hq77
-            subst hq75
-            subst hq74
-            subst hq72
-            subst hq71
-            subst hq70
-            subst hq68
-            subst hq67
-            subst hq65
-            subst hq64
-            subst hq62
-            subst hq61
-            subst hq59
-            subst hq58
-            subst hq57
-            subst hq55
-            subst hq54
-            subst hq52
-            subst hq51
-            subst hq49
-            subst hq48
-            subst hq46
-            subst hq45
-            subst hq44
-            subst hq42
-            subst hq41
-            subst hq39
-            subst hq38
-            subst hq36
-            subst hq35
-            subst hq33
-            subst hq32
-            subst hq31
-            subst hq29
-            subst hq28
-            subst hq26
-            subst hq25
-            subst hq23
-            subst hq22
-            subst hq20
-            subst hq19
-            subst hq18
-            subst hq16
-            subst hq15
-            subst hq13
-            subst hq12
-            subst hq10
-            subst hq9
-            subst hq7
-            subst hq6
-            subst hq5
-            subst hq4
-            subst hq3
-            subst hq2
-            subst hq1
-            exact «Fixed::hidden».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv11 hv103 ev198 ev236 ev274 ev312 ev350 ev388 ev426 ev464 ev502 ev540 ev578 ev616 ev654 ev692 ev730 ev768 rfl ev969 ev989 ev1009 ev1029 ev1049 ev1069 ev1089 ev1109 ev1129 ev1149 ev1169 ev1189 ev1209 ev1229 ev1249 ev1269 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+            subst zv192
+            subst zm194
+            refine a1043.cons_elim fun v947 vs1058 m1059 c1060 c1061 zv196 d1062 a1063 zq197 => ?_
+            try clear a1043
+            refine Fused.call_plain d1062 fun vs1064 m1065 c1066 cs1067 a1068 ev1069 zq198 => ?_
+            try clear d1062
+            refine Fused.args_var_cons a1068 rfl fun vs1071 zv199 a1076 => ?_
+            try clear a1068
+            refine a1076.nil_elim fun zv200 zm201 zq202 => ?_
+            try clear a1076
+            subst zv200
+            subst zv199
+            subst zm201
+            refine a1063.cons_elim fun v948 vs1078 m1079 c1080 c1081 zv203 d1082 a1083 zq204 => ?_
+            try clear a1063
+            refine Fused.call_plain d1082 fun vs1084 m1085 c1086 cs1087 a1088 ev1089 zq205 => ?_
+            try clear d1082
+            refine Fused.args_var_cons a1088 rfl fun vs1091 zv206 a1096 => ?_
+            try clear a1088
+            refine a1096.nil_elim fun zv207 zm208 zq209 => ?_
+            try clear a1096
+            subst zv207
+            subst zv206
+            subst zm208
+            refine a1083.cons_elim fun v949 vs1098 m1099 c1100 c1101 zv210 d1102 a1103 zq211 => ?_
+            try clear a1083
+            refine Fused.call_plain d1102 fun vs1104 m1105 c1106 cs1107 a1108 ev1109 zq212 => ?_
+            try clear d1102
+            refine Fused.args_var_cons a1108 rfl fun vs1111 zv213 a1116 => ?_
+            try clear a1108
+            refine a1116.nil_elim fun zv214 zm215 zq216 => ?_
+            try clear a1116
+            subst zv214
+            subst zv213
+            subst zm215
+            refine a1103.cons_elim fun v950 vs1118 m1119 c1120 c1121 zv217 d1122 a1123 zq218 => ?_
+            try clear a1103
+            refine Fused.call_plain d1122 fun vs1124 m1125 c1126 cs1127 a1128 ev1129 zq219 => ?_
+            try clear d1122
+            refine Fused.args_var_cons a1128 rfl fun vs1131 zv220 a1136 => ?_
+            as_aux_lemma =>
+             try clear a1128
+             refine a1136.nil_elim fun zv221 zm222 zq223 => ?_
+             try clear a1136
+             subst zv221
+             subst zv220
+             subst zm222
+             refine a1123.cons_elim fun v951 vs1138 m1139 c1140 c1141 zv224 d1142 a1143 zq225 => ?_
+             try clear a1123
+             refine Fused.call_plain d1142 fun vs1144 m1145 c1146 cs1147 a1148 ev1149 zq226 => ?_
+             try clear d1142
+             refine Fused.args_var_cons a1148 rfl fun vs1151 zv227 a1156 => ?_
+             try clear a1148
+             refine a1156.nil_elim fun zv228 zm229 zq230 => ?_
+             try clear a1156
+             subst zv228
+             subst zv227
+             subst zm229
+             refine a1143.cons_elim fun v952 vs1158 m1159 c1160 c1161 zv231 d1162 a1163 zq232 => ?_
+             try clear a1143
+             refine Fused.call_plain d1162 fun vs1164 m1165 c1166 cs1167 a1168 ev1169 zq233 => ?_
+             try clear d1162
+             refine Fused.args_var_cons a1168 rfl fun vs1171 zv234 a1176 => ?_
+             try clear a1168
+             refine a1176.nil_elim fun zv235 zm236 zq237 => ?_
+             try clear a1176
+             subst zv235
+             subst zv234
+             subst zm236
+             refine a1163.cons_elim fun v953 vs1178 m1179 c1180 c1181 zv238 d1182 a1183 zq239 => ?_
+             try clear a1163
+             refine Fused.call_plain d1182 fun vs1184 m1185 c1186 cs1187 a1188 ev1189 zq240 => ?_
+             try clear d1182
+             refine Fused.args_var_cons a1188 rfl fun vs1191 zv241 a1196 => ?_
+             try clear a1188
+             refine a1196.nil_elim fun zv242 zm243 zq244 => ?_
+             try clear a1196
+             subst zv242
+             subst zv241
+             subst zm243
+             refine a1183.cons_elim fun v954 vs1198 m1199 c1200 c1201 zv245 d1202 a1203 zq246 => ?_
+             as_aux_lemma =>
+              try clear a1183
+              refine Fused.call_plain d1202 fun vs1204 m1205 c1206 cs1207 a1208 ev1209 zq247 => ?_
+              try clear d1202
+              refine Fused.args_var_cons a1208 rfl fun vs1211 zv248 a1216 => ?_
+              try clear a1208
+              refine a1216.nil_elim fun zv249 zm250 zq251 => ?_
+              try clear a1216
+              subst zv249
+              subst zv248
+              subst zm250
+              refine a1203.cons_elim fun v955 vs1218 m1219 c1220 c1221 zv252 d1222 a1223 zq253 => ?_
+              try clear a1203
+              refine Fused.call_plain d1222 fun vs1224 m1225 c1226 cs1227 a1228 ev1229 zq254 => ?_
+              try clear d1222
+              refine Fused.args_var_cons a1228 rfl fun vs1231 zv255 a1236 => ?_
+              try clear a1228
+              refine a1236.nil_elim fun zv256 zm257 zq258 => ?_
+              try clear a1236
+              subst zv256
+              subst zv255
+              subst zm257
+              refine a1223.cons_elim fun v956 vs1238 m1239 c1240 c1241 zv259 d1242 a1243 zq260 => ?_
+              try clear a1223
+              refine Fused.call_plain d1242 fun vs1244 m1245 c1246 cs1247 a1248 ev1249 zq261 => ?_
+              try clear d1242
+              refine Fused.args_var_cons a1248 rfl fun vs1251 zv262 a1256 => ?_
+              try clear a1248
+              refine a1256.nil_elim fun zv263 zm264 zq265 => ?_
+              try clear a1256
+              subst zv263
+              subst zv262
+              subst zm264
+              refine a1243.cons_elim fun v957 vs1258 m1259 c1260 c1261 zv266 d1262 a1263 zq267 => ?_
+              try clear a1243
+              refine Fused.call_plain d1262 fun vs1264 m1265 c1266 cs1267 a1268 ev1269 zq268 => ?_
+              try clear d1262
+              refine Fused.args_var_cons a1268 rfl fun vs1271 zv269 a1276 => ?_
+              try clear a1268
+              refine a1276.nil_elim fun zv270 zm271 zq272 => ?_
+              try clear a1276
+              as_aux_lemma =>
+               subst zv270
+               subst zv269
+               subst zm271
+               refine a1263.nil_elim fun zv273 zm274 zq275 => ?_
+               try clear a1263
+               subst zv273
+               subst zv266
+               subst zv259
+               subst zv252
+               subst zv245
+               subst zv238
+               subst zv231
+               subst zv224
+               subst zv217
+               subst zv210
+               subst zv203
+               subst zv196
+               subst zv189
+               subst zv182
+               subst zv175
+               subst zv168
+               subst zv161
+               subst zm274
+               refine a939.nil_elim fun zv276 zm277 zq278 => ?_
+               try clear a939
+               subst zv276
+               subst zv158
+               subst zv136
+               subst zm277
+               subst zq278
+               subst zq275
+               subst zq272
+               subst zq268
+               subst zq267
+               subst zq265
+               subst zq261
+               subst zq260
+               subst zq258
+               subst zq254
+               subst zq253
+               as_aux_lemma =>
+                subst zq251
+                subst zq247
+                subst zq246
+                subst zq244
+                subst zq240
+                subst zq239
+                subst zq237
+                subst zq233
+                subst zq232
+                subst zq230
+                subst zq226
+                subst zq225
+                subst zq223
+                subst zq219
+                subst zq218
+                subst zq216
+                subst zq212
+                subst zq211
+                subst zq209
+                subst zq205
+                subst zq204
+                subst zq202
+                subst zq198
+                subst zq197
+                subst zq195
+                subst zq191
+                subst zq190
+                subst zq188
+                subst zq184
+                subst zq183
+                subst zq181
+                subst zq177
+                subst zq176
+                subst zq174
+                subst zq170
+                subst zq169
+                subst zq167
+                subst zq163
+                subst zq162
+                subst zq159
+                as_aux_lemma =>
+                 subst zq157
+                 subst zq137
+                 subst zq134
+                 subst zq128
+                 subst zq127
+                 subst zq126
+                 subst zq120
+                 subst zq119
+                 subst zq118
+                 subst zq112
+                 subst zq111
+                 subst zq110
+                 subst zq104
+                 subst zq103
+                 subst zq102
+                 subst zq96
+                 subst zq95
+                 subst zq94
+                 subst zq88
+                 subst zq87
+                 subst zq86
+                 subst zq80
+                 subst zq79
+                 subst zq78
+                 subst zq72
+                 subst zq71
+                 subst zq70
+                 subst zq64
+                 subst zq63
+                 subst zq62
+                 subst zq56
+                 subst zq55
+                 subst zq54
+                 subst zq48
+                 subst zq47
+                 subst zq46
+                 subst zq40
+                 subst zq39
+                 subst zq38
+                 subst zq32
+                 as_aux_lemma =>
+                  subst zq31
+                  subst zq30
+                  subst zq24
+                  subst zq23
+                  subst zq22
+                  subst zq16
+                  subst zq15
+                  subst zq14
+                  subst zq8
+                  subst zq7
+                  subst zq5
+                  subst zq4
+                  subst zq2
+                  subst zq1
+                  exact «Fixed::hidden».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv11 hv103 ev198 ev236 ev274 ev312 ev350 ev388 ev426 ev464 ev502 ev540 ev578 ev616 ev654 ev692 ev730 ev768 rfl ev969 ev989 ev1009 ev1029 ev1049 ev1069 ev1089 ev1109 ev1129 ev1149 ev1169 ev1189 ev1209 ev1229 ev1249 ev1269 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::output_unit`: one constructor per combination of selected arms. -/
 inductive «Fixed::output_unit».Path (x_row x_b x_h : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -4444,40 +3425,28 @@ theorem «Fixed::output_unit».obs {x_row x_b x_h : SourceValue F} {h h' : Heap 
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.output_unit.lookup
     (by simp [IxAIStep.Fixed.Fixed.output_unit, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.output_unit] at d0
-  obtain ⟨x1, y2, m3, c4, c5, d6, d7, op8, hq1⟩ := d0.binary_inv
+  refine d0.binary_elim fun x1 y2 m3 c4 c5 d6 d7 op8 ze1 => ?_
   try clear d0
-  obtain ⟨vs9, m10, c11, cs12, a13, ev14, hq2⟩ := d6.call_inv
+  subst ze1
+  refine Fused.call_plain d6 fun vs9 m10 c11 cs12 a13 ev14 zq2 => ?_
   try clear d6
-  rw [instanceName_plain_some] at ev14
-  obtain ⟨v15, vs17, m18, c19, c20, hq4, d21, a22, hq3⟩ := a13.cons_inv
+  refine Fused.args_var_cons a13 rfl fun vs17 zv3 a22 => ?_
   try clear a13
-  obtain ⟨l23, rfl, hq5⟩ := d21.var_inv
-  try clear d21
-  simp at l23
-  subst l23
-  obtain ⟨v16, vs24, m25, c26, c27, hq7, d28, a29, hq6⟩ := a22.cons_inv
+  refine Fused.args_var_cons a22 rfl fun vs24 zv4 a29 => ?_
   try clear a22
-  obtain ⟨l30, rfl, hq8⟩ := d28.var_inv
-  try clear d28
-  simp at l30
-  subst l30
-  obtain ⟨hq10, rfl, hq9⟩ := a29.nil_inv
+  refine a29.nil_elim fun zv5 zm6 zq7 => ?_
   try clear a29
-  subst hq10
-  subst hq7
-  subst hq4
-  obtain ⟨l31, rfl, hq11⟩ := d7.var_inv
+  subst zv5
+  subst zv4
+  subst zv3
+  subst zm6
+  refine Fused.var_is d7 rfl fun l31 zm9 zq8 => ?_
   try clear d7
-  simp at l31
   subst l31
-  subst hq11
-  subst hq9
-  subst hq8
-  subst hq6
-  subst hq5
-  subst hq3
-  subst hq2
-  subst hq1
+  subst zm9
+  subst zq8
+  subst zq7
+  subst zq2
   exact «Fixed::output_unit».Path.run _ _ _ ev14 rfl op8 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::outputs`: one constructor per combination of selected arms. -/
@@ -4509,560 +3478,266 @@ theorem «Fixed::outputs».obs {x_w2 x_b2 x_h : SourceValue F} {h h' : Heap F} {
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.outputs.lookup
     (by simp [IxAIStep.Fixed.Fixed.outputs, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.outputs] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, hq1⟩ := d0.letValue_inv
+  refine Fused.let_array_11 d0 fun x_r0 x_r1 x_r2 x_r3 x_r4 x_r5 x_r6 x_r7 x_r8 x_r9 x_r10 m2 c4 c5 d6 d8 zq1 => ?_
   try clear d0
-  obtain ⟨l9, rfl, hq2⟩ := d6.var_inv
+  refine Fused.var_is d6 rfl fun hv11 zm3 zq2 => ?_
   try clear d6
-  simp at l9
-  subst l9
-  obtain ⟨vs10, hv11, -, ml12⟩ := matchPattern_array_inv mt7
-  try clear mt7
-  obtain ⟨x_r0, vs13, b14, b15, rfl, mt16, ml17, rfl⟩ := matchListWith_cons_inv ml12
-  try clear ml12
-  obtain rfl := matchPattern_bind_inv mt16
-  try clear mt16
-  obtain ⟨x_r1, vs18, b19, b20, rfl, mt21, ml22, rfl⟩ := matchListWith_cons_inv ml17
-  try clear ml17
-  obtain rfl := matchPattern_bind_inv mt21
-  try clear mt21
-  obtain ⟨x_r2, vs23, b24, b25, rfl, mt26, ml27, rfl⟩ := matchListWith_cons_inv ml22
-  try clear ml22
-  obtain rfl := matchPattern_bind_inv mt26
-  try clear mt26
-  obtain ⟨x_r3, vs28, b29, b30, rfl, mt31, ml32, rfl⟩ := matchListWith_cons_inv ml27
-  try clear ml27
-  obtain rfl := matchPattern_bind_inv mt31
-  try clear mt31
-  obtain ⟨x_r4, vs33, b34, b35, rfl, mt36, ml37, rfl⟩ := matchListWith_cons_inv ml32
-  try clear ml32
-  obtain rfl := matchPattern_bind_inv mt36
-  try clear mt36
-  obtain ⟨x_r5, vs38, b39, b40, rfl, mt41, ml42, rfl⟩ := matchListWith_cons_inv ml37
-  try clear ml37
-  obtain rfl := matchPattern_bind_inv mt41
-  try clear mt41
-  obtain ⟨x_r6, vs43, b44, b45, rfl, mt46, ml47, rfl⟩ := matchListWith_cons_inv ml42
-  try clear ml42
-  obtain rfl := matchPattern_bind_inv mt46
-  try clear mt46
-  obtain ⟨x_r7, vs48, b49, b50, rfl, mt51, ml52, rfl⟩ := matchListWith_cons_inv ml47
-  try clear ml47
-  obtain rfl := matchPattern_bind_inv mt51
-  try clear mt51
-  obtain ⟨x_r8, vs53, b54, b55, rfl, mt56, ml57, rfl⟩ := matchListWith_cons_inv ml52
-  try clear ml52
-  obtain rfl := matchPattern_bind_inv mt56
-  try clear mt56
-  obtain ⟨x_r9, vs58, b59, b60, rfl, mt61, ml62, rfl⟩ := matchListWith_cons_inv ml57
-  try clear ml57
-  obtain rfl := matchPattern_bind_inv mt61
-  try clear mt61
-  obtain ⟨x_r10, vs63, b64, b65, rfl, mt66, ml67, rfl⟩ := matchListWith_cons_inv ml62
-  try clear ml62
-  obtain rfl := matchPattern_bind_inv mt66
-  try clear mt66
-  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml67
-  try clear ml67
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d8
-  obtain ⟨v68, m69, bs70, c71, c72, d73, mt74, d75, hq3⟩ := d8.letValue_inv
+  subst zm3
+  refine Fused.let_array_11 d8 fun x_c0 x_c1 x_c2 x_c3 x_c4 x_c5 x_c6 x_c7 x_c8 x_c9 x_c10 m69 c71 c72 d73 d75 zq4 => ?_
   try clear d8
-  obtain ⟨l76, rfl, hq4⟩ := d73.var_inv
+  refine Fused.var_is d73 rfl fun hv78 zm6 zq5 => ?_
   try clear d73
-  simp at l76
-  subst l76
-  obtain ⟨vs77, hv78, -, ml79⟩ := matchPattern_array_inv mt74
-  try clear mt74
-  obtain ⟨x_c0, vs80, b81, b82, rfl, mt83, ml84, rfl⟩ := matchListWith_cons_inv ml79
-  try clear ml79
-  obtain rfl := matchPattern_bind_inv mt83
-  try clear mt83
-  obtain ⟨x_c1, vs85, b86, b87, rfl, mt88, ml89, rfl⟩ := matchListWith_cons_inv ml84
-  try clear ml84
-  obtain rfl := matchPattern_bind_inv mt88
-  try clear mt88
-  obtain ⟨x_c2, vs90, b91, b92, rfl, mt93, ml94, rfl⟩ := matchListWith_cons_inv ml89
-  try clear ml89
-  obtain rfl := matchPattern_bind_inv mt93
-  try clear mt93
-  obtain ⟨x_c3, vs95, b96, b97, rfl, mt98, ml99, rfl⟩ := matchListWith_cons_inv ml94
-  try clear ml94
-  obtain rfl := matchPattern_bind_inv mt98
-  try clear mt98
-  obtain ⟨x_c4, vs100, b101, b102, rfl, mt103, ml104, rfl⟩ := matchListWith_cons_inv ml99
-  try clear ml99
-  obtain rfl := matchPattern_bind_inv mt103
-  try clear mt103
-  obtain ⟨x_c5, vs105, b106, b107, rfl, mt108, ml109, rfl⟩ := matchListWith_cons_inv ml104
-  try clear ml104
-  obtain rfl := matchPattern_bind_inv mt108
-  try clear mt108
-  obtain ⟨x_c6, vs110, b111, b112, rfl, mt113, ml114, rfl⟩ := matchListWith_cons_inv ml109
-  try clear ml109
-  obtain rfl := matchPattern_bind_inv mt113
-  try clear mt113
-  obtain ⟨x_c7, vs115, b116, b117, rfl, mt118, ml119, rfl⟩ := matchListWith_cons_inv ml114
-  try clear ml114
-  obtain rfl := matchPattern_bind_inv mt118
-  try clear mt118
-  obtain ⟨x_c8, vs120, b121, b122, rfl, mt123, ml124, rfl⟩ := matchListWith_cons_inv ml119
-  try clear ml119
-  obtain rfl := matchPattern_bind_inv mt123
-  try clear mt123
-  obtain ⟨x_c9, vs125, b126, b127, rfl, mt128, ml129, rfl⟩ := matchListWith_cons_inv ml124
-  try clear ml124
-  obtain rfl := matchPattern_bind_inv mt128
-  try clear mt128
-  obtain ⟨x_c10, vs130, b131, b132, rfl, mt133, ml134, rfl⟩ := matchListWith_cons_inv ml129
-  try clear ml129
-  obtain rfl := matchPattern_bind_inv mt133
-  try clear mt133
-  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml134
-  try clear ml134
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d75
-  obtain ⟨vs135, a136, rfl⟩ := d75.array_inv
+  subst zm6
+  refine d75.array_elim fun vs135 a136 zr7 => ?_
   try clear d75
-  obtain ⟨v137, vs149, m150, c151, c152, hq6, d153, a154, hq5⟩ := a136.cons_inv
+  subst zr7
+  refine a136.cons_elim fun v137 vs149 m150 c151 c152 zv8 d153 a154 zq9 => ?_
   try clear a136
-  obtain ⟨vs155, m156, c157, cs158, a159, ev160, hq7⟩ := d153.call_inv
+  refine Fused.call_plain d153 fun vs155 m156 c157 cs158 a159 ev160 zq10 => ?_
   try clear d153
-  rw [instanceName_plain_some] at ev160
-  obtain ⟨v161, vs164, m165, c166, c167, hq9, d168, a169, hq8⟩ := a159.cons_inv
+  refine Fused.args_var_cons a159 rfl fun vs164 zv11 a169 => ?_
   try clear a159
-  obtain ⟨l170, rfl, hq10⟩ := d168.var_inv
+  refine Fused.args_var_cons a169 rfl fun vs171 zv12 a176 => ?_
+  try clear a169
+  refine Fused.args_var_cons a176 rfl fun vs178 zv13 a183 => ?_
+  try clear a176
+  refine a183.nil_elim fun zv14 zm15 zq16 => ?_
+  try clear a183
+  subst zv14
+  subst zv13
+  subst zv12
+  subst zv11
+  subst zm15
+  refine a154.cons_elim fun v138 vs185 m186 c187 c188 zv17 d189 a190 zq18 => ?_
+  try clear a154
+  refine Fused.call_plain d189 fun vs191 m192 c193 cs194 a195 ev196 zq19 => ?_
+  try clear d189
+  refine Fused.args_var_cons a195 rfl fun vs200 zv20 a205 => ?_
+  try clear a195
+  refine Fused.args_var_cons a205 rfl fun vs207 zv21 a212 => ?_
+  try clear a205
+  refine Fused.args_var_cons a212 rfl fun vs214 zv22 a219 => ?_
+  try clear a212
   as_aux_lemma =>
-   try clear d168
-   simp at l170
-   subst l170
-   obtain ⟨v162, vs171, m172, c173, c174, hq12, d175, a176, hq11⟩ := a169.cons_inv
-   try clear a169
-   obtain ⟨l177, rfl, hq13⟩ := d175.var_inv
-   try clear d175
-   simp at l177
-   subst l177
-   obtain ⟨v163, vs178, m179, c180, c181, hq15, d182, a183, hq14⟩ := a176.cons_inv
-   try clear a176
-   obtain ⟨l184, rfl, hq16⟩ := d182.var_inv
-   try clear d182
-   simp at l184
-   subst l184
-   obtain ⟨hq18, rfl, hq17⟩ := a183.nil_inv
-   try clear a183
-   subst hq18
-   subst hq15
-   subst hq12
-   subst hq9
-   obtain ⟨v138, vs185, m186, c187, c188, hq20, d189, a190, hq19⟩ := a154.cons_inv
-   try clear a154
-   obtain ⟨vs191, m192, c193, cs194, a195, ev196, hq21⟩ := d189.call_inv
-   try clear d189
-   rw [instanceName_plain_some] at ev196
-   obtain ⟨v197, vs200, m201, c202, c203, hq23, d204, a205, hq22⟩ := a195.cons_inv
-   try clear a195
-   obtain ⟨l206, rfl, hq24⟩ := d204.var_inv
-   try clear d204
-   simp at l206
-   subst l206
-   obtain ⟨v198, vs207, m208, c209, c210, hq26, d211, a212, hq25⟩ := a205.cons_inv
-   try clear a205
-   obtain ⟨l213, rfl, hq27⟩ := d211.var_inv
-   try clear d211
-   simp at l213
-   subst l213
-   obtain ⟨v199, vs214, m215, c216, c217, hq29, d218, a219, hq28⟩ := a212.cons_inv
-   try clear a212
-   obtain ⟨l220, rfl, hq30⟩ := d218.var_inv
-   try clear d218
-   simp at l220
-   subst l220
-   obtain ⟨hq32, rfl, hq31⟩ := a219.nil_inv
+   refine a219.nil_elim fun zv23 zm24 zq25 => ?_
    try clear a219
-   subst hq32
-   subst hq29
-   subst hq26
-   subst hq23
-   obtain ⟨v139, vs221, m222, c223, c224, hq34, d225, a226, hq33⟩ := a190.cons_inv
+   subst zv23
+   subst zv22
+   subst zv21
+   subst zv20
+   subst zm24
+   refine a190.cons_elim fun v139 vs221 m222 c223 c224 zv26 d225 a226 zq27 => ?_
    try clear a190
-   obtain ⟨vs227, m228, c229, cs230, a231, ev232, hq35⟩ := d225.call_inv
+   refine Fused.call_plain d225 fun vs227 m228 c229 cs230 a231 ev232 zq28 => ?_
    try clear d225
-   rw [instanceName_plain_some] at ev232
-   obtain ⟨v233, vs236, m237, c238, c239, hq37, d240, a241, hq36⟩ := a231.cons_inv
+   refine Fused.args_var_cons a231 rfl fun vs236 zv29 a241 => ?_
    try clear a231
-   obtain ⟨l242, rfl, hq38⟩ := d240.var_inv
-   try clear d240
-   simp at l242
-   subst l242
-   obtain ⟨v234, vs243, m244, c245, c246, hq40, d247, a248, hq39⟩ := a241.cons_inv
+   refine Fused.args_var_cons a241 rfl fun vs243 zv30 a248 => ?_
    try clear a241
-   obtain ⟨l249, rfl, hq41⟩ := d247.var_inv
-   try clear d247
-   simp at l249
-   subst l249
-   obtain ⟨v235, vs250, m251, c252, c253, hq43, d254, a255, hq42⟩ := a248.cons_inv
+   refine Fused.args_var_cons a248 rfl fun vs250 zv31 a255 => ?_
    try clear a248
-   obtain ⟨l256, rfl, hq44⟩ := d254.var_inv
-   try clear d254
-   simp at l256
-   subst l256
-   obtain ⟨hq46, rfl, hq45⟩ := a255.nil_inv
+   refine a255.nil_elim fun zv32 zm33 zq34 => ?_
    try clear a255
-   subst hq46
-   subst hq43
-   subst hq40
-   subst hq37
-   obtain ⟨v140, vs257, m258, c259, c260, hq48, d261, a262, hq47⟩ := a226.cons_inv
+   subst zv32
+   subst zv31
+   subst zv30
+   subst zv29
+   subst zm33
+   refine a226.cons_elim fun v140 vs257 m258 c259 c260 zv35 d261 a262 zq36 => ?_
    try clear a226
-   obtain ⟨vs263, m264, c265, cs266, a267, ev268, hq49⟩ := d261.call_inv
+   refine Fused.call_plain d261 fun vs263 m264 c265 cs266 a267 ev268 zq37 => ?_
    try clear d261
-   rw [instanceName_plain_some] at ev268
-   obtain ⟨v269, vs272, m273, c274, c275, hq51, d276, a277, hq50⟩ := a267.cons_inv
+   refine Fused.args_var_cons a267 rfl fun vs272 zv38 a277 => ?_
    try clear a267
-   obtain ⟨l278, rfl, hq52⟩ := d276.var_inv
-   try clear d276
-   simp at l278
-   subst l278
-   obtain ⟨v270, vs279, m280, c281, c282, hq54, d283, a284, hq53⟩ := a277.cons_inv
+   refine Fused.args_var_cons a277 rfl fun vs279 zv39 a284 => ?_
    try clear a277
-   obtain ⟨l285, rfl, hq55⟩ := d283.var_inv
-   try clear d283
-   simp at l285
-   subst l285
-   obtain ⟨v271, vs286, m287, c288, c289, hq57, d290, a291, hq56⟩ := a284.cons_inv
+   refine Fused.args_var_cons a284 rfl fun vs286 zv40 a291 => ?_
    try clear a284
-   obtain ⟨l292, rfl, hq58⟩ := d290.var_inv
-   try clear d290
-   simp at l292
-   subst l292
-   obtain ⟨hq60, rfl, hq59⟩ := a291.nil_inv
+   refine a291.nil_elim fun zv41 zm42 zq43 => ?_
    try clear a291
-   subst hq60
-   subst hq57
-   subst hq54
-   subst hq51
-   obtain ⟨v141, vs293, m294, c295, c296, hq62, d297, a298, hq61⟩ := a262.cons_inv
-   try clear a262
-   obtain ⟨vs299, m300, c301, cs302, a303, ev304, hq63⟩ := d297.call_inv
-   try clear d297
-   rw [instanceName_plain_some] at ev304
-   obtain ⟨v305, vs308, m309, c310, c311, hq65, d312, a313, hq64⟩ := a303.cons_inv
-   try clear a303
-   obtain ⟨l314, rfl, hq66⟩ := d312.var_inv
-   try clear d312
-   simp at l314
-   subst l314
-   obtain ⟨v306, vs315, m316, c317, c318, hq68, d319, a320, hq67⟩ := a313.cons_inv
+   subst zv41
+   subst zv40
+   subst zv39
+   subst zv38
    as_aux_lemma =>
+    subst zm42
+    refine a262.cons_elim fun v141 vs293 m294 c295 c296 zv44 d297 a298 zq45 => ?_
+    try clear a262
+    refine Fused.call_plain d297 fun vs299 m300 c301 cs302 a303 ev304 zq46 => ?_
+    try clear d297
+    refine Fused.args_var_cons a303 rfl fun vs308 zv47 a313 => ?_
+    try clear a303
+    refine Fused.args_var_cons a313 rfl fun vs315 zv48 a320 => ?_
     try clear a313
-    obtain ⟨l321, rfl, hq69⟩ := d319.var_inv
-    try clear d319
-    simp at l321
-    subst l321
-    obtain ⟨v307, vs322, m323, c324, c325, hq71, d326, a327, hq70⟩ := a320.cons_inv
+    refine Fused.args_var_cons a320 rfl fun vs322 zv49 a327 => ?_
     try clear a320
-    obtain ⟨l328, rfl, hq72⟩ := d326.var_inv
-    try clear d326
-    simp at l328
-    subst l328
-    obtain ⟨hq74, rfl, hq73⟩ := a327.nil_inv
+    refine a327.nil_elim fun zv50 zm51 zq52 => ?_
     try clear a327
-    subst hq74
-    subst hq71
-    subst hq68
-    subst hq65
-    obtain ⟨v142, vs329, m330, c331, c332, hq76, d333, a334, hq75⟩ := a298.cons_inv
+    subst zv50
+    subst zv49
+    subst zv48
+    subst zv47
+    subst zm51
+    refine a298.cons_elim fun v142 vs329 m330 c331 c332 zv53 d333 a334 zq54 => ?_
     try clear a298
-    obtain ⟨vs335, m336, c337, cs338, a339, ev340, hq77⟩ := d333.call_inv
+    refine Fused.call_plain d333 fun vs335 m336 c337 cs338 a339 ev340 zq55 => ?_
     try clear d333
-    rw [instanceName_plain_some] at ev340
-    obtain ⟨v341, vs344, m345, c346, c347, hq79, d348, a349, hq78⟩ := a339.cons_inv
+    refine Fused.args_var_cons a339 rfl fun vs344 zv56 a349 => ?_
     try clear a339
-    obtain ⟨l350, rfl, hq80⟩ := d348.var_inv
-    try clear d348
-    simp at l350
-    subst l350
-    obtain ⟨v342, vs351, m352, c353, c354, hq82, d355, a356, hq81⟩ := a349.cons_inv
+    refine Fused.args_var_cons a349 rfl fun vs351 zv57 a356 => ?_
     try clear a349
-    obtain ⟨l357, rfl, hq83⟩ := d355.var_inv
-    try clear d355
-    simp at l357
-    subst l357
-    obtain ⟨v343, vs358, m359, c360, c361, hq85, d362, a363, hq84⟩ := a356.cons_inv
+    refine Fused.args_var_cons a356 rfl fun vs358 zv58 a363 => ?_
     try clear a356
-    obtain ⟨l364, rfl, hq86⟩ := d362.var_inv
-    try clear d362
-    simp at l364
-    subst l364
-    obtain ⟨hq88, rfl, hq87⟩ := a363.nil_inv
+    refine a363.nil_elim fun zv59 zm60 zq61 => ?_
     try clear a363
-    subst hq88
-    subst hq85
-    subst hq82
-    subst hq79
-    obtain ⟨v143, vs365, m366, c367, c368, hq90, d369, a370, hq89⟩ := a334.cons_inv
+    subst zv59
+    subst zv58
+    subst zv57
+    subst zv56
+    subst zm60
+    refine a334.cons_elim fun v143 vs365 m366 c367 c368 zv62 d369 a370 zq63 => ?_
     try clear a334
-    obtain ⟨vs371, m372, c373, cs374, a375, ev376, hq91⟩ := d369.call_inv
+    refine Fused.call_plain d369 fun vs371 m372 c373 cs374 a375 ev376 zq64 => ?_
     try clear d369
-    rw [instanceName_plain_some] at ev376
-    obtain ⟨v377, vs380, m381, c382, c383, hq93, d384, a385, hq92⟩ := a375.cons_inv
-    try clear a375
-    obtain ⟨l386, rfl, hq94⟩ := d384.var_inv
-    try clear d384
-    simp at l386
-    subst l386
-    obtain ⟨v378, vs387, m388, c389, c390, hq96, d391, a392, hq95⟩ := a385.cons_inv
-    try clear a385
-    obtain ⟨l393, rfl, hq97⟩ := d391.var_inv
-    try clear d391
-    simp at l393
-    subst l393
-    obtain ⟨v379, vs394, m395, c396, c397, hq99, d398, a399, hq98⟩ := a392.cons_inv
-    try clear a392
-    obtain ⟨l400, rfl, hq100⟩ := d398.var_inv
-    try clear d398
-    simp at l400
-    subst l400
-    obtain ⟨hq102, rfl, hq101⟩ := a399.nil_inv
-    try clear a399
-    subst hq102
-    subst hq99
-    subst hq96
-    subst hq93
-    obtain ⟨v144, vs401, m402, c403, c404, hq104, d405, a406, hq103⟩ := a370.cons_inv
-    try clear a370
-    obtain ⟨vs407, m408, c409, cs410, a411, ev412, hq105⟩ := d405.call_inv
-    try clear d405
-    rw [instanceName_plain_some] at ev412
-    obtain ⟨v413, vs416, m417, c418, c419, hq107, d420, a421, hq106⟩ := a411.cons_inv
-    try clear a411
-    obtain ⟨l422, rfl, hq108⟩ := d420.var_inv
-    try clear d420
-    simp at l422
-    subst l422
-    obtain ⟨v414, vs423, m424, c425, c426, hq110, d427, a428, hq109⟩ := a421.cons_inv
-    try clear a421
-    obtain ⟨l429, rfl, hq111⟩ := d427.var_inv
-    try clear d427
-    simp at l429
-    subst l429
-    obtain ⟨v415, vs430, m431, c432, c433, hq113, d434, a435, hq112⟩ := a428.cons_inv
-    try clear a428
-    obtain ⟨l436, rfl, hq114⟩ := d434.var_inv
-    try clear d434
-    simp at l436
-    subst l436
-    obtain ⟨hq116, rfl, hq115⟩ := a435.nil_inv
-    try clear a435
-    subst hq116
-    subst hq113
-    subst hq110
-    subst hq107
-    obtain ⟨v145, vs437, m438, c439, c440, hq118, d441, a442, hq117⟩ := a406.cons_inv
-    try clear a406
-    obtain ⟨vs443, m444, c445, cs446, a447, ev448, hq119⟩ := d441.call_inv
-    try clear d441
-    rw [instanceName_plain_some] at ev448
-    obtain ⟨v449, vs452, m453, c454, c455, hq121, d456, a457, hq120⟩ := a447.cons_inv
-    try clear a447
-    obtain ⟨l458, rfl, hq122⟩ := d456.var_inv
-    try clear d456
-    simp at l458
-    subst l458
-    obtain ⟨v450, vs459, m460, c461, c462, hq124, d463, a464, hq123⟩ := a457.cons_inv
-    try clear a457
-    obtain ⟨l465, rfl, hq125⟩ := d463.var_inv
-    try clear d463
-    simp at l465
+    refine Fused.args_var_cons a375 rfl fun vs380 zv65 a385 => ?_
     as_aux_lemma =>
-     subst l465
-     obtain ⟨v451, vs466, m467, c468, c469, hq127, d470, a471, hq126⟩ := a464.cons_inv
+     try clear a375
+     refine Fused.args_var_cons a385 rfl fun vs387 zv66 a392 => ?_
+     try clear a385
+     refine Fused.args_var_cons a392 rfl fun vs394 zv67 a399 => ?_
+     try clear a392
+     refine a399.nil_elim fun zv68 zm69 zq70 => ?_
+     try clear a399
+     subst zv68
+     subst zv67
+     subst zv66
+     subst zv65
+     subst zm69
+     refine a370.cons_elim fun v144 vs401 m402 c403 c404 zv71 d405 a406 zq72 => ?_
+     try clear a370
+     refine Fused.call_plain d405 fun vs407 m408 c409 cs410 a411 ev412 zq73 => ?_
+     try clear d405
+     refine Fused.args_var_cons a411 rfl fun vs416 zv74 a421 => ?_
+     try clear a411
+     refine Fused.args_var_cons a421 rfl fun vs423 zv75 a428 => ?_
+     try clear a421
+     refine Fused.args_var_cons a428 rfl fun vs430 zv76 a435 => ?_
+     try clear a428
+     refine a435.nil_elim fun zv77 zm78 zq79 => ?_
+     try clear a435
+     subst zv77
+     subst zv76
+     subst zv75
+     subst zv74
+     subst zm78
+     refine a406.cons_elim fun v145 vs437 m438 c439 c440 zv80 d441 a442 zq81 => ?_
+     try clear a406
+     refine Fused.call_plain d441 fun vs443 m444 c445 cs446 a447 ev448 zq82 => ?_
+     try clear d441
+     refine Fused.args_var_cons a447 rfl fun vs452 zv83 a457 => ?_
+     try clear a447
+     refine Fused.args_var_cons a457 rfl fun vs459 zv84 a464 => ?_
+     try clear a457
+     refine Fused.args_var_cons a464 rfl fun vs466 zv85 a471 => ?_
      try clear a464
-     obtain ⟨l472, rfl, hq128⟩ := d470.var_inv
-     try clear d470
-     simp at l472
-     subst l472
-     obtain ⟨hq130, rfl, hq129⟩ := a471.nil_inv
-     try clear a471
-     subst hq130
-     subst hq127
-     subst hq124
-     subst hq121
-     obtain ⟨v146, vs473, m474, c475, c476, hq132, d477, a478, hq131⟩ := a442.cons_inv
-     try clear a442
-     obtain ⟨vs479, m480, c481, cs482, a483, ev484, hq133⟩ := d477.call_inv
-     try clear d477
-     rw [instanceName_plain_some] at ev484
-     obtain ⟨v485, vs488, m489, c490, c491, hq135, d492, a493, hq134⟩ := a483.cons_inv
-     try clear a483
-     obtain ⟨l494, rfl, hq136⟩ := d492.var_inv
-     try clear d492
-     simp at l494
-     subst l494
-     obtain ⟨v486, vs495, m496, c497, c498, hq138, d499, a500, hq137⟩ := a493.cons_inv
-     try clear a493
-     obtain ⟨l501, rfl, hq139⟩ := d499.var_inv
-     try clear d499
-     simp at l501
-     subst l501
-     obtain ⟨v487, vs502, m503, c504, c505, hq141, d506, a507, hq140⟩ := a500.cons_inv
-     try clear a500
-     obtain ⟨l508, rfl, hq142⟩ := d506.var_inv
-     try clear d506
-     simp at l508
-     subst l508
-     obtain ⟨hq144, rfl, hq143⟩ := a507.nil_inv
-     try clear a507
-     subst hq144
-     subst hq141
-     subst hq138
-     subst hq135
-     obtain ⟨v147, vs509, m510, c511, c512, hq146, d513, a514, hq145⟩ := a478.cons_inv
-     try clear a478
-     obtain ⟨vs515, m516, c517, cs518, a519, ev520, hq147⟩ := d513.call_inv
-     try clear d513
-     rw [instanceName_plain_some] at ev520
-     obtain ⟨v521, vs524, m525, c526, c527, hq149, d528, a529, hq148⟩ := a519.cons_inv
-     try clear a519
-     obtain ⟨l530, rfl, hq150⟩ := d528.var_inv
-     try clear d528
-     simp at l530
-     subst l530
-     obtain ⟨v522, vs531, m532, c533, c534, hq152, d535, a536, hq151⟩ := a529.cons_inv
-     try clear a529
-     obtain ⟨l537, rfl, hq153⟩ := d535.var_inv
-     try clear d535
-     simp at l537
-     subst l537
-     obtain ⟨v523, vs538, m539, c540, c541, hq155, d542, a543, hq154⟩ := a536.cons_inv
-     try clear a536
-     obtain ⟨l544, rfl, hq156⟩ := d542.var_inv
-     try clear d542
-     simp at l544
-     subst l544
-     obtain ⟨hq158, rfl, hq157⟩ := a543.nil_inv
-     try clear a543
-     subst hq158
-     subst hq155
-     subst hq152
-     subst hq149
-     obtain ⟨hq160, rfl, hq159⟩ := a514.nil_inv
-     try clear a514
-     subst hq160
-     subst hq146
-     subst hq132
-     subst hq118
-     subst hq104
-     subst hq90
-     subst hq76
-     subst hq62
-     subst hq48
-     subst hq34
-     subst hq20
-     subst hq6
-     subst hq159
-     subst hq157
-     subst hq156
-     subst hq154
-     subst hq153
-     subst hq151
-     subst hq150
-     subst hq148
-     subst hq147
-     subst hq145
-     subst hq143
-     subst hq142
-     subst hq140
-     subst hq139
-     subst hq137
-     subst hq136
-     subst hq134
-     subst hq133
-     subst hq131
-     subst hq129
-     subst hq128
-     subst hq126
-     subst hq125
-     subst hq123
-     subst hq122
-     subst hq120
-     subst hq119
-     subst hq117
-     subst hq115
-     subst hq114
-     subst hq112
-     subst hq111
-     subst hq109
-     subst hq108
-     subst hq106
+     refine a471.nil_elim fun zv86 zm87 zq88 => ?_
      as_aux_lemma =>
-      subst hq105
-      subst hq103
-      subst hq101
-      subst hq100
-      subst hq98
-      subst hq97
-      subst hq95
-      subst hq94
-      subst hq92
-      subst hq91
-      subst hq89
-      subst hq87
-      subst hq86
-      subst hq84
-      subst hq83
-      subst hq81
-      subst hq80
-      subst hq78
-      subst hq77
-      subst hq75
-      subst hq73
-      subst hq72
-      subst hq70
-      subst hq69
-      subst hq67
-      subst hq66
-      subst hq64
-      subst hq63
-      subst hq61
-      subst hq59
-      subst hq58
-      subst hq56
-      subst hq55
-      subst hq53
-      subst hq52
-      subst hq50
-      subst hq49
-      subst hq47
-      subst hq45
-      subst hq44
-      subst hq42
-      subst hq41
-      subst hq39
-      subst hq38
-      subst hq36
-      subst hq35
-      subst hq33
-      subst hq31
-      subst hq30
-      subst hq28
-      subst hq27
-      subst hq25
-      subst hq24
-      subst hq22
-      subst hq21
-      subst hq19
-      subst hq17
-      subst hq16
-      subst hq14
-      subst hq13
-      subst hq11
-      subst hq10
-      subst hq8
-      subst hq7
-      subst hq5
-      subst hq4
-      subst hq3
-      subst hq2
-      subst hq1
-      exact «Fixed::outputs».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv11 hv78 rfl ev160 ev196 ev232 ev268 ev304 ev340 ev376 ev412 ev448 ev484 ev520 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      try clear a471
+      subst zv86
+      subst zv85
+      subst zv84
+      subst zv83
+      subst zm87
+      refine a442.cons_elim fun v146 vs473 m474 c475 c476 zv89 d477 a478 zq90 => ?_
+      try clear a442
+      refine Fused.call_plain d477 fun vs479 m480 c481 cs482 a483 ev484 zq91 => ?_
+      try clear d477
+      refine Fused.args_var_cons a483 rfl fun vs488 zv92 a493 => ?_
+      try clear a483
+      refine Fused.args_var_cons a493 rfl fun vs495 zv93 a500 => ?_
+      try clear a493
+      refine Fused.args_var_cons a500 rfl fun vs502 zv94 a507 => ?_
+      try clear a500
+      refine a507.nil_elim fun zv95 zm96 zq97 => ?_
+      try clear a507
+      subst zv95
+      subst zv94
+      subst zv93
+      subst zv92
+      subst zm96
+      refine a478.cons_elim fun v147 vs509 m510 c511 c512 zv98 d513 a514 zq99 => ?_
+      try clear a478
+      refine Fused.call_plain d513 fun vs515 m516 c517 cs518 a519 ev520 zq100 => ?_
+      try clear d513
+      refine Fused.args_var_cons a519 rfl fun vs524 zv101 a529 => ?_
+      try clear a519
+      refine Fused.args_var_cons a529 rfl fun vs531 zv102 a536 => ?_
+      try clear a529
+      refine Fused.args_var_cons a536 rfl fun vs538 zv103 a543 => ?_
+      try clear a536
+      refine a543.nil_elim fun zv104 zm105 zq106 => ?_
+      try clear a543
+      subst zv104
+      subst zv103
+      subst zv102
+      subst zv101
+      subst zm105
+      as_aux_lemma =>
+       refine a514.nil_elim fun zv107 zm108 zq109 => ?_
+       try clear a514
+       subst zv107
+       subst zv98
+       subst zv89
+       subst zv80
+       subst zv71
+       subst zv62
+       subst zv53
+       subst zv44
+       subst zv35
+       subst zv26
+       subst zv17
+       subst zv8
+       subst zm108
+       subst zq109
+       subst zq106
+       subst zq100
+       subst zq99
+       subst zq97
+       subst zq91
+       subst zq90
+       subst zq88
+       subst zq82
+       subst zq81
+       subst zq79
+       subst zq73
+       subst zq72
+       subst zq70
+       subst zq64
+       subst zq63
+       subst zq61
+       subst zq55
+       subst zq54
+       subst zq52
+       subst zq46
+       subst zq45
+       subst zq43
+       subst zq37
+       subst zq36
+       as_aux_lemma =>
+        subst zq34
+        subst zq28
+        subst zq27
+        subst zq25
+        subst zq19
+        subst zq18
+        subst zq16
+        subst zq10
+        subst zq9
+        subst zq5
+        subst zq4
+        subst zq2
+        subst zq1
+        exact «Fixed::outputs».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv11 hv78 rfl ev160 ev196 ev232 ev268 ev304 ev340 ev376 ev412 ev448 ev484 ev520 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::sub11`: one constructor per combination of selected arms. -/
 inductive «Fixed::sub11».Path (x_a x_b : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -5093,316 +3768,221 @@ theorem «Fixed::sub11».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : Sour
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.sub11.lookup
     (by simp [IxAIStep.Fixed.Fixed.sub11, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.sub11] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, hq1⟩ := d0.letValue_inv
+  refine Fused.let_array_11 d0 fun x_a0 x_a1 x_a2 x_a3 x_a4 x_a5 x_a6 x_a7 x_a8 x_a9 x_a10 m2 c4 c5 d6 d8 zq1 => ?_
   try clear d0
-  obtain ⟨l9, rfl, hq2⟩ := d6.var_inv
+  refine Fused.var_is d6 rfl fun hv11 zm3 zq2 => ?_
   try clear d6
-  simp at l9
-  subst l9
-  obtain ⟨vs10, hv11, -, ml12⟩ := matchPattern_array_inv mt7
-  try clear mt7
-  obtain ⟨x_a0, vs13, b14, b15, rfl, mt16, ml17, rfl⟩ := matchListWith_cons_inv ml12
-  try clear ml12
-  obtain rfl := matchPattern_bind_inv mt16
-  try clear mt16
-  obtain ⟨x_a1, vs18, b19, b20, rfl, mt21, ml22, rfl⟩ := matchListWith_cons_inv ml17
-  try clear ml17
-  obtain rfl := matchPattern_bind_inv mt21
-  try clear mt21
-  obtain ⟨x_a2, vs23, b24, b25, rfl, mt26, ml27, rfl⟩ := matchListWith_cons_inv ml22
-  try clear ml22
-  obtain rfl := matchPattern_bind_inv mt26
-  try clear mt26
-  obtain ⟨x_a3, vs28, b29, b30, rfl, mt31, ml32, rfl⟩ := matchListWith_cons_inv ml27
-  try clear ml27
-  obtain rfl := matchPattern_bind_inv mt31
-  try clear mt31
-  obtain ⟨x_a4, vs33, b34, b35, rfl, mt36, ml37, rfl⟩ := matchListWith_cons_inv ml32
-  try clear ml32
-  obtain rfl := matchPattern_bind_inv mt36
-  try clear mt36
-  obtain ⟨x_a5, vs38, b39, b40, rfl, mt41, ml42, rfl⟩ := matchListWith_cons_inv ml37
-  try clear ml37
-  obtain rfl := matchPattern_bind_inv mt41
-  try clear mt41
-  obtain ⟨x_a6, vs43, b44, b45, rfl, mt46, ml47, rfl⟩ := matchListWith_cons_inv ml42
-  try clear ml42
-  obtain rfl := matchPattern_bind_inv mt46
-  try clear mt46
-  obtain ⟨x_a7, vs48, b49, b50, rfl, mt51, ml52, rfl⟩ := matchListWith_cons_inv ml47
-  try clear ml47
-  obtain rfl := matchPattern_bind_inv mt51
-  try clear mt51
-  obtain ⟨x_a8, vs53, b54, b55, rfl, mt56, ml57, rfl⟩ := matchListWith_cons_inv ml52
-  try clear ml52
-  obtain rfl := matchPattern_bind_inv mt56
-  try clear mt56
-  obtain ⟨x_a9, vs58, b59, b60, rfl, mt61, ml62, rfl⟩ := matchListWith_cons_inv ml57
-  try clear ml57
-  obtain rfl := matchPattern_bind_inv mt61
-  try clear mt61
-  obtain ⟨x_a10, vs63, b64, b65, rfl, mt66, ml67, rfl⟩ := matchListWith_cons_inv ml62
-  try clear ml62
-  obtain rfl := matchPattern_bind_inv mt66
-  try clear mt66
-  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml67
-  try clear ml67
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d8
-  obtain ⟨v68, m69, bs70, c71, c72, d73, mt74, d75, hq3⟩ := d8.letValue_inv
+  subst zm3
+  refine Fused.let_array_11 d8 fun x_b0 x_b1 x_b2 x_b3 x_b4 x_b5 x_b6 x_b7 x_b8 x_b9 x_b10 m69 c71 c72 d73 d75 zq4 => ?_
   try clear d8
-  obtain ⟨l76, rfl, hq4⟩ := d73.var_inv
+  refine Fused.var_is d73 rfl fun hv78 zm6 zq5 => ?_
   try clear d73
-  simp at l76
-  subst l76
-  obtain ⟨vs77, hv78, -, ml79⟩ := matchPattern_array_inv mt74
-  try clear mt74
-  obtain ⟨x_b0, vs80, b81, b82, rfl, mt83, ml84, rfl⟩ := matchListWith_cons_inv ml79
-  try clear ml79
-  obtain rfl := matchPattern_bind_inv mt83
-  try clear mt83
-  obtain ⟨x_b1, vs85, b86, b87, rfl, mt88, ml89, rfl⟩ := matchListWith_cons_inv ml84
-  try clear ml84
-  obtain rfl := matchPattern_bind_inv mt88
-  try clear mt88
-  obtain ⟨x_b2, vs90, b91, b92, rfl, mt93, ml94, rfl⟩ := matchListWith_cons_inv ml89
-  try clear ml89
-  obtain rfl := matchPattern_bind_inv mt93
-  try clear mt93
-  obtain ⟨x_b3, vs95, b96, b97, rfl, mt98, ml99, rfl⟩ := matchListWith_cons_inv ml94
-  try clear ml94
-  obtain rfl := matchPattern_bind_inv mt98
-  try clear mt98
-  obtain ⟨x_b4, vs100, b101, b102, rfl, mt103, ml104, rfl⟩ := matchListWith_cons_inv ml99
-  try clear ml99
-  obtain rfl := matchPattern_bind_inv mt103
-  try clear mt103
-  obtain ⟨x_b5, vs105, b106, b107, rfl, mt108, ml109, rfl⟩ := matchListWith_cons_inv ml104
-  try clear ml104
-  obtain rfl := matchPattern_bind_inv mt108
-  try clear mt108
-  obtain ⟨x_b6, vs110, b111, b112, rfl, mt113, ml114, rfl⟩ := matchListWith_cons_inv ml109
-  try clear ml109
-  obtain rfl := matchPattern_bind_inv mt113
-  try clear mt113
-  obtain ⟨x_b7, vs115, b116, b117, rfl, mt118, ml119, rfl⟩ := matchListWith_cons_inv ml114
-  try clear ml114
-  obtain rfl := matchPattern_bind_inv mt118
-  try clear mt118
-  obtain ⟨x_b8, vs120, b121, b122, rfl, mt123, ml124, rfl⟩ := matchListWith_cons_inv ml119
-  try clear ml119
-  obtain rfl := matchPattern_bind_inv mt123
-  try clear mt123
-  obtain ⟨x_b9, vs125, b126, b127, rfl, mt128, ml129, rfl⟩ := matchListWith_cons_inv ml124
-  try clear ml124
-  obtain rfl := matchPattern_bind_inv mt128
-  try clear mt128
-  obtain ⟨x_b10, vs130, b131, b132, rfl, mt133, ml134, rfl⟩ := matchListWith_cons_inv ml129
-  try clear ml129
-  obtain rfl := matchPattern_bind_inv mt133
-  try clear mt133
-  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml134
-  try clear ml134
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d75
-  obtain ⟨vs135, a136, rfl⟩ := d75.array_inv
+  subst zm6
+  refine d75.array_elim fun vs135 a136 zr7 => ?_
   try clear d75
-  obtain ⟨v137, vs149, m150, c151, c152, hq6, d153, a154, hq5⟩ := a136.cons_inv
+  subst zr7
+  refine a136.cons_elim fun v137 vs149 m150 c151 c152 zv8 d153 a154 zq9 => ?_
   try clear a136
-  obtain ⟨x155, y156, m157, c158, c159, d160, d161, op162, hq7⟩ := d153.binary_inv
+  refine d153.binary_elim fun x155 y156 m157 c158 c159 d160 d161 op162 ze10 => ?_
   try clear d153
-  obtain ⟨l163, rfl, hq8⟩ := d160.var_inv
+  subst ze10
+  refine Fused.var_is d160 rfl fun l163 zm12 zq11 => ?_
   try clear d160
-  simp at l163
   subst l163
+  subst zm12
+  refine Fused.var_is d161 rfl fun l164 zm14 zq13 => ?_
+  try clear d161
+  subst l164
+  subst zm14
+  refine a154.cons_elim fun v138 vs165 m166 c167 c168 zv15 d169 a170 zq16 => ?_
+  try clear a154
+  refine d169.binary_elim fun x171 y172 m173 c174 c175 d176 d177 op178 ze17 => ?_
+  try clear d169
+  subst ze17
+  refine Fused.var_is d176 rfl fun l179 zm19 zq18 => ?_
+  try clear d176
+  subst l179
+  subst zm19
+  refine Fused.var_is d177 rfl fun l180 zm21 zq20 => ?_
+  try clear d177
+  subst l180
+  subst zm21
+  refine a170.cons_elim fun v139 vs181 m182 c183 c184 zv22 d185 a186 zq23 => ?_
   as_aux_lemma =>
-   obtain ⟨l164, rfl, hq9⟩ := d161.var_inv
-   try clear d161
-   simp at l164
-   subst l164
-   obtain ⟨v138, vs165, m166, c167, c168, hq11, d169, a170, hq10⟩ := a154.cons_inv
-   try clear a154
-   obtain ⟨x171, y172, m173, c174, c175, d176, d177, op178, hq12⟩ := d169.binary_inv
-   try clear d169
-   obtain ⟨l179, rfl, hq13⟩ := d176.var_inv
-   try clear d176
-   simp at l179
-   subst l179
-   obtain ⟨l180, rfl, hq14⟩ := d177.var_inv
-   try clear d177
-   simp at l180
-   subst l180
-   obtain ⟨v139, vs181, m182, c183, c184, hq16, d185, a186, hq15⟩ := a170.cons_inv
    try clear a170
-   obtain ⟨x187, y188, m189, c190, c191, d192, d193, op194, hq17⟩ := d185.binary_inv
+   refine d185.binary_elim fun x187 y188 m189 c190 c191 d192 d193 op194 ze24 => ?_
    try clear d185
-   obtain ⟨l195, rfl, hq18⟩ := d192.var_inv
+   subst ze24
+   refine Fused.var_is d192 rfl fun l195 zm26 zq25 => ?_
    try clear d192
-   simp at l195
    subst l195
-   obtain ⟨l196, rfl, hq19⟩ := d193.var_inv
+   subst zm26
+   refine Fused.var_is d193 rfl fun l196 zm28 zq27 => ?_
    try clear d193
-   simp at l196
    subst l196
-   obtain ⟨v140, vs197, m198, c199, c200, hq21, d201, a202, hq20⟩ := a186.cons_inv
+   subst zm28
+   refine a186.cons_elim fun v140 vs197 m198 c199 c200 zv29 d201 a202 zq30 => ?_
    try clear a186
-   obtain ⟨x203, y204, m205, c206, c207, d208, d209, op210, hq22⟩ := d201.binary_inv
+   refine d201.binary_elim fun x203 y204 m205 c206 c207 d208 d209 op210 ze31 => ?_
    try clear d201
-   obtain ⟨l211, rfl, hq23⟩ := d208.var_inv
+   subst ze31
+   refine Fused.var_is d208 rfl fun l211 zm33 zq32 => ?_
    try clear d208
-   simp at l211
    subst l211
-   obtain ⟨l212, rfl, hq24⟩ := d209.var_inv
+   subst zm33
+   refine Fused.var_is d209 rfl fun l212 zm35 zq34 => ?_
    try clear d209
-   simp at l212
    subst l212
-   obtain ⟨v141, vs213, m214, c215, c216, hq26, d217, a218, hq25⟩ := a202.cons_inv
+   subst zm35
+   refine a202.cons_elim fun v141 vs213 m214 c215 c216 zv36 d217 a218 zq37 => ?_
    try clear a202
-   obtain ⟨x219, y220, m221, c222, c223, d224, d225, op226, hq27⟩ := d217.binary_inv
+   refine d217.binary_elim fun x219 y220 m221 c222 c223 d224 d225 op226 ze38 => ?_
    try clear d217
-   obtain ⟨l227, rfl, hq28⟩ := d224.var_inv
+   subst ze38
+   refine Fused.var_is d224 rfl fun l227 zm40 zq39 => ?_
    try clear d224
-   simp at l227
    subst l227
-   obtain ⟨l228, rfl, hq29⟩ := d225.var_inv
+   subst zm40
+   refine Fused.var_is d225 rfl fun l228 zm42 zq41 => ?_
    try clear d225
-   simp at l228
    subst l228
-   obtain ⟨v142, vs229, m230, c231, c232, hq31, d233, a234, hq30⟩ := a218.cons_inv
+   subst zm42
+   refine a218.cons_elim fun v142 vs229 m230 c231 c232 zv43 d233 a234 zq44 => ?_
    try clear a218
-   obtain ⟨x235, y236, m237, c238, c239, d240, d241, op242, hq32⟩ := d233.binary_inv
-   try clear d233
-   obtain ⟨l243, rfl, hq33⟩ := d240.var_inv
-   try clear d240
-   simp at l243
-   subst l243
-   obtain ⟨l244, rfl, hq34⟩ := d241.var_inv
-   try clear d241
-   simp at l244
-   subst l244
-   obtain ⟨v143, vs245, m246, c247, c248, hq36, d249, a250, hq35⟩ := a234.cons_inv
-   try clear a234
-   obtain ⟨x251, y252, m253, c254, c255, d256, d257, op258, hq37⟩ := d249.binary_inv
-   try clear d249
-   obtain ⟨l259, rfl, hq38⟩ := d256.var_inv
-   try clear d256
-   simp at l259
-   subst l259
-   obtain ⟨l260, rfl, hq39⟩ := d257.var_inv
-   try clear d257
-   simp at l260
-   subst l260
-   obtain ⟨v144, vs261, m262, c263, c264, hq41, d265, a266, hq40⟩ := a250.cons_inv
-   try clear a250
-   obtain ⟨x267, y268, m269, c270, c271, d272, d273, op274, hq42⟩ := d265.binary_inv
-   try clear d265
-   obtain ⟨l275, rfl, hq43⟩ := d272.var_inv
-   try clear d272
-   simp at l275
-   subst l275
-   obtain ⟨l276, rfl, hq44⟩ := d273.var_inv
-   try clear d273
-   simp at l276
-   subst l276
-   obtain ⟨v145, vs277, m278, c279, c280, hq46, d281, a282, hq45⟩ := a266.cons_inv
-   try clear a266
-   obtain ⟨x283, y284, m285, c286, c287, d288, d289, op290, hq47⟩ := d281.binary_inv
-   try clear d281
-   obtain ⟨l291, rfl, hq48⟩ := d288.var_inv
-   try clear d288
-   simp at l291
-   subst l291
-   obtain ⟨l292, rfl, hq49⟩ := d289.var_inv
-   try clear d289
-   simp at l292
-   subst l292
-   obtain ⟨v146, vs293, m294, c295, c296, hq51, d297, a298, hq50⟩ := a282.cons_inv
-   try clear a282
-   obtain ⟨x299, y300, m301, c302, c303, d304, d305, op306, hq52⟩ := d297.binary_inv
-   try clear d297
-   obtain ⟨l307, rfl, hq53⟩ := d304.var_inv
-   try clear d304
-   simp at l307
-   subst l307
-   obtain ⟨l308, rfl, hq54⟩ := d305.var_inv
-   try clear d305
-   simp at l308
-   subst l308
-   obtain ⟨v147, vs309, m310, c311, c312, hq56, d313, a314, hq55⟩ := a298.cons_inv
-   try clear a298
-   obtain ⟨x315, y316, m317, c318, c319, d320, d321, op322, hq57⟩ := d313.binary_inv
-   try clear d313
-   obtain ⟨l323, rfl, hq58⟩ := d320.var_inv
-   try clear d320
-   simp at l323
-   subst l323
    as_aux_lemma =>
-    obtain ⟨l324, rfl, hq59⟩ := d321.var_inv
-    try clear d321
-    simp at l324
-    subst l324
-    obtain ⟨hq61, rfl, hq60⟩ := a314.nil_inv
-    try clear a314
-    subst hq61
-    subst hq56
-    subst hq51
-    subst hq46
-    subst hq41
-    subst hq36
-    subst hq31
-    subst hq26
-    subst hq21
-    subst hq16
-    subst hq11
-    subst hq6
-    subst hq60
-    subst hq59
-    subst hq58
-    subst hq57
-    subst hq55
-    subst hq54
-    subst hq53
-    subst hq52
-    subst hq50
-    subst hq49
-    subst hq48
-    subst hq47
-    subst hq45
-    subst hq44
-    subst hq43
-    subst hq42
-    subst hq40
-    subst hq39
-    subst hq38
-    subst hq37
-    subst hq35
-    subst hq34
-    subst hq33
-    subst hq32
-    subst hq30
-    subst hq29
-    subst hq28
-    subst hq27
-    subst hq25
-    subst hq24
-    subst hq23
-    subst hq22
-    subst hq20
-    subst hq19
-    subst hq18
-    subst hq17
-    subst hq15
-    subst hq14
-    subst hq13
-    subst hq12
-    subst hq10
-    subst hq9
-    subst hq8
-    subst hq7
-    subst hq5
-    subst hq4
-    subst hq3
-    subst hq2
-    subst hq1
-    exact «Fixed::sub11».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv11 hv78 rfl op162 op178 op194 op210 op226 op242 op258 op274 op290 op306 op322 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    refine d233.binary_elim fun x235 y236 m237 c238 c239 d240 d241 op242 ze45 => ?_
+    try clear d233
+    subst ze45
+    refine Fused.var_is d240 rfl fun l243 zm47 zq46 => ?_
+    try clear d240
+    subst l243
+    subst zm47
+    refine Fused.var_is d241 rfl fun l244 zm49 zq48 => ?_
+    try clear d241
+    subst l244
+    subst zm49
+    refine a234.cons_elim fun v143 vs245 m246 c247 c248 zv50 d249 a250 zq51 => ?_
+    try clear a234
+    refine d249.binary_elim fun x251 y252 m253 c254 c255 d256 d257 op258 ze52 => ?_
+    try clear d249
+    subst ze52
+    refine Fused.var_is d256 rfl fun l259 zm54 zq53 => ?_
+    try clear d256
+    subst l259
+    subst zm54
+    refine Fused.var_is d257 rfl fun l260 zm56 zq55 => ?_
+    try clear d257
+    subst l260
+    subst zm56
+    refine a250.cons_elim fun v144 vs261 m262 c263 c264 zv57 d265 a266 zq58 => ?_
+    try clear a250
+    refine d265.binary_elim fun x267 y268 m269 c270 c271 d272 d273 op274 ze59 => ?_
+    try clear d265
+    subst ze59
+    refine Fused.var_is d272 rfl fun l275 zm61 zq60 => ?_
+    try clear d272
+    subst l275
+    subst zm61
+    refine Fused.var_is d273 rfl fun l276 zm63 zq62 => ?_
+    try clear d273
+    subst l276
+    subst zm63
+    refine a266.cons_elim fun v145 vs277 m278 c279 c280 zv64 d281 a282 zq65 => ?_
+    try clear a266
+    refine d281.binary_elim fun x283 y284 m285 c286 c287 d288 d289 op290 ze66 => ?_
+    as_aux_lemma =>
+     try clear d281
+     subst ze66
+     refine Fused.var_is d288 rfl fun l291 zm68 zq67 => ?_
+     try clear d288
+     subst l291
+     subst zm68
+     refine Fused.var_is d289 rfl fun l292 zm70 zq69 => ?_
+     try clear d289
+     subst l292
+     subst zm70
+     refine a282.cons_elim fun v146 vs293 m294 c295 c296 zv71 d297 a298 zq72 => ?_
+     try clear a282
+     refine d297.binary_elim fun x299 y300 m301 c302 c303 d304 d305 op306 ze73 => ?_
+     try clear d297
+     subst ze73
+     refine Fused.var_is d304 rfl fun l307 zm75 zq74 => ?_
+     try clear d304
+     subst l307
+     subst zm75
+     refine Fused.var_is d305 rfl fun l308 zm77 zq76 => ?_
+     try clear d305
+     subst l308
+     subst zm77
+     refine a298.cons_elim fun v147 vs309 m310 c311 c312 zv78 d313 a314 zq79 => ?_
+     try clear a298
+     refine d313.binary_elim fun x315 y316 m317 c318 c319 d320 d321 op322 ze80 => ?_
+     try clear d313
+     subst ze80
+     refine Fused.var_is d320 rfl fun l323 zm82 zq81 => ?_
+     try clear d320
+     subst l323
+     subst zm82
+     refine Fused.var_is d321 rfl fun l324 zm84 zq83 => ?_
+     try clear d321
+     subst l324
+     subst zm84
+     refine a314.nil_elim fun zv85 zm86 zq87 => ?_
+     try clear a314
+     subst zv85
+     subst zv78
+     as_aux_lemma =>
+      subst zv71
+      subst zv64
+      subst zv57
+      subst zv50
+      subst zv43
+      subst zv36
+      subst zv29
+      subst zv22
+      subst zv15
+      subst zv8
+      subst zm86
+      subst zq87
+      subst zq83
+      subst zq81
+      subst zq79
+      subst zq76
+      subst zq74
+      subst zq72
+      subst zq69
+      subst zq67
+      subst zq65
+      subst zq62
+      subst zq60
+      subst zq58
+      subst zq55
+      subst zq53
+      subst zq51
+      subst zq48
+      subst zq46
+      subst zq44
+      subst zq41
+      subst zq39
+      subst zq37
+      subst zq34
+      subst zq32
+      subst zq30
+      subst zq27
+      subst zq25
+      subst zq23
+      subst zq20
+      as_aux_lemma =>
+       subst zq18
+       subst zq16
+       subst zq13
+       subst zq11
+       subst zq9
+       subst zq5
+       subst zq4
+       subst zq2
+       subst zq1
+       exact «Fixed::sub11».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv11 hv78 rfl op162 op178 op194 op210 op226 op242 op258 op274 op290 op306 op322 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Fixed::back_unit`: one constructor per combination of selected arms. -/
 inductive «Fixed::back_unit».Path (x_z x_col x_dout : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -5421,52 +4001,34 @@ theorem «Fixed::back_unit».obs {x_z x_col x_dout : SourceValue F} {h h' : Heap
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.Fixed.back_unit.lookup
     (by simp [IxAIStep.Fixed.Fixed.back_unit, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.Fixed.back_unit] at d0
-  obtain ⟨x1, y2, m3, c4, c5, d6, d7, op8, hq1⟩ := d0.binary_inv
+  refine d0.binary_elim fun x1 y2 m3 c4 c5 d6 d7 op8 ze1 => ?_
   try clear d0
-  obtain ⟨vs9, m10, c11, cs12, a13, ev14, hq2⟩ := d6.call_inv
+  subst ze1
+  refine Fused.call_plain d6 fun vs9 m10 c11 cs12 a13 ev14 zq2 => ?_
   try clear d6
-  rw [instanceName_plain_some] at ev14
-  obtain ⟨v15, vs16, m17, c18, c19, hq4, d20, a21, hq3⟩ := a13.cons_inv
+  refine Fused.args_var_cons a13 rfl fun vs16 zv3 a21 => ?_
   try clear a13
-  obtain ⟨l22, rfl, hq5⟩ := d20.var_inv
-  try clear d20
-  simp at l22
-  subst l22
-  obtain ⟨hq7, rfl, hq6⟩ := a21.nil_inv
+  refine a21.nil_elim fun zv4 zm5 zq6 => ?_
   try clear a21
-  subst hq7
-  subst hq4
-  obtain ⟨vs23, m24, c25, cs26, a27, ev28, hq8⟩ := d7.call_inv
+  subst zv4
+  subst zv3
+  subst zm5
+  refine Fused.call_plain d7 fun vs23 m24 c25 cs26 a27 ev28 zq7 => ?_
   try clear d7
-  rw [instanceName_plain_some] at ev28
-  obtain ⟨v29, vs31, m32, c33, c34, hq10, d35, a36, hq9⟩ := a27.cons_inv
+  refine Fused.args_var_cons a27 rfl fun vs31 zv8 a36 => ?_
   try clear a27
-  obtain ⟨l37, rfl, hq11⟩ := d35.var_inv
-  try clear d35
-  simp at l37
-  subst l37
-  obtain ⟨v30, vs38, m39, c40, c41, hq13, d42, a43, hq12⟩ := a36.cons_inv
+  refine Fused.args_var_cons a36 rfl fun vs38 zv9 a43 => ?_
   try clear a36
-  obtain ⟨l44, rfl, hq14⟩ := d42.var_inv
-  try clear d42
-  simp at l44
-  subst l44
-  obtain ⟨hq16, rfl, hq15⟩ := a43.nil_inv
+  refine a43.nil_elim fun zv10 zm11 zq12 => ?_
   try clear a43
-  subst hq16
-  subst hq13
-  subst hq10
-  subst hq15
-  subst hq14
-  subst hq12
-  subst hq11
-  subst hq9
-  subst hq8
-  subst hq6
-  subst hq5
-  subst hq3
-  subst hq2
-  subst hq1
+  subst zv10
+  subst zv9
+  subst zv8
+  subst zm11
+  subst zq12
+  subst zq7
+  subst zq6
+  subst zq2
   exact «Fixed::back_unit».Path.run _ _ _ _ _ ev14 ev28 op8 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 end IxAIStep.Fixed.Obs

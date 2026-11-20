@@ -37,12 +37,12 @@ The run that counts is made with no other job on the machine.
 | Stage | Certified run (M1) | Best measured so far | Needed |
 |---|---|---|---|
 | Environment leaf proofs | 99:00 | shard 0 proved: 30:26 → 16:27 (`kernel-subst`), 5:42 (experiment); all 5 shards executed under `kernel-subst`: 4.07 billion queries for 7.2 | about 13:00 |
-| Environment aggregation | 8:56 | leaves and aggregation in one prover run under `kernel-subst`: **32:52** (was 107:56) | |
+| Environment aggregation | 8:56 | leaves and aggregation in one prover run under `kernel-subst`: **32:52** (was 107:56); with the path lemmas in the fused shape: **15:33** | |
 | Training: 30 block proofs | 0:23 | | |
 | Training: aggregation | 4:18 | | |
 | Join | 0:22 | | |
 | Compression to PLONK | 3:18 | | |
-| **Total** | **116:17** | **41:13** with `kernel-subst` and one prover run (32:52 measured, the other stages as in M1) | **under 30:00** |
+| **Total** | **116:17** | **23:54** on paper: 15:33 measured for the environment (`kernel-subst`, fused lemmas, one run), the other stages as in M1; not yet one timed run, and without the card | **under 30:00** |
 
 `kernel-subst` on the five shards, executed (accepted, 2026-11-20): queries 1.10, 1.76, 0.70,
 0.23, 0.27 billion (certified: 2.18, 3.03, 1.23, 0.37, 0.42); FFT cost 1.04e13, 1.68e13,
@@ -91,6 +91,13 @@ claims still stall the GPU: 61 and 76 trace shards, proving 136 s and 118 s, sta
 253 s, about 8 minutes of the run. The partition is M1's refined one (shard 1 cut in two for
 the old kernel's record size), which this kernel no longer needs.
 
+**G2's exit measurement (2026-11-20, `cert/fuse`).** The environment regenerated with the fused
+path lemmas (36,840 constants requested, 175 MB for 245 MB, root `403b1b69…`) under
+`kernel-subst`, in one `prove --aggregate --fresh` run with the same settings: the sharder
+cuts it into 3 claims where it cut 5; root `97665cf7…` verified in 15:33 wall (912 s inside the
+prover), 125 GiB peak. Claims proved by 13:00. The largest claim: 483 s of execution, 50 trace
+shards, proving 137 s, stall 121 s.
+
 The stages after the leaves sum to 17:17 today, which leaves about 12:40 for the leaves unless
 aggregation also shrinks (it should, with fewer and lighter leaves; not measured). M1 did not
 include the card and decisions; their kernel cost in the environment is not measured yet.
@@ -100,13 +107,24 @@ include the card and decisions; their kernel cost in the environment is not meas
 | | Milestone | Exit criterion | State |
 |---|---|---|---|
 | G1 | Committed kernel validated and adopted | all 5 shards accepted; Ix's kernel tests pass apart from pinned costs; leaf-proof total measured | all 5 shards accepted (4.07 billion queries for 7.2); Ix's test tier: 14 of 17 suites pass, including the exploit suite (bad declarations still rejected), circuit verdicts and claim safety; the three failures are 149 pinned FFT costs (lower now) in `ixvm-eval` and `ixvm-kernel-checks`, and two generated mirror files that need regenerating (`ixvm-source`); **met**: environment proved in one run in 32:52 |
-| G2 | Generated lemmas in the cheaper shape | IxVM queries of the three worst lemmas measured against today's; environment regenerated with statements unchanged; leaf-proof total measured | measured under `kernel-subst` (own cost = closure minus statement-only floor): `transpose20x16` 528.6 → 107.6 million queries (4.9×), `deltas` 592.3 → 123.7 million (4.8×), `step` 34.9 → 22.1 million (1.6×); the string-lookup risk does not show; statements identical by text (103 declarations) and by elaborated type (307 constants); estimate for the environment about −45%; staged tree `/opt/dlami/nvme/ix-ai/combined/src-fuse`, build, compile, shard and single-run proof in hand (`cert/fuse`) |
+| G2 | Generated lemmas in the cheaper shape | IxVM queries of the three worst lemmas measured against today's; environment regenerated with statements unchanged; leaf-proof total measured | measured under `kernel-subst` (own cost = closure minus statement-only floor): `transpose20x16` 528.6 → 107.6 million queries (4.9×), `deltas` 592.3 → 123.7 million (4.8×), `step` 34.9 → 22.1 million (1.6×); the string-lookup risk does not show; statements identical by text (103 declarations) and by elaborated type (307 constants); estimate for the environment about −45%; **met**: the regenerated environment builds (8:06), compiles (70 s) and is proved in one run in 15:33 for 32:52; the rewritten files and `Core/Fused.lean` are in the source tree and on the branch |
 | G3 | Rebase cost removed without losing what it was added for | the variant passes a workload of the shape the rebase was added for, the 80 Mathlib claims and all 5 shards; leaf-proof total measured | no rebase in inference (`exp-noinferrebase`): all 5 shards accepted, 2.57 billion queries (0.52, 0.54, 0.69, 0.41, 0.41; the two library shards are 50 to 75% worse than `kernel-subst`), Mathlib +5.4%. Bounded search (`infer-rebase-shallow`): shard 0 at 386 million queries and FFT 3.33e12 (better than no rebase), Mathlib 882.5 million (+0.8%), all 80 accepted; shards 1 to 4 not run. Upstream's constant `Simps.addProjections._unsafe_rec` is not in our Mathlib snapshot, so it tests nothing here; another witness is needed |
 | G4 | Card and decisions in the environment | their leaf cost measured; `aiur_join_check` confirms the model constant is the run's final model | cost measured under `kernel-subst` (`measure_deployed.sh`): the environment with `IxAICombined.Deployed` compiles (36,835 constants, 79 s); own cost of the card 183 million queries (1:23 on its own), of one gate decision 3 million, of the model's range lemma 1.7 million: about 0.2 billion in all, a few percent of the environment. The checker's comparison of the model constant with the run's output is not written yet |
 | G5 | The timed run | one quiet end-to-end run under 30:00, `ixai-verify combined` reports `PROVED`, certificate and timings recorded | |
 
 If G1 to G3 together leave the total above 30 minutes, the next levers, in order: fewer and
 larger training blocks (aggregation 4:18), then the aggregation tree's shape. Not: more hardware.
+
+**Queued for when this goal is met (2026-11-20, at the owner's request).** Run the kernel's row
+profiler on Mathlib, under the kernel the goal ends with. The profiler is on `ix-ai`
+(`8bfad0c8a`: `IX_KERNEL_ROWS_PROFILE` writes, per selected function and argument, how many
+distinct values its rows had; `IX_KERNEL_HINTS_TRACE` writes rows per function per claim). Plan:
+a profiler build of the final kernel (one kernel build); a pilot on the 80-claim sample and a
+few whole shards of `.truthmines/store/mathlib-d13f23b/env.ixe` to measure rows per second and
+state what the whole library would cost before starting it; then execution only, shard by
+shard and resumable, with rows per kernel function, the functions and arguments where rows
+concentrate, and the constants that cost most. Deliverable: where Mathlib's rows are, ranked,
+with the same breakdown that found the substitution and rebase costs here.
 
 **Parked until this goal is met.** The decision library's training objective (a core change);
 Lane changes and the Lane gate prototype; the kernel redesign with free variables by level; a

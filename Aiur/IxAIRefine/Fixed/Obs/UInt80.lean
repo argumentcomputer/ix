@@ -1,4 +1,5 @@
 import IxAIRefine.Fixed.Obs.Names
+import IxAIRefine.Core.Fused
 
 /-! Generated path lemmas: `UInt8` functions, part 0.
 
@@ -36,66 +37,54 @@ theorem «UInt8::raw_and».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : So
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.raw_and.lookup
     (by simp [IxAIStep.Fixed.UInt8.raw_and, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.raw_and] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, hq1⟩ := d0.letValue_inv
+  refine Fused.let_bind d0 fun v1 m2 c4 c5 d6 d8 zq1 => ?_
   try clear d0
-  obtain ⟨vs9, m10, c11, cs12, a13, ev14, hq2⟩ := d6.call_inv
+  refine Fused.call_plain d6 fun vs9 m10 c11 cs12 a13 ev14 zq2 => ?_
   try clear d6
-  rw [instanceName_plain_some] at ev14
-  obtain ⟨v15, vs17, m18, c19, c20, hq4, d21, a22, hq3⟩ := a13.cons_inv
+  refine Fused.args_var_cons a13 rfl fun vs17 zv3 a22 => ?_
   try clear a13
-  obtain ⟨l23, rfl, hq5⟩ := d21.var_inv
-  try clear d21
-  simp at l23
-  subst l23
-  obtain ⟨v16, vs24, m25, c26, c27, hq7, d28, a29, hq6⟩ := a22.cons_inv
+  refine Fused.args_var_cons a22 rfl fun vs24 zv4 a29 => ?_
   try clear a22
-  obtain ⟨l30, rfl, hq8⟩ := d28.var_inv
-  try clear d28
-  simp at l30
-  subst l30
-  obtain ⟨hq10, rfl, hq9⟩ := a29.nil_inv
+  refine a29.nil_elim fun zv5 zm6 zq7 => ?_
   try clear a29
-  subst hq10
-  subst hq7
-  subst hq4
-  obtain rfl := matchPattern_bind_inv mt7
-  try clear mt7
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d8
-  obtain ⟨x31, y32, m33, c34, c35, d36, d37, op38, hq11⟩ := d8.binary_inv
+  subst zv5
+  subst zv4
+  subst zv3
+  subst zm6
+  refine d8.binary_elim fun x31 y32 m33 c34 c35 d36 d37 op38 ze8 => ?_
   try clear d8
-  obtain ⟨x39, y40, m41, c42, c43, d44, d45, op46, hq12⟩ := d36.binary_inv
+  subst ze8
+  refine d36.binary_elim fun x39 y40 m41 c42 c43 d44 d45 op46 ze9 => ?_
   try clear d36
-  obtain ⟨x47, y48, m49, c50, c51, d52, d53, op54, hq13⟩ := d44.binary_inv
+  subst ze9
+  refine d44.binary_elim fun x47 y48 m49 c50 c51 d52 d53 op54 ze10 => ?_
   try clear d44
-  obtain ⟨l55, rfl, hq14⟩ := d52.var_inv
+  subst ze10
+  refine Fused.var_is d52 rfl fun l55 zm12 zq11 => ?_
   try clear d52
-  simp at l55
   subst l55
-  obtain ⟨l56, rfl, hq15⟩ := d53.var_inv
+  subst zm12
+  refine Fused.var_is d53 rfl fun l56 zm14 zq13 => ?_
   try clear d53
-  simp at l56
   subst l56
-  obtain ⟨l57, rfl, hq16⟩ := d45.var_inv
+  subst zm14
+  refine Fused.var_is d45 rfl fun l57 zm16 zq15 => ?_
   try clear d45
-  simp at l57
   subst l57
-  obtain ⟨rfl, rfl, hq17⟩ := d37.literal_inv
+  subst zm16
+  refine d37.literal_elim fun ze17 ze18 ze19 => ?_
   try clear d37
-  subst hq17
-  subst hq16
-  subst hq15
-  subst hq14
-  subst hq13
-  subst hq12
-  subst hq11
-  subst hq9
-  subst hq8
-  subst hq6
-  subst hq5
-  subst hq3
-  subst hq2
-  subst hq1
-  exact «UInt8::raw_and».Path.run _ _ _ _ _ ev14 op54 op46 rfl op38 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  subst ze17
+  subst ze18
+  subst ze19
+  as_aux_lemma =>
+   subst zq15
+   subst zq13
+   subst zq11
+   subst zq7
+   subst zq2
+   subst zq1
+   exact «UInt8::raw_and».Path.run _ _ _ _ _ ev14 op54 op46 rfl op38 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::raw_or`: one constructor per combination of selected arms. -/
 inductive «UInt8::raw_or».Path (x_a x_b : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -116,66 +105,54 @@ theorem «UInt8::raw_or».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : Sou
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.raw_or.lookup
     (by simp [IxAIStep.Fixed.UInt8.raw_or, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.raw_or] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, hq1⟩ := d0.letValue_inv
+  refine Fused.let_bind d0 fun v1 m2 c4 c5 d6 d8 zq1 => ?_
   try clear d0
-  obtain ⟨vs9, m10, c11, cs12, a13, ev14, hq2⟩ := d6.call_inv
+  refine Fused.call_plain d6 fun vs9 m10 c11 cs12 a13 ev14 zq2 => ?_
   try clear d6
-  rw [instanceName_plain_some] at ev14
-  obtain ⟨v15, vs17, m18, c19, c20, hq4, d21, a22, hq3⟩ := a13.cons_inv
+  refine Fused.args_var_cons a13 rfl fun vs17 zv3 a22 => ?_
   try clear a13
-  obtain ⟨l23, rfl, hq5⟩ := d21.var_inv
-  try clear d21
-  simp at l23
-  subst l23
-  obtain ⟨v16, vs24, m25, c26, c27, hq7, d28, a29, hq6⟩ := a22.cons_inv
+  refine Fused.args_var_cons a22 rfl fun vs24 zv4 a29 => ?_
   try clear a22
-  obtain ⟨l30, rfl, hq8⟩ := d28.var_inv
-  try clear d28
-  simp at l30
-  subst l30
-  obtain ⟨hq10, rfl, hq9⟩ := a29.nil_inv
+  refine a29.nil_elim fun zv5 zm6 zq7 => ?_
   try clear a29
-  subst hq10
-  subst hq7
-  subst hq4
-  obtain rfl := matchPattern_bind_inv mt7
-  try clear mt7
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d8
-  obtain ⟨x31, y32, m33, c34, c35, d36, d37, op38, hq11⟩ := d8.binary_inv
+  subst zv5
+  subst zv4
+  subst zv3
+  subst zm6
+  refine d8.binary_elim fun x31 y32 m33 c34 c35 d36 d37 op38 ze8 => ?_
   try clear d8
-  obtain ⟨x39, y40, m41, c42, c43, d44, d45, op46, hq12⟩ := d36.binary_inv
+  subst ze8
+  refine d36.binary_elim fun x39 y40 m41 c42 c43 d44 d45 op46 ze9 => ?_
   try clear d36
-  obtain ⟨x47, y48, m49, c50, c51, d52, d53, op54, hq13⟩ := d44.binary_inv
+  subst ze9
+  refine d44.binary_elim fun x47 y48 m49 c50 c51 d52 d53 op54 ze10 => ?_
   try clear d44
-  obtain ⟨l55, rfl, hq14⟩ := d52.var_inv
+  subst ze10
+  refine Fused.var_is d52 rfl fun l55 zm12 zq11 => ?_
   try clear d52
-  simp at l55
   subst l55
-  obtain ⟨l56, rfl, hq15⟩ := d53.var_inv
+  subst zm12
+  refine Fused.var_is d53 rfl fun l56 zm14 zq13 => ?_
   try clear d53
-  simp at l56
   subst l56
-  obtain ⟨l57, rfl, hq16⟩ := d45.var_inv
+  subst zm14
+  refine Fused.var_is d45 rfl fun l57 zm16 zq15 => ?_
   try clear d45
-  simp at l57
   subst l57
-  obtain ⟨rfl, rfl, hq17⟩ := d37.literal_inv
+  subst zm16
+  refine d37.literal_elim fun ze17 ze18 ze19 => ?_
   try clear d37
-  subst hq17
-  subst hq16
-  subst hq15
-  subst hq14
-  subst hq13
-  subst hq12
-  subst hq11
-  subst hq9
-  subst hq8
-  subst hq6
-  subst hq5
-  subst hq3
-  subst hq2
-  subst hq1
-  exact «UInt8::raw_or».Path.run _ _ _ _ _ ev14 op54 op46 rfl op38 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  subst ze17
+  subst ze18
+  subst ze19
+  as_aux_lemma =>
+   subst zq15
+   subst zq13
+   subst zq11
+   subst zq7
+   subst zq2
+   subst zq1
+   exact «UInt8::raw_or».Path.run _ _ _ _ _ ev14 op54 op46 rfl op38 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::raw_lt`: one constructor per combination of selected arms. -/
 inductive «UInt8::raw_lt».Path (x_a x_b : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -194,54 +171,35 @@ theorem «UInt8::raw_lt».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : Sou
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.raw_lt.lookup
     (by simp [IxAIStep.Fixed.UInt8.raw_lt, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.raw_lt] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, hq1⟩ := d0.letValue_inv
+  refine d0.letValue_elim fun v1 m2 bs3 c4 c5 d6 mt7 d8 zq1 => ?_
   try clear d0
-  obtain ⟨vs9, m10, c11, cs12, a13, ev14, hq2⟩ := d6.call_inv
+  refine Fused.call_plain d6 fun vs9 m10 c11 cs12 a13 ev14 zq2 => ?_
   try clear d6
-  rw [instanceName_plain_some] at ev14
-  obtain ⟨v15, vs17, m18, c19, c20, hq4, d21, a22, hq3⟩ := a13.cons_inv
+  refine Fused.args_var_cons a13 rfl fun vs17 zv3 a22 => ?_
   try clear a13
-  obtain ⟨l23, rfl, hq5⟩ := d21.var_inv
-  try clear d21
-  simp at l23
-  subst l23
-  obtain ⟨v16, vs24, m25, c26, c27, hq7, d28, a29, hq6⟩ := a22.cons_inv
+  refine Fused.args_var_cons a22 rfl fun vs24 zv4 a29 => ?_
   try clear a22
-  obtain ⟨l30, rfl, hq8⟩ := d28.var_inv
-  try clear d28
-  simp at l30
-  subst l30
-  obtain ⟨hq10, rfl, hq9⟩ := a29.nil_inv
+  refine a29.nil_elim fun zv5 zm6 zq7 => ?_
   try clear a29
-  subst hq10
-  subst hq7
-  subst hq4
+  subst zv5
+  subst zv4
+  subst zv3
+  subst zm6
   obtain ⟨vs31, hv32, -, ml33⟩ := matchPattern_tuple_inv mt7
-  try clear mt7
   subst hv32
   obtain ⟨w34, vs35, b36, b37, rfl, mt38, ml39, rfl⟩ := matchListWith_cons_inv ml33
-  try clear ml33
   obtain rfl := matchPattern_wildcard_inv mt38
-  try clear mt38
   obtain ⟨x_borrow, vs40, b41, b42, rfl, mt43, ml44, rfl⟩ := matchListWith_cons_inv ml39
-  try clear ml39
   obtain rfl := matchPattern_bind_inv mt43
-  try clear mt43
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml44
-  try clear ml44
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d8
-  obtain ⟨l45, rfl, hq11⟩ := d8.var_inv
+  refine Fused.var_is d8 rfl fun l45 zm9 zq8 => ?_
   try clear d8
-  simp at l45
   subst l45
-  subst hq11
-  subst hq9
-  subst hq8
-  subst hq6
-  subst hq5
-  subst hq3
-  subst hq2
-  subst hq1
+  subst zm9
+  subst zq8
+  subst zq7
+  subst zq2
+  subst zq1
   exact «UInt8::raw_lt».Path.run _ _ _ _ ev14 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::to_field`: one constructor per combination of selected arms. -/
@@ -259,11 +217,11 @@ theorem «UInt8::to_field».obs {x_byte : SourceValue F} {h h' : Heap F} {r : So
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.to_field.lookup
     (by simp [IxAIStep.Fixed.UInt8.to_field, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.to_field] at d0
-  obtain ⟨l1, rfl, hq1⟩ := d0.var_inv
+  refine Fused.var_is d0 rfl fun l1 zm2 zq1 => ?_
   try clear d0
-  simp at l1
   subst l1
-  subst hq1
+  subst zm2
+  subst zq1
   exact «UInt8::to_field».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::from_fields`: one constructor per combination of selected arms. -/
@@ -283,62 +241,38 @@ theorem «UInt8::from_fields».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r 
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.from_fields.lookup
     (by simp [IxAIStep.Fixed.UInt8.from_fields, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.from_fields] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, hq1⟩ := d0.letValue_inv
+  refine d0.letValue_elim fun v1 m2 bs3 c4 c5 d6 mt7 d8 zq1 => ?_
   try clear d0
-  obtain ⟨vs9, m10, c11, cs12, a13, ev14, hq2⟩ := d6.call_inv
+  refine Fused.call_plain d6 fun vs9 m10 c11 cs12 a13 ev14 zq2 => ?_
   try clear d6
-  rw [instanceName_plain_some] at ev14
-  obtain ⟨v15, vs17, m18, c19, c20, hq4, d21, a22, hq3⟩ := a13.cons_inv
+  refine Fused.args_var_cons a13 rfl fun vs17 zv3 a22 => ?_
   try clear a13
-  obtain ⟨l23, rfl, hq5⟩ := d21.var_inv
-  try clear d21
-  simp at l23
-  subst l23
-  obtain ⟨v16, vs24, m25, c26, c27, hq7, d28, a29, hq6⟩ := a22.cons_inv
+  refine Fused.args_var_cons a22 rfl fun vs24 zv4 a29 => ?_
   try clear a22
-  obtain ⟨l30, rfl, hq8⟩ := d28.var_inv
-  try clear d28
-  simp at l30
-  subst l30
-  obtain ⟨hq10, rfl, hq9⟩ := a29.nil_inv
+  refine a29.nil_elim fun zv5 zm6 zq7 => ?_
   try clear a29
-  subst hq10
-  subst hq7
-  subst hq4
+  subst zv5
+  subst zv4
+  subst zv3
+  subst zm6
   obtain rfl := matchPattern_wildcard_inv mt7
-  try clear mt7
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d8
-  obtain ⟨vs31, a32, rfl⟩ := d8.tuple_inv
+  refine d8.tuple_elim fun vs31 a32 zr8 => ?_
   try clear d8
-  obtain ⟨v33, vs36, m37, c38, c39, hq12, d40, a41, hq11⟩ := a32.cons_inv
+  subst zr8
+  refine Fused.args_var_cons a32 rfl fun vs36 zv9 a41 => ?_
   try clear a32
-  obtain ⟨l42, rfl, hq13⟩ := d40.var_inv
-  try clear d40
-  simp at l42
-  subst l42
-  obtain ⟨v34, vs43, m44, c45, c46, hq15, d47, a48, hq14⟩ := a41.cons_inv
+  refine Fused.args_var_cons a41 rfl fun vs43 zv10 a48 => ?_
   try clear a41
-  obtain ⟨l49, rfl, hq16⟩ := d47.var_inv
-  try clear d47
-  simp at l49
-  subst l49
-  obtain ⟨hq18, rfl, hq17⟩ := a48.nil_inv
+  refine a48.nil_elim fun zv11 zm12 zq13 => ?_
   try clear a48
-  subst hq18
-  subst hq15
-  subst hq12
-  subst hq17
-  subst hq16
-  subst hq14
-  subst hq13
-  subst hq11
-  subst hq9
-  subst hq8
-  subst hq6
-  subst hq5
-  subst hq3
-  subst hq2
-  subst hq1
+  subst zv11
+  subst zv10
+  subst zv9
+  subst zm12
+  subst zq13
+  subst zq7
+  subst zq2
+  subst zq1
   exact «UInt8::from_fields».Path.run _ _ _ ev14 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::bit_decomposition`: one constructor per combination of selected arms. -/
@@ -356,23 +290,17 @@ theorem «UInt8::bit_decomposition».obs {x_x : SourceValue F} {h h' : Heap F} {
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.bit_decomposition.lookup
     (by simp [IxAIStep.Fixed.UInt8.bit_decomposition, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.bit_decomposition] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs8, m9, c10, c11, hq3, d12, a13, hq2⟩ := a5.cons_inv
+  refine Fused.args_var_cons a5 rfl fun vs8 zv2 a13 => ?_
   try clear a5
-  obtain ⟨l14, rfl, hq4⟩ := d12.var_inv
-  try clear d12
-  simp at l14
-  subst l14
-  obtain ⟨hq6, rfl, hq5⟩ := a13.nil_inv
+  refine a13.nil_elim fun zv3 zm4 zq5 => ?_
   try clear a13
-  subst hq6
-  subst hq3
-  subst hq5
-  subst hq4
-  subst hq2
-  subst hq1
+  subst zv3
+  subst zv2
+  subst zm4
+  subst zq5
+  subst zq1
   exact «UInt8::bit_decomposition».Path.run _ ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::xor`: one constructor per combination of selected arms. -/
@@ -390,32 +318,20 @@ theorem «UInt8::xor».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : Source
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.xor.lookup
     (by simp [IxAIStep.Fixed.UInt8.xor, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.xor] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs9, m10, c11, c12, hq3, d13, a14, hq2⟩ := a5.cons_inv
+  refine Fused.args_var_cons a5 rfl fun vs9 zv2 a14 => ?_
   try clear a5
-  obtain ⟨l15, rfl, hq4⟩ := d13.var_inv
-  try clear d13
-  simp at l15
-  subst l15
-  obtain ⟨v8, vs16, m17, c18, c19, hq6, d20, a21, hq5⟩ := a14.cons_inv
+  refine Fused.args_var_cons a14 rfl fun vs16 zv3 a21 => ?_
   try clear a14
-  obtain ⟨l22, rfl, hq7⟩ := d20.var_inv
-  try clear d20
-  simp at l22
-  subst l22
-  obtain ⟨hq9, rfl, hq8⟩ := a21.nil_inv
+  refine a21.nil_elim fun zv4 zm5 zq6 => ?_
   try clear a21
-  subst hq9
-  subst hq6
-  subst hq3
-  subst hq8
-  subst hq7
-  subst hq5
-  subst hq4
-  subst hq2
-  subst hq1
+  subst zv4
+  subst zv3
+  subst zv2
+  subst zm5
+  subst zq6
+  subst zq1
   exact «UInt8::xor».Path.run _ ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::and`: one constructor per combination of selected arms. -/
@@ -433,32 +349,20 @@ theorem «UInt8::and».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : Source
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.and.lookup
     (by simp [IxAIStep.Fixed.UInt8.and, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.and] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs9, m10, c11, c12, hq3, d13, a14, hq2⟩ := a5.cons_inv
+  refine Fused.args_var_cons a5 rfl fun vs9 zv2 a14 => ?_
   try clear a5
-  obtain ⟨l15, rfl, hq4⟩ := d13.var_inv
-  try clear d13
-  simp at l15
-  subst l15
-  obtain ⟨v8, vs16, m17, c18, c19, hq6, d20, a21, hq5⟩ := a14.cons_inv
+  refine Fused.args_var_cons a14 rfl fun vs16 zv3 a21 => ?_
   try clear a14
-  obtain ⟨l22, rfl, hq7⟩ := d20.var_inv
-  try clear d20
-  simp at l22
-  subst l22
-  obtain ⟨hq9, rfl, hq8⟩ := a21.nil_inv
+  refine a21.nil_elim fun zv4 zm5 zq6 => ?_
   try clear a21
-  subst hq9
-  subst hq6
-  subst hq3
-  subst hq8
-  subst hq7
-  subst hq5
-  subst hq4
-  subst hq2
-  subst hq1
+  subst zv4
+  subst zv3
+  subst zv2
+  subst zm5
+  subst zq6
+  subst zq1
   exact «UInt8::and».Path.run _ ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::or`: one constructor per combination of selected arms. -/
@@ -476,32 +380,20 @@ theorem «UInt8::or».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceV
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.or.lookup
     (by simp [IxAIStep.Fixed.UInt8.or, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.or] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs9, m10, c11, c12, hq3, d13, a14, hq2⟩ := a5.cons_inv
+  refine Fused.args_var_cons a5 rfl fun vs9 zv2 a14 => ?_
   try clear a5
-  obtain ⟨l15, rfl, hq4⟩ := d13.var_inv
-  try clear d13
-  simp at l15
-  subst l15
-  obtain ⟨v8, vs16, m17, c18, c19, hq6, d20, a21, hq5⟩ := a14.cons_inv
+  refine Fused.args_var_cons a14 rfl fun vs16 zv3 a21 => ?_
   try clear a14
-  obtain ⟨l22, rfl, hq7⟩ := d20.var_inv
-  try clear d20
-  simp at l22
-  subst l22
-  obtain ⟨hq9, rfl, hq8⟩ := a21.nil_inv
+  refine a21.nil_elim fun zv4 zm5 zq6 => ?_
   try clear a21
-  subst hq9
-  subst hq6
-  subst hq3
-  subst hq8
-  subst hq7
-  subst hq5
-  subst hq4
-  subst hq2
-  subst hq1
+  subst zv4
+  subst zv3
+  subst zv2
+  subst zm5
+  subst zq6
+  subst zq1
   exact «UInt8::or».Path.run _ ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::less_than`: one constructor per combination of selected arms. -/
@@ -519,32 +411,20 @@ theorem «UInt8::less_than».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : 
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.less_than.lookup
     (by simp [IxAIStep.Fixed.UInt8.less_than, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.less_than] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs9, m10, c11, c12, hq3, d13, a14, hq2⟩ := a5.cons_inv
+  refine Fused.args_var_cons a5 rfl fun vs9 zv2 a14 => ?_
   try clear a5
-  obtain ⟨l15, rfl, hq4⟩ := d13.var_inv
-  try clear d13
-  simp at l15
-  subst l15
-  obtain ⟨v8, vs16, m17, c18, c19, hq6, d20, a21, hq5⟩ := a14.cons_inv
+  refine Fused.args_var_cons a14 rfl fun vs16 zv3 a21 => ?_
   try clear a14
-  obtain ⟨l22, rfl, hq7⟩ := d20.var_inv
-  try clear d20
-  simp at l22
-  subst l22
-  obtain ⟨hq9, rfl, hq8⟩ := a21.nil_inv
+  refine a21.nil_elim fun zv4 zm5 zq6 => ?_
   try clear a21
-  subst hq9
-  subst hq6
-  subst hq3
-  subst hq8
-  subst hq7
-  subst hq5
-  subst hq4
-  subst hq2
-  subst hq1
+  subst zv4
+  subst zv3
+  subst zv2
+  subst zm5
+  subst zq6
+  subst zq1
   exact «UInt8::less_than».Path.run _ ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::add`: one constructor per combination of selected arms. -/
@@ -562,32 +442,20 @@ theorem «UInt8::add».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : Source
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.add.lookup
     (by simp [IxAIStep.Fixed.UInt8.add, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.add] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs9, m10, c11, c12, hq3, d13, a14, hq2⟩ := a5.cons_inv
+  refine Fused.args_var_cons a5 rfl fun vs9 zv2 a14 => ?_
   try clear a5
-  obtain ⟨l15, rfl, hq4⟩ := d13.var_inv
-  try clear d13
-  simp at l15
-  subst l15
-  obtain ⟨v8, vs16, m17, c18, c19, hq6, d20, a21, hq5⟩ := a14.cons_inv
+  refine Fused.args_var_cons a14 rfl fun vs16 zv3 a21 => ?_
   try clear a14
-  obtain ⟨l22, rfl, hq7⟩ := d20.var_inv
-  try clear d20
-  simp at l22
-  subst l22
-  obtain ⟨hq9, rfl, hq8⟩ := a21.nil_inv
+  refine a21.nil_elim fun zv4 zm5 zq6 => ?_
   try clear a21
-  subst hq9
-  subst hq6
-  subst hq3
-  subst hq8
-  subst hq7
-  subst hq5
-  subst hq4
-  subst hq2
-  subst hq1
+  subst zv4
+  subst zv3
+  subst zv2
+  subst zm5
+  subst zq6
+  subst zq1
   exact «UInt8::add».Path.run _ ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::sub`: one constructor per combination of selected arms. -/
@@ -605,32 +473,20 @@ theorem «UInt8::sub».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : Source
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.sub.lookup
     (by simp [IxAIStep.Fixed.UInt8.sub, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.sub] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs9, m10, c11, c12, hq3, d13, a14, hq2⟩ := a5.cons_inv
+  refine Fused.args_var_cons a5 rfl fun vs9 zv2 a14 => ?_
   try clear a5
-  obtain ⟨l15, rfl, hq4⟩ := d13.var_inv
-  try clear d13
-  simp at l15
-  subst l15
-  obtain ⟨v8, vs16, m17, c18, c19, hq6, d20, a21, hq5⟩ := a14.cons_inv
+  refine Fused.args_var_cons a14 rfl fun vs16 zv3 a21 => ?_
   try clear a14
-  obtain ⟨l22, rfl, hq7⟩ := d20.var_inv
-  try clear d20
-  simp at l22
-  subst l22
-  obtain ⟨hq9, rfl, hq8⟩ := a21.nil_inv
+  refine a21.nil_elim fun zv4 zm5 zq6 => ?_
   try clear a21
-  subst hq9
-  subst hq6
-  subst hq3
-  subst hq8
-  subst hq7
-  subst hq5
-  subst hq4
-  subst hq2
-  subst hq1
+  subst zv4
+  subst zv3
+  subst zv2
+  subst zm5
+  subst zq6
+  subst zq1
   exact «UInt8::sub».Path.run _ ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::mul`: one constructor per combination of selected arms. -/
@@ -648,32 +504,20 @@ theorem «UInt8::mul».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r : Source
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.mul.lookup
     (by simp [IxAIStep.Fixed.UInt8.mul, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.mul] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs9, m10, c11, c12, hq3, d13, a14, hq2⟩ := a5.cons_inv
+  refine Fused.args_var_cons a5 rfl fun vs9 zv2 a14 => ?_
   try clear a5
-  obtain ⟨l15, rfl, hq4⟩ := d13.var_inv
-  try clear d13
-  simp at l15
-  subst l15
-  obtain ⟨v8, vs16, m17, c18, c19, hq6, d20, a21, hq5⟩ := a14.cons_inv
+  refine Fused.args_var_cons a14 rfl fun vs16 zv3 a21 => ?_
   try clear a14
-  obtain ⟨l22, rfl, hq7⟩ := d20.var_inv
-  try clear d20
-  simp at l22
-  subst l22
-  obtain ⟨hq9, rfl, hq8⟩ := a21.nil_inv
+  refine a21.nil_elim fun zv4 zm5 zq6 => ?_
   try clear a21
-  subst hq9
-  subst hq6
-  subst hq3
-  subst hq8
-  subst hq7
-  subst hq5
-  subst hq4
-  subst hq2
-  subst hq1
+  subst zv4
+  subst zv3
+  subst zv2
+  subst zm5
+  subst zq6
+  subst zq1
   exact «UInt8::mul».Path.run _ ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::xor_split4`: one constructor per combination of selected arms. -/
@@ -691,32 +535,20 @@ theorem «UInt8::xor_split4».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r :
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.xor_split4.lookup
     (by simp [IxAIStep.Fixed.UInt8.xor_split4, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.xor_split4] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs9, m10, c11, c12, hq3, d13, a14, hq2⟩ := a5.cons_inv
+  refine Fused.args_var_cons a5 rfl fun vs9 zv2 a14 => ?_
   try clear a5
-  obtain ⟨l15, rfl, hq4⟩ := d13.var_inv
-  try clear d13
-  simp at l15
-  subst l15
-  obtain ⟨v8, vs16, m17, c18, c19, hq6, d20, a21, hq5⟩ := a14.cons_inv
+  refine Fused.args_var_cons a14 rfl fun vs16 zv3 a21 => ?_
   try clear a14
-  obtain ⟨l22, rfl, hq7⟩ := d20.var_inv
-  try clear d20
-  simp at l22
-  subst l22
-  obtain ⟨hq9, rfl, hq8⟩ := a21.nil_inv
+  refine a21.nil_elim fun zv4 zm5 zq6 => ?_
   try clear a21
-  subst hq9
-  subst hq6
-  subst hq3
-  subst hq8
-  subst hq7
-  subst hq5
-  subst hq4
-  subst hq2
-  subst hq1
+  subst zv4
+  subst zv3
+  subst zv2
+  subst zm5
+  subst zq6
+  subst zq1
   exact «UInt8::xor_split4».Path.run _ ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::xor_split7`: one constructor per combination of selected arms. -/
@@ -734,32 +566,20 @@ theorem «UInt8::xor_split7».obs {x_a x_b : SourceValue F} {h h' : Heap F} {r :
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.xor_split7.lookup
     (by simp [IxAIStep.Fixed.UInt8.xor_split7, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.xor_split7] at d0
-  obtain ⟨vs1, m2, c3, cs4, a5, ev6, hq1⟩ := d0.call_inv
+  refine Fused.call_plain d0 fun vs1 m2 c3 cs4 a5 ev6 zq1 => ?_
   try clear d0
-  rw [instanceName_plain_some] at ev6
-  obtain ⟨v7, vs9, m10, c11, c12, hq3, d13, a14, hq2⟩ := a5.cons_inv
+  refine Fused.args_var_cons a5 rfl fun vs9 zv2 a14 => ?_
   try clear a5
-  obtain ⟨l15, rfl, hq4⟩ := d13.var_inv
-  try clear d13
-  simp at l15
-  subst l15
-  obtain ⟨v8, vs16, m17, c18, c19, hq6, d20, a21, hq5⟩ := a14.cons_inv
+  refine Fused.args_var_cons a14 rfl fun vs16 zv3 a21 => ?_
   try clear a14
-  obtain ⟨l22, rfl, hq7⟩ := d20.var_inv
-  try clear d20
-  simp at l22
-  subst l22
-  obtain ⟨hq9, rfl, hq8⟩ := a21.nil_inv
+  refine a21.nil_elim fun zv4 zm5 zq6 => ?_
   try clear a21
-  subst hq9
-  subst hq6
-  subst hq3
-  subst hq8
-  subst hq7
-  subst hq5
-  subst hq4
-  subst hq2
-  subst hq1
+  subst zv4
+  subst zv3
+  subst zv2
+  subst zm5
+  subst zq6
+  subst zq1
   exact «UInt8::xor_split7».Path.run _ ev6 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::join4`: one constructor per combination of selected arms. -/
@@ -780,23 +600,23 @@ theorem «UInt8::join4».obs {x_high x_low : SourceValue F} {h h' : Heap F} {r :
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.join4.lookup
     (by simp [IxAIStep.Fixed.UInt8.join4, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.join4] at d0
-  obtain ⟨x1, y2, m3, c4, c5, d6, d7, op8, hq1⟩ := d0.binary_inv
+  refine d0.binary_elim fun x1 y2 m3 c4 c5 d6 d7 op8 ze1 => ?_
   try clear d0
-  obtain ⟨p9, d10, pr11⟩ := d6.project_inv
+  subst ze1
+  refine d6.project_elim fun p9 d10 pr11 => ?_
   try clear d6
-  obtain ⟨l12, rfl, hq2⟩ := d10.var_inv
+  refine Fused.var_is d10 rfl fun l12 zm3 zq2 => ?_
   try clear d10
-  simp at l12
   subst l12
-  obtain ⟨p13, d14, pr15⟩ := d7.project_inv
+  subst zm3
+  refine d7.project_elim fun p13 d14 pr15 => ?_
   try clear d7
-  obtain ⟨l16, rfl, hq3⟩ := d14.var_inv
+  refine Fused.var_is d14 rfl fun l16 zm5 zq4 => ?_
   try clear d14
-  simp at l16
   subst l16
-  subst hq3
-  subst hq2
-  subst hq1
+  subst zm5
+  subst zq4
+  subst zq2
   exact «UInt8::join4».Path.run _ _ pr11 rfl pr15 op8 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::join7`: one constructor per combination of selected arms. -/
@@ -817,23 +637,23 @@ theorem «UInt8::join7».obs {x_high x_low : SourceValue F} {h h' : Heap F} {r :
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.join7.lookup
     (by simp [IxAIStep.Fixed.UInt8.join7, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.join7] at d0
-  obtain ⟨x1, y2, m3, c4, c5, d6, d7, op8, hq1⟩ := d0.binary_inv
+  refine d0.binary_elim fun x1 y2 m3 c4 c5 d6 d7 op8 ze1 => ?_
   try clear d0
-  obtain ⟨p9, d10, pr11⟩ := d6.project_inv
+  subst ze1
+  refine d6.project_elim fun p9 d10 pr11 => ?_
   try clear d6
-  obtain ⟨l12, rfl, hq2⟩ := d10.var_inv
+  refine Fused.var_is d10 rfl fun l12 zm3 zq2 => ?_
   try clear d10
-  simp at l12
   subst l12
-  obtain ⟨p13, d14, pr15⟩ := d7.project_inv
+  subst zm3
+  refine d7.project_elim fun p13 d14 pr15 => ?_
   try clear d7
-  obtain ⟨l16, rfl, hq3⟩ := d14.var_inv
+  refine Fused.var_is d14 rfl fun l16 zm5 zq4 => ?_
   try clear d14
-  simp at l16
   subst l16
-  subst hq3
-  subst hq2
-  subst hq1
+  subst zm5
+  subst zq4
+  subst zq2
   exact «UInt8::join7».Path.run _ _ pr11 rfl pr15 op8 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `UInt8::split_sum`: one constructor per combination of selected arms. -/
@@ -855,67 +675,57 @@ theorem «UInt8::split_sum».obs {x_sum : SourceValue F} {h h' : Heap F} {r : So
   have d0 := ObsFn.function_inv (s := IxAIStep.Fixed.source) IxAIStep.Fixed.UInt8.split_sum.lookup
     (by simp [IxAIStep.Fixed.UInt8.split_sum, ControlLower.hasControl]) ev
   simp only [IxAIStep.Fixed.UInt8.split_sum] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, hq1⟩ := d0.letValue_inv
+  refine Fused.let_bind d0 fun v1 m2 c4 c5 d6 d8 zq1 => ?_
   try clear d0
-  obtain ⟨vs9, m10, c11, cs12, a13, ev14, hq2⟩ := d6.call_inv
+  refine Fused.call_plain d6 fun vs9 m10 c11 cs12 a13 ev14 zq2 => ?_
   try clear d6
-  rw [instanceName_plain_some] at ev14
-  obtain ⟨v15, vs16, m17, c18, c19, hq4, d20, a21, hq3⟩ := a13.cons_inv
+  refine Fused.args_var_cons a13 rfl fun vs16 zv3 a21 => ?_
   try clear a13
-  obtain ⟨l22, rfl, hq5⟩ := d20.var_inv
-  try clear d20
-  simp at l22
-  subst l22
-  obtain ⟨hq7, rfl, hq6⟩ := a21.nil_inv
+  refine a21.nil_elim fun zv4 zm5 zq6 => ?_
   try clear a21
-  subst hq7
-  subst hq4
-  obtain rfl := matchPattern_bind_inv mt7
-  try clear mt7
-  try simp only [List.cons_append, List.nil_append, List.append_nil, List.append_assoc] at d8
-  obtain ⟨vs23, a24, rfl⟩ := d8.tuple_inv
+  subst zv4
+  subst zv3
+  subst zm5
+  refine d8.tuple_elim fun vs23 a24 zr7 => ?_
   try clear d8
-  obtain ⟨v25, vs28, m29, c30, c31, hq9, d32, a33, hq8⟩ := a24.cons_inv
+  subst zr7
+  refine Fused.args_var_cons a24 rfl fun vs28 zv8 a33 => ?_
   try clear a24
-  obtain ⟨l34, rfl, hq10⟩ := d32.var_inv
-  try clear d32
-  simp at l34
-  subst l34
-  obtain ⟨v26, vs35, m36, c37, c38, hq12, d39, a40, hq11⟩ := a33.cons_inv
+  refine a33.cons_elim fun v26 vs35 m36 c37 c38 zv9 d39 a40 zq10 => ?_
   try clear a33
-  obtain ⟨x41, y42, m43, c44, c45, d46, d47, op48, hq13⟩ := d39.binary_inv
+  refine d39.binary_elim fun x41 y42 m43 c44 c45 d46 d47 op48 ze11 => ?_
   try clear d39
-  obtain ⟨x49, y50, m51, c52, c53, d54, d55, op56, hq14⟩ := d46.binary_inv
+  subst ze11
+  refine d46.binary_elim fun x49 y50 m51 c52 c53 d54 d55 op56 ze12 => ?_
   try clear d46
-  obtain ⟨l57, rfl, hq15⟩ := d54.var_inv
+  subst ze12
+  refine Fused.var_is d54 rfl fun l57 zm14 zq13 => ?_
   try clear d54
-  simp at l57
   subst l57
-  obtain ⟨l58, rfl, hq16⟩ := d55.var_inv
+  subst zm14
+  refine Fused.var_is d55 rfl fun l58 zm16 zq15 => ?_
   try clear d55
-  simp at l58
   subst l58
-  obtain ⟨rfl, rfl, hq17⟩ := d47.literal_inv
+  subst zm16
+  refine d47.literal_elim fun ze17 ze18 ze19 => ?_
   try clear d47
-  obtain ⟨hq19, rfl, hq18⟩ := a40.nil_inv
+  subst ze17
+  subst ze18
+  refine a40.nil_elim fun zv20 zm21 zq22 => ?_
   try clear a40
-  subst hq19
-  subst hq12
-  subst hq9
-  subst hq18
-  subst hq17
-  subst hq16
-  subst hq15
-  subst hq14
-  subst hq13
-  subst hq11
-  subst hq10
-  subst hq8
-  subst hq6
-  subst hq5
-  subst hq3
-  subst hq2
-  subst hq1
-  exact «UInt8::split_sum».Path.run _ _ _ _ _ ev14 rfl op56 op48 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  subst zv20
+  subst zv9
+  as_aux_lemma =>
+   subst zv8
+   subst zm21
+   subst zq22
+   subst ze19
+   subst zq15
+   subst zq13
+   subst zq10
+   subst zq6
+   subst zq2
+   subst zq1
+   exact «UInt8::split_sum».Path.run _ _ _ _ _ ev14 rfl op56 op48 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 end IxAIStep.Fixed.Obs
