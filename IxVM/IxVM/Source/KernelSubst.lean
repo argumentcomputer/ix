@@ -62,8 +62,20 @@ def lbr_min := aiur_fn⟦
     }
 ⟧
 
+  -- Every loose variable of `e` is below `expr_lbr(e)`, so a term whose range ends at
+  -- or below `lo` has none in [lo, hi) and is not walked.
+
 def has_bvar_in_range := aiur_fn⟦
   fn has_bvar_in_range(e: KernelTypes::KExpr, lo: Field, hi: Field) -> Field {
+      match UInt32::less_than_fields(lo, expr_lbr(e)) {
+        0 => {  0 } ,
+        _ => {  has_bvar_in_range_walk(e, lo, hi) } ,
+      }
+    }
+⟧
+
+def has_bvar_in_range_walk := aiur_fn⟦
+  inline fn has_bvar_in_range_walk(e: KernelTypes::KExpr, lo: Field, hi: Field) -> Field {
       match (*(e)) {
         KernelTypes::KExprNode::BVar(i) => {  has_bvar_in_range_bvar(i, lo, hi) } ,
         KernelTypes::KExprNode::Srt(_) => {  0 } ,
@@ -338,8 +350,20 @@ def expr_lower_let := aiur_fn⟦
     }
 ⟧
 
+  -- As in `has_bvar_in_range`, a term whose loose range ends at or below `depth` is
+  -- not walked.
+
 def expr_has_bvar_at := aiur_fn⟦
   fn expr_has_bvar_at(e: KernelTypes::KExpr, depth: Field) -> Field {
+      match UInt32::less_than_fields(depth, expr_lbr(e)) {
+        0 => {  0 } ,
+        _ => {  expr_has_bvar_at_walk(e, depth) } ,
+      }
+    }
+⟧
+
+def expr_has_bvar_at_walk := aiur_fn⟦
+  inline fn expr_has_bvar_at_walk(e: KernelTypes::KExpr, depth: Field) -> Field {
       match (*(e)) {
         KernelTypes::KExprNode::BVar(i) => {  match i - depth { 0 => {  1 } , _ => {  0 } , } } ,
         KernelTypes::KExprNode::App(f, a) => {
