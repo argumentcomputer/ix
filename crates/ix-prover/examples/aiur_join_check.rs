@@ -231,9 +231,11 @@ fn run() -> R<()> {
     "the binding's constant names the program key, as a string literal")?;
   check(contains(&binding_bytes, theorem_addr.as_bytes()), "the binding's constant references the theorem")?;
   let theorem_bytes = env.get_const_bytes(&theorem_addr).ok_or("no theorem constant")?;
+  // The addresses let a caller compare these constants with the ones its own job names.
   for name in ["IxAICore.train", "IxAICore.Triage.spec", "IxAIAiur.fullConfig"] {
-    check(contains(&theorem_bytes, addr_of(name)?.as_bytes()),
-      &format!("the theorem's statement references {name}"))?;
+    let addr = addr_of(name)?;
+    check(contains(&theorem_bytes, addr.as_bytes()),
+      &format!("the theorem's statement references {name} ({})", addr.hex()))?;
   }
 
   let spec = words(spec)?;
