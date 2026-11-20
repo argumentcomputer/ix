@@ -59,7 +59,7 @@ def k_infer := aiur_fn⟦
 
 def k_infer_rebase := aiur_fn⟦
   fn k_infer_rebase(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>, base: Field) -> KernelTypes::KExpr {
-      -- The gap is searched only within 32 binders of the subject (`expr_glb_shallow`):
+      -- The gap is searched only within 64 binders of the subject (`expr_glb_shallow`):
       -- either the exact gap or 0, both sound.
       let g = KernelSubst::lbr_min(KernelSubst::expr_glb_shallow(e, 0), Lists::length(types));
       match g {
