@@ -52,29 +52,24 @@ private theorem safe_used_refs_set_seg_spec
     {calls cs : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Kernel.RoleTable}
     {bAddr a : _root_.Address} {lim : Option Nat} {i : Nat} {idxs : List Nat}
     {S : List _root_.Address}
-    {ap rest rc refs used ex r : SourceValue F} {h h' : Heap F}
+    {hit nextUsed ap rest rc refs used ex r : SourceValue F} {h h' : Heap F}
     (hS : LoadedReads.RunStore calls E₀) (hrc : RCLimRep t bAddr lim h rc)
-    (ha : S0.addr h ap a) (hidx : RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h idxs used)
+    (ha : S0.addr h ap a) (hiff : hit = .field 1 ↔ i ∈ idxs)
     (hex : RepAddrSet h S ex)
-    (hi : i < 72057594037927936)
-    (ev : Obs.«KernelClaim::assert_safe_used_refs».Seg1 ap rest rc refs used (.field (i : F))
-      ex h r h' cs)
+    (ev : Obs.«KernelClaim::assert_safe_used_refs».Seg_fokxpuhl hit nextUsed ap rest rc refs used
+      (.field (i : F)) ex h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     Heap.Extends h h' ∧ (i ∈ idxs → a ∉ S → ¬ CoveredAt t lim a → SourceSafe E₀ a) := by
   obtain ⟨ab, hab, hab'⟩ := id ha
   match ev with
-  | .n1_n1 (ev56 := ev56) (ev91 := ev91) (he115 := hh) .. =>
-    obtain ⟨rfl, _⟩ := g_list_has_spec idxs hi hidx ev56
+  | .n1_n1 (ev_utgbirrs := ev91) (he_xpwauxiq := hh) .. =>
     obtain ⟨hm, rfl⟩ := addr_set_member_set_spec hab hex ev91
     refine ⟨by rw [hh], fun _ hnS _ => ?_⟩
     exact (hnS (hab' ▸ hm rfl)).elim
-  | .other (ev56 := ev56) (hne332 := hn) (he339 := hh) .. =>
-    refine ⟨?_, fun hm _ _ => ?_⟩
-    · rw [hh]; exact ev56.heap_extends
-    · exact (hn ((g_list_has_spec idxs hi hidx ev56).2.mpr hm)).elim
-  | .n1_other_other (ev56 := ev56) (ev91 := ev91) (ev134 := ev134) (ev165 := ev165)
-      (hne323 := hn) (he330 := hh) .. =>
-    obtain ⟨rfl, _⟩ := g_list_has_spec idxs hi hidx ev56
+  | .other (hne_yeueqpng := hn) (he_eemargwo := hh) .. =>
+    exact ⟨hh ▸ Heap.Extends.refl _, fun hm _ _ => (hn (hiff.mpr hm)).elim⟩
+  | .n1_other_other (ev_utgbirrs := ev91) (ev_qtjiirzs := ev134) (ev_phyxterm := ev165)
+      (hne_ifyzjima := hn) (he_felbweqg := hh) .. =>
     obtain ⟨_, rfl⟩ := addr_set_member_set_spec hab hex ev91
     have ext := ev134.heap_extends
     obtain ⟨he, hc⟩ := walk_covered_lim_spec (hrc.mono ext) (S0.addr_mono ext ha) ev165
@@ -83,16 +78,15 @@ private theorem safe_used_refs_set_seg_spec
     · rcases hc with hz | hcov
       · exact (hn hz).elim
       · exact (hnc hcov).elim
-  | .n1_other_n0 (cs197 := csLoad) (cs260 := csUnsafe) (cs300 := csOwner) (ev56 := ev56)
-      (ev91 := ev91) (ev134 := ev134) (ev165 := ev165)
-      (ev199 := ev199) (ev221 := ev221) (ev262 := ev262) (heq277 := hz)
-      (ev302 := ev302) (heq317 := hzo) (he321 := hh) (hc322 := hcs) .. =>
-    have extAll := ev56.heap_extends.trans (ev91.heap_extends.trans (ev134.heap_extends.trans
+  | .n1_other_n0 (cs_qjpwomix := csLoad) (cs_kgdddfzu := csUnsafe) (cs_kaixaukp := csOwner)
+      (ev_utgbirrs := ev91) (ev_qtjiirzs := ev134) (ev_phyxterm := ev165)
+      (ev_sbnkpoyd := ev199) (ev_qxxjnwmz := ev221) (ev_unasbjkv := ev262) (heq_jfdvmnjk := hz)
+      (ev_ytdmykjs := ev302) (heq_ppgaohtc := hzo) (he_xjkoaywn := hh) (hc_uzyocwyw := hcs) .. =>
+    have extAll := ev91.heap_extends.trans (ev134.heap_extends.trans
       (ev165.heap_extends.trans (ev199.heap_extends.trans (ev221.heap_extends.trans
-        (ev262.heap_extends.trans ev302.heap_extends))))))
+        (ev262.heap_extends.trans ev302.heap_extends)))))
     refine ⟨by rw [hh]; exact extAll, fun _ _ _ c hc => ?_⟩
-    have extLoad := ev56.heap_extends.trans (ev91.heap_extends.trans
-      (ev134.heap_extends.trans ev165.heap_extends))
+    have extLoad := ev91.heap_extends.trans (ev134.heap_extends.trans ev165.heap_extends)
     have haLoad := S0.addr_mono extLoad ha
     obtain ⟨extLoaded, bytes, c', _, hhash, haddr, _, he, hrep, _⟩ :=
       load_verified_constant_de haLoad ev199
@@ -121,7 +115,7 @@ theorem assert_safe_used_refs_set_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       {cs : List (Call F)}, i + refs.length < 8589934592 →
       RCLimRep t bAddr lim h rc →
       RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h refs rp →
-      RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h idxs used →
+      RepSortedIdxFrom h idxs i used →
       RepAddrSet h S ex →
       ObsFn Obs.W "KernelClaim::assert_safe_used_refs" [rc, rp, used, .field (i : F), ex] h r h' cs →
       (∀ cl ∈ cs, cl ∈ calls) →
@@ -133,13 +127,15 @@ theorem assert_safe_used_refs_set_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     intro i idxs rc rp used ex r h h' cs hb hrc hr hi hex ev hsub
     match Obs.«KernelClaim::assert_safe_used_refs».obs ev with
     | .Nil (ld12 := ld) .. => cases Lib.rep_nil_of_load hr ld
-    | .Cons (cs344 := csHead) (cs353 := csTail) (ld12 := ld) (sg349 := seg) (op395 := op) (ev355 := ev355) (hc404 := hcs) .. =>
+    | .Cons (cs_bixmeype := csHead) (cs353 := csTail) (ld12 := ld) (ev_ahqcgauk := evPop)
+        (sg_opqpxwys := seg) (op395 := op) (ev355 := ev355) (hc404 := hcs) .. =>
       obtain ⟨_, _, he, ha, hrest⟩ := Lib.rep_cons_of_load hr ld
       injection he with he1 he2
       subst he1 he2
+      obtain ⟨rfl, hiff, hiNext⟩ := sorted_pop_spec idxs (by simp at hb; omega) hi evPop
       have hsegSub : ∀ cl ∈ csHead, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       obtain ⟨ext, hsafe⟩ :=
-        safe_used_refs_set_seg_spec hS hrc ha hi hex (by simp at hb; omega) seg hsegSub
+        safe_used_refs_set_seg_spec hS hrc ha hiff hex seg hsegSub
       simp only [evalBinOp, Except.ok.injEq] at op
       subst op
       have hinc : (i : F) + 1 = ((i + 1 : Nat) : F) := by push_cast; rfl
@@ -147,7 +143,7 @@ theorem assert_safe_used_refs_set_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       have htailSub : ∀ cl ∈ csTail, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have ht := ih (i + 1) (by simp at hb ⊢; omega) (hrc.mono ext)
         (repList_heapMono₂ _ repAddrElem_heapMono₂ ext hrest)
-        (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext hi) (hex.mono ext) ev355 htailSub
+        (hiNext.mono ext) (hex.mono ext) ev355 htailSub
       intro j hj hm hnS hn
       cases j with
       | zero => exact hsafe (by simpa only [Nat.add_zero] using hm) hnS hn
@@ -165,7 +161,7 @@ theorem assert_safe_refs_except_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     {a : _root_.Address} {rc rp used ap r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hb : refs.length < 8589934592) (hrc : RCLimRep t bAddr lim h rc)
     (hr : RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h refs rp)
-    (hi : RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h idxs used)
+    (hi : RepSortedIdx h idxs used)
     (ha : S0.addr h ap a)
     (ev : ObsFn Obs.W "KernelClaim::assert_safe_refs_except" [rc, rp, used, ap] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
@@ -179,7 +175,7 @@ theorem assert_safe_refs_except_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     have hsub' : ∀ cl ∈ cs43, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc85]; simp [hcl])
     have hguard := assert_safe_used_refs_set_spec hS refs 0 (by omega) (hrc.mono ext)
       (repList_heapMono₂ _ repAddrElem_heapMono₂ ext hr)
-      (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext hi) hset
+      (hi.mono ext) hset
       (by simpa using ev45) hsub'
     intro j hj hm hne hnc
     refine hguard j hj (by rw [Nat.zero_add]; exact hm) (fun hmS => hne ?_) hnc

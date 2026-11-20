@@ -310,24 +310,247 @@ private theorem natCast_inj_of_lt_u56 {a b : Nat}
   have hv := congrArg ZMod.val heq
   omega
 
-private theorem concat_boundedIdx_spec {xs ys : List Nat} {a b r : SourceValue F}
+/-- Representation of the suffix `{k ∈ S | i ≤ k}` as a strictly increasing deduplicated
+`Lists::Node<Field>` list of bounded indices (`< 2^56`). -/
+def RepSortedIdxFrom (h : Heap F) (S : List Nat) (i : Nat) (x : SourceValue F) : Prop :=
+  ∃ idxs : List Nat,
+    idxs.Pairwise (· < ·) ∧
+    (∀ k, k ∈ idxs ↔ k ∈ S ∧ i ≤ k) ∧
+    RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h idxs x
+
+/-- Representation of the element set of `S` as a strictly increasing deduplicated
+`Lists::Node<Field>` list of bounded indices (`< 2^56`). -/
+abbrev RepSortedIdx (h : Heap F) (S : List Nat) (x : SourceValue F) : Prop :=
+  RepSortedIdxFrom h S 0 x
+
+theorem RepSortedIdxFrom.mono {h₁ h₂ : Heap F} {S : List Nat} {i : Nat} {x : SourceValue F}
+    (ext : Heap.Extends h₁ h₂) (rep : RepSortedIdxFrom h₁ S i x) :
+    RepSortedIdxFrom h₂ S i x := by
+  obtain ⟨idxs, hpw, hmem, hlist⟩ := rep
+  exact ⟨idxs, hpw, hmem, repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext hlist⟩
+
+theorem RepSortedIdxFrom.iff {h : Heap F} {S₁ S₂ : List Nat} {i : Nat} {x : SourceValue F}
+    (hiff : ∀ k, k ∈ S₁ ↔ k ∈ S₂) (rep : RepSortedIdxFrom h S₁ i x) :
+    RepSortedIdxFrom h S₂ i x := by
+  obtain ⟨idxs, hpw, hmem, hlist⟩ := rep
+  exact ⟨idxs, hpw, fun k => by rw [hmem k, hiff k], hlist⟩
+
+theorem RepSortedIdx.nil {h : Heap F} {x : SourceValue F}
+    (hlist : RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h [] x) :
+    RepSortedIdx h [] x :=
+  ⟨[], List.Pairwise.nil, by simp, hlist⟩
+
+theorem RepSortedIdx.singleton {h : Heap F} {k : Nat} {x : SourceValue F}
+    (hlist : RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h [k] x) :
+    RepSortedIdx h [k] x :=
+  ⟨[k], List.Pairwise.cons (by simp) List.Pairwise.nil, by simp, hlist⟩
+
+private theorem sorted_merge_uniq_aux :
+    ∀ (n : Nat) {xs ys : List Nat} {x_xs x_ys r : SourceValue F}
+      {h h' : Heap F} {calls : List (Call F)},
+      xs.length + ys.length ≤ n →
+      xs.Pairwise (· < ·) →
+      ys.Pairwise (· < ·) →
+      RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h xs x_xs →
+      RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h ys x_ys →
+      ObsFn Obs.W "KernelClaim::sorted_merge_uniq" [x_xs, x_ys] h r h' calls →
+      Heap.Extends h h' ∧
+      ∃ zs : List Nat,
+        zs.Pairwise (· < ·) ∧
+        (∀ k, k ∈ zs ↔ k ∈ xs ∨ k ∈ ys) ∧
+        RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h' zs r := by
+  intro n
+  induction n using Nat.strongRecOn with
+  | ind n ih =>
+    intro xs ys x_xs x_ys r h h' calls hlen hpw_x hpw_y hrep_x hrep_y ev
+    rcases Obs.«KernelClaim::sorted_merge_uniq».obs ev with
+      ⟨ld_x, rfl, rfl, -⟩ |
+      ⟨x_x, x_xrest, ld_x, ld_y, rfl, rfl, -⟩ |
+      ⟨x_x, x_xrest, x_y, x_yrest, v_tail, m_tail, cs_tail,
+        ld_x, ld_y, op_sub, rfl, rfl, ev_rec, -⟩ |
+      ⟨x_x, x_xrest, x_y, x_yrest, v_sub, m_lt, cs_lt, v_tail, m_tail, cs_tail,
+        ld_x, ld_y, op_sub, hne_sub, ev_lt, rfl, rfl, ev_rec, -⟩ |
+      ⟨x_x, x_xrest, x_y, x_yrest, v_sub, v_lt, m_lt, cs_lt, v_tail, m_tail, cs_tail,
+        ld_x, ld_y, op_sub, hne_sub, ev_lt, hne_lt, rfl, rfl, ev_rec, -⟩
+    · obtain rfl := Lib.rep_nil_of_load hrep_x ld_x
+      exact ⟨Heap.Extends.refl _, ys, hpw_y, by simp, hrep_y⟩
+    · obtain rfl := Lib.rep_nil_of_load hrep_y ld_y
+      exact ⟨Heap.Extends.refl _, xs, hpw_x, by simp, hrep_x⟩
+    · obtain ⟨x, xrest, rfl, ⟨hx_lt, rfl⟩, hxrest⟩ := Lib.rep_cons_of_load hrep_x ld_x
+      obtain ⟨y, yrest, rfl, ⟨hy_lt, rfl⟩, hyrest⟩ := Lib.rep_cons_of_load hrep_y ld_y
+      simp only [evalBinOp, Except.ok.injEq, Value.field.injEq, sub_eq_zero] at op_sub
+      have hxy : x = y := natCast_inj_of_lt_u56 hx_lt hy_lt op_sub
+      subst hxy
+      obtain ⟨hlt_x, hpw_xr⟩ := List.pairwise_cons.mp hpw_x
+      obtain ⟨hlt_y, hpw_yr⟩ := List.pairwise_cons.mp hpw_y
+      obtain ⟨ext_rec, zs, hpw_z, hmem_z, hrep_z⟩ :=
+        ih (xrest.length + yrest.length) (by simp at hlen; omega) (Nat.le_refl _)
+          hpw_xr hpw_yr hxrest hyrest ev_rec
+      refine ⟨ext_rec.trans (Heap.Extends.snoc m_tail _), x :: zs, ?_, ?_,
+        Lib.rep_store_cons repBoundedIdx_heapMono₂ ⟨hx_lt, rfl⟩ hrep_z⟩
+      · exact List.pairwise_cons.mpr ⟨fun k hk => by
+          rcases (hmem_z k).mp hk with hkx | hky
+          · exact hlt_x k hkx
+          · exact hlt_y k hky, hpw_z⟩
+      · intro k
+        simp only [List.mem_cons, hmem_z k]
+        tauto
+    · obtain ⟨x, xrest, rfl, ⟨hx_lt, rfl⟩, hxrest⟩ := Lib.rep_cons_of_load hrep_x ld_x
+      obtain ⟨y, yrest, rfl, ⟨hy_lt, rfl⟩, hyrest⟩ := Lib.rep_cons_of_load hrep_y ld_y
+      obtain ⟨_, _, hlt_iff, _, rfl⟩ := Lib.less_than_fields_field ev_lt
+      have hvx : ZMod.val (x : F) = x :=
+        ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
+      have hvy : ZMod.val (y : F) = y :=
+        ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
+      have hxy : x < y := by
+        have hlt := hlt_iff.mp rfl
+        rw [hvx, hvy] at hlt
+        exact hlt
+      obtain ⟨hlt_x, hpw_xr⟩ := List.pairwise_cons.mp hpw_x
+      obtain ⟨hlt_y, _⟩ := List.pairwise_cons.mp hpw_y
+      obtain ⟨ext_rec, zs, hpw_z, hmem_z, hrep_z⟩ :=
+        ih (xrest.length + (y :: yrest).length) (by simp at hlen ⊢; omega) (Nat.le_refl _)
+          hpw_xr hpw_y hxrest hrep_y ev_rec
+      refine ⟨ext_rec.trans (Heap.Extends.snoc m_tail _), x :: zs, ?_, ?_,
+        Lib.rep_store_cons repBoundedIdx_heapMono₂ ⟨hx_lt, rfl⟩ hrep_z⟩
+      · refine List.pairwise_cons.mpr ⟨fun k hk => ?_, hpw_z⟩
+        rcases (hmem_z k).mp hk with hkx | hky
+        · exact hlt_x k hkx
+        · rcases List.mem_cons.mp hky with rfl | hkyr
+          · exact hxy
+          · exact Nat.lt_trans hxy (hlt_y k hkyr)
+      · intro k
+        simp only [List.mem_cons, hmem_z k]
+        tauto
+    · obtain ⟨x, xrest, rfl, ⟨hx_lt, rfl⟩, hxrest⟩ := Lib.rep_cons_of_load hrep_x ld_x
+      obtain ⟨y, yrest, rfl, ⟨hy_lt, rfl⟩, hyrest⟩ := Lib.rep_cons_of_load hrep_y ld_y
+      simp only [evalBinOp, Except.ok.injEq] at op_sub
+      subst op_sub
+      have hne_xy : x ≠ y := by
+        intro hxy; subst hxy; exact hne_sub (by simp)
+      obtain ⟨_, _, hlt_iff, _, rfl⟩ := Lib.less_than_fields_field ev_lt
+      have hvx : ZMod.val (x : F) = x :=
+        ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
+      have hvy : ZMod.val (y : F) = y :=
+        ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
+      have hnot_lt : ¬ (x < y) := by
+        intro hlt
+        exact hne_lt (hlt_iff.mpr (by rw [hvx, hvy]; exact hlt))
+      have hyx : y < x := by omega
+      obtain ⟨hlt_x, _⟩ := List.pairwise_cons.mp hpw_x
+      obtain ⟨hlt_y, hpw_yr⟩ := List.pairwise_cons.mp hpw_y
+      obtain ⟨ext_rec, zs, hpw_z, hmem_z, hrep_z⟩ :=
+        ih ((x :: xrest).length + yrest.length) (by simp at hlen ⊢; omega) (Nat.le_refl _)
+          hpw_x hpw_yr hrep_x hyrest ev_rec
+      refine ⟨ext_rec.trans (Heap.Extends.snoc m_tail _), y :: zs, ?_, ?_,
+        Lib.rep_store_cons repBoundedIdx_heapMono₂ ⟨hy_lt, rfl⟩ hrep_z⟩
+      · refine List.pairwise_cons.mpr ⟨fun k hk => ?_, hpw_z⟩
+        rcases (hmem_z k).mp hk with hkx | hky
+        · rcases List.mem_cons.mp hkx with rfl | hkxr
+          · exact hyx
+          · exact Nat.lt_trans hyx (hlt_x k hkxr)
+        · exact hlt_y k hky
+      · intro k
+        simp only [List.mem_cons, hmem_z k]
+        tauto
+
+theorem sorted_merge_uniq_spec {S₁ S₂ : List Nat} {a b r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
-    (ev : ObsFn Obs.W Obs.Names.«Lists::concat<Field>» [a, b] h r h' cs)
-    (ha : RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h xs a)
-    (hb : RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h ys b) :
-    Heap.Extends h h' ∧
-    RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h' (xs ++ ys) r := by
-  have ext := ev.heap_extends
-  rw [← Obs.Names.«Lists::concat<Field>».symbol] at ev
-  rw [← Obs.Names.«Lists::Node<Field>».symbol] at ha hb ⊢
-  exact ⟨ext, Lib.Lists.concat_spec (t := .field) repBoundedIdx_heapMono₂ ev ha hb⟩
+    (ev : ObsFn Obs.W "KernelClaim::sorted_merge_uniq" [a, b] h r h' cs)
+    (ha : RepSortedIdx h S₁ a)
+    (hb : RepSortedIdx h S₂ b) :
+    Heap.Extends h h' ∧ RepSortedIdx h' (S₁ ++ S₂) r := by
+  obtain ⟨xs, hpw_x, hmem_x, hlist_x⟩ := ha
+  obtain ⟨ys, hpw_y, hmem_y, hlist_y⟩ := hb
+  obtain ⟨ext, zs, hpw_z, hmem_z, hlist_z⟩ :=
+    sorted_merge_uniq_aux (xs.length + ys.length) (Nat.le_refl _) hpw_x hpw_y hlist_x hlist_y ev
+  refine ⟨ext, zs, hpw_z, ?_, hlist_z⟩
+  intro k
+  simp only [hmem_z k, hmem_x k, hmem_y k, List.mem_append, Nat.zero_le, and_true]
+
+theorem sorted_pop_spec (S : List Nat) {i : Nat} (hi : i < 72057594037927936)
+    {h h' : Heap F} {x_xs hit next : SourceValue F} {calls : List (Call F)}
+    (rep : RepSortedIdxFrom h S i x_xs)
+    (ev : ObsFn Obs.W "KernelClaim::sorted_pop" [x_xs, .field (i : F)] h
+      (.tuple [hit, next]) h' calls) :
+    h = h' ∧ (hit = .field 1 ↔ i ∈ S) ∧ RepSortedIdxFrom h S (i + 1) next := by
+  obtain ⟨idxs, hpw, hmem, hlist⟩ := rep
+  rcases Obs.«KernelClaim::sorted_pop».obs ev with
+    ⟨ld, hr, rfl, -⟩ |
+    ⟨x_y, x_rest, ld, op, hr, rfl, -⟩ |
+    ⟨x_y, x_rest, v, ld, op, hne, hr, rfl, -⟩
+  · obtain rfl := Lib.rep_nil_of_load hlist ld
+    injection hr with hvs
+    simp only [List.cons.injEq, and_true] at hvs
+    obtain ⟨rfl, rfl⟩ := hvs
+    refine ⟨rfl, ?_, [], List.Pairwise.nil, ?_, hlist⟩
+    · constructor
+      · intro h01; exact absurd (Value.field.inj h01).symm one_ne_zero
+      · intro hiS
+        have hnil := (hmem i).mpr ⟨hiS, Nat.le_refl i⟩
+        simp at hnil
+    · intro k
+      constructor
+      · intro hk; simp at hk
+      · rintro ⟨hkS, hle⟩
+        have hnil := (hmem k).mpr ⟨hkS, by omega⟩
+        simp at hnil
+  · obtain ⟨y, rest, rfl, ⟨hy_lt, rfl⟩, hrest⟩ := Lib.rep_cons_of_load hlist ld
+    injection hr with hvs
+    simp only [List.cons.injEq, and_true] at hvs
+    obtain ⟨rfl, rfl⟩ := hvs
+    simp only [evalBinOp, Except.ok.injEq, Value.field.injEq, sub_eq_zero] at op
+    have hyi : y = i := natCast_inj_of_lt_u56 hy_lt hi op
+    subst hyi
+    obtain ⟨hlt_rest, hpw_rest⟩ := List.pairwise_cons.mp hpw
+    refine ⟨rfl, ?_, rest, hpw_rest, ?_, hrest⟩
+    · exact ⟨fun _ => ((hmem y).mp List.mem_cons_self).1, fun _ => rfl⟩
+    · intro k
+      constructor
+      · intro hk
+        have hlt : y < k := hlt_rest k hk
+        exact ⟨((hmem k).mp (List.mem_cons_of_mem y hk)).1, by omega⟩
+      · rintro ⟨hkS, hle⟩
+        have hmem_cons := (hmem k).mpr ⟨hkS, by omega⟩
+        rcases List.mem_cons.mp hmem_cons with rfl | hk_rest
+        · omega
+        · exact hk_rest
+  · obtain ⟨y, rest, rfl, ⟨hy_lt, rfl⟩, hrest⟩ := Lib.rep_cons_of_load hlist ld
+    injection hr with hvs
+    simp only [List.cons.injEq, and_true] at hvs
+    obtain ⟨rfl, rfl⟩ := hvs
+    simp only [evalBinOp, Except.ok.injEq] at op
+    subst op
+    have hne_yi : y ≠ i := by
+      intro hyi; subst hyi; exact hne (by simp)
+    have hge_y : i ≤ y := ((hmem y).mp List.mem_cons_self).2
+    have hgt_y : i < y := by omega
+    obtain ⟨hlt_rest, _⟩ := List.pairwise_cons.mp hpw
+    refine ⟨rfl, ?_, y :: rest, hpw, ?_, hlist⟩
+    · constructor
+      · intro h01; exact absurd (Value.field.inj h01).symm one_ne_zero
+      · intro hiS
+        have hi_in := (hmem i).mpr ⟨hiS, Nat.le_refl i⟩
+        rcases List.mem_cons.mp hi_in with hiy | hi_rest
+        · exact absurd hiy.symm hne_yi
+        · have hlt := hlt_rest i hi_rest; omega
+    · intro k
+      constructor
+      · intro hk
+        have hkS := ((hmem k).mp hk).1
+        rcases List.mem_cons.mp hk with rfl | hk_rest
+        · exact ⟨hkS, by omega⟩
+        · have hlt := hlt_rest k hk_rest
+          exact ⟨hkS, by omega⟩
+      · rintro ⟨hkS, hle⟩
+        exact (hmem k).mpr ⟨hkS, by omega⟩
 
 theorem const_idxs_expr_spec (e : Ixon.Expr) :
     ∀ {h h' : Heap F} {x_e r : SourceValue F} {calls : List (Call F)},
       Deserialize.RepExpr h e x_e →
       ObsFn Obs.W "KernelClaim::const_idxs_expr" [x_e] h r h' calls →
       Heap.Extends h h' ∧
-      RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h' (S0.exprRefIdxs e) r := by
+      RepSortedIdx h' (S0.exprRefIdxs e) r := by
   induction e with
   | sort idx =>
     intro h h' x_e r calls rep ev
@@ -335,35 +558,35 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
     | sort cell =>
       rcases Obs.«KernelClaim::const_idxs_expr».obs ev with
         ⟨_, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, _, _, _, _, rfl, rfl, -⟩
       all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
-      exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
+      exact ⟨Heap.Extends.snoc h _, RepSortedIdx.nil (Lib.rep_store_nil h)⟩
   | var idx =>
     intro h h' x_e r calls rep ev
     cases rep with
     | var cell =>
       rcases Obs.«KernelClaim::const_idxs_expr».obs ev with
         ⟨_, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, _, _, _, _, rfl, rfl, -⟩
       all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
-      exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
+      exact ⟨Heap.Extends.snoc h _, RepSortedIdx.nil (Lib.rep_store_nil h)⟩
   | ref idx univs =>
     intro h h' x_e r calls rep ev
     cases rep with
     | ref cell _ =>
       rcases Obs.«KernelClaim::const_idxs_expr».obs ev with
         ⟨x_i, w20, v39, m42, cs50, m62, ld12, rfl, rfl, ev52, rfl, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
@@ -385,7 +608,8 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
           (.construct Obs.Names.«Lists::Node<Field>» "Cons"
             [.field (idx.toNat : F), .ptr (.enum Obs.Names.«Lists::Node<Field>») h.length])
         exact ⟨ext1.trans ext2,
-          Lib.rep_store_cons repBoundedIdx_heapMono₂ ⟨hlt, rfl⟩ (Lib.rep_store_nil h)⟩
+          RepSortedIdx.singleton
+            (Lib.rep_store_cons repBoundedIdx_heapMono₂ ⟨hlt, rfl⟩ (Lib.rep_store_nil h))⟩
       all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
       · rw [Lib.load_enum_cell cell] at ld12
         injection ld12 with hv
@@ -396,22 +620,22 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
     | recur cell _ =>
       rcases Obs.«KernelClaim::const_idxs_expr».obs ev with
         ⟨_, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, _, _, _, _, rfl, rfl, -⟩
       all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
-      exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
+      exact ⟨Heap.Extends.snoc h _, RepSortedIdx.nil (Lib.rep_store_nil h)⟩
   | prj tIdx fIdx val ih =>
     intro h h' x_e r calls rep ev
     cases rep with
     | prj cell valRep =>
       rcases Obs.«KernelClaim::const_idxs_expr».obs ev with
         ⟨_, _, _, _, _, _, ld12, -⟩ |
-        ⟨x_i, w82, x_inner, v106, v107, m109, cs117, m129, cs137,
-          ld12, rfl, rfl, ev119, ev139, -⟩ |
+        ⟨x_i, w82, x_inner, cs_m, v_in, m_s, v_i, m_u, cs_u, m_nil, m_in, cs_in,
+          ld12, rfl, ev_u, rfl, ev_in, ev_m, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
@@ -423,15 +647,22 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         injection hv with _ _ hargs
         simp only [List.cons.injEq, and_true] at hargs
         obtain ⟨hxi, _, hxinner⟩ := hargs
-        rw [← hxi] at ev119
-        rw [← hxinner] at ev139
-        obtain ⟨hlt, hv106, hm109⟩ :=
-          Lib.u64_to_field_spec (Deserialize.repU64_u64Value h tIdx) ev119
-        rw [hm109] at ev139
-        rw [hv106]
-        obtain ⟨ext_in, hrep_in⟩ := ih valRep ev139
-        exact ⟨ext_in.trans (Heap.Extends.snoc m129 _),
-          Lib.rep_store_cons repBoundedIdx_heapMono₂ ⟨hlt, rfl⟩ hrep_in⟩
+        rw [← hxi] at ev_u
+        rw [← hxinner] at ev_in
+        obtain ⟨hlt, hv_i, hm_u⟩ :=
+          Lib.u64_to_field_spec (Deserialize.repU64_u64Value h tIdx) ev_u
+        subst hv_i; subst m_u
+        have ext1 := Heap.Extends.snoc h
+          (.construct Obs.Names.«Lists::Node<Field>» "Nil" [])
+        have ext2 := Heap.Extends.snoc
+          (h ++ [.construct Obs.Names.«Lists::Node<Field>» "Nil" []])
+          (.construct Obs.Names.«Lists::Node<Field>» "Cons"
+            [.field (tIdx.toNat : F), .ptr (.enum Obs.Names.«Lists::Node<Field>») h.length])
+        have hsingle := RepSortedIdx.singleton
+          (Lib.rep_store_cons repBoundedIdx_heapMono₂ ⟨hlt, rfl⟩ (Lib.rep_store_nil h))
+        obtain ⟨ext_in, hrep_in⟩ := ih (valRep.mono (ext1.trans ext2)) ev_in
+        obtain ⟨ext_m, hmerge⟩ := sorted_merge_uniq_spec ev_m (hsingle.mono ext_in) hrep_in
+        exact ⟨(ext1.trans ext2).trans (ext_in.trans ext_m), hmerge⟩
       · rw [Lib.load_enum_cell cell] at ld12
         injection ld12 with hv
         exact absurd hv.symm (hne149 [_, _, _] rfl)
@@ -441,35 +672,35 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
     | str cell =>
       rcases Obs.«KernelClaim::const_idxs_expr».obs ev with
         ⟨_, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, _, _, _, _, rfl, rfl, -⟩
       all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
-      exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
+      exact ⟨Heap.Extends.snoc h _, RepSortedIdx.nil (Lib.rep_store_nil h)⟩
   | nat idx =>
     intro h h' x_e r calls rep ev
     cases rep with
     | nat cell =>
       rcases Obs.«KernelClaim::const_idxs_expr».obs ev with
         ⟨_, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, _, _, _, _, rfl, rfl, -⟩
       all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
-      exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
+      exact ⟨Heap.Extends.snoc h _, RepSortedIdx.nil (Lib.rep_store_nil h)⟩
   | app fnE arg ih1 ih2 =>
     intro h h' x_e r calls rep ev
     cases rep with
     | app cell fnRep argRep =>
       rcases Obs.«KernelClaim::const_idxs_expr».obs ev with
         ⟨_, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨x_f, x_a, cs169, v172, v173, m175, cs183, m195, cs203,
           ld12, ev185, ev205, ev171, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
@@ -484,8 +715,7 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         obtain ⟨rfl, rfl⟩ := hargs
         obtain ⟨ext1, h1⟩ := ih1 fnRep ev185
         obtain ⟨ext2, h2⟩ := ih2 (argRep.mono ext1) ev205
-        obtain ⟨ext3, hcat⟩ :=
-          concat_boundedIdx_spec ev171 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext2 h1) h2
+        obtain ⟨ext3, hcat⟩ := sorted_merge_uniq_spec ev171 (h1.mono ext2) h2
         exact ⟨ext1.trans (ext2.trans ext3), hcat⟩
       · rw [Lib.load_enum_cell cell] at ld12
         injection ld12 with hv
@@ -496,7 +726,7 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
     | lam cell tyRep bodyRep =>
       rcases Obs.«KernelClaim::const_idxs_expr».obs ev with
         ⟨_, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨x_t, x_b, cs235, v238, v239, m241, cs249, m261, cs269,
           ld12, ev251, ev271, ev237, -⟩ |
@@ -511,8 +741,7 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         obtain ⟨rfl, rfl⟩ := hargs
         obtain ⟨ext1, h1⟩ := ih1 tyRep ev251
         obtain ⟨ext2, h2⟩ := ih2 (bodyRep.mono ext1) ev271
-        obtain ⟨ext3, hcat⟩ :=
-          concat_boundedIdx_spec ev237 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext2 h1) h2
+        obtain ⟨ext3, hcat⟩ := sorted_merge_uniq_spec ev237 (h1.mono ext2) h2
         exact ⟨ext1.trans (ext2.trans ext3), hcat⟩
       · rw [Lib.load_enum_cell cell] at ld12
         injection ld12 with hv
@@ -523,7 +752,7 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
     | all cell tyRep bodyRep =>
       rcases Obs.«KernelClaim::const_idxs_expr».obs ev with
         ⟨_, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨x_t, x_b, cs301, v304, v305, m307, cs315, m327, cs335,
@@ -538,8 +767,7 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         obtain ⟨rfl, rfl⟩ := hargs
         obtain ⟨ext1, h1⟩ := ih1 tyRep ev317
         obtain ⟨ext2, h2⟩ := ih2 (bodyRep.mono ext1) ev337
-        obtain ⟨ext3, hcat⟩ :=
-          concat_boundedIdx_spec ev303 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext2 h1) h2
+        obtain ⟨ext3, hcat⟩ := sorted_merge_uniq_spec ev303 (h1.mono ext2) h2
         exact ⟨ext1.trans (ext2.trans ext3), hcat⟩
       · rw [Lib.load_enum_cell cell] at ld12
         injection ld12 with hv
@@ -550,7 +778,7 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
     | letE cell tyRep valRep bodyRep =>
       rcases Obs.«KernelClaim::const_idxs_expr».obs ev with
         ⟨_, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
@@ -567,11 +795,9 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
         obtain ⟨ext1, h1⟩ := ih1 tyRep ev394
         obtain ⟨ext2, h2⟩ := ih2 (valRep.mono ext1) ev428
         obtain ⟨ext3, h3⟩ := ih3 (bodyRep.mono (ext1.trans ext2)) ev448
-        obtain ⟨ext4, h23⟩ :=
-          concat_boundedIdx_spec ev414 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext3 h2) h3
+        obtain ⟨ext4, h23⟩ := sorted_merge_uniq_spec ev414 (h2.mono ext3) h3
         obtain ⟨ext5, h123⟩ :=
-          concat_boundedIdx_spec ev380
-            (repList_heapMono₂ _ repBoundedIdx_heapMono₂ (ext2.trans (ext3.trans ext4)) h1) h23
+          sorted_merge_uniq_spec ev380 (h1.mono (ext2.trans (ext3.trans ext4))) h23
         simp only [S0.exprRefIdxs, List.append_assoc]
         exact ⟨ext1.trans (ext2.trans (ext3.trans (ext4.trans ext5))), h123⟩
       · rw [Lib.load_enum_cell cell] at ld12
@@ -583,27 +809,27 @@ theorem const_idxs_expr_spec (e : Ixon.Expr) :
     | share cell =>
       rcases Obs.«KernelClaim::const_idxs_expr».obs ev with
         ⟨_, _, _, _, _, _, ld12, -⟩ |
-        ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
+        ⟨_, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
         ⟨v1, ld12, _, _, _, _, _, _, rfl, rfl, -⟩
       all_goals try (rw [Lib.load_enum_cell cell] at ld12; simp at ld12; done)
-      exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
+      exact ⟨Heap.Extends.snoc h _, RepSortedIdx.nil (Lib.rep_store_nil h)⟩
 
 theorem const_idxs_exprs_spec (es : List Ixon.Expr) :
     ∀ {h h' : Heap F} {x_es r : SourceValue F} {calls : List (Call F)},
       RepList Obs.Names.«Lists::Node<&Ixon::Expr>» Deserialize.RepExpr h es x_es →
       ObsFn Obs.W "KernelClaim::const_idxs_exprs" [x_es] h r h' calls →
       Heap.Extends h h' ∧
-      RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h' (es.flatMap S0.exprRefIdxs) r := by
+      RepSortedIdx h' (es.flatMap S0.exprRefIdxs) r := by
   induction es with
   | nil =>
     intro h h' x_es r calls rep ev
     rcases Obs.«KernelClaim::const_idxs_exprs».obs ev with
       ⟨ld12, rfl, rfl, -⟩ | ⟨_, _, _, _, _, _, _, _, _, ld12, -⟩
-    · exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
+    · exact ⟨Heap.Extends.snoc h _, RepSortedIdx.nil (Lib.rep_store_nil h)⟩
     · obtain ⟨_, _, hbad, -⟩ := Lib.rep_cons_of_load rep ld12
       cases hbad
   | cons e rest ih =>
@@ -617,8 +843,7 @@ theorem const_idxs_exprs_spec (es : List Ixon.Expr) :
       obtain ⟨ext1, h1⟩ := const_idxs_expr_spec e he ev65
       obtain ⟨ext2, h2⟩ :=
         ih (repList_heapMono₂ _ Deserialize.repExpr_heapMono₂ ext1 hrest) ev85
-      obtain ⟨ext3, hcat⟩ :=
-        concat_boundedIdx_spec ev51 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext2 h1) h2
+      obtain ⟨ext3, hcat⟩ := sorted_merge_uniq_spec ev51 (h1.mono ext2) h2
       simpa only [List.flatMap_cons] using ⟨ext1.trans (ext2.trans ext3), hcat⟩
 
 theorem const_idxs_rules_spec (rs : List Ixon.RecursorRule) :
@@ -626,14 +851,13 @@ theorem const_idxs_rules_spec (rs : List Ixon.RecursorRule) :
       RepList Obs.Names.«Lists::Node<Ixon::RecursorRule>» RepRecursorRule h rs x_rs →
       ObsFn Obs.W "KernelClaim::const_idxs_rules" [x_rs] h r h' calls →
       Heap.Extends h h' ∧
-      RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h'
-        (rs.flatMap fun rl => S0.exprRefIdxs rl.rhs) r := by
+      RepSortedIdx h' (rs.flatMap fun rl => S0.exprRefIdxs rl.rhs) r := by
   induction rs with
   | nil =>
     intro h h' x_rs r calls rep ev
     rcases Obs.«KernelClaim::const_idxs_rules».obs ev with
       ⟨ld12, rfl, rfl, -⟩ | ⟨_, _, _, _, _, _, _, _, _, _, ld12, -⟩
-    · exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
+    · exact ⟨Heap.Extends.snoc h _, RepSortedIdx.nil (Lib.rep_store_nil h)⟩
     · obtain ⟨_, _, hbad, -⟩ := Lib.rep_cons_of_load rep ld12
       cases hbad
   | cons rl rest ih =>
@@ -652,8 +876,7 @@ theorem const_idxs_rules_spec (rs : List Ixon.RecursorRule) :
       obtain ⟨ext1, h1⟩ := const_idxs_expr_spec rl.rhs hrhs ev92
       obtain ⟨ext2, h2⟩ :=
         ih (repList_heapMono₂ _ repRecursorRule_heapMono₂ ext1 hrest) ev112
-      obtain ⟨ext3, hcat⟩ :=
-        concat_boundedIdx_spec ev78 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext2 h1) h2
+      obtain ⟨ext3, hcat⟩ := sorted_merge_uniq_spec ev78 (h1.mono ext2) h2
       simpa only [List.flatMap_cons] using ⟨ext1.trans (ext2.trans ext3), hcat⟩
 
 theorem const_idxs_ctors_spec (cs : List Ixon.Constructor) :
@@ -661,14 +884,13 @@ theorem const_idxs_ctors_spec (cs : List Ixon.Constructor) :
       RepList Obs.Names.«Lists::Node<Ixon::Constructor>» RepConstructor h cs x_cs →
       ObsFn Obs.W "KernelClaim::const_idxs_ctors" [x_cs] h r h' calls →
       Heap.Extends h h' ∧
-      RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h'
-        (cs.flatMap fun c => S0.exprRefIdxs c.typ) r := by
+      RepSortedIdx h' (cs.flatMap fun c => S0.exprRefIdxs c.typ) r := by
   induction cs with
   | nil =>
     intro h h' x_cs r calls rep ev
     rcases Obs.«KernelClaim::const_idxs_ctors».obs ev with
       ⟨ld12, rfl, rfl, -⟩ | ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩
-    · exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
+    · exact ⟨Heap.Extends.snoc h _, RepSortedIdx.nil (Lib.rep_store_nil h)⟩
     · obtain ⟨_, _, hbad, -⟩ := Lib.rep_cons_of_load rep ld12
       cases hbad
   | cons ctor rest ih =>
@@ -688,8 +910,7 @@ theorem const_idxs_ctors_spec (cs : List Ixon.Constructor) :
       obtain ⟨ext1, h1⟩ := const_idxs_expr_spec ctor.typ htyp ev122
       obtain ⟨ext2, h2⟩ :=
         ih (repList_heapMono₂ _ repConstructor_heapMono₂ ext1 hrest) ev142
-      obtain ⟨ext3, hcat⟩ :=
-        concat_boundedIdx_spec ev108 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext2 h1) h2
+      obtain ⟨ext3, hcat⟩ := sorted_merge_uniq_spec ev108 (h1.mono ext2) h2
       simpa only [List.flatMap_cons] using ⟨ext1.trans (ext2.trans ext3), hcat⟩
 
 theorem const_idxs_muts_spec (ms : List Ixon.MutConst) :
@@ -697,7 +918,7 @@ theorem const_idxs_muts_spec (ms : List Ixon.MutConst) :
       RepList Obs.Names.«Lists::Node<Ixon::MutConst>» RepMutConst h ms x_ms →
       ObsFn Obs.W "KernelClaim::const_idxs_muts" [x_ms] h r h' calls →
       Heap.Extends h h' ∧
-      RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h' (ms.flatMap S0.mutRefIdxs) r := by
+      RepSortedIdx h' (ms.flatMap S0.mutRefIdxs) r := by
   induction ms with
   | nil =>
     intro h h' x_ms r calls rep ev
@@ -706,7 +927,7 @@ theorem const_idxs_muts_spec (ms : List Ixon.MutConst) :
       ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
       ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩ |
       ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ld12, -⟩
-    · exact ⟨Heap.Extends.snoc h _, Lib.rep_store_nil h⟩
+    · exact ⟨Heap.Extends.snoc h _, RepSortedIdx.nil (Lib.rep_store_nil h)⟩
     all_goals (obtain ⟨_, _, hbad, -⟩ := Lib.rep_cons_of_load rep ld12; cases hbad)
   | cons mc rest ih =>
     intro h h' x_ms r calls rep ev
@@ -739,13 +960,10 @@ theorem const_idxs_muts_spec (ms : List Ixon.MutConst) :
         rw [← hdargs.2.2.2.2.2] at hval
         obtain ⟨ext1, h1⟩ := const_idxs_expr_spec d.typ htyp ev150
         obtain ⟨ext2, h2⟩ := const_idxs_expr_spec d.value (hval.mono ext1) ev170
-        obtain ⟨ext3, h12⟩ :=
-          concat_boundedIdx_spec ev136 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext2 h1) h2
+        obtain ⟨ext3, h12⟩ := sorted_merge_uniq_spec ev136 (h1.mono ext2) h2
         obtain ⟨ext4, hrest_out⟩ :=
           ih (repList_heapMono₂ _ repMutConst_heapMono₂ (ext1.trans (ext2.trans ext3)) hrest) ev190
-        obtain ⟨ext5, hcat⟩ :=
-          concat_boundedIdx_spec ev122
-            (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext4 h12) hrest_out
+        obtain ⟨ext5, hcat⟩ := sorted_merge_uniq_spec ev122 (h12.mono ext4) hrest_out
         simpa only [List.flatMap_cons, S0.mutRefIdxs] using
           ⟨ext1.trans (ext2.trans (ext3.trans (ext4.trans ext5))), hcat⟩
     · obtain ⟨mc', rest', heq, hmc, hrest⟩ := Lib.rep_cons_of_load rep ld12
@@ -767,13 +985,10 @@ theorem const_idxs_muts_spec (ms : List Ixon.MutConst) :
         obtain ⟨ext2, h2⟩ :=
           const_idxs_ctors_spec ind.ctors.toList
             (repList_heapMono₂ _ repConstructor_heapMono₂ ext1 hctors) ev316
-        obtain ⟨ext3, h12⟩ :=
-          concat_boundedIdx_spec ev282 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext2 h1) h2
+        obtain ⟨ext3, h12⟩ := sorted_merge_uniq_spec ev282 (h1.mono ext2) h2
         obtain ⟨ext4, hrest_out⟩ :=
           ih (repList_heapMono₂ _ repMutConst_heapMono₂ (ext1.trans (ext2.trans ext3)) hrest) ev336
-        obtain ⟨ext5, hcat⟩ :=
-          concat_boundedIdx_spec ev268
-            (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext4 h12) hrest_out
+        obtain ⟨ext5, hcat⟩ := sorted_merge_uniq_spec ev268 (h12.mono ext4) hrest_out
         simpa only [List.flatMap_cons, S0.mutRefIdxs] using
           ⟨ext1.trans (ext2.trans (ext3.trans (ext4.trans ext5))), hcat⟩
     · obtain ⟨mc', rest', heq, hmc, hrest⟩ := Lib.rep_cons_of_load rep ld12
@@ -795,13 +1010,10 @@ theorem const_idxs_muts_spec (ms : List Ixon.MutConst) :
         obtain ⟨ext2, h2⟩ :=
           const_idxs_rules_spec rc.rules.toList
             (repList_heapMono₂ _ repRecursorRule_heapMono₂ ext1 hrules) ev480
-        obtain ⟨ext3, h12⟩ :=
-          concat_boundedIdx_spec ev446 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext2 h1) h2
+        obtain ⟨ext3, h12⟩ := sorted_merge_uniq_spec ev446 (h1.mono ext2) h2
         obtain ⟨ext4, hrest_out⟩ :=
           ih (repList_heapMono₂ _ repMutConst_heapMono₂ (ext1.trans (ext2.trans ext3)) hrest) ev500
-        obtain ⟨ext5, hcat⟩ :=
-          concat_boundedIdx_spec ev432
-            (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext4 h12) hrest_out
+        obtain ⟨ext5, hcat⟩ := sorted_merge_uniq_spec ev432 (h12.mono ext4) hrest_out
         simpa only [List.flatMap_cons, S0.mutRefIdxs] using
           ⟨ext1.trans (ext2.trans (ext3.trans (ext4.trans ext5))), hcat⟩
 
@@ -810,7 +1022,7 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
     (rep : RepConstant h c x_c)
     (ev : ObsFn Obs.W "KernelClaim::const_idxs_of" [x_c] h r h' calls) :
     Heap.Extends h h' ∧
-    RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h' (S0.usedRefIdxs c) r := by
+    RepSortedIdx h' (S0.usedRefIdxs c) r := by
   obtain ⟨infoVal, sharingPtr, refsPtr, univsPtr, bindersPtr, rfl, hinfo, hsh, _, _, _⟩ := rep
   have hsh' : RepList Obs.Names.«Lists::Node<&Ixon::Expr>» Deserialize.RepExpr h
       c.sharing.toList sharingPtr := by
@@ -847,11 +1059,9 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
       obtain ⟨extS, hS⟩ := const_idxs_exprs_spec c.sharing.toList hsh' ev58
       obtain ⟨ext1, h1⟩ := const_idxs_expr_spec d.typ (htyp.mono extS) ev178
       obtain ⟨ext2, h2⟩ := const_idxs_expr_spec d.value (hval.mono (extS.trans ext1)) ev198
-      obtain ⟨ext3, h12⟩ :=
-        concat_boundedIdx_spec ev164 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext2 h1) h2
+      obtain ⟨ext3, h12⟩ := sorted_merge_uniq_spec ev164 (h1.mono ext2) h2
       obtain ⟨ext4, hcat⟩ :=
-        concat_boundedIdx_spec ev143
-          (repList_heapMono₂ _ repBoundedIdx_heapMono₂ (ext1.trans (ext2.trans ext3)) hS) h12
+        sorted_merge_uniq_spec ev143 (hS.mono (ext1.trans (ext2.trans ext3))) h12
       simpa only [S0.usedRefIdxs, hc] using
         ⟨extS.trans (ext1.trans (ext2.trans (ext3.trans ext4))), hcat⟩
     all_goals (obtain ⟨_, hv, _⟩ := hinfo; simp at hv)
@@ -874,11 +1084,9 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
       obtain ⟨ext2, h2⟩ :=
         const_idxs_rules_spec rc.rules.toList
           (repList_heapMono₂ _ repRecursorRule_heapMono₂ (extS.trans ext1) hrules) ev349
-      obtain ⟨ext3, h12⟩ :=
-        concat_boundedIdx_spec ev315 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext2 h1) h2
+      obtain ⟨ext3, h12⟩ := sorted_merge_uniq_spec ev315 (h1.mono ext2) h2
       obtain ⟨ext4, hcat⟩ :=
-        concat_boundedIdx_spec ev294
-          (repList_heapMono₂ _ repBoundedIdx_heapMono₂ (ext1.trans (ext2.trans ext3)) hS) h12
+        sorted_merge_uniq_spec ev294 (hS.mono (ext1.trans (ext2.trans ext3))) h12
       simpa only [S0.usedRefIdxs, hc] using
         ⟨extS.trans (ext1.trans (ext2.trans (ext3.trans ext4))), hcat⟩
     all_goals (obtain ⟨_, hv, _⟩ := hinfo; simp at hv)
@@ -897,8 +1105,7 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
       rw [← haargs.2.2] at htyp
       obtain ⟨extS, hS⟩ := const_idxs_exprs_spec c.sharing.toList hsh' ev58
       obtain ⟨ext1, h1⟩ := const_idxs_expr_spec a.typ (htyp.mono extS) ev431
-      obtain ⟨ext2, hcat⟩ :=
-        concat_boundedIdx_spec ev410 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext1 hS) h1
+      obtain ⟨ext2, hcat⟩ := sorted_merge_uniq_spec ev410 (hS.mono ext1) h1
       simpa only [S0.usedRefIdxs, hc] using ⟨extS.trans (ext1.trans ext2), hcat⟩
     all_goals (obtain ⟨_, hv, _⟩ := hinfo; simp at hv)
   · injection hv15 with _ _ hargs
@@ -916,8 +1123,7 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
       rw [← hqargs.2.2] at htyp
       obtain ⟨extS, hS⟩ := const_idxs_exprs_spec c.sharing.toList hsh' ev58
       obtain ⟨ext1, h1⟩ := const_idxs_expr_spec q.typ (htyp.mono extS) ev513
-      obtain ⟨ext2, hcat⟩ :=
-        concat_boundedIdx_spec ev492 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext1 hS) h1
+      obtain ⟨ext2, hcat⟩ := sorted_merge_uniq_spec ev492 (hS.mono ext1) h1
       simpa only [S0.usedRefIdxs, hc] using ⟨extS.trans (ext1.trans ext2), hcat⟩
     all_goals (obtain ⟨_, hv, _⟩ := hinfo; simp at hv)
   · injection hv15 with _ _ hargs
@@ -933,8 +1139,7 @@ theorem const_idxs_of_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceVa
       obtain ⟨extS, hS⟩ := const_idxs_exprs_spec c.sharing.toList hsh' ev58
       obtain ⟨ext1, h1⟩ :=
         const_idxs_muts_spec ms.toList (repList_heapMono₂ _ repMutConst_heapMono₂ extS hms) ev562
-      obtain ⟨ext2, hcat⟩ :=
-        concat_boundedIdx_spec ev541 (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext1 hS) h1
+      obtain ⟨ext2, hcat⟩ := sorted_merge_uniq_spec ev541 (hS.mono ext1) h1
       simpa only [S0.usedRefIdxs, hc] using ⟨extS.trans (ext1.trans ext2), hcat⟩
     all_goals (obtain ⟨_, hv, _⟩ := hinfo; simp at hv)
   · injection hv15 with _ _ hargs
@@ -989,6 +1194,15 @@ theorem g_list_has_spec (idxs : List Nat) {i : Nat} (hi : i < 72057594037927936)
         exact hne66 (by simp)
       obtain ⟨hh, hiff⟩ := ih hks ev75
       exact ⟨hh, by simp [hne_ki, hiff]⟩
+
+theorem g_list_has_sorted_spec (S : List Nat) {i : Nat} (hi : i < 72057594037927936)
+    {h h' : Heap F} {x_xs r : SourceValue F} {calls : List (Call F)}
+    (rep : RepSortedIdx h S x_xs)
+    (ev : ObsFn Obs.W "KernelClaim::g_list_has" [x_xs, .field (i : F)] h r h' calls) :
+    h' = h ∧ (r = .field 1 ↔ i ∈ S) := by
+  obtain ⟨idxs, _, hmem, hlist⟩ := rep
+  obtain ⟨hh, hiff⟩ := g_list_has_spec idxs hi hlist ev
+  exact ⟨hh, by simpa [Nat.zero_le] using hiff.trans (hmem i)⟩
 
 /-! ## `defn_is_unsafe_ci`, `ctors_unsafe`, `muts_unsafe`, `record_unsafe`, `assert_claimable` -/
 
@@ -1585,7 +1799,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
          i + refs.length < 8589934592 →
          RCFullRep t bAddr lim h x_rc →
          RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h refs x_refs →
-         RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h idxs x_consts →
+         RepSortedIdxFrom h idxs i x_consts →
          ObsFn Obs.W "KernelClaim::walk_refs_transitive"
            [x_rc, x_refs, x_consts, .field (i : F)] h r h' calls →
          Heap.Extends h h' ∧
@@ -1833,24 +2047,25 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
     · intro lim i refs idxs x_rc x_refs x_consts r h h' calls hfuel hbound hrc hrefs hidxs ev
       rcases Obs.«KernelClaim::walk_refs_transitive».obs ev with
         ⟨ld12, _, rfl, -⟩ |
-        ⟨x_a, x_rest, v204, m205, cs207, cs216, v222, ld12, sg212, op257, ev218, hc259⟩
+        ⟨x_a, x_rest, m_pop, cs_pop, x_hit, x_next_consts, v204, m205, cs207, cs216, v222,
+          ld12, ev_pop, sg212, op257, ev218, hc259⟩
       · obtain rfl := Lib.rep_nil_of_load hrefs ld12
         exact ⟨Heap.Extends.refl _, [], fun _ hj => absurd hj (Nat.not_lt_zero _),
           by simp [RecsClosed], by simp⟩
       · obtain ⟨a, rest, rfl, ha_head, hrest_rep⟩ := Lib.rep_cons_of_load hrefs ld12
         have hi_lt56 : i < 72057594037927936 := by simp at hbound; omega
+        obtain ⟨rfl, hiff_pop, hidxs_next⟩ := sorted_pop_spec idxs hi_lt56 hidxs ev_pop
         have hseg : Heap.Extends h m205 ∧
             ∃ recs₁ : List (WalkedRec calls bAddr t),
               (i ∈ idxs → a ∈ recs₁.map (·.addr)) ∧
               RecsClosed recs₁ ∧
               (∀ r ∈ recs₁, r.depth ≤ calls.length) := by
           rcases sg212 with
-            ⟨m43, cs54, v77, m78, cs88, m108, cs119, v142, m143, cs153, cs145, v148, m151, cs159,
-              ev56, ev90, ev121, evnb, ev161, ev147, hc185⟩ |
-            ⟨m43, cs54, v77, m78, cs88, v107, m108, cs119, ev56, ev90, ev121, hne186, -⟩ |
-            ⟨v42, m43, cs54, ev56, hne195, _, rfl, -⟩
-          · obtain ⟨rfl, _⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
-            have ext_ra := ev90.heap_extends
+            ⟨v77, m78, cs88, m108, cs119, v142, m143, cs153, cs145, v148, m151, cs159,
+              _, ev90, ev121, evnb, ev161, ev147, hc185⟩ |
+            ⟨v77, m78, cs88, v107, m108, cs119, _, ev90, ev121, hne186, -⟩ |
+            ⟨hne195, _, rfl, -⟩
+          · have ext_ra := ev90.heap_extends
             obtain ⟨_, rfl⟩ := walk_covered_spec (hrc.mono ext_ra) ev121
             have ext_nb := evnb.heap_extends
             obtain ⟨ext_wc, lim', hrc'⟩ := walk_ctx_spec (hrc.mono (ext_ra.trans ext_nb)) ev161
@@ -1870,12 +2085,10 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             intro _
             rw [map_addr_walkedRec_mono]
             exact hmem_s
-          · obtain ⟨rfl, _⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
-            have ext_ra := ev90.heap_extends
+          · have ext_ra := ev90.heap_extends
             obtain ⟨hv107, _⟩ := walk_covered_spec (hrc.mono ext_ra) ev121
             exact absurd hv107 hne186
-          · obtain ⟨rfl, hiff⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
-            exact ⟨Heap.Extends.refl _, [], fun hi_in => absurd (hiff.mpr hi_in) hne195,
+          · exact ⟨Heap.Extends.refl _, [], fun hi_in => absurd (hiff_pop.mpr hi_in) hne195,
               by simp [RecsClosed], by simp⟩
         obtain ⟨ext1, recs₁, hmem₁, hcl₁, hdep₁⟩ := hseg
         simp only [evalBinOp, Except.ok.injEq] at op257
@@ -1893,7 +2106,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
           (ih cs216.length hlt_tail).2 (i := i + 1) (Nat.le_refl _) hbound_tail
             (hrc.mono ext1)
             (repList_heapMono₂ _ repAddrElem_heapMono₂ ext1 hrest_rep)
-            (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext1 hidxs)
+            (hidxs_next.mono ext1)
             ev218
         have hsub₂ : ∀ cl ∈ cs216, cl ∈ calls := fun cl hcl => by
           rw [hc259]; simp [hcl]
@@ -1980,7 +2193,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
          i + refs.length < 8589934592 →
          RCFullRep t b.address lim h x_rc →
          RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h refs x_refs →
-         RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h idxs x_consts →
+         RepSortedIdxFrom h idxs i x_consts →
          ObsFn Obs.W "KernelClaim::env_walk_refs_all"
            [x_rc, x_refs, x_consts, .field (i : F)] h r h' calls →
          V.HashedCollision extra calls ∨
@@ -2283,12 +2496,14 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
     · intro lim i refs idxs x_rc x_refs x_consts r h h' calls hfuel hbound hrc hrefs hidxs ev
       rcases Obs.«KernelClaim::env_walk_refs_all».obs ev with
         ⟨ld12, _, rfl, -⟩ |
-        ⟨x_a, x_rest, v329, m330, cs332, cs341, v347, ld12, sg337, op382, ev343, hc384⟩
+        ⟨x_a, x_rest, m_pop, cs_pop, x_hit, x_next_consts, v329, m330, cs332, cs341, v347,
+          ld12, ev_pop, sg337, op382, ev343, hc384⟩
       · obtain rfl := Lib.rep_nil_of_load hrefs ld12
         exact .inr ⟨Heap.Extends.refl _, [], fun _ hj => absurd hj (Nat.not_lt_zero _),
           by simp [RecsClosed], by simp⟩
       · obtain ⟨a, rest, rfl, ha_head, hrest_rep⟩ := Lib.rep_cons_of_load hrefs ld12
         have hi_lt56 : i < 72057594037927936 := by simp at hbound; omega
+        obtain ⟨rfl, hiff_pop, hidxs_next⟩ := sorted_pop_spec idxs hi_lt56 hidxs ev_pop
         have hseg : V.HashedCollision extra calls ∨
             (Heap.Extends h m330 ∧
              ∃ recs₁ : List (WalkedRec calls b.address t),
@@ -2296,17 +2511,16 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
                RecsClosed recs₁ ∧
                (∀ r ∈ recs₁, r.depth ≤ calls.length)) := by
           rcases sg337 with
-            ⟨m43, cs54, v77, m78, cs88, m108, cs119, vnb, mnb, csnb, v142, m143, cs153, m173,
+            ⟨v77, m78, cs88, m108, cs119, vnb, mnb, csnb, v142, m143, cs153, m173,
               x181, y182, m183, cs192, cs206, cs224, v227, v228, v229, m231, p236, cs242, m254,
-              cs262, ev56, ev90, ev121, evnb, ev155, ev194, ev208, op188, ev244, ld238, ev264,
+              cs262, _, ev90, ev121, evnb, ev155, ev194, ev208, op188, ev244, ld238, ev264,
               ld281, ev226, hc283⟩ |
-            ⟨m43, cs54, v77, m78, cs88, m108, cs119, vnb, mnb, csnb, v142, m143, cs153, v172,
+            ⟨v77, m78, cs88, m108, cs119, vnb, mnb, csnb, v142, m143, cs153, v172,
               m173, x181, y182, m183, cs192, cs206, cs291,
-              ev56, ev90, ev121, evnb, ev155, ev194, ev208, op188, hne284, ev293, hc310⟩ |
-            ⟨m43, cs54, v77, m78, cs88, v107, m108, cs119, ev56, ev90, ev121, hne311, -⟩ |
-            ⟨v42, m43, cs54, ev56, hne320, _, rfl, -⟩
-          · obtain ⟨rfl, _⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
-            have ext_ra := ev90.heap_extends
+              _, ev90, ev121, evnb, ev155, ev194, ev208, op188, hne284, ev293, hc310⟩ |
+            ⟨v77, m78, cs88, v107, m108, cs119, _, ev90, ev121, hne311, -⟩ |
+            ⟨hne320, _, rfl, -⟩
+          · have ext_ra := ev90.heap_extends
             obtain ⟨_, rfl⟩ := walk_covered_spec (hrc.mono ext_ra) ev121
             have ext_nb := evnb.heap_extends
             obtain ⟨ext_wc, lim', hrc'⟩ := walk_ctx_spec (hrc.mono (ext_ra.trans ext_nb)) ev155
@@ -2336,8 +2550,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             intro _
             rw [map_addr_walkedRec_mono]
             exact hmem_s
-          · obtain ⟨rfl, _⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
-            have ext_ra := ev90.heap_extends
+          · have ext_ra := ev90.heap_extends
             obtain ⟨_, rfl⟩ := walk_covered_spec (hrc.mono ext_ra) ev121
             have ext_nb := evnb.heap_extends
             obtain ⟨ext_wc, lim', hrc'⟩ := walk_ctx_spec (hrc.mono (ext_ra.trans ext_nb)) ev155
@@ -2357,12 +2570,10 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             intro _
             rw [map_addr_walkedRec_mono]
             exact hmem_s
-          · obtain ⟨rfl, _⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
-            have ext_ra := ev90.heap_extends
+          · have ext_ra := ev90.heap_extends
             obtain ⟨hv107, _⟩ := walk_covered_spec (hrc.mono ext_ra) ev121
             exact absurd hv107 hne311
-          · obtain ⟨rfl, hiff⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
-            exact .inr ⟨Heap.Extends.refl _, [], fun hi_in => absurd (hiff.mpr hi_in) hne320,
+          · exact .inr ⟨Heap.Extends.refl _, [], fun hi_in => absurd (hiff_pop.mpr hi_in) hne320,
               by simp [RecsClosed], by simp⟩
         rcases hseg with hcoll | ⟨ext1, recs₁, hmem₁, hcl₁, hdep₁⟩
         · exact .inl hcoll
@@ -2380,7 +2591,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
         rcases (ih cs341.length hlt_tail).2.2 (i := i + 1) (Nat.le_refl _) hbound_tail
             (hrc.mono ext1)
             (repList_heapMono₂ _ repAddrElem_heapMono₂ ext1 hrest_rep)
-            (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext1 hidxs)
+            (hidxs_next.mono ext1)
             ev343 with
           hcoll | ⟨ext2, recs₂_raw, hmem₂, hcl₂, hdep₂⟩
         · exact .inl (hashedCollision_mono (fun cl hcl => by rw [hc384]; simp [hcl]) hcoll)

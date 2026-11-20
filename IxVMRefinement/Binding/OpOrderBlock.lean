@@ -317,7 +317,7 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
          calls.length ≤ fuel → Heap.Extends h₀ h →
          i + refs.length < 8589934592 →
          RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h refs x_refs →
-         RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h idxs x_used →
+         Claim.RepSortedIdxFrom h idxs i x_used →
          ObsFn Obs.W "KernelRoles::op_order_scan_list"
            [x_tbl, x_lim, x_needs, x_refs, x_used, .field (i : F)] h r h' calls →
          ∃ entered : List _root_.Address, ScanClosedExt calls t Ok entered ∧
@@ -542,29 +542,28 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
       | Nil ld12 he22 he23 hc24 =>
         obtain rfl := Lib.rep_nil_of_load hrefs ld12
         exact ⟨[], scanClosedExt_nil calls t Ok, fun j hj => absurd hj (Nat.not_lt_zero _)⟩
-      | Cons x_b x_rest v125 m126 cs128 cs137 v145 ld12 sg133 op194 ev139 hc196 =>
+      | Cons x_b x_rest m_pop cs_pop x_hit x_next_used v125 m126 cs128 cs137 v145
+          ld12 ev_pop sg133 op194 ev139 hc196 =>
         obtain ⟨b, rest, rfl, hb_rep, hrest_rep⟩ := Lib.rep_cons_of_load hrefs ld12
         have hi : i < 72057594037927936 := by simp at hbound; omega
+        obtain ⟨rfl, hiff, hidxs_next⟩ := Claim.sorted_pop_spec idxs hi hidxs ev_pop
         have hlen128 : cs128.length ≤ calls.length := by
           rw [hc196]; simp only [List.length_cons, List.length_append]; omega
         have hseg : Heap.Extends h m126 ∧ ∃ entered₁ : List _root_.Address,
             ScanClosedExt cs128 t Ok entered₁ ∧
               (i ∈ idxs → Ok b ∨ (b ∈ entered₁ ∧ NotOp t b)) := by
           cases sg133 with
-          | n1 m43 cs54 cs80 ev56 ev82 hc115 =>
-            obtain ⟨hh43, _⟩ := Claim.g_list_has_spec idxs hi hidxs ev56
-            subst hh43
+          | n1 cs80 _ ev82 hc115 =>
             have hlt : cs80.length < fuel := by
               have : cs80.length < cs128.length := by
-                rw [hc115]; simp only [List.length_cons, List.length_append]; omega
+                rw [hc115]; simp only [List.length_cons]; omega
               omega
             obtain ⟨entered₁, hcl, hmem⟩ := scanAt hlt hbase hb_rep ev82
             exact ⟨ev82.heap_extends, entered₁,
               hcl.mono (fun cl hcl' => by rw [hc115]; simp [hcl']), fun _ => hmem⟩
-          | other v42 m43 cs54 ev56 hne116 he122 he123 hc124 =>
-            obtain ⟨hh43, hiff⟩ := Claim.g_list_has_spec idxs hi hidxs ev56
+          | other hne116 he122 he123 hc124 =>
             refine ⟨?_, [], scanClosedExt_nil cs128 t Ok, fun hin => absurd (hiff.mpr hin) hne116⟩
-            subst he123; subst hh43; exact Heap.Extends.refl _
+            subst he123; exact Heap.Extends.refl _
         obtain ⟨ext1, entered₁, hcl₁, hhead⟩ := hseg
         obtain rfl := Decl.evalBinOp_add_one i op194
         have hbound' : (i + 1) + rest.length < 8589934592 := by simp at hbound; omega
@@ -573,7 +572,7 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
         obtain ⟨entered₂, hcl₂, htail⟩ :=
           (ih cs137.length (by omega)).2 (Nat.le_refl _) (hbase.trans ext1) hbound'
             (repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ ext1 hrest_rep)
-            (repList_heapMono₂ _ Claim.repBoundedIdx_heapMono₂ ext1 hidxs) ev139
+            (hidxs_next.mono ext1) ev139
         have hsub1 : ∀ cl ∈ cs128, cl ∈ calls := fun cl hcl => by rw [hc196]; simp [hcl]
         have hsub2 : ∀ cl ∈ cs137, cl ∈ calls := fun cl hcl => by rw [hc196]; simp [hcl]
         refine ⟨entered₁ ++ entered₂, (hcl₁.mono hsub1).append (hcl₂.mono hsub2),
@@ -621,7 +620,7 @@ theorem op_order_scan_except_ext_spec {x_tbl x_lim x_needs : SourceValue F} {h�
       {h h' : Heap F} {calls : List (Call F)},
       Heap.Extends h₀ h → i + refs.length < 8589934592 →
       RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h refs x_refs →
-      RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h idxs x_used →
+      Claim.RepSortedIdxFrom h idxs i x_used →
       S0.addr h x_a a →
       ObsFn Obs.W "KernelRoles::op_order_scan_except"
         [x_tbl, x_lim, x_needs, x_refs, x_used, .field (i : F), x_a] h r h' calls →
@@ -632,26 +631,26 @@ theorem op_order_scan_except_ext_spec {x_tbl x_lim x_needs : SourceValue F} {h�
     cases Obs.«KernelRoles::op_order_scan_except».obs ev with
     | Nil _ _ _ _ =>
       exact ⟨[], scanClosedExt_nil _ t Ok, fun _ hj => absurd hj (Nat.not_lt_zero _)⟩
-    | Cons _ _ _ _ _ _ _ ld12 _ _ _ _ =>
+    | Cons _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ =>
       obtain ⟨_, _, hbad, -⟩ := Lib.rep_cons_of_load hrefs ld12
       cases hbad
   | b :: rest, i, x_refs, x_used, x_a, r, h, h', calls, hbase, hbound, hrefs, hidxs, ha, ev => by
     cases Obs.«KernelRoles::op_order_scan_except».obs ev with
     | Nil ld12 _ _ _ => cases Lib.rep_nil_of_load hrefs ld12
-    | Cons x_b x_rest v163 m164 cs166 cs175 v183 ld12 sg171 op233 ev177 hc242 =>
+    | Cons x_b x_rest m_pop cs_pop x_hit x_next_used v163 m164 cs166 cs175 v183
+        ld12 ev_pop sg171 op233 ev177 hc242 =>
       obtain ⟨b', rest', heq, hb_rep, hrest_rep⟩ := Lib.rep_cons_of_load hrefs ld12
       injection heq with hb hrs
       subst hb hrs
       have hi : i < 72057594037927936 := by simp at hbound; omega
+      obtain ⟨rfl, hiff, hidxs_next⟩ := Claim.sorted_pop_spec idxs hi hidxs ev_pop
       obtain ⟨b₀, hb₀, hbix⟩ := id hb_rep
       obtain ⟨a₀, ha₀, haix⟩ := id ha
       have hseg : Heap.Extends h m164 ∧ ∃ entered₁ : List _root_.Address,
           ScanClosedExt cs166 t Ok entered₁ ∧
             (i ∈ idxs → b ≠ a → Ok b ∨ (b ∈ entered₁ ∧ NotOp t b)) := by
         cases sg171 with
-        | n1 m43 x51 y52 m53 cs62 y82 cs92 cs118 ev64 ev94 _ _ ev120 hc153 =>
-          obtain ⟨hh53, _⟩ := Claim.g_list_has_spec idxs hi hidxs ev64
-          have hh53' : h = m53 := hh53.symm; subst hh53'
+        | n1 m43 y52 y82 cs92 cs118 ev94 _ _ ev120 hc153 =>
           obtain ⟨_, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
           have hh43' : h = m43 := hh43.symm; subst hh43'
           rcases seam b x_b v163 h m164 cs118 hbase hb_rep ev120 with
@@ -663,9 +662,7 @@ theorem op_order_scan_except_ext_spec {x_tbl x_lim x_needs : SourceValue F} {h�
               fun cl hm => by rw [hc153]; simp [hsub cl hm]
             exact ⟨ev120.heap_extends, entered₁, hcl.mono hsub',
               fun _ _ => Or.inr ⟨hmem, hno⟩⟩
-        | other v42 m43 x51 y52 m53 cs62 y82 cs92 ev64 ev94 op88 op58 hne154 _ he161 _ =>
-          obtain ⟨hh53, hiff⟩ := Claim.g_list_has_spec idxs hi hidxs ev64
-          have hh53' : h = m53 := hh53.symm; subst hh53'
+        | other v42 m43 y52 y82 cs92 ev94 op88 op58 hne154 _ he161 _ =>
           obtain ⟨hy, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
           have hh43' : h = m43 := hh43.symm; subst hh43'
           refine ⟨by rw [he161], [], scanClosedExt_nil cs166 t Ok, fun hin hne => ?_⟩
@@ -678,7 +675,7 @@ theorem op_order_scan_except_ext_spec {x_tbl x_lim x_needs : SourceValue F} {h�
       obtain ⟨entered₂, hcl₂, htail⟩ :=
         op_order_scan_except_ext_spec seam rest (hbase.trans ext1) hbound'
           (repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ ext1 hrest_rep)
-          (repList_heapMono₂ _ Claim.repBoundedIdx_heapMono₂ ext1 hidxs)
+          (hidxs_next.mono ext1)
           (S0.addr_mono ext1 ha) ev177
       have hsub1 : ∀ cl ∈ cs166, cl ∈ calls := fun cl hcl => by rw [hc242]; simp [hcl]
       have hsub2 : ∀ cl ∈ cs175, cl ∈ calls := fun cl hcl => by rw [hc242]; simp [hcl]
@@ -1084,8 +1081,8 @@ private theorem validate_op_equations_scan {t : Ix.Kernel.RoleTable} {bAddr : _r
               simp only [List.cons.injEq] at hargs_c
               rw [← hargs_c.2.2.1] at hr_list
               exact repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ extRawToNeeds hr_list
-            have hidxs_needs := repList_heapMono₂ _ Claim.repBoundedIdx_heapMono₂
-              (guardRun.heap_extends.trans (walkRun.heap_extends.trans extNeeds)) hidxs
+            have hidxs_needs := hidxs.mono
+              (guardRun.heap_extends.trans (walkRun.heap_extends.trans extNeeds))
             have hbound : 0 + c.refs.toList.length < 8589934592 := by
               rw [Nat.zero_add, Array.length_toList]
               exact refs_size_lt_bound_ext hsz hdeExact

@@ -149,11 +149,6 @@ abbrev «Lists::snoc<&KernelTypes::KLevelNode>» : String := "${\"name\":\"Lists
 
 theorem «Lists::snoc<&KernelTypes::KLevelNode>».symbol : (Instance.mk "Lists::snoc" [(.ptr (.named "KernelTypes::KLevelNode" []))]).symbol = «Lists::snoc<&KernelTypes::KLevelNode>» := by decide +kernel
 
-/-- The instance `Lists::concat<Field>`. -/
-abbrev «Lists::concat<Field>» : String := "${\"name\":\"Lists::concat\",\"types\":[\"field\"]}"
-
-theorem «Lists::concat<Field>».symbol : (Instance.mk "Lists::concat" [.field]).symbol = «Lists::concat<Field>» := by decide +kernel
-
 /-- The instance `Lists::Node<Ixon::RecursorRule>`. -/
 abbrev «Lists::Node<Ixon::RecursorRule>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"named\":{\"args\":[],\"name\":\"Ixon::RecursorRule\"}}]}"
 
@@ -1030,8 +1025,6 @@ theorem n9644275015669645019 : constructorName [] (.named "Lists::Node" [(.ptr (
 theorem n17264845653887200752 : instanceName [] "Lists::snoc" (some [(.ptr (.named "KernelTypes::KLevelNode" []))]) = Names.«Lists::snoc<&KernelTypes::KLevelNode>» := by decide +kernel
 
 theorem n11871363439673646749 : constructorName [] (.named "Ixon::Expr" []) = "Ixon::Expr" := by decide +kernel
-
-theorem n3632407994155229761 : instanceName [] "Lists::concat" (some [.field]) = Names.«Lists::concat<Field>» := by decide +kernel
 
 theorem n2057903310009274417 : constructorName [] (.named "Lists::Node" [(.named "Ixon::RecursorRule" [])]) = Names.«Lists::Node<Ixon::RecursorRule>» := by decide +kernel
 

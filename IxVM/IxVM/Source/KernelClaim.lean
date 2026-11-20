@@ -72,13 +72,15 @@ def const_idxs_expr := aiur_fn⟦
         Ixon::Expr::Ref(i, _) => {
           (&(Lists::Node::Cons(UInt64::to_field(i), (&(Lists::Node::Nil))))) } ,
         Ixon::Expr::Prj(i, _, inner) => {
-          (&(Lists::Node::Cons(UInt64::to_field(i), const_idxs_expr(inner)))) } ,
-        Ixon::Expr::App(f, a) => {  Lists::concat(const_idxs_expr(f), const_idxs_expr(a)) } ,
-        Ixon::Expr::Lam(t, b) => {  Lists::concat(const_idxs_expr(t), const_idxs_expr(b)) } ,
-        Ixon::Expr::All(t, b) => {  Lists::concat(const_idxs_expr(t), const_idxs_expr(b)) } ,
+          sorted_merge_uniq(
+            (&(Lists::Node::Cons(UInt64::to_field(i), (&(Lists::Node::Nil))))),
+            const_idxs_expr(inner)) } ,
+        Ixon::Expr::App(f, a) => {  sorted_merge_uniq(const_idxs_expr(f), const_idxs_expr(a)) } ,
+        Ixon::Expr::Lam(t, b) => {  sorted_merge_uniq(const_idxs_expr(t), const_idxs_expr(b)) } ,
+        Ixon::Expr::All(t, b) => {  sorted_merge_uniq(const_idxs_expr(t), const_idxs_expr(b)) } ,
         Ixon::Expr::Let(_, t, v, b) => {
-          Lists::concat(const_idxs_expr(t),
-            Lists::concat(const_idxs_expr(v), const_idxs_expr(b))) } ,
+          sorted_merge_uniq(const_idxs_expr(t),
+            sorted_merge_uniq(const_idxs_expr(v), const_idxs_expr(b))) } ,
 
         _ => {  (&(Lists::Node::Nil)) } ,
       }
@@ -90,7 +92,7 @@ def const_idxs_exprs := aiur_fn⟦
       match (*(es)) {
         Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
         Lists::Node::Cons(e, rest) => {
-          Lists::concat(const_idxs_expr(e), const_idxs_exprs(rest)) } ,
+          sorted_merge_uniq(const_idxs_expr(e), const_idxs_exprs(rest)) } ,
       }
     }
 ⟧
@@ -102,7 +104,7 @@ def const_idxs_rules := aiur_fn⟦
         Lists::Node::Cons(r, rest) => {
           match r {
             Ixon::RecursorRule::Mk(_, rhs) => {
-              Lists::concat(const_idxs_expr(rhs), const_idxs_rules(rest)) } ,
+              sorted_merge_uniq(const_idxs_expr(rhs), const_idxs_rules(rest)) } ,
           } } ,
       }
     }
@@ -115,7 +117,7 @@ def const_idxs_ctors := aiur_fn⟦
         Lists::Node::Cons(c, rest) => {
           match c {
             Ixon::Constructor::Mk(_, _, _, _, _, _, typ) => {
-              Lists::concat(const_idxs_expr(typ), const_idxs_ctors(rest)) } ,
+              sorted_merge_uniq(const_idxs_expr(typ), const_idxs_ctors(rest)) } ,
           } } ,
       }
     }
@@ -130,22 +132,22 @@ def const_idxs_muts := aiur_fn⟦
             Ixon::MutConst::Defn(d) => {
               match d {
                 Ixon::Definition::Mk(_, _, _, _, typ, value) => {
-                  Lists::concat(
-                    Lists::concat(const_idxs_expr(typ), const_idxs_expr(value)),
+                  sorted_merge_uniq(
+                    sorted_merge_uniq(const_idxs_expr(typ), const_idxs_expr(value)),
                     const_idxs_muts(rest)) } ,
               } } ,
             Ixon::MutConst::Indc(i) => {
               match i {
                 Ixon::Inductive::Mk(_, _, _, _, typ, ctors) => {
-                  Lists::concat(
-                    Lists::concat(const_idxs_expr(typ), const_idxs_ctors(ctors)),
+                  sorted_merge_uniq(
+                    sorted_merge_uniq(const_idxs_expr(typ), const_idxs_ctors(ctors)),
                     const_idxs_muts(rest)) } ,
               } } ,
             Ixon::MutConst::Recr(r) => {
               match r {
                 Ixon::Recursor::Mk(_, _, _, _, _, _, _, typ, rules) => {
-                  Lists::concat(
-                    Lists::concat(const_idxs_expr(typ), const_idxs_rules(rules)),
+                  sorted_merge_uniq(
+                    sorted_merge_uniq(const_idxs_expr(typ), const_idxs_rules(rules)),
                     const_idxs_muts(rest)) } ,
               } } ,
           } } ,
@@ -162,27 +164,27 @@ def const_idxs_of := aiur_fn⟦
             Ixon::ConstantInfo::Defn(d) => {
               match d {
                 Ixon::Definition::Mk(_, _, _, _, typ, value) => {
-                  Lists::concat(shared,
-                    Lists::concat(const_idxs_expr(typ), const_idxs_expr(value))) } ,
+                  sorted_merge_uniq(shared,
+                    sorted_merge_uniq(const_idxs_expr(typ), const_idxs_expr(value))) } ,
               } } ,
             Ixon::ConstantInfo::Recr(r) => {
               match r {
                 Ixon::Recursor::Mk(_, _, _, _, _, _, _, typ, rules) => {
-                  Lists::concat(shared,
-                    Lists::concat(const_idxs_expr(typ), const_idxs_rules(rules))) } ,
+                  sorted_merge_uniq(shared,
+                    sorted_merge_uniq(const_idxs_expr(typ), const_idxs_rules(rules))) } ,
               } } ,
             Ixon::ConstantInfo::Axio(a) => {
               match a {
                 Ixon::Axiom::Mk(_, _, typ) => {
-                  Lists::concat(shared, const_idxs_expr(typ)) } ,
+                  sorted_merge_uniq(shared, const_idxs_expr(typ)) } ,
               } } ,
             Ixon::ConstantInfo::Quot(q) => {
               match q {
                 Ixon::Quotient::Mk(_, _, typ) => {
-                  Lists::concat(shared, const_idxs_expr(typ)) } ,
+                  sorted_merge_uniq(shared, const_idxs_expr(typ)) } ,
               } } ,
             Ixon::ConstantInfo::Muts(members) => {
-              Lists::concat(shared, const_idxs_muts(members)) } ,
+              sorted_merge_uniq(shared, const_idxs_muts(members)) } ,
 
             _ => {  shared } ,
           } } ,
@@ -198,6 +200,40 @@ def g_list_has := aiur_fn⟦
           match y - x {
             0 => {  1 } ,
             _ => {  g_list_has(rest, x) } ,
+          } } ,
+      }
+    }
+⟧
+
+def sorted_merge_uniq := aiur_fn⟦
+  fn sorted_merge_uniq(xs: Lists::List<Field>, ys: Lists::List<Field>) -> Lists::List<Field> {
+      match (*(xs)) {
+        Lists::Node::Nil => {  ys } ,
+        Lists::Node::Cons(x, xrest) => {
+          match (*(ys)) {
+            Lists::Node::Nil => {  xs } ,
+            Lists::Node::Cons(y, yrest) => {
+              match x - y {
+                0 => {  (&(Lists::Node::Cons(x, sorted_merge_uniq(xrest, yrest)))) } ,
+                _ => {
+                  match UInt32::less_than_fields(x, y) {
+                    1 => {  (&(Lists::Node::Cons(x, sorted_merge_uniq(xrest, ys)))) } ,
+                    _ => {  (&(Lists::Node::Cons(y, sorted_merge_uniq(xs, yrest)))) } ,
+                  } } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+def sorted_pop := aiur_fn⟦
+  fn sorted_pop(xs: Lists::List<Field>, i: Field) -> (Field, Lists::List<Field>) {
+      match (*(xs)) {
+        Lists::Node::Nil => {  (0, xs) } ,
+        Lists::Node::Cons(y, rest) => {
+          match y - i {
+            0 => {  (1, rest) } ,
+            _ => {  (0, xs) } ,
           } } ,
       }
     }
@@ -268,7 +304,8 @@ def walk_refs_transitive := aiur_fn⟦
       match (*(refs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(a, rest) => {
-          match g_list_has(consts, i) {
+          let (hit, next_consts) = sorted_pop(consts, i);
+          match hit {
             1 => {
               KernelRoles::assert_ref_allowed(rc, a);
               match KernelRoles::walk_covered(rc, a) {
@@ -279,7 +316,7 @@ def walk_refs_transitive := aiur_fn⟦
               } } ,
             _ => {  () } ,
           };
-          walk_refs_transitive(rc, rest, consts, i + 1) } ,
+          walk_refs_transitive(rc, rest, next_consts, i + 1) } ,
       }
     }
 ⟧
@@ -440,7 +477,8 @@ def env_walk_refs := aiur_fn⟦
       match (*(refs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(a, rest) => {
-          match g_list_has(consts, i) {
+          let (hit, next_consts) = sorted_pop(consts, i);
+          match hit {
             1 => {
               KernelRoles::assert_ref_allowed(rc, a);
               match KernelRoles::walk_covered(rc, a) {
@@ -455,7 +493,7 @@ def env_walk_refs := aiur_fn⟦
               } } ,
             _ => {  () } ,
           };
-          env_walk_refs(rc, rest, consts, i + 1, owned, asm, strict) } ,
+          env_walk_refs(rc, rest, next_consts, i + 1, owned, asm, strict) } ,
       }
     }
 ⟧
@@ -596,7 +634,8 @@ def assert_safe_used_refs := aiur_fn⟦
       match (*(refs)) {
         Lists::Node::Nil => { () } ,
         Lists::Node::Cons(a, rest) => {
-          match g_list_has(used, i) {
+          let (hit, next_used) = sorted_pop(used, i);
+          match hit {
             1 => {
               match addr_set_member(a, excluded) {
                 1 => { () } ,
@@ -616,7 +655,7 @@ def assert_safe_used_refs := aiur_fn⟦
               } } ,
             _ => { () } ,
           };
-          assert_safe_used_refs(rc, rest, used, i + 1, excluded) } ,
+          assert_safe_used_refs(rc, rest, next_used, i + 1, excluded) } ,
       }
     }
 ⟧
@@ -680,14 +719,15 @@ def quot_refs_ok := aiur_fn⟦
       match (*(refs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(r, rest) => {
-          match g_list_has(used, i) {
+          let (hit, next_used) = sorted_pop(used, i);
+          match hit {
             1 => {
               assert_eq!(KernelRoles::addr_walked_role(rc, r) + KernelRoles::addr_quot_bound(rc, r), 1,
                 "a quotient-bound record uses a reference neither covered nor bound to a quotient role");
               () } ,
             _ => {  () } ,
           };
-          quot_refs_ok(rc, rest, used, i + 1) } ,
+          quot_refs_ok(rc, rest, next_used, i + 1) } ,
       }
     }
 ⟧
@@ -885,7 +925,8 @@ def env_walk_refs_all := aiur_fn⟦
       match (*(refs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(a, rest) => {
-          match g_list_has(consts, i) {
+          let (hit, next_consts) = sorted_pop(consts, i);
+          match hit {
             1 => {
               KernelRoles::assert_ref_allowed(rc, a);
 
@@ -902,7 +943,7 @@ def env_walk_refs_all := aiur_fn⟦
               } } ,
             _ => {  () } ,
           };
-          env_walk_refs_all(rc, rest, consts, i + 1) } ,
+          env_walk_refs_all(rc, rest, next_consts, i + 1) } ,
       }
     }
 ⟧

@@ -374,7 +374,7 @@ theorem walk_path_spec {calls : List (Call F)} {E₀ : Ixon.Env}
           rw [hstSub] at evHas evLk
           obtain ⟨extIdxs, hidxsRep⟩ := Claim.const_idxs_of_spec hrepC evIdxs
           have hst1Lt : st - 1 < 72057594037927936 := by omega
-          obtain ⟨hmHas, hiff⟩ := Claim.g_list_has_spec (Core.S0.usedRefIdxs c_cur) hst1Lt
+          obtain ⟨hmHas, hiff⟩ := Claim.g_list_has_sorted_spec (Core.S0.usedRefIdxs c_cur) hst1Lt
             hidxsRep evHas
           have husedS0 : st - 1 ∈ Core.S0.usedRefIdxs c_cur := hiff.mp h1
           have hused : st - 1 ∈ usedRefIdxs c_cur := by
@@ -1248,7 +1248,7 @@ theorem used_ref_has_spec {E₀ : Ixon.Env} {ib r : _root_.Address} {c_ib : Ixon
       {h h' : Heap F} {cs : List (Call F)},
       c_ib.refs.toList.drop i = xs →
       RepList Core.addrListEnum Claim.RepAddrElem h xs x_irefs →
-      RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h (Core.S0.usedRefIdxs c_ib) x_iused →
+      Claim.RepSortedIdxFrom h (Core.S0.usedRefIdxs c_ib) i x_iused →
       Core.S0.addr h x_r r →
       ObsFn Obs.W "KernelModeled::used_ref_has" [x_irefs, x_iused, .field (i : F), x_r]
         h (.field 1) h' cs →
@@ -1269,19 +1269,17 @@ theorem used_ref_has_spec {E₀ : Ixon.Env} {ib r : _root_.Address} {c_ib : Ixon
     have hiBound : i < 72057594037927936 := by omega
     match Obs.«KernelModeled::used_ref_has».obs ev with
     | .Nil (ld12 := ld) .. => exact absurd (Lib.rep_nil_of_load hrefs ld) (by simp)
-    | .Cons_n1 (ld12 := ld) (sg113 := sg) .. =>
+    | .Cons_n1 (ld12 := ld) (ev_wrqjfrsf := evPop) (sg113 := sg) .. =>
       obtain ⟨q', rest', he, ⟨bq, hbq, hqEq⟩, -⟩ := Lib.rep_cons_of_load hrefs ld
       injection he with hq' _
       subst hq'
+      obtain ⟨rfl, hiff, -⟩ := Claim.sorted_pop_spec (Core.S0.usedRefIdxs c_ib) hiBound hused evPop
       match sg with
-      | .n1 (ev54 := evHas) (ev80 := evEq) .. =>
-        obtain ⟨hmHas, hiff⟩ :=
-          Claim.g_list_has_spec (Core.S0.usedRefIdxs c_ib) hiBound hused evHas
+      | .n1 (hv_rttbmops := hv1) (ev80 := evEq) .. =>
         have hmemUsed : i ∈ usedRefIdxs c_ib := by
-          rw [← Assembly.usedRefIdxs_eq]; exact hiff.mp rfl
+          rw [← Assembly.usedRefIdxs_eq]; exact hiff.mp hv1
         obtain ⟨br, hbr, hrEq⟩ := hr
-        obtain ⟨heqV, -⟩ := Lib.address_eq_spec evEq (by rw [hmHas]; exact hbq)
-          (by rw [hmHas]; exact hbr)
+        obtain ⟨heqV, -⟩ := Lib.address_eq_spec evEq hbq hbr
         have eb : bq = br := by
           by_cases hne : bq = br
           · exact hne
@@ -1294,14 +1292,15 @@ theorem used_ref_has_spec {E₀ : Ixon.Env} {ib r : _root_.Address} {c_ib : Ixon
           rfl
         exact ⟨c_ib, i, hcib, hmemUsed, hget⟩
       | .other (he102 := h0) .. => exact absurd (Value.field.inj h0) one_ne_zero
-    | .Cons_other (m106 := m106) (ld12 := ld) (sg113 := sg) (op172 := opAdd) (ev140 := evRec) .. =>
+    | .Cons_other (m106 := m106) (ld12 := ld) (ev_wrqjfrsf := evPop) (sg113 := sg) (op172 := opAdd) (ev140 := evRec) .. =>
       obtain ⟨q', rest', he, -, hrest⟩ := Lib.rep_cons_of_load hrefs ld
       injection he with _ hrest'
       subst hrest'
+      obtain ⟨rfl, -, husedNext⟩ := Claim.sorted_pop_spec (Core.S0.usedRefIdxs c_ib) hiBound hused evPop
       have extSg : Heap.Extends h m106 := by
         match sg with
-        | .n1 (ev54 := e1) (ev80 := e2) .. => exact e1.heap_extends.trans e2.heap_extends
-        | .other (ev54 := e1) (he103 := hh) .. => rw [hh]; exact e1.heap_extends
+        | .n1 (ev80 := e2) .. => exact e2.heap_extends
+        | .other (he103 := hh) .. => rw [hh]
       simp only [evalBinOp, Except.ok.injEq] at opAdd
       subst opAdd
       have hcast : ((i : F) + 1) = ((i + 1 : Nat) : F) := by push_cast; rfl
@@ -1312,7 +1311,7 @@ theorem used_ref_has_spec {E₀ : Ixon.Env} {ib r : _root_.Address} {c_ib : Ixon
         rw [← h1, hdrop]; rfl
       exact used_ref_has_spec hcib hsmall rest (i + 1) hdrop1
         (RepLinkedList.mono Claim.repAddrElem_heapMono₂ extSg hrest)
-        (RepLinkedList.mono (fun _ _ _ _ _ r => r) extSg hused)
+        (husedNext.mono extSg)
         (Core.S0.addr_mono extSg hr) evRec
 
 /-- **`KernelModeled::is_projection_of`**: returning `1` witnesses that `r` is a projection of
@@ -1387,7 +1386,7 @@ theorem ref_projects_from_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       {h h' : Heap F} {cs : List (Call F)},
       c_ib.refs.toList.drop i = xs →
       RepList Core.addrListEnum Claim.RepAddrElem h xs x_irefs →
-      RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h (Core.S0.usedRefIdxs c_ib) x_iused →
+      Claim.RepSortedIdxFrom h (Core.S0.usedRefIdxs c_ib) i x_iused →
       Core.S0.addr h x_blk blk →
       ObsFn Obs.W "KernelModeled::ref_projects_from"
         [x_rc, x_r, x_irefs, x_iused, .field (i : F), x_blk] h (.field 1) h' cs →
@@ -1410,40 +1409,39 @@ theorem ref_projects_from_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     have hiBound : i < 72057594037927936 := by omega
     match Obs.«KernelModeled::ref_projects_from».obs ev with
     | .Nil (ld12 := ld) .. => exact absurd (Lib.rep_nil_of_load hrefs ld) (by simp)
-    | .Cons_n1 (ld12 := ld) (sg113 := sg) (hc130 := hcs) .. =>
+    | .Cons_n1 (ld12 := ld) (ev_wrqjfrsf := evPop) (sg113 := sg) (hc130 := hcs) .. =>
       obtain ⟨q', rest', he, hqAddr, -⟩ := Lib.rep_cons_of_load hrefs ld
       injection he with hq' _
       subst hq'
+      obtain ⟨rfl, hiff, -⟩ := Claim.sorted_pop_spec (Core.S0.usedRefIdxs c_ib) hiBound hused evPop
       match sg with
-      | .n1_n1 (cs_mxfetwtb := csPr) (ev54 := evHas) (ev_crsszbsn := evPr)
+      | .n1_n1 (cs_mxfetwtb := csPr) (hv_rttbmops := hv1) (ev_crsszbsn := evPr)
           (hc_rfthzkdb := hcsSg) .. =>
-        obtain ⟨hmHas, hiff⟩ :=
-          Claim.g_list_has_spec (Core.S0.usedRefIdxs c_ib) hiBound hused evHas
         have hmemUsed : i ∈ usedRefIdxs c_ib := by
-          rw [← Assembly.usedRefIdxs_eq]; exact hiff.mp rfl
+          rw [← Assembly.usedRefIdxs_eq]; exact hiff.mp hv1
         have hget : c_ib.refs[i]? = some q := by
           rw [← Array.getElem?_toList, ← List.head?_drop, hdrop]; rfl
         have hu : UsedRef E₀ ib q := ⟨c_ib, i, hcib, hmemUsed, hget⟩
         have hsubPr : ∀ cl ∈ csPr, cl ∈ calls := fun cl hcl =>
           hsub cl (by rw [hcs, hcsSg]; simp [hcl])
         obtain ⟨cq, _, hcq, hpr, hownEq, -, -, -⟩ :=
-          is_projection_of_spec hS hH (by rw [hmHas]; exact hqAddr)
-            (by rw [hmHas]; exact hblk) evPr hsubPr
+          is_projection_of_spec hS hH hqAddr hblk evPr hsubPr
         exact ⟨q, Or.inl hu, PathReach.single (Or.inr ⟨cq, hcq, hpr, hownEq.symm⟩)⟩
       | .n1_other (he_wiyazqbs := h0) .. => exact absurd (Value.field.inj h0) one_ne_zero
       | .other (he102 := h0) .. => exact absurd (Value.field.inj h0) one_ne_zero
-    | .Cons_other (m106 := m106) (ld12 := ld) (cs138 := csRec) (sg113 := sg) (op_ifhibjja := opAdd)
-        (ev140 := evRec) (hc181 := hcs) .. =>
+    | .Cons_other (m106 := m106) (ld12 := ld) (cs138 := csRec) (ev_wrqjfrsf := evPop)
+        (sg113 := sg) (op_ifhibjja := opAdd) (ev140 := evRec) (hc181 := hcs) .. =>
       obtain ⟨q', rest', he, -, hrest⟩ := Lib.rep_cons_of_load hrefs ld
       injection he with _ hrest'
       subst hrest'
+      obtain ⟨rfl, -, husedNext⟩ := Claim.sorted_pop_spec (Core.S0.usedRefIdxs c_ib) hiBound hused evPop
       have extSg : Heap.Extends h m106 := by
         match sg with
-        | .n1_n1 (ev54 := e1) (ev_crsszbsn := e2) (ev_etesurje := e3) (ev_syhqofqg := e4) .. =>
-          exact e1.heap_extends.trans (e2.heap_extends.trans (e3.heap_extends.trans e4.heap_extends))
-        | .n1_other (ev54 := e1) (ev_crsszbsn := e2) (he_rviofgqu := hh) .. =>
-          rw [hh]; exact e1.heap_extends.trans e2.heap_extends
-        | .other (ev54 := e1) (he103 := hh) .. => rw [hh]; exact e1.heap_extends
+        | .n1_n1 (ev_crsszbsn := e2) (ev_etesurje := e3) (ev_syhqofqg := e4) .. =>
+          exact e2.heap_extends.trans (e3.heap_extends.trans e4.heap_extends)
+        | .n1_other (ev_crsszbsn := e2) (he_rviofgqu := hh) .. =>
+          rw [hh]; exact e2.heap_extends
+        | .other (he103 := hh) .. => rw [hh]
       simp only [evalBinOp, Except.ok.injEq] at opAdd
       subst opAdd
       have hcast : ((i : F) + 1) = ((i + 1 : Nat) : F) := by push_cast; rfl
@@ -1455,7 +1453,7 @@ theorem ref_projects_from_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       have hsubRec : ∀ cl ∈ csRec, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       exact ref_projects_from_spec hS hH hcib hsmall rest (i + 1) hdrop1
         (RepLinkedList.mono Claim.repAddrElem_heapMono₂ extSg hrest)
-        (RepLinkedList.mono (fun _ _ _ _ _ r => r) extSg hused)
+        (husedNext.mono extSg)
         (Core.S0.addr_mono extSg hblk) evRec hsubRec
 
 /-- **`KernelModeled::projection_of_ref_block`**: returning `1` witnesses that `r` is an
@@ -1467,8 +1465,7 @@ theorem projection_of_ref_block_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     {x_rc x_r x_irefs x_iused : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hr : Core.S0.addr h x_r r)
     (hrefs : RepList Core.addrListEnum Claim.RepAddrElem h c_ib.refs.toList x_irefs)
-    (hused : RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h
-      (Core.S0.usedRefIdxs c_ib) x_iused)
+    (hused : Claim.RepSortedIdx h (Core.S0.usedRefIdxs c_ib) x_iused)
     (ev : ObsFn Obs.W "KernelModeled::projection_of_ref_block" [x_rc, x_r, x_irefs, x_iused]
       h (.field 1) h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
@@ -1499,7 +1496,7 @@ theorem projection_of_ref_block_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     have extPb : Heap.Extends h m_pb := extLd.trans (evCi.heap_extends.trans evPb.heap_extends)
     have hpos := ref_projects_from_spec hS hH hcib hsmall c_ib.refs.toList 0 (by simp)
       (RepLinkedList.mono Claim.repAddrElem_heapMono₂ extPb hrefs)
-      (RepLinkedList.mono (fun _ _ _ _ _ r => r) extPb hused)
+      (hused.mono extPb)
       ⟨b_own, hownRep, rfl⟩ (by simpa using evRpf) hsubRpf
     have husedNil := proj_usedRefIdxs_nil hS hbrCi evCi hsubCi hrec hpr
     obtain ⟨cb, hcb, hca⟩ := Claim.proj_member_of_load hS hH hbrCi evCi hsubCi hrec hpr
@@ -1585,10 +1582,10 @@ private theorem family_refs_go_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       {h h' : Heap F} {cs : List (Call F)},
       crb.refs.toList.drop i = xs →
       RepList Core.addrListEnum Claim.RepAddrElem h xs x_refs →
-      RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h (Core.S0.usedRefIdxs crb) x_used →
+      Claim.RepSortedIdxFrom h (Core.S0.usedRefIdxs crb) i x_used →
       Core.S0.addr h x_blk B →
       RepList Core.addrListEnum Claim.RepAddrElem h cB.refs.toList x_irefs →
-      RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h (Core.S0.usedRefIdxs cB) x_iused →
+      Claim.RepSortedIdx h (Core.S0.usedRefIdxs cB) x_iused →
       Claim.RepAddrSet h W x_wset →
       ObsFn Obs.W "KernelModeled::family_refs_go"
         [x_rc, x_refs, x_used, .field (i : F), x_blk, x_irefs, x_iused, x_wset] h r h' cs →
@@ -1618,11 +1615,13 @@ private theorem family_refs_go_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     have hiBound : i < 72057594037927936 := by omega
     match Obs.«KernelModeled::family_refs_go».obs ev with
     | .Nil (ld12 := ld) .. => exact absurd (Lib.rep_nil_of_load hrefs ld) (by simp)
-    | .Cons (x_r := x_r) (m385 := m385) (cs387 := csSg) (cs396 := csRec)
-        (ld12 := ld) (sg392 := sg) (op_gskedpnl := opAdd) (ev398 := evRec) (hc463 := hcs) .. =>
+    | .Cons (x_r := x_r) (m_sszfdvej := m385) (cs_bixmeype := csSg) (cs396 := csRec)
+        (ld12 := ld) (ev_ahqcgauk := evPop) (sg_opqpxwys := sg) (op_gskedpnl := opAdd)
+        (ev398 := evRec) (hc463 := hcs) .. =>
       obtain ⟨a', rest', he, haAddr, hrestRep⟩ := Lib.rep_cons_of_load hrefs ld
       injection he with ha' hrest'
       subst ha' hrest'
+      obtain ⟨rfl, hiff, husedNext⟩ := Claim.sorted_pop_spec (Core.S0.usedRefIdxs crb) hiBound hused evPop
       have hsubSg : ∀ cl ∈ csSg, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have hsubRec : ∀ cl ∈ csRec, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have haSpec : Heap.Extends h m385 ∧
@@ -1672,98 +1671,94 @@ private theorem family_refs_go_spec {calls : List (Call F)} {E₀ : Ixon.Env}
           rw [← hownEq] at hcb hca
           exact ⟨c, cb, hrec, hpr, hownEq.symm, husedNil, hcb, hca⟩
         match sg with
-        | .n1_n1 (ev56 := evHas) (ev99 := evUrh) (he165 := hh) .. =>
-          refine ⟨by rw [hh]; exact evHas.heap_extends.trans evUrh.heap_extends, fun _ => ?_⟩
+        | .n1_n1 (ev_vkqwwiss := evUrh) (he_myomdylc := hh) .. =>
+          refine ⟨by rw [hh]; exact evUrh.heap_extends, fun _ => ?_⟩
           exact Or.inl (used_ref_has_spec hcB hBsmall cB.refs.toList 0 (by simp)
-            (RepLinkedList.mono Claim.repAddrElem_heapMono₂ evHas.heap_extends hirefs)
-            (RepLinkedList.mono (fun _ _ _ _ _ r => r) evHas.heap_extends hiused)
-            (Core.S0.addr_mono evHas.heap_extends haAddr) (by simpa using evUrh))
-        | .n1_other_IPrj_n1 (cs_zdnxjwry := csLd) (cs_qbnwdknq := csCi)
-            (ev56 := e1) (ev99 := e2) (ev_xluoudzn := evLd) (ev_qgckrtca := evCi)
-            (ev_vtyrtvpa := evPb) (ev_tnredfpp := evEq) (he_bzceqiro := hh) (hc_zgauihwq := hcsS) .. =>
-          have ext86 := e1.heap_extends.trans e2.heap_extends
+            hirefs hiused haAddr (by simpa using evUrh))
+        | .n1_other_IPrj_n1 (cs_rbvbkarg := csLd) (cs_refyytin := csCi)
+            (ev_vkqwwiss := e2) (ev_vfuchoir := evLd) (ev_wbqsghrj := evCi)
+            (ev_zdmznzea := evPb) (ev_ayagutrf := evEq) (he_deyryohb := hh) (hc_wjqitgkm := hcsS) .. =>
+          have ext86 := e2.heap_extends
           refine ⟨by rw [hh]; exact ext86.trans (evLd.heap_extends.trans
             (evCi.heap_extends.trans (evPb.heap_extends.trans evEq.heap_extends))), fun _ => ?_⟩
           exact Or.inr (Or.inl (hownMatch ext86 evLd evCi evPb evEq
             (fun cl hcl => hsubSg cl (by rw [hcsS]; simp [hcl]))
             (fun cl hcl => hsubSg cl (by rw [hcsS]; simp [hcl]))))
-        | .n1_other_IPrj_other_n1 (cs_snsikqdv := csPrb)
-            (ev56 := e1) (ev99 := e2) (ev_xluoudzn := e3) (ev_qgckrtca := e4)
-            (ev_vtyrtvpa := e5) (ev_tnredfpp := e6) (ev_yzpcnxhb := evPrb)
-            (he_zrgpsvav := hh) (hc_azxcvjxu := hcsS) .. =>
-          have ext6 := e1.heap_extends.trans (e2.heap_extends.trans (e3.heap_extends.trans
-            (e4.heap_extends.trans (e5.heap_extends.trans e6.heap_extends))))
+        | .n1_other_IPrj_other_n1 (cs_vkgckcez := csPrb)
+            (ev_vkqwwiss := e2) (ev_vfuchoir := e3) (ev_wbqsghrj := e4)
+            (ev_zdmznzea := e5) (ev_ayagutrf := e6) (ev_yqvfzjeh := evPrb)
+            (he_iqdjvtaz := hh) (hc_nruxotph := hcsS) .. =>
+          have ext6 := e2.heap_extends.trans (e3.heap_extends.trans
+            (e4.heap_extends.trans (e5.heap_extends.trans e6.heap_extends)))
           refine ⟨by rw [hh]; exact ext6.trans evPrb.heap_extends, fun _ => ?_⟩
           exact Or.inr (Or.inr (Or.inl (projection_of_ref_block_spec hS hH hcB hBsmall
             (Core.S0.addr_mono ext6 haAddr)
             (RepLinkedList.mono Claim.repAddrElem_heapMono₂ ext6 hirefs)
-            (RepLinkedList.mono (fun _ _ _ _ _ r => r) ext6 hiused)
+            (hiused.mono ext6)
             evPrb (fun cl hcl => hsubSg cl (by rw [hcsS]; simp [hcl])))))
-        | .n1_other_IPrj_other_other (ev56 := e1) (ev99 := e2) (ev_xluoudzn := e3)
-            (ev_qgckrtca := e4) (ev_vtyrtvpa := e5) (ev_tnredfpp := e6) (ev_yzpcnxhb := e7)
-            (ev_vlqtvrdt := evMem) (heq_cgphyymq := h1) (he_qwbsdwlv := hh) .. =>
-          have ext7 := e1.heap_extends.trans (e2.heap_extends.trans (e3.heap_extends.trans
-            (e4.heap_extends.trans (e5.heap_extends.trans (e6.heap_extends.trans e7.heap_extends)))))
+        | .n1_other_IPrj_other_other (ev_vkqwwiss := e2) (ev_vfuchoir := e3)
+            (ev_wbqsghrj := e4) (ev_zdmznzea := e5) (ev_ayagutrf := e6) (ev_yqvfzjeh := e7)
+            (ev_yxqerjnq := evMem) (heq_rnjwwgid := h1) (he_nogqutya := hh) .. =>
+          have ext7 := e2.heap_extends.trans (e3.heap_extends.trans
+            (e4.heap_extends.trans (e5.heap_extends.trans (e6.heap_extends.trans e7.heap_extends))))
           refine ⟨by rw [hh]; exact ext7.trans evMem.heap_extends, fun _ => ?_⟩
           obtain ⟨ba, hba, rfl⟩ := haAddr
           obtain ⟨hmem, -⟩ := Claim.addr_set_member_set_spec
             (Bytes.repAddressRef_heapMono₂ Core.addrTy ext7 hba) (hwset.mono ext7) evMem
           exact Or.inr (Or.inr (Or.inr (hmem h1)))
-        | .n1_other_CPrj_n1 (cs_zdnxjwry := csLd) (cs_lpudusuv := csCi)
-            (ev56 := e1) (ev99 := e2) (ev_xluoudzn := evLd) (ev_adpdzihl := evCi)
-            (ev_jzuzvoks := evPb) (ev_glaclyhi := evEq) (he_nmfyxnwl := hh) (hc_xipxbqsc := hcsS) .. =>
-          have ext86 := e1.heap_extends.trans e2.heap_extends
+        | .n1_other_CPrj_n1 (cs_rbvbkarg := csLd) (cs_kufiixht := csCi)
+            (ev_vkqwwiss := e2) (ev_vfuchoir := evLd) (ev_iugvjvnt := evCi)
+            (ev_rotnsgik := evPb) (ev_tfonyakh := evEq) (he_rbdkohki := hh) (hc_wijfzwct := hcsS) .. =>
+          have ext86 := e2.heap_extends
           refine ⟨by rw [hh]; exact ext86.trans (evLd.heap_extends.trans
             (evCi.heap_extends.trans (evPb.heap_extends.trans evEq.heap_extends))), fun _ => ?_⟩
           exact Or.inr (Or.inl (hownMatch ext86 evLd evCi evPb evEq
             (fun cl hcl => hsubSg cl (by rw [hcsS]; simp [hcl]))
             (fun cl hcl => hsubSg cl (by rw [hcsS]; simp [hcl]))))
-        | .n1_other_CPrj_other_n1 (cs_owbqhnqq := csPrb)
-            (ev56 := e1) (ev99 := e2) (ev_xluoudzn := e3) (ev_adpdzihl := e4)
-            (ev_jzuzvoks := e5) (ev_glaclyhi := e6) (ev_ajdyfujx := evPrb)
-            (he_lgylpqds := hh) (hc_aythwrab := hcsS) .. =>
-          have ext6 := e1.heap_extends.trans (e2.heap_extends.trans (e3.heap_extends.trans
-            (e4.heap_extends.trans (e5.heap_extends.trans e6.heap_extends))))
+        | .n1_other_CPrj_other_n1 (cs_drkuysre := csPrb)
+            (ev_vkqwwiss := e2) (ev_vfuchoir := e3) (ev_iugvjvnt := e4)
+            (ev_rotnsgik := e5) (ev_tfonyakh := e6) (ev_qdevyuoz := evPrb)
+            (he_uokyofhh := hh) (hc_dtaqztjo := hcsS) .. =>
+          have ext6 := e2.heap_extends.trans (e3.heap_extends.trans
+            (e4.heap_extends.trans (e5.heap_extends.trans e6.heap_extends)))
           refine ⟨by rw [hh]; exact ext6.trans evPrb.heap_extends, fun _ => ?_⟩
           exact Or.inr (Or.inr (Or.inl (projection_of_ref_block_spec hS hH hcB hBsmall
             (Core.S0.addr_mono ext6 haAddr)
             (RepLinkedList.mono Claim.repAddrElem_heapMono₂ ext6 hirefs)
-            (RepLinkedList.mono (fun _ _ _ _ _ r => r) ext6 hiused)
+            (hiused.mono ext6)
             evPrb (fun cl hcl => hsubSg cl (by rw [hcsS]; simp [hcl])))))
-        | .n1_other_CPrj_other_other (ev56 := e1) (ev99 := e2) (ev_xluoudzn := e3)
-            (ev_adpdzihl := e4) (ev_jzuzvoks := e5) (ev_glaclyhi := e6) (ev_ajdyfujx := e7)
-            (ev_evifbzkm := evMem) (heq_qygjpayn := h1) (he_vykzghpw := hh) .. =>
-          have ext7 := e1.heap_extends.trans (e2.heap_extends.trans (e3.heap_extends.trans
-            (e4.heap_extends.trans (e5.heap_extends.trans (e6.heap_extends.trans e7.heap_extends)))))
+        | .n1_other_CPrj_other_other (ev_vkqwwiss := e2) (ev_vfuchoir := e3)
+            (ev_iugvjvnt := e4) (ev_rotnsgik := e5) (ev_tfonyakh := e6) (ev_qdevyuoz := e7)
+            (ev_ewlwuehl := evMem) (heq_spkxkpjt := h1) (he_ciwrzgkh := hh) .. =>
+          have ext7 := e2.heap_extends.trans (e3.heap_extends.trans
+            (e4.heap_extends.trans (e5.heap_extends.trans (e6.heap_extends.trans e7.heap_extends))))
           refine ⟨by rw [hh]; exact ext7.trans evMem.heap_extends, fun _ => ?_⟩
           obtain ⟨ba, hba, rfl⟩ := haAddr
           obtain ⟨hmem, -⟩ := Claim.addr_set_member_set_spec
             (Bytes.repAddressRef_heapMono₂ Core.addrTy ext7 hba) (hwset.mono ext7) evMem
           exact Or.inr (Or.inr (Or.inr (hmem h1)))
-        | .n1_other_other_other_n1 (cs_wknojnhr := csPrb)
-            (ev56 := e1) (ev99 := e2) (ev_xluoudzn := e3) (ev_jlgopmei := evPrb)
-            (he_tzsimcbf := hh) (hc_iowtuhxz := hcsS) .. =>
-          have ext3 := e1.heap_extends.trans (e2.heap_extends.trans e3.heap_extends)
+        | .n1_other_other_other_n1 (cs_abbiyrfm := csPrb)
+            (ev_vkqwwiss := e2) (ev_vfuchoir := e3) (ev_klfijths := evPrb)
+            (he_ercyclqc := hh) (hc_evppckgi := hcsS) .. =>
+          have ext3 := e2.heap_extends.trans e3.heap_extends
           refine ⟨by rw [hh]; exact ext3.trans evPrb.heap_extends, fun _ => ?_⟩
           exact Or.inr (Or.inr (Or.inl (projection_of_ref_block_spec hS hH hcB hBsmall
             (Core.S0.addr_mono ext3 haAddr)
             (RepLinkedList.mono Claim.repAddrElem_heapMono₂ ext3 hirefs)
-            (RepLinkedList.mono (fun _ _ _ _ _ r => r) ext3 hiused)
+            (hiused.mono ext3)
             evPrb (fun cl hcl => hsubSg cl (by rw [hcsS]; simp [hcl])))))
-        | .n1_other_other_other_other (ev56 := e1) (ev99 := e2) (ev_xluoudzn := e3)
-            (ev_jlgopmei := e4) (ev_aamioxen := evMem) (heq_siovpfty := h1)
-            (he_mczqspon := hh) .. =>
-          have ext4 := e1.heap_extends.trans (e2.heap_extends.trans
-            (e3.heap_extends.trans e4.heap_extends))
+        | .n1_other_other_other_other (ev_vkqwwiss := e2) (ev_vfuchoir := e3)
+            (ev_klfijths := e4) (ev_beudnwyl := evMem) (heq_mwoshodc := h1)
+            (he_vggktger := hh) .. =>
+          have ext4 := e2.heap_extends.trans (e3.heap_extends.trans e4.heap_extends)
           refine ⟨by rw [hh]; exact ext4.trans evMem.heap_extends, fun _ => ?_⟩
           obtain ⟨ba, hba, rfl⟩ := haAddr
           obtain ⟨hmem, -⟩ := Claim.addr_set_member_set_spec
             (Bytes.repAddressRef_heapMono₂ Core.addrTy ext4 hba) (hwset.mono ext4) evMem
           exact Or.inr (Or.inr (Or.inr (hmem h1)))
-        | .other (ev56 := evHas) (hne375 := hne1) (he382 := hh) .. =>
-          refine ⟨by rw [hh]; exact evHas.heap_extends, fun hi => ?_⟩
-          have h1 := (Claim.g_list_has_spec (Core.S0.usedRefIdxs crb) hiBound hused evHas).2.mpr
-            (by rwa [Assembly.usedRefIdxs_eq])
+        | .other (hne_yeueqpng := hne1) (he_eemargwo := hh) .. =>
+          refine ⟨hh ▸ Heap.Extends.refl _, fun hi => ?_⟩
+          have h1 := hiff.mpr (by rwa [Assembly.usedRefIdxs_eq])
           exact (hne1 h1).elim
       obtain ⟨extSg, haCls⟩ := haSpec
       simp only [evalBinOp, Except.ok.injEq] at opAdd
@@ -1776,10 +1771,10 @@ private theorem family_refs_go_spec {calls : List (Call F)} {E₀ : Ixon.Env}
         rw [← h1, hdrop]; rfl
       have hrecCls := family_refs_go_spec hS hH hcB hBsmall hcrb hrbSmall rest (i + 1) hdrop1
         (RepLinkedList.mono Claim.repAddrElem_heapMono₂ extSg hrestRep)
-        (RepLinkedList.mono (fun _ _ _ _ _ r => r) extSg hused)
+        (husedNext.mono extSg)
         (Core.S0.addr_mono extSg hblk)
         (RepLinkedList.mono Claim.repAddrElem_heapMono₂ extSg hirefs)
-        (RepLinkedList.mono (fun _ _ _ _ _ r => r) extSg hiused)
+        (hiused.mono extSg)
         (hwset.mono extSg) evRec hsubRec
       intro j hij hj ref href
       by_cases hji : j = i
@@ -1848,7 +1843,7 @@ theorem family_refs_ok_spec {calls : List (Call F)} {bAddr : _root_.Address}
     have extGo0 : Heap.Extends h _ := extRb.trans (extB.trans (extI1.trans extI2))
     have hgo := family_refs_go_spec hS hH hcB hBsmall hcrb hrbSmall crb.refs.toList 0 (by simp)
       (RepLinkedList.mono Claim.repAddrElem_heapMono₂ (extI1.trans extI2) hrefsRb)
-      (RepLinkedList.mono (fun _ _ _ _ _ r => r) extI2 hidxsRb)
+      (hidxsRb.mono extI2)
       (Core.S0.addr_mono extGo0 hblk)
       (RepLinkedList.mono Claim.repAddrElem_heapMono₂ (extI1.trans extI2) hrefsB)
       hidxsB (hwset.mono extGo0) (by simpa using evGo) hsubGo
@@ -1875,7 +1870,7 @@ private theorem advice_refs_ok_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       {x_refs x_used x_aset x_wset r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       ca.refs.toList.drop i = xs →
       RepList Core.addrListEnum Claim.RepAddrElem h xs x_refs →
-      RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h (Core.S0.usedRefIdxs ca) x_used →
+      Claim.RepSortedIdxFrom h (Core.S0.usedRefIdxs ca) i x_used →
       Claim.RepAddrSet h S x_aset →
       Claim.RepAddrSet h W x_wset →
       ObsFn Obs.W "KernelModeled::advice_refs_ok"
@@ -1902,11 +1897,13 @@ private theorem advice_refs_ok_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     have hiBound : i < 72057594037927936 := by omega
     match Obs.«KernelModeled::advice_refs_ok».obs ev with
     | .Nil (ld12 := ld) .. => exact absurd (Lib.rep_nil_of_load hrefs ld) (by simp)
-    | .Cons (m291 := m291) (cs293 := csSg) (cs302 := csRec)
-        (ld12 := ld) (sg298 := sg) (op337 := opAdd) (ev304 := evRec) (hc353 := hcs) .. =>
+    | .Cons (m_sszfdvej := m291) (cs_bixmeype := csSg) (cs302 := csRec)
+        (ld12 := ld) (ev_ahqcgauk := evPop) (sg_opqpxwys := sg) (op337 := opAdd)
+        (ev304 := evRec) (hc353 := hcs) .. =>
       obtain ⟨r0', rest', he, hr0Addr, hrestRep⟩ := Lib.rep_cons_of_load hrefs ld
       injection he with hr0' hrest'
       subst hr0' hrest'
+      obtain ⟨rfl, hiff, husedNext⟩ := Claim.sorted_pop_spec (Core.S0.usedRefIdxs ca) hiBound hused evPop
       have hsubSg : ∀ cl ∈ csSg, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have hsubRec : ∀ cl ∈ csRec, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have hr0Spec : Heap.Extends h m291 ∧
@@ -1916,32 +1913,29 @@ private theorem advice_refs_ok_spec {calls : List (Call F)} {E₀ : Ixon.Env}
               Ix.Cert.ownerOf r0 c = blk ∧ usedRefIdxs c = [] ∧
               recordOf E₀ blk = some cb ∧ ConstAddrOf blk cb r0)) := by
         match sg with
-        | .n1_n1 (ev56 := e1) (ev99 := evMem) (he150 := hh) .. =>
-          refine ⟨by rw [hh]; exact e1.heap_extends.trans evMem.heap_extends, fun _ => ?_⟩
+        | .n1_n1 (ev_zkzgjmzs := evMem) (he_myomdylc := hh) .. =>
+          refine ⟨by rw [hh]; exact evMem.heap_extends, fun _ => ?_⟩
           obtain ⟨br, hbr, rfl⟩ := hr0Addr
-          obtain ⟨hm, -⟩ := Claim.addr_set_member_set_spec
-            (Bytes.repAddressRef_heapMono₂ Core.addrTy e1.heap_extends hbr)
-            (haset.mono e1.heap_extends) evMem
+          obtain ⟨hm, -⟩ := Claim.addr_set_member_set_spec hbr haset evMem
           exact Or.inl (hm rfl)
-        | .n1_other_n1 (ev56 := e1) (ev99 := e2) (ev170 := evMem) (he221 := hh) .. =>
-          have ext2 := e1.heap_extends.trans e2.heap_extends
+        | .n1_other_n1 (ev_zkzgjmzs := e2) (ev_fbypocrw := evMem) (he_lfvgoyiy := hh) .. =>
+          have ext2 := e2.heap_extends
           refine ⟨by rw [hh]; exact ext2.trans evMem.heap_extends, fun _ => ?_⟩
           obtain ⟨br, hbr, rfl⟩ := hr0Addr
           obtain ⟨hm, -⟩ := Claim.addr_set_member_set_spec
             (Bytes.repAddressRef_heapMono₂ Core.addrTy ext2 hbr) (hwset.mono ext2) evMem
           exact Or.inr (Or.inl (hm rfl))
-        | .n1_other_other (cs230 := csPa) (ev56 := e1) (ev99 := e2) (ev170 := e3)
-            (ev232 := evPa) (heq275 := h1) (he279 := hh) (hc280 := hcsS) .. =>
-          have ext3 := e1.heap_extends.trans (e2.heap_extends.trans e3.heap_extends)
+        | .n1_other_other (cs_zqivkhau := csPa) (ev_zkzgjmzs := e2) (ev_fbypocrw := e3)
+            (ev_xjpeityb := evPa) (heq_ehxdrpdc := h1) (he_gcsxeqxr := hh) (hc_ykqaogma := hcsS) .. =>
+          have ext3 := e2.heap_extends.trans e3.heap_extends
           refine ⟨by rw [hh]; exact ext3.trans evPa.heap_extends, fun _ => ?_⟩
           rw [h1] at evPa
           exact Or.inr (Or.inr (projection_of_advice_spec hS hH
             (Core.S0.addr_mono ext3 hr0Addr) (haset.mono ext3) evPa
             (fun cl hcl => hsubSg cl (by rw [hcsS]; simp [hcl]))))
-        | .other (ev56 := evHas) (hne281 := hne1) (he288 := hh) .. =>
-          refine ⟨by rw [hh]; exact evHas.heap_extends, fun hi => ?_⟩
-          have h1 := (Claim.g_list_has_spec (Core.S0.usedRefIdxs ca) hiBound hused evHas).2.mpr
-            (by rwa [Assembly.usedRefIdxs_eq])
+        | .other (hne_yeueqpng := hne1) (he_eemargwo := hh) .. =>
+          refine ⟨hh ▸ Heap.Extends.refl _, fun hi => ?_⟩
+          have h1 := hiff.mpr (by rwa [Assembly.usedRefIdxs_eq])
           exact (hne1 h1).elim
       obtain ⟨extSg, hr0Cls⟩ := hr0Spec
       simp only [evalBinOp, Except.ok.injEq] at opAdd
@@ -1954,7 +1948,7 @@ private theorem advice_refs_ok_spec {calls : List (Call F)} {E₀ : Ixon.Env}
         rw [← h1, hdrop]; rfl
       have hrecCls := advice_refs_ok_spec hS hH hca hasmall rest (i + 1) hdrop1
         (RepLinkedList.mono Claim.repAddrElem_heapMono₂ extSg hrestRep)
-        (RepLinkedList.mono (fun _ _ _ _ _ r => r) extSg hused)
+        (husedNext.mono extSg)
         (haset.mono extSg) (hwset.mono extSg) evRec hsubRec
       intro j hij hj ref href
       by_cases hji : j = i
@@ -2293,11 +2287,11 @@ private theorem container_refs_ok_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       {h h' : Heap F} {cs : List (Call F)},
       cown.refs.toList.drop i = xs →
       RepList Core.addrListEnum Claim.RepAddrElem h xs x_refs →
-      RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h (Core.S0.usedRefIdxs cown) x_used →
+      Claim.RepSortedIdxFrom h (Core.S0.usedRefIdxs cown) i x_used →
       Core.S0.addr h x_self self →
       Core.S0.addr h x_ib ib →
       RepList Core.addrListEnum Claim.RepAddrElem h cib.refs.toList x_irefs →
-      RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h (Core.S0.usedRefIdxs cib) x_iused →
+      Claim.RepSortedIdx h (Core.S0.usedRefIdxs cib) x_iused →
       Claim.RepAddrSet h W x_wset →
       ObsFn Obs.W "KernelModeled::container_refs_ok"
         [x_rc, x_refs, x_used, .field (i : F), x_self, x_ib, x_irefs, x_iused, x_wset] h r h' cs →
@@ -2328,11 +2322,13 @@ private theorem container_refs_ok_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     have hiBound : i < 72057594037927936 := by omega
     match Obs.«KernelModeled::container_refs_ok».obs ev with
     | .Nil (ld12 := ld) .. => exact absurd (Lib.rep_nil_of_load hrefs ld) (by simp)
-    | .Cons (x_r := x_r) (m385 := m385) (cs387 := csSg) (cs396 := csRec)
-        (ld12 := ld) (sg392 := sg) (op_gskedpnl := opAdd) (ev398 := evRec) (hc463 := hcs) .. =>
+    | .Cons (x_r := x_r) (m_sszfdvej := m385) (cs_bixmeype := csSg) (cs396 := csRec)
+        (ld12 := ld) (ev_ahqcgauk := evPop) (sg_opqpxwys := sg) (op_gskedpnl := opAdd)
+        (ev398 := evRec) (hc463 := hcs) .. =>
       obtain ⟨r0', rest', he, hr0Addr, hrestRep⟩ := Lib.rep_cons_of_load hrefs ld
       injection he with hr0' hrest'
       subst hr0' hrest'
+      obtain ⟨rfl, hiff, husedNext⟩ := Claim.sorted_pop_spec (Core.S0.usedRefIdxs cown) hiBound hused evPop
       have hsubSg : ∀ cl ∈ csSg, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have hsubRec : ∀ cl ∈ csRec, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have hneSelf : ∀ {m43 m_eq : Heap F} {v_eq : SourceValue F} {cs_eq : List (Call F)},
@@ -2363,45 +2359,44 @@ private theorem container_refs_ok_spec {calls : List (Call F)} {E₀ : Ixon.Env}
               (r0 ∈ W ∧ ∃ cr, recordOf E₀ r0 = some cr ∧
                 (∀ rc, cr.info ≠ .recr rc) ∧ (∀ rp, cr.info ≠ .rPrj rp)))) := by
         match sg with
-        | .n1_n1 (ev56 := e1) (ev_tojkhkzc := evEq) (heq_fltizyxe := h0)
-            (ev99 := evUrh) (he165 := hh) .. =>
-          have ext2 := e1.heap_extends.trans evEq.heap_extends
+        | .n1_n1 (ev_pzasmxtg := evEq) (heq_qhnjullb := h0)
+            (ev_vkqwwiss := evUrh) (he_myomdylc := hh) .. =>
+          have ext2 := evEq.heap_extends
           refine ⟨by rw [hh]; exact ext2.trans evUrh.heap_extends, fun _ =>
-            ⟨hneSelf e1.heap_extends evEq h0, Or.inl (used_ref_has_spec hcib hIbsmall
+            ⟨hneSelf (Heap.Extends.refl _) evEq h0, Or.inl (used_ref_has_spec hcib hIbsmall
               cib.refs.toList 0 (by simp)
               (RepLinkedList.mono Claim.repAddrElem_heapMono₂ ext2 hirefs)
-              (RepLinkedList.mono (fun _ _ _ _ _ r => r) ext2 hiused)
+              (hiused.mono ext2)
               (Core.S0.addr_mono ext2 hr0Addr) (by simpa using evUrh))⟩⟩
-        | .n1_other_n1 (cs183 := csIp) (ev56 := e1) (ev_tojkhkzc := evEq) (heq_fltizyxe := h0)
-            (ev99 := e2) (ev185 := evIp) (he236 := hh) (hc237 := hcsS) .. =>
-          have ext3 := e1.heap_extends.trans (evEq.heap_extends.trans e2.heap_extends)
+        | .n1_other_n1 (cs_pmhvsgke := csIp) (ev_pzasmxtg := evEq) (heq_qhnjullb := h0)
+            (ev_vkqwwiss := e2) (ev_zkbowtxp := evIp) (he_lfvgoyiy := hh) (hc_xzvvkayy := hcsS) .. =>
+          have ext3 := evEq.heap_extends.trans e2.heap_extends
           refine ⟨by rw [hh]; exact ext3.trans evIp.heap_extends, fun _ =>
-            ⟨hneSelf e1.heap_extends evEq h0, Or.inr (Or.inl (is_projection_of_spec hS hH
+            ⟨hneSelf (Heap.Extends.refl _) evEq h0, Or.inr (Or.inl (is_projection_of_spec hS hH
               (Core.S0.addr_mono ext3 hr0Addr) (Core.S0.addr_mono ext3 hib) evIp
               (fun cl hcl => hsubSg cl (by rw [hcsS]; simp [hcl]))))⟩⟩
-        | .n1_other_other_n1 (cs254 := csPrb) (ev56 := e1) (ev_tojkhkzc := evEq)
-            (heq_fltizyxe := h0) (ev99 := e2) (ev185 := e3) (ev256 := evPrb)
-            (he315 := hh) (hc316 := hcsS) .. =>
-          have ext4 := e1.heap_extends.trans (evEq.heap_extends.trans
-            (e2.heap_extends.trans e3.heap_extends))
+        | .n1_other_other_n1 (cs_pztgxaie := csPrb) (ev_pzasmxtg := evEq)
+            (heq_qhnjullb := h0) (ev_vkqwwiss := e2) (ev_zkbowtxp := e3) (ev_pxtgosia := evPrb)
+            (he_kjqonohl := hh) (hc_ukvrfiaa := hcsS) .. =>
+          have ext4 := evEq.heap_extends.trans (e2.heap_extends.trans e3.heap_extends)
           refine ⟨by rw [hh]; exact ext4.trans evPrb.heap_extends, fun _ =>
-            ⟨hneSelf e1.heap_extends evEq h0, Or.inr (Or.inr (Or.inl
+            ⟨hneSelf (Heap.Extends.refl _) evEq h0, Or.inr (Or.inr (Or.inl
               (projection_of_ref_block_spec hS hH hcib hIbsmall
                 (Core.S0.addr_mono ext4 hr0Addr)
                 (RepLinkedList.mono Claim.repAddrElem_heapMono₂ ext4 hirefs)
-                (RepLinkedList.mono (fun _ _ _ _ _ r => r) ext4 hiused)
+                (hiused.mono ext4)
                 evPrb (fun cl hcl => hsubSg cl (by rw [hcsS]; simp [hcl])))))⟩⟩
-        | .n1_other_other_other_n1_Recr (heq_jwmirhum := h01) ..
-        | .n1_other_other_other_n1_RPrj (heq_rbmskoff := h01) ..
-        | .n1_other_other_other_other (heq_siovpfty := h01) .. =>
+        | .n1_other_other_other_n1_Recr (heq_xowlvmqy := h01) ..
+        | .n1_other_other_other_n1_RPrj (heq_xdaprkwm := h01) ..
+        | .n1_other_other_other_other (heq_mwoshodc := h01) .. =>
           exact absurd (Value.field.inj h01) zero_ne_one
-        | .n1_other_other_other_n1_other (cs_nlmkvjrk := csLd)
-            (ev56 := e1) (ev_tojkhkzc := evEq) (heq_fltizyxe := h0)
-            (ev99 := e2) (ev185 := e3) (ev256 := e4) (ev_ntfvqzva := evMem)
-            (ev_eauaaxrq := evLd) (hne_qzgodjon := hneRecr) (hne_vgdvhltn := hneRprj)
-            (he_nqrzigtc := hh) (hc_xkxroafj := hcsS) .. =>
-          have ext5 := e1.heap_extends.trans (evEq.heap_extends.trans
-            (e2.heap_extends.trans (e3.heap_extends.trans e4.heap_extends)))
+        | .n1_other_other_other_n1_other (cs_ebjjqmma := csLd)
+            (ev_pzasmxtg := evEq) (heq_qhnjullb := h0)
+            (ev_vkqwwiss := e2) (ev_zkbowtxp := e3) (ev_pxtgosia := e4) (ev_ljfdsftw := evMem)
+            (ev_ilciblve := evLd) (hne_devshagv := hneRecr) (hne_kcnmdwjh := hneRprj)
+            (he_qcgbyuml := hh) (hc_enpwprcx := hcsS) .. =>
+          have ext5 := evEq.heap_extends.trans
+            (e2.heap_extends.trans (e3.heap_extends.trans e4.heap_extends))
           have ext6 := ext5.trans evMem.heap_extends
           refine ⟨by rw [hh]; exact ext6.trans evLd.heap_extends, fun _ => ?_⟩
           obtain ⟨br, hbr, rfl⟩ := hr0Addr
@@ -2418,7 +2413,7 @@ private theorem container_refs_ok_spec {calls : List (Call F)} {E₀ : Ixon.Env}
           obtain ⟨iv, _, _, _, _, hmk, hinfoR, -⟩ := hrepR
           injection hmk with _ _ haR; simp only [List.cons.injEq] at haR
           obtain ⟨rfl, -⟩ := haR
-          refine ⟨hneSelf e1.heap_extends evEq h0, Or.inr (Or.inr (Or.inr ⟨hm rfl, cr, hcr, ?_, ?_⟩))⟩
+          refine ⟨hneSelf (Heap.Extends.refl _) evEq h0, Or.inr (Or.inr (Or.inr ⟨hm rfl, cr, hcr, ?_, ?_⟩))⟩
           · intro rc hrc
             rw [hrc] at hinfoR
             obtain ⟨rv, hv, -⟩ := hinfoR
@@ -2427,10 +2422,9 @@ private theorem container_refs_ok_spec {calls : List (Call F)} {E₀ : Ixon.Env}
             rw [hrp] at hinfoR
             obtain ⟨rv, hv, -⟩ := hinfoR
             exact hneRprj [rv] rfl hv
-        | .other (ev56 := evHas) (hne375 := hne1) (he382 := hh) .. =>
-          refine ⟨by rw [hh]; exact evHas.heap_extends, fun hi => ?_⟩
-          have h1 := (Claim.g_list_has_spec (Core.S0.usedRefIdxs cown) hiBound hused evHas).2.mpr
-            (by rwa [Assembly.usedRefIdxs_eq])
+        | .other (hne_yeueqpng := hne1) (he_eemargwo := hh) .. =>
+          refine ⟨hh ▸ Heap.Extends.refl _, fun hi => ?_⟩
+          have h1 := hiff.mpr (by rwa [Assembly.usedRefIdxs_eq])
           exact (hne1 h1).elim
       obtain ⟨extSg, hr0Cls⟩ := hr0Spec
       simp only [evalBinOp, Except.ok.injEq] at opAdd
@@ -2443,10 +2437,10 @@ private theorem container_refs_ok_spec {calls : List (Call F)} {E₀ : Ixon.Env}
         rw [← h1, hdrop]; rfl
       have hrecCls := container_refs_ok_spec hS hH hcib hIbsmall hownSmall rest (i + 1) hdrop1
         (RepLinkedList.mono Claim.repAddrElem_heapMono₂ extSg hrestRep)
-        (RepLinkedList.mono (fun _ _ _ _ _ r => r) extSg hused)
+        (husedNext.mono extSg)
         (Core.S0.addr_mono extSg hself) (Core.S0.addr_mono extSg hib)
         (RepLinkedList.mono Claim.repAddrElem_heapMono₂ extSg hirefs)
-        (RepLinkedList.mono (fun _ _ _ _ _ r => r) extSg hiused)
+        (hiused.mono extSg)
         (hwset.mono extSg) evRec hsubRec
       intro j hij hj ref href
       by_cases hji : j = i
@@ -2551,7 +2545,7 @@ private theorem container_refs_check_spec {calls : List (Call F)} {bAddr : _root
     have hok := container_refs_ok_spec hC.runStore hC.hashedStored hcib hIbsmall hownSmall
       cown.refs.toList 0 (by simp)
       (RepLinkedList.mono Claim.repAddrElem_heapMono₂ (extI1.trans extI2) hrefsOwn)
-      (RepLinkedList.mono (fun _ _ _ _ _ r => r) extI2 hidxsOwn)
+      (hidxsOwn.mono extI2)
       (Core.S0.addr_mono extOk0 ⟨bx, hbx, rfl⟩)
       ⟨bib, Bytes.repAddressRef_heapMono₂ Core.addrTy (extIb.trans (extI1.trans extI2)) hbibRep, rfl⟩
       (RepLinkedList.mono Claim.repAddrElem_heapMono₂ (extI1.trans extI2) hrefsIb)

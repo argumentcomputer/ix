@@ -995,7 +995,7 @@ theorem recRefs_of_familyCall {calls : List (Call F)} {bAddr : _root_.Address}
           hrc_safe hrp hidx evS hsubS
         have hnb := assert_used_not_block_spec hS hH c.refs.toList 0 hsz_refs
           (repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ evS.heap_extends hrp)
-          (repList_heapMono₂ _ Claim.repBoundedIdx_heapMono₂ evS.heap_extends hidx) evNb hsubNb
+          (hidx.mono evS.heap_extends) evNb hsubNb
         intro x hu
         obtain ⟨c₀, i, hc₀, hi, hget⟩ := hu
         have heq0 : c₀ = c := Option.some.inj (hc₀.symm.trans hc)

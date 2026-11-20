@@ -763,7 +763,8 @@ def container_refs_ok := aiur_fn⟦
       match (*(refs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(r, rest) => {
-          match KernelClaim::g_list_has(used, i) {
+          let (hit, next_used) = KernelClaim::sorted_pop(used, i);
+          match hit {
             1 => {
               assert_eq!(Bytes::address_eq(r, self), 0,
                 "model advice: a container recursor references itself");
@@ -796,7 +797,7 @@ def container_refs_ok := aiur_fn⟦
               () } ,
             _ => {  () } ,
           };
-          container_refs_ok(rc, rest, used, i + 1, self, iblock, irefs, iused, wset) } ,
+          container_refs_ok(rc, rest, next_used, i + 1, self, iblock, irefs, iused, wset) } ,
       }
     }
 ⟧
@@ -826,7 +827,8 @@ def ref_projects_from := aiur_fn⟦
         Lists::Node::Nil => {  0 } ,
         Lists::Node::Cons(q, rest) => {
           -- a hit through a covered used reference counts only for a covered `r`
-          let hit = match KernelClaim::g_list_has(iused, i) {
+          let (used_hit, next_iused) = KernelClaim::sorted_pop(iused, i);
+          let hit = match used_hit {
             1 => {
               match is_projection_of(q, block) {
                 1 => {  1 - addr_covered(rc, q) * (1 - addr_covered(rc, r)) } ,
@@ -836,7 +838,7 @@ def ref_projects_from := aiur_fn⟦
           };
           match hit {
             1 => {  1 } ,
-            _ => {  ref_projects_from(rc, r, rest, iused, i + 1, block) } ,
+            _ => {  ref_projects_from(rc, r, rest, next_iused, i + 1, block) } ,
           } } ,
       }
     }
@@ -964,7 +966,8 @@ def advice_refs_ok := aiur_fn⟦
       match (*(refs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(r, rest) => {
-          match KernelClaim::g_list_has(used, i) {
+          let (hit, next_used) = KernelClaim::sorted_pop(used, i);
+          match hit {
             1 => {
               let ok = match KernelClaim::addr_set_member(r, aset) {
                 1 => {  1 } ,
@@ -978,7 +981,7 @@ def advice_refs_ok := aiur_fn⟦
               () } ,
             _ => {  () } ,
           };
-          advice_refs_ok(rest, used, i + 1, aset, wset) } ,
+          advice_refs_ok(rest, next_used, i + 1, aset, wset) } ,
       }
     }
 ⟧
@@ -993,11 +996,12 @@ def assert_used_not_block := aiur_fn⟦
       match (*(refs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(r, rest) => {
-          match KernelClaim::g_list_has(used, i) {
+          let (hit, next_used) = KernelClaim::sorted_pop(used, i);
+          match hit {
             1 => {  KernelClaim::assert_not_block_ref(r) } ,
             _ => {  () } ,
           };
-          assert_used_not_block(rest, used, i + 1) } ,
+          assert_used_not_block(rest, next_used, i + 1) } ,
       }
     }
 ⟧
@@ -1020,11 +1024,12 @@ def assert_used_in_order := aiur_fn⟦
       match (*(refs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(r, rest) => {
-          match KernelClaim::g_list_has(used, i) {
+          let (hit, next_used) = KernelClaim::sorted_pop(used, i);
+          match hit {
             1 => {  KernelRoles::assert_in_order(rc, r) } ,
             _ => {  () } ,
           };
-          assert_used_in_order(rc, rest, used, i + 1) } ,
+          assert_used_in_order(rc, rest, next_used, i + 1) } ,
       }
     }
 ⟧
@@ -1527,7 +1532,8 @@ def family_refs_go := aiur_fn⟦
       match (*(refs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(r, rest) => {
-          match KernelClaim::g_list_has(used, i) {
+          let (hit, next_used) = KernelClaim::sorted_pop(used, i);
+          match hit {
             1 => {
               let ok = match used_ref_has(irefs, iused, 0, r) {
                 1 => {  1 } ,
@@ -1554,7 +1560,7 @@ def family_refs_go := aiur_fn⟦
               () } ,
             _ => {  () } ,
           };
-          family_refs_go(rc, rest, used, i + 1, block, irefs, iused, wset) } ,
+          family_refs_go(rc, rest, next_used, i + 1, block, irefs, iused, wset) } ,
       }
     }
 ⟧
@@ -1567,13 +1573,14 @@ def used_ref_has := aiur_fn⟦
       match (*(irefs)) {
         Lists::Node::Nil => {  0 } ,
         Lists::Node::Cons(q, rest) => {
-          let hit = match KernelClaim::g_list_has(iused, i) {
+          let (used_hit, next_iused) = KernelClaim::sorted_pop(iused, i);
+          let hit = match used_hit {
             1 => {  Bytes::address_eq(q, r) } ,
             _ => {  0 } ,
           };
           match hit {
             1 => {  1 } ,
-            _ => {  used_ref_has(rest, iused, i + 1, r) } ,
+            _ => {  used_ref_has(rest, next_iused, i + 1, r) } ,
           } } ,
       }
     }

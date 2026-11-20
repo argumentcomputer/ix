@@ -249,7 +249,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
          i + refs.length < 8589934592 →
          RCLimRep t bAddr lim h x_rc →
          RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h refs x_refs →
-         RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h idxs x_consts →
+         RepSortedIdxFrom h idxs i x_consts →
          ObsFn Obs.W "KernelClaim::walk_refs_transitive"
            [x_rc, x_refs, x_consts, .field (i : F)] h r h' calls →
          Heap.Extends h h' ∧
@@ -540,10 +540,12 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
         exact ⟨Heap.Extends.refl _, [], fun _ hj => absurd hj (Nat.not_lt_zero _),
           fun _ hj => absurd hj (Nat.not_lt_zero _), by simp [TopRecsClosed], topRecsOrdered_nil,
           by simp⟩
-      | .Cons (x_a := x_a) (x_rest := x_rest) (m227 := m227) (cs229 := cs229) (cs238 := cs238)
-          (ld12 := ld12) (sg234 := sg234) (op279 := op279) (ev240 := ev240) (hc281 := hc281) .. =>
+      | .Cons (x_a := x_a) (x_rest := x_rest) (m_sszfdvej := m227) (cs_bixmeype := cs229)
+          (cs238 := cs238) (ld12 := ld12) (ev_fibarwuo := evPop) (sg_opqpxwys := sg234)
+          (op279 := op279) (ev240 := ev240) (hc281 := hc281) .. =>
         obtain ⟨a, rest, rfl, ha_head, hrest_rep⟩ := Lib.rep_cons_of_load hrefs ld12
         have hi_lt56 : i < 72057594037927936 := by simp at hbound; omega
+        obtain ⟨rfl, hiff_pop, hidxs_next⟩ := sorted_pop_spec idxs hi_lt56 hidxs evPop
         have hseg : Heap.Extends h m227 ∧
             ∃ recs₁ : List (TopRec calls bAddr t lim),
               (i ∈ idxs → RefAllowedIn calls t bAddr lim a ∧
@@ -553,10 +555,10 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
               TopRecsOrdered recs₁ ∧
               (∀ r ∈ recs₁, r.depth ≤ calls.length) := by
           match sg234 with
-          | .n1_n0 (cs88 := cs88) (cs153 := cs153) (cs167 := cs167) (v170 := v170)
-              (ev56 := ev56) (ev90 := ev90) (ev121 := ev121) (ev155 := ev155) (ev183 := ev183)
-              (ev169 := ev169) (hc207 := hc207) .. =>
-            obtain ⟨rfl, -⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
+          | .n1_n0 (cs_qutgqozh := cs88) (cs_jhnvxttf := cs153) (cs_aflnesla := cs167)
+              (v_vibiepaa := v170) (ev_icqlvczq := ev90) (ev_qjsortre := ev121)
+              (ev_uzqslaue := ev155) (ev_zvmflyhp := ev183) (ev_fjnopckc := ev169)
+              (hc_ywmagcss := hc207) .. =>
             have ext_ra := ev90.heap_extends
             have ext_cov := ev121.heap_extends
             obtain ⟨ext_nb, hnb⟩ :=
@@ -593,9 +595,8 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
             · exact ⟨ext_pre.trans (ext_wc.trans ev169.heap_extends), [],
                 fun _ => ⟨hal, .inr hcov⟩, fun _ => .inr hcov, by simp [TopRecsClosed],
                 topRecsOrdered_nil, by simp⟩
-          | .n1_other (cs88 := cs88) (ev56 := ev56) (ev90 := ev90) (ev121 := ev121)
-              (hne208 := hne208) (he215 := he215) (hc216 := hc216) .. =>
-            obtain ⟨rfl, -⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
+          | .n1_other (cs_qutgqozh := cs88) (ev_icqlvczq := ev90) (ev_qjsortre := ev121)
+              (hne_kcxluxmw := hne208) (he_vvdjdbjt := he215) (hc_rftbjjug := hc216) .. =>
             have ext_ra := ev90.heap_extends
             have ext_cov := ev121.heap_extends
             obtain ⟨-, hv⟩ :=
@@ -608,11 +609,10 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
                 ⟨_, _, _, _, _, _, hrc, ha_head, ev90, hsub_ra⟩
               refine ⟨by rw [he215]; exact ext_ra.trans ext_cov, [], fun _ => ⟨hal, .inr hcov⟩,
                 fun _ => .inr hcov, by simp [TopRecsClosed], topRecsOrdered_nil, by simp⟩
-          | .other (ev56 := ev56) (hne217 := hne217) (he224 := he224) .. =>
-            obtain ⟨rfl, hiff⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
+          | .other (hne_yeueqpng := hne217) (he_eemargwo := he224) .. =>
             refine ⟨by subst he224; exact Heap.Extends.refl _, [],
-              fun hi_in => absurd (hiff.mpr hi_in) hne217,
-              fun hi_in => absurd (hiff.mpr hi_in) hne217, by simp [TopRecsClosed], topRecsOrdered_nil,
+              fun hi_in => absurd (hiff_pop.mpr hi_in) hne217,
+              fun hi_in => absurd (hiff_pop.mpr hi_in) hne217, by simp [TopRecsClosed], topRecsOrdered_nil,
               by simp⟩
         obtain ⟨ext1, recs₁, hmem₁, hordj₁, hcl₁, hord₁, hdep₁⟩ := hseg
         simp only [evalBinOp, Except.ok.injEq] at op279
@@ -630,7 +630,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
           (ih cs238.length hlt_tail).2 (i := i + 1) (Nat.le_refl _) hbound_tail
             (hrc.mono ext1)
             (repList_heapMono₂ _ repAddrElem_heapMono₂ ext1 hrest_rep)
-            (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext1 hidxs)
+            (hidxs_next.mono ext1)
             ev240
         have hsub₂ : ∀ cl ∈ cs238, cl ∈ calls := fun cl hcl => by
           rw [hc281]; simp [hcl]
@@ -699,7 +699,7 @@ theorem walk_refs_transitive_lim_ordered {t : Ix.Kernel.RoleTable} {bAddr : _roo
     (hbound : i + refs.length < 8589934592)
     (hrc : RCLimRep t bAddr lim h x_rc)
     (hrefs : RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h refs x_refs)
-    (hidxs : RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h idxs x_consts)
+    (hidxs : RepSortedIdxFrom h idxs i x_consts)
     (ev : ObsFn Obs.W "KernelClaim::walk_refs_transitive"
       [x_rc, x_refs, x_consts, .field (i : F)] h r h' calls) :
     Heap.Extends h h' ∧

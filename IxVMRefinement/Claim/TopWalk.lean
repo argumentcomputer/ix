@@ -196,7 +196,7 @@ private theorem quot_refs_ok_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
       {cs : List (Call F)}, i + refs.length < 8589934592 →
       RCLimRep t bAddr lim h rc →
       RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h refs rp →
-      RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h idxs used →
+      RepSortedIdxFrom h idxs i used →
       ObsFn Obs.W "KernelClaim::quot_refs_ok" [rc, rp, used, .field (i : F)] h r h' cs →
       ∀ j, (hj : j < refs.length) → i + j ∈ idxs →
         Typing.Covered t refs[j] ∨ ∃ ro, quotRole ro = true ∧ t.addressOf? ro = some refs[j] := by
@@ -206,19 +206,19 @@ private theorem quot_refs_ok_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
     intro i idxs rc rp used r h h' cs hb hrc hr hi ev
     match Obs.«KernelClaim::quot_refs_ok».obs ev with
     | .Nil (ld_bolbylmd := ld) .. => cases Lib.rep_nil_of_load hr ld
-    | .Cons (m_yvuflqli := mSeg) (ld_bolbylmd := ld) (sg_dugcmplc := seg) (op_gskedpnl := op) (ev_rajcapyd := evr) .. =>
+    | .Cons (m_sszfdvej := mSeg) (ld_bolbylmd := ld) (ev_ahqcgauk := evPop)
+        (sg_opqpxwys := seg) (op_gskedpnl := op) (ev_rajcapyd := evr) .. =>
       obtain ⟨_, _, he, ha, hrest⟩ := Lib.rep_cons_of_load hr ld
       injection he with he1 he2
       subst he1 he2
+      obtain ⟨rfl, hiff, hiNext⟩ := sorted_pop_spec idxs (by simp at hb; omega) hi evPop
       have hseg : Heap.Extends h mSeg ∧ (i ∈ idxs →
           Typing.Covered t a ∨ ∃ ro, quotRole ro = true ∧ t.addressOf? ro = some a) := by
         match seg with
-        | .other (ev_zomhduxa := evg) (hne_arfngzyc := hn) (he_xtnzeqqi := hh) .. =>
-          refine ⟨by rw [hh]; exact evg.heap_extends, fun hm => ?_⟩
-          exact (hn ((g_list_has_spec idxs (by simp at hb; omega) hi evg).2.mpr hm)).elim
-        | .n1 (ev_zomhduxa := evg) (ev_hxpsnrnr := evw) (ev_wyalnnti := evq)
-            (op_yueivgwj := opAdd) (heq_gnajvtpv := heq1) (he_rlktgdfs := hh) .. =>
-          obtain ⟨rfl, _⟩ := g_list_has_spec idxs (by simp at hb; omega) hi evg
+        | .other (hne_yeueqpng := hn) (he_eemargwo := hh) .. =>
+          exact ⟨hh ▸ Heap.Extends.refl _, fun hm => (hn (hiff.mpr hm)).elim⟩
+        | .n1 (ev_akfsjgww := evw) (ev_ovoaytiw := evq)
+            (op_veoctrkq := opAdd) (heq_cbhcrbea := heq1) (he_glsulvqd := hh) .. =>
           obtain ⟨rfl, hw⟩ := addr_walked_role_lim_spec hrc ha evw
           obtain ⟨rfl, hq⟩ := addr_quot_bound_lim_spec hrc ha evq
           refine ⟨by rw [hh], fun _ => ?_⟩
@@ -235,7 +235,7 @@ private theorem quot_refs_ok_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
       rw [hinc] at evr
       have htail := ih (i + 1) (by simp at hb ⊢; omega) (hrc.mono ext)
         (repList_heapMono₂ _ repAddrElem_heapMono₂ ext hrest)
-        (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext hi) evr
+        (hiNext.mono ext) evr
       intro j hj hm
       cases j with
       | zero => exact hhead (by simpa only [Nat.add_zero] using hm)

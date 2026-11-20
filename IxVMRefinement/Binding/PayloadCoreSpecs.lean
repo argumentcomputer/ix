@@ -161,7 +161,7 @@ theorem assert_used_not_block_spec {calls : List (Call F)} (refs : List _root_.A
     ∀ (i : Nat) {idxs : List Nat} {rp used r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)}, i + refs.length < 8589934592 →
       RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h refs rp →
-      RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h idxs used →
+      Claim.RepSortedIdxFrom h idxs i used →
       ObsFn Obs.W "KernelModeled::assert_used_not_block" [rp, used, .field (i : F)] h r h' cs →
       (∀ cl ∈ cs, cl ∈ calls) →
       ∀ j, (hj : j < refs.length) → i + j ∈ idxs → Claim.NotBlockIn calls refs[j] := by
@@ -171,24 +171,23 @@ theorem assert_used_not_block_spec {calls : List (Call F)} (refs : List _root_.A
     intro i idxs rp used r h h' cs hb hr hi ev hsub
     match Obs.«KernelModeled::assert_used_not_block».obs ev with
     | .Nil (ld_bolbylmd := ld) .. => cases Lib.rep_nil_of_load hr ld
-    | .Cons (m_yvuflqli := mHead) (cs_juuuvegi := csHead) (cs_uirsovbz := csTail) (ld_bolbylmd := ld)
-        (sg_dugcmplc := seg) (op_urfjlksd := op) (ev_tuyouizb := evTail) (hc_gtnunfxa := hcs) .. =>
+    | .Cons (m_sszfdvej := mHead) (cs_bixmeype := csHead) (cs_uirsovbz := csTail) (ld_bolbylmd := ld)
+        (ev_ahqcgauk := evPop) (sg_opqpxwys := seg) (op_urfjlksd := op) (ev_tuyouizb := evTail)
+        (hc_gtnunfxa := hcs) .. =>
       obtain ⟨_, _, he, ha, hrest⟩ := Lib.rep_cons_of_load hr ld
       injection he with he1 he2
       subst he1 he2
+      have hiSmall : i < 72057594037927936 := by simp at hb; omega
+      obtain ⟨rfl, hiff, hiNext⟩ := Claim.sorted_pop_spec idxs hiSmall hi evPop
       have hsegSub : ∀ cl ∈ csHead, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have hseg : Heap.Extends h mHead ∧ (i ∈ idxs → Claim.NotBlockIn calls a) := by
-        have hiSmall : i < 72057594037927936 := by simp at hb; omega
         match seg with
-        | .n1 (cs_rexuxvwa := csNb) (ev_zomhduxa := evHas) (ev_rewyseeq := evNb)
-            (hc_hifgrvaq := hcs1) .. =>
-          have ext1 := evHas.heap_extends
-          obtain ⟨ext2, hnb⟩ := Claim.assert_not_block_ref_notBlock (Core.S0.addr_mono ext1 ha) evNb
-          refine ⟨ext1.trans ext2, fun _ => ?_⟩
+        | .n1 (cs_hcikeilv := csNb) (ev_wlgujvgf := evNb) (hc_yfpefzhg := hcs1) .. =>
+          obtain ⟨ext2, hnb⟩ := Claim.assert_not_block_ref_notBlock ha evNb
+          refine ⟨ext2, fun _ => ?_⟩
           exact Claim.NotBlockIn.mono (fun cl hcl => hsegSub cl (by rw [hcs1]; simp [hcl])) hnb
-        | .other (ev_zomhduxa := evHas) (hne_arfngzyc := hne) (he_xtnzeqqi := hh) .. =>
-          refine ⟨by rw [hh]; exact evHas.heap_extends, fun hm => ?_⟩
-          exact (hne ((Claim.g_list_has_spec idxs hiSmall hi evHas).2.mpr hm)).elim
+        | .other (hne_yeueqpng := hne) (he_eemargwo := hh) .. =>
+          exact ⟨hh ▸ Heap.Extends.refl _, fun hm => (hne (hiff.mpr hm)).elim⟩
       obtain ⟨ext, hhead⟩ := hseg
       simp only [evalBinOp, Except.ok.injEq] at op
       subst op
@@ -197,7 +196,7 @@ theorem assert_used_not_block_spec {calls : List (Call F)} (refs : List _root_.A
       have htailSub : ∀ cl ∈ csTail, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have ht := ih (i + 1) (by simp at hb ⊢; omega)
         (RepLinkedList.mono Claim.repAddrElem_heapMono₂ ext hrest)
-        (RepLinkedList.mono Claim.repBoundedIdx_heapMono₂ ext hi) evTail htailSub
+        (hiNext.mono ext) evTail htailSub
       intro j hj hm
       cases j with
       | zero => exact hhead (by simpa only [Nat.add_zero] using hm)
@@ -213,7 +212,7 @@ theorem assert_used_in_order_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
       {cs : List (Call F)}, i + refs.length < 8589934592 →
       Claim.RCLimRep t bAddr lim h rc →
       RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h refs rp →
-      RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h idxs used →
+      Claim.RepSortedIdxFrom h idxs i used →
       ObsFn Obs.W "KernelModeled::assert_used_in_order" [rc, rp, used, .field (i : F)] h r h' cs →
       ∀ j, (hj : j < refs.length) → i + j ∈ idxs → Claim.OpOrderedAt t lim refs[j] := by
   induction refs with
@@ -222,21 +221,19 @@ theorem assert_used_in_order_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
     intro i idxs rc rp used r h h' cs hb hrc hr hi ev
     match Obs.«KernelModeled::assert_used_in_order».obs ev with
     | .Nil (ld_bolbylmd := ld) .. => cases Lib.rep_nil_of_load hr ld
-    | .Cons (m_yvuflqli := mHead) (ld_bolbylmd := ld) (sg_dugcmplc := seg) (op_gskedpnl := op)
-        (ev_ohnkrrnf := evTail) .. =>
+    | .Cons (m_sszfdvej := mHead) (ld_bolbylmd := ld) (ev_ahqcgauk := evPop)
+        (sg_opqpxwys := seg) (op_gskedpnl := op) (ev_ohnkrrnf := evTail) .. =>
       obtain ⟨_, _, he, ha, hrest⟩ := Lib.rep_cons_of_load hr ld
       injection he with he1 he2
       subst he1 he2
+      have hiSmall : i < 72057594037927936 := by simp at hb; omega
+      obtain ⟨rfl, hiff, hiNext⟩ := Claim.sorted_pop_spec idxs hiSmall hi evPop
       have hseg : Heap.Extends h mHead ∧ (i ∈ idxs → Claim.OpOrderedAt t lim a) := by
-        have hiSmall : i < 72057594037927936 := by simp at hb; omega
         match seg with
-        | .n1 (ev_zomhduxa := evHas) (ev_rsdpehjw := evOrd) .. =>
-          have ext1 := evHas.heap_extends
-          exact ⟨ext1.trans evOrd.heap_extends, fun _ =>
-            assert_in_order_spec (hrc.mono ext1) (Core.S0.addr_mono ext1 ha) evOrd⟩
-        | .other (ev_zomhduxa := evHas) (hne_arfngzyc := hne) (he_xtnzeqqi := hh) .. =>
-          refine ⟨by rw [hh]; exact evHas.heap_extends, fun hm => ?_⟩
-          exact (hne ((Claim.g_list_has_spec idxs hiSmall hi evHas).2.mpr hm)).elim
+        | .n1 (ev_pgtthkyj := evOrd) .. =>
+          exact ⟨evOrd.heap_extends, fun _ => assert_in_order_spec hrc ha evOrd⟩
+        | .other (hne_yeueqpng := hne) (he_eemargwo := hh) .. =>
+          exact ⟨hh ▸ Heap.Extends.refl _, fun hm => (hne (hiff.mpr hm)).elim⟩
       obtain ⟨ext, hhead⟩ := hseg
       simp only [evalBinOp, Except.ok.injEq] at op
       subst op
@@ -244,7 +241,7 @@ theorem assert_used_in_order_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
       rw [hinc] at evTail
       have ht := ih (i + 1) (by simp at hb ⊢; omega) (hrc.mono ext)
         (RepLinkedList.mono Claim.repAddrElem_heapMono₂ ext hrest)
-        (RepLinkedList.mono Claim.repBoundedIdx_heapMono₂ ext hi) evTail
+        (hiNext.mono ext) evTail
       intro j hj hm
       cases j with
       | zero => exact hhead (by simpa only [Nat.add_zero] using hm)
@@ -260,7 +257,7 @@ theorem assert_inner_refs_safe_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
     {rc rp used r : SourceValue F} {h h' : Heap F}
     (hrc : Claim.RCLimRep t bAddr lim h rc)
     (hRefs : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h c.refs.toList rp)
-    (hIdx : RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h (Core.S0.usedRefIdxs c) used)
+    (hIdx : Claim.RepSortedIdx h (Core.S0.usedRefIdxs c) used)
     (ev : ObsFn Obs.W "KernelModeled::assert_inner_refs_safe" [rc, rp, used] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     ∀ i ∈ usedRefIdxs c, ∀ x, c.refs[i]? = some x →
@@ -282,10 +279,10 @@ theorem assert_inner_refs_safe_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
       evSafe hsubSafe
     have h2 := assert_used_not_block_spec c.refs.toList 0 hb
       (RepLinkedList.mono Claim.repAddrElem_heapMono₂ ext1 hRefs)
-      (RepLinkedList.mono Claim.repBoundedIdx_heapMono₂ ext1 hIdx) evNb hsubNb
+      (hIdx.mono ext1) evNb hsubNb
     have h3 := assert_used_in_order_spec c.refs.toList 0 hb (hrc.mono ext12)
       (RepLinkedList.mono Claim.repAddrElem_heapMono₂ ext12 hRefs)
-      (RepLinkedList.mono Claim.repBoundedIdx_heapMono₂ ext12 hIdx) evOrd
+      (hIdx.mono ext12) evOrd
     intro i hi x hx
     obtain ⟨hlt, hget⟩ := Array.getElem?_eq_some_iff.mp hx
     have hlt' : i < c.refs.toList.length := by simpa using hlt
