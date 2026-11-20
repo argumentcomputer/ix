@@ -108,7 +108,8 @@ def annotConstantValC (fe : FEnv md) (cv : ConstantVal md) :
   if Expr.hasFvar cv.type then
     throw (.invalid msg!"unexpected free variable in type of {cv.name}")
   let jty ← (coreKnotI mode fe checkFuel).annotate 0 cv.type
-  unless Expr.allLevelParamsDefinedC cv.levelParams jty do
+  unless Expr.allLevelParamsDefinedC cv.levelParams cv.type &&
+      Expr.allLevelParamsDefinedC cv.levelParams jty do
     throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
   unless constsResolveFC fe jty do
     throw (unresolvedConstsError msg!"type of {cv.name}" jty)
@@ -124,7 +125,8 @@ def annotValC (fe : FEnv md) (cvA : ConstantVal md) (value : Expr md) :
   if value.hasFvar then
     throw (.invalid msg!"unexpected free variable in value of {cvA.name}")
   let jv ← (coreKnotI mode fe checkFuel).annotate 0 value
-  unless Expr.allLevelParamsDefinedC cvA.levelParams jv do
+  unless Expr.allLevelParamsDefinedC cvA.levelParams value &&
+      Expr.allLevelParamsDefinedC cvA.levelParams jv do
     throw (.invalid msg!"undeclared universe parameter in value of {cvA.name}")
   unless constsResolveFC fe jv do
     throw (unresolvedConstsError msg!"value of {cvA.name}" jv)

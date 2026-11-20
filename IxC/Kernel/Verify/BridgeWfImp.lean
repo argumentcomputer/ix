@@ -186,7 +186,8 @@ theorem checkConstantVal_wfimp {env : Env md} (henv : EnvWF env)
   simp only [Bind.bind, Except.bind]
   have hwty : WScoped 0 type := annotateCore_WScoped F cv.type hty'
     (WScoped.of_not_hasFvar (Bool.not_eq_true _ ▸ h6))
-  by_cases h7 : Expr.allLevelParamsDefined cv.levelParams type = true
+  by_cases h7 : (Expr.allLevelParamsDefined cv.levelParams cv.type &&
+      Expr.allLevelParamsDefined cv.levelParams type) = true
   case neg =>
     rw [if_neg h7] at h
     exact absurd h atF_throw_bind
@@ -236,7 +237,8 @@ theorem checkDefnVal_wfimp {env : Env md} (henv : EnvWF env)
   simp only [Bind.bind, Except.bind]
   have hwval : WScoped 0 value' := annotateCore_WScoped F value hval'
     (WScoped.of_not_hasFvar (Bool.not_eq_true _ ▸ h2))
-  by_cases h3 : Expr.allLevelParamsDefined cv.levelParams value' = true
+  by_cases h3 : (Expr.allLevelParamsDefined cv.levelParams value &&
+      Expr.allLevelParamsDefined cv.levelParams value') = true
   case neg =>
     rw [if_neg h3] at h
     exact absurd h atF_throw_bind
@@ -318,7 +320,8 @@ theorem checkThmVal_wfimp {env : Env md} (henv : EnvWF env)
   simp only [Bind.bind, Except.bind]
   have hwval : WScoped 0 value' := annotateCore_WScoped F value hval'
     (WScoped.of_not_hasFvar (Bool.not_eq_true _ ▸ h2))
-  by_cases h3 : Expr.allLevelParamsDefined cv.levelParams value' = true
+  by_cases h3 : (Expr.allLevelParamsDefined cv.levelParams value &&
+      Expr.allLevelParamsDefined cv.levelParams value') = true
   case neg =>
     rw [if_neg h3] at h
     exact absurd h atF_throw_bind
@@ -375,7 +378,8 @@ theorem checkOpaqueVal_wfimp {env : Env md} (henv : EnvWF env)
   simp only [Bind.bind, Except.bind]
   have hwval : WScoped 0 value' := annotateCore_WScoped F value hval'
     (WScoped.of_not_hasFvar (Bool.not_eq_true _ ▸ h2))
-  by_cases h3 : Expr.allLevelParamsDefined cv.levelParams value' = true
+  by_cases h3 : (Expr.allLevelParamsDefined cv.levelParams value &&
+      Expr.allLevelParamsDefined cv.levelParams value') = true
   case neg =>
     rw [if_neg h3] at h
     exact absurd h atF_throw_bind
@@ -2261,9 +2265,11 @@ theorem checkConstantVal_typeWF {env : Env md} {cv cvA : ConstantVal md}
   intro h
   simp only [Bind.bind, Except.bind] at h
   have hann' : annotateCore mode env F 0 cv.type = .ok type := hann
-  by_cases h7 : Expr.allLevelParamsDefined cv.levelParams type = true
+  by_cases h7 : (Expr.allLevelParamsDefined cv.levelParams cv.type &&
+      Expr.allLevelParamsDefined cv.levelParams type) = true
   case neg => rw [if_neg h7] at h; exact nomatch h
   rw [if_pos h7] at h
+  have h7 := ((Bool.and_eq_true ..).mp h7).2
   by_cases h8 : Expr.constsResolve env type = true
   case neg => rw [if_neg h8] at h; exact nomatch h
   rw [if_pos h8] at h
