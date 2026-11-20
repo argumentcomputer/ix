@@ -90,8 +90,8 @@ private def materialize (st : State .source) (d : Lean.DefinitionVal) :
 /-- Compute the modeled field data over the owners' dependency closure. -/
 private def fieldState (source : Lean.Environment) (input : List (Lean.Name × Lean.ConstantInfo))
     (owners : List Lean.Name) :
-    Except String (State .source × Nat) := do
-  let deps := Ix.EnvScope.collectDeps source (``PUnit.unit :: owners) { recursors := true }
+    Except String (State .source) := do
+  let deps := Ix.EnvScope.collectDeps source owners { recursors := true }
   let support := Std.HashMap.ofList deps
   let support := input.foldl (fun m (n, ci) => if m.contains n then m.insert n ci else m) support
   let env : Ix.Environment := { consts := Std.HashMap.ofList (Ix.CanonM.canonChunk support.toArray).toList }
@@ -101,7 +101,7 @@ private def fieldState (source : Lean.Environment) (input : List (Lean.Name × L
   -- Only a successfully read block can supply an owner and its field iota level.
   for (_, converted) in scheduleOf graph do
     if let .ok r := converted >>= lower st then st := st.commit r
-  return (st, support.size)
+  return st
 
 /-- Publish the same recursor body IxC selects, so a use of the accessor unfolds
 to that body in Ixon. Check the materialized source term by reading it back. -/
@@ -111,12 +111,12 @@ def prepare (source : Lean.Environment) (input : List (Lean.Name × Lean.Constan
     | .defnInfo d => candidateOwner? source d
     | _ => none
   if owners.isEmpty then return input
-  let (st, supportSize) ← fieldState source input owners
+  let st ← fieldState source input owners
   let mut prepared := input.toArray
   let mut present := input.foldl (fun (s : Lean.NameSet) (n, _) => s.insert n) {}
-  -- A recursor body can introduce names from its owner's recursor closure and PUnit.
-  -- Process any such added definitions through the same preparation as the input.
-  for i in [:prepared.size + supportSize + 1] do
+  -- Dependencies appended while walking the input are distinct names from the source.
+  let sourceSize := source.constants.map₂.foldl (fun count _ _ => count + 1) source.constants.map₁.size
+  for i in [:prepared.size + sourceSize + 1] do
     let some (name, ci) := prepared[i]? | return prepared.toList
     let .defnInfo d := ci | continue
     if (candidateOwner? source d).isNone then continue
@@ -131,6 +131,6 @@ def prepare (source : Lean.Environment) (input : List (Lean.Name × Lean.Constan
         unless present.contains n do
           present := present.insert n
           prepared := prepared.push (n, extra)
-  throw "accessor dependencies exceed the owners' recursor closure"
+  throw "accessor dependencies exceed the source environment"
 
 end Ix.Compile.ProjectionAccessors
