@@ -304,11 +304,16 @@ private def modeledHeaderCase (guards recursorsRefused wrapped : Bool) : Except 
       else "modeled recursors: no let"
     accept := true
     witness := witness }
-  -- a program that refuses the recursors of such a family refuses the block of them first
+  -- a program that refuses the recursors of such a family refuses the block of them first;
+  -- otherwise `KernelModeled::check_recs` runs `canonical_rules_at_pos` (structural/`wrap_rel`
+  -- comparison against the reconstructed recursor type) ahead of `check_rec_header_lets`, so an
+  -- extra `let` in the index domain is refused there first.
   return if recursorsRefused then
     { c with accept := false, rejectsWith := some modeledRecursorRefusal }
   else if wrapped then
-    refused guards "recursor header: a let in an index's domain" none c
+    refused guards
+      "recursor declared type is neither the canonical reconstruction nor its full consumption"
+      none c
   else c
 
 /-! ## The suite -/
@@ -426,7 +431,7 @@ private def familyCases (shape recursors : Bool) (env : Ixon.Env) : Array Builde
     fun u => do
       return { (← kernelCheckCase env (defs "Rose.children") true u) with
         accept := false
-        rejectsWith := some "projection on a member of a mutual or nested block" },
+        rejectsWith := some noModel },
     fun u => do
       return { (← kernelCheckCase env (defs "Rose.rec") true u) with
         accept := false
