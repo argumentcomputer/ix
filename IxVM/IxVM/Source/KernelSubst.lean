@@ -95,7 +95,7 @@ def has_bvar_in_range_walk := aiur_fn⟦
 ⟧
 
 def has_bvar_in_range_bvar := aiur_fn⟦
-  fn has_bvar_in_range_bvar(i: Field, lo: Field, hi: Field) -> Field {
+  inline fn has_bvar_in_range_bvar(i: Field, lo: Field, hi: Field) -> Field {
       match UInt32::less_than_fields(i, lo) {
         1 => {  0 } ,
         0 => {  UInt32::less_than_fields(i, hi) } ,
@@ -282,7 +282,7 @@ def expr_lift_walk := aiur_fn⟦
 ⟧
 
 def expr_lift_bvar := aiur_fn⟦
-  fn expr_lift_bvar(i: Field, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
+  inline fn expr_lift_bvar(i: Field, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
       match UInt32::less_than_fields(i, cutoff) {
         1 => {  (&(KernelTypes::KExprNode::BVar(i))) } ,
         0 => {  (&(KernelTypes::KExprNode::BVar(i + shift))) } ,
@@ -444,7 +444,7 @@ def expr_inst1_walk := aiur_fn⟦
 ⟧
 
 def expr_inst1_bvar := aiur_fn⟦
-  fn expr_inst1_bvar(i: Field, arg: KernelTypes::KExpr, depth: Field) -> KernelTypes::KExpr {
+  inline fn expr_inst1_bvar(i: Field, arg: KernelTypes::KExpr, depth: Field) -> KernelTypes::KExpr {
       match UInt32::less_than_fields(i, depth) {
         1 => {  (&(KernelTypes::KExprNode::BVar(i))) } ,
         0 => {
@@ -486,11 +486,13 @@ def expr_inst_many := aiur_fn⟦
 ⟧
 
 def expr_inst_many_bvar := aiur_fn⟦
-  fn expr_inst_many_bvar(i: Field, substs: Lists::List<KernelTypes::KExpr>, depth: Field) -> KernelTypes::KExpr {
+  inline fn expr_inst_many_bvar(i: Field, substs: Lists::List<KernelTypes::KExpr>, depth: Field) -> KernelTypes::KExpr {
       let n = Lists::length(substs);
       let ofs = i - depth;
       match UInt32::less_than_fields(ofs, n) {
-        1 => {  expr_lift(Lists::lookup(substs, ofs), depth, 0) } ,
+        1 => {
+          let Lists::Node::Cons(sub, _) = (*(Lists::drop(substs, ofs)));
+          expr_lift(sub, depth, 0) } ,
         0 => {  (&(KernelTypes::KExprNode::BVar(i - n))) } ,
       }
     }
