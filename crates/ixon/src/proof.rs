@@ -1285,8 +1285,73 @@ impl ClaimContext {
     })
   }
 
+  /// Whether `name` is an auxiliary compiler-trust axiom synthesized by Lean 4's
+  /// `Lean.Meta.nativeEqTrue` (`native_decide`, `decide +native`, `bv_decide`):
+  /// `<decl>._native.<tactic>.ax` or `<decl>._native.<tactic>.ax_<suffix>`.
+  /// Mirrors `Ix.ClaimContext.isNativeEvalAxiomName` (`Ix/ClaimContext.lean`).
+  pub fn is_native_eval_axiom_name(name: &ix_common::env::Name) -> bool {
+    use ix_common::env::NameData;
+    let NameData::Str(parent, leaf, _) = name.as_data() else {
+      return false;
+    };
+    if leaf != "ax" && !leaf.starts_with("ax_") {
+      return false;
+    }
+    let NameData::Str(grandparent, tac, _) = parent.as_data() else {
+      return false;
+    };
+    if !matches!(tac.as_str(), "native_decide" | "decide" | "bv_decide") {
+      return false;
+    }
+    matches!(grandparent.as_data(), NameData::Str(_, seg, _) if seg == "_native")
+  }
+
+  /// Safe unbound axiom addresses in `env` whose named entries are all Lean 4
+  /// native-evaluation auxiliary axioms (`is_native_eval_axiom_name`).
+  /// Because Ixon deduplicates alpha-equivalent axioms, an address that also
+  /// carries a non-native user axiom name is NOT classified as compiler-trust.
+  /// Mirrors `Ix.ClaimContext.nativeEvalAxiomAddrs` (`Ix/ClaimContext.lean`).
+  pub fn native_eval_axiom_addrs(env: &Env) -> rustc_hash::FxHashSet<Address> {
+    let bound: rustc_hash::FxHashSet<Address> = env
+      .role_binding
+      .as_ref()
+      .and_then(|b| crate::role_table::RoleTable::from_bytes(&b.bytes).ok())
+      .map(|t| t.bound.into_iter().map(|(_, a)| a).collect())
+      .unwrap_or_default();
+    let mut candidates = rustc_hash::FxHashSet::default();
+    for entry in &env.consts {
+      if bound.contains(entry.key()) {
+        continue;
+      }
+      let bytes = entry.value().raw_bytes();
+      if bytes.len() >= 2 && bytes[0] == 0xD2 && bytes[1] == 0x00 {
+        candidates.insert(entry.key().clone());
+      }
+    }
+    if candidates.is_empty() || env.named.is_empty() {
+      return rustc_hash::FxHashSet::default();
+    }
+    let mut native = rustc_hash::FxHashSet::default();
+    let mut other = rustc_hash::FxHashSet::default();
+    for entry in &env.named {
+      let addr = &entry.value().addr;
+      if !candidates.contains(addr) {
+        continue;
+      }
+      if Self::is_native_eval_axiom_name(entry.key()) {
+        native.insert(addr.clone());
+      } else {
+        other.insert(addr.clone());
+      }
+    }
+    native.retain(|a| !other.contains(a));
+    native
+  }
+
   /// The custom user axioms of `env`: every safe `ConstantInfo::Axio` in
-  /// `env.consts` that is not bound in `env.role_binding`'s role table.
+  /// `env.consts` that is neither bound in `env.role_binding`'s role table nor
+  /// a Lean 4 native-evaluation auxiliary compiler-trust axiom
+  /// (`native_eval_axiom_addrs`).
   pub fn user_axioms(env: &Env) -> Vec<Address> {
     let Some(binding) = &env.role_binding else {
       return Vec::new();
@@ -1297,9 +1362,10 @@ impl ClaimContext {
     };
     let bound: rustc_hash::FxHashSet<Address> =
       table.bound.into_iter().map(|(_, a)| a).collect();
+    let native = Self::native_eval_axiom_addrs(env);
     let mut out = Vec::new();
     for entry in &env.consts {
-      if bound.contains(entry.key()) {
+      if bound.contains(entry.key()) || native.contains(entry.key()) {
         continue;
       }
       let bytes = entry.value().raw_bytes();

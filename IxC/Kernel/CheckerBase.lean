@@ -160,7 +160,8 @@ def checkConstantVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal 
   if cv.type.hasFvar then
     throw (.invalid msg!"unexpected free variable in type of {cv.name}")
   let type ← ops.annotate env 0 cv.type
-  unless type.allLevelParamsDefined cv.levelParams do
+  unless cv.type.allLevelParamsDefined cv.levelParams &&
+      type.allLevelParamsDefined cv.levelParams do
     throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
   unless type.constsResolve env do
     throw (unresolvedConstsError msg!"type of {cv.name}" type)

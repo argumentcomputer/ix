@@ -43,19 +43,63 @@ open Ix.Kernel (Role RoleTable)
 def ofBinding (binding : Address) (bindingAssumed : Bool := false) : Except String ClaimContext := do
   return { spec := ← Ix.SpecDigest.specDigest, binding, axioms := none, bindingAssumed }
 
-/-- Safe axioms in `env` not bound by its role binding. The default table binds
-    `propext` and `Classical.choice` and the inert `sorryAx`, `Lean.trustCompiler`,
-    `Lean.ofReduceBool` and `Lean.ofReduceNat`, so a claim over Lean's `Init` lists
-    none of them; it binds `Quot.sound`, an axiom record, as its role. Mirrors
-    `ClaimContext::user_axioms` in `crates/ixon/src/proof.rs`. -/
+/-- Whether `name` is an auxiliary compiler-trust axiom synthesized by Lean 4's
+`Lean.Meta.nativeEqTrue` (`native_decide`, `decide +native`, `bv_decide`):
+`<decl>._native.<tactic>.ax` or `<decl>._native.<tactic>.ax_<suffix>`.
+Mirrors `ClaimContext::is_native_eval_axiom_name` in `crates/ixon/src/proof.rs`. -/
+def isNativeEvalAxiomName : Ix.Name → Bool
+  | .str (.str (.str _ "_native" _) tac _) leaf _ =>
+    (tac == "native_decide" || tac == "decide" || tac == "bv_decide") &&
+      (leaf == "ax" || leaf.startsWith "ax_")
+  | _ => false
+
+/-- Safe unbound axiom addresses in `env` whose named entries are all Lean 4
+native-evaluation auxiliary axioms (`isNativeEvalAxiomName`). Because Ixon
+deduplicates alpha-equivalent axioms, an address that also carries a non-native
+user axiom name is NOT classified as compiler-trust. Mirrors
+`ClaimContext::native_eval_axiom_addrs` in `crates/ixon/src/proof.rs`. -/
+def nativeEvalAxiomAddrs (env : Ixon.Env) : Std.HashSet Address := Id.run do
+  let bytes := match env.roleBinding with
+    | some b => some b.bytes
+    | none => Ix.Kernel.Reader.defaultTableBytes.toOption
+  let bound : Std.HashSet Address := match bytes.bind RoleTable.ofBytes with
+    | some t => t.bound.foldl (fun s (_, a) => s.insert a) {}
+    | none => {}
+  let mut candidates : Std.HashSet Address := {}
+  for (addr, lc) in env.consts do
+    let bs := lc.rawBytes
+    if bs.size >= 2 && bs[0]! == 0xD2 && bs[1]! == 0x00 && !bound.contains addr then
+      candidates := candidates.insert addr
+  if candidates.isEmpty || env.named.isEmpty then return {}
+  let mut native : Std.HashSet Address := {}
+  let mut other : Std.HashSet Address := {}
+  for (name, named) in env.named do
+    let addr := named.addr
+    if !candidates.contains addr then continue
+    if isNativeEvalAxiomName name then
+      native := native.insert addr
+    else
+      other := other.insert addr
+  if native.isEmpty then return {}
+  return native.fold (init := {}) fun s a => if other.contains a then s else s.insert a
+
+/-- Safe axioms in `env` not bound by its role binding and not Lean 4
+    native-evaluation auxiliary axioms (`nativeEvalAxiomAddrs`). The default
+    table binds `propext` and `Classical.choice` and the inert `sorryAx`,
+    `Lean.trustCompiler`, `Lean.ofReduceBool` and `Lean.ofReduceNat`, so a
+    claim over Lean's `Init` lists none of them; it binds `Quot.sound`, an
+    axiom record, as its role. Mirrors `ClaimContext::user_axioms` in
+    `crates/ixon/src/proof.rs`. -/
 def userAxioms (env : Ixon.Env) : Array Address := Id.run do
   let some binding := env.roleBinding | return #[]
   let some table := RoleTable.ofBytes binding.bytes | return #[]
   let bound : Std.HashSet Address := table.bound.foldl (fun s (_, a) => s.insert a) {}
+  let native := nativeEvalAxiomAddrs env
   let mut out : Array Address := #[]
   for (addr, lc) in env.consts do
     let bytes := lc.rawBytes
-    if bytes.size >= 2 && bytes[0]! == 0xD2 && bytes[1]! == 0x00 && !bound.contains addr then
+    if bytes.size >= 2 && bytes[0]! == 0xD2 && bytes[1]! == 0x00 &&
+        !bound.contains addr && !native.contains addr then
       out := out.push addr
   return out
 

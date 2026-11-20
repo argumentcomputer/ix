@@ -59,6 +59,7 @@ import Tests.Ix.IxVM.ModelAdvice
 import Tests.Ix.IxVM.FieldReduction
 import Tests.Ix.IxVM.MustReject
 import Tests.Ix.IxVM.IndVariations
+import Tests.Ix.IxVM.SyntheticRegressions
 import Tests.Ix.Kernel.ReaderCoverage
 import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
@@ -267,6 +268,10 @@ def registry : List Entry := [
   -- The declaration checker's shape guards: one kind of member per inductive block, no later
   -- use of a recursive field, a recursor header free of `let`.
   .env "ixvm-shape-guards" (.ci .ixvm) Tests.Ix.IxVM.ShapeGuards.run,
+  -- Corpus-driven and synthetic 3-way IxVM / IxC regressions: modeled extract closure,
+  -- Lean 4.34 native_decide inert classification, dead-let universe bounds, multi-container
+  -- and mutual AST modeled families, semantic imax, and adversarial boundary controls.
+  .env "ixvm-synthetic-regressions" (.ci .ixvm) Tests.Ix.IxVM.SyntheticRegressions.run,
   .runner "ixvm-claim-safety-corpus" (.manual "walk closure of what stays owned on a compiled corpus; IX_SAFETY_IXE, IX_SAFETY_IXES") Tests.Ix.IxVM.ClaimSafety.corpus,
   -- The binder data a witness carries for the conversion: hand-made records
   -- with known data, the host-side check (coverage, the kernel's values), tampering.
@@ -401,6 +406,7 @@ def required : List (String × String) := [
   ("ixvm-claim-safety", "ci:ixvm"),
   ("ixvm-recursor-parent-route", "ci:ixvm"),
   ("ixvm-shape-guards", "ci:ixvm"),
+  ("ixvm-synthetic-regressions", "ci:ixvm"),
   ("binding-proof-cli", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),
   ("compile-closure-whole", "ci:compiler-closures"),

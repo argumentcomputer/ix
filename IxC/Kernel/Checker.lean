@@ -39,15 +39,16 @@ def checkDefnVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md)
     throw (.invalid msg!"loose bound variable in value of {cv.name}")
   if value.hasFvar then
     throw (.invalid msg!"unexpected free variable in value of {cv.name}")
-  let value ← ops.annotate env 0 value
-  unless value.allLevelParamsDefined cv.levelParams do
+  let jv ← ops.annotate env 0 value
+  unless value.allLevelParamsDefined cv.levelParams &&
+      jv.allLevelParamsDefined cv.levelParams do
     throw (.invalid msg!"undeclared universe parameter in value of {cv.name}")
-  unless value.constsResolve env do
-    throw (unresolvedConstsError msg!"value of {cv.name}" value)
-  let vtype ← ops.inferType env 0 value
+  unless jv.constsResolve env do
+    throw (unresolvedConstsError msg!"value of {cv.name}" jv)
+  let vtype ← ops.inferType env 0 jv
   unless ← ops.isDefEq env 0 vtype cv.type do
     throw (.invalid msg!"type mismatch in definition {cv.name}")
-  pure ⟨.defnInfo cv value hint :: env.consts⟩
+  pure ⟨.defnInfo cv jv hint :: env.consts⟩
 
 /-- Check a `theorem` declaration's value against its checked constant
 (whose type must additionally be a proposition).  **A theorem is
@@ -72,7 +73,8 @@ def checkThmVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md)
   if value.hasFvar then
     throw (.invalid msg!"unexpected free variable in value of {cv.name}")
   let jv ← ops.annotate env 0 value
-  unless jv.allLevelParamsDefined cv.levelParams do
+  unless value.allLevelParamsDefined cv.levelParams &&
+      jv.allLevelParamsDefined cv.levelParams do
     throw (.invalid msg!"undeclared universe parameter in value of {cv.name}")
   unless jv.constsResolve env do
     throw (unresolvedConstsError msg!"value of {cv.name}" jv)
@@ -96,12 +98,13 @@ def checkOpaqueVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md
     throw (.invalid msg!"loose bound variable in value of {cv.name}")
   if value.hasFvar then
     throw (.invalid msg!"unexpected free variable in value of {cv.name}")
-  let value ← ops.annotate env 0 value
-  unless value.allLevelParamsDefined cv.levelParams do
+  let jv ← ops.annotate env 0 value
+  unless value.allLevelParamsDefined cv.levelParams &&
+      jv.allLevelParamsDefined cv.levelParams do
     throw (.invalid msg!"undeclared universe parameter in value of {cv.name}")
-  unless value.constsResolve env do
-    throw (unresolvedConstsError msg!"value of {cv.name}" value)
-  let vtype ← ops.inferType env 0 value
+  unless jv.constsResolve env do
+    throw (unresolvedConstsError msg!"value of {cv.name}" jv)
+  let vtype ← ops.inferType env 0 jv
   unless ← ops.isDefEq env 0 vtype cv.type do
     throw (.invalid msg!"type mismatch in opaque {cv.name}")
   pure ⟨.axiomInfo cv :: env.consts⟩

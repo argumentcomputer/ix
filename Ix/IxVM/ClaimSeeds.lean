@@ -1,5 +1,6 @@
 module
 public import Ix.Claim
+public import Ix.ClaimContext
 public import IxC.Kernel.Ixon.RoleTable
 public import IxC.Kernel.Ixon.Prelude
 
@@ -91,11 +92,16 @@ def walkEdges (c : Ixon.Constant) : Array Address := Id.run do
   return out
 
 /-- **The constants of `env` that use an inert axiom**: the axioms its binding
-    binds to inert roles, and every constant whose walk edges reach one,
-    transitively. Empty, without a pass over `env`, when it stores none of the
-    inert axioms. -/
+    binds to inert roles (`inertRoleAddrs`), Lean 4's native-evaluation
+    auxiliary compiler-trust axioms (`Ix.ClaimContext.nativeEvalAxiomAddrs`),
+    and every constant whose walk edges reach one, transitively. Empty, without
+    a reverse-edge pass over `env`, when it stores none of these axioms. -/
 def inertUsers (env : Ixon.Env) : Std.HashSet Address := Id.run do
-  let roots := (inertRoleAddrs env).toArray.filter env.consts.contains
+  let mut rootSet : Std.HashSet Address := Ix.ClaimContext.nativeEvalAxiomAddrs env
+  for a in inertRoleAddrs env do
+    if env.consts.contains a then
+      rootSet := rootSet.insert a
+  let roots := rootSet.toArray
   if roots.isEmpty then return {}
   let mut users : Std.HashMap Address (Array Address) := {}
   for (a, lc) in env.consts do

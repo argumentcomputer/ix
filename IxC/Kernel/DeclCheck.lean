@@ -432,7 +432,8 @@ def checkConstantValF (ops : (CheckerOps md) m) (fe : FEnv md)
   if cv.type.hasFvar then
     throw (.invalid msg!"unexpected free variable in type of {cv.name}")
   let type ← ops.annotate fe.env 0 cv.type
-  unless type.allLevelParamsDefined cv.levelParams do
+  unless cv.type.allLevelParamsDefined cv.levelParams &&
+      type.allLevelParamsDefined cv.levelParams do
     throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
   unless type.constsResolveF fe do
     throw (unresolvedConstsError msg!"type of {cv.name}" type)
@@ -798,15 +799,16 @@ def checkDefnValF (ops : (CheckerOps md) m) (fe : FEnv md) (cv : ConstantVal md)
     throw (.invalid msg!"loose bound variable in value of {cv.name}")
   if value.hasFvar then
     throw (.invalid msg!"unexpected free variable in value of {cv.name}")
-  let value ← ops.annotate fe.env 0 value
-  unless value.allLevelParamsDefined cv.levelParams do
+  let jv ← ops.annotate fe.env 0 value
+  unless value.allLevelParamsDefined cv.levelParams &&
+      jv.allLevelParamsDefined cv.levelParams do
     throw (.invalid msg!"undeclared universe parameter in value of {cv.name}")
-  unless value.constsResolveF fe do
-    throw (unresolvedConstsError msg!"value of {cv.name}" value)
-  let vtype ← ops.inferType fe.env 0 value
+  unless jv.constsResolveF fe do
+    throw (unresolvedConstsError msg!"value of {cv.name}" jv)
+  let vtype ← ops.inferType fe.env 0 jv
   unless ← ops.isDefEq fe.env 0 vtype cv.type do
     throw (.invalid msg!"type mismatch in definition {cv.name}")
-  pure (fe.push (.defnInfo cv value hint))
+  pure (fe.push (.defnInfo cv jv hint))
 
 /-- `installBasisDecl` through the index, returning the pushed index. -/
 def installBasisDeclF (fe : FEnv md) (ci : ConstantInfo md) : m (FEnv md) := do
