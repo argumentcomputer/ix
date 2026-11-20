@@ -377,57 +377,6 @@ theorem readDefinition_spec {cx : Ctx md} {st : State md} {heights : CName md �
           · exact .opaq
           · exact .thm
 
-/-- Reading a safe definition reports a rewrite precisely when the recorded type and
-body select that recursor term in the current reader state. The returned declaration
-keeps the original member's key, including when its body changes. -/
-theorem readDefinition_rewritten_iff {cx : Ctx md} {st : State md} {heights : CName md → Nat}
-    {ref : ConstRef Address} {lps : List LevelParam} {mr : MemberReader md} {d : Ixon.Definition}
-    (kind : d.kind = .defn) (safe : d.safety = .safe) (decl : CDecl md) :
-    readDefinition cx st heights ref lps mr d = .ok (decl, true) ↔
-      ∃ key ty raw body, cx.memberKey ref = .ok key ∧ mr.read d.typ = .ok ty ∧
-        mr.read d.value = .ok raw ∧ projRewrite st ⟨key, lps, ty⟩ raw = some body ∧
-        decl = .defnDecl ⟨key, lps, ty⟩ body
-          ((cx.hint ref).getD (Ix.Kernel.Frontend.InModel.hintFor heights body)) := by
-  cases hk : cx.memberKey ref <;>
-    simp [readDefinition, hk, bind, Except.bind]
-  rename_i key
-  cases ht : mr.read d.typ <;> simp
-  rename_i ty
-  cases hv : mr.read d.value <;> simp
-  rename_i raw
-  have hs : safetyDeclineOf .defn .safe = none := rfl
-  have hd : (Ix.DefKind.defn != .opaq) = true := rfl
-  cases hw : projRewrite st ⟨key, lps, ty⟩ raw <;>
-    simp [lowerDefinition, kind, safe, hs, hd, hw, pure, Except.pure]
-  exact eq_comm
-
-/-- The full reader's singleton output for a rewritten accessor. Both expression
-reads refer to the record at `owner`, and the rewrite uses the state before that record. -/
-theorem readRecord_rewritten_defn_iff {cx : Ctx md} {st : State md} {owner : Address}
-    {c : Ixon.Constant} {d : Ixon.Definition} (info : c.info = .defn d)
-    (kind : d.kind = .defn) (safe : d.safety = .safe) (decl : CDecl md) :
-    readRecord cx st owner c = .ok { decls := #[decl], projRewrites := 1 } ↔
-      ∃ key ty raw body, cx.memberKey (.member owner 0) = .ok key ∧
-        (definitionReader cx owner c d).read d.typ = .ok ty ∧
-        (definitionReader cx owner c d).read d.value = .ok raw ∧
-        projRewrite st ⟨key, singletonLps d.lvls, ty⟩ raw = some body ∧
-        decl = .defnDecl ⟨key, singletonLps d.lvls, ty⟩ body
-          ((cx.hint (.member owner 0)).getD
-            (Ix.Kernel.Frontend.InModel.hintFor (st.heights.getD · 0) body)) := by
-  rw [← readDefinition_rewritten_iff kind safe]
-  unfold readRecord
-  rw [info]
-  change (do
-    let (result, rw) ← readDefinition cx st (st.heights.getD · 0) (.member owner 0)
-      (singletonLps d.lvls) (definitionReader cx owner c d) d
-    pure ({ decls := #[result], projRewrites := if rw then 1 else 0 } : Read md)) = _ ↔ _
-  cases h : readDefinition cx st (st.heights.getD · 0) (.member owner 0)
-      (singletonLps d.lvls) (definitionReader cx owner c d) d with
-  | error e => simp [bind, Except.bind]
-  | ok pair =>
-    obtain ⟨result, rw⟩ := pair
-    cases rw <;> simp [bind, Except.bind, pure, Except.pure]
-
 /-- Con-leche's quotient kind of an Ixon quotient record. -/
 def quotKind : Ix.QuotKind → Ix.Kernel.QuotKind
   | .type => .type

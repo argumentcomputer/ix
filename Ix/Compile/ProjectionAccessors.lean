@@ -6,6 +6,11 @@ public import Ix.EnvScope
 public import Ix.RoleEvidence
 public import IxC.Kernel.Ixon.Prelude
 
+/-! IxC reads a supported modeled accessor as a recursor application. Preparing that
+definition before compilation makes the recursor part of the authenticated Ixon
+record and follows its ordinary dependency edges. A use of the accessor therefore
+unfolds the same definition that IxC checked. -/
+
 public section
 
 namespace Ix.Compile.ProjectionAccessors
@@ -19,12 +24,12 @@ private def owner? : Lean.Expr → Option Lean.Name
   | .proj n _ (.bvar 0) => some n
   | _ => none
 
-private def candidate (env : Lean.Environment) (ci : Lean.ConstantInfo) : Bool := Id.run do
-  let .defnInfo d := ci | return false
-  unless d.safety == .safe && (d.all.isEmpty || d.all == [d.name]) do return false
-  let some n := owner? d.value | return false
-  let some (.inductInfo ind) := env.find? n | return false
-  return ind.all.length > 1 || ind.numNested != 0
+private def candidateOwner? (env : Lean.Environment) (d : Lean.DefinitionVal) : Option Lean.Name := do
+  guard (d.safety == .safe && (d.all.isEmpty || d.all == [d.name]))
+  let n ← owner? d.value
+  let .inductInfo ind ← env.find? n | none
+  guard (ind.all.length > 1 || ind.numNested != 0)
+  return n
 
 private def sourceName (key : Ix.Kernel.Key .source) : Except String Lean.Name :=
   match key with
@@ -85,41 +90,47 @@ private def materialize (st : State .source) (d : Lean.DefinitionVal) :
 /-- Compute the modeled field data over the owners' dependency closure. -/
 private def fieldState (source : Lean.Environment) (input : List (Lean.Name × Lean.ConstantInfo))
     (owners : List Lean.Name) :
-    Except String (State .source) := do
-  let deps := Ix.EnvScope.collectDeps source owners { recursors := true }
+    Except String (State .source × Nat) := do
+  let deps := Ix.EnvScope.collectDeps source (``PUnit.unit :: owners) { recursors := true }
   let support := Std.HashMap.ofList deps
   let support := input.foldl (fun m (n, ci) => if m.contains n then m.insert n ci else m) support
   let env : Ix.Environment := { consts := Std.HashMap.ofList (Ix.CanonM.canonChunk support.toArray).toList }
   let graph := Ix.LeanIngress.graph env (Ix.Cert.blocksOf env)
   let pre : Ix.Kernel.Reader.Prelude .source ← Ix.Kernel.Reader.builtinPrelude
   let mut st := pre.state
+  -- Only a successfully read block can supply an owner and its field iota level.
   for (_, converted) in scheduleOf graph do
     if let .ok r := converted >>= lower st then st := st.commit r
-  return st
+  return (st, support.size)
 
 /-- Publish the same recursor body IxC selects, so a use of the accessor unfolds
 to that body in Ixon. Check the materialized source term by reading it back. -/
 def prepare (source : Lean.Environment) (input : List (Lean.Name × Lean.ConstantInfo)) :
     Except String (List (Lean.Name × Lean.ConstantInfo)) := do
-  let candidates := input.filter fun (_, ci) => candidate source ci
-  if candidates.isEmpty then return input
-  let owners := candidates.filterMap fun (_, ci) => ci.value?.bind owner?
-  let st ← fieldState source input owners
-  let mut replacements : Std.HashMap Lean.Name Lean.ConstantInfo := {}
-  let mut refs : Lean.NameSet := {}
-  for (name, ci) in candidates do
+  let owners := input.filterMap fun (_, ci) => match ci with
+    | .defnInfo d => candidateOwner? source d
+    | _ => none
+  if owners.isEmpty then return input
+  let (st, supportSize) ← fieldState source input owners
+  let mut prepared := input.toArray
+  let mut present := input.foldl (fun (s : Lean.NameSet) (n, _) => s.insert n) {}
+  -- A recursor body can introduce names from its owner's recursor closure and PUnit.
+  -- Process any such added definitions through the same preparation as the input.
+  for i in [:prepared.size + supportSize + 1] do
+    let some (name, ci) := prepared[i]? | return prepared.toList
     let .defnInfo d := ci | continue
+    if (candidateOwner? source d).isNone then continue
     let ⟨updated, _⟩ ← materialize st d
     if updated.value == d.value then continue
-    replacements := replacements.insert name (.defnInfo updated)
+    prepared := prepared.set! i (name, .defnInfo updated)
     let previous := ci.getUsedConstantsAsSet
-    for n in updated.value.getUsedConstantsAsSet do
-      unless previous.contains n do refs := refs.insert n
-  if replacements.isEmpty then return input
-  let present := input.foldl (fun (s : Lean.NameSet) (n, _) => s.insert n) {}
-  let missing := refs.toList.filter (!present.contains ·)
-  let extra := if missing.isEmpty then [] else
-    (Ix.EnvScope.collectDeps source missing { recursors := true }).filter (!present.contains ·.1)
-  return (input.map fun (n, ci) => (n, replacements.getD n ci)) ++ extra
+    let missing := updated.value.getUsedConstants.toList.filter fun n =>
+      !present.contains n && !previous.contains n
+    unless missing.isEmpty do
+      for (n, extra) in Ix.EnvScope.collectDeps source missing { recursors := true } do
+        unless present.contains n do
+          present := present.insert n
+          prepared := prepared.push (n, extra)
+  throw "accessor dependencies exceed the owners' recursor closure"
 
 end Ix.Compile.ProjectionAccessors

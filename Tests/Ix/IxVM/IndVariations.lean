@@ -675,6 +675,7 @@ def run (leanEnv : Environment) : IO UInt32 := do
         let (annotated, data) ← try
             pure (← IxVM.ClaimHarness.withKernelAnnotator canon, "annotated")
           catch _ => pure (canon, "not annotated")
+        -- These cases exercise the stored syntax, including primitive projection bodies.
         let (rawEnv, _, _) ← IO.ofExcept <| Ix.Cert.compileUnchecked annotated
         let missing := names.filter fun x => (rawEnv.getAddr? (Ix.Name.fromLeanName x)).isNone
         -- IxC

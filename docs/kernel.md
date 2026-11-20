@@ -92,6 +92,12 @@ report check that reads the artifact alone) before it is written. The certified
 compiler runs at the default sharing limits, which `compileReport` fixes: a
 sharing-limit override is refused there.
 
+For a supported field accessor of a mutual or nested structure, source preparation
+emits the recursor body that IxC reads. It checks that both bodies give the same
+IxC declaration before Ixon assigns the accessor its address. Recompiling also
+updates references to the accessor. Generate a new `.ixes` from the resulting
+`.ixe` when upgrading an artifact containing these accessors.
+
 Name-only `ix prove`, `ix check` and `ix addr-of` use
 `Ix.Check.loadNamedIxonEnv`, which also compiles the closure through the
 certified compiler `Ix.CompileM.compileCertified` (`Ix.Cert.compileReport`);

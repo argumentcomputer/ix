@@ -1,4 +1,4 @@
-import Ix.IxVM.ProjectionAccessor
+import Ix.IxVM.Model
 import Tests.Ix.IxVM.Harness
 import Tests.Ix.IxVM.IndVariationsDefs
 
@@ -26,7 +26,19 @@ private def rewrittenAddress (env : Ixon.Env) (names : Model.Names) (name : Lean
   if source == target then throw s!"{name}: the rewrite preserved the source address"
   return target
 
+private def checkMissingRecursor (leanEnv : Lean.Environment) : IO Unit := do
+  let name := `IxIV.Constraint.value
+  let inputs := Ix.EnvScope.collectDeps leanEnv [name] {}
+  if inputs.any (·.1 == `IxIV.Constraint.rec) then throw (IO.userError "expected a missing recursor")
+  let prepared ← IO.ofExcept (Ix.Compile.ProjectionAccessors.prepare leanEnv inputs)
+  let constants := Std.HashMap.ofList prepared
+  let some (.defnInfo d) := constants[name]? | throw (IO.userError "missing prepared accessor")
+  let refs := d.value.getUsedConstants
+  unless refs.contains `IxIV.Constraint.rec && refs.all constants.contains do
+    throw (IO.userError "the prepared accessor did not bring its dependencies")
+
 def run (leanEnv : Lean.Environment) : IO UInt32 := do
+  checkMissingRecursor leanEnv
   let roots := fixtures.toList.map Prod.fst
   let inputs := Ix.EnvScope.collectSelectedDeps leanEnv roots
   let original ← IO.ofExcept (← Ix.CompileM.compileCertifiedPrepared inputs false (binderData := true))
@@ -59,15 +71,8 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
         pending := pending.erase a
         unless r.projRewrites == (if rewrites then 1 else 0) do
           throw (IO.userError s!"{name}: unexpected rewrite count {r.projRewrites}")
-        let some lc := env.consts[a]? | throw (IO.userError s!"missing bytes for {name}")
-        match ProjectionAccessor.readStored? cx st a lc.rawBytes with
-        | none =>
-          if rewrites then throw (IO.userError s!"{name}: accessor reconstruction failed")
-        | some decl =>
-          unless rewrites && r.decls == #[decl] do
-            throw (IO.userError s!"{name}: reconstructed declaration differs from the reader")
-          if (ProjectionAccessor.readStored? cx st native lc.rawBytes).isSome then
-            throw (IO.userError s!"{name}: reconstructed at a different source address")
+        if rewrites then
+          let #[decl] := r.decls | throw (IO.userError s!"{name}: expected one declaration")
           let target ← IO.ofExcept (rewrittenAddress env names name a decl)
           unless (← lookupAddr checkEnv name) == target do
             throw (IO.userError s!"{name}: compiler output differs from IxC's reconstructed accessor")
