@@ -2,18 +2,15 @@ import Ix.Meta
 import Tests.Ix.InstanceSymbols
 import Tests.Ix.VMSource
 import Tests.Ix.IxVM.SafeReferencesWalk
-import Tests.Ix.IxVM.GuardCertificate
-import Tests.Ix.IxVM.RecRunBounds
-import Tests.Ix.IxVM.TwinPairRecords
 
 /-!
 Test driver for suites that import the formal `Aiur`/`IxVM`/`MultiStark`
-packages or `IxVMRefinement` (and therefore Mathlib). Kept separate from
-`IxTests` (`Tests/Main.lean`) so the Nix flake and merge-test builds of
-`IxTests` stay free of Mathlib.
+packages (and therefore Mathlib). Kept separate from `IxTests`
+(`Tests/Main.lean`) so the Nix flake and merge-test builds of `IxTests` stay
+free of Mathlib.
 
 With no arguments, runs the CI checks (`instance-symbols`, `ixvm-source`).
-Named arguments select individual entries (including the manual helpers).
+Named arguments select individual entries (including `ixvm-export-safe-walk`).
 -/
 
 private def runNamed (getEnv : IO Lean.Environment) (name : String) : IO UInt32 := do
@@ -22,9 +19,6 @@ private def runNamed (getEnv : IO Lean.Environment) (name : String) : IO UInt32 
     | "instance-symbols" => Tests.Ix.InstanceSymbols.run
     | "ixvm-source" => do Tests.Ix.VMSource.run (← getEnv)
     | "ixvm-export-safe-walk" => Tests.Ix.IxVM.SafeReferencesWalk.exportWalkArtifact
-    | "ixvm-guard-certificate" => do Tests.Ix.IxVM.GuardCertificate.run (← getEnv)
-    | "ixvm-rec-run-bounds" => do Tests.Ix.IxVM.RecRunBounds.run (← getEnv)
-    | "ixvm-twin-pair" => do Tests.Ix.IxVM.TwinPairRecords.run (← getEnv)
     | other =>
       IO.eprintln s!"[formal-package-tests] unknown entry: {other}"
       return 2

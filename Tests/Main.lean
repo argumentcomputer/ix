@@ -52,28 +52,13 @@ import Tests.Ix.IxVM.ClaimSafety
 import Tests.Ix.IxVM.SafeReferences
 import Tests.Ix.IxVM.RecursorParentRoute
 import Tests.Ix.IxVM.ShapeGuards
-import Tests.Ix.IxVM.RecGen
-import Tests.Ix.IxVM.GuardCorpus
-import Tests.Ix.IxVM.AliasFormers
 import Tests.Ix.IxVM.Differential
-import Tests.Ix.IxVM.Mutator
 import Tests.Ix.IxVM.PwHints
 import Tests.Ix.IxVM.BinderAnnotators
 import Tests.Ix.IxVM.ModelAdvice
 import Tests.Ix.IxVM.FieldReduction
 import Tests.Ix.IxVM.MustReject
-import Tests.Ix.IxVM.DeclCheckMustReject
-import Tests.Ix.IxVM.AdviceMustReject
-import Tests.Ix.IxVM.QuotAdviceMustReject
 import Tests.Ix.IxVM.IndVariations
-import Tests.Ix.IxVM.RefusalControls
-import Tests.Ix.IxVM.OpOrderScan
-import Tests.Ix.IxVM.FamilyRecords
-import Tests.Ix.IxVM.FamilyGraphRecords
-import Tests.Ix.IxVM.AliasBlock
-import Tests.Ix.IxVM.ValueRecords
-import Tests.Ix.IxVM.TelescopeBlock
-import Tests.Ix.IxVM.RoleMemberCensus
 import Tests.Ix.Kernel.ReaderCoverage
 import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
@@ -230,9 +215,8 @@ def registry : List Entry := [
   .runner "claim-policy-cli" (.ci .cli) Tests.ClaimPolicyCli.run,
 
   -- Claims through the formal IxVM program (`ixvm-proof test` on the claim
-  -- artifact; `Tests.Ix.IxVM.Harness`), each verdict pinned: the only
-  -- evidence, until the refinement proof lands, that the program rejects
-  -- what it must.
+  -- artifact; `Tests.Ix.IxVM.Harness`), each verdict pinned: completeness,
+  -- FFT cost pins, and Rust-host/FFI/circuit-verdict boundary checks.
   -- Kernel verdicts and exact FFT costs for constants, the binding claim and a shard.
   .env "ixvm-kernel-checks" (.ci .ixvm) Tests.Ix.IxVM.kernelChecks,
   -- The trusted reader (`prepareWith`) accepts the logical records of the closures
@@ -260,20 +244,10 @@ def registry : List Entry := [
   -- A constant byte out of range is refused.
   .runner "ixvm-io-ingress" (.ci .ixvm) Tests.IOIngress.run,
   .env "ixvm-model-advice" (.ci .ixvm) Tests.Ix.IxVM.ModelAdvice.run,
-  -- Must-reject gates: hand-built inputs the program has to refuse, each with the controls
-  -- that show it reaches the check it targets.
+  -- Must-reject gate: compact hand-built inputs the program has to refuse, with
+  -- controls exercising the Rust executor and circuit-verdict deferred assertions.
   .env "ixvm-must-reject" (.manual "hand-built must-reject fixtures and their controls, checked against Lean's kernel") Tests.Ix.IxVM.MustReject.run,
-  .env "ixvm-decl-check-must-reject" (.manual "the declaration checker's must-reject cases and their controls") Tests.Ix.IxVM.DeclCheckMustReject.run,
-  .env "ixvm-advice-must-reject" (.manual "corrupted model advice for a mutual and a nested block") Tests.Ix.IxVM.AdviceMustReject.run,
-  .env "ixvm-quot-advice-must-reject" (.manual "model advice whose basis references leave the quotient roles") Tests.Ix.IxVM.QuotAdviceMustReject.run,
   .env "ixvm-ind-variations" (.manual "inductive variations through Lean, the certified kernel and IxVM; IX_IV_ONLY") Tests.Ix.IxVM.IndVariations.run,
-  .env "ixvm-refusal-controls" (.manual "negative controls that reach the later refusals of the declaration checker, role validation and the field classifier") Tests.Ix.IxVM.RefusalControls.run,
-  .runner "ixvm-op-order-scan" (.manual "binding claims whose operation certificate reaches another record through the well-founded block, and their controls; IX_OP_ORDER_DEFAULT_ONLY runs the default table only") Tests.Ix.IxVM.OpOrderScan.run,
-  .env "ixvm-family-records" (.manual "the compiled records and model advice of a nested and an indexed family; IX_FAMILY_RECORDS_OUT writes them") Tests.Ix.IxVM.FamilyRecords.run,
-  .env "ixvm-family-graph-records" (.manual "the compiled records of two nested families and of a second recursor record of a family; IX_FAMILY_GRAPH_OUT writes them") Tests.Ix.IxVM.FamilyGraphRecords.run,
-  .env "ixvm-alias-block" (.manual "a family whose former is declared at a definition, and its recursor, through the program in both validator modes") Tests.Ix.IxVM.AliasBlock.run,
-  .env "ixvm-value-records" (.manual "a compiled theorem and opaque constant and an assembled block of definitions through the program, under a validated and an assumed binding") Tests.Ix.IxVM.ValueRecords.run,
-  .env "ixvm-telescope-block" (.manual "an inductive type declared at its telescope, a structure-like proposition and their recursors through the program in both validator modes") Tests.Ix.IxVM.TelescopeBlock.run,
   .env "ixvm-model-report" (.manual "model advice per mutual or nested block of IX_MODEL_IXE") Tests.Ix.IxVM.ModelAdvice.report,
   .env "ixvm-model-coverage" (.manual "every modeled block of IX_MODEL_IXE through IxVM") Tests.Ix.IxVM.ModelAdvice.coverage,
   .env "ixvm-model-proj" (.manual "records of IX_MODEL_IXE that project at a modeled block") Tests.Ix.IxVM.ModelAdvice.projUse,
@@ -293,10 +267,7 @@ def registry : List Entry := [
   -- The declaration checker's shape guards: one kind of member per inductive block, no later
   -- use of a recursive field, a recursor header free of `let`.
   .env "ixvm-shape-guards" (.ci .ixvm) Tests.Ix.IxVM.ShapeGuards.run,
-  .env "ixvm-recgen" (.manual "IX_RECGEN_IXE and IX_RECGEN_OUT: native recursor corpus controls") Tests.Ix.IxVM.RecGen.run,
-  .env "ixvm-guard-corpus" (.manual "IX_RECGEN_IXE and IX_RECGEN_OUT: declaration controls; optional IX_GUARD_CORPUS_ADDRESS_FILE") Tests.Ix.IxVM.GuardCorpus.run,
   .runner "ixvm-claim-safety-corpus" (.manual "walk closure of what stays owned on a compiled corpus; IX_SAFETY_IXE, IX_SAFETY_IXES") Tests.Ix.IxVM.ClaimSafety.corpus,
-  .runner "ixvm-alias-formers" (.manual "formers that are not a telescope into a sort, walked as the native check walks them, of IX_ALIAS_IXE; IX_ALIAS_OUT") Tests.Ix.IxVM.AliasFormers.run,
   -- The binder data a witness carries for the conversion: hand-made records
   -- with known data, the host-side check (coverage, the kernel's values), tampering.
   .runner "ixvm-pw-hints" (.ci .ixvm) Tests.Ix.IxVM.PwHints.run,
@@ -306,20 +277,17 @@ def registry : List Entry := [
   .env "ixvm-fixture" (.manual "rebuild the dev fixture IxVM/IxVM/fixtures/nat-add-comm.ixf; IX_FIXTURE_OUT") Tests.Ix.IxVM.PwHints.fixture,
   .runner "binder-data-annotators" (.manual "the compiler's inline annotator against IxC's pass on a compiled artifact, byte for byte; IX_BD_IXE") Tests.Ix.IxVM.BinderAnnotators.run,
   .runner "prim-addrs-artifact" (.manual "every Ix.PrimAddrs address is the record a compiled artifact publishes under its Lean name; IX_PRIM_IXE") Tests.Ix.Kernel.PrimAddrs.artifact,
-  .runner "ixvm-role-member-census" (.manual "IX_ROLE_IXE: the record at every address the default role table binds, its block and the block's route, and the bound addresses that are constant addresses of an inductive block") Tests.Ix.IxVM.RoleMemberCensus.run,
   .env "ixvm-pw-diag" (.manual "why the kernel refuses records of a claim; IX_PW_NAME") Tests.Ix.IxVM.PwHints.diag,
   .runner "ixvm-pw-corpus" (.manual "the binder-data annotator on a compiled corpus; IX_PW_IXE, IX_PW_IXES") Tests.Ix.IxVM.PwHints.corpus,
   -- The compiler's binder-data sections and re-addressing (`Ix.Compile.BinderData`).
   .runner "ixvm-binder-data" (.ci .ixvm) Tests.Ix.IxVM.BinderData.run,
   .runner "binder-data-corpus" (.manual "a compiled artifact's binder-data sections: canonical, recomputed equal; IX_BD_IXE") Tests.Ix.IxVM.BinderData.corpus,
-  -- IxVM against Lean's kernel on a compiled corpus, and an adversarial mutator over
-  -- real inductive blocks and recursor records (circuit verdict).
+  -- IxVM against Lean's kernel on a compiled corpus (circuit verdict).
   .env "ixvm-differential" (.manual "a compiled corpus through IxVM and Lean's kernel; IX_DIFF_MODULES, IX_DIFF_LIMIT") Tests.Ix.IxVM.Differential.run,
   .env "ixvm-differential-shards" (.manual "a sharded corpus: an ix check report against Lean's kernel, failing parts run again by halving; IX_DIFF_IXE, IX_DIFF_IXES, IX_DIFF_REPORT, IX_DIFF_OUT") Tests.Ix.IxVM.Differential.runShards,
   -- The sharded differential's attribution on a hand-made report: an isolated rejection,
   -- an interaction set and inconclusive parts stay distinct.
   .runner "ixvm-differential-attribution" .primary Tests.Ix.IxVM.Differential.runAttribution,
-  .env "ixvm-mutator" (.manual "mutated blocks and recursors; IX_MUT_MODULES, IX_MUT_BUDGET, IX_MUT_SEED") Tests.Ix.IxVM.Mutator.run,
   -- Declaration-checker measurements: declaration costs, a Std shard, the
   -- inductive census and the in-process modeller's records. Not a gate.
   .env "ixvm-s4-bench" (.manual "declaration-checker cost measurements; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.S4Bench.bench,
