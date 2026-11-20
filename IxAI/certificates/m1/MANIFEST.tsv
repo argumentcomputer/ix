@@ -1,0 +1,13 @@
+file	blake3	bytes	location in the working store
+environment (full.ixe)	17c675af3f1107433619b8e1963b3178e670e753c7f6268423b4be141bb54291	245191531	.truthmines/combined/env/full.ixe
+proved partition (proven.ixes)	74c8d3836067171a6601289d4cc3052476127badc4418b5b6b6c81984c9f57b4	1230591	.truthmines/combined/cert/full/proven.ixes
+joined root proof (root-proof.bin)	86b30f095ebdcdaa76542d5b3095795c428c7a8e32bcb6334975703d9bbfe407	6007147	.truthmines/combined/cert/full/root/root-proof.bin
+IxVM artifact	0cbcb6812057cbb047da1a290a6ff6c72b1582e56596cab337c927a39f24fcd7	7168127	ix/artifacts/
+ix_aggr artifact with the join shapes	80d584ab24439dd23ad642a57009210ba3d407f4c20a4755c600d043fcaefa2e	3304125	ix/artifacts/
+PLONK verifying key (plonk-verifying-key.bin)	736588d00f08bb56626b83f8fea79af0bb516a6e6f99e6bde301afdf7c4a3b3e	34384	here
+run aggregator (aiur-exec.ixa)	001431282dc34b09e890944f9396bfe1ac2187914d30744a02209a130057e0bc	3070115	.truthmines/aiur/aiurexec-block/
+block program package (block-000.ixa)	5a8070af53a98fd010ec7fb4af17818183f6388b1a336548213716d38d5827c0	2679250	.truthmines/aiur/aiurexec-block/packages/
+certificate (proof.bin)	7a2a00c51524146aadc86b72750ced8f4d56f5cdc874e8562e090b99790b3b22	584	here
+joined root key (root-vk.bin)	798947179cf837f378820476df87c3149d67b5bf4e229e89c264e2c061620635	279471	here
+joined root claim (root-claims.bin)	cb46158a35249ce8f059b0d63b225028b488d990d9aa1ac5401713d3f04438b4	160	here
+submitted model (model.txt)	264a50d831e1c612387e837c065bdf83bebf85860e1e5f2c32317643756d2420	1083	here
