@@ -1,5 +1,5 @@
 name = "ix-ai-pipeline"
-defaultTargets = ["IxAICore", "IxAICommon", "IxAI", "IxAIVerify", "IxAICli", "IxAIData", "IxAIBench", "IxAITest", "IxAICoreTest", "IxAIVerifyTest", "demo", "ixai", "ixai-verify"]
+defaultTargets = ["IxAICore", "IxAICommon", "IxAI", "IxAIVerify", "IxAICli", "IxAIData", "IxAIBench", "IxAITest", "IxAICoreTest", "IxAIVerifyTest", "IxAIDecide", "IxAIDecideTest", "demo", "ixai", "ixai-verify"]
 
 [[require]]
 name = "floatlib"
@@ -58,6 +58,12 @@ name = "IxAIVerifyTest"
 
 [[lean_lib]]
 name = "IxAIGpu"
+
+[[lean_lib]]
+name = "IxAIDecide"
+
+[[lean_lib]]
+name = "IxAIDecideTest"
 
 [[lean_exe]]
 name = "ixai-gpu-export"
