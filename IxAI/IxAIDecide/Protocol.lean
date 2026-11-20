@@ -155,6 +155,42 @@ def judgments {ι ω : Type} [Encode ι] [Finite ω] [Inhabited ω] (m : Model)
     (val : List (Labelled ι ω)) : List (Judgment ω × ω) :=
   val.map fun e => (judge m e.input, e.label)
 
+/-! ## Thresholds that hold in every bin -/
+
+/-- The bins a threshold rule checks, as `[lo, hi)` in units of `1/256`. -/
+def gateBins : List (Int × Int) := [(128, 160), (160, 192), (192, 224), (224, 257)]
+
+/-- Validation answers of option `o` with confidence in `[lo, hi)`: how many, and how many right. -/
+def binCounts {ω : Type} [DecidableEq ω] (js : List (Judgment ω × ω)) (o : ω) (lo hi : Int) :
+    Nat × Nat :=
+  let sel := js.filter fun (j, _) =>
+    j.option == o && decide (lo ≤ j.confidence) && decide (j.confidence < hi)
+  (sel.length, (sel.filter fun (_, l) => l == o).length)
+
+/-- The lowest bin edge from which every bin holds at least `minCount` answers of `o` meeting
+`meets right count`; `257`, above every probability, if there is none. -/
+def thresholdPerBin {ω : Type} [DecidableEq ω] (js : List (Judgment ω × ω)) (o : ω)
+    (meets : Nat → Nat → Bool) (minCount : Nat) : Int :=
+  let ok := fun (k : Nat) => (gateBins.drop k).all fun (lo, hi) =>
+    let (n, r) := binCounts js o lo hi
+    decide (minCount ≤ n) && meets r n
+  match (List.range gateBins.length).find? ok with
+  | some k => (getD gateBins k (257, 257)).1
+  | none => 257
+
+/-- A fixed precision target `num/den`. -/
+def atLeast (num den : Nat) (right count : Nat) : Bool := decide (num * count ≤ den * right)
+
+/-- A rule's `pay` precision on labelled examples: `(right, paid)`. -/
+def rulePrecision {ι ω : Type} [DecidableEq ω] (rule : ι → ω) (o : ω) (xs : List (Labelled ι ω)) :
+    Nat × Nat :=
+  let paid := xs.filter fun e => rule e.input == o
+  ((paid.filter fun e => e.label == o).length, paid.length)
+
+/-- The rule's precision `R/P` plus one percentage point: `100·P·r ≥ (100·R + P)·n`. -/
+def policyPayTarget (rp : Nat × Nat) (right count : Nat) : Bool :=
+  decide ((100 * rp.1 + rp.2) * count ≤ 100 * rp.2 * right)
+
 /-! ## Calibration -/
 
 /-- One confidence bin of a model's answers on a labelled set. -/

@@ -177,32 +177,64 @@ Done:
   was judged `pay` at the gate's threshold or more.
   Training follows a protocol fixed before its runs (`Protocol.lean`): fan-in-scaled
   initialization, a validation stream, selection among 48 checkpoints per seed on validation
-  only, thresholds from validation precision targets (pay 90%, hold 80%, reject 90%), seeds
-  101 to 108 fixed in advance, the held-out set scored once. Results on 1,024 held-out invoices
-  per seed:
-  - Accuracy: model 902.3 on average, written policy 889.1, best rule on the visible fields
-    914.1; the model is at least as accurate as the policy on 7 of 8 seeds (the criterion fixed
-    in advance), closing about half the gap to the ceiling. The first version, tuned on one
-    seed's own held-out score, had lost to the policy on average (878 against 891).
-  - The gate is worse than the policy where it matters: with the pre-fixed threshold rule it
-    pays 657.5 invoices per seed with 68.1 wrong (10.4%), against the policy's 633.8 with 56.6
-    wrong (8.9%). A 90% precision target averaged over all `pay` answers is met at the floor,
-    because most are routine. `newVendorPortalBankChange_pays` proves that the deployed gate
-    pays a new vendor that changed bank details through the portal (fraudulent one time in
-    four under the generator; the policy rejects it). Not changed after the fact: the remedy (a
-    target met in every confidence bin above the threshold, or a pay target above the policy's
-    own precision) needs a new pre-fixed run on fresh seeds.
-  - `reject` never qualifies, which is right under the generator (the riskiest visible profile
-    is fraudulent at most 3/4 of the time); `never_rejects` proves it for every weight setting.
-  - Confidence rises with accuracy in every bin (44% right below 128, 91% at 224 and above, 8
-    seeds pooled) but is not calibrated.
-  The deployed seed-101 model (355 parameters, 1,920 steps) has its card and four decisions
-  proved by `decide +kernel` and its training re-run bit for bit at every test build (`#guard`,
-  evaluation, not a kernel proof). `Fast.lean` gives `@[csimp]` array versions of the core's
-  shuffle and schedule, proved equal: the schedule from 2.3 s to 0.06 s in the interpreter.
+  only, seeds fixed in advance, the held-out set scored once. Two threshold rules were each
+  fixed before their runs; neither makes the gate both safer than the written policy and
+  useful. Results on 1,024 held-out invoices per seed:
+  - Accuracy of the model's top answer: 902.3 on seeds 101 to 108 and 905.1 on seeds 201 to
+    208, against the written policy's 889.1 and 885.5 and the 914.1 and 916.0 of the best rule
+    on the visible fields; at least the policy's on 15 of 16 seeds. The first version, tuned on
+    one seed's own held-out score, had lost to the policy on average (878 against 891).
+  - Rule v1 (90% precision averaged over all `pay` answers; seeds 101 to 108): the gate pays
+    wrongly 10.4% of the time against the policy's 8.9%; the target is met at the floor because
+    most `pay` answers are routine. Reproduced on the fresh seeds (10.1% against 9.1%).
+  - Rule v2 (the policy's own validation precision plus one point, in every confidence bin;
+    same models, seeds 201 to 208): safety met (wrong payments at most the policy's on 7 of 8
+    seeds, 7.5% pooled against 9.1%), usefulness not met (500 of 1,024 decided on average,
+    under the 512 fixed in advance, and nothing paid on 3 seeds). A target at the label-noise
+    ceiling (a perfect `pay` answer is right about 93% of the time), judged on bins of a few
+    dozen answers, turns sampling noise into deferral.
+  - `reject` never qualifies under either rule, which is right under the generator (the
+    riskiest visible profile is fraudulent at most 3/4 of the time); `never_rejects` proves it
+    for every weight setting.
+  - Confidence rises with accuracy in every bin but is not calibrated.
+  The deployed model is seed 201's under rule v2 (179 parameters, 3,200 steps; pay needs
+  224/256): its card (877 correct against the policy's 857; 718 decided, 636 right; 438
+  payments, 34 wrong) and four decisions are proved by `decide +kernel`, including that the
+  new-vendor, portal, bank-change invoice which rule v1 paid now goes to a person
+  (`newVendorPortalBankChange_escalates`); its training is re-run bit for bit at every test
+  build (`#guard`, evaluation, not a kernel proof). `Fast.lean` gives `@[csimp]` array versions
+  of the core's shuffle and schedule, proved equal: the schedule from 2.3 s to 0.06 s in the
+  interpreter. Written down, not run: rule v3 (cumulative answers above each edge, a one-sided
+  binomial lower bound against the policy's precision, a 4,096-example validation set).
   Not general enough in the core: `card` and `Model.ask` clamp probabilities, the triage gate
   has one threshold; the Aiur circuit, refinement proofs and code generators are tied to
   `Triage.spec`, so this model's training is not certified by either route yet.
+- A guardrail gate for the Lane harness (2026-11-20, `IxAIDecide/LaneGate.lean`,
+  `decision-library.md` "Decisions inside an agent harness: Lane"). The first decision around
+  Lane is whether a finished change may merge without review. A typed `ChangeSummary` mirrors
+  what Lane's change record holds (edit counts per class, added axioms, unchecked files,
+  conflicts, obligations) plus three values only the main agent can supply (who classified the
+  edits, merge conflicts from `merge --check-only`, sorries). Exact rules send to review any
+  change whose edits were not classified by the main agent, or that has a statement, removed,
+  modifier or definition-body edit, an added axiom, text changed outside declarations, an
+  unchecked file, a conflict, an open obligation, a sorry or an IxC rejection; only an empty
+  change is discarded; a gated model may only choose between `mergeNow` and `review`. Proved
+  for every model and gate: `mergeNow` implies no exact rule applies, main-agent classification
+  and a `clean` judgment at the gate's threshold (`handle_mergeNow`,
+  `mergeNow_no_statement`, `…_added_axiom`, `…_unchecked_file`, `…_conflict`, `…_sorry`,
+  `mergeNow_classified_by_main`), and the model never causes a discard (`handle_discard_iff`).
+  No model is trained: there is no data. Reading Lane's code (fork `a97befb`) corrected the
+  earlier document-only mapping: the change record's edit classes are reported by whoever ran
+  `finish` (the worker, for a delegated lane) and the server checks only their shape; a file's
+  `unchecked: false` is whatever tag the writer sent; `finish` does not check for sorries;
+  `submit --require` recomputes the edits in the main agent's process but stores no outcome,
+  and nothing links a submission to a change address; heartbeat use is printed and recorded
+  against nothing. So no labels exist yet. Proposed in `lane.md` as changes 11 (outcome records
+  for merge, submit and discard, keyed by change address, written only on the main agent's
+  requests) and 12 (`lane classify`: main-agent reclassification, about 60 lines, not written).
+  Change 11 is drafted on the fork's local branch `outcome-records` (`f9a048d`, 105 lines and a
+  test); it has not been built or tested yet (queued). The module is checked on its own and is
+  not yet imported by the library's root or test target.
 - Combined certificate verified by the consumer (2026-11-20, M1). `ixai-verify combined`
   (`IxAIVerify.Combined`) checks the 584-byte certificate `7a2a00c5…` against a job that pins
   the compression pipeline: `PROVED` in 7.7 s (checker 4.3 s, PLONK 25 ms, 4.1 GB peak).
@@ -505,8 +537,13 @@ In progress:
   was added because a Mathlib constant
   (`Algebra.kerTensorProductMapIdToAlgHomEquiv._proof_1`) did not finish without it. Dropping it
   is sound by PR 678's own specifications of the two functions; what is at risk is termination
-  and cost elsewhere. `exp-noinferrebase` drops only the inference rebase and is built but not
-  measured. The design that removes the cost altogether is Lean's: open binders with free
+  and cost elsewhere. `exp-noinferrebase` (`711fdc14f`, nine lines: `k_infer_rebase` always takes the
+  unrebased branch) drops only the inference rebase: shard 0 at 520 million queries, FFT
+  3.95e12, 40 GB, 3:44, against v5's 1.10 billion, 1.04e13, 69 GB, 9:17. Both branches of
+  `k_infer_rebase` meet the same specification, so the change is sound; what it may lose is
+  what the rebase was added for (upstream #560: open inference workloads that did not converge
+  in practical time, with a fixture). In hand: that fixture, the Mathlib sample and shards 1 to
+  4 under it, and a cheaper middle design if it is not clean. The design that removes the cost altogether is Lean's: open binders with free
   variables named by de Bruijn level, so that instantiation walks only the paths to the
   variable replaced and no rebase is needed; that touches every kernel module that walks
   binders. Changed functions and the PR 678 proofs they affect are listed in the notes.
@@ -521,9 +558,10 @@ In progress:
   of 7.2 billion queries and 76 of the 99 minutes; the 29,750 constants of shards 3 and 4 take
   8 minutes. In hand, in this order of expected effect: the shape of the generated proofs
   (their inversion scripts were tuned for compile cost, never for checking cost); the kernel's
-  substitution cost (`kernel-subst`, being adopted into `cert` with `adopt_kernel.sh`; the first
-  real proving time under it is shard 0 of the existing environment, then all five shards
-  executed for their counts, in `cert/kernel-subst-timing`); the rebase experiments. The cost
+  substitution cost (`kernel-subst`, merged into `cert` with regenerated pins, `9a54ac3a5`,
+  IxVM artifact `1b348b95…`; shard 0 is being proved on the GPU under it and under
+  `exp-noinferrebase` with the standalone binaries, `kernel-subst/bin/prove0.sh`); the rebase
+  experiments. The cost
   is paid once per program and toolchain, not per training run: a run is joined to an existing
   environment root in 22 seconds.
 - A second combined certificate with the deployed model's card and gate decisions in the

@@ -14,7 +14,7 @@ and acts on the gate's verdict:
 
 `handle_paid` is the property the business cares about, proved for every model: an invoice is
 paid only if its vendor is approved, it is within its purchase order, and the model's confidence
-in `pay` was at least 128/256, the threshold set on validation.
+in `pay` was at least 224/256, the threshold set on validation.
 -/
 
 namespace IxAIDecide.Invoice
@@ -77,10 +77,10 @@ def handle (d : Decision Profile Disposition) (inv : Invoice) : Outcome :=
       .escalated j.option j.confidence
 
 /-- For every model behind `gate`: a paid invoice has an approved vendor, is within its purchase
-order, and was judged `pay` with confidence at least 128/256. -/
+order, and was judged `pay` with confidence at least 224/256. -/
 theorem handle_paid (m : Model) (inv : Invoice) (h : handle ⟨m, gate⟩ inv = .paid) :
     inv.vendorApproved = true ∧ inv.overPO = false ∧
-      128 ≤ (judge m inv.profile : Judgment Disposition).confidence := by
+      224 ≤ (judge m inv.profile : Judgment Disposition).confidence := by
   unfold handle at h
   by_cases ha : inv.vendorApproved = true
   · by_cases ho : inv.overPO = true

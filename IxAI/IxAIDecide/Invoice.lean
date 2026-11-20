@@ -140,26 +140,36 @@ def config : Config :=
   { seed := 2026, hidden := 8, lrRaw := 8, epochs := 80, batch := 16, trainSize := 512,
     testSize := 1024 }
 
-/-- The recipe the protocol selected for seed 101 on validation: fan-in initialization with gain
-627/256, learning rate 8/256, 16 hidden units, 60 epochs (1,920 SGD steps). -/
+/-- The recipe the protocol selected for seed 201 on validation: fan-in initialization with gain
+627/256, learning rate 8/256, 8 hidden units, 100 epochs (3,200 SGD steps). -/
 def recipe : Recipe :=
-  ⟨{ config with seed := 101, hidden := 16, lrRaw := 8, epochs := 60 }, 627⟩
+  ⟨{ config with seed := 201, hidden := 8, lrRaw := 8, epochs := 100 }, 627⟩
 
-/-- Validation targets: `pay` right 90% of the time, `hold` 80%, `reject` 90%, each over at
-least 20 validation answers. -/
-def targetPercent : Disposition → Nat
-  | .pay => 90
-  | .hold => 80
-  | .reject => 90
+/-- Protocol v2's gate for weights `m` from validation examples `val`
+(`docs/decision-library.md`): each option's threshold is the lowest bin edge from which every
+bin holds at least 20 validation answers of that option meeting its target. `pay`'s target is
+the written policy's own `pay` precision on `val` plus one percentage point; `hold` 80%;
+`reject` 90%. The floor is 128. -/
+def gateFromValidation (m : Model) (val : List (Labelled Profile Disposition)) :
+    Gate Disposition :=
+  let js := judgments m val
+  let pay := thresholdPerBin js .pay (policyPayTarget (rulePrecision writtenPolicy .pay val)) 20
+  let hold := thresholdPerBin js .hold (atLeast 8 10) 20
+  let rej := thresholdPerBin js .reject (atLeast 9 10) 20
+  { floor := 128
+    need := fun
+      | .pay => pay
+      | .hold => hold
+      | .reject => rej }
 
-/-- The thresholds `thresholdFor` gives on `recipe`'s validation judgments for those targets
-(checked in `IxAIDecideTest`): `pay` and `hold` qualify at the floor, 128/256; `reject` at no
-threshold, so it is 257 and the gate never rejects (`run_never`). Below the floor every case goes
-to a person. -/
+/-- `gateFromValidation` for the deployed weights on seed 201's validation set (checked in
+`IxAIDecideTest`): `pay` from 224/256, `hold` from the floor, 128/256, and `reject` at no
+threshold, so 257: the gate never rejects (`run_never`). Below the floor, and for a `pay`
+answer below 224, the case goes to a person. -/
 def gate : Gate Disposition :=
   { floor := 128
     need := fun
-      | .pay => 128
+      | .pay => 224
       | .hold => 128
       | .reject => 257 }
 

@@ -53,7 +53,9 @@ busy() {
 # runs many heavy steps back to back cannot starve the others.
 queue="$(dirname "$log")/heavy.queue"
 mkdir -p "$queue"
-ticket="$queue/$(date +%s%N).$$"
+# HEAVY_PRIORITY=1 queues the job ahead of every waiting job that did not ask for it: its ticket
+# sorts first. For a short measurement that other work is waiting on, not for routine jobs.
+ticket="$queue/${HEAVY_PRIORITY:+0}$(date +%s%N).$$"
 : > "$ticket"
 trap 'rm -f "$ticket"' EXIT
 oldest() {

@@ -340,28 +340,136 @@ the margin for the rare `reject` class (45 of 512 training examples). (3) 512 tr
 cover at most 512 of the 1,152 profiles. Next: a larger training set, a smaller learning rate
 late in training, and initial biases set positive so units start active.
 
-### The deployed model (seed 101)
+### The v1 deployed model (seed 101, superseded)
 
-`recipe` (gain 627, learning rate 8, 16 hidden units, 60 epochs: 1,920 SGD steps, 355
-parameters). `#guard recipe.train task.spec == deployed` re-runs training at every build of the
-test library and checks it bit for bit. Same seed, same weights.
+Seed 101's selected recipe (gain 627, learning rate 8, 16 hidden units, 60 epochs) behind v1's
+thresholds (`pay` 128, `hold` 128, `reject` 257): card 914 correct against the policy's 888, 991
+decided with 894 right, 653 `pay`s of which 60 wrong. It paid the new-vendor, portal,
+bank-change profile at 193/256. Replaced by the protocol v2 model below.
 
-**Gate** (`gate` in `Invoice.lean`, checked equal to `thresholdFor`'s output on validation by a
-`#guard`): floor 128; `pay` 128; `hold` 128; `reject` 257. Proved for every weight setting:
+## Protocol v2: thresholds that hold in every bin
 
-- `pay_needs_confidence`: `pay` only at confidence at least 128;
-- `never_rejects`: the gate never returns `reject` (from `run_never`, as 257 > 256);
+Under v1 the gate paid more wrong invoices than the written policy (10.4% against 8.9%), because a
+precision target averaged over all `pay` answers was met at the floor. v2 changes **only the
+threshold rule**. Data streams, the grid, training and `selectRecipe` are exactly as in v1, so
+each seed's selected model is the one v1 would select, and any difference in the gated numbers is
+the rule's. Written before any v2 run.
+
+**Bins.** `gateBins`: confidence `[128, 160)`, `[160, 192)`, `[192, 224)`, `[224, 257)` (in
+256ths). Candidate thresholds are the four lower edges.
+
+**Rule** (`thresholdPerBin`). For option `o`, on the selected model's validation judgments: `need o`
+is the lowest edge `e` such that **every** bin with lower edge at least `e` holds at least 20
+validation answers whose most probable option is `o`, and those answers meet `o`'s target. A bin
+with fewer than 20 such answers fails: too little evidence counts against deciding, not for it.
+If no edge qualifies, `need o` is 257 and the gate never returns `o` (`run_never`). The floor stays
+128.
+
+**Targets.**
+- `pay`: the written policy's own `pay` precision on the same validation set plus one percentage
+  point. With `R` of the policy's `P` validation `pay`s right, a bin with `n` answers of which `r`
+  are right meets it when `100·P·r ≥ (100·R + P)·n` (`policyPayTarget`).
+- `hold`: 80% in every bin. `reject`: 90% in every bin (as in v1, now per bin).
+
+**Seeds:** 201 to 208, fixed in advance and never run before. The held-out set is scored once per
+seed. v1's thresholds on the same models are reported beside v2's, for attribution only.
+
+**Success criteria, fixed in advance.**
+- **Safety:** the fraction of the gated model's `pay`s whose label is another option is at most
+  the written policy's fraction on at least 7 of the 8 seeds, and lower when pooled over the 8
+  seeds. A seed where the gate pays nothing counts as 0 wrong.
+- **Usefulness:** the gate decides (returns an option, not `defer`) at least 512 of 1,024
+  held-out invoices on average, and pays at least half as many invoices as the written policy on
+  average. **Below 50% coverage the gate is pointless**: a person would see most invoices anyway,
+  and the written policy decides all of them.
+- Both must hold for the rule to count as working. If safety holds only by deferring almost
+  everything, that is the finding.
+
+**Deployed:** seed 201's selected model with its v2 thresholds.
+
+## Protocol v2 results
+
+Run once on seeds 201–208 (about 80 s per seed in the interpreter with the `@[csimp]` fast
+schedule, in three `ix/light.sh` jobs). The models are the ones v1's selection picks; only the
+thresholds differ. `need` is `pay / hold`; `reject` was 257 on every seed. Before the full run, a
+one-candidate smoke test of the sweep script was run on seed 201 (20 epochs, one recipe) to check
+the script; it did not feed any choice.
+
+| Seed | Selected: gain, lr, hidden, epochs | `need` | Model | Policy | Ceiling | Decided | Right among decided | Deferred | Model's `pay`s / wrong | Policy's `pay`s / wrong | v1 thresholds' `pay`s / wrong |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 201 | 627, 8, 8, 100 | 224 / 128 | 877 | 857 | 885 | 718 | 636 | 306 | 438 / 34 (7.8%) | 612 / 66 (10.8%) | 648 / 77 (11.9%) |
+| 202 | 627, 8, 16, 60 | 192 / 192 | 910 | 883 | 921 | 818 | 746 | 206 | 552 / 51 (9.24%) | 628 / 58 (9.24%) | 642 / 65 (10.1%) |
+| 203 | 256, 8, 16, 100 | 257 / 192 | 903 | 895 | 918 | 290 | 259 | 734 | 0 / 0 | 654 / 55 (8.4%) | 713 / 77 (10.8%) |
+| 204 | 627, 4, 16, 80 | 257 / 192 | 900 | 882 | 911 | 196 | 172 | 828 | 0 / 0 | 653 / 63 (9.6%) | 681 / 82 (12.0%) |
+| 205 | 256, 8, 16, 60 | 224 / 160 | 921 | 885 | 927 | 522 | 482 | 502 | 232 / 14 (6.0%) | 639 / 50 (7.8%) | 663 / 53 (8.0%) |
+| 206 | 256, 8, 16, 20 | 224 / 160 | 909 | 885 | 911 | 521 | 476 | 503 | 220 / 17 (7.7%) | 642 / 62 (9.7%) | 639 / 61 (9.5%) |
+| 207 | 256, 8, 16, 40 | 257 / 160 | 918 | 905 | 937 | 275 | 253 | 749 | 0 / 0 | 643 / 50 (7.8%) | 564 / 46 (8.2%) |
+| 208 | 256, 8, 16, 80 | 224 / 192 | 903 | 892 | 918 | 662 | 608 | 362 | 355 / 19 (5.4%) | 651 / 63 (9.7%) | 668 / 68 (10.2%) |
+| Mean | | | 905.1 | 885.5 | 916.0 | 500.3 | 454.0 | 523.8 | 224.6 / 16.9 | 640.3 / 58.4 | 652.3 / 66.1 |
+
+**Safety: met, partly vacuously.** The gated model's wrong-payment fraction is at most the
+policy's on 7 of 8 seeds (seed 202 is above it by 0.003 points: 51/552 against 58/628), and
+pooled over the 8 seeds it is 7.5% (135 of 1,797) against the policy's 9.1% (467 of 5,122). But 3
+of those 7 seeds (203, 204, 207) pay nothing at all, which the rule fixed in advance counts as 0
+wrong. On the 5 seeds where the gate pays, it is safer than the policy on 4.
+
+**Usefulness: not met.** The gate decides 500.3 of 1,024 invoices on average, just under the 512
+fixed in advance as the point below which it is pointless, and on 3 seeds it decides fewer than
+300. It pays 224.6 invoices per seed against the policy's 640.3, far under the half (320) required.
+**The rule fails as a whole: safety is bought mostly by deferring.**
+
+**Accuracy** of the most probable option, unchanged by the rule: 905.1 against the policy's 885.5
+and the ceiling's 916.0, at least the policy's on all 8 seeds. v1's thresholds on the same models
+paid wrongly 10.1% of the time (529 of 5,218), so the v1 result reproduces on fresh seeds.
+
+**Why it fails.** The `pay` target, the policy's validation precision plus one point (90.9% to
+93.6% across the seeds), sits at the noise ceiling: with 1/16 of labels replaced at random, even
+a perfect `pay` is right about 93% of the time. And requiring it in **every** bin, each judged on
+20 to 550 validation answers, makes the outcome depend on sampling noise of several points in
+the smallest bin. Seed 203's top `pay` bin held 48 answers with 44 right (91.7% against a target
+of 93.6%); seed 204's held 38 with 35 right (92.1% against 92.5%); one short bin and `pay`
+becomes 257.
+
+**What I would change, not tried on these seeds** (a v3 must be fixed in advance and run on fresh
+seeds):
+- Judge a threshold `t` on the **cumulative** answers at or above every edge from `t` up, not on
+  each bin alone: this still forbids a low-confidence region from hiding behind a good top bin,
+  but each test uses at least as many answers as the top bin.
+- Make the margin statistical rather than fixed: require the policy's precision to be below a
+  lower confidence bound of the gate's (for example, a one-sided binomial bound computed in
+  integers), so a thin bin fails for lack of evidence and a large bin can pass at the policy's
+  own level.
+- Use a larger validation set (4,096 examples) so the top bins hold hundreds of answers.
+- Compare against the policy on the same invoices: the policy's precision among the invoices
+  the gate would pay, rather than over all its own payments.
+
+### The deployed model (seed 201)
+
+`recipe` (gain 627, learning rate 8, 8 hidden units, 100 epochs: 3,200 SGD steps, 179
+parameters) behind v2's thresholds. `#guard recipe.train task.spec == deployed` re-runs training
+at every build of the test library and checks it bit for bit. Same seed, same weights.
+
+**Gate** (`gate` in `Invoice.lean`; a `#guard` checks it equals `gateFromValidation deployed` on
+seed 201's validation set): floor 128; `pay` 224; `hold` 128; `reject` 257. Proved for every
+weight setting:
+
+- `pay_needs_confidence`: `pay` only at confidence at least 224;
+- `never_rejects`: the gate never returns `reject` (`run_never`, as 257 > 256);
 - `low_confidence_defers`: below 128 the verdict is `defer`.
 
-**Card** (`card_certified`, `decide +kernel`, about 48 s): model 914, policy 888, Brier sum
-51,012/256 (0.19 per example), 991 decided with 894 right, 653 `pay`s of which 60 wrong.
+**Card** (`card_certified`, `decide +kernel`): model 877, policy 857, Brier sum 68,104/256 (0.26
+per example), 718 decided with 636 right, 438 `pay`s of which 34 wrong (7.8%; the policy's: 66
+of 612, 10.8%).
 
 **Decisions**, each `by decide +kernel`:
 
-- `routine_pays`: established vendor, portal, amount level 2, purchase order: `pay` at 249/256.
-- `largeWithoutPO_holds`: the same at amount level 6 without a purchase order: `hold` at 244.
-- `newVendorEmailBankChange_escalates`: the model answers `reject` at 151; the verdict is `defer`.
-- `newVendorPortalBankChange_pays`: the written policy rejects; the model pays at 193.
+- `routine_pays`: established vendor, portal, amount level 2, purchase order: `pay` at 229/256.
+- `largeWithoutPO_escalates`: the same at amount level 6 without a purchase order: `hold` at 123,
+  below the floor, so `defer`.
+- `newVendorEmailBankChange_escalates`: the riskiest visible profile; the model answers `pay`,
+  but only at 130, and the verdict is `defer`.
+- `newVendorPortalBankChange_escalates`: the written policy rejects; the model answers `pay` at
+  183, below 224, and the verdict is `defer`. Under v1 the same kind of profile was paid.
 
 **Application** (`InvoiceApp.lean`). `handle` rejects an unapproved vendor and holds a total above
 its purchase order in ordinary code, then calls `decision.run` on the invoice's profile and acts:
@@ -381,7 +489,7 @@ def handle (d : Decision Profile Disposition) (inv : Invoice) : Outcome :=
 
 theorem handle_paid (m : Model) (inv : Invoice) (h : handle ⟨m, gate⟩ inv = .paid) :
     inv.vendorApproved = true ∧ inv.overPO = false ∧
-      128 ≤ (judge m inv.profile : Judgment Disposition).confidence
+      224 ≤ (judge m inv.profile : Judgment Disposition).confidence
 ```
 
 The test file exercises it with a model that says `pay` at full confidence for everything: it
@@ -445,11 +553,11 @@ and noise while the model sees only the encoded input.
   schedule and step and replaces only the initialization (fan-in scaled, zero biases);
   `validationSet`, `Recipe.checkpoints` and `selectRecipe` add validation and early stopping.
 - `Config.schedule` shuffles a list with `setAt`, quadratic in the training-set size: 2.3 s of
-  every 10 s training run of the deployed recipe in the interpreter. `IxAIDecide/Fast.lean`
+  every 10 s training run of seed 101's recipe in the interpreter. `IxAIDecide/Fast.lean`
   proves an array shuffle and an array schedule equal to the core's (`schedule_eq_scheduleArr`,
   `train_eq_trainArr`) and registers them with `@[csimp]`, so code compiled after it runs the fast
   versions while every statement names the core's. The shuffle and its proof are repeated from
-  `IxAIData/Scorer.lean` rather than imported. Measured on the deployed recipe: the schedule from
+  `IxAIData/Scorer.lean` rather than imported. Measured on seed 101's recipe: the schedule from
   2,263 ms to 63 ms, `recipe.train` from 7,958 ms to 5,782 ms, the test library from 10.9 s to
   8.5 s (this last figure also includes generating each data set once in the tests). The kernel still reduces the core's list shuffle.
 - `IxAICore.Finite` carries no lawfulness proof; `Finite.Lawful` is a decidable check, and
@@ -485,8 +593,9 @@ checked against the code of the fork at `~/repos/forks/lane`, branch `ix-address
 `a97befb`; `file:line` references are to that commit unless a branch is named. Markers:
 - no marker: what Lane's code does today;
 - *(proposed)*: a rule, feature or record this design adds; Lane does not do it today;
-- *(built)*: proposed here and implemented, in this project (`IxAIDecide/LaneGate.lean`) or on
-  the fork's local branch `outcome-records` (see `docs/lane.md`, "Outcome records").
+- *(built)*: proposed here and implemented in this project (`IxAIDecide/LaneGate.lean`, checked);
+- *(drafted)*: implemented on the fork's local branch `outcome-records` (`docs/lane.md`, change
+  11) but not yet built or tested.
 
 ### What Lane records today
 
@@ -572,9 +681,9 @@ model that only routes.
 
 | Jev's item | Decision point | Typed input | Options | Label | Exact rule, in code | Model's judgment | Gate property to prove |
 |---|---|---|---|---|---|---|---|
-| Guardrails on inputs and outputs | Main agent receiving a finished lane | `ChangeSummary`: counts from the change record (files by status, unchecked files, edits per class, added axioms, outside-declaration and unclassified modules, IxC rejections, notes, open obligations, resolved conflicts, verify records per origin) plus two counts the main agent measures (`merge --check-only` conflicts, `lane sorries`) and who classified the edits *(built)* | `mergeNow`, `review`, `discard`; the model's own options are only `clean`, `needsReview` *(built)* | whether the change, once merged, passed `submit --require …` with its declarations unedited; needs outcome records keyed by change address *(built on the fork branch, not yet used)* | edits not classified by the main agent, a statement, removed, modifier or body edit, an added axiom, outside-declaration text, an unclassified module, an unchecked file, any conflict, an open obligation, a sorry, or an IxC rejection rules out `mergeNow`; an empty change is discarded *(built)* | how likely the rest is to submit cleanly | proved in `LaneGate.lean` for every model and gate (below) |
+| Guardrails on inputs and outputs | Main agent receiving a finished lane | `ChangeSummary`: counts from the change record (files by status, unchecked files, edits per class, added axioms, outside-declaration and unclassified modules, IxC rejections, notes, open obligations, resolved conflicts, verify records per origin) plus two counts the main agent measures (`merge --check-only` conflicts, `lane sorries`) and who classified the edits *(built)* | `mergeNow`, `review`, `discard`; the model's own options are only `clean`, `needsReview` *(built)* | whether the change, once merged, passed `submit --require …` with its declarations unedited; needs outcome records keyed by change address *(drafted on the fork branch `outcome-records`, not built or tested)* | edits not classified by the main agent, a statement, removed, modifier or body edit, an added axiom, outside-declaration text, an unclassified module, an unchecked file, any conflict, an open obligation, a sorry, or an IxC rejection rules out `mergeNow`; an empty change is discarded *(built)* | how likely the rest is to submit cleanly | proved in `LaneGate.lean` for every model and gate (below) |
 | Checking an answer against the given material | A worker reports a proof accepted | — | — | — | the main agent's `submit --require …` rechecks it in its own process; a worker's `validation` tag and its verify records are self-reported | none: exact | — |
-| Reviewing finished agent runs | Order of the main agent's review queue | change record, plus counts of activity kinds above (activity holds edits, claims, notes, verifies and conflicts, not elaboration attempts) | review priority `low`, `medium`, `high` *(proposed)* | whether review changed or discarded the change: merge records with the target's tree after the merge, then the submit outcome and the submitted tree, compared per declaration *(built on the fork branch)* | a `statement` edit is `high` *(proposed)* | priority among the rest | a `statement` edit is never ranked below `high` |
+| Reviewing finished agent runs | Order of the main agent's review queue | change record, plus counts of activity kinds above (activity holds edits, claims, notes, verifies and conflicts, not elaboration attempts) | review priority `low`, `medium`, `high` *(proposed)* | whether review changed or discarded the change: merge records with the target's tree after the merge, then the submit outcome and the submitted tree, compared per declaration *(drafted on the fork branch, not built or tested)* | a `statement` edit is `high` *(proposed)* | priority among the rest | a `statement` edit is never ranked below `high` |
 | Cascade | Who attempts a goal first | the goal as typed syntax *(proposed; goals as terms need change 10, not started)* | `cheapWorker`, `strongWorker` *(proposed)* | whether a cheap attempt ended with a proof accepted by `submit --require` within its heartbeat budget. Not recorded: attempts leave no activity, heartbeats are stdout only, and a submission's outcome is not stored on `a97befb` | the budget cap | whether the cheap attempt will succeed | `cascade_choose`: the strong worker runs only after the cheap stage deferred or failed; acceptance stays with the kernel |
 | Model router | Which worker type, or none | as above | `cheapWorker`, `strongWorker`, `skip` *(proposed)* | as above | a goal whose statement address already has an accepted proof is not routed; needs the outcome cache of "Integration path" 5, future work | the route | `skip` is never returned for a goal the main agent marked required *(proposed)* |
 | Suggesting a skill from a large fixed list | What a worker's prompt suggests | goal features | a fixed list of tactic families or Lane verbs *(proposed)* | the family the accepted proof used; `premises` gives an accepted proof's used constants, and the proof text is the edit's `after` blob | none | the suggestion | none needed: a suggestion cannot change acceptance |
@@ -643,10 +752,11 @@ be built. Tests: `IxAIDecide/LaneGateTest.lean`, constant models only.
 
 ## What does not work yet
 
-- **The gate pays more wrong invoices than the written policy** (10.4% against 8.9%, all
-  seeds). The `pay` threshold rule (90% precision over all validation `pay` answers) is too loose
-  for the irreversible option. Next: require the target in every confidence bin at and above the
-  threshold, or a target above the policy's own precision.
+- **No threshold rule yet makes the gate both safer than the written policy and useful.** v1's
+  rule (90% precision averaged over all `pay` answers) paid wrongly 10.4% and 10.1% of the time
+  on two sets of seeds, against the policy's 8.9% and 9.1%. v2's (policy precision plus one point
+  in every bin) is safer (7.5%) but decides only 500 of 1,024 invoices on average and pays none on
+  3 of 8 seeds. The changes listed under "Protocol v2 results" are the next attempt.
 - **The model trails the ceiling by about 12 of 1,024** on average; dead hidden units, the noisy
   Brier targets and 512 training examples are the likely causes (see "Protocol results").
 - **Confidence is monotone but not calibrated**: underconfident by 7–12 points in the middle,
@@ -690,13 +800,14 @@ Taking other examples from Jev's map, what this library lacks for each:
 
 ## Build and tests
 
-`ix/light.sh .toolchain/bin/lake build IxAIDecide IxAIDecideTest` (2026-11-20, after the
-protocol): all 18 jobs succeeded, no warnings. `InvoiceDeployed` took 47 s (the kernel-checked
-card over 16 hidden units), `IxAIDecideTest` 7.5 s (re-running the 1,920-step training of the
-deployed recipe), every other module under 0.4 s. The tests cover: encodings and widths, the
-dataset's label counts, the two baselines on seeds 2026 and 101, `recipe.train task.spec ==
-deployed`, checkpoints equal to the shorter recipes, the gate's thresholds equal to
-`thresholdFor` on validation, the kernel-checked two-step core training and the same run through
-the `@[csimp]` fast path, the gate on a constant `pay` model, on every held-out example for three
-weight settings (nothing below 128, never `reject`), a stricter gate changing no decision, a
-cascade, and the service on concrete invoices.
+`ix/light.sh .toolchain/bin/lake build IxAIDecide IxAIDecideTest` (2026-11-20, after protocol
+v2): all 18 jobs succeeded. `InvoiceDeployed` took 39 s (the kernel-checked card),
+`IxAIDecideTest` 13 s on a loaded machine (8.8 s unloaded; it re-runs the deployed recipe's
+3,200-step training), every other module under 0.7 s. The tests cover: encodings and widths,
+the dataset's label counts, the two baselines on seeds 2026 and 201, `recipe.train task.spec ==
+deployed`, checkpoints equal to the shorter recipes, the gate equal to `gateFromValidation` on
+validation, the kernel-checked two-step core training and the same run through the `@[csimp]`
+fast path, the gate on a constant `pay` model, on every held-out example for three weight
+settings (nothing below 128, never `reject`), a stricter gate changing no decision, a cascade,
+and the service on concrete invoices, including the new-vendor, portal, bank-change invoice
+escalated at 183.

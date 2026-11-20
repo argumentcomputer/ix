@@ -3,13 +3,13 @@ import IxAIDecide.Invoice
 /-!
 # The deployed invoice decision
 
-`deployed` is `recipe.train task.spec`, the model the training protocol selected for seed 101
-(`docs/decision-library.md`, "Training protocol"), written out as literals so that every later
+`deployed` is `recipe.train task.spec`, the model protocol v2 selected for seed 201
+(`docs/decision-library.md`, "Protocol v2"), written out as literals so that every later
 statement about it (its card, its decisions) is a small evaluation. That it is the training
 function's output is the claim `trainingClaim`. At build time `IxAIDecideTest` checks it by
 running training in Lean's interpreter; certifying it is the same job as for the triage model: an
 Ix `Eval` claim, or a chain of per-step claims. Proving it with `decide +kernel` here would make
-the kernel replay 1,920 SGD steps, which the triage model's 600-step run shows is too slow for a
+the kernel replay 3,200 SGD steps, which the triage model's 600-step run shows is too slow for a
 build (21.7 minutes in `README.md`).
 
 Everything else in this file is proved by kernel evaluation over the literal weights, or holds
@@ -22,29 +22,21 @@ open IxAICore
 
 private def fx (xs : List Int) : List Fx := xs.map Fx.mk
 
-/-- The trained weights: 18 inputs, 16 hidden units, 3 outputs, 355 parameters. -/
+/-- The trained weights: 18 inputs, 8 hidden units, 3 outputs, 179 parameters. -/
 def deployed : Model :=
-  { w1 := [fx [313, 372, 488, 301, 435, 402, -399, -117, -123, 159, 37, 186, 154, -152, 272, -65, 128, 325],
-      fx [-153, -221, 4, -3, -28, -68, -140, -234, -173, -185, -83, -213, 87, -66, 5, -85, -53, -70],
-      fx [514, 427, 452, 324, 258, 319, -263, -231, 20, 36, 29, 167, 352, -214, 239, 3, 248, 113],
-      fx [329, 337, 205, 268, 279, 307, -192, -207, -38, 125, -3, 266, 88, -131, 152, 48, 87, 243],
-      fx [-120, 67, -41, 35, -105, 4, -106, -99, -100, -40, 27, 14, -56, 30, -51, -78, 0, 17],
-      fx [290, 368, 333, 267, 293, 240, -95, 70, -23, -34, 184, -30, 69, -138, 8, 4, 367, 35],
-      fx [-98, -5, -111, -106, -90, -1, -148, -116, -92, -94, 5, 32, -156, -106, 35, -53, -7, -113],
-      fx [334, -9, 163, 103, 84, 374, -12, -132, -87, 49, 48, 80, 43, 12, 528, 23, 141, 60],
-      fx [-74, -54, -36, -7, 49, -27, -123, 79, -75, -2, 53, 16, 91, -40, -11, 69, 23, -7],
-      fx [277, 205, 290, 218, 229, 282, -138, -152, 102, 96, 368, 54, 4, -421, 116, 7, -285, -64],
-      fx [327, 295, 282, 250, 220, 269, -128, -15, 35, 0, -231, -27, 100, 153, 81, -10, 531, 113],
-      fx [-147, -71, -95, -60, 39, -23, -113, -62, -152, 32, 2, 62, -14, -51, 21, -94, 114, 72],
-      fx [-95, 17, -115, -120, -34, 47, -33, -127, -62, 55, -94, -51, 46, -100, 26, -46, -44, -74],
-      fx [-124, -94, -17, -134, -43, -142, -119, -119, 11, -22, 84, -98, -1, 18, -33, -1, 27, -99],
-      fx [-139, -137, -138, -111, -37, -10, 27, -54, -92, 47, -8, 149, -75, -71, 9, -109, 48, -14],
-      fx [341, 417, 325, 293, 390, 156, -146, -72, -57, 109, 345, -4, 225, -355, -33, -56, 447, 51]]
-    b1 := fx [-543, -251, -594, -385, -71, -535, -228, -718, -76, -399, -594, -69, -54, 0, 0, -520]
-    w2 := [fx [41, -95, 40, 5, 163, -40, -54, -69, 225, -100, -85, -182, 100, 82, -61, -64],
-      fx [-27, -102, -14, -28, 257, 64, 113, -31, 133, 102, 81, 30, 100, 35, 76, 59],
-      fx [-10, -566, -22, 19, 186, 5, -55, 110, 225, 7, -2, 33, 125, 79, -83, -4]]
-    b2 := fx [249, 6, 0] }
+  { w1 := [fx [456, 454, 471, 489, 482, 487, -78, 53, -36, -16, -296, 31, 2, 300, -4, -9, 611, 25],
+      fx [-158, -67, 16, 83, -150, 47, -102, 55, -166, -9, 20, -10, 19, 28, 80, -56, -76, -67],
+      fx [-166, -39, 31, 83, 22, -113, -109, -207, -133, -103, -73, -252, 53, -197, 72, -200, 65, 71],
+      fx [96, 74, 81, -149, -117, 42, -172, -154, 97, -108, 76, -21, 7, 8, -131, 0, -80, -83],
+      fx [510, 179, 282, 371, 423, 624, -109, -131, 248, 29, -54, -192, 180, 132, 459, -28, -10, 183],
+      fx [-7, -56, -138, -51, -41, -170, -40, 4, -5, -130, -165, -76, -122, 43, 62, 10, -17, -82],
+      fx [-80, 33, 13, -74, -42, 65, -37, 26, -10, -22, -61, 16, 96, -76, -70, -111, -63, -129],
+      fx [516, 575, 540, 602, 554, 581, -88, 11, -128, 141, 554, 5, 40, -628, 7, -33, 310, 19]]
+    b1 := fx [-1173, -142, -197, -106, -998, -103, -111, -1016]
+    w2 := [fx [-88, 346, 262, 509, -53, 141, 505, -76],
+      fx [107, 79, 220, 107, 8, 140, -75, 54],
+      fx [-14, 119, 168, 25, 50, 182, 357, 27]]
+    b2 := fx [250, -2, 7] }
 
 /-- The weights are the specified training result. Checked at build time by evaluation; the
 statement Ix would certify. -/
@@ -52,11 +44,11 @@ def trainingClaim : Prop := recipe.train task.spec = deployed
 
 def decision : Decision Profile Disposition := ⟨deployed, gate⟩
 
-/-- The card of `deployed` behind `gate`, against `writtenPolicy`, on seed 101's 1,024 held-out
+/-- The card of `deployed` behind `gate`, against `writtenPolicy`, on seed 201's 1,024 held-out
 examples. -/
 def deployedCard : DecisionCard :=
-  { total := 1024, modelCorrect := 914, baselineCorrect := 888, brierRaw := 51012
-    decided := 991, decidedCorrect := 894, guardedChosen := 653, guardedWrong := 60 }
+  { total := 1024, modelCorrect := 877, baselineCorrect := 857, brierRaw := 68104
+    decided := 718, decidedCorrect := 636, guardedChosen := 438, guardedWrong := 34 }
 
 /-- The card is the specified evaluation of the deployed weights. -/
 def cardClaim : Prop :=
@@ -68,10 +60,10 @@ theorem card_certified : cardClaim := by unfold cardClaim; decide +kernel
 
 /-! ## Gate properties, for every weight setting -/
 
-/-- Whatever the weights: `pay` only at confidence at least 128/256. -/
+/-- Whatever the weights: `pay` only at confidence at least 224/256. -/
 theorem pay_needs_confidence (m : Model) (x : Profile)
     (h : (⟨m, gate⟩ : Decision _ _).run x = .choose .pay) :
-    128 ≤ (judge m x : Judgment Disposition).confidence :=
+    224 ≤ (judge m x : Judgment Disposition).confidence :=
   run_choose_need ⟨m, gate⟩ x h
 
 /-- Whatever the weights: the gate never rejects; a likely fraud goes to a person. -/
@@ -105,24 +97,29 @@ rejects it; under the label rule it is fraudulent one time in four. -/
 def newVendorPortalBankChange : Profile :=
   { routine with tenure := .new, bankChanged := true }
 
-/-- Paid: `pay` at 249/256. -/
+/-- Paid: `pay` at 229/256, above the 224 that `pay` needs. -/
 theorem routine_pays : decision.run routine = .choose .pay := by decide +kernel
 
-/-- Held: `hold` at 244/256. -/
-theorem largeWithoutPO_holds : decision.run largeWithoutPO = .choose .hold := by decide +kernel
+/-- The model's answer is `hold`, at 123/256, below the floor: a person decides. -/
+theorem largeWithoutPO_escalates :
+    (decision.judge largeWithoutPO).option = .hold ∧
+      (decision.judge largeWithoutPO).confidence = 123 ∧
+      decision.run largeWithoutPO = .defer := by decide +kernel
 
-/-- The model's answer is `reject`, at 151/256; the gate never rejects, so the case goes to a
-person. -/
+/-- The riskiest visible profile: the model's answer is `pay` at only 130/256, and the gate sends
+it to a person. -/
 theorem newVendorEmailBankChange_escalates :
-    (decision.judge newVendorEmailBankChange).option = .reject ∧
-      (decision.judge newVendorEmailBankChange).confidence = 151 ∧
+    (decision.judge newVendorEmailBankChange).option = .pay ∧
+      (decision.judge newVendorEmailBankChange).confidence = 130 ∧
       decision.run newVendorEmailBankChange = .defer := by decide +kernel
 
-/-- The written policy rejects; the model answers `pay` at 193/256 and the gate pays, although
-under the generator this profile is fraudulent one time in four. The `pay` threshold comes from
-aggregate validation precision, which this profile hardly moves. -/
-theorem newVendorPortalBankChange_pays :
+/-- The written policy rejects; the model answers `pay` at 183/256, below the 224 that `pay`
+needs, so the gate sends it to a person rather than paying. Under the generator this profile is
+fraudulent one time in four. -/
+theorem newVendorPortalBankChange_escalates :
     writtenPolicy newVendorPortalBankChange = .reject ∧
-      (decision.judge newVendorPortalBankChange).confidence = 193 ∧
-      decision.run newVendorPortalBankChange = .choose .pay := by decide +kernel
+      (decision.judge newVendorPortalBankChange).option = .pay ∧
+      (decision.judge newVendorPortalBankChange).confidence = 183 ∧
+      decision.run newVendorPortalBankChange = .defer := by decide +kernel
+
 end IxAIDecide.Invoice
