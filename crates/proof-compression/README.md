@@ -375,7 +375,7 @@ cargo test --release --locked -p ix-proof-compression --test integration \
   -- kzg::
 ```
 
-`tests/kzg_backend_parity.py` compares independent CPU/CUDA builds on small
+`Scripts/KzgBackendParity.lean` (`lake env lean --run Scripts/KzgBackendParity.lean`) compares independent CPU/CUDA builds on small
 ordinary KZG proofs. Complete Init proofs, GPU tests, and sizing runs have
 substantial resource costs and are run separately from the small checks.
 The CLI tests (`lake test -- compression-cli`) cover setup selection, claim

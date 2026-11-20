@@ -4,7 +4,7 @@ import Tests.FormalChecks.Common
 # `formal-checks ranges`
 
 The range split of a one-shard proof (`stark-verifier ranges PROOF DIR 1` in
-`check-formal.sh`): one leaf, `[0, 1)`, with no children, and its statement is
+`Scripts/CheckFormal.lean`): one leaf, `[0, 1)`, with no children, and its statement is
 the 65-byte range statement (`Aggr.rangeStatement`).
 -/
 

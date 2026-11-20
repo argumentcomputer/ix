@@ -4,7 +4,7 @@
   is rebuilt from the specification digest's bytes alone
   (`IxVM.RoleSpecGen.renderFromBytes`). `--check` fails when a file on disk
   differs, so the rendered circuit specification and the digest cannot drift
-  apart; `tools/ixvm/check-formal.sh` runs it.
+  apart; `Scripts/CheckFormal.lean` runs it.
 -/
 module
 public import Cli

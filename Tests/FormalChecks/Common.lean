@@ -6,8 +6,8 @@ import Ix.AiurInvocation
 # Shared pieces of the formal-backend check drivers
 
 The drivers (`formal-checks controller|cuda|ranges`, run by
-`tools/ixvm/check-formal.sh`) drive the Rust hosts and the `ix` CLI on the
-fixtures `check-formal.sh` leaves, log each command to a file in a fresh
+`Scripts/CheckFormal.lean`) drive the Rust hosts and the `ix` CLI on the
+fixtures `CheckFormal.lean` leaves, log each command to a file in a fresh
 directory beside the fixtures, and keep a JSON report there.
 -/
 
@@ -177,7 +177,7 @@ end Tests.FormalChecks
 
 /-! The Ixon invocation and case codecs (`Ix.AiurInvocation`) round-trip, and a
 truncated case file is refused at every length. The Rust readers carry the
-same checks (`aiur::artifact`); `check-formal.sh` runs files each side wrote
+same checks (`aiur::artifact`); `Scripts/CheckFormal.lean` runs files each side wrote
 through the other. -/
 
 private def sampleInvocation : Ix.AiurInvocation.Invocation :=

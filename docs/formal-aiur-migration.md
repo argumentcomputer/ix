@@ -281,7 +281,7 @@ NVIDIA driver and CUDA toolkit, run this from the repository root:
 
 ```sh
 IX_TEST_CUDA=1 IX_TEST_OUTPUT_DIR=.lake/cuda-validation \
-  bash tools/ixvm/check-formal.sh
+  lake env lean --run Scripts/CheckFormal.lean
 ```
 
 Set `MULTI_STARK_CUDA_DEVICE` to select a device (zero by default). The gate
@@ -444,7 +444,7 @@ Current-port checks on 2026-10-22:
   bytes across eight trace shards. Its stored address is
   `8e261edbcef1fcb3e64505ea68ce7399ba0a98fd1b251ba9676bf87f0a5211d0`.
 
-`bash tools/ixvm/check-formal.sh` runs the reproducible integration gate: current
+`lake env lean --run Scripts/CheckFormal.lean` runs the reproducible integration gate: current
 claims, CLI persistence/verification, recursive proof round trips and all
 aggregation shapes. The full-size aggregation above is a separate local check;
 CI uses small real child proofs to keep its memory requirements reasonable.

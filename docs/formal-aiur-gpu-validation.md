@@ -11,7 +11,7 @@ still had the legacy backend then (`--legacy`); it has since been removed.
 
 ## Hardware validation
 
-`IX_TEST_CUDA=1 tools/ixvm/check-formal.sh` passes. CPU and CUDA proofs and
+`IX_TEST_CUDA=1 lake env lean --run Scripts/CheckFormal.lean` passes. CPU and CUDA proofs and
 keys are byte-identical for IxVM, recursion and aggregation under retain and
 regenerate, with host and graph-derived lookups. This includes the single-shard
 graph-lookup retain/regenerate cases added by the

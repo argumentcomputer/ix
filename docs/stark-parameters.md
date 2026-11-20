@@ -112,7 +112,7 @@ from the documentation and must never decode or build a key a verifier trusts.
    (`crates/proof-compression/verifying-keys`). Regenerate them, and the
    cached proofs keyed by them; the compression keys become a new version
    ([Deriving the verifying keys](../crates/proof-compression/README.md#deriving-the-verifying-keys)).
-4. Run `bash tools/ixvm/check-formal.sh`, which proves and verifies IxVM,
+4. Run `lake env lean --run Scripts/CheckFormal.lean`, which proves and verifies IxVM,
    recursion and aggregation under the new parameters.
 
 For measurements, `compare` (`crates/stark-verifier/examples/compare.rs`)

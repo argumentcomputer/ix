@@ -77,7 +77,7 @@ outputs, invalid domains, dishonest hints, and real U64/Blake3 proof round trips
 
 Validation of the complete grouping certificate rebuilt the full proof graph,
 passed the fixture freshness/rejection checks and grouped Rust proof test, and
-passed `tools/ixvm/check-formal.sh` (IxVM claims, recursive proving, all thirteen
+passed `Scripts/CheckFormal.lean` (IxVM claims, recursive proving, all thirteen
 aggregation shapes, and malformed-input rejection). Re-exporting IxVM, the
 recursive verifier, and aggregation with all certificate checks enabled produced
 byte-identical artifacts, verified by SHA-256, so the column counts and measured

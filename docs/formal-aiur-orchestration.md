@@ -144,7 +144,7 @@ it is a deliberate implementation tradeoff, not a performance parity claim.
 ## Validation (2026-10-29)
 
 `formal-checks controller` (`Tests/FormalChecks/Controller.lean`) is the repeatable gate, also called by
-`tools/ixvm/check-formal.sh`. It tests two resident CPU lanes with six jobs
+`Scripts/CheckFormal.lean`. It tests two resident CPU lanes with six jobs
 (IxVM, recursive verification, aggregation), compares every proof/key byte to
 standalone hosts, independently verifies the proofs, checks quota rejection and
 reservation release, and compares distributed retain/regenerate proofs. The
@@ -186,4 +186,4 @@ verification; add `--pipeline` for complete aggregation. On a single GPU,
 `--devices 0,0` runs two lanes on the same device (the test opt-in
 `IX_PROVER_SHARED_DEVICES=1`, which `ix prove --lanes N` also honors by placing
 every lane on the starting device). `IX_TEST_CUDA=1`
-enables the one-device controller gate in `check-formal.sh` as well.
+enables the one-device controller gate in `Scripts/CheckFormal.lean` as well.

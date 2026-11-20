@@ -7,7 +7,7 @@ drift apart. `IxVM/IxVM/Source/KernelRoleSpec.lean` is rebuilt from the bytes
 the digest hashes (`IxVM.RoleSpecGen.checkRendering`): the checked-in file
 must pass, and each mutation below, of the bytes or of the file, must be
 refused. `ix codegen --check` runs the same rebuild on every PR
-(`tools/ixvm/check-formal.sh`); this suite also shows that it can fail. -/
+(`Scripts/CheckFormal.lean`); this suite also shows that it can fail. -/
 
 public section
 

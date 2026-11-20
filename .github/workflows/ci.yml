@@ -123,7 +123,7 @@ jobs:
         if: github.event_name != 'push'
         env:
           IX_TEST_OUTPUT_DIR: ${{ runner.temp }}/formal
-        run: bash tools/ixvm/check-formal.sh
+        run: lake env lean --run Scripts/CheckFormal.lean
       - name: Test the IxVM program on adversarial and regression claims
         if: github.event_name != 'push'
         env:
@@ -208,8 +208,8 @@ jobs:
           rust-version: ${{ env.RUST_VERSION }}
 
   # Compile and link the opt-in backend without requiring a GPU. Application
-  # runtime/proof parity uses IX_TEST_CUDA=1 tools/ixvm/check-formal.sh on a
-  # GPU host; the CPU job also exercises that gate's CPU controls.
+  # runtime/proof parity uses IX_TEST_CUDA=1 lake env lean --run Scripts/CheckFormal.lean
+  # on a GPU host; the CPU job also exercises that gate's CPU controls.
   cuda-compile:
     runs-on: runs-on=${{ github.run_id }}-cuda-compile-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     container:

@@ -3,7 +3,7 @@ import Tests.FormalChecks.Common
 /-!
 # `formal-checks cuda`
 
-Check grouped, sharded CPU/CUDA proofs using `check-formal.sh` fixtures.
+Check grouped, sharded CPU/CUDA proofs using `Scripts/CheckFormal.lean` fixtures.
 
 The default requires a real CUDA device. `--cpu-only` exercises the CPU
 controls without claiming hardware validation. Every run preserves its logs and

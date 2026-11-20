@@ -107,7 +107,7 @@ equality. The decidable procedure is proved equivalent to the original
 The full Aiur proof graph and both application executables build. The grouping
 fixture passes freshness, rejection and masked-quadratic regression checks.
 The Rust grouping test passes shared-row, padding, sharding and proof checks.
-`tools/ixvm/check-formal.sh` passes claims, recursive proving, all thirteen
+`Scripts/CheckFormal.lean` passes claims, recursive proving, all thirteen
 aggregation shapes and malformed-input rejection. The grouping axiom audit
 still reports only `propext`, `Classical.choice` and `Quot.sound`; no `sorry`,
 new axiom or unchecked certificate shortcut was introduced.

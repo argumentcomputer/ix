@@ -42,7 +42,7 @@ counts, types and equations. What the circuit reads off a role's identity
 two boundaries, `Ix.SpecDigest.Schedule.current`,
 `Ix/SpecDigest/Schedule.lean`) are defined beside the encoder, which commits to
 them. So every value the rendered file holds comes from the bytes the digest
-hashes, and `ix codegen --check` (`tools/ixvm/check-formal.sh`) fails when the
+hashes, and `ix codegen --check` (`Scripts/CheckFormal.lean`) fails when the
 file and the digest drift apart. IxC's specification set and its schedule are
 checked before rendering (`checkGroups`). -/
 

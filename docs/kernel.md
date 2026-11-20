@@ -794,7 +794,7 @@ identity (its name, inertness, quotient kind and native rule). `ix codegen`
 renders `KernelRoleSpec.lean` from the digest's bytes alone, read back and
 checked to re-encode to themselves (`IxVM.RoleSpecGen.renderFromBytes`), so
 every table the circuit holds is a function of those bytes; `ix codegen
---check`, run on every PR by `tools/ixvm/check-formal.sh`, fails when the file
+--check`, run on every PR by `Scripts/CheckFormal.lean`, fails when the file
 and the digest drift apart, and the `spec-digest-rendering` test shows that
 mutated bytes or a mutated file are refused. A claim's walk checks a constant bound to a basis member or an
 operation under the context its group is validated in, whether or not the

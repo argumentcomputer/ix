@@ -3,7 +3,7 @@ import Tests.FormalChecks.Cuda
 import Tests.FormalChecks.Ranges
 
 /-!
-The formal backend's check drivers, run by `tools/ixvm/check-formal.sh`:
+The formal backend's check drivers, run by `Scripts/CheckFormal.lean`:
 
 - `controller`: resident proving and cross-record IxVM proofs;
 - `cuda`: grouped, sharded CPU/CUDA proof and key parity (`--cpu-only` for the

@@ -42,7 +42,7 @@ namespace Tests.Registry
 inductive CiJob where
   | cli
   /-- Claims through the formal IxVM program (`ixvm-proof test`), after
-  `tools/ixvm/check-formal.sh` has built its host and exported its artifact. -/
+  `Scripts/CheckFormal.lean` has built its host and exported its artifact. -/
   | ixvm
   | compilerClosures
   | misc

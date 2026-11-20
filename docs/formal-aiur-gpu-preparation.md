@@ -127,7 +127,7 @@ The hardware gate in `formal-checks cuda` (`Tests/FormalChecks/Cuda.lean`) adds 
 retention/regeneration proofs for IxVM, recursion and aggregation, each checked
 against a CPU reference. It asserts the requested retention policy was honored.
 The existing multi-shard cases remain. Run it through `IX_TEST_CUDA=1
-tools/ixvm/check-formal.sh` on the GPU host.
+lake env lean --run Scripts/CheckFormal.lean` on the GPU host.
 
 Validation passed: 104 targeted Rust tests with parallel generation and 88
 Aiur tests with serial generation; Clippy with warnings denied; CPU retained,

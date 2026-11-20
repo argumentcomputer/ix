@@ -46,7 +46,7 @@ before the variable is compared.
 
 The legacy suite also proved one value per rung through a test-only codec
 entry point. The production program has no such entry point, and
-`tools/ixvm/check-formal.sh` proves a whole claim, so no proof runs here.
+`Scripts/CheckFormal.lean` proves a whole claim, so no proof runs here.
 -/
 
 namespace Tests.Ix.IxVM.TagN

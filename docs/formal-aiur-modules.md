@@ -207,7 +207,7 @@ From the repository root:
 lake build ixvm/ixvm multiStark/stark-export aiur/library_tests aiur/u32_tests
 lake env Aiur/.lake/build/bin/library_tests .lake/libraries.json
 cargo run --release --locked -p aiur --features stark --example library_check -- .lake/libraries.json
-tools/ixvm/check-formal.sh
+lake env lean --run Scripts/CheckFormal.lean
 ```
 
 The library regression also instantiates abstract byte/word clients, rejects

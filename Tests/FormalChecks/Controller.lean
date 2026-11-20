@@ -5,7 +5,7 @@ import Tests.FormalChecks.Common
 
 Exercise resident proving and cross-record IxVM proofs on production artifacts.
 
-Uses fixtures from `check-formal.sh`. CPU is the default; `--devices 0,1` runs
+Uses fixtures from `Scripts/CheckFormal.lean`. CPU is the default; `--devices 0,1` runs
 the same resident jobs on real CUDA lanes and independently verifies on the
 CPU. `--pipeline` additionally runs the expensive complete recursive
 aggregation. All logs and reports are preserved in the fixture directory.
