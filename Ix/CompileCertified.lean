@@ -6,6 +6,7 @@ public import Ix.RoleBinding.Compile
 public import Ix.Cli.Common
 public import Ix.Compile.BinderData
 public import Ix.Compile.KernelAnnotate
+public import Ix.Compile.ProjectionAccessors
 public import Ix.EnvScope
 public section
 
@@ -25,6 +26,9 @@ about, on the canonical environment of their input (`compileAndFinalize`):
    `Ix.Compile.CompileInput.prepare`), then checked
    (`Ix.CompileM.checkPreparedSource`: no binder contract left unresolved,
    every semantic contract inspects).
+   For safe modeled field accessors, the compiler emits IxC's recursor body.
+   It checks that both source forms lower to the same declaration before
+   content addressing the accessor and its dependents.
 2. **Canonicalization** (`canonInput`): `Ix.CanonM.canonChunk` on consecutive
    slices (`Ix.CanonM.chunks`), on tasks. A chunk's value is `(nameS, constS)`
    of each of its constants (`Ix.Cert.Canon.canonChunkCorrect`), and the
@@ -307,6 +311,9 @@ def compileCertified (source : Lean.Environment) (constants : List (Lean.Name ×
     | .error e => return .error e
   log s!"source contracts ({if annotated then "semantic contracts" else "none"}): \
 {(← IO.monoMsNow) - t0}ms"
+  let prepared ← match Ix.Compile.ProjectionAccessors.prepare source prepared with
+    | .ok p => pure p
+    | .error e => return .error e
   let installExtra := if binderData then installRecursors source prepared else []
   compileCertifiedPrepared prepared annotated workers log defaultRoles binderData keepAnnotator
     modeCheck deferModeCheck installExtra
@@ -347,8 +354,9 @@ certificates are compiled with `Ix.Cert.compileReport`, and must compile
 completely. `defaultRoles` as in `Ix.CompileM.compileCertifiedPrepared`; the binder
 data come from IxC's pass over the backend's prepared input, unless `binderData` is off. -/
 def certifiedBackend (workers : Nat) (defaultRoles : Bool := true) (binderData : Bool := true)
-    (modeCheck : Ix.CompileM.ModeChecker := Ix.CompileM.noModeChecker) : Backend := fun _source input => do
+    (modeCheck : Ix.CompileM.ModeChecker := Ix.CompileM.noModeChecker) : Backend := fun source input => do
   let prepared ← IO.ofExcept input.prepare
+  let prepared ← IO.ofExcept (Ix.Compile.ProjectionAccessors.prepare source prepared)
   let annotated ← IO.ofExcept (Ix.CompileM.checkPreparedSource prepared)
   let out ← IO.ofExcept
     (← Ix.CompileM.compileCertifiedPrepared prepared annotated workers (defaultRoles := defaultRoles)
