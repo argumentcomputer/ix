@@ -319,6 +319,13 @@ private theorem wellDenoted_congr_below' :
     intro k ρ ρ' hb hag
     rw [WellDenoted_snd, WellDenoted_snd, ihe k ρ ρ' hb hag,
       interp_congr_below V e k ρ ρ' hb hag]
+  | chain g e ihg ihe =>
+    intro k ρ ρ' hb hag
+    rw [WellDenoted_chain, WellDenoted_chain, ihe k ρ ρ' hb.2 hag]
+    exact and_congr (forall_congr' fun m => ihg m k ρ ρ' (hb.1 m) hag) Iff.rfl
+  | bgraph _ f ihf =>
+    intro k ρ ρ' hb hag
+    rw [WellDenoted_bgraph, WellDenoted_bgraph, ihf k ρ ρ' hb hag]
 
 private theorem annotValid_congr_below' :
     ∀ (e : AnnotTerm) (k : Nat) (ρ ρ' : Nat → V),
@@ -363,6 +370,13 @@ private theorem annotValid_congr_below' :
   | snd e ihe =>
     intro k ρ ρ' hb hag
     rw [AnnotValid_snd, AnnotValid_snd, ihe k ρ ρ' hb hag]
+  | chain g e ihg ihe =>
+    intro k ρ ρ' hb hag
+    rw [AnnotValid_chain, AnnotValid_chain, ihe k ρ ρ' hb.2 hag]
+    exact and_congr (forall_congr' fun m => ihg m k ρ ρ' (hb.1 m) hag) Iff.rfl
+  | bgraph _ f ihf =>
+    intro k ρ ρ' hb hag
+    rw [AnnotValid_bgraph, AnnotValid_bgraph, ihf k ρ ρ' hb hag]
 
 private theorem wellDenotedV_closed_congr {e : AnnotTerm} {ρ ρ' : Nat → V}
     (hb : Term.bvarsBelow 0 e.erase) (h : WellDenotedV V ρ e) : WellDenotedV V ρ' e :=
