@@ -12,7 +12,7 @@ aiur_module KernelInferOnly where
 
 def io_types_lookup := aiur_fn⟦
   inline fn io_types_lookup(types: Lists::List<KernelTypes::KExpr>, i: Field) -> KernelTypes::KExpr {
-      let ty = Lists::lookup(types, i);
+      let Lists::Node::Cons(ty, _) = (*(Lists::drop(types, i)));
       KernelSubst::expr_lift(ty, i + 1, 0)
     }
 ⟧

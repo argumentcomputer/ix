@@ -12,7 +12,7 @@ aiur_module KernelInfer where
 
 def types_lookup := aiur_fn⟦
   fn types_lookup(types: Lists::List<KernelTypes::KExpr>, i: Field) -> KernelTypes::KExpr {
-      let ty = Lists::lookup(types, i);
+      let Lists::Node::Cons(ty, _) = (*(Lists::drop(types, i)));
       KernelSubst::expr_lift(ty, i + 1, 0)
     }
 ⟧
@@ -416,11 +416,12 @@ def dec_nat := aiur_fn⟦
       let n_e = Lists::lookup(spine, 0);
       let m_e = Lists::lookup(spine, 1);
       let n_w = KernelWhnf::whnf(rc, n_e, types);
-      let m_w = KernelWhnf::whnf(rc, m_e, types);
       match KernelNatPrim::try_extract_nat(rc, n_w) {
         (0, _) => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
         (1, n_kl) => {
-          match KernelNatPrim::try_extract_nat(rc, m_w) {
+          -- The second argument is reduced only when the first is a literal; otherwise
+          -- the decision cannot fire and its reduct would be discarded.
+          match KernelNatPrim::try_extract_nat(rc, KernelWhnf::whnf(rc, m_e, types)) {
             (0, _) => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
             (1, m_kl) => {
               let verdict = match is_le {
@@ -469,11 +470,12 @@ def dec_int := aiur_fn⟦
       let a_e = Lists::lookup(spine, 0);
       let b_e = Lists::lookup(spine, 1);
       let a_w = KernelWhnf::whnf(rc, a_e, types);
-      let b_w = KernelWhnf::whnf(rc, b_e, types);
       match KernelNatPrim::try_extract_int_prim(rc, a_w) {
         (0, _, _) => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
         (1, sa, na) => {
-          match KernelNatPrim::try_extract_int_prim(rc, b_w) {
+          -- As in `dec_nat`, the second argument is reduced only when the first is a
+          -- literal.
+          match KernelNatPrim::try_extract_int_prim(rc, KernelWhnf::whnf(rc, b_e, types)) {
             (0, _, _) => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
             (1, sb, nb) => {
               let verdict = match is_le {
