@@ -225,6 +225,9 @@ pub fn execute(system: &System, request: &Request) -> Result<Outcome, String> {
   if let Some(path) = std::env::var_os("IX_KERNEL_HINTS_TRACE") {
     kernel_hints_trace(program, &result, Path::new(&path))?;
   }
+  if let Some(path) = std::env::var_os("IX_KERNEL_ROWS_PROFILE") {
+    kernel_rows_profile(program, &result, Path::new(&path))?;
+  }
   let mut report = json!({"execution_seconds":seconds, "queries":result.queries.len(),
     "instructions":result.instructions, "executor":ran,
     "execution_statistics":system.verifier().execution_statistics(&result)});
@@ -289,6 +292,84 @@ fn kernel_hints_trace(
   let line = json!({"queries": record.queries.len(),
     "instructions": record.instructions, "functions": functions,
     "steps": steps, "hint_loads": hint_loads});
+  let mut file = std::fs::OpenOptions::new()
+    .create(true)
+    .append(true)
+    .open(path)
+    .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+  writeln!(file, "{line}").map_err(|e| e.to_string())
+}
+
+/// Append one JSON line profiling the arguments of the functions whose names
+/// contain one of the comma-separated patterns in `IX_KERNEL_ROWS_PROFILE_FNS`
+/// (default: the `KernelSubst` module). For each such function and each
+/// flattened argument position: the number of distinct values, the rows that
+/// would remain if that position were ignored, and the most frequent values.
+/// The outputs' most frequent first elements are reported the same way.
+/// Arguments are positional field elements; a pointer is one element.
+fn kernel_rows_profile(
+  program: &Program,
+  record: &aiur::Execution<crate::Field>,
+  path: &Path,
+) -> Result<(), String> {
+  use multi_stark::p3_field::PrimeField64;
+  use std::collections::{BTreeMap, HashMap, HashSet};
+  use std::io::Write;
+  let patterns: Vec<String> = std::env::var("IX_KERNEL_ROWS_PROFILE_FNS")
+    .unwrap_or_else(|_| "KernelSubst::".into())
+    .split(',')
+    .map(str::to_string)
+    .collect();
+  let checked = program.checked();
+  type Rows = Vec<(Vec<u64>, Option<u64>, u64)>;
+  let mut by_fn: BTreeMap<String, Rows> = BTreeMap::new();
+  for (key, output) in record.queries.iter() {
+    let name = checked.callable_name(key.function).unwrap_or("?");
+    if !patterns.iter().any(|p| name.contains(p.as_str())) {
+      continue;
+    }
+    let args = key.args.iter().map(PrimeField64::as_canonical_u64).collect();
+    let out = output.output.first().map(PrimeField64::as_canonical_u64);
+    by_fn
+      .entry(name.to_string())
+      .or_default()
+      .push((args, out, output.multiplicity));
+  }
+  let top = |counts: HashMap<u64, u64>| -> Value {
+    let mut v: Vec<(u64, u64)> = counts.into_iter().collect();
+    v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    v.truncate(24);
+    json!(v)
+  };
+  let mut fns = serde_json::Map::new();
+  for (name, rows) in by_fn {
+    let arity = rows.first().map_or(0, |r| r.0.len());
+    let mut positions = Vec::new();
+    for i in 0..arity {
+      let mut counts: HashMap<u64, u64> = HashMap::new();
+      let mut without: HashSet<Vec<u64>> = HashSet::new();
+      for (args, _, _) in &rows {
+        *counts.entry(args[i]).or_default() += 1;
+        let mut rest = args.clone();
+        rest.remove(i);
+        without.insert(rest);
+      }
+      let distinct = counts.len();
+      positions.push(json!({"distinct": distinct, "rows_without": without.len(),
+        "top": if distinct <= 100_000 { top(counts) } else { Value::Null }}));
+    }
+    let mut outs: HashMap<u64, u64> = HashMap::new();
+    let mut uses = 0;
+    for (_, out, m) in &rows {
+      *outs.entry(out.unwrap_or(u64::MAX)).or_default() += 1;
+      uses += m;
+    }
+    let distinct_out = outs.len();
+    fns.insert(name, json!({"rows": rows.len(), "uses": uses, "args": positions,
+      "out_distinct": distinct_out,
+      "out_top": if distinct_out <= 100_000 { top(outs) } else { Value::Null }}));
+  }
+  let line = json!({"queries": record.queries.len(), "functions": fns});
   let mut file = std::fs::OpenOptions::new()
     .create(true)
     .append(true)

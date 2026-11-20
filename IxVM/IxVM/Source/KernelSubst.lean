@@ -62,8 +62,20 @@ def lbr_min := aiur_fn⟦
     }
 ⟧
 
+  -- Every loose variable of `e` is below `expr_lbr(e)`, so a term whose range ends at
+  -- or below `lo` has none in [lo, hi) and is not walked.
+
 def has_bvar_in_range := aiur_fn⟦
   fn has_bvar_in_range(e: KernelTypes::KExpr, lo: Field, hi: Field) -> Field {
+      match UInt32::less_than_fields(lo, expr_lbr(e)) {
+        0 => {  0 } ,
+        _ => {  has_bvar_in_range_walk(e, lo, hi) } ,
+      }
+    }
+⟧
+
+def has_bvar_in_range_walk := aiur_fn⟦
+  inline fn has_bvar_in_range_walk(e: KernelTypes::KExpr, lo: Field, hi: Field) -> Field {
       match (*(e)) {
         KernelTypes::KExprNode::BVar(i) => {  has_bvar_in_range_bvar(i, lo, hi) } ,
         KernelTypes::KExprNode::Srt(_) => {  0 } ,
@@ -83,7 +95,7 @@ def has_bvar_in_range := aiur_fn⟦
 ⟧
 
 def has_bvar_in_range_bvar := aiur_fn⟦
-  fn has_bvar_in_range_bvar(i: Field, lo: Field, hi: Field) -> Field {
+  inline fn has_bvar_in_range_bvar(i: Field, lo: Field, hi: Field) -> Field {
       match UInt32::less_than_fields(i, lo) {
         1 => {  0 } ,
         0 => {  UInt32::less_than_fields(i, hi) } ,
@@ -185,7 +197,7 @@ def expr_glb := aiur_fn⟦
 ⟧
 
 def expr_glb_walk := aiur_fn⟦
-  fn expr_glb_walk(e: KernelTypes::KExpr, c: Field) -> Field {
+  inline fn expr_glb_walk(e: KernelTypes::KExpr, c: Field) -> Field {
 
       match (*(e)) {
         KernelTypes::KExprNode::BVar(i) => {
@@ -196,9 +208,12 @@ def expr_glb_walk := aiur_fn⟦
         KernelTypes::KExprNode::Srt(_) => {  4294967295 } ,
         KernelTypes::KExprNode::Const(_, _) => {  4294967295 } ,
         KernelTypes::KExprNode::Lit(_) => {  4294967295 } ,
-        KernelTypes::KExprNode::App(f, a) => {  match expr_glb(f, c) {
+        -- The argument is searched first: in a spine the innermost variables tend to
+        -- occur in the last arguments, so a zero gap is found before the head and the
+        -- earlier arguments are walked.
+        KernelTypes::KExprNode::App(f, a) => {  match expr_glb(a, c) {
           0 => {  0 } ,
-          n => {  lbr_min(n, expr_glb(a, c)) } ,
+          n => {  lbr_min(n, expr_glb(f, c)) } ,
         } } ,
         KernelTypes::KExprNode::Lam(ty, body) => {  expr_glb_binder(ty, body, c) } ,
         KernelTypes::KExprNode::Forall(ty, body) => {  expr_glb_binder(ty, body, c) } ,
@@ -244,7 +259,7 @@ def expr_lift := aiur_fn⟦
 ⟧
 
 def expr_lift_walk := aiur_fn⟦
-  fn expr_lift_walk(e: KernelTypes::KExpr, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
+  inline fn expr_lift_walk(e: KernelTypes::KExpr, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
       match (*(e)) {
         KernelTypes::KExprNode::BVar(i) => {  expr_lift_bvar(i, shift, cutoff) } ,
         KernelTypes::KExprNode::Srt(l) => {  (&(KernelTypes::KExprNode::Srt(l))) } ,
@@ -270,7 +285,7 @@ def expr_lift_walk := aiur_fn⟦
 ⟧
 
 def expr_lift_bvar := aiur_fn⟦
-  fn expr_lift_bvar(i: Field, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
+  inline fn expr_lift_bvar(i: Field, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
       match UInt32::less_than_fields(i, cutoff) {
         1 => {  (&(KernelTypes::KExprNode::BVar(i))) } ,
         0 => {  (&(KernelTypes::KExprNode::BVar(i + shift))) } ,
@@ -303,7 +318,7 @@ def expr_lower := aiur_fn⟦
 ⟧
 
 def expr_lower_walk := aiur_fn⟦
-  fn expr_lower_walk(e: KernelTypes::KExpr, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
+  inline fn expr_lower_walk(e: KernelTypes::KExpr, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
       match (*(e)) {
 
         KernelTypes::KExprNode::BVar(i) => {  (&(KernelTypes::KExprNode::BVar(i - shift))) } ,
@@ -338,8 +353,20 @@ def expr_lower_let := aiur_fn⟦
     }
 ⟧
 
+  -- As in `has_bvar_in_range`, a term whose loose range ends at or below `depth` is
+  -- not walked.
+
 def expr_has_bvar_at := aiur_fn⟦
   fn expr_has_bvar_at(e: KernelTypes::KExpr, depth: Field) -> Field {
+      match UInt32::less_than_fields(depth, expr_lbr(e)) {
+        0 => {  0 } ,
+        _ => {  expr_has_bvar_at_walk(e, depth) } ,
+      }
+    }
+⟧
+
+def expr_has_bvar_at_walk := aiur_fn⟦
+  inline fn expr_has_bvar_at_walk(e: KernelTypes::KExpr, depth: Field) -> Field {
       match (*(e)) {
         KernelTypes::KExprNode::BVar(i) => {  match i - depth { 0 => {  1 } , _ => {  0 } , } } ,
         KernelTypes::KExprNode::App(f, a) => {
@@ -394,7 +421,7 @@ def expr_inst1 := aiur_fn⟦
 ⟧
 
 def expr_inst1_walk := aiur_fn⟦
-  fn expr_inst1_walk(e: KernelTypes::KExpr, arg: KernelTypes::KExpr, depth: Field) -> KernelTypes::KExpr {
+  inline fn expr_inst1_walk(e: KernelTypes::KExpr, arg: KernelTypes::KExpr, depth: Field) -> KernelTypes::KExpr {
       match (*(e)) {
         KernelTypes::KExprNode::BVar(i) => {  expr_inst1_bvar(i, arg, depth) } ,
         KernelTypes::KExprNode::Srt(l) => {  (&(KernelTypes::KExprNode::Srt(l))) } ,
@@ -420,7 +447,7 @@ def expr_inst1_walk := aiur_fn⟦
 ⟧
 
 def expr_inst1_bvar := aiur_fn⟦
-  fn expr_inst1_bvar(i: Field, arg: KernelTypes::KExpr, depth: Field) -> KernelTypes::KExpr {
+  inline fn expr_inst1_bvar(i: Field, arg: KernelTypes::KExpr, depth: Field) -> KernelTypes::KExpr {
       match UInt32::less_than_fields(i, depth) {
         1 => {  (&(KernelTypes::KExprNode::BVar(i))) } ,
         0 => {
@@ -462,18 +489,20 @@ def expr_inst_many := aiur_fn⟦
 ⟧
 
 def expr_inst_many_bvar := aiur_fn⟦
-  fn expr_inst_many_bvar(i: Field, substs: Lists::List<KernelTypes::KExpr>, depth: Field) -> KernelTypes::KExpr {
+  inline fn expr_inst_many_bvar(i: Field, substs: Lists::List<KernelTypes::KExpr>, depth: Field) -> KernelTypes::KExpr {
       let n = Lists::length(substs);
       let ofs = i - depth;
       match UInt32::less_than_fields(ofs, n) {
-        1 => {  expr_lift(Lists::lookup(substs, ofs), depth, 0) } ,
+        1 => {
+          let Lists::Node::Cons(sub, _) = (*(Lists::drop(substs, ofs)));
+          expr_lift(sub, depth, 0) } ,
         0 => {  (&(KernelTypes::KExprNode::BVar(i - n))) } ,
       }
     }
 ⟧
 
 def expr_inst_many_walk := aiur_fn⟦
-  fn expr_inst_many_walk(e: KernelTypes::KExpr, substs: Lists::List<KernelTypes::KExpr>, depth: Field) -> KernelTypes::KExpr {
+  inline fn expr_inst_many_walk(e: KernelTypes::KExpr, substs: Lists::List<KernelTypes::KExpr>, depth: Field) -> KernelTypes::KExpr {
       match (*(e)) {
         KernelTypes::KExprNode::BVar(i) => {  expr_inst_many_bvar(i, substs, depth) } ,
         KernelTypes::KExprNode::Srt(l) => {  (&(KernelTypes::KExprNode::Srt(l))) } ,
