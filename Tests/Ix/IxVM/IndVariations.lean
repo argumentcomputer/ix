@@ -70,6 +70,8 @@ def expectedVerdict (id : String) (leanOk : Bool) (records : List ConstantInfo) 
     Bool × Option String :=
   if outsideTheClaim.contains id then (true, none)
   else if !leanOk then (false, none)
+  else if ["h-mutual-rec-value", "h-mutual-rec-reason", "h-mutual-rec-value-mk"].contains id then
+    (false, some "projection on a member of a mutual or nested block")
   else if (refusedByDesign.lookup id).isSome then (false, none)
   else if Tests.Ix.IxVM.modeledRecursorsRefused && ownsFamilyRecursor records then
     (false, some Tests.Ix.IxVM.modeledRecursorRefusal)
@@ -331,6 +333,13 @@ def honest (env : Environment) : List Fx :=
     mk "h-mutual-nonrec-eta" "mutual non-recursive: structure eta" "MA" ["MA.eta'"],
     mk "h-mutual-nonrec-unit" "mutual non-recursive: unit-like eta" "MA" ["MB.uniq"],
     mk "h-mutual-nonrec-block" "mutual non-recursive block alone" "MA" [],
+    mk "h-mutual-rec-block" "mutual structure and its recursive reason, without accessors" "Constraint" [],
+    mk "h-mutual-rec-value-rec" "data field through the mutual recursor" "Constraint"
+      ["Constraint.valueRec", "Constraint.valueRec_mk"],
+    mk "h-mutual-rec-value" "data field of a recursive mutual structure" "Constraint" ["Constraint.value"],
+    mk "h-mutual-rec-reason" "field referring back into the mutual block" "Constraint" ["Constraint.reason"],
+    mk "h-mutual-rec-value-mk" "computation of a recursive mutual structure's accessor" "Constraint"
+      ["Constraint.value", "Constraint.value_mk"],
     mk "h-nested" "nested (List)" "Rose" ["Rose.rec'"],
     mk "h-nested-array-option" "nested (Array, Option): nested-nested via Array" "J" [],
     mk "h-nested-nested" "nested-nested (List (Array _))" "NN" [],
