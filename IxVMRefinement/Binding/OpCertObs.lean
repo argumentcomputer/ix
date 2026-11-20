@@ -213,12 +213,10 @@ private theorem walk_covered_mk' {t : Ix.Kernel.RoleTable} {n : Nat}
     r = .field 0 ∧ h' = h := by
   obtain ⟨tbl, ax, node, hl, hnode, _⟩ := hrc
   rcases hnode with ⟨n', _, _, rfl⟩ | ⟨hnone, _⟩
-  · rcases Obs.«KernelRoles::walk_covered».obs ev with
-      ⟨_, _, _, _, rfl, rfl, -⟩ | ⟨_, _, _, _, _, _, _, ld12, -⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, ld12, -⟩
-    · exact ⟨rfl, rfl⟩
-    · rw [hl] at ld12; simp at ld12
-    · rw [hl] at ld12; simp at ld12
+  · match Obs.«KernelRoles::walk_covered».obs ev with
+    | .Mk (he38 := hr) (he39 := hh) .. => exact ⟨hr, hh⟩
+    | .Assumed_n0 (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Assumed_other (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
   · cases hnone
 
 /-- `1 - [b = a]` and a field `x` multiply to `1` only when `x = 1` and `b ≠ a`. -/
@@ -962,9 +960,10 @@ theorem opCertFacts_of_projFree {calls : List (Call F)} (hpf : CertProjFree call
         have hcx₁ : IxVM.Consistency.recordOf R₁ (ixAddr x) = some cx :=
           (OpInstall.recordOf_ne hadds hxa).symm.trans hcx
         by_cases hcovP : Claim.CoveredAt t (some (valLimit g)) (ixAddr x)
-        · obtain ⟨r', hr', hw', hlt'⟩ := hcovP
-          have hs := hws.2 r' (ixAddr x) hw' (Nat.lt_of_lt_of_le (hlt' _ rfl) (valLimit_le g)) hr'
-          exact Option.isSome_iff_exists.mp hs
+        · obtain ⟨r', hr', ⟨hw', hlt'⟩ | ⟨hnone, -⟩⟩ := hcovP
+          · have hs := hws.2 r' (ixAddr x) hw' (Nat.lt_of_lt_of_le (hlt' _ rfl) (valLimit_le g)) hr'
+            exact Option.isSome_iff_exists.mp hs
+          · cases hnone
         · obtain ⟨recs, hcl, hmem'⟩ := hcov.resolve_left hcovP
           obtain ⟨r', hr', hr'x⟩ := List.mem_map.mp hmem'
           have hxE : IxVM.Consistency.recordOf ρ.E₀ (ixAddr x) = some r'.c := by

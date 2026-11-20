@@ -2263,7 +2263,7 @@ theorem basisRole_alreadyStoredRole {t : Ix.Kernel.RoleTable} {g : Nat} {x : _ro
     unfold valLimit RoleVal.groupValLimit
     split_ifs <;> omega
   rcases hk with hwb | hq
-  · refine Or.inl ⟨ro, had, by rw [Claim.walkedRole_eq_roleWalksBound]; exact hwb, fun n hn => ?_⟩
+  · refine Or.inl ⟨ro, had, Or.inl ⟨by rw [Claim.walkedRole_eq_roleWalksBound]; exact hwb, fun n hn => ?_⟩⟩
     cases hn
     omega
   · exact Or.inr (Or.inl ⟨ro, had, by omega, Or.inr (Or.inr hq)⟩)

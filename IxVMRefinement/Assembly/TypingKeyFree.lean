@@ -86,7 +86,7 @@ theorem keyFree_of_not_stored {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
       unfold roleStored at hb
       cases hw : walkedRole r with
       | true =>
-        have hcov : Covered t a := ⟨r, ha, hw⟩
+        have hcov : Covered t a := ⟨r, ha, Or.inl hw⟩
         exact absurd (covered_stored hshape htwf hcov) hns
       | false =>
         rw [hw] at hb

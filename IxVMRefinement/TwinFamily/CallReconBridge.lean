@@ -1001,8 +1001,7 @@ private theorem typingUseStore_usedClosed {calls : List (Call F)} {bAddrW bAddrI
         obtain ⟨bAddrFR, hCFR⟩ := hFR.checks
         obtain ⟨cs', hcall'⟩ := hCFR.twinCall a B' htw
         rcases recRefs_of_familyCall hWc.runStore hWc.hashedStored hc₀ hcall' x hu with hcovAt | hneed
-        · obtain ⟨r, hr, hw, -⟩ := hcovAt
-          exact held_of_cov x ⟨r, hr, hw⟩
+        · exact held_of_cov x (Claim.covered_of_coveredAt hcovAt)
         · rcases hFR.graph.innerClosed a x hIa hu hneed with hst | hcov | ⟨c', hc', hca⟩ | hob
           · exact held_of_stored x hst
           · exact held_of_cov x hcov
@@ -1032,8 +1031,7 @@ private theorem typingUseStore_usedClosed {calls : List (Call F)} {bAddrW bAddrI
       obtain ⟨bAddrFR, -, hrecAt⟩ := hFR.famRecAt
       obtain ⟨rs', cs', -, hcall'⟩ := hrecAt B' a crb hfam' hF.record
       rcases recRefs_of_familyCall hWc.runStore hWc.hashedStored hF.record hcall' x hu with hcovAt | hneed
-      · obtain ⟨r, hr, hw, -⟩ := hcovAt
-        exact held_of_cov x ⟨r, hr, hw⟩
+      · exact held_of_cov x (Claim.covered_of_coveredAt hcovAt)
       · rcases hFR.graph.famClosed B' a x hfam' hu hneed with
             hst | hcov | ⟨cb', hcb', hcaB⟩ | ⟨crb', hcrb', hcar⟩ | hob
         · exact held_of_stored x hst

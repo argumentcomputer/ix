@@ -1302,7 +1302,7 @@ private theorem scanStopsAt_alreadyStored_or_inert {t : Ix.Kernel.RoleTable}
   · rcases RoleVal.inForce_block_cases ro hlt with hwb | haw | hq | hk3 | hk4 | hunw
     · exfalso
       apply hns; left
-      refine ⟨ro, had, by rw [Claim.walkedRole_eq_roleWalksBound]; exact hwb, fun n hn => ?_⟩
+      refine ⟨ro, had, Or.inl ⟨by rw [Claim.walkedRole_eq_roleWalksBound]; exact hwb, fun n hn => ?_⟩⟩
       cases Option.some.inj hn
       rwa [hlim]
     · exfalso

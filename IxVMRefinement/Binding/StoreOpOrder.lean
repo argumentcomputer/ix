@@ -138,7 +138,7 @@ theorem opEarlier_of_late {t : Ix.Kernel.RoleTable} {g : Nat} (hg : 41 ≤ g)
   intro ro had hop
   exfalso
   apply hnc
-  refine ⟨ro, had, (op_facts_all ro hop).1, fun n hn => ?_⟩
+  refine ⟨ro, had, Or.inl ⟨(op_facts_all ro hop).1, fun n hn => ?_⟩⟩
   obtain rfl := Option.some.inj hn
   have h1 := (op_group_bounds hop).2
   have h2 := valLimit_ge_of_ge hg
@@ -565,12 +565,13 @@ theorem groupStore_unitsLast (hC : CollisionFreeRun calls E₀) (hb : BasisRowsL
   have hwf : t.wf = true := (hval r hr).wf
   have hgr : Ix.SpecDigest.groupOf r = g := groupOf_of_mem_roleGroup hr
   have hns : ¬ AlreadyStoredRole t g a := by
-    rintro (⟨r', had', -, hlt⟩ | ⟨r', had', hlt, -⟩ | ⟨r', had', -, hlt⟩)
+    rintro (⟨r', had', ⟨-, hlt⟩ | ⟨hnone, -⟩⟩ | ⟨r', had', hlt, -⟩ | ⟨r', had', -, hlt⟩)
     · have e : r' = r := addressOf_role_inj hwf had' had
       subst e
       have h1 := hlt (valLimit g) rfl
       have h2 := valLimit_le g
       omega
+    · cases hnone
     · have e : r' = r := addressOf_role_inj hwf had' had
       subst e
       have h2 := valLimit_le g

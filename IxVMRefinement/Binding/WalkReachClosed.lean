@@ -56,7 +56,7 @@ theorem walkReachedBy_ref {g : Nat} {a x : _root_.Address} (h : WalkReachedBy t 
     WalkReachedBy t E₀ g x := by
   obtain ⟨k, hk, hr⟩ := h
   by_cases hst : AlreadyStoredRole t k x
-  · rcases hst with ⟨r, had, hw, hlt⟩ | ⟨r, had, hlt, hkind⟩ | ⟨r, had, hk2, hlt⟩
+  · rcases hst with ⟨r, had, ⟨hw, hlt⟩ | ⟨hnone, -⟩⟩ | ⟨r, had, hlt, hkind⟩ | ⟨r, had, hk2, hlt⟩
     · have hlt' : Ix.SpecDigest.groupOf r < k :=
         Nat.lt_of_lt_of_le (hlt (valLimit k) rfl) (valLimit_le k)
       have hwb : RoleVal.roleWalksBound r = true := by
@@ -64,6 +64,7 @@ theorem walkReachedBy_ref {g : Nat} {a x : _root_.Address} (h : WalkReachedBy t 
         exact hw
       exact ⟨Ix.SpecDigest.groupOf r, Nat.le_trans (Nat.le_of_lt hlt') hk,
         GroupReach.root (role_mem_roleGroup r) (Or.inl hwb) had⟩
+    · cases hnone
     · have hlt' : Ix.SpecDigest.groupOf r < k := Nat.lt_of_lt_of_le hlt (valLimit_le k)
       rcases hkind with hwk | hs | hq
       · exact ⟨Ix.SpecDigest.groupOf r, Nat.le_trans (Nat.le_of_lt hlt') hk,

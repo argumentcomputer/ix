@@ -420,18 +420,24 @@ def projectionBlock? (c : Ixon.Constant) : Option Address :=
   | _ => none
 
 /-- A role whose record a validation walks (`KernelRoles::role_admission_checks`, read by
-`KernelModeled::addr_covered`): a block member outside the quotient package, an operation, or
-a definition specified by equations. The top-level walk does not enter a record bound to one,
-so a witness reached past one, or at one, must be bound to such a role itself
-(`KernelModeled::assert_covered_past`). -/
+`KernelModeled::addr_covered`): a block member outside the quotient package, an operation,
+a definition specified by equations, or one of the eleven non-container binding-validated
+anchors (`Bool`, `And`, `String`, `Char`, and their bound constructors/recursors/helpers).
+The top-level walk does not enter a record bound to one, so a witness reached past one, or
+at one, must be bound to such a role itself (`KernelModeled::assert_covered_past`). -/
 def coveredRole (r : Ix.Kernel.Role) : Bool :=
-  let quotPackage : Bool := match r with
-    | .quot | .quotMk | .quotLift | .quotInd | .quotSound => true
+  match r with
+  | .bool | .boolFalse | .boolTrue | .boolRec
+  | .and | .andIntro | .andRec
+  | .string | .stringOfList | .char | .charOfNat => true
+  | _ =>
+    let quotPackage : Bool := match r with
+      | .quot | .quotMk | .quotLift | .quotInd | .quotSound => true
+      | _ => false
+    match r.spec (md := .anon) with
+    | .block .. => !quotPackage
+    | .ops .. | .eqns .. => true
     | _ => false
-  match r.spec (md := .anon) with
-  | .block .. => !quotPackage
-  | .ops .. | .eqns .. => true
-  | _ => false
 
 /-- Breadth-first search of the dependency closure the claim walk visits from
 `root` (used references, projection to block), recording each record's

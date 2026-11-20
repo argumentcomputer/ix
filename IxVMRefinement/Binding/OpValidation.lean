@@ -298,8 +298,9 @@ theorem op_walk_facts {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {ρ : BR
   have hcov_right : Claim.CoveredAt t (some (valLimit g)) x →
       ∃ r', IxVM.Consistency.walkedRole r' = true ∧ Ix.SpecDigest.groupOf r' < g ∧
         t.addressOf? r' = some x := by
-    rintro ⟨r', hr', hw', hlt'⟩
-    exact ⟨r', hw', Nat.lt_of_lt_of_le (hlt' _ rfl) (valLimit_le g), hr'⟩
+    rintro ⟨r', hr', ⟨hw', hlt'⟩ | ⟨hnone, -⟩⟩
+    · exact ⟨r', hw', Nat.lt_of_lt_of_le (hlt' _ rfl) (valLimit_le g), hr'⟩
+    · cases hnone
   have hi' : i ∈ S0.usedRefIdxs ra.c := by
     rw [hrac, Assembly.usedRefIdxs_eq]
     exact hi

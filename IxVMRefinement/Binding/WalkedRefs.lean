@@ -200,11 +200,12 @@ theorem walkedRef_needOk (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
     (hw : GroupWalked calls bAddr t E₀ g recs) {A x : _root_.Address}
     (hA : GroupReach t E₀ g A) (hu : UsedRef E₀ A x) : NeedOk E₀ x := by
   by_cases hst : AlreadyStoredRole t g x
-  · rcases hst with ⟨r, had, hwr, -⟩ | ⟨r, had, -, hkind⟩ | ⟨r, had, hk2, -⟩
+  · rcases hst with ⟨r, had, ⟨hwr, -⟩ | ⟨hnone, -⟩⟩ | ⟨r, had, -, hkind⟩ | ⟨r, had, hk2, -⟩
     · have hwb : RoleVal.roleWalksBound r = true := by
         rw [← Claim.walkedRole_eq_roleWalksBound]
         exact hwr
       exact walkedRole_needOk hC hval hroots (Or.inl hwb) had
+    · cases hnone
     · rcases hkind with hwk | hs | hq
       · exact walkedRole_needOk hC hval hroots (Or.inr hwk) had
       · obtain ⟨c, ax, hc, hi, hsafe⟩ := hax r hs x had
@@ -293,7 +294,7 @@ theorem walkedRef_not_inert (hC : CollisionFreeRun calls E₀)
   obtain ⟨n, hn, hle⟩ := Claim.refAllowed_inert hal hin hof
   have e : n = valLimit g := (Option.some.inj hn).symm
   rw [e] at hle
-  rcases hrest with ⟨-, y', hy', hya', -⟩ | ⟨r, had, -, hlt⟩
+  rcases hrest with ⟨-, y', hy', hya', -⟩ | ⟨r, had, ⟨-, hlt⟩ | ⟨hnone, -⟩⟩
   · obtain ⟨a, raw, cx, ax, had, hsz, hh, hbl, hde, hdeE, hinfo, hsafe⟩ :=
       RoleVal.ValidateRoleIn.inert_record
         (show RoleVal.ValidateRoleIn calls bAddr t (Ix.SpecDigest.groupOf ro) ro from hv)
@@ -326,6 +327,7 @@ theorem walkedRef_not_inert (hC : CollisionFreeRun calls E₀)
     have hlt' := hlt _ rfl
     rw [e'] at hlt'
     exact absurd hlt' (Nat.not_lt.mpr hle)
+  · cases hnone
 
 end Run
 

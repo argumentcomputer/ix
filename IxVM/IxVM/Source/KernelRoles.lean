@@ -575,6 +575,17 @@ def role_admission_checks := aiur_fn⟦
             2 => {  1 } ,
             _ => {  0 } ,
           } } ,
+        1 => {
+          match anchor_walked(r) {
+            1 => {
+              match r {
+                29 => {  0 } ,
+                30 => {  0 } ,
+                31 => {  0 } ,
+                _ => {  1 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
         2 => {  1 } ,
         5 => {  1 } ,
         _ => {  0 } ,
@@ -620,7 +631,19 @@ def walk_ctx := aiur_fn⟦
             _ => {
               let g = KernelRoleSpec::role_group(r1 - 1);
               assert_op_reached_in_order(r1 - 1, g, limit);
-              match UInt32::less_than_fields(g, limit) * role_admission_checks(r1 - 1) {
+              let walks = match KernelRoleSpec::role_spec_kind(r1 - 1) {
+                0 => {
+                  match KernelRoleSpec::role_member_kind(r1 - 1) {
+                    0 => {  1 } ,
+                    1 => {  1 } ,
+                    2 => {  1 } ,
+                    _ => {  0 } ,
+                  } } ,
+                2 => {  1 } ,
+                5 => {  1 } ,
+                _ => {  0 } ,
+              };
+              match UInt32::less_than_fields(g, limit) * walks {
                 0 => {  rc } ,
                 _ => {  (&(RoleCtxNode::Mk(tbl, group_validation_limit(g), RBTreeMap::RBTreeMap::Nil))) } ,
               } } ,

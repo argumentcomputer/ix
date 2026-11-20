@@ -614,15 +614,17 @@ theorem covered_needOk (hC : CollisionFreeRun calls E₀)
     (hvalAll : ∀ k, ∀ r ∈ roleGroup k, RoleValidationIn calls bAddr t k r)
     (hroots : RootsSafe t E₀) {lim : Option Nat} {x : _root_.Address}
     (hcov : Claim.CoveredAt t lim x) : NeedOk E₀ x := by
-  obtain ⟨r, had, hwr, -⟩ := hcov
-  have hwb : RoleVal.roleWalksBound r = true := by
-    rw [← Claim.walkedRole_eq_roleWalksBound]; exact hwr
-  have hsafe := hroots.bound r (Or.inl hwb) x had
+  obtain ⟨r, had, hcov_r⟩ := hcov
+  have hwb : RoleVal.roleWalksBound r = true ∨ RoleVal.anchorWalked r = true := by
+    rcases hcov_r with ⟨hwr, -⟩ | ⟨-, hanc⟩
+    · exact Or.inl (by rw [← Claim.walkedRole_eq_roleWalksBound]; exact hwr)
+    · exact Or.inr (by cases r <;> revert hanc <;> decide)
+  have hsafe := hroots.bound r hwb x had
   obtain ⟨a', had', h₀, h₁, ap, ptr, v, cs, ha, ev, hsub, -, -⟩ :=
     RoleVal.ValidateRoleIn.bound_load_safe
       (show RoleVal.ValidateRoleIn calls bAddr t (Ix.SpecDigest.groupOf r) r from
         hvalAll _ r (role_mem_roleGroup r))
-      (RoleVal.roleSpecKind_of_walked r (Or.inl hwb))
+      (RoleVal.roleSpecKind_of_walked r hwb)
   have e : a' = x := Option.some.inj (had'.symm.trans had)
   rw [e] at ha
   obtain ⟨ab, hab, hab'⟩ := ha

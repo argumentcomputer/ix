@@ -430,11 +430,20 @@ theorem coveredAt_stored {t : Ix.Kernel.RoleTable} {G : Nat → Prop} {R : Ixon.
     (hG : ∀ r : Ix.Kernel.Role, (∀ n, lim = some n → Ix.SpecDigest.groupOf r < n) →
       G (Ix.SpecDigest.groupOf r))
     {x : _root_.Address} (h : Claim.CoveredAt t lim x) : StoredAt t envT x := by
-  obtain ⟨r, ha, hw, hlt⟩ := h
-  obtain ⟨ci, hfind, -⟩ := hshape.kept (Ix.SpecDigest.groupOf r) r x (hG r hlt)
-    (role_mem_roleGroup r) (Or.inl (Or.inl hw)) ha
-  exact storedAt_of_role htwf ha (Ix.Kernel.Semantics.Env.find?_mem hfind)
-    (Ix.Kernel.Semantics.Env.find?_name hfind)
+  obtain ⟨r, ha, ⟨hw, hlt⟩ | ⟨rfl, hanc⟩⟩ := h
+  · obtain ⟨ci, hfind, -⟩ := hshape.kept (Ix.SpecDigest.groupOf r) r x (hG r hlt)
+      (role_mem_roleGroup r) (Or.inl (Or.inl hw)) ha
+    exact storedAt_of_role htwf ha (Ix.Kernel.Semantics.Env.find?_mem hfind)
+      (Ix.Kernel.Semantics.Env.find?_name hfind)
+  · rcases Claim.anchorCoveredRole_mem_shape_or_prelude r hanc with hs | hp
+    · obtain ⟨ci, hfind, -⟩ := hshape.kept (Ix.SpecDigest.groupOf r) r x
+        (hG r (fun _ hn => nomatch hn)) (role_mem_roleGroup r) (Or.inl (Or.inr hs)) ha
+      exact storedAt_of_role htwf ha (Ix.Kernel.Semantics.Env.find?_mem hfind)
+        (Ix.Kernel.Semantics.Env.find?_name hfind)
+    · obtain ⟨ci, hfind, -⟩ := hshape.preludeKept (Ix.SpecDigest.groupOf r) r x
+        (hG r (fun _ hn => nomatch hn)) (role_mem_roleGroup r) hp ha
+      exact storedAt_of_role htwf ha (Ix.Kernel.Semantics.Env.find?_mem hfind)
+        (Ix.Kernel.Semantics.Env.find?_name hfind)
 
 /-- **What the family step gives the load facts** (`FamLoadCtx`), at each environment the step's
 record is taken at and at any decoded store `E` that holds the run's blobs and the run's records at

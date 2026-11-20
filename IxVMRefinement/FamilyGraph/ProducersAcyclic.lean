@@ -645,7 +645,7 @@ theorem FamRunCtx.witBase_bound
     (hcov : ¬ Covered K.t z) : (K.pot rank z).1 < rank B + 1 := by
   rcases hwb with ⟨ro, hro, ha⟩ | hc | hdep | ⟨ib, cib, hdep, hcib, hzi⟩
   · rcases basisRoles_walked_or_quot ro hro with hw | hq
-    · exact (hcov ⟨ro, ha, hw⟩).elim
+    · exact (hcov ⟨ro, ha, Or.inl hw⟩).elim
     · have hQ : K.QBound z := ⟨hTz, hcov, ro, hq, ha⟩
       obtain ⟨c, hc, hs⟩ := FamRunCtx.QBound.standalone hW hG hQ
       rw [FamRunCtx.pot_nproj (FamRunCtx.not_topProj hc (notProj_of_standalone hs)),

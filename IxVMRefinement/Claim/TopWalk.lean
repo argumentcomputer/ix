@@ -171,6 +171,17 @@ theorem addr_quot_bound_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Add
       · exact hn3 (congrArg Value.field h3)
       · exact hn4 (congrArg Value.field h4)
 
+set_option maxRecDepth 100000 in
+theorem anchorCoveredRole_mem_coveredAnchors (r : Ix.Kernel.Role) :
+    anchorCoveredRole r = true ↔ r ∈ Typing.coveredAnchors := by
+  cases r <;> decide
+
+theorem covered_of_coveredAt {t : Ix.Kernel.RoleTable} {lim : Option Nat} {x : _root_.Address}
+    (h : CoveredAt t lim x) : Typing.Covered t x := by
+  obtain ⟨ro, hof, ⟨hw, -⟩ | ⟨-, hanc⟩⟩ := h
+  · exact ⟨ro, hof, Or.inl hw⟩
+  · exact ⟨ro, hof, Or.inr ((anchorCoveredRole_mem_coveredAnchors ro).mp hanc)⟩
+
 theorem addr_walked_role_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     {lim : Option Nat} {x_rc x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hrc : RCLimRep t bAddr lim h x_rc) (ha : S0.addr h x_a a)
@@ -188,7 +199,8 @@ theorem addr_walked_role_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Ad
     · subst hro
       simp only [evalBinOp, add_sub_cancel_right, Except.ok.injEq] at op; subst op
       obtain ⟨rfl, hr⟩ := role_admission_checks_walks eva
-      exact ⟨rfl, hr.imp id fun ⟨h1, hw⟩ => ⟨h1, ro, hof, hw⟩⟩
+      exact ⟨rfl, hr.imp id fun ⟨h1, hwa⟩ =>
+        ⟨h1, ro, hof, hwa.imp id (anchorCoveredRole_mem_coveredAnchors ro).mp⟩⟩
 
 private theorem quot_refs_ok_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     {lim : Option Nat} (refs : List _root_.Address) :
@@ -388,9 +400,9 @@ theorem topWalkCore_of_recs
   · rintro a x hTa ⟨c, i, hc, hi, hx⟩
     obtain ⟨r, hr, rfl, hrd, rfl⟩ := hmin a c hTa hc
     obtain ⟨-, hrest⟩ := (hcl r hr).2 i (huse _ i x hi hx) x hx
-    rcases hrest with ⟨-, r', hr', rfl, hlt⟩ | ⟨ro, hof, hw, -⟩
+    rcases hrest with ⟨-, r', hr', rfl, hlt⟩ | hcov
     · exact .inl ⟨⟨r', hr', rfl⟩, by have := topRank_le hr'; omega⟩
-    · exact .inr ⟨ro, hof, hw⟩
+    · exact .inr (covered_of_coveredAt hcov)
   · intro a c hTa hc hp
     obtain ⟨r, hr, rfl, hrd, rfl⟩ := hmin a c hTa hc
     obtain ⟨r', hr', ha', hlt⟩ := (hcl r hr).1 hp
@@ -413,18 +425,18 @@ theorem topWalkCore_of_recs
   · rintro a x hTa ⟨c, i, hc, hi, hx⟩ hncov cx hcx ⟨ms, hms⟩
     obtain ⟨r, hr, rfl, -, rfl⟩ := hmin a c hTa hc
     obtain ⟨-, hrest⟩ := (hcl r hr).2 i (huse _ i x hi hx) x hx
-    rcases hrest with ⟨⟨raw, c', hh, hb, hd, hn⟩, r', hr', rfl, -⟩ | ⟨ro, hof, hw, -⟩
+    rcases hrest with ⟨⟨raw, c', hh, hb, hd, hn⟩, r', hr', rfl, -⟩ | hcov
     · have hraw : raw = r'.rawBytes := hnoColl raw r'.rawBytes hh r'.hhashed (hb.trans r'.hblake.symm)
       rw [hraw, r'.hde] at hd
       have hc' : r'.c = c' := Except.ok.inj hd
       have hcx' : cx = r'.c := huniq r' hr' cx hcx
       exact hn ms (hc' ▸ hcx' ▸ hms)
-    · exact hncov ⟨ro, hof, hw⟩
+    · exact hncov (covered_of_coveredAt hcov)
 
   · rintro a x hTa hsafe ⟨c, i, hc, hi, hx⟩ hncov
     obtain ⟨r, hr, rfl, _, rfl⟩ := hmin a c hTa hc
     exact r.hguard.safe hS hH (hrec r hr) hsafe i hi x (by simpa using hx)
-      (by rintro ⟨ro, hof, hw, _⟩; exact hncov ⟨ro, hof, hw⟩)
+      (fun hcov => hncov (covered_of_coveredAt hcov))
   · intro x ro c hTx hqr hof hc
     obtain ⟨r, hr, rfl, -, rfl⟩ := hmin x c hTx hc
     have hrefs : r.c.refs.size < 8589934592 := by

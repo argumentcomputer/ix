@@ -116,11 +116,27 @@ theorem ownerOf_constructorProjection (x B : _root_.Address) (i j : Nat) :
 
 /-! ## The walk -/
 
+/-- The eleven non-container anchors validated by a binding run and skipped under an assumed
+role table: `Bool`, `And`, `String`, `Char`, and their bound constructors/recursors/helpers. -/
+def coveredAnchors : List Ix.Kernel.Role :=
+  [.bool, .boolFalse, .boolTrue, .boolRec,
+   .and, .andIntro, .andRec,
+   .string, .stringOfList, .char, .charOfNat]
+
+set_option maxRecDepth 100000 in
+theorem coveredAnchors_mem_shape_or_prelude (r : Ix.Kernel.Role) (h : r ∈ coveredAnchors) :
+    r ∈ shapeAnchors ∨ r ∈ preludeRoles := by
+  cases r <;> first
+    | exact absurd h (by decide)
+    | exact Or.inl (by decide)
+    | exact Or.inr (by decide)
+
 /-- **A reference bound to a role whose record a validation walks.** A run that assumes its
 table skips such a reference; a run that validates it walks the record under another role
 context. Either way the valid table's environment keeps the role's constant. -/
 def Covered (t : Ix.Kernel.RoleTable) (b : _root_.Address) : Prop :=
-  ∃ r, t.addressOf? r = some b ∧ walkedRole r = true
+  ∃ r, t.addressOf? r = some b ∧
+    (walkedRole r = true ∨ r ∈ coveredAnchors)
 
 /-- **The record at `a` uses the reference `x`.** -/
 def UsedRef (E₀ : Ixon.Env) (a x : _root_.Address) : Prop :=
@@ -240,11 +256,20 @@ variable {t : Ix.Kernel.RoleTable} {R : Ixon.Env} {envT : Ix.Kernel.Env .anon}
 /-- **A covered reference is stored by a valid table's environment.** -/
 theorem covered_stored (hshape : TableShape.{u} t (fun _ => True) R envT) (htwf : t.wf = true)
     {x : _root_.Address} (h : Covered t x) : StoredAt t envT x := by
-  obtain ⟨r, ha, hw⟩ := h
-  obtain ⟨ci, hfind, -⟩ := hshape.kept (Ix.SpecDigest.groupOf r) r x trivial
-    (role_mem_roleGroup r) (Or.inl (Or.inl hw)) ha
-  exact storedAt_of_role htwf ha (Ix.Kernel.Semantics.Env.find?_mem hfind)
-    (Ix.Kernel.Semantics.Env.find?_name hfind)
+  obtain ⟨r, ha, hw | ha'⟩ := h
+  · obtain ⟨ci, hfind, -⟩ := hshape.kept (Ix.SpecDigest.groupOf r) r x trivial
+      (role_mem_roleGroup r) (Or.inl (Or.inl hw)) ha
+    exact storedAt_of_role htwf ha (Ix.Kernel.Semantics.Env.find?_mem hfind)
+      (Ix.Kernel.Semantics.Env.find?_name hfind)
+  · rcases coveredAnchors_mem_shape_or_prelude r ha' with hs | hp
+    · obtain ⟨ci, hfind, -⟩ := hshape.kept (Ix.SpecDigest.groupOf r) r x trivial
+        (role_mem_roleGroup r) (Or.inl (Or.inr hs)) ha
+      exact storedAt_of_role htwf ha (Ix.Kernel.Semantics.Env.find?_mem hfind)
+        (Ix.Kernel.Semantics.Env.find?_name hfind)
+    · obtain ⟨ci, hfind, -⟩ := hshape.preludeKept (Ix.SpecDigest.groupOf r) r x trivial
+        (role_mem_roleGroup r) hp ha
+      exact storedAt_of_role htwf ha (Ix.Kernel.Semantics.Env.find?_mem hfind)
+        (Ix.Kernel.Semantics.Env.find?_name hfind)
 
 /-- **The address of a standard axiom or of a role of the quotient package is stored by a
 valid table's environment**: the two axioms that are records of their own are kept, and the

@@ -78,12 +78,31 @@ theorem RCLimRep.cases {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim :
 
 /-! ## Roles whose record a validation walks -/
 
+/-- The eleven non-container anchors validated by a binding run (`KernelRoles::anchor_walked`
+excluding `List`, `List.nil`, `List.cons`): `Bool`, `And`, `String`, `Char`, and their bound
+constructors/recursors/helpers. -/
+def anchorCoveredRole : Ix.Kernel.Role → Bool
+  | .bool | .boolFalse | .boolTrue | .boolRec
+  | .and | .andIntro | .andRec
+  | .string | .stringOfList | .char | .charOfNat => true
+  | _ => false
+
+theorem anchorCoveredRole_mem_shape_or_prelude (r : Ix.Kernel.Role)
+    (h : anchorCoveredRole r = true) :
+    r ∈ IxVM.Consistency.shapeAnchors ∨ r ∈ IxVM.Consistency.preludeRoles := by
+  cases r <;> first
+    | exact absurd h (by decide)
+    | exact Or.inl (by decide)
+    | exact Or.inr (by decide)
+
 /-- **`b` is bound to a role whose record a validation walks, in force at `lim`**: a walk at
-`lim` skips such a reference (`Assumed`) or walks it under a context of its own (`Mk`). At the
-top level (`some 77` or `none`) it is the assembly's `Typing.Covered`. -/
+`lim` skips such a reference (`Assumed`, including the eleven non-container binding-validated
+anchors) or walks it under a context of its own (`Mk`). -/
 def CoveredAt (t : Ix.Kernel.RoleTable) (lim : Option Nat) (b : _root_.Address) : Prop :=
-  ∃ r, t.addressOf? r = some b ∧ IxVM.Consistency.walkedRole r = true ∧
-    ∀ n, lim = some n → Ix.SpecDigest.groupOf r < n
+  ∃ r, t.addressOf? r = some b ∧
+    ((IxVM.Consistency.walkedRole r = true ∧
+        ∀ n, lim = some n → Ix.SpecDigest.groupOf r < n) ∨
+      (lim = none ∧ anchorCoveredRole r = true))
 
 theorem walkedRole_eq_roleWalksBound (ro : Ix.Kernel.Role) :
     IxVM.Consistency.walkedRole ro = RoleVal.roleWalksBound ro := by
@@ -119,8 +138,46 @@ theorem role_member_kind_full {ro : Ix.Kernel.Role} {r : SourceValue F} {h h' : 
   obtain ⟨rfl, rfl, -⟩ := d9.literal_inv
   exact ⟨rfl, rfl⟩
 
+/-- The value `KernelRoles::anchor_walked` gives a role. -/
+def anchorWalkedF (ro : Ix.Kernel.Role) : F :=
+  (RolesAux.evalLitTable (RolesAux.matchArms IxVM.KernelRoles.anchor_walked.body)
+    (roleNum ro)).getD 0
+
 set_option maxRecDepth 100000 in
-/-- The roles `role_admission_checks` answers `1` for are the walked roles. -/
+theorem anchor_walked_table' (ro : Ix.Kernel.Role) :
+    RolesAux.evalLitTable (RolesAux.matchArms IxVM.KernelRoles.anchor_walked.body)
+      (roleNum ro) = some (anchorWalkedF ro) := by
+  cases ro <;> decide
+
+theorem anchor_walked_full' {ro : Ix.Kernel.Role} {r : SourceValue F} {h h' : Heap F}
+    {calls : List (Call F)}
+    (ev : ObsFn W "KernelRoles::anchor_walked" [.field (roleNum ro)] h r h' calls) :
+    r = .field (anchorWalkedF ro) ∧ h' = h := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoles.anchor_walked.lookup
+    (by simp [IxVM.KernelRoles.anchor_walked, ControlLower.hasControl]) ev
+  have hp : (IxVM.KernelRoles.anchor_walked.params.map fun (n, t) =>
+      (n, (t.subst []).toCore)).map Prod.fst = ["r"] := rfl
+  have hb : IxVM.KernelRoles.anchor_walked.body =
+      .matchValue (.var "r") (RolesAux.matchArms IxVM.KernelRoles.anchor_walked.body) := rfl
+  rw [hp, hb] at d0
+  obtain ⟨v1, m2, bs3, body4, _, _, d7, sel8, d9, -⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, -⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  obtain ⟨rfl, rfl⟩ := RolesAux.selectArm_litTable (anchor_walked_table' ro) sel8
+  obtain ⟨rfl, rfl, -⟩ := d9.literal_inv
+  exact ⟨rfl, rfl⟩
+
+set_option maxRecDepth 100000 in
+private theorem anchorCovered_of_anchorWalked (ro : Ix.Kernel.Role) :
+    anchorWalkedF ro = 1 →
+      roleNum ro ≠ 29 → roleNum ro ≠ 30 → roleNum ro ≠ 31 →
+      anchorCoveredRole ro = true := by
+  cases ro <;> decide
+
+set_option maxRecDepth 100000 in
+/-- The roles `role_admission_checks` answers `1` for are the walked roles and the eleven
+non-container binding-validated anchors. -/
 theorem walks_of_admission (ro : Ix.Kernel.Role) :
     ((((RoleVal.roleSpecKindNat ro : Nat) : F) = 0 →
         (memberKindF ro = 0 ∨ memberKindF ro = 1 ∨ memberKindF ro = 2) →
@@ -129,36 +186,65 @@ theorem walks_of_admission (ro : Ix.Kernel.Role) :
       (((RoleVal.roleSpecKindNat ro : Nat) : F) = 5 → RoleVal.roleWalksBound ro = true)) := by
   cases ro <;> decide
 
-/-- **`KernelRoles::role_admission_checks` at a role**: `0`, or `1` at a walked role. -/
+/-- **`KernelRoles::role_admission_checks` at a role**: `0`, or `1` at a walked role or one of the
+eleven non-container binding-validated anchors. -/
 theorem role_admission_checks_walks {ro : Ix.Kernel.Role} {r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
     (ev : ObsFn W "KernelRoles::role_admission_checks" [.field (roleNum ro)] h r h' calls) :
-    h' = h ∧ (r = .field 0 ∨ (r = .field 1 ∧ IxVM.Consistency.walkedRole ro = true)) := by
+    h' = h ∧
+      (r = .field 0 ∨
+        (r = .field 1 ∧ (IxVM.Consistency.walkedRole ro = true ∨ anchorCoveredRole ro = true))) := by
   rw [walkedRole_eq_roleWalksBound]
   obtain ⟨hw0, hw2, hw5⟩ := walks_of_admission ro
   match Obs.«KernelRoles::role_admission_checks».obs ev with
   | .n0_n0 (ev15 := ev15) (ev42 := ev42) (he55 := he) (he56 := hh) .. =>
     obtain ⟨hk, rfl⟩ := RoleVal.role_spec_kind_spec ev15
     obtain ⟨hm, rfl⟩ := role_member_kind_full ev42
-    exact ⟨hh, .inr ⟨he, hw0 (Value.field.inj hk).symm (.inl (Value.field.inj hm).symm)⟩⟩
+    exact ⟨hh, .inr ⟨he, .inl (hw0 (Value.field.inj hk).symm (.inl (Value.field.inj hm).symm))⟩⟩
   | .n0_n1 (ev15 := ev15) (ev42 := ev42) (he63 := he) (he64 := hh) .. =>
     obtain ⟨hk, rfl⟩ := RoleVal.role_spec_kind_spec ev15
     obtain ⟨hm, rfl⟩ := role_member_kind_full ev42
-    exact ⟨hh, .inr ⟨he, hw0 (Value.field.inj hk).symm (.inr (.inl (Value.field.inj hm).symm))⟩⟩
+    exact ⟨hh, .inr ⟨he, .inl (hw0 (Value.field.inj hk).symm (.inr (.inl (Value.field.inj hm).symm)))⟩⟩
   | .n0_n2 (ev15 := ev15) (ev42 := ev42) (he71 := he) (he72 := hh) .. =>
     obtain ⟨hk, rfl⟩ := RoleVal.role_spec_kind_spec ev15
     obtain ⟨hm, rfl⟩ := role_member_kind_full ev42
-    exact ⟨hh, .inr ⟨he, hw0 (Value.field.inj hk).symm (.inr (.inr (Value.field.inj hm).symm))⟩⟩
+    exact ⟨hh, .inr ⟨he, .inl (hw0 (Value.field.inj hk).symm (.inr (.inr (Value.field.inj hm).symm)))⟩⟩
   | .n0_other (ev15 := ev15) (ev42 := ev42) (he78 := he) (he79 := hh) .. =>
     obtain ⟨-, rfl⟩ := RoleVal.role_spec_kind_spec ev15
     obtain ⟨-, rfl⟩ := role_member_kind_full ev42
     exact ⟨hh, .inl he⟩
+  | .n1_n1_n29 (ev15 := ev15) (ev_psnyrwee := ev_aw) (he_rzqqcrtz := he) (he_qxtkilsf := hh) .. =>
+    obtain ⟨-, rfl⟩ := RoleVal.role_spec_kind_spec ev15
+    obtain ⟨-, rfl⟩ := anchor_walked_full' ev_aw
+    exact ⟨hh, .inl he⟩
+  | .n1_n1_n30 (ev15 := ev15) (ev_psnyrwee := ev_aw) (he_kjqtkskp := he) (he_uiedodii := hh) .. =>
+    obtain ⟨-, rfl⟩ := RoleVal.role_spec_kind_spec ev15
+    obtain ⟨-, rfl⟩ := anchor_walked_full' ev_aw
+    exact ⟨hh, .inl he⟩
+  | .n1_n1_n31 (ev15 := ev15) (ev_psnyrwee := ev_aw) (he_xidupilt := he) (he_indzhais := hh) .. =>
+    obtain ⟨-, rfl⟩ := RoleVal.role_spec_kind_spec ev15
+    obtain ⟨-, rfl⟩ := anchor_walked_full' ev_aw
+    exact ⟨hh, .inl he⟩
+  | .n1_n1_other (ev15 := ev15) (ev_psnyrwee := ev_aw)
+      (hne_fljbtzga := h29) (hne_vgqyttvl := h30) (hne_bmtzwnqi := h31)
+      (he_ekhbzpqp := he) (he_zhglxwnx := hh) .. =>
+    obtain ⟨-, rfl⟩ := RoleVal.role_spec_kind_spec ev15
+    obtain ⟨haw, rfl⟩ := anchor_walked_full' ev_aw
+    have hanc := anchorCovered_of_anchorWalked ro (Value.field.inj haw).symm
+      (fun h => h29 (congrArg Value.field h))
+      (fun h => h30 (congrArg Value.field h))
+      (fun h => h31 (congrArg Value.field h))
+    exact ⟨hh, .inr ⟨he, .inr hanc⟩⟩
+  | .n1_other (ev15 := ev15) (ev_psnyrwee := ev_aw) (he_flopnzhy := he) (he_dpyfurir := hh) .. =>
+    obtain ⟨-, rfl⟩ := RoleVal.role_spec_kind_spec ev15
+    obtain ⟨-, rfl⟩ := anchor_walked_full' ev_aw
+    exact ⟨hh, .inl he⟩
   | .n2 (ev15 := ev15) (he86 := he) (he87 := hh) .. =>
     obtain ⟨hk, rfl⟩ := RoleVal.role_spec_kind_spec ev15
-    exact ⟨hh, .inr ⟨he, hw2 (Value.field.inj hk).symm⟩⟩
+    exact ⟨hh, .inr ⟨he, .inl (hw2 (Value.field.inj hk).symm)⟩⟩
   | .n5 (ev15 := ev15) (he94 := he) (he95 := hh) .. =>
     obtain ⟨hk, rfl⟩ := RoleVal.role_spec_kind_spec ev15
-    exact ⟨hh, .inr ⟨he, hw5 (Value.field.inj hk).symm⟩⟩
+    exact ⟨hh, .inr ⟨he, .inl (hw5 (Value.field.inj hk).symm)⟩⟩
   | .other (ev15 := ev15) (he101 := he) (he102 := hh) .. =>
     obtain ⟨-, rfl⟩ := RoleVal.role_spec_kind_spec ev15
     exact ⟨hh, .inl he⟩
@@ -228,7 +314,7 @@ theorem walk_covered_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Addres
       obtain ⟨rfl, rfl, -⟩ := addr_index_lookup htbl ha ev94 ev72
       exact ⟨hh, .inl he⟩
     | .Assumed_other (ld12 := ld12) (ev94 := ev94) (ev72 := ev72) (hne126 := hne)
-        (op150 := op) (ev135 := ev135) .. =>
+        (op150 := op) (ev135 := ev_adm) .. =>
       rw [hl] at ld12
       injection ld12 with hv
       injection hv with _ _ hargs
@@ -237,11 +323,56 @@ theorem walk_covered_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Addres
       obtain ⟨rfl, rfl, hlk⟩ := addr_index_lookup htbl ha ev94 ev72
       rcases hlk with ⟨rfl, -⟩ | ⟨ro, rfl, hof⟩
       · exact absurd rfl hne
-      · rw [sub_one_roleNum op] at ev135
-        obtain ⟨rfl, hr⟩ := role_admission_checks_walks ev135
-        rcases hr with hr0 | ⟨-, hw⟩
+      · rw [sub_one_roleNum op] at ev_adm
+        obtain ⟨rfl, hr⟩ := role_admission_checks_walks ev_adm
+        rcases hr with hr0 | ⟨-, hw | hanc⟩
         · exact ⟨rfl, .inl hr0⟩
-        · exact ⟨rfl, .inr ⟨ro, hof, hw, fun n hn => by cases hn⟩⟩
+        · exact ⟨rfl, .inr ⟨ro, hof, .inl ⟨hw, fun n hn => by cases hn⟩⟩⟩
+        · exact ⟨rfl, .inr ⟨ro, hof, .inr ⟨rfl, hanc⟩⟩⟩
+
+private theorem walk_ctx_walks_seg {ro : Ix.Kernel.Role}
+    {e0 e2 e3 e4 e5 r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (sg : Obs.«KernelRoles::walk_ctx».Seg_fmsxypkd e0 (.field (roleNum ro + 1)) e2 e3 e4 e5 h r h' cs) :
+    h' = h ∧ (r = .field 0 ∨ (r = .field 1 ∧ IxVM.Consistency.walkedRole ro = true)) := by
+  rw [walkedRole_eq_roleWalksBound]
+  obtain ⟨hw0, hw2, hw5⟩ := walks_of_admission ro
+  match sg with
+  | .n0_n0 (op_hpxnuijd := op1) (ev_sphmhihq := ev1) (op_tocpeqnn := op2) (ev_sfslzxlw := ev2)
+      (he_jgltwaqm := hr) (he_jswitoyt := hh) .. =>
+    rw [sub_one_roleNum op1] at ev1; rw [sub_one_roleNum op2] at ev2
+    obtain ⟨hk, rfl⟩ := RoleVal.role_spec_kind_spec ev1
+    obtain ⟨hm, rfl⟩ := role_member_kind_full ev2
+    exact ⟨hh, .inr ⟨hr, hw0 (Value.field.inj hk).symm (.inl (Value.field.inj hm).symm)⟩⟩
+  | .n0_n1 (op_hpxnuijd := op1) (ev_sphmhihq := ev1) (op_tocpeqnn := op2) (ev_sfslzxlw := ev2)
+      (he_diymupvy := hr) (he_ozxjtsed := hh) .. =>
+    rw [sub_one_roleNum op1] at ev1; rw [sub_one_roleNum op2] at ev2
+    obtain ⟨hk, rfl⟩ := RoleVal.role_spec_kind_spec ev1
+    obtain ⟨hm, rfl⟩ := role_member_kind_full ev2
+    exact ⟨hh, .inr ⟨hr, hw0 (Value.field.inj hk).symm (.inr (.inl (Value.field.inj hm).symm))⟩⟩
+  | .n0_n2 (op_hpxnuijd := op1) (ev_sphmhihq := ev1) (op_tocpeqnn := op2) (ev_sfslzxlw := ev2)
+      (he_hsahncge := hr) (he_jntofudw := hh) .. =>
+    rw [sub_one_roleNum op1] at ev1; rw [sub_one_roleNum op2] at ev2
+    obtain ⟨hk, rfl⟩ := RoleVal.role_spec_kind_spec ev1
+    obtain ⟨hm, rfl⟩ := role_member_kind_full ev2
+    exact ⟨hh, .inr ⟨hr, hw0 (Value.field.inj hk).symm (.inr (.inr (Value.field.inj hm).symm))⟩⟩
+  | .n0_other (op_hpxnuijd := op1) (ev_sphmhihq := ev1) (op_tocpeqnn := op2) (ev_sfslzxlw := ev2)
+      (he_uehsouww := hr) (he_rqwniovc := hh) .. =>
+    rw [sub_one_roleNum op1] at ev1; rw [sub_one_roleNum op2] at ev2
+    obtain ⟨-, rfl⟩ := RoleVal.role_spec_kind_spec ev1
+    obtain ⟨-, rfl⟩ := role_member_kind_full ev2
+    exact ⟨hh, .inl hr⟩
+  | .n2 (op_hpxnuijd := op1) (ev_sphmhihq := ev1) (he_jcayiacp := hr) (he_qjehvnoy := hh) .. =>
+    rw [sub_one_roleNum op1] at ev1
+    obtain ⟨hk, rfl⟩ := RoleVal.role_spec_kind_spec ev1
+    exact ⟨hh, .inr ⟨hr, hw2 (Value.field.inj hk).symm⟩⟩
+  | .n5 (op_hpxnuijd := op1) (ev_sphmhihq := ev1) (he_vicfcdve := hr) (he_guywjgkj := hh) .. =>
+    rw [sub_one_roleNum op1] at ev1
+    obtain ⟨hk, rfl⟩ := RoleVal.role_spec_kind_spec ev1
+    exact ⟨hh, .inr ⟨hr, hw5 (Value.field.inj hk).symm⟩⟩
+  | .other (op_hpxnuijd := op1) (ev_sphmhihq := ev1) (he_lvavpcwq := hr) (he_okvdvlvj := hh) .. =>
+    rw [sub_one_roleNum op1] at ev1
+    obtain ⟨-, rfl⟩ := RoleVal.role_spec_kind_spec ev1
+    exact ⟨hh, .inl hr⟩
 
 private theorem groupValLimit_le_self (g : Nat) : RoleVal.groupValLimit g ≤ g := by
   unfold RoleVal.groupValLimit
@@ -267,7 +398,7 @@ theorem walk_ctx_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
     | .Mk_n0 (he101 := he) .. => exact ⟨ext, .inl he⟩
     | .Mk_other_n0 (he250 := he) .. => exact ⟨ext, .inl he⟩
     | .Mk_other_other (ld12 := ld12) (ev71 := ev71) (ev49 := ev49) (hne104 := hne)
-        (op136 := op136) (ev121 := ev121) (ev206 := ev206) (op243 := op243) (ev228 := ev228)
+        (op136 := op136) (ev121 := ev121) (sg_wozitseu := sg) (ev206 := ev206)
         (op200 := op200) (hne253 := hne253) (he261 := he261) (hm260 := hm260)
         (ev286 := ev286) .. =>
       rw [hl] at ld12
@@ -279,10 +410,9 @@ theorem walk_ctx_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
       rcases hlk with ⟨rfl, -⟩ | ⟨ro, rfl, hof⟩
       · exact absurd rfl hne
       · rw [sub_one_roleNum op136] at ev121
-        rw [sub_one_roleNum op243] at ev228
         obtain ⟨rfl, rfl⟩ := RolesAux.role_group_spec ev121
+        obtain ⟨rfl, hadm⟩ := walk_ctx_walks_seg sg
         obtain ⟨hgl, -, hlt_iff, hx01, rfl⟩ := Lib.less_than_fields_field ev206
-        obtain ⟨rfl, hadm⟩ := role_admission_checks_walks ev228
         have hx1 : ∀ x y : SourceValue F, (x = .field 0 ∨ x = .field 1) →
             (y = .field 0 ∨ (y = .field 1 ∧ IxVM.Consistency.walkedRole ro = true)) →
             ∀ v, evalBinOp .mul x y = .ok v → v ≠ .field 0 →
@@ -299,7 +429,7 @@ theorem walk_ctx_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
         have hg32 : Ix.SpecDigest.groupOf ro < 4294967296 := by omega
         obtain ⟨rfl, rfl⟩ := RoleVal.group_validation_limit_of_nat hg32 ev286
         subst he261 hm260
-        refine ⟨ext, .inr ⟨⟨ro, hof, hw, fun n' hn' => by cases hn'; exact hglt⟩,
+        refine ⟨ext, .inr ⟨⟨ro, hof, .inl ⟨hw, fun n' hn' => by cases hn'; exact hglt⟩⟩,
           RoleVal.groupValLimit (Ix.SpecDigest.groupOf ro),
           fun n' hn' => by
             cases hn'

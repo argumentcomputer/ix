@@ -1195,12 +1195,10 @@ theorem walk_covered_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {li
     (ev : ObsFn W "KernelRoles::walk_covered" [x_rc, x_a] h r h' calls) :
     r = .field 0 ∧ h' = h := by
   obtain ⟨_, tbl, hl_rc, _⟩ := hrc
-  rcases Obs.«KernelRoles::walk_covered».obs ev with
-    ⟨_, _, _, _, rfl, rfl, -⟩ | ⟨_, _, _, _, _, _, _, ld12, -⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, ld12, -⟩
-  · exact ⟨rfl, rfl⟩
-  · rw [hl_rc] at ld12; simp at ld12
-  · rw [hl_rc] at ld12; simp at ld12
+  match Obs.«KernelRoles::walk_covered».obs ev with
+  | .Mk (he38 := hr) (he39 := hh) .. => exact ⟨hr, hh⟩
+  | .Assumed_n0 (ld12 := ld12) .. => rw [hl_rc] at ld12; simp at ld12
+  | .Assumed_other (ld12 := ld12) .. => rw [hl_rc] at ld12; simp at ld12
 
 theorem group_validation_limit_spec {g : F} (hg : g.val < 4294967296)
     {r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -1246,17 +1244,17 @@ theorem walk_ctx_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : 
     Heap.Extends h h' ∧ ∃ lim' : Nat, RCFullRep t bAddr lim' h' r := by
   have ext := ev.heap_extends
   obtain ⟨hlim, tbl, hl_rc, htbl⟩ := hrc
-  rcases Obs.«KernelRoles::walk_ctx».obs ev with
-    ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, rfl, -⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, rfl, rfl, -⟩ |
-    ⟨x_tbl, x_limit, w20, v36, m37, cs47, v51, m61, cs69, v108, m109, cs119, v122, v138,
-      m139, cs149, v152, v184, m185, x193, y194, m195, cs204, cs226, v229, v266, m276, cs284,
-      ld12, _, _, _, _, _, _, _, ev206, _, _, _, _, rfl, rfl, ev286, -⟩ |
-    ⟨_, _, ld12, -⟩
-  · exact ⟨ext, lim, hlim, tbl, ext.loadValue_eq hl_rc, htbl.mono ext⟩
-  · exact ⟨ext, lim, hlim, tbl, ext.loadValue_eq hl_rc, htbl.mono ext⟩
-  · rw [hl_rc] at ld12
+  match Obs.«KernelRoles::walk_ctx».obs ev with
+  | .Mk_n0 (he101 := hr) (he102 := hh) .. =>
+    subst hr hh
+    exact ⟨ext, lim, hlim, tbl, ext.loadValue_eq hl_rc, htbl.mono ext⟩
+  | .Mk_other_n0 (he250 := hr) (he251 := hh) .. =>
+    subst hr hh
+    exact ⟨ext, lim, hlim, tbl, ext.loadValue_eq hl_rc, htbl.mono ext⟩
+  | .Mk_other_other (x_tbl := x_tbl) (m276 := m276) (ld12 := ld12) (ev206 := ev206)
+      (he261 := hr) (hm260 := hh) (ev286 := ev286) .. =>
+    subst hr hh
+    rw [hl_rc] at ld12
     injection ld12 with hv
     injection hv with _ _ hargs
     simp only [List.cons.injEq] at hargs
@@ -1267,7 +1265,8 @@ theorem walk_ctx_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : 
       loadValue_snoc_construct m276 rcEnum "Mk"
         [x_tbl, .field (lim' : F), .construct addrMapEnum "Nil" []],
       htbl.mono ext⟩
-  · rw [hl_rc] at ld12
+  | .Assumed (ld12 := ld12) .. =>
+    rw [hl_rc] at ld12
     simp at ld12
 
 end IxVM.Refinement.Claim

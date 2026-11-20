@@ -671,7 +671,7 @@ covered walked roles, walked anchors, standard axioms and quotient roles below `
 operations of groups below `g` were each placed in `basisStore` or added by their own group. -/
 theorem storedBelow_of_alreadyStored (hbr : BasisRolesStored t) {g : Nat} {x : _root_.Address}
     (hst : AlreadyStoredRole t g x) : StoredBelow t E₀ Pay g x := by
-  rcases hst with ⟨r, had, hw, hlt⟩ | ⟨r, had, hlt, hkind⟩ | ⟨r, had, hk2, hlt⟩
+  rcases hst with ⟨r, had, ⟨hw, hlt⟩ | ⟨hnone, -⟩⟩ | ⟨r, had, hlt, hkind⟩ | ⟨r, had, hk2, hlt⟩
   · have hlt' : Ix.SpecDigest.groupOf r < g :=
       Nat.lt_of_lt_of_le (hlt (valLimit g) rfl) (valLimit_le g)
     by_cases h6 : Ix.SpecDigest.groupOf r < 6
@@ -681,6 +681,7 @@ theorem storedBelow_of_alreadyStored (hbr : BasisRolesStored t) {g : Nat} {x : _
         exact hw
       exact Or.inr ⟨Ix.SpecDigest.groupOf r, Nat.le_of_not_lt h6, hlt',
         GroupAdds.reach (GroupReach.root (role_mem_roleGroup r) (Or.inl hwb) had)⟩
+  · cases hnone
   · have hlt' : Ix.SpecDigest.groupOf r < g := Nat.lt_of_lt_of_le hlt (valLimit_le g)
     rcases hkind with hwk | hs | hq
     · exact Or.inr ⟨Ix.SpecDigest.groupOf r, anchorWalked_group_ge_six r hwk, hlt',

@@ -846,12 +846,20 @@ theorem inLogic_of_covered_ind {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     (hc : recordOf E₀ a = some c) (hinfo : c.info = .iPrj p) (hBm : p.block = Bm)
     (hcBm : recordOf E₀ Bm = some cBm)
     (hcov : Claim.CoveredAt t lim a) : InLogic cBm := by
-  obtain ⟨r, hr_addr, hr_walk, hr_lt⟩ := hcov
-  have hGr : G (Ix.SpecDigest.groupOf r) :=
-    hLim r (by simp [hr_addr]) hr_lt
-  have hkept : keptRole r := Or.inl (Or.inl hr_walk)
-  obtain ⟨ci, hci_find, hpin | hkeptIn⟩ :=
-    hShape.kept (Ix.SpecDigest.groupOf r) r a hGr (role_mem_roleGroup r) hkept hr_addr
+  obtain ⟨r, hr_addr, hcov_r⟩ := hcov
+  have ⟨ci, hci_find, hci_src⟩ : ∃ ci, envT.find? (Ix.Kernel.Key.role r) = some ci ∧
+      (PinnedBasis ci ∨ KeptIn t (recordOf R) (fun x => R.blobs.get? x) a ci) := by
+    rcases hcov_r with ⟨hr_walk, hr_lt⟩ | ⟨rfl, hanc⟩
+    · have hGr : G (Ix.SpecDigest.groupOf r) := hLim r (by simp [hr_addr]) hr_lt
+      exact hShape.kept (Ix.SpecDigest.groupOf r) r a hGr (role_mem_roleGroup r)
+        (Or.inl (Or.inl hr_walk)) hr_addr
+    · have hGr : G (Ix.SpecDigest.groupOf r) :=
+        hLim r (by simp [hr_addr]) (fun _ hn => nomatch hn)
+      rcases Claim.anchorCoveredRole_mem_shape_or_prelude r hanc with hs | hp
+      · exact hShape.kept (Ix.SpecDigest.groupOf r) r a hGr (role_mem_roleGroup r)
+          (Or.inl (Or.inr hs)) hr_addr
+      · exact hShape.preludeKept (Ix.SpecDigest.groupOf r) r a hGr (role_mem_roleGroup r) hp hr_addr
+  rcases hci_src with hpin | hkeptIn
   · have hname : ci.name = .role r := Core.WhnfAux.name_of_find hci_find
     have hprel : r ∈ preludeRoles := pinnedBasis_role_mem_prelude hpin hname
     obtain ⟨a', bytes, ha', hrow⟩ := ClosedFacts.preludePinned_rows hShape.prelude r hprel

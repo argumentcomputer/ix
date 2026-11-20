@@ -324,10 +324,12 @@ private theorem role_of_ne_zero_lim_ext {t : Ix.Kernel.RoleTable} {bAddr a : _ro
       · exact ⟨ro, hro, hof⟩
 
 set_option maxRecDepth 100000 in
-private theorem admission_of_walks (ro : Ix.Kernel.Role) :
-    RoleVal.roleWalksBound ro = true →
+private theorem admission_of_covered (ro : Ix.Kernel.Role) :
+    (walkedRole ro = true ∨ ro ∈ coveredAnchors) →
       (((RoleVal.roleSpecKindNat ro : Nat) : F) = 0 ∧
         (Claim.memberKindF ro = 0 ∨ Claim.memberKindF ro = 1 ∨ Claim.memberKindF ro = 2)) ∨
+      (((RoleVal.roleSpecKindNat ro : Nat) : F) = 1 ∧ Claim.anchorWalkedF ro = 1 ∧
+        Core.roleNum ro ≠ 29 ∧ Core.roleNum ro ≠ 30 ∧ Core.roleNum ro ≠ 31) ∨
       ((RoleVal.roleSpecKindNat ro : Nat) : F) = 2 ∨
       ((RoleVal.roleSpecKindNat ro : Nat) : F) = 5 := by
   cases ro <;> decide
@@ -335,36 +337,72 @@ private theorem admission_of_walks (ro : Ix.Kernel.Role) :
 private theorem role_admission_checks_iff {ro : Ix.Kernel.Role} {r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
     (ev : ObsFn Obs.W "KernelRoles::role_admission_checks" [.field (Core.roleNum ro)] h r h' calls) :
-    h' = h ∧ (r = .field 0 ∨ r = .field 1) ∧ (r = .field 1 ↔ walkedRole ro = true) := by
+    h' = h ∧ (r = .field 0 ∨ r = .field 1) ∧
+      (r = .field 1 ↔ walkedRole ro = true ∨ ro ∈ coveredAnchors) := by
   obtain ⟨hh, hdisj⟩ := Claim.role_admission_checks_walks ev
   refine ⟨hh, hdisj.imp id And.left, ⟨fun h1 => ?_, fun hw => ?_⟩⟩
-  · rcases hdisj with h0 | ⟨-, hw⟩
+  · rcases hdisj with h0 | ⟨-, hwa⟩
     · exact absurd (Value.field.inj (h0.symm.trans h1)) zero_ne_one
-    · exact hw
+    · exact hwa.imp id (Claim.anchorCoveredRole_mem_coveredAnchors ro).mp
   · rcases hdisj with h0 | ⟨h1, -⟩
     · exfalso
-      rw [Claim.walkedRole_eq_roleWalksBound] at hw
-      have hadm := admission_of_walks ro hw
+      have hadm := admission_of_covered ro hw
       match Obs.«KernelRoles::role_admission_checks».obs ev with
       | .n0_n0 (he55 := he) .. | .n0_n1 (he63 := he) .. | .n0_n2 (he71 := he) ..
-      | .n2 (he86 := he) .. | .n5 (he94 := he) .. =>
+      | .n1_n1_other (he_ekhbzpqp := he) .. | .n2 (he86 := he) .. | .n5 (he94 := he) .. =>
         exact absurd (Value.field.inj (h0.symm.trans he)) zero_ne_one
       | .n0_other (ev15 := ev15) (ev42 := ev42) (hne58 := hne0) (hne66 := hne1)
           (hne74 := hne2) .. =>
-        obtain ⟨hk, hm2⟩ := RoleVal.role_spec_kind_spec ev15
+        obtain ⟨hk, _⟩ := RoleVal.role_spec_kind_spec ev15
         obtain ⟨hm, -⟩ := Claim.role_member_kind_full ev42
         have hk0 : ((RoleVal.roleSpecKindNat ro : Nat) : F) = 0 := (Value.field.inj hk).symm
-        rcases hadm with ⟨-, hm'⟩ | hk2 | hk5
+        rcases hadm with ⟨-, hm'⟩ | ⟨hk1, -⟩ | hk2 | hk5
         · rcases hm' with h | h | h
           · exact hne0 (hm.trans (congrArg Value.field h))
           · exact hne1 (hm.trans (congrArg Value.field h))
           · exact hne2 (hm.trans (congrArg Value.field h))
+        · exact absurd (hk0.symm.trans hk1) (by decide)
         · exact absurd (hk0.symm.trans hk2) (by decide)
         · exact absurd (hk0.symm.trans hk5) (by decide)
-      | .other (ev15 := ev15) (hne81 := hne0) (hne89 := hne2) (hne97 := hne5) .. =>
+      | .n1_n1_n29 (ev15 := ev15) (hv_rhkfrsxg := hv) .. =>
+        obtain ⟨hk, _⟩ := RoleVal.role_spec_kind_spec ev15
+        have hk1 : ((RoleVal.roleSpecKindNat ro : Nat) : F) = 1 := (Value.field.inj hk).symm
+        rcases hadm with ⟨hk0, -⟩ | ⟨-, -, h29, -, -⟩ | hk2 | hk5
+        · exact absurd (hk1.symm.trans hk0) (by decide)
+        · exact h29 (Value.field.inj hv)
+        · exact absurd (hk1.symm.trans hk2) (by decide)
+        · exact absurd (hk1.symm.trans hk5) (by decide)
+      | .n1_n1_n30 (ev15 := ev15) (hv_ptfjchii := hv) .. =>
+        obtain ⟨hk, _⟩ := RoleVal.role_spec_kind_spec ev15
+        have hk1 : ((RoleVal.roleSpecKindNat ro : Nat) : F) = 1 := (Value.field.inj hk).symm
+        rcases hadm with ⟨hk0, -⟩ | ⟨-, -, -, h30, -⟩ | hk2 | hk5
+        · exact absurd (hk1.symm.trans hk0) (by decide)
+        · exact h30 (Value.field.inj hv)
+        · exact absurd (hk1.symm.trans hk2) (by decide)
+        · exact absurd (hk1.symm.trans hk5) (by decide)
+      | .n1_n1_n31 (ev15 := ev15) (hv_jvyfexwb := hv) .. =>
+        obtain ⟨hk, _⟩ := RoleVal.role_spec_kind_spec ev15
+        have hk1 : ((RoleVal.roleSpecKindNat ro : Nat) : F) = 1 := (Value.field.inj hk).symm
+        rcases hadm with ⟨hk0, -⟩ | ⟨-, -, -, -, h31⟩ | hk2 | hk5
+        · exact absurd (hk1.symm.trans hk0) (by decide)
+        · exact h31 (Value.field.inj hv)
+        · exact absurd (hk1.symm.trans hk2) (by decide)
+        · exact absurd (hk1.symm.trans hk5) (by decide)
+      | .n1_other (ev15 := ev15) (ev_psnyrwee := ev_aw) (hne_qnsahksn := hne1) .. =>
+        obtain ⟨hk, _⟩ := RoleVal.role_spec_kind_spec ev15
+        obtain ⟨haw, _⟩ := Claim.anchor_walked_full' ev_aw
+        have hk1 : ((RoleVal.roleSpecKindNat ro : Nat) : F) = 1 := (Value.field.inj hk).symm
+        rcases hadm with ⟨hk0, -⟩ | ⟨-, haw1, -⟩ | hk2 | hk5
+        · exact absurd (hk1.symm.trans hk0) (by decide)
+        · exact hne1 (haw.trans (congrArg Value.field haw1))
+        · exact absurd (hk1.symm.trans hk2) (by decide)
+        · exact absurd (hk1.symm.trans hk5) (by decide)
+      | .other (ev15 := ev15) (hne81 := hne0) (hne_rehascgg := hne1) (hne89 := hne2)
+          (hne97 := hne5) .. =>
         obtain ⟨hk, -⟩ := RoleVal.role_spec_kind_spec ev15
-        rcases hadm with ⟨hk0, -⟩ | hk2 | hk5
+        rcases hadm with ⟨hk0, -⟩ | ⟨hk1, -⟩ | hk2 | hk5
         · exact hne0 (hk.trans (congrArg Value.field hk0))
+        · exact hne1 (hk.trans (congrArg Value.field hk1))
         · exact hne2 (hk.trans (congrArg Value.field hk2))
         · exact hne5 (hk.trans (congrArg Value.field hk5))
     · exact h1

@@ -146,10 +146,18 @@ theorem coveredLogic_of_checked {calls : List (Call F)} {t : Ix.Kernel.RoleTable
     (hcov : Claim.CoveredAt t lim x)
     (hrec : recordOf E₀ x = some c) (hinfo : c.info = .iPrj p)
     (hblk : recordOf E₀ p.block = some cb) : InLogic cb := by
-  obtain ⟨r, ha, hw, hlt⟩ := hcov
-  obtain ⟨ci, hfind, hpin | hkept⟩ :=
-    hshape.kept (Ix.SpecDigest.groupOf r) r x (hG r hlt)
-      (role_mem_roleGroup r) (Or.inl (Or.inl hw)) ha
+  obtain ⟨r, ha, hcov_r⟩ := hcov
+  have ⟨ci, hfind, hsrc⟩ : ∃ ci, envT.find? (Ix.Kernel.Key.role r) = some ci ∧
+      (PinnedBasis ci ∨ KeptIn t (recordOf R) (fun x => R.blobs.get? x) x ci) := by
+    rcases hcov_r with ⟨hw, hlt⟩ | ⟨rfl, hanc⟩
+    · exact hshape.kept (Ix.SpecDigest.groupOf r) r x (hG r hlt)
+        (role_mem_roleGroup r) (Or.inl (Or.inl hw)) ha
+    · rcases Claim.anchorCoveredRole_mem_shape_or_prelude r hanc with hs | hp
+      · exact hshape.kept (Ix.SpecDigest.groupOf r) r x (hG r (fun _ hn => nomatch hn))
+          (role_mem_roleGroup r) (Or.inl (Or.inr hs)) ha
+      · exact hshape.preludeKept (Ix.SpecDigest.groupOf r) r x (hG r (fun _ hn => nomatch hn))
+          (role_mem_roleGroup r) hp ha
+  rcases hsrc with hpin | hkept
   · -- Pinned basis constant: `r ∈ preludeRoles`, so both `x` and `p.block` are committed prelude rows.
     obtain ⟨kind, hci_mem⟩ := hpin
     obtain ⟨r', hr'_pre, hname'⟩ := pinnedBasis_role_mem_prelude kind ci hci_mem

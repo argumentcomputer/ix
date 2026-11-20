@@ -51,21 +51,10 @@ set_option linter.unusedVariables false
 
 /-! ## Top-level coverage equivalence -/
 
-/-- At a top-level limit (`some 77` or `none`), `Claim.CoveredAt` agrees with `Typing.Covered`. -/
-theorem coveredAt_iff_covered_top {t : Ix.Kernel.RoleTable} {lim : Option Nat}
-    {x : _root_.Address} (hlim : lim = some 77 ∨ lim = none) :
-    Claim.CoveredAt t lim x ↔ Covered t x := by
-  constructor
-  · rintro ⟨r, had, hwk, -⟩
-    exact ⟨r, had, hwk⟩
-  · rintro ⟨r, had, hwk⟩
-    refine ⟨r, had, hwk, fun n hn => ?_⟩
-    rcases hlim with h77 | hnone
-    · rw [h77] at hn
-      cases hn
-      exact RoleVal.groupOf_lt_77 r
-    · rw [hnone] at hn
-      cases hn
+/-- Every address covered at a limit (`Claim.CoveredAt`) is `Typing.Covered`. -/
+theorem covered_of_coveredAt_top {t : Ix.Kernel.RoleTable} {lim : Option Nat}
+    {x : _root_.Address} (h : Claim.CoveredAt t lim x) : Covered t x :=
+  Claim.covered_of_coveredAt h
 
 /-! ## Non-block and safety guards for inner records -/
 
@@ -200,7 +189,7 @@ theorem assert_inner_refs_safe_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     refine ⟨Claim.refAllowed_not_inert_top hAllow hlim, ?_⟩
     by_cases hcov : Covered t refs[j]
     · exact Or.inl hcov
-    · have hss := hSafe ((coveredAt_iff_covered_top hlim).not.mpr hcov)
+    · have hss := hSafe (fun hc => hcov (covered_of_coveredAt_top hc))
       obtain ⟨cx, hcx, hnotb⟩ := hnb j hj hm0
       obtain ⟨hlog, hown⟩ := hss cx hcx
       exact Or.inr ⟨cx, hcx, hnotb, hlog, hown⟩
