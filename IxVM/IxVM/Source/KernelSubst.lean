@@ -197,7 +197,7 @@ def expr_glb := aiur_fn⟦
 ⟧
 
 def expr_glb_walk := aiur_fn⟦
-  fn expr_glb_walk(e: KernelTypes::KExpr, c: Field) -> Field {
+  inline fn expr_glb_walk(e: KernelTypes::KExpr, c: Field) -> Field {
 
       match (*(e)) {
         KernelTypes::KExprNode::BVar(i) => {
@@ -259,7 +259,7 @@ def expr_lift := aiur_fn⟦
 ⟧
 
 def expr_lift_walk := aiur_fn⟦
-  fn expr_lift_walk(e: KernelTypes::KExpr, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
+  inline fn expr_lift_walk(e: KernelTypes::KExpr, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
       match (*(e)) {
         KernelTypes::KExprNode::BVar(i) => {  expr_lift_bvar(i, shift, cutoff) } ,
         KernelTypes::KExprNode::Srt(l) => {  (&(KernelTypes::KExprNode::Srt(l))) } ,
@@ -318,7 +318,7 @@ def expr_lower := aiur_fn⟦
 ⟧
 
 def expr_lower_walk := aiur_fn⟦
-  fn expr_lower_walk(e: KernelTypes::KExpr, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
+  inline fn expr_lower_walk(e: KernelTypes::KExpr, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
       match (*(e)) {
 
         KernelTypes::KExprNode::BVar(i) => {  (&(KernelTypes::KExprNode::BVar(i - shift))) } ,
@@ -421,7 +421,7 @@ def expr_inst1 := aiur_fn⟦
 ⟧
 
 def expr_inst1_walk := aiur_fn⟦
-  fn expr_inst1_walk(e: KernelTypes::KExpr, arg: KernelTypes::KExpr, depth: Field) -> KernelTypes::KExpr {
+  inline fn expr_inst1_walk(e: KernelTypes::KExpr, arg: KernelTypes::KExpr, depth: Field) -> KernelTypes::KExpr {
       match (*(e)) {
         KernelTypes::KExprNode::BVar(i) => {  expr_inst1_bvar(i, arg, depth) } ,
         KernelTypes::KExprNode::Srt(l) => {  (&(KernelTypes::KExprNode::Srt(l))) } ,
@@ -502,7 +502,7 @@ def expr_inst_many_bvar := aiur_fn⟦
 ⟧
 
 def expr_inst_many_walk := aiur_fn⟦
-  fn expr_inst_many_walk(e: KernelTypes::KExpr, substs: Lists::List<KernelTypes::KExpr>, depth: Field) -> KernelTypes::KExpr {
+  inline fn expr_inst_many_walk(e: KernelTypes::KExpr, substs: Lists::List<KernelTypes::KExpr>, depth: Field) -> KernelTypes::KExpr {
       match (*(e)) {
         KernelTypes::KExprNode::BVar(i) => {  expr_inst_many_bvar(i, substs, depth) } ,
         KernelTypes::KExprNode::Srt(l) => {  (&(KernelTypes::KExprNode::Srt(l))) } ,
