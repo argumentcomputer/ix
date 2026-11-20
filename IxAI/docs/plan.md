@@ -170,24 +170,39 @@ Done:
   unchanged. A `Gate` has a floor and a per-option confidence threshold, with theorems for every
   weight setting: an option is returned only at its threshold, `defer` below the floor, never an
   option other than the model's own, a stricter gate only adds deferrals, a cascade keeps each
-  stage's guarantee. Use case: pay, hold or reject an invoice (18 features, 179 parameters,
-  2,560 steps, a hidden fraud interaction, 1/16 label noise). `handle_paid` proves for every
-  model that a paid invoice has an approved vendor, is within its purchase order and was judged
-  `pay` at 230/256 or more; the card and four decisions are proved by `decide +kernel`; training
-  is re-run bit for bit at every test build (`#guard`, evaluation, not a kernel proof).
-  Measured on 1,024 held-out invoices: the deployed model 912 correct, the written policy 893,
-  the best rule on the visible fields 918. Over four seeds the policy is better on average (891
-  against 878), and the deployed seed's settings were chosen on its own held-out score, so the
-  model does not beat the rule here. What it adds is a confidence the gate acts on: behind the
-  gate it pays 441 invoices with 36 wrong, against the policy's 659 with 63; it defers 287 and
-  never rejects (its reject confidence never reaches the threshold). An untrained model can be
-  fully confident (one seed's initial weights pay everything): the gate theorems bound what a
-  confident model may do, and only the card says whether the confidence means anything.
+  stage's guarantee, and confidence is at most 256, so a threshold of 257 rules an option out
+  (`run_never`). Use case: pay, hold or reject an invoice (18 features, a hidden fraud
+  interaction, 1/16 label noise); `handle` applies exact rules first, and `handle_paid` proves
+  for every model that a paid invoice has an approved vendor, is within its purchase order and
+  was judged `pay` at the gate's threshold or more.
+  Training follows a protocol fixed before its runs (`Protocol.lean`): fan-in-scaled
+  initialization, a validation stream, selection among 48 checkpoints per seed on validation
+  only, thresholds from validation precision targets (pay 90%, hold 80%, reject 90%), seeds
+  101 to 108 fixed in advance, the held-out set scored once. Results on 1,024 held-out invoices
+  per seed:
+  - Accuracy: model 902.3 on average, written policy 889.1, best rule on the visible fields
+    914.1; the model is at least as accurate as the policy on 7 of 8 seeds (the criterion fixed
+    in advance), closing about half the gap to the ceiling. The first version, tuned on one
+    seed's own held-out score, had lost to the policy on average (878 against 891).
+  - The gate is worse than the policy where it matters: with the pre-fixed threshold rule it
+    pays 657.5 invoices per seed with 68.1 wrong (10.4%), against the policy's 633.8 with 56.6
+    wrong (8.9%). A 90% precision target averaged over all `pay` answers is met at the floor,
+    because most are routine. `newVendorPortalBankChange_pays` proves that the deployed gate
+    pays a new vendor that changed bank details through the portal (fraudulent one time in
+    four under the generator; the policy rejects it). Not changed after the fact: the remedy (a
+    target met in every confidence bin above the threshold, or a pay target above the policy's
+    own precision) needs a new pre-fixed run on fresh seeds.
+  - `reject` never qualifies, which is right under the generator (the riskiest visible profile
+    is fraudulent at most 3/4 of the time); `never_rejects` proves it for every weight setting.
+  - Confidence rises with accuracy in every bin (44% right below 128, 91% at 224 and above, 8
+    seeds pooled) but is not calibrated.
+  The deployed seed-101 model (355 parameters, 1,920 steps) has its card and four decisions
+  proved by `decide +kernel` and its training re-run bit for bit at every test build (`#guard`,
+  evaluation, not a kernel proof). `Fast.lean` gives `@[csimp]` array versions of the core's
+  shuffle and schedule, proved equal: the schedule from 2.3 s to 0.06 s in the interpreter.
   Not general enough in the core: `card` and `Model.ask` clamp probabilities, the triage gate
-  has one threshold, initialization ignores fan-in and there is no validation split (the likely
-  cause of the seed instability); the Aiur circuit, refinement proofs and code generators are
-  tied to `Triage.spec`, so this model's training is not certified by either route yet. Built
-  through `ix/light.sh` (`lake build IxAIDecide IxAIDecideTest`).
+  has one threshold; the Aiur circuit, refinement proofs and code generators are tied to
+  `Triage.spec`, so this model's training is not certified by either route yet.
 - Combined certificate verified by the consumer (2026-11-20, M1). `ixai-verify combined`
   (`IxAIVerify.Combined`) checks the 584-byte certificate `7a2a00c5…` against a job that pins
   the compression pipeline: `PROVED` in 7.7 s (checker 4.3 s, PLONK 25 ms, 4.1 GB peak).

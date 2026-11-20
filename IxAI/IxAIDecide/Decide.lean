@@ -186,6 +186,83 @@ theorem run_choose_eq {o : ω} (h : d.run x = .choose o) : o = (d.judge x).optio
 
 end
 
+/-! ## Confidence is at most one -/
+
+theorem relu_nonneg (a : Fx) : 0 ≤ (Fx.relu a).raw := by
+  unfold Fx.relu
+  split
+  · omega
+  · simp [Fx.zero]
+
+theorem sumRaw_nonneg (l : List Fx) (hl : ∀ y ∈ l, 0 ≤ y.raw) : 0 ≤ Fx.sumRaw l := by
+  induction l with
+  | nil => simp [Fx.sumRaw]
+  | cons b bs ih =>
+    simp only [Fx.sumRaw]
+    have := hl b (by simp)
+    have := ih (fun y hy => hl y (List.mem_cons_of_mem _ hy))
+    omega
+
+theorem le_sumRaw (l : List Fx) (hl : ∀ y ∈ l, 0 ≤ y.raw) : ∀ x ∈ l, x.raw ≤ Fx.sumRaw l := by
+  induction l with
+  | nil => intro x hx; cases hx
+  | cons a as ih =>
+    intro x hx
+    have hs : 0 ≤ Fx.sumRaw as := sumRaw_nonneg as (fun y hy => hl y (List.mem_cons_of_mem _ hy))
+    simp only [Fx.sumRaw]
+    rcases List.mem_cons.mp hx with h | h
+    · subst h; omega
+    · have := ih (fun y hy => hl y (List.mem_cons_of_mem _ hy)) x h
+      have := hl a (by simp)
+      omega
+
+/-- Every probability `probabilitiesNonneg` outputs is at most `256/256`. -/
+theorem probabilitiesNonneg_le (os : List Fx) : ∀ p ∈ probabilitiesNonneg os, p.raw ≤ 256 := by
+  intro p hp
+  unfold probabilitiesNonneg at hp
+  simp only at hp
+  split at hp
+  · obtain ⟨_, _, rfl⟩ := List.mem_map.mp hp
+    exact Int.ediv_le_self _ (by decide)
+  · rename_i ht
+    obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hp
+    have hnn : ∀ y ∈ os.map Fx.relu, 0 ≤ y.raw := by
+      intro y hy
+      obtain ⟨a, _, rfl⟩ := List.mem_map.mp hy
+      exact relu_nonneg a
+    have hle := le_sumRaw _ hnn c hc
+    have hpos : 0 < Fx.sumRaw (os.map Fx.relu) := by omega
+    show c.raw * 256 / Fx.sumRaw (os.map Fx.relu) ≤ 256
+    exact Int.ediv_le_of_le_mul hpos (by
+      calc c.raw * 256 ≤ Fx.sumRaw (os.map Fx.relu) * 256 :=
+            Int.mul_le_mul_of_nonneg_right hle (by decide)
+        _ = 256 * Fx.sumRaw (os.map Fx.relu) := Int.mul_comm _ _)
+
+theorem getD_le {l : List Fx} (h : ∀ p ∈ l, p.raw ≤ 256) (i : Nat) (d : Fx)
+    (hd : d.raw ≤ 256) :
+    (getD l i d).raw ≤ 256 := by
+  induction l generalizing i with
+  | nil => simpa [getD] using hd
+  | cons a as ih =>
+    cases i with
+    | zero => exact h a (by simp)
+    | succ i => exact ih (fun p hp => h p (List.mem_cons_of_mem _ hp)) i
+
+/-- Whatever the weights and input, a judgment's confidence is at most `256`. A threshold above
+256 therefore rules its option out. -/
+theorem judge_confidence_le {ι ω : Type} [Encode ι] [Finite ω] [Inhabited ω] (m : Model)
+    (x : ι) :
+    (judge m x : Judgment ω).confidence ≤ 256 :=
+  getD_le (probabilitiesNonneg_le _) _ _ (by decide)
+
+/-- An option whose threshold exceeds 256 is never returned, for any weights. -/
+theorem run_never {ι ω : Type} [Encode ι] [Finite ω] [Inhabited ω] (d : Decision ι ω) (x : ι)
+    (o : ω) (ho : 256 < d.gate.need o) : d.run x ≠ .choose o := by
+  intro h
+  have := run_choose_need d x h
+  have := judge_confidence_le (ω := ω) d.model x
+  simp only [Decision.judge] at *
+  omega
 /-! ## Cascades -/
 
 /-- Ask `first`; if it defers, ask `second`. The usual shape is a cheap model first and a costlier

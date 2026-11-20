@@ -1,4 +1,5 @@
 import IxAIDecide.Card
+import IxAIDecide.Protocol
 import IxAICore.Rng
 
 /-!
@@ -132,21 +133,34 @@ def bayesRule (p : Profile) : Disposition :=
 
 /-! ## Training configuration and gate -/
 
-/-- 512 training examples, 8 hidden units, 80 epochs of batches of 16 (2,560 SGD steps); 1,024
-held-out examples. The test set is drawn from seed `seed + 1000003`, disjoint in stream from the
-training seed. -/
+/-- The base configuration: 512 training examples, batches of 16, 1,024 held-out and 1,024
+validation examples. The protocol (`IxAIDecide.grid`) sets the seed, hidden units, learning rate
+and epochs; the seed here is the first model's, kept for `writtenPolicy` comparisons in tests. -/
 def config : Config :=
   { seed := 2026, hidden := 8, lrRaw := 8, epochs := 80, batch := 16, trainSize := 512,
     testSize := 1024 }
 
-/-- Pay needs 0.9 (230/256): it cannot be undone. Reject needs 0.75 (192/256): a rejected
-vendor can resubmit. Hold needs only the floor, 0.5 (128/256): holding is the cheap, reversible
-option. Anything below the floor goes to a person. -/
+/-- The recipe the protocol selected for seed 101 on validation: fan-in initialization with gain
+627/256, learning rate 8/256, 16 hidden units, 60 epochs (1,920 SGD steps). -/
+def recipe : Recipe :=
+  ⟨{ config with seed := 101, hidden := 16, lrRaw := 8, epochs := 60 }, 627⟩
+
+/-- Validation targets: `pay` right 90% of the time, `hold` 80%, `reject` 90%, each over at
+least 20 validation answers. -/
+def targetPercent : Disposition → Nat
+  | .pay => 90
+  | .hold => 80
+  | .reject => 90
+
+/-- The thresholds `thresholdFor` gives on `recipe`'s validation judgments for those targets
+(checked in `IxAIDecideTest`): `pay` and `hold` qualify at the floor, 128/256; `reject` at no
+threshold, so it is 257 and the gate never rejects (`run_never`). Below the floor every case goes
+to a person. -/
 def gate : Gate Disposition :=
   { floor := 128
     need := fun
-      | .pay => 230
-      | .reject => 192
-      | .hold => 128 }
+      | .pay => 128
+      | .hold => 128
+      | .reject => 257 }
 
 end IxAIDecide.Invoice
