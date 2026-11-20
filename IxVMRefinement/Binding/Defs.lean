@@ -2,6 +2,7 @@ import IxVMRefinement.Assembly.TypingSkeleton
 import IxVMRefinement.RoleOps.All
 import IxVMRefinement.RoleOps.Schedule
 import IxVMRefinement.RoleVal.GroupAdmit
+import IxVMRefinement.Binding.EqnsKit
 
 /-! # The binding fold: the boundary invariant, one group's admission, and the step
 
@@ -137,6 +138,8 @@ structure Shapes (G : Nat → Prop) (env : Ix.Kernel.Env .anon) : Prop where
     Ix.Kernel.stringOfListTyOk (env.find? Ix.Kernel.stringOfListName) = true
   iff : G (Ix.SpecDigest.groupOf .iff) → IffPinned env
   nonempty : G (Ix.SpecDigest.groupOf .nonempty) → NonemptyPinned env
+  eqns : ∀ r : Ix.Kernel.Role, 46 ≤ Ix.SpecDigest.groupOf r → G (Ix.SpecDigest.groupOf r) →
+    EqnsRoleShape env r
 
 /-! ## The boundary invariant -/
 
@@ -256,6 +259,23 @@ structure Admits (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : Ixon.En
     (thm x : _root_.Address), (r, arr) ∈ t.evidence.toList →
     Ix.Kernel.Evidence.proof thm ∈ arr.toList → UsedRef ρ.E₀ thm x →
     t.addressOf? r ≠ some x → (recordOf R' x).isSome = true
+  /-- The bound record of each equation-specified role of the group is held by `R'`. -/
+  eqnsBound : ∀ r ∈ roleGroup g, RoleVal.roleSpecKindNat r = 5 → ∀ a, t.addressOf? r = some a →
+    (recordOf R' a).isSome = true
+  /-- The record of each proof theorem in the evidence of an equation-specified role of the group
+  is held by `R'`. -/
+  eqnsProofs : ∀ r ∈ roleGroup g, RoleVal.roleSpecKindNat r = 5 →
+    ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm : _root_.Address),
+      (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
+      (recordOf R' thm).isSome = true
+  /-- The bound record of each anchor walked by `validate_eqns_anchors` for an equation-specified
+  role of the group is held by `R'`. -/
+  eqnsAnchors : ∀ r ∈ roleGroup g, RoleVal.roleSpecKindNat r = 5 →
+    ∀ ar ∈ RoleVal.eqnsAnchorsOf r, ∀ a, t.addressOf? ar = some a →
+      (recordOf R' a).isSome = true
+  /-- The bound record of each walked anchor of the group is held by `R'`. -/
+  walkedAnchors : ∀ r ∈ roleGroup g, RoleVal.anchorWalked r = true → ∀ a, t.addressOf? r = some a →
+    (recordOf R' a).isSome = true
 
 /-! ## The step -/
 

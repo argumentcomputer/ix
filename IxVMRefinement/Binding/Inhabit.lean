@@ -98,7 +98,8 @@ theorem shapes_below_six (env : Ix.Kernel.Env .anon) : Shapes (· < 6) env := by
     stringOfList := fun h =>
       absurd (show Ix.SpecDigest.groupOf .stringOfList < 6 from h) (by omega)
     iff := fun h => absurd (show Ix.SpecDigest.groupOf .iff < 6 from h) (by omega)
-    nonempty := fun h => absurd (show Ix.SpecDigest.groupOf .nonempty < 6 from h) (by omega) }
+    nonempty := fun h => absurd (show Ix.SpecDigest.groupOf .nonempty < 6 from h) (by omega)
+    eqns := fun _ h46 h => absurd (show _ < 6 from h) (by omega) }
 
 /-- **The boundary invariant below group 6, at the default table, the basis store and the
 environment of the pins.** -/
@@ -467,6 +468,28 @@ theorem admits_bool : Admits boolRun ctab 6 basisStore boolStore where
     have h := RoleVal.evidence_roleHasEquations_of_wf Typing.committedTable_wf hm
     rw [group6_noEquations r hr] at h
     cases h
+  eqnsBound := by
+    intro r hr h5
+    have : RoleVal.roleSpecKindNat r ≠ 5 := by
+      revert r hr; decide
+    exact absurd h5 this
+  eqnsProofs := by
+    intro r hr h5
+    have : RoleVal.roleSpecKindNat r ≠ 5 := by
+      revert r hr; decide
+    exact absurd h5 this
+  eqnsAnchors := by
+    intro r hr h5
+    have : RoleVal.roleSpecKindNat r ≠ 5 := by
+      revert r hr; decide
+    exact absurd h5 this
+  walkedAnchors := by
+    intro r hr _ a ha
+    obtain ⟨a', ci, ha', -, hkept⟩ := BoolInhabit.role_keptIn (Or.inr rfl) hr
+    have e : a' = a := Option.some.inj (ha'.symm.trans ha)
+    subst e
+    obtain ⟨-, ci₀, ⟨c, hc, -⟩, -⟩ := hkept
+    simp [hc]
 
 /-! ## The boundary invariant's other fields at the `Bool` environment -/
 
@@ -570,7 +593,8 @@ theorem bool_bfacts {R : Ixon.Env}
       iff := fun h => absurd (show Ix.SpecDigest.groupOf .iff < 6 ∨
         Ix.SpecDigest.groupOf .iff = 6 from h) (by omega)
       nonempty := fun h => absurd (show Ix.SpecDigest.groupOf .nonempty < 6 ∨
-        Ix.SpecDigest.groupOf .nonempty = 6 from h) (by omega) } }
+        Ix.SpecDigest.groupOf .nonempty = 6 from h) (by omega)
+      eqns := fun _ h46 h => by rcases h with h | h <;> omega } }
 
 /-! ## One step of the fold at the `Bool` group -/
 

@@ -216,7 +216,8 @@ def OverUnitStepFamily (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
         ∃ ci ∈ new, ∃ ci₀, ci.name = keyOf t x ∧ Reads t E₀ x ci₀ ∧ StoredAs ci ci₀) ∧
       FamilyInstalled t ⟨new ++ env.consts⟩ rb crb ∧
       StoredFamilyRecs t R ⟨new ++ env.consts⟩ B cb rb crb ∧
-      ∀ ci ∈ new, (∃ x, FamAddr B cb rb crb x ∧ ci.name = keyOf t x) ∨ ∃ k s, ci.name = .aux k s
+      (∀ ci ∈ new, (∃ x, FamAddr B cb rb crb x ∧ ci.name = keyOf t x) ∨ ∃ k s, ci.name = .aux k s) ∧
+      Ix.Kernel.EnvExt env ⟨new ++ env.consts⟩
 
 /-- **The step of a second family record of a block, over the fold's clause** (module
 docstring): `OverUnitStep` of the record at `A`, handed in addition the family record `rb` of its
@@ -242,7 +243,8 @@ def OverUnitStepTwin (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
       (∀ ci ∈ new, ci.name ∉ RoleOps.opNames) ∧
       (∀ x, ConstAddrOf A c x →
         ∃ ci ∈ new, ∃ ci₀, ci.name = keyOf t x ∧ Reads t E₀ x ci₀ ∧ StoredAs ci ci₀) ∧
-      ∀ ci ∈ new, (∃ x, ConstAddrOf A c x ∧ ci.name = keyOf t x) ∨ ∃ k s, ci.name = .aux k s
+      (∀ ci ∈ new, (∃ x, ConstAddrOf A c x ∧ ci.name = keyOf t x) ∨ ∃ k s, ci.name = .aux k s) ∧
+      Ix.Kernel.EnvExt env ⟨new ++ env.consts⟩
 
 /-- **A family installed by a step stays installed in every later environment** with distinct
 names: what the family step's conclusion gives the rest of the fold. -/

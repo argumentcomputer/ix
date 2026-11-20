@@ -467,7 +467,14 @@ theorem shapes_installed {g : Nat} {r : Ix.Kernel.Role} {env : Ix.Kernel.Env .an
       exact hs.iff (below .iff (by decide) h) cvA hn hm
     nonempty := fun h cvA hn hm => by
       rw [stdAxiomOk_congr hfr cvA]
-      exact hs.nonempty (below .nonempty (by decide) h) cvA hn hm }
+      exact hs.nonempty (below .nonempty (by decide) h) cvA hn hm
+    eqns := fun r' h46 h => by
+      have hopLt : ∀ x ∈ RoleOps.opRoles, Ix.SpecDigest.groupOf x < 46 := by decide
+      have hg46 : g < 46 := by
+        have hgr : Ix.SpecDigest.groupOf r = g :=
+          groupOf_of_mem_roleGroup (by rw [hgrp]; exact List.mem_singleton.mpr rfl)
+        rw [← hgr]; exact hopLt r hop
+      exact (hs.eqns r' h46 (by show Ix.SpecDigest.groupOf r' < g; omega)).weaken hext }
 
 /-! ## The step -/
 
@@ -700,7 +707,8 @@ theorem roleOp_step {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} (hL :
           (op_kept hop'').1 ha''
         rw [hfind_ne r'' hrr, hci]
         rfl
-    literal := fun h45 => absurd h45 (by omega) }
+    literal := fun h45 => absurd h45 (by omega)
+    tail := fun h76 => absurd h76 (by omega) }
   exact ⟨hshape, hclause, hfacts, hraise⟩
 
 end IxVM.Refinement.Binding.OpInstall

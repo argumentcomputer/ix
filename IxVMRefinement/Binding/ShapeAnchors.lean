@@ -514,7 +514,7 @@ theorem roleFreeShapes_anchorGroup {L : Ix.Kernel.Env .anon → NativeFam .anon 
     (hrun : BindingRun calls t ρ Rs) (hall : IxVM.Consistency.AllBound t)
     (ht : t.check = .ok ()) {g : Nat} (hg : g = 6 ∨ (41 ≤ g ∧ g ≤ 45)) :
     RoleFreeShapes.{u} L ρ t g := by
-  intro _ R R₁ R' env₁ hadm _ hle hb hk
+  intro _ R R₁ R' env₁ hadm _ hle hb hk _
   have hs := hb.facts.shapes
   obtain ⟨gB, gBF, gBT, gC, gS, gL, gLN, gLC, gCN, gSL, gI, gN⟩ := anchor_groups
   have pinAt : ∀ r ∈ pinnedAnchors, Ix.SpecDigest.groupOf r = g →
@@ -608,22 +608,29 @@ theorem roleFreeShapes_anchorGroup {L : Ix.Kernel.Env .anon → NativeFam .anon 
       · exact hs.nonempty h'
       · exfalso
         rw [gN] at h'
-        omega }
+        omega
+    eqns := fun r h46 h => by
+      have hlt : Ix.SpecDigest.groupOf r < g + 1 := h
+      exact hs.eqns r h46 (by show Ix.SpecDigest.groupOf r < g; omega) }
 
-/-- **The composed residual's `groupWithoutRoleUnit`, from its instances at groups 16 and 17**:
-the other shape groups are the anchor groups (`roleFreeShapes_anchorGroup`), and the groups
-with no shape role read no new shape (`groupWithoutRoleUnit_of_shapeGroups`). -/
+/-- **The composed residual's `groupWithoutRoleUnit`, from its instances at groups 16, 17 and the
+equation groups `46..76`**: the other shape groups are the anchor groups
+(`roleFreeShapes_anchorGroup`), and the remaining groups read no new shape
+(`groupWithoutRoleUnit_of_shapeGroups`). -/
 theorem groupWithoutRoleUnit_of_iffNonempty
     (h1617 : ∀ calls : List (Call F), AtGroups (BindingRun calls)
-      (fun ρ t g => (g = 16 ∨ g = 17) → RoleFreeShapes.{u} Typing.FormerOpenTraceAt ρ t g)) :
+      (fun ρ t g => (g = 16 ∨ g = 17) → RoleFreeShapes.{u} Typing.FormerOpenTraceAt ρ t g))
+    (heqns : ∀ calls : List (Call F), AtGroups (BindingRun calls)
+      (fun ρ t g => (46 ≤ g ∧ g < 77) → RoleFreeShapes.{u} Typing.FormerOpenTraceAt ρ t g)) :
     ∀ calls : List (Call F),
       AtGroups (BindingRun calls) (RoleFreeShapes.{u} Typing.FormerOpenTraceAt) := by
   apply groupWithoutRoleUnit_of_shapeGroups
   intro calls t ρ Rs hrun hall ht g h6 h77 hsg
-  rcases (shapeGroup_iff g).mp hsg with h | h | h | h
+  rcases (shapeGroup_iff g).mp hsg with h | h | h | h | h
   · exact roleFreeShapes_anchorGroup hrun hall ht (Or.inl h)
   · exact h1617 calls t ρ Rs hrun hall ht g h6 h77 (Or.inl h)
   · exact h1617 calls t ρ Rs hrun hall ht g h6 h77 (Or.inr h)
   · exact roleFreeShapes_anchorGroup hrun hall ht (Or.inr h)
+  · exact heqns calls t ρ Rs hrun hall ht g h6 h77 h
 
 end IxVM.Refinement.Binding

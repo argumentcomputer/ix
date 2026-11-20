@@ -72,6 +72,19 @@ theorem ValidateRoleIn.eqns_evidence_walks_ordered {calls : List (Call F)}
   exact ((validate_role_eqns_evidence_observed hrc htbl ev h5 arr thm hm hthm).mono
     hsub).lim_walks_ordered
 
+/-- **The anchors walked by `validate_eqns_anchors` for an equation role, walked and ordered.** -/
+theorem ValidateRoleIn.eqns_anchors_walks_ordered {calls : List (Call F)}
+    {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable} {g : Nat} {ro ar : Ix.Kernel.Role}
+    (hv : ValidateRoleIn calls bAddr t g ro) (h5 : roleSpecKindNat ro = 5)
+    (har : ar ∈ eqnsAnchorsOf ro) :
+    ∃ (a : _root_.Address) (recs : List (Claim.TopRec calls bAddr t (some (groupValLimit g)))),
+      t.addressOf? ar = some a ∧ Claim.TopRecsClosed recs ∧ Claim.TopRecsOrdered recs ∧
+        a ∈ recs.map (·.addr) := by
+  obtain ⟨h, h', x_rc, x_tbl, res, cs, hrc, htbl, ev, hsub⟩ := hv
+  obtain ⟨a, had, hw⟩ := validate_role_eqns_anchors_observed hrc htbl ev h5 ar har
+  obtain ⟨recs, hcl, hord, hmem⟩ := (hw.mono hsub).lim_walks_ordered
+  exact ⟨a, recs, had, hcl, hord, hmem⟩
+
 /-- **A reference walked under the context `walk_ctx` gives it, ordered**: the reference itself
 is ordered (`walk_ctx`'s assertion), and it is covered or a record of a closed, ordered list. -/
 theorem RefWalkedUnderCtxIn.lim_walks_ordered {calls : List (Call F)} {bAddr : _root_.Address}

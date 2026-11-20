@@ -49,6 +49,7 @@ private theorem coreEnvFacts_consInd {c : Ctx} {cv : ConstantVal .anon}
     natOps := fun role force operation => extended.natOpStored_mono (facts.natOps role force operation)
     natAdd := fun force => extended.opt_mono (p := Ix.Kernel.Rules.natAddTyOk) (facts.natAdd force) rfl
     eqStored := ?_
+    primEqn := fun h1 => (facts.primEqn h1).weaken extended
     recRules := ?_
     recPlain := ?_
     store := stageStore

@@ -506,7 +506,8 @@ def NativeUnitStep (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
       (∀ ci ∈ new, (∃ x, ConstAddrOf B cb x ∧ ci.name = keyOf t x) ∨
         ∃ k s, ci.name = .aux k s) ∧
       (∀ x, ConstAddrOf B cb x →
-        ∃ ci ∈ new, ∃ ci₀, ci.name = keyOf t x ∧ Reads t E₀ x ci₀ ∧ StoredAs ci ci₀)
+        ∃ ci ∈ new, ∃ ci₀, ci.name = keyOf t x ∧ Reads t E₀ x ci₀ ∧ StoredAs ci ci₀) ∧
+      Ix.Kernel.EnvExt env ⟨new ++ env.consts⟩
 
 /-- **The typing fold's step**: the step of the unit against a store the clause is kept at, at
 the limit of its check, for the part of the fold's clause beside the prefix invariant. -/
@@ -520,7 +521,7 @@ theorem NativeUnitStep.unitStep {L : Ix.Kernel.Env .anon → NativeFam .anon →
   obtain ⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩ := hX
   have hC : FoldClauseWith.{u} L t E lim env Reg :=
     FoldClauseWith.of_prefix hinv hR hkeys haux hlv
-  obtain ⟨new, fam, hnd', hfr, hkeep, hnamed, hreads⟩ := h env Reg hext hnd hC href hfresh
+  obtain ⟨new, fam, hnd', hfr, hkeep, hnamed, hreads, -⟩ := h env Reg hext hnd hC href hfresh
   have hC' := hkeep E lim Reg hE hC
   exact ⟨new, hnd', hfr, hC'.prefixInv, hC'.extra, hreads, hnamed⟩
 
@@ -565,7 +566,7 @@ theorem nativeUnitStep_of_install {L : Ix.Kernel.Env .anon → NativeFam .anon �
   refine ⟨new,
     ⟨p, ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩,
       ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩, ctorsA⟩,
-    hO.nodup, hO.fresh, ?_, hO.named, hO.reads⟩
+    hO.nodup, hO.fresh, ?_, hO.named, hO.reads, hO.facts.envExt⟩
   intro E lim Reg' hE hC'
   obtain ⟨hOE, hcertE⟩ := hat E hE
   exact hOE.keeps hL ht hread hS hrec hpin hna hstored hret hnp (hholds E hE) hcertE hC'

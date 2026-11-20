@@ -26,11 +26,6 @@ They are what the pinned axioms' bit lemmas read over derivations
 
 namespace Ix.Kernel.Rules
 
-/-- A sort or a `∀`: the subjects no rule rewrites. -/
-def isSortOrPi : Expr md → Bool
-  | .sort _ | .forallE .. => true
-  | _ => false
-
 theorem isSortOrPi_getAppFn {e : Expr md} (h : isSortOrPi e = true) : e.getAppFn = e := by
   cases e <;> first | rfl | exact nomatch h
 
@@ -75,10 +70,15 @@ theorem Red.rigid {env : Env md} :
   | _, _, _, .eqProof hhead .., he => by
     rw [isSortOrPi_false_of_head hhead] at he
     exact nomatch he
+  | _, _, _, .defEqClosed hsp .., he => by
+    rw [hsp] at he
+    exact nomatch he
   | _, _, _, .natLit _, he => nomatch he
   | _, _, _, .natZeroLit _, he => nomatch he
   | _, _, _, .strLit _, he => nomatch he
+  | _, _, _, .strLitFold _, he => by unfold strLitToConstructor at he; exact nomatch he
   | _, _, _, .natSucc .., he => nomatch he
+  | _, _, _, .natPred .., he => nomatch he
   | _, _, _, .natOp .., he => nomatch he
   | _, _, _, .natAddSucc .., he => nomatch he
   | _, _, _, .natAddZero .., he => nomatch he
@@ -124,6 +124,10 @@ theorem Red.rigid_etaProjCerts {env : Env md} :
       {lpsT : List LevelParam} {idxs : List Nat},
       EtaProjCerts env d T us' targs b lpsT idxs → True
   | _, _, _, _, _, _, _, _ => trivial
+
+theorem Red.rigid_piRed {env : Env md} :
+    ∀ {d : Nat} {e e' : Expr md}, PiRed env d e e' → True
+  | _, _, _, _ => trivial
 
 end
 

@@ -49,7 +49,10 @@ theorem _root_.IxVM.Refinement.Typing.ValueUnitStep.overUnitStep
     h env Reg hext hnd (hcl Ec hRc lc hc hl) href hfresh
   refine ⟨new, Reg, hnd', hfr,
     fun E hE lim hc' hl' => hkeep E lim Reg (hStores E hE) (hcl E hE lim hc' hl'), ?_, hreads,
-    ?_⟩
+    ?_, Ix.Kernel.EnvExt.append hfr fun ci hci _ _ _ _ => by
+      obtain ⟨x, -, hn⟩ := hnamed ci hci
+      rw [hn]
+      exact Decl.ne_projTableName_of_isBaseKey (Decl.isBaseKey_keyOf t x)⟩
   · intro ci hci
     obtain ⟨x, hx, hn⟩ := hnamed ci hci
     rw [hn]

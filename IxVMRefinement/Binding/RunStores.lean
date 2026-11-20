@@ -144,6 +144,13 @@ inductive GroupReach (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (g : Nat) :
       {thm x : _root_.Address} : r ∈ roleGroup g → (r, arr) ∈ t.evidence.toList →
       Ix.Kernel.Evidence.proof thm ∈ arr.toList → UsedRef E₀ thm x → t.addressOf? r ≠ some x →
       ¬ AlreadyStoredRole t g x → GroupReach t E₀ g x
+  | eqnsProof {r : Ix.Kernel.Role} {arr : Array (Ix.Kernel.Evidence _root_.Address)}
+      {thm : _root_.Address} : r ∈ roleGroup g → RoleVal.roleSpecKindNat r = 5 →
+      (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
+      GroupReach t E₀ g thm
+  | eqnsAnchor {r ar : Ix.Kernel.Role} {a : _root_.Address} : r ∈ roleGroup g →
+      RoleVal.roleSpecKindNat r = 5 → ar ∈ RoleVal.eqnsAnchorsOf r →
+      t.addressOf? ar = some a → GroupReach t E₀ g a
 
 /-- **The payload of the groups' family checks**: `Pay g B a` says that the family check of the
 block at `B` under the role context of group `g`'s validation names `a` (its family record, an

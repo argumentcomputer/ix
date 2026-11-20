@@ -96,6 +96,13 @@ structure GroupWalked (calls : List (Call F)) (bAddr : _root_.Address)
     (thm x : _root_.Address), (r, arr) ∈ t.evidence.toList →
     Ix.Kernel.Evidence.proof thm ∈ arr.toList → UsedRef E₀ thm x → t.addressOf? r ≠ some x →
     ¬ Claim.CoveredAt t (some (valLimit g)) x → ∃ y ∈ recs, y.addr = x
+  eqnsProofs : ∀ r ∈ roleGroup g, RoleVal.roleSpecKindNat r = 5 →
+    ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm : _root_.Address),
+      (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
+      ∃ y ∈ recs, y.addr = thm
+  eqnsAnchors : ∀ r ∈ roleGroup g, RoleVal.roleSpecKindNat r = 5 →
+    ∀ ar ∈ RoleVal.eqnsAnchorsOf r, ∀ a, t.addressOf? ar = some a →
+      ∃ y ∈ recs, y.addr = a
 
 /-- The table a role's validation reads is well formed. -/
 theorem RoleValidationIn.wf {g : Nat} {r : Ix.Kernel.Role}
@@ -145,15 +152,21 @@ role context at the group's validation limit: an equation theorem is walked with
 theorem roleEvidence_walked (hH : LoadedReads.HashedRecordsStored calls E₀) {g : Nat}
     {r : Ix.Kernel.Role} (hv : RoleValidationIn calls bAddr t g r) :
     ∃ recs : List (Claim.TopRec calls bAddr t (some (valLimit g))), Claim.TopRecsClosed recs ∧
-      ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm x : _root_.Address),
+      (∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm x : _root_.Address),
         (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
         UsedRef E₀ thm x → t.addressOf? r ≠ some x →
-        ¬ Claim.CoveredAt t (some (valLimit g)) x → ∃ y ∈ recs, y.addr = x := by
+        ¬ Claim.CoveredAt t (some (valLimit g)) x → ∃ y ∈ recs, y.addr = x) ∧
+      (RoleVal.roleSpecKindNat r = 5 →
+        ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm : _root_.Address),
+          (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
+          ∃ y ∈ recs, y.addr = thm) := by
   have hwf := hv.wf
   have hv' : RoleVal.ValidateRoleIn calls bAddr t g r := hv
   by_cases hex : ∃ arr₀, (r, arr₀) ∈ t.evidence.toList
   swap
-  · exact ⟨[], by simp [Claim.TopRecsClosed], fun arr _ _ hm => absurd ⟨arr, hm⟩ hex⟩
+  · exact ⟨[], by simp [Claim.TopRecsClosed],
+      fun arr _ _ hm => absurd ⟨arr, hm⟩ hex,
+      fun _ arr _ hm => absurd ⟨arr, hm⟩ hex⟩
   obtain ⟨arr₀, hm₀⟩ := hex
   rcases evidence_specKind hwf hm₀ with h2 | h5
   · -- an operation: the references of each certificate, other than the operation's address
@@ -210,7 +223,7 @@ theorem roleEvidence_walked (hH : LoadedReads.HashedRecordsStored calls E₀) {g
         have hlt' : i < c.refs.toList.length := by simpa using hlt
         exact hj i (List.mem_range.mpr hlt') x
           ⟨hlt', by rw [Assembly.usedRefIdxs_eq]; exact hi, by simpa using hxe, hxa, hnc⟩)
-    refine ⟨recs, hcl, fun arr thm x hm hthm hu hne hnc => ?_⟩
+    refine ⟨recs, hcl, fun arr thm x hm hthm hu hne hnc => ?_, fun h5 => absurd h5 (by omega)⟩
     have e := RoleVal.evidence_eq_of_wf hwf hm hm₀
     rw [e] at hthm
     have hxa : x ≠ a := fun hx => hne (by rw [hx]; exact had)
@@ -233,19 +246,22 @@ theorem roleEvidence_walked (hH : LoadedReads.HashedRecordsStored calls E₀) {g
         rw [e] at hmem
         obtain ⟨y, hy, hya⟩ := List.mem_map.mp hmem
         exact ⟨y, hy, hya⟩)
-    refine ⟨recs, hcl, fun arr thm x hm hthm hu hne hnc => ?_⟩
-    have e := RoleVal.evidence_eq_of_wf hwf hm hm₀
-    rw [e] at hthm
-    obtain ⟨y, hy, hya⟩ := hcov _ hthm thm rfl
-    obtain ⟨c', i, hc', hi, hx⟩ := hu
-    have hrec := topRec_recordOf hH y
-    rw [hya] at hrec
-    have ec : c' = y.c := Option.some.inj (hc'.symm.trans hrec)
-    rw [ec] at hi hx
-    obtain ⟨-, hrest⟩ := (hcl y hy).2 i (by rw [Assembly.usedRefIdxs_eq]; exact hi) x hx
-    rcases hrest with ⟨-, r', hr', e', -⟩ | hcov'
-    · exact ⟨r', hr', e'⟩
-    · exact absurd hcov' hnc
+    refine ⟨recs, hcl, fun arr thm x hm hthm hu hne hnc => ?_, fun _ arr thm hm hthm => ?_⟩
+    · have e := RoleVal.evidence_eq_of_wf hwf hm hm₀
+      rw [e] at hthm
+      obtain ⟨y, hy, hya⟩ := hcov _ hthm thm rfl
+      obtain ⟨c', i, hc', hi, hx⟩ := hu
+      have hrec := topRec_recordOf hH y
+      rw [hya] at hrec
+      have ec : c' = y.c := Option.some.inj (hc'.symm.trans hrec)
+      rw [ec] at hi hx
+      obtain ⟨-, hrest⟩ := (hcl y hy).2 i (by rw [Assembly.usedRefIdxs_eq]; exact hi) x hx
+      rcases hrest with ⟨-, r', hr', e', -⟩ | hcov'
+      · exact ⟨r', hr', e'⟩
+      · exact absurd hcov' hnc
+    · have e := RoleVal.evidence_eq_of_wf hwf hm hm₀
+      rw [e] at hthm
+      exact hcov _ hthm thm rfl
 
 /-- **The walks of one role**: from its observed validation, a closed list that holds its bound
 record if the validation walks it, the references of its record that are not covered if it
@@ -260,7 +276,14 @@ theorem roleWalked_exists (hH : LoadedReads.HashedRecordsStored calls E₀) {g :
       (∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm x : _root_.Address),
         (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
         UsedRef E₀ thm x → t.addressOf? r ≠ some x →
-        ¬ Claim.CoveredAt t (some (valLimit g)) x → ∃ y ∈ recs, y.addr = x) := by
+        ¬ Claim.CoveredAt t (some (valLimit g)) x → ∃ y ∈ recs, y.addr = x) ∧
+      (RoleVal.roleSpecKindNat r = 5 →
+        ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm : _root_.Address),
+          (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
+          ∃ y ∈ recs, y.addr = thm) ∧
+      (RoleVal.roleSpecKindNat r = 5 →
+        ∀ ar ∈ RoleVal.eqnsAnchorsOf r, ∀ a, t.addressOf? ar = some a →
+          ∃ y ∈ recs, y.addr = a) := by
   have h1 : ∃ recs₁ : List (Claim.TopRec calls bAddr t (some (valLimit g))),
       Claim.TopRecsClosed recs₁ ∧
       ((RoleVal.roleWalksBound r = true ∨ RoleVal.anchorWalked r = true) →
@@ -306,16 +329,45 @@ theorem roleWalked_exists (hH : LoadedReads.HashedRecordsStored calls E₀) {g :
         exact ⟨y, hy, hya⟩
       · exact absurd hcov hnc
     · exact ⟨[], by simp [Claim.TopRecsClosed], fun h => absurd h hs⟩
+  have h4 : ∃ recs₄ : List (Claim.TopRec calls bAddr t (some (valLimit g))),
+      Claim.TopRecsClosed recs₄ ∧
+      (RoleVal.roleSpecKindNat r = 5 →
+        ∀ ar ∈ RoleVal.eqnsAnchorsOf r, ∀ a, t.addressOf? ar = some a →
+          ∃ y ∈ recs₄, y.addr = a) := by
+    by_cases h5 : RoleVal.roleSpecKindNat r = 5
+    · have hcover := topRecs_cover (calls := calls) (bAddr := bAddr) (t := t)
+        (lim := some (valLimit g))
+        (fun (ar : Ix.Kernel.Role) (a : _root_.Address) =>
+          ar ∈ RoleVal.eqnsAnchorsOf r ∧ t.addressOf? ar = some a)
+        (RoleVal.eqnsAnchorsOf r)
+      obtain ⟨recs, hcl, hcov⟩ := hcover (by
+        intro ar har
+        obtain ⟨a, recs, had, hcl, hmem⟩ :=
+          RoleVal.ValidateRoleIn.eqns_anchors_walks
+            (show RoleVal.ValidateRoleIn calls bAddr t g r from hv) h5 har
+        refine ⟨recs, hcl, fun a' ha' => ?_⟩
+        have e : a' = a := Option.some.inj (ha'.2.symm.trans had)
+        rw [e]
+        exact List.mem_map.mp hmem)
+      exact ⟨recs, hcl, fun _ ar har a ha => hcov ar har a ⟨har, ha⟩⟩
+    · exact ⟨[], by simp [Claim.TopRecsClosed], fun h => absurd h h5⟩
   obtain ⟨recs₁, hc₁, hw₁⟩ := h1
   obtain ⟨recs₂, hc₂, hw₂⟩ := h2
-  obtain ⟨recs₃, hc₃, hw₃⟩ := roleEvidence_walked hH hv
-  refine ⟨recs₁ ++ recs₂ ++ recs₃, (hc₁.append hc₂).append hc₃, fun hw a ha => ?_,
-    fun hs a ha x hu hnc => ?_, fun arr thm x hm hthm hu hne hnc => ?_⟩
+  obtain ⟨recs₃, hc₃, hw₃, hp₃⟩ := roleEvidence_walked hH hv
+  obtain ⟨recs₄, hc₄, hw₄⟩ := h4
+  refine ⟨recs₁ ++ recs₂ ++ recs₃ ++ recs₄, ((hc₁.append hc₂).append hc₃).append hc₄,
+    fun hw a ha => ?_, fun hs a ha x hu hnc => ?_,
+    fun arr thm x hm hthm hu hne hnc => ?_,
+    fun h5 arr thm hm hthm => ?_, fun h5 ar har a ha => ?_⟩
   · obtain ⟨x, hx, e⟩ := hw₁ hw a ha
-    exact ⟨x, List.mem_append_left _ (List.mem_append_left _ hx), e⟩
+    exact ⟨x, List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _ hx)), e⟩
   · obtain ⟨y, hy, e⟩ := hw₂ hs a ha x hu hnc
-    exact ⟨y, List.mem_append_left _ (List.mem_append_right _ hy), e⟩
+    exact ⟨y, List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _ hy)), e⟩
   · obtain ⟨y, hy, e⟩ := hw₃ arr thm x hm hthm hu hne hnc
+    exact ⟨y, List.mem_append_left _ (List.mem_append_right _ hy), e⟩
+  · obtain ⟨y, hy, e⟩ := hp₃ h5 arr thm hm hthm
+    exact ⟨y, List.mem_append_left _ (List.mem_append_right _ hy), e⟩
+  · obtain ⟨y, hy, e⟩ := hw₄ h5 ar har a ha
     exact ⟨y, List.mem_append_right _ hy, e⟩
 
 /-- **A group's validations walked a closed list holding the group's roots.** -/
@@ -332,20 +384,29 @@ theorem groupWalked_exists (hH : LoadedReads.HashedRecordsStored calls E₀) {g 
         (∀ r ∈ rs, ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm x : _root_.Address),
           (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
           UsedRef E₀ thm x → t.addressOf? r ≠ some x →
-          ¬ Claim.CoveredAt t (some (valLimit g)) x → ∃ y ∈ recs, y.addr = x) := by
+          ¬ Claim.CoveredAt t (some (valLimit g)) x → ∃ y ∈ recs, y.addr = x) ∧
+        (∀ r ∈ rs, RoleVal.roleSpecKindNat r = 5 →
+          ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm : _root_.Address),
+            (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
+            ∃ y ∈ recs, y.addr = thm) ∧
+        (∀ r ∈ rs, RoleVal.roleSpecKindNat r = 5 →
+          ∀ ar ∈ RoleVal.eqnsAnchorsOf r, ∀ a, t.addressOf? ar = some a →
+            ∃ y ∈ recs, y.addr = a) := by
     intro rs
     induction rs with
     | nil =>
       intro _
       exact ⟨[], by simp [Claim.TopRecsClosed], (fun r hr => by cases hr),
+        (fun r hr => by cases hr), (fun r hr => by cases hr),
         (fun r hr => by cases hr), (fun r hr => by cases hr)⟩
     | cons r rs ih =>
       intro hsub
-      obtain ⟨recs, hcl, hw, hs, he⟩ := ih (fun r' hr' => hsub r' (List.mem_cons_of_mem _ hr'))
-      obtain ⟨recs', hcl', hw', hs', he'⟩ :=
+      obtain ⟨recs, hcl, hw, hs, he, hep, hea⟩ := ih (fun r' hr' => hsub r' (List.mem_cons_of_mem _ hr'))
+      obtain ⟨recs', hcl', hw', hs', he', hep', hea'⟩ :=
         roleWalked_exists (E₀ := E₀) hH (hval r (hsub r (List.mem_cons.mpr (Or.inl rfl))))
       refine ⟨recs' ++ recs, hcl'.append hcl, fun r₁ hr₁ hwk a ha => ?_,
-        fun r₁ hr₁ hst a ha x hu hnc => ?_, fun r₁ hr₁ arr thm x hm hthm hu hne hnc => ?_⟩
+        fun r₁ hr₁ hst a ha x hu hnc => ?_, fun r₁ hr₁ arr thm x hm hthm hu hne hnc => ?_,
+        fun r₁ hr₁ h5 arr thm hm hthm => ?_, fun r₁ hr₁ h5 ar har a ha => ?_⟩
       · rcases List.mem_cons.mp hr₁ with e | hr₁
         · rw [e] at hwk ha
           obtain ⟨x, hx, e'⟩ := hw' hwk a ha
@@ -364,8 +425,20 @@ theorem groupWalked_exists (hH : LoadedReads.HashedRecordsStored calls E₀) {g 
           exact ⟨y, List.mem_append_left _ hy, e'⟩
         · obtain ⟨y, hy, e'⟩ := he r₁ hr₁ arr thm x hm hthm hu hne hnc
           exact ⟨y, List.mem_append_right _ hy, e'⟩
-  obtain ⟨recs, hcl, hw, hs, he⟩ := haux (roleGroup g) (fun _ h => h)
-  exact ⟨recs, ⟨hcl, hw, hs, he⟩⟩
+      · rcases List.mem_cons.mp hr₁ with e | hr₁
+        · rw [e] at h5 hm
+          obtain ⟨y, hy, e'⟩ := hep' h5 arr thm hm hthm
+          exact ⟨y, List.mem_append_left _ hy, e'⟩
+        · obtain ⟨y, hy, e'⟩ := hep r₁ hr₁ h5 arr thm hm hthm
+          exact ⟨y, List.mem_append_right _ hy, e'⟩
+      · rcases List.mem_cons.mp hr₁ with e | hr₁
+        · rw [e] at h5 har
+          obtain ⟨y, hy, e'⟩ := hea' h5 ar har a ha
+          exact ⟨y, List.mem_append_left _ hy, e'⟩
+        · obtain ⟨y, hy, e'⟩ := hea r₁ hr₁ h5 ar har a ha
+          exact ⟨y, List.mem_append_right _ hy, e'⟩
+  obtain ⟨recs, hcl, hw, hs, he, hep, hea⟩ := haux (roleGroup g) (fun _ h => h)
+  exact ⟨recs, ⟨hcl, hw, hs, he, hep, hea⟩⟩
 
 /-- **An address the group's admission reaches is a record of the group's walk.** -/
 theorem GroupReach.listed (hH : LoadedReads.HashedRecordsStored calls E₀) {g : Nat}
@@ -398,6 +471,10 @@ theorem GroupReach.listed (hH : LoadedReads.HashedRecordsStored calls E₀) {g :
     exact ⟨r', hr', e⟩
   | evidenceRef hr hm hthm hu hne hns =>
     exact hw.evidenceRefs _ hr _ _ _ hm hthm hu hne (AlreadyStoredRole.not_covered hns)
+  | eqnsProof hr h5 hm hthm =>
+    exact hw.eqnsProofs _ hr h5 _ _ hm hthm
+  | eqnsAnchor hr h5 har had =>
+    exact hw.eqnsAnchors _ hr h5 _ har _ had
 
 /-! ## The rank -/
 
@@ -1131,6 +1208,71 @@ theorem groupStore_evidenceRefs (hC : CollisionFreeRun calls E₀) (hb : BasisRo
       exact topRec_recordOf hC.hashedStored y
     rw [(groupStore_recordOf hb h6).mpr ⟨storedBelow_of_adds hg (GroupAdds.reach hrx), hcx⟩]
     rfl
+
+set_option maxRecDepth 100000 in
+private theorem roleWalksBound_of_kind5 (r : Ix.Kernel.Role) :
+    RoleVal.roleSpecKindNat r = 5 → RoleVal.roleWalksBound r = true := by
+  cases r <;> decide
+
+/-- **`Admits.eqnsBound`**: the bound record of an equation-specified role is held by the store. -/
+theorem groupStore_eqnsBound (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
+    {g : Nat} (hg : 6 ≤ g) {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
+    (hw : GroupWalked calls bAddr t E₀ g recs) :
+    ∀ r ∈ roleGroup g, RoleVal.roleSpecKindNat r = 5 → ∀ a, t.addressOf? r = some a →
+      (recordOf (groupStore t E₀ Pay (g + 1)) a).isSome = true := by
+  intro r hr h5 a ha
+  have hrx : GroupReach t E₀ g a := GroupReach.root hr (Or.inl (roleWalksBound_of_kind5 r h5)) ha
+  obtain ⟨y, _, hya⟩ := hrx.listed hC.hashedStored hw
+  have hcx : recordOf E₀ a = some y.c := by rw [← hya]; exact topRec_recordOf hC.hashedStored y
+  rw [(groupStore_recordOf hb (Nat.le_succ_of_le hg)).mpr
+    ⟨storedBelow_of_adds hg (GroupAdds.reach hrx), hcx⟩]
+  rfl
+
+/-- **`Admits.eqnsProofs`**: every proof theorem in the evidence of an equation-specified role is
+held by the store. -/
+theorem groupStore_eqnsProofs (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
+    {g : Nat} (hg : 6 ≤ g) {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
+    (hw : GroupWalked calls bAddr t E₀ g recs) :
+    ∀ r ∈ roleGroup g, RoleVal.roleSpecKindNat r = 5 →
+      ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm : _root_.Address),
+        (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
+        (recordOf (groupStore t E₀ Pay (g + 1)) thm).isSome = true := by
+  intro r hr h5 arr thm hm hthm
+  have hrx : GroupReach t E₀ g thm := GroupReach.eqnsProof hr h5 hm hthm
+  obtain ⟨y, _, hya⟩ := hrx.listed hC.hashedStored hw
+  have hcx : recordOf E₀ thm = some y.c := by rw [← hya]; exact topRec_recordOf hC.hashedStored y
+  rw [(groupStore_recordOf hb (Nat.le_succ_of_le hg)).mpr
+    ⟨storedBelow_of_adds hg (GroupAdds.reach hrx), hcx⟩]
+  rfl
+
+/-- **`Admits.eqnsAnchors`**: every anchor walked by `validate_eqns_anchors` is held by the store. -/
+theorem groupStore_eqnsAnchors (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
+    {g : Nat} (hg : 6 ≤ g) {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
+    (hw : GroupWalked calls bAddr t E₀ g recs) :
+    ∀ r ∈ roleGroup g, RoleVal.roleSpecKindNat r = 5 →
+      ∀ ar ∈ RoleVal.eqnsAnchorsOf r, ∀ a, t.addressOf? ar = some a →
+        (recordOf (groupStore t E₀ Pay (g + 1)) a).isSome = true := by
+  intro r hr h5 ar har a ha
+  have hrx : GroupReach t E₀ g a := GroupReach.eqnsAnchor hr h5 har ha
+  obtain ⟨y, _, hya⟩ := hrx.listed hC.hashedStored hw
+  have hcx : recordOf E₀ a = some y.c := by rw [← hya]; exact topRec_recordOf hC.hashedStored y
+  rw [(groupStore_recordOf hb (Nat.le_succ_of_le hg)).mpr
+    ⟨storedBelow_of_adds hg (GroupAdds.reach hrx), hcx⟩]
+  rfl
+
+/-- **`Admits.walkedAnchors`**: the bound record of a walked anchor of the group is held by the store. -/
+theorem groupStore_walkedAnchors (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
+    {g : Nat} (hg : 6 ≤ g) {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
+    (hw : GroupWalked calls bAddr t E₀ g recs) :
+    ∀ r ∈ roleGroup g, RoleVal.anchorWalked r = true → ∀ a, t.addressOf? r = some a →
+      (recordOf (groupStore t E₀ Pay (g + 1)) a).isSome = true := by
+  intro r hr haw a ha
+  have hrx : GroupReach t E₀ g a := GroupReach.root hr (Or.inr haw) ha
+  obtain ⟨y, _, hya⟩ := hrx.listed hC.hashedStored hw
+  have hcx : recordOf E₀ a = some y.c := by rw [← hya]; exact topRec_recordOf hC.hashedStored y
+  rw [(groupStore_recordOf hb (Nat.le_succ_of_le hg)).mpr
+    ⟨storedBelow_of_adds hg (GroupAdds.reach hrx), hcx⟩]
+  rfl
 
 end Walk
 

@@ -46,6 +46,39 @@ theorem walked_not_inert (r : Ix.Kernel.Role) :
   rw [RoleVal.anchorWalked_iff]
   cases r <;> decide
 
+set_option maxRecDepth 100000 in
+/-- No anchor walked by `validate_eqns_anchors` is inert (decided). -/
+theorem eqnsAnchor_not_inert : ∀ r ar : Ix.Kernel.Role,
+    ar ∈ RoleVal.eqnsAnchorsOf r → ar.inert = false := by
+  intro r; cases r <;> decide
+
+set_option maxRecDepth 100000 in
+/-- Every equation-specified role belongs to a group at or above 46 (decided). -/
+theorem specKind5_group_ge_46 (r : Ix.Kernel.Role) :
+    RoleVal.roleSpecKindNat r = 5 → 46 ≤ Ix.SpecDigest.groupOf r := by
+  cases r <;> decide
+
+set_option maxRecDepth 100000 in
+private theorem roleHasEquations_of_kind5' (r : Ix.Kernel.Role) :
+    RoleVal.roleSpecKindNat r = 5 → RoleVal.roleHasEquations r = true := by
+  cases r <;> decide
+
+private theorem getThmCiIn_not_axio {calls : List (Call F)} {E₀ : Ixon.Env} {a : _root_.Address}
+    (hC : CollisionFreeRun calls E₀) (hthm : RoleVal.GetThmCiIn calls a)
+    {c : Ixon.Constant} {ax : Ixon.Axiom} (hc : recordOf E₀ a = some c) (hax : c.info = .axio ax) :
+    False := by
+  obtain ⟨h, h', ap, ptr, nl₀, tty, val₀, cs, ⟨ab, hab, rfl⟩, ev, -, hsub, hld⟩ := hthm
+  obtain ⟨raw, c', hsz, hh, hba, hx, -, hhead⟩ := Claim.get_ci_head hab ev
+  have hrec' : recordOf E₀ (Core.ixAddr ab) = some c' := by
+    rw [← hba]
+    exact Claim.recordOf_of_hashed hC.hashedStored (Core.hashed_mono hsub hh) hsz hx
+  have ec : c' = c := Option.some.inj (hrec'.symm.trans hc)
+  subst ec
+  obtain ⟨nl, ty, hldv⟩ := hhead.axio ax hax
+  have hv := Except.ok.inj (hldv.symm.trans hld)
+  injection hv with _ htag _
+  exact absurd htag (by decide)
+
 /-- **A basis role is bound to a basis row**, at a table that pins the prelude. -/
 theorem basisRow_of_basisRole {t : Ix.Kernel.RoleTable} (hpre : PreludePinned t)
     {r : Ix.Kernel.Role} (hr : r ∈ TableInhabit.basisRoleOrder) {a : _root_.Address}
@@ -74,14 +107,27 @@ theorem GroupReach.root_or_allowed (hC : CollisionFreeRun calls E₀) {g : Nat}
     {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
     (hw : GroupWalked calls bAddr t E₀ g recs) {a : _root_.Address}
     (h : GroupReach t E₀ g a) :
-    (∃ r ∈ roleGroup g, (RoleVal.roleWalksBound r = true ∨ RoleVal.anchorWalked r = true) ∧
-        t.addressOf? r = some a) ∨
+    (∃ r ∈ roleGroup g, ∃ r', r'.inert = false ∧ t.addressOf? r' = some a) ∨
       (∃ cb ms, recordOf E₀ a = some cb ∧ cb.info = .muts ms) ∨
-      Claim.RefAllowedIn calls t bAddr (some (valLimit g)) a := by
+      Claim.RefAllowedIn calls t bAddr (some (valLimit g)) a ∨
+      (46 ≤ g ∧ ∀ cb ax, recordOf E₀ a = some cb → cb.info ≠ .axio ax) := by
   cases h with
-  | root hr hwk had => exact Or.inl ⟨_, hr, hwk, had⟩
+  | root hr hwk had => exact Or.inl ⟨_, hr, _, walked_not_inert _ hwk, had⟩
+  | eqnsAnchor hr _ har had => exact Or.inl ⟨_, hr, _, eqnsAnchor_not_inert _ _ har, had⟩
+  | @eqnsProof r arr _ hr h5 hm hthm =>
+    right; right; right
+    have h46 : 46 ≤ g := by
+      rw [← groupOf_of_mem_roleGroup hr]
+      exact specKind5_group_ge_46 r h5
+    refine ⟨h46, fun cb ax hcb hax => ?_⟩
+    have hv := hval r hr
+    obtain ⟨⟨_, _, -, -, heqns⟩, -⟩ := RoleValidationIn.walks hv
+    obtain ⟨arr₀, hm₀, -, hprf⟩ := heqns (roleHasEquations_of_kind5' r h5)
+    have harr : arr = arr₀ := RoleVal.evidence_eq_of_wf hv.wf hm hm₀
+    subst harr
+    exact getThmCiIn_not_axio hC (hprf a hthm).1 hcb hax
   | @axiomRef r a' x hr hs had hu hnc =>
-    right; right
+    right; right; left
     obtain ⟨a₁, rawBytes, c, recs', had₁, hsz, hh, hblk, hde, hdeE, hcl, hrefs⟩ :=
       RoleVal.ValidateRoleIn.axiom_refs
         (show RoleVal.ValidateRoleIn calls bAddr t g r from hval r hr)
@@ -103,7 +149,7 @@ theorem GroupReach.root_or_allowed (hC : CollisionFreeRun calls E₀) {g : Nat}
     rw [hxl] at hal
     exact hal
   | @ref a' x ha' hu hnc =>
-    right; right
+    right; right; left
     obtain ⟨y, hy, hya⟩ := ha'.listed hC.hashedStored hw
     obtain ⟨c, i, hc, hi, hx⟩ := hu
     have hrec := topRec_recordOf hC.hashedStored y
@@ -128,7 +174,7 @@ theorem GroupReach.root_or_allowed (hC : CollisionFreeRun calls E₀) {g : Nat}
       exact standalone_not_proj hst hp
     · exact ⟨cb₀, ms, hcb₀, hms⟩
   | @evidenceRef r arr thm x hr hm hthm hu hne hnc =>
-    right; right
+    right; right; left
     have hv := hval r hr
     have hv' : RoleVal.ValidateRoleIn calls bAddr t g r := hv
     rcases evidence_specKind hv.wf hm with h2 | h5
@@ -214,13 +260,13 @@ theorem groupStore_standing (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLo
       · rcases standingRole_cases ro hm with ⟨hs, h6⟩ | hbas
         · exact hnotStd ro hs h6 (Nat.lt_of_lt_of_le hlt (valLimit_le g)) hb'
         · exact hnotBasis ro hbas hb'
-      · rcases hra.root_or_allowed hC hval hw with ⟨r', hr', hwk, had'⟩ | ⟨cb, ms, hcb, hms⟩ |
-          hal
-        · have hwf := (hval r' hr').wf
+      · rcases hra.root_or_allowed hC hval hw with ⟨r0, hr0, r', hni, had'⟩ | ⟨cb, ms, hcb, hms⟩ |
+          hal | ⟨-, hnotax⟩
+        · have hwf := (hval r0 hr0).wf
           have hk' := (Core.keyOf_of_addressOf hwf had').symm.trans
             (Core.keyOf_of_addressOf hwf hb')
           injection hk' with e
-          rw [← e, walked_not_inert r' hwk] at hin
+          rw [← e, hni] at hin
           cases hin
         · rw [hE] at hcb
           have e : c = cb := Option.some.inj hcb
@@ -230,6 +276,7 @@ theorem groupStore_standing (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLo
           have e : n = valLimit g := (Option.some.inj hn).symm
           rw [e] at hle
           exact absurd hlt (Nat.not_lt.mpr hle)
+        · exact hnotax c ax hE hax'
     · rcases standingRole_cases ro hm with ⟨hs, -⟩ | hbas
       · obtain ⟨c₂, ax, hc₂, hi, -⟩ := hax ro hs a hb'
         rw [hE] at hc₂

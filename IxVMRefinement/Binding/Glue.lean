@@ -92,6 +92,7 @@ def RoleNoneFacts (X : Ix.Kernel.RoleTable → (Nat → Prop) → Ixon.Env → I
       (∀ r ∈ roleGroup g, Core.fabricatedRole r = true → ∀ a, t.addressOf? r = some a →
         ∃ ci, env.find? (Core.keyOf t a) = some ci) ∧
       (g = 45 → Ix.Kernel.strLitSupported env = true) ∧
+      (g = 76 → Core.PrimEqnEnv env) ∧
       (X t (· < g) R env → X t (· < g + 1) R env)
 
 /-- **(T3b, T3c) The step of a group whose one role is a role unit** (module docstring); `P` is
@@ -174,7 +175,7 @@ theorem stepCoreR_of_parts
       exact ⟨env', fun ci h => hext' ci (hext ci h), hb'⟩
   · have hnu : ∀ r ∈ roleGroup g, ¬ (r ∈ RoleOps.opRoles ∨ r ∈ standardAxioms) :=
       fun r hr hk => hu ⟨r, hr, hk⟩
-    obtain ⟨hshapes, hfab, hlit, hX⟩ := hnone R₁ env₁ hb₁ hkept
+    obtain ⟨hshapes, hfab, hlit, htail, hX⟩ := hnone R₁ env₁ hb₁ hkept
     have hlitKeys : g = 45 → ∀ r ∈ literalRoles, Core.fabricatedRole r = true →
         ∀ a, t.addressOf? r = some a → ∃ ci, env₁.find? (Core.keyOf t a) = some ci := by
       intro h45 r hrl hf a ha
@@ -191,7 +192,7 @@ theorem stepCoreR_of_parts
         exact hfab r hmem hf a ha
     have hraise : RaiseAt t env₁ g :=
       raiseAt_of_noOps hg6 (fun r hr hop' => hnu r hr (Or.inl hop')) hfab
-        (fun h45 => ⟨hlit h45, hlitKeys h45⟩)
+        (fun h45 => ⟨hlit h45, hlitKeys h45⟩) htail
     have hb₂ : Bnd.{u} X t (· < g + 1) R₁ env₁ :=
       bnd_close hall hg hb₁ (fun r hr hkr a ha => hkept.1 r hr hkr (hnu r hr) a ha) hkept.2
         hshapes hraise hX

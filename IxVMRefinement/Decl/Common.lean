@@ -152,6 +152,7 @@ structure CtxRoleFacts (c : Ctx) : Prop where
     Ix.Kernel.natOpStored c.env (.role r) = true
   natAdd : c.inForce .natAdd → Ix.Kernel.Rules.natAddTyOk (c.env.find? Ix.Kernel.natAddName) = true
   eqStored : c.inForce .eq → ∃ ci, c.env.find? Ix.Kernel.eqName = some ci
+  primEqn : (∃ r, 46 ≤ Ix.SpecDigest.groupOf r ∧ c.inForce r) → Core.PrimEqnEnv c.env
   quotBasis : c.inForce .quot → ∀ ci ∈ BasisKind.declsA (md := .anon) .quotK,
     c.env.find? ci.name = some ci
   recMajorRecord : ∀ k cv mI rP rls (p : _root_.Address) us,
@@ -199,6 +200,7 @@ theorem DeclStoreInv.toEnvFacts {c : Ctx} (hS : DeclStoreInv c.env) (htwf : c.t.
   natOps := hR.natOps
   natAdd := hR.natAdd
   eqStored := hR.eqStored
+  primEqn := hR.primEqn
   recRules := fun k cv mI rP rls hf =>
     let ⟨hnodup, hprj⟩ := hR.recRulesNodupAndProj k cv mI rP rls hf
     ⟨hnodup, fun rl hrl => hS.store.recRules_fire hf hrl, hprj⟩

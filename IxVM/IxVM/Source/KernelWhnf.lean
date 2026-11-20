@@ -284,6 +284,7 @@ def try_prim_dispatch := aiur_fn⟦
           let (fam, op) = prim_family(rc, addr);
           match fam {
             1 => {  try_nat_dispatch_prewhnf(rc, addr, op, spine, types) } ,
+            6 => {  KernelNatPrim::try_int_prim_dispatch(rc, op, spine, types) } ,
             _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
           } } ,
         _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,

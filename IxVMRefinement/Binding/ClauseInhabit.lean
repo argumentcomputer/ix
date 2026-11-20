@@ -186,7 +186,7 @@ theorem overUnitStep_defn {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
       (keepsValuesKeyed_lvClauses t env _ d₀ ⟨hC.thmLevels, hC.storeArR⟩ hfreshC hval hnt hd₀
         hkeyx)
   refine ⟨[LoadedReads.defnConst d.kind ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val'
-      (.regular 0)], Reg, List.nodup_singleton _, ?_, hallC, ?_, ?_, ?_⟩
+      (.regular 0)], Reg, List.nodup_singleton _, ?_, hallC, ?_, ?_, ?_, hextE⟩
   · intro ci hci
     obtain rfl := List.mem_singleton.mp hci
     exact hfreshC
@@ -259,6 +259,10 @@ theorem admits_bool_observed {calls : List (Call F)} {bAddr : _root_.Address}
   opsOwn := admits_bool.opsOwn
   unitsLast := admits_bool.unitsLast
   evidenceRefs := admits_bool.evidenceRefs
+  eqnsBound := admits_bool.eqnsBound
+  eqnsProofs := admits_bool.eqnsProofs
+  eqnsAnchors := admits_bool.eqnsAnchors
+  walkedAnchors := admits_bool.walkedAnchors
 
 /-- The reading clause of the `Bool` group's admission: the run's records are the store's. -/
 theorem admitsReads_bool : AdmitsReads boolRun ctab basisStore boolStore where
@@ -284,7 +288,8 @@ theorem shapes_bool : Shapes (· < 6 + 1) boolEnv := by
     stringOfList := fun h =>
       absurd (show Ix.SpecDigest.groupOf .stringOfList < 6 + 1 from h) (by omega)
     iff := fun h => absurd (show Ix.SpecDigest.groupOf .iff < 6 + 1 from h) (by omega)
-    nonempty := fun h => absurd (show Ix.SpecDigest.groupOf .nonempty < 6 + 1 from h) (by omega) }
+    nonempty := fun h => absurd (show Ix.SpecDigest.groupOf .nonempty < 6 + 1 from h) (by omega)
+    eqns := fun _ h46 h => absurd (show _ < 6 + 1 from h) (by omega) }
 
 /-- **The roles of the `Bool` group are stored as their committed records declare them.** -/
 theorem groupKept_bool : GroupKept ctab 6 boolStore boolEnv :=
@@ -319,7 +324,7 @@ theorem bndOver_bool (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
   have hfab := fabKeys_of_groupKept htwf (Nat.le_refl 6) hnu groupKept_bool
   have hraise : RaiseAt ctab boolEnv 6 :=
     raiseAt_of_noOps (Nat.le_refl 6) (fun r hr hop => hnu r hr (Or.inl hop)) hfab
-      (fun h => absurd h (by decide))
+      (fun h => absurd h (by decide)) (fun h => absurd h (by decide))
   have hset : (fun k => k < 6 ∨ k = 6) = (fun k : Nat => k < 6 + 1) := by
     funext k
     exact propext (by omega)

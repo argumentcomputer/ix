@@ -510,6 +510,7 @@ theorem basisEnv_companions {E : Ixon.Env} (hE : RecordsFor StoreInhabit.basisSt
   natAdd := fun h => absurd (inForce_lt6 hlim h) natAdd_group
   eqStored := fun _ =>
     ⟨_, basisEnv_find_self (TableInhabit.basisEnv_pins .eqK _ List.mem_cons_self)⟩
+  primEqn := fun ⟨r, hge, hf⟩ => absurd (inForce_lt6 hlim hf) (by omega)
   quotBasis := fun _ ci hci => basisEnv_find_self (TableInhabit.basisEnv_pins .quotK ci hci)
   recMajorRecord := by
     intro k cv mI rP rls p us hf _ hdom

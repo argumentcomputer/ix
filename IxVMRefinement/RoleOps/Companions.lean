@@ -152,6 +152,14 @@ theorem coreCompanions_withOps {E : Ixon.Env} {env : Env .anon} {t : Ix.Kernel.R
         · exact h.natAdd h2
         · exact ha rfl
       eqStored := fun h1 => h.eqStored (hold _ (by simp) h1)
+      primEqn := fun ⟨r, hge, hf⟩ => by
+        rcases hnew r hf with h1 | ⟨hop, -, -⟩
+        · exact h.primEqn ⟨r, hge, h1⟩
+        · exfalso
+          have hlt : ∀ r', (Ix.Kernel.Key.role r' : KKey) ∈ opNames → Ix.SpecDigest.groupOf r' < 46 := by
+            intro r' hr'
+            cases r' <;> first | exact absurd hr' (by decide) | decide
+          exact Nat.not_lt.mpr hge (hlt r hop)
       quotBasis := fun h1 => h.quotBasis (hold _ (by simp) h1)
       recMajorRecord := h.recMajorRecord
       recRulesNodupAndProj := h.recRulesNodupAndProj

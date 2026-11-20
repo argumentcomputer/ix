@@ -171,4 +171,189 @@ theorem Red.eqProof_sound {d : Nat} {a b p T ta tb sT : Expr md} {u v : Level}
         rw [eq_of_mem_eqv hP]
         exact ⟨hy, hgy⟩
 
+/-- **Closed conversion between reduced forms** (`Red.defEqClosed`). -/
+theorem Red.defEqClosed_sound {d : Nat} {a a' b b' ta tb : Expr md}
+    (hbf : b.hasFvar = false) (hbb : b.looseBVarsBounded 0 = true)
+    (ha'f : a'.hasFvar = false) (ha'b : a'.looseBVarsBounded 0 = true)
+    (hb'f : b'.hasFvar = false) (hb'b : b'.looseBVarsBounded 0 = true)
+    (sia : InferFullS M φ 0 a' ta) (sra : RedS M φ 0 a' a)
+    (sib : InferFullS M φ 0 b' tb) (srb : RedS M φ 0 b' b)
+    (sde : DefEqS M φ 0 a' b') :
+    RedS M φ d a b := by
+  intro _
+  have hfa' : Frame 0 a' := Frame.of_closed ha'f ha'b
+  have hfb' : Frame 0 b' := Frame.of_closed hb'f hb'b
+  refine ⟨Frame.of_closed hbf hbb, LeavesSub.of_closed hbf, fun σ _ x hx _ => ?_⟩
+  obtain ⟨x', _, hx', hgx', -, -, -⟩ := (sia hfa').2.2 σ (Ctx.of_closed ha'f)
+  obtain ⟨hxa, -⟩ := (sra hfa').2.2 σ (Ctx.of_closed ha'f) x' hx' hgx'
+  obtain rfl := DenotesO.functional hxa hx
+  obtain ⟨y', _, hy', hgy', -, -, -⟩ := (sib hfb').2.2 σ (Ctx.of_closed hb'f)
+  obtain ⟨hyb, hgyb⟩ := (srb hfb').2.2 σ (Ctx.of_closed hb'f) y' hy' hgy'
+  obtain rfl := sde hfa' hfb' σ (Ctx.of_closed ha'f) (Ctx.of_closed hb'f) x' y' hx' hy' hgx' hgy'
+  exact ⟨hyb, hgyb⟩
+
+/-- **Closed equality reflection** (`DefEq.eqProof`). -/
+theorem DefEq.eqProof_sound {d : Nat} {a b p T ta tb sT : Expr md} {u v : Level}
+    (haf : a.hasFvar = false) (hab : a.looseBVarsBounded 0 = true)
+    (hbf : b.hasFvar = false) (hbb : b.looseBVarsBounded 0 = true)
+    (hpf : p.hasFvar = false) (hpb : p.looseBVarsBounded 0 = true)
+    (hp : InferFullS M φ 0 p (.app (.app (.app (.const eqName [u]) T) a) b))
+    (hta : InferFullS M φ 0 a ta) (hdta : DefEqS M φ 0 ta T)
+    (htb : InferFullS M φ 0 b tb) (hdtb : DefEqS M φ 0 tb T)
+    (hsT : InferFullS M φ 0 T sT) (hv : RedS M φ 0 sT (.sort v))
+    (huv : ∀ φ, Level.eval φ v = Level.eval φ u) :
+    DefEqS M φ d a b := by
+  intro _ _ σ _ _ x y hx hy _ _
+  have hfp : Frame 0 p := Frame.of_closed hpf hpb
+  have hfa : Frame 0 a := Frame.of_closed haf hab
+  have hfb : Frame 0 b := Frame.of_closed hbf hbb
+  obtain ⟨hfE, hsubE, kp⟩ := hp hfp
+  obtain ⟨hfETa, -⟩ := Frame.app_iff.1 hfE
+  obtain ⟨hfET, -⟩ := Frame.app_iff.1 hfETa
+  obtain ⟨-, hfT⟩ := Frame.app_iff.1 hfET
+  have hCp : Ctx M φ σ p := Ctx.of_closed hpf
+  have hCT : Ctx M φ σ T :=
+    hCp.of_subset (fun l hl => hsubE l (by simp [Expr.fvarLeaves, hl]))
+  obtain ⟨P, PT, -, -, hPT, -, hP⟩ := kp σ hCp
+  obtain ⟨A, S, hA, hgA, hS, hgS, hAS⟩ := (hsT hfT).2.2 σ hCT
+  obtain ⟨-, -, ksv⟩ := hv (hsT hfT).1
+  obtain ⟨hSv, -⟩ := ksv σ (hCT.of_subset (hsT hfT).2.1) S hS hgS
+  cases hSv
+  rw [huv φ] at hAS
+  obtain ⟨x', X, hx', -, hX, hgX, hxX⟩ := (hta hfa).2.2 σ (Ctx.of_closed haf)
+  obtain rfl := DenotesO.functional hx' hx
+  obtain rfl := hdta (hta hfa).1 hfT σ ((Ctx.of_closed haf).of_subset (hta hfa).2.1) hCT
+    _ _ hX hA hgX hgA
+  obtain ⟨y', Y, hy', -, hY, hgY, hyY⟩ := (htb hfb).2.2 σ (Ctx.of_closed hbf)
+  obtain rfl := DenotesO.functional hy' hy
+  obtain rfl := hdtb (htb hfb).1 hfT σ ((Ctx.of_closed hbf).of_subset (htb hfb).2.1) hCT
+    _ _ hY hA hgY hgA
+  cases hPT with
+  | app hETa hb' =>
+    cases hETa with
+    | app hET ha' =>
+      cases hET with
+      | app hE hT' =>
+        obtain rfl := DenotesO.functional hT' hA
+        obtain rfl := DenotesO.functional ha' hx
+        obtain rfl := DenotesO.functional hb' hy
+        have heq := M.eq_equality u φ ρ₀ _ _ _ _ (DenotesO.to_denotes hE rfl) hAS hxX hyY
+        rw [heq] at hP
+        exact eq_of_mem_eqv hP
+
+/-- **Closed level instantiation of a conversion** (`DefEq.instClosed`). -/
+theorem DefEq.instClosed_sound {d : Nat} {ks : List LevelParam} {us : List Level}
+    {a b : Expr md}
+    (haf : a.hasFvar = false) (hab : a.looseBVarsBounded 0 = true)
+    (hbf : b.hasFvar = false) (hbb : b.looseBVarsBounded 0 = true)
+    (sde : DefEqS M (Level.substFn φ ks us) 0 a b) :
+    DefEqS M φ d (a.instantiateLevelParams ks us) (b.instantiateLevelParams ks us) := by
+  intro _ _ σ _ _ x y hx hy hgx hgy
+  exact sde (Frame.of_closed haf hab) (Frame.of_closed hbf hbb) σ
+    (Ctx.of_closed haf) (Ctx.of_closed hbf) x y
+    ((DenotesO.instantiateLevelParams M.cval_params ks us a ρ₀ x).1 hx)
+    ((DenotesO.instantiateLevelParams M.cval_params ks us b ρ₀ y).1 hy)
+    ((GradedBy.instantiateLevelParamsO M.cval_params ks us a ρ₀).1 hgx)
+    ((GradedBy.instantiateLevelParamsO M.cval_params ks us b ρ₀).1 hgy)
+
+/-- **`PiRed.ofRed` is sound over `Model`.** -/
+theorem PiRed.ofRed_sound {d : Nat} {e e' : Expr md} (h : RedS M φ d e e') :
+    PiRedS M φ d e e' := fun hf => (h hf).2.2
+
+/-- **`PiRed.app` is sound over `Model`.** -/
+theorem PiRed.app_sound {d : Nat} {f f' a a' : Expr md}
+    (sf : PiRedS M φ d f f') (sa : PiRedS M φ d a a') :
+    PiRedS M φ d (.app f a) (.app f' a') := by
+  intro hf σ hC v hv hg
+  obtain ⟨hff, hfa⟩ := Frame.app_iff.1 hf
+  cases hv with
+  | app hF hX =>
+    obtain ⟨hgf, hga, r, A, F', X', B, hF', hX', hm, hx, h0⟩ := Gr.app_iff.1 hg
+    have hCf : Ctx M φ σ f := hC.of_subset fun l hl => by simp [Expr.fvarLeaves, hl]
+    have hCa : Ctx M φ σ a := hC.of_subset fun l hl => by simp [Expr.fvarLeaves, hl]
+    obtain ⟨hF₂, hgf₂⟩ := sf hff σ hCf _ hF hgf
+    obtain ⟨hX₂, hga₂⟩ := sa hfa σ hCa _ hX hga
+    obtain rfl := DenotesO.functional hF' hF
+    obtain rfl := DenotesO.functional hX' hX
+    exact ⟨.app hF₂ hX₂, Gr.app_iff.2 ⟨hgf₂, hga₂, r, A, _, _, B, hF₂, hX₂, hm, hx, h0⟩⟩
+
+/-- **`PiRed.forallE` is sound over `Model`.** -/
+theorem PiRed.forallE_sound {d : Nat} {A A' B B' : Expr md} {mb : BinderMeta}
+    (hB'ws : B'.wscopedB d = true)
+    (sA : PiRedS M φ d A A')
+    (sB : PiRedS M φ (d + 1) (B.instantiate1 (.fvar d A)) (B'.instantiate1 (.fvar d A))) :
+    PiRedS M φ d (.forallE A B mb) (.forallE A' B' mb) := by
+  intro hf σ hC v hv hg
+  have hp := Frame.pi_parts hf
+  obtain ⟨hgA, hgB⟩ := Gr.pi_iff.1 hg
+  have hCA : Ctx M φ σ A := hC.of_subset fun l hl => by simp [Expr.fvarLeaves, hl]
+  have hCB : Ctx M φ σ B := hC.of_subset fun l hl => by simp [Expr.fvarLeaves, hl]
+  have hfresh : ∀ l ∈ B.fvarLeaves, l.1 ≠ d := fun l hl =>
+    Nat.ne_of_lt (leaves_scoped hp.ws l hl).1
+  have hfresh' : ∀ l ∈ B'.fvarLeaves, l.1 ≠ d := fun l hl =>
+    Nat.ne_of_lt (leaves_scoped (Expr.WScoped.of_wscopedB hB'ws) l hl).1
+  cases hv with
+  | pi hA hB hP =>
+    obtain ⟨hA', hgA'⟩ := sA hp.ty σ hCA _ hA hgA
+    have hstep : ∀ x, x ∈ˢ _ →
+        DenotesO M.cval env φ σ (push x ρ₀) B' _ ∧
+        GradedBy (DenotesO M.cval env φ σ) (push x ρ₀) B' := fun x hx => by
+      have hCx := Ctx.open hp.ty.1 hp.ws hCA hCB hA hx hgA
+      have hBx : Den M φ (setAt σ d x) (B.instantiate1 (.fvar d A)) _ :=
+        (DenotesO.open_fvar hfresh ρ₀ _).2 (hB x hx)
+      have hgBx : Gr M φ (setAt σ d x) (B.instantiate1 (.fvar d A)) :=
+        (GradedBy.open_fvarO hfresh ρ₀).2 (hgB _ hA x hx)
+      obtain ⟨hB', hgB'⟩ := sB hp.open (setAt σ d x) hCx _ hBx hgBx
+      exact ⟨(DenotesO.open_fvar hfresh' ρ₀ _).1 hB', (GradedBy.open_fvarO hfresh' ρ₀).1 hgB'⟩
+    refine ⟨.pi hA' (fun x hx => (hstep x hx).1) hP, Gr.pi_iff.2 ⟨hgA', fun _ hA'' x hx => ?_⟩⟩
+    obtain rfl := DenotesO.functional hA'' hA'
+    exact (hstep x hx).2
+
+/-- **`PiRed.lam` is sound over `Model`.** -/
+theorem PiRed.lam_sound {d : Nat} {A A' B B' : Expr md} {mb : BinderMeta}
+    (hB'ws : B'.wscopedB d = true)
+    (sA : PiRedS M φ d A A')
+    (sB : PiRedS M φ (d + 1) (B.instantiate1 (.fvar d A)) (B'.instantiate1 (.fvar d A))) :
+    PiRedS M φ d (.lam A B mb) (.lam A' B' mb) := by
+  intro hf σ hC v hv hg
+  have hp := Frame.lam_parts hf
+  obtain ⟨hgA, hgB⟩ := Gr.lam_iff.1 hg
+  have hCA : Ctx M φ σ A := hC.of_subset fun l hl => by simp [Expr.fvarLeaves, hl]
+  have hCB : Ctx M φ σ B := hC.of_subset fun l hl => by simp [Expr.fvarLeaves, hl]
+  have hfresh : ∀ l ∈ B.fvarLeaves, l.1 ≠ d := fun l hl =>
+    Nat.ne_of_lt (leaves_scoped hp.ws l hl).1
+  have hfresh' : ∀ l ∈ B'.fvarLeaves, l.1 ≠ d := fun l hl =>
+    Nat.ne_of_lt (leaves_scoped (Expr.WScoped.of_wscopedB hB'ws) l hl).1
+  cases hv with
+  | lam hA hB hP =>
+    obtain ⟨hA', hgA'⟩ := sA hp.ty σ hCA _ hA hgA
+    have hstep : ∀ x, x ∈ˢ _ →
+        DenotesO M.cval env φ σ (push x ρ₀) B' _ ∧
+        GradedBy (DenotesO M.cval env φ σ) (push x ρ₀) B' := fun x hx => by
+      have hCx := Ctx.open hp.ty.1 hp.ws hCA hCB hA hx hgA
+      have hBx : Den M φ (setAt σ d x) (B.instantiate1 (.fvar d A)) _ :=
+        (DenotesO.open_fvar hfresh ρ₀ _).2 (hB x hx)
+      have hgBx : Gr M φ (setAt σ d x) (B.instantiate1 (.fvar d A)) :=
+        (GradedBy.open_fvarO hfresh ρ₀).2 (hgB _ hA x hx)
+      obtain ⟨hB', hgB'⟩ := sB hp.open (setAt σ d x) hCx _ hBx hgBx
+      exact ⟨(DenotesO.open_fvar hfresh' ρ₀ _).1 hB', (GradedBy.open_fvarO hfresh' ρ₀).1 hgB'⟩
+    refine ⟨.lam hA' (fun x hx => (hstep x hx).1) hP, Gr.lam_iff.2 ⟨hgA', fun _ hA'' x hx => ?_⟩⟩
+    obtain rfl := DenotesO.functional hA'' hA'
+    exact (hstep x hx).2
+
+/-- **`DefEq.transClosed` is sound over `Model`.** -/
+theorem DefEq.transClosed_sound {d : Nat} {a b b' c tb : Expr md}
+    (hbf : b.hasFvar = false) (hbb : b.looseBVarsBounded 0 = true)
+    (hb'f : b'.hasFvar = false) (hb'b : b'.looseBVarsBounded 0 = true)
+    (sib : InferFullS M φ 0 b' tb) (spb : PiRedS M φ 0 b' b)
+    (sab : DefEqS M φ d a b) (sbc : DefEqS M φ d b c) :
+    DefEqS M φ d a c := by
+  intro hfa hfc σ hCa hCc x z hx hz hgx hgz
+  have hfb' : Frame 0 b' := Frame.of_closed hb'f hb'b
+  have hfb : Frame d b := Frame.of_closed hbf hbb
+  obtain ⟨y, _, hy', hgy', -, -, -⟩ := (sib hfb').2.2 σ (Ctx.of_closed hb'f)
+  obtain ⟨hy, hgy⟩ := spb hfb' σ (Ctx.of_closed hb'f) y hy' hgy'
+  exact (sab hfa hfb σ hCa (Ctx.of_closed hbf) x y hx hy hgx hgy).trans
+    (sbc hfb hfc σ (Ctx.of_closed hbf) hCc y z hy hz hgy hgz)
+
 end Ix.Kernel.Open

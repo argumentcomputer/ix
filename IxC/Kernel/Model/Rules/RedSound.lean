@@ -291,6 +291,17 @@ theorem Red.strLit_sound {d : Nat} {s : String}
     rw [Ix.Kernel.strLitToConstructor_fvarLeaves] at hl; exact nomatch hl
   · rw [denoteMeta_strLitToConstructor h]; exact hea
 
+/-- Converse of `Red.strLit_sound`: `strLitToConstructor s` reads identically to `.lit (.strVal s)`. -/
+theorem Red.strLitFold_sound {d : Nat} {s : String}
+    (h : Ix.Kernel.strLitSupported env = true) :
+    RedSem m φ d (strLitToConstructor s) (.lit (.strVal s)) := by
+  intro _ Δa ea _ hea hg
+  obtain ⟨hfr, hsubr⟩ := frame_atom (d := d) (e := (.lit (.strVal s) : Expr md))
+    (by simp [Expr.fvarLeaves]) (by simp [Expr.WScoped]) (by simp [Expr.looseBVarsBounded])
+  refine ⟨hfr, hsubr _, ea, ?_, hg, fun _ _ => rfl⟩
+  rw [← denoteMeta_strLitToConstructor h]
+  exact hea
+
 /-- The successor row at the reduced argument (`NatSuccRow`). -/
 theorem Red.natSucc_sound (hin : RulesInputs V m φ) {d : Nat} {a w : Expr md}
     {n : Nat} (hsup : Ix.Kernel.natLitSupported env = true)
@@ -317,6 +328,33 @@ theorem Red.natSucc_sound (hin : RulesInputs V m φ) {d : Nat} {a w : Expr md}
     appCongrV rfl (heqw σ hσ) (hokf σ hσ) (hgw σ hσ) (hg σ hσ)
   obtain ⟨ra, hra, hgra, heqra⟩ := hin.nat_succ hsup hn hsw hgsw
   obtain ⟨hfr, hsubr⟩ := frame_atom (d := d) (e := (.lit (.natVal (n + 1)) : Expr md))
+    (by simp [Expr.fvarLeaves]) (by simp [Expr.WScoped])
+    (by simp [Expr.looseBVarsBounded])
+  refine ⟨hfr, hsubr _, ra, hra, hgra, fun σ hσ => ?_⟩
+  rw [interp_app, heqw σ hσ, ← interp_app]
+  exact heqra σ hσ
+
+/-- The predecessor row at the reduced argument (`NatPredRow`). -/
+theorem Red.natPred_sound (hin : RulesInputs V m φ) {d : Nat} {a w : Expr md} {n : Nat}
+    (hst : Ix.Kernel.natOpStored env natPredName = true)
+    (hw : RedSem m φ d a w) (hn : Ix.Kernel.rawNatLit? w = some n) :
+    RedSem m φ d (.app (.const natPredName []) a) (.lit (.natVal (n - 1))) := by
+  intro hf Δa ea hC hea hg
+  obtain ⟨hws, hb, hLb⟩ := hf
+  simp only [Expr.WScoped] at hws
+  simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
+  have hLa : Expr.LeavesBounded a := fun l hl =>
+    hLb l (by simp [Expr.fvarLeaves, hl])
+  obtain ⟨fa, aa, hfa, haa, rfl⟩ := denoteMeta_app_inv hea
+  obtain ⟨hokf, hoka⟩ := graded_app hg
+  obtain ⟨-, -, wa, hwa, hgw, heqw⟩ :=
+    hw ⟨hws.2, hb.2, hLa⟩ hC.app_arg haa hoka
+  have hsw : denoteMeta m.acval env φ d (.app (.const Ix.Kernel.natPredName []) w)
+      = some (.app fa wa) := by rw [denoteMeta_app, hfa, hwa]; rfl
+  have hgsw : Graded V Δa (.app fa wa) := fun σ hσ =>
+    appCongrV rfl (heqw σ hσ) (hokf σ hσ) (hgw σ hσ) (hg σ hσ)
+  obtain ⟨ra, hra, hgra, heqra⟩ := hin.nat_pred hst hn hsw hgsw
+  obtain ⟨hfr, hsubr⟩ := frame_atom (d := d) (e := (.lit (.natVal (n - 1)) : Expr md))
     (by simp [Expr.fvarLeaves]) (by simp [Expr.WScoped])
     (by simp [Expr.looseBVarsBounded])
   refine ⟨hfr, hsubr _, ra, hra, hgra, fun σ hσ => ?_⟩

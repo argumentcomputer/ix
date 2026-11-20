@@ -297,14 +297,265 @@ def mk_nat_lit := aiur_fn⟦
     }
 ⟧
 
+def try_extract_nat_or_whnf := aiur_fn⟦
+  fn try_extract_nat_or_whnf(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr,
+                             types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KLimbs) {
+      match try_extract_nat(rc, e) {
+        (1, n) => {  (1, n) } ,
+        _ => {  try_extract_nat(rc, KernelWhnf::whnf(rc, e, types)) } ,
+      }
+    }
+⟧
 
+  -- Extract a signed integer literal `Int.ofNat n` (`sign = 0`, `mag = n`) or
+  -- `Int.negSucc n` (`sign = 1`, `mag = n + 1`) at an empty level list,
+  -- normalizing the inner `Nat` argument lazily when not already a literal.
 
+def try_extract_int_prim := aiur_fn⟦
+  fn try_extract_int_prim(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr,
+                          types: Lists::List<KernelTypes::KExpr>) -> (Field, Field, KernelTypes::KLimbs) {
+      match (*(e)) {
+        KernelTypes::KExprNode::App(f, a) => {
+          match (*(f)) {
+            KernelTypes::KExprNode::Const(caddr, clvls) => {
+              match lvls_empty(clvls) {
+                1 => {
+                  match KernelRoles::role_is(rc, caddr, KernelRoleSpec::role_int_of_nat()) {
+                    1 => {
+                      match try_extract_nat_or_whnf(rc, a, types) {
+                        (1, n) => {  (1, 0, KernelKlimbs::klimbs_normalize(n)) } ,
+                        _ => {  (0, 0, (&(Lists::Node::Nil))) } ,
+                      } } ,
+                    _ => {
+                      match KernelRoles::role_is(rc, caddr, KernelRoleSpec::role_int_neg_succ()) {
+                        1 => {
+                          match try_extract_nat_or_whnf(rc, a, types) {
+                            (1, n) => {  (1, 1, KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_succ(n))) } ,
+                            _ => {  (0, 0, (&(Lists::Node::Nil))) } ,
+                          } } ,
+                        _ => {  (0, 0, (&(Lists::Node::Nil))) } ,
+                      } } ,
+                  } } ,
+                _ => {  (0, 0, (&(Lists::Node::Nil))) } ,
+              } } ,
+            _ => {  (0, 0, (&(Lists::Node::Nil))) } ,
+          } } ,
+        _ => {  (0, 0, (&(Lists::Node::Nil))) } ,
+      }
+    }
+⟧
 
+def mk_int_prim := aiur_fn⟦
+  fn mk_int_prim(rc: KernelRoles::RoleCtx, sign: Field, magnitude: KernelTypes::KLimbs) -> KernelTypes::KExpr {
+      let mag = KernelKlimbs::klimbs_normalize(magnitude);
+      let neg = sign * (1 - KernelKlimbs::klimbs_is_zero(mag));
+      let caddr = match neg {
+        0 => {  KernelRoles::role_used_implicitly(rc, KernelRoleSpec::role_int_of_nat()) } ,
+        _ => {  KernelRoles::role_used_implicitly(rc, KernelRoleSpec::role_int_neg_succ()) } ,
+      };
+      let arg = match neg {
+        0 => {  mag } ,
+        _ => {  KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_dec(mag)) } ,
+      };
+      (&(KernelTypes::KExprNode::App((&(KernelTypes::KExprNode::Const(caddr, (&(Lists::Node::Nil))))), mk_nat_lit(arg))))
+    }
+⟧
 
+def int_add_prim := aiur_fn⟦
+  fn int_add_prim(rc: KernelRoles::RoleCtx, sa: Field, a: KernelTypes::KLimbs, sb: Field, b: KernelTypes::KLimbs) -> KernelTypes::KExpr {
+      match sa - sb {
+        0 => {  mk_int_prim(rc, sa, KernelKlimbs::klimbs_add(a, b)) } ,
+        _ => {
+          match KernelKlimbs::klimbs_le(a, b) {
+            1 => {  mk_int_prim(rc, sb, KernelKlimbs::klimbs_sub(b, a)) } ,
+            _ => {  mk_int_prim(rc, sa, KernelKlimbs::klimbs_sub(a, b)) } ,
+          } } ,
+      }
+    }
+⟧
 
+def int_emod_prim := aiur_fn⟦
+  fn int_emod_prim(rc: KernelRoles::RoleCtx, sa: Field, a: KernelTypes::KLimbs, b: KernelTypes::KLimbs) -> KernelTypes::KExpr {
+      match KernelKlimbs::klimbs_is_zero(b) {
+        1 => {  mk_int_prim(rc, sa, a) } ,
+        _ => {
+          let r0 = KernelKlimbs::klimbs_mod(a, b);
+          match sa * (1 - KernelKlimbs::klimbs_is_zero(r0)) {
+            1 => {  mk_int_prim(rc, 0, KernelKlimbs::klimbs_sub(b, r0)) } ,
+            _ => {  mk_int_prim(rc, 0, r0) } ,
+          } } ,
+      }
+    }
+⟧
 
+def int_ediv_prim := aiur_fn⟦
+  fn int_ediv_prim(rc: KernelRoles::RoleCtx, sa: Field, a: KernelTypes::KLimbs, sb: Field, b: KernelTypes::KLimbs) -> KernelTypes::KExpr {
+      match KernelKlimbs::klimbs_is_zero(b) {
+        1 => {  mk_int_prim(rc, 0, (&(Lists::Node::Nil))) } ,
+        _ => {
+          let q0 = KernelKlimbs::klimbs_div(a, b);
+          let r0 = KernelKlimbs::klimbs_mod(a, b);
+          let q = match sa * (1 - KernelKlimbs::klimbs_is_zero(r0)) {
+            1 => {  KernelKlimbs::klimbs_succ(q0) } ,
+            _ => {  q0 } ,
+          };
+          mk_int_prim(rc, (sa + sb - 2 * sa * sb) * (1 - KernelKlimbs::klimbs_is_zero(q)), q) } ,
+      }
+    }
+⟧
 
+def int_bmod_prim := aiur_fn⟦
+  fn int_bmod_prim(rc: KernelRoles::RoleCtx, sa: Field, a: KernelTypes::KLimbs, m: KernelTypes::KLimbs) -> KernelTypes::KExpr {
+      match KernelKlimbs::klimbs_is_zero(m) {
+        1 => {  mk_int_prim(rc, sa, a) } ,
+        _ => {
+          let r0 = KernelKlimbs::klimbs_mod(a, m);
+          let r = match sa * (1 - KernelKlimbs::klimbs_is_zero(r0)) {
+            1 => {  KernelKlimbs::klimbs_sub(m, r0) } ,
+            _ => {  r0 } ,
+          };
+          let two = (&(Lists::Node::Cons([UInt8::BYTE_2, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], (&(Lists::Node::Nil)))));
+          let half = KernelKlimbs::klimbs_div(KernelKlimbs::klimbs_succ(m), two);
+          match KernelKlimbs::klimbs_le(half, r) {
+            1 => {  mk_int_prim(rc, 1, KernelKlimbs::klimbs_sub(m, r)) } ,
+            _ => {  mk_int_prim(rc, 0, r) } ,
+          } } ,
+      }
+    }
+⟧
 
+def int_bdiv_prim := aiur_fn⟦
+  fn int_bdiv_prim(rc: KernelRoles::RoleCtx, sa: Field, a: KernelTypes::KLimbs, m: KernelTypes::KLimbs) -> KernelTypes::KExpr {
+      match KernelKlimbs::klimbs_is_zero(m) {
+        1 => {  mk_int_prim(rc, 0, (&(Lists::Node::Nil))) } ,
+        _ => {
+          let r0 = KernelKlimbs::klimbs_mod(a, m);
+          let r = match sa * (1 - KernelKlimbs::klimbs_is_zero(r0)) {
+            1 => {  KernelKlimbs::klimbs_sub(m, r0) } ,
+            _ => {  r0 } ,
+          };
+          let q0 = KernelKlimbs::klimbs_div(a, m);
+          let qmag = match sa * (1 - KernelKlimbs::klimbs_is_zero(r0)) {
+            1 => {  KernelKlimbs::klimbs_succ(q0) } ,
+            _ => {  q0 } ,
+          };
+          let qsign = sa * (1 - KernelKlimbs::klimbs_is_zero(qmag));
+          let two = (&(Lists::Node::Cons([UInt8::BYTE_2, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], (&(Lists::Node::Nil)))));
+          let half = KernelKlimbs::klimbs_div(KernelKlimbs::klimbs_succ(m), two);
+          match KernelKlimbs::klimbs_le(half, r) {
+            0 => {  mk_int_prim(rc, qsign, qmag) } ,
+            _ => {  int_add_prim(rc, qsign, qmag, 0,
+              (&(Lists::Node::Cons([UInt8::BYTE_1, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], (&(Lists::Node::Nil)))))) } ,
+          } } ,
+      }
+    }
+⟧
+
+def try_int_unop_dispatch := aiur_fn⟦
+  fn try_int_unop_dispatch(rc: KernelRoles::RoleCtx, op: Field, a0: KernelTypes::KExpr,
+                           post: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>)
+                           -> (Field, KernelTypes::KExpr) {
+      let w0 = KernelWhnf::whnf(rc, a0, types);
+      match try_extract_int_prim(rc, w0, types) {
+        (1, s, a) => {
+          let v = match op {
+            2 => {  mk_nat_lit(a) } ,
+            _ => {  mk_int_prim(rc, (1 - s) * (1 - KernelKlimbs::klimbs_is_zero(a)), a) } ,
+          };
+          (1, np_apply_spine(v, post)) } ,
+        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+      }
+    }
+⟧
+
+def try_int_nat_arg_prim := aiur_fn⟦
+  fn try_int_nat_arg_prim(rc: KernelRoles::RoleCtx, op: Field, sa: Field,
+                          a: KernelTypes::KLimbs, b: KernelTypes::KLimbs) -> (Field, KernelTypes::KExpr) {
+      match op {
+        3 => {  (1, int_bmod_prim(rc, sa, a, b)) } ,
+        4 => {  (1, int_bdiv_prim(rc, sa, a, b)) } ,
+        5 => {
+          let cap = (&(Lists::Node::Cons([UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_1, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], (&(Lists::Node::Nil)))));
+          match KernelKlimbs::klimbs_le(b, cap) {
+            1 => {
+              let two = (&(Lists::Node::Cons([UInt8::BYTE_2, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], (&(Lists::Node::Nil)))));
+              let odd = 1 - KernelKlimbs::klimbs_is_zero(KernelKlimbs::klimbs_mod(b, two));
+              (1, mk_int_prim(rc, sa * odd, KernelKlimbs::klimbs_pow(a, b))) } ,
+            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+          } } ,
+        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+      }
+    }
+⟧
+
+def try_int_int_arg_prim := aiur_fn⟦
+  fn try_int_int_arg_prim(rc: KernelRoles::RoleCtx, op: Field, sa: Field, a: KernelTypes::KLimbs,
+                          sb: Field, b: KernelTypes::KLimbs) -> (Field, KernelTypes::KExpr) {
+      match op {
+        6 => {  (1, int_add_prim(rc, sa, a, sb, b)) } ,
+        7 => {  (1, int_add_prim(rc, sa, a, (1 - sb) * (1 - KernelKlimbs::klimbs_is_zero(b)), b)) } ,
+        8 => {  (1, mk_int_prim(rc, (sa + sb - 2 * sa * sb)
+          * (1 - KernelKlimbs::klimbs_is_zero(a)) * (1 - KernelKlimbs::klimbs_is_zero(b)),
+          KernelKlimbs::klimbs_mul(a, b))) } ,
+        9 => {  (1, int_emod_prim(rc, sa, a, b)) } ,
+        10 => {  (1, int_ediv_prim(rc, sa, a, sb, b)) } ,
+        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+      }
+    }
+⟧
+
+def try_int_binop_second := aiur_fn⟦
+  fn try_int_binop_second(rc: KernelRoles::RoleCtx, op: Field, a1: KernelTypes::KExpr,
+                          post: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>,
+                          sa: Field, a: KernelTypes::KLimbs) -> (Field, KernelTypes::KExpr) {
+      let w1 = KernelWhnf::whnf(rc, a1, types);
+      let is_nat_arg = Fields::is_zero(op - 3) + Fields::is_zero(op - 4) + Fields::is_zero(op - 5);
+      match is_nat_arg {
+        0 => {
+          match try_extract_int_prim(rc, w1, types) {
+            (1, sb, b) => {
+              match try_int_int_arg_prim(rc, op, sa, a, sb, b) {
+                (1, v) => {  (1, np_apply_spine(v, post)) } ,
+                _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+              } } ,
+            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+          } } ,
+        _ => {
+          match try_extract_nat(rc, w1) {
+            (1, b) => {
+              match try_int_nat_arg_prim(rc, op, sa, a, KernelKlimbs::klimbs_normalize(b)) {
+                (1, v) => {  (1, np_apply_spine(v, post)) } ,
+                _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+              } } ,
+            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+          } } ,
+      }
+    }
+⟧
+
+def try_int_prim_dispatch := aiur_fn⟦
+  fn try_int_prim_dispatch(rc: KernelRoles::RoleCtx, op: Field, spine: Lists::List<KernelTypes::KExpr>,
+                           types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
+      match (*(spine)) {
+        Lists::Node::Nil => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+        Lists::Node::Cons(a0, rest0) => {
+          let is_unop = Fields::is_zero(op - 1) + Fields::is_zero(op - 2);
+          match is_unop {
+            0 => {
+              match (*(rest0)) {
+                Lists::Node::Nil => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+                Lists::Node::Cons(a1, post) => {
+                  let w0 = KernelWhnf::whnf(rc, a0, types);
+                  match try_extract_int_prim(rc, w0, types) {
+                    (1, sa, a) => {  try_int_binop_second(rc, op, a1, post, types, sa, a) } ,
+                    _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+                  } } ,
+              } } ,
+            _ => {  try_int_unop_dispatch(rc, op, a0, rest0, types) } ,
+          } } ,
+      }
+    }
+⟧
 
 def np_apply_spine := aiur_fn⟦
   fn np_apply_spine(head: KernelTypes::KExpr, spine: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {

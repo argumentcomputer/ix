@@ -179,4 +179,14 @@ stuck side fit — `CertsSem` at every listed index. -/
     CertsSem m φ d false (cvp.type.instantiateLevelParams cvp.levelParams us')
       (targs ++ [b])
 
+/-- **`PiRed`'s motive**: preserves reading, grading, and denotation (including under `∀`). -/
+@[expose] def PiRedSem {env : Env md} (m : EnvModel V env) (φ : LevelParam → Nat)
+    (d : Nat) (e e' : Expr md) : Prop :=
+  ∀ {Δa : List AnnotTerm} {ea : AnnotTerm},
+    Frame d e → CtxOk m φ d Δa e →
+    denoteMeta m.acval env φ d e = some ea → Graded V Δa ea →
+    ∃ ea', denoteMeta m.acval env φ d e' = some ea' ∧
+      Graded V Δa ea' ∧
+      ∀ ρ : Nat → V, Sat V Δa ρ → interp V ρ ea = interp V ρ ea'
+
 end Ix.Kernel.Model.Rules

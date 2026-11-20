@@ -60,6 +60,7 @@ theorem coreCompanions_table {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
   natOps := fun r hr hm => h.natOps r (hin r hr) hm
   natAdd := fun h1 => h.natAdd (hin _ h1)
   eqStored := fun h1 => h.eqStored (hin _ h1)
+  primEqn := fun ⟨r, hge, hf⟩ => h.primEqn ⟨r, hge, hin r hf⟩
   quotBasis := fun h1 => h.quotBasis (hin _ h1)
   recMajorRecord := fun k cv mI rP rls p us hf hne hdom =>
     h.recMajorRecord k cv mI rP rls p us hf hne

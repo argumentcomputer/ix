@@ -2,6 +2,7 @@ import IxVMRefinement.Nat.KlimbsMul
 import IxVMRefinement.Nat.Utf8
 import IxVMRefinement.Nat.PrimStr
 import IxVMRefinement.Nat.PrimNat
+import IxVMRefinement.Nat.PrimInt
 import IxVMRefinement.Nat.Levels
 
 /-! # The `Nat` family's steps
@@ -72,5 +73,18 @@ theorem nat_step (c : ScopedCtx) (hc : ScopedCoreBase c) :
   | .try_nat_offset_dispatch, _, _, _, _, _, ev, ih => try_nat_offset_dispatch_step c hc ev ih
   | .try_nat_binop_dispatch, _, _, _, _, _, ev, ih => try_nat_binop_dispatch_step c hc ev ih
   | .try_nat_dispatch, _, _, _, _, _, ev, ih => try_nat_dispatch_step c hc ev ih
+  | .try_extract_nat_or_whnf, _, _, _, _, _, ev, ih => try_extract_nat_or_whnf_step c ev ih
+  | .try_extract_int_prim, _, _, _, _, _, ev, ih => try_extract_int_prim_step c hc ev ih
+  | .mk_int_prim, _, _, _, _, _, ev, ih => mk_int_prim_step c hc ev ih
+  | .int_add_prim, _, _, _, _, _, ev, ih => int_add_prim_step c ev ih
+  | .int_emod_prim, _, _, _, _, _, ev, ih => int_emod_prim_step c ev ih
+  | .int_ediv_prim, _, _, _, _, _, ev, ih => int_ediv_prim_step c ev ih
+  | .int_bmod_prim, _, _, _, _, _, ev, ih => int_bmod_prim_step c ev ih
+  | .int_bdiv_prim, _, _, _, _, _, ev, ih => int_bdiv_prim_step c ev ih
+  | .try_int_unop_dispatch, _, _, _, _, _, ev, ih => try_int_unop_dispatch_step c hc ev ih
+  | .try_int_nat_arg_prim, _, _, _, _, _, ev, ih => try_int_nat_arg_prim_step c hc ev ih
+  | .try_int_int_arg_prim, _, _, _, _, _, ev, ih => try_int_int_arg_prim_step c hc ev ih
+  | .try_int_binop_second, _, _, _, _, _, ev, ih => try_int_binop_second_step c hc ev ih
+  | .try_int_prim_dispatch, _, _, _, _, _, ev, ih => try_int_prim_dispatch_step c ev ih
 
 end IxVM.Refinement.Core

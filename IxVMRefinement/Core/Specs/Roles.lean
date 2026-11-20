@@ -201,6 +201,10 @@ def role_quot_mk : SpecFn := RoleConst .quotMk
 def role_quot_lift : SpecFn := RoleConst .quotLift
 /-- `KernelRoleSpec::role_quot_ind()`. -/
 def role_quot_ind : SpecFn := RoleConst .quotInd
+/-- `KernelRoleSpec::role_int_of_nat()`. -/
+def role_int_of_nat : SpecFn := RoleConst .intOfNat
+/-- `KernelRoleSpec::role_int_neg_succ()`. -/
+def role_int_neg_succ : SpecFn := RoleConst .intNegSucc
 
 /-- `KernelRoleSpec::role_prim_family(r)` at a role's number: the native rule IxVM fires on the
 role's constant, its family and operation (`Ix.SpecDigest.nativeOp`, which the specification
@@ -244,6 +248,8 @@ inductive Fn where
   | role_quot_mk
   | role_quot_lift
   | role_quot_ind
+  | role_int_of_nat
+  | role_int_neg_succ
   | role_prim_family
   deriving DecidableEq, Repr
 
@@ -280,6 +286,8 @@ def Fn.name : Fn → String
   | .role_quot_mk => "KernelRoleSpec::role_quot_mk"
   | .role_quot_lift => "KernelRoleSpec::role_quot_lift"
   | .role_quot_ind => "KernelRoleSpec::role_quot_ind"
+  | .role_int_of_nat => "KernelRoleSpec::role_int_of_nat"
+  | .role_int_neg_succ => "KernelRoleSpec::role_int_neg_succ"
   | .role_prim_family => "KernelRoleSpec::role_prim_family"
 
 /-- Each function's spec. -/
@@ -313,6 +321,8 @@ def Fn.spec : Fn → SpecFn
   | .role_quot_mk => Specs.Roles.role_quot_mk
   | .role_quot_lift => Specs.Roles.role_quot_lift
   | .role_quot_ind => Specs.Roles.role_quot_ind
+  | .role_int_of_nat => Specs.Roles.role_int_of_nat
+  | .role_int_neg_succ => Specs.Roles.role_int_neg_succ
   | .role_prim_family => Specs.Roles.role_prim_family
 
 end IxVM.Refinement.Core.Specs.Roles

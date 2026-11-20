@@ -97,6 +97,21 @@ def natOpOf : Nat → Option Ix.Kernel.Role
   | 16 => some .natBle
   | _ => none
 
+/-- The `Int` operation a primitive-family code stands for (`KernelRoleSpec::role_prim_family`,
+family `6`). -/
+def intOpOf : Nat → Option Ix.Kernel.Role
+  | 1 => some .intNeg
+  | 2 => some .intNatAbs
+  | 3 => some .intBmod
+  | 4 => some .intBdiv
+  | 5 => some .intPow
+  | 6 => some .intAdd
+  | 7 => some .intSub
+  | 8 => some .intMul
+  | 9 => some .intEmod
+  | 10 => some .intEdiv
+  | _ => none
+
 /-- **Telescope certificates up to reduction of the telescope**: `Certs`, with a step
 `Red env d T T'` allowed before any slot (where `certs_all` head-normalizes). -/
 inductive CertsR (env : Ix.Kernel.Env .anon) (d : Nat) (lic : Bool) :
@@ -565,6 +580,8 @@ def prim_family : SpecFn := fun c args h r h' calls =>
       f ≠ 0 →
         (∃ role, c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
         (f = 1 → ∃ role, natOpOf (ZMod.val op) = some role ∧
+          c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
+        (f = 6 → ∃ role, intOpOf (ZMod.val op) = some role ∧
           c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role)
 
 /-- `try_nat_dispatch_prewhnf(rc, head_addr, op, spine, types)`: the `Nat` natives after

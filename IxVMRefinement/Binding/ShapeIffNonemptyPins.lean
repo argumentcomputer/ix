@@ -1,4 +1,5 @@
 import IxVMRefinement.Binding.ShapeIffNonempty
+import IxVMRefinement.Binding.EqnsValidation
 import IxVMRefinement.Binding.MemberKindPins
 import IxVMRefinement.Binding.MemberFamilyKey
 
@@ -634,7 +635,8 @@ the groups with no shape role (`groupWithoutRoleUnit_of_shapeGroups`). -/
 theorem groupWithoutRoleUnit_bindingRun :
     ∀ calls : List (Call F),
       AtGroups (BindingRun calls) (RoleFreeShapes.{u} Typing.FormerOpenTraceAt) :=
-  groupWithoutRoleUnit_of_iffNonempty.{u} fun _ _ _ _ hrun hall ht _ _ _ hg =>
-    roleFreeShapes_iffNonempty.{u} hrun hall ht hg
+  groupWithoutRoleUnit_of_iffNonempty.{u}
+    (fun _ _ _ _ hrun hall ht _ _ _ hg => roleFreeShapes_iffNonempty.{u} hrun hall ht hg)
+    (fun _ _ _ _ hrun hall ht _ _ _ hg => roleFreeShapes_eqnsGroup.{u} hrun hall ht hg)
 
 end IxVM.Refinement.Binding

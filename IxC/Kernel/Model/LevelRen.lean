@@ -397,6 +397,26 @@ theorem arOk_bind {ty b : Expr md} {m : BinderMeta} :
     Expr.arOk env (.forallE ty b m) = true ↔ Expr.arOk env ty = true ∧ Expr.arOk env b = true := by
   simp [Expr.arOk]
 
+theorem arOk_of_instantiate1 {v : Expr md} :
+    ∀ (e : Expr md) (k : Nat), Expr.arOk env (e.instantiate1 v k) = true → Expr.arOk env e = true
+  | .bvar _, _, _ | .sort _, _, _ | .lit _, _, _ => rfl
+  | .fvar _ _, _, h => h
+  | .const _ _, _, h => h
+  | .app f a, k, h => by
+    simp only [Expr.instantiate1, Expr.arOk, Bool.and_eq_true] at h ⊢
+    exact ⟨arOk_of_instantiate1 f k h.1, arOk_of_instantiate1 a k h.2⟩
+  | .lam t b _, k, h => by
+    simp only [Expr.instantiate1, Expr.arOk, Bool.and_eq_true] at h ⊢
+    exact ⟨arOk_of_instantiate1 t k h.1, arOk_of_instantiate1 b (k + 1) h.2⟩
+  | .forallE t b _, k, h => by
+    simp only [Expr.instantiate1, Expr.arOk, Bool.and_eq_true] at h ⊢
+    exact ⟨arOk_of_instantiate1 t k h.1, arOk_of_instantiate1 b (k + 1) h.2⟩
+  | .letE t val b _, k, h => by
+    simp only [Expr.instantiate1, Expr.arOk, Bool.and_eq_true] at h ⊢
+    exact ⟨⟨arOk_of_instantiate1 t k h.1.1, arOk_of_instantiate1 val k h.1.2⟩,
+      arOk_of_instantiate1 b (k + 1) h.2⟩
+  | .proj _ _ e, k, h => arOk_of_instantiate1 e k h
+
 theorem arOk_lam {ty b : Expr md} {m : BinderMeta} :
     Expr.arOk env (.lam ty b m) = true ↔ Expr.arOk env ty = true ∧ Expr.arOk env b = true := by
   simp [Expr.arOk]
@@ -524,6 +544,25 @@ theorem red_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : LvRe
     intro φ
     rw [Level.eval_subst, Level.eval_subst]
     exact hv _
+  | _, _, _, .defEqClosed (a := a) hsp haf hab hbf hbb ha'f ha'b hb'f hb'b hia hra hib hrb hde, _ => by
+    have ia := infer_lr h hia (fun l hl => by
+      rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar ha'f] at hl; cases hl) (fun hg => nomatch hg)
+    have ra := red_lr h hra ia.1
+    have ib := infer_lr h hib (fun l hl => by
+      rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hb'f] at hl; cases hl) (fun hg => nomatch hg)
+    have rb := red_lr h hrb ib.1
+    have hsp' : isSortOrPi ⌜a⌝ = false := by
+      cases a <;> first | exact hsp | rfl
+    exact ⟨rb.1, .defEqClosed hsp'
+      (by rw [Expr.hasFvar_instantiateLevelParams]; exact haf)
+      (by rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hab)
+      (by rw [Expr.hasFvar_instantiateLevelParams]; exact hbf)
+      (by rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hbb)
+      (by rw [Expr.hasFvar_instantiateLevelParams]; exact ha'f)
+      (by rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact ha'b)
+      (by rw [Expr.hasFvar_instantiateLevelParams]; exact hb'f)
+      (by rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hb'b)
+      ia.2.2 ra.2 ib.2.2 rb.2 (defEq_lr h hde ia.1 ib.1)⟩
   | _, _, _, .natLit (n := n) hs, _ => by
     refine ⟨arOk_natLitToConstructor hs n, ?_⟩
     rw [natLitToConstructor_inst]
@@ -533,10 +572,18 @@ theorem red_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : LvRe
     refine ⟨(strLit_arOk hs).2 s, ?_⟩
     rw [strLitToConstructor_inst]
     exact .strLit hs
+  | _, _, _, .strLitFold (s := s) hs, _ => by
+    refine ⟨rfl, ?_⟩
+    rw [strLitToConstructor_inst]
+    exact .strLitFold hs
   | _, _, _, .natSucc hsup hw hn, he => by
     obtain ⟨-, ha⟩ := arOk_app.mp he
     have r := red_lr h hw ha
     exact ⟨rfl, .natSucc hsup r.2 (by rw [rawNatLit?_inst]; exact hn)⟩
+  | _, _, _, .natPred hst hw hn, he => by
+    obtain ⟨-, ha⟩ := arOk_app.mp he
+    have r := red_lr h hw ha
+    exact ⟨rfl, .natPred hst r.2 (by rw [rawNatLit?_inst]; exact hn)⟩
   | _, _, _, .natOp hc hst hwa hn₁ hwb hn₂ hr, he => by
     obtain ⟨hfa, hb⟩ := arOk_app.mp he
     obtain ⟨-, ha⟩ := arOk_app.mp hfa
@@ -918,6 +965,42 @@ theorem defEq_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : Lv
     exact .structEtaTy (inst_getAppFn_const ks ws hhead) hctor
       (by rw [Expr.getAppArgs_instantiateLevelParams, List.length_map]; exact hlen) hind heta
       hetaCtor hpos htow ita.2.2 hr hcs itb.2.2 (defEq_lr h hd' itb.2.1 ita.2.1) hf
+  | _, _, _, .eqProof hfE haf hab hbf hbb hpf hpb hp ha hda hb hdb hTT hred hv, _, _ => by
+    have ip := infer_lr h hp (fun l hl => by
+      rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hpf] at hl; cases hl) (fun hg => nomatch hg)
+    obtain ⟨hEqT, hb'⟩ := arOk_app.mp ip.2.1
+    obtain ⟨hEqT', -⟩ := arOk_app.mp hEqT
+    obtain ⟨-, hT⟩ := arOk_app.mp hEqT'
+    have ia := infer_lr h ha (fun l hl => by
+      rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar haf] at hl; cases hl) (fun hg => nomatch hg)
+    have ib := infer_lr h hb (fun l hl => by
+      rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hbf] at hl; cases hl) (fun hg => nomatch hg)
+    have iT := infer_lr h hTT (arOk_fvarLeaves hT) (fun hg => nomatch hg)
+    refine .eqProof hfE
+      (by rw [Expr.hasFvar_instantiateLevelParams]; exact haf)
+      (by rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hab)
+      (by rw [Expr.hasFvar_instantiateLevelParams]; exact hbf)
+      (by rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hbb)
+      (by rw [Expr.hasFvar_instantiateLevelParams]; exact hpf)
+      (by rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hpb)
+      ip.2.2 ia.2.2 (defEq_lr h hda ia.2.1 hT) ib.2.2 (defEq_lr h hdb ib.2.1 hT)
+      iT.2.2 (red_lr h hred iT.2.1).2 ?_
+    intro φ
+    rw [Level.eval_subst, Level.eval_subst]
+    exact hv _
+  | _, _, _, .instClosed hlen haLv hbLv haf hab hbf hbb hde, _, _ => by
+    rw [inst_comp hlen haLv, inst_comp hlen hbLv]
+    exact .instClosed (by rw [List.length_map]; exact hlen) haLv hbLv haf hab hbf hbb hde
+  | _, _, _, .transClosed hbf hbb hb'f hb'b hib hpb hab hbc, ha, hc => by
+    have ib := infer_lr h hib (fun l hl => by
+      rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hb'f] at hl; cases hl) (fun hg => nomatch hg)
+    have pb := piRed_lr h hpb ib.1
+    exact .transClosed
+      (by rw [Expr.hasFvar_instantiateLevelParams]; exact hbf)
+      (by rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hbb)
+      (by rw [Expr.hasFvar_instantiateLevelParams]; exact hb'f)
+      (by rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hb'b)
+      ib.2.2 pb.2 (defEq_lr h hab ha pb.1) (defEq_lr h hbc pb.1 hc)
 
 /-- **An inference, renamed.** At the full grade the subject's arity comes from the derivation,
 given its annotations'. -/
@@ -1081,6 +1164,35 @@ theorem etaProjCerts_lr {env : Env md} {ks : List LevelParam} {ws : List Level}
     rcases List.mem_cons.mp hj with rfl | hj
     · exact ⟨cvp, _, _, _, hf, hlps⟩
     · exact ir.1 j hj
+
+/-- **`PiRed`, level-renamed.** -/
+theorem piRed_lr {env : Env md} {ks : List LevelParam} {ws : List Level}
+    (h : LvRen env ks ws) :
+    ∀ {d : Nat} {e e' : Expr md}, PiRed env d e e' → AR e →
+      AR e' ∧ PiRed env d ⌜e⌝ ⌜e'⌝
+  | _, _, _, .ofRed hr, he =>
+    let ⟨h1, h2⟩ := red_lr h hr he
+    ⟨h1, .ofRed h2⟩
+  | _, _, _, .app hf ha, he =>
+    let ⟨hf1, hf2⟩ := piRed_lr h hf (arOk_app.mp he).1
+    let ⟨ha1, ha2⟩ := piRed_lr h ha (arOk_app.mp he).2
+    ⟨arOk_app.mpr ⟨hf1, ha1⟩, .app hf2 ha2⟩
+  | _, _, _, .forallE (d := d) (A := A) (A' := A') (B := B) (B' := B') hws hA hB, he => by
+    obtain ⟨hARa, hARb⟩ := arOk_bind.mp he
+    obtain ⟨hARa', hA'⟩ := piRed_lr h hA hARa
+    have hARopen : AR (B.instantiate1 (.fvar d A)) := arOk_instantiate1 (v := .fvar d A) hARa B 0 hARb
+    obtain ⟨hARbopen', hB'⟩ := piRed_lr h hB hARopen
+    rw [inst_instantiate1, inst_instantiate1] at hB'
+    refine ⟨arOk_bind.mpr ⟨hARa', arOk_of_instantiate1 B' 0 hARbopen'⟩,
+      .forallE (by rw [wscopedB_inst]; exact hws) hA' hB'⟩
+  | _, _, _, .lam (d := d) (A := A) (A' := A') (B := B) (B' := B') hws hA hB, he => by
+    obtain ⟨hARa, hARb⟩ := arOk_lam.mp he
+    obtain ⟨hARa', hA'⟩ := piRed_lr h hA hARa
+    have hARopen : AR (B.instantiate1 (.fvar d A)) := arOk_instantiate1 (v := .fvar d A) hARa B 0 hARb
+    obtain ⟨hARbopen', hB'⟩ := piRed_lr h hB hARopen
+    rw [inst_instantiate1, inst_instantiate1] at hB'
+    refine ⟨arOk_lam.mpr ⟨hARa', arOk_of_instantiate1 B' 0 hARbopen'⟩,
+      .lam (by rw [wscopedB_inst]; exact hws) hA' hB'⟩
 
 end
 

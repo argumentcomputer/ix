@@ -228,6 +228,16 @@ theorem red_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
       (hT.wscoped hd hwp) (Transport.lbb hbp) (fvarLeaves_sub_renFV hlp)
       (infer_tr hT ha hd) (defEq_tr hT hda hd) (infer_tr hT hb hd) (defEq_tr hT hdb hd)
       (infer_tr hT hTT hd) (red_tr hT hred hd) hv
+  | _, _, _, .defEqClosed hsp haf hab hbf hbb ha'f ha'b hb'f hb'b hia hra hib hrb hde, _ => by
+    have hw := Transport.weaken hT.ext
+    have i1 := infer_tr hw hia trivial
+    have r1 := red_tr hw hra trivial
+    have i2 := infer_tr hw hib trivial
+    have r2 := red_tr hw hrb trivial
+    have d1 := defEq_tr hw hde trivial
+    simp only [renFV_of_id (fun _ => rfl)] at i1 r1 i2 r2 d1
+    rw [Expr.renFV_of_not_hasFvar haf, Expr.renFV_of_not_hasFvar hbf]
+    exact .defEqClosed hsp haf hab hbf hbb ha'f ha'b hb'f hb'b i1 r1 i2 r2 d1
   | _, _, _, .natLit h, _ => by
     rw [renFV_natLitToConstructor]
     exact .natLit (hT.ext.natLitSupported_mono h)
@@ -235,8 +245,14 @@ theorem red_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
   | _, _, _, .strLit h, _ => by
     rw [renFV_strLitToConstructor]
     exact .strLit (hT.ext.strLitSupported_mono h)
+  | _, _, _, .strLitFold h, _ => by
+    rw [renFV_strLitToConstructor]
+    exact .strLitFold (hT.ext.strLitSupported_mono h)
   | _, _, _, .natSucc hsup hw hn, hd =>
     .natSucc (hT.ext.natLitSupported_mono hsup) (red_tr hT hw hd)
+      (by rw [rawNatLit?_renFV]; exact hn)
+  | _, _, _, .natPred hst hw hn, hd =>
+    .natPred (hT.ext.natOpStored_mono hst) (red_tr hT hw hd)
       (by rw [rawNatLit?_renFV]; exact hn)
   | _, _, _, .natOp hc hst hwa hn₁ hwb hn₂ hr, hd => by
     rw [renFV_of_natOpResult hr]
@@ -442,6 +458,34 @@ theorem defEq_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
       (by rw [getAppArgs_renFV, List.length_map]; exact hlen) (hT.ext.find hind) heta hetaCtor
       hpos (by rw [hT.ext.towerSlotsAll_eq hind]; exact htow) (infer_tr hT hta hd) hr hcs
       (infer_tr hT htb hd) (defEq_tr hT hd' hd) hf
+  | _, _, _, .eqProof hfE haf hab hbf hbb hpf hpb hp ha hda hb hdb hTT hred hv, _ => by
+    have hw := Transport.weaken hT.ext
+    have ip := infer_tr hw hp trivial
+    have ia := infer_tr hw ha trivial
+    have da := defEq_tr hw hda trivial
+    have ib := infer_tr hw hb trivial
+    have db := defEq_tr hw hdb trivial
+    have iT := infer_tr hw hTT trivial
+    have rT := red_tr hw hred trivial
+    simp only [renFV_of_id (fun _ => rfl)] at ip ia da ib db iT rT
+    rw [Expr.renFV_of_not_hasFvar haf, Expr.renFV_of_not_hasFvar hbf]
+    exact .eqProof (hT.ext.find hfE) haf hab hbf hbb hpf hpb ip ia da ib db iT rT hv
+  | _, _, _, .instClosed (ks := ks) (us := us) hlen haLv hbLv haf hab hbf hbb hde, _ => by
+    have hw := Transport.weaken hT.ext
+    have d1 := defEq_tr hw hde trivial
+    simp only [renFV_of_id (fun _ => rfl)] at d1
+    rw [renFV_instantiateLevelParams_closed ks us haf,
+      renFV_instantiateLevelParams_closed ks us hbf]
+    exact .instClosed hlen haLv hbLv haf hab hbf hbb d1
+  | _, _, _, .transClosed hbf hbb hb'f hb'b hib hpb hab hbc, hd => by
+    have hw := Transport.weaken hT.ext
+    have ib := infer_tr hw hib trivial
+    have pb := piRed_tr hw hpb trivial
+    simp only [renFV_of_id (fun _ => rfl)] at ib pb
+    have d1 := defEq_tr hT hab hd
+    have d2 := defEq_tr hT hbc hd
+    rw [Expr.renFV_of_not_hasFvar hbf] at d1 d2
+    exact .transClosed hbf hbb hb'f hb'b ib pb d1 d2
 
 /-- **An inference, transported.** -/
 theorem infer_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
@@ -526,6 +570,22 @@ theorem etaProjCerts_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → 
     rw [hT.fixType (cv := cvp) hf rfl, List.map_append] at hc
     exact .cons (hT.ext.find hf) hlps (by rw [List.length_map]; exact hstrip) hc
       (etaProjCerts_tr hT hrest hd)
+
+/-- **`PiRed`, transported.** -/
+theorem piRed_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
+    (hT : Transport ρ δ ok env env') :
+    ∀ {d : Nat} {e e' : Expr md}, PiRed env d e e' → ok d →
+      PiRed env' (δ d) (e.renFV ρ) (e'.renFV ρ)
+  | _, _, _, .ofRed hr, hd => .ofRed (red_tr hT hr hd)
+  | _, _, _, .app hf ha, hd => .app (piRed_tr hT hf hd) (piRed_tr hT ha hd)
+  | _, _, _, .forallE (A := A) (A' := A') (B := B) (B' := B') hws hA hB, hd => by
+    have hB' := piRed_tr hT hB (hT.ok_succ hd)
+    simp only [hT.δ_succ hd, hT.renFV_open hd] at hB'
+    exact .forallE (hT.wscoped hd hws) (piRed_tr hT hA hd) hB'
+  | _, _, _, .lam (A := A) (A' := A') (B := B) (B' := B') hws hA hB, hd => by
+    have hB' := piRed_tr hT hB (hT.ok_succ hd)
+    simp only [hT.δ_succ hd, hT.renFV_open hd] at hB'
+    exact .lam (hT.wscoped hd hws) (piRed_tr hT hA hd) hB'
 
 end
 
@@ -628,5 +688,12 @@ theorem Red.lift {env env' : Env md} (hx : EnvExt env env') (hs : StoreClosed en
     Red env' (p + g) (e.renFV (fun i => if i < p then i else i + g))
       (e'.renFV (fun i => if i < p then i else i + g)) :=
   red_tr (Transport.lift hx hs p g) hi (Nat.le_refl p)
+
+/-- **Top weakening for `PiRed`.** -/
+theorem PiRed.lift {env env' : Env md} (hx : EnvExt env env') (hs : StoreClosed env)
+    {p g : Nat} {e e' : Expr md} (hi : PiRed env p e e') :
+    PiRed env' (p + g) (e.renFV (fun i => if i < p then i else i + g))
+      (e'.renFV (fun i => if i < p then i else i + g)) :=
+  piRed_tr (Transport.lift hx hs p g) hi (Nat.le_refl p)
 
 end Ix.Kernel.Rules

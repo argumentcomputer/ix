@@ -488,15 +488,17 @@ theorem validate_role_evidence {t : Ix.Kernel.RoleTable} {ro : Ix.Kernel.Role}
       ev47.heap_extends.trans (ev80.heap_extends.trans
         (ev100.heap_extends.trans ev124.heap_extends))
     obtain ⟨_, _, _, _, _, _, m101_eq, _, _, m130_eq, _, _, m151_eq, _, _, m182_eq, _,
+      _, m_anc, _,
       v209, m210, cs220, v239, m240, cs250, v280, v281, m283, cs291, m303, cs311, cs326,
-      _, sg108, ev140, _, ev192, ev163, ev222, ev252, ev293, ev313, heq322, ev328, hc368⟩ :=
+      _, sg108, ev140, _, ev192, ev163, ev_anc, ev222, ev252, ev293, ev313, heq322, ev328, hc368⟩ :=
       Obs.«KernelRoles::validate_eqns».obs ev378
     have ext_sg : Heap.Extends m111 m101_eq := by
       cases sg108 with
       | Safe _ _ he63 _ => rw [he63]
       | other _ heq94 _ _ _ => exact absurd (Value.field.inj heq94) zero_ne_one
-    have ext_w : Heap.Extends m111 m151_eq :=
-      ext_sg.trans (ev140.heap_extends.trans (ev192.heap_extends.trans ev163.heap_extends))
+    have ext_w : Heap.Extends m111 m_anc :=
+      ext_sg.trans (ev140.heap_extends.trans (ev192.heap_extends.trans
+        (ev163.heap_extends.trans ev_anc.heap_extends)))
     have htbl_m210 : TableRep c₀.t m210 x_tbl :=
       htbl.mono (ext_ba.trans (ext_m111.trans (ext_w.trans ev222.heap_extends)))
     obtain ⟨es, hlist, hes⟩ :=

@@ -95,6 +95,10 @@ theorem admits_observed_of_checked {calls : List (Call F)} {bAddr : _root_.Addre
   opsOwn := h.opsOwn
   unitsLast := h.unitsLast
   evidenceRefs := h.evidenceRefs
+  eqnsBound := h.eqnsBound
+  eqnsProofs := h.eqnsProofs
+  eqnsAnchors := h.eqnsAnchors
+  walkedAnchors := h.walkedAnchors
 
 /-- The reading clause reads the run's records only. -/
 theorem admitsReads_observed_of_checked {calls : List (Call F)} {bAddr : _root_.Address}

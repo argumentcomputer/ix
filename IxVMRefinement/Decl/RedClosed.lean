@@ -239,10 +239,13 @@ theorem red_bclosed {md : Mode} {env : Env md} :
   | _, _, _, .delta hu, hS, he => lbb_unfoldDefinition hS hu he
   | _, _, _, .deltaThm _ _ _ hv .., _, _ => lbb_ilp _ _ hv
   | _, _, _, .eqProof _ _ _ _ _ _ _ _ hb .., _, _ => infer_full_bclosed hb rfl
+  | _, _, _, .defEqClosed _ _ _ _ hbb .., _, _ => hbb
   | _, _, _, .natLit _, _, _ => lbb_natLitToConstructor _
   | _, _, _, .natZeroLit _, _, _ => rfl
   | _, _, _, .strLit _, _, _ => lbb_strLitToConstructor _
+  | _, _, _, .strLitFold _, _, _ => rfl
   | _, _, _, .natSucc .., _, _ => rfl
+  | _, _, _, .natPred .., _, _ => rfl
   | _, _, _, .natOp _ _ _ _ _ _ hr, _, _ => lbb_natOpResult hr
   | _, _, _, .natAddSucc _ _, _, he => by
     have hb := (lbb_app_iff.mp (lbb_app_iff.mp he).1).2
@@ -307,6 +310,10 @@ theorem red_bclosed_etaProjCerts {md : Mode} {env : Env md} :
       {lpsT : List LevelParam} {idxs : List Nat},
       EtaProjCerts env d T us' targs b lpsT idxs → True
   | _, _, _, _, _, _, _, _ => trivial
+
+theorem red_bclosed_piRed {md : Mode} {env : Env md} :
+    ∀ {d : Nat} {e e' : Expr md}, PiRed env d e e' → True
+  | _, _, _, _ => trivial
 
 end
 

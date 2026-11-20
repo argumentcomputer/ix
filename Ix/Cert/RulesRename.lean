@@ -430,6 +430,27 @@ theorem red_rename (hR : Renaming P f env env') :
     intro l hl
     obtain ⟨l', hl', rfl⟩ := List.mem_map.mp hl
     exact List.mem_map.mpr ⟨l', hlp l' hl', rfl⟩
+  | _, _, _, .defEqClosed (a := a) hsp haf hab hbf hbb ha'f ha'b hb'f hb'b hia hra hib hrb hde, _ => by
+    have ha'g : _ := infer_good hR.found hR.roles hia rfl (fun l hl => by
+      rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar ha'f] at hl; cases hl)
+    have hb'g : _ := infer_good hR.found hR.roles hib rfl (fun l hl => by
+      rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hb'f] at hl; cases hl)
+    obtain ⟨-, ia⟩ := infer_rename hR hia ha'g
+    obtain ⟨-, ra⟩ := red_rename hR hra ha'g
+    obtain ⟨-, ib⟩ := infer_rename hR hib hb'g
+    obtain ⟨hbg, rb⟩ := red_rename hR hrb hb'g
+    have hsp' : isSortOrPi (a.mapKeys f) = false := by
+      cases a <;> first | exact hsp | rfl
+    exact ⟨hbg, .defEqClosed hsp'
+      (by rw [Expr.hasFvar_mapKeys]; exact haf)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact hab)
+      (by rw [Expr.hasFvar_mapKeys]; exact hbf)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact hbb)
+      (by rw [Expr.hasFvar_mapKeys]; exact ha'f)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact ha'b)
+      (by rw [Expr.hasFvar_mapKeys]; exact hb'f)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact hb'b)
+      ia ra ib rb (defEq_rename hR hde ha'g hb'g)⟩
   | _, _, _, .natLit h, _ => by
     refine ⟨natLitToConstructor_good hR.roles.pre _, ?_⟩
     rw [natLitToConstructor_mapKeys]
@@ -443,9 +464,20 @@ theorem red_rename (hR : Renaming P f env env') :
     refine ⟨strLitToConstructor_good hR.roles.pre hR.roles.str _, ?_⟩
     rw [strLitToConstructor_mapKeys]
     exact .strLit (by rw [strLitSupported_ren hR.rel hR.roles.str]; exact h)
+  | _, _, _, .strLitFold h, _ => by
+    refine ⟨hR.roles.str, ?_⟩
+    rw [strLitToConstructor_mapKeys]
+    exact .strLitFold (by rw [strLitSupported_ren hR.rel hR.roles.str]; exact h)
   | _, _, _, .natSucc hsup hw hn, he => by
     obtain ⟨-, rw'⟩ := red_rename hR hw he.2
     exact ⟨trivial, .natSucc (by rw [natLitSupported_ren hR.rel]; exact hsup) rw'
+      (by rw [rawNatLit?_mapKeys]; exact hn)⟩
+  | _, _, _, .natPred hst hw hn, he => by
+    obtain ⟨hcg, ha⟩ := he
+    obtain ⟨-, rw'⟩ := red_rename hR hw ha
+    exact ⟨trivial, .natPred (by
+      change natOpStored env' (Key.map f natPredName) = true
+      rw [natOpStored_ren hR.rel hcg]; exact hst) rw'
       (by rw [rawNatLit?_mapKeys]; exact hn)⟩
   | _, _, _, .natOp (c := c) hc hst hwa hn₁ hwb hn₂ hr, he => by
     obtain ⟨⟨hcg, ha⟩, hb⟩ := he
@@ -780,6 +812,67 @@ theorem defEq_rename (hR : Renaming P f env env') :
       (by simpa only [Expr.getAppArgs_mapKeys, List.map_take, ConstantVal.mapKeys_type,
             ConstantVal.mapKeys_levelParams, Expr.mapKeys_instantiateLevelParams] using hcerts')
       itb (defEq_rename hR hd gtb gta) hfields'
+  | _, _, _, .eqProof (a := a) (b := b) (p := p) (T := T) hfE haf hab hbf hbb hpf hpb hp ha hda hb
+      hdb hT hred hv, _, _ => by
+    have hpg : p.Good P := infer_good hR.found hR.roles hp rfl (fun l hl => by
+      rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hpf] at hl; cases hl)
+    obtain ⟨gS, iS⟩ := infer_rename hR hp hpg
+    have hTg : T.Good P := gS.1.1.2
+    have hag : a.Good P := gS.1.2
+    have hbg : b.Good P := gS.2
+    obtain ⟨gta, ita⟩ := infer_rename hR ha hag
+    obtain ⟨gtb, itb⟩ := infer_rename hR hb hbg
+    obtain ⟨gsT, itT⟩ := infer_rename hR hT hTg
+    obtain ⟨-, rs⟩ := red_rename hR hred gsT
+    exact .eqProof (hR.find hfE)
+      (by rw [Expr.hasFvar_mapKeys]; exact haf)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact hab)
+      (by rw [Expr.hasFvar_mapKeys]; exact hbf)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact hbb)
+      (by rw [Expr.hasFvar_mapKeys]; exact hpf)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact hpb)
+      iS ita (defEq_rename hR hda gta hTg) itb (defEq_rename hR hdb gtb hTg) itT rs hv
+  | _, _, _, .instClosed (ks := ks) (us := us) hlen haLv hbLv haf hab hbf hbb hde, ha, hb => by
+    have hgoodInst : ∀ e : Expr md, (e.instantiateLevelParams ks us).Good P → e.Good P := by
+      intro e hge
+      induction e with
+      | bvar | sort | lit => trivial
+      | fvar _ ty ih => exact ih hge
+      | const => exact hge
+      | app f' a' ihf iha => exact ⟨ihf hge.1, iha hge.2⟩
+      | lam t b _ iht ihb => exact ⟨iht hge.1, ihb hge.2⟩
+      | forallE t b _ iht ihb => exact ⟨iht hge.1, ihb hge.2⟩
+      | letE t v b _ iht ihv ihb => exact ⟨iht hge.1, ihv hge.2.1, ihb hge.2.2⟩
+      | proj _ _ e' ih => exact ⟨hge.1, ih hge.2⟩
+    have halp : ∀ e : Expr md, (e.mapKeys f).allLevelParamsDefined ks = e.allLevelParamsDefined ks := by
+      intro e
+      induction e with
+      | bvar | sort | const | lit => rfl
+      | fvar _ ty ih => exact ih
+      | app f' a' ihf iha => simp [Expr.mapKeys, Expr.allLevelParamsDefined, ihf, iha]
+      | lam t b _ iht ihb => simp [Expr.mapKeys, Expr.allLevelParamsDefined, iht, ihb]
+      | forallE t b _ iht ihb => simp [Expr.mapKeys, Expr.allLevelParamsDefined, iht, ihb]
+      | letE t v b _ iht ihv ihb => simp [Expr.mapKeys, Expr.allLevelParamsDefined, iht, ihv, ihb]
+      | proj _ _ e' ih => exact ih
+    rw [Expr.mapKeys_instantiateLevelParams, Expr.mapKeys_instantiateLevelParams]
+    exact .instClosed hlen
+      (by rw [halp]; exact haLv) (by rw [halp]; exact hbLv)
+      (by rw [Expr.hasFvar_mapKeys]; exact haf)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact hab)
+      (by rw [Expr.hasFvar_mapKeys]; exact hbf)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact hbb)
+      (defEq_rename hR hde (hgoodInst _ ha) (hgoodInst _ hb))
+  | _, _, _, .transClosed (b' := b') hbf hbb hb'f hb'b hib hpb hab hbc, ha, hc => by
+    have hb'g : b'.Good P := infer_good hR.found hR.roles hib rfl (fun l hl => by
+      rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hb'f] at hl; cases hl)
+    obtain ⟨_, ib⟩ := infer_rename hR hib hb'g
+    obtain ⟨hbg, pb⟩ := piRed_rename hR hpb hb'g
+    exact .transClosed
+      (by rw [Expr.hasFvar_mapKeys]; exact hbf)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact hbb)
+      (by rw [Expr.hasFvar_mapKeys]; exact hb'f)
+      (by rw [Expr.looseBVarsBounded_mapKeys]; exact hb'b)
+      ib pb (defEq_rename hR hab ha hbg) (defEq_rename hR hbc hbg hc)
 
 /-- **An inference, renamed**: a good subject has a good type, and the renamed
 subject infers the renamed type. -/
@@ -886,6 +979,30 @@ theorem etaProjCerts_rename (hR : Renaming P f env env') :
           exact ⟨ht, hb⟩)
     refine .cons (by rw [← projFnName_map]; exact hR.find hf) hlps (by simpa using hstrip)
       (by simpa using hcerts') (etaProjCerts_rename hR hrest hT ht hb)
+
+/-- **`PiRed`, renamed.** -/
+theorem piRed_rename (hR : Renaming P f env env') :
+    ∀ {d : Nat} {e e' : Expr md}, PiRed env d e e' → e.Good P →
+      e'.Good P ∧ PiRed env' d (e.mapKeys f) (e'.mapKeys f)
+  | _, _, _, .ofRed hr, he =>
+    let ⟨h1, h2⟩ := red_rename hR hr he
+    ⟨h1, .ofRed h2⟩
+  | _, _, _, .app hf ha, he =>
+    let ⟨hf1, hf2⟩ := piRed_rename hR hf he.1
+    let ⟨ha1, ha2⟩ := piRed_rename hR ha he.2
+    ⟨⟨hf1, ha1⟩, .app hf2 ha2⟩
+  | _, _, _, .forallE (A := A) (A' := A') (B := B) (B' := B') hws hA hB, he => by
+    obtain ⟨hga', hA'⟩ := piRed_rename hR hA he.1
+    obtain ⟨hgbopen', hB'⟩ := piRed_rename hR hB (good_inst_fvar he.2 he.1)
+    simp only [Expr.mapKeys_instantiate1, Expr.mapKeys] at hB'
+    refine ⟨⟨hga', good_of_instantiate1 B' 0 hgbopen'⟩,
+      .forallE (by rw [Expr.wscopedB_mapKeys]; exact hws) hA' hB'⟩
+  | _, _, _, .lam (A := A) (A' := A') (B := B) (B' := B') hws hA hB, he => by
+    obtain ⟨hga', hA'⟩ := piRed_rename hR hA he.1
+    obtain ⟨hgbopen', hB'⟩ := piRed_rename hR hB (good_inst_fvar he.2 he.1)
+    simp only [Expr.mapKeys_instantiate1, Expr.mapKeys] at hB'
+    refine ⟨⟨hga', good_of_instantiate1 B' 0 hgbopen'⟩,
+      .lam (by rw [Expr.wscopedB_mapKeys]; exact hws) hA' hB'⟩
 
 end
 

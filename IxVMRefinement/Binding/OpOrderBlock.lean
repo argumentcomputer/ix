@@ -1326,10 +1326,11 @@ private theorem groupReach_not_inert_wf {calls : List (Call F)} {bAddr : _root_.
     {y : _root_.Address} (hy : GroupReach t E₀ g y)
     {ro : Ix.Kernel.Role} (had : t.addressOf? ro = some y) (hin : ro.inert = true) : False := by
   have hwf := (hvalAll (Ix.SpecDigest.groupOf ro) ro (role_mem_roleGroup ro)).wf
-  rcases hy.root_or_allowed hC (hvalAll g) hw with ⟨r', hr', hwk, had'⟩ | ⟨cb, ms, hcb, hms⟩ | hal
+  rcases hy.root_or_allowed hC (hvalAll g) hw with ⟨_, _, r', hni, had'⟩ | ⟨cb, ms, hcb, hms⟩ |
+      hal | ⟨h46, -⟩
   · have e : r' = ro := addressOf_role_inj hwf had' had
     subst e
-    rw [walked_not_inert r' hwk] at hin
+    rw [hni] at hin
     cases hin
   · exact roleBound_notBlock hC.runStore
       (hvalAll (Ix.SpecDigest.groupOf ro) ro (role_mem_roleGroup ro)) had hcb ⟨ms, hms⟩
@@ -1345,6 +1346,7 @@ private theorem groupReach_not_inert_wf {calls : List (Call F)} {bAddr : _root_.
     have hlt33 : Ix.SpecDigest.groupOf ro < 33 := by
       cases ro <;> first | exact absurd hin (by decide) | decide
     omega
+  · omega
 
 /-! ## Master induction: every `GroupReach g` node (`33 ≤ g ≤ 40`) is entered by the scan -/
 
@@ -1428,6 +1430,14 @@ theorem groupReach_in_scan_wf {calls : List (Call F)} {bAddr : _root_.Address}
         (GroupReach.evidenceRef hr hm hthm hu hne hns) had hin).elim
     · rw [hyl] at hyent
       exact ⟨ent, hyent, hcl⟩
+  | eqnsProof hr h5 _ _ =>
+    have hgr := groupOf_of_mem_roleGroup hr
+    have h46 := specKind5_group_ge_46 _ h5
+    omega
+  | eqnsAnchor hr h5 _ _ =>
+    have hgr := groupOf_of_mem_roleGroup hr
+    have h46 := specKind5_group_ge_46 _ h5
+    omega
 
 /-! ## Discharging `blockSteps` and well-founded `payloadOps` -/
 

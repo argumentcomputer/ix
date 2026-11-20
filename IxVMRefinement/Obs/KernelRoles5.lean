@@ -17,6 +17,410 @@ namespace IxVM.Refinement.Obs
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 
+/-- The evaluation paths of `KernelRoles::axiom_role_standing`: one constructor per combination of selected arms. -/
+inductive «KernelRoles::axiom_role_standing».Path (x_r1 : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | n0
+      (hv14 : x_r1 = (.field 0))
+      (he15 : r = (.field 0))
+      (he16 : h' = h)
+      (hc17 : calls = [])
+  | other_n0
+      (v22 : SourceValue F) (m40 : Heap F) (y49 : SourceValue F) (cs60 : List (Call F))
+      (hne18 : (x_r1 : SourceValue F) ≠ (.field 0))
+      (op37 : evalBinOp .sub (x_r1 : SourceValue F) ((.field 1) : SourceValue F) = .ok v22)
+      (ev62 : ObsFn W "KernelRoleSpec::role_propext" [] h y49 m40 cs60)
+      (op55 : evalBinOp .sub (v22 : SourceValue F) (y49 : SourceValue F) = .ok (.field 0))
+      (he67 : r = (.field 1))
+      (he68 : h' = m40)
+      (hc69 : calls = ((⟨"KernelRoleSpec::role_propext", [], h⟩ : Call F) :: cs60))
+  | other_other_n0
+      (v22 : SourceValue F) (v39 : SourceValue F) (m40 : Heap F) (y49 : SourceValue F) (cs60 : List (Call F)) (m75 : Heap F) (y84 : SourceValue F) (cs95 : List (Call F))
+      (hne18 : (x_r1 : SourceValue F) ≠ (.field 0))
+      (op37 : evalBinOp .sub (x_r1 : SourceValue F) ((.field 1) : SourceValue F) = .ok v22)
+      (ev62 : ObsFn W "KernelRoleSpec::role_propext" [] h y49 m40 cs60)
+      (op55 : evalBinOp .sub (v22 : SourceValue F) (y49 : SourceValue F) = .ok v39)
+      (hne70 : (v39 : SourceValue F) ≠ (.field 0))
+      (ev97 : ObsFn W "KernelRoleSpec::role_choice" [] m40 y84 m75 cs95)
+      (op90 : evalBinOp .sub (v22 : SourceValue F) (y84 : SourceValue F) = .ok (.field 0))
+      (he102 : r = (.field 1))
+      (he103 : h' = m75)
+      (hc104 : calls = ((⟨"KernelRoleSpec::role_propext", [], h⟩ : Call F) :: (cs60 ++ ((⟨"KernelRoleSpec::role_choice", [], m40⟩ : Call F) :: cs95))))
+  | other_other_other_n0
+      (v22 : SourceValue F) (v39 : SourceValue F) (m40 : Heap F) (y49 : SourceValue F) (cs60 : List (Call F)) (v74 : SourceValue F) (m75 : Heap F) (y84 : SourceValue F) (cs95 : List (Call F)) (m110 : Heap F) (y119 : SourceValue F) (cs130 : List (Call F))
+      (hne18 : (x_r1 : SourceValue F) ≠ (.field 0))
+      (op37 : evalBinOp .sub (x_r1 : SourceValue F) ((.field 1) : SourceValue F) = .ok v22)
+      (ev62 : ObsFn W "KernelRoleSpec::role_propext" [] h y49 m40 cs60)
+      (op55 : evalBinOp .sub (v22 : SourceValue F) (y49 : SourceValue F) = .ok v39)
+      (hne70 : (v39 : SourceValue F) ≠ (.field 0))
+      (ev97 : ObsFn W "KernelRoleSpec::role_choice" [] m40 y84 m75 cs95)
+      (op90 : evalBinOp .sub (v22 : SourceValue F) (y84 : SourceValue F) = .ok v74)
+      (hne105 : (v74 : SourceValue F) ≠ (.field 0))
+      (ev132 : ObsFn W "KernelRoleSpec::role_quot_sound" [] m75 y119 m110 cs130)
+      (op125 : evalBinOp .sub (v22 : SourceValue F) (y119 : SourceValue F) = .ok (.field 0))
+      (he137 : r = (.field 1))
+      (he138 : h' = m110)
+      (hc139 : calls = ((⟨"KernelRoleSpec::role_propext", [], h⟩ : Call F) :: (cs60 ++ ((⟨"KernelRoleSpec::role_choice", [], m40⟩ : Call F) :: (cs95 ++ ((⟨"KernelRoleSpec::role_quot_sound", [], m75⟩ : Call F) :: cs130))))))
+  | other_other_other_other_n0
+      (v22 : SourceValue F) (v39 : SourceValue F) (m40 : Heap F) (y49 : SourceValue F) (cs60 : List (Call F)) (v74 : SourceValue F) (m75 : Heap F) (y84 : SourceValue F) (cs95 : List (Call F)) (v109 : SourceValue F) (m110 : Heap F) (y119 : SourceValue F) (cs130 : List (Call F)) (x153 : SourceValue F) (m155 : Heap F) (cs164 : List (Call F))
+      (hne18 : (x_r1 : SourceValue F) ≠ (.field 0))
+      (op37 : evalBinOp .sub (x_r1 : SourceValue F) ((.field 1) : SourceValue F) = .ok v22)
+      (ev62 : ObsFn W "KernelRoleSpec::role_propext" [] h y49 m40 cs60)
+      (op55 : evalBinOp .sub (v22 : SourceValue F) (y49 : SourceValue F) = .ok v39)
+      (hne70 : (v39 : SourceValue F) ≠ (.field 0))
+      (ev97 : ObsFn W "KernelRoleSpec::role_choice" [] m40 y84 m75 cs95)
+      (op90 : evalBinOp .sub (v22 : SourceValue F) (y84 : SourceValue F) = .ok v74)
+      (hne105 : (v74 : SourceValue F) ≠ (.field 0))
+      (ev132 : ObsFn W "KernelRoleSpec::role_quot_sound" [] m75 y119 m110 cs130)
+      (op125 : evalBinOp .sub (v22 : SourceValue F) (y119 : SourceValue F) = .ok v109)
+      (hne140 : (v109 : SourceValue F) ≠ (.field 0))
+      (ev166 : ObsFn W "KernelRoleSpec::role_spec_kind" [v22] m110 x153 m155 cs164)
+      (op160 : evalBinOp .sub (x153 : SourceValue F) ((.field 4) : SourceValue F) = .ok (.field 0))
+      (he179 : r = (.field 2))
+      (he180 : h' = m155)
+      (hc181 : calls = ((⟨"KernelRoleSpec::role_propext", [], h⟩ : Call F) :: (cs60 ++ ((⟨"KernelRoleSpec::role_choice", [], m40⟩ : Call F) :: (cs95 ++ ((⟨"KernelRoleSpec::role_quot_sound", [], m75⟩ : Call F) :: (cs130 ++ ((⟨"KernelRoleSpec::role_spec_kind", [v22], m110⟩ : Call F) :: cs164))))))))
+  | other_other_other_other_other
+      (v22 : SourceValue F) (v39 : SourceValue F) (m40 : Heap F) (y49 : SourceValue F) (cs60 : List (Call F)) (v74 : SourceValue F) (m75 : Heap F) (y84 : SourceValue F) (cs95 : List (Call F)) (v109 : SourceValue F) (m110 : Heap F) (y119 : SourceValue F) (cs130 : List (Call F)) (v144 : SourceValue F) (x153 : SourceValue F) (m155 : Heap F) (cs164 : List (Call F))
+      (hne18 : (x_r1 : SourceValue F) ≠ (.field 0))
+      (op37 : evalBinOp .sub (x_r1 : SourceValue F) ((.field 1) : SourceValue F) = .ok v22)
+      (ev62 : ObsFn W "KernelRoleSpec::role_propext" [] h y49 m40 cs60)
+      (op55 : evalBinOp .sub (v22 : SourceValue F) (y49 : SourceValue F) = .ok v39)
+      (hne70 : (v39 : SourceValue F) ≠ (.field 0))
+      (ev97 : ObsFn W "KernelRoleSpec::role_choice" [] m40 y84 m75 cs95)
+      (op90 : evalBinOp .sub (v22 : SourceValue F) (y84 : SourceValue F) = .ok v74)
+      (hne105 : (v74 : SourceValue F) ≠ (.field 0))
+      (ev132 : ObsFn W "KernelRoleSpec::role_quot_sound" [] m75 y119 m110 cs130)
+      (op125 : evalBinOp .sub (v22 : SourceValue F) (y119 : SourceValue F) = .ok v109)
+      (hne140 : (v109 : SourceValue F) ≠ (.field 0))
+      (ev166 : ObsFn W "KernelRoleSpec::role_spec_kind" [v22] m110 x153 m155 cs164)
+      (op160 : evalBinOp .sub (x153 : SourceValue F) ((.field 4) : SourceValue F) = .ok v144)
+      (hne182 : (v144 : SourceValue F) ≠ (.field 0))
+      (he186 : r = (.field 0))
+      (he187 : h' = m155)
+      (hc188 : calls = ((⟨"KernelRoleSpec::role_propext", [], h⟩ : Call F) :: (cs60 ++ ((⟨"KernelRoleSpec::role_choice", [], m40⟩ : Call F) :: (cs95 ++ ((⟨"KernelRoleSpec::role_quot_sound", [], m75⟩ : Call F) :: (cs130 ++ ((⟨"KernelRoleSpec::role_spec_kind", [v22], m110⟩ : Call F) :: cs164))))))))
+
+/-- **Every observed derivation of `KernelRoles::axiom_role_standing` takes one of its paths.** -/
+theorem «KernelRoles::axiom_role_standing».obs {x_r1 : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "KernelRoles::axiom_role_standing" [x_r1] h r h' calls) :
+    «KernelRoles::axiom_role_standing».Path x_r1 h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoles.axiom_role_standing.lookup
+    (by simp [IxVM.KernelRoles.axiom_role_standing, ControlLower.hasControl]) ev
+  simp only [IxVM.KernelRoles.axiom_role_standing] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  rcases selectArm_cons_inv sel8 with ⟨mt11, rfl⟩ | ⟨nm12, sel13⟩
+  · obtain ⟨hv14, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt11
+    obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+    exact «KernelRoles::axiom_role_standing».Path.n0 hv14 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne18 := MatchesConst.none_inv (MatchesConst.literal 0) nm12
+    rcases selectArm_cons_inv sel13 with ⟨mt19, rfl⟩ | ⟨nm20, sel21⟩
+    · obtain rfl := matchPattern_wildcard_inv mt19
+      obtain ⟨v22, m23, bs24, c25, c26, d27, mt28, d29, rfl⟩ := d9.letValue_inv
+      obtain ⟨x30, y31, m32, c33, c34, d35, d36, op37, rfl⟩ := d27.binary_inv
+      obtain ⟨l38, rfl, rfl⟩ := d35.var_inv
+      simp at l38
+      subst l38
+      obtain ⟨rfl, rfl, rfl⟩ := d36.literal_inv
+      obtain rfl := matchPattern_bind_inv mt28
+      obtain ⟨v39, m40, bs41, body42, c43, c44, d45, sel46, d47, rfl⟩ := d29.matchValue_inv
+      obtain ⟨x48, y49, m50, c51, c52, d53, d54, op55, rfl⟩ := d45.binary_inv
+      obtain ⟨l56, rfl, rfl⟩ := d53.var_inv
+      simp at l56
+      subst l56
+      obtain ⟨vs57, m58, c59, cs60, a61, ev62, rfl⟩ := d54.call_inv
+      rw [instanceName_plain_some] at ev62
+      obtain ⟨rfl, rfl, rfl⟩ := a61.nil_inv
+      rcases selectArm_cons_inv sel46 with ⟨mt63, rfl⟩ | ⟨nm64, sel65⟩
+      · obtain ⟨hv66, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt63
+        subst hv66
+        obtain ⟨rfl, rfl, rfl⟩ := d47.literal_inv
+        exact «KernelRoles::axiom_role_standing».Path.other_n0 _ _ _ _ hne18 op37 ev62 op55 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · have hne70 := MatchesConst.none_inv (MatchesConst.literal 0) nm64
+        rcases selectArm_cons_inv sel65 with ⟨mt71, rfl⟩ | ⟨nm72, sel73⟩
+        · obtain rfl := matchPattern_wildcard_inv mt71
+          obtain ⟨v74, m75, bs76, body77, c78, c79, d80, sel81, d82, rfl⟩ := d47.matchValue_inv
+          obtain ⟨x83, y84, m85, c86, c87, d88, d89, op90, rfl⟩ := d80.binary_inv
+          obtain ⟨l91, rfl, rfl⟩ := d88.var_inv
+          simp at l91
+          subst l91
+          obtain ⟨vs92, m93, c94, cs95, a96, ev97, rfl⟩ := d89.call_inv
+          rw [instanceName_plain_some] at ev97
+          obtain ⟨rfl, rfl, rfl⟩ := a96.nil_inv
+          rcases selectArm_cons_inv sel81 with ⟨mt98, rfl⟩ | ⟨nm99, sel100⟩
+          · obtain ⟨hv101, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt98
+            subst hv101
+            obtain ⟨rfl, rfl, rfl⟩ := d82.literal_inv
+            exact «KernelRoles::axiom_role_standing».Path.other_other_n0 _ _ _ _ _ _ _ _ hne18 op37 ev62 op55 hne70 ev97 op90 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+          · have hne105 := MatchesConst.none_inv (MatchesConst.literal 0) nm99
+            rcases selectArm_cons_inv sel100 with ⟨mt106, rfl⟩ | ⟨nm107, sel108⟩
+            · obtain rfl := matchPattern_wildcard_inv mt106
+              obtain ⟨v109, m110, bs111, body112, c113, c114, d115, sel116, d117, rfl⟩ := d82.matchValue_inv
+              obtain ⟨x118, y119, m120, c121, c122, d123, d124, op125, rfl⟩ := d115.binary_inv
+              obtain ⟨l126, rfl, rfl⟩ := d123.var_inv
+              simp at l126
+              subst l126
+              obtain ⟨vs127, m128, c129, cs130, a131, ev132, rfl⟩ := d124.call_inv
+              rw [instanceName_plain_some] at ev132
+              obtain ⟨rfl, rfl, rfl⟩ := a131.nil_inv
+              rcases selectArm_cons_inv sel116 with ⟨mt133, rfl⟩ | ⟨nm134, sel135⟩
+              · obtain ⟨hv136, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt133
+                subst hv136
+                obtain ⟨rfl, rfl, rfl⟩ := d117.literal_inv
+                exact «KernelRoles::axiom_role_standing».Path.other_other_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ hne18 op37 ev62 op55 hne70 ev97 op90 hne105 ev132 op125 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+              · have hne140 := MatchesConst.none_inv (MatchesConst.literal 0) nm134
+                rcases selectArm_cons_inv sel135 with ⟨mt141, rfl⟩ | ⟨nm142, sel143⟩
+                · obtain rfl := matchPattern_wildcard_inv mt141
+                  obtain ⟨v144, m145, bs146, body147, c148, c149, d150, sel151, d152, rfl⟩ := d117.matchValue_inv
+                  obtain ⟨x153, y154, m155, c156, c157, d158, d159, op160, rfl⟩ := d150.binary_inv
+                  obtain ⟨vs161, m162, c163, cs164, a165, ev166, rfl⟩ := d158.call_inv
+                  rw [instanceName_plain_some] at ev166
+                  obtain ⟨v167, vs168, m169, c170, c171, rfl, d172, a173, rfl⟩ := a165.cons_inv
+                  obtain ⟨l174, rfl, rfl⟩ := d172.var_inv
+                  simp at l174
+                  subst l174
+                  obtain ⟨rfl, rfl, rfl⟩ := a173.nil_inv
+                  obtain ⟨rfl, rfl, rfl⟩ := d159.literal_inv
+                  rcases selectArm_cons_inv sel151 with ⟨mt175, rfl⟩ | ⟨nm176, sel177⟩
+                  · obtain ⟨hv178, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt175
+                    subst hv178
+                    obtain ⟨rfl, rfl, rfl⟩ := d152.literal_inv
+                    exact «KernelRoles::axiom_role_standing».Path.other_other_other_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne18 op37 ev62 op55 hne70 ev97 op90 hne105 ev132 op125 hne140 ev166 op160 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                  · have hne182 := MatchesConst.none_inv (MatchesConst.literal 0) nm176
+                    rcases selectArm_cons_inv sel177 with ⟨mt183, rfl⟩ | ⟨nm184, sel185⟩
+                    · obtain rfl := matchPattern_wildcard_inv mt183
+                      obtain ⟨rfl, rfl, rfl⟩ := d152.literal_inv
+                      exact «KernelRoles::axiom_role_standing».Path.other_other_other_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne18 op37 ev62 op55 hne70 ev97 op90 hne105 ev132 op125 hne140 ev166 op160 hne182 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                    · exact (matchPattern_wildcard_none nm184).elim
+                · exact (matchPattern_wildcard_none nm142).elim
+            · exact (matchPattern_wildcard_none nm107).elim
+        · exact (matchPattern_wildcard_none nm72).elim
+    · exact (matchPattern_wildcard_none nm20).elim
+
+/-- The evaluation paths of `KernelRoles::assert_ref_allowed`: one constructor per combination of selected arms. -/
+inductive «KernelRoles::assert_ref_allowed».Path (x_rc x_a : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | n2
+      (m2 : Heap F) (cs13 : List (Call F))
+      (ev15 : ObsFn W "KernelRoles::axiom_standing" [x_rc, x_a] h (.field 2) m2 cs13)
+      (heq61 : ((.field 0) : SourceValue F) = (.field 1))
+      (he64 : r = (.tuple []))
+      (he65 : h' = m2)
+      (hc66 : calls = ((⟨"KernelRoles::axiom_standing", [x_rc, x_a], h⟩ : Call F) :: cs13))
+  | other
+      (v1 : SourceValue F) (m2 : Heap F) (cs13 : List (Call F))
+      (ev15 : ObsFn W "KernelRoles::axiom_standing" [x_rc, x_a] h v1 m2 cs13)
+      (hne67 : (v1 : SourceValue F) ≠ (.field 2))
+      (he73 : r = (.tuple []))
+      (he74 : h' = m2)
+      (hc75 : calls = ((⟨"KernelRoles::axiom_standing", [x_rc, x_a], h⟩ : Call F) :: cs13))
+
+/-- **Every observed derivation of `KernelRoles::assert_ref_allowed` takes one of its paths.** -/
+theorem «KernelRoles::assert_ref_allowed».obs {x_rc x_a : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "KernelRoles::assert_ref_allowed" [x_rc, x_a] h r h' calls) :
+    «KernelRoles::assert_ref_allowed».Path x_rc x_a h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoles.assert_ref_allowed.lookup
+    (by simp [IxVM.KernelRoles.assert_ref_allowed, ControlLower.hasControl]) ev
+  simp only [IxVM.KernelRoles.assert_ref_allowed] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
+  rw [instanceName_plain_some] at ev15
+  obtain ⟨v16, vs18, m19, c20, c21, rfl, d22, a23, rfl⟩ := a14.cons_inv
+  obtain ⟨l24, rfl, rfl⟩ := d22.var_inv
+  simp at l24
+  subst l24
+  obtain ⟨v17, vs25, m26, c27, c28, rfl, d29, a30, rfl⟩ := a23.cons_inv
+  obtain ⟨l31, rfl, rfl⟩ := d29.var_inv
+  simp at l31
+  subst l31
+  obtain ⟨rfl, rfl, rfl⟩ := a30.nil_inv
+  rcases selectArm_cons_inv sel8 with ⟨mt32, rfl⟩ | ⟨nm33, sel34⟩
+  · obtain ⟨hv35, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 2) mt32
+    subst hv35
+    obtain ⟨v36, m37, bs38, c39, c40, d41, mt42, d43, rfl⟩ := d9.letValue_inv
+    obtain ⟨vs44, a45, ap46⟩ := d41.builtin_inv
+    obtain ⟨v47, vs49, m50, c51, c52, rfl, d53, a54, rfl⟩ := a45.cons_inv
+    obtain ⟨rfl, rfl, rfl⟩ := d53.literal_inv
+    obtain ⟨v48, vs55, m56, c57, c58, rfl, d59, a60, rfl⟩ := a54.cons_inv
+    obtain ⟨rfl, rfl, rfl⟩ := d59.literal_inv
+    obtain ⟨rfl, rfl, rfl⟩ := a60.nil_inv
+    obtain ⟨heq61, rfl⟩ := Builtin.assertEq_inv ap46
+    obtain rfl := matchPattern_wildcard_inv mt42
+    obtain ⟨vs62, a63, rfl⟩ := d43.tuple_inv
+    obtain ⟨rfl, rfl, rfl⟩ := a63.nil_inv
+    exact «KernelRoles::assert_ref_allowed».Path.n2 _ _ ev15 heq61 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne67 := MatchesConst.none_inv (MatchesConst.literal 2) nm33
+    rcases selectArm_cons_inv sel34 with ⟨mt68, rfl⟩ | ⟨nm69, sel70⟩
+    · obtain rfl := matchPattern_wildcard_inv mt68
+      obtain ⟨vs71, a72, rfl⟩ := d9.tuple_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a72.nil_inv
+      exact «KernelRoles::assert_ref_allowed».Path.other _ _ _ ev15 hne67 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · exact (matchPattern_wildcard_none nm69).elim
+
+/-- The program resolves `KernelRoles::role_map_lookup_or_default` at each instance to its closure. -/
+theorem «KernelRoles::role_map_lookup_or_default».lookup (t_V : Generic.Ty) :
+    IxVM.source.program.sourceFunction? (Instance.mk "KernelRoles::role_map_lookup_or_default" [t_V]).symbol =
+      some { types := [("V", t_V)],
+             params := IxVM.KernelRoles.role_map_lookup_or_default.params.map fun (p, pt) => (p, (pt.subst [("V", t_V)]).toCore),
+             body := IxVM.KernelRoles.role_map_lookup_or_default.body } :=
+  Program.sourceFunction?_of_mem_one (f := IxVM.KernelRoles.role_map_lookup_or_default) IxVM.functionNames_nodup
+    (List.getElem_mem (l := IxVM.functions) (n := 228) (by decide +kernel)) rfl t_V
+
+/-- The evaluation paths of `KernelRoles::role_map_lookup_or_default`: one constructor per combination of selected arms. -/
+inductive «KernelRoles::role_map_lookup_or_default».Path (t_V : Generic.Ty) (x_key x_tree x_default : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Nil
+      (hv15 : x_tree = (.construct (Instance.mk "KernelRoles::RoleMap" [t_V]).symbol "Nil" []))
+      (he18 : r = x_default)
+      (he19 : h' = h)
+      (hc20 : calls = [])
+  | Node_n0
+      (w28 : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (x_left : SourceValue F) (x_right : SourceValue F)
+      (hne21 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "KernelRoles::RoleMap" [t_V]).symbol "Nil" vs)
+      (hv26 : x_tree = (.construct (Instance.mk "KernelRoles::RoleMap" [t_V]).symbol "Node" [w28, x_k, x_v, x_left, x_right]))
+      (op69 : evalBinOp .sub (x_key : SourceValue F) (x_k : SourceValue F) = .ok (.field 0))
+      (he87 : r = x_v)
+      (he88 : h' = h)
+      (hc89 : calls = [])
+  | Node_other_n1
+      (w28 : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (x_left : SourceValue F) (x_right : SourceValue F) (v54 : SourceValue F) (m95 : Heap F) (cs106 : List (Call F)) (cs132 : List (Call F)) (v136 : SourceValue F)
+      (hne21 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "KernelRoles::RoleMap" [t_V]).symbol "Nil" vs)
+      (hv26 : x_tree = (.construct (Instance.mk "KernelRoles::RoleMap" [t_V]).symbol "Node" [w28, x_k, x_v, x_left, x_right]))
+      (op69 : evalBinOp .sub (x_key : SourceValue F) (x_k : SourceValue F) = .ok v54)
+      (hne90 : (v54 : SourceValue F) ≠ (.field 0))
+      (ev108 : ObsFn W "UInt32::less_than_fields" [x_key, x_k] h (.field 1) m95 cs106)
+      (ld153 : loadValue m95 x_left = .ok v136)
+      (ev134 : ObsFn W (Instance.mk "KernelRoles::role_map_lookup_or_default" [t_V]).symbol [x_key, v136, x_default] m95 r h' cs132)
+      (hc162 : calls = ((⟨"UInt32::less_than_fields", [x_key, x_k], h⟩ : Call F) :: (cs106 ++ ((⟨(Instance.mk "KernelRoles::role_map_lookup_or_default" [t_V]).symbol, [x_key, v136, x_default], m95⟩ : Call F) :: cs132))))
+  | Node_other_other
+      (w28 : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (x_left : SourceValue F) (x_right : SourceValue F) (v54 : SourceValue F) (v94 : SourceValue F) (m95 : Heap F) (cs106 : List (Call F)) (cs170 : List (Call F)) (v174 : SourceValue F)
+      (hne21 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "KernelRoles::RoleMap" [t_V]).symbol "Nil" vs)
+      (hv26 : x_tree = (.construct (Instance.mk "KernelRoles::RoleMap" [t_V]).symbol "Node" [w28, x_k, x_v, x_left, x_right]))
+      (op69 : evalBinOp .sub (x_key : SourceValue F) (x_k : SourceValue F) = .ok v54)
+      (hne90 : (v54 : SourceValue F) ≠ (.field 0))
+      (ev108 : ObsFn W "UInt32::less_than_fields" [x_key, x_k] h v94 m95 cs106)
+      (hne163 : (v94 : SourceValue F) ≠ (.field 1))
+      (ld191 : loadValue m95 x_right = .ok v174)
+      (ev172 : ObsFn W (Instance.mk "KernelRoles::role_map_lookup_or_default" [t_V]).symbol [x_key, v174, x_default] m95 r h' cs170)
+      (hc200 : calls = ((⟨"UInt32::less_than_fields", [x_key, x_k], h⟩ : Call F) :: (cs106 ++ ((⟨(Instance.mk "KernelRoles::role_map_lookup_or_default" [t_V]).symbol, [x_key, v174, x_default], m95⟩ : Call F) :: cs170))))
+
+/-- **Every observed derivation of `KernelRoles::role_map_lookup_or_default` takes one of its paths.** -/
+theorem «KernelRoles::role_map_lookup_or_default».obs {t_V : Generic.Ty} {x_key x_tree x_default : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W (Instance.mk "KernelRoles::role_map_lookup_or_default" [t_V]).symbol [x_key, x_tree, x_default] h r h' calls) :
+    «KernelRoles::role_map_lookup_or_default».Path t_V x_key x_tree x_default h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) («KernelRoles::role_map_lookup_or_default».lookup t_V)
+    (by simp [IxVM.KernelRoles.role_map_lookup_or_default, ControlLower.hasControl]) ev
+  simp only [IxVM.KernelRoles.role_map_lookup_or_default] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  rcases selectArm_cons_inv sel8 with ⟨mt11, rfl⟩ | ⟨nm12, sel13⟩
+  · obtain ⟨vs14, hv15, -, ml16⟩ := matchPattern_construct_inv mt11
+    rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv15
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml16
+    obtain ⟨l17, rfl, rfl⟩ := d9.var_inv
+    simp at l17
+    subst l17
+    exact «KernelRoles::role_map_lookup_or_default».Path.Nil hv15 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne21 := matchPattern_construct_none (by trivial) nm12
+    simp only [constructorName_named, instanceName_some_one, subst_param_singleton] at hne21
+    rcases selectArm_cons_inv sel13 with ⟨mt22, rfl⟩ | ⟨nm23, sel24⟩
+    · obtain ⟨vs25, hv26, -, ml27⟩ := matchPattern_construct_inv mt22
+      rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv26
+      obtain ⟨w28, vs29, b30, b31, rfl, mt32, ml33, rfl⟩ := matchListWith_cons_inv ml27
+      obtain rfl := matchPattern_wildcard_inv mt32
+      obtain ⟨x_k, vs34, b35, b36, rfl, mt37, ml38, rfl⟩ := matchListWith_cons_inv ml33
+      obtain rfl := matchPattern_bind_inv mt37
+      obtain ⟨x_v, vs39, b40, b41, rfl, mt42, ml43, rfl⟩ := matchListWith_cons_inv ml38
+      obtain rfl := matchPattern_bind_inv mt42
+      obtain ⟨x_left, vs44, b45, b46, rfl, mt47, ml48, rfl⟩ := matchListWith_cons_inv ml43
+      obtain rfl := matchPattern_bind_inv mt47
+      obtain ⟨x_right, vs49, b50, b51, rfl, mt52, ml53, rfl⟩ := matchListWith_cons_inv ml48
+      obtain rfl := matchPattern_bind_inv mt52
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml53
+      obtain ⟨v54, m55, bs56, c57, c58, d59, mt60, d61, rfl⟩ := d9.letValue_inv
+      obtain ⟨x62, y63, m64, c65, c66, d67, d68, op69, rfl⟩ := d59.binary_inv
+      obtain ⟨l70, rfl, rfl⟩ := d67.var_inv
+      simp at l70
+      subst l70
+      obtain ⟨l71, rfl, rfl⟩ := d68.var_inv
+      simp at l71
+      subst l71
+      obtain rfl := matchPattern_bind_inv mt60
+      obtain ⟨v72, m73, bs74, body75, c76, c77, d78, sel79, d80, rfl⟩ := d61.matchValue_inv
+      obtain ⟨l81, rfl, rfl⟩ := d78.var_inv
+      simp at l81
+      subst l81
+      rcases selectArm_cons_inv sel79 with ⟨mt82, rfl⟩ | ⟨nm83, sel84⟩
+      · obtain ⟨hv85, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt82
+        subst hv85
+        obtain ⟨l86, rfl, rfl⟩ := d80.var_inv
+        simp at l86
+        subst l86
+        exact «KernelRoles::role_map_lookup_or_default».Path.Node_n0 _ _ _ _ _ hne21 hv26 op69 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · have hne90 := MatchesConst.none_inv (MatchesConst.literal 0) nm83
+        rcases selectArm_cons_inv sel84 with ⟨mt91, rfl⟩ | ⟨nm92, sel93⟩
+        · obtain rfl := matchPattern_wildcard_inv mt91
+          obtain ⟨v94, m95, bs96, body97, c98, c99, d100, sel101, d102, rfl⟩ := d80.matchValue_inv
+          obtain ⟨vs103, m104, c105, cs106, a107, ev108, rfl⟩ := d100.call_inv
+          rw [instanceName_plain_some] at ev108
+          obtain ⟨v109, vs111, m112, c113, c114, rfl, d115, a116, rfl⟩ := a107.cons_inv
+          obtain ⟨l117, rfl, rfl⟩ := d115.var_inv
+          simp at l117
+          subst l117
+          obtain ⟨v110, vs118, m119, c120, c121, rfl, d122, a123, rfl⟩ := a116.cons_inv
+          obtain ⟨l124, rfl, rfl⟩ := d122.var_inv
+          simp at l124
+          subst l124
+          obtain ⟨rfl, rfl, rfl⟩ := a123.nil_inv
+          rcases selectArm_cons_inv sel101 with ⟨mt125, rfl⟩ | ⟨nm126, sel127⟩
+          · obtain ⟨hv128, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt125
+            subst hv128
+            obtain ⟨vs129, m130, c131, cs132, a133, ev134, rfl⟩ := d102.call_inv
+            rw [instanceName_some_one, subst_param_singleton] at ev134
+            obtain ⟨v135, vs138, m139, c140, c141, rfl, d142, a143, rfl⟩ := a133.cons_inv
+            obtain ⟨l144, rfl, rfl⟩ := d142.var_inv
+            simp at l144
+            subst l144
+            obtain ⟨v136, vs145, m146, c147, c148, rfl, d149, a150, rfl⟩ := a143.cons_inv
+            obtain ⟨p151, d152, ld153⟩ := d149.load_inv
+            obtain ⟨l154, rfl, rfl⟩ := d152.var_inv
+            simp at l154
+            subst l154
+            obtain ⟨v137, vs155, m156, c157, c158, rfl, d159, a160, rfl⟩ := a150.cons_inv
+            obtain ⟨l161, rfl, rfl⟩ := d159.var_inv
+            simp at l161
+            subst l161
+            obtain ⟨rfl, rfl, rfl⟩ := a160.nil_inv
+            exact «KernelRoles::role_map_lookup_or_default».Path.Node_other_n1 _ _ _ _ _ _ _ _ _ _ hne21 hv26 op69 hne90 ev108 ld153 ev134 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
+          · have hne163 := MatchesConst.none_inv (MatchesConst.literal 1) nm126
+            rcases selectArm_cons_inv sel127 with ⟨mt164, rfl⟩ | ⟨nm165, sel166⟩
+            · obtain rfl := matchPattern_wildcard_inv mt164
+              obtain ⟨vs167, m168, c169, cs170, a171, ev172, rfl⟩ := d102.call_inv
+              rw [instanceName_some_one, subst_param_singleton] at ev172
+              obtain ⟨v173, vs176, m177, c178, c179, rfl, d180, a181, rfl⟩ := a171.cons_inv
+              obtain ⟨l182, rfl, rfl⟩ := d180.var_inv
+              simp at l182
+              subst l182
+              obtain ⟨v174, vs183, m184, c185, c186, rfl, d187, a188, rfl⟩ := a181.cons_inv
+              obtain ⟨p189, d190, ld191⟩ := d187.load_inv
+              obtain ⟨l192, rfl, rfl⟩ := d190.var_inv
+              simp at l192
+              subst l192
+              obtain ⟨v175, vs193, m194, c195, c196, rfl, d197, a198, rfl⟩ := a188.cons_inv
+              obtain ⟨l199, rfl, rfl⟩ := d197.var_inv
+              simp at l199
+              subst l199
+              obtain ⟨rfl, rfl, rfl⟩ := a198.nil_inv
+              exact «KernelRoles::role_map_lookup_or_default».Path.Node_other_other _ _ _ _ _ _ _ _ _ _ _ hne21 hv26 op69 hne90 ev108 hne163 ld191 ev172 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
+            · exact (matchPattern_wildcard_none nm165).elim
+        · exact (matchPattern_wildcard_none nm92).elim
+    · have hne201 := matchPattern_construct_none (by trivial) nm23
+      simp only [constructorName_named, instanceName_some_one, subst_param_singleton] at hne201
+      exact (selectArm_nil_inv sel24).elim
+
 /-- The evaluation paths of `KernelRoles::role_ctx_limit`: one constructor per combination of selected arms. -/
 inductive «KernelRoles::role_ctx_limit».Path (x_rc : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where

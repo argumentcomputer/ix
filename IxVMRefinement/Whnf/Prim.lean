@@ -46,6 +46,12 @@ theorem natOpOf_nativeOp (ro : Ix.Kernel.Role) (h1 : (Ix.SpecDigest.nativeOp ro)
     Specs.Whnf.natOpOf (Ix.SpecDigest.nativeOp ro).2 = some ro := by
   cases ro <;> first | rfl | exact absurd h1 (by decide)
 
+/-- The native rule table at an `Int` operation (family `6`) names the operation `intOpOf`
+reads. -/
+theorem intOpOf_nativeOp (ro : Ix.Kernel.Role) (h6 : (Ix.SpecDigest.nativeOp ro).1 = 6) :
+    Specs.Whnf.intOpOf (Ix.SpecDigest.nativeOp ro).2 = some ro := by
+  cases ro <;> first | rfl | exact absurd h6 (by decide)
+
 theorem nativeOp_lt (ro : Ix.Kernel.Role) :
     (Ix.SpecDigest.nativeOp ro).1 < 7 ∧ (Ix.SpecDigest.nativeOp ro).2 < 17 := by
   cases ro <;> decide
@@ -54,6 +60,12 @@ theorem nativeOp_lt (ro : Ix.Kernel.Role) :
 theorem natPrimOp_of_natOpOf {k : Nat} {ro : Ix.Kernel.Role}
     (h : Specs.Whnf.natOpOf k = some ro) : Specs.Nat.natPrimOp ro = some k := by
   unfold Specs.Whnf.natOpOf at h
+  split at h <;> first | (cases h; rfl) | cases h
+
+/-- The operation code `intOpOf` reads is the role's `Int` primitive code. -/
+theorem intPrimOp_of_intOpOf {k : Nat} {ro : Ix.Kernel.Role}
+    (h : Specs.Whnf.intOpOf k = some ro) : Specs.Nat.intPrimOp ro = some k := by
+  unfold Specs.Whnf.intOpOf at h
   split at h <;> first | (cases h; rfl) | cases h
 
 /-- **A spine of reducts**: an application's arguments reduce pointwise (`Red.appArg` under
@@ -91,6 +103,8 @@ theorem prim_family_full (c : ScopedCtx) (hc : ScopedCoreBase c) {rc ap : Source
     ∃ f o : F, r = .tuple [.field f, .field o] ∧ (f ≠ 0 →
       (∃ role, c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
       (f = 1 → ∃ role, Specs.Whnf.natOpOf (ZMod.val o) = some role ∧
+        c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
+      (f = 6 → ∃ role, Specs.Whnf.intOpOf (ZMod.val o) = some role ∧
         c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role)) := by
   rcases Obs.«KernelWhnf::prim_family».obs ev with
     ⟨v1, m2, cs12, m92, cs94, x_op, ev14, sg99, he131, he144, hc145⟩ |
@@ -123,14 +137,22 @@ theorem prim_family_full (c : ScopedCtx) (hc : ScopedCoreBase c) {rc ap : Source
         simpa using e
       subst hro
       refine ⟨((Ix.SpecDigest.nativeOp ro).1 : F), ((Ix.SpecDigest.nativeOp ro).2 : F), hpf,
-        fun _ => ⟨⟨ro, hb', hf'⟩, fun h1 => ⟨ro, ?_, hb', hf'⟩⟩⟩
-      obtain ⟨hl1, hl2⟩ := nativeOp_lt ro
-      have h1' : (Ix.SpecDigest.nativeOp ro).1 = 1 := by
-        have := congrArg ZMod.val h1
-        rwa [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).1) (by omega), NatAux.val_one]
-          at this
-      rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).2) (by omega)]
-      exact natOpOf_nativeOp ro h1'
+        fun _ => ⟨⟨ro, hb', hf'⟩, fun h1 => ⟨ro, ?_, hb', hf'⟩, fun h6 => ⟨ro, ?_, hb', hf'⟩⟩⟩
+      · obtain ⟨hl1, hl2⟩ := nativeOp_lt ro
+        have h1' : (Ix.SpecDigest.nativeOp ro).1 = 1 := by
+          have := congrArg ZMod.val h1
+          rwa [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).1) (by omega), NatAux.val_one]
+            at this
+        rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).2) (by omega)]
+        exact natOpOf_nativeOp ro h1'
+      · obtain ⟨hl1, hl2⟩ := nativeOp_lt ro
+        have h6' : (Ix.SpecDigest.nativeOp ro).1 = 6 := by
+          have := congrArg ZMod.val h6
+          rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).1) (by omega)] at this
+          have h6v : ZMod.val ((6 : Nat) : F) = 6 := NatAux.val_natCast (by norm_num)
+          simpa using this.trans h6v
+        rw [NatAux.val_natCast (n := (Ix.SpecDigest.nativeOp ro).2) (by omega)]
+        exact intOpOf_nativeOp ro h6'
 
 end WhnfAux
 
@@ -180,7 +202,8 @@ theorem try_prim_dispatch_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : L
   subst hargs
   rcases Obs.«KernelWhnf::try_prim_dispatch».obs ev with
     ⟨m21, cs31, x_op, cs80, ld12, ev33, ev82, hc123⟩ |
-    ⟨m21, cs31, x_fam, x_op, m140, ld12, ev33, hne124, he132, hm148, he159, hc160⟩ |
+    ⟨m21, cs31, x_op, cs_int, ld12, ev33, ev_int, hc_int⟩ |
+    ⟨m21, cs31, x_fam, x_op, m140, ld12, ev33, hne124, hne6, he132, hm148, he159, hc160⟩ |
     ⟨v1, m177, ld12, hne161, he169, hm185, he196, hc197⟩
   · subst hc123
     obtain rfl := WhnfAux.lvListRep_nil hus ld12
@@ -189,13 +212,32 @@ theorem try_prim_dispatch_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : L
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hfo
     obtain ⟨hf, rfl⟩ := hfo
     have hf1 : f = 1 := (Value.field.inj hf).symm
-    obtain ⟨-, hnat⟩ := hspec (by rw [hf1]; exact one_ne_zero)
+    obtain ⟨-, hnat, -⟩ := hspec (by rw [hf1]; exact one_ne_zero)
     obtain ⟨role, hrole, haddr, hforce⟩ := hnat hf1
     have e0 := ObsFn.heap_extends ev33
     exact ih.get (.whnf .try_nat_dispatch_prewhnf) (by lt_calls) ev82 rc addr _ sp types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ (types_mono e0 htypes) a o role
       As (Bytes.repAddressRef_heapMono₂ addrTy e0 ha) rfl hrole haddr hforce (tml_mono e0 hAs) t x
       hr ht
+  · subst hc_int
+    obtain rfl := WhnfAux.lvListRep_nil hus ld12
+    obtain ⟨f, o, hfo, hspec⟩ := WhnfAux.prim_family_full c hc ev33 (ih.mono (by lt_calls))
+      (good.sub fun x hx => by simp [hx]) hrc ha
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hfo
+    obtain ⟨hf, rfl⟩ := hfo
+    have hf6 : f = 6 := (Value.field.inj hf).symm
+    have h6nz : (6 : F) ≠ 0 := by
+      intro h0
+      have h6v : ZMod.val ((6 : Nat) : F) = 6 := NatAux.val_natCast (by norm_num)
+      rw [Nat.cast_ofNat, h0, ZMod.val_zero] at h6v
+      exact absurd h6v (by decide)
+    obtain ⟨-, -, hint⟩ := hspec (by rw [hf6]; exact h6nz)
+    obtain ⟨role, hrole, haddr, hforce⟩ := hint hf6
+    have e0 := ObsFn.heap_extends ev33
+    exact ih.get (.nat .try_int_prim_dispatch) (by lt_calls) ev_int rc o sp types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) a
+      ⟨role, WhnfAux.intPrimOp_of_intOpOf hrole, haddr, hforce⟩ d Γ (types_mono e0 htypes) As
+      (tml_mono e0 hAs) t x hr (WhnfAux.tag12_ne_zero ht)
   · exact (WhnfAux.tag12_absurd ht (hr.symm.trans he132)).elim
   · exact (WhnfAux.tag12_absurd ht (hr.symm.trans he169)).elim
 

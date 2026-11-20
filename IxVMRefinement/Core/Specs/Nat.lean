@@ -66,6 +66,31 @@ and `role_of`'s group test). -/
 def NatOpAt (c : ScopedCtx) (a : Bytes.Address) (o : Nat) : Prop :=
   ∃ r, natPrimOp r = some o ∧ c.t.addressOf? r = some (ixAddr a) ∧ c.inForce r
 
+/-- **The `Int` primitive a role is**: its operation code in `KernelRoleSpec::role_prim_family`
+(family `6`), by role. -/
+def intPrimOp : Ix.Kernel.Role → Option Nat
+  | .intNeg => some 1
+  | .intNatAbs => some 2
+  | .intBmod => some 3
+  | .intBdiv => some 4
+  | .intPow => some 5
+  | .intAdd => some 6
+  | .intSub => some 7
+  | .intMul => some 8
+  | .intEmod => some 9
+  | .intEdiv => some 10
+  | _ => none
+
+/-- **The address `a` is bound to the `Int` operation with code `o`, a role in force.** -/
+def IntOpAt (c : ScopedCtx) (a : Bytes.Address) (o : Nat) : Prop :=
+  ∃ r, intPrimOp r = some o ∧ c.t.addressOf? r = some (ixAddr a) ∧ c.inForce r
+
+/-- The signed integer represented by a sign bit `s ∈ {0, 1}` and magnitude `m : Nat`:
+zero is always `Int.ofNat 0`; `s = 0` gives `Int.ofNat m`, `s = 1` with `m > 0` gives
+`Int.negSucc (m - 1)`. -/
+def intOfSignMag (s : F) (m : Nat) : Int :=
+  if s = 0 ∨ m = 0 then Int.ofNat m else Int.negSucc (m - 1)
+
 /-- **The character list a string literal expands to**, over the expansion's `List.nil Char`
 (`N`), `List.cons Char` (`C`) and `Char.ofNat` (`K`): `strLitToConstructor`'s fold. -/
 def charList (N C K : KExpr) : List Char → KExpr
@@ -440,6 +465,123 @@ def try_nat_dispatch : SpecFn := fun c args h r h' calls =>
         ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
           ∃ E', c.tm d Γ h' E' x ∧ Red c.env d (mkAppN (.const (c.κ (ixAddr a)) []) As) E'
 
+/-! ## `KernelNatPrim`: `Int` natives -/
+
+/-- `try_extract_nat_or_whnf(rc, e, types)`: tag `1` reads a `Nat` value from `e` directly or
+after `whnf(rc, e, types)`. -/
+def try_extract_nat_or_whnf : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → ∀ x, r = .tuple [.field 1, x] →
+      ∃ n, RepLimbsC h' n x ∧ Red c.env d E (natLit n)
+
+/-- `try_extract_int_prim(rc, e, types)`: tag `1` reads a signed integer literal (`Int.ofNat n` or
+`Int.negSucc n`, empty level list) whose argument extracts as a `Nat` directly or after `whnf`. -/
+def try_extract_int_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → ∀ sv m, r = .tuple [.field 1, sv, m] →
+      ∃ (s : F) (n : Nat), sv = .field s ∧ (s = 0 ∨ s = 1) ∧ (s = 1 → 0 < n) ∧ RepLimbsC h' n m ∧
+        Red c.env d E (intLitExpr (intOfSignMag s n))
+
+/-- `mk_int_prim(rc, sign, magnitude)`: the closed expression `intLitExpr (intOfSignMag sign m)`
+under `PrimEqnEnv c.env` (which keeps `Int.ofNat` and `Int.negSucc` stored). -/
+def mk_int_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (s : F) mag, args = [rc, .field s, mag] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env → (s = 0 ∨ s = 1) → ∀ m, RepLimbs h m mag →
+      c.tmc h' (intLitExpr (intOfSignMag s m)) r
+
+/-- `int_add_prim(rc, sa, a, sb, b)`: the signed sum. -/
+def int_add_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (sa : F) a (sb : F) b, args = [rc, .field sa, a, .field sb, b] → CoreGood c calls →
+    c.rc h rc → PrimEqnEnv c.env → (sa = 0 ∨ sa = 1) → (sb = 0 ∨ sb = 1) →
+    ∀ na nb, RepLimbs h na a → RepLimbs h nb b →
+      c.tmc h' (intLitExpr (intOfSignMag sa na + intOfSignMag sb nb)) r
+
+/-- `int_emod_prim(rc, sa, a, b)`: the Euclidean remainder modulo `nb` (equals `x.emod y` for
+any sign of `y` with magnitude `nb`). -/
+def int_emod_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (sa : F) a b, args = [rc, .field sa, a, b] → CoreGood c calls →
+    c.rc h rc → PrimEqnEnv c.env → (sa = 0 ∨ sa = 1) →
+    ∀ na nb, RepLimbs h na a → RepLimbs h nb b →
+      c.tmc h' (intLitExpr ((intOfSignMag sa na).emod (Int.ofNat nb))) r
+
+/-- `int_ediv_prim(rc, sa, a, sb, b)`: the Euclidean quotient. -/
+def int_ediv_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (sa : F) a (sb : F) b, args = [rc, .field sa, a, .field sb, b] → CoreGood c calls →
+    c.rc h rc → PrimEqnEnv c.env → (sa = 0 ∨ sa = 1) → (sb = 0 ∨ sb = 1) →
+    ∀ na nb, RepLimbs h na a → RepLimbs h nb b →
+      c.tmc h' (intLitExpr ((intOfSignMag sa na).ediv (intOfSignMag sb nb))) r
+
+/-- `int_bmod_prim(rc, sa, a, m)`: the balanced remainder modulo `m`. -/
+def int_bmod_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (sa : F) a m, args = [rc, .field sa, a, m] → CoreGood c calls →
+    c.rc h rc → PrimEqnEnv c.env → (sa = 0 ∨ sa = 1) →
+    ∀ na nm, RepLimbs h na a → RepLimbs h nm m →
+      c.tmc h' (intLitExpr ((intOfSignMag sa na).bmod nm)) r
+
+/-- `int_bdiv_prim(rc, sa, a, m)`: the balanced quotient modulo `m`. -/
+def int_bdiv_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (sa : F) a m, args = [rc, .field sa, a, m] → CoreGood c calls →
+    c.rc h rc → PrimEqnEnv c.env → (sa = 0 ∨ sa = 1) →
+    ∀ na nm, RepLimbs h na a → RepLimbs h nm m →
+      c.tmc h' (intLitExpr ((intOfSignMag sa na).bdiv nm)) r
+
+/-- `try_int_unop_dispatch(rc, op, a0, post, types)`: unary `Int` dispatch (`op ∈ {1, 2}`). -/
+def try_int_unop_dispatch : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) a0 post types, args = [rc, .field o, a0, post, types] → CoreGood c calls →
+    c.rc h rc → (ZMod.val o = 1 ∨ ZMod.val o = 2) →
+    ∀ headAddr, IntOpAt c headAddr (ZMod.val o) →
+      ∀ d Γ, c.types Γ h d types → ∀ A₀ Ps, c.tm d Γ h A₀ a0 → c.tml d Γ h Ps post →
+        ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+          ∃ E', c.tm d Γ h' E' x ∧
+            Red c.env d (mkAppN (.const (c.κ (ixAddr headAddr)) []) (A₀ :: Ps)) E'
+
+/-- `try_int_nat_arg_prim(rc, op, sa, a, b)`: binary `Int × Nat` operations (`bmod`, `bdiv`, `pow`). -/
+def try_int_nat_arg_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) (sa : F) a b, args = [rc, .field o, .field sa, a, b] → CoreGood c calls →
+    c.rc h rc → PrimEqnEnv c.env → (sa = 0 ∨ sa = 1) →
+    ∀ na nb, RepLimbs h na a → RepLimbs h nb b →
+    ∀ headAddr, IntOpAt c headAddr (ZMod.val o) →
+      ∀ x, r = .tuple [.field 1, x] →
+        ∃ E', c.tmc h' E' x ∧
+          ∀ d, Red c.env d
+            (.app (.app (.const (c.κ (ixAddr headAddr)) []) (intLitExpr (intOfSignMag sa na)))
+              (natLit nb)) E'
+
+/-- `try_int_int_arg_prim(rc, op, sa, a, sb, b)`: binary `Int × Int` operations
+(`add`, `sub`, `mul`, `emod`, `ediv`). -/
+def try_int_int_arg_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) (sa : F) a (sb : F) b, args = [rc, .field o, .field sa, a, .field sb, b] →
+    CoreGood c calls → c.rc h rc → PrimEqnEnv c.env → (sa = 0 ∨ sa = 1) → (sb = 0 ∨ sb = 1) →
+    ∀ na nb, RepLimbs h na a → RepLimbs h nb b →
+    ∀ headAddr, IntOpAt c headAddr (ZMod.val o) →
+      ∀ x, r = .tuple [.field 1, x] →
+        ∃ E', c.tmc h' E' x ∧
+          ∀ d, Red c.env d
+            (.app (.app (.const (c.κ (ixAddr headAddr)) []) (intLitExpr (intOfSignMag sa na)))
+              (intLitExpr (intOfSignMag sb nb))) E'
+
+/-- `try_int_binop_second(rc, op, a1, post, types, sa, a)`: second argument and result for
+binary `Int` operations. -/
+def try_int_binop_second : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) a1 post types (sa : F) a, args = [rc, .field o, a1, post, types, .field sa, a] →
+    CoreGood c calls → c.rc h rc → (sa = 0 ∨ sa = 1) →
+    ∀ headAddr, IntOpAt c headAddr (ZMod.val o) →
+      ∀ d Γ, c.types Γ h d types →
+        ∀ A₀ A₁ Ps na, RepLimbs h na a → Red c.env d A₀ (intLitExpr (intOfSignMag sa na)) →
+          c.tm d Γ h A₁ a1 → c.tml d Γ h Ps post →
+          ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+            ∃ E', c.tm d Γ h' E' x ∧
+              Red c.env d (mkAppN (.const (c.κ (ixAddr headAddr)) []) (A₀ :: A₁ :: Ps)) E'
+
+/-- `try_int_prim_dispatch(rc, op, spine, types)`: top-level dispatcher for family `6` (`Int`). -/
+def try_int_prim_dispatch : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) sp types, args = [rc, .field o, sp, types] → CoreGood c calls → c.rc h rc →
+    ∀ headAddr, IntOpAt c headAddr (ZMod.val o) →
+      ∀ d Γ, c.types Γ h d types → ∀ As, c.tml d Γ h As sp →
+        ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+          ∃ E', c.tm d Γ h' E' x ∧
+            Red c.env d (mkAppN (.const (c.κ (ixAddr headAddr)) []) As) E'
+
 /-! ## The family -/
 
 /-- The functions of the family. -/
@@ -457,6 +599,9 @@ inductive Fn where
   | try_extract_nat | try_extract_nat_app | try_nat_binop_addr | try_match_nat_add
   | cleanup_nat_offset_major | try_nat_offset_dispatch | try_nat_binop_dispatch
   | try_nat_dispatch
+  | try_extract_nat_or_whnf | try_extract_int_prim | mk_int_prim | int_add_prim | int_emod_prim | int_ediv_prim
+  | int_bmod_prim | int_bdiv_prim | try_int_unop_dispatch | try_int_nat_arg_prim
+  | try_int_int_arg_prim | try_int_binop_second | try_int_prim_dispatch
   deriving DecidableEq, Repr
 
 /-- The function's symbol, as `ObsFn` names it. -/
@@ -511,6 +656,19 @@ def Fn.name : Fn → String
   | .try_nat_offset_dispatch => "KernelNatPrim::try_nat_offset_dispatch"
   | .try_nat_binop_dispatch => "KernelNatPrim::try_nat_binop_dispatch"
   | .try_nat_dispatch => "KernelNatPrim::try_nat_dispatch"
+  | .try_extract_nat_or_whnf => "KernelNatPrim::try_extract_nat_or_whnf"
+  | .try_extract_int_prim => "KernelNatPrim::try_extract_int_prim"
+  | .mk_int_prim => "KernelNatPrim::mk_int_prim"
+  | .int_add_prim => "KernelNatPrim::int_add_prim"
+  | .int_emod_prim => "KernelNatPrim::int_emod_prim"
+  | .int_ediv_prim => "KernelNatPrim::int_ediv_prim"
+  | .int_bmod_prim => "KernelNatPrim::int_bmod_prim"
+  | .int_bdiv_prim => "KernelNatPrim::int_bdiv_prim"
+  | .try_int_unop_dispatch => "KernelNatPrim::try_int_unop_dispatch"
+  | .try_int_nat_arg_prim => "KernelNatPrim::try_int_nat_arg_prim"
+  | .try_int_int_arg_prim => "KernelNatPrim::try_int_int_arg_prim"
+  | .try_int_binop_second => "KernelNatPrim::try_int_binop_second"
+  | .try_int_prim_dispatch => "KernelNatPrim::try_int_prim_dispatch"
 
 /-- The function's spec. -/
 def Fn.spec : Fn → SpecFn
@@ -564,5 +722,18 @@ def Fn.spec : Fn → SpecFn
   | .try_nat_offset_dispatch => Specs.Nat.try_nat_offset_dispatch
   | .try_nat_binop_dispatch => Specs.Nat.try_nat_binop_dispatch
   | .try_nat_dispatch => Specs.Nat.try_nat_dispatch
+  | .try_extract_nat_or_whnf => Specs.Nat.try_extract_nat_or_whnf
+  | .try_extract_int_prim => Specs.Nat.try_extract_int_prim
+  | .mk_int_prim => Specs.Nat.mk_int_prim
+  | .int_add_prim => Specs.Nat.int_add_prim
+  | .int_emod_prim => Specs.Nat.int_emod_prim
+  | .int_ediv_prim => Specs.Nat.int_ediv_prim
+  | .int_bmod_prim => Specs.Nat.int_bmod_prim
+  | .int_bdiv_prim => Specs.Nat.int_bdiv_prim
+  | .try_int_unop_dispatch => Specs.Nat.try_int_unop_dispatch
+  | .try_int_nat_arg_prim => Specs.Nat.try_int_nat_arg_prim
+  | .try_int_int_arg_prim => Specs.Nat.try_int_int_arg_prim
+  | .try_int_binop_second => Specs.Nat.try_int_binop_second
+  | .try_int_prim_dispatch => Specs.Nat.try_int_prim_dispatch
 
 end IxVM.Refinement.Core.Specs.Nat

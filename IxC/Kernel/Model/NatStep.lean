@@ -119,6 +119,26 @@ theorem natSuccRow_of (mp : EnvModelM V μ env) (φ : LevelParam → Nat) :
   · intro ρ _
     rw [natLit_succ]
 
+/-- **`NatPredRow`, proved.** `Nat.pred` at a literal reading interprets as `n - 1`. -/
+theorem natPredRow_of (mp : EnvModelM V μ env) (φ : LevelParam → Nat) :
+    Rules.NatPredRow mp.base2 φ := by
+  intro d w n Δa ea hstored hraw hea _
+  have hguard := natOpGuardLaw_of mp Ix.Kernel.natPredName
+    (Or.inl (by cases md <;> decide)) hstored
+  obtain ⟨hnat, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hguard
+  obtain ⟨cvc, vc, hcnt, hfc, hlpc⟩ := hdeps Ix.Kernel.natPredName (by cases md <;> decide)
+  obtain ⟨fa, wa, hfa, hwa, rfl⟩ := denoteMeta_app_inv hea
+  obtain rfl : fa = mp.base2.acval Ix.Kernel.natPredName φ :=
+    denoteMeta_head hfc
+      (show (ConstantInfo.defnInfo cvc vc hcnt).toConstantVal.levelParams = [] from hlpc) hfa
+  obtain rfl : wa = natLit mp.base2 φ n :=
+    Option.some.inj (hwa.symm.trans (denoteMeta_rawNatLit mp.base2 hnat hraw d))
+  refine ⟨natLit mp.base2 φ (n - 1), denoteMeta_natLit_spine mp.base2 hnat d (n - 1),
+    fun ρ _ => (natLit_facts mp.base2 (mp.nat_heads φ) mp.acvalValid hnat ρ (n - 1)).1,
+    fun ρ _ => ?_⟩
+  rw [interp_app]
+  exact natOpV_pred mp.base2 (mp.nat_ops φ) (mp.nat_heads φ) mp.acvalValid hfc ρ n
+
 set_option maxHeartbeats 1600000 in
 /-- **`NatOpRow`, proved.**  The fourteen certified binary operations
 at two literal readings: the head reads to the stored operation's

@@ -142,11 +142,11 @@ theorem _root_.IxVM.Refinement.Typing.NativeUnitStep.overUnitStep
     (h : NativeUnitStep.{u} L t envT E₀ Stores Ec lc B cb) :
     OverUnitStep.{u} L t G R envT E₀ B cb := by
   intro env Reg hext hnd hcl href hfresh
-  obtain ⟨new, fam, hnd', hfr, hkeep, hnamed, hreads⟩ :=
+  obtain ⟨new, fam, hnd', hfr, hkeep, hnamed, hreads, hextE⟩ :=
     h env Reg hext hnd (hcl Ec hRc lc hc hl) href hfresh
   refine ⟨new, fun f => Reg f ∨ f = fam, hnd', hfr,
     fun E hE lim hc' hl' => hkeep E lim Reg (hStores E hE) (hcl E hE lim hc' hl'), ?_, hreads,
-    hnamed⟩
+    hnamed, hextE⟩
   intro ci hci
   rcases hnamed ci hci with ⟨x, hx, hn⟩ | ⟨k, s, hn⟩
   · rw [hn]

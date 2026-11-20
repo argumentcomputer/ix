@@ -348,6 +348,8 @@ private theorem roles_only_step (c : ScopedCtx) (hwf : c.t.wf = true) :
   | .role_quot_mk, _, _, _, _, _, ev, _ => role_quot_mk_step c ev
   | .role_quot_lift, _, _, _, _, _, ev, _ => role_quot_lift_step c ev
   | .role_quot_ind, _, _, _, _, _, ev, _ => role_quot_ind_step c ev
+  | .role_int_of_nat, _, _, _, _, _, ev, _ => role_int_of_nat_step c ev
+  | .role_int_neg_succ, _, _, _, _, _, ev, _ => role_int_neg_succ_step c ev
   | .role_prim_family, _, _, _, _, _, ev, _ => role_prim_family_step c ev
 
 end Steps
