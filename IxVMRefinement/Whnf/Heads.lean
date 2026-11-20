@@ -120,46 +120,78 @@ theorem nd_seg_ext {fam op rc addr lvls hd sp types : SourceValue F} {h h' : Hea
     {r : SourceValue F} {cs : List (Call F)}
     (sg : Obs.«KernelWhnf::whnf_nd_const_head».Seg1 fam op rc addr lvls hd sp types h r h' cs) :
     Heap.Extends h h' := by
-  rcases sg with ⟨m70, hv57, he62, hm78, he89, hc90⟩ |
+  rcases sg with ⟨hv57, he62, he89, hc90⟩ |
     ⟨v96, m97, cs107, m127, cs138, cs156, hne91, hv95, ev109, ev140, ev158, hc199⟩ |
-    ⟨v96, m97, cs107, v126, m127, cs138, m216, hne91, hv95, ev109, ev140, hne200, he208, hm224,
-      he235, hc236⟩ |
+    ⟨v96, m97, cs107, v126, m127, cs138, hne91, hv95, ev109, ev140, hne200, he208, he235, hc236⟩ |
     ⟨cs244, hne91, hne237, ev246, hc287⟩
-  · rw [he89, hm78]; exact Heap.Extends.snoc _ _
+  · rw [he89]
   · exact (ObsFn.heap_extends ev109).trans
       ((ObsFn.heap_extends ev140).trans (ObsFn.heap_extends ev158))
-  · rw [he235, hm224]
-    exact (ObsFn.heap_extends ev109).trans
-      ((ObsFn.heap_extends ev140).trans (Heap.Extends.snoc _ _))
+  · rw [he235]
+    exact (ObsFn.heap_extends ev109).trans (ObsFn.heap_extends ev140)
   · exact ObsFn.heap_extends ev246
 
 /-- The native segment's tags `1` and `2` are `try_prim_dispatch`'s. -/
-theorem nd_seg_prim (c : ScopedCtx) {fam op rc addr lvls hd sp types : SourceValue F} {h h' : Heap F}
+theorem nd_seg_prim (c : ScopedCtx) {f o : F} {rc addr lvls hd sp types : SourceValue F} {h h' : Heap F}
     {t : F} {x : SourceValue F} {cs : List (Call F)}
-    (sg : Obs.«KernelWhnf::whnf_nd_const_head».Seg1 fam op rc addr lvls hd sp types h
+    (sg : Obs.«KernelWhnf::whnf_nd_const_head».Seg1 (.field f) (.field o) rc addr lvls hd sp types h
       (.tuple [.field t, x]) h' cs)
     (ht : t = 1 ∨ t = 2) (ih : IH c cs) (good : CoreGood c cs) (hrc : c.rc h rc) {d : Nat}
     {Γ : Nat → KExpr} (htypes : c.types Γ h d types) {a : Bytes.Address} {us : List KLevel}
-    {As : List KExpr} (ha : RepAddr h a addr) (hus : LvListRep h us lvls)
-    (hAs : c.tml d Γ h As sp) :
+    {As : List KExpr} (ha : RepAddr h a addr) (hprim : f ≠ 0 → Specs.Whnf.PrimAt c a f o)
+    (hus : LvListRep h us lvls) (hAs : c.tml d Γ h As sp) :
     ∃ E, c.tm d Γ h' E x ∧
       Red c.env d (Specs.Whnf.mkAppN (.const (c.κ (ixAddr a)) us) As) E := by
-  rcases sg with ⟨m70, hv57, he62, hm78, he89, hc90⟩ |
+  rcases sg with ⟨hv57, he62, he89, hc90⟩ |
     ⟨v96, m97, cs107, m127, cs138, cs156, hne91, hv95, ev109, ev140, ev158, hc199⟩ |
-    ⟨v96, m97, cs107, v126, m127, cs138, m216, hne91, hv95, ev109, ev140, hne200, he208, hm224,
-      he235, hc236⟩ |
+    ⟨v96, m97, cs107, v126, m127, cs138, hne91, hv95, ev109, ev140, hne200, he208, he235, hc236⟩ |
     ⟨cs244, hne91, hne237, ev246, hc287⟩
   · exact (tag12_absurd ht he62).elim
   · subst hc199
     have ext := (ObsFn.heap_extends ev109).trans (ObsFn.heap_extends ev140)
-    exact ih.get (.whnf .try_prim_dispatch) (by lt_calls) ev158 rc addr lvls sp types rfl
+    exact ih.get (.whnf .try_prim_dispatch) (by lt_calls) ev158 rc f o addr lvls sp types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ (types_mono ext htypes) a us
-      As (Bytes.repAddressRef_heapMono₂ addrTy ext ha) (LvListRep.mono ext hus)
+      As (Bytes.repAddressRef_heapMono₂ addrTy ext ha) hprim (LvListRep.mono ext hus)
       (tml_mono ext hAs) t x rfl ht
   · exact (tag12_absurd ht he208).elim
   · subst hc287
-    exact ih.get (.whnf .try_prim_dispatch) (by lt_calls) ev246 rc addr lvls sp types rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes a us As ha hus hAs t x rfl ht
+    exact ih.get (.whnf .try_prim_dispatch) (by lt_calls) ev246 rc f o addr lvls sp types rfl
+      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes a us As ha hprim hus hAs t x rfl ht
+
+theorem nd_seg_proj_ext {e0 e1 e2 e3 e4 e5 e6 e7 e8 e9 e10 e11 v : SourceValue F}
+    {h m : Heap F} {cs : List (Call F)}
+    (sg : Obs.«KernelWhnf::whnf_nd_const_head».Seg_waxxjudx e0 e1 e2 e3 e4 e5 e6 e7 e8 e9 e10 e11 h v m cs) :
+    Heap.Extends h m := by
+  cases sg with
+  | n1_other_other_other_other _ _ _ _ _ _ _ ev1 ev2 _ =>
+    exact (ObsFn.heap_extends ev1).trans (ObsFn.heap_extends ev2)
+  | other _ _ _ ev1 _ hh _ =>
+    subst hh; exact ObsFn.heap_extends ev1
+
+theorem nd_seg_proj (c : ScopedCtx) {nl val ci prim fam op rc addr lvls hd sp types x : SourceValue F}
+    {h m : Heap F} {cs : List (Call F)}
+    (sg : Obs.«KernelWhnf::whnf_nd_const_head».Seg_waxxjudx nl val ci prim fam op rc addr lvls hd sp
+      types h (.tuple [.field 1, x]) m cs)
+    (ih : IH c cs) (good : CoreGood c cs)
+    {d : Nat} {Γ : Nat → KExpr} {k : KKey} {cv : Ix.Kernel.ConstantVal .anon}
+    {V : KExpr} {hn : Ix.Kernel.ReducibilityHint} {us : List KLevel} {As : List KExpr}
+    (hfind : c.env.find? k = some (.defnInfo cv V hn))
+    (hV : ∀ d Γ, c.tm d Γ h (posOf cv.levelParams V) val)
+    (hnd : cv.levelParams.Perm (List.range cv.levelParams.length)) (hlt_lp : cv.levelParams.length < 4294967296)
+    (hnl : nl = .field (cv.levelParams.length : F))
+    (hus : LvListRep h us lvls) (hAs : c.tml d Γ h As sp) :
+    ∃ E, c.tm d Γ m E x ∧ Red c.env d (Specs.Whnf.mkAppN (.const k us) As) E := by
+  cases sg with
+  | n1_other_other_other_other m1 cs1 _ _ _ _ cs2 ev1 ev2 hc_s =>
+    subst hc_s
+    have e1 := ObsFn.heap_extends ev1
+    exact ih.get (.whnf .try_reduce_projection_definition) (by lt_calls) ev2
+      val nl lvls sp rfl (good.sub fun z hz => by simp [hz]) d Γ k cv V hn us As hfind
+      (fun d' Γ' => Tm.mono e1 (hV d' Γ')) hnd hlt_lp hnl (LvListRep.mono e1 hus)
+      (tml_mono e1 hAs) x rfl
+  | other _ _ _ _ hr _ _ =>
+    simp only [Value.tuple.injEq, List.cons.injEq] at hr
+    exact absurd (Value.field.inj hr.1) one_ne_zero
 
 end WhnfAux
 
@@ -263,24 +295,32 @@ theorem whnf_nd_const_head_step (c : ScopedCtx) (hc : ScopedCoreBase c)
   subst hargs
   have p := Obs.«KernelWhnf::whnf_nd_const_head».obs ev
   cases p
-  case n1_bind m2 cs12 x_fam x__op m289 cs291 x_reduced cs328 ev14 sg296 ev330 hc =>
+  case n1_bind m2 cs12 x_fam x_op m289 cs291 x_reduced cs328 ev14 sg296 ev330 hc =>
     subst hc
+    obtain ⟨f, o, hfo, hprim⟩ := ih.get (.whnf .prim_family) (by lt_calls) ev14 rc addr rfl
+      (good.sub fun x hx => by simp [hx]) hrc a ha
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hfo
+    obtain ⟨rfl, rfl⟩ := hfo
     have e0 := ObsFn.heap_extends ev14
     obtain ⟨E, hE, hred⟩ := WhnfAux.nd_seg_prim c sg296 (.inl rfl) (ih.mono (by lt_calls))
       (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) (types_mono e0 htypes)
-      (Bytes.repAddressRef_heapMono₂ addrTy e0 ha) (LvListRep.mono e0 hus) (tml_mono e0 hAs)
+      (Bytes.repAddressRef_heapMono₂ addrTy e0 ha) hprim (LvListRep.mono e0 hus) (tml_mono e0 hAs)
     have ext := e0.trans (WhnfAux.nd_seg_ext sg296)
     obtain ⟨E', hE', hred'⟩ := ih.get (.whnf .whnf_nd) (by lt_calls) ev330 rc x_reduced types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ (types_mono ext htypes) E hE
     exact ⟨E', hE', .trans hred hred'⟩
-  case n2_bind m2 cs12 x_fam x__op m289 cs291 x_stuck ev14 sg296 he375 he376 hc =>
+  case n2_bind m2 cs12 x_fam x_op m289 cs291 x_stuck ev14 sg296 he375 he376 hc =>
     subst hc he375 he376
+    obtain ⟨f, o, hfo, hprim⟩ := ih.get (.whnf .prim_family) (by lt_calls) ev14 rc addr rfl
+      (good.sub fun x hx => by simp [hx]) hrc a ha
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hfo
+    obtain ⟨rfl, rfl⟩ := hfo
     have e0 := ObsFn.heap_extends ev14
     exact WhnfAux.nd_seg_prim c sg296 (.inr rfl) (ih.mono (by lt_calls))
       (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) (types_mono e0 htypes)
-      (Bytes.repAddressRef_heapMono₂ addrTy e0 ha) (LvListRep.mono e0 hus) (tml_mono e0 hAs)
-  case other_Defn_n1_bind m2 cs12 x_fam x__op v288 m289 cs291 m382 p389 cs395 x_nl w422 x_value
-      w423 w424 m451 cs461 x_reduced cs527 ev14 sg296 ev397 ld391 ev463 ev529 hc =>
+      (Bytes.repAddressRef_heapMono₂ addrTy e0 ha) hprim (LvListRep.mono e0 hus) (tml_mono e0 hAs)
+  case other_Defn_n1_bind m2 cs12 x_fam x_op v288 m289 cs291 m382 p389 cs395 x_nl w422 x_value
+      w423 w424 m451 cs461 x_reduced cs527 ev14 sg296 ev397 ld391 sg463 ev529 hc =>
     subst hc
     have ext := (ObsFn.heap_extends ev14).trans (WhnfAux.nd_seg_ext sg296)
     obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl (good.allowedTop (by simp_all)) (by resolve_key)
@@ -290,18 +330,18 @@ theorem whnf_nd_const_head_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     subst hv
     obtain ⟨cv, V, hn, rfl, ⟨hnl, hlt, hnd, -⟩, hV⟩ := CIRep.defn_inv hci
     have ext2 := ext.trans (ObsFn.heap_extends ev397)
-    obtain ⟨E, hE, hred⟩ := ih.get (.whnf .try_reduce_projection_definition) (by lt_calls) ev463
-      x_value x_nl lvls sp rfl (good.sub fun x hx => by simp [hx]) d Γ _ cv V hn us As hfind hV
-      hnd hlt hnl (LvListRep.mono ext2 hus) (tml_mono ext2 hAs) x_reduced rfl
-    have ext3 := ext2.trans (ObsFn.heap_extends ev463)
+    obtain ⟨E, hE, hred⟩ := WhnfAux.nd_seg_proj c sg463 (ih.mono (by lt_calls))
+      (good.sub fun x hx => by simp [hx]) hfind hV hnd hlt hnl (LvListRep.mono ext2 hus)
+      (tml_mono ext2 hAs)
+    have ext3 := ext2.trans (WhnfAux.nd_seg_proj_ext sg463)
     obtain ⟨E', hE', hred'⟩ := ih.get (.whnf .whnf_nd) (by lt_calls) ev529 rc x_reduced types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono ext3 hrc) d Γ (types_mono ext3 htypes) E hE
     exact ⟨E', hE', .trans hred hred'⟩
-  case other_Defn_other m2 cs12 x_fam x__op v288 m289 cs291 m382 p389 cs395 x_nl w422 x_value w423
-      w424 v450 m451 cs461 cs561 ev14 sg296 ev397 ld391 ev463 ev563 hc =>
+  case other_Defn_other m2 cs12 x_fam x_op v288 m289 cs291 m382 p389 cs395 x_nl w422 x_value w423
+      w424 v450 m451 cs461 cs561 ev14 sg296 ev397 ld391 sg463 ev563 hc =>
     subst hc
     have ext := (ObsFn.heap_extends ev14).trans ((WhnfAux.nd_seg_ext sg296).trans
-      ((ObsFn.heap_extends ev397).trans (ObsFn.heap_extends ev463)))
+      ((ObsFn.heap_extends ev397).trans (WhnfAux.nd_seg_proj_ext sg463)))
     exact ⟨_, ih.get (.whnf .apply_spine) (by lt_calls) ev563 hd sp rfl
       (good.sub fun x hx => by simp [hx]) d Γ 0 _ As (Tm.mono ext hH) (tml_mono ext hAs), .refl⟩
   case other_Quot_n1_bind m2 cs12 x_fam x__op v288 m289 cs291 m382 p389 cs395 w588 w589 w590 m607

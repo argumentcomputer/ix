@@ -783,7 +783,7 @@ inductive «KernelWhnf::try_iota».Path (x_rc x_rec_ty x_lvls x_spine x_nparams 
       (he125 : h' = m106)
       (hc126 : calls = ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [x_spine], h⟩ : Call F) :: (cs48 ++ ((⟨"UInt32::less_than_fields", [v1, v37], m38⟩ : Call F) :: cs71))))
   | other_n1_bind_n0
-      (v1 : SourceValue F) (x9 : SourceValue F) (x17 : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v59 : SourceValue F) (m60 : Heap F) (cs71 : List (Call F)) (v131 : SourceValue F) (m132 : Heap F) (cs142 : List (Call F)) (v161 : SourceValue F) (m162 : Heap F) (cs172 : List (Call F)) (v191 : SourceValue F) (m192 : Heap F) (cs202 : List (Call F)) (v229 : SourceValue F) (m230 : Heap F) (cs240 : List (Call F)) (v259 : SourceValue F) (m260 : Heap F) (cs270 : List (Call F)) (m290 : Heap F) (cs301 : List (Call F)) (x_r3 : SourceValue F) (m419 : Heap F) (cs430 : List (Call F)) (v496 : SourceValue F) (m505 : Heap F) (cs513 : List (Call F))
+      (v1 : SourceValue F) (x9 : SourceValue F) (x17 : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v59 : SourceValue F) (m60 : Heap F) (cs71 : List (Call F)) (v131 : SourceValue F) (m132 : Heap F) (cs142 : List (Call F)) (v161 : SourceValue F) (m162 : Heap F) (cs172 : List (Call F)) (v191 : SourceValue F) (m192 : Heap F) (cs202 : List (Call F)) (v229 : SourceValue F) (m230 : Heap F) (cs240 : List (Call F)) (v259 : SourceValue F) (m260 : Heap F) (cs_adhiwjlg : List (Call F)) (m290 : Heap F) (cs301 : List (Call F)) (x_r3 : SourceValue F) (m419 : Heap F) (cs430 : List (Call F)) (v496 : SourceValue F) (m505 : Heap F) (cs513 : List (Call F))
       (op32 : evalBinOp .add (x_nparams : SourceValue F) (x_nmotives : SourceValue F) = .ok x17)
       (op24 : evalBinOp .add (x17 : SourceValue F) (x_nminors : SourceValue F) = .ok x9)
       (op16 : evalBinOp .add (x9 : SourceValue F) (x_nindices : SourceValue F) = .ok v1)
@@ -794,15 +794,15 @@ inductive «KernelWhnf::try_iota».Path (x_rc x_rec_ty x_lvls x_spine x_nparams 
       (ev174 : ObsFn W "KernelNatPrim::cleanup_nat_offset_major" [x_rc, v131] m132 v161 m162 cs172)
       (ev204 : ObsFn W "KernelWhnf::whnf_iota_major" [x_rc, v161, x_types] m162 v191 m192 cs202)
       (ev242 : ObsFn W "KernelNatPrim::cleanup_nat_offset_major" [x_rc, v191] m192 v229 m230 cs240)
-      (ev272 : ObsFn W "KernelWhnf::nat_lit_to_ctor_or_self" [x_rc, v229] m230 v259 m260 cs270)
+      (ev_qixdhsjs : ObsFn W "KernelWhnf::lit_to_ctor_or_self" [x_rc, v229] m230 v259 m260 cs_adhiwjlg)
       (ev303 : ObsFn W "KernelWhnf::red_iota" [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types] m260 (.tuple [(.field 1), x_r3]) m290 cs301)
       (ev432 : ObsFn W "KernelModeled::fire_ok" [x_rc, x_nmotives, x_head, x_lvls, x_spine, v259, x_types] m290 (.field 0) m419 cs430)
       (he497 : r = (.tuple [(.field 2), v496]))
       (ev515 : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m419 v496 m505 cs513)
       (he532 : h' = m505)
-      (hc533 : calls = ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [x_spine], h⟩ : Call F) :: (cs48 ++ ((⟨"UInt32::less_than_fields", [v1, v37], m38⟩ : Call F) :: (cs71 ++ ((⟨Names.«Lists::lookup<&KernelTypes::KExprNode>», [x_spine, v1], m60⟩ : Call F) :: (cs142 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v131], m132⟩ : Call F) :: (cs172 ++ ((⟨"KernelWhnf::whnf_iota_major", [x_rc, v161, x_types], m162⟩ : Call F) :: (cs202 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v191], m192⟩ : Call F) :: (cs240 ++ ((⟨"KernelWhnf::nat_lit_to_ctor_or_self", [x_rc, v229], m230⟩ : Call F) :: (cs270 ++ ((⟨"KernelWhnf::red_iota", [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types], m260⟩ : Call F) :: (cs301 ++ ((⟨"KernelModeled::fire_ok", [x_rc, x_nmotives, x_head, x_lvls, x_spine, v259, x_types], m290⟩ : Call F) :: (cs430 ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m419⟩ : Call F) :: cs513))))))))))))))))))))
+      (hc533 : calls = ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [x_spine], h⟩ : Call F) :: (cs48 ++ ((⟨"UInt32::less_than_fields", [v1, v37], m38⟩ : Call F) :: (cs71 ++ ((⟨Names.«Lists::lookup<&KernelTypes::KExprNode>», [x_spine, v1], m60⟩ : Call F) :: (cs142 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v131], m132⟩ : Call F) :: (cs172 ++ ((⟨"KernelWhnf::whnf_iota_major", [x_rc, v161, x_types], m162⟩ : Call F) :: (cs202 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v191], m192⟩ : Call F) :: (cs240 ++ ((⟨"KernelWhnf::lit_to_ctor_or_self", [x_rc, v229], m230⟩ : Call F) :: (cs_adhiwjlg ++ ((⟨"KernelWhnf::red_iota", [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types], m260⟩ : Call F) :: (cs301 ++ ((⟨"KernelModeled::fire_ok", [x_rc, x_nmotives, x_head, x_lvls, x_spine, v259, x_types], m290⟩ : Call F) :: (cs430 ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m419⟩ : Call F) :: cs513))))))))))))))))))))
   | other_n1_bind_other
-      (v1 : SourceValue F) (x9 : SourceValue F) (x17 : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v59 : SourceValue F) (m60 : Heap F) (cs71 : List (Call F)) (v131 : SourceValue F) (m132 : Heap F) (cs142 : List (Call F)) (v161 : SourceValue F) (m162 : Heap F) (cs172 : List (Call F)) (v191 : SourceValue F) (m192 : Heap F) (cs202 : List (Call F)) (v229 : SourceValue F) (m230 : Heap F) (cs240 : List (Call F)) (v259 : SourceValue F) (m260 : Heap F) (cs270 : List (Call F)) (m290 : Heap F) (cs301 : List (Call F)) (x_r3 : SourceValue F) (v418 : SourceValue F) (m419 : Heap F) (cs430 : List (Call F))
+      (v1 : SourceValue F) (x9 : SourceValue F) (x17 : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v59 : SourceValue F) (m60 : Heap F) (cs71 : List (Call F)) (v131 : SourceValue F) (m132 : Heap F) (cs142 : List (Call F)) (v161 : SourceValue F) (m162 : Heap F) (cs172 : List (Call F)) (v191 : SourceValue F) (m192 : Heap F) (cs202 : List (Call F)) (v229 : SourceValue F) (m230 : Heap F) (cs240 : List (Call F)) (v259 : SourceValue F) (m260 : Heap F) (cs_adhiwjlg : List (Call F)) (m290 : Heap F) (cs301 : List (Call F)) (x_r3 : SourceValue F) (v418 : SourceValue F) (m419 : Heap F) (cs430 : List (Call F))
       (op32 : evalBinOp .add (x_nparams : SourceValue F) (x_nmotives : SourceValue F) = .ok x17)
       (op24 : evalBinOp .add (x17 : SourceValue F) (x_nminors : SourceValue F) = .ok x9)
       (op16 : evalBinOp .add (x9 : SourceValue F) (x_nindices : SourceValue F) = .ok v1)
@@ -813,15 +813,15 @@ inductive «KernelWhnf::try_iota».Path (x_rc x_rec_ty x_lvls x_spine x_nparams 
       (ev174 : ObsFn W "KernelNatPrim::cleanup_nat_offset_major" [x_rc, v131] m132 v161 m162 cs172)
       (ev204 : ObsFn W "KernelWhnf::whnf_iota_major" [x_rc, v161, x_types] m162 v191 m192 cs202)
       (ev242 : ObsFn W "KernelNatPrim::cleanup_nat_offset_major" [x_rc, v191] m192 v229 m230 cs240)
-      (ev272 : ObsFn W "KernelWhnf::nat_lit_to_ctor_or_self" [x_rc, v229] m230 v259 m260 cs270)
+      (ev_qixdhsjs : ObsFn W "KernelWhnf::lit_to_ctor_or_self" [x_rc, v229] m230 v259 m260 cs_adhiwjlg)
       (ev303 : ObsFn W "KernelWhnf::red_iota" [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types] m260 (.tuple [(.field 1), x_r3]) m290 cs301)
       (ev432 : ObsFn W "KernelModeled::fire_ok" [x_rc, x_nmotives, x_head, x_lvls, x_spine, v259, x_types] m290 v418 m419 cs430)
       (hne534 : (v418 : SourceValue F) ≠ (.field 0))
       (he542 : r = (.tuple [(.field 1), x_r3]))
       (he556 : h' = m419)
-      (hc557 : calls = ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [x_spine], h⟩ : Call F) :: (cs48 ++ ((⟨"UInt32::less_than_fields", [v1, v37], m38⟩ : Call F) :: (cs71 ++ ((⟨Names.«Lists::lookup<&KernelTypes::KExprNode>», [x_spine, v1], m60⟩ : Call F) :: (cs142 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v131], m132⟩ : Call F) :: (cs172 ++ ((⟨"KernelWhnf::whnf_iota_major", [x_rc, v161, x_types], m162⟩ : Call F) :: (cs202 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v191], m192⟩ : Call F) :: (cs240 ++ ((⟨"KernelWhnf::nat_lit_to_ctor_or_self", [x_rc, v229], m230⟩ : Call F) :: (cs270 ++ ((⟨"KernelWhnf::red_iota", [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types], m260⟩ : Call F) :: (cs301 ++ ((⟨"KernelModeled::fire_ok", [x_rc, x_nmotives, x_head, x_lvls, x_spine, v259, x_types], m290⟩ : Call F) :: cs430))))))))))))))))))
+      (hc557 : calls = ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [x_spine], h⟩ : Call F) :: (cs48 ++ ((⟨"UInt32::less_than_fields", [v1, v37], m38⟩ : Call F) :: (cs71 ++ ((⟨Names.«Lists::lookup<&KernelTypes::KExprNode>», [x_spine, v1], m60⟩ : Call F) :: (cs142 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v131], m132⟩ : Call F) :: (cs172 ++ ((⟨"KernelWhnf::whnf_iota_major", [x_rc, v161, x_types], m162⟩ : Call F) :: (cs202 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v191], m192⟩ : Call F) :: (cs240 ++ ((⟨"KernelWhnf::lit_to_ctor_or_self", [x_rc, v229], m230⟩ : Call F) :: (cs_adhiwjlg ++ ((⟨"KernelWhnf::red_iota", [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types], m260⟩ : Call F) :: (cs301 ++ ((⟨"KernelModeled::fire_ok", [x_rc, x_nmotives, x_head, x_lvls, x_spine, v259, x_types], m290⟩ : Call F) :: cs430))))))))))))))))))
   | other_other
-      (v1 : SourceValue F) (x9 : SourceValue F) (x17 : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v59 : SourceValue F) (m60 : Heap F) (cs71 : List (Call F)) (v131 : SourceValue F) (m132 : Heap F) (cs142 : List (Call F)) (v161 : SourceValue F) (m162 : Heap F) (cs172 : List (Call F)) (v191 : SourceValue F) (m192 : Heap F) (cs202 : List (Call F)) (v229 : SourceValue F) (m230 : Heap F) (cs240 : List (Call F)) (v259 : SourceValue F) (m260 : Heap F) (cs270 : List (Call F)) (v289 : SourceValue F) (m290 : Heap F) (cs301 : List (Call F)) (v564 : SourceValue F) (m573 : Heap F) (cs581 : List (Call F))
+      (v1 : SourceValue F) (x9 : SourceValue F) (x17 : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v59 : SourceValue F) (m60 : Heap F) (cs71 : List (Call F)) (v131 : SourceValue F) (m132 : Heap F) (cs142 : List (Call F)) (v161 : SourceValue F) (m162 : Heap F) (cs172 : List (Call F)) (v191 : SourceValue F) (m192 : Heap F) (cs202 : List (Call F)) (v229 : SourceValue F) (m230 : Heap F) (cs240 : List (Call F)) (v259 : SourceValue F) (m260 : Heap F) (cs_adhiwjlg : List (Call F)) (v289 : SourceValue F) (m290 : Heap F) (cs301 : List (Call F)) (v564 : SourceValue F) (m573 : Heap F) (cs581 : List (Call F))
       (op32 : evalBinOp .add (x_nparams : SourceValue F) (x_nmotives : SourceValue F) = .ok x17)
       (op24 : evalBinOp .add (x17 : SourceValue F) (x_nminors : SourceValue F) = .ok x9)
       (op16 : evalBinOp .add (x9 : SourceValue F) (x_nindices : SourceValue F) = .ok v1)
@@ -832,12 +832,12 @@ inductive «KernelWhnf::try_iota».Path (x_rc x_rec_ty x_lvls x_spine x_nparams 
       (ev174 : ObsFn W "KernelNatPrim::cleanup_nat_offset_major" [x_rc, v131] m132 v161 m162 cs172)
       (ev204 : ObsFn W "KernelWhnf::whnf_iota_major" [x_rc, v161, x_types] m162 v191 m192 cs202)
       (ev242 : ObsFn W "KernelNatPrim::cleanup_nat_offset_major" [x_rc, v191] m192 v229 m230 cs240)
-      (ev272 : ObsFn W "KernelWhnf::nat_lit_to_ctor_or_self" [x_rc, v229] m230 v259 m260 cs270)
+      (ev_qixdhsjs : ObsFn W "KernelWhnf::lit_to_ctor_or_self" [x_rc, v229] m230 v259 m260 cs_adhiwjlg)
       (ev303 : ObsFn W "KernelWhnf::red_iota" [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types] m260 v289 m290 cs301)
       (he565 : r = (.tuple [(.field 2), v564]))
       (ev583 : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m290 v564 m573 cs581)
       (he600 : h' = m573)
-      (hc601 : calls = ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [x_spine], h⟩ : Call F) :: (cs48 ++ ((⟨"UInt32::less_than_fields", [v1, v37], m38⟩ : Call F) :: (cs71 ++ ((⟨Names.«Lists::lookup<&KernelTypes::KExprNode>», [x_spine, v1], m60⟩ : Call F) :: (cs142 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v131], m132⟩ : Call F) :: (cs172 ++ ((⟨"KernelWhnf::whnf_iota_major", [x_rc, v161, x_types], m162⟩ : Call F) :: (cs202 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v191], m192⟩ : Call F) :: (cs240 ++ ((⟨"KernelWhnf::nat_lit_to_ctor_or_self", [x_rc, v229], m230⟩ : Call F) :: (cs270 ++ ((⟨"KernelWhnf::red_iota", [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types], m260⟩ : Call F) :: (cs301 ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m290⟩ : Call F) :: cs581))))))))))))))))))
+      (hc601 : calls = ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [x_spine], h⟩ : Call F) :: (cs48 ++ ((⟨"UInt32::less_than_fields", [v1, v37], m38⟩ : Call F) :: (cs71 ++ ((⟨Names.«Lists::lookup<&KernelTypes::KExprNode>», [x_spine, v1], m60⟩ : Call F) :: (cs142 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v131], m132⟩ : Call F) :: (cs172 ++ ((⟨"KernelWhnf::whnf_iota_major", [x_rc, v161, x_types], m162⟩ : Call F) :: (cs202 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v191], m192⟩ : Call F) :: (cs240 ++ ((⟨"KernelWhnf::lit_to_ctor_or_self", [x_rc, v229], m230⟩ : Call F) :: (cs_adhiwjlg ++ ((⟨"KernelWhnf::red_iota", [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types], m260⟩ : Call F) :: (cs301 ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m290⟩ : Call F) :: cs581))))))))))))))))))
 
 /-- **Every observed derivation of `KernelWhnf::try_iota` takes one of its paths.** -/
 theorem «KernelWhnf::try_iota».obs {x_rc x_rec_ty x_lvls x_spine x_nparams x_nmotives x_nminors x_nindices x_rules x_types x_head x_rec_parent : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -961,8 +961,8 @@ theorem «KernelWhnf::try_iota».obs {x_rc x_rec_ty x_lvls x_spine x_nparams x_n
       obtain ⟨rfl, rfl, rfl⟩ := a257.nil_inv
       obtain rfl := matchPattern_bind_inv mt235
       obtain ⟨v259, m260, bs261, c262, c263, d264, mt265, d266, rfl⟩ := d236.letValue_inv
-      obtain ⟨vs267, m268, c269, cs270, a271, ev272, rfl⟩ := d264.call_inv
-      rw [instanceName_plain_some] at ev272
+      obtain ⟨vs267, m268, c269, cs_adhiwjlg, a271, ev_qixdhsjs, rfl⟩ := d264.call_inv
+      rw [instanceName_plain_some] at ev_qixdhsjs
       obtain ⟨v273, vs275, m276, c277, c278, rfl, d279, a280, rfl⟩ := a271.cons_inv
       obtain ⟨l281, rfl, rfl⟩ := d279.var_inv
       simp at l281
@@ -1085,7 +1085,7 @@ theorem «KernelWhnf::try_iota».obs {x_rc x_rec_ty x_lvls x_spine x_nparams x_n
           subst l531
           obtain ⟨rfl, rfl, rfl⟩ := a530.nil_inv
           obtain ⟨rfl, rfl, rfl⟩ := a509.nil_inv
-          exact «KernelWhnf::try_iota».Path.other_n1_bind_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ op32 op24 op16 ev50 ev73 hne127 ev144 ev174 ev204 ev242 ev272 ev303 ev432 rfl ev515 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n6682477127133607924, Names.n11123572196661760086])
+          exact «KernelWhnf::try_iota».Path.other_n1_bind_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ op32 op24 op16 ev50 ev73 hne127 ev144 ev174 ev204 ev242 ev_qixdhsjs ev303 ev432 rfl ev515 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n6682477127133607924, Names.n11123572196661760086])
         · have hne534 := MatchesConst.none_inv (MatchesConst.literal 0) nm490
           rcases selectArm_cons_inv sel491 with ⟨mt535, rfl⟩ | ⟨nm536, sel537⟩
           · obtain rfl := matchPattern_wildcard_inv mt535
@@ -1097,7 +1097,7 @@ theorem «KernelWhnf::try_iota».obs {x_rc x_rec_ty x_lvls x_spine x_nparams x_n
             simp at l555
             subst l555
             obtain ⟨rfl, rfl, rfl⟩ := a554.nil_inv
-            exact «KernelWhnf::try_iota».Path.other_n1_bind_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ op32 op24 op16 ev50 ev73 hne127 ev144 ev174 ev204 ev242 ev272 ev303 ev432 hne534 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n6682477127133607924, Names.n11123572196661760086])
+            exact «KernelWhnf::try_iota».Path.other_n1_bind_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ op32 op24 op16 ev50 ev73 hne127 ev144 ev174 ev204 ev242 ev_qixdhsjs ev303 ev432 hne534 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n6682477127133607924, Names.n11123572196661760086])
           · exact (matchPattern_wildcard_none nm536).elim
       · clear nm401
         rcases selectArm_cons_inv sel402 with ⟨mt558, rfl⟩ | ⟨nm559, sel560⟩
@@ -1118,7 +1118,7 @@ theorem «KernelWhnf::try_iota».obs {x_rc x_rec_ty x_lvls x_spine x_nparams x_n
           subst l599
           obtain ⟨rfl, rfl, rfl⟩ := a598.nil_inv
           obtain ⟨rfl, rfl, rfl⟩ := a577.nil_inv
-          exact «KernelWhnf::try_iota».Path.other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ op32 op24 op16 ev50 ev73 hne127 ev144 ev174 ev204 ev242 ev272 ev303 rfl ev583 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n6682477127133607924, Names.n11123572196661760086])
+          exact «KernelWhnf::try_iota».Path.other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ op32 op24 op16 ev50 ev73 hne127 ev144 ev174 ev204 ev242 ev_qixdhsjs ev303 rfl ev583 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n6682477127133607924, Names.n11123572196661760086])
         · exact (matchPattern_wildcard_none nm559).elim
     · exact (matchPattern_wildcard_none nm129).elim
 
@@ -1137,7 +1137,7 @@ inductive «KernelWhnf::try_iota».PathX (x_rc x_rec_ty x_lvls x_spine x_nparams
       (he125 : h' = m106)
       (hc126 : calls = ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [x_spine], h⟩ : Call F) :: (cs48 ++ ((⟨"UInt32::less_than_fields", [v1, v37], m38⟩ : Call F) :: cs71))))
   | other_n1_bind_n0
-      (v1 : SourceValue F) (x9 : SourceValue F) (x17 : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v59 : SourceValue F) (m60 : Heap F) (cs71 : List (Call F)) (v131 : SourceValue F) (m132 : Heap F) (cs142 : List (Call F)) (v161 : SourceValue F) (m162 : Heap F) (cs172 : List (Call F)) (v191 : SourceValue F) (m192 : Heap F) (cs202 : List (Call F)) (v229 : SourceValue F) (m230 : Heap F) (cs240 : List (Call F)) (v259 : SourceValue F) (m260 : Heap F) (cs270 : List (Call F)) (m290 : Heap F) (cs301 : List (Call F)) (x_r3 : SourceValue F) (m419 : Heap F) (cs430 : List (Call F)) (v496 : SourceValue F) (m505 : Heap F) (cs513 : List (Call F))
+      (v1 : SourceValue F) (x9 : SourceValue F) (x17 : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v59 : SourceValue F) (m60 : Heap F) (cs71 : List (Call F)) (v131 : SourceValue F) (m132 : Heap F) (cs142 : List (Call F)) (v161 : SourceValue F) (m162 : Heap F) (cs172 : List (Call F)) (v191 : SourceValue F) (m192 : Heap F) (cs202 : List (Call F)) (v229 : SourceValue F) (m230 : Heap F) (cs240 : List (Call F)) (v259 : SourceValue F) (m260 : Heap F) (cs_adhiwjlg : List (Call F)) (m290 : Heap F) (cs301 : List (Call F)) (x_r3 : SourceValue F) (m419 : Heap F) (cs430 : List (Call F)) (v496 : SourceValue F) (m505 : Heap F) (cs513 : List (Call F))
       (op32 : evalBinOp .add (x_nparams : SourceValue F) (x_nmotives : SourceValue F) = .ok x17)
       (op24 : evalBinOp .add (x17 : SourceValue F) (x_nminors : SourceValue F) = .ok x9)
       (op16 : evalBinOp .add (x9 : SourceValue F) (x_nindices : SourceValue F) = .ok v1)
@@ -1148,15 +1148,15 @@ inductive «KernelWhnf::try_iota».PathX (x_rc x_rec_ty x_lvls x_spine x_nparams
       (ev174 : ObsFn W "KernelNatPrim::cleanup_nat_offset_major" [x_rc, v131] m132 v161 m162 cs172)
       (ev204 : ObsFn W "KernelWhnf::whnf_iota_major" [x_rc, v161, x_types] m162 v191 m192 cs202)
       (ev242 : ObsFn W "KernelNatPrim::cleanup_nat_offset_major" [x_rc, v191] m192 v229 m230 cs240)
-      (ev272 : ObsFn W "KernelWhnf::nat_lit_to_ctor_or_self" [x_rc, v229] m230 v259 m260 cs270)
+      (ev_qixdhsjs : ObsFn W "KernelWhnf::lit_to_ctor_or_self" [x_rc, v229] m230 v259 m260 cs_adhiwjlg)
       (ev303 : ObsFn W "KernelWhnf::red_iota" [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types] m260 (.tuple [(.field 1), x_r3]) m290 cs301)
       (ev432 : ObsFn W "KernelModeled::fire_ok" [x_rc, x_nmotives, x_head, x_lvls, x_spine, v259, x_types] m290 (.field 0) m419 cs430)
       (he497 : r = (.tuple [(.field 2), v496]))
       (ev515 : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m419 v496 m505 cs513)
       (he532 : h' = m505)
-      (hc533 : calls = ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [x_spine], h⟩ : Call F) :: (cs48 ++ ((⟨"UInt32::less_than_fields", [v1, v37], m38⟩ : Call F) :: (cs71 ++ ((⟨Names.«Lists::lookup<&KernelTypes::KExprNode>», [x_spine, v1], m60⟩ : Call F) :: (cs142 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v131], m132⟩ : Call F) :: (cs172 ++ ((⟨"KernelWhnf::whnf_iota_major", [x_rc, v161, x_types], m162⟩ : Call F) :: (cs202 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v191], m192⟩ : Call F) :: (cs240 ++ ((⟨"KernelWhnf::nat_lit_to_ctor_or_self", [x_rc, v229], m230⟩ : Call F) :: (cs270 ++ ((⟨"KernelWhnf::red_iota", [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types], m260⟩ : Call F) :: (cs301 ++ ((⟨"KernelModeled::fire_ok", [x_rc, x_nmotives, x_head, x_lvls, x_spine, v259, x_types], m290⟩ : Call F) :: (cs430 ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m419⟩ : Call F) :: cs513))))))))))))))))))))
+      (hc533 : calls = ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [x_spine], h⟩ : Call F) :: (cs48 ++ ((⟨"UInt32::less_than_fields", [v1, v37], m38⟩ : Call F) :: (cs71 ++ ((⟨Names.«Lists::lookup<&KernelTypes::KExprNode>», [x_spine, v1], m60⟩ : Call F) :: (cs142 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v131], m132⟩ : Call F) :: (cs172 ++ ((⟨"KernelWhnf::whnf_iota_major", [x_rc, v161, x_types], m162⟩ : Call F) :: (cs202 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v191], m192⟩ : Call F) :: (cs240 ++ ((⟨"KernelWhnf::lit_to_ctor_or_self", [x_rc, v229], m230⟩ : Call F) :: (cs_adhiwjlg ++ ((⟨"KernelWhnf::red_iota", [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types], m260⟩ : Call F) :: (cs301 ++ ((⟨"KernelModeled::fire_ok", [x_rc, x_nmotives, x_head, x_lvls, x_spine, v259, x_types], m290⟩ : Call F) :: (cs430 ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m419⟩ : Call F) :: cs513))))))))))))))))))))
   | other_n1_bind_other
-      (v1 : SourceValue F) (x9 : SourceValue F) (x17 : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v59 : SourceValue F) (m60 : Heap F) (cs71 : List (Call F)) (v131 : SourceValue F) (m132 : Heap F) (cs142 : List (Call F)) (v161 : SourceValue F) (m162 : Heap F) (cs172 : List (Call F)) (v191 : SourceValue F) (m192 : Heap F) (cs202 : List (Call F)) (v229 : SourceValue F) (m230 : Heap F) (cs240 : List (Call F)) (v259 : SourceValue F) (m260 : Heap F) (cs270 : List (Call F)) (m290 : Heap F) (cs301 : List (Call F)) (x_r3 : SourceValue F) (v418 : SourceValue F) (m419 : Heap F) (cs430 : List (Call F))
+      (v1 : SourceValue F) (x9 : SourceValue F) (x17 : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v59 : SourceValue F) (m60 : Heap F) (cs71 : List (Call F)) (v131 : SourceValue F) (m132 : Heap F) (cs142 : List (Call F)) (v161 : SourceValue F) (m162 : Heap F) (cs172 : List (Call F)) (v191 : SourceValue F) (m192 : Heap F) (cs202 : List (Call F)) (v229 : SourceValue F) (m230 : Heap F) (cs240 : List (Call F)) (v259 : SourceValue F) (m260 : Heap F) (cs_adhiwjlg : List (Call F)) (m290 : Heap F) (cs301 : List (Call F)) (x_r3 : SourceValue F) (v418 : SourceValue F) (m419 : Heap F) (cs430 : List (Call F))
       (op32 : evalBinOp .add (x_nparams : SourceValue F) (x_nmotives : SourceValue F) = .ok x17)
       (op24 : evalBinOp .add (x17 : SourceValue F) (x_nminors : SourceValue F) = .ok x9)
       (op16 : evalBinOp .add (x9 : SourceValue F) (x_nindices : SourceValue F) = .ok v1)
@@ -1167,15 +1167,15 @@ inductive «KernelWhnf::try_iota».PathX (x_rc x_rec_ty x_lvls x_spine x_nparams
       (ev174 : ObsFn W "KernelNatPrim::cleanup_nat_offset_major" [x_rc, v131] m132 v161 m162 cs172)
       (ev204 : ObsFn W "KernelWhnf::whnf_iota_major" [x_rc, v161, x_types] m162 v191 m192 cs202)
       (ev242 : ObsFn W "KernelNatPrim::cleanup_nat_offset_major" [x_rc, v191] m192 v229 m230 cs240)
-      (ev272 : ObsFn W "KernelWhnf::nat_lit_to_ctor_or_self" [x_rc, v229] m230 v259 m260 cs270)
+      (ev_qixdhsjs : ObsFn W "KernelWhnf::lit_to_ctor_or_self" [x_rc, v229] m230 v259 m260 cs_adhiwjlg)
       (ev303 : ObsFn W "KernelWhnf::red_iota" [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types] m260 (.tuple [(.field 1), x_r3]) m290 cs301)
       (ev432 : ObsFn W "KernelModeled::fire_ok" [x_rc, x_nmotives, x_head, x_lvls, x_spine, v259, x_types] m290 v418 m419 cs430)
       (hne534 : (v418 : SourceValue F) ≠ (.field 0))
       (he542 : r = (.tuple [(.field 1), x_r3]))
       (he556 : h' = m419)
-      (hc557 : calls = ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [x_spine], h⟩ : Call F) :: (cs48 ++ ((⟨"UInt32::less_than_fields", [v1, v37], m38⟩ : Call F) :: (cs71 ++ ((⟨Names.«Lists::lookup<&KernelTypes::KExprNode>», [x_spine, v1], m60⟩ : Call F) :: (cs142 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v131], m132⟩ : Call F) :: (cs172 ++ ((⟨"KernelWhnf::whnf_iota_major", [x_rc, v161, x_types], m162⟩ : Call F) :: (cs202 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v191], m192⟩ : Call F) :: (cs240 ++ ((⟨"KernelWhnf::nat_lit_to_ctor_or_self", [x_rc, v229], m230⟩ : Call F) :: (cs270 ++ ((⟨"KernelWhnf::red_iota", [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types], m260⟩ : Call F) :: (cs301 ++ ((⟨"KernelModeled::fire_ok", [x_rc, x_nmotives, x_head, x_lvls, x_spine, v259, x_types], m290⟩ : Call F) :: cs430))))))))))))))))))
+      (hc557 : calls = ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [x_spine], h⟩ : Call F) :: (cs48 ++ ((⟨"UInt32::less_than_fields", [v1, v37], m38⟩ : Call F) :: (cs71 ++ ((⟨Names.«Lists::lookup<&KernelTypes::KExprNode>», [x_spine, v1], m60⟩ : Call F) :: (cs142 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v131], m132⟩ : Call F) :: (cs172 ++ ((⟨"KernelWhnf::whnf_iota_major", [x_rc, v161, x_types], m162⟩ : Call F) :: (cs202 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v191], m192⟩ : Call F) :: (cs240 ++ ((⟨"KernelWhnf::lit_to_ctor_or_self", [x_rc, v229], m230⟩ : Call F) :: (cs_adhiwjlg ++ ((⟨"KernelWhnf::red_iota", [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types], m260⟩ : Call F) :: (cs301 ++ ((⟨"KernelModeled::fire_ok", [x_rc, x_nmotives, x_head, x_lvls, x_spine, v259, x_types], m290⟩ : Call F) :: cs430))))))))))))))))))
   | other_other
-      (v1 : SourceValue F) (x9 : SourceValue F) (x17 : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v59 : SourceValue F) (m60 : Heap F) (cs71 : List (Call F)) (v131 : SourceValue F) (m132 : Heap F) (cs142 : List (Call F)) (v161 : SourceValue F) (m162 : Heap F) (cs172 : List (Call F)) (v191 : SourceValue F) (m192 : Heap F) (cs202 : List (Call F)) (v229 : SourceValue F) (m230 : Heap F) (cs240 : List (Call F)) (v259 : SourceValue F) (m260 : Heap F) (cs270 : List (Call F)) (v289 : SourceValue F) (m290 : Heap F) (cs301 : List (Call F)) (v564 : SourceValue F) (m573 : Heap F) (cs581 : List (Call F))
+      (v1 : SourceValue F) (x9 : SourceValue F) (x17 : SourceValue F) (v37 : SourceValue F) (m38 : Heap F) (cs48 : List (Call F)) (v59 : SourceValue F) (m60 : Heap F) (cs71 : List (Call F)) (v131 : SourceValue F) (m132 : Heap F) (cs142 : List (Call F)) (v161 : SourceValue F) (m162 : Heap F) (cs172 : List (Call F)) (v191 : SourceValue F) (m192 : Heap F) (cs202 : List (Call F)) (v229 : SourceValue F) (m230 : Heap F) (cs240 : List (Call F)) (v259 : SourceValue F) (m260 : Heap F) (cs_adhiwjlg : List (Call F)) (v289 : SourceValue F) (m290 : Heap F) (cs301 : List (Call F)) (v564 : SourceValue F) (m573 : Heap F) (cs581 : List (Call F))
       (op32 : evalBinOp .add (x_nparams : SourceValue F) (x_nmotives : SourceValue F) = .ok x17)
       (op24 : evalBinOp .add (x17 : SourceValue F) (x_nminors : SourceValue F) = .ok x9)
       (op16 : evalBinOp .add (x9 : SourceValue F) (x_nindices : SourceValue F) = .ok v1)
@@ -1186,12 +1186,12 @@ inductive «KernelWhnf::try_iota».PathX (x_rc x_rec_ty x_lvls x_spine x_nparams
       (ev174 : ObsFn W "KernelNatPrim::cleanup_nat_offset_major" [x_rc, v131] m132 v161 m162 cs172)
       (ev204 : ObsFn W "KernelWhnf::whnf_iota_major" [x_rc, v161, x_types] m162 v191 m192 cs202)
       (ev242 : ObsFn W "KernelNatPrim::cleanup_nat_offset_major" [x_rc, v191] m192 v229 m230 cs240)
-      (ev272 : ObsFn W "KernelWhnf::nat_lit_to_ctor_or_self" [x_rc, v229] m230 v259 m260 cs270)
+      (ev_qixdhsjs : ObsFn W "KernelWhnf::lit_to_ctor_or_self" [x_rc, v229] m230 v259 m260 cs_adhiwjlg)
       (ev303 : ObsFn W "KernelWhnf::red_iota" [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types] m260 v289 m290 cs301)
       (he565 : r = (.tuple [(.field 2), v564]))
       (ev583 : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m290 v564 m573 cs581)
       (he600 : h' = m573)
-      (hc601 : calls = ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [x_spine], h⟩ : Call F) :: (cs48 ++ ((⟨"UInt32::less_than_fields", [v1, v37], m38⟩ : Call F) :: (cs71 ++ ((⟨Names.«Lists::lookup<&KernelTypes::KExprNode>», [x_spine, v1], m60⟩ : Call F) :: (cs142 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v131], m132⟩ : Call F) :: (cs172 ++ ((⟨"KernelWhnf::whnf_iota_major", [x_rc, v161, x_types], m162⟩ : Call F) :: (cs202 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v191], m192⟩ : Call F) :: (cs240 ++ ((⟨"KernelWhnf::nat_lit_to_ctor_or_self", [x_rc, v229], m230⟩ : Call F) :: (cs270 ++ ((⟨"KernelWhnf::red_iota", [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types], m260⟩ : Call F) :: (cs301 ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m290⟩ : Call F) :: cs581))))))))))))))))))
+      (hc601 : calls = ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [x_spine], h⟩ : Call F) :: (cs48 ++ ((⟨"UInt32::less_than_fields", [v1, v37], m38⟩ : Call F) :: (cs71 ++ ((⟨Names.«Lists::lookup<&KernelTypes::KExprNode>», [x_spine, v1], m60⟩ : Call F) :: (cs142 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v131], m132⟩ : Call F) :: (cs172 ++ ((⟨"KernelWhnf::whnf_iota_major", [x_rc, v161, x_types], m162⟩ : Call F) :: (cs202 ++ ((⟨"KernelNatPrim::cleanup_nat_offset_major", [x_rc, v191], m192⟩ : Call F) :: (cs240 ++ ((⟨"KernelWhnf::lit_to_ctor_or_self", [x_rc, v229], m230⟩ : Call F) :: (cs_adhiwjlg ++ ((⟨"KernelWhnf::red_iota", [x_rc, x_rec_ty, x_lvls, x_spine, x_nparams, x_nmotives, x_nminors, x_nindices, x_rules, x_rec_parent, v259, x_types], m260⟩ : Call F) :: (cs301 ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m290⟩ : Call F) :: cs581))))))))))))))))))
       (hnt0 : ∀ a1 : SourceValue F, (v289 : SourceValue F) ≠ .tuple [(.field 1), a1])
 
 /-- **Every observed derivation of `KernelWhnf::try_iota` takes one of its paths.** -/
@@ -1316,8 +1316,8 @@ theorem «KernelWhnf::try_iota».obsx {x_rc x_rec_ty x_lvls x_spine x_nparams x_
       obtain ⟨rfl, rfl, rfl⟩ := a257.nil_inv
       obtain rfl := matchPattern_bind_inv mt235
       obtain ⟨v259, m260, bs261, c262, c263, d264, mt265, d266, rfl⟩ := d236.letValue_inv
-      obtain ⟨vs267, m268, c269, cs270, a271, ev272, rfl⟩ := d264.call_inv
-      rw [instanceName_plain_some] at ev272
+      obtain ⟨vs267, m268, c269, cs_adhiwjlg, a271, ev_qixdhsjs, rfl⟩ := d264.call_inv
+      rw [instanceName_plain_some] at ev_qixdhsjs
       obtain ⟨v273, vs275, m276, c277, c278, rfl, d279, a280, rfl⟩ := a271.cons_inv
       obtain ⟨l281, rfl, rfl⟩ := d279.var_inv
       simp at l281
@@ -1440,7 +1440,7 @@ theorem «KernelWhnf::try_iota».obsx {x_rc x_rec_ty x_lvls x_spine x_nparams x_
           subst l531
           obtain ⟨rfl, rfl, rfl⟩ := a530.nil_inv
           obtain ⟨rfl, rfl, rfl⟩ := a509.nil_inv
-          exact «KernelWhnf::try_iota».PathX.other_n1_bind_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ op32 op24 op16 ev50 ev73 hne127 ev144 ev174 ev204 ev242 ev272 ev303 ev432 rfl ev515 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n6682477127133607924, Names.n11123572196661760086])
+          exact «KernelWhnf::try_iota».PathX.other_n1_bind_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ op32 op24 op16 ev50 ev73 hne127 ev144 ev174 ev204 ev242 ev_qixdhsjs ev303 ev432 rfl ev515 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n6682477127133607924, Names.n11123572196661760086])
         · have hne534 := MatchesConst.none_inv (MatchesConst.literal 0) nm490
           rcases selectArm_cons_inv sel491 with ⟨mt535, rfl⟩ | ⟨nm536, sel537⟩
           · obtain rfl := matchPattern_wildcard_inv mt535
@@ -1452,7 +1452,7 @@ theorem «KernelWhnf::try_iota».obsx {x_rc x_rec_ty x_lvls x_spine x_nparams x_
             simp at l555
             subst l555
             obtain ⟨rfl, rfl, rfl⟩ := a554.nil_inv
-            exact «KernelWhnf::try_iota».PathX.other_n1_bind_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ op32 op24 op16 ev50 ev73 hne127 ev144 ev174 ev204 ev242 ev272 ev303 ev432 hne534 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n6682477127133607924, Names.n11123572196661760086])
+            exact «KernelWhnf::try_iota».PathX.other_n1_bind_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ op32 op24 op16 ev50 ev73 hne127 ev144 ev174 ev204 ev242 ev_qixdhsjs ev303 ev432 hne534 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n6682477127133607924, Names.n11123572196661760086])
           · exact (matchPattern_wildcard_none nm536).elim
       · have hnt0 : ∀ a1 : SourceValue F, (v289 : SourceValue F) ≠ .tuple [(.field 1), a1] := fun a1 hv2 => by rw [hv2] at nm401; exact matchPattern_tuple_mixed_none nm401 (.cons (Or.inr ⟨_, (MatchesConst.literal 1), rfl⟩) (.cons (Or.inl trivial) .nil))
         rcases selectArm_cons_inv sel402 with ⟨mt558, rfl⟩ | ⟨nm559, sel560⟩
@@ -1473,7 +1473,7 @@ theorem «KernelWhnf::try_iota».obsx {x_rc x_rec_ty x_lvls x_spine x_nparams x_
           subst l599
           obtain ⟨rfl, rfl, rfl⟩ := a598.nil_inv
           obtain ⟨rfl, rfl, rfl⟩ := a577.nil_inv
-          exact «KernelWhnf::try_iota».PathX.other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ op32 op24 op16 ev50 ev73 hne127 ev144 ev174 ev204 ev242 ev272 ev303 rfl ev583 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n6682477127133607924, Names.n11123572196661760086]) hnt0
+          exact «KernelWhnf::try_iota».PathX.other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ op32 op24 op16 ev50 ev73 hne127 ev144 ev174 ev204 ev242 ev_qixdhsjs ev303 rfl ev583 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n6682477127133607924, Names.n11123572196661760086]) hnt0
         · exact (matchPattern_wildcard_none nm559).elim
     · exact (matchPattern_wildcard_none nm129).elim
 

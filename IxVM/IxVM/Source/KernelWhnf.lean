@@ -209,7 +209,11 @@ def whnf_with_spine := aiur_fn⟦
         KernelTypes::KExprNode::App(f, a) => {
           match KernelTypes::collect_spine(head) {
             (inner_head, inner_spine) => {
-              whnf_with_spine(rc, inner_head, Lists::concat(inner_spine, spine), types) } ,
+              let combined = match (*(spine)) {
+                Lists::Node::Nil => {  inner_spine } ,
+                _ => {  Lists::concat(inner_spine, spine) } ,
+              };
+              whnf_with_spine(rc, inner_head, combined, types) } ,
           } } ,
         KernelTypes::KExprNode::Lam(ty, body, _) => {
           match red_beta(rc, head, spine, types) {
@@ -233,7 +237,7 @@ def whnf_proj_head := aiur_fn⟦
                           spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       let inner_whnf = whnf(rc, inner, types);
 
-      let inner_exp = KernelNatPrim::str_lit_to_ctor_app_or_self(rc, inner_whnf, types);
+      let inner_exp = KernelNatPrim::str_lit_to_ctor_app_or_self(rc, inner_whnf);
       match red_proj(rc, struct_addr, fidx, inner_exp, types) {
         (1, field) => {  whnf_with_spine(rc, field, spine, types) } ,
         _ => {
@@ -266,24 +270,30 @@ def try_nat_dispatch_prewhnf := aiur_fn⟦
 def prim_family := aiur_fn⟦
   fn prim_family(rc: KernelRoles::RoleCtx, a: Bytes::AddressRef) -> (Field, Field) {
       let r1 = KernelRoles::role_index_of(rc, a);
-      let (f, op) = match r1 { 0 => {  (0, 0) } , _ => {  KernelRoleSpec::role_prim_family(r1 - 1) } , };
+      let (f, op) = match r1 {
+        0 => {  (0, 0) } ,
+        101 => {  (2, 7) } ,
+        _ => {  KernelRoleSpec::role_prim_family(r1 - 1) } ,
+      };
       match f {
         0 => {  (0, 0) } ,
+        5 => {  (0, 0) } ,
         _ => {  match KernelRoles::role_of(rc, a) { 0 => {  (0, 0) } , _ => {  (f, op) } , } } ,
       }
     }
 ⟧
 
 def try_prim_dispatch := aiur_fn⟦
-  fn try_prim_dispatch(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef, lvls: Lists::List<KernelTypes::KLevel>,
-                              spine: Lists::List<KernelTypes::KExpr>,
-                              types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
+  fn try_prim_dispatch(rc: KernelRoles::RoleCtx, fam: Field, op: Field, addr: Bytes::AddressRef,
+                       lvls: Lists::List<KernelTypes::KLevel>,
+                       spine: Lists::List<KernelTypes::KExpr>,
+                       types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
       -- the native rules read the operation at an empty level list (`.const c []`)
       match (*(lvls)) {
         Lists::Node::Nil => {
-          let (fam, op) = prim_family(rc, addr);
           match fam {
             1 => {  try_nat_dispatch_prewhnf(rc, addr, op, spine, types) } ,
+            2 => {  KernelNatPrim::try_str_dispatch(rc, op, spine, types) } ,
             6 => {  KernelNatPrim::try_int_prim_dispatch(rc, op, spine, types) } ,
             _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
           } } ,
@@ -395,7 +405,11 @@ def quot_certs := aiur_fn⟦
 def whnf_const_head := aiur_fn⟦
   fn whnf_const_head(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef, lvls: Lists::List<KernelTypes::KLevel>, head: KernelTypes::KExpr,
                            spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
-      let prim = try_prim_dispatch(rc, addr, lvls, spine, types);
+      let (fam, op) = prim_family(rc, addr);
+      let prim = match fam {
+        0 => {  (0, head) } ,
+        _ => {  try_prim_dispatch(rc, fam, op, addr, lvls, spine, types) } ,
+      };
       match prim {
         (1, reduced) => {  whnf(rc, reduced, types) } ,
 
@@ -404,7 +418,10 @@ def whnf_const_head := aiur_fn⟦
       let ci = (*(Ingress::get_ci(addr)));
       match ci {
         KernelTypes::KConstantInfo::Defn(nl, _, value, _, _) => {
-          let pd = try_reduce_projection_definition(value, nl, lvls, spine);
+          let pd = match projection_definition_info(value, 0) {
+            (1, _, _, _, _) => {  try_reduce_projection_definition(value, nl, lvls, spine) } ,
+            _ => {  (0, head) } ,
+          };
           match pd {
             (1, reduced) => {  whnf(rc, reduced, types) } ,
             _ => {
@@ -577,6 +594,19 @@ def nat_lit_to_ctor_or_self := aiur_fn⟦
     }
 ⟧
 
+def lit_to_ctor_or_self := aiur_fn⟦
+  fn lit_to_ctor_or_self(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr) -> KernelTypes::KExpr {
+      match (*(e)) {
+        KernelTypes::KExprNode::Lit(lit) => {
+          match lit {
+            KernelTypes::KLiteral::Nat(_) => {  nat_lit_to_ctor_or_self(rc, e) } ,
+            KernelTypes::KLiteral::Str(_) => {  KernelNatPrim::str_lit_to_ctor_app_or_self(rc, e) } ,
+          } } ,
+        _ => {  e } ,
+      }
+    }
+⟧
+
 def try_k_synth_iota := aiur_fn⟦
   fn try_k_synth_iota(rc: KernelRoles::RoleCtx, rec_ty: KernelTypes::KExpr, lvls: Lists::List<KernelTypes::KLevel>,
                             spine: Lists::List<KernelTypes::KExpr>,
@@ -688,7 +718,7 @@ def try_iota := aiur_fn⟦
           let major_clean1 = KernelNatPrim::cleanup_nat_offset_major(rc, raw_major);
           let major_w = whnf_iota_major(rc, major_clean1, types);
           let major_clean2 = KernelNatPrim::cleanup_nat_offset_major(rc, major_w);
-          let major = nat_lit_to_ctor_or_self(rc, major_clean2);
+          let major = lit_to_ctor_or_self(rc, major_clean2);
           match red_iota(rc, rec_ty, lvls, spine, nparams, nmotives, nminors, nindices,
                          rules, rec_parent, major, types) {
             (1, r3) => {
@@ -1266,7 +1296,12 @@ def whnf_struct_core_spine := aiur_fn⟦
       match (*(head)) {
         KernelTypes::KExprNode::App(_, _) => {
           match KernelTypes::collect_spine(head) {
-            (h, s) => {  whnf_struct_core_spine(rc, h, Lists::concat(s, spine), types) } ,
+            (h, s) => {
+              let combined = match (*(spine)) {
+                Lists::Node::Nil => {  s } ,
+                _ => {  Lists::concat(s, spine) } ,
+              };
+              whnf_struct_core_spine(rc, h, combined, types) } ,
           } } ,
         KernelTypes::KExprNode::Lam(_, _, _) => {
           match red_beta(rc, head, spine, types) {
@@ -1345,7 +1380,11 @@ def whnf_nd_with_spine := aiur_fn⟦
         KernelTypes::KExprNode::App(f, a) => {
           match KernelTypes::collect_spine(head) {
             (inner_head, inner_spine) => {
-              whnf_nd_with_spine(rc, inner_head, Lists::concat(inner_spine, spine), types) } ,
+              let combined = match (*(spine)) {
+                Lists::Node::Nil => {  inner_spine } ,
+                _ => {  Lists::concat(inner_spine, spine) } ,
+              };
+              whnf_nd_with_spine(rc, inner_head, combined, types) } ,
           } } ,
         KernelTypes::KExprNode::Lam(ty, body, _) => {
           match red_beta(rc, head, spine, types) {
@@ -1369,7 +1408,7 @@ def whnf_nd_proj_head := aiur_fn⟦
                              spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       let inner_whnf = whnf_nd(rc, inner, types);
 
-      let inner_exp = KernelNatPrim::str_lit_to_ctor_app_or_self(rc, inner_whnf, types);
+      let inner_exp = KernelNatPrim::str_lit_to_ctor_app_or_self(rc, inner_whnf);
       match red_proj(rc, struct_addr, fidx, inner_exp, types) {
         (1, field) => {  whnf_nd_with_spine(rc, field, spine, types) } ,
         _ => {
@@ -1383,16 +1422,16 @@ def whnf_nd_const_head := aiur_fn⟦
   fn whnf_nd_const_head(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef, lvls: Lists::List<KernelTypes::KLevel>, head: KernelTypes::KExpr,
                               spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
 
-      let (fam, _op) = prim_family(rc, addr);
+      let (fam, op) = prim_family(rc, addr);
       let prim = match fam {
-        0 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+        0 => {  (0, head) } ,
         1 => {
           let whole = apply_spine(head, spine);
           match KernelSubst::expr_lbr(whole) {
-            0 => {  try_prim_dispatch(rc, addr, lvls, spine, types) } ,
-            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+            0 => {  try_prim_dispatch(rc, fam, op, addr, lvls, spine, types) } ,
+            _ => {  (0, head) } ,
           } } ,
-        _ => {  try_prim_dispatch(rc, addr, lvls, spine, types) } ,
+        _ => {  try_prim_dispatch(rc, fam, op, addr, lvls, spine, types) } ,
       };
       match prim {
         (1, reduced) => {  whnf_nd(rc, reduced, types) } ,
@@ -1402,7 +1441,10 @@ def whnf_nd_const_head := aiur_fn⟦
       let ci = (*(Ingress::get_ci(addr)));
       match ci {
         KernelTypes::KConstantInfo::Defn(nl, _, value, _, _) => {
-          let pd = try_reduce_projection_definition(value, nl, lvls, spine);
+          let pd = match projection_definition_info(value, 0) {
+            (1, _, _, _, _) => {  try_reduce_projection_definition(value, nl, lvls, spine) } ,
+            _ => {  (0, head) } ,
+          };
           match pd {
             (1, reduced) => {  whnf_nd(rc, reduced, types) } ,
             _ => {  apply_spine(head, spine) } ,

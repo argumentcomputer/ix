@@ -1157,47 +1157,62 @@ theorem cleanup_nat_offset_major_step (c : ScopedCtx) (hc : ScopedCoreBase c) {a
   subst hargs
   have ext := ObsFn.heap_extends ev
   rcases Obs.«KernelNatPrim::cleanup_nat_offset_major».obs ev with
-    ⟨_, _, hr', _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hr', _, _⟩ |
-    ⟨v1, m35, cs46, x_head, x_args, w92, w93, m105, cs116, x_base, x_lit, v166, m167, cs177, v188,
-      m189, cs200, cs226, ld, hne30, ev48, ld84, ev118, ev179, ev202, hne219, ev228, hcalls⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hr', _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, hr', _, _⟩
-  · rw [hr']
-    exact ⟨E, Tm.mono ext hE, .refl⟩
+    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hr', _, _⟩ |
+    ⟨x_f, x_rhs, x_limbs, x_op_head, x_base, x_caddr, w_lvls, m_ris, cs_ris, v_rn, m_rn, cs_rn,
+      v_norm, m_norm, cs_norm, v_iz, m_iz, cs_iz, cs_bso, ld12, ld_rhs, ld_f, ld_head, ev_rn,
+      ev_ris, ev_norm, ev_iz, hne_iz, ev_bso, hcalls⟩ |
+    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hr', _, _⟩ |
+    ⟨_, _, _, _, _, _, _, _, _, _, _, hr', _, _⟩ |
+    ⟨_, _, _, _, _, _, _, _, hr', _, _⟩ |
+    ⟨_, _, _, _, _, _, hr', _, _⟩ |
+    ⟨_, _, _, _, _, _, hr', _, _⟩ |
+    ⟨_, _, _, hr', _, _⟩
   · rw [hr']
     exact ⟨E, Tm.mono ext hE, .refl⟩
   · subst hcalls
-    obtain ⟨hd, sp, H, As, hres, hH, hAs, hEq⟩ := ih.get (.subst .collect_spine) (by nat_lt_calls)
-      ev48 e rfl (good.sub fun x hx => by simp [hx]) d Γ 0 E hE
-    obtain ⟨rfl, rfl⟩ : x_head = hd ∧ x_args = sp := by
-      injection hres with h1
-      injection h1 with h2 h3
-      injection h3 with h4 _
-      exact ⟨h2, h4⟩
-    have e1 := ObsFn.heap_extends ev48
-    obtain ⟨hforce, us, B, n, rfl, rfl, hB, hn⟩ :=
-      try_match_nat_add_strong c hc ev118 (ih.mono (by nat_lt_calls)) rc x_head x_args rfl
-        (good.sub fun x hx => by simp [hx]) (RCRep.mono e1 hrc) d Γ H As hH hAs x_base x_lit rfl
-    have e2 := ObsFn.heap_extends ev118
-    have hnm := ih.get (.nat .klimbs_normalize) (by nat_lt_calls) ev179 x_lit rfl
-      (good.sub fun x hx => by simp [hx]) n (RepLimbsC.toRepLimbs hn)
-    have e3 := ObsFn.heap_extends ev179
-    have hz := ih.get (.nat .klimbs_is_zero) (by nat_lt_calls) ev202 v166 rfl
-      (good.sub fun x hx => by simp [hx]) n (RepLimbsC.toRepLimbs hnm)
-    have hn0 : n ≠ 0 := by
-      intro h0
-      rw [ite_eq_left h0] at hz
-      exact hne219 hz
-    have e4 := ObsFn.heap_extends ev202
-    have hb := ih.get (.nat .build_succ_offset) (by nat_lt_calls) ev228 rc x_base v166 rfl
-      (good.sub fun x hx => by simp [hx]) (RCRep.mono (((e1.trans e2).trans e3).trans e4) hrc) d Γ
-      B n (Tm.mono (e3.trans e4) hB) (RepLimbsC.toRepLimbs (repLimbsC_mono e4 hnm))
-    refine ⟨_, hb, ?_⟩
-    subst hEq
-    obtain ⟨k, rfl⟩ : ∃ k, n = k + 1 := ⟨n - 1, by omega⟩
-    rw [Nat.add_sub_cancel]
-    exact .natAddSucc (natLit_of_natAdd hc hforce) (hc.env.natAdd hforce)
+    obtain ⟨Ef, Erhs, rfl, hEf, hErhs⟩ := hE.app_of_load ld12
+    obtain ⟨Eop, Ebase, rfl, hEop, hEbase⟩ := hEf.app_of_load ld_f
+    obtain ⟨ad, us, rfl, rad, -⟩ := hEop.const_of_load ld_head
+    rcases hErhs.lit_of_load ld_rhs with ⟨lp, limbs, hx, hl, hcn, rfl⟩ | ⟨bp, bytes, s, hx, -⟩
+    · injection hx with _ _ hx'
+      injection hx' with hlp
+      subst hlp
+      obtain ⟨rfl, hm_rn⟩ := ih.get (.roles .role_nat_add) (by nat_lt_calls) ev_rn rfl
+      subst m_rn
+      obtain ⟨haddr, hforce⟩ := ih.get (.roles .role_is) (by nat_lt_calls) ev_ris rc x_caddr ad .natAdd
+        rfl (good.sub fun x hx => by simp [hx]) hrc rad field_one_ne_zero
+      have hk : c.κ (ixAddr ad) = .role .natAdd :=
+        (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf haddr)
+      have e1 := ObsFn.heap_extends ev_ris
+      have hnm := ih.get (.nat .klimbs_normalize) (by nat_lt_calls) ev_norm x_limbs rfl
+        (good.sub fun x hx => by simp [hx]) (limbsVal limbs) ⟨limbs, lrep_mono e1 hl, rfl⟩
+      have e2 := ObsFn.heap_extends ev_norm
+      have hz := ih.get (.nat .klimbs_is_zero) (by nat_lt_calls) ev_iz v_norm rfl
+        (good.sub fun x hx => by simp [hx]) (limbsVal limbs) (RepLimbsC.toRepLimbs hnm)
+      have hn0 : limbsVal limbs ≠ 0 := by
+        intro h0
+        rw [ite_eq_left h0] at hz
+        exact hne_iz hz
+      have e3 := ObsFn.heap_extends ev_iz
+      have hb := ih.get (.nat .build_succ_offset) (by nat_lt_calls) ev_bso rc x_base v_norm rfl
+        (good.sub fun x hx => by simp [hx]) (RCRep.mono ((e1.trans e2).trans e3) hrc) d Γ
+        Ebase (limbsVal limbs) (Tm.mono ((e1.trans e2).trans e3) hEbase)
+        (RepLimbsC.toRepLimbs (repLimbsC_mono e3 hnm))
+      refine ⟨_, hb, ?_⟩
+      rw [hk]
+      obtain ⟨k, hk_eq⟩ : ∃ k, limbsVal limbs = k + 1 := ⟨limbsVal limbs - 1, by omega⟩
+      rw [hk_eq, Nat.add_sub_cancel]
+      exact .natAddSucc (natLit_of_natAdd hc hforce) (hc.env.natAdd hforce)
+    · injection hx with _ hc'
+      exact absurd hc' (by decide)
+  · rw [hr']
+    exact ⟨E, Tm.mono ext hE, .refl⟩
+  · rw [hr']
+    exact ⟨E, Tm.mono ext hE, .refl⟩
+  · rw [hr']
+    exact ⟨E, Tm.mono ext hE, .refl⟩
+  · rw [hr']
+    exact ⟨E, Tm.mono ext hE, .refl⟩
   · rw [hr']
     exact ⟨E, Tm.mono ext hE, .refl⟩
   · rw [hr']

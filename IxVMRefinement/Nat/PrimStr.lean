@@ -1,6 +1,7 @@
 import IxVMRefinement.Nat.Basic
 import IxVMRefinement.Nat.Utf8
 import IxVMRefinement.Core.Steps.Whnf
+import IxVMRefinement.L1.Prim
 
 /-! # `KernelNatPrim`: constructions, the `u32` split, and the string-literal expansion
 
@@ -353,34 +354,39 @@ theorem split_u32_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Hea
   rw [he192, show ZMod.val x / 256 / 256 / 256 = ZMod.val x / 16777216 by omega,
     show ZMod.val x / 256 / 256 = ZMod.val x / 65536 by omega]
 
-/-- `KernelNatPrim::klimbs_from_g`: the canonical limbs of the value (below `2^32`): the four
-digits are the low bytes of one limb holding the value, normalized. -/
+/-- `KernelNatPrim::klimbs_from_g`: the canonical limbs of the value (below `2^32`): `UInt32::from_field`
+checks the bound and yields the four little-endian bytes, which form one limb, normalized. -/
 theorem klimbs_from_g_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::klimbs_from_g" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_from_g c args h r h' calls := by
   intro x hargs good
   subst hargs
-  obtain ⟨m2, cs13, x_rb0, x_rb1, x_rb2, x_rb3, v50, m51, cs61, v72, m73, cs83, v94, m95, cs105,
-    v116, m117, cs127, v150, m159, x164, y165, m166, x172, y173, m174, x180, y181, m182, cs191,
-    y203, cs213, y225, cs235, y247, cs257, cs272, m277, m360, ev15, ev63, ev85, ev107, ev129,
-    ev193, ev215, op209, op187, ev237, op231, op179, ev259, op253, op171, heq268, hm285, hm368,
-    ev274, hc372⟩ := Obs.«KernelNatPrim::klimbs_from_g».obs ev
+  obtain ⟨m1, cs1, v_u32, m2, cs2, x_b0, x_b1, x_b2, x_b3, cs272, m277, m360,
+    ev_ff, ev_tb, hm285, hm368, ev274, hc372⟩ := Obs.«KernelNatPrim::klimbs_from_g».obs ev
   subst hc372
-  obtain ⟨hx, hr, -⟩ := ih.get (.nat .split_u32) (by nat_lt_calls) ev15 x rfl
-    (good.sub fun y hy => by simp [hy])
-  have hxv : ZMod.val x < 4294967296 := by simpa using hx
-  simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr
-  obtain ⟨rfl, rfl, rfl, rfl⟩ := hr
-  obtain ⟨rfl, -, -⟩ := from_field ev63
-  obtain ⟨rfl, -, -⟩ := from_field ev85
-  obtain ⟨rfl, -, -⟩ := from_field ev107
-  obtain ⟨rfl, -, -⟩ := from_field ev129
-  subst hm285 hm368
-  have hw := Lib.repU64_ofNatLT m159 (m := ZMod.val x) (by omega)
-  rw [PrimStrAux.u64Value_lt32 hxv] at hw
-  have hl := lrep_store_cons hw (lrep_store_nil m159)
-  refine ⟨hx, ih.get (.nat .klimbs_normalize) (by nat_lt_calls) ev274 _ rfl
+  obtain ⟨c0, c1, c2, c3, rfl, rfl, hval, hlt⟩ := L1.u32_fromField ev_ff
+  obtain ⟨hbytes, rfl⟩ := L1.u32_toBytes ev_tb
+  simp only [L1.w4, L1.bv, Value.tuple.injEq, List.cons.injEq, and_true] at hbytes
+  obtain ⟨rfl, rfl, rfl, rfl⟩ := hbytes
+  have hpack : ZMod.val x =
+      c0.toNat + 256 * (c1.toNat + 256 * (c2.toNat + 256 * c3.toNat)) := by
+    rw [hval, Aiur.Library.Blake3.wordOfBytes_toNat]
+    simp only [Aiur.Library.U32.pack]
+    omega
+  have hc0 := c0.toNat_lt
+  have hc1 := c1.toNat_lt
+  have hc2 := c2.toNat_lt
+  have hc3 := c3.toNat_lt
+  have hb0 : ZMod.val x % 256 = c0.toNat := by omega
+  have hb1 : ZMod.val x / 256 % 256 = c1.toNat := by omega
+  have hb2 : ZMod.val x / 65536 % 256 = c2.toNat := by omega
+  have hb3 : ZMod.val x / 16777216 % 256 = c3.toNat := by omega
+  subst hm368 hm285
+  have hw := Lib.repU64_ofNatLT m1 (m := ZMod.val x) (by omega)
+  rw [PrimStrAux.u64Value_lt32 hlt, hb0, hb1, hb2, hb3] at hw
+  have hl := lrep_store_cons hw (lrep_store_nil m1)
+  refine ⟨by omega, ih.get (.nat .klimbs_normalize) (by nat_lt_calls) ev274 _ rfl
     (good.sub fun y hy => by simp [hy]) _ ⟨_, hl, ?_⟩⟩
   rw [limbsVal_cons, limbsVal_nil, UInt64.toNat_ofNatLT]
   omega
@@ -578,18 +584,86 @@ theorem str_lit_delta_step_step (c : ScopedCtx) {args : List (SourceValue F)} {h
     rw [he422, he423]
     exact ⟨_, hE, .refl⟩
 
+private theorem tm0_hasFvar_false {κ : _root_.Address → KKey} {Γ : Nat → KExpr} {h : Heap F}
+    {k : Nat} {E : KExpr} {p : SourceValue F} (rep : Tm κ 0 Γ h k E p) :
+    E.hasFvar = false := by
+  induction rep with
+  | bvarLocal | sort | const | litNat | litStr => rfl
+  | bvarFree _ _ _ hd => omega
+  | app _ _ _ ihf iha => simp [Ix.Kernel.Expr.hasFvar, ihf, iha]
+  | lam _ _ _ _ iht ihb => simp [Ix.Kernel.Expr.hasFvar, iht, ihb]
+  | forallE _ _ _ _ iht ihb => simp [Ix.Kernel.Expr.hasFvar, iht, ihb]
+  | proj _ _ _ ihe => simpa [Ix.Kernel.Expr.hasFvar] using ihe
+  | @letE k _ _ _ _ T V B _ _ _ _ _ ihv ihb =>
+    have hlift : ∀ (x : KExpr) (n c : Nat), x.hasFvar = false →
+        (x.liftLooseBVars n c).hasFvar = false := by
+      intro x
+      induction x with
+      | bvar _ => intro n c _; simp only [Ix.Kernel.Expr.liftLooseBVars]; split <;> rfl
+      | fvar _ _ _ => intro _ _ hx; simp [Ix.Kernel.Expr.hasFvar] at hx
+      | sort _ | const _ _ | lit _ => intro _ _ _; rfl
+      | app f a ih1 ih2 =>
+        intro n c hx; simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hx
+        simp only [Ix.Kernel.Expr.liftLooseBVars, Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff]
+        exact ⟨ih1 n c hx.1, ih2 n c hx.2⟩
+      | lam t bo _ ih1 ih2 =>
+        intro n c hx; simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hx
+        simp only [Ix.Kernel.Expr.liftLooseBVars, Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff]
+        exact ⟨ih1 n c hx.1, ih2 n (c + 1) hx.2⟩
+      | forallE t bo _ ih1 ih2 =>
+        intro n c hx; simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hx
+        simp only [Ix.Kernel.Expr.liftLooseBVars, Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff]
+        exact ⟨ih1 n c hx.1, ih2 n (c + 1) hx.2⟩
+      | letE t va bo _ ih1 ih2 ih3 =>
+        intro n c hx; simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hx
+        simp only [Ix.Kernel.Expr.liftLooseBVars, Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff]
+        exact ⟨⟨ih1 n c hx.1.1, ih2 n c hx.1.2⟩, ih3 n (c + 1) hx.2⟩
+      | proj _ _ s ih1 =>
+        intro n c hx; simp only [Ix.Kernel.Expr.hasFvar] at hx
+        simp only [Ix.Kernel.Expr.liftLooseBVars, Ix.Kernel.Expr.hasFvar]; exact ih1 n c hx
+    have hinst : ∀ (bo : KExpr) (j : Nat), bo.hasFvar = false →
+        (bo.instantiate1Lift V j).hasFvar = false := by
+      intro bo
+      induction bo with
+      | bvar i =>
+        intro j _; simp only [Ix.Kernel.Expr.instantiate1Lift]; split
+        · exact hlift V j 0 ihv
+        · split <;> rfl
+      | fvar _ _ _ => intro _ hbo; simp [Ix.Kernel.Expr.hasFvar] at hbo
+      | sort _ | const _ _ | lit _ => intro _ _; rfl
+      | app f a ih1 ih2 =>
+        intro j hbo; simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hbo
+        simp only [Ix.Kernel.Expr.instantiate1Lift, Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff]
+        exact ⟨ih1 j hbo.1, ih2 j hbo.2⟩
+      | lam t bo _ ih1 ih2 =>
+        intro j hbo; simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hbo
+        simp only [Ix.Kernel.Expr.instantiate1Lift, Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff]
+        exact ⟨ih1 j hbo.1, ih2 (j + 1) hbo.2⟩
+      | forallE t bo _ ih1 ih2 =>
+        intro j hbo; simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hbo
+        simp only [Ix.Kernel.Expr.instantiate1Lift, Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff]
+        exact ⟨ih1 j hbo.1, ih2 (j + 1) hbo.2⟩
+      | letE t va bo _ ih1 ih2 ih3 =>
+        intro j hbo; simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hbo
+        simp only [Ix.Kernel.Expr.instantiate1Lift, Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff]
+        exact ⟨⟨ih1 j hbo.1.1, ih2 j hbo.1.2⟩, ih3 (j + 1) hbo.2⟩
+      | proj _ _ s ih1 =>
+        intro j hbo; simp only [Ix.Kernel.Expr.hasFvar] at hbo
+        simp only [Ix.Kernel.Expr.instantiate1Lift, Ix.Kernel.Expr.hasFvar]; exact ih1 j hbo
+    exact hinst B 0 ihb
+
 /-- `KernelNatPrim::str_lit_to_ctor_app_or_self`: a string literal expands to its constructor form
-(`Red.strLit`, under the support `str_lit_to_ctor` gives), then `str_lit_delta_step`'s reduct;
-any other term is itself. -/
-theorem str_lit_to_ctor_app_or_self_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
-    {r : SourceValue F} {calls : List (Call F)}
+(`Red.strLit`, under the support `str_lit_to_ctor` gives), then `str_lit_delta_step`'s reduct at
+depth `0` lifted to `d` (`Red.lift`, both endpoints being closed); any other term is itself. -/
+theorem str_lit_to_ctor_app_or_self_step (c : ScopedCtx) (hc : ScopedCoreBase c)
+    {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::str_lit_to_ctor_app_or_self" args h r h' calls)
     (ih : IH c calls) :
     Specs.Nat.str_lit_to_ctor_app_or_self c args h r h' calls := by
-  intro rc e types hargs good hrc d Γ htypes E hE
+  intro rc e hargs good hrc d Γ E hE
   subst hargs
   rcases Obs.«KernelNatPrim::str_lit_to_ctor_app_or_self».obs ev with
-    ⟨x_bs, cs49, v53, m63, cs71, ld12, ev73, ev51, hc97⟩ |
+    ⟨x_bs, cs49, v53, m63, cs71, m_nil, ld12, ev73, hm_nil, ev51, hc97⟩ |
     ⟨x_lit, ld12, hne98, he103, he104, hc105⟩ |
     ⟨v1, ld12, hne106, he111, he112, hc113⟩
   · -- a string literal
@@ -606,13 +680,23 @@ theorem str_lit_to_ctor_app_or_self_step (c : ScopedCtx) {args : List (SourceVal
           .app (.const Ix.Kernel.stringOfListName []) L := ⟨_, rfl⟩
       rw [hL] at hctor
       have e1 := ObsFn.heap_extends ev73
-      obtain ⟨E', hE', hred⟩ := ih.get (.nat .str_lit_delta_step) (by nat_lt_calls) ev51 rc v53
-        types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e1 hrc) hsup d Γ
-        (types_mono e1 htypes) L (hctor d Γ)
+      have e_nil : Heap.Extends m63 m_nil := PrimStrAux.ext_of_eq_snoc hm_nil
+      have htypes0 : c.types Γ m_nil 0 (.ptr (.enum kexprListEnum) m63.length) :=
+        ⟨.nil (by rw [hm_nil]; exact List.getElem?_concat_length),
+          fun j hj => (Nat.not_lt_zero j hj).elim⟩
+      obtain ⟨E', hE'0, hred0⟩ := ih.get (.nat .str_lit_delta_step) (by nat_lt_calls) ev51 rc v53
+        _ rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono (e1.trans e_nil) hrc) hsup 0 Γ
+        htypes0 L (Tm.mono e_nil (hctor 0 Γ))
+      have hfv1 : (Ix.Kernel.Expr.app (.const Ix.Kernel.stringOfListName []) L).hasFvar = false :=
+        tm0_hasFvar_false (hctor 0 Γ)
+      have hfv2 : E'.hasFvar = false := tm0_hasFvar_false hE'0
+      have hred_lift := Ix.Kernel.Rules.Red.lift (Ix.Kernel.EnvExt.refl c.env) hc.env.storeClosed
+        (p := 0) (g := d) hred0
+      rw [Nat.zero_add, Ix.Kernel.Expr.renFV_of_not_hasFvar hfv1,
+        Ix.Kernel.Expr.renFV_of_not_hasFvar hfv2, ← hL] at hred_lift
       have h1 : Ix.Kernel.Rules.Red c.env d (.lit (.strVal s))
-          (.app (.const Ix.Kernel.stringOfListName []) L) := by
-        rw [← hL]; exact .strLit hsup
-      exact ⟨E', hE', .trans h1 hred⟩
+          (Ix.Kernel.strLitToConstructor (md := .anon) s) := .strLit hsup
+      exact ⟨E', Tm.of_depth_zero hE'0 d, .trans h1 hred_lift⟩
   · -- another literal: itself
     rw [he103, he104]
     exact ⟨E, hE, .refl⟩

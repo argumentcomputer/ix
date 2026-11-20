@@ -85,6 +85,21 @@ def intPrimOp : Ix.Kernel.Role → Option Nat
 def IntOpAt (c : ScopedCtx) (a : Bytes.Address) (o : Nat) : Prop :=
   ∃ r, intPrimOp r = some o ∧ c.t.addressOf? r = some (ixAddr a) ∧ c.inForce r
 
+/-- **The `String`/`Char` primitive a role is**: its operation code in family `2`, by role. -/
+def strPrimOp : Ix.Kernel.Role → Option Nat
+  | .stringOfList => some 1
+  | .stringUtf8ByteSize => some 2
+  | .stringBack => some 3
+  | .stringToByteArray => some 4
+  | .stringDecEq => some 5
+  | .stringAppend => some 6
+  | .charUtf8Size => some 7
+  | _ => none
+
+/-- **The address `a` is bound to the `String`/`Char` operation with code `o`, a role in force.** -/
+def StrOpAt (c : ScopedCtx) (a : Bytes.Address) (o : Nat) : Prop :=
+  ∃ r, strPrimOp r = some o ∧ c.t.addressOf? r = some (ixAddr a) ∧ c.inForce r
+
 /-- The signed integer represented by a sign bit `s ∈ {0, 1}` and magnitude `m : Nat`:
 zero is always `Int.ofNat 0`; `s = 0` gives `Int.ofNat m`, `s = 1` with `m > 0` gives
 `Int.negSucc (m - 1)`. -/
@@ -377,12 +392,11 @@ def str_lit_delta_step : SpecFn := fun c args h r h' calls =>
     ∀ d Γ, c.types Γ h d types → ∀ L, c.tm d Γ h (.app (.const Ix.Kernel.stringOfListName []) L) e →
       ∃ E', c.tm d Γ h' E' r ∧ Red c.env d (.app (.const Ix.Kernel.stringOfListName []) L) E'
 
-/-- `str_lit_to_ctor_app_or_self(rc, e, types)`: a reduct (`Red.strLit` then
-`str_lit_delta_step`, or `Red.refl` on any other term). -/
+/-- `str_lit_to_ctor_app_or_self(rc, e)`: a reduct (`Red.strLit` then
+`str_lit_delta_step` at depth `0` lifted to `d`, or `Red.refl` on any other term). -/
 def str_lit_to_ctor_app_or_self : SpecFn := fun c args h r h' calls =>
-  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
-    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
-      ∃ E', c.tm d Γ h' E' r ∧ Red c.env d E E'
+  ∀ rc e, args = [rc, e] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ E, c.tm d Γ h E e → ∃ E', c.tm d Γ h' E' r ∧ Red c.env d E E'
 
 /-! ## `KernelNatPrim`: reading and dispatching -/
 
@@ -582,6 +596,170 @@ def try_int_prim_dispatch : SpecFn := fun c args h r h' calls =>
           ∃ E', c.tm d Γ h' E' x ∧
             Red c.env d (mkAppN (.const (c.κ (ixAddr headAddr)) []) As) E'
 
+/-! ## `KernelNatPrim`: `String` / `Char` natives -/
+
+/-- `utf8_last_go(bs, prev)`: the code point of the last character decoded from `bs`, or `prev`
+if `bs` is empty. -/
+def utf8_last_go : SpecFn := fun c args h r h' calls =>
+  ∀ bp (pv : F), args = [bp, .field pv] → CoreGood c calls →
+    ∀ bs, Bytes.RepByteStream byteListEnum h bs bp →
+      ∀ (p : Char), pv = (p.toNat : F) →
+        ∀ cs : List Char, cs.flatMap String.utf8EncodeChar = bs →
+          r = .field ((cs.getLastD p).toNat : F)
+
+/-- `utf8_last_codepoint(bs)`: the code point of the last character of a valid UTF-8 stream
+(`'A'` = 65 on empty). -/
+def utf8_last_codepoint : SpecFn := fun c args h r h' calls =>
+  ∀ bp, args = [bp] → CoreGood c calls →
+    ∀ bs s, Bytes.RepByteStream byteListEnum h bs bp → StrBytes s bs →
+      r = .field ((s.toList.getLastD 'A').toNat : F)
+
+/-- `utf8_encode_prepend(cp, tail)`: prepends the UTF-8 encoding of a valid scalar value `cp`
+onto `tail`. -/
+def utf8_encode_prepend : SpecFn := fun c args h r h' calls =>
+  ∀ (cp : F) tp, args = [.field cp, tp] → CoreGood c calls →
+    ∀ (ch : Char), cp = (ch.toNat : F) →
+      ∀ tail, Bytes.RepByteStream byteListEnum h tail tp →
+        Bytes.RepByteStream byteListEnum h' (String.utf8EncodeChar ch ++ tail) r
+
+/-- `klimbs_scalar_value(limbs)`: tag `1` reads a valid Unicode scalar value from a limb list;
+nothing allocated. -/
+def klimbs_scalar_value : SpecFn := fun c args h r h' calls =>
+  ∀ a, args = [a] → CoreGood c calls →
+    ∀ n, RepLimbs h n a → ∀ v, r = .tuple [.field 1, v] →
+      ∃ ch : Char, ch.toNat = n ∧ v = .field (ch.toNat : F) ∧ h' = h
+
+/-- `lvls_is_zero1(lvls)`: `1` only when `lvls` represents `[u]` with `∀ φ, Level.eval φ u = 0`;
+nothing allocated. -/
+def lvls_is_zero1 : SpecFn := fun c args h r h' calls =>
+  ∀ lp, args = [lp] → CoreGood c calls →
+    ∀ us, LvListRep h us lp → r = .field 1 →
+      (∃ u, us = [u] ∧ ∀ φ, Ix.Kernel.Level.eval φ u = 0) ∧ h' = h
+
+/-- `is_char_const(rc, e)`: `1` only when `e` is `.const Char []`. -/
+def is_char_const : SpecFn := fun c args h r h' calls =>
+  ∀ rc e, args = [rc, e] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ E, c.tm d Γ h E e → r = .field 1 → E = .const Ix.Kernel.charName []
+
+/-- `is_char_const_or_whnf(rc, e, types)`: `1` only when `e` reduces to `.const Char []`. -/
+def is_char_const_or_whnf : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → r = .field 1 →
+      Red c.env d E (.const Ix.Kernel.charName [])
+
+/-- `char_lit_codepoint_syn(rc, e, types)`: tag `1` reads a `Char.ofNat n` whose `Nat` argument
+reduces to a valid Unicode scalar value. -/
+def char_lit_codepoint_syn : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → ∀ v, r = .tuple [.field 1, v] →
+      ∃ ch : Char, v = .field (ch.toNat : F) ∧
+        Red c.env d E (.app (.const Ix.Kernel.charOfNatName []) (natLit ch.toNat))
+
+/-- `char_lit_codepoint(rc, e, types)`: tag `1` reads a `Char` literal directly or after `whnf`. -/
+def char_lit_codepoint : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → ∀ v, r = .tuple [.field 1, v] →
+      ∃ ch : Char, v = .field (ch.toNat : F) ∧
+        Red c.env d E (.app (.const Ix.Kernel.charOfNatName []) (natLit ch.toNat))
+
+/-- `match_char_list_head_syn(rc, e, types)`: under `strLitSupported`, tag `1` matches
+`List.nil.{0} Char` and tag `2` matches `List.cons.{0} Char ch tail` (up to level/type reduction). -/
+def match_char_list_head_syn : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    Ix.Kernel.strLitSupported c.env = true →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
+      ∀ (t : F) x y, r = .tuple [.field t, x, y] →
+        (t = 1 → Red c.env d E (.app (.const Ix.Kernel.listNilName [.zero]) (.const Ix.Kernel.charName []))) ∧
+        (t = 2 → ∃ Ch Tl, c.tm d Γ h' Ch x ∧ c.tm d Γ h' Tl y ∧
+          Red c.env d E (.app (.app (.app (.const Ix.Kernel.listConsName [.zero]) (.const Ix.Kernel.charName [])) Ch) Tl))
+
+/-- `walk_char_list_bytes(rc, list, types)`: under `strLitSupported`, tag `1` gives a character
+list `cs` whose UTF-8 bytes are represented by `bs` and to whose `charList` `E` reduces. -/
+def walk_char_list_bytes : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    Ix.Kernel.strLitSupported c.env = true →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → ∀ bp, r = .tuple [.field 1, bp] →
+      ∃ cs : List Char,
+        Bytes.RepByteStream byteListEnum h' (cs.flatMap String.utf8EncodeChar) bp ∧
+        Red c.env d E (charList
+          (.app (.const Ix.Kernel.listNilName [.zero]) (.const Ix.Kernel.charName []))
+          (.app (.const Ix.Kernel.listConsName [.zero]) (.const Ix.Kernel.charName []))
+          (.const Ix.Kernel.charOfNatName []) cs)
+
+/-- `try_str_of_list(rc, a0, post, types)`: `String.ofList` literal fold (`Red.strLitFold`). -/
+def try_str_of_list : SpecFn := fun c args h r h' calls =>
+  ∀ rc a0 post types, args = [rc, a0, post, types] → CoreGood c calls → c.rc h rc →
+    Ix.Kernel.strLitSupported c.env = true →
+    ∀ d Γ, c.types Γ h d types → ∀ A₀ Ps, c.tm d Γ h A₀ a0 → c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const Ix.Kernel.stringOfListName []) (A₀ :: Ps)) E'
+
+/-- `try_str_utf8_byte_size(rc, a0, post, types)`: `String.utf8ByteSize` on a string literal. -/
+def try_str_utf8_byte_size : SpecFn := fun c args h r h' calls =>
+  ∀ rc a0 post types, args = [rc, a0, post, types] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ A₀ Ps, c.tm d Γ h A₀ a0 → c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .stringUtf8ByteSize) []) (A₀ :: Ps)) E'
+
+/-- `try_str_back(rc, a0, post, types)`: `String.back` on a string literal. -/
+def try_str_back : SpecFn := fun c args h r h' calls =>
+  ∀ rc a0 post types, args = [rc, a0, post, types] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ A₀ Ps, c.tm d Γ h A₀ a0 → c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .stringBack) []) (A₀ :: Ps)) E'
+
+/-- `try_str_to_byte_array(rc, a0, post, types)`: `String.toByteArray ""`. -/
+def try_str_to_byte_array : SpecFn := fun c args h r h' calls =>
+  ∀ rc a0 post types, args = [rc, a0, post, types] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ A₀ Ps, c.tm d Γ h A₀ a0 → c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .stringToByteArray) []) (A₀ :: Ps)) E'
+
+/-- `try_str_dec_eq(rc, a0, a1, post, types)`: reflexive `String.decEq s s`. -/
+def try_str_dec_eq : SpecFn := fun c args h r h' calls =>
+  ∀ rc a0 a1 post types, args = [rc, a0, a1, post, types] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ A₀ A₁ Ps, c.tm d Γ h A₀ a0 → c.tm d Γ h A₁ a1 →
+      c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .stringDecEq) []) (A₀ :: A₁ :: Ps)) E'
+
+/-- `try_str_append(rc, a0, a1, post, types)`: `String.append` on two string literals. -/
+def try_str_append : SpecFn := fun c args h r h' calls =>
+  ∀ rc a0 a1 post types, args = [rc, a0, a1, post, types] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ A₀ A₁ Ps, c.tm d Γ h A₀ a0 → c.tm d Γ h A₁ a1 →
+      c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .stringAppend) []) (A₀ :: A₁ :: Ps)) E'
+
+/-- `try_char_utf8_size(rc, a0, post, types)`: `Char.utf8Size` on a character literal. -/
+def try_char_utf8_size : SpecFn := fun c args h r h' calls =>
+  ∀ rc a0 post types, args = [rc, a0, post, types] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ A₀ Ps, c.tm d Γ h A₀ a0 → c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .charUtf8Size) []) (A₀ :: Ps)) E'
+
+/-- `try_str_dispatch(rc, op, spine, types)`: top-level dispatcher for family `2` (`String`/`Char`). -/
+def try_str_dispatch : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) sp types, args = [rc, .field o, sp, types] → CoreGood c calls → c.rc h rc →
+    ∀ headAddr, StrOpAt c headAddr (ZMod.val o) →
+      ∀ d Γ, c.types Γ h d types → ∀ As, c.tml d Γ h As sp →
+        ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+          ∃ E', c.tm d Γ h' E' x ∧
+            Red c.env d (mkAppN (.const (c.κ (ixAddr headAddr)) []) As) E'
+
 /-! ## The family -/
 
 /-- The functions of the family. -/
@@ -602,6 +780,11 @@ inductive Fn where
   | try_extract_nat_or_whnf | try_extract_int_prim | mk_int_prim | int_add_prim | int_emod_prim | int_ediv_prim
   | int_bmod_prim | int_bdiv_prim | try_int_unop_dispatch | try_int_nat_arg_prim
   | try_int_int_arg_prim | try_int_binop_second | try_int_prim_dispatch
+  | utf8_last_go | utf8_last_codepoint | utf8_encode_prepend | klimbs_scalar_value
+  | lvls_is_zero1 | is_char_const | is_char_const_or_whnf | char_lit_codepoint_syn
+  | char_lit_codepoint | match_char_list_head_syn | walk_char_list_bytes
+  | try_str_of_list | try_str_utf8_byte_size | try_str_back | try_str_to_byte_array
+  | try_str_dec_eq | try_str_append | try_char_utf8_size | try_str_dispatch
   deriving DecidableEq, Repr
 
 /-- The function's symbol, as `ObsFn` names it. -/
@@ -669,6 +852,25 @@ def Fn.name : Fn → String
   | .try_int_int_arg_prim => "KernelNatPrim::try_int_int_arg_prim"
   | .try_int_binop_second => "KernelNatPrim::try_int_binop_second"
   | .try_int_prim_dispatch => "KernelNatPrim::try_int_prim_dispatch"
+  | .utf8_last_go => "KernelNatPrim::utf8_last_go"
+  | .utf8_last_codepoint => "KernelNatPrim::utf8_last_codepoint"
+  | .utf8_encode_prepend => "KernelNatPrim::utf8_encode_prepend"
+  | .klimbs_scalar_value => "KernelNatPrim::klimbs_scalar_value"
+  | .lvls_is_zero1 => "KernelNatPrim::lvls_is_zero1"
+  | .is_char_const => "KernelNatPrim::is_char_const"
+  | .is_char_const_or_whnf => "KernelNatPrim::is_char_const_or_whnf"
+  | .char_lit_codepoint_syn => "KernelNatPrim::char_lit_codepoint_syn"
+  | .char_lit_codepoint => "KernelNatPrim::char_lit_codepoint"
+  | .match_char_list_head_syn => "KernelNatPrim::match_char_list_head_syn"
+  | .walk_char_list_bytes => "KernelNatPrim::walk_char_list_bytes"
+  | .try_str_of_list => "KernelNatPrim::try_str_of_list"
+  | .try_str_utf8_byte_size => "KernelNatPrim::try_str_utf8_byte_size"
+  | .try_str_back => "KernelNatPrim::try_str_back"
+  | .try_str_to_byte_array => "KernelNatPrim::try_str_to_byte_array"
+  | .try_str_dec_eq => "KernelNatPrim::try_str_dec_eq"
+  | .try_str_append => "KernelNatPrim::try_str_append"
+  | .try_char_utf8_size => "KernelNatPrim::try_char_utf8_size"
+  | .try_str_dispatch => "KernelNatPrim::try_str_dispatch"
 
 /-- The function's spec. -/
 def Fn.spec : Fn → SpecFn
@@ -735,5 +937,24 @@ def Fn.spec : Fn → SpecFn
   | .try_int_int_arg_prim => Specs.Nat.try_int_int_arg_prim
   | .try_int_binop_second => Specs.Nat.try_int_binop_second
   | .try_int_prim_dispatch => Specs.Nat.try_int_prim_dispatch
+  | .utf8_last_go => Specs.Nat.utf8_last_go
+  | .utf8_last_codepoint => Specs.Nat.utf8_last_codepoint
+  | .utf8_encode_prepend => Specs.Nat.utf8_encode_prepend
+  | .klimbs_scalar_value => Specs.Nat.klimbs_scalar_value
+  | .lvls_is_zero1 => Specs.Nat.lvls_is_zero1
+  | .is_char_const => Specs.Nat.is_char_const
+  | .is_char_const_or_whnf => Specs.Nat.is_char_const_or_whnf
+  | .char_lit_codepoint_syn => Specs.Nat.char_lit_codepoint_syn
+  | .char_lit_codepoint => Specs.Nat.char_lit_codepoint
+  | .match_char_list_head_syn => Specs.Nat.match_char_list_head_syn
+  | .walk_char_list_bytes => Specs.Nat.walk_char_list_bytes
+  | .try_str_of_list => Specs.Nat.try_str_of_list
+  | .try_str_utf8_byte_size => Specs.Nat.try_str_utf8_byte_size
+  | .try_str_back => Specs.Nat.try_str_back
+  | .try_str_to_byte_array => Specs.Nat.try_str_to_byte_array
+  | .try_str_dec_eq => Specs.Nat.try_str_dec_eq
+  | .try_str_append => Specs.Nat.try_str_append
+  | .try_char_utf8_size => Specs.Nat.try_char_utf8_size
+  | .try_str_dispatch => Specs.Nat.try_str_dispatch
 
 end IxVM.Refinement.Core.Specs.Nat

@@ -25,7 +25,7 @@ section EqnElim
 
 variable {env : Ix.Kernel.Env .anon}
 
-private abbrev Γ₀ : Nat → KExpr := fun _ => .sort .zero
+abbrev Γ₀ : Nat → KExpr := fun _ => .sort .zero
 private abbrev ΓNat1 : Nat → KExpr := fvarUpdate Γ₀ 0 BaseKit.natT
 private abbrev ΓNat2 : Nat → KExpr := fvarUpdate ΓNat1 1 BaseKit.natT
 
@@ -50,19 +50,19 @@ private theorem lbb_abstract1_ge (d : Nat) :
     simp only [Ix.Kernel.Expr.abstract1, Ix.Kernel.Expr.looseBVarsBounded,
       lbb_abstract1_ge d e hkm]
 
-private theorem lbb_abstract1_succ (d : Nat) (e : KExpr) (m : Nat) :
+theorem lbb_abstract1_succ (d : Nat) (e : KExpr) (m : Nat) :
     (e.abstract1 d).looseBVarsBounded (m + 1) = e.looseBVarsBounded (m + 1) :=
   lbb_abstract1_ge d e (Nat.zero_lt_succ m)
 
-private theorem lbb_of_lbb0 {e : KExpr} (h : e.looseBVarsBounded 0 = true) (k : Nat) :
+theorem lbb_of_lbb0 {e : KExpr} (h : e.looseBVarsBounded 0 = true) (k : Nat) :
     e.looseBVarsBounded k = true :=
   looseBVarsBounded_mono e (Nat.zero_le k) h
 
-private theorem inst1_of_lbb0 {e : KExpr} (h : e.looseBVarsBounded 0 = true) (v : KExpr) (k : Nat) :
+theorem inst1_of_lbb0 {e : KExpr} (h : e.looseBVarsBounded 0 = true) (v : KExpr) (k : Nat) :
     e.instantiate1 v k = e :=
   instantiate1_eq_self e (lbb_of_lbb0 h k)
 
-private theorem fvarSubst_comm {d₁ d₂ : Nat} {v₁ v₂ : KExpr} (hne : d₁ ≠ d₂)
+theorem fvarSubst_comm {d₁ d₂ : Nat} {v₁ v₂ : KExpr} (hne : d₁ ≠ d₂)
     (hv₁ : v₁.hasFvar = false) (hv₂ : v₂.hasFvar = false) :
     ∀ {e : KExpr}, fvarSubst d₂ v₂ (fvarSubst d₁ v₁ e) = fvarSubst d₁ v₁ (fvarSubst d₂ v₂ e)
   | .bvar _ | .sort _ | .const _ _ | .lit _ => rfl
@@ -643,26 +643,26 @@ section BuildIntKit
 
 variable {env : Ix.Kernel.Env .anon}
 
-private theorem eqnsShape_of (hs : Shapes (· < 77) env) (r : Role)
+theorem eqnsShape_of (hs : Shapes (· < 77) env) (r : Role)
     (h46 : 46 ≤ Ix.SpecDigest.groupOf r) : EqnsRoleShape env r :=
   hs.eqns r h46 (RoleVal.groupOf_lt_77 r)
 
-private theorem roleExact_eqns (hs : Shapes (· < 77) env) (r : Role)
+theorem roleExact_eqns (hs : Shapes (· < 77) env) (r : Role)
     (h46 : 46 ≤ Ix.SpecDigest.groupOf r) (h5 : RoleVal.roleSpecKindNat r = 5) :
     RoleExactTy env r :=
   ((eqnsShape_of hs r h46).1 h5).1
 
-private theorem roleExact_anchor_of (hs : Shapes (· < 77) env) (r ar : Role)
+theorem roleExact_anchor_of (hs : Shapes (· < 77) env) (r ar : Role)
     (h46 : 46 ≤ Ix.SpecDigest.groupOf r) (h5 : RoleVal.roleSpecKindNat r = 5)
     (har : ar ∈ eqnsAnchorsOf r) : RoleExactTy env ar :=
   ((eqnsShape_of hs r h46).1 h5).2.1 ar har
 
-private theorem roleExact_walked (hs : Shapes (· < 77) env) (r : Role)
+theorem roleExact_walked (hs : Shapes (· < 77) env) (r : Role)
     (h46 : 46 ≤ Ix.SpecDigest.groupOf r) (h1 : RoleVal.roleSpecKindNat r = 1)
     (hw : RoleVal.anchorWalked r = true) : RoleExactTy env r :=
   (eqnsShape_of hs r h46).2 h1 hw
 
-private theorem eqnValid_of (hs : Shapes (· < 77) env) (r : Role)
+theorem eqnValid_of (hs : Shapes (· < 77) env) (r : Role)
     (h46 : 46 ≤ Ix.SpecDigest.groupOf r) (h5 : RoleVal.roleSpecKindNat r = 5)
     {k : Nat} {e : Ix.Kernel.Equation .anon} (hget : (eqnsOfRole r)[k]? = some e) :
     EqnValid env r e :=
@@ -1136,13 +1136,13 @@ namespace IntKit
 variable {env : Ix.Kernel.Env .anon}
   {wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd : KExpr}
 
-private theorem wDec_cl (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd) :
+theorem wDec_cl (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd) :
     TermClosed wDec := ik.decW ▸ ik.decAt.wClosed
 
 private theorem wNot_cl (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd) :
     TermClosed wNot := ik.notW ▸ ik.notAt.wClosed
 
-private theorem wDecide_cl (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd) :
+theorem wDecide_cl (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd) :
     TermClosed wDecide := ik.decideW ▸ ik.decideAt.wClosed
 
 private theorem wInt_cl (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd) :
@@ -1172,7 +1172,7 @@ private theorem wIntAdd_cl (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOf
 private theorem wDecide_red (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd) :
     Red env 0 wDecide (.const (.role .decidableDecide) []) := ik.decideW ▸ ik.decideAt.wRed
 
-private theorem wDecide_defEq (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd) :
+theorem wDecide_defEq (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd) :
     DefEq env 0 wDecide (.const (.role .decidableDecide) []) := ik.decideW ▸ ik.decideAt.defEq_witness
 
 private theorem wInt_defEq (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd) :
@@ -1243,7 +1243,7 @@ private def notType (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIn
   have h := ClosedType.ofClosedAt (ik.notAt.app_nondep hp rfl)
   simpa [ik.notW] using h
 
-private def isTrueApp (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd)
+def isTrueApp (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd)
     {p h : KExpr} (hp : ClosedAt env p (.sort .zero)) (hh : ClosedAt env h hp.witness) :
     ClosedAt env (.app (.app (.const (.role .decidableIsTrue) []) p) h) (.app wDec hp.witness) := by
   have h1 := ik.isTrueAt.app_abs hp .refl
@@ -1266,7 +1266,7 @@ private def isFalseApp (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat 
     (by simp [Ix.Kernel.Expr.looseBVarsBounded, ik.wDec_cl.2, hp.wClosed.2])
   simpa [fvarSubst, fvarSubst_of_not_hasFvar ik.wDec_cl.1, fvarSubst_of_not_hasFvar hp.wClosed.1] using h2
 
-private def decideApp (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd)
+def decideApp (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd)
     {p inst : KExpr} (hp : ClosedAt env p (.sort .zero)) (hinst : ClosedAt env inst (.app wDec hp.witness)) :
     ClosedAt env (.app (.app (.const (.role .decidableDecide) []) p) inst) BaseKit.boolT := by
   have h1 := ik.decideAt.app_abs hp .refl
@@ -1389,7 +1389,7 @@ private def iteIntApp (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat w
 
 /-! ### `decide` computation & extensionality (`decideEqns[0..2]`) -/
 
-private theorem decide_isTrue (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd)
+theorem decide_isTrue (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd)
     {p h : KExpr} (hp : ClosedAt env p (.sort .zero)) (hh : ClosedAt env h hp.witness) :
     DefEq env 0
       (.app (.app (.const (.role .decidableDecide) []) p)
@@ -1660,7 +1660,7 @@ private theorem decide_isFalse (ik : IntKit env wDec wNot wDecide wInt wIntLe wI
       (.app (.app (.app .refl .refl) hLhsDe) .refl)
       (ik.decideApp hp (ik.isFalseApp hp hh)) ik.bk.boolFalseAt ik.bk.boolType
 
-private theorem decide_ext (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd)
+theorem decide_ext (ik : IntKit env wDec wNot wDecide wInt wIntLe wIntOfNat wIntAdd)
     {p a b : KExpr} (hp : ClosedAt env p (.sort .zero))
     (ha : ClosedAt env a (.app wDec hp.witness)) (hb : ClosedAt env b (.app wDec hp.witness))
     (hEq : DefEq env 0
@@ -4661,10 +4661,45 @@ private theorem defEq_intBdiv (ik : IntKit env wDec wNot wDecide wInt wIntLe wIn
 
 end IntKit
 
-/-! ## Assembling `Core.PrimEqnEnv` from `BaseKit` and `Shapes (· < 77)` -/
+/-! ## Assembling `Int` primitive equations from `BaseKit` and `Shapes (· < 77)` -/
 
-theorem primEqnEnv_of_shapes {env : Ix.Kernel.Env .anon}
-    (bk : BaseKit env) (hs : Shapes (· < 77) env) : Core.PrimEqnEnv env := by
+structure IntPrimEqns (env : Ix.Kernel.Env .anon) : Prop where
+  intOfNatStored : ∃ ci, env.find? (.role .intOfNat) = some ci
+  intNegSuccStored : ∃ ci, env.find? (.role .intNegSucc) = some ci
+  intOpStored : ∀ r : Ix.Kernel.Role,
+    r ∈ [.intNeg, .intNatAbs, .intAdd, .intSub, .intMul, .intEdiv, .intEmod, .intPow, .intBmod, .intBdiv] →
+    ∃ ci, env.find? (.role r) = some ci
+  intNeg : ∀ d (x : Int),
+    Red env d (.app (.const (.role .intNeg) []) (intLitExpr x)) (intLitExpr (-x))
+  intNatAbs : ∀ d (x : Int),
+    Red env d (.app (.const (.role .intNatAbs) []) (intLitExpr x)) (.lit (.natVal x.natAbs))
+  intAdd : ∀ d (x y : Int),
+    Red env d (.app (.app (.const (.role .intAdd) []) (intLitExpr x)) (intLitExpr y))
+      (intLitExpr (x + y))
+  intSub : ∀ d (x y : Int),
+    Red env d (.app (.app (.const (.role .intSub) []) (intLitExpr x)) (intLitExpr y))
+      (intLitExpr (x - y))
+  intMul : ∀ d (x y : Int),
+    Red env d (.app (.app (.const (.role .intMul) []) (intLitExpr x)) (intLitExpr y))
+      (intLitExpr (x * y))
+  intEdiv : ∀ d (x y : Int),
+    Red env d (.app (.app (.const (.role .intEdiv) []) (intLitExpr x)) (intLitExpr y))
+      (intLitExpr (x.ediv y))
+  intEmod : ∀ d (x y : Int),
+    Red env d (.app (.app (.const (.role .intEmod) []) (intLitExpr x)) (intLitExpr y))
+      (intLitExpr (x.emod y))
+  intPow : ∀ d (x : Int) (n : Nat), n ≤ 2 ^ 24 →
+    Red env d (.app (.app (.const (.role .intPow) []) (intLitExpr x)) (.lit (.natVal n)))
+      (intLitExpr (x ^ n))
+  intBmod : ∀ d (x : Int) (m : Nat),
+    Red env d (.app (.app (.const (.role .intBmod) []) (intLitExpr x)) (.lit (.natVal m)))
+      (intLitExpr (x.bmod m))
+  intBdiv : ∀ d (x : Int) (m : Nat),
+    Red env d (.app (.app (.const (.role .intBdiv) []) (intLitExpr x)) (.lit (.natVal m)))
+      (intLitExpr (x.bdiv m))
+
+theorem intPrimEqns_of_shapes {env : Ix.Kernel.Env .anon}
+    (bk : BaseKit env) (hs : Shapes (· < 77) env) : IntPrimEqns env := by
   obtain ⟨wDec, wNot, wDecide, wInt, wIntLe, wIntOfNat, wIntAdd, ⟨ik⟩⟩ := intKit_exists bk hs
   have hOfNatS : ∃ ci, env.find? (.role .intOfNat) = some ci := by
     obtain ⟨ci, _, hf, -⟩ := roleExact_anchor_of hs .intNegOfNat .intOfNat (by decide) (by decide) (by decide)
@@ -4855,13 +4890,18 @@ theorem baseKit_of_bndOver {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
     boolCtorsStored := hbc
     boolCtorsTyped := hbt }
 
-/-- **Certified `PrimEqnEnv` at group 76 of the binding fold**, from the invariant below group 76
-and the validated equation shapes below group 77. -/
-theorem primEqnEnv_of_bndOver {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+/-- Extract `Ix.Kernel.strLitSupported env = true` from `BndOver.{u} L t (· < 76) R env`. -/
+theorem strLitSupported_of_bndOver {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     {t : Ix.Kernel.RoleTable} {R : Ixon.Env} {env : Ix.Kernel.Env .anon}
-    (hall : AllBound t) (hb : BndOver.{u} L t (· < 76) R env)
-    (hshapes : Shapes (· < 77) env) : Core.PrimEqnEnv env :=
-  primEqnEnv_of_shapes (baseKit_of_bndOver hall hb) hshapes
+    (hall : AllBound t) (hb : BndOver.{u} L t (· < 76) R env) :
+    Ix.Kernel.strLitSupported env = true := by
+  obtain ⟨E, hE⟩ := OpInstall.recordsFor_exists hb.shape.committed
+  have hinv := hb.inv hE (carried_valLimit 76) (limWithin_below t 76)
+  have hStr : Ix.SpecDigest.groupOf .string < 46 := by decide +kernel
+  exact hinv.companions.strLit ⟨hall .string, fun n hn => by
+    rw [valLimit_76] at hn
+    obtain rfl := Option.some.inj hn
+    exact hStr⟩
 
 end FoldTail
 

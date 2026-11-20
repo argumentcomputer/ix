@@ -42,11 +42,12 @@ theorem whnf_family_step (c : ScopedCtx) (hc : ScopedCoreBase c) :
   | .whnf_spine, _, _, _, _, _, ev, ih => whnf_spine_step c ev ih
   | .try_nat_dispatch_prewhnf, _, _, _, _, _, ev, ih => try_nat_dispatch_prewhnf_step c ev ih
   | .prim_family, _, _, _, _, _, ev, ih => prim_family_step c hc ev ih
-  | .try_prim_dispatch, _, _, _, _, _, ev, ih => try_prim_dispatch_step c hc ev ih
+  | .try_prim_dispatch, _, _, _, _, _, ev, ih => try_prim_dispatch_step c ev ih
   | .whnf_const_head, _, _, _, _, _, ev, ih => whnf_const_head_step c hc ev ih
   | .lams_never, _, _, _, _, _, ev, ih => lams_never_step c ev ih
   | .projection_definition_info, _, _, _, _, _, ev, ih => projection_definition_info_step c ev ih
   | .nat_lit_to_ctor_or_self, _, _, _, _, _, ev, ih => nat_lit_to_ctor_or_self_step c hc ev ih
+  | .lit_to_ctor_or_self, _, _, _, _, _, ev, ih => lit_to_ctor_or_self_step c ev ih
   | .slots_never, _, _, _, _, _, ev, ih => slots_never_step c ev ih
   | .certs_all, _, _, _, _, _, ev, ih => certs_all_step c ev ih
   | .apply_n_projs, _, _, _, _, _, ev, ih => apply_n_projs_step c ev ih

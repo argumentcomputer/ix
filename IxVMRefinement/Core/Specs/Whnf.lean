@@ -112,6 +112,27 @@ def intOpOf : Nat → Option Ix.Kernel.Role
   | 10 => some .intEdiv
   | _ => none
 
+/-- The `String`/`Char` operation a primitive-family code stands for (family `2`). -/
+def strOpOf : Nat → Option Ix.Kernel.Role
+  | 1 => some .stringOfList
+  | 2 => some .stringUtf8ByteSize
+  | 3 => some .stringBack
+  | 4 => some .stringToByteArray
+  | 5 => some .stringDecEq
+  | 6 => some .stringAppend
+  | 7 => some .charUtf8Size
+  | _ => none
+
+/-- What a nonzero `(f, op)` from `prim_family(rc, a)` witnesses about `a`. -/
+def PrimAt (c : ScopedCtx) (a : Bytes.Address) (f op : F) : Prop :=
+  (∃ role, c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
+  (f = 1 → ∃ role, natOpOf (ZMod.val op) = some role ∧
+    c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
+  (f = 2 → ∃ role, strOpOf (ZMod.val op) = some role ∧
+    c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
+  (f = 6 → ∃ role, intOpOf (ZMod.val op) = some role ∧
+    c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role)
+
 /-- **Telescope certificates up to reduction of the telescope**: `Certs`, with a step
 `Red env d T T'` allowed before any slot (where `certs_all` head-normalizes). -/
 inductive CertsR (env : Ix.Kernel.Env .anon) (d : Nat) (lic : Bool) :
@@ -571,18 +592,11 @@ def try_quot_iota : SpecFn := fun c args h r h' calls =>
 
 /-! ## Natives -/
 
-/-- `prim_family(rc, a)`: a nonzero family means the table binds a role to the address (in
-force under the role context); family `1` means it is the `Nat` operation `natOpOf op`. A zero
-family: no claim. -/
+/-- `prim_family(rc, a)`: returns a field pair `(f, op)`; a nonzero `f` gives `PrimAt c a f op`. -/
 def prim_family : SpecFn := fun c args h r h' calls =>
   ∀ rc ap, args = [rc, ap] → CoreGood c calls → c.rc h rc →
-    ∀ (a : Bytes.Address) (f op : F), RepAddr h a ap → r = .tuple [.field f, .field op] →
-      f ≠ 0 →
-        (∃ role, c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
-        (f = 1 → ∃ role, natOpOf (ZMod.val op) = some role ∧
-          c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
-        (f = 6 → ∃ role, intOpOf (ZMod.val op) = some role ∧
-          c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role)
+    ∀ (a : Bytes.Address), RepAddr h a ap →
+      ∃ (f op : F), r = .tuple [.field f, .field op] ∧ (f ≠ 0 → PrimAt c a f op)
 
 /-- `try_nat_dispatch_prewhnf(rc, head_addr, op, spine, types)`: the `Nat` natives after
 head-normalizing the spine. At a constant the table binds to the operation `natOpOf op`, in
@@ -598,13 +612,16 @@ def try_nat_dispatch_prewhnf : SpecFn := fun c args h r h' calls =>
         ∀ (t : F) x, r = .tuple [.field t, x] → (t = 1 ∨ t = 2) →
           ∃ E, c.tm d Γ h' E x ∧ Red c.env d (mkAppN (.const (c.κ (ixAddr a)) []) As) E
 
-/-- `try_prim_dispatch(rc, addr, lvls, spine, types)`: the native dispatch at a constant head:
-tags `1` (the result, which the caller normalizes) and `2` (a stuck form with reduced
-arguments, final) are `Red` of the applied constant to the result. Tag `0`: no claim. -/
+/-- `try_prim_dispatch(rc, fam, op, addr, lvls, spine, types)`: the native dispatch at a constant
+head given `(fam, op)` from `prim_family`: tags `1` (the result, which the caller normalizes) and
+`2` (a stuck form with reduced arguments, final) are `Red` of the applied constant to the result.
+Tag `0`: no claim. -/
 def try_prim_dispatch : SpecFn := fun c args h r h' calls =>
-  ∀ rc addr lvls sp types, args = [rc, addr, lvls, sp, types] → CoreGood c calls → c.rc h rc →
+  ∀ rc (f o : F) addr lvls sp types,
+    args = [rc, .field f, .field o, addr, lvls, sp, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
-      ∀ (a : Bytes.Address) us As, RepAddr h a addr → LvListRep h us lvls → c.tml d Γ h As sp →
+      ∀ (a : Bytes.Address) us As, RepAddr h a addr → (f ≠ 0 → PrimAt c a f o) →
+        LvListRep h us lvls → c.tml d Γ h As sp →
         ∀ (t : F) x, r = .tuple [.field t, x] → (t = 1 ∨ t = 2) →
           ∃ E, c.tm d Γ h' E x ∧ Red c.env d (mkAppN (.const (c.κ (ixAddr a)) us) As) E
 
@@ -614,6 +631,10 @@ returned. `Red`. -/
 def nat_lit_to_ctor_or_self : SpecFn := fun c args h r h' calls =>
   ∀ rc e, args = [rc, e] → CoreGood c calls → c.rc h rc →
     ∀ d Γ E, c.tm d Γ h E e → ∃ E', c.tm d Γ h' E' r ∧ Red c.env d E E'
+
+/-- `lit_to_ctor_or_self(rc, e)`: a `Nat` or `String` literal becomes constructor form; any other
+term is returned. `Red`. -/
+def lit_to_ctor_or_self : SpecFn := nat_lit_to_ctor_or_self
 
 /-! ## The normalizers -/
 
@@ -916,7 +937,7 @@ inductive Fn where
   | type_sort_never | red_unfold | whnf_with_spine | whnf_proj_head | whnf_spine
   | try_nat_dispatch_prewhnf | prim_family | try_prim_dispatch | try_quot_iota | red_quot
   | quot_certs | whnf_const_head | red_rec | try_reduce_projection_definition | lams_never
-  | projection_definition_info | nat_lit_to_ctor_or_self | try_k_synth_iota | k_synth_fab
+  | projection_definition_info | nat_lit_to_ctor_or_self | lit_to_ctor_or_self | try_k_synth_iota | k_synth_fab
   | whnf_iota_major | try_iota | red_iota | iota_cmp | iota_certs | slots_never | pi_peel
   | pi_residual | find_rule | try_struct_eta_iota | eta_iota_fab | certs_all | se_parent_addr
   | apply_n_projs | struct_is_rec | struct_scan_members | struct_block_member_addrs
@@ -951,6 +972,7 @@ def Fn.name : Fn → String
   | .lams_never => "KernelWhnf::lams_never"
   | .projection_definition_info => "KernelWhnf::projection_definition_info"
   | .nat_lit_to_ctor_or_self => "KernelWhnf::nat_lit_to_ctor_or_self"
+  | .lit_to_ctor_or_self => "KernelWhnf::lit_to_ctor_or_self"
   | .try_k_synth_iota => "KernelWhnf::try_k_synth_iota"
   | .k_synth_fab => "KernelWhnf::k_synth_fab"
   | .whnf_iota_major => "KernelWhnf::whnf_iota_major"
@@ -1012,6 +1034,7 @@ def Fn.spec : Fn → SpecFn
   | .lams_never => Whnf.lams_never
   | .projection_definition_info => Whnf.projection_definition_info
   | .nat_lit_to_ctor_or_self => Whnf.nat_lit_to_ctor_or_self
+  | .lit_to_ctor_or_self => Whnf.lit_to_ctor_or_self
   | .try_k_synth_iota => Whnf.try_k_synth_iota
   | .k_synth_fab => Whnf.k_synth_fab
   | .whnf_iota_major => Whnf.whnf_iota_major

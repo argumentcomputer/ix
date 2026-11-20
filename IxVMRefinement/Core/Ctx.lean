@@ -510,6 +510,39 @@ structure PrimEqnEnv (env : Ix.Kernel.Env .anon) : Prop where
   intBdiv : ∀ d (x : Int) (m : Nat),
     Red env d (.app (.app (.const (.role .intBdiv) []) (intLitExpr x)) (.lit (.natVal m)))
       (intLitExpr (x.bdiv m))
+  strOpStored : ∀ r : Ix.Kernel.Role,
+    r ∈ [.stringUtf8ByteSize, .stringBack, .stringToByteArray, .stringDecEq, .stringAppend,
+      .charUtf8Size] →
+    ∃ ci, env.find? (.role r) = some ci
+  charOfNatStored : ∃ ci, env.find? (.role .charOfNat) = some ci
+  byteArrayEmptyStored : ∃ ci, env.find? (.role .byteArrayEmpty) = some ci
+  stringStored : ∃ ci, env.find? (.role .string) = some ci
+  eqStored : ∃ ci, env.find? (.role .eq) = some ci
+  eqReflStored : ∃ ci, env.find? (.role .eqRefl) = some ci
+  decidableIsTrueStored : ∃ ci, env.find? (.role .decidableIsTrue) = some ci
+  charUtf8Size : ∀ d (c : Char),
+    Red env d
+      (.app (.const (.role .charUtf8Size) []) (.app (.const (.role .charOfNat) []) (.lit (.natVal c.toNat))))
+      (.lit (.natVal c.utf8Size))
+  strUtf8ByteSize : ∀ d (s : String),
+    Red env d (.app (.const (.role .stringUtf8ByteSize) []) (.lit (.strVal s)))
+      (.lit (.natVal s.utf8ByteSize))
+  strBack : ∀ d (s : String),
+    Red env d (.app (.const (.role .stringBack) []) (.lit (.strVal s)))
+      (.app (.const (.role .charOfNat) []) (.lit (.natVal (s.toList.getLastD 'A').toNat)))
+  strToByteArrayEmpty : ∀ d,
+    Red env d (.app (.const (.role .stringToByteArray) []) (.lit (.strVal "")))
+      (.const (.role .byteArrayEmpty) [])
+  strDecEqRefl : ∀ d (s : String),
+    Red env d (.app (.app (.const (.role .stringDecEq) []) (.lit (.strVal s))) (.lit (.strVal s)))
+      (.app (.app (.const (.role .decidableIsTrue) [])
+        (.app (.app (.app (.const (.role .eq) [.succ .zero]) (.const (.role .string) []))
+          (.lit (.strVal s))) (.lit (.strVal s))))
+        (.app (.app (.const (.role .eqRefl) [.succ .zero]) (.const (.role .string) []))
+          (.lit (.strVal s))))
+  strAppend : ∀ d (s₁ s₂ : String),
+    Red env d (.app (.app (.const (.role .stringAppend) []) (.lit (.strVal s₁))) (.lit (.strVal s₂)))
+      (.lit (.strVal (s₁ ++ s₂)))
 
 theorem PrimEqnEnv.weaken {env env' : Ix.Kernel.Env .anon} (h : PrimEqnEnv env)
     (hext : Ix.Kernel.EnvExt env env') : PrimEqnEnv env' where
@@ -526,6 +559,19 @@ theorem PrimEqnEnv.weaken {env env' : Ix.Kernel.Env .anon} (h : PrimEqnEnv env)
   intPow := fun d x n hn => Ix.Kernel.Rules.Red.weaken hext (h.intPow d x n hn)
   intBmod := fun d x m => Ix.Kernel.Rules.Red.weaken hext (h.intBmod d x m)
   intBdiv := fun d x m => Ix.Kernel.Rules.Red.weaken hext (h.intBdiv d x m)
+  strOpStored := fun r hr => let ⟨ci, hci⟩ := h.strOpStored r hr; ⟨ci, hext.find hci⟩
+  charOfNatStored := let ⟨ci, hci⟩ := h.charOfNatStored; ⟨ci, hext.find hci⟩
+  byteArrayEmptyStored := let ⟨ci, hci⟩ := h.byteArrayEmptyStored; ⟨ci, hext.find hci⟩
+  stringStored := let ⟨ci, hci⟩ := h.stringStored; ⟨ci, hext.find hci⟩
+  eqStored := let ⟨ci, hci⟩ := h.eqStored; ⟨ci, hext.find hci⟩
+  eqReflStored := let ⟨ci, hci⟩ := h.eqReflStored; ⟨ci, hext.find hci⟩
+  decidableIsTrueStored := let ⟨ci, hci⟩ := h.decidableIsTrueStored; ⟨ci, hext.find hci⟩
+  charUtf8Size := fun d c => Ix.Kernel.Rules.Red.weaken hext (h.charUtf8Size d c)
+  strUtf8ByteSize := fun d s => Ix.Kernel.Rules.Red.weaken hext (h.strUtf8ByteSize d s)
+  strBack := fun d s => Ix.Kernel.Rules.Red.weaken hext (h.strBack d s)
+  strToByteArrayEmpty := fun d => Ix.Kernel.Rules.Red.weaken hext (h.strToByteArrayEmpty d)
+  strDecEqRefl := fun d s => Ix.Kernel.Rules.Red.weaken hext (h.strDecEqRefl d s)
+  strAppend := fun d s₁ s₂ => Ix.Kernel.Rules.Red.weaken hext (h.strAppend d s₁ s₂)
 
 /-- **The environment invariant the core reads** (module docstring's table, with the layer that
 establishes each field). -/

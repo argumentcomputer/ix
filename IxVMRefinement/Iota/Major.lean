@@ -234,7 +234,7 @@ theorem try_iota_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap
     obtain ⟨A3, hA3, hr3⟩ := ih.get (.nat .cleanup_nat_offset_major) (by lt_calls) ev242 rc v191
       rfl (good.sub fun z hz => by simp [hz]) (RCRep.mono (e0.trans (e1.trans e2)) hrc) d Γ A2 hA2
     have e3 := ObsFn.heap_extends ev242
-    obtain ⟨M, hM, hr4⟩ := ih.get (.whnf .nat_lit_to_ctor_or_self) (by lt_calls) ev272 rc v229
+    obtain ⟨M, hM, hr4⟩ := ih.get (.whnf .lit_to_ctor_or_self) (by lt_calls) ev272 rc v229
       rfl (good.sub fun z hz => by simp [hz]) (RCRep.mono (e0.trans (e1.trans (e2.trans e3))) hrc)
       d Γ A3 hA3
     have e4 := ObsFn.heap_extends ev272
