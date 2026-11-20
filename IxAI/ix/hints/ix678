@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Runs the ix binary built at the head of ix pull request 678 (~/repos/ix.ixai-pr678, built by
+# build_pr678.sh) against this project's local store. No artifact is pinned: the binary compiles
+# and caches the IxVM of its own checkout, which is the kernel under test.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+project="$(dirname "$(dirname "$here")")"
+# cargo and rustup keep using the user's own homes: HOME below is only for the ix store.
+export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+export HOME="$project/.truthmines"
+export PATH="/nix/store/xnh27vasww8vbnh7a18g3xkdg1r4kl6w-lean-4.34.1/bin:$PATH"
+# The nix-built CUDA library resolves dlopen through nix's loader, which does not search the
+# system driver directory.
+export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libcuda.so.1
+unset IX_AIUR_ARTIFACT IX_AIUR_ARTIFACT_DIGEST IX_AGGR_ARTIFACT IX_AGGR_ARTIFACT_DIGEST
+# The checkout's build tree is a symlink to scratch disk, so the binary cannot find its checkout
+# from its own path.
+export IX_ROOT="${IX_ROOT:-/home/sam/repos/ix.ixai-pr678}"
+# On first use the binary builds its Aiur artifacts and Rust hosts with cargo, which needs the
+# dev shell's compiler environment; the kernel-hints fork's shell is the one it was built in.
+exec nix develop /home/sam/repos/forks/ix-kernel-hints --command "$IX_ROOT/.lake/build/bin/ix" "$@"

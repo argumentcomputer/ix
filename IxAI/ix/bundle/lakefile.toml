@@ -1,0 +1,4 @@
+name = "ixai-bundle"
+
+[[lean_lib]]
+name = "IxAICore"

@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Runs the Ix CLI against this project's local store. The store (`$HOME/.ix/store`) is the local
+# Truth Mines sketch, so HOME points into the project. The ix binary is used read-only from its
+# checkout, and its IxVM artifact is pinned by digest.
+#
+# IX_PROFILE selects the build: `ci` (default: the checkout IX_CI_CHECKOUT, default
+# /home/sam/repos/ix.ci-merge-tests), `ci-pinned` (ix/toolchain-ci), `cert` (IX_CERT_CHECKOUT,
+# default /home/sam/repos/forks/ix-cert: ci with the kernel fixes and the Aiur-child aggregator),
+# `compress` (IX_COMPRESS_CHECKOUT,
+# default /home/sam/repos/ix.aiur-compression-active) or `pinned` (ix/toolchain: this project's own
+# pinned copy of the compression build, with the ladder artifacts it needs). IX_BIN overrides the
+# binary and IX_LEAN the Lean toolchain (default the Nix store path below).
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+project="$(dirname "$here")"
+case "${IX_PROFILE:-ci}" in
+  ci)
+    checkout="${IX_CI_CHECKOUT:-/home/sam/repos/ix.ci-merge-tests}"
+    digest=5111b234907cf3ab87d43ac6673617c752b3a37fb0ca7485b60d9d7081f02576 ;;
+  ci-pinned)
+    # This project's pinned copy (ix/toolchain-ci) of the ci build, immune to rebuilds of its checkout.
+    export IX_BIN="$here/toolchain-ci/bin/ix"
+    checkout="$here/toolchain-ci"
+    digest=5111b234907cf3ab87d43ac6673617c752b3a37fb0ca7485b60d9d7081f02576
+    export IX_AGGR_ARTIFACT="$here/artifacts/stark-export-7d687ca0a7815bb5c4a68b94276fe797bb3a9f909b2da795267ac8ec9184c4d1.ixa"
+    export IX_AGGR_ARTIFACT_DIGEST=7d687ca0a7815bb5c4a68b94276fe797bb3a9f909b2da795267ac8ec9184c4d1 ;;
+  cert)
+    # The combined certificate's toolchain (IX_CERT_CHECKOUT, default the fork ix-cert): the ci
+    # build with the IxVM kernel fixes and the Aiur-child aggregator. Its IxVM artifact differs
+    # from ci's because the kernel circuit changed.
+    checkout="${IX_CERT_CHECKOUT:-/home/sam/repos/forks/ix-cert}"
+    # The fork pins its programs in tools/formal-aiur.keys (program, artifact digest, key digest);
+    # the artifacts themselves are kept by digest in ix/artifacts (ix/combined/adopt_kernel.sh).
+    digest=$(awk '$1 == "ixvm" { print $2 }' "$checkout/tools/formal-aiur.keys")
+    aggr_digest=$(awk '$1 == "aggregation" { print $2 }' "$checkout/tools/formal-aiur.keys")
+    export IX_AGGR_ARTIFACT="$here/artifacts/aggregate-$aggr_digest.ixa"
+    export IX_AGGR_ARTIFACT_DIGEST="$aggr_digest"
+    # The fork's CUDA library resolves dlopen through nix's loader, which does not search the
+    # system driver directory.
+    export LD_PRELOAD="${LD_PRELOAD:-/usr/lib/x86_64-linux-gnu/libcuda.so.1}" ;;
+  compress)
+    checkout="${IX_COMPRESS_CHECKOUT:-/home/sam/repos/ix.aiur-compression-active}"
+    digest=5bce5f797cd03bf76f6e70404f046baf7ecb90f7b9a76995b6ee8c62d31a1b08 ;;
+  pinned)
+    # This project's own pinned copy (ix/toolchain): binary, CUDA libraries and ladder artifacts.
+    export IX_BIN="$here/toolchain/bin/ix"
+    checkout="$here/toolchain"
+    digest=5bce5f797cd03bf76f6e70404f046baf7ecb90f7b9a76995b6ee8c62d31a1b08 ;;
+  *) echo "unknown IX_PROFILE ${IX_PROFILE}" >&2; exit 2 ;;
+esac
+export IX_BIN="${IX_BIN:-$checkout/.lake/build/bin/ix}"
+export IX_LEAN="${IX_LEAN:-/nix/store/xnh27vasww8vbnh7a18g3xkdg1r4kl6w-lean-4.34.1}"
+export HOME="$project/.truthmines"
+export PATH="$IX_LEAN/bin:$PATH"
+export IX_AIUR_ARTIFACT="$here/artifacts/ixvm-$digest.ixa"
+export IX_AIUR_ARTIFACT_DIGEST="$digest"
+mkdir -p "$HOME"
+exec "$IX_BIN" "$@"

@@ -1,0 +1,5 @@
+Verifier-side tools of the combined certificate, built from ~/repos/forks/ix-cert (branch cert,
+2a7952660) by ix/combined/build_cert.sh and copied here because their cargo target is on scratch
+disk: aiur_join_check (the independent check of a joined root), export_root, env_names,
+combine_members and b3 (BLAKE3 of a file). None needs the GPU. The prover-side tools (ix itself
+and aiur_join) are rebuilt by build_cert.sh.

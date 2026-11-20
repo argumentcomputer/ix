@@ -1,0 +1,64 @@
+name = "ix-ai-pipeline"
+defaultTargets = ["IxAICore", "IxAICommon", "IxAI", "IxAIVerify", "IxAICli", "IxAIData", "IxAIBench", "IxAITest", "IxAICoreTest", "IxAIVerifyTest", "demo", "ixai", "ixai-verify"]
+
+[[require]]
+name = "floatlib"
+git = "https://github.com/lean-dojo/FloatLib.git"
+rev = "21865090ba7c1cd39381c198d5cdd8fb1d8728a3"
+
+[[require]]
+name = "Blake3"
+git = "https://github.com/argumentcomputer/Blake3.lean"
+rev = "3f8b805614a0bae1c033469ff893a8f0ee85f601"
+
+[[lean_lib]]
+name = "IxAICore"
+
+[[lean_lib]]
+name = "IxAICommon"
+
+[[lean_lib]]
+name = "IxAI"
+
+[[lean_lib]]
+name = "IxAIVerify"
+
+[[lean_lib]]
+name = "IxAICli"
+
+[[lean_lib]]
+name = "IxAIData"
+
+[[lean_lib]]
+name = "IxAIBench"
+
+[[lean_exe]]
+name = "demo"
+root = "Main"
+
+[[lean_lib]]
+name = "IxAITest"
+
+[[lean_lib]]
+name = "IxAICoreTest"
+
+[[lean_exe]]
+name = "ixai"
+root = "Ixai"
+# The reward harness parses submissions in an imported `Init` environment, whose initializers
+# run in the interpreter.
+supportInterpreter = true
+
+[[lean_exe]]
+name = "ixai-verify"
+root = "IxaiVerify"
+
+[[lean_lib]]
+name = "IxAIVerifyTest"
+
+[[lean_lib]]
+name = "IxAIGpu"
+
+[[lean_exe]]
+name = "ixai-gpu-export"
+root = "GpuExport"
