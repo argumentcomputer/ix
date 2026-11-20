@@ -61,12 +61,20 @@ module KernelTypes {
 ⟧
 
 def collect_spine := aiur_fn⟦
-  fn collect_spine(e: KExpr) -> (KExpr, Lists::List<KExpr>) {
+  inline fn collect_spine(e: KExpr) -> (KExpr, Lists::List<KExpr>) {
+      collect_spine_onto(e, (&(Lists::Node::Nil)))
+    }
+⟧
+
+  -- The head of `e` and its arguments in order, followed by `rest`. Arguments are
+  -- consed from the last one inwards, so a spine of n arguments costs n rows (a
+  -- `snoc` per argument would cost n²/2).
+
+def collect_spine_onto := aiur_fn⟦
+  fn collect_spine_onto(e: KExpr, rest: Lists::List<KExpr>) -> (KExpr, Lists::List<KExpr>) {
       match (*(e)) {
-        KExprNode::App(f, a) => {
-          let (head, args) = collect_spine(f);
-          (head, Lists::snoc(args, a)) } ,
-        _ => {  (e, (&(Lists::Node::Nil))) } ,
+        KExprNode::App(f, a) => {  collect_spine_onto(f, (&(Lists::Node::Cons(a, rest)))) } ,
+        _ => {  (e, rest) } ,
       }
     }
 ⟧

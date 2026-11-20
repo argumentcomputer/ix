@@ -148,9 +148,9 @@ def whnf_with_spine := aiur_fn⟦
   fn whnf_with_spine(rc: KernelRoles::RoleCtx, head: KernelTypes::KExpr, spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       match (*(head)) {
         KernelTypes::KExprNode::App(f, a) => {
-          match KernelTypes::collect_spine(head) {
+          match KernelTypes::collect_spine_onto(head, spine) {
             (inner_head, inner_spine) => {
-              whnf_with_spine(rc, inner_head, Lists::concat(inner_spine, spine), types) } ,
+              whnf_with_spine(rc, inner_head, inner_spine, types) } ,
           } } ,
         KernelTypes::KExprNode::Lam(ty, body) => {
           match red_beta(rc, head, spine, types) {
@@ -1219,8 +1219,8 @@ def whnf_struct_core_spine := aiur_fn⟦
                                    types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       match (*(head)) {
         KernelTypes::KExprNode::App(_, _) => {
-          match KernelTypes::collect_spine(head) {
-            (h, s) => {  whnf_struct_core_spine(rc, h, Lists::concat(s, spine), types) } ,
+          match KernelTypes::collect_spine_onto(head, spine) {
+            (h, s) => {  whnf_struct_core_spine(rc, h, s, types) } ,
           } } ,
         KernelTypes::KExprNode::Lam(_, _) => {
           match red_beta(rc, head, spine, types) {
@@ -1297,9 +1297,9 @@ def whnf_nd_with_spine := aiur_fn⟦
                               types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       match (*(head)) {
         KernelTypes::KExprNode::App(f, a) => {
-          match KernelTypes::collect_spine(head) {
+          match KernelTypes::collect_spine_onto(head, spine) {
             (inner_head, inner_spine) => {
-              whnf_nd_with_spine(rc, inner_head, Lists::concat(inner_spine, spine), types) } ,
+              whnf_nd_with_spine(rc, inner_head, inner_spine, types) } ,
           } } ,
         KernelTypes::KExprNode::Lam(ty, body) => {
           match red_beta(rc, head, spine, types) {
