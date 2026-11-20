@@ -1245,6 +1245,105 @@ theorem check_carriers_rawTm_familyKey {κ : _root_.Address → KKey} {d : Nat}
       rw [hstrip]
       simp only [Option.bind_some, hlast, headKey, hRdom_eq, getAppFn_mkAppN_ce, Expr.getAppFn]
 
+private theorem recMotiveCarrierAt_eq_familyOf_ce (c : Ixon.Constant) (r : Ixon.Recursor)
+    (i n : Nat) :
+    recMotiveCarrierAt c r i n = Binding.FamilyOf.motiveCarrierAt c r i n := by
+  have hunshare : ∀ k e, recUnshare c k e = Binding.FamilyOf.unshare c k e := by
+    intro k; induction k with
+    | zero => intro _; rfl
+    | succ k ih =>
+      intro e; cases e with
+      | share idx =>
+        simp only [recUnshare, Binding.FamilyOf.unshare]
+        cases c.sharing[idx.toNat]? with
+        | none => rfl
+        | some e' => exact ih e'
+      | _ => rfl
+  have hnode : ∀ e, recNode c e = Binding.FamilyOf.node c e := fun e => hunshare _ e
+  have hpeel : ∀ k e, recPeel c k e = Binding.FamilyOf.peel c k e := by
+    intro k; induction k with
+    | zero => intro _; rfl
+    | succ k ih =>
+      intro e; simp only [recPeel, Binding.FamilyOf.peel, hnode]
+      cases Binding.FamilyOf.node c e <;> simp [ih]
+  have hdom : ∀ e, recDomOf c e = Binding.FamilyOf.domOf c e := by
+    intro e; simp only [recDomOf, Binding.FamilyOf.domOf, hnode]
+    cases Binding.FamilyOf.node c e <;> rfl
+  have hlast : ∀ k e, recLastDom c k e = Binding.FamilyOf.lastDom c k e := by
+    intro k; induction k with
+    | zero => intro _; rfl
+    | succ k ih =>
+      intro e; simp only [recLastDom, Binding.FamilyOf.lastDom, hnode]
+      cases h1 : Binding.FamilyOf.node c e with
+      | all d b =>
+        dsimp only
+        cases h2 : Binding.FamilyOf.node c b <;> simp [ih]
+      | _ => rfl
+  have hsp : ∀ k e, recSpineHead c k e = Binding.FamilyOf.spineHead c k e := by
+    intro k; induction k with
+    | zero => intro e; exact hnode e
+    | succ k ih =>
+      intro e; simp only [recSpineHead, Binding.FamilyOf.spineHead, hnode]
+      cases Binding.FamilyOf.node c e <;> simp [ih]
+  have href : ∀ k e, recRefHeadAt c k e = Binding.FamilyOf.refHeadAt c k e := by
+    intro k e; simp only [recRefHeadAt, Binding.FamilyOf.refHeadAt, hsp]
+    cases Binding.FamilyOf.spineHead c k e <;> rfl
+  simp only [recMotiveCarrierAt, Binding.FamilyOf.motiveCarrierAt, hpeel, hdom, hlast, href]
+
+/-- **`KernelModeled::check_carriers`** on a raw converted recursor type certifies
+`∃ nf, recMotiveCarrierAt crb rc 0 nf = some (Core.ixAddr b₀)`. -/
+private theorem check_carriers_recMotiveCarrier0_ce {crb : Ixon.Constant} {rc : Ixon.Recursor}
+    {blobs : List (_root_.Address × ByteArray)} {b₀ : Bytes.Address} {bs : List Bytes.Address}
+    {x_ty x_ta r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hnp : rc.params.toNat < 72057594037927936)
+    (raw : L1.RawConvExpr crb.refs.toList [] crb.univs.toList crb.sharing.toList blobs h
+      4294967295 rc.typ x_ty)
+    (hta : RepList Core.addrListEnum (Bytes.RepAddressRef Core.addrTy) h (b₀ :: bs) x_ta)
+    (ev : ObsFn Obs.W "KernelModeled::check_carriers"
+      [x_ty, .field (rc.params.toNat : F), x_ta] h r h' cs) :
+    ∃ nf, recMotiveCarrierAt crb rc 0 nf = some (Core.ixAddr b₀) := by
+  match Obs.«KernelModeled::check_carriers».obs ev with
+  | .run (ev20 := ev20) (ev6 := ev6) .. =>
+    obtain ⟨rfl, -, _, e₁, hpeel, raw₁⟩ := peel_n_foralls_raw rc.params.toNat hnp raw ev20
+    match Obs.«KernelModeled::check_carriers_go».obs ev6 with
+    | .Nil (ld12 := ld) .. => cases Lib.rep_nil_of_load hta ld
+    | .Cons (ld12 := ld12) (ld53 := ld53) (ev103 := ev103) (ev90 := ev90) (ld137 := ld137)
+        (ev180 := ev180) (heq203 := heq203) .. =>
+      obtain ⟨_, _, hcons, ht_rep, -⟩ := Lib.rep_cons_of_load hta ld12
+      injection hcons with hb_eq _
+      subst hb_eq
+      obtain ⟨_, ed, _, hnd₁, raw_d, -⟩ := rawConvExpr_forall_inv raw₁ ld53
+      obtain ⟨rfl, -, n₁, _, ed', hld, raw_d'⟩ :=
+        last_binder_dom_raw_aux _ (Nat.le_refl _) raw_d ev103
+      obtain ⟨ext_sp, -, n₂, _, raw_sp, hns_sp⟩ :=
+        collect_spine_raw_aux _ (Nat.le_refl _) raw_d' ev90
+      obtain ⟨rIdx, uIdxs, a_c, d_c, hnd_sp, href_c, hd_c, hra_c⟩ :=
+        rawConvExpr_const_inv raw_sp ld137
+      rw [node_of_not_share hns_sp] at hnd_sp
+      have ht_sp := Bytes.repAddressRef_heapMono₂ Core.addrTy ext_sp ht_rep
+      obtain ⟨heq_c, rfl⟩ := Lib.address_eq_spec ev180 hra_c ht_sp
+      have hd_eq : d_c = b₀ := by
+        by_contra hne
+        rw [ite_eq_right_iff.mpr fun hc => absurd hc hne] at heq_c
+        exact absurd (Value.field.inj (heq203.symm.trans heq_c)) (by decide)
+      subst hd_eq
+      refine ⟨max n₁ n₂, ?_⟩
+      rw [recMotiveCarrierAt_eq_familyOf_ce]
+      unfold Binding.FamilyOf.motiveCarrierAt
+      rw [Nat.add_zero, hpeel]
+      dsimp only [bind, Option.bind]
+      have hdom : Binding.FamilyOf.domOf crb e₁ = some ed := by
+        simp only [Binding.FamilyOf.domOf, hnd₁]
+      rw [hdom]
+      dsimp only [bind, Option.bind]
+      rw [Binding.FamilyOf.lastDom_mono crb ed' n₁ (max n₁ n₂) ed hld (Nat.le_max_left _ _)]
+      dsimp only [bind, Option.bind]
+      have hrefAt : Binding.FamilyOf.refHeadAt crb n₂ ed' = some (Core.ixAddr d_c) := by
+        unfold Binding.FamilyOf.refHeadAt
+        rw [hnd_sp, hd_c]
+        exact href_c
+      exact Binding.FamilyOf.refHeadAt_mono hrefAt (Nat.le_max_right _ _)
+
 /-- **`KernelModeled::check_rec_motive` ensures the `mI + 1`-st conclusion is not a `∀`**, because
 its spine head is a `.bvar`. -/
 theorem check_rec_motive_not_forallE {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
@@ -2580,6 +2679,7 @@ structure ExtractedTwinMember (calls : List (Call F)) (t : Ix.Kernel.RoleTable) 
   hty_def : ty₀.allLevelParamsDefined ps = true
   hty_fv : ty₀.hasFvar = false
   hcanonTy : LoadedReads.canonAnn c ps (mutsRoot rs' k) rc.typ ty₀ = some ty'
+  hmotiveCarrier0 : ∃ nf, recMotiveCarrierAt c rc 0 nf = some (Core.iprjAddr B 0)
   hty'_letFree : letFree ty' = true
   hvalStored : ValStored ⟨keyOf t (Core.rprjAddr A k), ps, ty'⟩
     ⟨keyOf t (Core.rprjAddr A k), ps, ty₀⟩
@@ -3225,6 +3325,10 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
           have hty'_eq : ty'_e = ty' := Option.some.inj (hcanonTy_e.symm.trans hcanonTy)
           subst ty'_e
           have htm_ty' : Decl.TmCExact (Core.keyOf t) m67 (Core.posOf ps ty') tyPtr := htm_ty'_e
+          have hmc0 : ∃ nf, recMotiveCarrierAt c rc 0 nf = some (Core.iprjAddr B 0) := by
+            rw [← ht0_addr]
+            exact check_carriers_recMotiveCarrier0_ce hp56 (rty.mono ext_m67_m391 (fun _ hm => hm))
+              htype_m391 ev485
           have hty'_letFree : letFree ty' = true := letFree_of_canonAnn hcanonTy
           have hrls_letFree : ∀ rl ∈ rls, letFree rl.rhs = true :=
             canonRules_letFree hcanonRules
@@ -3459,6 +3563,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             hty_def := hty₀_def
             hty_fv := hty₀_fv
             hcanonTy := hcanonTy
+            hmotiveCarrier0 := hmc0
             hty'_letFree := hty'_letFree
             hvalStored := ⟨rfl, rfl, hannTy'⟩
             hrules_read := hrules_rd

@@ -316,6 +316,21 @@ theorem towerEntryLaw_cons_prefix (mp : EnvModelM V μ env)
     exact nomatch hn
   have hnT : T ≠ c₀.name := hne hfT
   have hnC : entry.ctor ≠ c₀.name := hne hfC
+  have hprojNodeEq : ∀ x : AnnotTerm,
+      projNodeAV m₂.acval T i entry x = projNodeAV mp.base2.acval T i entry x := by
+    intro x
+    unfold projNodeAV
+    split
+    · rfl
+    · rename_i hgt
+      have hth := mp.base2.proj_ok.towerHead hfP
+      have hch := hth.chain_isSome hgt
+      rw [hsn, hidx] at hch
+      cases hfc : env.find? (Ix.Kernel.projChainKey T i) with
+      | none => rw [hfc] at hch; exact nomatch hch
+      | some ci =>
+        have hnCh : Ix.Kernel.projChainKey T i ≠ c₀.name := hne hfc
+        congr 1; funext n; rw [hac, acvalWith_ne hnCh]
   refine ⟨hsn, hidx, hlt, ⟨cvT, capsT, ?_, hlpsT⟩, hO5, cvC, ?_, hlpsC,
     fun us hus => ?_, ?_⟩
   · rw [Ix.Kernel.Env.find?_cons_of_isSome hfresh (by rw [hfT]; rfl)]; exact hfT
@@ -337,6 +352,7 @@ theorem towerEntryLaw_cons_prefix (mp : EnvModelM V μ env)
         exact (Ix.Kernel.projEntry_body_wf mp.base2.wf hfP).2.2.1
     · intro hg ρ vs x rest hlen hokT hokx hmem hpeel
       rw [hac, acvalWith_ne hnT] at hokT hmem
+      rw [hprojNodeEq x]
       exact hA hg ρ vs x rest hlen hokT hokx hmem hpeel
     · -- the constructor type's reading crosses: a
       -- prefix lookup's closed type
@@ -346,16 +362,17 @@ theorem towerEntryLaw_cons_prefix (mp : EnvModelM V μ env)
         (constsBound_instType mp.base2.wf
           (Ix.Kernel.Semantics.Env.find?_mem hfC) us) hTCa
     · intro hg ρ ys rest hlen hok hfit
+      rw [hprojNodeEq]
       rw [hac, acvalWith_ne hnC] at hok ⊢
       exact hB hg ρ ys rest hlen hok hfit
   · -- (C) the η law crosses: the former's lookup is a
     -- prefix lookup, its type reading is closed, the leaves are prefix
     -- leaves
-    intro cvT' capsT' hfT' us hus
+    intro hoff cvT' capsT' hfT' us hus
     have hfT'' : env.find? T = some (.indInfo cvT' capsT') := by
       rw [Ix.Kernel.Env.find?_cons_of_isSome hfresh (by rw [hfT]; rfl)] at hfT'
       exact hfT'
-    obtain ⟨TVa, hTVa, hok, hlaw'⟩ := hetaL cvT' capsT' hfT'' us hus
+    obtain ⟨TVa, hTVa, hok, hlaw'⟩ := hetaL hoff cvT' capsT' hfT'' us hus
     refine ⟨TVa, ?_, hok, ?_⟩
     · rw [hac]
       exact denoteMeta_cons_mono hfresh

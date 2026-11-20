@@ -72,6 +72,8 @@ environment discipline of `WellDenoted`. -/
   | _, .sort _ => True
   | _, .const _ _ => True
   | _, .prf => True
+  | ρ, .chain g e => (∀ m, AnnotValid ρ (g m)) ∧ AnnotValid ρ e
+  | ρ, .bgraph _ f => AnnotValid ρ f
 
 /-! ### Clause equations -/
 
@@ -107,6 +109,12 @@ theorem AnnotValid_fst (ρ : Nat → V) (e : AnnotTerm) :
   rw [AnnotValid]
 theorem AnnotValid_snd (ρ : Nat → V) (e : AnnotTerm) :
     AnnotValid V ρ (.snd e) = AnnotValid V ρ e := by
+  rw [AnnotValid]
+theorem AnnotValid_chain (ρ : Nat → V) (g : Nat → AnnotTerm) (e : AnnotTerm) :
+    AnnotValid V ρ (.chain g e) = ((∀ m, AnnotValid V ρ (g m)) ∧ AnnotValid V ρ e) := by
+  rw [AnnotValid]
+theorem AnnotValid_bgraph (ρ : Nat → V) (n : Nat) (f : AnnotTerm) :
+    AnnotValid V ρ (.bgraph n f) = AnnotValid V ρ f := by
   rw [AnnotValid]
 
 /-! ## The establishment step, isolated
@@ -185,6 +193,13 @@ theorem AnnotValid_liftN (n : Nat) :
     intro k ρ
     rw [AnnotTerm.liftN_snd, AnnotValid_snd, AnnotValid_snd, ihe]
   | prf => intro k ρ; simp
+  | chain g e ihg ihe =>
+    intro k ρ
+    rw [AnnotTerm.liftN_chain, AnnotValid_chain, AnnotValid_chain, ihe]
+    exact and_congr (forall_congr' fun m => ihg m k ρ) Iff.rfl
+  | bgraph m f ihf =>
+    intro k ρ
+    rw [AnnotTerm.liftN_bgraph, AnnotValid_bgraph, AnnotValid_bgraph, ihf]
 
 /-! ### Instantiation — and the one premise that had to change
 
@@ -261,6 +276,13 @@ theorem AnnotValid_inst :
     intro a k ρ ha
     rw [AnnotTerm.inst_snd, AnnotValid_snd, AnnotValid_snd, ihe a k ρ ha]
   | prf => intro a k ρ _; simp [AnnotTerm.inst]
+  | chain g e ihg ihe =>
+    intro a k ρ ha
+    rw [AnnotTerm.inst_chain, AnnotValid_chain, AnnotValid_chain, ihe a k ρ ha]
+    exact and_congr (forall_congr' fun m => ihg m a k ρ ha) Iff.rfl
+  | bgraph m f ihf =>
+    intro a k ρ ha
+    rw [AnnotTerm.inst_bgraph, AnnotValid_bgraph, AnnotValid_bgraph, ihf a k ρ ha]
 
 /-- Substitution at the outermost binder — the β/ζ transport form,
 `WellDenoted_inst0`'s mirror. -/

@@ -243,6 +243,7 @@ theorem aliasEnv_cons {E : Env .anon} {h h' : KKey → KKey} (hA : AliasEnv E h)
 its one-step lemma. -/
 theorem foldStoreInv_cons_defn {env : Env .anon} (h : FoldStoreInv env)
     {cv : ConstantVal .anon} {value : KExpr} {hint : ReducibilityHint}
+    (haux : ¬ NonAuxKey cv.name)
     (hfresh : env.find? cv.name = none)
     (hnpt : ∀ T, cv.name ≠ Ix.Kernel.projTableName T)
     (hty : cv.type.hasFvar = false ∧
@@ -275,6 +276,8 @@ theorem foldStoreInv_cons_defn {env : Env .anon} (h : FoldStoreInv env)
         (fun _ _ heq => nomatch heq)
       thmTyped := Ix.Kernel.Model.thmTyped_step_noThm hext h.thmTyped
         (hnew Ix.Kernel.Model.NotThm (fun _ _ heq => nomatch heq))
+      defnTyped := defnTyped_step_noBaseDefn hext h.defnTyped
+        (hnew NotBaseDefn fun hna _ _ _ _ => haux hna)
       recK := Ix.Kernel.Model.recK_step h.store h.recK hext.find
         (fun n cv' mI rP rules hf hn => (hnorec n cv' mI rP rules hf hn).elim)
       etaTowers := Ix.Kernel.Model.etaTowers_step_noEta hext h.etaTowers
@@ -309,7 +312,7 @@ theorem foldInv_installAliasPos {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .a
   obtain ⟨mp', -, hext, hEE', -⟩ := installAliasPos mp hEE hperm hfresh hnpt hsrc hlps htf htp
     htr htb (fun ψ => aliasType_reads mp.base2 (renameOkPos_of_aliasEnv mp hA) hperm hlps hty ψ)
   refine ⟨⟨⟨mp', hT.of_ext hext⟩, hEE'⟩, ?_⟩
-  refine foldStoreInv_cons_defn hE.store hfresh hnpt ⟨htf, htp, htr, htb⟩ ⟨rfl, ?_, ?_, rfl⟩
+  refine foldStoreInv_cons_defn hE.store (fun hna => hna n d rfl) hfresh hnpt ⟨htf, htp, htr, htb⟩ ⟨rfl, ?_, ?_, rfl⟩
   · show Expr.allLevelParamsDefined lps (Expr.const tgt (lps.map Level.param)) = true
     simp only [Expr.allLevelParamsDefined, List.all_eq_true]
     intro u hu

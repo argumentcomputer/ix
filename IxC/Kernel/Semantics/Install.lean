@@ -121,7 +121,23 @@ theorem denoteAnnot_acval_congr {mode : CheckMode}
   | case8 d f a ihf iha => rw [denoteAnnot, denoteAnnot, ihf, iha]
   | case9 d ty val body =>
     rw [denoteAnnot, denoteAnnot]
-  | case10 d sn i e ihe => rw [denoteAnnot, denoteAnnot, ihe]
+  | case10 d sn i e ihe =>
+    rw [denoteAnnot, denoteAnnot, ihe]
+    cases denoteAnnot mode acval₂ env φ fuel d e with
+    | none => rfl
+    | some ea =>
+      dsimp only [bind, Option.bind]
+      cases env.findProj? sn i with
+      | none => rfl
+      | some entry =>
+        dsimp only
+        unfold projNodeAV?
+        split
+        · rfl
+        · split
+          · rename_i hs
+            congr 2; funext m; exact congrFun (hag _ hs) _
+          · rfl
   | case11 d n hsup =>
     obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hN, hZ, hS, -⟩ :=
       natLitSupported_inv hsup

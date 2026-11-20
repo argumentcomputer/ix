@@ -442,6 +442,7 @@ theorem fixCtorDataI_ident {acval : Key md → (LevelParam → Nat) → AnnotTer
     {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ : Env md}
     {m₁ m₂ : EnvModel V env} (hac₁ : m₁.acval = acvalWith acval T A₁)
     (hac₂ : m₂.acval = acvalWith acval T A₂) (hfresh : env₀.find? T = none)
+    (hnp : T.isProjFnShape = false)
     {lps : List LevelParam} {cvC : ConstantVal md} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {idx₁ idx₂ : List (Expr md)}
     {ds₁ ds₂ : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)} {Es₁ Es₂ : (LevelParam → Nat) → List AnnotTerm}
@@ -491,7 +492,7 @@ theorem fixCtorDataI_ident {acval : Key md → (LevelParam → Nat) → AnnotTer
     have hd₂ := hdoms₂ k a hka
     rw [hac₁] at hd₁
     rw [hac₂] at hd₂
-    rw [denoteMeta_acvalWith_shallow (A₂ := A₂) hfresh (nP + i + k) _
+    rw [denoteMeta_acvalWith_shallow (A₂ := A₂) hfresh hnp (nP + i + k) _
       (hresA a (List.mem_of_getElem? hka))] at hd₁
     have h22 := Option.some.inj (hd₁.symm.trans hd₂)
     have hlenA := openPisAtFvars_length _ hop₁
@@ -522,7 +523,7 @@ theorem fixCtorDataI_ident {acval : Key md → (LevelParam → Nat) → AnnotTer
     exact Prod.ext (hb₁.trans hb₂.symm) (Prod.ext h21 h22)
   refine ⟨rfl, rfl, rfl, rfl, ?_, ?_, ?_, ?_⟩
   · intro ψ
-    refine CtorDataI.Es_eq_shallow hac₁ hac₂ hfresh h₁.toCtorDataI h₂.toCtorDataI ?_ ψ
+    refine CtorDataI.Es_eq_shallow hac₁ hac₂ hfresh hnp h₁.toCtorDataI h₂.toCtorDataI ?_ ψ
     rw [h₁.idxEq]
     exact h₁.opened.residRes
   · intro ψ
@@ -543,13 +544,13 @@ theorem fixCtorDataI_ident {acval : Key md → (LevelParam → Nat) → AnnotTer
           rw [hac₁] at hr₁
           rw [hac₂] at hr₂
           have hr₁' := DenoteMetaSpine.congr hr₁ fun a ha =>
-            denoteMeta_acvalWith_shallow (A₂ := A₂) hfresh (nP + i) a (hres a ha)
+            denoteMeta_acvalWith_shallow (A₂ := A₂) hfresh hnp (nP + i) a (hres a ha)
           exact DenoteMetaSpine.unique hr₁' hr₂
         · obtain ⟨-, afvs, body, -, -, hr₁, hr₂, hres⟩ := hrefl ψ i _ hx hk
           rw [hac₁] at hr₁
           rw [hac₂] at hr₂
           have hr₁' := DenoteMetaSpine.congr hr₁ fun a ha =>
-            denoteMeta_acvalWith_shallow (A₂ := A₂) hfresh _ a (hres a ha)
+            denoteMeta_acvalWith_shallow (A₂ := A₂) hfresh hnp _ a (hres a ha)
           exact DenoteMetaSpine.unique hr₁' hr₂
       rw [List.getElem?_eq_getElem (by omega), List.getElem?_eq_getElem (by omega)]
       congr 1
@@ -600,7 +601,7 @@ theorem fixCtorDataI_ident {acval : Key md → (LevelParam → Nat) → AnnotTer
     have hd₂ := h₂.domRead ψ i _ hx
     rw [hac₁] at hd₁
     rw [hac₂] at hd₂
-    rw [denoteMeta_acvalWith_shallow (A₂ := A₂) hfresh (nP + i) _ (h₁.opened.ord i _ hx hk)] at hd₁
+    rw [denoteMeta_acvalWith_shallow (A₂ := A₂) hfresh hnp (nP + i) _ (h₁.opened.ord i _ hx hk)] at hd₁
     exact Option.some.inj (hd₁.symm.trans hd₂)
 
 

@@ -838,17 +838,27 @@ structure UnposAgree (ac_r : KKey → (LevelParam → Nat) → AnnotTerm) (E_r :
   entry : ∀ k ci_r, E_r.find? k = some ci_r →
     ∃ ci_p, E_p.find? k = some ci_p ∧ UnposEntry ac_r ci_r ac_p ci_p k
   projEq : ∀ sn, (E_r.find? sn).isSome = true → ∀ i, E_p.findProj? sn i = E_r.findProj? sn i
+  projChain : ∀ sn i entry, E_r.findProj? sn i = some entry → ¬ entry.off ≤ 1 →
+    (E_r.find? (Ix.Kernel.projChainKey sn i)).isSome = true ∧
+    (E_p.find? (Ix.Kernel.projChainKey sn i)).isSome = true ∧
+    ac_p (Ix.Kernel.projChainKey sn i) = ac_r (Ix.Kernel.projChainKey sn i)
 
 theorem UnposAgree.of_base
     {ac_r : KKey → (LevelParam → Nat) → AnnotTerm} {E_r : Env .anon}
     {ac_p : KKey → (LevelParam → Nat) → AnnotTerm} {E_p : Env .anon}
     (hfind : ∀ k ci, E_r.find? k = some ci → E_p.find? k = some ci)
     (hac : ∀ k, (E_r.find? k).isSome = true → ac_p k = ac_r k)
-    (hnnp : NoNewProjForOld E_r E_p) :
+    (hnnp : NoNewProjForOld E_r E_p)
+    (hpok : Ix.Kernel.ProjOkT E_r) :
     UnposAgree ac_r E_r ac_p E_p where
   entry k ci_r hf :=
     ⟨ci_r, hfind k ci_r hf, Or.inl ⟨rfl, hac k (by rw [hf]; rfl)⟩⟩
   projEq sn hsn i := hnnp.findProj?_eq hsn i
+  projChain sn i entry hfp hgt := by
+    have hsr : (E_r.find? (Ix.Kernel.projChainKey sn i)).isSome = true :=
+      hpok.chain_isSome hfp hgt
+    obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hsr
+    exact ⟨hsr, by rw [hfind _ _ hci]; rfl, hac _ hsr⟩
 
 theorem UnposAgree.cons_pair
     {ac_r : KKey → (LevelParam → Nat) → AnnotTerm} {E_r : Env .anon}
@@ -906,6 +916,19 @@ theorem UnposAgree.cons_pair
       rw [hproj_self]
     · rw [ite_eq_right heq] at hsn
       exact h.projEq sn hsn i
+  projChain sn i entry hfp hgt := by
+    unfold Env.findProj? at hfp
+    rw [EnvExt.find?_cons_ne (hnpt_r sn)] at hfp
+    obtain ⟨hsr, hsp, hac⟩ := h.projChain sn i entry hfp hgt
+    have hne_r : c_r.name ≠ Ix.Kernel.projChainKey sn i := by
+      intro heq
+      rw [← heq, hfresh_r] at hsr
+      exact nomatch hsr
+    have hne_p : c_p.name ≠ Ix.Kernel.projChainKey sn i := fun heq => hne_r (hname.symm.trans heq)
+    refine ⟨?_, ?_, ?_⟩
+    · rw [EnvExt.find?_cons_ne hne_r]; exact hsr
+    · rw [EnvExt.find?_cons_ne hne_p]; exact hsp
+    · rw [acvalWith_ne hne_p.symm, acvalWith_ne hne_r.symm]; exact hac
 
 private theorem natIndOk_false_of_gt_one {ci : ConstantInfo .anon}
     (h : 1 < ci.toConstantVal.levelParams.length) :
@@ -1217,6 +1240,19 @@ theorem denoteMeta_unpos_eq {ac_r ac_p : KKey → (LevelParam → Nat) → Annot
     rw [denoteMeta, denoteMeta,
       denoteMeta_unpos_eq h φ sub d hcr.2,
       h.projEq sn hcr.1 i]
+    cases hfp : E_r.findProj? sn i with
+    | none => rfl
+    | some entry =>
+      dsimp only
+      cases hs : denoteMeta ac_p E_p φ d sub with
+      | none => rfl
+      | some ea =>
+        unfold Ix.Kernel.Semantics.projNodeAV?
+        split
+        · rfl
+        · rename_i hgt
+          obtain ⟨hsr, hsp, hac⟩ := h.projChain sn i entry hfp hgt
+          rw [hsr, hsp, hac]
   | .lit (.natVal n), _, hcr => by
     simp only [Expr.constsResolve, Bool.and_eq_true] at hcr
     obtain ⟨⟨hn1, hn2⟩, hn3⟩ := hcr
@@ -3474,7 +3510,7 @@ theorem modeledBlock_install_step {calls : List (Call F)} {env : Env .anon}
         (fun k hk => by
           obtain ⟨hk_adv, hac_0⟩ := modelExt_isSome_acval hext_adv k hk
           exact (hac_iota k hk_adv).trans hac_0)
-        hnnp_0_iota
+        hnnp_0_iota mp_0.base2.proj_ok
     have hbn_fresh_0 : ∀ k, blockNames.contains k = true → env.find? k = none := by
       intro k hk
       rcases List.mem_append.mp (List.contains_iff_mem.mp hk) with hnr | hrc

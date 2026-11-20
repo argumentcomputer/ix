@@ -422,27 +422,17 @@ theorem block_is_modeled_step (c : ScopedCtx) {args : List (SourceValue F)} {h h
     rintro ⟨ms, hms, -⟩
     exact (hnm ms hms).elim
 
-/-- `KernelModeled::proj_ctor`: asserts `block_is_modeled(block) = 0` (`FewInductives`) and loads
+/-- `KernelModeled::proj_ctor`: asserts `proj_allowed_at(block, i) = 1` and loads
 the constructor projection record `(i, 0, block)`. -/
 theorem proj_ctor_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelModeled::proj_ctor" args h r h' calls) (ih : IH c calls) :
+    (ev : ObsFn W "KernelModeled::proj_ctor" args h r h' calls) (_ih : IH c calls) :
     Specs.Callees.proj_ctor c args h r h' calls := by
   intro bp i b hargs allowed res hperm good hb
   subst hargs
-  obtain ⟨v1, m2, cs12, cs26, ev14, ev28, hc52⟩ := Obs.«KernelModeled::proj_ctor».obs ev
-  obtain ⟨v12, m15, cs23, ev25, heq40, -, hm2, hc45⟩ :=
-    Obs.«KernelModeled::assert_proj_allowed».obs ev14
-  subst heq40 hm2
-  have hgood1 : CoreGood c cs23 :=
-    good.sub (by rw [hc52, hc45]; intro z hz; simp [hz])
-  have hbim := ih.get (.callees .block_is_modeled)
-    (by rw [hc52, hc45]; callees_lt) ev25
-  have hfew : FewInductives c (ixAddr b) :=
-    ModeledAux.fewInductives_of_modeled_zero c hbim hgood1 hb
-  exact ⟨hfew, (hc.loads.projTables bp (.field i) r h h' calls b i
-    ev allowed good.raw hb rfl res hperm).1⟩
+  exact (hc.loads.projTables bp (.field i) r h h' calls b i
+    ev allowed good.raw hb rfl res hperm).1
 
 /-- `KernelModeled::defeq_list_ok`: pairwise `DefEq` on two represented term lists when the answer
 is nonzero. -/

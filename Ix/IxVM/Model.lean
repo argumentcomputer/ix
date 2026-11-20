@@ -481,8 +481,9 @@ def putN (b : ByteArray) (n : Nat) : ByteArray := Aiur.Ixon.tagN0 b n.toUInt64
 
 /-- A payload, structured (`KernelModeled`'s layout): the recursor family
 record, the advice records, the witnessed outside references (address, kind,
-dependency path), the models of the types, constructors and recursors, and the
-`iota_j` theorems. `adviceCount` overrides the advice count written (tests). -/
+dependency path), the models of the types, constructors and recursors, the
+`iota_j` theorems, and per projection-eligible member and field the pair
+`(proj_i, proj_i.iota)`. `adviceCount` overrides the advice count written (tests). -/
 structure Payload where
   recBlock : Address
   advice : Array Address
@@ -491,6 +492,7 @@ structure Payload where
   ctorModels : Array Address
   recModels : Array Address
   iotas : Array Address
+  projModels : Array (Address × Address) := #[]
   adviceCount : Option Nat := none
   deriving Inhabited
 
@@ -504,7 +506,119 @@ def Payload.ser (p : Payload) : ByteArray := Id.run do
     unless kind == 0 do b := steps.foldl putN (putN b steps.length)
     b := extra.foldl putN b
   for a in p.typeModels ++ p.ctorModels ++ p.recModels ++ p.iotas do b := putAddr b a
+  for (pm, pi) in p.projModels do b := putAddr (putAddr b pm) pi
   return b
+
+/-- Mirror of `KernelLevels::level_is_not_zero` on `Ixon.Univ`. -/
+def ixonUnivIsNotZero : Ixon.Univ → Bool
+  | .zero => false
+  | .var _ => false
+  | .succ _ => true
+  | .max a b => ixonUnivIsNotZero a || ixonUnivIsNotZero b
+  | .imax _ b => ixonUnivIsNotZero b
+
+/-- Lift loose bound variables `≥ cutoff` by `shift` in an unshared `Ixon.Expr`. -/
+def ixonLift (shift cutoff : Nat) : Ixon.Expr → Ixon.Expr
+  | .var i => if i.toNat < cutoff then .var i else .var (i.toNat + shift).toUInt64
+  | .app a b => .app (ixonLift shift cutoff a) (ixonLift shift cutoff b)
+  | .lam t b => .lam (ixonLift shift cutoff t) (ixonLift shift (cutoff + 1) b)
+  | .all t b => .all (ixonLift shift cutoff t) (ixonLift shift (cutoff + 1) b)
+  | .letE nd lm t v b =>
+      .letE nd lm (ixonLift shift cutoff t) (ixonLift shift cutoff v) (ixonLift shift (cutoff + 1) b)
+  | .prj t i v => .prj t i (ixonLift shift cutoff v)
+  | e => e
+
+/-- Mirror of `KernelSubst::expr_inst1` on an unshared `Ixon.Expr`. -/
+def ixonInst1 (arg : Ixon.Expr) (depth : Nat) : Ixon.Expr → Ixon.Expr
+  | .var i =>
+      if i.toNat < depth then .var i
+      else if i.toNat == depth then ixonLift depth 0 arg
+      else .var (i.toNat - 1).toUInt64
+  | .app a b => .app (ixonInst1 arg depth a) (ixonInst1 arg depth b)
+  | .lam t b => .lam (ixonInst1 arg depth t) (ixonInst1 arg (depth + 1) b)
+  | .all t b => .all (ixonInst1 arg depth t) (ixonInst1 arg (depth + 1) b)
+  | .letE nd lm t v b =>
+      .letE nd lm (ixonInst1 arg depth t) (ixonInst1 arg depth v) (ixonInst1 arg (depth + 1) b)
+  | .prj t i v => .prj t i (ixonInst1 arg depth v)
+  | e => e
+
+/-- Mirror of `KernelWhnf::type_sort_never` at declaration level parameters on an
+unshared `Ixon.Expr`. -/
+def ixonTypeSortNever (univs : Array Ixon.Univ) : Ixon.Expr → Nat → Bool
+  | .all _ b, n + 1 => ixonTypeSortNever univs b n
+  | .sort uIdx, 0 => (univs[uIdx.toNat]?).any ixonUnivIsNotZero
+  | _, _ => false
+
+/-- Mirror of `KernelCheck::peel_n_foralls_zeta` on an unshared `Ixon.Expr`. -/
+partial def ixonPeelForallsZeta : Ixon.Expr → Nat → Option Ixon.Expr
+  | e, 0 => some e
+  | .all _ b, n + 1 => ixonPeelForallsZeta b n
+  | .letE _ _ _ v b, n => ixonPeelForallsZeta (ixonInst1 v 0 b) n
+  | _, _ => none
+
+/-- Mirror of `KernelWhnf::se_mentions` on an unshared `Ixon.Expr` of a block. -/
+def ixonMentionsBlock (refs : Array Address) (mems : Std.HashSet Address) (nMems : Nat) :
+    Ixon.Expr → Bool
+  | .recur j _ => j.toNat < nMems
+  | .ref r _ => (refs[r.toNat]?).any mems.contains
+  | .app a b | .lam a b | .all a b =>
+      ixonMentionsBlock refs mems nMems a || ixonMentionsBlock refs mems nMems b
+  | .letE _ _ t v b =>
+      ixonMentionsBlock refs mems nMems t || ixonMentionsBlock refs mems nMems v ||
+        ixonMentionsBlock refs mems nMems b
+  | .prj _ _ inner => ixonMentionsBlock refs mems nMems inner
+  | _ => false
+
+/-- Mirror of `KernelModeled::field_has_neg` on an unshared `Ixon.Expr`. -/
+partial def ixonFieldHasNeg (refs : Array Address) (mems : Std.HashSet Address) (nMems : Nat) :
+    Ixon.Expr → Bool
+  | .all dom body =>
+      ixonMentionsBlock refs mems nMems dom || ixonFieldHasNeg refs mems nMems body
+  | .letE _ _ _ v b => ixonFieldHasNeg refs mems nMems (ixonInst1 v 0 b)
+  | _ => false
+
+/-- Mirror of `KernelModeled::fields_have_neg` on an unshared `Ixon.Expr`. -/
+partial def ixonFieldsHaveNeg (refs : Array Address) (mems : Std.HashSet Address) (nMems : Nat) :
+    Ixon.Expr → Nat → Bool
+  | _, 0 => false
+  | .all dom body, n + 1 =>
+      ixonFieldHasNeg refs mems nMems dom || ixonFieldsHaveNeg refs mems nMems body n
+  | .letE _ _ _ v b, n => ixonFieldsHaveNeg refs mems nMems (ixonInst1 v 0 b) n
+  | _, _ => false
+
+/-- Mirror of `KernelModeled::block_has_neg_occ` on a `muts` block record. -/
+def ixonBlockHasNegOcc (b : Address) (bc : Ixon.Constant) (ms : Array Ixon.MutConst) : Bool := Id.run do
+  let mut mems : Std.HashSet Address := {}
+  for (m, pos) in ms.zipIdx do
+    match m with
+    | .indc _ => mems := mems.insert (addressOf (projRecord (.iPrj ⟨pos.toUInt64, b⟩)))
+    | .defn _ => mems := mems.insert (addressOf (projRecord (.dPrj ⟨pos.toUInt64, b⟩)))
+    | .recr _ => mems := mems.insert (addressOf (projRecord (.rPrj ⟨pos.toUInt64, b⟩)))
+  for m in ms do
+    let .indc ind := m | continue
+    for ct in ind.ctors do
+      let cty := unshareAll bc.sharing ct.typ
+      let some body := ixonPeelForallsZeta cty ct.params.toNat | continue
+      if ixonMentionsBlock bc.refs mems ms.size body &&
+          ixonFieldsHaveNeg bc.refs mems ms.size body ct.fields.toNat then
+        return true
+  return false
+
+/-- Mirror of `KernelModeled::modeled_proj_eligible` for member `pos` of `ms`. -/
+def ixonMemberProjEligible (bc : Ixon.Constant) (ms : Array Ixon.MutConst) (hasNeg : Bool)
+    (pos : Nat) : Bool :=
+  if hasNeg then false
+  else match ms[pos]? with
+  | some (.indc ind) =>
+    if ind.indices == 0 && ind.ctors.size == 1 then
+      let ity := unshareAll bc.sharing ind.typ
+      if ixonTypeSortNever bc.univs ity ind.params.toNat then
+        match ind.ctors[0]? with
+        | some ct => ct.lvls == ind.lvls && ct.params == ind.params && ct.fields > 0
+        | none => false
+      else false
+    else false
+  | _ => false
 
 /-- One block's advice, ready to attach. -/
 structure BlockAdvice where
@@ -731,8 +845,22 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
     for j in [0:n] do
       let some t := nm.gen[auxKey (auxKey k .model) (.iota j)]? | throw s!"no iota_{j} for {k}"
       iotas := iotas.push t
+  let mut projModels : Array (Address × Address) := #[]
+  if let .muts ms := bc.info then
+    let hasNeg := ixonBlockHasNegOcc b bc ms
+    for (m, pos) in ms.zipIdx do
+      if ixonMemberProjEligible bc ms hasNeg pos then
+        if let .indc ind := m then
+          if let some ct := ind.ctors[0]? then
+            let some tk := fk.types[pos]? | throw s!"no type key at member {pos}"
+            for fidx in [0:ct.fields.toNat] do
+              let pmKey := Ix.Kernel.projModelName tk fidx
+              let some pm := nm.gen[pmKey]? | throw s!"no projection model {fidx} for {tk}"
+              let some pi := nm.gen[auxKey pmKey .projIota]?
+                | throw s!"no projection iota {fidx} for {tk}"
+              projModels := projModels.push (pm, pi)
   let layout : Payload := { recBlock := fk.recBlock, advice := records.map (·.1), witnesses,
-                            typeModels, ctorModels, recModels, iotas }
+                            typeModels, ctorModels, recModels, iotas, projModels }
   return { layout, records, hints, blobs, deps }
 
 /-! ## The advice's binder data
@@ -799,7 +927,8 @@ def BlockAdvice.withSections (adv : BlockAdvice) (support : Array (Address × Ix
     typeModels := l.typeModels.map rename
     ctorModels := l.ctorModels.map rename
     recModels := l.recModels.map rename
-    iotas := l.iotas.map rename }
+    iotas := l.iotas.map rename
+    projModels := l.projModels.map (fun (pm, pi) => (rename pm, rename pi)) }
   return { adv with layout, records,
                     hints := adv.hints.map (fun (a, h) => (rename a, h)),
                     deps := adv.deps.map rename }

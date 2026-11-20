@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.SetModel.Ops
+public import IxC.Kernel.SetModel.TreeUnpack
 public import IxC.Kernel.Term.Const
 public import IxC.Kernel.SetTheory.Derive.Sigma
 public import IxC.Kernel.SetTheory.Derive.Quot
@@ -566,5 +567,7 @@ noncomputable def bval : BConst → List Nat → V
   | .propext, _ => pt
   | .choice, us => choiceV V (lv us 0)
   | .lfpFam, us => lfpFamV V (lv us 0) (lv us 1)
+  | .unpackGraph spec, us =>
+    boundedGraph (fun x => treeUnpack spec (Ix.Kernel.SetTheory.Tower.projS (lv us 1) x)) (lv us 0)
 
 end Ix.Kernel.SetModel

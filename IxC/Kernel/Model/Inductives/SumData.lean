@@ -345,17 +345,17 @@ theorem CtorDataI.cross {m : EnvModel V env} {T : Key md} {lps : List LevelParam
 either valuation of it. -/
 theorem DenoteMetaSpine.acvalWith_congr {acval : Key md → (LevelParam → Nat) → AnnotTerm} {T' : Key md}
     {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ : Env md} (hfresh : env₀.find? T' = none)
-    {ψ : LevelParam → Nat} {d : Nat} :
+    (hnp : T'.isProjFnShape = false) {ψ : LevelParam → Nat} {d : Nat} :
     ∀ {as : List (Expr md)} {vs : List AnnotTerm}, (∀ e ∈ as, e.constsResolve env₀ = true) →
       DenoteMetaSpine (acvalWith acval T' A₁) env ψ d as vs →
       DenoteMetaSpine (acvalWith acval T' A₂) env ψ d as vs
   | _, _, _, .nil => .nil
   | a :: _, _, hres, .cons ha htl =>
     .cons (by
-        rw [← denoteMeta_acvalWith_unmentioned₂ (A₁ := A₁) (A₂ := A₂) hfresh _ _
+        rw [← denoteMeta_acvalWith_unmentioned₂ (A₁ := A₁) (A₂ := A₂) hfresh hnp _ _
           (hres a List.mem_cons_self)]
         exact ha)
-      (DenoteMetaSpine.acvalWith_congr hfresh (fun e he => hres e (List.mem_cons_of_mem _ he)) htl)
+      (DenoteMetaSpine.acvalWith_congr hfresh hnp (fun e he => hres e (List.mem_cons_of_mem _ he)) htl)
 
 /-- The index readings of two data at the same residual agree across
 carriers that differ only at an unmentioned constant. -/
@@ -363,6 +363,7 @@ theorem CtorDataI.Es_eq {env : Env md} {acval : Key md → (LevelParam → Nat) 
     {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ : Env md}
     {m₁ m₂ : EnvModel V env} (hac₁ : m₁.acval = acvalWith acval T' A₁)
     (hac₂ : m₂.acval = acvalWith acval T' A₂) (hfresh : env₀.find? T' = none)
+    (hnp : T'.isProjFnShape = false)
     {lps : List LevelParam} {cvC : ConstantVal md} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {idxArgs : List (Expr md)}
     {ds₁ ds₂ : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)} {Es₁ Es₂ : (LevelParam → Nat) → List AnnotTerm}
@@ -375,7 +376,7 @@ theorem CtorDataI.Es_eq {env : Env md} {acval : Key md → (LevelParam → Nat) 
   have hsp₂ := h₂.idxRead ψ
   rw [hac₁] at hsp₁
   rw [hac₂] at hsp₂
-  exact DenoteMetaSpine.unique (DenoteMetaSpine.acvalWith_congr hfresh hres hsp₁) hsp₂
+  exact DenoteMetaSpine.unique (DenoteMetaSpine.acvalWith_congr hfresh hnp hres hsp₁) hsp₂
 
 /-- The constructor's data, from its stage at the environment holding the
 former (over a judgement package). The stored former `cvS` is the telescope constant `cvTa`,

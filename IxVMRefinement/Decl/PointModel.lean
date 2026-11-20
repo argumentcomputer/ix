@@ -485,6 +485,8 @@ theorem foldStoreInv_member {F : List (Key .anon)} {env : Env .anon}
           rw [hcaps0 cv caps heq]
           exact ⟨fun hh => (nomatch hh), fun hh => (nomatch hh)⟩)
       thmTyped := thmTyped_step_noThm hext h.thmTyped (NewSat.cons hnotthm)
+      defnTyped := defnTyped_step_noBaseDefn hext h.defnTyped
+        (NewSat.cons fun _ => hnotdefn)
       recK := recK_step_noRec h.store h.recK (fun hh => hext.find hh) (NewSat.cons hnotrec)
       etaTowers := etaTowers_step_noEta hext h.etaTowers
         (NewSat.cons (fun cv caps heq _ => by

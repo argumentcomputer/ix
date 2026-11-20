@@ -105,7 +105,7 @@ theorem tableCtor_arity (h : ProjOkT env) {sn : Key md} {i : Nat} {entry : ProjE
     nP = entry.numParams ∧ nF = entry.numFields ∧
       (cvC.type.stripPis (nP + nF)).isSome = true := by
   obtain ⟨tbl, ht, hi, rfl⟩ := Ix.Kernel.Env.findProj?_some hp
-  obtain ⟨-, -, -, -, ⟨cvC', hC', -, bs, hs⟩⟩ := h _ tbl ht i hi
+  obtain ⟨-, -, -, -, ⟨cvC', hC', -, bs, hs⟩, -⟩ := h _ tbl ht i hi
   rw [hc] at hC'
   obtain ⟨rfl, rfl, rfl⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hC')
   exact ⟨rfl, rfl, by rw [hs]; rfl⟩

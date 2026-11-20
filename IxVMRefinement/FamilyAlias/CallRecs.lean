@@ -1,5 +1,6 @@
 import IxVMRefinement.FamilyAlias.CallIotaRule
 import IxVMRefinement.FamilyAlias.CallRecRefs
+import IxVMRefinement.FamilyGraph.ProducersCarriers
 import IxVMRefinement.Assembly.TypingRecLateFamilyKey
 import IxVMRefinement.Assembly.TypingRecLateNativeRead
 import IxVMRefinement.Assembly.TypingRecParentArm
@@ -323,6 +324,105 @@ theorem check_carriers_familyKey {t : Ix.Kernel.RoleTable} {rc : Ixon.Recursor}
         rw [hlast]
         exact hhead
       exact (familyKey_eq_of_rawShape hshape).trans hfamR
+
+private theorem recMotiveCarrierAt_eq_familyOf_rc (c : Ixon.Constant) (r : Ixon.Recursor)
+    (i n : Nat) :
+    recMotiveCarrierAt c r i n = Binding.FamilyOf.motiveCarrierAt c r i n := by
+  have hunshare : ∀ k e, recUnshare c k e = Binding.FamilyOf.unshare c k e := by
+    intro k; induction k with
+    | zero => intro _; rfl
+    | succ k ih =>
+      intro e; cases e with
+      | share idx =>
+        simp only [recUnshare, Binding.FamilyOf.unshare]
+        cases c.sharing[idx.toNat]? with
+        | none => rfl
+        | some e' => exact ih e'
+      | _ => rfl
+  have hnode : ∀ e, recNode c e = Binding.FamilyOf.node c e := fun e => hunshare _ e
+  have hpeel : ∀ k e, recPeel c k e = Binding.FamilyOf.peel c k e := by
+    intro k; induction k with
+    | zero => intro _; rfl
+    | succ k ih =>
+      intro e; simp only [recPeel, Binding.FamilyOf.peel, hnode]
+      cases Binding.FamilyOf.node c e <;> simp [ih]
+  have hdom : ∀ e, recDomOf c e = Binding.FamilyOf.domOf c e := by
+    intro e; simp only [recDomOf, Binding.FamilyOf.domOf, hnode]
+    cases Binding.FamilyOf.node c e <;> rfl
+  have hlast : ∀ k e, recLastDom c k e = Binding.FamilyOf.lastDom c k e := by
+    intro k; induction k with
+    | zero => intro _; rfl
+    | succ k ih =>
+      intro e; simp only [recLastDom, Binding.FamilyOf.lastDom, hnode]
+      cases h1 : Binding.FamilyOf.node c e with
+      | all d b =>
+        dsimp only
+        cases h2 : Binding.FamilyOf.node c b <;> simp [ih]
+      | _ => rfl
+  have hsp : ∀ k e, recSpineHead c k e = Binding.FamilyOf.spineHead c k e := by
+    intro k; induction k with
+    | zero => intro e; exact hnode e
+    | succ k ih =>
+      intro e; simp only [recSpineHead, Binding.FamilyOf.spineHead, hnode]
+      cases Binding.FamilyOf.node c e <;> simp [ih]
+  have href : ∀ k e, recRefHeadAt c k e = Binding.FamilyOf.refHeadAt c k e := by
+    intro k e; simp only [recRefHeadAt, Binding.FamilyOf.refHeadAt, hsp]
+    cases Binding.FamilyOf.spineHead c k e <;> rfl
+  simp only [recMotiveCarrierAt, Binding.FamilyOf.motiveCarrierAt, hpeel, hdom, hlast, href]
+
+/-- **`KernelModeled::check_carriers`** on a raw converted recursor type certifies
+`∃ nf, recMotiveCarrierAt crb rc 0 nf = some (ixAddr b₀)`. -/
+private theorem check_carriers_recMotiveCarrier0 {crb : Ixon.Constant} {rc : Ixon.Recursor}
+    {blobs : List (_root_.Address × ByteArray)} {b₀ : Bytes.Address} {bs : List Bytes.Address}
+    {x_ty x_ta r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hnp : rc.params.toNat < 72057594037927936)
+    (raw : L1.RawConvExpr crb.refs.toList [] crb.univs.toList crb.sharing.toList blobs h
+      4294967295 rc.typ x_ty)
+    (hta : RepList addrListEnum (Bytes.RepAddressRef addrTy) h (b₀ :: bs) x_ta)
+    (ev : ObsFn Obs.W "KernelModeled::check_carriers"
+      [x_ty, .field (rc.params.toNat : F), x_ta] h r h' cs) :
+    ∃ nf, recMotiveCarrierAt crb rc 0 nf = some (ixAddr b₀) := by
+  match Obs.«KernelModeled::check_carriers».obs ev with
+  | .run (ev20 := ev20) (ev6 := ev6) .. =>
+    obtain ⟨rfl, -, _, e₁, hpeel, raw₁⟩ := peel_n_foralls_raw rc.params.toNat hnp raw ev20
+    match Obs.«KernelModeled::check_carriers_go».obs ev6 with
+    | .Nil (ld12 := ld) .. => cases Lib.rep_nil_of_load hta ld
+    | .Cons (ld12 := ld12) (ld53 := ld53) (ev103 := ev103) (ev90 := ev90) (ld137 := ld137)
+        (ev180 := ev180) (heq203 := heq203) .. =>
+      obtain ⟨_, _, hcons, ht_rep, -⟩ := Lib.rep_cons_of_load hta ld12
+      injection hcons with hb_eq _
+      subst hb_eq
+      obtain ⟨_, ed, _, hnd₁, raw_d, -⟩ := rawConvExpr_forall_inv raw₁ ld53
+      obtain ⟨rfl, -, n₁, _, ed', hld, raw_d'⟩ :=
+        last_binder_dom_raw_aux _ (Nat.le_refl _) raw_d ev103
+      obtain ⟨ext_sp, -, n₂, _, raw_sp, hns_sp⟩ :=
+        collect_spine_raw_aux _ (Nat.le_refl _) raw_d' ev90
+      obtain ⟨rIdx, uIdxs, a_c, d_c, hnd_sp, href_c, hd_c, hra_c⟩ :=
+        rawConvExpr_const_inv raw_sp ld137
+      rw [node_of_not_share hns_sp] at hnd_sp
+      have ht_sp := Bytes.repAddressRef_heapMono₂ addrTy ext_sp ht_rep
+      obtain ⟨heq_c, rfl⟩ := Lib.address_eq_spec ev180 hra_c ht_sp
+      have hd_eq : d_c = b₀ := by
+        by_contra hne
+        rw [ite_eq_right_iff.mpr fun hc => absurd hc hne] at heq_c
+        exact absurd (Value.field.inj (heq203.symm.trans heq_c)) (by decide)
+      subst hd_eq
+      refine ⟨max n₁ n₂, ?_⟩
+      rw [recMotiveCarrierAt_eq_familyOf_rc]
+      unfold Binding.FamilyOf.motiveCarrierAt
+      rw [Nat.add_zero, hpeel]
+      dsimp only [bind, Option.bind]
+      have hdom : Binding.FamilyOf.domOf crb e₁ = some ed := by
+        simp only [Binding.FamilyOf.domOf, hnd₁]
+      rw [hdom]
+      dsimp only [bind, Option.bind]
+      rw [Binding.FamilyOf.lastDom_mono crb ed' n₁ (max n₁ n₂) ed hld (Nat.le_max_left _ _)]
+      dsimp only [bind, Option.bind]
+      have hrefAt : Binding.FamilyOf.refHeadAt crb n₂ ed' = some (ixAddr d_c) := by
+        unfold Binding.FamilyOf.refHeadAt
+        rw [hnd_sp, hd_c]
+        exact href_c
+      exact Binding.FamilyOf.refHeadAt_mono hrefAt (Nat.le_max_right _ _)
 
 /-- **`KernelCheck::rec_to_parent_addr`** on a raw heap term: returns both the address witness
 `Bytes.RepAddressRef` and `majorKey rc tyP = some (Core.keyOf t (ixAddr a_par))`. -/
@@ -1448,14 +1548,14 @@ private theorem stripPis_instantiateLevelParams (ks : List LevelParam) (us : Lis
   | _ + 1, .bvar _ | _ + 1, .fvar _ _ | _ + 1, .sort _ | _ + 1, .const _ _ | _ + 1, .app _ _
   | _ + 1, .lam _ _ _ | _ + 1, .letE _ _ _ _ | _ + 1, .lit _ | _ + 1, .proj _ _ _ => rfl
 
-private theorem stripPis_renameConsts (g : KKey → KKey) :
+private theorem stripPis_renameConsts_cr (g : KKey → KKey) :
     ∀ (m : Nat) (e : KExpr),
       (e.renameConsts g).stripPis m =
         (e.stripPis m).map fun (bs, rem) =>
           (bs.map fun (d, bm) => (d.renameConsts g, bm), rem.renameConsts g)
   | 0, e => rfl
   | m + 1, .forallE T B bm => by
-    simp only [Expr.renameConsts, Expr.stripPis, stripPis_renameConsts g m B]
+    simp only [Expr.renameConsts, Expr.stripPis, stripPis_renameConsts_cr g m B]
     cases B.stripPis m <;> rfl
   | _ + 1, .bvar _ | _ + 1, .fvar _ _ | _ + 1, .sort _ | _ + 1, .const _ _ | _ + 1, .app _ _
   | _ + 1, .lam _ _ _ | _ + 1, .letE _ _ _ _ | _ + 1, .lit _ | _ + 1, .proj _ _ _ => rfl
@@ -1695,7 +1795,7 @@ theorem pinsP_leavesFixed {t : Ix.Kernel.RoleTable} {calls : List (Call F)}
   have hrenAll_eq : Decl.renameAll g (Core.posOf ps tyA) = (Core.posOf ps tyA).renameConsts g := by
     refine Decl.renameAll_eq_renameConsts_of_noProjIn hg_out ?_
     unfold Core.posOf; rw [noProjIn_instantiateLevelParams]; exact hnp_ty
-  rw [hrenAll_eq, stripPis_renameConsts, hstrip1] at hstrip2
+  rw [hrenAll_eq, stripPis_renameConsts_cr, hstrip1] at hstrip2
   simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hstrip2
   obtain ⟨hbs2_eq, -⟩ := hstrip2
   subst hbs2_eq
@@ -2961,6 +3061,7 @@ structure RecMemberData (calls : List (Call F)) (bAddr : _root_.Address)
       (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat + 1) =
       some (bs, concl) ∧
     ∀ d b m, concl ≠ .forallE d b m
+  hmotiveCarrier0 : ∃ nf, recMotiveCarrierAt crb rc 0 nf = some (iprjAddr B 0)
   -- Major-premise head & rules' constructors (for `MajorRefs` and `FamRecCompanion`)
   hhead : ∃ D lvls pins,
     Core.piDomAt (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat) tyA = some D ∧
@@ -3354,6 +3455,18 @@ private theorem rules_length_eq
       (fun _ _ _ => True) h rus p := by
     rw [Obs.Names.«Lists::Node<KernelTypes::KRecRule>».symbol]; exact htoRep hr
   exact Lib.Lists.length_spec ev' hrep
+
+private theorem rawShape_refl : ∀ (e : KExpr), RawShape e e
+  | .bvar i => .bvar i
+  | .fvar i t => .fvar i t t
+  | .sort l => .sort l
+  | .const k us => .const k us
+  | .lit l => .lit l
+  | .app f a => .app (rawShape_refl f) (rawShape_refl a)
+  | .lam t b _ => .lam (rawShape_refl t) (rawShape_refl b)
+  | .forallE t b _ => .forallE (rawShape_refl t) (rawShape_refl b)
+  | .letE t v b _ => .letE (rawShape_refl t) (rawShape_refl v) (rawShape_refl b)
+  | .proj _ _ e => .proj (rawShape_refl e)
 
 /-- **One iteration of `KernelModeled::check_recs`** paired with its `MemberValItem` from
 `evRecsVal` produces `RecMemberData` for recursor `k`. -/
@@ -4061,6 +4174,10 @@ theorem recMember_of_cons
       hrules_sc, hcanon_ty
       hcanon_rules := ⟨rlsCan, hcanon_rules, hf2_rules⟩
       hment, hnp_eq_ind0, hmot_eq_rs, hni_eq_indM, hconcl
+      hmotiveCarrier0 := by
+        rw [← ha0_eq]
+        exact check_carriers_recMotiveCarrier0 hnp_lt (rty.mono C.ext391 (fun _ hm => hm))
+          htys_391 evCarriers'
       hhead := ⟨domA, lvlsA, pinsA, piDomAt_eq_of_stripPis mI hstripA, hfnA, hmajA⟩
       hrules_len, hrules_ctor
       hrules_recCprj := fun j hj => by

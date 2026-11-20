@@ -156,9 +156,32 @@ structure FamLoadCtx (C : Core.Ctx) (new : List (ConstantInfo .anon)) (A : _root
   record : recordOf C.E A = some cb
   route : ModeledAt C.E A
   newName : ∀ cn ∈ new, (∃ x, FamAddr A cb rb crb x ∧ cn.name = Core.keyOf C.t x) ∨
-    ((∃ cv v hint, cn = .defnInfo cv v hint) ∧ ∃ n d, cn.name = Ix.Kernel.auxKey n d)
+    ((∃ cv v hint, cn = .defnInfo cv v hint) ∧ ∃ n d, cn.name = Ix.Kernel.auxKey n d) ∨
+    ((∃ cv, cn = .axiomInfo cv) ∧ ∃ n d, cn.name = Ix.Kernel.auxKey n d) ∨
+    ((∃ tbl, cn = .projInfo tbl) ∧ ∃ n d, cn.name = Ix.Kernel.auxKey n d)
   found : ∀ x, FamAddr A cb rb crb x →
     ∃ ci, (appCtx C new).env.find? (Core.keyOf C.t x) = some ci
+  /-- Projection-table data and `modeled_proj_eligible` determinism for every eligible member of
+  the modeled block. -/
+  projModeled : ∃ (elig : Nat → Bool) (pcs : List (ConstantInfo .anon)),
+    ms.size < UInt64.size ∧
+    BlockProjTableData C.t (appCtx C new).env pcs A ms elig ∧
+    (∀ tbl, ConstantInfo.projInfo tbl ∈ new → ConstantInfo.projInfo tbl ∈ pcs) ∧
+    (∀ {b₂ : Bytes.Address} {bp₂ r₂ : SourceValue F} {pos : Nat},
+      pos < ms.size →
+      ∀ {h₂ h₂' : Heap F} {cs₂ : List (Call F)},
+        Bytes.RepAddressRef Core.addrTy h₂ b₂ bp₂ → Core.ixAddr b₂ = A →
+        ¬ View.HashedCollision { env := C.E } [] cs₂ → Bounded cs₂ →
+        ObsFn Core.W "KernelModeled::modeled_proj_eligible"
+          [bp₂, .field (pos : F)] h₂ r₂ h₂' cs₂ →
+        r₂ = .field (if elig pos then 1 else 0))
+  /-- Every constructor stored in the new environment at a constructor projection key of a member
+  of the block is new (the prefix stores none because the member's inductive key was fresh). -/
+  ctorAt : ∀ i ind, ms[i]? = some (.indc ind) → Core.HashedBlockAt C.E A →
+    ∀ (j : Nat) (cv : ConstantVal .anon) (nP nF : Nat),
+      (appCtx C new).env.find? ((appCtx C new).stored.κ (Core.cprjAddr A i j)) =
+        some (.ctorInfo cv nP nF) →
+      ConstantInfo.ctorInfo cv nP nF ∈ new
   /-- A block of one inductive with no index and one constructor, modeled at the store: that
   constructor has a field. -/
   unitFree : ∀ ind, ms = #[.indc ind] → ind.indices.toNat = 0 → ind.ctors.size = 1 →
@@ -331,13 +354,19 @@ theorem FamLoadCtx.kappa_eq (hL : FamLoadCtx C new A cb ms rb crb rs) {y x : _ro
     (appCtx C new).stored.key_eq (a := y) (by rw [hk]; exact Core.Resolved.ne)
   exact Core.keyOf_inj hL.wf (h1.symm.trans hk)
 
-/-- **A new constant that is no definition is at the key of a family address.** -/
+/-- **A new constant that is no definition, chain axiom, or projection table is at the key of a
+family address.** -/
 theorem FamLoadCtx.member_name (hL : FamLoadCtx C new A cb ms rb crb rs)
-    {cn : ConstantInfo .anon} (hm : cn ∈ new) (hnd : ∀ cv v hint, cn ≠ .defnInfo cv v hint) :
+    {cn : ConstantInfo .anon} (hm : cn ∈ new)
+    (hnd : ∀ cv v hint, cn ≠ .defnInfo cv v hint)
+    (hna : ∀ cv, cn ≠ .axiomInfo cv)
+    (hnp : ∀ tbl, cn ≠ .projInfo tbl) :
     ∃ x, FamAddr A cb rb crb x ∧ cn.name = Core.keyOf C.t x := by
-  rcases hL.newName cn hm with h | ⟨⟨cv, v, hint, he⟩, -⟩
+  rcases hL.newName cn hm with h | ⟨⟨cv, v, hint, he⟩, -⟩ | ⟨⟨cv, he⟩, -⟩ | ⟨⟨tbl, he⟩, -⟩
   · exact h
   · exact (hnd cv v hint he).elim
+  · exact (hna cv he).elim
+  · exact (hnp tbl he).elim
 
 /-- **The block of a family a new constant witnesses is the family's block**, where it is a
 hashed block. -/
@@ -345,11 +374,13 @@ theorem FamLoadCtx.famNew_block (hL : FamLoadCtx C new A cb ms rb crb rs) {b : _
     (hbh : Core.HashedBlockAt C.E b) {i : Nat} (hfam : FamNew (appCtx C new).stored new b i) :
     b = A := by
   rcases hfam with ⟨cv, caps, hf, hm⟩ | ⟨j, cv, nP, nF, hf, hm⟩
-  · obtain ⟨x, hx, hname⟩ := hL.member_name hm (fun _ _ _ h => nomatch h)
+  · obtain ⟨x, hx, hname⟩ :=
+      hL.member_name hm (fun _ _ _ h => nomatch h) (fun _ h => nomatch h) (fun _ h => nomatch h)
     have hn : cv.name = (appCtx C new).stored.κ (Core.iprjAddr b i) :=
       Core.WhnfAux.name_of_find hf
     exact hL.iprj_block hbh hx (hL.kappa_eq (hn.symm.trans hname))
-  · obtain ⟨x, hx, hname⟩ := hL.member_name hm (fun _ _ _ h => nomatch h)
+  · obtain ⟨x, hx, hname⟩ :=
+      hL.member_name hm (fun _ _ _ h => nomatch h) (fun _ h => nomatch h) (fun _ h => nomatch h)
     have hn : cv.name = (appCtx C new).stored.κ (Core.cprjAddr b i j) :=
       Core.WhnfAux.name_of_find hf
     exact (hL.cprj_block hbh hx (hL.kappa_eq (hn.symm.trans hname))).1
@@ -421,12 +452,14 @@ theorem FamLoadCtx.member_of_load (hL : FamLoadCtx C new A cb ms rb crb rs)
   obtain ⟨hbA, i', ind, hget, hidx⟩ : Core.ixAddr b = A ∧ ∃ (i' : Nat) (ind : Ixon.Inductive),
       ms[i']? = some (.indc ind) ∧ (ZMod.val i).toUInt64 = i'.toUInt64 := by
     rcases hnew with ⟨cvT, caps, hfT, hm⟩ | ⟨cvC, nPc, nF, hfC, hm⟩
-    · obtain ⟨x, hx', hname⟩ := hL.member_name hm (fun _ _ _ h => nomatch h)
+    · obtain ⟨x, hx', hname⟩ :=
+        hL.member_name hm (fun _ _ _ h => nomatch h) (fun _ h => nomatch h) (fun _ h => nomatch h)
       have hn : cvT.name = (appCtx C new).stored.κ (Core.ixAddr a) :=
         Core.WhnfAux.name_of_find hfT
       have hax : Core.ixAddr a = x := hL.kappa_eq (hn.symm.trans hname)
       exact hL.iprj_block_idx hbh hx' (hx.symm.trans hax)
-    · obtain ⟨x, hx', hname⟩ := hL.member_name hm (fun _ _ _ h => nomatch h)
+    · obtain ⟨x, hx', hname⟩ :=
+        hL.member_name hm (fun _ _ _ h => nomatch h) (fun _ h => nomatch h) (fun _ h => nomatch h)
       have hn : cvC.name =
           (appCtx C new).stored.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) 0) :=
         Core.WhnfAux.name_of_find hfC
@@ -677,17 +710,130 @@ theorem multi_not_zero_core {C : Core.Ctx} (core : Core.ScopedCoreFacts (Core.Ct
     (by rw [hB]; exact hrec)).2 ⟨ms, hms, h2⟩
   exact absurd (Value.field.inj h1) (by decide)
 
-/-- **`proj_ctor` observes the native route at its block**: it asserts `block_is_modeled = 0`. -/
-theorem nativeAt_of_proj_ctor {c : Core.Ctx} {cs : List (Call F)} (hg : Core.Good c cs)
-    {b : Bytes.Address} {bp ip ptr : SourceValue F} {h h' : Heap F}
-    (ev : ObsFn Core.W "KernelModeled::proj_ctor" [bp, ip] h ptr h' cs)
-    (hb : Bytes.RepAddressRef Core.addrTy h b bp) : NativeAt c.E (Core.ixAddr b) := by
-  obtain ⟨v1, m2, cs12, cs26, ev14, ev28, hc52⟩ := Obs.«KernelModeled::proj_ctor».obs ev
-  obtain ⟨v12, m15, cs23, ev25, heq40, -, -, hc45⟩ :=
-    Obs.«KernelModeled::assert_proj_allowed».obs ev14
-  subst heq40
-  have hg' : Core.Good c cs23 := hg.sub fun cl hcl => by simp [hc52, hc45, hcl]
-  exact ⟨bp, h, m15, cs23, b, ev25, hg'.1, hg'.2, hb, rfl⟩
+/-- **Inverting `proj_allowed_at = 1` at the family's modeled block**: the native branch is
+refuted by `hL.route`, and the modeled branch forces `elig (ZMod.val i) = true`. -/
+theorem FamLoadCtx.proj_allowed_at_elim (hL : FamLoadCtx C new A cb ms rb crb rs)
+    {elig : Nat → Bool}
+    (heligDet : ∀ {b₂ : Bytes.Address} {bp₂ r₂ : SourceValue F} {pos : Nat},
+      pos < ms.size →
+      ∀ {h₂ h₂' : Heap F} {cs₂ : List (Call F)},
+        Bytes.RepAddressRef Core.addrTy h₂ b₂ bp₂ → Core.ixAddr b₂ = A →
+        ¬ View.HashedCollision { env := C.E } [] cs₂ → Bounded cs₂ →
+        ObsFn Core.W "KernelModeled::modeled_proj_eligible"
+          [bp₂, .field (pos : F)] h₂ r₂ h₂' cs₂ →
+        r₂ = .field (if elig pos then 1 else 0))
+    {bp : SourceValue F} {i : F} {h h' : Heap F} {cs : List (Call F)} {b : Bytes.Address}
+    (ev : ObsFn Core.W "KernelModeled::proj_allowed_at" [bp, .field i] h (.field 1) h' cs)
+    (good : Core.Good (appCtx C new) cs) (hb : Bytes.RepAddressRef Core.addrTy h b bp)
+    (hbA : Core.ixAddr b = A) (hi_lt : ZMod.val i < ms.size) :
+    elig (ZMod.val i) = true := by
+  cases Obs.«KernelModeled::proj_allowed_at».obs ev with
+  | n0 m_r cs_r ev_mod _ _ hc =>
+    have hg' : Core.Good (appCtx C new) cs_r := good.sub fun cl hcl => by simp [hc, hcl]
+    exact absurd (show NativeAt C.E A from ⟨bp, h, m_r, cs_r, b, ev_mod, hg'.1, hg'.2, hb, hbA⟩)
+      hL.route
+  | other _ m_r _ cs_e ev_mod _ ev_elig hc =>
+    have hg_e : Core.Good (appCtx C new) cs_e := good.sub fun cl hcl => by simp [hc, hcl]
+    have hb_m : Bytes.RepAddressRef Core.addrTy m_r b bp :=
+      Bytes.repAddressRef_heapMono₂ Core.addrTy ev_mod.heap_extends hb
+    have hdet := heligDet hi_lt hb_m hbA hg_e.1 hg_e.2 (by rwa [ZMod.natCast_zmod_val])
+    cases he : elig (ZMod.val i) with
+    | true => rfl
+    | false =>
+      rw [he] at hdet
+      simp only [Bool.false_eq_true, ↓reduceIte] at hdet
+      exact absurd (Value.field.inj hdet) (by decide)
+
+/-- **For a 1-constructor member of the family's block, any constructor stored at
+`Core.cprjAddr A pos j` sits at `Core.cprjAddr A pos 0`.** -/
+theorem FamLoadCtx.cprj_addr_eq_zero (hL : FamLoadCtx C new A cb ms rb crb rs)
+    (hbh : Core.HashedBlockAt C.E A) (hms_u64 : ms.size < UInt64.size)
+    {pos j : Nat} {ind : Ixon.Inductive} {cvC : ConstantVal .anon} {nP nF : Nat}
+    (hpos : pos < ms.size) (hmem : ms[pos]? = some (.indc ind)) (hnc1 : ind.ctors.size = 1)
+    (hf : (appCtx C new).env.find? ((appCtx C new).stored.κ (Core.cprjAddr A pos j)) =
+      some (.ctorInfo cvC nP nF)) :
+    Core.cprjAddr A pos j = Core.cprjAddr A pos 0 := by
+  have hm := hL.ctorAt pos ind hmem hbh j cvC nP nF hf
+  obtain ⟨x, hx, hname⟩ :=
+    hL.member_name hm (fun _ _ _ h => nomatch h) (fun _ h => nomatch h) (fun _ h => nomatch h)
+  have hn : cvC.name = (appCtx C new).stored.κ (Core.cprjAddr A pos j) :=
+    Core.WhnfAux.name_of_find hf
+  have hxy : Core.cprjAddr A pos j = x := hL.kappa_eq (hn.symm.trans hname)
+  obtain ⟨cm, hrec, hk⟩ := hL.recordOf_at hx
+  have hinfo := (hL.held A hbh).2 pos j cm (by rw [hxy]; exact recordAt_of_recordOf hL.decoded hrec)
+  rcases hk with ⟨_, _, -, -, h'⟩ | ⟨i', ind', j', hget', hj', hxeq, h'⟩ | ⟨_, h'⟩
+  · rw [h'] at hinfo; exact nomatch hinfo
+  · rw [h'] at hinfo
+    have hp := Ixon.ConstantInfo.cPrj.inj hinfo
+    have hidx : pos.toUInt64 = i'.toUInt64 := (congrArg Ixon.ConstructorProj.idx hp).symm
+    have hi'_lt : i' < ms.size := (Array.getElem?_eq_some_iff.mp hget').1
+    have hpi : pos = i' := by
+      have h1 := toNat_toUInt64_of_lt (Nat.lt_trans hpos hms_u64)
+      have h2 := toNat_toUInt64_of_lt (Nat.lt_trans hi'_lt hms_u64)
+      rw [← h1, ← h2, hidx]
+    subst hpi
+    have hind_eq : ind' = ind := Ixon.MutConst.indc.inj (Option.some.inj (hget'.symm.trans hmem))
+    subst hind_eq
+    have hj0 : j' = 0 := by omega
+    subst hj0
+    exact hxy.trans hxeq
+  · rw [h'] at hinfo; exact nomatch hinfo
+
+/-- **Shared projection-table conclusion for both `projTables` and `projTablesAt`** at an eligible
+member `ZMod.val i` of the family's block. -/
+theorem FamLoadCtx.table_at_eligible (hL : FamLoadCtx C new A cb ms rb crb rs)
+    {elig : Nat → Bool} {pcs : List (ConstantInfo .anon)}
+    (hms_u64 : ms.size < UInt64.size)
+    (hdata : BlockProjTableData C.t (appCtx C new).env pcs A ms elig)
+    {b : Bytes.Address} {i : F} {j : Nat} {cvC : ConstantVal .anon} {nP nF : Nat}
+    (hbA : Core.ixAddr b = A) (hbh : Core.HashedBlockAt C.E A)
+    (hi_lt : ZMod.val i < ms.size) (helig : elig (ZMod.val i) = true)
+    (hctor : (appCtx C new).env.find? ((appCtx C new).stored.κ
+      (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) j)) = some (.ctorInfo cvC nP nF)) :
+    ∃ tbl : Ix.Kernel.ProjTable .anon,
+      (appCtx C new).env.find? (Ix.Kernel.projTableName
+        ((appCtx C new).stored.κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)))) =
+        some (.projInfo tbl) ∧
+      tbl.structName = (appCtx C new).stored.κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)) ∧
+      tbl.ctor = (appCtx C new).stored.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) j) ∧
+      tbl.numParams = nP ∧ tbl.numFields = nF ∧ tbl.levelParams = cvC.levelParams ∧
+      (∀ cb' xs ind', Ix.Cert.recordAt C.E (Core.ixAddr b) = some cb' → cb'.info = .muts xs →
+        xs[ZMod.val i]? = some (.indc ind') → nP = ind'.params.toNat) ∧
+      (∀ f, f < nF → (appCtx C new).env.findProj? tbl.structName f = some (tbl.entry f) ∧
+        Ix.Kernel.TowerHead (appCtx C new).env (tbl.entry f)) ∧
+      Ix.Kernel.structProjBodies tbl.structName nP nF cvC.type = some tbl.bodies ∧
+      (∃ sorts : List Ix.Kernel.Level, sorts.length = nF ∧
+        tbl.guards = Ix.Kernel.structProjGuards cvC.type nP nF sorts) ∧
+      ∃ bs body, cvC.type.stripPis (nP + nF) = some (bs, body) ∧
+        ∀ bm ∈ bs, bm.2.pw = Ix.Kernel.Level.zeronessOf tbl.structSort := by
+  obtain ⟨ind, ct, cvC', tbl, hms, hct, -, hnc1, -, -, hfindC, hfindTbl, hsn, hctorT,
+    hnP, hnF, hlps, -, hfp, hbodies, hguards, hpw, -⟩ := hdata.atEligible (ZMod.val i) hi_lt helig
+  rw [hbA] at hctor ⊢
+  have hc0 := hL.cprj_addr_eq_zero hbh hms_u64 hi_lt hms hnc1 hctor
+  rw [hc0] at hctor ⊢
+  have hκC : (appCtx C new).stored.κ (Core.cprjAddr A (ZMod.val i) 0) =
+      Core.keyOf C.t (Core.cprjAddr A (ZMod.val i) 0) :=
+    Core.Ctx.stored_key_of_find (c := appCtx C new) hfindC
+  have hfindT_ex : ∃ ci, (appCtx C new).env.find? (Core.keyOf C.t (Core.iprjAddr A (ZMod.val i))) =
+      some ci :=
+    hL.found _ (Or.inl (Or.inr ⟨ms, ZMod.val i, .indc ind, hL.muts, hms, Or.inl rfl⟩))
+  have hκT : (appCtx C new).stored.κ (Core.iprjAddr A (ZMod.val i)) =
+      Core.keyOf C.t (Core.iprjAddr A (ZMod.val i)) :=
+    Core.Ctx.stored_key_of_find (c := appCtx C new) hfindT_ex.choose_spec
+  rw [hκC] at hctor ⊢
+  rw [hκT]
+  have hce := Option.some.inj (hctor.symm.trans hfindC)
+  injection hce with hcv hnp hnf
+  subst hcv hnp hnf
+  refine ⟨tbl, hfindTbl, hsn, hctorT, hnP, hnF, hlps, ?_, hfp, hbodies, hguards, hpw⟩
+  intro cb' xs ind' hcb' hxs hget'
+  have e1 : cb' = cb := Option.some.inj (hcb'.symm.trans (recordAt_of_recordOf hL.decoded hL.record))
+  subst e1
+  have e2 : xs = ms := Ixon.ConstantInfo.muts.inj (hxs.symm.trans hL.muts)
+  subst e2
+  have e3 : ind' = ind := Ixon.MutConst.indc.inj (Option.some.inj (hget'.symm.trans hms))
+  subst e3
+  rfl
 
 /-- **The load facts at the family step's new constants** (module docstring). -/
 theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
@@ -695,7 +841,7 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
   getCI := by
     intro addr ptr h h' cs a ev good ha hn
     obtain ⟨cn, hcn, hname⟩ := hn
-    rcases hL.newName cn hcn with ⟨x, hx, hx'⟩ | ⟨-, n, d, hnd⟩
+    rcases hL.newName cn hcn with ⟨x, hx, hx'⟩ | ⟨-, n, d, hnd⟩ | ⟨-, n, d, hnd⟩ | ⟨-, n, d, hnd⟩
     · have hax : Core.ixAddr a = x := Core.keyOf_inj hL.wf (hname.symm.trans hx')
       rcases hx with ⟨⟨-, hs⟩ | ⟨ms', i, m, hinfo', hget, hxm | ⟨ind, j, hind, hj, hxc⟩⟩⟩ |
           ⟨⟨-, hs⟩ | ⟨rs', i, m, hinfo', hget, hxm | ⟨ind, j, hind, hj, hxc⟩⟩⟩
@@ -717,6 +863,8 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
         obtain ⟨r, hr⟩ := hL.recrs m (by simpa using Array.mem_of_getElem? hget)
         rw [hind] at hr
         exact nomatch hr
+    · exact (keyOf_nonAux C.t (Core.ixAddr a) n d (hname.symm.trans hnd)).elim
+    · exact (keyOf_nonAux C.t (Core.ixAddr a) n d (hname.symm.trans hnd)).elim
     · exact (keyOf_nonAux C.t (Core.ixAddr a) n d (hname.symm.trans hnd)).elim
   getCprj := by
     intro bp ptr i j h h' cs b ev hfam good hb
@@ -774,7 +922,7 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
   inductRecord := by
     intro addr ptr h h' cs a nl ty np ni nc u blk idx ev hn good ha hld
     obtain ⟨cn, hcn, hname⟩ := hn
-    rcases hL.newName cn hcn with ⟨x, hx, hx'⟩ | ⟨-, n, d, hnd⟩
+    rcases hL.newName cn hcn with ⟨x, hx, hx'⟩ | ⟨-, n, d, hnd⟩ | ⟨-, n, d, hnd⟩ | ⟨-, n, d, hnd⟩
     · have hax : Core.ixAddr a = x := Core.keyOf_inj hL.wf (hname.symm.trans hx')
       obtain ⟨cm, hrec, -⟩ := hL.recordOf_at hx
       rw [← hax] at hrec
@@ -782,27 +930,69 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
         get_ci_induct_record hL.decoded good.1 good.2 ev ha hld hrec
       exact ⟨cm, b, i, hrecA, hb, hidx, hinfo⟩
     · exact (keyOf_nonAux C.t (Core.ixAddr a) n d (hname.symm.trans hnd)).elim
+    · exact (keyOf_nonAux C.t (Core.ixAddr a) n d (hname.symm.trans hnd)).elim
+    · exact (keyOf_nonAux C.t (Core.ixAddr a) n d (hname.symm.trans hnd)).elim
   projTables := by
     intro bp ip ptr h h' cs b i ev good hb hip hfam hperm
-    exfalso
-    have hbh := L1.hashedBlockAt_of_proj_ctor good ev hb hip
+    subst hip
+    obtain ⟨elig, pcs, hms_u64, hdata, -, heligDet⟩ := hL.projModeled
+    have hbh := L1.hashedBlockAt_of_proj_ctor good ev hb rfl
     have hbA := hL.famNew_block hbh hfam
-    have hnat := nativeAt_of_proj_ctor good ev hb
-    rw [hbA] at hnat
-    exact hL.route hnat
+    subst hbA
+    obtain ⟨v_a, m_a, cs_a, cs_c, ev_a, heq_a, ev_c, hc_c⟩ := Obs.«KernelModeled::proj_ctor».obs ev
+    subst heq_a
+    have good_a : Core.Good (appCtx C new) cs_a := good.sub fun cl hcl => by rw [hc_c]; simp [hcl]
+    have good_c : Core.Good (appCtx C new) cs_c := good.sub fun cl hcl => by rw [hc_c]; simp [hcl]
+    have hb_a : Bytes.RepAddressRef Core.addrTy m_a b bp :=
+      Bytes.repAddressRef_heapMono₂ Core.addrTy ev_a.heap_extends hb
+    obtain ⟨-, -, -, blkBytes, cb', ms', ind, ct, _, _, hhB, haB, hexB, -, hcb', hms', hct',
+      -, -, -⟩ := L1.get_ci_cprj_spec good_c.2 hb_a ev_c
+    have e1 : cb' = cb := hL.block_eq good_c.1 hhB haB hexB
+    subst e1
+    have e2 : ms' = ms := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hL.muts)
+    subst e2
+    have hmem : ms'[ZMod.val i]? = some (.indc ind) := by
+      rw [← Array.getElem?_toList]
+      exact hms'
+    have hct : ind.ctors[0]? = some ct := by
+      rw [← Array.getElem?_toList]
+      simpa [ZMod.val_zero] using hct'
+    have hi_lt : ZMod.val i < ms'.size := (Array.getElem?_eq_some_iff.mp hmem).1
+    obtain ⟨hcidx, ty₀, ty', hty, hlbb, hdef, hcan, hfind⟩ :=
+      hL.ctorForm (ZMod.val i) ind 0 ct (val_lt_uint64 i)
+        (by rw [show UInt64.size = 18446744073709551616 from rfl]; omega) hmem hct
+    obtain ⟨ty'', hcT, -, -, hrepS⟩ := LoadedReads.get_ci_cprj_load_canon hL.check good_c.1 good_c.2
+      hb_a ev_c hL.record hL.muts hmem (by simpa [ZMod.val_zero] using hct)
+      (by simpa [ZMod.val_zero] using hcidx) hty hlbb hdef
+    have e3 : ty'' = ty' := Option.some.inj (hcT.symm.trans hcan)
+    subst e3
+    have hrep := hrepS (appCtx C new).env C.lim hL.used hL.blockStored
+      ⟨_, by simpa [ZMod.val_zero] using hfind⟩
+    have hκ0 := Core.Ctx.stored_key_of_find (c := appCtx C new) hfind
+    refine ⟨⟨_, by rw [hκ0]; exact hfind, by simpa [ZMod.val_zero] using hrep⟩, ?_⟩
+    have helig := hL.proj_allowed_at_elim heligDet ev_a good_a hb rfl hi_lt
+    intro _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ j cvC nP nF hctor _
+    exact hL.table_at_eligible hms_u64 hdata rfl hbh hi_lt helig hctor
   projTablesAt := by
     intro bp sap ptr nl ty np u blk h h' h1 h2 cs cs1 b s i ev good hb ev1 good1 hs hld hb2
       j cvC nP nF hf hm hpos
-    exfalso
+    obtain ⟨elig, pcs, hms_u64, hdata, -, heligDet⟩ := hL.projModeled
     have hbh := L1.hashedBlockAt_of_get_ci_induct good1 ev1 hs hld hb2
-    obtain ⟨x, hx, hname⟩ := hL.member_name hm (fun _ _ _ h => nomatch h)
+    obtain ⟨x, hx, hname⟩ :=
+      hL.member_name hm (fun _ _ _ h => nomatch h) (fun _ h => nomatch h) (fun _ h => nomatch h)
     have hn : cvC.name =
         (appCtx C new).stored.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) j) :=
       Core.WhnfAux.name_of_find hf
-    have hbA := (hL.cprj_block hbh hx (hL.kappa_eq (hn.symm.trans hname))).1
-    have hnat : NativeAt C.E (Core.ixAddr b) := ⟨bp, h, h', cs, b, ev, good.1, good.2, hb, rfl⟩
-    rw [hbA] at hnat
-    exact hL.route hnat
+    obtain ⟨hbA, i', ind, hget, hidx⟩ := hL.cprj_block hbh hx (hL.kappa_eq (hn.symm.trans hname))
+    have hi'_lt : i' < ms.size := (Array.getElem?_eq_some_iff.mp hget).1
+    have hi_eq : ZMod.val i = i' := by
+      have h1 := toNat_toUInt64_of_lt (val_lt_uint64 i)
+      have h2 := toNat_toUInt64_of_lt (Nat.lt_trans hi'_lt hms_u64)
+      rw [← h1, ← h2, hidx]
+    have hi_lt : ZMod.val i < ms.size := hi_eq ▸ hi'_lt
+    have hbhA : Core.HashedBlockAt C.E A := hbA ▸ hbh
+    have helig := hL.proj_allowed_at_elim heligDet ev good hb hbA hi_lt
+    exact hL.table_at_eligible hms_u64 hdata hbA hbhA hi_lt helig hf
   unitLike := by
     intro ap ptr h h' cs a nl ty u blk p i b cvT caps cvC nPc ev good ha hld hb hfT hfew hfC hm
     exfalso
@@ -884,9 +1074,11 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
     have hbh := L1.hashedBlockAt_of_get_ci_iprj good hb ev
     have hbA : Core.ixAddr b = A := by
       rcases hnew with hm | hm
-      · obtain ⟨x, hx, hname⟩ := hL.member_name hm (fun _ _ _ h => nomatch h)
+      · obtain ⟨x, hx, hname⟩ :=
+          hL.member_name hm (fun _ _ _ h => nomatch h) (fun _ h => nomatch h) (fun _ h => nomatch h)
         exact (hL.cprj_block hbh hx (hL.kappa_eq (hcn.symm.trans hname))).1
-      · obtain ⟨x, hx, hname⟩ := hL.member_name hm (fun _ _ _ h => nomatch h)
+      · obtain ⟨x, hx, hname⟩ :=
+          hL.member_name hm (fun _ _ _ h => nomatch h) (fun _ h => nomatch h) (fun _ h => nomatch h)
         have hn : cvT.name =
             (appCtx C new).stored.κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)) :=
           Core.WhnfAux.name_of_find hfT
@@ -922,7 +1114,7 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
   inductBlock := by
     intro addr ptr h h' cs a b nl ty np ni nc u blk i ev hn good ha hld hb
     obtain ⟨cn, hcn, hname⟩ := hn
-    rcases hL.newName cn hcn with ⟨x, hx, hx'⟩ | ⟨-, n, d, hnd⟩
+    rcases hL.newName cn hcn with ⟨x, hx, hx'⟩ | ⟨-, n, d, hnd⟩ | ⟨-, n, d, hnd⟩ | ⟨-, n, d, hnd⟩
     · have hax : Core.ixAddr a = x := Core.keyOf_inj hL.wf (hname.symm.trans hx')
       have hia := get_ci_induct_addr ev good.2 ha hld hb
       have hbh := L1.hashedBlockAt_of_get_ci_induct good ev ha hld hb
@@ -945,37 +1137,77 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
       rw [hbA]
       exact recordAt_of_recordOf hL.decoded hL.record
     · exact (keyOf_nonAux C.t (Core.ixAddr a) n d (hname.symm.trans hnd)).elim
+    · exact (keyOf_nonAux C.t (Core.ixAddr a) n d (hname.symm.trans hnd)).elim
+    · exact (keyOf_nonAux C.t (Core.ixAddr a) n d (hname.symm.trans hnd)).elim
   projCtorTele := by
     intro bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hfC hfT hm
-    exfalso
-    rcases hm with hm | hm
-    · have hbh := L1.hashedBlockAt_of_proj_ctor good ev hb hip
-      obtain ⟨x, hx, hname⟩ := hL.member_name hm (fun _ _ _ h => nomatch h)
-      have hn : cvC.name =
-          (appCtx C new).stored.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) j) :=
-        Core.WhnfAux.name_of_find hfC
-      have hbA := (hL.cprj_block hbh hx (hL.kappa_eq (hn.symm.trans hname))).1
-      have hnat := nativeAt_of_proj_ctor good ev hb
-      rw [hbA] at hnat
-      exact hL.route hnat
-    · rcases hL.newName _ hm with ⟨x, -, hname⟩ | ⟨⟨cv, v, hint, he⟩, -⟩
-      · have hn : (ConstantInfo.projInfo tbl).name = Ix.Kernel.projTableName
+    subst hip
+    obtain ⟨elig, pcs, hms_u64, hdata, hprojNew, heligDet⟩ := hL.projModeled
+    have hbh := L1.hashedBlockAt_of_proj_ctor good ev hb rfl
+    obtain ⟨hbA, hi_lt⟩ : Core.ixAddr b = A ∧ ZMod.val i < ms.size := by
+      rcases hm with hm | hm
+      · obtain ⟨x, hx, hname⟩ :=
+          hL.member_name hm (fun _ _ _ h => nomatch h) (fun _ h => nomatch h) (fun _ h => nomatch h)
+        have hn : cvC.name =
+            (appCtx C new).stored.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) j) :=
+          Core.WhnfAux.name_of_find hfC
+        obtain ⟨hbA, i', ind, hget, hidx⟩ :=
+          hL.cprj_block hbh hx (hL.kappa_eq (hn.symm.trans hname))
+        have hi'_lt : i' < ms.size := (Array.getElem?_eq_some_iff.mp hget).1
+        have hi_eq : ZMod.val i = i' := by
+          have h1 := toNat_toUInt64_of_lt (val_lt_uint64 i)
+          have h2 := toNat_toUInt64_of_lt (Nat.lt_trans hi'_lt hms_u64)
+          rw [← h1, ← h2, hidx]
+        exact ⟨hbA, hi_eq ▸ hi'_lt⟩
+      · have hpcs := hprojNew tbl hm
+        obtain ⟨pos, hpos, -, hsn⟩ := hdata.projTablesPos tbl hpcs
+        have hn : (ConstantInfo.projInfo tbl).name = Ix.Kernel.projTableName
             ((appCtx C new).stored.κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val i))) :=
           Core.WhnfAux.name_of_find hfT
-        exact Decl.ne_projTableName_of_isBaseKey (Decl.isBaseKey_keyOf C.t x)
-          (hname.symm.trans hn)
-      · cases he
+        have hκ : (appCtx C new).stored.κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)) =
+            Core.keyOf C.t (Core.iprjAddr A pos) :=
+          (Ix.Kernel.projTableName_inj hn).symm.trans hsn
+        have haddr : Core.iprjAddr (Core.ixAddr b) (ZMod.val i) = Core.iprjAddr A pos :=
+          hL.kappa_eq hκ
+        obtain ⟨ind, hget⟩ := hL.indcs (ms[pos]'hpos) (by simp)
+        have hget' : ms[pos]? = some (.indc ind) := by
+          rw [Array.getElem?_eq_getElem hpos, hget]
+        have hx : FamAddr A cb rb crb (Core.iprjAddr A pos) :=
+          Or.inl (Or.inr ⟨ms, pos, .indc ind, hL.muts, hget', Or.inl rfl⟩)
+        obtain ⟨hbA, i', ind2, hget2, hidx⟩ := hL.iprj_block_idx hbh hx haddr
+        have hi'_lt : i' < ms.size := (Array.getElem?_eq_some_iff.mp hget2).1
+        have hi_eq : ZMod.val i = i' := by
+          have h1 := toNat_toUInt64_of_lt (val_lt_uint64 i)
+          have h2 := toNat_toUInt64_of_lt (Nat.lt_trans hi'_lt hms_u64)
+          rw [← h1, ← h2, hidx]
+        exact ⟨hbA, hi_eq ▸ hi'_lt⟩
+    obtain ⟨v_a, m_a, cs_a, cs_c, ev_a, heq_a, -, hc_c⟩ := Obs.«KernelModeled::proj_ctor».obs ev
+    subst heq_a
+    have good_a : Core.Good (appCtx C new) cs_a := good.sub fun cl hcl => by simp [hc_c, hcl]
+    have helig := hL.proj_allowed_at_elim heligDet ev_a good_a hb hbA hi_lt
+    obtain ⟨ind, ct, cvC', _, hms, -, -, hnc1, -, -, hfindC, -, -, -, -, -, -, -, -, -, -, -,
+      htele⟩ := hdata.atEligible (ZMod.val i) hi_lt helig
+    have hbhA : Core.HashedBlockAt C.E A := hbA ▸ hbh
+    rw [hbA] at hfC
+    have hc0 := hL.cprj_addr_eq_zero hbhA hms_u64 hi_lt hms hnc1 hfC
+    rw [hc0, Core.Ctx.stored_key_of_find (c := appCtx C new) hfindC] at hfC
+    have hce := Option.some.inj (hfC.symm.trans hfindC)
+    injection hce with hcv hnp hnf
+    subst hcv hnp hnf
+    exact htele
   projFire := by
     intro k tbl hm hf hsort
     exfalso
-    have hn : (ConstantInfo.projInfo tbl).name = Ix.Kernel.projTableName k :=
-      Core.WhnfAux.name_of_find hf
-    rcases hL.newName _ hm with ⟨x, -, hname⟩ | ⟨⟨cv, v, hint, he⟩, -⟩
-    · exact Decl.ne_projTableName_of_isBaseKey (Decl.isBaseKey_keyOf C.t x) (hname.symm.trans hn)
-    · cases he
+    obtain ⟨elig, pcs, -, hdata, hprojNew, -⟩ := hL.projModeled
+    have hnz := hdata.projTablesNeverZero tbl (hprojNew tbl hm)
+    have hpos := eval_pos_of_isNeverZero hnz (fun _ => 0)
+    have heq := Ix.Kernel.Level.isEquiv_sound hsort (fun _ => 0)
+    simp only [Ix.Kernel.Level.eval] at heq
+    omega
   ctorIndRes := by
     intro b i j cv nP nF hbh hf hm
-    obtain ⟨x, hx, hname⟩ := hL.member_name hm (fun _ _ _ h => nomatch h)
+    obtain ⟨x, hx, hname⟩ :=
+      hL.member_name hm (fun _ _ _ h => nomatch h) (fun _ h => nomatch h) (fun _ h => nomatch h)
     have hn : cv.name = (appCtx C new).stored.κ (Core.cprjAddr b i j) :=
       Core.WhnfAux.name_of_find hf
     obtain ⟨hbA, i', ind, hget, hidx⟩ := hL.cprj_block hbh hx (hL.kappa_eq (hn.symm.trans hname))

@@ -108,10 +108,17 @@ theorem denoteMeta_envExtend_mono_at {env₀ env : Env md}
     have hnpe : ∀ j', Expr.NoProjAt T j' e := fun j' => (hnp' j').2
     have hsnT : sn ≠ T := fun hsn => (hnp' j).1 ⟨hsn, rfl⟩
     obtain ⟨ea', hea', hcase⟩ := denoteMeta_proj_inv h
-    rcases hcase with ⟨entry, hfp0, rfl⟩ | ⟨hnt0, hdec⟩
+    rcases hcase with ⟨entry, hfp0, hnode⟩ | ⟨hnt0, hdec⟩
     · -- a table entry at the prefix persists unchanged
       rw [denoteMeta, ihe hc hnpe hea', hmono sn j entry hfp0]
-      rfl
+      obtain ⟨hrdy, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode
+      refine projNodeAV?_eq_some_iff.mpr ⟨?_, rfl⟩
+      rcases hrdy with hle | hs0
+      · exact Or.inl hle
+      · right
+        cases hfc : env₀.find? (Ix.Kernel.projChainKey sn j) with
+        | none => rw [hfc] at hs0; exact nomatch hs0
+        | some ci => rw [hF hfc]; rfl
     · -- the table-free path: the slots the extension may have added
       -- are `T`'s, and the subject has no node there
       rw [denoteMeta, ihe hc hnpe hea']

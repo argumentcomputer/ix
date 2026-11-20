@@ -216,6 +216,13 @@ theorem Graded.projAV {Δa : List AnnotTerm} {i : Nat} {e : AnnotTerm}
     (h : Graded V Δa (Ix.Kernel.Semantics.projAV i e)) : Graded V Δa e :=
   fun ρ hρ => ProjAV.hoistV (h ρ hρ)
 
+theorem Graded.projNodeAV {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {Δa : List AnnotTerm} {sn : Key md} {i : Nat} {entry : ProjEntry md}
+    {e : AnnotTerm}
+    (h : Graded V Δa (Ix.Kernel.Semantics.projNodeAV acval sn i entry e)) :
+    Graded V Δa e :=
+  fun ρ hρ => ProjNodeAV.hoistV (h ρ hρ)
+
 /-! ## The stored constant's package (`Steps/IotaRows.lean:200`) -/
 
 /-- A stored declaration's instantiated type: read at every depth,
@@ -343,7 +350,7 @@ theorem neverChain_succ_inv {n u : Nat} {e : AnnotTerm}
   match e with
   | .pi w v A B => exact ⟨w, v, A, B, rfl, h.1, h.2⟩
   | .bvar _ | .sort _ | .const _ _ | .app _ _ | .lam _ _ _
-  | .eqE _ _ | .fst _ | .snd _ | .prf => exact nomatch h
+  | .eqE _ _ | .fst _ | .snd _ | .prf | .chain _ _ | .bgraph _ _ => exact nomatch h
 
 /-- Substitution preserves the chain (`inst` maps `.pi` to `.pi` and
 `.sort` to itself). -/

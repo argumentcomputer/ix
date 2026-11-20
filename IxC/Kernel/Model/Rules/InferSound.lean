@@ -731,7 +731,7 @@ theorem Infer.proj_sound (hin : RulesInputs V m φ) {g : Grade} {d : Nat}
   obtain ⟨vp, hvp, rfl⟩ := denoteMeta_proj_inv_tower hent hea
   -- the io grade's premise, hoisted through the projection spelling
   have hoist : g = .io → Graded V Δa vp := fun hg ρ hρ =>
-    WellDenotedV_projAV_hoist ((hgr hg) ρ hρ)
+    WellDenotedV_projNodeAV_hoist ((hgr hg) ρ hρ)
   -- the scrutinee's inferred type, and its reduct
   obtain ⟨htpef, htpesub, hokPe, tpea, htpea, hokTpe, hmemPe⟩ :=
     htpe.apply ⟨hws, hb, hLpe⟩ hCpe hvp hoist
@@ -769,9 +769,9 @@ theorem Infer.proj_sound (hin : RulesInputs V m φ) {g : Grade} {d : Nat}
   have hlenVs : vs.length = entry.numParams := by
     rw [← hspt.length]; exact hlen
   have hlaw' : ∀ σ : Nat → V, Sat V Δa σ →
-      WellDenotedV V σ (projAV (i + entry.off) vp) ∧
+      WellDenotedV V σ (projNodeAV m.acval sn i entry vp) ∧
         WellDenotedV V σ restA ∧
-        interp V σ (projAV (i + entry.off) vp) ∈ˢ interp V σ restA :=
+        interp V σ (projNodeAV m.acval sn i entry vp) ∈ˢ interp V σ restA :=
     fun σ hσ =>
       hA (towerGuardAt_of_sem hO5 hprop) σ vs vp restA hlenVs (hokTe σ hσ)
         (hokPe σ hσ) ((heqTe σ hσ) ▸ hmemPe σ hσ) hpeel

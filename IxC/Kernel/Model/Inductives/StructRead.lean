@@ -45,7 +45,7 @@ runs are `none` together. -/
 theorem denoteMeta_acvalWith_unmentioned
     {acval : Key md → (LevelParam → Nat) → AnnotTerm} {T : Key md}
     {A : (LevelParam → Nat) → AnnotTerm} {env₀ env : Env md} {φ : LevelParam → Nat}
-    (hfresh : env₀.find? T = none) :
+    (hfresh : env₀.find? T = none) (hnp : T.isProjFnShape = false) :
     ∀ (d : Nat) (e : Expr md), Expr.constsResolve env₀ e = true →
       denoteMeta (acvalWith acval T A) env φ d e
         = denoteMeta acval env φ d e := by
@@ -89,7 +89,24 @@ theorem denoteMeta_acvalWith_unmentioned
   | case10 d sn i e ihe =>
     intro hcr
     simp only [Expr.constsResolve, Bool.and_eq_true] at hcr
-    rw [denoteMeta, denoteMeta, ihe hcr.2]
+    rw [denoteMeta_proj, denoteMeta_proj, ihe hcr.2]
+    cases denoteMeta acval env φ d e with
+    | none => rfl
+    | some ea =>
+      dsimp only [bind, Option.bind]
+      cases env.findProj? sn i with
+      | none => rfl
+      | some entry =>
+        dsimp only
+        unfold projNodeAV?
+        by_cases hle : entry.off ≤ 1
+        · rw [if_pos hle, if_pos hle]
+        · rw [if_neg hle, if_neg hle]
+          by_cases hch : (env.find? (Ix.Kernel.projChainKey sn i)).isSome = true
+          · rw [if_pos hch, if_pos hch]
+            congr 1; congr 1; funext n
+            exact congrFun (acvalWith_ne (Ix.Kernel.auxKey_projFn_ne hnp)) _
+          · rw [if_neg hch, if_neg hch]
   | case11 d n hsup =>
     intro hcr
     simp only [Expr.constsResolve, Bool.and_eq_true] at hcr
@@ -135,12 +152,12 @@ theorem denoteMeta_acvalWith_unmentioned
 theorem denoteMeta_acvalWith_unmentioned₂
     {acval : Key md → (LevelParam → Nat) → AnnotTerm} {T : Key md}
     {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ env : Env md} {φ : LevelParam → Nat}
-    (hfresh : env₀.find? T = none)
+    (hfresh : env₀.find? T = none) (hnp : T.isProjFnShape = false)
     (d : Nat) (e : Expr md) (hcr : Expr.constsResolve env₀ e = true) :
     denoteMeta (acvalWith acval T A₁) env φ d e
       = denoteMeta (acvalWith acval T A₂) env φ d e := by
-  rw [denoteMeta_acvalWith_unmentioned hfresh d e hcr,
-    denoteMeta_acvalWith_unmentioned hfresh d e hcr]
+  rw [denoteMeta_acvalWith_unmentioned hfresh hnp d e hcr,
+    denoteMeta_acvalWith_unmentioned hfresh hnp d e hcr]
 
 /-! ## The reading peel -/
 

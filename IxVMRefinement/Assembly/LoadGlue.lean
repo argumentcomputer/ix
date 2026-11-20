@@ -399,7 +399,7 @@ structure DeclStoreFacts (c : Core.Ctx) : Prop where
     ProjTableCoreFact c b i
   projTablesAtCore : ∀ (bp sap ptr nl ty np u blk : SourceValue F) (h h' h1 h2 : Heap F)
       (cs cs1 : List (Call F)) (b s : Bytes.Address) (i : F),
-    ObsFn W "KernelModeled::block_is_modeled" [bp] h (.field 0) h' cs → Core.Good c cs →
+    ObsFn W "KernelModeled::proj_allowed_at" [bp, .field i] h (.field 1) h' cs → Core.Good c cs →
     Bytes.RepAddressRef Core.addrTy h b bp →
     ObsFn W "Ingress::get_ci" [sap] h1 ptr h2 cs1 → Core.Good c cs1 →
     Bytes.RepAddressRef Core.addrTy h1 s sap →

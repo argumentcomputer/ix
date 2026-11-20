@@ -46,10 +46,6 @@ open Lean
 def refusedByDesign : List (String × String) := [
   ("h-mutual-nonrec-eta", "no structure eta at a mutual block"),
   ("h-mutual-nonrec-unit", "no unit-like conversion at a mutual block"),
-  ("h-nested-struct-proj", "no projection at a member of a mutual or nested block"),
-  ("p-mutual-nonrec-fn", "no projection at a member of a mutual or nested block"),
-  ("p-nested-struct-thm", "no projection at a member of a mutual or nested block"),
-  ("p-mutual-nonrec-thm", "no projection at a member of a mutual or nested block"),
   ("h-nested-binder", "a nested occurrence under a binder has no model"),
   ("a-redex-rec", "a field that mentions the block only where reduction erases it"),
   ("a-phantom-def", "a field that mentions the block only where reduction erases it"),

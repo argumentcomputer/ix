@@ -431,7 +431,7 @@ private def familyCases (shape recursors : Bool) (env : Ixon.Env) : Array Builde
     fun u => do
       return { (← kernelCheckCase env (defs "Rose.children") true u) with
         accept := false
-        rejectsWith := some "projection on a member of a mutual or nested block" },
+        rejectsWith := some noModel },
     fun u => do
       return { (← kernelCheckCase env (defs "Rose.rec") true u) with
         accept := false

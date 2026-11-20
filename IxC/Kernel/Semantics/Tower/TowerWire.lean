@@ -138,6 +138,12 @@ theorem bvarsBelow_liftN (n : Nat) :
   | snd e ihe =>
     intro m k h
     exact ihe m k h
+  | chain g e ihg ihe =>
+    intro m k h
+    exact ⟨fun j => ihg j m k (h.1 j), ihe m k h.2⟩
+  | bgraph _ f ihf =>
+    intro m k h
+    exact ihf m k h
 
 /-- Application spines preserve a bound. -/
 theorem bvarsBelow_mkAppN :

@@ -1093,7 +1093,7 @@ theorem storeInv_nativeTable {p : NativeParts md} {ctorsA : List (ConstantVal md
       intro tbl heq i hi
       obtain rfl := ConstantInfo.projInfo.inj heq
       exact ⟨hrT, hrC, hi, ⟨cvT, caps, Ix.Kernel.Env.find?_cons_of_fresh hfresh hfT, hlT, hsT⟩,
-        ⟨cA.1, Ix.Kernel.Env.find?_cons_of_fresh hfresh hfC, hlC, hsC⟩⟩
+        ⟨cA.1, Ix.Kernel.Env.find?_cons_of_fresh hfresh hfC, hlC, hsC⟩, Or.inl (Nat.le_refl 1)⟩
     · obtain rfl := Except.ok.inj hTbl
       exact h
   · obtain rfl := Except.ok.inj hTbl

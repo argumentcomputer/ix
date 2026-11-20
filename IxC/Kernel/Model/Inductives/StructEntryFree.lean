@@ -334,8 +334,16 @@ theorem denoteMeta_liftN_of_leaf_free {env : Env md} (m : EnvModel V env) {φ : 
     obtain ⟨ia, hia, hcase⟩ := denoteMeta_proj_inv h
     simp only [Expr.WScoped] at hw
     obtain ⟨Xe, rfl⟩ := ihe hw hq (fun l hl' => hl l (by simpa [Expr.fvarLeaves] using hl')) hia
-    rcases hcase with ⟨entry, -, rfl⟩ | ⟨-, hdec⟩
-    · exact ⟨projAV (i + entry.off) Xe, by rw [projAV_liftN]⟩
+    rcases hcase with ⟨entry, -, hnode⟩ | ⟨-, hdec⟩
+    · obtain ⟨-, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode
+      by_cases hle : entry.off ≤ 1
+      · rw [projNodeAV_of_le_one hle]
+        exact ⟨projAV (i + entry.off) Xe, by rw [projAV_liftN]⟩
+      · rw [projNodeAV_of_gt_one hle]
+        refine ⟨.chain (fun n => m.acval (Ix.Kernel.projChainKey sn i) (fun _ => n)) Xe, ?_⟩
+        rw [AnnotTerm.liftN_chain]
+        congr 1; funext n
+        exact (m.acval_closed _ _ _).symm
     · rcases AnnotTerm.projPair?_cases hdec with rfl | rfl
       · exact ⟨.fst Xe, by rw [AnnotTerm.liftN_fst]⟩
       · exact ⟨.snd Xe, by rw [AnnotTerm.liftN_snd]⟩

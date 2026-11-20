@@ -313,7 +313,7 @@ structure ScopedLoadBase (c : ScopedCtx) : Prop where
           ∀ bm ∈ bs, bm.2.pw = Ix.Kernel.Level.zeronessOf tbl.structSort
   projTablesAt : ∀ (bp sap ptr nl ty np u blk : SourceValue F) (h h' h1 h2 : Heap F)
       (cs cs1 : List (Call F)) (b s : Bytes.Address) (i : F),
-    ObsFn W "KernelModeled::block_is_modeled" [bp] h (.field 0) h' cs → Good c.toCtx cs →
+    ObsFn W "KernelModeled::proj_allowed_at" [bp, .field i] h (.field 1) h' cs → Good c.toCtx cs →
     Bytes.RepAddressRef addrTy h b bp →
     ObsFn W "Ingress::get_ci" [sap] h1 ptr h2 cs1 → Good c.toCtx cs1 →
     Bytes.RepAddressRef addrTy h1 s sap →
@@ -496,7 +496,7 @@ theorem ScopedLoadBase.ofUnrestricted {c : ScopedCtx} (hk : c.key = keyOf c.t)
     intro bp ip ptr h₀ h₁ cs b i ev _ hg hb hip _ _
     subst ip
     have htables := h.projTables bp (.field i) ptr h₀ h₁ cs b i ev hg hb rfl
-    obtain ⟨v, mid, cs_assert, cs_load, ev_assert, ev_load, hcalls⟩ :=
+    obtain ⟨v, mid, cs_assert, cs_load, ev_assert, _, ev_load, hcalls⟩ :=
       Obs.«KernelModeled::proj_ctor».obs ev
     have hstored := h.getCprj bp ptr i 0 mid h₁ cs_load b ev_load
       (hg.sub fun cl hcl => by simp [hcalls, hcl])

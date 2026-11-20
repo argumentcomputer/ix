@@ -119,11 +119,9 @@ theorem auxKey_ne_of_isBaseKey {k k' : KKey} {d : Derived} (hk : isBaseKey k = t
 
 /-! ## The assembly -/
 
-/-- **The family step's record from the family check's facts** (module docstring). The premises
-beside the facts: the prefix's store invariant; the family's names distinct, base keys, not
-reserved, fresh in the prefix; the prefix storing no model key and no `iota` key of a member; the
-pinned equality stored. -/
-theorem familyRecord_of_facts {env : Env .anon} {blk : List (ConstantInfo .anon)}
+/-- **The family step's record from the family check's facts**, exposing the alias naming shape
+and target map alongside the installed constants. -/
+theorem familyRecord_of_facts_full {env : Env .anon} {blk : List (ConstantInfo .anon)}
     {adv : FamilyAdvice} {tys : List KExpr} {rhsss : List (List KExpr)}
     (hF : FamilyCheckFacts env blk adv tys rhsss) (hsi : Ix.Kernel.Open.StoreInv env)
     (hnd : (blk.map (·.name)).Nodup)
@@ -136,6 +134,9 @@ theorem familyRecord_of_facts {env : Env .anon} {blk : List (ConstantInfo .anon)
     ∃ (h : KKey → KKey) (aliases : List (ConstantInfo .anon)) (env₂ : Env .anon),
       AliasGroup env h aliases ∧
       (∀ a ∈ aliases, ∃ ci ∈ blk, a.name.base = ci.name) ∧
+      (∀ a ∈ aliases, ∃ ci ∈ blk,
+        a.name = auxKey ci.name .model ∨ ∃ j, a.name = iotaKey ci.name j) ∧
+      (∀ ci ∈ blk, h (auxKey ci.name .model) = adv.ren ci.name) ∧
       DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk env₂ ∧
       (∀ ci ∈ blk, ∃ c, env₂.find? ci.name = some c ∧ IxVM.Consistency.StoredAs c ci) ∧
       (∀ (i : Nat) (ci : ConstantInfo .anon) (tyA : KExpr), (nonrecsOf blk)[i]? = some ci →
@@ -305,7 +306,7 @@ theorem familyRecord_of_facts {env : Env .anon} {blk : List (ConstantInfo .anon)
   · -- no recursor
     refine ⟨aliasMap tbl, as,
       storeMembers ⟨as ++ env.consts⟩ (nonrecsOf blk) (tys.take (nonrecsOf blk).length), hg,
-      hroots, ?_, ?_, ?_, ?_⟩
+      hroots, hnames, htgt, ?_, ?_, ?_, ?_⟩
     · set_option smartUnfolding false in
       exact ⟨hF.split, _, hmem, Or.inl ⟨hrecs, rfl⟩⟩
     · intro ci hci
@@ -364,7 +365,7 @@ theorem familyRecord_of_facts {env : Env .anon} {blk : List (ConstantInfo .anon)
       (storeMembers ⟨as ++ env.consts⟩ (nonrecsOf blk) (tys.take (nonrecsOf blk).length))
       hrecsA hmfs.2
       (fun ci hci => hblk ci (hRmem ci hci)) hRnd
-    refine ⟨aliasMap tbl, as, out, hg, hroots, ?_, ?_, ?_, ?_⟩
+    refine ⟨aliasMap tbl, as, out, hg, hroots, hnames, htgt, ?_, ?_, ?_, ?_⟩
     · set_option smartUnfolding false in
       exact ⟨hF.split, _, hmem, Or.inr ⟨fun he => hrecs he, heqM, _, _, hprov, hfold⟩⟩
     · intro ci hci
@@ -382,6 +383,36 @@ theorem familyRecord_of_facts {env : Env .anon} {blk : List (ConstantInfo .anon)
         exact hty
       exact hstoredF i cv mI rP rules tyA rhss hi hty' hrh
 
+/-- **The family step's record from the family check's facts** (module docstring). -/
+theorem familyRecord_of_facts {env : Env .anon} {blk : List (ConstantInfo .anon)}
+    {adv : FamilyAdvice} {tys : List KExpr} {rhsss : List (List KExpr)}
+    (hF : FamilyCheckFacts env blk adv tys rhsss) (hsi : Ix.Kernel.Open.StoreInv env)
+    (hnd : (blk.map (·.name)).Nodup)
+    (hkey : ∀ ci ∈ blk, isBaseKey ci.name = true ∧
+      Ix.Kernel.reservedBasisNames.contains ci.name = false)
+    (hfresh : ∀ ci ∈ blk, env.find? ci.name = none)
+    (hnewM : ∀ ci ∈ blk, env.find? (auxKey ci.name .model) = none)
+    (hnewI : ∀ ci ∈ blk, ∀ j, env.find? (iotaKey ci.name j) = none)
+    (heq : env.find? eqName = some eqA) :
+    ∃ (h : KKey → KKey) (aliases : List (ConstantInfo .anon)) (env₂ : Env .anon),
+      AliasGroup env h aliases ∧
+      (∀ a ∈ aliases, ∃ ci ∈ blk, a.name.base = ci.name) ∧
+      DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk env₂ ∧
+      (∀ ci ∈ blk, ∃ c, env₂.find? ci.name = some c ∧ IxVM.Consistency.StoredAs c ci) ∧
+      (∀ (i : Nat) (ci : ConstantInfo .anon) (tyA : KExpr), (nonrecsOf blk)[i]? = some ci →
+        tys[i]? = some tyA → env₂.find? ci.name = some (storedMember ci tyA)) ∧
+      (∀ (i : Nat) (cv : ConstantVal .anon) (mI rP : Nat) (rules : List (RecRule .anon))
+        (tyA : KExpr) (rhss : List KExpr),
+        (recsOf blk)[i]? = some (.recInfo cv mI rP rules) →
+        tys[(nonrecsOf blk).length + i]? = some tyA → rhsss[i]? = some rhss →
+        ∃ rules' : List (RecRule .anon),
+          env₂.find? cv.name = some (.recInfo ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules') ∧
+          List.Forall₂ IxVM.Consistency.RuleStored rules' rules ∧
+          List.Forall₂ (fun (r' : RecRule .anon) rhsA => r'.rhs = rhsA) rules' rhss) := by
+  obtain ⟨h, as, env₂, hg, hroots, -, -, hd, hst, hN, hR⟩ :=
+    familyRecord_of_facts_full hF hsi hnd hkey hfresh hnewM hnewI heq
+  exact ⟨h, as, env₂, hg, hroots, hd, hst, hN, hR⟩
+
 end IxVM.Refinement.Decl.FamilyAlias
 
 namespace IxVM.Refinement.Typing.FamilyAlias
@@ -390,7 +421,67 @@ open IxVM.Consistency
 open Ix.Kernel (ConstantInfo ConstantVal)
 open Ix.Kernel.Semantics (DeclIndRenRunJ)
 open IxVM.Refinement.Decl.FamilyAlias (AliasGroup famJ FamilyAdvice FamilyCheckFacts
-  familyRecord_of_facts)
+  familyRecord_of_facts familyRecord_of_facts_full)
+
+/-- **The family step's record from the family check's facts, with installed members and alias
+naming/target facts**. -/
+theorem famStepConclusion_installed_full {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
+    {B rb : _root_.Address} {cb crb : Ixon.Constant} {env : Ix.Kernel.Env .anon}
+    {blk : List (ConstantInfo .anon)} {adv : FamilyAdvice}
+    {tys : List IxVM.Refinement.Core.KExpr} {rhsss : List (List IxVM.Refinement.Core.KExpr)}
+    (hF : FamilyCheckFacts env blk adv tys rhsss)
+    (hreads : FamDeclReads t E₀ B cb rb crb blk)
+    (hsi : Ix.Kernel.Open.StoreInv env) (hroot : Decl.AuxRootSynced env)
+    (heq : env.find? Ix.Kernel.eqName = some Ix.Kernel.eqA)
+    (hfresh : ∀ x, FamAddr B cb rb crb x → env.find? (keyOf t x) = none)
+    (hfree : ∀ x, FamAddr B cb rb crb x → Decl.KeyFree (keyOf t x)) :
+    ∃ (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
+      (aliases : List (ConstantInfo .anon)) (env₂ : Ix.Kernel.Env .anon),
+      AliasGroup env h aliases ∧
+      (∀ a ∈ aliases, ∃ ci ∈ blk, a.name.base = ci.name) ∧
+      (∀ a ∈ aliases, ∃ ci ∈ blk,
+        a.name = Ix.Kernel.auxKey ci.name .model ∨
+          ∃ j, a.name = Decl.FamilyAlias.iotaKey ci.name j) ∧
+      (∀ ci ∈ blk, h (Ix.Kernel.auxKey ci.name .model) = adv.ren ci.name) ∧
+      DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk env₂ ∧
+      (∀ ci ∈ blk, ∃ c, env₂.find? ci.name = some c ∧ StoredAs c ci) ∧
+      (∀ (i : Nat) (ci : ConstantInfo .anon) (tyA : IxVM.Refinement.Core.KExpr),
+        (Decl.FamilyAlias.nonrecsOf blk)[i]? = some ci → tys[i]? = some tyA →
+        env₂.find? ci.name = some (Decl.FamilyAlias.storedMember ci tyA)) ∧
+      (∀ (i : Nat) (cv : ConstantVal .anon) (mI rP : Nat)
+        (rules : List (Ix.Kernel.RecRule .anon)) (tyA : IxVM.Refinement.Core.KExpr)
+        (rhss : List IxVM.Refinement.Core.KExpr),
+        (Decl.FamilyAlias.recsOf blk)[i]? = some (.recInfo cv mI rP rules) →
+        tys[(Decl.FamilyAlias.nonrecsOf blk).length + i]? = some tyA → rhsss[i]? = some rhss →
+        ∃ rules' : List (Ix.Kernel.RecRule .anon),
+          env₂.find? cv.name = some (.recInfo ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules') ∧
+          List.Forall₂ RuleStored rules' rules ∧
+          List.Forall₂ (fun (r' : Ix.Kernel.RecRule .anon) rhsA => r'.rhs = rhsA) rules' rhss) := by
+  have hmem : ∀ ci ∈ blk, ∃ x, FamAddr B cb rb crb x ∧ ci.name = keyOf t x := by
+    intro ci hci
+    obtain ⟨x, hx, hk, -⟩ := hreads.2.1 ci hci
+    exact ⟨x, hx, hk⟩
+  have hbase : ∀ ci ∈ blk, Decl.isBaseKey ci.name = true := by
+    intro ci hci
+    obtain ⟨x, -, hk⟩ := hmem ci hci
+    rw [hk]
+    exact Decl.isBaseKey_keyOf t x
+  have hfr : ∀ ci ∈ blk, env.find? ci.name = none := by
+    intro ci hci
+    obtain ⟨x, hx, hk⟩ := hmem ci hci
+    rw [hk]
+    exact hfresh x hx
+  have hkey : ∀ ci ∈ blk, Decl.isBaseKey ci.name = true ∧
+      Ix.Kernel.reservedBasisNames.contains ci.name = false := by
+    intro ci hci
+    obtain ⟨x, hx, hk⟩ := hmem ci hci
+    refine ⟨hbase ci hci, ?_⟩
+    rw [hk]
+    exact (hfree x hx).1
+  exact familyRecord_of_facts_full hF hsi hreads.1 hkey hfr
+    (fun ci hci => hroot.fresh_auxKey (hbase ci hci) (hfr ci hci) .model)
+    (fun ci hci j => hroot.fresh_auxKey2 (hbase ci hci) (hfr ci hci) .model (.iota j))
+    heq
 
 /-- **The family step's record from the family check's facts, with the installed members**: the
 alias group, the roots, IxC's renamed record and each member stored as its reading, from the facts

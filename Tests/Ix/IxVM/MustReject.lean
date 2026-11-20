@@ -169,7 +169,7 @@ private def noModel : String := "no model advice for a mutual or nested block"
 private def twoMotives : String := "a recursor of a native block with more than one motive"
 private def levelLink : String :=
   "universe-parameter count is not its block's plus the elimination parameter"
-private def modeledProjection : String := "projection on a member of a mutual or nested block"
+private def lamZeroDatum : String := "a lambda's datum is not the zero-ness of its body type's sort"
 
 /-- The rejection message each case not on the list is pinned to: the first assertion the
 program is expected to meet on the case's walk. A required rejection without one accepts
@@ -187,11 +187,11 @@ def rejectionReasons : List (String × String) := [
   ("nonempty-nest/recursor-aux", noModel),
   ("peer-negative/inductive-Bad", noModel),
   ("peer-negative/ctor-Bad.mk", noModel),
-  ("peer-negative/unwrap", modeledProjection),
-  ("peer-negative/false", modeledProjection),
+  ("peer-negative/unwrap", noModel),
+  ("peer-negative/false", lamZeroDatum),
   ("peer-negative/control-nonmutual-container", noModel),
   ("peer-negative/inductive-Bad2-three-peers", noModel),
-  ("peer-negative/false-three-peers", modeledProjection),
+  ("peer-negative/false-three-peers", lamZeroDatum),
   ("peer-negative/control-declared-mutual-negative", noModel),
   ("shapes/inductive-inductive", "an inductive's type mentions a type of its own block"),
   ("shapes/peer-universe-counts", noModel),

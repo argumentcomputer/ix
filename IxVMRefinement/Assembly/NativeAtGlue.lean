@@ -365,6 +365,13 @@ theorem foldStoreInv_step_declRunJA {env env₂ : Ix.Kernel.Env .anon} {d : Decl
         Ix.Kernel.Model.storeInv_declRunJA
           (fun e => Ix.Kernel.Model.judgeFrames_rulesJ e) h.store hd
       thmTyped := Ix.Kernel.Model.thmTyped_declRunJA h.thmTyped hd
+      defnTyped := by
+        have hext := Ix.Kernel.Model.declRunJA_envExt hd
+        rcases Ix.Kernel.Model.declRunJA_cases hd with h' | ⟨_, _, rfl, _, _, _, _, hN⟩
+        · exact defnTyped_declRunJ h.defnTyped h'
+        · exact defnTyped_step_noBaseDefn hext h.defnTyped
+            (Ix.Kernel.Model.nativeNoRec_newSat (fun _ _ _ _ _ _ h => nomatch h)
+              (fun _ _ _ _ _ _ _ h => nomatch h) (fun _ _ _ _ _ h => nomatch h) hN)
       recK := Ix.Kernel.Model.recK_declRunJA h.store h.recK hd
       etaTowers := Ix.Kernel.Model.etaTowers_declRunJA h.etaTowers hd
       strongProps := strongEnvProps_declRunJA h.store h.strongProps hna hd

@@ -1568,13 +1568,149 @@ theorem etaType_of_closed_stored {env : Ix.Kernel.Env .anon}
 
 /-! ## Section 3: Unified store and fold invariants (`FoldStoreInv`, `FoldInv`) -/
 
+/-- Every stored definition at a non-auxiliary (base) key has an `Infer .full` typing derivation
+for its declared type (reducing to a sort) and for its value (whose inferred type is definitionally
+equal to its declared type). -/
+def DefnTyped (env : Ix.Kernel.Env .anon) : Prop :=
+  ∀ k cv v hint, NonAuxKey k → env.find? k = some (.defnInfo cv v hint) →
+    (∃ stype u, Infer env .full 0 cv.type stype ∧ Red env 0 stype (.sort u)) ∧
+    (∃ vt, Infer env .full 0 v vt ∧ DefEq env 0 vt cv.type)
+
+theorem DefnTyped.empty : DefnTyped Ix.Kernel.Env.empty :=
+  fun _ _ _ _ _ h => by simp [Ix.Kernel.Env.find?, Ix.Kernel.Env.empty] at h
+
+theorem defnTyped_step {env env₂ : Ix.Kernel.Env .anon} (hext : EnvExt env env₂)
+    (h : DefnTyped env)
+    (hnew : ∀ k cv v hint, NonAuxKey k →
+      env₂.find? k = some (.defnInfo cv v hint) → env.find? k = none →
+      (∃ stype u, Infer env₂ .full 0 cv.type stype ∧ Red env₂ 0 stype (.sort u)) ∧
+      (∃ vt, Infer env₂ .full 0 v vt ∧ DefEq env₂ 0 vt cv.type)) :
+    DefnTyped env₂ := by
+  intro k cv v hint hna hf
+  cases hold : env.find? k with
+  | none => exact hnew k cv v hint hna hf hold
+  | some ci =>
+    have h2 := hext.find hold
+    rw [hf] at h2
+    obtain rfl := Option.some.inj h2
+    obtain ⟨⟨stype, u, hinfT, hredT⟩, ⟨vt, hvt, hde⟩⟩ := h k cv v hint hna hold
+    exact ⟨⟨stype, u, Infer.weaken hext hinfT, Red.weaken hext hredT⟩,
+      ⟨vt, Infer.weaken hext hvt, DefEq.weaken hext hde⟩⟩
+
+/-- Predicate excluding base-key definitions (`NonAuxKey ci.name → ci` is not `.defnInfo`). -/
+def NotBaseDefn (ci : ConstantInfo .anon) : Prop :=
+  NonAuxKey ci.name → ∀ cv v hint, ci ≠ .defnInfo cv v hint
+
+theorem defnTyped_step_noBaseDefn {env env₂ : Ix.Kernel.Env .anon} (hext : EnvExt env env₂)
+    (h : DefnTyped env) (hns : NewSat env env₂ NotBaseDefn) :
+    DefnTyped env₂ :=
+  defnTyped_step hext h fun k cv v hint hna hf hold => by
+    rcases hns k (.defnInfo cv v hint) hf with ho | hq
+    · rw [ho] at hold; exact nomatch hold
+    · exact absurd rfl (hq (by simpa [Ix.Kernel.Semantics.Env.find?_name hf] using hna) cv v hint)
+
+private def basisNoDefnb (kind : BasisKind) : Bool :=
+  (kind.declsA (md := .anon)).all fun
+    | .defnInfo _ _ _ => false
+    | _ => true
+
+private theorem basis_noDefn (kind : BasisKind) : basisNoDefnb kind = true := by
+  cases kind <;> decide +kernel
+
+theorem basis_newSat_noBaseDefn {env env₂ : Ix.Kernel.Env .anon} {kind : BasisKind}
+    (hrun : DeclBasisRun env kind env₂) : NewSat env env₂ NotBaseDefn := by
+  refine Ix.Kernel.Model.basis_newSat (fun c hc _ cv v hint heq => ?_) hrun
+  have h := List.all_eq_true.mp (basis_noDefn kind) c hc
+  subst heq
+  simp at h
+
+theorem twin_newSat_noBaseDefn {J : Judgements .anon} {env env₂ : Ix.Kernel.Env .anon}
+    {block : List (ConstantInfo .anon)} (hrun : DeclRecTwinRunJ J env block env₂) :
+    NewSat env env₂ NotBaseDefn := by
+  obtain ⟨ws, f, -, -, rfl, -⟩ := hrun
+  intro n x hf
+  have hf' : (⟨(twinRecs ws ++ twinModels ws) ++ env.consts⟩ : Ix.Kernel.Env .anon).find? n =
+      some x := by
+    simpa [List.append_assoc] using hf
+  unfold Ix.Kernel.Env.find? at hf'
+  rw [List.find?_append] at hf'
+  cases h₁ : (twinRecs ws ++ twinModels ws).find? (fun ci => ci.name == n) with
+  | none =>
+    simp only [h₁, Option.none_or] at hf'
+    exact .inl hf'
+  | some c =>
+    simp only [h₁, Option.some_or, Option.some.injEq] at hf'
+    subst hf'
+    have hmem := List.mem_of_find?_eq_some h₁
+    rcases List.mem_append.mp hmem with hrec | hmod
+    · obtain ⟨w, -, rfl⟩ := List.mem_map.mp hrec
+      exact .inr fun _ _ _ _ heq => nomatch heq
+    · obtain ⟨w, -, hw⟩ := List.mem_filterMap.mp hmod
+      unfold Ix.Kernel.Semantics.TwinRecPart.modelInfo? at hw
+      obtain ⟨⟨cvm, mval, hint⟩, -, rfl⟩ := Option.map_eq_some_iff.mp hw
+      exact .inr fun hna _ _ _ _ => absurd rfl (hna w.cvW.name .model)
+
+theorem indRoutes_newSat_noBaseDefn {J : Judgements .anon} {env env₂ : Ix.Kernel.Env .anon}
+    {block : List (ConstantInfo .anon)} {nP : Nat}
+    (hI : IndRoutesJ J env block nP env₂) : NewSat env env₂ NotBaseDefn := by
+  rcases hI with ⟨_, -, hN⟩ | hM | ⟨_, -, hN⟩ | hT
+  · exact Ix.Kernel.Model.native_newSat (fun _ _ _ _ _ _ h => nomatch h)
+      (fun _ _ _ _ _ _ _ h => nomatch h) (fun _ _ _ _ _ _ _ _ h => nomatch h)
+      (fun _ _ _ _ _ h => nomatch h) hN
+  · exact Ix.Kernel.Model.modeled_newSat (fun _ _ _ _ _ h => nomatch h)
+      (fun _ _ _ _ _ _ _ h => nomatch h) (fun _ _ _ _ _ _ _ _ h => nomatch h) hM
+  · exact Ix.Kernel.Model.nativeNoRec_newSat (fun _ _ _ _ _ _ h => nomatch h)
+      (fun _ _ _ _ _ _ _ h => nomatch h) (fun _ _ _ _ _ h => nomatch h) hN
+  · exact twin_newSat_noBaseDefn hT
+
+theorem defnTyped_declRunJ {env env₂ : Ix.Kernel.Env .anon} {d : Declaration .anon}
+    (h : DefnTyped env) (hrun : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env d env₂) :
+    DefnTyped env₂ := by
+  have hext := Ix.Kernel.Model.declRunJ_envExt_routes hrun
+  cases d with
+  | defnDecl cv value hint =>
+    obtain ⟨type', value', hcv, hvf, rfl, -, -⟩ := hrun
+    refine defnTyped_step hext h ?_
+    intro k cv' v' hint' _ hf hold
+    rw [Ix.Kernel.Env.find?_cons] at hf
+    split at hf
+    · obtain ⟨rfl, rfl, rfl⟩ := ConstantInfo.defnInfo.inj (Option.some.inj hf)
+      obtain ⟨-, -, -, -, -, -, -, -, -, stype, u, hinfT, hredT⟩ := hcv
+      obtain ⟨-, -, -, -, -, vt, hvt, hde⟩ := hvf
+      exact ⟨⟨stype, u, Infer.weaken hext hinfT, Red.weaken hext hredT⟩,
+        ⟨vt, Infer.weaken hext hvt, DefEq.weaken hext hde⟩⟩
+    · rw [hf] at hold; exact nomatch hold
+  | thmDecl cv value =>
+    obtain ⟨type', value', hcv, -, -, rfl⟩ := hrun
+    exact defnTyped_step_noBaseDefn hext h (NewSat.cons fun _ _ _ _ heq => nomatch heq)
+  | opaqueDecl cv value =>
+    obtain ⟨type', value', hcv, -, rfl⟩ := hrun
+    exact defnTyped_step_noBaseDefn hext h (NewSat.cons fun _ _ _ _ heq => nomatch heq)
+  | axiomDecl cv =>
+    rcases hrun with ⟨-, rfl⟩ | ⟨type', hcv, ⟨-, rfl⟩ | ⟨-, -, -, -, rfl⟩⟩
+    · exact h
+    · exact defnTyped_step_noBaseDefn hext h (NewSat.cons fun _ _ _ _ heq => nomatch heq)
+    · exact h
+  | basisDecl kind => exact defnTyped_step_noBaseDefn hext h (basis_newSat_noBaseDefn hrun)
+  | indDecl block nP =>
+    simp only [DeclRunJ] at hrun
+    split at hrun
+    · exact defnTyped_step_noBaseDefn hext h (basis_newSat_noBaseDefn hrun)
+    · exact defnTyped_step_noBaseDefn hext h (indRoutes_newSat_noBaseDefn hrun)
+  | quotDecl k cv =>
+    simp only [DeclRunJ] at hrun
+    split at hrun
+    · exact defnTyped_step_noBaseDefn hext h (basis_newSat_noBaseDefn hrun)
+    · subst hrun; exact h
+
 /-- Unified store-level declaration invariant bundle carried alongside `EnvModelT` across all
-declaration routes: combines `StoreInv`, `ThmTyped`, `RecK`, `EtaTowers`, `StrongEnvProps`
-(extending `TableBodies` with non-auxiliary projection-table constructor keys), `RecShape`,
-`EtaCtorStored`, and `EtaShape`. -/
+declaration routes: combines `StoreInv`, `ThmTyped`, `DefnTyped`, `RecK`, `EtaTowers`,
+`StrongEnvProps` (extending `TableBodies` with non-auxiliary projection-table constructor keys),
+`RecShape`, `EtaCtorStored`, and `EtaShape`. -/
 structure FoldStoreInv (env : Ix.Kernel.Env .anon) : Prop where
   store : Ix.Kernel.Open.StoreInv env
   thmTyped : ThmTyped env
+  defnTyped : DefnTyped env
   recK : RecK env
   etaTowers : EtaTowers env
   strongProps : StrongEnvProps env
@@ -1589,7 +1725,7 @@ theorem FoldStoreInv.tableBodies {env : Ix.Kernel.Env .anon} (h : FoldStoreInv e
 
 /-- `FoldStoreInv` holds of the empty environment. -/
 theorem foldStoreInv_empty : FoldStoreInv Ix.Kernel.Env.empty :=
-  ⟨.empty, .empty, .empty, .empty, strongEnvProps_empty, .empty, .empty, .empty⟩
+  ⟨.empty, .empty, .empty, .empty, .empty, strongEnvProps_empty, .empty, .empty, .empty⟩
 
 /-- One-step preservation of `FoldStoreInv` along any `DeclRunJ rulesJ (IndRoutesJ rulesJ env)`
 step when any unpinned `.indDecl` block has `NonAuxKey` member names. -/
@@ -1608,6 +1744,7 @@ theorem foldStoreInv_step_declRunJ {env env₂ : Ix.Kernel.Env .anon} {d : Decla
             (fun e => Ix.Kernel.Model.judgeFrames_rulesJ e) h.store hI)
           h.store hd
       thmTyped := Ix.Kernel.Model.thmTyped_declRunJ h.thmTyped hd
+      defnTyped := defnTyped_declRunJ h.defnTyped hd
       recK := Ix.Kernel.Model.recK_declRunJ h.store h.recK hd
       etaTowers := Ix.Kernel.Model.etaTowers_declRunJ h.etaTowers hd
       strongProps := strongEnvProps_declRunJ h.store h.strongProps hna hd

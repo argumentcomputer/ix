@@ -56,6 +56,7 @@ import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.PwHints
 import Tests.Ix.IxVM.BinderAnnotators
 import Tests.Ix.IxVM.ModelAdvice
+import Tests.Ix.IxVM.ModeledProj
 import Tests.Ix.IxVM.FieldReduction
 import Tests.Ix.IxVM.MustReject
 import Tests.Ix.IxVM.IndVariations
@@ -245,6 +246,7 @@ def registry : List Entry := [
   -- A constant byte out of range is refused.
   .runner "ixvm-io-ingress" (.ci .ixvm) Tests.IOIngress.run,
   .env "ixvm-model-advice" (.ci .ixvm) Tests.Ix.IxVM.ModelAdvice.run,
+  .env "ixvm-modeled-proj" (.ci .ixvm) Tests.Ix.IxVM.ModeledProj.run,
   -- Must-reject gate: compact hand-built inputs the program has to refuse, with
   -- controls exercising the Rust executor and circuit-verdict deferred assertions.
   .env "ixvm-must-reject" (.manual "hand-built must-reject fixtures and their controls, checked against Lean's kernel") Tests.Ix.IxVM.MustReject.run,
@@ -400,6 +402,7 @@ def required : List (String × String) := [
   ("ixvm-decision-roles", "ci:ixvm"),
   ("ixvm-io-ingress", "ci:ixvm"),
   ("ixvm-model-advice", "ci:ixvm"),
+  ("ixvm-modeled-proj", "ci:ixvm"),
   ("ixvm-circuit-verdict", "ci:ixvm"),
   ("ixvm-field-reduction", "ci:ixvm"),
   ("ixvm-pw-hints", "ci:ixvm"),

@@ -101,6 +101,9 @@ theorem foldStoreInv_step_declIndRen {env env₂ : Ix.Kernel.Env .anon}
       thmTyped := Ix.Kernel.Model.thmTyped_step_noThm hext h.thmTyped
         (Ix.Kernel.Model.modeled_newSat (fun _ _ _ heq => nomatch heq)
           (fun _ _ _ _ _ heq => nomatch heq) (fun _ _ _ _ _ _ heq => nomatch heq) hM)
+      defnTyped := defnTyped_step_noBaseDefn hext h.defnTyped
+        (Ix.Kernel.Model.modeled_newSat (fun _ _ _ _ _ heq => nomatch heq)
+          (fun _ _ _ _ _ _ _ heq => nomatch heq) (fun _ _ _ _ _ _ _ _ heq => nomatch heq) hM)
       recK := Ix.Kernel.Model.recK_step h.store h.recK hext.find
         (Ix.Kernel.Model.modeled_recK_new hM)
       etaTowers := Ix.Kernel.Model.etaTowers_step_noEta hext h.etaTowers

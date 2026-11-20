@@ -1,4 +1,5 @@
 import IxVMRefinement.FamilyAlias.CallRecs
+import IxVMRefinement.FamilyAlias.CallProjs
 import IxVMRefinement.FamilyAlias.BlockRowCheck
 import IxVMRefinement.FamilyAlias.ClosureFamilyStep
 import IxVMRefinement.FamilyGraph.ProducersCallTree
@@ -495,16 +496,23 @@ private theorem nonrecsOf_append_recs {nonrecs recs : List (ConstantInfo .anon)}
 
 /-! ## Core Layer-2 assembly from `CheckFamilyChain` -/
 
+private theorem repList_true {α : Type _} {enumName : String}
+    {R : Heap F → α → SourceValue F → Prop} {h : Heap F} :
+    ∀ {xs : List α} {p : SourceValue F},
+      RepList enumName R h xs p → RepList enumName (fun _ _ _ => True) h xs p
+  | [], _, .nil cell => .nil cell
+  | _ :: _, _, .cons cell _ rest => .cons cell trivial (repList_true rest)
+
 /-- **Full Layer-2 facts from one heap-chained `KernelModeled::check_family` run**:
 builds `(blk, advM, tys, rhsss)` once from the check's payload, advice, tables, three
-`members_val` loops, `block_elim`, `family_refs_ok`, and `check_recs`, yielding:
+`members_val` loops, `block_elim`, `family_refs_ok`, `check_recs`, and `check_projs`, yielding:
 1. `FamilyTysCanon` (store-free canonical loads);
 2. `MajorRefs` (major-premise heads are references of `rb`);
 3. `recRefs` (`UsedRef E₀ rb x → CoveredAt t lim x ∨ NeedOk E₀ x`);
-4. at any `FamilyStepEnv` (with covered `.iPrj` logic safety):
-   `FamDeclReads`, `FamilyCheckFacts`, and `FamRecsCompanion E₀`. -/
+4. at any `FamilyStepEnv FormerOpenTraceAt` (with committed-prelude records and covered `.iPrj`
+   logic safety): `FamDeclReads`, `FamilyCheckFacts`, `FamRecsCompanion E₀`, and
+   `Nonempty (BlockProjFacts ...)`. -/
 theorem familyCall_checked_of_chain
-    {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
     {E₀ : Ixon.Env} {lim : Option Nat} {csFam : List (Call F)}
     {B rb : _root_.Address} {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
@@ -529,12 +537,14 @@ theorem familyCall_checked_of_chain
       MajorRefs t E₀ rb blk tys ∧
       (∀ x, UsedRef E₀ rb x → Claim.CoveredAt t lim x ∨ NeedOk E₀ x) ∧
       ∀ (E : Ixon.Env) (env : Ix.Kernel.Env .anon),
-        FamilyStepEnv.{u} L calls t E₀ lim B cb rb crb adv E env →
+        FamilyStepEnv.{u} FormerOpenTraceAt calls t E₀ lim B cb rb crb adv E env →
+        (∀ e ∈ RoleVal.committedPreludeList, Ix.Cert.recordAt E e.1 = some e.2) →
         (∀ x c p cbM, Claim.CoveredAt t lim x → recordOf E₀ x = some c → c.info = .iPrj p →
           recordOf E₀ p.block = some cbM → InLogic cbM) →
         FamDeclReads t E₀ B cb rb crb blk ∧
-        FamilyCheckFacts env blk advM tys rhsss ∧
-        FamRecsCompanion E₀ t env blk tys := by
+        Decl.FamilyAlias.FamilyCheckFacts env blk advM tys rhsss ∧
+        FamRecsCompanion E₀ t env blk tys ∧
+        Nonempty (BlockProjFacts t E₀ E env B cb ms blk tys advM.ren) := by
   have htwf : t.wf = true := by unfold Ix.Kernel.RoleTable.wf; rw [ht]; rfl
   obtain ⟨bB, hbB_rep, hbB_eq⟩ := hxb
   obtain ⟨bR, hbR_rep, hbR_eq⟩ := hxrb
@@ -937,7 +947,7 @@ theorem familyCall_checked_of_chain
     simp only [dstAs, List.mem_append]; exact Or.inr hb
   have evCheckRecs' : ObsFn Obs.W "KernelModeled::check_recs"
       [rc, C.tys, C.recs, C.recM, C.src, C.dst, C.aset, C.s8, C.nRecs, .field ((0 : Nat) : F),
-        C.np, C.uo, C.bnl, C.recs, .field 0] C.m1293 C.s9 h' C.evCheckRecs.cs := by
+        C.np, C.uo, C.bnl, C.recs, .field 0] C.m1293 C.s9 C.m1331 C.evCheckRecs.cs := by
     rw [Nat.cast_zero]; exact C.evCheckRecs.obs
   -- Header-count equations (`block_nparams` and `nRecs = rs.size`) for `check_recs`
   have hnp_ind0 : ∀ ind₀, ms[0]? = some (.indc ind₀) →
@@ -1263,7 +1273,7 @@ theorem familyCall_checked_of_chain
           by rw [← D_k.haIndM_can, ← D_k.hcmM_can]; exact D_k.hrecM,
           D_k.hrecBM, D_k.hmutsM, D_k.hmsM, hpiM, by rw [← D_k.haIndM_can]; exact hfnM,
           D_k.hni_eq_indM⟩,
-        D_k.hconcl⟩
+        D_k.hconcl, ⟨ind0, hms0⟩, D_k.hmotiveCarrier0⟩
       have hj_lt : j < recAs.length := by
         have h1 := (Array.getElem?_eq_some_iff.mp hj).1
         have hlen_r : recAs.length = rs.size := by
@@ -1333,8 +1343,8 @@ theorem familyCall_checked_of_chain
       subst hty_eq
       obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hk
       exact D_i.hment b hb
-  -- 14. Step-environment conclusions: `FamDeclReads`, `FamilyCheckFacts`, `FamRecsCompanion`
-  refine ⟨blk, advM, tys, rhsss, hcanon, hmajorRefs, hrecRefs, fun E env hSE hcovLogic => ?_⟩
+  -- 14. Step-environment conclusions: `FamDeclReads`, `FamilyCheckFacts`, `FamRecsCompanion`, `BlockProjFacts`
+  refine ⟨blk, advM, tys, rhsss, hcanon, hmajorRefs, hrecRefs, fun E env hSE hPre hcovLogic => ?_⟩
   -- Every `k' ∈ srcKeys` maps under `g` to a stored `.defnInfo` in `env`
   have hdefSrc : ∀ k' ∈ srcKeys, ∃ cvm mval hint, env.find? (g k') = some (.defnInfo cvm mval hint) := by
     intro k' hk'
@@ -1535,7 +1545,7 @@ theorem familyCall_checked_of_chain
     let itemR := Classical.choice (hRecsItems idx hi)
     have hadvM := adv_of_advChecked itemR.hAdv itemR.hrecM itemR.hcaM hadvCase
     exact D_i.hrulesFacts recsBlk recsTys hSE hadvM hadvCase hdefSrc hdst_stored
-  have hcheckFacts : FamilyCheckFacts env blk advM tys rhsss := by
+  have hcheckFacts : Decl.FamilyAlias.FamilyCheckFacts env blk advM tys rhsss := by
     refine
       { split := by rw [hnonrecs_eq, hrecs_eq]
         kinds := by rw [hnonrecs_eq]; exact List.all_eq_true.mpr hnonrecs_kind
@@ -1614,7 +1624,140 @@ theorem familyCall_checked_of_chain
     have ha_k := hrecAs_k k hk_lt
     rw [Nat.zero_add] at ha_k
     rwa [ha_k] at hmem_k
-  exact ⟨hreads, hcheckFacts, hcompanions⟩
+  -- 14d. `Nonempty (BlockProjFacts t E₀ E env B cb ms blk tys advM.ren)`
+  have hprojs : Nonempty (BlockProjFacts t E₀ E env B cb ms blk tys advM.ren) := by
+    obtain ⟨Reg, hreg⟩ := hSE.extra.1.1.1
+    let P : ProjsCtx.{u} :=
+      { calls := calls, bAddr := bAddr, t := t, E₀ := E₀, lim := lim, csFam := csFam,
+        B := B, cb := cb, rb := rb, crb := crb, adv := adv, E := E, env := env,
+        Reg := Reg, advAs := advAs, ht := ht, hbd := hbd, hS := hS, hH := hH,
+        hSE := hSE, hreg := hreg, hPre := hPre, hadvCase := hadvCase }
+    let indTy₀ : Nat → KExpr := fun pos =>
+      if h : pos < ms.size then (indData ⟨pos, h⟩).ty₀ else .sort .zero
+    let ctorTy₀ : Nat → Nat → KExpr := fun pos j =>
+      match h1 : ms[pos]? with
+      | some (.indc ind) =>
+        match h2 : ind.ctors[j]? with
+        | some ct => (hctorLookup pos j ind ct h1 h2).choose_spec.choose
+        | none => .sort .zero
+      | _ => .sort .zero
+    have hctorTy₀_eq : ∀ pos j ind ct (h1 : ms[pos]? = some (.indc ind)) (h2 : ind.ctors[j]? = some ct),
+        ctorTy₀ pos j = (hctorLookup pos j ind ct h1 h2).choose_spec.choose := by
+      intro pos j ind ct h1 h2
+      dsimp only [ctorTy₀]
+      split
+      · rename_i ind' h1'
+        have hind' : ind' = ind := Ixon.MutConst.indc.inj (Option.some.inj (h1'.symm.trans h1))
+        subst hind'
+        split
+        · rename_i ct' h2'
+          have hct' : ct' = ct := Option.some.inj (h2'.symm.trans h2)
+          subst hct'; rfl
+        · rename_i h2'; exact absurd h2 (by rw [h2']; simp)
+      · rename_i h1'; exact absurd h1 (h1' ind)
+    have hcanonE₀ : BlockCanonReadings t E₀ B cb ms indTy₀ ctorTy₀ :=
+      { check := ht
+        record := hB.record
+        muts := hB.muts
+        indcs := hB.indcs
+        ind := fun i ind _ hmi => by
+          have hi_lt : i < ms.size := (Array.getElem?_eq_some_iff.mp hmi).1
+          have hind_eq : ind = indOf ⟨i, hi_lt⟩ :=
+            Ixon.MutConst.indc.inj (Option.some.inj (hmi.symm.trans (hms_indOf ⟨i, hi_lt⟩)))
+          subst hind_eq
+          simp only [indTy₀, hi_lt, ↓reduceDIte]
+          exact ⟨(indData ⟨i, hi_lt⟩).hread, (indData ⟨i, hi_lt⟩).hlbb, (indData ⟨i, hi_lt⟩).hdef⟩
+        ctor := fun i ind j ct _ _ hmi hct => by
+          have hlk := (hctorLookup i j ind ct hmi hct).choose_spec.choose_spec.choose_spec
+          rw [hctorTy₀_eq i j ind ct hmi hct]
+          exact ⟨hcidx i ind j ct hmi hct, hlk.2.2.2.1, hlk.2.2.2.2.1, hlk.2.2.2.2.2.1⟩ }
+    have hMemInfo : ∀ pos (hpos : pos < ms.size) (ind : Ixon.Inductive) (ct : Ixon.Constructor),
+        ms[pos]? = some (.indc ind) → ind.ctors[0]? = some ct →
+        ∃ (kT kC : Nat) (ciT ciC : ConstantInfo .anon) (tyA_T tyA_C : KExpr),
+          (nonrecsOf blk)[kT]? = some ciT ∧
+          ciT.name = Core.keyOf t (iprjAddr B pos) ∧
+          tys[kT]? = some tyA_T ∧
+          (nonrecsOf blk)[kC]? = some ciC ∧
+          ciC.name = Core.keyOf t (cprjAddr B pos 0) ∧
+          tys[kC]? = some tyA_C ∧
+          LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
+            ((L1.mutsRootOffset ms.toList pos : Nat) : F) ind.typ (indTy₀ pos) = some tyA_T ∧
+          Annotates tyA_T (indTy₀ pos) ∧
+          tyA_T.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
+          LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
+            (((L1.mutsRootOffset ms.toList pos : Nat) : F) + 1 + ((0 : Nat) : F)) ct.typ (ctorTy₀ pos 0) =
+            some tyA_C ∧
+          tyA_C.allLevelParamsDefined (List.range ct.lvls.toNat) = true := by
+      intro pos hpos ind ct hmi hct
+      have hind_eq : ind = indOf ⟨pos, hpos⟩ :=
+        Ixon.MutConst.indc.inj (Option.some.inj (hmi.symm.trans (hms_indOf ⟨pos, hpos⟩)))
+      subst hind_eq
+      let kC := (hctorLookup pos 0 (indOf ⟨pos, hpos⟩) ct hmi hct).choose
+      let ty₀C := (hctorLookup pos 0 (indOf ⟨pos, hpos⟩) ct hmi hct).choose_spec.choose
+      let tyAC := (hctorLookup pos 0 (indOf ⟨pos, hpos⟩) ct hmi hct).choose_spec.choose_spec.choose
+      have hspecC := (hctorLookup pos 0 (indOf ⟨pos, hpos⟩) ct hmi hct).choose_spec.choose_spec.choose_spec
+      have hty₀T : indTy₀ pos = (indData ⟨pos, hpos⟩).ty₀ := by simp only [indTy₀, hpos, ↓reduceDIte]
+      have hty₀C : ctorTy₀ pos 0 = ty₀C := hctorTy₀_eq pos 0 (indOf ⟨pos, hpos⟩) ct hmi hct
+      refine ⟨pos, kC,
+        .indInfo ⟨Core.keyOf t (iprjAddr B pos), List.range (indOf ⟨pos, hpos⟩).lvls.toNat,
+          (indData ⟨pos, hpos⟩).ty₀⟩ {},
+        .ctorInfo ⟨Core.keyOf t (cprjAddr B pos 0), List.range ct.lvls.toNat, ty₀C⟩
+          ct.params.toNat ct.fields.toNat,
+        (indData ⟨pos, hpos⟩).tyA, tyAC, ?_, rfl, ?_, ?_, rfl, ?_,
+        hty₀T ▸ (indData ⟨pos, hpos⟩).hcanon, hty₀T ▸ (indData ⟨pos, hpos⟩).hann,
+        (indData ⟨pos, hpos⟩).hA_def, hty₀C ▸ hspecC.2.2.2.2.2.2.1, hspecC.2.2.2.2.2.2.2.1⟩
+      · rw [hnonrecs_eq, List.getElem?_append_left (by omega)]
+        simp only [indBlk, List.getElem?_map, getElem?_finRange_eq hpos, Option.map_some]
+      · rw [List.getElem?_append_left (by simp only [nonrecsTys, List.length_append]; omega),
+          List.getElem?_append_left (by omega)]
+        simp only [indTys, List.getElem?_map, getElem?_finRange_eq hpos, Option.map_some]
+      · rw [hnonrecs_eq]; exact hspecC.2.1
+      · rw [List.getElem?_append_left (by have := hspecC.1; omega)]; exact hspecC.2.2.1
+    have hrepM_1331 : RepList Obs.Names.«Lists::Node<Ixon::MutConst>» (fun _ _ _ => True)
+        C.m1331 ms.toList C.members := by
+      obtain ⟨cb', ms', hbl, hrepM⟩ := Claim.load_block_head hbB453 C.evLoadBlk.obs
+      obtain ⟨hrec', hmuts'⟩ := (hbl.mono (fun cl hcl => hsub cl (C.evLoadBlk.sub cl hcl))).stored hH
+      have e1 : cb = cb' := Option.some.inj (hB'.record.symm.trans hrec')
+      subst e1
+      have e2 : ms = ms' := Ixon.ConstantInfo.muts.inj (hB'.muts.symm.trans hmuts')
+      subst e2
+      have ext_501_978 : Heap.Extends C.m501 C.m978 :=
+        C.evLenMem.extends.trans (C.evIndcCnt.extends.trans (C.evNParams.extends.trans
+          (C.evTypes.extends.trans (C.evTypeMods.extends.trans (C.evCtors.extends.trans
+            (C.evLenCtors.extends.trans (C.evCtorMods.extends.trans (C.evRecs.extends.trans
+              (C.evNoRole.extends.trans (C.evNoTypeRole.extends.trans (C.evLenRecs.extends.trans
+                (C.evRecMods.extends.trans (C.evSrcTail.extends.trans (C.evSrc.extends.trans
+                  (C.evDstTail.extends.trans C.evDst.extends)))))))))))))))
+      have hme : L1.mutConstListEnum = Obs.Names.«Lists::Node<Ixon::MutConst>» := by decide +kernel
+      rw [hme] at hrepM
+      exact RepLinkedList.mono (fun _ _ _ _ _ _ => trivial)
+        (ext_501_978.trans (C.ext_m978_m1293.trans C.evCheckRecs.extends)) (repList_true hrepM)
+    obtain ⟨bytes9, hstr9⟩ := check_recs_stream
+      (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) C.ext_m978_m1293 T.recsRep)
+      (hs8_978.mono C.ext_m978_m1293) C.evCheckRecs.obs
+    have ext_978_1331 : Heap.Extends C.m978 C.m1331 := C.ext_m978_m1293.trans C.evCheckRecs.extends
+    have ext_h_1331 : Heap.Extends h C.m1331 := ext_h_978.trans ext_978_1331
+    have hrm_1331 : Decl.RenameMap (Core.keyOf t) (Core.keyOf t) g C.m1331 C.src C.dst :=
+      renameMap_aliasMap htwf hlenSD
+        (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_978_1331 hsrcRep978)
+        (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_978_1331 hdstRep978)
+    exact check_projs_facts P hB hcanonE₀ hms_u64 (by omega) hbB_eq
+      hlen_types (by rw [T.typeModels]; exact hlen_types)
+      (fun j hj => htypeAs_i ⟨j, hj⟩)
+      (fun j hj => (hgt_i ⟨j, hj⟩).symm)
+      (fun j hj => (indData ⟨j, hj⟩).hitem.hAdv)
+      hMemInfo
+      (hrc.mono ext_h_1331)
+      (Bytes.repAddressRef_heapMono₂ addrTy ext_h_1331 hbB_rep)
+      hrepM_1331
+      (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_978_1331 T.typesRep)
+      (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_978_1331 T.typeModelsRep)
+      hrm_1331
+      (AddrMapAll.mono (fun _ _ _ _ _ hx => hx) ext_978_1331 haset978)
+      hstr9
+      (fun cl hcl => hsub cl (C.evCheckProjs.sub cl hcl))
+      C.evCheckProjs.obs
+  exact ⟨hreads, hcheckFacts, hcompanions, hprojs⟩
 
 /-! ## Payload-stream determinism: identifying `FamilyOwnAdvice`'s advice list with `C.advList` -/
 
@@ -1784,10 +1927,11 @@ theorem advAs_eq_of_familyOwnAdvice {rc xb xrb r : SourceValue F} {h h' : Heap F
 
 /-! ## Endpoint 1 (unconditional): `ClosureFamilyCheck` at every group of every binding run -/
 
-/-- **Unconditional `ClosureFamilyCheck` at every group of every binding run**, polymorphic in any
-link predicate `L` (in particular `FormerOpenTraceAt`). -/
-theorem closureFamilyCheck_of_run {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} :
-    ∀ calls, Binding.AtGroups (Binding.BindingRun calls) (ClosureFamilyCheck.{u} L calls) := by
+/-- **Unconditional `ClosureFamilyCheck` at every group of every binding run** at
+`FormerOpenTraceAt`. -/
+theorem closureFamilyCheck_of_run :
+    ∀ calls, Binding.AtGroups (Binding.BindingRun calls)
+      (ClosureFamilyCheck.{u} FormerOpenTraceAt calls) := by
   intro calls t ρ Rs hrun hall ht g hg6 hg R R' R₁ env₀ envT famOf₀ famOf adv cont bAddr B rb cb
     crb hC hextT hndT hnB hcb hunc hfam hcrb hfrT
   have htwf : t.wf = true := by unfold Ix.Kernel.RoleTable.wf; rw [ht]; rfl
@@ -1895,11 +2039,11 @@ theorem closureFamilyCheck_of_run {L : Ix.Kernel.Env .anon → NativeFam .anon �
     rw [advAs_eq_of_familyOwnAdvice w C hrep'] at ha'
     exact Or.inl (hadvIn a ha')
   obtain ⟨blk, advM, tys, rhsss, hcanon, hmajorRefs, hrecRefs, hstep⟩ :=
-    familyCall_checked_of_chain (L := L) ht hbd hS hH hFB.block hFB.record hrc hxb hxrb hsub C
+    familyCall_checked_of_chain ht hbd hS hH hFB.block hFB.record hrc hxb hxrb hsub C
       (Or.inr hadvHyp) hcidx
   refine ⟨fun Ec hRc hst env hext hnd hinv hX hinert hrefs hadv1 hadv2 hfresh => ?_, hrecRefs⟩
-  have hSE : FamilyStepEnv.{u} L calls t ρ.E₀ (some (Binding.valLimit g)) B cb rb crb (adv B)
-      Ec env :=
+  have hSE : FamilyStepEnv.{u} FormerOpenTraceAt calls t ρ.E₀ (some (Binding.valLimit g))
+      B cb rb crb (adv B) Ec env :=
     { store := hst
       shape := ⟨(· < g), R, env₀, hC.bnd.shape, fun ci hci => hext ci (hextT ci hci)⟩
       nodup := hnd
@@ -1926,9 +2070,10 @@ theorem closureFamilyCheck_of_run {L : Ix.Kernel.Env .anon → NativeFam .anon �
     coveredLogic_of_checked hC.bnd.shape
       (fun r hr => Nat.lt_of_lt_of_le (hr _ rfl) (Binding.valLimit_le g))
       hRecsR hst hcov hrec hinfo hblk
-  obtain ⟨hreads, hcheckFacts, hcompanions⟩ := hstep Ec env hSE hcovLogic
+  obtain ⟨hreads, hcheckFacts, hcompanions, hprojs⟩ :=
+    hstep Ec env hSE (fun _ hq => recordAt_of_committedPrelude hRecsR hq) hcovLogic
   refine ⟨blk, advM, tys, rhsss, hreads, hcheckFacts,
-    fun ms' rs' hms' hrs' => ?_, fun E hE => ?_⟩
+    fun ms' rs' hms' hrs' => ?_, fun E hE => ?_, fun ms' hms' => ?_⟩
   · have e3 : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hFB.block.muts)
     have e4 : rs' = rs := Ixon.ConstantInfo.muts.inj (hrs'.symm.trans hFB.record.muts)
     subst e3 e4; exact hcanon
@@ -1941,13 +2086,14 @@ theorem closureFamilyCheck_of_run {L : Ix.Kernel.Env .anon → NativeFam .anon �
     have e6 : P = c' := Option.some.inj ((Binding.recordOf_of_loaded hloaded hP).symm.trans hc')
     subst e6
     exact hE.2.1 p P hP
+  · have e3 : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hFB.block.muts)
+    subst e3; exact hprojs
 
 /-! ## Endpoint 2 (unconditional): `FamilyBlockCheckRow` at every typing walk -/
 
-/-- **Unconditional `FamilyBlockCheckRow`**, polymorphic in any link predicate `L`
-(in particular `FormerOpenTraceAt`). -/
-theorem familyBlockCheckRow_of_run {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} :
-    FamilyBlockCheckRow.{u} L := by
+/-- **Unconditional `FamilyBlockCheckRow`** at `FormerOpenTraceAt`. -/
+theorem familyBlockCheckRow_of_run :
+    FamilyBlockCheckRow.{u} FormerOpenTraceAt := by
   intro calls t seeds E₀ lim Top rank hTW R envT E fam twin adv Inner hrun hctx A c rb crb rs
     hTop hc hlog hkind hfam hrb
   obtain ⟨ms, hB⟩ := famBlockRecord_of_run hTW hrun hTop hc hlog hfam
@@ -1998,10 +2144,10 @@ theorem familyBlockCheckRow_of_run {L : Ix.Kernel.Env .anon → NativeFam .anon 
     rw [advAs_eq_of_familyOwnAdvice w C hrep'] at ha'
     exact hlist a ha'
   obtain ⟨blk, advM, tys, rhsss, hcanon, hmajorRefs, hrecRefs, hstep⟩ :=
-    familyCall_checked_of_chain (L := L) ht hbd hS hH hB hrb hrc hxb hxrb hsub C
+    familyCall_checked_of_chain ht hbd hS hH hB hrb hrc hxb hxrb hsub C
       (Or.inr hadvHyp) hcidx
   refine ⟨fun env hextT hnd hinv hX hrefs hadv1 hadv2 hfresh => ?_, hrecRefs⟩
-  have hSE : FamilyStepEnv.{u} L calls t E₀ lim A c rb crb (adv A) E env :=
+  have hSE : FamilyStepEnv.{u} FormerOpenTraceAt calls t E₀ lim A c rb crb (adv A) E env :=
     { store := hctx.toStepStore
       shape := ⟨fun _ => True, R, envT, hctx.shape, hextT⟩
       nodup := hnd
@@ -2030,14 +2176,17 @@ theorem familyBlockCheckRow_of_run {L : Ix.Kernel.Env .anon → NativeFam .anon 
       InLogic cbM := fun x cx p cbM hcov hrec hinfo hblk =>
     coveredLogic_of_checked hctx.shape (fun _ _ => trivial) hctx.recordsFor hctx.toStepStore
       hcov hrec hinfo hblk
-  obtain ⟨hreads, hcheckFacts, hcompanions⟩ := hstep E env hSE hcovLogic
+  obtain ⟨hreads, hcheckFacts, hcompanions, hprojs⟩ :=
+    hstep E env hSE (fun _ hq => recordAt_of_committedPrelude hctx.recordsFor hq) hcovLogic
   refine ⟨blk, advM, tys, rhsss, hreads, hcheckFacts, ?_⟩
   unfold SelectedForms
-  refine ⟨fun ms' rs' hms' hrs' => ?_, ?_⟩
+  refine ⟨fun ms' rs' hms' hrs' => ?_, ?_, fun ms' hms' => ?_⟩
   · have e1 : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hB.muts)
     have e2 : rs' = rs := Ixon.ConstantInfo.muts.inj (hrs'.symm.trans hrb.muts)
     subst e1 e2; exact hcanon
   · exact famRecsCompanion_carry hS.recordOf_eq_recordAt
       (fun p _ c' hc' => hctx.runRecord p c' hc') hmajorRefs hcompanions
+  · have e1 : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hB.muts)
+    subst e1; exact hprojs
 
 end IxVM.Refinement.Typing.FamilyAlias

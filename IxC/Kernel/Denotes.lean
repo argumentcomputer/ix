@@ -127,6 +127,27 @@ noncomputable def field : Nat → V → V
   | 0, p => sfst p
   | i + 1, p => field i (ssnd p)
 
+/-- Key for the universe-indexed partial-graph chain of field `i` of a modeled
+structure `T`'s projection table. -/
+def projChainKey (T : Key md) (i : Nat) : Key md :=
+  auxKey (projTableName T) (.projFn i)
+
+/-- Apply a universe-indexed family of partial function graphs `G` to `P`:
+when some `G n` pairs `P` with a value, apply that graph; otherwise `empty`. -/
+noncomputable def chainApp (G : Nat → V) (P : V) : V :=
+  open Classical in
+  if h : ∃ n : Nat, ∃ v : V, kpair P v ∈ˢ G n then
+    app (G (Classical.choose h)) P
+  else empty
+
+/-- Value of field `i` of `P` under a stored projection-table entry:
+pair-chain component `i + entry.off` when `entry.off ≤ 1`, or the
+universe-indexed graph chain at `projChainKey T i` otherwise. -/
+noncomputable def projVal (cval : Key md → (LevelParam → Nat) → V)
+    (T : Key md) (i : Nat) (entry : ProjEntry md) (P : V) : V :=
+  if entry.off ≤ 1 then field (i + entry.off) P
+  else chainApp (fun n => cval (projChainKey T i) (fun _ => n)) P
+
 /-- `Denotes cval env φ ρ e v`: the term `e` denotes the set `v`.  See
 the module docstring. -/
 inductive Denotes (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (φ : LevelParam → Nat) :
@@ -165,11 +186,10 @@ inductive Denotes (cval : Key md → (LevelParam → Nat) → V) (env : Env md) 
       (hB : ∀ x, x ∈ˢ A → Denotes cval env φ (push x ρ) body (B x))
       (hP : regime φ m.pw = 0 → ∀ x, x ∈ˢ A → B x ∈ˢ univ 0) :
       Denotes cval env φ ρ (.forallE ty body m) (piR (regime φ m.pw) A B)
-  /-- a projection at a stored table reads the field's position in the
-  pair chain -/
+  /-- a projection at a stored table reads the table's projection value -/
   | proj_table {ρ : BVarIdx → V} {T : Key md} {i : Nat} {e : Expr md} {entry : ProjEntry md} {P : V}
       (ht : env.findProj? T i = some entry) (he : Denotes cval env φ ρ e P) :
-      Denotes cval env φ ρ (.proj T i e) (field (i + entry.off) P)
+      Denotes cval env φ ρ (.proj T i e) (projVal cval T i entry P)
   /-- field `0` of a bare pair -/
   | proj_fst {ρ : BVarIdx → V} {T : Key md} {e : Expr md} {P : V}
       (ht : env.findProj? T 0 = none) (he : Denotes cval env φ ρ e P) :
@@ -437,13 +457,14 @@ def ProjLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop
           ∀ (σ : BVarIdx → V) (R : Expr md) (ys : List V),
             ys.length = entry.numParams + entry.numFields →
             Fits cval env φ ρ (cvC.type.instantiateLevelParams cvC.levelParams us) ys σ R →
-            field (i + entry.off) (ys.foldl app K) = ys.getD (entry.numParams + i) empty) ∧
-        ∀ (σ : BVarIdx → V) (R : Expr md) (ts : List V) (x : V),
-          ts.length = entry.numParams →
-          Fits cval env φ ρ (cvT.type.instantiateLevelParams cvT.levelParams us) ts σ R →
-          x ∈ˢ ts.foldl app F →
-          x = (ts ++ (List.range entry.numFields).map fun j => field (j + entry.off) x).foldl
-            app K
+            projVal cval T i entry (ys.foldl app K) = ys.getD (entry.numParams + i) empty) ∧
+        (entry.off ≤ 1 →
+          ∀ (σ : BVarIdx → V) (R : Expr md) (ts : List V) (x : V),
+            ts.length = entry.numParams →
+            Fits cval env φ ρ (cvT.type.instantiateLevelParams cvT.levelParams us) ts σ R →
+            x ∈ˢ ts.foldl app F →
+            x = (ts ++ (List.range entry.numFields).map fun j => field (j + entry.off) x).foldl
+              app K)
 
 /-- **The binary `Nat` operations with a `Nat` value that the kernel computes on
 literals**, at their role keys, each with Lean's function: so `a / 0 = 0`, `a % 0 = a`,
@@ -533,7 +554,7 @@ def ProjTypeLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : 
           (entry.body.instantiateLevelParams entry.levelParams us) B ∧
         GradedBy (Denotes cval env φ) (push x (pushVals ρ ts))
           (entry.body.instantiateLevelParams entry.levelParams us) ∧
-        field (i + entry.off) x ∈ˢ B
+        projVal cval T i entry x ∈ˢ B
 
 /-- **Structure η at a family the kernel models without a projection table.** At a stored
 family `T` that claims η (`IndCaps.eta`) through a stored constructor `C`, with neither a

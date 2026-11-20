@@ -158,7 +158,9 @@ theorem foldClauseWith_twinStep (hL : LinkLaws L) (h : FoldClauseWith.{u} L t E 
     (hkeys : ∀ ci ∈ blk, ∃ x : _root_.Address, ci.name = keyOf t x ∧ x.hash.size = 32)
     (hAr : StoreArR env₂) (hcomp : Decl.CoreCompanions ⟨E, env₂, t, lim⟩)
     (hreload : ∀ ci, env₂.find? ci.name = some ci → env.find? ci.name = none →
-      ∀ x, ci.name = keyOf t x → Decl.ReloadsAs E t env₂ ci) :
+      ∀ x, ci.name = keyOf t x → Decl.ReloadsAs E t env₂ ci)
+    (hmodelBlk : ∀ ci ∈ blk, HasModel env₂ ci.name)
+    (hnotNat : NewRecNotNative t E env env₂) :
     FoldClauseWith.{u} L t E lim env₂ Reg := by
   have hext : Ix.Kernel.EnvExt env env₂ := Ix.Kernel.Semantics.declRecTwinRunJ_envExt hrun
   have hDS : Decl.DeclStoreInv env₂ :=
@@ -250,6 +252,7 @@ theorem foldClauseWith_twinStep (hL : LinkLaws L) (h : FoldClauseWith.{u} L t E 
       recShape := hDS.recShape
       recK := hDS.recK
       thmTyped := hDS.thmTyped
+      defnTyped := Decl.defnTyped_step_noBaseDefn hext h.defnTyped (Decl.twin_newSat_noBaseDefn hrun)
       etaTowers := hDS.etaTowers
       thmLevels := hTL
       storeArR := hAr
@@ -258,6 +261,42 @@ theorem foldClauseWith_twinStep (hL : LinkLaws L) (h : FoldClauseWith.{u} L t E 
       complete := fun P cm ip cv caps hf hr hcm hinfo hnat =>
         h.complete P cm ip cv caps (hold hf fun hm => (hkind _ hm).1 cv caps rfl) hr hcm hinfo
           hnat
+      completeCtor := fun C cm cp cv nP nF hf hr hcm hinfo hnat =>
+        h.completeCtor C cm cp cv nP nF (hold hf fun hm => (hkind _ hm).2.1 cv nP nF rfl) hr hcm
+          hinfo hnat
+      recRhsPw := recRhsPwNoModel_step hext h.recRhsPw (by
+        intro k cv mI rP rls hf hnone _ hnm
+        exfalso
+        rcases find?_append_cases (twinRecs ws ++ twinModels ws) hf with hmem | ho
+        · rcases List.mem_append.mp hmem with hr | hm
+          · have hkn : (ConstantInfo.recInfo cv mI rP rls).name ∈ blk.map (·.name) := by
+              rw [← hnames]
+              exact List.mem_map.mpr ⟨_, hr, rfl⟩
+            obtain ⟨ci₀, hci₀, hci₀n⟩ := List.mem_map.mp hkn
+            have hk : ci₀.name = k := hci₀n.trans (Core.WhnfAux.name_of_find hf)
+            exact hnm (hk ▸ hmodelBlk ci₀ hci₀)
+          · obtain ⟨-, -, -, _, _, _, he⟩ := hmods _ hm
+            cases he
+        · rw [hnone] at ho; cases ho)
+      recModelNotNative := recHasModelNotNative_step hext h.recModelNotNative (by
+        intro a cv mI rP rls cHost rc n p cmP ipP hf hm hcase hrc hmc hcmP hipP
+        rcases hcase with hnone | hnm₀
+        · exact hnotNat a cv mI rP rls cHost rc n p cmP ipP hf hnone hrc hmc hcmP hipP
+        · obtain ⟨cvm, mv, hint, hfm⟩ := hm
+          rcases find?_append_cases (twinRecs ws ++ twinModels ws) hfm with hmem | ho
+          · rcases List.mem_append.mp hmem with hr | hm'
+            · obtain ⟨_, _, _, _, he⟩ := hrecs _ hr
+              cases he
+            · obtain ⟨ci', hci', hci'n, -⟩ := hmods _ hm'
+              have hname : Ix.Kernel.auxKey ci'.name .model = Ix.Kernel.auxKey (keyOf t a) .model :=
+                hci'n.symm.trans (Core.WhnfAux.name_of_find hfm)
+              have heq : ci'.name = keyOf t a := by
+                injection hname
+              have hnone : env.find? (keyOf t a) = none := by
+                rw [← heq]
+                exact hfr ci' (List.mem_append_left _ hci')
+              exact hnotNat a cv mI rP rls cHost rc n p cmP ipP hf hnone hrc hmc hcmP hipP
+          · exact (hnm₀ ⟨cvm, mv, hint, ho⟩).elim)
       hashKeyed := hkeyed
       auxRoot := haux
       etaCtorStored := heta.1
@@ -279,7 +318,7 @@ theorem twinStepKeeps_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon →
     {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} {lim : Option Nat} {A : _root_.Address}
     {c : Ixon.Constant} (hsz : ∀ x, ConstAddrOf A c x → x.hash.size = 32) :
     TwinStepKeeps.{u} (FoldExtra.{u} L t E) t envT E₀ E lim A c := by
-  intro env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp hrel
+  intro env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp hrel hnotNat
   obtain ⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩ := hX
   have hC : FoldClauseWith.{u} L t E lim env Reg :=
     FoldClauseWith.of_prefix hinv hR hkeys haux hlv
@@ -289,7 +328,7 @@ theorem twinStepKeeps_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon →
     exact ⟨x, hn, hsz x hx⟩
   have hC' : FoldClauseWith.{u} L t E lim env₂ Reg :=
     foldClauseWith_twinStep hL hC hrun hkeyed (twinKeepsStoreAr env env₂ blk hrun hC.storeArR)
-      hcomp hrel
+      hcomp hrel hmodel hnotNat
   exact ⟨hC'.prefixInv, hC'.extra⟩
 
 /-- **A constant address of a block record is the key of a 32-byte address**: it is the BLAKE3

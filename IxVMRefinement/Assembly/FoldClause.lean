@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.NativeBlockFinalRetHead
+import IxVMRefinement.Assembly.RecRhsPw
 import IxC.Kernel.Model.Inductives.NativeAtRecLate
 
 /-! # The one clause the declaration folds carry
@@ -243,7 +244,17 @@ structure FamRegistryWith (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     Ix.Kernel.reservedBasisNames.contains (keyOf t P) = false →
     Ix.Cert.recordAt E P = some cm → cm.info = .iPrj ip → NativeAt E ip.block →
     ∃ fam, Reg fam ∧ fam.p.cvT.name = keyOf t P
+  completeCtor : ∀ (C : _root_.Address) (cm : Ixon.Constant) (cp : Ixon.ConstructorProj)
+      (cv : ConstantVal .anon) (nP nF : Nat),
+    env.find? (keyOf t C) = some (.ctorInfo cv nP nF) →
+    Ix.Kernel.reservedBasisNames.contains (keyOf t C) = false →
+    Ix.Cert.recordAt E C = some cm → cm.info = .cPrj cp → NativeAt E cp.block →
+    ∃ fam j cA, Reg fam ∧
+      fam.p.cvT.name = keyOf t (Core.iprjAddr cp.block cp.idx.toNat) ∧
+      fam.ctorsA[j]? = some cA ∧ cA.1.name = keyOf t C ∧ cp.cidx.toNat = j
   model : ∀ (V : Type u) [Ix.Kernel.SetTheory V], EnvModelN V .verified env Reg
+  recRhsPw : RecRhsPwNoModel env
+  recModelNotNative : RecHasModelNotNative t E env
 
 /-- **The registry**: some registry, chosen before the set theory. -/
 def FamRegistry (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (t : Ix.Kernel.RoleTable)
@@ -277,7 +288,14 @@ theorem FamRegistryWith.step (hL : LinkLaws L) (h : FamRegistryWith.{u} L t E en
       (cv : ConstantVal .anon) (caps : IndCaps .anon),
       env₂.find? (keyOf t P) = some (.indInfo cv caps) → env.find? (keyOf t P) = none →
       Ix.Cert.recordAt E P = some cm → cm.info = .iPrj ip → NativeAt E ip.block →
-      Ix.Kernel.reservedBasisNames.contains (keyOf t P) = true) :
+      Ix.Kernel.reservedBasisNames.contains (keyOf t P) = true)
+    (hnewCtor : ∀ (C : _root_.Address) (cm : Ixon.Constant) (cp : Ixon.ConstructorProj)
+      (cv : ConstantVal .anon) (nP nF : Nat),
+      env₂.find? (keyOf t C) = some (.ctorInfo cv nP nF) → env.find? (keyOf t C) = none →
+      Ix.Cert.recordAt E C = some cm → cm.info = .cPrj cp → NativeAt E cp.block →
+      Ix.Kernel.reservedBasisNames.contains (keyOf t C) = true)
+    (hrecPw : RecRhsPwNoModel env → RecRhsPwNoModel env₂)
+    (hrecMod : RecHasModelNotNative t E env → RecHasModelNotNative t E env₂) :
     FamRegistryWith.{u} L t E env₂ Reg where
   fams fam hf := (h.fams fam hf).ext hL hext
   complete := by
@@ -292,18 +310,40 @@ theorem FamRegistryWith.step (hL : LinkLaws L) (h : FamRegistryWith.{u} L t E en
       have hci : ci = .indInfo cv caps := (Option.some.inj h₂).symm
       rw [hci] at hold
       exact h.complete P cm ip cv caps hold hr hcm hinfo hnat
+  completeCtor := by
+    intro C cm cp cv nP nF hf hr hcm hinfo hnat
+    cases hold : env.find? (keyOf t C) with
+    | none =>
+      rw [hnewCtor C cm cp cv nP nF hf hold hcm hinfo hnat] at hr
+      cases hr
+    | some ci =>
+      have h₂ := hext.find hold
+      rw [hf] at h₂
+      have hci : ci = .ctorInfo cv nP nF := (Option.some.inj h₂).symm
+      rw [hci] at hold
+      exact h.completeCtor C cm cp cv nP nF hold hr hcm hinfo hnat
   model V _ := hmodel V (h.model V)
+  recRhsPw := hrecPw h.recRhsPw
+  recModelNotNative := hrecMod h.recModelNotNative
 
 /-- **A step that installs a native family registers it**: the step's model extension registers
 the family in every set theory, the family is read off the store at the new environment, and
-the only inductive type the step stores new is the family's stored former. -/
+the only inductive type and constructors the step stores new are the family's. -/
 theorem FamRegistryWith.install (hL : LinkLaws L) {fam : NativeFam .anon}
     (h : FamRegistryWith.{u} L t E env Reg)
     (hmodel : ∀ (V : Type u) [Ix.Kernel.SetTheory V], EnvModelN V .verified env Reg →
       EnvModelN V .verified env₂ (fun f => Reg f ∨ f = fam))
     (hext : Ix.Kernel.EnvExt env env₂) (hread : FamRead L t E env₂ fam)
     (hnewInd : ∃ new : List (ConstantInfo .anon), env₂ = ⟨new ++ env.consts⟩ ∧
-      ∀ ci ∈ new, ∀ cv caps, ci = .indInfo cv caps → cv = fam.cvS) :
+      ∀ ci ∈ new, ∀ cv caps, ci = .indInfo cv caps → cv = fam.cvS)
+    (hnewCtor : ∀ (C : _root_.Address) (cm : Ixon.Constant) (cp : Ixon.ConstructorProj)
+      (cv : ConstantVal .anon) (nP nF : Nat),
+      env₂.find? (keyOf t C) = some (.ctorInfo cv nP nF) → env.find? (keyOf t C) = none →
+      Ix.Cert.recordAt E C = some cm → cm.info = .cPrj cp →
+      ∃ j cA, fam.p.cvT.name = keyOf t (Core.iprjAddr cp.block cp.idx.toNat) ∧
+        fam.ctorsA[j]? = some cA ∧ cA.1.name = keyOf t C ∧ cp.cidx.toNat = j)
+    (hrecPw : RecRhsPwNoModel env → RecRhsPwNoModel env₂)
+    (hrecMod : RecHasModelNotNative t E env → RecHasModelNotNative t E env₂) :
     FamRegistryWith.{u} L t E env₂ (fun f => Reg f ∨ f = fam) where
   fams f hf := by
     rcases hf with hf | rfl
@@ -332,18 +372,95 @@ theorem FamRegistryWith.install (hL : LinkLaws L) {fam : NativeFam .anon}
       rw [hci] at hold
       obtain ⟨f, hRf, hname⟩ := h.complete P cm ip cv caps hold hr hcm hinfo hnat
       exact ⟨f, Or.inl hRf, hname⟩
+  completeCtor := by
+    intro C cm cp cv nP nF hf hr hcm hinfo hnat
+    cases hold : env.find? (keyOf t C) with
+    | none =>
+      obtain ⟨j, cA, hT, hcA, hC, hj⟩ := hnewCtor C cm cp cv nP nF hf hold hcm hinfo
+      exact ⟨fam, j, cA, Or.inr rfl, hT, hcA, hC, hj⟩
+    | some ci =>
+      have h₂ := hext.find hold
+      rw [hf] at h₂
+      have hci : ci = .ctorInfo cv nP nF := (Option.some.inj h₂).symm
+      rw [hci] at hold
+      obtain ⟨f, j, cA, hRf, hT, hcA, hC, hj⟩ :=
+        h.completeCtor C cm cp cv nP nF hold hr hcm hinfo hnat
+      exact ⟨f, j, cA, Or.inl hRf, hT, hcA, hC, hj⟩
   model V _ := hmodel V (h.model V)
+  recRhsPw := hrecPw h.recRhsPw
+  recModelNotNative := hrecMod h.recModelNotNative
+
+/-- **New constructor completeness for a native block install**: when every new constructor is
+in `fam.ctorsA` and the store holds each constructor projection record of the block, any newly
+stored constructor matches its constructor projection record. -/
+theorem newCtor_of_blockInstall {fam : NativeFam .anon} {B : _root_.Address}
+    {ind : Ixon.Inductive}
+    (htwf : t.wf = true) (hdec : L1.EnvDecoded E)
+    (hctors : ∀ j < ind.ctors.size,
+      recordOf E (Core.cprjAddr B 0 j) = some (constructorProjection B 0 j))
+    (hsz56 : ind.ctors.size < 72057594037927936)
+    (hlenA : fam.ctorsA.length = ind.ctors.size)
+    (hfamName : fam.p.cvT.name = keyOf t (Core.iprjAddr B 0))
+    (hctorNames : ∀ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA →
+      cA.1.name = keyOf t (Core.cprjAddr B 0 j))
+    (hnewC : ∃ new : List (ConstantInfo .anon), env₂ = ⟨new ++ env.consts⟩ ∧
+      ∀ ci ∈ new, ∀ cv nP nF, ci = .ctorInfo cv nP nF →
+        ∃ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA ∧ cv = cA.1) :
+    ∀ (C : _root_.Address) (cm : Ixon.Constant) (cp : Ixon.ConstructorProj)
+      (cv : ConstantVal .anon) (nP nF : Nat),
+      env₂.find? (keyOf t C) = some (.ctorInfo cv nP nF) → env.find? (keyOf t C) = none →
+      Ix.Cert.recordAt E C = some cm → cm.info = .cPrj cp →
+      ∃ j cA, fam.p.cvT.name = keyOf t (Core.iprjAddr cp.block cp.idx.toNat) ∧
+        fam.ctorsA[j]? = some cA ∧ cA.1.name = keyOf t C ∧ cp.cidx.toNat = j := by
+  intro C cm cp cv nP nF hf hold hcm hinfo
+  obtain ⟨new, henv, hctor⟩ := hnewC
+  have hf' := hf
+  rw [henv] at hf'
+  rcases find?_append_cases new hf' with hm | ho
+  · obtain ⟨j, cA, hcA, hcv⟩ := hctor _ hm cv nP nF rfl
+    have hj : j < ind.ctors.size := hlenA ▸ (List.getElem?_eq_some_iff.mp hcA).1
+    have hname : keyOf t C = keyOf t (Core.cprjAddr B 0 j) := by
+      have h1 : cv.name = keyOf t C := Core.WhnfAux.name_of_find hf
+      rw [hcv] at h1
+      exact h1.symm.trans (hctorNames j cA hcA)
+    have hC : C = Core.cprjAddr B 0 j := Core.keyOf_inj htwf hname
+    have hrecC : Ix.Cert.recordAt E C = some (constructorProjection B 0 j) := by
+      rw [hC]
+      exact (recordOf_eq_recordAt_of_decoded hdec _).symm.trans (hctors j hj)
+    rw [hcm] at hrecC
+    have hcmEq : cm = constructorProjection B 0 j := Option.some.inj hrecC
+    rw [hcmEq] at hinfo
+    have hcp : cp = ⟨(0 : Nat).toUInt64, j.toUInt64, B⟩ :=
+      (Ixon.ConstantInfo.cPrj.inj hinfo).symm
+    subst hcp
+    have h0 : ((0 : Nat).toUInt64).toNat = 0 := by decide
+    have hj64 : j.toUInt64.toNat = j := by
+      change (UInt64.ofNat j).toNat = j
+      rw [UInt64.toNat_ofNat']
+      exact Nat.mod_eq_of_lt (by omega)
+    refine ⟨j, cA, ?_, hcA, (hctorNames j cA hcA).trans hname.symm, hj64⟩
+    rw [h0]
+    exact hfamName
+  · rw [hold] at ho
+    cases ho
 
 /-- **The empty registry**, where the environment has a model in every set theory and every
-stored family has a basis name. -/
+stored family and constructor has a basis name. -/
 theorem famRegistryWith_of_noFamily
     (hmodel : ∀ (V : Type u) [Ix.Kernel.SetTheory V], EnvModelT V .verified env)
     (hres : ∀ (k : Key .anon) (cv : ConstantVal .anon) (caps : IndCaps .anon),
-      env.find? k = some (.indInfo cv caps) → Ix.Kernel.reservedBasisNames.contains k = true) :
+      env.find? k = some (.indInfo cv caps) → Ix.Kernel.reservedBasisNames.contains k = true)
+    (hresCtor : ∀ (k : Key .anon) (cv : ConstantVal .anon) (nP nF : Nat),
+      env.find? k = some (.ctorInfo cv nP nF) → Ix.Kernel.reservedBasisNames.contains k = true)
+    (hrecPw : RecRhsPwNoModel env)
+    (hrecMod : RecHasModelNotNative t E env) :
     FamRegistryWith.{u} L t E env (fun _ => False) := by
-  refine ⟨fun _ h => h.elim, ?_, ?_⟩
+  refine ⟨fun _ h => h.elim, ?_, ?_, ?_, hrecPw, hrecMod⟩
   · intro P cm ip cv caps hf hr _ _ _
     rw [hres _ _ _ hf] at hr
+    cases hr
+  · intro C cm cp cv nP nF hf hr _ _ _
+    rw [hresCtor _ _ _ _ hf] at hr
     cases hr
   · intro V _
     obtain ⟨⟨mp, hT⟩, hE⟩ := hmodel V
@@ -351,12 +468,42 @@ theorem famRegistryWith_of_noFamily
 
 end Registry
 
+/-- Every constructor stored at the environment of the pins has a basis name (decided). -/
+theorem basisEnv_ctor_reserved :
+    IxVM.Refinement.TableInhabit.basisEnv.consts.all (fun ci => match ci with
+      | .ctorInfo cv _ _ => Ix.Kernel.reservedBasisNames.contains cv.name
+      | _ => true) = true := by
+  decide +kernel
+
+theorem basisEnv_find_ctor_reserved {k : Key .anon} {cv : ConstantVal .anon} {nP nF : Nat}
+    (h : IxVM.Refinement.TableInhabit.basisEnv.find? k = some (.ctorInfo cv nP nF)) :
+    Ix.Kernel.reservedBasisNames.contains k = true := by
+  obtain ⟨hmem, hname⟩ := basisEnv_find_mem h
+  have hall := List.all_eq_true.mp basisEnv_ctor_reserved _ hmem
+  have hcv : Ix.Kernel.reservedBasisNames.contains cv.name = true := hall
+  have hk : cv.name = k := hname
+  rw [← hk]
+  exact hcv
+
 /-- **The empty registry at the environment of the pins**, for every table and every store. -/
 theorem famRegistryWith_basis (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     (t : Ix.Kernel.RoleTable) (E : Ixon.Env) :
     FamRegistryWith.{u} L t E IxVM.Refinement.TableInhabit.basisEnv (fun _ => False) :=
   famRegistryWith_of_noFamily (fun V _ => ((basisEnv_decl V).toFoldInv).model)
     (fun _ _ _ hf => basisEnv_find_ind_reserved hf)
+    (fun _ _ _ _ hf => basisEnv_find_ctor_reserved hf)
+    recRhsPwNoModel_basisEnv (recHasModelNotNative_basisEnv t E)
+
+/-- A constructor lookup past a non-constructor constant is the prefix's. -/
+theorem find_ctor_cons_old {env : Ix.Kernel.Env .anon} {ci : ConstantInfo .anon}
+    {k : Key .anon} {cv : ConstantVal .anon} {nP nF : Nat}
+    (hctor : ∀ cv' nP' nF', ci ≠ .ctorInfo cv' nP' nF')
+    (hf : (⟨ci :: env.consts⟩ : Ix.Kernel.Env .anon).find? k = some (.ctorInfo cv nP nF)) :
+    env.find? k = some (.ctorInfo cv nP nF) := by
+  rw [Ix.Kernel.Env.find?_cons] at hf
+  split at hf
+  · exact (hctor cv nP nF (Option.some.inj hf)).elim
+  · exact hf
 
 /-! ## The clause -/
 
@@ -375,6 +522,8 @@ structure FoldClauseWith (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
   recK : Ix.Kernel.Model.RecK env
   /-- IxC: the stored theorems are typed. -/
   thmTyped : Ix.Kernel.Model.ThmTyped env
+  /-- Stored definitions at base keys are typed. -/
+  defnTyped : Decl.DefnTyped env
   /-- IxC: the η families' tables. -/
   etaTowers : Ix.Kernel.Model.EtaTowers env
   /-- IxC: a stored theorem's value mentions only its own level parameters. -/
@@ -393,6 +542,21 @@ structure FoldClauseWith (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     Ix.Kernel.reservedBasisNames.contains (keyOf t P) = false →
     Ix.Cert.recordAt E P = some cm → cm.info = .iPrj ip → NativeAt E ip.block →
     ∃ fam, Reg fam ∧ fam.p.cvT.name = keyOf t P
+  /-- Every stored constructor of a native block, under no basis name, belongs to a registered
+  family at its projection index. -/
+  completeCtor : ∀ (C : _root_.Address) (cm : Ixon.Constant) (cp : Ixon.ConstructorProj)
+      (cv : ConstantVal .anon) (nP nF : Nat),
+    env.find? (keyOf t C) = some (.ctorInfo cv nP nF) →
+    Ix.Kernel.reservedBasisNames.contains (keyOf t C) = false →
+    Ix.Cert.recordAt E C = some cm → cm.info = .cPrj cp → NativeAt E cp.block →
+    ∃ fam j cA, Reg fam ∧
+      fam.p.cvT.name = keyOf t (Core.iprjAddr cp.block cp.idx.toNat) ∧
+      fam.ctorsA[j]? = some cA ∧ cA.1.name = keyOf t C ∧ cp.cidx.toNat = j
+  /-- Every non-basis recursor without a model companion has rule `PropWhen` aligned with its
+  major-premise binder. -/
+  recRhsPw : RecRhsPwNoModel env
+  /-- No stored recursor with a model companion has a native first-motive carrier. -/
+  recModelNotNative : RecHasModelNotNative t E env
   /-- A stored key that is the key of an address is the key of an address of 32 bytes. -/
   hashKeyed : HashKeyed t env
   /-- Every stored key has its root stored. -/
@@ -440,6 +604,7 @@ theorem FoldClauseWith.foldStore (h : FoldClauseWith.{u} L t E lim env Reg) :
     Decl.FoldStoreInv env :=
   { store := h.store
     thmTyped := h.thmTyped
+    defnTyped := h.defnTyped
     recK := h.recK
     etaTowers := h.etaTowers
     strongProps := h.strong
@@ -464,7 +629,7 @@ theorem FoldClauseWith.prefixInv (h : FoldClauseWith.{u} L t E lim env Reg) :
 /-- The registry of the clause. -/
 theorem FoldClauseWith.registry (h : FoldClauseWith.{u} L t E lim env Reg) :
     FamRegistryWith.{u} L t E env Reg :=
-  ⟨h.fams, h.complete, h.model⟩
+  ⟨h.fams, h.complete, h.completeCtor, h.model, h.recRhsPw, h.recModelNotNative⟩
 
 /-- The registry, the store keys, the roots and the level clauses of the clause. -/
 theorem FoldClauseWith.core (h : FoldClauseWith.{u} L t E lim env Reg) :
@@ -487,12 +652,16 @@ theorem FoldClauseWith.of_prefix (hinv : Decl.PrefixInv.{u} E t lim env)
     recShape := hinv.store.recShape
     recK := hinv.store.recK
     thmTyped := hinv.store.thmTyped
+    defnTyped := hinv.store.defnTyped
     etaTowers := hinv.store.etaTowers
     thmLevels := hlv.1
     storeArR := hlv.2
     strong := hinv.store.strongProps
     fams := hR.fams
     complete := hR.complete
+    completeCtor := hR.completeCtor
+    recRhsPw := hR.recRhsPw
+    recModelNotNative := hR.recModelNotNative
     hashKeyed := hkeys
     auxRoot := haux
     etaCtorStored := hinv.store.etaCtorStored
@@ -514,20 +683,6 @@ theorem foldClause_iff :
     exact ⟨Reg, FoldClauseWith.of_prefix hinv hR hkeys haux hlv⟩
 
 end Clause
-
-/-! ## From the clause with the telescope equality -/
-
-/-- **The clause with the telescope equality gives the registry, the store keys, the roots
-and the level clauses at any link**,
-where the stored constants are well formed: every registered family is read without the
-equality (`FamRead.of_late`). -/
-theorem foldCore_of_nativeBlockXR {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hL : LinkLaws L) {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
-    (hwf : Ix.Kernel.EnvWF env) (h : NativeBlockXR.{u} t E env) : FoldCore.{u} L t E env := by
-  obtain ⟨⟨⟨⟨Reg, hR, hH⟩, hkeys⟩, haux⟩, hlv⟩ := h
-  exact ⟨⟨⟨⟨Reg, fun fam hf =>
-    FamRead.of_late hL (hR.fams fam hf) hwf hlv.2 (hH fam hf).1 (hH fam hf).2,
-    hR.complete, hR.model⟩, hkeys⟩, haux⟩, hlv⟩
 
 /-! ## The clause at the link that identifies the two constants -/
 
@@ -583,18 +738,6 @@ theorem UnitStep.of_iff {X X' : Ix.Kernel.Env .anon → Prop} {t : Ix.Kernel.Rol
   obtain ⟨new, h1, h2, hinv', hXn, h5, h6⟩ :=
     h env hext hnd hinv ((hXX' env hinv).mpr hX') href hfresh
   exact ⟨new, h1, h2, hinv', (hXX' _ hinv').mp hXn, h5, h6⟩
-
-/-- **Every unit step that keeps the clause with the telescope equality keeps the registry,
-the store keys, the roots and the level clauses at the identifying link**, at the same limit:
-under the prefix invariant the two are equivalent. -/
-theorem unitStep_foldCore_tele {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .anon}
-    {E₀ E : Ixon.Env} {lim : Option Nat} {A : _root_.Address} {c : Ixon.Constant}
-    (h : UnitStep.{u} (NativeBlockXR.{u} t E) t envT E₀ E lim A c) :
-    UnitStep.{u} (FoldCore.{u} TeleLink t E) t envT E₀ E lim A c :=
-  UnitStep.of_iff (X := NativeBlockXR.{u} t E) (X' := FoldCore.{u} TeleLink t E)
-    (fun env hinv =>
-      ⟨foldCore_of_nativeBlockXR linkLaws_tele hinv.store.store.wf,
-        nativeBlockXR_of_foldCore_tele⟩) h
 
 /-- **The clause with the telescope equality has no inhabitant at an environment that stores a
 former declared at a definition.** At a stored former under no basis name, whose record is an

@@ -27,7 +27,7 @@ interpretation of the fresh former. Indices and binder metadata are preserved by
 theorem denoteMeta_acvalWith_shallow
     {acval : Key md → (LevelParam → Nat) → AnnotTerm} {T : Key md}
     {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ env : Env md} {φ : LevelParam → Nat}
-    (hfresh : env₀.find? T = none) (d : Nat) (e : Expr md)
+    (hfresh : env₀.find? T = none) (hnp : T.isProjFnShape = false) (d : Nat) (e : Expr md)
     (hcr : e.constsResolveShallow env₀ = true) :
     denoteMeta (acvalWith acval T A₁) env φ d e =
       denoteMeta (acvalWith acval T A₂) env φ d e := by
@@ -35,13 +35,13 @@ theorem denoteMeta_acvalWith_shallow
     _ = denoteMeta (acvalWith acval T A₁) env φ d e.eraseFvarTypes :=
       denoteMeta_erasedEq e.eraseFvarTypes_erasedEq d
     _ = denoteMeta (acvalWith acval T A₂) env φ d e.eraseFvarTypes :=
-      denoteMeta_acvalWith_unmentioned₂ hfresh d e.eraseFvarTypes hcr
+      denoteMeta_acvalWith_unmentioned₂ hfresh hnp d e.eraseFvarTypes hcr
     _ = _ := (denoteMeta_erasedEq e.eraseFvarTypes_erasedEq d).symm
 
 theorem DenoteMetaSpine.acvalWith_shallow
     {acval : Key md → (LevelParam → Nat) → AnnotTerm} {T : Key md}
     {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ env : Env md}
-    (hfresh : env₀.find? T = none) {φ : LevelParam → Nat} {d : Nat} :
+    (hfresh : env₀.find? T = none) (hnp : T.isProjFnShape = false) {φ : LevelParam → Nat} {d : Nat} :
     ∀ {as : List (Expr md)} {vs : List AnnotTerm},
       (∀ e ∈ as, e.constsResolveShallow env₀ = true) →
       DenoteMetaSpine (acvalWith acval T A₁) env φ d as vs →
@@ -49,10 +49,10 @@ theorem DenoteMetaSpine.acvalWith_shallow
   | _, _, _, .nil => .nil
   | a :: _, _, hres, .cons ha htl =>
     .cons (by
-        rw [← denoteMeta_acvalWith_shallow (A₁ := A₁) (A₂ := A₂) hfresh _ _
+        rw [← denoteMeta_acvalWith_shallow (A₁ := A₁) (A₂ := A₂) hfresh hnp _ _
           (hres a List.mem_cons_self)]
         exact ha)
-      (DenoteMetaSpine.acvalWith_shallow hfresh
+      (DenoteMetaSpine.acvalWith_shallow hfresh hnp
         (fun e he => hres e (List.mem_cons_of_mem _ he)) htl)
 
 universe u
@@ -62,6 +62,7 @@ theorem CtorDataI.Es_eq_shallow {V : Type u} [SetTheory V] {env : Env md}
     {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ : Env md}
     {m₁ m₂ : EnvModel V env} (hac₁ : m₁.acval = acvalWith acval T' A₁)
     (hac₂ : m₂.acval = acvalWith acval T' A₂) (hfresh : env₀.find? T' = none)
+    (hnp : T'.isProjFnShape = false)
     {lps : List LevelParam} {cvC : ConstantVal md} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {idxArgs : List (Expr md)}
     {ds₁ ds₂ : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
@@ -74,6 +75,6 @@ theorem CtorDataI.Es_eq_shallow {V : Type u} [SetTheory V] {env : Env md}
   have hsp₂ := h₂.idxRead φ
   rw [hac₁] at hsp₁
   rw [hac₂] at hsp₂
-  exact DenoteMetaSpine.unique (DenoteMetaSpine.acvalWith_shallow hfresh hres hsp₁) hsp₂
+  exact DenoteMetaSpine.unique (DenoteMetaSpine.acvalWith_shallow hfresh hnp hres hsp₁) hsp₂
 
 end Ix.Kernel.Model

@@ -178,7 +178,20 @@ theorem denote_mono {cval : TConstVal md} {env₁ env₂ : Env md} {φ : LevelPa
     intro v h
     rw [denote_proj, h1, h2] at h
     rw [denote_proj, ihe h1, hext.findProj?_mono h2]
-    exact h
+    dsimp only at h ⊢
+    unfold projNodeNV? at h ⊢
+    split at h
+    · rename_i hle; rw [if_pos hle]; exact h
+    · rename_i hle; rw [if_neg hle]
+      split at h
+      · rename_i hs
+        cases hfc : env₁.find? (projChainKey sn i) with
+        | none => rw [hfc] at hs; exact nomatch hs
+        | some ci =>
+          have hfc2 := hext _ _ hfc
+          rw [if_pos (by rw [hfc2]; rfl)]
+          exact h
+      · exact nomatch h
   | case17 d sn i e B h1 h2 ihe =>
     intro v h
     rw [denote_proj, h1, h2] at h
@@ -316,9 +329,18 @@ theorem denote_cval_congr {cval₁ cval₂ : TConstVal md} {env : Env md}
     simp only [denote_letE]
   | case15 d sn i e h1 ihe => simp only [denote_proj, h1, ← ihe]
   | case16 d sn i e B h1 entry h2 ihe =>
-    simp only [denote_proj, h1, ← ihe]
+    simp only [denote_proj, h1, ← ihe, h2, projNodeNV?]
+    split
+    · rfl
+    · split
+      · rename_i hs
+        cases hfc : env.find? (projChainKey sn i) with
+        | none => rw [hfc] at hs; exact nomatch hs
+        | some ci =>
+          congr 2; funext m; exact congrFun (hag _ ci hfc) _
+      · rfl
   | case17 d sn i e B h1 h2 ihe =>
-    simp only [denote_proj, h1, ← ihe]
+    simp only [denote_proj, h1, ← ihe, h2]
   | case18 d n _ | case19 d n _ =>
     simp only [denote_natLit]
     by_cases hg2 : natLitSupported env = true
@@ -488,22 +510,35 @@ theorem ne_of_isSome_fresh {env : Env md} {c₀ : ConstantInfo md} {n : Key md}
 constants already resolve.  Transpose of `interp_mono`. -/
 theorem denote_env_shrink {cval : TConstVal md} {env : Env md} {φ : LevelParam → Nat}
     {c₀ : ConstantInfo md} (hfresh : env.find? c₀.name = none)
-    (hntc : ∀ e', c₀ ≠ .projInfo e') :
+    (hntc : ∀ e', c₀ ≠ .projInfo e') (hprojOk : ProjOkT env) :
     ∀ (d : Nat) (e : Expr md), e.constsResolve env = true →
       denote cval ⟨c₀ :: env.consts⟩ φ d e = denote cval env φ d e := by
   have hbranch : ∀ (sn : Key md) (i : Nat) (ve : Term),
       (match Env.findProj? ⟨c₀ :: env.consts⟩ sn i with
-        | some entry => some (projNV (i + entry.off) ve)
+        | some entry => projNodeNV? cval ⟨c₀ :: env.consts⟩ sn i entry ve
         | none => Term.projPair? i ve)
       = (match env.findProj? sn i with
-        | some entry => some (projNV (i + entry.off) ve)
+        | some entry => projNodeNV? cval env sn i entry ve
         | none => Term.projPair? i ve) := by
     intro sn i ve
-    by_cases hn : c₀.name = projTableName sn
-    · have h0 : env.findProj? sn i = none :=
-        Env.findProj?_none_of_fresh (by rw [← hn]; exact hfresh) i
-      rw [h0, findProj?_cons_of_base_none hntc sn i h0]
-    · rw [Env.findProj?_cons_ne hn]
+    have hfp : Env.findProj? ⟨c₀ :: env.consts⟩ sn i = env.findProj? sn i := by
+      by_cases hn : c₀.name = projTableName sn
+      · have h0 : env.findProj? sn i = none :=
+          Env.findProj?_none_of_fresh (by rw [← hn]; exact hfresh) i
+        rw [h0, findProj?_cons_of_base_none hntc sn i h0]
+      · exact Env.findProj?_cons_ne hn i
+    rw [hfp]
+    cases hfpe : env.findProj? sn i with
+    | none => rfl
+    | some entry =>
+      dsimp only
+      unfold projNodeNV?
+      split
+      · rfl
+      · rename_i hgt
+        have hs : (env.find? (projChainKey sn i)).isSome = true :=
+          hprojOk.chain_isSome hfpe hgt
+        rw [if_pos (by rw [Env.find?_cons_of_isSome hfresh hs]; exact hs), if_pos hs]
   intro d e
   induction d, e using denote.induct (cval := cval) (env := env) (φ := φ) with
   | case1 d u => intro _; rw [denote_sort, denote_sort]
@@ -843,7 +878,7 @@ environment.  The two moves compose in one order only: shrink first
 (the expression resolves there), then change the valuation (the two
 agree on everything stored there, but not at the new constant). -/
 theorem Installs.denoteDown {env : Env md} {cval cval' : TConstVal md}
-    {c₀ : ConstantInfo md} (hi : Installs env cval cval' c₀)
+    {c₀ : ConstantInfo md} (hi : Installs env cval cval' c₀) (hprojOk : ProjOkT env)
     {φ : LevelParam → Nat} {d : Nat} {e : Expr md} {v : Term}
     (hres : e.constsResolve env = true)
     (h : denote cval' ⟨c₀ :: env.consts⟩ φ d e = some v) :
@@ -854,7 +889,7 @@ theorem Installs.denoteDown {env : Env md} {cval cval' : TConstVal md}
     intro hh
     rw [hh, hi.fresh] at hf
     exact nomatch hf
-  rw [denote_env_shrink hi.fresh hi.ntc d e hres] at h
+  rw [denote_env_shrink hi.fresh hi.ntc hprojOk d e hres] at h
   rwa [denote_cval_congr hagE hi.lit.nat hi.lit.succ hi.lit.sol hi.lit.nil
     hi.lit.cons hi.lit.char hi.lit.ofn d e]
 

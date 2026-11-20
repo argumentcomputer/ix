@@ -129,7 +129,7 @@ theorem hashedBlockAt_of_proj_ctor {c : Core.Ctx} {cs : List (Call F)} (hg : Cor
     (hb : Bytes.RepAddressRef Core.addrTy h b bp) (hip : ip = .field i) :
     Core.HashedBlockAt c.E (Core.ixAddr b) := by
   subst hip
-  obtain ⟨v, mid, cs_assert, cs_load, ev_assert, ev_load, hcalls⟩ :=
+  obtain ⟨v, mid, cs_assert, cs_load, ev_assert, _, ev_load, hcalls⟩ :=
     Obs.«KernelModeled::proj_ctor».obs ev
   exact hashedBlockAt_of_get_ci_cprj (hg.sub fun cl hcl => by simp [hcalls, hcl])
     (Bytes.repAddressRef_heapMono₂ Core.addrTy ev_assert.heap_extends hb) ev_load

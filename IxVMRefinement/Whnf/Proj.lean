@@ -152,7 +152,7 @@ theorem red_proj_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (Sour
   subst hargs hfidx
   have p := Obs.«KernelWhnf::red_proj».obs ev
   cases p
-  case Const_Ctor_Induct_n1_n0_n1 m2 cs13 x_head x_args x_caddr x_clvls m70 p78 cs84 x_cnl w101
+  case Const_Ctor_Induct_n1_n1_n1 m2 cs13 x_head x_args x_caddr x_clvls m70 p78 cs84 x_cnl w101
       x_cblock x_cind w102 x_nparams x_nfields w103 m145 p153 cs159 x_snl x_sty x_snp x_sni x_snc
       w176 x_sblock x_sidx v217 m218 x225 y226 m227 x233 y234 m235 cs244 cs266 v269 cs289 v292
       v309 m310 x317 y318 m319 x325 y326 m327 cs336 cs350 v353 cs372 v375 v392 m393 x400 y401

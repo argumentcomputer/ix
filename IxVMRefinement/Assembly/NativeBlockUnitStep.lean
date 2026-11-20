@@ -147,13 +147,22 @@ theorem FoldClauseWith.nativeNoRec {L : Ix.Kernel.Env .anon → NativeFam .anon 
     (hres : ∀ (k : Core.KKey) (ci : ConstantInfo .anon), env₂.find? k = some ci →
       env.find? k = none → k ≠ Core.unresolvedKey)
     (hloads : Core.ScopedLoadFacts (Core.Ctx.stored ⟨E, env₂, t, lim⟩))
-    (hkeys₂ : HashKeyed t env₂) (hread : FamRead L t E env₂ fam) :
+    (hkeys₂ : HashKeyed t env₂) (hread : FamRead L t E env₂ fam)
+    (hnewCtor : ∀ (C : _root_.Address) (cm : Ixon.Constant) (cp : Ixon.ConstructorProj)
+      (cv : ConstantVal .anon) (nP nF : Nat),
+      env₂.find? (keyOf t C) = some (.ctorInfo cv nP nF) → env.find? (keyOf t C) = none →
+      Ix.Cert.recordAt E C = some cm → cm.info = .cPrj cp →
+      ∃ j cA, fam.p.cvT.name = keyOf t (Core.iprjAddr cp.block cp.idx.toNat) ∧
+        fam.ctorsA[j]? = some cA ∧ cA.1.name = keyOf t C ∧ cp.cidx.toNat = j) :
     FoldClauseWith.{u} L t E lim env₂ (fun f => Reg f ∨ f = fam) := by
   have hinv₂ : Decl.PrefixInv.{u} E t lim env₂ :=
     PrefixInv.nativeNoRec_eta h.prefixInv hfacts hpin hna hres hloads
+  have hno := hfacts.noRecNoDefn
   exact FoldClauseWith.of_prefix hinv₂
     (h.registry.install hL (fun V _ hm => hfacts.register V hm) hfacts.envExt hread
-      hfacts.newInd)
+      hfacts.newInd hnewCtor
+      (fun hp => recRhsPwNoModel_append_noRec hfacts.envExt hp (let ⟨new, heq, hn⟩ := hno; ⟨new, heq, fun ci hci => (hn ci hci).1⟩))
+      (fun hm => recHasModelNotNative_append_noRecNoDefn hfacts.envExt hm hno))
     hkeys₂ (NativeNoRecFacts.auxRootSynced hpin hna hfacts h.auxRoot)
     (NativeNoRecFacts.lvClauses hpin hfacts ⟨h.thmLevels, h.storeArR⟩)
 
@@ -398,7 +407,10 @@ theorem NativeInstallOut.keeps {L : Ix.Kernel.Env .anon → NativeFam .anon → 
         ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩, ctorsA⟩ :=
     famRead_of_install hL hrec hO hinv₂.store.store.wf hlv₂.2
       (famIxonRetHead_of_holds ht hH hrec.muts hret hfamT) hnp
-  exact hC.nativeNoRec hL hO.facts hpin hna hres hloads hkeys₂ hreadF
+  have hnewCtor := newCtor_of_blockInstall (E := E) (B := B) (ind := ind) htwf hI.decoded
+    hI.ctorRec hI.bounds.2.2 hO.lenA hfamT (fun j cA hcA => (hctorsA j cA hcA).1)
+    hO.facts.newCtor
+  exact hC.nativeNoRec hL hO.facts hpin hna hres hloads hkeys₂ hreadF hnewCtor
 
 /-! ## The install's output from the walk's member check -/
 

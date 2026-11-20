@@ -200,6 +200,35 @@ info: @Ix.Kernel.field.eq_def : ∀ {V : Type u_1} [inst : Ix.Kernel.SetTheory V
 #check @Ix.Kernel.field.eq_def
 
 /--
+info: def Ix.Kernel.projChainKey : {md : Ix.Kernel.Mode} → Ix.Kernel.Key md → Nat → Ix.Kernel.Key md :=
+fun {md} T i => Ix.Kernel.auxKey (Ix.Kernel.projTableName T) (Ix.Kernel.Derived.projFn i)
+-/
+#guard_msgs in
+#print Ix.Kernel.projChainKey
+
+/--
+info: def Ix.Kernel.chainApp.{w} : {V : Type w} → [Ix.Kernel.SetTheory V] → (Nat → V) → V → V :=
+fun {V} [Ix.Kernel.SetTheory V] G P =>
+  if h : ∃ n v, Ix.Kernel.SetTheory.Mem (Ix.Kernel.SetTheory.kpair P v) (G n) then
+    Ix.Kernel.SetTheory.app (G (Classical.choose h)) P
+  else Ix.Kernel.SetTheory.empty
+-/
+#guard_msgs in
+#print Ix.Kernel.chainApp
+
+/--
+info: def Ix.Kernel.projVal.{w} : {V : Type w} →
+  [Ix.Kernel.SetTheory V] →
+    {md : Ix.Kernel.Mode} →
+      (Ix.Kernel.Key md → (Ix.Kernel.LevelParam → Nat) → V) → Ix.Kernel.Key md → Nat → Ix.Kernel.ProjEntry md → V → V :=
+fun {V} [Ix.Kernel.SetTheory V] {md} cval T i entry P =>
+  if entry.off ≤ 1 then Ix.Kernel.field (i + entry.off) P
+  else Ix.Kernel.chainApp (fun n => cval (Ix.Kernel.projChainKey T i) fun x => n) P
+-/
+#guard_msgs in
+#print Ix.Kernel.projVal
+
+/--
 info: inductive Ix.Kernel.Denotes.{w} : {V : Type w} →
   [Ix.Kernel.SetTheory V] →
     {md : Ix.Kernel.Mode} →
@@ -247,7 +276,7 @@ Ix.Kernel.Denotes.proj_table : ∀ {V : Type w} [inst : Ix.Kernel.SetTheory V] {
   {P : V},
   env.findProj? T i = some entry →
     Ix.Kernel.Denotes cval env φ ρ e P →
-      Ix.Kernel.Denotes cval env φ ρ (Ix.Kernel.Expr.proj T i e) (Ix.Kernel.field (i + entry.off) P)
+      Ix.Kernel.Denotes cval env φ ρ (Ix.Kernel.Expr.proj T i e) (Ix.Kernel.projVal cval T i entry P)
 Ix.Kernel.Denotes.proj_fst : ∀ {V : Type w} [inst : Ix.Kernel.SetTheory V] {md : Ix.Kernel.Mode}
   {cval : Ix.Kernel.Key md → (Ix.Kernel.LevelParam → Nat) → V} {env : Ix.Kernel.Env md} {φ : Ix.Kernel.LevelParam → Nat}
   {ρ : Ix.Kernel.BVarIdx → V} {T : Ix.Kernel.Key md} {e : Ix.Kernel.Expr md} {P : V},
@@ -464,18 +493,19 @@ fun {V} [Ix.Kernel.SetTheory V] {md} cval env =>
                                 ys.length = entry.numParams + entry.numFields →
                                   Ix.Kernel.Fits cval env φ ρ
                                       (Ix.Kernel.Expr.instantiateLevelParams cvC.levelParams us cvC.type) ys σ R →
-                                    Ix.Kernel.field (i + entry.off) (List.foldl Ix.Kernel.SetTheory.app K ys) =
+                                    Ix.Kernel.projVal cval T i entry (List.foldl Ix.Kernel.SetTheory.app K ys) =
                                       ys.getD (entry.numParams + i) Ix.Kernel.SetTheory.empty) ∧
-                            ∀ (σ : Ix.Kernel.BVarIdx → V) (R : Ix.Kernel.Expr md) (ts : List V) (x : V),
-                              ts.length = entry.numParams →
-                                Ix.Kernel.Fits cval env φ ρ
-                                    (Ix.Kernel.Expr.instantiateLevelParams cvT.levelParams us cvT.type) ts σ R →
-                                  Ix.Kernel.SetTheory.Mem x (List.foldl Ix.Kernel.SetTheory.app F ts) →
-                                    x =
-                                      List.foldl Ix.Kernel.SetTheory.app K
-                                        (ts ++
-                                          List.map (fun j => Ix.Kernel.field (j + entry.off) x)
-                                            (List.range entry.numFields))
+                            (entry.off ≤ 1 →
+                              ∀ (σ : Ix.Kernel.BVarIdx → V) (R : Ix.Kernel.Expr md) (ts : List V) (x : V),
+                                ts.length = entry.numParams →
+                                  Ix.Kernel.Fits cval env φ ρ
+                                      (Ix.Kernel.Expr.instantiateLevelParams cvT.levelParams us cvT.type) ts σ R →
+                                    Ix.Kernel.SetTheory.Mem x (List.foldl Ix.Kernel.SetTheory.app F ts) →
+                                      x =
+                                        List.foldl Ix.Kernel.SetTheory.app K
+                                          (ts ++
+                                            List.map (fun j => Ix.Kernel.field (j + entry.off) x)
+                                              (List.range entry.numFields)))
 -/
 #guard_msgs in
 #print Ix.Kernel.ProjLaw
@@ -606,7 +636,7 @@ fun {V} [Ix.Kernel.SetTheory V] {md} cval env =>
                           (Ix.Kernel.Expr.instantiateLevelParams entry.levelParams us entry.body) B ∧
                         Ix.Kernel.GradedBy (Ix.Kernel.Denotes cval env φ) (Ix.Kernel.push x (Ix.Kernel.pushVals ρ ts))
                             (Ix.Kernel.Expr.instantiateLevelParams entry.levelParams us entry.body) ∧
-                          Ix.Kernel.SetTheory.Mem (Ix.Kernel.field (i + entry.off) x) B
+                          Ix.Kernel.SetTheory.Mem (Ix.Kernel.projVal cval T i entry x) B
 -/
 #guard_msgs in
 #print Ix.Kernel.ProjTypeLaw

@@ -141,6 +141,10 @@ structure FamilyCallFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
   comparison, with the constructor's return type check at its block. -/
   companions : ∀ E env, FamilyStepEnv.{u} L calls t E₀ lim B cb rb crb adv E env →
     FamRecsCompanion E₀ t env blk tys
+  /-- The projection check facts for every eligible member of the block, at every environment
+  a step is handed. Producer: `KernelModeled::check_projs`. -/
+  projs : ∀ E env, FamilyStepEnv.{u} L calls t E₀ lim B cb rb crb adv E env →
+    Nonempty (BlockProjFacts t E₀ E env B cb ms blk tys advM.ren)
 
 /-- **The facts of every accepted family check** (module docstring): at every family check of
 the block at `B` with its family record at `rb` in a run, under a role context at `lim`, on the
@@ -247,13 +251,16 @@ theorem familyBlockCheckRow_of_call {L : Ix.Kernel.Env .anon → NativeFam .anon
           exact Or.inr (hneed i hi x hx' (hinert i hi x hx') hcov) }
   refine ⟨blk, advM, tys, rhsss, hF.reads E env hSE, hF.checkFacts E env hSE, ?_⟩
   unfold SelectedForms
-  refine ⟨fun ms' rs' hms' hrs' => ?_, ?_⟩
+  refine ⟨fun ms' rs' hms' hrs' => ?_, ?_, fun ms' hms' => ?_⟩
   · have e1 : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hB.muts)
     have e2 : rs' = rs := Ixon.ConstantInfo.muts.inj (hrs'.symm.trans hrb.muts)
     subst e1 e2
     exact hF.canon
   · exact famRecsCompanion_carry hS.recordOf_eq_recordAt
       (fun p _ c' hc' => hctx.runRecord p c' hc') hF.majorRefs (hF.companions E env hSE)
+  · have e1 : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hB.muts)
+    subst e1
+    exact hF.projs E env hSE
 
 /-! ## The binding side's row -/
 
@@ -305,7 +312,7 @@ theorem closureFamilyCheck_of_call {L : Ix.Kernel.Env .anon → NativeFam .anon 
         exact find_isSome_of_storedAt ⟨ci, hext ci (hextT ci hci), hname⟩
       blockRefs := fun x hu => Or.inr (hC.run.famNeedOk B rb x hfam hnB' hu) }
   refine ⟨blk, advM, tys, rhsss, hF.reads Ec env hSE, hF.checkFacts Ec env hSE,
-    fun ms' rs' hms' hrs' => ?_, fun E hE => ?_⟩
+    fun ms' rs' hms' hrs' => ?_, fun E hE => ?_, fun ms' hms' => ?_⟩
   · have e3 : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hFB.block.muts)
     have e4 : rs' = rs := Ixon.ConstantInfo.muts.inj (hrs'.symm.trans hFB.record.muts)
     subst e3 e4
@@ -320,5 +327,8 @@ theorem closureFamilyCheck_of_call {L : Ix.Kernel.Env .anon → NativeFam .anon 
     have e6 : P = c' := Option.some.inj ((Binding.recordOf_of_loaded hloaded hP).symm.trans hc')
     subst e6
     exact hE.2.1 p P hP
+  · have e3 : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hFB.block.muts)
+    subst e3
+    exact hF.projs Ec env hSE
 
 end IxVM.Refinement.Typing.FamilyAlias

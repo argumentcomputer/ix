@@ -47,7 +47,8 @@ def StoredTables (env : Env md) : Prop :=
     (∀ ci, env.find? T = some ci → ∃ (cvT : ConstantVal md) (capsT : IndCaps md),
       ci = .indInfo cvT capsT ∧
       (capsT.eta = true → capsT.etaCtor = some entry.ctor ∧
-        capsT.etaParams = entry.numParams ∧ capsT.etaFields = entry.numFields)) ∧
+        capsT.etaParams = entry.numParams ∧ capsT.etaFields = entry.numFields ∧
+        entry.off ≤ 1)) ∧
     ∀ (cvC : ConstantVal md) (nP nF : Nat),
       env.find? entry.ctor = some (.ctorInfo cvC nP nF) →
       nP = entry.numParams ∧ nF = entry.numFields ∧ cvC.levelParams = entry.levelParams ∧
@@ -154,7 +155,7 @@ theorem EnvModelM.storedTables {μ : CheckMode} {env : Env md}
     (m : Ix.Kernel.Model.EnvModelM V μ env) : StoredTables env := by
   intro T i entry hP
   obtain ⟨hsn, -, -, ⟨cvT, capsT, hfT, -, heta⟩, hO5, -⟩ := m.tower_ok (fun _ => 0) T i entry hP
-  obtain ⟨-, -, -, -, ⟨cvC, hfC, hlpsC, bs, hs⟩⟩ := m.base2.proj_ok.towerHead hP
+  obtain ⟨-, -, -, -, ⟨cvC, hfC, hlpsC, bs, hs⟩, -⟩ := m.base2.proj_ok.towerHead hP
   refine ⟨hsn, hO5, fun ci hci => ?_, fun cvC' nP nF hci => ?_⟩
   · rw [hfT] at hci
     cases hci

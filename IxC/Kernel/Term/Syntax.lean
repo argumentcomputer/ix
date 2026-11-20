@@ -1,5 +1,7 @@
 module
 
+public import IxC.Kernel.Term.UnpackSpec
+
 @[expose] public section
 
 /-!
@@ -173,6 +175,10 @@ inductive BConst where
   hypothesis that a closed family exists.  (The non-indexed `lfp` of
   the route's checkpoint was removed once the indexed leaf landed.) -/
   | lfpFam
+  /-- `unpackGraph spec.{n,k} : Sort (n + 1)` — the bounded graph at universe
+  `n` of `x ↦ treeUnpack spec (projS k x)`, used to interpret projections on
+  modeled structures. -/
+  | unpackGraph (spec : UnpackSpec)
   deriving Repr, DecidableEq, Inhabited
 
 /-- Terms.  See the module docstring for what is *not* here. -/
@@ -204,7 +210,13 @@ inductive Term where
   | snd (e : Term)
   /-- the canonical (irrelevant) proof of a derivable equation -/
   | prf
-  deriving Repr, Inhabited
+  /-- universe-indexed partial-graph chain application (`chainApp`), interpreting
+  `.proj` on a modeled structure -/
+  | chain (g : Nat → Term) (e : Term)
+  /-- bounded graph of `x ↦ app f x` at universe `n` (`boundedGraph`), used for
+  parameter-free monomorphic modeled projections -/
+  | bgraph (n : Nat) (f : Term)
+  deriving Inhabited
 
 namespace Term
 
@@ -238,7 +250,7 @@ def BConst.numLevels : BConst → Nat
   | .nat | .natZero | .natSucc | .propext => 0
   | .natRec | .punit | .punitUnit | .empty
   | .quot | .quotMk | .quotInd | .quotSound | .choice => 1
-  | .lfpFam => 2
+  | .lfpFam | .unpackGraph _ => 2
   | .punitRec | .psigma | .psigmaMk
   | .emptyRec | .quotLift => 2
 

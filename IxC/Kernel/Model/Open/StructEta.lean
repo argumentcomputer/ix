@@ -147,7 +147,7 @@ theorem DefEq.structEta_sound (hse : StoredEnv env) {d : Nat} {a b tb wtb : Expr
     obtain ⟨-, -, hTst, -⟩ := hse.tables T 0 e0 he0
     obtain ⟨cvT', capsT', hci, hetaT⟩ := hTst _ hT
     obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj hci
-    obtain ⟨hec, hpar, hfld⟩ := hetaT heta
+    obtain ⟨hec, hpar, hfld, hoff0⟩ := hetaT heta
     rw [hctor] at hec
     obtain rfl := Option.some.inj hec
     obtain ⟨hlpsT, _cvC, -, -, -, hlaw⟩ := M.proj_law T 0 e0 cvT caps he0 hT
@@ -164,7 +164,7 @@ theorem DefEq.structEta_sound (hse : StoredEnv env) {d : Nat} {a b tb wtb : Expr
       exact .const hc (show us'.length = cvc.levelParams.length by rw [hlps]; exact hlv)
     obtain ⟨-, hη⟩ := hlaw us' φ ρ₀ F _ (by rw [← hlpsT]; exact hlv)
       (DenotesO.to_denotes hF rfl) hK'
-    have hyeta := hη σT R ts y (by rw [htslen, hpar]) hfit hyTb
+    have hyeta := hη hoff0 σT R ts y (by rw [htslen, hpar]) hfit hyTb
     -- `b`'s projections denote its fields
     have hetaP : etaProjs env T us' wtb.getAppArgs b caps.etaFields =
         (List.range caps.etaFields).map fun j => Expr.proj T j b := by
@@ -179,7 +179,8 @@ theorem DefEq.structEta_sound (hse : StoredEnv env) {d : Nat} {a b tb wtb : Expr
         ((List.range caps.etaFields).map fun j => field (j + e0.off) y) := by
       refine DenList.map_mem _ fun j hj => ?_
       obtain ⟨ej, hej⟩ := hslot j (List.mem_range.mp hj)
-      rw [← hoff j ej hej]
+      have hle : ej.off ≤ 1 := by rw [hoff j ej hej]; exact hoff0
+      rw [← hoff j ej hej, ← projVal_of_le_one (cval := M.cval) (T := T) (i := j) hle y]
       exact .proj_table hej hy
     have hvdrop : vs.drop caps.etaParams =
         (List.range caps.etaFields).map fun j => field (j + e0.off) y :=

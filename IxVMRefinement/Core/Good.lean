@@ -242,7 +242,7 @@ structure LoadFacts (c : Ctx) : Prop where
   `projTables`. -/
   projTablesAt : ∀ (bp sap ptr nl ty np u blk : SourceValue F) (h h' h1 h2 : Heap F)
       (cs cs1 : List (Call F)) (b s : Bytes.Address) (i : F),
-    ObsFn W "KernelModeled::block_is_modeled" [bp] h (.field 0) h' cs → Good c cs →
+    ObsFn W "KernelModeled::proj_allowed_at" [bp, .field i] h (.field 1) h' cs → Good c cs →
     Bytes.RepAddressRef addrTy h b bp →
     ObsFn W "Ingress::get_ci" [sap] h1 ptr h2 cs1 → Good c cs1 →
     Bytes.RepAddressRef addrTy h1 s sap →

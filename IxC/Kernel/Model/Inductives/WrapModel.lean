@@ -142,6 +142,7 @@ inductive AW : AnnotTerm → AnnotTerm → Prop
       AStar A a → AW a A' → AW B B' → AW (.pi u v A B) (.pi u' v A' B')
   | fst {e e' : AnnotTerm} : AW e e' → AW (.fst e) (.fst e')
   | snd {e e' : AnnotTerm} : AW e e' → AW (.snd e) (.snd e')
+  | chain {g : Nat → AnnotTerm} {e e' : AnnotTerm} : AW e e' → AW (.chain g e) (.chain g e')
 
 theorem AStar.sem {A a : AnnotTerm} (h : AStar A a) :
     ∀ ρ : Nat → V, WellDenotedV V ρ A → WellDenotedV V ρ a ∧ interp V ρ A = interp V ρ a := by
@@ -234,10 +235,29 @@ theorem AW.sem {X Y : AnnotTerm} (h : AW X Y) :
     obtain ⟨he1, he2⟩ := ih ρ ⟨hwe, hav⟩
     refine ⟨⟨?_, by rw [AnnotValid_snd]; exact he1.2⟩, by rw [interp_snd, interp_snd, he2]⟩
     rw [WellDenoted]; exact ⟨he1.1, u, v, A, Bf, by rw [← he2]; exact hm, hAu, hBv⟩
+  | chain _ ih =>
+    intro ρ hX
+    obtain ⟨hwd, hav⟩ := hX
+    rw [WellDenoted_chain] at hwd
+    rw [AnnotValid_chain] at hav
+    obtain ⟨he1, he2⟩ := ih ρ ⟨hwd.2, hav.2⟩
+    refine ⟨⟨?_, ?_⟩, by rw [interp_chain, interp_chain, he2]⟩
+    · rw [WellDenoted_chain]; exact ⟨hwd.1, he1.1⟩
+    · rw [AnnotValid_chain]; exact ⟨hav.1, he1.2⟩
 
 theorem AW.projAV : ∀ (n : Nat) {X X' : AnnotTerm}, AW X X' → AW (projAV n X) (projAV n X')
   | 0, _, _, h => .fst h
   | n + 1, _, _, h => AW.projAV n (.snd h)
+
+theorem AW.projNodeAV {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {s : Key md} {i : Nat} {entry : Ix.Kernel.ProjEntry md}
+    {X X' : AnnotTerm} (h : AW X X') :
+    AW (Ix.Kernel.Semantics.projNodeAV acval s i entry X)
+      (Ix.Kernel.Semantics.projNodeAV acval s i entry X') := by
+  unfold Ix.Kernel.Semantics.projNodeAV
+  split
+  · exact AW.projAV _ h
+  · exact .chain h
 
 theorem AW.projPair {i : Nat} {X X' Y : AnnotTerm} (h : AW X X')
     (hp : AnnotTerm.projPair? i X = some Y) :
@@ -592,18 +612,15 @@ theorem wrapT_read : ∀ (n : Nat) (g d : Expr md), g.sizeB < n → WrapT find? 
       obtain ⟨ia, hia, hcase⟩ := denoteMeta_proj_inv hg
       simp only [Ix.Kernel.Expr.sizeB] at hlt
       obtain ⟨ia', hia', hAW⟩ := ih e e' (by omega) he k ia hia
-      rcases hcase with ⟨entry, hfp, rfl⟩ | ⟨hfp, hdec⟩
-      · refine ⟨projAV (i + entry.off) ia', ?_, AW.projAV _ hAW⟩
-        rw [denoteMeta_proj, hia']
-        show (match env.findProj? s i with
-          | some entry => some (projAV (i + entry.off) ia')
-          | none => AnnotTerm.projPair? i ia') = _
-        rw [hfp]
+      rcases hcase with ⟨entry, hfp, hnode⟩ | ⟨hfp, hdec⟩
+      · obtain ⟨hrdy, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode
+        refine ⟨projNodeAV acval s i entry ia', ?_, AW.projNodeAV hAW⟩
+        exact denoteMeta_proj_tower hfp hrdy hia'
       · obtain ⟨ga', hdec', hAW'⟩ := AW.projPair hAW hdec
         refine ⟨ga', ?_, hAW'⟩
         rw [denoteMeta_proj, hia']
         show (match env.findProj? s i with
-          | some entry => some (projAV (i + entry.off) ia')
+          | some entry => projNodeAV? acval env s i entry ia'
           | none => AnnotTerm.projPair? i ia') = _
         rw [hfp]; exact hdec'
 
@@ -957,6 +974,7 @@ inductive SymAW : AnnotTerm → AnnotTerm → Prop
       AStar A' a → SymAW A a → SymAW B B' → SymAW (.pi u v A B) (.pi u' v A' B')
   | fst {e e' : AnnotTerm} : SymAW e e' → SymAW (.fst e) (.fst e')
   | snd {e e' : AnnotTerm} : SymAW e e' → SymAW (.snd e) (.snd e')
+  | chain {g : Nat → AnnotTerm} {e e' : AnnotTerm} : SymAW e e' → SymAW (.chain g e) (.chain g e')
 
 theorem SymAW.of_AW {X Y : AnnotTerm} (h : AW X Y) : SymAW X Y := by
   induction h with
@@ -966,6 +984,7 @@ theorem SymAW.of_AW {X Y : AnnotTerm} (h : AW X Y) : SymAW X Y := by
   | pi hs _ _ ihd ihb => exact .piL hs ihd ihb
   | fst _ ih => exact .fst ih
   | snd _ ih => exact .snd ih
+  | chain _ ih => exact .chain ih
 
 theorem SymAW.symm {X Y : AnnotTerm} (h : SymAW X Y) : SymAW Y X := by
   induction h with
@@ -977,6 +996,7 @@ theorem SymAW.symm {X Y : AnnotTerm} (h : SymAW X Y) : SymAW Y X := by
   | piR hs _ _ ihd ihb => exact .piL hs ihd ihb
   | fst _ ih => exact .fst ih
   | snd _ ih => exact .snd ih
+  | chain _ ih => exact .chain ih
 
 /-- **Symmetric wrapper relation preserves interpretation** when both sides are graded. -/
 theorem SymAW.sem {X Y : AnnotTerm} (h : SymAW X Y) :
@@ -1050,11 +1070,28 @@ theorem SymAW.sem {X Y : AnnotTerm} (h : SymAW X Y) :
     rw [WellDenoted] at hwdX hwdY
     rw [AnnotValid_snd] at havX havY
     rw [interp_snd, interp_snd, ih ρ ⟨hwdX.1, havX⟩ ⟨hwdY.1, havY⟩]
+  | chain _ ih =>
+    intro ρ hX hY
+    obtain ⟨hwdX, havX⟩ := hX
+    obtain ⟨hwdY, havY⟩ := hY
+    rw [WellDenoted_chain] at hwdX hwdY
+    rw [AnnotValid_chain] at havX havY
+    rw [interp_chain, interp_chain, ih ρ ⟨hwdX.2, havX.2⟩ ⟨hwdY.2, havY.2⟩]
 
 theorem SymAW.projAV : ∀ (n : Nat) {X X' : AnnotTerm}, SymAW X X' →
     SymAW (projAV n X) (projAV n X')
   | 0, _, _, h => .fst h
   | n + 1, _, _, h => SymAW.projAV n (.snd h)
+
+theorem SymAW.projNodeAV {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {s : Key md} {i : Nat} {entry : Ix.Kernel.ProjEntry md}
+    {X X' : AnnotTerm} (h : SymAW X X') :
+    SymAW (Ix.Kernel.Semantics.projNodeAV acval s i entry X)
+      (Ix.Kernel.Semantics.projNodeAV acval s i entry X') := by
+  unfold Ix.Kernel.Semantics.projNodeAV
+  split
+  · exact SymAW.projAV _ h
+  · exact .chain h
 
 theorem SymAW.projPair {i : Nat} {X X' Y Y' : AnnotTerm} (h : SymAW X X')
     (hp : AnnotTerm.projPair? i X = some Y) (hp' : AnnotTerm.projPair? i X' = some Y') :
@@ -1260,10 +1297,12 @@ theorem symWrapT_read_aux : ∀ (n : Nat) (d₁ d₂ : Expr md), d₁.sizeB + d�
       obtain ⟨ia₂, hia₂, hcase₂⟩ := denoteMeta_proj_inv hd₂
       simp only [Ix.Kernel.Expr.sizeB] at hlt
       have hSAW := ih _ _ (by omega) he k ia₁ ia₂ hia₁ hia₂
-      rcases hcase₁ with ⟨entry₁, hfp₁, rfl⟩ | ⟨hfp₁, hdec₁⟩
-      · rcases hcase₂ with ⟨entry₂, hfp₂, rfl⟩ | ⟨hfp₂, _⟩
+      rcases hcase₁ with ⟨entry₁, hfp₁, hnode₁⟩ | ⟨hfp₁, hdec₁⟩
+      · rcases hcase₂ with ⟨entry₂, hfp₂, hnode₂⟩ | ⟨hfp₂, _⟩
         · obtain rfl := Option.some.inj (hfp₁.symm.trans hfp₂)
-          exact SymAW.projAV _ hSAW
+          obtain ⟨-, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode₁
+          obtain ⟨-, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode₂
+          exact SymAW.projNodeAV hSAW
         · rw [hfp₁] at hfp₂; cases hfp₂
       · rcases hcase₂ with ⟨_, hfp₂, _⟩ | ⟨_, hdec₂⟩
         · rw [hfp₁] at hfp₂; cases hfp₂

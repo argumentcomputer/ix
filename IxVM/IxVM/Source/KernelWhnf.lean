@@ -117,14 +117,15 @@ def peel_beta_cert := aiur_fn⟦
 ⟧
 
   -- Red.proj. Fires only when the constructor belongs to the projected structure, the
-  -- structure is a member of a native block (the rule reads the projection table,
-  -- which the kernel installs at native blocks only; `KernelModeled::proj_ctor` is
-  -- inference's gate), has one constructor and no indices, the field exists, the
-  -- constructor application has exactly `nparams + nfields` arguments and the right
-  -- number of levels, and the structure's sort at those levels is never zero. At a
-  -- never-zero structure the rule's `FireSem` guard is vacuous and every slot of the
-  -- licensed `Certs` walk is a `.never` skip, so no certificate is needed; a
-  -- projection out of a possibly-`Prop` structure is left stuck (completeness only).
+  -- structure is allowed to project (`KernelModeled::proj_allowed_at`: every native
+  -- block, or a 1-constructor 0-index never-zero-sort member of a modeled block whose
+  -- projection models are checked by `KernelModeled::check_projs`), has one constructor
+  -- and no indices, the field exists, the constructor application has exactly
+  -- `nparams + nfields` arguments and the right number of levels, and the structure's
+  -- sort at those levels is never zero. At a never-zero structure the rule's `FireSem`
+  -- guard is vacuous and every slot of the licensed `Certs` walk is a `.never` skip, so
+  -- no certificate is needed; a projection out of a possibly-`Prop` structure is left
+  -- stuck (completeness only).
 
 def red_proj := aiur_fn⟦
   fn red_proj(rc: KernelRoles::RoleCtx, struct_addr: Bytes::AddressRef, fidx: Field, scrut: KernelTypes::KExpr,
@@ -143,8 +144,8 @@ def red_proj := aiur_fn⟦
                                   * Fields::is_zero(Lists::length(clvls) - cnl);
                       match ((owner * shape) * arity) * UInt32::less_than_fields(fidx, nfields) {
                         1 => {
-                          match KernelModeled::block_is_modeled(sblock) {
-                            0 => {
+                          match KernelModeled::proj_allowed_at(sblock, sidx) {
+                            1 => {
                               match type_sort_never(sty, snp, clvls) {
                                 1 => {  (1, Lists::lookup(args, nparams + fidx)) } ,
                                 _ => {  (0, scrut) } ,

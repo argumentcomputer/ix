@@ -109,10 +109,16 @@ theorem FoldClauseWith.aliasInstall {blk : List (ConstantInfo .anon)} {nP nIdx :
     (hloads : Core.ScopedLoadFacts (Core.Ctx.stored ⟨E, env₂, t, lim⟩))
     (heta : Decl.EtaStable env₂) (hkeys₂ : HashKeyed t env₂)
     (hread : FamRead (fun _ _ => True) t E env₂ fam)
-    (hfollow : FormerOpenTraceAt env₂ fam) :
+    (hfollow : FormerOpenTraceAt env₂ fam)
+    (hnewCtor : ∀ (C : _root_.Address) (cm : Ixon.Constant) (cp : Ixon.ConstructorProj)
+      (cv : ConstantVal .anon) (nP nF : Nat),
+      env₂.find? (keyOf t C) = some (.ctorInfo cv nP nF) → env.find? (keyOf t C) = none →
+      Ix.Cert.recordAt E C = some cm → cm.info = .cPrj cp →
+      ∃ j cA, fam.p.cvT.name = keyOf t (Core.iprjAddr cp.block cp.idx.toNat) ∧
+        fam.ctorsA[j]? = some cA ∧ cA.1.name = keyOf t C ∧ cp.cidx.toNat = j) :
     FoldClauseWith.{u} FormerOpenTraceAt t E lim env₂ (fun f => Reg f ∨ f = fam) :=
   h.nativeAt linkLaws_formerOpenTrace hfacts hpin hna hres hloads heta hkeys₂
-    (hread.withLink hfollow)
+    (hread.withLink hfollow) hnewCtor
 
 end
 

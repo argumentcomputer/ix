@@ -354,5 +354,8 @@ theorem bval_mem_type (c : BConst) (us : List Nat) (ρ : Nat → V) :
   | propext => exact bval_mem_propext V us ρ
   | choice => exact bval_mem_choice V us ρ
   | lfpFam => exact bval_mem_lfpFam V us ρ
+  | unpackGraph spec =>
+    exact boundedGraph_mem_univ
+      (fun x => treeUnpack spec (Ix.Kernel.SetTheory.Tower.projS (lv us 1) x)) (lv us 0)
 
 end Ix.Kernel.Semantics

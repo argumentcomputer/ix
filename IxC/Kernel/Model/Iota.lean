@@ -997,7 +997,7 @@ theorem projLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvM
   intro T i entry cvT capsT hfP hfT
   have hcl := m.base2.cval_closedL
   obtain ⟨hsn, -, hi, -, -, cvC, hfC, hlpsC, -, -⟩ := m.tower_ok (fun _ => 0) T i entry hfP
-  obtain ⟨-, -, -, ⟨cvT', capsT', hfT', hlpsT, -, -⟩, ⟨cvC', hfC', -, bsC, hresC⟩⟩ :=
+  obtain ⟨-, -, -, ⟨cvT', capsT', hfT', hlpsT, -, -⟩, ⟨cvC', hfC', -, bsC, hresC⟩, -⟩ :=
     m.base2.proj_ok.towerHead hfP
   rw [hsn, hfT] at hfT'
   obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj (Option.some.inj hfT')
@@ -1018,7 +1018,7 @@ theorem projLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvM
     | const hfr _ => rw [hfC] at hfr; cases hfr; rfl
   rw [hlpsT] at hFv
   rw [hlpsC] at hKv
-  refine ⟨fun hg σ R ys hys hfit => ?_, fun σ R ts x hts hfit hx => ?_⟩
+  refine ⟨fun hg σ R ys hys hfit => ?_, fun hoff σ R ts x hts hfit hx => ?_⟩
   · -- the projection of a constructor: clause (B) at the bound-variable readings
     obtain ⟨-, ⟨TCa, hTCa, hB⟩⟩ := hlaw us hus
     have hwf := m.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfC)
@@ -1059,10 +1059,17 @@ theorem projLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvM
       (hmemC ρ') hfitT
     rw [hlpsC] at hokApp
     have hres := hB hg ρ' ws _ (by rw [hws_len, hys]) hokApp.1 hfitT
-    rw [projAV_interp, interp_mkAppN_map, hwsMap, interp_cvalOf hcl] at hres
-    rw [hKv, field_eq_projS, hres, hws_val _ (by rw [hys]; omega)]
+    have hvalEq : interp V ρ' (projNodeAV m.base2.acval T i entry (AnnotTerm.mkAppN
+          (m.base2.acval entry.ctor (Level.substFn φ entry.levelParams us)) ws)) =
+        Ix.Kernel.projVal (cvalOf (V := V) m.base2.acval) T i entry (ys.foldl app K) := by
+      unfold projNodeAV Ix.Kernel.projVal
+      split
+      · rw [projAV_interp, interp_mkAppN_map, hwsMap, interp_cvalOf hcl, hKv, field_eq_projS]
+      · rw [interp_chain, interp_mkAppN_map, hwsMap, interp_cvalOf hcl, hKv]
+        exact chainApp_congr fun n => interp_cvalOf hcl _ _ ρ'
+    rw [← hvalEq, hres, hws_val _ (by rw [hys]; omega)]
   · -- structure η: clause (C) at the bound-variable readings
-    obtain ⟨TVa, hTVa, hTVaok, hη⟩ := heta cvT capsT hfT us hus
+    obtain ⟨TVa, hTVa, hTVaok, hη⟩ := heta hoff cvT capsT hfT us hus
     have hwf := m.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
     have hTf : (cvT.type.instantiateLevelParams cvT.levelParams us).hasFvar = false := by
       rw [Expr.hasFvar_instantiateLevelParams]; exact hwf.1
@@ -1238,8 +1245,14 @@ theorem projTypeLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
     (push x (pushVals ρ ts)) hokR
   rw [hcl'] at hden hgr
   refine ⟨_, hden, hgr, ?_⟩
-  rw [projAV_interp, interp_bvar] at hmemR
-  rw [field_eq_projS]
+  have hvalEq : interp V (push x (pushVals ρ ts)) (projNodeAV m.base2.acval T i entry (.bvar 0)) =
+      Ix.Kernel.projVal (cvalOf (V := V) m.base2.acval) T i entry x := by
+    unfold projNodeAV Ix.Kernel.projVal
+    split
+    · rw [projAV_interp, interp_bvar, field_eq_projS]; rfl
+    · rw [interp_chain, interp_bvar]
+      exact chainApp_congr fun n => interp_cvalOf hcl _ _ _
+  rw [← hvalEq]
   exact hmemR
 
 /-- **Structure η through projection functions, from the invariant**: the η law (`CapsOk`'s

@@ -86,6 +86,13 @@ theorem interp_liftN (n : Nat) :
   | snd e ihe =>
     intro k ρ; simp only [AnnotTerm.liftN_snd, interp_snd, ihe]
   | prf => intro k ρ; rfl
+  | chain g e ihg ihe =>
+    intro k ρ
+    simp only [AnnotTerm.liftN_chain, interp_chain, ihe]
+    exact chainApp_congr fun m => ihg m k ρ
+  | bgraph m f ihf =>
+    intro k ρ
+    simp only [AnnotTerm.liftN_bgraph, interp_bgraph, ihf]
 
 theorem interp_lift (e : AnnotTerm) (ρ : Nat → V) :
     interp V ρ e.lift = interp V (fun i => ρ (i + 1)) e := by
@@ -136,6 +143,13 @@ theorem interp_inst :
   | snd e ihe =>
     intro a k ρ; simp only [AnnotTerm.inst_snd, interp_snd, ihe]
   | prf => intro a k ρ; rfl
+  | chain g e ihg ihe =>
+    intro a k ρ
+    simp only [AnnotTerm.inst_chain, interp_chain, ihe]
+    exact chainApp_congr fun m => ihg m a k ρ
+  | bgraph m f ihf =>
+    intro a k ρ
+    simp only [AnnotTerm.inst_bgraph, interp_bgraph, ihf]
 
 /-! ### Interpretation invariance below a bound
 
@@ -192,6 +206,13 @@ theorem interp_congr_below :
   | snd e ihe =>
     intro k ρ ρ' hb hag
     simp only [interp_snd, ihe k ρ ρ' hb hag]
+  | chain g e ihg ihe =>
+    intro k ρ ρ' hb hag
+    simp only [interp_chain, ihe k ρ ρ' hb.2 hag]
+    exact chainApp_congr fun m => ihg m k ρ ρ' (hb.1 m) hag
+  | bgraph m f ihf =>
+    intro k ρ ρ' hb hag
+    simp only [interp_bgraph, ihf k ρ ρ' hb hag]
 
 /-- A closed term interprets the same under every environment. -/
 theorem interp_closed {e : AnnotTerm}

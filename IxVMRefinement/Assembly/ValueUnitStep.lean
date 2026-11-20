@@ -245,6 +245,17 @@ theorem FoldClauseWith.consValue {L : Ix.Kernel.Env .anon → NativeFam .anon �
       (fun P cm ip cv caps hf hold _ _ _ => by
         rw [find_ind_cons_old hval.not_ind hf] at hold
         cases hold)
+      (fun C cm cp cv nP nF hf hold _ _ _ => by
+        have hnc : ∀ cv' nP' nF', cn ≠ .ctorInfo cv' nP' nF' := fun _ _ _ he => by
+          rcases hval with ⟨_, _, _, h1⟩ | ⟨_, _, h1⟩ | ⟨_, h1⟩ <;> rw [h1] at he <;> cases he
+        rw [find_ctor_cons_old hnc hf] at hold
+        cases hold)
+      (fun hp => recRhsPwNoModel_cons_noRec hextE hp fun _ _ _ _ he => by
+        rcases hval with ⟨_, _, _, h1⟩ | ⟨_, _, h1⟩ | ⟨_, h1⟩ <;> rw [h1] at he <;> cases he)
+      (fun hm => recHasModelNotNative_cons_noRecNoModel hextE hm
+        (fun _ _ _ _ he => by
+          rcases hval with ⟨_, _, _, h1⟩ | ⟨_, _, h1⟩ | ⟨_, h1⟩ <;> rw [h1] at he <;> cases he)
+        (fun k he => let ⟨x, hx, _⟩ := hkeyx; keyOf_nonAux t x k .model (hx.symm.trans he)))
   exact FoldClauseWith.of_prefix hinv' hreg
     (keepsValuesKeyed_hashKeyed h.tableWf env _ d₀ h.hashKeyed hfresh hval hnt hd₀ hkeyx)
     (keepsValuesKeyed_auxRoot t env _ d₀ h.auxRoot hfresh hval hnt hd₀ hkeyx)

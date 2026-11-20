@@ -239,10 +239,14 @@ structure CheckFamilyChain (rc b rb : SourceValue F)
   m1293 : Heap F
   evRefsOk : SubCall calls "KernelModeled::family_refs_ok" [rc, rb, b, wset] mRefs vRefs m1293
   s9 : SourceValue F
+  m1331 : Heap F
   evCheckRecs : SubCall calls "KernelModeled::check_recs"
     [rc, tys, recs, recM, src, dst, aset, s8, nRecs, .field 0, np, uo, bnl, recs, .field 0]
-    m1293 s9 h_out
-  ldS9Nil : loadValue h_out s9 = .ok (.construct Obs.Names.«Lists::Node<Field>» "Nil" [])
+    m1293 s9 m1331
+  s10 : SourceValue F
+  evCheckProjs : SubCall calls "KernelModeled::check_projs"
+    [rc, b, members, .field 0, tys, tyM, src, dst, aset, np, bnl, s9] m1331 s10 h_out
+  ldS10Nil : loadValue h_out s10 = .ok (.construct Obs.Names.«Lists::Node<Field>» "Nil" [])
 
 theorem CheckFamilyChain.ext_m105_m453 {rc b rb : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)} (C : CheckFamilyChain rc b rb h h' calls) :
@@ -283,7 +287,8 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
       (ev990 := e990) (ev_edyzsqzv := eTysV) (ev_gkddqxhv := eLater) (ev_ittpynob := eCtorsV)
       (ev_biaifgpd := eRecsV) (ev1203 := eElim) (ev_cwwgzxtj := eFlat) (ev1246 := eNest)
       (ev_mitevvsv := eLenF) (ev_rqpeovbn := eZ1) (ev_xrhmaojz := eZ2) (ev_whimdwjd := eValG)
-      (ev1305 := eRefs) (ev1343 := eChk) (ld1465 := lS9) (he1473 := hEqH) (hc1474 := hc) .. =>
+      (ev1305 := eRefs) (ev1343 := eChk) (ev_apltvwnk := eProjs) (ld1465 := lS10) (he1473 := hEqH)
+      (hc1474 := hc) .. =>
     subst q217 q650 hEqH
     have h0 := callSub_of_eq hc
     have hSubSeg := callSub_append_left h0
@@ -330,7 +335,8 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
     let ⟨sZ2, hr⟩ := peel_call hr eZ2
     let ⟨sValG, hr⟩ := peel_call hr eValG
     let ⟨sRefs, hr⟩ := peel_call hr eRefs
-    let sChk := peel_last hr eChk
+    let ⟨sChk, hr⟩ := peel_call hr eChk
+    let sProjs := peel_last hr eProjs
     exact
       ⟨{ vSeg := _, m105 := _, cs107 := _, sg112 := sg
          subSeg := hSubSeg
@@ -372,8 +378,9 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
          mRefs := _, extAfterElim := sFlat.extends.trans (sNest.extends.trans (sLenF.extends.trans
            (sZ1.extends.trans (sZ2.extends.trans sValG.extends))))
          vRefs := _, m1293 := _, evRefsOk := sRefs
-         s9 := _, evCheckRecs := sChk
-         ldS9Nil := lS9 }⟩
+         s9 := _, m1331 := _, evCheckRecs := sChk
+         s10 := _, evCheckProjs := sProjs
+         ldS10Nil := lS10 }⟩
 
 /-! ## `members_val` and `member_val` -/
 

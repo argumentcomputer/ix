@@ -269,7 +269,8 @@ structure ClosureFamilyFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       FamDeclReads t E₀ B cb rb crb blk ∧ FamilyCheckFacts env blk adv' tys rhsss ∧
       (∀ ms rs, cb.info = .muts ms → crb.info = .muts rs →
         FamilyTysCanon t E₀ B cb ms rb crb rs blk tys rhsss) ∧
-      ∀ E : Ixon.Env, RecordsFor R₁ E → FamRecsCompanion E t env blk tys
+      (∀ E : Ixon.Env, RecordsFor R₁ E → FamRecsCompanion E t env blk tys) ∧
+      ∀ ms, cb.info = .muts ms → Nonempty (BlockProjFacts t E₀ Ec env B cb ms blk tys adv'.ren)
   /-- Each reference the family record uses is covered at the group's validation limit (its
   role's group is below the group, so the fold's table environment stores it) or is one a step
   needs stored (a record of the run's store, no block, in Lean's logic with its block). With the
@@ -297,11 +298,12 @@ def ClosureFamilyCheck (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
 
 /-- **The closure's step of a new block with its selected family record, at a group of a binding
 run** (module docstring). -/
-theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hL : LinkLaws L) {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {ρ : Binding.BRun}
-    {Rs : Nat → Ixon.Env} (hrun : Binding.BindingRun calls t ρ Rs) (ht : t.check = .ok ())
-    {g : Nat} (hg6 : 6 ≤ g) (hchk : ClosureFamilyCheck.{u} L calls ρ t g) :
-    Binding.ClosureFamilySteps.{u} L calls ρ t g := by
+theorem closureFamilySteps_of_check
+    (hL : LinkLaws FormerOpenTraceAt) {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {ρ : Binding.BRun} {Rs : Nat → Ixon.Env} (hrun : Binding.BindingRun calls t ρ Rs)
+    (ht : t.check = .ok ()) {g : Nat} (hg6 : 6 ≤ g)
+    (hchk : ClosureFamilyCheck.{u} FormerOpenTraceAt calls ρ t g) :
+    Binding.ClosureFamilySteps.{u} FormerOpenTraceAt calls ρ t g := by
   intro R R' R₁ env₀ envT famOf₀ famOf adv cont bAddr B rb cb crb hC hextT hndT hnB hcb hunc
     hfam hcrb hfrT
   have hF := hchk R R' R₁ env₀ envT famOf₀ famOf adv cont bAddr B rb cb crb hC hextT hndT hnB
@@ -445,17 +447,40 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
   intro env Reg hext hnd hcl hrefs hadv1 hadv2 hfresh
   have hClc := hcl Ec hRc (some (Binding.valLimit g)) (Binding.carried_valLimit g)
     (Binding.limWithin_below t g)
-  obtain ⟨blk, adv', tys, rhsss, hreads, hFacts, hTys, hComp⟩ :=
+  obtain ⟨blk, adv', tys, rhsss, hreads, hFacts, hTys, hComp, hProj⟩ :=
     hF.seam Ec hRc hst env hext hnd hClc.prefixInv hClc.extra hinert hrefs hadv1 hadv2 hfresh
+  obtain ⟨bpf⟩ := hProj ms hB.muts
   have heq : env.find? Ix.Kernel.eqName = some Ix.Kernel.eqA :=
     eqPin_of_shape hC.bnd.shape (fun ci hci => hext ci (hextT ci hci)) hnd
-  obtain ⟨h, as, env₂, hg, hroots, hd, hst₂, hN, hR⟩ :=
-    famStepConclusion_installed hFacts hreads hClc.store hClc.auxRoot heq hfresh hkey
+  have hbasis : ∀ ci ∈ IxVM.Refinement.TableInhabit.basisEnv.consts, env.find? ci.name = some ci :=
+    basisPins_of_shape hC.bnd.shape (fun ci hci => hext ci (hextT ci hci)) hnd
+  obtain ⟨h, as, env₂, hg, hroots, hnames, htgt, hd, hst₂, hN, hR⟩ :=
+    famStepConclusion_installed_full hFacts hreads hClc.store hClc.auxRoot heq hfresh hkey
+  have hI : SelectedInstalled blk tys rhsss env₂ := ⟨hN, hR⟩
+  let pcs := blockProjConsts t env₂ B ms bpf.elig
+  have hres : BlockProjInstallResult.{u} t env env₂ Reg B ms bpf.elig pcs :=
+    install_block_proj_tables htwf ht hB hreads hFacts hg hnames htgt hroots hd hI
+      hClc.foldStore hClc.storeArR hClc.thmLevels hClc.auxRoot heq hbasis hClc.registry
+      hfresh hkey bpf
   obtain ⟨new, henv, hperm⟩ := declIndRunJ_names_perm hd.shape
   have henv₂ : env₂ = ⟨(new ++ as) ++ env.consts⟩ := by
     rw [henv]
     simp [List.append_assoc]
   subst henv₂
+  have hassoc : (⟨(pcs ++ (new ++ as)) ++ env.consts⟩ : Ix.Kernel.Env .anon) =
+      ⟨pcs ++ ((new ++ as) ++ env.consts)⟩ := by
+    simp [List.append_assoc]
+  have hfind₂ : ∀ {k : Core.KKey} {ci : ConstantInfo .anon},
+      (⟨(new ++ as) ++ env.consts⟩ : Ix.Kernel.Env .anon).find? k = some ci →
+      (⟨(pcs ++ (new ++ as)) ++ env.consts⟩ : Ix.Kernel.Env .anon).find? k = some ci := by
+    intro k ci hf
+    rw [hassoc]
+    exact hres.find₂ hf
+  have hpcsAux : ∀ ci ∈ pcs, ∃ n d, ci.name = Ix.Kernel.auxKey n d := by
+    intro ci hci
+    obtain ⟨pos, -, -, ⟨_, _, hnm, -⟩ | ⟨j, _, hnm⟩⟩ := hres.kindAndName ci hci
+    · exact ⟨Core.keyOf t (Core.iprjAddr B pos), .projTable, hnm⟩
+    · exact ⟨Ix.Kernel.projTableName (Core.keyOf t (Core.iprjAddr B pos)), .projFn j, hnm⟩
   -- the members' names
   have hmemb : ∀ ci ∈ new, ∃ x, FamAddr B cb rb crb x ∧ ci.name = keyOf t x := by
     intro ci hci
@@ -536,7 +561,8 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
   have hSrec : Ix.Kernel.RecCtorsStored (⟨(new ++ as) ++ env.consts⟩ : Ix.Kernel.Env .anon) :=
     (Decl.FamilyAlias.foldStoreInv_famStep hg hreads.2.2.2 hna hd hClc.foldStore).store.rec_ctors
   -- the stored recursors' loaded form, self-mention scoping, and `check_recs` header counts
-  have hstoredRecs : Binding.StoredFamilyRecs t R₁ ⟨(new ++ as) ++ env.consts⟩ B cb rb crb := by
+  have hstoredRecs :
+      Binding.StoredFamilyRecs t R₁ ⟨(pcs ++ (new ++ as)) ++ env.consts⟩ B cb rb crb := by
     refine ⟨?_, fun ms' rs' hms' hrs' => ?_⟩
     swap
     · obtain ⟨off, hBE₀, hlv⟩ := hC.checks.familyRecLvls B rb cb crb ms' rs' hfam hcb₀ hcrb₀ hms' hrs'
@@ -654,7 +680,7 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
       (by simpa [hk_toNat] using hk) (by simpa [hk_toNat] using hcv_name)
       (by rw [hcv_name]; exact hRR₀)
     obtain ⟨hns, hnp, hmot, ⟨Bm, im, cbm, msm, indm, D, lvls, himu, husedM, hPm₀, hBm₀, hmsm, him,
-      hpi, hfn, hni⟩, hconcl⟩ := hmeta
+      hpi, hfn, hni⟩, hconcl, -, -⟩ := hmeta
     obtain ⟨crb', i_u, hcrb'_u, hi_u, hx_u⟩ := husedM
     have ecrb'_u : crb' = crb := Option.some.inj (hcrb'_u.symm.trans hcrb₀)
     subst crb'
@@ -668,22 +694,34 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
     have ecbm : cbm₁ = cbm :=
       Option.some.inj ((Binding.recordOf_of_loaded hloaded hcbm₁).symm.trans hBm₀)
     subst cbm₁
-    exact ⟨cv, mI, rP, rules₀, ⟨cv.name, cv.levelParams, tyA⟩, rules', hku, hRR₁, hf_k, rfl, rfl,
+    exact ⟨cv, mI, rP, rules₀, ⟨cv.name, cv.levelParams, tyA⟩, rules', hku, hRR₁, hfind₂ hf_k, rfl, rfl,
       hSA', hTML, hns, hnp, hmot,
       ⟨Bm, im, cbm, msm, indm, D, lvls, himu, hPm₁, hcbm₁, hmsm, him, hpi, hfn, hni⟩, hconcl⟩
-  refine ⟨new ++ as, Reg, hndNA, ?_, ?_, ?_, ?_, ?_, hstoredRecs, ?_,
-    hg.envExt.trans (Ix.Kernel.Semantics.declIndRenRunJ_envExt hd)⟩
+  have hndPNA : ((pcs ++ (new ++ as)).map (·.name)).Nodup := by
+    rw [List.map_append]
+    refine List.nodup_append.mpr ⟨hres.nodup, hndNA, ?_⟩
+    intro k hk k' hk' heq'
+    obtain ⟨c1, hc1, rfl⟩ := List.mem_map.mp hk
+    obtain ⟨c2, hc2, rfl⟩ := List.mem_map.mp hk'
+    have hsome := find?_isSome_of_mem (E := ⟨(new ++ as) ++ env.consts⟩)
+      (List.mem_append_left env.consts hc2)
+    rw [← heq', hres.freshEnv₂ c1 hc1] at hsome
+    exact Bool.false_ne_true hsome
+  refine ⟨pcs ++ (new ++ as), Reg, hndPNA, ?_, ?_, ?_, ?_, ?_, hstoredRecs, ?_,
+    hassoc.symm ▸ hres.envExt⟩
   · -- fresh in the prefix
     intro ci hci
     rcases List.mem_append.mp hci with hci | hci
-    · obtain ⟨x, hx, hk⟩ := hmemb ci hci
-      rw [hk]
-      exact hfresh x hx
-    · exact AliasGroup.fresh_prefix hg ci hci
+    · exact hres.freshPrefix ci hci
+    · rcases List.mem_append.mp hci with hci | hci
+      · obtain ⟨x, hx, hk⟩ := hmemb ci hci
+        rw [hk]
+        exact hfresh x hx
+      · exact AliasGroup.fresh_prefix hg ci hci
   · -- the clause, with the same registry, at every record store and carried limit
     intro E hE lim hcE hlE
     have hCE := hcl E hE lim hcE hlE
-    have hLC : FamLoadCtx ⟨E, env, t, lim⟩ (new ++ as) B cb ms rb crb rs :=
+    have hLC : FamLoadCtx ⟨E, env, t, lim⟩ (pcs ++ (new ++ as)) B cb ms rb crb rs :=
       famLoadCtx_at hE.1 (Binding.blob_of_recordsFor hE hblobs) hB hRB
         (Binding.recordOf_of_recordsFor hE hcb)
         (fun i m hm => hEof E hE _ (Or.inl (Or.inr ⟨ms, i, m, hB.muts, hm, Or.inl rfl⟩)) _
@@ -694,29 +732,42 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
         (Binding.recordOf_of_recordsFor hE hcrb)
         (fun i m hm => hEof E hE _ (Or.inr (Or.inr ⟨rs, i, m, hRB.muts, hm, Or.inl rfl⟩)) _
           (hRB.members i m hm))
-        (modeledAt_of_blockRoute (hrouteE E hE)) hfree (hrouteE E hE) htrees hCE.prefixInv hg
-        hreads hd hst₂ hused hcanonM
+        (modeledAt_of_blockRoute (hrouteE E hE)) hfree (hrouteE E hE) htrees hCE.prefixInv hfresh
+        hg hreads hd hst₂ hused hcanonM bpf hres
     exact famStepKeeps_with hL hsz
       (famModeled_at hB hRB (fun x hx d hd => hE.2.1 x d (hheld x hx d hd))
         (modeledAt_of_blockRoute (hrouteE E hE)))
-      hCE hg hroots hreads hd
-      (recCompanionFacts_of_tys hB hRB (Binding.recordOf_of_recordsFor hE hcrb)
+      (famModeled_ctor_at hB hRB (fun x hx d hd => hE.2.1 x d (hheld x hx d hd))
+        (modeledAt_of_blockRoute (hrouteE E hE)))
+      hCE hg hroots hreads hd hres
+      (recCompanionFacts_of_tys htwf hE.1 hB hRB
+        (fun i m hm => hEof E hE _ (Or.inl (Or.inr ⟨ms, i, m, hB.muts, hm, Or.inl rfl⟩)) _
+          (hB.members i m hm))
+        (Binding.recordOf_of_recordsFor hE hcrb)
         (fun i m hm => hEof E hE _ (Or.inr (Or.inr ⟨rs, i, m, hRB.muts, hm, Or.inl rfl⟩)) _
           (hRB.members i m hm))
+        (modeledAt_of_blockRoute (hrouteE E hE))
         hreads (hTys ms rs hB.muts hRB.muts) hFacts hndNA hnameNA hN hR hSrec (hComp E hE))
       hLC.newLoads
   · -- no constant at an operation's key
     intro ci hci
     rcases List.mem_append.mp hci with hm | hm
-    · obtain ⟨x, hx, hn⟩ := hmemb ci hm
-      rw [hn]
-      exact Binding.not_mem_opNames_of_keyFree (hkey x hx)
-    · obtain ⟨n, d, hn⟩ := AliasGroup.name_aux hg ci hm
+    · obtain ⟨n, d, hn⟩ := hpcsAux ci hm
       have hn' : ci.name = .aux n d := hn
       rw [hn']
       intro hop
       have hb := RoleOps.isBaseKey_of_mem_opNames hop
       exact nomatch hb
+    · rcases List.mem_append.mp hm with hm | hm
+      · obtain ⟨x, hx, hn⟩ := hmemb ci hm
+        rw [hn]
+        exact Binding.not_mem_opNames_of_keyFree (hkey x hx)
+      · obtain ⟨n, d, hn⟩ := AliasGroup.name_aux hg ci hm
+        have hn' : ci.name = .aux n d := hn
+        rw [hn']
+        intro hop
+        have hb := RoleOps.isBaseKey_of_mem_opNames hop
+        exact nomatch hb
   · -- each address of the family, stored as its reading
     intro x hx
     obtain ⟨ci₀, hci₀, hk⟩ := hreads.2.2.1 x hx
@@ -728,7 +779,7 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
     refine ⟨c', ?_, ci₀, hname.trans hk', hr, hSA⟩
     rcases List.mem_append.mp hmem' with hmem' | hmem'
     · rcases List.mem_append.mp hmem' with hmem' | hmem'
-      · exact List.mem_append_left _ hmem'
+      · exact List.mem_append_right pcs (List.mem_append_left as hmem')
       · exfalso
         exact hnotalias (keyOf t x') (Decl.isBaseKey_keyOf t x') c' hmem'
           (hname.trans hk')
@@ -737,13 +788,18 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
       rw [hname, hk', hfresh x' hx'] at h1
       exact Bool.false_ne_true h1
   · -- the family record installed
-    exact familyInstalled_of_step htwf hRB hg hreads hd hst₂ hfresh
+    have hFI₂ := familyInstalled_of_step htwf hRB hg hreads hd hst₂ hfresh
+    intro x hx
+    obtain ⟨⟨cv, mI, rP, rls, hfR⟩, ⟨cvm, mv, hint, hfM⟩⟩ := hFI₂ x hx
+    exact ⟨⟨cv, mI, rP, rls, hfind₂ hfR⟩, ⟨cvm, mv, hint, hfind₂ hfM⟩⟩
   · -- each new constant at an address's key or at a derived key
     intro ci hci
     rcases List.mem_append.mp hci with hci | hci
-    · exact Or.inl (hmemb ci hci)
-    · obtain ⟨n, d, hn⟩ := AliasGroup.name_aux hg ci hci
-      exact Or.inr ⟨n, d, hn⟩
+    · exact Or.inr (hpcsAux ci hci)
+    · rcases List.mem_append.mp hci with hci | hci
+      · exact Or.inl (hmemb ci hci)
+      · obtain ⟨n, d, hn⟩ := AliasGroup.name_aux hg ci hci
+        exact Or.inr ⟨n, d, hn⟩
 
 /-- **The closure's step of a new block with its selected family record at every group of every
 binding run**, from the family check's facts there: the residual's `ClosureFamilySteps`

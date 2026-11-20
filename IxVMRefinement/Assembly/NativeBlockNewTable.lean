@@ -267,7 +267,7 @@ theorem BlockInstall.newProjTables (hI : BlockInstall c new B cb ind caps)
   subst hip
   have hbh := L1.hashedBlockAt_of_proj_ctor (c := appCtx c new) good ev hb rfl
   obtain ⟨hbB, hi0⟩ := hI.famNew hbh (val_lt_uint64 i) hfam
-  obtain ⟨v, mid, cs_assert, cs_load, ev_assert, ev_load, hcalls⟩ :=
+  obtain ⟨v, mid, cs_assert, cs_load, ev_assert, _, ev_load, hcalls⟩ :=
     Obs.«KernelModeled::proj_ctor».obs ev
   have hfound := hI.newGetCprjFound ev_load hfam (good.sub fun cl hcl => by simp [hcalls, hcl])
     (Bytes.repAddressRef_heapMono₂ Core.addrTy ev_assert.heap_extends hb)
@@ -281,7 +281,7 @@ theorem BlockInstall.newProjTablesAt (hI : BlockInstall c new B cb ind caps)
     (hT : BlockTable c new B ind) :
     ∀ (bp sap ptr nl ty np u blk : SourceValue F) (h h' h1 h2 : Heap F)
       (cs cs1 : List (Call F)) (b s : Bytes.Address) (i : F),
-      ObsFn Core.W "KernelModeled::block_is_modeled" [bp] h (.field 0) h' cs →
+      ObsFn Core.W "KernelModeled::proj_allowed_at" [bp, .field i] h (.field 1) h' cs →
       Core.Good (appCtx c new) cs → Bytes.RepAddressRef Core.addrTy h b bp →
       ObsFn Core.W "Ingress::get_ci" [sap] h1 ptr h2 cs1 → Core.Good (appCtx c new) cs1 →
       Bytes.RepAddressRef Core.addrTy h1 s sap →

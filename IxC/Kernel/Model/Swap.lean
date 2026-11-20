@@ -99,6 +99,23 @@ theorem denoteMeta_env_ext {acval : Key md → (LevelParam → Nat) → AnnotTer
     rw [denoteMeta, denoteMeta]
   | case10 d sn i e ihe =>
     rw [denoteMeta, denoteMeta, ihe, hproj sn i]
+    cases denoteMeta acval env₂ φ d e with
+    | none => rfl
+    | some ea =>
+      show (match env₂.findProj? sn i with
+          | some entry => projNodeAV? acval env₁ sn i entry ea
+          | none => AnnotTerm.projPair? i ea) =
+        (match env₂.findProj? sn i with
+          | some entry => projNodeAV? acval env₂ sn i entry ea
+          | none => AnnotTerm.projPair? i ea)
+      cases env₂.findProj? sn i with
+      | none => rfl
+      | some entry =>
+        have hsm : (env₁.find? (Ix.Kernel.projChainKey sn i)).isSome =
+            (env₂.find? (Ix.Kernel.projChainKey sn i)).isSome := by
+          have hm := congrArg Option.isSome (henvLev (Ix.Kernel.projChainKey sn i))
+          simpa using hm
+        simp only [projNodeAV?, hsm]
   | case11 d n hsup =>
     rw [denoteMeta, if_pos hsup, denoteMeta, if_pos (hnat ▸ hsup)]
   | case12 d n hsup =>
@@ -354,8 +371,8 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env md}
         ⟨TCa, by rw [← hde]; exact hTCa, hB⟩⟩
     · -- (C) the η law: the former's lookup is unchanged
       -- by the swap, and the reading is `hde`
-      intro cvT' capsT' hfT' us hus
-      obtain ⟨TVa, hTVa, hok, hlaw'⟩ := hetaL cvT' capsT' ((hsame _ _
+      intro hoff cvT' capsT' hfT' us hus
+      obtain ⟨TVa, hTVa, hok, hlaw'⟩ := hetaL hoff cvT' capsT' ((hsame _ _
         (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp hfT') us hus
       exact ⟨TVa, by rw [← hde]; exact hTVa, hok, hlaw'⟩
 

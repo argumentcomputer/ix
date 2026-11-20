@@ -133,7 +133,7 @@ theorem Red.proj_sound (hse : StoredEnv env) {d : Nat} {sn : Key md} {i : Nat} {
   have hCe : Ctx M φ σ e := hCx.of_subset fun l hl => by simpa [Expr.fvarLeaves] using hl
   have hge : Gr M φ σ e := hg
   -- the node reads the table
-  obtain ⟨P, hPe, rfl⟩ : ∃ P, Den M φ σ e P ∧ v = field (i + entry.off) P := by
+  obtain ⟨P, hPe, rfl⟩ : ∃ P, Den M φ σ e P ∧ v = projVal M.cval sn i entry P := by
     cases hv with
     | proj_table ht he => rw [hP] at ht; cases ht; exact ⟨_, he, rfl⟩
     | proj_fst ht _ => rw [hP] at ht; exact nomatch ht
@@ -213,7 +213,7 @@ theorem DefEq.structEtaTy_sound (hse : StoredEnv env) {d : Nat} {a b ta tb : Exp
   obtain ⟨-, -, hTst, hCst⟩ := hse.tables T 0 e0 he0
   obtain ⟨cvT', capsT', hci, hetaT⟩ := hTst _ hT
   obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj hci
-  obtain ⟨hec, hparams, -⟩ := hetaT heta
+  obtain ⟨hec, hparams, -, hoff0⟩ := hetaT heta
   rw [hctor] at hec
   obtain rfl := Option.some.inj hec
   obtain ⟨rfl, rfl, -, -⟩ := hCst cvc cnP cnF hc
@@ -272,7 +272,7 @@ theorem DefEq.structEtaTy_sound (hse : StoredEnv env) {d : Nat} {a b ta tb : Exp
   -- `b` is the constructor at the parameters and its own fields
   obtain ⟨-, hηlaw⟩ := hlaw us φ ρ₀ F K hus (DenotesO.to_denotes hF rfl)
     (DenotesO.to_denotes hK rfl)
-  have hxeta := hηlaw σT R ts x htslen hfit hxTb
+  have hxeta := hηlaw hoff0 σT R ts x htslen hfit hxTb
   -- `b`'s projections denote its fields, and are `a`'s fields
   have hmemP : ∀ z ∈ (List.range e0.numFields).map (fun j => Expr.proj T j b),
       ∃ j, z = Expr.proj T j b := fun z hz => by
@@ -282,7 +282,8 @@ theorem DefEq.structEtaTy_sound (hse : StoredEnv env) {d : Nat} {a b ta tb : Exp
       ((List.range e0.numFields).map fun j => field (j + e0.off) x) := by
     refine DenList.map_mem _ fun j hj => ?_
     obtain ⟨ej, hej⟩ := hslot j (List.mem_range.mp hj)
-    rw [← hoff j ej hej]
+    have hle : ej.off ≤ 1 := by rw [hoff j ej hej]; exact hoff0
+    rw [← hoff j ej hej, ← projVal_of_le_one (cval := M.cval) (T := T) (i := j) hle x]
     exact .proj_table hej hx
   have hfeq := hfs.2
     (fun z hz => by obtain ⟨j, rfl⟩ := hmemP z hz; exact Frame.proj_iff.2 hfb)

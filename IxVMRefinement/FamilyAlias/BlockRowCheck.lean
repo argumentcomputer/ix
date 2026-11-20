@@ -479,18 +479,46 @@ theorem famLoadCtx_at {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} (hdec : L1.E
         T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
         Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
         ∀ k < ct.params.toNat, Bd.args[k]? = some .atom)
-    {lim : Option Nat} {env : Ix.Kernel.Env .anon} {h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon}
-    {aliases blk new : List (ConstantInfo .anon)} (hinv : Decl.PrefixInv.{u} E t lim env)
+    {lim : Option Nat} {env : Ix.Kernel.Env .anon} {Reg : NativeFam .anon → Prop}
+    {E_bpf : Ixon.Env} {g : Core.KKey → Core.KKey} {tys : List Core.KExpr}
+    {h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon}
+    {aliases blk new pcs : List (ConstantInfo .anon)} (hinv : Decl.PrefixInv.{u} E t lim env)
+    (hfresh : ∀ x, FamAddr A c rb crb x → env.find? (keyOf t x) = none)
     (hg : AliasGroup env h aliases) (hreads : FamDeclReads t E₀ A c rb crb blk)
     (hd : DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩)
     (hst : ∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
       StoredAs c' ci)
     (hused : Decl.UsedRefsStored t ⟨new ++ env.consts⟩ c)
-    (hcanon : FamilyMembersCanon t E₀ A c ms rb crb rs ⟨new ++ env.consts⟩) :
-    FamLoadCtx ⟨E, env, t, lim⟩ new A c ms rb crb rs := by
+    (hcanon : FamilyMembersCanon t E₀ A c ms rb crb rs ⟨new ++ env.consts⟩)
+    (bpf : BlockProjFacts t E₀ E_bpf env A c ms blk tys g)
+    (hres : BlockProjInstallResult.{u} t env ⟨new ++ env.consts⟩ Reg A ms bpf.elig pcs) :
+    FamLoadCtx ⟨E, env, t, lim⟩ (pcs ++ new) A c ms rb crb rs := by
   obtain ⟨new', henv, hnewN, -⟩ := famStep_consts hd
   have h2 : new ++ env.consts = (new' ++ aliases) ++ env.consts := congrArg Ix.Kernel.Env.consts henv
   have hnew : new = new' ++ aliases := List.append_cancel_right h2
+  have hassoc : (⟨(pcs ++ new) ++ env.consts⟩ : Ix.Kernel.Env .anon) =
+      ⟨pcs ++ (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).consts⟩ := by
+    simp [List.append_assoc]
+  have hfind₂ : ∀ {k : Core.KKey} {ci : ConstantInfo .anon},
+      (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? k = some ci →
+      (appCtx ⟨E, env, t, lim⟩ (pcs ++ new)).env.find? k = some ci := by
+    intro k ci hf
+    show (⟨(pcs ++ new) ++ env.consts⟩ : Ix.Kernel.Env .anon).find? k = some ci
+    rw [hassoc]
+    exact hres.find₂ hf
+  have hcanonE : BlockCanonReadings t E A c ms bpf.indTy₀ bpf.ctorTy₀ :=
+    { check := bpf.canonE₀.check
+      record := hEA
+      muts := hB.muts
+      indcs := hB.indcs
+      ind := fun i ind hi hm => by
+        obtain ⟨hr, hl, hd'⟩ := bpf.canonE₀.ind i ind hi hm
+        exact ⟨ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
+          (blob' := fun y => E.blobs.get? y) hblob hr, hl, hd'⟩
+      ctor := fun i ind j ct hi hj hm hct => by
+        obtain ⟨hcj, hr, hl, hd'⟩ := bpf.canonE₀.ctor i ind j ct hi hj hm hct
+        exact ⟨hcj, ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
+          (blob' := fun y => E.blobs.get? y) hblob hr, hl, hd'⟩ }
   exact
     { wf := hinv.tableWf
       decoded := hdec
@@ -506,18 +534,59 @@ theorem famLoadCtx_at {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} (hdec : L1.E
       route := hroute
       newName := by
         intro cn hcn
-        rw [hnew] at hcn
-        rcases List.mem_append.mp hcn with hm | hm
-        · obtain ⟨ci, hci, hn⟩ := hnewN cn hm
-          obtain ⟨x, hx, hk, -⟩ := hreads.2.1 ci hci
-          exact Or.inl ⟨x, hx, hn.trans hk⟩
-        · exact Or.inr ⟨(AliasGroup.defn_of_mem hg cn hm).1, AliasGroup.name_aux hg cn hm⟩
+        rcases List.mem_append.mp hcn with hmp | hm
+        · obtain ⟨pos, -, -, ⟨tbl, heq, hnm, -⟩ | ⟨j, heq, hnm⟩⟩ := hres.kindAndName cn hmp
+          · exact Or.inr (Or.inr (Or.inr ⟨⟨tbl, heq⟩, Core.keyOf t (Core.iprjAddr A pos), .projTable, hnm⟩))
+          · exact Or.inr (Or.inr (Or.inl ⟨⟨_, heq⟩, Ix.Kernel.projTableName (Core.keyOf t (Core.iprjAddr A pos)), .projFn j, hnm⟩))
+        · rw [hnew] at hm
+          rcases List.mem_append.mp hm with hm' | hm'
+          · obtain ⟨ci, hci, hn⟩ := hnewN cn hm'
+            obtain ⟨x, hx, hk, -⟩ := hreads.2.1 ci hci
+            exact Or.inl ⟨x, hx, hn.trans hk⟩
+          · exact Or.inr (Or.inl ⟨(AliasGroup.defn_of_mem hg cn hm').1, AliasGroup.name_aux hg cn hm'⟩)
       found := by
         intro x hx
         obtain ⟨ci, hci, hk⟩ := hreads.2.2.1 x hx
         obtain ⟨c', hc', -⟩ := hst ci hci
         rw [hk] at hc'
-        exact ⟨c', hc'⟩
+        exact ⟨c', hfind₂ hc'⟩
+      projModeled := by
+        refine ⟨bpf.elig, pcs, bpf.hms_size, ?_, ?_, bpf.eligDet hcanonE⟩
+        · show BlockProjTableData t ⟨(pcs ++ new) ++ env.consts⟩ pcs A ms bpf.elig
+          rw [hassoc]; exact hres.tableData
+        · intro tbl hm
+          rcases List.mem_append.mp hm with hmp | hmn
+          · exact hmp
+          · exfalso
+            rw [hnew] at hmn
+            rcases List.mem_append.mp hmn with hm' | hm'
+            · obtain ⟨ci, hci, hn⟩ := hnewN _ hm'
+              obtain ⟨x, -, hk, -⟩ := hreads.2.1 ci hci
+              exact Decl.ne_projTableName_of_isBaseKey (Decl.isBaseKey_keyOf t x)
+                (hn.trans hk).symm
+            · obtain ⟨⟨_, _, _, he⟩, -⟩ := AliasGroup.defn_of_mem hg _ hm'
+              exact nomatch he
+      ctorAt := by
+        intro i ind hmi hbh j cv nP nF hf
+        rcases find?_append_cases (env := env) (pcs ++ new) hf with hm | hold
+        · exact hm
+        · exfalso
+          have hne : (appCtx ⟨E, env, t, lim⟩ (pcs ++ new)).stored.κ (Core.cprjAddr A i j) ≠
+              Core.unresolvedKey := by
+            intro he
+            rw [he, hinv.unresolved] at hold
+            exact nomatch hold
+          have hk : (appCtx ⟨E, env, t, lim⟩ (pcs ++ new)).stored.κ (Core.cprjAddr A i j) =
+              Core.keyOf t (Core.cprjAddr A i j) :=
+            (appCtx ⟨E, env, t, lim⟩ (pcs ++ new)).stored.key_eq hne
+          rw [hk] at hold
+          obtain ⟨ci, hci⟩ := hinv.ctor_ind_stored hbh hold
+          have hx : FamAddr A c rb crb (Core.iprjAddr A i) :=
+            Or.inl (Or.inr ⟨ms, i, .indc ind, hB.muts, hmi, Or.inl rfl⟩)
+          have hfr := hfresh _ hx
+          change env.find? (keyOf t (Core.iprjAddr A i)) = some ci at hci
+          rw [hfr] at hci
+          exact nomatch hci
       unitFree := fun ind hms => hfree ind (hB.muts.trans (by rw [hms]))
       ctorCounts := by
         intro ind ct hms hct ci hci
@@ -553,7 +622,7 @@ theorem famLoadCtx_at {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} (hdec : L1.E
         subst ct'
         obtain ⟨c'', hf'', hsa⟩ := hst ci₀ hci₀
         rw [hk] at hf''
-        have e5 : c'' = ci := Option.some.inj (hf''.symm.trans hci)
+        have e5 : c'' = ci := Option.some.inj ((hfind₂ hf'').symm.trans hci)
         subst c''
         rw [hci₀eq] at hsa
         exact storedAs_ctor hsa
@@ -561,7 +630,7 @@ theorem famLoadCtx_at {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} (hdec : L1.E
       ctorTrees := fun ind hms => htrees ind (hB.muts.trans (by rw [hms]))
       core := hinv.scopedCoreFacts
       check := Core.RoleClosure.check_ok_of_wf hinv.tableWf
-      used := hused
+      used := fun i hi x hx => let ⟨ci, hci⟩ := hused i hi x hx; ⟨ci, hfind₂ hci⟩
       indForm := by
         intro i ind hi hm
         have hx : FamAddr A c rb crb (Core.iprjAddr A i) :=
@@ -600,7 +669,7 @@ theorem famLoadCtx_at {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} (hdec : L1.E
         exact ⟨ty₀, cv.type, caps,
           ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
             (blob' := fun y => E.blobs.get? y) hblob hty,
-          hlbb, hdef, hcan, hf''.trans (congrArg some ecv)⟩
+          hlbb, hdef, hcan, (hfind₂ hf'').trans (congrArg some ecv)⟩
       ctorForm := by
         intro i ind j ct hi hj hm hct
         have hjlt : j < ind.ctors.size := (Array.getElem?_eq_some_iff.mp hct).1
@@ -648,9 +717,9 @@ theorem famLoadCtx_at {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} (hdec : L1.E
         exact ⟨hcj, ty₀, cv.type,
           ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
             (blob' := fun y => E.blobs.get? y) hblob hty,
-          hlbb, hdef, hcan, hf''.trans (congrArg some ecv)⟩
+          hlbb, hdef, hcan, (hfind₂ hf'').trans (congrArg some ecv)⟩
       rrecord := hErb
-      usedRecs := hcanon.usedRecs
+      usedRecs := fun i hi x hx => let ⟨ci, hci⟩ := hcanon.usedRecs i hi x hx; ⟨ci, hfind₂ hci⟩
       recForm := by
         intro p rc hpb hm
         obtain ⟨pidx, pblk⟩ := p
@@ -711,7 +780,7 @@ theorem famLoadCtx_at {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} (hdec : L1.E
           TwinFamily.lforall₂_mono (fun ru rl₀ hr => ⟨hr.1,
             ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
               (blob' := fun y => E.blobs.get? y) hblob hr.2⟩) hrules₁,
-          hML, hf''.trans (congrArg some ecv)⟩ }
+          hML, (hfind₂ hf'').trans (congrArg some ecv)⟩ }
 
 /-- **The load facts' context at the step's store** (`famLoadCtx_at` at a store that holds the
 run's records and blobs). -/
@@ -731,15 +800,20 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
         T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
         Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
         ∀ k < ct.params.toNat, Bd.args[k]? = some .atom)
-    {lim : Option Nat} {env : Ix.Kernel.Env .anon} {h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon}
-    {aliases blk new : List (ConstantInfo .anon)} (hinv : Decl.PrefixInv.{u} E t lim env)
+    {lim : Option Nat} {env : Ix.Kernel.Env .anon} {Reg : NativeFam .anon → Prop}
+    {E_bpf : Ixon.Env} {g : Core.KKey → Core.KKey} {tys : List Core.KExpr}
+    {h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon}
+    {aliases blk new pcs : List (ConstantInfo .anon)} (hinv : Decl.PrefixInv.{u} E t lim env)
+    (hfresh : ∀ x, FamAddr A c rb crb x → env.find? (keyOf t x) = none)
     (hg : AliasGroup env h aliases) (hreads : FamDeclReads t E₀ A c rb crb blk)
     (hd : DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩)
     (hst : ∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
       StoredAs c' ci)
     (hused : Decl.UsedRefsStored t ⟨new ++ env.consts⟩ c)
-    (hcanon : FamilyMembersCanon t E₀ A c ms rb crb rs ⟨new ++ env.consts⟩) :
-    FamLoadCtx ⟨E, env, t, lim⟩ new A c ms rb crb rs :=
+    (hcanon : FamilyMembersCanon t E₀ A c ms rb crb rs ⟨new ++ env.consts⟩)
+    (bpf : BlockProjFacts t E₀ E_bpf env A c ms blk tys g)
+    (hres : BlockProjInstallResult.{u} t env ⟨new ++ env.consts⟩ Reg A ms bpf.elig pcs) :
+    FamLoadCtx ⟨E, env, t, lim⟩ (pcs ++ new) A c ms rb crb rs :=
   have hdec : L1.EnvDecoded E := hctx.recordsFor.1
   have hrec : ∀ a d, recordOf E₀ a = some d → recordOf E a = some d := fun a d hd' =>
     (recordOf_eq_recordAt_of_decoded hdec a).trans (hctx.runRecord a d hd')
@@ -747,7 +821,7 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
     (fun i m hm => hrec _ _ (hB.members i m hm))
     (fun i ind j hm hj => hrec _ _ (hB.ctors i ind j hm hj))
     (hrec _ _ hrb.record) (fun i m hm => hrec _ _ (hrb.members i m hm)) hroute hfree hrouteT htrees
-    hinv hg hreads hd hst hused hcanon
+    hinv hfresh hg hreads hd hst hused hcanon bpf hres
 
 /-- **The new constants of the family step**: the members, under the names of the family's
 members, then the aliases, definitions; their names are distinct. -/
@@ -816,7 +890,7 @@ structure FamilyBlockCheck (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
       (tys : List IxVM.Refinement.Core.KExpr)
       (rhsss : List (List IxVM.Refinement.Core.KExpr)),
       FamDeclReads t E₀ A c rb crb blk ∧ FamilyCheckFacts env blk adv' tys rhsss ∧
-        SelectedForms t E₀ E A c rb crb env blk tys rhsss
+        SelectedForms t E₀ E A c rb crb env blk adv'.ren tys rhsss
   /-- Each reference the family record uses is covered at the limit (the table's environment
   stores it) or is one a step needs stored. Producer: `KernelModeled::check_family`'s
   `family_refs_ok`, whose `assert_inner_refs_safe` covers every reference the family record uses:
@@ -872,12 +946,18 @@ theorem familyBlockCircuitRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .a
       obtain ⟨x, -, hk, -⟩ := hreads.2.1 ci hci
       rw [hk]
       exact Decl.isBaseKey_iff_nonAuxKey.mp (Decl.isBaseKey_keyOf t x)
-    exact recCompanionFacts_of_tys hB hrb (hctx.toStepStore.held hrb.record)
-      (fun i m hm => hctx.toStepStore.held (hrb.members i m hm)) hreads
+    exact recCompanionFacts_of_tys hinv.tableWf hctx.toStepStore.decoded hB hrb
+      (fun i m hm => hctx.toStepStore.held (hB.members i m hm))
+      (hctx.toStepStore.held hrb.record)
+      (fun i m hm => hctx.toStepStore.held (hrb.members i m hm))
+      hroute hreads
       (hSel.1 ms rs hB.muts hrb.muts) hF hnd hname hI.nonrecs hI.recs
       (Decl.FamilyAlias.foldStoreInv_famStep hg hreads.2.2.2 hna hd hinv.store).store.rec_ctors
-      hSel.2
-  · intro env h aliases blk new adv' tys rhsss hinv hextT hrefs hg hreads hF hSel hd hst hI
+      hSel.2.1
+  · intro ms' hms' env Reg h aliases blk new adv' tys rhsss bpf pcs hinv hextT hrefs hfresh hg
+      hreads hF hSel hd hst hI hres
+    have ems : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hB.muts)
+    subst ems
     have ht : t.check = .ok () := Core.RoleClosure.check_ok_of_wf hinv.tableWf
     have husedR : Decl.UsedRefsStored t ⟨new ++ env.consts⟩ crb := by
       intro i hi x hx
@@ -899,15 +979,16 @@ theorem familyBlockCircuitRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .a
         · exact hold hs
         · exact famFound_of_step hreads hst x hf
         · exact absurd hneed hn
-    exact (famLoadCtx_of_step hctx hB hrb hroute hfree hrouteT htrees hinv hg hreads hd hst
+    exact (famLoadCtx_of_step hctx hB hrb hroute hfree hrouteT htrees hinv hfresh hg hreads hd hst
       (famUsedStored hctx.shape hinv.tableWf hc hinert hneed hextT hrefs
         (famFound_of_step hreads hst))
-      (familyMembersCanon_of_tys ht hB hrb hF hreads (hSel.1 ms rs hB.muts hrb.muts) hI.nonrecs
-        hI.recs husedR)).newLoads
+      (familyMembersCanon_of_tys ht hB hrb hF hreads (hSel.1 ms' rs hB.muts hrb.muts) hI.nonrecs
+        hI.recs husedR) bpf hres).newLoads
 
 /-- **The row `familyBlock` from the facts of the family check** (module docstring). -/
-theorem familyBlockRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hL : LinkLaws L) (hchk : FamilyBlockCheckRow.{u} L) : FamilyBlockRow.{u} L :=
+theorem familyBlockRow_of_check
+    (hL : LinkLaws FormerOpenTraceAt) (hchk : FamilyBlockCheckRow.{u} FormerOpenTraceAt) :
+    FamilyBlockRow.{u} FormerOpenTraceAt :=
   familyBlockRow_of_circuit hL (familyBlockCircuitRow_of_check hchk) familyClaimRow
 
 end IxVM.Refinement.Typing.FamilyAlias

@@ -85,6 +85,13 @@ theorem liftN_liftN_absorb : ∀ (e : AnnotTerm) {j k m : Nat}, k ≤ j →
   | snd e ihe =>
     intro j k m hkj hjk n
     simp only [liftN_snd, ihe hkj hjk n]
+  | chain g e ihg ihe =>
+    intro j k m hkj hjk n
+    simp only [liftN_chain, ihe hkj hjk n]
+    congr 1; funext r; exact ihg r hkj hjk n
+  | bgraph _ f ihf =>
+    intro j k m hkj hjk n
+    simp only [liftN_bgraph, ihf hkj hjk n]
 
 /-- Instantiating inside the range a lift just created absorbs one
 unit of it (`Term.inst_liftN_absorb`). -/
@@ -125,6 +132,13 @@ theorem inst_liftN_absorb : ∀ (e : AnnotTerm) {j k m : Nat}, j ≤ k →
   | snd e ihe =>
     intro j k m hjk hkj a
     simp only [liftN_snd, inst_snd, ihe hjk hkj a]
+  | chain g e ihg ihe =>
+    intro j k m hjk hkj a
+    simp only [liftN_chain, inst_chain, ihe hjk hkj a]
+    congr 1; funext r; exact ihg r hjk hkj a
+  | bgraph _ f ihf =>
+    intro j k m hjk hkj a
+    simp only [liftN_bgraph, inst_bgraph, ihf hjk hkj a]
 
 /-- Instantiating strictly above a lift moves under it, with the cut
 shrunk by the lift amount (`Term.inst_liftN_comm`). -/
@@ -178,6 +192,13 @@ theorem inst_liftN_comm : ∀ (e : AnnotTerm) {j k m : Nat}, j + m ≤ k →
   | snd e ihe =>
     intro j k m hjk a
     simp only [liftN_snd, inst_snd, ihe hjk a]
+  | chain g e ihg ihe =>
+    intro j k m hjk a
+    simp only [liftN_chain, inst_chain, ihe hjk a]
+    congr 1; funext r; exact ihg r hjk a
+  | bgraph _ f ihf =>
+    intro j k m hjk a
+    simp only [liftN_bgraph, inst_bgraph, ihf hjk a]
 
 /-- Two instantiations commute, with the cuts adjusted
 (`Term.inst_inst_comm`). -/
@@ -232,6 +253,13 @@ theorem inst_inst_comm : ∀ (e : AnnotTerm) {j k : Nat}, j ≤ k →
   | snd e ihe =>
     intro j k hjk a b
     simp only [inst_snd, ihe hjk]
+  | chain g e ihg ihe =>
+    intro j k hjk a b
+    simp only [inst_chain, ihe hjk]
+    congr 1; funext r; exact ihg r hjk a b
+  | bgraph _ f ihf =>
+    intro j k hjk a b
+    simp only [inst_bgraph, ihf hjk]
 
 /-- A reading closed in the lifting sense is fixed by any
 instantiation.  The `AnnotTerm` closedness currency is the lifting

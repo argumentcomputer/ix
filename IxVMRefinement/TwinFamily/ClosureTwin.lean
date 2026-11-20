@@ -61,10 +61,14 @@ via `foldClauseWith_twinStep`, `twinKeepsStoreAr`, `coreCompanions_twin`, `twinM
 and `twinRecs_recNotKAt_at`. -/
 private theorem overUnitStepTwin_of_parts {t : Ix.Kernel.RoleTable}
     {g : Nat} {R₁ E₀ Ec : Ixon.Env} {envT : Ix.Kernel.Env .anon}
-    {A rb : _root_.Address} {c crb : Ixon.Constant} {rs' : Array Ixon.MutConst}
+    {B A rb : _root_.Address} {cb c crb : Ixon.Constant} {rs' : Array Ixon.MutConst}
+    {ind₀ : Ixon.Inductive}
     (ht : t.check = .ok ())
     (hblobs : ∀ x b, E₀.blobs.get? x = some b → R₁.blobs.get? x = some b)
     (hcl₁ : UsedClosed R₁)
+    (hcb₁ : recordOf R₁ B = some cb)
+    (hP0₁ : recordOf R₁ (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind₀)))
+    (hrouteR₁ : Route.blockRoute R₁ B = some true)
     (hc₁ : recordOf R₁ A = some c)
     (hRc : RecordsFor R₁ Ec)
     (hA : FamRecRecord E₀ A c rs')
@@ -84,13 +88,16 @@ private theorem overUnitStepTwin_of_parts {t : Ix.Kernel.RoleTable}
         TwinDeclReads t E₀ A c (ds.map fun d => .recInfo d.cvW d.mI d.rP d.rulesW) ∧
         TwinPartsFacts t env rb crb (Decl.mkTwinRecParts env ds)
           (Decl.twinPeerRename (Decl.mkTwinRecParts env ds)) ∧
-        TwinLoadFacts t E₀ env A c (Decl.mkTwinRecParts env ds)) :
+        TwinLoadFacts t E₀ env A c (Decl.mkTwinRecParts env ds) ∧
+        ∀ w ∈ Decl.mkTwinRecParts env ds, ∀ (k : Nat) (rc : Ixon.Recursor),
+          rs'[k]? = some (.recr rc) → w.cvW'.name = keyOf t (memberAddr A k (.recr rc)) →
+          ∃ nf, recMotiveCarrierAt c rc 0 nf = some (Core.iprjAddr B 0)) :
     OverUnitStepTwin.{u} FormerOpenTraceAt t (· < g) R₁ envT E₀ A c rb crb := by
   intro env Reg hext hnd hcl hrefs hinst hstoredRb hfresh
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
   have hClc := hcl Ec hRc (some (Binding.valLimit g)) (Binding.carried_valLimit g)
     (Binding.limWithin_below t g)
-  obtain ⟨ds, hreads, hF, hLd⟩ :=
+  obtain ⟨ds, hreads, hF, hLd, hfkW⟩ :=
     hparts env hext hnd hClc.prefixInv hrefs hinst hstoredRb hfresh
   -- Assemble the parts list `ws` and declared block `blk` opaquely
   have hmodel : ∀ w ∈ Decl.mkTwinRecParts env ds, ∀ cvm mval hint,
@@ -106,7 +113,7 @@ private theorem overUnitStepTwin_of_parts {t : Ix.Kernel.RoleTable}
     simp only [List.map_map]
     rfl
   obtain ⟨ws, hws⟩ : ∃ ws, ws = Decl.mkTwinRecParts env ds := ⟨_, rfl⟩
-  rw [← hws] at hF hLd hmodel hblock
+  rw [← hws] at hF hLd hmodel hblock hfkW
   obtain ⟨blk, hb⟩ : ∃ blk, blk = ds.map (fun d => ConstantInfo.recInfo d.cvW d.mI d.rP d.rulesW) :=
     ⟨_, rfl⟩
   rw [← hb] at hreads hblock
@@ -285,7 +292,46 @@ private theorem overUnitStepTwin_of_parts {t : Ix.Kernel.RoleTable}
       · have hs := find_isSome_of_mem henv
         rw [hnone] at hs
         cases hs
-    exact foldClauseWith_twinStep linkLaws_formerOpenTrace hCE hrun_app hkeys hAr_app hcomp_app hrel_app
+    have hmodelBlk : ∀ ci ∈ blk,
+        HasModel ⟨(twinRecs ws ++ twinModels ws) ++ env.consts⟩ ci.name := by
+      intro ci hci
+      rw [hblock] at hci
+      obtain ⟨w, hw, rfl⟩ := List.mem_map.mp hci
+      obtain ⟨cvm, mval, hint, -, hmw⟩ := hmod w hw
+      have hmi : w.modelInfo? = some (.defnInfo ⟨Ix.Kernel.auxKey w.cvW.name .model,
+          cvm.levelParams, cvm.type⟩ mval hint) := by
+        unfold TwinRecPart.modelInfo?; rw [hmw]; rfl
+      have hmem : ConstantInfo.defnInfo ⟨Ix.Kernel.auxKey w.cvW.name .model, cvm.levelParams,
+          cvm.type⟩ mval hint ∈ twinRecs ws ++ twinModels ws :=
+        List.mem_append_right _ (List.mem_filterMap.mpr ⟨w, hw, hmi⟩)
+      have hf := hfind _ hmem
+      rw [henv₂_app] at hf
+      exact ⟨_, mval, hint, hf⟩
+    have hrouteE : Route.blockRoute E B = some true := by
+      have hcongr : Route.blockRoute E B = Route.blockRoute R₁ B := by
+        refine Binding.blockRoute_congr hcb₁ (Binding.recordOf_of_recordsFor hE hcb₁) (fun a ha => ?_)
+        have hRa : (recordOf R₁ a).isSome = true := by
+          rcases ha with ⟨i, hi, hx⟩ | ⟨ms', i, m, hms', hm, hx⟩
+          · exact (hcl₁.1 B cb hcb₁).2 i hi a hx
+          · rw [hx]
+            exact Option.isSome_iff_exists.mpr ⟨_, (hcl₁.2 B cb ms' hcb₁ hms' i m hm).1⟩
+        obtain ⟨ca, hca⟩ := Option.isSome_iff_exists.mp hRa
+        unfold Route.isIndAt
+        rw [Binding.recordOf_of_recordsFor hE hca, hca]
+      rw [hcongr]; exact hrouteR₁
+    have hnotNat : NewRecNotNative t E env ⟨(twinRecs ws ++ twinModels ws) ++ env.consts⟩ := by
+      have hnn : NewRecNotNative t E env ⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩ :=
+        twin_newRecNotNative ht hE.1 hA (Binding.recordOf_of_recordsFor hE hc₁)
+        (fun k m hm => Binding.recordOf_of_recordsFor hE (hcl₁.2 A c rs' hc₁ hA.muts k m hm).1)
+        (Binding.recordOf_of_recordsFor hE hP0₁)
+        (by
+          rintro ⟨bq, h₁, h₁', cs, bb, ev, hnc, hbd, hrep, rfl⟩
+          have hv := (Route.block_is_modeled_agrees hnc hbd hrep ev).value true hrouteE
+          exact Bool.false_ne_true (Route.bit_eq_one ((Route.bit_false.trans hv).trans Route.bit_true)))
+        hreads hblock hname_eq hfkW
+      simpa only [List.append_assoc] using hnn
+    exact foldClauseWith_twinStep linkLaws_formerOpenTrace hCE hrun_app hkeys hAr_app hcomp_app
+      hrel_app hmodelBlk hnotNat
   · -- 2. No constant under an operation key
     intro ci hci
     rcases List.mem_append.mp hci with hr | hm
@@ -584,7 +630,7 @@ theorem closureTwinSteps_at
     refine ⟨B, rb, crb, hcrb₁, Or.inl hfam₀, fun envT hextT hndT hfrT => ?_⟩
     have hkeyA : ∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x) :=
       fun x hx => Binding.plain_keyFree hC ht hg6 hextT hnA' hc₁ hx (hfrT x hx)
-    refine overUnitStepTwin_of_parts ht hblobs hC.closed hc₁ hRc hA hszA hkeyA ?_
+    refine overUnitStepTwin_of_parts ht hblobs hC.closed hcb₁ hP0₁ hrouteR₁ hc₁ hRc hA hszA hkeyA ?_
     intro env hext hnd hinv hrefs _ _ hfresh
     have husedA : ∀ i ∈ usedRefIdxs c, ∀ x, c.refs.toList[i]? = some x →
         (env.find? (keyOf t x)).isSome = true ∨ ConstAddrOf A c x := by
@@ -786,7 +832,7 @@ theorem closureTwinSteps_at
     refine ⟨B, rb, crb, hcrb₁, Or.inr ⟨hfamB, hrank⟩, fun envT hextT hndT hfrT => ?_⟩
     have hkeyA : ∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x) :=
       fun x hx => Binding.plain_keyFree hC ht hg6 hextT hnA' hc₁ hx (hfrT x hx)
-    refine overUnitStepTwin_of_parts ht hblobs hC.closed hc₁ hRc hA hszA hkeyA ?_
+    refine overUnitStepTwin_of_parts ht hblobs hC.closed hcb₁ hP0₁ hrouteR₁ hc₁ hRc hA hszA hkeyA ?_
     intro env hext hnd hinv hrefs _ hstoredRb hfresh
     have husedA : ∀ i ∈ usedRefIdxs c, ∀ x, c.refs.toList[i]? = some x →
         (env.find? (keyOf t x)).isSome = true ∨ ConstAddrOf A c x := by

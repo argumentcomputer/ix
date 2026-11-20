@@ -87,7 +87,11 @@ inductive AnnotTerm where
   | snd (e : AnnotTerm)
   /-- the canonical (irrelevant) proof of a derivable equation -/
   | prf
-  deriving Repr, Inhabited
+  /-- universe-indexed partial-graph chain application (`chainApp`) -/
+  | chain (g : Nat → AnnotTerm) (e : AnnotTerm)
+  /-- bounded graph of `x ↦ app f x` at universe `n` (`boundedGraph`) -/
+  | bgraph (n : Nat) (f : AnnotTerm)
+  deriving Inhabited
 
 namespace AnnotTerm
 
@@ -103,6 +107,8 @@ def erase : AnnotTerm → Term
   | .fst e => .fst (erase e)
   | .snd e => .snd (erase e)
   | .prf => .prf
+  | .chain g e => .chain (fun m => erase (g m)) (erase e)
+  | .bgraph m f => .bgraph m (erase f)
 
 @[simp] theorem erase_bvar (i : Nat) : erase (.bvar i) = .bvar i := rfl
 @[simp] theorem erase_sort (u : Nat) : erase (.sort u) = .sort u := rfl
@@ -121,6 +127,10 @@ def erase : AnnotTerm → Term
 @[simp] theorem erase_snd (e : AnnotTerm) :
     erase (.snd e) = .snd (erase e) := rfl
 @[simp] theorem erase_prf : erase .prf = .prf := rfl
+@[simp] theorem erase_chain (g : Nat → AnnotTerm) (e : AnnotTerm) :
+    erase (.chain g e) = .chain (fun m => erase (g m)) (erase e) := rfl
+@[simp] theorem erase_bgraph (m : Nat) (f : AnnotTerm) :
+    erase (.bgraph m f) = .bgraph m (erase f) := rfl
 
 /-- Weakening: insert `n` fresh binders at depth `k`.  Clause for
 clause `Term.liftN`; the numerals ride along untouched. -/
@@ -135,6 +145,8 @@ def liftN (n : Nat) : AnnotTerm → (k : Nat := 0) → AnnotTerm
   | .fst e, k => .fst (liftN n e k)
   | .snd e, k => .snd (liftN n e k)
   | .prf, _ => .prf
+  | .chain g e, k => .chain (fun m => liftN n (g m) k) (liftN n e k)
+  | .bgraph m f, k => .bgraph m (liftN n f k)
 
 /-- Weakening by one. -/
 abbrev lift (e : AnnotTerm) : AnnotTerm := liftN 1 e
@@ -153,6 +165,8 @@ def inst : AnnotTerm → AnnotTerm → (k : Nat := 0) → AnnotTerm
   | .fst e, a, k => .fst (inst e a k)
   | .snd e, a, k => .snd (inst e a k)
   | .prf, _, _ => .prf
+  | .chain g e, a, k => .chain (fun m => inst (g m) a k) (inst e a k)
+  | .bgraph m f, a, k => .bgraph m (inst f a k)
 
 /-- Iterated application (`Term.mkAppN`'s transpose). -/
 def mkAppN (f : AnnotTerm) : List AnnotTerm → AnnotTerm
@@ -229,6 +243,10 @@ theorem projPair?_cases₂ {i : Nat} {e x e' x' : AnnotTerm}
 @[simp] theorem liftN_snd (n k : Nat) (e : AnnotTerm) :
     liftN n (.snd e) k = .snd (liftN n e k) := rfl
 @[simp] theorem liftN_prf (n k : Nat) : liftN n .prf k = .prf := rfl
+@[simp] theorem liftN_chain (n k : Nat) (g : Nat → AnnotTerm) (e : AnnotTerm) :
+    liftN n (.chain g e) k = .chain (fun m => liftN n (g m) k) (liftN n e k) := rfl
+@[simp] theorem liftN_bgraph (n k m : Nat) (f : AnnotTerm) :
+    liftN n (.bgraph m f) k = .bgraph m (liftN n f k) := rfl
 
 @[simp] theorem inst_bvar (a : AnnotTerm) (k i : Nat) :
     inst (.bvar i) a k =
@@ -251,6 +269,10 @@ theorem projPair?_cases₂ {i : Nat} {e x e' x' : AnnotTerm}
 @[simp] theorem inst_snd (a : AnnotTerm) (k : Nat) (e : AnnotTerm) :
     inst (.snd e) a k = .snd (inst e a k) := rfl
 @[simp] theorem inst_prf (a : AnnotTerm) (k : Nat) : inst .prf a k = .prf := rfl
+@[simp] theorem inst_chain (a : AnnotTerm) (k : Nat) (g : Nat → AnnotTerm) (e : AnnotTerm) :
+    inst (.chain g e) a k = .chain (fun m => inst (g m) a k) (inst e a k) := rfl
+@[simp] theorem inst_bgraph (a : AnnotTerm) (k m : Nat) (f : AnnotTerm) :
+    inst (.bgraph m f) a k = .bgraph m (inst f a k) := rfl
 
 /-! ### The erase-commutations
 
@@ -282,6 +304,13 @@ rewriting with them, never by re-deriving a sort fact. -/
   | snd e ih => intro n k; simp only [liftN_snd, erase_snd, ih,
       Term.liftN_snd]
   | prf => intros; rfl
+  | chain g e ihg ihe =>
+    intro n k
+    simp only [liftN_chain, erase_chain, ihe, Term.liftN_chain]
+    congr 1; funext m; exact ihg m n k
+  | bgraph m f ihf =>
+    intro n k
+    simp only [liftN_bgraph, erase_bgraph, ihf, Term.liftN_bgraph]
 
 /-- `erase` commutes with instantiation. -/
 @[simp] theorem erase_inst : ∀ (e a : AnnotTerm) (k : Nat),
@@ -311,6 +340,13 @@ rewriting with them, never by re-deriving a sort fact. -/
   | snd e ih => intro a k; simp only [inst_snd, erase_snd, ih,
       Term.inst_snd]
   | prf => intros; rfl
+  | chain g e ihg ihe =>
+    intro a k
+    simp only [inst_chain, erase_chain, ihe, Term.inst_chain]
+    congr 1; funext m; exact ihg m a k
+  | bgraph m f ihf =>
+    intro a k
+    simp only [inst_bgraph, erase_bgraph, ihf, Term.inst_bgraph]
 
 /-- `erase` commutes with application spines. -/
 theorem erase_mkAppN : ∀ (as : List AnnotTerm) (f : AnnotTerm),
@@ -348,6 +384,8 @@ theorem erase_eq_const {ea : AnnotTerm} {c : BConst} {us : List Nat}
   | fst e => rw [AnnotTerm.erase_fst] at h; exact nomatch h
   | snd e => rw [AnnotTerm.erase_snd] at h; exact nomatch h
   | prf => rw [AnnotTerm.erase_prf] at h; exact nomatch h
+  | chain _ _ => rw [AnnotTerm.erase_chain] at h; exact nomatch h
+  | bgraph _ _ => rw [AnnotTerm.erase_bgraph] at h; exact nomatch h
 
 
 end Ix.Kernel.Semantics
