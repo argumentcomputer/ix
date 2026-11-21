@@ -327,7 +327,15 @@ def makeOne (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source) (fe 
     let vis := fe.visibleBelow
     let (fe', _, err) := step mode ev fe pos d
     match err with
-    | none => (fe', .pushes (fe'.env.consts.take (fe'.visibleBelow - vis)).reverse.toArray)
+    | none =>
+      if fe'.visibleBelow == vis && !d.names.isEmpty then
+        -- Inert compiler-trust declarations (`§7.10`) succeed without pushing into `fe`;
+        -- enter them leniently so downstream declarations naming them can still be annotated.
+        match lenient mode fe' d with
+        | some fe'' => (fe'', .pushes (fe''.env.consts.take (fe''.visibleBelow - vis)).reverse.toArray)
+        | none => (fe', .retry)
+      else
+        (fe', .pushes (fe'.env.consts.take (fe'.visibleBelow - vis)).reverse.toArray)
     | some _ => (fe', .retry)
 
 /-- **Phase A on workers**, each with an environment of its own built by `push`
@@ -601,11 +609,17 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
           fe := fe'
           lenientCount := lenientCount + 1
       continue
+    let vis := fe.visibleBelow
     let (fe', pos', err) := step mode ev fe pos d
     fe := fe'
     pos := pos'
     match err with
-    | none => ok := ok + 1
+    | none =>
+      if fe.visibleBelow == vis && !d.names.isEmpty then
+        if let some fe'' := lenient mode fe d then
+          fe := fe''
+          lenientCount := lenientCount + 1
+      ok := ok + 1
     | some e =>
       let why := (Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2
       failures := failures.push (declName d, why)

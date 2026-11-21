@@ -69,7 +69,9 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
 -- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 7042 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
+-- Inert compiler-trust handling (`§7.10`) and reflexive mimic fields (`h-nested-binder` / M8)
+-- add 63 compiled functions (7042 → 7105); externs, implemented_by, unsafe, csimp and rulings unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 7105 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`Init, `Std] rulings
 
@@ -85,7 +87,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`I
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
 -- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 7176 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
+-- Inert compiler-trust handling (`§7.10`) and reflexive mimic fields (`h-nested-binder` / M8)
+-- add 63 compiled functions (7176 → 7239); externs, implemented_by, unsafe, csimp and rulings unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 7239 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered] #[`Init, `Std] rulings
 
@@ -101,7 +105,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
 -- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 7042 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
+-- Inert compiler-trust handling (`§7.10`) and reflexive mimic fields (`h-nested-binder` / M8)
+-- add 63 compiled functions (7042 → 7105); externs, implemented_by, unsafe, csimp and rulings unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 7105 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[`Init, `Std] rulings
 
@@ -117,7 +123,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
 -- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 7176 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
+-- Inert compiler-trust handling (`§7.10`) and reflexive mimic fields (`h-nested-binder` / M8)
+-- add 63 compiled functions (7176 → 7239); externs, implemented_by, unsafe, csimp and rulings unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 7239 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
 
@@ -143,8 +151,11 @@ ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.
 -- csimp and all ruling counts are unchanged.
 -- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
 -- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
+-- Inert compiler-trust handling (`§7.10`) and reflexive mimic fields (`h-nested-binder` / M8)
+-- (`IxC/Kernel/Audit/Roots.lean`, `IxC/Kernel/Admission/Audit.lean`) add 66 compiled functions
+-- (7237 → 7303); externs, implemented_by, unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ix.RoleBinding.Artifact.checkConditional,
- Ix.RoleBinding.Artifact.checkTieredConditional]: 7237 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
+ Ix.RoleBinding.Artifact.checkTieredConditional]: 7303 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith
