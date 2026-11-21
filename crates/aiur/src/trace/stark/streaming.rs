@@ -241,8 +241,10 @@ impl<B: WitnessField> HostPrepared<B> {
   }
 }
 
+/// An immutable execution validated for one backend and reused by its supplies.
 pub struct PreparedRecord<'r, B: WitnessField> {
   record: &'r Execution<B>,
+  backend_identity: std::sync::Arc<()>,
   counts: Vec<Vec<u64>>,
   members: Vec<Vec<Member>>,
   rows: Vec<usize>,
@@ -283,6 +285,13 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     record: &Execution<B>,
   ) -> Result<Vec<usize>, String> {
     self.plan.validate_record_shape(record)?;
+    self.validated_record_rows(record)
+  }
+
+  fn validated_record_rows(
+    &self,
+    record: &Execution<B>,
+  ) -> Result<Vec<usize>, String> {
     let mut rows = self
       .members
       .iter()
@@ -712,7 +721,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       }
       members.push(spans);
     }
-    let rows = self.record_rows(record)?;
+    let rows = self.validated_record_rows(record)?;
     phases.lap("rows");
     let generated: Vec<bool> = (0..self.system.circuits.len())
       .map(|ci| self.generated_circuit(record, ci))
@@ -807,6 +816,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     }
     Ok(PreparedRecord {
       record,
+      backend_identity: std::sync::Arc::clone(&self.preparation_identity),
       counts,
       members: host.members.clone(),
       rows: host.rows.clone(),
@@ -911,7 +921,14 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     shard: &ShardLayout,
   ) -> Result<(PreparedWitness<Val>, ShardTime), String> {
     let start = Instant::now();
-    self.plan.validate_record_shape(prepared.record)?;
+    // `prepare_host_parts` validated the record against this backend's plan,
+    // and `prepared` borrows it immutably, so supplies need not revalidate.
+    if !std::sync::Arc::ptr_eq(
+      &prepared.backend_identity,
+      &self.preparation_identity,
+    ) {
+      return Err("prepared record belongs to another prover backend".into());
+    }
     if shard.circuits.len() != self.system.circuits.len() {
       return Err("wrong shard circuit count".into());
     }
