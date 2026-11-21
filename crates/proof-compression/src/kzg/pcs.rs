@@ -814,6 +814,7 @@ impl KzgPcs {
 
   /// Stream-commit each column of `matrix` over `domain`, returning only the
   /// normalized KZG commitments without keeping all column vectors resident.
+  #[cfg(not(feature = "cuda"))]
   pub(crate) fn commit_matrix_commitment_only(
     &self,
     domain: Radix2Coset,
@@ -864,6 +865,7 @@ impl KzgPcs {
   /// file in the exact [`KzgProverData::write_checkpoint`] format, avoiding a
   /// full transposed copy in memory and avoiding re-reading the written file
   /// to compute per-column digests.
+  #[cfg(not(feature = "cuda"))]
   pub(crate) fn commit_matrix_to_checkpoint(
     &self,
     domain: Radix2Coset,
@@ -1024,6 +1026,7 @@ impl KzgPcs {
 
   /// Open a persisted streamed checkpoint without re-reading its coefficient
   /// payload to recompute column digests.
+  #[cfg(not(feature = "cuda"))]
   pub(crate) fn open_streamed_checkpoint(
     path: &std::path::Path,
     domain: Radix2Coset,
@@ -1063,6 +1066,7 @@ impl KzgPcs {
 
   /// Stream-commit `matrix` one column at a time on CPU and spill non-constant
   /// coefficient columns to a temporary disk file in `spill_dir`.
+  #[cfg(not(feature = "cuda"))]
   pub(crate) fn commit_matrix_spilled(
     &self,
     domain: Radix2Coset,
@@ -1143,6 +1147,7 @@ impl KzgPcs {
 
   /// Interpolate, slice, commit and spill a quotient polynomial to a temporary
   /// disk file in `spill_dir`, dropping the resident coefficients immediately.
+  #[cfg(not(feature = "cuda"))]
   pub(crate) fn commit_quotient_spilled(
     &self,
     quotient_domain: Radix2Coset,
@@ -1328,6 +1333,7 @@ impl KzgPcs {
 }
 
 /// Column metadata recorded while streaming a matrix into a checkpoint file.
+#[cfg(not(feature = "cuda"))]
 pub(crate) enum StreamedColumn {
   Constant(Fr),
   Disk { offset: u64, digest: blake3::Hash },
