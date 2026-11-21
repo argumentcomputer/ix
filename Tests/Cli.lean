@@ -85,6 +85,9 @@ private def Tests.Cli.testCompileNoBuild : IO Unit := do
   finally
     IO.FS.removeDirAll dir
 
+/-- `ix compile` lowers valid annotated source and checks it with `ModeCheck`,
+while refusing ill-moded annotated definitions and annotated opaque constants
+outside the extern set without writing an artifact. -/
 private def Tests.Cli.testCompileContracts : IO Unit := do
   let ix ← IO.FS.realPath ".lake/build/bin/ix"
   let dir ← IO.FS.createTempDir
@@ -100,42 +103,27 @@ private def Tests.Cli.testCompileContracts : IO Unit := do
       cmd := ix.toString
       args := #["compile", source.toString, "--no-build", "--consts", name,
         "--out", output.toString] ++ flags }
-    for flags in [#[], #["--anon"]] do
-      let result ← compile "cliLocal" flags
-      unless result.exitCode == 0 do
-        throw <| IO.userError s!"annotated CLI compile failed: {result.stderr}\n{result.stdout}"
-      let env ← IO.ofExcept (Ixon.runGetExact Ixon.Env.getEnv (← IO.FS.readBinFile output))
-      let preserved := env.consts.toList.any fun (addr, _) =>
-        match env.getConst? addr with
-        | some { info := .defn d, .. } =>
-          match d.typ, d.value with
-          | .all input result _ _, .lam bodyInput _ _ =>
-            input == ⟨.linear, .localShared⟩ && result == .localShared && bodyInput == input
-          | _, _ => false
-        | _ => false
-      unless preserved do
-        throw <| IO.userError "CLI output lost its linear/local contract"
-      IO.FS.removeFile output
-    -- The registry is loaded from an imported .olean in this fresh process.
-    let imported ← compile "Tests.Ix.SourceContract.Imported.opaqueIdentity" #[]
-    unless imported.exitCode == 0 do
-      throw <| IO.userError s!"imported contract CLI compile failed: {imported.stderr}"
-    let env ← IO.ofExcept (Ixon.runGetExact Ixon.Env.getEnv (← IO.FS.readBinFile output))
-    unless env.consts.toList.any (fun (addr, _) =>
-        match env.getConst? addr with
-        | some { info := .defn d, .. } =>
-          match d.typ, d.value with
-          | .all input _ _ _, .lam bodyInput _ _ =>
-            d.kind == .opaq && input.uses == .linear && bodyInput == input
-          | _, _ => false
-        | _ => false) do
-      throw <| IO.userError "CLI output lost its imported opaque contract"
-    IO.FS.removeFile output
     for flags in [#[], #["--anon"], #["--allow-partial"]] do
-      let result ← compile "cliEscape" flags
-      if result.exitCode == 0 || (← output.pathExists) then
-        throw <| IO.userError "CLI emitted an artifact for an escaping local input"
-    IO.println "CLI: source/import contracts preserved; local escape rejected in every output mode"
+      let result ← compile "cliLocal" flags
+      unless result.exitCode == 0 && (← output.pathExists) do
+        throw <| IO.userError s!"CLI failed on valid annotated source cliLocal {flags}:\n{result.stderr}\n{result.stdout}"
+      let said := result.stderr ++ result.stdout
+      unless (said.splitOn "mode checking: accepted by IxC.Resource.check").length > 1 do
+        throw <| IO.userError s!"CLI did not report uncertified mode-check acceptance for cliLocal {flags}"
+      let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile output))
+      unless env.roleBinding.isSome do
+        throw <| IO.userError s!"CLI wrote no role binding for cliLocal {flags}"
+      IO.FS.removeFile output
+    for (name, expected) in [("cliEscape", "borrowEscape"),
+        ("Tests.Ix.SourceContract.Imported.opaqueIdentity", "not in the extern set")] do
+      for flags in [#[], #["--anon"], #["--allow-partial"]] do
+        let result ← compile name flags
+        if result.exitCode == 0 || (← output.pathExists) then
+          throw <| IO.userError s!"CLI emitted an artifact for rejected annotated source: {name} {flags}"
+        let said := result.stderr ++ result.stdout
+        unless (said.splitOn expected).length > 1 do
+          throw <| IO.userError s!"CLI refused {name} {flags} without '{expected}':\n{result.stderr}\n{result.stdout}"
+    IO.println "CLI: valid annotated source compiles and passes ModeCheck; escaping and opaque contracts are refused"
   finally
     IO.FS.removeDirAll dir
 

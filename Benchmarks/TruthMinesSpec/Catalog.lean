@@ -489,7 +489,7 @@ member of the mini infrastructure tier."),
 
   /- Corpus-growth additions (the TruthMines `to_add` wishlist). These remain
   unadmitted candidates — records without membership in `catalogSpec` — until
-  a successful probe on the unified toolchain admits them (Phase 4). -/
+  a successful probe on the unified toolchain admits them. -/
   gitPackage "Comparator" `Comparator
     "https://github.com/leanprover/Comparator"
     "777e7f56119efc0fac34003db4efe831e0b53723"

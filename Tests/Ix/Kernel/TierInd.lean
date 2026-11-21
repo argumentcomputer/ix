@@ -2,7 +2,7 @@ import LSpec
 import Ix.Meta
 import Ix.LeanIngress
 import IxC.Kernel.Tier.Answer
-import Ix.Resource.Typing
+import Ix.Typing
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.TierIndDefs
 
@@ -60,7 +60,7 @@ def isTierInductive : Group → Bool
 
 /-- **An inductive group's conversion for the tier**: `convertInductive`'s,
 unsafe or not (the safety flags are the only thing it reads that the tier
-does not), as the tier takes it (`Ix.Resource.tierIndOf`). A block without
+does not), as the tier takes it (`Ix.Typing.tierIndOf`). A block without
 recursors converts too. -/
 def convertTierInductive (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.ConstructorVal))
     (recs : Array Ix.RecursorVal) : Except _root_.Ix.Kernel.Reader.ReadError (TierInd .source) := do
@@ -68,7 +68,7 @@ def convertTierInductive (types : Array Ix.InductiveVal) (ctors : Array (Array I
     (ctors.map (·.map fun v => { v with isUnsafe := false }))
     (recs.map fun v => { v with isUnsafe := false })
   match c with
-  | .inductive rb => pure (_root_.Ix.Resource.tierIndOf rb)
+  | .inductive rb => pure (_root_.Ix.Typing.tierIndOf rb)
   | _ => throw (.malformed "tier: an inductive group converted to something else")
 
 /-- A block's group from its formers' and recursors' names. -/

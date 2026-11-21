@@ -121,9 +121,9 @@ where
     | .ref .. => (acc.1 + 1, acc.2 + 1)
     | .prj _ _ v => go (acc.1 + 1, acc.2 + 1) v
     | .app f a => go (go (acc.1 + 1, acc.2) f) a
-    | .lam _ t b => go (go (acc.1 + 1, acc.2) t) b
-    | .all _ _ t b => go (go (acc.1 + 1, acc.2) t) b
-    | .letE _ t v b => go (go (go (acc.1 + 1, acc.2) t) v) b
+    | .lam t b => go (go (acc.1 + 1, acc.2) t) b
+    | .all t b => go (go (acc.1 + 1, acc.2) t) b
+    | .letE _ _ t v b => go (go (go (acc.1 + 1, acc.2) t) v) b
     | _ => (acc.1 + 1, acc.2)
 
 /-- What the reader's per-reference work costs. The reader keys a reference at

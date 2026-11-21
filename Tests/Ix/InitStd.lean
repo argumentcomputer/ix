@@ -11,11 +11,12 @@ import Ix.FileDigest
   Blake3 digest and size must equal the reference in
   `Tests/Fixtures/initstd-reference.txt`. The kernel then checks the
   artifact (`ix check-lean --anon`), strict as every entry is by default: it
-  must admit every role the default role table binds and refuse none, pass
-  the reference's count of constants, and refuse exactly the reference's
-  constants (`Lean.trustCompiler`, the one native-evaluation axiom it declines,
-  and the four constants that depend on it), so the whole-artifact entry does
-  not run and the check exits 3. A change that moves the compiler's bytes, or
+  must admit every role the default role table binds but the five
+  compiler-trust roles, pass the reference's count of constants, and refuse
+  exactly the reference's constants (`Lean.trustCompiler`, the one
+  native-evaluation axiom it declines, and the four constants that depend on
+  it: the five compiler-trust roles), so the whole-artifact entry does not run
+  and the check exits 3. A change that moves the compiler's bytes, or
   the kernel's verdicts on the artifact, updates that file in the same commit.
   (`--allow-user-axioms`, the uncertified conditional path, is covered on
   small fixtures by `RoleArtifactConsumer`: a second pass here would add
@@ -36,6 +37,11 @@ def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
 def source : String := "Benchmarks/Compile/CompileInitStd.lean"
 
 def referencePath : System.FilePath := "Tests" / "Fixtures" / "initstd-reference.txt"
+
+/-- The default table's compiler-trust roles (`Lean.trustCompiler`, `Lean.reduceBool`,
+`Lean.reduceNat`, `Lean.ofReduceBool`, `Lean.ofReduceNat`): strict checking refuses each
+one's record, the axioms' as non-standard axioms and the others' through them. -/
+def compilerTrustRoles : Nat := 5
 
 /-- Where `initstd-reference` leaves a copy of its artifact, for the later
 entries of its partition that read Init+Std (`admission-hash-diff-initstd`).
@@ -209,8 +215,9 @@ def reference : IO UInt32 := do
       (s!"the artifact's Blake3 digest is the reference's ({expected.blake3})", digest == expected.blake3),
       (s!"the artifact's size is the reference's ({expected.bytes} bytes)", size == expected.bytes),
       ("ix check-lean --anon exits 3: strict checking refuses constants", exited),
-      (s!"the kernel admits all {roles} roles the default table binds and refuses none",
-        admitted == some (roles, 0)),
+      (s!"the kernel admits the {roles - compilerTrustRoles} roles the default table binds \
+        but the {compilerTrustRoles} compiler-trust roles, which it refuses",
+        admitted == some (roles - compilerTrustRoles, compilerTrustRoles)),
       (s!"the kernel passes {expected.leanPassed} of {expected.leanChecked} constants, \
         as the reference says", counts == some (expected.leanPassed, expected.leanChecked)),
       (s!"the kernel refuses exactly the reference's {expected.refused.size} constants", refusedOk),

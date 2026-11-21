@@ -104,7 +104,8 @@ def rust (env : Environment) (cs : List (Name × ConstantInfo)) (out : System.Fi
 /-- The Lean IO pipeline (`compile-lean`): `ok bytes`, or the refusal text. -/
 def lean (env : Environment) (cs : List (Name × ConstantInfo)) :
     IO (Except String ByteArray) := do
-  match ← Ix.CompileM.compileCertified env cs 1 with
+  -- without binder data, as the other two compiles write their records
+  match ← Ix.CompileM.compileCertified env cs 1 (binderData := false) with
   | .error e => return .error e
   | .ok o =>
     if let some (n, m) := o.failures.toMap.toList.head? then

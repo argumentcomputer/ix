@@ -12,19 +12,19 @@ structure ExprCase where
   bytes : ByteArray
 
 def lambdaTelescope : Expr :=
-  .lam .many (.sort 0) (.lam .many (.sort 0) (.lam .many (.sort 0) (.var 0)))
+  .lam (.sort 0) (.lam (.sort 0) (.lam (.sort 0) (.var 0)))
 
 def fixtures : List (String × Expr) := [
   ("app", .app (.app (.app (.var 3) (.var 2)) (.var 1)) (.var 0)),
   ("lam", lambdaTelescope),
-  ("lam_local_unique", .lam ⟨.linear, .localUnique⟩ (.sort 0) (.var 0)),
-  ("lam_affine_local", .lam ⟨.affine, .localShared⟩ (.sort 0) (.var 0)),
-  ("all", .all ⟨.linear, .localUnique⟩ .localUnique (.sort 0)
-    (.all .many .shared (.sort 0) (.var 0))),
-  ("ordinary_let", .letE ⟨true, .value, ⟨.erased, .unique⟩⟩ (.sort 0) (.nat 1) (.var 0)),
-  ("local_unique_let", .letE ⟨false, .value, ⟨.affine, .localUnique⟩⟩ (.sort 0) (.var 1) (.var 0)),
-  ("borrow", .letE (.borrow false .affine) (.sort 0) (.prj 2 1 (.var 1)) (.var 0)),
-  ("borrow_nondep", .letE (.borrow true .many) (.sort 0) (.var 1) (.var 0)),
+  ("all", .all (.sort 0) (.all (.sort 0) (.var 0))),
+  ("ordinary_let", .letE true (.value .many) (.sort 0) (.nat 1) (.var 0)),
+  ("unique_let", .letE false (.value .unique) (.sort 0) (.var 1) (.var 0)),
+  ("unique_borrowed_let_nondep", .letE true (.value .uniqueBorrowed) (.sort 0) (.var 1) (.var 0)),
+  ("once_let_nondep", .letE true (.value .once) (.sort 0) (.var 1) (.var 0)),
+  ("erased_let", .letE false (.value .erased) (.sort 0) (.var 1) (.var 0)),
+  ("borrow", .letE false .borrow (.sort 0) (.prj 2 1 (.var 1)) (.var 0)),
+  ("borrow_nondep", .letE true .borrow (.sort 0) (.var 1) (.var 0)),
   ("reference", .ref 0 #[]),
   ("recursion", .recur 2 #[0, 1]),
   -- The last and first value of every TagN rung, f = 4 (an expression
@@ -58,31 +58,21 @@ def fixtures : List (String × Expr) := [
   ("share_rung3", .share 1032)
 ]
 
-def valueContracts : Array ValueContract := #[.unique, .shared, .localUnique, .localShared]
-def usages : Array Uses := #[.erased, .linear, .affine, .many]
+/-- Every let mode, dependent and not: the header's TagN value is
+`nonDep + 2 · LetMode.toCode`, one byte below 8 and `A8` then `value - 8` from 8
+to 15. A binder's mode is in its record's section, not in the term. -/
+def letModes : Array LetMode :=
+  #[.value .many, .value .borrowed, .value .unique, .value .uniqueBorrowed, .value .once,
+    .value .onceBorrowed, .value .erased, .borrow]
 
-/-- Every representable combination. Resource validity is checked separately
-from these representation tests, including for borrow-let contracts. -/
 def modeCases : List ExprCase := Id.run do
   let mut cases := #[]
-  for v in [:4] do
-    for u in [:4] do
-      let contract : BinderContract := ⟨usages[u]!, valueContracts[v]!⟩
-      let code := (u + 4 * v).toUInt8
-      cases := cases.push ⟨s!"lambda-{u}-{v}", .lam contract (.sort 0) (.var 0),
-        ByteArray.mk #[0x81, code, 0x00, 0x10]⟩
-      for r in [:4] do
-        cases := cases.push ⟨s!"forall-{u}-{v}-{r}",
-          .all contract valueContracts[r]! (.sort 0) (.var 0),
-          ByteArray.mk #[0x91, code + 16 * r.toUInt8, 0x00, 0x10]⟩
-      for flags in [:4] do
-        let lc : LetContract := {
-          nonDep := flags % 2 == 1
-          kind := if flags / 2 == 1 then .borrowShared else .value
-          binder := contract
-        }
-        cases := cases.push ⟨s!"let-{u}-{v}-{flags}", .letE lc (.sort 0) (.var 1) (.var 0),
-          ByteArray.mk #[0xA0 + flags.toUInt8, code, 0x00, 0x11, 0x10]⟩
+  for m in letModes do
+    for nonDep in [false, true] do
+      let value := (if nonDep then 1 else 0) + 2 * m.toCode.toNat
+      let header : Array UInt8 := if value < 8 then #[0xA0 + value.toUInt8] else #[0xA8, (value - 8).toUInt8]
+      cases := cases.push ⟨s!"let-{m.toCode}-{nonDep}", .letE nonDep m (.sort 0) (.var 1) (.var 0),
+        ByteArray.mk (header ++ #[0x00, 0x11, 0x10])⟩
   return cases.toList
 
 /-- Load independent golden bytes once for the Lean, Rust FFI, and VM suites. -/
@@ -123,9 +113,8 @@ def malformedCases : Array (String × ByteArray) := #[
   ("empty-lambda", .mk #[0x80]),
   ("empty-forall", .mk #[0x90]),
   ("split-app-telescope", .mk #[0x71, 0x71, 0x10, 0x11, 0x12]),
-  ("split-lambda-telescope", .mk #[0x81, 0x07, 0x00, 0x81, 0x07, 0x00, 0x10]),
-  ("split-forall-telescope", .mk #[0x91, 0x17, 0x00, 0x91, 0x17, 0x00, 0x10]),
-  ("reserved-let-flags", .mk #[0xA4, 0x07, 0x00, 0x10, 0x10]),
+  ("split-lambda-telescope", .mk #[0x81, 0x00, 0x81, 0x00, 0x10]),
+  ("split-forall-telescope", .mk #[0x91, 0x00, 0x91, 0x00, 0x10]),
   -- TagN is bijective, so no integer has a second encoding (the v3
   -- non-minimal cases `18 00` and `20 80 00` are now `Var(8)` and
   -- `Ref(128, [])`, and `28 07` heads a 15-universe reference). The integer
@@ -137,18 +126,17 @@ def malformedCases : Array (String × ByteArray) := #[
   ("invalid-reference-index-code", .mk #[0x20, 0xC4]),
   ("overflowing-variable", .mk #[0x1F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
   ("oversized-reference-universe-count", .mk #[0x28, 0xFF, 0x00]),
-  ("truncated-lambda-telescope", .mk #[0x87, 0x07, 0x00, 0x10]),
+  ("truncated-lambda-telescope", .mk #[0x87, 0x00, 0x10]),
   ("truncated-app-telescope", .mk #[0x77, 0x10])
 ]
 
 /-- Shared raw rejection cases for the native Lean decoder and VM. -/
 def rejectedExprCases : Array (String × ByteArray) := Id.run do
   let mut cases := malformedCases
-  for code in [16:256] do
-    cases := cases.push (s!"lambda-reserved-binder-{code}", .mk #[0x81, code.toUInt8, 0x00, 0x10])
-    cases := cases.push (s!"let-reserved-binder-{code}", .mk #[0xA0, code.toUInt8, 0x00, 0x10, 0x10])
-  for code in [64:256] do
-    cases := cases.push (s!"forall-reserved-bits-{code}", .mk #[0x91, code.toUInt8, 0x00, 0x10])
+  -- A let header's TagN value is below 16; 16 to 263 take rung 2 (`A8`, then
+  -- `value - 8`).
+  for value in [16:264] do
+    cases := cases.push (s!"let-reserved-header-{value}", .mk #[0xA8, (value - 8).toUInt8, 0x00, 0x10, 0x10])
   return cases
 
 def runGolden (cases : List ExprCase) : IO Nat := do

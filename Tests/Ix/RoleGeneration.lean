@@ -2,7 +2,7 @@ module
 
 public import Ix.RoleBinding.Generate
 public import Ix.RoleBinding.Artifact
-public import Ix.Resource.Typing
+public import Ix.Typing
 public import LSpec
 
 namespace Tests.Ix.RoleGeneration
@@ -70,12 +70,12 @@ private def inputs (operation : Role) (complete : Bool := false) :
 The committed bytes remain test inputs, never a production fallback. -/
 public def completeArtifact (operation : Role) : Except String (Env × Ix.RoleBinding.Generated) := do
   let (env, certificates, required, _) ← inputs operation true
-  let generated ← Ix.RoleBinding.generate Ix.Resource.typingLimits env certificates required Ix.Kernel.preludeShape
-  return (← generated.emit Ix.Resource.typingLimits env, generated)
+  let generated ← Ix.RoleBinding.generate Ix.Typing.typingLimits env certificates required Ix.Kernel.preludeShape
+  return (← generated.emit Ix.Typing.typingLimits env, generated)
 
 private def checks (operation : Role) : Except String Unit := do
   let (env, certificates, required, proofAddresses) ← inputs operation
-  let limits := Ix.Resource.typingLimits
+  let limits := Ix.Typing.typingLimits
   let generated ← Ix.RoleBinding.generate limits env certificates required Ix.Kernel.preludeShape
   need "every requested role is actually published"
     (generated.publication.bound.size == required.length)
@@ -204,7 +204,7 @@ public def units (operation : Role) : LSpec.TestSeq :=
       | .error message => (false, 0, 0, some message)) .done
 
 private def artifactChecks (operation : Role) : Except String Unit := do
-  let limits := Ix.Resource.typingLimits
+  let limits := Ix.Typing.typingLimits
   let (partialEnv, partialCertificates, partialRoles, _) ← inputs operation
   let partialGenerated ← Ix.RoleBinding.generate limits partialEnv partialCertificates partialRoles Ix.Kernel.preludeShape
   let partialArtifact ← partialGenerated.emit limits partialEnv
