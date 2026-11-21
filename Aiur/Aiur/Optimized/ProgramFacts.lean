@@ -25,6 +25,7 @@ theorem compile_stages {program : Program F} {entries : List String} {config : C
     obtain ⟨⟨⟩, _, rest₂⟩ := except_bind_ok.mp rest₁
     obtain ⟨⟨⟩, tags, rest₃⟩ := except_bind_ok.mp rest₂
     obtain ⟨layouts, mapped, rest₄⟩ := except_bind_ok.mp rest₃
+    rw [parMapM_eq_mapM] at mapped
     obtain ⟨result, deduplicated, rest₅⟩ := except_bind_ok.mp rest₄
     obtain ⟨⟨⟩, formed, finished⟩ := except_bind_ok.mp rest₅
     split at finished
