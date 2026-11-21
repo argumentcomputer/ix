@@ -154,7 +154,7 @@ theorem compiled : compile program = .ok system := by
 theorem nested_derives : EncodedEntryDerives system "nested" (entryValues [8]) (outer 8).toValue := by
   have executed : Aiur.run program "nested" [8] 16 keyed = .ok ((outer 8).toValue, []) := by decide +kernel
   obtain ⟨_, entry, locals, expr, prepared, body⟩ := run_eq_ok_iff.mp executed
-  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec body))
+  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec_exact body))
     (fun _ => (0 : Rat)) (by simp)
   simpa only [Constant.toValue_mapAddress] using complete
 
@@ -182,7 +182,7 @@ example {rom : WireROM Rat} (valid : rom.Valid)
 example : EncodedEntryDerives system "lazy" (entryValues [0]) (.field 9) := by
   have executed : Aiur.run program "lazy" [0] 16 = .ok (.field 9, []) := by decide +kernel
   obtain ⟨_, entry, locals, expr, prepared, body⟩ := run_eq_ok_iff.mp executed
-  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec body))
+  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec_exact body))
     (fun _ => (0 : Rat)) (by simp)
   simpa [Value.mapAddress] using complete
 

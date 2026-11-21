@@ -1,4 +1,5 @@
 import Aiur
+import Aiur.Execution.Compile
 import Mathlib.Algebra.Field.Rat
 import Mathlib.Algebra.Field.ZMod
 
@@ -96,8 +97,8 @@ example : CircuitEvaluates sampleSystem ⟨[]⟩ "branch" [.field 0, .field 7] (
   have executed : run (sample.toField Rat) "branch" [.field 0, .field 7] 10 =
       .ok (.field 7, []) := by decide +kernel
   obtain ⟨_, _, locals, expr, prepared, body⟩ := run_eq_ok_iff.mp executed
-  have evaluated := EvalFn.intro prepared (evalExpr_spec body)
-  have romEval := evaluated.toROM (ROM.ofHeap_cells [] (fun _ => (0 : Rat)))
+  have evaluated := ExactEvalFn.intro prepared (evalExpr_spec_exact body)
+  have romEval := evaluated.toROM (ROM.ofHeap_cells [] (fun _ => (0 : Rat))) (by simp)
   have decodedEval : ROMEvalCall ((⟨[]⟩ : WireROM Rat).decode sample.enums)
       (sample.toField Rat) "branch" [.field 0, .field 7] (.field 7) := by
     simpa [ROM.ofHeap, WireROM.decode, Value.mapAddress] using romEval
@@ -175,6 +176,59 @@ example (accepted : Circuit.EncodedEntryDerives roundtripSystem "f" (entryValues
 #guard_msgs in
 #print axioms Aiur.exists_eval_iff
 
+-- N6b: Typed pointer equality (`ptr_eq`).
+def ptrEqSample : Program Nat := aiur% "
+fn same(x: Field) -> Field { let p = &x; ptr_eq(p, p) }
+fn distinct(x: Field) -> Field { let p = &x; let q = &(x + 1); ptr_eq(p, q) }
+fn fresh_pair(x: Field) -> Field { let p = &x; let q = &x; ptr_eq(p, q) }
+fn nested_same(x: Field) -> Field { let p = &&x; ptr_eq(p, p) }
+fn branched(flag: Field, x: Field) -> Field {
+  let p = &x;
+  let q = &(x + 1);
+  match flag { 0 => ptr_eq(p, p), _ => ptr_eq(p, q) }
+}
+"
+
+run_cmd do
+  let env ← Lean.getEnv
+  for source in [
+    "fn f(x: Field, y: Field) -> Field { ptr_eq(x, y) }",
+    "fn f(p: &Field, q: &(Field, Field)) -> Field { ptr_eq(p, q) }",
+    "fn f(p: &Field, q: &&Field) -> Field { ptr_eq(p, q) }"
+  ] do
+    match Frontend.ofString env source with
+    | .error _ => pure ()
+    | .ok _ => throwError "accepted ill-typed ptr_eq program: {source}"
+
+example : eval (ptrEqSample.toField Rat) "same" [7] = .ok 1 := by decide +kernel
+example : eval (ptrEqSample.toField Rat) "distinct" [7] = .ok 0 := by decide +kernel
+example : eval (ptrEqSample.toField Rat) "fresh_pair" [7] = .ok 0 := by decide +kernel
+example : eval (ptrEqSample.toField Rat) "nested_same" [7] = .ok 1 := by decide +kernel
+example : eval (ptrEqSample.toField Rat) "branched" [0, 7] = .ok 1 := by decide +kernel
+example : eval (ptrEqSample.toField Rat) "branched" [1, 7] = .ok 0 := by decide +kernel
+
+/-- info: 'Aiur.HeapValueEq.mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.HeapValueEq.mono
+/-- info: 'Aiur.HeapValueEq.load' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.HeapValueEq.load
+/-- info: 'Aiur.HeapValueEq.eq_of_pointerFree' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.HeapValueEq.eq_of_pointerFree
+/-- info: 'Aiur.Represents.heapValueEq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Represents.heapValueEq
+/-- info: 'Aiur.evalExpr_spec_exact' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.evalExpr_spec_exact
+/-- info: 'Aiur.evalExpr_ptrEq_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.evalExpr_ptrEq_iff
+/-- info: 'Aiur.EvalFn.toExact_of_ptrEqFree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.EvalFn.toExact_of_ptrEqFree
+
 private def checkEqual [DecidableEq α] [Repr α] (label : String) (actual expected : α) : IO Unit := do
   unless actual = expected do
     throw (IO.userError s!"{label}: expected {repr expected}, got {repr actual}")
@@ -183,9 +237,13 @@ def run : IO Unit := do
   for (label, actual, expected) in rationalTests do
     checkEqual label actual expected
   checkEqual "pointer program compiles" (Circuit.compile (sample.toField Rat)).isOk true
+  checkEqual "ptr_eq reference circuit compiles" (Circuit.compile (ptrEqSample.toField Rat)).isOk true
+  checkEqual "ptr_eq optimized circuit compiles" (Optimized.compile (ptrEqSample.toField Rat) {}).isOk true
+  checkEqual "ptr_eq bytecode compiles"
+    (Execution.compile (ptrEqSample.toField Rat) ["same", "distinct", "fresh_pair", "nested_same", "branched"]).isOk true
   checkEqual "field specialization" (eval (sample.toField (ZMod 7)) "tuple_memory" [6]) (.ok 6)
   checkEqual "shared circuit cell" (sharedSystem.check goodROM
     ⟨"f", [7], .tuple [.ptr .field 99, .ptr .field 99]⟩ [⟨"f", [7, 99, 99, 99, 99]⟩]) (.ok ())
-  IO.println s!"Passed {rationalTests.length + 3} pointer runtime checks."
+  IO.println s!"Passed {rationalTests.length + 6} pointer runtime checks."
 
 end AiurPointerTests

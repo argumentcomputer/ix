@@ -61,6 +61,7 @@ def putInstruction (encode : F → Nat) : Instruction F → PutM Unit
       bool assertion.runtimeCheck
   | .ret value => do u8 12; nats value
   | .fail message => do u8 13; str message
+  | .ptrEq dest left right => do u8 14; nat dest; nat left; nat right
 
 def putHint (encode : F → Nat) (entry : FlatHintEntry F) : PutM Unit := do
   str entry.channel

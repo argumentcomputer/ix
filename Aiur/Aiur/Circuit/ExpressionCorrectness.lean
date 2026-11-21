@@ -250,6 +250,55 @@ mutual
           exact ⟨.tuple [], by simpa only [WireValue.map_tuple, List.map_nil] using
             WireValue.decode_tuple checked tags (.nil : DecodesValues program.enums [] []),
             .assertEq xEval yEval (evalAssertEq_ok.mpr ⟨pointerFree, same, rfl⟩)⟩
+    | ptrEq left right =>
+        simp only [lowerExpr] at compiled
+        obtain ⟨leftWire, s₁, leftRun, rest⟩ := bind_ok.mp compiled
+        rcases leftWire with ⟨t₁, ws₁⟩
+        cases t₁ with
+        | field | tuple | enum => simp at rest
+        | ptr target₁ =>
+            cases ws₁ with
+            | nil => simp at rest
+            | cons a₁ ws₁ => cases ws₁ with
+              | cons => simp at rest
+              | nil =>
+                  dsimp only at rest
+                  obtain ⟨rightWire, s₂, rightRun, rest⟩ := bind_ok.mp rest
+                  rcases rightWire with ⟨t₂, ws₂⟩
+                  cases t₂ with
+                  | field | tuple | enum => simp at rest
+                  | ptr target₂ =>
+                      cases ws₂ with
+                      | nil => simp at rest
+                      | cons a₂ ws₂ => cases ws₂ with
+                        | cons => simp at rest
+                        | nil =>
+                            dsimp only at rest
+                            split at rest
+                            · simp [StateT.bind, bind, Except.bind] at rest
+                            · rename_i sameTy
+                              have hty : target₁ = target₂ := by simpa using sameTy
+                              subst hty
+                              obtain ⟨⟨⟩, s₃, unchanged, rest⟩ := bind_ok.mp rest
+                              obtain ⟨_, rfl⟩ := pure_ok.mp unchanged
+                              obtain ⟨test, s₄, indRun, finished⟩ := bind_ok.mp rest
+                              obtain ⟨rfl, rfl⟩ := pure_ok.mp finished
+                              obtain ⟨valid₂, indEq⟩ := equalIndicator_sound indRun valid
+                              obtain ⟨valid₁, rightEval⟩ := lowerExpr_sound checked tags callSound rightRun valid₂
+                              obtain ⟨previous, leftEval⟩ := lowerExpr_sound checked tags callSound leftRun valid₁
+                              refine ⟨previous, fun active environment decoded => ?_⟩
+                              obtain ⟨x, xDecode, xEval⟩ := leftEval active environment decoded
+                              obtain ⟨y, yDecode, yEval⟩ := rightEval active environment decoded
+                              have xEq := WireValue.ptr_decoded_eq xDecode
+                              have yEq := WireValue.ptr_decoded_eq yDecode
+                              subst x; subst y
+                              have hdiff : (ArithExpr.sub a₁ a₂).denote assignment = 0 ↔
+                                  a₁.denote assignment = a₂.denote assignment := by
+                                simp [Scalar.Circuit.ArithExpr.denote, sub_eq_zero]
+                              refine ⟨.field (if a₁.denote assignment = a₂.denote assignment then 1 else 0),
+                                ?_, .ptrEq xEval yEval⟩
+                              simpa only [WireValue.map_field, WireValue.decode_field,
+                                Option.some.injEq, Value.field.injEq, hdiff] using indEq
     | binary op left right =>
         simp only [lowerExpr] at compiled
         obtain ⟨leftWire, s₁, leftRun, rest⟩ := bind_ok.mp compiled

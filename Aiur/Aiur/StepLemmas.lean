@@ -134,6 +134,24 @@ theorem evalExpr_assertEq_iff {program : Program F} {locals : Environment F Nat}
   · intro h; cases h with | assertEq left right operation => exact ⟨_, _, _, left, right, operation⟩
   · rintro ⟨x, middle, y, left, right, operation⟩; exact .assertEq left right operation
 
+theorem evalExpr_ptrEq_iff {program : Program F} {locals : Environment F Nat}
+    {lhs rhs : Expr F}
+    {before : Heap F} {result : SourceValue F} {after : Heap F} :
+    EvalExpr program locals (.ptrEq lhs rhs) before result after ↔
+      ∃ target a₁ a₂ middle, ∃ equal : Bool,
+        EvalExpr program locals lhs before (.ptr target a₁) middle ∧
+        EvalExpr program locals rhs middle (.ptr target a₂) after ∧
+        a₁ < after.length ∧ a₂ < after.length ∧
+        (equal = true → HeapValueEq after (.ptr target a₁) (.ptr target a₂)) ∧
+        result = .field (if equal then 1 else 0) := by
+  constructor
+  · intro h
+    cases h with
+    | ptrEq left right h1 h2 sound =>
+        exact ⟨_, _, _, _, _, left, right, h1, h2, sound, rfl⟩
+  · rintro ⟨target, a₁, a₂, middle, equal, left, right, h1, h2, sound, rfl⟩
+    exact .ptrEq left right h1 h2 sound
+
 theorem evalExpr_binary_iff {program : Program F} {locals : Environment F Nat}
     {op : BinOp} {lhs rhs : Expr F}
     {before : Heap F} {result : SourceValue F} {after : Heap F} :

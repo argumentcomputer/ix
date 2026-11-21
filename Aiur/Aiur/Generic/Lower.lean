@@ -177,7 +177,7 @@ def coreCalls : Aiur.Expr α → List String
   | .tuple xs | .construct _ _ xs => xs.flatMap coreCalls
   | .call n xs => n :: xs.flatMap coreCalls
   | .project x _ | .store x | .load x | .hint _ x channel | .neg x => coreCalls x
-  | .letValue _ x b | .binary _ x b | .assertEq _ x b => coreCalls x ++ coreCalls b
+  | .letValue _ x b | .binary _ x b | .assertEq _ x b | .ptrEq x b => coreCalls x ++ coreCalls b
   | .matchValue x arms => coreCalls x ++ arms.flatMap (fun a => coreCalls a.2)
 termination_by e => sizeOf e
 decreasing_by
@@ -192,7 +192,7 @@ def coreExprNames : Aiur.Expr α → List String
   | .project x _ | .store x | .load x | .neg x => coreExprNames x
   | .hint t x channel => coreTypeNames t ++ coreExprNames x
   | .letValue p x b => corePatternNames p ++ coreExprNames x ++ coreExprNames b
-  | .binary _ x b | .assertEq _ x b => coreExprNames x ++ coreExprNames b
+  | .binary _ x b | .assertEq _ x b | .ptrEq x b => coreExprNames x ++ coreExprNames b
   | .matchValue x arms => coreExprNames x ++ arms.flatMap (fun a => corePatternNames a.1 ++ coreExprNames a.2)
 termination_by e => sizeOf e
 decreasing_by
@@ -220,5 +220,144 @@ def collectEnums (p : Program α) (rigid : List String) :
             result := result ++ [decl] ++ (← collectEnums p rigid fuel (key :: path)
               (decl.constructors.flatMap fun ctor => ctor.fields.flatMap coreTypeNames))
       return result.foldl (fun acc d => if acc.any (·.name == d.name) then acc else acc ++ [d]) []
+
+theorem StructLowering.record_ptrEqFree (types : List (String × Ty)) (head : RecordHead)
+    {items : List (Aiur.Expr α)} (hi : ∀ x ∈ items, x.ptrEqFree = true) :
+    (StructLowering.record types head items).ptrEqFree = true := by
+  simp only [StructLowering.record, Aiur.Expr.ptrEqFree, Bool.and_eq_true,
+    List.all_map, List.all_eq_true, Function.comp_def, id_eq]
+  refine ⟨hi, ?_⟩
+  intro x hx
+  unfold RecordHead.order at hx
+  obtain ⟨slot, _, rfl⟩ := List.mem_map.mp hx
+  cases slot with
+  | none => simp [Aiur.Expr.ptrEqFree]
+  | some i =>
+      simp only [Option.bind_some]
+      cases hget : ((List.range items.length).map fun i => Aiur.Expr.project (.var "$record") i)[i]? with
+      | none => simp [Aiur.Expr.ptrEqFree]
+      | some e =>
+          have hmem := List.mem_of_getElem? hget
+          obtain ⟨j, _, rfl⟩ := List.mem_map.mp hmem
+          simp [Aiur.Expr.ptrEqFree]
+
+theorem StructLowering.member_ptrEqFree {α : Type} (types : List (String × Ty)) {value : Aiur.Expr α}
+    (hv : value.ptrEqFree = true) (field : FieldRef) :
+    (StructLowering.member types value field).ptrEqFree = true := by
+  simp [StructLowering.member, Aiur.Expr.ptrEqFree, hv]
+
+theorem UpdateLowering.path_ptrEqFree {α : Type} (types : List (String × Ty)) (p : UpdatePath)
+    {input : Aiur.Expr α} (hi : input.ptrEqFree = true) :
+    (UpdateLowering.path types p input).ptrEqFree = true := by
+  induction p generalizing input with
+  | nil => simp [UpdateLowering.path, Aiur.Expr.ptrEqFree, hi]
+  | cons step rest ih =>
+      simp only [UpdateLowering.path, Aiur.Expr.ptrEqFree, hi, Bool.true_and]
+      have hcomp : ∀ i, (@UpdateLowering.component α types step i).ptrEqFree = true := by
+        intro i
+        unfold UpdateLowering.component
+        cases step.owner with
+        | none => simp [Aiur.Expr.ptrEqFree]
+        | some _ => exact StructLowering.member_ptrEqFree _ (by simp [Aiur.Expr.ptrEqFree]) _
+      have hitems : ∀ x ∈ (List.range step.width).map (fun i =>
+            if i == step.position then UpdateLowering.path types rest (@UpdateLowering.component α types step i)
+            else @UpdateLowering.component α types step i), x.ptrEqFree = true := by
+        intro x hx
+        obtain ⟨i, _, rfl⟩ := List.mem_map.mp hx
+        split
+        · exact ih (hcomp i)
+        · exact hcomp i
+      unfold UpdateLowering.product
+      cases step.owner with
+      | none => simpa [Aiur.Expr.ptrEqFree, List.all_map, List.all_eq_true] using hitems
+      | some _ => simpa [Aiur.Expr.ptrEqFree, List.all_map, List.all_eq_true] using hitems
+
+theorem UpdateLowering.sequence_ptrEqFree {α : Type} (types : List (String × Ty)) (ps : List UpdatePath) (idx : Nat) :
+    (@UpdateLowering.sequence α types ps idx).ptrEqFree = true := by
+  induction ps generalizing idx with
+  | nil => simp [UpdateLowering.sequence, Aiur.Expr.ptrEqFree]
+  | cons p rest ih =>
+      simp [UpdateLowering.sequence, Aiur.Expr.ptrEqFree,
+        UpdateLowering.path_ptrEqFree types p (input := (.var "$withCurrent" : Aiur.Expr α))
+          (by simp [Aiur.Expr.ptrEqFree]), ih]
+
+theorem UpdateLowering.expression_ptrEqFree {α : Type} (types : List (String × Ty)) (paths : List UpdatePath)
+    {operands : List (Aiur.Expr α)} (ho : ∀ x ∈ operands, x.ptrEqFree = true) :
+    (UpdateLowering.expression types paths operands).ptrEqFree = true := by
+  simp only [UpdateLowering.expression, Aiur.Expr.ptrEqFree, Bool.and_eq_true,
+    List.all_map, List.all_eq_true, Function.comp_def, id_eq, UpdateLowering.sequence_ptrEqFree,
+    and_true]
+  exact ho
+
+theorem BuiltinLowering.expression_ptrEqFree {α : Type} (op : Builtin) {operands : List (Aiur.Expr α)}
+    (ho : ∀ x ∈ operands, x.ptrEqFree = true) :
+    (BuiltinLowering.expression op operands).ptrEqFree = true := by
+  cases op <;> simpa [BuiltinLowering.expression, Aiur.Expr.ptrEqFree, List.all_map, List.all_eq_true] using ho
+
+theorem Expr.lower_ptrEqFree {α : Type} (env : List (String × Ty)) (e : Expr α) :
+    (e.lower env).ptrEqFree = true := by
+  match e with
+  | .literal _ | .var _ | .global _ _ | .control _ _ | .slice _ _ none =>
+      simp [Expr.lower, Aiur.Expr.ptrEqFree]
+  | .tuple xs | .array xs | .construct _ _ _ xs | .constructAs _ _ _ xs | .call _ _ xs =>
+      simp only [Expr.lower, Aiur.Expr.ptrEqFree, List.map_map, List.all_map, List.all_eq_true,
+        Function.comp_def, id_eq]
+      intro x hx
+      have _ := List.sizeOf_lt_of_mem hx
+      exact Expr.lower_ptrEqFree env x
+  | .repeat x n =>
+      simp only [Expr.lower, ArrayLowering.repeatValue, Aiur.Expr.ptrEqFree,
+        Expr.lower_ptrEqFree env x, Bool.true_and, List.all_map, List.all_eq_true,
+        Function.comp_def, id_eq]
+      intro y hy
+      rw [(List.mem_replicate.mp hy).2]
+      simp [Aiur.Expr.ptrEqFree]
+  | .index x i =>
+      simpa [Expr.lower, Aiur.Expr.ptrEqFree] using Expr.lower_ptrEqFree env x
+  | .slice x start (some stop) =>
+      simp only [Expr.lower, ArrayLowering.sliceValue, Aiur.Expr.ptrEqFree,
+        Expr.lower_ptrEqFree env x, Bool.true_and, List.map_map, List.all_map, List.all_eq_true,
+        Function.comp_def, id_eq]
+      intro _ _; trivial
+  | .builtin op xs =>
+      simp only [Expr.lower]
+      exact BuiltinLowering.expression_ptrEqFree op fun y hy => by
+        obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hy
+        have _ := List.sizeOf_lt_of_mem hx
+        exact Expr.lower_ptrEqFree env x
+  | .update paths xs =>
+      simp only [Expr.lower]
+      exact UpdateLowering.expression_ptrEqFree env paths fun y hy => by
+        obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hy
+        have _ := List.sizeOf_lt_of_mem hx
+        exact Expr.lower_ptrEqFree env x
+  | .record head xs =>
+      simp only [Expr.lower]
+      exact StructLowering.record_ptrEqFree env head fun y hy => by
+        obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hy
+        have _ := List.sizeOf_lt_of_mem hx
+        exact Expr.lower_ptrEqFree env x
+  | .member x field =>
+      simp only [Expr.lower]
+      exact StructLowering.member_ptrEqFree env (Expr.lower_ptrEqFree env x) field
+  | .project x _ | .store x | .load x | .hint _ x _ | .neg x =>
+      simpa [Expr.lower, Aiur.Expr.ptrEqFree] using Expr.lower_ptrEqFree env x
+  | .binary _ x y =>
+      simp [Expr.lower, Aiur.Expr.ptrEqFree, Expr.lower_ptrEqFree env x, Expr.lower_ptrEqFree env y]
+  | .letValue p x b =>
+      simp only [Expr.lower]
+      exact PatternLowering.lowerLet_ptrEqFree env p
+        (Expr.lower_ptrEqFree env x) (Expr.lower_ptrEqFree env b)
+  | .matchValue x arms =>
+      simp only [Expr.lower]
+      exact PatternLowering.lowerMatch_ptrEqFree env (Expr.lower_ptrEqFree env x) fun arm ha => by
+        obtain ⟨⟨pat, body⟩, hmem, rfl⟩ := List.mem_map.mp ha
+        have _ : sizeOf (pat, body) < sizeOf arms := List.sizeOf_lt_of_mem hmem
+        exact Expr.lower_ptrEqFree env body
+termination_by sizeOf e
+decreasing_by
+  all_goals simp_wf
+  all_goals try simp_all only [Prod.mk.sizeOf_spec]
+  all_goals omega
 
 end Aiur.Generic

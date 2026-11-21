@@ -111,6 +111,11 @@ pub enum Instruction<F = u64> {
   Fail {
     message: String,
   },
+  PtrEq {
+    dest: usize,
+    left: usize,
+    right: usize,
+  },
 }
 
 impl Instruction {
@@ -150,6 +155,9 @@ impl Instruction {
       },
       Self::Ret { value } => Instruction::Ret { value },
       Self::Fail { message } => Instruction::Fail { message },
+      Self::PtrEq { dest, left, right } => {
+        Instruction::PtrEq { dest, left, right }
+      },
     }
   }
 }
@@ -432,12 +440,13 @@ fn link_registers(
   let mut writes = vec![0usize; function.registers];
   writes[..input].fill(1);
   for op in &function.code {
-    use Instruction::{Binary, Call, Copy, Hint, Literal, Load, Neg, Store};
+    use Instruction::{Binary, Call, Copy, Hint, Literal, Load, Neg, PtrEq, Store};
     let dest: &[usize] = match op {
       Literal { dest, .. }
       | Neg { dest, .. }
       | Binary { dest, .. }
-      | Store { dest, .. } => std::slice::from_ref(dest),
+      | Store { dest, .. }
+      | PtrEq { dest, .. } => std::slice::from_ref(dest),
       Copy { dest, .. }
       | Call { dest, .. }
       | Load { dest, .. }
@@ -483,7 +492,8 @@ fn link_registers(
   };
   for op in &mut linked.code {
     use Instruction::{
-      AssertEq, Binary, Branch, Call, Copy, Guard, Hint, Load, Neg, Ret, Store,
+      AssertEq, Binary, Branch, Call, Copy, Guard, Hint, Load, Neg, PtrEq, Ret,
+      Store,
     };
     match op {
       Copy { dest, source } => {
@@ -491,7 +501,7 @@ fn link_registers(
         source.iter_mut().for_each(read);
       },
       Neg { source, .. } => read(source),
-      Binary { left, right, .. } => {
+      Binary { left, right, .. } | PtrEq { left, right, .. } => {
         read(left);
         read(right);
       },
@@ -959,7 +969,9 @@ fn constant_divisions<B: FieldBackend>(
         }
         writes.push((*dest, None));
       },
-      Instruction::Neg { dest, .. } | Instruction::Store { dest, .. } => {
+      Instruction::Neg { dest, .. }
+      | Instruction::Store { dest, .. }
+      | Instruction::PtrEq { dest, .. } => {
         writes.push((*dest, None))
       },
       Instruction::Call { dest, .. }
@@ -1010,7 +1022,7 @@ fn check_function(
     let mut successors = vec![pc + 1];
     use Instruction::{
       AssertEq, Binary, Branch, Call, Copy, Fail, Guard, Hint, Jump, Literal,
-      Load, Neg, Ret, Store,
+      Load, Neg, PtrEq, Ret, Store,
     };
     match instruction {
       Literal { dest, value } => {
@@ -1030,7 +1042,7 @@ fn check_function(
         reads.push(*source);
         writes.push(*dest);
       },
-      Binary { dest, left, right, .. } => {
+      Binary { dest, left, right, .. } | PtrEq { dest, left, right } => {
         reads.extend([left, right]);
         writes.push(*dest);
       },

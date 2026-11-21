@@ -422,6 +422,115 @@ mutual
             exact ⟨.tuple [], by simpa only [WireValue.map_tuple, List.map_nil] using
               WireValue.decode_tuple checked tags (.nil : DecodesValues program.enums [] []),
               .assertEq xEval yEval (evalAssertEq_ok.mpr ⟨pointerFree, same, rfl⟩)⟩
+      | ptrEq left right =>
+          obtain ⟨leftWire, s₁, leftRun, rightBind⟩ := bind_ok.mp valueRun
+          rcases leftWire with ⟨lt, lw⟩
+          cases lt with
+          | field | tuple | enum => simp at rightBind
+          | ptr t₁ =>
+              cases lw with
+              | nil => simp at rightBind
+              | cons a₁ lrest =>
+                  cases lrest with
+                  | cons => simp at rightBind
+                  | nil =>
+                      dsimp only at rightBind
+                      obtain ⟨rightWire, s₂, rightRun, typeCheck⟩ := bind_ok.mp rightBind
+                      rcases rightWire with ⟨rt, rw'⟩
+                      cases rt with
+                      | field | tuple | enum => simp at typeCheck
+                      | ptr t₂ =>
+                          cases rw' with
+                          | nil => simp at typeCheck
+                          | cons a₂ rrest =>
+                              cases rrest with
+                              | cons => simp at typeCheck
+                              | nil =>
+                                  dsimp only at typeCheck
+                                  split at typeCheck
+                                  · simp [StateT.bind, bind, Except.bind] at typeCheck
+                                  · rename_i sameType
+                                    have sameType : t₁ = t₂ := not_ne_iff.mp sameType
+                                    subst sameType
+                                    obtain ⟨⟨⟩, s₂', unchanged, choiceBind⟩ := bind_ok.mp typeCheck
+                                    obtain ⟨_, stateEq⟩ := pure_ok.mp unchanged
+                                    subst s₂'
+                                    obtain ⟨branches, s₃, choiceRun, branchBind⟩ := bind_ok.mp choiceBind
+                                    cases branches with
+                                    | nil => simp at branchBind
+                                    | cons eqBranch brest =>
+                                        cases brest with
+                                        | nil => simp at branchBind
+                                        | cons neqBranch brest₂ =>
+                                            cases brest₂ with
+                                            | cons => simp at branchBind
+                                            | nil =>
+                                                dsimp only at branchBind
+                                                obtain ⟨⟨⟩, s₄, eqRun, failBind⟩ := bind_ok.mp branchBind
+                                                obtain ⟨⟨⟩, s₅, failRun, scopeBind⟩ := bind_ok.mp failBind
+                                                obtain ⟨eqScope, s₆, scopeRun, pureRun⟩ := bind_ok.mp scopeBind
+                                                obtain ⟨eqScopeFound, stateEq⟩ := getScope_eq scopeRun
+                                                subst s₆
+                                                obtain ⟨rfl, rfl⟩ := pure_ok.mp pureRun
+                                                obtain ⟨leftExt, leftMeaning⟩ :=
+                                                  lower_sound checked tags romValid callSound callProvenance leftRun
+                                                obtain ⟨rightExt, rightMeaning⟩ :=
+                                                  lower_sound checked tags romValid callSound callProvenance rightRun
+                                                have beforeChoice := leftExt.trans rightExt
+                                                have choiceExt := choice_extends choiceRun
+                                                have eqExt := equation_extends eqRun
+                                                have failExt := failure_extends failRun
+                                                have afterChoiceExt := eqExt.trans failExt
+                                                refine ⟨((beforeChoice.trans choiceExt).trans eqExt).trans failExt,
+                                                  fun assignment root valid => ?_⟩
+                                                obtain ⟨s₄valid, failMeaning⟩ := failure_sound failRun valid
+                                                obtain ⟨s₃valid, eqEquation⟩ := equation_valid eqRun s₄valid
+                                                obtain ⟨s₂valid, cs⟩ := choice_sound choiceRun s₃valid (beforeChoice.active root)
+                                                obtain ⟨s₁valid, rightEval⟩ := rightMeaning assignment (leftExt.active root) s₂valid
+                                                obtain ⟨previous, leftEval⟩ := leftMeaning assignment root s₁valid
+                                                refine ⟨previous, fun active environment decoded trusted => ?_⟩
+                                                obtain ⟨x, xDecode, xEval⟩ := leftEval active environment decoded trusted
+                                                obtain ⟨y, yDecode, yEval⟩ := rightEval (leftExt.active active) environment decoded trusted
+                                                have hx := WireValue.ptr_decoded_eq xDecode
+                                                have hy := WireValue.ptr_decoded_eq yDecode
+                                                subst x; subst y
+                                                have eqBranchValid : eqBranch < s₃.scopes.size :=
+                                                  choice_child_bound choiceRun eqBranch (by simp)
+                                                have eqActEq : eqScope.activation = s₃.activation eqBranch := by
+                                                  have h5 := afterChoiceExt.activation_eq eqBranchValid
+                                                  simpa [State.activation, eqScopeFound] using h5
+                                                obtain ⟨⟨idx, hidx⟩, hi, _⟩ := cs.active (beforeChoice.active active)
+                                                match idx with
+                                                | 0 =>
+                                                  have hEqOne : (s₃.activation eqBranch).denote assignment = 1 := by
+                                                    simpa using hi
+                                                  have hDiffZero : a₁.denote assignment - a₂.denote assignment = 0 := by
+                                                    simpa [hEqOne, Scalar.Circuit.ArithExpr.denote] using eqEquation
+                                                  have hAddrEq : a₁.denote assignment = a₂.denote assignment :=
+                                                    sub_eq_zero.mp hDiffZero
+                                                  refine ⟨.field (if a₁.denote assignment = a₂.denote assignment then 1 else 0),
+                                                    ?_, .ptrEq xEval yEval⟩
+                                                  simp [WireValue.map_field, WireValue.decode_field, eqActEq, hEqOne, hAddrEq]
+                                                | 1 =>
+                                                  have hNeqOne : (s₃.activation neqBranch).denote assignment = 1 := by
+                                                    simpa using hi
+                                                  have hEqZero : (s₃.activation eqBranch).denote assignment = 0 := by
+                                                    have hexcl := cs.exclusive ⟨0, by simp⟩ ⟨1, by simp⟩ (by intro h; cases h)
+                                                    simp only [Fin.getElem_fin, List.getElem_cons_zero, List.getElem_cons_succ] at hexcl
+                                                    rw [hNeqOne, mul_one] at hexcl
+                                                    exact hexcl
+                                                  have hNotZero := failMeaning (by rw [eqExt.active hNeqOne])
+                                                  have hAddrNe : a₁.denote assignment ≠ a₂.denote assignment := by
+                                                    intro hEq
+                                                    apply hNotZero
+                                                    intro c hc
+                                                    simp only [List.mem_singleton] at hc
+                                                    subst hc
+                                                    simp [Scalar.Circuit.ArithExpr.denote, hEq]
+                                                  refine ⟨.field (if a₁.denote assignment = a₂.denote assignment then 1 else 0),
+                                                    ?_, .ptrEq xEval yEval⟩
+                                                  simp [WireValue.map_field, WireValue.decode_field, eqActEq, hEqZero, hAddrNe]
+                                                | _ + 2 => simp at hidx
       | binary op left right =>
           obtain ⟨leftWire, s₁, leftRun, leftBind⟩ := bind_ok.mp valueRun
           obtain ⟨leftPoly, s₂, leftField, rightBind⟩ := bind_ok.mp leftBind

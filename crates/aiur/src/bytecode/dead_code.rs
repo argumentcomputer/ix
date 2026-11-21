@@ -43,7 +43,7 @@ pub(super) fn eliminate<F>(function: &mut Function, inverses: &[Option<F>]) {
   for pc in (0..function.code.len()).rev() {
     use Instruction::{
       AssertEq, Binary, Branch, Call, Copy, Fail, Guard, Hint, Jump, Literal,
-      Load, Neg, Ret, Store,
+      Load, Neg, PtrEq, Ret, Store,
     };
     let mut live = match &function.code[pc] {
       Ret { .. } | Fail { .. } => empty.clone(),
@@ -134,6 +134,14 @@ pub(super) fn eliminate<F>(function: &mut Function, inverses: &[Option<F>]) {
       },
       Ret { value } => reads(&mut live, value),
       Jump { .. } | Fail { .. } => {},
+      PtrEq { dest, left, right } => {
+        if contains(&live, *dest) {
+          set(&mut live, *dest, false);
+          reads(&mut live, &[*left, *right]);
+        } else {
+          *op = nop();
+        }
+      },
     }
     before[pc] = live;
   }

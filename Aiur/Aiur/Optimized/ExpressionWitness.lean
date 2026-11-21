@@ -361,6 +361,143 @@ mutual
                 exact ⟨b, (leftExt.trans rightExt).trans finalExt, Circuit.Compiler.bounded_tuple.mpr (by simp), by
                   simpa only [WireValue.map_tuple, List.map_nil] using
                     WireValue.decode_tuple checked tags (.nil : DecodesValues program.enums [] [])⟩
+      | ptrEq left right =>
+          rw [exprEq] at evaluated valueRun
+          cases evaluated with
+          | @ptrEq _ _ _ addr₁ _ addr₂ leftEval rightEval =>
+              obtain ⟨leftWire, s₁, leftRun, rightBind⟩ := bind_ok.mp valueRun
+              rcases leftWire with ⟨lt, lw⟩
+              cases lt with
+              | field | tuple | enum => simp at rightBind
+              | ptr t₁ =>
+                  cases lw with
+                  | nil => simp at rightBind
+                  | cons a₁ lrest =>
+                      cases lrest with
+                      | cons => simp at rightBind
+                      | nil =>
+                          dsimp only at rightBind
+                          obtain ⟨rightWire, s₂, rightRun, typeCheck⟩ := bind_ok.mp rightBind
+                          rcases rightWire with ⟨rt, rw'⟩
+                          cases rt with
+                          | field | tuple | enum => simp at typeCheck
+                          | ptr t₂ =>
+                              cases rw' with
+                              | nil => simp at typeCheck
+                              | cons a₂ rrest =>
+                                  cases rrest with
+                                  | cons => simp at typeCheck
+                                  | nil =>
+                                      dsimp only at typeCheck
+                                      split at typeCheck
+                                      · simp [StateT.bind, bind, Except.bind] at typeCheck
+                                      · rename_i sameType
+                                        have sameType : t₁ = t₂ := not_ne_iff.mp sameType
+                                        subst sameType
+                                        obtain ⟨⟨⟩, s₂', unchanged, choiceBind⟩ := bind_ok.mp typeCheck
+                                        obtain ⟨_, stateEq⟩ := pure_ok.mp unchanged
+                                        subst s₂'
+                                        obtain ⟨branches, s₃, choiceRun, branchBind⟩ := bind_ok.mp choiceBind
+                                        cases branches with
+                                        | nil => simp at branchBind
+                                        | cons eqBranch brest =>
+                                            cases brest with
+                                            | nil => simp at branchBind
+                                            | cons neqBranch brest₂ =>
+                                                cases brest₂ with
+                                                | cons => simp at branchBind
+                                                | nil =>
+                                                    dsimp only at branchBind
+                                                    obtain ⟨⟨⟩, s₄, eqRun, failBind⟩ := bind_ok.mp branchBind
+                                                    obtain ⟨⟨⟩, s₅, failRun, scopeBind⟩ := bind_ok.mp failBind
+                                                    obtain ⟨eqScope, s₆, scopeRun, pureRun⟩ := bind_ok.mp scopeBind
+                                                    obtain ⟨eqScopeFound, stateEq⟩ := getScope_eq scopeRun
+                                                    subst s₆
+                                                    obtain ⟨rfl, rfl⟩ := pure_ok.mp pureRun
+                                                    obtain ⟨a, leftExt, leftBound, leftDecode⟩ := lower_complete checked tags typed callComplete
+                                                      leftRun stateLayout scopeLayout valid scopeValid localsBound
+                                                      (by simp [TargetBound]) active decoded (by simp [TargetDecodes]) leftEval
+                                                    obtain ⟨leftStructure, leftScoped⟩ := lower_scoped leftRun scopeLayout scopeValid
+                                                    obtain ⟨b, rightExt, rightBound, rightDecode⟩ := lower_complete checked tags typed callComplete
+                                                      rightRun leftExt.layout leftScoped leftExt.validAssignment
+                                                      (leftStructure.scopeValid scopeValid) (localsBound.mono leftExt.increase)
+                                                      (by simp [TargetBound]) ((leftExt.activation leftStructure scopeLayout scopeValid).trans active)
+                                                      (leftExt.environment localsBound decoded) (by simp [TargetDecodes]) rightEval
+                                                    obtain ⟨rightStructure, rightScoped⟩ := lower_scoped rightRun leftScoped
+                                                      (leftStructure.scopeValid scopeValid)
+                                                    have beforeChoice := leftStructure.trans rightStructure
+                                                    have untilChoice := leftExt.trans rightExt
+                                                    have hAddr₁A : a₁.denote a = addr₁ :=
+                                                      (Value.ptr.inj (WireValue.ptr_decoded_eq leftDecode)).2.symm
+                                                    have hA₁Bound : a₁.inBounds s₁.roles.size = true := leftBound a₁ (by simp)
+                                                    have hA₁Bound₂ : a₁.inBounds s₂.roles.size = true := rightExt.bound hA₁Bound
+                                                    have hA₂Bound₂ : a₂.inBounds s₂.roles.size = true := rightBound a₂ (by simp)
+                                                    have hAddr₁B : a₁.denote b = addr₁ :=
+                                                      (rightExt.polynomial hA₁Bound).trans hAddr₁A
+                                                    have hAddr₂B : a₂.denote b = addr₂ :=
+                                                      (Value.ptr.inj (WireValue.ptr_decoded_eq rightDecode)).2.symm
+                                                    let chosen : Fin 2 := if addr₁ = addr₂ then ⟨0, by decide⟩ else ⟨1, by decide⟩
+                                                    obtain ⟨c, choiceExt, choices⟩ := choice_complete choiceRun rightExt.layout rightScoped
+                                                      rightExt.validAssignment (some chosen) (by
+                                                        simpa using (Extension.activation untilChoice beforeChoice scopeLayout scopeValid).trans active)
+                                                    have choiceScoped := choice_scoped choiceRun rightScoped
+                                                    have eqBranchValid : eqBranch < s₃.scopes.size :=
+                                                      choice_child_bound choiceRun eqBranch (by simp)
+                                                    have neqBranchValid : neqBranch < s₃.scopes.size :=
+                                                      choice_child_bound choiceRun neqBranch (by simp)
+                                                    have hDiffBound₃ : (Polynomial.sub a₁ a₂).inBounds s₃.roles.size = true := by
+                                                      simpa only [Scalar.Circuit.ArithExpr.inBounds, Bool.and_eq_true, State.toReference] using
+                                                        And.intro (choiceExt.bound hA₁Bound₂) (choiceExt.bound hA₂Bound₂)
+                                                    have hDiffValC : (Polynomial.sub a₁ a₂).denote c = addr₁ - addr₂ := by
+                                                      change a₁.denote c - a₂.denote c = addr₁ - addr₂
+                                                      rw [choiceExt.polynomial hA₁Bound₂, choiceExt.polynomial hA₂Bound₂, hAddr₁B, hAddr₂B]
+                                                    have hEqActC : (s₃.activation eqBranch).denote c = if addr₁ = addr₂ then 1 else 0 := by
+                                                      have h0 := choices ⟨0, by simp⟩
+                                                      simp only [Fin.getElem_fin, List.getElem_cons_zero, choiceSelected,
+                                                        Option.map_some, Option.some.injEq, chosen] at h0
+                                                      by_cases hEq : addr₁ = addr₂ <;> simpa [hEq] using h0
+                                                    have hNeqActC : (s₃.activation neqBranch).denote c = if addr₁ = addr₂ then 0 else 1 := by
+                                                      have h1 := choices ⟨1, by simp⟩
+                                                      simp only [Fin.getElem_fin, List.getElem_cons_succ, List.getElem_cons_zero,
+                                                        choiceSelected, Option.map_some, Option.some.injEq, chosen] at h1
+                                                      by_cases hEq : addr₁ = addr₂ <;> simpa [hEq] using h1
+                                                    have eqExt := equation_complete eqRun choiceExt.layout choiceExt.validAssignment (by
+                                                      change ((s₃.activation eqBranch).inBounds s₃.roles.size &&
+                                                        (Polynomial.sub a₁ a₂).inBounds s₃.roles.size) = true
+                                                      rw [Bool.and_eq_true]
+                                                      exact ⟨choiceScoped.activation_bound eqBranch, hDiffBound₃⟩) (by
+                                                      change (s₃.activation eqBranch).denote c * (Polynomial.sub a₁ a₂).denote c = 0
+                                                      rw [hEqActC, hDiffValC]
+                                                      split_ifs with hEq
+                                                      · simp [hEq]
+                                                      · simp)
+                                                    have eqStruct := equation_grow eqRun
+                                                    have eqScoped := equation_scoped eqRun choiceScoped eqBranchValid
+                                                    obtain ⟨d, failExt⟩ := failure_complete failRun eqExt.layout eqExt.validAssignment
+                                                      (eqScoped.activation_bound neqBranch)
+                                                      (fun p hp => by simp only [List.mem_singleton] at hp; subst hp; exact eqExt.bound hDiffBound₃) (by
+                                                      rw [eqStruct.activation_eq neqBranchValid, hNeqActC]
+                                                      split_ifs with hEq
+                                                      · exact Or.inl rfl
+                                                      · right
+                                                        intro hAll
+                                                        have hz : (Polynomial.sub a₁ a₂).denote c = 0 := hAll (Polynomial.sub a₁ a₂) (by simp)
+                                                        rw [hDiffValC] at hz
+                                                        exact hEq (sub_eq_zero.mp hz))
+                                                    obtain ⟨failStruct, failScoped⟩ := failure_scoped failRun eqScoped
+                                                      (eqStruct.scopeValid neqBranchValid)
+                                                    have afterChoiceStruct := eqStruct.trans failStruct
+                                                    have eqActEq : eqScope.activation = s₃.activation eqBranch := by
+                                                      have h5 := afterChoiceStruct.activation_eq eqBranchValid
+                                                      simpa [State.activation, eqScopeFound] using h5
+                                                    have hEqScopeBound : eqScope.activation.inBounds s₅.roles.size = true :=
+                                                      failScoped.activations eqScope (by simpa using Array.mem_of_getElem? eqScopeFound)
+                                                    refine ⟨d, (((untilChoice.trans choiceExt).trans eqExt).trans failExt),
+                                                      Circuit.Compiler.bounded_field.mpr hEqScopeBound, ?_⟩
+                                                    simp only [WireValue.map_field, WireValue.decode_field, Option.some.injEq]
+                                                    congr 1
+                                                    rw [eqActEq, (eqExt.trans failExt).polynomial (choiceScoped.activation_bound eqBranch)]
+                                                    exact hEqActC
       | binary op left right =>
           rw [exprEq] at evaluated valueRun
           cases evaluated with

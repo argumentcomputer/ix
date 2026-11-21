@@ -619,11 +619,17 @@ fn put_instruction(w: &mut Writer, op: &Instruction) {
       w.u8(13);
       w.str(message);
     },
+    Instruction::PtrEq { dest, left, right } => {
+      w.u8(14);
+      w.usize(*dest);
+      w.usize(*left);
+      w.usize(*right);
+    },
   }
 }
 
 fn instruction(r: &mut Reader<'_>) -> Result<Instruction, String> {
-  Ok(match r.tag("instruction", 14)? {
+  Ok(match r.tag("instruction", 15)? {
     0 => Instruction::Literal { dest: r.usize()?, value: r.nat()? },
     1 => Instruction::Copy { dest: r.usizes()?, source: r.usizes()? },
     2 => Instruction::Neg { dest: r.usize()?, source: r.usize()? },
@@ -670,7 +676,12 @@ fn instruction(r: &mut Reader<'_>) -> Result<Instruction, String> {
       runtime_check: r.bool()?,
     },
     12 => Instruction::Ret { value: r.usizes()? },
-    _ => Instruction::Fail { message: r.string()? },
+    13 => Instruction::Fail { message: r.string()? },
+    _ => Instruction::PtrEq {
+      dest: r.usize()?,
+      left: r.usize()?,
+      right: r.usize()?,
+    },
   })
 }
 

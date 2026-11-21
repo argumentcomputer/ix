@@ -24,17 +24,18 @@ theorem System.SemanticModel.heap_complete (model : system.SemanticModel program
     (checked : typecheck program = .ok ()) (tags : program.enums.tagsValid F = true)
     (enums : system.enums = program.enums)
     {name : String} {args : List (SourceValue F)} {value : SourceValue F} {heap : Heap F}
-    (entry : checkEntry program name = .ok ()) (evaluated : EvalFn program name args [] value heap)
+    (entry : checkEntry program name = .ok ()) (evaluated : ExactEvalFn program name args [] value heap)
     (encode : Nat → F)
     (distinct : ∀ i j, i < heap.length → j < heap.length → encode i = encode j → i = j) :
     EncodedEntryDerives system name (entryValues args) (value.mapAddress encode) := by
-  have free := evaluated.public_pointerFree entry
-  have heapGood := (evaluated.heap_good checked (by simp [Heap.Good])
+  have baseEval := evaluated.toEvalFn
+  have free := baseEval.public_pointerFree entry
+  have heapGood := (baseEval.heap_good checked (by simp [Heap.Good])
     (fun arg member => Value.pointerNames_of_free (free arg member))).2
   let table := ROM.ofHeap heap encode
   have good := ROM.ofHeap_good heapGood encode
   have decodeTable := ROM.decode_encode model.declarations tags good
-  have body := evaluated.toROM (ROM.ofHeap_cells heap encode)
+  have body := evaluated.toROM (ROM.ofHeap_cells heap encode) distinct
   have encodedBody : ROMEvalCall ((table.encode program.enums).decode program.enums) program name
       (args.map (Value.mapAddress encode)) (value.mapAddress encode) := by
     rw [decodeTable]; exact body
@@ -43,7 +44,7 @@ theorem System.SemanticModel.heap_complete (model : system.SemanticModel program
   have argsFree : ∀ arg ∈ entryValues args, arg.type.pointerFree program.enums = true := by
     intro arg member
     obtain ⟨source, sourceMember, rfl⟩ := List.mem_map.mp member
-    simpa using (evaluated.publicArguments entry source sourceMember).1
+    simpa using (baseEval.publicArguments entry source sourceMember).1
   have tableValid := ROM.encode_valid model.declarations good (ROM.ofHeap_valid heap encode distinct)
   refine ⟨wires, output, ?_, ?_, ?_⟩
   · simpa only [enums] using arguments

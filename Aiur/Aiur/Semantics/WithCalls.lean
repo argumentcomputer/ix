@@ -38,6 +38,9 @@ mutual
     | assertEq (left : ROMEvalExprWith decls rom calls locals lhs x) (right : ROMEvalExprWith decls rom calls locals rhs y)
         (operation : evalAssertEq op x y = .ok result) :
         ROMEvalExprWith decls rom calls locals (.assertEq op lhs rhs) result
+    | ptrEq (left : ROMEvalExprWith decls rom calls locals lhs (.ptr target a₁))
+        (right : ROMEvalExprWith decls rom calls locals rhs (.ptr target a₂)) :
+        ROMEvalExprWith decls rom calls locals (.ptrEq lhs rhs) (.field (if a₁ = a₂ then 1 else 0))
     | binary (left : ROMEvalExprWith decls rom calls locals lhs x) (right : ROMEvalExprWith decls rom calls locals rhs y)
         (operation : evalBinOp op x y = .ok result) :
         ROMEvalExprWith decls rom calls locals (.binary op lhs rhs) result
@@ -73,6 +76,7 @@ theorem ROMEvalExprWith.toEvalExpr [Field F] [DecidableEq F] {program : Program 
   | hint _ typed ih => exact .hint ih typed
   | neg _ operation ih => exact .neg ih operation
   | assertEq _ _ operation leftIH rightIH => exact .assertEq leftIH rightIH operation
+  | ptrEq _ _ leftIH rightIH => exact .ptrEq leftIH rightIH
   | binary _ _ operation leftIH rightIH => exact .binary leftIH rightIH operation
   | call _ callee ih => exact .call ih callee
   | matchValue _ selected _ valueIH bodyIH => exact .matchValue valueIH selected bodyIH
@@ -97,6 +101,7 @@ theorem ROMEvalExpr.toEvalExprWith [Field F] [DecidableEq F] {program : Program 
   | hint _ typed ih => exact .hint ih typed
   | neg _ operation ih => exact .neg ih operation
   | assertEq _ _ operation leftIH rightIH => exact .assertEq leftIH rightIH operation
+  | ptrEq _ _ leftIH rightIH => exact .ptrEq leftIH rightIH
   | binary _ _ operation leftIH rightIH => exact .binary leftIH rightIH operation
   | call _ callee ih _ => exact .call ih callee
   | matchValue _ selected _ valueIH bodyIH => exact .matchValue valueIH selected bodyIH

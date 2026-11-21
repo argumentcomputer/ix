@@ -52,6 +52,17 @@ def prepare [DecidableEq F] (p : Aiur.Program F) (names entries : List String) :
 
 @[simp] theorem Prepared.enums [DecidableEq F] {p : Aiur.Program F} (q : Prepared p names entries) : q.program.enums = p.enums := rfl
 
+theorem Prepared.program_ptrEqFree [DecidableEq F] {p : Aiur.Program F}
+    (q : Prepared p names entries) (hp : p.ptrEqFree = true) : q.program.ptrEqFree = true := by
+  simp only [Prepared.program, Bodies.program, Aiur.Program.ptrEqFree, List.map_map,
+    List.all_map, List.all_eq_true, Function.comp_def, id_eq, List.mem_filter, Bodies.function]
+  intro f ⟨hf, _⟩
+  have hfbody : f.body.ptrEqFree = true := by
+    simp only [Aiur.Program.ptrEqFree, List.all_map, List.all_eq_true, Function.comp_def, id_eq] at hp
+    exact hp f hf
+  obtain ⟨hsrc, hsafe, _, _⟩ := q.valid.2.1 f hf
+  exact Tree.target_ptrEqFree hp (q.bodies.body f.name) hsafe (hsrc.symm ▸ hfbody)
+
 theorem Bodies.findFunction (b : Bodies F) (p : Aiur.Program F) (names : List String) (n : String) :
     (b.program p names).findFunction? n =
       if n ∈ names then none else (p.findFunction? n).map b.function := by

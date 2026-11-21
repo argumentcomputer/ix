@@ -10,6 +10,7 @@ mod depth;
 mod memo_cycle;
 mod parameters;
 mod partition;
+mod spec_parity;
 
 fn f() -> Json {
   json!({"kind":"field"})

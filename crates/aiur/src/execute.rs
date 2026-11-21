@@ -1025,6 +1025,16 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
               regs[*dest as usize] = field.mul(regs[*left as usize], inv);
               cursor = step.next;
             },
+            dispatch::Action::PtrEq { dest, left, right } => {
+              #[cfg(feature = "function-profile-ops")]
+              if let Some(profile) = profile.as_deref_mut() {
+                profile.operation("ptr_eq");
+              }
+              regs[*dest as usize] = field.from_u64(u64::from(
+                regs[*left as usize] == regs[*right as usize],
+              ));
+              cursor = step.next;
+            },
             dispatch::Action::BranchEq1 { reg, otherwise_cursor, value } => {
               #[cfg(feature = "function-profile-ops")]
               if let Some(profile) = profile.as_deref_mut() {
@@ -1356,7 +1366,7 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
           let instruction = &program.execution_functions[cur_fn].code[pc];
           use Instruction::{
             AssertEq, Binary, Branch, Call, Copy, Fail, Guard, Hint, Jump,
-            Literal, Load, Neg, Ret, Store,
+            Literal, Load, Neg, PtrEq, Ret, Store,
           };
           #[cfg(feature = "function-profile-ops")]
           if let Some(profile) = &mut self.profile {
@@ -1385,6 +1395,7 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
               AssertEq { .. } => "assert_eq",
               Ret { .. } => "return",
               Fail { .. } => "fail",
+              PtrEq { .. } => "ptr_eq",
             });
           }
           let frame = &mut self.frames[frame_idx];
@@ -1552,6 +1563,11 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
               continue;
             },
             Fail { message } => return Err(self.error(message)),
+            PtrEq { dest, left, right } => {
+              frame.registers[*dest] = field.from_u64(u64::from(
+                frame.registers[*left] == frame.registers[*right],
+              ));
+            },
           }
           self.frames[frame_idx].pc = pc + 1;
           self.frames[frame_idx].cursor = next;

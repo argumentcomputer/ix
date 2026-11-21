@@ -100,4 +100,43 @@ namespace Aiur.Generic
 def Source.compilerFunction? [DecidableEq F] (s : Source F) (name : String) : Option (Aiur.Function F) :=
   ((Instance.ofSymbol name).bind (Preparation.function s.program)).toOption
 
+theorem Preparation.function_ptrEqFree {p : Program F} {key : Instance} {fn : Aiur.Function F}
+    (h : Preparation.function p key = .ok fn) : fn.body.ptrEqFree = true := by
+  unfold Preparation.function at h
+  cases hfn : p.findFunction? key.name with
+  | none => simp [hfn] at h
+  | some f =>
+      simp only [hfn] at h
+      cases hargs : arguments f.typeParams key.types with
+      | error _ => simp [hargs, bind, Except.bind] at h
+      | ok types =>
+          simp only [hargs, bind, Except.bind] at h
+          cases hexpr : expression p (p.consts.length + 1) types f.body with
+          | error _ => simp [hexpr] at h
+          | ok prep =>
+              simp only [hexpr] at h
+              cases hctrl : ControlLower.function prep (f.params.map Prod.fst) with
+              | error _ => simp [hctrl] at h
+              | ok body =>
+                  simp only [hctrl] at h
+                  split_ifs at h
+                  simp only [pure, Except.pure, Except.ok.injEq] at h
+                  subst h
+                  exact Expr.lower_ptrEqFree [] body
+
+theorem Source.compilerFunction?_ptrEqFree [DecidableEq F] {s : Source F} {name : String}
+    {fn : Aiur.Function F} (h : s.compilerFunction? name = some fn) :
+    fn.body.ptrEqFree = true := by
+  unfold Source.compilerFunction? at h
+  cases hsym : Instance.ofSymbol name with
+  | error _ => simp [hsym, Except.bind, Except.toOption] at h
+  | ok key =>
+      simp only [hsym, Except.bind] at h
+      cases hfn : Preparation.function s.program key with
+      | error _ => simp [hfn, Except.toOption] at h
+      | ok f =>
+          simp only [hfn, Except.toOption, Option.some.injEq] at h
+          subst h
+          exact Preparation.function_ptrEqFree hfn
+
 end Aiur.Generic

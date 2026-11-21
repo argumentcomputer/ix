@@ -49,6 +49,10 @@ def evalExprWith [Field F] [DecidableEq F] (world : World F) (hints : HintProvid
       | .neg value => liftM (evalNeg (← evalExprWith world hints locals fuel value))
       | .assertEq op left right =>
           liftM (evalAssertEq op (← evalExprWith world hints locals fuel left) (← evalExprWith world hints locals fuel right))
+      | .ptrEq left right =>
+          let lv ← evalExprWith world hints locals fuel left
+          let rv ← evalExprWith world hints locals fuel right
+          liftM (evalPtrEq (← get) lv rv)
       | .binary op left right =>
           liftM (evalBinOp op (← evalExprWith world hints locals fuel left) (← evalExprWith world hints locals fuel right))
       | .call name args =>
@@ -94,6 +98,13 @@ mutual
         (right : EvalExpr world locals rhs middle y after)
         (operation : evalAssertEq op x y = .ok result) :
         EvalExpr world locals (.assertEq op lhs rhs) before result after
+    | ptrEq {target : Aiur.Ty} {a₁ a₂ : Nat} {equal : Bool}
+        (left : EvalExpr world locals lhs before (.ptr target a₁) middle)
+        (right : EvalExpr world locals rhs middle (.ptr target a₂) after)
+        (inBounds₁ : a₁ < after.length)
+        (inBounds₂ : a₂ < after.length)
+        (sound : equal = true → HeapValueEq after (.ptr target a₁) (.ptr target a₂)) :
+        EvalExpr world locals (.ptrEq lhs rhs) before (.field (if equal then 1 else 0)) after
     | binary (left : EvalExpr world locals lhs before x middle)
         (right : EvalExpr world locals rhs middle y after)
         (operation : evalBinOp op x y = .ok result) :
@@ -214,6 +225,20 @@ theorem evalExpr_spec [Field F] [DecidableEq F]
           obtain ⟨rightValue, last, rightRun, operation⟩ := Evaluation.bind_ok.mp rest
           obtain ⟨operationOK, rfl⟩ := Evaluation.lift_ok.mp operation
           exact .assertEq (ih leftRun) (ih rightRun) operationOK
+      | ptrEq left right =>
+          simp only [evalExprWith] at executed
+          obtain ⟨leftValue, middle, leftRun, rest⟩ := Evaluation.bind_ok.mp executed
+          obtain ⟨rightValue, last, rightRun, operation⟩ := Evaluation.bind_ok.mp rest
+          have lifted : (liftM (evalPtrEq last leftValue rightValue) : Evaluation F _) last = .ok (result, after) := by
+            simpa [bind, StateT.bind, Evaluation.get_apply, Except.bind] using operation
+          obtain ⟨opOK, rfl⟩ := Evaluation.lift_ok.mp lifted
+          obtain ⟨target, a₁, a₂, rfl, rfl, h1, h2, rfl⟩ := evalPtrEq_ok.mp opOK
+          have hsound : decide (a₁ = a₂) = true → HeapValueEq last (.ptr target a₁) (.ptr target a₂) := by
+            intro h; have heq := of_decide_eq_true h; subst heq; exact .refl _
+          have hres : (if a₁ = a₂ then (1 : F) else 0) = (if decide (a₁ = a₂) then 1 else 0) := by
+            by_cases h : a₁ = a₂ <;> simp [h]
+          rw [hres]
+          exact .ptrEq (ih leftRun) (ih rightRun) h1 h2 hsound
       | binary op left right =>
           simp only [evalExprWith] at executed
           obtain ⟨leftValue, middle, leftRun, rest⟩ := Evaluation.bind_ok.mp executed

@@ -136,7 +136,7 @@ example : ¬ MemoEntryDerives system badEntry := fun accepted => badEntry_not_pu
 theorem plain_derives : EncodedEntryDerives system "read_plain" (entryValues [plain]) (.field 7) := by
   have executed : Aiur.run program "read_plain" [plain] 16 = .ok (.field 7, []) := by decide +kernel
   obtain ⟨_, entry, locals, expr, prepared, body⟩ := run_eq_ok_iff.mp executed
-  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec body))
+  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec_exact body))
     (fun _ => (0 : Rat)) (by simp)
   simpa [Value.mapAddress] using complete
 

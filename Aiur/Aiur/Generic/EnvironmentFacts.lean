@@ -79,6 +79,10 @@ theorem EvalExpr.changeLocals (ev : EvalExpr world calls locals expr before valu
       intro other agree
       exact .assertEq (ih1 other (agree.mono (by intros; simp [PatternLowering.exprNames, *])))
         (ih2 other (agree.mono (by intros; simp [PatternLowering.exprNames, *]))) op
+  | ptrEq _ _ h1 h2 s ih1 ih2 =>
+      intro other agree
+      exact .ptrEq (ih1 other (agree.mono (by intros; simp [PatternLowering.exprNames, *])))
+        (ih2 other (agree.mono (by intros; simp [PatternLowering.exprNames, *]))) h1 h2 s
   | binary _ _ op ih1 ih2 =>
       intro other agree
       exact .binary (ih1 other (agree.mono (by intros; simp [PatternLowering.exprNames, *])))
