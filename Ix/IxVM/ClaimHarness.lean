@@ -455,8 +455,16 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     let outputClosure := closureFrom env output
     ioBuffer := addEntries env
       (fun a => inputClosure.contains a || outputClosure.contains a) ioBuffer
-  | .checkEnv .. =>
-    ioBuffer := addEntries env (fun _ => true) ioBuffer
+  | .checkEnv ctx root _ =>
+    let some ownedTree := trees.get? root
+      | throw s!"no assumption tree supplied for root {root}"
+    let customAxioms := (ctx.axioms.bind trees.get?).map (·.leaves) |>.getD #[]
+    let roots := ownedTree.leaves
+      ++ Ix.primAddrSet.toArray.filter env.consts.contains
+      ++ bindingRoots env ctx.bindingAssumed
+      ++ Ix.ClaimContext.userAxioms env
+      ++ customAxioms
+    ioBuffer := addEntries env (closureFromRoots env roots).contains ioBuffer
   | .reveal comm _info _binders =>
     ioBuffer := addEntries env (closureFrom env comm).contains ioBuffer
   | .contains .. => pure ()
