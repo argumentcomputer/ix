@@ -22,10 +22,17 @@ public section
 namespace Ix.Cli.FormalAiur
 open Lean IxVM.ClaimHarness
 
+/-- Spawn env for nested `lake` / `cargo` invocations: drop `LD_LIBRARY_PATH` so an outer
+`lake env` / `lake test` does not put Lean's bundled non-RTTI `libLLVM` ahead of system
+`libLLVM` when `cargo` build scripts load `libclang` (cf. `Ix.Meta.lakeSpawnEnv`). -/
+private def nestedBuildEnv : Array (String × Option String) :=
+  #[("LD_LIBRARY_PATH", none)]
+
 def commandStatus (cmd : String) (args : Array String) (cwd : Option System.FilePath := none) :
     IO UInt32 := do
   (← IO.getStdout).flush
-  let child ← IO.Process.spawn { cmd, args, cwd, stdout := .inherit, stderr := .inherit }
+  let env := if cmd == "lake" || cmd == "cargo" then nestedBuildEnv else #[]
+  let child ← IO.Process.spawn { cmd, args, cwd, env, stdout := .inherit, stderr := .inherit }
   child.wait
 
 def command (cmd : String) (args : Array String) (cwd : Option System.FilePath := none) :
@@ -70,7 +77,8 @@ def repoRoot : IO System.FilePath := do
 its `digest` mode. It identifies the deployed program. -/
 def programDigest (root exporter : System.FilePath) (extra : Array String := #[]) : IO String := do
   let result ← IO.Process.output {
-    cmd := "lake", args := #["env", exporter.toString, "digest"] ++ extra, cwd := root }
+    cmd := "lake", args := #["env", exporter.toString, "digest"] ++ extra, cwd := root,
+    env := nestedBuildEnv }
   let digest := result.stdout.trimAscii.toString
   unless result.exitCode == 0 && digest.length == 64 && digest.all Char.isHexDigit do
     throw (IO.userError s!"{exporter} digest failed ({result.exitCode}): {result.stderr}")

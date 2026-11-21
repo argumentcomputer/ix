@@ -72,7 +72,8 @@ private def ix (exe : String) (home : System.FilePath) (args : Array String) :
     IO IO.Process.Output := do
   IO.eprintln s!"[binding-reuse] ix {" ".intercalate args.toList}"
   let started ← IO.monoMsNow
-  let out ← IO.Process.output { cmd := "env", args := #[s!"HOME={home}", exe] ++ args }
+  let out ← IO.Process.output {
+    cmd := "env", args := #[s!"HOME={home}", exe] ++ args, env := lakeSpawnEnv }
   IO.eprintln s!"[binding-reuse]   exit {out.exitCode} in {(← IO.monoMsNow) - started} ms"
   if out.exitCode != 0 then
     IO.eprintln s!"{(out.stdout.takeEnd 1500).toString}\n{(out.stderr.takeEnd 1500).toString}"
