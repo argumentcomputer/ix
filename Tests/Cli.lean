@@ -40,7 +40,8 @@ private def Tests.Cli.testCompileNoBuild : IO Unit := do
     -- implicit Init imports are available; the CLI must elaborate this body.
     IO.FS.writeFile source
       "def noBuildMarker : Nat := 7\ntheorem noBuildProof : noBuildMarker = 7 := rfl\n"
-    let args := #["compile", source.toString, "--consts", "noBuildProof",
+    -- `--no-equations`: the parity below is with `compile-lean`, which realizes no equations.
+    let args := #["compile", source.toString, "--consts", "noBuildProof", "--no-equations",
       "--out", output.toString, "--report", report.toString]
     let built ← IO.Process.output { cmd := ix.toString, args := args.push "--no-build" }
     unless built.exitCode == 0 do
@@ -504,8 +505,10 @@ private def Tests.Cli.testKernelLimits : IO Unit := do
     let contracts := dir / "Contracts.lean"
     IO.FS.writeFile contracts
       "import Ix.Compile.SourceContract.Elab\nimport Tests.Ix.SourceContract.Imported\n\
+       open scoped Ix.Modes\n\
        def cliLvl.{u, v} : Sort (max (u + 2) (v + 2)) := Sort (max (v + 1) (u + 1))\n\
-       def cliLocal (~1 x : Nat) : ~ Nat := let _ := cliLvl.{0, 0}; x\n"
+       inductive CliBox | mk (a b : Nat)\n\
+       def cliLocal (@borrowed x : CliBox) : @borrowed CliBox := let _ := cliLvl.{0, 0}; x\n"
     let compile := fun (flags : Array String) (vars : Array (String × Option String)) =>
       Tests.Cli.runEnv ix.toString (#["compile", contracts.toString, "--no-build", "--consts",
         "cliLocal", "--out", (dir / "contracts.ixe").toString] ++ flags) vars
@@ -523,6 +526,86 @@ private def Tests.Cli.testKernelLimits : IO Unit := do
   finally
     IO.FS.removeDirAll dir
 
+/-- `ix compile`'s equations on a file with a structurally recursive, a
+well-founded and a mutual definition, reached from a non-recursive root: the
+associations it writes are the same for the anonymous and named compiles,
+list each local definition with its `eq_def` and no failure, and the named
+artifact resolves every theorem. They are the default for a selected closure:
+without `--equations` the compile writes the same associations and, since
+`eqLog`'s `omega` termination proof is a theorem, no word equation (the
+`theorems` list is empty); `--no-word-equations` keeps the associations;
+`--no-equations` writes none and refuses `--equations-out`; each flag and its
+`--no-` form together, and `--word-equations` with `--no-equations`, are
+refused. -/
+private def Tests.Cli.testCompileEquations : IO Unit := do
+  let ix ← IO.FS.realPath ".lake/build/bin/ix"
+  IO.FS.withTempDir fun dir => do
+    let source := dir / "Equations.lean"
+    IO.FS.writeFile source <| String.intercalate "\n"
+      [ "def eqLen : List Nat → Nat", "  | [] => 0", "  | _ :: t => eqLen t + 1"
+      , "def eqLog (n : Nat) : Nat :=", "  if h : n < 2 then 0 else eqLog (n / 2) + 1"
+      , "termination_by n", "decreasing_by omega"
+      , "mutual", "def eqEven : Nat → Bool", "  | 0 => true", "  | n + 1 => eqOdd n"
+      , "def eqOdd : Nat → Bool", "  | 0 => false", "  | n + 1 => eqEven n", "end"
+      , "def eqEntry (l : List Nat) (n : Nat) : Nat := eqLen l + eqLog n + (if eqEven n then 1 else 0)", "" ]
+    let run (out : String) (flags : Array String) : IO IO.Process.Output :=
+      IO.Process.output { cmd := ix.toString, args := #["compile", source.toString,
+        "--no-build", "--consts", "eqEntry", "--out", (dir / s!"{out}.ixe").toString] ++ flags }
+    let compile (out : String) (flags : Array String) : IO (Lean.Json × ByteArray) := do
+      let json := dir / s!"{out}.json"
+      let result ← run out (#["--equations-out", json.toString] ++ flags)
+      unless result.exitCode == 0 do
+        throw <| IO.userError s!"compile {flags} failed:\n{result.stdout}\n{result.stderr}"
+      return (← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile json)),
+        ← IO.FS.readBinFile (dir / s!"{out}.ixe"))
+    let (anonJson, anonBytes) ← compile "anon" #["--equations", "--anon"]
+    let (namedJson, _) ← compile "named" #["--equations"]
+    unless anonJson == namedJson do
+      throw <| IO.userError "compile --equations: the anonymous and named associations differ"
+    let rows ← IO.ofExcept (namedJson.getObjValAs? (Array Lean.Json) "equations")
+    let pairs := rows.toList.filterMap fun row =>
+      match row.getObjValAs? String "definition", row.getObjValAs? String "equation" with
+      | .ok d, .ok e => some (d, e)
+      | _, _ => none
+    let failures ← IO.ofExcept (namedJson.getObjValAs? (Array Lean.Json) "failures")
+    for d in ["eqLen", "eqLog", "eqEven", "eqOdd"] do
+      unless pairs.contains (d, s!"{d}.eq_def") do
+        throw <| IO.userError s!"compile --equations: no association for {d}: {namedJson.compress}"
+      let addrArgs := #["addr-of", "--ixe", (dir / "named.ixe").toString, s!"{d}.eq_def"]
+      let addr ← IO.Process.output { cmd := ix.toString, args := addrArgs }
+      unless addr.exitCode == 0 && addr.stdout.trimAscii.toString.length == 64 do
+        throw <| IO.userError s!"addr-of {d}.eq_def in the named artifact: {addr.stdout}{addr.stderr}"
+    if pairs.any (·.1 == "eqEntry") || !failures.isEmpty then
+      throw <| IO.userError s!"compile --equations: unexpected association or failure: {namedJson.compress}"
+    let anon ← IO.ofExcept (Ixon.deEnv anonBytes)
+    unless anon.named.isEmpty do
+      throw <| IO.userError "compile --equations --anon: names in the anonymous artifact"
+    -- The default for a selected closure: the same associations, no word equation (the omega
+    -- proof that reaches word operations is a theorem).
+    let (defaultJson, defaultBytes) ← compile "default" #[]
+    let (explicitJson, explicitBytes) ← compile "explicit" #["--equations", "--word-equations"]
+    unless defaultJson == namedJson && explicitJson == namedJson && defaultBytes == explicitBytes do
+      throw <| IO.userError s!"compile without flags differs from --equations: {defaultJson.compress}"
+    unless (defaultJson.getObjValAs? (Array Lean.Json) "theorems").toOption.map (·.size) == some 0 do
+      throw <| IO.userError s!"compile: a word equation for an omega proof: {defaultJson.compress}"
+    let (noWordsJson, _) ← compile "no-words" #["--no-word-equations"]
+    unless noWordsJson == namedJson do
+      throw <| IO.userError s!"compile --no-word-equations changed the associations: {noWordsJson.compress}"
+    let off ← run "off" #["--no-equations"]
+    if off.exitCode != 0 || (← (dir / "off.ixe.equations.json").pathExists) then
+      throw <| IO.userError s!"compile --no-equations: exit {off.exitCode} or an equations file written"
+    for (flags, what) in [(#["--no-equations", "--equations-out", (dir / "x.json").toString],
+          "--equations-out with --no-equations"),
+        (#["--equations", "--no-equations"], "--equations with --no-equations"),
+        (#["--word-equations", "--no-word-equations"], "--word-equations with --no-word-equations"),
+        (#["--word-equations", "--no-equations"], "--word-equations with --no-equations")] do
+      let refused ← run "refused" flags
+      if refused.exitCode == 0 || (← (dir / "refused.ixe").pathExists) then
+        throw <| IO.userError s!"compile accepted {what}"
+    IO.println s!"compile: {pairs.length} associations by default and with --equations, the same \
+      for the anonymous and named compiles; no word equation for an omega proof; the --no- forms \
+      turn them off; contradictory flags refused"
+
 public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["exe", "ix", "--help"]) none
   Tests.Cli.testCompileNoBuild
@@ -534,6 +617,7 @@ public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.testCheckIxeExits
   Tests.Cli.testDeepRecordExits
   Tests.Cli.testKernelLimits
+  Tests.Cli.testCompileEquations
   --Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
   --Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none
   return 0

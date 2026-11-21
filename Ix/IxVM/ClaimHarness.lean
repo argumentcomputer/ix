@@ -532,7 +532,7 @@ def seedClaimTrees (env : Ixon.Env) (claim : Ix.Claim)
   | .check ctx _ asm | .eval ctx _ _ asm => seedAsm asm (← seedAxioms ctx ioBuffer)
   | .checkEnv ctx root asm => seedAsm asm (← seedAxioms ctx (← seedTreeAt root trees ioBuffer))
   | .contains tree _ => seedTreeAt tree trees ioBuffer
-  | .reveal .. | .catalog .. | .binding .. => pure ioBuffer
+  | .reveal .. | .catalog .. | .binding .. | .compile .. => pure ioBuffer
 
 /-- Serializes `claim`, seeds its bytes at `key = blake3(claim)`, and
     populates the IOBuffer with the `closureFrom` byte scope of every
@@ -585,6 +585,11 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   | .catalog .. =>
     throw "catalog claims have no single-run witness; they are formed by \
 aggregating their members' check-env claims"
+  | .compile .. =>
+    -- A compile claim is formed and verified by the IxCC certificate checker
+    -- (`compile-v2`), never by an IxVM circuit run.
+    throw "compile claims have no IxVM witness; they are verified by the \
+IxCC certificate checker"
   ioBuffer ← seedClaimTrees env claim trees ioBuffer
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }

@@ -211,6 +211,7 @@ def kind : Ix.Claim → String
   | .contains .. => "contains"
   | .catalog .. => "catalog"
   | .binding .. => "binding"
+  | .compile .. => "compile"
 
 /-- The specification set a claim names: a typing claim's context's, or a binding
 claim's. -/
@@ -235,6 +236,8 @@ def kindRefusal (pol : Policy) : Ix.Claim → Option String
     kindFlagged pol.contains "a contains claim, which states no typing" "allow-contains-claim"
   | .binding .. =>
     kindFlagged pol.binding "a binding claim, which states no typing" "allow-binding-claim"
+  | .compile .. => some "the claim is a compile claim (IxCC), which states no typing; verify it \
+      with the IxCC certificate checker"
 
 /-- Why `pol` refuses `claim`, if it does. `bindingDischarged`: a verified binding
 proof discharges the claim's assumed binding; `assumptionsDischarged`: the proofs
@@ -339,6 +342,11 @@ def statement (claim : Ix.Claim) (bindingDischarged : Bool := false)
     | .binding named table =>
       ("a role table binds every role, each bound constant meeting its specification",
         s!"the role table {table}", [specLine spec named])
+    | .compile cc =>
+      ("a constant compiles to an x86-64 ELF64 object",
+        s!"{cc.target} in env {cc.env} (role table {cc.roleTable}, policy {cc.policy}, \
+          arity {cc.abiArity}) -> ELF {cc.elfHash}",
+        ["none; the claim states no typing"])
   let (what, subject, conditions) := parts
   -- An eval claim is accepted by default, but the consistency theorem does not state it.
   let scope := match claim with

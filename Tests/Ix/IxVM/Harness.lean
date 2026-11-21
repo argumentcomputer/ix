@@ -150,6 +150,7 @@ def renameClaim (a t : Address → Address) : Ix.Claim → Ix.Claim
   | .contains tree c => .contains (t tree) (a c)
   | .catalog members => .catalog (t members)
   | .binding spec b => .binding spec (a b)
+  | .compile cc => .compile { cc with env := t cc.env, roleTable := cc.roleTable.map a, target := a cc.target }
 
 /-- Whether a `LazyConstant` may lack its binder-data section (`c.binders.isEmpty`).
 A canonical Ixon v5 constant with an empty binder section ends with the byte `0x00`

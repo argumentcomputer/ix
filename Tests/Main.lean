@@ -23,6 +23,8 @@ import Tests.Ix.CollectDependencies
 import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CheckerSupport
 import Tests.Ix.Compile.PackUnits
+import Tests.Ix.Compile.Equations
+import Tests.Ix.Compile.WordEquations
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
 import Tests.Ix.Kernel.Tutorial
@@ -129,6 +131,10 @@ def registry : List Entry := [
   -- selected closures (`collectSelectedDeps`): whole logical units, a
   -- matcher's unit, mutual siblings, checker support from `Role.deps`
   .suite "compiler-selected-closure" .primary Tests.Ix.Compile.SelectedClosure.suite,
+  -- `ix compile --equations`: the unfolding theorems it realizes, against Lean's own
+  .suiteIO "compile-equations" .primary Tests.Ix.Compile.Equations.suite,
+  -- and the fixed-width words' stored equations it adds as seeds
+  .suiteIO "compile-word-equations" .primary Tests.Ix.Compile.WordEquations.suite,
   -- the raw dependency collector (`Lean.collectDependenciesMany`) lists a mutual family once
   .suite "collect-dependencies" .primary Tests.Ix.CollectDependencies.suite,
   -- the formal IxVM program holds no address literal but its specification digest

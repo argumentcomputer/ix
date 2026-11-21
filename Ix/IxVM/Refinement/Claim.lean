@@ -678,6 +678,7 @@ def HoldsIn (V : View) : Claim → Prop
   | .contains tree a => V.HoldsTree tree ∧ ∀ leaves, V.LeavesAt tree leaves → a ∈ leaves
   | .catalog _ => False
   | .binding spec b => BindingIn V spec b
+  | .compile _ => False
 
 /-- **What a view must hold for the claim** before the main statement says
 anything about it: the addresses the claim names are stored, the trees it
@@ -693,5 +694,6 @@ def Covers (V : View) : Claim → Prop
   | .contains tree _ => V.HoldsTree tree
   | .binding _ b => V.Closed ∧ (V.binding? b).isSome = true
   | .catalog _ => True
+  | .compile _ => True
 
 end Ix.Claim

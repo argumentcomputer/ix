@@ -434,6 +434,7 @@ fun V x =>
   | Ix.Claim.contains tree a => V.HoldsTree tree ∧ ∀ (leaves : List Address), V.LeavesAt tree leaves → a ∈ leaves
   | Ix.Claim.catalog members => False
   | Ix.Claim.binding spec b => IxVM.Refinement.BindingIn V spec b
+  | Ix.Claim.compile c => False
 -/
 #guard_msgs in
 #print Ix.Claim.HoldsIn
@@ -457,6 +458,7 @@ fun V x =>
   | Ix.Claim.contains tree const => V.HoldsTree tree
   | Ix.Claim.binding spec b => V.Closed ∧ (V.binding? b).isSome = true
   | Ix.Claim.catalog members => True
+  | Ix.Claim.compile c => True
 -/
 #guard_msgs in
 #print Ix.Claim.Covers
