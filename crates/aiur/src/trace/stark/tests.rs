@@ -97,11 +97,26 @@ fn batch_memory_partition_and_persisted_key() {
   let record = program.execute("root", vec![3]).unwrap();
   let mut witness = backend.generate(&record, "root", &[3]).unwrap();
   let memory = witness.traces.last_mut().unwrap();
-  assert_eq!(memory.width, 4);
-  // Two unused but consecutive cells force a memory boundary across shards.
-  memory
-    .values
-    .extend([0, 1, 1, 42, 0, 1, 2, 43, 0, 0, 0, 0].map(Val::from_u64));
+  let lanes = rom_lanes(1);
+  assert_eq!(memory.width, 1 + lanes * 3);
+  // Fill row 0's remaining lanes and add an active row 1 + two padding rows so
+  // the contiguous ROM run spans two shards of height 2 (MEMSEG end = 10).
+  for lane in 1..lanes {
+    let base = 1 + lane * 3;
+    memory.values[base] = Val::ZERO;
+    memory.values[base + 1] = Val::ONE;
+    memory.values[base + 2] = Val::from_u64(40 + lane as u64);
+  }
+  let mut row1 = vec![Val::ZERO; memory.width];
+  row1[0] = Val::from_usize(lanes);
+  for lane in 0..2 {
+    let base = 1 + lane * 3;
+    row1[base] = Val::ZERO;
+    row1[base + 1] = Val::ONE;
+    row1[base + 2] = Val::from_u64(50 + lane as u64);
+  }
+  memory.values.extend(row1);
+  memory.values.extend(vec![Val::ZERO; memory.width * 2]);
   let retained = backend
     .prove_batch_stage_1(
       "root",
@@ -144,11 +159,26 @@ fn sliced_lookup_writer_matches_graph_and_retained_proof() {
   let mut traces = backend.generate_stage_1(&record, "root", &[3]).unwrap();
   // Exercise a ROM run spanning two shards, fixed-table padding, zero
   // multiplicities and circuits inactive in the second shard.
-  traces
-    .last_mut()
-    .unwrap()
-    .values
-    .extend([0, 1, 1, 42, 0, 1, 2, 43, 0, 0, 0, 0].map(Val::from_u64));
+  {
+    let memory = traces.last_mut().unwrap();
+    let lanes = rom_lanes(1);
+    for lane in 1..lanes {
+      let base = 1 + lane * 3;
+      memory.values[base] = Val::ZERO;
+      memory.values[base + 1] = Val::ONE;
+      memory.values[base + 2] = Val::from_u64(40 + lane as u64);
+    }
+    let mut row1 = vec![Val::ZERO; memory.width];
+    row1[0] = Val::from_usize(lanes);
+    for lane in 0..2 {
+      let base = 1 + lane * 3;
+      row1[base] = Val::ZERO;
+      row1[base + 1] = Val::ONE;
+      row1[base + 2] = Val::from_u64(50 + lane as u64);
+    }
+    memory.values.extend(row1);
+    memory.values.extend(vec![Val::ZERO; memory.width * 2]);
+  }
   for shard in 0..2 {
     let sliced = backend.slice_stage_1(&traces, shard, 2).unwrap();
     let reference =
@@ -187,7 +217,7 @@ fn sliced_lookup_writer_matches_graph_and_retained_proof() {
       [MEMSEG, 1, 0].map(Val::from_u64).to_vec(),
     ),
     multi_stark::batch::BatchMessage::push(
-      [MEMSEG, 1, 3].map(Val::from_u64).to_vec(),
+      [MEMSEG, 1, (rom_lanes(1) + 2) as u64].map(Val::from_u64).to_vec(),
     ),
   ];
   let reference = backend.system.prove_batch_with(
@@ -248,9 +278,13 @@ fn sliced_lookup_writer_matches_graph_and_retained_proof() {
       [MEMSEG, width as u64, 0].map(Val::from_u64).to_vec(),
     ));
     norm_messages.push(multi_stark::batch::BatchMessage::push(
-      [MEMSEG, width as u64, rows[rom_base + i] as u64]
-        .map(Val::from_u64)
-        .to_vec(),
+      [
+        MEMSEG,
+        width as u64,
+        backend.rom.active_entries(i, &resized[rom_base + i]) as u64,
+      ]
+      .map(Val::from_u64)
+      .to_vec(),
     ));
   }
   let ref_norm = backend.system.prove_batch(
@@ -325,23 +359,42 @@ fn compare_generated<B: WitnessField>(
   // checks the borrowed width buckets, including counts, empty widths and
   // padding, without sharing the production bucket/index access path.
   let rom_start = backend.members.len() + backend.tables.len();
-  for matrix in &got.traces[rom_start..] {
-    let width = matrix.width - 3;
-    let mut expected = vec![];
-    for entry in record.memory.iter().filter(|m| m.cell.value.len() == width) {
-      expected.extend([
-        Val::from_u64(entry.multiplicity),
-        Val::ONE,
-        Val::from_usize(entry.address),
-      ]);
-      expected.extend(entry.cell.value.iter().copied().map(B::into_stark));
-    }
-    let rows = expected.len() / matrix.width;
+  for (idx, matrix) in got.traces[rom_start..].iter().enumerate() {
+    let width = backend.rom.widths[idx];
+    let lanes = backend.rom.layout.lanes(width);
+    let entries: Vec<_> =
+      record.memory.iter().filter(|m| m.cell.value.len() == width).collect();
+    let rows = entries.len().div_ceil(lanes);
     assert_eq!(
       matrix.height(),
       if rows == 0 { 0 } else { rows.next_power_of_two() }
     );
-    expected.resize(matrix.values.len(), Val::ZERO);
+    let mut expected = vec![Val::ZERO; matrix.values.len()];
+    if lanes == 1 {
+      for (r, entry) in entries.iter().enumerate() {
+        let base = r * matrix.width;
+        expected[base] = Val::from_u64(entry.multiplicity);
+        expected[base + 1] = Val::ONE;
+        expected[base + 2] = Val::from_usize(entry.address);
+        for (k, &v) in entry.cell.value.iter().enumerate() {
+          expected[base + 3 + k] = B::into_stark(v);
+        }
+      }
+    } else {
+      let stride = width + 2;
+      for (r, chunk) in entries.chunks(lanes).enumerate() {
+        let row_base = r * matrix.width;
+        expected[row_base] = Val::from_usize(r * lanes);
+        for (lane, entry) in chunk.iter().enumerate() {
+          let base = row_base + 1 + lane * stride;
+          expected[base] = Val::from_u64(entry.multiplicity);
+          expected[base + 1] = Val::ONE;
+          for (k, &v) in entry.cell.value.iter().enumerate() {
+            expected[base + 2 + k] = B::into_stark(v);
+          }
+        }
+      }
+    }
     assert_eq!(matrix.values, expected);
   }
   // Compare every nonzero message directly to the independent dense graph
@@ -400,11 +453,11 @@ fn fused_rows_and_lookups_match_reference_and_verify() {
   let shapes = backend.statistics();
   assert_eq!(
     shapes.iter().find(|s| s.name == "<ROM:1>").unwrap().stage1_width,
-    4
+    1 + rom_lanes(1) * 3
   );
   assert_eq!(
     shapes.iter().find(|s| s.name == "<ROM:4>").unwrap().stage1_width,
-    7
+    1 + rom_lanes(4) * 6
   );
   for arg in [2, 3, 4] {
     let record = program.execute("root", vec![arg]).unwrap();
@@ -523,10 +576,12 @@ fn proves_calls_fixed_maps_and_rom_and_verifies_without_record() {
   let trace = plan.generate(&record, "root", &[3], true).unwrap();
   let witness = backend.witness(&record, &trace).unwrap();
   assert_eq!(witness.traces[2].height(), 4);
-  assert_eq!(
-    witness.traces[3].values,
-    [Val::from_u64(2), Val::ONE, Val::ZERO, Val::from_u64(9)]
-  );
+  let mut expected_rom = vec![Val::ZERO; 1 + rom_lanes(1) * 3];
+  expected_rom[0] = Val::ZERO;
+  expected_rom[1] = Val::from_u64(2);
+  expected_rom[2] = Val::ONE;
+  expected_rom[3] = Val::from_u64(9);
+  assert_eq!(witness.traces[3].values, expected_rom);
   let proof = backend.prove("root", &[3], &[9], witness).unwrap();
   drop(trace);
   drop(record);
@@ -816,7 +871,9 @@ fn mixed_memory() -> (CheckedProgram, TraceArtifact) {
 fn width_local_rom_shares_types_and_preserves_functionality() {
   let (program, artifact) = mixed_memory();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend =
+    Backend::new_with_rom_layout(&plan, parameters(), RomLayout::Scalar)
+      .unwrap();
   let index =
     |name: &str| backend.names.iter().position(|n| n == name).unwrap();
   assert!(!backend.names.iter().any(|n| n == "<ROM:addresses>"));
@@ -1813,7 +1870,7 @@ fn parallel_rom_witness_and_prefix_lookups_match_reference() {
     assert_eq!(a.values, b.values);
   }
   let rom_ci = backend.names.iter().position(|name| name == "<ROM:1>").unwrap();
-  assert_eq!(witness.traces[rom_ci].height(), 512);
+  assert_eq!(witness.traces[rom_ci].height(), 512 / rom_lanes(1));
   let proof = backend
     .prove_batch(
       "store_loop",

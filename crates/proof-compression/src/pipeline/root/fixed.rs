@@ -175,6 +175,22 @@ impl FixedRoot {
     })
   }
 
+  fn memory_lanes(key: &AiurVerifyingKey, width: usize, index: usize) -> usize {
+    let main_width = key.system().circuits[index].main_width;
+    let k = aiur::trace::stark::rom_lanes(width);
+    if k > 1
+      && width
+        .checked_add(2)
+        .and_then(|s| s.checked_mul(k))
+        .and_then(|n| n.checked_add(1))
+        == Some(main_width)
+    {
+      k
+    } else {
+      1
+    }
+  }
+
   fn build(
     &self,
     key: &AiurVerifyingKey,
@@ -213,8 +229,9 @@ impl FixedRoot {
       .collect();
     let mut messages = vec![];
     for (&(width, index), &end) in self.memory_traces.iter().zip(&ends) {
-      let log = self.log_heights[index];
-      // 0 <= end <= 2^log_height: low bits must vanish if the top bit is 1.
+      let lanes = Self::memory_lanes(key, width, index);
+      let log = usize::from(self.log_heights[index]) + lanes.ilog2() as usize;
+      // 0 <= end <= lanes * 2^log_height: low bits must vanish if the top bit is 1.
       // This also establishes canonical integer ordering for Aiur's policy.
       let mut low = b.constant(Val::ZERO);
       for bit in 0..log {
@@ -299,12 +316,12 @@ impl FixedRoot {
       .step_by(2)
       .map(|m| m.args[2])
       .collect();
-    if ends
-      .iter()
-      .zip(&self.memory_traces)
-      .any(|(e, &(_, i))| e.as_canonical_u64() > 1u64 << self.log_heights[i])
-    {
-      return Err("memory closure exceeds normalization bound".into());
+    for (e, &(w, i)) in ends.iter().zip(&self.memory_traces) {
+      let lanes = Self::memory_lanes(key, w, i);
+      let max_entries = (lanes as u64) << self.log_heights[i];
+      if e.as_canonical_u64() > max_entries {
+        return Err("memory closure exceeds normalization bound".into());
+      }
     }
     let mut preamble = self.preamble(key, expected, &ends)?;
     preamble.headers[0].stage_1_trace =

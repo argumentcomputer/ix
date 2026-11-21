@@ -238,7 +238,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
   ) -> Result<Self, String> {
-    Self::new_with_rom_layout(plan, parameters, RomLayout::Scalar)
+    Self::new_with_rom_layout(plan, parameters, RomLayout::Vectorized)
   }
 
   pub fn new_with_rom_layout(
@@ -255,7 +255,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
   ) -> Result<Self, String> {
-    Self::for_batch_with_rom_layout(plan, parameters, RomLayout::Scalar)
+    Self::for_batch_with_rom_layout(plan, parameters, RomLayout::Vectorized)
   }
 
   pub fn for_batch_with_rom_layout(
@@ -276,7 +276,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Self::for_batch_verification_with_rom_layout(
       plan,
       parameters,
-      RomLayout::Scalar,
+      RomLayout::Vectorized,
     )
   }
 
@@ -295,7 +295,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     parameters: Parameters,
     device: Option<i32>,
   ) -> Result<Self, String> {
-    Self::build(plan, parameters, true, RomLayout::Scalar, device, true)
+    Self::build(plan, parameters, true, RomLayout::Vectorized, device, true)
   }
 
   /// [`Self::for_batch`] without the security floor, for tests whose toy
@@ -309,7 +309,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Self::for_batch_below_floor_with_rom_layout(
       plan,
       parameters,
-      RomLayout::Scalar,
+      RomLayout::Vectorized,
     )
   }
 
@@ -370,7 +370,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       plan,
       parameters,
       segmented_memory,
-      RomLayout::Scalar,
+      RomLayout::Vectorized,
       device,
       gpu_lookup_only,
       true,

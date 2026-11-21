@@ -288,9 +288,7 @@ fn assert_opened_round_eq(
   let exp: Vec<Vec<Vec<[u64; 2]>>> = expected
     .iter()
     .map(|m| {
-      m.iter()
-        .map(|p| p.iter().copied().map(ef_to_pair).collect())
-        .collect()
+      m.iter().map(|p| p.iter().copied().map(ef_to_pair).collect()).collect()
     })
     .collect();
   assert_eq!(got, exp.as_slice());
@@ -313,7 +311,8 @@ fn wire_verify_batch_proof(
     assert_eq!(stage1.as_slice(), exp_h.stage_1_trace.roots());
     let log_degrees = c.read_vec(WireCursor::read_u8)?;
     assert_eq!(log_degrees, exp_h.log_degrees);
-    let claims = c.read_vec(|cur| cur.read_vec(WireCursor::read_canonical_f))?;
+    let claims =
+      c.read_vec(|cur| cur.read_vec(WireCursor::read_canonical_f))?;
     let exp_claims: Vec<Vec<u64>> = exp_h
       .claims
       .iter()
@@ -620,9 +619,9 @@ fn dump_and_verify_fixture(
   proof: &BatchProof<GoldilocksBlake3Config>,
   all_claims: &[Vec<Val>],
 ) {
-  system
-    .verify_batch(proof)
-    .unwrap_or_else(|e| panic!("{description}: native verify_batch failed: {e:?}"));
+  system.verify_batch(proof).unwrap_or_else(|e| {
+    panic!("{description}: native verify_batch failed: {e:?}")
+  });
 
   let system_bytes = stark_key::to_bytes(system, cp, fp);
   let proof_bytes = proof.to_bytes().expect("proof to_bytes");
@@ -632,7 +631,10 @@ fn dump_and_verify_fixture(
   let (decoded_sys, decoded_cp, decoded_fp) =
     stark_key::from_bytes_below_floor(&system_bytes)
       .expect("stark_key::from_bytes_below_floor");
-  assert_eq!(stark_key::to_bytes(&decoded_sys, decoded_cp, decoded_fp), system_bytes);
+  assert_eq!(
+    stark_key::to_bytes(&decoded_sys, decoded_cp, decoded_fp),
+    system_bytes
+  );
   let decoded_proof =
     BatchProof::<GoldilocksBlake3Config>::from_bytes(&proof_bytes)
       .expect("BatchProof::from_bytes");
@@ -642,12 +644,15 @@ fn dump_and_verify_fixture(
     .expect("decoded system verifies decoded proof");
 
   // Strict byte-for-byte mirror of `Ix/Cert/MultiStark/Wire.lean`
-  wire_verify_system(&system_bytes, system, cp, fp)
-    .unwrap_or_else(|e| panic!("{description}: Wire.lean system mirror failed: {e}"));
-  wire_verify_batch_proof(&proof_bytes, proof)
-    .unwrap_or_else(|e| panic!("{description}: Wire.lean proof mirror failed: {e}"));
-  wire_verify_claims(&claims_bytes, all_claims)
-    .unwrap_or_else(|e| panic!("{description}: Wire.lean claims mirror failed: {e}"));
+  wire_verify_system(&system_bytes, system, cp, fp).unwrap_or_else(|e| {
+    panic!("{description}: Wire.lean system mirror failed: {e}")
+  });
+  wire_verify_batch_proof(&proof_bytes, proof).unwrap_or_else(|e| {
+    panic!("{description}: Wire.lean proof mirror failed: {e}")
+  });
+  wire_verify_claims(&claims_bytes, all_claims).unwrap_or_else(|e| {
+    panic!("{description}: Wire.lean claims mirror failed: {e}")
+  });
 
   // Negative checks on Wire.lean mirror: truncation and trailing bytes must fail.
   assert!(
@@ -659,7 +664,8 @@ fn dump_and_verify_fixture(
   assert!(wire_verify_system(&trailing_sys, system, cp, fp).is_err());
 
   assert!(
-    wire_verify_batch_proof(&proof_bytes[..proof_bytes.len() - 1], proof).is_err()
+    wire_verify_batch_proof(&proof_bytes[..proof_bytes.len() - 1], proof)
+      .is_err()
   );
   let mut trailing_proof = proof_bytes.clone();
   trailing_proof.push(0);
@@ -749,7 +755,8 @@ fn generate_and_verify_multi_stark_fixtures() {
   );
 
   let claims = vec![vec![Val::ONE, Val::ONE, Val::ONE]];
-  let witness_all = SystemWitness::from_stage_1(vec![c0_trace(), c1_trace()], &sys);
+  let witness_all =
+    SystemWitness::from_stage_1(vec![c0_trace(), c1_trace()], &sys);
   let proof_1 = sys.prove_batch(
     &pk,
     vec![ShardInput { claims: claims.clone(), witness: witness_all.clone() }],
@@ -830,7 +837,10 @@ fn generate_and_verify_multi_stark_fixtures() {
         x.clone() * x.clone() - y.clone(),
         sel.clone() * (sel.clone() - one.clone()),
       ],
-      lookups: vec![Lookup::pull(sel, vec![one, Expr::constant(Val::ZERO), x, y])],
+      lookups: vec![Lookup::pull(
+        sel,
+        vec![one, Expr::constant(Val::ZERO), x, y],
+      )],
       lookup_group_size: 1,
       ..Default::default()
     }],
@@ -894,7 +904,9 @@ fn generate_and_verify_multi_stark_fixtures() {
       constraints: vec![
         active_col.clone() * (active_col.clone() - Expr::constant(Val::ONE)),
         active_col.clone()
-          * (end_col.clone() - start_col.clone() - Expr::constant(Val::from_u64(2))),
+          * (end_col.clone()
+            - start_col.clone()
+            - Expr::constant(Val::from_u64(2))),
       ],
       lookups: vec![
         Lookup::push(

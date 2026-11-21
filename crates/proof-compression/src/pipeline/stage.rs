@@ -17,16 +17,16 @@ use crate::fri::{self, VerifierKey};
 use crate::kzg::{
   KzgCommitment, KzgConfig, Scalar, Srs, TranscriptKind, VerifierParams,
 };
-use multi_stark::lookup::LookupValues;
 use multi_stark::plonkish::{Assignment, Circuit};
 use multi_stark::prover::Proof;
-use multi_stark::system::{System, SystemWitness, compute_lookup_values_range};
+use multi_stark::system::System;
+#[cfg(test)]
+use multi_stark::system::SystemWitness;
 #[cfg(test)]
 use multi_stark::traits::Algebra;
 use multi_stark::traits::{Field, TwoAdicField};
 use multi_stark::types::{GoldilocksBlake3Config, Val};
 use p3_field::PrimeField64;
-use p3_matrix::Matrix;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 
@@ -105,55 +105,54 @@ impl Prepared<Val> {
     let claims = statement.claims(self.assignment.public_values())?;
     let definitions = lowering::fri_definitions(&compiled);
     validate_config(&config, &definitions)?;
-    let (system, key) = tracing::info_span!("compression/setup")
-      .in_scope(|| System::new_without_preprocessed(config, definitions));
-    // Materialize each circuit's trace and lookup messages one at a time so
-    // preprocessed matrices are never cloned across all circuits and frontend
-    // state (`compiled` and `assignment`) is dropped before stage-1 LDEs.
-    let trace_span = tracing::info_span!("compression/trace").entered();
-    let count = system.circuits.len();
-    let shards = compiled.trace_shards(&self.assignment)?;
-    let mut traces = Vec::with_capacity(count);
-    let mut lookups = Vec::with_capacity(count);
-    for ci in 0..count {
-      let trace = shards.trace(ci)?;
-      let circuit = &system.circuits[ci];
-      let lookup = if trace.height() == 0 || circuit.graph.lookups.is_empty() {
-        LookupValues::builder(trace.height(), &[]).finish()
-      } else {
-        let preprocessed = (circuit.preprocessed_width > 0)
-          .then(|| {
-            compiled
-              .circuit_input(ci)
-              .and_then(|input| input.preprocessed)
-              .ok_or("missing compiled preprocessed matrix")
-          })
-          .transpose()?;
-        if let Some(pp) = &preprocessed {
-          assert_eq!(
-            trace.height(),
-            pp.height(),
-            "circuit {ci}: main trace height must equal preprocessed trace height"
-          );
-        }
-        compute_lookup_values_range(
-          &circuit.graph,
-          &trace,
-          preprocessed.as_ref(),
-          0..trace.height(),
-        )
-      };
-      traces.push(trace);
-      lookups.push(lookup);
+    let mut config = config;
+    if let Some(spill_dir) =
+      KzgConfig::resolve_disk_spill_dir(&std::env::temp_dir())?
+    {
+      config = config.with_disk_spill(spill_dir);
     }
-    drop(trace_span);
+    let (mut system, key) = tracing::info_span!("compression/setup")
+      .in_scope(|| System::new_without_preprocessed(config, definitions));
+    // Stream each circuit's main trace directly into stage-1 commitment (with
+    // CPU disk-backed LDE spilling when enabled) and drop frontend state
+    // (`compiled` and `assignment`) before stage-2 lookups and quotient work so
+    // all traces, lookup buffers, and 4x LDE matrices are never co-resident.
+    let count = system.circuits.len();
+    let mut trace_err: Option<Box<dyn std::error::Error + Send + Sync>> = None;
+    let stage_1 =
+      tracing::info_span!("compression/trace_stage1").in_scope(|| {
+        let shards = match compiled.trace_shards(&self.assignment) {
+          Ok(shards) => shards,
+          Err(err) => {
+            trace_err = Some(err.into());
+            return None;
+          },
+        };
+        let iter = (0..count).map(|ci| match shards.trace(ci) {
+          Ok(trace) => trace,
+          Err(err) => {
+            if trace_err.is_none() {
+              trace_err = Some(err.into());
+            }
+            p3_matrix::dense::RowMajorMatrix::new(
+              Vec::new(),
+              system.circuits[ci].main_width,
+            )
+          },
+        });
+        Some(system.prove_stage_1_streaming(iter))
+      });
+    if let Some(err) = trace_err {
+      return Err(err);
+    }
+    let stage_1 = stage_1.expect("trace_err handled above");
     drop(compiled);
     drop(self.assignment);
     let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
-    let witness = SystemWitness { traces, lookups };
     let proof = tracing::info_span!("compression/prove")
-      .in_scope(|| system.prove_multiple_claims(&key, &refs, witness));
+      .in_scope(|| system.prove_committed(&key, &refs, stage_1));
     drop(key);
+    system.config = system.config.without_disk_spill();
     tracing::info_span!("compression/verify")
       .in_scope(|| system.verify_multiple_claims(&refs, &proof))
       .map_err(|e| format!("new FRI proof: {e:?}"))?;

@@ -440,7 +440,9 @@ fn link_registers(
   let mut writes = vec![0usize; function.registers];
   writes[..input].fill(1);
   for op in &function.code {
-    use Instruction::{Binary, Call, Copy, Hint, Literal, Load, Neg, PtrEq, Store};
+    use Instruction::{
+      Binary, Call, Copy, Hint, Literal, Load, Neg, PtrEq, Store,
+    };
     let dest: &[usize] = match op {
       Literal { dest, .. }
       | Neg { dest, .. }
@@ -971,9 +973,7 @@ fn constant_divisions<B: FieldBackend>(
       },
       Instruction::Neg { dest, .. }
       | Instruction::Store { dest, .. }
-      | Instruction::PtrEq { dest, .. } => {
-        writes.push((*dest, None))
-      },
+      | Instruction::PtrEq { dest, .. } => writes.push((*dest, None)),
       Instruction::Call { dest, .. }
       | Instruction::Load { dest, .. }
       | Instruction::Hint { dest, .. } => {

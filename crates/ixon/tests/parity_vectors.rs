@@ -606,8 +606,14 @@ fn ixon_v5_cross_language_parity_vectors() {
   // 2. Proofs (all 7 variants under 0xF flag)
   // =========================================================================
   let proof_cases: Vec<(&str, Proof)> = vec![
-    ("proof_eval", Proof::new(claim_cases[0].1.clone(), vec![0xDE, 0xAD, 0xBE, 0xEF])),
-    ("proof_check_assumed", Proof::new(claim_cases[3].1.clone(), vec![0x01, 0x02, 0x03])),
+    (
+      "proof_eval",
+      Proof::new(claim_cases[0].1.clone(), vec![0xDE, 0xAD, 0xBE, 0xEF]),
+    ),
+    (
+      "proof_check_assumed",
+      Proof::new(claim_cases[3].1.clone(), vec![0x01, 0x02, 0x03]),
+    ),
     ("proof_check_env_class", Proof::new(claim_cases[6].1.clone(), vec![])),
     ("proof_reveal", Proof::new(claim_cases[8].1.clone(), vec![0xAA; 16])),
     ("proof_contains", Proof::new(claim_cases[17].1.clone(), vec![0x55; 8])),
@@ -658,8 +664,9 @@ fn ixon_v5_cross_language_parity_vectors() {
   for (name, tree) in &tree_cases {
     let bytes = tree.ser();
     let mut slice = bytes.as_slice();
-    let decoded = AssumptionTree::get(&mut slice)
-      .unwrap_or_else(|e| panic!("tree {name} failed AssumptionTree::get: {e}"));
+    let decoded = AssumptionTree::get(&mut slice).unwrap_or_else(|e| {
+      panic!("tree {name} failed AssumptionTree::get: {e}")
+    });
     assert!(slice.is_empty(), "tree {name} had trailing bytes");
     assert_eq!(&decoded, tree, "tree {name} round-trip mismatch");
     assert_eq!(decoded.root(), tree.root());
@@ -762,7 +769,10 @@ fn ixon_v5_cross_language_parity_vectors() {
       "app_telescope_3",
       "app",
       Expr::app(
-        Expr::app(Expr::app(Expr::reference(0, vec![0]), Expr::var(2)), Expr::var(1)),
+        Expr::app(
+          Expr::app(Expr::reference(0, vec![0]), Expr::var(2)),
+          Expr::var(1),
+        ),
         Expr::var(0),
       ),
     ),
@@ -1134,8 +1144,10 @@ fn ixon_v5_cross_language_parity_vectors() {
   // =========================================================================
   let b64: Vec<u8> = (0u8..64).collect();
   let b65: Vec<u8> = (0u8..65).collect();
-  let b1024: Vec<u8> = (0usize..1024).map(|i| u8::try_from(i % 251).unwrap()).collect();
-  let b1025: Vec<u8> = (0usize..1025).map(|i| u8::try_from(i % 251).unwrap()).collect();
+  let b1024: Vec<u8> =
+    (0usize..1024).map(|i| u8::try_from(i % 251).unwrap()).collect();
+  let b1025: Vec<u8> =
+    (0usize..1025).map(|i| u8::try_from(i % 251).unwrap()).collect();
   let blake3_cases: Vec<(&str, &[u8])> = vec![
     ("empty", b""),
     ("abc", b"abc"),
@@ -1232,7 +1244,12 @@ fn ixon_v5_cross_language_parity_vectors() {
   );
 
   let mut retired_resource = Vec::new();
-  TagN::put(4, FLAG_CLAIM, VARIANT_RESOURCE_CLAIM_RETIRED, &mut retired_resource);
+  TagN::put(
+    4,
+    FLAG_CLAIM,
+    VARIANT_RESOURCE_CLAIM_RETIRED,
+    &mut retired_resource,
+  );
   assert_eq!(&retired_resource[..2], &[0xE8, 0x01]);
   retired_resource.extend_from_slice(&[Env::OBJECT_FORMAT, 2]);
   retired_resource.extend_from_slice(addr("res-target").as_bytes());

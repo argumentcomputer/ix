@@ -799,8 +799,12 @@ fn vectorized_rom_matches_lean_multistark_spec_and_cuts_rom3_cells() {
 
   let (program, artifact) = multi_width_rom_fixture(8, 0);
   let plan = TracePlan::new(&program, artifact).unwrap();
-  let scalar_backend =
-    Backend::for_batch_verification(&plan, Parameters::DEFAULT).unwrap();
+  let scalar_backend = Backend::for_batch_verification_with_rom_layout(
+    &plan,
+    Parameters::DEFAULT,
+    RomLayout::Scalar,
+  )
+  .unwrap();
   let vec_backend = Backend::for_batch_verification_with_rom_layout(
     &plan,
     Parameters::DEFAULT,
