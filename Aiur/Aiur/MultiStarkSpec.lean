@@ -1683,6 +1683,263 @@ def lowerFullSystem [Field F] [DecidableEq F] {source : Circuit.System F}
     lowerRomCircuits (F := F) romWidths segmented
   inputs.map fun inp => retune (compileCircuit inp extDegree) blowup extDegree
 
+/-! ## 5b. Grouping Slot Permutation (`C7a`) & Raw-Packet Compaction (`C2`) LogUp Equivalence -/
+
+section GroupingPacketLogUp
+
+variable {F K : Type} [Field F] [DecidableEq F] [Field K]
+
+private theorem foldr_rlc_zero (γ : K) :
+    ∀ (xs : List K), (∀ j : Nat, xs[j]?.getD 0 = 0) →
+      xs.foldr (fun a acc => acc * γ + a) 0 = 0
+  | [], _ => rfl
+  | x :: xs, h => by
+      have hx : x = 0 := by simpa using h 0
+      have hxs : ∀ j : Nat, xs[j]?.getD 0 = 0 := fun j => by simpa using h (j + 1)
+      simp [hx, foldr_rlc_zero γ xs hxs]
+
+/-- Multi-STARK's RLC fingerprint `β + ∑ arg_k * γ^k` is invariant under
+zero-padded tails: two argument vectors with equal zero-extended entries have
+the exact same fingerprint. -/
+theorem fingerprint_eq_of_word_eq (β γ : K) :
+    ∀ {xs ys : List K}, (∀ j : Nat, xs[j]?.getD 0 = ys[j]?.getD 0) →
+      fingerprint β γ xs = fingerprint β γ ys
+  | [], ys, h => by
+      unfold fingerprint
+      have hys : ∀ j : Nat, ys[j]?.getD 0 = 0 := fun j => (h j).symm
+      rw [List.foldr_nil, foldr_rlc_zero γ ys hys]
+  | x :: xs, [], h => by
+      unfold fingerprint
+      have hxs : ∀ j : Nat, (x :: xs)[j]?.getD 0 = 0 := fun j => h j
+      rw [foldr_rlc_zero γ (x :: xs) hxs, List.foldr_nil]
+  | x :: xs, y :: ys, h => by
+      have h0 : x = y := by simpa using h 0
+      have htail : ∀ j : Nat, xs[j]?.getD 0 = ys[j]?.getD 0 := fun j => by simpa using h (j + 1)
+      have ih := fingerprint_eq_of_word_eq β γ htail
+      unfold fingerprint at ih ⊢
+      have hfold : xs.foldr (fun a acc => acc * γ + a) 0 = ys.foldr (fun a acc => acc * γ + a) 0 :=
+        add_right_cancel ih
+      simp [h0, hfold]
+
+private theorem flatten_map_append_at {α : Type} (k : α) (s₀ : Nat) :
+    ∀ (m : Nat) (f : Nat → List α), s₀ < m →
+      ((List.range m).map fun s => if s = s₀ then f s ++ [k] else f s).flatten.Perm
+        (k :: ((List.range m).map f).flatten)
+  | 0, _, hs => by omega
+  | m + 1, f, hs => by
+      rw [List.range_succ, List.map_append, List.map_singleton, List.flatten_append,
+        List.flatten_singleton, List.map_append, List.map_singleton, List.flatten_append,
+        List.flatten_singleton]
+      by_cases heq : m = s₀
+      · subst heq
+        have hlt : ∀ s ∈ List.range m, (if s = m then f s ++ [k] else f s) = f s := by
+          intro s hsm
+          have hne : s ≠ m := Nat.ne_of_lt (List.mem_range.mp hsm)
+          simp [hne]
+        rw [List.map_congr_left hlt]
+        simp only [↓reduceIte, ← List.append_assoc]
+        exact List.perm_append_singleton k _
+      · have hlt : s₀ < m := by omega
+        have hne : m ≠ s₀ := heq
+        simp only [hne, ↓reduceIte]
+        have ih := flatten_map_append_at k s₀ m f hlt
+        exact ih.append_right (f m)
+
+/-- When every logical index `k < n` maps to a physical slot `slotOf slotMap k < m`,
+the buckets `{ bucketOf slotMap n s | s < m }` partition `List.range n`. -/
+theorem flatten_bucketOf_perm (slotMap : Array Nat) (m : Nat) :
+    ∀ (n : Nat), (∀ k < n, slotOf slotMap k < m) →
+      ((List.range m).map fun s => bucketOf slotMap n s).flatten.Perm (List.range n)
+  | 0, _ => by
+      have hnil : ((List.range m).map fun s => bucketOf slotMap 0 s).flatten = [] := by
+        apply List.flatten_eq_nil_iff.mpr
+        intro xs hxs
+        obtain ⟨s, _, rfl⟩ := List.mem_map.mp hxs
+        rfl
+      rw [hnil]
+      exact List.Perm.refl _
+  | n + 1, hbound => by
+      have hstep : ∀ s, bucketOf slotMap (n + 1) s =
+          if s = slotOf slotMap n then bucketOf slotMap n s ++ [n] else bucketOf slotMap n s := by
+        intro s
+        unfold bucketOf
+        rw [List.range_succ, List.filter_append, List.filter_cons, List.filter_nil]
+        by_cases heq : s = slotOf slotMap n
+        · simp [heq]
+        · have hne : (slotOf slotMap n == s) = false := by
+            simp [Ne.symm heq]
+          simp [heq, hne]
+      have hmap : ((List.range m).map fun s => bucketOf slotMap (n + 1) s) =
+          ((List.range m).map fun s =>
+            if s = slotOf slotMap n then bucketOf slotMap n s ++ [n] else bucketOf slotMap n s) :=
+        List.map_congr_left fun s _ => hstep s
+      rw [hmap]
+      have h1 := flatten_map_append_at n (slotOf slotMap n) m (bucketOf slotMap n)
+        (hbound n (Nat.lt_succ_self n))
+      have h2 := flatten_bucketOf_perm slotMap m n (fun k hk => hbound k (Nat.lt_succ_of_lt hk))
+      have h3 : (n :: List.range n).Perm (List.range (n + 1)) := by
+        rw [List.range_succ]
+        exact (List.perm_append_singleton n (List.range n)).symm
+      exact (h1.trans (h2.cons n)).trans h3
+
+private theorem sum_map_eq_single_of_nodup {α : Type} {f : α → K} :
+    ∀ {xs : List α}, xs.Nodup → ∀ {k : α}, k ∈ xs → (∀ x ∈ xs, x ≠ k → f x = 0) →
+      (xs.map f).sum = f k
+  | [], _, _, hk, _ => by cases hk
+  | x :: xs, hnd, k, hk, hzero => by
+      rw [List.nodup_cons] at hnd
+      simp only [List.map_cons, List.sum_cons]
+      rcases List.mem_cons.mp hk with rfl | hmem
+      · have htail : (xs.map f).sum = 0 := by
+          apply List.sum_eq_zero
+          intro v hv
+          obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hv
+          exact hzero y (List.mem_cons_of_mem _ hy) (fun heq => hnd.1 (heq ▸ hy))
+        rw [htail, add_zero]
+      · have hx : f x = 0 := hzero x List.mem_cons_self (fun heq => hnd.1 (heq ▸ hmem))
+        rw [hx, zero_add]
+        exact sum_map_eq_single_of_nodup hnd.2 hmem (fun y hy hne =>
+          hzero y (List.mem_cons_of_mem _ hy) hne)
+
+/-- Evaluate a `Grouping.Lookup F` into a `(multiplicity, denominator)` LogUp pair in `K`. -/
+def evalGroupingLookup (embed : F →+* K) (β γ : K) (a : Nat → F) (l : Grouping.Lookup F) : K × K :=
+  (embed (l.enable.denote a), fingerprint β γ (l.args.map fun p => embed (p.denote a)))
+
+private theorem word_list_map_getD (embed : F →+* K) (a : Nat → F)
+    (ps : List (Optimized.Polynomial F)) (j : Nat) :
+    (ps.map fun p => embed (p.denote a))[j]?.getD 0 = embed ((word ps j).denote a) := by
+  by_cases hj : j < ps.length
+  · simp [word, hj]
+  · have hge : ps.length ≤ j := Nat.not_lt.mp hj
+    simp [word, List.getElem?_eq_none hge, Scalar.Circuit.ArithExpr.denote, map_zero]
+
+/-- **Per-row LogUp equivalence for `C7a` slot permutation & `C2` raw-packet compaction:**
+`Grouping.SamePackets` preserves both the receive RLC fingerprint and the exact
+per-row send LogUp rational sum `∑ m_i / (β + rlc(γ, args_i))` over any field
+extension `embed : F →+* K`. -/
+theorem samePackets_logup_sum_eq (embed : F →+* K) (β γ : K)
+    {g : Grouping.Layout F} {slotMap : Array Nat} {a b : Nat → F}
+    {provided : List (Optimized.Polynomial F)} {required : List (Grouping.Lookup F)}
+    (hsame : Grouping.SamePackets g slotMap a provided required b) :
+    fingerprint β γ (g.receive.map fun p => embed (p.denote a)) =
+      fingerprint β γ (provided.map fun p => embed (p.denote b)) ∧
+    ungroupedLogUpSum (g.sends.map (evalGroupingLookup embed β γ a)) =
+      ungroupedLogUpSum (required.map (evalGroupingLookup embed β γ b)) := by
+  obtain ⟨hrecv, hbound, hslots⟩ := hsame
+  constructor
+  · apply fingerprint_eq_of_word_eq
+    intro j
+    rw [word_list_map_getD, word_list_map_getD, hrecv j]
+  · set slotTerm : Nat → K := fun s =>
+      let t := evalGroupingLookup embed β γ a (g.slot s)
+      t.1 * t.2⁻¹
+    set reqTerm : Nat → K := fun k =>
+      let t := evalGroupingLookup embed β γ b (Grouping.lookupAt required k)
+      t.1 * t.2⁻¹
+    have hlhs : ungroupedLogUpSum (g.sends.map (evalGroupingLookup embed β γ a)) =
+        ((List.range g.sends.length).map slotTerm).sum := by
+      unfold ungroupedLogUpSum
+      rw [List.map_map]
+      congr 1
+      apply List.ext_getElem
+      · simp
+      · intro s hs1 hs2
+        have hs : s < g.sends.length := by simpa using hs1
+        simp [slotTerm, Grouping.Layout.slot, hs]
+    have hrhs_range : ungroupedLogUpSum (required.map (evalGroupingLookup embed β γ b)) =
+        ((List.range required.length).map reqTerm).sum := by
+      unfold ungroupedLogUpSum
+      rw [List.map_map]
+      congr 1
+      apply List.ext_getElem
+      · simp
+      · intro k hk1 hk2
+        have hk : k < required.length := by simpa using hk1
+        simp [reqTerm, Grouping.lookupAt, hk]
+    have hperm := flatten_bucketOf_perm slotMap g.sends.length required.length hbound
+    have hrhs_part : ((List.range required.length).map reqTerm).sum =
+        ((List.range g.sends.length).map fun s =>
+          ((bucketOf slotMap required.length s).map reqTerm).sum).sum := by
+      rw [← (hperm.map reqTerm).sum_eq, List.map_flatten, List.sum_flatten, List.map_map,
+        List.map_map]
+      rfl
+    rw [hlhs, hrhs_range, hrhs_part]
+    congr 1
+    apply List.map_congr_left
+    intro s _
+    have hslot := hslots s
+    dsimp only at hslot
+    have hnd : (bucketOf slotMap required.length s).Nodup :=
+      List.Nodup.filter _ List.nodup_range
+    generalize hB : bucketOf slotMap required.length s = B at hslot hnd ⊢
+    cases B with
+    | nil =>
+        simp [slotTerm, evalGroupingLookup, hslot.1, map_zero]
+    | cons k1 rest =>
+        cases rest with
+        | nil =>
+            simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, add_zero,
+              slotTerm, reqTerm, evalGroupingLookup]
+            have hfp : fingerprint β γ ((g.slot s).args.map fun p => embed (p.denote a)) =
+                fingerprint β γ ((Grouping.lookupAt required k1).args.map fun p => embed (p.denote b)) := by
+              apply fingerprint_eq_of_word_eq
+              intro j
+              rw [word_list_map_getD, word_list_map_getD, hslot.2 j]
+            rw [hslot.1, hfp]
+        | cons k2 tail =>
+            set B' := k1 :: k2 :: tail
+            rcases hslot with ⟨hs0, _, hall0⟩ | ⟨k, hkmem, hk1, hrest0, hs1, hargs⟩
+            · have hr0 : (B'.map reqTerm).sum = 0 := by
+                apply List.sum_eq_zero
+                intro v hv
+                obtain ⟨j, hj, rfl⟩ := List.mem_map.mp hv
+                simp [reqTerm, evalGroupingLookup, hall0 j hj, map_zero]
+              simp [slotTerm, evalGroupingLookup, hs0, map_zero, hr0]
+            · have hrk : (B'.map reqTerm).sum = reqTerm k := by
+                apply sum_map_eq_single_of_nodup hnd hkmem
+                intro j hj hne
+                simp [reqTerm, evalGroupingLookup, hrest0 j hj hne, map_zero]
+              rw [hrk]
+              simp only [slotTerm, reqTerm, evalGroupingLookup, hs1, hk1]
+              have hfp : fingerprint β γ ((g.slot s).args.map fun p => embed (p.denote a)) =
+                  fingerprint β γ ((Grouping.lookupAt required k).args.map fun p => embed (p.denote b)) := by
+                apply fingerprint_eq_of_word_eq
+                intro j
+                rw [word_list_map_getD, word_list_map_getD, hargs j]
+              rw [hfp]
+
+/-- **Certified active-row LogUp equivalence for grouped circuits (`C7a` + `C2`):**
+any valid active row of a certified `Grouping.Checked` layout produces the exact
+same receive fingerprint and send LogUp rational sum as the selected member's
+original ungrouped chip. -/
+theorem checked_packet_logup_sum_eq {sources : List (Circuit.Chip F)}
+    {id : String → Except String Nat} (checked : Grouping.Checked sources id)
+    (embed : F →+* K) (β γ : K) {rom : WireROM F}
+    (m : Grouping.Member F) (hm : m ∈ checked.layout.members) (a : Nat → F)
+    (valid : checked.layout.ValidRow rom a) (active : a m.selector = 1) :
+    ∃ provided required, Grouping.messages id m.origin = .ok (provided, required) ∧
+      fingerprint β γ (checked.layout.receive.map fun p => embed (p.denote a)) =
+        fingerprint β γ (provided.map fun p => embed (p.denote (fun v => a (m.columns[v]?.getD 0)))) ∧
+      ungroupedLogUpSum (checked.layout.sends.map (evalGroupingLookup embed β γ a)) =
+        ungroupedLogUpSum (required.map (evalGroupingLookup embed β γ (fun v => a (m.columns[v]?.getD 0)))) := by
+  obtain ⟨provided, required, hmsg, hsame⟩ := checked.packet_sound m hm a valid active
+  exact ⟨provided, required, hmsg, samePackets_logup_sum_eq embed β γ hsame⟩
+
+/-- **Certified padding-row LogUp silence for grouped circuits:**
+any padding row (`activation = 0`) of a certified `Grouping.Checked` layout
+contributes `0` to the send LogUp rational sum. -/
+theorem checked_padding_logup_sum_zero {sources : List (Circuit.Chip F)}
+    {id : String → Except String Nat} (checked : Grouping.Checked sources id)
+    (embed : F →+* K) (β γ : K) (a : Nat → F)
+    (valid : Circuit.Satisfies checked.layout.constraints a)
+    (off : checked.layout.activation.denote a = 0) :
+    ungroupedLogUpSum (checked.layout.sends.map (evalGroupingLookup embed β γ a)) = 0 := by
+  have hsame := checked.padding_sound a valid off
+  have h := (samePackets_logup_sum_eq embed β γ hsame).2
+  simpa [ungroupedLogUpSum] using h
+
+end GroupingPacketLogUp
+
 /-! ## 6. Axiom Audit Guards (`WS 2B-2`) -/
 
 /-- info: 'Aiur.MultiStarkSpec.AirExpr.eval_fold' depends on axioms: [propext] -/
@@ -1732,5 +1989,17 @@ def lowerFullSystem [Field F] [DecidableEq F] {source : Circuit.System F}
 /-- info: 'Aiur.MultiStarkSpec.lowered_trace_depth_sound_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms lowered_trace_depth_sound_goldilocks
+
+/-- info: 'Aiur.MultiStarkSpec.samePackets_logup_sum_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms samePackets_logup_sum_eq
+
+/-- info: 'Aiur.MultiStarkSpec.checked_packet_logup_sum_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms checked_packet_logup_sum_eq
+
+/-- info: 'Aiur.MultiStarkSpec.checked_padding_logup_sum_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms checked_padding_logup_sum_zero
 
 end Aiur.MultiStarkSpec

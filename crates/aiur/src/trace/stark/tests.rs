@@ -1880,3 +1880,92 @@ fn validated_record_binds_to_backend_survives_moves_and_rejects_bad_depths() {
       .contains("field characteristic")
   );
 }
+
+#[test]
+fn single_member_group_proves_and_empty_group_rejected() {
+  use crate::trace::{FunctionGroup, GroupLookup, GroupMember, Polynomial};
+
+  let package = grouping_fixture();
+  let program = package.program.check().unwrap();
+
+  // An empty 0-member group must still be rejected.
+  let mut empty_trace = package.trace.clone();
+  empty_trace.groups = vec![FunctionGroup {
+    name: "empty".into(),
+    width: 1,
+    activation: Polynomial::Const(0),
+    constraints: vec![],
+    receive: vec![],
+    sends: vec![],
+    members: vec![],
+  }];
+  let empty_plan = TracePlan::new(&program, empty_trace).unwrap();
+  assert!(Backend::for_batch(&empty_plan, parameters()).is_err());
+
+  // Wrap a single chip (`Grouped::memory`) in a 1-member group (`C2`).
+  let chip = package
+    .trace
+    .chips
+    .iter()
+    .find(|c| c.name == "Grouped::memory")
+    .unwrap()
+    .clone();
+  let call_id = program
+    .program()
+    .functions
+    .iter()
+    .position(|f| f.name == chip.name)
+    .unwrap() as u64;
+  let mut receive = vec![Polynomial::Const(CALL), Polynomial::Const(call_id)];
+  receive.extend(chip.inputs.iter().map(|&c| Polynomial::Var(c)));
+  receive.extend(chip.output.iter().cloned());
+  let sends: Vec<GroupLookup> = chip
+    .memory
+    .iter()
+    .map(|cell| {
+      let mut args = vec![
+        Polynomial::Const(ROM),
+        Polynomial::Const(cell.values.len() as u64),
+        cell.address.clone(),
+      ];
+      args.extend(cell.values.iter().cloned());
+      GroupLookup { enable: cell.enable.clone(), args }
+    })
+    .collect();
+  let single_group = FunctionGroup {
+    name: "memory_single_group".into(),
+    width: chip.width,
+    activation: Polynomial::Var(chip.activation),
+    constraints: chip.constraints.clone(),
+    receive,
+    sends,
+    members: vec![GroupMember {
+      name: chip.name.clone(),
+      columns: (0..chip.width).collect(),
+      selector: chip.activation,
+      writes: vec![],
+    }],
+  };
+
+  let mut single_trace = package.trace.clone();
+  single_trace.groups = vec![single_group];
+  let plan = TracePlan::new(&program, single_trace).unwrap();
+  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  assert!(backend.names.iter().any(|n| n == "memory_single_group"));
+
+  let entry = "Grouped::run";
+  let record = program.execute(entry, vec![3]).unwrap();
+  assert_eq!(record.output, vec![140]);
+  let witness = backend.generate(&record, entry, &[3]).unwrap();
+  let proof = backend
+    .prove_batch(
+      entry,
+      &[3],
+      &record.output,
+      witness,
+      2,
+      multi_stark::batch::Retention::Retain,
+    )
+    .unwrap();
+  backend.verify_batch(entry, &[3], &record.output, &proof).unwrap();
+}

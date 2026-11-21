@@ -32,7 +32,7 @@ pub(super) fn build<B: WitnessField>(
   let mut placements: Vec<Option<Placement>> =
     (0..plan.artifact.chips.len()).map(|_| None).collect();
   for (gi, group) in plan.artifact.groups.iter().enumerate() {
-    if group.members.len() < 2 || group.width >= u32::MAX as usize {
+    if group.members.is_empty() || group.width >= u32::MAX as usize {
       return Err("invalid function group size".into());
     }
     for member in &group.members {

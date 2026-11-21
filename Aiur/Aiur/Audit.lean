@@ -5651,5 +5651,14 @@ info: Library.IxVMRep.tagn_tail_two_byte_spec : ∀ (lo v0 : UInt8) (q h carry :
 /-- info: 'Aiur.MultiStarkSpec.lowered_trace_depth_sound_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.MultiStarkSpec.lowered_trace_depth_sound_goldilocks
+/-- info: 'Aiur.MultiStarkSpec.samePackets_logup_sum_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.samePackets_logup_sum_eq
+/-- info: 'Aiur.MultiStarkSpec.checked_packet_logup_sum_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.checked_packet_logup_sum_eq
+/-- info: 'Aiur.MultiStarkSpec.checked_padding_logup_sum_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.checked_padding_logup_sum_zero
 
 end Aiur.Audit

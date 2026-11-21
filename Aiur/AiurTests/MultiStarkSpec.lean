@@ -144,7 +144,149 @@ def expectedDepthFixtureSummaries : List CircuitSummary := [
     constraintCount := 2, maxConstraintDegree := 2 }
 ]
 
+/-- Real Aiur module exercising `C2` cross-channel intra-chip compaction:
+- `dispatch3`: 3 mutually-exclusive calls to distinct channels (`f1`, `f2`, `f3`)
+  -> compacts `3 → 1` slot in a 1-member group!
+- `dispatch2`: 2 mutually-exclusive deg-1 calls (`f1`, `f2`) -> guarded by the
+  `retune` `g=4→2` threshold (`≥ 3`), stays `2` deg-1 slots!
+- `dispatch2_quad`: 2 mutually-exclusive calls with a deg-2 arg (`f1(x * x)`)
+  -> `hadDeg2` allows `2 → 1` compaction! -/
+private def compactTestProgram : Modules.Program Nat := aiur_modules% "
+module CompactTest {
+  fn f1(x: Field) -> Field { x + 1 }
+  fn f2(x: Field) -> Field { x + 2 }
+  fn f3(x: Field) -> Field { x + 3 }
+  fn dispatch3(tag: Field, x: Field) -> Field {
+    match tag {
+      0 => f1(x),
+      1 => f2(x),
+      _ => f3(x),
+    }
+  }
+  fn dispatch2(tag: Field, x: Field) -> Field {
+    match tag {
+      0 => f1(x),
+      _ => f2(x),
+    }
+  }
+  fn dispatch2_quad(tag: Field, x: Field) -> Field {
+    match tag {
+      0 => f1(x),
+      1 => f1(x + 1),
+      _ => f2(x),
+    }
+  }
+}
+"
+
+private def testC7AndC2 : IO Unit := do
+  -- 1. `C7a`: Per-member slot sorting aligns deg-2 lookups instead of smearing across deg-1 slots.
+  -- `enable := .var 0` places `var 0` in `privateCols`, so `.var 0` stays degree 1 while
+  -- `.mul (.var 0) (.var 1)` stays degree 2 (no lifting).
+  let deg1Send (ch : String) : Circuit.Send GF :=
+    { enable := .var 0, channel := ch, args := [.field (.var 0)], result := .field 0 }
+  let deg2Send (ch : String) : Circuit.Send GF :=
+    { enable := .var 0, channel := ch, args := [.field (.mul (.var 0) (.var 1))], result := .field 0 }
+  let chipA : Circuit.Chip GF := {
+    name := "c7a_a", numVars := 2
+    inputs := [.field 0, .field 1], output := .field (.var 0)
+    constraints := [], sends := [deg1Send "h1", deg2Send "h2"], memory := [] }
+  let chipB : Circuit.Chip GF := {
+    name := "c7a_b", numVars := 2
+    inputs := [.field 0, .field 1], output := .field (.var 0)
+    constraints := [], sends := [deg2Send "h2", deg1Send "h1"], memory := [] }
+  let c7aId : String → Except String Nat
+    | "c7a_a" => .ok 0
+    | "c7a_b" => .ok 1
+    | "h1" => .ok 2
+    | "h2" => .ok 3
+    | s => .error s!"unknown {s}"
+  let unsorted ← IO.ofExcept (Grouping.compile "c7a_unsorted" c7aId [chipA, chipB] false false)
+  let sorted ← IO.ofExcept (Grouping.compile "c7a_sorted" c7aId [chipA, chipB] true false)
+  let countDeg2 (l : Grouping.Layout GF) : Nat :=
+    l.sends.countP fun s => (s.args.foldl (fun acc p => max acc p.degree) 0) ≥ 2
+  unless countDeg2 unsorted.layout == 2 && countDeg2 sorted.layout == 1 do
+    throw (IO.userError s!"C7a: expected deg-2 slots 2 → 1, got {countDeg2 unsorted.layout} → {countDeg2 sorted.layout}")
+
+  -- 2. `C7b`: Relaxing constraint cap 3 → 5 on q=4 groups reduces width while keeping q ≤ 4.
+  let cubicChip (nm : String) (numSends : Nat) : Circuit.Chip GF := {
+    name := nm, numVars := 4
+    inputs := [.field 0, .field 1, .field 2], output := .field (.var 3)
+    constraints := [.mul (.var 0) (.mul (.var 1) (.var 2))]
+    sends := (List.range numSends).map fun _ =>
+      { enable := .const 1, channel := "h1", args := [.field (.var 0)], result := .field 3 }
+    memory := [] }
+  let c7bId : String → Except String Nat
+    | "c7b_a" => .ok 0
+    | "c7b_b" => .ok 1
+    | "h1" => .ok 2
+    | s => .error s!"unknown {s}"
+  let c7bSources := [cubicChip "c7b_a" 20, cubicChip "c7b_b" 20]
+  let cap3 ← IO.ofExcept (Grouping.compile "c7b_cap3" c7bId c7bSources true false (some 3))
+  let autoQ4 ← IO.ofExcept (Grouping.compile "c7b_auto" c7bId c7bSources true false none)
+  let maxDegAuto := autoQ4.layout.constraints.foldl (fun acc p => max acc p.degree) 0
+  unless autoQ4.layout.width < cap3.layout.width && maxDegAuto ≤ 5 &&
+      quotientDegreeFromMax maxDegAuto ≤ 4 do
+    throw (IO.userError s!"C7b: expected width {autoQ4.layout.width} < {cap3.layout.width}, maxDeg={maxDegAuto}")
+  -- Small q=2 group stays at cap=3 (maxDeg ≤ 3, q ≤ 2).
+  let smallSources := [cubicChip "c7b_a" 1, cubicChip "c7b_b" 1]
+  let autoSmall ← IO.ofExcept (Grouping.compile "c7b_small" c7bId smallSources true false none)
+  let maxDegSmall := autoSmall.layout.constraints.foldl (fun acc p => max acc p.degree) 0
+  unless maxDegSmall ≤ 3 do
+    throw (IO.userError s!"C7b: small q=2 group exceeded degree 3 (got {maxDegSmall})")
+
+  -- 3. `C2`: Real Aiur program — 1-member group + cross-channel compaction + retune guard + negative check.
+  let c2Src := compactTestProgram.toField GF
+  let c2Prep ← IO.ofExcept (Modules.prepare c2Src
+    ["CompactTest::dispatch3", "CompactTest::dispatch2", "CompactTest::dispatch2_quad"])
+  let c2Exp ← IO.ofExcept c2Prep.exportExecution
+  let c2Comp ← IO.ofExcept c2Prep.compileOptimized
+  let c2Phys ← IO.ofExcept (Physical.prepare c2Comp.circuit.artifact)
+  let c2Callables := c2Exp.bytecode.functions.map (·.name) ++ c2Exp.bytecode.maps.map (·.name)
+  let c2Id : String → Except String Nat := fun name =>
+    if c2Callables.contains name then pure (c2Callables.idxOf name)
+    else throw s!"unknown callable {name}"
+  let findChip (nm : String) : IO (Circuit.Chip GF) :=
+    match c2Phys.system.findChip? nm with
+    | some c => pure c
+    | none => throw (IO.userError s!"missing chip {nm}")
+  let d3Chip ← findChip "CompactTest::dispatch3"
+  let d2Chip ← findChip "CompactTest::dispatch2"
+  let d2qChip ← findChip "CompactTest::dispatch2_quad"
+
+  let d3NoCompact ← IO.ofExcept (Grouping.compile "d3_plain" c2Id [d3Chip] true false)
+  let d3Compact ← IO.ofExcept (Grouping.compile "d3_compact" c2Id [d3Chip] true true)
+  unless d3NoCompact.layout.sends.length == 3 && d3Compact.layout.sends.length == 1 do
+    throw (IO.userError s!"C2 dispatch3: expected sends 3 → 1, got {d3NoCompact.layout.sends.length} → {d3Compact.layout.sends.length}")
+
+  let d2Compact ← IO.ofExcept (Grouping.compile "d2_compact" c2Id [d2Chip] true true)
+  unless d2Compact.layout.sends.length == 2 do
+    throw (IO.userError s!"C2 dispatch2 retune guard: expected 2 deg-1 slots preserved, got {d2Compact.layout.sends.length}")
+
+  let d2qNoCompact ← IO.ofExcept (Grouping.compile "d2q_plain" c2Id [d2qChip] true false)
+  let d2qCompact ← IO.ofExcept (Grouping.compile "d2q_compact" c2Id [d2qChip] true true)
+  unless d2qNoCompact.layout.sends.length == 2 && d2qCompact.layout.sends.length == 1 do
+    throw (IO.userError s!"C2 dispatch2_quad: expected sends 2 → 1, got {d2qNoCompact.layout.sends.length} → {d2qCompact.layout.sends.length}")
+
+  -- Negative tamper test: stripping exclusion constraints from `d3Chip` must be rejected by `certify`.
+  let strippedOrigin : Circuit.Chip GF := { d3Chip with constraints := [] }
+  let tamperedLayout : Grouping.Layout GF :=
+    { d3Compact.layout with members := d3Compact.layout.members.map fun m => { m with origin := strippedOrigin } }
+  match Grouping.certify [strippedOrigin] c2Id tamperedLayout with
+  | .ok _ => throw (IO.userError "C2 negative test: certify accepted compacted slot without exclusion constraints")
+  | .error _ => pure ()
+  -- Negative tamper test: perturbing a compacted slot word must be rejected by `certify`.
+  let badWordLayout : Grouping.Layout GF :=
+    { d3Compact.layout with
+      sends := d3Compact.layout.sends.map fun s =>
+        { s with args := s.args.take 2 ++ [.add (Grouping.word s.args 2) (.const 1)] ++ s.args.drop 3 } }
+  match Grouping.certify [d3Chip] c2Id badWordLayout with
+  | .ok _ => throw (IO.userError "C2 negative test: certify accepted tampered compacted slot argument")
+  | .error _ => pure ()
+  IO.println s!"MultiStarkSpec C7+C2: C7a deg2 2→1, C7b width {cap3.layout.width}→{autoQ4.layout.width} (maxDeg={maxDegAuto}), C2 dispatch3 3→1, dispatch2 guard=2, dispatch2_quad 2→1, negative checks rejected"
+
 def run : IO Unit := do
+  testC7AndC2
   let source := depthFixtureProgram.toField GF
   let prepared ← IO.ofExcept (Modules.prepare source depthFixtureEntries)
   let exported ← IO.ofExcept prepared.exportExecution
