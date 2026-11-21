@@ -5660,5 +5660,23 @@ info: Library.IxVMRep.tagn_tail_two_byte_spec : ∀ (lo v0 : UInt8) (q h carry :
 /-- info: 'Aiur.MultiStarkSpec.checked_padding_logup_sum_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.MultiStarkSpec.checked_padding_logup_sum_zero
+/-- info: 'Aiur.MultiStarkSpec.vecRow_prefix_of_valid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.vecRow_prefix_of_valid
+/-- info: 'Aiur.MultiStarkSpec.vecRow_memseg_delta_eq_scalar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.vecRow_memseg_delta_eq_scalar
+/-- info: 'Aiur.MultiStarkSpec.vecTrace_memseg_delta_eq_scalar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.vecTrace_memseg_delta_eq_scalar
+/-- info: 'Aiur.MultiStarkSpec.vecRow_rom_logup_sum_eq_extracted' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.vecRow_rom_logup_sum_eq_extracted
+/-- info: 'Aiur.MultiStarkSpec.vectorizedRom_rows_contiguous' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.vectorizedRom_rows_contiguous
+/-- info: 'Aiur.MultiStarkSpec.vectorizedRom_telescopes_memseg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.vectorizedRom_telescopes_memseg
 
 end Aiur.Audit

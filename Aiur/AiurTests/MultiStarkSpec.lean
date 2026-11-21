@@ -285,8 +285,43 @@ private def testC7AndC2 : IO Unit := do
   | .error _ => pure ()
   IO.println s!"MultiStarkSpec C7+C2: C7a deg2 2→1, C7b width {cap3.layout.width}→{autoQ4.layout.width} (maxDeg={maxDegAuto}), C2 dispatch3 3→1, dispatch2 guard=2, dispatch2_quad 2→1, negative checks rejected"
 
+/-- Exact `C6` vectorized ROM circuit summaries for widths `[1, 3, 5, 13]` at
+`blowup = 4`, `segmented = true`, mirrored in
+`crates/aiur/src/trace/stark/tests/spec_parity.rs`. -/
+def expectedVectorizedRomSummaries : List CircuitSummary := [
+  { name := "<ROM:1>", stage1Width := 25, stage2Width := 10, preprocessedWidth := 0,
+    preprocessedHeight := 0, lookups := 10, lookupGroupSize := 2, quotientDegree := 2,
+    constraintCount := 35, maxConstraintDegree := 3 },
+  { name := "<ROM:3>", stage1Width := 41, stage2Width := 10, preprocessedWidth := 0,
+    preprocessedHeight := 0, lookups := 10, lookupGroupSize := 2, quotientDegree := 2,
+    constraintCount := 35, maxConstraintDegree := 3 },
+  { name := "<ROM:5>", stage1Width := 29, stage2Width := 6, preprocessedWidth := 0,
+    preprocessedHeight := 0, lookups := 6, lookupGroupSize := 2, quotientDegree := 2,
+    constraintCount := 19, maxConstraintDegree := 3 },
+  { name := "<ROM:13>", stage1Width := 16, stage2Width := 6, preprocessedWidth := 0,
+    preprocessedHeight := 0, lookups := 3, lookupGroupSize := 1, quotientDegree := 1,
+    constraintCount := 10, maxConstraintDegree := 2 }
+]
+
+def testVectorizedRom : IO Unit := do
+  let widths := [1, 3, 5, 13]
+  let vecSummaries :=
+    (lowerVectorizedRomCircuits (F := GF) widths true).map fun inp =>
+      (retune (compileCircuit inp) 4).summary
+  unless vecSummaries == expectedVectorizedRomSummaries do
+    throw (IO.userError s!"C6 vectorized ROM parity mismatch!\nactual:\n{reprStr vecSummaries}\nexpected:\n{reprStr expectedVectorizedRomSummaries}")
+  let scalarRom3 := (retune (compileCircuit (lowerScalarRomCircuit (F := GF) 3 true)) 4).summary
+  let vecRom3 := (retune (compileCircuit (lowerVectorizedRomCircuit (F := GF) 3 true)) 4).summary
+  -- Compare total committed cells per 8 `<ROM:3>` entries (main + stage2 + quotient*ext).
+  let scalarCells8 := (scalarRom3.stage1Width + scalarRom3.stage2Width + scalarRom3.quotientDegree * 2) * 8
+  let vecCells8 := (vecRom3.stage1Width + vecRom3.stage2Width + vecRom3.quotientDegree * 2) * 1
+  unless scalarCells8 == 112 && vecCells8 == 55 do
+    throw (IO.userError s!"C6 <ROM:3> cell delta mismatch: scalar={scalarCells8}, vec={vecCells8}")
+  IO.println s!"MultiStarkSpec C6: vectorized ROM [1,3,5,13] matches spec, <ROM:3> cells/8-entries {scalarCells8}→{vecCells8} (-50.9%, -3 max_log)"
+
 def run : IO Unit := do
   testC7AndC2
+  testVectorizedRom
   let source := depthFixtureProgram.toField GF
   let prepared ← IO.ofExcept (Modules.prepare source depthFixtureEntries)
   let exported ← IO.ofExcept prepared.exportExecution

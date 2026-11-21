@@ -43,6 +43,7 @@ mod tables;
 mod tests;
 mod witness;
 pub use batch::{StageOne, StreamPlan, VerifyingKey};
+pub use rom::{RomLayout, rom_lanes};
 pub use statistics::{CircuitMeasurements, ExecutionStatistics};
 pub use witness::ValidatedRecord;
 
@@ -237,7 +238,15 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
   ) -> Result<Self, String> {
-    Self::with_memory_policy(plan, parameters, false)
+    Self::new_with_rom_layout(plan, parameters, RomLayout::Scalar)
+  }
+
+  pub fn new_with_rom_layout(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    rom_layout: RomLayout,
+  ) -> Result<Self, String> {
+    Self::with_memory_policy(plan, parameters, false, rom_layout)
   }
 
   /// Batch proofs close contiguous memory ranges through authenticated
@@ -246,7 +255,15 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
   ) -> Result<Self, String> {
-    Self::with_memory_policy(plan, parameters, true)
+    Self::for_batch_with_rom_layout(plan, parameters, RomLayout::Scalar)
+  }
+
+  pub fn for_batch_with_rom_layout(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    rom_layout: RomLayout,
+  ) -> Result<Self, String> {
+    Self::with_memory_policy(plan, parameters, true, rom_layout)
   }
 
   /// Reconstruct the trusted batch system for verification or key export.
@@ -256,7 +273,19 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
   ) -> Result<Self, String> {
-    Self::build_with_lookup_policy(plan, parameters, true, None, false)
+    Self::for_batch_verification_with_rom_layout(
+      plan,
+      parameters,
+      RomLayout::Scalar,
+    )
+  }
+
+  pub fn for_batch_verification_with_rom_layout(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    rom_layout: RomLayout,
+  ) -> Result<Self, String> {
+    Self::assemble(plan, parameters, true, rom_layout, None, false, true)
   }
 
   /// Explicit CUDA placement. CPU builds reject a requested device instead of
@@ -266,7 +295,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     parameters: Parameters,
     device: Option<i32>,
   ) -> Result<Self, String> {
-    Self::build(plan, parameters, true, device, true)
+    Self::build(plan, parameters, true, RomLayout::Scalar, device, true)
   }
 
   /// [`Self::for_batch`] without the security floor, for tests whose toy
@@ -277,21 +306,36 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
   ) -> Result<Self, String> {
-    Self::build(plan, parameters, true, None, false)
+    Self::for_batch_below_floor_with_rom_layout(
+      plan,
+      parameters,
+      RomLayout::Scalar,
+    )
+  }
+
+  #[doc(hidden)]
+  pub fn for_batch_below_floor_with_rom_layout(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    rom_layout: RomLayout,
+  ) -> Result<Self, String> {
+    Self::build(plan, parameters, true, rom_layout, None, false)
   }
 
   fn with_memory_policy(
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
     segmented_memory: bool,
+    rom_layout: RomLayout,
   ) -> Result<Self, String> {
-    Self::build(plan, parameters, segmented_memory, None, true)
+    Self::build(plan, parameters, segmented_memory, rom_layout, None, true)
   }
 
   fn build(
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
     segmented_memory: bool,
+    rom_layout: RomLayout,
     device: Option<i32>,
     floor: bool,
   ) -> Result<Self, String> {
@@ -301,6 +345,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       plan,
       parameters,
       segmented_memory,
+      rom_layout,
       device,
       gpu_lookup_only,
       floor,
@@ -313,6 +358,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Ok(backend)
   }
 
+  #[cfg(test)]
   fn build_with_lookup_policy(
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
@@ -324,6 +370,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       plan,
       parameters,
       segmented_memory,
+      RomLayout::Scalar,
       device,
       gpu_lookup_only,
       true,
@@ -334,6 +381,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
     segmented_memory: bool,
+    rom_layout: RomLayout,
     device: Option<i32>,
     gpu_lookup_only: bool,
     floor: bool,
@@ -364,7 +412,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     if plan.program.field.modulus() != Val::ORDER_U64 {
       return Err("multi-stark adapter requires the Goldilocks field".into());
     }
-    let rom = rom::Rom::new(plan);
+    let rom = rom::Rom::new(plan, rom_layout);
     let mut inputs = vec![];
     let mut names = vec![];
     let placements = grouping::build(plan, &rom, &mut inputs, &mut names)?;
@@ -455,6 +503,10 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
 
   pub const fn parameters(&self) -> Parameters {
     self.parameters
+  }
+
+  pub const fn rom_layout(&self) -> RomLayout {
+    self.rom.layout
   }
 
   pub fn statistics(&self) -> Vec<CircuitStatistics> {

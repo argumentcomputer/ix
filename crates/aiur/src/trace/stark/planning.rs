@@ -319,7 +319,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           .ok_or("ROM boundary overflow")?;
         memory_intervals.push((width as u64, start, end));
       }
-      heights.push(padded(cells.len())?);
+      heights.push(padded(self.rom.row_count_for_entries(width, cells.len()))?);
     }
     Ok(RecordShape { heights, memory_intervals })
   }
