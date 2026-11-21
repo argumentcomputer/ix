@@ -263,6 +263,7 @@ def recursionCoreFunctions : List (String × String) :=
   , ("StarkIO", "read_byte_stream")
   , ("SystemDeserialize", "read_system")
   , ("SystemDeserialize", "lookup_groups_count")
+  , ("ProofDeserialize", "read_u64_at")
   , ("ProofDeserialize", "read_batch")
   , ("ProofDeserialize", "read_proof")
   , ("Transcript", "ch_sample8")
@@ -274,6 +275,13 @@ def recursionCoreFunctions : List (String × String) :=
   , ("StarkHash", "b3_rows")
   , ("StarkHash", "b3_to_digest")
   , ("Mmcs", "mmcs_verify_multi")
+  , ("Pcs", "rows_pop")
+  , ("Pcs", "fri_fold2")
+  , ("Pcs", "ro_fold_1pt")
+  , ("Pcs", "ro_fold_2pt")
+  , ("Pcs", "bucket_update_1pt")
+  , ("Pcs", "bucket_update_2pt")
+  , ("Pcs", "finalize_buckets")
   , ("Pcs", "pcs_fri_verify")
   , ("StarkVerifier", "ext_is_zero")
   , ("StarkVerifier", "two_adic_gen")
@@ -318,12 +326,23 @@ def verifyBatchRequiredCalls : List String :=
 def verifyShardRequiredCalls : List String :=
   ["Transcript::shard_fiat_shamir", "claims_acc", "ood_loop", "Pcs::pcs_fri_verify", "last_acc"]
 
+/-- Required calls inside `Pcs::rows_pop`. -/
+def rowsPopRequiredCalls : List String :=
+  ["Goldilocks::gl_lt_p"]
+
+/-- Required calls inside `Pcs::finalize_buckets`. -/
+def finalizeBucketsRequiredCalls : List String :=
+  ["Goldilocks::eg_inverse", "Goldilocks::eg_eq"]
+
 /-- AST-level pin predicate on any MultiStark verifier program: checks entry point, `verify_batch`,
-and `verify_shard` retain all mandatory subcalls and `assert_eq!` constraints. -/
+`verify_shard`, `Pcs::rows_pop`, and `Pcs::finalize_buckets` retain all mandatory subcalls and
+`assert_eq!` constraints. -/
 def RecursionVerifierAstPinned {α : Type} (prog : Modules.Program α) : Bool :=
   fnHasCallsAndAsserts prog "MultiStark" "verify_multi_stark_proof" entryRequiredCalls 3 &&
   fnHasCallsAndAsserts prog "StarkVerifier" "verify_batch" verifyBatchRequiredCalls 5 &&
-  fnHasCallsAndAsserts prog "StarkVerifier" "verify_shard" verifyShardRequiredCalls 15
+  fnHasCallsAndAsserts prog "StarkVerifier" "verify_shard" verifyShardRequiredCalls 15 &&
+  fnHasCallsAndAsserts prog "Pcs" "rows_pop" rowsPopRequiredCalls 1 &&
+  fnHasCallsAndAsserts prog "Pcs" "finalize_buckets" finalizeBucketsRequiredCalls 1
 
 /-- Kernel-checked AST pin of the deployed `MultiStark.recursionSource`. -/
 theorem recursionSource_ast_pinned :
@@ -337,22 +356,29 @@ theorem libraries_disjoint_multistark :
         (Aiur.Library.Option.declarations.toField Fp)).append
         Aiur.Library.Field.Goldilocks.program
     libPrefix.findModule? "MultiStark" = none ∧
-    libPrefix.findModule? "StarkVerifier" = none := by
+    libPrefix.findModule? "StarkVerifier" = none ∧
+    libPrefix.findModule? "Pcs" = none := by
   have hb1 : Aiur.Library.Blake3.Goldilocks.program.findModule? "MultiStark" = none := rfl
   have hb2 : Aiur.Library.Blake3.Goldilocks.program.findModule? "StarkVerifier" = none := rfl
+  have hb3 : Aiur.Library.Blake3.Goldilocks.program.findModule? "Pcs" = none := rfl
   have ho : Aiur.Library.Option.declarations.findModule? "MultiStark" = none ∧
-      Aiur.Library.Option.declarations.findModule? "StarkVerifier" = none := by
+      Aiur.Library.Option.declarations.findModule? "StarkVerifier" = none ∧
+      Aiur.Library.Option.declarations.findModule? "Pcs" = none := by
     decide
   have hf : Aiur.Library.Field.Goldilocks.declarations.findModule? "MultiStark" = none ∧
-      Aiur.Library.Field.Goldilocks.declarations.findModule? "StarkVerifier" = none := by
+      Aiur.Library.Field.Goldilocks.declarations.findModule? "StarkVerifier" = none ∧
+      Aiur.Library.Field.Goldilocks.declarations.findModule? "Pcs" = none := by
     decide
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · apply findModule?_append_none
     · exact findModule?_append_none _ _ _ hb1 (findModule?_map_none _ _ _ ho.1)
     · exact findModule?_map_none _ _ _ hf.1
   · apply findModule?_append_none
-    · exact findModule?_append_none _ _ _ hb2 (findModule?_map_none _ _ _ ho.2)
-    · exact findModule?_map_none _ _ _ hf.2
+    · exact findModule?_append_none _ _ _ hb2 (findModule?_map_none _ _ _ ho.2.1)
+    · exact findModule?_map_none _ _ _ hf.2.1
+  · apply findModule?_append_none
+    · exact findModule?_append_none _ _ _ hb3 (findModule?_map_none _ _ _ ho.2.2)
+    · exact findModule?_map_none _ _ _ hf.2.2
 
 /-- Kernel-checked AST pin lifted to the actual Goldilocks `MultiStark.recursionProgram`. -/
 theorem recursionProgram_ast_pinned :
@@ -361,8 +387,10 @@ theorem recursionProgram_ast_pinned :
   unfold MultiStark.recursionProgram MultiStark.withLibraries RecursionVerifierAstPinned
   unfold fnHasCallsAndAsserts
   rw [findModuleFunction?_append_right _ _ "MultiStark" _ hdisj.1]
-  rw [findModuleFunction?_append_right _ _ "StarkVerifier" _ hdisj.2]
-  rw [findModuleFunction?_append_right _ _ "StarkVerifier" _ hdisj.2]
+  rw [findModuleFunction?_append_right _ _ "StarkVerifier" _ hdisj.2.1]
+  rw [findModuleFunction?_append_right _ _ "StarkVerifier" _ hdisj.2.1]
+  rw [findModuleFunction?_append_right _ _ "Pcs" _ hdisj.2.2]
+  rw [findModuleFunction?_append_right _ _ "Pcs" _ hdisj.2.2]
   have hsrc := recursionSource_ast_pinned
   unfold RecursionVerifierAstPinned fnHasCallsAndAsserts at hsrc
   have h1 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
@@ -371,9 +399,13 @@ theorem recursionProgram_ast_pinned :
     "StarkVerifier" "verify_batch" verifyBatchRequiredCalls 5
   have h3 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
     "StarkVerifier" "verify_shard" verifyShardRequiredCalls 15
-  unfold fnHasCallsAndAsserts at h1 h2 h3
+  have h4 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
+    "Pcs" "rows_pop" rowsPopRequiredCalls 1
+  have h5 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
+    "Pcs" "finalize_buckets" finalizeBucketsRequiredCalls 1
+  unfold fnHasCallsAndAsserts at h1 h2 h3 h4 h5
   unfold Modules.Program.toField
-  rw [h1, h2, h3]
+  rw [h1, h2, h3, h4, h5]
   exact hsrc
 
 /-! ## 4. Public Digest Packing, Value Representations, and BLAKE3 Escape -/

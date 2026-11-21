@@ -322,4 +322,83 @@ theorem from_ext_basis_refines (c0 c1 : EF) :
     apply K.ext <;> decide
   rw [extToModel_add, extToModel_mul, hu]
 
+/-! ## 4. Algebraic Equivalences for Optimized PCS Operations (`rows_pop`, `fri_fold2`, `ro_fold`, `finalize_buckets`) -/
+
+/-- `Pcs::rows_pop` checks `Goldilocks::gl_lt_p(x) == 1` directly on an already range-checked
+8-byte `UInt64::U64`; by `gl_to_bytes_unique`, `x` is byte-for-byte identical to any canonical
+`Goldilocks::gl_to_bytes(Goldilocks::gl_val(x))` output. -/
+theorem rows_pop_canonical_eq {x r : Fin 8 → UInt8}
+    (hltX : glLtPModel x = 1)
+    (hvalR : glValModel r = glValModel x) (hltR : glLtPModel r = 1) :
+    x = r :=
+  gl_to_bytes_unique rfl hltX hvalR hltR
+
+/-- Exact Goldilocks inverse of `2`: `2 * 9223372034707292161 = 1` in `Fp` (used by `Pcs::fri_fold2`). -/
+theorem goldilocks_inv_two : (2 : Fp) * (9223372034707292161 : Fp) = 1 := by
+  decide
+
+theorem goldilocks_inv_two_eq : (9223372034707292161 : Fp) = (2 : Fp)⁻¹ :=
+  eq_inv_of_mul_eq_one_right goldilocks_inv_two
+
+/-- Dividing an extension element `e : K` by an embedded base element `⟨s, 0⟩ : K` equals
+componentwise multiplication by `s⁻¹ : Fp` (for every `s : Fp`, including `s = 0`).
+Certifies the base-inversion optimization in `Pcs::fri_fold2`. -/
+theorem eg_div_base_eq (e : K) (s : Fp) :
+    e * (⟨s, 0⟩ : K)⁻¹ = ⟨e.c0 * s⁻¹, e.c1 * s⁻¹⟩ := by
+  by_cases hs : s = 0
+  · subst hs
+    have hz : (⟨0, 0⟩ : K) = 0 := rfl
+    rw [hz, inv_zero, mul_zero, inv_zero, mul_zero, mul_zero]; rfl
+  · have hinv : (⟨s, 0⟩ : K)⁻¹ = ⟨s⁻¹, 0⟩ := by
+      symm
+      apply eq_inv_of_mul_eq_one_right
+      apply K.ext
+      · change s * s⁻¹ + 7 * (0 * 0) = 1
+        simp [mul_inv_cancel₀ hs]
+      · change s * 0 + 0 * s⁻¹ = 0
+        ring
+    rw [hinv]
+    apply K.ext
+    · change e.c0 * s⁻¹ + 7 * (e.c1 * 0) = e.c0 * s⁻¹; ring
+    · change e.c0 * 0 + e.c1 * s⁻¹ = e.c1 * s⁻¹; ring
+
+/-- Original tail-recursive `Pcs::ro_fold(px, pz, alpha, s, ap)` in `K`. -/
+def roFoldTail : List Fp → List K → K → K → K → K × K
+  | [], _, _, s, ap => (s, ap)
+  | x :: xs, z :: zs, alpha, s, ap =>
+    roFoldTail xs zs alpha (s + ap * (z - ⟨x, 0⟩)) (ap * alpha)
+  | _ :: _, [], _, s, ap => (s, ap)
+
+/-- Ascending Horner-from-tail `Pcs::ro_fold_1pt` / `ro_fold_2pt` in `K`. -/
+def roFoldHorner : List Fp → List K → K → K × K
+  | [], _, _ => (0, 1)
+  | x :: xs, z :: zs, alpha =>
+    let (s, pw) := roFoldHorner xs zs alpha
+    ((z - ⟨x, 0⟩) + alpha * s, alpha * pw)
+  | _ :: _, [], _ => (0, 1)
+
+/-- `ro_fold_1pt` / `ro_fold_2pt` produces the exact same `(sum, ap * alpha^w)` as
+tail-recursive `ro_fold` when shifted by `(acc, ap)` (for equal-length lists). -/
+theorem roFoldHorner_refines_tail :
+    ∀ (xs : List Fp) (zs : List K) (alpha acc ap : K),
+      xs.length = zs.length →
+      let (s, pw) := roFoldHorner xs zs alpha
+      roFoldTail xs zs alpha acc ap = (acc + ap * s, ap * pw)
+  | [], [], _, acc, ap, _ => by
+    simp [roFoldHorner, roFoldTail]
+  | x :: xs, z :: zs, alpha, acc, ap, hlen => by
+    simp only [List.length_cons, Nat.succ.injEq] at hlen
+    unfold roFoldHorner roFoldTail
+    dsimp only
+    rw [roFoldHorner_refines_tail xs zs alpha (acc + ap * (z - ⟨x, 0⟩)) (ap * alpha) hlen]
+    simp only [Prod.mk.injEq]
+    constructor <;> ring
+
+/-- Distributivity certifying `Pcs::finalize_buckets`: accumulating `(ro0, ro1)` per height
+bucket and multiplying by `(q0, q1)` once per distinct height equals per-opening `q * s_i`. -/
+theorem bucket_finalize_distributes (q0 q1 : K) (s0s s1s : List K) :
+    (s0s.map (q0 * ·)).sum + (s1s.map (q1 * ·)).sum = q0 * s0s.sum + q1 * s1s.sum := by
+  rw [List.sum_map_mul_left, List.sum_map_mul_left]
+  simp
+
 end Ix.Cert.MultiStarkRefinement

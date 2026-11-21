@@ -137,14 +137,16 @@ module StarkVerifier {
       }
     }
 
-  inline fn trace_selectors(zeta: ProofDeserialize::Ext, l: Field) -> (ProofDeserialize::Ext, ProofDeserialize::Ext, ProofDeserialize::Ext, ProofDeserialize::Ext) {
-      let zh = trace_vanishing(zeta, l);
-      let ginv = Goldilocks::gl_inverse(two_adic_gen(l));
+  inline fn trace_selectors(zeta: ProofDeserialize::Ext, l: Field) -> (ProofDeserialize::Ext, ProofDeserialize::Ext, ProofDeserialize::Ext, ProofDeserialize::Ext, Goldilocks::Goldilocks, ProofDeserialize::Ext) {
+      let zeta_pow_n = ext_exp_pow2(zeta, l);
+      let zh = Goldilocks::eg_sub(zeta_pow_n, [1, 0]);
+      let g = two_adic_gen(l);
+      let ginv = Goldilocks::gl_inverse(g);
       let is_first = Goldilocks::eg_div(zh, Goldilocks::eg_sub(zeta, [1, 0]));
       let is_last = Goldilocks::eg_div(zh, Goldilocks::eg_sub(zeta, [ginv, 0]));
       let is_trans = Goldilocks::eg_sub(zeta, [ginv, 0]);
       let inv_van = Goldilocks::eg_inverse(zh);
-      (is_first, is_last, is_trans, inv_van)
+      (is_first, is_last, is_trans, inv_van, g, zeta_pow_n)
     }
 
   fn ood_fold(acc: ProofDeserialize::Ext, alpha: ProofDeserialize::Ext, x: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
@@ -348,15 +350,18 @@ module StarkVerifier {
       }
     }
 
-  inline fn ood_prep_rows(prep_opt: ProofDeserialize::PreprocessedOpt, oi: SystemDeserialize::OptIdx) -> (Lists::List<ProofDeserialize::Ext>, Lists::List<ProofDeserialize::Ext>) {
+  inline fn ood_prep_rows(prep_opt: ProofDeserialize::PreprocessedOpt, oi: SystemDeserialize::OptIdx)
+        -> (Lists::List<ProofDeserialize::Ext>, Lists::List<ProofDeserialize::Ext>, ProofDeserialize::PreprocessedOpt) {
       match oi {
-        SystemDeserialize::OptIdx::NoIdx => {  ((&(Lists::Node::Nil)), (&(Lists::Node::Nil))) } ,
-        SystemDeserialize::OptIdx::SomeIdx(j) => {
+        SystemDeserialize::OptIdx::NoIdx => {  ((&(Lists::Node::Nil)), (&(Lists::Node::Nil)), prep_opt) } ,
+        SystemDeserialize::OptIdx::SomeIdx(_j) => {
           match prep_opt {
-            ProofDeserialize::PreprocessedOpt::NoPreprocessed => {  ((&(Lists::Node::Nil)), (&(Lists::Node::Nil))) } ,
+            ProofDeserialize::PreprocessedOpt::NoPreprocessed => {  ((&(Lists::Node::Nil)), (&(Lists::Node::Nil)), prep_opt) } ,
             ProofDeserialize::PreprocessedOpt::SomePreprocessed(round) => {
-              let pr = Lists::lookup(round, j);
-              (Lists::lookup(pr, 0), Lists::lookup(pr, 1)) } ,
+              let &Lists::Node::Cons(pr, round_rest) = round;
+              let &Lists::Node::Cons(p0, pr1) = pr;
+              let &Lists::Node::Cons(p1, _pr2) = pr1;
+              (p0, p1, ProofDeserialize::PreprocessedOpt::SomePreprocessed(round_rest)) } ,
           } } ,
       }
     }
@@ -364,26 +369,25 @@ module StarkVerifier {
   fn ood_loop(circuits: Lists::List<SystemDeserialize::SysCircuit>, prep_indices: Lists::List<SystemDeserialize::OptIdx>,
         log_degrees: Lists::List<UInt8::U8>, accs: Lists::List<ProofDeserialize::Ext>,
         stage1: ProofDeserialize::OpenedRound, stage2: ProofDeserialize::OpenedRound, prep_opt: ProofDeserialize::PreprocessedOpt,
-        q_opened: ProofDeserialize::OpenedRound, i: Field, accp: ProofDeserialize::Ext,
+        q_opened: ProofDeserialize::OpenedRound, accp: ProofDeserialize::Ext,
         lch: ProofDeserialize::Ext, fch: ProofDeserialize::Ext, alpha: ProofDeserialize::Ext, zeta: ProofDeserialize::Ext) -> Field {
       match (*(circuits)) {
         Lists::Node::Nil => {  1 } ,
         Lists::Node::Cons(circ, rest) => {
           let SystemDeserialize::SysCircuit::Mk(nodes, _node_count, zeros, md, lks, k, mw, pw, ph, s2w) = circ;
-
-          let ld8 = Lists::lookup(log_degrees, i);
+          let &Lists::Node::Cons(pi, pi_rest) = prep_indices;
+          let &Lists::Node::Cons(ld8, ld_rest) = log_degrees;
           assert_eq!(UInt8::less_than(ld8, UInt8::BYTE_32), 1);
           let l = UInt8::to_field(ld8);
           let qd = quotient_degree_of(md);
-          let naccp = Lists::lookup(accs, i);
-          let s1 = Lists::lookup(stage1, i);
-          let main = Lists::lookup(s1, 0);
-          let main_next = Lists::lookup(s1, 1);
-          let s2 = Lists::lookup(stage2, i);
-
-          let s2row = Lists::lookup(s2, 0);
-          let s2next = Lists::lookup(s2, 1);
-          let (prep, prep_next) = ood_prep_rows(prep_opt, Lists::lookup(prep_indices, i));
+          let &Lists::Node::Cons(naccp, acc_rest) = accs;
+          let &Lists::Node::Cons(s1, s1_rest) = stage1;
+          let &Lists::Node::Cons(main, s1_1) = s1;
+          let &Lists::Node::Cons(main_next, _s1_2) = s1_1;
+          let &Lists::Node::Cons(s2, s2_rest) = stage2;
+          let &Lists::Node::Cons(s2row, s2_1) = s2;
+          let &Lists::Node::Cons(s2next, _s2_2) = s2_1;
+          let (prep, prep_next, prep_opt2) = ood_prep_rows(prep_opt, pi);
 
           assert_eq!(Fields::is_zero(Lists::length(main) - mw), 1);
           assert_eq!(Fields::is_zero(Lists::length(main_next) - mw), 1);
@@ -391,22 +395,24 @@ module StarkVerifier {
           assert_eq!(Fields::is_zero(Lists::length(s2next) - s2w), 1);
           assert_eq!(Fields::is_zero(Lists::length(prep) - pw), 1);
           assert_eq!(Fields::is_zero(Lists::length(prep_next) - pw), 1);
-          let (isf, isl, ist, invv) = trace_selectors(zeta, l);
+          let (isf, isl, ist, invv, g, zeta_pow_n) = trace_selectors(zeta, l);
           let publics = build_publics(lch, fch, accp, naccp);
           let height = pow2(l);
           assert_eq!((1 - Fields::is_zero(ph)) * (height - ph), 0);
-          let inorm = Goldilocks::gl_inverse(height * two_adic_gen(l));
+          let inorm = Goldilocks::gl_inverse(height * g);
           let comp = ood_composition(nodes, zeros, lks, k,
                                      main, main_next, prep, prep_next, s2row, s2next,
                                      publics, lch, fch, accp, naccp,
                                      isf, isl, ist, alpha, inorm);
 
-          let slices = reconstruct_ext_row(Lists::lookup(Lists::lookup(q_opened, i), 0));
+          let &Lists::Node::Cons(qmat, q_rest) = q_opened;
+          let &Lists::Node::Cons(qrow, _qmat_rest) = qmat;
+          let slices = reconstruct_ext_row(qrow);
           assert_eq!(Fields::is_zero(Lists::length(slices) - qd), 1);
-          let quot = quotient_eval(slices, ext_exp_pow2(zeta, l), [1, 0]);
+          let quot = quotient_eval(slices, zeta_pow_n, [1, 0]);
           assert_eq!(Goldilocks::eg_eq(Goldilocks::eg_mul(comp, invv), quot), 1);
-          ood_loop(rest, prep_indices, log_degrees, accs, stage1, stage2, prep_opt,
-                   q_opened, i + 1, naccp, lch, fch, alpha, zeta) } ,
+          ood_loop(rest, pi_rest, ld_rest, acc_rest, s1_rest, s2_rest, prep_opt2,
+                   q_rest, naccp, lch, fch, alpha, zeta) } ,
       }
     }
 
@@ -762,10 +768,10 @@ module StarkVerifier {
       let (alpha, zeta, post_zeta_input) = Transcript::shard_fiat_shamir(input, shard, s2c, qc, accs);
       let acc0 = claims_acc([0, 0], h_claims, lch, fch);
       let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
-               prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);
+               prep_opt, q_opened, acc0, lch, fch, alpha, zeta);
       assert_eq!(Pcs::pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
         s1c, s2c, qc, prep_cap, aprep, log_degrees, zeta,
-        Lists::length(acirc), log_blowup, num_queries, commit_pow_bits,
+        num_circuits, log_blowup, num_queries, commit_pow_bits,
         query_pow_bits), 1);
       last_acc(accs)
     }

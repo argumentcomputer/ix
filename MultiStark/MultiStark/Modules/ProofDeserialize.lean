@@ -115,12 +115,13 @@ module ProofDeserialize {
       (UInt8::from_field(b), i + 1)
     }
 
-  fn read_u64_at(i: Field) -> (UInt64::U64, Field) {
+  inline fn read_u64_at(i: Field) -> (UInt64::U64, Field) {
       let [b0, b1, b2, b3, b4, b5, b6, b7] = hint::<[Field; 8]>("stark.io.read8", (0, i));
-      ([UInt8::from_field(b0), UInt8::from_field(b1),
-        UInt8::from_field(b2), UInt8::from_field(b3),
-        UInt8::from_field(b4), UInt8::from_field(b5),
-        UInt8::from_field(b6), UInt8::from_field(b7)], i + 8)
+      let (c0, c1) = UInt8::from_fields(b0, b1);
+      let (c2, c3) = UInt8::from_fields(b2, b3);
+      let (c4, c5) = UInt8::from_fields(b4, b5);
+      let (c6, c7) = UInt8::from_fields(b6, b7);
+      ([c0, c1, c2, c3, c4, c5, c6, c7], i + 8)
     }
 
   fn read_count_at(i: Field) -> (Field, Field) {
@@ -165,10 +166,14 @@ module ProofDeserialize {
   fn read_u64_vec_n(i: Field, n: Field) -> (Lists::List<UInt64::U64>, Field) {
       match n {
         0 => {  ((&(Lists::Node::Nil)), i) } ,
-        _ => {
+        1 => {
           let (x, j) = read_u64_at(i);
-          let (rest, j2) = read_u64_vec_n(j, n - 1);
-          ((&(Lists::Node::Cons(x, rest))), j2) } ,
+          ((&(Lists::Node::Cons(x, (&(Lists::Node::Nil))))), j) } ,
+        _ => {
+          let (x0, j0) = read_u64_at(i);
+          let (x1, j1) = read_u64_at(j0);
+          let (rest, j2) = read_u64_vec_n(j1, n - 2);
+          ((&(Lists::Node::Cons(x0, (&(Lists::Node::Cons(x1, rest)))))), j2) } ,
       }
     }
 
