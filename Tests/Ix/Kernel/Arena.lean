@@ -132,7 +132,8 @@ private def subjectClaim (env : Ixon.Env) (ctx : Ix.ClaimContext) (target : Addr
 
 /-- Every fixture as a claim over one shared Ixon env. A fixture the compile
 filtered (no Ixon address) is reported and skipped. -/
-def arenaCases (env : Lean.Environment) : IO (Array Tests.Ix.IxVM.Builder) := do
+def arenaCases (env : Lean.Environment) (includeAllBad : Bool := true) :
+    IO (Array Tests.Ix.IxVM.Builder) := do
   let checks := collectChecks env
   let rawConsts := getRawConsts env
   let rawMap : Std.HashMap Lean.Name Lean.ConstantInfo :=
@@ -152,7 +153,12 @@ def arenaCases (env : Lean.Environment) : IO (Array Tests.Ix.IxVM.Builder) := do
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv (bindingAssumed := true))
   let ctx := { ctx with axioms := none }
   let mut out : Array Tests.Ix.IxVM.Builder := #[]
+  let mut badSmokes : Nat := 0
   for c in checks do
+    let isNative := nativeEvaluationFixtures.contains c.name
+    if !includeAllBad && !c.expectPass && !isNative then
+      if badSmokes ≥ 3 then continue
+      badSmokes := badSmokes + 1
     let label := s!"arena {if c.expectPass then "GOOD" else "BAD"} {c.name}"
     match ixonEnv.getAddr? (Ix.Name.fromLeanName c.name) with
     | none => IO.println s!"{label}: skipped (ungrounded by the compile)"
@@ -160,7 +166,7 @@ def arenaCases (env : Lean.Environment) : IO (Array Tests.Ix.IxVM.Builder) := do
       -- A `native_decide` proof cites an auxiliary axiom asserting the native
       -- result: assumed, it makes the claim a vacuous conditional one, so the
       -- claim checks the closure and the axiom policy must refuse it.
-      if nativeEvaluationFixtures.contains c.name then
+      if isNative then
         out := out.push fun _ =>
           Tests.Ix.IxVM.Case.ofClaim s!"{label}, its closure checked" ixonEnv (.check ctx addr none)
             {} false (some "an axiom that is not one of Lean's standard axioms")
@@ -172,7 +178,14 @@ def arenaCases (env : Lean.Environment) : IO (Array Tests.Ix.IxVM.Builder) := do
             else kase
   return out
 
+/-- PR fast suite: all `good_*` completeness fixtures, `native_decide` checks,
+and 3 representative `bad_*` host smokes (`bad_*` soundness is proved by
+`CircuitComposed` and exercised in IxC by `kernel-tutorial`). -/
 def run (env : Lean.Environment) : IO UInt32 := do
-  Tests.Ix.IxVM.runCases "ixvm-arena" (← arenaCases env)
+  Tests.Ix.IxVM.runCases "ixvm-arena" (← arenaCases env (includeAllBad := false))
+
+/-- Full nightly suite: every `good_*` and `bad_*` arena fixture through IxVM. -/
+def runFull (env : Lean.Environment) : IO UInt32 := do
+  Tests.Ix.IxVM.runCases "ixvm-arena-full" (← arenaCases env (includeAllBad := true))
 
 end Tests.Ix.Kernel.Arena

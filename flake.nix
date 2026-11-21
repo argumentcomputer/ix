@@ -199,13 +199,11 @@
 
           # Lake package
           lake2nix = pkgs.callPackage lean4-nix.lake { inherit lean; };
-          # Restrict the Lake build inputs to files traced by the Lean and
-          # Rust archive targets. Cargo itself is still handled by Crane, but
-          # Lake needs the Rust sources and manifests to calculate the archive
-          # dependency trace before copying the prebuilt static library.
-          leanSrc = pkgs.lib.fileset.toSource {
-            root = ./.;
-            fileset = pkgs.lib.fileset.unions [
+          # Base Lake fileset, excluding separate proof/model/script trees that
+          # the Nix packages never build (e.g. the 944-module IxVMRefinement
+          # library) so edits there never bust Cachix hits for Ix / IxTests.
+          lakeFilesBase = pkgs.lib.fileset.difference
+            (pkgs.lib.fileset.unions [
               # What `lake build` reads: Lean sources, manifests, FFI shims.
               (pkgs.lib.fileset.fromSource (lake2nix.cleanLakeSource ./.))
               ./IxC/lake-manifest.json
@@ -214,12 +212,45 @@
               cargoSource
               compressionData
               plonkSources
-            ];
+            ])
+            (pkgs.lib.fileset.unions [
+              ./IxVMRefinement
+              ./Models
+              ./Scripts
+            ]);
+          # Library / CLI / app source: also excludes `Tests/` and formal circuit
+          # proof/source subtrees so test or circuit-proof edits do not rebuild `ixLib`.
+          leanLibSrc = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.difference lakeFilesBase (pkgs.lib.fileset.unions [
+              ./Tests
+              ./Tests.lean
+              ./IxVM/IxVM/Source
+              ./MultiStark/MultiStark
+            ]);
+          };
+          # Test build source: includes `Tests/` for `IxTests`.
+          leanTestSrc = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = lakeFilesBase;
+          };
+          # Runtime working tree for `checks.ix-tests`: excludes docs, proofs,
+          # models and unrelated workflows so edits there do not invalidate the check.
+          ixTestsRuntimeSrc = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.difference
+              (pkgs.lib.fileset.fromSource ./.)
+              (pkgs.lib.fileset.unions [
+                ./IxVMRefinement
+                ./Models
+                ./docs
+                ./Scripts
+              ]);
           };
           lakeManifest = builtins.fromJSON (builtins.readFile ./lake-manifest.json);
           # Local packages build in the workspace; buildDeps only supports Git sources.
           lakeDeps = builtins.removeAttrs (lake2nix.buildDeps {
-            src = leanSrc;
+            src = leanLibSrc;
             # Formal Aiur's proofs require mathlib, which brings these packages
             # into the workspace. Nothing the flake builds (the Ix library, the
             # CLI and the test binary) imports them, so Lake needs only their
@@ -272,9 +303,9 @@
             }
           );
           # Shared Lake build args: patches out the Cargo build (Crane handles it)
-          mkLakeBuildArgs = rustLib: {
+          mkLakeBuildArgs = rustLib: srcTree: {
             inherit lakeDeps;
-            src = leanSrc;
+            src = srcTree;
             # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
             postPatch = ''
               substituteInPlace lakefile.lean --replace-fail 'cmd := "cargo"' 'cmd := "true"'
@@ -314,11 +345,11 @@
           };
 
           # Release build args (no test-ffi symbols)
-          lakeBuildArgs = mkLakeBuildArgs rustPkgRelease;
+          lakeBuildArgs = mkLakeBuildArgs rustPkgRelease leanLibSrc;
           # CLI build args (net symbols for `ix serve` / `ix connect`)
-          lakeNetBuildArgs = mkLakeBuildArgs rustPkgNet;
-          # Test build args (includes test-ffi symbols)
-          lakeTestBuildArgs = mkLakeBuildArgs rustPkgTest;
+          lakeNetBuildArgs = mkLakeBuildArgs rustPkgNet leanLibSrc;
+          # Test build args (includes test-ffi symbols and `Tests/` sources)
+          lakeTestBuildArgs = mkLakeBuildArgs rustPkgTest leanTestSrc;
 
           ixLib = lake2nix.mkPackage (
             lakeBuildArgs
@@ -416,7 +447,7 @@
               # zstd decompresses the lean-export suite's toolchain fixture.
               nativeBuildInputs = [ rustToolchain lean pkgs.zstd ];
             } ''
-              cp -r ${./.} src
+              cp -r ${ixTestsRuntimeSrc} src
               chmod -R u+w src
               # Source-mode CLI tests invoke Lake. Reuse the configured build
               # tree, including local package overrides and fixture oleans,

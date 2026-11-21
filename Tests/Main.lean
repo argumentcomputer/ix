@@ -222,18 +222,27 @@ def registry : List Entry := [
   -- Kernel verdicts and exact FFT costs for constants, the binding claim and a shard.
   .env "ixvm-kernel-checks" (.ci .ixvm) Tests.Ix.IxVM.kernelChecks,
   -- The trusted reader (`prepareWith`) accepts the logical records of the closures
-  -- the IxVM suites check (`IxVM.consistent`'s `ReadIn`).
-  .env "ixvm-reader-coverage" (.ci .ixvm) Tests.Ix.Kernel.ReaderCoverage.run,
-  -- Prover-authored malformed Ixon, each exploit with its controls.
+  -- the IxVM suites check (`IxVM.consistent`'s `ReadIn`). Pure host test (no IxVM
+  -- circuit invocation), grouped with the Init+Std / Std reader landing job.
+  .env "ixvm-reader-coverage" (.ci .landingInitStdCli) Tests.Ix.Kernel.ReaderCoverage.run,
+  -- Prover-authored malformed Ixon, each exploit with its controls (PR fast subset;
+  -- full `.binding` sweep runs in `ci:nightly`).
   .env "ixvm-exploits" (.ci .ixvm) Tests.Ix.IxVM.Exploits.run,
-  -- The lean-kernel-arena tutorial fixtures: good accepted, `bad_*` rejected.
+  .env "ixvm-exploits-full" (.ci .nightly) Tests.Ix.IxVM.Exploits.runFull,
+  -- The lean-kernel-arena tutorial fixtures: good + native_decide + bad smokes on PR;
+  -- full `bad_*` sweep runs in `ci:nightly`.
   .env "ixvm-arena" (.ci .ixvm) Tests.Ix.Kernel.Arena.run,
-  -- The program's TagN codec against the host's (`Ixon.putTagN`/`getTagN`).
+  .env "ixvm-arena-full" (.ci .nightly) Tests.Ix.Kernel.Arena.runFull,
+  -- The program's TagN codec against the host's (`Ixon.putTagN`/`getTagN`): boundaries
+  -- and parity on PR; exhaustive 4,128-claim sweep in `ci:nightly`.
   .runner "ixvm-tagn" (.ci .ixvm) Tests.Ix.IxVM.TagN.run,
+  .runner "ixvm-tagn-sweep" (.ci .nightly) Tests.Ix.IxVM.TagN.runSweep,
   -- The program's Ixon codec (`ixon-v4-tests`' vectors) and claim boundary.
   .runner "ixvm-codec" (.ci .ixvm) Tests.Ix.IxVM.Codec.run,
-  -- Evaluation claims against Lean's own reduction and generated arithmetic.
+  -- Evaluation claims against Lean's own reduction and generated arithmetic (fast PR
+  -- subset; full 24-term + every-byte truncation sweep in `ci:nightly`).
   .env "ixvm-eval" (.ci .ixvm) Tests.Ix.IxVM.Eval.run,
+  .env "ixvm-eval-full" (.ci .nightly) Tests.Ix.IxVM.Eval.runFull,
   -- Every leaf of a claim's axioms tree type-checked, used or not.
   .runner "ixvm-user-axioms" (.ci .ixvm) Tests.Ix.IxVM.UserAxioms.run,
   -- A decision's `of_decide_eq_*` roles bound by a compiled binding
@@ -265,6 +274,7 @@ def registry : List Entry := [
   -- builders leave them out.
   .runner "ixvm-claim-safety" (.ci .ixvm) Tests.Ix.IxVM.ClaimSafety.run,
   .runner "ixvm-safe-references" (.ci .ixvm) Tests.Ix.IxVM.SafeReferences.run,
+  .runner "ixvm-safe-references-full" (.ci .nightly) Tests.Ix.IxVM.SafeReferences.runFull,
   .runner "ixvm-unsafe-origin-walks" (.manual "IX_AIUR_WALK_ARTIFACT: a verify_transitive artifact") Tests.Ix.IxVM.SafeReferences.runUnsafeOrigins,
   .runner "ixvm-recursor-parent-route" (.ci .ixvm) Tests.Ix.IxVM.RecursorParentRoute.run,
   -- The declaration checker's shape guards: one kind of member per inductive block, no later
@@ -277,7 +287,8 @@ def registry : List Entry := [
   .runner "ixvm-claim-safety-corpus" (.manual "walk closure of what stays owned on a compiled corpus; IX_SAFETY_IXE, IX_SAFETY_IXES") Tests.Ix.IxVM.ClaimSafety.corpus,
   -- The binder data a witness carries for the conversion: hand-made records
   -- with known data, the host-side check (coverage, the kernel's values), tampering.
-  .runner "ixvm-pw-hints" (.ci .ixvm) Tests.Ix.IxVM.PwHints.run,
+  -- Pure host checks (no IxVM circuit invocation), so they live in `primary`.
+  .runner "ixvm-pw-hints" .primary Tests.Ix.IxVM.PwHints.run,
   -- A wrong datum is rejected and a missing one a host error, through the program
   -- (runs once the program reads the data).
   .runner "ixvm-pw-circuit" (.ci .ixvm) Tests.Ix.IxVM.PwHints.circuit,
@@ -287,7 +298,8 @@ def registry : List Entry := [
   .env "ixvm-pw-diag" (.manual "why the kernel refuses records of a claim; IX_PW_NAME") Tests.Ix.IxVM.PwHints.diag,
   .runner "ixvm-pw-corpus" (.manual "the binder-data annotator on a compiled corpus; IX_PW_IXE, IX_PW_IXES") Tests.Ix.IxVM.PwHints.corpus,
   -- The compiler's binder-data sections and re-addressing (`Ix.Compile.BinderData`).
-  .runner "ixvm-binder-data" (.ci .ixvm) Tests.Ix.IxVM.BinderData.run,
+  -- Pure host checks (no IxVM circuit invocation), so they live in `primary`.
+  .runner "ixvm-binder-data" .primary Tests.Ix.IxVM.BinderData.run,
   .runner "binder-data-corpus" (.manual "a compiled artifact's binder-data sections: canonical, recomputed equal; IX_BD_IXE") Tests.Ix.IxVM.BinderData.corpus,
   -- IxVM against Lean's kernel on a compiled corpus (circuit verdict).
   .env "ixvm-differential" (.manual "a compiled corpus through IxVM and Lean's kernel; IX_DIFF_MODULES, IX_DIFF_LIMIT") Tests.Ix.IxVM.Differential.run,
@@ -303,9 +315,9 @@ def registry : List Entry := [
   -- `ix prove-binding`, shard proofs that assume the binding, and their
   -- composition with the binding proof file and refusals without it, through
   -- the `ix` binary (`aggregate-binding-reuse` without its two aggregates).
-  -- Its 64 GiB proving budget would set lean-test's memory peak, so it runs
-  -- in the compiler-closures partition of the merge queue.
-  .runner "binding-proof-cli" (.ci .compilerClosures) Tests.Aggr.BindingReuse.cli,
+  -- Runs in its own parallel formal CI job (`ci:binding-proof`) on the cached
+  -- `ixvm.ixa` artifact with a 64 GiB proving budget.
+  .runner "binding-proof-cli" (.ci .bindingProof) Tests.Aggr.BindingReuse.cli,
 
   -- expensive suites and runners (these require significant RAM)
   .suite "catalog-dedup" (.ci .misc) Tests.Ix.CatalogDedup.suite,
@@ -327,11 +339,12 @@ def registry : List Entry := [
   .runner "initstd-reference" (.ci .landingInitStdCli) Tests.Ix.InitStd.reference,
   -- Address.blake3, Address.blake3Pure and Address.admissionHash on every
   -- record, blob and the binding of the artifact `initstd-reference` leaves
-  .runner "admission-hash-diff-initstd" (.ci .landingInitStdCli) Tests.Ix.Kernel.AdmissionHashDiff.runInitStd,
+  -- (253 MB pure-Lean hash sweep; runs nightly after `initstd-reference`).
+  .runner "admission-hash-diff-initstd" (.ci .nightly) Tests.Ix.Kernel.AdmissionHashDiff.runInitStd,
   -- `ix validate-lean` on Init+Std: compile, serde, projection, reader and
-  -- decompile fidelity
+  -- decompile fidelity (reusing `.lake/build/initstd-reference.ixe`)
   .runner "fidelity-initstd" (.ci .landingInitStdCli) Tests.Ix.InitStd.fidelity,
-  .suite "cert-evidence-agreement" .primary Tests.Ix.Cert.Statement.evidenceSuite,
+  .suite "cert-evidence-agreement" (.ci .compilerClosures) Tests.Ix.Cert.Statement.evidenceSuite,
   .runner "aggregate-binding-reuse" (.manual "one binding proof file discharges two aggregates, end to end through the `ix` binary; minutes of recursion and about 190 GB, needs `lake build ix`; `binding-proof-cli` runs it without the aggregates") Tests.Aggr.BindingReuse.run,
   .runner "aggregate-toolchains" (.manual "libraries from four Lean toolchains proven with one IxVM key and joined into one catalog root, end to end through the `ix` binary; tens of minutes of proving, needs `lake build ix` and `zstd`; IX_TOOLCHAINS_MAX_RAM sets the aggregate RAM budget in GiB (default 140)") Tests.Aggr.Toolchains.run,
   .runner "table-admission-cli" (.manual "ix verify on a claim under a generated artifact's role table, refused and admitted by the kernel's admission, through the `ix` binary; needs `lake build ix`") Tests.Ix.TableAdmissionCli.cli,
@@ -361,7 +374,6 @@ manual tier, or deleting it, fails `ixtests-registry`; so does a CI tier
 with no required entry. -/
 def required : List (String × String) := [
   ("cert-statement", "primary"),
-  ("cert-evidence-agreement", "primary"),
   ("ix-aggr", "primary"),
   ("lean-export", "primary"),
   ("kernel-source-ingress", "primary"),
@@ -383,6 +395,8 @@ def required : List (String × String) := [
   ("compile-ind-flags", "primary"),
   ("admission-hash-diff", "primary"),
   ("spec-digest-rendering", "primary"),
+  ("ixvm-pw-hints", "primary"),
+  ("ixvm-binder-data", "primary"),
   ("cli", "ci:cli"),
   ("compile-determinism", "ci:cli"),
   ("kernel-check-lean-cli", "ci:cli"),
@@ -392,7 +406,6 @@ def required : List (String × String) := [
   ("claim-policy", "primary"),
   ("claim-policy-cli", "ci:cli"),
   ("ixvm-kernel-checks", "ci:ixvm"),
-  ("ixvm-reader-coverage", "ci:ixvm"),
   ("ixvm-exploits", "ci:ixvm"),
   ("ixvm-arena", "ci:ixvm"),
   ("ixvm-tagn", "ci:ixvm"),
@@ -405,12 +418,13 @@ def required : List (String × String) := [
   ("ixvm-modeled-proj", "ci:ixvm"),
   ("ixvm-circuit-verdict", "ci:ixvm"),
   ("ixvm-field-reduction", "ci:ixvm"),
-  ("ixvm-pw-hints", "ci:ixvm"),
   ("ixvm-claim-safety", "ci:ixvm"),
+  ("ixvm-safe-references", "ci:ixvm"),
   ("ixvm-recursor-parent-route", "ci:ixvm"),
   ("ixvm-shape-guards", "ci:ixvm"),
   ("ixvm-synthetic-regressions", "ci:ixvm"),
-  ("binding-proof-cli", "ci:compiler-closures"),
+  ("binding-proof-cli", "ci:binding-proof"),
+  ("cert-evidence-agreement", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),
   ("compile-closure-whole", "ci:compiler-closures"),
   ("checker-support-regression", "ci:compiler-closures"),
@@ -418,8 +432,14 @@ def required : List (String × String) := [
   ("kernel-accel-semantics", "ci:compiler-closures"),
   ("kernel-tutorial", "ci:misc"),
   ("initstd-reference", "ci:landing-initstd-cli"),
-  ("admission-hash-diff-initstd", "ci:landing-initstd-cli"),
-  ("fidelity-initstd", "ci:landing-initstd-cli")]
+  ("fidelity-initstd", "ci:landing-initstd-cli"),
+  ("ixvm-reader-coverage", "ci:landing-initstd-cli"),
+  ("ixvm-exploits-full", "ci:nightly"),
+  ("ixvm-tagn-sweep", "ci:nightly"),
+  ("ixvm-eval-full", "ci:nightly"),
+  ("ixvm-arena-full", "ci:nightly"),
+  ("ixvm-safe-references-full", "ci:nightly"),
+  ("admission-hash-diff-initstd", "ci:nightly")]
 
 def main (args : List String) : IO UInt32 :=
   Tests.Registry.run registry required get_env! args

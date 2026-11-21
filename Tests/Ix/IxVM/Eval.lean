@@ -157,7 +157,7 @@ private def rawWitness (env : Ixon.Env) (input : Address) (bytes : ByteArray)
   let io := io.extend 2 (output.hash.data.map Aiur.G.ofUInt8) (bytes.data.map .ofUInt8)
   { funcName := `verify_claim, input := digest, inputIOBuffer := io }
 
-def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
+def tests (r : Tests.Ix.IxVM.Runner) (fullTruncation : Bool := true) : IO Unit := do
   let beta := Ixon.Expr.app (.leanLam idType (.var 0)) idValue
   let underBinder := Ixon.Expr.leanLam (.sort 0)
     (.leanLam (.var 0) (.app (.leanLam (.var 1) (.var 0)) (.var 0)))
@@ -307,7 +307,10 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
   let outputBytes := Ixon.ser (← IO.ofExcept (_root_.IxVM.RecordSections.withSection rawEnv idOutput))
   r.build <| execute "trailing output bytes"
     (rawWitness rawEnv rawInput (outputBytes.push 0)) (some "Ingress::load_verified_constant")
-  for n in [:outputBytes.size] do
+  let truncOffsets : List Nat :=
+    if fullTruncation then List.range outputBytes.size
+    else [0, 1, outputBytes.size / 2, outputBytes.size - 1].filter (· < outputBytes.size) |>.eraseDups
+  for n in truncOffsets do
     r.build <| execute s!"truncated output at {n}"
       (rawWitness rawEnv rawInput (outputBytes.extract 0 n)) (some "")
   let w ← witness rawEnv rawInput idOutput
@@ -608,14 +611,15 @@ private def genNat (fuel : Nat) (locals : List Nat) :
     | 5 => return (binary ``Nat.div (Lean.mkApp (Lean.mkConst ``Nat.succ) b), av / (bv + 1))
     | _ => return (binary ``Nat.mod (Lean.mkApp (Lean.mkConst ``Nat.succ) b), av % (bv + 1))
 
-def differentialTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : IO TestSeq := do
+def differentialTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner)
+    (count : Nat := 24) : IO TestSeq := do
   let phases ← compileClosure leanEnv
     #[``Nat.add, ``Nat.mul, ``Nat.sub, ``Nat.div, ``Nat.mod, ``Nat.succ]
   let base := Ix.Commit.mkCompileEnv phases
   let ty := Lean.mkConst ``Nat
   let mut state : GenState := {}
   let mut seq : TestSeq := .done
-  for i in [:24] do
+  for i in [:count] do
     let seed := state.seed
     let ((value, answer), next) := (genNat 4 []).run state
     state := next
@@ -633,8 +637,9 @@ def differentialTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : 
     let (fixture, wrong) ← natOutput fixture (answer + 1)
     r.build <| execute s!"mutated output: {label}"
       (← witness fixture input wrong) (some "result does not match")
-  seq := seq ++ test "generated corpus covers add/mul/sub/let/beta/div/mod"
-    (state.coverage.all (· > 0))
+  if count ≥ 24 then
+    seq := seq ++ test "generated corpus covers add/mul/sub/let/beta/div/mod"
+      (state.coverage.all (· > 0))
   return seq
 
 private def packBundle (env : Ixon.Env) (root : Address) : IO Ixon.Env := do
@@ -720,15 +725,18 @@ def natBlobParity (leanEnv : Lean.Environment) : IO TestSeq := do
       (ok && Ix.Kernel.Reader.canonicalNatural blob == canonical)
   return tests
 
-/-- Every evaluation claim through the IxVM program, and the Lean oracles
-that pin their expected results independently. -/
-def run (leanEnv : Lean.Environment) : IO UInt32 := do
+/-- Run the evaluation suite: `full = false` (PR `ci:ixvm`) runs all handcrafted,
+compiled, difficult, command, and parity cases plus 6 generated arithmetic pairs
+and 4 boundary truncation offsets; `full = true` (`ci:nightly`) runs all 24
+generated pairs, every truncation offset, and verifies every FFT pin in `evalFftCosts`. -/
+def runWith (leanEnv : Lean.Environment) (suiteName : String) (full : Bool) : IO UInt32 := do
   let oracles ← IO.mkRef TestSeq.done
-  let code ← Tests.Ix.IxVM.withRunner "ixvm-eval" fun r => do
-    tests r
+  let genCount := if full then 24 else 6
+  let code ← Tests.Ix.IxVM.withRunner suiteName fun r => do
+    tests r (fullTruncation := full)
     compiledTests leanEnv r
     let difficult ← difficultTests leanEnv r
-    let generated ← differentialTests leanEnv r
+    let generated ← differentialTests leanEnv r (count := genCount)
     let command ← commandTests leanEnv r
     let parity ← natBlobParity leanEnv
     oracles.set (difficult ++ generated ++ command ++ parity)
@@ -736,10 +744,21 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     -- a pin of a case the program refuses while it refuses the recursors of mutual and
     -- nested families is kept for when it no longer does
     for (name, _) in evalFftCosts do
+      if !full && name.startsWith "generated arithmetic " then
+        let idx? := ((name.drop "generated arithmetic ".length).toString.splitOn ",").head?.bind String.toNat?
+        if idx?.any (· ≥ genCount) then continue
       unless labels.contains s!"eval accepts {name}" ||
           (modeledRecursorsRefused && labels.contains s!"eval rejects {name}") do
         r.fail s!"unused evaluation FFT pin: {name}"
-  let lean ← lspecIO (.ofList [("ixvm-eval oracles", [← oracles.get])]) []
+  let lean ← lspecIO (.ofList [(s!"{suiteName} oracles", [← oracles.get])]) []
   return if code == 0 && lean == 0 then 0 else 1
+
+/-- PR fast evaluation suite. -/
+def run (leanEnv : Lean.Environment) : IO UInt32 :=
+  runWith leanEnv "ixvm-eval" false
+
+/-- Full nightly evaluation suite (all 24 generated terms and every truncation offset). -/
+def runFull (leanEnv : Lean.Environment) : IO UInt32 :=
+  runWith leanEnv "ixvm-eval-full" true
 
 end Tests.Ix.IxVM.Eval

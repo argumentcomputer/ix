@@ -2,9 +2,8 @@ name: Nix CI
 
 on:
   pull_request:
-  merge_group:
-  # Pushes to main keep the sticky disk's `main` snapshot fresh, which every
-  # new PR branch and merge-queue ref falls back to (see ci.yml).
+    types: [opened, synchronize, reopened, ready_for_review]
+  # Pushes to main keep the sticky disk's `main` snapshot and Cachix fresh.
   push:
     branches: [main]
   workflow_dispatch:
@@ -17,32 +16,104 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect Nix-relevant paths
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run_nix: ${{ steps.plan.outputs.run_nix }}
+      run_flake_check: ${{ steps.plan.outputs.run_flake_check }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            nix_pkg:
+              - 'flake.nix'
+              - 'flake.lock'
+              - 'lakefile.lean'
+              - 'lake-manifest.json'
+              - 'lean-toolchain'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - '.github/workflows/nix.yml'
+            code:
+              - 'Ix.lean'
+              - 'Ix/**'
+              - 'IxC/**'
+              - 'IxSharingVerify.lean'
+              - 'IxSharingVerify/**'
+              - 'Main.lean'
+              - 'Apps.lean'
+              - 'Apps/**'
+              - 'Benchmarks/**'
+              - 'Aiur/Aiur/Ixon.lean'
+              - 'Aiur/Aiur/Ixon/**'
+              - 'IxVM/IxVM/Fixture.lean'
+              - 'crates/**'
+              - 'tools/gnark/**'
+              - 'Tests/Fixtures/ixon-v4/**'
+              - 'Tests/Fixtures/host-admission-v1/**'
+              - 'Tests/Fixtures/role-binding-v2/**'
+      - name: Resolve Nix job plan
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_DRAFT: ${{ github.event.pull_request.draft || false }}
+          F_NIX_PKG: ${{ steps.filter.outputs.nix_pkg }}
+          F_CODE: ${{ steps.filter.outputs.code }}
+        run: |
+          run_nix=false
+          run_flake_check=false
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            run_nix=true
+            run_flake_check=true
+          elif [ "$EVENT_NAME" = "push" ]; then
+            # Push to main warms Cachix + the devShell sticky disk only;
+            # never re-run the 29m sandboxed `nix flake check` on push.
+            if [ "$F_NIX_PKG" = "true" ] || [ "$F_CODE" = "true" ]; then
+              run_nix=true
+            fi
+          else
+            if [ "$F_NIX_PKG" = "true" ] || [ "$F_CODE" = "true" ]; then
+              run_nix=true
+            fi
+            # Only run the sandboxed `ix-tests` check on ready PRs that change
+            # Nix packaging, toolchains, or lockfiles (host-test-primary already
+            # runs all primary IxTests on every PR; nightly.yml runs it daily).
+            if [ "$PR_DRAFT" != "true" ] && [ "$F_NIX_PKG" = "true" ]; then
+              run_flake_check=true
+            fi
+          fi
+          {
+            echo "run_nix=$run_nix"
+            echo "run_flake_check=$run_flake_check"
+          } >> "$GITHUB_OUTPUT"
+
   nix-test:
     name: Nix Tests
+    needs: changes
+    if: needs.changes.outputs.run_nix == 'true'
     env:
-      # The dev shell builds with cargo directly, where `.cargo/config.toml`
-      # would select native code generation; the sticky cache is shared
-      # across instance families, so pin the same baseline CI uses.
       RUSTFLAGS: -Ctarget-cpu=x86-64-v4 -Ctarget-feature=+avx512vbmi2,+gfni
-    # Sticky disks retain Lake/Cargo files; /nix uses the larger root volume
-    # and Cachix provides its binary cache.
-    # https://runs-on.com/docs/runners/capabilities/sticky-disks/
     runs-on: runs-on=${{ github.run_id }}-nix-test-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=150gb/sticky=nix-x86-64-v4:100gb/extras=s3-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # sccache serves only the `nix develop` build at the end: `nix build` and
-      # `nix flake check` compile inside Nix's sandbox, which sees neither
-      # the wrapper nor the network, and rely on Cachix instead. The dev
-      # shell inherits RUSTC_WRAPPER and keeps the outer PATH, so the
-      # binary the sccache action installs resolves there (see ci.yml).
       - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
         with:
           sccache: s3
           sticky_cache: |
             rust
-            custom,path=.lake,path=target
+            custom,path=.lake,path=Aiur/.lake,path=target
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
@@ -52,26 +123,51 @@ jobs:
         with:
           name: argumentcomputer
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      # Covers `builtins.fetchGit` of the Lake manifest's `git+https`
-      # dependencies, which runs at flake eval time as this user;
-      # `install-nix-action`'s github_access_token covers only `github:`
-      # flake inputs, which fetch via the API.
       - uses: $/.github/actions/authenticate-github-fetches
-      # Ix CLI
-      - run: nix build --print-build-logs --accept-flake-config
-      - run: nix run .#ix -- --help
-      # The flake's one check, `ix-tests`: the primary tier from the
-      # Nix-built test binary, in the sandbox, on a fresh copy of the
-      # tracked sources. CI Jobs' lean-test runs the same tier on its
-      # incremental sticky disk and its rust-test job runs clippy and
-      # nextest, so neither runs again here.
-      - run: nix flake check --print-build-logs --accept-flake-config
-      # The development shell builds the library; the tests ran above.
-      - run: nix develop --accept-flake-config --command lake build
+      # Build all packages in one Nix invocation so independent Crane and Lake
+      # derivations execute in parallel.
+      - name: Build Nix packages
+        run: nix build .#default .#ix .#zkv-prover --no-link --print-build-logs --accept-flake-config
+      - name: Smoke-test packaged ix CLI
+        run: nix run .#ix -- --help
+      # Sandboxed `ix-tests` runs only when Nix/manifest/lockfiles changed (or
+      # via workflow_dispatch / nightly.yml), avoiding a 29m duplicate of
+      # `host-test-primary` on ordinary PRs and pushes to main.
+      - name: Run Nix flake check (ix-tests)
+        if: needs.changes.outputs.run_flake_check == 'true'
+        run: nix flake check --print-build-logs --accept-flake-config
+      - name: Smoke-test development shell build
+        run: nix develop --accept-flake-config --command lake build
+
+  check-results:
+    name: Validate Nix results
+    if: ${{ always() }}
+    needs: [changes, nix-test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify planned Nix job succeeded
+        env:
+          R_CHANGES: ${{ needs.changes.result }}
+          E_NIX: ${{ needs.changes.outputs.run_nix }}
+          R_NIX: ${{ needs.nix-test.result }}
+        run: |
+          if [ "$R_CHANGES" != "success" ]; then
+            echo "::error::changes job ended with $R_CHANGES"
+            exit 1
+          fi
+          if [ "$E_NIX" = "true" ]; then
+            if [ "$R_NIX" != "success" ]; then
+              echo "::error::nix-test ended with '$R_NIX'"
+              exit 1
+            fi
+          elif [ "$R_NIX" != "skipped" ] && [ "$R_NIX" != "success" ]; then
+            echo "::error::unplanned nix-test ended with '$R_NIX'"
+            exit 1
+          fi
 
   nix-gate:
     if: ${{ always() }}
-    needs: [nix-test]
+    needs: [check-results]
     permissions:
       actions: read
       checks: read

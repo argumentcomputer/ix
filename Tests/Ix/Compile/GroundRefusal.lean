@@ -34,18 +34,12 @@ def target : Name := ``Src.double
 def closure (env : Environment) (drop : Name → Bool) : List (Name × ConstantInfo) :=
   (Ix.EnvScope.collectDeps env [target]).filter fun (n, _) => !drop n
 
-/-- The Lean IO pipeline's failures `(name, reason)`, sorted by name. Without binder data:
-    the closures here are the raw ones, without recursors, on which the annotator's install
-    (which needs every inductive's recursor) refuses the compile; grounding is the subject. -/
-def leanFailures (env : Environment) (cs : List (Name × ConstantInfo)) :
-    IO (Array (String × String)) := do
-  let out ← IO.ofExcept (← Ix.CompileM.compileCertified env cs 1 (binderData := false))
-  let failures := out.failures.toMap.toArray.map fun (n, m) => (n.pretty, m)
-  return failures.qsort fun a b => a.1 < b.1
-
-/-- The certified compiler's failures `(name, reason)` (`compileCertified`),
-    sorted by name. -/
-def rustFailures (env : Environment) (cs : List (Name × ConstantInfo)) :
+/-- The certified IO pipeline's failures `(name, reason)`, sorted by name.
+Without binder data: the closures here are the raw ones, without recursors, on
+which the annotator's install refuses the compile; grounding is the subject.
+Worker-count independence is formally proved (`compileEnvFold_width`), so one
+certified run suffices alongside the pure compile. -/
+def certifiedFailures (env : Environment) (cs : List (Name × ConstantInfo)) :
     IO (Array (String × String)) := do
   let out ← IO.ofExcept (← Ix.CompileM.compileCertified env cs (binderData := false))
   let failures := out.failures.toMap.toArray.map fun (n, m) => (n.pretty, m)
@@ -83,26 +77,24 @@ def expected : Array (String × String) :=
   |>.qsort fun a b => a.1 < b.1
 
 def suite : List TestSeq := [
-  .individualIO "ground refusal: the closed input compiles with no failure, Lean, Rust and the pure compile" none (do
+  .individualIO "ground refusal: the closed input compiles with no failure, certified IO and pure compile" none (do
     let env ← get_env!
     let cs := closure env fun _ => false
-    let lean ← leanFailures env cs
-    let rust ← rustFailures env cs
+    let cert ← certifiedFailures env cs
     let pure ← pureFailures env cs
     let complete ← completeError? env cs
-    let ok := lean.isEmpty && rust.isEmpty && pure.isEmpty && complete.isNone
+    let ok := cert.isEmpty && pure.isEmpty && complete.isNone
     return (ok, if ok then 1 else 0, 1,
-      if ok then none else some s!"lean {lean.toList.take 4}; rust {rust.toList.take 4}; \
+      if ok then none else some s!"certified {cert.toList.take 4}; \
         pure {pure.toList.take 4}; compileComplete {complete}")) .done,
-  .individualIO "ground refusal: an omitted dependency is refused by name, Lean, Rust and the pure compile" none (do
+  .individualIO "ground refusal: an omitted dependency is refused by name, certified IO and pure compile" none (do
     let env ← get_env!
     let cs := closure env (· == ``Nat.add)
-    let lean ← leanFailures env cs
-    let rust ← rustFailures env cs
+    let cert ← certifiedFailures env cs
     let pure ← pureFailures env cs
-    let ok := lean == expected && rust == expected && pure == expected
+    let ok := cert == expected && pure == expected
     return (ok, if ok then 1 else 0, 1,
-      if ok then none else some s!"lean {lean}; rust {rust}; pure {pure}; expected {expected}")) .done,
+      if ok then none else some s!"certified {cert}; pure {pure}; expected {expected}")) .done,
   .individualIO "ground refusal: the pure compile's report keeps the grounded rest, and compileComplete refuses" none (do
     let env ← get_env!
     let cs := closure env (· == ``Nat.add)

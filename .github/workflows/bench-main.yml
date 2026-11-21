@@ -41,11 +41,56 @@ env:
   COMPILE_DIR: Benchmarks/Compile
 
 jobs:
+  # Skip spawning 15+ 32-CPU r8i.8xlarge benchmark runners on docs-only,
+  # workflow-only, or pure-proof (`IxVMRefinement/`) pushes to main.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      run_bench: ${{ steps.plan.outputs.run_bench }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            bench:
+              - 'Ix.lean'
+              - 'Ix/**'
+              - 'IxC/**'
+              - 'Main.lean'
+              - 'Aiur/**'
+              - 'IxVM/**'
+              - 'MultiStark/**'
+              - 'crates/**'
+              - 'Benchmarks/**'
+              - 'lean-toolchain'
+              - 'lake-manifest.json'
+              - 'lakefile.lean'
+              - 'rust-toolchain.toml'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - '.github/workflows/bench-main.yml'
+      - id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          F_BENCH: ${{ steps.filter.outputs.bench }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$F_BENCH" = "true" ]; then
+            echo "run_bench=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_bench=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # Build the `ix` binary once and cache it;
   # every later job restores it instead of rebuilding. It is built
   # with native code generation for r8i, with caches and measured results
   # isolated from other hardware and compiler flags.
   build:
+    needs: changes
+    if: needs.changes.outputs.run_bench == 'true'
     # The sticky disk is the native-r8i lineage bench-pr's build job shares:
     # this push run leaves the lineage's `main` snapshot, which a
     # `!benchmark` run dispatched on its PR branch reads without writing.
@@ -77,6 +122,7 @@ jobs:
           build: true
           build-args: "ix --wfail -v"
           use-github-cache: false
+          use-mathlib-cache: false
       - run: |
           mkdir -p ~/.local/bin
           echo | lake run install            # copies ix -> ~/.local/bin/ix
@@ -113,6 +159,7 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
+          use-mathlib-cache: false
       - id: matrix
         run: |
           ix bench ci matrix > matrix.json
@@ -312,6 +359,7 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
+          use-mathlib-cache: false
       # Pull the `.ixe` the compile job built — do NOT recompile here.
       # (The path list must match the compile job's save exactly.)
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

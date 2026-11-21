@@ -339,13 +339,33 @@ def levelCountCases (_ : Unit) : Array Builder :=
     Case.ofClaim s!"TagN f=0 level count {v} is not revealed as {other}" (← bare env)
       (.reveal addr (.axio none (some other.toUInt64) none) none) (accept := false)
 
+/-- Boundary sample of invalid codes (first and last invalid code per `(f, width)`):
+16 fast cases for PR CI, while `invalidCodeCases` + `sweepCases` run in `runSweep`. -/
+def invalidCodeSample (_ : Unit) : Array Builder := Id.run do
+  let mut out := #[]
+  for (f, lastCode, flag) in [(0, 63, (0 : UInt8)), (2, 15, 3)] do
+    for width in [2, 3, 4, 8] do
+      for c in [4, lastCode] do
+        let bytes : ByteArray :=
+          ⟨#[Ixon.tagNHeader f flag (3 * 2 ^ (6 - f) + c)] ++ Array.replicate width 0⟩
+        out := out.push (differential s!"TagN f={f} invalid code {c} with {width} following bytes"
+          (rewrite (fieldOfWidth f) bytes))
+  return out
+
+/-- PR fast suite: host checks, all expected/rejected/boundary/level-count/parity/
+universe-variable cases, and a boundary sample of invalid codes. -/
 def run : IO UInt32 := do
   let host ← lspecIO (.ofList [("ixvm-tagn host", [expectedHostTests])]) []
-  let cases := expectedCases () ++ rejectedCases () ++ boundaryCases () ++ invalidCodeCases ()
-    ++ levelCountCases () ++ levelCountParityCases () ++ universeVariableCases () ++ sweepCases ()
+  let cases := expectedCases () ++ rejectedCases () ++ boundaryCases () ++ invalidCodeSample ()
+    ++ levelCountCases () ++ levelCountParityCases () ++ universeVariableCases ()
   -- The universe-variable cases are decided by the circuit's range check, so
   -- this suite always takes the circuit verdict.
   let ixvm ← runCases "ixvm-tagn" cases (circuit := some true)
   return if host == 0 && ixvm == 0 then 0 else 1
+
+/-- Exhaustive nightly sweep: all 288 invalid-code cases and 3,840 1/2-byte sweep cases. -/
+def runSweep : IO UInt32 := do
+  let cases := invalidCodeCases () ++ sweepCases ()
+  runCases "ixvm-tagn-sweep" cases (circuit := some true)
 
 end Tests.Ix.IxVM.TagN
