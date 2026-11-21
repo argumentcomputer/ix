@@ -1,19 +1,23 @@
-Canonical C+ input-contract regression fixtures
+Input-mode fixtures: six reference-free definitions in Ixon v5
 
-These six reference-free definitions were constructed directly as Ixon data,
-serialized and fully decoded, then checked against published 137
-8fb4049f9f0833d1e583d5a19b049c7e9a7169c0. Each complete .ixe envelope is 122
-bytes. The fixtures record the exact addresses, scalar fields, structure and
-serialized bytes for these six cases.
+Each fixture is a complete .ixe envelope (version 4, no role binding) of
+131 bytes holding one record: the definition `fun (x : Prop) => x : Prop ->
+Prop`, constructed directly as Ixon data (lvls 0, universe table [zero]). Its
+binder-data section has one block per root, each with one `never` node: the
+`all` binder of the type (root 0) and the `lam` binder of the value (root 1).
+The six fixtures differ only in those two nodes' modes (input, result):
 
-The type is Prop -> Prop and the body is the identity lambda over Prop.
-No external constant, primitive role, assumption or resource validation is
-involved. The three mismatch fixtures differ respectively in input usage,
-ownership and locality and must be rejected under C+. Matching many/linear
-inputs and the result-only unique variant must be accepted.
+  many-match          all (many, shared)       lam (many, shared)
+  linear-match        all (once, shared)       lam (once, shared)
+  uses-mismatch       all (once, shared)       lam (many, shared)
+  ownership-mismatch  all (unique, shared)     lam (many, shared)
+  locality-mismatch   all (borrowed, shared)   lam (many, shared)
+  result-only-unique  all (once, unique)       lam (once, unique)
 
-Published 137 accepted all six, demonstrating the intended negative regression.
-The bytes and expected behavior are fixed independently of compiler output.
+They carry over the earlier input-contract fixtures (which wrote the same
+differences as contract bytes in the expressions) to modes in the section.
+Every record is canonical and its section complete. The bytes are fixed
+independently of compiler output.
 
 Today only `crates/ixon/tests/role_binding.rs` reads them, as inputs for the
 role-binding transport tests, which claim nothing about admission.

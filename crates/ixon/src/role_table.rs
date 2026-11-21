@@ -17,8 +17,14 @@ macro_rules! roles {
     pub enum Role { $($role),+ }
 
     impl Role {
-      pub const ALL: [Self; 103] = [$(Self::$role),+];
+      pub const ALL: [Self; 108] = [$(Self::$role),+];
       pub const fn index(self) -> u8 { self as u8 }
+      /// The inert axiom roles: `sorryAx` and Lean's compiler-trust axioms. A
+      /// binding names each, no claim certifies one, and no accepted constant
+      /// uses one. Mirror of IxC's `Role.inert`.
+      pub const fn is_inert(self) -> bool {
+        matches!(self, Self::SorryAx | Self::TrustCompiler | Self::OfReduceBool | Self::OfReduceNat)
+      }
       pub fn from_index(index: u8) -> Option<Self> {
         Self::ALL.get(usize::from(index)).copied()
       }
@@ -134,6 +140,11 @@ roles! {
   CharUtf8Size => "Char.utf8Size",
   StringUtf8ByteSize => "String.utf8ByteSize",
   StringBack => "String.back",
+  TrustCompiler => "Lean.trustCompiler",
+  ReduceBool => "Lean.reduceBool",
+  ReduceNat => "Lean.reduceNat",
+  OfReduceBool => "Lean.ofReduceBool",
+  OfReduceNat => "Lean.ofReduceNat",
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -292,17 +303,19 @@ impl RoleTable {
 /// The roles the checker uses without a reference to them, in role order:
 /// a `Nat` literal's type and constructor forms, a `String` literal's type and
 /// constructor form, and the standard axioms the axiom policy admits as the
-/// binding binds them. Two bindings that bind these alike have the same literal
+/// binding binds them (`propext`, `Classical.choice`, and `Quot.sound`, an axiom
+/// record). Two bindings that bind these alike have the same literal
 /// class, and typing transfers between them. Mirrors
 /// `Ix.ClaimContext.classRoles`; a checker change that fabricates a reference
 /// to another role must add it to both.
-pub const CLASS_ROLES: [Role; 12] = [
+pub const CLASS_ROLES: [Role; 13] = [
   Role::Nat,
   Role::NatZero,
   Role::NatSucc,
   Role::List,
   Role::ListNil,
   Role::ListCons,
+  Role::QuotSound,
   Role::String,
   Role::StringOfList,
   Role::Char,

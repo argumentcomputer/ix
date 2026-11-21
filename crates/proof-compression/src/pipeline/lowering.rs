@@ -96,14 +96,12 @@ impl Lowered {
     preprocessing: Option<&Path>,
     prefetch_bytes: usize,
   ) -> Result<super::prover::Committed> {
-    let committed = super::prover::Committed::prepare(
+    super::prover::Committed::prepare_owned(
       config,
-      &self.compiled.trace_shards(&self.assignment)?,
+      self,
       preprocessing,
       prefetch_bytes,
-    )?;
-    drop(self);
-    Ok(committed)
+    )
   }
 }
 
@@ -216,9 +214,17 @@ pub(in crate::pipeline) fn prepare_first(
   prepared: Prepared<Val>,
   height: usize,
 ) -> Result<Lowered> {
-  let (compiled, inputs) = first_circuit(prepared.circuit, height)?;
-  let assignment =
-    assign_foreign(&inputs, compiled.circuit(), &prepared.assignment)?;
+  let Prepared { circuit, assignment: source_assignment } = prepared;
+  let translated = translate(&circuit);
+  drop(circuit);
+  let assignment = assign_foreign(
+    &translated.inputs,
+    &translated.circuit,
+    &source_assignment,
+  )?;
+  drop(source_assignment);
+  drop(translated.inputs);
+  let compiled = lower_first(translated.circuit, height, TABLE_HEIGHT)?;
   Ok(Lowered { compiled, assignment })
 }
 

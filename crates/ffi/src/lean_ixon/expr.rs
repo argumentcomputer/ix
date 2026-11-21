@@ -2,10 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::lean::{
-  LeanIxonBinderContract, LeanIxonExpr, LeanIxonLetContract,
-  LeanIxonValueContract,
-};
+use crate::lean::{LeanIxonExpr, LeanIxonLetMode};
 use ixon::expr::Expr as IxonExpr;
 use lean_ffi::object::{LeanArray, LeanBorrowed, LeanOwned, LeanRef};
 
@@ -83,34 +80,25 @@ impl LeanIxonExpr<LeanOwned> {
         ctor.set_obj(1, arg_obj);
         ctor
       },
-      IxonExpr::Lam(contract, ty, body) => {
+      IxonExpr::Lam(ty, body) | IxonExpr::All(ty, body) => {
         let ty_obj = Self::build(ty);
         let body_obj = Self::build(body);
-        let ctor = LeanIxonExpr::alloc(8);
-        ctor.set_obj(0, LeanIxonBinderContract::build(contract));
-        ctor.set_obj(1, ty_obj);
-        ctor.set_obj(2, body_obj);
+        let tag = if matches!(expr, IxonExpr::Lam(..)) { 8 } else { 9 };
+        let ctor = LeanIxonExpr::alloc(tag);
+        ctor.set_obj(0, ty_obj);
+        ctor.set_obj(1, body_obj);
         ctor
       },
-      IxonExpr::All(contract, result, ty, body) => {
-        let ty_obj = Self::build(ty);
-        let body_obj = Self::build(body);
-        let ctor = LeanIxonExpr::alloc(9);
-        ctor.set_obj(0, LeanIxonBinderContract::build(contract));
-        ctor.set_obj(1, LeanIxonValueContract::build(result));
-        ctor.set_obj(2, ty_obj);
-        ctor.set_obj(3, body_obj);
-        ctor
-      },
-      IxonExpr::Let(contract, ty, val, body) => {
+      IxonExpr::Let(non_dep, mode, ty, val, body) => {
         let ty_obj = Self::build(ty);
         let val_obj = Self::build(val);
         let body_obj = Self::build(body);
         let ctor = LeanIxonExpr::alloc(10);
-        ctor.set_obj(0, LeanIxonLetContract::build(contract));
+        ctor.set_obj(0, LeanIxonLetMode::build(mode));
         ctor.set_obj(1, ty_obj);
         ctor.set_obj(2, val_obj);
         ctor.set_obj(3, body_obj);
+        ctor.set_num_8(0, u8::from(*non_dep));
         ctor
       },
       IxonExpr::Share(idx) => {
@@ -132,7 +120,7 @@ impl LeanIxonExpr<LeanOwned> {
 }
 
 impl<R: LeanRef> LeanIxonExpr<R> {
-  /// Decode all Ixon expression forms without erasing contracts.
+  /// Decode all Ixon expression forms.
   pub fn decode(&self) -> IxonExpr {
     let ctor = self.as_ctor();
     let tag = ctor.tag();
@@ -177,18 +165,16 @@ impl<R: LeanRef> LeanIxonExpr<R> {
         Arc::new(LeanIxonExpr(ctor.get(1)).decode()),
       ),
       8 => IxonExpr::Lam(
-        LeanIxonBinderContract(ctor.get(0)).decode(),
+        Arc::new(LeanIxonExpr(ctor.get(0)).decode()),
         Arc::new(LeanIxonExpr(ctor.get(1)).decode()),
-        Arc::new(LeanIxonExpr(ctor.get(2)).decode()),
       ),
       9 => IxonExpr::All(
-        LeanIxonBinderContract(ctor.get(0)).decode(),
-        LeanIxonValueContract(ctor.get(1)).decode(),
-        Arc::new(LeanIxonExpr(ctor.get(2)).decode()),
-        Arc::new(LeanIxonExpr(ctor.get(3)).decode()),
+        Arc::new(LeanIxonExpr(ctor.get(0)).decode()),
+        Arc::new(LeanIxonExpr(ctor.get(1)).decode()),
       ),
       10 => IxonExpr::Let(
-        LeanIxonLetContract(ctor.get(0)).decode(),
+        self.get_num_8(0) != 0,
+        LeanIxonLetMode(ctor.get(0)).decode(),
         Arc::new(LeanIxonExpr(self.get_obj(1)).decode()),
         Arc::new(LeanIxonExpr(self.get_obj(2)).decode()),
         Arc::new(LeanIxonExpr(self.get_obj(3)).decode()),

@@ -20,8 +20,6 @@ lean_ffi::lean_domain_type! {
 
   // Opaque types (passed through without field access)
   LeanIxonExprMetaArena;
-  LeanAiurCommitmentParameters;
-  LeanAiurFriParameters;
 }
 
 // =============================================================================
@@ -31,15 +29,18 @@ lean_ffi::lean_domain_type! {
 lean_ffi::lean_inductive! {
   // --- Ixon structures (single-constructor) ---
 
-  LeanIxonValueContract  [ { num_8: 2 } ];
-  LeanIxonBinderContract [ { num_obj: 1, num_8: 1 } ];
-  LeanIxonLetContract    [ { num_obj: 1, num_8: 2 } ];
-  LeanIxonDefinition      [ { num_obj: 2, num_64: 1, num_8: 2 } ];
+  // input, result (BinderMode, ResultMode)
+  LeanIxonAllMode         [ { num_8: 2 } ];
+  // alloc, boundedStack (AllocAssert, Bool)
+  LeanIxonDefAsserts      [ { num_8: 2 } ];
+  // kind, safety, asserts, lvls, typ, value
+  LeanIxonDefinition      [ { num_obj: 3, num_64: 1, num_8: 2 } ];
   LeanIxonRecursorRule    [ { num_obj: 1, num_64: 1 } ];
   LeanIxonRecursor        [ { num_obj: 2, num_64: 5, num_8: 2 } ];
   LeanIxonAxiom           [ { num_obj: 1, num_64: 1, num_8: 1 } ];
   LeanIxonQuotient        [ { num_obj: 1, num_64: 1, num_8: 1 } ];
-  LeanIxonConstructor     [ { num_obj: 1, num_64: 4, num_8: 1 } ];
+  // isUnsafe, lvls, cidx, params, fields, fieldModes, typ
+  LeanIxonConstructor     [ { num_obj: 2, num_64: 4, num_8: 1 } ];
   LeanIxonInductive       [ { num_obj: 2, num_64: 3, num_8: 1 } ];
   LeanIxonInductiveProj   [ { num_obj: 1, num_64: 1 } ];
   LeanIxonConstructorProj [ { num_obj: 1, num_64: 2 } ];
@@ -47,7 +48,8 @@ lean_ffi::lean_inductive! {
   LeanIxonDefinitionProj  [ { num_obj: 1, num_64: 1 } ];
   LeanIxonNamed           [ { num_obj: 4 } ];
   LeanIxonComm            [ { num_obj: 2 } ];
-  LeanIxonConstant        [ { num_obj: 4 } ];
+  LeanIxonConstant        [ { num_obj: 5 } ];
+  LeanIxonBinderBlock     [ { num_obj: 1, num_64: 2, num_8: 1 } ];
   LeanIxonRawConst        [ { num_obj: 2 } ];
   // name, addr, constMeta, original, hints
   LeanIxonRawNamed        [ { num_obj: 5 } ];
@@ -80,6 +82,25 @@ lean_ffi::lean_inductive! {
 
   // --- Ixon multi-variant inductives ---
 
+  // Every binder node holds its `AllMode` as an object field.
+  LeanIxonBinderNode [
+    { num_obj: 1 },                           // tag 0: never (mode)
+    { num_obj: 1 },                           // tag 1: zero (mode)
+    { num_obj: 2 },                           // tag 2: ifAllZero (params, mode)
+    { num_64: 1 },                            // tag 3: share
+    { num_obj: 1 },                           // tag 4: undecided (mode)
+  ];
+
+  LeanIxonLetMode [
+    { num_8: 1 },                             // tag 0: value (BinderMode)
+    { },                                      // tag 1: borrow (scalar)
+  ];
+
+  LeanIxonFieldModes [
+    { },                                      // tag 0: inherited (scalar)
+    { num_obj: 1 },                           // tag 1: listed (the Array)
+  ];
+
   LeanIxonUniv [
     { },                                      // tag 0: zero
     { num_obj: 1 },                           // tag 1: succ
@@ -97,9 +118,10 @@ lean_ffi::lean_inductive! {
     { num_64: 1 },                            // tag 5: str
     { num_64: 1 },                            // tag 6: nat
     { num_obj: 2 },                           // tag 7: app
-    { num_obj: 3 },                           // tag 8: lam
-    { num_obj: 4 },                           // tag 9: all
-    { num_obj: 4 },                           // tag 10: let
+    { num_obj: 2 },                           // tag 8: lam (ty, body)
+    { num_obj: 2 },                           // tag 9: all (ty, body)
+    // tag 10: letE (mode, ty, val, body; nonDep a Bool scalar)
+    { num_obj: 4, num_8: 1 },
     { num_64: 1 },                            // tag 11: share
   ];
 
@@ -173,37 +195,6 @@ lean_ffi::lean_inductive! {
     { },                                      // tag 1: abbrev (scalar)
     { num_32: 1 },                            // tag 2: regular
   ];
-
-  // --- Aiur types ---
-
-  LeanAiurToplevel [ { num_obj: 3 } ];
-  LeanAiurFunction [ { num_obj: 2, num_8: 2 } ];
-  LeanAiurCircuit  [ { num_obj: 3 } ];
-
-  // Aiur FFI result structures (`Ix/Aiur/Semantics/BytecodeFfi.lean`,
-  // `Ix/Aiur/Protocol.lean`). `IOBuffer` hashmaps cross the boundary as
-  // flat `ioData`/`ioMap` arrays; Lean folds them back into hashmaps.
-  // idx, len
-  LeanAiurIOKeyInfo      [ { num_obj: 2 } ];
-  // uniqueRows, totalHits
-  LeanAiurQueryCount     [ { num_obj: 2 } ];
-  // mainWidth, stage2Width, quotientDegree, preprocessedWidth,
-  // preprocessedHeight
-  LeanAiurCircuitShape   [ { num_obj: 5 } ];
-  // output, ioData, ioMap, queryCounts
-  LeanAiurExecuteResult  [ { num_obj: 4 } ];
-  // claim, proof, ioData, ioMap
-  LeanAiurProveResult    [ { num_obj: 4 } ];
-  // claimBytes, proof, ioData, ioMap
-  LeanAiurProveEnvResult [ { num_obj: 4 } ];
-  // error, peakBytes, suggestedParts
-  LeanAiurShardResult    [ { num_obj: 3 } ];
-  // claimBytes, proof, peakBytes, suggestedParts, workerBytes
-  LeanAiurShardProveResult [ { num_obj: 5 } ];
-  // claimBytes, proofAddr, peakBytes
-  LeanAiurShardProvenAhead [ { num_obj: 3 } ];
-  // claimBytes, constantCount
-  LeanAiurAggregateExpected [ { num_obj: 2 } ];
 
   // --- Iroh types ---
 

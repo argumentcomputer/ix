@@ -1,0 +1,28 @@
+[package]
+name = "ix-prover"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aiur = { workspace = true, features = ["stark"] }
+ixvm = { workspace = true, features = ["stark"] }
+stark-verifier = { workspace = true }
+record-pool = { workspace = true }
+multi-stark = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+blake3 = { workspace = true }
+rustc-hash = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-texray = { workspace = true }
+
+[features]
+default = ["parallel"]
+parallel = ["aiur/parallel", "ixvm/parallel", "stark-verifier/parallel"]
+cuda = ["aiur/cuda", "ixvm/cuda", "stark-verifier/cuda"]
+
+[lints]
+workspace = true

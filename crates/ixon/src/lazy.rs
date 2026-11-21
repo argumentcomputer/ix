@@ -376,6 +376,7 @@ mod tests {
     Constant::new(ConstantInfo::Defn(Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Safe,
+      asserts: Default::default(),
       lvls: 1,
       typ: Expr::sort(0),
       value: Expr::var(0),
@@ -565,6 +566,7 @@ mod tests {
     let m1 = MutConst::Defn(Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Safe,
+      asserts: Default::default(),
       lvls: 0,
       typ: Expr::sort(0),
       value: Expr::var(0),
@@ -572,6 +574,7 @@ mod tests {
     let m2 = MutConst::Defn(Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Safe,
+      asserts: Default::default(),
       lvls: 0,
       typ: Expr::sort(0),
       value: Expr::var(0),

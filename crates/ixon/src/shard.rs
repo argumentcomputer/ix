@@ -659,13 +659,279 @@ pub fn build_sub_env(
   Ok(buf)
 }
 
+#[cfg(not(target_arch = "riscv64"))]
+fn unshare_expr<'a>(c: &'a crate::constant::Constant, mut e: &'a crate::expr::Expr) -> &'a crate::expr::Expr {
+  for _ in 0..256 {
+    if let crate::expr::Expr::Share(i) = e
+      && let Some(shared) = c.sharing.get(*i as usize)
+    {
+      e = shared.as_ref();
+    } else {
+      break;
+    }
+  }
+  e
+}
+
+#[cfg(not(target_arch = "riscv64"))]
+fn app_head_ref<'a>(
+  c: &'a crate::constant::Constant,
+  mut e: &'a crate::expr::Expr,
+) -> Option<usize> {
+  for _ in 0..1024 {
+    e = unshare_expr(c, e);
+    match e {
+      crate::expr::Expr::App(f, _) => e = f.as_ref(),
+      crate::expr::Expr::Let(_, _, _, _, body) => e = body.as_ref(),
+      crate::expr::Expr::Ref(j, _) => return Some(*j as usize),
+      _ => return None,
+    }
+  }
+  None
+}
+
+#[cfg(not(target_arch = "riscv64"))]
+fn resolve_inductive_block(
+  source: &IxonEnv,
+  c: &crate::constant::Constant,
+  ref_idx: usize,
+) -> Option<Address> {
+  let pa = c.refs.get(ref_idx)?;
+  let pc = source.get_const(pa)?;
+  match &pc.info {
+    IxonCI::IPrj(p) => Some(p.block.clone()),
+    _ => None,
+  }
+}
+
+/// The inductive block (`Muts` address) that `r` eliminates, read from motive
+/// 0's carrier (or, as fallback, the major premise's head).
+#[cfg(not(target_arch = "riscv64"))]
+fn recursor_target_block(
+  source: &IxonEnv,
+  c: &crate::constant::Constant,
+  r: &crate::constant::Recursor,
+) -> Option<Address> {
+  let mut e = r.typ.as_ref();
+  for _ in 0..r.params {
+    loop {
+      e = unshare_expr(c, e);
+      match e {
+        crate::expr::Expr::All(_, body) => {
+          e = body.as_ref();
+          break;
+        },
+        crate::expr::Expr::Let(_, _, _, _, body) => e = body.as_ref(),
+        _ => return None,
+      }
+    }
+  }
+  if r.motives > 0 {
+    let mut me = e;
+    let dom0 = loop {
+      me = unshare_expr(c, me);
+      match me {
+        crate::expr::Expr::All(dom, _) => break Some(dom.as_ref()),
+        crate::expr::Expr::Let(_, _, _, _, body) => me = body.as_ref(),
+        _ => break None,
+      }
+    };
+    if let Some(mut de) = dom0 {
+      let mut last_dom = None;
+      for _ in 0..1024 {
+        de = unshare_expr(c, de);
+        match de {
+          crate::expr::Expr::All(d, b) => {
+            last_dom = Some(d.as_ref());
+            de = b.as_ref();
+          },
+          crate::expr::Expr::Let(_, _, _, _, b) => de = b.as_ref(),
+          _ => break,
+        }
+      }
+      if let Some(ld) = last_dom
+        && let Some(j) = app_head_ref(c, ld)
+        && let Some(block) = resolve_inductive_block(source, c, j)
+      {
+        return Some(block);
+      }
+    }
+  }
+  // Fallback: major premise after params + motives + minors + indices binders.
+  let skip = r
+    .motives
+    .saturating_add(r.minors)
+    .saturating_add(r.indices);
+  for _ in 0..skip {
+    loop {
+      e = unshare_expr(c, e);
+      match e {
+        crate::expr::Expr::All(_, body) => {
+          e = body.as_ref();
+          break;
+        },
+        crate::expr::Expr::Let(_, _, _, _, body) => e = body.as_ref(),
+        _ => return None,
+      }
+    }
+  }
+  let major_dom = loop {
+    e = unshare_expr(c, e);
+    match e {
+      crate::expr::Expr::All(dom, _) => break Some(dom.as_ref()),
+      crate::expr::Expr::Let(_, _, _, _, body) => e = body.as_ref(),
+      _ => break None,
+    }
+  }?;
+  let j = app_head_ref(c, major_dom)?;
+  resolve_inductive_block(source, c, j)
+}
+
+/// If `c` is a `Muts` block with inductive members, return `(ind_count, any_unsafe)`.
+#[cfg(not(target_arch = "riscv64"))]
+fn inductive_block_arity(c: &crate::constant::Constant) -> Option<(usize, bool)> {
+  let IxonCI::Muts(ms) = &c.info else { return None };
+  let mut ind_count = 0usize;
+  let mut any_unsafe = false;
+  for m in ms {
+    if let crate::constant::MutConst::Indc(ind) = m {
+      ind_count += 1;
+      if ind.is_unsafe {
+        any_unsafe = true;
+      }
+    }
+  }
+  if ind_count > 0 { Some((ind_count, any_unsafe)) } else { None }
+}
+
+/// Index every safe recursor record in `source` (standalone `Recr` and `Muts`
+/// recursor families) by the inductive block address it eliminates.
+/// Each value is `(recursor_record_addr, is_family_block)`.
+#[cfg(not(target_arch = "riscv64"))]
+fn collect_recursors_by_block(
+  source: &IxonEnv,
+) -> FxHashMap<Address, Vec<(Address, bool)>> {
+  let mut by_block: FxHashMap<Address, Vec<(Address, bool)>> =
+    FxHashMap::default();
+  for entry in source.consts.iter() {
+    let Ok(tag) = entry.value().peek_variant() else { continue };
+    if tag != ConstVariantTag::Recr && tag != ConstVariantTag::Muts {
+      continue;
+    }
+    let addr = entry.key().clone();
+    let Ok(c) = entry.value().get() else { continue };
+    match &c.info {
+      IxonCI::Recr(r) if !r.is_unsafe => {
+        if let Some(block) = recursor_target_block(source, &c, r) {
+          by_block.entry(block).or_default().push((addr, false));
+        }
+      },
+      IxonCI::Muts(ms)
+        if ms.iter().any(|m| matches!(m, crate::constant::MutConst::Recr(_))) =>
+      {
+        if ms.iter().any(|m| {
+          matches!(m, crate::constant::MutConst::Recr(r) if r.is_unsafe)
+        }) {
+          continue;
+        }
+        for m in ms {
+          if let crate::constant::MutConst::Recr(r) = m
+            && let Some(block) = recursor_target_block(source, &c, r)
+          {
+            by_block.entry(block).or_default().push((addr, true));
+            break;
+          }
+        }
+      },
+      _ => {},
+    }
+  }
+  by_block
+}
+
+/// Expand `closure` so every safe mutual or nested (modeled) inductive block
+/// reached in `closure` carries its recursor family record and the recursors
+/// of all safe inductive blocks (including containers such as `Array`, `List`,
+/// `Option`, `Prod`, or nested/mutual containers) in its transitive support.
+///
+/// Direct `Constant.refs` walks drop these recursors whenever a seed mentions a
+/// modeled inductive type (e.g. via `autoParam` → `Lean.Syntax`) without naming
+/// its recursor, leaving downstream `IxVM.Model` unable to generate advice.
+/// Pure native extractions (no modeled inductive block in `closure`) are
+/// returned untouched.
+#[cfg(not(target_arch = "riscv64"))]
+fn expand_modeled_closure(
+  source: &IxonEnv,
+  closure: &mut std::collections::HashSet<Address>,
+) {
+  let has_safe_ind_block = closure.iter().any(|addr| {
+    source.consts.get(addr).is_some_and(|lc| {
+      lc.value().peek_variant() == Ok(ConstVariantTag::Muts)
+        && lc
+          .value()
+          .get()
+          .ok()
+          .and_then(|c| inductive_block_arity(&c))
+          .is_some_and(|(_, is_unsafe)| !is_unsafe)
+    })
+  });
+  if !has_safe_ind_block {
+    return;
+  }
+
+  let recs_by_block = collect_recursors_by_block(source);
+  let mut queue: std::collections::VecDeque<Address> =
+    std::collections::VecDeque::new();
+  let mut visited_support: FxHashSet<Address> = FxHashSet::default();
+  for addr in closure.iter() {
+    let Some(lc) = source.consts.get(addr) else { continue };
+    if lc.value().peek_variant() != Ok(ConstVariantTag::Muts) {
+      continue;
+    }
+    let Ok(c) = lc.value().get() else { continue };
+    let Some((ind_count, false)) = inductive_block_arity(&c) else { continue };
+    let is_modeled = ind_count > 1
+      || recs_by_block.get(addr).is_some_and(|rs| {
+        rs.iter().any(|(_, is_fam)| *is_fam) || rs.len() > ind_count
+      });
+    if is_modeled && visited_support.insert(addr.clone()) {
+      queue.push_back(addr.clone());
+    }
+  }
+  if queue.is_empty() {
+    return;
+  }
+
+  while let Some(addr) = queue.pop_front() {
+    closure.insert(addr.clone());
+    let Some(c) = source.get_const(&addr) else { continue };
+    let mut edges: Vec<Address> = Vec::new();
+    IxonEnv::closure_edges(&addr, &c, &mut edges);
+    if let Some((_, false)) = inductive_block_arity(&c)
+      && let Some(rs) = recs_by_block.get(&addr)
+    {
+      for (rec_addr, _) in rs {
+        edges.push(rec_addr.clone());
+      }
+    }
+    for e in edges {
+      if visited_support.insert(e.clone()) {
+        queue.push_back(e);
+      }
+    }
+  }
+}
+
 /// The in-memory closure sub-env behind [`build_sub_env`]: copy the BFS
 /// dependency closure of `roots` (genuine bytes + blobs + reducibility
 /// hints), no Named section. A bound source's binding is copied with the
 /// closure of the records it names, so the sub-env carries every record its
 /// role admission reads and every unit a verdict on `roots` rests on (see
-/// [`verdict_work`]). A binding that does not decode is copied as is, and
-/// the sub-env's reader refuses it.
+/// [`verdict_work`]). Every safe modeled (mutual/nested) inductive block in
+/// the closure is expanded with its recursor family and transitive container
+/// recursors so extracted `.ixe` files remain self-contained for `IxVM.Model`
+/// and `ix check`. A binding that does not decode is copied as is, and the
+/// sub-env's reader refuses it.
 #[cfg(not(target_arch = "riscv64"))]
 fn sub_env_of(source: &IxonEnv, roots: &[Address]) -> IxonEnv {
   let mut roots = roots.to_vec();
@@ -674,7 +940,8 @@ fn sub_env_of(source: &IxonEnv, roots: &[Address]) -> IxonEnv {
   {
     roots.extend(table.records().cloned());
   }
-  let closure = closure_addrs(source, &roots);
+  let mut closure = closure_addrs(source, &roots);
+  expand_modeled_closure(source, &mut closure);
   let mut sub = IxonEnv::new();
   sub.role_binding = source.role_binding.clone();
   for addr in &closure {
@@ -4124,5 +4391,269 @@ mod tests {
     )
     .unwrap_err();
     assert!(err.contains("do not match"), "got: {err}");
+  }
+
+  #[test]
+  fn sub_env_expands_modeled_family_and_container_recursors() {
+    use crate::constant::{
+      Constant, ConstantInfo, Constructor, Definition, DefKind, Inductive,
+      InductiveProj, MutConst, Recursor, RecursorProj,
+    };
+    use crate::expr::Expr;
+    use crate::modes::{DefAsserts, FieldModes};
+    use crate::univ::Univ;
+    use ix_common::env::DefinitionSafety;
+
+    let mut env = IxonEnv::new();
+    let store = |env: &mut IxonEnv, c: Constant| -> Address {
+      let mut bytes = Vec::new();
+      c.put(&mut bytes);
+      let a = Address::hash(&bytes);
+      env.store_const(a.clone(), c);
+      a
+    };
+
+    let mk_ind_block = |env: &mut IxonEnv,
+                        ctors: Vec<Constructor>,
+                        refs: Vec<Address>|
+     -> (Address, Address) {
+      let block = store(
+        env,
+        Constant {
+          info: ConstantInfo::Muts(vec![MutConst::Indc(Inductive {
+            is_unsafe: false,
+            lvls: 0,
+            params: 0,
+            indices: 0,
+            typ: Expr::sort(0),
+            ctors,
+          })]),
+          sharing: vec![],
+          refs,
+          univs: vec![Univ::zero()],
+          binders: vec![],
+        },
+      );
+      let iprj = store(
+        env,
+        Constant {
+          info: ConstantInfo::IPrj(InductiveProj { idx: 0, block: block.clone() }),
+          sharing: vec![],
+          refs: vec![],
+          univs: vec![],
+          binders: vec![],
+        },
+      );
+      (block, iprj)
+    };
+
+    // Container inductive `Cont` (1-type native) + its standalone `Cont.rec`.
+    let (cont_block, cont_iprj) = mk_ind_block(&mut env, vec![], vec![]);
+    let cont_rec = store(
+      &mut env,
+      Constant {
+        info: ConstantInfo::Recr(Recursor {
+          k: false,
+          is_unsafe: false,
+          lvls: 0,
+          params: 0,
+          indices: 0,
+          motives: 1,
+          minors: 0,
+          // motive 0 : Cont → Sort 0; major : Cont → Sort 0
+          typ: Expr::all(
+            Expr::all(Expr::reference(0, vec![]), Expr::sort(0)),
+            Expr::all(Expr::reference(0, vec![]), Expr::sort(0)),
+          ),
+          rules: vec![],
+        }),
+        sharing: vec![],
+        refs: vec![cont_iprj.clone()],
+        univs: vec![Univ::zero()],
+        binders: vec![],
+      },
+    );
+
+    // Unrelated plain native inductive `Plain` (distinct content from `Cont`)
+    // + its standalone `Plain.rec`.
+    let (plain_block, plain_iprj) = mk_ind_block(
+      &mut env,
+      vec![Constructor {
+        is_unsafe: false,
+        lvls: 0,
+        cidx: 0,
+        params: 0,
+        fields: 0,
+        field_modes: FieldModes::default(),
+        typ: Expr::rec(0, vec![]),
+      }],
+      vec![],
+    );
+    assert_ne!(cont_block, plain_block);
+    let plain_rec = store(
+      &mut env,
+      Constant {
+        info: ConstantInfo::Recr(Recursor {
+          k: false,
+          is_unsafe: false,
+          lvls: 0,
+          params: 0,
+          indices: 0,
+          motives: 1,
+          minors: 0,
+          typ: Expr::all(
+            Expr::all(Expr::reference(0, vec![]), Expr::sort(0)),
+            Expr::all(Expr::reference(0, vec![]), Expr::sort(0)),
+          ),
+          rules: vec![],
+        }),
+        sharing: vec![],
+        refs: vec![plain_iprj.clone()],
+        univs: vec![Univ::zero()],
+        binders: vec![],
+      },
+    );
+
+    // Nested inductive `Tree` referencing `Cont`, with a 2-member recursor
+    // family block `Tree.rec` / `Tree.rec_1` (neither referenced by `seed`).
+    let (tree_block, tree_iprj) = mk_ind_block(
+      &mut env,
+      vec![Constructor {
+        is_unsafe: false,
+        lvls: 0,
+        cidx: 0,
+        params: 0,
+        fields: 1,
+        field_modes: FieldModes::default(),
+        typ: Expr::all(Expr::reference(0, vec![]), Expr::rec(0, vec![])),
+      }],
+      vec![cont_iprj.clone()],
+    );
+    let tree_rec_fam = store(
+      &mut env,
+      Constant {
+        info: ConstantInfo::Muts(vec![
+          MutConst::Recr(Recursor {
+            k: false,
+            is_unsafe: false,
+            lvls: 0,
+            params: 0,
+            indices: 0,
+            motives: 2,
+            minors: 0,
+            // motive 0 : Tree → Sort 0; motive 1 : Cont → Sort 0; major : Tree → Sort 0
+            typ: Expr::all(
+              Expr::all(Expr::reference(0, vec![]), Expr::sort(0)),
+              Expr::all(
+                Expr::all(Expr::reference(1, vec![]), Expr::sort(0)),
+                Expr::all(Expr::reference(0, vec![]), Expr::sort(0)),
+              ),
+            ),
+            rules: vec![],
+          }),
+          MutConst::Recr(Recursor {
+            k: false,
+            is_unsafe: false,
+            lvls: 0,
+            params: 0,
+            indices: 0,
+            motives: 2,
+            minors: 0,
+            // motive 0 : Tree → Sort 0; motive 1 : Cont → Sort 0; major : Cont → Sort 0
+            typ: Expr::all(
+              Expr::all(Expr::reference(0, vec![]), Expr::sort(0)),
+              Expr::all(
+                Expr::all(Expr::reference(1, vec![]), Expr::sort(0)),
+                Expr::all(Expr::reference(1, vec![]), Expr::sort(0)),
+              ),
+            ),
+            rules: vec![],
+          }),
+        ]),
+        sharing: vec![],
+        refs: vec![tree_iprj.clone(), cont_iprj.clone()],
+        univs: vec![Univ::zero()],
+        binders: vec![],
+      },
+    );
+    let tree_rec_rprj0 = store(
+      &mut env,
+      Constant {
+        info: ConstantInfo::RPrj(RecursorProj {
+          idx: 0,
+          block: tree_rec_fam.clone(),
+        }),
+        sharing: vec![],
+        refs: vec![],
+        univs: vec![],
+        binders: vec![],
+      },
+    );
+    let tree_rec_rprj1 = store(
+      &mut env,
+      Constant {
+        info: ConstantInfo::RPrj(RecursorProj {
+          idx: 1,
+          block: tree_rec_fam.clone(),
+        }),
+        sharing: vec![],
+        refs: vec![],
+        univs: vec![],
+        binders: vec![],
+      },
+    );
+
+    // Seed touching `Tree` (like `autoParam → Lean.Syntax`) and `Plain`,
+    // without naming any recursor.
+    let seed_modeled = store(
+      &mut env,
+      Constant {
+        info: ConstantInfo::Defn(Definition {
+          kind: DefKind::Definition,
+          safety: DefinitionSafety::Safe,
+          asserts: DefAsserts::default(),
+          lvls: 0,
+          typ: Expr::all(Expr::reference(0, vec![]), Expr::reference(1, vec![])),
+          value: Expr::lam(Expr::reference(0, vec![]), Expr::var(0)),
+        }),
+        sharing: vec![],
+        refs: vec![tree_iprj.clone(), plain_iprj.clone()],
+        univs: vec![],
+        binders: vec![],
+      },
+    );
+    let sub_modeled = sub_env_of(&env, std::slice::from_ref(&seed_modeled));
+    assert!(sub_modeled.consts.contains_key(&tree_block));
+    assert!(sub_modeled.consts.contains_key(&tree_rec_fam));
+    assert!(sub_modeled.consts.contains_key(&tree_rec_rprj0));
+    assert!(sub_modeled.consts.contains_key(&tree_rec_rprj1));
+    assert!(sub_modeled.consts.contains_key(&cont_block));
+    assert!(sub_modeled.consts.contains_key(&cont_rec));
+    // `Plain` is outside `Tree`'s modeled support cone, so `Plain.rec` is not pulled.
+    assert!(sub_modeled.consts.contains_key(&plain_block));
+    assert!(!sub_modeled.consts.contains_key(&plain_rec));
+
+    // Seed touching ONLY native `Plain` pulls no recursors at all.
+    let seed_native = store(
+      &mut env,
+      Constant {
+        info: ConstantInfo::Defn(Definition {
+          kind: DefKind::Definition,
+          safety: DefinitionSafety::Safe,
+          asserts: DefAsserts::default(),
+          lvls: 0,
+          typ: Expr::all(Expr::reference(0, vec![]), Expr::reference(0, vec![])),
+          value: Expr::lam(Expr::reference(0, vec![]), Expr::var(0)),
+        }),
+        sharing: vec![],
+        refs: vec![plain_iprj],
+        univs: vec![],
+        binders: vec![],
+      },
+    );
+    let sub_native = sub_env_of(&env, std::slice::from_ref(&seed_native));
+    assert!(sub_native.consts.contains_key(&plain_block));
+    assert!(!sub_native.consts.contains_key(&plain_rec));
+    assert!(!sub_native.consts.contains_key(&tree_rec_fam));
   }
 }

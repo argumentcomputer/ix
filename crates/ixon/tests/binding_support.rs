@@ -7,7 +7,6 @@ use ixon::constant::{
   Constant, ConstantInfo as CI, DefKind, Definition, Inductive, MutConst,
   Recursor, indc_proj_constant,
 };
-use ixon::contract::{BinderContract, ValueContract};
 use ixon::env::{Env, Named, RoleBinding};
 use ixon::expr::Expr;
 use ixon::metadata::{ConstantMeta, ConstantMetaInfo, ExprMeta};
@@ -25,6 +24,7 @@ fn definition(refs: Vec<Address>, discriminator: u64) -> Constant {
   let mut c = Constant::new(CI::Defn(Definition {
     kind: DefKind::Definition,
     safety: DefinitionSafety::Safe,
+    asserts: Default::default(),
     lvls: discriminator,
     typ: Expr::sort(0),
     value: Expr::var(0),
@@ -77,12 +77,7 @@ fn all_fail(
   }
 }
 fn all(domain: Arc<Expr>, body: Arc<Expr>) -> Arc<Expr> {
-  Arc::new(Expr::All(
-    BinderContract::default(),
-    ValueContract::shared(),
-    domain,
-    body,
-  ))
+  Expr::all(domain, body)
 }
 
 struct Fixture {

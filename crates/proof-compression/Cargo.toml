@@ -6,8 +6,9 @@ license.workspace = true
 publish = false
 
 [dependencies]
-aiur = { workspace = true }
+aiur = { path = "../aiur", default-features = false, features = ["stark"] }
 multi-stark = { workspace = true }
+stark-key = { path = "../stark-key" }
 ark-bn254 = { version = "0.5", features = ["curve"] }
 ark-ec = "0.5"
 ark-ff = { version = "0.5", features = ["asm"] }

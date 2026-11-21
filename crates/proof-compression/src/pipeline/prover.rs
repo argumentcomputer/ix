@@ -10,11 +10,13 @@ use crate::{
 use multi_stark::{
   config::ProofConfig,
   lookup::LookupValues,
-  plonkish::{MultiStarkCircuit, TraceShards},
+  plonkish::MultiStarkCircuit,
   prover::{Proof, Stage1},
   system::{Circuit, ProverKey, System},
   traits::Pcs,
 };
+#[cfg(test)]
+use multi_stark::plonkish::TraceShards;
 use p3_matrix::Matrix;
 use std::{
   fs::{self, File},
@@ -39,11 +41,66 @@ pub(super) struct Proved {
   pub verify_seconds: f64,
 }
 
+trait PartitionSource: Sync {
+  fn compiled(&self) -> &MultiStarkCircuit<Scalar>;
+  fn trace(
+    &self,
+    index: usize,
+  ) -> std::result::Result<p3_matrix::dense::RowMajorMatrix<Scalar>, String>;
+}
+
+#[cfg(test)]
+impl PartitionSource for &TraceShards<'_, Scalar> {
+  fn compiled(&self) -> &MultiStarkCircuit<Scalar> {
+    TraceShards::compiled(self)
+  }
+
+  fn trace(
+    &self,
+    index: usize,
+  ) -> std::result::Result<p3_matrix::dense::RowMajorMatrix<Scalar>, String> {
+    TraceShards::trace(self, index).map_err(|error| error.to_string())
+  }
+}
+
+impl PartitionSource for super::lowering::Lowered {
+  fn compiled(&self) -> &MultiStarkCircuit<Scalar> {
+    &self.compiled
+  }
+
+  fn trace(
+    &self,
+    index: usize,
+  ) -> std::result::Result<p3_matrix::dense::RowMajorMatrix<Scalar>, String> {
+    self
+      .compiled
+      .trace_shards(&self.assignment)
+      .and_then(|shards| shards.trace(index))
+      .map_err(|error| error.to_string())
+  }
+}
+
 impl Committed {
+  /// Commit one partition at a time while taking ownership of `lowered`,
+  /// dropping the compiled circuit and logical assignment immediately after
+  /// the last partition's witness is materialized (before its KZG commit).
+  #[tracing::instrument(level = "info", skip_all, name = "compression/prepare")]
+  pub(super) fn prepare_owned(
+    config: KzgConfig,
+    lowered: super::lowering::Lowered,
+    preprocessing: Option<&Path>,
+    prefetch_bytes: usize,
+  ) -> Result<Self> {
+    let _ = lowered.compiled.trace_shards(&lowered.assignment)?;
+    Self::prepare_source(config, lowered, preprocessing, prefetch_bytes)
+  }
+
   /// Commit one partition at a time. A trusted preprocessing directory holds
-  /// only fixed columns and circuit metadata; witness columns stay in memory.
+  /// only fixed columns and circuit metadata; witness columns stay in memory
+  /// unless disk spilling is configured.
   /// Prefetch overlaps the next witness with the current partition's commits
   /// only when that witness fits within the byte budget.
+  #[cfg(test)]
   #[tracing::instrument(level = "info", skip_all, name = "compression/prepare")]
   pub(super) fn prepare(
     config: KzgConfig,
@@ -51,11 +108,23 @@ impl Committed {
     preprocessing: Option<&Path>,
     prefetch_bytes: usize,
   ) -> Result<Self> {
-    let compiled = traces.compiled();
-    let count = compiled.num_circuits();
-    let dimensions = (0..count)
-      .map(|i| compiled.trace_dimensions(i).ok_or("missing compiled trace"))
-      .collect::<std::result::Result<Vec<_>, _>>()?;
+    Self::prepare_source(config, traces, preprocessing, prefetch_bytes)
+  }
+
+  fn prepare_source<S: PartitionSource>(
+    config: KzgConfig,
+    source: S,
+    preprocessing: Option<&Path>,
+    prefetch_bytes: usize,
+  ) -> Result<Self> {
+    let mut source = Some(source);
+    let count = source.as_ref().unwrap().compiled().num_circuits();
+    let dimensions = {
+      let compiled = source.as_ref().unwrap().compiled();
+      (0..count)
+        .map(|i| compiled.trace_dimensions(i).ok_or("missing compiled trace"))
+        .collect::<std::result::Result<Vec<_>, _>>()?
+    };
     if let Some(directory) = preprocessing {
       fs::create_dir_all(directory)?;
     }
@@ -64,24 +133,26 @@ impl Committed {
     let mut main = Vec::with_capacity(count);
     let parent = tracing::Span::current();
     let dispatch = tracing::dispatcher::get_default(Clone::clone);
-    let generate_witness = |i: usize| -> std::result::Result<_, String> {
-      let _span =
-        tracing::info_span!(parent: &parent, "compression/trace", circuit = i)
-          .entered();
-      let started = Instant::now();
-      let trace = traces.trace(i).map_err(|error| error.to_string())?;
-      if (trace.height(), trace.width()) != dimensions[i] {
-        return Err(
-          "generated trace dimensions differ from the compiled circuit".into(),
+    let generate_witness =
+      |source: &S, i: usize| -> std::result::Result<_, String> {
+        let _span =
+          tracing::info_span!(parent: &parent, "compression/trace", circuit = i)
+            .entered();
+        let started = Instant::now();
+        let trace = source.trace(i)?;
+        if (trace.height(), trace.width()) != dimensions[i] {
+          return Err(
+            "generated trace dimensions differ from the compiled circuit"
+              .into(),
+          );
+        }
+        tracing::info!(
+          circuit = i,
+          seconds = started.elapsed().as_secs_f64(),
+          "KZG witness generated"
         );
-      }
-      tracing::info!(
-        circuit = i,
-        seconds = started.elapsed().as_secs_f64(),
-        "KZG witness generated"
-      );
-      Ok(trace)
-    };
+        Ok(trace)
+      };
     let mut prefetched = None;
     for i in 0..count {
       // Without prefetch, generate fixed columns before the witness so their
@@ -89,33 +160,13 @@ impl Committed {
       let witness = if prefetch_bytes == 0 {
         None
       } else {
-        Some(prefetched.take().unwrap_or_else(|| generate_witness(i))?)
+        Some(
+          prefetched
+            .take()
+            .unwrap_or_else(|| generate_witness(source.as_ref().unwrap(), i))?,
+        )
       };
-      let prepare = || -> Result<()> {
-        let started = Instant::now();
-        let (circuit, data) = tracing::info_span!(parent: &parent, "compression/fixed", circuit = i)
-          .in_scope(|| fixed_partition(&config, compiled, i, preprocessing))?;
-        circuits.push(circuit);
-        fixed.push(data);
-        tracing::info!(
-          circuit = i,
-          seconds = started.elapsed().as_secs_f64(),
-          "KZG fixed prepared"
-        );
-        let witness = witness.map_or_else(|| generate_witness(i), Ok)?;
-        let started = Instant::now();
-        let (_, data) = tracing::info_span!(parent: &parent, "compression/main_commit", circuit = i)
-          .in_scope(|| config.pcs().commit(vec![(
-            config.pcs().natural_domain_for_degree(dimensions[i].0), witness,
-          )]));
-        main.push(data);
-        tracing::info!(
-          circuit = i,
-          seconds = started.elapsed().as_secs_f64(),
-          "KZG main committed"
-        );
-        Ok(())
-      };
+      let is_last = i + 1 == count;
       let can_prefetch =
         dimensions.get(i + 1).is_some_and(|&(height, width)| {
           height
@@ -124,6 +175,45 @@ impl Committed {
             .is_some_and(|bytes| bytes <= prefetch_bytes)
         });
       if can_prefetch {
+        let src = source.as_ref().unwrap();
+        let prepare = || -> Result<()> {
+          let started = Instant::now();
+          let (circuit, data) =
+            tracing::info_span!(parent: &parent, "compression/fixed", circuit = i)
+              .in_scope(|| {
+                fixed_partition(&config, src.compiled(), i, preprocessing)
+              })?;
+          circuits.push(circuit);
+          fixed.push(data);
+          tracing::info!(
+            circuit = i,
+            seconds = started.elapsed().as_secs_f64(),
+            "KZG fixed prepared"
+          );
+          let witness =
+            witness.map_or_else(|| generate_witness(src, i), Ok)?;
+          let started = Instant::now();
+          let (_, data) =
+            tracing::info_span!(parent: &parent, "compression/main_commit", circuit = i)
+              .in_scope(|| -> Result<_> {
+                let domain =
+                  config.pcs().natural_domain_for_degree(dimensions[i].0);
+                #[cfg(not(feature = "cuda"))]
+                if let Some(spill_dir) = config.spill_dir() {
+                  return Ok(
+                    config.pcs().commit_matrix_spilled(domain, witness, spill_dir)?,
+                  );
+                }
+                Ok(config.pcs().commit(vec![(domain, witness)]))
+              })?;
+          main.push(data);
+          tracing::info!(
+            circuit = i,
+            seconds = started.elapsed().as_secs_f64(),
+            "KZG main committed"
+          );
+          Ok(())
+        };
         let (prepared, next) = p3_maybe_rayon::prelude::join(
           || {
             tracing::dispatcher::with_default(&dispatch, || {
@@ -132,16 +222,59 @@ impl Committed {
           },
           || {
             tracing::dispatcher::with_default(&dispatch, || {
-              generate_witness(i + 1)
+              generate_witness(src, i + 1)
             })
           },
         );
         prepared?;
         prefetched = Some(next);
       } else {
-        prepare()?;
+        let started = Instant::now();
+        let (circuit, data) =
+          tracing::info_span!(parent: &parent, "compression/fixed", circuit = i)
+            .in_scope(|| {
+              fixed_partition(
+                &config,
+                source.as_ref().unwrap().compiled(),
+                i,
+                preprocessing,
+              )
+            })?;
+        circuits.push(circuit);
+        fixed.push(data);
+        tracing::info!(
+          circuit = i,
+          seconds = started.elapsed().as_secs_f64(),
+          "KZG fixed prepared"
+        );
+        let witness = witness
+          .map_or_else(|| generate_witness(source.as_ref().unwrap(), i), Ok)?;
+        if is_last {
+          drop(source.take());
+        }
+        let started = Instant::now();
+        let (_, data) =
+          tracing::info_span!(parent: &parent, "compression/main_commit", circuit = i)
+            .in_scope(|| -> Result<_> {
+              let domain =
+                config.pcs().natural_domain_for_degree(dimensions[i].0);
+              #[cfg(not(feature = "cuda"))]
+              if let Some(spill_dir) = config.spill_dir() {
+                return Ok(
+                  config.pcs().commit_matrix_spilled(domain, witness, spill_dir)?,
+                );
+              }
+              Ok(config.pcs().commit(vec![(domain, witness)]))
+            })?;
+        main.push(data);
+        tracing::info!(
+          circuit = i,
+          seconds = started.elapsed().as_secs_f64(),
+          "KZG main committed"
+        );
       }
     }
+    drop(source);
     let lookups = circuits
       .iter()
       .zip(&dimensions)
@@ -220,8 +353,15 @@ pub(super) fn fixed_setup(
 ) -> Result<Vec<FixedSetup>> {
   (0..compiled.num_circuits())
     .map(|i| {
-      let (circuit, data) = fixed_partition(config, compiled, i, None)?;
-      Ok((circuit, KzgProverData::concatenate([data]).0))
+      #[cfg(not(feature = "cuda"))]
+      {
+        fixed_partition_commitment_only(config, compiled, i)
+      }
+      #[cfg(feature = "cuda")]
+      {
+        let (circuit, data) = fixed_partition(config, compiled, i, None)?;
+        Ok((circuit, KzgProverData::concatenate([data]).0))
+      }
     })
     .collect()
 }
@@ -235,8 +375,15 @@ pub(super) fn fixed_setup_in(
 ) -> Result<Vec<FixedSetup>> {
   (0..compiled.num_circuits())
     .map(|i| {
-      let (circuit, data) = fixed_partition(config, compiled, i, Some(dir))?;
-      Ok((circuit, KzgProverData::concatenate([data]).0))
+      #[cfg(not(feature = "cuda"))]
+      {
+        fixed_partition_checkpoint_only(config, compiled, i, dir)
+      }
+      #[cfg(feature = "cuda")]
+      {
+        let (circuit, data) = fixed_partition(config, compiled, i, Some(dir))?;
+        Ok((circuit, KzgProverData::concatenate([data]).0))
+      }
     })
     .collect()
 }
@@ -274,6 +421,141 @@ pub(super) fn setup(
   fixed_system(config, parts)
 }
 
+#[cfg(not(feature = "cuda"))]
+fn compile_fixed_circuit(
+  config: &KzgConfig,
+  definition: &multi_stark::system::CircuitInputs<Scalar>,
+) -> Result<Circuit<Scalar>> {
+  let params = multi_stark::system::extension_params::<KzgConfig>();
+  let num_lookups = definition.lookups.len();
+  let group_size = definition.lookup_group_size.max(1);
+  if group_size > multi_stark::lookup::MAX_LOOKUP_GROUP {
+    return Err("lookup group size exceeds maximum".into());
+  }
+  let preprocessed_width =
+    definition.preprocessed.as_ref().map_or(0, Matrix::width);
+  let preprocessed_height =
+    definition.preprocessed.as_ref().map_or(0, Matrix::height);
+  let graph = definition
+    .compile_graph(&params)
+    .map_err(|e| format!("compression circuit: {e:?}"))?;
+  let d = params.degree;
+  let stage_2_width =
+    multi_stark::lookup::stage2_width(num_lookups, group_size, d);
+  let num_publics = multi_stark::lookup::num_publics(d);
+  let constraint_count = graph.zeros.len()
+    + multi_stark::lookup::logup_constraint_count(num_lookups, group_size, d);
+  let max_constraint_degree = graph
+    .max_constraint_degree
+    .max(multi_stark::lookup::logup_max_degree(&graph, group_size))
+    as usize;
+  let circuit = Circuit {
+    graph,
+    main_width: definition.main_width,
+    preprocessed: None,
+    preprocessed_width,
+    preprocessed_height,
+    num_lookups,
+    stage_2_width,
+    num_publics,
+    lookup_group_size: group_size,
+    constraint_count,
+    max_constraint_degree,
+  };
+  let quotient = circuit.quotient_degree();
+  if quotient > config.max_quotient_degree() {
+    return Err(format!(
+      "compression circuit requires quotient degree {quotient}; increase the PCS degree budget"
+    )
+    .into());
+  }
+  if preprocessed_height != 0
+    && (!preprocessed_height.is_power_of_two()
+      || preprocessed_height.ilog2() as usize > config.max_log_degree()
+      || preprocessed_height.ilog2() as usize + quotient.ilog2() as usize
+        > config.max_log_quotient_domain())
+  {
+    return Err("compression trace exceeds the PCS domain".into());
+  }
+  Ok(circuit)
+}
+
+#[cfg(not(feature = "cuda"))]
+fn fixed_partition_commitment_only(
+  config: &KzgConfig,
+  compiled: &MultiStarkCircuit<Scalar>,
+  index: usize,
+) -> Result<FixedSetup> {
+  let mut definition = compiled
+    .kzg_circuit_input(
+      index,
+      config.pcs().verifier_params().max_trace_len(),
+      config.max_quotient_degree(),
+    )?
+    .ok_or("missing compiled fixed trace")?;
+  let circuit = compile_fixed_circuit(config, &definition)?;
+  let preprocessed =
+    definition.preprocessed.take().ok_or("missing fixed columns")?;
+  let domain = config.pcs().natural_domain_for_degree(preprocessed.height());
+  let commitment =
+    config.pcs().commit_matrix_commitment_only(domain, preprocessed);
+  Ok((circuit, commitment))
+}
+
+#[cfg(not(feature = "cuda"))]
+fn fixed_partition_checkpoint_only(
+  config: &KzgConfig,
+  compiled: &MultiStarkCircuit<Scalar>,
+  index: usize,
+  dir: &Path,
+) -> Result<FixedSetup> {
+  let meta = dir.join(format!("setup-{index}.bin"));
+  let fixed = dir.join(format!("fixed-{index}.bin"));
+  if meta.exists() && fixed.exists() {
+    let (circuit, commitment): (Circuit<Scalar>, KzgCommitment) =
+      storage::load(&meta)?;
+    if compiled.trace_dimensions(index)
+      != Some((circuit.preprocessed_height, circuit.main_width))
+    {
+      return Err(
+        "setup checkpoint dimensions differ from the compiled circuit".into(),
+      );
+    }
+    let data = read_checkpoint(&fixed)?;
+    let (actual, _) = KzgProverData::concatenate([data]);
+    if actual != commitment {
+      return Err(
+        "fixed checkpoint commitment differs from the setup metadata".into(),
+      );
+    }
+    return Ok((circuit, commitment));
+  }
+  let mut definition = compiled
+    .kzg_circuit_input(
+      index,
+      config.pcs().verifier_params().max_trace_len(),
+      config.max_quotient_degree(),
+    )?
+    .ok_or("missing compiled fixed trace")?;
+  let circuit = compile_fixed_circuit(config, &definition)?;
+  let preprocessed =
+    definition.preprocessed.take().ok_or("missing fixed columns")?;
+  let domain = config.pcs().natural_domain_for_degree(preprocessed.height());
+  let temp = storage::temporary_path(&fixed);
+  let result =
+    config.pcs().commit_matrix_to_checkpoint(domain, preprocessed, &temp);
+  let (commitment, _) = match result {
+    Ok(committed) => committed,
+    Err(error) => {
+      let _ = fs::remove_file(&temp);
+      return Err(error.into());
+    },
+  };
+  storage::persist(&temp, &fixed)?;
+  storage::save(&meta, &(&circuit, &commitment))?;
+  Ok((circuit, commitment))
+}
+
 fn fixed_partition(
   config: &KzgConfig,
   compiled: &MultiStarkCircuit<Scalar>,
@@ -306,6 +588,53 @@ fn fixed_partition(
         "fixed checkpoint commitment differs from the setup metadata".into(),
       );
     }
+    return Ok((circuit, data));
+  }
+  #[cfg(not(feature = "cuda"))]
+  if let Some((meta, fixed)) = paths {
+    let mut definition = compiled
+      .kzg_circuit_input(
+        index,
+        config.pcs().verifier_params().max_trace_len(),
+        config.max_quotient_degree(),
+      )?
+      .ok_or("missing compiled fixed trace")?;
+    let circuit = compile_fixed_circuit(config, &definition)?;
+    let preprocessed =
+      definition.preprocessed.take().ok_or("missing fixed columns")?;
+    let domain = config.pcs().natural_domain_for_degree(preprocessed.height());
+    let temp = storage::temporary_path(&fixed);
+    let result =
+      config.pcs().commit_matrix_to_checkpoint(domain, preprocessed, &temp);
+    let (commitment, columns) = match result {
+      Ok(committed) => committed,
+      Err(error) => {
+        let _ = fs::remove_file(&temp);
+        return Err(error.into());
+      },
+    };
+    storage::persist(&temp, &fixed)?;
+    storage::save(&meta, &(&circuit, &commitment))?;
+    let data = crate::kzg::pcs::KzgPcs::open_streamed_checkpoint(
+      &fixed, domain, commitment, columns,
+    )?;
+    return Ok((circuit, data));
+  }
+  #[cfg(not(feature = "cuda"))]
+  if let Some(spill_dir) = config.spill_dir() {
+    let mut definition = compiled
+      .kzg_circuit_input(
+        index,
+        config.pcs().verifier_params().max_trace_len(),
+        config.max_quotient_degree(),
+      )?
+      .ok_or("missing compiled fixed trace")?;
+    let circuit = compile_fixed_circuit(config, &definition)?;
+    let preprocessed =
+      definition.preprocessed.take().ok_or("missing fixed columns")?;
+    let domain = config.pcs().natural_domain_for_degree(preprocessed.height());
+    let (_, data) =
+      config.pcs().commit_matrix_spilled(domain, preprocessed, spill_dir)?;
     return Ok((circuit, data));
   }
   let definition = compiled
@@ -509,5 +838,146 @@ mod tests {
       }
     }
     Ok(compiled.num_circuits())
+  }
+
+  #[test]
+  fn streamed_fixed_commit_matches_dense_commitments_and_checkpoint_bytes()
+  -> Result<()> {
+    let mut builder = CircuitBuilder::new();
+    let table =
+      builder.fixed_table("small", vec![vec![Scalar::ONE], vec![Scalar::TWO]]);
+    let input = builder.public_input("input");
+    for _ in 0..50 {
+      builder.lookup(table, &[input]);
+    }
+    let square = builder.mul(input, input);
+    builder.expose_public(square);
+    let compiled = builder
+      .finish()
+      .lower_to_multi_stark_sharded(Scalar::ONE, 32)?
+      .merge_table_traces(32)?;
+    let srs = Arc::new(Srs::unsafe_dev_setup(64, b"streamed-fixed-parity"));
+    let config = KzgConfig::new(srs, 2);
+    let scratch = crate::test_support::TempDir::new("streamed-fixed");
+    let streamed_dir = scratch.join("streamed");
+    fs::create_dir_all(&streamed_dir)?;
+
+    let setup_streamed = fixed_setup(&config, &compiled)?;
+    let setup_in_streamed = fixed_setup_in(&config, &compiled, &streamed_dir)?;
+    let encode_setup = |parts: &[FixedSetup]| -> Result<Vec<u8>> {
+      Ok(bincode::serde::encode_to_vec(parts, bincode::config::standard())?)
+    };
+    assert_eq!(encode_setup(&setup_streamed)?, encode_setup(&setup_in_streamed)?);
+
+    for i in 0..compiled.num_circuits() {
+      let definition = compiled.kzg_circuit_input(i, 64, 2)?.unwrap();
+      let (mut reference, key) =
+        System::new_without_preprocessed(config.clone(), [definition]);
+      let mut ref_circuit = reference.circuits.remove(0);
+      ref_circuit.preprocessed = None;
+      let ref_commitment = reference.preprocessed_commit.unwrap();
+      let ref_data = key.preprocessed_data.unwrap();
+
+      let mut expected_fixed = Vec::new();
+      ref_data.write_checkpoint(&mut expected_fixed)?;
+      let actual_fixed = fs::read(streamed_dir.join(format!("fixed-{i}.bin")))?;
+      assert_eq!(
+        actual_fixed, expected_fixed,
+        "fixed-{i}.bin bytes differ between streamed and dense commit"
+      );
+
+      let expected_setup = bincode::serde::encode_to_vec(
+        (&ref_circuit, &ref_commitment),
+        bincode::config::standard(),
+      )?;
+      let actual_setup = fs::read(streamed_dir.join(format!("setup-{i}.bin")))?;
+      assert_eq!(
+        actual_setup, expected_setup,
+        "setup-{i}.bin bytes differ between streamed and dense commit"
+      );
+
+      // Verify freshly streamed `fixed_partition` matches `read_checkpoint_file`
+      // on evaluation and opening.
+      let fresh_dir = scratch.join(format!("fresh-{i}"));
+      fs::create_dir_all(&fresh_dir)?;
+      let (_, streamed_data) =
+        fixed_partition(&config, &compiled, i, Some(&fresh_dir))?;
+      assert_eq!(
+        fs::read(fresh_dir.join(format!("fixed-{i}.bin")))?,
+        expected_fixed
+      );
+      let reopened =
+        KzgProverData::read_checkpoint_file(fresh_dir.join(format!("fixed-{i}.bin")))?;
+      let domain = streamed_data.matrices[0].domain();
+      assert_eq!(
+        config.pcs().get_evaluations_on_domain(&streamed_data, 0, domain),
+        config.pcs().get_evaluations_on_domain(&reopened, 0, domain)
+      );
+      let points = vec![vec![Scalar::from_u8(11), Scalar::from_u8(17)]];
+      assert_eq!(
+        config.pcs().open(
+          vec![(&streamed_data, points.clone())],
+          &mut crate::kzg::KzgTranscript::default()
+        ),
+        config.pcs().open(
+          vec![(&reopened, points)],
+          &mut crate::kzg::KzgTranscript::default()
+        )
+      );
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn disk_spilled_stage1_stage2_and_quotient_preserve_proof_bytes_and_cleanup()
+  -> Result<()> {
+    let mut builder = CircuitBuilder::new();
+    let table =
+      builder.fixed_table("small", vec![vec![Scalar::ONE], vec![Scalar::TWO]]);
+    let input = builder.public_input("input");
+    for _ in 0..50 {
+      builder.lookup(table, &[input]);
+    }
+    let square = builder.mul(input, input);
+    builder.expose_public(square);
+    let compiled = builder
+      .finish()
+      .lower_to_multi_stark_sharded(Scalar::ONE, 32)?
+      .merge_table_traces(32)?;
+    let mut witness = compiled.witness();
+    witness.set(input, Scalar::TWO)?;
+    let assignment = witness.generate()?;
+    let claims = compiled.claims(assignment.public_values())?;
+    let refs = claims.iter().map(Vec::as_slice).collect::<Vec<_>>();
+    let srs = Arc::new(Srs::unsafe_dev_setup(64, b"disk-spill-prover"));
+    let traces = compiled.trace_shards(&assignment)?;
+    let scratch = crate::test_support::TempDir::new("kzg-disk-spill");
+    let spill_dir = scratch.join("spill");
+    let prep_dir = scratch.join("preprocessing");
+    for kind in [TranscriptKind::Blake3, TranscriptKind::Keccak256] {
+      let resident = KzgConfig::new(srs.clone(), 2)
+        .with_transcript(kind)
+        .with_streaming_lookups()
+        .with_streaming_quotient();
+      let expected =
+        Committed::prepare(resident.clone(), &traces, None, 0)?.prove(&claims)?;
+      let spilled = resident.with_disk_spill(&spill_dir);
+      let actual = Committed::prepare(spilled, &traces, Some(&prep_dir), 0)?
+        .prove(&claims)?;
+      assert_eq!(actual.bytes, expected.bytes);
+      expected
+        .system
+        .verify_multiple_claims(&refs, &actual.proof)
+        .map_err(|error| format!("resident verification: {error:?}"))?;
+    }
+    // Every temporary spill file must be cleaned up once the proof finishes.
+    if spill_dir.exists() {
+      assert!(
+        fs::read_dir(&spill_dir)?.next().is_none(),
+        "temporary spill files remained in {}",
+        spill_dir.display()
+      );
+    }
+    Ok(())
   }
 }
