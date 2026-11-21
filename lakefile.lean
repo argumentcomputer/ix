@@ -49,9 +49,10 @@ compiled into `ix_rs_net` only, so other executables never build Go. With
 for Groth16, ICICLE) are copied to `.lake/build/lib` and found through
 `$ORIGIN/../lib`; each Rust archive target links them itself.
 
-The `ix_rs_test` and `ix_rs_net` targets fetch `ix_rs` first to guarantee ordering
-before Cargo overwrites its release archive, then snapshot distinct Lake artifacts.
-The second Cargo build is incremental — only feature-affected crates recompile.
+Each Rust staticlib target traces its Rust sources, manifests and build env
+vars via Lake so Cargo only runs when inputs change, and holds a workspace lock
+around Cargo + snapshotting so concurrent variants never race on
+`target/release/libix_ffi.a`.
 
 The archives are built when native targets need them. Keeping Rust linkage on
 `Ix` keeps `ix_rs` out of the certified kernel's build.
@@ -124,56 +125,129 @@ def runtimeArtifacts (archive : FilePath) : IO (Array (Bool × String)) := do
     | ["load", path] => pure (false, path)
     | _ => throw <| IO.userError s!"malformed runtime manifest line: {line}"
 
-/-- One feature selection of the Rust static lib, as a target links it. Cargo
-runs on every build and decides what is stale; the archive is snapshotted to
-`lib/libix_ffi_{tag}.a`, so targets relink only when its contents change.
+/-- Acquire an atomic directory lock before running Cargo against the shared
+`target/release/libix_ffi.a` output, preventing races between `ix_rs`,
+`ix_rs_test`, and `ix_rs_net` without requiring `flock` (works on Linux and
+macOS). -/
+private def acquireCargoLock (lockDir : FilePath) : IO Unit := do
+  IO.FS.createDirAll lockDir.parent.get!
+  let mut acquired := false
+  while !acquired do
+    try
+      IO.FS.createDir lockDir
+      acquired := true
+    catch _ =>
+      IO.sleep 100
+
+private def releaseCargoLock (lockDir : FilePath) : IO Unit := do
+  try IO.FS.removeDir lockDir catch _ => pure ()
+
+def withCargoLock (lockDir : FilePath) (act : JobM α) : JobM α := do
+  acquireCargoLock lockDir
+  try
+    act
+  finally
+    releaseCargoLock lockDir
+
+/-- Whether a file under `crates/` can affect the `ix-ffi` static library. -/
+def isRustBuildInput (path : FilePath) : Bool :=
+  let comps := path.components
+  !comps.contains "target" &&
+    (path.fileName == some "Cargo.toml" ||
+     match path.extension with
+     | some "rs" | some "cu" | some "c" | some "cpp" | some "h" | some "json" | some "bin" => true
+     | _ => false)
+
+/-- Input trace for `buildRustStatic`: Rust sources, manifests, CUDA/C sources,
+embedded fixtures, optional gnark sources, and build-affecting environment
+variables. When none of these change, Lake skips invoking Cargo altogether. -/
+def rustInputDeps (pkg : Package) (features : Array String) : FetchM (Job Unit) := do
+  let crates ← inputDir (pkg.dir / "crates") false isRustBuildInput
+  let mut manifestJobs : Array (Job FilePath) := #[
+    ← inputTextFile (pkg.dir / "Cargo.toml"),
+    ← inputTextFile (pkg.dir / "Cargo.lock"),
+    ← inputTextFile (pkg.dir / "rust-toolchain.toml")
+  ]
+  if ← (pkg.dir / ".cargo" / "config.toml").pathExists then
+    manifestJobs := manifestJobs.push (← inputTextFile (pkg.dir / ".cargo" / "config.toml"))
+  let manifests := Job.collectArray manifestJobs
+  let mut deps := crates.zipWith (fun _ _ => ()) manifests
+  if (features.contains "plonk" || features.contains "groth16") &&
+      (← (pkg.dir / "tools" / "gnark").pathExists) then
+    let gnark ← inputDir (pkg.dir / "tools" / "gnark") false fun path =>
+      path.fileName == some "go.mod" || path.fileName == some "go.sum" ||
+      match path.extension with
+      | some "go" | some "h" | some "json" | some "bin" => true
+      | _ => false
+    deps := deps.zipWith (fun _ _ => ()) gnark
+  let envVars := #["RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS", "MULTI_STARK_CUDA_ARCHS",
+    "LEAN_SYSROOT", "LIBCLANG_PATH", "CLANG_PATH", "IX_CUDA", "IX_NO_PAR",
+    "IX_PLONK", "IX_GROTH16"]
+  let envVals ← envVars.mapM fun k => do return s!"{k}={(← IO.getEnv k).getD ""}"
+  let envKey := s!"features={",".intercalate features.toList};target={System.Platform.target};" ++
+    ";".intercalate envVals.toList
+  deps.mapM fun _ => do
+    addTrace (BuildTrace.ofHash (Hash.ofString envKey))
+    pure ()
+
+/-- One feature selection of the Rust static lib, as a target links it. Lake
+traces the Rust sources, manifests and build env vars so Cargo only runs when
+inputs change; when Cargo runs, an atomic lock serializes writes to Cargo's
+shared `target/release/libix_ffi.a` before snapshotting to `lib/libix_ffi_{tag}.a`.
 A static archive does not carry its shared-library dependencies to Lean's
 linker, so with CUDA this is an `ld` script naming the archive together with
 the libraries the build scripts report. -/
-def buildRustStatic (pkg : Package) (args : Array String) (tag : String)
-    (before : Option (Job FilePath) := none) : FetchM (Job FilePath) := do
-  let start := match before with
-    | some before => before.map fun _ => ()
-    | none => Job.nil
-  start.mapM fun _ => do
-    let result ← captureProc' {
-      cmd := "cargo"
-      args := args.push "--message-format=json-render-diagnostics"
-      cwd := pkg.dir
-    }
-    unless result.stderr.isEmpty do logVerbose result.stderr
-    let artifacts ← match cargoRuntimeArtifacts result.stdout with
-      | .ok artifacts => pure artifacts
-      | .error message => error message
-    let lib := pkg.buildDir / "lib"
-    for (source, path, _) in artifacts do
-      snapshot source (lib / FilePath.mk path)
-    let archive := lib / s!"libix_ffi_{tag}.a"
-    snapshot (pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi") archive
-    -- One `link <path>` or `load <path>` line per library, relative to `lib/`.
-    IO.FS.writeFile (archive.withExtension "runtime") <| String.join <|
-      artifacts.toList.map fun (_, path, link) => s!"{if link then "link" else "load"} {path}\n"
-    setTrace (← computeTrace archive)
-    let linked := artifacts.filterMap fun (_, path, link) => if link then some path else none
+def buildRustStatic (pkg : Package) (features : Array String) (args : Array String)
+    (tag : String) : FetchM (Job FilePath) := do
+  let lib := pkg.buildDir / "lib"
+  let archive := lib / s!"libix_ffi_{tag}.a"
+  let deps ← rustInputDeps pkg features
+  let archiveJob ← buildFileAfterDep archive deps fun _ => do
+    withCargoLock (pkg.buildDir / "cargo-ffi.lock") do
+      let result ← captureProc' {
+        cmd := "cargo"
+        args := args.push "--message-format=json-render-diagnostics"
+        cwd := pkg.dir
+      }
+      unless result.stderr.isEmpty do logVerbose result.stderr
+      let artifacts ← match cargoRuntimeArtifacts result.stdout with
+        | .ok artifacts => pure artifacts
+        | .error message => error message
+      for (source, path, _) in artifacts do
+        snapshot source (lib / FilePath.mk path)
+      snapshot (pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi") archive
+      -- One `link <path>` or `load <path>` line per library, relative to `lib/`.
+      IO.FS.writeFile (archive.withExtension "runtime") <| String.join <|
+        artifacts.toList.map fun (_, path, link) => s!"{if link then "link" else "load"} {path}\n"
+      let linked := artifacts.filterMap fun (_, path, link) => if link then some path else none
+      if !linked.isEmpty then
+        let ldScript := lib / s!"libix_ffi_{tag}_link.so"
+        let paths := #[archive.toString] ++ linked.map fun path => (lib / FilePath.mk path).toString
+        IO.FS.writeFile ldScript s!"INPUT({" ".intercalate paths.toList})\n"
+  archiveJob.mapM fun archive => do
+    let runtimeFile := archive.withExtension "runtime"
+    if !(← runtimeFile.pathExists) then return archive
+    let entries ← runtimeArtifacts runtimeFile
+    let linked := entries.filterMap fun (link, path) => if link then some path else none
     if linked.isEmpty then return archive
     let ldScript := lib / s!"libix_ffi_{tag}_link.so"
-    let paths := #[archive.toString] ++ linked.map fun path => (lib / FilePath.mk path).toString
-    IO.FS.writeFile ldScript s!"INPUT({" ".intercalate paths.toList})\n"
     addTrace (← computeTrace ldScript)
     return ldScript
 
 /-- Build the Rust static lib with default features (`parallel`). -/
 target ix_rs pkg : FilePath := do
-  buildRustStatic pkg (← cargoArgs) "default"
+  let features ← cargoFeatures
+  buildRustStatic pkg features (← cargoArgs) "default"
 
-/-- Cargo feature variants run after the default build, since every
-selection writes Cargo's one release archive. -/
+/-- Build the Rust static lib with `test-ffi` for test executables. -/
 target ix_rs_test pkg : FilePath := do
-  buildRustStatic pkg (← cargoArgs (testFfi := true)) "test" (some (← ix_rs.fetch))
+  let features ← cargoFeatures (testFfi := true)
+  buildRustStatic pkg features (← cargoArgs (testFfi := true)) "test"
 
 /-- Build the Rust static lib with `net` for the `ix` CLI. -/
 target ix_rs_net pkg : FilePath := do
-  buildRustStatic pkg (← cargoArgs (net := true)) "net" (some (← ix_rs.fetch))
+  let features ← cargoFeatures (net := true)
+  buildRustStatic pkg features (← cargoArgs (net := true)) "net"
 
 end FFI
 
@@ -440,10 +514,38 @@ def coveredModules : IO (Array Lean.Name) := do
     if ← f.pathExists then out := out.push (f.withExtension "").toString.toName
   return out.qsort (·.toString < ·.toString)
 
+/-- Executable targets that import the nested formal/Mathlib packages and are
+checked in the formal CI job (`check-formal-modules`) when `build-all` runs
+with `--host-only`. -/
+def formalOnlyExes : List String := ["formal-package-tests"]
+
+/-- Modules under `coveredDirs` whose transitive imports reach Mathlib (through
+`Aiur`/`IxVM`/`MultiStark`). `checkModules` splits them from `--host-only` so
+host CI builds require no Mathlib cache, while `check-formal-modules` builds
+this exact complement in the formal CI job. -/
+def isFormalOnlyModule (m : Lean.Name) : Bool :=
+  let s := m.toString
+  (s.startsWith "Ix.IxVM.Refinement." && m != `Ix.IxVM.Refinement.Claim) ||
+  (s.startsWith "Ix.IxVM.Consistency." &&
+    m != `Ix.IxVM.Consistency.ReaderAdmission &&
+    m != `Ix.IxVM.Consistency.ReaderFootprint) ||
+  m == `Ix.IxVM.ConsistencyAudit ||
+  m == `Tests.FormalPackageMain ||
+  m == `Tests.Ix.InstanceSymbols ||
+  m == `Tests.Ix.VMSource ||
+  m == `Tests.Ix.IxVM.SafeReferencesWalk ||
+  m == `Tests.Ix.Kernel.ModelLaws
+
+inductive ModuleScope where
+  | all
+  | hostOnly
+  | formalOnly
+  deriving BEq
+
 /-- The module-coverage gate: check `moduleExclusions`, require every covered
 module to be buildable (under a library root or an executable root), then
-`lake build <args> +M…` every covered module that is not excluded. -/
-def checkModules (args : List String) : ScriptM UInt32 := do
+`lake build <args> +M…` every selected covered module that is not excluded. -/
+def checkModules (args : List String) (scope : ModuleScope := .all) : ScriptM UInt32 := do
   let ws ← getWorkspace
   let modules ← coveredModules
   let excluded := moduleExclusions.map (·.module)
@@ -466,10 +568,19 @@ def checkModules (args : List String) : ScriptM UInt32 := do
   unless problems.isEmpty do
     for p in problems do IO.eprintln s!"[check-modules] {p}"
     return 1
-  IO.println s!"[check-modules] building {built.size} modules under \
+  let selected := match scope with
+    | .all => built
+    | .hostOnly => built.filter (!isFormalOnlyModule ·)
+    | .formalOnly => built.filter isFormalOnlyModule
+  let scopeLabel := match scope with
+    | .all => "all"
+    | .hostOnly => "host-only"
+    | .formalOnly => "formal-only"
+  IO.println s!"[check-modules] building {selected.size} ({scopeLabel}) of {built.size} modules under \
     {coveredDirs.toList} and the root files; {excluded.size} left out: {excluded.toList}"
+  if selected.isEmpty then return 0
   let child ← IO.Process.spawn {
-    cmd := "lake", args := #["build"] ++ args.toArray ++ built.map (s!"+{·}")
+    cmd := "lake", args := #["build"] ++ args.toArray ++ selected.map (s!"+{·}")
     stdout := .inherit, stderr := .inherit }
   let code ← child.wait
   return if code == 0 then 0 else 1
@@ -524,28 +635,30 @@ def separateLibs : List String := ["IxVMRefinement"]
 
 @[lint_driver]
 script "build-all" (args) := do
+  let hostOnly := args.contains "--host-only"
+  let buildArgs := args.filter (· != "--host-only")
   let pkg ← getRootPackage
   let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)
     |>.filter (!separateLibs.contains ·)
   let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
-  let allNames := (libNames ++ exeNames).toList
+    |>.filter fun n => !hostOnly || !formalOnlyExes.contains n
+  let allNames := libNames ++ exeNames
   let mut failed : Array String := #[]
-  for name in allNames do
-    IO.println s!"Building: {name}"
-    let child ← IO.Process.spawn {
-      cmd := "lake", args := #["build", name] ++ args
-      stdout := .inherit, stderr := .inherit }
-    let exitCode ← child.wait
-    if exitCode != 0 then failed := failed.push name
+  IO.println s!"Building {allNames.size} targets in one batched Lake build{if hostOnly then " (host-only)" else ""}"
+  let batch ← IO.Process.spawn {
+    cmd := "lake", args := #["build"] ++ buildArgs.toArray ++ allNames
+    stdout := .inherit, stderr := .inherit }
+  if (← batch.wait) != 0 then failed := failed.push "targets"
   IO.println "Building: every module under the covered directories (check-modules)"
-  if (← checkModules args) != 0 then failed := failed.push "check-modules"
+  let scope := if hostOnly then .hostOnly else .all
+  if (← checkModules buildArgs scope) != 0 then failed := failed.push "check-modules"
   IO.println "Checking: source terminology (check-source-docs)"
   let hygiene ← IO.Process.spawn {
     cmd := "lake", args := #["env", "lean", "--run", "Scripts/SourceHygiene.lean"]
     stdout := .inherit, stderr := .inherit }
   if (← hygiene.wait) != 0 then failed := failed.push "check-source-docs"
   if failed.isEmpty then return 0
-  IO.eprintln s!"Failed {failed.size} of {allNames.length + 2} build and lint checks: {", ".intercalate failed.toList}"
+  IO.eprintln s!"Failed {failed.size} build and lint check(s): {", ".intercalate failed.toList}"
   return 1
 
 /-- Reject retired compiler APIs and private planning references in source
@@ -557,9 +670,24 @@ script "check-source-docs" := do
   return ← child.wait
 
 /-- The module-coverage gate (`checkModules`), always strict. `lake lint`
-runs it too, with the lint arguments. -/
+runs it too, with the lint arguments. Accepts `--host-only`. -/
 script "check-modules" (args) := do
-  return ← checkModules ("--wfail" :: args)
+  let hostOnly := args.contains "--host-only"
+  let buildArgs := args.filter (· != "--host-only")
+  return ← checkModules ("--wfail" :: buildArgs) (if hostOnly then .hostOnly else .all)
+
+/-- Build the Mathlib-dependent root executables and covered modules that
+`build-all --host-only` leaves to the formal CI job. -/
+script "check-formal-modules" (args) := do
+  let buildArgs := "--wfail" :: args
+  let exes := formalOnlyExes.toArray
+  unless exes.isEmpty do
+    let child ← IO.Process.spawn {
+      cmd := "lake", args := #["build"] ++ buildArgs.toArray ++ exes
+      stdout := .inherit, stderr := .inherit }
+    let code ← child.wait
+    unless code == 0 do return 1
+  return ← checkModules buildArgs .formalOnly
 
 /-- Check the `IxTests` registry against CI workflows and required entries. -/
 script "check-ixtests-registry" := do
@@ -692,19 +820,24 @@ script "check-kernel" (args) := do
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "lake" #["-d", "IxC", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.ModelLaws", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure"]
+  -- Batch all root-workspace kernel audit modules, freeze, fences and host-entry
+  -- executables into one Lake invocation so dependency tracing runs once.
+  run "lake" #["build", "--wfail",
+    "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit",
+    "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Ix.Cert.Audit",
+    "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection",
+    "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication",
+    "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.ModelLaws", "Tests.Ix.Kernel.Axioms",
+    "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure",
+    "kernel-layering", "kernel-trust-surface", "kernel-entry-cases", "kernel-meta-names"]
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
-  -- The certification statements' freeze, which no test binary imports.
-  run "lake" #["build", "--wfail", "Ix.Cert.Audit"]
   -- The kernel's fences, derived from con-leche's: import layering and the
   -- per-file escape allowlist, with the trust-surface lexer's self-test.
-  run "lake" #["build", "--wfail", "kernel-layering", "kernel-trust-surface"]
   run ".lake/build/bin/kernel-layering" #[]
   run ".lake/build/bin/kernel-trust-surface" #[]
   -- Host-compiled Lean declarations through the certified entry, each with
   -- an exact expected verdict (`Tests/Ix/Kernel/EntryCases.lean`).
-  run "lake" #["build", "--wfail", "kernel-entry-cases"]
   let entry ← IO.Process.output { cmd := ".lake/build/bin/kernel-entry-cases" }
   IO.FS.writeFile ".lake/build/kernel-entry-cases.jsonl" entry.stdout
   IO.eprint entry.stderr
@@ -713,7 +846,6 @@ script "check-kernel" (args) := do
     throw <| IO.userError "kernel-entry-cases failed; see .lake/build/kernel-entry-cases.jsonl"
   -- The `.meta` and `.source` names against Lean's, on ill-typed declarations
   -- and the fixtures (`Tests/Ix/Kernel/MetaNames.lean`).
-  run "lake" #["build", "--wfail", "kernel-meta-names"]
   run ".lake/build/bin/kernel-meta-names" #[]
   IO.println "Certified kernel checks passed."
   return 0

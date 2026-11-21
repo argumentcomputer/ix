@@ -143,39 +143,30 @@ them eagerly (`Lean.Meta.mkSizeOfInstances`). If a run shows it is not
 carried, drop it from this list. Do not restore O11a's `compilerSupportOf`. -/
 def sizeOfUnitSupport : List Name := [``SizeOf.sizeOf]
 
-/-- Kernel names as Lean names. -/
-private def kernelNameToLean : Ix.Kernel.Name → Name
-  | .anonymous => .anonymous
-  | .str p s => .str (kernelNameToLean p) s
-  | .num p n => .num (kernelNameToLean p) n
-
-/-- The checker-support derivation (`checkerSupportOf`, from `Role.deps`
-with blocks) against the checker's install guard (`divModEnvGuardF` reads
-`natOpDeps`): for each of the 15 `Nat` operation roles, the operation roles
-in its support, plus the role itself, are exactly `natOpDeps` of its key,
-as a set. A drift between `Role.deps` and `natOpDeps` would make a selected
-closure miss a record the checker needs, or carry one it does not. -/
-def supportDrift (env : Environment) : Array String := Id.run do
+/-- The 15 `Nat` operation roles guarded by `Ix.Kernel.natOpDeps`. -/
+private def natOpRoles : List Ix.Kernel.Role :=
   let opKeys : List (Ix.Kernel.Key .anon) := Ix.Kernel.natOpNames ++ Ix.Kernel.natDivModNames
-  let roleOf : Ix.Kernel.Key .anon → Option Ix.Kernel.Role
+  opKeys.filterMap fun
     | .role r => some r
     | _ => none
-  let opRoles := opKeys.filterMap roleOf
-  let mut errors : Array String := #[]
-  unless opRoles.length == 15 do
-    errors := errors.push s!"expected 15 operation roles, found {opRoles.length}"
-  for r in opRoles do
-    let support := Ix.EnvScope.checkerSupportOf env.constants (kernelNameToLean r.leanName)
-    let supportOps := support.filterMap fun n =>
-      (Ix.Kernel.Role.ofLeanName? (Ix.Kernel.Name.ofLeanName n)).filter opRoles.contains
+
+/-- Compile-time drift check: for each of the 15 `Nat` operation roles, the
+operation roles derived from `Role.deps` and `Role.block` (what
+`Ix.EnvScope.checkerSupportOf` draws from), plus the role itself, match
+`Ix.Kernel.natOpDeps` as a set. Checked in the kernel at build time instead of
+at test runtime. -/
+private def checkerSupportMatchesNatOpDeps : Bool :=
+  natOpRoles.length == 15 &&
+  natOpRoles.all fun r =>
+    let supportOps := ((r.deps.flatMap Ix.Kernel.Role.block).eraseDups.filter (· != r)).filter
+      natOpRoles.contains
     let derived := (r :: supportOps).eraseDups
-    let guard := ((Ix.Kernel.natOpDeps (Ix.Kernel.roleKey r : Ix.Kernel.Key .anon)).filterMap
-      roleOf).eraseDups
-    unless derived.all guard.contains && guard.all derived.contains do
-      errors := errors.push s!"{kernelNameToLean r.leanName}: support operations \
-        {derived.map (kernelNameToLean ·.leanName)} ≠ natOpDeps \
-        {guard.map (kernelNameToLean ·.leanName)}"
-  return errors
+    let guard := ((Ix.Kernel.natOpDeps (Ix.Kernel.roleKey r : Ix.Kernel.Key .anon)).filterMap fun
+      | .role q => some q
+      | _ => none).eraseDups
+    derived.all guard.contains && guard.all derived.contains
+
+theorem checkerSupport_matches_natOpDeps : checkerSupportMatchesNatOpDeps = true := by decide
 
 private def report (errors : Array String) (checked : Nat) (what : String) :
     IO (Bool × Nat × Nat × Option String) := do
@@ -265,11 +256,7 @@ def suite : List TestSeq := [
     unless (nameSet (Ix.EnvScope.collectSelectedDeps env [``stringInProof])).contains ``String.ofList do
       errors := errors.push "stringInProof's selected closure (a literal in a proof) lacks String.ofList"
     checked := checked + 1
-    report errors checked "selected closure")
-    (.individualIO "checker support agrees with the checker's install guard (natOpDeps)" none (do
-    let env ← get_env!
-    let errors := supportDrift env
-    report errors 15 "checker-support drift") .done))
+    report errors checked "selected closure") .done)
 ]
 
 /-- `compiler-selected-closure-e2e`: the fixture compiled whole and as each

@@ -163,12 +163,63 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   -- source's reader comparison (phase 4) counts their constants as foreign.
   let mut bindingRecords : Array Address := #[]
 
+  let mut reusingIxeWithSource := false
   match ixe?, path? with
-  | some ixePath, _ =>
+  | some ixePath, none =>
     IO.println s!"Running pure-Lean Ix validator on {ixePath} (no Lean source: phases 1/4 skipped)"
     bytes ← IO.FS.readBinFile ixePath
     phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
       .skipped "pre-compiled .ixe input — no Lean source to compile")
+  | some ixePath, some pathStr =>
+    reusingIxeWithSource := true
+    IO.println s!"Running pure-Lean Ix validator on {pathStr} with pre-compiled {ixePath}"
+    let t0 ← IO.monoMsNow
+    bytes ← IO.FS.readBinFile ixePath
+    buildFile pathStr
+    let fe ← getFileEnvCore pathStr
+    let leanEnv := fe.env
+    leanEnv? := some leanEnv
+    let constList ← match p.flag? "ns" with
+      | none => defaultConstList fe pathStr
+      | some flag =>
+        let raw := flag.as! String
+        let prefixes := parsePrefixes raw
+        if prefixes.isEmpty then
+          IO.println s!"[validate-lean] warning: --ns '{raw}' parsed to empty list; validating full env"
+          defaultConstList fe pathStr
+        else
+          let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
+            if prefixes.any (·.isPrefixOf n) then some n else none
+          IO.println s!"[validate-lean] filter: {prefixes.length} namespace(s), {seeds.length} seed constants"
+          let closed := collectSelectedDeps leanEnv seeds
+          IO.println s!"[validate-lean] filter: {closed.length} constants after transitive-dep closure"
+          pure closed
+    IO.println s!"Total constants: {constList.length}"
+    let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants leanEnv constList)
+    let constArr := prepared.toArray
+    let chunkSize := max 1 ((constArr.size + 31) / 32)
+    let chunkArr := Ix.CanonM.chunks constArr chunkSize
+    if fullOracle then
+      let tasks := chunkArr.map fun chunk =>
+        Task.spawn fun _ => Ix.CanonM.canonChunk chunk
+      let mut view : Std.HashMap Ix.Name Ix.ConstantInfo := {}
+      for task in tasks do
+        for (n, ci) in task.get do
+          view := view.insert n ci
+      canonView? := some view
+    else
+      let tasks := chunkArr.map fun chunk =>
+        Task.spawn fun _ => (Ix.CanonM.canonChunk chunk).map fun (n, ci) => (n, hash ci)
+      let mut digs : Std.HashMap Ix.Name UInt64 :=
+        Std.HashMap.emptyWithCapacity constArr.size
+      for task in tasks do
+        for (n, d) in task.get do
+          digs := digs.insert n d
+      canonDigests? := some digs
+    let t1 ← IO.monoMsNow
+    phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
+      .passed s!"reused pre-compiled artifact {ixePath}: {bytes.size} bytes, \
+{constList.length} source constants ({t1 - t0}ms)")
   | none, some pathStr =>
     IO.println s!"Running pure-Lean Ix validator on {pathStr}"
     buildFile pathStr
@@ -299,6 +350,70 @@ failure(s) ({finalizedBytes.size} bytes, {t1 - t0}ms)\n" ++
   -- The lazy parts' backing buffer is the same array; drop the extra
   -- reference so exactly one image stays live.
   bytes := .empty
+
+  -- When validating a pre-compiled `.ixe` against a Lean source file, enrich
+  -- the decompile oracle and foreign-record list with any role-binding
+  -- constants present in the artifact outside the source environment (such as
+  -- certificate theorems from `IxC.Kernel.PinGen.Certs`).
+  if reusingIxeWithSource then
+    if let (some parts, some leanEnv) := (parts?, leanEnv?) then
+      let missingNames : Array Ix.Name := parts.namedRows.filterMap fun row =>
+        let inOracle := match canonView?, canonDigests? with
+          | some view, _ => view.contains row.name
+          | none, some digs => digs.contains row.name
+          | none, none => true
+        if inOracle then none else some row.name
+      if !missingNames.isEmpty then
+        let sources ← if missingNames.all fun n => leanEnv.contains (Ix.SemanticContract.toLeanName n) then
+            pure #[leanEnv]
+          else pure #[leanEnv, ← Ix.RoleBinding.Compile.nativeCertSource]
+        let addedConsts : Array (Lean.Name × Lean.ConstantInfo) := missingNames.filterMap fun n =>
+          let ln := Ix.SemanticContract.toLeanName n
+          (sources.findSome? (·.find? ln)).map (ln, ·)
+        let addedCanon := Ix.CanonM.canonChunk addedConsts
+        if let some view := canonView? then
+          let mut view := view
+          for (n, ci) in addedCanon do
+            unless view.contains n do view := view.insert n ci
+          canonView? := some view
+        if let some digs := canonDigests? then
+          let mut digs := digs
+          for (n, ci) in addedCanon do
+            unless digs.contains n do digs := digs.insert n (hash ci)
+          canonDigests? := some digs
+      let foreignAddrs : Array Address := parts.namedRows.filterMap fun row =>
+        let ln := Ix.SemanticContract.toLeanName row.name
+        if leanEnv.contains ln then none else some row.addr
+      bindingRecords := bindingRecords ++ foreignAddrs
+      -- Also include unnamed role-binding records (`generated.support` and
+      -- `generated.evidence` added by `Generated.emit` without `named` rows):
+      -- every source record in a pre-finalized compile is either named directly
+      -- in `parts.namedRows` or is the owning `p.block` of a named projection,
+      -- so when `roleBinding` is present, the remaining unnamed records are
+      -- exactly the binding's support/evidence records.
+      if parts.env.roleBinding.isSome then
+        let mut ownedBySource : Std.HashSet Address :=
+          Std.HashSet.emptyWithCapacity parts.namedRows.size
+        for row in parts.namedRows do
+          let ln := Ix.SemanticContract.toLeanName row.name
+          if leanEnv.contains ln then
+            ownedBySource := ownedBySource.insert row.addr
+            if let some lc := parts.env.consts[row.addr]? then
+              if lc.len ≤ 64 then
+                if let .ok c := lc.get then
+                let block? : Option Address := match c.info with
+                  | .iPrj p => some p.block
+                  | .cPrj p => some p.block
+                  | .rPrj p => some p.block
+                  | .dPrj p => some p.block
+                  | _ => none
+                if let some blk := block? then
+                  ownedBySource := ownedBySource.insert blk
+        let mut rbAddrs : Array Address := #[]
+        for (a, _) in parts.env.consts.toList do
+          unless ownedBySource.contains a do
+            rbAddrs := rbAddrs.push a
+        bindingRecords := bindingRecords ++ rbAddrs
 
   match parts? with
   | none =>
@@ -485,7 +600,7 @@ def validateLeanCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     ns  : String; "Comma-separated Lean name prefixes to filter on (e.g. 'Aesop,SetTheory.PGame'). When set, only seeds matching any prefix are validated; transitive deps are pulled in automatically."
-    ixe : String; "Validate a pre-compiled .ixe (serde, projection/block-order fidelity and oracle-free decompilation; compilation and source comparison are skipped)"
+    ixe : String; "Validate a pre-compiled .ixe (with <path>, skips Phase 1 recompilation while keeping source/reader and decompile-oracle checks; without <path>, runs oracle-free phases 2-3 and 5)"
     report : String; "Write a machine-readable JSON report (phase table + pass/fail) to this path."
     workers : Nat; "Worker count for the parallel phases (compile phase 1, decompile phase 5); default 32 for compile, 16 for decompile. Lower at whole-Mathlib scale — memory scales with workers (phase 1 at 32 peaks past 116 GiB there; 8 is a safe whole-Mathlib setting on a 128 GiB box)."
     «full-oracle»; "Phase 5 comparison via the full canonicalized env (structural BEq per constant) instead of the default per-name digests. Holds a whole extra env copy through phase 5 — use on --ns-filtered closures to debug a digest mismatch."
