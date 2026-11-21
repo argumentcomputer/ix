@@ -1,13 +1,16 @@
 module
 
-public import Ix.IxonContract
+public import Ix.Common
+public import IxC.Ixon.Types.Modes
 
 /-!
 # Source contracts before canonicalization
 
 These records refer to elaborated source syntax, before source sharing,
-canonicalization, specialization, or erasure. They carry intent; they do not
-prove that a term satisfies a usage or ownership discipline.
+canonicalization, specialization, or erasure. They carry intent directly in the
+Ixon v5 mode vocabulary (`Ixon.BinderMode`, `Ixon.ResultMode`, `Ixon.LetMode`,
+`Ixon.FieldMode`, `Ixon.DefAsserts`); they do not prove that a term satisfies a
+resource discipline.
 
 The input owns both its selected constants and its explicit contract registry.
 No environment extension or source file is needed to validate this data.
@@ -49,15 +52,21 @@ inductive SourceBinderKind where
   | letE
   deriving BEq, DecidableEq, Repr, Inhabited
 
-/-- Independent input and result value contracts. A borrow kind is meaningful
-only at a let occurrence; locality alone never creates a loan. -/
+/-- Independent input and result modes at a binder occurrence. `isBorrow` is
+meaningful only at a `letE` occurrence with `mode = .borrowed` (`LetMode.borrow`). -/
 structure BinderContract where
   site : BinderSite
-  uses : Ixon.Uses
-  result : Option Ixon.ValueContract := none
-  value : Ixon.ValueContract := .shared
-  letKind : Ixon.LetKind := .value
+  mode : Ixon.BinderMode := .many
+  result : Option Ixon.ResultMode := none
+  isBorrow : Bool := false
   deriving BEq, Repr, Inhabited
+
+/-- A constructor field's `FieldMode` (`inherited` or `shared`), indexed by
+zero-based field position past `numParams`. -/
+structure FieldModeContract where
+  fieldIndex : Nat
+  mode : Ixon.FieldMode := .inherited
+  deriving BEq, DecidableEq, Repr, Inhabited
 
 /-- Contract binding uses an exact source snapshot, including the type, body,
 universe parameters, binder information, and metadata. The snapshot is shared
@@ -65,7 +74,9 @@ Lean data, not a second environment. In particular, a 64-bit expression hash
 alone cannot authorize reusing contracts for different source syntax. -/
 structure SourceContract where
   source : Lean.ConstantInfo
-  binders : Array BinderContract
+  binders : Array BinderContract := #[]
+  fieldModes : Array FieldModeContract := #[]
+  defAsserts : Ixon.DefAsserts := {}
   deriving Repr, Inhabited
 
 /-- User-facing selectors are resolved once to elaborated telescope positions.
@@ -76,14 +87,13 @@ inductive BinderSelector where
   deriving BEq, Repr, Inhabited
 
 /-- Declaration shorthand that annotates corresponding type/body binders.
-The input contract applies to both occurrences; the independent result
-contract applies only to this position's arrow. -/
+The input mode applies to both occurrences; the independent result mode
+applies only to this position's arrow. -/
 structure TelescopeContract where
   binder : BinderSelector
-  uses : Ixon.Uses
-  result : Option Ixon.ValueContract := none
-  value : Ixon.ValueContract := .shared
-  letKind : Ixon.LetKind := .value
+  mode : Ixon.BinderMode := .many
+  result : Option Ixon.ResultMode := none
+  isBorrow : Bool := false
   deriving Repr, Inhabited
 
 /-- Optional recursion information, bound to the exact source declaration.
@@ -106,22 +116,23 @@ def CompileInput.plain (constants : List (Lean.Name × Lean.ConstantInfo)) : Com
   { constants, contracts := #[] }
 
 /-- Diagnostic names and binder information are retained after resolving a
-site. On arrows, result is always populated, including the shared default.
+site. On arrows, `result` is always populated, including the shared default.
 On lambdas and lets it is absent. -/
 structure ResolvedBinderContract where
   site : BinderSite
   kind : SourceBinderKind
   name : Lean.Name
   binderInfo : Lean.BinderInfo
-  uses : Ixon.Uses
-  result : Option Ixon.ValueContract
-  value : Ixon.ValueContract
-  letKind : Ixon.LetKind
+  mode : Ixon.BinderMode
+  result : Option Ixon.ResultMode
+  isBorrow : Bool
   deriving Repr, Inhabited
 
 structure ResolvedSourceContract where
   source : Lean.ConstantInfo
   binders : Array ResolvedBinderContract
+  fieldModes : Array FieldModeContract := #[]
+  defAsserts : Ixon.DefAsserts := {}
   deriving Repr, Inhabited
 
 /-- The resolved assertion at one source occurrence, without diagnostic names.
@@ -129,22 +140,25 @@ This is source contract data, not an Ixon expression or wire encoding. -/
 structure BinderContractSemantics where
   site : BinderSite
   kind : SourceBinderKind
-  uses : Ixon.Uses
-  result : Option Ixon.ValueContract
-  value : Ixon.ValueContract
-  letKind : Ixon.LetKind
+  mode : Ixon.BinderMode
+  result : Option Ixon.ResultMode
+  isBorrow : Bool
   deriving BEq, Repr, Inhabited
 
 /-- Names and the exact source snapshot belong to validation and diagnostics.
 Source paths still refer to the elaborated tree; do not hash this as an artifact. -/
 structure SourceContractSemantics where
   binders : Array BinderContractSemantics
+  fieldModes : Array FieldModeContract := #[]
+  defAsserts : Ixon.DefAsserts := {}
   deriving BEq, Repr, Inhabited
 
 def ResolvedSourceContract.semantics (contract : ResolvedSourceContract) : SourceContractSemantics :=
   { binders := contract.binders.map fun binder => {
-      site := binder.site, kind := binder.kind, uses := binder.uses
-      result := binder.result, value := binder.value, letKind := binder.letKind } }
+      site := binder.site, kind := binder.kind, mode := binder.mode
+      result := binder.result, isBorrow := binder.isBorrow }
+    fieldModes := contract.fieldModes
+    defAsserts := contract.defAsserts }
 
 structure ResolvedMeasureHint where
   source : Lean.ConstantInfo
@@ -177,9 +191,7 @@ inductive SourceContractError where
   | ambiguousBinder (declaration binder : Lean.Name)
   | missingBodyBinder (name : Lean.Name) (index : Nat)
   | inconsistentTelescope (name : Lean.Name) (index : Nat)
-      (typeUses bodyUses : Ixon.Uses)
-  | inconsistentValue (name : Lean.Name) (index : Nat)
-      (typeValue bodyValue : Ixon.ValueContract)
+      (typeMode bodyMode : Ixon.BinderMode)
   | annotatedRecursorRule (declaration : Lean.Name)
   | malformedAnnotation (declaration : Lean.Name) (site : BinderSite) (reason : String)
   | misplacedAnnotation (declaration : Lean.Name) (site : BinderSite)
@@ -189,6 +201,12 @@ inductive SourceContractError where
   | missingAnnotation (declaration : Lean.Name) (site : BinderSite)
   | conflictingAnnotation (declaration : Lean.Name) (site : BinderSite)
   | missingContract (declaration : Lean.Name)
+  | fieldModeOnNonCtor (name : Lean.Name)
+  | fieldOutOfRange (name : Lean.Name) (index : Nat)
+  | duplicateFieldMode (name : Lean.Name) (index : Nat)
+  | erasedSharedField (name : Lean.Name) (index : Nat)
+  | invalidDefAsserts (name : Lean.Name) (reason : String)
+  | conflictingDefAsserts (name : Lean.Name) (reason : String)
   | duplicateMeasure (name : Lean.Name)
   | zeroFixedStep (name : Lean.Name)
   deriving BEq, Repr

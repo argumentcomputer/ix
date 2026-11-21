@@ -20,10 +20,9 @@ def sourceAnnotationKey : Lean.Name := `ix.source.binder
 structure BinderAnnotation where
   origin : Nat
   binder : Lean.Name
-  uses : Ixon.Uses
-  value : Ixon.ValueContract
-  result : Option Ixon.ValueContract := none
-  letKind : Ixon.LetKind := .value
+  mode : Ixon.BinderMode
+  result : Option Ixon.ResultMode := none
+  isBorrow : Bool := false
   deriving BEq, Repr, Inhabited
 
 def hasSourceAnnotation (data : Lean.MData) : Bool :=
@@ -31,52 +30,55 @@ def hasSourceAnnotation (data : Lean.MData) : Bool :=
 
 def BinderAnnotation.toMetadata (annotation : BinderAnnotation) : Lean.MData := Id.run do
   let mut data := ({} : Lean.MData)
-    |>.setNat sourceAnnotationKey 3
+    |>.setNat sourceAnnotationKey 4
     |>.setNat `ix.source.binder.origin annotation.origin
     |>.setName `ix.source.binder.name annotation.binder
-    |>.setNat `ix.source.binder.contract (Ixon.BinderContract.toBits ⟨annotation.uses, annotation.value⟩).toNat
-    |>.setNat `ix.source.binder.letKind (match annotation.letKind with | .value => 0 | .borrowShared => 1)
+    |>.setNat `ix.source.binder.mode annotation.mode.toCode.toNat
+    |>.setNat `ix.source.binder.borrow (if annotation.isBorrow then 1 else 0)
   if let some result := annotation.result then
-    data := data.setNat `ix.source.binder.result result.toBits.toNat
+    data := data.setNat `ix.source.binder.result result.toCode.toNat
   return data
 
-/-- Strictly decode the reserved namespace. Other metadata, including Lean's
-native borrow hint, is orthogonal. Unknown versions, keys, and duplicate keys
-are errors, including when the version marker itself is missing. -/
+/-- Strictly decode the reserved namespace (schema 4, Ixon v5 codes). Other
+metadata, including Lean's native borrow hint, is orthogonal. Unknown versions,
+keys, and duplicate keys are errors, including when the version marker itself
+is missing. -/
 def BinderAnnotation.ofMetadata? (data : Lean.MData) : Except String (Option BinderAnnotation) := do
   if !hasSourceAnnotation data then return none
   let keys := #[sourceAnnotationKey, `ix.source.binder.origin, `ix.source.binder.name,
-    `ix.source.binder.contract, `ix.source.binder.result, `ix.source.binder.letKind]
+    `ix.source.binder.mode, `ix.source.binder.result, `ix.source.binder.borrow]
   let mut seen : Std.HashSet Lean.Name := {}
   for (key, _) in data.entries do
     if sourceAnnotationKey.isPrefixOf key then
       if !keys.contains key then throw s!"unknown source annotation field {key}"
       if seen.contains key then throw s!"duplicate source annotation field {key}"
       seen := seen.insert key
-  let some (.ofNat 3) := data.find sourceAnnotationKey
+  let some (.ofNat 4) := data.find sourceAnnotationKey
     | throw "unsupported or missing source annotation version"
   let some (.ofNat origin) := data.find `ix.source.binder.origin
     | throw "missing source annotation origin"
   let some (.ofName binder) := data.find `ix.source.binder.name
     | throw "missing source binder name"
-  let some (.ofNat bits) := data.find `ix.source.binder.contract
-    | throw "missing source binder contract"
-  if bits > 15 then throw "invalid source binder contract"
-  let some contract := Ixon.BinderContract.ofBits? bits.toUInt8
-    | throw "invalid source binder contract"
+  let some (.ofNat modeCode) := data.find `ix.source.binder.mode
+    | throw "missing source binder mode"
+  if modeCode >= 256 then throw "invalid source binder mode"
+  let some mode := Ixon.BinderMode.ofCode? modeCode.toUInt8
+    | throw "invalid source binder mode"
   let result ← match data.find `ix.source.binder.result with
     | none => pure none
-    | some (.ofNat bits) => do
-      if bits > 3 then throw "invalid source result contract"
-      let some result := Ixon.ValueContract.ofBits? bits.toUInt8
-        | throw "invalid source result contract"
+    | some (.ofNat resultCode) => do
+      if resultCode >= 256 then throw "invalid source result mode"
+      let some result := Ixon.ResultMode.ofCode? resultCode.toUInt8
+        | throw "invalid source result mode"
       pure (some result)
-    | _ => throw "invalid source result contract"
-  let letKind ← match data.find `ix.source.binder.letKind with
-    | some (.ofNat 0) => pure Ixon.LetKind.value
-    | some (.ofNat 1) => pure Ixon.LetKind.borrowShared
-    | _ => throw "invalid source let kind"
-  return some { origin, binder, uses := contract.uses, value := contract.value, result, letKind }
+    | _ => throw "invalid source result mode"
+  let isBorrow ← match data.find `ix.source.binder.borrow with
+    | some (.ofNat 0) => pure false
+    | some (.ofNat 1) => pure true
+    | _ => throw "invalid source let borrow flag"
+  if isBorrow && (mode != .borrowed || result.isSome) then
+    throw "invalid source borrow annotation"
+  return some { origin, binder, mode, result, isBorrow }
 
 /-- Read only the domain's outer metadata chain, without reducing its type. -/
 def binderAnnotation? : Lean.Expr → Except String (Option BinderAnnotation)

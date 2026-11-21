@@ -252,7 +252,7 @@ def readContractLean (md : Lean.MData) : Except String Ix.SemanticContract.Contr
     else if name == `ix.contract.kind && kind.isNone then kind := some value
     else if name == `ix.contract.code && code.isNone then code := some value
     else throw "unknown or duplicate semantic contract field"
-  unless version == some 3 do throw "unsupported semantic contract version"
+  unless version == some 4 do throw "unsupported semantic contract version"
   let some kindValue := kind | throw "missing semantic contract kind"
   let some codeValue := code | throw "missing semantic contract code"
   Ix.SemanticContract.decode kindValue codeValue
@@ -263,6 +263,8 @@ def attachedToLean (c : Ix.SemanticContract.Contract) (e : Lean.Expr) : Bool :=
   | .lam, .lam .. => true
   | .all, .forallE .. => true
   | .letE, .letE .. => true
+  | .field, .forallE .. => true
+  | .defAsserts, _ => true
   | _, _ => false
 
 /-- `Ix.LeanIngress.withContract`, on a Lean binder. -/

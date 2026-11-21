@@ -68,7 +68,7 @@ def compiledVerdicts : IO (Array String × Array String) := do
   let mut lines : Array String := #[]
   -- the contract pipeline's input: an assumption axiom and an identity under the
   -- ordinary contract
-  match Tests.ContractPipeline.input .many .shared .shared with
+  match Tests.ContractPipeline.input .many .shared with
   | .error e => errors := errors.push s!"contract pipeline: input: {e}"
   | .ok input =>
     match ← Tests.ContractPipeline.compileInput input with

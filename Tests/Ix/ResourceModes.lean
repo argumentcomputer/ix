@@ -1669,8 +1669,9 @@ private def envOfSingleConst (c : Ixon.Constant) : Address × Ixon.Env :=
 def runAnnotatedCompileSuite : IO (Array String) := do
   let mut errs : Array String := #[]
   -- 1. Surface-annotated Lean declarations from `SyntaxFixture`: positive, post-binder-data, and strip/apply.
-  -- Under finalized L1 (`Nat` is never confined), `localShared` and `sharedLoan` (on `Nat`) are accepted;
-  -- under Repair S (`notOnceSrc`), returning a `@once` parameter (`linear`) is refused.
+  -- Under finalized L1 (`Nat` is never confined), `localShared`, `sharedLoan`, and `doBlockBorrowEscape`
+  -- (all on `Nat`) are accepted; under Repair S (`notOnceSrc`), returning a `@once` parameter (`linear`)
+  -- is refused, and `doBlockBorrowEscapeBox` (on heap cell `SyntaxBox`) is refused with `borrowEscape`.
   let senv ← getCompileEnv #[`Tests.Ix.SourceContract.SyntaxFixture]
   let posNames : List Lean.Name := [
     ``Tests.Ix.SourceContract.SyntaxFixture.unique,
@@ -1678,7 +1679,18 @@ def runAnnotatedCompileSuite : IO (Array String) := do
     ``Tests.Ix.SourceContract.SyntaxFixture.localResult,
     ``Tests.Ix.SourceContract.SyntaxFixture.localUniqueResult,
     ``Tests.Ix.SourceContract.SyntaxFixture.localShared,
-    ``Tests.Ix.SourceContract.SyntaxFixture.sharedLoan]
+    ``Tests.Ix.SourceContract.SyntaxFixture.sharedLoan,
+    ``Tests.Ix.SourceContract.SyntaxFixture.defNoRc,
+    ``Tests.Ix.SourceContract.SyntaxFixture.defNoAllocBounded,
+    ``Tests.Ix.SourceContract.SyntaxFixture.defInlineNoRc,
+    ``Tests.Ix.SourceContract.SyntaxFixture.defZeroArity,
+    ``Tests.Ix.SourceContract.SyntaxFixture.doBlockBorrow,
+    ``Tests.Ix.SourceContract.SyntaxFixture.doBlockBorrowEscape,
+    ``Tests.Ix.SourceContract.SyntaxFixture.SharedPair,
+    ``Tests.Ix.SourceContract.SyntaxFixture.SharedOnly,
+    ``Tests.Ix.SourceContract.SyntaxFixture.SharedList,
+    ``Tests.Ix.SourceContract.SyntaxFixture.SharedTree,
+    ``Tests.Ix.SourceContract.SyntaxFixture.SharedArrowInd]
   let posConsts := Ix.EnvScope.collectSelectedDeps senv posNames
   match ← Ix.CompileM.compileCertified senv posConsts 2 with
   | .ok _ => errs := errs.push "surface contracts: compileCertified without ModeChecker accepted"
@@ -1695,6 +1707,37 @@ def runAnnotatedCompileSuite : IO (Array String) := do
       | some c =>
         unless Ix.Compile.BinderData.hasModes c && c.bindersComplete && c.modesCanonical do
           errs := errs.push s!"surface contracts: invalid mode/binder invariants on {n}"
+    -- Verify compiled `Ixon.Constructor.fieldModes` actually received `@shared`
+    for (indName, ctorIdx, expected) in [
+        (``Tests.Ix.SourceContract.SyntaxFixture.SharedPair, 0, #[Ixon.FieldMode.shared, .inherited]),
+        (``Tests.Ix.SourceContract.SyntaxFixture.SharedOnly, 0, #[.shared]),
+        (``Tests.Ix.SourceContract.SyntaxFixture.SharedList, 1, #[.shared, .inherited]),
+        (``Tests.Ix.SourceContract.SyntaxFixture.SharedTree, 1, #[.shared, .inherited, .inherited]),
+        (``Tests.Ix.SourceContract.SyntaxFixture.SharedArrowInd, 0, #[.inherited, .shared])] do
+      match ownerConst? out.env indName with
+      | some c =>
+        let ok := match c.info with
+          | .muts ms => ms.any fun
+            | .indc ind => (ind.ctors[ctorIdx]?.map fun (ctor : Ixon.Constructor) => ctor.fieldModes.toArray) == some expected
+            | _ => false
+          | _ => false
+        unless ok do
+          errs := errs.push s!"surface contracts: {indName} ctor[{ctorIdx}] fieldModes mismatch (expected {repr expected})"
+      | none => errs := errs.push s!"surface contracts: missing inductive record for {indName}"
+    -- Verify compiled `Ixon.Definition.asserts` actually received `@[no_rc]` / `@[no_alloc, bounded_stack]`
+    for (defName, expected) in [
+        (``Tests.Ix.SourceContract.SyntaxFixture.defNoRc, ({ alloc := .noRc } : Ixon.DefAsserts)),
+        (``Tests.Ix.SourceContract.SyntaxFixture.defNoAllocBounded, { alloc := .noAlloc, boundedStack := true }),
+        (``Tests.Ix.SourceContract.SyntaxFixture.defInlineNoRc, { alloc := .noRc }),
+        (``Tests.Ix.SourceContract.SyntaxFixture.defZeroArity, { alloc := .noAlloc, boundedStack := true })] do
+      match ownerConst? out.env defName with
+      | some c =>
+        let actual? := match c.info with
+          | .defn d => some d.asserts
+          | _ => none
+        unless actual? == some expected do
+          errs := errs.push s!"surface contracts: {defName} asserts mismatch (expected {repr expected}, got {repr actual?})"
+      | none => errs := errs.push s!"surface contracts: missing def record for {defName}"
   match ← Ix.CompileM.compileAndFinalize senv posConsts 2 false
       (binderData := .post) (modeCheck := Ix.ModeCheck.checkArtifact) with
   | .error e => errs := errs.push s!"surface contracts (.post): compileAndFinalize failed: {e}"
@@ -1718,25 +1761,56 @@ def runAnnotatedCompileSuite : IO (Array String) := do
             errs := errs.push "surface contracts: strip/apply roundtrip changed serialized bytes"
   | .ok _ => errs := errs.push "surface contracts (.post): finalization did not complete"
 
-  -- 2. Must-reject surface-annotated declaration: Repair S (`onceReentry` on returning `@once` binding)
-  for bad in [``Tests.Ix.SourceContract.SyntaxFixture.linear] do
+  -- 1b. `@erased` constructor fields: matching via `casesOn` in a minimal closure (without
+  -- Lean's unannotated auto-generated `recOn`/`_sizeOf_1` auxiliaries) compiles cleanly, while
+  -- a full unit closure containing those raw-recursor auxiliaries is strictly refused by V8.
+  let erasedMatchConsts := Ix.EnvScope.collectDeps senv
+    [``Tests.Ix.SourceContract.SyntaxFixture.readSharedBox]
+    { recursors := true, units := false, checkerSupport := true }
+  match ← Ix.CompileM.compileCertified senv erasedMatchConsts 2 (modeCheck := Ix.ModeCheck.checkArtifact) with
+  | .error e => errs := errs.push s!"surface contracts (@erased match): compileCertified failed: {e}"
+  | .ok out =>
+    match ownerConst? out.env ``Tests.Ix.SourceContract.SyntaxFixture.SharedBox with
+    | none => errs := errs.push "surface contracts (@erased match): missing SharedBox record"
+    | some c =>
+      let ok := match c.info with
+        | .muts ms => ms.any fun
+          | .indc ind => (ind.ctors[0]?.map fun (ctor : Ixon.Constructor) => ctor.fieldModes.toArray) ==
+              some #[Ixon.FieldMode.shared, .inherited, .inherited]
+          | _ => false
+        | _ => false
+      unless ok && Ix.Compile.BinderData.hasModes c && c.bindersComplete && c.modesCanonical do
+        errs := errs.push "surface contracts (@erased match): SharedBox modes/fieldModes invalid"
+  let erasedUnitConsts := Ix.EnvScope.collectSelectedDeps senv
+    [``Tests.Ix.SourceContract.SyntaxFixture.SharedBox]
+  match ← Ix.CompileM.compileCertified senv erasedUnitConsts 2 (modeCheck := Ix.ModeCheck.checkArtifact) with
+  | .ok _ => errs := errs.push "surface contracts (@erased unit V8): unexpectedly accepted unannotated raw recursor auxiliaries"
+  | .error e =>
+    unless hasSubstr e "is erased in its constructor and not in minor premise" do
+      errs := errs.push s!"surface contracts (@erased unit V8): expected V8 recRules refusal, got: {e}"
+
+  -- 2. Must-reject surface-annotated declarations: Repair S (`onceReentry` on returning `@once` binding)
+  -- and `borrowEscape` on `do`-block `let @borrow` of heap cell `SyntaxBox`
+  for (bad, expectedErr) in [
+      (``Tests.Ix.SourceContract.SyntaxFixture.linear, "onceReentry"),
+      (``Tests.Ix.SourceContract.SyntaxFixture.doBlockBorrowEscapeBox, "borrowEscape")] do
     let badConsts := Ix.EnvScope.collectSelectedDeps senv [bad]
     match ← Ix.CompileM.compileCertified senv badConsts 2 (modeCheck := Ix.ModeCheck.checkArtifact) with
     | .ok _ => errs := errs.push s!"surface must-reject {bad}: accepted"
     | .error e =>
-      unless hasSubstr e "onceReentry" do
-        errs := errs.push s!"surface must-reject {bad}: expected onceReentry, got: {e}"
+      unless hasSubstr e expectedErr do
+        errs := errs.push s!"surface must-reject {bad}: expected {expectedErr}, got: {e}"
 
-  -- 3. `ModeFixture` source contracts: `let borrow`, `borrowEscape` on heap cell `BoxE`,
+  -- 3. `ModeFixture` source contracts: `let @borrow`, `borrowEscape` on heap cell `BoxE`,
   -- 2-variant shared `lam`, tier retry, and must-rejects
   let fenv ← fixtureFileEnv
-  -- 3a'. Must-reject `borrowEscape` on return (`idBox`) and on `let borrow` (`leakBorrowBox`) for heap cell `BoxE`
+  -- 3a'. Must-reject `borrowEscape` on return (`idBox`) and on `let @borrow` (`leakBorrowBox`) for heap cell `BoxE`
   match fenv.find? `ModeFixture.idBox with
   | none => errs := errs.push "idBox: missing fixture declaration"
   | some idCi =>
     let idConsts := Ix.EnvScope.collectSelectedDeps fenv [`ModeFixture.idBox]
     match Ix.Compile.SourceContract.ofTelescope idCi
-        #[{ binder := .position 0, uses := .many, value := .localShared }] with
+        #[{ binder := .position 0, mode := .borrowed }] with
     | .error e => errs := errs.push s!"idBox contract: {e}"
     | .ok cId =>
       match ← compileWithContracts idConsts #[cId] with
@@ -1752,20 +1826,20 @@ def runAnnotatedCompileSuite : IO (Array String) := do
       | errs := errs.push "leakBorrowBox: missing source body"
     let letSites := collectLetSites .body [] lbbBody
     match Ix.Compile.SourceContract.ofTelescope lbbCi
-        #[{ binder := .position 0, uses := .many, value := .unique }],
+        #[{ binder := .position 0, mode := .unique }],
       letSites[0]? with
     | .ok cLbbOuter, some letSite =>
       let cLbb : Ix.Compile.SourceContract := {
         source := lbbCi
         binders := cLbbOuter.binders.push
-          { site := letSite, uses := .many, value := .localShared, letKind := .borrowShared } }
+          { site := letSite, mode := .borrowed, isBorrow := true } }
       match ← compileWithContracts lbbConsts #[cLbb] with
-      | .ok _ => errs := errs.push "leakBorrowBox (let borrow BoxE escaped): accepted"
+      | .ok _ => errs := errs.push "leakBorrowBox (let @borrow BoxE escaped): accepted"
       | .error e =>
         unless hasSubstr e "borrowEscape" do
           errs := errs.push s!"leakBorrowBox: expected borrowEscape, got: {e}"
     | _, _ => errs := errs.push "leakBorrowBox: contract setup failed"
-  -- 3a. Valid `let borrow` + borrowed parameter on heap cell `BoxE`
+  -- 3a. Valid `let @borrow` + borrowed parameter on heap cell `BoxE`
   let borrowConsts := Ix.EnvScope.collectSelectedDeps fenv [`ModeFixture.letBorrowBox]
   match fenv.find? `ModeFixture.inspectBox, fenv.find? `ModeFixture.letBorrowBox with
   | some inspectCi, some lbCi =>
@@ -1773,15 +1847,15 @@ def runAnnotatedCompileSuite : IO (Array String) := do
       | errs := errs.push "letBorrowBox: missing source body"
     let letSites := collectLetSites .body [] lbBody
     match Ix.Compile.SourceContract.ofTelescope inspectCi
-        #[{ binder := .position 0, uses := .many, value := .localShared }],
+        #[{ binder := .position 0, mode := .borrowed }],
       Ix.Compile.SourceContract.ofTelescope lbCi
-        #[{ binder := .position 0, uses := .many, value := .unique }],
+        #[{ binder := .position 0, mode := .unique }],
       letSites[0]? with
     | .ok cInspect, .ok cLbOuter, some letSite =>
       let cLb : Ix.Compile.SourceContract := {
         source := lbCi
         binders := cLbOuter.binders.push
-          { site := letSite, uses := .many, value := .localShared, letKind := .borrowShared } }
+          { site := letSite, mode := .borrowed, isBorrow := true } }
       match ← compileWithContracts borrowConsts #[cInspect, cLb] with
       | .error e => errs := errs.push s!"letBorrowBox: failed: {e}"
       | .ok out =>
@@ -1809,8 +1883,8 @@ def runAnnotatedCompileSuite : IO (Array String) := do
       let cSl : Ix.Compile.SourceContract := {
         source := slCi
         binders := #[
-          { site := lamSites[0]!, uses := .many, value := .unique },
-          { site := lamSites[1]!, uses := .many, value := .localShared }] }
+          { site := lamSites[0]!, mode := .unique },
+          { site := lamSites[1]!, mode := .borrowed }] }
       match ← compileWithContracts sharedConsts #[cSl] with
       | .error e => errs := errs.push s!"sharedLams: failed: {e}"
       | .ok out =>
@@ -1855,7 +1929,7 @@ def runAnnotatedCompileSuite : IO (Array String) := do
   | none => errs := errs.push "tier retry: missing inspectBox"
   | some inspectCi =>
     match Ix.Compile.SourceContract.ofTelescope inspectCi
-        #[{ binder := .position 0, uses := .many, value := .localShared }] with
+        #[{ binder := .position 0, mode := .borrowed }] with
     | .error e => errs := errs.push s!"tier retry: telescope failed: {e}"
     | .ok cInspect =>
       match ← compileWithContracts tierConsts #[cInspect] with
@@ -1874,7 +1948,7 @@ def runAnnotatedCompileSuite : IO (Array String) := do
   | none => errs := errs.push "callTwice: missing"
   | some ctCi =>
     let ctConsts := Ix.EnvScope.collectSelectedDeps fenv [`ModeFixture.callTwice]
-    match Ix.Compile.SourceContract.ofTelescope ctCi #[{ binder := .position 0, uses := .linear }] with
+    match Ix.Compile.SourceContract.ofTelescope ctCi #[{ binder := .position 0, mode := .once }] with
     | .error e => errs := errs.push s!"callTwice contract: {e}"
     | .ok cCt =>
       match ← compileWithContracts ctConsts #[cCt] with
@@ -1886,9 +1960,9 @@ def runAnnotatedCompileSuite : IO (Array String) := do
   | some dbCi, some ubtCi =>
     let ubtConsts := Ix.EnvScope.collectSelectedDeps fenv [`ModeFixture.useBoxTwice]
     match Ix.Compile.SourceContract.ofTelescope dbCi
-            #[{ binder := .position 0, uses := .many, value := .unique }],
+            #[{ binder := .position 0, mode := .unique }],
           Ix.Compile.SourceContract.ofTelescope ubtCi
-            #[{ binder := .position 0, uses := .many, value := .unique }] with
+            #[{ binder := .position 0, mode := .unique }] with
     | .ok cDb, .ok cUbt =>
       match ← compileWithContracts ubtConsts #[cDb, cUbt] with
       | .ok _ => errs := errs.push "useBoxTwice (unique transferred twice): accepted"
@@ -1901,7 +1975,7 @@ def runAnnotatedCompileSuite : IO (Array String) := do
   | none => errs := errs.push "readErased: missing"
   | some reCi =>
     let reConsts := Ix.EnvScope.collectSelectedDeps fenv [`ModeFixture.readErased]
-    match Ix.Compile.SourceContract.ofTelescope reCi #[{ binder := .position 0, uses := .erased }] with
+    match Ix.Compile.SourceContract.ofTelescope reCi #[{ binder := .position 0, mode := .erased }] with
     | .error e => errs := errs.push s!"readErased contract: {e}"
     | .ok cRe =>
       match ← compileWithContracts reConsts #[cRe] with

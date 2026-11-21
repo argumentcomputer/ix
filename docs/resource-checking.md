@@ -1,13 +1,70 @@
-# Resource modes: the model and the mode checker
+# Resource modes: the model, surface syntax, and the mode checker
 
-Ixon records carry **modes**: every `lam` and `all` binder an `AllMode` (the
-bound variable's mode, `many`, `borrowed`, `unique`, `uniqueBorrowed`, `once`,
-`onceBorrowed` or `erased`, and the result mode of the binder's own arrow,
-`shared`, `borrowed`, `unique` or `uniqueBorrowed`), every `let` a `LetMode`,
-every constructor field a `FieldMode` (`inherited` or `shared`). They are data of
-the record, hashed into its address. Kernel terms carry none: typing never sees
-modes, and typing claims cover annotated constants without saying anything
-about their modes.
+Ixon v5 records carry **modes**: every `lam` and `all` binder an `AllMode` (the
+bound variable's `BinderMode`: `many`, `borrowed`, `unique`, `uniqueBorrowed`,
+`once`, `onceBorrowed`, or `erased`, and the result's `ResultMode`: `shared`,
+`borrowed`, `unique`, or `uniqueBorrowed`), every `let` a `LetMode` (a value
+`let` at any `BinderMode` or `.borrow`), every constructor field a `FieldMode`
+(`inherited` or `shared`), and every non-theorem definition a `DefAsserts`
+(`unrestricted`/`noRc`/`noAlloc` × `boundedStack`). They are data of the record,
+hashed into its address. Kernel terms carry none: typing never sees modes, and
+typing claims cover annotated constants without saying anything about their
+modes.
+
+## Surface syntax (`open scoped Ix.Modes`)
+
+Import `Ix.Compile.SourceContract.Elab` and opt in locally with
+`open scoped Ix.Modes`. All mode keywords are parsed with
+`atomic ("@" >> checkNoWsBefore ... >> nonReservedSymbol w)`, adding **zero**
+entries to Lean's `TokenTable` so `@unique_fn`, `@uniqueId`, `@id`, `@&`,
+`(unique x : Nat)`, `let @Prod.mk _ _ a b := p`, and `let borrow v := owner + v`
+remain unaffected.
+
+* **Binder modes (7, composable, order-insensitive)** in `(...)`, `{...}`,
+  `⦃...⦄`, `[...]` (multi-name groups `(@unique x y : T)` and optional `: T` in
+  `fun` supported): unmarked (`many`), `@borrowed`, `@unique`,
+  `@unique @borrowed` / `@borrowed @unique`, `@once`,
+  `@once @borrowed` / `@borrowed @once`, `@erased`. Illegal pairs (`@erased`
+  with anything, `@once @unique`, duplicates) are rejected at elaboration.
+* **Result modes (4)** after `:` in `def`/`abbrev`/`opaque`/`axiom`, after
+  `→`/`->`, or after `∀ ...,`: unmarked (`shared`), `@borrowed`, `@unique`,
+  `@unique @borrowed` / `@borrowed @unique`. Input modes stay bracketed
+  (`(@borrowed x : α) → @unique β`) so `A → @unique B → C` has no precedence
+  ambiguity.
+* **`let` & `do`-block `let` (8, unparenthesized, optional `: T`)**:
+  `let @borrowed x := e`, `let @unique x := e`, `let @unique @borrowed x := e`,
+  `let @once f := e`, `let @once @borrowed f := e`, `let @erased h := p`, and
+  `let @borrow v := owner` (`LetMode.borrow`).
+* **Structure & inductive fields**: `@shared field : T` (`FieldMode.shared` in
+  `Ixon.Constructor.fieldModes`), `@erased field : T` (constructor binder
+  `.erased`), unmarked (`FieldMode.inherited`). Note: when an inductive declares
+  an `@erased` field, pattern matching through `casesOn` (a case shape) is
+  accepted, while Lean's unannotated auto-generated auxiliaries (`*.rec`,
+  `recOn`, `_sizeOf_1`, `brecOn`, `noConfusion*`) call the raw recursor without
+  marking the corresponding minor-premise binder `@erased` (and `_sizeOf_1`
+  genuinely reads non-`Prop` fields), so `Reading.recRules` strictly refuses
+  closures that include them.
+* **Definition assertions (6)**: scoped Lean 4 attributes `@[no_rc]`,
+  `@[no_alloc]`, `@[bounded_stack]` (combinable, e.g.
+  `@[no_alloc, bounded_stack]`; rejected on `theorem`/`partial`/`unsafe`),
+  lowered to `Ixon.Definition.asserts`.
+
+```lean
+import Ix.Compile.SourceContract.Elab
+open scoped Ix.Modes
+
+structure Packet (α : Type) where
+  @shared label : α
+  @erased valid : True
+  payload : Nat
+
+@[no_alloc, bounded_stack]
+def forward (@unique @borrowed x : Nat) : @unique @borrowed Nat := x
+
+def borrowInDo (@unique owner : Nat) : Id Nat := do
+  let @borrow v := owner
+  return v + 1
+```
 
 Two things are in this repository:
 
@@ -72,5 +129,4 @@ mode skeletons at every flow. Its verdict is accept, refuse with a witness, or
 decline at a limit. `CheckSound` (accept implies `ModeSafe`) is the theorem
 left to prove.
 
-Tests: `lake exe IxTests resource-modes` (small run programs, each run under
-`runR` and checked).
+Tests: `lake exe IxTests resource-modes` and `lake exe source-contract-tests`.

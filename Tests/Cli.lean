@@ -97,9 +97,10 @@ private def Tests.Cli.testCompileContracts : IO Unit := do
     IO.FS.writeFile source
       "import Ix.Compile.SourceContract.Elab\n\
        import Tests.Ix.SourceContract.Imported\n\
+       open scoped Ix.Modes\n\
        inductive CliBox | mk (a b : Nat)\n\
-       def cliLocal (~ x : CliBox) : ~ CliBox := x\n\
-       def cliEscape (~ x : CliBox) : CliBox := x\n"
+       def cliLocal (@borrowed x : CliBox) : @borrowed CliBox := x\n\
+       def cliEscape (@borrowed x : CliBox) : CliBox := x\n"
     let compile := fun name flags => IO.Process.output {
       cmd := ix.toString
       args := #["compile", source.toString, "--no-build", "--consts", name,

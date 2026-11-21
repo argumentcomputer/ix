@@ -745,23 +745,22 @@ theorem lowerContract_read (contract : Ix.SemanticContract.Contract) (source : I
   · cases success
   · rename_i notUnattached
     have attached : contract.attachedTo source = true := by simpa using notUnattached
-    cases hk : contract.kind <;> rw [hk] at success <;> dsimp only at success
-    · split at success <;> cases success
-      rename_i hm
-      have hadmits : contract.admits source = true := by
-        simp [Ix.SemanticContract.Contract.admits, Ix.SemanticContract.Contract.validMode, hk, hm, attached]
+    have hadmits : contract.admits source = true := by
+      simp [Ix.SemanticContract.Contract.admits, Ix.SemanticContract.Contract.validMode, attached]
+    cases contract with
+    | lam _ | all _ | field _ | defAsserts _ =>
+      cases success
       exact ⟨target, by rw [withContract, ite_eq_left hadmits], read⟩
-    · split at success <;> cases success
-      rename_i hm
-      have hadmits : contract.admits source = true := by
-        simp [Ix.SemanticContract.Contract.admits, Ix.SemanticContract.Contract.validMode, hk, hm, attached]
-      exact ⟨target, by rw [withContract, ite_eq_left hadmits], read⟩
-    · cases hm : contract.toLetMode? <;> rw [hm] at success <;> dsimp only at success
-      · cases success
-      · split at success <;> cases success
-        have hadmits : contract.admits source = true := by
-          simp [Ix.SemanticContract.Contract.admits, Ix.SemanticContract.Contract.validMode, hk, hm, attached]
-        exact ⟨target, by rw [withContract, ite_eq_left hadmits], read⟩
+    | letE mode =>
+      cases value with
+      | letE nonDep _ ty val body =>
+        cases success
+        obtain ⟨t, v, b, ht, hv, hb, rfl⟩ := read_letE cx param self read
+        refine ⟨.letE t v b { nonDep }, by rw [withContract, ite_eq_left hadmits], ?_⟩
+        change ((reader state).read ty >>= fun t => (reader state).read val >>= fun v =>
+          (reader state).read body >>= fun b => pure (Ix.Kernel.Expr.letE t v b { nonDep })) = _
+        rw [ht, hv, hb]; rfl
+      | _ => cases success
 
 theorem metadata_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64))
     (data : Array (Ix.Name × Ix.DataValue)) (source : Ix.Expr) (hash : Address)

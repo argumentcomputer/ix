@@ -298,11 +298,12 @@ def stripSection (c : Ixon.Constant) : Except String (Array Ixon.BinderBlock) :=
 /-! ## Source modes onto undecided sections -/
 
 /-- Peel metadata frames around a source expression, keeping the outermost
-semantic contract frame (if any) and the underlying expression. -/
+binder (`lam`/`all`) semantic contract frame (if any) and the underlying expression.
+Non-binder frames (`defAsserts`, `field`) are peeled through transparently. -/
 def peelSource : Ix.Expr → Option Ix.SemanticContract.Contract × Ix.Expr
   | .mdata d inner _ =>
     if Ix.SemanticContract.hasMetadata d then
-      let c? := (Ix.SemanticContract.read d).toOption
+      let c? := ((Ix.SemanticContract.read d).toOption).filter (·.toAllMode?.isSome)
       let (innerC?, core) := peelSource inner
       (c?.orElse (fun _ => innerC?), core)
     else
@@ -313,7 +314,8 @@ def peelSource : Ix.Expr → Option Ix.SemanticContract.Contract × Ix.Expr
 def leadingAllResults : Ix.Expr → Option Ix.SemanticContract.Contract → List Ixon.ResultMode
   | .mdata d inner _, outer? =>
     if Ix.SemanticContract.hasMetadata d then
-      leadingAllResults inner ((Ix.SemanticContract.read d).toOption.orElse fun _ => outer?)
+      let c? := ((Ix.SemanticContract.read d).toOption).filter (·.toAllMode?.isSome)
+      leadingAllResults inner (c?.orElse fun _ => outer?)
     else
       leadingAllResults inner outer?
   | .forallE _ _ body _ _, c? =>

@@ -238,13 +238,12 @@ theorem lower_lits {contract : Ix.SemanticContract.Contract} {source : Ix.Expr} 
   unfold Ix.SemanticContract.Contract.lower at h
   split at h
   · cases h
-  · cases hk : contract.kind <;> rw [hk] at h <;> dsimp only at h
-    · split at h <;> cases h; rfl
-    · split at h <;> cases h; rfl
-    · cases hm : contract.toLetMode? <;> rw [hm] at h <;> dsimp only at h
-      · cases h
-      · split at h <;> cases h
-        simp only [ixLits_letE]
+  · cases contract with
+    | lam _ | all _ | field _ | defAsserts _ => cases h; rfl
+    | letE mode =>
+      cases compiled with
+      | letE nonDep _ ty val body => cases h; simp only [ixLits_letE]
+      | _ => cases h
 
 /-- **One step returns its source's literals**, given the same of the recursive compile on
 every strict subterm, under the cache invariant. -/

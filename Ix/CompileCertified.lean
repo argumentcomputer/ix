@@ -68,9 +68,10 @@ def prepareCertified (source : Lean.Environment)
     (constants : List (Lean.Name × Lean.ConstantInfo)) :
     Except String (List (Lean.Name × Lean.ConstantInfo) × Bool) := do
   let registry := Ix.Compile.sourceContractExtension.getState source
+  let assertsReg := Ix.Compile.sourceDefAssertsExtension.getState source
   let hints := Ix.Compile.sourceMeasureExtension.getState source
   if ← Ix.Compile.checkOrdinaryConstants constants
-      (fun name => registry.contains name || hints.contains name) then
+      (fun name => registry.contains name || assertsReg.contains name || hints.contains name) then
     return (constants, false)
   let input ← (Ix.Compile.compileInputFromEnv source constants).mapError toString
   let prepared ← input.prepare

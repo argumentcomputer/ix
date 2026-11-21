@@ -147,11 +147,15 @@ def instantiateRev (body : Expr) (args : Array Expr) : Expr :=
   if args.isEmpty then body
   else instantiateRevAt body args 0
 
-/-- Peel `n` forall binders, substituting their variables with `args`
+/-- Peel `n` forall binders (through `mdata`), substituting their variables with `args`
     (Lean's `instantiate_pi_params`). -/
 def instantiatePiParams (typ : Expr) (n : Nat) (args : Array Expr) : Expr := Id.run do
   let mut cur := typ
   for arg in args.extract 0 n do
+    repeat
+      match cur with
+      | .mdata _ inner _ => cur := inner
+      | _ => break
     match cur with
     | .forallE _ _ body _ _ =>
       cur := instantiateRev body #[arg]
@@ -690,12 +694,18 @@ def computeLeanIndFlags (all : Array Name) : CompileM LeanIndFlags := do
       let mut go := true
       while go do
         match ty with
+        | .mdata _ inner _ => ty := inner
         | .forallE _ dom body _ _ =>
           let (occ, cache') := (hasIndOcc dom blockNames).run occCache
           occCache := cache'
           if occ then
             isRec := true
-            if let .forallE .. := dom then
+            let mut domCore := dom
+            repeat
+              match domCore with
+              | .mdata _ inner _ => domCore := inner
+              | _ => break
+            if let .forallE .. := domCore then
               isReflexive := true
           ty := body
         | _ => go := false

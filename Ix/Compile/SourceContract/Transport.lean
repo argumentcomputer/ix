@@ -5,71 +5,103 @@ public import Ix.SemanticContract
 public import Ix.Compile.SourceContract.SemanticPresence
 
 /-! Resolve occurrence contracts against the original source, then decorate
-the corresponding binders before hashing, canonicalization, or sharing. -/
+the corresponding binders, constructor fields, and definition assertions before
+hashing, canonicalization, or sharing. -/
 
 @[expose] public section
 
 namespace Ix.Compile
 
 def ResolvedBinderContract.semantic (binder : ResolvedBinderContract) :
-    Ix.SemanticContract.Contract := {
-  kind := match binder.kind with | .lam => .lam | .all => .all | .letE => .letE
-  binder := ⟨binder.uses, binder.value⟩
-  result := binder.result.getD .shared
-  letKind := binder.letKind }
+    Ix.SemanticContract.Contract :=
+  match binder.kind with
+  | .lam => .lam binder.mode
+  | .all => .all { input := binder.mode, result := binder.result.getD .shared }
+  | .letE => .letE (if binder.isBorrow then .borrow else .value binder.mode)
 
 def decorateExpr (contract : ResolvedSourceContract) (root : SourceRoot)
-    (path : List SourceStep) (expr : Lean.Expr) (attachSemantic : Bool := true) :
+    (path : List SourceStep) (expr : Lean.Expr) (attachSemantic : Bool := true)
+    (fieldSites : Array (BinderSite × Ixon.FieldMode) := #[]) :
     Except String Lean.Expr := do
   let result ← do
     match expr with
     | .bvar _ | .sort _ | .const _ _ | .lit _ => pure expr
     | .fvar _ | .mvar _ => throw "source transport: open elaboration variable"
     | .app fn arg =>
-      pure <| .app (← decorateExpr contract root (path ++ [.appFn]) fn attachSemantic)
-        (← decorateExpr contract root (path ++ [.appArg]) arg attachSemantic)
+      pure <| .app (← decorateExpr contract root (path ++ [.appFn]) fn attachSemantic fieldSites)
+        (← decorateExpr contract root (path ++ [.appArg]) arg attachSemantic fieldSites)
     | .lam name type body info =>
-      pure <| .lam name (← decorateExpr contract root (path ++ [.binderType]) type attachSemantic)
-        (← decorateExpr contract root (path ++ [.binderBody]) body attachSemantic) info
+      pure <| .lam name (← decorateExpr contract root (path ++ [.binderType]) type attachSemantic fieldSites)
+        (← decorateExpr contract root (path ++ [.binderBody]) body attachSemantic fieldSites) info
     | .forallE name type body info =>
-      pure <| .forallE name (← decorateExpr contract root (path ++ [.binderType]) type attachSemantic)
-        (← decorateExpr contract root (path ++ [.binderBody]) body attachSemantic) info
+      pure <| .forallE name (← decorateExpr contract root (path ++ [.binderType]) type attachSemantic fieldSites)
+        (← decorateExpr contract root (path ++ [.binderBody]) body attachSemantic fieldSites) info
     | .letE name type value body nonDep =>
-      pure <| .letE name (← decorateExpr contract root (path ++ [.letType]) type attachSemantic)
-        (← decorateExpr contract root (path ++ [.letValue]) value attachSemantic)
-        (← decorateExpr contract root (path ++ [.letBody]) body attachSemantic) nonDep
+      pure <| .letE name (← decorateExpr contract root (path ++ [.letType]) type attachSemantic fieldSites)
+        (← decorateExpr contract root (path ++ [.letValue]) value attachSemantic fieldSites)
+        (← decorateExpr contract root (path ++ [.letBody]) body attachSemantic fieldSites) nonDep
     | .proj name field value =>
-      pure <| .proj name field (← decorateExpr contract root (path ++ [.projection]) value attachSemantic)
+      pure <| .proj name field (← decorateExpr contract root (path ++ [.projection]) value attachSemantic fieldSites)
     | .mdata data inner =>
       unless (Ix.SemanticContract.leanFields data).isEmpty do
         throw "source transport: reserved semantic metadata in unprocessed source"
       let data : Lean.MData := ⟨data.entries.filter fun (key, _) => !sourceAnnotationKey.isPrefixOf key⟩
-      let inner ← decorateExpr contract root (path ++ [.metadata]) inner attachSemantic
+      let inner ← decorateExpr contract root (path ++ [.metadata]) inner attachSemantic fieldSites
       pure <| if data.entries.isEmpty then inner else .mdata data inner
-  match contract.binders.find? (·.site == ⟨root, path⟩) with
-  | none => return result
-  | some binder =>
-    let semantic := binder.semantic
-    unless semantic.validMode do
-      throw "unsupported semantic contract mode"
-    return if !attachSemantic || semantic.isOrdinary then result else semantic.attach result
+  let site : BinderSite := ⟨root, path⟩
+  let result := match contract.binders.find? (·.site == site) with
+    | none => result
+    | some binder =>
+      let semantic := binder.semantic
+      if !attachSemantic || semantic.isOrdinary then result else semantic.attach result
+  let result := match fieldSites.find? (·.1 == site) with
+    | none => result
+    | some (_, fm) =>
+      let semantic := Ix.SemanticContract.Contract.field fm
+      if !attachSemantic || semantic.isOrdinary then result else semantic.attach result
+  return result
 termination_by sizeOf expr
 
 def ResolvedSourceContract.decorate (contract : ResolvedSourceContract) :
     Except String Lean.ConstantInfo := do
   let source := contract.source
   let attach := !(source matches .thmInfo _)
-  let type ← decorateExpr contract .type [] source.type attach
+  let fieldSites : Array (BinderSite × Ixon.FieldMode) ← match source with
+    | .ctorInfo info =>
+      if contract.fieldModes.isEmpty then pure #[]
+      else do
+        let tele := sourceTelescope source .type
+        let mut out := #[]
+        for fm in contract.fieldModes do
+          if fm.mode != .inherited then
+            let some (site, _) := tele[info.numParams + fm.fieldIndex]?
+              | throw s!"source transport: field index {fm.fieldIndex} out of range for constructor {source.name}"
+            out := out.push (site, fm.mode)
+        pure out
+    | _ => pure #[]
+  let type ← decorateExpr contract .type [] source.type attach fieldSites
+  let type := if attach && contract.defAsserts != {} then
+      (Ix.SemanticContract.Contract.defAsserts contract.defAsserts).attach type
+    else type
   match source with
   | .defnInfo info =>
     return .defnInfo { info with type, value := ← decorateExpr contract .body [] info.value true }
   | .thmInfo info =>
+    if contract.defAsserts != {} then
+      throw s!"source transport: theorem cannot carry definition assertions: {source.name}"
     -- Theorems always compile with default modes; validate and strip markers only.
     return .thmInfo { info with type, value := ← decorateExpr contract .body [] info.value false }
   | .opaqueInfo info =>
     return .opaqueInfo { info with type, value := ← decorateExpr contract .body [] info.value true }
-  | .axiomInfo info => return .axiomInfo { info with type }
-  | _ => throw s!"source transport: annotated inductive/constructor/recursor transformations are unsupported: {source.name}"
+  | .axiomInfo info =>
+    if contract.defAsserts != {} then
+      throw s!"source transport: axiom cannot carry definition assertions: {source.name}"
+    return .axiomInfo { info with type }
+  | .ctorInfo info =>
+    if contract.defAsserts != {} then
+      throw s!"source transport: constructor cannot carry definition assertions: {source.name}"
+    return .ctorInfo { info with type }
+  | _ => throw s!"source transport: annotated inductive/recursor transformations are unsupported: {source.name}"
 
 def exprHasSemanticContracts (expr : Lean.Expr) : Bool :=
   SemanticPresence.run expr
@@ -163,8 +195,10 @@ def prepareRegisteredConstants (env : Lean.Environment)
     (constants : List (Lean.Name × Lean.ConstantInfo)) :
     Except String (List (Lean.Name × Lean.ConstantInfo)) := do
   let registry := sourceContractExtension.getState env
+  let assertsReg := sourceDefAssertsExtension.getState env
   let hints := sourceMeasureExtension.getState env
-  if ← checkOrdinaryConstants constants (fun name => registry.contains name || hints.contains name) then
+  if ← checkOrdinaryConstants constants
+      (fun name => registry.contains name || assertsReg.contains name || hints.contains name) then
     return constants
   let input ← (compileInputFromEnv env constants).mapError toString
   input.prepare

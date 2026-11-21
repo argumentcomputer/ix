@@ -317,6 +317,7 @@ role-evidence and role-binding synthesis, frozen here. -/
  Ix.groundLevel,
  instBEqSyntax_ix.beq,
  Ix.Compile.sourceContractExtension,
+ Ix.Compile.sourceDefAssertsExtension,
  Ix.Compile.sourceMeasureExtension,
  Ix.IndFlags.hasIndOcc,
  Ix.IndFlags.replaceAllNested,
