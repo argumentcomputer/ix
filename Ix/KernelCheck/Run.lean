@@ -46,13 +46,11 @@ structure RunReport where
   failed : Std.HashMap Address Address
   execution : Execution
 
-/-- Run the supplied record source at its mode. Without tier support, `some n`
-workers run the pool (`CheckIxePool.runOutcome`) with its install/check/replay
-protocol. With tier support this harness always runs the serial loop, whose
-tier checks see the per-record checked state; the pool's own tier path
-(rebuilding the checked logical index after phase B) is used only by
-`kernel-check-ixe --jobs`. The returned execution path is explicit,
-even when a source happens to contain no tier records. Pool progress reports
+/-- Run the supplied record source at its mode. When `cfg.workers = some n`, runs
+the worker pool (`CheckIxePool.runOutcome`) with its install/check/replay protocol
+(passing `src.tierHook` when `cfg.tier = true`, and keeping checker state
+reclaimable via `persist := false`). When `cfg.workers = none`, runs the serial
+loop (reporting `.serialTier none` when `cfg.tier = true`). Pool progress reports
 provisional phase-A install counts; only the returned report has the replayed
 verdicts. The report retains every emitted row, so its memory is linear in
 the number of rows. -/
@@ -65,15 +63,16 @@ def runRecords (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md)
   if cfg.workers == some 0 then throw (IO.userError "record check: the pool needs a worker")
   let rows ← IO.mkRef (#[] : Array Row)
   let note := fun row => do rows.modify (·.push row); emit row
-  let execution := if cfg.tier then Execution.serialTier cfg.workers else
-    match cfg.workers with
-    | none => .serial
+  let execution := match cfg.workers with
+    | none => if cfg.tier then Execution.serialTier none else .serial
     | some n => .pool n
   let out : LoopOutcome Unit ← match execution with
     | .pool n => do
       let slots ← (Array.range n).mapM fun _ => IO.mkRef (none : Option (Address × Nat))
       CheckIxePool.runOutcome src ev names addresses cfg.skip slots note log progress onRead spell
+        (tier := if cfg.tier then src.tierHook else none)
         (allowUserAxioms := cfg.allowUserAxioms)
+        (persist := false)
     | .serial | .serialTier _ => do
       let out ← checkLoopWith src.view src.read src.commit (← src.init)
         (Checker.stepRecordWithUserAxioms ev cfg.allowUserAxioms) {}

@@ -245,4 +245,70 @@ def exportPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
     (groups : List (String × List String) := []) : Except String (Execution.Export F × ByteArray) := do
   exportPreparedPlan modulus encode program artifact (← Physical.prepare artifact) exported groups
 
+private def parMapExcept (xs : List α) (f : α → Except String β) : Except String (List β) :=
+  let tasks := xs.map fun x => Task.spawn (prio := .default) fun _ => f x
+  tasks.mapM (·.get)
+
+/-- Parallel variant of `exportPreparedPlan` (`A8`). Evaluates independent group
+compilations, per-function population plans (`putFunction`), per-chip activations
+(`putChip`/`putDepth`), and per-group serializations (`putGroup`) concurrently via
+`Task.spawn`, then concatenates their raw byte chunks in exact source order to
+produce a byte-for-byte identical trace section without altering pure
+`exportPreparedPlan` or `Optimized.compile`. -/
+def exportPreparedPlanPar [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
+    (exported : Execution.Export F) (groups : List (String × List String) := []) :
+    Except String (Execution.Export F × ByteArray) := do
+  let original := exported.bytecode
+  unless program.functions.length == artifact.layouts.length && program.functions.length == original.functions.length do
+    throw "trace program/function count mismatch"
+  let cfg ← depthConfig modulus physical
+  let bytecode := depthBytecode cfg original
+  let system := Depth.system cfg physical.system
+  let callableNames := bytecode.functions.map (·.name) ++ bytecode.maps.map (·.name)
+  let id := fun name => if callableNames.contains name then pure (callableNames.idxOf name)
+    else throw s!"unknown grouped callable {name}"
+  let mut used : List String := []
+  let mut groupSpecs : List (String × List (Circuit.Chip F)) := []
+  for (name, names) in groups do
+    let names := (names.map physical.representative).dedup
+    let chips := system.chips.filter fun c =>
+      names.contains c.name && !used.contains c.name && !artifact.entries.contains c.name
+    if chips.length < 2 then continue
+    used := used ++ chips.map (·.name)
+    groupSpecs := groupSpecs ++ [(name, chips)]
+  let packed : List (Grouping.Packed F id) ← parMapExcept groupSpecs fun (name, chips) => do
+    let group ← Grouping.compile name id chips
+    pure ⟨chips, group⟩
+  let plan ← Grouping.preparePlan system id packed
+  unless decide plan.WellFormedActivation do
+    throw "an ungrouped chip is not well-formed before or after activation (Plan.WellFormedActivation)"
+  let fnItems := (program.functions.zip artifact.layouts).zip original.functions
+  let chipItems := system.chips.zip physical.system.chips
+  let fnBytes ← parMapExcept fnItems fun ((fn, layout), code) =>
+    Ixon.run (capacity := 4096) do
+      unless fn.name == code.name do throw "trace bytecode function order mismatch"
+      putFunction encode program artifact.config fn layout (physical.representative fn.name) code
+        (artifact.entries.contains fn.name)
+  let chipBytes ← parMapExcept chipItems fun (chip, source) =>
+    Ixon.run (capacity := 4096) do
+      putChip encode chip
+      putDepth cfg source
+  let groupBytes ← parMapExcept plan.groups fun p =>
+    Ixon.run (capacity := 4096) (putGroup encode p.checked.layout)
+  let trace ← Ixon.run do
+    nat planVersion
+    nat modulus
+    nats cfg.limbs
+    list fnBytes raw
+    list chipBytes raw
+    list groupBytes raw
+  return ({ exported with bytecode }, trace)
+
+/-- `exportPreparedPlanPar` after physical deduplication of `artifact`. -/
+def exportPlanPar [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (program : Program F) (artifact : Optimized.Artifact F) (exported : Execution.Export F)
+    (groups : List (String × List String) := []) : Except String (Execution.Export F × ByteArray) := do
+  exportPreparedPlanPar modulus encode program artifact (← Physical.prepare artifact) exported groups
+
 end Aiur.Trace

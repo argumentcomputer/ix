@@ -15,6 +15,12 @@ require aiur from "Aiur"
 require ixvm from "IxVM"
 require multiStark from "MultiStark"
 
+require certifri from git
+  "https://github.com/argumentcomputer/CertiFRI" @ "6cc8b2e3acc4c828987d877591fbfaf876e39fd2"
+
+require «certifri-proofs» from git
+  "https://github.com/argumentcomputer/CertiFRI" @ "6cc8b2e3acc4c828987d877591fbfaf876e39fd2" / "Proofs"
+
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
 

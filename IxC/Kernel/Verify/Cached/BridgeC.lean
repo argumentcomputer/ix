@@ -411,13 +411,19 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
   | axiomDecl cv =>
     unfold checkDeclC checkDecl
     dsimp only
-    -- task #293: `Quot.sound` is compared with the pin on both sides
+    -- task #293 & §7.10: `Quot.sound` and compiler-trust axioms are compared with their pins
     by_cases hqs : cv.name = quotSoundName
     · simp only [if_pos hqs]
       split
       · exact SimC.pure hs ⟨rfl, rfl⟩
       · exact SimC.throw
     simp only [if_neg hqs]
+    by_cases hct : cv.name.isCompilerTrustAxiom = true
+    · simp only [if_pos hct]
+      split
+      · exact SimC.pure hs ⟨rfl, rfl⟩
+      · exact SimC.throw
+    simp only [if_neg hct]
     refine SimC.bind (checkConstantValC_sim hμ henv hs rfl)
       (fun s₁ pr cvA hs₁ hP => ?_)
     obtain ⟨cvR, jty⟩ := pr
@@ -450,6 +456,12 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
   | opaqueDecl cv value =>
     unfold checkDeclC checkDecl
     dsimp only
+    by_cases hct : cv.name.isCompilerTrustOpaque = true
+    · simp only [if_pos hct]
+      split
+      · exact SimC.pure hs ⟨rfl, rfl⟩
+      · exact SimC.throw
+    simp only [if_neg hct]
     refine SimC.bind (checkConstantValC_sim hμ henv hs rfl)
       (fun s₁ pr cvA hs₁ hP => ?_)
     obtain ⟨cvR, jty⟩ := pr

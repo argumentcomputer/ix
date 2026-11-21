@@ -186,18 +186,30 @@ def checkDeclC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
   | .thmDecl cv value => do
     let (cvA, jty) ← checkConstantValC mode fe cv
     checkThmValC mode fe cvA jty value
-  | .opaqueDecl cv value => do
-    let (cvA, jty) ← checkConstantValC mode fe cv
-    checkOpaqueValC mode fe cvA jty value
+  | .opaqueDecl cv value =>
+    if cv.name.isCompilerTrustOpaque then
+      if (anchorMismatch? cv).isNone then
+        pure fe
+      else
+        throw (.notImplemented msg!"compiler-trust opaque shape mismatch ({cv.name})")
+    else do
+      let (cvA, jty) ← checkConstantValC mode fe cv
+      checkOpaqueValC mode fe cvA jty value
   | .axiomDecl cv =>
     -- `checkDecl`'s twin (task #293): `Quot.sound` is the pinned
     -- quotient block's own record — compared with the pin, installing
-    -- nothing, declining on a mismatch.
+    -- nothing, declining on a mismatch; compiler-trust axioms (§7.10)
+    -- likewise match their pin and install nothing.
     if cv.name = quotSoundName then
       (if ConstantInfo.canonEq (.axiomInfo cv) (quotBasis.getD 4 (.axiomInfo default)) then
         pure fe
       else
         throw (.notImplemented "quotient soundness axiom mismatch"))
+    else if cv.name.isCompilerTrustAxiom then
+      (if (anchorMismatch? cv).isNone then
+        pure fe
+      else
+        throw (.notImplemented msg!"compiler-trust axiom shape mismatch ({cv.name})"))
     else do
       let (cvA, _) ← checkConstantValC mode fe cv
       if stdAxiomOkF fe cvA then

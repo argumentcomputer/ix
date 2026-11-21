@@ -340,7 +340,29 @@ fn description(
     "generator": point(params.g1[0]),
     "outerKeys": [key(&params.g2), key(&params.tau_g2)],
     "deferredKeys": deferred_keys.iter().map(key).collect::<Vec<_>>(),
+    "programDigest": hex_json(&program.digest()),
     "program": program,
   });
   Ok((exported, layout))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::pipeline::verifying_keys;
+
+  #[test]
+  fn describe_emits_matching_program_digest() -> Result<()> {
+    let vk = VerifyingKey::from_bytes(verifying_keys::RECURSIVE_VK)?;
+    let bytes = describe(&vk, &verifying_keys::STATEMENT_PREFIX)?;
+    let exported: Json = serde_json::from_slice(&bytes)?;
+    let digest = exported["programDigest"]
+      .as_str()
+      .ok_or("missing programDigest field")?;
+    assert!(digest.starts_with("0x"));
+    assert_eq!(digest.len(), 66);
+    let program = ir::parse_program_json(&exported["program"]);
+    assert_eq!(digest, hex_json(&program.digest()));
+    Ok(())
+  }
 }

@@ -140,7 +140,9 @@ theorem checkDecl_post_free (mode : CheckMode) (ops : (CheckerOps md) (CheckM md
       (by simp [ConstantInfo.name, ConstantInfo.toConstantVal, h])
   | opaqueDecl cv value =>
     unfold checkDecl
-    rw [ExPost.post_bind]
+    simp only [ExPost.post_ite, ExPost.post_pure, ExPost.post_throw, imp_true_iff, and_true,
+      ExPost.post_bind]
+    refine ⟨fun _ _ => Grows.refl _ env, fun _ => ?_⟩
     refine ExPost.mono (fun cvA h => ?_) (checkConstantVal_post env cv)
     refine ExPost.mono (fun e he => ?_) (checkOpaqueVal_post env cvA value)
     subst he
@@ -151,7 +153,7 @@ theorem checkDecl_post_free (mode : CheckMode) (ops : (CheckerOps md) (CheckM md
     unfold checkDecl
     simp only [ExPost.post_ite, ExPost.post_pure, ExPost.post_throw, imp_true_iff, and_true,
       ExPost.post_bind]
-    refine ⟨fun _ _ => Grows.refl _ env, fun _ => ?_⟩
+    refine ⟨fun _ _ => Grows.refl _ env, fun _ => ⟨fun _ _ => Grows.refl _ env, fun _ => ?_⟩⟩
     refine ExPost.mono (fun cvA h => ?_) (checkConstantVal_post env cv)
     have hg : Grows (OverN (Declaration.names (.axiomDecl cv))) env
         ⟨.axiomInfo cvA :: env.consts⟩ :=

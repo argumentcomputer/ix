@@ -110,6 +110,11 @@ def checkStdAxiomDeclC (fe : FEnv md) (cv : ConstantVal md) : (CheckCM md) (FEnv
       pure fe
     else
       throw (.notImplemented "quotient soundness axiom mismatch"))
+  else if cv.name.isCompilerTrustAxiom then
+    (if (anchorMismatch? cv).isNone then
+      pure fe
+    else
+      throw (.notImplemented msg!"compiler-trust axiom shape mismatch ({cv.name})"))
   else do
     let (cvA, _) ← checkConstantValC mode fe cv
     if stdAxiomOkF fe cvA then

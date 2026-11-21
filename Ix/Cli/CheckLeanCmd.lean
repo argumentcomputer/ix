@@ -431,9 +431,9 @@ def runMode (p : PreparedInput) (cfg : CheckCfg) (plan : Plan) (cx : Ctx md) (ev
     pure ()
 
 /-- Preparation is shareable; every run owns ordinary reclaimable checker
-state. Tier support explicitly chooses one effective worker. The declaration
-checks run first; the whole-artifact entry (`checkWhole`) runs only when they
-all pass. -/
+state (the pool runs with `persist := false`). The declaration checks run first
+using `cfg.workers` parallel workers; the whole-artifact entry (`checkWhole`)
+runs only when they all pass. -/
 def runPrepared (p : PreparedInput) (cfg : CheckCfg) (selection : Selection)
     (maxGroups : Option Nat := none) (failOut? : Option IO.FS.Handle := none) : IO (Except DriverError CheckReport) := do
   if cfg.workers == 0 then return .error (.usage "--workers must be greater than zero")
@@ -444,7 +444,7 @@ def runPrepared (p : PreparedInput) (cfg : CheckCfg) (selection : Selection)
     -- an unresolved thin whole run declines before any declaration is checked
     let whole ← match wholeEntry p selection maxGroups with
       | .ok w => pure w | .error e => return .error e
-    if !cfg.silent then IO.eprintln s!"{cfg.tag} {plan.targets.size} selected subjects, {plan.producers.size} producers, {plan.addresses.size} support/prelude records; workers requested {cfg.workers}, effective 1 (serial typing tier); {plan.omitted.size} omitted by cap"
+    if !cfg.silent then IO.eprintln s!"{cfg.tag} {plan.targets.size} selected subjects, {plan.producers.size} producers, {plan.addresses.size} support/prelude records; workers {cfg.workers}; {plan.omitted.size} omitted by cap"
     let declarations : IO (Except DriverError CheckReport) ← if p.anon then
       pure (runMode p cfg plan p.setup.cx p.setup.evidence id id id toString start failOut?)
     else do
@@ -653,7 +653,7 @@ def runPerName (o : Options) (p : PreparedInput) (json : String) :
     else index
   let key (name : String) := match o.jsonName? with | some stem => s!"{stem}/{name}" | none => name
   let mut merged : CheckReport := {
-    targets := #[], execution := .serialTier (some o.cfg.workers), omitted := #[], records := 0
+    targets := #[], execution := .pool o.cfg.workers, omitted := #[], records := 0
     inputMs := p.prepareMs, prepareMs := 0, elapsedMs := 0, subjectMicros := 0, supportMicros := 0
     readMicros := 0, bound := p.bound }
   let mut userAxioms : Std.HashSet Address := {}
@@ -779,7 +779,7 @@ def checkLeanCmd : Cli.Cmd := `[Cli|
   "Check authenticated .ixe declarations with IxC (bound whole inputs use actual artifact admission; meta display by default). Strict: a safe axiom other than propext, Classical.choice and Quot.sound declines unless --allow-user-axioms. Exit 0: everything asked for passed; 3: a declaration failed or the artifact was refused; 4: every declaration passed but the whole artifact, asked for, carries no role binding, so its admission did not run; 5: CONDITIONAL, everything passed only with the listed user axioms admitted (--allow-user-axioms); 2: usage, including a selector naming no declaration and a host statement the run could not issue; 1: infrastructure"
   FLAGS:
     anon; "Anonymous keys and #hex display labels"
-    workers : Nat; "Requested workers (>0); the tier-capable path reports effective 1"
+    workers : Nat; "Worker threads for parallel checking (>0)"
     "allow-user-axioms"; "Admit safe axioms beyond the standard three; the role binding must bind sorryAx, propext and Classical.choice. A whole run whose declarations hold any runs the uncertified conditional entry, lists the axioms, issues no host statement and exits 5; so does a selected run that reads one"
     "allow-declined"; "Record-check mode: tolerate declarations outside IxC's fragment (decline) and their dependents (blocked), failing with exit 3 only on a kernel or reader reject; skips whole-artifact admission and issues no host statement"
     "fail-out" : String; "Write failing selected labels in consts-file format"

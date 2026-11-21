@@ -1,15 +1,41 @@
 use super::*;
 use std::{ops, sync::Mutex};
 
+const OUTER_IR_DOMAIN: &[u8] = b"ix/outer-ir/v1";
+
+fn serialize_scalar<S: serde::Serializer>(
+  value: &Scalar,
+  serializer: S,
+) -> std::result::Result<S::Ok, S::Error> {
+  serializer.serialize_str(&scalar(*value))
+}
+
 #[derive(serde::Serialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub(super) enum Instruction {
-  Constant { value: String },
-  Input { kind: &'static str, index: usize },
-  Add { a: usize, b: usize },
-  Sub { a: usize, b: usize },
-  Mul { a: usize, b: usize },
-  Inverse { a: usize },
+  Constant {
+    #[serde(serialize_with = "serialize_scalar")]
+    value: Scalar,
+  },
+  Input {
+    kind: &'static str,
+    index: usize,
+  },
+  Add {
+    a: usize,
+    b: usize,
+  },
+  Sub {
+    a: usize,
+    b: usize,
+  },
+  Mul {
+    a: usize,
+    b: usize,
+  },
+  Inverse {
+    a: usize,
+  },
 }
 
 #[derive(Default, serde::Serialize)]
@@ -18,6 +44,85 @@ pub(super) struct Program {
   pub assertions: Vec<usize>,
   pub coefficients: Vec<usize>,
   pub witnesses: Vec<usize>,
+}
+
+fn push_u32(out: &mut Vec<u8>, value: usize) {
+  let value = u32::try_from(value).expect("OuterIR index fits in u32");
+  out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_u32_slice(out: &mut Vec<u8>, values: &[usize]) {
+  push_u32(out, values.len());
+  for &value in values {
+    push_u32(out, value);
+  }
+}
+
+impl Program {
+  /// Canonical deterministic binary encoding shared with Go (`tools/gnark`)
+  /// and Lean (`OuterIR`).
+  pub(super) fn encode(&self) -> Vec<u8> {
+    let mut out = Vec::with_capacity(
+      OUTER_IR_DOMAIN.len()
+        + 16
+        + self.nodes.len() * 9
+        + (self.assertions.len()
+          + self.coefficients.len()
+          + self.witnesses.len())
+          * 4,
+    );
+    out.extend_from_slice(OUTER_IR_DOMAIN);
+    push_u32(&mut out, self.nodes.len());
+    for node in &self.nodes {
+      match *node {
+        Instruction::Constant { value } => {
+          out.push(0);
+          let bytes = value.0.into_bigint().to_bytes_be();
+          assert_eq!(bytes.len(), 32);
+          out.extend_from_slice(&bytes);
+        },
+        Instruction::Input { kind, index } => {
+          out.push(1);
+          let kind_tag = match kind {
+            "challenge" => 0u8,
+            "value" => 1u8,
+            "public" => 2u8,
+            other => panic!("unknown OuterIR input kind: {other}"),
+          };
+          out.push(kind_tag);
+          push_u32(&mut out, index);
+        },
+        Instruction::Add { a, b } => {
+          out.push(2);
+          push_u32(&mut out, a);
+          push_u32(&mut out, b);
+        },
+        Instruction::Sub { a, b } => {
+          out.push(3);
+          push_u32(&mut out, a);
+          push_u32(&mut out, b);
+        },
+        Instruction::Mul { a, b } => {
+          out.push(4);
+          push_u32(&mut out, a);
+          push_u32(&mut out, b);
+        },
+        Instruction::Inverse { a } => {
+          out.push(5);
+          push_u32(&mut out, a);
+        },
+      }
+    }
+    push_u32_slice(&mut out, &self.assertions);
+    push_u32_slice(&mut out, &self.coefficients);
+    push_u32_slice(&mut out, &self.witnesses);
+    out
+  }
+
+  /// Canonical 32-byte BLAKE3 digest of [`Program::encode`].
+  pub(super) fn digest(&self) -> [u8; 32] {
+    *blake3::hash(&self.encode()).as_bytes()
+  }
 }
 
 #[derive(Clone, Copy)]
@@ -50,7 +155,7 @@ impl<'a> Term<'a> {
       },
       Self::Constant(value) => {
         let Self::Node(id, _) =
-          Self::push(arena, Instruction::Constant { value: scalar(value) })
+          Self::push(arena, Instruction::Constant { value })
         else {
           unreachable!()
         };
@@ -286,4 +391,213 @@ pub(super) fn build(
   program.coefficients = coefficients;
   program.witnesses = witnesses;
   Ok(program)
+}
+
+#[cfg(test)]
+pub(super) fn parse_program_json(value: &serde_json::Value) -> Program {
+  use ark_bn254::Fr;
+  use ark_ff::PrimeField;
+
+  let parse_scalar = |s: &str| -> Scalar {
+    let hex_str = s.strip_prefix("0x").expect("0x prefix");
+    assert_eq!(hex_str.len(), 64);
+    let mut bytes = [0u8; 32];
+    for (i, slot) in bytes.iter_mut().enumerate() {
+      *slot = u8::from_str_radix(&hex_str[2 * i..2 * i + 2], 16).unwrap();
+    }
+    let fr = Fr::from_be_bytes_mod_order(&bytes);
+    assert_eq!(fr.into_bigint().to_bytes_be(), bytes);
+    Scalar(fr)
+  };
+  let usize_field = |obj: &serde_json::Value, key: &str| -> usize {
+    usize::try_from(obj[key].as_u64().unwrap()).unwrap()
+  };
+  let usize_list = |key: &str| -> Vec<usize> {
+    value[key]
+      .as_array()
+      .unwrap()
+      .iter()
+      .map(|entry| usize::try_from(entry.as_u64().unwrap()).unwrap())
+      .collect()
+  };
+  let nodes = value["nodes"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .map(|node| match node["op"].as_str().unwrap() {
+      "constant" => Instruction::Constant {
+        value: parse_scalar(node["value"].as_str().unwrap()),
+      },
+      "input" => Instruction::Input {
+        kind: match node["kind"].as_str().unwrap() {
+          "challenge" => "challenge",
+          "value" => "value",
+          "public" => "public",
+          other => panic!("unknown input kind: {other}"),
+        },
+        index: usize_field(node, "index"),
+      },
+      "add" => Instruction::Add {
+        a: usize_field(node, "a"),
+        b: usize_field(node, "b"),
+      },
+      "sub" => Instruction::Sub {
+        a: usize_field(node, "a"),
+        b: usize_field(node, "b"),
+      },
+      "mul" => Instruction::Mul {
+        a: usize_field(node, "a"),
+        b: usize_field(node, "b"),
+      },
+      "inverse" => Instruction::Inverse { a: usize_field(node, "a") },
+      other => panic!("unknown op: {other}"),
+    })
+    .collect();
+  Program {
+    nodes,
+    assertions: usize_list("assertions"),
+    coefficients: usize_list("coefficients"),
+    witnesses: usize_list("witnesses"),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  const EMPTY_DIGEST: &str =
+    "0x02d95030e924d62b65dcb11734967f540cddd90337d58184d90f02197df5a799";
+  const GOLDEN_DIGEST: &str =
+    "0x3841d46e6b5730d0f1d9faba16072a2c3caed66c64f8e32ee5ebdb69a57a2b28";
+  const FIXTURE_VK_DIGEST: &str =
+    "0x764a1979c109cbc92bff867f7f929950438365adfe3c502a82700ed4d6f7a7b0";
+
+  fn golden_program() -> Program {
+    Program {
+      nodes: vec![
+        Instruction::Constant { value: Scalar::ZERO },
+        Instruction::Constant { value: Scalar::from_u8(94) },
+        Instruction::Constant { value: -Scalar::ONE },
+        Instruction::Input { kind: "challenge", index: 5 },
+        Instruction::Input { kind: "value", index: 258 },
+        Instruction::Input { kind: "public", index: 22 },
+        Instruction::Add { a: 1, b: 3 },
+        Instruction::Sub { a: 6, b: 4 },
+        Instruction::Mul { a: 7, b: 2 },
+        Instruction::Inverse { a: 8 },
+      ],
+      assertions: vec![9, 0],
+      coefficients: vec![6, 7, 8],
+      witnesses: vec![5],
+    }
+  }
+
+  #[test]
+  fn empty_program_encoding_and_digest() {
+    let program = Program::default();
+    let encoded = program.encode();
+    let mut expected = b"ix/outer-ir/v1".to_vec();
+    expected.extend_from_slice(&[0u8; 16]);
+    assert_eq!(encoded, expected);
+    assert_eq!(hex_json(&program.digest()), EMPTY_DIGEST);
+  }
+
+  #[test]
+  fn golden_program_encoding_and_digest_matches_go() {
+    let program = golden_program();
+    let encoded = program.encode();
+    assert_eq!(encoded.len(), 203);
+    assert_eq!(&encoded[..14], b"ix/outer-ir/v1");
+    assert_eq!(&encoded[14..18], &10u32.to_le_bytes());
+    assert_eq!(encoded[18], 0);
+    assert_eq!(&encoded[19..51], &[0u8; 32]);
+    assert_eq!(encoded[51], 0);
+    assert_eq!(&encoded[52..83], &[0u8; 31]);
+    assert_eq!(encoded[83], 0x5e);
+    assert_eq!(encoded[84], 0);
+    assert_eq!(encoded[85], 0x30);
+    assert_eq!(encoded[116], 0x00);
+    assert_eq!(&encoded[117..123], &[1, 0, 5, 0, 0, 0]);
+    assert_eq!(&encoded[123..129], &[1, 1, 2, 1, 0, 0]);
+    assert_eq!(&encoded[129..135], &[1, 2, 22, 0, 0, 0]);
+    assert_eq!(&encoded[135..144], &[2, 1, 0, 0, 0, 3, 0, 0, 0]);
+    assert_eq!(&encoded[144..153], &[3, 6, 0, 0, 0, 4, 0, 0, 0]);
+    assert_eq!(&encoded[153..162], &[4, 7, 0, 0, 0, 2, 0, 0, 0]);
+    assert_eq!(&encoded[162..167], &[5, 8, 0, 0, 0]);
+    let expected_outputs: Vec<u8> = [2u32, 9, 0, 3, 6, 7, 8, 1, 5]
+      .into_iter()
+      .flat_map(u32::to_le_bytes)
+      .collect();
+    assert_eq!(&encoded[167..203], expected_outputs.as_slice());
+    assert_eq!(hex_json(&program.digest()), GOLDEN_DIGEST);
+  }
+
+  #[test]
+  fn digest_changes_on_any_mutation() {
+    let base = golden_program().digest();
+
+    let mut p = golden_program();
+    p.nodes[1] = Instruction::Constant { value: Scalar::from_u8(95) };
+    assert_ne!(p.digest(), base);
+
+    let mut p = golden_program();
+    p.nodes[3] = Instruction::Input { kind: "value", index: 5 };
+    assert_ne!(p.digest(), base);
+
+    let mut p = golden_program();
+    p.nodes[4] = Instruction::Input { kind: "value", index: 259 };
+    assert_ne!(p.digest(), base);
+
+    let mut p = golden_program();
+    p.nodes[6] = Instruction::Mul { a: 1, b: 3 };
+    assert_ne!(p.digest(), base);
+
+    let mut p = golden_program();
+    p.nodes[7] = Instruction::Sub { a: 4, b: 6 };
+    assert_ne!(p.digest(), base);
+
+    let mut p = golden_program();
+    p.nodes.push(Instruction::Constant { value: Scalar::ZERO });
+    assert_ne!(p.digest(), base);
+
+    let mut p = golden_program();
+    p.assertions[0] = 8;
+    assert_ne!(p.digest(), base);
+
+    let mut p = golden_program();
+    p.coefficients[2] = 6;
+    assert_ne!(p.digest(), base);
+
+    let mut p = golden_program();
+    p.witnesses[0] = 4;
+    assert_ne!(p.digest(), base);
+  }
+
+  #[test]
+  fn constant_json_serialization_matches_scalar_hex() {
+    let p = Program {
+      nodes: vec![
+        Instruction::Constant { value: Scalar::ZERO },
+        Instruction::Constant { value: Scalar::from_u8(94) },
+        Instruction::Constant { value: -Scalar::ONE },
+      ],
+      ..Program::default()
+    };
+    let json = serde_json::to_value(&p).unwrap();
+    assert_eq!(json["nodes"][0]["op"], "constant");
+    assert_eq!(json["nodes"][0]["value"], scalar(Scalar::ZERO));
+    assert_eq!(json["nodes"][1]["value"], scalar(Scalar::from_u8(94)));
+    assert_eq!(json["nodes"][2]["value"], scalar(-Scalar::ONE));
+  }
+
+  #[test]
+  fn fixture_vk_program_digest_matches_go() {
+    let raw: serde_json::Value = serde_json::from_slice(include_bytes!(
+      "../../../../../../../tools/gnark/testdata/bn254/vk.json"
+    ))
+    .unwrap();
+    let program = parse_program_json(&raw["program"]);
+    assert_eq!(hex_json(&program.digest()), FIXTURE_VK_DIGEST);
+    assert_eq!(raw["programDigest"].as_str().unwrap(), FIXTURE_VK_DIGEST);
+  }
 }

@@ -981,23 +981,32 @@ theorem checkDecl_datF (env : Env md) (d : Declaration md) (F : Nat) :
     funext cv'
     rw [checkThmVal_datF]
   | opaqueDecl cv value =>
-    show ((checkConstantVal (fueledOpsM mode) env cv >>= fun cv =>
-      checkOpaqueVal (fueledOpsM mode) env cv value : FueledM md _)).val F = _
-    rw [FueledM.atF_bind, checkConstantVal_datF]
-    congr 1
-    funext cv'
-    rw [checkOpaqueVal_datF]
+    dsimp only
+    by_cases hct : cv.name.isCompilerTrustOpaque = true
+    · rw [if_pos hct, if_pos hct]
+      simp only [FueledM.atF_ite, FueledM.atF_pure, FueledM.atF_throw]
+    · rw [if_neg hct, if_neg hct]
+      show ((checkConstantVal (fueledOpsM mode) env cv >>= fun cv =>
+        checkOpaqueVal (fueledOpsM mode) env cv value : FueledM md _)).val F = _
+      rw [FueledM.atF_bind, checkConstantVal_datF]
+      congr 1
+      funext cv'
+      rw [checkOpaqueVal_datF]
   | axiomDecl cv =>
     dsimp only
-    -- the `Quot.sound` comparison (task #293) is a pure guard
+    -- the `Quot.sound` and compiler-trust comparisons are pure guards
     by_cases hqs : cv.name = quotSoundName
     · rw [if_pos hqs, if_pos hqs]
       simp only [FueledM.atF_ite, FueledM.atF_pure, FueledM.atF_throw]
     · rw [if_neg hqs, if_neg hqs]
-      rw [FueledM.atF_bind, checkConstantVal_datF]
-      congr 1
-      funext cvA
-      simp only [FueledM.atF_ite, FueledM.atF_pure, FueledM.atF_throw]
+      by_cases hct : cv.name.isCompilerTrustAxiom = true
+      · rw [if_pos hct, if_pos hct]
+        simp only [FueledM.atF_ite, FueledM.atF_pure, FueledM.atF_throw]
+      · rw [if_neg hct, if_neg hct]
+        rw [FueledM.atF_bind, checkConstantVal_datF]
+        congr 1
+        funext cvA
+        simp only [FueledM.atF_ite, FueledM.atF_pure, FueledM.atF_throw]
   | basisDecl kind => exact checkBasisDecl_datF env kind F
   | quotDecl k cv =>
     dsimp only

@@ -39,7 +39,7 @@ unsafe def main (args : List String) : IO Unit := do
   let (exported, trace) ← if mode == "export-trace" then do
     IO.eprintln "Compiling certified circuits and witness population plans..."
     let compiled ← IO.ofExcept (prepared.compileOptimized {})
-    let (exported, trace) ← IO.ofExcept (Trace.exportPlan MultiStark.modulus ZMod.val
+    let (exported, trace) ← IO.ofExcept (Trace.exportPlanPar MultiStark.modulus ZMod.val
       compiled.circuit.inlined.program compiled.circuit.artifact exported groups)
     pure (exported, some trace)
   else pure (exported, none)

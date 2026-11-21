@@ -84,7 +84,7 @@ func TestVerifyingKeyRequiresExplicitSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"accumulatorCount", "claims", "publics"} {
+	for _, field := range []string{"accumulatorCount", "claims", "publics", "programDigest"} {
 		for _, null := range []bool{false, true} {
 			var fields map[string]json.RawMessage
 			if err := json.Unmarshal(data, &fields); err != nil {

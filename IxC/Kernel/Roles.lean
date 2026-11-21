@@ -1368,7 +1368,9 @@ evil : False`) the tolerated declaration. -/
 
 /-- The roles whose constants the fold's step matches against their
 specifications at install. -/
-def installAnchors : List Role := [.boolRec, .and, .andIntro, .andRec, .sorryAx]
+def installAnchors : List Role :=
+  [.boolRec, .and, .andIntro, .andRec, .sorryAx,
+   .trustCompiler, .reduceBool, .reduceNat, .ofReduceBool, .ofReduceNat]
 
 /-- **The pin of an anchor validated at install**: the role's key, its
 specification's level count (positional) and type. Spelled out rather than
@@ -1381,6 +1383,16 @@ def installAnchorPin? : Key md → Option (ConstantVal md)
   | .role .andRec => some { name := .role .andRec, levelParams := [0], type := andRecSpecTy }
   | .role .sorryAx =>
     some { name := .role .sorryAx, levelParams := [0], type := sorryAxSpecTy }
+  | .role .trustCompiler =>
+    some { name := .role .trustCompiler, levelParams := [], type := trustCompilerSpecTy }
+  | .role .reduceBool =>
+    some { name := .role .reduceBool, levelParams := [], type := reduceBoolSpecTy }
+  | .role .reduceNat =>
+    some { name := .role .reduceNat, levelParams := [], type := reduceNatSpecTy }
+  | .role .ofReduceBool =>
+    some { name := .role .ofReduceBool, levelParams := [], type := ofReduceBoolSpecTy }
+  | .role .ofReduceNat =>
+    some { name := .role .ofReduceNat, levelParams := [], type := ofReduceNatSpecTy }
   | _ => none
 
 /-- The pins are the specifications: at a role of `installAnchors` the pin is
@@ -1450,6 +1462,13 @@ theorem Key.isCustomAxiomEligible_ne_sorryAx {k : Key md}
     (h : k.isCustomAxiomEligible = true) :
     k ≠ sorryAxName := by
   intro heq; subst heq; exact nomatch h
+
+theorem Key.isCustomAxiomEligible_not_compilerTrustAxiom {k : Key md}
+    (h : k.isCustomAxiomEligible = true) :
+    k.isCompilerTrustAxiom = false := by
+  cases k with
+  | id _ => rfl
+  | role _ | aux _ _ => exact nomatch h
 
 /-- Extract a custom user axiom from a declaration: `some cv` when the
 declaration is `.axiomDecl cv` (distinct from `.opaqueDecl cv value`) and

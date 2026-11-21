@@ -83,7 +83,9 @@ theorem annotStepC_vis (mode : CheckMode) (i : Nat) (fe : FEnv md)
     exact Yields.bind fun _ => Yields.bind fun _ => Yields.pure ⟨[_], Array.toList_push, by simp⟩
   | opaqueDecl cv value =>
     simp only []
-    exact Yields.bind fun _ => Yields.pure ⟨[_], Array.toList_push, by simp⟩
+    split
+    · exact hord _
+    · exact Yields.bind fun _ => Yields.pure ⟨[_], Array.toList_push, by simp⟩
   | axiomDecl cv => exact hord _
   | basisDecl kind => exact hord _
   | quotDecl k cv => exact hord _

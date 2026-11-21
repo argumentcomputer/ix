@@ -461,11 +461,11 @@ def indDeclSkels (nP : Nat) (block : List (ConstantInfo md)) (sk : List (Install
 def declCSkels : Declaration md → List (InstallSkel md) → List (InstallSkel md)
   | .defnDecl cv _ _, sk => .defn cv.name :: sk
   | .thmDecl cv _, sk => .thm cv.name :: sk
-  | .opaqueDecl cv _, sk => .ax cv.name :: sk
+  | .opaqueDecl cv _, sk =>
+    if cv.name.isCompilerTrustOpaque then sk else .ax cv.name :: sk
   | .axiomDecl cv, sk =>
-    -- task #293: `Quot.sound` is the pinned quotient block's own
-    -- record and installs nothing of its own, like `sorryAx`
-    if cv.name = sorryAxName ∨ cv.name = quotSoundName then sk
+    -- task #293 & §7.10: `Quot.sound`, `sorryAx`, and compiler-trust axioms install nothing
+    if cv.name = sorryAxName ∨ cv.name = quotSoundName ∨ cv.name.isCompilerTrustAxiom = true then sk
     else .ax cv.name :: sk
   | .basisDecl kind, sk =>
     kind.declsA.foldl (fun acc ci => ciSkel ci :: acc) sk
@@ -1256,38 +1256,51 @@ theorem checkDeclC_skels (mode : CheckMode) {fe : FEnv md}
     exact checkThmValC_skels mode h cvA jty value
   | opaqueDecl cv value =>
     simp only []
-    refine Yields.bind' (checkConstantValC_name mode fe cv) fun p hp => ?_
-    obtain ⟨cvA, jty⟩ := p
-    rw [← hp]
-    exact checkOpaqueValC_skels mode h cvA jty value
+    by_cases hct : cv.name.isCompilerTrustOpaque = true
+    · rw [if_pos hct, if_pos hct]
+      split
+      · exact Yields.pure h
+      · exact Yields.ofThrow
+    · rw [if_neg hct, if_neg hct]
+      refine Yields.bind' (checkConstantValC_name mode fe cv) fun p hp => ?_
+      obtain ⟨cvA, jty⟩ := p
+      rw [← hp]
+      exact checkOpaqueValC_skels mode h cvA jty value
   | axiomDecl cv =>
     simp only []
-    -- task #293: `Quot.sound` is compared with the pin and installs
-    -- nothing of its own
+    -- task #293 & §7.10: `Quot.sound` and compiler-trust axioms install nothing
     by_cases hqs : cv.name = quotSoundName
-    · rw [if_pos hqs, if_pos (Or.inr hqs)]
+    · rw [if_pos hqs, if_pos (Or.inr (Or.inl hqs))]
       split
       · exact Yields.pure h
       · exact Yields.ofThrow
     · rw [if_neg hqs]
-      refine Yields.bind' (checkConstantValC_name mode fe cv) fun p hp => ?_
-      obtain ⟨cvA, jty⟩ := p
-      simp only []
-      rw [← hp]
-      by_cases ht : cvA.name = sorryAxName
-      · rw [if_pos (Or.inl ht),
-          if_neg (by rw [tolerated_not_std fe cvA ht]; exact Bool.false_ne_true),
-          if_neg (tolerated_ne_std ht), if_pos ht]
-        exact Yields.pure h
-      · have hne : ¬(cvA.name = sorryAxName ∨ cvA.name = quotSoundName) := by
-          rintro (h' | h')
-          · exact ht h'
-          · exact hqs (hp ▸ h')
-        rw [if_neg hne]
-        yields
-        all_goals first
-          | (apply Yields.pure; exact h.push _)
-          | exact absurd (by assumption) ht
+      by_cases hct : cv.name.isCompilerTrustAxiom = true
+      · rw [if_pos hct, if_pos (Or.inr (Or.inr hct))]
+        split
+        · exact Yields.pure h
+        · exact Yields.ofThrow
+      · rw [if_neg hct]
+        refine Yields.bind' (checkConstantValC_name mode fe cv) fun p hp => ?_
+        obtain ⟨cvA, jty⟩ := p
+        simp only []
+        rw [← hp]
+        by_cases ht : cvA.name = sorryAxName
+        · rw [if_pos (Or.inl ht),
+            if_neg (by rw [tolerated_not_std fe cvA ht]; exact Bool.false_ne_true),
+            if_neg (tolerated_ne_std ht), if_pos ht]
+          exact Yields.pure h
+        · have hne : ¬(cvA.name = sorryAxName ∨ cvA.name = quotSoundName ∨
+              cvA.name.isCompilerTrustAxiom = true) := by
+            rintro (h' | h' | h')
+            · exact ht h'
+            · exact hqs (hp ▸ h')
+            · exact hct (hp ▸ h')
+          rw [if_neg hne]
+          yields
+          all_goals first
+            | (apply Yields.pure; exact h.push _)
+            | exact absurd (by assumption) ht
   | basisDecl kind => exact checkBasisDeclC_skels h kind
   | quotDecl k cv =>
     -- task #293: the `type` record installs the pinned block, the
@@ -1380,11 +1393,14 @@ theorem annotStepC_skels (mode : CheckMode) (i : Nat) {fe : FEnv md}
     rw [← hr.1]; exact h.push _
   | opaqueDecl cv value =>
     simp only []
-    refine Yields.bind' (annotValueC_fresh mode fe cv value) fun r hr => ?_
-    obtain ⟨cvA, jty, jv⟩ := r
-    apply Yields.pure
-    show SkelIs (fe.push (.axiomInfo cvA)) (.ax cv.name :: sk)
-    rw [← hr.1]; exact h.push _
+    by_cases hct : cv.name.isCompilerTrustOpaque = true
+    · rw [if_pos hct]; exact hord _
+    · rw [if_neg hct]
+      refine Yields.bind' (annotValueC_fresh mode fe cv value) fun r hr => ?_
+      obtain ⟨cvA, jty, jv⟩ := r
+      apply Yields.pure
+      show SkelIs (fe.push (.axiomInfo cvA)) (if cv.name.isCompilerTrustOpaque = true then sk else .ax cv.name :: sk)
+      rw [if_neg hct, ← hr.1]; exact h.push _
   | axiomDecl cv => exact hord _
   | basisDecl kind => exact hord _
   | quotDecl k cv => exact hord _

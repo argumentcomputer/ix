@@ -1,0 +1,27 @@
+{
+  "cap_height": 0,
+  "claims": [
+    [
+      1,
+      1,
+      1
+    ]
+  ],
+  "claims_bytes_len": 40,
+  "claims_digest": "c2ee0262d5602c28c5a761f5bda6c11600496ef78b4dfa60448f4f90efb9b5c3",
+  "commit_proof_of_work_bits": 1,
+  "description": "2 circuits (with preprocessed table + cross-circuit grouped lookups), 2 shards",
+  "log_blowup": 2,
+  "log_final_poly_len": 0,
+  "max_log_arity": 1,
+  "num_circuits": 2,
+  "num_messages": 0,
+  "num_queries": 4,
+  "num_shards": 2,
+  "proof_bytes_len": 5362,
+  "proof_digest": "7b76df70b4ec83a84d6771d549d1fcd1cb40d81b1be3636824e166eb9bc1bb7a",
+  "proof_of_work_bits": 2,
+  "query_proof_of_work_bits": 2,
+  "system_bytes_len": 313,
+  "vk_digest": "b4675144c8d221241c589e25f8e77e5af30b9387996cd8d166f15ff8b34de81d"
+}

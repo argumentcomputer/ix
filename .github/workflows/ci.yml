@@ -98,6 +98,10 @@ jobs:
         run: |
           lake exe ixvm/ixvm-proof-gen --check
           lake build --wfail IxVMRefinement
+          pinned=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' IxVMRefinement/Endpoint/ClosureManifest.lean)
+          test -n "$pinned"
+          printf '%s  Tests/Fixtures/circuit-composed-closure-manifest.txt\n' "$pinned" | sha256sum -c -
+          lake env leanchecker IxVMRefinement.Endpoint.ComposedResidual Ix.IxVM.ConsistencyAudit Ix.IxVM.ConsistencyModelAudit Ix.Cert.Compile
           tmp=$(mktemp -d)
           {
             echo "import IxC.Kernel.Audit.Axioms"

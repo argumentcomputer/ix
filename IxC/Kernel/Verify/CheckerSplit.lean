@@ -370,8 +370,9 @@ theorem checkDecl_of_split_thm {cv : ConstantVal md} {value : Expr md} {vg : Val
     hlbv hivf hannv hvp hvr hvt hde
   simp only [checkDecl, Bind.bind, Except.bind, hcc, htv]
 
-/-- **An opaque's two halves are `checkDecl`.** -/
+/-- **An opaque's two halves are `checkDecl`**, for non-inert opaques. -/
 theorem checkDecl_of_split_opaque {cv : ConstantVal md} {value : Expr md} {vg : ValueGroup md}
+    (hnot : cv.name.isCompilerTrustOpaque = false)
     (hk : vg.kind = .opaque)
     (hI : installConstantVal (fueledOps μ F) env cv = .ok vg.cvA)
     (hV : installValue (fueledOps μ F) env vg.cvA value = .ok vg.jv)
@@ -387,6 +388,6 @@ theorem checkDecl_of_split_opaque {cv : ConstantVal md} {value : Expr md} {vg : 
   have hcc := checkConstantVal_of_facts hfind hres hshape hnd hlb hif hann htp htr hst hsort
   have hov := checkOpaqueVal_of_facts (cv := { cv with type := type' })
     hlbv hivf hannv hvp hvr hvt hde
-  simp only [checkDecl, Bind.bind, Except.bind, hcc, hov]
+  simp only [checkDecl, hnot, Bool.false_eq_true, ↓reduceIte, Bind.bind, Except.bind, hcc, hov]
 
 end Ix.Kernel

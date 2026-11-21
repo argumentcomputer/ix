@@ -302,8 +302,17 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
     let cv ← checkConstantVal ops env cv
     checkThmVal ops env cv value
   | .opaqueDecl cv value =>
-    let cv ← checkConstantVal ops env cv
-    checkOpaqueVal ops env cv value
+    -- Compiler-trust opaques (`Lean.reduceBool`, `Lean.reduceNat`, §7.10):
+    -- tolerated as declarations when matching their pinned types, installing
+    -- nothing; any use declines (`unknownConstError`, `unresolvedConstsError`).
+    if cv.name.isCompilerTrustOpaque then
+      if (anchorMismatch? cv).isNone then
+        pure env
+      else
+        throw (.notImplemented msg!"compiler-trust opaque shape mismatch ({cv.name})")
+    else do
+      let cv ← checkConstantVal ops env cv
+      checkOpaqueVal ops env cv value
   | .axiomDecl cv =>
     -- Pinned axioms are *installed*: the two standard axioms
     -- (`propext` via the stored `Iff` recursor and extensionality of
@@ -311,19 +320,15 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
     -- recursor and global choice).  Their types and the shapes of the
     -- inductives they quantify over are pinned (up to the exporter's
     -- unstable hygienic binder names).  The certified theory is Lean
-    -- with its three standard axioms: the
-    -- compiler-trust axioms (`Lean.trustCompiler`, `Lean.ofReduceBool`,
-    -- `Lean.ofReduceNat`) are non-standard axioms here.  `sorryAx` — the
-    -- one axiom the checker tolerates as a DECLARATION (user ruling) —
-    -- is well-formedness-checked but installs NOTHING: an export
-    -- declares it whenever its module mentions `sorry`, whether or not
-    -- anything uses it, so the record is skipped and the run continues,
-    -- and because there is no set model for it any USE of the name
+    -- with its three standard axioms: the compiler-trust axioms
+    -- (`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`,
+    -- §7.10) and `sorryAx` are tolerated as *declarations* — matched
+    -- against their pinned types and installing NOTHING, so any USE
     -- declines at the record that uses it (`unknownConstError`,
     -- `IxC/Kernel/Core.lean`, and `unresolvedConstsError`,
-    -- `IxC/Kernel/CheckerBase.lean`).  Any other axiom
-    -- is a positive decline at its own record; a *pinned name* with a
-    -- non-pinned shape likewise (the pin would otherwise shadow).
+    -- `IxC/Kernel/CheckerBase.lean`).  Any other axiom is a positive
+    -- decline at its own record; a *pinned name* with a non-pinned
+    -- shape likewise (the pin would otherwise shadow).
     -- **`Quot.sound` is the pinned quotient BLOCK's own record**
     -- (task #293): the export writes it as an ordinary axiom record
     -- beside the four `#QUOT` ones, so it arrives here — compared with
@@ -340,6 +345,11 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
         pure env
       else
         throw (.notImplemented "quotient soundness axiom mismatch"))
+    else if cv.name.isCompilerTrustAxiom then
+      (if (anchorMismatch? cv).isNone then
+        pure env
+      else
+        throw (.notImplemented msg!"compiler-trust axiom shape mismatch ({cv.name})"))
     else do
       let cvA ← checkConstantVal ops env cv
       if stdAxiomOk env cvA then

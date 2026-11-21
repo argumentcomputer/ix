@@ -182,7 +182,7 @@ unsafe def main (args : List String) : IO Unit := do
       IO.eprintln "Compiling claim circuits and witness population plans..."
       let specialized ← IO.ofExcept (Generic.specialize source entries)
       let compiled ← IO.ofExcept (specialized.compileOptimized {})
-      let (exported, trace) ← IO.ofExcept (Trace.exportPlan modulus ZMod.val
+      let (exported, trace) ← IO.ofExcept (Trace.exportPlanPar modulus ZMod.val
         compiled.inlined.program compiled.artifact exported groups)
       pure (exported, some trace)
     else pure (exported, none)
@@ -217,7 +217,7 @@ unsafe def main (args : List String) : IO Unit := do
     IO.eprintln "Compiling certified circuits and witness population plans..."
     let specialized ← IO.ofExcept (Generic.specialize source entries)
     let compiled ← IO.ofExcept (specialized.compileOptimized {})
-    let (exported, trace) ← IO.ofExcept (Trace.exportPlan modulus ZMod.val
+    let (exported, trace) ← IO.ofExcept (Trace.exportPlanPar modulus ZMod.val
       compiled.inlined.program compiled.artifact exported groups)
     pure (exported, some trace)
   else pure (exported, none)

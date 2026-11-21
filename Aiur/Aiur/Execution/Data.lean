@@ -12,7 +12,32 @@ inductive DataValue (F : Type) where
   | array (element : Generic.Ty) (items : List (DataValue F))
   | record (type : Generic.Ty) (fields : List (String × DataValue F))
   | construct (type : Generic.Ty) (constructor : String) (args : List (DataValue F))
-  deriving Repr, BEq
+  deriving Repr
+
+mutual
+  def DataValue.beq [BEq F] : DataValue F → DataValue F → Bool
+    | .field x, .field y => x == y
+    | .tuple xs, .tuple ys => DataValue.listBeq xs ys
+    | .array t xs, .array t' ys => t == t' && DataValue.listBeq xs ys
+    | .record t fs, .record t' fs' => t == t' && DataValue.fieldsBeq fs fs'
+    | .construct t c xs, .construct t' c' ys => t == t' && c == c' && DataValue.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def DataValue.listBeq [BEq F] : List (DataValue F) → List (DataValue F) → Bool
+    | [], [] => true
+    | x :: xs, y :: ys => DataValue.beq x y && DataValue.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def DataValue.fieldsBeq [BEq F] : List (String × DataValue F) → List (String × DataValue F) → Bool
+    | [], [] => true
+    | (n, v) :: xs, (n', v') :: ys => n == n' && DataValue.beq v v' && DataValue.fieldsBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+end
+
+instance [BEq F] : BEq (DataValue F) := ⟨DataValue.beq⟩
 
 instance [OfNat F n] : OfNat (DataValue F) n := ⟨.field (OfNat.ofNat n)⟩
 

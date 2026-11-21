@@ -194,6 +194,9 @@ def run : IO Unit := do
     let some ternary := physical.system.findChip? "Merge::public_ternary" | throw (IO.userError "missing ternary entry")
     unless binary.constraints != ternary.constraints do throw (IO.userError "public canonicality checks disappeared")
     let (traced, plan) ← IO.ofExcept (Trace.exportPreparedPlan 97 ZMod.val compiled.circuit.inlined.program artifact physical exported)
+    let (_, planPar) ← IO.ofExcept (Trace.exportPreparedPlanPar 97 ZMod.val compiled.circuit.inlined.program artifact physical exported)
+    unless plan == planPar do
+      throw (IO.userError "exportPreparedPlanPar output differs from exportPreparedPlan")
     let cfg ← IO.ofExcept (Trace.depthConfig 97 physical)
     let depthSystem := Optimized.Depth.system cfg physical.system
     for (name, args) in cases do

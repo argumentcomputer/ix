@@ -215,7 +215,8 @@ def runOutcome {σ : Type} (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md
     (onRead : Address → Except ReadError (Read md) → Nat → IO Unit := fun _ _ _ => pure ())
     (spell : Ix.Kernel.Key md → String := toString)
     (tier : Option (TierHook σ (Checker md) md) := none)
-    (allowUserAxioms : Bool := false) :
+    (allowUserAxioms : Bool := false)
+    (persist : Bool := true) :
     IO (LoopOutcome Unit) := do
   let some slot0 := slots[0]? | throw (IO.userError "check-ixe: the pool needs a worker")
   -- phase A: what each record's rows will carry besides the verdict
@@ -284,10 +285,11 @@ def runOutcome {σ : Type} (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md
   let installErrors := inst.installErrors
   let installedCount := inst.installedCount
   let installedLog := inst.installedLog
-  let _ ← unsafe Runtime.markPersistent fe
-  let _ ← unsafe Runtime.markPersistent pend
-  let _ ← unsafe Runtime.markPersistent owners
-  log s!"installed environment marked persistent in {(← IO.monoMsNow) - tM} ms"
+  if persist then
+    let _ ← unsafe Runtime.markPersistent fe
+    let _ ← unsafe Runtime.markPersistent pend
+    let _ ← unsafe Runtime.markPersistent owners
+    log s!"installed environment marked persistent in {(← IO.monoMsNow) - tM} ms"
   let tB ← IO.monoMsNow
   let table ← pool fe pend owners slots
   let failures := table.foldl (fun n (r, _) => if r.isSome then n + 1 else n) 0

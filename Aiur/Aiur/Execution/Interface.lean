@@ -11,7 +11,38 @@ inductive IOType where
   | array (element : IOType) (length : Nat)
   | record (name : String) (fields : List (String × IOType))
   | enum (name : String) (constructors : List (String × List IOType))
-  deriving Repr, BEq
+  deriving Repr
+
+mutual
+  def IOType.beq : IOType → IOType → Bool
+    | .field, .field => true
+    | .tuple xs, .tuple ys => IOType.listBeq xs ys
+    | .array e n, .array e' n' => IOType.beq e e' && n == n'
+    | .record n fs, .record n' fs' => n == n' && IOType.fieldsBeq fs fs'
+    | .enum n cs, .enum n' cs' => n == n' && IOType.ctorsBeq cs cs'
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def IOType.listBeq : List IOType → List IOType → Bool
+    | [], [] => true
+    | x :: xs, y :: ys => IOType.beq x y && IOType.listBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def IOType.fieldsBeq : List (String × IOType) → List (String × IOType) → Bool
+    | [], [] => true
+    | (n, t) :: xs, (n', t') :: ys => n == n' && IOType.beq t t' && IOType.fieldsBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+
+  def IOType.ctorsBeq : List (String × List IOType) → List (String × List IOType) → Bool
+    | [], [] => true
+    | (n, ts) :: xs, (n', ts') :: ys => n == n' && IOType.listBeq ts ts' && IOType.ctorsBeq xs ys
+    | _, _ => false
+  termination_by left _ => sizeOf left
+end
+
+instance : BEq IOType := ⟨IOType.beq⟩
 
 structure Interface where
   name : String

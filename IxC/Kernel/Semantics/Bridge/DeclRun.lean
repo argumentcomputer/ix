@@ -204,9 +204,17 @@ theorem declAxiomRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
         (quotBasis.getD 4 (.axiomInfo default)) = true
     · rw [if_pos hpin] at h
       simp only [pure, Except.pure, Except.ok.injEq] at h
-      exact Or.inl ⟨hqs, h.symm⟩
+      exact Or.inl ⟨Or.inl hqs, h.symm⟩
     · rw [if_neg hpin] at h; exact nomatch h
   rw [if_neg hqs] at h
+  by_cases hct : cv.name.isCompilerTrustAxiom = true
+  · rw [if_pos hct] at h
+    by_cases hpin : (anchorMismatch? cv).isNone = true
+    · rw [if_pos hpin] at h
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      exact Or.inl ⟨Or.inr hct, h.symm⟩
+    · rw [if_neg hpin] at h; exact nomatch h
+  rw [if_neg hct] at h
   refine Or.inr ?_
   cases hccv : checkConstantVal (fueledOps μ F) env cv with
   | error e => rw [hccv] at h; exact nomatch h
@@ -243,6 +251,15 @@ theorem declOpaqueRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
     DeclOpaqueRun μ F env cv value env₂ := by
   simp only [checkDecl, checkOpaqueVal, fueledOps_annotate,
     fueledOps_inferType, fueledOps_isDefEq, Bind.bind, Except.bind] at h
+  by_cases hct : cv.name.isCompilerTrustOpaque = true
+  · rw [if_pos hct] at h
+    by_cases hpin : (anchorMismatch? cv).isNone = true
+    · rw [if_pos hpin] at h
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      exact Or.inl ⟨hct, h.symm⟩
+    · rw [if_neg hpin] at h; exact nomatch h
+  rw [if_neg hct] at h
+  refine Or.inr ?_
   cases hccv : checkConstantVal (fueledOps μ F) env cv with
   | error e => rw [hccv] at h; exact nomatch h
   | ok cv' =>

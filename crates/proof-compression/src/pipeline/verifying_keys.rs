@@ -63,7 +63,7 @@ pub(super) const PLONK_VK_SHA256: &str =
 /// SHA-256 of the exported recursive verifier description that both final
 /// circuits prove.
 pub(super) const FINAL_SCHEMA_SHA256: &str =
-  "28f594d120a90c52c5207799461e9e3aa44d24803d3a5f2c35a5ca7bb67e7d35";
+  "257f151c9f4dd75e132cf7fe8e149e602087a62db66e07b776a3ca2233b8cb85";
 
 /// The release Groth16 key comes from a development setup: whoever ran it can
 /// forge proofs, so it verifies only when development setups are accepted.

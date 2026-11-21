@@ -29,8 +29,10 @@ nothing of their own. -/
 def declSkel : Declaration md → Option (InstallSkel md)
   | .defnDecl cv _ _ => some (.defn cv.name)
   | .thmDecl cv _ => some (.thm cv.name)
-  | .opaqueDecl cv _ => some (.ax cv.name)
-  | .axiomDecl cv => if cv.name = sorryAxName ∨ cv.name = quotSoundName then none else some (.ax cv.name)
+  | .opaqueDecl cv _ => if cv.name.isCompilerTrustOpaque then none else some (.ax cv.name)
+  | .axiomDecl cv =>
+    if cv.name = sorryAxName ∨ cv.name = quotSoundName ∨ cv.name.isCompilerTrustAxiom = true then none
+    else some (.ax cv.name)
   | _ => none
 
 private theorem foldl_suffix {α β : Type} {g : List α → β → List α}
@@ -78,7 +80,11 @@ theorem declCSkels_suffix (pd : Declaration md) (sk : List (InstallSkel md)) : s
   cases pd with
   | defnDecl cv _ _ => exact cons_suffix _ _
   | thmDecl cv _ => exact cons_suffix _ _
-  | opaqueDecl cv _ => exact cons_suffix _ _
+  | opaqueDecl cv _ =>
+    simp only [declCSkels]
+    split
+    · exact List.suffix_refl _
+    · exact cons_suffix _ _
   | axiomDecl cv =>
     simp only [declCSkels]
     split
@@ -105,7 +111,15 @@ theorem declSkel_mem {pd : Declaration md} {s : InstallSkel md} (h : declSkel pd
   cases pd with
   | defnDecl cv _ _ => cases h; exact List.mem_cons_self
   | thmDecl cv _ => cases h; exact List.mem_cons_self
-  | opaqueDecl cv _ => cases h; exact List.mem_cons_self
+  | opaqueDecl cv _ =>
+    simp only [declSkel] at h
+    simp only [declCSkels]
+    split at h
+    · cases h
+    · rename_i hn
+      cases h
+      simp only [hn]
+      exact List.mem_cons_self
   | axiomDecl cv =>
     simp only [declSkel] at h
     simp only [declCSkels]

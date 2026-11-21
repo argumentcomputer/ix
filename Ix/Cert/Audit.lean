@@ -5897,11 +5897,12 @@ fun ixe t cx sub envQ =>
   ∀ (n : Ix.Name) (ci : Ix.ConstantInfo),
     (n, ci) ∈ sub.consts.toList →
       Ix.Cert.quotientKey ixe t n ≠ Ix.Kernel.sorryAxName →
-        ∃ c,
-          c ∈ envQ.consts ∧
-            c.name = Ix.Cert.quotientKey ixe t n ∧
-              Ix.Cert.keyAddress ixe t c.name = Option.map (fun x => x.addr) (ixe.named.get? n) ∧
-                (Ix.Cert.readingAt ixe t cx c).isSome = true -/
+        (Ix.Cert.quotientKey ixe t n).isCompilerTrust = false →
+          ∃ c,
+            c ∈ envQ.consts ∧
+              c.name = Ix.Cert.quotientKey ixe t n ∧
+                Ix.Cert.keyAddress ixe t c.name = Option.map (fun x => x.addr) (ixe.named.get? n) ∧
+                  (Ix.Cert.readingAt ixe t cx c).isSome = true -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.ReadingCovers
 
@@ -6371,10 +6372,11 @@ fun blocks sched st₀ acc =>
       ∀ (n : Ix.Name) (ci : Ix.ConstantInfo),
         (n, ci) ∈ sub.consts.toList →
           Ix.Cert.quotientKey ixe t n ≠ Ix.Kernel.sorryAxName →
-            ∃ c,
-              c ∈ envQ.consts ∧
-                c.name = Ix.Cert.quotientKey ixe t n ∧
-                  Ix.Cert.keyAddress ixe t c.name = Option.map (fun x => x.addr) (ixe.named.get? n) -/
+            (Ix.Cert.quotientKey ixe t n).isCompilerTrust = false →
+              ∃ c,
+                c ∈ envQ.consts ∧
+                  c.name = Ix.Cert.quotientKey ixe t n ∧
+                    Ix.Cert.keyAddress ixe t c.name = Option.map (fun x => x.addr) (ixe.named.get? n) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Obligation.SourceTotal
 

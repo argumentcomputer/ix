@@ -1242,13 +1242,16 @@ theorem harvestOpaqueJ {J : Judgements md}
       (A := A) hfresh (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
       (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) _ rfl φ
 
-/-- The kernel's `opaque` harvest: `harvestOpaqueJ` at the fold's runs. -/
+/-- The kernel's `opaque` harvest: `harvestOpaqueJ` at the fold's runs
+(an inert compiler-trust opaque installs nothing and keeps the model). -/
 theorem harvestOpaque (hμ : μ.verifiedChecks = true)
     (mp : EnvModelM V μ env)
     {cv : ConstantVal md} {value : Expr md} {env₂ : Env md}
     (hR : DeclOpaqueRun μ F env cv value env₂) :
-    Nonempty (EnvModelM V μ env₂) :=
-  let ⟨mp₂, _⟩ := harvestOpaqueJ mp (judgeSound_runJ hμ mp F) hR
-  ⟨mp₂⟩
+    Nonempty (EnvModelM V μ env₂) := by
+  rcases hR with ⟨-, rfl⟩ | hR
+  · exact ⟨mp⟩
+  · let ⟨mp₂, _⟩ := harvestOpaqueJ mp (judgeSound_runJ hμ mp F) hR
+    exact ⟨mp₂⟩
 
 end Ix.Kernel.Model

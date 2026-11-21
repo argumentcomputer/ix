@@ -278,6 +278,7 @@ the same question at the guard, for the `sorryAx` occurrences
 inference never reaches. -/
 def unknownConstError (n : Key md) : CheckError md :=
   if n = sorryAxName then .notImplemented "use of the sorryAx axiom"
+  else if n.isCompilerTrust then .notImplemented msg!"use of compiler-trust constant {n}"
   else .invalid msg!"unknown constant {n}"
 
 /-- The record of mutually recursive core entry points.  `whnfCore`

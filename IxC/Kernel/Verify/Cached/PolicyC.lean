@@ -32,7 +32,8 @@ theorem checkStdAxiomDeclC_eligible (mode : CheckMode) (fe : FEnv md) (cv : Cons
     (h : cv.name.isCustomAxiomEligible = true) :
     Yields (checkStdAxiomDeclC mode fe cv) (fun _ => False) := by
   unfold checkStdAxiomDeclC
-  rw [if_neg (Key.isCustomAxiomEligible_ne_quotSound h)]
+  rw [if_neg (Key.isCustomAxiomEligible_ne_quotSound h),
+    if_neg (by rw [Key.isCustomAxiomEligible_not_compilerTrustAxiom h]; exact Bool.false_ne_true)]
   refine Yields.bind' (checkConstantValC_name mode fe cv) fun p hp => ?_
   obtain ⟨cvA, jty⟩ := p
   have hn : cvA.name = cv.name := hp

@@ -162,9 +162,12 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- csimp and all ruling counts are unchanged.
 -- Normalized recursor analysis and the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`)
 -- move the closure from 7092 compiled functions and 28 ruled csimps to 7139 and 29.
+-- Inert compiler-trust handling (`§7.10`) and reflexive mimic fields (`h-nested-binder` / M8)
+-- (`IxC/Kernel/Audit/Roots.lean`, `IxC/Kernel/Admission/Audit.lean`) add 63 compiled functions
+-- (7139 → 7202); externs, implemented_by, unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 7139 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 29 -/
+ Ixon.Projection.checkBytes]: 7202 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

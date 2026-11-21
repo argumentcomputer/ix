@@ -214,8 +214,30 @@ theorem accepted_nodup {md : Ix.Kernel.Mode} {μ : Ix.Kernel.CheckMode} {ev : Ix
     obtain ⟨_, _, hcv, -⟩ := run
     exact hcv.2.2.2.1
   | opaqueDecl cv value =>
-    obtain ⟨_, _, hcv, -⟩ := run
-    exact hcv.2.2.2.1
+    rcases run with ⟨hct, -⟩ | ⟨_, _, hcv, -⟩
+    · simp only [Ix.Kernel.checkDecl, hct, ↓reduceIte] at he
+      split at he
+      · rename_i hok
+        cases hnm : cv.name with
+        | role r =>
+          rw [hnm] at hct
+          cases r <;>
+            simp [Ix.Kernel.Key.isCompilerTrustOpaque, Ix.Kernel.Role.isCompilerTrustOpaque] at hct
+          all_goals
+            simp only [Ix.Kernel.anchorMismatch?, hnm, Ix.Kernel.installAnchorPin?,
+              Ix.Kernel.ConstantVal.matchesPin] at hok
+            split at hok
+            · rename_i hm
+              simp only [Bool.and_eq_true, decide_eq_true_eq] at hm
+              unfold DefinitionBlockReads.DeclNodup
+              dsimp only
+              rw [hm.1.2]; rfl
+            · cases hok
+        | id _ | aux _ _ =>
+          rw [hnm] at hct
+          cases hct
+      · cases he
+    · exact hcv.2.2.2.1
   | _ => trivial
 
 /--

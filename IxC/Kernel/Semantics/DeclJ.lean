@@ -267,29 +267,18 @@ theorem declThmRun_eq_runJ {μ : CheckMode} {F : Nat} {env env₂ : Env md}
     {cv : ConstantVal md} {value : Expr md} :
     DeclThmRun μ F env cv value env₂ = DeclThmRunJ (runJ μ F) env cv value env₂ := rfl
 
-theorem declOpaqueRun_eq_runJ {μ : CheckMode} {F : Nat} {env env₂ : Env md}
-    {cv : ConstantVal md} {value : Expr md} :
-    DeclOpaqueRun μ F env cv value env₂ = DeclOpaqueRunJ (runJ μ F) env cv value env₂ := rfl
+theorem declOpaqueRun_of_runJ {μ : CheckMode} {F : Nat} {env env₂ : Env md}
+    {cv : ConstantVal md} {value : Expr md}
+    (h : DeclOpaqueRunJ (runJ μ F) env cv value env₂) :
+    DeclOpaqueRun μ F env cv value env₂ := Or.inr h
 
-theorem declAxiomRun_eq_runJ {μ : CheckMode} {F : Nat} {env env₂ : Env md}
-    {cv : ConstantVal md} :
-    DeclAxiomRun μ F env cv env₂ = DeclAxiomRunJ (runJ μ F) env cv env₂ := rfl
-
-/-- **The kernel's record gives the restated one at its runs**: the fold's
-`DeclRun` is `DeclRunJ` at `runJ μ F` (the certificate run read as its
-relation). -/
-theorem declRun_runJ {μ : CheckMode} {F : Nat}
-    {Ind : List (ConstantInfo md) → Nat → Env md → Prop} {env env₂ : Env md}
-    {d : Declaration md} (h : DeclRun μ F Ind env d env₂) :
-    DeclRunJ (runJ μ F) Ind env d env₂ := by
-  cases d with
-  | defnDecl cv value hint => exact declDefnRun_runJ h
-  | thmDecl cv value => exact h
-  | opaqueDecl cv value => exact h
-  | axiomDecl cv => exact h
-  | basisDecl kind => exact h
-  | indDecl block nP => exact h
-  | quotDecl k cv => exact h
+theorem declAxiomRun_of_runJ {μ : CheckMode} {F : Nat} {env env₂ : Env md}
+    {cv : ConstantVal md}
+    (h : DeclAxiomRunJ (runJ μ F) env cv env₂) :
+    DeclAxiomRun μ F env cv env₂ := by
+  rcases h with ⟨hqs, he⟩ | h
+  · exact Or.inl ⟨Or.inl hqs, he⟩
+  · exact Or.inr h
 
 
 /-! ## The η half over a package

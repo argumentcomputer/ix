@@ -193,12 +193,17 @@ theorem carrD (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) {mems : Lis
     RG P f (carrierAt fam (mems.getD t default) o idx model)
       (carrierAt (fam.mapKeys f) ((mems.getD t default).mapKeys f) o idx' model) :=
   carr hf hfam (hmD t) o h model
+theorem rn_map_bif (hf : InjOn f P) {bn : List (Key md)} (hbn : ∀ k ∈ bn, k.Good P) {e : Expr md}
+    (he : e.Good P) :
+    (e.mapKeys f).renameConsts (fun x => bif (bn.map (Key.map f)).contains x then modelName x else x) =
+      (e.renameConsts fun x => bif bn.contains x then modelName x else x).mapKeys f := by
+  simpa only [Bool.cond_eq_ite] using rn_map hf hbn he
 theorem rn (hf : InjOn f P) {bn : List (Key md)} (hbn : ∀ k ∈ bn, k.Good P) {e : Expr md}
     {e' : Expr md'} (h : RG P f e e') :
     RG P f (e.renameConsts fun x => bif bn.contains x then modelName x else x)
-      (e'.renameConsts fun x => if (bn.map (Key.map f)).contains x = true then modelName x else x) := by
+      (e'.renameConsts fun x => bif (bn.map (Key.map f)).contains x then modelName x else x) := by
   obtain ⟨rfl, h⟩ := h
-  exact ⟨rn_map hf hbn h, rn_good h⟩
+  exact ⟨rn_map_bif hf hbn h, rn_good h⟩
 theorem cond {c : Bool} {a b : Expr md} {a' b' : Expr md'} (ha : c = true → RG P f a a')
     (hb : c = false → RG P f b b') : RG P f (bif c then a else b) (bif c then a' else b') := by
   cases c
@@ -355,6 +360,102 @@ theorem liftT {tele : List (Expr md)} {tele' : List (Expr md')} (h : RGL P f tel
 
 end RGL
 
+theorem RG.funext (hP : P.Pre) {ℓA ℓB : Level} {A B f0 g h : Expr md} {A' B' f0' g' h' : Expr md'}
+    (hA : RG P f A A') (hB : RG P f B B') (hf0 : RG P f f0 f0') (hg : RG P f g g') (hh : RG P f h h') :
+    RG P f (mkFunext ℓA ℓB A B f0 g h) (mkFunext ℓA ℓB A' B' f0' g' h') := by
+  simp only [mkFunext]
+  let ℓF : Level := .imax ℓA ℓB
+  let hF := RG.pi hA hB bm
+  let hr := RG.lam hF (RG.lam (RG.lift hF 1 0) (RG.pi (RG.lift hA 2 0)
+    (RG.eq (ℓ := ℓB) hP (RG.lift hB 2 1) (RG.app (RG.bvar 2) (RG.bvar 0)) (RG.app (RG.bvar 1) (RG.bvar 0))) bm) bm) bm
+  let hQ := RG.appN (RG.const (k := quotName) (ls := [ℓF]) rfl (hP _ (by decide)) rfl) (RGL.cons hF (RGL.cons hr RGL.nil))
+  let hext := fun (o : Nat) {q : Expr md} {q' : Expr md'} (hq : RG P f q q') =>
+    let hFo := RG.lift hF (o + 1) 0
+    let hro := RG.lift hr (o + 1) 0
+    let hBo := RG.lift hB o 1
+    let hev := RG.lam hFo (RG.app (RG.bvar 0) (RG.bvar 1)) bm
+    let hresp := RG.lam hFo (RG.lam (RG.lift hFo 1 0) (RG.lam
+      (RG.appN (RG.lift hro 2 0) (RGL.cons (RG.bvar 1) (RGL.cons (RG.bvar 0) RGL.nil)))
+      (RG.app (RG.bvar 0) (RG.bvar 3)) bm) bm) bm
+    RG.lam (RG.lift hA o 0) (RG.appN (RG.const (k := quotLiftName) (ls := [ℓF, ℓB]) rfl (hP _ (by decide)) rfl)
+      (RGL.cons hFo (RGL.cons hro (RGL.cons hBo (RGL.cons hev (RGL.cons hresp (RGL.cons (RG.lift hq 1 0) RGL.nil))))))) bm
+  let hqF := RG.appN (RG.const (k := quotMkName) (ls := [ℓF]) rfl (hP _ (by decide)) rfl)
+    (RGL.cons hF (RGL.cons hr (RGL.cons hf0 RGL.nil)))
+  let hqG := RG.appN (RG.const (k := quotMkName) (ls := [ℓF]) rfl (hP _ (by decide)) rfl)
+    (RGL.cons hF (RGL.cons hr (RGL.cons hg RGL.nil)))
+  let hhq := RG.appN (RG.const (k := quotSoundName) (ls := [ℓF]) rfl (hP _ (by decide)) rfl)
+    (RGL.cons hF (RGL.cons hr (RGL.cons hf0 (RGL.cons hg (RGL.cons hh RGL.nil)))))
+  exact RG.eqRec hP hQ hqF
+    (RG.lam hQ (RG.lam (RG.eq (ℓ := ℓF) hP (RG.lift hQ 1 0) (RG.lift hqF 1 0) (RG.bvar 0))
+      (RG.eq (ℓ := ℓF) hP (RG.lift hF 2 0) (hext 2 (RG.lift hqF 2 0)) (hext 2 (RG.bvar 1))) bm) bm)
+    (RG.refl (ℓ := ℓF) hP hF (hext 0 hqF)) hqG hhq
+
+theorem RG.funextTele (hP : P.Pre) (u : Level) {tele : List (Expr md)} {tele' : List (Expr md')}
+    (ht : RGL P f tele tele') (sorts : List Level) {cod f0 g h : Expr md} {cod' f0' g' h' : Expr md'}
+    (hc : RG P f cod cod') (hf0 : RG P f f0 f0') (hg : RG P f g g') (hh : RG P f h h') :
+    RG P f (mkFunextTele u tele sorts cod f0 g h) (mkFunextTele u tele' sorts cod' f0' g' h') := by
+  obtain ⟨rfl, htG⟩ := ht
+  induction tele generalizing sorts f0 f0' g g' with
+  | nil => exact hh
+  | cons A rest ih =>
+    cases sorts with
+    | nil => exact hh
+    | cons ℓA srest =>
+      have hA : RG P f A (A.mapKeys f) := ⟨rfl, htG A List.mem_cons_self⟩
+      have hrest : RGL P f rest (rest.map (Expr.mapKeys f)) :=
+        ⟨rfl, fun x hx => htG x (List.mem_cons_of_mem _ hx)⟩
+      simp only [List.map_cons, mkFunextTele]
+      exact RG.funext hP hA (RG.pis hrest hc) hf0 hg
+        (RG.lam hA (ih srest (RG.app (RG.lift hf0 1 0) (RG.bvar 0)) (RG.app (RG.lift hg 1 0) (RG.bvar 0)) hrest.2) bm)
+
+theorem RG.congrFunTele (hP : P.Pre) {u ℓF : Level} (nT : Nat) {fTy f0 g h cod : Expr md}
+    {fTy' f0' g' h' cod' : Expr md'} (hfTy : RG P f fTy fTy') (hf0 : RG P f f0 f0')
+    (hg : RG P f g g') (hh : RG P f h h') (hcod : RG P f cod cod') :
+    RG P f (Ix.Kernel.Frontend.InModel.congrFunTele u ℓF nT fTy f0 g h cod)
+      (Ix.Kernel.Frontend.InModel.congrFunTele u ℓF nT fTy' f0' g' h' cod') := by
+  simp only [Ix.Kernel.Frontend.InModel.congrFunTele]
+  refine RG.ite (fun _ => hh) (fun _ => ?_)
+  exact RG.eqRec hP hfTy hf0
+    (RG.lam hfTy (RG.lam (RG.eq hP (RG.lift hfTy 1 0) (RG.lift hf0 1 0) (RG.bvar 0))
+      (RG.eq hP (RG.lift hcod 2 0)
+        (RG.appN (RG.lift hf0 2 0) (RGL.vars 2 nT))
+        (RG.appN (RG.bvar 1) (RGL.vars 2 nT))) bm) bm)
+    (RG.refl hP hcod (RG.appN hf0 (RGL.vars 0 nT))) hg hh
+
+theorem RG.congrPackFun (hP : P.Pre) {ℓF : Level} {fTy auxTy : Expr md} {fTy' auxTy' : Expr md'}
+    (hfTy : RG P f fTy fTy') (haux : RG P f auxTy auxTy')
+    {pk : Nat → Expr md → Expr md} {pk' : Nat → Expr md' → Expr md'}
+    (hpk : ∀ o e e', RG P f e e' → RG P f (pk o e) (pk' o e'))
+    {u_k z_k h_k : Expr md} {u_k' z_k' h_k' : Expr md'}
+    (hu : RG P f u_k u_k') (hz : RG P f z_k z_k') (hh : RG P f h_k h_k') :
+    RG P f (Ix.Kernel.Frontend.InModel.congrPackFun ℓF fTy auxTy pk u_k z_k h_k)
+      (Ix.Kernel.Frontend.InModel.congrPackFun ℓF fTy' auxTy' pk' u_k' z_k' h_k') := by
+  simp only [Ix.Kernel.Frontend.InModel.congrPackFun]
+  exact RG.eqRec hP hfTy hu
+    (RG.lam hfTy (RG.lam (RG.eq hP (RG.lift hfTy 1 0) (RG.lift hu 1 0) (RG.bvar 0))
+      (RG.eq hP (RG.lift haux 2 0) (hpk 2 _ _ (RG.lift hu 2 0)) (hpk 2 _ _ (RG.bvar 1))) bm) bm)
+    (RG.refl hP haux (hpk 0 _ _ hu)) hz hh
+
+theorem RG.rhsPacked (hP : P.Pre) {ℓ u ℓF : Level} (nT : Nat)
+    {tele idx : List (Expr md)} {tele' idx' : List (Expr md')}
+    (htele : RGL P f tele tele') (hidx : RGL P f idx idx')
+    {cod carr uVal zVal rVal hVal mot : Expr md} {cod' carr' uVal' zVal' rVal' hVal' mot' : Expr md'}
+    (hcod : RG P f cod cod') (hcarr : RG P f carr carr') (hu : RG P f uVal uVal')
+    (hz : RG P f zVal zVal') (hr : RG P f rVal rVal') (hh : RG P f hVal hVal')
+    (hmot : RG P f mot mot') :
+    RG P f (mkRhsPacked ℓ u ℓF nT tele idx cod carr uVal zVal rVal hVal mot)
+      (mkRhsPacked ℓ u ℓF nT tele' idx' cod' carr' uVal' zVal' rVal' hVal' mot') := by
+  simp only [mkRhsPacked]
+  let huApp := RG.appN (RG.lift hu nT 0) (RGL.vars 0 nT)
+  let hzApp := RG.appN (RG.lift hz nT 0) (RGL.vars 0 nT)
+  let hrApp := RG.appN (RG.lift hr nT 0) (RGL.vars 0 nT)
+  let hhAt := RG.congrFunTele hP (u := u) (ℓF := ℓF) nT (RG.lift hcarr nT 0) (RG.lift hu nT 0)
+    (RG.lift hz nT 0) (RG.lift hh nT 0) hcod
+  exact RG.lams htele (RG.eqRec hP hcod huApp
+    (RG.lam hcod (RG.lam (RG.eq hP (RG.lift hcod 1 0) (RG.lift huApp 1 0) (RG.bvar 0))
+      (RG.appN hmot (RGL.append (RGL.liftAll hidx 2) (RGL.cons (RG.bvar 1) RGL.nil))) bm) bm)
+    hrApp hzApp hhAt)
+
 namespace ORG
 theorem none : ORG P f (none : Option (Expr md)) none := ⟨rfl, fun _ h => nomatch h⟩
 theorem some {e : Expr md} {e' : Expr md'} (h : RG P f e e') : ORG P f (some e) (some e') := by
@@ -482,15 +583,16 @@ theorem RG.congr (hP : P.Pre) {ℓα : Level} {α : Expr md} {α' : Expr md'} (h
 
 /-- **The adapted minor's transport chain** (`_impl.rec`'s real-member minors) and
 its renaming, by its recursion over the packed positions. -/
-theorem RG.go (hP : P.Pre) {u ℓ : Level} {c : ACtor md} {c' : ACtor md'} (hcn : c'.nF = c.nF)
+theorem RG.go (hP : P.Pre) {ℓ : Level} {fl : ACtor md → Nat → Level} {fl' : ACtor md' → Nat → Level}
+    {c : ACtor md} {c' : ACtor md'} (hcn : c'.nF = c.nF) (hfl : ∀ k, fl' c' k = fl c k)
     {fv : Nat → Expr md} {fv' : Nat → Expr md'} (hfv : ∀ i, RG P f (fv i) (fv' i)) {packed : List Nat}
     {ma : Nat → List (Expr md) → Expr md} {ma' : Nat → List (Expr md') → Expr md'}
     (hma : ∀ o l l', RGL P f l l' → RG P f (ma o l) (ma' o l'))
     {pu : Nat → Expr md × Expr md × Expr md} {pu' : Nat → Expr md' × Expr md' × Expr md'}
     (hpu : ∀ i, RG P f (pu i).1 (pu' i).1 ∧ RG P f (pu i).2.1 (pu' i).2.1 ∧ RG P f (pu i).2.2 (pu' i).2.2) :
     ∀ (ks done : List Nat) {acc : Expr md} {acc' : Expr md'}, RG P f acc acc' →
-      RG P f (genNested.go u ℓ c fv packed ma pu ks done acc)
-        (genNested.go u ℓ c' fv' packed ma' pu' ks done acc')
+      RG P f (genNested.go ℓ fl c fv packed ma pu ks done acc)
+        (genNested.go ℓ fl' c' fv' packed ma' pu' ks done acc')
   | [], _, _, _, h => by simp only [genNested.go]; exact h
   | k :: rest, done, acc, acc', h => by
     simp only [genNested.go]
@@ -499,7 +601,8 @@ theorem RG.go (hP : P.Pre) {u ℓ : Level} {c : ACtor md} {c' : ACtor md'} (hcn 
     rcases pu k with ⟨a, b, d⟩
     rcases pu' k with ⟨a', b', d'⟩
     intro h1 h2 h3
-    refine RG.go hP hcn hfv hma hpu rest _ (RG.eqRec hP h3 h1 ?_ h (hfv k) h2)
+    rw [hfl k]
+    refine RG.go hP hcn hfl hfv hma hpu rest _ (RG.eqRec hP h3 h1 ?_ h (hfv k) h2)
     refine RG.lam h3 (RG.lam (RG.eq hP (RG.lift h3 1 0) (RG.lift h1 1 0) (RG.bvar 0)) (hma 2 _ _ ?_) bm) bm
     refine RGL.map (by rw [hcn]) fun i _ => ?_
     exact rel_ite (fun _ => RG.bvar 1) fun _ => rel_ite (fun _ => RG.lift (hfv i) 2 0) fun _ =>
@@ -543,40 +646,57 @@ theorem MRel.map {α : Type} {l : List α} {g : α → Nat × Expr md × Expr md
   exact MRel.filterMap rfl h
 
 /-- **The iota statement's transport chain** (a real member's `goT`) and its renaming. -/
-theorem RG.goT (hP : P.Pre) {u ℓ : Level} {M n : Nat} {mems : List (Mem md)} {mems' : List (Mem md')}
+theorem RG.goT (hP : P.Pre) {ℓ : Level} {mems : List (Mem md)} {mems' : List (Mem md')}
     (hmj : ∀ t, (mems'.getD t default).j = (mems.getD t default).j)
     {fam : Family md} (hfam : fam.Good P)
-    {rn : Expr md → Expr md} {rn' : Expr md' → Expr md'} (hrn : ∀ e e', RG P f e e' → RG P f (rn e) (rn' e'))
-    {fI : ACtor md → Nat → Nat → List (Expr md)} {fI' : ACtor md' → Nat → Nat → List (Expr md')}
-    {c : ACtor md} {c' : ACtor md'} (hck : c'.kinds = c.kinds)
-    (hfI : ∀ k o, RGL P f (fI c k o) (fI' c' k o))
+    {fl : ACtor md → Nat → Level} {fl' : ACtor md' → Nat → Level}
     {cpn : Nat → Key md} {cpn' : Nat → Key md'} (hcpn : ∀ j, cpn' j = (cpn j).map f)
     (hcpnG : ∀ j, (cpn j).Good P)
     {ai : Key md → Nat → List (Expr md) → List (Expr md) → Expr md}
     {ai' : Key md' → Nat → List (Expr md') → List (Expr md') → Expr md'}
     (hai : ∀ nm o l l' a a', nm.Good P → RGL P f l l' → RGL P f a a' → RG P f (ai nm o l a) (ai' (nm.map f) o l' a'))
-    {nF oP : Nat} {packed : List Nat} {uOf : Nat → Nat → Expr md} {uOf' : Nat → Nat → Expr md'}
-    (hu : ∀ o i, RG P f (uOf o i) (uOf' o i)) {o' : Nat} {zOf hOf : Nat → Expr md}
+    {c : ACtor md} {c' : ACtor md'} (hck : c'.kinds = c.kinds) (hct : c'.teles = c.teles)
+    (hfl : ∀ k, fl' c' k = fl c k)
+    {nF oP : Nat} {packed : List Nat}
+    {telOf : Nat → Nat → List (Expr md)} {telOf' : Nat → Nat → List (Expr md')}
+    (htel : ∀ o i, RGL P f (telOf o i) (telOf' o i))
+    {idxOf : Nat → Nat → List (Expr md)} {idxOf' : Nat → Nat → List (Expr md')}
+    (hidx : ∀ o i, RGL P f (idxOf o i) (idxOf' o i))
+    {uOf : Nat → Nat → Expr md} {uOf' : Nat → Nat → Expr md'}
+    (hu : ∀ o i, RG P f (uOf o i) (uOf' o i))
+    {cOf : Nat → Nat → Expr md} {cOf' : Nat → Nat → Expr md'}
+    (hcOf : ∀ o i, RG P f (cOf o i) (cOf' o i))
+    {o' : Nat} {zOf hOf : Nat → Expr md}
     {zOf' hOf' : Nat → Expr md'} (hz : ∀ i, RG P f (zOf i) (zOf' i)) (hh : ∀ i, RG P f (hOf i) (hOf' i))
     {pk : Nat → Nat → Expr md → Expr md} {pk' : Nat → Nat → Expr md' → Expr md'}
     (hpk : ∀ o i e e', RG P f e e' → RG P f (pk o i e) (pk' o i e'))
     {ma : Nat → List (Expr md) → Expr md} {ma' : Nat → List (Expr md') → Expr md'}
     (hma : ∀ o l l', RGL P f l l' → RG P f (ma o l) (ma' o l')) :
     ∀ (ks done : List Nat) {acc : Expr md} {acc' : Expr md'}, RG P f acc acc' →
-      RG P f (genNested.goT u M n mems fam ℓ rn fI cpn ai c nF oP packed uOf o' zOf hOf pk ma ks done acc)
-        (genNested.goT u M n mems' (fam.mapKeys f) ℓ rn' fI' cpn' ai' c' nF oP packed uOf' o' zOf' hOf' pk'
+      RG P f (genNested.goT mems fam ℓ fl cpn ai c nF oP packed telOf idxOf uOf cOf o' zOf hOf pk ma ks done acc)
+        (genNested.goT mems' (fam.mapKeys f) ℓ fl' cpn' ai' c' nF oP packed telOf' idxOf' uOf' cOf' o' zOf' hOf' pk'
           ma' ks done acc')
   | [], _, _, _, h => by simp only [genNested.goT]; exact h
   | k :: rest, done, acc, acc', h => by
     simp only [genNested.goT]
-    have hidx : RGL P f (liftAll o' (((fI c k (nF - k)).map rn).map (·.liftLooseBVars (M + n) nF)))
-        (liftAll o' (((fI' c' k (nF - k)).map rn').map (·.liftLooseBVars (M + n) nF))) :=
-      RGL.liftAll (RGL.lifts (RGL.mapR (hfI k _) hrn) _ _) o'
-    have haux := RG.aux hfam ((c.kinds.getD k none).getD 0) (oP + o') hidx
-    rw [hck, hmj, hcpn]
-    refine RG.goT hP hmj hfam hrn hck hfI hcpn hcpnG hai hu hz hh hpk hma rest _
-      (RG.eqRec hP haux (hpk 0 k _ _ (hu o' k)) ?_ h (hpk 0 k _ _ (hz k))
-        (hai _ _ _ _ _ _ (hcpnG _) hidx (RGL.cons (hu o' k) (RGL.cons (hz k) (RGL.cons (hh k) RGL.nil)))))
+    rw [hck, hct, hfl k, hmj, hcpn]
+    have haux := RG.pis (htel o' k) (RG.aux hfam ((c.kinds.getD k none).getD 0) (oP + o' + c.teles.getD k 0) (hidx o' k))
+    have hcp : RG P f
+        (if (c.teles.getD k 0 == 0) = true then
+          ai (cpn (mems.getD ((c.kinds.getD k none).getD 0) default).j) (oP + o') (idxOf o' k) [uOf o' k, zOf k, hOf k]
+         else Ix.Kernel.Frontend.InModel.congrPackFun (fl c k) (cOf o' k)
+          (mkPis (telOf o' k) (auxAt fam ((c.kinds.getD k none).getD 0) (oP + o' + c.teles.getD k 0) (idxOf o' k)))
+          (fun d x => pk d k x) (uOf o' k) (zOf k) (hOf k))
+        (if (c.teles.getD k 0 == 0) = true then
+          ai' ((cpn (mems.getD ((c.kinds.getD k none).getD 0) default).j).map f) (oP + o') (idxOf' o' k) [uOf' o' k, zOf' k, hOf' k]
+         else Ix.Kernel.Frontend.InModel.congrPackFun (fl c k) (cOf' o' k)
+          (mkPis (telOf' o' k) (auxAt (fam.mapKeys f) ((c.kinds.getD k none).getD 0) (oP + o' + c.teles.getD k 0) (idxOf' o' k)))
+          (fun d x => pk' d k x) (uOf' o' k) (zOf' k) (hOf' k)) :=
+      rel_ite
+        (fun _ => hai _ _ _ _ _ _ (hcpnG _) (hidx o' k) (RGL.cons (hu o' k) (RGL.cons (hz k) (RGL.cons (hh k) RGL.nil))))
+        (fun _ => RG.congrPackFun hP (hcOf o' k) haux (fun d _ _ he => hpk d k _ _ he) (hu o' k) (hz k) (hh k))
+    refine RG.goT hP hmj hfam hcpn hcpnG hai hck hct hfl htel hidx hu hcOf hz hh hpk hma rest _
+      (RG.eqRec hP haux (hpk 0 k _ _ (hu o' k)) ?_ h (hpk 0 k _ _ (hz k)) hcp)
     refine RG.lam haux (RG.lam (RG.eq hP (RG.lift haux 1 0) (hpk 1 k _ _ (RG.lift (hu o' k) 1 0))
       (RG.bvar 0)) (hma 2 _ _ ?_) bm) bm
     refine RGL.map rfl fun i _ => ?_
@@ -585,7 +705,9 @@ theorem RG.goT (hP : P.Pre) {u ℓ : Level} {M n : Nat} {mems : List (Mem md)} {
         fun _ => hpk _ _ _ _ (RG.lift (hu o' i) _ _)) fun _ => RG.lift (RG.bvar _) _ _
 
 /-- **The iota proof's nested generalisations** and their renaming. -/
-theorem RG.nest (hP : P.Pre) {u ℓ : Level} {nF : Nat} {uOf eOf cOf : Nat → Nat → Expr md}
+theorem RG.nest (hP : P.Pre) {ℓ : Level} {fl : ACtor md → Nat → Level} {fl' : ACtor md' → Nat → Level}
+    {c : ACtor md} {c' : ACtor md'} (hfl : ∀ k, fl' c' k = fl c k)
+    {nF : Nat} {uOf eOf cOf : Nat → Nat → Expr md}
     {uOf' eOf' cOf' : Nat → Nat → Expr md'} (hu : ∀ o i, RG P f (uOf o i) (uOf' o i))
     (he : ∀ o i, RG P f (eOf o i) (eOf' o i)) (hc : ∀ o i, RG P f (cOf o i) (cOf' o i))
     {st : Nat → (Nat → Option (Expr md)) → (Nat → Option (Expr md)) → Expr md × Expr md × Expr md}
@@ -595,14 +717,15 @@ theorem RG.nest (hP : P.Pre) {u ℓ : Level} {nF : Nat} {uOf eOf cOf : Nat → N
         RG P f (st o zs hs).2.2 (st' o zs' hs').2.2) :
     ∀ (ks : List Nat) (o' : Nat) {zs hs : Nat → Option (Expr md)} {zs' hs' : Nat → Option (Expr md')},
       FORG P f zs zs' → FORG P f hs hs' →
-      RG P f (genNested.nest u ℓ nF uOf eOf cOf st ks o' zs hs)
-        (genNested.nest u ℓ nF uOf' eOf' cOf' st' ks o' zs' hs')
+      RG P f (genNested.nest ℓ fl c nF uOf cOf eOf st ks o' zs hs)
+        (genNested.nest ℓ fl' c' nF uOf' cOf' eOf' st' ks o' zs' hs')
   | [], o', zs, hs, zs', hs', hz, hh => by
     simp only [genNested.nest]
     obtain ⟨h1, h2, -⟩ := hst o' zs zs' hs hs' hz hh
     exact RG.refl hP h1 h2
   | k :: rest, o', zs, hs, zs', hs', hz, hh => by
     simp only [genNested.nest]
+    rw [hfl k]
     obtain ⟨h1, h2, h3⟩ := hst (o' + 2)
       (fun i => if (i == k) = true then some (Expr.bvar 1) else (zs i).map (·.liftLooseBVars 2 0))
       (fun i => if (i == k) = true then some (Expr.bvar 1) else (zs' i).map (·.liftLooseBVars 2 0))
@@ -613,7 +736,7 @@ theorem RG.nest (hP : P.Pre) {u ℓ : Level} {nF : Nat} {uOf eOf cOf : Nat → N
     exact RG.eqRec hP (hc o' k) (hu o' k)
       (RG.lam (hc o' k) (RG.lam (RG.eq hP (RG.lift (hc o' k) 1 0) (RG.lift (hu o' k) 1 0) (RG.bvar 0))
         (RG.eq hP h1 h2 h3) bm) bm)
-      (RG.nest hP hu he hc hst rest o' (fun i => rel_ite (fun _ => ORG.some (hu o' k)) (fun _ => hz i))
+      (RG.nest hP hfl hu he hc hst rest o' (fun i => rel_ite (fun _ => ORG.some (hu o' k)) (fun _ => hz i))
         (fun i => rel_ite (fun _ => ORG.some (RG.refl hP (hc o' k) (hu o' k))) (fun _ => hh i)))
       (RG.lift (RG.bvar _) o' 0) (he o' k)
 
@@ -690,6 +813,10 @@ macro "rg" : tactic => `(tactic| repeat' (first
   | (with_reducible refine RG.eq ‹_› ?_ ?_ ?_)
   | (with_reducible refine RG.refl ‹_› ?_ ?_)
   | (with_reducible refine RG.eqRec ‹_› ?_ ?_ ?_ ?_ ?_ ?_)
+  | (with_reducible refine RG.funextTele ‹_› _ ?_ _ ?_ ?_ ?_ ?_)
+  | (with_reducible refine RG.congrFunTele ‹_› _ ?_ ?_ ?_ ?_ ?_)
+  | (with_reducible refine RG.congrPackFun ‹_› ?_ ?_ ?_ ?_ ?_ ?_; rotate_left; intro _ _ _ _)
+  | (with_reducible refine RG.rhsPacked ‹_› _ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_)
   | (with_reducible refine RGL.fieldIdxAt ‹_› ‹_› _ _ _ _ _ ?_)
   | (with_reducible refine RGL.fieldIdx ‹_› ‹_› _ _ _ ?_)
   | (with_reducible refine RGL.mc ‹_› ‹_› _ ?_)
@@ -711,9 +838,9 @@ macro "rg" : tactic => `(tactic| repeat' (first
   | (with_reducible refine MRel.filterMap ?_ ?_; rotate_left; intro _ _)
   | (with_reducible exact OMRel.none)
   | (with_reducible refine OMRel.some _ ?_ ?_ _)
-  | (with_reducible refine RG.go ‹_› ?_ ?_ ?_ ?_ _ _ ?_)
-  | (with_reducible refine RG.goT ‹_› ?_ ‹_› ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ _ _ ?_)
-  | (with_reducible refine RG.nest ‹_› ?_ ?_ ?_ ?_ _ _ ?_ ?_)
+  | (with_reducible refine RG.go ‹_› ?_ ?_ ?_ ?_ ?_ _ _ ?_)
+  | (with_reducible refine RG.goT ‹_› ?_ ‹_› ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ _ _ ?_)
+  | (with_reducible refine RG.nest ‹_› ?_ ?_ ?_ ?_ ?_ _ _ ?_ ?_)
   | (with_reducible exact FORG.none)
   | (with_reducible refine RG.getDz ‹_› _ ?_)
   | (with_reducible refine MRel.map ?_; intro _ _)
@@ -840,14 +967,14 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
   obtain ⟨types, ctors, recs⟩ := b
   obtain ⟨hty, hct, hrc⟩ := hb
   unfold genNested
-  simp (config := { maxSteps := 800000 }) only [← Bool.cond_eq_ite, except_throw_bind,
-    BlockRec.mapKeys_types, BlockRec.mapKeys_ctors,
+  simp (config := { maxSteps := 2000000, zeta := false }) only [← Bool.cond_eq_ite, except_throw_bind]
+  simp (config := { maxSteps := 2000000 }) only [BlockRec.mapKeys_types, BlockRec.mapKeys_ctors,
     BlockRec.mapKeys_recs, List.length_map]
   cases types with
   | nil => exact ExRel.throw'
   | cons t0 rest =>
   have ht0 := hty t0 List.mem_cons_self
-  simp only [List.map_cons, IndTypeRec.mapKeys_cv, ConstantVal.mapKeys_name,
+  simp (config := { maxSteps := 400000 }) only [List.map_cons, IndTypeRec.mapKeys_cv, ConstantVal.mapKeys_name,
     ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type, IndTypeRec.mapKeys_nP,
     IndTypeRec.mapKeys_nIdx, List.length_cons]
   have hl : ListRel (fun x x' => x' = IndTypeRec.mapKeys f x ∧ x.Good P) (t0 :: rest)
@@ -857,7 +984,7 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
   · obtain ⟨rfl, htg⟩ := ht
     simp only [IndTypeRec.mapKeys_cv, ConstantVal.mapKeys_levelParams, IndTypeRec.mapKeys_nP]
     exact ExRel.cond rfl (fun _ => ExRel.pure' trivial) (fun _ => ExRel.throw')
-  simp only [Expr.stripPis_mapKeys]
+  simp (config := { maxSteps := 400000 }) only [Expr.stripPis_mapKeys]
   cases hs : Expr.stripPis (t0.nP + t0.nIdx) t0.cv.type with
   | none => first | exact ExRel.throw' | (simp only [Option.map_none]; exact ExRel.throw')
   | some q =>
@@ -866,7 +993,7 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
   cases body with
   | sort u => ?_
   | _ => exact ExRel.throw'
-  simp only [Option.map_some, Expr.mapTele, Expr.mapKeys]
+  simp (config := { maxSteps := 400000 }) only [Option.map_some, Expr.mapTele, Expr.mapKeys]
   refine ExRel.bind (S := fun _ _ => True) (ExRel.forIn_list hl trivial fun t t' _ _ ht _ => ?_)
     fun _ _ _ => ?_
   · obtain ⟨rfl, htg⟩ := ht
@@ -877,33 +1004,33 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
     | some q =>
       obtain ⟨_, body⟩ := q
       cases body <;> first | exact ExRel.throw' | exact ExRel.pure' trivial
-  simp only [List.getElem?_map]
+  simp (config := { maxSteps := 400000 }) only [List.getElem?_map]
   cases hr0 : recs[0]? with
   | none => first | exact ExRel.throw' | (simp only [Option.map_none]; exact ExRel.throw')
   | some r0 =>
   have hr0g := hrc r0 (List.mem_of_getElem? hr0)
-  simp only [Option.map_some, IndRecRec.mapKeys_nM, IndRecRec.mapKeys_nm, IndRecRec.mapKeys_cv,
+  simp (config := { maxSteps := 400000 }) only [Option.map_some, IndRecRec.mapKeys_nM, IndRecRec.mapKeys_nm, IndRecRec.mapKeys_cv,
     ConstantVal.mapKeys_type, ConstantVal.mapKeys_levelParams]
   refine ExRel.ite Iff.rfl (fun hM => ?_) (fun _ => ExRel.throw')
-  simp only [Expr.stripPis_mapKeys]
+  simp (config := { maxSteps := 400000 }) only [Expr.stripPis_mapKeys]
   cases hp1 : Expr.stripPis t0.nP r0.cv.type with
   | none => first | exact ExRel.throw' | (simp only [Option.map_none]; exact ExRel.throw')
   | some q =>
   obtain ⟨_, afterP⟩ := q
   have hP1 := Expr.stripPis_good hr0g.1.2 hp1
-  simp only [Option.map_some, Expr.mapTele, Expr.stripPis_mapKeys]
+  simp (config := { maxSteps := 400000 }) only [Option.map_some, Expr.mapTele, Expr.stripPis_mapKeys]
   cases hp2 : Expr.stripPis r0.nM afterP with
   | none => first | exact ExRel.throw' | (simp only [Option.map_none]; exact ExRel.throw')
   | some q =>
   obtain ⟨motiveBs, afterM⟩ := q
   have hP2 := Expr.stripPis_good hP1.2 hp2
-  simp only [Option.map_some, Expr.mapTele, Expr.stripPis_mapKeys]
+  simp (config := { maxSteps := 400000 }) only [Option.map_some, Expr.mapTele, Expr.stripPis_mapKeys]
   cases hp3 : Expr.stripPis r0.nm afterM with
   | none => first | exact ExRel.throw' | (simp only [Option.map_none]; exact ExRel.throw')
   | some q =>
   obtain ⟨minorBs, _⟩ := q
   have hP3 := Expr.stripPis_good hP2.2 hp3
-  simp only [Option.map_some, Expr.mapTele]
+  simp (config := { maxSteps := 400000 }) only [Option.map_some, Expr.mapTele]
   have hmot : (Expr.mapBinders f motiveBs).map (fun x => x.1) =
       (motiveBs.map (fun x => x.1)).map (Expr.mapKeys f) := by
     simp [Expr.mapBinders, List.map_map, Function.comp_def]
@@ -972,7 +1099,7 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
     fun _ _ _ => ?_
   · have hm' : m < (t0 :: rest).length := List.mem_range.mp hm
     have hT := hty _ (getD_mem_of_lt hm' default)
-    simp only [← Bool.cond_eq_ite, ← List.map_cons, getD_map_of_lt hm' default default,
+    simp only [← List.map_cons, getD_map_of_lt hm' default default,
       IndTypeRec.mapKeys_ctors, IndTypeRec.mapKeys_cv, ConstantVal.mapKeys_name]
     refine ExRel.cond ?cm (fun _ => ?_) (fun _ => ?_)
     case cm =>
@@ -1186,6 +1313,61 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
     simp only [hbn]
     generalize (t0.cv.name :: List.map (fun x => x.cv.name) rest ++
       List.map (fun x => x.cv.name) ctors ++ List.map (fun x => x.cv.name) recs) = bn at hbnG ⊢
+    -- binder sorts for reflexive mimic fields (`ctorSorts`)
+    refine ExRel.bind (S := Eq) (ExRel.forIn_list (ListRel.of_map hcsG) rfl fun c c' csS csS' hc hcsS => ?_)
+      fun ctorSorts ctorSorts' hctorSorts => ?_
+    · obtain ⟨rfl, hcG⟩ := hc
+      subst hcsS
+      simp only [ACtor.mapKeys_nF, ACtor.mapKeys_teles, ACtor.mapKeys_kinds]
+      refine ExRel.bind (S := Eq) (ExRel.forIn_same rfl fun i fS fS' _ hfS => ?_)
+        fun fS fS' hfS => by subst hfS; exact ExRel.pure' rfl
+      subst hfS
+      refine ExRel.cond rfl (fun _ => ?_) (fun _ => ExRel.pure' rfl)
+      have htd : RGL P f (teleDoms c i) (teleDoms (c.mapKeys f) i) := RGL.tele hcG i
+      have hmd : RGL P f
+          ((List.range c.nF).map fun i => Expr.renameConsts (fun x => bif bn.contains x then modelName x else x)
+            (c.doms.getD i default))
+          ((List.range c.nF).map fun i => Expr.renameConsts (fun x =>
+            bif (List.map (Key.map f) bn).contains x then modelName x else x)
+            ((c.mapKeys f).doms.getD i default)) :=
+        RGL.map rfl fun k _ => RG.rn hf hbnG (RG.dom hcG k)
+      refine ExRel.bind (S := Eq) (ExRel.forIn_same rfl fun j ls ls' _ hls => ?_)
+        fun ls ls' hls => by subst hls; exact ExRel.pure' rfl
+      subst hls
+      refine ExRel.bind (S := Eq) (ExRel.refl (congrArg Except.toOption
+        (Eq.symm (sortOf_mapKeysOn' hP (tblOn_local hf hctx.tbl ?hgt ?hgtG) ?hC ?hE ?h1 ?h2))))
+        fun x x' hx => ?_
+      case hgt =>
+        simp only [List.map_cons, List.map_append, List.map_map]
+        refine append_congr' (cons_congr' rfl (List.map_congr_left fun t _ => rfl))
+          (List.map_congr_left fun c'' hc'' => ?_)
+        simp only [Function.comp_apply, IndCtorRec.mapKeys_cv, ConstantVal.mapKeys_name,
+          ConstantVal.mapKeys_type, RG.rn_map_bif hf hbnG (hct c'' hc'').2]
+        rfl
+      case hgtG =>
+        intro x hx
+        simp only [List.mem_cons, List.mem_append, List.mem_map] at hx
+        rcases hx with (rfl | ⟨t, ht, rfl⟩) | ⟨c'', hc'', rfl⟩
+        · exact ⟨ht0.1.1, ht0.1.2⟩
+        · exact (hty t (List.mem_cons_of_mem _ ht)).1
+        · exact ⟨(hct c'' hc'').1, rn_good (hct c'' hc'').2⟩
+      case hC =>
+        intro x hx
+        simp only [List.mem_reverse, List.mem_append] at hx
+        rcases hx with (hx | hx) | hx
+        · exact Expr.goodList_piBinders (Expr.BindersGood.take hpbs.1 _) x hx
+        · exact hmd.2 x (List.mem_of_mem_take hx)
+        · exact htd.2 x (List.mem_of_mem_take hx)
+      case hE => exact Expr.GoodList.getD_default htd.2 j
+      case h1 =>
+        simp only [List.map_reverse, List.map_append, List.map_take, hmd.1, htd.1]
+      case h2 =>
+        rw [htd.1, getD_mapKeys_default]
+      subst hx
+      cases x with
+      | none => exrel_throw
+      | some ℓ => exact ExRel.pure' rfl
+    subst hctorSorts
     refine ExRel.bind (S := Eq) (ExRel.forIn_list (ListRel.of_map hmG) rfl fun mem mem' W W' hmem hW => ?_)
       fun W W' hW => ?_
     · obtain ⟨rfl, hmemG⟩ := hmem
@@ -1193,7 +1375,7 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
       refine ExRel.bind (S := Eq) (ExRel.forIn_same rfl fun j W W' _ hW => ?_) fun W W' hW => ExRel.pure' hW
       subst hW
       simp only [Mem.mapKeys_idxBs, getD_mapKeys_default]
-      rw [rn_map hf hbnG (Expr.GoodList.getD_default hmemG.2.2 j)]
+      rw [RG.rn_map_bif hf hbnG (Expr.GoodList.getD_default hmemG.2.2 j)]
       rw [idxSort_mapKeysOn' hP hctx.tbl
         (ctx := (piBinders (List.take t0.nP pbs0) ++ List.take j mem.idxBs).reverse) ?g1 ?g2 ?g3 rfl]
       case g1 =>
@@ -1392,7 +1574,7 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
         refine ExRel.pure' (PS.push hf hctx hs (by rfl) (by exact hcG.1) _ ?_ hv)
         refine RG.eq_of (P := P) ?_; rg
       -- 7. `_impl.rec`
-      rw [rn_map hf hbnG hr0g.1.2, Expr.stripPis_mapKeys]
+      rw [RG.rn_map_bif hf hbnG hr0g.1.2, Expr.stripPis_mapKeys]
       cases hpre : Expr.stripPis (t0.nP + r0.nM + r0.nm)
           (Expr.renameConsts (fun x => bif bn.contains x then modelName x else x) r0.cv.type) with
       | none => simp only [Option.map_none]; exrel_throw
@@ -1492,7 +1674,7 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
       | none => exact ExRel.pure' ⟨rfl, rfl, hsG⟩
       | some pc =>
       have hpcG := hct pc (List.mem_of_find?_eq_some hpc)
-      simp only [Option.map_some, IndCtorRec.mapKeys_cv, ConstantVal.mapKeys_type, rn_map hf hbnG hpcG.2,
+      simp only [Option.map_some, IndCtorRec.mapKeys_cv, ConstantVal.mapKeys_type, RG.rn_map_bif hf hbnG hpcG.2,
         Expr.stripPis_mapKeys]
       cases hcbs : Expr.stripPis (t0.nP + c.nF)
           (Expr.renameConsts (fun x => bif bn.contains x then modelName x else x) pc.cv.type) with
@@ -1518,7 +1700,7 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
         refine append_congr' (cons_congr' rfl (List.map_congr_left fun t _ => rfl))
           (List.map_congr_left fun c'' hc'' => ?_)
         simp only [Function.comp_apply, IndCtorRec.mapKeys_cv, ConstantVal.mapKeys_name,
-          ConstantVal.mapKeys_type, rn_map hf hbnG (hct c'' hc'').2]
+          ConstantVal.mapKeys_type, RG.rn_map_bif hf hbnG (hct c'' hc'').2]
         rfl
       case hgtG =>
         intro x hx

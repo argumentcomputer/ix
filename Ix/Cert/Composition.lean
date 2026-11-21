@@ -128,6 +128,7 @@ def SourceTotal : Prop :=
     Premises env roots sub ixe failures t envQ →
     (∀ c ∈ envQ.consts, envQ.find? c.name = some c) ∧
     ∀ n ci, (n, ci) ∈ sub.consts.toList → quotientKey ixe t n ≠ Ix.Kernel.sorryAxName →
+      (quotientKey ixe t n).isCompilerTrust = false →
       ∃ c ∈ envQ.consts, c.name = quotientKey ixe t n ∧
         keyAddress ixe t c.name = (ixe.named.get? n).map (·.addr)
 
@@ -385,8 +386,8 @@ theorem compileCorrect_unchanged (h1 : Obligation.SourceTotal) (h2 : Obligation.
     refine ⟨{ N₀ with rec_rule := rules, caps := caps }, fun c hc e he φ ρ => ?_⟩
     rw [keys c hc e he]
     exact renamed_reading_denotes rel same unique hc M φ ρ
-  · intro n ci hn hsorry
-    obtain ⟨c, hc, hname, haddr⟩ := total n ci hn hsorry
+  · intro n ci hn hsorry hct
+    obtain ⟨c, hc, hname, haddr⟩ := total n ci hn hsorry hct
     exact ⟨c, hc, hname, haddr, readsAll n ci hn c hc hname haddr⟩
 
 end Ix.Cert

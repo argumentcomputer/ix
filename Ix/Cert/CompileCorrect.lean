@@ -107,6 +107,7 @@ record and so is represented by its role. Any use of one is declined. -/
 def ReadingCovers (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (cx : Ix.Kernel.Reader.Ctx .anon)
     (sub : Ix.Environment) (envQ : Env .source) : Prop :=
   ∀ n ci, (n, ci) ∈ sub.consts.toList → quotientKey ixe t n ≠ Ix.Kernel.sorryAxName →
+    (quotientKey ixe t n).isCompilerTrust = false →
     ∃ c ∈ envQ.consts, c.name = quotientKey ixe t n ∧
       keyAddress ixe t c.name = (ixe.named.get? n).map (·.addr) ∧
       (readingAt ixe t cx c).isSome = true
