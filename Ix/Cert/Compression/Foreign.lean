@@ -10,8 +10,9 @@ Formalization and soundness proofs for `crates/proof-compression/src/foreign.rs`
 2. Signed coefficients (`signedCoeff`, `signedCoeff_mod_eq`, `abs_signedCoeff_le`)
    and interval arithmetic (`Interval`, `InInterval`, `Interval.add`, `Interval.scale`,
    `Interval.mulNonneg`, `GatePlan`, `arithmeticRange`, `selectionRange`).
-3. Canonical 16-bit limb decomposition check (`canonical_iff_lt_goldilocksP`).
-4. Direct and quotient gate soundness (`direct_gate_sound`, `quotient_gate_sound`).
+3. Canonical 20-bit/12-bit limb decomposition check (`canonical_iff_lt_goldilocksP`).
+4. Direct and quotient gate soundness (`direct_gate_sound`, `quotient_gate_sound`)
+   with 7 × 20-bit quotient limbs (`q' < 2^140`).
 5. End-to-end Goldilocks-to-BN254 compiler `foreignCompile` and universal soundness
    theorem `foreign_compile_sound`.
 -/
@@ -360,7 +361,7 @@ def GatePlan.Valid (plan : GatePlan) (I : Interval) : Prop :=
       offset % goldilocksP = 0 ∧
       0 ≤ I.min + Int.ofNat offset ∧
       I.max + Int.ofNat offset < Int.ofNat (2 ^ bits * goldilocksP) ∧
-      bits ≤ 144
+      bits ≤ 140
 
 /-- Acyclic arithmetic range (`src/foreign.rs:207-218`): computes the interval of
 `qm * a * b + qa * a + qb * b + k` solving for wire `c` (`qc = -1`), with the
@@ -423,26 +424,26 @@ theorem blake3ByteBound_sound (u : UInt8) :
     unfold bn254FrModulus
     omega
 
-/-! ## 3. Canonical Goldilocks Check (`canonical`, `src/foreign.rs:398-422`) -/
+/-! ## 3. Canonical Goldilocks Check (`canonical`, `src/foreign.rs`) -/
 
-/-- Reconstruct a 64-bit integer from four 16-bit limbs `lo0, lo1, hi0, hi1`. -/
-def reconstructU64FromU16 (lo0 lo1 hi0 hi1 : Nat) : Nat :=
-  lo0 + 2 ^ 16 * lo1 + 2 ^ 32 * hi0 + 2 ^ 48 * hi1
+/-- Reconstruct a 64-bit integer from 20-bit low limbs `lo0, hi0` and 12-bit high limbs `lo1, hi1`. -/
+def reconstructU64FromU20U12 (lo0 lo1 hi0 hi1 : Nat) : Nat :=
+  lo0 + 2 ^ 20 * lo1 + 2 ^ 32 * hi0 + 2 ^ 52 * hi1
 
 /-- The canonical Goldilocks high/low word check (`hi = 0xffffffff → lo = 0`). -/
 def CanonicalHighLowCheck (lo0 lo1 hi0 hi1 : Nat) : Prop :=
-  hi0 + 2 ^ 16 * hi1 = 0xffffffff → lo0 + 2 ^ 16 * lo1 = 0
+  hi0 + 2 ^ 20 * hi1 = 0xffffffff → lo0 + 2 ^ 20 * lo1 = 0
 
-/-- **Canonical Goldilocks 16-Bit Limb Theorem (`canonical_iff_lt_goldilocksP`)**:
-For any four 16-bit limbs `lo0, lo1, hi0, hi1 < 2^16`, the constraint
-`(hi0 + 2^16 * hi1 = 0xffffffff → lo0 + 2^16 * lo1 = 0)` holds if and only if
-`reconstructU64FromU16 lo0 lo1 hi0 hi1 < goldilocksP`. -/
+/-- **Canonical Goldilocks 20/12-Bit Limb Theorem (`canonical_iff_lt_goldilocksP`)**:
+For any 20-bit limbs `lo0, hi0 < 2^20` and 12-bit limbs `lo1, hi1 < 2^12`, the constraint
+`(hi0 + 2^20 * hi1 = 0xffffffff → lo0 + 2^20 * lo1 = 0)` holds if and only if
+`reconstructU64FromU20U12 lo0 lo1 hi0 hi1 < goldilocksP`. -/
 theorem canonical_iff_lt_goldilocksP (lo0 lo1 hi0 hi1 : Nat)
-    (hlo0 : lo0 < 2 ^ 16) (hlo1 : lo1 < 2 ^ 16)
-    (hhi0 : hi0 < 2 ^ 16) (hhi1 : hi1 < 2 ^ 16) :
+    (hlo0 : lo0 < 2 ^ 20) (hlo1 : lo1 < 2 ^ 12)
+    (hhi0 : hi0 < 2 ^ 20) (hhi1 : hi1 < 2 ^ 12) :
     CanonicalHighLowCheck lo0 lo1 hi0 hi1 ↔
-      reconstructU64FromU16 lo0 lo1 hi0 hi1 < goldilocksP := by
-  unfold CanonicalHighLowCheck reconstructU64FromU16 goldilocksP
+      reconstructU64FromU20U12 lo0 lo1 hi0 hi1 < goldilocksP := by
+  unfold CanonicalHighLowCheck reconstructU64FromU20U12 goldilocksP
   omega
 
 /-! ## 4. Direct & Quotient Gate Soundness (`constrain_gate`, `src/foreign.rs:695-738`) -/
@@ -483,29 +484,29 @@ theorem direct_gate_sound (qm qa qb qc k a b c : Int)
   refine ⟨heq0, ?_⟩
   rw [heq0]
 
-/-- Reconstruct a quotient integer from up to 9 16-bit limbs $q_0, \dots, q_8 \in [0, 2^{16})$. -/
-def reconstructQuotient9 (q0 q1 q2 q3 q4 q5 q6 q7 q8 : Nat) : Nat :=
-  q0 + 2 ^ 16 * q1 + 2 ^ 32 * q2 + 2 ^ 48 * q3 + 2 ^ 64 * q4 +
-  2 ^ 80 * q5 + 2 ^ 96 * q6 + 2 ^ 112 * q7 + 2 ^ 128 * q8
+/-- Reconstruct a quotient integer from up to 7 20-bit limbs $q_0, \dots, q_6 \in [0, 2^{20})$. -/
+def reconstructQuotient7 (q0 q1 q2 q3 q4 q5 q6 : Nat) : Nat :=
+  q0 + 2 ^ 20 * q1 + 2 ^ 40 * q2 + 2 ^ 60 * q3 + 2 ^ 80 * q4 +
+  2 ^ 100 * q5 + 2 ^ 120 * q6
 
-theorem reconstructQuotient9_lt (q0 q1 q2 q3 q4 q5 q6 q7 q8 : Nat)
-    (h0 : q0 < 2 ^ 16) (h1 : q1 < 2 ^ 16) (h2 : q2 < 2 ^ 16)
-    (h3 : q3 < 2 ^ 16) (h4 : q4 < 2 ^ 16) (h5 : q5 < 2 ^ 16)
-    (h6 : q6 < 2 ^ 16) (h7 : q7 < 2 ^ 16) (h8 : q8 < 2 ^ 16) :
-    reconstructQuotient9 q0 q1 q2 q3 q4 q5 q6 q7 q8 < 2 ^ 144 := by
-  unfold reconstructQuotient9
+theorem reconstructQuotient7_lt (q0 q1 q2 q3 q4 q5 q6 : Nat)
+    (h0 : q0 < 2 ^ 20) (h1 : q1 < 2 ^ 20) (h2 : q2 < 2 ^ 20)
+    (h3 : q3 < 2 ^ 20) (h4 : q4 < 2 ^ 20) (h5 : q5 < 2 ^ 20)
+    (h6 : q6 < 2 ^ 20) :
+    reconstructQuotient7 q0 q1 q2 q3 q4 q5 q6 < 2 ^ 140 := by
+  unfold reconstructQuotient7
   omega
 
 /-- **Quotient Gate Soundness (`quotient_gate_sound`)**:
-If $0 \le E(a,b,c) + \text{offset} < R$, $q' < 2^{144}$ (reconstructed from $m \le 9$
-16-bit limbs), $\text{offset} \equiv 0 \pmod{P}$, and
+If $0 \le E(a,b,c) + \text{offset} < R$, $q' < 2^{140}$ (reconstructed from $m \le 7$
+20-bit limbs), $\text{offset} \equiv 0 \pmod{P}$, and
 $E(a,b,c) + \text{offset} - P \cdot q' \equiv 0 \pmod{R}$, then
 $E(a,b,c) + \text{offset} = P \cdot q'$ in $\mathbb{Z}$, and hence
 $E(a,b,c) \equiv 0 \pmod{P}$. -/
 theorem quotient_gate_sound (qm qa qb qc k a b c : Int) (offset q' : Nat)
     (hnonneg : 0 ≤ gateIntExpr qm qa qb qc k a b c + Int.ofNat offset)
     (hupper : gateIntExpr qm qa qb qc k a b c + Int.ofNat offset < Int.ofNat bn254FrModulus)
-    (hq : q' < 2 ^ 144)
+    (hq : q' < 2 ^ 140)
     (hoffset : offset % goldilocksP = 0)
     (hmodR : gateIntExpr qm qa qb qc k a b c + Int.ofNat offset -
       Int.ofNat goldilocksP * Int.ofNat q' ≡ 0 [ZMOD Int.ofNat bn254FrModulus]) :
@@ -542,7 +543,7 @@ theorem quotient_gate_sound (qm qa qb qc k a b c : Int) (offset q' : Nat)
 /-! ## 5. End-to-End Foreign Compiler (`foreignCompile` & `foreign_compile_sound`) -/
 
 /-- Universal offset $(P^2 + 4P) \cdot P$, which is a multiple of $P$ and guarantees
-$0 \le E(a,b,c) + \text{offset} < 2^{144} P < R$ for every Goldilocks gate with
+$0 \le E(a,b,c) + \text{offset} < 2^{140} P < R$ for every Goldilocks gate with
 canonical inputs $a, b, c < P$ and centered coefficients $|q_*| \le P / 2$. -/
 def universalGateOffset : Nat :=
   (goldilocksP * goldilocksP + 4 * goldilocksP) * goldilocksP
@@ -596,12 +597,19 @@ theorem universalGateExpr_bounds (qm qa qb qc k : GoldilocksF) {a b c : Nat}
   simp only [Int.ofNat_eq_natCast] at *
   omega
 
-/-- The shared 16-bit range table `"u16"` in `BN254Fr` (`src/foreign.rs:503-506`). -/
-def u16Entries : List (List BN254Fr) :=
-  List.map (fun (v : Nat) => [(v : BN254Fr)]) (List.range (2 ^ 16))
+/-- The shared 20-bit range table `"u20"` in `BN254Fr` (`src/foreign.rs`). -/
+def u20Entries : List (List BN254Fr) :=
+  List.map (fun (v : Nat) => [(v : BN254Fr)]) (List.range (2 ^ 20))
 
-def u16TableSpec : TableSpec BN254Fr :=
-  { name := "u16", width := 1, entries := u16Entries }
+def u20TableSpec : TableSpec BN254Fr :=
+  { name := "u20", width := 1, entries := u20Entries }
+
+/-- The 12-bit canonical high-limb table `"u12"` in `BN254Fr` (`src/foreign.rs`). -/
+def u12Entries : List (List BN254Fr) :=
+  List.map (fun (v : Nat) => [(v : BN254Fr)]) (List.range (2 ^ 12))
+
+def u12TableSpec : TableSpec BN254Fr :=
+  { name := "u12", width := 1, entries := u12Entries }
 
 /-- Translate a source `GoldilocksF` lookup table to `BN254Fr` with `"src:"` namespace prefix. -/
 def translateTable (t : TableSpec GoldilocksF) : TableSpec BN254Fr :=
@@ -613,45 +621,84 @@ def translateTable (t : TableSpec GoldilocksF) : TableSpec BN254Fr :=
 def translateLookup (l : LookupConstraint) : LookupConstraint :=
   { tableName := "src:" ++ l.tableName, wires := l.wires }
 
-theorem src_prefix_ne_u16 (s : String) : "src:" ++ s ≠ "u16" := by
+theorem src_prefix_ne_u20 (s : String) : "src:" ++ s ≠ "u20" := by
   intro h
   have hlen := congrArg String.length h
   rw [String.length_append] at hlen
   have : "src:".length = 4 := rfl
-  have : "u16".length = 3 := rfl
+  have : "u20".length = 3 := rfl
   omega
+
+theorem src_prefix_ne_u12 (s : String) : "src:" ++ s ≠ "u12" := by
+  intro h
+  have hlen := congrArg String.length h
+  rw [String.length_append] at hlen
+  have : "src:".length = 4 := rfl
+  have : "u12".length = 3 := rfl
+  omega
+
+theorem u12_ne_u20 : ("u12" : String) ≠ "u20" := by decide
 
 theorem src_prefix_inj {s₁ s₂ : String} (h : "src:" ++ s₁ = "src:" ++ s₂) : s₁ = s₂ := by
   have hlist := congrArg String.toList h
   rw [String.toList_append, String.toList_append] at hlist
   exact String.ext (List.append_cancel_left hlist)
 
-theorem u16Entries_mem (row : List BN254Fr) :
-    row ∈ u16Entries ↔ ∃ v : Nat, v < 2 ^ 16 ∧ [(v : BN254Fr)] = row := by
-  unfold u16Entries
+theorem u20Entries_mem (row : List BN254Fr) :
+    row ∈ u20Entries ↔ ∃ v : Nat, v < 2 ^ 20 ∧ [(v : BN254Fr)] = row := by
+  unfold u20Entries
   simp only [List.mem_map, List.mem_range]
 
-attribute [irreducible] u16Entries
+theorem u12Entries_mem (row : List BN254Fr) :
+    row ∈ u12Entries ↔ ∃ v : Nat, v < 2 ^ 12 ∧ [(v : BN254Fr)] = row := by
+  unfold u12Entries
+  simp only [List.mem_map, List.mem_range]
 
-/-- Any lookup in `"u16"` against `u16TableSpec :: (tables.map translateTable)` enforces
-`ZMod.val (w_fr wire) < 2^16`. -/
-theorem u16_lookup_val_lt (tables : List (TableSpec GoldilocksF))
+attribute [irreducible] u20Entries u12Entries
+
+/-- Any lookup in `"u20"` against `u20TableSpec :: u12TableSpec :: (tables.map translateTable)`
+enforces `ZMod.val (w_fr wire) < 2^20`. -/
+theorem u20_lookup_val_lt (tables : List (TableSpec GoldilocksF))
     (wire : Wire) (w_fr : Wire → BN254Fr)
-    (h : LookupConstraint.Satisfied (u16TableSpec :: tables.map translateTable)
-      { tableName := "u16", wires := [wire] } w_fr) :
-    ZMod.val (w_fr wire) < 2 ^ 16 := by
+    (h : LookupConstraint.Satisfied (u20TableSpec :: u12TableSpec :: tables.map translateTable)
+      { tableName := "u20", wires := [wire] } w_fr) :
+    ZMod.val (w_fr wire) < 2 ^ 20 := by
   rcases h with ⟨t, ht, hname, hmem⟩
   simp only [List.mem_cons, List.mem_map] at ht
-  rcases ht with rfl | ⟨srcT, _, rfl⟩
-  · have hmem' : [w_fr wire] ∈ u16Entries := hmem
-    rw [u16Entries_mem] at hmem'
+  rcases ht with rfl | rfl | ⟨srcT, _, rfl⟩
+  · have hmem' : [w_fr wire] ∈ u20Entries := hmem
+    rw [u20Entries_mem] at hmem'
     rcases hmem' with ⟨v, hv, heq⟩
     injection heq with hhead _
     rw [← hhead, ZMod.val_natCast, Nat.mod_eq_of_lt]
     · exact hv
     · unfold bn254FrModulus; omega
   · exfalso
-    exact src_prefix_ne_u16 srcT.name hname
+    exact u12_ne_u20 hname
+  · exfalso
+    exact src_prefix_ne_u20 srcT.name hname
+
+/-- Any lookup in `"u12"` against `u20TableSpec :: u12TableSpec :: (tables.map translateTable)`
+enforces `ZMod.val (w_fr wire) < 2^12`. -/
+theorem u12_lookup_val_lt (tables : List (TableSpec GoldilocksF))
+    (wire : Wire) (w_fr : Wire → BN254Fr)
+    (h : LookupConstraint.Satisfied (u20TableSpec :: u12TableSpec :: tables.map translateTable)
+      { tableName := "u12", wires := [wire] } w_fr) :
+    ZMod.val (w_fr wire) < 2 ^ 12 := by
+  rcases h with ⟨t, ht, hname, hmem⟩
+  simp only [List.mem_cons, List.mem_map] at ht
+  rcases ht with rfl | rfl | ⟨srcT, _, rfl⟩
+  · exfalso
+    exact u12_ne_u20 hname.symm
+  · have hmem' : [w_fr wire] ∈ u12Entries := hmem
+    rw [u12Entries_mem] at hmem'
+    rcases hmem' with ⟨v, hv, heq⟩
+    injection heq with hhead _
+    rw [← hhead, ZMod.val_natCast, Nat.mod_eq_of_lt]
+    · exact hv
+    · unfold bn254FrModulus; omega
+  · exfalso
+    exact src_prefix_ne_u12 srcT.name hname
 
 /-- Helper lemma: if `x = (n : BN254Fr)` and `n < bn254FrModulus`, then `ZMod.val x = n`. -/
 theorem val_eq_of_natCast_eq {x : BN254Fr} {n : Nat}
@@ -659,17 +706,17 @@ theorem val_eq_of_natCast_eq {x : BN254Fr} {n : Nat}
     ZMod.val x = n := by
   rw [heq, ZMod.val_natCast, Nat.mod_eq_of_lt hlt]
 
-/-- The 4 `"u16"` lookups of the canonical Goldilocks check on wire `v` using
+/-- The 4 `"u20"`/`"u12"` lookups of the canonical Goldilocks check on wire `v` using
 auxiliary wires `base .. base + 7`. -/
 def canonicalWireLookups (base : Nat) : List LookupConstraint :=
-  [ { tableName := "u16", wires := [base] },
-    { tableName := "u16", wires := [base + 1] },
-    { tableName := "u16", wires := [base + 2] },
-    { tableName := "u16", wires := [base + 3] } ]
+  [ { tableName := "u20", wires := [base] },
+    { tableName := "u12", wires := [base + 1] },
+    { tableName := "u20", wires := [base + 2] },
+    { tableName := "u12", wires := [base + 3] } ]
 
 /-- The 6 degree-2 Plonkish gates of the canonical Goldilocks check on wire `v`
-(`src/foreign.rs:398-422`) using auxiliary wires `base .. base + 7`:
-- `lo0 = base`, `lo1 = base + 1`, `hi0 = base + 2`, `hi1 = base + 3`
+(`src/foreign.rs`) using auxiliary wires `base .. base + 7`:
+- `lo0 = base` (`u20`), `lo1 = base + 1` (`u12`), `hi0 = base + 2` (`u20`), `hi1 = base + 3` (`u12`)
 - `lo = base + 4`, `hi = base + 5`, `inv = base + 6`, `max_hi = base + 7` -/
 def canonicalWireGates (v base : Nat) : List (Gate BN254Fr) :=
   let lo0 := base
@@ -680,10 +727,10 @@ def canonicalWireGates (v base : Nat) : List (Gate BN254Fr) :=
   let hi := base + 5
   let inv := base + 6
   let max_hi := base + 7
-  [ -- Gate 1: lo0 + 2^16 * lo1 - lo = 0
-    { a := lo0, b := lo1, c := lo, qm := 0, qa := 1, qb := (2 ^ 16 : BN254Fr), qc := -1, k := 0 },
-    -- Gate 2: hi0 + 2^16 * hi1 - hi = 0
-    { a := hi0, b := hi1, c := hi, qm := 0, qa := 1, qb := (2 ^ 16 : BN254Fr), qc := -1, k := 0 },
+  [ -- Gate 1: lo0 + 2^20 * lo1 - lo = 0
+    { a := lo0, b := lo1, c := lo, qm := 0, qa := 1, qb := (2 ^ 20 : BN254Fr), qc := -1, k := 0 },
+    -- Gate 2: hi0 + 2^20 * hi1 - hi = 0
+    { a := hi0, b := hi1, c := hi, qm := 0, qa := 1, qb := (2 ^ 20 : BN254Fr), qc := -1, k := 0 },
     -- Gate 3: lo + 2^32 * hi - v = 0
     { a := lo, b := hi, c := v, qm := 0, qa := 1, qb := (2 ^ 32 : BN254Fr), qc := -1, k := 0 },
     -- Gate 4: max_hi * max_hi - max_hi = 0
@@ -700,23 +747,23 @@ theorem canonicalWireGadget_sound (tables : List (TableSpec GoldilocksF))
     (v base : Nat) (w_fr : Wire → BN254Fr)
     (hgates : ∀ g ∈ canonicalWireGates v base, g.Satisfied w_fr)
     (hlookups : ∀ l ∈ canonicalWireLookups base,
-      l.Satisfied (u16TableSpec :: tables.map translateTable) w_fr) :
+      l.Satisfied (u20TableSpec :: u12TableSpec :: tables.map translateTable) w_fr) :
     ZMod.val (w_fr v) < goldilocksP := by
-  have hlo0 : ZMod.val (w_fr base) < 2 ^ 16 :=
-    u16_lookup_val_lt tables base w_fr (hlookups _ (by simp [canonicalWireLookups]))
-  have hlo1 : ZMod.val (w_fr (base + 1)) < 2 ^ 16 :=
-    u16_lookup_val_lt tables (base + 1) w_fr (hlookups _ (by simp [canonicalWireLookups]))
-  have hhi0 : ZMod.val (w_fr (base + 2)) < 2 ^ 16 :=
-    u16_lookup_val_lt tables (base + 2) w_fr (hlookups _ (by simp [canonicalWireLookups]))
-  have hhi1 : ZMod.val (w_fr (base + 3)) < 2 ^ 16 :=
-    u16_lookup_val_lt tables (base + 3) w_fr (hlookups _ (by simp [canonicalWireLookups]))
+  have hlo0 : ZMod.val (w_fr base) < 2 ^ 20 :=
+    u20_lookup_val_lt tables base w_fr (hlookups _ (by simp [canonicalWireLookups]))
+  have hlo1 : ZMod.val (w_fr (base + 1)) < 2 ^ 12 :=
+    u12_lookup_val_lt tables (base + 1) w_fr (hlookups _ (by simp [canonicalWireLookups]))
+  have hhi0 : ZMod.val (w_fr (base + 2)) < 2 ^ 20 :=
+    u20_lookup_val_lt tables (base + 2) w_fr (hlookups _ (by simp [canonicalWireLookups]))
+  have hhi1 : ZMod.val (w_fr (base + 3)) < 2 ^ 12 :=
+    u12_lookup_val_lt tables (base + 3) w_fr (hlookups _ (by simp [canonicalWireLookups]))
   have hg1 := hgates
     { a := base, b := base + 1, c := base + 4,
-      qm := 0, qa := 1, qb := (2 ^ 16 : BN254Fr), qc := -1, k := 0 }
+      qm := 0, qa := 1, qb := (2 ^ 20 : BN254Fr), qc := -1, k := 0 }
     (by simp [canonicalWireGates])
   have hg2 := hgates
     { a := base + 2, b := base + 3, c := base + 5,
-      qm := 0, qa := 1, qb := (2 ^ 16 : BN254Fr), qc := -1, k := 0 }
+      qm := 0, qa := 1, qb := (2 ^ 20 : BN254Fr), qc := -1, k := 0 }
     (by simp [canonicalWireGates])
   have hg3 := hgates
     { a := base + 4, b := base + 5, c := v,
@@ -732,32 +779,32 @@ theorem canonicalWireGadget_sound (tables : List (TableSpec GoldilocksF))
     (by simp [canonicalWireGates])
   unfold Gate.Satisfied Gate.eval at hg1 hg2 hg3 hg5 hg6
   have hlo_eq : w_fr (base + 4) =
-      ((ZMod.val (w_fr base) + 2 ^ 16 * ZMod.val (w_fr (base + 1)) : Nat) : BN254Fr) := by
+      ((ZMod.val (w_fr base) + 2 ^ 20 * ZMod.val (w_fr (base + 1)) : Nat) : BN254Fr) := by
     push_cast
     rw [ZMod.natCast_zmod_val, ZMod.natCast_zmod_val]
     linear_combination -hg1
   have hlo_val : ZMod.val (w_fr (base + 4)) =
-      ZMod.val (w_fr base) + 2 ^ 16 * ZMod.val (w_fr (base + 1)) :=
+      ZMod.val (w_fr base) + 2 ^ 20 * ZMod.val (w_fr (base + 1)) :=
     val_eq_of_natCast_eq hlo_eq (by unfold bn254FrModulus; omega)
   have hhi_eq : w_fr (base + 5) =
-      ((ZMod.val (w_fr (base + 2)) + 2 ^ 16 * ZMod.val (w_fr (base + 3)) : Nat) : BN254Fr) := by
+      ((ZMod.val (w_fr (base + 2)) + 2 ^ 20 * ZMod.val (w_fr (base + 3)) : Nat) : BN254Fr) := by
     push_cast
     rw [ZMod.natCast_zmod_val, ZMod.natCast_zmod_val]
     linear_combination -hg2
   have hhi_val : ZMod.val (w_fr (base + 5)) =
-      ZMod.val (w_fr (base + 2)) + 2 ^ 16 * ZMod.val (w_fr (base + 3)) :=
+      ZMod.val (w_fr (base + 2)) + 2 ^ 20 * ZMod.val (w_fr (base + 3)) :=
     val_eq_of_natCast_eq hhi_eq (by unfold bn254FrModulus; omega)
   have hv_eq : w_fr v =
-      ((reconstructU64FromU16 (ZMod.val (w_fr base)) (ZMod.val (w_fr (base + 1)))
+      ((reconstructU64FromU20U12 (ZMod.val (w_fr base)) (ZMod.val (w_fr (base + 1)))
         (ZMod.val (w_fr (base + 2))) (ZMod.val (w_fr (base + 3))) : Nat) : BN254Fr) := by
-    unfold reconstructU64FromU16
+    unfold reconstructU64FromU20U12
     push_cast
     rw [ZMod.natCast_zmod_val, ZMod.natCast_zmod_val, ZMod.natCast_zmod_val, ZMod.natCast_zmod_val]
     linear_combination -hg3 - hg1 - (2 ^ 32 : BN254Fr) * hg2
   have hv_val : ZMod.val (w_fr v) =
-      reconstructU64FromU16 (ZMod.val (w_fr base)) (ZMod.val (w_fr (base + 1)))
+      reconstructU64FromU20U12 (ZMod.val (w_fr base)) (ZMod.val (w_fr (base + 1)))
         (ZMod.val (w_fr (base + 2))) (ZMod.val (w_fr (base + 3))) :=
-    val_eq_of_natCast_eq hv_eq (by unfold reconstructU64FromU16 bn254FrModulus; omega)
+    val_eq_of_natCast_eq hv_eq (by unfold reconstructU64FromU20U12 bn254FrModulus; omega)
   rw [hv_val, ← canonical_iff_lt_goldilocksP _ _ _ _ hlo0 hlo1 hhi0 hhi1]
   intro hhi_max
   have hhi_cast : w_fr (base + 5) = (0xffffffff : BN254Fr) := by
@@ -771,25 +818,23 @@ theorem canonicalWireGadget_sound (tables : List (TableSpec GoldilocksF))
     linear_combination hg6
   rw [← hlo_val, hlo0_fr, ZMod.val_zero]
 
-/-- The 9 `"u16"` lookups for the 144-bit quotient `q'` of a translated gate,
-using auxiliary wires `gbase .. gbase + 8`. -/
+/-- The 7 `"u20"` lookups for the 140-bit quotient `q'` of a translated gate,
+using auxiliary wires `gbase .. gbase + 6`. -/
 def translatedGateLookups (gbase : Nat) : List LookupConstraint :=
-  [ { tableName := "u16", wires := [gbase] },
-    { tableName := "u16", wires := [gbase + 1] },
-    { tableName := "u16", wires := [gbase + 2] },
-    { tableName := "u16", wires := [gbase + 3] },
-    { tableName := "u16", wires := [gbase + 4] },
-    { tableName := "u16", wires := [gbase + 5] },
-    { tableName := "u16", wires := [gbase + 6] },
-    { tableName := "u16", wires := [gbase + 7] },
-    { tableName := "u16", wires := [gbase + 8] } ]
+  [ { tableName := "u20", wires := [gbase] },
+    { tableName := "u20", wires := [gbase + 1] },
+    { tableName := "u20", wires := [gbase + 2] },
+    { tableName := "u20", wires := [gbase + 3] },
+    { tableName := "u20", wires := [gbase + 4] },
+    { tableName := "u20", wires := [gbase + 5] },
+    { tableName := "u20", wires := [gbase + 6] } ]
 
-/-- The 10 degree-2 Plonkish gates in `BN254Fr` for a translated Goldilocks gate `g`
-(`src/foreign.rs:695-738`), using auxiliary wires `gbase .. gbase + 17`:
-- `q0 .. q8 = gbase .. gbase + 8` (9 16-bit quotient limbs)
-- `acc1 .. acc7 = gbase + 9 .. gbase + 15` (partial limb sums)
-- `q_wire = gbase + 16` (reconstructed 144-bit quotient $q'$)
-- `t1 = gbase + 17` (intermediate gate linear combination) -/
+/-- The 8 degree-2 Plonkish gates in `BN254Fr` for a translated Goldilocks gate `g`
+(`src/foreign.rs`), using auxiliary wires `gbase .. gbase + 13`:
+- `q0 .. q6 = gbase .. gbase + 6` (7 20-bit quotient limbs)
+- `acc1 .. acc5 = gbase + 7 .. gbase + 11` (partial limb sums)
+- `q_wire = gbase + 12` (reconstructed 140-bit quotient $q'$)
+- `t1 = gbase + 13` (intermediate gate linear combination) -/
 def translatedGateGates (g : Gate GoldilocksF) (gbase : Nat) : List (Gate BN254Fr) :=
   let qm : BN254Fr := (signedCoeff (ZMod.val g.qm) : BN254Fr)
   let qa : BN254Fr := (signedCoeff (ZMod.val g.qa) : BN254Fr)
@@ -803,25 +848,19 @@ def translatedGateGates (g : Gate GoldilocksF) (gbase : Nat) : List (Gate BN254F
   let q4 := gbase + 4
   let q5 := gbase + 5
   let q6 := gbase + 6
-  let q7 := gbase + 7
-  let q8 := gbase + 8
-  let acc1 := gbase + 9
-  let acc2 := gbase + 10
-  let acc3 := gbase + 11
-  let acc4 := gbase + 12
-  let acc5 := gbase + 13
-  let acc6 := gbase + 14
-  let acc7 := gbase + 15
-  let q_wire := gbase + 16
-  let t1 := gbase + 17
-  [ { a := q0, b := q1, c := acc1, qm := 0, qa := 1, qb := (2 ^ 16 : BN254Fr), qc := -1, k := 0 },
-    { a := acc1, b := q2, c := acc2, qm := 0, qa := 1, qb := (2 ^ 32 : BN254Fr), qc := -1, k := 0 },
-    { a := acc2, b := q3, c := acc3, qm := 0, qa := 1, qb := (2 ^ 48 : BN254Fr), qc := -1, k := 0 },
-    { a := acc3, b := q4, c := acc4, qm := 0, qa := 1, qb := (2 ^ 64 : BN254Fr), qc := -1, k := 0 },
-    { a := acc4, b := q5, c := acc5, qm := 0, qa := 1, qb := (2 ^ 80 : BN254Fr), qc := -1, k := 0 },
-    { a := acc5, b := q6, c := acc6, qm := 0, qa := 1, qb := (2 ^ 96 : BN254Fr), qc := -1, k := 0 },
-    { a := acc6, b := q7, c := acc7, qm := 0, qa := 1, qb := (2 ^ 112 : BN254Fr), qc := -1, k := 0 },
-    { a := acc7, b := q8, c := q_wire, qm := 0, qa := 1, qb := (2 ^ 128 : BN254Fr), qc := -1, k := 0 },
+  let acc1 := gbase + 7
+  let acc2 := gbase + 8
+  let acc3 := gbase + 9
+  let acc4 := gbase + 10
+  let acc5 := gbase + 11
+  let q_wire := gbase + 12
+  let t1 := gbase + 13
+  [ { a := q0, b := q1, c := acc1, qm := 0, qa := 1, qb := (2 ^ 20 : BN254Fr), qc := -1, k := 0 },
+    { a := acc1, b := q2, c := acc2, qm := 0, qa := 1, qb := (2 ^ 40 : BN254Fr), qc := -1, k := 0 },
+    { a := acc2, b := q3, c := acc3, qm := 0, qa := 1, qb := (2 ^ 60 : BN254Fr), qc := -1, k := 0 },
+    { a := acc3, b := q4, c := acc4, qm := 0, qa := 1, qb := (2 ^ 80 : BN254Fr), qc := -1, k := 0 },
+    { a := acc4, b := q5, c := acc5, qm := 0, qa := 1, qb := (2 ^ 100 : BN254Fr), qc := -1, k := 0 },
+    { a := acc5, b := q6, c := q_wire, qm := 0, qa := 1, qb := (2 ^ 120 : BN254Fr), qc := -1, k := 0 },
     -- Gate A: qm * a * b + qa * a + qb * b - t1 + (k + offset) = 0
     { a := g.a, b := g.b, c := t1,
       qm := qm, qa := qa, qb := qb, qc := -1,
@@ -844,43 +883,35 @@ theorem translatedGateGadget_sound (tables : List (TableSpec GoldilocksF))
     (hc : ZMod.val (w_fr g.c) < goldilocksP)
     (hgates : ∀ gate ∈ translatedGateGates g gbase, gate.Satisfied w_fr)
     (hlookups : ∀ l ∈ translatedGateLookups gbase,
-      l.Satisfied (u16TableSpec :: tables.map translateTable) w_fr) :
+      l.Satisfied (u20TableSpec :: u12TableSpec :: tables.map translateTable) w_fr) :
     g.Satisfied (projectGoldilocksWire w_fr) := by
-  have hq0 := u16_lookup_val_lt tables gbase w_fr (hlookups _ (by simp [translatedGateLookups]))
-  have hq1 := u16_lookup_val_lt tables (gbase + 1) w_fr (hlookups _ (by simp [translatedGateLookups]))
-  have hq2 := u16_lookup_val_lt tables (gbase + 2) w_fr (hlookups _ (by simp [translatedGateLookups]))
-  have hq3 := u16_lookup_val_lt tables (gbase + 3) w_fr (hlookups _ (by simp [translatedGateLookups]))
-  have hq4 := u16_lookup_val_lt tables (gbase + 4) w_fr (hlookups _ (by simp [translatedGateLookups]))
-  have hq5 := u16_lookup_val_lt tables (gbase + 5) w_fr (hlookups _ (by simp [translatedGateLookups]))
-  have hq6 := u16_lookup_val_lt tables (gbase + 6) w_fr (hlookups _ (by simp [translatedGateLookups]))
-  have hq7 := u16_lookup_val_lt tables (gbase + 7) w_fr (hlookups _ (by simp [translatedGateLookups]))
-  have hq8 := u16_lookup_val_lt tables (gbase + 8) w_fr (hlookups _ (by simp [translatedGateLookups]))
+  have hq0 := u20_lookup_val_lt tables gbase w_fr (hlookups _ (by simp [translatedGateLookups]))
+  have hq1 := u20_lookup_val_lt tables (gbase + 1) w_fr (hlookups _ (by simp [translatedGateLookups]))
+  have hq2 := u20_lookup_val_lt tables (gbase + 2) w_fr (hlookups _ (by simp [translatedGateLookups]))
+  have hq3 := u20_lookup_val_lt tables (gbase + 3) w_fr (hlookups _ (by simp [translatedGateLookups]))
+  have hq4 := u20_lookup_val_lt tables (gbase + 4) w_fr (hlookups _ (by simp [translatedGateLookups]))
+  have hq5 := u20_lookup_val_lt tables (gbase + 5) w_fr (hlookups _ (by simp [translatedGateLookups]))
+  have hq6 := u20_lookup_val_lt tables (gbase + 6) w_fr (hlookups _ (by simp [translatedGateLookups]))
   have hg_l1 := hgates
-    { a := gbase, b := gbase + 1, c := gbase + 9, qm := 0, qa := 1, qb := (2 ^ 16 : BN254Fr), qc := -1, k := 0 }
+    { a := gbase, b := gbase + 1, c := gbase + 7, qm := 0, qa := 1, qb := (2 ^ 20 : BN254Fr), qc := -1, k := 0 }
     (by simp [translatedGateGates])
   have hg_l2 := hgates
-    { a := gbase + 9, b := gbase + 2, c := gbase + 10, qm := 0, qa := 1, qb := (2 ^ 32 : BN254Fr), qc := -1, k := 0 }
+    { a := gbase + 7, b := gbase + 2, c := gbase + 8, qm := 0, qa := 1, qb := (2 ^ 40 : BN254Fr), qc := -1, k := 0 }
     (by simp [translatedGateGates])
   have hg_l3 := hgates
-    { a := gbase + 10, b := gbase + 3, c := gbase + 11, qm := 0, qa := 1, qb := (2 ^ 48 : BN254Fr), qc := -1, k := 0 }
+    { a := gbase + 8, b := gbase + 3, c := gbase + 9, qm := 0, qa := 1, qb := (2 ^ 60 : BN254Fr), qc := -1, k := 0 }
     (by simp [translatedGateGates])
   have hg_l4 := hgates
-    { a := gbase + 11, b := gbase + 4, c := gbase + 12, qm := 0, qa := 1, qb := (2 ^ 64 : BN254Fr), qc := -1, k := 0 }
+    { a := gbase + 9, b := gbase + 4, c := gbase + 10, qm := 0, qa := 1, qb := (2 ^ 80 : BN254Fr), qc := -1, k := 0 }
     (by simp [translatedGateGates])
   have hg_l5 := hgates
-    { a := gbase + 12, b := gbase + 5, c := gbase + 13, qm := 0, qa := 1, qb := (2 ^ 80 : BN254Fr), qc := -1, k := 0 }
+    { a := gbase + 10, b := gbase + 5, c := gbase + 11, qm := 0, qa := 1, qb := (2 ^ 100 : BN254Fr), qc := -1, k := 0 }
     (by simp [translatedGateGates])
   have hg_l6 := hgates
-    { a := gbase + 13, b := gbase + 6, c := gbase + 14, qm := 0, qa := 1, qb := (2 ^ 96 : BN254Fr), qc := -1, k := 0 }
-    (by simp [translatedGateGates])
-  have hg_l7 := hgates
-    { a := gbase + 14, b := gbase + 7, c := gbase + 15, qm := 0, qa := 1, qb := (2 ^ 112 : BN254Fr), qc := -1, k := 0 }
-    (by simp [translatedGateGates])
-  have hg_l8 := hgates
-    { a := gbase + 15, b := gbase + 8, c := gbase + 16, qm := 0, qa := 1, qb := (2 ^ 128 : BN254Fr), qc := -1, k := 0 }
+    { a := gbase + 11, b := gbase + 6, c := gbase + 12, qm := 0, qa := 1, qb := (2 ^ 120 : BN254Fr), qc := -1, k := 0 }
     (by simp [translatedGateGates])
   have hgA := hgates
-    { a := g.a, b := g.b, c := gbase + 17,
+    { a := g.a, b := g.b, c := gbase + 13,
       qm := (signedCoeff (ZMod.val g.qm) : BN254Fr),
       qa := (signedCoeff (ZMod.val g.qa) : BN254Fr),
       qb := (signedCoeff (ZMod.val g.qb) : BN254Fr),
@@ -888,23 +919,23 @@ theorem translatedGateGadget_sound (tables : List (TableSpec GoldilocksF))
       k := (signedCoeff (ZMod.val g.k) : BN254Fr) + (universalGateOffset : BN254Fr) }
     (by simp [translatedGateGates])
   have hgB := hgates
-    { a := gbase + 17, b := g.c, c := gbase + 16,
+    { a := gbase + 13, b := g.c, c := gbase + 12,
       qm := 0, qa := 1,
       qb := (signedCoeff (ZMod.val g.qc) : BN254Fr),
       qc := -(goldilocksP : BN254Fr), k := 0 }
     (by simp [translatedGateGates])
-  unfold Gate.Satisfied Gate.eval at hg_l1 hg_l2 hg_l3 hg_l4 hg_l5 hg_l6 hg_l7 hg_l8 hgA hgB
-  let q_nat := reconstructQuotient9
+  unfold Gate.Satisfied Gate.eval at hg_l1 hg_l2 hg_l3 hg_l4 hg_l5 hg_l6 hgA hgB
+  let q_nat := reconstructQuotient7
     (ZMod.val (w_fr gbase)) (ZMod.val (w_fr (gbase + 1))) (ZMod.val (w_fr (gbase + 2)))
     (ZMod.val (w_fr (gbase + 3))) (ZMod.val (w_fr (gbase + 4))) (ZMod.val (w_fr (gbase + 5)))
-    (ZMod.val (w_fr (gbase + 6))) (ZMod.val (w_fr (gbase + 7))) (ZMod.val (w_fr (gbase + 8)))
-  have hq_nat_lt : q_nat < 2 ^ 144 :=
-    reconstructQuotient9_lt _ _ _ _ _ _ _ _ _ hq0 hq1 hq2 hq3 hq4 hq5 hq6 hq7 hq8
-  have hq_wire_eq : w_fr (gbase + 16) = (q_nat : BN254Fr) := by
-    dsimp [q_nat, reconstructQuotient9]
+    (ZMod.val (w_fr (gbase + 6)))
+  have hq_nat_lt : q_nat < 2 ^ 140 :=
+    reconstructQuotient7_lt _ _ _ _ _ _ _ hq0 hq1 hq2 hq3 hq4 hq5 hq6
+  have hq_wire_eq : w_fr (gbase + 12) = (q_nat : BN254Fr) := by
+    dsimp [q_nat, reconstructQuotient7]
     push_cast
     repeat rw [ZMod.natCast_zmod_val]
-    linear_combination -(hg_l1 + hg_l2 + hg_l3 + hg_l4 + hg_l5 + hg_l6 + hg_l7 + hg_l8)
+    linear_combination -(hg_l1 + hg_l2 + hg_l3 + hg_l4 + hg_l5 + hg_l6)
   let qm_i := signedCoeff (ZMod.val g.qm)
   let qa_i := signedCoeff (ZMod.val g.qa)
   let qb_i := signedCoeff (ZMod.val g.qb)
@@ -988,15 +1019,15 @@ def foreignCompile (c : Circuit GoldilocksF) : Circuit BN254Fr :=
   let base0 := maxWireBound c
   let wireBase (idx : Nat) : Nat := base0 + 8 * idx
   let gateStart : Nat := base0 + 8 * refs.length
-  let gateBase (idx : Nat) : Nat := gateStart + 18 * idx
+  let gateBase (idx : Nat) : Nat := gateStart + 14 * idx
   let canonGates := refs.zipIdx.flatMap fun (v, idx) => canonicalWireGates v (wireBase idx)
   let canonLookups := refs.zipIdx.flatMap fun (_, idx) => canonicalWireLookups (wireBase idx)
   let gateGates := c.gates.zipIdx.flatMap fun (g, idx) => translatedGateGates g (gateBase idx)
   let gateLookups := c.gates.zipIdx.flatMap fun (_, idx) => translatedGateLookups (gateBase idx)
-  { numWires := gateStart + 18 * c.gates.length
+  { numWires := gateStart + 14 * c.gates.length
     publicInputs := c.publicInputs
     gates := canonGates ++ gateGates
-    tables := u16TableSpec :: c.tables.map translateTable
+    tables := u20TableSpec :: u12TableSpec :: c.tables.map translateTable
     lookups := canonLookups ++ gateLookups ++ c.lookups.map translateLookup
     blake3Calls := c.blake3Calls }
 
@@ -1059,7 +1090,7 @@ theorem foreign_compile_sound (c : Circuit GoldilocksF)
     have ha := foreignCompile_wire_canonical c w_fr hhold hga
     have hb := foreignCompile_wire_canonical c w_fr hhold hgb
     have hc := foreignCompile_wire_canonical c w_fr hhold hgc
-    let gbase := (maxWireBound c + 8 * (allReferencedWires c).length) + 18 * idx
+    let gbase := (maxWireBound c + 8 * (allReferencedWires c).length) + 14 * idx
     apply translatedGateGadget_sound c.tables g gbase w_fr ha hb hc
     · intro gate hgate
       apply hhold.1 gate
@@ -1085,9 +1116,11 @@ theorem foreign_compile_sound (c : Circuit GoldilocksF)
       exact List.mem_map_of_mem hl
     rcases hl_fr with ⟨t_fr, ht_fr, hname_fr, hmem_fr⟩
     simp only [foreignCompile, List.mem_cons, List.mem_map] at ht_fr
-    rcases ht_fr with rfl | ⟨srcT, hsrcT, rfl⟩
+    rcases ht_fr with rfl | rfl | ⟨srcT, hsrcT, rfl⟩
     · exfalso
-      exact src_prefix_ne_u16 l.tableName hname_fr.symm
+      exact src_prefix_ne_u20 l.tableName hname_fr.symm
+    · exfalso
+      exact src_prefix_ne_u12 l.tableName hname_fr.symm
     · have hname : srcT.name = l.tableName := src_prefix_inj hname_fr
       simp only [translateTable, translateLookup, List.mem_map] at hmem_fr
       rcases hmem_fr with ⟨srcRow, hsrcRow, hrow_eq⟩

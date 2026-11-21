@@ -40,18 +40,28 @@ zero `bv_decide`, zero custom axioms).
 /-- info: 'Ix.Cert.Compression.RecursiveKzg.recursiveKzgCircuit_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Compression.RecursiveKzg.recursiveKzgCircuit_sound
 
--- 1C-iv: Canonical "ix/outer-ir/v1" BLAKE3 3-Way Parity & Gnark Outer-IR Soundness
+-- 1C-iv: Canonical "ix/outer-ir/v1" BLAKE3 3-Way Parity, Folded Pairing & Gnark Outer-IR Soundness
 #check @Ix.Cert.Compression.OuterRelation.empty_program_digest_matches_rust_go
 #check @Ix.Cert.Compression.OuterRelation.allOps_golden_digest_matches_rust_go
 #check @Ix.Cert.Compression.OuterRelation.gnark_outer_relation_sound
+#check @Ix.Cert.Compression.OuterRelation.folded_pairing_bad_card
+#check @Ix.Cert.Compression.OuterRelation.foldedPairingCheck_bad_card
+#check @Ix.Cert.Compression.OuterRelation.gnark_folded_pairing_sound
 /-- info: 'Ix.Cert.Compression.OuterRelation.empty_program_digest_matches_rust_go' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Compression.OuterRelation.empty_program_digest_matches_rust_go
 /-- info: 'Ix.Cert.Compression.OuterRelation.allOps_golden_digest_matches_rust_go' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Compression.OuterRelation.allOps_golden_digest_matches_rust_go
 /-- info: 'Ix.Cert.Compression.OuterRelation.gnark_outer_relation_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Compression.OuterRelation.gnark_outer_relation_sound
+/-- info: 'Ix.Cert.Compression.OuterRelation.foldedPairingCheck_bad_card' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Compression.OuterRelation.foldedPairingCheck_bad_card
+/-- info: 'Ix.Cert.Compression.OuterRelation.gnark_folded_pairing_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Compression.OuterRelation.gnark_folded_pairing_sound
 
 -- 1C-v: Full Multi-Stage Proof-Compression Composition
 #check @Ix.Cert.Compression.compression_pipeline_sound
+#check @Ix.Cert.Compression.compression_pipeline_folded_pairing_sound
 /-- info: 'Ix.Cert.Compression.compression_pipeline_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Ix.Cert.Compression.compression_pipeline_sound
+/-- info: 'Ix.Cert.Compression.compression_pipeline_folded_pairing_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.Compression.compression_pipeline_folded_pairing_sound

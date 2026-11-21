@@ -1,12 +1,16 @@
 package main
 
 import (
+	"math/big"
+	mathbits "math/bits"
+
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/std/math/uints"
 )
 
 var blakeIV = [8]uint32{0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19}
 var blakePermutation = [16]int{2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8}
+var maxByteVal = big.NewInt(255)
 
 type blakeOutput struct {
 	cv      [8]uints.U32
@@ -16,7 +20,85 @@ type blakeOutput struct {
 	flags   uint32
 }
 
-func blakeCompress(u *uints.BinaryField[uints.U32], out blakeOutput, counter uint64, flags uint32) [16]uints.U32 {
+func constU32(api frontend.API, w uints.U32) (uint32, bool) {
+	var out uint32
+	for i := 0; i < 4; i++ {
+		v, ok := api.Compiler().ConstantValue(w[i].Val)
+		if !ok || v.Sign() < 0 || v.Cmp(maxByteVal) > 0 {
+			return 0, false
+		}
+		out |= uint32(v.Uint64()) << (8 * i)
+	}
+	return out, true
+}
+
+func blakeCompressNative(cv [8]uint32, m [16]uint32, counter uint64, length, flags uint32) [16]uint32 {
+	var v [16]uint32
+	copy(v[:8], cv[:])
+	copy(v[8:12], blakeIV[:4])
+	v[12], v[13] = uint32(counter), uint32(counter>>32)
+	v[14], v[15] = length, flags
+	g := func(a, b, c, d int, x, y uint32) {
+		v[a] = v[a] + v[b] + x
+		v[d] = mathbits.RotateLeft32(v[d]^v[a], -16)
+		v[c] = v[c] + v[d]
+		v[b] = mathbits.RotateLeft32(v[b]^v[c], -12)
+		v[a] = v[a] + v[b] + y
+		v[d] = mathbits.RotateLeft32(v[d]^v[a], -8)
+		v[c] = v[c] + v[d]
+		v[b] = mathbits.RotateLeft32(v[b]^v[c], -7)
+	}
+	for round := 0; round < 7; round++ {
+		g(0, 4, 8, 12, m[0], m[1])
+		g(1, 5, 9, 13, m[2], m[3])
+		g(2, 6, 10, 14, m[4], m[5])
+		g(3, 7, 11, 15, m[6], m[7])
+		g(0, 5, 10, 15, m[8], m[9])
+		g(1, 6, 11, 12, m[10], m[11])
+		g(2, 7, 8, 13, m[12], m[13])
+		g(3, 4, 9, 14, m[14], m[15])
+		previous := m
+		for i, index := range blakePermutation {
+			m[i] = previous[index]
+		}
+	}
+	for i := 0; i < 8; i++ {
+		v[i] ^= v[i+8]
+		v[i+8] ^= cv[i]
+	}
+	return v
+}
+
+func blakeCompress(api frontend.API, u *uints.BinaryField[uints.U32], out blakeOutput, counter uint64, flags uint32) [16]uints.U32 {
+	var constCV [8]uint32
+	var constBlock [16]uint32
+	allConst := true
+	for i := range out.cv {
+		val, ok := constU32(api, out.cv[i])
+		if !ok {
+			allConst = false
+			break
+		}
+		constCV[i] = val
+	}
+	if allConst {
+		for i := range out.block {
+			val, ok := constU32(api, out.block[i])
+			if !ok {
+				allConst = false
+				break
+			}
+			constBlock[i] = val
+		}
+	}
+	if allConst {
+		native := blakeCompressNative(constCV, constBlock, counter, out.length, flags)
+		var v [16]uints.U32
+		for i := range native {
+			v[i] = uints.NewU32(native[i])
+		}
+		return v
+	}
 	var v [16]uints.U32
 	copy(v[:8], out.cv[:])
 	for i := 0; i < 4; i++ {
@@ -56,12 +138,12 @@ func blakeCompress(u *uints.BinaryField[uints.U32], out blakeOutput, counter uin
 	return v
 }
 
-func (out blakeOutput) chaining(u *uints.BinaryField[uints.U32]) [8]uints.U32 {
-	v := blakeCompress(u, out, out.counter, out.flags)
+func (out blakeOutput) chaining(api frontend.API, u *uints.BinaryField[uints.U32]) [8]uints.U32 {
+	v := blakeCompress(api, u, out, out.counter, out.flags)
 	return [8]uints.U32(v[:8])
 }
 
-func blakeChunk(u *uints.BinaryField[uints.U32], input []uints.U8, counter uint64) blakeOutput {
+func blakeChunk(api frontend.API, u *uints.BinaryField[uints.U32], input []uints.U8, counter uint64) blakeOutput {
 	var cv [8]uints.U32
 	for i := range cv {
 		cv[i] = uints.NewU32(blakeIV[i])
@@ -85,7 +167,7 @@ func blakeChunk(u *uints.BinaryField[uints.U32], input []uints.U8, counter uint6
 		if i == blocks-1 {
 			out.flags |= 2
 		} else {
-			cv = out.chaining(u)
+			cv = out.chaining(api, u)
 		}
 	}
 	return out
@@ -102,28 +184,28 @@ func blakeParent(left, right [8]uints.U32) blakeOutput {
 }
 
 // blakeXOF implements unkeyed BLAKE3 for a circuit-fixed input and output length.
-func blakeXOF(u *uints.BinaryField[uints.U32], input []uints.U8, length int) []uints.U8 {
+func blakeXOF(api frontend.API, u *uints.BinaryField[uints.U32], input []uints.U8, length int) []uints.U8 {
 	chunks := max(1, (len(input)+1023)/1024)
 	stack := make([][8]uints.U32, 0)
 	var out blakeOutput
 	for i := 0; i < chunks; i++ {
-		out = blakeChunk(u, input[i*1024:min((i+1)*1024, len(input))], uint64(i))
+		out = blakeChunk(api, u, input[i*1024:min((i+1)*1024, len(input))], uint64(i))
 		if i == chunks-1 {
 			break
 		}
-		cv := out.chaining(u)
+		cv := out.chaining(api, u)
 		for count := i + 1; count&1 == 0; count >>= 1 {
-			cv = blakeParent(stack[len(stack)-1], cv).chaining(u)
+			cv = blakeParent(stack[len(stack)-1], cv).chaining(api, u)
 			stack = stack[:len(stack)-1]
 		}
 		stack = append(stack, cv)
 	}
 	for i := len(stack) - 1; i >= 0; i-- {
-		out = blakeParent(stack[i], out.chaining(u))
+		out = blakeParent(stack[i], out.chaining(api, u))
 	}
 	result := make([]uints.U8, 0, length+63)
 	for counter := uint64(0); len(result) < length; counter++ {
-		block := blakeCompress(u, out, counter, out.flags|8)
+		block := blakeCompress(api, u, out, counter, out.flags|8)
 		for _, word := range block {
 			result = append(result, word[:]...)
 		}
@@ -146,8 +228,22 @@ func (t *transcript) observe(v []uints.U8) { t.buffer = append(t.buffer, v...) }
 
 func (t *transcript) sample() frontend.Variable {
 	input := append(append([]uints.U8(nil), t.state...), t.buffer...)
-	out := blakeXOF(t.u, input, 96)
+	out := blakeXOF(t.api, t.u, input, 96)
 	t.state, t.buffer = out[64:], nil
+	var result frontend.Variable = 0
+	for i := 63; i >= 0; i-- {
+		result = t.api.Add(t.api.Mul(result, 256), t.u.Value(out[i]))
+	}
+	return result
+}
+
+// sampleFinal extracts one 512-bit-reduced scalar challenge without squeezing a
+// follow-up chaining state (saves one BLAKE3 output compression at the end of
+// the transcript).
+func (t *transcript) sampleFinal() frontend.Variable {
+	input := append(append([]uints.U8(nil), t.state...), t.buffer...)
+	out := blakeXOF(t.api, t.u, input, 64)
+	t.state, t.buffer = nil, nil
 	var result frontend.Variable = 0
 	for i := 63; i >= 0; i-- {
 		result = t.api.Add(t.api.Mul(result, 256), t.u.Value(out[i]))

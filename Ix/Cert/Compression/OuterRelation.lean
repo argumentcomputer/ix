@@ -539,4 +539,202 @@ theorem gnark_outer_relation_sound
       have := congrArg (fun l => l[i]?) hdig
       simpa [Vector.getElem?_toList, hi] using this
 
+/-! ## 5. Folded BN254 Pairing Check Soundness (`tools/gnark/circuit.go`, K-3) -/
+
+/-- Abstract prime-order bilinear pairing `(G1, G2, GT, e)` of order `bn254FrModulus`,
+modeling the BN254 optimal Ate pairing verified inside `tools/gnark/circuit.go`. -/
+structure BilinearPairing where
+  G1 : Type
+  G2 : Type
+  GT : Type
+  [g1AddCommGroup : AddCommGroup G1]
+  [gtCommGroup : CommGroup GT]
+  [g2DecEq : DecidableEq G2]
+  [gtDecEq : DecidableEq GT]
+  smul : BN254Fr → G1 → G1
+  e : G1 → G2 → GT
+  e_add : ∀ P Q H, e (P + Q) H = e P H * e Q H
+  e_smul : ∀ (ρ : BN254Fr) P H, e (smul ρ P) H = (e P H) ^ ρ.val
+  gt_pow_order : ∀ x : GT, x ^ bn254FrModulus = 1
+
+attribute [instance] BilinearPairing.g1AddCommGroup BilinearPairing.gtCommGroup
+  BilinearPairing.g2DecEq BilinearPairing.gtDecEq
+
+/-- Outer KZG opening pairing value `e(left, h) * e(-right, tauH)` in `GT`. -/
+def BilinearPairing.outerPairingVal (bp : BilinearPairing)
+    (outerKeys : bp.G2 × bp.G2) (left right : bp.G1) : bp.GT :=
+  bp.e left outerKeys.1 * bp.e (-right) outerKeys.2
+
+/-- Deferred inner KZG opening pairing value `e(d0, ih) * e(d1, itauH)` in `GT`. -/
+def BilinearPairing.deferredPairingVal (bp : BilinearPairing)
+    (deferredKeys : bp.G2 × bp.G2) (d0 d1 : bp.G1) : bp.GT :=
+  bp.e d0 deferredKeys.1 * bp.e d1 deferredKeys.2
+
+/-- Single folded BN254 pairing check implemented in `tools/gnark/circuit.go`:
+- When `outerKeys = deferredKeys` (Ignition fast path), folds both checks into one 2-pair check
+  `e(left + ρ·d0, h) · e(-right + ρ·d1, tauH) = 1`.
+- When `outerKeys ≠ deferredKeys` (distinct-key fallback), checks the single ρ-randomized
+  4-pair product `e(left, h) · e(-right, tauH) · e(ρ·d0, ih) · e(ρ·d1, itauH) = 1`. -/
+def FoldedPairingCheck (bp : BilinearPairing)
+    (outerKeys deferredKeys : bp.G2 × bp.G2)
+    (left right d0 d1 : bp.G1) (ρ : BN254Fr) : Prop :=
+  if outerKeys = deferredKeys then
+    bp.e (left + bp.smul ρ d0) outerKeys.1 *
+      bp.e (-right + bp.smul ρ d1) outerKeys.2 = 1
+  else
+    bp.e left outerKeys.1 * bp.e (-right) outerKeys.2 *
+      bp.e (bp.smul ρ d0) deferredKeys.1 *
+      bp.e (bp.smul ρ d1) deferredKeys.2 = 1
+
+instance (bp : BilinearPairing) (outerKeys deferredKeys : bp.G2 × bp.G2)
+    (left right d0 d1 : bp.G1) (ρ : BN254Fr) :
+    Decidable (FoldedPairingCheck bp outerKeys deferredKeys left right d0 d1 ρ) := by
+  unfold FoldedPairingCheck
+  infer_instance
+
+/-- Both branches of `FoldedPairingCheck` reduce algebraically to `A * B ^ ρ.val = 1`
+where `A` is the outer KZG pairing value and `B` is the deferred KZG pairing value. -/
+theorem foldedPairingCheck_iff (bp : BilinearPairing)
+    (outerKeys deferredKeys : bp.G2 × bp.G2)
+    (left right d0 d1 : bp.G1) (ρ : BN254Fr) :
+    FoldedPairingCheck bp outerKeys deferredKeys left right d0 d1 ρ ↔
+      bp.outerPairingVal outerKeys left right *
+        (bp.deferredPairingVal deferredKeys d0 d1) ^ ρ.val = 1 := by
+  unfold FoldedPairingCheck BilinearPairing.outerPairingVal BilinearPairing.deferredPairingVal
+  split_ifs with hkeys
+  · rw [← hkeys, bp.e_add, bp.e_add, bp.e_smul, bp.e_smul, mul_pow]
+    have hrearr :
+        (bp.e left outerKeys.1 * bp.e d0 outerKeys.1 ^ ρ.val) *
+          (bp.e (-right) outerKeys.2 * bp.e d1 outerKeys.2 ^ ρ.val) =
+        (bp.e left outerKeys.1 * bp.e (-right) outerKeys.2) *
+          (bp.e d0 outerKeys.1 ^ ρ.val * bp.e d1 outerKeys.2 ^ ρ.val) := by
+      ac_rfl
+    rw [hrearr]
+  · rw [bp.e_smul, bp.e_smul, mul_pow]
+    have hrearr :
+        bp.e left outerKeys.1 * bp.e (-right) outerKeys.2 *
+          bp.e d0 deferredKeys.1 ^ ρ.val * bp.e d1 deferredKeys.2 ^ ρ.val =
+        (bp.e left outerKeys.1 * bp.e (-right) outerKeys.2) *
+          (bp.e d0 deferredKeys.1 ^ ρ.val * bp.e d1 deferredKeys.2 ^ ρ.val) := by
+      ac_rfl
+    rw [hrearr]
+
+/-- **Prime-Order Folded Pairing Soundness (Schwartz–Zippel Bound `≤ 1 / r`):**
+In any commutative group `GT` of prime exponent `r = bn254FrModulus`, if either pairing check
+fails (`¬ (A = 1 ∧ B = 1)`), then **at most one** challenge `ρ ∈ BN254Fr` satisfies
+`A * B ^ ρ.val = 1` (preventing rogue cross-cancellation with soundness error `≤ 1 / r`). -/
+theorem folded_pairing_bad_card {GT : Type} [CommGroup GT] [DecidableEq GT]
+    (hExp : ∀ x : GT, x ^ bn254FrModulus = 1)
+    {A B : GT} (hfail : ¬ (A = 1 ∧ B = 1)) :
+    (Finset.univ.filter fun ρ : BN254Fr => A * B ^ ρ.val = 1).card ≤ 1 := by
+  rw [Finset.card_le_one]
+  intro ρ₁ hρ₁ ρ₂ hρ₂
+  simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hρ₁ hρ₂
+  by_cases hB : B = 1
+  · subst hB
+    simp only [one_pow, mul_one] at hρ₁
+    exact absurd ⟨hρ₁, rfl⟩ hfail
+  · have hpow_eq : B ^ ρ₁.val = B ^ ρ₂.val :=
+      mul_left_cancel (hρ₁.trans hρ₂.symm)
+    -- Show that whenever `x.val ≤ y.val` and `B ^ x.val = B ^ y.val`, then `x = y`.
+    have hle_imp_eq : ∀ {x y : BN254Fr}, x.val ≤ y.val → B ^ x.val = B ^ y.val → x = y := by
+      intro x y hle heq
+      change ZMod.val x ≤ ZMod.val y at hle
+      set d := ZMod.val y - ZMod.val x
+      have hd_lt : d < bn254FrModulus := by
+        have hy := ZMod.val_lt y
+        omega
+      have hsum : ZMod.val x + d = ZMod.val y := Nat.add_sub_of_le hle
+      have hBd : B ^ d = 1 := by
+        have h1 : B ^ ZMod.val x * B ^ d = B ^ ZMod.val x * 1 := by
+          rw [← pow_add, hsum, mul_one, heq]
+        exact mul_left_cancel h1
+      by_cases hd0 : d = 0
+      · exact ZMod.val_injective bn254FrModulus (by omega)
+      · -- `0 < d < bn254FrModulus` implies `(d : BN254Fr) ≠ 0`, so `d` has an inverse mod `r`.
+        have hd_cast_ne : (d : BN254Fr) ≠ 0 := by
+          intro hzero
+          have hval : ZMod.val (d : BN254Fr) = 0 := by rw [hzero, ZMod.val_zero]
+          rw [ZMod.val_natCast, Nat.mod_eq_of_lt hd_lt] at hval
+          exact hd0 hval
+        set inv : BN254Fr := (d : BN254Fr)⁻¹
+        have hmul1 : (d : BN254Fr) * inv = 1 := mul_inv_cancel₀ hd_cast_ne
+        have hmod1 : (d * ZMod.val inv) % bn254FrModulus = 1 := by
+          have hcast : ((d * ZMod.val inv : Nat) : BN254Fr) = 1 := by
+            push_cast
+            rw [ZMod.natCast_zmod_val, hmul1]
+          have hval := congrArg ZMod.val hcast
+          rw [ZMod.val_natCast, ZMod.val_one] at hval
+          exact hval
+        have hdivmod : bn254FrModulus * (d * ZMod.val inv / bn254FrModulus) + 1 = d * ZMod.val inv := by
+          have h := Nat.div_add_mod (d * ZMod.val inv) bn254FrModulus
+          rw [hmod1] at h
+          exact h
+        have hB1 : B = 1 := by
+          calc B = B ^ 1 := (pow_one B).symm
+            _ = (B ^ bn254FrModulus) ^ (d * ZMod.val inv / bn254FrModulus) * B ^ 1 := by
+                rw [hExp B, one_pow, one_mul]
+            _ = B ^ (bn254FrModulus * (d * ZMod.val inv / bn254FrModulus) + 1) := by
+                rw [pow_add, pow_mul]
+            _ = B ^ (d * ZMod.val inv) := by rw [hdivmod]
+            _ = (B ^ d) ^ ZMod.val inv := by rw [pow_mul]
+            _ = 1 := by rw [hBd, one_pow]
+        exact absurd hB1 hB
+    rcases le_total ρ₁.val ρ₂.val with hle | hle
+    · exact hle_imp_eq hle hpow_eq
+    · exact (hle_imp_eq hle hpow_eq.symm).symm
+
+/-- **Folded Pairing Soundness for `FoldedPairingCheck`:**
+If either the outer KZG opening check (`outerPairingVal = 1`) or the deferred inner KZG
+pairing check (`deferredPairingVal = 1`) fails, at most one challenge `ρ ∈ BN254Fr` makes
+`FoldedPairingCheck` accept (applies identically to both the 2-pair Ignition fast path and
+the 4-pair distinct-key fallback). -/
+theorem foldedPairingCheck_bad_card (bp : BilinearPairing)
+    (outerKeys deferredKeys : bp.G2 × bp.G2)
+    (left right d0 d1 : bp.G1)
+    (hfail : ¬ (bp.outerPairingVal outerKeys left right = 1 ∧
+      bp.deferredPairingVal deferredKeys d0 d1 = 1)) :
+    (Finset.univ.filter fun ρ : BN254Fr =>
+      FoldedPairingCheck bp outerKeys deferredKeys left right d0 d1 ρ).card ≤ 1 := by
+  have hfilt :
+      (Finset.univ.filter fun ρ : BN254Fr =>
+        FoldedPairingCheck bp outerKeys deferredKeys left right d0 d1 ρ) =
+      (Finset.univ.filter fun ρ : BN254Fr =>
+        bp.outerPairingVal outerKeys left right *
+          (bp.deferredPairingVal deferredKeys d0 d1) ^ ρ.val = 1) := by
+    ext ρ
+    simp only [Finset.mem_filter, Finset.mem_univ, true_and, foldedPairingCheck_iff]
+  rw [hfilt]
+  exact folded_pairing_bad_card bp.gt_pow_order hfail
+
+/-- **Gnark Outer-Relation + Folded Pairing Soundness (`gnark_folded_pairing_sound`):**
+If a Gnark final proof is accepted against `vk` with `FoldedPairingCheck` at Fiat–Shamir
+challenge `ρ`, then EITHER a BLAKE3 collision on `"ix/outer-ir/v1"` occurred, OR
+`vk.expectedProgram` is satisfied on `inp` with outputs `out` such that EITHER both
+individual BN254 pairing checks hold (`outer = 1 ∧ deferred = 1`) OR the Fiat–Shamir
+challenge `ρ` landed in the bad set of cardinality `≤ 1` out of `bn254FrModulus` (`≤ 2^{-253}`). -/
+theorem gnark_folded_pairing_sound
+    {vk : GnarkVerifyingKey} {inp : OuterInputs}
+    (bp : BilinearPairing) (outerKeys deferredKeys : bp.G2 × bp.G2)
+    (leftOf rightOf : OuterOutputs → bp.G1) (d0 d1 : bp.G1) (ρ : BN254Fr)
+    (acc : GnarkOuterAccepted vk inp
+      (fun out => FoldedPairingCheck bp outerKeys deferredKeys (leftOf out) (rightOf out) d0 d1 ρ)) :
+    (acc.outerProgram.encode ≠ vk.expectedProgram.encode ∧
+      Blake3.Pure.digest acc.outerProgram.encode = Blake3.Pure.digest vk.expectedProgram.encode) ∨
+    (∃ out, vk.expectedProgram.Satisfied inp out ∧
+      ((bp.outerPairingVal outerKeys (leftOf out) (rightOf out) = 1 ∧
+        bp.deferredPairingVal deferredKeys d0 d1 = 1) ∨
+       (FoldedPairingCheck bp outerKeys deferredKeys (leftOf out) (rightOf out) d0 d1 ρ ∧
+        (Finset.univ.filter fun ρ' : BN254Fr =>
+          FoldedPairingCheck bp outerKeys deferredKeys (leftOf out) (rightOf out) d0 d1 ρ').card ≤ 1))) := by
+  rcases gnark_outer_relation_sound acc with hCol | ⟨out, hsat, hfold⟩
+  · exact Or.inl hCol
+  · right
+    refine ⟨out, hsat, ?_⟩
+    by_cases hboth : bp.outerPairingVal outerKeys (leftOf out) (rightOf out) = 1 ∧
+        bp.deferredPairingVal deferredKeys d0 d1 = 1
+    · exact Or.inl hboth
+    · exact Or.inr ⟨hfold, foldedPairingCheck_bad_card bp outerKeys deferredKeys
+        (leftOf out) (rightOf out) d0 d1 hboth⟩
+
 end Ix.Cert.Compression.OuterRelation
