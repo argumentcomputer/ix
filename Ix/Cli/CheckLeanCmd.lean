@@ -64,6 +64,9 @@ structure CheckCfg where
   verbose : Bool := false
   silent : Bool := false
   allowDeclined : Bool := false
+  /-- Require per-record execution telemetry (`--per-const`, `--json`); disables
+  the single-pass `checkWhole`-first shortcut on bound whole-artifact runs. -/
+  perRecord : Bool := false
   progressMs : Nat := 2000
   slowMs : Nat := 7000
   stackBytes : Nat := 256 * 1024 * 1024
@@ -430,10 +433,32 @@ def runMode (p : PreparedInput) (cfg : CheckCfg) (plan : Plan) (cx : Ctx md) (ev
     let _ ← IO.wait reporter
     pure ()
 
+private def wholeOnlyReport (p : PreparedInput) (plan : Plan) (admission : ArtifactAdmission)
+    (statement? : Option Ix.HostAdmission.Statement) (prepareMs artifactMs elapsedMs : Nat) :
+    CheckReport :=
+  let targets := plan.targets.map fun t =>
+    let isTier := (p.setup.store[t.producer]?).any (fun c => Ix.Kernel.Admission.isTierInfo c.info)
+    { target := t, outcome := if isTier then "typed" else "accept", reason := "", micros := 0 }
+  let records := match admission with
+    | .logical n | .tiered n _ | .conditional n _ _ => n
+  let userAxioms := match admission with
+    | .conditional _ _ axioms => axioms
+    | _ => #[]
+  { targets, rows := #[], execution := .serial, omitted := plan.omitted, records
+    inputMs := p.prepareMs, prepareMs, elapsedMs
+    subjectMicros := 0, supportMicros := 0, readMicros := 0
+    bound := true, roles := some (p.setup.table.bound.size, 0)
+    userAxioms, artifactAdmission := some admission, hostStatement := statement?
+    artifactMs }
+
 /-- Preparation is shareable; every run owns ordinary reclaimable checker
-state (the pool runs with `persist := false`). The declaration checks run first
-using `cfg.workers` parallel workers; the whole-artifact entry (`checkWhole`)
-runs only when they all pass. -/
+state (the pool runs with `persist := false`). On a default/quiet whole-artifact
+check of a bound artifact (no `--per-const`, `--json`, `--verbose`,
+`--allow-declined`, `--fail-out`, selection, or cap), `checkWhole` runs first in
+a single pass and falls back to the parallel declaration pool only if
+`checkWhole` rejects, so per-record failure diagnostics are still reported.
+Otherwise declaration checks run first using `cfg.workers` parallel workers and
+`checkWhole` runs only when they all pass. -/
 def runPrepared (p : PreparedInput) (cfg : CheckCfg) (selection : Selection)
     (maxGroups : Option Nat := none) (failOut? : Option IO.FS.Handle := none) : IO (Except DriverError CheckReport) := do
   if cfg.workers == 0 then return .error (.usage "--workers must be greater than zero")
@@ -445,45 +470,70 @@ def runPrepared (p : PreparedInput) (cfg : CheckCfg) (selection : Selection)
     let whole ← match wholeEntry p selection maxGroups with
       | .ok w => pure w | .error e => return .error e
     if !cfg.silent then IO.eprintln s!"{cfg.tag} {plan.targets.size} selected subjects, {plan.producers.size} producers, {plan.addresses.size} support/prelude records; workers {cfg.workers}; {plan.omitted.size} omitted by cap"
-    let declarations : IO (Except DriverError CheckReport) ← if p.anon then
-      pure (runMode p cfg plan p.setup.cx p.setup.evidence id id id toString start failOut?)
-    else do
-      let mut included := plan.addresses.foldl (fun (s : Std.HashSet Address) a => s.insert a) {}
-      for a in plan.addresses do
-        for r in recursorRecords p.setup.cx.index a do included := included.insert r
-      let mut env := p.parts.env
-      for row in p.parts.namedRows do
-        if (p.setup.store[row.addr]?).any (fun c => included.contains (owner row.addr c)) then
-          let named ← IO.ofExcept (row.materialize p.parts.backing p.parts.nameRev)
-          env := { env with named := env.named.insert row.name named }
-      let pre : Prelude .meta ← IO.ofExcept <| if p.bound then do
-          let pre ← readPrelude p.setup.table p.pre.records #[] p.pre.blobs
-          checkPreludeShape pre
-          checkFallbackRecursors pre
-          pure pre
-        else preludeFor p.setup.table
-      let (cx, ev) := metaContext p.setup (env.blobs[·]?) p.setup.table pre p.hints.lookup
-      let display := displayTable env cx
-      let nc : Ix.KernelDisplay.NameCx := ⟨env.names, Ix.KernelDisplay.metaTable env cx⟩
-      pure (runMode p cfg plan cx ev (fun k => Key.map (md := .meta) (md' := .anon) id k)
-        (fun rd => (Ix.KernelDisplay.nameRead nc (withDisplay display rd)).1)
-        (fun d => (nameTier nc d {}).1) (spellWith display) start failOut?)
+    let runDeclarations : IO (Except DriverError CheckReport) := do
+      if p.anon then
+        runMode p cfg plan p.setup.cx p.setup.evidence id id id toString start failOut?
+      else
+        let mut included := plan.addresses.foldl (fun (s : Std.HashSet Address) a => s.insert a) {}
+        for a in plan.addresses do
+          for r in recursorRecords p.setup.cx.index a do included := included.insert r
+        let mut env := p.parts.env
+        for row in p.parts.namedRows do
+          if (p.setup.store[row.addr]?).any (fun c => included.contains (owner row.addr c)) then
+            let named ← IO.ofExcept (row.materialize p.parts.backing p.parts.nameRev)
+            env := { env with named := env.named.insert row.name named }
+        let pre : Prelude .meta ← IO.ofExcept <| if p.bound then do
+            let pre ← readPrelude p.setup.table p.pre.records #[] p.pre.blobs
+            checkPreludeShape pre
+            checkFallbackRecursors pre
+            pure pre
+          else preludeFor p.setup.table
+        let (cx, ev) := metaContext p.setup (env.blobs[·]?) p.setup.table pre p.hints.lookup
+        let display := displayTable env cx
+        let nc : Ix.KernelDisplay.NameCx := ⟨env.names, Ix.KernelDisplay.metaTable env cx⟩
+        runMode p cfg plan cx ev (fun k => Key.map (md := .meta) (md' := .anon) id k)
+          (fun rd => (Ix.KernelDisplay.nameRead nc (withDisplay display rd)).1)
+          (fun d => (nameTier nc d {}).1) (spellWith display) start failOut?
+    let wholeFirst := whole && !cfg.allowDeclined && !cfg.verbose && !cfg.perRecord && failOut?.isNone
     let run : IO (Except DriverError CheckReport) := do
-      match ← declarations with
-      | .error e => return .error e
-      | .ok report =>
-        let report := { report with
-          bound := p.bound, roles := if whole then some (roleCounts p report.rows) else none }
-        if !whole || cfg.allowDeclined || !report.failures.isEmpty then return .ok report
-        let started ← IO.monoMsNow
+      if wholeFirst then
+        let wholeStart ← IO.monoMsNow
         let admitted ← IO.lazyPure fun _ => checkWhole p selection maxGroups
-        let elapsed := (← IO.monoMsNow) - started
+        let now ← IO.monoMsNow
+        let artifactMs := now - wholeStart
         match admitted with
+        | .ok (some (admission, statement?)) =>
+          return .ok (wholeOnlyReport p plan admission statement?
+            (wholeStart - start) artifactMs (now - start))
+        | .ok none =>
+          match ← runDeclarations with
+          | .error e => return .error e
+          | .ok report =>
+            return .ok { report with bound := p.bound, roles := some (roleCounts p report.rows) }
+        | .error wholeErr =>
+          match ← runDeclarations with
+          | .error e => return .error e
+          | .ok report =>
+            let report := { report with
+              bound := p.bound, roles := some (roleCounts p report.rows) }
+            if !report.failures.isEmpty then return .ok report
+            return .error wholeErr
+      else
+        match ← runDeclarations with
         | .error e => return .error e
-        | .ok admission =>
-          return .ok { report with
-            artifactAdmission := admission.map (·.1), hostStatement := admission.bind (·.2)
-            artifactMs := elapsed }
+        | .ok report =>
+          let report := { report with
+            bound := p.bound, roles := if whole then some (roleCounts p report.rows) else none }
+          if !whole || cfg.allowDeclined || !report.failures.isEmpty then return .ok report
+          let started ← IO.monoMsNow
+          let admitted ← IO.lazyPure fun _ => checkWhole p selection maxGroups
+          let elapsed := (← IO.monoMsNow) - started
+          match admitted with
+          | .error e => return .error e
+          | .ok admission =>
+            return .ok { report with
+              artifactAdmission := admission.map (·.1), hostStatement := admission.bind (·.2)
+              artifactMs := elapsed }
     if cfg.stackBytes != 0 then Ix.Runtime.setLeanThreadStackSize (USize.ofNat cfg.stackBytes)
     IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) run))
   catch e => return .error (.infrastructure e.toString)
@@ -514,6 +564,7 @@ def checkConfig (p : Cli.Parsed) : IO (Except DriverError CheckCfg) := do
   let slow ← envNat ["IX_KERNEL_CHECK_SLOW_MS"] 7000
   return do pure {
     workers, verbose := p.hasFlag "verbose", allowDeclined := p.hasFlag "allow-declined"
+    perRecord := (p.flag? "per-const").isSome || (p.flag? "json").isSome
     progressMs := ← progress, slowMs := ← slow }
 
 private def csvField (s : String) : String :=
