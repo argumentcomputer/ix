@@ -58,6 +58,7 @@ structure Enc where
   univs : Array Ixon.Univ := #[]
   univIdx : Std.HashMap Ixon.Univ Nat := {}
   blobs : Array (Address × ByteArray) := #[]
+  exprCache : Std.HashMap (Expr .anon) Ixon.Expr := {}
 
 abbrev EncM := StateT Enc (Except String)
 
@@ -79,7 +80,9 @@ def univOf (u : Ixon.Univ) : EncM UInt64 := do
 
 def blobOf (bytes : ByteArray) : EncM UInt64 := do
   let a := Address.blake3 bytes
-  modify fun s => { s with blobs := s.blobs.push (a, bytes) }
+  let s ← get
+  unless s.refIdx.contains a do
+    set { s with blobs := s.blobs.push (a, bytes) }
   refOf a
 
 /-- A level over the declaration's parameters `lps` (kernel positions), as an
@@ -120,27 +123,35 @@ encode at the default ones; a let keeps its `nonDep` flag, which is committed co
 of the record the kernel read it from, so a
 declaration read from a record encodes to that record's expressions; the modeller's
 own binders and lets carry the Lean fragment's. -/
-partial def encExpr (nm : Names) (lps : List Nat) (self : Key .anon → Option Nat) :
-    Expr .anon → EncM Ixon.Expr
+partial def encExpr (nm : Names) (lps : List Nat) (self : Key .anon → Option Nat)
+    (e : Expr .anon) : EncM Ixon.Expr :=
+  match e with
   | .bvar i => pure (.var i.toUInt64)
   | .fvar .. => throw "free variable in a generated record"
   | .sort u => do pure (.sort (← univOf (← liftExcept (encLevel lps u))))
-  | .const k us => do
-    let uis ← us.toArray.mapM fun u => do univOf (← liftExcept (encLevel lps u))
-    match self k with
-    | some i => pure (.recur i.toUInt64 uis)
-    | none => pure (.ref (← refOf (← liftExcept (nm.addr k))) uis)
-  | .app f a => return .app (← encExpr nm lps self f) (← encExpr nm lps self a)
-  | .lam t b _ => return .lam (← encExpr nm lps self t) (← encExpr nm lps self b)
-  | .forallE t b _ =>
-    return .all (← encExpr nm lps self t) (← encExpr nm lps self b)
-  | .letE t v b l =>
-    return .letE l.nonDep (.value .many) (← encExpr nm lps self t) (← encExpr nm lps self v) (← encExpr nm lps self b)
   | .lit (.natVal n) => return .nat (← blobOf (ByteArray.mk (Nat.toBytesLE n)))
   | .lit (.strVal s) => return .str (← blobOf s.toUTF8)
-  | .proj s i e => do
-    let si ← refOf (← liftExcept (nm.addr s))
-    return .prj si i.toUInt64 (← encExpr nm lps self e)
+  | _ => do
+    if let some cached := (← get).exprCache[e]? then
+      return cached
+    let res ← match e with
+      | .const k us => do
+        let uis ← us.toArray.mapM fun u => do univOf (← liftExcept (encLevel lps u))
+        match self k with
+        | some i => pure (.recur i.toUInt64 uis)
+        | none => pure (.ref (← refOf (← liftExcept (nm.addr k))) uis)
+      | .app f a => pure (.app (← encExpr nm lps self f) (← encExpr nm lps self a))
+      | .lam t b _ => pure (.lam (← encExpr nm lps self t) (← encExpr nm lps self b))
+      | .forallE t b _ => pure (.all (← encExpr nm lps self t) (← encExpr nm lps self b))
+      | .letE t v b l =>
+        pure (.letE l.nonDep (.value .many) (← encExpr nm lps self t) (← encExpr nm lps self v)
+          (← encExpr nm lps self b))
+      | .proj s i x => do
+        let si ← refOf (← liftExcept (nm.addr s))
+        pure (.prj si i.toUInt64 (← encExpr nm lps self x))
+      | _ => throw "unreachable"
+    modify fun s => { s with exprCache := s.exprCache.insert e res }
+    return res
 
 def addressOf (c : Ixon.Constant) : Address := Address.blake3 (Ixon.ser c)
 
@@ -194,7 +205,8 @@ the encoder met its references and levels in. Its binder data come later, per bl
 (`BlockAdvice.withSections`). -/
 def sharedRecord (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Array Ixon.Univ) :
     Except String Ixon.Constant := do
-  let sorted := refs.qsort fun a b => a.cmpBytes b == .lt
+  let sorted := (refs.qsort fun a b => a.cmpBytes b == .lt).foldl
+    (fun acc a => if acc.back? == some a then acc else acc.push a) #[]
   let pos : Std.HashMap Address UInt64 :=
     sorted.zipIdx.foldl (fun m (a, i) => m.insert a i.toUInt64) {}
   let move (i : UInt64) : UInt64 := ((refs[i.toNat]?).bind (pos[·]?)).getD i
@@ -204,18 +216,54 @@ def sharedRecord (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Arra
   (Ix.CompileM.buildConstantWithSharing Ix.CompileM.compilerSharingLimits info sorted table).mapError
     (s!"model record sharing: {·}")
 
-/-- `e` with every `share` node replaced by its entry of `sharing`, recursively (a
-canonical table is acyclic). -/
-partial def unshareAll (sharing : Array Ixon.Expr) : Ixon.Expr → Ixon.Expr
-  | .share i => match sharing[i.toNat]? with
-    | some e => unshareAll sharing e
-    | none => .share i
-  | .prj t i v => .prj t i (unshareAll sharing v)
-  | .app a b => .app (unshareAll sharing a) (unshareAll sharing b)
-  | .lam t b => .lam (unshareAll sharing t) (unshareAll sharing b)
-  | .all t b => .all (unshareAll sharing t) (unshareAll sharing b)
-  | .letE nd lm t v b => .letE nd lm (unshareAll sharing t) (unshareAll sharing v) (unshareAll sharing b)
+/-- Replace each `.share i` in `e` with `tbl[i]?` in a single pass. -/
+def substShares (tbl : Array Ixon.Expr) : Ixon.Expr → Ixon.Expr
+  | .share i => tbl[i.toNat]?.getD (.share i)
+  | .prj t i v => .prj t i (substShares tbl v)
+  | .app a b => .app (substShares tbl a) (substShares tbl b)
+  | .lam t b => .lam (substShares tbl t) (substShares tbl b)
+  | .all t b => .all (substShares tbl t) (substShares tbl b)
+  | .letE nd lm t v b =>
+      .letE nd lm (substShares tbl t) (substShares tbl v) (substShares tbl b)
   | e => e
+
+/-- Whether `e` only references `.share` indices strictly less than `bound`. -/
+def sharesBelow (bound : Nat) : Ixon.Expr → Bool
+  | .share i => i.toNat < bound
+  | .prj _ _ v => sharesBelow bound v
+  | .app a b | .lam a b | .all a b => sharesBelow bound a && sharesBelow bound b
+  | .letE _ _ t v b => sharesBelow bound t && sharesBelow bound v && sharesBelow bound b
+  | _ => true
+
+/-- Expand a backward-referenced `sharing` table bottom-up in `O(|sharing|)` time; returns
+`none` if any entry has a forward share reference. -/
+def expandSharingTable? (sharing : Array Ixon.Expr) : Option (Array Ixon.Expr) := Id.run do
+  let mut out : Array Ixon.Expr := Array.mkEmpty sharing.size
+  for e in sharing do
+    unless sharesBelow out.size e do return none
+    out := out.push (substShares out e)
+  return some out
+
+/-- Recursive fallback expansion for non-backward sharing tables. -/
+partial def unshareAllRec (sharing : Array Ixon.Expr) : Ixon.Expr → Ixon.Expr
+  | .share i => match sharing[i.toNat]? with
+    | some e => unshareAllRec sharing e
+    | none => .share i
+  | .prj t i v => .prj t i (unshareAllRec sharing v)
+  | .app a b => .app (unshareAllRec sharing a) (unshareAllRec sharing b)
+  | .lam t b => .lam (unshareAllRec sharing t) (unshareAllRec sharing b)
+  | .all t b => .all (unshareAllRec sharing t) (unshareAllRec sharing b)
+  | .letE nd lm t v b =>
+      .letE nd lm (unshareAllRec sharing t) (unshareAllRec sharing v) (unshareAllRec sharing b)
+  | e => e
+
+/-- `e` with every `share` node replaced by its entry of `sharing`, recursively (a
+canonical table is acyclic and backward-referenced, expanded once in `O(|sharing|)`). -/
+def unshareAll (sharing : Array Ixon.Expr) (e : Ixon.Expr) : Ixon.Expr :=
+  if sharing.isEmpty then e
+  else match expandSharingTable? sharing with
+    | some tbl => substShares tbl e
+    | none => unshareAllRec sharing e
 
 /-- Record `c` with its references renamed by `rename`, in the compiler's form again
 (`sharedRecord` over its expressions with the sharing expanded: refs sorted, levels
@@ -225,7 +273,12 @@ def renormalize (rename : Address → Address) (c : Ixon.Constant) : Except Stri
   match c.info with
   | .iPrj _ | .cPrj _ | .rPrj _ | .dPrj _ => return Ix.Compile.BinderData.rewriteRecord rename c #[]
   | _ =>
-    let roots := (Ix.CompileM.constantInfoRootExprs c.info).map (unshareAll c.sharing)
+    let expand : Ixon.Expr → Ixon.Expr :=
+      if c.sharing.isEmpty then id
+      else match expandSharingTable? c.sharing with
+        | some tbl => substShares tbl
+        | none => unshareAllRec c.sharing
+    let roots := (Ix.CompileM.constantInfoRootExprs c.info).map expand
     let info ← (Ix.CompileM.withRootExprs c.info roots).mapError (s!"model record refs: {·}")
     sharedRecord info (c.refs.map rename) c.univs
 
@@ -588,6 +641,11 @@ partial def ixonFieldsHaveNeg (refs : Array Address) (mems : Std.HashSet Address
 
 /-- Mirror of `KernelModeled::block_has_neg_occ` on a `muts` block record. -/
 def ixonBlockHasNegOcc (b : Address) (bc : Ixon.Constant) (ms : Array Ixon.MutConst) : Bool := Id.run do
+  let expand : Ixon.Expr → Ixon.Expr :=
+    if bc.sharing.isEmpty then id
+    else match expandSharingTable? bc.sharing with
+      | some tbl => substShares tbl
+      | none => unshareAllRec bc.sharing
   let mut mems : Std.HashSet Address := {}
   for (m, pos) in ms.zipIdx do
     match m with
@@ -597,7 +655,7 @@ def ixonBlockHasNegOcc (b : Address) (bc : Ixon.Constant) (ms : Array Ixon.MutCo
   for m in ms do
     let .indc ind := m | continue
     for ct in ind.ctors do
-      let cty := unshareAll bc.sharing ct.typ
+      let cty := expand ct.typ
       let some body := ixonPeelForallsZeta cty ct.params.toNat | continue
       if ixonMentionsBlock bc.refs mems ms.size body &&
           ixonFieldsHaveNeg bc.refs mems ms.size body ct.fields.toNat then
@@ -669,6 +727,301 @@ def familyKeys (cx : Ix.Kernel.Reader.Ctx .anon) (b : Address) (bc : Ixon.Consta
     recs := recs.push (← readKey (cx.memberKey (.member rb j)), n)
   return { recBlock := rb, types, ctors, recs }
 
+/-! ## Compaction and dead-declaration pruning of generated model advice -/
+
+/-- The tag enumeration's recursor metadata, used to ι-reduce closed `tag.rec ... (tag.m ...)`
+dispatch redexes generated by the modeller (`Nested.lean`'s `ihBinder` and `dispatchMotive`). -/
+structure TagRecInfo where
+  recKey : Key .anon
+  nP : Nat
+  numCtors : Nat
+  ctors : Std.HashMap (Key .anon) (Nat × Nat)
+
+/-- Extract `TagRecInfo` from a non-recursive, index-free 1-type tag `.indDecl`. -/
+def extractTagRecInfo (gen : List (Declaration .anon)) : Option TagRecInfo :=
+  gen.findSome? fun d => match d with
+    | .indDecl block nP =>
+      let tys := block.filterMap fun ci => match ci with | .indInfo cv _ => some cv | _ => none
+      let ctors := block.filterMap fun ci => match ci with | .ctorInfo cv cP cF => some (cv, cP, cF) | _ => none
+      let recs := block.filterMap fun ci => match ci with | .recInfo cv mI rP rules => some (cv, mI, rP, rules) | _ => none
+      match tys, recs with
+      | [cvT], [(cvR, mI, rP, rules)] =>
+        let k := ctors.length
+        if piCount cvT.type == nP && mI == nP + 1 + k && rP == nP + 1 + k && rules.length == k &&
+            ctors.all (fun (_, cP, _) => cP == nP) &&
+            (ctors.zip rules).all (fun ((cvC, _, cF), r) =>
+              r.ctor == cvC.name && r.nfields == cF &&
+                match cvC.type.stripPis (nP + cF) with
+                | some (bs, _) => bs.all (fun (dom, _) => !dom.mentionsConst cvT.name)
+                | none => false) then
+          let cmap := (ctors.zipIdx).foldl (init := ({} : Std.HashMap (Key .anon) (Nat × Nat)))
+            fun m ((cvC, _, cF), idx) => m.insert cvC.name (idx, cF)
+          some { recKey := cvR.name, nP, numCtors := k, ctors := cmap }
+        else none
+      | _, _ => none
+    | _ => none
+
+/-- Count occurrences of bound variable `d` in `e`, stopping once `acc > limit`. -/
+def bvarOccsBounded (limit : Nat) : Nat → Expr .anon → Nat → Nat
+  | d, e, acc =>
+    if acc > limit then acc
+    else match e with
+      | .bvar i => if i == d then acc + 1 else acc
+      | .app f a =>
+        let acc := bvarOccsBounded limit d f acc
+        bvarOccsBounded limit d a acc
+      | .lam t b _ | .forallE t b _ =>
+        let acc := bvarOccsBounded limit d t acc
+        bvarOccsBounded limit (d + 1) b acc
+      | .letE t v b _ =>
+        let acc := bvarOccsBounded limit d t acc
+        let acc := bvarOccsBounded limit d v acc
+        bvarOccsBounded limit (d + 1) b acc
+      | .proj _ _ x => bvarOccsBounded limit d x acc
+      | _ => acc
+
+/-- Count AST nodes in `e`, stopping once `acc > limit`. -/
+def exprNodesBounded (limit : Nat) : Expr .anon → Nat → Nat
+  | e, acc =>
+    if acc > limit then acc
+    else match e with
+      | .app f a =>
+        let acc := exprNodesBounded limit f (acc + 1)
+        exprNodesBounded limit a acc
+      | .lam t b _ | .forallE t b _ =>
+        let acc := exprNodesBounded limit t (acc + 1)
+        exprNodesBounded limit b acc
+      | .letE t v b _ =>
+        let acc := exprNodesBounded limit t (acc + 1)
+        let acc := exprNodesBounded limit v acc
+        exprNodesBounded limit b acc
+      | .proj _ _ x => exprNodesBounded limit x (acc + 1)
+      | _ => acc + 1
+
+/-- Collect an application spine `(head, args)` without quadratic re-traversal. -/
+def splitAppSpine (e : Expr .anon) : Expr .anon × List (Expr .anon) :=
+  let rec go : Expr .anon → List (Expr .anon) → Expr .anon × List (Expr .anon)
+    | .app f a, acc => go f (a :: acc)
+    | fn, acc => (fn, acc)
+  go e []
+
+/-- Whether `e` is a constructor application of the tag enumeration `tag?`. -/
+def isTagCtorApp (tag? : Option TagRecInfo) (e : Expr .anon) : Bool :=
+  match tag? with
+  | none => false
+  | some ti =>
+    match e.getAppFn with
+    | .const ck _ => ti.ctors.contains ck
+    | _ => false
+
+/-- Peel leading lambdas, returning `(arity, body)`. -/
+def peelLamArity : Expr .anon → Nat → Nat × Expr .anon
+  | .lam _ b _, n => peelLamArity b (n + 1)
+  | e, n => (n, e)
+
+/-- Capture-avoiding multi-argument substitution for a term `body` originally under `args.length`
+lambdas (`args[0]` substitutes the outermost binder, `args.getLast` the innermost). -/
+def applyLamArgs (body : Expr .anon) (args : List (Expr .anon)) : Expr .anon :=
+  let rec go (e : Expr .anon) (rem : Nat) : List (Expr .anon) → Expr .anon
+    | [] => e
+    | a :: rest => go (e.instantiate1Lift a (rem - 1)) (rem - 1) rest
+  go body args.length args
+
+/-- An internal `Eq.rec`-at-`Eq.refl` congruence helper (`congrPack_j`): when applied to `arity`
+arguments whose last argument is `Eq.refl _ _`, reduces definitionally to `base` instantiated at
+those levels and arguments. -/
+structure EqReflHelper where
+  levelParams : List Nat
+  arity : Nat
+  base : Expr .anon
+
+/-- Extract internal congruence helpers of the form `λ x_0 ... x_{k-1}, Eq.rec _ _ _ base _ (.bvar 0)`
+where `base` is an `Eq.refl` application. -/
+def extractEqReflHelpers (gen : Array (Declaration .anon)) (req : Std.HashSet (Key .anon)) :
+    Std.HashMap (Key .anon) EqReflHelper := Id.run do
+  let mut out : Std.HashMap (Key .anon) EqReflHelper := {}
+  for d in gen do
+    let .defnDecl cv v _ := d | continue
+    if req.contains cv.name then continue
+    let (arity, body) := peelLamArity v 0
+    if arity == 0 then continue
+    let (fn, args) := splitAppSpine body
+    match fn, args with
+    | .const (.role .eqRec) _, [_α, _a, _mot, base, _b, .bvar 0] =>
+      let (bh, bargs) := splitAppSpine base
+      match bh with
+      | .const (.role .eqRefl) _ =>
+        if bargs.length == 2 then
+          out := out.insert cv.name { levelParams := cv.levelParams, arity, base }
+      | _ => pure ()
+    | _, _ => pure ()
+  return out
+
+/-- Safe bottom-up β + `tag.rec`-ι + `Eq.rec`-ι + `congrPack`-at-`Eq.refl` compaction on generated
+model expressions. Structural descent is unbounded; `stepFuel` bounds only actual reduction steps.
+Preserves definitional equality and well-typedness, never ζ-reduces `letE`, and guards β-reduction
+against term blowup (`occs ≤ 1`, tag constructor argument, or `occs * size ≤ 64`). -/
+partial def compactExpr (tag? : Option TagRecInfo)
+    (eqHelpers : Std.HashMap (Key .anon) EqReflHelper) (e : Expr .anon) : Expr .anon :=
+  go 256 e
+where
+  go (stepFuel : Nat) (e : Expr .anon) : Expr .anon :=
+    match e with
+    | .lam t b bm => .lam (go stepFuel t) (go stepFuel b) bm
+    | .forallE t b bm => .forallE (go stepFuel t) (go stepFuel b) bm
+    | .letE t v b lm => .letE (go stepFuel t) (go stepFuel v) (go stepFuel b) lm
+    | .proj s i x => .proj s i (go stepFuel x)
+    | .app .. =>
+      let (fn0, args0) := splitAppSpine e
+      let fn := go stepFuel fn0
+      let args := args0.map (go stepFuel)
+      reduceSpine stepFuel fn args
+    | e => e
+  isEqReflApp (e : Expr .anon) : Bool :=
+    let (ph, pargs) := splitAppSpine e
+    match ph with
+    | .const (.role .eqRefl) _ => pargs.length == 2
+    | _ => false
+  reduceSpine (stepFuel : Nat) (fn : Expr .anon) (args : List (Expr .anon)) : Expr .anon :=
+    match stepFuel with
+    | 0 => Expr.mkAppN fn args
+    | stepFuel + 1 =>
+      match fn, args with
+      -- Safe β-reduction
+      | .lam _ body _, a :: rest =>
+        let occs := bvarOccsBounded 64 0 body 0
+        let canBeta :=
+          if occs ≤ 1 || isTagCtorApp tag? a then true
+          else if occs ≤ 64 then
+            let sz := exprNodesBounded (64 / occs) a 0
+            occs * sz ≤ 64
+          else false
+        if canBeta then
+          let body' := go stepFuel (body.instantiate1Lift a 0)
+          let (fn', extra) := splitAppSpine body'
+          reduceSpine stepFuel fn' (extra ++ rest)
+        else Expr.mkAppN fn args
+      -- `Eq.rec α a mot h b (Eq.refl α' a') rest ↦ h rest`
+      | .const (.role .eqRec) _, _ :: _ :: _ :: h :: _ :: prf :: rest =>
+        if isEqReflApp prf then
+          let (fn', extra) := splitAppSpine h
+          reduceSpine stepFuel fn' (extra ++ rest)
+        else Expr.mkAppN fn args
+      -- `tag.rec p⃗ mot m_0 ... m_{k-1} (tag.j p⃗ f⃗) rest ↦ m_j f⃗ rest`
+      -- and `congrPack_j p⃗ idx x x (Eq.refl _ x) rest ↦ Eq.refl _ (pack_j p⃗ idx x) rest`
+      | .const k us, _ =>
+        match eqHelpers[k]? with
+        | some eh =>
+          if args.length ≥ eh.arity && us.length == eh.levelParams.length then
+            match args[eh.arity - 1]? with
+            | some prf =>
+              if isEqReflApp prf then
+                let inst := applyLamArgs (eh.base.instantiateLevelParams eh.levelParams us)
+                  (args.take eh.arity)
+                let (fn', extra) := splitAppSpine (go stepFuel inst)
+                reduceSpine stepFuel fn' (extra ++ args.drop eh.arity)
+              else Expr.mkAppN fn args
+            | none => Expr.mkAppN fn args
+          else Expr.mkAppN fn args
+        | none =>
+          match tag? with
+          | some ti =>
+            if k == ti.recKey && args.length ≥ ti.nP + 1 + ti.numCtors + 1 then
+              let majorIdx := ti.nP + 1 + ti.numCtors
+              match args[majorIdx]? with
+              | some major =>
+                let (mh, margs) := splitAppSpine major
+                match mh with
+                | .const ck _ =>
+                  match ti.ctors[ck]? with
+                  | some (cidx, cF) =>
+                    if margs.length == ti.nP + cF then
+                      match args[ti.nP + 1 + cidx]? with
+                      | some minor =>
+                        let (fn', extra) := splitAppSpine minor
+                        reduceSpine stepFuel fn' (extra ++ margs.drop ti.nP ++ args.drop (majorIdx + 1))
+                      | none => Expr.mkAppN fn args
+                    else Expr.mkAppN fn args
+                  | none => Expr.mkAppN fn args
+                | _ => Expr.mkAppN fn args
+              | none => Expr.mkAppN fn args
+            else Expr.mkAppN fn args
+          | none => Expr.mkAppN fn args
+      | _, _ => Expr.mkAppN fn args
+
+/-- Collect all constant keys referenced by `e` (constants and `.proj` structure heads). -/
+def exprConstKeys (e : Expr .anon) (acc : Std.HashSet (Key .anon)) : Std.HashSet (Key .anon) :=
+  match e with
+  | .const k _ => acc.insert k
+  | .proj k _ x => exprConstKeys x (acc.insert k)
+  | .app f a => exprConstKeys a (exprConstKeys f acc)
+  | .lam t b _ | .forallE t b _ => exprConstKeys b (exprConstKeys t acc)
+  | .letE t v b _ => exprConstKeys b (exprConstKeys v (exprConstKeys t acc))
+  | _ => acc
+
+/-- All keys declared by a generated kernel declaration. -/
+def declDeclaredKeys : Declaration .anon → List (Key .anon)
+  | .defnDecl cv _ _ => [cv.name]
+  | .thmDecl cv _ => [cv.name]
+  | .indDecl block _ => block.map ConstantInfo.name
+  | _ => []
+
+/-- All constant keys referenced by a generated kernel declaration. -/
+def declReferencedKeys : Declaration .anon → Std.HashSet (Key .anon)
+  | .defnDecl cv v _ => exprConstKeys v (exprConstKeys cv.type {})
+  | .thmDecl cv v => exprConstKeys v (exprConstKeys cv.type {})
+  | .indDecl block _ => block.foldl (init := {}) fun s ci => match ci with
+    | .indInfo cv _ => exprConstKeys cv.type s
+    | .ctorInfo cv _ _ => exprConstKeys cv.type s
+    | .recInfo cv _ _ rules => rules.foldl (fun s r => exprConstKeys r.rhs s) (exprConstKeys cv.type s)
+    | _ => s
+  | _ => {}
+
+/-- Keep only declarations reachable from `req`, preserving topological order. -/
+def pruneGenReachable (decls : Array (Declaration .anon)) (req : Std.HashSet (Key .anon)) :
+    Array (Declaration .anon) := Id.run do
+  let mut declByKey : Std.HashMap (Key .anon) Nat := {}
+  for (d, i) in decls.zipIdx do
+    for k in declDeclaredKeys d do
+      declByKey := declByKey.insert k i
+  let mut reach : Std.HashSet Nat := {}
+  let mut queue : Array Nat := #[]
+  for k in req do
+    if let some i := declByKey[k]? then
+      unless reach.contains i do
+        reach := reach.insert i
+        queue := queue.push i
+  let mut head := 0
+  while head < queue.size do
+    let idx := queue[head]!
+    head := head + 1
+    for dep in declReferencedKeys decls[idx]! do
+      if let some j := declByKey[dep]? then
+        unless reach.contains j do
+          reach := reach.insert j
+          queue := queue.push j
+  let mut out : Array (Declaration .anon) := #[]
+  for (d, i) in decls.zipIdx do
+    if reach.contains i then out := out.push d
+  return out
+
+/-- Compact expressions in generated model declarations (leaving public root types and
+inductive blocks intact) and prune declarations unreachable from the required public roots. -/
+def compactAndPruneGen (gen : List (Declaration .anon)) (req : Std.HashSet (Key .anon)) :
+    List (Declaration .anon) := Id.run do
+  let genArr := gen.toArray
+  let tag? := extractTagRecInfo gen
+  let eqHelpers := extractEqReflHelpers genArr req
+  let compacted : Array (Declaration .anon) := genArr.map fun d => match d with
+    | .defnDecl cv v h =>
+      let ty := if req.contains cv.name then cv.type else compactExpr tag? eqHelpers cv.type
+      .defnDecl { cv with type := ty } (compactExpr tag? eqHelpers v) h
+    | .thmDecl cv v =>
+      let ty := if req.contains cv.name then cv.type else compactExpr tag? eqHelpers cv.type
+      .thmDecl { cv with type := ty } (compactExpr tag? eqHelpers v)
+    | other => other
+  return (pruneGenReachable compacted req).toList
+
 /-- The advice of one block, from the declarations the reader generated for it. -/
 def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Constant)
     (cx : Ix.Kernel.Reader.Ctx .anon) (b : Address) (bc : Ixon.Constant)
@@ -676,19 +1029,51 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
     (tweak : Declaration .anon → Declaration .anon := id) :
     Except String BlockAdvice := do
   let fk ← familyKeys cx b bc shape
+  -- Determine eligible modeled-projection keys once (reused for pruning and payload assembly)
+  let mut projKeys : Array (Key .anon × Key .anon) := #[]
+  if let .muts ms := bc.info then
+    let hasNeg := ixonBlockHasNegOcc b bc ms
+    for (m, pos) in ms.zipIdx do
+      if ixonMemberProjEligible bc ms hasNeg pos then
+        if let .indc ind := m then
+          if let some ct := ind.ctors[0]? then
+            let some tk := fk.types[pos]? | throw s!"no type key at member {pos}"
+            for fidx in [0:ct.fields.toNat] do
+              let pmKey := Ix.Kernel.projModelName tk fidx
+              projKeys := projKeys.push (pmKey, auxKey pmKey .projIota)
+  -- Required public root keys checked by `KernelModeled::check_family`
+  let mut req : Std.HashSet (Key .anon) := {}
+  for k in fk.types ++ fk.ctors do req := req.insert (auxKey k .model)
+  for (k, n) in fk.recs do
+    req := req.insert (auxKey k .model)
+    for j in [0:n] do req := req.insert (auxKey (auxKey k .model) (.iota j))
+  for (pmKey, piKey) in projKeys do
+    req := (req.insert pmKey).insert piKey
+  let liveGen := compactAndPruneGen (gen.map tweak) req
   let roles : Std.HashMap Ix.Kernel.Role Address := table.bound.foldl (fun m (r, a) => m.insert r a) {}
   let mut nm : Names := { roles := roles }
   let mut records : Array (Address × Ixon.Constant) := #[]
+  let mut recSeen : Std.HashSet Address := {}
   let mut hints : Array (Address × Lean.ReducibilityHints) := #[]
+  let mut hintSeen : Std.HashSet Address := {}
   let mut blobs : Array (Address × ByteArray) := #[]
-  for d in gen.map tweak do
+  let mut blobSeen : Std.HashSet Address := {}
+  for d in liveGen do
     let e ← encDecl nm d
     for rc in e.records do
-      unless records.any (·.1 == rc.1) do records := records.push rc
-    hints := hints ++ e.hints
-    blobs := blobs ++ e.blobs
+      unless recSeen.contains rc.1 do
+        recSeen := recSeen.insert rc.1
+        records := records.push rc
+    for h in e.hints do
+      unless hintSeen.contains h.1 do
+        hintSeen := hintSeen.insert h.1
+        hints := hints.push h
+    for bl in e.blobs do
+      unless blobSeen.contains bl.1 do
+        blobSeen := blobSeen.insert bl.1
+        blobs := blobs.push bl
     nm := { nm with gen := e.keys.foldl (fun m (k, x) => m.insert k x) nm.gen }
-  let aset : Std.HashSet Address := records.foldl (fun s (a, _) => s.insert a) {}
+  let aset : Std.HashSet Address := recSeen
   -- outside references: used references that are not advice
   let mut outside : Array Address := #[]
   for (_, c) in records do
@@ -846,37 +1231,41 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
       let some t := nm.gen[auxKey (auxKey k .model) (.iota j)]? | throw s!"no iota_{j} for {k}"
       iotas := iotas.push t
   let mut projModels : Array (Address × Address) := #[]
-  if let .muts ms := bc.info then
-    let hasNeg := ixonBlockHasNegOcc b bc ms
-    for (m, pos) in ms.zipIdx do
-      if ixonMemberProjEligible bc ms hasNeg pos then
-        if let .indc ind := m then
-          if let some ct := ind.ctors[0]? then
-            let some tk := fk.types[pos]? | throw s!"no type key at member {pos}"
-            for fidx in [0:ct.fields.toNat] do
-              let pmKey := Ix.Kernel.projModelName tk fidx
-              let some pm := nm.gen[pmKey]? | throw s!"no projection model {fidx} for {tk}"
-              let some pi := nm.gen[auxKey pmKey .projIota]?
-                | throw s!"no projection iota {fidx} for {tk}"
-              projModels := projModels.push (pm, pi)
-  let layout : Payload := { recBlock := fk.recBlock, advice := records.map (·.1), witnesses,
+  for (pmKey, piKey) in projKeys do
+    let some pm := nm.gen[pmKey]? | throw s!"no projection model for {pmKey}"
+    let some pi := nm.gen[piKey]? | throw s!"no projection iota for {piKey}"
+    projModels := projModels.push (pm, pi)
+  -- Deduplicate `deps` preserving order
+  let mut depSeen : Std.HashSet Address := {}
+  let mut dedupDeps : Array Address := #[]
+  for d in deps do
+    unless depSeen.contains d do
+      depSeen := depSeen.insert d
+      dedupDeps := dedupDeps.push d
+  let isCPrj : Ixon.Constant → Bool
+    | ⟨.cPrj _, _, _, _, _⟩ => true
+    | _ => false
+  let adviceAddrs := (records.filter fun (_, c) => !isCPrj c).map (·.1)
+  let layout : Payload := { recBlock := fk.recBlock, advice := adviceAddrs, witnesses,
                             typeModels, ctorModels, recModels, iotas, projModels }
-  return { layout, records, hints, blobs, deps }
+  return { layout, records, hints, blobs, deps := dedupDeps }
 
 /-! ## The advice's binder data
 
 A generated record carries its binder-data section like any record, so its
 address covers the data IxVM reads from it. The records are encoded first (each
-naming the ones before it by address), then annotated as a whole by IxC's pass,
-typed against the environment's records (`IxVM.RecordSections.sectionsOf`; the
-data do not depend on addresses), and then re-addressed bottom-up: each record's
-references to the advice follow their new addresses, the record is put in the
-compiler's form again (`renormalize`: its refs sorted by the new addresses, its
-sharing rebuilt), its section is set, and it is hashed. The section computed before
-fits the rebuilt record when the two have the same shape (`recordShape`); otherwise
-it is computed again for the record as it stands. So every advice record is the
-record the compiler would write for its declaration. The payload, hints and
-dependencies name the new addresses. -/
+naming the ones before it by address), then installed once into IxC's kernel
+environment (`IxVM.PwHints.KernelEnv.ofView`, typed against the environment's
+records), and then re-addressed bottom-up: each record's references to the
+advice follow their new addresses, the record is put in the compiler's form
+again (reusing the existing sharing directly when `refs` remain strictly
+ascending, otherwise calling `renormalize`), its section is computed directly
+against the already-built `KernelEnv` by mapping its refs back to their
+unsectioned addresses (`localInv`, falling back to `sectionsOf` only on an
+address collision), and it is hashed. So every advice record is the record the
+compiler would write for its declaration, without rebuilding the kernel
+environment per record. The payload, hints and dependencies name the new
+addresses. -/
 
 /-- `adv` with every record's binder-data section, re-addressed. `support` are the
 environment's records, `chosen` its role table and prelude. -/
@@ -888,7 +1277,10 @@ def BlockAdvice.withSections (adv : BlockAdvice) (support : Array (Address × Ix
   -- the advice records are the view's models: indexed after the environment's, so a generated
   -- recursor cannot displace the environment's recursor of an alpha-equivalent block
   let models : Std.HashSet Address := adv.records.foldl (fun s (a, _) => s.insert a) {}
-  let sections ← IxVM.RecordSections.sectionsOf adv.records support blobs hints chosen (models := models)
+  let view : IxVM.PwHints.View :=
+    { records := adv.records, support, blobs, hints, table := some chosen.1.toBytes, models }
+  let kEnv ← IxVM.PwHints.KernelEnv.ofView view (prelude? := some chosen)
+  let core := Ix.Kernel.Cached.coreKnotI .verified kEnv.fe Ix.Kernel.checkFuel
   let store : Std.HashMap Address Ixon.Constant :=
     adv.records.foldl (fun m (a, c) => m.insert a c) {}
   let order ← Ix.Compile.BinderData.bottomUp store adv.records
@@ -897,41 +1289,85 @@ def BlockAdvice.withSections (adv : BlockAdvice) (support : Array (Address × Ix
   for a in order do
     let some c := store[a]? | continue
     let rename (x : Address) : Address := renamed.getD x x
-    let c1 ← renormalize rename c
-    let c' ← if recordShape c1 == recordShape c then
-        pure { c1 with binders := sections.getD a #[] }
+    let c1 ← match c.info with
+      | .iPrj _ | .cPrj _ | .rPrj _ | .dPrj _ =>
+        pure (Ix.Compile.BinderData.rewriteRecord rename c #[])
+      | _ =>
+        let refs' := c.refs.map rename
+        if tablesCanonical c && ascendingBy refs' (fun x y => x.cmpBytes y == .lt) then
+          pure { c with refs := refs', binders := #[] }
+        else
+          renormalize rename c
+    let binders ←
+      if (IxVM.PwHints.roots c1).isEmpty then pure #[]
+      else if IxVM.RecordSections.unsafeOrPartial c1 then
+        Ix.Compile.BinderData.stripSection c1
       else do
-        -- the rebuilt sharing moved a binder or a share: the section of the record as it stands,
-        -- typed against the environment and the advice re-addressed so far
-        let a1 := addressOf c1
-        let done := rewritten.toArray
-        let fresh ← IxVM.RecordSections.sectionsOf #[(a1, c1)] (support ++ done) blobs hints chosen
-          (models := done.foldl (fun s (x, _) => s.insert x) ({} : Std.HashSet Address))
-        pure { c1 with binders := fresh.getD a1 #[] }
+        -- Map `c1.refs` back to their unsectioned addresses in `kEnv` (local to `c.refs` so
+        -- unchanged `support` refs never collide with renamed advice addresses).
+        let mut localInv : Std.HashMap Address Address := {}
+        let mut collision := false
+        for r in c.refs do
+          let r' := rename r
+          match localInv[r']? with
+          | some prev => if prev != r then collision := true
+          | none => localInv := localInv.insert r' r
+        if !collision then
+          let c1Old := { c1 with refs := c1.refs.map (fun x => localInv.getD x x) }
+          let (blocks, _, _) := IxVM.PwHints.annotateRecord kEnv core a c1Old (taint := true)
+          Ix.Compile.BinderData.sectionOf c1 blocks
+        else
+          let a1 := addressOf c1
+          let done := rewritten.toArray
+          let fresh ← IxVM.RecordSections.sectionsOf #[(a1, c1)] (support ++ done) blobs hints chosen
+            (models := done.foldl (fun s (x, _) => s.insert x) ({} : Std.HashSet Address))
+          pure (fresh.getD a1 #[])
+    let c' := { c1 with binders }
     let a' := addressOf c'
     renamed := renamed.insert a a'
     rewritten := rewritten.insert a' c'
   let rename (x : Address) : Address := renamed.getD x x
   -- the records in their original order, each once
   let mut records : Array (Address × Ixon.Constant) := #[]
+  let mut seen : Std.HashSet Address := {}
   for (a, _) in adv.records do
     let a' := rename a
-    if records.any (·.1 == a') then continue
+    if seen.contains a' then continue
     let some c' := rewritten[a']? | throw s!"model advice: record {a} was not re-addressed"
+    seen := seen.insert a'
     records := records.push (a', c')
+  let mut hints' : Array (Address × Lean.ReducibilityHints) := #[]
+  let mut hintSeen : Std.HashSet Address := {}
+  for (a, h) in adv.hints do
+    let a' := rename a
+    unless hintSeen.contains a' do
+      hintSeen := hintSeen.insert a'
+      hints' := hints'.push (a', h)
+  let mut deps' : Array Address := #[]
+  let mut depSeen : Std.HashSet Address := {}
+  for d in adv.deps do
+    let d' := rename d
+    unless depSeen.contains d' do
+      depSeen := depSeen.insert d'
+      deps' := deps'.push d'
   let l := adv.layout
+  let mut advice' : Array Address := #[]
+  let mut adviceSeen : Std.HashSet Address := {}
+  for a in l.advice do
+    let a' := rename a
+    unless adviceSeen.contains a' do
+      adviceSeen := adviceSeen.insert a'
+      advice' := advice'.push a'
   let layout : Payload := { l with
     recBlock := rename l.recBlock
-    advice := records.map (·.1)
+    advice := advice'
     witnesses := l.witnesses.map (fun (x, k, steps, extra) => (rename x, k, steps, extra))
     typeModels := l.typeModels.map rename
     ctorModels := l.ctorModels.map rename
     recModels := l.recModels.map rename
     iotas := l.iotas.map rename
     projModels := l.projModels.map (fun (pm, pi) => (rename pm, rename pi)) }
-  return { adv with layout, records,
-                    hints := adv.hints.map (fun (a, h) => (rename a, h)),
-                    deps := adv.deps.map rename }
+  return { adv with layout, records, hints := hints', deps := deps' }
 
 /-! ## Attaching the models -/
 
