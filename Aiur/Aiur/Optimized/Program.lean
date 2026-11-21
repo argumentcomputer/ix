@@ -19,6 +19,21 @@ structure Artifact (F : Type) [Field F] [DecidableEq F] where
   degreeBound : ∀ chip ∈ system.chips,
     chip.stats.maxConstraintDegree ≤ config.maxDegree ∧ chip.stats.maxLookupDegree ≤ 2 ∧ chip.maxLookupGuardDegree ≤ 1
 
+/-- Parallel `List.mapM` for `Except`, backed by `Task.spawn` with deterministic
+input-order result collection. Equal to `List.mapM` (`parMapM_eq_mapM`), so
+switching `Optimized.compile` preserves every downstream theorem verbatim. -/
+def parMapM (f : α → Except ε β) (xs : List α) : Except ε (List β) :=
+  (xs.map fun x => Task.spawn (prio := .default) fun _ => f x).mapM (·.get)
+
+theorem parMapM_eq_mapM (f : α → Except ε β) (xs : List α) :
+    parMapM f xs = xs.mapM f := by
+  unfold parMapM
+  induction xs with
+  | nil => rfl
+  | cons x xs ih =>
+      simp only [List.map_cons, List.mapM_cons, ih]
+      rfl
+
 def compile [Field F] [DecidableEq F] (program : Program F) (entries : List String)
     (config : Config := {}) : Except String (Artifact F) := do
   if config.maxDegree < 3 then throw "the optimized compiler requires a degree cap of at least three"
@@ -28,8 +43,9 @@ def compile [Field F] [DecidableEq F] (program : Program F) (entries : List Stri
     let _ ← (checkEntry program entry).mapError reprStr
   for declaration in program.enums do
     let _ ← (Circuit.checkEnumTags F declaration).mapError reprStr
-  let layouts ← program.functions.mapM fun fn => do
-    layOut config (← Compiler.function program config fn (entries.contains fn.name))
+  let layouts ← parMapM (fun fn => do
+    layOut config (← Compiler.function program config fn (entries.contains fn.name)))
+    program.functions
   let initial : Circuit.System F := ⟨layouts.map (·.chip), program.enums, program.tables, program.maps⟩
   let deduplicate : Except String (Dedup.CheckedResult initial entries) := if config.deduplicate then Dedup.run initial entries
     else Dedup.certify initial entries (Dedup.identity initial)

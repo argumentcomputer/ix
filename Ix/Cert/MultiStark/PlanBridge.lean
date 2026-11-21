@@ -1,5 +1,6 @@
 import Ix.Cert.MultiStark.LogUpSoundness
 import Aiur.Optimized.Depth.Grouped
+import Aiur.MultiStarkSpec
 
 /-! # Extracted Trace Rows → `Aiur.Optimized.Grouping.Plan.checkMemo` Bridge (Gap 5)
 
@@ -242,5 +243,83 @@ theorem prepared_eval_of_extracted_trace
     activated selected hvalid signed rooted outside (hlen ▸ hrows_len) hchecked arguments decoded
 
 end PlanCheckMemo
+
+section VectorizedRomBridge
+
+open Aiur.MultiStarkSpec
+
+/-- Every extracted entry from a `K`-lane vectorized `<ROM:w>` trace has payload length `w`. -/
+theorem vecTraceEntries_payload_length {F : Type} [Field F] [DecidableEq F]
+    (w K : ℕ) (rows : List (ℕ → F)) {e : F × List F}
+    (he : e ∈ vecTraceEntries w K rows) : e.2.length = w := by
+  unfold vecTraceEntries at he
+  obtain ⟨r, _, hr⟩ := List.mem_flatMap.mp he
+  unfold vecRowEntries at hr
+  obtain ⟨l, _, rfl⟩ := List.mem_map.mp hr
+  simp [vecPayload]
+
+/-- **Vectorized `K`-lane ROM → scalar `hmemseg` bridge (`C6`):**
+if the width-`w` entries of `rom : Aiur.WidthROM Fp` are extracted from valid
+`K`-lane vectorized ROM rows (`1 < K`) whose `MEMSEG` row deltas balance against
+sorted disjoint intervals `ivls`, then the exact scalar `hmemseg` balance required by
+`memseg_balance_implies_unique` and `prepared_eval_of_extracted_trace` holds. -/
+theorem vectorized_rom_hmemseg_of_valid
+    (rom : Aiur.WidthROM Fp) (w K : ℕ) (hK : 1 < K)
+    (rows : List (ℕ → Fp)) (hrows : ∀ r ∈ rows, KLaneRomRowValid w K r)
+    (hslice : rom.entries.filter (fun e => decide (e.2.length = w)) = vecTraceEntries w K rows)
+    (ivls : List (ℕ × ℕ))
+    (hbal : ∀ x : Fp, (rows.map fun r => vecRowMemsegDelta w K r x).sum +
+        memsegBoundary ivls x = 0) :
+    ∀ x : Fp,
+      (((rom.entries.filter fun e => decide (e.2.length = w ∧ e.1 = x)).length : Fp) -
+        ((rom.entries.filter fun e => decide (e.2.length = w ∧ e.1 = x - 1)).length : Fp)) +
+        memsegBoundary ivls x = 0 := by
+  intro x
+  have hfilt : ∀ y : Fp,
+      (rom.entries.filter fun e => decide (e.2.length = w ∧ e.1 = y)) =
+        (vecTraceEntries w K rows).filter (fun e => decide (e.1 = y)) := by
+    intro y
+    rw [← hslice, List.filter_filter]
+    congr 1
+    funext e
+    by_cases hw : e.2.length = w <;> by_cases ha : e.1 = y <;> simp [hw, ha]
+  rw [hfilt x, hfilt (x - 1), ← vecTrace_memseg_delta_eq_scalar hK hrows x]
+  exact hbal x
+
+/-- **Vectorized `K`-lane ROM `WidthROM.Valid` bridge (`C6`):**
+any `WidthROM Fp` whose every width bucket either balances as a scalar ROM or is
+extracted from valid `K`-lane vectorized ROM rows (`1 < K`) balancing against sorted
+disjoint `MEMSEG` intervals is guaranteed `rom.Valid` (uniquely addressed per width). -/
+theorem vectorized_rom_widthROM_valid
+    (rom : Aiur.WidthROM Fp)
+    (ivlsOf : ℕ → List (ℕ × ℕ))
+    (hdisj : ∀ w, DisjointIntervals (ivlsOf w))
+    (hrom_lt : ∀ w,
+      (∑ x : Fp, (rom.entries.filter fun e => decide (e.2.length = w ∧ e.1 = x)).length) + 1 <
+        CertiFri.P3.Goldilocks.order)
+    (hvec : ∀ w,
+      (∀ x : Fp,
+        (((rom.entries.filter fun e => decide (e.2.length = w ∧ e.1 = x)).length : Fp) -
+          ((rom.entries.filter fun e => decide (e.2.length = w ∧ e.1 = x - 1)).length : Fp)) +
+          memsegBoundary (ivlsOf w) x = 0) ∨
+      ∃ (K : ℕ) (rows : List (ℕ → Fp)),
+        1 < K ∧
+        (∀ r ∈ rows, KLaneRomRowValid w K r) ∧
+        rom.entries.filter (fun e => decide (e.2.length = w)) = vecTraceEntries w K rows ∧
+        ∀ x : Fp, (rows.map fun r => vecRowMemsegDelta w K r x).sum +
+          memsegBoundary (ivlsOf w) x = 0) :
+    rom.Valid := by
+  apply widthROM_valid_of_count_le_one rom
+  intro w x
+  have hmemseg : ∀ y : Fp,
+      (((rom.entries.filter fun e => decide (e.2.length = w ∧ e.1 = y)).length : Fp) -
+        ((rom.entries.filter fun e => decide (e.2.length = w ∧ e.1 = y - 1)).length : Fp)) +
+        memsegBoundary (ivlsOf w) y = 0 := by
+    rcases hvec w with hscalar | ⟨K, rows, hK, hrows, hslice, hbal⟩
+    · exact hscalar
+    · exact vectorized_rom_hmemseg_of_valid rom w K hK rows hrows hslice (ivlsOf w) hbal
+  exact (memseg_balance_implies_unique (hdisj w) (hrom_lt w) hmemseg x).2
+
+end VectorizedRomBridge
 
 end Ix.Cert.MultiStark

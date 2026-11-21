@@ -298,9 +298,9 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       if start >= end
         || end >= Val::ORDER_U64
         || previous.is_some_and(|(w, e)| w == width && start < e)
-        || !self.system.circuits[self.members.len() + self.tables.len()..]
-          .iter()
-          .any(|c| (c.main_width - 3) as u64 == width)
+        || usize::try_from(width)
+          .ok()
+          .is_none_or(|w| self.rom.widths.binary_search(&w).is_err())
       {
         return Err("invalid streamed memory intervals".into());
       }
@@ -535,7 +535,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       let heights: Vec<_> =
         (0..self.system.circuits.len()).map(|ci| device.height(ci)).collect();
       let traces = self
-        .generate_with::<false>(
+        .generate_with_validated::<false>(
           record,
           Some((entry, args)),
           &heights,
@@ -583,14 +583,10 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     }
     let memory_start = self.members.len() + self.tables.len();
     let mut messages = Vec::new();
-    for trace in &traces[memory_start..] {
-      let total = trace
-        .values
-        .chunks_exact(trace.width)
-        .take_while(|row| row[1] == Val::ONE)
-        .count();
+    for (i, trace) in traces[memory_start..].iter().enumerate() {
+      let total = self.rom.active_entries(i, trace);
       if total != 0 {
-        let width = Val::from_usize(trace.width - 3);
+        let width = Val::from_usize(self.rom.widths[i]);
         messages.push(BatchMessage::pull(vec![
           Val::from_u64(MEMSEG),
           width,
@@ -719,7 +715,11 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       rows.push(self.system.circuits[ci].preprocessed_height);
     }
     for &width in &self.rom.widths {
-      rows.push(record.memory.indices_for_width(width).len());
+      rows.push(
+        self
+          .rom
+          .row_count_for_entries(width, record.memory.width_cells(width).len()),
+      );
     }
     rows
   }
@@ -825,6 +825,12 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       }
     }
     let unpadded_rows = self.execution_rows(&record);
+    let rom_entries: Vec<usize> = self
+      .rom
+      .widths
+      .iter()
+      .map(|&width| record.memory.width_cells(width).len())
+      .collect();
     for (index, (&rows, &log)) in
       unpadded_rows.iter().zip(log_heights).enumerate()
     {
@@ -847,13 +853,12 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       &target_heights,
     )?;
     drop(record);
-    let rom_base = self.members.len() + self.tables.len();
     let mut messages = Vec::with_capacity(self.rom.widths.len() * 2);
     for (i, &width) in self.rom.widths.iter().enumerate() {
-      let unpadded = unpadded_rows[rom_base + i];
+      let entries = rom_entries[i];
       messages.push(BatchMessage::pull(memseg_args(width, Val::ZERO).to_vec()));
       messages.push(BatchMessage::push(
-        memseg_args(width, Val::from_usize(unpadded)).to_vec(),
+        memseg_args(width, Val::from_usize(entries)).to_vec(),
       ));
     }
     let witness = self.witness_from_main(traces);

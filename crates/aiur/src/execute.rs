@@ -615,6 +615,8 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
       }
       machine.record.output = output;
     }
+    machine.record.queries.drop_prefetched();
+    machine.record.memory.drop_prefetched();
     Ok(machine.record)
   }
 }
