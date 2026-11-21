@@ -206,7 +206,14 @@ fn sliced_lookup_writer_matches_graph_and_retained_proof() {
   // drains completed source traces progressively; it must still be bit-identical
   // to retained multi-shard proving.
   let retained_multi = backend
-    .prove_batch_stage_1("root", &[3], &[9], traces.clone(), 2, Retention::Retain)
+    .prove_batch_stage_1(
+      "root",
+      &[3],
+      &[9],
+      traces.clone(),
+      2,
+      Retention::Retain,
+    )
     .unwrap();
   let regenerated_multi = backend
     .prove_batch_stage_1(

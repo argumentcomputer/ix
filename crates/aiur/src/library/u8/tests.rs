@@ -132,8 +132,10 @@ fn direct_byte_maps_and_word_hints_match_table_and_closure_execution() {
     pair_in.iter().map(|r| vec![r[0] | r[1]]).collect();
   let lt_out: Vec<Vec<u64>> =
     pair_in.iter().map(|r| vec![u64::from(r[0] < r[1])]).collect();
-  let add_out: Vec<Vec<u64>> =
-    pair_in.iter().map(|r| vec![(r[0] + r[1]) & 255, (r[0] + r[1]) >> 8]).collect();
+  let add_out: Vec<Vec<u64>> = pair_in
+    .iter()
+    .map(|r| vec![(r[0] + r[1]) & 255, (r[0] + r[1]) >> 8])
+    .collect();
   let sub_out: Vec<Vec<u64>> = pair_in
     .iter()
     .map(|r| vec![r[0].wrapping_sub(r[1]) & 255, u64::from(r[0] < r[1])])
@@ -161,7 +163,11 @@ fn direct_byte_maps_and_word_hints_match_table_and_closure_execution() {
   let unary_t = Type::Tuple { items: vec![f.clone()] };
   // Tables: 0=u8_in, 1=sum_in, 2=pair_in, 3..15=outputs
   let tables = vec![
-    Table { name: "u8_in".into(), r#type: unary_t.clone(), rows: u8_in.clone() },
+    Table {
+      name: "u8_in".into(),
+      r#type: unary_t.clone(),
+      rows: u8_in.clone(),
+    },
     Table { name: "sum_in".into(), r#type: unary_t, rows: sum_in },
     Table { name: "pair_in".into(), r#type: pair_t.clone(), rows: pair_in },
     Table { name: "u8_id".into(), r#type: f.clone(), rows: u8_in },
@@ -174,24 +180,110 @@ fn direct_byte_maps_and_word_hints_match_table_and_closure_execution() {
     Table { name: "add_out".into(), r#type: pair_t.clone(), rows: add_out },
     Table { name: "sub_out".into(), r#type: pair_t.clone(), rows: sub_out },
     Table { name: "mul_out".into(), r#type: pair_t.clone(), rows: mul_out },
-    Table { name: "split4_out".into(), r#type: pair_t.clone(), rows: split4_out },
-    Table { name: "split7_out".into(), r#type: pair_t.clone(), rows: split7_out },
+    Table {
+      name: "split4_out".into(),
+      r#type: pair_t.clone(),
+      rows: split4_out,
+    },
+    Table {
+      name: "split7_out".into(),
+      r#type: pair_t.clone(),
+      rows: split7_out,
+    },
     Table { name: "sum_out".into(), r#type: f.clone(), rows: sum_out },
   ];
   let maps = vec![
-    Map { name: "UInt8::from_field".into(), params: vec![f.clone()], result: f.clone(), input: 0, output: 3 },
-    Map { name: "UInt8::raw_bit_decomposition".into(), params: vec![f.clone()], result: bytes8.clone(), input: 0, output: 4 },
-    Map { name: "UInt8::range_pair".into(), params: vec![f.clone(), f.clone()], result: unit, input: 2, output: 5 },
-    Map { name: "UInt8::raw_xor".into(), params: vec![f.clone(), f.clone()], result: f.clone(), input: 2, output: 6 },
-    Map { name: "UInt8::raw_and".into(), params: vec![f.clone(), f.clone()], result: f.clone(), input: 2, output: 7 },
-    Map { name: "UInt8::raw_or".into(), params: vec![f.clone(), f.clone()], result: f.clone(), input: 2, output: 8 },
-    Map { name: "UInt8::raw_lt".into(), params: vec![f.clone(), f.clone()], result: f.clone(), input: 2, output: 9 },
-    Map { name: "UInt8::raw_add".into(), params: vec![f.clone(), f.clone()], result: pair_t.clone(), input: 2, output: 10 },
-    Map { name: "UInt8::raw_sub".into(), params: vec![f.clone(), f.clone()], result: pair_t.clone(), input: 2, output: 11 },
-    Map { name: "UInt8::raw_mul".into(), params: vec![f.clone(), f.clone()], result: pair_t.clone(), input: 2, output: 12 },
-    Map { name: "UInt8::raw_xor_split4".into(), params: vec![f.clone(), f.clone()], result: pair_t.clone(), input: 2, output: 13 },
-    Map { name: "UInt8::raw_xor_split7".into(), params: vec![f.clone(), f.clone()], result: pair_t.clone(), input: 2, output: 14 },
-    Map { name: "UInt8::raw_sum_byte".into(), params: vec![f.clone()], result: f.clone(), input: 1, output: 15 },
+    Map {
+      name: "UInt8::from_field".into(),
+      params: vec![f.clone()],
+      result: f.clone(),
+      input: 0,
+      output: 3,
+    },
+    Map {
+      name: "UInt8::raw_bit_decomposition".into(),
+      params: vec![f.clone()],
+      result: bytes8.clone(),
+      input: 0,
+      output: 4,
+    },
+    Map {
+      name: "UInt8::range_pair".into(),
+      params: vec![f.clone(), f.clone()],
+      result: unit,
+      input: 2,
+      output: 5,
+    },
+    Map {
+      name: "UInt8::raw_xor".into(),
+      params: vec![f.clone(), f.clone()],
+      result: f.clone(),
+      input: 2,
+      output: 6,
+    },
+    Map {
+      name: "UInt8::raw_and".into(),
+      params: vec![f.clone(), f.clone()],
+      result: f.clone(),
+      input: 2,
+      output: 7,
+    },
+    Map {
+      name: "UInt8::raw_or".into(),
+      params: vec![f.clone(), f.clone()],
+      result: f.clone(),
+      input: 2,
+      output: 8,
+    },
+    Map {
+      name: "UInt8::raw_lt".into(),
+      params: vec![f.clone(), f.clone()],
+      result: f.clone(),
+      input: 2,
+      output: 9,
+    },
+    Map {
+      name: "UInt8::raw_add".into(),
+      params: vec![f.clone(), f.clone()],
+      result: pair_t.clone(),
+      input: 2,
+      output: 10,
+    },
+    Map {
+      name: "UInt8::raw_sub".into(),
+      params: vec![f.clone(), f.clone()],
+      result: pair_t.clone(),
+      input: 2,
+      output: 11,
+    },
+    Map {
+      name: "UInt8::raw_mul".into(),
+      params: vec![f.clone(), f.clone()],
+      result: pair_t.clone(),
+      input: 2,
+      output: 12,
+    },
+    Map {
+      name: "UInt8::raw_xor_split4".into(),
+      params: vec![f.clone(), f.clone()],
+      result: pair_t.clone(),
+      input: 2,
+      output: 13,
+    },
+    Map {
+      name: "UInt8::raw_xor_split7".into(),
+      params: vec![f.clone(), f.clone()],
+      result: pair_t.clone(),
+      input: 2,
+      output: 14,
+    },
+    Map {
+      name: "UInt8::raw_sum_byte".into(),
+      params: vec![f.clone()],
+      result: f.clone(),
+      input: 1,
+      output: 15,
+    },
   ];
   // Function 0 exercises all 13 direct maps (including aliased src==dst) plus
   // all 6 direct hints (`u32.*` and `bytes_le`).

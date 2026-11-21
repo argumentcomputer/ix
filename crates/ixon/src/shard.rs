@@ -660,7 +660,10 @@ pub fn build_sub_env(
 }
 
 #[cfg(not(target_arch = "riscv64"))]
-fn unshare_expr<'a>(c: &'a crate::constant::Constant, mut e: &'a crate::expr::Expr) -> &'a crate::expr::Expr {
+fn unshare_expr<'a>(
+  c: &'a crate::constant::Constant,
+  mut e: &'a crate::expr::Expr,
+) -> &'a crate::expr::Expr {
   for _ in 0..256 {
     if let crate::expr::Expr::Share(i) = e
       && let Some(shared) = c.sharing.get(*i as usize)
@@ -758,10 +761,7 @@ fn recursor_target_block(
     }
   }
   // Fallback: major premise after params + motives + minors + indices binders.
-  let skip = r
-    .motives
-    .saturating_add(r.minors)
-    .saturating_add(r.indices);
+  let skip = r.motives.saturating_add(r.minors).saturating_add(r.indices);
   for _ in 0..skip {
     loop {
       e = unshare_expr(c, e);
@@ -789,7 +789,9 @@ fn recursor_target_block(
 
 /// If `c` is a `Muts` block with inductive members, return `(ind_count, any_unsafe)`.
 #[cfg(not(target_arch = "riscv64"))]
-fn inductive_block_arity(c: &crate::constant::Constant) -> Option<(usize, bool)> {
+fn inductive_block_arity(
+  c: &crate::constant::Constant,
+) -> Option<(usize, bool)> {
   let IxonCI::Muts(ms) = &c.info else { return None };
   let mut ind_count = 0usize;
   let mut any_unsafe = false;
@@ -827,11 +829,13 @@ fn collect_recursors_by_block(
         }
       },
       IxonCI::Muts(ms)
-        if ms.iter().any(|m| matches!(m, crate::constant::MutConst::Recr(_))) =>
+        if ms
+          .iter()
+          .any(|m| matches!(m, crate::constant::MutConst::Recr(_))) =>
       {
-        if ms.iter().any(|m| {
-          matches!(m, crate::constant::MutConst::Recr(r) if r.is_unsafe)
-        }) {
+        if ms.iter().any(
+          |m| matches!(m, crate::constant::MutConst::Recr(r) if r.is_unsafe),
+        ) {
           continue;
         }
         for m in ms {
@@ -4396,7 +4400,7 @@ mod tests {
   #[test]
   fn sub_env_expands_modeled_family_and_container_recursors() {
     use crate::constant::{
-      Constant, ConstantInfo, Constructor, Definition, DefKind, Inductive,
+      Constant, ConstantInfo, Constructor, DefKind, Definition, Inductive,
       InductiveProj, MutConst, Recursor, RecursorProj,
     };
     use crate::expr::Expr;
@@ -4437,7 +4441,10 @@ mod tests {
       let iprj = store(
         env,
         Constant {
-          info: ConstantInfo::IPrj(InductiveProj { idx: 0, block: block.clone() }),
+          info: ConstantInfo::IPrj(InductiveProj {
+            idx: 0,
+            block: block.clone(),
+          }),
           sharing: vec![],
           refs: vec![],
           univs: vec![],
@@ -4613,7 +4620,10 @@ mod tests {
           safety: DefinitionSafety::Safe,
           asserts: DefAsserts::default(),
           lvls: 0,
-          typ: Expr::all(Expr::reference(0, vec![]), Expr::reference(1, vec![])),
+          typ: Expr::all(
+            Expr::reference(0, vec![]),
+            Expr::reference(1, vec![]),
+          ),
           value: Expr::lam(Expr::reference(0, vec![]), Expr::var(0)),
         }),
         sharing: vec![],
@@ -4642,7 +4652,10 @@ mod tests {
           safety: DefinitionSafety::Safe,
           asserts: DefAsserts::default(),
           lvls: 0,
-          typ: Expr::all(Expr::reference(0, vec![]), Expr::reference(0, vec![])),
+          typ: Expr::all(
+            Expr::reference(0, vec![]),
+            Expr::reference(0, vec![]),
+          ),
           value: Expr::lam(Expr::reference(0, vec![]), Expr::var(0)),
         }),
         sharing: vec![],

@@ -37,11 +37,7 @@ impl DiskFile {
       let id = NEXT.fetch_add(1, Ordering::Relaxed);
       let path =
         dir.join(format!(".kzg-spill-{}-{id}.bin", std::process::id()));
-      match File::options()
-        .create_new(true)
-        .read(true)
-        .write(true)
-        .open(&path)
+      match File::options().create_new(true).read(true).write(true).open(&path)
       {
         Ok(file) => {
           #[cfg(unix)]
@@ -248,7 +244,12 @@ impl Column {
         "spilled column file offset overflow",
       )
     })?;
-    Ok(Self::Disk { file: Arc::clone(file), offset: start, len: coeffs.len(), digest })
+    Ok(Self::Disk {
+      file: Arc::clone(file),
+      offset: start,
+      len: coeffs.len(),
+      digest,
+    })
   }
 
   /// Check the bytes on every access; changing/truncating a checkpoint fails

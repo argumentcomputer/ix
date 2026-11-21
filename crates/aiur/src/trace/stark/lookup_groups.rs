@@ -83,11 +83,8 @@ fn logup_max_degree_for_order(
     .map(|chunk| {
       let sum: u32 = chunk.iter().map(|&i| degs[i].1).sum();
       let product_term = sum + 1;
-      let mult_term = chunk
-        .iter()
-        .map(|&i| degs[i].0 + sum - degs[i].1)
-        .max()
-        .unwrap_or(0);
+      let mult_term =
+        chunk.iter().map(|&i| degs[i].0 + sum - degs[i].1).max().unwrap_or(0);
       product_term.max(mult_term)
     })
     .max()
@@ -167,11 +164,7 @@ pub(super) fn set_group(
   circuit.max_constraint_degree = max_degree(circuit, group);
 }
 
-pub(super) fn retune(
-  circuit: &mut Circuit<Val>,
-  blowup: usize,
-  degree: usize,
-) {
+pub(super) fn retune(circuit: &mut Circuit<Val>, blowup: usize, degree: usize) {
   // Authored Aiur constraints never reference stage 2. Retain the layout if a
   // circuit ever does, since changing its column count would change column IDs.
   if circuit
@@ -192,27 +185,30 @@ pub(super) fn retune(
   };
   let max_group = circuit.num_lookups.clamp(1, MAX_LOOKUP_GROUP);
   let degs = lookup_degrees(&circuit.graph);
-  let has_mixed = degs.first().is_some_and(|first| degs.iter().any(|d| d != first));
+  let has_mixed =
+    degs.first().is_some_and(|first| degs.iter().any(|d| d != first));
 
   // For each allowed quotient degree (sorted ascending, starting from the
   // initial quotient), keep the lowest-cost grouping, preferring original
   // lookup order on ties so reordering only occurs for a strict cost win.
   let mut by_quotient: Vec<(usize, FftCost, usize, Option<Vec<usize>>)> =
     Vec::new();
-  let mut record =
-    |quotient: usize, cost: FftCost, group: usize, order: Option<Vec<usize>>| {
-      if let Some(entry) = by_quotient.iter_mut().find(|e| e.0 == quotient) {
-        let better = cost.score() < entry.1.score()
-          || (cost.score() == entry.1.score()
-            && order.is_none()
-            && entry.3.is_some());
-        if better {
-          *entry = (quotient, cost, group, order);
-        }
-      } else {
-        by_quotient.push((quotient, cost, group, order));
+  let mut record = |quotient: usize,
+                    cost: FftCost,
+                    group: usize,
+                    order: Option<Vec<usize>>| {
+    if let Some(entry) = by_quotient.iter_mut().find(|e| e.0 == quotient) {
+      let better = cost.score() < entry.1.score()
+        || (cost.score() == entry.1.score()
+          && order.is_none()
+          && entry.3.is_some());
+      if better {
+        *entry = (quotient, cost, group, order);
       }
-    };
+    } else {
+      by_quotient.push((quotient, cost, group, order));
+    }
+  };
 
   for group in 1..=max_group {
     let Some(quotient) = quotient_degree(circuit, group) else { continue };
@@ -388,10 +384,8 @@ mod tests {
     // End-to-end STARK prove + verifying-key codec round-trip + verify with
     // both `q = 4` lookup grouping and balanced reordered `graph.lookups`.
     use multi_stark::{
-      batch::ShardInput,
-      p3_field::PrimeCharacteristicRing,
-      p3_matrix::dense::RowMajorMatrix,
-      system::SystemWitness,
+      batch::ShardInput, p3_field::PrimeCharacteristicRing,
+      p3_matrix::dense::RowMajorMatrix, system::SystemWitness,
     };
     let (mut system, key) = System::new(
       GoldilocksBlake3Config::new(
@@ -410,7 +404,9 @@ mod tests {
         CircuitInputs {
           main_width: 4,
           lookups: (0..14)
-            .map(|_| Lookup::push(Expr::main(0), vec![Expr::main(1) * Expr::main(2)]))
+            .map(|_| {
+              Lookup::push(Expr::main(0), vec![Expr::main(1) * Expr::main(2)])
+            })
             .collect(),
           ..Default::default()
         },
@@ -420,10 +416,7 @@ mod tests {
           main_width: 4,
           lookups: vec![
             Lookup::pull(Expr::main(0), vec![Expr::main(1)]),
-            Lookup::pull(
-              Expr::main(0),
-              vec![Expr::main(2) * Expr::main(3)],
-            ),
+            Lookup::pull(Expr::main(0), vec![Expr::main(2) * Expr::main(3)]),
             Lookup::pull(Expr::main(0), vec![Expr::main(1)]),
           ],
           ..Default::default()
@@ -442,15 +435,27 @@ mod tests {
     // 3 * 14 = 42 copies of `6` across its mixed-degree lookups.
     let t0 = RowMajorMatrix::new(
       vec![
-        Val::from_u64(3), Val::from_u64(2), Val::from_u64(3), Val::ZERO,
-        Val::ZERO, Val::ZERO, Val::ZERO, Val::ZERO,
+        Val::from_u64(3),
+        Val::from_u64(2),
+        Val::from_u64(3),
+        Val::ZERO,
+        Val::ZERO,
+        Val::ZERO,
+        Val::ZERO,
+        Val::ZERO,
       ],
       4,
     );
     let t1 = RowMajorMatrix::new(
       vec![
-        Val::from_u64(14), Val::from_u64(6), Val::from_u64(2), Val::from_u64(3),
-        Val::ZERO, Val::ZERO, Val::ZERO, Val::ZERO,
+        Val::from_u64(14),
+        Val::from_u64(6),
+        Val::from_u64(2),
+        Val::from_u64(3),
+        Val::ZERO,
+        Val::ZERO,
+        Val::ZERO,
+        Val::ZERO,
       ],
       4,
     );
@@ -469,8 +474,9 @@ mod tests {
       query_proof_of_work_bits: 0,
     };
     let vk_bytes = stark_key::to_bytes(&system, cp, fp);
-    let vk = crate::trace::stark::VerifyingKey::from_bytes_below_floor(&vk_bytes)
-      .unwrap();
+    let vk =
+      crate::trace::stark::VerifyingKey::from_bytes_below_floor(&vk_bytes)
+        .unwrap();
     vk.verify(&[], &proof).unwrap();
   }
 

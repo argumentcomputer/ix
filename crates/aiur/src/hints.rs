@@ -95,10 +95,7 @@ impl<F> HintChannels<F> {
     self.insert_fixed_inner(name, key_type, output_type, function, None)
   }
 
-  pub(crate) fn insert_direct_fixed<
-    const INPUTS: usize,
-    const OUTPUTS: usize,
-  >(
+  pub(crate) fn insert_direct_fixed<const INPUTS: usize, const OUTPUTS: usize>(
     &mut self,
     name: impl Into<String>,
     key_type: Type,
@@ -289,8 +286,9 @@ impl<B: FieldBackend> CheckedProgram<B> {
                   };
                   binder(key, dest, check)
                 });
-              let direct =
-                (direct_ok && registers.is_some()).then_some(provider.direct).flatten();
+              let direct = (direct_ok && registers.is_some())
+                .then_some(provider.direct)
+                .flatten();
               HintSite {
                 function: provider.function.clone(),
                 output_layout: Some(layout),

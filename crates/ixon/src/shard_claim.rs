@@ -652,10 +652,9 @@ mod tests {
     use ix_common::env::{DefinitionSafety, Name};
 
     let mut env = Env::new();
-    let table_bytes =
-      RoleTable { version: 5, bound: vec![], evidence: vec![] }
-        .to_bytes()
-        .unwrap();
+    let table_bytes = RoleTable { version: 5, bound: vec![], evidence: vec![] }
+      .to_bytes()
+      .unwrap();
     env.role_binding = Some(RoleBinding {
       address: Address::hash(&table_bytes),
       bytes: table_bytes.into(),
