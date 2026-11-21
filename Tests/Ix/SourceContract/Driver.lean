@@ -154,11 +154,12 @@ def suite : List TestSeq := [
     let tyA : ConstantInfo := .axiomInfo {
       name := `SourceContractDriver.TyA, levelParams := [], type := .sort (.succ .zero), isUnsafe := false }
     let defId : ConstantInfo := .defnInfo {
-      name := `SourceContractDriver.idOnce, levelParams := []
+      name := `SourceContractDriver.idUnique, levelParams := []
       type := .forallE `x (.const tyA.name []) (.const tyA.name []) .default
       value := .lam `x (.const tyA.name []) (.bvar 0) .default
-      hints := .abbrev, safety := .safe, all := [`SourceContractDriver.idOnce] }
-    let .ok contract := SourceContract.ofTelescope defId #[{ binder := .position 0, uses := .linear }]
+      hints := .abbrev, safety := .safe, all := [`SourceContractDriver.idUnique] }
+    let .ok contract := SourceContract.ofTelescope defId
+        #[{ binder := .position 0, uses := .many, value := .unique }]
       | return false
     let .ok out ← compileInput { constants := [(tyA.name, tyA), (defId.name, defId)], contracts := #[contract] }
       | return false

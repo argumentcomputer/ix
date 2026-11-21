@@ -40,6 +40,12 @@ def useBoxTwice (x : BoxE) : E :=
 
 def readErased (x : E) : E := x
 
+def idBox (x : BoxE) : BoxE := x
+
+def leakBorrowBox (owner : BoxE) : BoxE :=
+  let view : BoxE := owner
+  view
+
 def sharedLams : E :=
   k ((fun (y : E) => k E.c₀ (k E.c₁ (k E.c₂ y))) E.c₁)
     ((fun (y : E) => k E.c₀ (k E.c₁ (k E.c₂ y))) E.c₂)

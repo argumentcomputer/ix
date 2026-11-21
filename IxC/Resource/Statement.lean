@@ -2,14 +2,15 @@ module
 
 public import IxC.Resource.Read
 public import IxC.Resource.Eval
+public import IxC.Resource.Oracle
 public import IxC.Kernel.Rules.Rel
 public import IxC.Kernel.Verify.Level
 
 /-!
 # The mode-safety statement
 
-`ModeSafe env s` is the statement a modes claim would carry: the claim's records
-read as a run program `P` (`Reads`); for every seed with a run body, every input
+`ModeSafe lim env s` is the statement a modes claim would carry: the claim's records
+read as a run program `P` at the oracle limits `lim` (`Reads`); for every seed with a run body, every input
 heap meeting its declared modes (`InputsOk`), every extern behaving as its
 declared modes allow (`ExternOk`) and every fuel, `runR` never ends in one of
 its four violations. Runs that end `stuck` or out of fuel are not covered.
@@ -24,11 +25,14 @@ consistency statement's reading installs (`IxVM.Consistency.ConsistentRead`'s
 states them inside one existential, so typing and modes are answered from the
 same bytes.
 
-**Classes are the kernel's.** The run program's classes are read with the
-canonical class oracle (`canonClassifier`): a term is `irr` when the kernel's
-rules (`Rules.Infer`, `Rules.Red`) type it as a type, a type former or a proof;
-`imm` or `leaf` when they type it at an immediate or leaf type (`ImmT`, `LeafT`,
-least fixed points, so a type that wraps itself is neither).
+**Classes at stated limits.** The run program's classes are read with the
+decidable class oracle (`oracleClassifier`) at the limits `lim` the claim
+states, so the program the statement speaks of is the one the checker checks;
+a decline at those limits is not a refusal of the program. The canonical
+classes (`canonClassifier`: the kernel's rules, `Rules.Infer`, `Rules.Red`,
+`ImmT`, `LeafT`) remain as the target of a separate lemma, "the oracle's
+classes are the kernel's where it answers", which the bridge to compiled code
+and adequacy need and which nothing here proves.
 -/
 
 @[expose] public section
@@ -38,49 +42,8 @@ namespace IxC.Resource
 open Ixon
 open Ix.Kernel (Env Key)
 
-/-! ## Constructor shapes -/
-
-/-- A constructor, as the classes need it: its kernel type, its parameter count,
-and which of its fields are erased (its binders' modes in its record). -/
-structure CtorShape where
-  type : KExpr
-  nParams : Nat
-  erased : List Bool
-
-/-- The record address a kernel key names. -/
-def keyAddress (s : Subject) : Key .anon → Option Address
-  | .id a => some a
-  | .role r => s.table.addressOf? r
-  | .aux _ _ => none
-
-/-- A class oracle that answers `val`, for readings that use no class. -/
-def noClasses : Classifier := { type := fun _ _ => .ok .val, node := fun _ _ => .ok .val }
-
-/-- The constructors of the inductive type a key names, from the records. -/
-def ctorShapes (rd : Reading) (k : Key .anon) : Option (List CtorShape) := do
-  let a ← keyAddress rd.s k
-  let r ← Ix.Kernel.Reader.resolve rd.s.store a
-  let ind ← inductiveAt? rd.s r
-  let x ← (rd.rcx noClasses r).toOption
-  let .member _ i := r | none
-  let base := rootBase x.c i
-  let nP := ind.params.toNat
-  (List.range ind.ctors.size).mapM fun ci => do
-    let ctor ← ind.ctors[ci]?
-    let type ← (x.toK [] ctor.typ).toOption
-    let (alls, _) ← ((inBlock x.rm (rootKey (base + 1 + ci)) (do
-        let (alls, cod) ← readForalls x readFuel ctor.typ
-        let _ ← readSkel x readFuel cod
-        pure alls)).run {}).toOption
-    pure { type, nParams := nP, erased := (alls.drop nP).map fun (m, _, _) => m.input == .erased }
 
 /-! ## The canonical classes -/
-
-/-- Instantiate a type's leading ∀s with `args`. -/
-def instParams : KExpr → List KExpr → Option KExpr
-  | t, [] => some t
-  | .forallE _ b _, a :: as => instParams (b.instantiate1 a) as
-  | _, _ :: _ => none
 
 /-- **The types of irrelevant terms**: `T`, opened at depth `d`, reduces to a
 sort (its terms are types), to a ∀ whose body is again such a type (type
@@ -163,24 +126,46 @@ noncomputable def nodeClass (env : Env .anon) (sh : Key .anon → Option (List C
     else if ∃ T, Ix.Kernel.Rules.Infer env .full d e T ∧ LeafT env sh d T then .leaf
     else .val
 
-/-- **The class oracle's definition**: the kernel's own judgements, over the
-environment `env`. One definition, so a different oracle (a fueled run at fixed
-limits, say) is a change here. -/
+/-- **The canonical classes**: the kernel's own judgements, over the environment
+`env`. No longer what `ModeSafe` reads with (`Reads` uses the decidable oracle at
+limits the claim states): it remains the target of a separate lemma, "the
+oracle's classes are the kernel's where it answers", which the bridge to
+compiled code and adequacy need and which nothing here proves. -/
 noncomputable def canonClassifier (env : Env .anon) (s : Subject) : Classifier :=
   let sh := ctorShapes (Reading.make s)
   { type := fun d T => .ok (typeClass env sh d T), node := fun d e => .ok (nodeClass env sh d e) }
 
-/-- **The run program of a subject**, read with the kernel's classes. -/
-def Reads (env : Env .anon) (s : Subject) (P : Prog) : Prop :=
+/-- The run program of a subject read with the canonical classes: what `Reads`
+was before the reading moved to the decidable oracle (kept for that lemma and
+for the other workstream's texts that name the canonical reading). -/
+def ReadsCanon (env : Env .anon) (s : Subject) (P : Prog) : Prop :=
   readProg s (canonClassifier env s) = .ok P
+
+/-- **The run program of a subject**, read with the decidable class oracle
+(`oracleClassifier`) at the limits `lim`. The limits are part of what is
+claimed: a claim of mode safety is a claim at stated oracle limits, and a
+decline at those limits is not a refusal of the program. By definition this is
+the program the checker checks (`check` reads the whole closure with the same
+classifier), which is why the oracle declines at its depth limit instead of
+inventing a class. Every source of a decline, in one place: the oracle's
+kernel fuel, its depth limit and a level comparison out of fuel
+(`Oracle.lean`), and the closure's walk cut at its step limit (`closureFuel`,
+`Reading.complete`; `check` at `Limits.walk`), in which case no program is
+read and `check` declines. -/
+def Reads (lim : OracleLimits) (env : Env .anon) (s : Subject) (P : Prog) : Prop :=
+  readProg s (oracleClassifier env (ctorShapes (Reading.make s)) lim) = .ok P
 
 /-! ## Heaps meeting declared modes -/
 
-/-- The values a cell holds. -/
+/-- The values a cell holds. A closure holds its captures (the bindings of its
+environment at `fvs`), not the rest of the environment it was formed in: those
+are neither read nor confined by `formClosure`, nor seen by the checker (V5,
+Gap A: as landed a closure held its whole environment, so `ExternOk` let an
+extern given a closure return a borrowed binding the closure never captured). -/
 def Cell.vals : Cell → List Val
   | .ctor _ fs => fs.toList
   | .num _ | .str _ => []
-  | .clo env _ _ _ _ _ => env.map (·.val)
+  | .clo env _ _ _ fvs _ => fvs.toList.filterMap fun i => env[i]?.map (·.val)
   | .pap _ as => as.toList
   | .once t _ => [t]
 
@@ -204,14 +189,18 @@ inductive OwnReach (P : Prog) (h : Heap) : Val → Nat → Prop
       OwnReach P h v l → OwnReach P h (.ref loc cap t) l
 
 /-- `v`'s ownership closure is a tree: no cell of it (a leaf excepted) is held
-by two owned slots in it. -/
+by two owned slots in it, nor reachable through any non-owned (`@shared`) field
+of a constructor cell in it. -/
 def OwnTree (P : Prog) (h : Heap) (v : Val) : Prop :=
-  ∀ (p₁ p₂ i₁ i₂ l c₁ c₂ : Nat) (o₁ o₂ : Obj) (t₁ t₂ : List Nat),
+  (∀ (p₁ p₂ i₁ i₂ l c₁ c₂ : Nat) (o₁ o₂ : Obj) (t₁ t₂ : List Nat),
     OwnReach P h v p₁ → OwnReach P h v p₂ → h.objs[p₁]? = some o₁ → h.objs[p₂]? = some o₂ →
     i₁ ∈ ownedSlots P o₁.cell → i₂ ∈ ownedSlots P o₂.cell →
     o₁.cell.slot? i₁ = some (.ref l c₁ t₁) → o₂.cell.slot? i₂ = some (.ref l c₂ t₂) →
     (∀ o, h.objs[l]? = some o → o.cell.isNum = false ∨ natClass ≠ .leaf) →
-    p₁ = p₂ ∧ i₁ = i₂
+    p₁ = p₂ ∧ i₁ = i₂) ∧
+  (∀ (p l i : Nat) (o : Obj) (r : Ref) (fs : Array Val) (w : Val),
+    OwnReach P h v p → h.objs[p]? = some o → o.cell = .ctor r fs →
+    i ∉ ownedSlots P o.cell → fs[i]? = some w → OwnReach P h v l → ¬ Reach h w l)
 
 /-- A reference that is live and confined to no region. -/
 def ValOk (h : Heap) : Val → Prop
@@ -225,11 +214,14 @@ def ifaceSkel : List Param → ResultMode → Skel → Skel
   | [p], r, cod => .arrow p.mode p.skel r cod
   | p :: ps, r, cod => .arrow p.mode p.skel .shared (ifaceSkel ps r cod)
 
-/-- The skeleton of a partial application of `r` to `n` arguments. -/
+/-- The skeleton of a partial application of `r` to `n` arguments (strictly fewer
+than `r`'s arity). -/
 def papSkel (P : Prog) (r : Ref) (n : Nat) : Option Skel :=
   match P.find? r with
-  | some (.body ps res _ rs _) => some (ifaceSkel (ps.toList.drop n) res rs)
-  | some (.extern ps res _ rs) => some (ifaceSkel (ps.toList.drop n) res rs)
+  | some (.body ps res _ rs _) =>
+    if n < ps.size then some (ifaceSkel (ps.toList.drop n) res rs) else none
+  | some (.extern ps res _ rs) =>
+    if n < ps.size then some (ifaceSkel (ps.toList.drop n) res rs) else none
   | _ => none
 
 /-- A cell an input heap may hold: data, numbers, strings, and partial
@@ -251,7 +243,12 @@ def PapArgOk (h : Heap) (v : Val) : Prop :=
   (∃ i, v = .imm i) ∨ ∃ loc cap o n, v = .ref loc cap [] ∧ h.objs[loc]? = some o ∧ o.cell = .num n
 
 /-- An input at an arrow skeleton `s`: a partial application of a constant of
-the program whose remaining interface `s` admits. -/
+the program whose remaining interface `s` admits. A function value arriving
+from outside the program is not admitted: a seed with a (non-erased) parameter
+at an arrow skeleton that no constant's remaining interface matches has no
+admissible input, and `ModeSafe` is vacuous for it. In whole-program
+compilation the only function inputs are partial applications of the
+program's own constants, which this admits. -/
 def ClosureAt (P : Prog) (h : Heap) (s : Skel) (v : Val) : Prop :=
   ∃ loc cap r args o sk, v = .ref loc cap [] ∧ h.objs[loc]? = some o ∧ o.cell = .pap r args ∧
     (∀ a ∈ args.toList, PapArgOk h a) ∧ papSkel P r args.size = some sk ∧ s.admits sk = true
@@ -261,18 +258,22 @@ def DefaultPaps (P : Prog) (h : Heap) (v : Val) : Prop :=
   ∀ (l : Nat) (o : Obj) (r : Ref) (args : Array Val), Reach h v l → h.objs[l]? = some o → o.cell = .pap r args →
     (∀ a ∈ args.toList, PapArgOk h a) ∧ ∃ sk, papSkel P r args.size = some sk ∧ sk.isDefault = true
 
-/-- An argument meeting a parameter: erased and irrelevant ones `irr`, the class
-respected, a closure at an arrow skeleton the skeleton admits, and only default
-closures elsewhere. -/
+/-- An argument meeting a parameter: an erased one `irr` (whatever its class and
+skeleton: `runR` binds an erased parameter as `irr`, and as landed the class and
+skeleton clauses applied too, so an erased parameter of class `leaf` or `imm` or
+at an arrow skeleton had no admissible input and `ModeSafe` said nothing about
+its seed); otherwise irrelevant ones `irr`, the class respected, a closure at an
+arrow skeleton the skeleton admits, and only default closures elsewhere. -/
 def ArgOk (P : Prog) (h : Heap) (p : Param) (a : Val) : Prop :=
   ValOk h a ∧
   (p.mode = .erased → a = .imm .irr) ∧
-  (p.cls = .irr → a = .imm .irr) ∧
-  (p.cls = .imm → ∃ i, a = .imm i) ∧
-  (p.cls = .leaf → ∃ loc cap o n, a = .ref loc cap [] ∧ h.objs[loc]? = some o ∧ o.cell = .num n) ∧
-  (match p.skel with
-    | .arrow .. => ClosureAt P h p.skel a
-    | _ => DefaultPaps P h a)
+  (p.mode ≠ .erased →
+    (p.cls = .irr → a = .imm .irr) ∧
+    (p.cls = .imm → ∃ i, a = .imm i) ∧
+    (p.cls = .leaf → ∃ loc cap o n, a = .ref loc cap [] ∧ h.objs[loc]? = some o ∧ o.cell = .num n) ∧
+    (match p.skel with
+      | .arrow .. => ClosureAt P h p.skel a
+      | _ => DefaultPaps P h a))
 
 /-- **Inputs meeting the declared modes**: one argument per parameter, each
 meeting it, in an input heap; an argument at a unique parameter owns a tree
@@ -285,22 +286,52 @@ def InputsOk (P : Prog) (h : Heap) (params : Array Param) (args : List Val) : Pr
 
 /-! ## Externs -/
 
-/-- `v` is `a`, or held by a cell `a` reaches. -/
-def HeldBy (h : Heap) (a v : Val) : Prop :=
-  v = a ∨ ∃ l o, Reach h a l ∧ h.objs[l]? = some o ∧ v ∈ o.cell.vals
+/-- `l` is reachable from `v` in `h` descending only through data (`.ctor`) cells. -/
+inductive DataReach (h : Heap) : Val → Nat → Prop
+  | here {loc cap : Nat} {t : List Nat} : DataReach h (.ref loc cap t) loc
+  | step {loc cap : Nat} {t : List Nat} {o : Obj} {r : Ref} {fs : Array Val} {v : Val} {l : Nat} :
+      h.objs[loc]? = some o → o.cell = .ctor r fs → v ∈ fs.toList →
+      DataReach h v l → DataReach h (.ref loc cap t) l
 
-/-- A value an extern may produce: an immediate; a fresh, unconfined reference;
-or a value held by an argument at a parameter that neither lends nor transfers. -/
-def ExternVal (ps : Array Param) (args : List Val) (h : Heap) (v : Val) : Prop :=
-  (∃ i, v = .imm i) ∨ (∃ loc cap, v = .ref loc cap [] ∧ h.objs.size ≤ loc) ∨
-  ∃ (i : Nat) (p : Param) (a : Val), ps[i]? = some p ∧ args[i]? = some a ∧ p.mode.isBorrowed = false ∧
-    p.mode.isUnique = false ∧ HeldBy h a v
+/-- `v` is stored in a `.ctor` field reachable from `a` through `.ctor` cells
+(strictly inside a constructor cell of `a`, never dissecting opaque `.clo`/`.pap`
+environments). -/
+def DataFieldOf (h : Heap) (a v : Val) : Prop :=
+  ∃ l o r fs, DataReach h a l ∧ h.objs[l]? = some o ∧ o.cell = .ctor r fs ∧ v ∈ fs.toList
+
+/-- A value an extern may store in a field of a newly allocated `.ctor` cell
+(mirroring `anCtor`'s default-skeleton requirement for constructor fields): an
+immediate; a fresh, unconfined reference to a cell of `h'` carrying that cell's
+capability (with a default remaining interface if `.pap`); or a plain (`.many`)
+argument with a default skeleton, or a data field strictly inside a `.ctor` of a
+plain argument. -/
+def ExternFieldVal (P : Prog) (ps : Array Param) (args : List Val) (h h' : Heap) (w : Val) : Prop :=
+  (∃ i, w = .imm i) ∨
+  (∃ loc cap o, w = .ref loc cap [] ∧ h.objs.size ≤ loc ∧ h'.objs[loc]? = some o ∧ o.cap = cap ∧
+    ∀ r_p as_p, o.cell = .pap r_p as_p → ∃ sk, papSkel P r_p as_p.size = some sk ∧ sk.isDefault = true) ∨
+  ∃ (i : Nat) (p : Param) (a : Val), ps[i]? = some p ∧ args[i]? = some a ∧ p.mode = .many ∧
+    ((w = a ∧ p.skel.isDefault = true) ∨ DataFieldOf h a w)
+
+/-- A value an extern may return at result skeleton `rs`: an immediate; a fresh,
+unconfined reference to a cell of `h'` carrying that cell's capability (whose
+remaining interface `rs` admits if `.pap`); or a plain (`.many`) argument whose
+skeleton `rs` admits, or a data field strictly inside a `.ctor` of a plain
+argument when `rs` is default. -/
+def ExternRetVal (P : Prog) (ps : Array Param) (args : List Val) (rs : Skel) (h h' : Heap) (v : Val) :
+    Prop :=
+  (∃ i, v = .imm i) ∨
+  (∃ loc cap o, v = .ref loc cap [] ∧ h.objs.size ≤ loc ∧ h'.objs[loc]? = some o ∧ o.cap = cap ∧
+    ∀ r_p as_p, o.cell = .pap r_p as_p → ∃ sk, papSkel P r_p as_p.size = some sk ∧ rs.admits sk = true) ∨
+  ∃ (i : Nat) (p : Param) (a : Val), ps[i]? = some p ∧ args[i]? = some a ∧ p.mode = .many ∧
+    ((v = a ∧ rs.admits p.skel = true) ∨ (DataFieldOf h a v ∧ rs.isDefault = true))
 
 /-- **Externs behave as their declared modes allow**: an extern changes no cell
 it was given, except that it may kill the cells it received at a unique
-parameter; it builds only input cells of values it may produce; its result is
-such a value, of its class, and fresh and unshared at a unique result; it calls
-no closure (higher-order externs are not covered). -/
+parameter; it builds only input cells of values it may produce (data fields
+meeting `ExternFieldVal` and partial-application arguments meeting `PapArgOk`
+and `ValOk`), with capabilities below its new counter and acyclic; its result
+meets `ExternRetVal` at `rs`, respects its class, and is fresh and unshared at a
+unique result; it calls no closure (higher-order externs are not covered). -/
 def ExternOk (P : Prog) (ext : ExternOracle) : Prop :=
   ∀ (r : Ref) (ps : Array Param) (res : ResultMode) (rc : Cls) (rs : Skel) (args : List Val)
     (h h' : Heap) (v : Val), P.find? r = some (.extern ps res rc rs) →
@@ -308,11 +339,16 @@ def ExternOk (P : Prog) (ext : ExternOracle) : Prop :=
     h.objs.size ≤ h'.objs.size ∧ h.nextCap ≤ h'.nextCap ∧
     (∀ (l : Nat) (o : Obj), h.objs[l]? = some o → ∃ o' : Obj, h'.objs[l]? = some o' ∧
       (o'.cell = o.cell ∧ o'.cap = o.cap ∨
-        h.nextCap ≤ o'.cap ∧ ∃ (i : Nat) (p : Param) (a : Val), ps[i]? = some p ∧ args[i]? = some a ∧
-          p.mode.isUnique = true ∧ OwnReach P h a l)) ∧
+        h.nextCap ≤ o'.cap ∧ o'.cap < h'.nextCap ∧
+          ∃ (i : Nat) (p : Param) (a : Val), ps[i]? = some p ∧ args[i]? = some a ∧
+            p.mode.isUnique = true ∧ OwnReach P h a l)) ∧
     (∀ (l : Nat) (o : Obj), h.objs.size ≤ l → h'.objs[l]? = some o →
-      InputCell P o.cell ∧ ∀ w ∈ o.cell.vals, ExternVal ps args h w) ∧
-    ExternVal ps args h v ∧
+      InputCell P o.cell ∧ o.cap < h'.nextCap ∧
+      (match o.cell with
+      | .ctor _ fs => ∀ w ∈ fs.toList, ExternFieldVal P ps args h h' w ∧ ¬ Reach h' w l
+      | .pap _ as => ∀ w ∈ as.toList, PapArgOk h' w ∧ ValOk h' w ∧ ¬ Reach h' w l
+      | _ => True)) ∧
+    ExternRetVal P ps args rs h h' v ∧
     (rc = .irr → v = .imm .irr) ∧ (rc = .imm → ∃ i, v = .imm i) ∧
     (rc = .leaf → ∃ loc cap o n, v = .ref loc cap [] ∧ h'.objs[loc]? = some o ∧ o.cell = .num n) ∧
     (res.isUnique = true → rc = .val → ∃ loc cap, v = .ref loc cap [] ∧ h.objs.size ≤ loc ∧
@@ -338,10 +374,13 @@ seed with a run body, every extern behaving as declared, every input meeting the
 declared modes and every fuel, the run of the seed never reads an erased value,
 never uses a reference revoked by a unique transfer, never lets a borrowed value
 outlive its scope, and never calls a once-closure twice. Runs that end `stuck`
-or out of fuel are not covered. -/
-def ModeSafe (env : Env .anon) (s : Subject) : Prop :=
-  (∃ P, Reads env s P) ∧
-  ∀ P, Reads env s P → ∀ a ∈ s.seeds, ∀ r, SeedRef s a r →
+or out of fuel are not covered. A seed with no input meeting `InputsOk` is
+covered vacuously: one with a (non-erased) parameter at an arrow skeleton that
+no constant of the program matches (`ClosureAt`). The program is the one read at
+the oracle limits `lim` (`Reads`), which the claim states. -/
+def ModeSafe (lim : OracleLimits) (env : Env .anon) (s : Subject) : Prop :=
+  (∃ P, Reads lim env s P) ∧
+  ∀ P, Reads lim env s P → ∀ a ∈ s.seeds, ∀ r, SeedRef s a r →
     ∀ params res rc rs t, P.find? r = some (.body params res rc rs t) →
     ∀ ext, ExternOk P ext → ∀ h args, InputsOk P h params args →
     ∀ fuel k, runR P ext fuel r h args ≠ .violation k
@@ -392,7 +431,7 @@ natively in its place reads no erased position either. For run bodies the
 corresponding sentence is `ModeSafe`'s second conjunct: no run of a seed reads
 an erased binding. -/
 def ReadsRespectErasure : Prop :=
-  ∀ env s P, Reads env s P → RespectsErasure s P
+  ∀ lim env s P, Reads lim env s P → RespectsErasure s P
 
 /-! ## Statements for the follow-up work (definitions; nothing is proved here) -/
 

@@ -83,26 +83,54 @@ def isDefault : Skel → Bool
   | .dataApp f a => f.isDefault && a.isDefault
   | .arrow i d r c => i == .many && r == .shared && d.isDefault && c.isDefault
 
+mutual
+
 /-- **The unknown-skeleton rule**: whether a value of skeleton `src` may flow
 to a position of skeleton `dest`. Skeletons must be equal (no subsumption),
 and a position whose skeleton is `unknown` admits only values whose modes are
 all default, and a value read from one is treated as mode-free: every flow into
 such a position is checked, so every value found there is mode-free. One
-definition, so a different rule is a change here. -/
+definition, so a different rule is a change here.
+
+At `.unique`/`.once` arrow codomains and `.once` arrow domains, recurses via
+`admitsNA` so hiding an `.arrow` behind `.unknown` cannot defeat `applyValue`'s
+`mayBePap` `onceOnly` propagation in two hops (`.arrow → .unknown → .data`). -/
 def admits : Skel → Skel → Bool
   | .unknown, s => s.isDefault
   | d, .unknown => d.isDefault
   | .data, .data => true
   | .dataApp f a, .dataApp g b => admits f g && admits a b
-  | .arrow i d r c, .arrow i' d' r' c' => i == i' && r == r' && admits d d' && admits c c'
+  | .arrow i d r c, .arrow i' d' r' c' =>
+    i == i' && r == r' &&
+      (if i.usage == .once then admitsNA d d' else admits d d') &&
+      (if i.isUnique || i.usage == .once then admitsNA c c' else admits c c')
+  | .arrow .., _ | _, .arrow .. => false
   | d, s => d.isDefault && s.isDefault
+
+/-- Like `admits`, except `.unknown` does not admit an `.arrow` (used where a
+value may be `onceOnly` or passed to a `@once` position). -/
+def admitsNA : Skel → Skel → Bool
+  | .unknown, .arrow .. | .arrow .., .unknown => false
+  | .unknown, s => s.isDefault
+  | d, .unknown => d.isDefault
+  | .data, .data => true
+  | .dataApp f a, .dataApp g b => admitsNA f g && admitsNA a b
+  | .arrow i d r c, .arrow i' d' r' c' =>
+    i == i' && r == r' &&
+      (if i.usage == .once then admitsNA d d' else admits d d') &&
+      admitsNA c c'
+  | .arrow .., _ | _, .arrow .. => false
+  | d, s => d.isDefault && s.isDefault
+
+end
 
 end Skel
 
 /-- A parameter or binder: its mode, the class of its values, the skeleton of
-its type, and whether its type is one no leaf inhabits (a function type, a
-sort, an inductive type with other than one constructor: read from the record,
-not from the class oracle). -/
+its type. `noLeaf` is not read by the checker or by `runR`, and the reading
+sets it `false` (`RCx.noLeafType`): the refinement it served, a `shared` leaf
+result carrying no region of an argument at a type no leaf inhabits, was
+unsound (findings 1 to 3) and is dropped. -/
 structure Param where
   mode : BinderMode := .many
   cls : Cls := .val

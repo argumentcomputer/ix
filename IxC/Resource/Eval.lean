@@ -311,12 +311,18 @@ def transfer (P : Prog) (fuel : Nat) (toBorrowed : Bool) (v : Val) : M Val := do
   if !toBorrowed && (← confinedOpen v) then violate .borrowEscape
   renew P fuel v
 
-/-- **Binding a value at a binder** of mode `m` and class `c`, in region `s`. -/
+/-- **Binding a value at a binder** of mode `m` and class `c`, in region `s`. A
+borrowed binder confines what it binds to `s`, except a leaf: a number is never
+confined (the owner's provisional ruling L1, 2026-11-13). `readOut` already
+unconfines a leaf read out of a container, and every other confinement is the
+union of a cell's parts' (a closure's captures, a partial application's
+arguments, a constructor's fields), so after this no leaf carries a region. The
+cost: a borrow annotation on a number is not enforced on its own binder. -/
 def bindAt (P : Prog) (fuel s : Nat) (m : BinderMode) (c : Cls) (v : Val) : M Bnd := do
   if m == .erased then return ⟨.imm .irr, .erased⟩
   let v ← conform c v
   let v ← if m.isUnique then transfer P fuel m.isBorrowed v else pure v
-  let v := if m.isBorrowed then addTaint s v else v
+  let v ← if m.isBorrowed && !(← isLeaf v) then pure (addTaint s v) else pure v
   let v ← if m.usage == .once then alloc (.once v false) v.taint else pure v
   return ⟨v, m⟩
 
@@ -488,18 +494,26 @@ def select (P : Prog) (k : CaseInfo) (mv : Val) : M (Nat × Array (Val × Bool))
         unless ind == k.ind do stuckM
         let mut out : Array (Val × Bool) := #[]
         for (f, i) in fdefs.zipIdx do
-          let v := fs[i]?.getD (.imm .irr)
-          out := out.push ((← readOut (f.fmode == .inherited) t v), f.mode == .erased)
+          let v ← readOut (f.fmode == .inherited) t (fs[i]?.getD (.imm .irr))
+          -- a kept field conforms to its class, as `proj` conforms to its node's (finding 15: a cell
+          -- whose field is outside its class, possible only in an ill-typed input, is a stuck run,
+          -- not a violation)
+          let v ← if f.kept then conform f.cls v else pure (.imm .irr)
+          out := out.push (v, f.mode == .erased)
         pure (cidx, out)
       | none => stuckM
     | .num _ => wrapperCase
     | _ => stuckM
 
-/-- The head and arguments of an application spine. -/
-def collect : Nat → Term → List Term → Term × List Term
-  | 0, t, acc => (t, acc)
-  | n + 1, .app f a _, acc => collect n f (a :: acc)
-  | _, t, acc => (t, acc)
+/-- The head and arguments of an application spine, whole: by structural
+recursion, not cut by the fuel (finding 7: a spine cut by the fuel ran a call
+as a partial application followed by applications, which evaluates an argument
+at an erased position or transfers before later arguments are read, so a run
+of an honest program violated at some fuels). Fuel is spent per evaluation
+step, as before. -/
+def collect : Term → List Term → Term × List Term
+  | .app f a _, acc => collect f (a :: acc)
+  | t, acc => (t, acc)
 
 /-! ## The evaluator -/
 
@@ -520,7 +534,7 @@ def eval (P : Prog) (ext : ExternOracle) : Nat → List Bnd → Term → M Val
     | .strLit s => strValue s
     | .const r c => spine P ext n env (.const r c) [] c
     | .app f a c => do
-      let (h, as) := collect n (.app f a c) []
+      let (h, as) := collect (.app f a c) []
       spine P ext n env h as c
     | .lam p res rc fvs body => formClosure P n env p res rc fvs body
     | .letE m d v b => do

@@ -34,6 +34,10 @@ the kernel's own judgements; the checker reads with a fueled one.
 * **Externs** are the constants of the extern set, **primitives** the role
   table's `Nat` operations, and every other constant without a run body is
   `stuck` with its interface.
+* **Raw recursors.** A recursor a run term calls (not through a case shape)
+  has rules that pass each field its constructor erases only to a binder of the
+  dispatched minor premise that erases it (`Reading.recRules`), as do the recursors
+  its rules call; one over an inductive with an erased field is called saturated.
 
 **No supplied behaviour reads what an interface erases.** A case rule, a
 primitive, a constructor and an extern run in place of a body, so their modes
@@ -45,7 +49,8 @@ the extern set has the default interface (`stuckAt`); a run body's interface,
 read for itself or for its callers, is its telescopes' agreed reading
 (`teleAgree`). `IxC.Resource.ReadsRespectErasure` states the consequence.
 
-Telescopes are read up to their first sharing reference.
+Telescopes are read through sharing references: a binder inside a sharing entry
+is read in that entry's block, as the telescope's (`readTele`).
 -/
 
 @[expose] public section
@@ -58,13 +63,14 @@ open Ix.Kernel (ConstRef)
 abbrev KExpr := Ix.Kernel.Expr .anon
 
 /-- **What a modes claim binds** besides its typing: the role table, the
-records and blobs, the seeds, the run-table record and the extern set. -/
+records and blobs, the seeds, the run-table records (per-definition `f.eq_def`
+theorem records and/or `And` conjunctions of equations) and the extern set. -/
 structure Subject where
   table : Ix.Kernel.RoleTable
   store : Ix.Kernel.Reader.Store
   blob : Address → Option ByteArray := fun _ => none
   seeds : List Address
-  runTable : Option Address := none
+  runTable : List Address := []
   externs : List Address := []
 
 /-- **A class oracle**: the class of the terms of a type (`type`), and of a term
@@ -73,6 +79,9 @@ below it). -/
 structure Classifier where
   type : Nat → KExpr → Except String Cls
   node : Nat → KExpr → Except String Cls
+
+/-- A class oracle that answers `val`, for readings that use no class. -/
+def noClasses : Classifier := { type := fun _ _ => .ok .val, node := fun _ _ => .ok .val }
 
 /-! ## Cursors over binder blocks -/
 
@@ -146,13 +155,28 @@ def ixSpine : Nat → Ixon.Expr → Except String (Ixon.Expr × Array Ixon.Expr)
       pure (h, as.push a)
     | _ => pure (e, #[])
 
-/-- The head and arguments of a run term. -/
-def termSpine : Nat → Term → Term × Array Term
-  | 0, t => (t, #[])
-  | n + 1, .app f a _ =>
-    let (h, as) := termSpine n f
+/-- The head and arguments of an application, stepping through sharing references at every node
+of the spine. -/
+def ixSpineU (c : Ixon.Constant) : Nat → Ixon.Expr → Except String (Ixon.Expr × Array Ixon.Expr)
+  | 0, _ => throw "expression too large"
+  | n + 1, e =>
+    match Ix.Kernel.Reader.unshare c e with
+    | .app f a => do
+      let (h, as) ← ixSpineU c n f
+      pure (h, as.push a)
+    | e' => pure (e', #[])
+
+/-- The head and arguments of a run term, whole: by structural recursion, not
+cut by a fuel. (As landed it took the caller's fuel, and the checker passed its
+remaining depth, so a spine longer than that depth was judged as a shorter call
+followed by applications of a function value: the checker-side shape of
+finding 7. A bound that exists for termination must not change what a spine
+means.) -/
+def termSpine : Term → Term × Array Term
+  | .app f a _ =>
+    let (h, as) := termSpine f
     (h, as.push a)
-  | _, t => (t, #[])
+  | t => (t, #[])
 
 /-- The relevant free variables of a run term, under `d` binders, as indices
 outside them. -/
@@ -202,6 +226,8 @@ structure Reading where
   cx : Ix.Kernel.Reader.Ctx .anon
   /-- the closure's record addresses -/
   closure : Array Address
+  /-- the closure's walk finished within its step limit (else `closure` is a part of it) -/
+  walked : Bool
 
 /-- What reading one member of one record needs. -/
 structure RCx where
@@ -243,24 +269,13 @@ def RCx.isInd (x : RCx) (e : Ixon.Expr) : Bool :=
     | none => false
   | _ => false
 
-/-- Whether no value of type `ty` is a leaf, read from the record: a function
-type, a sort, or an inductive type with other than one constructor (a leaf is
-`Nat` or a one-constructor wrapper of it). -/
-def RCx.noLeafType (x : RCx) (ty : Ixon.Expr) : Bool :=
-  let ty := Ix.Kernel.Reader.unshare x.c ty
-  match view ty with
-  | .ok (.all ..) | .ok .sort => true
-  | _ =>
-    match ixSpine 4096 ty with
-    | .ok (h, _) =>
-      let r? : Option Ref := match view (Ix.Kernel.Reader.unshare x.c h) with
-        | .ok (.ref i) => (x.refAt i).toOption
-        | .ok (.recur i) => x.recur i
-        | _ => none
-      match r?.bind (inductiveAt? x.s) with
-      | some ind => ind.ctors.size != 1
-      | none => false
-    | .error _ => false
+/-- Whether the reading claims that no value of type `ty` is a leaf: never. The
+claim (a function type, a sort, an inductive with other than one constructor)
+was true of `Nat` itself, which has two, and false in the sense the checker used
+it at function types, at data holding closures and under an absurd hypothesis
+(findings 1 to 3); the checker no longer reads `Param.noLeaf`. Enforcing such a
+claim in `runR`, as a stuck run, can come back as a widening. -/
+def RCx.noLeafType (_x : RCx) (_ty : Ixon.Expr) : Bool := false
 
 /-! ## Skeletons -/
 
@@ -337,7 +352,7 @@ def readTerm (x : RCx) (caseOf : Ref → Option CaseInfo) :
       let (ht, _) ← readTerm x caseOf n ctx h
       let mut ats : Array Term := #[]
       for a in args do ats := ats.push (← readTerm x caseOf n ctx a).1
-      let (h', pre) := termSpine n ht
+      let (h', pre) := termSpine ht
       let all := pre ++ ats
       match h' with
       | .const r _ =>
@@ -375,18 +390,53 @@ def readTerm (x : RCx) (caseOf : Ref → Option CaseInfo) :
 /-- The fuel of every syntactic walk. -/
 def readFuel : Nat := 1 <<< 20
 
-/-- A type's leading ∀s (up to its first sharing reference): each node's mode and
-its domain's skeleton and expression, then the codomain. Consumes the nodes. -/
-def readForalls (x : RCx) : Nat → Ixon.Expr → RM (List (AllMode × Skel × Ixon.Expr) × Ixon.Expr)
-  | 0, _ => throw "expression too large"
-  | n + 1, e => do
+/-- A telescope's binder: its node's mode, its domain's skeleton and its domain. -/
+abbrev TeleBinder := AllMode × Skel × Ixon.Expr
+
+/-- Whether a sharing entry continues a telescope: through sharing references, a λ (`lam`) or
+a ∀ (otherwise). -/
+def continuesTele (c : Ixon.Constant) (lam : Bool) (e : Ixon.Expr) : Bool :=
+  match Ix.Kernel.Reader.unshare c e with
+  | .lam .. => lam
+  | .all .. => !lam
+  | _ => false
+
+/-- **A telescope**: the leading λs (`lam`) or ∀s of an expression, stepping through a sharing
+reference whose entry continues it (the entry is read in its block, at the variant its share
+node names); each binder's node's mode, its domain's skeleton and its domain; then `k` on the
+binders, in order, and on what follows them, in the block that holds it. Consumes the nodes.
+(As landed the walk stopped at the first sharing reference, so binders inside a sharing entry
+were read as part of the codomain or the body, their modes unchecked as parameters: note 12
+§2 item 2.) -/
+def readTele {β : Type} (x : RCx) (lam : Bool) (k : List TeleBinder → Ixon.Expr → RM β) :
+    Nat → List TeleBinder → Ixon.Expr → RM β
+  | 0, _, _ => throw "expression too large"
+  | n + 1, acc, e => do
     match ← view e with
-    | .all ty b => do
-      let m ← nextBinder
-      let d ← readSkel x n ty
-      let (rest, cod) ← readForalls x n b
-      pure ((m, d, ty) :: rest, cod)
-    | _ => pure ([], e)
+    | .all ty b =>
+      if lam then k acc.reverse e else do
+        let m ← nextBinder
+        let d ← readSkel x n ty
+        readTele x lam k n ((m, d, ty) :: acc) b
+    | .lam ty b =>
+      if lam then do
+        let m ← nextBinder
+        let d ← readSkel x n ty
+        readTele x lam k n ((m, d, ty) :: acc) b
+      else k acc.reverse e
+    | .share i =>
+      match x.c.sharing[i]? with
+      | some ent =>
+        if continuesTele x.c lam ent then enterShare x.rm i (readTele x lam k n acc ent)
+        else k acc.reverse e
+      | none => k acc.reverse e
+    | _ => k acc.reverse e
+
+/-- A type's leading ∀s, through sharing references (`readTele`), and `k` on its codomain.
+Returns the binders, the codomain and `k`'s answer. -/
+def readForalls {β : Type} (x : RCx) (fuel : Nat) (ty : Ixon.Expr) (k : Ixon.Expr → RM β) :
+    RM (List TeleBinder × Ixon.Expr × β) :=
+  readTele x false (fun alls cod => do pure (alls, cod, ← k cod)) fuel [] ty
 
 /-- A telescope's parameters, opened in order: each binder's mode, its domain's
 class (by the oracle) and skeleton; and the context under them. -/
@@ -406,8 +456,7 @@ and its codomain's result mode, class and skeleton. A result mode before the
 last ∀'s is `shared`. Reads in the type's block. -/
 def readIface (x : RCx) (fuel : Nat) (ty : Ixon.Expr) :
     RM (Array Param × ResultMode × Cls × Skel) := do
-  let (alls, cod) ← readForalls x fuel ty
-  let codSkel ← readSkel x fuel cod
+  let (alls, cod, codSkel) ← readForalls x fuel ty (readSkel x fuel)
   let (ctx, ps) ← openParams x alls
   let n := alls.length
   for (m, _, _) in alls.take (n - 1) do
@@ -416,26 +465,19 @@ def readIface (x : RCx) (fuel : Nat) (ty : Ixon.Expr) :
   let rc ← x.cl.type ctx.length (← x.toK ctx cod)
   pure (ps, res, rc, codSkel)
 
-/-- The λs of a definition's value (up to its first sharing reference): each
-node's mode, its domain's skeleton and expression; then the body. Consumes the
-nodes. -/
-def readLamNodes (x : RCx) : Nat → Ixon.Expr → RM (List (AllMode × Skel × Ixon.Expr) × Ixon.Expr)
-  | 0, _ => throw "expression too large"
-  | n + 1, e => do
-    match ← view e with
-    | .lam ty b => do
-      let m ← nextBinder
-      let sk ← readSkel x n ty
-      let (rest, body) ← readLamNodes x n b
-      pure ((m, sk, ty) :: rest, body)
-    | _ => pure ([], e)
+/-- The λs of a definition's value, through sharing references (`readTele`), and `k` on them and
+on the body. Returns the binders, the body and `k`'s answer. -/
+def readLamNodes {β : Type} (x : RCx) (fuel : Nat) (val : Ixon.Expr)
+    (k : List TeleBinder → Ixon.Expr → RM β) : RM (List TeleBinder × Ixon.Expr × β) :=
+  readTele x true (fun lams body => do pure (lams, body, ← k lams body)) fuel [] val
 
-/-- Strip `k` leading ∀s (not through sharing references). -/
-def dropAlls : Nat → Ixon.Expr → Except String Ixon.Expr
+/-- Strip `k` leading ∀s of an expression of `c`, through sharing references (as `readForalls`
+reads them; as landed it stopped at the first sharing reference). -/
+def dropAlls (c : Ixon.Constant) : Nat → Ixon.Expr → Except String Ixon.Expr
   | 0, e => pure e
   | k + 1, e => do
-    match ← view e with
-    | .all _ b => dropAlls k b
+    match ← view (Ix.Kernel.Reader.unshare c e) with
+    | .all _ b => dropAlls c k b
     | _ => throw "fewer binders than expected"
 
 /-- **Telescope agreement**: a value's λs and its type's ∀s agree node for node,
@@ -474,24 +516,21 @@ the definition is read for its interface: the same telescopes, the same
 agreement, the same parameters, with `Term.irr` for the body. -/
 def readBody (x : RCx) (caseOf : Ref → Option CaseInfo) (fuel : Nat) (bodies : Bool)
     (ty val : Ixon.Expr) (tyKey valKey : BlockKey) : Except String RunDef := do
-  let ((alls, codSkel), _) ← (inBlock x.rm tyKey (do
-      let (alls, cod) ← readForalls x fuel ty
-      let cs ← readSkel x fuel cod
-      pure (alls, cs))).run {}
-  let ((lams, ctx, params, body, bodyT, bodyC?), _) ← (inBlock x.rm valKey (do
-      let (lams, body) ← readLamNodes x fuel val
-      let (ctx, params) ← openParams x lams
-      if bodies then
-        let (bt, bc) ← readTerm x caseOf fuel ctx body
-        pure (lams, ctx, params, body, bt, some bc)
-      else do
-        skip x.rm fuel body
-        pure (lams, ctx, params, body, Term.irr, none))).run {}
+  let ((alls, _, codSkel), _) ← (inBlock x.rm tyKey (readForalls x fuel ty (readSkel x fuel))).run {}
+  let ((lams, body, ctx, params, bodyT, bodyC?), _) ← (inBlock x.rm valKey
+      (readLamNodes x fuel val fun lams body => do
+        let (ctx, params) ← openParams x lams
+        if bodies then
+          let (bt, bc) ← readTerm x caseOf fuel ctx body
+          pure (ctx, params, bt, some bc)
+        else do
+          skip x.rm fuel body
+          pure (ctx, params, Term.irr, none))).run {}
   teleAgree alls lams
   let k := lams.length
   let res := (lams.getLast?.map (·.1.result)).getD .shared
   if k ≤ alls.length then
-    let rest ← dropAlls k ty
+    let rest ← dropAlls x.c k ty
     let rc ← x.cl.type ctx.length (← x.toK ctx rest)
     let rs := arrowChain ((alls.drop k).map fun (m, s, _) => (m, s)) codSkel
     pure (.body params res rc rs bodyT)
@@ -510,14 +549,9 @@ and the selected alternative and nothing else, so these are exactly the modes
 it honours. The value's body is not read: the case rule runs in its place. -/
 def caseModes (x : RCx) (k : CaseInfo) (ty val : Ixon.Expr) (tyKey valKey : BlockKey) :
     Except String Unit := do
-  let (alls, _) ← (inBlock x.rm tyKey (do
-      let (alls, cod) ← readForalls x readFuel ty
-      let _ ← readSkel x readFuel cod
-      pure alls)).run {}
-  let (lams, _) ← (inBlock x.rm valKey (do
-      let (lams, body) ← readLamNodes x readFuel val
-      skip x.rm readFuel body
-      pure lams)).run {}
+  let ((alls, _, _), _) ← (inBlock x.rm tyKey (readForalls x readFuel ty (readSkel x readFuel))).run {}
+  let ((lams, _, _), _) ← (inBlock x.rm valKey
+      (readLamNodes x readFuel val fun _ body => skip x.rm readFuel body)).run {}
   teleAgree alls lams
   for ((m, _, _), i) in lams.zipIdx do
     unless m.result == .shared do throw "a case definition's binder with a result mode"
@@ -547,11 +581,13 @@ def varOf? (c : Ixon.Constant) (e : Ixon.Expr) : Option Nat :=
 
 /-- An alternative forwarded under `m` binders, mapped by `map`: the body
 `p a₁ … aₗ` with `p` one of the `k` parameters outside the binders and each
-`aᵢ` a binder or `()`. Returns the parameter and the composed arguments. -/
+`aᵢ` a binder or `()` (distinct constructor fields, never duplicating a field
+into two independent bindings). Reads the application spine through sharing
+references (`ixSpineU`, V8). Returns the parameter and the composed arguments. -/
 def forwarded (s : Subject) (c : Ixon.Constant) (k m : Nat) (map : Nat → Option FieldArg)
     (e : Ixon.Expr) : Option CaseAlt := do
   let body ← stripLamsU c m e
-  let (h, args) ← (ixSpine 4096 (Ix.Kernel.Reader.unshare c body)).toOption
+  let (h, args) ← (ixSpineU c 4096 body).toOption
   let w ← varOf? c h
   guard (m ≤ w && w < m + k)
   let p := k - 1 - (w - m)
@@ -561,7 +597,10 @@ def forwarded (s : Subject) (c : Ixon.Constant) (k m : Nat) (map : Nat → Optio
     match varOf? c a with
     | some y =>
       guard (y < m)
-      out := out.push (← map (m - 1 - y))
+      let fa ← map (m - 1 - y)
+      if let .field _ := fa then
+        guard (!out.contains fa)
+      out := out.push fa
     | none =>
       match view (Ix.Kernel.Reader.unshare c a) with
       | .ok (.ref i) =>
@@ -612,7 +651,8 @@ def headRefOf (s : Subject) (owner : Address) (c : Ixon.Constant) (h : Ixon.Expr
 def runBound (rt : Array (Ref × RunDef)) (r : Ref) : Bool := rt.any (·.1 == r)
 
 /-- **The case shape of a constant**, if it has one (recognised from the
-records; `fuel` bounds the chain of definitions). -/
+records; `fuel` bounds the chain of definitions). Leading λs and application
+spines are read through sharing references (`unshare`, `ixSpineU`, V8). -/
 def caseShape (s : Subject) (rt : Array (Ref × RunDef)) : Nat → Ref → Option CaseInfo
   | 0, _ => none
   | fuel + 1, r => do
@@ -620,14 +660,14 @@ def caseShape (s : Subject) (rt : Array (Ref × RunDef)) : Nat → Ref → Optio
     let (c, d) ← definitionAt? s r
     guard (d.kind == .defn && d.safety == .safe)
     let owner := r.block
-    -- the value's λs and the head it applies
+    -- the value's λs and the head it applies (through sharing references)
     let mut k := 0
     let mut body := d.value
     for _ in [0:4096] do
-      match view body with
+      match view (Ix.Kernel.Reader.unshare c body) with
       | .ok (.lam _ b) => do k := k + 1; body := b
       | _ => break
-    let (h, args) ← (ixSpine 4096 (Ix.Kernel.Reader.unshare c body)).toOption
+    let (h, args) ← (ixSpineU c 4096 body).toOption
     let hr ← headRefOf s owner c h
     let major (pos : Nat) : Option Nat := do
       let w ← varOf? c (← args[pos]?)
@@ -686,10 +726,16 @@ def caseShape (s : Subject) (rt : Array (Ref × RunDef)) : Nat → Ref → Optio
 
 /-! ## The closure and the reading context -/
 
+/-- The default step limit of the closure's walk (`closureOf`). -/
+def closureFuel : Nat := 1 <<< 24
+
 /-- The record addresses reachable from `roots` (through references and the
-blocks projections name). -/
-def closureOf (store : Ix.Kernel.Reader.Store) (roots : List Address) (fuel : Nat := 1 <<< 24) :
-    Array Address := Id.run do
+blocks projections name), and whether the walk finished within `fuel` steps.
+As landed a walk cut at its limit returned what it had found so far, silently,
+so a larger closure was read in part (V5): the caller now sees the cut, and
+`Reading.complete` declines on it. -/
+def closureOf (store : Ix.Kernel.Reader.Store) (roots : List Address) (fuel : Nat := closureFuel) :
+    Array Address × Bool := Id.run do
   let mut seen : Std.HashSet Address := {}
   let mut out : Array Address := #[]
   let mut todo := roots
@@ -711,23 +757,42 @@ def closureOf (store : Ix.Kernel.Reader.Store) (roots : List Address) (fuel : Na
         | .cPrj p => todo := p.block :: todo
         | .rPrj p => todo := p.block :: todo
         | _ => pure ()
-  return out
+  return (out, todo.isEmpty)
 
-/-- The subject's closure's records, and the kernel reader's context over them. -/
-def Reading.make (s : Subject) : Reading :=
-  let roots := s.seeds ++ s.runTable.toList ++ s.externs
-  let closure := closureOf s.store roots
+/-- The subject's closure's records, and the kernel reader's context over them;
+`walked` says whether the closure's walk finished within `fuel` steps. -/
+def Reading.make (s : Subject) (fuel : Nat := closureFuel) : Reading :=
+  let roots := s.seeds ++ s.runTable ++ s.externs
+  let (closure, walked) := closureOf s.store roots fuel
   let records := closure.filterMap fun a => (s.store a).map (a, ·)
-  { s, cx := Ix.Kernel.Reader.contextWith (md := .anon) s.store s.blob s.table records, closure }
+  { s, cx := Ix.Kernel.Reader.contextWith (md := .anon) s.store s.blob s.table records, closure,
+    walked }
 
-/-- Every record of the reading's closure has a complete binder-data section
+/-- A reading with no closure, for the walks that read no kernel expression (a
+telescope's modes and skeletons: `ifaceErased`); its kernel reader indexes no
+record. -/
+def Reading.bare (s : Subject) : Reading :=
+  { s, cx := Ix.Kernel.Reader.contextWith (md := .anon) s.store s.blob s.table #[], closure := #[],
+    walked := true }
+
+/-- **A record's modes are well formed**: its binder-data section is complete
 (`Ixon.Constant.bindersComplete`: a block for each root and each variant of a
-sharing entry with a binder, each node of a binder's kind). A closure with an
-incomplete section is not read. -/
+sharing entry with a binder, each node of a binder's kind), and its modes outside
+the section are canonical (`Ixon.Constant.modesCanonical`: no theorem asserts
+anything). As landed `Reading.complete` checked the section only, and the fast
+path's test (`allDefault`) neither (note 12 §2 item 4, the lead's ruling, V4). -/
+def recordWellFormed (a : Address) (c : Ixon.Constant) : Except String Unit := do
+  unless c.bindersComplete do throw s!"record {a}: its binder-data section is incomplete"
+  unless c.modesCanonical do throw s!"record {a}: its modes are not canonical (a theorem asserts something)"
+
+/-- The closure's walk finished (else a decline: a closure cut at the walk's
+limit is never read in part), and every record of the reading's closure is well
+formed (`recordWellFormed`). A closure with a record that is not is not read. -/
 def Reading.complete (rd : Reading) : Except String Unit := do
+  unless rd.walked do throw "decline: the closure's walk reached its step limit"
   for a in rd.closure do
     let some c := rd.s.store a | continue
-    unless c.bindersComplete do throw s!"record {a}: its binder-data section is incomplete"
+    recordWellFormed a c
 
 /-- The reading context of member `r`'s record. -/
 def Reading.rcx (rd : Reading) (cl : Classifier) (r : Ref) : Except String RCx := do
@@ -784,13 +849,14 @@ def isExtern (s : Subject) (r : Ref) : Bool :=
   s.externs.any fun a => Ix.Kernel.Reader.resolve s.store a == some r
 
 /-- A constructor's fields: each field binder's mode (`erased` or `many`) and
-class, and the constructor's field mode. -/
-def readCtorFields (x : RCx) (member ci : Nat) (nParams : Nat) (ty : Ixon.Expr) (key : BlockKey) :
+class, and the constructor's field mode. Its type's ∀s are exactly its
+parameters and its `nFields` fields (as landed nothing compared them, and a
+field inside a sharing entry was not read: note 12 §2 item 2). -/
+def readCtorFields (x : RCx) (member ci : Nat) (nParams nFields : Nat) (ty : Ixon.Expr) (key : BlockKey) :
     Except String (Array Field) := do
-  let ((alls, _), _) ← (inBlock x.rm key (do
-      let r ← readForalls x readFuel ty
-      let _ ← readSkel x readFuel r.2
-      pure r)).run {}
+  let ((alls, _, _), _) ← (inBlock x.rm key (readForalls x readFuel ty (readSkel x readFuel))).run {}
+  unless alls.length == nParams + nFields do
+    throw "a constructor's type's binders are not its parameters and fields"
   let mut ctx : List Local := []
   let mut out : Array Field := #[]
   for ((m, _, dom), i) in alls.zipIdx do
@@ -836,7 +902,10 @@ def letsDefault : Nat → Ixon.Expr → Except String Bool
     | .prj _ _ v => letsDefault n v
     | _ => pure true
 
-/-- Whether a record carries only default modes (binders, `let`s, fields). -/
+/-- Whether a record carries only default modes (binders, `let`s, fields) and no
+definition of it asserts anything (`Definition.asserts`, Ixon v5's `tailrec`/
+`nonalloc` bits; V4: as landed the assertions were not looked at, so a record
+asserting something counted as default). -/
 def recordDefault (c : Ixon.Constant) : Except String Bool := do
   let rm ← recordModes c
   let mut ok := rm.blocks.all fun (_, ns) => ns.all fun
@@ -844,7 +913,13 @@ def recordDefault (c : Ixon.Constant) : Except String Bool := do
     | .share _ => true
   for root in binderRoots c.info ++ c.sharing do
     ok := ok && (← letsDefault readFuel root)
-  pure (ok && fieldModesDefault c)
+  let noAsserts := match c.info with
+    | .defn d => d.asserts == {}
+    | .muts ms => ms.all fun
+      | .defn d => d.asserts == {}
+      | _ => true
+    | _ => true
+  pure (ok && fieldModesDefault c && noAsserts)
 
 /-- **The run definition of a constant** (`bodies = false` reads a run body's
 telescopes and not its body, for an interface).
@@ -871,7 +946,8 @@ def Reading.readDef (rd : Reading) (cl : Classifier) (rt : Array (Ref × RunDef)
     let .muts ms := x.c.info | throw "a constructor outside a block"
     let some (.indc ind) := ms[i]? | throw "a constructor of no inductive"
     let some ctor := ind.ctors[ci]? | throw "constructor index out of range"
-    let fields ← readCtorFields x i ci ind.params.toNat ctor.typ (rootKey (rootBase x.c i + 1 + ci))
+    let fields ← readCtorFields x i ci ind.params.toNat ctor.fields.toNat ctor.typ
+      (rootKey (rootBase x.c i + 1 + ci))
     pure (.ctor (.member b i) ci ind.params.toNat fields)
   | .member _ i => do
     let base := rootBase x.c i
@@ -923,26 +999,71 @@ def typeRootOf (c : Ixon.Constant) : Ref → Option (Nat × Ixon.Expr)
     | _ => none
 
 /-- **The positions a constant's interface erases**: the leading ∀s of its type
-(up to its first sharing reference) whose binder mode is `erased`, read from its
-record. -/
+whose binder mode is `erased`, read from its record by the walk every interface
+is read by (`readForalls`, through sharing references, in its type's block; as
+landed a walk of its own, `leadingBinders`, stopped at the first sharing
+reference: note 12 §2 item 2, B.20). -/
 def ifaceErased (s : Subject) (r : Ref) : Except String (List Nat) := do
   let some c := s.store r.block | throw s!"record {r.block} is missing"
   let some (root, ty) := typeRootOf c r | throw "no constant at this reference"
-  let rm ← recordModes c
-  let pos ← leadingBinders rm.binderful true 4096 ty 0
-  let nodes := (rm.block? (rootKey root)).getD #[]
-  pure (pos.zipIdx.filterMap fun (p, i) =>
-    match nodes[p]? with
-    | some (.binder m) => if m.input == .erased then some i else none
-    | _ => none)
+  let x ← (Reading.bare s).rcx noClasses r
+  let ((alls, _, _), _) ← (inBlock x.rm (rootKey root) (readForalls x readFuel ty (readSkel x readFuel))).run {}
+  pure (alls.zipIdx.filterMap fun ((m, _, _), i) => if m.input == .erased then some i else none)
 
 /-! ## The run table -/
 
-/-- One equation of the run table: `∀ xs, f xs = rhs`, read in the run-table
-record's type block. Returns `f` and its run body; `f`'s binder modes and
-skeletons come from `f`'s own type. -/
-def readEquation (rd : Reading) (cl : Classifier) (x : RCx) (eqRef andRef : Option Ref) :
-    Nat → List Local → Ixon.Expr → RM (Array (Ref × RunDef))
+/-- Read the left conjunct of `And a b` from the application prefix `f` (which unshares to
+`And a`), stepping into a sharing reference around `f` in its own binder block. -/
+def readAndLeft (x : RCx) (readA : Ixon.Expr → RM (Array (Ref × RunDef))) :
+    Nat → Ixon.Expr → RM (Array (Ref × RunDef))
+  | 0, _ => throw "run table too large"
+  | n + 1, f => do
+    match ← view f with
+    | .app _ a => readA a
+    | .share i => do
+      let some ent := x.c.sharing[i]? | throw "sharing reference out of range"
+      enterShare x.rm i (readAndLeft x readA n ent)
+    | _ => throw "a run-table entry is not an equation"
+
+/-- Collect the definitions bound by the run-table records so `caseShape` inside
+`readEquation` treats every run-table target as run-bound. -/
+def runTableTargets (rd : Reading) : Array (Ref × RunDef) := Id.run do
+  let eqRef := roleRef? rd.s .eq
+  let andRef := roleRef? rd.s .and
+  let rec go (x : RCx) : Nat → Ixon.Expr → Array (Ref × RunDef)
+    | 0, _ => #[]
+    | n + 1, e =>
+      match Ix.Kernel.Reader.unshare x.c e with
+      | .all _ b => go x n b
+      | .app f a =>
+        match ixSpineU x.c n (.app f a) with
+        | .ok (h, args) =>
+          let hr := headRefOf rd.s x.owner x.c h
+          if hr.isSome && hr == andRef && args.size == 2 then
+            go x n args[0]! ++ go x n args[1]!
+          else if hr.isSome && hr == eqRef && args.size == 3 then
+            match ixSpineU x.c n args[1]! with
+            | .ok (lh, _) =>
+              match headRefOf rd.s x.owner x.c lh with
+              | some ref => #[(ref, .ind #[])]
+              | none => #[]
+            | .error _ => #[]
+          else #[]
+        | .error _ => #[]
+      | _ => #[]
+  let mut out : Array (Ref × RunDef) := #[]
+  for a in rd.s.runTable do
+    let some r := Ix.Kernel.Reader.resolve rd.s.store a | continue
+    let some (_, d) := definitionAt? rd.s r | continue
+    let .ok x := rd.rcx noClasses r | continue
+    out := out ++ go x readFuel d.typ
+  return out
+
+/-- One equation (or conjunction of equations) of the run table: `∀ xs, f xs = rhs`,
+read in the run-table record's type block, stepping through sharing references. Returns
+each `f` and its run body; `f`'s binder modes and skeletons come from `f`'s own type. -/
+def readEquation (rd : Reading) (cl : Classifier) (x : RCx) (eqRef andRef : Option Ref)
+    (targets : Array (Ref × RunDef)) : Nat → List Local → Ixon.Expr → RM (Array (Ref × RunDef))
   | 0, _, _ => throw "run table too large"
   | n + 1, ctx, e => do
     match ← view e with
@@ -952,32 +1073,30 @@ def readEquation (rd : Reading) (cl : Classifier) (x : RCx) (eqRef andRef : Opti
       let k ← x.toK ctx ty
       let pc ← cl.type ctx.length k
       skip x.rm n ty
-      readEquation rd cl x eqRef andRef n (⟨.fvar ctx.length k, pc⟩ :: ctx) b
-    | .app .. => do
-      let (h, args) ← ixSpine n e
-      let hr := match view h with
-        | .ok (.ref i) => (x.refAt i).toOption
-        | _ => none
+      readEquation rd cl x eqRef andRef targets n (⟨.fvar ctx.length k, pc⟩ :: ctx) b
+    | .share i => do
+      let some ent := x.c.sharing[i]? | throw "sharing reference out of range"
+      enterShare x.rm i (readEquation rd cl x eqRef andRef targets n ctx ent)
+    | .app fArg lastArg => do
+      let (h, args) ← ixSpineU x.c n e
+      let hr := headRefOf rd.s x.owner x.c h
       if ctx.isEmpty && hr.isSome && hr == andRef && args.size == 2 then
-        let a ← readEquation rd cl x eqRef andRef n [] args[0]!
-        let b ← readEquation rd cl x eqRef andRef n [] args[1]!
+        let a ← readAndLeft x (readEquation rd cl x eqRef andRef targets n []) n fArg
+        let b ← readEquation rd cl x eqRef andRef targets n [] lastArg
         return a ++ b
       unless hr.isSome && hr == eqRef && args.size == 3 do throw "a run-table entry is not an equation"
       let xs := ctx.length
-      -- the left side: `f` applied to exactly the bound variables, in order
-      let (lh, largs) ← ixSpine n args[1]!
-      let f ← match view lh with
-        | .ok (.ref i) => x.refAt i
-        | _ => throw "a run-table equation's left side is not a constant"
+      -- the left side: `f` applied to exactly the bound variables, in order (through sharing)
+      let (lh, largs) ← ixSpineU x.c n args[1]!
+      let some f := headRefOf rd.s x.owner x.c lh | throw "a run-table equation's left side is not a constant"
       unless largs.size == xs do throw "a run-table equation's left side is not fully applied"
       for (a, i) in largs.zipIdx do
-        unless (match view a with | .ok (.var j) => j == xs - 1 - i | _ => false) do
+        unless varOf? x.c a == some (xs - 1 - i) do
           throw "a run-table equation's left side does not apply its constant to its binders"
       let tyK ← x.toK ctx args[0]!
       let rc ← cl.type xs tyK
-      skip x.rm n args[0]!
-      skip x.rm n args[1]!
-      let (rhs, _) ← readTerm x (caseShape rd.s #[] 16) n ctx args[2]!
+      skip x.rm n fArg
+      let (rhs, _) ← readTerm x (caseShape rd.s targets 16) n ctx lastArg
       -- `f`'s modes, from its own type
       let some (fc, fd) := definitionAt? rd.s f | throw "a run-table equation names no definition"
       unless fd.kind == .defn && fd.safety == .safe do throw "a run-table equation names no safe definition"
@@ -985,10 +1104,8 @@ def readEquation (rd : Reading) (cl : Classifier) (x : RCx) (eqRef andRef : Opti
       let base := match f with
         | .member _ i => rootBase fc i
         | _ => 0
-      let ((alls, codSkel), _) ← (inBlock fx.rm (rootKey base) (do
-          let (alls, cod) ← readForalls fx readFuel fd.typ
-          let cs ← readSkel fx readFuel cod
-          pure (alls, cs))).run {}
+      let ((alls, _, codSkel), _) ←
+        (inBlock fx.rm (rootKey base) (readForalls fx readFuel fd.typ (readSkel fx readFuel))).run {}
       unless xs ≤ alls.length do throw "a run-table equation has more binders than its definition's type"
       for (m, _, _) in alls.drop xs do
         unless m.isDefault do throw "a moded ∀ beyond a run-table equation's binders"
@@ -1002,21 +1119,237 @@ def readEquation (rd : Reading) (cl : Classifier) (x : RCx) (eqRef andRef : Opti
       return #[(f, .body params res rc rs rhs)]
     | _ => throw "a run-table entry is not an equation"
 
-/-- **The run table**: its record's statement, a conjunction of equations. -/
+/-- **The run table**: zero or more theorem records whose statements are equations
+`∀ xs, f xs = rhs` (per-definition `f.eq_def` records, as `ix compile` exports them)
+and/or `And` conjunctions of such equations. Each bound definition may appear at most
+once across the whole run table. -/
 def Reading.runTable (rd : Reading) (cl : Classifier) : Except String (Array (Ref × RunDef)) := do
-  let some a := rd.s.runTable | return #[]
-  let some r := Ix.Kernel.Reader.resolve rd.s.store a | throw "the run table does not resolve"
-  let some (c, d) := definitionAt? rd.s r | throw "the run table is not a definition"
-  unless d.kind == .thm do throw "the run table is not a theorem"
+  if rd.s.runTable.isEmpty then return #[]
+  let eqRef := roleRef? rd.s .eq
+  let andRef := roleRef? rd.s .and
+  let targets := runTableTargets rd
+  let mut entries : Array (Ref × RunDef) := #[]
+  for a in rd.s.runTable do
+    let some r := Ix.Kernel.Reader.resolve rd.s.store a | throw "the run table does not resolve"
+    let some (c, d) := definitionAt? rd.s r | throw "the run table is not a definition"
+    unless d.kind == .thm do throw "the run table is not a theorem"
+    let x ← rd.rcx cl r
+    let base := match r with
+      | .member _ i => rootBase c i
+      | _ => 0
+    let es ← ((inBlock x.rm (rootKey base)
+        (readEquation rd cl x eqRef andRef targets readFuel [] d.typ)).run {}).map (·.1)
+    entries := entries ++ es
+  for (f, _) in entries do
+    unless (entries.filter (·.1 == f)).size == 1 do throw "a definition bound twice by the run table"
+  pure entries
+
+/-! ## Raw recursors (note 12 §2.1)
+
+A raw recursor is `stuck` in `runR`, but our evaluator and compiled code fire it by its stored
+rules, and the rules hand a constructor's fields to the minor premise they dispatch. So a raw
+recursor a run term calls must pass a field its constructor writes erased only to a binder that
+erases it, and must read it nowhere else. -/
+
+/-- Whether the variable `v` (a de Bruijn index at `e`'s top) occurs in `e`, through sharing
+references. -/
+def mentions (c : Ixon.Constant) : Nat → Nat → Ixon.Expr → Except String Bool
+  | 0, _, _ => throw "expression too large"
+  | n + 1, v, e =>
+    match Ix.Kernel.Reader.unshare c e with
+    | .var i => pure (i.toNat == v)
+    | .app f a => do pure ((← mentions c n v f) || (← mentions c n v a))
+    | .lam t b | .all t b => do pure ((← mentions c n v t) || (← mentions c n (v + 1) b))
+    | .letE _ _ t x b => do
+      pure ((← mentions c n v t) || (← mentions c n v x) || (← mentions c n (v + 1) b))
+    | .prj _ _ x => mentions c n v x
+    | .share _ => throw "sharing reference out of range"
+    | _ => pure false
+
+/-- The recursors an expression of record `c` (owned by `owner`) names where it runs, each with
+the number of arguments of the spine it heads (0 standing alone): through sharing references,
+under λs (not in their domains, which are types), in a `let`'s value and body, in a projection;
+not in a ∀ (a type). The recursors a recursor's rule calls, natively, when it fires. -/
+def recOccs (s : Subject) (owner : Address) (c : Ixon.Constant) :
+    Nat → Ixon.Expr → Except String (List (Ref × Nat))
+  | 0, _ => throw "expression too large"
+  | n + 1, e => do
+    let isRec (r : Ref) : Bool := (recursorAt? s r).isSome
+    match Ix.Kernel.Reader.unshare c e with
+    | .app f a => do
+      let (h, args) ← ixSpineU c n (.app f a)
+      let mut out ← match headRefOf s owner c h with
+        | some r => pure (if isRec r then [(r, args.size)] else [])
+        | none => recOccs s owner c n h
+      for x in args do out := out ++ (← recOccs s owner c n x)
+      pure out
+    | .ref i us =>
+      pure (match headRefOf s owner c (.ref i us) with
+        | some r => if isRec r then [(r, 0)] else []
+        | none => [])
+    | .recur i us =>
+      pure (match headRefOf s owner c (.recur i us) with
+        | some r => if isRec r then [(r, 0)] else []
+        | none => [])
+    | .lam _ b => recOccs s owner c n b
+    | .letE _ _ _ v b => do pure ((← recOccs s owner c n v) ++ (← recOccs s owner c n b))
+    | .prj _ _ x => recOccs s owner c n x
+    | .share _ => throw "sharing reference out of range"
+    | _ => pure []
+
+/-- The modes of a skeleton's arrows, outermost first: a type's leading ∀s, as `readSkel` reads
+them (through sharing references). -/
+def arrowModes : Skel → List (BinderMode × ResultMode)
+  | .arrow i _ r c => (i, r) :: arrowModes c
+  | _ => []
+
+/-- The modes of constructor `ci`'s field binders (its type's ∀s past its inductive's
+parameters), read as `readCtorFields` reads them. -/
+def Reading.ctorFieldModes (rd : Reading) (cl : Classifier) (ind : Ref) (ci : Nat) :
+    Except String (List AllMode) := do
+  let .member _ i := ind | throw "a constructor of no inductive"
+  let some indV := inductiveAt? rd.s ind | throw "a recursor's major premise is of no inductive"
+  let some ctor := indV.ctors[ci]? | throw "constructor index out of range"
+  let x ← rd.rcx cl ind
+  let ((alls, _, _), _) ← (inBlock x.rm (rootKey (rootBase x.c i + 1 + ci))
+    (readForalls x readFuel ctor.typ (readSkel x readFuel))).run {}
+  pure ((alls.drop indV.params.toNat).map (·.1))
+
+/-- **A raw recursor's rules against its inductive's constructors** (note 12 §2.1). The
+recursor's type's ∀s are its parameters, motives, minor premises, indices and major premise,
+all of the default mode; its inductive is the head of its major premise's type, and its rules
+are exactly that inductive's constructors (a mutual recursor takes the minor premises of every
+constructor of its block, and has rules only for its own inductive's). For rule `j`, of
+constructor `j`: its field count is the constructor's; its right-hand side, past
+`params + motives + minors + fields` λs (through sharing references), applies a minor premise
+`m` (the rule dispatches the minor its body applies, not the one at index `j`), and `m`'s
+telescope has at least the constructor's fields; each field the constructor's record writes
+erased is bound erased in `m`'s telescope, is passed as `m`'s argument at its own position, and
+is mentioned in no other argument of the body (the λs' domains are types, not read); the
+binders of `m`'s telescope past the fields (its induction hypotheses) are of the default mode.
+The pairing is decided from the records alone; nothing is assumed of the kernel's rules.
+Answers whether some constructor of the inductive has an erased field, and the recursors the
+rules' bodies call (`recOccs`: a rule's induction hypotheses call this recursor, another of a
+mutual block, or a nested inductive's auxiliary one), each with its argument count. -/
+def Reading.recRules (rd : Reading) (cl : Classifier) (r : Ref) :
+    Except String (Bool × List (Ref × Nat)) := do
+  let some (c, rr) := recursorAt? rd.s r | throw "no recursor at this reference"
   let x ← rd.rcx cl r
   let base := match r with
     | .member _ i => rootBase c i
     | _ => 0
-  let entries ← ((inBlock x.rm (rootKey base)
-      (readEquation rd cl x (roleRef? rd.s .eq) (roleRef? rd.s .and) readFuel [] d.typ)).run {}).map (·.1)
-  for (f, _) in entries do
-    unless (entries.filter (·.1 == f)).size == 1 do throw "a definition bound twice by the run table"
-  pure entries
+  let nP := rr.params.toNat
+  let nMot := rr.motives.toNat
+  let nMin := rr.minors.toNat
+  let ((alls, _, _), _) ← (inBlock x.rm (rootKey base) (readForalls x readFuel rr.typ (readSkel x readFuel))).run {}
+  unless alls.all (·.1.isDefault) do throw "a recursor's binder with a mode"
+  let some (_, _, majorTy) := alls[nP + nMot + nMin + rr.indices.toNat]? |
+    throw "a recursor's type has fewer binders than its counts"
+  let some ind := Ix.Kernel.Reader.headRef rd.s.store x.owner c majorTy |
+    throw "a recursor's major premise is of no inductive"
+  let some indV := inductiveAt? rd.s ind | throw "a recursor's major premise is of no inductive"
+  unless rr.rules.size == indV.ctors.size do throw "a recursor's rules are not its inductive's constructors"
+  let mut erasedField := false
+  let mut calls : List (Ref × Nat) := []
+  for (rule, j) in rr.rules.zipIdx do
+    let some ctor := indV.ctors[j]? | throw "a recursor's rules are not its inductive's constructors"
+    let nf := rule.fields.toNat
+    unless nf == ctor.fields.toNat do throw s!"rule {j}: its field count is not its constructor's"
+    let fms ← rd.ctorFieldModes cl ind j
+    unless fms.length == nf do throw s!"rule {j}: its constructor's type has not its field count of binders"
+    let some body := stripLamsU c (nP + nMot + nMin + nf) rule.rhs |
+      throw s!"rule {j}: its right-hand side has fewer λs than its counts"
+    let (h, args) ← ixSpineU c readFuel body
+    let some w := varOf? c h | throw s!"rule {j}: its right-hand side applies no minor premise"
+    unless nf ≤ w && w < nf + nMin do throw s!"rule {j}: its right-hand side applies no minor premise"
+    let m := nMin - 1 - (w - nf)
+    let some (_, minorSkel, _) := alls[nP + nMot + m]? | throw s!"rule {j}: no minor premise {m}"
+    let tele := arrowModes minorSkel
+    unless nf ≤ tele.length do
+      throw s!"rule {j}: minor premise {m} has fewer binders than its constructor has fields"
+    for (fm, q) in fms.zipIdx do
+      unless fm.input == .erased do continue
+      erasedField := true
+      unless (tele[q]?.map (·.1)) == some .erased do
+        throw s!"rule {j}: field {q} is erased in its constructor and not in minor premise {m}, which the rule dispatches"
+      let fv := nf - 1 - q
+      unless (args[q]?.bind (varOf? c)) == some fv do
+        throw s!"rule {j}: its erased field {q} is not passed to minor premise {m} at its own position"
+      for (a, p) in args.zipIdx do
+        if p != q then
+          if (← mentions c readFuel fv a) then
+            throw s!"rule {j}: its erased field {q} is mentioned other than at its own position"
+    for (i, res) in tele.drop nf do
+      unless i == .many && res == .shared do
+        throw s!"rule {j}: an induction hypothesis's binder in minor premise {m} has a mode"
+    calls := calls ++ (← recOccs rd.s x.owner c readFuel body)
+  pure (erasedField, calls)
+
+/-- The constant heads of a run term's spines, each with its number of arguments: a spine's head
+constant, and a constant standing alone (with none). A `Term.case` is a case shape fully
+applied, not a call of its constant. -/
+def constHeads : Nat → Term → Except String (List (Ref × Nat))
+  | 0, _ => throw "term too large"
+  | n + 1, t =>
+    match t with
+    | .app .. => do
+      let (h, args) := termSpine t
+      let mut out : List (Ref × Nat) ← match h with
+        | .const r _ => pure [(r, args.size)]
+        | _ => constHeads n h
+      for a in args do out := out ++ (← constHeads n a)
+      pure out
+    | .const r _ => pure [(r, 0)]
+    | .lam _ _ _ _ b => constHeads n b
+    | .letE _ _ v b => do pure ((← constHeads n v) ++ (← constHeads n b))
+    | .proj _ _ e _ => constHeads n e
+    | .case _ mj alts ex _ => do
+      let mut out ← constHeads n mj
+      for a in alts do out := out ++ (← constHeads n a)
+      for a in ex do out := out ++ (← constHeads n a)
+      pure out
+    | .irr | .var .. | .natLit _ | .strLit _ => pure []
+
+/-- **The raw recursors the run bodies call** meet `Reading.recRules` (V1), and one whose
+inductive has a constructor with an erased field is called saturated, its spine supplying all of
+`params + motives + minors + indices + 1` arguments (V3, note 12 §2 item 3, B.18, by the lead's
+ruling): a partial application receives its minor premises later, at a variable head, where
+nothing compares them with the constructors (REPLY-2 §3.1). Every occurrence of a recursor in a
+run body is one (`constHeads`: at a spine's head or standing alone, as an argument too), and so
+is every recursor a checked recursor's rules call (`recOccs`), transitively: a rule fired
+natively fires those. `runR` is stuck at a recursor. -/
+def Reading.rawRecursors (rd : Reading) (cl : Classifier) (defs : Array (Ref × RunDef)) :
+    Except String Unit := do
+  -- the work list: each occurrence, with the recursor whose rules it is in (`none`: a run body)
+  let mut todo : Array (Ref × Nat × Option Ref) := #[]
+  for (_, d) in defs do
+    let .body _ _ _ _ t := d | continue
+    for (r, nargs) in ← constHeads readFuel t do
+      if (recursorAt? rd.s r).isSome then todo := todo.push (r, nargs, none)
+  let mut seen : Array (Ref × Bool) := #[]
+  let mut i := 0
+  for _ in [0:readFuel] do
+    let some (r, nargs, via) := todo[i]? | break
+    i := i + 1
+    let some (_, rr) := recursorAt? rd.s r | continue
+    let at_ := match via with
+      | none => s!"a raw recursor a run body calls ({(repr r).pretty})"
+      | some v => s!"a recursor ({(repr r).pretty}) the rules of a raw recursor ({(repr v).pretty}) call"
+    let mut erasedField := false
+    match seen.find? (·.1 == r) with
+    | some (_, e) => erasedField := e
+    | none =>
+      match rd.recRules cl r with
+      | .ok (e, calls) =>
+        erasedField := e
+        seen := seen.push (r, e)
+        for (r', n') in calls do todo := todo.push (r', n', some r)
+      | .error e => throw s!"{at_}: {e}"
+    let arity := rr.params.toNat + rr.motives.toNat + rr.minors.toNat + rr.indices.toNat + 1
+    if erasedField && nargs < arity then
+      throw s!"{at_}: over an inductive with an erased constructor field, applied to {nargs} of its \
+        {arity} arguments"
+  if i < todo.size then throw "too many raw recursor calls"
 
 /-! ## The run program -/
 
@@ -1033,7 +1366,9 @@ def refsOf (a : Address) (c : Ixon.Constant) : Array Ref :=
     return out
   | _ => #[]
 
-/-- **The run program of a subject**, read with the class oracle `cl`. -/
+/-- **The run program of a subject**, read with the class oracle `cl`; every raw recursor its run
+bodies call meets `Reading.recRules` (V1), and so do the recursors their rules call; one over an
+inductive with an erased constructor field is called saturated (V3). -/
 def readProg (s : Subject) (cl : Classifier) : Except String Prog := do
   let rd := Reading.make s
   rd.complete
@@ -1043,7 +1378,54 @@ def readProg (s : Subject) (cl : Classifier) : Except String Prog := do
     let some c := s.store a | continue
     for r in refsOf a c do
       defs := defs.push (r, ← rd.readDef cl rt true r)
+  rd.rawRecursors cl defs
   pure { defs, nat := roleRef? s .nat }
+
+
+/-! ## Constructor shapes (moved here from `Statement.lean`, so that the class oracle, which
+uses them, can sit below the statement that reads with it) -/
+
+section
+open Ix.Kernel (Env Key)
+
+
+/-- A constructor, as the classes need it: its kernel type, its parameter count,
+and which of its fields are erased (its binders' modes in its record). -/
+structure CtorShape where
+  type : KExpr
+  nParams : Nat
+  erased : List Bool
+
+/-- The record address a kernel key names. -/
+def keyAddress (s : Subject) : Key .anon → Option Address
+  | .id a => some a
+  | .role r => s.table.addressOf? r
+  | .aux _ _ => none
+
+/-- The constructors of the inductive type a key names, from the records. -/
+def ctorShapes (rd : Reading) (k : Key .anon) : Option (List CtorShape) := do
+  let a ← keyAddress rd.s k
+  let r ← Ix.Kernel.Reader.resolve rd.s.store a
+  let ind ← inductiveAt? rd.s r
+  let x ← (rd.rcx noClasses r).toOption
+  let .member _ i := r | none
+  let base := rootBase x.c i
+  let nP := ind.params.toNat
+  (List.range ind.ctors.size).mapM fun ci => do
+    let ctor ← ind.ctors[ci]?
+    let type ← (x.toK [] ctor.typ).toOption
+    let ((alls, _, _), _) ← ((inBlock x.rm (rootKey (base + 1 + ci))
+      (readForalls x readFuel ctor.typ (readSkel x readFuel))).run {}).toOption
+    pure { type, nParams := nP, erased := (alls.drop nP).map fun (m, _, _) => m.input == .erased }
+
+
+/-- Instantiate a type's leading ∀s with `args`. -/
+def instParams : KExpr → List KExpr → Option KExpr
+  | t, [] => some t
+  | .forallE _ b _, a :: as => instParams (b.instantiate1 a) as
+  | _, _ :: _ => none
+
+end
 
 end IxC.Resource
 

@@ -53,7 +53,7 @@ def run : IO Unit := do
     throw <| IO.userError "contract pipeline: Lean/certified address sets differ"
   let _ ← get "mode checking" (Ix.ModeCheck.checkArtifact lean.env)
   -- A valid annotated contract lowers modes into the record and passes mode checking.
-  let annotated ← get "annotated input" ((input .linear .localShared .localShared).mapError toString)
+  let annotated ← get "annotated input" ((input .many .localShared .localShared).mapError toString)
   let annotatedOut ← compileInput annotated >>= get "annotated compile"
   unless annotatedOut.annotated do
     throw <| IO.userError "contract pipeline: annotated flag not set"
@@ -65,7 +65,7 @@ def run : IO Unit := do
   unless Ix.Compile.BinderData.hasModes idConst do
     throw <| IO.userError "contract pipeline: annotated identity carries no resource modes"
   -- An ill-moded annotated contract is refused by mode checking before emission.
-  let escaping ← get "escaping input" ((input .linear .localShared .shared).mapError toString)
+  let escaping ← get "escaping input" ((input .many .localShared .shared).mapError toString)
   match ← compileInput escaping with
   | .ok _ => throw <| IO.userError "contract pipeline: escaping borrow compiled"
   | .error e =>

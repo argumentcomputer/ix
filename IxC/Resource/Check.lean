@@ -1,6 +1,7 @@
 module
 
 public import IxC.Resource.Oracle
+public import IxC.Resource.Statement
 
 /-!
 # The mode checker (uncertified)
@@ -12,12 +13,16 @@ seed's run can reach none of `runR`'s four violations: it **accepts**,
 runs out. Nothing about it is proved: its soundness, `CheckSound` (accept gives
 `ModeSafe`), is left to prove.
 
+* **Reading.** Every record of the closure is well formed (`recordWellFormed`: a
+  complete binder-data section, canonical modes)
+  (`Reading.complete`), and the whole closure is read as a run program, with the
+  kernel as class oracle (`oracleClassifier`); a closure that does not read is
+  refused, or declined at an oracle limit.
 * **Fast path.** A closure whose every record carries only default modes, with
-  no run table, is accepted without reading it (`DefaultOk`).
-* **Otherwise** it reads, with the kernel as class oracle (`oracleClassifier`),
-  every constant of a record with a non-default mode and every constant that
-  references one, with the interfaces they call, and runs an abstract
-  interpretation of `runR` on each run body: per binding whether it is live and
+  no run table, is then accepted without checking a body (`DefaultOk`).
+* **Otherwise** it runs, on each run body of a record with a non-default mode
+  or of a constant that references one, an abstract
+  interpretation of `runR`: per binding whether it is live and
   unique, shared or consumed, the regions a value may be confined to, the
   bindings a value may alias, whether a once binding has been called, whether a
   closure may only be called once; alternatives joined; skeletons compared at
@@ -148,11 +153,37 @@ inductive Dest where
   /-- bound at a once binder -/
   | once
 
+/-- Not a value read from a once binding (`Rules.repaired`'s `NotOnceSrc`). -/
+def notOnceSrc (v : AVal) (w : String) : CM Unit := do
+  if let some x := v.src then
+    if ← isOnceBnd x then refuseM s!"onceReentry: a once binding where it may be called again: {w}"
+
+/-- A once-only value read from a binding moves out of it: the binding is
+consumed (`Rules.repaired`'s `killSrc`). -/
+def killSrc (v : AVal) : CM Unit := do
+  if v.onceOnly then
+    if let some x := v.src then setSt x BSt.dead
+
 /-- **A flow** of `v` to a position of skeleton `exp`. A once binding passed on
-counts as called. -/
+counts as called. A once-only value, or a value read from a once binding, goes
+only to a `once` position: lent or retained, it may be called again (findings
+10 and 11); a once-only value read from a binding is moved out of it. -/
 def flowTo (d : Dest) (exp : Skel) (v : AVal) (w : String) : CM Unit := do
   valid v w
-  unless exp.admits v.skel do refuseM s!"mode skeletons differ: {w}"
+  let skelOk := match d with
+    | .once => exp.admitsNA v.skel
+    | _ => if v.onceOnly then exp.admitsNA v.skel else exp.admits v.skel
+  unless skelOk do refuseM s!"mode skeletons differ: {w}"
+  match d with
+  | .once => do
+    -- a once binding already called or passed on is not passed on again (repair T): each once
+    -- position wraps its own once view around the same target
+    for x in v.deps do
+      if (← isOnceBnd x) && (← isSpent x) then
+        refuseM s!"onceReentry: a once binding passed on after it was called or passed on: {w}"
+  | _ => do
+    if v.onceOnly then refuseM s!"onceReentry: a once-only closure where it may be called again: {w}"
+    notOnceSrc v w
   for x in v.deps do
     if ← isOnceBnd x then markSpent x
   match d with
@@ -172,6 +203,7 @@ def flowTo (d : Dest) (exp : Skel) (v : AVal) (w : String) : CM Unit := do
       unless ← isUniq v do refuseM s!"revokedUse: a value that may be shared, at a unique position: {w}"
       if !b && !v.regs.isEmpty then refuseM s!"borrowEscape: a borrowed value given away: {w}"
       for x in v.deps do setSt x BSt.dead
+  killSrc v
 
 /-- A callee's interface. -/
 structure Iface where
@@ -195,36 +227,61 @@ def destOf (p : Param) (lendPlain : Bool) : Dest :=
   else if p.mode.isBorrowed then .lend
   else if lendPlain then .lend else .share
 
-/-- **A call's result**, the arguments bound at the parameters in order. -/
+/-- **A call's result**, the arguments bound at the parameters in order. A
+result of class `leaf` carries no region: `ret` conforms it to a number, and a
+number is never confined (L1, finalized; W3).
+Repair A had a `shared` leaf result carry every argument's regions, since it
+could be any argument's leaf, or a leaf a closure or a cell among the arguments
+held, with the confinement it was stored with. (As landed, an argument at a
+parameter whose type no leaf inhabits, `Param.noLeaf`, gave it none: unsound for
+`Nat` itself, for function types and under an absurd hypothesis, findings 1 to 3.
+Under L1 that refinement is moot, and `Param.noLeaf` stays unread.) -/
 def callResult (ifc : Iface) (avs : Array (Option AVal)) (w : String) : CM AVal := do
   let lendPlain := ifc.resCls != .val
   let mut deps : List Nat := []
   let mut sdeps : List Nat := []
   let mut regs : List Nat := []
-  -- the regions a leaf result may carry: an argument's, where a leaf may pass
-  let mut leafRegs : List Nat := []
   for (p, i) in ifc.params.zipIdx do
     match avs[i]? with
     | some (some a) =>
       let d := destOf p lendPlain
       flowTo d p.skel a w
+      -- a unique result drops the arguments' regions (`pure { base with own := .uniq }`), and
+      -- an extern (whose body is not checked) may retain a `.many` argument in a `@shared`
+      -- field of a fresh unique cell (`ExternFieldVal` permits `p.mode = .many` arguments):
+      -- any retained `val` argument must be unconfined (repair U; under finalized L1 a `leaf`
+      -- is never confined, W6)
+      if ifc.res == .unique && ifc.resCls == .val && !a.regs.isEmpty && a.cls != .leaf && p.cls != .leaf then
+        match d with
+        | .share | .once =>
+          refuseM s!"borrowEscape: a borrowed value retained by a call whose result is unique: {w}"
+        | _ => pure ()
       if a.cls == .val then deps := natUnion deps a.deps
       regs := natUnion regs a.regs
-      if !p.noLeaf then leafRegs := natUnion leafRegs a.regs
       match d with
       | .share => sdeps := natUnion sdeps a.deps
       | _ => pure ()
     | _ => pure ()
+  -- a later unique argument may revoke a binding lent to an earlier argument (Bug #9b);
+  -- only `.lend` positions leave `a.deps` `.live` (`.share`/`.once` already shared them)
+  for (p, i) in ifc.params.zipIdx do
+    match destOf p lendPlain with
+    | .lend =>
+      if let some (some a) := avs[i]? then
+        valid a w
+    | _ => pure ()
   let base : AVal := { cls := ifc.resCls, skel := ifc.resSkel }
   if ifc.resCls == .irr || ifc.resCls == .imm then return base
+  if ifc.resCls == .leaf then
+    return if ifc.res == .unique || ifc.res == .uniqueBorrowed then { base with own := .uniq } else base
   let inner ← innermost
   match ifc.res with
+  -- a unique result holds no region: `ret` transfers it, which refuses a confined value, and a
+  -- number is never confined (L1, W4; repair O had it keep the arguments' regions)
   | .unique => pure { base with own := .uniq }
   | .uniqueBorrowed => pure { base with own := .uniq, deps, regs := natUnion regs [inner] }
   | .borrowed => pure { base with deps, regs := natUnion regs [inner] }
-  | .shared =>
-    if ifc.resCls == .leaf then pure { base with regs := leafRegs }
-    else pure { base with deps := sdeps, regs }
+  | .shared => pure { base with deps := sdeps, regs }
 
 /-- A partial application: its arguments at unique parameters transferred now
 (`captureTransfers`), which makes it callable once; the others retained. -/
@@ -246,24 +303,47 @@ def papVal (ifc : Iface) (avs : Array (Option AVal)) (w : String) : CM AVal := d
   pure { cls := .val, deps, regs, onceOnly := once,
          skel := ifaceSkel (ifc.params.toList.drop avs.size) ifc.res ifc.resSkel }
 
+/-- Whether a skeleton may still be a partial application (arrow or unknown). -/
+def mayBePap : Skel → Bool
+  | .arrow .. | .unknown => true
+  | .data | .dataApp .. => false
+
 /-- Applying a function value to one argument: by its skeleton's arrow (an
 unknown skeleton is a mode-free arrow, since only mode-free values flow there).
-A once binding called twice is refused; a once-only closure is consumed. -/
+A once binding called twice is refused; a once-only closure is consumed. The
+result may hold what the function value holds (a closure's captures, a partial
+application's arguments) with the confinement they were stored with, so it
+carries the function value's regions; at class `val` it may alias what the
+function value aliases, and the argument whatever its destination (a partial
+application retains even a lent argument). As landed the result was built
+from the argument alone (finding 9). -/
 def applyValue (f a : AVal) (c : Cls) (w : String) : CM AVal := do
   valid f w
+  let mut fHasOnceDep := false
   for x in f.deps do
     if ← isOnceBnd x then
+      fHasOnceDep := true
       if ← isSpent x then refuseM s!"onceReentry: a once binding called a second time: {w}"
       markSpent x
-  if f.onceOnly then
-    if let some x := f.src then setSt x BSt.dead
   let (m, dom, res, cod) := match f.skel with
     | .arrow m d r cd => (m, d, r, cd)
     | _ => (BinderMode.many, Skel.unknown, ResultMode.shared, Skel.unknown)
   let p : Param := { mode := m, cls := a.cls, skel := dom }
   let ifc : Iface := { params := #[p], res := res, resCls := c, resSkel := cod }
   let r ← callResult ifc #[some a] w
-  pure { r with cls := c }
+  -- the argument may transfer uniquely and revoke a capture of `f` (Bug #9a): re-check `f`
+  -- after `callResult` and before consuming `f.src`
+  valid f w
+  if f.onceOnly then
+    if let some x := f.src then setSt x BSt.dead
+  -- under L1 a leaf result carries no region (only `val` may hold confined captures)
+  let regs := if c == .val then natUnion r.regs f.regs else r.regs
+  let deps := if c == .val then natUnion (natUnion r.deps f.deps) a.deps else r.deps
+  -- applying a function value whose codomain may still be a PAP preserves/gains `onceOnly`
+  -- whenever the function is once-only/once-bound or this argument transfers uniquely/once
+  let onceOnly := r.onceOnly ||
+    (c == .val && mayBePap cod && (f.onceOnly || fHasOnceDep || m.isUnique || m.usage == .once))
+  pure { r with cls := c, regs, deps, onceOnly }
 
 /-- A call of something the program does not define: arguments retained. -/
 def unknownCall (avs : Array (Option AVal)) (c : Cls) : CM AVal := do
@@ -275,16 +355,20 @@ def unknownCall (avs : Array (Option AVal)) (c : Cls) : CM AVal := do
       deps := natUnion deps a.deps
       regs := natUnion regs a.regs
   pure { cls := c, deps := (if c == .val then deps else []),
-         regs := (if c == .irr || c == .imm then [] else regs), skel := .unknown }
+         regs := (if c == .val then regs else []), skel := .unknown }
 
 /-- Binding a value at an inner binder (a `let`, a case field's binder) in
-region `s`, as `bindAt` does. A plain binder aliases. -/
-def bindInner (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String) : CM AVal := do
+region `s`, as `bindAt` does, before the once rules of `bindInner`. A plain
+binder aliases. (`bindInnerBase` is this, with no region at class `leaf`.) -/
+def bindInnerRegs (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String) : CM AVal := do
   match m with
   | .erased => pure { cls := .irr }
   | .unique | .uniqueBorrowed => do
     flowTo (.uniq m.isBorrowed) v.skel v w
-    pure { cls, own := .uniq, regs := (if m.isBorrowed then natUnion v.regs [s] else []),
+    -- the transfer refuses a confined value, and a number is never confined (L1, W4; repair O
+    -- kept a value's regions at a class other than `val`)
+    pure { cls, own := .uniq,
+           regs := (if m.isBorrowed then natUnion v.regs [s] else []),
            skel := v.skel }
   | .borrowed => do valid v w; pure { v with cls, regs := natUnion v.regs [s], src := none }
   | .once => do flowTo .once v.skel v w; pure { v with cls, src := none }
@@ -293,33 +377,62 @@ def bindInner (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String) : C
     pure { v with cls, regs := natUnion v.regs [s], src := none }
   | .many => do valid v w; pure { v with cls, src := none }
 
+/-- Binding a value at an inner binder (`bindInnerRegs`). A binding of class
+`leaf` has no region: `bindAt` conforms it to a number, and a number is never
+confined (L1, finalized; `runR`'s side is W1). -/
+def bindInnerBase (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String) : CM AVal := do
+  let r ← bindInnerRegs m cls v s w
+  pure (if cls == .leaf then { r with regs := [] } else r)
+
+/-- Binding a value at an inner binder (`bindInnerBase`), with the once rules: a
+value read from a once binding is bound only at a `once` binder (finding 11),
+and a once-only value read from a binding moves out of it (finding 10: as
+landed, `let h := g` left both `g` and `h` callable). `Rules.repaired`'s
+`repairedBind`. -/
+def bindInner (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String) : CM AVal := do
+  if m.usage != .once then notOnceSrc v w
+  let r ← bindInnerBase m cls v s w
+  killSrc v
+  pure r
+
 /-- A parameter as its body sees it, in the call's region `s` (region 1 stands
-for the caller's regions, which a lent argument may also be confined to). -/
+for the caller's regions, which any non-unique `val` argument—including a plain
+`.many`/`.once` argument—may be confined to). Only class `val` can carry region
+confinement (under finalized L1 a `leaf` is never confined, and `imm`/`irr`
+values have empty taint). -/
 def paramVal (p : Param) (s : Nat) : AVal :=
+  let caller : List Nat := if p.cls == .val then [1] else []
+  let lent : List Nat := if p.cls == .val then [s, 1] else []
   match p.mode with
   | .erased => { cls := .irr }
   | .unique => { cls := p.cls, own := .uniq, skel := p.skel }
-  | .uniqueBorrowed => { cls := p.cls, own := .uniq, regs := [s, 1], skel := p.skel }
-  | .borrowed | .onceBorrowed => { cls := p.cls, regs := [s, 1], skel := p.skel }
-  | .many | .once => { cls := p.cls, skel := p.skel }
+  | .uniqueBorrowed => { cls := p.cls, own := .uniq, regs := lent, skel := p.skel }
+  | .borrowed | .onceBorrowed => { cls := p.cls, regs := lent, skel := p.skel }
+  | .many | .once => { cls := p.cls, regs := caller, skel := p.skel }
 
-/-- **The return rule** from region `s` at result mode `res`, as `ret`. -/
+/-- **The return rule** from region `s` at result mode `res`, as `ret`. Under L1
+a number (`leaf`) is never confined and never unique, so only class `val` checks
+confinement and uniqueness here. A unique return transfers `r`'s owned cells and
+marks `r.deps` dead so enclosing closures (`anLam`) and cases (`anAlt`) observe
+the consumption. -/
 def retCheck (exp : Skel) (res : ResultMode) (s : Nat) (r : AVal) (w : String) : CM Unit := do
   valid r w
   unless exp.admits r.skel do refuseM s!"mode skeletons differ: {w}"
   if r.onceOnly then refuseM s!"onceReentry: a once-only closure returned: {w}"
-  if r.cls == .val || r.cls == .leaf then
+  -- a once binding returned may be called again by whoever receives it (repair S)
+  notOnceSrc r w
+  if r.cls == .val then
     match res with
     | .shared => if r.regs.contains s then refuseM s!"borrowEscape: a borrowed value returned: {w}"
     | .unique => do
       if r.regs.contains s then refuseM s!"borrowEscape: a borrowed value returned: {w}"
-      if r.cls == .val then
-        unless ← isUniq r do refuseM s!"revokedUse: a value that may be shared, returned unique: {w}"
-        unless r.regs.isEmpty do refuseM s!"borrowEscape: a borrowed value returned unique: {w}"
+      unless ← isUniq r do refuseM s!"revokedUse: a value that may be shared, returned unique: {w}"
+      unless r.regs.isEmpty do refuseM s!"borrowEscape: a borrowed value returned unique: {w}"
+      for x in r.deps do setSt x BSt.dead
     | .borrowed => pure ()
     | .uniqueBorrowed => do
-      if r.cls == .val then
-        unless ← isUniq r do refuseM s!"revokedUse: a value that may be shared, returned unique: {w}"
+      unless ← isUniq r do refuseM s!"revokedUse: a value that may be shared, returned unique: {w}"
+      for x in r.deps do setSt x BSt.dead
 
 /-- A saturated constructor application, as `construct`. -/
 def anCtor (nP : Nat) (fields : Array Field) (avs : Array (Option AVal)) (c : Cls) : CM AVal := do
@@ -351,17 +464,24 @@ def anCtor (nP : Nat) (fields : Array Field) (avs : Array (Option AVal)) (c : Cl
       unless Skel.unknown.admits v.skel do refuseM "mode skeletons differ: a moded closure stored in a cell"
       regs := natUnion regs v.regs
       if f.fmode == .shared then
-        unless v.regs.isEmpty do refuseM "borrowEscape: a borrowed value stored in a @shared field"
+        unless (v.regs.filter (· != 1)).isEmpty do refuseM "borrowEscape: a borrowed value stored in a @shared field"
         flowTo .share v.skel v "a shared field"
       else if v.cls == .val then
+        -- a once binding stored in a cell can be read out and called again (repair Q)
+        notOnceSrc v "a constructor field"
         unless ← isUniq v do own := .shared
+        -- two inherited fields aliasing one binding: the cell holds a value twice, so it is no
+        -- tree and its transfer reaches that value twice (finding 8)
+        if v.deps.any deps.contains then own := .shared
         deps := natUnion deps v.deps
     | _, _ => pure ()
-  pure { cls := c, own, deps, regs, skel := .unknown }
+  -- this branch allocates a `.ctor` cell (`Eval.construct`), whose runtime class is always `.val`
+  -- regardless of the outer application node's class annotation (pre-proof fix 13)
+  pure { cls := .val, own, deps, regs, skel := .unknown }
 
 /-- A projection, as `runR`'s: an erased field is refused; a trivial wrapper is
-its field; a `@shared` field or a leaf is a counted value of its own; any other
-field aliases its container and shares its confinement. -/
+its field; a leaf is a counted value of its own; any other `.val` field (including
+`@shared`) aliases its container's deps and shares its confinement. -/
 def anProj (P : Prog) (s : Ref) (i : Nat) (v : AVal) (c : Cls) : CM AVal := do
   let fields : Array Field := match (P.ctorsOf s)[0]? with
     | some ctor => match P.ctorOf? ctor with
@@ -371,12 +491,12 @@ def anProj (P : Prog) (s : Ref) (i : Nat) (v : AVal) (c : Cls) : CM AVal := do
   let some f := fields[i]? | return { cls := c }
   if f.mode == .erased then refuseM "erasedRead: an erased field is projected"
   if f.cls == .irr || c == .irr then return { cls := .irr }
-  if c == .imm then return { cls := .imm }
+  -- under L1 a leaf is never confined (whether read out of a cell, a `@shared` field, or a wrapper)
+  if c == .imm || c == .leaf then return { cls := c }
   if v.cls != .val then return { v with cls := c, src := none }
-  if f.fmode == .shared then return { cls := c, skel := .unknown }
-  -- a leaf: read out of a cell it is unconfined, but the container may be a
-  -- trivial wrapper represented by it
-  if c == .leaf then return { cls := c, regs := v.regs, skel := .unknown }
+  -- a `@shared` field holds its value as it was stored, and a callee or an extern may have stored
+  -- a confined or borrowed-arg-dependent value there (findings 18, 5; pre-proof fix 12): it keeps
+  -- both the container's deps and its regions (repair P + fix 12)
   pure { cls := c, deps := v.deps, regs := v.regs, skel := .unknown }
 
 /-- The value of field `i` of a case's constructor, whether it is erased, and
@@ -392,7 +512,11 @@ def caseField (P : Prog) (k : CaseInfo) (fields : Array Field) (mv : AVal) (cons
       else if f.cls == .irr then ({ cls := .irr }, false, false)
       else if mv.cls != .val && P.wrapperField? k.ind == some i then ({ mv with src := none }, false, false)
       else if f.cls != .val then ({ cls := f.cls }, false, false)
-      else if f.fmode == .shared then ({ cls := .val }, false, false)
+      else if f.fmode == .shared then
+        -- as `anProj` (repair P + pre-proof fix 12): keep the container's deps and regions
+        -- (a consuming match already has `mv.deps = []`), read out of a cell unless the
+        -- inductive may be a trivial wrapper
+        ({ cls := .val, deps := mv.deps, regs := mv.regs }, false, (P.ctorsOf k.ind).size != 1)
       else
         -- read out of a cell, unless the inductive may be a trivial wrapper
         let fromCell := (P.ctorsOf k.ind).size != 1
@@ -416,14 +540,18 @@ def anTerm (P : Prog) : Nat → List ABnd → Term → CM AVal
     | .strLit _ => pure { cls := .val, skel := .data }
     | .const r c => anCall P n env r #[] c
     | .app _ _ c => do
-      let (h, args) := termSpine n t
+      let (h, args) := termSpine t
       match h with
       | .const r _ => anCall P n env r args c
       | _ => do
+        -- every argument, then the applications, as `runR`'s `spine` and `applyAll` (finding
+        -- 13: as landed each argument was judged after the applications before it)
         let mut f ← anTerm P n env h
-        for (a, i) in args.zipIdx do
-          let av ← anTerm P n env a
-          f ← applyValue f av (if i + 1 == args.size then c else .val) "an application"
+        let mut avs : Array AVal := #[]
+        for a in args do
+          avs := avs.push (← anTerm P n env a)
+        for (av, i) in avs.zipIdx do
+          f ← applyValue f av (if i + 1 == avs.size then c else .val) "an application"
         pure f
     | .lam p res rc fvs body => anLam P n env p res rc fvs body
     | .letE m d v b => do
@@ -452,6 +580,15 @@ def anCall (P : Prog) : Nat → List ABnd → Ref → Array Term → Cls → CM 
   | 0, _, _, _, _ => declineM "the checker's depth limit"
   | n + 1, env, r, args, c => do
     let d? := P.find? r
+    -- a case definition is entered only as a `Term.case`, which `readTerm` builds at a full
+    -- application; called here it is under-applied (note 12 §2 item 3, B.18): `runR` is stuck at
+    -- it, and a native run would form a partial application whose alternatives, supplied later at
+    -- a variable head, nothing compares with the case rule (as landed: an unknown call). A
+    -- saturated call here comes only from a program built by hand, and is refused the same.
+    if let some (.caseDef k) := d? then
+      refuseM (if args.size < k.arity then
+        s!"an under-applied case definition ({args.size} of {k.arity} arguments)"
+        else "a case definition called other than as a case")
     let mut avs : Array (Option AVal) := #[]
     for (a, i) in args.zipIdx do
       let skip := match d? with
@@ -462,9 +599,20 @@ def anCall (P : Prog) : Nat → List ABnd → Ref → Array Term → Cls → CM 
     | some (.ind _) => pure { cls := .irr }
     | some (.ctor _ _ nP fields) => anCtor nP fields avs c
     | some (.prim p) => do
+      let mut deps : List Nat := []
+      let mut regs : List Nat := []
       for a in avs do
-        if let some a := a then valid a "a primitive's argument"
-      if avs.size < p.arity then pure { cls := .val, skel := .unknown } else pure { cls := c }
+        if let some a := a then
+          if a.cls == .val then
+            flowTo .share .unknown a "a primitive's argument"
+            deps := natUnion deps a.deps
+            regs := natUnion regs a.regs
+          else
+            valid a "a primitive's argument"
+      -- a partial application holds its arguments as they were (`makePap`): numbers, read at
+      -- their nodes' class, and a number is never confined (L1, W5), so `leaf` arguments add no
+      -- region; a `.val` argument (possible under arbitrary `KernelRead`) is shared and tracked
+      if avs.size < p.arity then pure { cls := .val, deps, regs, skel := .unknown } else pure { cls := c }
     | some d =>
       match ifaceOf? d with
       | some ifc =>
@@ -480,7 +628,9 @@ def anCall (P : Prog) : Nat → List ABnd → Ref → Array Term → Cls → CM 
             | none => pure ()
           pure { f with cls := c }
       | none => unknownCall avs c
-    | none => unknownCall avs c
+    -- a constant the program does not define is a refusal: `runR` is stuck there, but the program
+    -- checked may stand for a larger one (finding 6; `Rules.repaired`'s r8, `absent = false`)
+    | none => refuseM "a call of a constant the program does not define"
 
 /-- A closure: its captures read, the unique ones transferred into it; its body
 checked as a call of its own, from a copy of the state; once-only if the body
@@ -521,6 +671,11 @@ def anCase (P : Prog) :
     Nat → List ABnd → CaseInfo → Term → Array Term → Array Term → Cls → CM AVal
   | 0, _, _, _, _, _, _ => declineM "the checker's depth limit"
   | n + 1, env, k, mj, alts, ex, c => do
+    -- one alternative per alternative of the case shape (V5, Gap B: as landed a missing one was
+    -- skipped and an extra one never looked at; `readTerm` builds only matching cases, so this
+    -- refuses only a program built otherwise, on which `runR` is stuck at the missing one)
+    unless alts.size == k.alts.size do
+      refuseM "a case's alternatives do not match its case shape's"
     let (mv, consuming) ← match mj with
       | .var j mc => do
         let some b := env[j]? | refuseM "a variable out of scope"
@@ -547,9 +702,16 @@ def anCase (P : Prog) :
         | .field i => caseField P k fields mv consuming i
         | .irr => (({ cls := .irr } : AVal), false, false)
         | .unit => (({ cls := .imm } : AVal), false, false)
-      let some alt := alts[j]? | continue
+      let some alt := alts[j]? | refuseM "a case's alternative is missing"
       let r ← anAlt P n env alt args
-      results := results.push { r with deps := r.deps.filter (· < pre.st.size) }
+      -- the join drops the binding a result was read from, so a once binding or once-only closure
+      -- cannot leave an alternative (repair R + Bug #7/#10: matches `retCheck` and `anCtor`);
+      -- validate `r` and check `isUniq r` before truncating local deps `≥ pre.st.size` (Bug #11)
+      notOnceSrc r "a case alternative's result"
+      if r.onceOnly then refuseM "onceReentry: a once-only closure leaving a case alternative"
+      valid r "a case alternative's result"
+      let own := if r.own == Own.uniq && (← isUniq r) then Own.uniq else Own.shared
+      results := results.push { r with own, deps := r.deps.filter (· < pre.st.size) }
       let post ← get
       posts := posts.push post
       steps := post.steps
@@ -564,17 +726,25 @@ def anCase (P : Prog) :
           else if a == BSt.shared || b == BSt.shared then BSt.shared else BSt.live)
         if post.spent[i]! then spent := spent.set! i true
     set { pre with st, spent, steps, nextRegion }
-    let some r0 := results[0]? | return { cls := c }
-    let mut r := r0
-    for x in results do
-      unless x.skel.admits r.skel do refuseM "mode skeletons differ between a case's alternatives"
-      r := { r with own := (if r.own == Own.uniq && x.own == Own.uniq then Own.uniq else Own.shared),
-                    deps := natUnion r.deps x.deps, regs := natUnion r.regs x.regs,
-                    onceOnly := r.onceOnly || x.onceOnly }
+    -- the alternatives' results joined; a case with no alternative (on an inductive with no
+    -- constructor, where `runR` is stuck at `select`) has a result holding nothing, and its extra
+    -- arguments are still analysed below (V5, Gap B: as landed it returned before them)
+    let mut r : AVal := { cls := c }
+    if let some r0 := results[0]? then
+      r := r0
+      for x in results do
+        unless x.skel.admits r.skel do refuseM "mode skeletons differ between a case's alternatives"
+        r := { r with own := (if r.own == Own.uniq && x.own == Own.uniq then Own.uniq else Own.shared),
+                      deps := natUnion r.deps x.deps, regs := natUnion r.regs x.regs,
+                      onceOnly := r.onceOnly || x.onceOnly }
     r := { r with cls := c, src := none }
+    -- the extra arguments, then the applications, all but the last at class `val`, as
+    -- `runR`'s `applyAll` (finding 16: as landed each was judged in turn, at the case's class)
+    let mut avs : Array AVal := #[]
     for e in ex do
-      let av ← anTerm P n env e
-      r ← applyValue r av c "an application"
+      avs := avs.push (← anTerm P n env e)
+    for (av, i) in avs.zipIdx do
+      r ← applyValue r av (if i + 1 == avs.size then c else .val) "an application"
     pure r
 
 /-- An alternative applied to its fields, as `applyAlt`: a λ telescope binds
@@ -592,9 +762,19 @@ def anAlt (P : Prog) : Nat → List ABnd → Term → List (AVal × Bool × Bool
         pure (p.mode, ← bindInner p.mode p.cls a s "a case field's binder")
       let id ← newBnd bv (mode.usage == .once)
       let r ← anAlt P n ({ id, mode, val := bv } :: env) body rest
-      retCheck r.skel res s r "a case alternative"
+      retCheck r.skel res s { r with cls := rc } "a case alternative"
       closeReg s
-      pure { r with cls := rc }
+      let inner ← innermost
+      let regs :=
+        if rc == .irr || rc == .imm || rc == .leaf then []
+        else if res.isBorrowed && r.regs.contains s then
+          natUnion (r.regs.filter (· != s)) [inner]
+        else r.regs.filter (· != s)
+      -- when `res.isUnique && rc == .val`, `applyAlt`'s `ret` renewed `r` with fresh capabilities
+      -- (and `retCheck` killed `r.deps`), so clear old `deps`/`src` on the freshly owned result
+      let deps := if res.isUnique && rc == .val then [] else r.deps
+      let src := if res.isUnique && rc == .val then none else r.src
+      pure { r with cls := rc, deps, regs, src }
     | _ => do
       if ((a0, er, fromCell) :: rest).any (·.2.1) then
         refuseM "erasedRead: an erased field passed to an alternative that is not a λ for it"
@@ -605,9 +785,19 @@ def anAlt (P : Prog) : Nat → List ABnd → Term → List (AVal × Bool × Bool
 
 end
 
-/-- **One run body**, from its parameters as `InputsOk` gives them. -/
+/-- **One run body**, from its parameters as `InputsOk` gives them. A body with
+no parameter is a static: `runR` runs it once (`static`), in whatever region its
+first caller has open, with no region and no return rule of its own, and shares
+its value, which a caller's `anCall` takes as unconfined. So its result mode is
+`shared` (note 12 §4, B.15, V6): then the return rule below, at its region with
+no parameter, leaves its value confined to no region. As landed any result mode
+was read: a static with a `@borrowed` result could return a value its run
+confines to its first caller's region. `readBody` gives a body without λs the
+result mode `shared`, so this refuses only programs built otherwise. -/
 def anDef (P : Prog) (fuel : Nat) (params : Array Param) (res : ResultMode) (rc : Cls) (rs : Skel)
     (body : Term) : CM Unit := do
+  unless params.size > 0 || res == .shared do
+    refuseM "a static (a run body with no parameter) whose result mode is not shared"
   let s ← openReg
   let mut env : List ABnd := []
   for p in params do
@@ -624,6 +814,8 @@ structure Limits where
   steps : Nat := 1 <<< 22
   depth : Nat := 1 <<< 12
   oracle : OracleLimits := {}
+  /-- the step limit of the closure's walk (`closureOf`): a walk cut there declines -/
+  walk : Nat := closureFuel
   deriving Inhabited
 
 /-- **The verdict**: accepted (how many run bodies were checked, and whether by
@@ -637,20 +829,6 @@ inductive Verdict where
 def Verdict.isAccept : Verdict → Bool
   | .accept .. => true
   | _ => false
-
-/-- The constants a run term names. -/
-def termRefs : Nat → Term → List Ref
-  | 0, _ => []
-  | n + 1, t =>
-    match t with
-    | .const r _ => [r]
-    | .app f a _ => termRefs n f ++ termRefs n a
-    | .lam _ _ _ _ b => termRefs n b
-    | .letE _ _ v b => termRefs n v ++ termRefs n b
-    | .proj s _ e _ => s :: termRefs n e
-    | .case k mj alts ex _ =>
-      k.ind :: (termRefs n mj ++ alts.toList.flatMap (termRefs n) ++ ex.toList.flatMap (termRefs n))
-    | _ => []
 
 /-- A reading failure as a verdict: the oracle's declines decline, anything
 else (malformed modes, a telescope mismatch, a bad run table) refuses. -/
@@ -670,20 +848,44 @@ def checkBodies (lim : Limits) (P : Prog) (rs : List Ref) : Verdict := Id.run do
     | .error (.decline w) => return .decline s!"{refName r}: {w}"
   return .accept n false
 
-/-- **The fast path's test**: every record of the subject's closure carries only
-default modes, and there is no run table (an error: a record's modes are
-malformed). -/
-def allDefault (s : Subject) : Except String Bool := do
-  for a in closureOf s.store (s.seeds ++ s.runTable.toList ++ s.externs) do
+/-- **The fast path's test**: every record of the subject's closure is well formed
+(`recordWellFormed`: a complete binder-data section, canonical modes; else an
+error, as `check` refuses it) and carries only default modes, and there is no
+run table (an error: a record's modes are malformed). A closure whose walk is
+cut at its step limit is not known to be all default: false, so the caller
+takes the slow path, where `check` declines (V5: as landed the records past the
+cut were not looked at). V4: as landed a record with an incomplete section, or a
+theorem asserting something, passed this test, so a host tool taking the fast
+path accepted a closure `check` refuses and that does not read. -/
+def allDefault (s : Subject) (walk : Nat := closureFuel) : Except String Bool := do
+  let (closure, walked) := closureOf s.store (s.seeds ++ s.runTable ++ s.externs) walk
+  unless walked do return false
+  for a in closure do
     let some c := s.store a | continue
+    recordWellFormed a c
     unless (← recordDefault c) do return false
-  return s.runTable.isNone
+  return s.runTable.isEmpty
+
+/-- Whether a run term names a constant, projection, or `case` inductive whose block is in `bad`. -/
+def termTouchesNonDefault (bad : Array Address) : Term → Bool
+  | .const r _ => bad.contains r.block
+  | .app f a _ => termTouchesNonDefault bad f || termTouchesNonDefault bad a
+  | .lam _ _ _ _ b => termTouchesNonDefault bad b
+  | .letE _ _ v b => termTouchesNonDefault bad v || termTouchesNonDefault bad b
+  | .proj s _ e _ => bad.contains s.block || termTouchesNonDefault bad e
+  | .case k mj alts ex _ =>
+    bad.contains k.ind.block || termTouchesNonDefault bad mj ||
+      alts.attach.any (fun ⟨a, _⟩ => termTouchesNonDefault bad a) ||
+      ex.attach.any (fun ⟨e, _⟩ => termTouchesNonDefault bad e)
+  | _ => false
 
 /-- **The mode checker** (uncertified): the subject's closure, its records' modes,
 the kernel environment `env` its typing installed (for the class oracle). -/
 def check (lim : Limits) (env : Ix.Kernel.Env .anon) (s : Subject) : Verdict := Id.run do
-  let rd := Reading.make s
-  if let .error e := rd.complete then return .refuse "the closure" e
+  let rd := Reading.make s lim.walk
+  -- a closure cut at the walk's limit declines (V5); an incomplete binder-data section refuses
+  if let .error e := rd.complete then
+    return if e.startsWith "decline:" then .decline s!"the closure: {e}" else .refuse "the closure" e
   -- the fast path: every record's modes default, and no run table
   let mut nonDefault : Array Address := #[]
   for a in rd.closure do
@@ -692,8 +894,16 @@ def check (lim : Limits) (env : Ix.Kernel.Env .anon) (s : Subject) : Verdict := 
     | .ok true => pure ()
     | .ok false => nonDefault := nonDefault.push a
     | .error e => return .refuse s!"record {a}" s!"malformed modes: {e}"
-  if nonDefault.isEmpty && s.runTable.isNone then return .accept 0 true
   let cl := oracleClassifier env (ctorShapes rd) lim.oracle
+  -- the whole closure must read as a run program, on both paths, and that program is the one
+  -- checked (finding 6: as landed the fast path read nothing, and the slow path read only the
+  -- constants it checked and the interfaces they name, through a work list cut at `1 <<< 20`
+  -- iterations, a constant left unread being called as `unknownCall`); `readProg` repeats
+  -- `rd.complete`, which held above, so the closure's one completeness check is that refusal
+  let P ← match readProg s cl with
+    | .ok P => pure P
+    | .error e => return readFailure "the reading" e
+  if nonDefault.isEmpty && s.runTable.isEmpty then return .accept 0 true
   let rt ← match rd.runTable cl with
     | .ok rt => pure rt
     | .error e => return readFailure "the run table" e
@@ -712,43 +922,22 @@ def check (lim : Limits) (env : Ix.Kernel.Env .anon) (s : Subject) : Verdict := 
     let some c := s.store a | continue
     if touches a || c.refs.any touches || rt.any (fun (f, _) => f.block == a) then
       for r in refsOf a c do toCheck := toCheck.push r
-  -- their run definitions, then the interfaces they reach
-  let mut defs : Array (Ref × RunDef) := #[]
-  for r in toCheck do
-    match rd.readDef cl rt true r with
-    | .ok d => defs := defs.push (r, d)
-    | .error e => return readFailure (refName r) e
-  let mut todo : List Ref := []
-  for (_, d) in defs do
-    match d with
-    | .body _ _ _ _ t => todo := todo ++ termRefs (1 <<< 20) t
-    | .ind cs => todo := todo ++ cs.toList
-    | .caseDef k => todo := todo ++ [k.ind]
-    | _ => pure ()
-  for _ in [0:1 <<< 20] do
-    match todo with
-    | [] => break
-    | r :: rest =>
-      todo := rest
-      if defs.any (·.1 == r) then continue
-      match rd.readDef cl rt false r with
-      | .ok d =>
-        defs := defs.push (r, d)
-        match d with
-        | .ind cs => todo := todo ++ cs.toList
-        | .caseDef k => todo := todo ++ [k.ind]
-        | .ctor ind .. => todo := todo ++ [ind]
-        | _ => pure ()
-      | .error e => return readFailure (refName r) e
-  let P : Prog := { defs, nat := roleRef? s .nat }
+    else
+      for r in refsOf a c do
+        if let some (.body _ _ _ _ t) := P.find? r then
+          if termTouchesNonDefault nonDefault t then toCheck := toCheck.push r
   checkBodies lim P toCheck.toList
 
-/-- **The checker's soundness**, to prove: whatever it accepts is mode-safe
-(over the environment the subject's typing installs). The fast path rests on
-`DefaultOk`, and on a closure whose modes are all default reading as a run
-program (`Reads`) whenever the kernel reads it. -/
-def CheckSound : Prop :=
-  ∀ lim env s n fp, check lim env s = .accept n fp → ModeSafe env s
+/-- **The checker's soundness**, to prove: whatever it accepts is mode-safe at
+its oracle limits, over an environment the kernel installed from the subject's
+records. `KernelRead env s` is that reading; it is a parameter because the
+kernel's reading lives in the root package, where the consistency statement's
+`IxVM.Consistency.ConsistentRead` (its `env` and its records) instantiates it.
+The program `ModeSafe` speaks of is by definition the one `check` checks: both
+read the whole closure with `oracleClassifier` at `lim.oracle` (`Reads`). The
+fast path rests on `DefaultOk`. -/
+def CheckSound (KernelRead : Ix.Kernel.Env .anon → Subject → Prop) : Prop :=
+  ∀ lim env s n fp, KernelRead env s → check lim env s = .accept n fp → ModeSafe lim.oracle env s
 
 end IxC.Resource
 
