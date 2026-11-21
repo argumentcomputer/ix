@@ -1,0 +1,18 @@
+started 2026-11-21T01:36:46Z on ip-172-31-32-231
+environment ff52b081d173d5def42fd66bd536d8a7b5e18bc0d4679aefbf57eeb3fee033b0 36915 constants
+pins ixvm 6c9353f8392d9d5fae944a8ac0ff7cfb276189e7f6a369364ba9c5ccfac13407 1dec861dd26c8e6f07ff06d3408ad758eb7a2e9472f1ed7db8151b1f83bbf616 aggregation 80d584ab24439dd23ad642a57009210ba3d407f4c20a4755c600d043fcaefa2e 798947179cf837f378820476df87c3149d67b5bf4e229e89c264e2c061620635 
+settings MAX_RAM=200 MEM_CAP=230; environment run AIUR_GPU_TRACE=cpu AIUR_TRACE_SHARD_MAX_CELLS=2100000000
+load 1.36 5.62 8.02; other busy processes: 
+01:36:46 start: stages roots tree wraps; MAX_RAM 200, MEM_CAP 230, AIUR_GPU_TRACE generated, TREE_FLAGS none, tools /home/sam/repos/forks/ix-aiurexec/target/release/examples
+01:37:09 roots done: 22.484 s
+01:41:35 tree done: 265.725 s
+01:41:58 wraps done: 22.675 s
+01:41:58 done
+01:55:50 aggregate root 992ae0c42c11c24ab057033cc091cc44565ea23ccc94c737ad7f1548db18b2ce in 13:51.86
+01:55:52 exported environment root: {"aggr_artifact_blake3":"80d584ab24439dd23ad642a57009210ba3d407f4c20a4755c600d043fcaefa2e","claim_words":[1,0,748538741,754640221,2734060371,175110981,1380024401,249389883,3786917766,4235189850,3987249550,755823351,698843555,3775776444,4240587956,3179517269,1903882616,1639207857],"claims_blake3":"0e
+01:56:14 joined in 0:21.11: root key 798947179cf837f378820476df87c3149d67b5bf4e229e89c264e2c061620635 (aggregate entry 0)
+ok: IxAICombined.Deployed.decision3 (247323c667d72d995be21617de14b43ebc6791550a38011e3c264391a6e4c4b4) is a subject of the environment
+PROVED (under the hypotheses below): environment claim 8e99a8edf7f20c2da381a729bcc60de1b43cc2fc559583bd78f17a71b153b461 (subject root e837df3f9ef6ac3d4d11b2be89ae2d39d8c23bee875d9bb57dac6eb376797f39) holds and contains IxAICombined.train_of_deployed_blocks_enc and IxAICombined.blockRun; the program with key d46caf1e358f9e28744a1163b2d25b2ea4de331870fcc78e1625119edfa1da58 ran 30 chained executions from m0 to the model with BLAKE3 062ecbcd0de0c0c5f95a4814b5cbff087e2893275baa5c338299508004ac0055, which IxAICombined.train_of_deployed_blocks_enc and eq_of_encModel_eq make IxAICore.train IxAICore.Triage.spec IxAIAiur.fullConfig; the environment's IxAICombined.Deployed.trainedOutput is that model.
+hypotheses: STARK acceptance implies memo-checker acceptance (Ix's Audit boundary); the program key compiles the deployed preparation (BlockOnlyParity, checked by #eval); soundness of ix_aggr (including shapes 17/18) and of AiurExec; the claim encoding enc, checked here rather than in Lean.
+01:56:18 check exit 0
+01:59:37 PLONK certificate: 584 bytes in 3:19.37; checks: {"gl_admission_rejects_changed_claim_and_layout":true,"gl_native_rejects_changed_output":true,"narrow_verified_and_rejects_changed_output":true,"plonk_verifying_key_is_prepared":true,"plonk_wrong_statement_refused_by_prover":true,"plonk_wrong_statement_rejected_by_verifier":true,"wrap_key_is_layout_key":true,"wrap_verified":true}

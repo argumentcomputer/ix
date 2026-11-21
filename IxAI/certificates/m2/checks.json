@@ -1,0 +1,10 @@
+{
+  "gl_admission_rejects_changed_claim_and_layout": true,
+  "gl_native_rejects_changed_output": true,
+  "narrow_verified_and_rejects_changed_output": true,
+  "plonk_verifying_key_is_prepared": true,
+  "plonk_wrong_statement_refused_by_prover": true,
+  "plonk_wrong_statement_rejected_by_verifier": true,
+  "wrap_key_is_layout_key": true,
+  "wrap_verified": true
+}

@@ -22,7 +22,12 @@
 # train_run.sh under cert/NAME and cert/NAME/train.
 #
 # Settings: MAX_RAM (default 200) and MEM_CAP (default 230) for a machine the run has to itself;
-# AIUR_GPU_TRACE (default generated); CHECK_FLAGS, further options for aiur_join_check.
+# CHECK_FLAGS, further options for aiur_join_check. For the environment's prover run only:
+# ENV_GPU_TRACE (default cpu) and ENV_SHARD_CELLS (default 2100000000). With these heavy claims
+# the device record of all eligible circuits does not fit beside the trace shards, so the
+# planner populates almost everything on the host whatever the mode; without a device record
+# the card holds larger shards, and fewer shards mean fewer host supplies. The other stages keep
+# their own defaults.
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 ix="$(dirname "$here")"
@@ -38,7 +43,9 @@ for f in "$project/.truthmines/combined/env/$name.ixe" "$project/.truthmines/com
 done
 
 export MAX_RAM="${MAX_RAM:-200}" MEM_CAP="${MEM_CAP:-230}"
-export AIUR_GPU_TRACE="${AIUR_GPU_TRACE:-generated}"
+env_trace="${ENV_GPU_TRACE:-cpu}"
+env_cells="${ENV_SHARD_CELLS:-2100000000}"
+unset AIUR_GPU_TRACE AIUR_TRACE_SHARD_MAX_CELLS
 export STEP_CAP="${STEP_CAP:-7200}"
 export RUN_ROOT="$work/train/run-root"
 
@@ -52,7 +59,7 @@ timeline="$work/timeline.tsv"
   echo "started $(date -u +%FT%TZ) on $(hostname)"
   echo "environment $(python3 -c "import json; d = json.load(open('$project/.truthmines/combined/env/$name.json')); print(d.get('root'), d.get('requested'), 'constants')" 2>/dev/null)"
   echo "pins $(grep -E '^(ixvm|aggregation) ' "${IX_CERT_CHECKOUT:-/home/sam/repos/forks/ix-cert}/tools/formal-aiur.keys" | tr '\n' ' ')"
-  echo "settings MAX_RAM=$MAX_RAM MEM_CAP=$MEM_CAP AIUR_GPU_TRACE=$AIUR_GPU_TRACE"
+  echo "settings MAX_RAM=$MAX_RAM MEM_CAP=$MEM_CAP; environment run AIUR_GPU_TRACE=$env_trace AIUR_TRACE_SHARD_MAX_CELLS=$env_cells"
   echo "load $(cut -d' ' -f1-3 /proc/loadavg); other busy processes: $(ps -eo pcpu,comm --sort=-pcpu | awk 'NR>1 && $1>50 {printf "%s(%s%%) ", $2, $1}')"
 } > "$work/timed.log"
 
@@ -72,7 +79,8 @@ stage() {
 }
 
 stage train    "$here/train_run.sh" "$work/train" roots tree wraps
-stage env      env PROVE_FLAGS="--fresh" "$here/certify.sh" "$name" aggregate
+stage env      env PROVE_FLAGS="--fresh" AIUR_GPU_TRACE="$env_trace" AIUR_TRACE_SHARD_MAX_CELLS="$env_cells" \
+               "$here/certify.sh" "$name" aggregate
 stage export   "$here/certify.sh" "$name" export
 stage join     "$here/certify.sh" "$name" join
 # shellcheck disable=SC2086

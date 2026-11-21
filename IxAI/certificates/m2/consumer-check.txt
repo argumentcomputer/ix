@@ -1,0 +1,64 @@
+commitment 2b8b2eadc928b93cf86f88364a26f5408d8cbed301b94a53b697b0a74f1af791: IxAICore.Triage.spec, config full
+  dataset: 400 examples, root 2733c9728b7adae890c2c1a275ba758404dbb1fe0ff5db0a88d2ab706992a93a (merkleRootV2), recomputed from the spec
+proved: IxAICore.train IxAICore.Triage.spec (config full) is the submitted model (weights 45ea4f5f860b…): the environment that holds IxAICombined.train_of_deployed_blocks_enc and IxAICombined.blockRun is checked by IxVM, and the approved Fixed::train_block program ran the schedule from config.init to the submitted model, in one PLONK certificate
+[combined] verified
+  aiur_join_check accepted the joined root (3584 ms, 31 checks):
+    ok: the certificate's root key is ix_aggr's, recompiled from the pinned artifact
+    ok: one 18-word root claim
+    ok: the root claim is a call of MultiStark::ix_aggr
+    ok: the root claim names IxVM's and ix_aggr's keys and entries
+    ok: ix-claim.bin is the claim's preimage
+    ok: the root claim is an AiurRun claim
+    ok: the environment claim is the CheckEnv of the environment (31140 constants, 3 shards)
+    ok: the subject root is the environment's
+    ok: the theorem is IxAICombined.train_of_deployed_blocks_enc (9d6219cede15f621b4cabafca115e3218ee6d7457002ebf2efab33cf08633f1d), a subject of the environment
+    ok: the binding is IxAICombined.blockRun (7bfaffec279a52a53cad5cefdc4c882bd1e3d2a4438b6c57cb500c918b9a838f), a subject of the environment
+    ok: the environment has no user axiom other than the theorem (0 user axiom(s))
+    ok: the Aiur child's key is the run aggregator's, recompiled
+    ok: root-claims.bin is the Aiur child's claim list
+    ok: the Aiur child exposes one 18-word claim
+    ok: the Aiur child's claim is a call of AiurExec::aiur_exec
+    ok: allowed.bin is its identity
+    ok: out.bin is its output claim
+    ok: the program's claim is model, 20 batches and the rate, model
+    ok: the run's identity names the program's and the run aggregator's keys and entries, recompiled
+    ok: the binding's constant names the program key, as a string literal
+    ok: the binding's constant references the theorem
+    ok: the theorem's statement references IxAICore.train (cb947a29928fc9eb9ae01f3e010a3e270d88f18320938f3f027f570b0a62876d)
+    ok: the theorem's statement references IxAICore.Triage.spec (789a15b23f5a93b826956b2ab4ead81b526262c4e2a0c9a26560091482d60043)
+    ok: the theorem's statement references IxAIAiur.fullConfig (32eb615a338056410b0e744f837af096fa32791ef4669d3df70f63f9edb57cce)
+    ok: specification arguments have the full config's length
+    ok: modelOkB of m0 and of the final model
+    ok: BatchOk of every batch, |lr| <= 2^8
+    ok: the chain has 30 executions
+    ok: the chain starts at m0
+    ok: the chain ends at the expected model
+    ok: execution i used its batches and lr, for every i
+    PROVED (under the hypotheses below): environment claim 8e99a8edf7f20c2da381a729bcc60de1b43cc2fc559583bd78f17a71b153b461 (subject root e837df3f9ef6ac3d4d11b2be89ae2d39d8c23bee875d9bb57dac6eb376797f39) holds and contains IxAICombined.train_of_deployed_blocks_enc and IxAICombined.blockRun; the program with key d46caf1e358f9e28744a1163b2d25b2ea4de331870fcc78e1625119edfa1da58 ran 30 chained executions from m0 to the model with BLAKE3 062ecbcd0de0c0c5f95a4814b5cbff087e2893275baa5c338299508004ac0055, which IxAICombined.train_of_deployed_blocks_enc and eq_of_encModel_eq make IxAICore.train IxAICore.Triage.spec IxAIAiur.fullConfig.
+  the theorem references the job's IxAICore.train (cb947a29928f…) and IxAICore.Triage.spec (789a15b23f5a…), and IxAIAiur.fullConfig is the consumer's IxAITemplate.full.config (32eb615a3380…)
+  the run's output claim is the one computed here: 30 executions of 20 steps from config.init to the submitted model over the schedule's batches and rate (BLAKE3 025949281a84…)
+  statement 4f473d40857c… computed from the joined root's key 798947179cf8… (ix_aggr's, recompiled from the pinned artifact) and its AiurRun claim, through the job's wrapper key 1bc0cd05e3d1…
+  PLONK certificate verified against the pinned key 736588d00f08… and statement 4f473d40857c2df8d64ca21851d48553907dbddb9105f45c21dd9ce81d4bde46 (25 ms for the verifier process): ACCEPT: PLONK proof 82cf6fbebeb5d9f30271ea3595591b816fed4fc7a2e708a3e9c38b45a4d87ac5 (584 bytes) verifies statement 4f473d40857c2df8d64ca21851d48553907dbddb9105f45c21dd9ce81d4bde46 under key 736588d00f08bb56626b83f8fea79af0bb516a6e6f99e6bde301afdf7c4a3b3e (0.019 s)
+  public inputs 111020805428274136418980631959073277775, 94200173157865988590593042050564586896: the statement's halves, computed here
+hypotheses:
+  - the job commitment is the consumer's own (its BLAKE3 was received independently of the trainer)
+  - the run aggregator (BLAKE3 001431282dc3…) and the `Fixed::train_block` program (BLAKE3 5a8070af53a9…) are the compilation of the programs the consumer approved; their digests are given on the command line, not named by the job
+  - the IxVM artifact (6c9353f8392d…) and the `ix_aggr` artifact with the join shapes (80d584ab2443…) are the circuits the consumer approved: given by BLAKE3 on the command line, recompiled to keys by `aiur_join_check`
+  - `aiur_join_check` (BLAKE3 426ad3e142456a1b15f3d9dc2e3e16cb18ff8f8bfd7f4d3b6279a8c505a36467, /home/sam/repos/ix-ai-pipeline/ix/toolchain-cert/bin/aiur_join_check) recompiles those keys, rebuilds the environment's CheckEnv claim from the environment and its partition, and reads the joined claim, the run's claims and the environment's records as Ix and the circuits do; it does not verify the root's proof, which the certificate binds
+  - `IxAICombined.train_of_deployed_blocks_enc` states the refinement its name says: its statement is checked to reference `IxAICore.train` and `IxAICore.Triage.spec` at the job's addresses and `IxAIAiur.fullConfig` at the address of the consumer's compiled config, and `IxAICombined.blockRun` to name the program key and the theorem; the statement itself is not compared with an expected term
+  - IxVM soundness for the CheckEnv claim: the pinned IxVM kernel differs from the one Ix PR 678 proves in `try_nat_dispatch_prewhnf`
+  - aiur_join_check: STARK acceptance implies memo-checker acceptance (Ix's Audit boundary)
+  - aiur_join_check: the program key compiles the deployed preparation (BlockOnlyParity, checked by #eval)
+  - aiur_join_check: soundness of ix_aggr (including shapes 17/18) and of AiurExec
+  - aiur_join_check: the claim encoding enc, checked here rather than in Lean
+  - `aiur_plonk_verify` (BLAKE3 1e2a081e6ee2c3449a1acad4758accbbf7db18281010e29ee3869e9aa37e7e61, /home/sam/repos/forks/ix-aiurexec/target/release/examples/aiur_plonk_verify) runs Ix's gnark PLONK verifier (`tools/gnark` `verifyAiurProof`, BN254, Solidity-target transcript) as the compression pipeline does at proving time
+  - PLONK knowledge soundness (gnark, BN254 KZG) for the pinned verifying key 736588d00f08…, which fixes the terminal circuit: the Lean-exported constraint system of `CompressFinalNarrow::verify_accumulator_v1` with its in-circuit pairing check, and the narrow stage's key and policy it embeds
+  - the KZG setup is the Aztec Ignition ceremony (MAIN IGNITION, final contributions 196 and 197, Ix's release SRS): the key's [1]G1, [1]G2 and [τ]G2 are checked equal to the parameters bundled in the verifier (Ix's release recursive key), so a development SRS with a known trapdoor is refused; soundness of the PLONK and of the narrow stage's KZG needs τ to be unknown, i.e. at least one Ignition contributor to have destroyed its secret
+  - each recursion layer between the root and the PLONK is sound and verifies what its predecessor claims: the terminal folds and checks the narrow stage's deferred pairing; the narrow stage (`CompressNarrowFixed::step_v1`, packed-SHPLONK KZG over BN254) verifies the CompressGL proof against the statement; CompressGL (`CompressGL::verify_root`, a Goldilocks FRI verifier over BN254) verifies the wrapper's proof under the key and claims the statement digests; the wrapper (`CompressWrap::verify_root`, a Goldilocks FRI STARK) verifies the root STARK under the root key and claim. These verifier programs are Aiur written in Lean, not proved to implement their verifiers; the Rust lowering of circuits, key writers, statements and policies are trusted (Ix docs/aiur-compression-architecture.md §3)
+  - STARK soundness (multi-stark, Goldilocks FRI, BLAKE3 transcripts) of the root, the wrapper and CompressGL at Ix's parameters; packed-SHPLONK soundness (Ix docs/aiur-packed-kzg-soundness.md)
+  - the statement format is Ix's (`compress_wrap::Statement`, `WrapPolicy::statement_for`, wrapper claim prefix [1, 0]): recomputed here, but its meaning is taken from Ix's source; the wrapper key 1bc0cd05e3d1… is the job's pin (the pipeline's `m16384w64-v3` layout), not recompiled here
+  - BLAKE3 is collision resistant: every key, claim and model enters the statement through a BLAKE3 digest
+  - the claim encoding (`IxAIVerify.stepClaimEncoding`) is read the same way by the circuit: checker code, not a Lean definition the claim names
+  - native evaluation of the specification here (examples, schedule, `config.init`; compiled Lean) agrees with kernel evaluation (`#eval` parity of the compiler)
+OUTCOME: PROVED
+combined exit 0

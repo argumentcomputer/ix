@@ -1,0 +1,39 @@
+ok: the certificate's root key is ix_aggr's, recompiled from the pinned artifact
+ok: one 18-word root claim
+ok: the root claim is a call of MultiStark::ix_aggr
+ok: the root claim names IxVM's and ix_aggr's keys and entries
+ok: ix-claim.bin is the claim's preimage
+ok: the root claim is an AiurRun claim
+ok: the environment claim is the CheckEnv of the environment (31140 constants, 3 shards)
+ok: the subject root is the environment's
+ok: the theorem is IxAICombined.train_of_deployed_blocks_enc (9d6219cede15f621b4cabafca115e3218ee6d7457002ebf2efab33cf08633f1d), a subject of the environment
+ok: the binding is IxAICombined.blockRun (7bfaffec279a52a53cad5cefdc4c882bd1e3d2a4438b6c57cb500c918b9a838f), a subject of the environment
+ok: the environment has no user axiom other than the theorem (0 user axiom(s))
+ok: the Aiur child's key is the run aggregator's, recompiled
+ok: root-claims.bin is the Aiur child's claim list
+ok: the Aiur child exposes one 18-word claim
+ok: the Aiur child's claim is a call of AiurExec::aiur_exec
+ok: allowed.bin is its identity
+ok: out.bin is its output claim
+ok: the program's claim is model, 20 batches and the rate, model
+ok: the run's identity names the program's and the run aggregator's keys and entries, recompiled
+ok: the binding's constant names the program key, as a string literal
+ok: the binding's constant references the theorem
+ok: the theorem's statement references IxAICore.train (cb947a29928fc9eb9ae01f3e010a3e270d88f18320938f3f027f570b0a62876d)
+ok: the theorem's statement references IxAICore.Triage.spec (789a15b23f5a93b826956b2ab4ead81b526262c4e2a0c9a26560091482d60043)
+ok: the theorem's statement references IxAIAiur.fullConfig (32eb615a338056410b0e744f837af096fa32791ef4669d3df70f63f9edb57cce)
+ok: specification arguments have the full config's length
+ok: modelOkB of m0 and of the final model
+ok: BatchOk of every batch, |lr| <= 2^8
+ok: the chain has 30 executions
+ok: the chain starts at m0
+ok: the chain ends at the expected model
+ok: execution i used its batches and lr, for every i
+ok: IxAICombined.Deployed.trainedOutput (a2523a1d7cefc0881b5966b2dd97a7c6ac8f5a99c97c23fc9e6b0f2f63cae9a4) is the expected model: 331 words, a subject of the environment
+ok: IxAICombined.Deployed.cardCertified (2ba03dbd58e3c70daae183198ce92dbca18d79d070c841d55dba85320bd4d0f9) is a subject of the environment
+ok: IxAICombined.Deployed.decision0 (e0643e9aec3c61618625d70a73ce43bcfb10d6dd3ec0c1dcbde46f2ba87969eb) is a subject of the environment
+ok: IxAICombined.Deployed.decision1 (6e71446bce342db406a916314fa400ff1a7ce5ccc6aa7afa8d5dc093fd0d5e4f) is a subject of the environment
+ok: IxAICombined.Deployed.decision2 (7c9a007d1f084ed359096e4ea41f61eb9fa6a145009f52eefa7e0e2de739019a) is a subject of the environment
+ok: IxAICombined.Deployed.decision3 (247323c667d72d995be21617de14b43ebc6791550a38011e3c264391a6e4c4b4) is a subject of the environment
+PROVED (under the hypotheses below): environment claim 8e99a8edf7f20c2da381a729bcc60de1b43cc2fc559583bd78f17a71b153b461 (subject root e837df3f9ef6ac3d4d11b2be89ae2d39d8c23bee875d9bb57dac6eb376797f39) holds and contains IxAICombined.train_of_deployed_blocks_enc and IxAICombined.blockRun; the program with key d46caf1e358f9e28744a1163b2d25b2ea4de331870fcc78e1625119edfa1da58 ran 30 chained executions from m0 to the model with BLAKE3 062ecbcd0de0c0c5f95a4814b5cbff087e2893275baa5c338299508004ac0055, which IxAICombined.train_of_deployed_blocks_enc and eq_of_encModel_eq make IxAICore.train IxAICore.Triage.spec IxAIAiur.fullConfig; the environment's IxAICombined.Deployed.trainedOutput is that model.
+hypotheses: STARK acceptance implies memo-checker acceptance (Ix's Audit boundary); the program key compiles the deployed preparation (BlockOnlyParity, checked by #eval); soundness of ix_aggr (including shapes 17/18) and of AiurExec; the claim encoding enc, checked here rather than in Lean.
