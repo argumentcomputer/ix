@@ -122,6 +122,7 @@ def host : IO String := rustHost "ixvm" "ixvm-proof" "IX_AIUR_HOST"
 structure Resident where
   directory : System.FilePath
   running : IO Bool
+  mode : String := "prove"
 
 structure HostOptions where
   rows : Nat := 0
@@ -177,8 +178,8 @@ def resources : IO Json := do
   unless result.exitCode == 0 do throw (IO.userError result.stderr)
   IO.ofExcept (Json.parse result.stdout)
 
-def jobCount (p : Cli.Parsed) : IO Nat := do
-  let n := ((p.flag? "jobs").map (·.as! Nat)).getD 1
+def jobCount (p : Cli.Parsed) (defaultJobs : Nat := 1) : IO Nat := do
+  let n := ((p.flag? "jobs").map (·.as! Nat)).getD defaultJobs
   if n != 0 then return n
   return max 1 ((← resources).getObjValAs? Nat "cores" |>.toOption.getD 1)
 
@@ -217,14 +218,25 @@ def executionJobs (p : Cli.Parsed) (jobs : Nat) : IO Nat := do
 /-- One process retains checked programs and one backend per device. It owns
 the shared execution pool; Lean only schedules dependency-ready requests. -/
 def withController {α : Type} (p : Cli.Parsed) (artifacts : Array (String × String))
-    (options : HostOptions) (jobs : Nat) (f : HostOptions → IO α) : IO α := do
+    (options : HostOptions) (jobs : Nat) (f : HostOptions → IO α)
+    (mode : String := "prove") : IO α := do
   if options.resident.isSome then return ← f options
-  let lanes := ((p.flag? "lanes").map (·.as! Nat)).getD (if options.device.isSome then 1 else jobs)
+  let lanes := if mode != "prove" then 1 else
+    ((p.flag? "lanes").map (·.as! Nat)).getD (if options.device.isSome then 1 else jobs)
   if lanes == 0 then throw (IO.userError "--lanes must be positive")
   let executors ← executionJobs p jobs
   let shared := (← IO.getEnv "IX_PROVER_SHARED_DEVICES") == some "1"
   let devices := (Array.range lanes).map fun i => options.device.map (· + if shared then 0 else i)
-  let ram := if p.hasFlag "lanes" && p.hasFlag "max-ram" then options.ram * lanes else options.ram
+  let ram ← if mode != "prove" && !p.hasFlag "max-ram" then
+      match (p.flag? "exec-ram").map (·.as! Nat) with
+      | some n =>
+        if n == 0 then throw (IO.userError "--exec-ram must be positive")
+        pure (n * 1024^3)
+      | none =>
+        -- A destination proof's budget is independent of this checker's
+        -- execution capacity, as in the legacy RAM-gated batch.
+        pure (((← resources).getObjValAs? Nat "available_bytes" |>.toOption.getD (8 * 1024^3)) * 85 / 100)
+    else pure (if p.hasFlag "lanes" && p.hasFlag "max-ram" then options.ram * lanes else options.ram)
   let binary ← rustHost "ix-prover" "ix-prover" "IX_PROVER_HOST" options.device
   let recordLimit ← match ← IO.getEnv "AIUR_RECORD_MAX_BYTES" with
     | none => pure Json.null
@@ -237,6 +249,7 @@ def withController {α : Type} (p : Cli.Parsed) (artifacts : Array (String × St
       let digest := Address.blake3 (← IO.FS.readBinFile path)
       pure (Json.mkObj [("path", toJson path), ("kind", toJson kind), ("digest", toJson (toString digest))])
     let config := Json.mkObj [
+      ("mode", toJson mode),
       ("artifacts", toJson entries),
       ("devices", toJson devices), ("exec_jobs", toJson executors),
       ("threads_per_prover", toJson (max 1 (options.threads / lanes))),
@@ -258,7 +271,11 @@ def withController {α : Type} (p : Cli.Parsed) (artifacts : Array (String × St
           let error ← if ← (dir / "failed.json").pathExists then IO.FS.readFile (dir / "failed.json") else pure ""
           throw (IO.userError s!"resident prover exited {code}: {error}")
         IO.sleep 10
-      f { options with resident := some { directory := dir, running := do return !(← IO.hasFinished exited) } }
+      let resident : Resident := {
+        directory := dir
+        mode := mode
+        running := do return !(← IO.hasFinished exited) }
+      f { options with resident := some resident }
     finally
       IO.FS.writeFile (dir / "stop") ""
       let _ ← IO.wait exited
@@ -292,7 +309,7 @@ def runHost (binary artifactPath mode : String) (input : ByteArray) (output : St
     oh.putStr options.json.compress
     oh.flush
     if let some resident := options.resident then
-      if mode != "prove" then throw (IO.userError "resident session requires prove mode")
+      if mode != resident.mode then throw (IO.userError "resident session mode mismatch")
       return ← residentRequest resident artifactPath path.toString output options
     (← IO.getStdout).flush
     let child ← IO.Process.spawn {
@@ -541,6 +558,8 @@ private def runDistributed (p : Cli.Parsed) (artifactPath : String) (options : H
 
 private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options : HostOptions)
     (mode ixe manifest : String) (jobs : Nat) : IO UInt32 := do
+  -- Match the legacy RSS window, including environment loading and the host.
+  if p.hasFlag "json" then TracingTexray.startSampler
   let env ← IO.ofExcept (withDefaultRoleBinding (← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))))
   let assumeBinding := p.hasFlag "assume-binding"
   let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest))
@@ -562,35 +581,56 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
   let inputs ← IO.ofExcept (ShardWitnessInputs.ofEnv env assumeBinding)
   -- `--json` writes one benchmark results row (`Ix.Benchmark.Results`) for
   -- `ix bench run --backend aiur-sharded-env`; its peak covers the hosts.
-  if p.hasFlag "json" then TracingTexray.startSampler
+  -- The legacy batch built its backend inside the timer too. Include shared
+  -- controller startup once, and report it separately for attribution.
+  let start ← IO.monoMsNow
   let drive (options : HostOptions) : IO UInt32 := do
-    let start ← IO.monoMsNow
-    let capacity ← if options.resident.isSome then pure (jobs + (← executionJobs p jobs)) else pure jobs
-    let results ← boundedMap capacity selected fun members k => do
-      let options := options.forWave jobs members
-      let mut pending := #[(view.shards[k]!, owners[k]!)]
-      let mut settled : Array PartResult := #[]
-      while !pending.isEmpty do
-        let (blocks, owned) := pending.back!
-        pending := pending.pop
-        if owned.isEmpty then
-          settled := settled.push { blocks, result := {} }
-          continue
+    let setupMs := (← IO.monoMsNow) - start
+    let capacity ← if mode == "prove" && options.resident.isSome then
+        pure (jobs + (← executionJobs p jobs)) else pure jobs
+    -- Retain each part's source offset: a later sibling can finish a wave
+    -- before an earlier sibling's children, but manifest order must not change.
+    let mut wave := selected.map fun k => (k, 0, view.shards[k]!, owners[k]!)
+    let mut settled : Array (Array (Nat × PartResult)) := Array.replicate view.shards.size #[]
+    let mut elapsedMs := 0
+    let mut waves := 0
+    let mut executionSeconds := 0.0
+    let mut planningSeconds := 0.0
+    let mut stopped : Std.HashSet Nat := {}
+    while !wave.isEmpty do
+      let completed ← boundedMap capacity wave fun members (k, offset, blocks, owned) => do
+        let options := options.forWave jobs members
+        if owned.isEmpty then return (k, offset, blocks, owned, { : JobResult })
         let (claim, ixiBytes) ← IO.ofExcept (buildOwnedShardInvocation env graph inputs owned)
         let result ← one p artifactPath binary options mode claim (.rawIxi ixiBytes) s!"shard {k} ({blocks.size} blocks)"
+        return (k, offset, blocks, owned, result)
+      -- Match the legacy benchmark: time the initial batch, then account for
+      -- all split/re-execution waves separately in check-total-time.
+      if waves == 0 then elapsedMs := (← IO.monoMsNow) - start
+      wave := #[]
+      for (k, offset, blocks, owned, result) in completed do
+        executionSeconds := executionSeconds +
+          (result.report.getObjValAs? Float "execution_seconds").toOption.getD 0
+        planningSeconds := planningSeconds +
+          (result.report.getObjValAs? Float "planning_seconds").toOption.getD 0
         let canSplit := (result.report.getObjValAs? Bool "can_split").toOption.getD true
         if result.code == 75 && canSplit && blocks.size > 1 && !p.hasFlag "trace-shards" then
           let parts := (result.report.getObjVal? "plan" >>= fun j => j.getObjValAs? Nat "suggested_parts").toOption.getD 2
           let cut := Ix.Shard.Check.cutOwned env blocks owned parts
           IO.println s!"[aiur] shard {k}: splitting into {cut.size} parts after resource planning"
-          pending := pending ++ cut.reverse
+          let mut offset := offset
+          for (b, o) in cut do
+            wave := wave.push (k, offset, b, o)
+            offset := offset + b.size
         else
           if result.code == 75 then
-            IO.eprintln s!"shard {k}: cannot fit budget; {if canSplit then "increase --max-ram or refine the environment" else "increase the RAM share (fewer --jobs or a larger budget)"}"
-          settled := settled.push { blocks, result, constants := owned.size }
-          if result.code != 0 && !p.hasFlag "keep-going" then pending := #[]
-      return (k, settled)
-    let elapsedMs := (← IO.monoMsNow) - start
+            IO.eprintln s!"shard {k}: cannot fit budget; {if canSplit then "increase the RAM budget or refine the environment" else "increase the RAM budget"}"
+          settled := settled.modify k (·.push (offset, { blocks, result, constants := owned.size }))
+          if result.code != 0 && !p.hasFlag "keep-going" then stopped := stopped.insert k
+      wave := wave.filter fun (k, _, _, _) => !stopped.contains k
+      waves := waves + 1
+    let totalMs := (← IO.monoMsNow) - start
+    let results := selected.map fun k => (k, (settled[k]!.qsort (·.1 < ·.1)).map (·.2))
     let failures := results.foldl (fun n (_, parts) => n + parts.countP (·.result.code != 0)) 0
     let (refinements, measured) := Ix.Shard.Check.refinementsOfRuns view.shards.size
       (results.map fun (k, parts) => (k, parts.map fun r => (r.blocks, r.result.peak)))
@@ -605,7 +645,13 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
     let name := ((p.flag? "json-name").map (·.as! String)).getD "env"
     let report := Json.mkObj [("schema", toJson "ix-formal-run/1"), ("failures", toJson failures),
       ("name", toJson name),
-      ("jobs", toJson jobs), ("options", options.json), ("leaves", toJson leafReports)]
+      ("jobs", toJson jobs), ("options", options.json), ("leaves", toJson leafReports),
+      ("engine", toJson "formal-bytecode"), ("split_waves", toJson (waves - 1)),
+      ("check_seconds", toJson (elapsedMs.toFloat / 1000.0)),
+      ("total_seconds", toJson (totalMs.toFloat / 1000.0)),
+      ("execution_work_seconds", toJson executionSeconds),
+      ("planning_work_seconds", toJson planningSeconds),
+      ("setup_seconds", toJson (setupMs.toFloat / 1000.0))]
     if let some flag := p.flag? "report" then IO.FS.writeFile (flag.as! String) report.pretty
     if let some flag := p.flag? "json" then
       let constants := results.foldl (fun n (_, parts) => parts.foldl (· + ·.constants) n) 0
@@ -618,15 +664,19 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
       let throughput := if elapsedMs > 0 then constants.toFloat * 1000.0 / elapsedMs.toFloat else 0.0
       Ix.Benchmark.Results.writeRow (flag.as! String) name
         (if failures == 0 then "ok" else "rejected")
-        (fftFields ++ [("constants", toJson constants), ("shards", toJson leaves),
+        (fftFields ++ [("engine", toJson "formal-bytecode"),
+         ("constants", toJson constants), ("shards", toJson leaves),
          ("check-time", Ix.Benchmark.Results.jsonRound 3 secs),
+         ("check-total-time", Ix.Benchmark.Results.jsonRound 3 (totalMs.toFloat / 1000.0)),
+         ("setup-time", Ix.Benchmark.Results.jsonRound 3 (setupMs.toFloat / 1000.0)),
+         ("execution-work-time", Ix.Benchmark.Results.jsonRound 3 executionSeconds),
+         ("planning-work-time", Ix.Benchmark.Results.jsonRound 3 planningSeconds),
          ("throughput", Ix.Benchmark.Results.jsonRound 2 throughput),
          ("peak-rss", toJson (← TracingTexray.peakTreeRssBytes))])
       if failures != 0 then return Ix.Benchmark.Results.exitRejected
     if failures != 0 then IO.eprintln s!"[aiur] {failures} shard part(s) failed"
     return if failures == 0 then 0 else 1
-  if mode == "prove" then withController p #[(artifactPath, "ixvm")] options jobs drive
-  else drive options
+  withController p #[(artifactPath, "ixvm")] options jobs drive mode
 
 def run (p : Cli.Parsed) (prove : Bool) : IO UInt32 := do
   rejectFlags p #["lanes"]
@@ -643,19 +693,26 @@ def run (p : Cli.Parsed) (prove : Bool) : IO UInt32 := do
   -- Reject manifest-only flags before any artifact export or host build.
   if manifest.isSome && ixe.isNone then throw (IO.userError "--ixes requires --ixe")
   if manifest.isNone then
-    for flag in #["shard", "shards", "out-ixes", "report", "plan-only", "distributed", "exec-jobs",
+    for flag in #["shard", "shards", "out-ixes", "report", "plan-only", "distributed", "exec-jobs", "exec-ram",
         "trace-shards", "json", "json-name"] do
       if p.hasFlag flag then throw (IO.userError s!"--{flag} requires --ixe and --ixes")
-  let requestedJobs ← jobCount p
+  let requestedJobs ← jobCount p (if !prove && manifest.isSome then 0 else 1)
   let jobs ← if p.hasFlag "exec-only" && p.hasFlag "exec-jobs" && !p.hasFlag "distributed" then
       executionJobs p requestedJobs
     else pure requestedJobs
-  let options ← hostOptions p (if prove && !p.hasFlag "exec-only" then 1 else jobs)
+  -- The resident checker admits records against a shared pool. Its destination
+  -- proof budget belongs to each leaf and does not shrink with --jobs.
+  let options ← hostOptions p (if manifest.isSome || prove && !p.hasFlag "exec-only" then 1 else jobs)
   let artifactPath ← if p.hasFlag "plan-only" then pure "" else artifact p
   let mode := if prove && !p.hasFlag "exec-only" then "prove"
     else if prove || p.hasFlag "ram-budget" then "plan" else "execute"
   let binary ← if p.hasFlag "plan-only" then pure ""
     else rustHost "ixvm" "ixvm-proof" "IX_AIUR_HOST" options.device
+  -- Refresh the resident host before the measured manifest/RSS window so
+  -- cached executables use this checkout's protocol and compilation is not timed.
+  if manifest.isSome && !p.hasFlag "plan-only" then
+    let _ ← rustHost "ix-prover" "ix-prover" "IX_PROVER_HOST" options.device (refresh := true)
+    pure ()
   match ixe, manifest with
   | some ixe, some manifest =>
     if p.hasFlag "distributed" then runDistributed p artifactPath options ixe manifest

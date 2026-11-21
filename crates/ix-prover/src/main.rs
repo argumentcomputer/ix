@@ -16,7 +16,7 @@ use aiur::{
   },
 };
 use multi_stark::types::Val;
-use protocol::{Config, Job, Kind, atomic_json, read_json};
+use protocol::{Config, Job, Kind, Mode, atomic_json, read_json};
 use record_pool::{
   BudgetError, RecordPool, RecordReservation, queue::WorkQueue,
 };
@@ -162,6 +162,61 @@ fn prepare(
       Err(Box::new((job, 1, fail(error), false)))
     },
   }
+}
+
+/// Check against the destination prover's whole budget, independently of how
+/// many checks happen to be running. Process RSS includes other records and
+/// must not be used as this claim's residency. The shared pool accounts for
+/// execution admission separately.
+fn check(
+  backend: &Prover<'_, '_>,
+  kind: Kind,
+  prepared: Prepared,
+  mode: Mode,
+  static_bytes: u64,
+  budget: u64,
+) -> (Job, u32, Value) {
+  let Prepared { job, record, mut report, .. } = prepared;
+  let start = Instant::now();
+  let result = (|| -> Result<u32, String> {
+    report["execution_statistics"] =
+      serde_json::to_value(backend.execution_statistics(&record))
+        .map_err(|e| e.to_string())?;
+    if mode == Mode::Execute {
+      return Ok(0);
+    }
+    let mut options = job.options.clone();
+    options.max_ram_bytes = Some(options.max_ram_bytes.unwrap_or(budget));
+    let fixed = backend.plan_fixed(&options, static_bytes)?;
+    let fits = if fixed.fits {
+      let resident = static_bytes
+        .saturating_add(report["record_bytes"].as_u64().unwrap_or(0));
+      let batch = backend.plan_record(&record, &options, resident)?;
+      let fits = batch.fits;
+      report["plan"] =
+        serde_json::to_value(batch).map_err(|e| e.to_string())?;
+      fits
+    } else {
+      report["plan"] =
+        serde_json::to_value(fixed).map_err(|e| e.to_string())?;
+      report["can_split"] = false.into();
+      false
+    };
+    Ok(if fits { 0 } else { 75 })
+  })();
+  report["planning_seconds"] = start.elapsed().as_secs_f64().into();
+  let mut code = match result {
+    Ok(code) => code,
+    Err(error) => {
+      report["error"] = error.into();
+      1
+    },
+  };
+  if let Err(error) = output::report(&job, kind, &report) {
+    report["error"] = error.into();
+    code = 1;
+  }
+  (job, code, report)
 }
 enum PrepFailure {
   Resource(BudgetError),
@@ -360,6 +415,7 @@ impl Drop for Shutdown<'_> {
 }
 
 fn serve(config: &Config, dir: &Path) -> Result<(), String> {
+  let setup = Instant::now();
   tracing(config.texray)?;
   if config.artifacts.is_empty()
     || config.devices.is_empty()
@@ -369,6 +425,12 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
     || config.record_limit_bytes == Some(0)
   {
     return Err("artifacts, lanes, execution threads, prover threads and RAM must be positive".into());
+  }
+  let checking = config.mode != Mode::Prove;
+  if checking && config.devices.len() != 1 {
+    return Err(
+      "checking shares one backend; configure exactly one lane".into(),
+    );
   }
   let mut seen_devices = HashSet::new();
   if config.devices.iter().any(Option::is_some)
@@ -412,7 +474,10 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
     let package = aiur::artifact::Package::decode(&bytes).map_err(|e| {
       format!("invalid artifact {}: {e}", artifact.path.display())
     })?;
-    let (program, trace) = package.traced()?;
+    let (mut program, trace) = package.traced()?;
+    if std::env::var_os("IX_AIUR_CIRCUIT_VERDICT").is_some_and(|v| v == "1") {
+      program.enforce_deferred_assertions();
+    }
     let mut program = program.check_field::<Val>()?;
     program.track_depth(&trace)?;
     programs.push(program);
@@ -445,11 +510,16 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
     .checked_sub(static_bytes.saturating_mul(5) / 4)
     .ok_or("RAM budget cannot hold resident artifacts and prover systems")?;
   let records_bytes =
-    usize::try_from(remaining / 2).ok().ok_or("record pool overflow")?;
+    usize::try_from(if checking { remaining } else { remaining / 2 })
+      .ok()
+      .ok_or("record pool overflow")?;
   if records_bytes == 0 {
     return Err("no record capacity remains".into());
   }
-  let workspace = Workspace::new(remaining / 2, config.devices.len());
+  let workspace = Workspace::new(
+    if checking { 0 } else { remaining / 2 },
+    config.devices.len(),
+  );
   // CPU lanes borrowing the whole workspace also borrow the waiting lanes'
   // threads. CUDA lanes keep their own: the device does the heavy work.
   let wide = (config.devices.len() > 1
@@ -479,11 +549,15 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
   let prep_queue = WorkQueue::<Prep>::new(config.exec_jobs);
   let records = WorkQueue::<Prepared>::new(capacity);
   let (send, receive) = mpsc::channel();
+  // Check workers share one immutable backend and discard records immediately
+  // after planning. Proving retains its separate execution/prover queues.
+  let check_backends = if checking { lanes.pop() } else { None };
   std::thread::scope(|scope| -> Result<(), String> {
     // Drop before scoped joins even if a later worker setup fails.
     let _shutdown =
       Shutdown { pool: &pool, prep: &prep_queue, records: &records };
     for executor in 0..config.exec_jobs {
+      let check_backends = check_backends.as_ref();
       let (programs, kinds, log, send, prep_queue, records) = (
         &programs,
         &config.artifacts,
@@ -499,6 +573,12 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
           match prepare(&programs[id], kinds[id].kind, task) {
             Ok(prepared) => {
               log.event(json!({"phase":"prepared", "id":prepared.job.id, "record_bytes":prepared.report["record_bytes"]}));
+              if let Some(backends) = check_backends {
+                let (job, code, report) = check(&backends[id], kinds[id].kind,
+                  prepared, config.mode, static_bytes, config.max_ram_bytes);
+                let _ = send.send(Event::Done(job, code, report, true));
+                continue;
+              }
               let _ = send.send(Event::Prepared);
               let priority = prepared.job.priority;
               if records.push(prepared, priority).is_err() { break; }
@@ -550,6 +630,7 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
     atomic_json(
       &dir.join("ready.json"),
       &json!({"ready":true, "lanes":config.devices, "executors":config.exec_jobs,
+      "mode":config.mode, "setup_seconds":setup.elapsed().as_secs_f64(),
       "static_bytes":static_bytes, "record_budget_bytes":records_bytes, "workspace_per_lane_bytes":workspace.share,
       "workspace_bytes":workspace.total}),
     )?;
@@ -570,9 +651,9 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
             log.event(json!({"phase":"retry", "id":job.id}));
             pending.push_front(job);
           },
-          Event::Done(job, code, report, failed_preparation) => {
+          Event::Done(job, code, report, executor_finished) => {
             active -= 1;
-            if failed_preparation {
+            if executor_finished {
               preparing -= 1;
             }
             log.event(json!({"phase":"done", "id":job.id, "status":code, "report":report}));
@@ -694,6 +775,75 @@ fn main() {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn checking_reports_statistics_and_refuses_small_plans_without_proving() {
+    let package = aiur::artifact::Package::decode(include_bytes!(
+      "../../aiur/tests/fixtures/grouping.ixa"
+    ))
+    .unwrap();
+    let (program, trace) = package.traced().unwrap();
+    let program = program.check_field::<Val>().unwrap();
+    let plan = TracePlan::new(&program, trace).unwrap();
+    let backend = Backend::for_batch(&plan, Parameters::default()).unwrap();
+    let dir = std::env::temp_dir().join(format!(
+      "ix-check-{}-{}",
+      std::process::id(),
+      std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos()
+    ));
+    fs::create_dir(&dir).unwrap();
+    let mut statistics = None;
+    for (mode, budget, expected) in
+      [(Mode::Plan, 1 << 30, 0), (Mode::Execute, 1, 0), (Mode::Plan, 1, 75)]
+    {
+      let args = program.field().decode(&[3]).unwrap();
+      let record = program.execute("Grouped::run", args.clone()).unwrap();
+      let job = Job {
+        id: "check".into(),
+        artifact: "unused".into(),
+        input: "unused".into(),
+        output: dir.join("output"),
+        options: planning::Options {
+          max_ram_bytes: Some(budget),
+          ..Default::default()
+        },
+        priority: false,
+      };
+      let prepared = Prepared {
+        job,
+        artifact: 0,
+        entry: "Grouped::run".into(),
+        args,
+        record,
+        report: json!({"verified":false, "record_bytes":1024}),
+      };
+      let (job, code, report) =
+        check(&backend, Kind::Ixvm, prepared, mode, 1 << 20, 1 << 30);
+      assert_eq!(code, expected, "{report}");
+      assert_eq!(report["verified"], false);
+      assert!(!job.output.exists(), "checking wrote a proof");
+      assert!(report.get("proving_seconds").is_none());
+      let saved: Value = read_json(&dir.join("output.report.json")).unwrap();
+      assert_eq!(saved, report);
+      if let Some(previous) = &statistics {
+        assert_eq!(previous, &report["execution_statistics"]);
+      }
+      statistics = Some(report["execution_statistics"].clone());
+      if mode == Mode::Execute {
+        assert!(report.get("plan").is_none());
+      } else {
+        assert_eq!(report["plan"]["budget_bytes"], budget);
+        assert_eq!(report["plan"]["fits"], expected == 0);
+        if expected != 0 {
+          assert_eq!(report["can_split"], false);
+        }
+      }
+    }
+    fs::remove_dir_all(dir).unwrap();
+  }
 
   /// A request larger than what is free waits for a release, and a later
   /// request that would fit does not overtake it.

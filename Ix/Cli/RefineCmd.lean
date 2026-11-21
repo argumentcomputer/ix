@@ -36,21 +36,20 @@ def resolveBudget (p : Cli.Parsed) : IO Nat := do
   IO.println s!"[refine] budget {gib} GiB per leaf (detected: 85% of available memory)"
   return gib
 
-/-- The `ix check` arguments of a refinement that runs `concurrent` leaves at
-    once. `ix check --ram-budget` divides its budget among them, so the
-    per-leaf budget is multiplied by that count. -/
+/-- The destination budget is per leaf, independent of execution concurrency. -/
 def checkArgs (ixe manifest out : String) (shards report : Option String)
-    (budgetGib concurrent : Nat) (index : Bool) : Array String :=
+    (budgetGib concurrent : Nat) (index : Bool) (execRam : Option Nat := none) : Array String :=
   #["check", "--ixe", ixe, "--ixes", manifest, "--out-ixes", out,
-    "--ram-budget", toString (budgetGib * concurrent), "--jobs", toString concurrent,
+    "--ram-budget", toString budgetGib, "--jobs", toString concurrent,
     "--keep-going"]
     ++ (match shards with | some s => #["--shards", s] | none => #[])
     ++ (match report with | some r => #["--report", r] | none => #[])
+    ++ (match execRam with | some n => #["--exec-ram", toString n] | none => #[])
     ++ (if index then #["--skip-proven"] else #[])
 
 #guard checkArgs "e.ixe" "m.ixes" "o.ixes" none none 64 3 true ==
   #["check", "--ixe", "e.ixe", "--ixes", "m.ixes", "--out-ixes", "o.ixes",
-    "--ram-budget", "192", "--jobs", "3", "--keep-going", "--skip-proven"]
+    "--ram-budget", "64", "--jobs", "3", "--keep-going", "--skip-proven"]
 
 def runShardRefineCmd (p : Cli.Parsed) : IO UInt32 := do
   let some pathArg := p.positionalArg? "path"
@@ -65,12 +64,10 @@ def runShardRefineCmd (p : Cli.Parsed) : IO UInt32 := do
   let selected ← match shards with
     | some s => pure (← IO.ofExcept (Ix.Shard.Check.parseShardSelection s)).size
     | none => pure view.shards.size
-  -- `ix check` divides its budget by --jobs, so pass exactly the number of
-  -- leaves that run at once; each is then planned against the full budget.
-  let concurrent := max 1 (min (← FormalAiur.jobCount p) selected)
+  let concurrent := max 1 (min (← FormalAiur.jobCount p 0) selected)
   let budget ← resolveBudget p
   let args := checkArgs ixePath manifest out shards ((p.flag? "report").map (·.as! String))
-    budget concurrent (!p.hasFlag "no-index")
+    budget concurrent (!p.hasFlag "no-index") ((p.flag? "exec-ram").map (·.as! Nat))
   FormalAiur.commandStatus (← IO.appPath).toString args
 
 end Ix.Cli.RefineCmd
@@ -85,7 +82,8 @@ def shardRefineCmd : Cli.Cmd := `[Cli|
     out        : String; "Where to write the refined `.ixes` manifest (required). Written only when every selected leaf settles: any failure exits 1 and writes nothing, and the report lists every failed leaf."
     shards     : String; "Leaves to audit: `K`, `a-b`, or a comma list of those. Default: every leaf. Unselected leaves are carried over unchanged."
     "max-ram"  : Nat;    "Per-leaf prover-RAM budget in GiB, the budget each leaf's proof will be planned against. Omitted or 0: 85% of this machine's available memory."
-    jobs       : Nat;    "Leaves executed at once (default 1; 0 uses available cores). Each is planned against the full --max-ram, so their executions must fit in memory together."
+    jobs       : Nat;    "Leaves executed at once (default: available cores). A shared memory pool bounds concurrent executions; each leaf is planned against the full --max-ram."
+    "exec-ram" : Nat;    "Shared execution-memory budget in GiB (default: 85% of available host memory), independent of the per-leaf --max-ram."
     report     : String; "Write the ix-formal-run/1 report (per-leaf parts, status, plans) to this path."
     "no-index";          "Do not consult the shard-proof index (`~/.ix/cache/formal-shard-proofs`): execute and split leaves even when a verified proof of their claim exists."
 

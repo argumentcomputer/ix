@@ -327,6 +327,13 @@ jobs:
           ix bench run --backend ${{ matrix.params.backend }}
           --env ${{ matrix.params.env }} --mode ${{ matrix.params.mode }}
           --ixe ${{ matrix.params.env }}.ixe --out bench.json
+      - name: Upload shard check diagnostics
+        if: always() && matrix.params.backend == 'aiur-sharded-env'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: diagnostics-${{ matrix.params.label }}
+          path: bench.json.report.json*
+          if-no-files-found: warn
       # The ooc run writes a per-constant attribution CSV next to its
       # results file. Bencher stores metric rows only, so cache the CSV by
       # (SHA, cell) — bench-pr restores it to render the per-constant

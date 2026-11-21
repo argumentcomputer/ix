@@ -905,6 +905,15 @@ jobs:
           path: out/table-${{ env.LABEL }}.md
           if-no-files-found: warn
           overwrite: true
+      - name: Upload shard check diagnostics
+        if: always() && matrix.params.backend == 'aiur-sharded-env'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: diagnostics-${{ env.LABEL }}
+          path: |
+            pr.json.report.json*
+            base.json.report.json*
+          if-no-files-found: warn
       # A PR-side rejection is a correctness regression: re-raise the run
       # step's failure now that the table is uploaded, so the job goes red
       # while the comment still posts with the constant's ❌ row.

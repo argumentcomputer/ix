@@ -229,6 +229,8 @@ def buildPlan (cfg : EnvConfig) (formalTmp : FilePath) : Array Step := Id.run do
   ]
   steps := push ".lake/build/bin/formal-checks"
     (#["controller", formalTmp.toString] ++ artifactArgs) env steps
+  steps := push ".lake/build/bin/formal-checks"
+    #["checking", formalTmp.toString, "--ixvm-artifact", aiurArt] env steps
 
   -- Optional hardware gate: prove with CUDA and independently verify with CPU
   -- binaries. The separate target directory is the same one the CLI selects.
