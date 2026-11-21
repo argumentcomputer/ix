@@ -828,17 +828,31 @@ theorem check_modeled_block_inv {rc iblk r : SourceValue F} {h h' : Heap F}
       (ObsFn.heap_extends ev27).trans (ObsFn.heap_extends ev14),
       fun x hx => by simp [hx]⟩
 
-/-- Inversion of `KernelModeled::check_family`'s initial segment `Seg1` (asserting empty user
-axioms in `rc`). -/
+/-- Inversion of `KernelModeled::check_family`'s initial segment `Seg_krruczny` (stripping user
+axioms from `rc` for `check_advice_records`). -/
 theorem check_family_seg1_inv {rc iblk rblk v104 : SourceValue F} {h m105 : Heap F}
     {cs107 : List (Call F)}
-    (sg : Obs.«KernelModeled::check_family».Seg1 rc iblk rblk h v104 m105 cs107) :
+    (sg : Obs.«KernelModeled::check_family».Seg_krruczny rc iblk rblk h v104 m105 cs107) :
     Heap.Extends h m105 := by
   cases sg with
   | Nil _ _ ev15 _ he33 _ => exact he33 ▸ ObsFn.heap_extends ev15
-  | Node _ _ _ _ _ _ _ _ heq97 _ _ _ =>
-    injection heq97 with hf
-    exact absurd hf zero_ne_one
+  | Node _ _ _ _ _ _ _ _ ev15 ev_wo _ =>
+    exact (ObsFn.heap_extends ev15).trans (ObsFn.heap_extends ev_wo)
+
+/-- When `rc` already has an empty user-axiom map (`RCAxiomsNil`), `check_family`'s initial
+segment takes the `.Nil` arm and leaves `rc` and the heap unchanged. -/
+theorem check_family_seg_nil_of_rc {rc iblk rblk v104 : SourceValue F} {h m105 : Heap F}
+    {cs107 : List (Call F)} (hnil : RCAxiomsNil h rc)
+    (sg : Obs.«KernelModeled::check_family».Seg_krruczny rc iblk rblk h v104 m105 cs107) :
+    v104 = rc ∧ m105 = h := by
+  cases sg with
+  | Nil _ _ ev15 hr hm _ =>
+    obtain ⟨_, hm0, _⟩ := role_ctx_axioms_nil hnil ev15
+    exact ⟨hr, hm.trans hm0⟩
+  | Node _ _ _ _ _ _ _ _ ev15 _ _ =>
+    obtain ⟨hax, _, _⟩ := role_ctx_axioms_nil hnil ev15
+    injection hax with _ htag _
+    exact absurd htag (by decide)
 
 /-- Assembly step oracle for `KernelModeled::check_advice_records`: given the current validated advice
 prefix `(seenSet, c_cur)`, an unvisited advice address `a` (`addr_set_member(a, seen) = 0`), and

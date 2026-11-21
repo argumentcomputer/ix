@@ -1520,11 +1520,11 @@ structure FamCheckCarriers (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E�
   ind0Safe : 0 < rs.size → ∀ ind₀, ms[0]? = some (Ixon.MutConst.indc ind₀) → ind₀.isUnsafe = false
 
 theorem check_family_seg1_extends {e0 e1 e2 r : SourceValue F} {h h' : Heap F}
-    {cs : List (Call F)} (sg : Obs.«KernelModeled::check_family».Seg1 e0 e1 e2 h r h' cs) :
+    {cs : List (Call F)} (sg : Obs.«KernelModeled::check_family».Seg_krruczny e0 e1 e2 h r h' cs) :
     Heap.Extends h h' := by
   cases sg with
   | Nil _ _ ev _ hh _ => rw [hh]; exact ev.heap_extends
-  | Node _ _ _ _ _ _ _ ev _ _ hh _ => rw [hh]; exact ev.heap_extends
+  | Node _ _ _ _ _ _ _ _ ev1 ev2 _ => exact ev1.heap_extends.trans ev2.heap_extends
 
 /-- **Master extraction from `K.FamCheck B rb`**: yields the block record, family record, non-empty
 member `0` inductive, projection hash for `iprjAddr B 0`, role-freeness of every recursor member,
@@ -1542,7 +1542,7 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
       (m624 := m624) (m652 := m652) (v673 := v673) (m674 := m674) (cs684 := cs684)
       (m784 := m784) (v839 := v839) (m840 := m840) (cs850 := cs850) (m1293 := m1293)
       (cs1341 := cs1341)
-      (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+      (sg_barfcuni := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
       (ev_yqjbwijz := ev_ord) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
       (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465)
       (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)

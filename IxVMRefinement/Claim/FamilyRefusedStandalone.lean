@@ -61,9 +61,9 @@ theorem check_family_standalone_refused {calls cs : List (Call F)} {E₀ : Ixon.
     (hc : IxVM.Consistency.recordOf E₀ (ixAddr ab) = some c) (hinfo : c.info = .recr rcr) :
     False := by
   match Obs.«KernelModeled::check_family».obs ev with
-  | .run (m105 := m105) (m784 := m784) (m840 := m840) (m_qvdvjtit := mR) (m1293 := m1293)
+  | .run (m_vcemfqfp := m105) (m784 := m784) (m840 := m840) (m_qvdvjtit := mR) (m1293 := m1293)
       (v839 := v839) (v861 := v861) (m862 := m862) (cs850 := cs850) (cs872 := cs872)
-      (sg112 := sg112)
+      (sg_barfcuni := sg112)
       (ev126 := ev126) (ev148 := ev148) (ev194 := ev194) (ev_yqjbwijz := evo) (ev231 := ev231)
       (ev266 := ev266) (ev309 := ev309) (ev344 := ev344) (ev403 := ev403) (ev435 := ev435)
       (ev465 := ev465) (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
@@ -76,10 +76,11 @@ theorem check_family_standalone_refused {calls cs : List (Call F)} {E₀ : Ixon.
       (hc1474 := hc1474) .. =>
     have e0 : Heap.Extends h m105 := by
       match sg112 with
-      | .Nil (ev15 := ev15) (he33 := he33) .. =>
+      | .Nil (ev_wxupbkvw := ev15) (he_heykuhzf := he33) .. =>
         rw [he33]
         exact ev15.heap_extends
-      | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
+      | .Node (ev_wxupbkvw := ev15) (ev_kastmihc := ev_wo) .. =>
+        exact ev15.heap_extends.trans ev_wo.heap_extends
     have e784 : Heap.Extends h m784 := by
       refine e0.trans ?_
       refine ev126.heap_extends.trans ?_

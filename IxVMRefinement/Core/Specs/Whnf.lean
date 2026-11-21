@@ -317,6 +317,15 @@ def type_sort_never : SpecFn := fun c args h r h' calls =>
       r ≠ .field 0 → ∃ l, piSortAt (ZMod.val m) T = some l ∧
         (Ix.Kernel.Level.subst (List.range us.length) us l).isNeverZero = true
 
+/-- `type_sort_may_be_nonzero(ty, n, lvls)`: a nonzero answer means the type is syntactically
+`n` `∀`s ending in a sort `l` whose instantiation at `lvls` is nonzero under some level
+assignment (`¬ ∀ φ, Level.eval φ (subst ... l) = 0`). Answer `0`: no claim. -/
+def type_sort_may_be_nonzero : SpecFn := fun c args h r h' calls =>
+  ∀ ty n lvls, args = [ty, n, lvls] → CoreGood c calls →
+    ∀ d Γ k T (m : F) us, c.tmk d Γ k h T ty → n = .field m → LvListRep h us lvls →
+      r ≠ .field 0 → ∃ l, piSortAt (ZMod.val m) T = some l ∧
+        ¬ ∀ φ, Ix.Kernel.Level.eval φ (Ix.Kernel.Level.subst (List.range us.length) us l) = 0
+
 /-- `slots_never(t, n)`: a nonzero answer means the first `n` binders of the telescope are
 `∀`s with the datum `never` (`Certs.skip`'s premise at each slot). Answer `0`: no claim. -/
 def slots_never : SpecFn := fun c args h r h' calls =>
@@ -363,19 +372,29 @@ def certs_all : SpecFn := fun c args h r h' calls =>
       ∀ T Cs As, c.tmk d Γ Cs.length h T t → c.tml d Γ h Cs subs → c.tml d Γ h As zs →
         r ≠ .field 0 → CertsR c.env d false (T.instantiateList Cs 0) As
 
-/-- `iota_certs(rc, rec_ty_i, rec_args, n_rec, cty, clvls, margs, n_ctor, types)`: a nonzero
+/-- `certs_licensed(rc, t, args, subs_rev, types)`: a nonzero answer is the licensed telescope
+certificate (`CertsR … true`), skipping `Forall` slots whose binder level is never zero and
+certifying the rest. Answer `0`: no claim. -/
+def certs_licensed : SpecFn := fun c args h r h' calls =>
+  ∀ rc t zs subs types, args = [rc, t, zs, subs, types] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ, c.types Γ h d types →
+      ∀ T Cs As, c.tmk d Γ Cs.length h T t → c.tml d Γ h Cs subs → c.tml d Γ h As zs →
+        r ≠ .field 0 → CertsR c.env d true (T.instantiateList Cs 0) As
+
+/-- `iota_certs(rc, rec_ty_i, pre, major, n_rec, cty, clvls, margs, n_ctor, types)`: a nonzero
 answer gives `Red.iota`'s two licensed telescope walks (`CertsR … true`, read as `Certs` by
-`CertsR.toCerts`): the recursor's (level-instantiated) type over its arguments, and the
+`CertsR.toCerts`): the recursor's (level-instantiated) type over `pre ++ [major]`, and the
 constructor's type at the levels `clvls` over the major's arguments. `n_rec`, `n_ctor` are the
 walks' lengths. Answer `0`: no claim. -/
 def iota_certs : SpecFn := fun c args h r h' calls =>
-  ∀ rc rt ra nr cty clvls ma nc types,
-    args = [rc, rt, ra, nr, cty, clvls, ma, nc, types] → CoreGood c calls → c.rc h rc →
+  ∀ rc rt pre maj nr cty clvls ma nc types,
+    args = [rc, rt, pre, maj, nr, cty, clvls, ma, nc, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
-      ∀ RT RA CT cus MA, c.tmc h RT rt → c.tml d Γ h RA ra → nr = .field (RA.length : F) →
+      ∀ RT PRE MAJ CT cus MA, c.tmc h RT rt → c.tml d Γ h PRE pre → c.tm d Γ h MAJ maj →
+        nr = .field ((PRE.length + 1 : Nat) : F) →
         c.tmc h CT cty → LvListRep h cus clvls → c.tml d Γ h MA ma →
-        nc = .field (MA.length : F) → RA.length < 2 ^ 39 → MA.length < 2 ^ 39 → r ≠ .field 0 →
-          CertsR c.env d true RT RA ∧
+        nc = .field (MA.length : F) → PRE.length < 2 ^ 39 → MA.length < 2 ^ 39 → r ≠ .field 0 →
+          CertsR c.env d true RT (PRE ++ [MAJ]) ∧
             CertsR c.env d true (CT.instantiateLevelParams (List.range cus.length) cus) MA
 
 /-- `iota_cmp(rc, rec_ty_i, pre, major_idx, cty, clvls, cnp, margs, nindices, types)`:
@@ -942,12 +961,12 @@ def struct_is_rec : SpecFn := fun c args h r h' calls =>
 
 inductive Fn where
   | apply_spine | peel_beta | red_beta | beta_more | peel_beta_cert | red_proj
-  | type_sort_never | red_unfold | whnf_with_spine | whnf_proj_head | whnf_spine
+  | type_sort_never | type_sort_may_be_nonzero | red_unfold | whnf_with_spine | whnf_proj_head | whnf_spine
   | try_nat_dispatch_prewhnf | prim_family | try_prim_dispatch | try_quot_iota | red_quot
   | quot_certs | whnf_const_head | red_rec | try_reduce_projection_definition | lams_never
   | projection_definition_info | nat_lit_to_ctor_or_self | lit_to_ctor_or_self | try_k_synth_iota | k_synth_fab
   | whnf_iota_major | try_iota | red_iota | iota_cmp | iota_certs | slots_never | pi_peel
-  | pi_residual | find_rule | try_struct_eta_iota | eta_iota_fab | certs_all | se_parent_addr
+  | pi_residual | find_rule | try_struct_eta_iota | eta_iota_fab | certs_all | certs_licensed | se_parent_addr
   | apply_n_projs | struct_is_rec | struct_scan_members | struct_block_member_addrs
   | struct_scan_ctors | se_peel_tol | se_scan_fields | se_mentions | se_addr_in | whnf
   | whnf_core | whnf_struct_core | whnf_struct_core_spine | whnf_struct_core_proj
@@ -964,6 +983,7 @@ def Fn.name : Fn → String
   | .peel_beta_cert => "KernelWhnf::peel_beta_cert"
   | .red_proj => "KernelWhnf::red_proj"
   | .type_sort_never => "KernelWhnf::type_sort_never"
+  | .type_sort_may_be_nonzero => "KernelWhnf::type_sort_may_be_nonzero"
   | .red_unfold => "KernelWhnf::red_unfold"
   | .whnf_with_spine => "KernelWhnf::whnf_with_spine"
   | .whnf_proj_head => "KernelWhnf::whnf_proj_head"
@@ -995,6 +1015,7 @@ def Fn.name : Fn → String
   | .try_struct_eta_iota => "KernelWhnf::try_struct_eta_iota"
   | .eta_iota_fab => "KernelWhnf::eta_iota_fab"
   | .certs_all => "KernelWhnf::certs_all"
+  | .certs_licensed => "KernelWhnf::certs_licensed"
   | .se_parent_addr => "KernelWhnf::se_parent_addr"
   | .apply_n_projs => "KernelWhnf::apply_n_projs"
   | .struct_is_rec => "KernelWhnf::struct_is_rec"
@@ -1026,6 +1047,7 @@ def Fn.spec : Fn → SpecFn
   | .peel_beta_cert => Whnf.peel_beta_cert
   | .red_proj => Whnf.red_proj
   | .type_sort_never => Whnf.type_sort_never
+  | .type_sort_may_be_nonzero => Whnf.type_sort_may_be_nonzero
   | .red_unfold => Whnf.red_unfold
   | .whnf_with_spine => Whnf.whnf_with_spine
   | .whnf_proj_head => Whnf.whnf_proj_head
@@ -1057,6 +1079,7 @@ def Fn.spec : Fn → SpecFn
   | .try_struct_eta_iota => Whnf.try_struct_eta_iota
   | .eta_iota_fab => Whnf.eta_iota_fab
   | .certs_all => Whnf.certs_all
+  | .certs_licensed => Whnf.certs_licensed
   | .se_parent_addr => Whnf.se_parent_addr
   | .apply_n_projs => Whnf.apply_n_projs
   | .struct_is_rec => Whnf.struct_is_rec

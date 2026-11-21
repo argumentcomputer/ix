@@ -129,43 +129,6 @@ theorem g_lbr_dec {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue
   injection hx with hx; subst hx
   exact ⟨hh, hr⟩
 
-theorem g_expr_lbr_let (κ : _root_.Address → KKey) {args : List (SourceValue F)} {h h' : Heap F}
-    {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelSubst::expr_lbr_let" args h r h' calls) (ih : GIH κ calls) :
-    G.expr_lbr_let κ args h r h' calls := by
-  intro ty val body hargs bd
-  subst hargs
-  match Obs.«KernelSubst::expr_lbr_let».obs ev with
-  | .run (ev34 := e1) (ev54 := e2) (ev20 := e3) (ev87 := e4) (ev74 := e5) (ev6 := e6)
-      (hc96 := hc) .. =>
-    subst hc
-    obtain ⟨rfl, st⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
-    obtain ⟨rfl, sv⟩ := ih.get .expr_lbr lt_calls e2 _ rfl (bounded_sub sub_calls bd)
-    obtain ⟨x1, y1, rfl, rfl, -, -, rfl, rfl⟩ := lbr_max_obs e3
-    obtain ⟨rfl, sb⟩ := ih.get .expr_lbr lt_calls e4 _ rfl (bounded_sub sub_calls bd)
-    obtain ⟨z, rfl, rfl, rfl⟩ := lbr_dec_obs e5
-    obtain ⟨x2, y2, hx2, hy2, -, -, hr, rfl⟩ := lbr_max_obs e6
-    injection hx2 with hx2; injection hy2 with hy2; subst hx2 hy2
-    refine ⟨rfl, fun d Γ k T V B ht hv hb => ?_⟩
-    obtain ⟨bt, hbt, bt1, bt2, bt3, bt4, -⟩ := st d Γ k T ht
-    obtain ⟨bv, hbv, bv1, bv2, bv3, bv4, -⟩ := sv d Γ k V hv
-    obtain ⟨bb, hbb, bb1, bb2, bb3, bb4, -⟩ := sb d Γ (k + 1) B hb
-    injection hbt with hbt; injection hbv with hbv; injection hbb with hbb
-    subst hbt hbv hbb
-    obtain ⟨bm, hbm, m1, m2, m3⟩ := max_spec (lt_mod_of_le_idx bt1) (lt_mod_of_le_idx bv1)
-    rw [hbm, val_natCast (lt_mod_of_le_idx bb1)] at hr
-    obtain ⟨b, hb', b1, b2, b3⟩ := max_spec (a := bm) (b := bb - 1)
-      (by have := lt_mod_of_le_idx bt1; have := lt_mod_of_le_idx bv1; omega)
-      (by have := lt_mod_of_le_idx bb1; omega)
-    rw [hb'] at hr
-    refine ⟨b, hr, by omega, by omega, idxAll_mono bt3 (fun n i hi => by omega),
-      idxAll_mono bv3 (fun n i hi => by omega), idxAll_mono bb3 (fun n i hi => by omega), ?_⟩
-    rintro b' hlt ⟨ht', hv', hb''⟩
-    rcases (show b' < bt ∨ b' < bv ∨ b' + 1 < bb by omega) with h1 | h1 | h1
-    · exact bt4 b' h1 ht'
-    · exact bv4 b' h1 hv'
-    · exact bb4 (b' + 1) h1 hb''
-
 theorem g_expr_lbr (κ : _root_.Address → KKey) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelSubst::expr_lbr" args h r h' calls) (ih : GIH κ calls) :
@@ -273,17 +236,40 @@ theorem g_expr_lbr (κ : _root_.Address → KKey) {args : List (SourceValue F)} 
     rcases (show b' < bt ∨ b' + 1 < bb by omega) with h1 | h1
     · exact bt4 b' h1 ht'
     · exact bb4 (b' + 1) h1 (idxAll_imp hb'' (fun n i hi => by omega))
-  | .Let (ld12 := ld) (ev353 := e1) (hc378 := hc) .. =>
+  | .Let (ld12 := ld) (ev_fnxqycub := e1) (ev_plifhkci := e2) (ev_ysiaxbmd := e3)
+      (ev_jtwmhabz := e4) (ev_mnneydpr := e5) (ev_llwfxidj := e6) (hc378 := hc) .. =>
     subst hc
-    obtain ⟨rfl, sl⟩ := ih.get .expr_lbr_let lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨rfl, st⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨rfl, sv⟩ := ih.get .expr_lbr lt_calls e2 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨x1, y1, rfl, rfl, -, -, rfl, rfl⟩ := lbr_max_obs e3
+    obtain ⟨rfl, sb⟩ := ih.get .expr_lbr lt_calls e4 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨z, rfl, rfl, rfl⟩ := lbr_dec_obs e5
+    obtain ⟨x2, y2, hx2, hy2, -, -, hr, rfl⟩ := lbr_max_obs e6
+    injection hx2 with hx2; injection hy2 with hy2; subst hx2 hy2
     refine ⟨rfl, fun d Γ k E hE => ?_⟩
     obtain ⟨T, V, B, rfl, ht, hv, hb⟩ := Tm.letE_of_load hE ld
-    obtain ⟨b, hr, b1, b2, i1, i2, i3, bmin⟩ := sl d Γ k T V B ht hv hb
-    have hI : IdxLt _ b e := idxAll_letE_of_load ld i1 i2 (idxAll_imp i3 (fun n i hi => by omega))
-    refine ⟨b, hr, b1, b2, hI, ?_, lbrLe_of_idxLt hE hI⟩
+    obtain ⟨bt, hbt, bt1, bt2, bt3, bt4, -⟩ := st d Γ k T ht
+    obtain ⟨bv, hbv, bv1, bv2, bv3, bv4, -⟩ := sv d Γ k V hv
+    obtain ⟨bb, hbb, bb1, bb2, bb3, bb4, -⟩ := sb d Γ (k + 1) B hb
+    injection hbt with hbt; injection hbv with hbv; injection hbb with hbb
+    subst hbt hbv hbb
+    obtain ⟨bm, hbm, m1, m2, m3⟩ := max_spec (lt_mod_of_le_idx bt1) (lt_mod_of_le_idx bv1)
+    rw [hbm, val_natCast (lt_mod_of_le_idx bb1)] at hr
+    obtain ⟨b, hb', b1, b2, b3⟩ := max_spec (a := bm) (b := bb - 1)
+      (by have := lt_mod_of_le_idx bt1; have := lt_mod_of_le_idx bv1; omega)
+      (by have := lt_mod_of_le_idx bb1; omega)
+    rw [hb'] at hr
+    have hI : IdxLt _ b e := idxAll_letE_of_load ld
+      (idxAll_mono bt3 (fun n i hi => by omega))
+      (idxAll_mono bv3 (fun n i hi => by omega))
+      (idxAll_imp bb3 (fun n i hi => by omega))
+    refine ⟨b, hr, by omega, by omega, hI, ?_, lbrLe_of_idxLt hE hI⟩
     intro b' hb' hlt
     obtain ⟨t', v', bd'⟩ := idxAll_letE_inv hlt ld
-    exact bmin b' hb' ⟨t', v', idxAll_imp bd' (fun n i hi => by omega)⟩
+    rcases (show b' < bt ∨ b' < bv ∨ b' + 1 < bb by omega) with h1 | h1 | h1
+    · exact bt4 b' h1 t'
+    · exact bv4 b' h1 v'
+    · exact bb4 (b' + 1) h1 (idxAll_imp bd' (fun n i hi => by omega))
   | .Proj (ld12 := ld) (ev408 := e1) (hc417 := hc) .. =>
     subst hc
     obtain ⟨rfl, s1⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)

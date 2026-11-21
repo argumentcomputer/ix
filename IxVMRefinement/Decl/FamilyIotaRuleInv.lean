@@ -65,11 +65,11 @@ private theorem invR_store_nil_kexpr {locals : Environment F Nat} {v : SourceVal
 
 /-- Structured record of all intermediate heaps, values, call slices, and sub-derivations extracted
 from `ObsFn W "KernelModeled::check_iota_rule"`, in the order of the body. The renamed terms are
-named: `rhs_m` (the rule, renamed before it is inferred), `ty_m` (the recursor type, renamed
-before the statement's prefix comparison), `v_cty_ren` (the constructor type renamed for
-`inst_params`) and `v_cty_ren2` (renamed again for `inst_params_typed`). -/
+named: `rhs_m` (the rule, renamed before it is inferred), `ty_m` (the already-renamed recursor
+type passed in from `check_rules`), and `v_cty_ren` (the constructor type renamed once and reused
+for both `inst_params` and `inst_params_typed`). -/
 structure CheckIotaRuleInvR
-    (rc rm nl ty_r rp ni rhs cprj cty cnp cnf ilvls pins t_addr src dst aset : SourceValue F)
+    (rc rm nl ty_m rp ni rhs cprj cty cnp cnf ilvls pins t_addr src dst aset : SourceValue F)
     (h : Heap F) (calls : List (Call F)) where
   mi : SourceValue F
   d : SourceValue F
@@ -302,17 +302,12 @@ structure CheckIotaRuleInvR
   ev_deidx : ObsFn W "KernelModeled::defeq_list_ok" [rc, v_idxl, v_idxr, ctx] h_idxr (.field 1) h_deidx cs_deidx
   sub_deidx : SubCalls calls cs_deidx
   -- statement domain telescopes: the renamed recursor type `ty_m`
-  ty_m : SourceValue F
-  h_ty_m : Heap F
-  cs_ty_m : List (Call F)
-  ev_ty_m : ObsFn W "KernelModeled::rename" [ty_r, src, dst] h_deidx ty_m h_ty_m cs_ty_m
-  sub_ty_m : SubCalls calls cs_ty_m
   v_dt1 : SourceValue F
   h_dt1 : Heap F
   cs_dt1 : List (Call F)
   ev_dt1 : ObsFn W "KernelModeled::defeq_tele"
-    [rc, tty, ty_m, rp, .ptr (.enum kexprListEnum) h_ty_m.length]
-    (h_ty_m ++ [.construct kexprListEnum "Nil" []]) v_dt1 h_dt1 cs_dt1
+    [rc, tty, ty_m, rp, .ptr (.enum kexprListEnum) h_deidx.length]
+    (h_deidx ++ [.construct kexprListEnum "Nil" []]) v_dt1 h_dt1 cs_dt1
   sub_dt1 : SubCalls calls cs_dt1
   v_tty_rp : SourceValue F
   h_tty_rp : Heap F
@@ -335,16 +330,11 @@ structure CheckIotaRuleInvR
   ev_ctxp : ObsFn W "KernelModeled::peel_collect"
     [ty_m, rp, .ptr (.enum kexprListEnum) h_dt2.length]
     (h_dt2 ++ [.construct kexprListEnum "Nil" []]) (.tuple [w_pbody, ctx_p]) h_ctxp cs_ctxp
-  v_cty_ren2 : SourceValue F
-  h_cty_ren2 : Heap F
-  cs_cty_ren2 : List (Call F)
-  ev_cty_ren2 : ObsFn W "KernelModeled::rename" [cty_l, src, dst] h_ctxp v_cty_ren2 h_cty_ren2 cs_cty_ren2
-  sub_cty_ren2 : SubCalls calls cs_cty_ren2
   crest_p : SourceValue F
   h_crestp : Heap F
   cs_crestp : List (Call F)
-  ev_crestp : ObsFn W "KernelModeled::inst_params_typed" [rc, v_cty_ren2, pins_ren, ctx_p]
-    h_cty_ren2 crest_p h_crestp cs_crestp
+  ev_crestp : ObsFn W "KernelModeled::inst_params_typed" [rc, v_cty_ren, pins_ren, ctx_p]
+    h_ctxp crest_p h_crestp cs_crestp
   sub_crestp : SubCalls calls cs_crestp
   rhs_rp : SourceValue F
   lctx : SourceValue F
@@ -494,12 +484,12 @@ rule renamed before it is inferred (`rhs_m`), the renamed recursor type (`ty_m`)
 statement's prefix and the rule's side, the constructor type renamed for `inst_params_typed` at
 the renamed pins. -/
 theorem check_iota_rule_invR
-    {rc rm nl ty_r rp ni rhs cprj cty cnp cnf ilvls pins t_addr src dst aset r : SourceValue F}
+    {rc rm nl ty_m rp ni rhs cprj cty cnp cnf ilvls pins t_addr src dst aset r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
     (ev : ObsFn W "KernelModeled::check_iota_rule"
-      [rc, rm, nl, ty_r, rp, ni, rhs, cprj, cty, cnp, cnf, ilvls, pins, t_addr, src, dst, aset]
+      [rc, rm, nl, ty_m, rp, ni, rhs, cprj, cty, cnp, cnf, ilvls, pins, t_addr, src, dst, aset]
       h r h' calls) :
-    Nonempty (CheckIotaRuleInvR rc rm nl ty_r rp ni rhs cprj cty cnp cnf ilvls pins t_addr src dst aset h calls) := by
+    Nonempty (CheckIotaRuleInvR rc rm nl ty_m rp ni rhs cprj cty cnp cnf ilvls pins t_addr src dst aset h calls) := by
   have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelModeled.check_iota_rule.lookup
     (by simp [IxVM.KernelModeled.check_iota_rule, ControlLower.hasControl]) ev
   simp only [IxVM.KernelModeled.check_iota_rule] at d0
@@ -969,24 +959,31 @@ theorem check_iota_rule_invR
   -- 34. `match (*(chead0)) { Const(_, _) => { () } };`
   obtain ⟨w_ch0a, w_ch0b, _, ld_chead0, sc34, rest34⟩ :=
     invR_match_kexpr_const_unit (by rfl) sc33 rest33; clear sc33 rest33
-  -- 35. `let crest = inst_params(rename(cty_l, src, dst), pins_ren)`
-  obtain ⟨crest, h_crest, _, c35a, _, d35, mt35, rest35, hc35⟩ := rest34.letValue_inv; clear rest34
-  rw [hc35] at sc34; have sc35_l := sc34.append_left; have sc35 := sc34.append_right; clear sc34 hc35
-  obtain ⟨_, _, c35_args, cs_crest, a35, ev_crest, hc_crest⟩ := d35.call_inv
-  rw [instanceName_plain_some] at ev_crest hc_crest
-  obtain ⟨v_cty_ren, _, h_cty_ren, c35_1, _, rfl, hc35_args, d35_1, d35_2⟩ := invR_args2 a35
-  obtain ⟨_, _, _, cs_cty_ren, a35_r, ev_cty_ren, hc_cty_ren⟩ := d35_1.call_inv
+  -- 35a. `let cty_m = rename(cty_l, src, dst)`
+  obtain ⟨v_cty_ren, h_cty_ren, _, c35ra, _, d35r, mt35r, rest35r, hc35r⟩ := rest34.letValue_inv; clear rest34
+  rw [hc35r] at sc34; have sc35r_l := sc34.append_left; have sc35r := sc34.append_right; clear sc34 hc35r
+  obtain ⟨_, _, _, cs_cty_ren, a35_r, ev_cty_ren, hc_cty_ren⟩ := d35r.call_inv
   rw [instanceName_plain_some] at ev_cty_ren hc_cty_ren
   obtain ⟨_, _, _, _, _, _, _, _, rfl, _, d35_r1, d35_r2, d35_r3⟩ := invR_args3 a35_r
   obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d35_r1
   obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d35_r2
   obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d35_r3
+  obtain rfl := matchPattern_bind_inv mt35r
+  rw [hc_cty_ren] at sc35r_l
+  have sub_cty_ren := sc35r_l.append_right.cons_tail
+  clear sc35r_l hc_cty_ren
+  -- 35b. `let crest = inst_params(cty_m, pins_ren)`
+  obtain ⟨crest, h_crest, _, c35a, _, d35, mt35, rest35, hc35⟩ := rest35r.letValue_inv; clear rest35r
+  rw [hc35] at sc35r; have sc35_l := sc35r.append_left; have sc35 := sc35r.append_right; clear sc35r hc35
+  obtain ⟨_, _, c35_args, cs_crest, a35, ev_crest, hc_crest⟩ := d35.call_inv
+  rw [instanceName_plain_some] at ev_crest hc_crest
+  obtain ⟨_, _, _, _, _, rfl, _, d35_1, d35_2⟩ := invR_args2 a35
+  obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d35_1
   obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d35_2
   obtain rfl := matchPattern_bind_inv mt35
-  rw [hc_crest, hc35_args, hc_cty_ren] at sc35_l
-  have sub_cty_ren := sc35_l.append_left.append_left.append_right.cons_tail
+  rw [hc_crest] at sc35_l
   have sub_crest := sc35_l.append_right.cons_tail
-  clear sc35_l hc_crest hc35_args hc_cty_ren
+  clear sc35_l hc_crest
   -- 36. `let (cres, _) = peel_collect(crest, cnf, (&(Lists::Node::Nil)))`
   obtain ⟨_, h_cres, _, _, _, d36, mt36, rest36, hc36⟩ := rest35.letValue_inv; clear rest35
   rw [hc36] at sc35; have sc36 := sc35.append_right; clear sc35 hc36
@@ -1069,22 +1066,9 @@ theorem check_iota_rule_invR
   rw [hc40_args, hc_deidx] at sc40_l
   have sub_deidx := sc40_l.append_left.append_right.cons_tail
   clear sc40_l hc40_args hc_deidx
-  -- 41a. `let ty_m = rename(ty_r, src, dst)`
-  obtain ⟨ty_m, h_ty_m, _, c41ra, _, d41r, mt41r, rest41r, hc41r⟩ := rest40.letValue_inv; clear rest40
-  rw [hc41r] at sc40; have sc41r_l := sc40.append_left; have sc41r := sc40.append_right; clear sc40 hc41r
-  obtain ⟨_, _, _, cs_ty_m, a41r, ev_ty_m, hc_ty_m⟩ := d41r.call_inv
-  rw [instanceName_plain_some] at ev_ty_m hc_ty_m
-  obtain ⟨_, _, _, _, _, _, _, _, rfl, _, d41r_1, d41r_2, d41r_3⟩ := invR_args3 a41r
-  obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d41r_1
-  obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d41r_2
-  obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d41r_3
-  obtain rfl := matchPattern_bind_inv mt41r
-  rw [hc_ty_m] at sc41r_l
-  have sub_ty_m := sc41r_l.append_right.cons_tail
-  clear sc41r_l hc_ty_m
-  -- 41b. `defeq_tele(rc, tty, ty_m, rp, (&(Lists::Node::Nil)))`
-  obtain ⟨v_dt1, h_dt1, _, c41a, _, d41, mt41, rest41, hc41⟩ := rest41r.letValue_inv; clear rest41r
-  rw [hc41] at sc41r; have sc41_l := sc41r.append_left; have sc41 := sc41r.append_right; clear sc41r hc41
+  -- 41. `defeq_tele(rc, tty, ty_m, rp, (&(Lists::Node::Nil)))`
+  obtain ⟨v_dt1, h_dt1, _, c41a, _, d41, mt41, rest41, hc41⟩ := rest40.letValue_inv; clear rest40
+  rw [hc41] at sc40; have sc41_l := sc40.append_left; have sc41 := sc40.append_right; clear sc40 hc41
   obtain ⟨_, _, _, cs_dt1, a41, ev_dt1, hc_dt1⟩ := d41.call_inv
   rw [instanceName_plain_some] at ev_dt1 hc_dt1
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, rfl, _,
@@ -1137,27 +1121,21 @@ theorem check_iota_rule_invR
   obtain ⟨ctx_p, _, _, _, rfl, mt43_2, ml43c, rfl⟩ := matchListWith_cons_inv ml43b
   obtain rfl := matchPattern_bind_inv mt43_2
   obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml43c
-  -- 44. `let crest_p = inst_params_typed(rc, rename(cty_l, src, dst), pins_ren, ctx_p)`
+  -- 44. `let crest_p = inst_params_typed(rc, cty_m, pins_ren, ctx_p)`
   obtain ⟨crest_p, h_crestp, _, c44a, _, d44, mt44, rest44, hc44⟩ := rest43.letValue_inv; clear rest43
   rw [hc44] at sc43; have sc44_l := sc43.append_left; have sc44 := sc43.append_right; clear sc43 hc44
   obtain ⟨_, _, _, cs_crestp, a44, ev_crestp, hc_crestp⟩ := d44.call_inv
   rw [instanceName_plain_some] at ev_crestp hc_crestp
-  obtain ⟨_, v_cty_ren2, _, _, _, h_cty_ren2, _, _, c44_2, _, _, rfl, hc44_args,
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, _,
     d44_1, d44_2, d44_3, d44_4⟩ := invR_args4 a44
   obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d44_1
-  obtain ⟨_, _, _, cs_cty_ren2, a44_r, ev_cty_ren2, hc_cty_ren2⟩ := d44_2.call_inv
-  rw [instanceName_plain_some] at ev_cty_ren2 hc_cty_ren2
-  obtain ⟨_, _, _, _, _, _, _, _, rfl, _, d44_r1, d44_r2, d44_r3⟩ := invR_args3 a44_r
-  obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d44_r1
-  obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d44_r2
-  obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d44_r3
+  obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d44_2
   obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d44_3
   obtain ⟨rfl, rfl, _⟩ := invR_var_find (by rfl) d44_4
   obtain rfl := matchPattern_bind_inv mt44
-  rw [hc_crestp, hc44_args, hc_cty_ren2] at sc44_l
-  have sub_cty_ren2 := sc44_l.append_left.append_right.append_left.append_right.cons_tail
+  rw [hc_crestp] at sc44_l
   have sub_crestp := sc44_l.append_right.cons_tail
-  clear sc44_l hc_crestp hc44_args hc_cty_ren2
+  clear sc44_l hc_crestp
   -- 45. `let (rhs_rp, lctx) = defeq_lam_tele(rc, rhs_m, ty_m, rp, (&(Lists::Node::Nil)))`
   obtain ⟨_, h_lt1, _, c45a, _, d45, mt45, rest45, hc45⟩ := rest44.letValue_inv; clear rest44
   rw [hc45] at sc44; have sc45_l := sc44.append_left; have sc45 := sc44.append_right; clear sc44 hc45
@@ -1368,11 +1346,10 @@ theorem check_iota_rule_invR
       cnp_ni, op_cnp_ni, h_clen, cs_clen, call_clen, ev_clen,
       v_ldrop, h_ldrop, cs_ldrop, v_idxl, h_idxl, cs_idxl, v_idxr, h_idxr, cs_idxr,
       h_deidx, cs_deidx, ev_ldrop, ev_idxl, ev_idxr, ev_deidx, sub_deidx,
-      ty_m, h_ty_m, cs_ty_m, ev_ty_m, sub_ty_m, v_dt1, h_dt1, cs_dt1, ev_dt1, sub_dt1,
+      v_dt1, h_dt1, cs_dt1, ev_dt1, sub_dt1,
       v_tty_rp, h_tty_rp, cs_tty_rp, v_ctx_rp, h_ctx_rp, cs_ctx_rp,
       v_dt2, h_dt2, cs_dt2, ev_tty_rp, ev_ctx_rp, ev_dt2, sub_dt2,
       w_pbody, ctx_p, h_ctxp, cs_ctxp, ev_ctxp,
-      v_cty_ren2, h_cty_ren2, cs_cty_ren2, ev_cty_ren2, sub_cty_ren2,
       crest_p, h_crestp, cs_crestp, ev_crestp, sub_crestp,
       rhs_rp, lctx, h_lt1, cs_lt1, ev_lt1, sub_lt1,
       w_lt2a, w_lt2b, h_lt2, cs_lt2, ev_lt2, sub_lt2,

@@ -5072,6 +5072,139 @@ theorem listsLookup_refines {h h' : Heap F} {ls : List Ix.Kernel.Level}
         rfl
       exact ⟨hd, hget, repHd, rfl⟩
 
+/-- **`EvalFn W` refinement for `KernelLevels::level_has_param`.** -/
+theorem levelHasParam_refines {h h' : Heap F} {l : Ix.Kernel.Level}
+    {ptrL r : SourceValue F}
+    (repL : RepKLevel h l ptrL)
+    (ev : EvalFn W "KernelLevels::level_has_param" [ptrL] h r h') :
+    h' = h ∧ (r = .field 0 ∨ r = .field 1) ∧
+    (r = .field 0 → ∀ params, ParamsLt params.length l ∧ substLevel l params = l) := by
+  induction l generalizing h h' ptrL r with
+  | zero =>
+    cases repL with
+    | zero cell =>
+      have ev := ev.function_inv (IxVM.KernelLevels.level_has_param.lookup)
+        (by simp [IxVM.KernelLevels.level_has_param, ControlLower.hasControl])
+      simp only [IxVM.KernelLevels.level_has_param] at ev
+      obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell ev
+      simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
+        SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
+      obtain ⟨rfl, rfl⟩ := sel
+      obtain ⟨rfl, rfl⟩ := dArm.literal_inv
+      exact ⟨rfl, .inl rfl, fun _ _ => ⟨trivial, rfl⟩⟩
+  | succ u ih =>
+    cases repL with
+    | succ cell repU =>
+      have ev := ev.function_inv (IxVM.KernelLevels.level_has_param.lookup)
+        (by simp [IxVM.KernelLevels.level_has_param, ControlLower.hasControl])
+      simp only [IxVM.KernelLevels.level_has_param] at ev
+      obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell ev
+      simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
+        matchPattern_bind, SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
+      obtain ⟨rfl, rfl⟩ := sel
+      obtain ⟨_, _, dVarU, dFn⟩ := evalExpr_call1_inv dArm
+      obtain ⟨⟨⟩, rfl⟩ := dVarU.var_inv'
+      simp only [instanceName] at dFn
+      obtain ⟨hh', h01, h0⟩ := ih repU dFn
+      refine ⟨hh', h01, fun hr params => ?_⟩
+      obtain ⟨hp, hsub⟩ := h0 hr params
+      exact ⟨hp, congrArg Ix.Kernel.Level.succ hsub⟩
+  | max a b _ _ =>
+    cases repL with
+    | max cell _ _ =>
+      have ev := ev.function_inv (IxVM.KernelLevels.level_has_param.lookup)
+        (by simp [IxVM.KernelLevels.level_has_param, ControlLower.hasControl])
+      simp only [IxVM.KernelLevels.level_has_param] at ev
+      obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell ev
+      simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
+        matchPattern_wildcard, SourceSemantics.matchPattern, SourceSemantics.matchListWith, bind,
+        Except.bind, pure, Except.pure] at sel
+      obtain ⟨rfl, rfl⟩ := sel
+      obtain ⟨rfl, rfl⟩ := dArm.literal_inv
+      exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+  | imax a b _ _ =>
+    cases repL with
+    | imax cell _ _ =>
+      have ev := ev.function_inv (IxVM.KernelLevels.level_has_param.lookup)
+        (by simp [IxVM.KernelLevels.level_has_param, ControlLower.hasControl])
+      simp only [IxVM.KernelLevels.level_has_param] at ev
+      obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell ev
+      simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
+        matchPattern_wildcard, SourceSemantics.matchPattern, SourceSemantics.matchListWith, bind,
+        Except.bind, pure, Except.pure] at sel
+      obtain ⟨rfl, rfl⟩ := sel
+      obtain ⟨rfl, rfl⟩ := dArm.literal_inv
+      exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+  | param i =>
+    cases repL with
+    | param _ cell =>
+      have ev := ev.function_inv (IxVM.KernelLevels.level_has_param.lookup)
+        (by simp [IxVM.KernelLevels.level_has_param, ControlLower.hasControl])
+      simp only [IxVM.KernelLevels.level_has_param] at ev
+      obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell ev
+      simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
+        matchPattern_wildcard, SourceSemantics.matchPattern, SourceSemantics.matchListWith, bind,
+        Except.bind, pure, Except.pure] at sel
+      obtain ⟨rfl, rfl⟩ := sel
+      obtain ⟨rfl, rfl⟩ := dArm.literal_inv
+      exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+
+/-- **`EvalFn W` refinement for `KernelLevels::level_list_has_param`.** -/
+theorem levelListHasParam_refines {h h' : Heap F} {lvls : List Ix.Kernel.Level}
+    {ptrLvls r : SourceValue F}
+    (repLvls : RepKLevelList h lvls ptrLvls)
+    (ev : EvalFn W "KernelLevels::level_list_has_param" [ptrLvls] h r h') :
+    h' = h ∧ (r = .field 0 ∨ r = .field 1) ∧
+    (r = .field 0 → ∀ params, (∀ l ∈ lvls, ParamsLt params.length l) ∧
+      substLevelList lvls params = lvls) := by
+  induction lvls generalizing h h' ptrLvls r with
+  | nil =>
+    cases repLvls with
+    | nil cell =>
+      have ev := ev.function_inv (IxVM.KernelLevels.level_list_has_param.lookup)
+        (by simp [IxVM.KernelLevels.level_list_has_param, ControlLower.hasControl])
+      simp only [IxVM.KernelLevels.level_list_has_param] at ev
+      obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell ev
+      simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
+        SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
+      obtain ⟨rfl, rfl⟩ := sel
+      obtain ⟨rfl, rfl⟩ := dArm.literal_inv
+      exact ⟨rfl, .inl rfl, fun _ _ => ⟨by simp, rfl⟩⟩
+  | cons hdLvl tlLvls ih =>
+    cases repLvls with
+    | cons cell repHd repTl =>
+      have ev := ev.function_inv (IxVM.KernelLevels.level_list_has_param.lookup)
+        (by simp [IxVM.KernelLevels.level_list_has_param, ControlLower.hasControl])
+      simp only [IxVM.KernelLevels.level_list_has_param] at ev
+      obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell ev
+      simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
+        matchPattern_bind, SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
+      obtain ⟨rfl, rfl⟩ := sel
+      obtain ⟨v, h1, bs1, body1, dScrut, sel1, dArm1⟩ := dArm.matchValue_inv
+      obtain ⟨_, _, dVarL, dFnL⟩ := evalExpr_call1_inv dScrut
+      obtain ⟨⟨⟩, rfl⟩ := dVarL.var_inv'
+      simp only [instanceName] at dFnL
+      obtain ⟨hh1, h01, h0l⟩ := levelHasParam_refines repHd dFnL
+      subst hh1
+      rcases selectArm_literal_inv sel1 with ⟨heq1, rfl, rfl⟩ | ⟨hne1, sel1'⟩
+      · obtain ⟨rfl, rfl⟩ := dArm1.literal_inv
+        exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+      · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel1'
+        have hv0 : v = .field 0 := h01.resolve_right (by simpa using hne1)
+        obtain ⟨_, _, dVarRest, dFnRest⟩ := evalExpr_call1_inv dArm1
+        obtain ⟨⟨⟩, rfl⟩ := dVarRest.var_inv'
+        simp only [instanceName] at dFnRest
+        obtain ⟨hh', h01', h0r⟩ := ih repTl dFnRest
+        refine ⟨hh', h01', fun hr params => ?_⟩
+        obtain ⟨hpl, hsubl⟩ := h0l hv0 params
+        obtain ⟨hpr, hsubr⟩ := h0r hr params
+        refine ⟨fun l hl => ?_, ?_⟩
+        · rcases List.mem_cons.mp hl with rfl | htl
+          · exact hpl
+          · exact hpr l htl
+        · simp only [substLevelList, List.map_cons, hsubl]
+          exact congrArg (List.cons _) hsubr
+
 /-- **`EvalFn W` refinement for `KernelLevels::level_inst_params` (`subst_level`).** -/
 theorem levelInstParams_refines {h h' : Heap F} {l : Ix.Kernel.Level}
     {params : List Ix.Kernel.Level} {ptrL ptrParams r : SourceValue F}
@@ -5086,118 +5219,175 @@ theorem levelInstParams_refines {h h' : Heap F} {l : Ix.Kernel.Level}
       have ev := ev.function_inv (IxVM.KernelLevels.level_inst_params.lookup)
         (by simp [IxVM.KernelLevels.level_inst_params, ControlLower.hasControl])
       simp only [IxVM.KernelLevels.level_inst_params] at ev
-      obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell ev
-      simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
-        SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
-      obtain ⟨rfl, rfl⟩ := sel
-      obtain ⟨rfl, rfl⟩ := evalExpr_store_construct0_inv dArm
-      simp only [ParamsLt, substLevel, klevel_inst, true_and]
-      exact RepKLevel.allocZero h
+      obtain ⟨v, h1, bs0, body0, dScrut0, sel0, dArm0⟩ := ev.matchValue_inv
+      obtain ⟨_, _, dVarL0, dFnHP⟩ := evalExpr_call1_inv dScrut0
+      obtain ⟨⟨⟩, rfl⟩ := dVarL0.var_inv'
+      simp only [instanceName] at dFnHP
+      obtain ⟨hh1, -, -⟩ := levelHasParam_refines (.zero cell) dFnHP
+      subst hh1
+      rcases selectArm_literal_inv sel0 with ⟨_, rfl, rfl⟩ | ⟨_, sel0'⟩
+      · obtain ⟨⟨⟩, rfl⟩ := dArm0.var_inv'
+        exact ⟨trivial, .zero cell, Heap.Extends.refl _⟩
+      · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel0'
+        obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell dArm0
+        simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
+          SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
+        obtain ⟨rfl, rfl⟩ := sel
+        obtain ⟨⟨⟩, rfl⟩ := dArm.var_inv'
+        exact ⟨trivial, .zero cell, Heap.Extends.refl _⟩
   | succ u ih =>
     cases repL with
     | succ cell repU =>
       have ev := ev.function_inv (IxVM.KernelLevels.level_inst_params.lookup)
         (by simp [IxVM.KernelLevels.level_inst_params, ControlLower.hasControl])
       simp only [IxVM.KernelLevels.level_inst_params] at ev
-      obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell ev
-      simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct, matchPattern_bind,
-        SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
-      obtain ⟨rfl, rfl⟩ := sel
-      obtain ⟨_, h1, dCall, rfl, rfl⟩ := evalExpr_store_construct1_inv dArm
-      obtain ⟨_, _, _, _, dVarU, dVarP, dFn⟩ := evalExpr_call2_inv dCall
-      obtain ⟨⟨⟩, rfl⟩ := dVarU.var_inv'
-      obtain ⟨⟨⟩, rfl⟩ := dVarP.var_inv'
-      simp only [instanceName] at dFn
-      have hdU : levelDepth u + maxLevelDepth params < fieldSize := by
-        simp only [levelDepth] at hd; omega
-      obtain ⟨hplt, repU', ext1⟩ := ih repU repParams hdU dFn
-      obtain ⟨repSucc, ext2⟩ := RepKLevel.allocSucc repU'
-      simp only [ParamsLt, substLevel, klevel_inst]
-      exact ⟨hplt, repSucc, ext1.trans ext2⟩
+      obtain ⟨v, h1, bs0, body0, dScrut0, sel0, dArm0⟩ := ev.matchValue_inv
+      obtain ⟨_, _, dVarL0, dFnHP⟩ := evalExpr_call1_inv dScrut0
+      obtain ⟨⟨⟩, rfl⟩ := dVarL0.var_inv'
+      simp only [instanceName] at dFnHP
+      obtain ⟨hh1, -, h0⟩ := levelHasParam_refines (.succ cell repU) dFnHP
+      subst hh1
+      rcases selectArm_literal_inv sel0 with ⟨heq0, rfl, rfl⟩ | ⟨_, sel0'⟩
+      · obtain ⟨⟨⟩, rfl⟩ := dArm0.var_inv'
+        obtain ⟨hp, hsub⟩ := h0 (by simpa using heq0) params
+        rw [hsub]
+        exact ⟨hp, .succ cell repU, Heap.Extends.refl _⟩
+      · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel0'
+        obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell dArm0
+        simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct, matchPattern_bind,
+          SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
+        obtain ⟨rfl, rfl⟩ := sel
+        obtain ⟨_, h1, dCall, rfl, rfl⟩ := evalExpr_store_construct1_inv dArm
+        obtain ⟨_, _, _, _, dVarU, dVarP, dFn⟩ := evalExpr_call2_inv dCall
+        obtain ⟨⟨⟩, rfl⟩ := dVarU.var_inv'
+        obtain ⟨⟨⟩, rfl⟩ := dVarP.var_inv'
+        simp only [instanceName] at dFn
+        have hdU : levelDepth u + maxLevelDepth params < fieldSize := by
+          simp only [levelDepth] at hd; omega
+        obtain ⟨hplt, repU', ext1⟩ := ih repU repParams hdU dFn
+        obtain ⟨repSucc, ext2⟩ := RepKLevel.allocSucc repU'
+        simp only [ParamsLt, substLevel, klevel_inst]
+        exact ⟨hplt, repSucc, ext1.trans ext2⟩
   | max a b iha ihb =>
     cases repL with
     | max cell repA repB =>
       have ev := ev.function_inv (IxVM.KernelLevels.level_inst_params.lookup)
         (by simp [IxVM.KernelLevels.level_inst_params, ControlLower.hasControl])
       simp only [IxVM.KernelLevels.level_inst_params] at ev
-      obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell ev
-      simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct, matchPattern_bind,
-        SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
-      obtain ⟨rfl, rfl⟩ := sel
-      obtain ⟨_, _, h1, h2, dCallA, dCallB, dFnMax⟩ := evalExpr_call2_inv dArm
-      obtain ⟨_, _, _, _, dVarA, dVarP1, dFnA⟩ := evalExpr_call2_inv dCallA
-      obtain ⟨⟨⟩, rfl⟩ := dVarA.var_inv'
-      obtain ⟨⟨⟩, rfl⟩ := dVarP1.var_inv'
-      simp only [instanceName] at dFnA
-      have hdA : levelDepth a + maxLevelDepth params < fieldSize := by
-        simp only [levelDepth] at hd; omega
-      have hdB : levelDepth b + maxLevelDepth params < fieldSize := by
-        simp only [levelDepth] at hd; omega
-      obtain ⟨hpltA, repA', ext1⟩ := iha repA repParams hdA dFnA
-      obtain ⟨_, _, _, _, dVarB, dVarP2, dFnB⟩ := evalExpr_call2_inv dCallB
-      obtain ⟨⟨⟩, rfl⟩ := dVarB.var_inv'
-      obtain ⟨⟨⟩, rfl⟩ := dVarP2.var_inv'
-      simp only [instanceName] at dFnB
-      obtain ⟨hpltB, repB', ext2⟩ := ihb (repB.mono' ext1) (repParams.mono' ext1) hdB dFnB
-      simp only [instanceName] at dFnMax
-      have hdA' : levelDepth (substLevel a params) < fieldSize :=
-        Nat.lt_of_le_of_lt (levelDepth_substLevel_le a params) hdA
-      have hdB' : levelDepth (substLevel b params) < fieldSize :=
-        Nat.lt_of_le_of_lt (levelDepth_substLevel_le b params) hdB
-      obtain ⟨repMax, ext3⟩ := levelMax_refines (repA'.mono' ext2) repB' hdA' hdB' dFnMax
-      exact ⟨⟨hpltA, hpltB⟩, repMax, (ext1.trans ext2).trans ext3⟩
+      obtain ⟨v, h1, bs0, body0, dScrut0, sel0, dArm0⟩ := ev.matchValue_inv
+      obtain ⟨_, _, dVarL0, dFnHP⟩ := evalExpr_call1_inv dScrut0
+      obtain ⟨⟨⟩, rfl⟩ := dVarL0.var_inv'
+      simp only [instanceName] at dFnHP
+      obtain ⟨hh1, -, h0⟩ := levelHasParam_refines (.max cell repA repB) dFnHP
+      subst hh1
+      rcases selectArm_literal_inv sel0 with ⟨heq0, rfl, rfl⟩ | ⟨_, sel0'⟩
+      · obtain ⟨⟨⟩, rfl⟩ := dArm0.var_inv'
+        obtain ⟨hp, hsub⟩ := h0 (by simpa using heq0) params
+        rw [hsub]
+        exact ⟨hp, .max cell repA repB, Heap.Extends.refl _⟩
+      · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel0'
+        obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell dArm0
+        simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct, matchPattern_bind,
+          SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
+        obtain ⟨rfl, rfl⟩ := sel
+        obtain ⟨_, _, h1, h2, dCallA, dCallB, dFnMax⟩ := evalExpr_call2_inv dArm
+        obtain ⟨_, _, _, _, dVarA, dVarP1, dFnA⟩ := evalExpr_call2_inv dCallA
+        obtain ⟨⟨⟩, rfl⟩ := dVarA.var_inv'
+        obtain ⟨⟨⟩, rfl⟩ := dVarP1.var_inv'
+        simp only [instanceName] at dFnA
+        have hdA : levelDepth a + maxLevelDepth params < fieldSize := by
+          simp only [levelDepth] at hd; omega
+        have hdB : levelDepth b + maxLevelDepth params < fieldSize := by
+          simp only [levelDepth] at hd; omega
+        obtain ⟨hpltA, repA', ext1⟩ := iha repA repParams hdA dFnA
+        obtain ⟨_, _, _, _, dVarB, dVarP2, dFnB⟩ := evalExpr_call2_inv dCallB
+        obtain ⟨⟨⟩, rfl⟩ := dVarB.var_inv'
+        obtain ⟨⟨⟩, rfl⟩ := dVarP2.var_inv'
+        simp only [instanceName] at dFnB
+        obtain ⟨hpltB, repB', ext2⟩ := ihb (repB.mono' ext1) (repParams.mono' ext1) hdB dFnB
+        simp only [instanceName] at dFnMax
+        have hdA' : levelDepth (substLevel a params) < fieldSize :=
+          Nat.lt_of_le_of_lt (levelDepth_substLevel_le a params) hdA
+        have hdB' : levelDepth (substLevel b params) < fieldSize :=
+          Nat.lt_of_le_of_lt (levelDepth_substLevel_le b params) hdB
+        obtain ⟨repMax, ext3⟩ := levelMax_refines (repA'.mono' ext2) repB' hdA' hdB' dFnMax
+        exact ⟨⟨hpltA, hpltB⟩, repMax, (ext1.trans ext2).trans ext3⟩
   | imax a b iha ihb =>
     cases repL with
     | imax cell repA repB =>
       have ev := ev.function_inv (IxVM.KernelLevels.level_inst_params.lookup)
         (by simp [IxVM.KernelLevels.level_inst_params, ControlLower.hasControl])
       simp only [IxVM.KernelLevels.level_inst_params] at ev
-      obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell ev
-      simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct, matchPattern_bind,
-        SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
-      obtain ⟨rfl, rfl⟩ := sel
-      obtain ⟨_, _, h1, h2, dCallA, dCallB, dFnIMax⟩ := evalExpr_call2_inv dArm
-      obtain ⟨_, _, _, _, dVarA, dVarP1, dFnA⟩ := evalExpr_call2_inv dCallA
-      obtain ⟨⟨⟩, rfl⟩ := dVarA.var_inv'
-      obtain ⟨⟨⟩, rfl⟩ := dVarP1.var_inv'
-      simp only [instanceName] at dFnA
-      have hdA : levelDepth a + maxLevelDepth params < fieldSize := by
-        simp only [levelDepth] at hd; omega
-      have hdB : levelDepth b + maxLevelDepth params < fieldSize := by
-        simp only [levelDepth] at hd; omega
-      obtain ⟨hpltA, repA', ext1⟩ := iha repA repParams hdA dFnA
-      obtain ⟨_, _, _, _, dVarB, dVarP2, dFnB⟩ := evalExpr_call2_inv dCallB
-      obtain ⟨⟨⟩, rfl⟩ := dVarB.var_inv'
-      obtain ⟨⟨⟩, rfl⟩ := dVarP2.var_inv'
-      simp only [instanceName] at dFnB
-      obtain ⟨hpltB, repB', ext2⟩ := ihb (repB.mono' ext1) (repParams.mono' ext1) hdB dFnB
-      simp only [instanceName] at dFnIMax
-      have hdA' : levelDepth (substLevel a params) < fieldSize :=
-        Nat.lt_of_le_of_lt (levelDepth_substLevel_le a params) hdA
-      have hdB' : levelDepth (substLevel b params) < fieldSize :=
-        Nat.lt_of_le_of_lt (levelDepth_substLevel_le b params) hdB
-      obtain ⟨repIMax, ext3⟩ := levelIMax_refines (repA'.mono' ext2) repB' hdA' hdB' dFnIMax
-      exact ⟨⟨hpltA, hpltB⟩, repIMax, (ext1.trans ext2).trans ext3⟩
+      obtain ⟨v, h1, bs0, body0, dScrut0, sel0, dArm0⟩ := ev.matchValue_inv
+      obtain ⟨_, _, dVarL0, dFnHP⟩ := evalExpr_call1_inv dScrut0
+      obtain ⟨⟨⟩, rfl⟩ := dVarL0.var_inv'
+      simp only [instanceName] at dFnHP
+      obtain ⟨hh1, -, h0⟩ := levelHasParam_refines (.imax cell repA repB) dFnHP
+      subst hh1
+      rcases selectArm_literal_inv sel0 with ⟨heq0, rfl, rfl⟩ | ⟨_, sel0'⟩
+      · obtain ⟨⟨⟩, rfl⟩ := dArm0.var_inv'
+        obtain ⟨hp, hsub⟩ := h0 (by simpa using heq0) params
+        rw [hsub]
+        exact ⟨hp, .imax cell repA repB, Heap.Extends.refl _⟩
+      · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel0'
+        obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell dArm0
+        simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct, matchPattern_bind,
+          SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
+        obtain ⟨rfl, rfl⟩ := sel
+        obtain ⟨_, _, h1, h2, dCallA, dCallB, dFnIMax⟩ := evalExpr_call2_inv dArm
+        obtain ⟨_, _, _, _, dVarA, dVarP1, dFnA⟩ := evalExpr_call2_inv dCallA
+        obtain ⟨⟨⟩, rfl⟩ := dVarA.var_inv'
+        obtain ⟨⟨⟩, rfl⟩ := dVarP1.var_inv'
+        simp only [instanceName] at dFnA
+        have hdA : levelDepth a + maxLevelDepth params < fieldSize := by
+          simp only [levelDepth] at hd; omega
+        have hdB : levelDepth b + maxLevelDepth params < fieldSize := by
+          simp only [levelDepth] at hd; omega
+        obtain ⟨hpltA, repA', ext1⟩ := iha repA repParams hdA dFnA
+        obtain ⟨_, _, _, _, dVarB, dVarP2, dFnB⟩ := evalExpr_call2_inv dCallB
+        obtain ⟨⟨⟩, rfl⟩ := dVarB.var_inv'
+        obtain ⟨⟨⟩, rfl⟩ := dVarP2.var_inv'
+        simp only [instanceName] at dFnB
+        obtain ⟨hpltB, repB', ext2⟩ := ihb (repB.mono' ext1) (repParams.mono' ext1) hdB dFnB
+        simp only [instanceName] at dFnIMax
+        have hdA' : levelDepth (substLevel a params) < fieldSize :=
+          Nat.lt_of_le_of_lt (levelDepth_substLevel_le a params) hdA
+        have hdB' : levelDepth (substLevel b params) < fieldSize :=
+          Nat.lt_of_le_of_lt (levelDepth_substLevel_le b params) hdB
+        obtain ⟨repIMax, ext3⟩ := levelIMax_refines (repA'.mono' ext2) repB' hdA' hdB' dFnIMax
+        exact ⟨⟨hpltA, hpltB⟩, repIMax, (ext1.trans ext2).trans ext3⟩
   | param i =>
     cases repL with
     | param hi cell =>
       have ev := ev.function_inv (IxVM.KernelLevels.level_inst_params.lookup)
         (by simp [IxVM.KernelLevels.level_inst_params, ControlLower.hasControl])
       simp only [IxVM.KernelLevels.level_inst_params] at ev
-      obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell ev
-      simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct, matchPattern_bind,
-        SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
-      obtain ⟨rfl, rfl⟩ := sel
-      obtain ⟨_, _, _, _, dVarP, dVarI, dFn⟩ := evalExpr_call2_inv dArm
-      obtain ⟨⟨⟩, rfl⟩ := dVarP.var_inv'
-      obtain ⟨⟨⟩, rfl⟩ := dVarI.var_inv'
-      have hinst : instanceName [] "Lists::lookup" (some [klevelTy]) =
-          (Instance.mk "Lists::lookup" [klevelTy]).symbol := by decide +kernel
-      rw [hinst] at dFn
-      obtain ⟨l', hget, repL', rfl⟩ := listsLookup_refines hi repParams dFn
-      have hlt : i < params.length := (List.getElem?_eq_some_iff.mp hget).1
-      simp only [ParamsLt, substLevel, hget, Option.getD_some]
-      exact ⟨hlt, repL', Heap.Extends.refl _⟩
+      obtain ⟨v, h1, bs0, body0, dScrut0, sel0, dArm0⟩ := ev.matchValue_inv
+      obtain ⟨_, _, dVarL0, dFnHP⟩ := evalExpr_call1_inv dScrut0
+      obtain ⟨⟨⟩, rfl⟩ := dVarL0.var_inv'
+      simp only [instanceName] at dFnHP
+      obtain ⟨hh1, -, h0⟩ := levelHasParam_refines (.param hi cell) dFnHP
+      subst hh1
+      rcases selectArm_literal_inv sel0 with ⟨heq0, rfl, rfl⟩ | ⟨_, sel0'⟩
+      · obtain ⟨⟨⟩, rfl⟩ := dArm0.var_inv'
+        obtain ⟨hp, hsub⟩ := h0 (by simpa using heq0) params
+        rw [hsub]
+        exact ⟨hp, .param hi cell, Heap.Extends.refl _⟩
+      · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel0'
+        obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell dArm0
+        simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct, matchPattern_bind,
+          SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
+        obtain ⟨rfl, rfl⟩ := sel
+        obtain ⟨_, _, _, _, dVarP, dVarI, dFn⟩ := evalExpr_call2_inv dArm
+        obtain ⟨⟨⟩, rfl⟩ := dVarP.var_inv'
+        obtain ⟨⟨⟩, rfl⟩ := dVarI.var_inv'
+        have hinst : instanceName [] "Lists::lookup" (some [klevelTy]) =
+            (Instance.mk "Lists::lookup" [klevelTy]).symbol := by decide +kernel
+        rw [hinst] at dFn
+        obtain ⟨l', hget, repL', rfl⟩ := listsLookup_refines hi repParams dFn
+        have hlt : i < params.length := (List.getElem?_eq_some_iff.mp hget).1
+        simp only [ParamsLt, substLevel, hget, Option.getD_some]
+        exact ⟨hlt, repL', Heap.Extends.refl _⟩
 
 /-- **`EvalFn W` refinement for `KernelLevels::level_list_inst`.** -/
 theorem levelListInst_refines {h h' : Heap F} {lvls params : List Ix.Kernel.Level}
@@ -5215,44 +5405,65 @@ theorem levelListInst_refines {h h' : Heap F} {lvls params : List Ix.Kernel.Leve
       have ev := ev.function_inv (IxVM.KernelLevels.level_list_inst.lookup)
         (by simp [IxVM.KernelLevels.level_list_inst, ControlLower.hasControl])
       simp only [IxVM.KernelLevels.level_list_inst] at ev
-      obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell ev
-      simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
-        SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
-      obtain ⟨rfl, rfl⟩ := sel
-      obtain ⟨rfl, rfl⟩ := evalExpr_store_construct0_inv dArm
-      simp only [substLevelList, List.map_nil, klevelList_inst]
-      exact And.intro (by intro l hl; cases hl) (RepKLevelList.allocNil _)
+      obtain ⟨v, h1, bs0, body0, dScrut0, sel0, dArm0⟩ := ev.matchValue_inv
+      obtain ⟨_, _, dVarL0, dFnHP⟩ := evalExpr_call1_inv dScrut0
+      obtain ⟨⟨⟩, rfl⟩ := dVarL0.var_inv'
+      simp only [instanceName] at dFnHP
+      obtain ⟨hh1, -, -⟩ := levelListHasParam_refines (.nil cell) dFnHP
+      subst hh1
+      rcases selectArm_literal_inv sel0 with ⟨_, rfl, rfl⟩ | ⟨_, sel0'⟩
+      · obtain ⟨⟨⟩, rfl⟩ := dArm0.var_inv'
+        exact ⟨(by intro l hl; cases hl), .nil cell, Heap.Extends.refl _⟩
+      · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel0'
+        obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell dArm0
+        simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct,
+          SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
+        obtain ⟨rfl, rfl⟩ := sel
+        obtain ⟨⟨⟩, rfl⟩ := dArm.var_inv'
+        exact ⟨(by intro l hl; cases hl), .nil cell, Heap.Extends.refl _⟩
   | cons hdLvl tlLvls ih =>
     cases repLvls with
     | cons cell repHd repTl =>
       have ev := ev.function_inv (IxVM.KernelLevels.level_list_inst.lookup)
         (by simp [IxVM.KernelLevels.level_list_inst, ControlLower.hasControl])
       simp only [IxVM.KernelLevels.level_list_inst] at ev
-      obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell ev
-      simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct, matchPattern_bind,
-        SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
-      obtain ⟨rfl, rfl⟩ := sel
-      obtain ⟨_, _, h1, h2, dCallHd, dCallTl, rfl, rfl⟩ := evalExpr_store_construct2_inv dArm
-      obtain ⟨_, _, _, _, dVarL, dVarP1, dFnHd⟩ := evalExpr_call2_inv dCallHd
-      obtain ⟨⟨⟩, rfl⟩ := dVarL.var_inv'
-      obtain ⟨⟨⟩, rfl⟩ := dVarP1.var_inv'
-      simp only [instanceName] at dFnHd
-      obtain ⟨hpltHd, repHd', ext1⟩ :=
-        levelInstParams_refines repHd repParams (hd _ (List.mem_cons_self ..)) dFnHd
-      obtain ⟨_, _, _, _, dVarRest, dVarP2, dFnTl⟩ := evalExpr_call2_inv dCallTl
-      obtain ⟨⟨⟩, rfl⟩ := dVarRest.var_inv'
-      obtain ⟨⟨⟩, rfl⟩ := dVarP2.var_inv'
-      simp only [instanceName] at dFnTl
-      obtain ⟨hpltTl, repTl', ext2⟩ :=
-        ih (repTl.mono' ext1) (repParams.mono' ext1)
-          (fun l hl => hd l (List.mem_cons_of_mem _ hl)) dFnTl
-      obtain ⟨repCons, ext3⟩ := RepKLevelList.allocCons (repHd'.mono' ext2) repTl'
-      simp only [substLevelList, List.map_cons, klevelList_inst]
-      refine ⟨?_, repCons, (ext1.trans ext2).trans ext3⟩
-      intro l hl
-      rcases List.mem_cons.mp hl with rfl | htl
-      · exact hpltHd
-      · exact hpltTl l htl
+      obtain ⟨v, h1, bs0, body0, dScrut0, sel0, dArm0⟩ := ev.matchValue_inv
+      obtain ⟨_, _, dVarL0, dFnHP⟩ := evalExpr_call1_inv dScrut0
+      obtain ⟨⟨⟩, rfl⟩ := dVarL0.var_inv'
+      simp only [instanceName] at dFnHP
+      obtain ⟨hh1, -, h0⟩ := levelListHasParam_refines (.cons cell repHd repTl) dFnHP
+      subst hh1
+      rcases selectArm_literal_inv sel0 with ⟨heq0, rfl, rfl⟩ | ⟨_, sel0'⟩
+      · obtain ⟨⟨⟩, rfl⟩ := dArm0.var_inv'
+        obtain ⟨hp, hsub⟩ := h0 (by simpa using heq0) params
+        rw [hsub]
+        exact ⟨hp, .cons cell repHd repTl, Heap.Extends.refl _⟩
+      · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel0'
+        obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cell dArm0
+        simp (config := { decide := true }) [SourceSemantics.selectArm, matchPattern_construct, matchPattern_bind,
+          SourceSemantics.matchListWith, bind, Except.bind, pure, Except.pure] at sel
+        obtain ⟨rfl, rfl⟩ := sel
+        obtain ⟨_, _, h1, h2, dCallHd, dCallTl, rfl, rfl⟩ := evalExpr_store_construct2_inv dArm
+        obtain ⟨_, _, _, _, dVarL, dVarP1, dFnHd⟩ := evalExpr_call2_inv dCallHd
+        obtain ⟨⟨⟩, rfl⟩ := dVarL.var_inv'
+        obtain ⟨⟨⟩, rfl⟩ := dVarP1.var_inv'
+        simp only [instanceName] at dFnHd
+        obtain ⟨hpltHd, repHd', ext1⟩ :=
+          levelInstParams_refines repHd repParams (hd _ (List.mem_cons_self ..)) dFnHd
+        obtain ⟨_, _, _, _, dVarRest, dVarP2, dFnTl⟩ := evalExpr_call2_inv dCallTl
+        obtain ⟨⟨⟩, rfl⟩ := dVarRest.var_inv'
+        obtain ⟨⟨⟩, rfl⟩ := dVarP2.var_inv'
+        simp only [instanceName] at dFnTl
+        obtain ⟨hpltTl, repTl', ext2⟩ :=
+          ih (repTl.mono' ext1) (repParams.mono' ext1)
+            (fun l hl => hd l (List.mem_cons_of_mem _ hl)) dFnTl
+        obtain ⟨repCons, ext3⟩ := RepKLevelList.allocCons (repHd'.mono' ext2) repTl'
+        simp only [substLevelList, List.map_cons, klevelList_inst]
+        refine ⟨?_, repCons, (ext1.trans ext2).trans ext3⟩
+        intro l hl
+        rcases List.mem_cons.mp hl with rfl | htl
+        · exact hpltHd
+        · exact hpltTl l htl
 
 /-- **`EvalFn W` refinement for `KernelLevels::level_reduce`.** -/
 theorem levelReduce_refines {h h' : Heap F} {l : Ix.Kernel.Level}

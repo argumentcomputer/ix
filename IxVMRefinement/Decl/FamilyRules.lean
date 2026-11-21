@@ -56,10 +56,8 @@ def CheckIotaRuleInvR.mono
     sub_csp := hs.trans inv.sub_csp
     call_clen := hs _ inv.call_clen
     sub_deidx := hs.trans inv.sub_deidx
-    sub_ty_m := hs.trans inv.sub_ty_m
     sub_dt1 := hs.trans inv.sub_dt1
     sub_dt2 := hs.trans inv.sub_dt2
-    sub_cty_ren2 := hs.trans inv.sub_cty_ren2
     sub_crestp := hs.trans inv.sub_crestp
     sub_lt1 := hs.trans inv.sub_lt1
     sub_lt2 := hs.trans inv.sub_lt2
@@ -250,7 +248,8 @@ theorem check_rules_stepsR {κ : _root_.Address → KKey} {ps : List LevelParam}
       h s_out h' calls) :
     ∃ (iaddr ilvls pins : SourceValue F) (h_rmp : Heap F) (cs_rmp : List (Call F))
       (p_ind : SourceValue F) (h_ind : Heap F) (cs_ind : List (Call F))
-      (w_inl w_ity inp w_ini inct w_iu iblock iidx : SourceValue F),
+      (w_inl w_ity inp w_ini inct w_iu iblock iidx : SourceValue F)
+      (ty_m : SourceValue F) (h_ren : Heap F) (cs_ren : List (Call F)),
       (⟨"KernelModeled::rec_major_pins", [ty, rp, ni], h⟩ : Call F) ∈ calls ∧
       ObsFn W "KernelModeled::rec_major_pins" [ty, rp, ni] h (.tuple [iaddr, ilvls, pins])
         h_rmp cs_rmp ∧
@@ -261,20 +260,24 @@ theorem check_rules_stepsR {κ : _root_.Address → KKey} {ps : List LevelParam}
       loadValue h_ind p_ind = .ok (.construct "KernelTypes::KConstantInfo" "Induct"
         [w_inl, w_ity, inp, w_ini, inct, w_iu, iblock, iidx]) ∧
       inct = .field (rls.length : F) ∧ rls.length < 2 ^ 39 ∧
+      (⟨"KernelModeled::rename", [ty, src, dst], h_ind⟩ : Call F) ∈ calls ∧
+      ObsFn W "KernelModeled::rename" [ty, src, dst] h_ind ty_m h_ren cs_ren ∧
+      SubCalls calls cs_ren ∧
       (⟨"KernelModeled::check_rules_go",
-        [rc, rm, nl, ty, rp, ni, rules, iblock, iidx, inp, ilvls, pins, src, dst, aset, s,
-          .field 0], h_ind⟩ : Call F) ∈ calls ∧
-      RuleStepsR κ ps rc rm nl ty rp ni iblock iidx inp ilvls pins src dst aset s_out h' calls
-        0 rls rules h_ind bytes s := by
+        [rc, rm, nl, ty_m, rp, ni, rules, iblock, iidx, inp, ilvls, pins, src, dst, aset, s,
+          .field 0], h_ren⟩ : Call F) ∈ calls ∧
+      RuleStepsR κ ps rc rm nl ty_m rp ni iblock iidx inp ilvls pins src dst aset s_out h' calls
+        0 rls rules h_ren bytes s := by
   have hsub : SubCalls calls calls := SubCalls.refl calls
   match Obs.«KernelModeled::check_rules».obs ev with
   | .run (m2 := m2) (cs12 := cs12) (x_iaddr := x_iaddr) (x_ilvls := x_ilvls)
       (x_pins := x_pins) (m58 := m58) (p66 := p66) (cs72 := cs72)
       (w89 := w89) (w90 := w90) (x_inp := x_inp) (w91 := w91) (x_inct := x_inct) (w92 := w92)
       (x_iblock := x_iblock) (x_iidx := x_iidx)
-      (v144 := v144) (m147 := m147) (cs155 := cs155) (cs177 := cs177)
+      (v144 := v144) (m147 := m147) (cs155 := cs155)
+      (v_rnhjwdes := ty_m) (m_omqdqrpp := m_ren) (cs_tniefsju := cs_ren) (cs177 := cs177)
       (ev14 := ev_rmp) (ev74 := ev_ci) (ld68 := ld_ci) (ev157 := ev_rlen)
-      (heq173 := heq_inct) (ev179 := ev_go) (hc315 := hc) .. =>
+      (heq173 := heq_inct) (ev_bcyyrzqq := ev_ren) (ev179 := ev_go) (hc315 := hc) .. =>
     subst hc
     have call_rmp := hsub.cons_head
     have sub_rmp := hsub.cons_tail.append_left
@@ -284,19 +287,24 @@ theorem check_rules_stepsR {κ : _root_.Address → KKey} {ps : List LevelParam}
     have s2 := s1.cons_tail.append_right
     have call_rlen := s2.cons_head
     have s3 := s2.cons_tail.append_right
-    have call_go := s3.cons_head
-    have sub_go := s3.cons_tail
+    have call_ren := s3.cons_head
+    have sub_ren := s3.cons_tail.append_left
+    have s4 := s3.cons_tail.append_right
+    have call_go := s4.cons_head
+    have sub_go := s4.cons_tail
     have ext_rmp_ci := ev_rmp.heap_extends.trans ev_ci.heap_extends
     obtain ⟨hrlen_f, hrlen_lt, hm147_eq⟩ :=
       rulesRepExact_length hbd call_rlen ev_rlen (hrls.mono ext_rmp_ci)
     subst m147
+    have ext_rmp_ren := ext_rmp_ci.trans ev_ren.heap_extends
     have ev_go' := ev_go
     rw [show (.field 0 : SourceValue F) = .field ((0 : Nat) : F) by simp] at ev_go'
-    have hsteps := check_rules_go_stepsR rls 0 sub_go (hrls.mono ext_rmp_ci)
-      (hstr.mono ext_rmp_ci) ev_go'
+    have hsteps := check_rules_go_stepsR rls 0 sub_go (hrls.mono ext_rmp_ren)
+      (hstr.mono ext_rmp_ren) ev_go'
     exact ⟨x_iaddr, x_ilvls, x_pins, m2, cs12, p66, m58, cs72,
       w89, w90, x_inp, w91, x_inct, w92, x_iblock, x_iidx,
+      ty_m, m_ren, cs_ren,
       call_rmp, ev_rmp, sub_rmp, call_ci, ev_ci, sub_ci, ld_ci,
-      heq_inct.symm.trans hrlen_f, hrlen_lt, call_go, hsteps⟩
+      heq_inct.symm.trans hrlen_f, hrlen_lt, call_ren, ev_ren, sub_ren, call_go, hsteps⟩
 
 end IxVM.Refinement.Decl

@@ -147,6 +147,89 @@ theorem levelReduce_obs {x_l r : SourceValue F} {h h' : Heap F} {cs : List (Call
 termination_by cs.length
 decreasing_by all_goals (rw [hc]; simp only [List.length_append, List.length_cons]; omega)
 
+/-- **`level_has_param` never allocates, returns `0` or `1`, and `0` guarantees `substLevel` is
+syntactically the identity.** -/
+theorem levelHasParam_obs {x_l r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    {l : Ix.Kernel.Level}
+    (ev : ObsFn IxVM.source.world "KernelLevels::level_has_param" [x_l] h r h' cs)
+    (rep : RepKLevel h l x_l) :
+    h' = h ∧ (r = .field 0 ∨ r = .field 1) ∧
+      (r = .field 0 → ∀ params, ParamsLt params.length l ∧ substLevel l params = l) := by
+  cases Obs.«KernelLevels::level_has_param».obs ev with
+  | Zero ld hr hm hc =>
+    obtain rfl := rep_zero_of_load rep ld
+    subst hr hm
+    exact ⟨rfl, .inl rfl, fun _ _ => ⟨trivial, rfl⟩⟩
+  | Succ x_u cs1 ld ev1 hc =>
+    obtain ⟨u, rfl, hu⟩ := rep_succ_of_load rep ld
+    obtain ⟨hh', h01, h0⟩ := levelHasParam_obs ev1 hu
+    refine ⟨hh', h01, fun hr params => ?_⟩
+    obtain ⟨hp, hsub⟩ := h0 hr params
+    exact ⟨hp, congrArg Ix.Kernel.Level.succ hsub⟩
+  | other v ld _ _ hr hm hc =>
+    subst hr hm
+    exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+termination_by cs.length
+decreasing_by rw [hc]; simp
+
+/-- **`level_list_has_param` never allocates, returns `0` or `1`, and `0` guarantees
+`substLevelList` is syntactically the identity.** -/
+theorem levelListHasParam_obs {x_ls r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    {lvls : List Ix.Kernel.Level}
+    (ev : ObsFn IxVM.source.world "KernelLevels::level_list_has_param" [x_ls] h r h' cs)
+    (repLs : RepKLevelList h lvls x_ls) :
+    h' = h ∧ (r = .field 0 ∨ r = .field 1) ∧
+      (r = .field 0 → ∀ params, (∀ l ∈ lvls, ParamsLt params.length l) ∧
+        substLevelList lvls params = lvls) := by
+  cases Obs.«KernelLevels::level_list_has_param».obs ev with
+  | Nil ld hr hm hc =>
+    cases repLs with
+    | nil cell =>
+      subst hr hm
+      exact ⟨rfl, .inl rfl, fun _ _ => ⟨by simp, rfl⟩⟩
+    | cons cell _ _ =>
+      rw [loadValue_enum_cell cell, klevelList_names] at ld
+      injection ld with hv; injection hv with _ hc' _
+      exact absurd hc' (by decide)
+  | Cons_n1 x_l x_rest m1 cs1 ld ev1 hr hm hc =>
+    cases repLs with
+    | nil cell =>
+      rw [loadValue_enum_cell cell, klevelList_names] at ld
+      injection ld with hv; injection hv with _ hc' _
+      exact absurd hc' (by decide)
+    | cons cell repL repRest =>
+      rw [loadValue_enum_cell cell, klevelList_names] at ld
+      injection ld with hv; injection hv with _ _ hxs
+      injection hxs with hx hxs; injection hxs with hr' _; subst hx hr'
+      obtain ⟨hm1, -, -⟩ := levelHasParam_obs ev1 repL
+      subst hm1 hr hm
+      exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+  | Cons_other x_l x_rest v1 m1 cs1 cs2 ld ev1 hne1 ev2 hc =>
+    cases repLs with
+    | nil cell =>
+      rw [loadValue_enum_cell cell, klevelList_names] at ld
+      injection ld with hv; injection hv with _ hc' _
+      exact absurd hc' (by decide)
+    | cons cell repL repRest =>
+      rw [loadValue_enum_cell cell, klevelList_names] at ld
+      injection ld with hv; injection hv with _ _ hxs
+      injection hxs with hx hxs; injection hxs with hr' _; subst hx hr'
+      obtain ⟨hm1, h01, h0l⟩ := levelHasParam_obs ev1 repL
+      subst hm1
+      have hv1 : v1 = .field 0 := h01.resolve_right hne1
+      obtain ⟨hh', h01', h0r⟩ := levelListHasParam_obs ev2 repRest
+      refine ⟨hh', h01', fun hr params => ?_⟩
+      obtain ⟨hpl, hsubl⟩ := h0l hv1 params
+      obtain ⟨hpr, hsubr⟩ := h0r hr params
+      refine ⟨fun x hx => ?_, ?_⟩
+      · rcases List.mem_cons.mp hx with rfl | hx
+        · exact hpl
+        · exact hpr x hx
+      · simp only [substLevelList, List.map_cons, hsubl]
+        exact congrArg (List.cons _) hsubr
+termination_by cs.length
+decreasing_by rw [hc]; simp only [List.length_append, List.length_cons]; omega
+
 /-- **`level_inst_params` returns `substLevel`** on a represented level and parameter list, in a
 bounded derivation; every parameter the level names is in the list. -/
 theorem levelInstParams_obs {x_l x_ps r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -155,18 +238,28 @@ theorem levelInstParams_obs {x_l x_ps r : SourceValue F} {h h' : Heap F} {cs : L
     (hb : Bounded cs) (rep : RepKLevel h l x_l) (repPs : RepKLevelList h params x_ps) :
     ParamsLt params.length l ∧ RepKLevel h' (substLevel l params) r ∧ Heap.Extends h h' := by
   cases Obs.«KernelLevels::level_inst_params».obs ev with
-  | Zero ld he hm hc =>
+  | n0 m1 cs1 ev1 hr hm hc =>
+    obtain ⟨hm1, -, h0⟩ := levelHasParam_obs ev1 rep
+    subst hm1 hr hm
+    obtain ⟨hp, hsub⟩ := h0 rfl params
+    rw [hsub]
+    exact ⟨hp, rep, Heap.Extends.refl _⟩
+  | other_Zero v1 m1 cs1 ev1 _ ld hr hm hc =>
+    obtain ⟨hm1, -, -⟩ := levelHasParam_obs ev1 rep
+    subst hm1 hr hm
     obtain rfl := rep_zero_of_load rep ld
-    subst he hm
-    obtain ⟨repZ, ext⟩ := RepKLevel.allocZero h
-    exact ⟨trivial, repZ, ext⟩
-  | Succ x_u v49 m51 cs59 ld he hm ev61 hc =>
+    exact ⟨trivial, rep, Heap.Extends.refl _⟩
+  | other_Succ v1 m1 cs1 x_u v49 m51 cs59 ev1 _ ld he hm ev61 hc =>
+    obtain ⟨hm1, -, -⟩ := levelHasParam_obs ev1 rep
+    subst hm1
     obtain ⟨u, rfl, hu⟩ := rep_succ_of_load rep ld
     obtain ⟨hpu, repU, ext1⟩ := levelInstParams_obs ev61 (bounded_sub hb (by rw [hc]; chainsub)) hu repPs
     subst he hm
     obtain ⟨repS, ext2⟩ := RepKLevel.allocSucc repU
     exact ⟨hpu, repS, ext1.trans ext2⟩
-  | Max x_a x_b cs99 v102 v103 m105 cs113 m133 cs141 ld ev115 ev143 ev101 hc =>
+  | other_Max v1 m1 cs1 x_a x_b cs99 v102 v103 m105 cs113 m133 cs141 ev1 _ ld ev115 ev143 ev101 hc =>
+    obtain ⟨hm1, -, -⟩ := levelHasParam_obs ev1 rep
+    subst hm1
     obtain ⟨a, b, rfl, ha, hb'⟩ := rep_max_of_load rep ld
     obtain ⟨hpa, repA, ext1⟩ :=
       levelInstParams_obs ev115 (bounded_sub hb (by rw [hc]; chainsub)) ha repPs
@@ -174,7 +267,9 @@ theorem levelInstParams_obs {x_l x_ps r : SourceValue F} {h h' : Heap F} {cs : L
       levelInstParams_obs ev143 (bounded_sub hb (by rw [hc]; chainsub)) (hb'.mono ext1) (repPs.mono ext1)
     obtain ⟨repM, ext3⟩ := levelMax_obs ev101 (bounded_sub hb (by rw [hc]; chainsub)) (repA.mono ext2) repB
     exact ⟨⟨hpa, hpb⟩, repM, (ext1.trans ext2).trans ext3⟩
-  | IMax x_a x_b cs181 v184 v185 m187 cs195 m215 cs223 ld ev197 ev225 ev183 hc =>
+  | other_IMax v1 m1 cs1 x_a x_b cs181 v184 v185 m187 cs195 m215 cs223 ev1 _ ld ev197 ev225 ev183 hc =>
+    obtain ⟨hm1, -, -⟩ := levelHasParam_obs ev1 rep
+    subst hm1
     obtain ⟨a, b, rfl, ha, hb'⟩ := rep_imax_of_load rep ld
     obtain ⟨hpa, repA, ext1⟩ :=
       levelInstParams_obs ev197 (bounded_sub hb (by rw [hc]; chainsub)) ha repPs
@@ -183,7 +278,9 @@ theorem levelInstParams_obs {x_l x_ps r : SourceValue F} {h h' : Heap F} {cs : L
     obtain ⟨repM, ext3⟩ :=
       levelIMax_obs ev183 (bounded_sub hb (by rw [hc]; chainsub)) (repA.mono ext2) repB
     exact ⟨⟨hpa, hpb⟩, repM, (ext1.trans ext2).trans ext3⟩
-  | Param x_i cs258 ld ev260 hc =>
+  | other_Param v1 m1 cs1 x_i cs258 ev1 _ ld ev260 hc =>
+    obtain ⟨hm1, -, -⟩ := levelHasParam_obs ev1 rep
+    subst hm1
     obtain ⟨n, rfl, rfl, hn⟩ := rep_param_of_load' rep ld
     rw [← Obs.Names.«Lists::lookup<&KernelTypes::KLevelNode>».symbol] at ev260
     obtain ⟨l', hl', repL', rfl⟩ := listsLookup_refines hn repPs ev260.erase
@@ -202,19 +299,26 @@ theorem levelListInst_obs {x_ls x_ps r : SourceValue F} {h h' : Heap F} {cs : Li
     (∀ l ∈ lvls, ParamsLt params.length l) ∧ RepKLevelList h' (substLevelList lvls params) r ∧
       Heap.Extends h h' := by
   cases Obs.«KernelLevels::level_list_inst».obs ev with
-  | Nil ld he hm hc =>
+  | n0 m1 cs1 ev1 hr hm hc =>
+    obtain ⟨hm1, -, h0⟩ := levelListHasParam_obs ev1 repLs
+    subst hm1 hr hm
+    obtain ⟨hp, hsub⟩ := h0 rfl params
+    rw [hsub]
+    exact ⟨hp, repLs, Heap.Extends.refl _⟩
+  | other_Nil v1 m1 cs1 ev1 _ ld he hm hc =>
+    obtain ⟨hm1, -, -⟩ := levelListHasParam_obs ev1 repLs
+    subst hm1 he hm
     cases repLs with
     | nil cell =>
-      subst he hm
-      obtain ⟨repN, ext⟩ := RepKLevelList.allocNil h
-      rw [klevelList_names] at repN ext
-      exact ⟨by simp, repN, ext⟩
+      exact ⟨by simp, .nil cell, Heap.Extends.refl _⟩
     | cons cell _ _ =>
       rw [loadValue_enum_cell cell, klevelList_names] at ld
       injection ld with hv
       injection hv with _ hc' _
       exact absurd hc' (by decide)
-  | Cons x_l x_rest v54 v55 m57 cs65 m85 cs93 ld he hm ev67 ev95 hc =>
+  | other_Cons v1 m1 cs1 x_l x_rest v54 v55 m57 cs65 m85 cs93 ev1 _ ld he hm ev67 ev95 hc =>
+    obtain ⟨hm1, -, -⟩ := levelListHasParam_obs ev1 repLs
+    subst hm1
     cases repLs with
     | nil cell =>
       rw [loadValue_enum_cell cell, klevelList_names] at ld

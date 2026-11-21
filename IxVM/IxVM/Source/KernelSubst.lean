@@ -22,16 +22,11 @@ def expr_lbr := aiur_fn⟦
           lbr_max(expr_lbr(ty), lbr_dec(expr_lbr(body))) } ,
         KernelTypes::KExprNode::Forall(ty, body, _) => {
           lbr_max(expr_lbr(ty), lbr_dec(expr_lbr(body))) } ,
-        KernelTypes::KExprNode::Let(ty, val, body) => {  expr_lbr_let(ty, val, body) } ,
+        KernelTypes::KExprNode::Let(ty, val, body) => {
+          lbr_max(lbr_max(expr_lbr(ty), expr_lbr(val)),
+                  lbr_dec(expr_lbr(body))) } ,
         KernelTypes::KExprNode::Proj(_, _, e1) => {  expr_lbr(e1) } ,
       }
-    }
-⟧
-
-def expr_lbr_let := aiur_fn⟦
-  fn expr_lbr_let(ty: KernelTypes::KExpr, val: KernelTypes::KExpr, body: KernelTypes::KExpr) -> Field {
-      lbr_max(lbr_max(expr_lbr(ty), expr_lbr(val)),
-              lbr_dec(expr_lbr(body)))
     }
 ⟧
 
@@ -194,22 +189,17 @@ def expr_glb := aiur_fn⟦
               0 => {  0 } ,
               n => {  lbr_min(n, expr_glb(body, c + 1)) } ,
             } } ,
-            KernelTypes::KExprNode::Let(ty, val, body) => {  expr_glb_let(ty, val, body, c) } ,
+            KernelTypes::KExprNode::Let(ty, val, body) => {
+              match expr_glb(ty, c) {
+                0 => {  0 } ,
+                n => {  match expr_glb(val, c) {
+                  0 => {  0 } ,
+                  m => {  lbr_min(lbr_min(n, m), expr_glb(body, c + 1)) } ,
+                } } ,
+              } } ,
             KernelTypes::KExprNode::Proj(_, _, e1) => {  expr_glb(e1, c) } ,
             _ => {  4294967295 } ,
           } } ,
-      }
-    }
-⟧
-
-def expr_glb_let := aiur_fn⟦
-  fn expr_glb_let(ty: KernelTypes::KExpr, val: KernelTypes::KExpr, body: KernelTypes::KExpr, c: Field) -> Field {
-      match expr_glb(ty, c) {
-        0 => {  0 } ,
-        n => {  match expr_glb(val, c) {
-          0 => {  0 } ,
-          m => {  lbr_min(lbr_min(n, m), expr_glb(body, c + 1)) } ,
-        } } ,
       }
     }
 ⟧
@@ -308,33 +298,27 @@ def expr_has_bvar_at := aiur_fn⟦
             1 => {  1 } ,
             _ => {  expr_has_bvar_at(a, depth) } ,
           } } ,
-        KernelTypes::KExprNode::Lam(ty, body, _) => {  expr_has_bvar_at_binder(ty, body, depth) } ,
-        KernelTypes::KExprNode::Forall(ty, body, _) => {  expr_has_bvar_at_binder(ty, body, depth) } ,
-        KernelTypes::KExprNode::Let(ty, val, body) => {  expr_has_bvar_at_let(ty, val, body, depth) } ,
-        KernelTypes::KExprNode::Proj(_, _, inner) => {  expr_has_bvar_at(inner, depth) } ,
-        _ => {  0 } ,
-      }
-    }
-⟧
-
-def expr_has_bvar_at_binder := aiur_fn⟦
-  fn expr_has_bvar_at_binder(ty: KernelTypes::KExpr, body: KernelTypes::KExpr, depth: Field) -> Field {
-      match expr_has_bvar_at(ty, depth) {
-        1 => {  1 } ,
-        _ => {  expr_has_bvar_at(body, depth + 1) } ,
-      }
-    }
-⟧
-
-def expr_has_bvar_at_let := aiur_fn⟦
-  fn expr_has_bvar_at_let(ty: KernelTypes::KExpr, val: KernelTypes::KExpr, body: KernelTypes::KExpr, depth: Field) -> Field {
-      match expr_has_bvar_at(ty, depth) {
-        1 => {  1 } ,
-        _ => {
-          match expr_has_bvar_at(val, depth) {
+        KernelTypes::KExprNode::Lam(ty, body, _) => {
+          match expr_has_bvar_at(ty, depth) {
             1 => {  1 } ,
             _ => {  expr_has_bvar_at(body, depth + 1) } ,
           } } ,
+        KernelTypes::KExprNode::Forall(ty, body, _) => {
+          match expr_has_bvar_at(ty, depth) {
+            1 => {  1 } ,
+            _ => {  expr_has_bvar_at(body, depth + 1) } ,
+          } } ,
+        KernelTypes::KExprNode::Let(ty, val, body) => {
+          match expr_has_bvar_at(ty, depth) {
+            1 => {  1 } ,
+            _ => {
+              match expr_has_bvar_at(val, depth) {
+                1 => {  1 } ,
+                _ => {  expr_has_bvar_at(body, depth + 1) } ,
+              } } ,
+          } } ,
+        KernelTypes::KExprNode::Proj(_, _, inner) => {  expr_has_bvar_at(inner, depth) } ,
+        _ => {  0 } ,
       }
     }
 ⟧

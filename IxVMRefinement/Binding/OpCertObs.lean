@@ -215,8 +215,9 @@ private theorem walk_covered_mk' {t : Ix.Kernel.RoleTable} {n : Nat}
   rcases hnode with ⟨n', _, _, rfl⟩ | ⟨hnone, _⟩
   · match Obs.«KernelRoles::walk_covered».obs ev with
     | .Mk (he38 := hr) (he39 := hh) .. => exact ⟨hr, hh⟩
-    | .Assumed_n0 (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
-    | .Assumed_other (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Assumed_n0 (ld12 := ld12) .. | .Assumed_other (ld12 := ld12) ..
+    | .MkEval (ld12 := ld12) .. | .AssumedEval_n0 (ld12 := ld12) ..
+    | .AssumedEval_other (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
   · cases hnone
 
 /-- `1 - [b = a]` and a field `x` multiply to `1` only when `x = 1` and `b ≠ a`. -/

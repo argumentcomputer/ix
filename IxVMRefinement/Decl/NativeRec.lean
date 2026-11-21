@@ -4575,6 +4575,200 @@ theorem RawTm.load {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     injection ld with hv
     exact ⟨_, rfl, by rw [← hv]; exact cell⟩
 
+/-- `KernelLevels::expr_has_level_param` never allocates, returns `0` or `1`, and `0` preserves
+`RawTm` at `d = 0` under arbitrary level instantiation without modifying the heap node. -/
+theorem exprHasLevelParam_rawTm {κ : _root_.Address → KKey} {Γ : Nat → KExpr} {k : Nat}
+    {R E : KExpr} {e r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsFn W "KernelLevels::expr_has_level_param" [e] h r h' cs)
+    (hRE : RawTm κ 0 Γ h k R E e) :
+    h' = h ∧ (r = .field 0 ∨ r = .field 1) ∧
+      (r = .field 0 → ∀ us,
+        RawTm κ 0 Γ h k
+          (R.instantiateLevelParams (List.range us.length) us)
+          (E.instantiateLevelParams (List.range us.length) us) e) := by
+  cases Obs.«KernelLevels::expr_has_level_param».obs ev with
+  | BVar w ld hr hm hc =>
+    subst hr hm
+    cases hRE with
+    | bvarLocal cell hsm hlt =>
+      exact ⟨rfl, .inl rfl, fun _ _ => .bvarLocal cell hsm hlt⟩
+    | bvarFree _ _ _ hd => omega
+    | sort cell _ _ | const cell _ _ _ | app cell _ _ | lam cell _ _ _
+    | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _ | litStr cell _ _
+    | proj cell _ _ => exact (load_cell_ne cell ld (by decide)).elim
+  | Lit w ld hr hm hc =>
+    subst hr hm
+    cases hRE with
+    | litNat cell rl hcl => exact ⟨rfl, .inl rfl, fun _ _ => .litNat cell rl hcl⟩
+    | litStr cell rb hs => exact ⟨rfl, .inl rfl, fun _ _ => .litStr cell rb hs⟩
+    | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
+    | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _
+    | proj cell _ _ => exact (load_cell_ne cell ld (by decide)).elim
+  | Srt x_l cs1 ld ev1 hc =>
+    cases hRE with
+    | sort cell rl eq =>
+      obtain ⟨-, hxs⟩ := load_cell cell ld
+      injection hxs with h1; subst h1
+      obtain ⟨hh', h01, h0⟩ := IxVM.Refinement.Levels.levelHasParam_obs ev1 rl
+      refine ⟨hh', h01, fun hr us => ?_⟩
+      obtain ⟨-, hsub⟩ := h0 hr us
+      have hlv := SubstAux.lvEq_subst eq (LvEqList.refl us)
+      rw [hsub] at hlv
+      exact .sort cell rl hlv
+    | bvarLocal cell _ _ | bvarFree cell _ _ _ | const cell _ _ _ | app cell _ _
+    | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _
+    | litStr cell _ _ | proj cell _ _ => exact (load_cell_ne cell ld (by decide)).elim
+  | Const w x_lvls cs1 ld ev1 hc =>
+    cases hRE with
+    | const cell ra rls eq =>
+      obtain ⟨-, hxs⟩ := load_cell cell ld
+      injection hxs with _ hxs; injection hxs with h2; subst h2
+      obtain ⟨hh', h01, h0⟩ := IxVM.Refinement.Levels.levelListHasParam_obs ev1 rls
+      refine ⟨hh', h01, fun hr us => ?_⟩
+      obtain ⟨-, hsub⟩ := h0 hr us
+      have hlv := SubstAux.lvEqList_subst eq (LvEqList.refl us)
+      rw [hsub] at hlv
+      exact .const cell ra rls hlv
+    | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | app cell _ _
+    | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _
+    | litStr cell _ _ | proj cell _ _ => exact (load_cell_ne cell ld (by decide)).elim
+  | App_n1 x_f x_a m1 cs1 ld ev1 hr hm hc =>
+    cases hRE with
+    | app cell rf ra =>
+      obtain ⟨-, hxs⟩ := load_cell cell ld
+      injection hxs with h1 hxs; injection hxs with h2; subst h1 h2
+      obtain ⟨hm1, -, -⟩ := exprHasLevelParam_rawTm ev1 rf
+      subst hm1 hr hm
+      exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+    | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
+    | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _
+    | litStr cell _ _ | proj cell _ _ => exact (load_cell_ne cell ld (by decide)).elim
+  | App_other x_f x_a v1 m1 cs1 cs2 ld ev1 hne1 ev2 hc =>
+    cases hRE with
+    | app cell rf ra =>
+      obtain ⟨-, hxs⟩ := load_cell cell ld
+      injection hxs with h1 hxs; injection hxs with h2; subst h1 h2
+      obtain ⟨hm1, h01f, h0f⟩ := exprHasLevelParam_rawTm ev1 rf
+      subst hm1
+      have hv1 : v1 = .field 0 := h01f.resolve_right hne1
+      obtain ⟨hh', h01a, h0a⟩ := exprHasLevelParam_rawTm ev2 ra
+      refine ⟨hh', h01a, fun hr us => ?_⟩
+      exact .app cell (h0f hv1 us) (h0a hr us)
+    | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
+    | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _
+    | litStr cell _ _ | proj cell _ _ => exact (load_cell_ne cell ld (by decide)).elim
+  | Lam x_ty x_body x_bl cs1 ld evb hc =>
+    cases hRE with
+    | lam cell rt rb rl =>
+      obtain ⟨-, hxs⟩ := load_cell cell ld
+      injection hxs with h1 hxs; injection hxs with h2 hxs; injection hxs with h3; subst h1 h2 h3
+      cases Obs.«KernelLevels::expr_has_level_param_binder».obs evb with
+      | n1 m1 csb evl hr hm hcb =>
+        obtain ⟨hm1, -, -⟩ := IxVM.Refinement.Levels.levelHasParam_obs evl rl
+        subst hm1 hr hm
+        exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+      | other_n1 v1 m1 csb m2 cst evl hne1 evt hr hm hcb =>
+        obtain ⟨hm1, -, -⟩ := IxVM.Refinement.Levels.levelHasParam_obs evl rl
+        subst hm1
+        obtain ⟨hm2, -, -⟩ := exprHasLevelParam_rawTm evt rt
+        subst hm2 hr hm
+        exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+      | other_other v1 m1 csb v2 m2 cst cs3 evl hne1 evt hne2 evbd hcb =>
+        obtain ⟨hm1, h01l, h0l⟩ := IxVM.Refinement.Levels.levelHasParam_obs evl rl
+        subst hm1
+        have hv1 : v1 = .field 0 := h01l.resolve_right hne1
+        obtain ⟨hm2, h01t, h0t⟩ := exprHasLevelParam_rawTm evt rt
+        subst hm2
+        have hv2 : v2 = .field 0 := h01t.resolve_right hne2
+        obtain ⟨hh', h01b, h0b⟩ := exprHasLevelParam_rawTm evbd rb
+        refine ⟨hh', h01b, fun hr us => ?_⟩
+        obtain ⟨-, hsubl⟩ := h0l hv1 us
+        simp only [Expr.instantiateLevelParams, SubstAux.bmeta_subst (LvEqList.refl us), hsubl]
+        exact .lam cell (h0t hv2 us) (h0b hr us) rl
+    | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
+    | app cell _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _
+    | litStr cell _ _ | proj cell _ _ => exact (load_cell_ne cell ld (by decide)).elim
+  | Forall x_ty x_body x_bl cs1 ld evb hc =>
+    cases hRE with
+    | forallE cell rt rb rl =>
+      obtain ⟨-, hxs⟩ := load_cell cell ld
+      injection hxs with h1 hxs; injection hxs with h2 hxs; injection hxs with h3; subst h1 h2 h3
+      cases Obs.«KernelLevels::expr_has_level_param_binder».obs evb with
+      | n1 m1 csb evl hr hm hcb =>
+        obtain ⟨hm1, -, -⟩ := IxVM.Refinement.Levels.levelHasParam_obs evl rl
+        subst hm1 hr hm
+        exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+      | other_n1 v1 m1 csb m2 cst evl hne1 evt hr hm hcb =>
+        obtain ⟨hm1, -, -⟩ := IxVM.Refinement.Levels.levelHasParam_obs evl rl
+        subst hm1
+        obtain ⟨hm2, -, -⟩ := exprHasLevelParam_rawTm evt rt
+        subst hm2 hr hm
+        exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+      | other_other v1 m1 csb v2 m2 cst cs3 evl hne1 evt hne2 evbd hcb =>
+        obtain ⟨hm1, h01l, h0l⟩ := IxVM.Refinement.Levels.levelHasParam_obs evl rl
+        subst hm1
+        have hv1 : v1 = .field 0 := h01l.resolve_right hne1
+        obtain ⟨hm2, h01t, h0t⟩ := exprHasLevelParam_rawTm evt rt
+        subst hm2
+        have hv2 : v2 = .field 0 := h01t.resolve_right hne2
+        obtain ⟨hh', h01b, h0b⟩ := exprHasLevelParam_rawTm evbd rb
+        refine ⟨hh', h01b, fun hr us => ?_⟩
+        obtain ⟨-, hsubl⟩ := h0l hv1 us
+        simp only [Expr.instantiateLevelParams, SubstAux.bmeta_subst (LvEqList.refl us), hsubl]
+        exact .forallE cell (h0t hv2 us) (h0b hr us) rl
+    | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
+    | app cell _ _ | lam cell _ _ _ | letE cell _ _ _ | litNat cell _ _
+    | litStr cell _ _ | proj cell _ _ => exact (load_cell_ne cell ld (by decide)).elim
+  | Let x_ty x_val x_body cs1 ld evl hc =>
+    cases hRE with
+    | letE cell rt rv rb =>
+      obtain ⟨-, hxs⟩ := load_cell cell ld
+      injection hxs with h1 hxs; injection hxs with h2 hxs; injection hxs with h3; subst h1 h2 h3
+      cases Obs.«KernelLevels::expr_has_level_param_let».obs evl with
+      | n1 m1 cst evt hr hm hcl =>
+        obtain ⟨hm1, -, -⟩ := exprHasLevelParam_rawTm evt rt
+        subst hm1 hr hm
+        exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+      | other_n1 v1 m1 cst m2 csv evt hne1 evv hr hm hcl =>
+        obtain ⟨hm1, -, -⟩ := exprHasLevelParam_rawTm evt rt
+        subst hm1
+        obtain ⟨hm2, -, -⟩ := exprHasLevelParam_rawTm evv rv
+        subst hm2 hr hm
+        exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+      | other_other v1 m1 cst v2 m2 csv cs3 evt hne1 evv hne2 evbd hcl =>
+        obtain ⟨hm1, h01t, h0t⟩ := exprHasLevelParam_rawTm evt rt
+        subst hm1
+        have hv1 : v1 = .field 0 := h01t.resolve_right hne1
+        obtain ⟨hm2, h01v, h0v⟩ := exprHasLevelParam_rawTm evv rv
+        subst hm2
+        have hv2 : v2 = .field 0 := h01v.resolve_right hne2
+        obtain ⟨hh', h01b, h0b⟩ := exprHasLevelParam_rawTm evbd rb
+        refine ⟨hh', h01b, fun hr us => ?_⟩
+        simp only [Expr.instantiateLevelParams, SubstAux.ilp_instShift]
+        exact .letE cell (h0t hv1 us) (h0v hv2 us) (h0b hr us)
+    | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
+    | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _ | litNat cell _ _
+    | litStr cell _ _ | proj cell _ _ => exact (load_cell_ne cell ld (by decide)).elim
+  | Proj w1 w2 x_e1 cs1 ld ev1 hc =>
+    cases hRE with
+    | proj cell ra re =>
+      obtain ⟨-, hxs⟩ := load_cell cell ld
+      injection hxs with _ hxs; injection hxs with _ hxs; injection hxs with h3; subst h3
+      obtain ⟨hh', h01, h0⟩ := exprHasLevelParam_rawTm ev1 re
+      refine ⟨hh', h01, fun hr us => ?_⟩
+      exact .proj cell ra (h0 hr us)
+    | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
+    | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _
+    | litNat cell _ _ | litStr cell _ _ => exact (load_cell_ne cell ld (by decide)).elim
+termination_by cs.length
+decreasing_by
+  all_goals
+    try subst hc
+    try subst hcb
+    try subst hcl
+    simp only [List.length_cons, List.length_append]
+    omega
+
 /-- `KernelLevels::expr_inst_levels` and `expr_inst_levels_walk` preserve `RawTm` at `d = 0`. -/
 theorem expr_inst_levels_rawTm_aux (κ : _root_.Address → KKey) :
     ∀ (n : Nat) (isWalk : Bool) {e params r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
@@ -4604,23 +4798,28 @@ theorem expr_inst_levels_rawTm_aux (κ : _root_.Address → KKey) :
       have hR0 : R.instantiateLevelParams [] [] = R := instantiateLevelParams_self [] R
       rw [List.length_nil, List.range_zero, hR0, SubstAux.tm_ilp_nil hRE.toTm]
       exact hRE
-    | .other (ev33 := evw) (hc50 := hc) .. =>
+    | .other_n0 (ev_ogebasxu := ehp) (he_yyggzpmq := hr) (he_krlanrqd := hh) .. =>
+      subst hr hh
+      obtain ⟨hm1, -, h0⟩ := exprHasLevelParam_rawTm ehp hRE
+      subst hm1
+      exact h0 rfl us
+    | .other_other (ev_ogebasxu := ehp) (ev_nzgqgvgw := evw) (hc_bmwtsztg := hc) .. =>
       subst hc
+      obtain ⟨hm1, -, -⟩ := exprHasLevelParam_rawTm ehp hRE
+      subst hm1
       cases n with
       | zero => simp at hlen
       | succ n' =>
         exact expr_inst_levels_rawTm_aux κ n' true (by simp at hlen; omega)
-          (RomBound.bounded_mono bd (fun x hx => List.mem_cons_of_mem _ hx)) evw hRE hus
+          (RomBound.bounded_mono bd (fun x hx => by simp [hx])) evw hRE hus
   | n, true, e, params, r, h, h', cs, hlen, bd, ev, Γ, k, R, E, us, hRE, hus => by
     obtain ⟨ls, hls, hul⟩ := hus
     match Obs.«KernelLevels::expr_inst_levels_walk».obs ev with
-    | .BVar (ld12 := ld) (he29 := hr) (hm28 := hm) .. =>
+    | .BVar (ld12 := ld) (he_wafvjlei := hr) (he_iewaezri := hm) .. =>
       subst hr hm
       cases hRE with
       | bvarLocal cell hsm hlt =>
-        obtain ⟨-, hxs⟩ := load_cell cell ld
-        injection hxs with h1; subst h1
-        exact .bvarLocal (by simp) hsm hlt
+        exact .bvarLocal cell hsm hlt
       | bvarFree _ _ _ hd => omega
       | sort cell _ _ | const cell _ _ _ | app cell _ _ | lam cell _ _ _
       | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _ | litStr cell _ _
@@ -4761,19 +4960,13 @@ theorem expr_inst_levels_rawTm_aux (κ : _root_.Address → KKey) :
       | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _ | litNat cell _ _
       | litStr cell _ _ | proj cell _ _ =>
         exact (load_cell_ne cell ld (by decide)).elim
-    | .Lit (ld12 := ld) (he609 := hr) (hm608 := hm) .. =>
+    | .Lit (ld12 := ld) (he_jqvjdxzf := hr) (he_vxvydceu := hm) .. =>
       subst hr hm
       cases hRE with
       | litNat cell rl hc =>
-        obtain ⟨-, hxs⟩ := load_cell cell ld
-        injection hxs with h1; subst h1
-        exact .litNat (by simp)
-          (repList_heapMono₂ limbListEnum repU64_heapMono₂ (Heap.Extends.snoc _ _) rl) hc
+        exact .litNat cell rl hc
       | litStr cell rb hs =>
-        obtain ⟨-, hxs⟩ := load_cell cell ld
-        injection hxs with h1; subst h1
-        exact .litStr (by simp)
-          (Bytes.repByteStream_heapMono₂ byteListEnum (Heap.Extends.snoc _ _) rb) hs
+        exact .litStr cell rb hs
       | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
       | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _
       | proj cell _ _ =>

@@ -26,7 +26,6 @@ theorem gstep (κ : _root_.Address → KKey) :
       (h' : Heap F) (cs : List (Call F)), ObsFn W f.name args h r h' cs → GIH κ cs →
       gspec κ f args h r h' cs
   | .expr_lbr, _, _, _, _, _, ev, ih => g_expr_lbr κ ev ih
-  | .expr_lbr_let, _, _, _, _, _, ev, ih => g_expr_lbr_let κ ev ih
   | .lbr_max, _, _, _, _, _, ev, _ => g_lbr_max ev
   | .lbr_dec, _, _, _, _, _, ev, _ => g_lbr_dec ev
   | .lbr_min, _, _, _, _, _, ev, _ => g_lbr_min ev
@@ -35,10 +34,7 @@ theorem gstep (κ : _root_.Address → KKey) :
   | .has_bvar_in_range_binder, _, _, _, _, _, ev, ih => g_has_bvar_in_range_binder κ ev ih
   | .has_bvar_in_range_let, _, _, _, _, _, ev, ih => g_has_bvar_in_range_let κ ev ih
   | .expr_has_bvar_at, _, _, _, _, _, ev, ih => g_expr_has_bvar_at κ ev ih
-  | .expr_has_bvar_at_binder, _, _, _, _, _, ev, ih => g_expr_has_bvar_at_binder κ ev ih
-  | .expr_has_bvar_at_let, _, _, _, _, _, ev, ih => g_expr_has_bvar_at_let κ ev ih
   | .expr_glb, _, _, _, _, _, ev, ih => g_expr_glb κ ev ih
-  | .expr_glb_let, _, _, _, _, _, ev, ih => g_expr_glb_let κ ev ih
   | .expr_lift, _, _, _, _, _, ev, ih => g_expr_lift κ ev ih
   | .expr_lift_let, _, _, _, _, _, ev, ih => g_expr_lift_let κ ev ih
   | .expr_lower, _, _, _, _, _, ev, ih => g_expr_lower κ ev ih
@@ -80,10 +76,6 @@ theorem expr_lbr_step (ev : ObsFn W "KernelSubst::expr_lbr" args h r h' calls) (
     Specs.Subst.expr_lbr c args h r h' calls :=
   fun a hargs good => SubstAux.gall c.κ .expr_lbr _ _ _ _ _ ev a hargs good.2
 
-theorem expr_lbr_let_step (ev : ObsFn W "KernelSubst::expr_lbr_let" args h r h' calls)
-    (ih : IH c calls) : Specs.Subst.expr_lbr_let c args h r h' calls :=
-  fun a b d hargs good => SubstAux.gall c.κ .expr_lbr_let _ _ _ _ _ ev a b d hargs good.2
-
 theorem lbr_max_step (ev : ObsFn W "KernelSubst::lbr_max" args h r h' calls) (ih : IH c calls) :
     Specs.Subst.lbr_max c args h r h' calls :=
   fun a b hargs good => SubstAux.gall c.κ .lbr_max _ _ _ _ _ ev a b hargs good.2
@@ -122,25 +114,9 @@ theorem expr_has_bvar_at_step (ev : ObsFn W "KernelSubst::expr_has_bvar_at" args
     (ih : IH c calls) : Specs.Subst.expr_has_bvar_at c args h r h' calls :=
   fun a b hargs good => SubstAux.gall c.κ .expr_has_bvar_at _ _ _ _ _ ev a b hargs good.2
 
-theorem expr_has_bvar_at_binder_step
-    (ev : ObsFn W "KernelSubst::expr_has_bvar_at_binder" args h r h' calls) (ih : IH c calls) :
-    Specs.Subst.expr_has_bvar_at_binder c args h r h' calls :=
-  fun a b d hargs good =>
-    SubstAux.gall c.κ .expr_has_bvar_at_binder _ _ _ _ _ ev a b d hargs good.2
-
-theorem expr_has_bvar_at_let_step
-    (ev : ObsFn W "KernelSubst::expr_has_bvar_at_let" args h r h' calls) (ih : IH c calls) :
-    Specs.Subst.expr_has_bvar_at_let c args h r h' calls :=
-  fun a b d e hargs good =>
-    SubstAux.gall c.κ .expr_has_bvar_at_let _ _ _ _ _ ev a b d e hargs good.2
-
 theorem expr_glb_step (ev : ObsFn W "KernelSubst::expr_glb" args h r h' calls) (ih : IH c calls) :
     Specs.Subst.expr_glb c args h r h' calls :=
   fun a b hargs good => SubstAux.gall c.κ .expr_glb _ _ _ _ _ ev a b hargs good.2
-
-theorem expr_glb_let_step (ev : ObsFn W "KernelSubst::expr_glb_let" args h r h' calls)
-    (ih : IH c calls) : Specs.Subst.expr_glb_let c args h r h' calls :=
-  fun a b d e hargs good => SubstAux.gall c.κ .expr_glb_let _ _ _ _ _ ev a b d e hargs good.2
 
 theorem expr_lift_step (ev : ObsFn W "KernelSubst::expr_lift" args h r h' calls)
     (ih : IH c calls) : Specs.Subst.expr_lift c args h r h' calls :=
@@ -223,7 +199,6 @@ theorem subst_step (c : ScopedCtx) :
       (h' : Heap F) (cs : List (Call F)), ObsFn W (Fn.subst f).name args h r h' cs → IH c cs →
       (Fn.subst f).spec c args h r h' cs
   | .expr_lbr, _, _, _, _, _, ev, ih => expr_lbr_step c ev ih
-  | .expr_lbr_let, _, _, _, _, _, ev, ih => expr_lbr_let_step c ev ih
   | .lbr_max, _, _, _, _, _, ev, ih => lbr_max_step c ev ih
   | .lbr_dec, _, _, _, _, _, ev, ih => lbr_dec_step c ev ih
   | .lbr_min, _, _, _, _, _, ev, ih => lbr_min_step c ev ih
@@ -232,10 +207,7 @@ theorem subst_step (c : ScopedCtx) :
   | .has_bvar_in_range_binder, _, _, _, _, _, ev, ih => has_bvar_in_range_binder_step c ev ih
   | .has_bvar_in_range_let, _, _, _, _, _, ev, ih => has_bvar_in_range_let_step c ev ih
   | .expr_has_bvar_at, _, _, _, _, _, ev, ih => expr_has_bvar_at_step c ev ih
-  | .expr_has_bvar_at_binder, _, _, _, _, _, ev, ih => expr_has_bvar_at_binder_step c ev ih
-  | .expr_has_bvar_at_let, _, _, _, _, _, ev, ih => expr_has_bvar_at_let_step c ev ih
   | .expr_glb, _, _, _, _, _, ev, ih => expr_glb_step c ev ih
-  | .expr_glb_let, _, _, _, _, _, ev, ih => expr_glb_let_step c ev ih
   | .expr_lift, _, _, _, _, _, ev, ih => expr_lift_step c ev ih
   | .expr_lift_let, _, _, _, _, _, ev, ih => expr_lift_let_step c ev ih
   | .expr_lower, _, _, _, _, _, ev, ih => expr_lower_step c ev ih

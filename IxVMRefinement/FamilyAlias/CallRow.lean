@@ -579,8 +579,10 @@ theorem familyCall_checked_of_chain
     · exact Or.inr (hList advAs hadv423)
   -- 2. Advice set `C.aset` from `check_advice_records_checked`
   have hrc423 : Claim.RCLimRep t bAddr lim C.m423 rc := hrc.mono ext_h_423
+  have hvSeg_eq : C.vSeg = rc := (Decl.check_family_seg_nil_of_rc hrc.axiomsNil C.sg112).1
+  have hrc423_seg : Claim.RCLimRep t bAddr lim C.m423 C.vSeg := by rw [hvSeg_eq]; exact hrc423
   obtain ⟨haset453_raw, -⟩ :=
-    check_advice_records_checked advAs (fun _ => False) hrc423 hadv423
+    check_advice_records_checked advAs (fun _ => False) hrc423_seg hadv423
       AddrMapAll.nil C.evCheckAdv.obs
       (fun cl hcl => hsub cl (C.evCheckAdv.sub cl hcl))
   have haset453 : AddrMapAll addrMapEnum

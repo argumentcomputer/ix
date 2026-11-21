@@ -11,7 +11,8 @@ require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @ "3f8b805614a0bae1c033469ff893a8f0ee85f601"
 
 @[default_target]
-lean_lib IxVM
+lean_lib IxVM where
+  roots := #[`IxVM, `IxVM.CompiledCert]
 
 lean_exe ixvm where
   root := `IxVM.Main

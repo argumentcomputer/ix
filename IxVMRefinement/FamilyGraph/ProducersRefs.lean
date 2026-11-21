@@ -19,7 +19,7 @@ import IxVMRefinement.Obs.KernelModeled1
 import IxVMRefinement.Obs.KernelModeled2
 import IxVMRefinement.Obs.KernelModeled3
 import IxVMRefinement.Obs.KernelModeled4
-import IxVMRefinement.Obs.KernelRoles1
+import IxVMRefinement.Obs.KernelRoles
 import IxVMRefinement.Obs.RBTreeMap0
 
 /-! # Reference closure and container witness obligations from `check_family`
@@ -197,12 +197,12 @@ private theorem role_ctx_table_lim_spec_ext {t : Ix.Kernel.RoleTable} {bAddr : _
       obtain ⟨rfl, -⟩ := hargs
       subst he
       exact ⟨hh, htbl⟩
-    | .Assumed (ld12 := ld12) .. =>
+    | .Assumed (ld12 := ld12) .. | .MkEval (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
       have hl' := ext.loadValue_eq ld12
       rw [hl] at hl'
       simp at hl'
   · match Obs.«KernelRoles::role_ctx_table».obs ev with
-    | .Mk (ld12 := ld12) .. =>
+    | .Mk (ld12 := ld12) .. | .MkEval (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
       have hl' := ext.loadValue_eq ld12
       rw [hl] at hl'
       simp at hl'
@@ -289,7 +289,9 @@ private theorem role_of_ne_zero_lim_ext {t : Ix.Kernel.RoleTable} {bAddr a : _ro
   · match Obs.«KernelRoles::role_of».obs ev with
     | .Mk_n0 (he100 := hr) .. => exact absurd hr hne
     | .Mk_other_other (he222 := hr) .. => exact absurd hr hne
-    | .Assumed (ld12 := ld12) .. =>
+    | .Assumed (ld12 := ld12) .. | .MkEval_n0 (ld12 := ld12) ..
+    | .MkEval_other_n1 (ld12 := ld12) .. | .MkEval_other_other (ld12 := ld12) ..
+    | .AssumedEval (ld12 := ld12) .. =>
       have hl' := ext.loadValue_eq ld12
       rw [hl] at hl'
       simp at hl'
@@ -307,7 +309,9 @@ private theorem role_of_ne_zero_lim_ext {t : Ix.Kernel.RoleTable} {bAddr a : _ro
       · exact ⟨ro, hr.trans hro, hof⟩
   · match Obs.«KernelRoles::role_of».obs ev with
     | .Mk_n0 (ld12 := ld12) .. | .Mk_other_n1 (ld12 := ld12) ..
-    | .Mk_other_other (ld12 := ld12) .. =>
+    | .Mk_other_other (ld12 := ld12) .. | .MkEval_n0 (ld12 := ld12) ..
+    | .MkEval_other_n1 (ld12 := ld12) .. | .MkEval_other_other (ld12 := ld12) ..
+    | .AssumedEval (ld12 := ld12) .. =>
       have hl' := ext.loadValue_eq ld12
       rw [hl] at hl'
       simp at hl'
@@ -1622,7 +1626,8 @@ private theorem check_witnesses_spec_ext {K : FamRunCtx}
       exact ⟨Heap.Extends.snoc h _, [], Lib.rep_store_nil h, fun _ hw => by cases hw⟩
     | .other (x_x := x_x) (x_s3 := x_s3) (m157 := m157) (m184 := m184) (cs127 := cs127)
         (cs194 := cs194) (ev59 := ev_ga) (ev94 := ev_rb)
-        (ev_updedcyj := ev_ord) (ev167 := ev_u8) (ev129 := ev_cw) (ev196 := ev_rest)
+        (ev_updedcyj := ev_ord) (ev_zctcgyek := ev_ax) (ev_gspkxwao := ev_lkp)
+        (ev167 := ev_u8) (ev129 := ev_cw) (ev196 := ev_rest)
         (he254 := hr) (hm264 := hm) (he291 := hh) (hc292 := hc) .. =>
       have hlen' : cs194.length ≤ m := by
         rw [hc] at hlen
@@ -1641,14 +1646,16 @@ private theorem check_witnesses_spec_ext {K : FamRunCtx}
       subst hm82
       obtain ⟨-, hm157⟩ := Lib.u8_to_field_spec ev_u8
       subst hm157
-      have ext_pre := ext_ga.trans ev_ord.heap_extends
+      have ext_ord_lkp := ev_ord.heap_extends.trans
+        (ev_ax.heap_extends.trans ev_lkp.heap_extends)
+      have ext_pre := ext_ga.trans ext_ord_lkp
       have ext_snoc : Heap.Extends m184 h' := by rw [hm]; exact Heap.Extends.snoc m184 _
       obtain ⟨ext_cw, ⟨bs4, hs4⟩, hcw_res⟩ :=
         check_witness_spec_ext hS hcov hrc
           ((ev_rest.heap_extends.trans ext_snoc).trans ext_end)
           (BaseSeams.addr_mono ext_pre hblk)
-          ⟨a_x, Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ord.heap_extends ha_rep, rfl⟩
-          (Ingress.Stream.mono ev_ord.heap_extends hs3) ev_cw
+          ⟨a_x, Bytes.repAddressRef_heapMono₂ Core.addrTy ext_ord_lkp ha_rep, rfl⟩
+          (Ingress.Stream.mono ext_ord_lkp hs3) ev_cw
           (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
       obtain ⟨ext_rest, ws, hws_rep, hws_spec⟩ :=
         check_witnesses_spec_ext hS hcov m hlen' hrc (ext_snoc.trans ext_end)
@@ -1660,14 +1667,14 @@ private theorem check_witnesses_spec_ext {K : FamRunCtx}
         rw [hm]
         exact Lib.rep_store_cons (Bytes.repAddressRef_heapMono₂ Core.addrTy)
           (Bytes.repAddressRef_heapMono₂ Core.addrTy
-            (ev_ord.heap_extends.trans (ext_cw.trans ext_rest)) ha_rep)
+            (ext_ord_lkp.trans (ext_cw.trans ext_rest)) ha_rep)
           hws_rep
       refine ⟨ext_all, a_x :: ws, hcons_rep, fun w hw => ?_⟩
       rcases List.mem_cons.mp hw with rfl | hw_rest
       · rcases hcw_res with hwb | ⟨hk2, cx, hcx, hkind⟩
         · exact Or.inl hwb
         · refine Or.inr ⟨m157, x_x, x_s3, ext_pre, BaseSeams.addr_mono ext_pre hblk,
-            ⟨w, Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ord.heap_extends ha_rep, rfl⟩,
+            ⟨w, Bytes.repAddressRef_heapMono₂ Core.addrTy ext_ord_lkp ha_rep, rfl⟩,
             ?_, cx, hcx, hkind⟩
           rw [hc, ← hk2]
           simp
@@ -1900,7 +1907,7 @@ theorem FamRunCtx.familyRefs_of {K : FamRunCtx} {seeds : List _root_.Address}
   obtain ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev_fam, -, hsub_fam⟩ := hS.1
   match Obs.«KernelModeled::check_family».obs ev_fam with
   | .run (cs342 := cs_ws) (cs1303 := cs_fro)
-      (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+      (sg_barfcuni := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
       (ev_yqjbwijz := ev_ord) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
       (ev344 := ev_ws) (ev403 := ev_asb) (ev435 := ev435) (ev465 := ev465)
       (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)

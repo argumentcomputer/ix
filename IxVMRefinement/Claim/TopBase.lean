@@ -313,10 +313,13 @@ theorem walk_covered_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Addres
   obtain ⟨tbl, htbl, ⟨n, rfl, -, hl⟩ | ⟨rfl, hl⟩⟩ := hrc.cases
   · match Obs.«KernelRoles::walk_covered».obs ev with
     | .Mk (he38 := he) (he39 := hh) .. => exact ⟨hh, .inl he⟩
-    | .Assumed_n0 (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
-    | .Assumed_other (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Assumed_n0 (ld12 := ld12) .. | .Assumed_other (ld12 := ld12) ..
+    | .MkEval (ld12 := ld12) .. | .AssumedEval_n0 (ld12 := ld12) ..
+    | .AssumedEval_other (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
   · match Obs.«KernelRoles::walk_covered».obs ev with
-    | .Mk (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Mk (ld12 := ld12) .. | .MkEval (ld12 := ld12) ..
+    | .AssumedEval_n0 (ld12 := ld12) .. | .AssumedEval_other (ld12 := ld12) .. =>
+      rw [hl] at ld12; simp at ld12
     | .Assumed_n0 (ld12 := ld12) (ev94 := ev94) (ev72 := ev72) (he123 := he) (he124 := hh) .. =>
       rw [hl] at ld12
       injection ld12 with hv
@@ -448,11 +451,16 @@ theorem walk_ctx_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
             exact Nat.lt_of_le_of_lt (groupValLimit_le_self _) hglt, ?_⟩⟩
         refine ⟨by have := RoleVal.groupValLimit_le (Ix.SpecDigest.groupOf ro); omega, tbl,
           loadValue_snoc_construct _ rcEnum "Mk" _, htbl.mono ext⟩
-    | .Assumed (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Assumed (ld12 := ld12) ..
+    | .MkEval_n0 (ld12 := ld12) .. | .MkEval_other_n0 (ld12 := ld12) ..
+    | .MkEval_other_other (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
+      rw [hl] at ld12; simp at ld12
   · match Obs.«KernelRoles::walk_ctx».obs ev with
-    | .Mk_n0 (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
-    | .Mk_other_n0 (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
-    | .Mk_other_other (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Mk_n0 (ld12 := ld12) .. | .Mk_other_n0 (ld12 := ld12) ..
+    | .Mk_other_other (ld12 := ld12) ..
+    | .MkEval_n0 (ld12 := ld12) .. | .MkEval_other_n0 (ld12 := ld12) ..
+    | .MkEval_other_other (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
+      rw [hl] at ld12; simp at ld12
     | .Assumed (he325 := he) .. => exact ⟨ext, .inl he⟩
 
 /-! ## The context accessors at a limit -/
@@ -472,9 +480,11 @@ theorem role_ctx_table_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addres
       obtain ⟨rfl, -⟩ := hargs
       subst he
       exact ⟨hh, htbl⟩
-    | .Assumed (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Assumed (ld12 := ld12) .. | .MkEval (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
+      rw [hl] at ld12; simp at ld12
   · match Obs.«KernelRoles::role_ctx_table».obs ev with
-    | .Mk (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Mk (ld12 := ld12) .. | .MkEval (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
+      rw [hl] at ld12; simp at ld12
     | .Assumed (ld12 := ld12) (he60 := he) (he61 := hh) .. =>
       rw [hl] at ld12
       injection ld12 with hv
@@ -512,10 +522,12 @@ theorem role_ctx_validator_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Ad
       subst he hh
       simp only [evalBinOp, add_zero, Except.ok.injEq] at op8
       exact ⟨rfl, .inl ⟨⟨n, rfl⟩, op8.symm⟩⟩
-    | .Assumed (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Assumed (ld12 := ld12) .. | .MkEval (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
+      rw [hl] at ld12; simp at ld12
   · obtain ⟨y2, _, ev14, op8, -⟩ := Obs.«KernelRoles::role_ctx_validator».obs ev
     match Obs.«KernelRoles::role_ctx_is_assumed».obs ev14 with
-    | .Mk (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Mk (ld12 := ld12) .. | .MkEval (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
+      rw [hl] at ld12; simp at ld12
     | .Assumed (he60 := he) (he61 := hh) .. =>
       subst he hh
       simp only [evalBinOp, Except.ok.injEq] at op8
@@ -531,7 +543,8 @@ theorem role_ctx_limit_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addres
     h' = h ∧ r = .field ((lim.getD 0 : Nat) : F) := by
   obtain ⟨tbl, htbl, ⟨n, rfl, -, hl⟩ | ⟨rfl, hl⟩⟩ := hrc.cases
   · match Obs.«KernelRoles::role_ctx_limit».obs ev with
-    | .Assumed (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Assumed (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. | .MkEval (ld12 := ld12) .. =>
+      rw [hl] at ld12; simp at ld12
     | .Mk (ld12 := ld12) (he60 := he) (he61 := hh) .. =>
       rw [hl] at ld12
       injection ld12 with hv
@@ -541,7 +554,8 @@ theorem role_ctx_limit_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addres
       exact ⟨hh, he⟩
   · match Obs.«KernelRoles::role_ctx_limit».obs ev with
     | .Assumed (he32 := he) (he33 := hh) .. => exact ⟨hh, by rw [he]; simp⟩
-    | .Mk (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Mk (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. | .MkEval (ld12 := ld12) .. =>
+      rw [hl] at ld12; simp at ld12
 
 /-! ## Loading the context (A0) -/
 

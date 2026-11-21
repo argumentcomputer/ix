@@ -6,6 +6,7 @@ import IxVMRefinement.Obs.KernelModeled0
 import IxVMRefinement.Obs.KernelModeled1
 import IxVMRefinement.Obs.KernelModeled2
 import IxVMRefinement.Obs.KernelModeled3
+import IxVMRefinement.Obs.KernelRoles
 import IxVMRefinement.Obs.Ingress0
 
 /-! # Call-tree descent for `check_family` and `check_witness`
@@ -1284,7 +1285,8 @@ private theorem check_witnesses_descend_aux (n : Nat) :
     | .n0 (hc41 := hc) .. =>
       rw [hc] at hcl; simp at hcl
     | .other (x_x := x_x) (x_rest := x_rest) (cs194 := cs194) (ev59 := ev59) (ev94 := ev94)
-        (ev_updedcyj := evOrd) (ev167 := ev167) (ev129 := ev129) (ev196 := ev196)
+        (ev_updedcyj := evOrd) (ev_zctcgyek := evAx) (ev_gspkxwao := evLkp)
+        (ev167 := ev167) (ev129 := ev129) (ev196 := ev196)
         (he254 := he254) (hm264 := hm264) (he291 := he291) (hc292 := hc) .. =>
       have mkSub : ∀ {fn' args' h₁ r₁ h₁' cs'},
           ObsFn Obs.W fn' args' h₁ r₁ h₁' cs' →
@@ -1310,6 +1312,32 @@ private theorem check_witnesses_descend_aux (n : Nat) :
               rcases List.mem_cons.mp ht with rfl | ht'
               · exact peel_noKey hpl' _ hneWS key hof
               · simp at ht'⟩
+      have mkSubSym : ∀ {fn' nm : String} {tys : List Ty} {args' h₁ r₁ h₁' cs'},
+          ObsFn Obs.W fn' args' h₁ r₁ h₁' cs' →
+          (Instance.mk nm tys).symbol = fn' →
+          tys ≠ [] →
+          nm ≠ "KernelModeled::check_witnesses" →
+          fn' ≠ "KernelModeled::check_witnesses" →
+          cl ∈ cs' → cs'.length < cs_ws.length → (∀ x ∈ cs', x ∈ cs_ws) →
+          (rc = rc₀ ∧ xb = xb₀ ∧
+            ∃ (v_w : SourceValue F) (m_w : Heap F) (cs_w : List (Call F))
+              (elems : List (SourceValue F)),
+              ObsFn Obs.W "KernelModeled::check_witness" [rc, xb, xx, kind, s] h_w v_w m_w cs_w ∧
+              (∀ cl ∈ cs_w, cl ∈ cs_ws) ∧
+              Heap.Extends h_ws h_w ∧ Heap.Extends m_w h_ws' ∧
+              List.RepList Obs.Names.«Lists::Node<&[Field; 32]>» (fun _ a b => a = b) h_ws' elems xlist ∧
+              xx ∈ elems) ∨
+          StrictSubCall ts cl cs_ws :=
+        fun ev' hsym' htys' hneNm hneWS hcl' hlt' hsub' =>
+          Or.inr ⟨_, _, _, _, _, _, ev', hcl', hlt', hsub',
+            fun t ht => by
+              rcases List.mem_cons.mp ht with rfl | ht'
+              · exact hneWS
+              · simp at ht',
+            fun key hof t ht => by
+              rcases List.mem_cons.mp ht with rfl | ht'
+              · exact peel_noKey_sym hsym' htys' hneNm key hof
+              · simp at ht'⟩
       refine peel_eq hc hcl fun hcl hle hsub => ?_
       refine peel ev59 hcl hle hsub (by simp [cl])
         (fun h1 h2 h3 => mkSub ev59 (by decide) (by decide) h1 h2 h3)
@@ -1319,6 +1347,13 @@ private theorem check_witnesses_descend_aux (n : Nat) :
         fun hcl hle hsub => ?_
       refine peel evOrd hcl hle hsub (by simp [cl])
         (fun h1 h2 h3 => mkSub evOrd (by decide) (by decide) h1 h2 h3)
+        fun hcl hle hsub => ?_
+      refine peel evAx hcl hle hsub (by simp [cl])
+        (fun h1 h2 h3 => mkSub evAx (by decide) (by decide) h1 h2 h3)
+        fun hcl hle hsub => ?_
+      refine peel evLkp hcl hle hsub (by simp [cl, Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>»])
+        (fun h1 h2 h3 => mkSubSym evLkp Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>».symbol
+          (by decide) (by decide) (by simp [Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>»]) h1 h2 h3)
         fun hcl hle hsub => ?_
       refine peel ev167 hcl hle hsub (by simp [cl])
         (fun h1 h2 h3 => mkSub ev167 (by decide) (by decide) h1 h2 h3)
@@ -1337,7 +1372,8 @@ private theorem check_witnesses_descend_aux (n : Nat) :
         have hrepCons := List.allocCons_rep _ (fun _ _ _ _ _ h => h) (x := xx) rfl hrepRest
         have hext1 : Heap.Extends h_ws _ :=
           ev59.heap_extends.trans (ev94.heap_extends.trans
-            (evOrd.heap_extends.trans ev167.heap_extends))
+            (evOrd.heap_extends.trans (evAx.heap_extends.trans
+              (evLkp.heap_extends.trans ev167.heap_extends))))
         exact Or.inl ⟨rfl, rfl, _, _, _, xx :: elems, ev129,
           fun x hx => hsub x (List.mem_cons_of_mem _ (List.mem_append_left _ hx)),
           hext1, ev196.heap_extends.trans (Heap.Extends.snoc _ _), hrepCons, List.mem_cons_self⟩
@@ -1355,7 +1391,8 @@ private theorem check_witnesses_descend_aux (n : Nat) :
               have hrepCons := List.allocCons_rep _ (fun _ _ _ _ _ h => h) (x := x_x) rfl hrepRest
               have hextPre : Heap.Extends h_ws _ :=
                 ev59.heap_extends.trans (ev94.heap_extends.trans
-                  (evOrd.heap_extends.trans (ev167.heap_extends.trans ev129.heap_extends)))
+                  (evOrd.heap_extends.trans (evAx.heap_extends.trans
+                    (evLkp.heap_extends.trans (ev167.heap_extends.trans ev129.heap_extends)))))
               exact Or.inl ⟨rfl, rfl, vw, mw, csw, x_x :: elems, evw,
                 fun x hx => hsub x (List.mem_cons_of_mem _ (List.mem_append_right _ (List.mem_cons_of_mem _ (hsubw x hx)))),
                 hextPre.trans hext1, hext2.trans (Heap.Extends.snoc _ _),
@@ -1534,7 +1571,7 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                 peel_last ev' hcl' hle' hsub' (fun e => hneW e.symm)
                   (fun h1 h2 h3 => useSub ev' (peel_noKey hpl' _ hneWS) hneWS h1 h2 h3)
             match Obs.«KernelModeled::check_family».obs evCF with
-            | .run (m105 := m105) (m297 := m297) (cs107 := cs107) (cs401 := cs401) (cs433 := cs433) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+            | .run (m_vcemfqfp := m105) (m297 := m297) (cs_dkftegsw := cs107) (cs401 := cs401) (cs433 := cs433) (sg_barfcuni := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
                 (ev_yqjbwijz := evOrd) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
                 (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465)
                 (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
@@ -1550,14 +1587,16 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
               refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine peel_append hcl hle hsub (fun hcs107 hle107 hsub107 => ?_)
                 fun hcl hle hsub => ?_
-              · -- Inside `sg112` (`KernelRoles::role_ctx_axioms`)
+              · -- Inside `sg112` (`KernelRoles::role_ctx_axioms` / `role_ctx_without_axioms`)
                 cases sg112 with
                 | Nil _ _ ev15 _ _ hc34 =>
                   rw [hc34] at hcs107 hle107 hsub107
                   exact stepLast ev15 (by decide) (by decide) (by decide) hcs107 hle107 hsub107
-                | Node _ _ _ _ _ _ _ ev15 _ _ _ hc102 =>
+                | Node _ _ _ _ _ _ _ _ ev15 ev_wo hc102 =>
                   rw [hc102] at hcs107 hle107 hsub107
-                  exact stepLast ev15 (by decide) (by decide) (by decide) hcs107 hle107 hsub107
+                  refine step ev15 (by decide) (by decide) (by decide) hcs107 hle107 hsub107
+                    fun hcl' hle' hsub' => ?_
+                  exact stepLast ev_wo (by decide) (by decide) (by decide) hcl' hle' hsub'
               · refine step ev126 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
                 refine step ev148 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
                 refine step ev194 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -2010,31 +2049,38 @@ private theorem find?_append_none_left {α : Type _} {p : α → Bool} {l₁ l�
 is the call on its own payload stream `v113` at `m114`.** -/
 theorem check_family_first_get_address {x_rc x_block x_rec_block v104 v113 : SourceValue F}
     {h m105 m114 : Heap F} {calls cs107 cs124 rest : List (Call F)}
-    (sg112 : Obs.«KernelModeled::check_family».Seg1 x_rc x_block x_rec_block h v104 m105 cs107)
+    (sg112 : Obs.«KernelModeled::check_family».Seg_krruczny x_rc x_block x_rec_block h v104 m105 cs107)
     (ev126 : ObsFn Obs.W "KernelModeled::read_payload" [x_block] m105 v113 m114 cs124)
     (hc : calls = cs107 ++ ((⟨"KernelModeled::read_payload", [x_block], m105⟩ : Call F) ::
       (cs124 ++ ((⟨"IxonDeserialize::get_address", [v113], m114⟩ : Call F) :: rest)))) :
     calls.find? (fun cl => cl.name == "IxonDeserialize::get_address") =
       some ⟨"IxonDeserialize::get_address", [v113], m114⟩ := by
   have hno107 : ∀ cl ∈ cs107, (cl.name == "IxonDeserialize::get_address") = false := by
-    have hax : ∀ {r' m' cs'}, ObsFn Obs.W "KernelRoles::role_ctx_axioms" [x_rc] h r' m' cs' →
-        ∀ cl ∈ cs', cl.name ≠ "IxonDeserialize::get_address" := by
-      intro r' m' cs' ev
-      exact obsFn_readPayloadClosed_no_get_address ev (fun key hof => by
-        have hsym := Instance.ofSymbol_symbol ⟨"KernelRoles::role_ctx_axioms", []⟩
-          (fun _ => by decide)
-        change Instance.ofSymbol (Instance.symbol ⟨"KernelRoles::role_ctx_axioms", []⟩) = .ok key at hof
-        rw [hsym] at hof
-        injection hof with hkey
-        subst hkey
-        decide)
     match sg112 with
-    | .Nil (ev15 := ev15) (hc34 := hc34) .. | .Node (ev15 := ev15) (hc102 := hc34) .. =>
+    | .Nil (cs_thydysml := cs0) (ev_wxupbkvw := ev15) (hc_ouotrhcf := hc34) .. =>
+      have hcs0 : cs0 = [] := by
+        match Obs.«KernelRoles::role_ctx_axioms».obs ev15 with
+        | .Mk (hc40 := h0) .. | .Assumed (hc62 := h0) ..
+        | .MkEval (hc_mtegehcw := h0) .. | .AssumedEval (hc_fdveciok := h0) .. => exact h0
       intro cl hcl
-      rw [hc34] at hcl
+      rw [hc34, hcs0] at hcl
       rcases List.mem_cons.mp hcl with rfl | hcl'
       · dsimp only; decide
-      · exact beq_false_of_ne (hax ev15 cl hcl')
+      · simp at hcl'
+    | .Node (cs_thydysml := cs0) (cs_dccnupsb := cs1) (ev_wxupbkvw := ev15)
+        (ev_kastmihc := ev_wo) (hc_bosnamra := hc102) .. =>
+      have hcs0 : cs0 = [] := by
+        match Obs.«KernelRoles::role_ctx_axioms».obs ev15 with
+        | .Mk (hc40 := h0) .. | .Assumed (hc62 := h0) ..
+        | .MkEval (hc_mtegehcw := h0) .. | .AssumedEval (hc_fdveciok := h0) .. => exact h0
+      have hcs1 : cs1 = [] := by
+        match Obs.«KernelRoles::role_ctx_without_axioms».obs ev_wo with
+        | .Mk (hc_pfkmcbip := h1) .. | .Assumed (hc_reopitlb := h1) ..
+        | .MkEval (hc_mtegehcw := h1) .. | .AssumedEval (hc_fdveciok := h1) .. => exact h1
+      intro cl hcl
+      rw [hc102, hcs0, hcs1] at hcl
+      simp only [List.nil_append, List.mem_cons, List.not_mem_nil, or_false] at hcl
+      rcases hcl with rfl | rfl <;> (dsimp only; decide)
   have hno124 : ∀ cl ∈ cs124, (cl.name == "IxonDeserialize::get_address") = false := by
     intro cl hcl
     refine beq_false_of_ne (obsFn_readPayloadClosed_no_get_address ev126 (fun key hof => ?_) cl hcl)

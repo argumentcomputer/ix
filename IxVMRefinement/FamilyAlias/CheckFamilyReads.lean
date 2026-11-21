@@ -96,7 +96,7 @@ structure CheckFamilyChain (rc b rb : SourceValue F)
   vSeg : SourceValue F
   m105 : Heap F
   cs107 : List (Call F)
-  sg112 : Obs.«KernelModeled::check_family».Seg1 rc b rb h_in vSeg m105 cs107
+  sg112 : Obs.«KernelModeled::check_family».Seg_krruczny rc b rb h_in vSeg m105 cs107
   subSeg : CallSub cs107 calls
   -- Payload stream, order check, witnesses, advice
   payload : SourceValue F
@@ -143,7 +143,7 @@ structure CheckFamilyChain (rc b rb : SourceValue F)
   aset : SourceValue F
   m453 : Heap F
   evCheckAdv : SubCall calls "KernelModeled::check_advice_records"
-    [rc, advList, .construct Obs.Names.«RBTreeMap::RBTreeMap<Field>» "Nil" [], wset] m423
+    [vSeg, advList, .construct Obs.Names.«RBTreeMap::RBTreeMap<Field>» "Nil" [], wset] m423
     aset m453
   -- Block and family-record tables (`CallTables.family_tables` inputs)
   members : SourceValue F
@@ -278,7 +278,7 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
     (ev : ObsFn Obs.W "KernelModeled::check_family" [rc, b, rb] h r h' calls) :
     Nonempty (CheckFamilyChain rc b rb h h' calls) := by
   match Obs.«KernelModeled::check_family».obs ev with
-  | .run (sg112 := sg) (ev126 := e126) (ev148 := e148) (ev194 := e194) (heq217 := q217)
+  | .run (sg_barfcuni := sg) (ev126 := e126) (ev148 := e148) (ev194 := e194) (heq217 := q217)
       (ev_yqjbwijz := eOrd) (ev231 := e231) (ev266 := e266) (ev309 := e309) (ev344 := e344)
       (ev403 := e403) (ev435 := e435) (ev465 := e465) (ev513 := e513) (ev601 := e601)
       (ev634 := e634) (heq650 := q650) (ev664 := e664) (ev686 := e686) (ev716 := e716)

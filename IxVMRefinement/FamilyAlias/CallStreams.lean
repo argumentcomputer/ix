@@ -204,7 +204,8 @@ theorem check_witnesses_stream_field :
       injection hv with hn
       subst hn
       simp at hk
-    | .other (hne42 := hne) (ev59 := e1) (ev94 := e2) (ev_updedcyj := e2') (ev167 := e3)
+    | .other (hne42 := hne) (ev59 := e1) (ev94 := e2) (ev_updedcyj := e2')
+        (ev_zctcgyek := e2ax) (ev_gspkxwao := e2lkp) (ev167 := e3)
         (ev129 := e4) (op235 := op) (ev196 := e5) (he254 := hr) (hm264 := hm) (he291 := hh) .. =>
       have hn0 : n ≠ 0 := fun e => hne (congrArg Value.field e)
       obtain rfl := Lib.sub_one_inv op
@@ -216,7 +217,9 @@ theorem check_witnesses_stream_field :
       obtain ⟨-, hx2⟩ := htup
       rw [← hx2] at hs1
       obtain ⟨b2, hs2⟩ := read_byte_stream hs1 e2
-      obtain ⟨b3, hs3⟩ := check_witness_stream ((hs2.mono e2'.heap_extends).mono e3.heap_extends) e4
+      obtain ⟨b3, hs3⟩ := check_witness_stream
+        ((((hs2.mono e2'.heap_extends).mono e2ax.heap_extends).mono e2lkp.heap_extends).mono
+          e3.heap_extends) e4
       obtain ⟨xs, s', b4, hr', hs4⟩ := check_witnesses_stream_field k hpred hs3 e5
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr'
       obtain ⟨-, hs'⟩ := hr'
