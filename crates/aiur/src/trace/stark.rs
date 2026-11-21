@@ -24,6 +24,9 @@ use multi_stark::{
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_BACKEND_ID: AtomicU64 = AtomicU64::new(1);
 
 pub mod batch;
 #[cfg(feature = "cuda")]
@@ -41,6 +44,7 @@ mod tests;
 mod witness;
 pub use batch::{StageOne, StreamPlan, VerifyingKey};
 pub use statistics::{CircuitMeasurements, ExecutionStatistics};
+pub use witness::ValidatedRecord;
 
 /// Conversion at this concrete proving adapter only. The native configuration
 /// writes its existing field values directly into multi-stark's matrices.
@@ -160,6 +164,7 @@ pub struct CircuitStatistics {
 /// Set up once, then prove many records. Only this adapter selects Goldilocks;
 /// the compiler, circuit export and ordinary execution remain field generic.
 pub struct Backend<'p, 'a, B: WitnessField = PrimeField> {
+  id: u64,
   plan: &'p TracePlan<'a, B>,
   system: System<GoldilocksBlake3Config>,
   key: ProverKey<GoldilocksBlake3Config>,
@@ -420,6 +425,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       members[placements[chip].circuit].push(function);
     }
     let backend = Self {
+      id: NEXT_BACKEND_ID.fetch_add(1, Ordering::Relaxed),
       plan,
       system,
       key,

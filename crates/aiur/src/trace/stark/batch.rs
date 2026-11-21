@@ -535,7 +535,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       let heights: Vec<_> =
         (0..self.system.circuits.len()).map(|ci| device.height(ci)).collect();
       let traces = self
-        .generate_with::<false>(
+        .generate_with_validated::<false>(
           record,
           Some((entry, args)),
           &heights,
@@ -719,7 +719,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       rows.push(self.system.circuits[ci].preprocessed_height);
     }
     for &width in &self.rom.widths {
-      rows.push(record.memory.indices_for_width(width).len());
+      rows.push(record.memory.width_cells(width).len());
     }
     rows
   }

@@ -309,24 +309,17 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         .take(self.tables.len())
         .map(|c| c.preprocessed_height),
     );
-    let memory_start = heights.len();
-    let mut counts = std::collections::BTreeMap::<usize, usize>::new();
-    for entry in record.memory.iter() {
-      *counts.entry(entry.cell.value.len()).or_default() += 1;
-    }
     let mut memory_intervals = Vec::new();
-    for c in &self.system.circuits[memory_start..] {
-      let width = c.main_width - 3;
-      let indices = record.memory.indices_for_width(width);
-      if let Some(&first) = indices.first() {
-        let start = record.memory.get(first).unwrap().address as u64;
+    for &width in &self.rom.widths {
+      let cells = record.memory.width_cells(width);
+      if let Some(first) = cells.first_address() {
+        let start = first as u64;
         let end = start
-          .checked_add(indices.len() as u64)
+          .checked_add(cells.len() as u64)
           .ok_or("ROM boundary overflow")?;
         memory_intervals.push((width as u64, start, end));
       }
-      heights
-        .push(padded(counts.get(&(c.main_width - 3)).copied().unwrap_or(0))?);
+      heights.push(padded(cells.len())?);
     }
     Ok(RecordShape { heights, memory_intervals })
   }

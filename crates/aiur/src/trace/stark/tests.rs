@@ -1826,3 +1826,57 @@ fn parallel_rom_witness_and_prefix_lookups_match_reference() {
     .unwrap();
   backend.verify_batch("store_loop", &[n], &record.output, &proof).unwrap();
 }
+
+#[test]
+fn validated_record_binds_to_backend_survives_moves_and_rejects_bad_depths() {
+  let (program, trace) = depth::depth_fixture();
+  let plan = TracePlan::new(&program, trace).unwrap();
+  let backend_a = Backend::for_batch(&plan, parameters()).unwrap();
+  let backend_b = Backend::for_batch(&plan, parameters()).unwrap();
+  let record = program.execute("Depth::run", vec![8]).unwrap();
+
+  let validated = backend_a.validate_record(&record).unwrap();
+  // Rejected by a different backend instance, even for the exact same plan.
+  assert!(
+    backend_b
+      .generate_stage_1_validated(&validated, "Depth::run", &[8])
+      .unwrap_err()
+      .contains("different backend")
+  );
+  assert!(
+    backend_b
+      .generate_validated(&validated, "Depth::run", &[8])
+      .err()
+      .unwrap()
+      .contains("different backend")
+  );
+
+  // Moving the backend keeps its identity valid and matches unvalidated output.
+  let expected =
+    backend_a.generate_stage_1(&record, "Depth::run", &[8]).unwrap();
+  let moved_a = Box::new(backend_a);
+  let actual =
+    moved_a.generate_stage_1_validated(&validated, "Depth::run", &[8]).unwrap();
+  assert_eq!(actual.len(), expected.len());
+  for (a, b) in actual.iter().zip(&expected) {
+    assert_eq!(a.width, b.width);
+    assert_eq!(a.values, b.values);
+  }
+
+  // Out-of-field depths are still rejected at validate_record.
+  let mut bad = record.clone();
+  let fib = program
+    .program()
+    .functions
+    .iter()
+    .position(|f| f.name == "Depth::fib")
+    .unwrap();
+  bad.queries.tables[fib].set_depth(0, Val::ORDER_U64);
+  assert!(
+    moved_a
+      .validate_record(&bad)
+      .err()
+      .unwrap()
+      .contains("field characteristic")
+  );
+}

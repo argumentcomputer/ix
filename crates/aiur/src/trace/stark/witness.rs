@@ -531,7 +531,79 @@ impl<F> Default for Worker<F> {
 /// a large circuit use the whole pool alongside the many small circuits.
 const ROW_BATCH: usize = 32;
 
+/// An immutable reference to an [`Execution`] already validated against a
+/// specific [`Backend`] instance, allowing repeated witness generation without
+/// rescanning every query row, depth word, and ROM cell.
+pub struct ValidatedRecord<'r, B: WitnessField = PrimeField> {
+  backend_id: u64,
+  record: &'r Execution<B>,
+}
+
+impl<'r, B: WitnessField> ValidatedRecord<'r, B> {
+  pub const fn record(&self) -> &'r Execution<B> {
+    self.record
+  }
+}
+
 impl<B: WitnessField> Backend<'_, '_, B> {
+  /// Validate `record` once for this backend so subsequent witness calls can
+  /// skip whole-record validation scans.
+  pub fn validate_record<'r>(
+    &self,
+    record: &'r Execution<B>,
+  ) -> Result<ValidatedRecord<'r, B>, String> {
+    self.plan.validate_record(record)?;
+    Ok(ValidatedRecord { backend_id: self.id, record })
+  }
+
+  /// Generate a complete stage-one witness from an already-validated record.
+  pub fn generate_validated(
+    &self,
+    validated: &ValidatedRecord<'_, B>,
+    entry: &str,
+    args: &[B::Element],
+  ) -> Result<SystemWitness<Val>, String> {
+    if validated.backend_id != self.id {
+      return Err("record was validated for a different backend".into());
+    }
+    if self.gpu_lookup_only {
+      Ok(self.witness_from_main(
+        self.generate_stage_1_validated(validated, entry, args)?,
+      ))
+    } else {
+      self.generate_with_validated::<true>(
+        validated.record,
+        Some((entry, args)),
+        &[],
+        &RangeCounts::default(),
+        None,
+      )
+    }
+  }
+
+  /// Generate stage-one main traces from an already-validated record.
+  pub fn generate_stage_1_validated(
+    &self,
+    validated: &ValidatedRecord<'_, B>,
+    entry: &str,
+    args: &[B::Element],
+  ) -> Result<Vec<RowMajorMatrix<Val>>, String> {
+    if validated.backend_id != self.id {
+      return Err("record was validated for a different backend".into());
+    }
+    Ok(
+      self
+        .generate_with_validated::<false>(
+          validated.record,
+          Some((entry, args)),
+          &[],
+          &RangeCounts::default(),
+          None,
+        )?
+        .traces,
+    )
+  }
+
   /// Generate a complete stage-one witness from the immutable query record.
   /// Main rows and their lookup messages are populated together. With the
   /// `parallel` feature, circuits and real-row batches share the Rayon pool.
@@ -627,9 +699,28 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     device_ranges: &RangeCounts,
     min_heights: Option<&[usize]>,
   ) -> Result<SystemWitness<Val>, String> {
+    self.plan.validate_record(record)?;
+    self.generate_with_validated::<LOOKUPS>(
+      record,
+      root,
+      device,
+      device_ranges,
+      min_heights,
+    )
+  }
+
+  /// Same as [`Self::generate_with`], skipping `validate_record` because the
+  /// caller already validated `record` against this backend's plan.
+  pub(super) fn generate_with_validated<const LOOKUPS: bool>(
+    &self,
+    record: &Execution<B>,
+    root: Option<(&str, &[B::Element])>,
+    device: &[Option<usize>],
+    device_ranges: &RangeCounts,
+    min_heights: Option<&[usize]>,
+  ) -> Result<SystemWitness<Val>, String> {
     #[cfg(feature = "trace-profile")]
     let mut profile = super::profile::Phases::new();
-    self.plan.validate_record(record)?;
     if let Some((entry, args)) = root {
       self.plan.root(record, entry, args)?;
     }
