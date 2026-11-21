@@ -322,13 +322,7 @@ impl CompressConfig {
     }
     let prefetch_gib = match std::env::var("IX_KZG_PREFETCH_GIB") {
       Ok(value) => value.parse::<usize>()?,
-      Err(std::env::VarError::NotPresent) => {
-        if cfg!(feature = "cuda") {
-          32
-        } else {
-          0
-        }
-      },
+      Err(std::env::VarError::NotPresent) => default_prefetch_gib(),
       Err(error) => return Err(error.into()),
     };
     Ok(Self {
@@ -379,6 +373,43 @@ impl CompressConfig {
     let _ = crate::kzg::KzgConfig::resolve_disk_spill_dir(Path::new("."))?;
     Ok(())
   }
+}
+
+/// Choose an adaptive default partition prefetch budget (in GiB) from the
+/// host's available memory when `IX_KZG_PREFETCH_GIB` is unset.
+fn adaptive_prefetch_gib(avail_gib: Option<usize>, is_cuda: bool) -> usize {
+  match (avail_gib, is_cuda) {
+    (Some(avail), true) => (avail / 4).min(32),
+    (None, true) => 32,
+    (Some(avail), false) if avail >= 96 => ((avail - 64) / 8).min(16),
+    (_, false) => 0,
+  }
+}
+
+fn available_host_gib() -> Option<usize> {
+  #[cfg(target_os = "linux")]
+  {
+    let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
+    let parse_kib = |key: &str| -> Option<usize> {
+      meminfo
+        .lines()
+        .find_map(|line| line.strip_prefix(key))?
+        .split_whitespace()
+        .next()?
+        .parse::<usize>()
+        .ok()
+    };
+    let kib = parse_kib("MemAvailable:").or_else(|| parse_kib("MemTotal:"))?;
+    Some(kib >> 20)
+  }
+  #[cfg(not(target_os = "linux"))]
+  {
+    None
+  }
+}
+
+fn default_prefetch_gib() -> usize {
+  adaptive_prefetch_gib(available_host_gib(), cfg!(feature = "cuda"))
 }
 
 /// Read the KZG CUDA backend settings from the environment. The pipeline
@@ -837,6 +868,7 @@ impl Checkpoints<'_> {
       let proved = span.in_scope(|| prove(&dir));
       #[cfg(feature = "cuda")]
       multi_stark::cuda::release_device_memory();
+      storage::release_host_memory();
       proved
     };
     proved.and_then(|()| check(&dir)).map_err(|error| {
@@ -1153,6 +1185,14 @@ mod tests {
       assert_eq!(expected.as_str(), name);
     }
     assert!(Stage::parse("unknown").is_err());
+    assert_eq!(adaptive_prefetch_gib(Some(32), false), 0);
+    assert_eq!(adaptive_prefetch_gib(Some(64), false), 0);
+    assert_eq!(adaptive_prefetch_gib(Some(128), false), 8);
+    assert_eq!(adaptive_prefetch_gib(Some(512), false), 16);
+    assert_eq!(adaptive_prefetch_gib(None, false), 0);
+    assert_eq!(adaptive_prefetch_gib(Some(64), true), 16);
+    assert_eq!(adaptive_prefetch_gib(Some(256), true), 32);
+    assert_eq!(adaptive_prefetch_gib(None, true), 32);
   }
 
   #[test]

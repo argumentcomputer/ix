@@ -275,6 +275,7 @@ pub(super) fn prove(
   let statement = statement::from_rows(&input.claims)?;
   drop(plan);
   drop(input);
+  super::super::storage::release_host_memory();
   super::outer::stage(
     built,
     assignment,

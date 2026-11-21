@@ -309,8 +309,8 @@ environment and installs them once, before the first KZG stage:
 | --- | --- | --- |
 | `IX_KZG_CUDA_DEVICES` | CUDA ordinals, comma separated, in preference order | `0`; the library itself defaults to every supported device |
 | `IX_KZG_MSM_CHUNK_POINTS` | `1..=2^28` | `2^24` |
-| `IX_KZG_CUDA_RESIDENT_GIB` | device bytes kept for resident coefficients, in GiB | first stage: up to half the device memory; recursive stage: `8` |
-| `IX_KZG_CUDA_SRS_CACHE` | `0`, `1` | `0` |
+| `IX_KZG_CUDA_RESIDENT_GIB` | device bytes kept for resident coefficients, in GiB | adaptive (`total / 3`, bounded by `total / 2` and free VRAM minus reserve) |
+| `IX_KZG_CUDA_SRS_CACHE` | `0`, `1` | `1` |
 | `IX_KZG_CUDA_PASSES` | `0`, `1`, `force` | `1`: constraint passes when the dense working set does not fit |
 | `IX_KZG_CUDA_PROFILE` | set to record NVTX ranges and transfer timings | unset |
 

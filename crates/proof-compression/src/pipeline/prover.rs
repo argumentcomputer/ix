@@ -191,6 +191,9 @@ impl Committed {
             "KZG fixed prepared"
           );
           let witness = witness.map_or_else(|| generate_witness(src, i), Ok)?;
+          #[cfg(not(feature = "cuda"))]
+          let retain_evaluations =
+            config.stream_lookups() && circuits[i].num_lookups > 0;
           let started = Instant::now();
           let (_, data) =
             tracing::info_span!(parent: &parent, "compression/main_commit", circuit = i)
@@ -200,7 +203,12 @@ impl Committed {
                 #[cfg(not(feature = "cuda"))]
                 if let Some(spill_dir) = config.spill_dir() {
                   return Ok(
-                    config.pcs().commit_matrix_spilled(domain, witness, spill_dir)?,
+                    config.pcs().commit_matrix_spilled_with_evaluations(
+                      domain,
+                      witness,
+                      spill_dir,
+                      retain_evaluations,
+                    )?,
                   );
                 }
                 Ok(config.pcs().commit(vec![(domain, witness)]))
@@ -250,7 +258,11 @@ impl Committed {
           .map_or_else(|| generate_witness(source.as_ref().unwrap(), i), Ok)?;
         if is_last {
           drop(source.take());
+          storage::release_host_memory();
         }
+        #[cfg(not(feature = "cuda"))]
+        let retain_evaluations =
+          config.stream_lookups() && circuits[i].num_lookups > 0;
         let started = Instant::now();
         let (_, data) =
           tracing::info_span!(parent: &parent, "compression/main_commit", circuit = i)
@@ -260,7 +272,12 @@ impl Committed {
               #[cfg(not(feature = "cuda"))]
               if let Some(spill_dir) = config.spill_dir() {
                 return Ok(
-                  config.pcs().commit_matrix_spilled(domain, witness, spill_dir)?,
+                  config.pcs().commit_matrix_spilled_with_evaluations(
+                    domain,
+                    witness,
+                    spill_dir,
+                    retain_evaluations,
+                  )?,
                 );
               }
               Ok(config.pcs().commit(vec![(domain, witness)]))
@@ -274,6 +291,7 @@ impl Committed {
       }
     }
     drop(source);
+    storage::release_host_memory();
     let lookups = circuits
       .iter()
       .zip(&dimensions)
@@ -321,6 +339,8 @@ impl Committed {
     let started = Instant::now();
     let proof = tracing::info_span!("compression/prove")
       .in_scope(|| system.prove_committed(&key, &refs, stage));
+    drop(key);
+    storage::release_host_memory();
     tracing::info!(
       seconds = started.elapsed().as_secs_f64(),
       "KZG proof computed"
