@@ -220,7 +220,7 @@ def runClaimBinding (p : Cli.Parsed) : IO UInt32 := do
 
 def claimBindingCmd : Cli.Cmd := `[Cli|
   binding VIA runClaimBinding;
-  "Build and persist a `Binding` claim: the role table binds every role and each bound constant meets its specification in this specification set. Prove it once (`ix prove-binding <ixe>`) to discharge the claims that assume their binding (`--assume-binding`; `ix aggregate --binding-proof`, `ix prove --ixe --ixes --binding-proof`)."
+  "Build and persist a `Binding` claim: the role table binds every role and each bound constant meets its specification in this specification set. Prove it once (`ix prove-binding <ixe>`) to discharge the claims that assume their binding (`--assume-binding`; `ix aggregate --binding-proof`, `ix prove --aggregate --ixe --ixes --binding-proof`)."
 
   FLAGS:
     binding : String; "32-byte hex binding hash of the role table (default: the default role table of the compiled Init)."

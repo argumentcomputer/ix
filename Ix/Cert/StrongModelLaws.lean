@@ -1,5 +1,6 @@
 import Ix.Cert.Composition
 import Ix.Cert.ConversionValues
+import IxC.Kernel.Verify.Rules.Defs
 
 /-! # Strong models satisfy the Source laws
 
@@ -40,7 +41,8 @@ unsupported literal, or a form with no reading. A full-grade typing excludes eac
 of these: it resolves every constant at its arity, types every projection
 through its table, types every literal under its support, and checks every
 argument (the io grade's unchecked application, `Infer.appSkip`, does not occur). -/
-theorem infer_reads {env : Env md} (acval : Key md → (LevelParam → Nat) → AnnotTerm)
+theorem infer_reads {env : Env md} (hproj : Ix.Kernel.ProjOkT env)
+    (acval : Key md → (LevelParam → Nat) → AnnotTerm)
     (φ : LevelParam → Nat) :
     ∀ {g : Grade} {d : Nat} {e t : Ix.Kernel.Expr md}, Infer env g d e t → g = .full →
       ∃ ea, denoteMeta acval env φ d e = some ea
@@ -50,21 +52,26 @@ theorem infer_reads {env : Env md} (acval : Key md → (LevelParam → Nat) → 
   | _, _, _, _, .natLit h, _ => ⟨_, by rw [denoteMeta]; exact ite_eq_left h⟩
   | _, _, _, _, .strLit h, _ => ⟨_, by rw [denoteMeta]; exact ite_eq_left h⟩
   | _, _, _, _, .forallE hs _ hbs _ _, hg => by
-    obtain ⟨ta, hta⟩ := infer_reads acval φ hs hg
-    obtain ⟨ba, hba⟩ := infer_reads acval φ hbs hg
+    obtain ⟨ta, hta⟩ := infer_reads hproj acval φ hs hg
+    obtain ⟨ba, hba⟩ := infer_reads hproj acval φ hbs hg
     exact ⟨_, by rw [denoteMeta, hta, hba]; rfl⟩
   | _, _, _, _, .lam hs _ hbt _ _ _ _, hg => by
-    obtain ⟨ta, hta⟩ := infer_reads acval φ (hs hg) rfl
-    obtain ⟨ba, hba⟩ := infer_reads acval φ hbt hg
+    obtain ⟨ta, hta⟩ := infer_reads hproj acval φ (hs hg) rfl
+    obtain ⟨ba, hba⟩ := infer_reads hproj acval φ hbt hg
     exact ⟨_, by rw [denoteMeta, hta, hba]; rfl⟩
   | _, _, _, _, .app htf _ hta _, hg => by
-    obtain ⟨fa, hfa⟩ := infer_reads acval φ htf hg
-    obtain ⟨aa, haa⟩ := infer_reads acval φ hta hg
+    obtain ⟨fa, hfa⟩ := infer_reads hproj acval φ htf hg
+    obtain ⟨aa, haa⟩ := infer_reads hproj acval φ hta hg
     exact ⟨_, by rw [denoteMeta, hfa, haa]; rfl⟩
   | _, _, _, _, .appSkip _ _ _, hg => nomatch hg
-  | _, _, _, _, .proj htpe _ _ hent _ _ _, hg => by
-    obtain ⟨ea, hea⟩ := infer_reads acval φ htpe hg
-    exact ⟨_, by rw [denoteMeta, hea, hent]; rfl⟩
+  | _, _, _, _, .proj (entry := entry) htpe _ _ hent _ _ _, hg => by
+    obtain ⟨ea, hea⟩ := infer_reads hproj acval φ htpe hg
+    rw [denoteMeta, hea, hent]
+    dsimp only [bind, Option.bind, Ix.Kernel.Semantics.projNodeAV?]
+    by_cases hle : entry.off ≤ 1
+    · rw [ite_eq_left hle]; exact ⟨_, rfl⟩
+    · rw [ite_eq_right hle, ite_eq_left (hproj.chain_isSome hent hle)]
+      exact ⟨_, rfl⟩
 
 variable {V : Type w} [SetTheory V] {env : Env md}
 
@@ -77,8 +84,8 @@ theorem _root_.Ix.Cert.TypedClosed.graded (M : Cached.StrongModel V env) (φ : L
     {e : Ix.Kernel.Expr md} (h : TypedClosed env e) :
     ∃ ea, denoteMeta M.internal.base2.acval env φ 0 e = some ea ∧ Graded V [] ea := by
   obtain ⟨t, ht⟩ := h.2.2
-  obtain ⟨ea, read⟩ := infer_reads M.internal.base2.acval φ ht rfl
-  have typed := Model.Rules.infer_sound (Model.Rules.RulesInputs.ofSem M.internal φ) ht
+  obtain ⟨ea, read⟩ := infer_reads M.internal.base2.proj_ok M.internal.base2.acval φ ht rfl
+  have typed := Model.Rules.infer_sound (fun ψ => Model.Rules.RulesInputs.ofSem M.internal ψ) (φ := φ) ht
   obtain ⟨_, _, _, _, graded, _, _⟩ :=
     typed h.frame (ConversionValues.frame_context M φ h.frame) read
   exact ⟨ea, read, graded⟩
@@ -92,7 +99,7 @@ theorem red_denoteSame (M : Cached.StrongModel V env) {e e' : Ix.Kernel.Expr md}
   intro φ ρ
   obtain ⟨ea, read, graded⟩ := ht.graded M φ
   obtain ⟨frame', -, ea', read', graded', heq⟩ :=
-    Model.Rules.red_sound (Model.Rules.RulesInputs.ofSem M.internal φ) hr ht.frame
+    Model.Rules.red_sound (fun ψ => Model.Rules.RulesInputs.ofSem M.internal ψ) (φ := φ) hr ht.frame
       (ConversionValues.frame_context M φ ht.frame) read graded
   refine ⟨interp V ρ ea, ConversionValues.reading_denotes M ht.frame read graded ρ, ?_⟩
   rw [heq ρ (Sat_nil V ρ)]
@@ -106,7 +113,7 @@ theorem defeq_denoteSame (M : Cached.StrongModel V env) {a b : Ix.Kernel.Expr md
   intro φ ρ
   obtain ⟨aa, readA, gradeA⟩ := ha.graded M φ
   obtain ⟨ba, readB, gradeB⟩ := hb.graded M φ
-  have eq := Model.Rules.defeq_sound (Model.Rules.RulesInputs.ofSem M.internal φ) h ha.frame
+  have eq := Model.Rules.defeq_sound (fun ψ => Model.Rules.RulesInputs.ofSem M.internal ψ) (φ := φ) h ha.frame
     hb.frame (ConversionValues.frame_context M φ ha.frame)
     (ConversionValues.frame_context M φ hb.frame) readA readB gradeA gradeB ρ (Sat_nil V ρ)
   refine ⟨interp V ρ aa, ConversionValues.reading_denotes M ha.frame readA gradeA ρ, ?_⟩
@@ -129,7 +136,8 @@ theorem _root_.Ix.Cert.IotaStep.red {c : Key md} {cv : Ix.Kernel.ConstantVal md}
     (h : IotaStep env c cv mI rP rules rl e e') : Red env 0 e e' := by
   obtain ⟨-, us, major, cj, usj, cvj, cnP, cnF, residual, hhead, hlen, hus, hmajor, hmhead, hctor,
     hrule, hmlen, hfire, hlv, hparams, hcertR, hcertC, hres, hidx, rfl⟩ := h
-  exact Red.iota hhead hfind hlen hus hmajor hmhead hctor hrule hmlen hfire hlv hparams hcertR
+  exact Red.iota hhead hfind hlen hus hmajor hmhead hctor hrule hmlen hfire
+    (Ix.Kernel.Level.isEquivList_sound hlv) hparams hcertR
     hcertC hres hidx
 
 /-- A projection step is a reduction (`Red.proj`). -/
@@ -137,7 +145,7 @@ theorem _root_.Ix.Cert.ProjStep.red {sn : Key md} {i : Nat} {e e' : Ix.Kernel.Ex
     (h : ProjStep env sn i e e') : Red env 0 e e' := by
   obtain ⟨-, u, entry, us, cvC, nP, nF, rfl, hent, hhead, hi, hlen, hus, hfire, hctor, hcerts,
     rfl⟩ := h
-  exact Red.proj hent hhead hi hlen hus hfire hctor hcerts
+  exact Red.proj hent hhead hi hlen hus (Ix.Kernel.Rules.fireOk_sem hfire) hctor hcerts
 
 /-- A structure-η step at a stored family is a conversion (`DefEq.structEta`). -/
 theorem _root_.Ix.Cert.StructEtaStep.defEq {T : Key md} {cvT : Ix.Kernel.ConstantVal md} {caps : IndCaps md}
@@ -146,7 +154,7 @@ theorem _root_.Ix.Cert.StructEtaStep.defEq {T : Key md} {cvT : Ix.Kernel.Constan
   obtain ⟨-, -, tb, wtb, c, us, cvc, cnP, cnF, us', htb, hwtb, hhead, hctor, hlen, hthead, heta,
     hetaCtor, hresT, hresc, htlen, hlv, hlps, hslots, hus, hcerts, hproj, hparams, hfields⟩ := h
   exact DefEq.structEta htb hwtb hhead hctor hlen hthead hT heta hetaCtor hresT hresc htlen hlv
-    hlps hslots hus hcerts hproj hparams hfields
+    hlps hslots (Ix.Kernel.Level.isEquivList_sound hus) hcerts hproj hparams hfields
 
 /-- A unit-like step at a stored family is a conversion (`DefEq.structUnit`). -/
 theorem _root_.Ix.Cert.StructUnitStep.defEq {T : Key md} {cvT : Ix.Kernel.ConstantVal md} {caps : IndCaps md}

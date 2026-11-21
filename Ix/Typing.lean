@@ -7,7 +7,7 @@ public import IxC.Kernel.Admission.Tier
 public import IxC.Kernel.Tier.Ind
 public import IxC.Kernel.Tier.Answer
 
-/-! # resource-v1's typing half
+/-! # The typing of a compiled artifact
 
 `typeCheck` types every record of an Ixon environment as committed: its
 exact bytes (never a materialized cache), in an executable whole-environment
@@ -64,8 +64,8 @@ moves every tier record to the uncertified part and retries certified
 admission on the remaining logical records. The separate checker then types
 the tier transparently. A successful result with a nonempty uncertified part
 combines the certified part's theorem with IxC's uncertified typing of the
-rest. The claim string stays `resource-v1`, uncertified as a resource claim
-(`Ix.Resource.Claim`).
+rest. `ix compile` runs it on every artifact it emits, and the mode checker
+(`Ix.ModeCheck`) reads modes with the environment its certified part installs.
 
 The reading of an unsafe block (`readTierBlock`) is a separate entry: the
 certified reader, the batch tier and its theorem are unchanged, and the
@@ -75,7 +75,7 @@ accept. -/
 
 @[expose] public section
 
-namespace Ix.Resource
+namespace Ix.Typing
 
 open Ix.Kernel (ConstRef)
 open Ix.Kernel.Reader
@@ -98,7 +98,7 @@ through, and the role table and prelude. -/
 structure TypingInput where
   binding : Ix.Kernel.Admission.Binding
   /-- A supplied artifact binding requires complete role/evidence coverage,
-  including operations unused by the requested resource program. -/
+  including operations unused by the program. -/
   bound : Bool := false
   table : Ix.Kernel.RoleTable
   pre : Prelude .anon
@@ -110,7 +110,7 @@ structure TypingInput where
   hints : Std.HashMap Address Lean.ReducibilityHints
 
 /-- **The compiler's reducibility hints**, read as `Ix.Cert.hintsOf` reads
-them (copied, so that `Ix.Resource` does not import `Ix.Cert`; the test
+them (copied, so that `Ix.Typing` does not import `Ix.Cert`; the test
 `resource-hints` checks that the two agree): the hint the artifact ships at
 a definition block member's projection record, otherwise at the record. The
 projection map is built once, with the input: a lookup returned as a closure
@@ -120,12 +120,58 @@ def TypingInput.hint (input : TypingInput) (r : ConstRef Address) : Option Ix.Ke
   hintOf <$> input.hints.get? ((input.projections.get? r).getD r.block)
 
 /-- The entry uses the same admitted table and guarded prelude as preparation.
-The resource answer view remains confined to the separately typed part. -/
+The answer view remains confined to the separately typed part. -/
 def TypingInput.preludeFor (input : TypingInput) (table : Ix.Kernel.RoleTable) :
     Except String (Prelude .anon) := do
   unless table.toBytes == input.binding.bytes do
-    throw "resource validator: admitted table differs from prepared binding"
+    throw "typing: admitted table differs from prepared binding"
   return input.pre
+
+/-- Whether a decoded safe record carries an undecided (`0x04`) binder node. -/
+def isUndecidedSafeRecord (c : Ixon.Constant) : Bool :=
+  !c.info.uncheckedSafety && c.binders.any (·.nodes.any (·.isUndecided))
+
+/-- Whether `env` holds any safe record whose committed bytes decode with an
+undecided (`0x04`) binder node. -/
+def envHasUndecidedSafe (env : Ixon.Env) : Bool :=
+  env.consts.toArray.any fun (_, lazy) =>
+    match Ixon.runGetExact (Ixon.Serialize.get : Ixon.GetM Ixon.Constant) lazy.rawBytes with
+    | .ok c => isUndecidedSafeRecord c
+    | .error _ => false
+
+/-- Note explaining why undecided (`0x04`) binder sections fail against a role
+table that binds decided records. -/
+def undecidedRoleNote (defaultTable : Bool) : String :=
+  if defaultTable then
+    "; note: input records carry undecided (0x04) binder sections, whereas the default role table binds records with decided binder data"
+  else
+    "; note: input records carry undecided (0x04) binder sections, which changes record addresses relative to the role binding"
+
+/-- Check that every published role name in `env.named` sits at `table`'s bound
+address for that role, naming any mismatched or unbound role and noting when
+input records carry undecided (`0x04`) binder sections. -/
+def checkPublishedRolesDefault (env : Ixon.Env) (table : Ix.Kernel.RoleTable)
+    (constants : List (Address × Ixon.Constant)) : Except String Unit := do
+  if env.named.isEmpty then return
+  let bound : Std.HashMap Ix.Kernel.Role Address :=
+    table.bound.foldl (fun m (r, a) => if m.contains r then m else m.insert r a) {}
+  let entries := env.named.toArray.qsort fun a b => Ix.Name.leanCmp a.1 b.1 == .lt
+  for (n, entry) in entries do
+    if let some r := Ix.Kernel.Role.ofLeanName? (Ix.LeanIngress.ingressName n) then
+      match bound[r]? with
+      | some expected =>
+        unless expected == entry.addr do
+          let note := if constants.any (isUndecidedSafeRecord ∘ Prod.snd) then
+              undecidedRoleNote true
+            else ""
+          throw s!"role check failed: published role {n.pretty} ({repr r}) is at {entry.addr}, \
+            not its bound address {expected} in the default role table{note}"
+      | none =>
+        let note := if constants.any (isUndecidedSafeRecord ∘ Prod.snd) then
+            undecidedRoleNote true
+          else ""
+        throw s!"role check failed: published role {n.pretty} ({repr r}) at {entry.addr} \
+          is unbound in the default role table{note}"
 
 /-- The typing half's input. Every record is decoded from its committed
 bytes (`lazy.rawBytes`: Lean's public `LazyConstant` record permits a
@@ -134,11 +180,19 @@ the committed bytes) by the entry's own canonical decoder; the entry decodes
 the same bytes again itself. -/
 def typingInput (env : Ixon.Env) : Except String TypingInput := do
   if env.roleBinding.isSome then
-    let input ← (Ix.RoleBinding.Artifact.prepareRecords env typingLimits).mapError toString
+    let input ← match Ix.RoleBinding.Artifact.prepareRecords env typingLimits with
+      | .ok r => pure r
+      | .error err =>
+        let base := toString err
+        let note := match err with
+          | .coverage _ | .prelude _ =>
+            if envHasUndecidedSafe env then undecidedRoleNote false else ""
+          | _ => ""
+        throw (base ++ note)
     let p := input.prepared
     let bytes : Std.HashMap Address ByteArray := p.records.foldl (fun m (a, b) => m.insert a b) {}
     let ordered ← input.constants.toArray.mapM fun (a, c) => do
-      let some raw := bytes[a]? | throw s!"resource validator: missing prepared bytes at {a}"
+      let some raw := bytes[a]? | throw s!"typing: missing prepared bytes at {a}"
       pure (a, c, raw)
     let projections : Std.HashMap (ConstRef Address) Address := input.constants.foldl (init := {}) fun m (a, c) =>
       match c.info with
@@ -153,6 +207,7 @@ def typingInput (env : Ixon.Env) : Except String TypingInput := do
     (env.consts.toArray.map fun (a, lazy) => (a, lazy.rawBytes)).qsort fun x y => x.1.cmpBytes y.1 == .lt
   let constants ← (Ix.Kernel.Admission.decodeRecords typingLimits committed.toList).mapError
     (toString ∘ Ix.Kernel.Admission.Error.ofBytes)
+  checkPublishedRolesDefault env table constants
   let bytes : Std.HashMap Address ByteArray := committed.foldl (fun m (a, b) => m.insert a b) {}
   let decoded : Std.HashMap Address Ixon.Constant := constants.foldl (fun m (a, c) => m.insert a c) {}
   let ordered := (Ixon.CheckOrder.wholeEnv table pre constants.toArray).filterMap fun a => do
@@ -492,10 +547,10 @@ def checkCertified (input : TypingInput) (unc : Std.HashSet Address) :
     let (logical, _) := Ix.Kernel.Admission.partitionTier constants
     let (evidence, declarations) ← (Ix.Kernel.Admission.readStream Address.admissionHash
       input.table input.pre logical input.blobs input.hint).mapError
-        fun e => (s!"resource validator: bound evidence reading failed: {e}", false)
+        fun e => (s!"typing: bound evidence reading failed: {e}", false)
     (Ix.RoleBinding.Artifact.checkEvidence input.table evidence
       (Ix.Kernel.Frontend.preparePrelude input.pre.ix declarations)).mapError
-        fun e => (s!"resource validator: {e}", false)
+        fun e => (s!"typing: {e}", false)
   match Ix.Kernel.Admission.checkBytesTieredUsing input.preludeFor Address.admissionHash input.binding typingLimits records
       input.blobs input.hint with
   | .ok (env, _) => pure env
@@ -504,7 +559,7 @@ def checkCertified (input : TypingInput) (unc : Std.HashSet Address) :
       | some a => s!" at {a}"
       | none => ""
     let isTier := match e with | .tier .. => true | _ => false
-    throw (s!"resource validator: erased typing failed{site}: {e}", isTier)
+    throw (s!"typing failed{site}: {e}", isTier)
 
 /-- **The uncertified part**, typed from the certified run's environment
 `env` (its only input from that run): read (`readUncertified`), then checked
@@ -516,35 +571,38 @@ def typeUncertified (input : TypingInput) (unc : Std.HashSet Address) (env : Ix.
     input.blobs input.hint
   let site (i : Nat) : String := ((input.ordered[i]?).map fun (a, _, _) => s!" at {a}").getD ""
   let u ← (readUncertified cx input.pre input.ordered unc).mapError fun (i, e) =>
-    s!"resource validator: erased typing failed{site i} (uncertified part): read: {e}"
+    s!"typing failed{site i} (uncertified part): read: {e}"
   let ev := evidenceOf cx u.state input.table
   (checkUncertified ev env input.hint u).mapError fun (i, e) =>
-    s!"resource validator: erased typing failed{site i} (uncertified part): {e}"
+    s!"typing failed{site i} (uncertified part): {e}"
 
 /-- The owners of the tier records (`Admission.isTierInfo`) and of their
 definition projections. -/
 def tierOwnersOf (input : TypingInput) : Std.HashSet Address :=
   input.ordered.foldl (fun s (a, c, _) => if Ix.Kernel.Admission.isTierInfo c.info then s.insert a else s) {}
 
-/-- **The typing half** of the resource validator: the certified part
+/-- **The typing of an artifact**: the certified part
 (`checkCertified`), then, when there is one, the uncertified part from its
 result (`typeUncertified`). When the batch tier refuses a tier record (it
 keeps tier constants opaque, where Lean unfolds tier definitions), the
 certified part is the logical records alone, and every tier record joins the
-uncertified part, typed transparently. A failure is `resource validator:
-erased typing failed`, with IxC's error and, where it has one, the failing
+uncertified part, typed transparently. A failure is `typing failed`,
+with IxC's error and, where it has one, the failing
 record; an uncertified part's failure says so. -/
 def typeCheck (env : Ixon.Env) : Except String Unit := do
-  let input ← (typingInput env).mapError (s!"resource validator: erased typing failed: {·}")
+  let input ← (typingInput env).mapError (s!"typing failed: {·}")
+  let note := if !input.bound && input.ordered.any (fun (_, c, _) => isUndecidedSafeRecord c) then
+      undecidedRoleNote true
+    else ""
   let unc := splitOf input
   match checkCertified input unc with
-  | .ok env₀ => unless unc.isEmpty do typeUncertified input unc env₀
+  | .ok env₀ => unless unc.isEmpty do (typeUncertified input unc env₀).mapError (· ++ note)
   | .error (e, isTier) =>
-    unless isTier do throw e
+    unless isTier do throw (e ++ note)
     let unc := (tierOwnersOf input).fold (·.insert ·) unc
-    let env₀ ← (checkCertified input unc).mapError (·.1)
-    typeUncertified input unc env₀
+    let env₀ ← (checkCertified input unc).mapError (·.1 ++ note)
+    (typeUncertified input unc env₀).mapError (· ++ note)
 
-end Ix.Resource
+end Ix.Typing
 
 end

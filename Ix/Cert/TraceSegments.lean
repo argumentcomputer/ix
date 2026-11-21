@@ -79,12 +79,13 @@ def ConvGood (Q : KeyScope .source) : Converted → Prop
   | .axiom cv => cv.type.Good Q
   | .quot _ cv => cv.type.Good Q
 
-/-- **A state's entries at keys of a scope lie in the scope**: its owners, constant types and
-inductive blocks. -/
+/-- **A state's entries at keys of a scope lie in the scope**: its owners, constant types,
+inductive blocks and definition values. -/
 structure StateGood (Q : KeyScope .source) (st : State .source) : Prop where
   owners : ∀ k : Key .source, k.Good Q → ∀ o, st.projOwners[k]? = some o → o.Good Q
   types : ∀ k : Key .source, k.Good Q → ∀ p, st.constTypes[k]? = some p → p.2.Good Q
   blocks : ∀ k : Key .source, k.Good Q → ∀ bk, st.indBlocks[k]? = some bk → bk.Good Q
+  values : ∀ k : Key .source, k.Good Q → ∀ p, st.defValues[k]? = some p → p.2.Good Q
 
 /-- **The trace's `ℓ`-th lowered item** `y` converts its group `gr` to `c`, lowers it from the
 state `stS` the reads before it leave to `raw`, and the collapse keeps `rd` of it. -/
@@ -688,7 +689,7 @@ theorem inductive_at (P : Premises env roots sub ixe failures t envQ) {preA : Pr
           (Converted.inductive (InductiveUnits.srcBlock types ctors recs first'))) := good
       rw [e] at g
       exact g)
-    stGood.types stGood.blocks hl
+    stGood.types stGood.blocks stGood.values hl
   have hpos : 0 < types.size := (Array.getElem?_eq_some_iff.mp hfirst).1
   obtain ⟨before, after, hplace, hin⟩ := InductiveSegments.inductive_place P prelude corder canonical steps inTrace hnd
     hmem resolves hy hr needs.hcsize hpos needs.hrne typesIn ctorsIn recsIn hnames ran₁ hr₁ pub₁ hrec₁ hr₂ pub₂

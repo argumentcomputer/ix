@@ -232,19 +232,27 @@ structure Setup where
 order (the prelude's owners first). A store of record skeletons
 (`CheckIxeStream`) passes `literals`: for every record of the store, a record
 with the same literal kinds (`literalKinds`), from which the literal edges
-are computed instead of from the store. -/
+are computed instead of from the store.
+
+The recursor index keeps, for each motive of a block, the first record it files
+there (`buildIndex`), so the records are indexed in a fixed order: the store's
+in address order, those `late` marks after the others (the annotator's IxVM
+model records, which must not displace the environment's recursor of an
+alpha-equivalent block), then the prelude's records the store lacks. -/
 def setup (store : RecordStore) (blobs : Address → Option ByteArray)
     (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint)
     (literals : Option (Array (Address × Ixon.Constant)) := none)
-    (literalFlags : Option (Array (Address × Bool × Bool)) := none) : Setup := Id.run do
+    (literalFlags : Option (Array (Address × Bool × Bool)) := none)
+    (late : Address → Bool := fun _ => false) : Setup := Id.run do
+  let inputs := store.toArray.qsort (fun x y => x.1.cmpBytes y.1 == .lt)
   let mut store := store
   let mut added : Array (Address × Ixon.Constant) := #[]
   for (a, c) in pre.records do
     unless store.contains a do
       store := store.insert a c
       added := added.push (a, c)
-  let records := store.toArray
+  let records := inputs.filter (!late ·.1) ++ inputs.filter (late ·.1) ++ added
   let blobs' : Address → Option ByteArray := fun a =>
     blobs a <|> (pre.blobs.find? (·.1 == a)).map (·.2)
   -- the evidence records back the reader's store only: they are not records

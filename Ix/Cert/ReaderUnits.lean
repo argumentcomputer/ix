@@ -2,9 +2,9 @@ import Ix.Cert.Statement
 import Ix.CompileCert.Loop
 import Ix.Cert.LowerDistinct
 
-/-! # Each record's and each group's lowering (S1's units,: reader and ingress)
+/-! # Each record's and each group's lowering (reader and ingress units)
 
-The S1 union is stated over units: one record's lowering, the modeller's
+The agreement theorem is stated over units: one record's lowering, the modeller's
 generated records then the record's own declaration, or a definition block's
 declarations. IxC's decided units check closes each run of generated records
 with an ungenerated declaration whose bases cover the run's
@@ -157,9 +157,7 @@ theorem lowerInductive_decls {st : State md} {rb : BlockRead md} {r : Read md}
   split at h
   all_goals
     rcases ite_ok h with h | h
-    all_goals first
-      | (obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h)
-      | skip
+    all_goals obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
     all_goals
       rcases ite_ok h with h | h
       · split at h
@@ -200,6 +198,177 @@ def KeyedBy (cx : Ctx md) (R : ConstRef Address → Prop) {β : Type} (name : β
 /-- A failing reader step fails. -/
 theorem throw_ok {α : Type} {e : ReadError} {r : α} (h : (throw e : ReadM α) = .ok r) : False := by
   simp [throw, throwThe, MonadExceptOf.throw] at h
+
+/-- **A read recursor carries its reference's key.** -/
+theorem readRecursor_key {cx : Ctx md} {blockLps : List Ix.Kernel.LevelParam}
+    {ref : ConstRef Address} {entry : RecEntry}
+    {res : CVal md × RecCounts × List (Ix.Kernel.RecRule md)}
+    (h : readRecursor cx blockLps ref entry = .ok res) :
+    cx.memberKey ref = .ok res.1.name := by
+  unfold readRecursor at h
+  split at h
+  · split at h
+    · split at h
+      · rcases ite_ok h with h | h
+        · exact (fail_bind h).elim
+        · obtain ⟨key, hkey, h⟩ := except_bind_ok.mp h
+          obtain ⟨_, -, h⟩ := except_bind_ok.mp h
+          split at h
+          · rcases ite_ok h with h | h
+            · split at h
+              · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
+                simp only [pure, Except.pure, Except.ok.injEq] at h
+                subst h
+                exact hkey
+              · exact (throw_ok h).elim
+            · exact (fail_bind h).elim
+          · exact (throw_ok h).elim
+      · exact (throw_ok h).elim
+    · exact (throw_ok h).elim
+  · exact (throw_ok h).elim
+
+/-- **A twin recursor record's lowering**: no generated declarations, and either
+nothing or one `indDecl` naming only keys of references in `twins`. -/
+theorem lowerTwin_spec {cx : Ctx md} {twins : Array (ConstRef Address × RecEntry)}
+    {r : Read md} (h : lowerTwin cx twins = .ok r) :
+    r.generated = 0 ∧ ∀ d ∈ r.decls.toList, ∀ k ∈ d.names,
+      ∃ x ∈ twins.toList, cx.memberKey x.1 = .ok k := by
+  unfold lowerTwin at h
+  split at h
+  · dsimp only at h
+    rcases ite_ok h with h | h
+    · split at h
+      · split at h
+        · split at h
+          · rcases ite_ok h with h | h
+            · split at h
+              · rcases ite_ok h with h | h
+                · exact (fail_bind h).elim
+                · rcases ite_ok h with h | h
+                  · obtain ⟨_, -, h⟩ := except_bind_ok.mp h
+                    obtain ⟨recs, hrecs, h⟩ := except_bind_ok.mp h
+                    have rk := forIn_pushes (fun s => s)
+                      (fun e => ∃ x ∈ twins.toList, cx.memberKey x.1 = .ok e.1.name) _ _
+                      (fun x hx s q hq => by
+                        obtain ⟨rv, hrv, hq⟩ := except_bind_ok.mp hq
+                        simp only [pure, Except.pure, Except.ok.injEq] at hq
+                        subst hq
+                        refine ⟨_, rfl, fun e he => ?_⟩
+                        rcases Array.mem_push.mp he with he | rfl
+                        · exact .inl he
+                        · exact .inr ⟨x, hx, readRecursor_key hrv⟩)
+                      (fun e he => by simp at he) hrecs
+                    simp only [ite_not, bne_iff_ne, ne_eq] at h
+                    split at h
+                    all_goals
+                      rcases ite_ok h with h | h
+                      all_goals obtain ⟨_, -, h⟩ := except_bind_ok.mp h
+                      all_goals
+                        split at h
+                        · exact (fail_bind h).elim
+                        · simp only [pure, Except.pure, Except.ok.injEq] at h
+                          subst h
+                          refine ⟨rfl, fun d hd k hk => ?_⟩
+                          simp at hd
+                          subst hd
+                          simp only [Ix.Kernel.Declaration.names, List.map_map, List.mem_map] at hk
+                          obtain ⟨e, he, rfl⟩ := hk
+                          exact rk e (Array.mem_def.mpr he)
+                  · exact (fail_bind h).elim
+              · exact (throw_ok h).elim
+            · exact (fail_bind h).elim
+          · exact (throw_ok h).elim
+        · exact (throw_ok h).elim
+      · exact (throw_ok h).elim
+    · exact (fail_bind h).elim
+  · simp only [pure, Except.pure, Except.ok.injEq] at h
+    subst h
+    exact ⟨rfl, fun d hd => by simp at hd⟩
+
+/-- Reading a partitioned twin array generates no auxiliaries and names only its actual
+input references, across every emitted family declaration. -/
+theorem lowerTwins_spec {cx : Ctx md} {twins : Array (ConstRef Address × RecEntry)}
+    {r : Read md} (h : lowerTwins cx twins = .ok r) :
+    r.generated = 0 ∧ ∀ d ∈ r.decls.toList, ∀ k ∈ d.names,
+      ∃ x ∈ twins.toList, cx.memberKey x.1 = .ok k := by
+  unfold lowerTwins at h
+  split at h
+  · dsimp only at h
+    split at h
+    · exact lowerTwin_spec h
+    · obtain ⟨decls, loop, returned⟩ := except_bind_ok.mp h
+      simp only [pure, Except.pure, Except.ok.injEq] at returned
+      subst r
+      have declared := forIn_pushes (fun s => s)
+        (fun d => ∀ k ∈ d.names, ∃ x ∈ twins.toList, cx.memberKey x.1 = .ok k) _ _
+        (fun family familyIn acc result step => by
+          obtain ⟨chunk, read, step⟩ := except_bind_ok.mp step
+          simp only [pure, Except.pure, Except.ok.injEq] at step
+          subst result
+          refine ⟨_, rfl, fun d member => ?_⟩
+          rcases Array.mem_append.mp member with old | added
+          · exact .inl old
+          · refine .inr fun k hk => ?_
+            obtain ⟨entry, present, keyed⟩ := (lowerTwin_spec read).2 d
+              (Array.mem_toList_iff.mpr added) k hk
+            exact ⟨entry, Array.mem_toList_iff.mpr
+              (groupTwins_member (Array.mem_toList_iff.mp familyIn)
+                (Array.mem_toList_iff.mp present)), keyed⟩)
+        (fun d absent => by simp at absent) loop
+      exact ⟨rfl, fun d member => declared d (Array.mem_toList_iff.mp member)⟩
+  · simp only [pure, Except.pure, Except.ok.injEq] at h
+    subst r
+    exact ⟨rfl, fun d absent => by simp at absent⟩
+
+/-- Every declaration emitted by the partitioned reader is emitted by one successful
+ordinary family reading whose payloads come from the original array. -/
+theorem lowerTwins_decl_origin {cx : Ctx md} {twins : Array (ConstRef Address × RecEntry)}
+    {r : Read md} (h : lowerTwins cx twins = .ok r) :
+    ∀ d ∈ r.decls.toList, ∃ family chunk,
+      (∀ entry ∈ family, entry ∈ twins) ∧ lowerTwin cx family = .ok chunk ∧ d ∈ chunk.decls.toList := by
+  unfold lowerTwins at h
+  split at h
+  · dsimp only at h
+    split at h
+    · exact fun d member => ⟨twins, r, fun _ h => h, h, member⟩
+    · obtain ⟨decls, loop, returned⟩ := except_bind_ok.mp h
+      simp only [pure, Except.pure, Except.ok.injEq] at returned
+      subst r
+      have declared := forIn_pushes (fun s => s)
+        (fun d => ∃ family chunk, (∀ entry ∈ family, entry ∈ twins) ∧
+          lowerTwin cx family = .ok chunk ∧ d ∈ chunk.decls.toList) _ _
+        (fun family familyIn acc result step => by
+          obtain ⟨chunk, read, step⟩ := except_bind_ok.mp step
+          simp only [pure, Except.pure, Except.ok.injEq] at step
+          subst result
+          refine ⟨_, rfl, fun d member => ?_⟩
+          rcases Array.mem_append.mp member with old | added
+          · exact .inl old
+          · exact .inr ⟨family, chunk,
+              fun entry member => groupTwins_member (Array.mem_toList_iff.mp familyIn) member,
+              read, Array.mem_toList_iff.mpr added⟩)
+        (fun d absent => by simp at absent) loop
+      exact fun d member => declared d (Array.mem_toList_iff.mp member)
+  · simp only [pure, Except.pure, Except.ok.injEq] at h
+    subst r
+    exact fun d absent => by simp at absent
+
+/-- A recursor of the shape a block reads at (`blockShapeOf`) is one the index
+files for the block: the default shape of a block no recursor eliminates has
+none. -/
+theorem blockShapeOf_recs {index : RecIndex} {owner : Address} {ms : Array Ixon.MutConst}
+    {shape : BlockShape} (h : blockShapeOf index owner ms = some shape) {ref : ConstRef Address}
+    (hr : ref ∈ shape.recs) : ∃ s, index.blocks[owner]? = some s ∧ ref ∈ s.recs := by
+  unfold blockShapeOf at h
+  split at h
+  · next s hs =>
+    obtain rfl := Option.some.inj h
+    exact ⟨_, hs, hr⟩
+  · unfold unindexedShape at h
+    split at h
+    · obtain rfl := Option.some.inj h
+      simp at hr
+    · exact nomatch h
 
 /-- **An inductive block's lowering, per record**: the modeller's records (as
 many as `generated` says), then one declaration every name of which is a
@@ -261,29 +430,13 @@ theorem readInductive_lowering {cx : Ctx md} {st : State md} {owner : Address} {
             have rk := forIn_pushes (fun s => s) (KeyedBy cx (· ∈ shape.recs) (·.1.name)) _ _
               (fun x hx s r hf => by
                 split at hf
-                · split at hf
-                  · split at hf
-                    · split at hf
-                      · rcases ite_ok hf with hf | hf
-                        · exact (fail_bind hf).elim
-                        · obtain ⟨key, hkey, hf⟩ := except_bind_ok.mp hf
-                          obtain ⟨_, -, hf⟩ := except_bind_ok.mp hf
-                          split at hf
-                          · rcases ite_ok hf with hf | hf
-                            · split at hf
-                              · obtain ⟨_, -, hf⟩ := except_bind_ok.mp hf
-                                simp only [pure, Except.pure, Except.ok.injEq] at hf
-                                subst hf
-                                refine ⟨_, rfl, fun e he => ?_⟩
-                                rcases Array.mem_push.mp he with he | rfl
-                                · exact .inl he
-                                · exact .inr ⟨_, Array.mem_def.mpr hx, hkey⟩
-                              · exact (fail_bind hf).elim
-                            · exact (fail_bind hf).elim
-                          · exact (fail_bind hf).elim
-                      · exact (throw_ok hf).elim
-                    · exact (throw_ok hf).elim
-                  · exact (throw_ok hf).elim
+                · obtain ⟨rv, hrv, hf⟩ := except_bind_ok.mp hf
+                  simp only [pure, Except.pure, Except.ok.injEq] at hf
+                  subst hf
+                  refine ⟨_, rfl, fun e he => ?_⟩
+                  rcases Array.mem_push.mp he with he | rfl
+                  · exact .inl he
+                  · exact .inr ⟨_, Array.mem_def.mpr hx, readRecursor_key hrv⟩
                 · exact (throw_ok hf).elim)
               (fun e he => by simp at he) hrecs
             obtain ⟨gens, d, hd, hg, hnames⟩ := lowerInductive_decls h
@@ -296,7 +449,7 @@ theorem readInductive_lowering {cx : Ctx md} {st : State md} {owner : Address} {
             · obtain ⟨ref, hb, hk⟩ := ck e (Array.mem_def.mpr he)
               exact ⟨ref, .inl hb, hk⟩
             · obtain ⟨ref, hb, hk⟩ := rk e (Array.mem_def.mpr he)
-              exact ⟨ref, .inr ⟨shape, hshape, hb⟩, hk⟩
+              exact ⟨ref, .inr (blockShapeOf_recs hshape hb), hk⟩
           · exact (fail_bind h).elim
       · exact (throw_ok h).elim
     · exact (fail_bind h).elim
@@ -309,10 +462,12 @@ theorem readInductive_lowering {cx : Ctx md} {st : State md} {owner : Address} {
 generated records, and every declaration names only `K`-keys (a definition,
 axiom or quotient record's one declaration, a definition block's one per
 member, or nothing); or the modeller's records, as many as `generated` says,
-then one declaration naming only `K`-keys (an inductive block). -/
+then a nonempty suffix of declarations naming only `K`-keys (an inductive block
+and any additional same-record recursors). -/
 def LoweringBy (K : CName md → Prop) (r : Read md) : Prop :=
   (r.generated = 0 ∧ ∀ d ∈ r.decls.toList, ∀ k ∈ d.names, K k) ∨
-    ∃ gens d, r.decls.toList = gens ++ [d] ∧ r.generated = gens.length ∧ ∀ k ∈ d.names, K k
+    ∃ gens suffix, r.decls.toList = gens ++ suffix ∧ r.generated = gens.length ∧
+      suffix ≠ [] ∧ ∀ d ∈ suffix, ∀ k ∈ d.names, K k
 
 /-- **One record's lowering**: its keys are the record's member keys. -/
 abbrev Lowering (cx : Ctx md) (owner : Address) : Read md → Prop :=
@@ -320,6 +475,34 @@ abbrev Lowering (cx : Ctx md) (owner : Address) : Read md → Prop :=
 
 theorem LoweringBy.empty {K : CName md → Prop} : LoweringBy K ({} : Read md) :=
   .inl ⟨rfl, fun d hd => by simp at hd⟩
+
+/-- A generated prefix followed by one public declaration is a lowering. -/
+theorem LoweringBy.single {K : CName md → Prop} {r : Read md}
+    {gens : List (CDecl md)} {d : CDecl md}
+    (hd : r.decls.toList = gens ++ [d]) (hg : r.generated = gens.length)
+    (hk : ∀ k ∈ d.names, K k) : LoweringBy K r := by
+  refine .inr ⟨gens, [d], hd, hg, by simp, ?_⟩
+  intro d' hd'
+  rw [List.mem_singleton] at hd'
+  subst d'
+  exact hk
+
+/-- Appending public declarations preserves the generated prefix and lowering shape. -/
+theorem LoweringBy.append {K : CName md → Prop} {r : Read md}
+    (h : LoweringBy K r) {tail : Array (CDecl md)}
+    (htail : ∀ d ∈ tail.toList, ∀ k ∈ d.names, K k) :
+    LoweringBy K { r with decls := r.decls ++ tail } := by
+  rcases h with ⟨hg, hall⟩ | ⟨gens, suffix, hd, hg, hne, hall⟩
+  · refine .inl ⟨hg, ?_⟩
+    intro d hd'
+    simp only [Array.toList_append, List.mem_append] at hd'
+    exact hd'.elim (hall d) (htail d)
+  · refine .inr ⟨gens, suffix ++ tail.toList, ?_, hg, ?_, ?_⟩
+    · simp only [Array.toList_append, hd, List.append_assoc]
+    · intro hempty
+      exact hne (List.append_eq_nil_iff.mp hempty).1
+    · intro d hd'
+      exact (List.mem_append.mp hd').elim (hall d) (htail d)
 
 /-- A declaration naming exactly the key of member `i` names only member keys. -/
 theorem member_names {cx : Ctx md} {owner : Address} {i : Nat} {k : CName md} {d : CDecl md}
@@ -329,6 +512,18 @@ theorem member_names {cx : Ctx md} {owner : Address} {i : Nat} {k : CName md} {d
   rw [hn, List.mem_singleton] at hk'
   subst hk'
   exact ⟨_, .inl rfl, hk⟩
+
+/-- Same-record twins append declarations whose names remain keys of that record. -/
+theorem finishInductiveRead_lowering {cx : Ctx md} {owner : Address}
+    {ms : Array Ixon.MutConst} {rInd r : Read md}
+    (hInd : Lowering cx owner rInd)
+    (h : finishInductiveRead cx owner ms rInd = .ok r) : Lowering cx owner r := by
+  rcases finishInductiveRead_spec h with rfl | ⟨rTwin, hTwin, rfl⟩
+  · exact hInd
+  · apply LoweringBy.append hInd
+    intro d hd k hk
+    obtain ⟨entry, hentry, hkey⟩ := (lowerTwins_spec hTwin).2 d hd k hk
+    exact ⟨entry.1, .inl (recordTwins_member_block (Array.mem_toList_iff.mp hentry)), hkey⟩
 
 /-- **Every record's lowering has its shape**, whatever the record. -/
 theorem readRecord_lowering {cx : Ctx md} {st : State md} {owner : Address} {c : Ixon.Constant}
@@ -352,12 +547,18 @@ theorem readRecord_lowering {cx : Ctx md} {st : State md} {owner : Address} {c :
     subst hd'
     exact member_names hk hn
   case h_6 =>
-    dsimp only at h
     rcases ite_ok h with h | h
     · simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h
       exact LoweringBy.empty
-    · exact (fail_bind h).elim
+    · split at h
+      · obtain ⟨hg, hk⟩ := lowerTwin_spec h
+        refine .inl ⟨hg, fun d hd k hk' => ?_⟩
+        obtain ⟨x, hx, hkx⟩ := hk d hd k hk'
+        simp at hx
+        subst hx
+        exact ⟨_, .inl rfl, hkx⟩
+      · exact (throw_ok h).elim
   case h_7 =>
     dsimp only at h
     rcases ite_ok h with h | h
@@ -384,13 +585,34 @@ theorem readRecord_lowering {cx : Ctx md} {st : State md} {owner : Address} {c :
     rcases ite_ok h with h | h
     · rcases ite_ok h with h | h
       · exact (fail_bind h).elim
-      · obtain ⟨gens, d, hd, hg, hk⟩ := readInductive_lowering h
-        exact .inr ⟨gens, d, hd, hg, hk⟩
+      · obtain ⟨rInd, hInd, hfinish⟩ := except_bind_ok.mp h
+        obtain ⟨gens, d, hd, hg, hk⟩ := readInductive_lowering hInd
+        exact finishInductiveRead_lowering (LoweringBy.single hd hg hk) hfinish
     · rcases ite_ok h with h | h
-      · obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
-        simp only [pure, Except.pure, Except.ok.injEq] at h
-        subst h
-        exact LoweringBy.empty
+      · rcases ite_ok h with h | h
+        · simp only [pure, Except.pure, Except.ok.injEq] at h
+          subst h
+          exact LoweringBy.empty
+        · obtain ⟨twins, htw, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
+          have twk := forIn_pushes (fun s => s) (fun x => x.1.block = owner) _ _
+            (fun j _ s q hq => by
+              split at hq
+              · simp only [pure, Except.pure, Except.ok.injEq] at hq
+                subst hq
+                refine ⟨_, rfl, fun e he => ?_⟩
+                rcases Array.mem_push.mp he with he | rfl
+                · exact .inl he
+                · exact .inr rfl
+              · rcases ite_ok hq with hq | hq
+                · simp only [pure, Except.pure, Except.ok.injEq] at hq
+                  subst hq
+                  exact ⟨_, rfl, fun e he => .inl he⟩
+                · exact (fail_bind hq).elim)
+            (fun e he => by simp at he) htw
+          obtain ⟨hg, hk⟩ := lowerTwins_spec h
+          refine .inl ⟨hg, fun d hd k hk' => ?_⟩
+          obtain ⟨x, hx, hkx⟩ := hk d hd k hk'
+          exact ⟨x.1, .inl (twk x (Array.mem_def.mpr hx)), hkx⟩
       · rcases ite_ok h with h | h
         · split at h
           · exact (fail_bind h).elim
@@ -534,13 +756,18 @@ theorem LoweringBy.closed {K : CName md → Prop} (hK : ∀ k, K k → Ix.Kernel
     (h : LoweringBy K r) :
     r.decls.toList = [] ∨ ∃ ds d, r.decls.toList = ds ++ [d] ∧ Ix.Kernel.Declaration.isGenerated d = false ∧
       ∀ k ∈ d.names, K k := by
-  rcases h with ⟨-, hall⟩ | ⟨gens, d, hd, -, hk⟩
+  rcases h with ⟨-, hall⟩ | ⟨gens, suffix, hd, -, hne, hall⟩
   · rcases List.eq_nil_or_concat r.decls.toList with he | ⟨ds, d, hd⟩
     · exact .inl he
     · rw [List.concat_eq_append] at hd
       have hk := hall d (by simp [hd])
       exact .inr ⟨ds, d, hd, isGenerated_false fun k h => hK k (hk k h), hk⟩
-  · exact .inr ⟨gens, d, hd, isGenerated_false fun k h => hK k (hk k h), hk⟩
+  · rcases List.eq_nil_or_concat suffix with he | ⟨ds, d, hs⟩
+    · exact (hne he).elim
+    · rw [List.concat_eq_append] at hs
+      have hk := hall d (by simp [hs])
+      exact .inr ⟨gens ++ ds, d, by simpa only [hs, List.append_assoc] using hd,
+        isGenerated_false fun k h => hK k (hk k h), hk⟩
 
 /-- `LoweringBy.closed` for a record, under `RolesKeyed`. -/
 theorem Lowering.closed {cx : Ctx md} (hr : RolesKeyed cx) {owner : Address} {r : Read md}
@@ -553,14 +780,18 @@ theorem Lowering.closed {cx : Ctx md} (hr : RolesKeyed cx) {owner : Address} {r 
 shape (the ingress's `canonDecl`). -/
 theorem LoweringBy.map {K : CName md → Prop} {f : CDecl md → CDecl md} (hf : ∀ d, (f d).names = d.names)
     {r : Read md} (h : LoweringBy K r) : LoweringBy K { r with decls := r.decls.map f } := by
-  rcases h with ⟨hg, hall⟩ | ⟨gens, d, hd, hg, hk⟩
+  rcases h with ⟨hg, hall⟩ | ⟨gens, suffix, hd, hg, hne, hall⟩
   · refine .inl ⟨hg, fun d' hd' => ?_⟩
     simp only [Array.toList_map, List.mem_map] at hd'
     obtain ⟨d, hd, rfl⟩ := hd'
     rw [hf]
     exact hall d hd
-  · refine .inr ⟨gens.map f, f d, ?_, by simp [hg], fun k hk' => hk k (by rwa [hf] at hk')⟩
-    simp [hd]
+  · refine .inr ⟨gens.map f, suffix.map f, ?_, by simp [hg], by simpa using hne, ?_⟩
+    · simp [hd]
+    · intro d' hd'
+      obtain ⟨d, hmem, rfl⟩ := List.mem_map.mp hd'
+      rw [hf]
+      exact hall d hmem
 
 /-- An invariant of an `Id` loop over `[:n]` holds of its result, so of what
 follows it. -/
@@ -833,7 +1064,7 @@ theorem lower_lowering {K : CName .source → Prop} {st : State .source} {c : Co
   | «inductive» rb =>
     obtain ⟨tk, ck, rk⟩ := hk
     obtain ⟨gens, d, hd, hg, hn⟩ := lowerInductive_decls h
-    refine .inr ⟨gens, d, hd, hg, fun k hk' => ?_⟩
+    refine LoweringBy.single hd hg (fun k hk' => ?_)
     rw [hn] at hk'
     simp only [List.mem_append, List.mem_map] at hk'
     rcases hk' with (⟨e, he, rfl⟩ | ⟨e, he, rfl⟩) | ⟨e, he, rfl⟩

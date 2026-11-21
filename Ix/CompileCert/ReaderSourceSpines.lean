@@ -44,7 +44,7 @@ outer constructor, the children's readings on spines and telescopes, and
 the head key. -/
 def Outer (reader : ECx md) : Ixon.Expr → CExpr md → Prop
   | .var index, .bvar target => index.toNat = target
-  | .all _ _ type body, .forallE targetType targetBody _ =>
+  | .all type body, .forallE targetType targetBody _ =>
     convExpr reader #[] type = .ok targetType ∧ convExpr reader #[] body = .ok targetBody
   | .app function argument, .app targetFunction targetArgument =>
     convExpr reader #[] function = .ok targetFunction ∧ convExpr reader #[] argument = .ok targetArgument
@@ -108,19 +108,19 @@ theorem read_outer (reader : ECx md) (expression : Ixon.Expr) (target : CExpr md
     obtain ⟨targetArgument, second, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok rest
     cases Except.ok.inj returned
     exact ⟨first, second⟩
-  | lam contract type body =>
+  | lam type body =>
     simp only [convExpr] at read
     obtain ⟨targetType, _, rest⟩ := Ix.Sharing.Verify.except_bind_eq_ok read
     obtain ⟨targetBody, _, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok rest
     cases Except.ok.inj returned
     trivial
-  | all contract result type body =>
+  | all type body =>
     simp only [convExpr] at read
     obtain ⟨targetType, first, rest⟩ := Ix.Sharing.Verify.except_bind_eq_ok read
     obtain ⟨targetBody, second, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok rest
     cases Except.ok.inj returned
     exact ⟨first, second⟩
-  | letE contract type value body =>
+  | letE nonDep mode type value body =>
     simp only [convExpr] at read
     obtain ⟨targetType, _, rest⟩ := Ix.Sharing.Verify.except_bind_eq_ok read
     obtain ⟨targetValue, _, rest⟩ := Ix.Sharing.Verify.except_bind_eq_ok rest
@@ -131,11 +131,11 @@ theorem read_outer (reader : ECx md) (expression : Ixon.Expr) (target : CExpr md
 
 theorem read_forall (reader : ECx md) (expression : Ixon.Expr) (type body : CExpr md)
     (binder : Ix.Kernel.BinderMeta) (read : convExpr reader #[] expression = .ok (.forallE type body binder)) :
-    ∃ contract result rawType rawBody, expression = .all contract result rawType rawBody ∧
+    ∃ rawType rawBody, expression = .all rawType rawBody ∧
       convExpr reader #[] rawType = .ok type ∧ convExpr reader #[] rawBody = .ok body := by
   have shape := read_outer reader expression _ read
   cases expression <;> simp only [Outer] at shape
-  exact ⟨_, _, _, _, rfl, shape⟩
+  exact ⟨_, _, rfl, shape⟩
 
 theorem read_bvar (reader : ECx md) (expression : Ixon.Expr) (index : Nat)
     (read : convExpr reader #[] expression = .ok (.bvar index)) :
@@ -175,7 +175,7 @@ theorem read_stripAll (reader : ECx md) (empty : reader.src.sharing = #[]) (coun
   | succ count ih =>
     cases target with
     | forallE type tail binder =>
-      obtain ⟨contract, result, rawType, rawBody, rawEq, typeRead, bodyRead⟩ :=
+      obtain ⟨rawType, rawBody, rawEq, typeRead, bodyRead⟩ :=
         read_forall reader expression type tail binder read
       subst rawEq
       rw [piTypes_forall] at parsed
@@ -261,15 +261,22 @@ theorem withContract_shape {c : Ix.SemanticContract.Contract} {source : Ix.Expr}
       (∃ name type value body nonDep hash, source = .letE name type value body nonDep hash) := by
   unfold withContract at lowered
   split at lowered
-  · exact .inl ⟨_, _, _, _, _, rfl⟩
-  · exact .inr (.inl ⟨_, _, _, _, _, rfl⟩)
-  · exact .inr (.inr ⟨_, _, _, _, _, _, rfl⟩)
+  · rename_i admits
+    simp only [Ix.SemanticContract.Contract.admits, Bool.and_eq_true] at admits
+    have attached := admits.2
+    unfold Ix.SemanticContract.Contract.attachedTo at attached
+    split at attached
+    · exact .inl ⟨_, _, _, _, _, rfl⟩
+    · exact .inr (.inl ⟨_, _, _, _, _, rfl⟩)
+    · exact .inr (.inr ⟨_, _, _, _, _, _, rfl⟩)
+    · cases attached
   · cases lowered
 
 theorem withContract_depth {c : Ix.SemanticContract.Contract} {source : Ix.Expr} {target result : CExpr md}
     (lowered : withContract c source target = some result) : kernelAppDepth result = kernelAppDepth target := by
   unfold withContract at lowered
-  split at lowered <;> cases lowered <;> rfl
+  split at lowered <;> cases lowered
+  rfl
 
 theorem withContract_head {c : Ix.SemanticContract.Contract} {source : Ix.Expr} {target result : CExpr md}
     (lowered : withContract c source target = some result) :
@@ -283,9 +290,7 @@ theorem withContract_piTypes {c : Ix.SemanticContract.Contract} {source : Ix.Exp
     piTypes (count + 1) result = piTypes (count + 1) target := by
   unfold withContract at lowered
   split at lowered <;> cases lowered
-  · rfl
-  · rw [piTypes_forall, piTypes_forall]
-  · rfl
+  rfl
 
 theorem related_appDepth {names : Ix.Name → CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop}
     {source : Ix.Expr} {target : CExpr md} (related : Related names levels source target) :
@@ -530,13 +535,11 @@ def KernelNonForall : CExpr md → Prop
   | _ => True
 
 theorem withContract_nonForall {c : Ix.SemanticContract.Contract} {source : Ix.Expr} {target result : CExpr md}
-    (lowered : withContract c source target = some result) (last : SourceNonForall source) :
+    (lowered : withContract c source target = some result) (inner : KernelNonForall target) :
     KernelNonForall result := by
   unfold withContract at lowered
   split at lowered <;> cases lowered
-  · trivial
-  · exact False.elim last
-  · trivial
+  exact inner
 
 theorem related_kernelNonForall {names : Ix.Name → CName md → Prop}
     {levels : Ix.Level → Ix.Kernel.Level → Prop} {source : Ix.Expr} {target : CExpr md}
@@ -544,7 +547,7 @@ theorem related_kernelNonForall {names : Ix.Name → CName md → Prop}
   induction related with
   | all => exact False.elim last
   | mdata _ _ _ _ ih => exact ih last
-  | contract _ _ _ _ _ _ lowered _ => exact withContract_nonForall lowered last
+  | contract _ _ _ _ _ _ lowered ih => exact withContract_nonForall lowered (ih last)
   | bvar => rw [Ix.Kernel.Expr.mkBvar_eq]; trivial
   | _ => trivial
 
@@ -583,7 +586,7 @@ theorem full_of_strip (constant : Ixon.Constant) (empty : constant.sharing = #[]
   | succ count ih =>
     obtain ⟨fuel, rfl⟩ : ∃ smaller, fuel = smaller + 1 := ⟨fuel - 1, by omega⟩
     cases expression with
-    | all contract binder type tail =>
+    | all type tail =>
       cases tailParsed : stripAll constant count tail with
       | none => simp [stripAll, ReaderSpines.unshare_empty constant empty, tailParsed] at parsed
       | some result =>

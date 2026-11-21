@@ -51,10 +51,6 @@ def G.isU8 (x : G) : Prop := x.n < 256
 /-- Range predicate for u32 operations. -/
 def G.isU32 (x : G) : Prop := x.n < 2 ^ 32
 
--- Semantic models for unsigned integer operations.
--- These mirror the Aiur circuit gadgets, which force range constraints
--- on their inputs and compute the corresponding bitwise/arithmetic result.
-
 def G.u8And (a b : G) : G := G.ofNat (a.n &&& b.n)
 def G.u8Or  (a b : G) : G := G.ofNat (a.n ||| b.n)
 def G.u8Xor (a b : G) : G := G.ofNat (a.n ^^^ b.n)
@@ -81,16 +77,12 @@ def G.u8BitDecomposition (a : G) : Fin 8 → G :=
 
 def G.u32LessThan (a b : G) : G := if a.n < b.n then 1 else 0
 
-/-- The 8 little-endian bytes of the canonical `u64` value. Semantic model of
-the `unconstrained_g_to_bytes` hint. -/
+/-- The 8 little-endian bytes of the canonical `u64` value. -/
 def G.toLeBytes (a : G) : Fin 8 → G :=
   fun i => G.ofUInt8 (a.val >>> (8 * i.val).toUInt64).toUInt8
 
 /-- Canonical little-endian u64 limbs of a natural number, each limb as its
-8 LE bytes (as field elements). Semantic model of the limb lists the
-`unconstrained_big_uint_div_mod` runtime builds (`biguint_to_klimbs_u64` in
-`crates/aiur/src/execute.rs`): zero is the empty list, no trailing zero
-limbs. -/
+8 LE bytes (as field elements). -/
 def natToLimbsLE (n : Nat) : List (Array G) :=
   if h : n = 0 then []
   else
@@ -101,8 +93,7 @@ termination_by n
 decreasing_by
   exact Nat.div_lt_self (Nat.pos_of_ne_zero h) (by decide : (1 : Nat) < 2^64)
 
-/-- Value of one 8-LE-byte limb. Inverse direction of `natToLimbsLE`'s
-per-limb encoding; bytes are assumed already validated `< 256`. -/
+/-- Value of one 8-LE-byte limb. -/
 def limbBytesVal (bytes : Array G) : Nat :=
   (bytes.toList.zipIdx.map fun (b, i) => b.val.toNat <<< (8 * i)).foldl (· + ·) 0
 
@@ -110,8 +101,7 @@ def limbBytesVal (bytes : Array G) : Nat :=
 def limbsVal (limbs : List (Array G)) : Nat :=
   limbs.foldr (fun limb acc => limbBytesVal limb + acc <<< 64) 0
 
-/-- Exponentiation by squaring. Fuel-structural (64 bits covers any `n < 2⁶⁴`
-exponent, in particular `p − 2`). -/
+/-- Exponentiation by squaring. -/
 def G.pow (x : G) (n : Nat) : G := go n 64 where
   go (n fuel : Nat) : G := match fuel with
     | 0 => 1
@@ -122,8 +112,7 @@ def G.pow (x : G) (n : Nat) : G := go n 64 where
         let sq := h * h
         if n % 2 == 0 then sq else sq * x
 
-/-- Fermat inverse `x^(p−2)`, with `0 ↦ 0`. Semantic model of the
-`unconstrained_g_inverse` hint. -/
+/-- Fermat inverse `x^(p−2)`, with `0 ↦ 0`. -/
 def G.inverse (x : G) : G := G.pow x (gSize.toNat - 2)
 
 theorem G.one_ne_zero : ¬(1 : G) = (0 : G) := by decide

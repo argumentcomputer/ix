@@ -235,9 +235,10 @@ def recursorsOf (consts : Lean.ConstMap) (n : Lean.Name) : List Lean.Name := Id.
 structure ClosureOptions where
   /-- The recursors of every inductive reached (`recursorsOf`: `I.rec`, and
       `I.rec_N` on a nested block's first member). The certified checker
-      reads an inductive block together with its recursor and declines it
-      otherwise (`reader: inductive block without a recursor in the
-      input`); a whole environment always has both. -/
+      declines an inductive block without its recursor (a block of several
+      types at the reader, `reader: inductive block without a recursor in the
+      input`; a block of one type reads and the checker declines it); a whole
+      environment always has both. -/
   recursors : Bool := false
   /-- The whole logical unit of every declaration reached (`unitMembers`,
       §6.3). -/

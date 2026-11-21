@@ -19,50 +19,55 @@ def ResolvedBinderContract.semantic (binder : ResolvedBinderContract) :
   letKind := binder.letKind }
 
 def decorateExpr (contract : ResolvedSourceContract) (root : SourceRoot)
-    (path : List SourceStep) (expr : Lean.Expr) : Except String Lean.Expr := do
+    (path : List SourceStep) (expr : Lean.Expr) (attachSemantic : Bool := true) :
+    Except String Lean.Expr := do
   let result ← do
     match expr with
     | .bvar _ | .sort _ | .const _ _ | .lit _ => pure expr
     | .fvar _ | .mvar _ => throw "source transport: open elaboration variable"
     | .app fn arg =>
-      pure <| .app (← decorateExpr contract root (path ++ [.appFn]) fn)
-        (← decorateExpr contract root (path ++ [.appArg]) arg)
+      pure <| .app (← decorateExpr contract root (path ++ [.appFn]) fn attachSemantic)
+        (← decorateExpr contract root (path ++ [.appArg]) arg attachSemantic)
     | .lam name type body info =>
-      pure <| .lam name (← decorateExpr contract root (path ++ [.binderType]) type)
-        (← decorateExpr contract root (path ++ [.binderBody]) body) info
+      pure <| .lam name (← decorateExpr contract root (path ++ [.binderType]) type attachSemantic)
+        (← decorateExpr contract root (path ++ [.binderBody]) body attachSemantic) info
     | .forallE name type body info =>
-      pure <| .forallE name (← decorateExpr contract root (path ++ [.binderType]) type)
-        (← decorateExpr contract root (path ++ [.binderBody]) body) info
+      pure <| .forallE name (← decorateExpr contract root (path ++ [.binderType]) type attachSemantic)
+        (← decorateExpr contract root (path ++ [.binderBody]) body attachSemantic) info
     | .letE name type value body nonDep =>
-      pure <| .letE name (← decorateExpr contract root (path ++ [.letType]) type)
-        (← decorateExpr contract root (path ++ [.letValue]) value)
-        (← decorateExpr contract root (path ++ [.letBody]) body) nonDep
+      pure <| .letE name (← decorateExpr contract root (path ++ [.letType]) type attachSemantic)
+        (← decorateExpr contract root (path ++ [.letValue]) value attachSemantic)
+        (← decorateExpr contract root (path ++ [.letBody]) body attachSemantic) nonDep
     | .proj name field value =>
-      pure <| .proj name field (← decorateExpr contract root (path ++ [.projection]) value)
+      pure <| .proj name field (← decorateExpr contract root (path ++ [.projection]) value attachSemantic)
     | .mdata data inner =>
       unless (Ix.SemanticContract.leanFields data).isEmpty do
         throw "source transport: reserved semantic metadata in unprocessed source"
       let data : Lean.MData := ⟨data.entries.filter fun (key, _) => !sourceAnnotationKey.isPrefixOf key⟩
-      let inner ← decorateExpr contract root (path ++ [.metadata]) inner
+      let inner ← decorateExpr contract root (path ++ [.metadata]) inner attachSemantic
       pure <| if data.entries.isEmpty then inner else .mdata data inner
   match contract.binders.find? (·.site == ⟨root, path⟩) with
   | none => return result
   | some binder =>
     let semantic := binder.semantic
-    return if semantic.isOrdinary then result else semantic.attach result
+    unless semantic.validMode do
+      throw "unsupported semantic contract mode"
+    return if !attachSemantic || semantic.isOrdinary then result else semantic.attach result
 termination_by sizeOf expr
 
 def ResolvedSourceContract.decorate (contract : ResolvedSourceContract) :
     Except String Lean.ConstantInfo := do
   let source := contract.source
-  let type ← decorateExpr contract .type [] source.type
+  let attach := !(source matches .thmInfo _)
+  let type ← decorateExpr contract .type [] source.type attach
   match source with
   | .defnInfo info =>
-    return .defnInfo { info with type, value := ← decorateExpr contract .body [] info.value }
+    return .defnInfo { info with type, value := ← decorateExpr contract .body [] info.value true }
   | .thmInfo info =>
-    return .thmInfo { info with type, value := ← decorateExpr contract .body [] info.value }
+    -- Theorems always compile with default modes; validate and strip markers only.
+    return .thmInfo { info with type, value := ← decorateExpr contract .body [] info.value false }
   | .opaqueInfo info =>
-    return .opaqueInfo { info with type, value := ← decorateExpr contract .body [] info.value }
+    return .opaqueInfo { info with type, value := ← decorateExpr contract .body [] info.value true }
   | .axiomInfo info => return .axiomInfo { info with type }
   | _ => throw s!"source transport: annotated inductive/constructor/recursor transformations are unsupported: {source.name}"
 

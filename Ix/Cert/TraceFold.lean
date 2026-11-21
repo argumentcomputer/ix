@@ -252,7 +252,7 @@ theorem reach_exact {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures
     have hr := auxBlockOutcome_compiled ho
     have hclaim' : (n, a, b) ∈ claimWrites (blockKey rep all) r := hclaim
     rcases ClosureClaims.claim_name hclaim' with rfl | ⟨row, hrow, rfl⟩
-    · exact blockKey_exact (E := { consts := env.consts }) hall
+    · exact blockKey_exact (E := env.materialized) hall
     · obtain ⟨m, ⟨k, ci, -, hci, hname, hctors⟩, hx⟩ :=
         Claims.compileBlock_names (run_success (BlockRecords.runBlock_compiles hr)) row hrow
       have hci' : env.consts.get? k = some ci := (hE k).symm.trans hci

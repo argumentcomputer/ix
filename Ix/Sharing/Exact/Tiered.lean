@@ -157,9 +157,9 @@ def shareIndices : Ixon.Expr → Array Nat → Array Nat
   | .share i, acc => acc.push i.toNat
   | .prj _ _ v, acc => shareIndices v acc
   | .app f a, acc => shareIndices a (shareIndices f acc)
-  | .lam _ t b, acc => shareIndices b (shareIndices t acc)
-  | .all _ _ t b, acc => shareIndices b (shareIndices t acc)
-  | .letE _ t v b, acc => shareIndices b (shareIndices v (shareIndices t acc))
+  | .lam t b, acc => shareIndices b (shareIndices t acc)
+  | .all t b, acc => shareIndices b (shareIndices t acc)
+  | .letE _ _ t v b, acc => shareIndices b (shareIndices v (shareIndices t acc))
   | _, acc => acc
 
 /-! ## First-tier allocation -/

@@ -99,7 +99,7 @@ theorem order_scanned {a : Address} {c : Ixon.Constant} (ha : a ∈ order) (hc :
     (a, c) ∈ scannedOf ixe t preA order := by
   simp only [scannedOf, indexedRecords, Array.mem_append, Array.mem_filter]
   refine .inl ⟨mem_decoded.mpr ⟨ha, hc⟩, ?_⟩
-  unfold inputIndexed
+  rw [inputIndexed_eq]
   rw [Bool.or_eq_true]
   refine .inl (Array.all_eq_true'.mpr fun ⟨j, r⟩ hm => ?_)
   dsimp only
@@ -158,7 +158,7 @@ theorem scanned_cases {a : Address} {c : Ixon.Constant} (h : (a, c) ∈ scannedO
     | none => rfl
     | some cb =>
       exfalso
-      unfold fallbackIndexed at hfb
+      rw [fallbackIndexed_eq] at hfb
       have hall := Array.all_eq_true'.mp hfb (j, r) hm
       simp only [ha, hcs] at hall
       have hk := known_contains (records := (Stream.decodedOf ixe order).toArray) (mem_decoded.mpr ⟨hb, hrb⟩)
@@ -227,6 +227,28 @@ theorem headRef_closure {S : Address → Prop} (corder : ClosureOrder ixe S orde
     exact ho
   all_goals simp [hap] at h
 
+theorem resolveShapeHead_closure {S : Address → Prop} (corder : ClosureOrder ixe S order)
+    {owner : Address} {c : Ixon.Constant} (ho : owner ∈ order) (hc : recordAt ixe owner = some c)
+    (head : Shape.Head) (q : ConstRef Address)
+    (h : resolveShapeHead (recordAt ixe) owner c head = some q) :
+    resolveShapeHead (closureContext ixe t preA order).store owner c head = some q ∧ q.block ∈ order := by
+  cases head with
+  | ref i =>
+    obtain ⟨a, hia, hra⟩ := Option.bind_eq_some_iff.mp h
+    obtain ⟨ca, hca, hq⟩ := Option.bind_eq_some_iff.mp hra
+    have hcontains : c.refs.contains a = true := Array.contains_iff_mem.mpr (Array.mem_of_getElem? hia)
+    have ha : a ∈ order := (corder.complete _).mpr
+      (.step ((corder.complete owner).mp ho) ⟨c, hc, .inr ⟨hcontains, ClosureLayout.recordAt_contains hca⟩⟩)
+    refine ⟨Option.bind_eq_some_iff.mpr ⟨a, hia, BlockContext.closure_resolve corder ha hca hq⟩, ?_⟩
+    rw [resolveSource_block hq]
+    exact InductiveSegments.owner_in_order corder ha hca rfl
+  | recur i =>
+    refine ⟨h, ?_⟩
+    have same : q.block = owner := by
+      simp only [resolveShapeHead] at h
+      split at h <;> split at h <;> cases h <;> rfl
+    rwa [same]
+
 /-- **A closure record's filing analysis files alike in the closure's context**, its carriers
 and major premise in the closure. -/
 theorem analysis_closure {S : Address → Prop} (corder : ClosureOrder ixe S order) {owner : Address}
@@ -235,7 +257,7 @@ theorem analysis_closure {S : Address → Prop} (corder : ClosureOrder ixe S ord
     (h : recursorAnalysis? (recordAt ixe) owner c r = some y) :
     recursorAnalysis? (closureContext ixe t preA order).store owner c r = some y ∧
       (∀ q ∈ y.2.2.1, q.block ∈ order) ∧ y.2.2.2.block ∈ order :=
-  recursorAnalysis_transfer (D := (· ∈ order)) (headRef_closure corder ho hc)
+  recursorAnalysis_transfer (D := (· ∈ order)) (resolveShapeHead_closure corder ho hc)
     (fun _ _ ha hbc => ClosureKeying.closure_store corder.nodup ha hbc) h
 
 theorem inductiveAt_closure (nodup : order.Nodup) {mb : Address} {mi : Nat} {ind : Ixon.Inductive}
@@ -680,8 +702,7 @@ theorem quotient_motives {types : Array Ix.InductiveVal} {ctors : Array (Array I
         simp only at e0 hn ⊢
         rw [e0]
         simpa [InductiveUnits.srcBlock] using hn
-  rcases checks with hne | hall
-  · exact absurd hnest hne
+  have hall := checks.2 hnest
   intro j hj
   have hj' : j < (Ix.LeanIngress.BlockRead.canon (Ix.LeanIngress.BlockRead.substKeys ρ
       (InductiveUnits.srcBlock types ctors recs first))).recs.size := by

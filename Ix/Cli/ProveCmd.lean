@@ -1,320 +1,51 @@
 module
 public import Cli
-public import Ix.Aiur.Compiler
-public import Ix.Aiur.Protocol
-public import Ix.Aggr
-public import Ix.Claim
-public import Ix.Shard.Check
-public import Ix.Shard.Environment
-public import Ix.Cli.ShardProofIndex
+public import Ix.Cli.FormalAiur
+public import Ix.Cli.FormalAggregate
 public import Ix.Cli.CompressCmd
-public import Ix.Common
+
+/-!
+  `ix prove`: generate a STARK proof against an `Ix.Claim`. Mirrors
+  the CLI shape of `ix check`.
+
+  With `--ixe` and `--ixes`, every manifest shard's claim is proven and its
+  proof address printed: one leaf proof per shard, which `ix verify --ixes`
+  checks and `ix aggregate` joins. `--aggregate` (CPU), `--lanes` (GPUs) or
+  `--compress` instead prove the leaves and their recursive joins through one
+  resident controller and print the verified root.
+-/
 
 public section
 
-open IxVM.ClaimHarness
-
 namespace Ix.Cli.ProveCmd
 
-/-- Canonical aiur params shared between prove and verify (the shared
-    defaults in `Ix.Aiur.Protocol`). Matches `Tests.Aiur.Common`. Until
-    these become flags / commit to the proof header, they MUST stay in
-    sync between `prove` and `verify`. -/
-private def commitmentParameters : Aiur.CommitmentParameters :=
-  Aiur.defaultCommitmentParameters
-
-private def friParameters : Aiur.FriParameters :=
-  Aiur.defaultFriParameters
-
-def proveOne (aiurSystem : Aiur.AiurSystem)
-    (compiled : Aiur.CompiledToplevel)
-    (claim : Ix.Claim)
-    (envHandle? : Option Aiur.EnvHandle)
-    (target : Ix.Check.Target)
-    (label : String) : IO UInt32 := do
-  IO.println s!"Proving {label}"
-  (← IO.getStdout).flush
-  let funIdx ← match compiled.getFuncIdx `verify_claim with
-    | some i => pure i
-    | none =>
-      IO.eprintln s!"{label}: entrypoint `verify_claim` missing from compiled toplevel"
-      return 1
-  let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
-  -- Native IxVM path: routes execution + STARK prove through the
-  -- codegen'd Rust kernel. `.addr` / `.shard` go through the
-  -- envHandle-based prove FFIs (witness + execute + prove all in
-  -- one Rust trip). `.leanW` consumes a pre-built `ClaimWitness`
-  -- via `proveIxVM` (used for non-`check addr none` `--claim hex`).
-  let proof : Aiur.Proof ← match target, envHandle? with
-    | .addr a, some envHandle =>
-      match aiurSystem.proveAddrWithEnv funIdx envHandle a.hash with
-      | .error e =>
-        IO.eprintln s!"{label}: proveAddrWithEnv error: {e}"
-        return 1
-      | .ok (_claimBytes, proof, _outIO) => pure proof
-    | .shard owned, some envHandle =>
-      let mut blob := ByteArray.empty
-      for x in owned do blob := blob ++ x.hash
-      match aiurSystem.shardProveWithEnv funIdx envHandle blob with
-      | .error e =>
-        IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
-        return 1
-      | .ok r => match r.proof with
-        | some proof => pure proof
-        | none =>
-          IO.eprintln s!"{label}: projected prover peak {r.peakBytes} bytes \
-            exceeds the budget; this target is not a manifest shard, so it \
-            cannot be split — raise --max-ram"
-          return 1
-    | .leanW witness, _ =>
-      match aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer with
-      | .error e =>
-        IO.eprintln s!"{label}: proveIxVM error: {e}"
-        return 1
-      | .ok (_aiurClaim, proof, _outIO) => pure proof
-    | _, none =>
-      IO.eprintln s!"{label}: internal: addr/shard target with no envHandle"
-      return 1
-  let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
-  let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
-  IO.println (toString proofAddr)
-  return 0
-
-/-- Prove the constants owned by `blocks` as ONE shard, cutting it into
-    the peak model's suggested part count whenever the executed record's
-    projected prover peak exceeds the budget, and recursing on any part
-    that still misses.
-
-    Cuts are contiguous equal-block-count runs, approximating the prover-row
-    distribution without requiring another per-block cost signal.
-
-    A shard is only a plan, never part of a statement: its claim is
-    `checkEnv(ownedRoot, asmRoot)`, a pure function of `(env, owned)`
-    with the frontier recomputed from the owned set. So cutting `blocks`
-    yields claims exactly as valid as the parent's — each part's grown
-    frontier is discharged by its siblings — and the cut costs only the
-    parent's execution, the cheap half of the run. Splitting on BLOCKS
-    rather than constants is what keeps mutual-recursion groups intact,
-    since every constant maps to exactly one block.
-
-    The suggested count is optimistic — parts re-execute dependencies
-    shared across the cut, and equal block counts are not equal row
-    counts — so each part is gated on its own executed record and
-    re-cut if it misses. That bias is deliberate: an under-cut costs
-    one cheap re-execution, an over-cut pays the per-proof floor on
-    every extra part for the life of the partition.
-
-    Returns the parts actually proven, in proof order, each with its
-    measured projected prover peak: the parent's own when it fit,
-    otherwise its descendants'. That is the partition the run really
-    produced — what the corrected manifest describes, peaks included. -/
-partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
-    (ixonEnv : Ixon.Env) (aiurSystem : Aiur.AiurSystem)
-    (funIdx : Aiur.Bytecode.FunIdx) (maxRamBytes : Nat)
-    (execOnly traceShards : Bool) (retention : Aiur.AiurSystem.ShardRetention)
-    (compiled : Aiur.CompiledToplevel)
-    (indexDir? : Option System.FilePath) (skipProven : Bool) (assumeBinding : Bool)
-    (label : String)
-    (blocks owned : Array Address) :
-    IO (Except String (Array (Array Address × Nat))) := do
-  -- Claim-addressed resume: a leaf's identity is its claim digest, so a
-  -- verified proof of exactly this claim in the shard-proof index is the
-  -- proof this run would produce — reuse it without executing anything.
-  if skipProven then
-    if let some dir := indexDir? then
-      if let .ok (claim, _) := IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv owned then
-        let claim := if assumeBinding then Ix.Claim.assumingBinding claim else claim
-        if let some addr ← Ix.Cli.ShardProofIndex.verifiedProof aiurSystem compiled dir claim then
-          let digest := Address.blake3 (Ix.Claim.ser claim)
-          IO.println s!"[{label}] verified proof of claim {digest} in the \
-            shard-proof index — reused"
-          IO.println s!"claim {digest}"
-          IO.println (toString addr)
-          return .ok #[(blocks, 0)]
-  let mut blob := ByteArray.empty
-  for a in owned do
-    blob := blob ++ a.hash
-  IO.println s!"Proving {label} ({blocks.size} blocks, {owned.size} consts)"
-  (← IO.getStdout).flush
-  match aiurSystem.shardProveWithEnv funIdx envHandle blob maxRamBytes
-      execOnly traceShards retention assumeBinding with
-  | .error e => return .error s!"{label}: shardProveWithEnv error: {e}"
-  | .ok { claimBytes, proof, peakBytes, suggestedParts, .. } =>
-    let gib := toGib peakBytes
-    match proof with
-    | none =>
-      -- The peak fit but nothing proved: reachable only in exec-only
-      -- mode (a budgeted prove either proves or suggests ≥ 2 parts).
-      if suggestedParts <= 1 then
-        IO.println s!"[{label}] prover peak {gib} GiB (exec-only)"
-        return .ok #[(blocks, peakBytes)]
-      -- With trace shards the budget is met inside the proof, never by
-      -- changing the claim: a shard no trace-shard count can fit stops
-      -- the run (the `[trace-shards]` line above names the floor).
-      if traceShards then
-        return .error s!"{label}: no trace-shard count fits the budget \
-          (whole-execution peak {gib} GiB) — raise --max-ram"
-      -- A single block is the atom the kernel checks together; there is
-      -- no smaller shard to fall back to.
-      if blocks.size <= 1 then
-        return .error s!"{label}: projected prover peak {gib} GiB exceeds \
-          the budget and the shard is a single block — raise --max-ram"
-      let cut := Ix.Shard.Check.cutBlocks blocks suggestedParts
-      IO.println s!"[{label}] peak {gib} GiB over budget — cutting \
-        {blocks.size} blocks into {cut.size} parts"
-      let cutOwned := Ix.Shard.partitionOwned ixonEnv owned cut
-      let mut proven : Array (Array Address × Nat) := #[]
-      for (i, part, po) in (cut.zip cutOwned).mapIdx
-          (fun i (part, po) => (i, part, po)) do
-        match ← proveBlocksWithinBudget envHandle ixonEnv aiurSystem funIdx
-            maxRamBytes execOnly traceShards retention compiled indexDir?
-            skipProven assumeBinding s!"{label}.{i}" part po with
-        | .error e => return .error e
-        | .ok parts => proven := proven ++ parts
-      return .ok proven
-    | some proof =>
-      IO.println s!"[{label}] prover peak {gib} GiB"
-      -- Rust returns the canonical CheckEnv claim's wire bytes; deserialize
-      -- back to `Ix.Claim` to persist alongside the proof. Avoids
-      -- recomputing the closure walk + canonical AssumptionTree Lean-side.
-      match Ix.Claim.de claimBytes with
-      | .error e => return .error s!"{label}: Claim wire-decode failed: {e}"
-      | .ok claim => do
-        let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
-        let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
-        let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
-        -- The claim digest is the leaf's durable identity; print it next to
-        -- the address so a runner can key its progress on it, and index the
-        -- proof under it for `--skip-proven` and `ix shard refine`.
-        let digest := Address.blake3 (Ix.Claim.ser claim)
-        IO.println s!"claim {digest}"
-        IO.println (toString proofAddr)
-        if let some dir := indexDir? then
-          Ix.Cli.ShardProofIndex.writeAddress dir digest proofAddr
-        return .ok #[(blocks, peakBytes)]
-
-/-- Prove shard `shardK` of the partition, splitting it as needed.
-    Returns the block sets actually proven for that shard. -/
-def runShardProveNative (envHandle : Aiur.EnvHandle) (ixonEnv : Ixon.Env)
-    (shards ownedPerShard : Array (Array Address)) (shardK : Nat)
-    (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
-    (maxRamBytes : Nat) (execOnly traceShards : Bool)
-    (retention : Aiur.AiurSystem.ShardRetention)
-    (indexDir? : Option System.FilePath) (skipProven assumeBinding : Bool) :
-    IO (Except String (Array (Array Address × Nat))) := do
-  match shards[shardK]?, ownedPerShard[shardK]? with
-  | some blocks, some owned =>
-    let funIdx := compiled.getFuncIdx `verify_claim |>.get!
-    proveBlocksWithinBudget envHandle ixonEnv aiurSystem funIdx maxRamBytes
-      execOnly traceShards retention compiled indexDir? skipProven assumeBinding
-      s!"shard {shardK}" blocks owned
-  | _, _ => return .error s!"shard {shardK} out of range (0..{shards.size})"
-
-/-- Report the partition a prove run actually produced against the one
-    its manifest planned. They differ exactly when a shard was split. -/
-def reportPartition (proven : Array (Array Address × Nat)) (planned : Nat) : IO Unit := do
-  if proven.size == planned then
-    IO.println s!"[prove] {proven.size} shard(s) proven, partition unchanged"
-  else
-    IO.println s!"[prove] {proven.size} shard(s) proven from {planned} planned \
-      ({proven.size - planned} from splits) — re-shard with this partition to \
-      skip the splits next run"
-
-/-- The aggregate root of a one-shard manifest: the shard's proof, wrapped
-into `ix_aggr` until it is a single trace shard. -/
-def proveOneShardRoot (ixe manifest : String) (ixvmSystem : Aiur.AiurSystem)
-    (ixvmCompiled : Aiur.CompiledToplevel) (aggrSystem : Aiur.AiurSystem)
-    (envHandle : Aiur.EnvHandle) (verifyIdx aggrIdx maxRamBytes : Nat)
-    (retention : Aiur.AiurSystem.ShardRetention) (cacheFriBytes : ByteArray)
-    (bindingProof : String) (fresh : Bool) :
-    IO (Except String String) := do
-  let assumeBinding := !bindingProof.isEmpty
-  let .ok (ixonEnv, shards) ← Ix.Shard.loadEnvAndShards manifest ixe
-    | return .error s!"{manifest}: cannot load the shard"
-  let some k := shards.findIdx? (!·.isEmpty) | return .error "the manifest has no shard"
-  let owned := (Ix.Shard.ownedConstsPer ixonEnv shards)[k]!
-  let index ← Ix.Cli.ShardProofIndex.indexDir
-  match ← proveBlocksWithinBudget envHandle ixonEnv ixvmSystem verifyIdx maxRamBytes
-      false true retention ixvmCompiled (some index) (!fresh) assumeBinding s!"shard {k}" shards[k]! owned with
-  | .error e => return .error e
-  | .ok _ => pure ()
-  let .ok (claim, _) := IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv owned
-    | return .error s!"shard {k}: cannot rebuild its claim"
-  let claim := if assumeBinding then Ix.Claim.assumingBinding claim else claim
-  let some proof ← Ix.Cli.ShardProofIndex.verifiedProof ixvmSystem ixvmCompiled index claim
-    | return .error s!"shard {k}: its proof is not in the shard-proof index"
-  let ramBudget ← if maxRamBytes == 0 then Aggr.defaultAggregateRamBudgetBytes else pure maxRamBytes
-  IO.lazyPure fun _ =>
-    Aiur.AiurSystem.aggregateStage2 ixvmSystem aggrSystem envHandle manifest
-      (toString proof) verifyIdx aggrIdx 0 ramBudget Aggr.defaultStructuralAbove 0
-      false false cacheFriBytes true true true 0 true 1 false 0 bindingProof fresh
+/-- Flags the aggregation pipeline does not read. -/
+private def nonAggregateFlags : Array String :=
+  #["shards-only", "assume-binding", "keep-going", "claim", "cells"]
 
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
-  -- Streamed `[texray] <span>: <dur> ── RAM Δ/peak` lines on stderr as
-  -- each `aiur/` / `stark/` span closes: the per-phase wall + RSS
-  -- breakdown (execute vs witness vs STARK) of every prove in the run.
-  if ← TracingTexray.enabled (p.hasFlag "texray") then TracingTexray.init {}
-  let keepGoing := p.hasFlag "keep-going"
-  -- Same units as `ix shard --max-ram`: the per-shard prover budget the
-  -- partition was sized against, re-checked here against each shard's
-  -- measured peak. 0 = detect (85% of `MemAvailable`, the check batch's
-  -- gate policy — see `shardProveWithEnv`).
-  let maxRamBytes :=
-    ((p.flag? "max-ram").map (·.as! Nat)).getD 0 * gibBytes
-  let execOnly := p.hasFlag "exec-only"
-  -- Over-budget shards become batches of trace shards within the budget
-  -- instead of being cut into parts (see `shardProveWithEnv`).
-  let traceShards := p.hasFlag "trace-shards"
-  let retention ← match (p.flag? "retention").map (·.as! String) with
-    | none => pure Aiur.AiurSystem.ShardRetention.auto
-    | some s => match Aiur.AiurSystem.ShardRetention.parse s with
-      | some r => pure r
-      | none =>
-        IO.eprintln s!"--retention: expected auto, retain or regenerate, got {s}"
-        return 1
-  let outIxes := (p.flag? "out-ixes").map (·.as! String)
-  -- The shard-proof index: written for every proof this run persists,
-  -- consulted before executing a leaf under `--skip-proven`.
-  let skipProven := p.hasFlag "skip-proven"
   let fresh := p.hasFlag "fresh"
-  if fresh && skipProven then
+  if fresh && p.hasFlag "skip-proven" then
     IO.eprintln "--fresh cannot be combined with --skip-proven"
     return 1
   if fresh then IO.eprintln "[prove] fresh: bypassing earlier proof checkpoints"
-  let indexDir? ← if p.hasFlag "no-index" then pure none
-    else some <$> Ix.Cli.ShardProofIndex.indexDir
-  -- Both `--ixes` branches end the same way: the partition the run
-  -- actually proved, written as a refinement of the manifest it started
-  -- from — the one the next run of this env should start from.
-  let emitRefined (envHandle : Aiur.EnvHandle) (sourcePath : String)
-      (numShards : Nat) (runs : Array (Nat × Array (Array Address × Nat)))
-      (failures : Nat) : IO Unit := do
-    if let some out := outIxes then
-      let (refinements, measured) :=
-        Ix.Shard.Check.refinementsOfRuns numShards runs
-      let _ ← Ix.Shard.Check.emitRefinedManifest "prove" envHandle
-        sourcePath out refinements measured failures
+  let aggregate := p.hasFlag "lanes" || p.hasFlag "aggregate" || p.hasFlag "compress"
+  if aggregate then
+    for flag in nonAggregateFlags do
+      if p.hasFlag flag then
+        IO.eprintln s!"--{flag} cannot be combined with --aggregate, --lanes or --compress"
+        return 1
   let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
-  let claimHex : Option String := (p.flag? "claim").map (·.as! String)
-  let names := (p.variableArgsAs! String).toList
-  -- A whole environment (`--ixe` and `--ixes`, no leaf selection) is proven
-  -- and aggregated into one root on every visible GPU. `--shards-only` and the
-  -- leaf, distributed and audit modes below prove shard claims instead.
-  let aggregate := ixePath.isSome && p.hasFlag "ixes" && !p.hasFlag "shards-only"
-    && !p.hasFlag "assume-binding"
-    && !p.hasFlag "shard" && !p.hasFlag "shards" && !p.hasFlag "distributed" && !execOnly
-  if p.hasFlag "gpus" && !aggregate then
-    IO.eprintln "--gpus applies only to aggregating a whole environment (--ixe and --ixes)"
-    return 1
-  -- `--compress` continues from the aggregate root, so its parameters are
-  -- checked before any proving starts.
+  -- Compression continues from a whole environment's aggregate root.
+  let canCompress := ixePath.isSome && p.hasFlag "ixes"
+    && !p.hasFlag "shard" && !p.hasFlag "shards" && !p.hasFlag "distributed" && !p.hasFlag "exec-only"
   let compress? ← match (p.flag? "compress").map (·.as! String) with
     | none =>
       if p.hasFlag "fixed-root" || p.hasFlag "dev-kzg-srs" || p.hasFlag "dev-final-srs" || p.hasFlag "compression-out" then
         IO.eprintln "--fixed-root, --dev-kzg-srs, --dev-final-srs and --compression-out require --compress"; return 1
       pure none
     | some output =>
-      if !aggregate then
+      if !canCompress then
         IO.eprintln "--compress requires aggregating a whole environment (--ixe and --ixes)"; return 1
       match Ix.Cli.CompressCmd.finalOf output with
       | .error e => IO.eprintln s!"--compress: {e}"; return 1
@@ -327,248 +58,17 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
           devFinalSrs := p.hasFlag "dev-final-srs"
           fixedRoot := (p.flag? "fixed-root").map (·.as! String) }
         try
-          IO.eprintln s!"Compression will use {← Ix.Cli.CompressCmd.preflight opts}."
+          IO.eprintln s!"Compression will use {← Ix.Cli.CompressCmd.preflight p opts}."
           pure (some opts)
         catch e => IO.eprintln s!"--compress: {e}"; return 1
-  -- One prover per GPU over its share of the Stage 2 plan, then the final
-  -- joins. Dispatched before any prover system is built, so this process
-  -- opens no device until compression.
-  if let (true, some ixe, some manifest) := (aggregate, ixePath, (p.flag? "ixes").map (·.as! String)) then
-    -- 0 proves on every visible GPU.
-    let gpus := ((p.flag? "gpus").map (·.as! Nat)).getD 0
-    let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
-      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
-      | .ok h => pure h
-    -- Both prover systems are built once here; Rust derives a resident
-    -- pair per GPU from them without copying the bytecode again.
-    let ixvmCompiled ← match IxVM.ixVM with
-      | .error e => IO.eprintln s!"toplevel merging failed: {e}"; return 1
-      | .ok t => match t.compileWithGroups IxVM.functionGroups with
-        | .error e => IO.eprintln s!"compilation failed: {e}"; return 1
-        | .ok c => pure c
-    let aggrCompiled ← match Aggr.ixAggr with
-      | .error e => IO.eprintln s!"ixAggr toplevel merge failed: {e}"; return 1
-      | .ok t => match t.compileWithGroups Aggr.functionGroups with
-        | .error e => IO.eprintln s!"ixAggr compilation failed: {e}"; return 1
-        | .ok c => pure c
-    let rp := Aggr.defaultRecursionParameters
-    let ixvmSystem := Aiur.AiurSystem.build ixvmCompiled.bytecode commitmentParameters friParameters
-    let aggrSystem := Aiur.AiurSystem.build aggrCompiled.bytecode rp.commitment rp.fri
-    let some verifyIdx := ixvmCompiled.getFuncIdx `verify_claim
-      | IO.eprintln "compiled toplevel has no `verify_claim` entry"; return 1
-    let some aggrIdx := aggrCompiled.getFuncIdx `ix_aggr
-      | IO.eprintln "compiled ixAggr has no `ix_aggr` entry"; return 1
-    let bindingProof := ((p.flag? "binding-proof").map (·.as! String)).getD ""
-    let nonempty ← match Ix.Shard.parseIxesAllShards (← IO.FS.readBinFile manifest) with
-      | .error e => IO.eprintln s!"{manifest}: {e}"; return 1
-      | .ok shards => pure (shards.filter (!·.isEmpty)).size
-    let result ← if nonempty == 1 then
-        -- One shard has no join for the GPU scheduler to run: prove it, then
-        -- wrap it into the aggregate root as `ix aggregate --wrap-root` does.
-        proveOneShardRoot ixe manifest ixvmSystem ixvmCompiled aggrSystem envHandle
-          verifyIdx aggrIdx maxRamBytes retention rp.cacheFriBytes bindingProof fresh
-      else IO.lazyPure fun _ =>
-        (Aiur.AiurSystem.proveMultiGpu ixvmSystem aggrSystem envHandle manifest
-          verifyIdx aggrIdx gpus maxRamBytes
-          (((p.flag? "exec-jobs").map (·.as! Nat)).getD 0) 0 rp.cacheFriBytes
-          (outIxes.getD "") bindingProof fresh)
-    match result with
-    | .error e => IO.eprintln s!"[prove] {e}"; return 1
-    | .ok root =>
-      IO.println root
-      let some opts := compress? | return 0
-      let some addr := Address.fromString root.trimAscii.toString
-        | IO.eprintln s!"--compress: unexpected root address {root}"; return 1
-      try
-        IO.println (toString (← Ix.Cli.CompressCmd.compressRoot addr opts))
-        return 0
-      catch e => IO.eprintln s!"compress: {e}"; return 1
-  let toplevel ← match IxVM.ixVM with
-    | .error e => IO.eprintln s!"toplevel merging failed: {e}"; return 1
-    | .ok t => pure t
-  let compiled ← match toplevel.compileWithGroups IxVM.functionGroups with
-    | .error e => IO.eprintln s!"compilation failed: {e}"; return 1
-    | .ok c => pure c
-  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
-  let runOne := proveOne aiurSystem compiled
-  match ixePath, (p.flag? "ixes").map (·.as! String), (p.flag? "shard").map (·.as! Nat) with
-  | some ixe, some manifest, some k =>
-    -- IxVM-native shard prove. Build the envHandle once + share it
-    -- with the shard prove FFI.
-    match (← Ix.Shard.loadEnvAndShards manifest ixe) with
-    | .error e => IO.eprintln e; return 1
-    | .ok (ixonEnv, shards) =>
-      let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
-        | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
-        | .ok h => pure h
-      match ← runShardProveNative envHandle ixonEnv shards
-          (Ix.Shard.ownedConstsPer ixonEnv shards) k aiurSystem
-          compiled maxRamBytes execOnly traceShards retention indexDir?
-          skipProven (p.hasFlag "assume-binding") with
-      | .error e => IO.eprintln e; return 1
-      | .ok parts =>
-        -- A single-shard run plans exactly one shard, not the whole
-        -- partition.
-        reportPartition parts 1
-        -- The refined whole partition: the source manifest with shard k
-        -- replaced by the parts this run actually proved; every other
-        -- leaf is carried over untouched (this run never executed them).
-        emitRefined envHandle manifest shards.size #[(k, parts)] 0
-        return 0
-  | some ixe, some manifest, none =>
-    -- IxVM-native all-shards prove. Same envHandle reused across
-    -- every shard.
-    match (← Ix.Shard.loadEnvAndShards manifest ixe) with
-    | .error e => IO.eprintln e; return 1
-    | .ok (ixonEnv, shards) =>
-      let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
-        | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
-        | .ok h => pure h
-      -- Accumulate the partition the run actually produced. Splits stay
-      -- in this process, so the manifest describing them is written
-      -- once at the end rather than rewritten per split. Ownership is
-      -- assigned in ONE env pass here; splits inherit it.
-      let ownedPer := Ix.Shard.ownedConstsPer ixonEnv shards
-      if p.hasFlag "distributed" then
-        -- One claim for the whole environment, one worker record per
-        -- chunk, a manifest shard (see `Aiur.AiurSystem.proveEnvDistributed`).
-        let funIdx := compiled.getFuncIdx `verify_claim |>.get!
-        let some checkOwnedIdx := compiled.getFuncIdx `check_owned
-          | IO.eprintln "compiled toplevel has no `check_owned` entry"; return 1
-        let maxCells := ((p.flag? "cells").map (·.as! Nat)).getD 0
-        IO.println s!"Proving the whole environment as one claim over \
-          {shards.size} workers"
-        (← IO.getStdout).flush
-        let execJobs := ((p.flag? "exec-jobs").map (·.as! Nat)).getD 0
-        let planOnly := p.hasFlag "plan-only"
-        -- Record sizes an earlier exec-only run wrote to the manifest.
-        let measured ← match Ix.Shard.parseIxesManifest
-            (← IO.FS.readBinFile manifest) with
-          | .ok view => pure (if view.measuredPeakBytes.size == shards.size
-              then view.measuredPeakBytes else #[])
-          | .error _ => pure #[]
-        match aiurSystem.proveEnvDistributed funIdx checkOwnedIdx envHandle
-            ownedPer maxCells planOnly execOnly execJobs maxRamBytes
-            measured with
-        | .error e => IO.eprintln s!"proveEnvDistributed error: {e}"; return 1
-        | .ok { proof := none, workerBytes, .. } =>
-          if planOnly then
-            IO.println "planned the workers' commit order (plan-only)"
-            return 0
-          if execOnly then
-            IO.println "executed and absorbed every worker (exec-only)"
-            -- The measured record bytes, for the next run's admission.
-            if let some out := outIxes then
-              let sizes := Id.run do
-                let mut sizes : Array Nat := #[]
-                for i in [0:workerBytes.size / 8] do
-                  let mut v : Nat := 0
-                  for j in [0:8] do
-                    v := v + (workerBytes.get! (8 * i + j)).toNat <<< (8 * j)
-                  sizes := sizes.push v
-                sizes
-              let _ ← Ix.Shard.Check.emitRefinedManifest "prove" envHandle
-                manifest out #[] sizes 0
-            return 0
-          IO.eprintln "proveEnvDistributed returned no proof"; return 1
-        | .ok { claimBytes, proof := some proof, .. } =>
-          match Ix.Claim.de claimBytes with
-          | .error e => IO.eprintln s!"Claim wire-decode failed: {e}"; return 1
-          | .ok claim =>
-            let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
-            let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
-            let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
-            IO.println s!"claim {Address.blake3 (Ix.Claim.ser claim)}"
-            IO.println (toString proofAddr)
-            return 0
-      -- `--shards SEL` restricts the run to some leaves (one env load for
-      -- all of them); every other leaf is carried over unchanged.
-      let selected : Array Nat ← match (p.flag? "shards").map (·.as! String) with
-        | none => pure (Array.range shards.size)
-        | some s => match Ix.Shard.Check.parseShardSelection s with
-          | .error e => IO.eprintln s!"error: {e}"; return 1
-          | .ok ids =>
-            if let some k := ids.find? (· ≥ shards.size) then
-              IO.eprintln s!"--shards: shard {k} out of range ({shards.size} shards)"
-              return 1
-            pure ids
-      let mut runs : Array (Nat × Array (Array Address × Nat)) := #[]
-      let mut proven : Array (Array Address × Nat) := #[]
-      let mut failed : Array String := #[]
-      -- Trace-sharded claims prove as a pipeline: the shards execute ahead
-      -- of the prover (`--exec-jobs` at once) and every proof is persisted
-      -- and indexed as it lands. Leaves with a verified proof in the index
-      -- are reused first under --skip-proven.
-      if traceShards && !execOnly then
-        let funIdx := compiled.getFuncIdx `verify_claim |>.get!
-        let execJobs := ((p.flag? "exec-jobs").map (·.as! Nat)).getD 0
-        let mut todo : Array Nat := #[]
-        for k in selected do
-          let mut reused := false
-          if skipProven then
-            if let some dir := indexDir? then
-              if let .ok (claim, _) :=
-                  IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv ownedPer[k]! then
-                let claim :=
-                  if p.hasFlag "assume-binding" then Ix.Claim.assumingBinding claim else claim
-                if let some addr ← Ix.Cli.ShardProofIndex.verifiedProof
-                    aiurSystem compiled dir claim then
-                  let digest := Address.blake3 (Ix.Claim.ser claim)
-                  IO.println s!"[shard {k}] verified proof of claim {digest} in \
-                    the shard-proof index — reused"
-                  IO.println s!"claim {digest}"
-                  IO.println (toString addr)
-                  runs := runs.push (k, #[(shards[k]!, 0)])
-                  reused := true
-          if !reused then todo := todo.push k
-        let storeDir ← StoreIO.toIO Store.storeDir
-        let indexDir := match indexDir? with
-          | some dir => dir.toString
-          | none => ""
-        IO.println s!"Proving {todo.size} shard(s) as trace-shard batches, \
-          executions ahead of the prover"
-        (← IO.getStdout).flush
-        match aiurSystem.shardProveAheadWithEnv funIdx envHandle
-            (todo.map (ownedPer[·]!)) todo maxRamBytes retention execJobs
-            storeDir.toString indexDir (p.hasFlag "assume-binding") with
-        | .error e =>
-          IO.eprintln s!"[prove] FAILED: {e} (finished proofs are in the \
-            store and the shard-proof index; rerun with --skip-proven)"
-          return 1
-        | .ok rows =>
-          for (k, row) in todo.zip rows do
-            runs := runs.push (k, #[(shards[k]!, row.peakBytes)])
-        let ordered := runs.qsort (·.1 < ·.1)
-        reportPartition (ordered.flatMap (·.2)) selected.size
-        emitRefined envHandle manifest shards.size ordered 0
-        return 0
-      for k in selected do
-        match ← runShardProveNative envHandle ixonEnv shards ownedPer k
-            aiurSystem compiled maxRamBytes execOnly traceShards retention
-            indexDir? skipProven (p.hasFlag "assume-binding") with
-        | .error e => IO.eprintln e; failed := failed.push e
-        | .ok parts => runs := runs.push (k, parts); proven := proven ++ parts
-      if failed.isEmpty then
-        reportPartition proven selected.size
-        -- Consolidation is arithmetic from the peaks this run already
-        -- measured, never an extra execution: the measured sum only
-        -- shrinks as shards get coarser, so the count is a safe
-        -- under-count, verified inline by the next run's own gate.
-        if maxRamBytes > 0 then
-          let sum := proven.foldl (· + ·.2) 0
-          let n1 := max 1 ((sum + maxRamBytes * 95 / 100 - 1)
-            / (maxRamBytes * 95 / 100))
-          if n1 < proven.size then
-            IO.println s!"[prove] measured total {toGib sum} GiB — {n1} \
-              shard(s) would fit the budget: re-shard with --shards {n1}"
-      else
-        IO.eprintln s!"[prove] {failed.size} of {shards.size} shard(s) FAILED:"
-        for e in failed do
-          IO.eprintln s!"  {e}"
-      emitRefined envHandle manifest shards.size runs failed.size
-      return if failed.isEmpty then 0 else 1
-  | _, _, _ =>
-    Ix.Check.forEachClaim ixePath claimHex names keepGoing "prove" false runOne
+  if p.hasFlag "lanes" || p.hasFlag "aggregate" || compress?.isSome then
+    let onRoot : Address → IO Unit := match compress? with
+      | none => fun _ => pure ()
+      | some opts => fun addr => do
+        IO.println (toString (← Ix.Cli.CompressCmd.compressRoot p addr opts))
+    FormalAggregate.runPipeline p onRoot
+  else
+    FormalAiur.run p true
 
 end Ix.Cli.ProveCmd
 
@@ -578,34 +78,47 @@ def proveCmd : Cli.Cmd := `[Cli|
   "Generate a STARK proof for an `Ix.Claim` (mirrors `ix check`'s CLI shape)"
 
   FLAGS:
+    "gpu-device" : Nat; "Use this CUDA device with the Aiur host (requires a CUDA build)."
+    "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
+    "aiur-artifact-digest" : String; "Refuse an IxVM artifact whose BLAKE3 digest is not this one."
+    "aggr-artifact" : String; "Trusted formal aggregation artifact for --aggregate/--lanes; otherwise compile/cache local sources."
+    "aggr-artifact-digest" : String; "Refuse an aggregation artifact whose BLAKE3 digest is not this one."
+    "direct-joins"; "With --aggregate/--lanes: join raw IxVM leaves directly instead of wrapping each leaf first (higher RAM)."
+    "structural-above" : Nat; "With --aggregate/--lanes: use structural joins above N subject leaves (default 4096; 0 means every join)."
+    "range" : Nat; "With --aggregate/--lanes: wrap a leaf proof with more than N trace shards through a range-sum tree (default 0: wrap whole)."
+    "no-cache"; "With --aggregate/--lanes: bypass aggregate cache reads and writes; leaf proofs still follow --no-index."
     "fresh"; "Bypass prior leaf, aggregation and compression proofs, replacing their cache entries with newly verified results. Reuse parameters, proving keys and fixed preprocessing. Incompatible with --skip-proven."
+    "jobs" : Nat; "Aiur: CPU prover lanes for manifest claims or --aggregate (default 1; 0 uses available cores). One shared execution pool; the RAM budget and prover threads are divided among lanes."
+    "aggregate"; "Aiur: prove manifest leaves and ready recursive joins through one resident controller on CPU, then verify and print the root. Requires --ixe and --ixes. --lanes does the same on GPUs, and --compress implies it."
+    "report" : String; "Aiur: write per-part plans, timings and persisted proof addresses to this JSON file."
+    "shard-rows" : Nat; "Aiur: maximum rows per function/memory chip per trace shard (power of two; default 0, which lets the planner choose the largest shards within the RAM budget and, on CUDA, the device cell budget AIUR_TRACE_SHARD_MAX_CELLS, default 1.5e9). Small caps multiply recursive verification work."
     "keep-going";       "Continue past failures and report them at the end instead of halting on the first."
     "texray";           "Stream per-phase `[texray]` timing/RSS lines (execute, witness, STARK stages) to stderr as each span closes."
     "ixe"   : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env. The file must carry a role binding: its claims are relative to it."
     "claim" : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, proves the persisted claim against the `--ixe` env (single proof, skips per-const iteration)."
-    "ixes"  : String;   "Path to a `.ixes` shard manifest (with --ixe). By default, prove every shard and aggregate them into one root, printing its address. With --shard K: prove shard K. With --shards-only: prove every shard without aggregating."
+    "ixes"  : String;   "Path to a `.ixes` shard manifest (with --ixe). By default, prove every shard's claim and print each proof's address; `ix verify --ixes` checks them and `ix aggregate` joins them. With --shard K or --shards: prove only those shards. With --aggregate, --lanes or --compress: also join the shard proofs into one root and print its address."
     "shard" : Nat;      "0-based shard index K (with --ixes and --ixe): prove that one shard's CheckEnv claim."
     "shards" : String;  "With --ixes and no --shard: prove only these leaves — `K`, `a-b`, or a comma list of those — in one process (one env load); every other leaf is carried over unchanged by --out-ixes."
+    "shards-only";      "With --ixe and --ixes: prove each shard's claim and stop. This is the default; the flag makes it explicit and rejects --aggregate, --lanes and --compress."
     "out-ixes" : String; "Write the partition this run actually proved — splits included — as a `.ixes` manifest to this path: the manifest `ix verify --ixes` checks these proofs against, and the one the next run of this env should start from. Skipped if any shard failed."
-    "binding-proof" : String; "With --ixe and --ixes: a proof of the `binding` claim for the env's role binding (`ix prove-binding`). Every claim then assumes its binding instead of validating it, and the root discharges that condition once, so the binding's roles are validated once per aggregate rather than in every claim."
-    "assume-binding";  "With --ixes: prove each shard's claim assuming the env's role binding meets the specifications (validator 4) instead of validating its roles in every shard proof; `ix aggregate --binding-proof` then discharges that condition once."
+    "binding-proof" : String; "With --aggregate, --lanes or --compress: a proof of the `binding` claim for the env's role binding (`ix prove-binding`). Every claim then assumes its binding instead of validating it, and the root discharges that condition once, so the binding's roles are validated once per aggregate rather than in every claim."
+    "assume-binding";  "Without aggregation: prove each claim assuming the env's role binding meets the specifications (validator 4) instead of validating its roles in every proof; `ix aggregate --binding-proof` or `ix verify --binding-proof` then discharges that condition once. When aggregating, pass --binding-proof instead."
     "exec-only";        "Execute each shard and measure its projected prover peak, splitting over-budget shards as usual, but never start a STARK. The cheap way to audit a partition's split behavior at scale."
-    "trace-shards";     "With --shards-only, --shard or --shards (always on when aggregating): prove an over-budget shard as a batch of trace shards that each fit --max-ram, from one execution, instead of cutting it into parts; a shard no trace-shard count can fit stops the run rather than being cut. With --exec-only, reports the planned shard count and the heaviest shard's projected peak without proving."
-    "retention" : String; "With --trace-shards: what the batch keeps between its two rounds — `retain` (every shard's stage 1, nothing recomputed), `regenerate` (headers only; each shard rebuilt for round two), or `auto` (default: retain when the RAM model says the retained batch fits --max-ram). Fixing it lets one plan be measured under both policies."
+    "trace-shards";     "With --ixe and --ixes, without aggregation: never cut a manifest shard into parts. Every proof is already a batch of trace shards planned within --max-ram, from one execution; by default a shard whose batch still cannot fit is cut into parts by blocks and each part proven, and with this flag it stops the run instead. Aggregation (--aggregate, --lanes, --compress) bisects such a leaf and joins its parts back into the leaf's statement, so this flag is accepted there and changes nothing."
+    "retention" : String; "What a trace-shard batch keeps between its two rounds — `retain` (every shard's stage 1, nothing recomputed), `regenerate` (headers only; each shard rebuilt for round two), or `auto` (default: retain when the RAM model says the retained batch fits --max-ram). Fixing it lets one plan be measured under both policies."
     "distributed";      "With --ixes and no --shard: prove the WHOLE environment as one `CheckEnv` claim, with one worker record per chunk — each shard of the manifest is one worker's chunk, the constants it owns — executing in parallel (calls into other workers' constants cross records through the lookup argument) and every record's trace shards in one batch. Writes one proof; no manifest is refined."
     "cells" : Nat;      "With --distributed: per-shard committed-cell budget each worker record is planned to (e.g. 1800000000 for a 96 GB device). 0 (default) proves each record as one shard."
-    "gpus" : Nat;       "With --ixe and --ixes: the number of GPUs to prove and aggregate on (default: every visible GPU). --max-ram and --exec-jobs are per-GPU values. Environment claims exceeding the 128 GiB record ceiling (AIUR_RECORD_MAX_BYTES overrides it) are bisected automatically. Rerunning resumes the checkpointed partition and completed proofs. --out-ixes writes the final partition."
-    "shards-only";      "With --ixe and --ixes: prove each shard's claim and stop, instead of aggregating the environment into one root."
-    "exec-jobs" : Nat;  "With --ixes and --trace-shards: how many shards execute at once ahead of the prover (default 0: one per core, or each GPU's share of the cores when aggregating); peak host memory is the prover's budget plus the records in flight. With --distributed: how many workers execute at once (default 0: one per core). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
-    "plan-only";        "With --distributed: report the static caller graph, the commit order and the largest group of mutually calling workers (how many records the first round holds at once) for this manifest, and stop before executing anything. The way to compare layouts without a run."
-    "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."
+    "lanes" : Nat;      "With --ixe and --ixes: prove and aggregate on N GPUs using a shared execution pool. --max-ram and --exec-jobs are per-GPU values. Environment claims exceeding the 128 GiB record ceiling (AIUR_RECORD_MAX_BYTES overrides it) are bisected automatically. Rerunning resumes the checkpointed partition and completed proofs. --out-ixes writes the final partition. Prints the verified root address on stdout."
+    "exec-jobs" : Nat;  "Concurrent executions ahead of the provers. Aiur defaults to --jobs (or available cores with --lanes); 0 uses available cores. Positive values are per GPU with --lanes. Records and prover workspaces share --max-ram. Distributed Aiur first measures call counts and trace shapes, then replays one record at a time; regenerate replays again for round two."
+    "plan-only";        "Aiur: print selected manifest leaves and RAM reservations without execution."
+    "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/formal-shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement. Aggregation always resumes this way."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."
     "compress" : String; "With --ixe and --ixes: compress the aggregate root to `kzg`, `plonk` or `groth16` and print the compressed proof's address after the root's. The setup is checked before proving."
     "compression-out" : String; "With --compress: directory for compression stage files; --fresh replaces prior stages there."
     "fixed-root" : String; "With --compress: override the bundled release normalization layout with a layout from `ix compress layout`."
     "dev-kzg-srs";      "With --compress: generate local development inner KZG parameters. Final Groth16/PLONK proofs also require --dev-final-srs."
     "dev-final-srs"; "With --compress groth16 or plonk: generate and cache local development final keys. With --dev-kzg-srs, no Ignition parameters are required."
-    "max-ram" : Nat;    "Per-shard prover-RAM budget, GiB — normally the same value the partition was sized with (`ix shard --max-ram`). Each shard is executed, its projected prover peak measured on the resulting record, and the proof attempted only if it fits; an over-budget shard is cut into the part count the peak model projects will fit, and each part re-gated, instead of being taken into the FFT phases that would exhaust the box. Omit to detect: 85% of the machine's available RAM."
+    "max-ram" : Nat;    "Aiur: total RAM budget across --jobs in GiB, default 85% of available memory."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to prove. With none, iterate every named constant in the env (sorted)."

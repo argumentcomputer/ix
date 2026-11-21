@@ -81,19 +81,20 @@ theorem claim_name {k n : Ix.Name} {r : BlockResult} {a : Address} {b : ByteArra
 
 /-! ## The driver's environment -/
 
-theorem view_get (E : Ix.Environment) (x : Ix.Name) :
-    ({ consts := {}, fallback? := some E.get? } : Ix.Environment).get? x = E.get? x := by
+theorem view_get (E : Ix.Environment) {annotator? : Option Ix.BinderAnnotator} (x : Ix.Name) :
+    ({ consts := {}, fallback? := some E.get?, binderAnnotator? := annotator? } : Ix.Environment).get? x =
+      E.get? x := by
   simp [Ix.Environment.get?]
 
-theorem input_get (consts : Std.HashMap Ix.Name Ix.ConstantInfo) (x : Ix.Name) :
-    ({ consts } : Ix.Environment).get? x = consts.get? x := by
+theorem input_get (consts : Std.HashMap Ix.Name Ix.ConstantInfo) {annotator? : Option Ix.BinderAnnotator}
+    (x : Ix.Name) : ({ consts, binderAnnotator? := annotator? } : Ix.Environment).get? x = consts.get? x := by
   unfold Ix.Environment.get?
   split <;> simp_all
 
 /-- **The driver's view of the input carries its names** (the eighth check). -/
 theorem namedEnv_view {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
-    Ix.Cert.Claims.NamedEnv { consts := {}, fallback? := some (Ix.Environment.get? { consts := env.consts }) } := by
+    Ix.Cert.Claims.NamedEnv env.materialized.lookupView := by
   intro x ci hx
   rw [view_get, input_get, Std.HashMap.get?_eq_getElem?,
     Std.HashMap.getElem?_eq_some_iff_exists_beq_and_mem_toList] at hx
@@ -112,8 +113,8 @@ theorem compileReport_owned {env : Ix.Environment} {ixe : Ixon.Env} {failures : 
     (hcl : IsClosure env roots sub) :
     ∃ (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (cenv₀ : CompileEnv) (sched : FoldSchedule),
       compileUnchecked env = .ok (ixe, failures, cenv) ∧
-      blocks = Ix.CondenseM.run (groundSplit { consts := env.consts }).1 ∧
-      FoldRun { consts := env.consts } blocks cenv cenv₀ sched ∧
+      blocks = Ix.CondenseM.run (groundSplit env.materialized).1 ∧
+      FoldRun env.materialized blocks cenv cenv₀ sched ∧
       ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
         (sub.consts.get? n).isSome = true →
         (ixe.named.get? n).map (·.addr) = some a ∧

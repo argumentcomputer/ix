@@ -143,9 +143,7 @@ theorem lowerInductive_owners {st : State md} {rb : BlockRead md} {r : Read md}
   simp only [ite_not, bne_iff_ne, ne_eq] at h
   all_goals
     rcases ite_ok' h with ⟨-, h⟩ | ⟨-, h⟩
-    all_goals first
-      | (obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h)
-      | skip
+    all_goals obtain ⟨_, -, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
     all_goals
       rcases ite_ok' h with ⟨-, h⟩ | ⟨-, h⟩
       · split at h

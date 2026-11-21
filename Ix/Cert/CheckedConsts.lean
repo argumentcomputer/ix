@@ -214,9 +214,9 @@ theorem withContract_constsAll {P : Ix.Kernel.Key .source → Prop} {c : Ix.Sema
     {e : Ix.Expr} {x y : Ix.Kernel.Expr .source} (h : withContract c e x = .ok y) :
     ConstsAll P y ↔ ConstsAll P x := by
   unfold withContract at h
-  split at h <;> first
-    | (simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; exact Iff.rfl)
-    | cases h
+  split at h
+  · cases h; exact Iff.rfl
+  · split at h <;> cases h
 
 /-- **The ingress maps a Lean term's constants to their keys, node for node**: a property holds
 of every constant node of the conversion exactly when it holds of every constant's key in the

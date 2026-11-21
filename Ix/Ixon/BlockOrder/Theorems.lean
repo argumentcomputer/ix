@@ -1,5 +1,6 @@
 import Ix.Ixon.BlockOrder
 import Ix.Ixon.Projection.Theorems
+import IxC.Kernel.Ixon.ShapeSpec
 
 namespace Ixon.BlockOrder
 
@@ -16,22 +17,11 @@ theorem recursorMotive_of_analyse {store owner c r m carriers major}
     (h : analyseRecursor store owner c r = some (m, carriers, major)) :
     recursorMotive c r = some m := by
   unfold analyseRecursor at h
-  unfold recursorMotive
-  cases hs : stripAll c
-      (r.params.toNat + r.motives.toNat + r.minors.toNat + r.indices.toNat + 1) r.typ with
-  | none => simp [hs] at h
-  | some p =>
-    obtain ⟨doms, body⟩ := p
-    cases hd : appHead c spineFuel body with
-    | var k =>
-      simp only [hs, hd, Option.bind_eq_bind, Option.bind_some, Option.pure_def] at h ⊢
-      obtain ⟨u, hu, rest⟩ := Option.bind_eq_some_iff.mp h
-      rw [Option.bind_eq_some_iff]
-      refine ⟨u, hu, ?_⟩
-      simp only [Option.bind_eq_some_iff, Option.some.injEq, Prod.mk.injEq] at rest
-      obtain ⟨_, _, _, _, _, _, hm, _⟩ := rest
-      exact congrArg some hm
-    | _ => simp [hs, hd] at h
+  simp only [bind, Option.bind_eq_some_iff, pure] at h
+  obtain ⟨⟨motive, heads, last⟩, analysed, values, _, target, _, returned⟩ := h
+  cases Option.some.inj returned
+  obtain ⟨domains, parsed⟩ := Shape.analyse_telescope analysed
+  simp only [recursorMotive, parsed, Option.map_some]
 
 /-- The members, from `start` on, are recursors in motive order: the one at
 position `start + j` eliminates motive `start + j` (`recursorMotive`, as the
@@ -45,6 +35,29 @@ def MotivesFrom (source : Ixon.Constant) (size start : Nat)
 every member declares one motive per member of the block. -/
 def MotiveOrdered (source : Ixon.Constant) (members : Array Ixon.MutConst) : Prop :=
   MotivesFrom source members.size 0 members.toList
+
+theorem checkMotives_prepared (owner : Address) (source : Ixon.Constant) (size position : Nat)
+    (members : List MutConst) :
+    checkMotivesPrepared owner (Reader.Shape.sharing source.sharing) size position members =
+      checkMotives owner source size position members := by
+  cases members <;> rfl
+
+theorem checkMotives_cons (owner : Address) (source : Ixon.Constant) (size position : Nat)
+    (member : MutConst) (rest : List MutConst) :
+    checkMotives owner source size position (member :: rest) = (do
+      match member with
+      | .recr r =>
+        let motive := recursorMotive source r
+        unless r.motives.toNat == size && motive == some position do
+          throw (.motiveOrder owner position motive)
+      | _ => throw (.malformed "expected a recursor")
+      checkMotives owner source size (position + 1) rest) := by
+  cases member with
+  | recr recursor =>
+    rw [checkMotives, checkMotivesPrepared, checkMotives_prepared]
+    rfl
+  | defn _ => rfl
+  | indc _ => rfl
 
 theorem motivesFrom_cons (source : Ixon.Constant) (size start : Nat)
     (member : Ixon.MutConst) (rest : List Ixon.MutConst) :
@@ -73,15 +86,15 @@ theorem checkMotives_ok_iff (owner : Address) (source : Ixon.Constant) (size : N
     cases member with
     | recr r =>
       by_cases ok : r.motives.toNat = size ∧ recursorMotive source r = some start
-      · simp [checkMotives, ok]
+      · simp [checkMotives_cons, ok]
       · have bad : (r.motives.toNat == size && recursorMotive source r == some start) = false := by
           simpa [Bool.and_eq_true, beq_iff_eq] using ok
-        simp only [checkMotives, bad]
+        simp only [checkMotives_cons, bad]
         simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind]
         intro hm hmot
         exact absurd ⟨hm, hmot⟩ ok
     | defn _ | indc _ =>
-      simp [checkMotives, bind, Except.bind, throw, throwThe, MonadExceptOf.throw]
+      simp [checkMotives_cons, bind, Except.bind, throw, throwThe, MonadExceptOf.throw]
 
 theorem checkMotiveOrder_ok_iff (owner : Address) (source : Ixon.Constant)
     (members : Array Ixon.MutConst) :

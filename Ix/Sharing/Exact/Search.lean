@@ -37,7 +37,7 @@
 module
 
 public import Ix.Sharing.Exact.Dictionary
-public import Ix.Sharing.Exact.Phase3
+public import Ix.Sharing.Exact.EvalUpFast
 public import Ix.Sharing.Exact.Reexpand
 
 public section

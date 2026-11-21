@@ -39,13 +39,15 @@ structure StateRen (f : md.Id → md'.Id) (P : KeyScope md) (stS : State md) (st
   owners : ∀ k : Key md, k.Good P →
     stA.projOwners[k.map f]? = (stS.projOwners[k]?).map (ProjRecOwner.mapKeys f)
   levels : ∀ k : Key md, k.Good P → stA.projLevels[k.map f]? = stS.projLevels[k]?
+  values : ∀ k : Key md, k.Good P →
+    stA.defValues[k.map f]? = (stS.defValues[k]?).map fun v => (v.1, v.2.mapKeys f)
 
 /-- The two prelude states are related on every scope. -/
 theorem StateRen.of_prelude {f : Mode.Id .source → Mode.Id .anon} {P : KeyScope .source}
     {stS : State .source} {stA : State .anon} (h : PreludeAgree.StateRen f stS stA) :
     StateRen f P stS stA :=
   ⟨fun k _ => h.types k, fun k _ => h.heights k, fun k _ => h.blocks k, fun k _ => h.owners k,
-    fun k _ => h.levels k⟩
+    fun k _ => h.levels k, fun k _ => h.values k⟩
 
 /-! ## The prelude's entries -/
 
@@ -181,7 +183,16 @@ theorem StateRen.commit_plain {f : md.Id → md'.Id} {P : KeyScope md} (hf : Inj
     intro e he
     obtain ⟨d, hd, he⟩ := List.mem_flatMap.mp he
     exact hgood d hd e he
-  refine ⟨fun k hk => ?_, fun k hk => ?_, fun k hk => ?_, fun k hk => ?_, fun k hk => ?_⟩
+  have hvals : rA.decls.toList.flatMap CtxAgree.valEntries =
+      (rS.decls.toList.flatMap CtxAgree.valEntries).map (CtxAgree.renV f) := by
+    rw [hdecls, Array.toList_map, List.flatMap_map, List.map_flatMap]
+    exact CtxAgree.flatMap_congr' fun d _ => CtxAgree.valEntries_mapKeys d
+  have hvkeys : ∀ e ∈ rS.decls.toList.flatMap CtxAgree.valEntries, e.1.Good P := by
+    intro e he
+    obtain ⟨d, hd, he⟩ := List.mem_flatMap.mp he
+    obtain ⟨e', he', hn⟩ := CtxAgree.valEntries_name he
+    exact hn ▸ hgood d hd e' he'
+  refine ⟨fun k hk => ?_, fun k hk => ?_, fun k hk => ?_, fun k hk => ?_, fun k hk => ?_, fun k hk => ?_⟩
   · rw [CtxAgree.commit_constTypes, CtxAgree.commit_constTypes, hentries]
     exact foldl_insOpt_ren hf tyOf tyOf (renE f) (fun v => (v.1, v.2.mapKeys f))
       (fun e => rfl) _ (fun e he p hp => by
@@ -200,6 +211,9 @@ theorem StateRen.commit_plain {f : md.Id → md'.Id} {P : KeyScope md} (hf : Inj
     exact h.owners k hk
   · rw [commit_projLevels_plain _ pS, commit_projLevels_plain _ pA]
     exact h.levels k hk
+  · rw [CtxAgree.commit_defValues, CtxAgree.commit_defValues, hvals]
+    exact foldl_insOpt_ren hf some some (CtxAgree.renV f) (fun v => (v.1, v.2.mapKeys f))
+      (fun e => rfl) _ (fun e he p hp => by cases hp; exact hvkeys e he) _ _ h.values k hk
 
 /-- A read that declares nothing changes no entry. -/
 structure Inert (r : Read md) : Prop extends Plain r where
@@ -214,19 +228,26 @@ theorem commit_inert_fields (st : State md) {r : Read md} (h : Inert r) :
   · rw [CtxAgree.commit_heights, h.decls]; rfl
   · rw [CtxAgree.commit_indBlocks, h.blocks]; rfl
 
+/-- A read that declares nothing records no value. -/
+theorem commit_inert_defValues (st : State md) {r : Read md} (h : Inert r) :
+    (st.commit r).defValues = st.defValues := by
+  rw [CtxAgree.commit_defValues, h.decls]; rfl
+
 theorem StateRen.commit_inert_left {f : md.Id → md'.Id} {P : KeyScope md} {stS : State md}
     {stA : State md'} (h : StateRen f P stS stA) {r : Read md} (hr : Inert r) :
     StateRen f P (stS.commit r) stA := by
   obtain ⟨e1, e2, e3, e4, e5⟩ := commit_inert_fields stS hr
   exact ⟨fun k hk => e1 ▸ h.types k hk, fun k hk => e2 ▸ h.heights k hk,
-    fun k hk => e3 ▸ h.blocks k hk, fun k hk => e4 ▸ h.owners k hk, fun k hk => e5 ▸ h.levels k hk⟩
+    fun k hk => e3 ▸ h.blocks k hk, fun k hk => e4 ▸ h.owners k hk, fun k hk => e5 ▸ h.levels k hk,
+    fun k hk => (commit_inert_defValues stS hr) ▸ h.values k hk⟩
 
 theorem StateRen.commit_inert_right {f : md.Id → md'.Id} {P : KeyScope md} {stS : State md}
     {stA : State md'} (h : StateRen f P stS stA) {r : Read md'} (hr : Inert r) :
     StateRen f P stS (stA.commit r) := by
   obtain ⟨e1, e2, e3, e4, e5⟩ := commit_inert_fields stA hr
   exact ⟨fun k hk => e1 ▸ h.types k hk, fun k hk => e2 ▸ h.heights k hk,
-    fun k hk => e3 ▸ h.blocks k hk, fun k hk => e4 ▸ h.owners k hk, fun k hk => e5 ▸ h.levels k hk⟩
+    fun k hk => e3 ▸ h.blocks k hk, fun k hk => e4 ▸ h.owners k hk, fun k hk => e5 ▸ h.levels k hk,
+    fun k hk => (commit_inert_defValues stA hr) ▸ h.values k hk⟩
 
 /-! ## The committed prelude's states -/
 
@@ -245,7 +266,7 @@ theorem preludeAgree_keys {preS : Ix.Kernel.Reader.Prelude .source}
     {preA : Ix.Kernel.Reader.Prelude .anon} (h : PreludeAgree.preludeAgreeB preS preA = true) :
     ∀ k ∈ preS.state.keys, k.Good PreludeAgree.NoIds := by
   simp only [PreludeAgree.preludeAgreeB, PreludeAgree.stateAgreeB, Bool.and_eq_true] at h
-  obtain ⟨-, ⟨⟨⟨⟨hT, hH⟩, hB⟩, hO⟩, hL⟩⟩ := h
+  obtain ⟨-, ⟨⟨⟨⟨⟨hT, hH⟩, hB⟩, hO⟩, hL⟩, -⟩⟩ := h
   intro k hk
   simp only [State.keys, List.mem_append, Std.HashMap.mem_keys, Std.HashMap.mem_iff_contains,
     or_assoc] at hk
