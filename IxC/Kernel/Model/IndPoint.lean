@@ -62,8 +62,8 @@ variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 set_option maxHeartbeats 12800000 in
 /-- **The point stage, at the reading** (`pointS`). -/
-theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
-    (hclaims : DefEqClaim μ m ψ' F)
+theorem point {m : EnvModel V env} {J : Judgements md} {ψ' : LevelParam → Nat}
+    (hclaims : DefEqClaimJ J m ψ')
     {lps : List LevelParam}
     {f : Key md → Key md} (hroT : RenameOk m.acval env f)
     {Rn : Key md}
@@ -139,7 +139,7 @@ theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     (hRjdec : Rj = AnnotTerm.mkAppN vHC vArgsC)
     (hArgsClen : vArgsC.length = cnP + (mI - rP))
     -- the recorded index run
-    (hdeIdx : DefEqListOk μ F env (rP + cnF)
+    (hdeIdx : DefEqListJ J env (rP + cnF)
       ((lhsS.getAppArgs.drop rP).take (mI - rP))
       (cres.getAppArgs.drop cnP))
     {mix : List AnnotTerm} (hmixlen : mix.length = cnP + cnF)
@@ -310,7 +310,7 @@ theorem point {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
             = bx := by
           rw [List.getD, List.getElem?_drop, hbx]
           rfl
-        have hrun : isDefEqCore μ env F (rP + cnF) ai bx = .ok true := by
+        have hrun : J.defeq env (rP + cnF) ai bx := by
           have h := defEqListOk_getD hdeIdx (i - rP) (by rw [hlenL]; omega)
           rw [hLsub, hRsub] at h
           exact h

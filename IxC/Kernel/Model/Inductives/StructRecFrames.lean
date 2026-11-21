@@ -4,13 +4,13 @@ public import IxC.Kernel.Model.Inductives.StructRecRead
 public section
 
 /-!
-# The recursor's frames (task #175 W4c, P3 module 6, part 13; S2)
+# The recursor's frames
 
 `recFrames`: at every parameter valuation the recursor's post-parameter
 phase facts hold — `RecBase`: the field chain graded, the motive
 binder the Π over the carrier into the elimination sort, the minor
-binder the minor space, the major binder the carrier.  Since task
-#175 S2 the recursor type is the *generated* one, whose binder data
+binder the minor space, the major binder the carrier.  The
+recursor type is the *generated* one, whose binder data
 is `recDataAV`: its parameter entries are the type former's (so the
 parameter frames coincide outright), and its three special entries are
 spelled out, so every clause of `RecBase` is a **computation** on the

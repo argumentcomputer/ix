@@ -401,8 +401,8 @@ Where v1 rebuilds three `CtxOkR`s and fires quantified-context packs,
 the P tier reads the two runs `IotaRuns` records straight through
 `InferClaim`/`DefEqClaim`; the context is the stages' shared
 one. -/
-theorem sidesMem {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
-    (hinfer : InferClaim μ m ψ' F) (hclaims : DefEqClaim μ m ψ' F)
+theorem sidesMem {m : EnvModel V env} {J : Judgements md} {ψ' : LevelParam → Nat}
+    (hinfer : InferClaimJ J m ψ') (hclaims : DefEqClaimJ J m ψ')
     {d : Nat} {Δa : List AnnotTerm} {αS lhsS rhsS : Expr md}
     (hctxα : CtxOk m ψ' d Δa αS)
     (hctxL : CtxOk m ψ' d Δa lhsS)
@@ -420,10 +420,10 @@ theorem sidesMem {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     -- the slot's own grading (the statement body's, descended)
     (hokα : ∀ ρ : Nat → V, Sat V Δa ρ → WellDenotedV V ρ vα)
     {tl tr : Expr md}
-    (hInfL : inferTypeCore μ env F d lhsS = .ok tl)
-    (hDeqL : isDefEqCore μ env F d tl αS = .ok true)
-    (hInfR : inferTypeCore μ env F d rhsS = .ok tr)
-    (hDeqR : isDefEqCore μ env F d tr αS = .ok true)
+    (hInfL : J.infer env d lhsS tl)
+    (hDeqL : J.defeq env d tl αS)
+    (hInfR : J.infer env d rhsS tr)
+    (hDeqR : J.defeq env d tr αS)
     {tla tra : AnnotTerm}
     (htla : denoteMeta m.acval env ψ' d tl = some tla)
     (htra : denoteMeta m.acval env ψ' d tr = some tra)

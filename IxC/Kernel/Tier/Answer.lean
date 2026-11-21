@@ -32,7 +32,7 @@ tier constants carry their δ and ι forms.
 private: what leaves it is the cached checker's functions over it (`knot`)
 and lookups, never an index a check could run at. No certified path imports
 this module (`Tests/Ix/Kernel/Layering.lean`, the answers fence): its only
-consumer is resource typing's uncertified part (`Ix.Resource.Typing`), which
+consumer is the artifact typing's uncertified part (`Ix.Typing`), which
 no certified verdict covers.
 -/
 

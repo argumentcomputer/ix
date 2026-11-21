@@ -76,7 +76,7 @@ theorem denoteMeta_proj (acval : Key md → (LevelParam → Nat) → AnnotTerm)
       = (do
         let ea ← denoteMeta acval env φ d e
         match env.findProj? s i with
-        | some entry => some (projAV (i + entry.off) ea)
+        | some entry => projNodeAV? acval env s i entry ea
         | none => AnnotTerm.projPair? i ea) := by
   rw [denoteMeta]
   rfl
@@ -95,7 +95,7 @@ theorem denoteMeta_proj_pair (acval : Key md → (LevelParam → Nat) → AnnotT
   | none => rfl
   | some ea =>
     show (match env.findProj? s i with
-      | some entry => some (projAV (i + entry.off) ea)
+      | some entry => projNodeAV? acval env s i entry ea
       | none => AnnotTerm.projPair? i ea)
         = AnnotTerm.projPair? i ea
     rw [hnt]
@@ -143,11 +143,29 @@ theorem denoteMeta_app_inv {d : Nat} {f a : Expr md} {ea : AnnotTerm}
       rw [hf, ha] at h
       exact ⟨fa, aa, rfl, rfl, (Option.some.inj h).symm⟩
 
+theorem projNodeAV?_eq_some_iff {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {env : Env md} {sn : Key md} {i : Nat} {entry : ProjEntry md} {ia ea : AnnotTerm} :
+    projNodeAV? acval env sn i entry ia = some ea ↔
+      ((entry.off ≤ 1 ∨ (env.find? (Ix.Kernel.projChainKey sn i)).isSome = true) ∧
+       ea = projNodeAV acval sn i entry ia) := by
+  unfold projNodeAV? projNodeAV
+  by_cases hle : entry.off ≤ 1
+  · rw [if_pos hle, if_pos hle]
+    exact ⟨fun h => ⟨Or.inl hle, (Option.some.inj h).symm⟩,
+      fun ⟨_, h⟩ => by rw [h]⟩
+  · rw [if_neg hle, if_neg hle]
+    cases hs : (env.find? (Ix.Kernel.projChainKey sn i)).isSome
+    · simp [hle]
+    · rw [if_pos rfl]
+      exact ⟨fun h => ⟨Or.inr rfl, (Option.some.inj h).symm⟩,
+        fun ⟨_, h⟩ => by rw [h]⟩
+
 theorem denoteMeta_proj_inv {d : Nat} {s : Key md} {i : Nat} {e : Expr md}
     {ea : AnnotTerm}
     (h : denoteMeta acval env φ d (.proj s i e) = some ea) :
     ∃ ia, denoteMeta acval env φ d e = some ia ∧
-      ((∃ entry, env.findProj? s i = some entry ∧ ea = projAV (i + entry.off) ia) ∨
+      ((∃ entry, env.findProj? s i = some entry ∧
+          projNodeAV? acval env s i entry ia = some ea) ∨
        (env.findProj? s i = none ∧ AnnotTerm.projPair? i ia = some ea)) := by
   rw [denoteMeta] at h
   cases he : denoteMeta acval env φ d e with
@@ -155,14 +173,14 @@ theorem denoteMeta_proj_inv {d : Nat} {s : Key md} {i : Nat} {e : Expr md}
   | some ia =>
     rw [he] at h
     replace h : (match env.findProj? s i with
-        | some entry => some (projAV (i + entry.off) ia)
+        | some entry => projNodeAV? acval env s i entry ia
         | none => AnnotTerm.projPair? i ia)
           = some ea := h
     cases hfp : env.findProj? s i with
     | some entry =>
       rw [hfp] at h
       dsimp only at h
-      exact ⟨ia, rfl, Or.inl ⟨entry, rfl, (Option.some.inj h).symm⟩⟩
+      exact ⟨ia, rfl, Or.inl ⟨entry, rfl, h⟩⟩
     | none =>
       rw [hfp] at h
       dsimp only at h
@@ -249,7 +267,7 @@ inductive DenoteMetaSpine (acval : Key md → (LevelParam → Nat) → AnnotTerm
 
 /-- A member of a read spine reads (`DenoteMetaSpine`'s membership form —
 the shape the projection clause's `getD` selection needs).  Relocated
-from the retired `Steps/ProjPinsP.lean` (task #175 W6). -/
+from the retired `Steps/ProjPinsP.lean`. -/
 theorem DenoteMetaSpine.mem {acval : Key md → (LevelParam → Nat) → AnnotTerm} {d : Nat}
     {as : List (Expr md)} {vs : List AnnotTerm}
     (h : DenoteMetaSpine acval env φ d as vs) :
@@ -361,30 +379,44 @@ theorem DenoteMetaSpine.getD {acval : Key md → (LevelParam → Nat) → AnnotT
     | 0 => exact ha
     | j + 1 => exact ih dflt j (by simpa using hi)
 
-/-- The clause at a stored entry: the uniform iterated projection of
-the subject's reading. -/
+/-- The clause at a stored entry whose chain constant (when `entry.off ≥ 2`) is ready. -/
 theorem denoteMeta_proj_tower {d : Nat} {s : Key md} {i : Nat} {e : Expr md}
     {entry : ProjEntry md} {ia : AnnotTerm}
     (hfe : env.findProj? s i = some entry)
+    (hrdy : entry.off ≤ 1 ∨ (env.find? (Ix.Kernel.projChainKey s i)).isSome = true)
     (he : denoteMeta acval env φ d e = some ia) :
-    denoteMeta acval env φ d (.proj s i e) = some (projAV (i + entry.off) ia) := by
+    denoteMeta acval env φ d (.proj s i e) = some (projNodeAV acval s i entry ia) := by
   rw [denoteMeta_proj, he]
   show (match env.findProj? s i with
-    | some entry => some (projAV (i + entry.off) ia)
+    | some entry => projNodeAV? acval env s i entry ia
     | none => AnnotTerm.projPair? i ia)
-      = some (projAV (i + entry.off) ia)
+      = some (projNodeAV acval s i entry ia)
   rw [hfe]
+  exact projNodeAV?_eq_some_iff.mpr ⟨hrdy, rfl⟩
+
+/-- The clause at a stored entry under `ProjOkT`. -/
+theorem denoteMeta_proj_tower_ok {d : Nat} {s : Key md} {i : Nat} {e : Expr md}
+    {entry : ProjEntry md} {ia : AnnotTerm}
+    (hpok : Ix.Kernel.ProjOkT env)
+    (hfe : env.findProj? s i = some entry)
+    (he : denoteMeta acval env φ d e = some ia) :
+    denoteMeta acval env φ d (.proj s i e) = some (projNodeAV acval s i entry ia) := by
+  refine denoteMeta_proj_tower hfe ?_ he
+  by_cases hle : entry.off ≤ 1
+  · exact Or.inl hle
+  · exact Or.inr (hpok.chain_isSome hfe hle)
 
 /-- The inversion at a stored entry. -/
 theorem denoteMeta_proj_inv_tower {d : Nat} {s : Key md} {i : Nat} {e : Expr md}
     {entry : ProjEntry md} {ea : AnnotTerm}
     (hfe : env.findProj? s i = some entry)
     (h : denoteMeta acval env φ d (.proj s i e) = some ea) :
-    ∃ ia, denoteMeta acval env φ d e = some ia ∧ ea = projAV (i + entry.off) ia := by
+    ∃ ia, denoteMeta acval env φ d e = some ia ∧
+      ea = projNodeAV acval s i entry ia := by
   obtain ⟨ia, hia, hcase⟩ := denoteMeta_proj_inv h
-  rcases hcase with ⟨entry', hfe', rfl⟩ | ⟨hnt, -⟩
+  rcases hcase with ⟨entry', hfe', hnode⟩ | ⟨hnt, -⟩
   · obtain rfl : entry = entry' := Option.some.inj (hfe.symm.trans hfe')
-    exact ⟨ia, hia, rfl⟩
+    exact ⟨ia, hia, (projNodeAV?_eq_some_iff.mp hnode).2⟩
   · rw [hnt] at hfe; exact nomatch hfe
 
 /-- A read spine extended by one read argument. -/

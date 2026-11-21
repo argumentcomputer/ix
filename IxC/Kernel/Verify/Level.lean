@@ -188,7 +188,7 @@ theorem leq_sound {l r : Level} (h : leq l r = some true) :
   rw [eval_simplify, eval_simplify] at this
   omega
 
-/-- **Conformance, task #176 P2 (restrictions-are-findings).**  The
+/-- **Conformance note.**  The
 `l == r` disjunct `isEquiv` gained — official's
 `is_equivalent(lhs, rhs) = lhs == rhs || normalize lhs == normalize rhs`
 (`level.cpp:518`) — is *redundant*: `isEquiv` is equal to the
@@ -243,6 +243,16 @@ theorem isEquivList_length : ∀ {us vs : List Level}, isEquivList us vs = some 
     simpa using isEquivList_length h2
   | [], _ :: _, h => by simp [isEquivList] at h
   | _ :: _, [], h => by simp [isEquivList] at h
+
+/-- Pointwise-equivalent level lists have one length. -/
+theorem EvalEqList.length_eq {φ : LevelParam → Nat} : ∀ {us vs : List Level},
+    EvalEqList φ us vs → us.length = vs.length
+  | [], [], _ => rfl
+  | u :: us, v :: vs, h => by
+    obtain ⟨-, hrest⟩ : eval φ u = eval φ v ∧ EvalEqList φ us vs := h
+    simp only [List.length_cons, EvalEqList.length_eq hrest]
+  | [], _ :: _, h => absurd h (by simp [EvalEqList])
+  | _ :: _, [], h => absurd h (by simp [EvalEqList])
 
 /-- Pointwise-equivalent substitutions induce the same assignment. -/
 theorem substFn_congr {φ : LevelParam → Nat} : ∀ {ks : List LevelParam} {us vs : List Level},

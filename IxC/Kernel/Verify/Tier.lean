@@ -179,7 +179,7 @@ theorem installConstantVal_typeFacts {E : Env md} {F : Nat} {cv c : ConstantVal 
   obtain ⟨hfind, -, -, -, hlb, hif, type', hann, htp, htr, rfl⟩ := installConstantVal_inv h
   exact ⟨Expr.not_hasFvar_of_fvarsBelow_zero
       ((annotateCore_WScoped F cv.type hann (Expr.WScoped.of_not_hasFvar hif)).fvarsBelow),
-    htp, htr, annotateCore_looseBVars F cv.type hann hlb, rfl, hfind⟩
+    ((Bool.and_eq_true ..).mp htp).2, htr, annotateCore_looseBVars F cv.type hann hlb, rfl, hfind⟩
 
 /-- A block's headers, checked at `mkFEnv E`: each the install of its
 member's header at `E`, well scoped. -/

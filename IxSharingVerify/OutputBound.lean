@@ -116,22 +116,22 @@ theorem nodeCount_size_facts (sc : Nat → Nat) (pos : ∀ i, 1 ≤ sc i) :
     have := Ix.Sharing.Verify.UniformModel.tag4Size_pos (n + 1)
     simp only [sizeInfoWith, hc, nodeCount]
     omega
-  | lam c ty body iht ihb =>
+  | lam ty body iht ihb =>
     rcases hc : (sizeInfoWith sc body).lamCont with ⟨n, b⟩
     rw [hc] at ihb
     dsimp only at ihb
     have := Ix.Sharing.Verify.UniformModel.tag4Size_pos (n + 1)
     simp only [sizeInfoWith, hc, nodeCount]
     omega
-  | all c r ty body iht ihb =>
+  | all ty body iht ihb =>
     rcases hc : (sizeInfoWith sc body).allCont with ⟨n, b⟩
     rw [hc] at ihb
     dsimp only at ihb
     have := Ix.Sharing.Verify.UniformModel.tag4Size_pos (n + 1)
     simp only [sizeInfoWith, hc, nodeCount]
     omega
-  | letE c ty v body iht ihv ihb =>
-    have := Ix.Sharing.Verify.UniformModel.tag4Size_pos c.flags.toNat
+  | letE nonDep mode ty v body iht ihv ihb =>
+    have := Ix.Sharing.Verify.UniformModel.tag4Size_pos (Ixon.LetMode.header nonDep mode).toNat
     simp only [sizeInfoWith, SizeInfo.plain, nodeCount]; omega
 
 /-- **An expression has fewer nodes than twice its length** when every

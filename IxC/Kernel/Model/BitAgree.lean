@@ -80,6 +80,11 @@ inductive AnnotTerm.BitAgree : AnnotTerm → AnnotTerm → Prop where
       BitAgree e e' → BitAgree (.fst e) (.fst e')
   | snd {e e' : AnnotTerm} :
       BitAgree e e' → BitAgree (.snd e) (.snd e')
+  | chain {g g' : Nat → AnnotTerm} {e e' : AnnotTerm} :
+      (∀ n, BitAgree (g n) (g' n)) → BitAgree e e' →
+      BitAgree (.chain g e) (.chain g' e')
+  | bgraph (n : Nat) {f f' : AnnotTerm} :
+      BitAgree f f' → BitAgree (.bgraph n f) (.bgraph n f')
 
 namespace AnnotTerm.BitAgree
 
@@ -95,6 +100,8 @@ theorem refl : ∀ e : AnnotTerm, BitAgree e e
   | .eqE a b => .eqE (refl a) (refl b)
   | .fst e => .fst (refl e)
   | .snd e => .snd (refl e)
+  | .chain g e => .chain (fun n => refl (g n)) (refl e)
+  | .bgraph n f => .bgraph n (refl f)
 
 /-- Symmetry. -/
 theorem symm : ∀ {e e' : AnnotTerm}, BitAgree e e' → BitAgree e' e := by
@@ -110,6 +117,8 @@ theorem symm : ∀ {e e' : AnnotTerm}, BitAgree e e' → BitAgree e' e := by
   | eqE _ _ iha ihb => exact .eqE iha ihb
   | fst _ ih => exact .fst ih
   | snd _ ih => exact .snd ih
+  | chain _ _ ihg ihe => exact .chain ihg ihe
+  | bgraph n _ ihf => exact .bgraph n ihf
 
 /-- **The relation refines erasure-equality** — and strictly: erasure
 also forgets the *structure* of the numerals' binders, while `BitAgree`
@@ -128,6 +137,10 @@ theorem erase_eq : ∀ {e e' : AnnotTerm}, BitAgree e e' →
   | eqE _ _ iha ihb => simp [AnnotTerm.erase, iha, ihb]
   | fst _ ih => simp [AnnotTerm.erase, ih]
   | snd _ ih => simp [AnnotTerm.erase, ih]
+  | chain _ _ ihg ihe =>
+    simp only [AnnotTerm.erase_chain, ihe]
+    congr 1; funext n; exact ihg n
+  | bgraph _ _ ihf => simp [AnnotTerm.erase, ihf]
 
 variable (V : Type w) [SetTheory V]
 
@@ -155,6 +168,10 @@ theorem interp_eq : ∀ {e e' : AnnotTerm}, BitAgree e e' →
     intro ρ; simp only [interp_eqE, iha, ihb]
   | fst _ ih => intro ρ; simp only [interp_fst, ih]
   | snd _ ih => intro ρ; simp only [interp_snd, ih]
+  | chain _ _ ihg ihe =>
+    intro ρ; simp only [interp_chain, ihe]
+    exact chainApp_congr fun n => ihg n ρ
+  | bgraph _ _ ihf => intro ρ; simp only [interp_bgraph, ihf]
 
 /-- **Truthfulness is invariant.**  The `lam`/`app` clauses' fibre
 obligations are `v = 0 → …`, so zero-agreement transfers them; every
@@ -193,6 +210,13 @@ theorem wellDenoted : ∀ {e e' : AnnotTerm}, BitAgree e e' →
   | snd he ih =>
     intro ρ
     rw [WellDenoted_snd, WellDenoted_snd, ih ρ, interp_eq V he ρ]
+  | chain _ _ ihg ihe =>
+    intro ρ
+    rw [WellDenoted_chain, WellDenoted_chain, ihe ρ]
+    exact and_congr (forall_congr' fun n => ihg n ρ) Iff.rfl
+  | bgraph _ _ ihf =>
+    intro ρ
+    rw [WellDenoted_bgraph, WellDenoted_bgraph, ihf ρ]
 
 /-- **Bit validity is invariant.**  The one clause that reads a numeral
 is `pi`'s `v = 0 → …`, and zero-agreement is exactly what it needs. -/
@@ -223,6 +247,13 @@ theorem validV : ∀ {e e' : AnnotTerm}, BitAgree e e' →
     intro ρ; rw [AnnotValid_eqE, AnnotValid_eqE, iha ρ, ihb ρ]
   | fst _ ih => intro ρ; rw [AnnotValid_fst, AnnotValid_fst, ih ρ]
   | snd _ ih => intro ρ; rw [AnnotValid_snd, AnnotValid_snd, ih ρ]
+  | chain _ _ ihg ihe =>
+    intro ρ
+    rw [AnnotValid_chain, AnnotValid_chain, ihe ρ]
+    exact and_congr (forall_congr' fun n => ihg n ρ) Iff.rfl
+  | bgraph _ _ ihf =>
+    intro ρ
+    rw [AnnotValid_bgraph, AnnotValid_bgraph, ihf ρ]
 
 end AnnotTerm.BitAgree
 

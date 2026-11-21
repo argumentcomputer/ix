@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.Verify.Frontend.InModelNestedRename
+public import IxC.Kernel.Verify.Frontend.InModelNestedAux
 
 @[expose] public section
 
@@ -224,6 +225,15 @@ theorem idxBm {mems : List (Mem md)} {mem : Mem md} (hx : mem ∈ mems) (hmG : �
 theorem domm {cs : List (ACtor md)} {c : ACtor md} (hx : c ∈ cs) (hcG : ∀ c ∈ cs, c.Good P) (i : Nat) :
     RG P f (c.doms.getD i default) ((c.mapKeys f).doms.getD i default) :=
   dom (hcG c hx) i
+/-- A field's domain past its telescope (`teleBody`), renamed. -/
+theorem tbody {c : ACtor md} (hc : c.Good P) (i : Nat) :
+    RG P f (teleBody c i) (teleBody (c.mapKeys f) i) := by
+  have hs := stripAllPis_good (Expr.GoodList.getD_default hc.2.1 i)
+  refine ⟨?_, hs.2⟩
+  simp only [teleBody, ACtor.mapKeys_doms, getD_mapKeys_default, stripAllPis_mapKeys, Expr.mapTele]
+theorem tbodym {cs : List (ACtor md)} {c : ACtor md} (hx : c ∈ cs) (hcG : ∀ c ∈ cs, c.Good P) (i : Nat) :
+    RG P f (teleBody c i) (teleBody (c.mapKeys f) i) :=
+  tbody (hcG c hx) i
 end RG
 
 namespace RGL
@@ -310,11 +320,38 @@ theorem mc (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) (i : Nat) {d :
     obtain ⟨t, idx⟩ := p
     exact ⟨rfl, fun y hy => Expr.Good.getAppArgs h y (matchCarrier_args hm y hy)⟩
 /-- A field's index arguments off its domain (`fieldIdx`). -/
-theorem fieldIdx (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) (i o' : Nat) {d : Expr md}
+theorem fieldIdx (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) (i o' c : Nat) {d : Expr md}
     {d' : Expr md'} (h : RG P f d d') :
-    RGL P f ((((matchCarrier fam i d).map (·.2)).getD []).map (·.liftLooseBVars o' 0))
-      ((((matchCarrier (fam.mapKeys f) i d').map (·.2)).getD []).map (·.liftLooseBVars o' 0)) :=
-  lifts (mc hf hfam i h) o' 0
+    RGL P f ((((matchCarrier fam i d).map (·.2)).getD []).map (·.liftLooseBVars o' c))
+      ((((matchCarrier (fam.mapKeys f) i d').map (·.2)).getD []).map (·.liftLooseBVars o' c)) :=
+  lifts (mc hf hfam i h) o' c
+/-- A field's index arguments off its domain, the parameters lifted past `o` binders
+(`fieldIdxAt`). -/
+theorem fieldIdxAt (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) (i c o o' c' : Nat) {d : Expr md}
+    {d' : Expr md'} (h : RG P f d d') :
+    RGL P f (((((matchCarrier fam i d).map (·.2)).getD []).map (·.liftLooseBVars o c)).map
+        (·.liftLooseBVars o' c'))
+      (((((matchCarrier (fam.mapKeys f) i d').map (·.2)).getD []).map (·.liftLooseBVars o c)).map
+        (·.liftLooseBVars o' c')) :=
+  lifts (lifts (mc hf hfam i h) o c) o' c'
+/-- A field's telescope domains (`teleDoms`), renamed. -/
+theorem tele {c : ACtor md} (hc : c.Good P) (i : Nat) :
+    RGL P f (teleDoms c i) (teleDoms (c.mapKeys f) i) := by
+  have hs := stripAllPis_good (Expr.GoodList.getD_default hc.2.1 i)
+  refine ⟨?_, Expr.goodList_piBinders hs.1⟩
+  simp only [teleDoms, ACtor.mapKeys_doms, getD_mapKeys_default, stripAllPis_mapKeys, Expr.mapTele,
+    piBinders_mapBinders']
+theorem telem {cs : List (ACtor md)} {c : ACtor md} (hx : c ∈ cs) (hcG : ∀ c ∈ cs, c.Good P) (i : Nat) :
+    RGL P f (teleDoms c i) (teleDoms (c.mapKeys f) i) :=
+  tele (hcG c hx) i
+/-- A telescope at another frame (`liftTele`). -/
+theorem liftT {tele : List (Expr md)} {tele' : List (Expr md')} (h : RGL P f tele tele') (i o o' : Nat) :
+    RGL P f (liftTele tele i o o') (liftTele tele' i o o') := by
+  obtain ⟨rfl, h⟩ := h
+  unfold Ix.Kernel.Frontend.InModel.liftTele
+  rw [List.length_map]
+  exact map rfl fun j _ =>
+    RG.lift (RG.lift ⟨getD_mapKeys_default _ _, Expr.GoodList.getD_default h j⟩ _ _) _ _
 
 end RGL
 
@@ -629,6 +666,10 @@ macro "rg" : tactic => `(tactic| repeat' (first
   | (with_reducible exact RG.dom ‹_› _)
   | (with_reducible exact RG.idxBm ‹_› ‹_› _)
   | (with_reducible exact RG.domm ‹_› ‹_› _)
+  | (with_reducible exact RG.tbody ‹_› _)
+  | (with_reducible exact RG.tbodym ‹_› ‹_› _)
+  | (with_reducible exact RGL.tele ‹_› _)
+  | (with_reducible exact RGL.telem ‹_› ‹_› _)
   | (with_reducible exact RGL.idx ‹_›)
   | (with_reducible exact RGL.pins ‹_›)
   | (with_reducible exact RGL.pinsD ‹_› _)
@@ -649,7 +690,8 @@ macro "rg" : tactic => `(tactic| repeat' (first
   | (with_reducible refine RG.eq ‹_› ?_ ?_ ?_)
   | (with_reducible refine RG.refl ‹_› ?_ ?_)
   | (with_reducible refine RG.eqRec ‹_› ?_ ?_ ?_ ?_ ?_ ?_)
-  | (with_reducible refine RGL.fieldIdx ‹_› ‹_› _ _ ?_)
+  | (with_reducible refine RGL.fieldIdxAt ‹_› ‹_› _ _ _ _ _ ?_)
+  | (with_reducible refine RGL.fieldIdx ‹_› ‹_› _ _ _ ?_)
   | (with_reducible refine RGL.mc ‹_› ‹_› _ ?_)
   | (with_reducible refine RGL.cons ?_ ?_)
   | (with_reducible refine RGL.append ?_ ?_)
@@ -657,6 +699,7 @@ macro "rg" : tactic => `(tactic| repeat' (first
   | (with_reducible refine RGL.args ?_)
   | (with_reducible refine RGL.liftAll ?_ _)
   | (with_reducible refine RGL.lifts ?_ _ _)
+  | (with_reducible refine RGL.liftT ?_ _ _ _)
   | (with_reducible refine RGL.set ?_ _ ?_)
   | (with_reducible refine RGL.mapG ‹_› ?_; intro _ _)
   | (with_reducible refine RGL.mapR ?_ ?_; rotate_left; intro _ _ _)
@@ -687,7 +730,7 @@ macro "rg" : tactic => `(tactic| repeat' (first
   | (with_reducible exact goodRecD ‹_› _)
   | exact ‹KeyScope.Pre _› _ (by decide)
   | (simp only [Mem.mapKeys_tag, Mem.mapKeys_real?, Mem.mapKeys_j, Mem.mapKeys_nIdx, Mem.mapKeys_lv,
-      Mem.mapKeys_pins_length, ACtor.mapKeys_mem, ACtor.mapKeys_kinds, ACtor.mapKeys_nF,
+      Mem.mapKeys_pins_length, ACtor.mapKeys_mem, ACtor.mapKeys_kinds, ACtor.mapKeys_teles, ACtor.mapKeys_nF,
       ACtor.mapKeys_clv, ACtor.mapKeys_J, ACtor.mapKeys_jIn, ACtor.mapKeys_cname, Group.mapKeys_tags,
       Group.mapKeys_lv, Group.mapKeys_nPI, Group.mapKeys_large, getD_map_default Mem.mapKeys_default,
       getD_map_default IndRecRec.mapKeys_default, IndRecRec.mapKeys_cv, ConstantVal.mapKeys_name,
@@ -785,10 +828,11 @@ theorem push_thm_map {o : Array (Declaration md)} {nm : Key md} {nm' : Key md'} 
       (o.push (.thmDecl ⟨nm, l, ty⟩ v)).map (Declaration.mapKeys f) := by
   subst hnm hty hv; rw [Array.map_push]; rfl
 
--- The elaboration budget: one theorem walks all of `genNested` (about 930 lines of
+-- The elaboration budget: one theorem walks all of `genNested` (about 990 lines of
 -- generator, each emitted term descended by `rg`); genMutual's 4000000 ran out at the
--- last step (the projection artifacts). It bounds elaboration only.
-set_option maxHeartbeats 10000000 in
+-- last step (the projection artifacts). It bounds elaboration only, as does the first
+-- `simp`'s step bound (it inlines every `let` of the generator).
+set_option maxHeartbeats 20000000 in
 theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ctx md'}
     (hctx : CtxAgree f P ctx ctx') {b : BlockRec md} (hb : b.Good P) :
     ExRel (fun ds ds' => ds' = ds.map (Declaration.mapKeys f))
@@ -796,7 +840,8 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
   obtain ⟨types, ctors, recs⟩ := b
   obtain ⟨hty, hct, hrc⟩ := hb
   unfold genNested
-  simp only [← Bool.cond_eq_ite, except_throw_bind, BlockRec.mapKeys_types, BlockRec.mapKeys_ctors,
+  simp (config := { maxSteps := 800000 }) only [← Bool.cond_eq_ite, except_throw_bind,
+    BlockRec.mapKeys_types, BlockRec.mapKeys_ctors,
     BlockRec.mapKeys_recs, List.length_map]
   cases types with
   | nil => exact ExRel.throw'
@@ -810,9 +855,7 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
   refine ExRel.bind (S := fun _ _ => True) (ExRel.forIn_list hl trivial fun t t' _ _ ht _ => ?_)
     fun _ _ _ => ?_
   · obtain ⟨rfl, htg⟩ := ht
-    simp only [IndTypeRec.mapKeys_isReflexive, IndTypeRec.mapKeys_cv, ConstantVal.mapKeys_levelParams,
-      IndTypeRec.mapKeys_nP]
-    refine ExRel.cond rfl (fun _ => ?_) (fun _ => ExRel.throw')
+    simp only [IndTypeRec.mapKeys_cv, ConstantVal.mapKeys_levelParams, IndTypeRec.mapKeys_nP]
     exact ExRel.cond rfl (fun _ => ExRel.pure' trivial) (fun _ => ExRel.throw')
   simp only [Expr.stripPis_mapKeys]
   cases hs : Expr.stripPis (t0.nP + t0.nIdx) t0.cv.type with
@@ -868,6 +911,9 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
   refine ExRel.bind (readMems_mapKeys hf _ _ hty (Expr.goodList_map fun b hb => hP2.1 b hb))
     fun mems mems' hm => ?_
   obtain ⟨rfl, hmG⟩ := hm
+  -- the auxiliary-member check answers alike (`nestedAuxOk_mapKeys`)
+  have hchk := nestedAuxOk_mapKeys hf hctx t0.nP (types := t0 :: rest) hty hct hrc hmG
+  refine ExRel.cond hchk.symm (fun _ => ?_) (fun _ => ExRel.throw')
   refine ExRel.bind (S := fun _ _ => True)
     (ExRel.forIn_list (ListRel.of_map hmG) trivial fun mem mem' _ _ hmem _ => ?_) fun _ _ _ => ?_
   · obtain ⟨rfl, hmemG⟩ := hmem
@@ -1555,6 +1601,176 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
         · rg
         · refine RG.eq_of (P := P) ?_; rg
 
+/-! ## Formers declared at a definition -/
+
+/-- `deltaHead` commutes with the renaming at agreeing value tables, and unfolds a
+good term to a good one. -/
+theorem deltaHead_mapKeys {vals : ConstTable md} {vals' : ConstTable md'} (hv : TblOn P f vals vals') :
+    ∀ (e : Expr md), e.Good P →
+      deltaHead vals' (e.mapKeys f) = (deltaHead vals e).map (Expr.mapKeys f) ∧
+      ∀ r, deltaHead vals e = some r → r.Good P
+  | .const c us, he => by
+    refine ⟨?_, ?_⟩
+    · simp only [Expr.mapKeys, deltaHead, hv.agree c he]
+      cases vals c with
+      | none => rfl
+      | some p =>
+        obtain ⟨lps, v⟩ := p
+        simp only [Option.map_some, Option.bind_some]
+        split <;> simp [Expr.mapKeys_instantiateLevelParams]
+    · intro r hr
+      simp only [deltaHead] at hr
+      cases hc : vals c with
+      | none => rw [hc] at hr; exact nomatch hr
+      | some p =>
+        obtain ⟨lps, v⟩ := p
+        rw [hc] at hr
+        simp only [Option.bind_some] at hr
+        split at hr
+        · cases hr; exact Expr.Good.instantiateLevelParams (hv.good c he _ hc) _ _
+        · exact nomatch hr
+  | .app g a, he => by
+    obtain ⟨hg, ha⟩ := he
+    obtain ⟨ih1, ih2⟩ := deltaHead_mapKeys hv g hg
+    refine ⟨?_, ?_⟩
+    · simp only [Expr.mapKeys, deltaHead, ih1]
+      cases deltaHead vals g <;> rfl
+    · intro r hr
+      simp only [deltaHead] at hr
+      cases hd : deltaHead vals g with
+      | none => rw [hd] at hr; exact nomatch hr
+      | some g' => rw [hd] at hr; cases hr; exact ⟨ih2 g' hd, ha⟩
+  | .bvar _, _ => ⟨rfl, fun _ h => nomatch h⟩
+  | .fvar _ _, _ => ⟨rfl, fun _ h => nomatch h⟩
+  | .sort _, _ => ⟨rfl, fun _ h => nomatch h⟩
+  | .lam _ _ _, _ => ⟨rfl, fun _ h => nomatch h⟩
+  | .forallE _ _ _, _ => ⟨rfl, fun _ h => nomatch h⟩
+  | .letE _ _ _ _, _ => ⟨rfl, fun _ h => nomatch h⟩
+  | .lit _, _ => ⟨rfl, fun _ h => nomatch h⟩
+  | .proj _ _ _, _ => ⟨rfl, fun _ h => nomatch h⟩
+
+/-- `formerTeleF` commutes with the renaming at agreeing value tables, and reads a
+good type to a good one. -/
+theorem formerTeleF_mapKeys {vals : ConstTable md} {vals' : ConstTable md'} (hv : TblOn P f vals vals') :
+    ∀ (fuel n : Nat) (e : Expr md), e.Good P →
+      formerTeleF vals' fuel n (e.mapKeys f) = (formerTeleF vals fuel n e).map (Expr.mapKeys f) ∧
+      ∀ r, formerTeleF vals fuel n e = some r → r.Good P := by
+  intro fuel
+  induction fuel with
+  | zero => intro n e _; exact ⟨rfl, fun _ h => nomatch h⟩
+  | succ fuel ih =>
+    intro n e he
+    -- the unfolding step
+    have hstep : ∀ e : Expr md, e.Good P →
+        ((deltaHead vals' (e.mapKeys f)).bind (betaHeadF fuel)).bind (formerTeleF vals' fuel n) =
+          (((deltaHead vals e).bind (betaHeadF fuel)).bind (formerTeleF vals fuel n)).map (Expr.mapKeys f) ∧
+        ∀ r, ((deltaHead vals e).bind (betaHeadF fuel)).bind (formerTeleF vals fuel n) = some r → r.Good P := by
+      intro e he
+      obtain ⟨hd1, hd2⟩ := deltaHead_mapKeys hv e he
+      rw [hd1]
+      cases hd : deltaHead vals e with
+      | none => exact ⟨rfl, fun _ h => nomatch h⟩
+      | some e1 =>
+        have he1 := hd2 e1 hd
+        simp only [Option.map_some, Option.bind_some, betaHeadF_mapKeys]
+        cases hb : betaHeadF fuel e1 with
+        | none => exact ⟨rfl, fun _ h => nomatch h⟩
+        | some e2 =>
+          simp only [Option.map_some, Option.bind_some]
+          exact ih n e2 (betaHeadF_good fuel he1 hb)
+    cases e with
+    | forallE d b m =>
+      obtain ⟨hd, hb⟩ := he
+      cases n with
+      | zero => exact ⟨rfl, fun _ h => nomatch h⟩
+      | succ n =>
+        obtain ⟨ih1, ih2⟩ := ih n b hb
+        refine ⟨?_, ?_⟩
+        · show (formerTeleF vals' fuel n (b.mapKeys f)).map (fun b' => Expr.forallE (d.mapKeys f) b' m) =
+            ((formerTeleF vals fuel n b).map (fun b' => Expr.forallE d b' m)).map (Expr.mapKeys f)
+          rw [ih1]
+          cases formerTeleF vals fuel n b <;> rfl
+        · intro r hr
+          change (formerTeleF vals fuel n b).map (fun b' => Expr.forallE d b' m) = some r at hr
+          cases hf : formerTeleF vals fuel n b with
+          | none => rw [hf] at hr; exact nomatch hr
+          | some b' => rw [hf] at hr; cases hr; exact ⟨hd, ih2 b' hf⟩
+    | sort u =>
+      cases n with
+      | zero =>
+        refine ⟨rfl, fun r hr => ?_⟩
+        have h := Option.some.inj hr
+        subst h
+        trivial
+      | succ n => exact ⟨rfl, fun _ h => nomatch h⟩
+    | bvar i => exact hstep _ he
+    | fvar i t => exact hstep _ he
+    | const c us => exact hstep _ he
+    | app g a => exact hstep _ he
+    | lam d b m => exact hstep _ he
+    | letE t v b l => exact hstep _ he
+    | lit l => exact hstep _ he
+    | proj s i x => exact hstep _ he
+
+/-- `readFormer` commutes with the renaming at an agreeing context, and reads a good
+member to a good one. -/
+theorem readFormer_mapKeys {ctx : Ctx md} {ctx' : Ctx md'} (hctx : CtxAgree f P ctx ctx')
+    {t : IndTypeRec md} (ht : t.Good P) :
+    ExRel (fun t1 t1' => t1' = t1.mapKeys f ∧ t1.Good P) (readFormer ctx t) (readFormer ctx' (t.mapKeys f)) := by
+  obtain ⟨h1, h2⟩ := formerTeleF_mapKeys hctx.values inferFuel (t.nP + t.nIdx) t.cv.type ht.1.2
+  have e : formerTele ctx'.values ((t.mapKeys f).nP + (t.mapKeys f).nIdx) (t.mapKeys f).cv.type =
+      (formerTele ctx.values (t.nP + t.nIdx) t.cv.type).map (Expr.mapKeys f) := h1
+  have e0 : ((t.mapKeys f).cv.type.stripPis (t.mapKeys f).nP).isSome = (t.cv.type.stripPis t.nP).isSome := by
+    show ((t.cv.type.mapKeys f).stripPis t.nP).isSome = _
+    rw [Expr.stripPis_mapKeys]
+    cases t.cv.type.stripPis t.nP <;> rfl
+  unfold readFormer
+  rw [e0, e]
+  by_cases hc : (t.cv.type.stripPis t.nP).isSome = true
+  · rw [if_pos hc, if_pos hc]
+    cases hft : formerTele ctx.values (t.nP + t.nIdx) t.cv.type with
+    | none => exact ExRel.error'
+    | some ty => exact ExRel.ok' ⟨rfl, ⟨ht.1.1, h2 ty hft⟩, ht.2⟩
+  · rw [if_neg hc, if_neg hc]
+    exact ExRel.error'
+
+/-- `readFormers` commutes with the renaming at an agreeing context, and reads a good
+block to a good one. -/
+theorem readFormers_mapKeys {ctx : Ctx md} {ctx' : Ctx md'} (hctx : CtxAgree f P ctx ctx')
+    {b : BlockRec md} (hb : b.Good P) :
+    ExRel (fun b1 b1' => b1' = b1.mapKeys f ∧ b1.Good P) (readFormers ctx b) (readFormers ctx' (b.mapKeys f)) := by
+  obtain ⟨types, ctors, recs⟩ := b
+  obtain ⟨hty, hct, hrc⟩ := hb
+  unfold readFormers
+  refine ExRel.bind (S := ListRel fun t1 t1' => t1' = t1.mapKeys f ∧ t1.Good P)
+    (ExRel.mapM (ListRel.of_map (g := IndTypeRec.mapKeys f) hty) fun t t' htt => ?_) fun ts ts' hts => ?_
+  · obtain ⟨rfl, htg⟩ := htt
+    exact readFormer_mapKeys hctx htg
+  · obtain ⟨rfl, htsg⟩ := forall₂_map_eq hts
+    exact ExRel.pure' ⟨rfl, htsg, hct, hrc⟩
+
+theorem restoreAt_mapKeys (b : BlockRec md) (i : Nat) (d : Declaration md) :
+    restoreAt (b.mapKeys f) i (d.mapKeys f) = (restoreAt b i d).mapKeys f := by
+  cases d with
+  | defnDecl cv v h =>
+    simp only [Declaration.mapKeys, restoreAt, BlockRec.mapKeys_types, List.getElem?_map]
+    cases b.types[i - 2]? with
+    | none => rfl
+    | some t =>
+      simp only [Option.map_some]
+      by_cases hi : 2 ≤ i
+      · simp only [if_pos hi]; try rfl
+      · simp only [if_neg hi]; try rfl
+  | _ => rfl
+
+theorem restoreFrom_mapKeys (b : BlockRec md) :
+    ∀ (i : Nat) (ds : List (Declaration md)),
+      restoreFrom (b.mapKeys f) i (ds.map (Declaration.mapKeys f)) =
+        (restoreFrom b i ds).map (Declaration.mapKeys f)
+  | _, [] => rfl
+  | i, d :: ds => by
+    simp only [List.map_cons, restoreFrom, restoreAt_mapKeys, restoreFrom_mapKeys b (i + 1) ds]
+
 /-! ## The generator -/
 
 /-- **The generated records commute with the renaming** (parametricity, both rungs):
@@ -1570,9 +1786,14 @@ theorem generate_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ct
     ExRel (fun ds ds' => ds' = ds.map (Declaration.mapKeys f))
       (generate ctx b) (generate ctx' (b.mapKeys f)) := by
   unfold generate
-  refine ExRel.ite ?_ (fun _ => genNested_mapKeys hP hf hctx hb) (fun _ => genMutual_mapKeys hP hf hctx hb)
-  simp only [BlockRec.mapKeys_types, List.any_map, Function.comp_def, IndTypeRec.mapKeys_numNested]
-  exact Iff.rfl
+  refine ExRel.bind (S := fun b1 b1' => b1' = b1.mapKeys f ∧ b1.Good P) (readFormers_mapKeys hctx hb) ?_
+  rintro b1 _ ⟨rfl, hb1⟩
+  refine ExRel.bind (S := fun ds ds' => ds' = ds.map (Declaration.mapKeys f)) ?_ ?_
+  · refine ExRel.ite ?_ (fun _ => genNested_mapKeys hP hf hctx hb1) (fun _ => genMutual_mapKeys hP hf hctx hb1)
+    simp only [BlockRec.mapKeys_types, List.any_map, Function.comp_def, IndTypeRec.mapKeys_numNested]
+    exact Iff.rfl
+  · rintro ds _ rfl
+    exact ExRel.pure' (restoreFrom_mapKeys b 0 ds)
 
 /-- `generate_mapKeys` as the runs' results: the renamed block's records are the
 renamed records, or both runs fail. -/

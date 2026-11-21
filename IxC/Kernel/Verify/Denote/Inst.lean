@@ -47,8 +47,7 @@ open Ix.Kernel.Term
 
 variable {cval : TConstVal md} {env : Env md} {φ : LevelParam → Nat}
 
-/-- `projNV` commutes with instantiation (no binders; task #175
-wiring W3). -/
+/-- `projNV` commutes with instantiation (no binders). -/
 theorem inst_projNV :
     ∀ (i : Nat) (v x : Term) (k : Nat),
       (projNV i v).inst x k = projNV i (v.inst x k)
@@ -156,7 +155,14 @@ theorem denote_substFvarAt (hcl : ∀ n ψ, Term.Closed (cval n ψ))
         · simp only [Term.projPair?, Option.map_some, Term.inst_snd]
         · rfl
       | some entry =>
-        simp only [Option.map_some, inst_projNV]
+        dsimp only
+        unfold projNodeNV?
+        split
+        · simp only [Option.map_some, inst_projNV]
+        · split
+          · simp only [Option.map_some, Term.inst_chain]
+            congr 2; funext m; exact (Term.inst_eq_self_of_closed (hcl _ _) _ _).symm
+          · rfl
   | .lit (.natVal k), D, hpD, hfb => by
     simp only [Expr.substFvarAt, denote_natLit]
     split

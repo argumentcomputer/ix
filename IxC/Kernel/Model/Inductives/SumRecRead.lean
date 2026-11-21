@@ -5,7 +5,7 @@ import IxC.Kernel.Model.Annot.BitInst
 public section
 
 /-!
-# The generated sum recursor's readings (task #175 sum-types, indexed)
+# The generated sum recursor's readings
 
 `IxC/Kernel/Model/Inductives/StructRecRead.lean` at a constructor list over
 an indexed family: the generated recursor type reads to the Π-tower

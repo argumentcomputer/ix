@@ -160,7 +160,8 @@ def checkConstantVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal 
   if cv.type.hasFvar then
     throw (.invalid msg!"unexpected free variable in type of {cv.name}")
   let type ← ops.annotate env 0 cv.type
-  unless type.allLevelParamsDefined cv.levelParams do
+  unless cv.type.allLevelParamsDefined cv.levelParams &&
+      type.allLevelParamsDefined cv.levelParams do
     throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
   unless type.constsResolve env do
     throw (unresolvedConstsError msg!"type of {cv.name}" type)
@@ -310,7 +311,11 @@ the family applied to exactly the parameters — the syntactic pins the
 rule's total λ-equality derivation folds over (task #58; completeness-
 safe: both telescopes spell the family's parameter types, and a
 structure constructor targets the family at its parameters). -/
-def checkProjShape (pty ctorTy : Expr md) (nP nF : Nat) : m Unit := do
+def checkProjShape (pty ctorTy : Expr md) (nP nF : Nat) (cjLps : List LevelParam) : m Unit := do
+  -- the major premise is the structure at the constructor's levels and at the
+  -- parameters, so the stored rule is canonical and fires
+  unless Expr.recRulePlain pty nP nP nP cjLps do
+    throw (.notImplemented "projection type: the major premise is not canonical")
   let some (_abinders, _) := pty.stripPis nP
     | throw (.notImplemented "projection type telescope")
   let some (_, cbody) := ctorTy.stripPis (nP + nF)

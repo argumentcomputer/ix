@@ -47,11 +47,9 @@ variable {V : Type w} [SetTheory V]
 /-- **One checked `.nested` rule's fired law, at the reading**
 (`iotaRuleS`'s nested branch, plus the P tier's pin conjunct). -/
 
-theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
+theorem iotaRuleNested {μ : CheckMode} {J : Judgements md} {env₂ envSelf : Env md}
     (mp : EnvModelM V μ envSelf)
-    (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
-    (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
-    (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
+    (hJ : JudgeSound J mp.base2)
     {blockNames : List (Key md)} {f : Key md → Key md}
     (hf : f = fun n =>
       if blockNames.contains n then auxKey n .model else n)
@@ -66,11 +64,15 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
     (hbnA : blockNames.contains cvA.name = true)
     (hself : envSelf.find? cvA.name = some (.recInfo cvA mI rP []))
     (heqfind : env₂.find? eqName = some eqA)
-    (hkit : IotaRuleRun μ F env₂ envSelf f cvA.name
+    (hkit : IotaRuleRunJ J env₂ envSelf f cvA.name
       cvA.levelParams cvA.type mI rP j r r')
     {lvls : List Level} {pins : List (Expr md)}
     (hfireN : RecRule.fire r' = .nested lvls pins) (φ : LevelParam → Nat) :
     RecRuleLaw mp.base2 φ cvA.name cvA mI rP r' := by
+  have hdeq := hJ.defeq
+  have hinf := hJ.infer
+  have hreadsP := hJ.reads
+  have hframe := hJ.frame
   obtain ⟨cvjK, cnPK, cnFK, rhsA, hfcK, hnfK, hrb, hrf, hann, hrlp,
     -- `-` at position 13: `IotaRuleR`'s rule-rhs **derivation** row,
     -- no longer consumed (task #161 S10)
@@ -123,7 +125,7 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
       ⟨cv, mI', rP', rules, rules', heq, -⟩
     · exact h
     · exact nomatch heq
-  obtain ⟨hrhsAw, hrhsAb⟩ := annotate_syntax hann hrf hrb
+  obtain ⟨hrhsAw, hrhsAb⟩ := hJ.annot_syntax hann hrf hrb
   have hRmlps : (ConstantInfo.defnInfo cvm mval
       hm).toConstantVal.levelParams = cvA.levelParams := hlpsm
   have htyOk : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
@@ -146,7 +148,7 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
     intro ψ
     -- the reading, from the RUN (task #161 S10; see `iotaRulePlain`)
     obtain ⟨Ra, hRa⟩ :=
-      acceptedReads_of mp.base2 ψ hrun hrhsWs hrhsAb hrhsLb
+      hJ.accepted ψ hrun hrhsWs hrhsAb hrhsLb
     have hctx : CtxOk mp.base2 ψ 0 [] rhsA :=
       ⟨rfl, fun l hl => absurd hl (fun h => hrhsLeafNil l h)⟩
     obtain ⟨ta, hta⟩ := hreadsP ψ hrun hrhsWs hrhsAb hrhsLb
@@ -173,15 +175,12 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
     · exfalso
       rw [hr'fire, hfireP0] at hfireN
       exact nomatch hfireN
-    · rcases hrest with ⟨hfireI, -⟩ | ⟨lvls0, pins0, hfireN0, hthm0⟩
-      · exfalso
-        rw [hr'fire, hfireI] at hfireN
-        exact nomatch hfireN
-      · obtain ⟨rfl, rfl⟩ : lvls0 = lvls ∧ pins0 = pins := by
-          rw [hr'fire, hfireN0] at hfireN
-          injection hfireN with a b
-          exact ⟨a, b⟩
-        exact hthm0
+    · obtain ⟨lvls0, pins0, hfireN0, hthm0⟩ := hrest
+      obtain ⟨rfl, rfl⟩ : lvls0 = lvls ∧ pins0 = pins := by
+        rw [hr'fire, hfireN0] at hfireN
+        injection hfireN with a b
+        exact ⟨a, b⟩
+      exact hthm0
   obtain ⟨hrPmI, -, hpinsWf0, -⟩ := nestedRuleShape_inv hshape
   obtain ⟨-, -, -, pre, domD, bodyD, bmD, D,
     -, -, -, hpinsLen⟩ := nestedRuleShape_inv hshape
@@ -195,7 +194,7 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
     hlen3, hlhead0, hlarity0, hlpre0, hmaj0, hCstripsHead,
     cdoms, cres, rdoms, lrest, fvsP, crest2, cdomsP, crestP, xFvsP,
     ldoms, hcinst, hclen, hrinst, hopenP,
-    ⟨hpinAnn, hcinstP, hopenXP, hldomsAr⟩,
+    ⟨hcinstP, hopenXP, hldomsAr⟩,
     -- `-` at position 19: `IotaThmNR`'s `TypedListW` walk — the S4
     -- census's ONE consumed derivation row, and the row S5 designed
     -- `IotaNestedPinReadsR` for.  It is no longer consumed either
@@ -430,17 +429,17 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
     obtain ⟨ty, hi, -⟩ := typedListOk_getD hTypedP q
       (by rw [List.length_map, hpinsLen]; exact hq)
     rw [hpinsGetD q hq] at hi
-    exact acceptedReads_of mp.base2 ψ hi
+    exact hJ.accepted ψ hi
       (hpinSyn _ (hpinMem q hq)).1 (hpinSyn _ (hpinMem q hq)).2.1
       (hpinSyn _ (hpinMem q hq)).2.2
   -- ===== the pin conjunct's row =====
   have hrow := nestedPinRow (m := mp.base2) (φ := ψ)
-    (hdeq ψ) (hinf ψ) (hreadsP ψ) hfvsPlen hshapeP hwsFvsP
+    (hdeq ψ) (hinf ψ) (hreadsP ψ) (hframe ψ) hfvsPlen hshapeP hwsFvsP
     hleafClosedP hlbFvsP htowerP hokTV hdomsP0 hpinsLen hpinsWf
     hctyPw hctyPb hTVjP hokTVjP hcinstP hTypedP hpinRead
   -- ===== fire the nested bottom =====
   obtain ⟨Ra, hRaden, hokRa, hRalaw⟩ := indBottomNested (V := V) mp
-    hdeq hinf hreadsP hroT heqfS htyw htyb htyOk hfRnE hRmlps hfcS
+    hdeq hinf hreadsP hframe hroT heqfS htyw htyb htyOk hfRnE hRmlps hfcS
     hfCmE hCmlps hCw hCb hClp hrPmI hlvlsLen hpinsLen hpinsWf
     hrhsAw hrhsAb hrhsKey hSw hSb hthm hopen hheadEq hargs3
     (eq_of_beq hlhead0) hlarity0 (eq_of_beq hlpre0) hmaj0 hCstrips'
@@ -476,11 +475,9 @@ theorem iotaRuleNested {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
 
 /-- **The per-rule bridge, at the reading** (`iotaRuleS`): the two
 branches, dispatched on the stored fire mode. -/
-theorem iotaRule {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
+theorem iotaRule {μ : CheckMode} {J : Judgements md} {env₂ envSelf : Env md}
     (mp : EnvModelM V μ envSelf)
-    (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
-    (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
-    (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
+    (hJ : JudgeSound J mp.base2)
     {blockNames : List (Key md)} {f : Key md → Key md}
     (hf : f = fun n =>
       if blockNames.contains n then auxKey n .model else n)
@@ -495,17 +492,17 @@ theorem iotaRule {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
     (hbnA : blockNames.contains cvA.name = true)
     (hself : envSelf.find? cvA.name = some (.recInfo cvA mI rP []))
     (heqfind : env₂.find? eqName = some eqA)
-    (hkit : IotaRuleRun μ F env₂ envSelf f cvA.name
+    (hkit : IotaRuleRunJ J env₂ envSelf f cvA.name
       cvA.levelParams cvA.type mI rP j r r')
     (hfire : RecRule.fire r' ≠ .inert) (φ : LevelParam → Nat) :
     RecRuleLaw mp.base2 φ cvA.name cvA mI rP r' := by
   cases hfm : RecRule.fire r' with
   | inert => exact absurd hfm hfire
   | plain =>
-    exact iotaRulePlain mp hdeq hinf hreadsP hf hroT hIS hup hbnA
+    exact iotaRulePlain mp hJ hf hroT hIS hup hbnA
       hself heqfind hkit hfm φ
   | nested lvls pins =>
-    exact iotaRuleNested mp hdeq hinf hreadsP hf hroT hIS hup hbnA
+    exact iotaRuleNested mp hJ hf hroT hIS hup hbnA
       hself heqfind hkit hfm φ
 
 /-- **Every rule the per-recursor fold returns carries its fired law**
@@ -513,11 +510,9 @@ theorem iotaRule {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
 V-free and the v1 fold already establishes them; what the P tier owes
 is the row. -/
 
-theorem iotaRules {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
+theorem iotaRules {μ : CheckMode} {J : Judgements md} {env₂ envSelf : Env md}
     (mp : EnvModelM V μ envSelf)
-    (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
-    (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
-    (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
+    (hJ : JudgeSound J mp.base2)
     {blockNames : List (Key md)} {f : Key md → Key md}
     (hf : f = fun n =>
       if blockNames.contains n then auxKey n .model else n)
@@ -529,7 +524,7 @@ theorem iotaRules {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
     (hself : envSelf.find? cvA.name = some (.recInfo cvA mI rP []))
     (heqfind : env₂.find? eqName = some eqA) :
     ∀ (j : Nat) (rules rules' : List (RecRule md)),
-      IotaRulesRun μ F env₂ envSelf f cvA.name
+      IotaRulesRunJ J env₂ envSelf f cvA.name
         cvA.levelParams cvA.type mI rP j rules rules' →
       ∀ rl ∈ rules', RecRule.fire rl ≠ .inert → ∀ φ : LevelParam → Nat,
         RecRuleLaw mp.base2 φ cvA.name cvA mI rP rl := by
@@ -545,7 +540,7 @@ theorem iotaRules {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
     rcases List.mem_cons.mp hrl with heqrl | hrl'
     · intro hfire φ
       rw [heqrl] at hfire ⊢
-      exact iotaRule mp hdeq hinf hreadsP hf hroT hIS hup hbnA hself
+      exact iotaRule mp hJ hf hroT hIS hup hbnA hself
         heqfind hkit hfire φ
     · exact ih (j + 1) rest' hrec rl hrl'
 

@@ -33,7 +33,7 @@ theorem normalizeConstantSharingTiered_parts {layout : ShareLayout} {limits : Li
       expand limits input.sharing (constantInfoRoots input.info) true = .ok expanded ∧
       canonicalTieredExpanded layout limits expanded = .ok result ∧
       withRoots input.info result.result.roots = .ok info ∧
-      output = { input with info, sharing := result.result.sharing } := by
+      output = { input with info, sharing := result.result.sharing, binders := #[] } := by
   unfold Exact.Reference.normalizeConstantSharingTiered at run
   obtain ⟨result, normalized, run⟩ := bind_eq_ok run
   unfold Exact.Reference.canonicalSharingTieredTable at normalized

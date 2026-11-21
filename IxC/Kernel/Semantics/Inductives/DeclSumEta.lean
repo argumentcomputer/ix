@@ -6,8 +6,7 @@ import IxC.Kernel.Semantics.Inductives.DeclStructEta
 @[expose] public section
 
 /-!
-# The direct sum declaration keeps the η-families closed (task #175
-sum-types, indexed)
+# The direct sum declaration keeps the η-families closed
 
 Every store the direct sum install performs is a fresh cons
 (`checkConstantVal`'s duplicate guard for the former and the recursor;
@@ -85,7 +84,7 @@ theorem declNativeRun_etaClosed {μ : CheckMode} {F : Nat} {env env₂ : Env md}
     {p₀ : Ix.Kernel.NativeParts md} (hE : EtaFamiliesClosed env)
     (h : DeclNativeRun μ F env p₀ env₂) : EtaFamiliesClosed env₂ := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, rfl,
-    hCtors, -, hcaps, -, -, -, -, -, hRec, hTbl⟩ := h
+    hCtors, -, hcaps, -, -, -, -, -, hRec, -, hTbl⟩ := h
   obtain ⟨cvT, s, hTn, -, hcvT, rfl, rfl, -⟩ := Ix.Kernel.checkSumInd_shape hInd
   obtain ⟨hfT, -, -, -, -, -, _, _, _, -, -, -, -, -, hTeq⟩ :=
     Ix.Kernel.checkConstantVal_inv hcvT

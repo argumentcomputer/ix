@@ -158,6 +158,8 @@ noncomputable def interp : (Nat → V) → AnnotTerm → V
   | ρ, .fst e => sfst (interp ρ e)
   | ρ, .snd e => ssnd (interp ρ e)
   | _, .prf => pt
+  | ρ, .chain g e => Ix.Kernel.chainApp (fun n => interp ρ (g n)) (interp ρ e)
+  | ρ, .bgraph n f => boundedGraph (fun x => SetTheory.app (interp ρ f) x) n
 
 @[simp] theorem interp_bvar (ρ : Nat → V) (i : Nat) :
     interp V ρ (.bvar i) = ρ i := rfl
@@ -180,5 +182,11 @@ noncomputable def interp : (Nat → V) → AnnotTerm → V
 @[simp] theorem interp_snd (ρ : Nat → V) (e : AnnotTerm) :
     interp V ρ (.snd e) = ssnd (interp V ρ e) := rfl
 @[simp] theorem interp_prf (ρ : Nat → V) : interp V ρ .prf = pt := rfl
+@[simp] theorem interp_chain (ρ : Nat → V) (g : Nat → AnnotTerm) (e : AnnotTerm) :
+    interp V ρ (.chain g e) =
+      Ix.Kernel.chainApp (fun n => interp V ρ (g n)) (interp V ρ e) := rfl
+@[simp] theorem interp_bgraph (ρ : Nat → V) (n : Nat) (f : AnnotTerm) :
+    interp V ρ (.bgraph n f) =
+      boundedGraph (fun x => SetTheory.app (interp V ρ f) x) n := rfl
 
 end Ix.Kernel.Semantics

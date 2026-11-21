@@ -1387,10 +1387,10 @@ theorem ownBytes_pos {h : Head} (hf : h.family = .none) : 1 ≤ h.ownBytes := by
   | prj t f => simp only [Head.ownBytes]; have := tag4Size_pos f.toNat; omega
   | str i => exact tag4Size_pos _
   | nat i => exact tag4Size_pos _
-  | letE c => simp only [Head.ownBytes]; omega
+  | letE nonDep mode => exact tag4Size_pos _
   | app => simp [Head.family] at hf
-  | lam _ => simp [Head.family] at hf
-  | all _ _ => simp [Head.family] at hf
+  | lam => simp [Head.family] at hf
+  | all => simp [Head.family] at hf
 
 /-- An inline writing costs at least one byte. -/
 theorem PrepWF.cost_pos {p : Prep} (hp : PrepWF p) {S : Nat → Bool} {w x : Nat} {T : WTree}

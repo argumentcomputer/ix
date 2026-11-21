@@ -120,9 +120,9 @@ theorem canonicalize_ok {source : Array Node} {roots : Array Nat} (run : Run sou
 def ShareFree : Ixon.Expr → Prop
   | .prj _ _ value => ShareFree value
   | .app fn arg => ShareFree fn ∧ ShareFree arg
-  | .lam _ type body => ShareFree type ∧ ShareFree body
-  | .all _ _ type body => ShareFree type ∧ ShareFree body
-  | .letE _ type value body => ShareFree type ∧ ShareFree value ∧ ShareFree body
+  | .lam type body => ShareFree type ∧ ShareFree body
+  | .all type body => ShareFree type ∧ ShareFree body
+  | .letE _ _ type value body => ShareFree type ∧ ShareFree value ∧ ShareFree body
   | .share _ => False
   | _ => True
 
@@ -130,18 +130,18 @@ def ShareFree : Ixon.Expr → Prop
 def nodeCount : Ixon.Expr → Nat
   | .prj _ _ value => nodeCount value + 1
   | .app fn arg => nodeCount fn + nodeCount arg + 1
-  | .lam _ type body => nodeCount type + nodeCount body + 1
-  | .all _ _ type body => nodeCount type + nodeCount body + 1
-  | .letE _ type value body => nodeCount type + nodeCount value + nodeCount body + 1
+  | .lam type body => nodeCount type + nodeCount body + 1
+  | .all type body => nodeCount type + nodeCount body + 1
+  | .letE _ _ type value body => nodeCount type + nodeCount value + nodeCount body + 1
   | _ => 1
 
 /-- Edges on the longest root-to-leaf path. -/
 def treeHeight : Ixon.Expr → Nat
   | .prj _ _ value => treeHeight value + 1
   | .app fn arg => max (treeHeight fn) (treeHeight arg) + 1
-  | .lam _ type body => max (treeHeight type) (treeHeight body) + 1
-  | .all _ _ type body => max (treeHeight type) (treeHeight body) + 1
-  | .letE _ type value body => max (treeHeight type) (max (treeHeight value) (treeHeight body)) + 1
+  | .lam type body => max (treeHeight type) (treeHeight body) + 1
+  | .all type body => max (treeHeight type) (treeHeight body) + 1
+  | .letE _ _ type value body => max (treeHeight type) (max (treeHeight value) (treeHeight body)) + 1
   | _ => 0
 
 theorem intern_size (s : Interner) (node : Node) : (s.intern node).1.nodes.size ≤ s.nodes.size + 1 := by
@@ -254,7 +254,7 @@ theorem ingestExpr_ok (limits : Limits) (context : ShareCtx) :
     obtain ⟨i2, s2, r2, v2, n2⟩ := argIh (depth + 1) s1 free.2 (by omega) (by omega) (by omega)
     obtain ⟨i3, s3, r3, v3, n3⟩ := internNode_ok limits ⟨.app, #[i1, i2]⟩ s2 (by omega)
     exact ⟨i3, s3, by rw [run_bind_ok r1, run_bind_ok r2]; exact r3, by omega, by omega⟩
-  | lam contract type body typeIh bodyIh =>
+  | lam type body typeIh bodyIh =>
     intro depth before free deep visits nodes
     simp only [SharesValid, nodeCount, treeHeight] at free deep visits nodes ⊢
     have cv := counted_visits before
@@ -265,9 +265,9 @@ theorem ingestExpr_ok (limits : Limits) (context : ShareCtx) :
     obtain ⟨i1, s1, r1, v1, n1⟩ := typeIh (depth + 1) { before with visits := before.visits + 1 }
       free.1 (by omega) (by omega) (by omega)
     obtain ⟨i2, s2, r2, v2, n2⟩ := bodyIh (depth + 1) s1 free.2 (by omega) (by omega) (by omega)
-    obtain ⟨i3, s3, r3, v3, n3⟩ := internNode_ok limits ⟨.lam contract, #[i1, i2]⟩ s2 (by omega)
+    obtain ⟨i3, s3, r3, v3, n3⟩ := internNode_ok limits ⟨.lam, #[i1, i2]⟩ s2 (by omega)
     exact ⟨i3, s3, by rw [run_bind_ok r1, run_bind_ok r2]; exact r3, by omega, by omega⟩
-  | all contract result type body typeIh bodyIh =>
+  | all type body typeIh bodyIh =>
     intro depth before free deep visits nodes
     simp only [SharesValid, nodeCount, treeHeight] at free deep visits nodes ⊢
     have cv := counted_visits before
@@ -279,9 +279,9 @@ theorem ingestExpr_ok (limits : Limits) (context : ShareCtx) :
       free.1 (by omega) (by omega) (by omega)
     obtain ⟨i2, s2, r2, v2, n2⟩ := bodyIh (depth + 1) s1 free.2 (by omega) (by omega) (by omega)
     obtain ⟨i3, s3, r3, v3, n3⟩ :=
-      internNode_ok limits ⟨.all contract result, #[i1, i2]⟩ s2 (by omega)
+      internNode_ok limits ⟨.all, #[i1, i2]⟩ s2 (by omega)
     exact ⟨i3, s3, by rw [run_bind_ok r1, run_bind_ok r2]; exact r3, by omega, by omega⟩
-  | letE contract type value body typeIh valueIh bodyIh =>
+  | letE nonDep mode type value body typeIh valueIh bodyIh =>
     intro depth before free deep visits nodes
     simp only [SharesValid, nodeCount, treeHeight] at free deep visits nodes ⊢
     have cv := counted_visits before
@@ -293,7 +293,7 @@ theorem ingestExpr_ok (limits : Limits) (context : ShareCtx) :
       free.1 (by omega) (by omega) (by omega)
     obtain ⟨i2, s2, r2, v2, n2⟩ := valueIh (depth + 1) s1 free.2.1 (by omega) (by omega) (by omega)
     obtain ⟨i3, s3, r3, v3, n3⟩ := bodyIh (depth + 1) s2 free.2.2 (by omega) (by omega) (by omega)
-    obtain ⟨i4, s4, r4, v4, n4⟩ := internNode_ok limits ⟨.letE contract, #[i1, i2, i3]⟩ s3 (by omega)
+    obtain ⟨i4, s4, r4, v4, n4⟩ := internNode_ok limits ⟨.letE nonDep mode, #[i1, i2, i3]⟩ s3 (by omega)
     exact ⟨i4, s4, by rw [run_bind_ok r1, run_bind_ok r2, run_bind_ok r3]; exact r4, by omega,
       by omega⟩
   | share index =>
@@ -539,8 +539,8 @@ theorem sharesValid_of_free (context : ShareCtx) (source : Ixon.Expr) (free : Sh
   induction source with
   | share _ => simp only [ShareFree] at free
   | prj _ _ _ ih => exact ih free
-  | app _ _ ihf iha | lam _ _ _ ihf iha | all _ _ _ _ ihf iha => exact ⟨ihf free.1, iha free.2⟩
-  | letE _ _ _ _ iht ihv ihb => exact ⟨iht free.1, ihv free.2.1, ihb free.2.2⟩
+  | app _ _ ihf iha | lam _ _ ihf iha | all _ _ ihf iha => exact ⟨ihf free.1, iha free.2⟩
+  | letE _ _ _ _ _ iht ihv ihb => exact ⟨iht free.1, ihv free.2.1, ihb free.2.2⟩
   | _ => trivial
 
 /-- With Shares allowed, every Share below the resolved count resolves. -/
@@ -555,20 +555,20 @@ theorem sharesValid_of_below (context : ShareCtx) (allow : context.allowShare = 
     rw [allow, Array.getElem?_eq_getElem below]
     rfl
   | prj _ _ _ ih => exact ih below
-  | app _ _ ihf iha | lam _ _ _ ihf iha | all _ _ _ _ ihf iha => exact ⟨ihf below.1, iha below.2⟩
-  | letE _ _ _ _ iht ihv ihb => exact ⟨iht below.1, ihv below.2.1, ihb below.2.2⟩
+  | app _ _ ihf iha | lam _ _ ihf iha | all _ _ ihf iha => exact ⟨ihf below.1, iha below.2⟩
+  | letE _ _ _ _ _ iht ihv ihb => exact ⟨iht below.1, ihv below.2.1, ihb below.2.2⟩
   | _ => trivial
 
 theorem treeHeight_lt (source : Ixon.Expr) : treeHeight source < nodeCount source := by
   induction source with
   | prj _ _ _ ih => simp only [treeHeight, nodeCount]; omega
-  | app _ _ ihf iha | lam _ _ _ ihf iha | all _ _ _ _ ihf iha =>
+  | app _ _ ihf iha | lam _ _ ihf iha | all _ _ ihf iha =>
     simp only [treeHeight, nodeCount]
     have := Nat.max_le.mpr (And.intro (Nat.le_of_lt_succ (Nat.lt_succ_of_lt (Nat.lt_of_lt_of_le ihf
       (Nat.le_add_right _ _)))) (Nat.le_of_lt_succ (Nat.lt_succ_of_lt (Nat.lt_of_lt_of_le iha
       (Nat.le_add_left _ _)))))
     omega
-  | letE _ ty v b iht ihv ihb =>
+  | letE _ _ ty v b iht ihv ihb =>
     simp only [treeHeight, nodeCount]
     have inner : max (treeHeight v) (treeHeight b) ≤ nodeCount ty + nodeCount v + nodeCount b :=
       Nat.max_le.mpr ⟨by omega, by omega⟩

@@ -6,7 +6,7 @@ import IxC.Kernel.Model.IndPointKit
 public section
 
 /-!
-# The sum recursor's cons (task #175 sum-types, indexed)
+# The sum recursor's cons
 
 `stageSumRec`: the P step at the sum recursor's cons.  The stored
 recursor is the generated one: its data is read off syntactically

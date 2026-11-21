@@ -140,7 +140,7 @@ theorem isBoolTrue_spec' {e : Expr md} {ex : Expr md}
     (h : e = ex) : Expr.isBoolTrue e = ex.isBoolTrue := by
   rw [h]
 
-/-- The eq-true shortcut (the audit's E2) simulates its specification:
+/-- The eq-true shortcut simulates its specification:
 one `whnf`, then the store read of the head test. -/
 theorem boolTrueShortcutC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr md}
     {a : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
@@ -166,7 +166,7 @@ theorem boolTrueShortcutIfC_sim (ih : SSimC mode env f) {d : Nat} {i : Expr md}
   · exact SimC.pure hs rfl
   · exact boolTrueShortcutC_sim ih hs hden hw
 
-/-- `propIrrelC_sim` under the once-per-entry gate (the audit's D3):
+/-- `propIrrelC_sim` under the once-per-entry gate:
 the pruned branch is `pure false` twinned. -/
 theorem propIrrelIfC_sim (ih : SSimC mode env f) {d : Nat} {i j : Expr md}
     {a b : Expr md} {s₀ : CState md} (hs : CSOK mode env s₀)
@@ -331,12 +331,10 @@ theorem etaCertC_sim (ih : SSimC mode env f) {d : Nat}
           (coreKnotI mode (mkFEnv env) f).defeq (d + 1) b₁ ba
             >>= fun r₂ =>
           if r₂ = true then
-            if (m₁.contract == m₂.contract) = true then
-              if (mode.verifiedChecks && !(m₁.pw == m₂.pw)) = true then
-                (throw (.notImplemented "sort-annotation mismatch (eta)")
-                  : (CheckCM md) Unit) >>= fun _ => pure true
-              else pure true
-            else pure false
+            if (mode.verifiedChecks && !(m₁.pw == m₂.pw)) = true then
+              (throw (.notImplemented "sort-annotation mismatch (eta)")
+                : (CheckCM md) Unit) >>= fun _ => pure true
+            else pure true
           else pure false
         else pure false
       | _ => pure false)
@@ -350,12 +348,10 @@ theorem etaCertC_sim (ih : SSimC mode env f) {d : Nat}
             (body₁x.instantiate1 (.fvar d ty₁x))
             (.app bx (.fvar d ty₁x)) >>= fun r₂ =>
           if r₂ = true then
-            if (m₁.contract == m₂.contract) = true then
-              if (mode.verifiedChecks && !(m₁.pw == m₂.pw)) = true then
-                (throw (.notImplemented "sort-annotation mismatch (eta)")
-                  : FueledM md Unit) >>= fun _ => pure true
-              else pure true
-            else pure false
+            if (mode.verifiedChecks && !(m₁.pw == m₂.pw)) = true then
+              (throw (.notImplemented "sort-annotation mismatch (eta)")
+                : FueledM md Unit) >>= fun _ => pure true
+            else pure true
           else pure false
         else pure false
       | _ => pure false)
@@ -415,9 +411,7 @@ theorem etaCertC_sim (ih : SSimC mode env f) {d : Nat}
       | true =>
         simp only [↓reduceIte]
         split
-        · split
-          · exact SimC.throw_bind
-          · exact SimC.pure hs₈ rfl
+        · exact SimC.throw_bind
         · exact SimC.pure hs₈ rfl
   | bvar k => exact SimC.pure hs₂ rfl
   | sort u => exact SimC.pure hs₂ rfl
@@ -442,7 +436,7 @@ theorem RelCL.getD {dflt : Expr md} {dfltx : Expr md} (hd : RelC dflt dfltx) :
     obtain ⟨x, xs', rfl, -, has⟩ := h.cons_inv
     exact RelCL.getD hd n has
 
-/-- Port of `projCertI_sim` (task #175 W6: the spine certificate against
+/-- Port of `projCertI_sim` (the spine certificate against
 the constructor's stored type — `constTyAtM` reads it, `iotaCertsC_sim`
 walks it). -/
 theorem projCertC_sim (ih : SSimC mode env f) (henv : EnvWF env) {d : Nat}
@@ -669,7 +663,7 @@ theorem projAppsFnC_eff (T : Key md) (us' : List Level) :
       (fun s₃ rs hs₃ hQrs => ?_)
     exact CEff.pure hs₃ (RelCL.cons hQr hQrs)
 
-/-- The cached `.proj` spine (the tower spelling, task #175 W4c). -/
+/-- The cached `.proj` spine (the tower spelling). -/
 theorem projNodesC_eff (T : Key md) :
     ∀ (l : List Nat) {s₀ : CState md}, CSOK mode env s₀ →
       ∀ {b : Expr md} {xb : Expr md}, RelC b xb →
@@ -707,7 +701,7 @@ theorem recSlotsAllF_mkFEnv (env : Env md) (T : Key md) (n : Nat) :
        | some ci => cases ci <;> rfl)
 
 /-- Port of `projAppsI_eff`: the cached fabricated-projection spine
-denotes `etaProjs` (task #175 W4c: by entry kind). -/
+denotes `etaProjs` (by entry kind). -/
 theorem projAppsC_eff (T : Key md) (us' : List Level) (nF : Nat)
     {s₀ : CState md} (hs : CSOK mode env s₀)
     {targs : List (Expr md)} {xs : List (Expr md)} {b : Expr md} {xb : Expr md}
@@ -1000,7 +994,7 @@ theorem structEtaCertWithC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mo
                     | true =>
                       simp only [↓reduceIte]
                       -- the per-slot certificates run at a
-                      -- projection-function family only (task #175 S1)
+                      -- projection-function family only
                       refine SimC.bind (P := RelVC) ?_
                         (fun s₄ r₂ r₂' hs₄ hPr₂ => ?_)
                       · split

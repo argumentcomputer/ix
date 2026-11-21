@@ -154,8 +154,8 @@ theorem hoistNatOpGround_perm (ds : Array (Declaration md)) :
 
 /-! ## The prepared stream -/
 
-/-- **The prepared stream is the front, then the hoisted rest** (fact (i) of
-S1's union, by construction: the ground hoist runs over the rest only). -/
+/-- **The prepared stream is the front, then the hoisted rest** (by
+construction: the ground hoist runs over the rest only). -/
 theorem preparePrelude_front (pre : PreludeIx md) (ds : Array (Declaration md)) :
     preparePrelude pre ds = (frontOf #[] pre.decls.toList ds).1 ++
       (hoistNatOpGround (frontOf #[] pre.decls.toList ds).2).1 := rfl

@@ -37,7 +37,8 @@ theorem installConstantVal_inv {cv cvA : ConstantVal md}
     cv.type.hasFvar = false ∧
     ∃ type',
       annotateCore μ env F 0 cv.type = .ok type' ∧
-      type'.allLevelParamsDefined cv.levelParams = true ∧
+      (cv.type.allLevelParamsDefined cv.levelParams &&
+        type'.allLevelParamsDefined cv.levelParams) = true ∧
       type'.constsResolve env = true ∧
       cvA = { cv with type := type' } := by
   simp only [installConstantVal, fueledOps_annotate, Bind.bind, Except.bind,
@@ -71,7 +72,8 @@ theorem installConstantVal_inv {cv cvA : ConstantVal md}
   | ok type =>
   rw [hann] at h
   try dsimp only at h
-  by_cases htp : type.allLevelParamsDefined cv.levelParams = true
+  by_cases htp : (cv.type.allLevelParamsDefined cv.levelParams &&
+      type.allLevelParamsDefined cv.levelParams) = true
   case neg => simp [htp] at h
   simp only [htp] at h
   by_cases htr : type.constsResolve env = true
@@ -92,7 +94,8 @@ theorem installConstantVal_of_facts {cv : ConstantVal md} {type' : Expr md}
     (hlb : cv.type.looseBVarsBounded 0 = true)
     (hif : cv.type.hasFvar = false)
     (hann : annotateCore μ env F 0 cv.type = .ok type')
-    (htp : type'.allLevelParamsDefined cv.levelParams = true)
+    (htp : (cv.type.allLevelParamsDefined cv.levelParams &&
+      type'.allLevelParamsDefined cv.levelParams) = true)
     (htr : type'.constsResolve env = true) :
     installConstantVal (fueledOps μ F) env cv = .ok { cv with type := type' } := by
   simp only [installConstantVal, fueledOps_annotate, Bind.bind, Except.bind,
@@ -104,7 +107,8 @@ theorem installValue_inv {cv : ConstantVal md} {value jv : Expr md}
     value.looseBVarsBounded 0 = true ∧
     value.hasFvar = false ∧
     annotateCore μ env F 0 value = .ok jv ∧
-    jv.allLevelParamsDefined cv.levelParams = true ∧
+    (value.allLevelParamsDefined cv.levelParams &&
+      jv.allLevelParamsDefined cv.levelParams) = true ∧
     jv.constsResolve env = true := by
   simp only [installValue, fueledOps_annotate, Bind.bind, Except.bind,
     Pure.pure, Except.pure] at h
@@ -119,7 +123,8 @@ theorem installValue_inv {cv : ConstantVal md} {value jv : Expr md}
   | ok v =>
   rw [hann] at h
   try dsimp only at h
-  by_cases hvp : v.allLevelParamsDefined cv.levelParams = true
+  by_cases hvp : (value.allLevelParamsDefined cv.levelParams &&
+      v.allLevelParamsDefined cv.levelParams) = true
   case neg => simp [hvp] at h
   simp only [hvp] at h
   by_cases hvr : v.constsResolve env = true
@@ -133,7 +138,8 @@ theorem installValue_of_facts {cv : ConstantVal md} {value jv : Expr md}
     (hlb : value.looseBVarsBounded 0 = true)
     (hif : value.hasFvar = false)
     (hann : annotateCore μ env F 0 value = .ok jv)
-    (hvp : jv.allLevelParamsDefined cv.levelParams = true)
+    (hvp : (value.allLevelParamsDefined cv.levelParams &&
+      jv.allLevelParamsDefined cv.levelParams) = true)
     (hvr : jv.constsResolve env = true) :
     installValue (fueledOps μ F) env cv value = .ok jv := by
   simp only [installValue, fueledOps_annotate, Bind.bind, Except.bind,
@@ -262,7 +268,8 @@ theorem checkConstantVal_of_facts {cv : ConstantVal md} {type' stype : Expr md} 
     (hlb : cv.type.looseBVarsBounded 0 = true)
     (hif : cv.type.hasFvar = false)
     (hann : annotateCore μ env F 0 cv.type = .ok type')
-    (htp : type'.allLevelParamsDefined cv.levelParams = true)
+    (htp : (cv.type.allLevelParamsDefined cv.levelParams &&
+      type'.allLevelParamsDefined cv.levelParams) = true)
     (htr : type'.constsResolve env = true)
     (hst : inferTypeCore μ env F 0 type' = .ok stype)
     (hsort : ensureSortCore μ env F 0 stype = .ok u) :
@@ -277,7 +284,8 @@ theorem checkDefnVal_of_facts {cv : ConstantVal md} {value jv vtype : Expr md}
     (hlb : value.looseBVarsBounded 0 = true)
     (hif : value.hasFvar = false)
     (hann : annotateCore μ env F 0 value = .ok jv)
-    (hvp : jv.allLevelParamsDefined cv.levelParams = true)
+    (hvp : (value.allLevelParamsDefined cv.levelParams &&
+      jv.allLevelParamsDefined cv.levelParams) = true)
     (hvr : jv.constsResolve env = true)
     (hvt : inferTypeCore μ env F 0 jv = .ok vtype)
     (hde : isDefEqCore μ env F 0 vtype cv.type = .ok true) :
@@ -293,7 +301,8 @@ theorem checkThmVal_of_facts {cv : ConstantVal md} {value jv vtype stype : Expr 
     (hlb : value.looseBVarsBounded 0 = true)
     (hif : value.hasFvar = false)
     (hann : annotateCore μ env F 0 value = .ok jv)
-    (hvp : jv.allLevelParamsDefined cv.levelParams = true)
+    (hvp : (value.allLevelParamsDefined cv.levelParams &&
+      jv.allLevelParamsDefined cv.levelParams) = true)
     (hvr : jv.constsResolve env = true)
     (hvt : inferTypeCore μ env F 0 jv = .ok vtype)
     (hde : isDefEqCore μ env F 0 vtype cv.type = .ok true) :
@@ -306,7 +315,8 @@ theorem checkOpaqueVal_of_facts {cv : ConstantVal md} {value jv vtype : Expr md}
     (hlb : value.looseBVarsBounded 0 = true)
     (hif : value.hasFvar = false)
     (hann : annotateCore μ env F 0 value = .ok jv)
-    (hvp : jv.allLevelParamsDefined cv.levelParams = true)
+    (hvp : (value.allLevelParamsDefined cv.levelParams &&
+      jv.allLevelParamsDefined cv.levelParams) = true)
     (hvr : jv.constsResolve env = true)
     (hvt : inferTypeCore μ env F 0 jv = .ok vtype)
     (hde : isDefEqCore μ env F 0 vtype cv.type = .ok true) :

@@ -112,7 +112,8 @@ theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv md}
   obtain rfl : jA = .const n ls :=
     annotate_const_of_miss (f := checkFuel - 1) (empty_annotC_none _)
       (by rw [show checkFuel - 1 + 1 = checkFuel from rfl]; exact hann)
-  by_cases h7 : Expr.allLevelParamsDefinedC cv.levelParams (Expr.const n ls) = true
+  by_cases h7 : (Expr.allLevelParamsDefinedC cv.levelParams cv.type &&
+      Expr.allLevelParamsDefinedC cv.levelParams (Expr.const n ls)) = true
   case neg => rw [if_neg h7] at h; exact absurd h throwC_bind_ok
   rw [if_pos h7] at h
   by_cases h8 : constsResolveFC fe (Expr.const n ls) = true

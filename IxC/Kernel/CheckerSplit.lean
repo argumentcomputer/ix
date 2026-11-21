@@ -78,7 +78,8 @@ def installConstantVal (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVa
   if cv.type.hasFvar then
     throw (.invalid msg!"unexpected free variable in type of {cv.name}")
   let type ← ops.annotate env 0 cv.type
-  unless type.allLevelParamsDefined cv.levelParams do
+  unless cv.type.allLevelParamsDefined cv.levelParams &&
+      type.allLevelParamsDefined cv.levelParams do
     throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
   unless type.constsResolve env do
     throw (unresolvedConstsError msg!"type of {cv.name}" type)
@@ -92,12 +93,13 @@ def installValue (ops : (CheckerOps md) m) (env : Env md) (cv : ConstantVal md)
     throw (.invalid msg!"loose bound variable in value of {cv.name}")
   if value.hasFvar then
     throw (.invalid msg!"unexpected free variable in value of {cv.name}")
-  let value ← ops.annotate env 0 value
-  unless value.allLevelParamsDefined cv.levelParams do
+  let jv ← ops.annotate env 0 value
+  unless value.allLevelParamsDefined cv.levelParams &&
+      jv.allLevelParamsDefined cv.levelParams do
     throw (.invalid msg!"undeclared universe parameter in value of {cv.name}")
-  unless value.constsResolve env do
-    throw (unresolvedConstsError msg!"value of {cv.name}" value)
-  pure value
+  unless jv.constsResolve env do
+    throw (unresolvedConstsError msg!"value of {cv.name}" jv)
+  pure jv
 
 /-- **The check half of a value declaration**, at the environment the
 constant was installed at: the type's sort, the theorem's

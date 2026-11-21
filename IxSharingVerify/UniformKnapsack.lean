@@ -1,7 +1,7 @@
 import IxSharingVerify.UniformSearchSpec
 
 /-!
-# Stage 4: the count knapsack of the uniform optimizer
+# The count knapsack of the uniform optimizer
 
 The knapsack over the component tables (`knapStep`) and the choice among
 its counts (`knapChoose`): every choice of one entry per table within the

@@ -1,6 +1,8 @@
 module
 
 public import IxC.Kernel.Model.IndFrame
+public import IxC.Kernel.Model.ClaimsJ
+public import IxC.Kernel.Semantics.DeclIndJ
 import IxC.Kernel.Verify.IotaWalkInv
 public section
 
@@ -68,8 +70,8 @@ what is *absent* relative to v1: no `DefEq.sound`, no `EnvSHyp`, and
 no derivation — the claims conclude the semantic equality directly
 (the two-step collapses to one, exactly as part 3's resume-here
 predicted for `annotPFrameEqS`). -/
-theorem defEqAt_of_run {m : EnvModel V env} {F : Nat}
-    (hclaims : DefEqClaim μ m φ F)
+theorem defEqAt_of_run {m : EnvModel V env} {J : Judgements md}
+    (hclaims : DefEqClaimJ J m φ)
     {k : Nat} {fvs : List (Expr md)} {Aa : Nat → AnnotTerm} {Δa : List AnnotTerm}
     (hΔlen : Δa.length = k)
     (hshape : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
@@ -82,7 +84,7 @@ theorem defEqAt_of_run {m : EnvModel V env} {F : Nat}
     (hokA : ∀ i, i < n → ∀ ρ : Nat → V, Sat V Δa ρ →
       WellDenotedV V (fun j => ρ (j + (k - 1 - i) + 1)) (Aa i))
     {a b : Expr md}
-    (hrun : isDefEqCore μ env F k a b = .ok true)
+    (hrun : J.defeq env k a b)
     (hwa : Expr.WScoped k a) (hba : a.looseBVarsBounded 0 = true)
     (hLa : Expr.LeavesBounded a)
     (hwb : Expr.WScoped k b) (hbb : b.looseBVarsBounded 0 = true)
@@ -114,10 +116,10 @@ from the two towers), and all this lemma does is find the run at that
 index. -/
 
 /-- The run at one index of a recorded comparison list. -/
-theorem defEqListOk_getElem {F : Nat} {d : Nat} :
-    ∀ {as bs : List (Expr md)}, DefEqListOk μ F env d as bs →
+theorem defEqListOk_getElem {J : Judgements md} {d : Nat} :
+    ∀ {as bs : List (Expr md)}, DefEqListJ J env d as bs →
       ∀ (i : Nat) (a b : Expr md), as[i]? = some a → bs[i]? = some b →
-        isDefEqCore μ env F d a b = .ok true := by
+        J.defeq env d a b := by
   intro as
   induction as with
   | nil =>
@@ -138,10 +140,9 @@ theorem defEqListOk_getElem {F : Nat} {d : Nat} :
 /-- The run at one index, in `getD` form — the shape the stages read
 their comparison lists in (v1's `DefEqListW` is consumed the same
 way). -/
-theorem defEqListOk_getD {F : Nat} {d : Nat} {as bs : List (Expr md)}
-    (h : DefEqListOk μ F env d as bs) (i : Nat) (hi : i < as.length) :
-    isDefEqCore μ env F d (as.getD i default) (bs.getD i default)
-      = .ok true := by
+theorem defEqListOk_getD {J : Judgements md} {d : Nat} {as bs : List (Expr md)}
+    (h : DefEqListJ J env d as bs) (i : Nat) (hi : i < as.length) :
+    J.defeq env d (as.getD i default) (bs.getD i default) := by
   have hlen : as.length = bs.length := h.length
   rcases ha : as[i]? with _ | a
   · rw [List.getElem?_eq_none_iff] at ha; omega
@@ -154,8 +155,8 @@ theorem defEqListOk_getD {F : Nat} {d : Nat} {as bs : List (Expr md)}
 `defEqAt_of_run`, at one index.  The two readings are the caller's
 (they come from the two towers the lists' entries are the domains of);
 what this adds is the frame's context and the claims. -/
-theorem defEqListFueled_of_runs {m : EnvModel V env} {F : Nat}
-    (hclaims : DefEqClaim μ m φ F)
+theorem defEqListFueled_of_runs {m : EnvModel V env} {J : Judgements md}
+    (hclaims : DefEqClaimJ J m φ)
     {k : Nat} {fvs : List (Expr md)} {Aa : Nat → AnnotTerm} {Δa : List AnnotTerm}
     (hΔlen : Δa.length = k)
     (hshape : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
@@ -167,7 +168,7 @@ theorem defEqListFueled_of_runs {m : EnvModel V env} {F : Nat}
     (hent : ∀ i, i < n → Δa[k - 1 - i]? = some (Aa i))
     (hokA : ∀ i, i < n → ∀ ρ : Nat → V, Sat V Δa ρ →
       WellDenotedV V (fun j => ρ (j + (k - 1 - i) + 1)) (Aa i))
-    {as bs : List (Expr md)} (hruns : DefEqListOk μ F env k as bs)
+    {as bs : List (Expr md)} (hruns : DefEqListJ J env k as bs)
     (i : Nat) (hi : i < as.length)
     (hwa : Expr.WScoped k (as.getD i default))
     (hba : (as.getD i default).looseBVarsBounded 0 = true)

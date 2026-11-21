@@ -11,9 +11,8 @@ public import IxC.Kernel.Inductives.SumParts
 The former, constructor and rule-shape stages the fixpoint route runs
 (`checkNative`, `IxC/Kernel/Inductives/NativeInstall.lean`): the
 type former read at the placeholder sort, one constructor stage per
-constructor, the constructors consed, the rules' shape.  Written for
-the sum route (task #175), which was deleted at task #210 Part C; the
-stages are the one route's now.  No projection
+constructor, the constructors consed, the rules' shape.  Shared
+stages for direct inductive installation.  No projection
 table, no eta, no unit-likeness — a sum has no structure-like
 capability (the official kernel's `is_structure_like` needs one
 constructor and no index); the former is stored with the capability
@@ -284,7 +283,7 @@ def sumRules (find? : Key md → Option (ConstantInfo md)) (recName : Key md)
   | c :: cs, rhs :: rhss =>
     recRuleBits find? recName
       { ctor := c.1.name, nfields := c.2, ctorParams := nP,
-        fire := if Expr.recRulePlain recTy mI rP nP then .plain else .inert,
+        fire := if Expr.recRulePlain recTy mI rP nP c.1.levelParams then .plain else .inert,
         rhs := rhs, paramsBlind := true }
       :: sumRules find? recName nP mI rP recTy cs rhss
   | _, _ => []

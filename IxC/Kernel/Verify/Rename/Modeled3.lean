@@ -154,7 +154,7 @@ theorem checkIotaThmN_sim (mode : CheckMode) (hops : OpsSim P f L ops ops')
   unfold checkIotaThmN
   rw [nestedRuleShape_map hE₁ hES hn lps hty mI rP cnP j]
   cases hs : nestedRuleShape env₁ envS cvName lps tyA mI rP cnP j with
-  | none => exact SimE.pure' trivial rfl
+  | none => exact SimE.throw'
   | some s =>
   obtain ⟨lvls, pins⟩ := s
   have hpins : Expr.GoodList P pins := nestedRuleShape_good hty hs

@@ -1,7 +1,7 @@
 import IxSharingVerify.UniformTables
 
 /-!
-# Stage 4: the component search finds every minimum's choice
+# The component search finds every minimum's choice
 
 The invariant of the explicit-state component search (`solveP`, `solveBody`,
 `nodeP`, `splitP`): every table entry is a real set of the group with its

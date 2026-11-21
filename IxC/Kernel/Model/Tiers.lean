@@ -77,7 +77,7 @@ closing): the bridge turns the run into a derivation and the infer
 motive CONCLUDES the type's reading — the shape `Recompose.lean`'s
 fourth case destructures. -/
 theorem inferReads_of (hμ : μ.verifiedChecks = true)
-    {m : EnvModel V env} (hin : Rules.RulesInputs V m φ) :
+    {m : EnvModel V env} (hin : ∀ ψ, Rules.RulesInputs V m ψ) :
     InferReads m μ φ fuel := by
   intro d e t Δa ea hrun hws hb hLb hC hea
   obtain rfl : μ = .verified := CheckMode.eq_verified hμ
@@ -166,7 +166,7 @@ at the leaf's stored annotation; that asymmetry is what made
 
 `inferBody`'s `letE` arm is a positive `.internal` error (task #241) —
 the official `infer_let` triple lives in `annotateBody`, which returns
-the ζ *reduct* (task #217), so inference only ever sees let-free
+the ζ *reduct*, so inference only ever sees let-free
 expressions; `inferTypeCore_letE_inv` turns the run hypothesis into
 `False`.
 
@@ -319,7 +319,7 @@ private theorem acceptedReads_aux (m : EnvModel V env) (φ : LevelParam → Nat)
       simp only [Expr.looseBVarsBounded] at hb
       obtain ⟨pa, hpa⟩ := ih htpe hws hb (fun l hl =>
         hL l (by simpa [Expr.fvarLeaves] using hl))
-      exact ⟨_, denoteMeta_proj_tower hfe hpa⟩
+      exact ⟨_, denoteMeta_proj_tower_ok m.proj_ok hfe hpa⟩
     | .letE ty val body _ =>
       exact (Ix.Kernel.inferTypeCore_letE_inv h).elim
 

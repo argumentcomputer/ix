@@ -6,7 +6,7 @@ public import IxC.Kernel.Verify.FastOps
 public section
 
 /-!
-# The incremental projection residual agrees with the generator (task #175 W4c)
+# The incremental projection residual agrees with the generator
 
 The cached drivers thread `structProjResidP` — the constructor
 telescope peeled one earlier-projection substitute at a time — and read

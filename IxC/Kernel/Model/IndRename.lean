@@ -54,8 +54,8 @@ renaming. -/
     ci'.toConstantVal.levelParams = ci.toConstantVal.levelParams) ∧
   (∀ n, env.find? n = none → env.find? (f n) = none) ∧
   (∀ (n : Key md) (ψ : LevelParam → Nat), acval (f n) ψ = acval n ψ)
-  -- (the W3 tower-freeness conjunct is gone with W5's `renameConsts`
-  -- fix — see `RenameOkT`)
+  -- (no tower-freeness conjunct is needed because `renameConsts`
+  -- keeps `.proj` struct names fixed — see `RenameOkT`)
 
 /-- **Renaming is invisible to the reading** (`denote_renameConsts`).
 Clause for clause; the `fvar`, `lit` and `proj` clauses are the cheap

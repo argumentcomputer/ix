@@ -345,13 +345,13 @@ theorem inferTypeCoreIO_proj_inv {env : Env md} {fuel d : Nat} {sn : Key md}
       env.findProj? T i = some entry ∧
       te.getAppArgs.length = entry.numParams ∧
       us.length = entry.levelParams.length ∧
-      -- the official `infer_proj` restriction (task #175 W4c/O4), as in
+      -- the official `infer_proj` restriction, as in
       -- `inferTypeCore_proj_inv`
       ((Level.isEquiv entry.structSort .zero == some true) = true →
         (Level.isEquiv (Level.subst entry.levelParams us entry.fieldSort) .zero
           == some true) = true) ∧
       (t = entry.typeAt us te.getAppArgs e ∧
-       -- task #175 wiring W5: the node's struct name is the head's
+       -- the node's struct name is the head's
        T = sn) := by
   rw [inferTypeCoreIO_succ] at h
   simp only [inferBodyIO, pure, Except.pure, Bind.bind,
@@ -391,7 +391,7 @@ theorem inferTypeCoreIO_proj_inv {env : Env md} {fuel d : Nat} {sn : Key md}
   case isFalse => exact nomatch h
   case isTrue hcond =>
     obtain ⟨hsn, hlen, hus⟩ := hcond
-    -- the Prop guard (task #175 W4c/O4), then the residual walk's
+    -- the Prop guard, then the residual walk's
     -- result
     have hg : (Level.isEquiv entry.structSort .zero == some true) = true →
         (Level.isEquiv (Level.subst entry.levelParams us entry.fieldSort) .zero

@@ -41,53 +41,47 @@ omit [SetTheory V] in
 /-- **The Π-prefix's domains' sorts**: along an opening of an inferred
 type, each binder's domain infers a sort at most the whole type's
 whenever the whole's is nonzero (`imax` is then `max`). -/
-theorem piDoms_of_infer {mode : CheckMode} :
-    ∀ (n : Nat) {F d : Nat} {e t : Expr md} {v₀ : Level} {fvs : List (Expr md)} {opened : Expr md},
+theorem piDomsJ {J : Judgements md} (hI : JudgeInv J) :
+    ∀ (n : Nat) {d : Nat} {e t : Expr md} {v₀ : Level} {fvs : List (Expr md)} {opened : Expr md},
       Ix.Kernel.openPisAtFvars n e d = some (fvs, opened) →
-      Ix.Kernel.inferTypeCore mode env F d e = .ok t →
-      Ix.Kernel.ensureSortCore mode env F d t = .ok v₀ →
+      J.infer env d e t → J.sort env d t v₀ →
       ∀ (k : Nat) (a : Expr md), fvs[k]? = some a →
-        ∃ (F' : Nat) (t' : Expr md) (u : Level),
-          Ix.Kernel.inferTypeCore mode env F' (d + k) a.fvarTypeD = .ok t' ∧
-          Ix.Kernel.ensureSortCore mode env F' (d + k) t' = .ok u ∧
+        ∃ (t' : Expr md) (u : Level),
+          J.infer env (d + k) a.fvarTypeD t' ∧ J.sort env (d + k) t' u ∧
           ∀ φ, Level.eval φ v₀ ≠ 0 → Level.eval φ u ≤ Level.eval φ v₀
-  | 0, F, d, e, t, v₀, fvs, opened, hop, _, _, k, a, hk => by
+  | 0, d, e, t, v₀, fvs, opened, hop, _, _, k, a, hk => by
     simp only [Ix.Kernel.openPisAtFvars, Option.some.injEq, Prod.mk.injEq] at hop
     obtain ⟨rfl, -⟩ := hop
     exact nomatch hk
-  | n + 1, F, d, e, t, v₀, fvs, opened, hop, h, hens, k, a, hk => by
+  | n + 1, d, e, t, v₀, fvs, opened, hop, h, hens, k, a, hk => by
     match e, hop, h with
     | .forallE dom body mb, hop, h =>
-      match F, h with
-      | 0, h => rw [Ix.Kernel.inferTypeCore_zero] at h; exact nomatch h
-      | F + 1, h =>
-        obtain ⟨tty, u, bt, v, hdom, hwh, hbt, hensb, -, rfl⟩ := Ix.Kernel.inferTypeCore_forall_inv h
-        have hv₀ : v₀ = .imax u v := ensureSortCore_sort_eq hens
-        subst hv₀
-        simp only [Ix.Kernel.openPisAtFvars] at hop
-        split at hop
-        · next fvs' e' hop' =>
-          simp only [Option.some.injEq, Prod.mk.injEq] at hop
-          obtain ⟨rfl, rfl⟩ := hop
-          cases k with
-          | zero =>
-            simp only [List.getElem?_cons_zero, Option.some.injEq] at hk
-            subst hk
-            refine ⟨F, tty, u, hdom, ?_, fun φ hne => ?_⟩
-            · rw [Nat.add_zero, Ix.Kernel.ensureSortCore_eq, hwh]; rfl
-            · have hv : Level.eval φ v ≠ 0 := fun h0 => hne ((eval_imax_eq_zero_iff φ u v).mpr h0)
-              simp only [Level.eval, if_neg hv]
-              exact Nat.le_max_left _ _
-          | succ k =>
-            simp only [List.getElem?_cons_succ] at hk
-            obtain ⟨F', t', u', h1, h2, h3⟩ := piDoms_of_infer n hop' hbt hensb k a hk
-            refine ⟨F', t', u', by rw [show d + (k + 1) = d + 1 + k from by omega]; exact h1,
-              by rw [show d + (k + 1) = d + 1 + k from by omega]; exact h2, fun φ hne => ?_⟩
-            have hv : Level.eval φ v ≠ 0 := fun h0 => hne ((eval_imax_eq_zero_iff φ u v).mpr h0)
-            have := h3 φ hv
-            simp only [Level.eval, if_neg hv]
-            exact Nat.le_trans this (Nat.le_max_right _ _)
-        · exact nomatch hop
+      obtain ⟨tty, u, bt, v, hdom, hdomS, hbt, hensb, -, rfl⟩ := hI.infer_forallE h
+      have hv₀ : v₀ = .imax u v := hI.sort_sort hens
+      subst hv₀
+      simp only [Ix.Kernel.openPisAtFvars] at hop
+      split at hop
+      · next fvs' e' hop' =>
+        simp only [Option.some.injEq, Prod.mk.injEq] at hop
+        obtain ⟨rfl, rfl⟩ := hop
+        cases k with
+        | zero =>
+          simp only [List.getElem?_cons_zero, Option.some.injEq] at hk
+          subst hk
+          refine ⟨tty, u, hdom, hdomS, fun φ hne => ?_⟩
+          have hv : Level.eval φ v ≠ 0 := fun h0 => hne ((eval_imax_eq_zero_iff φ u v).mpr h0)
+          simp only [Level.eval, if_neg hv]
+          exact Nat.le_max_left _ _
+        | succ k =>
+          simp only [List.getElem?_cons_succ] at hk
+          obtain ⟨t', u', h1, h2, h3⟩ := piDomsJ hI n hop' hbt hensb k a hk
+          refine ⟨t', u', by rw [show d + (k + 1) = d + 1 + k from by omega]; exact h1,
+            by rw [show d + (k + 1) = d + 1 + k from by omega]; exact h2, fun φ hne => ?_⟩
+          have hv : Level.eval φ v ≠ 0 := fun h0 => hne ((eval_imax_eq_zero_iff φ u v).mpr h0)
+          have := h3 φ hv
+          simp only [Level.eval, if_neg hv]
+          exact Nat.le_trans this (Nat.le_max_right _ _)
+      · exact nomatch hop
     | .bvar _, hop, _ | .fvar _ _, hop, _ | .sort _, hop, _
     | .const _ _, hop, _ | .app _ _, hop, _ | .lam _ _ _, hop, _
     | .letE _ _ _ _, hop, _ | .lit _, hop, _ | .proj _ _ _, hop, _ =>
@@ -99,18 +93,19 @@ theorem piDoms_of_infer {mode : CheckMode} :
 frame satisfying the earlier domains, the next domain's reading is
 graded and lies in `univ w` — the sort claim at the context opened by
 the earlier binders. -/
-theorem teleBound_walk (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env) (ψ : LevelParam → Nat)
+theorem teleBound_walkJ {J : Judgements md} {m : EnvModel V env} (ψ : LevelParam → Nat)
+    (hS : SortClaimJ J m ψ)
     {w : Nat} :
     ∀ (n : Nat) {d : Nat} {e : Expr md} {fvs : List (Expr md)} {o : Expr md} {Δ : List AnnotTerm}
       {tl : List (Nat × Nat × AnnotTerm)},
       Ix.Kernel.openPisAtFvars n e d = some (fvs, o) → tl.length = n →
-      CtxOk mp.base2 ψ d Δ e → Expr.WScoped d e → e.looseBVarsBounded 0 = true →
+      CtxOk m ψ d Δ e → Expr.WScoped d e → e.looseBVarsBounded 0 = true →
       Expr.LeavesBounded e →
       (∀ k a, fvs[k]? = some a →
-        denoteMeta mp.base2.acval env ψ (d + k) a.fvarTypeD = some (tl.getD k default).2.2) →
-      (∀ k a, fvs[k]? = some a → ∃ (F : Nat) (t : Expr md) (u : Level),
-        Ix.Kernel.inferTypeCore μ env F (d + k) a.fvarTypeD = .ok t ∧
-        Ix.Kernel.ensureSortCore μ env F (d + k) t = .ok u ∧ Level.eval ψ u ≤ w) →
+        denoteMeta m.acval env ψ (d + k) a.fvarTypeD = some (tl.getD k default).2.2) →
+      (∀ k a, fvs[k]? = some a → ∃ (t : Expr md) (u : Level),
+        J.infer env (d + k) a.fvarTypeD t ∧
+        J.sort env (d + k) t u ∧ Level.eval ψ u ≤ w) →
       ∀ k, k < n → ∀ ρ : Nat → V, Sat V (((tl.take k).map (·.2.2)).reverse ++ Δ) ρ →
         WellDenotedV V ρ (tl.getD k default).2.2 ∧ interp V ρ (tl.getD k default).2.2 ∈ˢ (univ w : V)
   | 0, _, _, _, _, _, _, _, _, _, _, _, _, _, _, k, hk, _, _ => absurd hk (Nat.not_lt_zero k)
@@ -138,37 +133,37 @@ theorem teleBound_walk (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env
         have hLbody : Expr.LeavesBounded body := fun l hl =>
           hL l (by rw [Expr.fvarLeaves]; exact List.mem_append_right _ hl)
         -- the first domain's row
-        have hread0 : denoteMeta mp.base2.acval env ψ d ty = some t0.2.2 := by
+        have hread0 : denoteMeta m.acval env ψ d ty = some t0.2.2 := by
           have := hread 0 _ rfl
           simpa [Expr.fvarTypeD] using this
-        obtain ⟨F, t, u, hi, hens, hle⟩ := hinf 0 _ rfl
+        obtain ⟨t, u, hi, hens, hle⟩ := hinf 0 _ rfl
         simp only [Nat.add_zero, Expr.fvarTypeD] at hi hens
         have hCty := hC.forallE_ty
-        have hrow := (claimsAt_of hμ mp ψ F).sortRow hi hens hws2.1 hbty hLty hCty hread0
+        have hrow := sortRowJ hS hi hens hws2.1 hbty hLty hCty hread0
         cases k with
         | zero =>
           simp only [List.take_zero, List.map_nil, List.reverse_nil, List.nil_append] at hρ
           exact ⟨(hrow ρ hρ).1, univ_mono hle _ (hrow ρ hρ).2⟩
         | succ k =>
           -- open the binder, walk on
-          have hC' : CtxOk mp.base2 ψ (d + 1) (t0.2.2 :: Δ) (body.instantiate1 (.fvar d ty)) :=
+          have hC' : CtxOk m ψ (d + 1) (t0.2.2 :: Δ) (body.instantiate1 (.fvar d ty)) :=
             CtxOk.open hC.forallE_body hCty hread0 fun ρ hρ => (hrow ρ hρ).1
           obtain ⟨hws', hb', hL'⟩ := frame_open2 hws2.1 hbty hws2.2 hbb hLty hLbody
           have hread' : ∀ k a, fvs'[k]? = some a →
-              denoteMeta mp.base2.acval env ψ (d + 1 + k) a.fvarTypeD = some (tl'.getD k default).2.2 := by
+              denoteMeta m.acval env ψ (d + 1 + k) a.fvarTypeD = some (tl'.getD k default).2.2 := by
             intro k a hk
             have := hread (k + 1) a (by simpa using hk)
             rwa [show d + (k + 1) = d + 1 + k from by omega] at this
-          have hinf' : ∀ k a, fvs'[k]? = some a → ∃ (F : Nat) (t : Expr md) (u : Level),
-              Ix.Kernel.inferTypeCore μ env F (d + 1 + k) a.fvarTypeD = .ok t ∧
-              Ix.Kernel.ensureSortCore μ env F (d + 1 + k) t = .ok u ∧ Level.eval ψ u ≤ w := by
+          have hinf' : ∀ k a, fvs'[k]? = some a → ∃ (t : Expr md) (u : Level),
+              J.infer env (d + 1 + k) a.fvarTypeD t ∧
+              J.sort env (d + 1 + k) t u ∧ Level.eval ψ u ≤ w := by
             intro k a hk
-            obtain ⟨F, t, u, h1, h2, h3⟩ := hinf (k + 1) a (by simpa using hk)
+            obtain ⟨t, u, h1, h2, h3⟩ := hinf (k + 1) a (by simpa using hk)
             rw [show d + (k + 1) = d + 1 + k from by omega] at h1 h2
-            exact ⟨F, t, u, h1, h2, h3⟩
+            exact ⟨t, u, h1, h2, h3⟩
           have hρ' : Sat V (((tl'.take k).map (·.2.2)).reverse ++ (t0.2.2 :: Δ)) ρ := by
             simpa [List.take_succ_cons, List.reverse_cons, List.append_assoc] using hρ
-          have := teleBound_walk hμ mp ψ n hop' hlen' hC' hws' hb' hL' hread' hinf' k (by omega) ρ hρ'
+          have := teleBound_walkJ ψ hS n hop' hlen' hC' hws' hb' hL' hread' hinf' k (by omega) ρ hρ'
           simpa using this
       · exact nomatch hop
     | .bvar _, hop, _, _ | .fvar _ _, hop, _, _ | .sort _, hop, _, _
@@ -184,18 +179,18 @@ shadow-fitting field spine and a fitting prefix of the telescope, the
 next domain's reading lies in `univ w`.  The install's field-sort
 check bounds the field's Π-type's sort by the block's, hence (the
 family's sort being nonzero) every domain's. -/
-theorem fixTeleBound_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+theorem fixTeleBoundJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J m)
+    (hI : JudgeInv J) (hS : ∀ ψ, SortClaimJ J m ψ)
+    {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md}
     {sorts : List Level}
-    (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
-      isProp large cvC nF cvTa = .ok (cvCa, sorts))
+    (hCtor : SumCtorRunJ J env₁ env T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts)
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
     {idxArgs : List (Expr md)} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
     {fvsP xFvs : List (Expr md)} {xrest : Expr md} {Eiss : (LevelParam → Nat) → List (List AnnotTerm)}
     {tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
-    (hD : FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es
+    (hD : FixCtorDataI m env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es
       srcs ks fvsP xFvs xrest Eiss tss)
     (ψ : LevelParam → Nat) (hw : resSort.eval ψ ≠ 0) {i : Nat} (hi : i < nF)
     (hk : ks.getD i .ordinary = .reflexive) {ρp : Nat → V}
@@ -207,23 +202,24 @@ theorem fixTeleBound_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ en
       interp V (consList bs (consList as' ρp)) (((tss ψ).getD i []).getD k default).2.2
         ∈ˢ (univ (resSort.eval ψ) : V) := by
   -- the run's pieces
-  obtain ⟨⟨_, hccv⟩, -, fvsP', crest', tfvs, trest, xFvs', idxArgs', hopC, -, -, hopX, -, -, -,
-    hsorts⟩ := Ix.Kernel.checkSumCtor_shape hCtor
+  obtain ⟨_, hccvW⟩ := hCtor.check
+  obtain ⟨-, -, fvsP', crest', tfvs, trest, xFvs', idxArgs', hopC, -, -, hopX, -, -, -,
+    hsorts⟩ := id hCtor
   obtain ⟨crest, hopP, hopXX⟩ := hD.opens
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hopP.symm.trans hopC))
   obtain ⟨rfl, hxrest⟩ := Prod.mk.inj (Option.some.inj (hopXX.symm.trans hopX))
-  obtain ⟨-, hfields⟩ := Ix.Kernel.checkStructFieldSortsI_inv hsorts
-  obtain ⟨hcf, -, -, hcb⟩ := Ix.Kernel.direct_sum_ctor_typeWF hCtor
+  obtain ⟨-, hfields⟩ := hsorts
+  obtain ⟨hcf, -, -, hcb⟩ := ConstantValCheckJ.typeWF hJ.toJudgeFrames hccvW
   have hopAll : Ix.Kernel.openPisAtFvars (nP + nF) cvCa.type 0 = some (fvsP ++ xFvs, xrest) :=
     openPisAtFvars_add nP hopP (by rw [Nat.zero_add]; exact hopXX)
-  have hO : Opened mp.base2 ψ (nP + nF) cvCa.type (fvsP ++ xFvs) xrest
-      (((ds ψ).map (·.2.2)).reverse) (ctorBodyAVI mp.base2 T nP nF ψ (Es ψ)) :=
+  have hO : Opened m ψ (nP + nF) cvCa.type (fvsP ++ xFvs) xrest
+      (((ds ψ).map (·.2.2)).reverse) (ctorBodyAVI m T nP nF ψ (Es ψ)) :=
     opened_of_peel hopAll hcf hcb (hD.read ψ) (hD.len ψ) (hD.okTy ψ)
   have hlenDs := hD.len ψ
   have hlenAll : (fvsP ++ xFvs).length = nP + nF := by
     rw [List.length_append, hD.pLen, hD.xLen]
   -- the shadow gradings
-  obtain ⟨hkey, -⟩ := fixShadowGrading hμ mp hCtor hProp hD ψ
+  obtain ⟨hkey, -⟩ := fixShadowGradingJ hJ hI hS hCtor hProp hD ψ
   -- a recursive variable is a leaf of no later domain
   have hrecGet : ∀ i, recAt nP ks (nP + i) → i < nF → ∃ x, xFvs[i]? = some x ∧
       (∀ y ∈ xFvs.drop (i + 1), y.fvarTypeD.mentionsFvar (nP + i) = false) := by
@@ -256,7 +252,7 @@ theorem fixTeleBound_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ en
       exact hx
     exact mentionsFvar_false (hlater x hmem) l hl (by omega)
   -- the context discipline at the field
-  have hC : CtxOk mp.base2 ψ (nP + i)
+  have hC : CtxOk m ψ (nP + i)
       ((shadowCtx nP ks (nP + nF) (((ds ψ).map (·.2.2)).reverse)).drop (nP + nF - (nP + i)))
       x.fvarTypeD :=
     shadowCtxOk hO hlenAll (nP := nP) (ks := ks) (by omega) hws hleaf hnorec
@@ -273,18 +269,18 @@ theorem fixTeleBound_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ en
     · exfalso
       have h0 := Level.isEquiv_sound (beq_iff_eq.mp (hProp hp)) ψ
       exact hw (by simpa [Level.eval] using h0)
-  have hle := Level.leq_sound (hleq hnp) ψ
+  have hle := hleq hnp ψ
   -- the field's sort is nonzero: the telescope's bits are at the
   -- family's regime, and exact against the innermost body's sort
   have hu : Level.eval ψ u ≠ 0 := by
-    obtain ⟨-, -, vb, -, -, hv, hbits⟩ := piBits_of_infer hμ _ hop hinf hens
+    obtain ⟨-, vb, -, -, hv, hbits⟩ := piBitsJ hI _ hop hinf hens
     intro hu0
     have hvb : Level.eval ψ vb = 0 := (hv ψ).mp hu0
     obtain ⟨afvs', body', hop', hne, -, -, -, -, -, -, -⟩ := hD.opened.reflF i x hx hk
     have hread := hO.doms (nP + i) x hxA
     rw [reverse_getD_field hlenDs hi, drop_map_getD hlenDs hi, hD.reflEntry ψ i hk hi] at hread
     have hst := stripPisAV_mkPisAV ((tss ψ).getD i [])
-      (AnnotTerm.mkAppN (mp.base2.acval T ψ)
+      (AnnotTerm.mkAppN (m.acval T ψ)
         (paramBvarsAt nP (nP + i + ((tss ψ).getD i []).length) ++ (Eiss ψ).getD i []))
     have hb := stripPisAV_bits _ (hbits ψ) hread hst
     have hne' : (tss ψ).getD i [] ≠ [] := by
@@ -299,12 +295,12 @@ theorem fixTeleBound_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ en
     have h2 := hD.tssBits ψ i d0 hmem
     exact hw (h2.mp (h1.mpr hvb))
   -- the domains' sorts
-  have hinfD : ∀ k a, afvs[k]? = some a → ∃ (F : Nat) (t : Expr md) (u' : Level),
-      Ix.Kernel.inferTypeCore μ env F (nP + i + k) a.fvarTypeD = .ok t ∧
-      Ix.Kernel.ensureSortCore μ env F (nP + i + k) t = .ok u' ∧ Level.eval ψ u' ≤ resSort.eval ψ := by
+  have hinfD : ∀ k a, afvs[k]? = some a → ∃ (t : Expr md) (u' : Level),
+      J.infer env (nP + i + k) a.fvarTypeD t ∧
+      J.sort env (nP + i + k) t u' ∧ Level.eval ψ u' ≤ resSort.eval ψ := by
     intro k a hka
-    obtain ⟨F', t', u', h1, h2, h3⟩ := piDoms_of_infer _ hop hinf hens k a hka
-    exact ⟨F', t', u', h1, h2, Nat.le_trans (h3 ψ hu) hle⟩
+    obtain ⟨t', u', h1, h2, h3⟩ := piDomsJ hI _ hop hinf hens k a hka
+    exact ⟨t', u', h1, h2, Nat.le_trans (h3 ψ hu) hle⟩
   -- the walk
   intro k hkT bs hbs
   have hsat : Sat V ((shadowCtx nP ks (nP + nF) (((ds ψ).map (·.2.2)).reverse)).drop
@@ -312,8 +308,36 @@ theorem fixTeleBound_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ en
     rw [shadowCtx_drop_fields hlenDs (Nat.le_of_lt hi)]
     exact sat_of_spineFit hρp' hsp'
   have hρ := sat_of_spineFit hsat hbs
-  have := teleBound_walk hμ mp ψ (w := resSort.eval ψ) ((tss ψ).getD i []).length hop rfl hC hws hbnd hL
+  have := teleBound_walkJ ψ (hS ψ) (w := resSort.eval ψ) ((tss ψ).getD i []).length hop rfl hC hws hbnd hL
     hdoms hinfD k hkT _ hρ
   exact ⟨this.1.1, this.2⟩
+
+
+/-- The reflexive field's telescope bound from the constructor's stage run:
+`fixTeleBoundJ` at the kernel's runs. -/
+theorem fixTeleBound_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
+    {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md}
+    {sorts : List Level}
+    (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
+      isProp large cvC nF cvTa = .ok (cvCa, sorts))
+    (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
+    {idxArgs : List (Expr md)} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
+    {fvsP xFvs : List (Expr md)} {xrest : Expr md} {Eiss : (LevelParam → Nat) → List (List AnnotTerm)}
+    {tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    (hD : FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es
+      srcs ks fvsP xFvs xrest Eiss tss)
+    (ψ : LevelParam → Nat) (hw : resSort.eval ψ ≠ 0) {i : Nat} (hi : i < nF)
+    (hk : ks.getD i .ordinary = .reflexive) {ρp : Nat → V}
+    (hρp' : Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρp) {as' : List V}
+    (hsp' : SpineFit ρp ((shadowFs nP ks nF (((ds ψ).drop nP).map (·.2.2))).take i) as') :
+    ∀ k, k < ((tss ψ).getD i []).length → ∀ bs : List V,
+      SpineFit (consList as' ρp) ((((tss ψ).getD i []).take k).map (·.2.2)) bs →
+      WellDenoted V (consList bs (consList as' ρp)) (((tss ψ).getD i []).getD k default).2.2 ∧
+      interp V (consList bs (consList as' ρp)) (((tss ψ).getD i []).getD k default).2.2
+        ∈ˢ (univ (resSort.eval ψ) : V) :=
+  fixTeleBoundJ (judgeSound_runJ hμ mp F) (judgeInv_runJ hμ F) (sortClaim_runJ hμ mp F)
+    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hProp hD ψ hw hi hk hρp' hsp'
 
 end Ix.Kernel.Model

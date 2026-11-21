@@ -74,7 +74,7 @@ theorem defeqStep_bridge (hwc : WhnfCoreBridge env fuel) (hw : WhnfBridge env fu
   -- the stuck tree: one rule per exit
   cases hstuck with
   | fallback hs => exact stuckIrrel_bridge hw hd hio hs
-  | sort hle => exact .sort hle
+  | sort hle => exact .sort (Level.isEquiv_sound hle)
   | lit => exact .refl
   | natZeroL => exact .natZero
   | natZeroR => exact .natZeroR
@@ -83,9 +83,9 @@ theorem defeqStep_bridge (hwc : WhnfCoreBridge env fuel) (hw : WhnfBridge env fu
   | strLitL hg hde => exact .strLitL hg (hd hde)
   | strLitR hg hde => exact .strLitR hg (hd hde)
   | fvar => exact .fvar
-  | const hle => exact .const hle
-  | forallE hdt hbd hpw hc => exact .forallE (hd hdt) (hd hbd) hpw hc
-  | lam hdt hbd hpw hc => exact .lam (hd hdt) (hd hbd) hpw hc
+  | const hle => exact .const (Level.isEquivList_sound hle)
+  | forallE hdt hbd hpw => exact .forallE (hd hdt) (hd hbd) hpw
+  | lam hdt hbd hpw => exact .lam (hd hdt) (hd hbd) hpw
   | spine hhd hls => exact .spine (hd hhd) (defEqList_bridge hd hls)
   | proj hde => exact .proj (hd hde)
   | etaL he => exact etaCert_bridge hw hd hio he

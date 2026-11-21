@@ -66,6 +66,13 @@ theorem AnnotValid_congr_noBVar :
     intro P σ σ' h hag
     rw [AnnotValid_snd, AnnotValid_snd, ihe h hag]
   | prf => intros; simp
+  | chain g e ihg ihe =>
+    intro P σ σ' h hag
+    rw [AnnotValid_chain, AnnotValid_chain, ihe h.2 hag]
+    exact and_congr (forall_congr' fun m => ihg m (h.1 m) hag) Iff.rfl
+  | bgraph _ f ihf =>
+    intro P σ σ' h hag
+    rw [AnnotValid_bgraph, AnnotValid_bgraph, ihf h hag]
 
 /-! ## The X-chains, valid at every family -/
 

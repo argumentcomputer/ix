@@ -155,5 +155,6 @@ def BConst.type : BConst → List Nat → Term
     .pi (.sort u) <|
     .pi (arrow (arrow (.bvar 0) (.sort w)) (arrow (.bvar 0) (.sort w))) <|
     .pi (.bvar 1) (.sort w)
+  | .unpackGraph _, us => .sort (lv us 0 + 1)
 
 end Ix.Kernel.Term

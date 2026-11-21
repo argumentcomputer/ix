@@ -82,6 +82,11 @@ theorem liftN_liftN : ∀ (v : Term) (m n k : Nat),
     intro m n k; simp only [Term.liftN_eqE, iha, ihb]
   | fst e ihe => intro m n k; simp only [Term.liftN_fst, ihe]
   | snd e ihe => intro m n k; simp only [Term.liftN_snd, ihe]
+  | chain g e ihg ihe =>
+    intro m n k
+    simp only [Term.liftN_chain, ihe]
+    congr 1; funext j; exact ihg j m n k
+  | bgraph _ f ihf => intro m n k; simp only [Term.liftN_bgraph, ihf]
 
 /-- Lifting by zero is the identity. -/
 theorem liftN_zero : ∀ (v : Term) (k : Nat), Term.liftN 0 v k = v := by
@@ -97,6 +102,11 @@ theorem liftN_zero : ∀ (v : Term) (k : Nat), Term.liftN 0 v k = v := by
   | eqE a b iha ihb => intro k; simp only [Term.liftN_eqE, iha, ihb]
   | fst e ihe => intro k; simp only [Term.liftN_fst, ihe]
   | snd e ihe => intro k; simp only [Term.liftN_snd, ihe]
+  | chain g e ihg ihe =>
+    intro k
+    simp only [Term.liftN_chain, ihe]
+    congr 1; funext j; exact ihg j k
+  | bgraph _ f ihf => intro k; simp only [Term.liftN_bgraph, ihf]
 
 /-- A `Nat` literal's term is closed when the two constructor
 valuations are. -/
@@ -124,8 +134,7 @@ theorem strLitT_closed (hcl : ∀ n ψ, Term.Closed (cval n ψ))
   · exact ⟨hcl _ _, hcl _ _⟩
   · exact ⟨hcl _ _, hcl _ _⟩
 
-/-- `projNV` commutes with lifting (it introduces no binders; task
-#175 wiring W3). -/
+/-- `projNV` commutes with lifting (it introduces no binders). -/
 theorem liftN_projNV (n : Nat) :
     ∀ (i : Nat) (v : Term) (k : Nat),
       (projNV i v).liftN n k = projNV i (v.liftN n k)
@@ -226,7 +235,14 @@ theorem denote_shiftFrom (hcl : ∀ n ψ, Term.Closed (cval n ψ)) {p : Nat} :
         · simp only [Term.projPair?, Option.map_some, Term.liftN_snd]
         · rfl
       | some entry =>
-        simp only [Option.map_some, liftN_projNV]
+        dsimp only
+        unfold projNodeNV?
+        split
+        · simp only [Option.map_some, liftN_projNV]
+        · split
+          · simp only [Option.map_some, Term.liftN_chain]
+            congr 2; funext m; exact (Term.liftN_eq_self_of_closed (hcl _ _) _ _).symm
+          · rfl
   | .lit (.natVal k), d, hpd, hfb => by
     simp only [Expr.shiftFrom, denote_natLit]
     split
@@ -382,10 +398,16 @@ theorem denote_bvarsBelow (hcl : ∀ n ψ, Term.Closed (cval n ψ)) :
   | case16 d sn i e B h1 entry h2 ihe =>
     intro hws hb v h
     rw [denote_proj, h1, h2] at h
-    simp only [Option.some.injEq] at h
+    dsimp only at h
     simp only [Expr.WScoped] at hws
-    obtain rfl : v = projNV (i + entry.off) B := h.symm
-    exact projNV_bvarsBelow _ (ihe hws hb h1)
+    unfold projNodeNV? at h
+    split at h
+    · obtain rfl := (Option.some.inj h).symm
+      exact projNV_bvarsBelow _ (ihe hws hb h1)
+    · split at h
+      · obtain rfl := (Option.some.inj h).symm
+        exact ⟨fun m => Term.bvarsBelow.mono (Nat.zero_le d) (hcl _ _), ihe hws hb h1⟩
+      · exact nomatch h
   | case17 d sn i e B h1 h2 ihe =>
     intro hws hb v h
     rw [denote_proj, h1, h2] at h

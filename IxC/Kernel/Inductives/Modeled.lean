@@ -105,8 +105,11 @@ def checkIotaThm (ops : (CheckerOps md) m) (env' envSelf : Env md)
         (fvs.take cnP ++ xFvs) do
       throw (.notImplemented msg!"iota statement major mismatch for {cvName}")
     -- the constructor's telescope (renamed), instantiated at the
-    -- major's arguments: field domains and the canonical index tuple
-    unless (cvj.type.stripPis (cnP + cnF)).isSome do
+    -- major's arguments: field domains and the canonical index tuple.
+    -- The residual head must be a constant (the family former), as at a
+    -- nested rule: the soundness layer reads the residual's arguments
+    -- through the substitution, which a variable head would shift.
+    unless Expr.ctorTeleOk cvj.type (cnP + cnF) do
       throw (.notImplemented msg!"iota constructor telescope for {cvName}")
     let (cdoms, cres) ← unwrapOr
         (Expr.instPisAt (fvs.take cnP ++ xFvs) (cvj.type.renameConsts f))
@@ -202,15 +205,16 @@ arguments are all opened variables, the stored pins can contain
 binders (dependent nested occurrences, `Impl α (fun _ => T ...)`), and
 export arenas intern name-insensitively, so the theorem's pin spelling
 can differ from the recursor type's in binder names only.  When
-the rule has no certifiable shape the rule is stored inert (`.inert`;
-a matched major positively declines at fire time); a shape whose
+the rule has no certifiable shape the block is declined (every stored
+rule fires); a shape whose
 theorem then fails the pin is a positive decline here. -/
 def checkIotaThmN (ops : (CheckerOps md) m) (env' envSelf : Env md)
     (f : Key md → Key md) (cvName : Key md) (lps : List LevelParam) (tyA : Expr md)
     (mI rP j : Nat) (r : RecRule md) (cvj : ConstantVal md)
     (cnP cnF : Nat) (rhsA : Expr md) : m (RecRuleFire md) := do
     match nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j with
-    | none => pure .inert
+    | none => throw (.notImplemented
+        msg!"nested auxiliary rule outside the certified shape for {cvName}")
     | some (lvls, pins) => do
     let cvt ← unwrapOr
         (env'.findCV? (auxKey (auxKey cvName .model) (.iota j)))
@@ -348,7 +352,7 @@ def checkIotaRule (ops : (CheckerOps md) m) (env' envSelf : Env md)
     -- the firing mode is computed once, here, and stored on the rule;
     -- `iotaRec` reads the flag instead of re-walking the recursor type
     -- on every fire
-    let fire ← if Expr.recRulePlain tyA mI rP cnP then do
+    let fire ← if Expr.recRulePlain tyA mI rP cnP cvj.levelParams then do
         checkIotaThm mode ops env' envSelf f cvName lps tyA mI rP j r
           cvj cnP cnF rhsA
         pure RecRuleFire.plain
@@ -570,7 +574,7 @@ def checkProjFn (ops : (CheckerOps md) m) (env' : Env md) (T ctorName : Key md) 
     (nP nF i : Nat) : m (Env md) := do
   let (cvj, mcv) ← checkProjLookups env' T ctorName lps nP nF i
   let pty ← checkProjTy env' T ctorName lps mcv.type nP nF
-  checkProjShape pty cvj.type nP nF
+  checkProjShape pty cvj.type nP nF cvj.levelParams
   unless i < nF do
     throw (.invalid "projection index out of range")
   let rhsA ← checkProjRule ops env' pty cvj lps nP nF i
@@ -686,7 +690,7 @@ family's constructor targets the family at exactly its parameters,
 `T p⃗` — the same conjunct `checkStructCtor` pins on the direct route —
 while an indexed family's targets `T p⃗ i⃗`.
 
-Task #175 SigmaHom (2026-09-06): the modeller also emits
+The modeller also emits
 `T._model.proj_i` artifacts for an *indexed* one-constructor family
 (its indexed-fibre projection tranche; `CategoryTheory.Sigma.SigmaHom`
 in Mathlib), and consuming them as projection functions declined at
@@ -710,9 +714,8 @@ def ctorTargetsFam (ctorTy : Expr md) (T : Key md) (lps : List LevelParam)
 
 /-- One projection-function install step (skipped where the model's
 projection artifact is absent — a family with such fields simply gets
-no table, and a `.proj` on it declines at its own site; task #175
-tower-flag retired the inert elimination-template table that used to
-record the family).  The whole fold is skipped for a block that is not
+no table, and a `.proj` on it declines at its own site; no inert
+elimination-template table is installed).  The whole fold is skipped for a block that is not
 structure-like (`ctorTargetsFam`). -/
 def installProjFnStep (ops : (CheckerOps md) m) (T ctorName : Key md)
     (lps : List LevelParam) (nP nF : Nat) (e : Env md) (i : Nat) : m (Env md) :=
@@ -821,8 +824,8 @@ def checkModeled (ops : (CheckerOps md) m) (env : Env md) (block : List (Constan
     unless (List.range nF).all
         (fun j => (env₃.find? (projFnName cvT.name j)).isNone) do
       throw (.invalid "projection name family taken")
-    -- the projection functions: structure-like blocks only (task #175
-    -- SigmaHom; an indexed family's model projections are ignored)
+    -- the projection functions: structure-like blocks only
+    -- (an indexed family's model projections are ignored)
     if ctorTargetsFam cvC.type cvT.name cvT.levelParams nP nF then
       (List.range nF).foldlM
         (installProjFnStep mode ops cvT.name cvC.name cvT.levelParams nP nF)

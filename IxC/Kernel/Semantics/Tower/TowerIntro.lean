@@ -7,7 +7,7 @@ public import IxC.Kernel.SetModel.TupleTower
 
 /-!
 # The telescope introduction: `TeleS` from an interpreted binder chain
-(task #175, stage 1)
+
 
 The tuple tier (`IxC/Kernel/SetBase/TupleTower.lean`) states its laws over
 an abstract dependent telescope `TeleS V n`.  A checked

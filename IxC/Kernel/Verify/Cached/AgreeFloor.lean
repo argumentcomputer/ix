@@ -7,36 +7,25 @@ import all Init.LetFun
 public section
 
 /-!
-# The trusted↔P agreement floor (task #172, batch B7; restated at the
-twin's retirement, 2026-09-06)
+# The trusted↔verified agreement floor
 
-The *cheap floor* of census part 4 §3: whenever the cached driver
-(`IxC/Kernel/Cached/ParsedC.lean`) at the trusted config and at the
-verified config both **accept** a stream, the two installed
-environments carry the same constants, in the same order, with the same
-install skeletons — and in particular the same names and the same
-count.
+Whenever the cached driver (`IxC/Kernel/Cached/ParsedC.lean`) at the
+trusted mode and at the verified mode both **accept** a stream, the two
+installed environments carry the same constants, in the same order, with
+the same install skeletons — and in particular the same names and the
+same count.
 
-**What the retirement did to the statement.**  Until 2026-09-06 the
-trusted lane was a separate driver (`checkDeclsT`,
-`IxC/Kernel/Cached/ParsedT.lean`) over a hand-written cert-skipping core,
-and the floor had to prove the skeleton spec for *both* drivers, stage
-by stage — the second half of this file was a clause-by-clause
-duplicate of the first.  Now there is one driver, `checkDecls
-mode`, and the floor is the skeleton spec proved **once, for every
-`mode : CheckMode`** (`checkDecls_skels`); the agreement of
-two modes is its two instances glued by `Eq.trans`.  That is strictly
-stronger than the frozen B7 statement: the old theorem is the new one
-at `μP := .verified`, `μT := .trusted`, and the new one covers any two
-modes (task #185: "any two configs" until the configuration record
-retired).  The certification-only work the trusted mode omits
-(`mode.verifiedChecks`, group A, and `mode.certs`) is invisible to the
-skeleton by construction — the spec forgets everything a core computes
-— which is exactly why the proof is mode-generic without a case
-split.
+Because there is one driver, `checkDecls mode`, the agreement floor is
+the skeleton spec proved **once, for every `mode : CheckMode`**
+(`checkDecls_skels`); the agreement of any two modes is its two instances
+glued by `Eq.trans` (in particular at `μP := .verified`, `μT := .trusted`).
+The certification-only work the trusted mode omits (`mode.verifiedChecks`
+and `mode.certs`) is invisible to the skeleton by construction — the spec
+forgets everything a core computes — which is why the proof is
+mode-generic without a case split.
 
 Nothing here reasons about the cores.  The floor's whole content is
-that the fold is *the same fold* at every config, and the only work is
+that the fold is *the same fold* at every mode, and the only work is
 that this is not quite true on the nose: the inductive-block clause
 installs constants under **environment-dependent guards**
 (`installProjFnStep*`'s model lookup).  So the induction runs on
@@ -45,20 +34,15 @@ nothing a core computes — and the names corollary falls out.
 
 Two facts close the remaining branches without core reasoning:
 
-* the direct simple-structure clause (task #175 W4c, the priority
-  route) installs under guards that are the block's own (the
-  projection bodies' scoping, task #175 S1) or freshness checks, and
-  its dispatch
-  (`structPartsF?`) reads the index only through name lookups
-  (`structNonRecF_skel`), so it runs on the skeleton too;
+* the direct simple-structure clause (the priority route) installs under
+  guards that are the block's own (the projection bodies' scoping) or
+  freshness checks, and its dispatch (`structPartsF?`) reads the index
+  only through name lookups (`structNonRecF_skel`), so it runs on the
+  skeleton too;
 * at `.axiomDecl` the push-or-not decision is a function of the header
   name alone — the `sorryAx` record installs nothing in
-  both drivers, and `stdAxiomOkF` is `false` off `propext`/`choice`, so
+  both modes, and `stdAxiomOkF` is `false` off `propext`/`choice`, so
   every other accepted axiom installs exactly one `.axiomInfo`.
-
-See DESIGN.md, "TASK #172 — BATCH B7: THE AGREEMENT FLOOR — STATEMENT
-FREEZE" for the frozen statements and the scope (accept verdicts only;
-T2c untouched).
 -/
 
 namespace Ix.Kernel.Cached
@@ -375,14 +359,14 @@ def indDeclSkelsModeled (block : List (ConstantInfo md)) (sk : List (InstallSkel
     else base
   | _, _ => base
 
-/-! ### The direct simple-structure clause (task #175 W4c)
+/-! ### The direct simple-structure clause
 
 The priority gate `structPartsF?` reads the block (`structPartsCore?`,
 pure) and the index only through `constsResolveF` on the raw
 constructor domains — skeleton-level lookups — so the dispatch is a
 function of the skeleton; the direct install's own install decisions
 are the projection bodies' scoping (`structProjBodies`, a function of
-the annotated constructor type; task #175 S1) plus freshness checks.
+the annotated constructor type) plus freshness checks.
 Nothing a core computes enters. -/
 
 /-- `Expr.constsResolve` at the skeleton level (lookups through
@@ -433,7 +417,7 @@ theorem constsResolveF_skel {fe : FEnv md} {sk : List (InstallSkel md)}
   | proj s _ e ihe =>
     simp only [Expr.constsResolveF, constsResolveSk, h.isSome', ihe]
 
-/-! ### The direct sum clause (task #175 sum-types)
+/-! ### The direct sum clause
 
 The second gate reads the index exactly as the first does — `constsResolveF`
 on the raw constructor domains — and its install decisions are the block's
@@ -724,7 +708,7 @@ theorem checkIndRecsS_skels (mode : CheckMode) (blockNames : List (Key md))
         (Yields.foldlM_rel (R := SkelIs) hstep checked fe₂ sk h)
         fun fe' hfe' => ?_
       rw [foldl_recMemberSkels]
-      simp only [foldl_cons_map] at hfe' 
+      simp only [foldl_cons_map] at hfe'
       simp only [show checked.map provSkel = recs.map recMemberSkel from hq] at hfe'
       exact hfe'
     · exact Yields.ofThrowBind
@@ -750,7 +734,7 @@ theorem installProjFnStepS_skels (mode : CheckMode) {fe : FEnv md}
     exact checkProjFnS_skels mode h T ctorName lps nP nF i
   · exact Yields.pure h
 
-/-! ## The direct simple-structure install's skeleton (task #175 W4c)
+/-! ## The direct simple-structure install's skeleton
 
 Every stage's install decision is the block's own or a freshness
 check; the stored constants' names are the block's (`checkConstantValF`
@@ -810,8 +794,8 @@ theorem checkIndDeclSF_skels (mode : CheckMode) {fe : FEnv md}
         split
         case isFalse => exact Yields.ofThrowBind
         case isTrue =>
-          -- the projection phase runs on structure-like blocks only
-          -- (task #175 SigmaHom): a decision of the block's own
+          -- the projection phase runs on structure-like blocks only:
+          -- a decision of the block's own
           -- constructor type, so the skeleton spec computes it
           by_cases hsl : ctorTargetsFam cvC.type cvT.name cvT.levelParams
               nP nF = true
@@ -829,7 +813,7 @@ theorem checkIndDeclSF_skels (mode : CheckMode) {fe : FEnv md}
         exact absurd hC (hne cvT capsT cvC nP nF hI)
       case h_2 => exact indBase_skels mode _ _ h _ _
 
-/-! ## The direct sum install's skeleton (task #175 sum-types, indexed)
+/-! ## The direct sum install's skeleton
 
 Same shape as the structure route's, with the constructor stage run
 over a list: the stored constructors' names and field counts are the
@@ -1131,6 +1115,9 @@ theorem checkNativeTailS_skels (mode : CheckMode) {fe : FEnv md}
     simpa [ciSkel, sumSkels, hnR, sumRules_map_ctor _ _ _ _ _ _ hlen',
       hctors] using hpush
   -- the projection table at a structure-like block (task #210 Part A)
+  split
+  case isFalse => exact Yields.ofThrowBind
+  case isTrue _ =>
   refine Yields.mono (checkNativeTableF_skels hpush' q.p q.ctorsA q.sortss hlenC hlenS) ?_
   intro fe' h'
   unfold nativeSkels

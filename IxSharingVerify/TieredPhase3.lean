@@ -945,7 +945,7 @@ theorem buildTop_eq {t : Nat} (ht : t < dag.size) (hnone : index'[t]?.getD none 
           have h0 := hchild 0 (by simp [hh, Head.arity])
           simp only
           rw [hsub _ h0.1 h0.2.1 h0.2.2]
-        case letE lc =>
+        case letE nonDep mode =>
           have h0 := hchild 0 (by simp [hh, Head.arity])
           have h1 := hchild 1 (by simp [hh, Head.arity])
           have h2 := hchild 2 (by simp [hh, Head.arity])

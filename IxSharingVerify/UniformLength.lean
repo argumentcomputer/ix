@@ -44,16 +44,16 @@ theorem rebuild_size (sc : Nat → Nat) {n : Node} {inner side e : Ixon.Expr} {F
   all_goals simp only [hh, Head.family] at hF
   all_goals subst hF
   · refine ⟨?_, ?_, ?_⟩
-    · simp only [famCont, sizeInfoWith_app_appCont, Node.sideExtra, hh]; congr 1; omega
-    · simp only [famCont, sizeInfoWith_app_full, Node.sideExtra, hh]; omega
+    · simp only [famCont, sizeInfoWith_app_appCont, Node.sideExtra]; congr 1; omega
+    · simp only [famCont, sizeInfoWith_app_full, Node.sideExtra]; omega
     · intro F' hF'; cases F' <;> first | exact absurd rfl hF' | rfl
   · refine ⟨?_, ?_, ?_⟩
-    · simp only [famCont, sizeInfoWith_lam_lamCont, Node.sideExtra, hh]
-    · simp only [famCont, sizeInfoWith_lam_full, Node.sideExtra, hh]
+    · simp only [famCont, sizeInfoWith_lam_lamCont, Node.sideExtra, Nat.zero_add]
+    · simp only [famCont, sizeInfoWith_lam_full, Node.sideExtra, Nat.zero_add]
     · intro F' hF'; cases F' <;> first | exact absurd rfl hF' | rfl
   · refine ⟨?_, ?_, ?_⟩
-    · simp only [famCont, sizeInfoWith_all_allCont, Node.sideExtra, hh]
-    · simp only [famCont, sizeInfoWith_all_full, Node.sideExtra, hh]
+    · simp only [famCont, sizeInfoWith_all_allCont, Node.sideExtra, Nat.zero_add]
+    · simp only [famCont, sizeInfoWith_all_full, Node.sideExtra, Nat.zero_add]
     · intro F' hF'; cases F' <;> first | exact absurd rfl hF' | rfl
 
 /-- A telescope rebuilt by `build` around a tail of another family: its
@@ -413,7 +413,7 @@ theorem PrepWF.build_size {p : Prep} (hp : PrepWF p)
               refine ⟨?_, fun F' _ => by cases F' <;> rfl⟩
               rw [← Array.foldl_toList, children_toList (m := 1) (by simpa [Head.arity] using har)]
               simp [sizeInfoWith, SizeInfo.plain, hvs, Head.ownBytes] <;> omega
-            case letE lc =>
+            case letE nonDep mode =>
               obtain ⟨ty, hty, h2⟩ := bind_eq_ok h
               obtain ⟨v, hv, h3⟩ := bind_eq_ok h2
               obtain ⟨bd, hbd, hpure⟩ := bind_eq_ok h3

@@ -6,7 +6,7 @@ import IxC.Kernel.Inductives.SumInstall
 public section
 
 /-!
-# The generated recursor at a constructor list (task #175 sum-types)
+# The generated recursor at a constructor list
 
 `IxC/Kernel/Verify/Inductives/StructRec.lean`'s syntactic kit at one
 constructor, generalized to the list the generators fold over
@@ -124,7 +124,7 @@ theorem sumRules_getElem? {find? : Key md → Option (ConstantInfo md)}
         ctorsA[j]? = some cA ∧ rhss[j]? = some rhs ∧
         r = recRuleBits find? recName
           { ctor := cA.1.name, nfields := cA.2, ctorParams := nP,
-            fire := if Expr.recRulePlain recTy mI rP nP then .plain
+            fire := if Expr.recRulePlain recTy mI rP nP cA.1.levelParams then .plain
               else .inert,
             rhs := rhs, paramsBlind := true }
   | [], _, r, h => by simp [sumRules] at h
@@ -136,7 +136,7 @@ theorem sumRules_getElem? {find? : Key md → Option (ConstantInfo md)}
     · obtain ⟨j, cA, rhs', hc, hr, rfl⟩ := sumRules_getElem? h
       exact ⟨j + 1, cA, rhs', by simpa using hc, by simpa using hr, rfl⟩
 
-/-! ## The indexed generators, unfolded (task #175 indexed families) -/
+/-! ## The indexed generators, unfolded -/
 
 /-! ## Instantiation under a mid-cutoff lift -/
 

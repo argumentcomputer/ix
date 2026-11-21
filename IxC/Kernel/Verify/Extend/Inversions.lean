@@ -91,9 +91,11 @@ theorem checkConstantVal_inv {env : Env md} {cv cv' : ConstantVal md}
   | ok type =>
   rw [hann] at h
   try dsimp only at h
-  by_cases htp : type.allLevelParamsDefined cv.levelParams = true
+  by_cases htp : (cv.type.allLevelParamsDefined cv.levelParams &&
+      type.allLevelParamsDefined cv.levelParams) = true
   case neg => simp [htp] at h
   simp only [htp] at h
+  have htp := (Bool.and_eq_true ..).mp htp |>.2
   by_cases htr : type.constsResolve env = true
   case neg => simp [htr] at h
   simp only [htr] at h

@@ -18,8 +18,8 @@ public import IxC.Kernel.Canon
 A modelled inductive block is reduced to the five-member basis `Eq`,
 `Nat`, `PSigma'`, `PUnit`, `Quot` (plus standard axioms); of these the
 checker pins `Eq`, `Nat`, `PUnit`, `Quot` (and `Empty`, `False`)
-natively (hand-written set models).  `PSigma'` is NOT pinned (task
-#175 W6, 2026-09-05): the tight pair is an ordinary two-field simple
+natively (hand-written set models).  `PSigma'` is NOT pinned:
+the tight pair is an ordinary two-field simple
 structure and installs through the direct path
 (`IxC/Kernel/Direct.lean`, tower projection entries) like any
 other.  The pinned declarations are the toolchain's own — the frontend

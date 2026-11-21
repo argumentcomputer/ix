@@ -97,7 +97,7 @@ def IotaRuns (μ : CheckMode) (F : Nat) (envSelf : Env md) (depth : Nat)
   (∃ tr, inferTypeCore μ envSelf F depth rhsS = .ok tr ∧
     isDefEqCore μ envSelf F depth tr alphaS = .ok true)
 
-/-! ## The direct-structure arm (task #175 wiring, W4)
+/-! ## The direct-structure arm
 
 The direct arm of the `.indDecl` clause, recorded as a **run
 relation** (the W4 freeze's threading decision): the direct block has

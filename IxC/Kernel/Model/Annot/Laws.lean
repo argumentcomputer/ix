@@ -138,10 +138,8 @@ the v1 field (`Sound/Motives.lean:309`) on the stored `indInfo`, the
 capability flag, the non-reserved name, and the completed family
 (`EtaFamilyStored`).
 
-Design decisions, recorded (the lane lead's freeze; the statements
-below are unchanged from `Interp/CapsP.lean`'s first landing, which
-is now the *preservation* file — the definitions moved here because
-the `EnvModelM` field must import them and `CapsP` imports `EnvModelM`):
+Design decisions (the definitions live here because `EnvModelM` imports
+them and `Interp/CapsP.lean` imports `EnvModelM`):
 
 * **The telescope fit is `TeleFit`, not `TeleFit2`.**  `TeleFit2`
   (`Annot/Spine2.lean`) demands every product in the graph regime
@@ -174,8 +172,7 @@ law → cert+sound, `Install/EtaLawS.lean`); the P path re-runs its
 defeq certificates through the claims — the run-certificate route —
 when the ind tier lands.  Consumers: the structure-η and unit-like
 rules' soundness (`DefEq.structEta_sound`/`DefEq.structUnit_sound`,
-`Model/Rules/DefEqSound.lean`; the `Steps/CapsRows.lean` rows until
-the task #305 closing). -/
+`Model/Rules/DefEqSound.lean`). -/
 
 /-- **The annotated telescope fit** (`TeleFitV`'s `interp` mirror):
 each argument value inhabits its progressively-peeled domain, the
@@ -273,14 +270,9 @@ install — `IndStepPB`'s bill). -/
     Ix.Kernel.reservedBasisNames.contains T = false →
     Ix.Kernel.EtaFamilyStored env T caps →
     ∀ φ' : LevelParam → Nat, EtaLaw m φ' T cvT caps) ∧
-  -- The unit half carries NO `EtaFamilyStored` premise — exactly as
-  -- v1's `CapsOkV` unit half (`Sound/Motives.lean:315`).  The freeze
-  -- transcribed the eta half's premise here by mistake; the caps
-  -- batch mechanized the refutation (`etaFamilyStored_not_derivable`:
-  -- a WF environment with a non-reserved unitlike-only family where
-  -- the premise is false and the law vacuous), and the deletion was
-  -- ratified — it strengthens the field, consumers and the
-  -- `IndStepPB` establishment unchanged.
+  -- The unit half carries NO `EtaFamilyStored` premise (matching `CapsOkV`'s
+  -- unit half, since a WF environment can have a non-reserved unitlike-only
+  -- family where `EtaFamilyStored` is false).
   (∀ (T : Key md) (cvT : ConstantVal md) (caps : IndCaps md),
     env.find? T = some (.indInfo cvT caps) → caps.unitlike = true →
     Ix.Kernel.reservedBasisNames.contains T = false →
@@ -505,10 +497,10 @@ every deviation). -/
     ∀ rl ∈ rules, RecRule.fire rl ≠ .inert →
       RecRuleLaw m φ n cv mI rP rl
 
-/-! ## The tower projection law (task #175 wiring, W5)
+/-! ## The tower projection law
 
 A projection-table entry (the direct-structure install's native
-entries — task #175 tower-flag: the only ones) is typed by the checker
+entries) is typed by the checker
 generically — the stored `ty` peeled along the parameters and the
 subject (`inferBody`'s tower branch) — and reduced by the structural
 rule `proj_i (ctor p⃗ x⃗) ↦ x_i`; the reading is the uniform
@@ -520,7 +512,7 @@ family lands in the peeled entry type's reading, graded) and the
 selected field's reading).  Both are **environment laws** in the sense
 of `caps_ok`/`rec_rules` — fixed by the direct install and by nothing
 else — so they are a field of `EnvModelM`, established at the install
-(`Model/StructInstallP`, W4c) and transported across every other cons
+(`Model/StructInstallP`) and transported across every other cons
 (`towerOk_cons_fresh`, `Model/RecRulesCons.lean`).
 
 **Why the typing law is stated over a syntactic peel** (`peelPis`)
@@ -556,8 +548,8 @@ theorem TeleFitPA.peelPis {V : Type w} [SetTheory V] {ρ : Nat → V} :
   | nil => rfl
   | cons _ _ ih => exact ih
 
-/-- **The structural-η law of a tower-backed family** (task #175 W4c;
-`EtaLaw`'s twin at the tower kind, keyed on the entry): a member of
+/-- **The structural-η law of a tower-backed family**
+(`EtaLaw`'s twin at the tower kind, keyed on the entry): a member of
 the family instance is the constructor at the parameters and the tower
 readings (`projS`) of its own projections — the value-level content of
 the η certificate's `.proj T j b` fabrication (`etaProjs`).  Keyed on
@@ -584,7 +576,7 @@ an all-tower family. -/
             (interp V ρ
               (m.acval entry.ctor (Level.substFn φ entry.levelParams us)))
 
-/-- **The `Prop` guard at a use's valuation** (task #175 W4c/O4): if
+/-- **The `Prop` guard at a use's valuation**: if
 the structure is a proposition there, so is the field's guard level.
 The typing and iota laws of a tower entry hold under it — a data
 field of a `Prop`-declared structure has no projection law (its value
@@ -619,15 +611,13 @@ theorem towerGuardAt_of {entry : ProjEntry md} {us : List Level} {φ : LevelPara
     simpa [Level.eval] using h1
   · exact hO5 (by simpa using hp) _ hs
 
-/-- **The guard at a valuation, from the fire guard** (task #175 W6):
+/-- **The guard at a valuation, from the fire guard**:
 `whnfCore`'s tower fire (`ProjEntry.fireOk`) is the tower infer
 branch's own guard — a `Prop`-declared family fires only where the
 field's guard level is a proposition, any other family unconditionally
 — so with O5 it yields `TowerGuardAt` exactly as the infer branch
-does.  (Until W6 the fire was gated on the structure's sort being
-provably nonzero, `TowerStructPos`, and the iota law was stated in the
-graph regime only; the squash regime is now licensed by the certified
-spine's fit, see `TowerEntryLaw`'s clause (B).) -/
+does (the squash regime is licensed by the certified spine's fit, see
+`TowerEntryLaw`'s clause (B)). -/
 theorem towerGuardAt_of_fireOk {entry : ProjEntry md} {us : List Level}
     {φ : LevelParam → Nat} (hO5 : TowerO5 entry)
     (hfire : entry.fireOk us = true) : TowerGuardAt φ entry us := by
@@ -636,15 +626,31 @@ theorem towerGuardAt_of_fireOk {entry : ProjEntry md} {us : List Level}
   rw [hp] at hfire
   simpa using hfire
 
+/-- **The guard at a valuation, from the semantic guard**
+(`Rules.FireSem`, the premise of the rules tier's `Red.proj`,
+`Red.rescueAnd` and `Infer.proj`): `towerGuardAt_of` with the field's zero
+value read directly instead of through the checker's zero test. -/
+theorem towerGuardAt_of_sem {entry : ProjEntry md} {us : List Level}
+    {φ : LevelParam → Nat} (hO5 : TowerO5 entry)
+    (hg : Level.isEquiv entry.structSort .zero = some true →
+      ∀ ψ, Level.eval ψ (Level.subst entry.levelParams us entry.fieldSort) = 0) :
+    TowerGuardAt φ entry us := by
+  intro hs
+  by_cases hp : (Level.isEquiv entry.structSort .zero == some true) = true
+  · have h1 := hg (beq_iff_eq.mp hp) φ
+    rw [Level.eval_subst] at h1
+    exact h1
+  · exact hO5 (by simpa using hp) _ hs
+
 /-- **One tower-backed entry's projection law** (see the section
 docstring): the entry's stored data agrees with the stored former and
-constructor (whose η capability is the entry's at a non-`Prop` family
-— task #175 W4c/O4), the O5 bound, and at every level instantiation
+constructor (whose η capability is the entry's at a non-`Prop` family),
+the O5 bound, and at every level instantiation
 the typing law and the iota law hold under the `Prop` guard at the
 entry's own body reading and the constructor's, and the family's
 structural-η law holds (clause (C), `TowerEtaLaw`).
 
-Task #175 S1: the entry stores a *body* scoped at the parameters and
+The entry stores a *body* scoped at the parameters and
 the subject, not a type; the typing law is stated over the reading
 of `projTele (nP + 1) body` — the body under `nP + 1` dummy binders
 (`IxC/Kernel/Verify/ProjTele.lean`) — whose `instPisAt` peel along the
@@ -667,7 +673,8 @@ dummy binders carry the reading only; the law never reads them. -/
       (Level.isEquiv entry.structSort .zero == some true) = false ∧
       capsT.etaCtor = some entry.ctor ∧
       capsT.etaParams = entry.numParams ∧
-      capsT.etaFields = entry.numFields)) ∧
+      capsT.etaFields = entry.numFields ∧
+      entry.off ≤ 1)) ∧
   TowerO5 entry ∧
   ∃ cvC : ConstantVal md,
     env.find? entry.ctor
@@ -688,11 +695,11 @@ dummy binders carry the reading only; the law never reads them. -/
           interp V ρ x ∈ˢ interp V ρ (AnnotTerm.mkAppN
             (m.acval T (Level.substFn φ entry.levelParams us)) vs) →
           Ix.Kernel.Model.AnnotTerm.peelPis Ta (vs ++ [x]) = some rest →
-          WellDenotedV V ρ (projAV (i + entry.off) x) ∧ WellDenotedV V ρ rest ∧
-            interp V ρ (projAV (i + entry.off) x) ∈ˢ interp V ρ rest)) ∧
+          WellDenotedV V ρ (projNodeAV m.acval T i entry x) ∧ WellDenotedV V ρ rest ∧
+            interp V ρ (projNodeAV m.acval T i entry x) ∈ˢ interp V ρ rest)) ∧
       -- (B) the iota law: the projection of a *graded* constructor
       -- application is the selected field, at every valuation under
-      -- the guard (task #175 W6).  Two premises: the application's
+      -- the guard.  Two premises: the application's
       -- grading (its slot chain — the graph regime's whole premise,
       -- where every constructor binder is graph-regime and graph
       -- rigidity pins the memberships), and the certified spine's fit
@@ -711,14 +718,14 @@ dummy binders carry the reading only; the law never reads them. -/
         WellDenotedV V ρ (AnnotTerm.mkAppN
           (m.acval entry.ctor (Level.substFn φ entry.levelParams us)) ys) →
         TeleFit V ρ TCa (ys.map (interp V ρ)) rest →
-        interp V ρ (projAV (i + entry.off) (AnnotTerm.mkAppN
+        interp V ρ (projNodeAV m.acval T i entry (AnnotTerm.mkAppN
             (m.acval entry.ctor (Level.substFn φ entry.levelParams us)) ys))
           = interp V ρ (ys.getD (entry.numParams + i) default)))) ∧
-    -- (C) the structural-η law (task #175 W4c)
-    TowerEtaLaw m φ T entry
+    -- (C) the structural-η law, on directly-installed tables
+    (entry.off ≤ 1 → TowerEtaLaw m φ T entry)
 
 /-- **The tower projection law, keyed on every stored entry**
-(`RecRules`'s sibling).  Task #175 tower-flag: every stored table is
+(`RecRules`'s sibling).  Every stored table is
 a real one, so the law is uniform — no flag premise. -/
 @[expose] def TowerOk {V : Type w} [SetTheory V] {env : Env md}
     (m : EnvModel V env) (φ : LevelParam → Nat) : Prop :=

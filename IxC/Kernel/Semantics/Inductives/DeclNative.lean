@@ -70,6 +70,8 @@ def DeclNativeRun (μ : CheckMode) (F : Nat) (env : Env md)
       ctorsA p.kinds p.rhss p.cvR.type = true ∧
     checkNativeRec (m := Ix.Kernel.CheckM md) (fueledOps μ F) (consSumCtors p.nP ctorsA env₁)
       p cvTa ctorsA = .ok (cvRa, rhss) ∧
+    ctorsA.all (fun c => Expr.recRulePlain cvRa.type p.majorIdx p.rulePrefix p.nP
+      c.1.levelParams) = true ∧
     -- the projection table at a structure-like block (task #210 Part A)
     checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss
       ⟨.recInfo cvRa p.majorIdx p.rulePrefix
@@ -93,6 +95,8 @@ theorem checkNativeTail_inv {μ : CheckMode} {F : Nat} {env env₂ : Env md}
         q.p.ctors.length q.ctorsA q.p.kinds q.p.rhss q.p.cvR.type = true ∧
       checkNativeRec (m := Ix.Kernel.CheckM md) (fueledOps μ F) (consSumCtors q.p.nP q.ctorsA q.env₁)
         q.p q.cvTa q.ctorsA = .ok (cvRa, rhss) ∧
+      q.ctorsA.all (fun c => Expr.recRulePlain cvRa.type q.p.majorIdx q.p.rulePrefix q.p.nP
+        c.1.levelParams) = true ∧
       checkNativeTable (m := Ix.Kernel.CheckM md) q.p q.ctorsA q.sortss
         ⟨.recInfo cvRa q.p.majorIdx q.p.rulePrefix
           (sumRules (consSumCtors q.p.nP q.ctorsA q.env₁).find? cvRa.name q.p.nP q.p.majorIdx
@@ -148,8 +152,15 @@ theorem checkNativeTail_inv {μ : CheckMode} {F : Nat} {env env₂ : Env md}
   obtain ⟨cvRa, rhss⟩ := r₃
   rw [hRec] at h
   dsimp only at h
+  by_cases hpl : q.ctorsA.all (fun c => Expr.recRulePlain cvRa.type q.p.majorIdx
+      q.p.rulePrefix q.p.nP c.1.levelParams) = true
+  case neg =>
+    rw [if_neg hpl] at h
+    exact absurd h (by simp [throw, throwThe, MonadExceptOf.throw])
+  rw [if_pos hpl] at h
+  try simp only [bind, Except.bind] at h
   -- `cases … :` rewrote the opening and the recursor's run in the goal
-  exact ⟨cvRa, rhss, tfvs, trest, isorts, helim, rfl, hsorts, hk, hr, rfl, h⟩
+  exact ⟨cvRa, rhss, tfvs, trest, isorts, helim, rfl, hsorts, hk, hr, rfl, hpl, h⟩
 
 /-- A settled pass with the install after it is a run. -/
 theorem declNativeRun_of_pass {μ : CheckMode} {F : Nat} {env env₂ : Env md}
@@ -159,11 +170,11 @@ theorem declNativeRun_of_pass {μ : CheckMode} {F : Nat} {env env₂ : Env md}
     (h : checkNativeTail (m := Ix.Kernel.CheckM md) (fueledOps μ F) env q = .ok env₂) :
     DeclNativeRun μ F env p₀ env₂ := by
   obtain ⟨p₁, kinds, hInd, hCtors, hK, hp, hb⟩ := Ix.Kernel.checkNativePass_inv hP
-  obtain ⟨cvRa, rhss, tfvs, trest, isorts, helim, htq, hsorts, hk, hr, hRec, hTbl⟩ :=
+  obtain ⟨cvRa, rhss, tfvs, trest, isorts, helim, htq, hsorts, hk, hr, hRec, hpl, hTbl⟩ :=
     checkNativeTail_inv h
   have hcaps : nativeCaps q.p = nativeCapsAt p₁ isRec := beq_iff_eq.mp hb.symm
   refine ⟨hnd, isRec, q.env₁, q.cvTa, p₁, q.p, q.ctorsA, q.sortss, kinds, cvRa, rhss, tfvs, trest,
-    isorts, hInd, hp, ?_, ?_, hcaps, helim, htq, hsorts, hk, hr, hRec, hTbl⟩
+    isorts, hInd, hp, ?_, ?_, hcaps, helim, htq, hsorts, hk, hr, hRec, hpl, hTbl⟩
   · rw [hp]; exact hCtors
   · rw [hp]; exact hK
 

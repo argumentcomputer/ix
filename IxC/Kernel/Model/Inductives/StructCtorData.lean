@@ -4,7 +4,7 @@ public import IxC.Kernel.Model.Inductives.StructStageFormer
 public section
 
 /-!
-# The constructor's stage data (task #175 W4c, P3 module 6, part 3)
+# The constructor's stage data
 
 `CtorData`: the constructor type's peeled reading — the binder data
 `ds` (parameters then fields), whose codomain bits are zero exactly at

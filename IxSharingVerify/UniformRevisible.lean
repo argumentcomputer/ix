@@ -1,7 +1,7 @@
 import IxSharingVerify.UniformOptimal
 
 /-!
-# Stage 4: the visible counts of a search node
+# The visible counts of a search node
 
 Visible counts are positive and antitone in the maybe-stored set, and the
 counts `revisible` recomputes at a search node are below the visible counts

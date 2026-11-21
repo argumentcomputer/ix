@@ -6,7 +6,7 @@ import IxC.Kernel.Model.Inductives.StructRecFrames
 public section
 
 /-!
-# The sum recursor's frames (task #175 sum-types, indexed)
+# The sum recursor's frames
 
 `sumRecFrames`: at a parameter frame, the generated sum recursor's
 entries read to the recursor leaf's premise `RecBaseS` — the motive

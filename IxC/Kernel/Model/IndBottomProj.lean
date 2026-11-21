@@ -544,7 +544,7 @@ theorem indBottomProj {μ : CheckMode} {env : Env md}
     hLL (hctxOf lhsS hleafL hltL) hvl0
   obtain ⟨tra, htra⟩ := hreadsP (Level.substFn φ lps us) hInfR hwsR hbR
     hLR (hctxOf rhsS hleafR hltR) hvr0
-  obtain ⟨hokVL, hokVR, hmemLR⟩ := sidesMem (hinf _) (hdeq _)
+  obtain ⟨hokVL, hokVR, hmemLR⟩ := sidesMem (J := runJ μ F) (hinf _) (hdeq _)
     (hctxOf αS hleafα hltα) (hctxOf lhsS hleafL hltL)
     (hctxOf rhsS hleafR hltR) hwsα hbα hLα hwsL hbL hLL hwsR hbR hLR
     hva0 hvl0 hvr0 hokVα hInfL hDeqL hInfR hDeqR htla htra
@@ -673,13 +673,13 @@ theorem indBottomProj {μ : CheckMode} {env : Env md}
           (cvj.levelParams.map .param)
         = Level.substFn φ lps us from
         funext fun _ => Level.substFn_map_param, hroT.2.2, hctorLev]
-  have hdeIdxNil : DefEqListOk μ F env (rP + cnF)
+  have hdeIdxNil : DefEqListJ (runJ μ F) env (rP + cnF)
       ((lhsS.getAppArgs.drop rP).take (mI - rP))
       (cres.getAppArgs.drop cnP) := by
     rw [show mI - rP = 0 from by omega, List.take_zero,
       List.drop_eq_nil_of_le (by rw [hclen]; omega)]
     trivial
-  have heqL := point (hdeq (Level.substFn φ lps us)) hroT
+  have heqL := point (J := runJ μ F) (hdeq (Level.substFn φ lps us)) hroT
     (zs := xs.take rP ++ ys.drop cnP) rfl hrPmI hlenX hlenY hfRnE
     hRmlps hfvslen hshapeS hwsFvs hlbFvs htowerS hokTst hdomsS0 hΓslen
     hΔaent hsat hvl0 hwsL hbL hokVL hlhead hlarity hlpre

@@ -1238,15 +1238,12 @@ decreasing_by all_goals first
 hereditarily through annotations (the `Bool` mirror of the
 verification-side `WScoped`).
 
-Not on any per-memo-op path (task #43): the executed knot's cache
+Not on any per-memo-op path: the executed knot's cache
 operations run unguarded, justified by the proven call discipline
-(`IxC/Kernel/Verify/Cached/DiscC*.lean`; the memoized knot's own
-discipline, `IxC/Kernel/Verify/Disc.lean`, went with that knot at task
-#221).  Remaining executable call sites are the
+(`IxC/Kernel/Verify/Cached/DiscC*.lean`).  Remaining executable call sites are the
 scope guards on checker-fabricated terms in `IxC/Kernel/Core.lean`
-(the stuck-major rescues in `majorToCtor`; the projection
-eliminations went with task #175 wiring W5), each O(small
-fabricated term) once per fabrication.  TODO(cleanup, task #26):
+(the stuck-major rescues in `majorToCtor`), each O(small
+fabricated term) once per fabrication.  TODO(cleanup):
 interning should cache the fvar range per node, making those O(1). -/
 def wscopedB : (d : Nat) → Expr md → Bool
   | d, .fvar idx ty => idx < d && wscopedB idx ty
@@ -1345,16 +1342,16 @@ def renameConsts (f : Key md → Key md) : Expr md → Expr md
   | .letE ty v body lmeta =>
     .letE (renameConsts f ty) (renameConsts f v) (renameConsts f body) lmeta
   | .lit l => .lit l
-  -- Task #175 wiring W5: a `.proj` node's struct name is NOT renamed.
+  -- A `.proj` node's struct name is NOT renamed.
   -- The renaming exists for the modeled-block contract (a public
-  -- block's types against its `_model` artifacts, compared with `==`
-  -- since task #205, and the fire comparands); a block's own projections can never be
+  -- block's types against its `_model` artifacts, compared with `==`,
+  -- and the fire comparands); a block's own projections can never be
   -- spelled inside its types (their entries do not exist when the
   -- types are annotated), and a `.proj` on any *other* structure names
   -- it the same on both sides — so the rename never had a matching
   -- case here.  Fixing the name keeps the entry-kind readings
   -- (`denote`/`denoteMeta`, which consult the table at the struct name)
-  -- rename-invariant by construction (DESIGN, "W5 opening seam").
+  -- rename-invariant by construction.
   | .proj s i e => .proj s i (renameConsts f e)
 
 /-! ### `renameConsts`, memoized (task #215)
@@ -1629,21 +1626,67 @@ def instSpine : List (Expr md) → Nat → Expr md → Expr md
   | a :: as, t, e => instSpine as (t - 1) (e.instantiate1 a t)
 
 /-- A recursor rule is *canonical* when its constructor's parameters
-are exactly the recursor's own leading arguments: the major premise's
-type applies the eliminated family to the first `cnP` telescope
-variables.  Rules for nested auxiliary constructors (whose parameters
-are instantiations like `Array Syntax`) are not canonical; they are
-stored `.nested` when the certification against the model's `iota_j`
-theorem succeeds (see `checkIotaThmN`) and `.inert` otherwise —
-`iotaRec` never fires an inert rule, so it carries no fold
-obligation. -/
-def recRulePlain (recTy : Expr md) (mI rP cnP : Nat) : Bool :=
+and levels are exactly the recursor's own: the major premise's type
+applies the eliminated family, at the constructor's own level
+parameters `cjLps`, to the first `cnP` telescope variables.  (A
+canonical rule's level comparands link the constructor's level
+parameters to the recursor's by name, `recFireComparands`; the major
+premise at those parameters is what makes the comparison say that the
+constructor is used at the major premise's levels.)  Rules for nested
+auxiliary constructors (whose parameters are instantiations like
+`Array Syntax`) are not canonical; they are stored `.nested` when the
+certification against the model's `iota_j` theorem succeeds (see
+`checkIotaThmN`) and `.inert` otherwise — `iotaRec` never fires an
+inert rule, so it carries no fold obligation. -/
+def recRulePlain (recTy : Expr md) (mI rP cnP : Nat) (cjLps : List LevelParam) : Bool :=
   decide (cnP ≤ rP) && decide (rP ≤ mI) &&
   match recTy.stripPis mI with
   | some (_, .forallE dom _ _) =>
+    (match dom.getAppFn with
+     | .const _ ls => decide (ls = cjLps.map Level.param)
+     | _ => false) &&
     dom.getAppArgs.take cnP ==
       (List.range cnP).map (fun k => Expr.bvar (mI - 1 - k))
   | _ => false
+
+/-- **A constructor's telescope, as a rule fires it**: the constructor's type has `k`
+syntactic binders (its parameters and fields), and the residual is headed by a constant
+(the family former), so substituting the major premise's arguments for the binders leaves
+the residual's arguments where they were. -/
+def ctorTeleOk (ty : Expr md) (k : Nat) : Bool :=
+  match ty.stripPis k with
+  | some (_, body) =>
+    match body.getAppFn with
+    | .const _ _ => true
+    | _ => false
+  | none => false
+
+theorem ctorTeleOk_isSome {ty : Expr md} {k : Nat} (h : ctorTeleOk ty k = true) :
+    (ty.stripPis k).isSome = true := by
+  unfold ctorTeleOk at h
+  split at h
+  · rename_i hs
+    rw [hs]
+    rfl
+  · exact nomatch h
+
+theorem ctorTeleOk_head {ty : Expr md} {k : Nat} (h : ctorTeleOk ty k = true) :
+    ∃ bs body c us, ty.stripPis k = some (bs, body) ∧ body.getAppFn = .const c us := by
+  unfold ctorTeleOk at h
+  split at h
+  · rename_i bs body hs
+    split at h
+    · rename_i c us hb
+      exact ⟨bs, body, c, us, hs, hb⟩
+    · exact nomatch h
+  · exact nomatch h
+
+theorem ctorTeleOk_of {ty body : Expr md} {k : Nat} {bs : List (Expr md × BinderMeta)}
+    {c : Key md} {us : List Level} (hs : ty.stripPis k = some (bs, body))
+    (hb : body.getAppFn = .const c us) : ctorTeleOk ty k = true := by
+  unfold ctorTeleOk
+  rw [hs]
+  simp only [hb]
 
 /-- Convert the first `k` `∀`-binders into `λ`-binders over a body.
 
@@ -1652,10 +1695,8 @@ claims the *codomain*'s prop-ness, which is not the λ's claim (the sort
 of the body's *type*), so carrying it over would be a wrong annotation.
 The result is emitted at the parse placeholder `.never` and **every
 consumer must run the annotate pass over it before storing or using
-it** — audited: `CheckerS.checkProjRule` and `CheckerBase`'s projection
-rule builder feed `ops.annotate` (DESIGN.md, task #161,
-manufacture-site audit row 9; the third consumer, `annotateProjRec`,
-went with task #175 wiring W5). -/
+it** — both `CheckerS.checkProjRule` and `CheckerBase`'s projection
+rule builder feed `ops.annotate`. -/
 def pisToLams : Nat → Expr md → Expr md → Option (Expr md)
   | 0, _, body => some body
   | k + 1, .forallE ty rest _, body =>

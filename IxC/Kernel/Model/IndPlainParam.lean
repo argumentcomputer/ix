@@ -48,8 +48,8 @@ variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 set_option maxHeartbeats 3200000 in
 /-- **The canonical rule's parameter positions, supplied** — exactly
 `fieldGradeFire`'s `hpar`. -/
-theorem plainParamSupply {m : EnvModel V env} {F : Nat}
-    (hclaims : DefEqClaim μ m φ F)
+theorem plainParamSupply {m : EnvModel V env} {J : Judgements md}
+    (hclaims : DefEqClaimJ J m φ)
     {rP cnP cnF N : Nat} (hcnP : cnP ≤ rP) (hrPN : rP ≤ N)
     -- the statement frame
     {fvs : List (Expr md)} (hfvslen : fvs.length = rP + cnF)
@@ -92,7 +92,7 @@ theorem plainParamSupply {m : EnvModel V env} {F : Nat}
     {cdomsP : List (Expr md)} {crestP : Expr md}
     (hcinstP : Expr.instPisAt (fvsP.take cnP) ctyP
       = some (cdomsP, crestP))
-    (hdePars : DefEqListOk μ F env (rP + cnF)
+    (hdePars : DefEqListJ J env (rP + cnF)
       ((fvsP.take cnP).map Expr.fvarTypeD) cdomsP)
     -- the statement-frame run, whose parameter spine is the frame's
     {sp : List (Expr md)} (hsplen : sp.length = cnP + cnF)

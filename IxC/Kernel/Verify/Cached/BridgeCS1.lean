@@ -77,7 +77,8 @@ theorem checkConstantValS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF e
       (Expr.WScoped.of_not_hasFvar (Bool.not_eq_true _ ▸ h6)))
     (fun s₁ ty ty' hs₁ hP => ?_)
   obtain ⟨rfl, hwty⟩ := hP
-  by_cases h7 : Expr.allLevelParamsDefined cv.levelParams ty = true
+  by_cases h7 : (Expr.allLevelParamsDefined cv.levelParams cv.type &&
+      Expr.allLevelParamsDefined cv.levelParams ty) = true
   case neg =>
     simp only [if_neg h7]
     exact SimC.throw_bind

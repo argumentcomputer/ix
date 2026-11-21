@@ -89,6 +89,12 @@ theorem liftN_eq_self : ∀ (e : AnnotTerm) {k : Nat},
     intro k h n; rw [liftN_fst, ihe h n]
   | snd e ihe =>
     intro k h n; rw [liftN_snd, ihe h n]
+  | chain g e ihg ihe =>
+    intro k h n
+    rw [liftN_chain, ihe h.2 n]
+    congr 1; funext m; exact ihg m (h.1 m) n
+  | bgraph m f ihf =>
+    intro k h n; rw [liftN_bgraph, ihf h n]
 
 /-- **`liftN_eq_self`'s substitution twin.**  `inst` never reads or
 writes a numeral slot either, and it touches a term only at the `bvar`
@@ -122,6 +128,12 @@ theorem inst_eq_self : ∀ (e : AnnotTerm) {k : Nat},
     intro k h x; rw [inst_fst, ihe h x]
   | snd e ihe =>
     intro k h x; rw [inst_snd, ihe h x]
+  | chain g e ihg ihe =>
+    intro k h x
+    rw [inst_chain, ihe h.2 x]
+    congr 1; funext m; exact ihg m (h.1 m) x
+  | bgraph m f ihf =>
+    intro k h x; rw [inst_bgraph, ihf h x]
 
 end AnnotTerm
 

@@ -6,15 +6,14 @@ public import IxC.Kernel.Verify.Inductives.SumInv
 public section
 
 /-!
-# The direct sum install: environment well-formedness (task #175
-sum-types, indexed)
+# The direct sum install: environment well-formedness
 
 `EnvWF` for the environments `checkSum` walks through, read off
 the stages' own guards (as `StructWF.lean` for the structure route):
 the former's cons, the constructors' conses (`consSumCtors`, each a
 checked constant), the recursor's cons with its rules (each rule's
 right-hand side scoped by `checkSumRules`, never `.nested`).
-Task #175 indexed: the recursor's cons is generic over its major index
+For indexed families, the recursor's cons is generic over its major index
 and rule prefix (`p.majorIdx`/`p.rulePrefix` at the install).
 -/
 
@@ -104,7 +103,8 @@ theorem sumRules_mem {find? : Key md → Option (ConstantInfo md)} {recName : Ke
     simp only [sumRules, List.mem_cons] at h
     rcases h with rfl | h
     · refine ⟨List.mem_cons_self, fun lvls pins => ?_⟩
-      show (if Expr.recRulePlain recTy mI rP nP then RecRuleFire.plain else .inert) ≠ _
+      show (if Expr.recRulePlain recTy mI rP nP c.1.levelParams then RecRuleFire.plain
+        else .inert) ≠ _
       split <;> simp
     · obtain ⟨hm, hf⟩ := sumRules_mem h
       exact ⟨List.mem_cons_of_mem _ hm, hf⟩

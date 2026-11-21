@@ -133,17 +133,17 @@ theorem shareIndices_acc : ∀ (e : Ixon.Expr) (acc : Array Nat),
     simp only [shareIndices, shareList]
     rw [iha, ihf, iha (shareIndices f #[]), ihf #[]]
     simp
-  | lam _ t b iht ihb =>
+  | lam t b iht ihb =>
     intro acc
     simp only [shareIndices, shareList]
     rw [ihb, iht, ihb (shareIndices t #[]), iht #[]]
     simp
-  | all _ _ t b iht ihb =>
+  | all t b iht ihb =>
     intro acc
     simp only [shareIndices, shareList]
     rw [ihb, iht, ihb (shareIndices t #[]), iht #[]]
     simp
-  | letE _ t v b iht ihv ihb =>
+  | letE _ _ t v b iht ihv ihb =>
     intro acc
     simp only [shareIndices, shareList]
     rw [ihb, ihv, iht, ihb (shareIndices v (shareIndices t #[])), ihv (shareIndices t #[]),
@@ -154,16 +154,16 @@ theorem shareIndices_acc : ∀ (e : Ixon.Expr) (acc : Array Nat),
 
 theorem shareList_app (f a : Ixon.Expr) : shareList (.app f a) = shareList f ++ shareList a := by
   unfold shareList; simp only [shareIndices]; rw [shareIndices_acc]; rfl
-theorem shareList_lam (c : Ixon.BinderContract) (t b : Ixon.Expr) :
-    shareList (.lam c t b) = shareList t ++ shareList b := by
+theorem shareList_lam (t b : Ixon.Expr) :
+    shareList (.lam t b) = shareList t ++ shareList b := by
   unfold shareList; simp only [shareIndices]; rw [shareIndices_acc]; rfl
-theorem shareList_all (c : Ixon.BinderContract) (r : Ixon.ValueContract) (t b : Ixon.Expr) :
-    shareList (.all c r t b) = shareList t ++ shareList b := by
+theorem shareList_all (t b : Ixon.Expr) :
+    shareList (.all t b) = shareList t ++ shareList b := by
   unfold shareList; simp only [shareIndices]; rw [shareIndices_acc]; rfl
 theorem shareList_prj (ti f : UInt64) (v : Ixon.Expr) : shareList (.prj ti f v) = shareList v := by
   unfold shareList; simp only [shareIndices]
-theorem shareList_letE (c : Ixon.LetContract) (t v b : Ixon.Expr) :
-    shareList (.letE c t v b) = shareList t ++ shareList v ++ shareList b := by
+theorem shareList_letE (nonDep : Bool) (mode : Ixon.LetMode) (t v b : Ixon.Expr) :
+    shareList (.letE nonDep mode t v b) = shareList t ++ shareList v ++ shareList b := by
   unfold shareList; simp only [shareIndices]; rw [shareIndices_acc, shareIndices_acc]; rfl
 theorem shareList_share (i : UInt64) : shareList (.share i) = [i.toNat] := by
   simp [shareList, shareIndices]
@@ -332,7 +332,7 @@ theorem PrepWF.gBuild_tree {p : Prep} (hp : PrepWF p)
                 exact hvL
               · simp [WTree.gcost, WTree.gcosts, sizeInfoWith, SizeInfo.plain, Head.ownBytes, hh,
                   (hvS sc wd' hsc).1] <;> omega
-            case letE lc =>
+            case letE nonDep mode =>
               obtain ⟨ty, hty, h2⟩ := bind_eq_ok h
               obtain ⟨v, hv, h3⟩ := bind_eq_ok h2
               obtain ⟨bd, hbd, hpure⟩ := bind_eq_ok h3

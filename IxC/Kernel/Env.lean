@@ -374,7 +374,7 @@ structure IndCaps (md : Mode) where
   sortZ : PropWhen := .ifAllZero []
   deriving DecidableEq, Repr, Inhabited
 
-/-- **One structure's projection table** (task #175 S1, 2026-09-06):
+/-- **One structure's projection table**:
 everything the checker's `.proj` rules consume about a structure `T`,
 stored once at the structure's install as ONE constant (keyed on the
 structure: `projTableName structName`; see `Env.findProj?`).
@@ -393,7 +393,7 @@ annotated constructor type by substitution alone (`structProjBodies`)
 — no annotate, no infer, no pins: a slot with no legal instantiation
 simply fails the guard at every use.
 
-**Table-kind flag retired** (task #175 tower-flag, 2026-09-06): the
+**Uniform table invariant**: the
 modeled route installs no table at all — a family without a table IS
 a modeled one, and `findProj? = none` already says so at every
 `.proj` site.  So *every* stored table carries bodies, types its
@@ -417,7 +417,7 @@ structure ProjTable (md : Mode) where
   projected field's sort joined with the sorts of the earlier fields
   that a later field's type uses — exactly the sorts the official
   `infer_proj` requires to be `Prop` when projecting from a
-  propositional structure (task #175 W4c/O4, `structProjGuards`); the
+  propositional structure (`structProjGuards`); the
   infer branch checks it at every use of a `Prop`-declared
   structure. -/
   guards : List Level
@@ -625,13 +625,13 @@ def indParamsOk (nP : Nat) (block : List (ConstantInfo md)) : Bool :=
 /-- The public projection-*function* name for field `i` of structure
 `T` — the modeled path's degenerate-recursor projection functions
 (`checkProjFn`; a `Nat` component keeps it out of the way of exported
-identifiers; installs are duplicate-checked regardless).  Since task
-#175 S1 no table entry lives under this name: the direct install's
+identifiers; installs are duplicate-checked regardless). No table entry
+lives under this name: the direct install's
 table is one constant per structure, `projTableName`. -/
 def projFnName (T : Key md) (i : Nat) : Key md := auxKey T (.projFn i)
 
-/-- The reserved name of structure `T`'s projection table (task #175
-S1): one constant per structure, a `Nat` component keeping it out of
+/-- The reserved name of structure `T`'s projection table:
+one constant per structure, a `Nat` component keeping it out of
 the way of exported identifiers (the front door rejects the shape,
 `Key.isProjFnShape`), distinct from every `projFnName` name. -/
 def projTableName (T : Key md) : Key md := auxKey T .projTable
@@ -645,7 +645,7 @@ def toConstantVal : ConstantInfo md → ConstantVal md
 
 def name (c : ConstantInfo md) : Key md := c.toConstantVal.name
 
-/-- A projection table (task #175 W4c): a table, not a term — no
+/-- A projection table: a table, not a term — no
 `.const` node names it (`inferTypeCore` rejects one), so the model
 owes it no leaf. -/
 def isTowerEntry : ConstantInfo md → Bool
@@ -710,8 +710,8 @@ def find? (env : Env md) (n : Key md) : Option (ConstantInfo md) :=
   env.consts.find? (·.name == n)
 
 /-- Look up the projection-table entry for field `i` of `T`: the
-structure's table (`projTableName T`), viewed at field `i` (task #175
-S1; `none` beyond the table's field count). -/
+structure's table (`projTableName T`), viewed at field `i`
+(`none` beyond the table's field count). -/
 def findProj? (env : Env md) (T : Key md) (i : Nat) : Option (ProjEntry md) :=
   match env.find? (projTableName T) with
   | some (.projInfo tbl) => if i < tbl.numFields then some (tbl.entry i) else none

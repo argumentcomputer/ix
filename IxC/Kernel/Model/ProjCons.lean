@@ -101,9 +101,7 @@ theorem projCons {env' : Env md} (mp : EnvModelM V μ env')
     (hctorsHead : ∀ (cvR : ConstantVal md) (mI rP : Nat)
       (rules₀ : List (RecRule md)), c₀ = .recInfo cvR mI rP rules₀ →
       ∀ r ∈ rules₀,
-        (∃ cvj cnP cnF,
-          env'.find? (Ix.Kernel.RecRule.ctor r)
-            = some (.ctorInfo cvj cnP cnF)) ∧
+        Ix.Kernel.RuleCtorOk env'.find? cvR mI rP r ∧
         (r.k = true → Ix.Kernel.recRuleKOf env'.find? r.ctor = true) ∧
         (r.eta = true →
           Ix.Kernel.recRuleEtaOf env'.find? c₀.name r.ctor = true))

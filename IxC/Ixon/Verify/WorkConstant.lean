@@ -16,12 +16,14 @@ def bool : M Bool := do
 
 def defn : M Definition := do
   let flags ← u8
-  reject (flags >>> 2 > 2 || (flags &&& 3) > 2) "invalid definition kind/safety"
-  let (kind, safety) := unpackDefKindSafety flags
+  reject ((flags >>> 2) &&& 3 > 2 || (flags &&& 3) > 2) "invalid definition kind/safety"
+  let some asserts := DefAsserts.ofCode? (flags >>> 4)
+    | fail s!"invalid definition assertions {flags >>> 4}"
+  let (kind, safety) := unpackDefKindSafety (flags &&& 15)
   let lvls ← tagN 0
   let typ ← expr
   let value ← expr
-  charged 1 (pure ⟨kind, safety, lvls.value, typ, value⟩)
+  charged 1 (pure ⟨kind, safety, asserts, lvls.value, typ, value⟩)
 
 def recursorRule : M RecursorRule := do
   let fields ← tagN 0
@@ -59,14 +61,35 @@ def quotient : M Quotient := do
   let typ ← expr
   charged 1 (pure ⟨kind, lvls.value, typ⟩)
 
+/-- One field mode byte. -/
+def fieldMode : M FieldMode := do
+  let byte ← u8
+  let some mode := FieldMode.ofCode? byte | fail s!"invalid field mode {byte}"
+  pure mode
+
+/-- A constructor's listed field modes. -/
+def fieldModes (count : Nat) : M (FieldModes count) := do
+  check count.toUInt64
+  let modes ← array fieldMode count
+  match FieldModes.listed? modes with
+  | some listed => pure listed
+  | none => fail "constructor: listed field modes with no shared field"
+
+/-- `getConstructorFieldModes`. -/
+def ctorFieldModes (listed : Bool) (count : Nat) : M (FieldModes count) :=
+  if listed then fieldModes count else pure .inherited
+
 def ctor : M Constructor := do
-  let isUnsafe ← bool
+  let flags ← u8
+  reject (flags > 3) s!"invalid constructor flags {flags}"
+  let isUnsafe := flags &&& 1 == 1
   let lvls ← tagN 0
   let cidx ← tagN 0
   let params ← tagN 0
   let fields ← tagN 0
+  let modes ← ctorFieldModes (flags &&& 2 == 2) fields.value.toNat
   let typ ← expr
-  charged 1 (pure ⟨isUnsafe, lvls.value, cidx.value, params.value, fields.value, typ⟩)
+  charged 1 (pure ⟨isUnsafe, lvls.value, cidx.value, params.value, fields.value, modes, typ⟩)
 
 def inductiveDecl : M Inductive := do
   let isUnsafe ← bool
@@ -129,6 +152,36 @@ def constantInfo : M ConstantInfo := do
     | v => fail s!"getConstantInfo: invalid variant {v}"
   else fail s!"getConstantInfo: invalid flag {tag.flag}"
 
+def binderNode : M BinderNode := do
+  let byte ← u8
+  if byte == 3 then
+    let variant ← tagN 0
+    charged 1 (pure (.share variant.value))
+  else
+    let some mode := AllMode.ofCode? (byte >>> 3)
+      | fail s!"getBinderNode: invalid mode in {byte}"
+    match byte &&& 7 with
+    | 0 => charged 1 (pure (.never mode))
+    | 1 => charged 1 (pure (.zero mode))
+    | 2 => do
+      let count ← tagN 0
+      let params ← tagN0Values count.value.toNat
+      charged (2 * params.length + 1) (pure (.ifAllZero params.toArray mode))
+    | 4 => charged 1 (pure (.undecided mode))
+    | t => fail s!"getBinderNode: invalid tag {t} in {byte}"
+
+def binderBlock : M BinderBlock := do
+  let shared ← bool
+  let index ← tagN 0
+  let variant ← tagN 0
+  let count ← tagN 0
+  let nodes ← array binderNode count.value.toNat
+  charged 1 (pure ⟨shared, index.value, variant.value, nodes⟩)
+
+def binders : M (Array BinderBlock) := do
+  let count ← tagN 0
+  array binderBlock count.value.toNat
+
 /-- The tuple exposes the shared grammar prefix in proofs only. Its work is
 charged conservatively even though production does not allocate this tuple. -/
 def recordPrefix : M (ConstantInfo × Array Expr × Array Address × Nat) := do
@@ -143,7 +196,8 @@ def recordPrefix : M (ConstantInfo × Array Expr × Array Address × Nat) := do
 def constant (budget : Nat) : M Constant := do
   let (info, sharing, refs, count) ← recordPrefix
   let (univs, _) ← univArray count budget
-  charged 1 (pure ⟨info, sharing, refs, univs⟩)
+  let blocks ← binders
+  charged 1 (pure ⟨info, sharing, refs, univs, blocks⟩)
 
 theorem bool_erases : Erases bool (Serialize.get (α := Bool)) := by
   unfold bool
@@ -154,8 +208,14 @@ theorem bool_erases : Erases bool (Serialize.get (α := Bool)) := by
 
 theorem defn_erases : Erases defn getDefinition := by
   unfold defn getDefinition
-  exact u8_erases.bind fun _ => reject_erases _ _ ((tagN_erases 0).bind fun _ =>
-    expr_erases.bind fun _ => expr_erases.bind fun _ => (pure_erases _).charged 1)
+  apply u8_erases.bind
+  intro flags
+  apply reject_erases
+  cases DefAsserts.ofCode? (flags >>> 4) with
+  | none => exact fail_erases _
+  | some asserts =>
+    exact (tagN_erases 0).bind fun _ =>
+      expr_erases.bind fun _ => expr_erases.bind fun _ => (pure_erases _).charged 1
 
 theorem recursorRule_erases : Erases recursorRule getRecursorRule := by
   unfold recursorRule getRecursorRule
@@ -202,11 +262,44 @@ theorem quotient_erases : Erases quotient getQuotient := by
   | exact fail_erases _
   | exact (tagN_erases 0).bind fun _ => expr_erases.bind fun _ => (pure_erases _).charged 1
 
+theorem fieldMode_erases : Erases fieldMode getFieldMode := by
+  unfold fieldMode getFieldMode
+  apply u8_erases.bind
+  intro byte
+  cases FieldMode.ofCode? byte with
+  | none => exact fail_erases _
+  | some mode => exact pure_erases _
+
+theorem fieldModes_erases (count : Nat) : Erases (fieldModes count) (getFieldModes count) := by
+  unfold fieldModes getFieldModes
+  apply (check_erases _ _).bind
+  intro checked
+  apply (array_erases fieldMode_erases count).bind
+  intro modes
+  cases (FieldModes.listed? modes : Option (FieldModes count)) with
+  | none => exact fail_erases _
+  | some listed => exact pure_erases _
+
 theorem ctor_erases : Erases ctor getConstructor := by
   unfold ctor getConstructor
-  exact bool_erases.bind fun _ => (tagN_erases 0).bind fun _ => (tagN_erases 0).bind fun _ =>
-    (tagN_erases 0).bind fun _ => (tagN_erases 0).bind fun _ => expr_erases.bind fun _ =>
-    (pure_erases _).charged 1
+  apply u8_erases.bind
+  intro flags
+  apply reject_erases
+  apply (tagN_erases 0).bind
+  intro lvls
+  apply (tagN_erases 0).bind
+  intro cidx
+  apply (tagN_erases 0).bind
+  intro params
+  apply (tagN_erases 0).bind
+  intro fields
+  have modes : Erases (ctorFieldModes (flags &&& 2 == 2) fields.value.toNat)
+      (getConstructorFieldModes (flags &&& 2 == 2) fields.value.toNat) := by
+    unfold ctorFieldModes getConstructorFieldModes
+    split
+    · exact fieldModes_erases _
+    · exact pure_erases _
+  exact modes.bind fun _ => expr_erases.bind fun _ => (pure_erases _).charged 1
 
 theorem inductiveDecl_erases : Erases inductiveDecl getInductive := by
   unfold inductiveDecl getInductive
@@ -281,6 +374,34 @@ theorem constantInfo_erases : Erases constantInfo getConstantInfo := by
       · exact fail_erases _
     · exact fail_erases _
 
+theorem binderNode_erases : Erases binderNode getBinderNode := by
+  unfold binderNode getBinderNode
+  apply u8_erases.bind
+  intro byte
+  split
+  · exact (tagN_erases 0).bind fun _ => (pure_erases _).charged 1
+  · cases AllMode.ofCode? (byte >>> 3) with
+    | none => exact fail_erases _
+    | some mode =>
+      dsimp only
+      split <;> simp_all only
+      · exact (pure_erases _).charged 1
+      · exact (pure_erases _).charged 1
+      · exact (tagN_erases 0).bind fun _ => (tagN0Values_erases _).bind fun _ =>
+          (pure_erases _).charged _
+      · exact (pure_erases _).charged 1
+      · exact fail_erases _
+
+theorem binderBlock_erases : Erases binderBlock getBinderBlock := by
+  unfold binderBlock getBinderBlock
+  exact bool_erases.bind fun _ => (tagN_erases 0).bind fun _ => (tagN_erases 0).bind fun _ =>
+    (tagN_erases 0).bind fun _ => (array_erases binderNode_erases _).bind fun _ =>
+      (pure_erases _).charged 1
+
+theorem binders_erases : Erases binders getBinders := by
+  unfold binders getBinders
+  exact (tagN_erases 0).bind fun _ => array_erases binderBlock_erases _
+
 theorem prefix_erases : Erases recordPrefix BoundedConstant.getPrefix := by
   unfold recordPrefix BoundedConstant.getPrefix
   exact constantInfo_erases.bind fun _ => (tagN_erases 0).bind fun _ =>
@@ -296,7 +417,7 @@ theorem constant_erases (budget : Nat) : Erases (constant budget) (Bounded.getCo
   simp only [map_eq_pure_bind, bind_assoc, pure_bind]
   apply (univArray_erases count budget).bind
   rintro ⟨univs, remaining⟩
-  exact (pure_erases _).charged 1
+  exact binders_erases.bind fun _ => (pure_erases _).charged 1
 
 theorem bool_bound : Bound bool 16 0 (fun _ => 15) := by
   unfold bool
@@ -313,11 +434,14 @@ theorem defn_bound : Bound defn 16 0 (fun _ => 2) := by
   intro flags
   apply (reject_bound 16 0 _ _).bind
   intro checked
-  apply (tagN_bound 0 16 (by decide)).bind_zero
-  intro lvls
-  apply expr_bound.bind_zero
-  intro typ
-  exact expr_bound.bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
+  cases DefAsserts.ofCode? (flags >>> 4) with
+  | none => exact fail_bound _ _ _ _
+  | some asserts =>
+    apply (tagN_bound 0 16 (by decide)).bind_zero
+    intro lvls
+    apply expr_bound.bind_zero
+    intro typ
+    exact expr_bound.bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
 
 theorem recursorRule_bound : Bound recursorRule 16 0 (fun _ => 2) := by
   unfold recursorRule
@@ -369,10 +493,30 @@ theorem quotient_bound : Bound quotient 16 0 (fun _ => 2) := by
     intro lvls
     exact expr_bound.bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
 
+theorem fieldMode_bound : Bound fieldMode 16 0 (fun _ => 2) := by
+  unfold fieldMode
+  apply (u8_bound 16 (by decide)).bind
+  intro byte
+  cases FieldMode.ofCode? byte with
+  | none => exact fail_bound _ _ _ _
+  | some mode => exact pure_bound _ _ _ _ (by decide)
+
+theorem fieldModes_bound (count : Nat) : Bound (fieldModes count) 16 0 (fun _ => 0) := by
+  unfold fieldModes
+  apply (check_bound _ _ _ _).bind
+  intro checked
+  apply (array_bound fieldMode_bound count).bind
+  intro modes
+  cases (FieldModes.listed? modes : Option (FieldModes count)) with
+  | none => exact fail_bound _ _ _ _
+  | some listed => exact pure_bound _ _ _ _ (Nat.le_refl _)
+
 theorem ctor_bound : Bound ctor 16 0 (fun _ => 2) := by
   unfold ctor
-  apply bool_bound.bind_zero
-  intro isUnsafe
+  apply (u8_bound 16 (by decide)).bind_zero
+  intro flags
+  apply (reject_bound 16 0 _ _).bind
+  intro checked
   apply (tagN_bound 0 16 (by decide)).bind_zero
   intro lvls
   apply (tagN_bound 0 16 (by decide)).bind_zero
@@ -381,6 +525,13 @@ theorem ctor_bound : Bound ctor 16 0 (fun _ => 2) := by
   intro params
   apply (tagN_bound 0 16 (by decide)).bind_zero
   intro fields
+  have modes : Bound (ctorFieldModes (flags &&& 2 == 2) fields.value.toNat) 16 0 (fun _ => 0) := by
+    unfold ctorFieldModes
+    split
+    · exact fieldModes_bound _
+    · exact pure_bound _ _ _ _ (Nat.le_refl _)
+  apply modes.bind_zero
+  intro modesRead
   exact expr_bound.bind fun _ => charged_pure_bound _ _ _ _ _ (by decide)
 
 theorem inductiveDecl_bound : Bound inductiveDecl 16 0 (fun _ => 2) := by
@@ -462,6 +613,47 @@ theorem constantInfo_bound : Bound constantInfo 16 0 (fun _ => 2) := by
       · exact fail_bound _ _ _ _
     · exact fail_bound _ _ _ _
 
+theorem binderNode_bound : Bound binderNode 16 0 (fun _ => 2) := by
+  unfold binderNode
+  apply (u8_bound 16 (by decide)).bind
+  intro byte
+  split
+  · apply ((tagN_bound 0 16 (by decide)).frame 15).bind
+    intro variant
+    exact charged_pure_bound _ _ _ _ _ (by decide)
+  · cases AllMode.ofCode? (byte >>> 3) with
+    | none => exact fail_bound _ _ _ _
+    | some mode =>
+      dsimp only
+      split
+      · exact charged_pure_bound _ _ _ _ _ (by decide)
+      · exact charged_pure_bound _ _ _ _ _ (by decide)
+      · apply ((tagN_bound 0 16 (by decide)).frame 15).bind
+        intro count
+        apply ((tagN0Values_bound _).frame 29).bind
+        intro params
+        exact charged_pure_bound _ _ _ _ _ (by omega)
+      · exact charged_pure_bound _ _ _ _ _ (by decide)
+      · exact fail_bound _ _ _ _
+
+theorem binderBlock_bound : Bound binderBlock 16 0 (fun _ => 2) := by
+  unfold binderBlock
+  apply bool_bound.bind_zero
+  intro shared
+  apply (tagN_bound 0 16 (by decide)).bind_zero
+  intro index
+  apply (tagN_bound 0 16 (by decide)).bind_zero
+  intro variant
+  apply (tagN_bound 0 16 (by decide)).bind
+  intro count
+  exact ((array_bound binderNode_bound _).carry 14).bind fun _ =>
+    charged_pure_bound _ _ _ _ _ (by decide)
+
+theorem binders_bound : Bound binders 16 0 (fun _ => 0) := by
+  unfold binders
+  exact (tagN_bound 0 16 (by decide)).bind fun _ =>
+    (array_bound binderBlock_bound _).weaken (Nat.zero_le _) (fun _ => Nat.le_refl _)
+
 theorem prefix_bound : Bound recordPrefix 16 0 (fun _ => 4) := by
   unfold recordPrefix
   apply constantInfo_bound.bind_zero
@@ -486,6 +678,8 @@ theorem constant_bound (budget : Nat) : Bound (constant budget) 16 (2 * budget) 
   apply Bound.bind (intermediate := fun value => 2 * value.2 + 4)
   · exact ((univArray_bound count budget).frame 4).weaken (by omega) (fun _ => Nat.le_refl _)
   · rintro ⟨univs, remaining⟩
+    apply (binders_bound.carry (2 * remaining + 4)).bind
+    intro blocks
     exact charged_pure_bound _ _ _ _ _ (by omega)
 
 end Ixon.Verify.Work

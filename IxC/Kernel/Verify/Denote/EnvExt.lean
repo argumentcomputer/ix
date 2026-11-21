@@ -88,11 +88,18 @@ theorem denote_env_ext {cval : TConstVal md} {env₁ env₂ : Env md}
   | case13 d f a hbad ihf iha => simp only [denote_app, ← ihf, ← iha]
   | case14 d ty val body =>
     simp only [denote_letE]
-  | case15 d sn i e h1 ihe => simp only [denote_proj, ← ihe, hproj sn i]
+  | case15 d sn i e h1 ihe => simp only [denote_proj, ← ihe, h1]
   | case16 d sn i e B h1 entry h2 ihe =>
-    simp only [denote_proj, ← ihe, hproj sn i]
+    simp only [denote_proj, ← ihe, h1, hproj sn i, projNodeNV?]
+    have hsm : (env₁.find? (projChainKey sn i)).isSome =
+        (env₂.find? (projChainKey sn i)).isSome := by
+      have hm := congrArg Option.isSome (henvLev (projChainKey sn i))
+      simpa using hm
+    cases env₂.findProj? sn i with
+    | none => rfl
+    | some e' => rw [hsm]
   | case17 d sn i e B h1 h2 ihe =>
-    simp only [denote_proj, ← ihe, hproj sn i]
+    simp only [denote_proj, ← ihe, ← hproj sn i, h1, h2]
   | case18 d n _ | case19 d n _ =>
     simp only [denote_natLit, hnat]
   | case20 d s _ | case21 d s _ =>

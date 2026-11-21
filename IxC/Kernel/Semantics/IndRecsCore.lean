@@ -240,13 +240,12 @@ theorem swapEnvFacts {envSelf env₃ : Env md} {cvalSelf : TConstVal md}
         envSelf.find? m = some ci → env₃.find? m = some ci :=
       fun m ci hnr hfc => hcg.findUp m ci hfc hnr
     rcases hentF n cv mI rP rules hf with hfS | hfacts
-    · obtain ⟨⟨cvj, cnP, cnF, hfc⟩, hk, he⟩ :=
+    · obtain ⟨hco, hk, he⟩ :=
         hctorsS n cv mI rP rules hfS r hr
-      exact ⟨⟨cvj, cnP, cnF, hkeep _ _
-          (fun _ _ _ _ hcon => ConstantInfo.noConfusion rfl (heq_of_eq hcon)) hfc⟩,
+      exact ⟨hco.mono hkeep,
         fun hb => recRuleKOf_mono hkeep (hk hb),
         fun hb => recRuleEtaOf_mono hkeep (he hb)⟩
-    · obtain ⟨-, -, -, -, -, ⟨cvj, cnP, cnF, hfc⟩, -, hk, he⟩ := hfacts r hr
+    · obtain ⟨-, -, -, -, -, hco, -, hk, he⟩ := hfacts r hr
       -- the swapped recursor is stored under its own constant's name
       have hnR : cv.name = n := by
         rcases hcorr n with heq | ⟨cv', mI', rP', rules', h₀, h₃, hn'⟩
@@ -257,8 +256,7 @@ theorem swapEnvFacts {envSelf env₃ : Env md} {cvalSelf : TConstVal md}
         · rw [h₃] at hf
           obtain ⟨rfl, -, -, -⟩ := ConstantInfo.recInfo.inj (Option.some.inj hf)
           exact hn'
-      exact ⟨⟨cvj, cnP, cnF, hkeep _ _
-          (fun _ _ _ _ hcon => ConstantInfo.noConfusion rfl (heq_of_eq hcon)) hfc⟩,
+      exact ⟨hco.mono hkeep,
         fun hb => recRuleKOf_mono hkeep (hk hb),
         fun hb => recRuleEtaOf_mono hkeep (hnR ▸ he hb)⟩
   · -- `BasisPinnedTT`: a genuinely swapped entry is never reserved

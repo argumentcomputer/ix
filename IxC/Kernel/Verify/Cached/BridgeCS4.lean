@@ -651,7 +651,7 @@ theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv
       CheckM md _) = .ok pty := by
     rw [← checkProjTy_datF (F := F₀')]
     exact hFty
-  have hSHc : (checkProjShape pty cvj.type nP nF : CheckM md Unit)
+  have hSHc : (checkProjShape pty cvj.type nP nF cvj.levelParams : CheckM md Unit)
       = .ok u0 := by
     rw [← checkProjShape_datF (F := F₀'')]
     exact hFshape
@@ -680,7 +680,7 @@ theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv
       CheckM md _) >>= _) = _
     rw [hTYc]
     simp only [Bind.bind, Except.bind]
-    show ((checkProjShape pty cvj.type nP nF : CheckM md Unit) >>= _) = _
+    show ((checkProjShape pty cvj.type nP nF cvj.levelParams : CheckM md Unit) >>= _) = _
     rw [hSHc]
     simp only [Bind.bind, Except.bind]
     try dsimp only
@@ -727,7 +727,7 @@ theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv
   rcases List.mem_singleton.mp hr with rfl
   refine ⟨hrfv, halp, Expr.constsResolve_mono hrres, hrbv, ?_⟩
   intro lvls pins hf
-  cases hcond : Expr.recRulePlain pty' nP nP nP <;>
+  cases hcond : Expr.recRulePlain pty' nP nP nP (ctorLevelParamsOf env.find? ctorName) <;>
     simp [projFnRule, recRuleBits, hcond] at hf
 
 /-- One projection-function install step. -/

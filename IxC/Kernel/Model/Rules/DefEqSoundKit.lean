@@ -1,8 +1,8 @@
 module
 
--- lane S-red's kit is the SHARED one: `DenoteMetaSpine`'s list algebra,
--- `hoist_spine`, `frame_spine`, `denoteMeta_mkAppN(_inv)`, the
--- `PiChain` guard and the tower entry's reading live there
+-- `RedSoundKit` holds the shared spine helpers: `DenoteMetaSpine`'s list
+-- algebra, `hoist_spine`, `frame_spine`, `denoteMeta_mkAppN(_inv)`, the
+-- `PiChain` guard and the tower entry's reading live there.
 public import IxC.Kernel.Model.Rules.RedSoundKit
 import IxC.Kernel.Model.CtxOkKit
 import IxC.Kernel.Model.Annot.BitLemmas
@@ -12,12 +12,11 @@ import IxC.Kernel.Model.IOLicense
 import IxC.Kernel.Model.Annot.BitClosed
 import IxC.Kernel.Verify.InstLevels
 import IxC.Kernel.Verify.PinnedShapes
-/- `Ix.Kernel.PropWhen` seals its representation on purpose (the
-`Std.HashMap` pattern, task #194): the datum's module is `public` but
+/- `Ix.Kernel.PropWhen` seals its representation on purpose (following the
+`Std.HashMap` pattern): the datum's module is `public` but
 not `@[expose]`d, so the `cases`-then-`rfl` steps of the squash-regime
 facts below cannot see the reduct.  `import all` restores that view
-HERE only — the transplant of `Model/Steps/IrrelFast.lean`, which
-carries the same escape for the same reason. -/
+HERE only. -/
 import all IxC.Kernel.PropWhen
 import IxC.Kernel.Semantics.Hoist
 import IxC.Kernel.Model.Annot.BitLevels
@@ -25,16 +24,13 @@ import IxC.Kernel.Model.Annot.BitLevels
 public section
 
 /-!
-# The definitional-equality soundness kit (task #305, lane S-defeq)
+# The definitional-equality soundness kit
 
 The plumbing the per-rule lemmas of `Model/Rules/DefEqSound.lean`
 share: the frame/grading splitters at each node shape, the two `Nat`
-constant readings, and `projAV`'s congruence.  Everything here is a
-TRANSPLANT of an argument that lived in `Model/Steps/*` until the task
-#305 closing deleted that tier (`DefEq.lean`'s `hoist_*` and
-`denoteMeta_nat*Const`, `ProjAVKit.lean`'s `projAV` family) — restated
-at the rules tier's `Frame`/`Graded` vocabulary, so that no
-`Model/Rules` module is stated over runs.
+constant readings, and `projAV`'s congruence — stated at the rules
+tier's `Frame`/`Graded` vocabulary, so that no `Model/Rules` module
+is stated over runs.
 -/
 
 namespace Ix.Kernel.Model.Rules
@@ -195,7 +191,7 @@ theorem denoteMeta_open_rename {acval : Key md → (LevelParam → Nat) → Anno
 validated reading. -/
 theorem acval_const_congr' {m : EnvModel V env} (hap : AcvalParams m)
     {d : Nat} {n : Key md} {us us' : List Level} {aa ba : AnnotTerm}
-    (hlev : Level.isEquivList us us' = some true)
+    (hlev : ∀ φ, Level.EvalEqList φ us us')
     (hda : denoteMeta m.acval env φ d (.const n us) = some aa)
     (hdb : denoteMeta m.acval env φ d (.const n us') = some ba) :
     aa = ba := by
@@ -210,8 +206,7 @@ theorem acval_const_congr' {m : EnvModel V env} (hap : AcvalParams m)
       · rw [← Option.some.inj hda, ← Option.some.inj hdb]
         refine hap n ci hf _ _ ?_
         intro p _
-        exact Level.substFn_of_evalEqList _
-          (Level.isEquivList_sound hlev φ) p
+        exact Level.substFn_of_evalEqList _ (hlev φ) p
       · exact nomatch hdb
     · exact nomatch hda
 
@@ -220,6 +215,13 @@ of `RedSoundKit`, at `Graded`). -/
 theorem Graded.projAV {Δa : List AnnotTerm} {i : Nat} {e : AnnotTerm}
     (h : Graded V Δa (Ix.Kernel.Semantics.projAV i e)) : Graded V Δa e :=
   fun ρ hρ => ProjAV.hoistV (h ρ hρ)
+
+theorem Graded.projNodeAV {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {Δa : List AnnotTerm} {sn : Key md} {i : Nat} {entry : ProjEntry md}
+    {e : AnnotTerm}
+    (h : Graded V Δa (Ix.Kernel.Semantics.projNodeAV acval sn i entry e)) :
+    Graded V Δa e :=
+  fun ρ hρ => ProjNodeAV.hoistV (h ρ hρ)
 
 /-! ## The stored constant's package (`Steps/IotaRows.lean:200`) -/
 
@@ -348,7 +350,7 @@ theorem neverChain_succ_inv {n u : Nat} {e : AnnotTerm}
   match e with
   | .pi w v A B => exact ⟨w, v, A, B, rfl, h.1, h.2⟩
   | .bvar _ | .sort _ | .const _ _ | .app _ _ | .lam _ _ _
-  | .eqE _ _ | .fst _ | .snd _ | .prf => exact nomatch h
+  | .eqE _ _ | .fst _ | .snd _ | .prf | .chain _ _ | .bgraph _ _ => exact nomatch h
 
 /-- Substitution preserves the chain (`inst` maps `.pi` to `.pi` and
 `.sort` to itself). -/
@@ -657,7 +659,7 @@ theorem prop_side_pt' {m : EnvModel V env} {d : Nat} {a ta tta : Expr md}
     {u : Level} {Δa : List AnnotTerm} {aa : AnnotTerm}
     (hta : InferSemIO m φ d a ta) (htta : InferSemIO m φ d ta tta)
     (hu : RedSem m φ d tta (.sort u))
-    (hu0 : Level.isEquiv u .zero = some true)
+    (hu0 : ∀ φ, Level.eval φ u = 0)
     (hfa : Frame d a) (hCa : CtxOk m φ d Δa a)
     (hda : denoteMeta m.acval env φ d a = some aa)
     (hokA : Graded V Δa aa)
@@ -670,7 +672,7 @@ theorem prop_side_pt' {m : EnvModel V env} {d : Nat} {a ta tta : Expr md}
   obtain ⟨-, -, sa, hsa, -, heq⟩ := hu hftta hCtta httaa hokttaa
   rw [denoteMeta_sort] at hsa
   obtain rfl : sa = AnnotTerm.sort (u.eval φ) := (Option.some.inj hsa).symm
-  have h0 : Level.eval φ u = 0 := Ix.Kernel.Level.isEquiv_sound hu0 φ
+  have h0 : Level.eval φ u = 0 := hu0 φ
   have hT := hmemT ρ hρ
   rw [heq ρ hρ, interp_sort, h0] at hT
   exact mem_univ_zero hT (hmemA ρ hρ)

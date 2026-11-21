@@ -6,7 +6,7 @@ import IxC.Kernel.Verify.ProjSlots
 public section
 
 /-!
-# The generated recursor, opened (task #175 S2)
+# The generated recursor, opened
 
 The direct install stores the recursor it *generates* (`structRecTy`,
 `structRecRhs`, `IxC/Kernel/Inductives/StructParts.lean`): the type former's
