@@ -248,6 +248,54 @@ def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
 def projWrapperAddr (info : Ixon.ConstantInfo) : Address :=
   Address.blake3 (Ixon.ser (⟨info, #[], #[], #[], #[]⟩ : Ixon.Constant))
 
+/-- Precomputed per-constant adjacency lists for fast sharded witness construction
+without re-deserializing `LazyConstant`s per shard. -/
+structure EnvGraph where
+  walkEdges : Std.HashMap Address (Array Address) := {}
+  closureRefs : Std.HashMap Address (Array Address) := {}
+  deriving Inhabited
+
+/-- Exact closure edges `closureFromRoots` follows out of `(addr, c)`. -/
+def closureEdgesOf (addr : Address) (c : Ixon.Constant) : Array Address := Id.run do
+  let mut out := c.refs
+  match c.info with
+  | .iPrj p | .cPrj p => out := out.push p.block
+  | .rPrj p | .dPrj p => out := out.push p.block
+  | .muts members =>
+    let mut i : UInt64 := 0
+    for m in members do
+      let info : Ixon.ConstantInfo := match m with
+        | .defn _ => .dPrj ⟨i, addr⟩
+        | .indc _ => .iPrj ⟨i, addr⟩
+        | .recr _ => .rPrj ⟨i, addr⟩
+      out := out.push (projWrapperAddr info)
+      if let .indc ind := m then
+        let mut cidx : UInt64 := 0
+        for _ in ind.ctors do
+          out := out.push (projWrapperAddr (.cPrj ⟨i, cidx, addr⟩))
+          cidx := cidx + 1
+      i := i + 1
+  | _ => pure ()
+  return out
+
+/-- Walk the Constant ref-graph from `roots` using a precomputed `EnvGraph`. -/
+def closureFromRootsWithGraph (env : Ixon.Env) (graph : EnvGraph) (roots : Array Address) :
+    Std.HashSet Address := Id.run do
+  let mut visited : Std.HashSet Address := Std.HashSet.emptyWithCapacity (max 64 (roots.size * 4))
+  let mut worklist : Array Address := roots
+  while !worklist.isEmpty do
+    let addr := worklist.back!
+    worklist := worklist.pop
+    if visited.contains addr then continue
+    visited := visited.insert addr
+    if let some deps := env.modelDeps[addr]? then
+      for d in deps do worklist := worklist.push d
+    if let some refs := graph.closureRefs[addr]? then
+      for r in refs do worklist := worklist.push r
+    else if let some c := env.modelRecords[addr]? then
+      for r in closureEdgesOf addr c do worklist := worklist.push r
+  return visited
+
 /-- Walk the Constant ref-graph from `roots` to compute the set of
     addresses needed to type-check them. -/
 partial def closureFromRoots (env : Ixon.Env) (roots : Array Address) :
@@ -574,6 +622,127 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address)
   let closure := closureFromRoots env
     (owned ++ primitiveRoots ++ bindingRoots env assumeBinding ++ Ix.ClaimContext.userAxioms env)
   pure (claim, closure, trees)
+
+@[inline] private def pushByteAsTagN0 (out : ByteArray) (b : UInt8) : ByteArray :=
+  if b < 128 then out.push b
+  else (out.push 128).push (b - 128)
+
+private def pushByteSliceAsTagN0 (out : ByteArray) (buf : ByteArray) (off len : Nat) : ByteArray := Id.run do
+  let mut out := Aiur.Ixon.tagN0 out len.toUInt64
+  for i in [off : off + len] do
+    out := pushByteAsTagN0 out (buf.get! i)
+  return out
+
+private def pushBytesAsTagN0 (out : ByteArray) (bs : ByteArray) : ByteArray :=
+  pushByteSliceAsTagN0 out bs 0 bs.size
+
+private def pushAddrKeyAsTagN0 (out : ByteArray) (a : Address) : ByteArray :=
+  pushByteSliceAsTagN0 out a.hash 0 a.hash.size
+
+private def pushGsAsTagN0 (out : ByteArray) (xs : Array Aiur.G) : ByteArray :=
+  xs.foldl (fun o x => Aiur.Ixon.tagN0 o x.val) (Aiur.Ixon.tagN0 out xs.size.toUInt64)
+
+private def shardTreesWithGraph (env : Ixon.Env) (graph : EnvGraph) (owned : Array Address)
+    (ctx : Ix.ClaimContext) (axioms : Option Ix.AssumptionTree) :
+    Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
+  let ownedSet : Std.HashSet Address := owned.foldl (·.insert ·) {}
+  let frontier : Array Address := Id.run do
+    let mut fs : Std.HashSet Address := {}
+    for o in owned do
+      if let some es := graph.walkEdges[o]? then
+        for r in es do
+          if !ownedSet.contains r && env.consts.contains r then fs := fs.insert r
+      else if let some c := env.getConst? o then
+        for r in walkEdges c do
+          if !ownedSet.contains r && env.consts.contains r then fs := fs.insert r
+    return fs.toArray
+  let some ownedTree := Ix.AssumptionTree.canonical owned
+    | .error "shardCheckEnvClaim: empty owned set"
+  let asmTree? := Ix.AssumptionTree.canonical frontier
+  let claim := Ix.Claim.checkEnv ctx ownedTree.root (asmTree?.map (·.root))
+  let mut trees : Std.HashMap Address Ix.AssumptionTree :=
+    ({} : Std.HashMap Address Ix.AssumptionTree).insert ownedTree.root ownedTree
+  if let some axTree := axioms then
+    trees := trees.insert axTree.root axTree
+  match asmTree? with
+  | some asmTree => trees := trees.insert asmTree.root asmTree
+  | none => pure ()
+  pure (claim, trees)
+
+/-- Build a shard's `IXAIURI\0` invocation bytes directly from raw `LazyConstant` slices
+using the precomputed `EnvGraph`, avoiding per-shard deserialization and `Array Aiur.G`
+materialization. -/
+def buildOwnedShardInvocation (env : Ixon.Env) (graph : EnvGraph) (inputs : ShardWitnessInputs)
+    (owned : Array Address) : Except String (Ix.Claim × ByteArray) := do
+  let (claim, trees) ← shardTreesWithGraph env graph owned inputs.context inputs.axioms
+  let closure := closureFromRootsWithGraph env graph (owned ++ inputs.commonRoots)
+  let claimBytes := Ix.Claim.ser claim
+  let digestKey := packedDigestKey (Address.blake3 claimBytes)
+  -- Pre-count streams and estimate byte capacity to avoid reallocations.
+  let mut streamCount : Nat := 1 + trees.size + (if env.roleBinding.isSome then 1 else 0)
+  let mut estBytes : Nat := 1024 + claimBytes.size * 2
+  for a in closure do
+    if let some lc := env.consts[a]? then
+      streamCount := streamCount + 1
+      estBytes := estBytes + 48 + lc.len + (lc.len / 2)
+    else if env.modelRecords.contains a then
+      streamCount := streamCount + 1
+      estBytes := estBytes + 512
+    if env.anonHints.contains a || env.modelHints.contains a then
+      streamCount := streamCount + 1
+      estBytes := estBytes + 48
+    if let some bs := env.blobs[a]? <|> env.modelBlobs[a]? then
+      streamCount := streamCount + 1
+      estBytes := estBytes + 48 + bs.size + (bs.size / 2)
+    if let some payload := env.models[a]? then
+      streamCount := streamCount + 1
+      estBytes := estBytes + 48 + payload.size + (payload.size / 2)
+  let entry := "IxVM::verify_claim".toUTF8
+  let mut out := ByteArray.emptyWithCapacity estBytes
+  out := out.append "IXAIURI\x00".toUTF8
+  out := Aiur.Ixon.tagN0 out 1
+  out := (Aiur.Ixon.tagN0 out entry.size.toUInt64).append entry
+  out := pushGsAsTagN0 out digestKey
+  out := Aiur.Ixon.tagN0 out streamCount.toUInt64
+  -- Channel 6: role binding
+  if let some binding := env.roleBinding then
+    out := Aiur.Ixon.tagN0 out 6
+    out := pushAddrKeyAsTagN0 out binding.address
+    out := pushBytesAsTagN0 out binding.bytes
+  -- Channel 0: claim bytes
+  out := Aiur.Ixon.tagN0 out 0
+  out := pushGsAsTagN0 out digestKey
+  out := pushBytesAsTagN0 out claimBytes
+  -- Channel 1: assumption / owned / axiom trees
+  for (root, tree) in trees do
+    let bytes := Ix.AssumptionTree.ser tree
+    out := Aiur.Ixon.tagN0 out 1
+    out := pushAddrKeyAsTagN0 out root
+    out := pushBytesAsTagN0 out bytes
+  -- Channels 2, 3, 4, 7: scoped records, hints, blobs, model payloads
+  for a in closure do
+    if let some lc := env.consts[a]? then
+      out := Aiur.Ixon.tagN0 out 2
+      out := pushAddrKeyAsTagN0 out a
+      out := pushByteSliceAsTagN0 out lc.buf lc.off lc.len
+    else if let some c := env.modelRecords[a]? then
+      out := Aiur.Ixon.tagN0 out 2
+      out := pushAddrKeyAsTagN0 out a
+      out := pushBytesAsTagN0 out (Ixon.ser c)
+    if let some h := env.anonHints[a]? <|> env.modelHints[a]? then
+      out := Aiur.Ixon.tagN0 out 3
+      out := pushAddrKeyAsTagN0 out a
+      out := Aiur.Ixon.tagN0 out 1
+      out := Aiur.Ixon.tagN0 out (hintToG h).val
+    if let some bytes := env.blobs[a]? <|> env.modelBlobs[a]? then
+      out := Aiur.Ixon.tagN0 out 4
+      out := pushAddrKeyAsTagN0 out a
+      out := pushBytesAsTagN0 out bytes
+    if let some payload := env.models[a]? then
+      out := Aiur.Ixon.tagN0 out 7
+      out := pushAddrKeyAsTagN0 out a
+      out := pushBytesAsTagN0 out payload
+  return (claim, out)
 
 /-- Build a shard already partitioned by `ownedConstsPer` under the same bound
 environment. A split inherits its parent's filtered owned addresses. -/

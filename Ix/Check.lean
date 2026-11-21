@@ -131,9 +131,10 @@ def loadBoundIxe (path : String) : IO (Ixon.Env × Aiur.EnvHandle) := do
 
 /-- What a single `runOne` invocation is targeting. -/
 inductive Target where
-  | addr  (a : Address)
-  | shard (owned : Array Address)
-  | leanW (w : IxVM.ClaimHarness.ClaimWitness)
+  | addr   (a : Address)
+  | shard  (owned : Array Address)
+  | leanW  (w : IxVM.ClaimHarness.ClaimWitness)
+  | rawIxi (bytes : ByteArray)
 
 /-- The environment a claim about `name` is checked against when no `.ixe` is
     given: the closure of `name`, with the constants the kernel fabricates

@@ -112,11 +112,29 @@ def inertUsers (env : Ixon.Env) : Std.HashSet Address := Id.run do
       rootSet := rootSet.insert a
   let roots := rootSet.toArray
   if roots.isEmpty then return {}
-  let mut users : Std.HashMap Address (Array Address) := {}
-  for (a, lc) in env.consts do
-    let some c := lc.get? | continue
-    for e in walkEdges c do
-      users := users.alter e (fun xs => some ((xs.getD #[]).push a))
+  let entries := env.consts.toArray
+  let numTasks := if entries.size < 4096 then 1 else 32
+  let chunk := (entries.size + numTasks - 1) / numTasks
+  let tasks : Array (Task (Array (Address × Array Address))) :=
+    (Array.range numTasks).filterMap fun t =>
+      let lo := t * chunk
+      if lo ≥ entries.size then none
+      else
+        let hi := min entries.size (lo + chunk)
+        some <| Task.spawn fun _ => Id.run do
+          let mut pairs : Array (Address × Array Address) := Array.mkEmpty (hi - lo)
+          for i in [lo:hi] do
+            let (a, lc) := entries[i]!
+            if let some c := lc.get? then
+              let es := walkEdges c
+              unless es.isEmpty do pairs := pairs.push (a, es)
+          return pairs
+  let mut users : Std.HashMap Address (Array Address) :=
+    Std.HashMap.emptyWithCapacity entries.size
+  for t in tasks do
+    for (a, es) in t.get do
+      for e in es do
+        users := users.alter e (fun xs => some ((xs.getD #[]).push a))
   let mut seen : Std.HashSet Address := roots.foldl (·.insert ·) {}
   let mut stack := roots
   repeat

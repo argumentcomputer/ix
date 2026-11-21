@@ -362,7 +362,10 @@ def one (p : Cli.Parsed) (artifactPath binary : String) (options : HostOptions)
     (mode : String) (claim : Ix.Claim) (target : Ix.Check.Target) (label : String)
     (resume : Bool := false) : IO JobResult := do
   try
-    let .leanW witness := target | throw (IO.userError "formal backend needs a stream witness")
+    let input : ByteArray ← match target with
+      | .leanW witness => pure (invocation witness.input witness.inputIOBuffer)
+      | .rawIxi bytes => pure bytes
+      | _ => throw (IO.userError "formal backend needs a stream witness")
     let digest := Address.blake3 (Ix.Claim.ser claim)
     -- A verified proof of exactly this claim settles it: proving reuses it,
     -- and checking (`ix shard refine`) keeps its leaf rather than orphan it.
@@ -379,9 +382,9 @@ def one (p : Cli.Parsed) (artifactPath binary : String) (options : HostOptions)
           return { address := some addr, report := Json.mkObj [("reused", toJson (toString addr))] }
         catch e => IO.eprintln s!"ignored cached proof {addr}: {e}"
     IO.println s!"[aiur] {mode} {label}"
+    (← IO.getStdout).flush
     IO.FS.withTempDir fun dir => do
       let path := dir / "proof"
-      let input := invocation witness.input witness.inputIOBuffer
       let code ← runHost binary artifactPath mode input path.toString options
       let reportPath := System.FilePath.mk (path.toString ++ ".report.json")
       let report ← if ← reportPath.pathExists then
@@ -539,7 +542,7 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
   let env ← IO.ofExcept (withDefaultRoleBinding (← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))))
   let assumeBinding := p.hasFlag "assume-binding"
   let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest))
-  let some owners ← Ix.Shard.coveredOwners env view.shards | throw (IO.userError "invalid manifest coverage")
+  let some (owners, graph) ← Ix.Shard.coveredOwnersWithGraph env view.shards | throw (IO.userError "invalid manifest coverage")
   if p.hasFlag "shard" && p.hasFlag "shards" then throw (IO.userError "choose --shard or --shards")
   let selected ← match (p.flag? "shard").map (·.as! Nat), (p.flag? "shards").map (·.as! String) with
     | some k, _ => pure #[k]
@@ -571,8 +574,8 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
         if owned.isEmpty then
           settled := settled.push { blocks, result := {} }
           continue
-        let (claim, witness) ← IO.ofExcept (buildOwnedShardWitness env inputs owned)
-        let result ← one p artifactPath binary options mode claim (.leanW witness) s!"shard {k} ({blocks.size} blocks)"
+        let (claim, ixiBytes) ← IO.ofExcept (buildOwnedShardInvocation env graph inputs owned)
+        let result ← one p artifactPath binary options mode claim (.rawIxi ixiBytes) s!"shard {k} ({blocks.size} blocks)"
         let canSplit := (result.report.getObjValAs? Bool "can_split").toOption.getD true
         if result.code == 75 && canSplit && blocks.size > 1 && !p.hasFlag "trace-shards" then
           let parts := (result.report.getObjVal? "plan" >>= fun j => j.getObjValAs? Nat "suggested_parts").toOption.getD 2
