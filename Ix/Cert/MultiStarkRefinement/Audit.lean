@@ -28,12 +28,25 @@ mutation negative controls) depends ONLY on standard Lean axioms
 #check @Ix.Cert.MultiStarkRefinement.pair_mul_refines
 #check @Ix.Cert.MultiStarkRefinement.two_adic_gen_refines
 #check @Ix.Cert.MultiStarkRefinement.quotient_degree_of_refines
+#check @Ix.Cert.MultiStarkRefinement.rows_pop_canonical_eq
+#check @Ix.Cert.MultiStarkRefinement.goldilocks_inv_two_eq
+#check @Ix.Cert.MultiStarkRefinement.eg_div_base_eq
+#check @Ix.Cert.MultiStarkRefinement.roFoldHorner_refines_tail
+#check @Ix.Cert.MultiStarkRefinement.bucket_finalize_distributes
 /-- info: 'Ix.Cert.MultiStarkRefinement.gl_to_bytes_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Ix.Cert.MultiStarkRefinement.gl_to_bytes_unique
 /-- info: 'Ix.Cert.MultiStarkRefinement.eg_inverse_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Ix.Cert.MultiStarkRefinement.eg_inverse_spec
 /-- info: 'Ix.Cert.MultiStarkRefinement.two_adic_gen_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in #print axioms Ix.Cert.MultiStarkRefinement.two_adic_gen_refines
+/-- info: 'Ix.Cert.MultiStarkRefinement.rows_pop_canonical_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.MultiStarkRefinement.rows_pop_canonical_eq
+/-- info: 'Ix.Cert.MultiStarkRefinement.eg_div_base_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.MultiStarkRefinement.eg_div_base_eq
+/-- info: 'Ix.Cert.MultiStarkRefinement.roFoldHorner_refines_tail' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.MultiStarkRefinement.roFoldHorner_refines_tail
+/-- info: 'Ix.Cert.MultiStarkRefinement.bucket_finalize_distributes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in #print axioms Ix.Cert.MultiStarkRefinement.bucket_finalize_distributes
 
 -- 3. Wire deserialization, transcript, MMCS, preamble bounds, and verifyBatch refinement
 #check @Ix.Cert.MultiStarkRefinement.lookup_groups_count_refines
