@@ -170,6 +170,8 @@ pub struct CircuitStatistics {
 /// the compiler, circuit export and ordinary execution remain field generic.
 pub struct Backend<'p, 'a, B: WitnessField = PrimeField> {
   plan: Shared<'p, TracePlan<'a, B>>,
+  /// Prepared placements and device allocations belong to this backend.
+  preparation_identity: std::sync::Arc<()>,
   system: System<GoldilocksBlake3Config>,
   key: ProverKey<GoldilocksBlake3Config>,
   names: Vec<String>,
@@ -505,6 +507,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     }
     let backend = Self {
       plan,
+      preparation_identity: std::sync::Arc::new(()),
       system,
       key,
       names,
