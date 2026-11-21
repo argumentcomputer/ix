@@ -340,20 +340,42 @@ def makeOne (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source) (fe 
 
 /-- **Phase A on workers**, each with an environment of its own built by `push`
 (never shared, so every push is in place). The prelude's wave (wave 0, whose
-declarations name each other) is made whole by every worker, in order. At every
-other wave, worker `w` makes the declarations of the groups `g` with `g % W = w`
-(`groupOf`, by position in `prepared`; a group's declarations, which may name each
-other, in order on one worker), each against its own environment (`makeOne`) and
-pushed there at once, publishes them, and pushes every other worker's (in worker
-order, a constant already there skipped). The groups of a wave do not name each
-other, so each declaration is made against an environment that answers its lookups
-as the one-by-one fold's does. The first worker's environment, and the
-declarations to retry (in wave order, then worker order). A worker that finds
-`stop` set at a wave publishes nothing for it and the waves after it, and ends:
-the install is abandoned, and no worker waits for it. -/
+declarations name each other) is made once sequentially, its constants marked
+persistent and pushed into each worker's fresh environment before the parallel
+waves begin. At every subsequent wave, worker `w` makes the declarations of the
+groups `g` with `g % W = w` (`groupOf`, by position in `prepared`; a group's
+declarations, which may name each other, in order on one worker), each against
+its own environment (`makeOne`) and pushed there at once, publishes them, and
+pushes every other worker's (in worker order, a constant already there skipped).
+The groups of a wave do not name each other, so each declaration is made against
+an environment that answers its lookups as the one-by-one fold's does. The first
+worker's environment, and the declarations to retry (in wave order, then worker
+order). A worker that finds `stop` set at a wave publishes nothing for it and
+the waves after it, and ends: the install is abandoned, and no worker waits for
+it. -/
 def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source)
     (prepared : Array (CDecl .source)) (groupOf : Array Nat) (waves : Array (Array Nat))
     (workers : Nat) (stop : IO Bool) : IO (FEnv .source × Array Nat) := do
+  if waves.isEmpty then
+    return (Ix.Kernel.mkFEnv Ix.Kernel.Env.empty, #[])
+  -- Wave 0 (the prelude, whose declarations name each other) is made once, not
+  -- repeated on every worker.
+  let mut fe0 : FEnv .source := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
+  let mut retry0 : Array Nat := #[]
+  for i in waves[0]! do
+    if ← stop then return (fe0, retry0)
+    let (fe', m) := makeOne mode ev fe0 i prepared[i]!
+    fe0 := fe'
+    match m with
+    | .pushes cis =>
+      for ci in cis do
+        if (fe0.find? ci.name).isNone then fe0 := fe0.push ci
+    | .retry =>
+      retry0 := retry0.push i
+  if waves.size ≤ 1 || (← stop) then
+    return (fe0, retry0)
+  let baseCis ← fe0.env.consts.reverse.toArray.mapM fun ci =>
+    (unsafe Runtime.markPersistent ci : BaseIO (Ix.Kernel.ConstantInfo .source))
   let W := max 1 workers
   -- worker `w`'s results at wave `k`, at `k * W + w`
   let mut made : Array (IO.Promise (Array (Nat × Made))) := #[]
@@ -361,9 +383,10 @@ def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source
     made := made.push (← IO.Promise.new)
   let outs := made
   let run (w : Nat) : IO (FEnv .source × Array Nat) := do
-    let mut fe : FEnv .source := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
-    let mut retry : Array Nat := #[]
-    for h : k in [:waves.size] do
+    let mut fe : FEnv .source :=
+      baseCis.foldl (fun fe ci => fe.push ci) (Ix.Kernel.mkFEnv Ix.Kernel.Env.empty)
+    let mut retry : Array Nat := if w == 0 then retry0 else #[]
+    for h : k in [1:waves.size] do
       if ← stop then
         for k' in [k:waves.size] do
           if let some p := outs[k' * W + w]? then p.resolve #[]
@@ -371,7 +394,7 @@ def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source
       let wave := waves[k]
       let mut mine : Array (Nat × Made) := #[]
       for i in wave do
-        unless k == 0 || (groupOf[i]?.getD i) % W == w do continue
+        unless (groupOf[i]?.getD i) % W == w do continue
         let (fe', m) := makeOne mode ev fe i prepared[i]!
         fe := fe'
         match m with
@@ -379,16 +402,12 @@ def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source
           -- read by every worker, written by none: no reference counts
           let mut ps : Array (Ix.Kernel.ConstantInfo .source) := #[]
           for ci in cis do
-            let mut ci := ci
-            if k != 0 then
-              ci ← (unsafe Runtime.markPersistent ci : BaseIO (Ix.Kernel.ConstantInfo .source))
+            let ci ← (unsafe Runtime.markPersistent ci : BaseIO (Ix.Kernel.ConstantInfo .source))
             if (fe.find? ci.name).isNone then fe := fe.push ci
             ps := ps.push ci
           mine := mine.push (i, .pushes ps)
         | .retry =>
           mine := mine.push (i, .retry)
-          if k == 0 && w == 0 then retry := retry.push i
-      if k == 0 then continue
       if let some p := outs[k * W + w]? then p.resolve mine
       for w' in [:W] do
         let rs : Array (Nat × Made) ← if w' == w then pure mine else
@@ -785,7 +804,7 @@ def installInput (env : Ix.Environment) (pre : Ix.Kernel.Reader.Prelude .source)
   let tc1 ← IO.monoMsNow
   -- the reference graph as `Ix.Compile.FrontEnd.graph` builds it, then its condensation
   let some refs ← parMap threads stop (fun (nc : Ix.Name × Ix.ConstantInfo) =>
-      (nc.1, (Ix.GraphM.run envI .init (Ix.graphConst nc.2)).1)) envI.consts.toList.toArray
+      (nc.1, (Ix.GraphM.run envI .init (Ix.graphConst nc.2)).1)) envI.consts.toArray
     | return .error abandoned
   let graph : Ix.Map Ix.Name (Ix.Set Ix.Name) := refs.foldl (fun out (n, rs) => out.insert n rs) {}
   let blocks ← IO.lazyPure fun _ => Ix.CondenseM.run graph
