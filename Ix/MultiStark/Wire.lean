@@ -23,13 +23,8 @@ def serializeClaims (claims : Array (Array Aiur.G)) : ByteArray := Id.run do
   return ⟨out⟩
 
 /-- Assemble `verify_multi_stark_proof`'s public input from the serialized vk
-(`AiurSystem.vkBytes`) and claims (`serializeClaims`): vk digest ++ claims
-digest, each as 8 packed-4-byte field elements (the entrypoint's format). The FRI parameters are read in-circuit from the digest-bound vk, not
-passed publicly. The proof/vk/claims advice itself goes through the
-natively-built IO buffer (`executeMultiStark` / `proveMultiStark`, which take
-the raw byte blobs directly: channel 0 = the verified native proof transport
-returned by `AiurSystem.proofToAdviceBytes`, 1 = vk, 2 = claims, each under
-key `[0]`). -/
+and claims (`serializeClaims`): vk digest ++ claims digest, each as 8
+packed-4-byte field elements (the entrypoint's format). -/
 def digestGs (bytes : ByteArray) : Array Aiur.G :=
   let h := (Blake3.Rust.hash bytes).val.data
   (Array.range 8).map fun i =>
@@ -38,7 +33,6 @@ def digestGs (bytes : ByteArray) : Array Aiur.G :=
 
 def verifierPubInput (vkBytes claimBytes : ByteArray) : Array Aiur.G :=
   digestGs vkBytes ++ digestGs claimBytes
-
 
 end MultiStark
 end
