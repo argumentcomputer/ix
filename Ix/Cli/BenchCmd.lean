@@ -291,16 +291,18 @@ def backendSpecs : List BackendSpec := [
                    ("ixvm-verify-time", "0.10", "_"),
                    ("fri-verifier-verify-time", "0.10", "_")] },
   -- aiur-sharded-env: whole-env formal Aiur execution at env scale, one row
-  -- per env. Shards the `.ixe` for the runner's RAM (`ix shard --max-ram
+  -- per env. Shards the `.ixe` for the destination proof RAM (`ix shard --max-ram
   -- 100`: seed sizing), then checks every leaf with the split audit (`ix
   -- check --ram-budget 100 --keep-going`): each leaf is executed by the
-  -- `ixvm-proof` host and its proof planned against the budget, and a leaf
+  -- resident host and its proof planned against the budget, and a leaf
   -- whose trace-shard batch cannot fit is cut by blocks and its parts
   -- re-executed, so the row describes the LEAF partition the run validated.
-  -- Leaves run one at a time (`ix check` defaults to `--jobs 1`, and more
-  -- jobs would share the budget). The measured window (`check-time`) covers
-  -- every leaf's execution and planning, splits included, but not the
-  -- environment load. ISLB only for now; add "FLT" / "Mathlib" to `envs` for
+  -- Leaves share one backend and a memory-bounded execution pool (all cores
+  -- by default). Each retains the full destination proof budget. `check-time`
+  -- covers the initial batch, matching the legacy timer; `check-total-time`
+  -- also includes split waves. `setup-time` reports shared host setup.
+  -- Neither batch timer includes environment loading. ISLB only for now;
+  -- add "FLT" / "Mathlib" to `envs` for
   -- the env-scale tiers when their per-push cost is warranted. `shards`
   -- counts leaves — deterministic per (env static block profile, budget),
   -- rising only when the seed under-counts → upper-only pin, re-pin on a
@@ -309,7 +311,8 @@ def backendSpecs : List BackendSpec := [
     envs := some ["ISLB"],
     testbeds := [("execute", "aiur-sharded-env-check")],
     metrics := [("execute", ["check-time", "throughput", "peak-rss",
-                             "constants", "shards", "fft-cost"])],
+                             "constants", "shards", "fft-cost", "check-total-time",
+                             "setup-time", "execution-work-time", "planning-work-time"])],
     thresholds := [("constants", "0", "0"), ("shards", "0", "_"),
                    ("fft-cost", "0.05", "_"),
                    ("check-time", "0.10", "_"), ("throughput", "_", "0.10"),
@@ -765,7 +768,7 @@ is not a benchmark run"
         IO.eprintln s!"[bench] per-constant checks failed (exit {exit})"
   | "aiur-sharded-env" =>
     -- Whole-env sharded formal Aiur execution: seed the env for the
-    -- runner's RAM from its static block-shape score (`--max-ram 100`),
+    -- destination proof RAM from its static block-shape score (`--max-ram 100`),
     -- then check every leaf of the manifest against the same budget. The
     -- check writes the env-keyed row itself (`--json`): check-time,
     -- throughput, peak-rss, constants, shards and FFT cost. The shard step is
@@ -776,8 +779,8 @@ is not a benchmark run"
     -- One budget for both stages: the shard step seeds for it, and the
     -- check's split audit (`--ram-budget`) cuts any seed the spread
     -- pushes over it in place — the row's `shards` counts the LEAF
-    -- partition the run actually validated. 100 GiB = the 128 GB
-    -- runner class the testbed pins.
+    -- partition the run actually validated. The destination is fixed at
+    -- 100 GiB; execution independently uses available host memory.
     let budgetGib := "100"
     let exit ← runGuarded watchdog ceilingGb ix
       #["shard", ixe, "--max-ram", budgetGib, "--out", manifest]
@@ -786,7 +789,7 @@ is not a benchmark run"
       return 1
     let exit ← runGuarded watchdog ceilingGb ix
       #["check", "--ixe", ixe, "--ixes", manifest, "--ram-budget", budgetGib, "--keep-going",
-        "--json", out, "--json-name", info.name]
+        "--json", out, "--json-name", info.name, "--report", s!"{out}.report.json"]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-env aiur check failed (exit {exit})"
   | other =>
