@@ -1070,21 +1070,27 @@ theorem k_is_def_eq_slow2_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
     Specs.DefEq.k_is_def_eq_slow2 c args h r h' calls := by
   intro rc oa ob a b types hargs good hrc d Γ htypes A0 B0 A B hA0 hB0 hA hB hra0 hrb0 hr
   subst hargs
-  rcases Obs.«KernelDefEq::k_is_def_eq_slow2».obs ev with
-    ⟨m2, cs13, x_eq, ev15, he67, he68, hc69⟩ |
-    ⟨v1, m2, cs13, m74, cs85, w134, w135, ev15, ev87, he152, he153, hc154⟩ |
-    ⟨v1, m2, cs13, m74, cs85, w161, x_fa, x_fb, cs180, ev15, ev87, ev182, hc231⟩
-  · subst he67 hc69
+  cases Obs.«KernelDefEq::k_is_def_eq_slow2».obs ev
+  case n1 _ _ ev_fast _ _ hc =>
+    subst hc
+    exact .redBoth hra0 hrb0 (ih.get (.defEq .expr_eq_fast) (by lt_calls) ev_fast a b rfl
+      (good.sub fun x hx => by simp [hx]) d Γ A B hA hB field_one_ne_zero)
+  case other_n1_bind _ _ _ _ _ _ ev_fast _ ev15 he_r _ hc =>
+    subst he_r hc
+    have ef := ObsFn.heap_extends ev_fast
     exact .redBoth hra0 hrb0 (ih.get (.defEq .de_rescue_tier) (by lt_calls) ev15 rc a b types rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB r rfl hr)
-  · subst hc154
-    have e0 := ObsFn.heap_extends ev15
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ef hrc) d Γ (types_mono ef htypes) A B
+      (Tm.mono ef hA) (Tm.mono ef hB) r rfl hr)
+  case other_other_n1_other_other _ _ _ _ _ _ _ _ _ _ ev_fast _ ev15 ev87 _ _ hc =>
+    subst hc
+    have e0 := (ObsFn.heap_extends ev_fast).trans (ObsFn.heap_extends ev15)
     obtain ⟨_, _, _, _, _, _, hd⟩ := ih.get (.defEq .lazy_delta_loop) (by lt_calls) ev87 rc a b
       (.field 16) types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ
       (types_mono e0 htypes) A B (Tm.mono e0 hA) (Tm.mono e0 hB) _ _ _ rfl
     exact .redBoth hra0 hrb0 (hd field_one_ne_zero)
-  · subst hc231
-    have e0 := ObsFn.heap_extends ev15
+  case other_other_other_bind_bind _ _ _ _ _ _ _ _ _ x_fa x_fb _ ev_fast _ ev15 ev87 ev182 hc =>
+    subst hc
+    have e0 := (ObsFn.heap_extends ev_fast).trans (ObsFn.heap_extends ev15)
     obtain ⟨FA, FB, hFA, hFB, hraF, hrbF, -⟩ := ih.get (.defEq .lazy_delta_loop) (by lt_calls)
       ev87 rc a b (.field 16) types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d
       Γ (types_mono e0 htypes) A B (Tm.mono e0 hA) (Tm.mono e0 hB) _ _ _ rfl

@@ -554,56 +554,49 @@ theorem unfold_both_and_loop_step (c : ScopedCtx) {args : List (SourceValue F)} 
     exact loopResult_zero (ObsFn.heap_extends ev15) hA hB
 
 /-- `KernelDefEq::lazy_delta_step_const_const`: both heads constants; unfold the side(s) whose
-loaded constant is a definition or a theorem, by rank. -/
+loaded constant is a definition or a theorem, by rank, short-circuiting via spine congruence
+when both sides share the same regular-hint constant head. -/
 theorem lazy_delta_step_const_const_step (c : ScopedCtx) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::lazy_delta_step_const_const" args h r h' calls)
     (ih : IH c calls) : Specs.DefEq.lazy_delta_step_const_const c args h r h' calls := by
   intro rc aa ba a b fuel types hargs good hrc d Γ htypes A B hA hB
   subst hargs
-  rcases Obs.«KernelDefEq::lazy_delta_step_const_const».obs ev with
-    ⟨v1, m2, p9, cs15, v26, m27, p34, cs40, m52, cs62, m74, cs84, ev17, ld11, ev42, ld36, ev64,
-      ev86, he128, he149, hc150⟩ |
-    ⟨v1, m2, p9, cs15, v26, m27, p34, cs40, m52, cs62, v73, m74, cs84, cs158, ev17, ld11, ev42,
-      ld36, ev64, ev86, hne151, ev160, hc201⟩ |
-    ⟨v1, m2, p9, cs15, v26, m27, p34, cs40, v51, m52, cs62, m74, cs84, cs223, ev17, ld11, ev42,
-      ld36, ev64, ev86, hne202, ev225, hc266⟩ |
-    ⟨v1, m2, p9, cs15, v26, m27, p34, cs40, v51, m52, cs62, v73, m74, cs84, v271, m272, cs282,
-      v293, m294, cs304, m316, cs327, cs353, ev17, ld11, ev42, ld36, ev64, ev86, hne202, hne267,
-      ev284, ev306, ev329, ev355, hc396⟩ |
-    ⟨v1, m2, p9, cs15, v26, m27, p34, cs40, v51, m52, cs62, v73, m74, cs84, v271, m272, cs282,
-      v293, m294, cs304, v315, m316, cs327, m402, cs413, cs439, ev17, ld11, ev42, ld36, ev64,
-      ev86, hne202, hne267, ev284, ev306, ev329, hne397, ev415, ev441, hc482⟩ |
-    ⟨v1, m2, p9, cs15, v26, m27, p34, cs40, v51, m52, cs62, v73, m74, cs84, v271, m272, cs282,
-      v293, m294, cs304, v315, m316, cs327, v401, m402, cs413, cs490, ev17, ld11, ev42, ld36,
-      ev64, ev86, hne202, hne267, ev284, ev306, ev329, hne397, ev415, hne483, ev492, hc533⟩
-  · subst he128 he149
+  cases Obs.«KernelDefEq::lazy_delta_step_const_const».obs ev
+  case n0_n0 _ _ _ _ _ _ _ _ _ _ _ _ ev17 _ ev42 _ ev64 ev86 he128 he149 _ =>
+    subst he128 he149
     exact loopResult_zero ((ObsFn.heap_extends ev17).trans ((ObsFn.heap_extends ev42).trans
       ((ObsFn.heap_extends ev64).trans (ObsFn.heap_extends ev86)))) hA hB
-  · subst hc201
-    have x0 : Heap.Extends h m74 := (ObsFn.heap_extends ev17).trans
+  case n0_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev17 _ ev42 _ ev64 ev86 _ ev160 hc201 =>
+    subst hc201
+    have x0 : Heap.Extends h _ := (ObsFn.heap_extends ev17).trans
       ((ObsFn.heap_extends ev42).trans ((ObsFn.heap_extends ev64).trans
         (ObsFn.heap_extends ev86)))
     exact ih.get (.defEq .unfold_b_and_loop) (by lt_calls) ev160 rc a b fuel types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono x0 hrc) d Γ (types_mono x0 htypes) A B
       (Tm.mono x0 hA) (Tm.mono x0 hB)
-  · subst hc266
-    have x0 : Heap.Extends h m74 := (ObsFn.heap_extends ev17).trans
+  case other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev17 _ ev42 _ ev64 ev86 _ ev225 hc266 =>
+    subst hc266
+    have x0 : Heap.Extends h _ := (ObsFn.heap_extends ev17).trans
       ((ObsFn.heap_extends ev42).trans ((ObsFn.heap_extends ev64).trans
         (ObsFn.heap_extends ev86)))
     exact ih.get (.defEq .unfold_a_and_loop) (by lt_calls) ev225 rc a b fuel types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono x0 hrc) d Γ (types_mono x0 htypes) A B
       (Tm.mono x0 hA) (Tm.mono x0 hB)
-  · subst hc396
-    have x0 : Heap.Extends h m316 := (ObsFn.heap_extends ev17).trans
+  case other_other_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev17 _ ev42 _ ev64 ev86 _ _
+      ev284 ev306 ev329 ev355 hc396 =>
+    subst hc396
+    have x0 : Heap.Extends h _ := (ObsFn.heap_extends ev17).trans
       ((ObsFn.heap_extends ev42).trans ((ObsFn.heap_extends ev64).trans
         ((ObsFn.heap_extends ev86).trans ((ObsFn.heap_extends ev284).trans
           ((ObsFn.heap_extends ev306).trans (ObsFn.heap_extends ev329))))))
     exact ih.get (.defEq .unfold_a_and_loop) (by lt_calls) ev355 rc a b fuel types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono x0 hrc) d Γ (types_mono x0 htypes) A B
       (Tm.mono x0 hA) (Tm.mono x0 hB)
-  · subst hc482
-    have x0 : Heap.Extends h m402 := (ObsFn.heap_extends ev17).trans
+  case other_other_other_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev17 _ ev42 _ ev64
+      ev86 _ _ ev284 ev306 ev329 _ ev415 ev441 hc482 =>
+    subst hc482
+    have x0 : Heap.Extends h _ := (ObsFn.heap_extends ev17).trans
       ((ObsFn.heap_extends ev42).trans ((ObsFn.heap_extends ev64).trans
         ((ObsFn.heap_extends ev86).trans ((ObsFn.heap_extends ev284).trans
           ((ObsFn.heap_extends ev306).trans ((ObsFn.heap_extends ev329).trans
@@ -611,13 +604,64 @@ theorem lazy_delta_step_const_const_step (c : ScopedCtx) {args : List (SourceVal
     exact ih.get (.defEq .unfold_b_and_loop) (by lt_calls) ev441 rc a b fuel types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono x0 hrc) d Γ (types_mono x0 htypes) A B
       (Tm.mono x0 hA) (Tm.mono x0 hB)
-  · subst hc533
-    have x0 : Heap.Extends h m402 := (ObsFn.heap_extends ev17).trans
+  case other_other_other_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev17 _ ev42 _
+      ev64 ev86 _ _ ev284 ev306 ev329 _ ev415 _ ev_ub hc =>
+    subst hc
+    have x0 : Heap.Extends h _ := (ObsFn.heap_extends ev17).trans
       ((ObsFn.heap_extends ev42).trans ((ObsFn.heap_extends ev64).trans
         ((ObsFn.heap_extends ev86).trans ((ObsFn.heap_extends ev284).trans
           ((ObsFn.heap_extends ev306).trans ((ObsFn.heap_extends ev329).trans
             (ObsFn.heap_extends ev415)))))))
-    exact ih.get (.defEq .unfold_both_and_loop) (by lt_calls) ev492 rc a b fuel types rfl
+    exact ih.get (.defEq .unfold_both_and_loop) (by lt_calls) ev_ub rc a b fuel types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono x0 hrc) d Γ (types_mono x0 htypes) A B
+      (Tm.mono x0 hA) (Tm.mono x0 hB)
+  case other_other_other_other_n4294967295 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev17 _
+      ev42 _ ev64 ev86 _ _ ev284 ev306 ev329 _ ev415 _ ev_ub hc =>
+    subst hc
+    have x0 : Heap.Extends h _ := (ObsFn.heap_extends ev17).trans
+      ((ObsFn.heap_extends ev42).trans ((ObsFn.heap_extends ev64).trans
+        ((ObsFn.heap_extends ev86).trans ((ObsFn.heap_extends ev284).trans
+          ((ObsFn.heap_extends ev306).trans ((ObsFn.heap_extends ev329).trans
+            (ObsFn.heap_extends ev415)))))))
+    exact ih.get (.defEq .unfold_both_and_loop) (by lt_calls) ev_ub rc a b fuel types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono x0 hrc) d Γ (types_mono x0 htypes) A B
+      (Tm.mono x0 hA) (Tm.mono x0 hB)
+  case other_other_other_other_other_n1_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      _ _ _ _ _ ev17 _ ev42 _ ev64 ev86 _ _ ev284 ev306 ev329 _ ev415 _ _ _ ev_aeq ev_app he_r
+      he_h hc =>
+    subst he_r he_h hc
+    have x0 : Heap.Extends h _ := (ObsFn.heap_extends ev17).trans
+      ((ObsFn.heap_extends ev42).trans ((ObsFn.heap_extends ev64).trans
+        ((ObsFn.heap_extends ev86).trans ((ObsFn.heap_extends ev284).trans
+          ((ObsFn.heap_extends ev306).trans ((ObsFn.heap_extends ev329).trans
+            ((ObsFn.heap_extends ev415).trans (ObsFn.heap_extends ev_aeq))))))))
+    have x1 := x0.trans (ObsFn.heap_extends ev_app)
+    exact loopResult_same (Tm.mono x1 hA) (Tm.mono x1 hB) fun _ =>
+      ih.get (.defEq .try_def_eq_app) (by lt_calls) ev_app rc a b types rfl
+        (good.sub fun x hx => by simp [hx]) (RCRep.mono x0 hrc) d Γ (types_mono x0 htypes) A B
+        (Tm.mono x0 hA) (Tm.mono x0 hB) field_one_ne_zero
+  case other_other_other_other_other_n1_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      _ _ _ _ _ _ _ _ ev17 _ ev42 _ ev64 ev86 _ _ ev284 ev306 ev329 _ ev415 _ _ _ ev_aeq ev_app
+      _ ev_ub hc =>
+    subst hc
+    have x0 : Heap.Extends h _ := (ObsFn.heap_extends ev17).trans
+      ((ObsFn.heap_extends ev42).trans ((ObsFn.heap_extends ev64).trans
+        ((ObsFn.heap_extends ev86).trans ((ObsFn.heap_extends ev284).trans
+          ((ObsFn.heap_extends ev306).trans ((ObsFn.heap_extends ev329).trans
+            ((ObsFn.heap_extends ev415).trans ((ObsFn.heap_extends ev_aeq).trans
+              (ObsFn.heap_extends ev_app)))))))))
+    exact ih.get (.defEq .unfold_both_and_loop) (by lt_calls) ev_ub rc a b fuel types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono x0 hrc) d Γ (types_mono x0 htypes) A B
+      (Tm.mono x0 hA) (Tm.mono x0 hB)
+  case other_other_other_other_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+      _ _ _ _ _ ev17 _ ev42 _ ev64 ev86 _ _ ev284 ev306 ev329 _ ev415 _ _ _ ev_aeq _ ev_ub hc =>
+    subst hc
+    have x0 : Heap.Extends h _ := (ObsFn.heap_extends ev17).trans
+      ((ObsFn.heap_extends ev42).trans ((ObsFn.heap_extends ev64).trans
+        ((ObsFn.heap_extends ev86).trans ((ObsFn.heap_extends ev284).trans
+          ((ObsFn.heap_extends ev306).trans ((ObsFn.heap_extends ev329).trans
+            ((ObsFn.heap_extends ev415).trans (ObsFn.heap_extends ev_aeq))))))))
+    exact ih.get (.defEq .unfold_both_and_loop) (by lt_calls) ev_ub rc a b fuel types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono x0 hrc) d Γ (types_mono x0 htypes) A B
       (Tm.mono x0 hA) (Tm.mono x0 hB)
 
@@ -746,53 +790,66 @@ theorem lazy_delta_both_proj_step (c : ScopedCtx) {args : List (SourceValue F)} 
   · subst he340 he361
     exact loopResult_zero ((ObsFn.heap_extends ev14).trans (ObsFn.heap_extends ev52)) hA hB
 
-/-- `KernelDefEq::lazy_delta_loop`: out of fuel, the inputs; a decided `Nat` comparison
-(`try_def_eq_nat`) on the inputs; otherwise one δ step chosen by the heads. -/
+/-- `KernelDefEq::lazy_delta_loop`: fast structural equality (`expr_eq_fast`), out of fuel,
+a decided `Nat` comparison (`try_def_eq_nat`) on the inputs, or one δ step chosen by the heads. -/
 theorem lazy_delta_loop_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::lazy_delta_loop" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.lazy_delta_loop c args h r h' calls := by
   intro rc a b fuel types hargs good hrc d Γ htypes A B hA hB
   subst hargs
-  rcases Obs.«KernelDefEq::lazy_delta_loop».obs ev with
-    ⟨hv14, he20, he41, hc42⟩ |
-    ⟨m48, cs59, x_eq, hne43, ev61, he117, he139, hc140⟩ |
-    ⟨v47, m48, cs59, m145, cs155, x_a_addr, m180, cs190, x_b_addr, cs245, hne43, ev61, ev157,
-      ev192, ev247, hc304⟩ |
-    ⟨v47, m48, cs59, m145, cs155, x_a_addr, m180, cs190, x_b_addr, x_b_is_const, cs312, hne43,
-      ev61, ev157, ev192, hne305, ev314, hc363⟩ |
-    ⟨v47, m48, cs59, m145, cs155, x_a_addr, x_a_is_const, m180, cs190, x_b_addr, cs385, hne43,
-      ev61, ev157, ev192, hne364, ev387, hc436⟩ |
-    ⟨v47, m48, cs59, m145, cs155, x_a_addr, x_a_is_const, m180, cs190, x_b_addr, x_b_is_const,
-      cs444, hne43, ev61, ev157, ev192, hne364, hne437, ev446, hc487⟩
-  · subst he20 he41
-    exact loopResult_same hA hB fun ht => absurd rfl ht
-  · subst he117 he139 hc140
-    have e0 := ObsFn.heap_extends ev61
-    exact loopResult_same (Tm.mono e0 hA) (Tm.mono e0 hB) fun ht =>
+  cases Obs.«KernelDefEq::lazy_delta_loop».obs ev
+  case n1 _ _ ev_fast he_r he_h hc =>
+    subst he_r he_h hc
+    have e0 := ObsFn.heap_extends ev_fast
+    exact loopResult_same (Tm.mono e0 hA) (Tm.mono e0 hB) fun _ =>
+      ih.get (.defEq .expr_eq_fast) (by lt_calls) ev_fast a b rfl
+        (good.sub fun x hx => by simp [hx]) d Γ A B hA hB field_one_ne_zero
+  case other_n0 _ _ _ ev_fast _ _ he_r he_h _ =>
+    subst he_r he_h
+    have e0 := ObsFn.heap_extends ev_fast
+    exact loopResult_same (Tm.mono e0 hA) (Tm.mono e0 hB) fun ht => absurd rfl ht
+  case other_other_n1_bind _ _ _ _ _ x_eq ev_fast _ _ ev61 he_r he_h hc =>
+    subst he_r he_h hc
+    have e0 := ObsFn.heap_extends ev_fast
+    have x1 := e0.trans (ObsFn.heap_extends ev61)
+    exact loopResult_same (Tm.mono x1 hA) (Tm.mono x1 hB) fun ht =>
       ih.get (.defEq .try_def_eq_nat) (by lt_calls) ev61 rc a b types rfl
-        (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB x_eq rfl ht
-  · subst hc304
-    have x0 : Heap.Extends h m180 := (ObsFn.heap_extends ev61).trans
-      ((ObsFn.heap_extends ev157).trans (ObsFn.heap_extends ev192))
+        (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ (types_mono e0 htypes) A B
+        (Tm.mono e0 hA) (Tm.mono e0 hB) x_eq rfl ht
+  case other_other_other_n1_n1 _ _ _ _ _ _ _ _ x_a_addr _ _ x_b_addr _ ev_fast _ _ ev61 ev157 ev192
+      ev247 hc =>
+    subst hc
+    have x0 : Heap.Extends h _ := (ObsFn.heap_extends ev_fast).trans
+      ((ObsFn.heap_extends ev61).trans ((ObsFn.heap_extends ev157).trans
+        (ObsFn.heap_extends ev192)))
     exact ih.get (.defEq .lazy_delta_step_const_const) (by lt_calls) ev247 rc x_a_addr x_b_addr
       a b fuel types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono x0 hrc) d Γ
       (types_mono x0 htypes) A B (Tm.mono x0 hA) (Tm.mono x0 hB)
-  · subst hc363
-    have x0 : Heap.Extends h m180 := (ObsFn.heap_extends ev61).trans
-      ((ObsFn.heap_extends ev157).trans (ObsFn.heap_extends ev192))
+  case other_other_other_n1_other _ _ _ _ _ _ _ _ x_a_addr _ _ _ _ _ ev_fast _ _ ev61 ev157 ev192 _
+      ev314 hc =>
+    subst hc
+    have x0 : Heap.Extends h _ := (ObsFn.heap_extends ev_fast).trans
+      ((ObsFn.heap_extends ev61).trans ((ObsFn.heap_extends ev157).trans
+        (ObsFn.heap_extends ev192)))
     exact ih.get (.defEq .lazy_delta_a_const_b_proj) (by lt_calls) ev314 rc x_a_addr a b fuel
       types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono x0 hrc) d Γ
       (types_mono x0 htypes) A B (Tm.mono x0 hA) (Tm.mono x0 hB)
-  · subst hc436
-    have x0 : Heap.Extends h m180 := (ObsFn.heap_extends ev61).trans
-      ((ObsFn.heap_extends ev157).trans (ObsFn.heap_extends ev192))
+  case other_other_other_other_n1 _ _ _ _ _ _ _ _ _ _ _ _ x_b_addr _ ev_fast _ _ ev61 ev157 ev192 _
+      ev387 hc =>
+    subst hc
+    have x0 : Heap.Extends h _ := (ObsFn.heap_extends ev_fast).trans
+      ((ObsFn.heap_extends ev61).trans ((ObsFn.heap_extends ev157).trans
+        (ObsFn.heap_extends ev192)))
     exact ih.get (.defEq .lazy_delta_b_const_a_proj) (by lt_calls) ev387 rc x_b_addr a b fuel
       types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono x0 hrc) d Γ
       (types_mono x0 htypes) A B (Tm.mono x0 hA) (Tm.mono x0 hB)
-  · subst hc487
-    have x0 : Heap.Extends h m180 := (ObsFn.heap_extends ev61).trans
-      ((ObsFn.heap_extends ev157).trans (ObsFn.heap_extends ev192))
+  case other_other_other_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_fast _ _ ev61 ev157 ev192 _ _
+      ev446 hc =>
+    subst hc
+    have x0 : Heap.Extends h _ := (ObsFn.heap_extends ev_fast).trans
+      ((ObsFn.heap_extends ev61).trans ((ObsFn.heap_extends ev157).trans
+        (ObsFn.heap_extends ev192)))
     exact ih.get (.defEq .lazy_delta_both_proj) (by lt_calls) ev446 rc a b fuel types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono x0 hrc) d Γ (types_mono x0 htypes) A B
       (Tm.mono x0 hA) (Tm.mono x0 hB)
