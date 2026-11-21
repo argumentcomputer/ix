@@ -600,7 +600,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     let axiomProofs : Ix.Kernel.Declaration .anon → Ix.Kernel.Declaration .anon
       | .thmDecl cv v => .thmDecl cv (.letE (.sort .zero) (.const (.id a) []) v default)
       | d => d
-    let (e, _) ← IO.ofExcept (IxVM.Model.generateReport { withoutModels e0 with modelsAttached := false } axiomProofs)
+    let (e, _) ← IxVM.Model.generateReport { withoutModels e0 with modelsAttached := false } axiomProofs
     let some axioms := Ix.AssumptionTree.canonical #[a] | throw "no tree for the axiom"
     let some target := e.getAddr? (Ix.Name.fromLeanName (nameOfString name))
       | throw s!"{name} is not in the Ixon environment"
