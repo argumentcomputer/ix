@@ -85,10 +85,20 @@ def walkEdges (c : Ixon.Constant) : Array Address := Id.run do
   | _ => pure ()
   return out
 
+/-- The stored inert root addresses of `env`: inert roles bound by `env`'s
+    role binding (or the default table) plus Lean 4's native-evaluation
+    auxiliary compiler-trust axioms (`Ix.ClaimContext.nativeEvalAxiomAddrs`). -/
+def inertRoots (env : Ixon.Env) : Std.HashSet Address := Id.run do
+  let mut rootSet : Std.HashSet Address := Ix.ClaimContext.nativeEvalAxiomAddrs env
+  for a in inertRoleAddrs env do
+    if env.consts.contains a then
+      rootSet := rootSet.insert a
+  return rootSet
+
 /-- Follow the same edges as `inertUsers` from a single requested seed. Only
 stored inert roots count, including when the seed itself is an inert axiom. -/
 def reachesInert (env : Ixon.Env) (seed : Address) : Bool := Id.run do
-  let roots := (inertRoleAddrs env).filter env.consts.contains
+  let roots := inertRoots env
   if roots.isEmpty then return false
   let mut seen : Std.HashSet Address := {}
   let mut todo := #[seed]
@@ -106,11 +116,7 @@ def reachesInert (env : Ixon.Env) (seed : Address) : Bool := Id.run do
     and every constant whose walk edges reach one, transitively. Empty, without
     a reverse-edge pass over `env`, when it stores none of these axioms. -/
 def inertUsers (env : Ixon.Env) : Std.HashSet Address := Id.run do
-  let mut rootSet : Std.HashSet Address := Ix.ClaimContext.nativeEvalAxiomAddrs env
-  for a in inertRoleAddrs env do
-    if env.consts.contains a then
-      rootSet := rootSet.insert a
-  let roots := rootSet.toArray
+  let roots := (inertRoots env).toArray
   if roots.isEmpty then return {}
   let entries := env.consts.toArray
   let numTasks := if entries.size < 4096 then 1 else 32

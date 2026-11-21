@@ -649,12 +649,8 @@ private def shardTreesWithGraph (env : Ixon.Env) (graph : EnvGraph) (owned : Arr
   let frontier : Array Address := Id.run do
     let mut fs : Std.HashSet Address := {}
     for o in owned do
-      if let some es := graph.walkEdges[o]? then
-        for r in es do
-          if !ownedSet.contains r && env.consts.contains r then fs := fs.insert r
-      else if let some c := env.getConst? o then
-        for r in walkEdges c do
-          if !ownedSet.contains r && env.consts.contains r then fs := fs.insert r
+      for r in graph.walkEdges.getD o #[] do
+        if !ownedSet.contains r && env.consts.contains r then fs := fs.insert r
     return fs.toArray
   let some ownedTree := Ix.AssumptionTree.canonical owned
     | .error "shardCheckEnvClaim: empty owned set"

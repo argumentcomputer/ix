@@ -53,7 +53,7 @@ def isNativeEvalAxiomName : Ix.Name → Bool
       (leaf == "ax" || leaf.startsWith "ax_")
   | _ => false
 
-private def isSafeAxiomFast (lc : Ixon.LazyConstant) : Bool :=
+def isSafeAxiomFast (lc : Ixon.LazyConstant) : Bool :=
   if lc.len >= 2 && lc.off + 1 < lc.buf.size &&
       lc.buf[lc.off]! == 0xD2 && lc.buf[lc.off + 1]! == 0x00 then
     match lc.get? with
@@ -62,7 +62,7 @@ private def isSafeAxiomFast (lc : Ixon.LazyConstant) : Bool :=
   else
     false
 
-private def classifyNativeEvalAxioms (env : Ixon.Env) (candidates : Std.HashSet Address) :
+def classifyNativeEvalAxioms (env : Ixon.Env) (candidates : Std.HashSet Address) :
     Std.HashSet Address := Id.run do
   if candidates.isEmpty || env.named.isEmpty then return {}
   let mut native : Std.HashSet Address := {}

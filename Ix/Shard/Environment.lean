@@ -165,7 +165,7 @@ def coveredOwnersWithGraph (ixonEnv : Ixon.Env) (shards : Array (Array Address))
       | none => blockToShard := blockToShard.insert blk k
   -- Single parallel pass over `ixonEnv.consts`: decode each record once for
   -- unparsed detection, `outsideLogic`, `blockAddrOf`, `walkEdges`, and `closureEdgesOf`.
-  let inertRoots := (IxVM.ClaimHarness.inertRoleAddrs ixonEnv).toArray.filter ixonEnv.consts.contains
+  let inertRoots := (IxVM.ClaimHarness.inertRoots ixonEnv).toArray
   let trackInert := !inertRoots.isEmpty
   let entries := ixonEnv.consts.toArray
   let numTasks := if entries.size < 4096 then 1 else 32

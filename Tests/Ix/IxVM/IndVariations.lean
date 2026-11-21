@@ -70,9 +70,6 @@ def expectedVerdict (id : String) (leanOk : Bool) (records : List ConstantInfo) 
     Bool × Option String :=
   if outsideTheClaim.contains id then (true, none)
   else if !leanOk then (false, none)
-  else if ["h-mutual-rec-value", "h-mutual-rec-reason", "h-mutual-rec-value-mk",
-      "p-nested-struct-thm", "p-mutual-nonrec-thm"].contains id then
-    (false, some "projection on a member of a mutual or nested block")
   else if (refusedByDesign.lookup id).isSome then (false, none)
   else if Tests.Ix.IxVM.modeledRecursorsRefused && ownsFamilyRecursor records then
     (false, some Tests.Ix.IxVM.modeledRecursorRefusal)

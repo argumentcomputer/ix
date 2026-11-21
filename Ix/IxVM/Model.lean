@@ -1168,9 +1168,10 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
   let look : Ix.Kernel.Reader.Store := fun a => store[a]? <|> fallbackMap[a]?
   let blobLook : Address → Option ByteArray := fun a => env.blobs[a]? <|> fallbackBlobMap[a]?
   let allSub := subRecords ++ fallbackRecs.filter (fun (a, _) => !store.contains a)
+  let subIndexed := indexed.filter fun (a, _) => store.contains a || !env.consts.contains a
   let cx : Ix.Kernel.Reader.Ctx .anon :=
     Ix.Kernel.Reader.contextWith look blobLook table allSub
-      (fun _ => none) (Ix.Kernel.Admission.projectionAddress Address.blake3 look) indexed
+      (fun _ => none) (Ix.Kernel.Admission.projectionAddress Address.blake3 look) subIndexed
   let supportFor (seeds : Array Address) : Array (Address × Ixon.Constant) := Id.run do
     let closureOwners := Ixon.CheckOrder.closure store extra (roleSeeds ++ seeds)
     let mut out : Array (Address × Ixon.Constant) := #[]
@@ -1179,7 +1180,7 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
         out := out.push entry
     return out
   let owners : Std.HashSet Address :=
-    (Ixon.CheckOrder.closure store extra roots).foldl (·.insert ·) {}
+    (Ixon.CheckOrder.closure store extra (roots ++ roleSeeds)).foldl (·.insert ·) {}
   let sub := subRecords.filter fun (a, c) => owners.contains (Ixon.CheckOrder.owner a c)
   let ordered := Ixon.CheckOrder.wholeEnv table pre sub
   let rootSet : Std.HashSet Address := roots.foldl (·.insert ·) {}

@@ -467,13 +467,15 @@ private def runDistributed (p : Cli.Parsed) (artifactPath : String) (options : H
   let some binding := env.roleBinding | throw (IO.userError "distributed environment carries no role binding")
   let assumeBinding := p.hasFlag "assume-binding"
   let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest))
-  let some owned ← Ix.Shard.coveredOwners env view.shards | throw (IO.userError "invalid manifest coverage")
+  let some (owned, graph) ← Ix.Shard.coveredOwnersWithGraph env view.shards
+    | throw (IO.userError "invalid manifest coverage")
   let (claim, tree) ← IO.ofExcept
     (distributedClaimWithTree env assumeBinding (Thunk.mk fun _ => Ix.AssumptionTree.canonical owned.flatten))
   let indexed := (owned.mapIdx fun i group => (i, group)).filter (!·.2.isEmpty)
   let owners := indexed.map (·.2)
   if owners.isEmpty then throw (IO.userError "distributed environment has no owned constants")
-  let scopes := owners.map (distributedScope env)
+  let commonRoots := Ix.primAddrSet.toArray.filter env.consts.contains ++ bindingRoots env
+  let scopes := owners.map fun own => closureFromRootsWithGraph env graph (own ++ commonRoots)
   let jobs ← executionJobs p owners.size
   if p.hasFlag "plan-only" then
     for i in [:owners.size] do
