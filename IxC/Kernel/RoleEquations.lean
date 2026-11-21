@@ -68,7 +68,11 @@ def checkRoleEquation (ops : CheckerOps md m) (env : Env md) (levels : Nat)
     unless ← ops.isDefEq env 0 left right do
       throw (.invalid "a role equation does not hold by definitional equality")
   | .proof (key, value) =>
-    let some (.thmInfo cv _) := env.find? key
+    let some ci := env.find? key
+      | throw (.invalid "a role equation's evidence does not name a checked theorem")
+    let some cv := (match ci with
+      | .thmInfo cv _ | .defnInfo cv _ .opaque => some cv
+      | _ => none)
       | throw (.invalid "a role equation's evidence does not name a checked theorem")
     unless cv.levelParams.length == levels && cv.levelParams.eraseDups == cv.levelParams do
       throw (.invalid "a role equation's theorem has different universe parameters")

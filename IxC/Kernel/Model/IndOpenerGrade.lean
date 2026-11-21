@@ -55,8 +55,8 @@ of such atoms in scope, and the nested bottom carries enough more of
 them (the pin spines) that the same block costs two orders of
 magnitude more there.  A stage lemma is the fix that scales — its
 context is its premise set. -/
-theorem annotOpeners {m : EnvModel V env} {F : Nat}
-    (hclaims : DefEqClaim μ m φ F)
+theorem annotOpeners {m : EnvModel V env} {J : Judgements md}
+    (hclaims : DefEqClaimJ J m φ)
     {f : Key md → Key md} (hroT : RenameOk m.acval env f)
     {K : Nat}
     -- the statement frame and its tower
@@ -95,7 +95,7 @@ theorem annotOpeners {m : EnvModel V env} {F : Nat}
     (hokRa : ∀ σ : Nat → V, WellDenotedV V σ Ra)
     {ldomsL : List (Expr md)} {lrest2 : Expr md}
     (hinstLam : Expr.instLamsAt pfvs rhsA = some (ldomsL, lrest2))
-    (hdeLam : DefEqListOk μ F env K (pfvs.map Expr.fvarTypeD) ldomsL) :
+    (hdeLam : DefEqListJ J env K (pfvs.map Expr.fvarTypeD) ldomsL) :
     ∀ σ : Nat → V, Sat V Γs σ → ∀ ba : AnnotTerm,
       denoteMeta m.acval env φ K
         (Expr.mkAppN (rhsA.renameConsts f) fvs) = some ba →

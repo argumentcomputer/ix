@@ -4,7 +4,7 @@ public import IxC.Kernel.Model.Inductives.StructCtorFrames
 public section
 
 /-!
-# The constructor's cons (task #175 W4c, P3 module 6, part 5)
+# The constructor's cons
 
 `stageCtor`: the P step at the constructor's cons.  The leaf is
 `structMkAV (resSort.eval ψ) (ds ψ) (Fs ψ)` over the constructor

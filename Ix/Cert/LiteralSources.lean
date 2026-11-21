@@ -54,15 +54,15 @@ theorem go_spec : ∀ (e : Ixon.Expr) (acc : Bool × Bool),
     simp only [ixLits, Ix.Kernel.Reader.literalKinds.go]
     rw [go_spec a, go_spec f, go_spec a (Ix.Kernel.Reader.literalKinds.go (false, false) f)]
     simp [Bool.or_assoc]
-  | .lam _ t b, acc => by
+  | .lam t b, acc => by
     simp only [ixLits, Ix.Kernel.Reader.literalKinds.go]
     rw [go_spec b, go_spec t, go_spec b (Ix.Kernel.Reader.literalKinds.go (false, false) t)]
     simp [Bool.or_assoc]
-  | .all _ _ t b, acc => by
+  | .all t b, acc => by
     simp only [ixLits, Ix.Kernel.Reader.literalKinds.go]
     rw [go_spec b, go_spec t, go_spec b (Ix.Kernel.Reader.literalKinds.go (false, false) t)]
     simp [Bool.or_assoc]
-  | .letE _ t v b, acc => by
+  | .letE _ _ t v b, acc => by
     simp only [ixLits, Ix.Kernel.Reader.literalKinds.go]
     rw [go_spec b, go_spec v, go_spec t, go_spec b (Ix.Kernel.Reader.literalKinds.go _ v),
       go_spec v (Ix.Kernel.Reader.literalKinds.go (false, false) t)]
@@ -78,18 +78,18 @@ theorem ixLits_app (f a : Ixon.Expr) :
   show Ix.Kernel.Reader.literalKinds.go (Ix.Kernel.Reader.literalKinds.go (false, false) f) a = _
   rw [go_spec]
 
-theorem ixLits_lam (c : Ixon.BinderContract) (t b : Ixon.Expr) :
-    ixLits (.lam c t b) = ((ixLits t).1 || (ixLits b).1, (ixLits t).2 || (ixLits b).2) := by
+theorem ixLits_lam (t b : Ixon.Expr) :
+    ixLits (.lam t b) = ((ixLits t).1 || (ixLits b).1, (ixLits t).2 || (ixLits b).2) := by
   show Ix.Kernel.Reader.literalKinds.go (Ix.Kernel.Reader.literalKinds.go (false, false) t) b = _
   rw [go_spec]
 
-theorem ixLits_all (c : Ixon.BinderContract) (r : Ixon.ValueContract) (t b : Ixon.Expr) :
-    ixLits (.all c r t b) = ((ixLits t).1 || (ixLits b).1, (ixLits t).2 || (ixLits b).2) := by
+theorem ixLits_all (t b : Ixon.Expr) :
+    ixLits (.all t b) = ((ixLits t).1 || (ixLits b).1, (ixLits t).2 || (ixLits b).2) := by
   show Ix.Kernel.Reader.literalKinds.go (Ix.Kernel.Reader.literalKinds.go (false, false) t) b = _
   rw [go_spec]
 
-theorem ixLits_letE (c : Ixon.LetContract) (t v b : Ixon.Expr) :
-    ixLits (.letE c t v b) = ((ixLits t).1 || (ixLits v).1 || (ixLits b).1,
+theorem ixLits_letE (nd : Bool) (c : Ixon.LetMode) (t v b : Ixon.Expr) :
+    ixLits (.letE nd c t v b) = ((ixLits t).1 || (ixLits v).1 || (ixLits b).1,
       (ixLits t).2 || (ixLits v).2 || (ixLits b).2) := by
   show Ix.Kernel.Reader.literalKinds.go (Ix.Kernel.Reader.literalKinds.go
     (Ix.Kernel.Reader.literalKinds.go (false, false) t) v) b = _
@@ -232,16 +232,19 @@ theorem decompose_lits : ∀ (expr : Ix.Expr) (args : Array Ix.Expr) (whole : Ix
     intro args whole nat str hargs
     exact ⟨⟨nat, str⟩, fun x hx => hargs x (Array.mem_reverse.mp hx)⟩
 
-/-- A semantic contract changes only a binder's annotations. -/
+/-- A lowered semantic contract preserves the compiled binder's literal kinds. -/
 theorem lower_lits {contract : Ix.SemanticContract.Contract} {source : Ix.Expr} {compiled value : Ixon.Expr}
     (h : contract.lower source compiled = .ok value) : ixLits value = ixLits compiled := by
   unfold Ix.SemanticContract.Contract.lower at h
   split at h
-  all_goals first
-    | (simp only [pure, Except.pure, Except.ok.injEq] at h
-       subst h
-       simp only [ixLits_lam, ixLits_all, ixLits_letE])
-    | cases h
+  · cases h
+  · cases hk : contract.kind <;> rw [hk] at h <;> dsimp only at h
+    · split at h <;> cases h; rfl
+    · split at h <;> cases h; rfl
+    · cases hm : contract.toLetMode? <;> rw [hm] at h <;> dsimp only at h
+      · cases h
+      · split at h <;> cases h
+        simp only [ixLits_letE]
 
 /-- **One step returns its source's literals**, given the same of the recursive compile on
 every strict subterm, under the cache invariant. -/
@@ -312,7 +315,7 @@ theorem step_lits (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (source
       Triple.andThen (each body (by simp; omega)) fun b hb =>
       Triple.seqHolds (cacheFrame (frame_alloc _)) fun _ => Triple.returns fun _ _ _ _ => ?_
     exact litsFrom_two (litsFrom_mono ht (fun h => by simp [hasNatLit, h]) (fun h => by simp [hasStrLit, h]))
-      (litsFrom_mono hb (fun h => by simp [hasNatLit, h]) (fun h => by simp [hasStrLit, h])) (ixLits_lam _ _ _)
+      (litsFrom_mono hb (fun h => by simp [hasNatLit, h]) (fun h => by simp [hasStrLit, h])) (ixLits_lam _ _)
   | forallE name type body info hash =>
     rw [show ExpressionState.step compile (.forallE name type body info hash) = _ from
       ExpressionState.binder_step_eq true compile name type body info hash]
@@ -322,7 +325,7 @@ theorem step_lits (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (source
       Triple.andThen (each body (by simp; omega)) fun b hb =>
       Triple.seqHolds (cacheFrame (frame_alloc _)) fun _ => Triple.returns fun _ _ _ _ => ?_
     exact litsFrom_two (litsFrom_mono ht (fun h => by simp [hasNatLit, h]) (fun h => by simp [hasStrLit, h]))
-      (litsFrom_mono hb (fun h => by simp [hasNatLit, h]) (fun h => by simp [hasStrLit, h])) (ixLits_all _ _ _ _)
+      (litsFrom_mono hb (fun h => by simp [hasNatLit, h]) (fun h => by simp [hasStrLit, h])) (ixLits_all _ _)
   | letE name type value body nonDep hash =>
     rw [ExpressionState.let_step_eq]
     unfold ExpressionState.finishLet
@@ -436,16 +439,16 @@ abbrev has (k : Bool) (e : Ixon.Expr) : Bool := if k then (ixLits e).2 else (ixL
 theorem has_app (k : Bool) (f a : Ixon.Expr) : has k (.app f a) = (has k f || has k a) := by
   cases k <;> simp [has, ixLits_app]
 
-theorem has_lam (k : Bool) (c : Ixon.BinderContract) (t b : Ixon.Expr) :
-    has k (.lam c t b) = (has k t || has k b) := by
+theorem has_lam (k : Bool) (t b : Ixon.Expr) :
+    has k (.lam t b) = (has k t || has k b) := by
   cases k <;> simp [has, ixLits_lam]
 
-theorem has_all (k : Bool) (c : Ixon.BinderContract) (r : Ixon.ValueContract) (t b : Ixon.Expr) :
-    has k (.all c r t b) = (has k t || has k b) := by
+theorem has_all (k : Bool) (t b : Ixon.Expr) :
+    has k (.all t b) = (has k t || has k b) := by
   cases k <;> simp [has, ixLits_all]
 
-theorem has_letE (k : Bool) (c : Ixon.LetContract) (t v b : Ixon.Expr) :
-    has k (.letE c t v b) = (has k t || has k v || has k b) := by
+theorem has_letE (k : Bool) (nd : Bool) (c : Ixon.LetMode) (t v b : Ixon.Expr) :
+    has k (.letE nd c t v b) = (has k t || has k v || has k b) := by
   cases k <;> simp [has, ixLits_letE]
 
 theorem has_prj (k : Bool) (r f : UInt64) (v : Ixon.Expr) : has k (.prj r f v) = has k v := rfl
@@ -461,17 +464,17 @@ theorem has_subst (k : Bool) (σ : Nat → Ixon.Expr) :
     have ha := has_subst k σ a
     simp only [Ix.Sharing.Verify.SharingExact.substShares, has_app, Bool.or_eq_true] at h ⊢
     exact h.imp hf ha
-  | .lam c t b, h => by
+  | .lam t b, h => by
     have ht := has_subst k σ t
     have hb := has_subst k σ b
     simp only [Ix.Sharing.Verify.SharingExact.substShares, has_lam, Bool.or_eq_true] at h ⊢
     exact h.imp ht hb
-  | .all c r t b, h => by
+  | .all t b, h => by
     have ht := has_subst k σ t
     have hb := has_subst k σ b
     simp only [Ix.Sharing.Verify.SharingExact.substShares, has_all, Bool.or_eq_true] at h ⊢
     exact h.imp ht hb
-  | .letE c t v b, h => by
+  | .letE nd c t v b, h => by
     have ht := has_subst k σ t
     have hv := has_subst k σ v
     have hb := has_subst k σ b
@@ -1064,31 +1067,30 @@ theorem finishConstant_lits {T : Ix.Expr → Prop} (info : Ixon.ConstantInfo) (b
     (roots : ∀ e ∈ (constantInfoRootExprs info).toList, LitsIn T e) :
     Triple LI (fun _ _ => True) (finishConstantInfoWithSharing info blockMeta) (fun _ _ r => BlockLits T r) := by
   intro context before value after hI _ ran
-  unfold finishConstantInfoWithSharing finishConstantWithSharing at ran
-  obtain ⟨cache, mid, hc, ran⟩ := bind_ok ran
-  have hc : (Except.ok before, before) = (Except.ok cache, mid) := hc
-  cases hc
-  obtain ⟨block, mid', hb, done⟩ := bind_ok ran
-  have same : mid' = before := by
-    have := RefTables.buildBlockConstant_preserves info before.refs before.univs context before
-    rw [hb] at this
-    exact this
-  subst same
-  rw [rawRun_pure] at done
-  cases done
-  exact ⟨hI, built_lits (BlockLayout.buildBlockConstant_ok hb) roots⟩
+  rw [Ix.CompileCert.EmissionBlocks.finish_run] at ran
+  cases built : (buildConstantWithSharing context.1.sharingLimits info before.refs before.univs >>=
+      withBinderSection context.1.env.binderAnnotator? #[context.2.current]) with
+  | error e => rw [built] at ran; cases ran
+  | ok block =>
+    rw [built] at ran
+    simp only [Except.map, Prod.mk.injEq, Except.ok.injEq] at ran
+    obtain ⟨rfl, rfl⟩ := ran
+    have lits := built_lits (Ix.CompileCert.EmissionBlocks.sectioned_of_bind built).1 roots
+    exact ⟨hI, lits⟩
 
 theorem mutual_lits {T : Ix.Expr → Prop} {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
-    {out : BlockResult} (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out)
+    {out : BlockResult} {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes payloads metas cache = .ok out)
     (roots : ∀ p ∈ payloads.toList, ∀ e ∈ mutConstRootExprs p, LitsIn T e) : BlockLits T out := by
   unfold buildCompiledMutualBlock at ran
   cases hs : standaloneMutConstInfo? payloads with
   | some info =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
-    refine built_lits hb fun e he => ?_
+    have lits := built_lits (T := T) hb (fun e he => ?_)
+    · exact lits
     rcases payloads with ⟨l⟩
     rcases l with _ | ⟨m, _ | ⟨m₂, rest⟩⟩
     · cases hs
@@ -1104,9 +1106,10 @@ theorem mutual_lits {T : Ix.Expr → Prop} {limits : Ix.Sharing.Exact.Limits} {c
       exact roots (.defn d) (by simp) e (by simpa [constantInfoRootExprs] using he)
   | none =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
-    refine built_lits hb fun e he => ?_
+    have lits := built_lits (T := T) hb (fun e he => ?_)
+    · exact lits
     simp only [constantInfoRootExprs, List.toList_toArray, List.mem_flatMap] at he
     obtain ⟨p, hp, he⟩ := he
     exact roots p hp e he

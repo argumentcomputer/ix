@@ -5,7 +5,7 @@ public import IxC.Kernel.SetModel.TupleTower
 @[expose] public section
 
 /-!
-# The tagged disjoint union (task #175 sum-types)
+# The tagged disjoint union
 
 The semantic carrier of a directly-installed inductive with **any
 number of constructors other than one**: a value is the pair of a

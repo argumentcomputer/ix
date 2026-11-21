@@ -564,8 +564,7 @@ structure SwapCongr (env₀ env₃ : Env md) : Prop where
     env₃.find? n = some ci
 
 /-- Projection-table lookups transport across the swap: a `projInfo`
-is never a recursor, so `findDown`/`findUp` move it both ways (task
-#175 wiring W3 — `denote`'s `.proj` clause now reads the entry
+is never a recursor, so `findDown`/`findUp` move it both ways (`denote`'s `.proj` clause now reads the entry
 kind). -/
 theorem SwapCongr.projEq {env₀ env₃ : Env md} (hcg : SwapCongr env₀ env₃) :
     ∀ (sn : Key md) (i : Nat), env₀.findProj? sn i = env₃.findProj? sn i := by

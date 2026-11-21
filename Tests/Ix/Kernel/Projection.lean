@@ -22,10 +22,10 @@ def blake3Binding : Ix.Kernel.Admission.Binding :=
 def spec : ByteArray → Address := Address.blake3Pure
 
 def variants (owner : Address) (index ctor : UInt64) : List Ixon.Constant :=
-  [⟨.dPrj ⟨index, owner⟩, #[], #[], #[]⟩,
-   ⟨.iPrj ⟨index, owner⟩, #[], #[], #[]⟩,
-   ⟨.rPrj ⟨index, owner⟩, #[], #[], #[]⟩,
-   ⟨.cPrj ⟨index, ctor, owner⟩, #[], #[], #[]⟩]
+  [⟨.dPrj ⟨index, owner⟩, #[], #[], #[], #[]⟩,
+   ⟨.iPrj ⟨index, owner⟩, #[], #[], #[], #[]⟩,
+   ⟨.rPrj ⟨index, owner⟩, #[], #[], #[], #[]⟩,
+   ⟨.cPrj ⟨index, ctor, owner⟩, #[], #[], #[], #[]⟩]
 
 -- These use the production Rust BLAKE3 backend, independently of the pure
 -- implementation the theorems are about. Every variant and compact-tag
@@ -43,10 +43,10 @@ def entry (record : Ixon.Constant) : Address × Ixon.Constant :=
 def blockInput : List (Address × Ixon.Constant) := [(address 12, variedBlock)]
 
 def generated : List (Address × Ixon.Constant) := [
-  entry ⟨.rPrj ⟨2, address 12⟩, #[], #[], #[]⟩,
-  entry ⟨.cPrj ⟨1, 0, address 12⟩, #[], #[], #[]⟩,
-  entry ⟨.iPrj ⟨1, address 12⟩, #[], #[], #[]⟩,
-  entry ⟨.dPrj ⟨0, address 12⟩, #[], #[], #[]⟩]
+  entry ⟨.rPrj ⟨2, address 12⟩, #[], #[], #[], #[]⟩,
+  entry ⟨.cPrj ⟨1, 0, address 12⟩, #[], #[], #[], #[]⟩,
+  entry ⟨.iPrj ⟨1, address 12⟩, #[], #[], #[], #[]⟩,
+  entry ⟨.dPrj ⟨0, address 12⟩, #[], #[], #[], #[]⟩]
 
 def reconstructs (input expected : List (Address × Ixon.Constant)) (limit : Nat) : Bool :=
   match Ixon.Authenticated.reconstruct limit input with
@@ -67,7 +67,7 @@ def reconstructionError (input : List (Address × Ixon.Constant)) (limit : Nat :
 #guard reconstructionError (generated ++ blockInput) 3 = some .limit
 #guard Ixon.Projection.primaries (generated ++ blockInput) == blockInput
 
-def definitionProjection : Ixon.Constant := ⟨.dPrj ⟨0, address 12⟩, #[], #[], #[]⟩
+def definitionProjection : Ixon.Constant := ⟨.dPrj ⟨0, address 12⟩, #[], #[], #[], #[]⟩
 def definitionAddress : Address := Ixon.Projection.address spec definitionProjection
 
 -- A supplied conflicting payload is never overwritten or ignored, even
@@ -88,7 +88,7 @@ separately (in `Prop` the family would be `False`'s block, byte for byte,
 and so the prelude's under its content address, with its recursor and
 projection records). -/
 def family : Ixon.Constant :=
-  ⟨.muts #[.indc ⟨false, 0, 0, 0, .sort 0, #[]⟩], #[], #[], #[.succ (.succ .zero)]⟩
+  ⟨.muts #[.indc ⟨false, 0, 0, 0, .sort 0, #[]⟩], #[], #[], #[.succ (.succ .zero)], #[]⟩
 
 /-- The family, its projection record and its recursor (which names the
 projection), under their BLAKE3 keys. -/
@@ -128,7 +128,8 @@ def accepts (input : List (Address × Ixon.Constant)) (limit : Nat := 16) : Bool
 #guard accepts [(address 1, identity), (address 2, aliasIdentity)] 0
 #guard (checkAt separated.records).isOk
 #guard !(checkAt separatedInput 0).isOk
--- A family stored without its recursor declines at the reader; the request
+-- A family stored without its recursor declines (one type: the reader reads it and
+-- the checker declines it); the request
 -- bound and the batch limits apply first.
 #guard match check [(address 3, family)] with
   | .error e@(.checker _) => e.outcome == .declined
@@ -160,7 +161,7 @@ def accepts (input : List (Address × Ixon.Constant)) (limit : Nat := 16) : Bool
 
 def wrongConstructorIndex : Ixon.Constant :=
   ⟨.muts #[.indc ⟨false, 0, 0, 0, .sort 0,
-    #[⟨false, 0, 1, 0, 0, .recur 0 #[]⟩]⟩], #[], #[], #[.zero]⟩
+    #[⟨false, 0, 1, 0, 0, .inherited, .recur 0 #[]⟩]⟩], #[], #[], #[.zero], #[]⟩
 
 -- The reconstructed constructor projection does not match the block's
 -- metadata: the reader finds it malformed, which rejects.

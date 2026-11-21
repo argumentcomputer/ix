@@ -20,8 +20,9 @@ use ix_common::env::{BinderInfo, NameComponent};
 use nom::{Err as NErr, IResult};
 use num_bigint::BigUint;
 
-use crate::contract::{BinderContract, LetContract, LetKind, Locality};
-use crate::expr::{Owned, Uses};
+use crate::contract::{
+  BinderContract, LetContract, LetKind, Locality, Owned, Uses,
+};
 use crate::syntax::Limits;
 use crate::syntax::VERSION;
 use crate::syntax::ast::{

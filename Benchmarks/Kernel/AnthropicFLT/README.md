@@ -72,7 +72,7 @@ by hex prefixes (8–64 digits). It prints all aliases, not a single guessed
 name. This separate diagnostic reads the full file into RAM: apply an
 appropriate memory limit for large artifacts. Name lookup is not checking.
 
-`cases.json` pins the exact existing `.ixe` by Blake3 digest (`artifact.blake3`,
+`Cases.lean` (`Benchmarks.AnthropicFLT.suiteManifest`) pins the exact existing `.ixe` by Blake3 digest (`artifact.blake3`,
 checked with `b3sum`) and byte length; the committed manifest still carries the
 v3 artifact's SHA-256 instead, so the harness refuses to run against it until a
 Blake3 digest is recorded. It
@@ -117,13 +117,14 @@ nix develop --offline --command cargo build -p ix-ffi --release \
   --example check_anon_subject --features parallel,net --offline
 ```
 
-On the Linux CPU box, run inside tmux. The harness is Lean (`import Lean`
-only; no project rebuild needed). It uses GNU time/timeout, systemd, and
+On the Linux CPU box, run inside tmux. The harness is Lean (importing `Lean`
+and `Benchmarks.Kernel.AnthropicFLT.Cases`; build `lake build AnthropicFLT`
+once, then run via `lake env lean --run`). It uses GNU time/timeout, systemd, and
 noninteractive sudo for the per-process scopes.
 The output directory must not exist. No corpus is copied or rebuilt.
 
 ```sh
-lean --run Benchmarks/Kernel/AnthropicFLT/RunSuite.lean \
+lake env lean --run Benchmarks/Kernel/AnthropicFLT/RunSuite.lean \
   --ixe /path/to/flt-after-source-hints-1.ixe \
   --baseline /path/to/check-subject-baseline \
   --adaptive /path/to/check-subject-adaptive \
@@ -191,5 +192,5 @@ controls, kernel tests, Mathlib, and periodic full FLT sweeps as separate
 correctness and whole-run performance gates.
 
 ```sh
-lean --run Benchmarks/Kernel/AnthropicFLT/RunSuite.lean --self-test
+lake env lean --run Benchmarks/Kernel/AnthropicFLT/RunSuite.lean --self-test
 ```

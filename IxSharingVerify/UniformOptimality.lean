@@ -1,7 +1,7 @@
 import IxSharingVerify.UniformKnapsack
 
 /-!
-# Stage 4: the uniform optimizer returns a minimum
+# Uniform optimality: the uniform optimizer returns a minimum
 
 The stage facts of `uniformChoose` (classification, components, the search
 context of every component), the component decomposition of the uniform
@@ -838,7 +838,7 @@ theorem inClass_of_check {dag : Dag} {roots stored : Array Nat}
   rw [Array.all_eq_true'] at h2
   exact of_decide_eq_true (h2 s (Array.mem_toList_iff.mp hs'))
 
-/-- **Stage 4: the uniform optimizer returns a minimum.** With the default
+/-- **The uniform optimizer returns a minimum.** With the default
 branch-and-bound component search (`uniformSubsetSearch = false`), the set a
 successful `optimizeUniformExpanded` stores minimises the uniform length over
 the restricted class (duplicate-free terms of in-degree at least 2): its
@@ -1369,7 +1369,7 @@ theorem uniformChoose_tie {w : Nat} {limits : Limits} {ex : Expanded}
   · exact Or.inl (by omega)
   · exact Or.inr ⟨by omega, hk2⟩
 
-/-- **Stage 4: the uniform optimizer returns the tie-least minimum.** With the
+/-- **The uniform optimizer returns the tie-least minimum.** With the
 default branch-and-bound component search, the set a successful
 `optimizeUniformExpanded` stores minimises the uniform length over the
 restricted class, its `modelBytes` is that length, and it comes first in the

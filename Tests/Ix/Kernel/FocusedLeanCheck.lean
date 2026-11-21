@@ -6,6 +6,7 @@ public import Ix.CompileCertified
 public import Ix.Ixon
 public import Ix.EnvScope
 public import Ix.KernelCheck
+public import Ix.IxVM.ClaimHarness
 
 /-!
 Shared harness for checking a small source-level closure with the pure-Lean
@@ -41,7 +42,9 @@ def rsCheckIxonFFI (path : String) (names : Array Lean.Name)
 def rsCheckConstsFFI (consts : List (Lean.Name × Lean.ConstantInfo))
     (names : Array Lean.Name) (_expectPass : Array Bool) (quiet : Bool) :
     IO (Array (Option CheckError)) := do
-  let rawEnv := Ix.CompileM.canonInput consts.toArray 32
+  -- with the compile's binder-data annotator, as the default role table's records were
+  -- compiled, so a constant the table binds is at its bound address
+  let rawEnv ← IxVM.ClaimHarness.withKernelAnnotator (Ix.CompileM.canonInput consts.toArray 32)
   let (compiledEnv, failures) ← match Ix.Cert.compileReport rawEnv with
     | .ok res => pure res
     | .error err =>

@@ -12,7 +12,7 @@ import IxC.Kernel.Inductives.StructParts
 public section
 
 /-!
-# The direct structure's annotated Π-bits are exact (task #175 W4c, P3 module 1)
+# The direct structure's annotated Π-bits are exact
 
 The tower leaves' folds need the annotated Π-types' codomain bits
 *exactly*: the type former's parameter binders carry a nonzero bit
@@ -119,7 +119,7 @@ theorem inferTypeCore_mkAppN_sort {env : Env md} {F d : Nat} :
 
 /-- The first `n` binders of `e`, opened from depth `d` with the
 inference's own `fvar`s, each codomain bit zero exactly when `z`. -/
-def PiBitsOpen (φ : LevelParam → Nat) (z : Prop) : Nat → Nat → Expr md → Prop
+@[expose] def PiBitsOpen (φ : LevelParam → Nat) (z : Prop) : Nat → Nat → Expr md → Prop
   | 0, _, _ => True
   | n + 1, d, .forallE dom body mb =>
     (pwBit φ mb.pw = 0 ↔ z) ∧

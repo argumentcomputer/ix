@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.Model.Inductives.FixLeafOk
+public import IxC.Kernel.Model.Inductives.NativeJudge
 public section
 
 /-!
@@ -134,12 +135,12 @@ theorem fixLeafWalks {m : EnvModel V env} {cvT : ConstantVal md} {nP nIdx : Nat}
 
 /-- **The P step at the recursive former's cons**, for given block
 data. -/
-theorem stageFixFormer (mp : EnvModelM V μ env)
+theorem stageFixFormerJ (mp : EnvModelM V μ env)
     (hE₀ : Ix.Kernel.EtaFamiliesClosed env)
-    {F : Nat} {p : InductiveShape md} {cvT cvTa : ConstantVal md}
+    {J : Judgements md} (hfr : JudgeFrames J env) {p : InductiveShape md} {cvT cvTa : ConstantVal md}
     -- the former's `checkConstantVal` run at the block's header (as at
     -- `stageSumFormer`)
-    (hccv : Ix.Kernel.checkConstantVal (Ix.Kernel.fueledOps μ F) env cvT = .ok cvTa)
+    (hccv : ConstantValCheckJ J env cvT cvTa)
     (hname₀ : cvT.name = p.cvT.name)
     {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort pps)
@@ -180,15 +181,16 @@ theorem stageFixFormer (mp : EnvModelM V μ env)
       mp'.base2.acval = acvalWith mp.base2.acval cvTa.name
         (fun ψ => nativeTyAVI (u ψ) (p.resSort.eval ψ) (pps ψ) (((pps ψ).drop p.nP).map (·.2.2))
           rss (tlss ψ) (Eiss ψ) (Fss ψ) (Ess ψ)) := by
-  obtain ⟨hfind, hnres, hpshape, -, -, -, type', -, -, -, -, htr', -, -, hty⟩ :=
-    Ix.Kernel.checkConstantVal_inv hccv
+  obtain ⟨type', ⟨hfind', hnres, hpshape, -, -, -, -, -, htr', -⟩, hty⟩ :=
+    id hccv
+  have hfind := Option.isNone_iff_eq_none.mp hfind'
   have hname : cvTa.name = p.cvT.name := by rw [hty]; exact hname₀
   have hfresh : env.find? cvTa.name = none := by
     rw [hname, ← hname₀]; exact hfind
   have htr : cvTa.type.constsResolve env = true := by rw [hty]; exact htr'
   have hcb : ConstsBound env cvTa.type := constsBound_of_constsResolve _ htr
   have hwfI : Ix.Kernel.EnvWF ⟨.indInfo cvTa caps :: env.consts⟩ :=
-    Ix.Kernel.envWF_cons_ind mp.base2.wf hccv hicw
+    envWF_cons_indJ hfr mp.base2.wf hccv hicw
   have hIdsLen : ∀ ψ, ((((pps ψ).drop p.nP).map (·.2.2))).length = p.nIdx := by
     intro ψ; simp [hFD.len ψ]
   let A : (LevelParam → Nat) → AnnotTerm :=
@@ -244,5 +246,206 @@ theorem stageFixFormer (mp : EnvModelM V μ env)
     obtain ⟨rfl, rfl⟩ :=
       ConstantInfo.indInfo.inj (Option.some.inj (hself.symm.trans hf))
     exact hTlaws m₂ hac
+
+
+/-- **The P step at the recursive former's cons, storing the declared former** `cvS`, checked
+and definitionally equal to the telescope constant `cvTa` the block's data read: the leaf is the
+telescope's, and the declared type reads, graded, to a term with the telescope's value
+(`DefEqClaimJ`), so the leaf inhabits it. -/
+theorem stageFixFormerDeclJ (mp : EnvModelM V μ env)
+    (hE₀ : Ix.Kernel.EtaFamiliesClosed env)
+    {J : Judgements md} (hfr : JudgeFrames J env) (hJ : JudgeSound J mp.base2) {p : InductiveShape md}
+    {cvT cvTa cvTS cvS : ConstantVal md}
+    -- the former's `checkConstantVal` run at the block's header (as at
+    -- `stageSumFormer`)
+    (hccv : ConstantValCheckJ J env cvT cvTa)
+    (hname₀ : cvT.name = p.cvT.name)
+    (hccvS : ConstantValCheckJ J env cvTS cvS) (hnameS : cvTS.name = p.cvT.name)
+    (hdq : J.defeq env 0 cvS.type cvTa.type)
+    (hlpsS : cvS.levelParams = cvTa.levelParams)
+    {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    (hFD : FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort pps)
+    (u : (LevelParam → Nat) → Nat) (rss : List (List Bool))
+    (tlss : (LevelParam → Nat) → List (List (List (Nat × Nat × AnnotTerm))))
+    (Eiss : (LevelParam → Nat) → List (List (List AnnotTerm))) (Fss Ess : (LevelParam → Nat) → List (List AnnotTerm))
+    (hParams : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ q ∈ cvTa.levelParams, ψ₁ q = ψ₂ q) →
+      u ψ₁ = u ψ₂ ∧ tlss ψ₁ = tlss ψ₂ ∧ Eiss ψ₁ = Eiss ψ₂ ∧ Fss ψ₁ = Fss ψ₂ ∧ Ess ψ₁ = Ess ψ₂)
+    (hbelow : ∀ ψ, ∀ chain ∈ chainsXI (u ψ) (((pps ψ).drop p.nP).map (·.2.2)) p.nIdx rss (tlss ψ) (Eiss ψ)
+      (Fss ψ) (Ess ψ), FieldsBelow (p.nP + 2) chain)
+    (hIdx : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
+      Sat V (((pps ψ).take p.nP).map (·.2.2)).reverse ρp →
+      IdxOk (u ψ) ρp (((pps ψ).drop p.nP).map (·.2.2)) ∧
+      FieldsValid ρp (((pps ψ).drop p.nP).map (·.2.2)))
+    (hX : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
+      Sat V (((pps ψ).take p.nP).map (·.2.2)).reverse ρp →
+      XChainsOk (u ψ) (p.resSort.eval ψ) ρp (((pps ψ).drop p.nP).map (·.2.2)) rss (tlss ψ) (Eiss ψ) (Fss ψ)
+        (Ess ψ))
+    (hXV : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
+      Sat V (((pps ψ).take p.nP).map (·.2.2)).reverse ρp →
+      ∀ X, X ∈ˢ lfpFamSpace V (p.resSort.eval ψ)
+        (idxSet (u ψ) ρp (((pps ψ).drop p.nP).map (·.2.2))) →
+      ∀ t, t ∈ˢ idxSet (u ψ) ρp (((pps ψ).drop p.nP).map (·.2.2)) →
+      SumFieldsValid (cons t (cons X ρp))
+        (chainsXI (u ψ) (((pps ψ).drop p.nP).map (·.2.2)) (((pps ψ).drop p.nP).map (·.2.2)).length
+          rss (tlss ψ) (Eiss ψ) (Fss ψ) (Ess ψ)))
+    -- the block's capability record and its laws at the cons (task #210
+    -- Part A)
+    (caps : IndCaps md)
+    -- the record's arities, from the install's telescope pin
+    (hicw : Ix.Kernel.IndCapsWF (.indInfo cvS caps))
+    (hTlaws : ∀ m₂ : EnvModel V ⟨.indInfo cvS caps :: env.consts⟩,
+      m₂.acval = acvalWith mp.base2.acval cvS.name
+        (fun ψ => nativeTyAVI (u ψ) (p.resSort.eval ψ) (pps ψ) (((pps ψ).drop p.nP).map (·.2.2))
+          rss (tlss ψ) (Eiss ψ) (Fss ψ) (Ess ψ)) →
+      CapsLawsAt m₂ cvS.name cvS caps) :
+    ∃ mp' : EnvModelM V μ ⟨.indInfo cvS caps :: env.consts⟩,
+      mp'.base2.acval = acvalWith mp.base2.acval cvS.name
+        (fun ψ => nativeTyAVI (u ψ) (p.resSort.eval ψ) (pps ψ) (((pps ψ).drop p.nP).map (·.2.2))
+          rss (tlss ψ) (Eiss ψ) (Fss ψ) (Ess ψ)) := by
+  obtain ⟨type', ⟨hfind', -, -, -, -, -, -, -, -, -⟩, hty⟩ := id hccv
+  have hfind := Option.isNone_iff_eq_none.mp hfind'
+  have hname : cvTa.name = p.cvT.name := by rw [hty]; exact hname₀
+  have hfresh : env.find? cvTa.name = none := by
+    rw [hname, ← hname₀]; exact hfind
+  obtain ⟨typeS, ⟨-, hnresS, hpshapeS, -, hlbS, hifS, hannS, -, htrS, _, _, hstS, -⟩,
+    htyS⟩ := id hccvS
+  have hSn : cvS.name = cvTa.name := by rw [htyS, hname]; exact hnameS
+  have hfreshS : env.find? cvS.name = none := by rw [hSn]; exact hfresh
+  have htyS' : cvS.type = typeS := by rw [htyS]
+  obtain ⟨htfS, hbS⟩ := hfr.annot_syntax hannS hifS hlbS
+  have hcbS : ConstsBound env cvS.type :=
+    constsBound_of_constsResolve _ (by rw [htyS']; exact htrS)
+  have hwfI : Ix.Kernel.EnvWF ⟨.indInfo cvS caps :: env.consts⟩ :=
+    envWF_cons_indJ hfr mp.base2.wf hccvS hicw
+  have hIdsLen : ∀ ψ, ((((pps ψ).drop p.nP).map (·.2.2))).length = p.nIdx := by
+    intro ψ; simp [hFD.len ψ]
+  let A : (LevelParam → Nat) → AnnotTerm :=
+    fun ψ => nativeTyAVI (u ψ) (p.resSort.eval ψ) (pps ψ) (((pps ψ).drop p.nP).map (·.2.2))
+      rss (tlss ψ) (Eiss ψ) (Fss ψ) (Ess ψ)
+  have hAbelow : ∀ ψ, Term.bvarsBelow 0 (A ψ).erase := fun ψ =>
+    nativeTyAVI_below (hFD.below ψ) (hFD.len ψ) (hIdsLen ψ) (hbelow ψ) rfl
+  have hwalks := fixLeafWalks hFD hIdx hX hXV
+  -- the declared type at the pre-block environment: read, graded, valued as the telescope
+  have hwS : Expr.WScoped 0 typeS := Expr.WScoped.of_not_hasFvar htfS
+  have hLS : Expr.LeavesBounded typeS := Expr.LeavesBounded.of_not_hasFvar htfS
+  have hnilS : typeS.fvarLeaves = [] := Expr.fvarLeaves_eq_nil_of_not_hasFvar htfS
+  have hdq' : J.defeq env 0 typeS cvTa.type := by rw [← htyS']; exact hdq
+  have hreadS : ∀ ψ, ∃ Ta, denoteMeta mp.base2.acval env ψ 0 cvS.type = some Ta ∧
+      (∀ ρ : Nat → V, WellDenotedV V ρ Ta) ∧
+      ∀ ρ : Nat → V, interp V ρ Ta = interp V ρ (mkPisAV (pps ψ) (.sort (p.resSort.eval ψ))) := by
+    intro ψ
+    obtain ⟨Ta, hTa⟩ := hJ.accepted ψ hstS hwS hbS hLS
+    obtain ⟨-, -, hokT, -, -⟩ := inferRowJ hJ hstS hwS hbS hLS (CtxOk.nil hnilS) hTa
+    have hokT' : ∀ ρ : Nat → V, WellDenotedV V ρ Ta := fun ρ => hokT ρ (Sat_nil V ρ)
+    have hTf := hFD.tf
+    have hTb := hFD.tb
+    refine ⟨Ta, by rw [htyS']; exact hTa, hokT', fun ρ => ?_⟩
+    exact (hJ.defeq ψ) hdq' hwS hbS hLS (Expr.WScoped.of_not_hasFvar hTf) hTb
+      (Expr.LeavesBounded.of_not_hasFvar hTf) (CtxOk.nil hnilS)
+      (CtxOk.nil (Expr.fvarLeaves_eq_nil_of_not_hasFvar hTf)) hTa (hFD.read ψ)
+      (fun ρ _ => hokT' ρ) (fun ρ _ => hFD.okTy ψ ρ) ρ (Sat_nil V ρ)
+  have hreadI : ∀ ψ (Ta : AnnotTerm), denoteMeta mp.base2.acval env ψ 0 cvS.type = some Ta →
+      denoteMeta (acvalWith mp.base2.acval cvS.name A)
+        ⟨.indInfo cvS caps :: env.consts⟩ ψ 0 cvS.type = some Ta := fun ψ _ hTa =>
+    denoteMeta_cons_mono (c₀ := .indInfo cvS caps) hfreshS
+      (ConsCrossAt.ofNtc fun _ h => nomatch h) ψ 0 hcbS hTa
+  have hnresI : Ix.Kernel.reservedBasisNames.contains
+      (ConstantInfo.indInfo cvS caps).name = false := by
+    show Ix.Kernel.reservedBasisNames.contains cvS.name = false
+    rw [htyS]; exact hnresS
+  have hpshapeI : (ConstantInfo.indInfo cvS caps).name.isProjFnShape = false := by
+    show cvS.name.isProjFnShape = false
+    rw [htyS]; exact hpshapeS
+  refine declStep_preserves_of_ind_member_cons mp (c₀ := .indInfo cvS caps)
+    (A := A) hfreshS hnresI (Or.inl ⟨_, _, rfl⟩)
+    (ConsHead.ofFresh hwfI (fun ψ => hAbelow ψ) hnresI
+      (fun _ h => nomatch h)
+      (fun _ _ _ _ h => nomatch h))
+    (fun ψ k => AnnotTerm.liftN_eq_self _
+      (Term.bvarsBelow.mono (Nat.zero_le k) (hAbelow ψ)) 1)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_
+  · intro ψ₁ ψ₂ hφ
+    have hφ' : ∀ q ∈ cvTa.levelParams, ψ₁ q = ψ₂ q := by
+      rw [← hlpsS]; exact hφ
+    obtain ⟨hp, hw⟩ := hFD.params ψ₁ ψ₂ hφ'
+    obtain ⟨hu, htlss, hEiss, hFss, hEss⟩ := hParams ψ₁ ψ₂ hφ'
+    show nativeTyAVI _ _ _ _ _ _ _ _ _ = nativeTyAVI _ _ _ _ _ _ _ _ _
+    rw [hp, hw, hu, htlss, hEiss, hFss, hEss]
+  · exact fun ψ ρ => nativeTyAVI_wellDenoted (hwalks ψ ρ).1
+  · exact fun ψ ρ => (nativeTyAVI_wellDenotedV (hwalks ψ ρ).1 (hwalks ψ ρ).2).2
+  · intro ψ
+    obtain ⟨Ta, hTa, -, -⟩ := hreadS ψ
+    exact ⟨Ta, hreadI ψ Ta hTa⟩
+  · intro ψ ta hta ρ
+    obtain ⟨Ta, hTa, hok, -⟩ := hreadS ψ
+    obtain rfl := Option.some.inj ((hreadI ψ Ta hTa).symm.trans hta)
+    exact hok ρ
+  · intro ψ ta hta ρ
+    obtain ⟨Ta, hTa, -, heq⟩ := hreadS ψ
+    obtain rfl := Option.some.inj ((hreadI ψ Ta hTa).symm.trans hta)
+    rw [heq ρ]
+    exact nativeTyAVI_mem (hwalks ψ ρ).1
+  · intro m₂ hac
+    refine capsOk_cons_native mp (c₀ := .indInfo cvS caps)
+      (A := A) (T := cvS.name) hfreshS
+      (ConsCrossEnv.ofNtc fun _ h => nomatch h) hpshapeI
+      (Or.inl ⟨cvS, caps, rfl, rfl⟩)
+      (fun T' cvT' caps' hf _ hres hcape => hE₀ T' cvT' caps' hf hcape hres)
+      m₂ hac ?_
+    intro cvT caps' hf _
+    have hself := Ix.Kernel.Env.find?_cons_self (ConstantInfo.indInfo cvS caps) env
+    obtain ⟨rfl, rfl⟩ :=
+      ConstantInfo.indInfo.inj (Option.some.inj (hself.symm.trans hf))
+    exact hTlaws m₂ hac
+
+/-- The former's cons from its constant check run: `stageFixFormerJ` at the kernel's runs. -/
+theorem stageFixFormer (mp : EnvModelM V μ env)
+    (hE₀ : Ix.Kernel.EtaFamiliesClosed env)
+    {F : Nat} {p : InductiveShape md} {cvT cvTa : ConstantVal md}
+    -- the former's `checkConstantVal` run at the block's header (as at
+    -- `stageSumFormer`)
+    (hccv : Ix.Kernel.checkConstantVal (Ix.Kernel.fueledOps μ F) env cvT = .ok cvTa)
+    (hname₀ : cvT.name = p.cvT.name)
+    {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    (hFD : FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort pps)
+    (u : (LevelParam → Nat) → Nat) (rss : List (List Bool))
+    (tlss : (LevelParam → Nat) → List (List (List (Nat × Nat × AnnotTerm))))
+    (Eiss : (LevelParam → Nat) → List (List (List AnnotTerm))) (Fss Ess : (LevelParam → Nat) → List (List AnnotTerm))
+    (hParams : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ q ∈ cvTa.levelParams, ψ₁ q = ψ₂ q) →
+      u ψ₁ = u ψ₂ ∧ tlss ψ₁ = tlss ψ₂ ∧ Eiss ψ₁ = Eiss ψ₂ ∧ Fss ψ₁ = Fss ψ₂ ∧ Ess ψ₁ = Ess ψ₂)
+    (hbelow : ∀ ψ, ∀ chain ∈ chainsXI (u ψ) (((pps ψ).drop p.nP).map (·.2.2)) p.nIdx rss (tlss ψ) (Eiss ψ)
+      (Fss ψ) (Ess ψ), FieldsBelow (p.nP + 2) chain)
+    (hIdx : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
+      Sat V (((pps ψ).take p.nP).map (·.2.2)).reverse ρp →
+      IdxOk (u ψ) ρp (((pps ψ).drop p.nP).map (·.2.2)) ∧
+      FieldsValid ρp (((pps ψ).drop p.nP).map (·.2.2)))
+    (hX : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
+      Sat V (((pps ψ).take p.nP).map (·.2.2)).reverse ρp →
+      XChainsOk (u ψ) (p.resSort.eval ψ) ρp (((pps ψ).drop p.nP).map (·.2.2)) rss (tlss ψ) (Eiss ψ) (Fss ψ)
+        (Ess ψ))
+    (hXV : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
+      Sat V (((pps ψ).take p.nP).map (·.2.2)).reverse ρp →
+      ∀ X, X ∈ˢ lfpFamSpace V (p.resSort.eval ψ)
+        (idxSet (u ψ) ρp (((pps ψ).drop p.nP).map (·.2.2))) →
+      ∀ t, t ∈ˢ idxSet (u ψ) ρp (((pps ψ).drop p.nP).map (·.2.2)) →
+      SumFieldsValid (cons t (cons X ρp))
+        (chainsXI (u ψ) (((pps ψ).drop p.nP).map (·.2.2)) (((pps ψ).drop p.nP).map (·.2.2)).length
+          rss (tlss ψ) (Eiss ψ) (Fss ψ) (Ess ψ)))
+    -- the block's capability record and its laws at the cons (task #210
+    -- Part A)
+    (caps : IndCaps md)
+    -- the record's arities, from the install's telescope pin
+    (hicw : Ix.Kernel.IndCapsWF (.indInfo cvTa caps))
+    (hTlaws : ∀ m₂ : EnvModel V ⟨.indInfo cvTa caps :: env.consts⟩,
+      m₂.acval = acvalWith mp.base2.acval cvTa.name
+        (fun ψ => nativeTyAVI (u ψ) (p.resSort.eval ψ) (pps ψ) (((pps ψ).drop p.nP).map (·.2.2))
+          rss (tlss ψ) (Eiss ψ) (Fss ψ) (Ess ψ)) →
+      CapsLawsAt m₂ cvTa.name cvTa caps) :
+    ∃ mp' : EnvModelM V μ ⟨.indInfo cvTa caps :: env.consts⟩,
+      mp'.base2.acval = acvalWith mp.base2.acval cvTa.name
+        (fun ψ => nativeTyAVI (u ψ) (p.resSort.eval ψ) (pps ψ) (((pps ψ).drop p.nP).map (·.2.2))
+          rss (tlss ψ) (Eiss ψ) (Fss ψ) (Ess ψ)) :=
+  stageFixFormerJ mp hE₀ (judgeFrames_runJ F) (Ix.Kernel.Semantics.constantValCheckJ_of_run hccv)
+    hname₀ hFD u rss tlss Eiss Fss Ess hParams hbelow hIdx hX hXV caps hicw hTlaws
 
 end Ix.Kernel.Model

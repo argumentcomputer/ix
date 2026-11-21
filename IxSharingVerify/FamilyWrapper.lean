@@ -20,7 +20,7 @@ theorem normalizeFamily_parts {cfg : Config} {layout : ShareLayout} {limits : Li
     ∃ expanded info, expand limits input.sharing (constantInfoRoots input.info) true = .ok expanded ∧
       familyExpanded cfg layout limits expanded = .ok result ∧
       withRoots input.info result.result.roots = .ok info ∧
-      output = { input with info, sharing := result.result.sharing } := by
+      output = { input with info, sharing := result.result.sharing, binders := #[] } := by
   unfold normalizeFamily at run
   obtain ⟨expanded, expandedRun, run⟩ := bind_eq_ok run
   obtain ⟨result', normalized, run⟩ := bind_eq_ok run
@@ -60,13 +60,14 @@ theorem normalizeFamily_wire_headers {cfg : Config} {layout : ShareLayout} {limi
   obtain ⟨_, _, _, normalized, written, rfl⟩ := normalizeFamily_parts run
   have format := (familyExpanded_output_of_success normalized).format
   refine ⟨withRoots_wireWF_headers written headers (fun e he => format.2.1 e (Array.mem_toList_iff.mpr he)),
-    format.2.2.1, fun e he => format.1 e (Array.mem_toList_iff.mpr he), refsCount, refs, univsCount, univs⟩
+    format.2.2.1, fun e he => format.1 e (Array.mem_toList_iff.mpr he), refsCount, refs, univsCount, univs,
+    Ixon.bindersWireWF_empty⟩
 
 theorem normalizeFamily_wire {cfg : Config} {layout : ShareLayout} {limits : Limits}
     {input output : Ixon.Constant} {result : TieredSharingResult} (wire : input.wireWF)
     (run : normalizeFamily cfg layout input limits = .ok (output, result)) : output.wireWF :=
   normalizeFamily_wire_headers (ConstantInfoHeaderWF.of_wire wire.1)
-    wire.2.2.2.1 wire.2.2.2.2.1 wire.2.2.2.2.2.1 wire.2.2.2.2.2.2 run
+    wire.2.2.2.1 wire.2.2.2.2.1 wire.2.2.2.2.2.1 wire.2.2.2.2.2.2.1 run
 
 /-- This is the table-count plus serialized table/root EXPRESSION bytes.
 It excludes unchanged constant headers, references and universe tables. -/

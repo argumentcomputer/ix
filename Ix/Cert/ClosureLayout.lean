@@ -420,7 +420,7 @@ theorem lowered_keys {ρ : FiberMap} {hints : Ix.Kernel.Reader.CName .source →
     exact ⟨n, hn, rfl⟩
   have gen := SourceNames.lower_generated hl
   intro d hd k hk hna
-  rcases ReaderUnits.lower_lowering hK hl with ⟨-, hall⟩ | ⟨gens, d0, hdecls, hgl, hk0⟩
+  rcases ReaderUnits.lower_lowering hK hl with ⟨-, hall⟩ | ⟨gens, suffix, hdecls, hgl, -, hk0⟩
   · exact hall d hd k hk
   · rw [hdecls] at hd
     rcases List.mem_append.mp hd with hd | hd
@@ -428,9 +428,7 @@ theorem lowered_keys {ρ : FiberMap} {hints : Ix.Kernel.Reader.CName .source →
       have := List.all_eq_true.mp (Bool.and_eq_true_iff.mp hg).2 k hk
       rw [hna] at this
       cases this
-    · rw [List.mem_singleton] at hd
-      subst hd
-      exact hk0 k hk
+    · exact hk0 d hd k hk
 
 /-- **A scheduled group's lowering declares each of its names' quotient keys.** -/
 theorem lowered_declares {ρ : FiberMap} {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint}

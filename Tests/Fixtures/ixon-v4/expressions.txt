@@ -1,13 +1,18 @@
-# Independently specified Ixon v4 bytes: relative locality, no lifetime parameters.
+# Independently specified Ixon bytes. A binder telescope carries its domains
+# only (a record's binder modes live in its binder-data section). A let header's
+# TagN value is nonDep + 2 * the let's mode code: 0 many (the default), 2 unique,
+# 3 unique and borrowed, 4 once, 6 erased, 7 borrow; values 8 to 15 take rung 2
+# (A8 then one byte, value - 8).
 app 7313121110
-lam 8307000700070010
-lam_local_unique 81090010
-lam_affine_local 810e0010
-all 922900170010
-ordinary_let a100006110
-local_unique_let a00a001110
-borrow a20e0041021110
-borrow_nondep a30f001110
+lam 8300000010
+all 92000010
+ordinary_let a1006110
+unique_let a4001110
+unique_borrowed_let_nondep a7001110
+once_let_nondep a801001110
+erased_let a804001110
+borrow a8060041021110
+borrow_nondep a807001110
 reference 2000
 recursion 32020001
 # Multi-byte TagN in context: the last and first value of every rung, derived

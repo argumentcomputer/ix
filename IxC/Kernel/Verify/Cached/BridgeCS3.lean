@@ -67,17 +67,17 @@ theorem checkStructDomsAtS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF 
       simp only [↓reduceIte]
       exact checkStructDomsAtS_sim hμ henv hc ht hs₃
 
-/-! ## The direct sum install (task #175 sum-types, indexed)
+/-! ## The direct sum install
 
 The same three stages over a constructor *list*: the former, one
 constructor stage per constructor — all at the environment holding the
 type former alone — and the recursor, generated and compared, whose
 rules loop runs `inferType` on closed generated right-hand sides.
-Task #175 indexed: the stages carry `nIdx` and the field-sort walk is
+For indexed families, the stages carry `nIdx` and the field-sort walk is
 `checkStructFieldSortsI` (`checkStructFieldSortsIS_sim`). -/
 
 /-- The per-field sort walk of the sum route at the shared operations
-(task #175 indexed: the large-eliminator escape admits a field that is
+(the large-eliminator escape admits a field that is
 one of the residual's index expressions). -/
 theorem checkStructFieldSortsIS_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {isProp large : Bool}
     {s : Level} {nP : Nat} {fvs idxArgs : List (Expr md)}

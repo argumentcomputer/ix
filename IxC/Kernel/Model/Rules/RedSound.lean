@@ -9,17 +9,14 @@ import IxC.Kernel.Model.Annot.BitClosed
 public section
 
 /-!
-# The soundness of the reduction rules (task #305, lanes S-red / S-iota)
+# The soundness of the reduction rules
 
 One lemma per constructor of `Red`: the motives of its derivation
 premises (the induction hypotheses) and its side conditions give the
 motive of its conclusion.  The master induction (`Sound.lean`) is the
-only place that mentions derivations; these lemmas are pure semantics,
-mined from the `Model/Steps/*` rows each docstring names — the tier
-they cite was deleted at the task #305 closing.
+only place that mentions derivations; these lemmas are pure semantics.
 
-Lane S-red owns this file; `iota` and the three rescues are in
-`IotaSound.lean` (lane S-iota).
+`iota` and the three rescues are in `IotaSound.lean`.
 -/
 
 namespace Ix.Kernel.Model.Rules
@@ -116,8 +113,9 @@ theorem Red.projArg_sound {d : Nat} {sn : Key md}
   obtain ⟨vp, hvp, hrd⟩ := denoteMeta_proj_inv hea
   have hokVp : Graded V Δa vp := by
     intro σ hσ
-    rcases hrd with ⟨_, -, rfl⟩ | ⟨-, hdec⟩
-    · exact ProjAV.hoistV (hg σ hσ)
+    rcases hrd with ⟨entry, -, hnode⟩ | ⟨-, hdec⟩
+    · obtain ⟨-, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode
+      exact ProjNodeAV.hoistV (hg σ hσ)
     · rcases AnnotTerm.projPair?_cases hdec with rfl | rfl
       · exact ⟨by have h1 := (hg σ hσ).1; rw [WellDenoted_fst] at h1; exact h1.1,
           by have h2 := (hg σ hσ).2; rwa [AnnotValid_fst] at h2⟩
@@ -129,11 +127,12 @@ theorem Red.projArg_sound {d : Nat} {sn : Key md}
       by simp only [Expr.looseBVarsBounded]; exact hb',
       fun l hl => hL' l (by simpa [Expr.fvarLeaves] using hl)⟩,
     fun l hl => hsube l (hsub l (by simpa [Expr.fvarLeaves] using hl)), ?_⟩
-  rcases hrd with ⟨entry, hfe, rfl⟩ | ⟨hnt, hdec⟩
-  · refine ⟨projAV (i + entry.off) vp', ?_,
-      fun σ hσ => ProjAV.congrV (heq σ hσ) (hg' σ hσ) (hg σ hσ),
-      fun σ hσ => ProjAV.interp_congr (heq σ hσ)⟩
-    rw [denoteMeta, hvp', hfe]; rfl
+  rcases hrd with ⟨entry, hfe, hnode⟩ | ⟨hnt, hdec⟩
+  · obtain ⟨hready, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode
+    refine ⟨projNodeAV m.acval sn i entry vp', ?_,
+      fun σ hσ => ProjNodeAV.congrV (heq σ hσ) (hg' σ hσ) (hg σ hσ),
+      fun σ hσ => ProjNodeAV.interp_congr (heq σ hσ)⟩
+    exact denoteMeta_proj_tower hfe hready hvp'
   · obtain ⟨x', hx'⟩ :=
       AnnotTerm.projPair?_exists_of_lt (AnnotTerm.lt_of_projPair? hdec) vp'
     have hred : denoteMeta m.acval env φ d (.proj sn i e') = some x' := by
@@ -267,6 +266,19 @@ theorem Red.natLit_sound {d n : Nat} (h : Ix.Kernel.natLitSupported env = true) 
     rw [Ix.Kernel.natLitToConstructor_fvarLeaves] at hl; exact nomatch hl
   · rw [denoteMeta_natLitToConstructor h]; exact hea
 
+/-- `Nat.zero` and the literal `0` read alike (`denoteMeta_natLitToConstructor` at `0`). -/
+theorem Red.natZeroLit_sound {d : Nat} (h : Ix.Kernel.natLitSupported env = true) :
+    RedSem m φ d (.const natZeroName []) (.lit (.natVal 0)) := by
+  intro _ Δa ea _ hea hg
+  have h0 : denoteMeta m.acval env φ d (.lit (.natVal 0)) = some ea := by
+    rw [← denoteMeta_natLitToConstructor h d 0]; exact hea
+  have hnf : (Expr.lit (.natVal 0) : Expr md).hasFvar = false := rfl
+  refine ⟨⟨Ix.Kernel.Expr.WScoped.of_not_hasFvar hnf, rfl,
+      Ix.Kernel.Expr.LeavesBounded.of_not_hasFvar hnf⟩, fun l hl => ?_, ea, h0, hg,
+    fun _ _ => rfl⟩
+  rw [Ix.Kernel.Expr.fvarLeaves_eq_nil_of_not_hasFvar hnf] at hl
+  exact nomatch hl
+
 /-- `denotePStrLit_of_guard` (`Steps/Stuck.lean:540`). -/
 theorem Red.strLit_sound {d : Nat} {s : String}
     (h : Ix.Kernel.strLitSupported env = true) :
@@ -280,6 +292,17 @@ theorem Red.strLit_sound {d : Nat} {s : String}
   · intro l hl
     rw [Ix.Kernel.strLitToConstructor_fvarLeaves] at hl; exact nomatch hl
   · rw [denoteMeta_strLitToConstructor h]; exact hea
+
+/-- Converse of `Red.strLit_sound`: `strLitToConstructor s` reads identically to `.lit (.strVal s)`. -/
+theorem Red.strLitFold_sound {d : Nat} {s : String}
+    (h : Ix.Kernel.strLitSupported env = true) :
+    RedSem m φ d (strLitToConstructor s) (.lit (.strVal s)) := by
+  intro _ Δa ea _ hea hg
+  obtain ⟨hfr, hsubr⟩ := frame_atom (d := d) (e := (.lit (.strVal s) : Expr md))
+    (by simp [Expr.fvarLeaves]) (by simp [Expr.WScoped]) (by simp [Expr.looseBVarsBounded])
+  refine ⟨hfr, hsubr _, ea, ?_, hg, fun _ _ => rfl⟩
+  rw [← denoteMeta_strLitToConstructor h]
+  exact hea
 
 /-- The successor row at the reduced argument (`NatSuccRow`). -/
 theorem Red.natSucc_sound (hin : RulesInputs V m φ) {d : Nat} {a w : Expr md}
@@ -307,6 +330,33 @@ theorem Red.natSucc_sound (hin : RulesInputs V m φ) {d : Nat} {a w : Expr md}
     appCongrV rfl (heqw σ hσ) (hokf σ hσ) (hgw σ hσ) (hg σ hσ)
   obtain ⟨ra, hra, hgra, heqra⟩ := hin.nat_succ hsup hn hsw hgsw
   obtain ⟨hfr, hsubr⟩ := frame_atom (d := d) (e := (.lit (.natVal (n + 1)) : Expr md))
+    (by simp [Expr.fvarLeaves]) (by simp [Expr.WScoped])
+    (by simp [Expr.looseBVarsBounded])
+  refine ⟨hfr, hsubr _, ra, hra, hgra, fun σ hσ => ?_⟩
+  rw [interp_app, heqw σ hσ, ← interp_app]
+  exact heqra σ hσ
+
+/-- The predecessor row at the reduced argument (`NatPredRow`). -/
+theorem Red.natPred_sound (hin : RulesInputs V m φ) {d : Nat} {a w : Expr md} {n : Nat}
+    (hst : Ix.Kernel.natOpStored env natPredName = true)
+    (hw : RedSem m φ d a w) (hn : Ix.Kernel.rawNatLit? w = some n) :
+    RedSem m φ d (.app (.const natPredName []) a) (.lit (.natVal (n - 1))) := by
+  intro hf Δa ea hC hea hg
+  obtain ⟨hws, hb, hLb⟩ := hf
+  simp only [Expr.WScoped] at hws
+  simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
+  have hLa : Expr.LeavesBounded a := fun l hl =>
+    hLb l (by simp [Expr.fvarLeaves, hl])
+  obtain ⟨fa, aa, hfa, haa, rfl⟩ := denoteMeta_app_inv hea
+  obtain ⟨hokf, hoka⟩ := graded_app hg
+  obtain ⟨-, -, wa, hwa, hgw, heqw⟩ :=
+    hw ⟨hws.2, hb.2, hLa⟩ hC.app_arg haa hoka
+  have hsw : denoteMeta m.acval env φ d (.app (.const Ix.Kernel.natPredName []) w)
+      = some (.app fa wa) := by rw [denoteMeta_app, hfa, hwa]; rfl
+  have hgsw : Graded V Δa (.app fa wa) := fun σ hσ =>
+    appCongrV rfl (heqw σ hσ) (hokf σ hσ) (hgw σ hσ) (hg σ hσ)
+  obtain ⟨ra, hra, hgra, heqra⟩ := hin.nat_pred hst hn hsw hgsw
+  obtain ⟨hfr, hsubr⟩ := frame_atom (d := d) (e := (.lit (.natVal (n - 1)) : Expr md))
     (by simp [Expr.fvarLeaves]) (by simp [Expr.WScoped])
     (by simp [Expr.looseBVarsBounded])
   refine ⟨hfr, hsubr _, ra, hra, hgra, fun σ hσ => ?_⟩
@@ -365,7 +415,8 @@ theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Key md} {i : N
     (hi : i < entry.numFields)
     (hlen : e.getAppArgs.length = entry.numParams + entry.numFields)
     (hus : us.length = entry.levelParams.length)
-    (hfire : entry.fireOk us = true)
+    (hfire : Level.isEquiv entry.structSort .zero = some true →
+      ∀ ψ, Level.eval ψ (Level.subst entry.levelParams us entry.fieldSort) = 0)
     (hctor : env.find? entry.ctor = some (.ctorInfo cvC nP nF))
     (hcerts : CertsSem m φ d true
       (cvC.type.instantiateLevelParams cvC.levelParams us) e.getAppArgs) :
@@ -413,7 +464,7 @@ theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Key md} {i : N
   have hgvp : Graded V Δa (AnnotTerm.mkAppN
       (m.acval entry.ctor (Level.substFn φ entry.levelParams us)) vs) := by
     rw [← hveq]
-    exact fun σ hσ => ProjAV.hoistV (hg σ hσ)
+    exact fun σ hσ => ProjNodeAV.hoistV (hg σ hσ)
   obtain ⟨-, hoA⟩ := hoist_spine vs hgvp
   have hokArg : Graded V Δa (vs.getD (entry.numParams + i) default) :=
     hoA _ (Ix.Kernel.getD_mem (by rw [hlenVs]; omega))
@@ -446,9 +497,7 @@ theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Key md} {i : N
     rw [← hlpsC]
     exact hmemC0 σ
   -- the ∀-chain, off the head data's arity pin
-  obtain ⟨cvC'', hfC'', -, hstrip⟩ := (m.proj_ok.towerHead hent).2.2.2.2
-  obtain ⟨rfl, -, -⟩ :=
-    ConstantInfo.ctorInfo.inj (Option.some.inj (hfC.symm.trans hfC''))
+  have hstrip := (m.proj_ok.towerHead hent).ctor_stripPis_isSome hfC
   have hpc : PiChain e.getAppArgs.length TCa := by
     rw [hlen]
     exact piChain_of_stripPis (entry.numParams + entry.numFields)
@@ -465,6 +514,6 @@ theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Key md} {i : N
     vs.getD (entry.numParams + i) default, hfvd, hokArg, fun σ hσ => ?_⟩
   have hfit : TeleFit V σ TCa (vs.map (interp V σ)) (interp V σ resta) :=
     teleFit_of_teleFitPA (by rw [← hspa.length]; exact hpc) (hfitA σ hσ)
-  rw [hveq, hB (towerGuardAt_of_fireOk hO5 hfire) σ vs _ hlenVs (hgvp σ hσ) hfit]
+  rw [hveq, hB (towerGuardAt_of_sem hO5 hfire) σ vs _ hlenVs (hgvp σ hσ) hfit]
 
 end Ix.Kernel.Model.Rules

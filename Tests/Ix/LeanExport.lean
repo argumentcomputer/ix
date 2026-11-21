@@ -162,7 +162,7 @@ def compileBound (env : Lean.Environment) : IO Ixon.Env := do
   require out.failures.isEmpty
     s!"{out.failures.toMap.size} constants failed to compile"
   Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.certifiedBackend 8) env (pure env) input
-    out.env Ix.Resource.typingLimits out.existing?
+    out.env Ix.Typing.typingLimits out.existing?
 
 def fidelity : IO (Bool × Nat × Nat × Option String) := do
   let exported ← IO.ofExcept (importString (← readFixture Lean.versionString))

@@ -6,8 +6,7 @@ public import IxC.Kernel.Semantics.Tower.SumWire
 public section
 
 /-!
-# The sum leaves' bit validity and P packages (task #175 sum-types,
-indexed)
+# The sum leaves' bit validity and P packages
 
 `AnnotValid` for the three sum leaves at an indexed family.  The
 case split and the injection carry no `.pi` node (hereditary

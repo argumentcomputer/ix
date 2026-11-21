@@ -892,7 +892,7 @@ theorem PrepWF.gBuild_size {p : Prep} (hp : PrepWF p)
               refine ⟨?_, fun F' _ => by cases F' <;> rfl⟩
               rw [← Array.foldl_toList, children_toList (m := 1) (by simpa [Head.arity] using har)]
               simp [sizeInfoWith, SizeInfo.plain, hvs, Head.ownBytes] <;> omega
-            case letE lc =>
+            case letE nonDep mode =>
               obtain ⟨ty, hty, h2⟩ := bind_eq_ok h
               obtain ⟨v, hv, h3⟩ := bind_eq_ok h2
               obtain ⟨bd, hbd, hpure⟩ := bind_eq_ok h3
@@ -1874,7 +1874,7 @@ theorem build_congr :
             have h0 := hchild 0 (by simp [hh, Head.arity])
             simp only
             rw [hsub _ h0.1 h0.2]
-          case letE lc =>
+          case letE nonDep mode =>
             have h0 := hchild 0 (by simp [hh, Head.arity])
             have h1 := hchild 1 (by simp [hh, Head.arity])
             have h2 := hchild 2 (by simp [hh, Head.arity])

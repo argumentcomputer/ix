@@ -26,10 +26,10 @@ def memberProjection (owner : Address) (index : UInt64) (source : MutConst) : Ix
   ⟨match source with
     | .defn _ => .dPrj ⟨index, owner⟩
     | .indc _ => .iPrj ⟨index, owner⟩
-    | .recr _ => .rPrj ⟨index, owner⟩, #[], #[], #[]⟩
+    | .recr _ => .rPrj ⟨index, owner⟩, #[], #[], #[], #[]⟩
 
 def constructorProjection (owner : Address) (index ctorIndex : UInt64) : Ixon.Constant :=
-  ⟨.cPrj ⟨index, ctorIndex, owner⟩, #[], #[], #[]⟩
+  ⟨.cPrj ⟨index, ctorIndex, owner⟩, #[], #[], #[], #[]⟩
 
 def sourceRows (owner : Address) (index : UInt64) (source : MutConst) : List (Ix.Name × Ixon.Constant) :=
   (source.name, memberProjection owner index source) ::
@@ -168,10 +168,10 @@ theorem standalone_rows (sources : List MutConst) (block : Ixon.Constant)
 /-! ## Wire validity and codec -/
 
 theorem empty_tables_wire (info : Ixon.ConstantInfo) (header : info.wireWF) :
-    (⟨info, #[], #[], #[]⟩ : Ixon.Constant).wireWF :=
+    (⟨info, #[], #[], #[], #[]⟩ : Ixon.Constant).wireWF :=
   ⟨header, by change 0 < UInt64.size; decide, by simp,
     by change 0 < UInt64.size; decide, by simp,
-    by change 0 < UInt64.size; decide, by simp⟩
+    by change 0 < UInt64.size; decide, by simp, Ixon.bindersWireWF_empty⟩
 
 theorem member_wire (owner : Address) (width : owner.hash.size = 32) (index : UInt64) (source : MutConst) :
     (memberProjection owner index source).wireWF := by
@@ -219,18 +219,19 @@ def ProjectionWire (output : BlockResult) : Prop := ∀ row ∈ output.projectio
 
 theorem build_projection_wire (limits : Ix.Sharing.Exact.Limits) (classes : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
-    (output : BlockResult) (ran : buildCompiledMutualBlock limits classes members metadata state = .ok output)
+    (output : BlockResult) {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes members metadata state = .ok output)
     (main : output.block.wireWF) : ProjectionWire output := by
   unfold buildCompiledMutualBlock at ran
   cases chosen : standaloneMutConstInfo? members with
   | some info =>
     simp only [chosen] at ran
-    obtain ⟨block, _, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, _, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     exact standalone_rows_wire classes block main metadata
   | none =>
     simp only [chosen] at ran
-    obtain ⟨block, _, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, _, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     exact build_rows_wire classes (Address.admissionHash (Ixon.ser block))
       (Ixon.Authenticated.admissionHash_width _) metadata

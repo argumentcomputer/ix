@@ -1,5 +1,6 @@
 import Ix.Compile.ReadyCompile
 import Ix.CompileCertified
+import Ix.ModeCheck
 import Ix.Meta
 import Ix.EnvScope
 
@@ -54,13 +55,13 @@ def main (args : List String) : IO UInt32 := do
     let rows := failures.toMap.toArray.map fun (name, message) => (name.pretty, message)
     throw (IO.userError s!"compiler failures: {repr rows}")
   if annotated then
-    discard <| IO.ofExcept (Ix.Resource.validate artifact (Ix.Resource.standardProfile artifact))
+    discard <| IO.ofExcept (Ix.ModeCheck.checkArtifact artifact)
   let final ← phase "finalize" do
     Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.certifiedBackend workers)
       frontend.env Ix.RoleBinding.Compile.nativeCertSource (.plain constants) artifact
-      Ix.Resource.typingLimits
+      Ix.Typing.typingLimits
   let _ ← dropAsync _ (frontend, constants, artifact)
-  IO.ofExcept (validateFinalized annotated final)
+  IO.ofExcept (validateFinalized annotated Ix.ModeCheck.checkArtifact final)
   let bytes ← phase "serialize" do IO.ofExcept (← IO.lazyPure fun _ => Ixon.serEnv final)
   let _ ← dropAsync _ final
   phase "write" (Ix.RoleBinding.Compile.writeAtomic output bytes)

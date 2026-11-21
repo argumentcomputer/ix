@@ -269,10 +269,12 @@ theorem sumRules_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env env
         (sumRules env.find? recName nP mI rP recTy cs rhss).map (RecRule.mapKeys f)
   | c :: cs, rhs :: rhss, hcs, hrhss => by
     simp only [Expr.goodList_cons] at hrhss
-    simp only [List.map_cons, sumRules, List.map_cons, Expr.recRulePlain_mapKeys]
+    simp only [List.map_cons, sumRules, List.map_cons, Expr.recRulePlain_mapKeys,
+      ConstantVal.mapKeys_levelParams]
     have hrl : RecRule.Good P
         ({ ctor := c.1.name, nfields := c.2, ctorParams := nP,
-           fire := (if Expr.recRulePlain recTy mI rP nP then .plain else .inert),
+           fire := (if Expr.recRulePlain recTy mI rP nP c.1.levelParams then .plain
+             else .inert),
            rhs := rhs, paramsBlind := true } : RecRule md) := by
       refine ⟨(hcs c List.mem_cons_self).1, ?_, hrhss.1⟩
       split <;> trivial

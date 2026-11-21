@@ -2,7 +2,7 @@ import IxSharingVerify.UniformDecomp
 import IxSharingVerify.UniformOptimizer
 
 /-!
-# Stage 4: every term of an optimized DAG is reachable from a root
+# Reachability: every term of an optimized DAG is reachable from a root
 
 Facts about the run of `optimizeUniformExpanded` that the optimality theorem
 (`UniformOptimality`) needs, discharged from its runtime checks: every term is

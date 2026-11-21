@@ -13,6 +13,7 @@ import Ix.LeanIngress
 import Ix.Cert.RoleClosurePrepare
 import IxC.Kernel.Verify.Rename.Basic
 import IxC.Kernel.RoleEquations
+import Ix.IxVM.RecordSections
 import Ix.FileDigest
 
 /-! # The default role table, its evidence and the Ixon prelude, from Ixon (untrusted)
@@ -51,8 +52,9 @@ in IxC: the specifications (`Role.spec`), `specVersion` and their digest stay.
    (`Reader.evidenceOf`) and must give the closed proofs; then the dependency
    closure of every bound constant is checked record by record
    (`CheckIxeStep.checkLoop`, the environment check's own step) under the
-   generated table and its evidence. The run fails unless every bound
-   constant's record is accepted (a basis block matches its specification up
+   generated table and its evidence, but for the compiler-trust roles
+   (`uncheckedRoles`), which the fold accepts nothing of. The run fails unless
+   every other bound constant's record is accepted (a basis block matches its specification up
    to `canon`, the literal support has its exact types, the structural `Nat`
    operations are certified by their recurrences and the well-founded ones by
    the evidence) and both literal capabilities hold in the final
@@ -87,6 +89,16 @@ namespace Benchmarks.Kernel.PinGen
 open Ix.Kernel (ConstRef LevelParam Role)
 open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
+
+/-- **The roles whose records the fold is not asked to accept**: Lean's
+compiler-trust constants. The checker declines `Lean.trustCompiler`, an inert
+axiom, as a non-standard axiom; `Lean.reduceBool` and `Lean.reduceNat` use it;
+the types of the inert `Lean.ofReduceBool` and `Lean.ofReduceNat` mention
+those two. No accepted constant uses any of them, so their records and
+closures are left out of the checked closure. The table binds them by Lean
+name like every other role. -/
+def uncheckedRoles : List Role :=
+  [.trustCompiler, .reduceBool, .reduceNat, .ofReduceBool, .ofReduceNat]
 
 /-- The prelude's declarations, in upstream con-leche's prelude order (its
 `pins/<toolchain>.prelude.ndjson`): each group's roles. -/
@@ -513,6 +525,19 @@ def run (args : List String) : IO UInt32 := do
   let mut evidence : Array (Role × Array (Ix.Kernel.Evidence Address)) :=
     Ix.RoleEvidence.defeqRoles.toArray.map (fun r => (r, (Ix.RoleEvidence.defeqEvidence r).toArray)) ++
       Ix.RoleEvidence.defeqDefinitions.toArray
+  -- the closed theorems have no Lean source the compiler could annotate: their
+  -- binder data come from IxC's pass over the record, typed against the store
+  let secBlobs : Std.HashMap Address ByteArray := certEnv.blobs.fold (fun m a b => m.insert a b) env.blobs
+  let secHints := certEnv.anonHints.fold (fun m a h => m.insert a h) env.anonHints
+  let secSupport := certStore.toArray
+  let evidenceSection (c : Ixon.Constant) (blobs : Array (Address × ByteArray)) :
+      Except String Ixon.Constant := do
+    let a0 := hash (Ixon.serConstant c)
+    let sections ← IxVM.RecordSections.sectionsOf #[(a0, c)] secSupport
+      (blobs.foldl (fun m (a, b) => m.insert a b) secBlobs) secHints (boundOnly, pre0)
+    let binders := sections.getD a0 #[]
+    if binders.any (·.nodes.any (·.isUndecided)) then throw "an undecided binder"
+    return { c with binders }
   let mut evRecords : Array (Address × Ixon.Constant) := #[]
   let mut evBlobs : Array (Address × ByteArray) := #[]
   let mut closed : Std.HashMap Address (CExpr .anon) := {}
@@ -529,6 +554,9 @@ def run (args : List String) : IO UInt32 := do
       let (c, blobs) ← match Ix.RoleBinding.Evidence.theoremRecord (addrOfName[·]?) type p with
         | .ok x => pure x
         | .error e => fail s!"{t}: {e}"
+      let c ← match evidenceSection c blobs with
+        | .ok c => pure c
+        | .error e => fail s!"{t}: binder data: {e}"
       let bytes := Ixon.serConstant c
       match Ixon.Canonical.deConstant preludeMaxBytes preludeMaxUnivNodes bytes with
       | .ok c' => unless c' == c do fail s!"{t}: its record does not round-trip"
@@ -588,7 +616,7 @@ def run (args : List String) : IO UInt32 := do
       roots ++ entries.filterMap (fun | .proof address => some address | .defeq => none)
     else roots
   let checkRoots := equationRoots ++ (preRecords.map (·.1)) ++ (bound.filterMap fun (r, _) =>
-    (refOfRole[r]?).map (·.block))
+    if uncheckedRoles.contains r then none else (refOfRole[r]?).map (·.block))
   let ordered := closure s.store s.extra checkRoots
   IO.eprintln s!"pin-gen: checking the closure, {ordered.size} records"
   let rows ← IO.mkRef (#[] : Array Row)
@@ -603,6 +631,9 @@ def run (args : List String) : IO UInt32 := do
     rows.foldl (fun m r => m.insert r.address (r.outcome, r.reason)) {}
   let mut bad := 0
   for (r, _) in bound do
+    if uncheckedRoles.contains r then
+      IO.eprintln s!"pin-gen: bound {repr r}: not checked (compiler trust)"
+      continue
     let some ref := refOfRole[r]? | continue
     let verdict := outcomeOf[ref.block]?
     match verdict with
@@ -662,6 +693,19 @@ def run (args : List String) : IO UInt32 := do
     match Ixon.Canonical.deConstant preludeMaxBytes preludeMaxUnivNodes bytes with
     | .ok c' => unless c' == c do fail s!"closure record {a} does not round-trip"
     | .error e => fail s!"closure record {a}: {e}"
+  -- The inert compiler-trust roles (`uncheckedRoles`) and the records they reach that no array
+  -- above holds: the table binds them, so a witness of the table carries them
+  -- (`IxVM.ClaimHarness.defaultTableSupport`), and nothing checks them.
+  let written : Std.HashSet Address := closureRecords.foldl (fun m (a, _) => m.insert a) preludeSet
+  let inertRoots := bound.filterMap fun (r, _) =>
+    if uncheckedRoles.contains r then (refOfRole[r]?).map (·.block) else none
+  let inertRecords : Array (Address × Ixon.Constant) :=
+    ((closure s.store s.extra inertRoots).filter (!written.contains ·)).filterMap fun a =>
+      (s.store[a]?).map (a, ·)
+  for a in inertRoots do
+    unless written.contains a || inertRecords.any (·.1 == a) do
+      fail s!"an inert role's record {a} is not in the store"
+  IO.eprintln s!"pin-gen: inert roles: {inertRecords.size} records outside the checked closure"
   let mut closureBlobs : Array (Address × ByteArray) := #[]
   for (_, c) in closureRecords do
     for x in c.refs do
@@ -844,6 +888,10 @@ def quotientNames : Array (String × Lean.Name) := #[
 {nameRows qNames}]
 
 {fixtureDefinition "closure" (rowTerms (closureRecords.map fun (a, c) => (a, Ixon.serConstant c)))}
+
+-- The inert compiler-trust roles' records and what they reach outside the closure: bound,
+-- never checked; the claim harness supplies them with the table.
+{fixtureDefinition "inert" (rowTerms (inertRecords.map fun (a, c) => (a, Ixon.serConstant c)))}
 
 def closureBlobs : Array (String × String) := #[
 {rowsOf closureBlobs}]

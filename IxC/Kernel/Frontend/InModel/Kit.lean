@@ -438,6 +438,42 @@ checking path reads this one. -/
 def betaHead (e : Expr md) : Expr md :=
   (betaHeadF inferFuel e).getD e
 
+/-! ### Formers declared at a definition
+
+Lean's kernel reads an inductive type's former after reducing it to weak
+head normal form before each binder (`check_inductive_types`), so a former
+may be declared at a definition that only unfolds to its telescope
+(`T : MyType`, with `MyType := Type`).  The modeller reads a former the same
+way where its declared type is not syntactically a telescope ending in a
+sort: the head definition δ-unfolded at its value (`Ctx.values`), then head
+β-reduced.  Only δ and β: a former that needs another reduction is
+declined, as before. -/
+
+/-- `e` with its head constant δ-unfolded at its value in `vals`, at the
+constant's levels; `none` when the head is no constant with a value. -/
+def deltaHead (vals : ConstTable md) : Expr md → Option (Expr md)
+  | .const c us => (vals c).bind fun (lps, v) =>
+      if lps.length == us.length then some (v.instantiateLevelParams lps us) else none
+  | .app g a => (deltaHead vals g).map fun g' => .app g' a
+  | _ => none
+
+/-- **A former's type read to `n` Π binders and a sort**: where the residual is
+neither, its head definition is δ-unfolded and the result head-β-reduced
+(`deltaHead`, `betaHeadF`), at most `fuel` steps in all; `none` when no such
+telescope shows.  A type that is already one is returned unchanged. -/
+def formerTeleF (vals : ConstTable md) : Nat → Nat → Expr md → Option (Expr md)
+  | 0, _, _ => none
+  | fuel + 1, n, .forallE d b m =>
+    match n with
+    | 0 => none
+    | n + 1 => (formerTeleF vals fuel n b).map fun b' => .forallE d b' m
+  | _ + 1, n, .sort u => if n == 0 then some (.sort u) else none
+  | fuel + 1, n, e => ((deltaHead vals e).bind (betaHeadF fuel)).bind (formerTeleF vals fuel n)
+
+/-- `formerTeleF` at `inferFuel`. -/
+def formerTele (vals : ConstTable md) (n : Nat) (e : Expr md) : Option (Expr md) :=
+  formerTeleF vals inferFuel n e
+
 mutual
 /-- The type of `e` at `ctx`, at `fuel`: `none` where the syntactic
 reading fails, the fuel-out failure where the fuel runs out. -/

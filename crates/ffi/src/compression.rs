@@ -1,16 +1,34 @@
 //! Main CLI bridge; compression is linked into the ix executable.
-use crate::aiur::aggregate::normalize::{self, RootWrap};
-use crate::aiur::lean_unbox_nat_as_usize;
-use aiur::synthesis::AiurSystem;
+use aiur::{
+  artifact::Package,
+  bytecode::CheckedProgram,
+  field::{FieldBackend, NativeField},
+  trace::{
+    TraceArtifact, TracePlan,
+    stark::{Backend, BatchProof, Parameters},
+  },
+};
 use ix_proof_compression::pipeline::{self, FixedRoot};
 use lean_ffi::object::{
-  LeanBorrowed, LeanByteArray, LeanExternal, LeanIOResult, LeanNat, LeanOwned,
-  LeanString,
+  LeanBorrowed, LeanByteArray, LeanIOResult, LeanOwned, LeanString,
 };
+use multi_stark::types::Val;
 
-fn optional(text: &LeanString<LeanBorrowed<'_>>) -> Option<String> {
-  let text = text.to_string();
-  (!text.is_empty()).then_some(text)
+/// The aggregation artifact's checked program and trace plan.
+fn aggregate(
+  path: &LeanString<LeanBorrowed<'_>>,
+) -> Result<(CheckedProgram<NativeField<Val>>, TraceArtifact), String> {
+  let (package, _) = Package::load(path.to_string().as_ref())?;
+  let (program, trace) = package.traced()?;
+  let mut program = program.check_field::<Val>()?;
+  program.track_depth(&trace)?;
+  Ok((program, trace))
+}
+
+/// An optional `.ixl` layout: empty means none.
+fn optional(bytes: &LeanByteArray<LeanBorrowed<'_>>) -> Option<Vec<u8>> {
+  let bytes = bytes.as_bytes();
+  (!bytes.is_empty()).then(|| bytes.to_vec())
 }
 
 #[unsafe(no_mangle)]
@@ -19,7 +37,7 @@ extern "C" fn rs_compression_run(
   proof: LeanByteArray<LeanBorrowed<'_>>,
   claim: LeanByteArray<LeanBorrowed<'_>>,
   statement: LeanByteArray<LeanBorrowed<'_>>,
-  fixed_root: LeanString<LeanBorrowed<'_>>,
+  fixed_root: LeanByteArray<LeanBorrowed<'_>>,
   dir: LeanString<LeanBorrowed<'_>>,
   cache_root: LeanString<LeanBorrowed<'_>>,
   dev_kzg_srs: bool,
@@ -136,61 +154,81 @@ extern "C" fn rs_compression_check_claim(
   }
 }
 
-fn root_wrap<'a>(
-  system: &'a LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  aggr_idx: &LeanNat<LeanBorrowed<'_>>,
-  allowed: &'a LeanByteArray<LeanBorrowed<'_>>,
-  ixvm_vk: &'a LeanByteArray<LeanBorrowed<'_>>,
-  claim: &'a LeanByteArray<LeanBorrowed<'_>>,
-) -> RootWrap<'a> {
-  RootWrap {
-    system: system.get(),
-    aggr_idx: lean_unbox_nat_as_usize(aggr_idx.inner()),
-    allowed: allowed.as_bytes(),
-    ixvm_vk: ixvm_vk.as_bytes(),
-    claim: claim.as_bytes(),
+/// Check that `statement` belongs to `claim` and to the aggregation backend
+/// the bundled verifying keys were derived for.
+#[unsafe(no_mangle)]
+extern "C" fn rs_compression_check_release_statement(
+  claim: LeanByteArray<LeanBorrowed<'_>>,
+  statement: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  match pipeline::check_release_statement(
+    claim.as_bytes(),
+    statement.as_bytes(),
+  ) {
+    Ok(()) => LeanIOResult::ok(LeanOwned::box_usize(0)),
+    Err(e) => LeanIOResult::error_string(&e.to_string()),
   }
 }
 
-/// The versioned normalization layout for the selected aggregation backend.
+/// The versioned normalization layout (`.ixl` bytes) for the selected
+/// aggregation backend.
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_release_root_layout(
   vk: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   match pipeline::release_root_layout(vk.as_bytes()) {
-    Ok(layout) => LeanIOResult::ok(LeanString::new(layout)),
+    Ok(layout) => LeanIOResult::ok(LeanByteArray::from_bytes(layout)),
     Err(error) => LeanIOResult::error_string(&error.to_string()),
   }
 }
 
-/// Per-circuit rows of one root wrap execution, as a JSON array.
+/// Per-circuit rows of one root wrap execution, as a JSON array. The
+/// invocation is in Ixon (`aiur::artifact`).
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_root_rows(
-  system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  aggr_idx: LeanNat<LeanBorrowed<'_>>,
-  allowed: LeanByteArray<LeanBorrowed<'_>>,
-  ixvm_vk: LeanByteArray<LeanBorrowed<'_>>,
-  claim: LeanByteArray<LeanBorrowed<'_>>,
-  proof: LeanByteArray<LeanBorrowed<'_>>,
+  aggr_artifact: LeanString<LeanBorrowed<'_>>,
+  invocation: LeanByteArray<LeanBorrowed<'_>>,
+  raw_proof: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let wrap = root_wrap(&system, &aggr_idx, &allowed, &ixvm_vk, &claim);
-  match wrap.rows(proof.as_bytes()) {
-    Ok(rows) => LeanIOResult::ok(LeanString::new(
-      &serde_json::to_string(&rows).expect("row counts serialize"),
-    )),
+  let result = (|| -> Result<String, String> {
+    let (program, trace) = aggregate(&aggr_artifact)?;
+    let plan = TracePlan::new(&program, trace)?;
+    let backend =
+      Backend::for_batch_verification(&plan, Parameters::default())?;
+    let invocation = stark_verifier::Invocation::decode(invocation.as_bytes())?;
+    let args = program.field().decode(&invocation.args)?;
+    let proof_bytes = raw_proof.as_bytes();
+    let proof = BatchProof::from_bytes(proof_bytes)
+      .map_err(|e| format!("root proof decode failed: {e}"))?;
+    if proof.to_bytes().map_err(|e| e.to_string())? != proof_bytes {
+      return Err("noncanonical or trailing root proof bytes".into());
+    }
+    backend.verify_batch(&invocation.entry, &args, &[], &proof)?;
+    let hints = stark_verifier::prepare(&program, &invocation.streams)?;
+    let record =
+      hints.execute(&invocation.entry, args).map_err(|e| e.to_string())?;
+    if !record.output.is_empty() {
+      return Err("verifier returned a non-unit value".into());
+    }
+    let rows = backend.execution_rows(&record);
+    serde_json::to_string(&rows).map_err(|e| e.to_string())
+  })();
+  match result {
+    Ok(rows) => LeanIOResult::ok(LeanString::new(&rows)),
     Err(e) => LeanIOResult::error_string(&e),
   }
 }
 
-/// The fixed layout holding every row-count array in the JSON array `rows`.
+/// The fixed layout (`.ixl` bytes) holding every row-count array in the JSON
+/// array `rows`.
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_root_layout(
-  system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  aggr_artifact: LeanString<LeanBorrowed<'_>>,
   rows: LeanString<LeanBorrowed<'_>>,
   headroom: u32,
   claim_len: u32,
 ) -> LeanIOResult<LeanOwned> {
-  let result = (|| -> Result<String, String> {
+  let result = (|| -> Result<Vec<u8>, String> {
     let executions: Vec<Vec<usize>> =
       serde_json::from_str(&rows.to_string()).map_err(|e| e.to_string())?;
     let first = executions.first().ok_or("no root executions to size")?;
@@ -200,16 +238,24 @@ extern "C" fn rs_compression_root_layout(
     let maxima: Vec<_> = (0..first.len())
       .map(|i| executions.iter().map(|rows| rows[i]).max().unwrap_or(0))
       .collect();
-    let layout = normalize::layout(
-      system.get(),
+    let (program, trace) = aggregate(&aggr_artifact)?;
+    let plan = TracePlan::new(&program, trace)?;
+    let backend =
+      Backend::for_batch_verification(&plan, Parameters::default())?;
+    let log_heights = backend.normalized_log_heights(
       &maxima,
       u8::try_from(headroom).map_err(|e| e.to_string())?,
-      claim_len as usize,
     )?;
-    Ok(layout.to_json())
+    let layout = FixedRoot::new(
+      log_heights,
+      backend.memory_circuits(),
+      claim_len as usize,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(layout.to_bytes())
   })();
   match result {
-    Ok(json) => LeanIOResult::ok(LeanString::new(&json)),
+    Ok(layout) => LeanIOResult::ok(LeanByteArray::from_bytes(&layout)),
     Err(e) => LeanIOResult::error_string(&e),
   }
 }
@@ -217,18 +263,48 @@ extern "C" fn rs_compression_root_layout(
 /// Wrap and prove the root in `layout`'s fixed shape.
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_normalize_root(
-  system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  aggr_idx: LeanNat<LeanBorrowed<'_>>,
-  allowed: LeanByteArray<LeanBorrowed<'_>>,
-  ixvm_vk: LeanByteArray<LeanBorrowed<'_>>,
-  claim: LeanByteArray<LeanBorrowed<'_>>,
-  proof: LeanByteArray<LeanBorrowed<'_>>,
-  layout: LeanString<LeanBorrowed<'_>>,
+  aggr_artifact: LeanString<LeanBorrowed<'_>>,
+  invocation: LeanByteArray<LeanBorrowed<'_>>,
+  raw_proof: LeanByteArray<LeanBorrowed<'_>>,
+  layout: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let wrap = root_wrap(&system, &aggr_idx, &allowed, &ixvm_vk, &claim);
-  let result = FixedRoot::from_json(&layout.to_string())
-    .map_err(|e| e.to_string())
-    .and_then(|layout| wrap.normalize(proof.as_bytes(), &layout));
+  let result = (|| -> Result<Vec<u8>, String> {
+    let layout =
+      FixedRoot::from_bytes(layout.as_bytes()).map_err(|e| e.to_string())?;
+    let (program, trace) = aggregate(&aggr_artifact)?;
+    let plan = TracePlan::new(&program, trace)?;
+    let backend = Backend::for_batch(&plan, Parameters::default())?;
+    let invocation = stark_verifier::Invocation::decode(invocation.as_bytes())?;
+    let args = program.field().decode(&invocation.args)?;
+    let proof_bytes = raw_proof.as_bytes();
+    let proof = BatchProof::from_bytes(proof_bytes)
+      .map_err(|e| format!("root proof decode failed: {e}"))?;
+    if proof.to_bytes().map_err(|e| e.to_string())? != proof_bytes {
+      return Err("noncanonical or trailing root proof bytes".into());
+    }
+    backend.verify_batch(&invocation.entry, &args, &[], &proof)?;
+    let hints = stark_verifier::prepare(&program, &invocation.streams)?;
+    let record = hints
+      .execute(&invocation.entry, args.clone())
+      .map_err(|e| e.to_string())?;
+    if !record.output.is_empty() {
+      return Err("verifier returned a non-unit value".into());
+    }
+    let (claim, normalized) = backend.prove_normalized(
+      &invocation.entry,
+      &args,
+      &[],
+      record,
+      layout.log_heights(),
+    )?;
+    let expected = backend.claim(&invocation.entry, &args, &[])?;
+    if claim != expected {
+      return Err(
+        "normalized root claim differs from expected outer claim".into(),
+      );
+    }
+    normalized.to_bytes().map_err(|e| e.to_string())
+  })();
   match result {
     Ok(bytes) => LeanIOResult::ok(LeanByteArray::from_bytes(&bytes)),
     Err(e) => LeanIOResult::error_string(&e),
@@ -242,7 +318,7 @@ extern "C" fn rs_compression_write_root(
   proof: LeanByteArray<LeanBorrowed<'_>>,
   claim: LeanByteArray<LeanBorrowed<'_>>,
   statement: LeanByteArray<LeanBorrowed<'_>>,
-  fixed_root: LeanString<LeanBorrowed<'_>>,
+  fixed_root: LeanByteArray<LeanBorrowed<'_>>,
   dir: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   match pipeline::write_root_input(

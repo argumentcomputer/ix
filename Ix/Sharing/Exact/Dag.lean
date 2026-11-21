@@ -127,19 +127,19 @@ def ingestExpr (limits : Limits) (ctx : ShareCtx) (depth : Nat) (e : Ixon.Expr) 
         let fi ← ingestExpr limits ctx (depth + 1) f
         let ai ← ingestExpr limits ctx (depth + 1) a
         internNode limits ⟨.app, #[fi, ai]⟩
-      | .lam c ty body => do
+      | .lam ty body => do
         let ti ← ingestExpr limits ctx (depth + 1) ty
         let bi ← ingestExpr limits ctx (depth + 1) body
-        internNode limits ⟨.lam c, #[ti, bi]⟩
-      | .all c r ty body => do
+        internNode limits ⟨.lam, #[ti, bi]⟩
+      | .all ty body => do
         let ti ← ingestExpr limits ctx (depth + 1) ty
         let bi ← ingestExpr limits ctx (depth + 1) body
-        internNode limits ⟨.all c r, #[ti, bi]⟩
-      | .letE c ty v body => do
+        internNode limits ⟨.all, #[ti, bi]⟩
+      | .letE nonDep mode ty v body => do
         let ti ← ingestExpr limits ctx (depth + 1) ty
         let vi ← ingestExpr limits ctx (depth + 1) v
         let bi ← ingestExpr limits ctx (depth + 1) body
-        internNode limits ⟨.letE c, #[ti, vi, bi]⟩
+        internNode limits ⟨.letE nonDep mode, #[ti, vi, bi]⟩
       | .share j => liftExcept (resolveShare ctx j)
     modify fun s => { s with ptrCache := s.ptrCache.insert ptr id }
     return id
@@ -309,8 +309,8 @@ telescope. -/
 def continuationEdge (parent : Node) (i : Nat) (child : Node) : Bool :=
   match parent.head, child.head with
   | .app, .app => i == 0
-  | .lam _, .lam _ => i == 1
-  | .all .., .all .. => i == 1
+  | .lam, .lam => i == 1
+  | .all, .all => i == 1
   | _, _ => false
 
 /-- Counts pushed from parents to children, the largest ID first: every root

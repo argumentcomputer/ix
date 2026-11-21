@@ -5,7 +5,7 @@ public import IxC.Kernel.Model.Inductives.StructFrames
 public section
 
 /-!
-# The direct block's family laws (task #175 W4c, P3 module 5, part 2)
+# The direct block's family laws
 
 The block's own capability laws, from the leaves' semantic summary:
 

@@ -19,7 +19,16 @@ formerly 59–63) and the `identity` kind are gone.
 Version 3 makes `Iff`, `Nonempty` and their constructors and recursors
 (23–28) blocks and gives the inert `sorryAx` (58) its type over `Bool` (4).
 Native definitions and their anchors occupy roles 59–102; their equations
-use `eqns`. Each line also records `Role.usedImplicitly`. -/
+use `eqns`. Each line also records `Role.usedImplicitly`.
+
+Version 4 makes `Nat.decEq`, `Nat.decLe`, `Int.decEq` and `Int.decLe` depend on the
+`of_decide_eq_*` roles (63 and 64), and `String.decEq` on 63.
+
+Version 5 brings the compiler-trust constants back as roles 103–107: the three
+axioms (`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`) are inert
+axioms of their exact types (`Role.inert`, as `sorryAx` is), and the two opaques
+their types mention (`Lean.reduceBool`, `Lean.reduceNat`) are type-only
+anchors. -/
 
 namespace Ix.Kernel.Audit
 
@@ -33,7 +42,7 @@ def roleLine (r : Role) : String :=
     | .block decls => s!"block {decls.length}"
     | .anchor levels _ => s!"anchor {levels}"
     | .ops _ eqs => s!"ops {eqs.length}"
-    | .axiom levels _ => s!"axiom {levels}{if r == Role.sorryAx then " inert" else ""}"
+    | .axiom levels _ => s!"axiom {levels}{if r.inert then " inert" else ""}"
     | .eqns levels _ eqs => s!"eqns {levels} {eqs.length}"
   let ev := String.ofList ((r.spec (md := .anon)).evidenceAllowed.map fun
     | some true => 'd'
@@ -45,7 +54,7 @@ def roleLine (r : Role) : String :=
 
 end Ix.Kernel.Audit
 
-/-- info: 3 -/
+/-- info: 4 -/
 #guard_msgs in #eval Ix.Kernel.specVersion
 
 /--
@@ -152,5 +161,10 @@ info: 0 Nat: block 4 block [0,1,2,3] deps [] implicit
 100 Char.utf8Size: eqns 0 5 ppppp block [100] deps [0,39,40,4,8,44,47]
 101 String.utf8ByteSize: eqns 0 2 ee block [101] deps [0,37,29,39,38,8,42,100]
 102 String.back: eqns 0 3 eee block [102] deps [0,37,29,39,40,38,8,44]
+103 Lean.trustCompiler: axiom 0 inert block [103] deps [18]
+104 Lean.reduceBool: anchor 0 block [104] deps [4]
+105 Lean.reduceNat: anchor 0 block [105] deps [0]
+106 Lean.ofReduceBool: axiom 0 inert block [106] deps [4,8,104]
+107 Lean.ofReduceNat: axiom 0 inert block [107] deps [0,8,105]
 -/
 #guard_msgs in #eval IO.println ("\n".intercalate (Ix.Kernel.Role.all.map Ix.Kernel.Audit.roleLine))

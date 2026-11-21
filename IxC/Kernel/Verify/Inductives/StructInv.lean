@@ -5,7 +5,7 @@ public import IxC.Kernel.Verify.Inductives.StructWF
 public section
 
 /-!
-# The direct install's stage runs, inverted to their records (task #175 W4c, P3)
+# The direct install's stage runs, inverted to their records
 
 Each stage of `checkStruct` is a `do`-block of guards and
 operation runs; the P install reads those runs (the annotated types'
@@ -38,7 +38,7 @@ local macro_rules
 
 /-! ## Stage 2: the constructor -/
 
-/-! ## Stage 3: the recursor, generated and compared (task #175 S2) -/
+/-! ## Stage 3: the recursor, generated and compared -/
 
 /-! ## The frame walks: binder-domain pins and field sorts -/
 

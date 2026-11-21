@@ -1061,11 +1061,16 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       else if backends.all (·.name != b.name) then
         backends := backends.push b
   if backends.isEmpty then
-    if !skipped.isEmpty then
+    -- A bare `!benchmark` requests the default backend, `aiur`, which is
+    -- disabled while it has no formal-backend tool.
+    if skipped.isEmpty then
+      let default := (Ix.Cli.BenchCmd.findBackend "aiur").toList.toArray
+      backends := default.filter (·.disabled.isNone)
+      skipped := default.filter (·.disabled.isSome)
+    if backends.isEmpty then
       let reasons := ", ".intercalate <| skipped.toList.map fun b =>
         s!"{b.name} ({b.disabled.getD "disabled in CI"})"
       return ← parseError s!"no requested benchmark backend is enabled in CI: {reasons}"
-    backends := (Ix.Cli.BenchCmd.findBackend "aiur").toList.toArray
 
   -- KEY=VALUE config: the inline command-line tokens (strict — an
   -- unknown key rejects, same as a typo'd backend), then the lines below

@@ -273,6 +273,8 @@ pub(super) fn prove(
   )?;
   eprintln!("{}", serde_json::to_string_pretty(&result)?);
   let statement = statement::from_rows(&input.claims)?;
+  drop(plan);
+  drop(input);
   super::outer::stage(
     built,
     assignment,

@@ -13,7 +13,7 @@ open LSpec SlimCheck Gen
 open Ix (RevealConstructorInfo RevealRecursorRule RevealMutConstInfo RevealConstantInfo Claim
          DefKind DefinitionSafety QuotKind)
 open Tests.Gen.Ixon (genAddress genUInt64Small genDefKind genDefinitionSafety genQuotKindNew
-                      genSmallArray)
+                      genDefAsserts genFieldMode genSmallArray)
 
 namespace Tests.Gen.Claim
 
@@ -35,6 +35,7 @@ def genRevealConstructorInfo : Gen RevealConstructorInfo :=
     <*> genOptional genUInt64Small
     <*> genOptional genUInt64Small
     <*> genOptional genAddress
+    <*> genOptional (genSmallArray genFieldMode)
 
 def genRevealRecursorRule : Gen RevealRecursorRule :=
   RevealRecursorRule.mk <$> genUInt64Small <*> genUInt64Small <*> genAddress
@@ -43,7 +44,8 @@ def genRevealMutConstInfo : Gen RevealMutConstInfo :=
   frequency [
     (10, RevealMutConstInfo.defn
       <$> genOptional genDefKind <*> genOptional genDefinitionSafety
-      <*> genOptional genUInt64Small <*> genOptional genAddress <*> genOptional genAddress),
+      <*> genOptional genUInt64Small <*> genOptional genAddress <*> genOptional genAddress
+      <*> genOptional genDefAsserts),
     (5, RevealMutConstInfo.indc
       <$> genOptional genBool <*> genOptional genUInt64Small
       <*> genOptional genUInt64Small <*> genOptional genUInt64Small
@@ -61,7 +63,8 @@ def genRevealConstantInfo : Gen RevealConstantInfo :=
   frequency [
     (10, RevealConstantInfo.defn
       <$> genOptional genDefKind <*> genOptional genDefinitionSafety
-      <*> genOptional genUInt64Small <*> genOptional genAddress <*> genOptional genAddress),
+      <*> genOptional genUInt64Small <*> genOptional genAddress <*> genOptional genAddress
+      <*> genOptional genDefAsserts),
     (5, RevealConstantInfo.recr
       <$> genOptional genBool <*> genOptional genBool
       <*> genOptional genUInt64Small <*> genOptional genUInt64Small
@@ -107,11 +110,10 @@ def genClaim : Gen Claim :=
     (10, Claim.eval     <$> genClaimContext <*> genAddress <*> genAddress <*> genOptAddress),
     (10, Claim.check    <$> genAssumableContext <*> genAddress <*> genOptAddress),
     (10, Claim.checkEnv <$> genCheckEnvContext <*> genAddress <*> genOptAddress),
-    (10, Claim.reveal   <$> genAddress <*> genRevealConstantInfo),
+    (10, Claim.reveal   <$> genAddress <*> genRevealConstantInfo <*> genOptAddress),
     (10, Claim.contains <$> genAddress <*> genAddress),
     (10, Claim.binding  <$> genAddress <*> genAddress),
     (10, Claim.catalog  <$> genAddress),
-    (10, Claim.resource <$> genAddress <*> genAddress),
   ]
 
 /-! ## Shrinkable instances -/
@@ -119,8 +121,9 @@ def genClaim : Gen Claim :=
 instance : Shrinkable RevealConstructorInfo where
   shrink info :=
     if info.isUnsafe.isSome || info.lvls.isSome || info.cidx.isSome ||
-       info.params.isSome || info.fields.isSome || info.typ.isSome
-    then [⟨none, none, none, none, none, none⟩]
+       info.params.isSome || info.fields.isSome || info.typ.isSome ||
+       info.fieldModes.isSome
+    then [⟨none, none, none, none, none, none, none⟩]
     else []
 
 instance : Shrinkable RevealRecursorRule where
@@ -130,8 +133,8 @@ instance : Shrinkable RevealRecursorRule where
 
 instance : Shrinkable RevealMutConstInfo where
   shrink
-    | .defn none none none none none => []
-    | _ => [.defn none none none none none]
+    | .defn none none none none none none => []
+    | _ => [.defn none none none none none none]
 
 instance : Shrinkable RevealConstantInfo where
   shrink
@@ -145,11 +148,12 @@ instance : Shrinkable Claim where
     | .check ctx c (some _) => [.check ctx c none]
     | .checkEnv ctx r (some _) => [.checkEnv ctx r none]
     | .eval ctx input _ _ => [.check ctx input none]
-    | .reveal comm info =>
-      (.reveal comm <$> Shrinkable.shrink info) ++ [.check default comm none]
+    | .reveal comm info binders =>
+      (if binders.isSome then [.reveal comm info none] else []) ++
+      ((fun i => .reveal comm i binders) <$> Shrinkable.shrink info) ++
+      [.check default comm none]
     | .contains t _ => [.checkEnv default t none]
     | .catalog m => [.checkEnv default m none]
-    | .resource _ _ => []
     | .binding _ _ => []
 
 /-! ## SampleableExt instances -/

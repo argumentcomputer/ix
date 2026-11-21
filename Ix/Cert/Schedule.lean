@@ -191,7 +191,7 @@ def compileEnvFoldSeq (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   if let some msg := missingBlockRefs? blocks then throw msg
   validateInductiveFlags env
   validateMutualSafety env blocks
-  let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
+  let view : Ix.Environment := env.lookupView
   let sched := FoldSchedule.of blocks
   let cenv₀ := { CompileEnv.new view with sharingLimits }
   let st ← foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)

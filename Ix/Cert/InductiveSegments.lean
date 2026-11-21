@@ -136,14 +136,14 @@ theorem mutual_rows {context : CompileEnv × BlockEnv} {before after : BlockStat
   cases hs : standaloneMutConstInfo? members with
   | none =>
     rw [hs] at built
-    obtain ⟨block, -, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok built
+    obtain ⟨block, -, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned built
     cases Except.ok.inj returned
     refine .inl ⟨rfl, ?_⟩
     dsimp only [BlockResult.mk']
     exact MutualProjections.build_rows _ _ _
   | some info =>
     rw [hs] at built
-    obtain ⟨block, -, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok built
+    obtain ⟨block, -, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned built
     cases Except.ok.inj returned
     refine .inr ⟨by simp, ?_⟩
     dsimp only [BlockResult.mk']
@@ -588,6 +588,8 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
       stS.constTypes[k]? = some p → p.2.Good (KeyScope.ofId (QRepAt ixe (roleAtMap t))))
     (blocksGood : ∀ k : Key .source, k.Good (KeyScope.ofId (QRepAt ixe (roleAtMap t))) → ∀ bk,
       stS.indBlocks[k]? = some bk → bk.Good (KeyScope.ofId (QRepAt ixe (roleAtMap t))))
+    (valuesGood : ∀ k : Key .source, k.Good (KeyScope.ofId (QRepAt ixe (roleAtMap t))) → ∀ p,
+      stS.defValues[k]? = some p → p.2.Good (KeyScope.ofId (QRepAt ixe (roleAtMap t))))
     {rS : Read .source}
     (lowered : Ix.LeanIngress.lower stS (conv.quotient (fiberAliasAt ixe (roleAtMap t))) = .ok rS) :
     out₁.blockAddr ∈ order ∧ recordAt ixe out₁.blockAddr = some out₁.block ∧
@@ -806,7 +808,7 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
     (ClosureKeying.closure_store corder.nodup hB₂ stored₂)
     refs₁ hkey₀ family (fun i hi => by obtain ⟨_, -, -, hkey⟩ := typeKeys i hi; exact hkey) ctorKeys
     (fun j hj => by obtain ⟨_, -, _, -, -, hkey⟩ := recKeys j hj; exact hkey)
-    hindexed hshape hrecs entries good typesGood blocksGood lowered
+    hindexed hshape hrecs entries good typesGood blocksGood valuesGood lowered
 
 /-! ## The inductive group's segment -/
 

@@ -2,6 +2,7 @@ module
 public import Cli
 public import Ix.Common
 public import Ix.CompileM
+public import Ix.ModeCheck
 public import Ix.CompileDriver
 public import Ix.CompileCertified
 public import Ix.RoleBinding.Compile
@@ -86,7 +87,8 @@ def runCompileExportCmd (p : Cli.Parsed) : IO UInt32 := do
       pure (pure certEnv)
   let constList := env.constants.toList
   let (out, artifact, outBytes) ← match ← Ix.CompileM.compileAndFinalize env constList workers
-      (allowPartial := false) (certSource := certSource) (defaultRoles := false) with
+      (allowPartial := false) (certSource := certSource) (defaultRoles := false)
+      (modeCheck := Ix.ModeCheck.checkArtifact) with
     | .error e =>
       IO.println s!"[compile-export] FAILED: {e}"
       return 1

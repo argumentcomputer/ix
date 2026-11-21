@@ -6,7 +6,7 @@ import IxC.Kernel.Model.Annot.BitRename
 public section
 
 /-!
-# The recursor's frame kit (task #175 W4c, P3 module 6, part 8)
+# The recursor's frame kit
 
 The pieces the recursor's frames are assembled from:
 

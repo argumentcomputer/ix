@@ -4,6 +4,7 @@ public import IxC.Kernel.Model.EqTower
 public import IxC.Kernel.Model.DivMod
 import IxC.Kernel.Model.NatEqs
 public import IxC.Kernel.Model.BasisTypeOk
+public import IxC.Kernel.Model.ThmVal
 
 public section
 
@@ -141,7 +142,7 @@ theorem declStep_preserves_of_basis_cons (mp : EnvModelM V μ env)
   · -- `rec_rules`: `EnvS.rec_ctors` supplies the constructor
     -- disequality, so freshness is enough (ENDGAME D §3a)
     exact fun φ => recRules_cons_fresh mp hfresh hh.projTower hnotrec _ rfl φ
-  · -- `tower_ok` (task #175 wiring W5): no tower entry is a basis cons
+  · -- `tower_ok`: no tower entry is a basis cons
     exact fun φ => towerOk_cons_fresh mp hfresh hh.projTower hntc _ rfl φ
 
 /-- **The P step at a basis *recursor* cons** — `declStep_preserves_of_basis_cons`
@@ -202,7 +203,7 @@ theorem declStep_preserves_of_basis_rec_cons (mp : EnvModelM V μ env)
   · exact eqLaw_cons_fresh mp.eq_law hnEq _ rfl
   · exact capsOk_cons_basis mp mp.caps_ok hfresh hh.projTower hres _ rfl
   · exact fun φ => hrec _ rfl φ
-  · -- `tower_ok` (task #175 wiring W5): no tower entry is a basis cons
+  · -- `tower_ok`: no tower entry is a basis cons
     exact fun φ => towerOk_cons_fresh mp hfresh hh.projTower hntc _ rfl φ
 
 /-- **The P step at the `Eq` cons** — `declStep_preserves_of_basis_cons` with
@@ -259,7 +260,7 @@ theorem declStep_preserves_of_basis_cons_eqrow (mp : EnvModelM V μ env)
   · exact heq _ rfl
   · exact capsOk_cons_basis mp mp.caps_ok hfresh hh.projTower hres _ rfl
   · exact fun φ => recRules_cons_fresh mp hfresh hh.projTower hnotrec _ rfl φ
-  · -- `tower_ok` (task #175 wiring W5): no tower entry is a basis cons
+  · -- `tower_ok`: no tower entry is a basis cons
     exact fun φ => towerOk_cons_fresh mp hfresh hh.projTower hntc _ rfl φ
 
 /-- **The P step at a basis cons, both varying rows open.**  The `Nat`
@@ -316,7 +317,7 @@ theorem declStep_preserves_of_basis_cons_gen (mp : EnvModelM V μ env)
   · exact eqLaw_cons_fresh mp.eq_law hnEq _ rfl
   · exact capsOk_cons_basis mp mp.caps_ok hfresh hh.projTower hres _ rfl
   · exact fun φ => hrec _ rfl φ
-  · -- `tower_ok` (task #175 wiring W5): no tower entry is a basis cons
+  · -- `tower_ok`: no tower entry is a basis cons
     exact fun φ => towerOk_cons_fresh mp hfresh hh.projTower hntc _ rfl φ
 
 end Ix.Kernel.Model

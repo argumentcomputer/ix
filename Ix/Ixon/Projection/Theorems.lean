@@ -112,7 +112,7 @@ theorem Reads.wireWF {request : Request} {record : Ixon.Constant}
   rcases h with ⟨width, reading⟩
   cases reading <;> simpa [
     Ixon.Constant.wireWF, Ixon.ConstantInfo.wireWF,
-    ConstRef.block] using width
+    ConstRef.block, Ixon.bindersWireWF_empty] using width
 
 theorem Reads.matchesRecord {request : Request} {record : Ixon.Constant}
     (h : Reads request record) : matchesRecord request record = true := by

@@ -110,7 +110,7 @@ theorem groundSplit_node {E : Ix.Environment} {x : Ix.Name} (hs : E.consts.conta
 /-- **The compile reports the ground filter's constants as failed.** -/
 theorem ungrounded_failed {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     {cenv : CompileEnv} (hu : compileUnchecked env = .ok (ixe, failures, cenv)) {x : Ix.Name}
-    (h : (groundSplit { consts := env.consts }).2.contains x = true) : failures.failed x = true := by
+    (h : (groundSplit env.materialized).2.contains x = true) : failures.failed x = true := by
   unfold compileUnchecked at hu
   simp only [bind, Except.bind, pure, Except.pure] at hu
   split at hu
@@ -131,17 +131,17 @@ the compile reports the ground filter's constants as failed. -/
 theorem env_node {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
     (P : Premises env roots sub ixe failures t envQ) {x : Ix.Name} (hx : (sub.consts.get? x).isSome = true) :
-    (groundSplit { consts := env.consts }).1.contains x = true := by
+    (groundSplit env.materialized).1.contains x = true := by
   have hcl : IsClosure env roots sub := P.source.1
   obtain ⟨cenv, hu, -⟩ := Ix.Cert.compileReport_ok P.compiled
   obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hx
-  have hin : ({ consts := env.consts } : Ix.Environment).consts.contains x = true := by
+  have hin : (env.materialized : Ix.Environment).consts.contains x = true := by
     show env.consts.contains x = true
     rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?,
       ← CompiledRefs.closure_same hcl hx, hci]
     rfl
   refine groundSplit_node hin ?_
-  cases hg : (groundSplit { consts := env.consts }).2.contains x
+  cases hg : (groundSplit env.materialized).2.contains x
   · rfl
   · have failed := ungrounded_failed hu hg
     rw [P.none x ci hci] at failed
@@ -180,9 +180,9 @@ theorem block_agree {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Envi
   · have p₁ := Condense.condense_scc hE hnE hx
     have p₂ := Condense.condense_scc hE hx hnE
     have hxs := Condense.closure_path hcl p₁ hn
-    have transfer := fun {a b : Ix.Name} (p : Path (groundSplit { consts := env.consts }).1 a b)
+    have transfer := fun {a b : Ix.Name} (p : Path (groundSplit env.materialized).1 a b)
         (ha : (sub.consts.get? a).isSome = true) =>
-      CompiledRefs.path_transfer (E₁ := { consts := env.consts }) (E₂ := sub)
+      CompiledRefs.path_transfer (E₁ := env.materialized) (E₂ := sub)
         (fun z => (sub.consts.get? z).isSome = true) (CompiledRefs.closure_closed_env hcl)
         (fun z hz => sub_node scheduled hz) (fun z hz => CompiledRefs.closure_same hcl hz) p ha
     obtain ⟨lo, allx, -, hallx, hxallx⟩ := CompiledRefs.placed scheduled hxs
@@ -195,7 +195,7 @@ theorem block_agree {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Envi
         rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.contains_eq_isSome_getElem?]; exact hk)
     have transfer := fun {a b : Ix.Name} (p : Path (groundSplit sub).1 a b)
         (ha : (sub.consts.get? a).isSome = true) =>
-      CompiledRefs.path_transfer (E₁ := sub) (E₂ := { consts := env.consts })
+      CompiledRefs.path_transfer (E₁ := sub) (E₂ := env.materialized)
         (fun z => (sub.consts.get? z).isSome = true) CompiledRefs.closure_closed_sub
         (fun z hz => env_node P hz) (fun z hz => (CompiledRefs.closure_same hcl hz).symm) p ha
     obtain ⟨repx, allx, hallx, hxallx⟩ := hmem
@@ -563,7 +563,7 @@ theorem single_block {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Env
   intro x hx
   have hfound : (env.consts.get? x).isSome = true := by
     have hk := CompiledRefs.key_of_member hE hx
-    exact CompiledRefs.node_const (E := { consts := env.consts }) (by
+    exact CompiledRefs.node_const (E := env.materialized) (by
       rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.contains_eq_isSome_getElem?]; exact hk)
   obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hfound
   have hin := (names ci.getCnst.name).mpr ⟨x, ci, hx, hci, rfl⟩

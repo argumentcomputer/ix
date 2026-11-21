@@ -11,7 +11,7 @@ import IxC.Kernel.Verify.Inductives.StructInv
 @[expose] public section
 
 /-!
-# The direct-structure declaration keeps the η-families closed (task #175 wiring, W5)
+# The direct-structure declaration keeps the η-families closed
 
 The declaration fold's η half at the `.indDecl` dispatch: the modeled
 arm is `declIndEtaClosedRun` (`IndBlockRun`), and the direct arm is
@@ -24,8 +24,7 @@ duplicate guard for the three constants, `checkStructProj`'s own
 
 With this the two dispatch lemmas below make the fold's η half
 **flag-agnostic**: `declStep_preserves` (`Model/FoldP`) and `declEtaStep` read
-the kernel's own `structParts?` dispatch and no longer consult
-the former master switch (gone at W4c).
+the kernel's own `structParts?` dispatch.
 -/
 
 namespace Ix.Kernel.Semantics
@@ -37,7 +36,7 @@ open Ix.Kernel (Env Expr Key Level CheckMode ConstantVal ConstantInfo
 /-! ## The stage shapes, with their freshness guards -/
 
 /-- The table stage's run: the tower table consed at a fresh table
-name (task #175 S1). -/
+name. -/
 theorem checkStructProjTable_shape {T C : Key md}
     {lps : List LevelParam} {nP nF : Nat} {resSort : Level}
     {guards : List Level} {off : Nat} {cvCa : ConstantVal md} {env env' : Env md}

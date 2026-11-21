@@ -4,7 +4,7 @@ public import IxC.Kernel.Model.Inductives.StructRecFrames
 public section
 
 /-!
-# λ-towers fold to their body (task #175 W4c, P3 module 6, part 15)
+# λ-towers fold to their body
 
 A **graded** λ-tower applied along a fitting spine computes its body
 at the spine's frame — whatever its bits.  A nonzero bit steps by

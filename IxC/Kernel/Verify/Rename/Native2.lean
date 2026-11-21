@@ -68,6 +68,37 @@ theorem any_mentionsFvar_map (l : List (Expr md)) (q : Nat) :
 
 /-! ## The kinds, re-checked -/
 
+theorem Expr.eraseFvarTypes_mapKeys (e : Expr md) :
+    (e.mapKeys f).eraseFvarTypes = e.eraseFvarTypes.mapKeys f := by
+  induction e <;> simp_all [Expr.eraseFvarTypes]
+
+theorem Expr.Good.eraseFvarTypes {e : Expr md} (he : e.Good P) :
+    e.eraseFvarTypes.Good P := by
+  induction e <;> simp_all [Expr.eraseFvarTypes]
+
+theorem constsResolveShallow_ren {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {e : Expr md} (he : e.Good P) :
+    (e.mapKeys f).constsResolveShallow env' = e.constsResolveShallow env := by
+  unfold Expr.constsResolveShallow
+  rw [Expr.eraseFvarTypes_mapKeys]
+  exact constsResolve_ren hE he.eraseFvarTypes
+
+private theorem all_constsResolveShallow_map {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {l : List (Expr md)} (hl : Expr.GoodList P l) :
+    (l.map (Expr.mapKeys f)).all (fun e => e.constsResolveShallow env') =
+      l.all (fun e => e.constsResolveShallow env) := by
+  rw [List.all_map]
+  exact List.all_congr_mem' fun x hx => constsResolveShallow_ren hE (hl x hx)
+
+private theorem all_fvarTypeD_constsResolveShallow_map {env : Env md} {env' : Env md'}
+    (hE : EnvRelG P f L env env') {l : List (Expr md)} (hl : Expr.GoodList P l) :
+    (l.map (Expr.mapKeys f)).all (fun e => e.fvarTypeD.constsResolveShallow env') =
+      l.all (fun e => e.fvarTypeD.constsResolveShallow env) := by
+  rw [List.all_map]
+  exact List.all_congr_mem' fun x hx => by
+    simp only [Function.comp, ← Expr.mapKeys_fvarTypeD]
+    exact constsResolveShallow_ren hE (hl x hx).fvarTypeD
+
 /-- **The kinds' re-check at a renamed constructor** answers alike. -/
 theorem nativeOpenedOk_map {env₀ : Env md} {env₀' : Env md'} (hE₀ : EnvRelG P f L env₀ env₀')
     {T : Key md} (hT : T.Good P) (lps : List LevelParam) (nP nIdx : Nat) {cty : Expr md}
@@ -90,7 +121,7 @@ theorem nativeOpenedOk_map {env₀ : Env md} {env₀' : Env md'} (hE₀ : EnvRel
       obtain ⟨xFvs, xrest⟩ := q₂
       obtain ⟨hx, hxrest⟩ := Expr.openPisAtFvars_good hcrest h₂
       simp only [Option.map_some, Expr.mapDoms, Expr.getAppArgs_mapKeys, ← List.map_drop,
-        all_constsResolve_map hE₀ (hxrest.getAppArgs.drop nP), Expr.mentionsFvar_mapKeys]
+        all_constsResolveShallow_map hE₀ (hxrest.getAppArgs.drop nP), Expr.mentionsFvar_mapKeys]
       congr 1
       apply List.all_congr_mem'
       intro i _
@@ -104,12 +135,12 @@ theorem nativeOpenedOk_map {env₀ : Env md} {env₀' : Env md'} (hE₀ : EnvRel
         cases ks.getD i .ordinary with
         | ordinary =>
           simp only [← Expr.mapKeys_fvarTypeD]
-          exact constsResolve_ren hE₀ hxt
+          exact constsResolveShallow_ren hE₀ hxt
         | recursive =>
           simp only [← Expr.mapKeys_fvarTypeD, getAppFn_beq_const_map hf hT _ hxt,
             take_beq_map hf hxt nP hfvsP, Expr.getAppArgs_mapKeys, List.length_map,
             take_map_beq_map hf hxt.getAppArgs nP hfvsP,
-            ← List.map_drop, all_constsResolve_map hE₀ (hxt.getAppArgs.drop nP),
+            ← List.map_drop, all_constsResolveShallow_map hE₀ (hxt.getAppArgs.drop nP),
             any_mentionsFvar_map, Expr.mentionsFvar_mapKeys]
         | reflexive =>
           simp only [← Expr.mapKeys_fvarTypeD, Expr.piBinders_mapKeys, Expr.mapTele,
@@ -121,10 +152,10 @@ theorem nativeOpenedOk_map {env₀ : Env md} {env₀' : Env md'} (hE₀ : EnvRel
             obtain ⟨afvs, body⟩ := q₃
             obtain ⟨ha, hbody⟩ := Expr.openPisAtFvars_good hxt h₃
             simp only [Option.map_some, Expr.mapDoms, List.length_map,
-              all_fvarTypeD_constsResolve_map hE₀ ha, getAppFn_beq_const_map hf hT _ hbody,
+              all_fvarTypeD_constsResolveShallow_map hE₀ ha, getAppFn_beq_const_map hf hT _ hbody,
               take_beq_map hf hbody nP hfvsP, Expr.getAppArgs_mapKeys,
               take_map_beq_map hf hbody.getAppArgs nP hfvsP,
-              ← List.map_drop, all_constsResolve_map hE₀ (hbody.getAppArgs.drop nP),
+              ← List.map_drop, all_constsResolveShallow_map hE₀ (hbody.getAppArgs.drop nP),
               any_mentionsFvar_map, Expr.mentionsFvar_mapKeys]
         | negative => rfl
         | unsupported => rfl

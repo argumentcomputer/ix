@@ -24,7 +24,7 @@ namespace Ixon.Verify.Codec.Constant
 open Ix
 
 def definitionBytes (definition : Ixon.Definition) : ByteArray :=
-  [Ixon.packDefKindSafety definition.kind definition.safety].toByteArray ++
+  [Ixon.packDefinitionFlags definition].toByteArray ++
     tag0Bytes definition.lvls ++
       Expr.spineWireEncode definition.typ ++ Expr.spineWireEncode definition.value
 
@@ -43,6 +43,30 @@ theorem packDefKindSafety_valid (kind : DefKind) (safety : DefinitionSafety) :
       (Ixon.packDefKindSafety kind safety &&& 3 > 2)) = false := by
   cases kind <;> cases safety <;> decide
 
+/-- A definition's first byte decodes back to its kind, safety and assertions:
+the kind/safety check passes, the high nibble is its assertions' code, and the
+low nibble unpacks to its kind and safety. -/
+theorem definitionFlags_decode' (kind : DefKind) (safety : DefinitionSafety)
+    (asserts : Ixon.DefAsserts) :
+    ((((Ixon.packDefKindSafety kind safety ||| (asserts.toCode <<< 4)) >>> 2) &&& 3 > 2) ||
+        ((Ixon.packDefKindSafety kind safety ||| (asserts.toCode <<< 4)) &&& 3 > 2)) = false ∧
+      Ixon.DefAsserts.ofCode? ((Ixon.packDefKindSafety kind safety ||| (asserts.toCode <<< 4)) >>> 4) =
+        some asserts ∧
+      Ixon.unpackDefKindSafety ((Ixon.packDefKindSafety kind safety ||| (asserts.toCode <<< 4)) &&& 15) =
+        (kind, safety) := by
+  rcases asserts with ⟨alloc, boundedStack⟩
+  cases kind <;> cases safety <;> cases alloc <;> cases boundedStack <;>
+    exact ⟨by decide, rfl, rfl⟩
+
+theorem definitionFlags_decode (definition : Ixon.Definition) :
+    (((Ixon.packDefinitionFlags definition >>> 2) &&& 3 > 2) ||
+        (Ixon.packDefinitionFlags definition &&& 3 > 2)) = false ∧
+      Ixon.DefAsserts.ofCode? (Ixon.packDefinitionFlags definition >>> 4) =
+        some definition.asserts ∧
+      Ixon.unpackDefKindSafety (Ixon.packDefinitionFlags definition &&& 15) =
+        (definition.kind, definition.safety) :=
+  definitionFlags_decode' definition.kind definition.safety definition.asserts
+
 theorem getBool_reads (value : Bool) :
     Reads (Ixon.Serialize.get (α := Bool))
       [if value then 1 else 0].toByteArray value := by
@@ -56,7 +80,7 @@ theorem putDefinition_writes (definition : Ixon.Definition)
     (hvalue : Ixon.Expr.wireWF definition.value) :
     Writes (Ixon.putDefinition definition) (definitionBytes definition) := by
   have hwrite :=
-    (putU8_writes (Ixon.packDefKindSafety definition.kind definition.safety)).bind
+    (putU8_writes (Ixon.packDefinitionFlags definition)).bind
       ((putTag0_writes definition.lvls).bind
         ((Expr.putExpr_writes_spine definition.typ htyp).bind
           (Expr.putExpr_writes_spine definition.value hvalue)))
@@ -76,8 +100,8 @@ theorem getDefinition_reads (definition : Ixon.Definition)
     (htyp : Ixon.Expr.wireWF definition.typ)
     (hvalue : Ixon.Expr.wireWF definition.value) :
     Reads Ixon.getDefinition (definitionBytes definition) definition := by
-  have hkind :=
-    getU8_reads (Ixon.packDefKindSafety definition.kind definition.safety)
+  obtain ⟨hvalid, hasserts, hunpack⟩ := definitionFlags_decode definition
+  have hkind := getU8_reads (Ixon.packDefinitionFlags definition)
   have hlvls := getTag0_reads definition.lvls
   have htypRead := Expr.getExpr_reads_spine definition.typ htyp
   have hvalueRead := Expr.getExpr_reads_spine definition.value hvalue
@@ -100,44 +124,52 @@ theorem getDefinition_reads (definition : Ixon.Definition)
         Ixon.Definition))
     hlvls hafterTyp
   have hafterLvls' : Reads
-      (match Ixon.unpackDefKindSafety
-          (Ixon.packDefKindSafety definition.kind definition.safety) with
+      (match Ixon.unpackDefKindSafety (Ixon.packDefinitionFlags definition &&& 15) with
         | (kind, safety) => do
           let lvls := (← Ixon.getTagN 0).value
           let typ ← Ixon.getExpr
           let value ← Ixon.getExpr
-          return (⟨kind, safety, lvls, typ, value⟩ : Ixon.Definition))
+          return (⟨kind, safety, definition.asserts, lvls, typ, value⟩ : Ixon.Definition))
       (tag0Bytes definition.lvls ++ Expr.spineWireEncode definition.typ ++
         Expr.spineWireEncode definition.value)
       definition := by
-    rw [unpackDefKindSafety_pack]
+    rw [hunpack]
     simpa [ByteArray.append_assoc] using hafterLvls
   have hchecked : Reads
       (do
-        let packed := Ixon.packDefKindSafety definition.kind definition.safety
-        if packed >>> 2 > 2 || (packed &&& 3) > 2 then
+        let packed := Ixon.packDefinitionFlags definition
+        if (packed >>> 2) &&& 3 > 2 || (packed &&& 3) > 2 then
           throw "invalid definition kind/safety"
-        let (kind, safety) := Ixon.unpackDefKindSafety packed
+        let some asserts := Ixon.DefAsserts.ofCode? (packed >>> 4)
+          | throw s!"invalid definition assertions {packed >>> 4}"
+        let (kind, safety) := Ixon.unpackDefKindSafety (packed &&& 15)
         let lvls := (← Ixon.getTagN 0).value
         let typ ← Ixon.getExpr
         let value ← Ixon.getExpr
-        return (⟨kind, safety, lvls, typ, value⟩ : Ixon.Definition))
+        return (⟨kind, safety, asserts, lvls, typ, value⟩ : Ixon.Definition))
       (tag0Bytes definition.lvls ++ Expr.spineWireEncode definition.typ ++
         Expr.spineWireEncode definition.value) definition := by
-    simpa only [packDefKindSafety_valid, Bool.false_eq_true, ite_false]
+    simpa only [hvalid, hasserts, Bool.false_eq_true, ite_false]
       using hafterLvls'
   have hall := Reads.bind
     (next := fun packed : UInt8 => do
-      if packed >>> 2 > 2 || (packed &&& 3) > 2 then
+      if (packed >>> 2) &&& 3 > 2 || (packed &&& 3) > 2 then
         throw "invalid definition kind/safety"
-      let (kind, safety) := Ixon.unpackDefKindSafety packed
+      let some asserts := Ixon.DefAsserts.ofCode? (packed >>> 4)
+        | throw s!"invalid definition assertions {packed >>> 4}"
+      let (kind, safety) := Ixon.unpackDefKindSafety (packed &&& 15)
       let lvls := (← Ixon.getTagN 0).value
       let typ ← Ixon.getExpr
       let value ← Ixon.getExpr
-      return (⟨kind, safety, lvls, typ, value⟩ : Ixon.Definition))
+      return (⟨kind, safety, asserts, lvls, typ, value⟩ : Ixon.Definition))
     hkind hchecked
-  simpa [Ixon.getDefinition, definitionBytes, unpackDefKindSafety_pack,
-    ByteArray.append_assoc] using hall
+  have hbytes : definitionBytes definition =
+      [Ixon.packDefinitionFlags definition].toByteArray ++
+        (tag0Bytes definition.lvls ++ Expr.spineWireEncode definition.typ ++
+          Expr.spineWireEncode definition.value) := by
+    simp only [definitionBytes, ByteArray.append_assoc]
+  rw [hbytes]
+  exact hall
 
 theorem getAxiom_reads (axiomInfo : Ixon.Axiom)
     (htyp : Ixon.Expr.wireWF axiomInfo.typ) :
@@ -304,10 +336,10 @@ theorem runGet_runPut_constantInfo_core (info : Ixon.ConstantInfo)
   rw [hread]
 
 def emptyConstant (info : Ixon.ConstantInfo) : Ixon.Constant :=
-  ⟨info, #[], #[], #[]⟩
+  ⟨info, #[], #[], #[], #[]⟩
 
 def emptyConstantBytes (info : Ixon.ConstantInfo) : ByteArray :=
-  infoBytes info ++ tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0
+  infoBytes info ++ tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0
 
 def getConstantUnivs (info : Ixon.ConstantInfo)
     (sharing : Array Ixon.Expr) (refs : Array Address) :
@@ -316,7 +348,8 @@ def getConstantUnivs (info : Ixon.ConstantInfo)
   let mut univs : Array Ixon.Univ := #[]
   for _ in [0:numUnivs] do
     univs := univs.push (← Ixon.getUniv)
-  return ⟨info, sharing, refs, univs⟩
+  let binders ← Ixon.getBinders
+  return ⟨info, sharing, refs, univs, binders⟩
 
 def getConstantRefs (info : Ixon.ConstantInfo)
     (sharing : Array Ixon.Expr) : Ixon.GetM Ixon.Constant := do
@@ -340,13 +373,27 @@ theorem getConstant_eq :
     getConstantAfterInfo getConstantRefs getConstantUnivs
   simp
 
+/-- An empty binder-data section is its count, zero. -/
+theorem putBinders_writes_empty :
+    Writes (Ixon.putBinders #[]) (tag0Bytes 0) := by
+  simpa [Ixon.putBinders] using putTag0_writes 0
+
+theorem getBinders_reads_empty :
+    Reads Ixon.getBinders (tag0Bytes 0) #[] := by
+  have htail : Reads (Ixon.getArray Ixon.getBinderBlock 0) ByteArray.empty #[] := by
+    simpa [Ixon.getArray] using Reads.pure (#[] : Array Ixon.BinderBlock)
+  have hall := Reads.bind
+    (next := fun count : Ixon.TagN => Ixon.getArray Ixon.getBinderBlock count.value.toNat)
+    (getTag0_reads 0) htail
+  simpa [Ixon.getBinders] using hall
+
 theorem putConstant_writes_core_empty (info : Ixon.ConstantInfo)
     (h : CoreInfoWireWF info) :
     Writes (Ixon.putConstant (emptyConstant info))
       (emptyConstantBytes info) := by
   have hwrite := (putConstantInfo_writes_core info h).bind
     ((putTag0_writes 0).bind
-      ((putTag0_writes 0).bind (putTag0_writes 0)))
+      ((putTag0_writes 0).bind ((putTag0_writes 0).bind putBinders_writes_empty)))
   simpa [Ixon.putConstant, emptyConstant, emptyConstantBytes,
     ByteArray.append_assoc] using hwrite
 
@@ -355,24 +402,29 @@ theorem getConstant_reads_core_empty (info : Ixon.ConstantInfo)
     Reads Ixon.getConstant (emptyConstantBytes info) (emptyConstant info) := by
   have hinfo := getConstantInfo_reads_core info h
   have hzero := getTag0_reads 0
-  have hreturn := Reads.pure (emptyConstant info)
+  have hreturn := Reads.bind
+    (next := fun binders : Array Ixon.BinderBlock =>
+      (pure (⟨info, #[], #[], #[], binders⟩ : Ixon.Constant) : Ixon.GetM Ixon.Constant))
+    getBinders_reads_empty (Reads.pure (emptyConstant info))
   have hunivsTail : Reads
       (do
         let mut univs : Array Ixon.Univ := #[]
         for _ in [0:0] do
           univs := univs.push (← Ixon.getUniv)
-        return (⟨info, #[], #[], univs⟩ : Ixon.Constant))
-      ByteArray.empty (emptyConstant info) := by
+        let binders ← Ixon.getBinders
+        return (⟨info, #[], #[], univs, binders⟩ : Ixon.Constant))
+      (tag0Bytes 0) (emptyConstant info) := by
     simpa [emptyConstant] using hreturn
   have hunivs := Reads.bind
     (next := fun count : Ixon.TagN => do
       let mut univs : Array Ixon.Univ := #[]
       for _ in [0:count.value.toNat] do
         univs := univs.push (← Ixon.getUniv)
-      return (⟨info, #[], #[], univs⟩ : Ixon.Constant))
+      let binders ← Ixon.getBinders
+      return (⟨info, #[], #[], univs, binders⟩ : Ixon.Constant))
     hzero hunivsTail
   have hunivs' : Reads (getConstantUnivs info #[] #[])
-      (tag0Bytes 0) (emptyConstant info) := by
+      (tag0Bytes 0 ++ tag0Bytes 0) (emptyConstant info) := by
     simpa [getConstantUnivs] using hunivs
   have hrefsTail : Reads
       (do
@@ -380,7 +432,7 @@ theorem getConstant_reads_core_empty (info : Ixon.ConstantInfo)
         for _ in [0:0] do
           refs := refs.push (← Ixon.Serialize.get)
         getConstantUnivs info #[] refs)
-      (tag0Bytes 0) (emptyConstant info) := by
+      (tag0Bytes 0 ++ tag0Bytes 0) (emptyConstant info) := by
     simpa using hunivs'
   have hrefs := Reads.bind
     (next := fun count : Ixon.TagN => do
@@ -390,7 +442,7 @@ theorem getConstant_reads_core_empty (info : Ixon.ConstantInfo)
       getConstantUnivs info #[] refs)
     hzero hrefsTail
   have hrefs' : Reads (getConstantRefs info #[])
-      (tag0Bytes 0 ++ tag0Bytes 0) (emptyConstant info) := by
+      (tag0Bytes 0 ++ (tag0Bytes 0 ++ tag0Bytes 0)) (emptyConstant info) := by
     simpa [getConstantRefs] using hrefs
   have hsharingTail : Reads
       (do
@@ -398,7 +450,7 @@ theorem getConstant_reads_core_empty (info : Ixon.ConstantInfo)
         for _ in [0:0] do
           sharing := sharing.push (← Ixon.getExpr)
         getConstantRefs info sharing)
-      (tag0Bytes 0 ++ tag0Bytes 0) (emptyConstant info) := by
+      (tag0Bytes 0 ++ (tag0Bytes 0 ++ tag0Bytes 0)) (emptyConstant info) := by
     simpa using hrefs'
   have hsharing := Reads.bind
     (next := fun count : Ixon.TagN => do
@@ -408,7 +460,7 @@ theorem getConstant_reads_core_empty (info : Ixon.ConstantInfo)
       getConstantRefs info sharing)
     hzero hsharingTail
   have htail : Reads (getConstantAfterInfo info)
-      (tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0)
+      (tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0)
       (emptyConstant info) := by
     simpa [getConstantAfterInfo, ByteArray.append_assoc] using hsharing
   have hall := Reads.bind (next := getConstantAfterInfo) hinfo htail

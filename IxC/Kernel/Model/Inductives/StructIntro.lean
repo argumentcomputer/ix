@@ -6,7 +6,7 @@ public import IxC.Kernel.Semantics.Tower.TowerRec
 public section
 
 /-!
-# The direct-structure leaves' bit validity and P packages (task #175, stage 4a)
+# The direct-structure leaves' bit validity and P packages
 
 `AnnotValid` for the three synthesized leaves, completing the
 `WellDenotedV` currency (`WellDenoted` landed with the leaves themselves in

@@ -184,13 +184,13 @@ checker runs, no fuel, no mode.  See the module docstring for the
     none
   | d, .proj sn i e => do
     let ea ← denoteMeta acval env φ d e
-    -- the entry-kind branch (task #175 wiring W3): a tower-backed
+    -- the entry-kind branch: a tower-backed
     -- entry reads field `i` by the uniform iterated spelling
     -- (`projAV`, whose `WellDenoted`/substitution batteries are the
     -- introduction machinery's); the pair/absent side is the pre-W3
     -- clause
     match env.findProj? sn i with
-    | some entry => some (projAV (i + entry.off) ea)
+    | some entry => projNodeAV? acval env sn i entry ea
     | none => AnnotTerm.projPair? i ea
   | _, .lit (.natVal n) =>
     if natLitSupported env then
@@ -316,7 +316,7 @@ theorem denoteMeta_erase {acval : Key md → (LevelParam → Nat) → AnnotTerm}
     · rw [hea] at h; exact nomatch h
     rw [hea] at h
     replace h : (match env.findProj? sn i with
-        | some entry => some (projAV (i + entry.off) ea')
+        | some entry => projNodeAV? acval env sn i entry ea'
         | none => AnnotTerm.projPair? i ea')
           = some ea := h
     rw [denote_proj, ihe hea]
@@ -325,8 +325,7 @@ theorem denoteMeta_erase {acval : Key md → (LevelParam → Nat) → AnnotTerm}
     | some entry =>
       rw [hfp] at h
       dsimp only at h ⊢
-      obtain rfl := Option.some.inj h
-      rw [erase_projAV]
+      exact projNodeAV?_erase hlink h
     | none =>
       rw [hfp] at h
       dsimp only at h ⊢

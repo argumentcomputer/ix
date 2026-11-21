@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Semantics.Tower.TowerLeaf
 public import IxC.Kernel.Verify.Denote
+public import IxC.Kernel.Verify.EnvPreds
 
 @[expose] public section
 
@@ -41,8 +42,8 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Key Level inferTypeCore whnf
-  natLitSupported strLitSupported)
+open Ix.Kernel (CheckMode Env Expr Key Level ProjEntry projChainKey TowerHead
+  inferTypeCore whnf natLitSupported strLitSupported)
 
 /-- The sort of `e`'s **type**, as the checker computes it: infer,
 whnf to a sort, evaluate the ground level. -/
@@ -78,11 +79,76 @@ def charListAV (nilA consA ofNatA za sa : AnnotTerm) :
       (charListAV nilA consA ofNatA za sa cs)
 
 /-- The uniform projection spellings erase onto each other:
-`projAV`'s image is `projNV` (task #175 wiring W3). -/
+`projAV`'s image is `projNV`. -/
 theorem erase_projAV : ∀ (i : Nat) (ea : AnnotTerm),
     (projAV i ea).erase = Ix.Kernel.Verify.projNV i ea.erase
   | 0, _ => rfl
   | i + 1, ea => erase_projAV i (.snd ea)
+
+/-- Annotated reading of a stored projection-table entry, clause-parallel with
+`Verify.projNodeNV?`. -/
+def projNodeAV? (acval : Key md → (LevelParam → Nat) → AnnotTerm) (env : Env md)
+    (sn : Key md) (i : Nat) (entry : ProjEntry md) (ea : AnnotTerm) : Option AnnotTerm :=
+  if entry.off ≤ 1 then some (projAV (i + entry.off) ea)
+  else if (env.find? (projChainKey sn i)).isSome then
+    some (.chain (fun n => acval (projChainKey sn i) (fun _ => n)) ea)
+  else none
+
+/-- Total annotated node for a stored projection-table entry (used when the
+entry is known to be ready in `env`). -/
+def projNodeAV (acval : Key md → (LevelParam → Nat) → AnnotTerm)
+    (sn : Key md) (i : Nat) (entry : ProjEntry md) (ea : AnnotTerm) : AnnotTerm :=
+  if entry.off ≤ 1 then projAV (i + entry.off) ea
+  else .chain (fun n => acval (projChainKey sn i) (fun _ => n)) ea
+
+theorem projNodeAV?_of_le_one {acval : Key md → (LevelParam → Nat) → AnnotTerm} {env : Env md}
+    {sn : Key md} {i : Nat} {entry : ProjEntry md} (h : entry.off ≤ 1) (ea : AnnotTerm) :
+    projNodeAV? acval env sn i entry ea = some (projAV (i + entry.off) ea) :=
+  if_pos h
+
+theorem projNodeAV_of_le_one {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {sn : Key md} {i : Nat} {entry : ProjEntry md} (h : entry.off ≤ 1) (ea : AnnotTerm) :
+    projNodeAV acval sn i entry ea = projAV (i + entry.off) ea :=
+  if_pos h
+
+theorem projNodeAV_of_gt_one {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {sn : Key md} {i : Nat} {entry : ProjEntry md} (h : ¬ entry.off ≤ 1) (ea : AnnotTerm) :
+    projNodeAV acval sn i entry ea =
+      .chain (fun n => acval (projChainKey sn i) (fun _ => n)) ea :=
+  if_neg h
+
+theorem projNodeAV?_of_towerHead {acval : Key md → (LevelParam → Nat) → AnnotTerm} {env : Env md}
+    {sn : Key md} {i : Nat} {entry : ProjEntry md}
+    (hs : entry.structName = sn) (hi : entry.idx = i)
+    (hth : TowerHead env entry) (ea : AnnotTerm) :
+    projNodeAV? acval env sn i entry ea = some (projNodeAV acval sn i entry ea) := by
+  unfold projNodeAV? projNodeAV
+  split
+  · rfl
+  · rename_i hgt
+    have hch := hth.chain_isSome hgt
+    rw [hs, hi] at hch
+    rw [if_pos hch]
+
+theorem projNodeAV?_erase {acval : Key md → (LevelParam → Nat) → AnnotTerm} {cval : TConstVal md}
+    {env : Env md} {sn : Key md} {i : Nat} {entry : ProjEntry md} {ea ea' : AnnotTerm}
+    (hlink : ∀ n ψ, (acval n ψ).erase = cval n ψ)
+    (h : projNodeAV? acval env sn i entry ea' = some ea) :
+    projNodeNV? cval env sn i entry ea'.erase = some ea.erase := by
+  unfold projNodeAV? at h
+  unfold projNodeNV?
+  split at h
+  · rename_i hle
+    obtain rfl := Option.some.inj h
+    rw [if_pos hle, erase_projAV]
+  · rename_i hle
+    rw [if_neg hle]
+    split at h
+    · rename_i hch
+      obtain rfl := Option.some.inj h
+      rw [if_pos hch, AnnotTerm.erase_chain]
+      congr 2; funext m; exact (hlink _ _).symm
+    · exact nomatch h
 
 /-- The canonical annotation pass: `denote` with every binder numeral
 computed by the checker's own functions and every constant leaf drawn
@@ -125,10 +191,10 @@ def denoteAnnot (mode : CheckMode) (acval : Key md → (LevelParam → Nat) → 
     none
   | d, .proj sn i e => do
     let ea ← denoteAnnot mode acval env φ fuel d e
-    -- the entry-kind branch (task #175 wiring W3), clause-parallel
+    -- the entry-kind branch, clause-parallel
     -- with `denote` and `denoteMeta`
     match env.findProj? sn i with
-    | some entry => some (projAV (i + entry.off) ea)
+    | some entry => projNodeAV? acval env sn i entry ea
     | none => AnnotTerm.projPair? i ea
   | _, .lit (.natVal n) =>
     if natLitSupported env then
@@ -289,7 +355,7 @@ theorem denoteAnnot_erase {mode : CheckMode}
     · rw [hea] at h; exact nomatch h
     rw [hea] at h
     replace h : (match env.findProj? sn i with
-        | some entry => some (projAV (i + entry.off) ea')
+        | some entry => projNodeAV? acval env sn i entry ea'
         | none => AnnotTerm.projPair? i ea')
           = some ea := h
     rw [denote_proj, ihe hea]
@@ -298,8 +364,7 @@ theorem denoteAnnot_erase {mode : CheckMode}
     | some entry =>
       rw [hfp] at h
       dsimp only at h ⊢
-      obtain rfl := Option.some.inj h
-      rw [erase_projAV]
+      exact projNodeAV?_erase hlink h
     | none =>
       rw [hfp] at h
       dsimp only at h ⊢

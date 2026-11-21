@@ -136,7 +136,7 @@ theorem declStep_preserves_of_ind_cons (mp : EnvModelM V μ env)
     (hrec : ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
       m₂.acval = acvalWith mp.base2.acval c₀.name A →
       ∀ φ : LevelParam → Nat, RecRules m₂ φ)
-    -- the head is not a projection table (task #175 W4c: those get
+    -- the head is not a projection table (those get
     -- their own kit, `DeclStructP`)
     (hntc : ∀ entry, c₀ ≠ .projInfo entry) :
     ∃ mp' : EnvModelM V μ ⟨c₀ :: env.consts⟩,
@@ -162,7 +162,7 @@ theorem declStep_preserves_of_ind_cons (mp : EnvModelM V μ env)
       (fun h => ne_of_notReserved hnres reserved_eqName h.symm) _ rfl
   · exact hcaps _ rfl
   · exact fun φ => hrec _ rfl φ
-  · -- `tower_ok` (task #175 wiring W5): an ind-tier cons is never a
+  · -- `tower_ok`: an ind-tier cons is never a
     -- tower entry (`hh.projTower`)
     exact fun φ => towerOk_cons_fresh mp hfresh hh.projTower hntc _ rfl φ
 

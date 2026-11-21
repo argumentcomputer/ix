@@ -1,5 +1,13 @@
 # Prover-level trace sharding for Aiur
 
+> **Historical.** This design document describes the trace sharding of the
+> legacy Aiur backend as it was on main at `3d725c8c0`; its file references
+> and measurements are to that tree. The formal Aiur backend proves a claim as
+> a batch of trace shards with the same structure (memory intervals closed
+> across shards, byte tables in every shard) in `crates/aiur/src/trace/stark`;
+> see [Formal Aiur in Ix](formal-aiur-migration.md#current-port-and-cli-integration)
+> for its planner and batch verifier.
+
 Design for splitting one Aiur execution into K independently provable
 trace shards whose proofs form a batch of STARKs, so that each shard's
 STARK phases fit in GPU memory, then aggregating that batch with the

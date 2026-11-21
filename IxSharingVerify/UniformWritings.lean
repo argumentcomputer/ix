@@ -72,10 +72,8 @@ inductive Valid (p : Prep) (S : Nat → Bool) : Nat → WTree → Prop
 
 /-! ## Spine bookkeeping -/
 
-theorem sideExtra_of_family {a b : Node} (h : a.head.family = b.head.family) :
-    a.sideExtra = b.sideExtra := by
-  unfold Node.sideExtra
-  cases ha : a.head <;> cases hb : b.head <;> simp_all [Head.family]
+theorem sideExtra_of_family {a b : Node} (_ : a.head.family = b.head.family) :
+    a.sideExtra = b.sideExtra := rfl
 
 theorem PrepWF.sideExtra_spine {p : Prep} (hp : PrepWF p) {x k : Nat} (hx : x < p.dag.size)
     (hf : p.family[x]! ≠ .none) (hk : k < p.spineLen[x]!) :

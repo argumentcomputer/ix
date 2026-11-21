@@ -1,0 +1,3711 @@
+import IxVMRefinement.Core.CallHeaps
+import IxVMRefinement.Obs.KernelRoles
+import IxVMRefinement.RoleVal.LookupSpec
+import IxVMRefinement.Claim.RoleTable
+import IxVMRefinement.Claim.Walk
+
+/-! # Structural call and walk extraction for `KernelRoles::group_admit` and role lookups
+
+Refines the on-demand group admission and transitive constant-walk structure of `KernelRoles`:
+* `group_admit_spec` / `group_admit_nat_spec` (under `TableRep`) and
+  `group_admit_full_spec` / `group_admit_full_nat_spec` (under `Claim.TableFullRep`):
+  extracts the `Ingress::get_ci` loads and `KernelClaim::run_check_transitive` sub-derivations
+  (and closed `Claim.WalkedRec` lists) executed across all bound addresses (`roleWalksBound`)
+  and `.proof thm` evidence entries of group `g` and recursively `group_admit_needs`
+  (`GroupReachable`);
+* `role_used_implicitly_spec` / `role_used_implicitly_full_spec`,
+  `role_addr_admit_spec` / `role_addr_full_admit_spec`, and
+  `role_of_admit_spec` / `role_of_full_admit_spec`:
+  extracts the bound address, limit guard `groupOf ro < n`, `group_admit` call, and
+  `run_check_transitive` walk triggered when roles are queried under `RCRep` / `Claim.RCFullRep`.
+-/
+
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 100000
+
+namespace IxVM.Refinement.RoleVal
+
+open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open Aiur.Library Aiur.Library.List
+open IxVM.Refinement.Core
+
+section GroupAdmit
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySimpa false
+
+/-! ## Validation limit, schedule groups, and reachability -/
+
+/-- The bound anchors checked with their closures by `KernelRoles::validate_eqns_anchors`
+when validating equation role `r`. -/
+def eqnsAnchorsOf : Ix.Kernel.Role → List Ix.Kernel.Role
+  | .decidableDecide => [.decidable, .decidableIsTrue, .decidableIsFalse, .notProp]
+  | .natDecLe => [.natLe]
+  | .intNegOfNat => [.int, .intOfNat, .intNegSucc]
+  | .bitVecToNat => [.bitVec, .bitVecOfNat]
+  | .stringToByteArray => [.byteArray, .byteArrayEmpty]
+  | .intDecLe => [.intLe]
+  | _ => []
+
+/-- Exact group validation limit computed by `KernelRoles::group_validation_limit(g)`: a group
+before the well-founded block at its own index, the well-founded block at its first group (33),
+the literal support at its first group (41), and every later group at the first equation group
+(46). -/
+def groupValLimit (g : Nat) : Nat :=
+  if g < 33 then g else if g < 41 then 33 else if g < 46 then 41 else 46
+
+theorem groupValLimit_le (g : Nat) : groupValLimit g ≤ 46 := by
+  unfold groupValLimit
+  split <;> try omega
+  split <;> try omega
+  split <;> omega
+
+theorem groupValLimit_lt_u32 (g : Nat) : groupValLimit g < 4294967296 :=
+  Nat.lt_of_le_of_lt (groupValLimit_le g) (by decide)
+
+private theorem natCast_val_eq (x : F) : ((ZMod.val x : Nat) : F) = x := by
+  apply ZMod.val_injective
+  exact RolesAux.val_natCast (ZMod.val_lt x)
+
+/-- `UInt32::less_than_fields(.field g, .field c)` against a schedule constant `c < 2^32`: the
+answer is `1` exactly when `g.val < c`. -/
+private theorem lt_const_iff {gf b : F} {c : Nat} (hb : ZMod.val b = c) {r : SourceValue F}
+    {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsFn W "UInt32::less_than_fields" [.field gf, .field b] h r h' cs) :
+    (r = .field 1 ↔ gf.val < c) ∧ h' = h := by
+  obtain ⟨_, _, hiff, _, hh⟩ := Lib.less_than_fields_field ev
+  rw [hb] at hiff
+  exact ⟨hiff, hh⟩
+
+/-- **`KernelRoles::group_validation_limit(x_g)`**: forces `x_g = .field (g : F)` with `g < 2^32`
+and returns `.field (groupValLimit g : F)` without modifying the heap. -/
+theorem group_validation_limit_exact {x_g r : SourceValue F} {h h' : Heap F}
+    {calls : List (Call F)}
+    (ev : ObsFn W "KernelRoles::group_validation_limit" [x_g] h r h' calls) :
+    h' = h ∧ ∃ g : Nat, g < 4294967296 ∧ x_g = .field (g : F) ∧
+      r = .field (groupValLimit g : F) := by
+  rcases Obs.«KernelRoles::group_validation_limit».obs ev with
+    ⟨v1, m2, _, m16, _, ev14, ev29, rfl, rfl, -⟩ |
+    ⟨v1, m2, _, v15, m16, _, v58, m59, _, m73, _, ev14, ev29, hne, ev71, ev86, rfl, rfl, -⟩ |
+    ⟨v1, m2, _, v15, m16, _, v58, m59, _, v72, m73, _, v115, m116, _, m130, _, ev14, ev29, hne1,
+      ev71, ev86, hne2, ev128, ev143, rfl, rfl, -⟩ |
+    ⟨v1, m2, _, v15, m16, _, v58, m59, _, v72, m73, _, v115, m116, _, v129, m130, _, ev14, ev29,
+      hne1, ev71, ev86, hne2, ev128, ev143, hne3, rfl, rfl, -⟩
+  · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
+    obtain ⟨gf, bf, rfl, hbf, hgf_lt, _, hr29, rfl⟩ := Lib.less_than_fields_spec ev29
+    injection hbf with hbf_eq
+    subst hbf_eq
+    have h33 : ZMod.val (33 : F) = 33 := RolesAux.val_natCast (by decide)
+    have hlt33 : gf.val < 33 := by
+      by_cases hc : gf.val < 33
+      · exact hc
+      · simp only [h33, hc, ↓reduceIte] at hr29
+        exact absurd (Value.field.inj hr29) one_ne_zero
+    refine ⟨rfl, gf.val, hgf_lt, congrArg Value.field (natCast_val_eq gf).symm, ?_⟩
+    unfold groupValLimit
+    simp only [hlt33, ↓reduceIte, natCast_val_eq]
+  · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
+    obtain ⟨gf, bf, rfl, hbf, hgf_lt, _, hr29, rfl⟩ := Lib.less_than_fields_spec ev29
+    injection hbf with hbf_eq
+    subst hbf_eq
+    have h33 : ZMod.val (33 : F) = 33 := RolesAux.val_natCast (by decide)
+    have hge33 : ¬ gf.val < 33 := fun hc => by
+      simp only [h33, hc, ↓reduceIte] at hr29
+      exact hne hr29
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_literal_group».obs ev71
+    obtain ⟨h41, rfl⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (41 : F) = 41) ev86
+    have hlt41 : gf.val < 41 := h41.mp rfl
+    refine ⟨rfl, gf.val, hgf_lt, congrArg Value.field (natCast_val_eq gf).symm, ?_⟩
+    unfold groupValLimit
+    simp only [hge33, hlt41, ↓reduceIte]
+    rfl
+  · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
+    obtain ⟨gf, bf, rfl, hbf, hgf_lt, _, hr29, rfl⟩ := Lib.less_than_fields_spec ev29
+    injection hbf with hbf_eq
+    subst hbf_eq
+    have h33 : ZMod.val (33 : F) = 33 := RolesAux.val_natCast (by decide)
+    have hge33 : ¬ gf.val < 33 := fun hc => by
+      simp only [h33, hc, ↓reduceIte] at hr29
+      exact hne1 hr29
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_literal_group».obs ev71
+    obtain ⟨h41, rfl⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (41 : F) = 41) ev86
+    have hge41 : ¬ gf.val < 41 := fun hc => hne2 (h41.mpr hc)
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev128
+    obtain ⟨h46, rfl⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (46 : F) = 46) ev143
+    have hlt46 : gf.val < 46 := h46.mp rfl
+    refine ⟨rfl, gf.val, hgf_lt, congrArg Value.field (natCast_val_eq gf).symm, ?_⟩
+    unfold groupValLimit
+    simp only [hge33, hge41, hlt46, ↓reduceIte]
+    rfl
+  · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
+    obtain ⟨gf, bf, rfl, hbf, hgf_lt, _, hr29, rfl⟩ := Lib.less_than_fields_spec ev29
+    injection hbf with hbf_eq
+    subst hbf_eq
+    have h33 : ZMod.val (33 : F) = 33 := RolesAux.val_natCast (by decide)
+    have hge33 : ¬ gf.val < 33 := fun hc => by
+      simp only [h33, hc, ↓reduceIte] at hr29
+      exact hne1 hr29
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_literal_group».obs ev71
+    obtain ⟨h41, rfl⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (41 : F) = 41) ev86
+    have hge41 : ¬ gf.val < 41 := fun hc => hne2 (h41.mpr hc)
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev128
+    obtain ⟨h46, rfl⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (46 : F) = 46) ev143
+    have hge46 : ¬ gf.val < 46 := fun hc => hne3 (h46.mpr hc)
+    refine ⟨rfl, gf.val, hgf_lt, congrArg Value.field (natCast_val_eq gf).symm, ?_⟩
+    unfold groupValLimit
+    simp only [hge33, hge41, hge46, ↓reduceIte]
+    rfl
+
+theorem group_validation_limit_of_nat {g : Nat} (hg : g < 4294967296)
+    {r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelRoles::group_validation_limit" [.field (g : F)] h r h' calls) :
+    h' = h ∧ r = .field (groupValLimit g : F) := by
+  obtain ⟨rfl, g', hg', hxg, hr⟩ := group_validation_limit_exact ev
+  have hval := congrArg ZMod.val (Value.field.inj hxg)
+  rw [RolesAux.val_natCast (Nat.lt_trans hg (by decide)),
+    RolesAux.val_natCast (Nat.lt_trans hg' (by decide))] at hval
+  subst hval
+  exact ⟨rfl, hr⟩
+
+/-- Roles belonging to group `g` (`[]` for `g ≥ 77`, matching `KernelRoleSpec::group_roles`). -/
+def groupRoles (g : Nat) : List Ix.Kernel.Role :=
+  Ix.SpecDigest.groups.getD g []
+
+/-- Roles directly needed by group `g` (`[]` for `g ≥ 77`, matching `KernelRoleSpec::group_needs`). -/
+def groupNeededRoles (g : Nat) : List Ix.Kernel.Role :=
+  if g < 77 then Ix.SpecDigest.groupNeeds (groupRoles g) else []
+
+theorem groups_length : Ix.SpecDigest.groups.length = 77 := by decide
+
+theorem groupRoles_eq_getElem {g : Nat} (hg : g < 77) :
+    groupRoles g = Ix.SpecDigest.groups[g]'(by rw [groups_length]; exact hg) := by
+  unfold groupRoles
+  rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem (by rw [groups_length]; exact hg)]
+  rfl
+
+set_option maxRecDepth 100000 in
+theorem groupOf_lt_77 (ro : Ix.Kernel.Role) : Ix.SpecDigest.groupOf ro < 77 := by
+  cases ro <;> decide
+
+set_option maxRecDepth 100000 in
+theorem mem_groupRoles_groupOf (ro : Ix.Kernel.Role) :
+    ro ∈ groupRoles (Ix.SpecDigest.groupOf ro) := by
+  cases ro <;> decide
+
+set_option maxRecDepth 100000 in
+private theorem groupNeededRoles_lt_fin :
+    ∀ i : Fin 77,
+      ((groupNeededRoles i.val).all fun ro => decide (Ix.SpecDigest.groupOf ro < i.val)) = true := by
+  decide +kernel
+
+theorem groupNeeds_groupOf_lt {g : Nat} {ro : Ix.Kernel.Role}
+    (hm : ro ∈ groupNeededRoles g) : Ix.SpecDigest.groupOf ro < g := by
+  unfold groupNeededRoles at hm
+  by_cases hg : g < 77
+  · have hfin := groupNeededRoles_lt_fin ⟨g, hg⟩
+    simp only [groupNeededRoles, hg, ↓reduceIte] at hfin
+    simp only [hg, ↓reduceIte] at hm
+    have hall := List.all_eq_true.mp hfin ro hm
+    exact of_decide_eq_true hall
+  · simp only [hg, ↓reduceIte] at hm
+    cases hm
+
+/-- Reflexive-transitive group dependency relation induced by `KernelRoles::group_admit_needs`. -/
+inductive GroupReachable : Nat → Nat → Prop where
+  | refl (g : Nat) : GroupReachable g g
+  | step {g g' : Nat} {ro : Ix.Kernel.Role}
+      (hm : ro ∈ groupNeededRoles g)
+      (hr : GroupReachable (Ix.SpecDigest.groupOf ro) g') :
+      GroupReachable g g'
+
+theorem GroupReachable.trans {g₁ g₂ g₃ : Nat}
+    (h₁ : GroupReachable g₁ g₂) (h₂ : GroupReachable g₂ g₃) :
+    GroupReachable g₁ g₃ := by
+  induction h₁ with
+  | refl => exact h₂
+  | step hm _ ih => exact .step hm (ih h₂)
+
+theorem GroupReachable.le {g g' : Nat} (hr : GroupReachable g g') : g' ≤ g := by
+  induction hr with
+  | refl => exact Nat.le_refl _
+  | step hm _ ih => exact Nat.le_of_lt (Nat.lt_of_le_of_lt ih (groupNeeds_groupOf_lt hm))
+
+/-! ## Role classification and well-formed evidence coverage -/
+
+/-- Specification dispatch tag matching `KernelRoleSpec::role_spec_kind`. -/
+def roleSpecKindNat (ro : Ix.Kernel.Role) : Nat :=
+  match ro.spec (md := .anon) with
+  | .block .. => 0
+  | .anchor .. => 1
+  | .ops .. => 2
+  | .axiom .. => if ro.inert then 4 else 3
+  | .eqns .. => 5
+
+/-- Whether `ro` is one of the five `Quot` roles (`member_kind ∈ 3..7`). -/
+def isQuotRole : Ix.Kernel.Role → Bool
+  | .quot | .quotMk | .quotLift | .quotInd | .quotSound => true
+  | _ => false
+
+/-- Roles whose bound address `a` is walked via `KernelClaim::run_check_transitive(rc, a)`
+during `KernelRoles::validate_role(rc, tbl, r)`: non-`Quot` block members, `.ops`, and `.eqns`. -/
+def roleWalksBound (ro : Ix.Kernel.Role) : Bool :=
+  match ro.spec (md := .anon) with
+  | .block .. => !isQuotRole ro
+  | .ops .. | .eqns .. => true
+  | _ => false
+
+/-- Roles carrying equation evidence in `validate_role` (`.ops` and `.eqns`). -/
+def roleHasEquations (ro : Ix.Kernel.Role) : Bool :=
+  match ro.spec (md := .anon) with
+  | .ops .. | .eqns .. => true
+  | _ => false
+
+set_option maxRecDepth 100000 in
+private theorem evidenceAllowed_isEmpty_eq (ro : Ix.Kernel.Role) :
+    ((Ix.Kernel.Role.spec (md := .anon)) ro).evidenceAllowed.isEmpty = !roleHasEquations ro := by
+  cases ro <;> decide
+
+/-- A table passing `RoleTable.check` has duplicate-free evidence keys, and every evidence entry
+belongs to a role with `roleHasEquations ro = true`. -/
+theorem check_evidence_nodup_and_eqns {t : Ix.Kernel.RoleTable} (hchk : t.check = .ok ()) :
+    (t.evidence.toList.map (·.1)).Nodup ∧
+    ∀ p ∈ t.evidence.toList, roleHasEquations p.1 = true := by
+  unfold Ix.Kernel.RoleTable.check at hchk
+  by_cases hv : (t.version == Ix.Kernel.specVersion) = true
+  case neg =>
+    simp only [hv, Bool.false_eq_true, ↓reduceIte] at hchk
+    obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hchk
+    first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+  by_cases hbn : (List.map (fun x => x.1) t.bound.toList).Nodup
+  case neg =>
+    simp only [hv, hbn, ↓reduceIte] at hchk
+    obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hchk
+    first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+  cases hfr : Ix.Kernel.RoleTable.firstRepeat (List.map (fun x => x.2) t.bound.toList) with
+  | some a0 =>
+    simp only [hv, hbn, hfr, ↓reduceIte] at hchk
+    obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hchk
+    first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+  | none =>
+    simp only [hv, hbn, hfr, ↓reduceIte] at hchk
+    obtain ⟨_, _, hchk2⟩ := RoleClosure.except_bind_ok hchk
+    by_cases hnd : (List.map (fun x => x.1) t.evidence.toList).Nodup
+    case neg =>
+      simp only [hnd, ↓reduceIte] at hchk2
+      obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hchk2
+      first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+    simp only [hnd, ↓reduceIte] at hchk2
+    refine ⟨hnd, ?_⟩
+    obtain ⟨u, hev, -⟩ := RoleClosure.except_bind_ok hchk2
+    cases u
+    rw [← Array.forIn_toList] at hev
+    have hall := RoleClosure.forIn_ok_all hev (by
+      intro p _ hst
+      rcases p with ⟨r, es⟩
+      dsimp only at hst
+      by_cases hrc : (List.map (fun x => x.1) t.bound.toList).contains r = true
+      case neg =>
+        simp only [hrc, Bool.false_eq_true, ↓reduceIte] at hst
+        obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hst
+        first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+      simp only [hrc, ↓reduceIte] at hst
+      by_cases hke : ((Ix.Kernel.Role.spec (md := .anon)) r).evidenceAllowed.isEmpty = true
+      case pos =>
+        simp only [hke, ↓reduceIte] at hst
+        obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hst
+        first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+      simp only [hke, Bool.false_eq_true, ↓reduceIte] at hst
+      split at hst
+      · simp only [pure, Except.pure, Except.ok.injEq] at hst
+        exact hst.symm
+      · obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hst
+        first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1)
+    intro p hp
+    have hp_ok := hall p hp
+    rcases p with ⟨r, es⟩
+    dsimp only at hp_ok ⊢
+    by_cases hrc : (List.map (fun x => x.1) t.bound.toList).contains r = true
+    case neg =>
+      simp only [hrc, Bool.false_eq_true, ↓reduceIte] at hp_ok
+      obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hp_ok
+      first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+    simp only [hrc, ↓reduceIte] at hp_ok
+    by_cases hreq : roleHasEquations r = true
+    · exact hreq
+    · have hfalse : roleHasEquations r = false := Bool.eq_false_iff.mpr hreq
+      have hemp : ((Ix.Kernel.Role.spec (md := .anon)) r).evidenceAllowed.isEmpty = true := by
+        rw [evidenceAllowed_isEmpty_eq, hfalse]
+        rfl
+      simp only [hemp, ↓reduceIte] at hp_ok
+      obtain ⟨_, h1, -⟩ := RoleClosure.except_bind_ok hp_ok
+      first | cases h1 | simp [throw, throwThe, MonadExceptOf.throw] at h1
+
+private theorem eq_of_mem_nodup_fst {α β : Type} :
+    ∀ {l : List (α × β)} {k : α} {v₁ v₂ : β},
+      (l.map (·.1)).Nodup → (k, v₁) ∈ l → (k, v₂) ∈ l → v₁ = v₂
+  | [], _, _, _, _, h1, _ => by cases h1
+  | (a, b) :: ls, k, v₁, v₂, hnd, h1, h2 => by
+    rw [List.map_cons, List.nodup_cons] at hnd
+    rcases List.mem_cons.mp h1 with heq1 | ht1
+    · injection heq1 with hk hv1
+      subst hk hv1
+      rcases List.mem_cons.mp h2 with heq2 | ht2
+      · injection heq2 with _ hv2
+        exact hv2.symm
+      · exact absurd (List.mem_map_of_mem (f := (·.1)) ht2) hnd.1
+    · rcases List.mem_cons.mp h2 with heq2 | ht2
+      · injection heq2 with hk _
+        subst hk
+        exact absurd (List.mem_map_of_mem (f := (·.1)) ht1) hnd.1
+      · exact eq_of_mem_nodup_fst hnd.2 ht1 ht2
+
+theorem evidence_eq_of_wf {t : Ix.Kernel.RoleTable} (hwf : t.wf = true)
+    {ro : Ix.Kernel.Role} {arr₁ arr₂ : Array (Ix.Kernel.Evidence _root_.Address)}
+    (h₁ : (ro, arr₁) ∈ t.evidence.toList) (h₂ : (ro, arr₂) ∈ t.evidence.toList) :
+    arr₁ = arr₂ :=
+  eq_of_mem_nodup_fst (check_evidence_nodup_and_eqns (RoleClosure.check_ok_of_wf hwf)).1 h₁ h₂
+
+theorem evidence_roleHasEquations_of_wf {t : Ix.Kernel.RoleTable} (hwf : t.wf = true)
+    {ro : Ix.Kernel.Role} {arr : Array (Ix.Kernel.Evidence _root_.Address)}
+    (hm : (ro, arr) ∈ t.evidence.toList) :
+    roleHasEquations ro = true :=
+  (check_evidence_nodup_and_eqns (RoleClosure.check_ok_of_wf hwf)).2 (ro, arr) hm
+
+/-! ## Pure AST evaluators for `KernelRoleSpec` match tables -/
+
+private def evalNatLitMatchNat (k : Nat) :
+    List (Generic.Pattern F × Generic.Expr F) → Option Nat
+  | (.literal c, .literal v) :: rest =>
+    if k == ZMod.val c then some (ZMod.val v) else evalNatLitMatchNat k rest
+  | (.wildcard, .literal v) :: _ => some (ZMod.val v)
+  | _ => none
+
+private theorem selectArm_natLitMatch {arms : List (Generic.Pattern F × Generic.Expr F)}
+    {x : F} {m : Nat}
+    (ht : evalNatLitMatchNat (ZMod.val x) arms = some m)
+    {h : Heap F} {bs : Environment F Nat} {body : Generic.Expr F}
+    (hsel : selectArm W [] h (.field x) arms = Except.ok (some (bs, body))) :
+    bs = [] ∧ body = .literal (m : F) := by
+  induction arms with
+  | nil => simp [evalNatLitMatchNat] at ht
+  | cons arm rest ih =>
+    rcases arm with ⟨pat, expr⟩
+    cases pat with
+    | literal c =>
+      cases expr with
+      | literal v =>
+        simp only [evalNatLitMatchNat] at ht
+        by_cases hxc_b : (ZMod.val x == ZMod.val c) = true
+        · rw [ite_eq_left hxc_b] at ht
+          injection ht with hm_eq
+          have hxc : x = c := ZMod.val_injective _ (beq_iff_eq.mp hxc_b)
+          subst hxc
+          rcases selectArm_cons_inv hsel with ⟨mt, rfl⟩ | ⟨nm, _⟩
+          · obtain ⟨_, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal x) mt
+            refine ⟨rfl, congrArg Generic.Expr.literal ?_⟩
+            rw [← hm_eq, natCast_val_eq]
+          · exact absurd rfl (MatchesConst.none_inv (MatchesConst.literal x) nm)
+        · rw [ite_eq_right hxc_b] at ht
+          have hxc_ne : x ≠ c := fun e => hxc_b (beq_iff_eq.mpr (congrArg ZMod.val e))
+          rcases selectArm_cons_inv hsel with ⟨mt, _⟩ | ⟨_, hsel'⟩
+          · obtain ⟨hv, _⟩ := MatchesConst.some_inv (MatchesConst.literal c) mt
+            exact absurd (Value.field.inj hv) hxc_ne
+          · exact ih ht hsel'
+      | _ => simp [evalNatLitMatchNat] at ht
+    | wildcard =>
+      cases expr with
+      | literal v =>
+        simp only [evalNatLitMatchNat, Option.some.injEq] at ht
+        rcases selectArm_cons_inv hsel with ⟨mt, rfl⟩ | ⟨nm, _⟩
+        · refine ⟨matchPattern_wildcard_inv mt, congrArg Generic.Expr.literal ?_⟩
+          rw [← ht, natCast_val_eq]
+        · exact (matchPattern_wildcard_none nm).elim
+      | _ => simp [evalNatLitMatchNat] at ht
+    | _ => simp [evalNatLitMatchNat] at ht
+
+set_option maxRecDepth 100000 in
+private theorem role_spec_kind_table (ro : Ix.Kernel.Role) :
+    evalNatLitMatchNat ro.idx (RolesAux.matchArms IxVM.KernelRoleSpec.role_spec_kind.body) =
+      some (roleSpecKindNat ro) := by
+  cases ro <;> decide
+
+theorem role_spec_kind_spec {ro : Ix.Kernel.Role} {r : SourceValue F}
+    {h h' : Heap F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelRoleSpec::role_spec_kind" [.field (roleNum ro)] h r h' calls) :
+    r = .field (roleSpecKindNat ro : F) ∧ h' = h := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_spec_kind.lookup
+    (by simp [IxVM.KernelRoleSpec.role_spec_kind, ControlLower.hasControl]) ev
+  have hp : (IxVM.KernelRoleSpec.role_spec_kind.params.map fun (n, t) =>
+      (n, (t.subst []).toCore)).map Prod.fst = ["r"] := rfl
+  have hb : IxVM.KernelRoleSpec.role_spec_kind.body =
+      .matchValue (.var "r") (RolesAux.matchArms IxVM.KernelRoleSpec.role_spec_kind.body) := rfl
+  rw [hp, hb] at d0
+  obtain ⟨_, _, bs3, body4, _, _, d7, sel8, d9, -⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, -⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  have ht : evalNatLitMatchNat (ZMod.val (roleNum ro))
+      (RolesAux.matchArms IxVM.KernelRoleSpec.role_spec_kind.body) =
+      some (roleSpecKindNat ro) := by
+    rw [RolesAux.val_roleNum]
+    exact role_spec_kind_table ro
+  obtain ⟨rfl, rfl⟩ := selectArm_natLitMatch ht sel8
+  obtain ⟨rfl, rfl, -⟩ := d9.literal_inv
+  exact ⟨rfl, rfl⟩
+
+set_option maxRecDepth 100000 in
+private theorem role_member_kind_lt3_table (ro : Ix.Kernel.Role)
+    (h0 : roleSpecKindNat ro = 0) (hw : roleWalksBound ro = true) :
+    (match evalNatLitMatchNat ro.idx (RolesAux.matchArms IxVM.KernelRoleSpec.role_member_kind.body) with
+     | some mk => decide (mk < 3)
+     | none => false) = true := by
+  cases ro <;> first | exact absurd h0 (by decide) | exact absurd hw (by decide) | decide
+
+theorem role_member_kind_lt3_of_walks {ro : Ix.Kernel.Role}
+    (h0 : roleSpecKindNat ro = 0) (hw : roleWalksBound ro = true)
+    {r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelRoleSpec::role_member_kind" [.field (roleNum ro)] h r h' calls) :
+    h' = h ∧ (r = .field 0 ∨ r = .field 1 ∨ r = .field 2) := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_member_kind.lookup
+    (by simp [IxVM.KernelRoleSpec.role_member_kind, ControlLower.hasControl]) ev
+  have hp : (IxVM.KernelRoleSpec.role_member_kind.params.map fun (n, t) =>
+      (n, (t.subst []).toCore)).map Prod.fst = ["r"] := rfl
+  have hb : IxVM.KernelRoleSpec.role_member_kind.body =
+      .matchValue (.var "r") (RolesAux.matchArms IxVM.KernelRoleSpec.role_member_kind.body) := rfl
+  rw [hp, hb] at d0
+  obtain ⟨_, _, bs3, body4, _, _, d7, sel8, d9, -⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, -⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  have htab := role_member_kind_lt3_table ro h0 hw
+  cases hm : evalNatLitMatchNat ro.idx
+      (RolesAux.matchArms IxVM.KernelRoleSpec.role_member_kind.body) with
+  | none => rw [hm] at htab; cases htab
+  | some mk =>
+    rw [hm] at htab
+    have hlt3 : mk < 3 := of_decide_eq_true htab
+    have ht : evalNatLitMatchNat (ZMod.val (roleNum ro))
+        (RolesAux.matchArms IxVM.KernelRoleSpec.role_member_kind.body) = some mk := by
+      rw [RolesAux.val_roleNum]
+      exact hm
+    obtain ⟨rfl, rfl⟩ := selectArm_natLitMatch ht sel8
+    obtain ⟨rfl, rfl, -⟩ := d9.literal_inv
+    refine ⟨rfl, ?_⟩
+    interval_cases mk
+    · exact .inl rfl
+    · exact .inr (.inl rfl)
+    · exact .inr (.inr rfl)
+
+set_option maxRecDepth 100000 in
+private theorem op_equation_count_table_pos (ro : Ix.Kernel.Role)
+    (h2 : roleSpecKindNat ro = 2) :
+    (match evalNatLitMatchNat ro.idx (RolesAux.matchArms IxVM.KernelRoleSpec.op_equation_count.body) with
+     | some k => decide (0 < k ∧ k < 10)
+     | none => false) = true := by
+  cases ro <;> first | exact absurd h2 (by decide) | decide
+
+theorem op_equation_count_pos {ro : Ix.Kernel.Role} (h2 : roleSpecKindNat ro = 2)
+    {r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelRoleSpec::op_equation_count" [.field (roleNum ro)] h r h' calls) :
+    h' = h ∧ ∃ k : Nat, 0 < k ∧ k < 10 ∧ r = .field (k : F) := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.op_equation_count.lookup
+    (by simp [IxVM.KernelRoleSpec.op_equation_count, ControlLower.hasControl]) ev
+  have hp : (IxVM.KernelRoleSpec.op_equation_count.params.map fun (n, t) =>
+      (n, (t.subst []).toCore)).map Prod.fst = ["r"] := rfl
+  have hb : IxVM.KernelRoleSpec.op_equation_count.body =
+      .matchValue (.var "r") (RolesAux.matchArms IxVM.KernelRoleSpec.op_equation_count.body) := rfl
+  rw [hp, hb] at d0
+  obtain ⟨_, _, bs3, body4, _, _, d7, sel8, d9, -⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, -⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  have htab := op_equation_count_table_pos ro h2
+  cases hm : evalNatLitMatchNat ro.idx
+      (RolesAux.matchArms IxVM.KernelRoleSpec.op_equation_count.body) with
+  | none => rw [hm] at htab; cases htab
+  | some k =>
+    rw [hm] at htab
+    obtain ⟨hk0, hk10⟩ := of_decide_eq_true htab
+    have ht : evalNatLitMatchNat (ZMod.val (roleNum ro))
+        (RolesAux.matchArms IxVM.KernelRoleSpec.op_equation_count.body) = some k := by
+      rw [RolesAux.val_roleNum]
+      exact hm
+    obtain ⟨rfl, rfl⟩ := selectArm_natLitMatch ht sel8
+    obtain ⟨rfl, rfl, -⟩ := d9.literal_inv
+    exact ⟨rfl, k, hk0, hk10, rfl⟩
+
+set_option maxRecDepth 100000 in
+private theorem eqns_equation_count_table_pos (ro : Ix.Kernel.Role)
+    (h5 : roleSpecKindNat ro = 5) :
+    (match evalNatLitMatchNat ro.idx (RolesAux.matchArms IxVM.KernelRoleSpec.eqns_equation_count.body) with
+     | some k => decide (0 < k ∧ k < 10)
+     | none => false) = true := by
+  cases ro <;> first | exact absurd h5 (by decide) | decide
+
+theorem eqns_equation_count_pos {ro : Ix.Kernel.Role} (h5 : roleSpecKindNat ro = 5)
+    {r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelRoleSpec::eqns_equation_count" [.field (roleNum ro)] h r h' calls) :
+    h' = h ∧ ∃ k : Nat, 0 < k ∧ k < 10 ∧ r = .field (k : F) := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.eqns_equation_count.lookup
+    (by simp [IxVM.KernelRoleSpec.eqns_equation_count, ControlLower.hasControl]) ev
+  have hp : (IxVM.KernelRoleSpec.eqns_equation_count.params.map fun (n, t) =>
+      (n, (t.subst []).toCore)).map Prod.fst = ["r"] := rfl
+  have hb : IxVM.KernelRoleSpec.eqns_equation_count.body =
+      .matchValue (.var "r") (RolesAux.matchArms IxVM.KernelRoleSpec.eqns_equation_count.body) := rfl
+  rw [hp, hb] at d0
+  obtain ⟨_, _, bs3, body4, _, _, d7, sel8, d9, -⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, -⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  have htab := eqns_equation_count_table_pos ro h5
+  cases hm : evalNatLitMatchNat ro.idx
+      (RolesAux.matchArms IxVM.KernelRoleSpec.eqns_equation_count.body) with
+  | none => rw [hm] at htab; cases htab
+  | some k =>
+    rw [hm] at htab
+    obtain ⟨hk0, hk10⟩ := of_decide_eq_true htab
+    have ht : evalNatLitMatchNat (ZMod.val (roleNum ro))
+        (RolesAux.matchArms IxVM.KernelRoleSpec.eqns_equation_count.body) = some k := by
+      rw [RolesAux.val_roleNum]
+      exact hm
+    obtain ⟨rfl, rfl⟩ := selectArm_natLitMatch ht sel8
+    obtain ⟨rfl, rfl, -⟩ := d9.literal_inv
+    exact ⟨rfl, k, hk0, hk10, rfl⟩
+
+/-! ### Linked-list AST decoder for `group_roles` and `group_needs` -/
+
+private def repRoleIdx (_ : Heap F) (n : Nat) (v : SourceValue F) : Prop :=
+  v = .field (n : F)
+
+private theorem repRoleIdx_heapMono₂ : HeapMono₂ repRoleIdx :=
+  fun _ _ _ _ _ h => h
+
+private def repRoleNum (_ : Heap F) (ro : Ix.Kernel.Role) (v : SourceValue F) : Prop :=
+  v = .field (roleNum ro)
+
+private theorem repRoleNum_heapMono₂ : HeapMono₂ repRoleNum :=
+  fun _ _ _ _ _ h => h
+
+private theorem repList_map_idx_to_role :
+    ∀ {rs : List Ix.Kernel.Role} {h : Heap F} {p : SourceValue F},
+      RepList Obs.Names.«Lists::Node<Field>» repRoleIdx h (rs.map Ix.Kernel.Role.idx) p →
+      RepList Obs.Names.«Lists::Node<Field>» repRoleNum h rs p
+  | [], _, _, .nil cell => .nil cell
+  | _ :: _, _, _, .cons cell rh rt => .cons cell rh (repList_map_idx_to_role rt)
+
+private def isFieldListCtor (ctorWant : String) :
+    Generic.Expr F → Option (List (Generic.Expr F))
+  | .construct name args ctor es =>
+    if ctor == ctorWant && instanceName [] name args == Obs.Names.«Lists::Node<Field>» then
+      some es
+    else none
+  | .constructAs _ t ctor es =>
+    if ctor == ctorWant && constructorName [] t == Obs.Names.«Lists::Node<Field>» then
+      some es
+    else none
+  | _ => none
+
+private theorem isFieldListCtor_sound {ctorWant : String} {inner : Generic.Expr F}
+    {es : List (Generic.Expr F)} (hc : isFieldListCtor ctorWant inner = some es)
+    {locals : Environment F Nat} {h : Heap F} {v : SourceValue F} {h' : Heap F}
+    {calls : List (Call F)}
+    (d : ObsExpr W [] locals inner h v h' calls) :
+    ∃ vs, ObsArgs W [] locals es h vs h' calls ∧
+      v = .construct Obs.Names.«Lists::Node<Field>» ctorWant vs := by
+  cases inner with
+  | construct name args ctor es' =>
+    simp only [isFieldListCtor] at hc
+    split at hc
+    case isTrue hcond =>
+      simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+      obtain ⟨rfl, hinst⟩ := hcond
+      injection hc with hes
+      subst hes
+      obtain ⟨vs, a, hres⟩ := d.construct_inv
+      rw [hinst] at hres
+      exact ⟨vs, a, hres⟩
+    case isFalse => cases hc
+  | constructAs ps t ctor es' =>
+    simp only [isFieldListCtor] at hc
+    split at hc
+    case isTrue hcond =>
+      simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+      obtain ⟨rfl, hctor⟩ := hcond
+      injection hc with hes
+      subst hes
+      obtain ⟨vs, a, hres⟩ := d.constructAs_inv
+      rw [hctor] at hres
+      exact ⟨vs, a, hres⟩
+    case isFalse => cases hc
+  | _ => simp [isFieldListCtor] at hc
+
+private def decodeNatListExpr : Nat → Generic.Expr F → Option (List Nat)
+  | 0, _ => none
+  | fuel + 1, .builtin (.ascribe _) [e] => decodeNatListExpr fuel e
+  | fuel + 1, .store inner =>
+    match isFieldListCtor "Nil" inner with
+    | some [] => some []
+    | _ =>
+      match isFieldListCtor "Cons" inner with
+      | some [.literal x, tail] => (decodeNatListExpr fuel tail).map (ZMod.val x :: ·)
+      | _ => none
+  | _, _ => none
+
+private theorem decodeNatListExpr_sound :
+    ∀ (fuel : Nat) {e : Generic.Expr F} {ns : List Nat}
+      (hd : decodeNatListExpr fuel e = some ns)
+      {locals : Environment F Nat} {h : Heap F} {r : SourceValue F} {h' : Heap F}
+      {calls : List (Call F)}
+      (d : ObsExpr W [] locals e h r h' calls),
+      Heap.Extends h h' ∧
+      RepList Obs.Names.«Lists::Node<Field>» repRoleIdx h' ns r
+  | 0, _, _, hd, _, _, _, _, _, _ => by simp [decodeNatListExpr] at hd
+  | fuel + 1, e, ns, hd, locals, h, r, h', calls, d => by
+    cases e with
+    | builtin op es =>
+      cases op with
+      | ascribe t =>
+        cases es with
+        | nil => simp [decodeNatListExpr] at hd
+        | cons e0 es1 =>
+          cases es1 with
+          | nil =>
+            simp only [decodeNatListExpr] at hd
+            obtain ⟨vs, a, ap⟩ := d.builtin_inv
+            obtain ⟨v0, vs1, m1, _, _, rfl, d0, a1, _⟩ := a.cons_inv
+            obtain ⟨rfl, rfl, _⟩ := a1.nil_inv
+            obtain rfl := Builtin.ascribe_inv ap
+            exact decodeNatListExpr_sound fuel hd d0
+          | cons _ _ => simp [decodeNatListExpr] at hd
+      | _ => simp [decodeNatListExpr] at hd
+    | store inner =>
+      simp only [decodeNatListExpr] at hd
+      obtain ⟨vin, min, din, rfl, rfl⟩ := d.store_inv
+      cases hnil : isFieldListCtor "Nil" inner with
+      | some es_nil =>
+        rw [hnil] at hd
+        cases es_nil with
+        | nil =>
+          simp only [Option.some.injEq] at hd
+          subst hd
+          obtain ⟨vs, a, hvin⟩ := isFieldListCtor_sound hnil din
+          obtain ⟨rfl, rfl, _⟩ := a.nil_inv
+          subst hvin
+          rw [Value.type]
+          exact ⟨Heap.Extends.snoc _ _,
+            Lib.rep_store_nil (en := Obs.Names.«Lists::Node<Field>») (R := repRoleIdx) min⟩
+        | cons _ _ =>
+          cases hcons : isFieldListCtor "Cons" inner with
+          | none => rw [hcons] at hd; cases hd
+          | some es_cons =>
+            obtain ⟨_, _, h1⟩ := isFieldListCtor_sound hnil din
+            obtain ⟨_, _, h2⟩ := isFieldListCtor_sound hcons din
+            exact (RolesAux.construct_ctor_ne (by decide) (h1.symm.trans h2)).elim
+      | none =>
+        rw [hnil] at hd
+        cases hcons : isFieldListCtor "Cons" inner with
+        | none => rw [hcons] at hd; cases hd
+        | some es_cons =>
+          rw [hcons] at hd
+          cases es_cons with
+          | nil => simp at hd
+          | cons e_head es_tail1 =>
+            cases e_head with
+            | literal x =>
+              cases es_tail1 with
+              | nil => simp at hd
+              | cons tail es_tail2 =>
+                cases es_tail2 with
+                | nil =>
+                  simp only [Option.map_eq_some_iff] at hd
+                  obtain ⟨ns', htail, rfl⟩ := hd
+                  obtain ⟨vs, a, hvin⟩ := isFieldListCtor_sound hcons din
+                  obtain ⟨vx, vs1, m1, _, _, rfl, dx, a1, _⟩ := a.cons_inv
+                  obtain ⟨rfl, rfl, _⟩ := dx.literal_inv
+                  obtain ⟨vt, vs2, m2, _, _, rfl, dt, a2, _⟩ := a1.cons_inv
+                  obtain ⟨rfl, rfl, _⟩ := a2.nil_inv
+                  subst hvin
+                  rw [Value.type]
+                  obtain ⟨ext_t, hrep_t⟩ := decodeNatListExpr_sound fuel htail dt
+                  have hhead : repRoleIdx min (ZMod.val x) (.field x) :=
+                    congrArg Value.field (natCast_val_eq x).symm
+                  exact ⟨ext_t.trans (Heap.Extends.snoc _ _),
+                    Lib.rep_store_cons repRoleIdx_heapMono₂ hhead hrep_t⟩
+                | cons _ _ => simp at hd
+            | _ =>
+              cases es_tail1 with
+              | nil => simp at hd
+              | cons _ es_tail2 =>
+                cases es_tail2 <;> simp at hd
+    | _ => simp [decodeNatListExpr] at hd
+
+private def evalNatListMatchNat (k : Nat) :
+    List (Generic.Pattern F × Generic.Expr F) → Option (List Nat)
+  | (.literal c, body) :: rest =>
+    if k == ZMod.val c then decodeNatListExpr 32 body else evalNatListMatchNat k rest
+  | (.wildcard, body) :: _ => decodeNatListExpr 32 body
+  | _ => none
+
+private def wildcardBodyAbove77 :
+    List (Generic.Pattern F × Generic.Expr F) → Option (List Nat)
+  | (.literal c, _) :: rest => if ZMod.val c < 77 then wildcardBodyAbove77 rest else none
+  | [(.wildcard, body)] => decodeNatListExpr 32 body
+  | _ => none
+
+private theorem evalNatListMatchNat_of_above77 {k : Nat} (hk : 77 ≤ k)
+    {arms : List (Generic.Pattern F × Generic.Expr F)} {ns : List Nat}
+    (hw : wildcardBodyAbove77 arms = some ns) :
+    evalNatListMatchNat k arms = some ns := by
+  induction arms with
+  | nil => simp [wildcardBodyAbove77] at hw
+  | cons arm rest ih =>
+    rcases arm with ⟨pat, body⟩
+    cases pat with
+    | literal c =>
+      simp only [wildcardBodyAbove77] at hw
+      split at hw
+      case isTrue hlt =>
+        have hne : (k == ZMod.val c) = false := beq_false_of_ne (by omega)
+        simp only [evalNatListMatchNat, hne]
+        exact ih hw
+      case isFalse => cases hw
+    | wildcard =>
+      cases rest with
+      | nil =>
+        simp only [wildcardBodyAbove77] at hw
+        exact hw
+      | cons _ _ => simp [wildcardBodyAbove77] at hw
+    | _ => simp [wildcardBodyAbove77] at hw
+
+private theorem selectArm_natListMatch {arms : List (Generic.Pattern F × Generic.Expr F)}
+    {x : F} {ns : List Nat}
+    (ht : evalNatListMatchNat (ZMod.val x) arms = some ns)
+    {h : Heap F} {bs : Environment F Nat} {body : Generic.Expr F}
+    (hsel : selectArm W [] h (.field x) arms = Except.ok (some (bs, body))) :
+    decodeNatListExpr 32 body = some ns := by
+  induction arms with
+  | nil => simp [evalNatListMatchNat] at ht
+  | cons arm rest ih =>
+    rcases arm with ⟨pat, armBody⟩
+    cases pat with
+    | literal c =>
+      simp only [evalNatListMatchNat] at ht
+      by_cases hxc_b : (ZMod.val x == ZMod.val c) = true
+      · rw [ite_eq_left hxc_b] at ht
+        have hxc : x = c := ZMod.val_injective _ (beq_iff_eq.mp hxc_b)
+        subst hxc
+        rcases selectArm_cons_inv hsel with ⟨_, rfl⟩ | ⟨nm, _⟩
+        · exact ht
+        · exact absurd rfl (MatchesConst.none_inv (MatchesConst.literal x) nm)
+      · rw [ite_eq_right hxc_b] at ht
+        have hxc_ne : x ≠ c := fun e => hxc_b (beq_iff_eq.mpr (congrArg ZMod.val e))
+        rcases selectArm_cons_inv hsel with ⟨mt, _⟩ | ⟨_, hsel'⟩
+        · obtain ⟨hv, _⟩ := MatchesConst.some_inv (MatchesConst.literal c) mt
+          exact absurd (Value.field.inj hv) hxc_ne
+        · exact ih ht hsel'
+    | wildcard =>
+      simp only [evalNatListMatchNat] at ht
+      rcases selectArm_cons_inv hsel with ⟨_, rfl⟩ | ⟨nm, _⟩
+      · exact ht
+      · exact (matchPattern_wildcard_none nm).elim
+    | _ => simp [evalNatListMatchNat] at ht
+
+set_option maxRecDepth 100000 in
+private theorem group_roles_table_fin :
+    ∀ i : Fin 77,
+      evalNatListMatchNat i.val (RolesAux.matchArms IxVM.KernelRoleSpec.group_roles.body) =
+        some ((groupRoles i.val).map Ix.Kernel.Role.idx) := by
+  decide +kernel
+
+set_option maxRecDepth 100000 in
+private theorem group_roles_above77 :
+    wildcardBodyAbove77 (RolesAux.matchArms IxVM.KernelRoleSpec.group_roles.body) = some [] := by
+  decide +kernel
+
+set_option maxRecDepth 100000 in
+private theorem group_needs_table_fin :
+    ∀ i : Fin 77,
+      evalNatListMatchNat i.val (RolesAux.matchArms IxVM.KernelRoleSpec.group_needs.body) =
+        some ((groupNeededRoles i.val).map Ix.Kernel.Role.idx) := by
+  decide +kernel
+
+set_option maxRecDepth 100000 in
+private theorem group_needs_above77 :
+    wildcardBodyAbove77 (RolesAux.matchArms IxVM.KernelRoleSpec.group_needs.body) = some [] := by
+  decide +kernel
+
+theorem group_roles_spec {g : Nat} (hg : g < 4294967296)
+    {r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelRoleSpec::group_roles" [.field (g : F)] h r h' calls) :
+    Heap.Extends h h' ∧
+    RepList Obs.Names.«Lists::Node<Field>» repRoleNum h' (groupRoles g) r := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.group_roles.lookup
+    (by simp [IxVM.KernelRoleSpec.group_roles, ControlLower.hasControl]) ev
+  have hp : (IxVM.KernelRoleSpec.group_roles.params.map fun (n, t) =>
+      (n, (t.subst []).toCore)).map Prod.fst = ["g"] := rfl
+  have hb : IxVM.KernelRoleSpec.group_roles.body =
+      .matchValue (.var "g") (RolesAux.matchArms IxVM.KernelRoleSpec.group_roles.body) := rfl
+  rw [hp, hb] at d0
+  obtain ⟨_, m2, bs3, body4, _, _, d7, sel8, d9, -⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, -⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  have hval : ZMod.val (g : F) = g := RolesAux.val_natCast (Nat.lt_trans hg (by decide))
+  have ht : evalNatListMatchNat (ZMod.val (g : F))
+      (RolesAux.matchArms IxVM.KernelRoleSpec.group_roles.body) =
+      some ((groupRoles g).map Ix.Kernel.Role.idx) := by
+    rw [hval]
+    by_cases hg77 : g < 77
+    · exact group_roles_table_fin ⟨g, hg77⟩
+    · have hge : 77 ≤ g := Nat.le_of_not_lt hg77
+      have hemp : groupRoles g = [] := by
+        unfold groupRoles
+        rw [List.getD_eq_getElem?_getD,
+          List.getElem?_eq_none (by rw [groups_length]; exact hge)]
+        rfl
+      rw [hemp, List.map_nil]
+      exact evalNatListMatchNat_of_above77 hge group_roles_above77
+  have hdec := selectArm_natListMatch ht sel8
+  obtain ⟨ext, hrep⟩ := decodeNatListExpr_sound 32 hdec d9
+  exact ⟨ext, repList_map_idx_to_role hrep⟩
+
+theorem group_needs_spec {g : Nat} (hg : g < 4294967296)
+    {r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelRoleSpec::group_needs" [.field (g : F)] h r h' calls) :
+    Heap.Extends h h' ∧
+    RepList Obs.Names.«Lists::Node<Field>» repRoleNum h' (groupNeededRoles g) r := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.group_needs.lookup
+    (by simp [IxVM.KernelRoleSpec.group_needs, ControlLower.hasControl]) ev
+  have hp : (IxVM.KernelRoleSpec.group_needs.params.map fun (n, t) =>
+      (n, (t.subst []).toCore)).map Prod.fst = ["g"] := rfl
+  have hb : IxVM.KernelRoleSpec.group_needs.body =
+      .matchValue (.var "g") (RolesAux.matchArms IxVM.KernelRoleSpec.group_needs.body) := rfl
+  rw [hp, hb] at d0
+  obtain ⟨_, m2, bs3, body4, _, _, d7, sel8, d9, -⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, -⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  have hval : ZMod.val (g : F) = g := RolesAux.val_natCast (Nat.lt_trans hg (by decide))
+  have ht : evalNatListMatchNat (ZMod.val (g : F))
+      (RolesAux.matchArms IxVM.KernelRoleSpec.group_needs.body) =
+      some ((groupNeededRoles g).map Ix.Kernel.Role.idx) := by
+    rw [hval]
+    by_cases hg77 : g < 77
+    · exact group_needs_table_fin ⟨g, hg77⟩
+    · have hge : 77 ≤ g := Nat.le_of_not_lt hg77
+      have hemp : groupNeededRoles g = [] := by
+        unfold groupNeededRoles
+        simp only [hg77, ↓reduceIte]
+      rw [hemp, List.map_nil]
+      exact evalNatListMatchNat_of_above77 hge group_needs_above77
+  have hdec := selectArm_natListMatch ht sel8
+  obtain ⟨ext, hrep⟩ := decodeNatListExpr_sound 32 hdec d9
+  exact ⟨ext, repList_map_idx_to_role hrep⟩
+
+/-! ## Unconditional `role_is_bound` and `role_bound_addr` under `TableRep` -/
+
+theorem role_is_bound_uncond {t : Ix.Kernel.RoleTable} {ro : Ix.Kernel.Role}
+    {tbl r byRole : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (htbl : TableRep t h tbl) (hr_ne : r ≠ .field 0)
+    (hby : Specs.Roles.ByRole h tbl byRole)
+    (ev : ObsFn W "KernelRoles::role_is_bound" [tbl, .field (roleNum ro)] h r h' calls) :
+    ∃ res : Option (SourceValue F),
+      Specs.Roles.RoleMapSearch roleAddrMapEnum h (roleNum ro) byRole res ∧
+      match res with
+      | some v => ∃ a : Bytes.Address,
+          Bytes.RepAddressRef addrTy h a v ∧ t.addressOf? ro = some (ixAddr a)
+      | none => t.addressOf? ro = some (ixAddr Specs.Roles.zeroAddr) := by
+  let c₀ : Ctx := { E := default, env := default, t := t, lim := none }
+  cases Obs.«KernelRoles::role_is_bound».obs ev with
+  | other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ he110 _ _ =>
+    exact absurd he110 hr_ne
+  | n0 v1 m2 cs12 x40 y41 m42 cs51 v55 m65 cs73 ev14 ev75 ev53 op97 op47 _ _ _ =>
+    obtain ⟨res, hs, hres⟩ :=
+      role_bound_addr_or_zero_step (ScopedCtx.unrestricted c₀) ev14 tbl (roleNum ro) rfl byRole hby
+    have htbl' := htbl
+    obtain ⟨bp, byRole', byAddr, evMap, hload, hbyRoleAll, _, _⟩ := htbl'
+    obtain ⟨bp', byAddr', evMap', hload'⟩ := hby
+    have hbr_eq : byRole = byRole' := by
+      rw [hload] at hload'
+      injection hload' with hv
+      injection hv with _ _ hxs
+      injection hxs with _ hxs1
+      injection hxs1 with he
+      exact he.symm
+    subst hbr_eq
+    cases res with
+    | some v =>
+      obtain ⟨ro', a, hk, ha, haddr⟩ := RolesAux.roleMapSearch_mem_all hbyRoleAll hs
+      obtain rfl := RolesAux.roleNum_inj hk.symm
+      exact ⟨some v, hs, a, ha, haddr⟩
+    | none =>
+      rcases hres with hnone | ⟨_, ha_zero⟩
+      · cases hnone
+      have htbl_m2 : TableRep c₀.t m2 tbl := htbl.mono ev14.heap_extends
+      obtain ⟨rfl, hIdx⟩ := role_addr_index_step (ScopedCtx.unrestricted c₀) ev75 tbl rfl htbl_m2
+      have hlookup :=
+        rbtree_map_lookup_or_default_field_step (ScopedCtx.unrestricted c₀) ev53
+          v1 v55 (.field 0) rfl Specs.Roles.zeroAddr ha_zero (IndexEntry c₀.t) hIdx
+      obtain rfl := RolesAux.evalBinOp_add_field_inv op97
+      obtain ⟨x, hx1, hx2⟩ := RolesAux.evalBinOp_sub_eq_zero_inv op47
+      have hx40 : x40 = .field (roleNum ro + 1) := hx1.trans hx2.symm
+      rcases hlookup with hx0 | ⟨ro', hxr, haddr⟩
+      · exfalso
+        exact RolesAux.roleNum_add_one_ne_zero ro (Value.field.inj (hx40.symm.trans hx0))
+      · obtain rfl := RolesAux.roleNum_add_one_inj (Value.field.inj (hx40.symm.trans hxr))
+        exact ⟨none, hs, haddr⟩
+
+theorem role_bound_addr_uncond {t : Ix.Kernel.RoleTable} {ro : Ix.Kernel.Role}
+    {tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (htbl : TableRep t h tbl)
+    (ev : ObsFn W "KernelRoles::role_bound_addr" [tbl, .field (roleNum ro)] h r h' calls) :
+    Heap.Extends h h' ∧ ∃ a : _root_.Address, BaseSeams.addr h' r a ∧ t.addressOf? ro = some a := by
+  let c₀ : Ctx := { E := default, env := default, t := t, lim := none }
+  obtain ⟨v12, m15, cs23, cs52, ev25, heq48, ev54, _⟩ :=
+    Obs.«KernelRoles::role_bound_addr».obs ev
+  have htbl' := htbl
+  obtain ⟨bp, byRole, byAddr, evMap, hload, _, _, _⟩ := htbl'
+  have hby : Specs.Roles.ByRole h tbl byRole := ⟨bp, byAddr, evMap, hload⟩
+  have hv12_ne : v12 ≠ .field 0 := by
+    rw [heq48]
+    exact fun e => one_ne_zero (Value.field.inj e)
+  obtain ⟨res₁, hs₁, hbound⟩ := role_is_bound_uncond htbl hv12_ne hby ev25
+  have ext1 : Heap.Extends h m15 := ev25.heap_extends
+  have hby_m15 : Specs.Roles.ByRole m15 tbl byRole :=
+    ⟨bp, byAddr, evMap, ext1.loadValue_eq hload⟩
+  obtain ⟨res₂, hs₂, hres₂⟩ :=
+    role_bound_addr_or_zero_step (ScopedCtx.unrestricted c₀) ev54 tbl (roleNum ro) rfl byRole hby_m15
+  have hdet : res₁ = res₂ := RolesAux.roleMapSearch_det (RolesAux.roleMapSearch_mono ext1 hs₁) hs₂
+  subst hdet
+  refine ⟨ev.heap_extends, ?_⟩
+  cases res₁ with
+  | some v =>
+    rcases hres₂ with hsome | ⟨hnone, _⟩
+    · injection hsome with hvr
+      subst hvr
+      obtain ⟨a, ha, haddr⟩ := hbound
+      exact ⟨ixAddr a,
+        ⟨a, Bytes.repAddressRef_heapMono₂ addrTy (ext1.trans ev54.heap_extends) ha, rfl⟩, haddr⟩
+    · cases hnone
+  | none =>
+    rcases hres₂ with hsome | ⟨_, ha_zero⟩
+    · cases hsome
+    · exact ⟨ixAddr Specs.Roles.zeroAddr, ⟨Specs.Roles.zeroAddr, ha_zero, rfl⟩, hbound⟩
+
+/-! ## Structural sub-call and walk witnesses -/
+
+/-- Witness that `Ingress::get_ci` loaded a `KConstantInfo` cell at `addr` inside `calls`. -/
+def GetCiIn (calls : List (Call F)) (addr : _root_.Address) : Prop :=
+  ∃ (h_ld m_ld : Heap F) (ap ptr v_ci : SourceValue F) (cs_ld : List (Call F)),
+    BaseSeams.addr h_ld ap addr ∧
+    ObsFn W "Ingress::get_ci" [ap] h_ld ptr m_ld cs_ld ∧
+    (⟨"Ingress::get_ci", [ap], h_ld⟩ : Call F) ∈ calls ∧
+    (∀ cl ∈ cs_ld, cl ∈ calls) ∧
+    loadValue m_ld ptr = .ok v_ci
+
+theorem GetCiIn.mono {cs₁ cs₂ : List (Call F)} {addr : _root_.Address}
+    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (h : GetCiIn cs₁ addr) : GetCiIn cs₂ addr := by
+  obtain ⟨h_ld, m_ld, ap, ptr, v_ci, cs_ld, ha, ev, hcl, hcs, hload⟩ := h
+  exact ⟨h_ld, m_ld, ap, ptr, v_ci, cs_ld, ha, ev, hsub _ hcl, fun cl hm => hsub cl (hcs cl hm),
+    hload⟩
+
+/-- Witness that `Ingress::get_ci` loaded a `"Thm"` constant cell at `addr` inside `calls`. -/
+def GetThmCiIn (calls : List (Call F)) (addr : _root_.Address) : Prop :=
+  ∃ (h_ld m_ld : Heap F) (ap ptr x_nlvls x_tty x_val : SourceValue F) (cs_ld : List (Call F)),
+    BaseSeams.addr h_ld ap addr ∧
+    ObsFn W "Ingress::get_ci" [ap] h_ld ptr m_ld cs_ld ∧
+    (⟨"Ingress::get_ci", [ap], h_ld⟩ : Call F) ∈ calls ∧
+    (∀ cl ∈ cs_ld, cl ∈ calls) ∧
+    loadValue m_ld ptr =
+      .ok (.construct "KernelTypes::KConstantInfo" "Thm" [x_nlvls, x_tty, x_val])
+
+theorem GetThmCiIn.mono {cs₁ cs₂ : List (Call F)} {addr : _root_.Address}
+    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (h : GetThmCiIn cs₁ addr) : GetThmCiIn cs₂ addr := by
+  obtain ⟨h_ld, m_ld, ap, ptr, nl, ty, val, cs_ld, ha, ev, hcl, hcs, hload⟩ := h
+  exact ⟨h_ld, m_ld, ap, ptr, nl, ty, val, cs_ld, ha, ev, hsub _ hcl,
+    fun cl hm => hsub cl (hcs cl hm), hload⟩
+
+theorem GetThmCiIn.toGetCiIn {calls : List (Call F)} {addr : _root_.Address}
+    (h : GetThmCiIn calls addr) : GetCiIn calls addr := by
+  obtain ⟨h_ld, m_ld, ap, ptr, nl, ty, val, cs_ld, ha, ev, hcl, hcs, hload⟩ := h
+  exact ⟨h_ld, m_ld, ap, ptr, _, cs_ld, ha, ev, hcl, hcs, hload⟩
+
+/-- Witness that `KernelClaim::run_check_transitive(rc, ap)` ran on `addr` under `RCRep t lim`
+inside `calls`. -/
+def RunCheckIn (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (lim : Option Nat)
+    (addr : _root_.Address) : Prop :=
+  ∃ (h_w h'_w : Heap F) (rc ap r_w : SourceValue F) (cs_w : List (Call F)),
+    RCRep t lim h_w rc ∧
+    BaseSeams.addr h_w ap addr ∧
+    ObsFn W "KernelClaim::run_check_transitive" [rc, ap] h_w r_w h'_w cs_w ∧
+    (⟨"KernelClaim::run_check_transitive", [rc, ap], h_w⟩ : Call F) ∈ calls ∧
+    (∀ cl ∈ cs_w, cl ∈ calls)
+
+theorem RunCheckIn.mono {cs₁ cs₂ : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {lim : Option Nat} {addr : _root_.Address}
+    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (h : RunCheckIn cs₁ t lim addr) :
+    RunCheckIn cs₂ t lim addr := by
+  obtain ⟨h_w, h'_w, rc, ap, r_w, cs_w, hrc, ha, ev, hcl, hcs⟩ := h
+  exact ⟨h_w, h'_w, rc, ap, r_w, cs_w, hrc, ha, ev, hsub _ hcl, fun cl hm => hsub cl (hcs cl hm)⟩
+
+/-- Witness that `KernelRoles::group_admit(tbl, .field (g : F))` ran under `TableRep t`
+inside `calls`. -/
+def GroupAdmitIn (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (g : Nat) : Prop :=
+  ∃ (h_ga h'_ga : Heap F) (tbl r_ga : SourceValue F) (cs_ga : List (Call F)),
+    TableRep t h_ga tbl ∧
+    ObsFn W "KernelRoles::group_admit" [tbl, .field (g : F)] h_ga r_ga h'_ga cs_ga ∧
+    (⟨"KernelRoles::group_admit", [tbl, .field (g : F)], h_ga⟩ : Call F) ∈ calls ∧
+    (∀ cl ∈ cs_ga, cl ∈ calls)
+
+theorem GroupAdmitIn.mono {cs₁ cs₂ : List (Call F)} {t : Ix.Kernel.RoleTable} {g : Nat}
+    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (h : GroupAdmitIn cs₁ t g) :
+    GroupAdmitIn cs₂ t g := by
+  obtain ⟨h_ga, h'_ga, tbl, r_ga, cs_ga, htbl, ev, hcl, hcs⟩ := h
+  exact ⟨h_ga, h'_ga, tbl, r_ga, cs_ga, htbl, ev, hsub _ hcl, fun cl hm => hsub cl (hcs cl hm)⟩
+
+/-- **What an operation's validation walks of one certificate theorem** `thm`, the operation at
+`a`: the record at `thm` decodes (`rawBytes`, whose BLAKE3 digest is `thm`, to `c`), and every
+reference `c` uses other than `a` was walked inside `calls` (`KernelClaim::run_check_transitive`
+under the context `KernelRoles::walk_ctx` gives it, from the group's validation context). The
+theorem record itself is not walked (`KernelRoles::walk_refs_except`). -/
+def RefsWalkedExceptIn (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
+    (thm a : _root_.Address) : Prop :=
+  ∃ (rawBytes : ByteArray) (c : Ixon.Constant),
+    Address.blake3Pure rawBytes = thm ∧ Ixon.deConstantExact rawBytes = .ok c ∧
+    ∀ j : Nat, (hj : j < c.refs.size) → j ∈ BaseSeams.usedRefIdxs c → c.refs[j] ≠ a →
+      ∃ lim' : Option Nat, RunCheckIn calls t lim' c.refs[j]
+
+theorem RefsWalkedExceptIn.mono {cs₁ cs₂ : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {thm a : _root_.Address} (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (h : RefsWalkedExceptIn cs₁ t thm a) :
+    RefsWalkedExceptIn cs₂ t thm a := by
+  obtain ⟨rawBytes, c, hb, hde, hw⟩ := h
+  exact ⟨rawBytes, c, hb, hde, fun j hj hu hne =>
+    let ⟨lim', hr⟩ := hw j hj hu hne; ⟨lim', hr.mono hsub⟩⟩
+
+/-- The same, the walked records' addresses being `walked`. -/
+def RefsWalkedExcept (thm a : _root_.Address) (walked : List _root_.Address) : Prop :=
+  ∃ (rawBytes : ByteArray) (c : Ixon.Constant),
+    Address.blake3Pure rawBytes = thm ∧ Ixon.deConstantExact rawBytes = .ok c ∧
+    ∀ j : Nat, (hj : j < c.refs.size) → j ∈ BaseSeams.usedRefIdxs c → c.refs[j] ≠ a → c.refs[j] ∈ walked
+
+theorem RefsWalkedExcept.mono {thm a : _root_.Address} {w₁ w₂ : List _root_.Address}
+    (hsub : ∀ x ∈ w₁, x ∈ w₂) (h : RefsWalkedExcept thm a w₁) : RefsWalkedExcept thm a w₂ := by
+  obtain ⟨rawBytes, c, hb, hde, hw⟩ := h
+  exact ⟨rawBytes, c, hb, hde, fun j hj hu hne => hsub _ (hw j hj hu hne)⟩
+
+/-- **What a role's validation walks for one `.proof thm` evidence entry**, as the addresses
+`walked`: an equation role's (kind 5) theorem itself; for an operation (kind 2), the references
+of the theorem's record other than the operation's own address (`RefsWalkedExcept`). -/
+def EvidenceWalked (t : Ix.Kernel.RoleTable) (ro : Ix.Kernel.Role) (thm : _root_.Address)
+    (walked : List _root_.Address) : Prop :=
+  (roleSpecKindNat ro = 5 → thm ∈ walked) ∧
+  (roleSpecKindNat ro = 2 → ∀ a, t.addressOf? ro = some a → RefsWalkedExcept thm a walked)
+
+theorem EvidenceWalked.mono {t : Ix.Kernel.RoleTable} {ro : Ix.Kernel.Role} {thm : _root_.Address}
+    {w₁ w₂ : List _root_.Address} (hsub : ∀ x ∈ w₁, x ∈ w₂) (h : EvidenceWalked t ro thm w₁) :
+    EvidenceWalked t ro thm w₂ :=
+  ⟨fun h5 => hsub _ (h.1 h5), fun h2 a ha => (h.2 h2 a ha).mono hsub⟩
+
+/-- Structural call and walk facts extracted from `KernelRoles::validate_role` on role `ro`
+in group `g` (validated at limit `groupValLimit g`). An evidence theorem is loaded for every
+role with equations; an equation role's is walked itself, an operation's through its references
+other than the operation (`RefsWalkedExceptIn`). -/
+def RoleValidatedAt (t : Ix.Kernel.RoleTable) (calls : List (Call F))
+    (g : Nat) (ro : Ix.Kernel.Role) : Prop :=
+  ∃ a : _root_.Address,
+    t.addressOf? ro = some a ∧
+    GetCiIn calls a ∧
+    (roleWalksBound ro = true → RunCheckIn calls t (some (groupValLimit g)) a) ∧
+    (roleHasEquations ro = true →
+      ∃ arr : Array (Ix.Kernel.Evidence _root_.Address),
+        (ro, arr) ∈ t.evidence.toList ∧
+        0 < arr.size ∧
+        ∀ thm : _root_.Address, .proof thm ∈ arr.toList →
+          GetThmCiIn calls thm ∧
+          (roleSpecKindNat ro = 5 → RunCheckIn calls t (some (groupValLimit g)) thm) ∧
+          (roleSpecKindNat ro = 2 → RefsWalkedExceptIn calls t thm a))
+
+theorem RoleValidatedAt.mono {t : Ix.Kernel.RoleTable} {cs₁ cs₂ : List (Call F)}
+    {g : Nat} {ro : Ix.Kernel.Role}
+    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (hv : RoleValidatedAt t cs₁ g ro) :
+    RoleValidatedAt t cs₂ g ro := by
+  obtain ⟨a, had, hci, hwalk, heqns⟩ := hv
+  refine ⟨a, had, hci.mono hsub, fun hw => (hwalk hw).mono hsub, fun he => ?_⟩
+  obtain ⟨arr, hmem, hpos, hprf⟩ := heqns he
+  refine ⟨arr, hmem, hpos, fun thm hthm => ?_⟩
+  obtain ⟨htci, htw5, htw2⟩ := hprf thm hthm
+  exact ⟨htci.mono hsub, fun h5 => (htw5 h5).mono hsub, fun h2 => (htw2 h2).mono hsub⟩
+
+/-! ## The references of an operation's certificate: `KernelRoles::walk_refs_except` -/
+
+private theorem refs_size_lt_bound' {rawBytes : ByteArray} {c : Ixon.Constant}
+    (hsz : rawBytes.size < 4294967296)
+    (hdeExact : Ixon.deConstantExact rawBytes = .ok c) :
+    c.refs.size < 8589934592 := by
+  have hres := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound rawBytes c hdeExact
+  have hrefs : c.refs.size ≤ c.resourceSize := by
+    dsimp [Ixon.Constant.resourceSize]
+    omega
+  omega
+
+/-- `KernelRoles::walk_covered` on a validating context (`Mk`) answers `0`. -/
+private theorem walk_covered_mk {t : Ix.Kernel.RoleTable} {n : Nat}
+    {x_rc x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : RCRep t (some n) h x_rc)
+    (ev : ObsFn W "KernelRoles::walk_covered" [x_rc, x_a] h r h' calls) :
+    r = .field 0 ∧ h' = h := by
+  obtain ⟨tbl, ax, node, hl, hnode, _⟩ := hrc
+  rcases hnode with ⟨n', _, _, rfl⟩ | ⟨hnone, _⟩
+  · match Obs.«KernelRoles::walk_covered».obs ev with
+    | .Mk (he38 := hr) (he39 := hh) .. => exact ⟨hr, hh⟩
+    | .Assumed_n0 (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Assumed_other (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+  · cases hnone
+
+/-- **`KernelRoles::walk_ctx` under `RCRep`**: the context it returns is a context of the same
+table (the one given, or a validating context at the group limit of the referenced role). -/
+theorem walk_ctx_rcRep {t : Ix.Kernel.RoleTable} {lim : Option Nat}
+    {x_rc x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : RCRep t lim h x_rc)
+    (ev : ObsFn W "KernelRoles::walk_ctx" [x_rc, x_a] h r h' calls) :
+    Heap.Extends h h' ∧ ∃ lim' : Option Nat, RCRep t lim' h' r := by
+  have ext := ev.heap_extends
+  refine ⟨ext, ?_⟩
+  match Obs.«KernelRoles::walk_ctx».obs ev with
+  | .Mk_n0 (he101 := hr) (he102 := hh) .. =>
+    subst hr hh; exact ⟨lim, hrc.mono ext⟩
+  | .Mk_other_n0 (he250 := hr) (he251 := hh) .. =>
+    subst hr hh; exact ⟨lim, hrc.mono ext⟩
+  | .Mk_other_other (x_tbl := x_tbl) (m276 := m276) (ld12 := ld12)
+      (he261 := hr) (hm260 := hh) (ev286 := ev286) .. =>
+    subst hr hh
+    obtain ⟨tbl, ax, node, hl, hnode, htbl⟩ := hrc
+    rw [hl] at ld12
+    injection ld12 with hnode_eq
+    have htbl' : TableRep t h x_tbl := by
+      rcases hnode with ⟨n, _, _, rfl⟩ | ⟨_, rfl⟩
+      · injection hnode_eq with _ _ hargs
+        simp only [List.cons.injEq] at hargs
+        rw [← hargs.1]
+        exact htbl
+      · injection hnode_eq with _ hctor _
+        exact absurd hctor (by decide)
+    obtain ⟨_, g, _, _, rfl⟩ := group_validation_limit_exact ev286
+    exact ⟨some (groupValLimit g), x_tbl, _, _,
+      Claim.loadValue_snoc_construct m276 rcEnum "Mk"
+        [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []],
+      .inl ⟨groupValLimit g, rfl, groupValLimit_lt_u32 g, rfl⟩, htbl'.mono ext⟩
+  | .Assumed (he325 := hr) (he326 := hh) .. =>
+    subst hr hh; exact ⟨lim, hrc.mono ext⟩
+
+/-- `1 - [b = a]` and a field `x` multiply to `1` only when `x = 1` and `b ≠ a`. -/
+private theorem except_guard {x y y' v : SourceValue F} {p : Prop} [Decidable p]
+    (hy : y = .field (if p then 1 else 0))
+    (op1 : evalBinOp .sub (.field 1) y = .ok y')
+    (op2 : evalBinOp .mul x y' = .ok v)
+    (hx : x = .field 1) (hp : ¬ p) : v = .field 1 := by
+  subst hy hx
+  simp only [hp, ↓reduceIte] at op1
+  simp only [evalBinOp, Except.ok.injEq] at op1
+  subst op1
+  simp only [evalBinOp, Except.ok.injEq] at op2
+  rw [← op2]
+  simp
+
+/-- **`KernelRoles::walk_refs_except(rc, refs, used, i, a)`** under a validating context: every
+reference `refs[j]` used at index `i + j`, other than `a`, is walked
+(`KernelClaim::run_check_transitive` under the context `KernelRoles::walk_ctx` gives it). -/
+theorem walk_refs_except_walks {t : Ix.Kernel.RoleTable} {n : Nat} {a : _root_.Address}
+    {idxs : List Nat} :
+    ∀ (refs : List _root_.Address) {i : Nat} {x_rc x_refs x_used x_a r : SourceValue F}
+      {h h' : Heap F} {calls : List (Call F)},
+      i + refs.length < 8589934592 →
+      RCRep t (some n) h x_rc →
+      RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h refs x_refs →
+      Claim.RepSortedIdxFrom h idxs i x_used →
+      BaseSeams.addr h x_a a →
+      ObsFn W "KernelRoles::walk_refs_except" [x_rc, x_refs, x_used, .field (i : F), x_a]
+        h r h' calls →
+      Heap.Extends h h' ∧
+      ∀ j : Nat, (hj : j < refs.length) → i + j ∈ idxs → refs[j] ≠ a →
+        ∃ lim' : Option Nat, RunCheckIn calls t lim' refs[j]
+  | [], i, x_rc, x_refs, x_used, x_a, r, h, h', calls, _, _, hrefs, _, _, ev => by
+    cases Obs.«KernelRoles::walk_refs_except».obs ev with
+    | Nil _ _ he23 _ =>
+      subst he23
+      exact ⟨Heap.Extends.refl _, fun j hj => absurd hj (Nat.not_lt_zero _)⟩
+    | Cons _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ =>
+      obtain ⟨_, _, hbad, -⟩ := Lib.rep_cons_of_load hrefs ld12
+      cases hbad
+  | b :: rest, i, x_rc, x_refs, x_used, x_a, r, h, h', calls, hbound, hrc, hrefs, hidxs, ha, ev => by
+    cases Obs.«KernelRoles::walk_refs_except».obs ev with
+    | Nil ld12 _ _ _ => cases Lib.rep_nil_of_load hrefs ld12
+    | Cons x_b x_rest m_pop cs_pop x_hit x_next_used v264 m265 cs267 cs276 v282
+        ld12 ev_pop sg272 op318 ev278 hc327 =>
+      obtain ⟨b', rest', heq, hb_rep, hrest_rep⟩ := Lib.rep_cons_of_load hrefs ld12
+      injection heq with hb hrs
+      subst hb hrs
+      have hi : i < 72057594037927936 := by simp at hbound; omega
+      obtain ⟨rfl, hiff, hidxs_next⟩ := Claim.sorted_pop_spec idxs hi hidxs ev_pop
+      obtain ⟨b₀, hb₀, hbix⟩ := id hb_rep
+      obtain ⟨a₀, ha₀, haix⟩ := id ha
+      have hseg : Heap.Extends h m265 ∧
+          (i ∈ idxs → b ≠ a → ∃ lim' : Option Nat, RunCheckIn cs267 t lim' b) := by
+        cases sg272 with
+        | n1_n0 m43 y52 y82 cs92 v115 m116 cs126 m146 cs157 v180 m181 cs191
+            cs205 v208 m211 cs219 ev94 _ _ ev128 ev159 ev193 ev221 ev207 hc245 =>
+          obtain ⟨_, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
+          have e1 : Heap.Extends h m181 :=
+            ev128.heap_extends.trans (ev159.heap_extends.trans ev193.heap_extends)
+          obtain ⟨e2, lim', hrc'⟩ := walk_ctx_rcRep (hrc.mono e1) ev221
+          have ha_m211 : BaseSeams.addr m211 x_b b := BaseSeams.addr_mono (e1.trans e2) hb_rep
+          exact ⟨e1.trans (e2.trans ev207.heap_extends), fun _ _ =>
+            ⟨lim', m211, m265, v208, x_b, v264, cs205, hrc', ha_m211, ev207,
+              by rw [hc245]; simp, fun cl hm => by rw [hc245]; simp [hm]⟩⟩
+        | n1_other m43 y52 y82 cs92 v115 m116 cs126 v145 m146 cs157
+            ev94 _ _ ev128 ev159 hne246 _ _ _ =>
+          obtain ⟨_, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
+          obtain ⟨hv, _⟩ := walk_covered_mk (hrc.mono ev128.heap_extends) ev159
+          exact absurd hv hne246
+        | other v42 m43 y52 y82 cs92 ev94 op88 op58 hne255 _ he262 _ =>
+          obtain ⟨hy, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
+          refine ⟨by rw [he262], fun hin hne => ?_⟩
+          exfalso
+          have hba : ¬ b₀ = a₀ := fun e => hne (by rw [← hbix, ← haix, e])
+          exact hne255 (except_guard hy op88 op58 (hiff.mpr hin) hba)
+      obtain ⟨ext1, hhead⟩ := hseg
+      simp only [evalBinOp, Except.ok.injEq] at op318
+      subst op318
+      have hv_inc : ((i : F) + 1) = ((i + 1 : Nat) : F) := by push_cast; rfl
+      rw [hv_inc] at ev278
+      have hbound' : (i + 1) + rest.length < 8589934592 := by simp at hbound; omega
+      obtain ⟨ext2, htail⟩ :=
+        walk_refs_except_walks rest hbound' (hrc.mono ext1)
+          (repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ ext1 hrest_rep)
+          (hidxs_next.mono ext1)
+          (BaseSeams.addr_mono ext1 ha) ev278
+      have hsub1 : ∀ cl ∈ cs267, cl ∈ calls := fun cl hm => by rw [hc327]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs276, cl ∈ calls := fun cl hm => by rw [hc327]; simp [hm]
+      refine ⟨ext1.trans ext2, fun j hj hij hne => ?_⟩
+      cases j with
+      | zero =>
+        obtain ⟨lim', hr⟩ := hhead (by simpa using hij) (by simpa using hne)
+        exact ⟨lim', by simpa using hr.mono hsub1⟩
+      | succ j' =>
+        have hj' : j' < rest.length := by simpa using hj
+        obtain ⟨lim', hr⟩ := htail j' hj' (by rw [show i + 1 + j' = i + (j' + 1) by omega]; exact hij)
+          (by simpa using hne)
+        exact ⟨lim', by simpa using hr.mono hsub2⟩
+
+/-- **`KernelRoles::walk_refs_except`** under a full validating context: the same references
+are among a closed list of walked records. -/
+theorem walk_refs_except_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {n : Nat}
+    {a : _root_.Address} {idxs : List Nat} :
+    ∀ (refs : List _root_.Address) {i : Nat} {x_rc x_refs x_used x_a r : SourceValue F}
+      {h h' : Heap F} {calls : List (Call F)},
+      i + refs.length < 8589934592 →
+      Claim.RCFullRep t bAddr n h x_rc →
+      RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h refs x_refs →
+      Claim.RepSortedIdxFrom h idxs i x_used →
+      BaseSeams.addr h x_a a →
+      ObsFn W "KernelRoles::walk_refs_except" [x_rc, x_refs, x_used, .field (i : F), x_a]
+        h r h' calls →
+      Heap.Extends h h' ∧
+      ∃ recs : List (Claim.WalkedRec calls bAddr t),
+        Claim.RecsClosed recs ∧
+        ∀ j : Nat, (hj : j < refs.length) → i + j ∈ idxs → refs[j] ≠ a →
+          refs[j] ∈ recs.map (·.addr)
+  | [], i, x_rc, x_refs, x_used, x_a, r, h, h', calls, _, _, hrefs, _, _, ev => by
+    cases Obs.«KernelRoles::walk_refs_except».obs ev with
+    | Nil _ _ he23 _ =>
+      subst he23
+      exact ⟨Heap.Extends.refl _, [], by simp [Claim.RecsClosed],
+        fun j hj => absurd hj (Nat.not_lt_zero _)⟩
+    | Cons _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ =>
+      obtain ⟨_, _, hbad, -⟩ := Lib.rep_cons_of_load hrefs ld12
+      cases hbad
+  | b :: rest, i, x_rc, x_refs, x_used, x_a, r, h, h', calls, hbound, hrc, hrefs, hidxs, ha, ev => by
+    cases Obs.«KernelRoles::walk_refs_except».obs ev with
+    | Nil ld12 _ _ _ => cases Lib.rep_nil_of_load hrefs ld12
+    | Cons x_b x_rest m_pop cs_pop x_hit x_next_used v264 m265 cs267 cs276 v282
+        ld12 ev_pop sg272 op318 ev278 hc327 =>
+      obtain ⟨b', rest', heq, hb_rep, hrest_rep⟩ := Lib.rep_cons_of_load hrefs ld12
+      injection heq with hb hrs
+      subst hb hrs
+      have hi : i < 72057594037927936 := by simp at hbound; omega
+      obtain ⟨rfl, hiff, hidxs_next⟩ := Claim.sorted_pop_spec idxs hi hidxs ev_pop
+      obtain ⟨b₀, hb₀, hbix⟩ := id hb_rep
+      obtain ⟨a₀, ha₀, haix⟩ := id ha
+      have hseg : Heap.Extends h m265 ∧
+          ∃ recs₁ : List (Claim.WalkedRec cs267 bAddr t),
+            Claim.RecsClosed recs₁ ∧ (i ∈ idxs → b ≠ a → b ∈ recs₁.map (·.addr)) := by
+        cases sg272 with
+        | n1_n0 m43 y52 y82 cs92 v115 m116 cs126 m146 cs157 v180 m181 cs191
+            cs205 v208 m211 cs219 ev94 _ _ ev128 ev159 ev193 ev221 ev207 hc245 =>
+          obtain ⟨_, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
+          have e1 : Heap.Extends h m181 :=
+            ev128.heap_extends.trans (ev159.heap_extends.trans ev193.heap_extends)
+          obtain ⟨e2, lim', hrc'⟩ := Claim.walk_ctx_spec (hrc.mono e1) ev221
+          have ha_m211 : BaseSeams.addr m211 x_b b := BaseSeams.addr_mono (e1.trans e2) hb_rep
+          obtain ⟨e3, recs_w, hmem_w, hcl_w, _⟩ := Claim.run_check_transitive_spec hrc' ha_m211 ev207
+          have hsub_w : ∀ cl ∈ cs205, cl ∈ cs267 := fun cl hm => by rw [hc245]; simp [hm]
+          refine ⟨e1.trans (e2.trans e3), recs_w.map (Claim.WalkedRec.mono hsub_w),
+            hcl_w.mono hsub_w, fun _ _ => ?_⟩
+          rw [Claim.map_addr_walkedRec_mono]
+          exact hmem_w
+        | n1_other m43 y52 y82 cs92 v115 m116 cs126 v145 m146 cs157
+            ev94 _ _ ev128 ev159 hne246 _ _ _ =>
+          obtain ⟨_, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
+          obtain ⟨hv, _⟩ := Claim.walk_covered_spec (hrc.mono ev128.heap_extends) ev159
+          exact absurd hv hne246
+        | other v42 m43 y52 y82 cs92 ev94 op88 op58 hne255 _ he262 _ =>
+          obtain ⟨hy, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
+          refine ⟨by rw [he262], [], by simp [Claim.RecsClosed], fun hin hne => ?_⟩
+          exfalso
+          have hba : ¬ b₀ = a₀ := fun e => hne (by rw [← hbix, ← haix, e])
+          exact hne255 (except_guard hy op88 op58 (hiff.mpr hin) hba)
+      obtain ⟨ext1, recs₁, hcl₁, hhead⟩ := hseg
+      simp only [evalBinOp, Except.ok.injEq] at op318
+      subst op318
+      have hv_inc : ((i : F) + 1) = ((i + 1 : Nat) : F) := by push_cast; rfl
+      rw [hv_inc] at ev278
+      have hbound' : (i + 1) + rest.length < 8589934592 := by simp at hbound; omega
+      obtain ⟨ext2, recs₂, hcl₂, htail⟩ :=
+        walk_refs_except_full_walks rest hbound' (hrc.mono ext1)
+          (repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ ext1 hrest_rep)
+          (hidxs_next.mono ext1)
+          (BaseSeams.addr_mono ext1 ha) ev278
+      have hsub1 : ∀ cl ∈ cs267, cl ∈ calls := fun cl hm => by rw [hc327]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs276, cl ∈ calls := fun cl hm => by rw [hc327]; simp [hm]
+      refine ⟨ext1.trans ext2,
+        recs₁.map (Claim.WalkedRec.mono hsub1) ++ recs₂.map (Claim.WalkedRec.mono hsub2),
+        (hcl₁.mono hsub1).append (hcl₂.mono hsub2), fun j hj hij hne => ?_⟩
+      rw [List.map_append, Claim.map_addr_walkedRec_mono, Claim.map_addr_walkedRec_mono]
+      cases j with
+      | zero =>
+        exact List.mem_append_left _ (by simpa using hhead (by simpa using hij) (by simpa using hne))
+      | succ j' =>
+        have hj' : j' < rest.length := by simpa using hj
+        have hij' : i + 1 + j' ∈ idxs := by rw [show i + 1 + j' = i + (j' + 1) by omega]; exact hij
+        have hne' : rest[j'] ≠ a := by simpa using hne
+        exact List.mem_append_right _ (by simpa using htail j' hj' hij' hne')
+
+/-! ## Equation loops: `validate_op_equations` and `validate_eqns_equations` -/
+
+private theorem evRep_proof_inv {h : Heap F} {thm : _root_.Address} {x_e x_thm : SourceValue F}
+    (hev : EvRep h (.proof thm) x_e)
+    (hx : x_e = .construct "KernelRoles::RoleEvidence" "Proof" [x_thm]) :
+    BaseSeams.addr h x_thm thm := by
+  rcases hev with ⟨hdef, _⟩ | ⟨a, p, hprf, hv, ha⟩
+  · cases hdef
+  · injection hprf with hix
+    rw [hx] at hv
+    injection hv with _ _ hargs
+    injection hargs with hp _
+    subst hp
+    exact ⟨a, ha, hix.symm⟩
+
+private theorem evRep_proof_not_defeq {h : Heap F} {thm : _root_.Address} {x_e : SourceValue F}
+    (hev : EvRep h (.proof thm) x_e)
+    (hx : x_e = .construct "KernelRoles::RoleEvidence" "Defeq" []) : False := by
+  rcases hev with ⟨hdef, _⟩ | ⟨_, p, _, hv, _⟩
+  · cases hdef
+  · rw [hx] at hv
+    exact RolesAux.construct_ctor_ne (by decide) hv
+
+/-- The proof arm of `KernelRoles::validate_op_equations` on `Proof(thm)`: the theorem loaded,
+and its references other than the operation's address `a` walked (`walk_refs_except`). -/
+private theorem validate_op_equations_walks {t : Ix.Kernel.RoleTable} {n : Nat}
+    {a : _root_.Address} {es : List (Ix.Kernel.Evidence _root_.Address)} :
+    ∀ {x_rc x_tbl x_r x_a x_val x_ev x_k r : SourceValue F} {h h' : Heap F}
+      {calls : List (Call F)},
+      RCRep t (some n) h x_rc →
+      BaseSeams.addr h x_a a →
+      RepList evListEnum EvRep h es x_ev →
+      ObsFn W "KernelRoles::validate_op_equations" [x_rc, x_tbl, x_r, x_a, x_val, x_ev, x_k]
+        h r h' calls →
+      Heap.Extends h h' ∧
+      ∀ thm : _root_.Address, .proof thm ∈ es →
+        GetThmCiIn calls thm ∧ RefsWalkedExceptIn calls t thm a
+  | x_rc, x_tbl, x_r, x_a, x_val, x_ev, x_k, r, h, h', calls, hrc, ha, hlist, ev => by
+    cases Obs.«KernelRoles::validate_op_equations».obs ev with
+    | Nil ld12 _ he23 _ =>
+      rw [← evListEnum] at ld12
+      obtain rfl := Lib.rep_nil_of_load hlist ld12
+      subst he23
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm)⟩
+    | Cons x_e x_rest v1048 m1049 cs1051 cs1060 v1069 ld12 sg1056 _ ev1062 hc1127 =>
+      rw [← evListEnum] at ld12
+      obtain ⟨e, rest, rfl, he_rep, hrest_rep⟩ := Lib.rep_cons_of_load hlist ld12
+      have tailMember : (⟨"KernelRoles::validate_op_equations",
+          [x_rc, x_tbl, x_r, x_a, x_val, x_rest, v1069], m1049⟩ : Call F) ∈ calls := by
+        rw [hc1127]; simp
+      have ext_seg_all : Heap.Extends h m1049 := (ev.call_heap_bounds tailMember).1
+      have hseg : Heap.Extends h m1049 ∧
+          (∀ thm : _root_.Address, e = .proof thm →
+            GetThmCiIn cs1051 thm ∧ RefsWalkedExceptIn cs1051 t thm a) := by
+        match sg1056 with
+        | .n0_Defeq (hv83 := hv83) .. =>
+          refine ⟨ext_seg_all, fun thm he => ?_⟩
+          have he_prf : EvRep h (.proof thm) x_e := by rwa [← he]
+          exact (evRep_proof_not_defeq he_prf hv83).elim
+        | .n0_Proof (heq379 := heq) .. => exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Defeq (heq431 := heq) .. => exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_Defn_other (heq1257 := heq) .. =>
+          exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_other (heq1904 := heq) .. =>
+          exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_Defn_Theorem
+            (m43 := roleHeap) (x_thm := thmPtr) (m450 := rawHeap) (w496 := refsPtr)
+            (m615 := ciHeap) (p623 := ciPtr) (cs629 := ciCalls)
+            (x_nlvls := levels) (w646 := typeVal) (x_pval := proofVal)
+            (m728 := scopeHeap) (m809 := idxHeap) (m831 := walkHeap) (cs887 := walkCalls)
+            (ev56 := roleRun) (hv442 := proofShape) (ev462 := rawRun)
+            (ev631 := ciRun) (ld625 := ciLoad) (ev702 := substRun) (ev740 := scopeRun)
+            (ev821 := idxRun) (ev843 := guardRun) (ev889 := walkRun) (hc1225 := segCalls) .. =>
+          have extRole := roleRun.heap_extends
+          have extRaw := rawRun.heap_extends
+          have extToScope := ciRun.heap_extends.trans (substRun.heap_extends.trans scopeRun.heap_extends)
+          refine ⟨ext_seg_all, fun thm he => ?_⟩
+          have he_prf : EvRep h (.proof thm) x_e := by rwa [← he]
+          have ha_h : BaseSeams.addr h thmPtr thm := evRep_proof_inv he_prf proofShape
+          have ha_raw : BaseSeams.addr roleHeap thmPtr _ := BaseSeams.addr_mono extRole ha_h
+          obtain ⟨_, rawBytes, c, hsz, _, hblk, _, hdeExact, hrep, _⟩ :=
+            Claim.load_verified_constant_de ha_raw rawRun
+          obtain ⟨extIdx, hidxs⟩ := Claim.const_idxs_of_spec (hrep.mono extToScope) idxRun
+          have extRawWalk : Heap.Extends rawHeap walkHeap :=
+            extToScope.trans (extIdx.trans guardRun.heap_extends)
+          have hrefs_rep : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem walkHeap
+              c.refs.toList refsPtr := by
+            obtain ⟨_, _, refsVal, _, _, hv_c, _, _, hr_list, _, _⟩ := hrep
+            injection hv_c with _ _ hargs_c
+            simp only [List.cons.injEq] at hargs_c
+            rw [← hargs_c.2.2.1] at hr_list
+            exact repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ extRawWalk hr_list
+          have hidxsWalk := hidxs.mono guardRun.heap_extends
+          have hbound : 0 + c.refs.toList.length < 8589934592 := by
+            rw [Nat.zero_add, Array.length_toList]
+            exact refs_size_lt_bound' hsz hdeExact
+          have extWalk : Heap.Extends h walkHeap := extRole.trans (extRaw.trans extRawWalk)
+          have hsub_w : ∀ cl ∈ walkCalls, cl ∈ cs1051 := fun cl hm => by rw [segCalls]; simp [hm]
+          obtain ⟨_, hwalk⟩ := walk_refs_except_walks c.refs.toList hbound (hrc.mono extWalk)
+            hrefs_rep hidxsWalk (BaseSeams.addr_mono extWalk ha) walkRun
+          have ha_ci : BaseSeams.addr rawHeap thmPtr thm := BaseSeams.addr_mono extRaw ha_raw
+          refine ⟨⟨rawHeap, ciHeap, thmPtr, ciPtr, levels, typeVal, proofVal, ciCalls,
+            ha_ci, ciRun, by rw [segCalls]; simp, fun cl hm => by rw [segCalls]; simp [hm], ciLoad⟩,
+            rawBytes, c, hblk, hdeExact, fun j hj hu hne => ?_⟩
+          have hj' : j < c.refs.toList.length := by rwa [Array.length_toList]
+          obtain ⟨lim', hr⟩ := hwalk j hj' (by simpa using hu) (by simpa using hne)
+          exact ⟨lim', by simpa using hr.mono hsub_w⟩
+      obtain ⟨ext1, hhead⟩ := hseg
+      have hsub1 : ∀ cl ∈ cs1051, cl ∈ calls := fun cl hm => by rw [hc1127]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs1060, cl ∈ calls := fun cl hm => by rw [hc1127]; simp [hm]
+      obtain ⟨ext2, htail⟩ :=
+        validate_op_equations_walks (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha)
+          (repList_heapMono₂ evListEnum evRep_heapMono₂ ext1 hrest_rep) ev1062
+      refine ⟨ext1.trans ext2, fun thm hmem => ?_⟩
+      rcases List.mem_cons.mp hmem with he | hrest
+      · obtain ⟨hci, hrw⟩ := hhead thm he.symm
+        exact ⟨hci.mono hsub1, hrw.mono hsub1⟩
+      · obtain ⟨hci, hrw⟩ := htail thm hrest
+        exact ⟨hci.mono hsub2, hrw.mono hsub2⟩
+
+/-- The same under a full validating context: the walked references are among a closed list of
+walked records. -/
+private theorem validate_op_equations_full_walks {t : Ix.Kernel.RoleTable}
+    {bAddr : _root_.Address} {n : Nat} {a : _root_.Address}
+    {es : List (Ix.Kernel.Evidence _root_.Address)} :
+    ∀ {x_rc x_tbl x_r x_a x_val x_ev x_k r : SourceValue F} {h h' : Heap F}
+      {calls : List (Call F)},
+      Claim.RCFullRep t bAddr n h x_rc →
+      BaseSeams.addr h x_a a →
+      RepList evListEnum EvRep h es x_ev →
+      ObsFn W "KernelRoles::validate_op_equations" [x_rc, x_tbl, x_r, x_a, x_val, x_ev, x_k]
+        h r h' calls →
+      Heap.Extends h h' ∧
+      ∃ recs : List (Claim.WalkedRec calls bAddr t),
+        Claim.RecsClosed recs ∧
+        ∀ thm : _root_.Address, .proof thm ∈ es → RefsWalkedExcept thm a (recs.map (·.addr))
+  | x_rc, x_tbl, x_r, x_a, x_val, x_ev, x_k, r, h, h', calls, hrc, ha, hlist, ev => by
+    cases Obs.«KernelRoles::validate_op_equations».obs ev with
+    | Nil ld12 _ he23 _ =>
+      rw [← evListEnum] at ld12
+      obtain rfl := Lib.rep_nil_of_load hlist ld12
+      subst he23
+      exact ⟨Heap.Extends.refl _, [], by simp [Claim.RecsClosed], fun _ hm => (nomatch hm)⟩
+    | Cons x_e x_rest v1048 m1049 cs1051 cs1060 v1069 ld12 sg1056 _ ev1062 hc1127 =>
+      rw [← evListEnum] at ld12
+      obtain ⟨e, rest, rfl, he_rep, hrest_rep⟩ := Lib.rep_cons_of_load hlist ld12
+      have tailMember : (⟨"KernelRoles::validate_op_equations",
+          [x_rc, x_tbl, x_r, x_a, x_val, x_rest, v1069], m1049⟩ : Call F) ∈ calls := by
+        rw [hc1127]; simp
+      have ext_seg_all : Heap.Extends h m1049 := (ev.call_heap_bounds tailMember).1
+      have hseg : Heap.Extends h m1049 ∧
+          ∃ recs₁ : List (Claim.WalkedRec cs1051 bAddr t),
+            Claim.RecsClosed recs₁ ∧
+            (∀ thm : _root_.Address, e = .proof thm → RefsWalkedExcept thm a (recs₁.map (·.addr))) := by
+        match sg1056 with
+        | .n0_Defeq (hv83 := hv83) .. =>
+          refine ⟨ext_seg_all, [], by simp [Claim.RecsClosed], fun thm he => ?_⟩
+          have he_prf : EvRep h (.proof thm) x_e := by rwa [← he]
+          exact (evRep_proof_not_defeq he_prf hv83).elim
+        | .n0_Proof (heq379 := heq) .. => exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Defeq (heq431 := heq) .. => exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_Defn_other (heq1257 := heq) .. =>
+          exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_other (heq1904 := heq) .. =>
+          exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_Defn_Theorem
+            (m43 := roleHeap) (x_thm := thmPtr) (m450 := rawHeap) (w496 := refsPtr)
+            (m615 := ciHeap) (p623 := ciPtr) (cs629 := ciCalls)
+            (x_nlvls := levels) (w646 := typeVal) (x_pval := proofVal)
+            (m728 := scopeHeap) (m809 := idxHeap) (m831 := walkHeap) (cs887 := walkCalls)
+            (ev56 := roleRun) (hv442 := proofShape) (ev462 := rawRun)
+            (ev631 := ciRun) (ld625 := ciLoad) (ev702 := substRun) (ev740 := scopeRun)
+            (ev821 := idxRun) (ev843 := guardRun) (ev889 := walkRun) (hc1225 := segCalls) .. =>
+          have extRole := roleRun.heap_extends
+          have extRaw := rawRun.heap_extends
+          have extToScope := ciRun.heap_extends.trans (substRun.heap_extends.trans scopeRun.heap_extends)
+          cases e with
+          | defeq => exact ⟨ext_seg_all, [], by simp [Claim.RecsClosed], fun _ he => by cases he⟩
+          | proof thm₀ =>
+            have ha_h : BaseSeams.addr h thmPtr thm₀ := evRep_proof_inv he_rep proofShape
+            have ha_raw : BaseSeams.addr roleHeap thmPtr _ := BaseSeams.addr_mono extRole ha_h
+            obtain ⟨_, rawBytes, c, hsz, _, hblk, _, hdeExact, hrep, _⟩ :=
+              Claim.load_verified_constant_de ha_raw rawRun
+            obtain ⟨extIdx, hidxs⟩ := Claim.const_idxs_of_spec (hrep.mono extToScope) idxRun
+            have extRawWalk : Heap.Extends rawHeap walkHeap :=
+              extToScope.trans (extIdx.trans guardRun.heap_extends)
+            have hrefs_rep : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem walkHeap
+                c.refs.toList refsPtr := by
+              obtain ⟨_, _, refsVal, _, _, hv_c, _, _, hr_list, _, _⟩ := hrep
+              injection hv_c with _ _ hargs_c
+              simp only [List.cons.injEq] at hargs_c
+              rw [← hargs_c.2.2.1] at hr_list
+              exact repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ extRawWalk hr_list
+            have hidxsWalk := hidxs.mono guardRun.heap_extends
+            have hbound : 0 + c.refs.toList.length < 8589934592 := by
+              rw [Nat.zero_add, Array.length_toList]
+              exact refs_size_lt_bound' hsz hdeExact
+            have extWalk : Heap.Extends h walkHeap := extRole.trans (extRaw.trans extRawWalk)
+            have hsub_w : ∀ cl ∈ walkCalls, cl ∈ cs1051 := fun cl hm => by rw [segCalls]; simp [hm]
+            obtain ⟨_, recs_w, hcl_w, hwalk⟩ := walk_refs_except_full_walks c.refs.toList hbound
+              (hrc.mono extWalk) hrefs_rep hidxsWalk (BaseSeams.addr_mono extWalk ha) walkRun
+            refine ⟨ext_seg_all, recs_w.map (Claim.WalkedRec.mono hsub_w), hcl_w.mono hsub_w,
+              fun thm he => ?_⟩
+            injection he with hthm
+            subst hthm
+            refine ⟨rawBytes, c, hblk, hdeExact, fun j hj hu hne => ?_⟩
+            have hj' : j < c.refs.toList.length := by rwa [Array.length_toList]
+            rw [Claim.map_addr_walkedRec_mono]
+            simpa using hwalk j hj' (by simpa using hu) (by simpa using hne)
+      obtain ⟨ext1, recs₁, hcl₁, hhead⟩ := hseg
+      obtain ⟨ext2, recs₂, hcl₂, htail⟩ :=
+        validate_op_equations_full_walks (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha)
+          (repList_heapMono₂ evListEnum evRep_heapMono₂ ext1 hrest_rep) ev1062
+      have hsub1 : ∀ cl ∈ cs1051, cl ∈ calls := fun cl hm => by rw [hc1127]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs1060, cl ∈ calls := fun cl hm => by rw [hc1127]; simp [hm]
+      refine ⟨ext1.trans ext2,
+        recs₁.map (Claim.WalkedRec.mono hsub1) ++ recs₂.map (Claim.WalkedRec.mono hsub2),
+        (hcl₁.mono hsub1).append (hcl₂.mono hsub2), fun thm hmem => ?_⟩
+      rw [List.map_append, Claim.map_addr_walkedRec_mono, Claim.map_addr_walkedRec_mono]
+      rcases List.mem_cons.mp hmem with he | hrest
+      · exact (hhead thm he.symm).mono (fun _ hx => List.mem_append_left _ hx)
+      · exact (htail thm hrest).mono (fun _ hx => List.mem_append_right _ hx)
+
+private theorem validate_eqns_equations_walks {t : Ix.Kernel.RoleTable} {lim : Option Nat}
+    {es : List (Ix.Kernel.Evidence _root_.Address)} :
+    ∀ {x_rc x_tbl x_r x_ev x_k r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      RCRep t lim h x_rc →
+      RepList evListEnum EvRep h es x_ev →
+      ObsFn W "KernelRoles::validate_eqns_equations" [x_rc, x_tbl, x_r, x_ev, x_k] h r h' calls →
+      Heap.Extends h h' ∧
+      ∀ thm : _root_.Address, .proof thm ∈ es →
+        GetThmCiIn calls thm ∧ RunCheckIn calls t lim thm
+  | x_rc, x_tbl, x_r, x_ev, x_k, r, h, h', calls, hrc, hlist, ev => by
+    cases Obs.«KernelRoles::validate_eqns_equations».obs ev with
+    | Nil ld12 _ he23 _ =>
+      rw [← evListEnum] at ld12
+      obtain rfl := Lib.rep_nil_of_load hlist ld12
+      subst he23
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm)⟩
+    | Cons x_e x_rest v432 m433 cs435 cs444 v451 ld12 sg440 _ ev446 hc495 =>
+      rw [← evListEnum] at ld12
+      obtain ⟨e, rest, rfl, he_rep, hrest_rep⟩ := Lib.rep_cons_of_load hlist ld12
+      have hseg : Heap.Extends h m433 ∧
+          (∀ thm : _root_.Address, e = .proof thm →
+            GetThmCiIn cs435 thm ∧ RunCheckIn cs435 t lim thm) := by
+        cases sg440 with
+        | Defeq _ m72 _ _ m120 _ _ _ m143 _ m179 _ m215
+            hv56 ev82 _ ev153 ev189 hm223 ev130 _ _ he237 _ =>
+          have ext_seg : Heap.Extends h m433 := by
+            rw [he237]
+            exact ev82.heap_extends.trans (ev153.heap_extends.trans (ev189.heap_extends.trans
+              ((by rw [hm223]; exact Heap.Extends.snoc m179 _ : Heap.Extends m179 m215).trans
+                ev130.heap_extends)))
+          refine ⟨ext_seg, fun thm he => ?_⟩
+          have he_prf : EvRep h (.proof thm) x_e := by rwa [← he]
+          exact (evRep_proof_not_defeq he_prf hv56).elim
+        | Proof x_thm m252 p260 cs266 x_nlvls x_tty w283 v311 m320 cs328
+            v340 m341 cs351 cs373 v378 m394 cs402
+            _ hv244 ev268 ld262 ev330 _ ev353 ev404 ev375 hc429 =>
+          have ext_seg : Heap.Extends h m433 :=
+            ev268.heap_extends.trans (ev330.heap_extends.trans (ev353.heap_extends.trans
+              (ev404.heap_extends.trans ev375.heap_extends)))
+          refine ⟨ext_seg, fun thm he => ?_⟩
+          have he_prf : EvRep h (.proof thm) x_e := by rwa [← he]
+          have ha_h : BaseSeams.addr h x_thm thm := evRep_proof_inv he_prf hv244
+          have ha_m320 : BaseSeams.addr m320 x_thm thm :=
+            BaseSeams.addr_mono (ev268.heap_extends.trans ev330.heap_extends) ha_h
+          have hrc_m320 : RCRep t lim m320 x_rc :=
+            hrc.mono (ev268.heap_extends.trans ev330.heap_extends)
+          refine ⟨⟨h, m252, x_thm, p260, x_nlvls, x_tty, w283, cs266, ha_h, ev268,
+            by rw [hc429]; simp, fun cl hm => by rw [hc429]; simp [hm], ld262⟩,
+            ⟨m320, m341, x_rc, x_thm, v340, cs351, hrc_m320, ha_m320, ev353,
+              by rw [hc429]; simp, fun cl hm => by rw [hc429]; simp [hm]⟩⟩
+      obtain ⟨ext1, hhead⟩ := hseg
+      have hsub1 : ∀ cl ∈ cs435, cl ∈ calls := fun cl hm => by rw [hc495]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs444, cl ∈ calls := fun cl hm => by rw [hc495]; simp [hm]
+      obtain ⟨ext2, htail⟩ :=
+        validate_eqns_equations_walks (hrc.mono ext1)
+          (repList_heapMono₂ evListEnum evRep_heapMono₂ ext1 hrest_rep) ev446
+      refine ⟨ext1.trans ext2, fun thm hmem => ?_⟩
+      rcases List.mem_cons.mp hmem with he | hrest
+      · obtain ⟨hci, hrw⟩ := hhead thm he.symm
+        exact ⟨hci.mono hsub1, hrw.mono hsub1⟩
+      · obtain ⟨hci, hrw⟩ := htail thm hrest
+        exact ⟨hci.mono hsub2, hrw.mono hsub2⟩
+
+private theorem validate_eqns_equations_full_walks {t : Ix.Kernel.RoleTable}
+    {bAddr : _root_.Address} {lim : Nat}
+    {es : List (Ix.Kernel.Evidence _root_.Address)} :
+    ∀ {x_rc x_tbl x_r x_ev x_k r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      Claim.RCFullRep t bAddr lim h x_rc →
+      RepList evListEnum EvRep h es x_ev →
+      ObsFn W "KernelRoles::validate_eqns_equations" [x_rc, x_tbl, x_r, x_ev, x_k] h r h' calls →
+      Heap.Extends h h' ∧
+      ∃ recs : List (Claim.WalkedRec calls bAddr t),
+        Claim.RecsClosed recs ∧
+        ∀ thm : _root_.Address, .proof thm ∈ es → thm ∈ recs.map (·.addr)
+  | x_rc, x_tbl, x_r, x_ev, x_k, r, h, h', calls, hrc, hlist, ev => by
+    cases Obs.«KernelRoles::validate_eqns_equations».obs ev with
+    | Nil ld12 _ he23 _ =>
+      rw [← evListEnum] at ld12
+      obtain rfl := Lib.rep_nil_of_load hlist ld12
+      subst he23
+      exact ⟨Heap.Extends.refl _, [], by simp [Claim.RecsClosed], fun _ hm => (nomatch hm)⟩
+    | Cons x_e x_rest v432 m433 cs435 cs444 v451 ld12 sg440 _ ev446 hc495 =>
+      rw [← evListEnum] at ld12
+      obtain ⟨e, rest, rfl, he_rep, hrest_rep⟩ := Lib.rep_cons_of_load hlist ld12
+      have hseg : Heap.Extends h m433 ∧
+          ∃ recs₁ : List (Claim.WalkedRec cs435 bAddr t),
+            Claim.RecsClosed recs₁ ∧
+            (∀ thm : _root_.Address, e = .proof thm → thm ∈ recs₁.map (·.addr)) := by
+        cases sg440 with
+        | Defeq _ m72 _ _ m120 _ _ _ m143 _ m179 _ m215
+            hv56 ev82 _ ev153 ev189 hm223 ev130 _ _ he237 _ =>
+          have ext_seg : Heap.Extends h m433 := by
+            rw [he237]
+            exact ev82.heap_extends.trans (ev153.heap_extends.trans (ev189.heap_extends.trans
+              ((by rw [hm223]; exact Heap.Extends.snoc m179 _ : Heap.Extends m179 m215).trans
+                ev130.heap_extends)))
+          refine ⟨ext_seg, [], by simp [Claim.RecsClosed], fun thm he => ?_⟩
+          have he_prf : EvRep h (.proof thm) x_e := by rwa [← he]
+          exact (evRep_proof_not_defeq he_prf hv56).elim
+        | Proof x_thm m252 p260 cs266 x_nlvls x_tty w283 v311 m320 cs328
+            v340 m341 cs351 cs373 v378 m394 cs402
+            _ hv244 ev268 _ ev330 _ ev353 ev404 ev375 hc429 =>
+          have ext_seg : Heap.Extends h m433 :=
+            ev268.heap_extends.trans (ev330.heap_extends.trans (ev353.heap_extends.trans
+              (ev404.heap_extends.trans ev375.heap_extends)))
+          cases e with
+          | defeq =>
+            exact ⟨ext_seg, [], by simp [Claim.RecsClosed], fun _ he => by cases he⟩
+          | proof thm₀ =>
+            have ha_h : BaseSeams.addr h x_thm thm₀ := evRep_proof_inv he_rep hv244
+            have ha_m320 : BaseSeams.addr m320 x_thm thm₀ :=
+              BaseSeams.addr_mono (ev268.heap_extends.trans ev330.heap_extends) ha_h
+            have hrc_m320 : Claim.RCFullRep t bAddr lim m320 x_rc :=
+              hrc.mono (ev268.heap_extends.trans ev330.heap_extends)
+            obtain ⟨_, recs_w, hmem_w, hcl_w, _⟩ :=
+              Claim.run_check_transitive_spec hrc_m320 ha_m320 ev353
+            have hsub_w : ∀ cl ∈ cs351, cl ∈ cs435 := fun cl hm => by rw [hc429]; simp [hm]
+            refine ⟨ext_seg, recs_w.map (Claim.WalkedRec.mono hsub_w), hcl_w.mono hsub_w,
+              fun thm he => ?_⟩
+            injection he with hthm
+            subst hthm
+            rw [Claim.map_addr_walkedRec_mono]
+            exact hmem_w
+      obtain ⟨ext1, recs₁, hcl₁, hhead⟩ := hseg
+      obtain ⟨ext2, recs₂, hcl₂, htail⟩ :=
+        validate_eqns_equations_full_walks (hrc.mono ext1)
+          (repList_heapMono₂ evListEnum evRep_heapMono₂ ext1 hrest_rep) ev446
+      have hsub1 : ∀ cl ∈ cs435, cl ∈ calls := fun cl hm => by rw [hc495]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs444, cl ∈ calls := fun cl hm => by rw [hc495]; simp [hm]
+      refine ⟨ext1.trans ext2,
+        recs₁.map (Claim.WalkedRec.mono hsub1) ++ recs₂.map (Claim.WalkedRec.mono hsub2),
+        (hcl₁.mono hsub1).append (hcl₂.mono hsub2), fun thm hmem => ?_⟩
+      rw [List.map_append, Claim.map_addr_walkedRec_mono, Claim.map_addr_walkedRec_mono]
+      rcases List.mem_cons.mp hmem with he | hrest
+      · exact List.mem_append_left _ (hhead thm he.symm)
+      · exact List.mem_append_right _ (htail thm hrest)
+
+/-! ## `validate_role` and `validate_group_roles` -/
+
+set_option maxRecDepth 100000 in
+private theorem roleSpecKind_of_roleWalksBound {ro : Ix.Kernel.Role}
+    (hw : roleWalksBound ro = true) :
+    roleSpecKindNat ro = 0 ∨ roleSpecKindNat ro = 2 ∨ roleSpecKindNat ro = 5 := by
+  cases ro <;> first | exact absurd hw (by decide) | decide
+
+set_option maxRecDepth 100000 in
+private theorem roleSpecKind_of_roleHasEquations {ro : Ix.Kernel.Role}
+    (he : roleHasEquations ro = true) :
+    roleSpecKindNat ro = 2 ∨ roleSpecKindNat ro = 5 := by
+  cases ro <;> first | exact absurd he (by decide) | decide
+
+private theorem nonempty_evidence_of_len_eq {ro : Ix.Kernel.Role} {t : Ix.Kernel.RoleTable}
+    {es : List (Ix.Kernel.Evidence _root_.Address)} {k : Nat}
+    (hk0 : 0 < k) (hk10 : k < 10)
+    (hes : es = [] ∨ ∃ arr, (ro, arr) ∈ t.evidence.toList ∧ arr.toList = es)
+    (heq : (Value.field (es.length : F) : SourceValue F) = .field (k : F)) :
+    ∃ arr : Array (Ix.Kernel.Evidence _root_.Address),
+      (ro, arr) ∈ t.evidence.toList ∧ arr.toList = es ∧ 0 < arr.size := by
+  rcases hes with rfl | ⟨arr, hmem, harr⟩
+  · exfalso
+    have hz := congrArg ZMod.val (Value.field.inj heq)
+    rw [List.length_nil, Nat.cast_zero, ZMod.val_zero,
+      RolesAux.val_natCast (Nat.lt_trans hk10 (by decide))] at hz
+    omega
+  · refine ⟨arr, hmem, harr, ?_⟩
+    have hz := congrArg ZMod.val (Value.field.inj heq)
+    rw [← harr, Array.length_toList] at hz
+    by_cases hsz0 : arr.size = 0
+    · rw [hsz0, Nat.cast_zero, ZMod.val_zero,
+        RolesAux.val_natCast (Nat.lt_trans hk10 (by decide))] at hz
+      omega
+    · omega
+
+private theorem evList_length {es : List (Ix.Kernel.Evidence _root_.Address)}
+    {l r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsFn W Obs.Names.«Lists::length<KernelRoles::RoleEvidence>» [l] h r h' cs)
+    (hl : RepList evListEnum EvRep h es l) :
+    r = .field (es.length : F) ∧ h' = h := by
+  have ev' : ObsFn W (Instance.mk "Lists::length" [.named "KernelRoles::RoleEvidence" []]).symbol
+      [l] h r h' cs := by
+    rw [Obs.Names.«Lists::length<KernelRoles::RoleEvidence>».symbol]; exact ev
+  have hl' : RepList (Instance.mk "Lists::Node" [.named "KernelRoles::RoleEvidence" []]).symbol
+      EvRep h es l := by
+    rw [Obs.Names.«Lists::Node<KernelRoles::RoleEvidence>».symbol]; exact hl
+  exact Lib.Lists.length_spec ev' hl'
+
+theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.Role}
+    {x_rc x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : RCRep t (some (groupValLimit g)) h x_rc)
+    (htbl : TableRep t h x_tbl)
+    (ev : ObsFn W "KernelRoles::validate_role" [x_rc, x_tbl, .field (roleNum ro)] h r h' calls) :
+    Heap.Extends h h' ∧ RoleValidatedAt t calls g ro := by
+  let c₀ : Ctx := { E := default, env := default, t := t, lim := none }
+  refine ⟨ev.heap_extends, ?_⟩
+  cases Obs.«KernelRoles::validate_role».obs ev with
+  | n0 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs140
+      ev14 ev47 ld41 ev80 ev100 _ ev124 ev142 hc183 =>
+    obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl ev14
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    have hsk : roleSpecKindNat ro = 0 := by
+      cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
+    have hci : GetCiIn calls a := ⟨m2, m32, v1, p39, v31, cs45, ha_m2, ev47,
+      by rw [hc183]; simp, fun cl hm => by rw [hc183]; simp [hm], ld41⟩
+    have ext_m111 : Heap.Extends m2 m111 :=
+      ev47.heap_extends.trans (ev80.heap_extends.trans
+        (ev100.heap_extends.trans ev124.heap_extends))
+    have hrc_m111 : RCRep t (some (groupValLimit g)) m111 x_rc :=
+      hrc.mono (ext_ba.trans ext_m111)
+    have ha_m111 : BaseSeams.addr m111 v1 a := BaseSeams.addr_mono ext_m111 ha_m2
+    refine ⟨a, had, hci, fun hw => ?_, fun he => ?_⟩
+    · have hsub_mem : ∀ cl ∈ cs140, cl ∈ calls := fun cl hm => by rw [hc183]; simp [hm]
+      match Obs.«KernelRoles::validate_member».obs ev142 with
+      | .n0 (m198 := m198') (cs221 := cs221') (ev14 := ev14') (ev_wwewoqqa := evT')
+          (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50') (ev70 := ev70')
+          (ev36 := ev36') (ev101 := ev101') (ev208 := ev208') (ev223 := ev223')
+          (hc240 := hc240') .. =>
+        have ext_w : Heap.Extends m111 m198' :=
+          ev14'.heap_extends.trans (evT'.heap_extends.trans (evN'.heap_extends.trans
+            (evS'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
+              (ev36'.heap_extends.trans (ev101'.heap_extends.trans ev208'.heap_extends)))))))
+        exact RunCheckIn.mono hsub_mem ⟨m198', h', x_rc, v1, r, cs221', hrc_m111.mono ext_w,
+          BaseSeams.addr_mono ext_w ha_m111, ev223', by rw [hc240']; simp,
+          fun cl hm => by rw [hc240']; simp [hm]⟩
+      | .n1 (m472 := m472') (cs623 := cs623') (ev14 := ev14') (ev_wwewoqqa := evT')
+          (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50') (ev70 := ev70')
+          (ev36 := ev36') (ev101 := ev101') (ev319 := ev319') (ev389 := ev389')
+          (ev376 := ev376') (ev482 := ev482') (ev625 := ev625') (hc642 := hc642') .. =>
+        have ext_w : Heap.Extends m111 m472' :=
+          ev14'.heap_extends.trans (evT'.heap_extends.trans (evN'.heap_extends.trans
+            (evS'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
+              (ev36'.heap_extends.trans (ev101'.heap_extends.trans (ev319'.heap_extends.trans
+                (ev389'.heap_extends.trans (ev376'.heap_extends.trans
+                  ev482'.heap_extends))))))))))
+        exact RunCheckIn.mono hsub_mem ⟨m472', h', x_rc, v1, r, cs623', hrc_m111.mono ext_w,
+          BaseSeams.addr_mono ext_w ha_m111, ev625', by rw [hc642']; simp,
+          fun cl hm => by rw [hc642']; simp [hm]⟩
+      | .n2 (m88 := m88') (m_jareqtgy := mR') (cs735 := cs735') (ev14 := ev14')
+          (ev_wwewoqqa := evT') (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50')
+          (ev70 := ev70') (ev36 := ev36') (ev101 := ev101') (sg_ejvytjpf := sgR')
+          (ev737 := ev737') (hc754 := hc754') .. =>
+        have hR : mR' = m88' := by cases sgR' <;> assumption
+        subst hR
+        have ext_w : Heap.Extends m111 mR' :=
+          ev14'.heap_extends.trans (evT'.heap_extends.trans (evN'.heap_extends.trans
+            (evS'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
+              (ev36'.heap_extends.trans ev101'.heap_extends))))))
+        exact RunCheckIn.mono hsub_mem ⟨mR', h', x_rc, v1, r, cs735', hrc_m111.mono ext_w,
+          BaseSeams.addr_mono ext_w ha_m111, ev737', by rw [hc754']; simp,
+          fun cl hm => by rw [hc754']; simp [hm]⟩
+      | .n3 (ev101 := ev101') .. | .n4 (ev101 := ev101') .. | .n5 (ev101 := ev101') ..
+      | .n6 (ev101 := ev101') .. | .n7 (ev101 := ev101') .. =>
+        obtain ⟨_, hmk⟩ := role_member_kind_lt3_of_walks hsk hw ev101'
+        rcases hmk with hmk | hmk | hmk <;> exact absurd (Value.field.inj hmk) (by decide)
+    · rcases roleSpecKind_of_roleHasEquations he with h2 | h5 <;> omega
+  | n1 v1 m2 cs12 v31 m32 p39 cs45 _ _ _ _ _ _ _ _ _
+      ev14 ev47 ld41 _ _ _ ev124 _ hc227 =>
+    obtain ⟨_, a, ha_m2, had⟩ := role_bound_addr_uncond htbl ev14
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    have hsk : roleSpecKindNat ro = 1 := by
+      cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
+    refine ⟨a, had, ⟨m2, m32, v1, p39, v31, cs45, ha_m2, ev47,
+      by rw [hc227]; simp, fun cl hm => by rw [hc227]; simp [hm], ld41⟩,
+      fun hw => ?_, fun he => ?_⟩
+    · rcases roleSpecKind_of_roleWalksBound hw with h0 | h2 | h5 <;> omega
+    · rcases roleSpecKind_of_roleHasEquations he with h2 | h5 <;> omega
+  | n2 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs236
+      ev14 ev47 ld41 ev80 ev100 _ ev124 ev238 hc279 =>
+    obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl ev14
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    have hsk : roleSpecKindNat ro = 2 := by
+      cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
+    have ext_m111 : Heap.Extends m2 m111 :=
+      ev47.heap_extends.trans (ev80.heap_extends.trans
+        (ev100.heap_extends.trans ev124.heap_extends))
+    have hsub_op : ∀ cl ∈ cs236, cl ∈ calls := fun cl hm => by rw [hc279]; simp [hm]
+    match Obs.«KernelRoles::validate_op».obs ev238 with
+    | .other (heq575 := hbad) .. => exact (zero_ne_one (Value.field.inj hbad)).elim
+    | .Defn (m2 := rawHeap) (m200 := m102_op) (m209 := m111_op) (m232 := m134_op)
+        (v259 := v161) (m260 := m162) (cs270 := cs172) (m391 := m_sg2)
+        (v399 := v191) (m400 := m192) (cs410 := cs202) (v440 := v232) (v441 := v233)
+        (m443 := m235) (cs451 := cs243) (m463 := m255) (cs471 := cs263)
+        (cs486 := cs278) (ev14 := rawLoad) (sg207 := sg109) (ev242 := ev144)
+        (ev221 := ev123) (ev272 := ev174) (sg398 := sg2) (ev412 := ev204)
+        (ev453 := ev245) (ev473 := ev265) (heq482 := heq274) (ev488 := ev280)
+        (hc544 := hc320) .. =>
+      have ext_safe : Heap.Extends rawHeap m102_op := by
+        cases sg109 with
+        | Safe _ _ he64 _ => rw [he64]
+        | other _ heq95 _ _ _ => exact absurd (Value.field.inj heq95) zero_ne_one
+      have ext_sg : Heap.Extends m111 m102_op := rawLoad.heap_extends.trans ext_safe
+      -- the order scan of the well-founded operations: assertions, extending the heap
+      have ext_sg2 : Heap.Extends m162 m_sg2 := by
+        cases sg2 with
+        | n1 _ _ _ _ _ _ _ _ _ e1 e2 e3 e4 _ =>
+          exact e1.heap_extends.trans (e2.heap_extends.trans (e3.heap_extends.trans e4.heap_extends))
+        | other _ _ _ e1 _ _ he _ => rw [he]; exact e1.heap_extends
+      have ext_w : Heap.Extends m111 m111_op :=
+        ext_sg.trans (ev144.heap_extends.trans ev123.heap_extends)
+      have hrc_w : RCRep t (some (groupValLimit g)) m111_op x_rc :=
+        hrc.mono (ext_ba.trans (ext_m111.trans ext_w))
+      have ha_w : BaseSeams.addr m111_op v1 a := BaseSeams.addr_mono (ext_m111.trans ext_w) ha_m2
+      have hwalk_a : RunCheckIn calls t (some (groupValLimit g)) a :=
+        RunCheckIn.mono hsub_op ⟨m111_op, m162, x_rc, v1, v161, cs172, hrc_w, ha_w, ev174,
+          by rw [hc320]; simp, fun cl hm => by rw [hc320]; simp [hm]⟩
+      have htbl_m162 : TableRep c₀.t m_sg2 x_tbl :=
+        htbl.mono (ext_ba.trans (ext_m111.trans (ext_w.trans (ev174.heap_extends.trans ext_sg2))))
+      obtain ⟨es, hlist_m192, hes⟩ := role_evidence_step (ScopedCtx.unrestricted c₀) ev204 x_tbl ro rfl htbl_m162
+      obtain ⟨rfl, rfl⟩ := evList_length ev245 hlist_m192
+      obtain ⟨rfl, k, hk0, hk10, rfl⟩ := op_equation_count_pos hsk ev265
+      obtain ⟨arr, hmem_ev, harr_eq, hpos⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq274
+      have e_255 : Heap.Extends m111_op m255 :=
+        ev174.heap_extends.trans (ext_sg2.trans ev204.heap_extends)
+      have hrc_m255 : RCRep t (some (groupValLimit g)) m255 x_rc := hrc_w.mono e_255
+      obtain ⟨_, hprfs⟩ :=
+        validate_op_equations_walks hrc_m255 (BaseSeams.addr_mono e_255 ha_w) hlist_m192 ev280
+      have hsub_eqs : ∀ cl ∈ cs278, cl ∈ calls := fun cl hm =>
+        hsub_op cl (by rw [hc320]; simp [hm])
+      refine ⟨a, had, ⟨m2, m32, v1, p39, v31, cs45, ha_m2, ev47,
+        by rw [hc279]; simp, fun cl hm => by rw [hc279]; simp [hm], ld41⟩,
+        fun _ => hwalk_a, fun _ => ⟨arr, hmem_ev, hpos, fun thm hthm => ?_⟩⟩
+      rw [harr_eq] at hthm
+      obtain ⟨htci, htw⟩ := hprfs thm hthm
+      exact ⟨htci.mono hsub_eqs, fun h5 => absurd h5 (by omega), fun _ => htw.mono hsub_eqs⟩
+  | n3 v1 m2 cs12 v31 m32 p39 cs45 _ _ _ _ _ _ _ _ _
+      ev14 ev47 ld41 _ _ _ ev124 _ hc323 =>
+    obtain ⟨_, a, ha_m2, had⟩ := role_bound_addr_uncond htbl ev14
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    have hsk : roleSpecKindNat ro = 3 := by
+      cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
+    refine ⟨a, had, ⟨m2, m32, v1, p39, v31, cs45, ha_m2, ev47,
+      by rw [hc323]; simp, fun cl hm => by rw [hc323]; simp [hm], ld41⟩,
+      fun hw => ?_, fun he => ?_⟩
+    · rcases roleSpecKind_of_roleWalksBound hw with h0 | h2 | h5 <;> omega
+    · rcases roleSpecKind_of_roleHasEquations he with h2 | h5 <;> omega
+  | n4 v1 m2 cs12 v31 m32 p39 cs45 _ _ _ _ _ _ _ _ _
+      ev14 ev47 ld41 _ _ _ ev124 _ hc367 =>
+    obtain ⟨_, a, ha_m2, had⟩ := role_bound_addr_uncond htbl ev14
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    have hsk : roleSpecKindNat ro = 4 := by
+      cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
+    refine ⟨a, had, ⟨m2, m32, v1, p39, v31, cs45, ha_m2, ev47,
+      by rw [hc367]; simp, fun cl hm => by rw [hc367]; simp [hm], ld41⟩,
+      fun hw => ?_, fun he => ?_⟩
+    · rcases roleSpecKind_of_roleWalksBound hw with h0 | h2 | h5 <;> omega
+    · rcases roleSpecKind_of_roleHasEquations he with h2 | h5 <;> omega
+  | n5 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs376
+      ev14 ev47 ld41 ev80 ev100 _ ev124 ev378 hc419 =>
+    obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl ev14
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    have hsk : roleSpecKindNat ro = 5 := by
+      cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
+    have ext_m111 : Heap.Extends m2 m111 :=
+      ev47.heap_extends.trans (ev80.heap_extends.trans
+        (ev100.heap_extends.trans ev124.heap_extends))
+    have hsub_eqns : ∀ cl ∈ cs376, cl ∈ calls := fun cl hm => by rw [hc419]; simp [hm]
+    obtain ⟨_, _, _, _, _, _, m101_eq, _, _, m130_eq, _, _, m151_eq, _, _, m182_eq, _,
+      _, m_anc, _,
+      v209, m210, cs220, v239, m240, cs250, v280, v281, m283, cs291, m303, cs311, cs326,
+      _, sg108, ev140, _, ev192, ev163, ev_anc, ev222, ev252, ev293, ev313, heq322, ev328, hc368⟩ :=
+      Obs.«KernelRoles::validate_eqns».obs ev378
+    have ext_sg : Heap.Extends m111 m101_eq := by
+      cases sg108 with
+      | Safe _ _ he63 _ => rw [he63]
+      | other _ heq94 _ _ _ => exact absurd (Value.field.inj heq94) zero_ne_one
+    have ext_w : Heap.Extends m111 m_anc :=
+      ext_sg.trans (ev140.heap_extends.trans (ev192.heap_extends.trans
+        (ev163.heap_extends.trans ev_anc.heap_extends)))
+    have hrc_w : RCRep t (some (groupValLimit g)) m_anc x_rc :=
+      hrc.mono (ext_ba.trans (ext_m111.trans ext_w))
+    have ha_w : BaseSeams.addr m_anc v1 a := BaseSeams.addr_mono (ext_m111.trans ext_w) ha_m2
+    have hwalk_a : RunCheckIn calls t (some (groupValLimit g)) a :=
+      RunCheckIn.mono hsub_eqns ⟨m_anc, m210, x_rc, v1, v209, cs220, hrc_w, ha_w, ev222,
+        by rw [hc368]; simp, fun cl hm => by rw [hc368]; simp [hm]⟩
+    have htbl_m210 : TableRep c₀.t m210 x_tbl :=
+      htbl.mono (ext_ba.trans (ext_m111.trans (ext_w.trans ev222.heap_extends)))
+    obtain ⟨es, hlist_m240, hes⟩ := role_evidence_step (ScopedCtx.unrestricted c₀) ev252 x_tbl ro rfl htbl_m210
+    obtain ⟨rfl, rfl⟩ := evList_length ev293 hlist_m240
+    obtain ⟨rfl, k, hk0, hk10, rfl⟩ := eqns_equation_count_pos hsk ev313
+    obtain ⟨arr, hmem_ev, harr_eq, hpos⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq322
+    have hrc_m303 : RCRep t (some (groupValLimit g)) m303 x_rc :=
+      hrc_w.mono (ev222.heap_extends.trans ev252.heap_extends)
+    obtain ⟨_, hprfs⟩ := validate_eqns_equations_walks hrc_m303 hlist_m240 ev328
+    have hsub_eqs : ∀ cl ∈ cs326, cl ∈ calls := fun cl hm =>
+      hsub_eqns cl (by rw [hc368]; simp [hm])
+    refine ⟨a, had, ⟨m2, m32, v1, p39, v31, cs45, ha_m2, ev47,
+      by rw [hc419]; simp, fun cl hm => by rw [hc419]; simp [hm], ld41⟩,
+      fun _ => hwalk_a, fun _ => ⟨arr, hmem_ev, hpos, fun thm hthm => ?_⟩⟩
+    rw [harr_eq] at hthm
+    obtain ⟨htci, htw⟩ := hprfs thm hthm
+    exact ⟨htci.mono hsub_eqs, fun _ => htw.mono hsub_eqs, fun h2 => absurd h2 (by omega)⟩
+
+theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {g : Nat} {ro : Ix.Kernel.Role}
+    {x_rc x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : Claim.RCFullRep t bAddr (groupValLimit g) h x_rc)
+    (htbl : Claim.TableFullRep t bAddr h x_tbl)
+    (ev : ObsFn W "KernelRoles::validate_role" [x_rc, x_tbl, .field (roleNum ro)] h r h' calls) :
+    Heap.Extends h h' ∧
+    RoleValidatedAt t calls g ro ∧
+    ∃ recs : List (Claim.WalkedRec calls bAddr t),
+      Claim.RecsClosed recs ∧
+      (∀ a, roleWalksBound ro = true → t.addressOf? ro = some a → a ∈ recs.map (·.addr)) ∧
+      (∀ arr thm, (ro, arr) ∈ t.evidence.toList → .proof thm ∈ arr.toList →
+        EvidenceWalked t ro thm (recs.map (·.addr))) := by
+  obtain ⟨ext, hval⟩ := validate_role_walks hrc.toRCRep htbl.toTableRep ev
+  have hwf : t.wf = true := htbl.1
+  refine ⟨ext, hval, ?_⟩
+  by_cases hw : roleWalksBound ro = true
+  · let c₀ : Ctx := { E := default, env := default, t := t, lim := none }
+    cases Obs.«KernelRoles::validate_role».obs ev with
+    | n0 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs140
+        ev14 ev47 _ ev80 ev100 _ ev124 ev142 hc183 =>
+      obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl.toTableRep ev14
+      obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+      have hsk : roleSpecKindNat ro = 0 := by
+        cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
+      have ext_m111 : Heap.Extends m2 m111 :=
+        ev47.heap_extends.trans (ev80.heap_extends.trans
+          (ev100.heap_extends.trans ev124.heap_extends))
+      have hrc_m111 := hrc.mono (ext_ba.trans ext_m111)
+      have ha_m111 := BaseSeams.addr_mono ext_m111 ha_m2
+      have hno_ev : ∀ arr thm, (ro, arr) ∈ t.evidence.toList → .proof thm ∈ arr.toList → False := by
+        intro arr _ hm _
+        have hreq := evidence_roleHasEquations_of_wf hwf hm
+        rcases roleSpecKind_of_roleHasEquations hreq with h2 | h5 <;> omega
+      match Obs.«KernelRoles::validate_member».obs ev142 with
+      | .n0 (m198 := m198') (cs221 := cs221') (ev14 := ev14') (ev_wwewoqqa := evT')
+          (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50') (ev70 := ev70')
+          (ev36 := ev36') (ev101 := ev101') (ev208 := ev208') (ev223 := ev223')
+          (hc240 := hc240') .. =>
+        have ext_w : Heap.Extends m111 m198' :=
+          ev14'.heap_extends.trans (evT'.heap_extends.trans (evN'.heap_extends.trans
+            (evS'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
+              (ev36'.heap_extends.trans (ev101'.heap_extends.trans ev208'.heap_extends)))))))
+        obtain ⟨_, recs_a, hmem_a, hcl_a, _⟩ :=
+          Claim.run_check_transitive_spec (hrc_m111.mono ext_w) (BaseSeams.addr_mono ext_w ha_m111) ev223'
+        have hsub : ∀ cl ∈ cs221', cl ∈ calls := fun cl hm => by
+          rw [hc183]; simp [show cl ∈ cs140 by rw [hc240']; simp [hm]]
+        refine ⟨recs_a.map (Claim.WalkedRec.mono hsub), hcl_a.mono hsub, ?_,
+          fun arr thm hm hp => (hno_ev arr thm hm hp).elim⟩
+        intro a' _ had'
+        rw [had] at had'; injection had' with ha_eq; subst ha_eq
+        rw [Claim.map_addr_walkedRec_mono]
+        exact hmem_a
+      | .n1 (m472 := m472') (cs623 := cs623') (ev14 := ev14') (ev_wwewoqqa := evT')
+          (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50') (ev70 := ev70')
+          (ev36 := ev36') (ev101 := ev101') (ev319 := ev319') (ev389 := ev389')
+          (ev376 := ev376') (ev482 := ev482') (ev625 := ev625') (hc642 := hc642') .. =>
+        have ext_w : Heap.Extends m111 m472' :=
+          ev14'.heap_extends.trans (evT'.heap_extends.trans (evN'.heap_extends.trans
+            (evS'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
+              (ev36'.heap_extends.trans (ev101'.heap_extends.trans (ev319'.heap_extends.trans
+                (ev389'.heap_extends.trans (ev376'.heap_extends.trans
+                  ev482'.heap_extends))))))))))
+        obtain ⟨_, recs_a, hmem_a, hcl_a, _⟩ :=
+          Claim.run_check_transitive_spec (hrc_m111.mono ext_w) (BaseSeams.addr_mono ext_w ha_m111) ev625'
+        have hsub : ∀ cl ∈ cs623', cl ∈ calls := fun cl hm => by
+          rw [hc183]; simp [show cl ∈ cs140 by rw [hc642']; simp [hm]]
+        refine ⟨recs_a.map (Claim.WalkedRec.mono hsub), hcl_a.mono hsub, ?_,
+          fun arr thm hm hp => (hno_ev arr thm hm hp).elim⟩
+        intro a' _ had'
+        rw [had] at had'; injection had' with ha_eq; subst ha_eq
+        rw [Claim.map_addr_walkedRec_mono]
+        exact hmem_a
+      | .n2 (m88 := m88') (m_jareqtgy := mR') (cs735 := cs735') (ev14 := ev14')
+          (ev_wwewoqqa := evT') (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50')
+          (ev70 := ev70') (ev36 := ev36') (ev101 := ev101') (sg_ejvytjpf := sgR')
+          (ev737 := ev737') (hc754 := hc754') .. =>
+        have hR : mR' = m88' := by cases sgR' <;> assumption
+        subst hR
+        have ext_w : Heap.Extends m111 mR' :=
+          ev14'.heap_extends.trans (evT'.heap_extends.trans (evN'.heap_extends.trans
+            (evS'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
+              (ev36'.heap_extends.trans ev101'.heap_extends))))))
+        obtain ⟨_, recs_a, hmem_a, hcl_a, _⟩ :=
+          Claim.run_check_transitive_spec (hrc_m111.mono ext_w) (BaseSeams.addr_mono ext_w ha_m111) ev737'
+        have hsub : ∀ cl ∈ cs735', cl ∈ calls := fun cl hm => by
+          rw [hc183]; simp [show cl ∈ cs140 by rw [hc754']; simp [hm]]
+        refine ⟨recs_a.map (Claim.WalkedRec.mono hsub), hcl_a.mono hsub, ?_,
+          fun arr thm hm hp => (hno_ev arr thm hm hp).elim⟩
+        intro a' _ had'
+        rw [had] at had'; injection had' with ha_eq; subst ha_eq
+        rw [Claim.map_addr_walkedRec_mono]
+        exact hmem_a
+      | .n3 (ev101 := ev101') .. | .n4 (ev101 := ev101') .. | .n5 (ev101 := ev101') ..
+      | .n6 (ev101 := ev101') .. | .n7 (ev101 := ev101') .. =>
+        obtain ⟨_, hmk⟩ := role_member_kind_lt3_of_walks hsk hw ev101'
+        rcases hmk with hmk | hmk | hmk <;> exact absurd (Value.field.inj hmk) (by decide)
+    | n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+      obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+      have hsk : roleSpecKindNat ro = 1 := by
+        cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
+      rcases roleSpecKind_of_roleWalksBound hw with h0 | h2 | h5 <;> omega
+    | n2 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs236
+        ev14 ev47 _ ev80 ev100 _ ev124 ev238 hc279 =>
+      obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl.toTableRep ev14
+      obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+      have hsk : roleSpecKindNat ro = 2 := by
+        cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
+      have ext_m111 : Heap.Extends m2 m111 :=
+        ev47.heap_extends.trans (ev80.heap_extends.trans
+          (ev100.heap_extends.trans ev124.heap_extends))
+      match Obs.«KernelRoles::validate_op».obs ev238 with
+      | .other (heq575 := hbad) .. => exact (zero_ne_one (Value.field.inj hbad)).elim
+      | .Defn (m2 := rawHeap) (m200 := m102_op) (m209 := m111_op) (m232 := m134_op)
+          (v259 := v161) (m260 := m162) (cs270 := cs172) (m391 := m_sg2)
+          (v399 := v191) (m400 := m192) (cs410 := cs202) (v440 := v232) (v441 := v233)
+          (m443 := m235) (cs451 := cs243) (m463 := m255) (cs471 := cs263)
+          (cs486 := cs278) (ev14 := rawLoad) (sg207 := sg109) (ev242 := ev144)
+          (ev221 := ev123) (ev272 := ev174) (sg398 := sg2) (ev412 := ev204)
+          (ev453 := ev245) (ev473 := ev265) (heq482 := heq274) (ev488 := ev280)
+          (hc544 := hc320) .. =>
+        have ext_safe : Heap.Extends rawHeap m102_op := by
+          cases sg109 with
+          | Safe _ _ he64 _ => rw [he64]
+          | other _ heq95 _ _ _ => exact absurd (Value.field.inj heq95) zero_ne_one
+        have ext_sg : Heap.Extends m111 m102_op := rawLoad.heap_extends.trans ext_safe
+        have ext_sg2 : Heap.Extends m162 m_sg2 := by
+          cases sg2 with
+          | n1 _ _ _ _ _ _ _ _ _ e1 e2 e3 e4 _ =>
+            exact e1.heap_extends.trans (e2.heap_extends.trans (e3.heap_extends.trans e4.heap_extends))
+          | other _ _ _ e1 _ _ he _ => rw [he]; exact e1.heap_extends
+        have ext_w : Heap.Extends m111 m111_op :=
+          ext_sg.trans (ev144.heap_extends.trans ev123.heap_extends)
+        have hrc_w := hrc.mono (ext_ba.trans (ext_m111.trans ext_w))
+        have ha_w := BaseSeams.addr_mono (ext_m111.trans ext_w) ha_m2
+        obtain ⟨_, recs_a, hmem_a, hcl_a, _⟩ := Claim.run_check_transitive_spec hrc_w ha_w ev174
+        have htbl_m162 : TableRep c₀.t m_sg2 x_tbl :=
+          htbl.toTableRep.mono (ext_ba.trans (ext_m111.trans (ext_w.trans
+            (ev174.heap_extends.trans ext_sg2))))
+        obtain ⟨es, hlist_m192, hes⟩ := role_evidence_step (ScopedCtx.unrestricted c₀) ev204 x_tbl ro rfl htbl_m162
+        obtain ⟨rfl, rfl⟩ := evList_length ev245 hlist_m192
+        obtain ⟨rfl, k, hk0, hk10, rfl⟩ := op_equation_count_pos hsk ev265
+        obtain ⟨arr₀, hmem_ev₀, harr_eq, _⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq274
+        have e_255 : Heap.Extends m111_op m255 :=
+          ev174.heap_extends.trans (ext_sg2.trans ev204.heap_extends)
+        have hrc_m255 := hrc_w.mono e_255
+        obtain ⟨_, recs_ev, hcl_ev, hprfs⟩ :=
+          validate_op_equations_full_walks hrc_m255 (BaseSeams.addr_mono e_255 ha_w) hlist_m192 ev280
+        have hsub_a : ∀ cl ∈ cs172, cl ∈ calls := fun cl hm => by
+          rw [hc279]; simp [show cl ∈ cs236 by rw [hc320]; simp [hm]]
+        have hsub_ev : ∀ cl ∈ cs278, cl ∈ calls := fun cl hm => by
+          rw [hc279]; simp [show cl ∈ cs236 by rw [hc320]; simp [hm]]
+        refine ⟨recs_a.map (Claim.WalkedRec.mono hsub_a) ++ recs_ev.map (Claim.WalkedRec.mono hsub_ev),
+          (hcl_a.mono hsub_a).append (hcl_ev.mono hsub_ev), ?_, ?_⟩
+        · intro a' _ had'
+          rw [had] at had'; injection had' with ha_eq; subst ha_eq
+          rw [List.map_append, Claim.map_addr_walkedRec_mono]
+          exact List.mem_append_left _ hmem_a
+        · intro arr thm hm hthm
+          have harr : arr = arr₀ := evidence_eq_of_wf hwf hm hmem_ev₀
+          subst harr
+          rw [harr_eq] at hthm
+          rw [List.map_append, Claim.map_addr_walkedRec_mono, Claim.map_addr_walkedRec_mono]
+          refine ⟨fun h5 => absurd h5 (by omega), fun _ a' had' => ?_⟩
+          rw [had] at had'
+          injection had' with ha_eq
+          subst ha_eq
+          exact (hprfs thm hthm).mono (fun _ hx => List.mem_append_right _ hx)
+    | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+      obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+      have hsk : roleSpecKindNat ro = 3 := by
+        cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
+      rcases roleSpecKind_of_roleWalksBound hw with h0 | h2 | h5 <;> omega
+    | n4 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+      obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+      have hsk : roleSpecKindNat ro = 4 := by
+        cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
+      rcases roleSpecKind_of_roleWalksBound hw with h0 | h2 | h5 <;> omega
+    | n5 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs376
+        ev14 ev47 _ ev80 ev100 _ ev124 ev378 hc419 =>
+      obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl.toTableRep ev14
+      obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+      have hsk : roleSpecKindNat ro = 5 := by
+        cases ro <;> first | exact absurd (Value.field.inj hsk_f) (by decide) | rfl
+      have ext_m111 : Heap.Extends m2 m111 :=
+        ev47.heap_extends.trans (ev80.heap_extends.trans
+          (ev100.heap_extends.trans ev124.heap_extends))
+      obtain ⟨_, _, _, _, _, _, m101_eq, _, _, m130_eq, _, _, m151_eq, _, _, m182_eq, _,
+        _, m_anc, _,
+        v209, m210, cs220, v239, m240, cs250, v280, v281, m283, cs291, m303, cs311, cs326,
+        _, sg108, ev140, _, ev192, ev163, ev_anc, ev222, ev252, ev293, ev313, heq322, ev328, hc368⟩ :=
+        Obs.«KernelRoles::validate_eqns».obs ev378
+      have ext_sg : Heap.Extends m111 m101_eq := by
+        cases sg108 with
+        | Safe _ _ he63 _ => rw [he63]
+        | other _ heq94 _ _ _ => exact absurd (Value.field.inj heq94) zero_ne_one
+      have ext_w : Heap.Extends m111 m_anc :=
+        ext_sg.trans (ev140.heap_extends.trans (ev192.heap_extends.trans
+          (ev163.heap_extends.trans ev_anc.heap_extends)))
+      have hrc_w := hrc.mono (ext_ba.trans (ext_m111.trans ext_w))
+      have ha_w := BaseSeams.addr_mono (ext_m111.trans ext_w) ha_m2
+      obtain ⟨_, recs_a, hmem_a, hcl_a, _⟩ := Claim.run_check_transitive_spec hrc_w ha_w ev222
+      have htbl_m210 : TableRep c₀.t m210 x_tbl :=
+        htbl.toTableRep.mono (ext_ba.trans (ext_m111.trans (ext_w.trans ev222.heap_extends)))
+      obtain ⟨es, hlist_m240, hes⟩ := role_evidence_step (ScopedCtx.unrestricted c₀) ev252 x_tbl ro rfl htbl_m210
+      obtain ⟨rfl, rfl⟩ := evList_length ev293 hlist_m240
+      obtain ⟨rfl, k, hk0, hk10, rfl⟩ := eqns_equation_count_pos hsk ev313
+      obtain ⟨arr₀, hmem_ev₀, harr_eq, _⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq322
+      have hrc_m303 := hrc_w.mono (ev222.heap_extends.trans ev252.heap_extends)
+      obtain ⟨_, recs_ev, hcl_ev, hprfs⟩ :=
+        validate_eqns_equations_full_walks hrc_m303 hlist_m240 ev328
+      have hsub_a : ∀ cl ∈ cs220, cl ∈ calls := fun cl hm => by
+        rw [hc419]; simp [show cl ∈ cs376 by rw [hc368]; simp [hm]]
+      have hsub_ev : ∀ cl ∈ cs326, cl ∈ calls := fun cl hm => by
+        rw [hc419]; simp [show cl ∈ cs376 by rw [hc368]; simp [hm]]
+      refine ⟨recs_a.map (Claim.WalkedRec.mono hsub_a) ++ recs_ev.map (Claim.WalkedRec.mono hsub_ev),
+        (hcl_a.mono hsub_a).append (hcl_ev.mono hsub_ev), ?_, ?_⟩
+      · intro a' _ had'
+        rw [had] at had'; injection had' with ha_eq; subst ha_eq
+        rw [List.map_append, Claim.map_addr_walkedRec_mono]
+        exact List.mem_append_left _ hmem_a
+      · intro arr thm hm hthm
+        have harr : arr = arr₀ := evidence_eq_of_wf hwf hm hmem_ev₀
+        subst harr
+        rw [harr_eq] at hthm
+        rw [List.map_append, Claim.map_addr_walkedRec_mono, Claim.map_addr_walkedRec_mono]
+        exact ⟨fun _ => List.mem_append_right _ (hprfs thm hthm), fun h2 => absurd h2 (by omega)⟩
+  · refine ⟨[], by simp [Claim.RecsClosed], fun _ hw' _ => absurd hw' hw, ?_⟩
+    intro arr _ hm _
+    have hreq := evidence_roleHasEquations_of_wf hwf hm
+    have hw_true : roleWalksBound ro = true := by
+      unfold roleHasEquations at hreq
+      unfold roleWalksBound
+      cases hsp : ro.spec (md := .anon) <;> rw [hsp] at hreq <;> first | cases hreq | rfl
+    exact absurd hw_true hw
+
+private theorem validate_group_roles_walks {t : Ix.Kernel.RoleTable} {g : Nat}
+    {rs : List Ix.Kernel.Role} :
+    ∀ {x_rc x_tbl x_rs r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      RCRep t (some (groupValLimit g)) h x_rc →
+      TableRep t h x_tbl →
+      RepList Obs.Names.«Lists::Node<Field>» repRoleNum h rs x_rs →
+      ObsFn W "KernelRoles::validate_group_roles" [x_rc, x_tbl, x_rs] h r h' calls →
+      Heap.Extends h h' ∧ ∀ ro ∈ rs, RoleValidatedAt t calls g ro
+  | x_rc, x_tbl, x_rs, r, h, h', calls, hrc, htbl, hlist, ev => by
+    cases Obs.«KernelRoles::validate_group_roles».obs ev with
+    | Nil ld12 _ he23 _ =>
+      obtain rfl := Lib.rep_nil_of_load hlist ld12
+      subst he23
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm)⟩
+    | Cons x_r x_rest v42 m43 cs53 cs83 ld12 ev55 ev85 hc110 =>
+      obtain ⟨ro₀, rest, rfl, hro, hrest⟩ := Lib.rep_cons_of_load hlist ld12
+      rw [hro] at ev55
+      obtain ⟨ext1, hval1⟩ := validate_role_walks hrc htbl ev55
+      obtain ⟨ext2, hval2⟩ :=
+        validate_group_roles_walks (hrc.mono ext1) (htbl.mono ext1)
+          (repList_heapMono₂ _ repRoleNum_heapMono₂ ext1 hrest) ev85
+      have hsub1 : ∀ cl ∈ cs53, cl ∈ calls := fun cl hm => by rw [hc110]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs83, cl ∈ calls := fun cl hm => by rw [hc110]; simp [hm]
+      refine ⟨ext1.trans ext2, fun ro hmem => ?_⟩
+      rcases List.mem_cons.mp hmem with rfl | hmem'
+      · exact hval1.mono hsub1
+      · exact (hval2 ro hmem').mono hsub2
+
+private theorem validate_group_roles_full_walks {t : Ix.Kernel.RoleTable}
+    {bAddr : _root_.Address} {g : Nat} {rs : List Ix.Kernel.Role} :
+    ∀ {x_rc x_tbl x_rs r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      Claim.RCFullRep t bAddr (groupValLimit g) h x_rc →
+      Claim.TableFullRep t bAddr h x_tbl →
+      RepList Obs.Names.«Lists::Node<Field>» repRoleNum h rs x_rs →
+      ObsFn W "KernelRoles::validate_group_roles" [x_rc, x_tbl, x_rs] h r h' calls →
+      Heap.Extends h h' ∧
+      (∀ ro ∈ rs, RoleValidatedAt t calls g ro) ∧
+      ∃ recs : List (Claim.WalkedRec calls bAddr t),
+        Claim.RecsClosed recs ∧
+        (∀ ro ∈ rs, ∀ a, roleWalksBound ro = true → t.addressOf? ro = some a →
+          a ∈ recs.map (·.addr)) ∧
+        (∀ ro ∈ rs, ∀ arr thm, (ro, arr) ∈ t.evidence.toList → .proof thm ∈ arr.toList →
+          EvidenceWalked t ro thm (recs.map (·.addr)))
+  | x_rc, x_tbl, x_rs, r, h, h', calls, hrc, htbl, hlist, ev => by
+    cases Obs.«KernelRoles::validate_group_roles».obs ev with
+    | Nil ld12 _ he23 _ =>
+      obtain rfl := Lib.rep_nil_of_load hlist ld12
+      subst he23
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm), [], by simp [Claim.RecsClosed],
+        fun _ hm => (nomatch hm), fun _ hm => (nomatch hm)⟩
+    | Cons x_r x_rest v42 m43 cs53 cs83 ld12 ev55 ev85 hc110 =>
+      obtain ⟨ro₀, rest, rfl, hro, hrest⟩ := Lib.rep_cons_of_load hlist ld12
+      rw [hro] at ev55
+      obtain ⟨ext1, hval1, recs₁, hcl₁, ha₁, hev₁⟩ := validate_role_full_walks hrc htbl ev55
+      obtain ⟨ext2, hval2, recs₂, hcl₂, ha₂, hev₂⟩ :=
+        validate_group_roles_full_walks (hrc.mono ext1) (htbl.mono ext1)
+          (repList_heapMono₂ _ repRoleNum_heapMono₂ ext1 hrest) ev85
+      have hsub1 : ∀ cl ∈ cs53, cl ∈ calls := fun cl hm => by rw [hc110]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs83, cl ∈ calls := fun cl hm => by rw [hc110]; simp [hm]
+      refine ⟨ext1.trans ext2, ?_,
+        recs₁.map (Claim.WalkedRec.mono hsub1) ++ recs₂.map (Claim.WalkedRec.mono hsub2),
+        (hcl₁.mono hsub1).append (hcl₂.mono hsub2), ?_, ?_⟩
+      · intro ro hmem
+        rcases List.mem_cons.mp hmem with rfl | hmem'
+        · exact hval1.mono hsub1
+        · exact (hval2 ro hmem').mono hsub2
+      · intro ro hmem a hw had
+        rw [List.map_append, Claim.map_addr_walkedRec_mono, Claim.map_addr_walkedRec_mono]
+        rcases List.mem_cons.mp hmem with rfl | hmem'
+        · exact List.mem_append_left _ (ha₁ a hw had)
+        · exact List.mem_append_right _ (ha₂ ro hmem' a hw had)
+      · intro ro hmem arr thm hm hthm
+        rw [List.map_append, Claim.map_addr_walkedRec_mono, Claim.map_addr_walkedRec_mono]
+        rcases List.mem_cons.mp hmem with rfl | hmem'
+        · exact (hev₁ arr thm hm hthm).mono (fun _ hx => List.mem_append_left _ hx)
+        · exact (hev₂ ro hmem' arr thm hm hthm).mono (fun _ hx => List.mem_append_right _ hx)
+
+/-! ## `group_admit` and `group_admit_needs` -/
+
+private theorem group_admit_needs_walks {t : Ix.Kernel.RoleTable} {g : Nat}
+    (ih_g : ∀ g' < g, ∀ {x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      TableRep t h x_tbl →
+      ObsFn W "KernelRoles::group_admit" [x_tbl, .field (g' : F)] h r h' calls →
+      Heap.Extends h h' ∧
+      ∀ g'', GroupReachable g' g'' → ∀ ro ∈ groupRoles g'', RoleValidatedAt t calls g'' ro)
+    {needs : List Ix.Kernel.Role} (hsub_needs : ∀ ro ∈ needs, ro ∈ groupNeededRoles g) :
+    ∀ {x_tbl x_needs r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      TableRep t h x_tbl →
+      RepList Obs.Names.«Lists::Node<Field>» repRoleNum h needs x_needs →
+      ObsFn W "KernelRoles::group_admit_needs" [x_tbl, x_needs] h r h' calls →
+      Heap.Extends h h' ∧
+      ∀ ro₀ ∈ needs, ∀ g'', GroupReachable (Ix.SpecDigest.groupOf ro₀) g'' →
+        ∀ ro ∈ groupRoles g'', RoleValidatedAt t calls g'' ro
+  | x_tbl, x_needs, r, h, h', calls, htbl, hlist, ev => by
+    cases Obs.«KernelRoles::group_admit_needs».obs ev with
+    | Nil ld12 _ he23 _ =>
+      obtain rfl := Lib.rep_nil_of_load hlist ld12
+      subst he23
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm)⟩
+    | Cons x_r x_rest v42 m43 cs53 v57 m66 cs74 cs88 ld12 ev76 ev55 ev90 hc107 =>
+      obtain ⟨ro_h, rest, rfl, hro, hrest⟩ := Lib.rep_cons_of_load hlist ld12
+      rw [hro] at ev76
+      obtain ⟨rfl, rfl⟩ := RolesAux.role_group_spec ev76
+      have hlt_g : Ix.SpecDigest.groupOf ro_h < g :=
+        groupNeeds_groupOf_lt (hsub_needs ro_h (List.mem_cons_self ..))
+      obtain ⟨ext1, hval1⟩ := ih_g (Ix.SpecDigest.groupOf ro_h) hlt_g htbl ev55
+      obtain ⟨ext2, hval2⟩ :=
+        group_admit_needs_walks ih_g
+          (fun ro hm => hsub_needs ro (List.mem_cons_of_mem _ hm))
+          (htbl.mono ext1)
+          (repList_heapMono₂ _ repRoleNum_heapMono₂ ext1 hrest) ev90
+      have hsub1 : ∀ cl ∈ cs53, cl ∈ calls := fun cl hm => by rw [hc107]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs88, cl ∈ calls := fun cl hm => by rw [hc107]; simp [hm]
+      refine ⟨ext1.trans ext2, fun ro₀ hmem g'' hr ro hro_in => ?_⟩
+      rcases List.mem_cons.mp hmem with rfl | hmem'
+      · exact (hval1 g'' hr ro hro_in).mono hsub1
+      · exact (hval2 ro₀ hmem' g'' hr ro hro_in).mono hsub2
+
+/-- **`KernelRoles::group_admit(tbl, .field (g : F))` (`g < 2^32`) under `TableRep`**:
+validates every role in `groupRoles g` and in every transitively needed group
+`GroupReachable g g'`. -/
+theorem group_admit_nat_spec {t : Ix.Kernel.RoleTable} :
+    ∀ (g : Nat), g < 4294967296 →
+      ∀ {x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+        TableRep t h x_tbl →
+        ObsFn W "KernelRoles::group_admit" [x_tbl, .field (g : F)] h r h' calls →
+        Heap.Extends h h' ∧
+        ∀ g', GroupReachable g g' → ∀ ro ∈ groupRoles g', RoleValidatedAt t calls g' ro := by
+  intro g
+  refine Nat.strongRecOn g fun g ih hg x_tbl r h h' calls htbl ev => ?_
+  obtain ⟨v1, m2, cs12, v16, m25, cs33, m45, v60, m70, cs78, cs101, v106, m122, cs130,
+    ev35, ev14, hm55, ev80, ev132, ev103, hc141⟩ :=
+    Obs.«KernelRoles::group_admit».obs ev
+  obtain ⟨rfl, rfl⟩ := group_validation_limit_of_nat hg ev80
+  obtain ⟨ext_gn, hneeds_rep⟩ := group_needs_spec hg ev35
+  have ih_lt : ∀ g' < g, ∀ {x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      TableRep t h x_tbl →
+      ObsFn W "KernelRoles::group_admit" [x_tbl, .field (g' : F)] h r h' calls →
+      Heap.Extends h h' ∧
+      ∀ g'', GroupReachable g' g'' → ∀ ro ∈ groupRoles g'', RoleValidatedAt t calls g'' ro :=
+    fun g' hlt => ih g' hlt (Nat.lt_trans hlt hg)
+  obtain ⟨ext_gan, hval_needs⟩ :=
+    group_admit_needs_walks ih_lt (fun _ hm => hm) (htbl.mono ext_gn) hneeds_rep ev14
+  let rcNode := Value.construct rcEnum "Mk"
+    [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []]
+  have ext_m45 : Heap.Extends h m45 :=
+    ext_gn.trans (ext_gan.trans (by rw [hm55]; exact Heap.Extends.snoc m70 rcNode))
+  have hld_rc : loadValue m45 (.ptr (.enum rcEnum) m70.length) = .ok rcNode := by
+    rw [hm55]
+    exact Claim.loadValue_snoc_construct m70 rcEnum "Mk"
+      [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []]
+  have hrc_m45 : RCRep t (some (groupValLimit g)) m45 (.ptr (.enum rcEnum) m70.length) :=
+    ⟨x_tbl, .construct addrMapEnum "Nil" [], _, hld_rc,
+      .inl ⟨groupValLimit g, rfl, groupValLimit_lt_u32 g, rfl⟩, htbl.mono ext_m45⟩
+  obtain ⟨ext_gr, hroles_rep⟩ := group_roles_spec hg ev132
+  obtain ⟨ext_vgr, hval_here⟩ :=
+    validate_group_roles_walks (hrc_m45.mono ext_gr) ((htbl.mono ext_m45).mono ext_gr)
+      hroles_rep ev103
+  have hsub_needs_cs : ∀ cl ∈ cs12, cl ∈ calls := fun cl hm => by rw [hc141]; simp [hm]
+  have hsub_here_cs : ∀ cl ∈ cs101, cl ∈ calls := fun cl hm => by rw [hc141]; simp [hm]
+  refine ⟨ext_m45.trans (ext_gr.trans ext_vgr), fun g' hr ro hro => ?_⟩
+  cases hr with
+  | refl => exact (hval_here ro hro).mono hsub_here_cs
+  | step hm hr' => exact (hval_needs _ hm g' hr' ro hro).mono hsub_needs_cs
+
+/-- **`KernelRoles::group_admit(tbl, x_g)` under `TableRep`**: forces `x_g = .field (g : F)` with
+`g < 2^32` and extracts `RoleValidatedAt` across all `GroupReachable g g'`. -/
+theorem group_admit_spec {t : Ix.Kernel.RoleTable}
+    {x_tbl x_g r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (htbl : TableRep t h x_tbl)
+    (ev : ObsFn W "KernelRoles::group_admit" [x_tbl, x_g] h r h' calls) :
+    Heap.Extends h h' ∧
+    ∃ g : Nat, g < 4294967296 ∧ x_g = .field (g : F) ∧
+      ∀ g', GroupReachable g g' → ∀ ro ∈ groupRoles g', RoleValidatedAt t calls g' ro := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ev80, _, _, _⟩ :=
+    Obs.«KernelRoles::group_admit».obs ev
+  obtain ⟨_, g, hg, rfl, _⟩ := group_validation_limit_exact ev80
+  obtain ⟨ext, hval⟩ := group_admit_nat_spec g hg htbl ev
+  exact ⟨ext, g, hg, rfl, hval⟩
+
+private theorem group_admit_needs_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {g : Nat}
+    (ih_g : ∀ g' < g, ∀ {x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      Claim.TableFullRep t bAddr h x_tbl →
+      ObsFn W "KernelRoles::group_admit" [x_tbl, .field (g' : F)] h r h' calls →
+      Heap.Extends h h' ∧
+      (∀ g'', GroupReachable g' g'' → ∀ ro ∈ groupRoles g'', RoleValidatedAt t calls g'' ro) ∧
+      ∃ recs : List (Claim.WalkedRec calls bAddr t),
+        Claim.RecsClosed recs ∧
+        (∀ g'', GroupReachable g' g'' → ∀ ro ∈ groupRoles g'', ∀ a,
+          roleWalksBound ro = true → t.addressOf? ro = some a → a ∈ recs.map (·.addr)) ∧
+        (∀ g'', GroupReachable g' g'' → ∀ ro ∈ groupRoles g'', ∀ arr thm,
+          (ro, arr) ∈ t.evidence.toList → .proof thm ∈ arr.toList → EvidenceWalked t ro thm (recs.map (·.addr))))
+    {needs : List Ix.Kernel.Role} (hsub_needs : ∀ ro ∈ needs, ro ∈ groupNeededRoles g) :
+    ∀ {x_tbl x_needs r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      Claim.TableFullRep t bAddr h x_tbl →
+      RepList Obs.Names.«Lists::Node<Field>» repRoleNum h needs x_needs →
+      ObsFn W "KernelRoles::group_admit_needs" [x_tbl, x_needs] h r h' calls →
+      Heap.Extends h h' ∧
+      (∀ ro₀ ∈ needs, ∀ g'', GroupReachable (Ix.SpecDigest.groupOf ro₀) g'' →
+        ∀ ro ∈ groupRoles g'', RoleValidatedAt t calls g'' ro) ∧
+      ∃ recs : List (Claim.WalkedRec calls bAddr t),
+        Claim.RecsClosed recs ∧
+        (∀ ro₀ ∈ needs, ∀ g'', GroupReachable (Ix.SpecDigest.groupOf ro₀) g'' →
+          ∀ ro ∈ groupRoles g'', ∀ a,
+            roleWalksBound ro = true → t.addressOf? ro = some a → a ∈ recs.map (·.addr)) ∧
+        (∀ ro₀ ∈ needs, ∀ g'', GroupReachable (Ix.SpecDigest.groupOf ro₀) g'' →
+          ∀ ro ∈ groupRoles g'', ∀ arr thm,
+            (ro, arr) ∈ t.evidence.toList → .proof thm ∈ arr.toList → EvidenceWalked t ro thm (recs.map (·.addr)))
+  | x_tbl, x_needs, r, h, h', calls, htbl, hlist, ev => by
+    cases Obs.«KernelRoles::group_admit_needs».obs ev with
+    | Nil ld12 _ he23 _ =>
+      obtain rfl := Lib.rep_nil_of_load hlist ld12
+      subst he23
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm), [], by simp [Claim.RecsClosed],
+        fun _ hm => (nomatch hm), fun _ hm => (nomatch hm)⟩
+    | Cons x_r x_rest v42 m43 cs53 v57 m66 cs74 cs88 ld12 ev76 ev55 ev90 hc107 =>
+      obtain ⟨ro_h, rest, rfl, hro, hrest⟩ := Lib.rep_cons_of_load hlist ld12
+      rw [hro] at ev76
+      obtain ⟨rfl, rfl⟩ := RolesAux.role_group_spec ev76
+      have hlt_g : Ix.SpecDigest.groupOf ro_h < g :=
+        groupNeeds_groupOf_lt (hsub_needs ro_h (List.mem_cons_self ..))
+      obtain ⟨ext1, hval1, recs₁, hcl₁, ha₁, hev₁⟩ :=
+        ih_g (Ix.SpecDigest.groupOf ro_h) hlt_g htbl ev55
+      obtain ⟨ext2, hval2, recs₂, hcl₂, ha₂, hev₂⟩ :=
+        group_admit_needs_full_walks ih_g
+          (fun ro hm => hsub_needs ro (List.mem_cons_of_mem _ hm))
+          (htbl.mono ext1)
+          (repList_heapMono₂ _ repRoleNum_heapMono₂ ext1 hrest) ev90
+      have hsub1 : ∀ cl ∈ cs53, cl ∈ calls := fun cl hm => by rw [hc107]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs88, cl ∈ calls := fun cl hm => by rw [hc107]; simp [hm]
+      refine ⟨ext1.trans ext2, ?_,
+        recs₁.map (Claim.WalkedRec.mono hsub1) ++ recs₂.map (Claim.WalkedRec.mono hsub2),
+        (hcl₁.mono hsub1).append (hcl₂.mono hsub2), ?_, ?_⟩
+      · intro ro₀ hmem g'' hr ro hro_in
+        rcases List.mem_cons.mp hmem with rfl | hmem'
+        · exact (hval1 g'' hr ro hro_in).mono hsub1
+        · exact (hval2 ro₀ hmem' g'' hr ro hro_in).mono hsub2
+      · intro ro₀ hmem g'' hr ro hro_in a hw had
+        rw [List.map_append, Claim.map_addr_walkedRec_mono, Claim.map_addr_walkedRec_mono]
+        rcases List.mem_cons.mp hmem with rfl | hmem'
+        · exact List.mem_append_left _ (ha₁ g'' hr ro hro_in a hw had)
+        · exact List.mem_append_right _ (ha₂ ro₀ hmem' g'' hr ro hro_in a hw had)
+      · intro ro₀ hmem g'' hr ro hro_in arr thm hm hthm
+        rw [List.map_append, Claim.map_addr_walkedRec_mono, Claim.map_addr_walkedRec_mono]
+        rcases List.mem_cons.mp hmem with rfl | hmem'
+        · exact (hev₁ g'' hr ro hro_in arr thm hm hthm).mono (fun _ hx => List.mem_append_left _ hx)
+        · exact (hev₂ ro₀ hmem' g'' hr ro hro_in arr thm hm hthm).mono (fun _ hx => List.mem_append_right _ hx)
+
+/-- **`KernelRoles::group_admit(tbl, .field (g : F))` (`g < 2^32`) under `Claim.TableFullRep`**:
+extracts both `RoleValidatedAt` and a closed list of `Claim.WalkedRec`s covering every walked bound
+address and every `.proof thm` evidence entry across all `GroupReachable g g'`. -/
+theorem group_admit_full_nat_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} :
+    ∀ (g : Nat), g < 4294967296 →
+      ∀ {x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+        Claim.TableFullRep t bAddr h x_tbl →
+        ObsFn W "KernelRoles::group_admit" [x_tbl, .field (g : F)] h r h' calls →
+        Heap.Extends h h' ∧
+        (∀ g', GroupReachable g g' → ∀ ro ∈ groupRoles g', RoleValidatedAt t calls g' ro) ∧
+        ∃ recs : List (Claim.WalkedRec calls bAddr t),
+          Claim.RecsClosed recs ∧
+          (∀ g', GroupReachable g g' → ∀ ro ∈ groupRoles g', ∀ a,
+            roleWalksBound ro = true → t.addressOf? ro = some a → a ∈ recs.map (·.addr)) ∧
+          (∀ g', GroupReachable g g' → ∀ ro ∈ groupRoles g', ∀ arr thm,
+            (ro, arr) ∈ t.evidence.toList → .proof thm ∈ arr.toList → EvidenceWalked t ro thm (recs.map (·.addr))) := by
+  intro g
+  refine Nat.strongRecOn g fun g ih hg x_tbl r h h' calls htbl ev => ?_
+  obtain ⟨v1, m2, cs12, v16, m25, cs33, m45, v60, m70, cs78, cs101, v106, m122, cs130,
+    ev35, ev14, hm55, ev80, ev132, ev103, hc141⟩ :=
+    Obs.«KernelRoles::group_admit».obs ev
+  obtain ⟨rfl, rfl⟩ := group_validation_limit_of_nat hg ev80
+  obtain ⟨ext_gn, hneeds_rep⟩ := group_needs_spec hg ev35
+  have ih_lt : ∀ g' < g, ∀ {x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      Claim.TableFullRep t bAddr h x_tbl →
+      ObsFn W "KernelRoles::group_admit" [x_tbl, .field (g' : F)] h r h' calls →
+      Heap.Extends h h' ∧
+      (∀ g'', GroupReachable g' g'' → ∀ ro ∈ groupRoles g'', RoleValidatedAt t calls g'' ro) ∧
+      ∃ recs : List (Claim.WalkedRec calls bAddr t),
+        Claim.RecsClosed recs ∧
+        (∀ g'', GroupReachable g' g'' → ∀ ro ∈ groupRoles g'', ∀ a,
+          roleWalksBound ro = true → t.addressOf? ro = some a → a ∈ recs.map (·.addr)) ∧
+        (∀ g'', GroupReachable g' g'' → ∀ ro ∈ groupRoles g'', ∀ arr thm,
+          (ro, arr) ∈ t.evidence.toList → .proof thm ∈ arr.toList → EvidenceWalked t ro thm (recs.map (·.addr))) :=
+    fun g' hlt => ih g' hlt (Nat.lt_trans hlt hg)
+  obtain ⟨ext_gan, hval_needs, recs_n, hcl_n, ha_n, hev_n⟩ :=
+    group_admit_needs_full_walks ih_lt (fun _ hm => hm) (htbl.mono ext_gn) hneeds_rep ev14
+  let rcNode := Value.construct rcEnum "Mk"
+    [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []]
+  have ext_m45 : Heap.Extends h m45 :=
+    ext_gn.trans (ext_gan.trans (by rw [hm55]; exact Heap.Extends.snoc m70 rcNode))
+  have hld_rc : loadValue m45 (.ptr (.enum rcEnum) m70.length) = .ok rcNode := by
+    rw [hm55]
+    exact Claim.loadValue_snoc_construct m70 rcEnum "Mk"
+      [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []]
+  have hrc_m45 : Claim.RCFullRep t bAddr (groupValLimit g) m45 (.ptr (.enum rcEnum) m70.length) :=
+    ⟨groupValLimit_lt_u32 g, x_tbl, hld_rc, htbl.mono ext_m45⟩
+  obtain ⟨ext_gr, hroles_rep⟩ := group_roles_spec hg ev132
+  obtain ⟨ext_vgr, hval_here, recs_h, hcl_h, ha_h, hev_h⟩ :=
+    validate_group_roles_full_walks (hrc_m45.mono ext_gr) ((htbl.mono ext_m45).mono ext_gr)
+      hroles_rep ev103
+  have hsub_n : ∀ cl ∈ cs12, cl ∈ calls := fun cl hm => by rw [hc141]; simp [hm]
+  have hsub_h : ∀ cl ∈ cs101, cl ∈ calls := fun cl hm => by rw [hc141]; simp [hm]
+  refine ⟨ext_m45.trans (ext_gr.trans ext_vgr), ?_,
+    recs_n.map (Claim.WalkedRec.mono hsub_n) ++ recs_h.map (Claim.WalkedRec.mono hsub_h),
+    (hcl_n.mono hsub_n).append (hcl_h.mono hsub_h), ?_, ?_⟩
+  · intro g' hr ro hro
+    cases hr with
+    | refl => exact (hval_here ro hro).mono hsub_h
+    | step hm hr' => exact (hval_needs _ hm g' hr' ro hro).mono hsub_n
+  · intro g' hr ro hro a hw had
+    rw [List.map_append, Claim.map_addr_walkedRec_mono, Claim.map_addr_walkedRec_mono]
+    cases hr with
+    | refl => exact List.mem_append_right _ (ha_h ro hro a hw had)
+    | step hm hr' => exact List.mem_append_left _ (ha_n _ hm g' hr' ro hro a hw had)
+  · intro g' hr ro hro arr thm hm_ev hthm
+    rw [List.map_append, Claim.map_addr_walkedRec_mono, Claim.map_addr_walkedRec_mono]
+    cases hr with
+    | refl => exact (hev_h ro hro arr thm hm_ev hthm).mono (fun _ hx => List.mem_append_right _ hx)
+    | step hm hr' => exact (hev_n _ hm g' hr' ro hro arr thm hm_ev hthm).mono (fun _ hx => List.mem_append_left _ hx)
+
+/-- **`KernelRoles::group_admit(tbl, x_g)` under `Claim.TableFullRep`**. -/
+theorem group_admit_full_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {x_tbl x_g r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (htbl : Claim.TableFullRep t bAddr h x_tbl)
+    (ev : ObsFn W "KernelRoles::group_admit" [x_tbl, x_g] h r h' calls) :
+    Heap.Extends h h' ∧
+    ∃ g : Nat, g < 4294967296 ∧ x_g = .field (g : F) ∧
+      (∀ g', GroupReachable g g' → ∀ ro ∈ groupRoles g', RoleValidatedAt t calls g' ro) ∧
+      ∃ recs : List (Claim.WalkedRec calls bAddr t),
+        Claim.RecsClosed recs ∧
+        (∀ g', GroupReachable g g' → ∀ ro ∈ groupRoles g', ∀ a,
+          roleWalksBound ro = true → t.addressOf? ro = some a → a ∈ recs.map (·.addr)) ∧
+        (∀ g', GroupReachable g g' → ∀ ro ∈ groupRoles g', ∀ arr thm,
+          (ro, arr) ∈ t.evidence.toList → .proof thm ∈ arr.toList → EvidenceWalked t ro thm (recs.map (·.addr))) := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ev80, _, _, _⟩ :=
+    Obs.«KernelRoles::group_admit».obs ev
+  obtain ⟨_, g, hg, rfl, _⟩ := group_validation_limit_exact ev80
+  obtain ⟨ext, hval, recs, hcl, ha, hev⟩ := group_admit_full_nat_spec g hg htbl ev
+  exact ⟨ext, g, hg, rfl, hval, recs, hcl, ha, hev⟩
+
+/-! ## `role_addr`, `role_used_implicitly`, and `role_of` -/
+
+/-- **`KernelRoles::role_addr(rc, .field (roleNum ro))` under `RCRep`**:
+extracts the bound address `a` (`t.addressOf? ro = some a`, `BaseSeams.addr h' r a`), and when `rc` is a
+validating `Mk` context (`lim = some n`), extracts `groupOf ro < n`, `GroupAdmitIn`, and
+`RoleValidatedAt` across all `GroupReachable (groupOf ro) g'`. -/
+theorem role_addr_admit_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat} {ro : Ix.Kernel.Role}
+    {x_rc r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : RCRep t lim h x_rc)
+    (ev : ObsFn W "KernelRoles::role_addr" [x_rc, .field (roleNum ro)] h r h' calls) :
+    Heap.Extends h h' ∧
+    ∃ a : _root_.Address, BaseSeams.addr h' r a ∧ t.addressOf? ro = some a ∧
+      (∀ n, lim = some n →
+        Ix.SpecDigest.groupOf ro < n ∧
+        GroupAdmitIn calls t (Ix.SpecDigest.groupOf ro) ∧
+        ∀ g', GroupReachable (Ix.SpecDigest.groupOf ro) g' →
+          ∀ ro' ∈ groupRoles g', RoleValidatedAt t calls g' ro') := by
+  obtain ⟨tbl, ax, node, hload, hnode, htbl⟩ := hrc
+  cases Obs.«KernelRoles::role_addr».obs ev with
+  | Mk x_tbl x_limit w20 v47 m50 cs58 v61 m64 cs72 v97 m98 cs108 v127 m128 cs138
+      v142 m151 cs159 ld12 ev74 ev60 heq96 ev110 ev161 ev140 he171 he172 hc173 =>
+    rw [hload] at ld12
+    rcases hnode with ⟨n, hlim, hn_lt, rfl⟩ | ⟨_, rfl⟩
+    · injection ld12 with hv
+      injection hv with _ _ hxs
+      injection hxs with hxt hxs1
+      injection hxs1 with hxl
+      subst hxt hxl
+      obtain ⟨rfl, rfl⟩ := RolesAux.role_group_spec ev74
+      subst heq96
+      obtain ⟨_, _, hlt_iff, _, rfl⟩ := Lib.less_than_fields_field ev60
+      have hlt_val : ZMod.val (Ix.SpecDigest.groupOf ro : F) < ZMod.val (n : F) := hlt_iff.mp rfl
+      rw [RolesAux.val_groupOf, RolesAux.val_natCast (Nat.lt_trans hn_lt (by decide))] at hlt_val
+      obtain ⟨ext_ba, a, ha_m98, had⟩ := role_bound_addr_uncond htbl ev110
+      obtain ⟨rfl, rfl⟩ := RolesAux.role_group_spec ev161
+      have hg_lt : Ix.SpecDigest.groupOf ro < 4294967296 :=
+        Nat.lt_trans (groupOf_lt_77 ro) (by decide)
+      obtain ⟨ext_ga, hval_ga⟩ := group_admit_nat_spec _ hg_lt (htbl.mono ext_ba) ev140
+      have hsub_ga : ∀ cl ∈ cs138, cl ∈ calls := fun cl hm => by rw [hc173]; simp [hm]
+      subst he171 he172
+      refine ⟨ext_ba.trans ext_ga, a, BaseSeams.addr_mono ext_ga ha_m98, had, fun n' hn' => ?_⟩
+      rw [hlim] at hn'
+      injection hn' with hnn
+      subst hnn
+      exact ⟨hlt_val, ⟨_, _, tbl, v127, cs138, htbl.mono ext_ba, ev140,
+        by rw [hc173]; simp, hsub_ga⟩, fun g' hr ro' hro' => (hval_ga g' hr ro' hro').mono hsub_ga⟩
+    · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
+  | Assumed x_tbl w181 cs195 ld12 ev197 _ =>
+    rw [hload] at ld12
+    rcases hnode with ⟨_, _, _, rfl⟩ | ⟨hlim, rfl⟩
+    · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
+    · injection ld12 with hv
+      injection hv with _ _ hxs
+      injection hxs with hxt
+      subst hxt
+      obtain ⟨ext_ba, a, ha_h', had⟩ := role_bound_addr_uncond htbl ev197
+      exact ⟨ext_ba, a, ha_h', had, fun n hn => by rw [hlim] at hn; cases hn⟩
+
+/-- **`KernelRoles::role_addr(rc, .field (roleNum ro))` under `Claim.RCFullRep`**. -/
+theorem role_addr_full_admit_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {lim : Nat} {ro : Ix.Kernel.Role}
+    {x_rc r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : Claim.RCFullRep t bAddr lim h x_rc)
+    (ev : ObsFn W "KernelRoles::role_addr" [x_rc, .field (roleNum ro)] h r h' calls) :
+    Heap.Extends h h' ∧
+    Ix.SpecDigest.groupOf ro < lim ∧
+    GroupAdmitIn calls t (Ix.SpecDigest.groupOf ro) ∧
+    (∀ g', GroupReachable (Ix.SpecDigest.groupOf ro) g' →
+      ∀ ro' ∈ groupRoles g', RoleValidatedAt t calls g' ro') ∧
+    ∃ a : _root_.Address, BaseSeams.addr h' r a ∧ t.addressOf? ro = some a ∧
+      ∃ recs : List (Claim.WalkedRec calls bAddr t),
+        Claim.RecsClosed recs ∧
+        (∀ g', GroupReachable (Ix.SpecDigest.groupOf ro) g' → ∀ ro' ∈ groupRoles g', ∀ a',
+          roleWalksBound ro' = true → t.addressOf? ro' = some a' → a' ∈ recs.map (·.addr)) ∧
+        (∀ g', GroupReachable (Ix.SpecDigest.groupOf ro) g' → ∀ ro' ∈ groupRoles g', ∀ arr thm,
+          (ro', arr) ∈ t.evidence.toList → .proof thm ∈ arr.toList → EvidenceWalked t ro' thm (recs.map (·.addr))) := by
+  obtain ⟨ext, a, ha, had, hmk⟩ := role_addr_admit_spec hrc.toRCRep ev
+  obtain ⟨hlt, hga, hval⟩ := hmk lim rfl
+  obtain ⟨_, tbl, hload, htbl⟩ := hrc
+  cases Obs.«KernelRoles::role_addr».obs ev with
+  | Assumed _ _ _ ld12 _ _ =>
+    rw [hload] at ld12
+    exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
+  | Mk x_tbl _ _ _ m50 _ _ m64 _ _ m98 _ _ m128 cs138 _ m151 _
+      ld12 ev74 ev60 _ ev110 ev161 ev140 _ _ hc173 =>
+    rw [hload] at ld12
+    injection ld12 with hv
+    injection hv with _ _ hxs
+    injection hxs with hxt _
+    subst hxt
+    obtain ⟨rfl, rfl⟩ := RolesAux.role_group_spec ev161
+    have ext_m151 := ev74.heap_extends.trans (ev60.heap_extends.trans ev110.heap_extends)
+    have hg_lt : Ix.SpecDigest.groupOf ro < 4294967296 :=
+      Nat.lt_trans (groupOf_lt_77 ro) (by decide)
+    obtain ⟨_, _, recs_ga, hcl_ga, ha_ga, hev_ga⟩ :=
+      group_admit_full_nat_spec _ hg_lt (htbl.mono ext_m151) ev140
+    have hsub_ga : ∀ cl ∈ cs138, cl ∈ calls := fun cl hm => by rw [hc173]; simp [hm]
+    refine ⟨ext, hlt, hga, hval, a, ha, had, recs_ga.map (Claim.WalkedRec.mono hsub_ga),
+      hcl_ga.mono hsub_ga, ?_, ?_⟩
+    · intro g' hr ro' hro' a' hw had'
+      rw [Claim.map_addr_walkedRec_mono]
+      exact ha_ga g' hr ro' hro' a' hw had'
+    · intro g' hr ro' hro' arr thm hm hthm
+      rw [Claim.map_addr_walkedRec_mono]
+      exact hev_ga g' hr ro' hro' arr thm hm hthm
+
+/-- **`KernelRoles::role_used_implicitly(rc, .field (roleNum ro))` under `RCRep`**:
+extracts the bound address `a` (`t.addressOf? ro = some a`, `BaseSeams.addr h' r a`), the direct
+`RunCheckIn calls t lim a` walk of `a` (present in both `Mk` and `Assumed` contexts), and when
+`rc` is `Mk(tbl, n, ax)` (`lim = some n`), also `groupOf ro < n`, `GroupAdmitIn`, and
+`RoleValidatedAt` across all `GroupReachable (groupOf ro) g'`. -/
+theorem role_used_implicitly_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat}
+    {ro : Ix.Kernel.Role}
+    {x_rc r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : RCRep t lim h x_rc)
+    (ev : ObsFn W "KernelRoles::role_used_implicitly" [x_rc, .field (roleNum ro)] h r h' calls) :
+    Heap.Extends h h' ∧
+    ∃ a : _root_.Address, BaseSeams.addr h' r a ∧ t.addressOf? ro = some a ∧
+      RunCheckIn calls t lim a ∧
+      (∀ n, lim = some n →
+        Ix.SpecDigest.groupOf ro < n ∧
+        GroupAdmitIn calls t (Ix.SpecDigest.groupOf ro) ∧
+        ∀ g', GroupReachable (Ix.SpecDigest.groupOf ro) g' →
+          ∀ ro' ∈ groupRoles g', RoleValidatedAt t calls g' ro') := by
+  obtain ⟨v1, m2, cs12, v31, m32, cs42, ev14, ev44, rfl, rfl, hc64⟩ :=
+    Obs.«KernelRoles::role_used_implicitly».obs ev
+  obtain ⟨ext1, a, ha_m2, had, hmk⟩ := role_addr_admit_spec hrc ev14
+  have hsub1 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hm => by rw [hc64]; simp [hm]
+  have hwalk_a : RunCheckIn calls t lim a :=
+    ⟨_, _, x_rc, _, v31, cs42, hrc.mono ext1, ha_m2, ev44,
+      by rw [hc64]; simp, fun cl hm => by rw [hc64]; simp [hm]⟩
+  refine ⟨ext1.trans ev44.heap_extends, a, BaseSeams.addr_mono ev44.heap_extends ha_m2, had, hwalk_a,
+    fun n hn => ?_⟩
+  obtain ⟨hlt, hga, hval⟩ := hmk n hn
+  exact ⟨hlt, hga.mono hsub1, fun g' hr ro' hro' => (hval g' hr ro' hro').mono hsub1⟩
+
+/-- **`KernelRoles::role_used_implicitly(rc, .field (roleNum ro))` under `Claim.RCFullRep`**:
+extracts `groupOf ro < lim`, `GroupAdmitIn`, `RoleValidatedAt`, and a single closed list of
+`Claim.WalkedRec`s covering `a` itself as well as every walked bound role and `.proof thm`
+evidence entry of `GroupReachable (groupOf ro) g'`. -/
+theorem role_used_implicitly_full_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {lim : Nat} {ro : Ix.Kernel.Role}
+    {x_rc r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : Claim.RCFullRep t bAddr lim h x_rc)
+    (ev : ObsFn W "KernelRoles::role_used_implicitly" [x_rc, .field (roleNum ro)] h r h' calls) :
+    Heap.Extends h h' ∧
+    Ix.SpecDigest.groupOf ro < lim ∧
+    GroupAdmitIn calls t (Ix.SpecDigest.groupOf ro) ∧
+    (∀ g', GroupReachable (Ix.SpecDigest.groupOf ro) g' →
+      ∀ ro' ∈ groupRoles g', RoleValidatedAt t calls g' ro') ∧
+    ∃ a : _root_.Address, BaseSeams.addr h' r a ∧ t.addressOf? ro = some a ∧
+      ∃ recs : List (Claim.WalkedRec calls bAddr t),
+        Claim.RecsClosed recs ∧
+        a ∈ recs.map (·.addr) ∧
+        (∀ g', GroupReachable (Ix.SpecDigest.groupOf ro) g' → ∀ ro' ∈ groupRoles g', ∀ a',
+          roleWalksBound ro' = true → t.addressOf? ro' = some a' → a' ∈ recs.map (·.addr)) ∧
+        (∀ g', GroupReachable (Ix.SpecDigest.groupOf ro) g' → ∀ ro' ∈ groupRoles g', ∀ arr thm,
+          (ro', arr) ∈ t.evidence.toList → .proof thm ∈ arr.toList → EvidenceWalked t ro' thm (recs.map (·.addr))) := by
+  obtain ⟨v1, m2, cs12, v31, m32, cs42, ev14, ev44, rfl, rfl, hc64⟩ :=
+    Obs.«KernelRoles::role_used_implicitly».obs ev
+  obtain ⟨ext1, hlt, hga, hval, a, ha_m2, had, recs_ga, hcl_ga, ha_ga, hev_ga⟩ :=
+    role_addr_full_admit_spec hrc ev14
+  obtain ⟨ext2, recs_a, hmem_a, hcl_a, _⟩ :=
+    Claim.run_check_transitive_spec (hrc.mono ext1) ha_m2 ev44
+  have hsub1 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hm => by rw [hc64]; simp [hm]
+  have hsub2 : ∀ cl ∈ cs42, cl ∈ calls := fun cl hm => by rw [hc64]; simp [hm]
+  refine ⟨ext1.trans ext2, hlt, hga.mono hsub1,
+    fun g' hr ro' hro' => (hval g' hr ro' hro').mono hsub1,
+    a, BaseSeams.addr_mono ext2 ha_m2, had,
+    recs_ga.map (Claim.WalkedRec.mono hsub1) ++ recs_a.map (Claim.WalkedRec.mono hsub2),
+    (hcl_ga.mono hsub1).append (hcl_a.mono hsub2), ?_, ?_, ?_⟩
+  · rw [List.map_append, Claim.map_addr_walkedRec_mono, Claim.map_addr_walkedRec_mono]
+    exact List.mem_append_right _ hmem_a
+  · intro g' hr ro' hro' a' hw had'
+    rw [List.map_append, Claim.map_addr_walkedRec_mono]
+    exact List.mem_append_left _ (ha_ga g' hr ro' hro' a' hw had')
+  · intro g' hr ro' hro' arr thm hm hthm
+    rw [List.map_append, Claim.map_addr_walkedRec_mono]
+    exact (hev_ga g' hr ro' hro' arr thm hm hthm).mono (fun _ hx => List.mem_append_left _ hx)
+
+/-- **`KernelRoles::role_of(rc, ap)` under `RCRep`**: either returns `0`, or returns
+`roleNum ro + 1` with `t.addressOf? ro = some addr`, and when `lim = some n`, `groupOf ro < n`,
+`GroupAdmitIn`, and `RoleValidatedAt` across all `GroupReachable (groupOf ro) g'`. -/
+theorem role_of_admit_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat} {addr : _root_.Address}
+    {x_rc x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : RCRep t lim h x_rc) (ha : BaseSeams.addr h x_a addr)
+    (ev : ObsFn W "KernelRoles::role_of" [x_rc, x_a] h r h' calls) :
+    Heap.Extends h h' ∧
+    (r = .field 0 ∨
+      ∃ ro : Ix.Kernel.Role,
+        r = .field (roleNum ro + 1) ∧
+        t.addressOf? ro = some addr ∧
+        (∀ n, lim = some n →
+          Ix.SpecDigest.groupOf ro < n ∧
+          GroupAdmitIn calls t (Ix.SpecDigest.groupOf ro) ∧
+          ∀ g', GroupReachable (Ix.SpecDigest.groupOf ro) g' →
+            ∀ ro' ∈ groupRoles g', RoleValidatedAt t calls g' ro')) := by
+  let c₀ : Ctx := { E := default, env := default, t := t, lim := none }
+  obtain ⟨a_bytes, ha_rep, rfl⟩ := ha
+  obtain ⟨tbl, ax, node, hload, hnode, htbl⟩ := hrc
+  refine ⟨ev.heap_extends, ?_⟩
+  cases Obs.«KernelRoles::role_of».obs ev with
+  | Mk_n0 _ _ _ _ _ _ _ _ _ _ _ he100 _ _ =>
+    exact .inl he100
+  | Mk_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ he222 _ _ =>
+    exact .inl he222
+  | Mk_other_n1 x_tbl x_limit w20 v36 m37 cs47 v51 m61 cs69 m108 cs119 v122 m125 cs133 v136
+      v163 m164 cs174 v178 m187 cs195 v198
+      ld12 ev71 ev49 hne103 op150 ev135 ev121 op212 ev197 ev176 he215 _ hc217 =>
+    rw [hload] at ld12
+    rcases hnode with ⟨n, hlim, hn_lt, rfl⟩ | ⟨_, rfl⟩
+    · injection ld12 with hv
+      injection hv with _ _ hxs
+      injection hxs with hxt hxs1
+      injection hxs1 with hxl
+      subst hxt hxl
+      obtain ⟨rfl, hIdx⟩ := role_addr_index_step (ScopedCtx.unrestricted c₀) ev71 tbl rfl htbl
+      have hlookup :=
+        rbtree_map_lookup_or_default_field_step (ScopedCtx.unrestricted c₀) ev49
+          x_a v51 (.field 0) rfl a_bytes ha_rep (IndexEntry c₀.t) hIdx
+      rcases hlookup with hv0 | ⟨ro, hv36, had⟩
+      · exact absurd hv0 hne103
+      · subst hv36
+        obtain ⟨y, hy1, rfl⟩ := RolesAux.evalBinOp_sub_field_left_inv op150
+        injection hy1 with hy
+        subst hy
+        have hsub : roleNum ro + 1 - 1 = roleNum ro := add_sub_cancel_right _ _
+        rw [hsub] at ev135
+        obtain ⟨rfl, rfl⟩ := RolesAux.role_group_spec ev135
+        obtain ⟨_, _, hlt_iff, _, rfl⟩ := Lib.less_than_fields_field ev121
+        have hlt_val : ZMod.val (Ix.SpecDigest.groupOf ro : F) < ZMod.val (n : F) := hlt_iff.mp rfl
+        rw [RolesAux.val_groupOf, RolesAux.val_natCast (Nat.lt_trans hn_lt (by decide))] at hlt_val
+        obtain ⟨y2, hy2, rfl⟩ := RolesAux.evalBinOp_sub_field_left_inv op212
+        injection hy2 with hy2_eq
+        subst hy2_eq
+        rw [hsub] at ev197
+        obtain ⟨rfl, rfl⟩ := RolesAux.role_group_spec ev197
+        have ext_m := ev71.heap_extends.trans ev49.heap_extends
+        have hg_lt : Ix.SpecDigest.groupOf ro < 4294967296 :=
+          Nat.lt_trans (groupOf_lt_77 ro) (by decide)
+        obtain ⟨_, hval_ga⟩ := group_admit_nat_spec _ hg_lt (htbl.mono ext_m) ev176
+        have hsub_ga : ∀ cl ∈ cs174, cl ∈ calls := fun cl hm => by rw [hc217]; simp [hm]
+        refine .inr ⟨ro, he215, had, fun n' hn' => ?_⟩
+        rw [hlim] at hn'
+        injection hn' with hnn
+        subst hnn
+        exact ⟨hlt_val, ⟨_, _, tbl, v163, cs174, htbl.mono ext_m, ev176,
+          by rw [hc217]; simp, hsub_ga⟩,
+          fun g' hr ro' hro' => (hval_ga g' hr ro' hro').mono hsub_ga⟩
+    · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
+  | Assumed x_tbl w232 cs246 v250 m260 cs268 ld12 ev270 ev248 _ =>
+    rw [hload] at ld12
+    rcases hnode with ⟨_, _, _, rfl⟩ | ⟨hlim, rfl⟩
+    · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
+    · injection ld12 with hv
+      injection hv with _ _ hxs
+      injection hxs with hxt
+      subst hxt
+      obtain ⟨rfl, hIdx⟩ := role_addr_index_step (ScopedCtx.unrestricted c₀) ev270 tbl rfl htbl
+      have hlookup :=
+        rbtree_map_lookup_or_default_field_step (ScopedCtx.unrestricted c₀) ev248
+          x_a v250 (.field 0) rfl a_bytes ha_rep (IndexEntry c₀.t) hIdx
+      rcases hlookup with hr0 | ⟨ro, hr_eq, had⟩
+      · exact .inl hr0
+      · exact .inr ⟨ro, hr_eq, had, fun n hn => by rw [hlim] at hn; cases hn⟩
+
+/-- **`KernelRoles::role_of(rc, ap)` under `Claim.RCFullRep`**. -/
+theorem role_of_full_admit_spec {t : Ix.Kernel.RoleTable} {bAddr addr : _root_.Address}
+    {lim : Nat}
+    {x_rc x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : Claim.RCFullRep t bAddr lim h x_rc) (ha : BaseSeams.addr h x_a addr)
+    (ev : ObsFn W "KernelRoles::role_of" [x_rc, x_a] h r h' calls) :
+    Heap.Extends h h' ∧
+    (r = .field 0 ∨
+      ∃ ro : Ix.Kernel.Role,
+        r = .field (roleNum ro + 1) ∧
+        t.addressOf? ro = some addr ∧
+        Ix.SpecDigest.groupOf ro < lim ∧
+        GroupAdmitIn calls t (Ix.SpecDigest.groupOf ro) ∧
+        (∀ g', GroupReachable (Ix.SpecDigest.groupOf ro) g' →
+          ∀ ro' ∈ groupRoles g', RoleValidatedAt t calls g' ro') ∧
+        ∃ recs : List (Claim.WalkedRec calls bAddr t),
+          Claim.RecsClosed recs ∧
+          (∀ g', GroupReachable (Ix.SpecDigest.groupOf ro) g' → ∀ ro' ∈ groupRoles g', ∀ a',
+            roleWalksBound ro' = true → t.addressOf? ro' = some a' → a' ∈ recs.map (·.addr)) ∧
+          (∀ g', GroupReachable (Ix.SpecDigest.groupOf ro) g' → ∀ ro' ∈ groupRoles g', ∀ arr thm,
+            (ro', arr) ∈ t.evidence.toList → .proof thm ∈ arr.toList → EvidenceWalked t ro' thm (recs.map (·.addr)))) := by
+  obtain ⟨ext, hres⟩ := role_of_admit_spec hrc.toRCRep ha ev
+  refine ⟨ext, ?_⟩
+  rcases hres with hr0 | ⟨ro, hr_eq, had, hmk⟩
+  · exact .inl hr0
+  · obtain ⟨hlt, hga, hval⟩ := hmk lim rfl
+    obtain ⟨_, tbl, hload, htbl⟩ := hrc
+    cases Obs.«KernelRoles::role_of».obs ev with
+    | Mk_n0 _ _ _ _ _ _ _ _ _ _ _ he100 _ _ =>
+      exfalso
+      exact RolesAux.roleNum_add_one_ne_zero ro (Value.field.inj (hr_eq.symm.trans he100))
+    | Mk_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ he222 _ _ =>
+      exfalso
+      exact RolesAux.roleNum_add_one_ne_zero ro (Value.field.inj (hr_eq.symm.trans he222))
+    | Assumed _ _ _ _ _ _ ld12 _ _ _ =>
+      rw [hload] at ld12
+      exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
+    | Mk_other_n1 x_tbl _ _ v36 m37 _ _ m61 _ m108 _ _ m125 _ _
+        _ m164 cs174 v178 m187 _ v198
+        ld12 ev71 ev49 _ _ ev135 ev121 op212 ev197 ev176 he215 _ hc217 =>
+      rw [hload] at ld12
+      injection ld12 with hv
+      injection hv with _ _ hxs
+      injection hxs with hxt _
+      subst hxt
+      have hv36 : v36 = .field (roleNum ro + 1) := he215.symm.trans hr_eq
+      subst hv36
+      obtain ⟨y2, hy2, rfl⟩ := RolesAux.evalBinOp_sub_field_left_inv op212
+      injection hy2 with hy2_eq
+      subst hy2_eq
+      have hsub : roleNum ro + 1 - 1 = roleNum ro := add_sub_cancel_right _ _
+      rw [hsub] at ev197
+      obtain ⟨rfl, rfl⟩ := RolesAux.role_group_spec ev197
+      have ext_m187 :=
+        ev71.heap_extends.trans (ev49.heap_extends.trans
+          (ev135.heap_extends.trans ev121.heap_extends))
+      have hg_lt : Ix.SpecDigest.groupOf ro < 4294967296 :=
+        Nat.lt_trans (groupOf_lt_77 ro) (by decide)
+      obtain ⟨_, _, recs_ga, hcl_ga, ha_ga, hev_ga⟩ :=
+        group_admit_full_nat_spec _ hg_lt (htbl.mono ext_m187) ev176
+      have hsub_ga : ∀ cl ∈ cs174, cl ∈ calls := fun cl hm => by rw [hc217]; simp [hm]
+      refine .inr ⟨ro, hr_eq, had, hlt, hga, hval,
+        recs_ga.map (Claim.WalkedRec.mono hsub_ga), hcl_ga.mono hsub_ga, ?_, ?_⟩
+      · intro g' hr ro' hro' a' hw had'
+        rw [Claim.map_addr_walkedRec_mono]
+        exact ha_ga g' hr ro' hro' a' hw had'
+      · intro g' hr ro' hro' arr thm hm hthm
+        rw [Claim.map_addr_walkedRec_mono]
+        exact hev_ga g' hr ro' hro' arr thm hm hthm
+
+/-! ## The observed validation of each role of a group -/
+
+/-- **The run validated the role `ro` in the validation of group `g`**: an observed call of
+`KernelRoles::validate_role` on `ro` under the role context at the group's validation limit and
+the table `t` at the binding `bAddr`, among `calls`. It is the observation itself: every
+assertion of the role's validation is a consequence of it. -/
+def ValidateRoleIn (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
+    (g : Nat) (ro : Ix.Kernel.Role) : Prop :=
+  ∃ (h h' : Heap F) (x_rc x_tbl res : SourceValue F) (cs : List (Call F)),
+    Claim.RCFullRep t bAddr (groupValLimit g) h x_rc ∧
+    Claim.TableFullRep t bAddr h x_tbl ∧
+    ObsFn W "KernelRoles::validate_role" [x_rc, x_tbl, .field (roleNum ro)] h res h' cs ∧
+    ∀ cl ∈ cs, cl ∈ calls
+
+theorem ValidateRoleIn.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.Role}
+    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (hv : ValidateRoleIn cs₁ bAddr t g ro) :
+    ValidateRoleIn cs₂ bAddr t g ro := by
+  obtain ⟨h, h', x_rc, x_tbl, res, cs, hrc, htbl, ev, hs⟩ := hv
+  exact ⟨h, h', x_rc, x_tbl, res, cs, hrc, htbl, ev, fun cl hm => hsub cl (hs cl hm)⟩
+
+private theorem validate_group_roles_observed {t : Ix.Kernel.RoleTable}
+    {bAddr : _root_.Address} {g : Nat} {rs : List Ix.Kernel.Role} :
+    ∀ {x_rc x_tbl x_rs r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      Claim.RCFullRep t bAddr (groupValLimit g) h x_rc →
+      Claim.TableFullRep t bAddr h x_tbl →
+      RepList Obs.Names.«Lists::Node<Field>» repRoleNum h rs x_rs →
+      ObsFn W "KernelRoles::validate_group_roles" [x_rc, x_tbl, x_rs] h r h' calls →
+      Heap.Extends h h' ∧ ∀ ro ∈ rs, ValidateRoleIn calls bAddr t g ro
+  | x_rc, x_tbl, x_rs, r, h, h', calls, hrc, htbl, hlist, ev => by
+    cases Obs.«KernelRoles::validate_group_roles».obs ev with
+    | Nil ld12 _ he23 _ =>
+      obtain rfl := Lib.rep_nil_of_load hlist ld12
+      subst he23
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm)⟩
+    | Cons x_r x_rest v42 m43 cs53 cs83 ld12 ev55 ev85 hc110 =>
+      obtain ⟨ro₀, rest, rfl, hro, hrest⟩ := Lib.rep_cons_of_load hlist ld12
+      rw [hro] at ev55
+      have ext1 := ev55.heap_extends
+      obtain ⟨ext2, hval2⟩ :=
+        validate_group_roles_observed (hrc.mono ext1) (htbl.mono ext1)
+          (repList_heapMono₂ _ repRoleNum_heapMono₂ ext1 hrest) ev85
+      have hsub1 : ∀ cl ∈ cs53, cl ∈ calls := fun cl hm => by rw [hc110]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs83, cl ∈ calls := fun cl hm => by rw [hc110]; simp [hm]
+      refine ⟨ext1.trans ext2, fun ro hmem => ?_⟩
+      rcases List.mem_cons.mp hmem with heq | hmem'
+      · rw [heq]
+        exact ⟨_, _, _, _, _, _, hrc, htbl, ev55, hsub1⟩
+      · exact (hval2 ro hmem').mono hsub2
+
+/-- **`KernelRoles::group_admit(tbl, .field (g : F))` validates every role of the group, as
+observed**: under `Claim.TableFullRep`, each role of group `g` has its `validate_role` call under
+the role context at the group's validation limit among the run's calls. -/
+theorem group_admit_role_observations {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {g : Nat} (hg : g < 4294967296)
+    {x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (htbl : Claim.TableFullRep t bAddr h x_tbl)
+    (ev : ObsFn W "KernelRoles::group_admit" [x_tbl, .field (g : F)] h r h' calls) :
+    Heap.Extends h h' ∧ ∀ ro ∈ groupRoles g, ValidateRoleIn calls bAddr t g ro := by
+  obtain ⟨v1, m2, cs12, v16, m25, cs33, m45, v60, m70, cs78, cs101, v106, m122, cs130,
+    ev35, ev14, hm55, ev80, ev132, ev103, hc141⟩ :=
+    Obs.«KernelRoles::group_admit».obs ev
+  obtain ⟨rfl, rfl⟩ := group_validation_limit_of_nat hg ev80
+  obtain ⟨ext_gn, hneeds_rep⟩ := group_needs_spec hg ev35
+  have ext_gan := ev14.heap_extends
+  let rcNode := Value.construct rcEnum "Mk"
+    [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []]
+  have ext_m45 : Heap.Extends h m45 :=
+    ext_gn.trans (ext_gan.trans (by rw [hm55]; exact Heap.Extends.snoc m70 rcNode))
+  have hld_rc : loadValue m45 (.ptr (.enum rcEnum) m70.length) = .ok rcNode := by
+    rw [hm55]
+    exact Claim.loadValue_snoc_construct m70 rcEnum "Mk"
+      [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []]
+  have hrc_m45 : Claim.RCFullRep t bAddr (groupValLimit g) m45 (.ptr (.enum rcEnum) m70.length) :=
+    ⟨groupValLimit_lt_u32 g, x_tbl, hld_rc, htbl.mono ext_m45⟩
+  obtain ⟨ext_gr, hroles_rep⟩ := group_roles_spec hg ev132
+  obtain ⟨ext_vgr, hval_here⟩ :=
+    validate_group_roles_observed (hrc_m45.mono ext_gr) ((htbl.mono ext_m45).mono ext_gr)
+      hroles_rep ev103
+  have hsub_h : ∀ cl ∈ cs101, cl ∈ calls := fun cl hm => by rw [hc141]; simp [hm]
+  exact ⟨ext_m45.trans (ext_gr.trans ext_vgr), fun ro hro => (hval_here ro hro).mono hsub_h⟩
+
+/-! ## The observed walk of an equation role's evidence theorems -/
+
+/-- **The run walked the record at `addr` under the role context at the limit `n`, as
+observed**: a call of `KernelClaim::run_check_transitive` on `addr` under
+`Claim.RCFullRep t bAddr n`, among `calls`. -/
+def RunCheckFullIn (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
+    (n : Nat) (addr : _root_.Address) : Prop :=
+  ∃ (h_w h_w' : Heap F) (rc ap r_w : SourceValue F) (cs_w : List (Call F)),
+    Claim.RCFullRep t bAddr n h_w rc ∧ BaseSeams.addr h_w ap addr ∧
+    ObsFn W "KernelClaim::run_check_transitive" [rc, ap] h_w r_w h_w' cs_w ∧
+    ∀ cl ∈ cs_w, cl ∈ calls
+
+theorem RunCheckFullIn.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {n : Nat} {addr : _root_.Address}
+    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (hv : RunCheckFullIn cs₁ bAddr t n addr) :
+    RunCheckFullIn cs₂ bAddr t n addr := by
+  obtain ⟨h_w, h_w', rc, ap, r_w, cs_w, hrc, ha, ev, hs⟩ := hv
+  exact ⟨h_w, h_w', rc, ap, r_w, cs_w, hrc, ha, ev, fun cl hm => hsub cl (hs cl hm)⟩
+
+private theorem validate_eqns_equations_observed {t : Ix.Kernel.RoleTable}
+    {bAddr : _root_.Address} {lim : Nat}
+    {es : List (Ix.Kernel.Evidence _root_.Address)} :
+    ∀ {x_rc x_tbl x_r x_ev x_k r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      Claim.RCFullRep t bAddr lim h x_rc →
+      RepList evListEnum EvRep h es x_ev →
+      ObsFn W "KernelRoles::validate_eqns_equations" [x_rc, x_tbl, x_r, x_ev, x_k] h r h' calls →
+      Heap.Extends h h' ∧
+      ∀ thm : _root_.Address, .proof thm ∈ es → RunCheckFullIn calls bAddr t lim thm
+  | x_rc, x_tbl, x_r, x_ev, x_k, r, h, h', calls, hrc, hlist, ev => by
+    cases Obs.«KernelRoles::validate_eqns_equations».obs ev with
+    | Nil ld12 _ he23 _ =>
+      rw [← evListEnum] at ld12
+      obtain rfl := Lib.rep_nil_of_load hlist ld12
+      subst he23
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm)⟩
+    | Cons x_e x_rest v432 m433 cs435 cs444 v451 ld12 sg440 _ ev446 hc495 =>
+      rw [← evListEnum] at ld12
+      obtain ⟨e, rest, rfl, he_rep, hrest_rep⟩ := Lib.rep_cons_of_load hlist ld12
+      have hseg : Heap.Extends h m433 ∧
+          (∀ thm : _root_.Address, e = .proof thm → RunCheckFullIn cs435 bAddr t lim thm) := by
+        cases sg440 with
+        | Defeq _ m72 _ _ m120 _ _ _ m143 _ m179 _ m215
+            hv56 ev82 _ ev153 ev189 hm223 ev130 _ _ he237 _ =>
+          have ext_seg : Heap.Extends h m433 := by
+            rw [he237]
+            exact ev82.heap_extends.trans (ev153.heap_extends.trans (ev189.heap_extends.trans
+              ((by rw [hm223]; exact Heap.Extends.snoc m179 _ : Heap.Extends m179 m215).trans
+                ev130.heap_extends)))
+          refine ⟨ext_seg, fun thm he => ?_⟩
+          have he_prf : EvRep h (.proof thm) x_e := by rwa [← he]
+          exact (evRep_proof_not_defeq he_prf hv56).elim
+        | Proof x_thm m252 p260 cs266 x_nlvls x_tty w283 v311 m320 cs328
+            v340 m341 cs351 cs373 v378 m394 cs402
+            _ hv244 ev268 _ ev330 _ ev353 ev404 ev375 hc429 =>
+          have ext_seg : Heap.Extends h m433 :=
+            ev268.heap_extends.trans (ev330.heap_extends.trans (ev353.heap_extends.trans
+              (ev404.heap_extends.trans ev375.heap_extends)))
+          cases e with
+          | defeq =>
+            exact ⟨ext_seg, fun _ he => by cases he⟩
+          | proof thm₀ =>
+            have ha_h : BaseSeams.addr h x_thm thm₀ := evRep_proof_inv he_rep hv244
+            have ha_m320 : BaseSeams.addr m320 x_thm thm₀ :=
+              BaseSeams.addr_mono (ev268.heap_extends.trans ev330.heap_extends) ha_h
+            have hrc_m320 : Claim.RCFullRep t bAddr lim m320 x_rc :=
+              hrc.mono (ev268.heap_extends.trans ev330.heap_extends)
+            have hsub_w : ∀ cl ∈ cs351, cl ∈ cs435 := fun cl hm => by rw [hc429]; simp [hm]
+            refine ⟨ext_seg, fun thm he => ?_⟩
+            injection he with hthm
+            subst hthm
+            exact ⟨_, _, _, _, _, _, hrc_m320, ha_m320, ev353, hsub_w⟩
+      obtain ⟨ext1, hhead⟩ := hseg
+      obtain ⟨ext2, htail⟩ :=
+        validate_eqns_equations_observed (hrc.mono ext1)
+          (repList_heapMono₂ evListEnum evRep_heapMono₂ ext1 hrest_rep) ev446
+      have hsub1 : ∀ cl ∈ cs435, cl ∈ calls := fun cl hm => by rw [hc495]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs444, cl ∈ calls := fun cl hm => by rw [hc495]; simp [hm]
+      refine ⟨ext1.trans ext2, fun thm hmem => ?_⟩
+      rcases List.mem_cons.mp hmem with he | hrest
+      · exact (hhead thm he.symm).mono hsub1
+      · exact (htail thm hrest).mono hsub2
+
+/-- **The evidence theorems of a role specified by equations are walked in its validation, as
+observed**: each `.proof thm` entry of the role's evidence has its
+`KernelClaim::run_check_transitive` call under the role context at the group's validation
+limit, among the validation's calls. -/
+theorem validate_role_eqns_evidence_observed {t : Ix.Kernel.RoleTable}
+    {bAddr : _root_.Address} {g : Nat} {ro : Ix.Kernel.Role}
+    {x_rc x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : Claim.RCFullRep t bAddr (groupValLimit g) h x_rc)
+    (htbl : Claim.TableFullRep t bAddr h x_tbl)
+    (ev : ObsFn W "KernelRoles::validate_role" [x_rc, x_tbl, .field (roleNum ro)] h r h' calls)
+    (h5 : roleSpecKindNat ro = 5) :
+    ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm : _root_.Address),
+      (ro, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
+      RunCheckFullIn calls bAddr t (groupValLimit g) thm := by
+  have hwf : t.wf = true := htbl.1
+  let c₀ : Ctx := { E := default, env := default, t := t, lim := none }
+  cases Obs.«KernelRoles::validate_role».obs ev with
+  | n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h5] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h5] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n2 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h5] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h5] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n4 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h5] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n5 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs376
+      ev14 ev47 _ ev80 ev100 _ ev124 ev378 hc419 =>
+    obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl.toTableRep ev14
+    have ext_m111 : Heap.Extends m2 m111 :=
+      ev47.heap_extends.trans (ev80.heap_extends.trans
+        (ev100.heap_extends.trans ev124.heap_extends))
+    obtain ⟨_, _, _, _, _, _, m101_eq, _, _, m130_eq, _, _, m151_eq, _, _, m182_eq, _,
+      _, m_anc, _,
+      v209, m210, cs220, v239, m240, cs250, v280, v281, m283, cs291, m303, cs311, cs326,
+      _, sg108, ev140, _, ev192, ev163, ev_anc, ev222, ev252, ev293, ev313, heq322, ev328, hc368⟩ :=
+      Obs.«KernelRoles::validate_eqns».obs ev378
+    have ext_sg : Heap.Extends m111 m101_eq := by
+      cases sg108 with
+      | Safe _ _ he63 _ => rw [he63]
+      | other _ heq94 _ _ _ => exact absurd (Value.field.inj heq94) zero_ne_one
+    have ext_w : Heap.Extends m111 m_anc :=
+      ext_sg.trans (ev140.heap_extends.trans (ev192.heap_extends.trans
+        (ev163.heap_extends.trans ev_anc.heap_extends)))
+    have hrc_w := hrc.mono (ext_ba.trans (ext_m111.trans ext_w))
+    have htbl_m210 : TableRep c₀.t m210 x_tbl :=
+      htbl.toTableRep.mono (ext_ba.trans (ext_m111.trans (ext_w.trans ev222.heap_extends)))
+    obtain ⟨es, hlist_m240, hes⟩ :=
+      role_evidence_step (ScopedCtx.unrestricted c₀) ev252 x_tbl ro rfl htbl_m210
+    obtain ⟨rfl, rfl⟩ := evList_length ev293 hlist_m240
+    obtain ⟨rfl, k, hk0, hk10, rfl⟩ := eqns_equation_count_pos h5 ev313
+    obtain ⟨arr₀, hmem_ev₀, harr_eq, _⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq322
+    have hrc_m303 := hrc_w.mono (ev222.heap_extends.trans ev252.heap_extends)
+    obtain ⟨_, hprfs⟩ := validate_eqns_equations_observed hrc_m303 hlist_m240 ev328
+    have hsub_ev : ∀ cl ∈ cs326, cl ∈ calls := fun cl hm => by
+      rw [hc419]; simp [show cl ∈ cs376 by rw [hc368]; simp [hm]]
+    intro arr thm hm hthm
+    have harr : arr = arr₀ := evidence_eq_of_wf hwf hm hmem_ev₀
+    subst harr
+    rw [harr_eq] at hthm
+    exact (hprfs thm hthm).mono hsub_ev
+
+/-! ## The observed walk of an equation role's walked anchors -/
+
+private theorem walk_bound_anchor_observed {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {n : Nat} {ar : Ix.Kernel.Role} {x_rc x_tbl r : SourceValue F} {h h' : Heap F}
+    {cs : List (Call F)}
+    (hrc : Claim.RCFullRep t bAddr n h x_rc) (htbl : Claim.TableFullRep t bAddr h x_tbl)
+    (ev : ObsFn W "KernelRoles::walk_bound_anchor" [x_rc, x_tbl, .field (roleNum ar)] h r h' cs) :
+    ∃ a, t.addressOf? ar = some a ∧ RunCheckFullIn cs bAddr t n a := by
+  match Obs.«KernelRoles::walk_bound_anchor».obs ev with
+  | .run (v_gcadudkq := v_a) (m_idkregbd := m1) (m_veaqlwmf := m2) (m_ahrzuxpa := m3)
+      (m_rxiohheh := m4) (v_jtpwocaz := v_w) (m_ysbiqxcq := m5) (cs_yfagfbik := cs_w)
+      (ev_hkmymzfn := ev_ba) (ev_njmmsszc := ev_ci) (ev_savgtekg := ev_nl)
+      (ev_rpdnxcnt := ev_rl) (ev_firpawtv := ev_w) (hc_sgljalbe := hc) .. =>
+    obtain ⟨ext_ba, a, ha_m1, had⟩ := role_bound_addr_uncond htbl.toTableRep ev_ba
+    have ext_m4 : Heap.Extends m1 m4 :=
+      ev_ci.heap_extends.trans (ev_nl.heap_extends.trans ev_rl.heap_extends)
+    exact ⟨a, had, m4, m5, x_rc, v_a, v_w, cs_w, hrc.mono (ext_ba.trans ext_m4),
+      BaseSeams.addr_mono ext_m4 ha_m1, ev_w, fun cl hm => by rw [hc]; simp [hm]⟩
+
+private theorem role_eq_of_field_eq {ro ro' : Ix.Kernel.Role}
+    (h : (.field (roleNum ro) : SourceValue F) = .field (roleNum ro')) : ro = ro' :=
+  RolesAux.roleNum_inj (Value.field.inj h)
+
+private theorem validate_eqns_anchors_observed {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {n : Nat} {ro : Ix.Kernel.Role} {x_rc x_tbl r : SourceValue F} {h h' : Heap F}
+    {cs : List (Call F)}
+    (hrc : Claim.RCFullRep t bAddr n h x_rc) (htbl : Claim.TableFullRep t bAddr h x_tbl)
+    (ev : ObsFn W "KernelRoles::validate_eqns_anchors" [x_rc, x_tbl, .field (roleNum ro)] h r h' cs) :
+    ∀ ar ∈ eqnsAnchorsOf ro, ∃ a, t.addressOf? ar = some a ∧ RunCheckFullIn cs bAddr t n a := by
+  cases Obs.«KernelRoles::validate_eqns_anchors».obs ev with
+  | n65 _ m1 cs1 _ m2 cs2 _ m3 cs3 cs4 hv ev1 ev2 ev3 ev4 hc =>
+    have hro : ro = .decidableDecide := role_eq_of_field_eq (ro' := .decidableDecide) hv
+    subst hro
+    intro ar har
+    simp only [eqnsAnchorsOf, List.mem_cons, List.not_mem_nil, or_false] at har
+    rcases har with rfl | rfl | rfl | rfl
+    · obtain ⟨a, had, hw⟩ := walk_bound_anchor_observed (ar := .decidable) hrc htbl ev1
+      exact ⟨a, had, hw.mono fun cl hm => by rw [hc]; simp [hm]⟩
+    · have ext := ev1.heap_extends
+      obtain ⟨a, had, hw⟩ :=
+        walk_bound_anchor_observed (ar := .decidableIsTrue) (hrc.mono ext) (htbl.mono ext) ev2
+      exact ⟨a, had, hw.mono fun cl hm => by rw [hc]; simp [hm]⟩
+    · have ext := ev1.heap_extends.trans ev2.heap_extends
+      obtain ⟨a, had, hw⟩ :=
+        walk_bound_anchor_observed (ar := .decidableIsFalse) (hrc.mono ext) (htbl.mono ext) ev3
+      exact ⟨a, had, hw.mono fun cl hm => by rw [hc]; simp [hm]⟩
+    · have ext := ev1.heap_extends.trans (ev2.heap_extends.trans ev3.heap_extends)
+      obtain ⟨a, had, hw⟩ :=
+        walk_bound_anchor_observed (ar := .notProp) (hrc.mono ext) (htbl.mono ext) ev4
+      exact ⟨a, had, hw.mono fun cl hm => by rw [hc]; simp [hm]⟩
+  | n68 cs1 _ hv ev1 hc =>
+    have hro : ro = .natDecLe := role_eq_of_field_eq (ro' := .natDecLe) hv
+    subst hro
+    intro ar har
+    simp only [eqnsAnchorsOf, List.mem_cons, List.not_mem_nil, or_false] at har
+    subst har
+    obtain ⟨a, had, hw⟩ := walk_bound_anchor_observed (ar := .natLe) hrc htbl ev1
+    exact ⟨a, had, hw.mono fun cl hm => by rw [hc]; simp [hm]⟩
+  | n73 _ m1 cs1 _ m2 cs2 cs3 _ _ hv ev1 ev2 ev3 hc =>
+    have hro : ro = .intNegOfNat := role_eq_of_field_eq (ro' := .intNegOfNat) hv
+    subst hro
+    intro ar har
+    simp only [eqnsAnchorsOf, List.mem_cons, List.not_mem_nil, or_false] at har
+    rcases har with rfl | rfl | rfl
+    · obtain ⟨a, had, hw⟩ := walk_bound_anchor_observed (ar := .int) hrc htbl ev1
+      exact ⟨a, had, hw.mono fun cl hm => by rw [hc]; simp [hm]⟩
+    · have ext := ev1.heap_extends
+      obtain ⟨a, had, hw⟩ :=
+        walk_bound_anchor_observed (ar := .intOfNat) (hrc.mono ext) (htbl.mono ext) ev2
+      exact ⟨a, had, hw.mono fun cl hm => by rw [hc]; simp [hm]⟩
+    · have ext := ev1.heap_extends.trans ev2.heap_extends
+      obtain ⟨a, had, hw⟩ :=
+        walk_bound_anchor_observed (ar := .intNegSucc) (hrc.mono ext) (htbl.mono ext) ev3
+      exact ⟨a, had, hw.mono fun cl hm => by rw [hc]; simp [hm]⟩
+  | n85 _ m1 cs1 cs2 _ _ _ hv ev1 ev2 hc =>
+    have hro : ro = .bitVecToNat := role_eq_of_field_eq (ro' := .bitVecToNat) hv
+    subst hro
+    intro ar har
+    simp only [eqnsAnchorsOf, List.mem_cons, List.not_mem_nil, or_false] at har
+    rcases har with rfl | rfl
+    · obtain ⟨a, had, hw⟩ := walk_bound_anchor_observed (ar := .bitVec) hrc htbl ev1
+      exact ⟨a, had, hw.mono fun cl hm => by rw [hc]; simp [hm]⟩
+    · have ext := ev1.heap_extends
+      obtain ⟨a, had, hw⟩ :=
+        walk_bound_anchor_observed (ar := .bitVecOfNat) (hrc.mono ext) (htbl.mono ext) ev2
+      exact ⟨a, had, hw.mono fun cl hm => by rw [hc]; simp [hm]⟩
+  | n90 _ m1 cs1 cs2 _ _ _ _ hv ev1 ev2 hc =>
+    have hro : ro = .stringToByteArray := role_eq_of_field_eq (ro' := .stringToByteArray) hv
+    subst hro
+    intro ar har
+    simp only [eqnsAnchorsOf, List.mem_cons, List.not_mem_nil, or_false] at har
+    rcases har with rfl | rfl
+    · obtain ⟨a, had, hw⟩ := walk_bound_anchor_observed (ar := .byteArray) hrc htbl ev1
+      exact ⟨a, had, hw.mono fun cl hm => by rw [hc]; simp [hm]⟩
+    · have ext := ev1.heap_extends
+      obtain ⟨a, had, hw⟩ :=
+        walk_bound_anchor_observed (ar := .byteArrayEmpty) (hrc.mono ext) (htbl.mono ext) ev2
+      exact ⟨a, had, hw.mono fun cl hm => by rw [hc]; simp [hm]⟩
+  | n96 cs1 _ _ _ _ _ hv ev1 hc =>
+    have hro : ro = .intDecLe := role_eq_of_field_eq (ro' := .intDecLe) hv
+    subst hro
+    intro ar har
+    simp only [eqnsAnchorsOf, List.mem_cons, List.not_mem_nil, or_false] at har
+    subst har
+    obtain ⟨a, had, hw⟩ := walk_bound_anchor_observed (ar := .intLe) hrc htbl ev1
+    exact ⟨a, had, hw.mono fun cl hm => by rw [hc]; simp [hm]⟩
+  | other h65 h68 h73 h85 h90 h96 _ _ _ =>
+    intro ar har
+    cases ro with
+    | decidableDecide => exact absurd rfl h65
+    | natDecLe => exact absurd rfl h68
+    | intNegOfNat => exact absurd rfl h73
+    | bitVecToNat => exact absurd rfl h85
+    | stringToByteArray => exact absurd rfl h90
+    | intDecLe => exact absurd rfl h96
+    | _ => simp [eqnsAnchorsOf] at har
+
+/-- **Every anchor walked by `validate_eqns_anchors` for an equation role is walked under the
+role context at the group's validation limit, as observed.** -/
+theorem validate_role_eqns_anchors_observed {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {g : Nat} {ro : Ix.Kernel.Role}
+    {x_rc x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : Claim.RCFullRep t bAddr (groupValLimit g) h x_rc)
+    (htbl : Claim.TableFullRep t bAddr h x_tbl)
+    (ev : ObsFn W "KernelRoles::validate_role" [x_rc, x_tbl, .field (roleNum ro)] h r h' calls)
+    (h5 : roleSpecKindNat ro = 5) :
+    ∀ ar ∈ eqnsAnchorsOf ro, ∃ a, t.addressOf? ar = some a ∧
+      RunCheckFullIn calls bAddr t (groupValLimit g) a := by
+  cases Obs.«KernelRoles::validate_role».obs ev with
+  | n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h5] at hsk_f; exact absurd (Value.field.inj hsk_f) (by decide)
+  | n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h5] at hsk_f; exact absurd (Value.field.inj hsk_f) (by decide)
+  | n2 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h5] at hsk_f; exact absurd (Value.field.inj hsk_f) (by decide)
+  | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h5] at hsk_f; exact absurd (Value.field.inj hsk_f) (by decide)
+  | n4 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h5] at hsk_f; exact absurd (Value.field.inj hsk_f) (by decide)
+  | n5 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs376
+      ev14 ev47 _ ev80 ev100 _ ev124 ev378 hc419 =>
+    obtain ⟨ext_ba, _, _, _⟩ := role_bound_addr_uncond htbl.toTableRep ev14
+    have ext_m111 : Heap.Extends m2 m111 :=
+      ev47.heap_extends.trans (ev80.heap_extends.trans
+        (ev100.heap_extends.trans ev124.heap_extends))
+    obtain ⟨_, _, _, _, _, _, m101_eq, _, _, m130_eq, _, _, m151_eq, _, _, m182_eq, _,
+      _, m_anc, cs_anc,
+      v209, m210, cs220, v239, m240, cs250, v280, v281, m283, cs291, m303, cs311, cs326,
+      _, sg108, ev140, _, ev192, ev163, ev_anc, ev222, ev252, ev293, ev313, heq322, ev328, hc368⟩ :=
+      Obs.«KernelRoles::validate_eqns».obs ev378
+    have ext_sg : Heap.Extends m111 m101_eq := by
+      cases sg108 with
+      | Safe _ _ he63 _ => rw [he63]
+      | other _ heq94 _ _ _ => exact absurd (Value.field.inj heq94) zero_ne_one
+    have ext_pre : Heap.Extends h m151_eq :=
+      ext_ba.trans (ext_m111.trans
+        (ext_sg.trans (ev140.heap_extends.trans (ev192.heap_extends.trans ev163.heap_extends))))
+    have hanc := validate_eqns_anchors_observed (hrc.mono ext_pre) (htbl.mono ext_pre) ev_anc
+    have hsub_anc : ∀ cl ∈ cs_anc, cl ∈ calls := fun cl hm => by
+      rw [hc419]; simp [show cl ∈ cs376 by rw [hc368]; simp [hm]]
+    intro ar har
+    obtain ⟨a, had, hw⟩ := hanc ar har
+    exact ⟨a, had, hw.mono hsub_anc⟩
+
+/-! ## The observed walk of an operation's certificate references -/
+
+/-- **The run asked whether the reference `b` is allowed, as observed**: the
+`KernelRoles::assert_ref_allowed` call on `b` under `Claim.RCFullRep t bAddr n`, among
+`calls`. -/
+def RefAllowedObsIn (calls : List (Call F)) (bAddr : _root_.Address)
+    (t : Ix.Kernel.RoleTable) (n : Nat) (b : _root_.Address) : Prop :=
+  ∃ (h h' : Heap F) (x_rc x_b r : SourceValue F) (cs : List (Call F)),
+    Claim.RCFullRep t bAddr n h x_rc ∧ BaseSeams.addr h x_b b ∧
+    ObsFn W "KernelRoles::assert_ref_allowed" [x_rc, x_b] h r h' cs ∧
+    ∀ cl ∈ cs, cl ∈ calls
+
+/-- **The run walked the reference `b` under the context `KernelRoles::walk_ctx` gives it, as
+observed**: the reference was asked about (`RefAllowedObsIn`), and the `walk_ctx` call on `b`
+under `Claim.RCFullRep t bAddr n`, and the `KernelClaim::run_check_transitive` call on `b` under
+the context it returned, are among `calls`. -/
+def RefWalkedUnderCtxIn (calls : List (Call F)) (bAddr : _root_.Address)
+    (t : Ix.Kernel.RoleTable) (n : Nat) (b : _root_.Address) : Prop :=
+  RefAllowedObsIn calls bAddr t n b ∧
+  ∃ (h₁ h₂ h₃ : Heap F) (x_rc x_b rc' r_w : SourceValue F) (cs_c cs_w : List (Call F)),
+    Claim.RCFullRep t bAddr n h₁ x_rc ∧ BaseSeams.addr h₁ x_b b ∧
+    ObsFn W "KernelRoles::walk_ctx" [x_rc, x_b] h₁ rc' h₂ cs_c ∧
+    ObsFn W "KernelClaim::run_check_transitive" [rc', x_b] h₂ r_w h₃ cs_w ∧
+    ∀ cl ∈ cs_w, cl ∈ calls
+
+theorem RefWalkedUnderCtxIn.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {n : Nat} {b : _root_.Address}
+    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (hv : RefWalkedUnderCtxIn cs₁ bAddr t n b) :
+    RefWalkedUnderCtxIn cs₂ bAddr t n b := by
+  obtain ⟨⟨h, h', x_rc₀, x_b₀, r₀, cs₀, hrc₀, hb₀, ev₀, hs₀⟩,
+    h₁, h₂, h₃, x_rc, x_b, rc', r_w, cs_c, cs_w, hrc, hb, evc, evw, hs⟩ := hv
+  exact ⟨⟨h, h', x_rc₀, x_b₀, r₀, cs₀, hrc₀, hb₀, ev₀, fun cl hm => hsub cl (hs₀ cl hm)⟩,
+    h₁, h₂, h₃, x_rc, x_b, rc', r_w, cs_c, cs_w, hrc, hb, evc, evw,
+    fun cl hm => hsub cl (hs cl hm)⟩
+
+/-- **The run's safety guard on a certificate's references, as observed**: the
+`KernelClaim::assert_safe_refs_except` call on the references and the used indices of the
+record `c`, the operation's address `a` excluded, under `Claim.RCFullRep t bAddr n`, among
+`calls`. -/
+def CertRefsGuardedIn (calls : List (Call F)) (bAddr : _root_.Address)
+    (t : Ix.Kernel.RoleTable) (n : Nat) (a : _root_.Address) (c : Ixon.Constant) : Prop :=
+  ∃ (h h' : Heap F) (x_rc x_refs x_used x_a r : SourceValue F) (cs : List (Call F)),
+    Claim.RCFullRep t bAddr n h x_rc ∧
+    RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h c.refs.toList x_refs ∧
+    Claim.RepSortedIdx h (BaseSeams.usedRefIdxs c) x_used ∧
+    BaseSeams.addr h x_a a ∧
+    ObsFn W "KernelClaim::assert_safe_refs_except" [x_rc, x_refs, x_used, x_a] h r h' cs ∧
+    ∀ cl ∈ cs, cl ∈ calls
+
+theorem CertRefsGuardedIn.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {n : Nat} {a : _root_.Address} {c : Ixon.Constant}
+    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (hg : CertRefsGuardedIn cs₁ bAddr t n a c) :
+    CertRefsGuardedIn cs₂ bAddr t n a c := by
+  obtain ⟨h, h', x_rc, x_refs, x_used, x_a, r, cs, hrc, hr, hi, ha, ev, hs⟩ := hg
+  exact ⟨h, h', x_rc, x_refs, x_used, x_a, r, cs, hrc, hr, hi, ha, ev,
+    fun cl hm => hsub cl (hs cl hm)⟩
+
+/-- **What an operation's validation walks of one certificate `thm`, as observed**, the
+operation at `a`: the certificate's record is bytes the run hashed that decode to `c`, the run
+guarded the references `c` uses other than `a` (`CertRefsGuardedIn`), and every reference `c`
+uses other than `a` was walked under the context `walk_ctx` gave it. The certificate's own
+record is not walked. -/
+def CertRefsWalkedIn (calls : List (Call F)) (bAddr : _root_.Address)
+    (t : Ix.Kernel.RoleTable) (n : Nat) (thm a : _root_.Address) : Prop :=
+  ∃ (rawBytes : ByteArray) (c : Ixon.Constant),
+    rawBytes.size < 4294967296 ∧ Hashed calls rawBytes ∧ Address.blake3Pure rawBytes = thm ∧
+    Ixon.deConstantExact rawBytes = .ok c ∧
+    CertRefsGuardedIn calls bAddr t n a c ∧
+    ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ BaseSeams.usedRefIdxs c →
+      c.refs.toList[j] ≠ a → RefWalkedUnderCtxIn calls bAddr t n c.refs.toList[j]
+
+theorem CertRefsWalkedIn.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {n : Nat} {thm a : _root_.Address}
+    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (hv : CertRefsWalkedIn cs₁ bAddr t n thm a) :
+    CertRefsWalkedIn cs₂ bAddr t n thm a := by
+  obtain ⟨rawBytes, c, hsz, hh, hb, hde, hg, hw⟩ := hv
+  exact ⟨rawBytes, c, hsz, Claim.hashed_mono hsub hh, hb, hde, hg.mono hsub,
+    fun j hj hu hne => (hw j hj hu hne).mono hsub⟩
+
+private theorem walk_refs_except_observed {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {n : Nat} {a : _root_.Address} {idxs : List Nat} :
+    ∀ (refs : List _root_.Address) {i : Nat} {x_rc x_refs x_used x_a r : SourceValue F}
+      {h h' : Heap F} {calls : List (Call F)},
+      i + refs.length < 8589934592 →
+      Claim.RCFullRep t bAddr n h x_rc →
+      RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h refs x_refs →
+      Claim.RepSortedIdxFrom h idxs i x_used →
+      BaseSeams.addr h x_a a →
+      ObsFn W "KernelRoles::walk_refs_except" [x_rc, x_refs, x_used, .field (i : F), x_a]
+        h r h' calls →
+      Heap.Extends h h' ∧
+      ∀ j : Nat, (hj : j < refs.length) → i + j ∈ idxs → refs[j] ≠ a →
+        RefWalkedUnderCtxIn calls bAddr t n refs[j]
+  | [], i, x_rc, x_refs, x_used, x_a, r, h, h', calls, _, _, hrefs, _, _, ev => by
+    cases Obs.«KernelRoles::walk_refs_except».obs ev with
+    | Nil _ _ he23 _ =>
+      subst he23
+      exact ⟨Heap.Extends.refl _, fun j hj => absurd hj (Nat.not_lt_zero _)⟩
+    | Cons _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ =>
+      obtain ⟨_, _, hbad, -⟩ := Lib.rep_cons_of_load hrefs ld12
+      cases hbad
+  | b :: rest, i, x_rc, x_refs, x_used, x_a, r, h, h', calls, hbound, hrc, hrefs, hidxs, ha, ev => by
+    cases Obs.«KernelRoles::walk_refs_except».obs ev with
+    | Nil ld12 _ _ _ => cases Lib.rep_nil_of_load hrefs ld12
+    | Cons x_b x_rest m_pop cs_pop x_hit x_next_used v264 m265 cs267 cs276 v282
+        ld12 ev_pop sg272 op318 ev278 hc327 =>
+      obtain ⟨b', rest', heq, hb_rep, hrest_rep⟩ := Lib.rep_cons_of_load hrefs ld12
+      injection heq with hb hrs
+      subst hb hrs
+      have hi : i < 72057594037927936 := by simp at hbound; omega
+      obtain ⟨rfl, hiff, hidxs_next⟩ := Claim.sorted_pop_spec idxs hi hidxs ev_pop
+      obtain ⟨b₀, hb₀, hbix⟩ := id hb_rep
+      obtain ⟨a₀, ha₀, haix⟩ := id ha
+      have hseg : Heap.Extends h m265 ∧
+          (i ∈ idxs → b ≠ a → RefWalkedUnderCtxIn cs267 bAddr t n b) := by
+        cases sg272 with
+        | n1_n0 m43 y52 y82 cs92 v115 m116 cs126 m146 cs157 v180 m181 cs191
+            cs205 v208 m211 cs219 ev94 _ _ ev128 ev159 ev193 ev221 ev207 hc245 =>
+          obtain ⟨_, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
+          have e1 : Heap.Extends h m181 :=
+            ev128.heap_extends.trans (ev159.heap_extends.trans ev193.heap_extends)
+          have hsub_w : ∀ cl ∈ cs205, cl ∈ cs267 := fun cl hm => by rw [hc245]; simp [hm]
+          have hsub_a : ∀ cl ∈ cs126, cl ∈ cs267 := fun cl hm => by rw [hc245]; simp [hm]
+          exact ⟨e1.trans (ev221.heap_extends.trans ev207.heap_extends), fun _ _ =>
+            ⟨⟨_, _, _, _, _, _, hrc, hb_rep, ev128, hsub_a⟩,
+              _, _, _, _, _, _, _, _, _, hrc.mono e1, BaseSeams.addr_mono e1 hb_rep, ev221, ev207,
+              hsub_w⟩⟩
+        | n1_other m43 y52 y82 cs92 v115 m116 cs126 v145 m146 cs157
+            ev94 _ _ ev128 ev159 hne246 _ _ _ =>
+          obtain ⟨_, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
+          obtain ⟨hv, _⟩ := Claim.walk_covered_spec (hrc.mono ev128.heap_extends) ev159
+          exact absurd hv hne246
+        | other v42 m43 y52 y82 cs92 ev94 op88 op58 hne255 _ he262 _ =>
+          obtain ⟨hy, hh43⟩ := Lib.address_eq_spec ev94 hb₀ ha₀
+          have hh43' : h = m43 := hh43.symm
+          subst hh43'
+          refine ⟨by rw [he262], fun hin hne => ?_⟩
+          exfalso
+          have hba : ¬ b₀ = a₀ := fun e => hne (by rw [← hbix, ← haix, e])
+          exact hne255 (except_guard hy op88 op58 (hiff.mpr hin) hba)
+      obtain ⟨ext1, hhead⟩ := hseg
+      simp only [evalBinOp, Except.ok.injEq] at op318
+      subst op318
+      have hv_inc : ((i : F) + 1) = ((i + 1 : Nat) : F) := by push_cast; rfl
+      rw [hv_inc] at ev278
+      have hbound' : (i + 1) + rest.length < 8589934592 := by simp at hbound; omega
+      obtain ⟨ext2, htail⟩ :=
+        walk_refs_except_observed rest hbound' (hrc.mono ext1)
+          (repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ ext1 hrest_rep)
+          (hidxs_next.mono ext1)
+          (BaseSeams.addr_mono ext1 ha) ev278
+      have hsub1 : ∀ cl ∈ cs267, cl ∈ calls := fun cl hm => by rw [hc327]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs276, cl ∈ calls := fun cl hm => by rw [hc327]; simp [hm]
+      refine ⟨ext1.trans ext2, fun j hj hij hne => ?_⟩
+      cases j with
+      | zero =>
+        have h0 := (hhead (by simpa using hij) (by simpa using hne)).mono hsub1
+        simpa using h0
+      | succ j' =>
+        have hj' : j' < rest.length := by simpa using hj
+        have hij' : i + 1 + j' ∈ idxs := by
+          rw [show i + 1 + j' = i + (j' + 1) by omega]
+          exact hij
+        have hne' : rest[j'] ≠ a := by simpa using hne
+        have h1 := (htail j' hj' hij' hne').mono hsub2
+        simpa using h1
+
+private theorem validate_op_equations_observed {t : Ix.Kernel.RoleTable}
+    {bAddr : _root_.Address} {n : Nat} {a : _root_.Address}
+    {es : List (Ix.Kernel.Evidence _root_.Address)} :
+    ∀ {x_rc x_tbl x_r x_a x_val x_ev x_k r : SourceValue F} {h h' : Heap F}
+      {calls : List (Call F)},
+      Claim.RCFullRep t bAddr n h x_rc →
+      BaseSeams.addr h x_a a →
+      RepList evListEnum EvRep h es x_ev →
+      ObsFn W "KernelRoles::validate_op_equations" [x_rc, x_tbl, x_r, x_a, x_val, x_ev, x_k]
+        h r h' calls →
+      Heap.Extends h h' ∧
+      ∀ thm : _root_.Address, .proof thm ∈ es → CertRefsWalkedIn calls bAddr t n thm a
+  | x_rc, x_tbl, x_r, x_a, x_val, x_ev, x_k, r, h, h', calls, hrc, ha, hlist, ev => by
+    cases Obs.«KernelRoles::validate_op_equations».obs ev with
+    | Nil ld12 _ he23 _ =>
+      rw [← evListEnum] at ld12
+      obtain rfl := Lib.rep_nil_of_load hlist ld12
+      subst he23
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm)⟩
+    | Cons x_e x_rest v1048 m1049 cs1051 cs1060 v1069 ld12 sg1056 _ ev1062 hc1127 =>
+      rw [← evListEnum] at ld12
+      obtain ⟨e, rest, rfl, he_rep, hrest_rep⟩ := Lib.rep_cons_of_load hlist ld12
+      have tailMember : (⟨"KernelRoles::validate_op_equations",
+          [x_rc, x_tbl, x_r, x_a, x_val, x_rest, v1069], m1049⟩ : Call F) ∈ calls := by
+        rw [hc1127]; simp
+      have ext_seg_all : Heap.Extends h m1049 := (ev.call_heap_bounds tailMember).1
+      have hseg : Heap.Extends h m1049 ∧
+          (∀ thm : _root_.Address, e = .proof thm → CertRefsWalkedIn cs1051 bAddr t n thm a) := by
+        match sg1056 with
+        | .n0_Defeq (hv83 := hv83) .. =>
+          refine ⟨ext_seg_all, fun thm he => ?_⟩
+          have he_prf : EvRep h (.proof thm) x_e := by rwa [← he]
+          exact (evRep_proof_not_defeq he_prf hv83).elim
+        | .n0_Proof (heq379 := heq) .. => exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Defeq (heq431 := heq) .. => exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_Defn_other (heq1257 := heq) .. =>
+          exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_other (heq1904 := heq) .. =>
+          exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_Defn_Theorem
+            (m43 := roleHeap) (x_thm := thmPtr) (m450 := rawHeap) (cs460 := rawCalls)
+            (w496 := refsPtr)
+            (m615 := ciHeap) (p623 := ciPtr) (cs629 := ciCalls)
+            (x_nlvls := levels) (w646 := typeVal) (x_pval := proofVal)
+            (m728 := scopeHeap) (m809 := idxHeap) (m831 := walkHeap) (cs887 := walkCalls)
+            (ev56 := roleRun) (hv442 := proofShape) (ev462 := rawRun)
+            (ev631 := ciRun) (ld625 := ciLoad) (ev702 := substRun) (ev740 := scopeRun)
+            (ev821 := idxRun) (ev843 := guardRun) (ev889 := walkRun)
+            (hc1225 := segCalls) .. =>
+          have extRole := roleRun.heap_extends
+          have extRaw := rawRun.heap_extends
+          have extToScope := ciRun.heap_extends.trans (substRun.heap_extends.trans scopeRun.heap_extends)
+          cases e with
+          | defeq => exact ⟨ext_seg_all, fun _ he => by cases he⟩
+          | proof thm₀ =>
+            have ha_h : BaseSeams.addr h thmPtr thm₀ := evRep_proof_inv he_rep proofShape
+            have ha_raw : BaseSeams.addr roleHeap thmPtr _ := BaseSeams.addr_mono extRole ha_h
+            obtain ⟨_, rawBytes, c, hsz, hh_raw, hblk, _, hdeExact, hrep, _⟩ :=
+              Claim.load_verified_constant_de ha_raw rawRun
+            obtain ⟨extIdx, hidxs⟩ := Claim.const_idxs_of_spec (hrep.mono extToScope) idxRun
+            have extRawIdx : Heap.Extends rawHeap idxHeap := extToScope.trans extIdx
+            have hrefs_idx : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem idxHeap
+                c.refs.toList refsPtr := by
+              obtain ⟨_, _, refsVal, _, _, hv_c, _, _, hr_list, _, _⟩ := hrep
+              injection hv_c with _ _ hargs_c
+              simp only [List.cons.injEq] at hargs_c
+              rw [← hargs_c.2.2.1] at hr_list
+              exact repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ extRawIdx hr_list
+            have extIdxH : Heap.Extends h idxHeap := extRole.trans (extRaw.trans extRawIdx)
+            have extRawWalk : Heap.Extends rawHeap walkHeap :=
+              extToScope.trans (extIdx.trans guardRun.heap_extends)
+            have hrefs_rep : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem walkHeap
+                c.refs.toList refsPtr := by
+              obtain ⟨_, _, refsVal, _, _, hv_c, _, _, hr_list, _, _⟩ := hrep
+              injection hv_c with _ _ hargs_c
+              simp only [List.cons.injEq] at hargs_c
+              rw [← hargs_c.2.2.1] at hr_list
+              exact repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ extRawWalk hr_list
+            have hidxsWalk := hidxs.mono guardRun.heap_extends
+            have hbound : 0 + c.refs.toList.length < 8589934592 := by
+              rw [Nat.zero_add, Array.length_toList]
+              exact refs_size_lt_bound' hsz hdeExact
+            have extWalk : Heap.Extends h walkHeap := extRole.trans (extRaw.trans extRawWalk)
+            have hsub_w : ∀ cl ∈ walkCalls, cl ∈ cs1051 := fun cl hm => by rw [segCalls]; simp [hm]
+            have hsub_raw : ∀ cl ∈ rawCalls, cl ∈ cs1051 := fun cl hm => by rw [segCalls]; simp [hm]
+            obtain ⟨_, hwalk⟩ := walk_refs_except_observed c.refs.toList hbound
+              (hrc.mono extWalk) hrefs_rep hidxsWalk (BaseSeams.addr_mono extWalk ha) walkRun
+            refine ⟨ext_seg_all, fun thm he => ?_⟩
+            injection he with hthm
+            subst hthm
+            exact ⟨rawBytes, c, hsz, Claim.hashed_mono hsub_raw hh_raw, hblk, hdeExact,
+              ⟨_, _, _, _, _, _, _, _, hrc.mono extIdxH, hrefs_idx, hidxs,
+                BaseSeams.addr_mono extIdxH ha, guardRun, fun cl hm => by rw [segCalls]; simp [hm]⟩,
+              fun j hj hu hne =>
+                (hwalk j hj (by rw [Nat.zero_add]; exact hu) hne).mono hsub_w⟩
+      obtain ⟨ext1, hhead⟩ := hseg
+      obtain ⟨ext2, htail⟩ :=
+        validate_op_equations_observed (hrc.mono ext1) (BaseSeams.addr_mono ext1 ha)
+          (repList_heapMono₂ evListEnum evRep_heapMono₂ ext1 hrest_rep) ev1062
+      have hsub1 : ∀ cl ∈ cs1051, cl ∈ calls := fun cl hm => by rw [hc1127]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs1060, cl ∈ calls := fun cl hm => by rw [hc1127]; simp [hm]
+      refine ⟨ext1.trans ext2, fun thm hmem => ?_⟩
+      rcases List.mem_cons.mp hmem with he | hrest
+      · exact (hhead thm he.symm).mono hsub1
+      · exact (htail thm hrest).mono hsub2
+
+/-- **The references of an operation's certificates are walked in its validation, as
+observed**: for each `.proof thm` entry of the operation's evidence, the certificate's record is
+bytes the validation hashed and every reference it uses other than the operation's address was
+walked under the context `walk_ctx` gave it from the group's validation context. -/
+theorem validate_role_op_certificates_observed {t : Ix.Kernel.RoleTable}
+    {bAddr : _root_.Address} {g : Nat} {ro : Ix.Kernel.Role}
+    {x_rc x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : Claim.RCFullRep t bAddr (groupValLimit g) h x_rc)
+    (htbl : Claim.TableFullRep t bAddr h x_tbl)
+    (ev : ObsFn W "KernelRoles::validate_role" [x_rc, x_tbl, .field (roleNum ro)] h r h' calls)
+    (h2 : roleSpecKindNat ro = 2) :
+    ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm a : _root_.Address),
+      t.addressOf? ro = some a → (ro, arr) ∈ t.evidence.toList →
+      Ix.Kernel.Evidence.proof thm ∈ arr.toList →
+      CertRefsWalkedIn calls bAddr t (groupValLimit g) thm a := by
+  have hwf : t.wf = true := htbl.1
+  let c₀ : Ctx := { E := default, env := default, t := t, lim := none }
+  cases Obs.«KernelRoles::validate_role».obs ev with
+  | n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h2] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h2] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h2] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n4 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h2] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n5 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [h2] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n2 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs236
+      ev14 ev47 _ ev80 ev100 _ ev124 ev238 hc279 =>
+    obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl.toTableRep ev14
+    have ext_m111 : Heap.Extends m2 m111 :=
+      ev47.heap_extends.trans (ev80.heap_extends.trans
+        (ev100.heap_extends.trans ev124.heap_extends))
+    match Obs.«KernelRoles::validate_op».obs ev238 with
+    | .other (heq575 := hbad) .. => exact (zero_ne_one (Value.field.inj hbad)).elim
+    | .Defn (m2 := rawHeap) (m200 := m102_op) (m209 := m111_op) (m232 := m134_op)
+        (v259 := v161) (m260 := m162) (cs270 := cs172) (m391 := m_sg2)
+        (v399 := v191) (m400 := m192) (cs410 := cs202) (v440 := v232) (v441 := v233)
+        (m443 := m235) (cs451 := cs243) (m463 := m255) (cs471 := cs263)
+        (cs486 := cs278) (ev14 := rawLoad) (sg207 := sg109) (ev242 := ev144)
+        (ev221 := ev123) (ev272 := ev174) (sg398 := sg2) (ev412 := ev204)
+        (ev453 := ev245) (ev473 := ev265) (heq482 := heq274) (ev488 := ev280)
+        (hc544 := hc320) .. =>
+      have ext_safe : Heap.Extends rawHeap m102_op := by
+        cases sg109 with
+        | Safe _ _ he64 _ => rw [he64]
+        | other _ heq95 _ _ _ => exact absurd (Value.field.inj heq95) zero_ne_one
+      have ext_sg : Heap.Extends m111 m102_op := rawLoad.heap_extends.trans ext_safe
+      have ext_sg2 : Heap.Extends m162 m_sg2 := by
+        cases sg2 with
+        | n1 _ _ _ _ _ _ _ _ _ e1 e2 e3 e4 _ =>
+          exact e1.heap_extends.trans (e2.heap_extends.trans (e3.heap_extends.trans e4.heap_extends))
+        | other _ _ _ e1 _ _ he _ => rw [he]; exact e1.heap_extends
+      have ext_w : Heap.Extends m111 m111_op :=
+        ext_sg.trans (ev144.heap_extends.trans ev123.heap_extends)
+      have hrc_w := hrc.mono (ext_ba.trans (ext_m111.trans ext_w))
+      have ha_w := BaseSeams.addr_mono (ext_m111.trans ext_w) ha_m2
+      have htbl_m162 : TableRep c₀.t m_sg2 x_tbl :=
+        htbl.toTableRep.mono (ext_ba.trans (ext_m111.trans (ext_w.trans
+          (ev174.heap_extends.trans ext_sg2))))
+      obtain ⟨es, hlist_m192, hes⟩ :=
+        role_evidence_step (ScopedCtx.unrestricted c₀) ev204 x_tbl ro rfl htbl_m162
+      obtain ⟨rfl, rfl⟩ := evList_length ev245 hlist_m192
+      obtain ⟨rfl, k, hk0, hk10, rfl⟩ := op_equation_count_pos h2 ev265
+      obtain ⟨arr₀, hmem_ev₀, harr_eq, _⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq274
+      have e_255 : Heap.Extends m111_op m255 :=
+        ev174.heap_extends.trans (ext_sg2.trans ev204.heap_extends)
+      have hrc_m255 := hrc_w.mono e_255
+      obtain ⟨_, hprfs⟩ :=
+        validate_op_equations_observed hrc_m255 (BaseSeams.addr_mono e_255 ha_w) hlist_m192 ev280
+      have hsub_ev : ∀ cl ∈ cs278, cl ∈ calls := fun cl hm => by
+        rw [hc279]; simp [show cl ∈ cs236 by rw [hc320]; simp [hm]]
+      intro arr thm a' had' hm hthm
+      rw [had] at had'
+      injection had' with ha_eq
+      subst ha_eq
+      have harr : arr = arr₀ := evidence_eq_of_wf hwf hm hmem_ev₀
+      subst harr
+      rw [harr_eq] at hthm
+      exact (hprfs thm hthm).mono hsub_ev
+
+end GroupAdmit
+
+end IxVM.Refinement.RoleVal

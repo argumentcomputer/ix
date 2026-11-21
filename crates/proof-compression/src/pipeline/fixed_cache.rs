@@ -62,9 +62,7 @@ pub(crate) struct FixedCache {
 }
 
 fn file_digest(path: &Path) -> io::Result<[u8; 32]> {
-  let mut hasher = blake3::Hasher::new();
-  hasher.update_mmap_rayon(path)?;
-  Ok(*hasher.finalize().as_bytes())
+  storage::blake3_file(path)
 }
 
 impl FixedCache {
@@ -296,5 +294,48 @@ fn move_file(source: &Path, destination: &Path) -> Result<()> {
       Ok(())
     },
     Err(error) => Err(error.into()),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::test_support::TempDir;
+
+  #[test]
+  fn streaming_file_digest_matches_blake3_across_chunk_boundaries()
+  -> io::Result<()> {
+    let dir = TempDir::new("fixed-cache-digest");
+    for size in [
+      0usize,
+      1,
+      1023,
+      1024,
+      1025,
+      128 * 1024 - 1,
+      128 * 1024,
+      128 * 1024 + 1,
+      (16 << 20) - 1,
+      16 << 20,
+      (16 << 20) + 137,
+    ] {
+      let bytes: Vec<u8> = (0..size)
+        .map(|i| u8::try_from((i.wrapping_mul(31) ^ (i >> 7)) & 0xff).unwrap())
+        .collect();
+      let path = dir.join(format!("blob-{size}.bin"));
+      fs::write(&path, &bytes)?;
+      let expected = *blake3::hash(&bytes).as_bytes();
+      let actual = file_digest(&path)?;
+      assert_eq!(actual, expected, "streaming digest mismatch at size {size}");
+      let mut mmap_hasher = blake3::Hasher::new();
+      mmap_hasher.update_mmap_rayon(&path)?;
+      assert_eq!(
+        actual,
+        *mmap_hasher.finalize().as_bytes(),
+        "mmap parity mismatch at size {size}"
+      );
+      fs::remove_file(&path)?;
+    }
+    Ok(())
   }
 }

@@ -5,13 +5,13 @@ public import IxC.Kernel.Semantics.Tower.IdxEq
 @[expose] public section
 
 /-!
-# The sum constructor leaf (task #175 sum-types, stage S3; indexed)
+# The sum constructor leaf
 
 Constructor `j` of a direct sum is the constant-bit λ-tower (bit `w`)
 over its type reading's binder data with the **injection** body: the
 pinned pair constructor applied to the tag domain, the case-split
-fibre, the numeral `j` and the constructor's own tupler.  Since task
-#175 indexed every constructor tower carries one extra proof-field —
+fibre, the numeral `j` and the constructor's own tupler.  For an
+indexed family every constructor tower carries one extra proof-field —
 the index equation at the family's carrier, the trivially true
 `idxEqAV []` at the constructor's own leaf — so the tupler is
 `mkTowerGoU`: the tuple of the fields followed by the point.  It reads

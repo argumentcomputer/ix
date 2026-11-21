@@ -242,9 +242,14 @@ acceptance, context agreement or no-drop premise is required or concluded. -/
 theorem generate_bases {ctx : Ix.Kernel.Frontend.InModel.Ctx md} {b : BlockRec md}
     {ds : List (Declaration md)} (h : generate ctx b = .ok ds) :
     ∀ d ∈ ds, ∀ k ∈ d.names, k.base ∈ roots b := by
-  unfold generate at h
-  split at h
-  · exact genNested_bases h
-  · exact genMutual_bases h
+  obtain ⟨b', ds0, hty, hct, hrc, hrun, hnames⟩ := SourceNames.generate_ok_rung h
+  have hroots : roots b' = roots b := by simp only [roots, hty, hct, hrc]
+  intro d hd k hk
+  obtain ⟨d0, hd0, he⟩ := hnames d hd
+  rw [he] at hk
+  rw [← hroots]
+  rcases hrun with hrun | hrun
+  · exact genNested_bases hrun d0 hd0 k hk
+  · exact genMutual_bases hrun d0 hd0 k hk
 
 end Ix.Cert.SourceOrigin

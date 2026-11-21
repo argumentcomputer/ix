@@ -9,7 +9,7 @@ import IxC.Kernel.Semantics.EnvFacts
 public section
 
 /-!
-# The P cons crossing at a tower head (task #175 W4c, P3 module 4)
+# The P cons crossing at a tower head
 
 Consing a tower-backed entry `(T, i)` changes the reading of exactly
 one node shape, `.proj T i _` with no entry (`BitExtendTower`), so the
@@ -48,13 +48,13 @@ structure NoProjEnv (env : Env md) (T : Key md) (i : Nat) : Prop where
     ∀ r ∈ rules, Expr.NoProjAt T i (RecRule.rhs r) ∧
       ∀ lvls pins, RecRule.fire r = .nested lvls pins →
         ∀ pin ∈ pins, Expr.NoProjAt T i pin
-  /-- a stored projection table's bodies (task #175 S1: the tower laws
+  /-- a stored projection table's bodies (the tower laws
   read them) -/
   table : ∀ (tbl : Ix.Kernel.ProjTable md), ConstantInfo.projInfo tbl ∈ env.consts →
     ∀ j, j < tbl.numFields → Expr.NoProjAt T i (tbl.bodies.getD j default)
 
 /-- The head's crossing condition: a table head's slots (every field
-of the structure, task #175 S1) are mentioned by no stored piece. -/
+of the structure) are mentioned by no stored piece. -/
 @[expose] def ConsCrossEnv (env : Env md) (c₀ : ConstantInfo md) : Prop :=
   ∀ tbl : Ix.Kernel.ProjTable md, c₀ = .projInfo tbl →
     ∀ i : Nat, NoProjEnv env tbl.structName i
@@ -118,7 +118,7 @@ theorem ConsCrossEnv.defn {env : Env md} {c₀ : ConstantInfo md}
     ConsCrossAt c₀ v := fun tbl heq i =>
   (h tbl heq i).defn cv v hint hc
 
-/-- A stored table's body at a field (task #175 S1). -/
+/-- A stored table's body at a field. -/
 theorem ConsCrossEnv.body {env : Env md} {c₀ : ConstantInfo md}
     (h : ConsCrossEnv env c₀) {n : Key md} {tbl : Ix.Kernel.ProjTable md}
     (hf : env.find? n = some (.projInfo tbl)) {j : Nat} (hj : j < tbl.numFields) :

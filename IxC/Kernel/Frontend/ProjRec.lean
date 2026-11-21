@@ -21,8 +21,8 @@ shape.)  The official kernel types `.proj T i` on every *structure-like*
 type — one constructor, zero indices, whatever the block's recursion:
 a member of a mutual block, a recursive structure, a nested one.  This
 checker serves `.proj` only on the class its direct install recognises
-(`structParts?`: single type, non-recursive, non-nested — task #175 W5,
-".proj on anything else declines"), so on the Mathlib stream the first
+(`structParts?`: single type, non-recursive, non-nested;
+`.proj` on anything else declines), so on the Mathlib stream the first
 such projection function declines the run
 (`Lean.Meta.Grind.AC.DiseqCnstr.lhs`, `DiseqCnstr` a mutual member).
 

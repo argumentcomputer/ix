@@ -3,10 +3,7 @@ public import Ix.Aggr.Host
 public import Ix.Aggr.Protocol
 public import Ix.Shard.Environment
 
-/-! Pure reference model for native aggregation plans and statements.
-
-Used by differential tests and the policy benchmark; execution, caching, and
-scheduling are owned by the native controller. -/
+/-! Pure reference model for native aggregation plans and statements. -/
 
 public section
 namespace Aggr.Reference
@@ -31,39 +28,23 @@ structure ScheduledFold where
   op : Ix.Shard.AggregationTree.FoldOp
   subjectCount : Nat
   structural : Bool
-  /-- Result kind of this slot. Only direct-policy leaves are `.ixvm`. -/
   kind : Aggr.ChildKind := .aggr
-  /-- `ix_aggr` shape proven by this slot. Direct-policy raw leaves have no
-  shape because they are verified and forwarded without a recursion proof. -/
   shape? : Option Nat := none
   deriving BEq, Repr
-
 
 /-- Reference copy of the native controller's conservative wrap reserve. -/
 def aggregateWrapRamBytes : Nat := 195 * aggregateGiB
 
-/-- Structural joins are dominated by the same two recursive-proof checks as
-lifts. Keep the conservative lift reserve until the real E2E calibration. -/
 def aggregateStructuralJoinRamBytes : Nat := aggregateWrapRamBytes
 
-/-- Native verification and serialization of a raw shard proof in direct mode
-is charged to its consuming pair. -/
 def aggregateRawShardRamBytes : Nat := 4 * aggregateGiB
 
-/-- Measured upper envelope for an `IxVM + IxVM` pair (shapes 2/6). -/
 def aggregateDirectJoinRamBytes : Nat := 390 * aggregateGiB
 
-/-- Measured upper envelope for a mixed recursive/IxVM pair (shapes 3/4/7/8). -/
 def aggregateMixedJoinRamBytes : Nat := 340 * aggregateGiB
 
-/-- Flat joins add canonical subject-tree work to the recursive-proof base.
-One MiB per subject is a deliberately conservative placeholder: at Init's
-~52k-subject root it adds ~51 GiB. The
-default structural threshold caps this term near 4 GiB in production. -/
 def aggregateFlatJoinRamPerSubjectBytes : Nat := 1024 * 1024
 
-/-- Reference per-shape RAM weight. Shape 5 retains the flat subject-count
-reserve; shape 9 is the O(1)-subject structural arm. -/
 def aggregateShapeRamBytes (shape subjectCount : Nat) : Nat :=
   match shape with
   | 0 | 1 => aggregateWrapRamBytes
@@ -74,7 +55,6 @@ def aggregateShapeRamBytes (shape subjectCount : Nat) : Nat :=
   | 9 => aggregateStructuralJoinRamBytes
   | _ => aggregateDirectJoinRamBytes
 
-/-- Reference per-slot RAM weight, also used by the policy benchmark. -/
 def aggregateSlotRamBytes (item : ScheduledFold) : Nat :=
   match item.shape? with
   | some shape => aggregateShapeRamBytes shape item.subjectCount
@@ -88,16 +68,13 @@ def aggregateSlotRamBytes (item : ScheduledFold) : Nat :=
 
 def aggregateSlotRamWeights (plan : Array ScheduledFold) : Array Nat :=
   plan.map aggregateSlotRamBytes
-/-- Resolve subject counts and the structural threshold once, before proving.
-Because parent counts only grow, `count > structuralAbove` makes the mode
-monotone: a flat join is never scheduled above a structural child. -/
+
+/-- Resolve subject counts and the structural threshold once, before proving. -/
 def schedulePlan (plan : Array Ix.Shard.AggregationTree.FoldOp)
     (shardCounts : Array Nat) (structuralAbove : Nat)
     (directJoins : Bool := false) :
     Except String (Array ScheduledFold) := do
   let mut scheduled : Array ScheduledFold := #[]
-  -- A singleton must still produce an `ix_aggr` wrapper. Larger direct plans
-  -- keep leaves raw so their first pair can select shapes 2–4/6–8.
   let rawLeaves := directJoins && plan.size > 1
   for op in plan do
     match op with
@@ -127,14 +104,11 @@ def schedulePlan (plan : Array Ix.Shard.AggregationTree.FoldOp)
       }
   pure scheduled
 
-/-! ## Converged single-entrypoint slot derivation -/
-
 /-- Derive every converged slot statement, uniform outer claim, kind, and
-cache key before proving. Wrap-first leaves use shape 0; direct-policy leaves
-remain raw IxVM claims and are deliberately not cache-consumed. -/
+cache key before proving. -/
 def buildAggrSlotSpecs (plan : Array ScheduledFold)
     (prepared : Array PreparedShard) (aggrVk allowed : ByteArray)
-    (verifyIdx aggrIdx : Aiur.Bytecode.FunIdx)
+    (verifyIdx aggrIdx : Nat)
     (recursionParameters : Aggr.RecursionParameters) :
     Except String (Array AggregateSlotSpec) := do
   let mut specs : Array AggregateSlotSpec := #[]
@@ -196,43 +170,41 @@ def buildAggrSlotSpecs (plan : Array ScheduledFold)
       }
   pure specs
 
-private def prepareOwnedShard (env : Ixon.Env) (owned : Array Address) :
+private def prepareOwnedShard (env : Ixon.Env) (owned : Array Address)
+    (assumeBinding : Bool := false) :
     Except String PreparedShard := do
-  let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
+  let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned assumeBinding
   let statement ← Aggr.CheckEnvTrees.ofClaim claim trees
   pure { claim, statement }
 
 /-- Reconstruct every shard statement after partitioning environment ownership
-in one pass. Calling `ownedConstsForBlocks` once per shard rescans the complete
-environment for every leaf, which made Mathlib aggregate startup take more
-than twenty minutes before the proof store was touched. -/
+in one pass. -/
 def prepareShards (env : Ixon.Env) (shards : Array (Array Address))
-    (shardIds : Array Nat := #[]) : Except String (Array PreparedShard) := do
+    (shardIds : Array Nat := #[]) (assumeBinding : Bool := false) :
+    Except String (Array PreparedShard) := do
   let ownedAll := Ix.Shard.ownedConstsPer env shards
   if ownedAll.size != shards.size then
     throw s!"internal: prepared ownership for {ownedAll.size} shards, expected {shards.size}"
   let mut prepared : Array PreparedShard := #[]
   for (owned, shard) in ownedAll.mapIdx fun shard owned => (owned, shard) do
     let originalShard := (shardIds[shard]?).getD shard
-    let item ← match prepareOwnedShard env owned with
+    let item ← match prepareOwnedShard env owned assumeBinding with
       | .error e => throw s!"prepare shard {originalShard}: {e}"
       | .ok item => pure item
     prepared := prepared.push item
   pure prepared
 
-
-private def shardStatement (env : Ixon.Env) (owned : Array Address) :
+private def shardStatement (env : Ixon.Env) (owned : Array Address)
+    (assumeBinding : Bool := false) :
     Except String Aggr.CheckEnvTrees := do
-  let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned
+  let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned assumeBinding
   Aggr.CheckEnvTrees.ofClaim claim trees
 
 /-- Reproduce the flat/structural statement fold from a coverage-validated
-manifest. Zero-constant leaves are pruned exactly as in `ix aggregate`; no proof
-data is needed. Ownership is assigned for every retained shard in one
-environment pass; verification must not reintroduce the old shard-by-shard
-full-environment scan. -/
+manifest. -/
 def expectedFromManifest (env : Ixon.Env)
-    (view : Ix.Shard.IxesManifestView) (structuralAbove : Nat) :
+    (view : Ix.Shard.IxesManifestView) (structuralAbove : Nat)
+    (assumeBinding : Bool := false) :
     Except String Aggr.CheckEnvTrees := do
   let (view, counts) ← view.pruneEmpty env
   let owned := Ix.Shard.ownedConstsPer env view.shards
@@ -244,7 +216,7 @@ def expectedFromManifest (env : Ixon.Env)
     | .leaf shard =>
       let some shardOwned := owned[shard]?
         | throw s!"aggregate plan references missing shard {shard}"
-      slots := slots.push (← shardStatement env shardOwned)
+      slots := slots.push (← shardStatement env shardOwned assumeBinding)
     | .join left right =>
       let some leftStatement := slots[left]?
         | throw s!"aggregate plan references missing left slot {left}"

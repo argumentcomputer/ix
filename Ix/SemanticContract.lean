@@ -101,14 +101,81 @@ def read (data : Array (Ix.Name × Ix.DataValue)) : Except String Contract := do
   let some codeValue := code | throw "missing semantic contract code"
   decode kindValue codeValue
 
+/-- Whether the frame sits directly on a binder of its kind. -/
+def Contract.attachedTo (contract : Contract) (source : Ix.Expr) : Bool :=
+  match contract.kind, source with
+  | .lam, .lam .. => true
+  | .all, .forallE .. => true
+  | .letE, .letE .. => true
+  | _, _ => false
+
+/-- Convert a surface value contract to an Ixon v5 result mode. -/
+def toResultMode (v : Ixon.ValueContract) : Ixon.ResultMode :=
+  match v.owned, v.locality with
+  | .shared, .unrestricted => .shared
+  | .shared, .local => .borrowed
+  | .unique, .unrestricted => .unique
+  | .unique, .local => .uniqueBorrowed
+
+/-- Convert a surface binder contract to an Ixon v5 binder mode, if representable.
+Erased binders carry no ownership or local lifetime in v5. -/
+def toBinderMode? (b : Ixon.BinderContract) : Option Ixon.BinderMode :=
+  if b.uses == .erased then
+    if b.value == .shared then some .erased else none
+  else
+    match b.value.owned, b.value.locality, b.uses with
+    | .unique, .unrestricted, _ => some .unique
+    | .unique, .local, _ => some .uniqueBorrowed
+    | .shared, .unrestricted, .many => some .many
+    | .shared, .local, .many => some .borrowed
+    | .shared, .unrestricted, .linear | .shared, .unrestricted, .affine => some .once
+    | .shared, .local, .linear | .shared, .local, .affine => some .onceBorrowed
+    | _, _, _ => none
+
+/-- The Ixon v5 binder-and-result mode of a `lam` or `all` contract frame, if valid. -/
+def Contract.toAllMode? (contract : Contract) : Option Ixon.AllMode := do
+  return { input := ← toBinderMode? contract.binder, result := toResultMode contract.result }
+
+/-- The Ixon v5 let mode of a `letE` contract frame, if valid. -/
+def Contract.toLetMode? (contract : Contract) : Option Ixon.LetMode :=
+  if contract.letKind == .borrowShared then
+    if contract.binder.uses != .erased && contract.binder.value == .localShared then
+      some .borrow
+    else none
+  else
+    Ixon.LetMode.value <$> toBinderMode? contract.binder
+
+/-- Whether the contract frame represents a valid Ixon v5 mode for its binder kind. -/
+def Contract.validMode (contract : Contract) : Bool :=
+  match contract.kind with
+  | .lam | .all => contract.toAllMode?.isSome
+  | .letE => contract.toLetMode?.isSome
+
+/-- Whether the compiler lowers the frame: a valid v5 contract on a binder of
+its kind. -/
+def Contract.admits (contract : Contract) (source : Ix.Expr) : Bool :=
+  contract.validMode && contract.attachedTo source
+
+/-- Lower a contract frame onto the binder it annotates. A `lam` or `all` frame
+leaves the compiled binder term unchanged (its `AllMode` is written into the
+record's binder-data section); a `letE` frame writes its `LetMode` onto the
+compiled `Ixon.Expr.letE`. -/
 def Contract.lower (contract : Contract) (source : Ix.Expr) (compiled : Ixon.Expr) :
-    Except String Ixon.Expr := do
-  match contract.kind, source, compiled with
-  | .lam, .lam .., .lam _ type body => return .lam contract.binder type body
-  | .all, .forallE .., .all _ _ type body => return .all contract.binder contract.result type body
-  | .letE, .letE .., .letE c type value body =>
-    return .letE { c with binder := contract.binder, kind := contract.letKind } type value body
-  | _, _, _ => throw "semantic contract is not attached to its original binder"
+    Except String Ixon.Expr :=
+  if !contract.attachedTo source then
+    .error "semantic contract is not attached to its original binder"
+  else
+    match contract.kind with
+    | .lam | .all =>
+      if contract.toAllMode?.isSome then .ok compiled
+      else .error "unsupported semantic contract mode"
+    | .letE =>
+      match contract.toLetMode? with
+      | none => .error "unsupported semantic contract mode"
+      | some mode =>
+        match compiled with
+        | .letE nonDep _ ty val body => .ok (.letE nonDep mode ty val body)
+        | _ => .error "semantic contract is not attached to its original binder"
 
 /-- Inspect an entire source expression before rewrites can remove subterms. -/
 def inspect (top : Ix.Expr) : Except String Bool := do
@@ -133,23 +200,11 @@ def inspect (top : Ix.Expr) : Except String Bool := do
           | .lam, .lam .. | .all, .forallE .. | .letE, .letE .. => true
           | _, _ => false
         unless valid do throw "semantic contract is not attached to its original binder"
+        unless contract.validMode do throw "unsupported semantic contract mode"
         annotated := true
       stack := stack.push inner
     | _ => pure ()
   return annotated
-
-/-- Reconstruct only committed binder fields; optional metadata cannot
-supply or replace semantic contracts. -/
-def ofIxon? : Ixon.Expr → Option Contract
-  | .lam binder _ _ =>
-    if binder == .many then none else some { kind := .lam, binder }
-  | .all binder result _ _ =>
-    if binder == .many && result == .shared then none
-    else some { kind := .all, binder, result }
-  | .letE c _ _ _ =>
-    if c.binder == .many && c.kind == .value then none
-    else some { kind := .letE, binder := c.binder, letKind := c.kind }
-  | _ => none
 
 def Contract.ixMetadata (contract : Contract) : Array (Ix.Name × Ix.DataValue) :=
   let key := Ix.Name.mkStr (Ix.Name.mkStr Ix.Name.mkAnon "ix") "contract"

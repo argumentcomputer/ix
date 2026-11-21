@@ -23,7 +23,7 @@ that backend's constructors; its implementation-specific comparison retired
 with the backend.
 
 Property set (tested in `Tests/Ix/IxonUniverse.lean` and the Rust twin;
-Verify-layer proofs are the D7 follow-up): P0 value preservation
+Verify-layer proofs are deferred): P0 value preservation
 (`canonUniv u` and `u` agree at every valuation of the params); P1
 idempotence; P2
 roundtrip-fixpoint (`normalize (linearize L) = L`, exact on non-empty

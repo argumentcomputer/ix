@@ -77,7 +77,28 @@ theorem denoteMeta_acval_congr
   | case8 d f a ihf iha => rw [denoteMeta, denoteMeta, ihf, iha]
   | case9 d ty val body =>
     rw [denoteMeta, denoteMeta]
-  | case10 d sn i e ihe => rw [denoteMeta, denoteMeta, ihe]
+  | case10 d sn i e ihe =>
+    rw [denoteMeta, denoteMeta, ihe]
+    cases denoteMeta acval₂ env φ d e with
+    | none => rfl
+    | some ea =>
+      show (match env.findProj? sn i with
+          | some entry => projNodeAV? acval₁ env sn i entry ea
+          | none => AnnotTerm.projPair? i ea) =
+        (match env.findProj? sn i with
+          | some entry => projNodeAV? acval₂ env sn i entry ea
+          | none => AnnotTerm.projPair? i ea)
+      cases env.findProj? sn i with
+      | none => rfl
+      | some entry =>
+        dsimp only
+        unfold projNodeAV?
+        split
+        · rfl
+        · split
+          · rename_i hs
+            congr 2; funext m; exact congrFun (hag _ hs) _
+          · rfl
   | case11 d n hsup =>
     obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hN, hZ, hS, -⟩ :=
       natLitSupported_inv hsup

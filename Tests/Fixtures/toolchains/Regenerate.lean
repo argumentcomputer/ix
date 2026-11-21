@@ -76,7 +76,9 @@ def roleNames : List String :=
    "Int.emod", "Int.pow", "BitVec", "BitVec.ofNat", "BitVec.toNat", "BitVec.ult",
    "String.decEq", "ByteArray", "ByteArray.empty", "String.toByteArray", "List.append",
    "String.append", "ite", "Int.le", "Int.decEq", "Int.decLe", "Int.decLt", "Int.bmod",
-   "Int.bdiv", "Char.utf8Size", "String.utf8ByteSize", "String.back"]
+   "Int.bdiv", "Char.utf8Size", "String.utf8ByteSize", "String.back",
+   "Lean.trustCompiler", "Lean.reduceBool", "Lean.reduceNat", "Lean.ofReduceBool",
+   "Lean.ofReduceNat"]
 
 /-- The certificate theorems (`Ix.RoleEvidence.allCertTheorems`). -/
 def certificateNames : List String :=

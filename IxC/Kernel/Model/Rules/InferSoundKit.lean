@@ -1,8 +1,8 @@
 module
 
--- lane S-red's kit is the SHARED one: `DenoteMetaSpine`'s list algebra,
--- `denoteMeta_mkAppN(_inv)`, `denoteMeta_proj_inv_tower`,
--- `teleFit_nil_inv` and the tower entry's reading live there
+-- `RedSoundKit` holds the shared spine helpers: `DenoteMetaSpine`'s list
+-- algebra, `denoteMeta_mkAppN(_inv)`, `denoteMeta_proj_inv_tower`,
+-- `teleFit_nil_inv` and the tower entry's reading live there.
 public import IxC.Kernel.Model.Rules.Inputs
 import IxC.Kernel.Model.Rules.RedSoundKit
 import IxC.Kernel.Semantics.Hoist
@@ -14,21 +14,16 @@ import IxC.Kernel.Model.Annot.ValidSpine
 public section
 
 /-!
-# The S-infer kit (task #305, lane S-infer)
+# The inference-rules soundness kit
 
-The pieces the inference rules' soundness needs, restated here **by
-transplant** from the `Model/Steps/*` rows that carried them until the
-task #305 closing deleted that tier (the citations below are their
-provenance):
+Shared helper lemmas for the inference rules' soundness:
 
-* `wellDenotedV_mkAppN_of_fit` (`Steps/CapsRows.lean:402`) — the
-  fit-to-application kit the string chain rides (`teleFit_nil_inv`,
-  the spine inversion and the entry-kind inversion come from lane
-  S-red's `RedSoundKit.lean`);
-* `charList_facts` and `strLitFacts` (`Steps/StrLit.lean:70`, `:176`)
-  — the `String`-literal clause's whole content, stated over
-  `RulesInputs`' fields (`ConstType`/`AcvalValid`/`NatHeads` are
-  `ConstType`/`AcvalValid`/`NatHeads` verbatim).
+* `wellDenotedV_mkAppN_of_fit` — the fit-to-application kit the string
+  chain rides (`teleFit_nil_inv`, spine inversion, and entry-kind
+  inversion live in `RedSoundKit.lean`);
+* `charList_facts` and `strLitFacts` — the `String`-literal clause's
+  whole content, stated over `RulesInputs`' fields (`ConstType`,
+  `AcvalValid`, `NatHeads`).
 -/
 
 namespace Ix.Kernel.Model.Rules
@@ -548,6 +543,17 @@ theorem WellDenotedV_projAV_hoist {i : Nat} {e : AnnotTerm} {σ : Nat → V}
     (hok : WellDenotedV V σ (projAV i e)) : WellDenotedV V σ e :=
   ⟨WellDenoted_projAV_hoist hok.1, AnnotValid_projAV_hoist hok.2⟩
 
+theorem WellDenotedV_projNodeAV_hoist {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {sn : Key md} {i : Nat} {entry : ProjEntry md} {e : AnnotTerm} {σ : Nat → V}
+    (hok : WellDenotedV V σ (projNodeAV acval sn i entry e)) :
+    WellDenotedV V σ e := by
+  by_cases hle : entry.off ≤ 1
+  · rw [projNodeAV_of_le_one hle] at hok
+    exact WellDenotedV_projAV_hoist hok
+  · rw [projNodeAV_of_gt_one hle] at hok
+    exact ⟨((WellDenoted_chain V σ _ e) ▸ hok.1).2,
+      ((AnnotValid_chain V σ _ e) ▸ hok.2).2⟩
+
 /-! ## The tower-entry kit (`Steps/TowerKit.lean`, `Steps/Stuck.lean`)
 
 The `.proj` rule's reading walk, transplanted: the spine inversion,
@@ -616,8 +622,8 @@ theorem denoteMeta_instPisAt_peel
       (fun x hx => hargs x (List.mem_cons_of_mem _ hx)) hbody' hsp'
     exact ⟨restA, hrestA, hpeel⟩
 
-/-- **The checker's projection type reads as the telescope's peel**
-(task #175 S1): `ProjEntry.typeAt` is the `instPisAt` peel of the body
+/-- **The checker's projection type reads as the telescope's peel**:
+`ProjEntry.typeAt` is the `instPisAt` peel of the body
 telescope along the arguments and the subject, so its reading is the
 syntactic peel of the telescope's reading along the readings. -/
 theorem denoteMeta_typeAt_peel {m : EnvModel V env} {T : Key md} {i : Nat}

@@ -41,13 +41,21 @@ def publishedRolesFrom (existing : Std.HashMap Ix.Kernel.Name Address) : List Ro
 def closeRoles (roles : List Role) : List Role :=
   Role.all.filter (roles ++ roles.flatMap Role.block ++ roles.flatMap Role.deps).contains
 
+/-- **The roles every binding binds**, whatever the artifact publishes: the
+prelude's, and the axiom roles (`sorryAx`, `propext`, `Classical.choice`), which
+a check admitting user axioms needs bound (`Ix.Kernel.Admission.admitAxiomPolicy`).
+Their records join an artifact whose closure lacks them, so a claim on any
+compiled artifact may carry user axioms under its binding. -/
+def alwaysBound : List Role :=
+  Ix.Kernel.preludeShape.flatten ++ Ix.Kernel.Admission.userAxiomRoles
+
 /-- Explicitly check mandatory sources before the selected-closure collector,
 which intentionally ignores unavailable seed names in other callers. -/
 def supportInput (source : Lean.Environment) (artifact : Ixon.Env)
     (published? : Option (List Role) := none) :
     Except String (List Role × Ix.Compile.CompileInput) := do
   let published := published?.getD (publishedRoles artifact)
-  let mut required := closeRoles (Ix.Kernel.preludeShape.flatten ++ published)
+  let mut required := closeRoles (alwaysBound ++ published)
   for _ in [:Role.all.length + 1] do
     let roots := required.map roleName
     for name in roots do
@@ -678,21 +686,21 @@ def blockProjectionAddrs (b : Address) (lc : Ixon.LazyConstant) : Array Address 
   if !Ix.Cert.blockHeader lc.rawBytes then #[]
   else
     match lc.get? with
-    | some ⟨.muts components, _, _, _⟩ => Id.run do
+    | some ⟨.muts components, _, _, _, _⟩ => Id.run do
       let mut out : Array Address := #[]
       for idx in [:components.size] do
         match components[idx]! with
         | .indc iv =>
-          let iProj : Ixon.Constant := ⟨.iPrj ⟨idx.toUInt64, b⟩, #[], #[], #[]⟩
+          let iProj : Ixon.Constant := ⟨.iPrj ⟨idx.toUInt64, b⟩, #[], #[], #[], #[]⟩
           out := out.push (Address.admissionHash (Ixon.serConstant iProj))
           for cidx in [:iv.ctors.size] do
-            let cProj : Ixon.Constant := ⟨.cPrj ⟨idx.toUInt64, cidx.toUInt64, b⟩, #[], #[], #[]⟩
+            let cProj : Ixon.Constant := ⟨.cPrj ⟨idx.toUInt64, cidx.toUInt64, b⟩, #[], #[], #[], #[]⟩
             out := out.push (Address.admissionHash (Ixon.serConstant cProj))
         | .defn _ =>
-          let dProj : Ixon.Constant := ⟨.dPrj ⟨idx.toUInt64, b⟩, #[], #[], #[]⟩
+          let dProj : Ixon.Constant := ⟨.dPrj ⟨idx.toUInt64, b⟩, #[], #[], #[], #[]⟩
           out := out.push (Address.admissionHash (Ixon.serConstant dProj))
         | .recr _ =>
-          let rProj : Ixon.Constant := ⟨.rPrj ⟨idx.toUInt64, b⟩, #[], #[], #[]⟩
+          let rProj : Ixon.Constant := ⟨.rPrj ⟨idx.toUInt64, b⟩, #[], #[], #[], #[]⟩
           out := out.push (Address.admissionHash (Ixon.serConstant rProj))
       return out
     | _ => #[]
@@ -873,18 +881,19 @@ for it when its theorems are the ones needed.
 roles are known, so it never starts one it does not use; it joins that compile
 before it returns or throws. A compile left running when `main` returns would
 wait for subtasks that the runtime's shutdown no longer runs. A prefetched
-compile is its caller's to join. -/
+compile is its caller's to join. The generated theorem records' binder data
+are `generate`'s, with `binderData`. -/
 def finalize (backend : Backend) (source : Lean.Environment)
     (certSource : IO Lean.Environment)
     (input : Ix.Compile.CompileInput) (artifact : Ixon.Env)
     (limits : Ix.Kernel.Admission.Limits)
     (existing? : Option (Std.HashMap Ix.Kernel.Name Address) := none)
-    (prefetched? : Option Prefetched := none) : IO Ixon.Env := do
+    (prefetched? : Option Prefetched := none) (binderData : Bool := true) : IO Ixon.Env := do
   let existing ← match existing? with
     | some m => pure m
     | none => IO.ofExcept (sourceAddresses artifact)
   let initialRoles := publishedRolesFrom existing
-  let initRoles := closeRoles (Ix.Kernel.preludeShape.flatten ++ initialRoles)
+  let initRoles := closeRoles (alwaysBound ++ initialRoles)
   -- The roles to support, and how: `initRoles`, sliced from the artifact when
   -- it can be; otherwise `supportInput`'s closure, from its selected input.
   let sliced? := if initialRoles == initRoles then
@@ -937,7 +946,7 @@ def finalize (backend : Backend) (source : Lean.Environment)
     -- Evidence generation needs only that closure and the certificate closure;
     -- emission below checks its binding against the complete merged artifact.
     let generated ← IO.ofExcept (generate limits support certificates required Ix.Kernel.preludeShape
-      (store? := some supportStore))
+      (store? := some supportStore) (binderData := binderData))
     let emitted ← IO.ofExcept (generated.emit limits merged
       (roleStore? := some (supportStore.records[·]?))
       (sourceAddrs? := some mergedNames))

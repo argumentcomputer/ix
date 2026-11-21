@@ -82,6 +82,7 @@ def plotTitle (workload measure : String) : String :=
   | "aiur-sharded-env-check", "throughput" => "Aiur Env Check Throughput"
   | "aiur-sharded-env-check", "peak-rss"   => "Aiur Env Check Peak RAM Usage"
   | "aiur-sharded-env-check", "constants"  => "Aiur Env Constants"
+  | "aiur-sharded-env-check", "fft-cost"   => "Aiur Env FFT Cost"
   | "aiur-sharded-env-check", "shards"     => "Aiur Env Shards"
   | w, m => s!"{w}: {m}"
 

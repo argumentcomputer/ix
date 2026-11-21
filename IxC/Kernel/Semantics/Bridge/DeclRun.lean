@@ -164,9 +164,11 @@ theorem declThmRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
   | ok value' =>
   rw [hannv] at h
   try dsimp only at h
-  by_cases hvp : value'.allLevelParamsDefined cv.levelParams = true
+  by_cases hvp : (value.allLevelParamsDefined cv.levelParams &&
+      value'.allLevelParamsDefined cv.levelParams) = true
   case neg => simp [hvp] at h
   simp only [hvp] at h
+  have hvp := (Bool.and_eq_true ..).mp hvp |>.2
   by_cases hvr : value'.constsResolve env = true
   case neg => simp [hvr] at h
   simp only [hvr] at h
@@ -261,9 +263,11 @@ theorem declOpaqueRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
   | ok value' =>
   rw [hannv] at h
   try dsimp only at h
-  by_cases hvp : value'.allLevelParamsDefined cv.levelParams = true
+  by_cases hvp : (value.allLevelParamsDefined cv.levelParams &&
+      value'.allLevelParamsDefined cv.levelParams) = true
   case neg => simp [hvp] at h
   simp only [hvp] at h
+  have hvp := (Bool.and_eq_true ..).mp hvp |>.2
   by_cases hvr : value'.constsResolve env = true
   case neg => simp [hvr] at h
   simp only [hvr] at h
@@ -315,9 +319,11 @@ theorem declDefnRun_of {env env₂ : Env md} {μ : CheckMode} {F : Nat}
   | ok value' =>
   rw [hannv] at h
   try dsimp only at h
-  by_cases hvp : value'.allLevelParamsDefined cv.levelParams = true
+  by_cases hvp : (value.allLevelParamsDefined cv.levelParams &&
+      value'.allLevelParamsDefined cv.levelParams) = true
   case neg => simp [hvp] at h
   simp only [hvp] at h
+  have hvp := (Bool.and_eq_true ..).mp hvp |>.2
   by_cases hvr : value'.constsResolve env = true
   case neg => simp [hvr] at h
   simp only [hvr] at h

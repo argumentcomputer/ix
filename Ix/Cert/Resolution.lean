@@ -892,7 +892,7 @@ theorem compileEnvFold_final {env : Ix.Environment} {blocks : Ix.CondensedBlocks
     (h : compileEnvFold env blocks dbg sharingLimits width = .ok (ixe, bytes, cenv)) :
     ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
       cenv₀.nameToAddr = {} ∧
-      (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } ∧
+      (FoldState.init cenv₀ blocks sched).acc.cenv.env = env.lookupView ∧
       foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched) = .ok st ∧
       (assembleEnv st.acc).1 = ixe ∧
       cenv.nameToAddr = st.acc.cenv.nameToAddr ∧
@@ -922,7 +922,7 @@ record. -/
 def FoldRun (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (cenv cenv₀ : CompileEnv)
     (sched : FoldSchedule) : Prop :=
   ∃ st : FoldState, cenv₀.nameToAddr = {} ∧
-    (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } ∧
+    (FoldState.init cenv₀ blocks sched).acc.cenv.env = env.lookupView ∧
     foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched) = .ok st ∧
     cenv.nameToAddr = st.acc.cenv.nameToAddr ∧
     (∀ a b, st.acc.cenv.constants.get? a = some b → cenv.constants.get? a = some b) ∧
@@ -937,7 +937,7 @@ theorem compileEnvFold_provenance {env : Ix.Environment} {blocks : Ix.CondensedB
     {bytes : Nat} {cenv : CompileEnv}
     (h : compileEnvFold env blocks dbg sharingLimits width = .ok (ixe, bytes, cenv)) :
     ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule), FoldRun env blocks cenv cenv₀ sched ∧
-      (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } ∧
+      (FoldState.init cenv₀ blocks sched).acc.cenv.env = env.lookupView ∧
       ∀ (n : ExactName) (a : Address),
         cenv.nameToAddr.get? n = some a →
           ∃ b, CompiledIn blocks (OnRun blocks sched (FoldState.init cenv₀ blocks sched)) cenv n a b ∧
@@ -958,8 +958,8 @@ theorem compileEnvFold_provenance {env : Ix.Environment} {blocks : Ix.CondensedB
 condensation, and returns the fold's final compile environment. -/
 theorem compileUnchecked_fold {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     {cenv : CompileEnv} (h : compileUnchecked env = .ok (ixe, failures, cenv)) :
-    ∃ bytes : Nat, compileEnvFold { consts := env.consts }
-        (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) = .ok (ixe, bytes, cenv) := by
+    ∃ bytes : Nat, compileEnvFold env.materialized
+        (Ix.CondenseM.run (groundSplit env.materialized).1) = .ok (ixe, bytes, cenv) := by
   unfold compileUnchecked at h
   simp only [bind, Except.bind, pure, Except.pure] at h
   split at h
@@ -992,16 +992,16 @@ address. -/
 theorem compileUnchecked_provenance {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     {cenv : CompileEnv} (h : compileUnchecked env = .ok (ixe, failures, cenv)) :
     ∃ (bytes : Nat) (cenv₀ : CompileEnv) (sched : FoldSchedule),
-      compileEnvFold { consts := env.consts }
-        (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) = .ok (ixe, bytes, cenv) ∧
-      FoldRun { consts := env.consts } (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) cenv
+      compileEnvFold env.materialized
+        (Ix.CondenseM.run (groundSplit env.materialized).1) = .ok (ixe, bytes, cenv) ∧
+      FoldRun env.materialized (Ix.CondenseM.run (groundSplit env.materialized).1) cenv
         cenv₀ sched ∧
-      (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc.cenv.env =
-        { consts := {}, fallback? := some (Ix.Environment.get? { consts := env.consts }) } ∧
+      (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit env.materialized).1) sched).acc.cenv.env =
+        env.materialized.lookupView ∧
       ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
-        ∃ b, CompiledIn (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)
-            (OnRun (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched
-              (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched))
+        ∃ b, CompiledIn (Ix.CondenseM.run (groundSplit env.materialized).1)
+            (OnRun (Ix.CondenseM.run (groundSplit env.materialized).1) sched
+              (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit env.materialized).1) sched))
             cenv n a b ∧
           ixe.consts.get? a = some { buf := b, len := b.size } := by
   obtain ⟨bytes, hf⟩ := compileUnchecked_fold h
@@ -1222,8 +1222,8 @@ theorem compileReport_claim {env : Ix.Environment} {ixe : Ixon.Env} {failures : 
     (h : compileReport env = .ok (ixe, failures)) :
     ∃ (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (cenv₀ : CompileEnv) (sched : FoldSchedule),
       compileUnchecked env = .ok (ixe, failures, cenv) ∧
-      blocks = Ix.CondenseM.run (groundSplit { consts := env.consts }).1 ∧
-      FoldRun { consts := env.consts } blocks cenv cenv₀ sched ∧
+      blocks = Ix.CondenseM.run (groundSplit env.materialized).1 ∧
+      FoldRun env.materialized blocks cenv cenv₀ sched ∧
       ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
         (ixe.named.get? n).map (·.addr) = some a ∧
         ∃ (snap : DriverAcc) (rep : Ix.Name) (all A : Ix.Set Ix.Name) (k : Ix.Name) (r : BlockResult)

@@ -291,7 +291,7 @@ theorem recursorsOwned {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failu
 /-- **The stored record at a bound role's address has its specification's kind**,
 under the default table: at a `Nat` operation's address (an `ops` specification)
 a standalone definition, at an axiom role's address (`propext`,
-`Classical.choice`, `sorryAx`) an axiom. Every other role, and an address the
+`Classical.choice` and the inert axioms) an axiom. Every other role, and an address the
 artifact stores nothing at, is unconstrained. -/
 def RoleRecordKinds (ixe : Ixon.Env) : Prop :=
   ∀ t, Ix.Kernel.Reader.defaultTable = .ok t →

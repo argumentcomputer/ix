@@ -5,7 +5,7 @@ public import IxC.Kernel.Semantics.Tower.SumRecCase
 @[expose] public section
 
 /-!
-# The sum recursor leaf (task #175 sum-types, stage S4b; indexed)
+# The sum recursor leaf
 
 `sumRecAV ℓ w rds Fss Ess srcs nIdx = mkLamsC ℓ rds (sumRecBodyAV …)` —
 the constant-bit λ-tower (bit `ℓ`) over the recursor type reading's
@@ -17,7 +17,7 @@ applied to the major's payload:
 
     sumRecBodyAV = (caseRec 0 (t.0)) (t.1)        t = bvar 0
 
-and at a **squash instantiation** (`w = 0`, task #175 indexed) the
+and at a **squash instantiation** (`w = 0`) the
 first minor applied to the fields' SOURCES — an index variable for a
 field that is one of the constructor's index expressions, the point
 for a proof field (`srcAV`): the squashed value carries no field, so

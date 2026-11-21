@@ -111,13 +111,14 @@ def exprUnits : TestSeq :=
     .share 0,
     .app (.var 0) (.var 1),
     .app (.app (.var 0) (.var 1)) (.var 2),  -- Nested apps (telescope)
-    .lam .erased (.sort 0) (.var 0),
-    .lam .affine (.sort 0) (.lam .linear (.sort 1) (.var 0)),  -- Nested lams (telescope)
-    .all .many .shared (.sort 0) (.var 0),
-    .all .linear .unique (.sort 0)
-      (.all .erased .shared (.sort 1) (.var 0)),  -- Nested alls (telescope)
-    .letE (.lean true) (.sort 0) (.var 0) (.var 1),
-    .letE (.lean false) (.sort 0) (.var 0) (.var 1),
+    .lam (.sort 0) (.var 0),
+    .lam (.sort 0) (.lam (.sort 1) (.var 0)),  -- Nested lams (telescope)
+    .all (.sort 0) (.var 0),
+    .all (.sort 0) (.all (.sort 1) (.var 0)),  -- Nested alls (telescope)
+    .leanLet true (.sort 0) (.var 0) (.var 1),
+    .leanLet false (.sort 0) (.var 0) (.var 1),
+    .letE false (.value .once) (.sort 0) (.var 0) (.var 1),
+    .letE true .borrow (.sort 0) (.var 0) (.var 1),
     .prj 0 1 (.var 0),
   ]
   cases.foldl (init := .done) fun acc e =>
@@ -340,12 +341,13 @@ def exprMetaArenaUnits : TestSeq :=
     (arenaVector { nodes := #[.leaf, .app 0 0] } #[0x02, 0x00, 0x0A, 0x00])
 
 def constantUnits : TestSeq :=
-  let defn := Definition.mk .defn .safe 0 (.sort 0) (.var 0)
+  let defn := Definition.mk .defn .safe {} 0 (.sort 0) (.var 0)
   let c := Constant.mk
     (.defn defn)
     #[.var 0, .sort 1]  -- sharing
     #[⟨(Blake3.Rust.hash "ref".toUTF8).val⟩]  -- refs
     #[.zero, .succ .zero]  -- univs
+    #[]  -- binder data
   test "Constant roundtrip" (constantSerde c)
 
 def commUnits : TestSeq :=
@@ -638,7 +640,7 @@ private def versionRejected {α : Type} (r : Except String α) (got : Nat) : Boo
 def envHeaderUnits : TestSeq :=
   let bytes := match serEnv ({} : Env) with | .ok b => b | .error _ => .empty
   test "env header is TagN(4, 0xE, 4) = 0xE4" (bytes.data[0]? == some 0xE4)
-  ++ test "wireFormatId is ixon-v4" (wireFormatId == "ixon-v4")
+  ++ test "wireFormatId is ixon-v5" (wireFormatId == "ixon-v5")
   ++ test "checked object-format byte remains 4" (Env.OBJECT_FORMAT == 4)
   ++ test "Lean reader accepts the version 4 header" ((deEnv bytes).toOption.isSome)
   ++ test "Lean reader rejects a version 3 header"
@@ -708,6 +710,115 @@ private def envelopeUnits (definition : Definition) : TestSeq :=
       | .ok _ => (true, 0, 0, none)
       | .error e => (false, 0, 0, some e)) .done
 
+/-! ## The binder-data section
+
+A record ends with its binder-data section. The fixture carries every node
+kind: two root blocks, each with a share node, the first with a parameter
+list, and the two variants of the sharing entry they name, in order of first
+occurrence, the second the sentinel. The Rust crate's `binder_fixture` checks
+the same section bytes. -/
+
+def binderFixture : Constant :=
+  { info := .defn (Definition.mk .defn .safe {} 3
+      (.all (.sort 0) (.share 0)) (.lam (.sort 0) (.share 0)))
+    sharing := #[.lam (.sort 0) (.var 0)]
+    refs := #[]
+    univs := #[.var 0]
+    binders := #[
+      ⟨false, 0, 0, #[.ifAllZero #[0, 2] {}, .share 0]⟩,
+      ⟨false, 1, 0, #[.never {}, .share 1]⟩,
+      ⟨true, 0, 0, #[.zero {}]⟩,
+      ⟨true, 0, 1, #[.undecided {}]⟩] }
+
+def binderFixtureSection : Array UInt8 :=
+  #[4,
+    0, 0, 0, 2, 2, 2, 0, 2, 3, 0,
+    0, 1, 0, 2, 0, 3, 1,
+    1, 0, 0, 1, 1,
+    1, 0, 1, 1, 4]
+
+/-- The canonical decoder over a record's own bytes. -/
+def canonicalRead (c : Constant) : Bool :=
+  let bytes := serConstant c
+  (Canonical.deConstant bytes.size loadMaxUnivNodes bytes).toOption == some c
+
+/-- Each form still round-trips; the canonical (local) form rejects it. -/
+def noncanonicalSections : List (String × Array BinderBlock) :=
+  let b := binderFixture.binders
+  [("blocks out of order", #[b[1]!, b[0]!, b[2]!, b[3]!]),
+   ("a repeated key", b.push b[3]!),
+   ("a root block at variant 1", b.set! 1 { b[1]! with variant := 1 }),
+   ("an empty parameter list", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[] {}, .share 0] }),
+   ("descending parameters", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[2, 0] {}, .share 0] }),
+   ("a repeated parameter", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[1, 1] {}, .share 0] }),
+   ("a parameter past the level count", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[3] {}, .share 0] }),
+   ("an empty block", b.push ⟨true, 0, 2, #[]⟩)]
+
+/-- Each form is canonical (local) and round-trips; only the complete form
+rejects it. -/
+def incompleteSections : List (String × Array BinderBlock) :=
+  let b := binderFixture.binders
+  [("a variant no share node names", b.push ⟨true, 0, 2, #[.never {}]⟩),
+   ("a missing root block", #[b[0]!, b[2]!, b[3]!]),
+   ("a missing variant", #[b[0]!, b[1]!, b[2]!]),
+   ("variants out of first-occurrence order",
+     (b.set! 0 { b[0]! with nodes := #[.ifAllZero #[0, 2] {}, .share 1] }).set! 1
+       { b[1]! with nodes := #[.never {}, .share 0] }),
+   ("two equal variants", b.set! 3 { b[3]! with nodes := #[.zero {}] }),
+   ("a share node at a binder", b.set! 2 { b[2]! with nodes := #[.share 0] }),
+   ("a binder node at a share", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[0, 2] {}, .never {}] }),
+   ("a node too many", b.set! 2 { b[2]! with nodes := #[.zero {}, .zero {}] }),
+   ("a block for an entry that is not shared", b.push ⟨true, 1, 0, #[.never {}]⟩),
+   ("no section for a record with binders", #[])]
+
+/-- A projection record carries no binder data. -/
+def projectionWithSection (node : BinderNode) : Constant :=
+  { info := .dPrj ⟨0, Address.blake3 "block".toUTF8⟩, sharing := #[], refs := #[], univs := #[],
+    binders := #[⟨false, 0, 0, #[node]⟩] }
+
+def binderSectionUnits : TestSeq :=
+  let bytes := serConstant binderFixture
+  let badTag := bytes.set! (bytes.size - binderFixtureSection.size + 5) 5
+  let badKind := bytes.set! (bytes.size - binderFixtureSection.size + 1) 2
+  test "section bytes" ((runPut (putBinders binderFixture.binders)).data == binderFixtureSection)
+  ++ test "the empty section is 0x00" ((runPut (putBinders #[])).data == #[0])
+  ++ test "a record ends with its section"
+      ((bytes.extract (bytes.size - binderFixtureSection.size) bytes.size).data
+        == binderFixtureSection)
+  ++ test "record with a section round-trips" (constantSerde binderFixture)
+  ++ test "record without a section round-trips" (constantSerde { binderFixture with binders := #[] })
+  ++ test "the fixture's section is canonical" binderFixture.bindersCanonical
+  ++ test "the fixture's section is complete" binderFixture.bindersComplete
+  ++ test "the canonical decoder accepts it" (canonicalRead binderFixture)
+  ++ test "a record without binders and no section is canonical and complete"
+      (let c := { binderFixture with
+        info := .defn (Definition.mk .defn .safe {} 0 (.sort 0) (.sort 0)), sharing := #[], binders := #[] }
+       canonicalRead c && c.bindersComplete)
+  ++ noncanonicalSections.foldl (init := .done) (fun acc (label, blocks) =>
+      let c := { binderFixture with binders := blocks }
+      acc ++ test s!"{label}: round-trips" (constantSerde c)
+        ++ test s!"{label}: not canonical" (!c.bindersCanonical && !canonicalRead c))
+  ++ incompleteSections.foldl (init := .done) (fun acc (label, blocks) =>
+      let c := { binderFixture with binders := blocks }
+      acc ++ test s!"{label}: round-trips" (constantSerde c)
+        ++ test s!"{label}: canonical but not complete"
+          (c.bindersCanonical && canonicalRead c && !c.bindersComplete))
+  ++ test "a projection with a parameter is not canonical"
+      (!canonicalRead (projectionWithSection (.ifAllZero #[0] {})))
+  ++ test "a projection with any section is not canonical"
+      (!canonicalRead (projectionWithSection (.never {})))
+  ++ test "a level count below 2^32 is canonical; 2^32 round-trips and is not"
+      (let withLvls (n : Nat) : Constant :=
+        { info := .defn (Definition.mk .defn .safe {} n.toUInt64 (.sort 0) (.sort 0)),
+          sharing := #[], refs := #[], univs := #[.zero], binders := #[] }
+       canonicalRead (withLvls (maxLevelCount - 1)) && constantSerde (withLvls maxLevelCount) &&
+         !(withLvls maxLevelCount).bindersCanonical && !canonicalRead (withLvls maxLevelCount))
+  ++ test "an unknown node tag is rejected" ((deConstant badTag).toOption.isNone)
+  ++ test "a block kind other than 0 or 1 is rejected" ((deConstant badKind).toOption.isNone)
+  ++ test "a truncated section is rejected"
+      ((deConstantExact (bytes.extract 0 (bytes.size - 1))).toOption.isNone)
+  ++ test "section serialization Lean==Rust" (constantSerializationMatches binderFixture)
+
 /-! ## Test Suite (property-based) -/
 
 public def Tests.Ixon.suite : List TestSeq := [
@@ -732,6 +843,7 @@ public def Tests.Ixon.suite : List TestSeq := [
   strictExprUnits,
   tagNUnits,
   exprMetaArenaUnits,
+  binderSectionUnits,
   -- Env unit tests (for debugging serialization)
   envUnitTests,
   -- Env serialization comparison unit tests

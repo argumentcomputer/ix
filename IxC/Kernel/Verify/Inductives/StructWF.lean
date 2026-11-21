@@ -113,7 +113,7 @@ theorem envWF_cons_ind {env : Env md} (henv : EnvWF env)
     (by intro tbl h; exact ConstantInfo.noConfusion rfl (heq_of_eq h))
     hcaps)
 
-/-! ## Stage 5: the projection table (task #175 S1) -/
+/-! ## Projection-table install -/
 
 /-- The table stage's run, inverted: the bodies are the generator's,
 they pass the scoping guard, the table name is fresh, and the output
@@ -145,7 +145,7 @@ theorem checkStructProjTable_inv {env envOut : Env md} {T C : Key md}
          Option.isNone_iff_eq_none.mp (by assumption), h.symm⟩)
     | close_throw
 
-/-- The projection-table stage at the run level (task #175 S1): the
+/-- The projection-table stage at the run level: the
 environment it produces is well-formed — the table's constant type is
 the closed `Sort 1`, and the bodies' scoping is the stage's own guard. -/
 theorem direct_table_wf {env envOut : Env md} (henv : EnvWF env)

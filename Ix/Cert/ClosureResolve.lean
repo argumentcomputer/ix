@@ -52,13 +52,15 @@ theorem finish_lone {info : Ixon.ConstantInfo} (h : BlockContext.lone info = tru
       (fun r => r.projections = #[] ∧ BlockContext.lone r.block.info = true) := by
   intro context before output after ran
   rw [Ix.CompileCert.EmissionBlocks.finish_run] at ran
-  cases built : buildConstantWithSharing context.1.sharingLimits info before.refs before.univs with
+  cases built : (buildConstantWithSharing context.1.sharingLimits info before.refs before.univs >>=
+      withBinderSection context.1.env.binderAnnotator? #[context.2.current]) with
   | error e => rw [built] at ran; cases ran
   | ok block =>
     rw [built] at ran
     simp only [Except.map, Prod.mk.injEq, Except.ok.injEq] at ran
     obtain ⟨rfl, -⟩ := ran
-    exact ⟨rfl, built_lone built h⟩
+    have lone := built_lone (Ix.CompileCert.EmissionBlocks.sectioned_of_bind built).1 h
+    exact ⟨rfl, lone⟩
 
 theorem definitionDataInfo_lone (source : Ix.Def) :
     Yields (compileDefinitionDataInfo source)
@@ -148,7 +150,7 @@ def IsMuts : Ixon.ConstantInfo → Prop
 /-- A block the canonical sharing built is no projection. -/
 theorem built_notPrj {c : Ixon.Constant} (h : BlockLayout.Built c) : BlockLayout.NotPrj c.info := by
   obtain ⟨limits, info, refs, univs, ran, hinfo⟩ := h
-  have erased := (SharingRoots.build_roots (md := .anon) limits info refs univs c ran).1
+  have erased := (SharingRoots.build_roots (md := .anon) limits info refs univs _ ran).1
   cases info <;> cases hc : c.info <;>
     simp_all [BlockLayout.NotPrj, SharingRoots.erase, Ix.Sharing.Exact.mapRoots]
 

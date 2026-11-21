@@ -197,17 +197,17 @@ theorem ingestExpr_refines {a b : Limits} (le : LimitsLe a b) (context : ShareCt
     rw [ingestExpr_eq, ingestExpr_eq]
     exact cached_refines le depth _ ((fnIh (depth + 1)).bind fun _ =>
       (argIh (depth + 1)).bind fun _ => internNode_refines le.nodes _)
-  | lam contract type body typeIh bodyIh =>
+  | lam type body typeIh bodyIh =>
     intro depth
     rw [ingestExpr_eq, ingestExpr_eq]
     exact cached_refines le depth _ ((typeIh (depth + 1)).bind fun _ =>
       (bodyIh (depth + 1)).bind fun _ => internNode_refines le.nodes _)
-  | all contract result type body typeIh bodyIh =>
+  | all type body typeIh bodyIh =>
     intro depth
     rw [ingestExpr_eq, ingestExpr_eq]
     exact cached_refines le depth _ ((typeIh (depth + 1)).bind fun _ =>
       (bodyIh (depth + 1)).bind fun _ => internNode_refines le.nodes _)
-  | letE contract type value body typeIh valueIh bodyIh =>
+  | letE nonDep mode type value body typeIh valueIh bodyIh =>
     intro depth
     rw [ingestExpr_eq, ingestExpr_eq]
     exact cached_refines le depth _ ((typeIh (depth + 1)).bind fun _ =>

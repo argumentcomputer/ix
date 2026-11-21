@@ -176,7 +176,7 @@ when the input's inductives list their constructors at their positions. -/
 theorem boundResolve_onRun {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     {cenv cenv₀ : CompileEnv} {blocks : Ix.CondensedBlocks} {sched : FoldSchedule}
     (hu : compileUnchecked env = .ok (ixe, failures, cenv)) (idx : ConstructorIndices env)
-    (hrun : FoldRun { consts := env.consts } blocks cenv cenv₀ sched) {acc : DriverAcc}
+    (hrun : FoldRun env.materialized blocks cenv cenv₀ sched) {acc : DriverAcc}
     (hacc : OnRun blocks sched (FoldState.init cenv₀ blocks sched) acc) : BoundResolve ixe acc.cenv := by
   obtain ⟨st, h₀, henv, hst, -, hkept, -⟩ := hrun
   have ok := reach_boundOK idx (blocks := blocks) (init := (FoldState.init cenv₀ blocks sched).acc)

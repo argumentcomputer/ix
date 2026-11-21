@@ -5,7 +5,7 @@ public import IxC.Kernel.Semantics.Tower.TowerLeaf
 @[expose] public section
 
 /-!
-# The constructor tupler (task #175, stage 3b)
+# The constructor tupler
 
 `mkTowerGo w Fs` spells the tier's `mkTower` — the right-nested
 `.psigmaMk [w, w]` application tower with the `.punitUnit` terminator
@@ -88,7 +88,7 @@ def mkTowerGoPos (w : Nat) : List AnnotTerm → AnnotTerm
       (mkTowerGoPos w Fs)
 
 /-- The tupler, both regimes: at squash the constructor's value is the
-proof point outright (`.punitUnit`, task #175 W4c/O4 — the pair
+proof point outright (`.punitUnit` — the pair
 constructor's pinned valuation cannot take a data field there), the
 pair tower above. -/
 def mkTowerGo (w : Nat) (Fs : List AnnotTerm) : AnnotTerm :=

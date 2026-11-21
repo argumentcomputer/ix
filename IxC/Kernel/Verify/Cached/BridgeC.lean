@@ -138,8 +138,9 @@ theorem checkConstantValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF e
     (fun s₁ jA w hs₁ hP => ?_)
   obtain ⟨hjA, hwty⟩ := hP
   obtain rfl := hjA
-  rw [Expr.allLevelParamsDefinedC_spec]
-  by_cases h7 : Expr.allLevelParamsDefined cvp.levelParams jA = true
+  rw [Expr.allLevelParamsDefinedC_spec, Expr.allLevelParamsDefinedC_spec]
+  by_cases h7 : (Expr.allLevelParamsDefined cvp.levelParams cvp.type &&
+      Expr.allLevelParamsDefined cvp.levelParams jA) = true
   case neg =>
     simp only [if_neg h7]
     exact SimC.throw_bind
@@ -186,8 +187,9 @@ theorem checkDefnValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) 
     (fun s₁ jv w hs₁ hP => ?_)
   obtain ⟨hjv, hwv⟩ := hP
   obtain rfl := hjv
-  rw [Expr.allLevelParamsDefinedC_spec]
-  by_cases h3 : Expr.allLevelParamsDefined cvA.levelParams jv = true
+  rw [Expr.allLevelParamsDefinedC_spec, Expr.allLevelParamsDefinedC_spec]
+  by_cases h3 : (Expr.allLevelParamsDefined cvA.levelParams value &&
+      Expr.allLevelParamsDefined cvA.levelParams jv) = true
   case neg =>
     simp only [if_neg h3]
     exact SimC.throw_bind
@@ -260,8 +262,9 @@ theorem checkThmValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {
     (fun s₄ jv w hs₄ hP₄ => ?_)
   obtain ⟨hjv, hwv⟩ := hP₄
   obtain rfl := hjv
-  rw [Expr.allLevelParamsDefinedC_spec]
-  by_cases h3 : Expr.allLevelParamsDefined cvA.levelParams jv = true
+  rw [Expr.allLevelParamsDefinedC_spec, Expr.allLevelParamsDefinedC_spec]
+  by_cases h3 : (Expr.allLevelParamsDefined cvA.levelParams value &&
+      Expr.allLevelParamsDefined cvA.levelParams jv) = true
   case neg =>
     simp only [if_neg h3]
     exact SimC.throw_bind
@@ -312,8 +315,9 @@ theorem checkOpaqueValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env
     (fun s₁ jv w hs₁ hP => ?_)
   obtain ⟨hjv, hwv⟩ := hP
   obtain rfl := hjv
-  rw [Expr.allLevelParamsDefinedC_spec]
-  by_cases h3 : Expr.allLevelParamsDefined cvA.levelParams jv = true
+  rw [Expr.allLevelParamsDefinedC_spec, Expr.allLevelParamsDefinedC_spec]
+  by_cases h3 : (Expr.allLevelParamsDefined cvA.levelParams value &&
+      Expr.allLevelParamsDefined cvA.levelParams jv) = true
   case neg =>
     simp only [if_neg h3]
     exact SimC.throw_bind

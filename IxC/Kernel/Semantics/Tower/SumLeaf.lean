@@ -5,7 +5,7 @@ public import IxC.Kernel.Semantics.Tower.SumCase
 @[expose] public section
 
 /-!
-# The tagged sum carrier, spelled (task #175 sum-types, stage S2)
+# The tagged sum carrier, spelled
 
 The carrier body of a direct sum: the `.psigma [w, w]` node over the
 tag domain `Nat` whose fibre is the numeral case split

@@ -71,9 +71,14 @@ private def check : IO Nat := do
   ensure (complete borrowed fullAccess.names.size) "source entries of setup-only block were skipped"
   -- A malformed stored recursor prevents a setup-only inductive from
   -- reading. That reader error must surface, not disappear with its entries.
-  let some (ra, rc) := pre.records.find? (fun (_, c) => c.info matches .recr _)
+  -- The recursor keeps its type, so it is still filed under its block, and
+  -- carries one rule too many, which the block's reading refuses. (Removing
+  -- the recursor is no malformation: a block of one inductive that no
+  -- recursor eliminates reads without one.)
+  let some (ra, rc, r) := pre.records.findSome? (fun (a, c) => match c.info with
+      | .recr r => some (a, c, r) | _ => none)
     | throw (IO.userError "prelude has no standalone recursor")
-  let bad := { rc with info := .axio { isUnsafe := false, lvls := 0, typ := .sort 0 } }
+  let bad := { rc with info := .recr { r with rules := r.rules.push ⟨0, .sort 0⟩ } }
   let badStore : RecordStore := ({} : RecordStore).insert ra bad
   let broken := { fullAccess with
     names := #[], headers := #[], foreign := #[], store := badStore

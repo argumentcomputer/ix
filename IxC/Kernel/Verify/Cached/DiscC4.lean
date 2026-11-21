@@ -684,17 +684,14 @@ theorem whnfCoreBodyC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
   exact SimC.wr (whnfCoreLoopC_sim hμ ih henv whnfCoreLoopFuel hs hden hw)
     (fun v F hF => whnfCoreLoop_sound_body d ex v whnfCoreLoopFuel F hF)
 
-/-! ## The named concrete core's simulation (task #172, batch B2; the
-R letter retired 2026-09-05)
+/-! ## The named concrete core's simulation
 
-**THE MEASUREMENT the batch was dispatched for.**  The walks above are
-generic in `mode` (under `hμ : mode.verifiedChecks = true`, task
-#185), so one proof serves every instantiation; the capstone is the
-instance at `.verified`, where `hμ` is `rfl`.  The per-core letter is
+The walks above are generic in `mode` (under `hμ : mode.verifiedChecks = true`),
+so one proof serves every instantiation; the capstone is the
+instance at `.verified`, where `hμ` is `rfl`.  The per-core lemma is
 therefore `exact` with no conversion step and no restated lemma: the
-tower **INSTANTIATES**, and per concrete core the whnfCore family
-costs **one proof line** (a term application) and **zero** new proof
-steps.
+tower instantiates, and per concrete core the `whnfCore` family
+costs one proof line (a term application) and zero new proof steps.
 
 `whnfCoreBodyRC_sim` was this letter's R twin.  It retired with its
 subject when the R core went (2026-09-05): `whnfCoreBodyRC` and `cfgR`
@@ -1976,7 +1973,7 @@ theorem inferBodyC_sim (ih : SSimC mode env f) (henv : EnvWF env)
     unfold inferBody
     dsimp only
     try dsimp only
-    obtain ⟨mpw, mc, mr⟩ := m
+    obtain ⟨mpw, mdisp⟩ := m
     refine SimC.bind (ih.infer hs rfl hwtb.1)
       (fun s₁ tty ttyx hs₁ hP => ?_)
     obtain ⟨httyd, hwtty⟩ := hP
@@ -2056,7 +2053,7 @@ theorem inferBodyC_sim (ih : SSimC mode env f) (henv : EnvWF env)
           Expr.getAppArgsC_spec te
         rw [htargs.length]
         split
-        · -- task #175 S1: the body at the spine and the subject —
+        · -- the body at the spine and the subject —
           -- `Expr = Expr` (the identity world), so the two results
           -- coincide once `RelCL` rewrites the spine
           rename_i hcond
@@ -2068,7 +2065,7 @@ theorem inferBodyC_sim (ih : SSimC mode env f) (henv : EnvWF env)
               projEntry_typeAt_WScoped henv hfp us
               hcond.2.1
               (fun a ha => hwte.getAppArgs a ha) hwpe⟩
-          -- the Prop guard (task #175 W4c) runs no walk of its own
+          -- the Prop guard runs no walk of its own
           split
           · split
             · exact hres
@@ -2372,7 +2369,7 @@ theorem inferBodyIOC_sim (hμ : mode.verifiedChecks = true) (hgb : mode.betaGate
           Expr.getAppArgsC_spec te
         rw [htargs.length]
         split
-        · -- task #175 S1: the body at the spine and the subject, as in
+        · -- the body at the spine and the subject, as in
           -- `inferBodyC_sim`
           rename_i hcond
           rw [htargs]
@@ -2383,7 +2380,7 @@ theorem inferBodyIOC_sim (hμ : mode.verifiedChecks = true) (hgb : mode.betaGate
               projEntry_typeAt_WScoped henv hfp us
               hcond.2.1
               (fun a ha => hwte.getAppArgs a ha) hwpe⟩
-          -- the Prop guard (task #175 W4c) runs no walk of its own
+          -- the Prop guard runs no walk of its own
           split
           · split
             · exact hres

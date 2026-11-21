@@ -89,8 +89,7 @@ theorem RecCtorsStored.cons {env : Env md} {c₀ : ConstantInfo md}
     (hold : RecCtorsStored env) (hfresh : env.find? c₀.name = none)
     (hnew : ∀ cvR mI rP rules, c₀ = .recInfo cvR mI rP rules →
       ∀ r ∈ rules,
-        (∃ cvj cnP cnF,
-          env.find? (RecRule.ctor r) = some (.ctorInfo cvj cnP cnF)) ∧
+        RuleCtorOk env.find? cvR mI rP r ∧
         (r.k = true → recRuleKOf env.find? r.ctor = true) ∧
         (r.eta = true → recRuleEtaOf env.find? c₀.name r.ctor = true)) :
     RecCtorsStored (⟨c₀ :: env.consts⟩ : Env md) := by
@@ -105,15 +104,13 @@ theorem RecCtorsStored.cons {env : Env md} {c₀ : ConstantInfo md}
   split at hfp
   · next hn =>
     obtain hceq := Option.some.inj hfp
-    obtain ⟨⟨cvj, cnP, cnF, hf⟩, hk, he⟩ := hnew _ _ _ _ hceq r hr
-    exact ⟨⟨cvj, cnP, cnF, hkeep _ _
-        (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hf⟩,
+    obtain ⟨hco, hk, he⟩ := hnew _ _ _ _ hceq r hr
+    exact ⟨hco.mono hkeep,
       fun hb => recRuleKOf_mono hkeep (hk hb),
       fun hb => recRuleEtaOf_mono hkeep (hn ▸ he hb)⟩
   · next hn =>
-    obtain ⟨⟨cvj, cnP, cnF, hf⟩, hk, he⟩ := hold n cv mI rP rules hfp r hr
-    exact ⟨⟨cvj, cnP, cnF, hkeep _ _
-        (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hf⟩,
+    obtain ⟨hco, hk, he⟩ := hold n cv mI rP rules hfp r hr
+    exact ⟨hco.mono hkeep,
       fun hb => recRuleKOf_mono hkeep (hk hb),
       fun hb => recRuleEtaOf_mono hkeep (he hb)⟩
 

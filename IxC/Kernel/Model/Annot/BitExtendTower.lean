@@ -6,7 +6,7 @@ public import IxC.Kernel.Verify.ProjSlots
 public section
 
 /-!
-# `denoteMeta` across a tower-entry cons (task #175 wiring, W4c S6)
+# `denoteMeta` across a tower-entry cons
 
 `denoteMeta_envExtend_mono` refutes a table head outright: its `hproj`
 premise says the extension adds no entry at all, because a `.proj T i`
@@ -108,10 +108,17 @@ theorem denoteMeta_envExtend_mono_at {env₀ env : Env md}
     have hnpe : ∀ j', Expr.NoProjAt T j' e := fun j' => (hnp' j').2
     have hsnT : sn ≠ T := fun hsn => (hnp' j).1 ⟨hsn, rfl⟩
     obtain ⟨ea', hea', hcase⟩ := denoteMeta_proj_inv h
-    rcases hcase with ⟨entry, hfp0, rfl⟩ | ⟨hnt0, hdec⟩
+    rcases hcase with ⟨entry, hfp0, hnode⟩ | ⟨hnt0, hdec⟩
     · -- a table entry at the prefix persists unchanged
       rw [denoteMeta, ihe hc hnpe hea', hmono sn j entry hfp0]
-      rfl
+      obtain ⟨hrdy, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode
+      refine projNodeAV?_eq_some_iff.mpr ⟨?_, rfl⟩
+      rcases hrdy with hle | hs0
+      · exact Or.inl hle
+      · right
+        cases hfc : env₀.find? (Ix.Kernel.projChainKey sn j) with
+        | none => rw [hfc] at hs0; exact nomatch hs0
+        | some ci => rw [hF hfc]; rfl
     · -- the table-free path: the slots the extension may have added
       -- are `T`'s, and the subject has no node there
       rw [denoteMeta, ihe hc hnpe hea']
@@ -157,7 +164,7 @@ theorem denoteMeta_envExtend_mono_at {env₀ env : Env md}
       | strVal s => exact absurd rfl (hstr s)
 
 /-- A table cons adds exactly its own structure's slots: any lookup
-new at the extension is the head's (task #175 S1). -/
+new at the extension is the head's. -/
 theorem findProj?_cons_tower {env : Env md} {tbl₀ : Ix.Kernel.ProjTable md} :
     ∀ (sn : Key md) (j : Nat) (entry : Ix.Kernel.ProjEntry md),
       env.findProj? sn j = none →

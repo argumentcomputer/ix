@@ -52,7 +52,7 @@ namespace Ix.Kernel
 
 /-! ## Failure messages -/
 
-/-- **What a failure shows beside its message** (step 6b, display only): the
+/-- **What a failure shows beside its message** (display only): the
 terms it is about, each with its role (`"argument"`, `"has type"`, …), and the
 binders it was thrown under, each at the depth it was opened at (the binder of
 `fvar d`), outermost first. -/
@@ -71,7 +71,7 @@ instance : Repr (Squash (FailureDisplay md)) := ⟨fun _ _ => "⟨display⟩"⟩
 the failure is about, or a number. Keys stay keys: the mode's renderer
 spells them (`Msg.render`).
 
-A prose part carries the failure's display (`FailureDisplay`, step 6b): a
+A prose part carries the failure's display (`FailureDisplay`): a
 subsingleton, so two failures that differ only there are equal, and only the
 renderers outside the kernel read it. Only the first prose part of a message
 holds one (`Msg.mapDisplay`). -/
@@ -123,7 +123,7 @@ def MsgPart.mapKeys (σ : Key md → Key md') : MsgPart md → MsgPart md'
   | .key k => .key (σ k)
   | .nat n => .nat n
 
-/-! ### A failure's display (step 6b)
+/-! ### A failure's display
 
 The checker puts what a failure is about on its message at run time, outside
 `.anon`: the terms (`Msg.withTerms`) and the binders it was thrown under
@@ -222,7 +222,7 @@ def mapKeys (σ : Key md → Key md') : CheckError md → CheckError md'
   | .invalid m => .invalid (Msg.mapKeys σ m)
   | .internal m => .internal (Msg.mapKeys σ m)
 
-/-- The failure with its display updated by `f` (step 6b). -/
+/-- The failure with its display updated by `f`. -/
 def mapDisplay (f : FailureDisplay md → FailureDisplay md) : CheckError md → CheckError md
   | .notImplemented m => .notImplemented (Msg.mapDisplay f m)
   | .invalid m => .invalid (Msg.mapDisplay f m)
@@ -353,11 +353,11 @@ def reduceNat (r : (CoreFns md) m) (env : Env md) (depth : Nat) (e : Expr md) :
       match rawNatLit? (← r.whnf depth a) with
       | some n => pure (some (.lit (.natVal (n + 1))))
       | none => pure none
-    -- (the audit's S1: the `Nat.pred` and `Nat.log2` literal fast paths
-    -- are gone — official `reduce_nat` (`type_checker.cpp:639-668`) has
-    -- `Nat.succ` and the fourteen binary operations, nothing else.
-    -- `Nat.pred` stays a certified structural operation because
-    -- `Nat.sub`'s recurrence names it; `Nat.log2` is gone entirely)
+    -- Official `reduce_nat` (`type_checker.cpp:639-668`) has only
+    -- `Nat.succ` and the fourteen binary operations (no `Nat.pred` or
+    -- `Nat.log2` literal fast paths). `Nat.pred` stays a certified
+    -- structural operation because `Nat.sub`'s recurrence names it;
+    -- `Nat.log2` is absent entirely.
     else pure none
   | .app (.app (.const c []) a) b =>
     if (c = natAddName ∨ c = natSubName ∨ c = natMulName ∨
@@ -368,11 +368,10 @@ def reduceNat (r : (CoreFns md) m) (env : Env md) (depth : Nat) (e : Expr md) :
         natOpStored env c = true then
       -- Official `reduce_bin_nat_op` (`type_checker.cpp:606-614`):
       -- the FIRST argument is head-normalised and, unless it is a
-      -- literal, the step fails WITHOUT touching the second.  The
-      -- former two-scrutinee `match` whnf'd both up front — a cost
-      -- divergence (DESIGN.md "THE DIVERGENCE AUDIT", D15): on
-      -- `Nat.add o (slow n)` with `o` opaque it evaluated `slow n`
-      -- where official never does (fuel death at `n = 80000`; the fixture).
+      -- literal, the step fails WITHOUT touching the second.  A
+      -- two-scrutinee `match` would whnf both up front, evaluating
+      -- `slow n` in `Nat.add o (slow n)` with `o` opaque where official
+      -- never does.
       match rawNatLit? (← r.whnf depth a) with
       | some n₁ =>
         match rawNatLit? (← r.whnf depth b) with
@@ -395,8 +394,7 @@ inferred type is defeq to the corresponding (instantiated) domain.
 This is what hands the soundness proof the memberships the iota
 equations need, at every level assignment.
 
-**The ι-slot licence** (the ι batch, 2026-09-05; DESIGN.md "THE ι
-AUDIT" §9.1): at a *licensed* walk (`lic = true`, set only by
+**The ι-slot licence**: at a *licensed* walk (`lic = true`, set only by
 `iotaRec`'s two calls — the fire-time telescope runs, where the redex
 is a subterm of the subject and carries its own `WellDenoted` app slots)
 a slot whose `∀`-binder datum is `.never` is skipped: the membership
@@ -436,16 +434,13 @@ def defEqList (r : (CoreFns md) m) (env : Env md) (depth : Nat) :
     else pure false
   | _, _ => pure false
 
-/-- The canonical-index comparison of a firing ι redex (the ι batch,
-2026-09-05).  Where the recursor has indices (`rP < mI`) the residual of
+/-- The canonical-index comparison of a firing ι redex.  Where the recursor has indices (`rP < mI`) the residual of
 the constructor's telescope `tyCtor` along the major's spine `margs`
 must agree, past the `cnP` parameters, with the recursor's index
 arguments `idx` — the model's iota equation only speaks about the
 canonical indices.  At `mI = rP` there is nothing to compare (the law's
 `IotaIndexPin` is discharged by `Or.inl rfl`) and the block is
-skipped.  The residual-head test that once stood beside the comparison
-(`stripPis` + "the body's head is a constant") was consumed by nothing
-in the P lane and is gone. -/
+skipped. -/
 def iotaIndexOk (r : (CoreFns md) m) (env : Env md) (depth : Nat) (mI rP cnP : Nat)
     (tyCtor : Expr md) (margs idx : List (Expr md)) : m Bool :=
   if mI = rP then pure true
@@ -535,8 +530,8 @@ def propIrrel (r : (CoreFns md) m) (env : Env md) (depth : Nat) (a b : Expr md) 
 certification at a **projection-function** slot family (the modeled
 path's): for every field index, the installed projection function's
 telescope is certified against the type's arguments and the stuck
-side.  A tower-backed family (the direct install's table, task #175
-S1) has no per-field telescope and needs no certificate: its η law
+side.  A tower-backed family (the direct install's projection table)
+has no per-field telescope and needs no certificate: its η law
 (`TowerEtaLaw`) is keyed on the family's typing of the stuck side,
 which the caller already holds. -/
 def structEtaProjCerts (r : (CoreFns md) m) (env : Env md) (depth : Nat)
@@ -582,7 +577,7 @@ def structEtaCertWith (r : (CoreFns md) m) (env : Env md) (depth : Nat)
                 -- `EnvWF`'s `IndCapsWF` clause: established at the
                 -- block's install, read by the η row from the
                 -- invariant
-                -- the slot discipline (task #175 W4c): one entry kind
+                -- the slot discipline: one entry kind across all fields
                 (towerSlotsAll env T caps.etaFields ||
                   recSlotsAll env T caps.etaFields) = true then
               if ← liftFueled "level comparison"
@@ -590,8 +585,8 @@ def structEtaCertWith (r : (CoreFns md) m) (env : Env md) (depth : Nat)
                 if ← iotaCerts r env depth false
                     (cvT.type.instantiateLevelParams cvT.levelParams
                       us') wtb.getAppArgs then
-                  -- the per-slot certificates are the projection-function
-                  -- kind's; a tabled family has none (task #175 S1)
+                  -- the per-slot certificates are for the projection-function
+                  -- kind only; a tabled family has none
                   if ← (if towerSlotsAll env T caps.etaFields then pure true
                       else structEtaProjCerts r env depth T us'
                         wtb.getAppArgs b cvT.levelParams
@@ -643,11 +638,10 @@ constructor's own counts gate the redex's shape and nothing else
 (`etaCtorShape`). -/
 def structEtaCert (r : (CoreFns md) m) (env : Env md) (depth : Nat) (a b : Expr md) :
     m Bool := do
-  -- The constructor-shape test FIRST (the divergence audit's D13):
+  -- The constructor-shape test FIRST:
   -- official `try_eta_struct_core` (`type_checker.cpp:824-829`) reads
   -- `s`'s head and arity syntactically and infers nothing unless they
-  -- fit; ours inferred and whnf'd `b`'s type on every stuck pair, both
-  -- directions, before `structEtaCertWith` looked at `a`'s head.
+  -- fit, avoiding redundant type inference and whnf on stuck pairs.
   if etaCtorShape env a then
     -- task #172 B4: io grade
     let tb ← r.inferIO depth b
@@ -686,8 +680,8 @@ def structUnitCert (r : (CoreFns md) m) (env : Env md) (depth : Nat) (a b : Expr
   | _ => pure false
 
 /-- Eta certification for a one-sided λ against a stuck term `b`: `b`'s
-type whnfs to a `∀` whose domain is defeq to the λ's and whose input
-contract is the λ's, and the λ's body is pointwise the application of
+type whnfs to a `∀` whose domain is defeq to the λ's, and the λ's body is
+pointwise the application of
 `b`.  The λ is then `b`'s eta-expansion (soundness: `SetTheory.lam_eta`). -/
 def etaCert (mode : CheckMode) (r : (CoreFns md) m) (_env : Env md) (depth : Nat)
     (ty₁ body₁ : Expr md) (m₁ : BinderMeta) (b : Expr md) :
@@ -706,7 +700,6 @@ def etaCert (mode : CheckMode) (r : (CoreFns md) m) (_env : Env md) (depth : Nat
       unless ← r.defeq (depth + 1)
           (body₁.instantiate1 (.fvar depth ty₁))
           (.app b (.fvar depth ty₁)) do return false
-      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (eta)")
       pure true
@@ -714,10 +707,7 @@ def etaCert (mode : CheckMode) (r : (CoreFns md) m) (_env : Env md) (depth : Nat
   | _ => pure false
 
 /-- The fallback for structurally distinct stuck terms: structural eta
-in either direction, unit-likeness, else proof irrelevance.  (The
-pinned-pair certificate `pairEtaCert` that used to lead is retired
-with the `PSigma'` pin, task #175 W6: the pair is an ordinary direct
-structure and `structEtaCert` covers it.) -/
+in either direction, unit-likeness, else proof irrelevance. -/
 def stuckIrrel (r : (CoreFns md) m) (env : Env md) (depth : Nat) (a b : Expr md) :
     m Bool := do
   if ← structEtaCert mode r env depth a b then pure true
@@ -1036,12 +1026,6 @@ def iotaRec (r : (CoreFns md) m) (env : Env md) (depth : Nat) (e : Expr md) :
                  throw (.notImplemented
                    "iota reduction over a nested auxiliary recursor rule")
                else
-                -- The ι batch (2026-09-05): the two `stripPis` arity
-                -- pins that stood here were an environment invariant
-                -- re-checked per fire (every install route establishes
-                -- them; the P lane bound and never used them) — deleted
-                -- per the "invariants over runtime gates" ruling.
-                --
                 -- the constructor's levels and parameters must agree
                 -- with the rule's comparands (canonical: the
                 -- recursor's own instantiation and leading arguments;
@@ -1093,7 +1077,7 @@ def iotaRec (r : (CoreFns md) m) (env : Env md) (depth : Nat) (e : Expr md) :
     | _ => pure none
   | _ => pure none
 
-/-- **The structural projection's certificate** (task #175 W6, the
+/-- **The structural projection's certificate** (the
 squash-regime licence): the redex `proj_i (C p⃗ x⃗)` fires only after
 its constructor spine is certified against `C`'s stored type at the
 redex's own levels — `iotaCerts`, each argument's inferred type defeq
@@ -1107,21 +1091,10 @@ what pins the selected argument to its domain — a grading alone pins
 nothing at bit `0`.  In the graph regime the fit is redundant with
 the application's grading, which the tower law consumes there.
 
-History: until task #161 P9 the certificate ran six things (the two
-sort legs and their comparisons, on top of the two `inferTypeCore`
-runs); P9 cut it to the two runs (the pinned pair's row walked the
-spine's typings out of the subject's own run, concretely at arity
-four); W6 replaces the two runs by the one telescope certificate,
-which is the same per-argument `inferIO` + `defeq` work the subject's
-run performed inside `inferSpine`, and drops the field's separate
-`inferIO`.  The official kernel's `reduce_proj` certifies nothing —
-this is the F4 conformance residue, which the P lane's `ProjStep`
-row consumes through `certs_teleLic`.  The spine is a subterm of the
-subject, so the certificate is *licensed* like the ι slot's
-(`iotaCerts`' docstring): at the verified P mode a `.never` binder's
-certificate is skipped — every field binder of an ordinary `structure`
-— which is the io skip the retired two-run certificate had through
-`inferSpine`. -/
+The spine is a subterm of the subject, so the certificate is *licensed*
+like the ι slot's (`iotaCerts`' docstring): at the verified mode a
+`.never` binder's certificate is skipped (every field binder of an
+ordinary `structure`). -/
 def projCert (r : (CoreFns md) m) (env : Env md) (depth : Nat) (lic : Bool)
     (c : Key md) (us : List Level) (args : List (Expr md)) : m Bool := do
   match env.find? c with
@@ -1200,8 +1173,7 @@ def whnfCoreBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Ex
       -- (official `whnf_core`: `reduce_proj` fails, `r = e`).  The WHNF
       -- has lost the scrutinee's head constant, and with it the defeq
       -- check's arguments-first comparison of `a.i =?= b.i`
-      -- (lane KEEPPROJ: exponential on the self-check's
-      -- `nestRoot_datF._f`, `tests/e2e/src/proj_stuck_struct.lean`).
+      -- (avoiding exponential blowup on stuck projections).
       match env.findProj? sn i with
       | some entry =>
         match e'.getAppFn with
@@ -1214,12 +1186,11 @@ def whnfCoreBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Ex
             let arg := args.getD (entry.numParams + i) (.bvar 0)
             -- Certify the reduction at the verified mode: the
             -- constructor spine against the constructor's stored type
-            -- (task #175 W6; see `projCert`).  Task #100 de-gating:
-            -- the former nonzero-sort gate is unsound-to-model under
-            -- the domain-relative collapse, so the certificate runs
-            -- unconditionally there; the trusted mode runs none
-            -- (`projCertAt`: official's `reduce_proj` certifies
-            -- nothing).
+            -- (see `projCert`).  The former nonzero-sort gate is
+            -- unsound-to-model under the domain-relative collapse, so
+            -- the certificate runs unconditionally there; the trusted
+            -- mode runs none (`projCertAt`: official's `reduce_proj`
+            -- certifies nothing).
             if ← projCertAt r env depth mode.verifiedChecks mode.betaGate c us args then
               r.whnfCore depth arg
             else pure (.proj sn i pe)
@@ -1233,7 +1204,7 @@ def whnfCoreBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Ex
       -- is gone: every expression reduction sees is annotate output or
       -- stored rule data, and both are let-free, because
       -- `annotateBody`'s own `.letE` clause runs the official
-      -- `infer_let` triple and returns the ζ *reduct* (task #217).
+      -- `infer_let` triple and returns the ζ *reduct*.
       -- A `letE` here is an invariant violation, not an unsupported
       -- feature, so it is `.internal` (exit 3), never a decline and
       -- never a silent accept.
@@ -1317,7 +1288,7 @@ def inferBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Expr 
       match env.find? n with
       | none => throw (unknownConstError n)
       | some ci =>
-        -- a projection table is not a term (task #175 W4c): `.proj`
+        -- a projection table is not a term: `.proj`
         -- nodes read it, no constant names it
         unless !ci.isTowerEntry do
           throw (.invalid msg!"projection table entry used as a constant {n}")
@@ -1419,24 +1390,22 @@ def inferBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Expr 
     | .proj sn i pe => do
       -- A `.proj` node is typed by its projection-table entry: the
       -- stored body, level-instantiated at the subject type's levels
-      -- and instantiated at its arguments and the subject (task #175
-      -- S1).  Only stored table entries type bare nodes (task #175
-      -- W6: the pinned pair entries and their computed two-member
-      -- fast path are retired; tower-flag: every stored table is a
-      -- real one, the modeled route installs none).
+      -- and instantiated at its arguments and the subject.  Only stored
+      -- table entries type bare nodes (every stored table is a real
+      -- one; the modeled route installs none).
       let te ← r.whnf depth (← r.infer depth pe)
       match te.getAppFn with
       | .const T us =>
         match env.findProj? T i with
         | some entry =>
-          -- task #175 wiring W5: the node's struct name must be the
+          -- the node's struct name must be the
           -- subject type's head (official `infer_proj`'s
           -- `const_name(I) == proj_sname(e)`); the readings key the
           -- table on the node's name, the checker on the head's
           if T = sn ∧ te.getAppArgs.length = entry.numParams ∧
               us.length = entry.levelParams.length then do
-            -- the official `infer_proj` restriction (task #175
-            -- W4c/O4): at a `Prop`-declared structure the field —
+            -- the official `infer_proj` restriction:
+            -- at a `Prop`-declared structure the field —
             -- and every earlier field a later field uses — must be
             -- a proposition at this instantiation; the entry's
             -- guard level joins exactly those sorts
@@ -1446,18 +1415,18 @@ def inferBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Expr 
                   == some true do
                 throw (.invalid
                   "projection from a propositional structure must be a proposition")
-            -- the body at the subject type's arguments and the
-            -- subject, one `instantiateList` (task #175 S1)
+            -- instantiate the stored body at the subject type's
+            -- arguments and the subject in one `instantiateList`
             pure (entry.typeAt us te.getAppArgs pe)
           else throw (.notImplemented "projection without a native entry")
         | none => throw (.notImplemented "projection without a native entry")
       | _ => throw (.notImplemented "projection without a native entry")
     | .letE _ _ _ _ =>
-      -- **Unreachable by construction** (task #241).  The official
+      -- **Unreachable by construction**.  The official
       -- kernel's `infer_let` triple (`!infer_only`) is not lost: it is
       -- `annotateBody`'s `.letE` clause, which is the one pass that
-      -- meets a `let` from the stream and which returns the ζ reduct
-      -- (task #217).  Inference therefore only ever sees annotate
+      -- meets a `let` from the stream and returns the ζ reduct.
+      -- Inference therefore only ever sees annotate
       -- output, which is let-free; see the `whnfCore` arm.
       throw (.internal "inferType: `let` in an annotated expression")
     | .bvar _ =>
@@ -1490,7 +1459,7 @@ def inferBodyIO (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Exp
       match env.find? n with
       | none => throw (unknownConstError n)
       | some ci =>
-        -- a projection table is not a term (task #175 W4c): `.proj`
+        -- a projection table is not a term: `.proj`
         -- nodes read it, no constant names it
         unless !ci.isTowerEntry do
           throw (.invalid msg!"projection table entry used as a constant {n}")
@@ -1567,33 +1536,32 @@ def inferBodyIO (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Exp
       | .const T us =>
         match env.findProj? T i with
         | some entry =>
-          -- task #175 wiring W5: the node's struct name must be the
+          -- the node's struct name must be the
           -- subject type's head (official `infer_proj`'s
           -- `const_name(I) == proj_sname(e)`); the readings key the
           -- table on the node's name, the checker on the head's
           if T = sn ∧ te.getAppArgs.length = entry.numParams ∧
               us.length = entry.levelParams.length then do
-            -- the official `infer_proj` restriction (task #175
-            -- W4c/O4), as in `inferBody`
+            -- the official `infer_proj` restriction, as in `inferBody`
             if Level.isEquiv entry.structSort .zero == some true then
               unless Level.isEquiv
                   (Level.subst entry.levelParams us entry.fieldSort) .zero
                   == some true do
                 throw (.invalid
                   "projection from a propositional structure must be a proposition")
-            -- the body at the arguments and the subject, as in
-            -- `inferBody` (task #175 S1)
+            -- instantiate the stored body at the arguments and the
+            -- subject, as in `inferBody`
             pure (entry.typeAt us te.getAppArgs pe)
           else throw (.notImplemented "projection without a native entry")
         | none => throw (.notImplemented "projection without a native entry")
       | _ => throw (.notImplemented "projection without a native entry")
     | .letE _ _ _ _ =>
-      -- unreachable by construction, as in `inferBody` (task #241)
+      -- unreachable by construction, as in `inferBody`
       throw (.internal "inferType: `let` in an annotated expression")
     | .bvar _ =>
       throw (.notImplemented "inferType beyond the supported fragment")
 
-/-- **The eq-true shortcut** (the divergence audit's E2): official
+/-- **The eq-true shortcut**: official
 `is_def_eq_core`'s second clause (`type_checker.cpp:1093-1101`) — when
 the right side is the constant `Bool.true` and the left side has no
 free variables, the left side is fully head-normalised (`whnf`, the
@@ -1652,10 +1620,10 @@ def defeqStep (r : (CoreFns md) m) (env : Env md) (depth : Nat)
     (k : Bool → Expr md → Expr md → m Bool) (pi : Bool) (a b : Expr md) : m Bool := do
     -- syntactic fast path (the references' most-hit branch)
     if a == b then pure true else
-    -- the eq-true shortcut (E2, `boolTrueShortcut`): right side
+    -- the eq-true shortcut (`boolTrueShortcut`): right side
     -- `Bool.true`, left side fvar-free, at an entry only — official's
     -- `(!has_fvar(t) || m_eager_reduce) && is_constant(s, Bool.true)`
-    -- (`:1097`; the eager flag is not mirrored yet, see the audit)
+    -- (`:1097`; the eager flag is not mirrored yet)
     if ← (if pi && b.isBoolTrue && !a.hasFvar then boolTrueShortcut r depth a
         else pure false) then pure true else
     let a' ← r.whnfCore depth a
@@ -1672,8 +1640,7 @@ def defeqStep (r : (CoreFns md) m) (env : Env md) (depth : Nat)
     -- the head-symbol fast arms; the unit-like test is `stuckIrrel`'s
     -- (every structural-failure exit below reaches it).
     --
-    -- **Once per `is_def_eq_core` entry** (the divergence audit's D3,
-    -- DESIGN.md "THE DIVERGENCE AUDIT"): official runs
+    -- **Once per `is_def_eq_core` entry**: official runs
     -- `is_def_eq_proof_irrel` before `lazy_delta_reduction` and never
     -- inside the loop — after an unfolding only `quick_is_def_eq` runs
     -- (`type_checker.cpp:965-969`, `:1118-1122`).  `pi` is the entry
@@ -1681,9 +1648,9 @@ def defeqStep (r : (CoreFns md) m) (env : Env md) (depth : Nat)
     -- re-entries (official restarts `is_def_eq_core` there,
     -- `:1010-1012`), `false` on the delta continuations.  A re-run
     -- could not answer differently — a proof stays a proof under
-    -- unfolding — so the gate is cost only (5× per delta step on the
-    -- audit's lockstep-chain witness).
-    -- D4: never on a pair official's `quick_is_def_eq` decides itself
+    -- unfolding — so the gate avoids redundant proof-irrelevance checks
+    -- on lockstep delta chains.
+    -- Also skip pairs official's `quick_is_def_eq` decides directly
     -- (sort/sort, lit/lit, ∀/∀, λ/λ — `Expr.quickPair`): the binder
     -- arms commit their own verdict there, without proof irrelevance
     if ← (if pi && !a'.quickPair b' then propIrrel r env depth a' b'
@@ -1825,14 +1792,10 @@ def defeqStep (r : (CoreFns md) m) (env : Env md) (depth : Nat)
       -- is exactly the cross-provenance coherence corner, declined
       -- loudly.  (The official kernel compares no annotations; the
       -- pre-#100 zero-ness comparison is back in validated clothing.)
-      -- The binders' input contracts must also be equal (a mismatch is
-      -- an inequality, `false`).  Result contracts are not compared: a
-      -- `λ` has none, so the type inferred for one carries the default.
       unless ← r.defeq depth ty₁ ty₂ do return false
       unless ← r.defeq (depth + 1)
           (body₁.instantiate1 (.fvar depth ty₂))
           (body₂.instantiate1 (.fvar depth ty₂)) do return false
-      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (defeq-forall)")
       pure true
@@ -1841,7 +1804,6 @@ def defeqStep (r : (CoreFns md) m) (env : Env md) (depth : Nat)
       unless ← r.defeq (depth + 1)
           (body₁.instantiate1 (.fvar depth ty₂))
           (body₂.instantiate1 (.fvar depth ty₂)) do return false
-      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (defeq-lam)")
       pure true
@@ -1874,10 +1836,9 @@ def defeqStep (r : (CoreFns md) m) (env : Env md) (depth : Nat)
       else stuckIrrel mode r env depth (.app f₁ a₁) (.app f₂ a₂)
     | .proj s₁ i₁ e₁, .proj s₂ i₂ e₂ => do
       -- Stuck projections: congruence, else the stuck fallbacks.
-      -- Task #175 wiring W5: congruence requires the same struct name
-      -- — the entry-kind readings differ across names, and on
-      -- annotated terms the name is the subject type's head, so
-      -- defeq subjects always agree (transitional: dissolves at W6).
+      -- Congruence requires the same struct name — the entry-kind
+      -- readings differ across names, and on annotated terms the name
+      -- is the subject type's head, so defeq subjects always agree.
       if s₁ == s₂ && i₁ == i₂ then
         if ← r.defeq depth e₁ e₂ then pure true
         else stuckIrrel mode r env depth (.proj s₁ i₁ e₁) (.proj s₂ i₂ e₂)
@@ -2053,20 +2014,13 @@ def annotateBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Ex
       -- variable was tried and rejects real streams (elaborated `let`
       -- bodies rely on the value definitionally — see DESIGN.md).
       --
-      -- Task #217 (audit follow-up #206-S1): the official `infer_let`
-      -- triple — `ensure_sort_core(infer(type))`, `infer(val)`,
-      -- `is_def_eq(val_type, type)` — runs HERE, on the annotated
-      -- annotation and the annotated value, before the reduct is taken.
-      --
-      -- Task #161 item C2 dropped it as redundant with `inferBody`'s
-      -- own `.letE` clause.  That was wrong: this clause returns the ζ
-      -- reduct, so the stored term is let-free and `inferBody`'s
-      -- `.letE` arm never sees a `letE` node the driver produced —
-      -- `def x : Nat := let y : Nat := Bool.true; Nat.zero` was
-      -- accepted where the official kernel rejects ("(kernel)
-      -- let-declaration type mismatch").  The annotation pass is the
-      -- only pass that meets a `letE`, so it is where the triple must
-      -- run.
+      -- The official `infer_let` triple — `ensure_sort_core(infer(type))`,
+      -- `infer(val)`, `is_def_eq(val_type, type)` — runs HERE, on the
+      -- annotated annotation and the annotated value, before the reduct
+      -- is taken. Because this clause returns the ζ reduct, downstream
+      -- `inferBody` only ever sees let-free terms; without this check,
+      -- an ill-typed unused binding like `let y : Nat := Bool.true; Nat.zero`
+      -- would be accepted where the official kernel rejects it.
       let ty' ← r.annotate depth ty
       let _ ← ensureSort r env depth (← r.infer depth ty')
       let v' ← r.annotate depth v
@@ -2099,11 +2053,10 @@ def annotateBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Ex
             throw (.invalid "projection parameter mismatch")
           pure (.proj T i e')
         | none =>
-          -- task #175 wiring W5: the elimination fallbacks are gone —
-          -- every supported projection is a native table entry.
-          -- An out-of-range index on a projectable structure (its
-          -- field 0 has an entry) is invalid; a shape without any
-          -- projection support declines
+          -- Every supported projection is a native table entry (no
+          -- elimination fallbacks). An out-of-range index on a
+          -- projectable structure (its field 0 has an entry) is invalid;
+          -- a shape without any projection support declines.
           throw (if (env.findProj? T 0).isSome then
               CheckError.invalid "projection index out of range"
             else .notImplemented "projection on a non-structure-like type")

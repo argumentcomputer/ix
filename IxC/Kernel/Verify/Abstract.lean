@@ -107,9 +107,9 @@ theorem looseBVarsBounded_abstract1 {d : Nat} :
 
 /-- Inversion for `annotate` on projections: a projection-table entry
 typed the node (which stays, with the display name normalized to the
-type's head).  Task #175 wiring W5: the elimination fallbacks are
-gone, so this is the only accepting arm; task #175 tower-flag: every
-stored table is one, so the entry's existence is the whole test. -/
+type's head).  There are no elimination fallbacks, so this is the only
+accepting arm; every stored table carries bodies, so the entry's
+existence is the whole test. -/
 theorem annotateCore_proj_inv {env : Env md} {fuel d : Nat} {sn : Key md}
     {i : Nat} {e e' : Expr md}
     (h : annotateCore mode env (fuel + 1) d (.proj sn i e) = .ok e') :
@@ -193,8 +193,8 @@ theorem annotateCore_app_inv {env : Env md} {fuel d : Nat} {f a e' : Expr md}
 value are traversed, and the body is annotated with the value
 transparent (as its zeta reduct).
 
-Task #217 (audit follow-up #206-S1) put the official `infer_let` triple
-back into the clause — `ensure_sort_core(infer(ty'))`, `infer(v')`,
+The official `infer_let` triple runs inside
+this clause — `ensure_sort_core(infer(ty'))`, `infer(v')`,
 `is_def_eq(tv, ty')` — because the pass returns the ζ reduct and
 `inferBody`'s own `.letE` arm therefore never sees the node.  The four
 extra conjuncts are back with it; consumers that do not need them

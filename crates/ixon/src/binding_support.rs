@@ -26,17 +26,9 @@ pub(crate) fn raw_constant(
       address.hex()
     ));
   }
-  let mut input = bytes.as_ref();
-  let constant = Constant::get(&mut input)?;
-  let mut canonical = Vec::new();
-  constant.put(&mut canonical);
-  if !input.is_empty() || canonical.as_slice() != bytes.as_ref() {
-    return Err(format!(
-      "binding support: noncanonical constant {}",
-      address.hex()
-    ));
-  }
-  Ok(constant)
+  Constant::get_canonical(bytes.as_ref()).map_err(|e| {
+    format!("binding support: noncanonical constant {}: {e}", address.hex())
+  })
 }
 
 #[derive(Clone)]
@@ -116,7 +108,7 @@ fn strip<'a>(
     if !seen.insert(std::ptr::from_ref(node)) {
       return None;
     }
-    let Expr::All(_, _, domain, body) = node else {
+    let Expr::All(domain, body) = node else {
       return None;
     };
     domains.push(domain.as_ref());
@@ -132,7 +124,7 @@ fn last_domain<'a>(c: &'a Constant, mut e: &'a Expr) -> Option<&'a Expr> {
     if !seen.insert(std::ptr::from_ref(node)) {
       return None;
     }
-    let Expr::All(_, _, domain, body) = node else {
+    let Expr::All(domain, body) = node else {
       break;
     };
     last = Some(domain.as_ref());
@@ -390,10 +382,10 @@ impl BindingSupport {
           edges.push(blob.clone());
         },
         Expr::Prj(_, _, v) => expressions.push(v),
-        Expr::App(f, a) | Expr::Lam(_, f, a) | Expr::All(_, _, f, a) => {
+        Expr::App(f, a) | Expr::Lam(f, a) | Expr::All(f, a) => {
           expressions.extend([f.as_ref(), a.as_ref()])
         },
-        Expr::Let(_, t, v, b) => {
+        Expr::Let(_, _, t, v, b) => {
           expressions.extend([t.as_ref(), v.as_ref(), b.as_ref()])
         },
         _ => {},

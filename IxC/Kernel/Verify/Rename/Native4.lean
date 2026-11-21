@@ -204,6 +204,9 @@ theorem checkNativeTail_sim (hops : OpsSim P f L ops ops') {env : Env md} {env' 
   rw [show (cvRa.mapKeys f).name = cvRa.name.map f from rfl,
     show (cvRa.mapKeys f).type = cvRa.type.mapKeys f from rfl,
     sumRules_ren hE₂ hcvRa.1 _ _ _ _ ctorsA rhss hcs hrhs]
+  simp only [List.all_map, Function.comp_def, Expr.recRulePlain_mapKeys,
+    ConstantVal.mapKeys_levelParams]
+  refine SimR.ite Iff.rfl (fun _ => ?_) (fun _ => SimR.throw_bind)
   have hE₃ := hE₂.push (c := .recInfo cvRa p.majorIdx p.rulePrefix
     (sumRules (consSumCtors p.nP ctorsA env₁).find? cvRa.name p.nP p.majorIdx p.rulePrefix
       cvRa.type ctorsA rhss)) ⟨hcvRa, sumRules_good _ _ _ _ ctorsA rhss hcs hrhs⟩

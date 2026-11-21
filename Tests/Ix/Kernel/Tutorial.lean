@@ -14,7 +14,7 @@ import Ix.Common
 import Ix.Meta
 import Ix.KernelCheck
 import Ix.RoleBinding.Compile
-import Ix.Resource.Typing
+import Ix.Typing
 import Tests.Ix.Kernel.FocusedLeanCheck
 import Tests.Ix.Kernel.SourceIngressCompare
 import Tests.Ix.Kernel.SourceIngressStep
@@ -112,7 +112,7 @@ def checkWithUserAxioms (env : Lean.Environment) (closure : List (Lean.Name × L
     return .error s!"compile: {out.failures.toMap.size} constants failed"
   let artifact ← Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.certifiedBackend 8) env
     Ix.RoleBinding.Compile.nativeCertSource (Ix.Compile.CompileInput.plain closure) out.env
-    Ix.Resource.typingLimits (existing? := out.existing?)
+    Ix.Typing.typingLimits (existing? := out.existing?)
   let bytes ← IO.ofExcept (Ixon.serEnv artifact)
   let prepared ← match ← Ix.Cli.CheckLeanCmd.prepareInput bytes (allowUserAxioms := true) with
     | .ok p => pure p
