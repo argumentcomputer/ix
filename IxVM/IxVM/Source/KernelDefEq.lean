@@ -429,13 +429,17 @@ def k_is_def_eq_slow2 := aiur_fn⟦
   fn k_is_def_eq_slow2(rc: KernelRoles::RoleCtx, orig_a: KernelTypes::KExpr, orig_b: KernelTypes::KExpr,
                               aw: KernelTypes::KExpr, bw: KernelTypes::KExpr,
                               types: Lists::List<KernelTypes::KExpr>) -> Field {
-      match de_rescue_tier(rc, aw, bw, types) {
-        (1, eq) => {  eq } ,
+      match expr_eq_fast(aw, bw) {
+        1 => {  1 } ,
         _ => {
-          match lazy_delta_loop(rc, aw, bw, 16, types) {
-            (1, _, _) => {  1 } ,
-            (_, fa, fb) => {  slow2_after_delta(rc, orig_a, orig_b,
-                                     fa, fb, types) } ,
+          match de_rescue_tier(rc, aw, bw, types) {
+            (1, eq) => {  eq } ,
+            _ => {
+              match lazy_delta_loop(rc, aw, bw, 16, types) {
+                (1, _, _) => {  1 } ,
+                (_, fa, fb) => {  slow2_after_delta(rc, orig_a, orig_b,
+                                         fa, fb, types) } ,
+              } } ,
           } } ,
       }
     }
@@ -1165,31 +1169,35 @@ def de_proj := aiur_fn⟦
 def lazy_delta_loop := aiur_fn⟦
   fn lazy_delta_loop(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, fuel: Field,
                             types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr, KernelTypes::KExpr) {
-      match fuel {
-        0 => {  (0, a, b) } ,
+      match expr_eq_fast(a, b) {
+        1 => {  (1, a, b) } ,
         _ => {
-          match try_def_eq_nat(rc, a, b, types) {
-            (1, eq) => {  (eq, a, b) } ,
+          match fuel {
+            0 => {  (0, a, b) } ,
             _ => {
-          let (a_addr, a_is_const) = head_addr(a);
-          let (b_addr, b_is_const) = head_addr(b);
-          match a_is_const {
-            1 => {
-              match b_is_const {
-                1 => {
-
-                  lazy_delta_step_const_const(rc, a_addr, b_addr, a, b,
-                                               fuel, types) } ,
-                _ => {  lazy_delta_a_const_b_proj(rc, a_addr, a, b, fuel, types) } ,
-              } } ,
-            _ => {
-              match b_is_const {
-                1 => {  lazy_delta_b_const_a_proj(rc, b_addr, a, b, fuel, types) } ,
+              match try_def_eq_nat(rc, a, b, types) {
+                (1, eq) => {  (eq, a, b) } ,
                 _ => {
+              let (a_addr, a_is_const) = head_addr(a);
+              let (b_addr, b_is_const) = head_addr(b);
+              match a_is_const {
+                1 => {
+                  match b_is_const {
+                    1 => {
 
-                  lazy_delta_both_proj(rc, a, b, fuel, types) } ,
+                      lazy_delta_step_const_const(rc, a_addr, b_addr, a, b,
+                                                   fuel, types) } ,
+                    _ => {  lazy_delta_a_const_b_proj(rc, a_addr, a, b, fuel, types) } ,
+                  } } ,
+                _ => {
+                  match b_is_const {
+                    1 => {  lazy_delta_b_const_a_proj(rc, b_addr, a, b, fuel, types) } ,
+                    _ => {
+
+                      lazy_delta_both_proj(rc, a, b, fuel, types) } ,
+                  } } ,
               } } ,
-          } } ,
+              } } ,
           } } ,
       }
     }
@@ -1229,7 +1237,22 @@ def lazy_delta_step_const_const := aiur_fn⟦
                 _ => {
                   match UInt32::less_than_fields(ar, br) {
                     1 => {  unfold_b_and_loop(rc, a, b, fuel, types) } ,
-                    _ => {  unfold_both_and_loop(rc, a, b, fuel, types) } ,
+                    _ => {
+                      -- Equal regular hints permit spine congruence before unfolding.
+                      -- Opaque (0) and abbrev (0xFFFFFFFF) keep their unfolding policy.
+                      match ar {
+                        0 => {  unfold_both_and_loop(rc, a, b, fuel, types) } ,
+                        4294967295 => {  unfold_both_and_loop(rc, a, b, fuel, types) } ,
+                        _ => {
+                          match Bytes::address_eq(a_addr, b_addr) {
+                            1 => {
+                              match try_def_eq_app(rc, a, b, types) {
+                                1 => {  (1, a, b) } ,
+                                _ => {  unfold_both_and_loop(rc, a, b, fuel, types) } ,
+                              } } ,
+                            _ => {  unfold_both_and_loop(rc, a, b, fuel, types) } ,
+                          } } ,
+                      } } ,
                   } } ,
               } } ,
           } } ,

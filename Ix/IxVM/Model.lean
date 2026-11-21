@@ -944,6 +944,7 @@ def withEmptyPayloads (env : Ixon.Env) : Ixon.Env := Id.run do
   let mut env := env
   for (a, lc) in env.consts do
     if env.models.contains a then continue
+    if lc.peekTag.toOption != some .muts then continue
     if let some c := lc.get? then
       if let .muts ms := c.info then
         if ms.any (fun m => match m with | .indc _ => true | _ => false) then
@@ -1043,33 +1044,150 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
     | none => Ix.Kernel.Reader.defaultTable.toOption
   let some table := table? | return fallback
   let .ok (pre : Ix.Kernel.Reader.Prelude .anon) := Ix.Kernel.Reader.preludeFor table | return fallback
-  let mut records : Array (Address × Ixon.Constant) := #[]
-  for (a, lc) in env.consts do
-    if let some c := lc.get? then records := records.push (a, c)
-  let cx : Ix.Kernel.Reader.Ctx .anon :=
-    Ix.Kernel.Reader.contextOf table records env.blobs.toList (pre.records ++ pre.evidence) pre.blobs
-      (fun _ => none) (Ix.Kernel.Admission.projectionAddress Address.blake3)
+  let fallbackRecs := pre.records ++ pre.evidence
+  let fallbackMap : Std.HashMap Address Ixon.Constant :=
+    fallbackRecs.foldl (fun m (a, c) => m.insert a c) {}
+  let fallbackBlobMap : Std.HashMap Address ByteArray :=
+    pre.blobs.foldl (fun m (a, b) => if m.contains a then m else m.insert a b) {}
+  -- Only `.recr` and `.muts` records have `recursorMembers` non-empty; decode just those
+  -- (in parallel for large environments) to build the recursor index and locate modeled blocks.
+  let recOrMutsRaw : Array (Address × Ixon.LazyConstant) := Id.run do
+    let mut out : Array (Address × Ixon.LazyConstant) := #[]
+    for (a, lc) in env.consts do
+      match lc.peekTag with
+      | .ok .recr | .ok .muts => out := out.push (a, lc)
+      | _ => pure ()
+    return out
+  let recOrMuts : Array (Address × Ixon.Constant) := Id.run do
+    if recOrMutsRaw.size < 256 then
+      return recOrMutsRaw.filterMap fun (a, lc) => lc.get?.map (a, ·)
+    let numTasks := min 32 ((recOrMutsRaw.size + 63) / 64)
+    let chunk := (recOrMutsRaw.size + numTasks - 1) / numTasks
+    let tasks := (Array.range numTasks).filterMap fun t =>
+      let lo := t * chunk
+      if lo ≥ recOrMutsRaw.size then none
+      else
+        let hi := min recOrMutsRaw.size (lo + chunk)
+        some <| Task.spawn fun _ => Id.run do
+          let mut part : Array (Address × Ixon.Constant) := Array.mkEmpty (hi - lo)
+          for i in [lo:hi] do
+            let (a, lc) := recOrMutsRaw[i]!
+            if let some c := lc.get? then part := part.push (a, c)
+          return part
+    return tasks.foldl (init := Array.mkEmpty recOrMutsRaw.size) fun acc t => acc ++ t.get
+  let recOrMutsMap : Std.HashMap Address Ixon.Constant :=
+    recOrMuts.foldl (init := Std.HashMap.emptyWithCapacity recOrMuts.size) fun m (a, c) => m.insert a c
+  let lazyLook : Ix.Kernel.Reader.Store := fun a =>
+    recOrMutsMap[a]? <|> (env.consts[a]?.bind (·.get?)) <|> fallbackMap[a]?
+  let isInputIndexed (a : Address) (c : Ixon.Constant) : Bool :=
+    let members := Ix.Kernel.Reader.recursorMembers c
+    if members.isEmpty then true else
+    let tbl := Ix.Kernel.Reader.Shape.sharing c.sharing
+    members.all (fun (_, r) =>
+      match Ix.Kernel.Reader.analyseRecursorPrepared lazyLook a c tbl r with
+      | some (_, carriers, _) =>
+        match carriers[0]? with
+        | some (ConstRef.member b _) => env.consts.contains b
+        | _ => true
+      | none => true) || fallbackMap[a]? == some c
+  let isFallbackIndexed (a : Address) (c : Ixon.Constant) : Bool :=
+    let members := Ix.Kernel.Reader.recursorMembers c
+    if members.isEmpty then true else
+    let tbl := Ix.Kernel.Reader.Shape.sharing c.sharing
+    members.all fun (_, r) =>
+      match Ix.Kernel.Reader.analyseRecursorPrepared lazyLook a c tbl r with
+      | some (_, carriers, _) =>
+        match carriers[0]? with
+        | some (ConstRef.member b _) => !env.consts.contains b
+        | _ => true
+      | none => true
+  let indexed :=
+    recOrMuts.filter (fun (a, c) => isInputIndexed a c) ++
+    fallbackRecs.filter (fun (a, c) => !env.consts.contains a && isFallbackIndexed a c)
+  let initIndex := Ix.Kernel.Reader.buildIndex lazyLook indexed
   -- the modeled blocks: several types, or more recursors than types (nested)
   let mut roots : Array Address := #[]
   let mut extra : Std.HashMap Address (Array Address) := {}
-  for (b, shape) in cx.index.blocks do
+  for (b, shape) in initIndex.blocks do
     let recBlocks := shape.recs.foldl (fun acc (r : ConstRef Address) => match r with
       | .member o _ => if acc.contains o then acc else acc.push o
       | _ => acc) #[]
     extra := extra.insert b recBlocks
     if shape.order.size > 1 || shape.recs.size > shape.order.size then roots := roots.push b
   if roots.isEmpty then return ({ withEmptyPayloads env with modelsAttached := true }, {})
-  let store : Ixon.CheckOrder.RecordStore := records.foldl (fun m (a, c) => m.insert a c) {}
-  let look (a : Address) : Option Ixon.Constant := store[a]? <|> cx.store a
+  let roleSeeds : Array Address :=
+    table.bound.filterMap fun (_, ra) => if env.consts.contains ra then some ra else none
+  -- Decode ONLY the transitive closure of `roots ++ roleSeeds` (plus their projection wrappers),
+  -- avoiding deserializing hundreds of thousands of unrelated definitions.
+  let store : Ixon.CheckOrder.RecordStore := Id.run do
+    let mut st : Ixon.CheckOrder.RecordStore := {}
+    let mut visited : Std.HashSet Address := {}
+    let mut todo : Array Address := roots ++ roleSeeds
+    while h : todo.size > 0 do
+      let a := todo[todo.size - 1]
+      todo := todo.pop
+      if visited.contains a then continue
+      visited := visited.insert a
+      let some c := recOrMutsMap[a]? <|> (env.consts[a]?.bind (·.get?)) | continue
+      st := st.insert a c
+      let o := Ixon.CheckOrder.owner a c
+      if o != a then
+        if !visited.contains o then todo := todo.push o
+      else
+        for r in c.refs do
+          if !visited.contains r && env.consts.contains r then todo := todo.push r
+        if let some ex := extra[o]? then
+          for r in ex do
+            if !visited.contains r && env.consts.contains r then todo := todo.push r
+        if let .muts members := c.info then
+          let mut i : UInt64 := 0
+          for m in members do
+            let info : Ixon.ConstantInfo := match m with
+              | .defn _ => .dPrj ⟨i, o⟩
+              | .indc _ => .iPrj ⟨i, o⟩
+              | .recr _ => .rPrj ⟨i, o⟩
+            let pc := projRecord info
+            let pa := addressOf pc
+            if env.consts.contains pa && !st.contains pa then
+              st := st.insert pa pc
+            if let .indc ind := m then
+              let mut cidx : UInt64 := 0
+              for _ in ind.ctors do
+                let cpc := projRecord (.cPrj ⟨i, cidx, o⟩)
+                let cpa := addressOf cpc
+                if env.consts.contains cpa && !st.contains cpa then
+                  st := st.insert cpa cpc
+                cidx := cidx + 1
+            i := i + 1
+    return st
+  let subRecords : Array (Address × Ixon.Constant) := store.toArray
+  let byOwner : Std.HashMap Address (Array (Address × Ixon.Constant)) :=
+    subRecords.foldl (init := Std.HashMap.emptyWithCapacity (subRecords.size / 2)) fun m (ra, rc) =>
+      let o := Ixon.CheckOrder.owner ra rc
+      m.alter o fun xs => some ((xs.getD #[]).push (ra, rc))
+  let look : Ix.Kernel.Reader.Store := fun a => store[a]? <|> fallbackMap[a]?
+  let blobLook : Address → Option ByteArray := fun a => env.blobs[a]? <|> fallbackBlobMap[a]?
+  let allSub := subRecords ++ fallbackRecs.filter (fun (a, _) => !store.contains a)
+  let subIndexed := indexed.filter fun (a, _) => store.contains a || !env.consts.contains a
+  let cx : Ix.Kernel.Reader.Ctx .anon :=
+    Ix.Kernel.Reader.contextWith look blobLook table allSub
+      (fun _ => none) (Ix.Kernel.Admission.projectionAddress Address.blake3 look) subIndexed
+  let supportFor (seeds : Array Address) : Array (Address × Ixon.Constant) := Id.run do
+    let closureOwners := Ixon.CheckOrder.closure store extra (roleSeeds ++ seeds)
+    let mut out : Array (Address × Ixon.Constant) := #[]
+    for o in closureOwners do
+      for entry in byOwner.getD o #[] do
+        out := out.push entry
+    return out
   let owners : Std.HashSet Address :=
-    (Ixon.CheckOrder.closure store extra roots).foldl (·.insert ·) {}
-  let sub := records.filter fun (a, c) => owners.contains (Ixon.CheckOrder.owner a c)
+    (Ixon.CheckOrder.closure store extra (roots ++ roleSeeds)).foldl (·.insert ·) {}
+  let sub := subRecords.filter fun (a, c) => owners.contains (Ixon.CheckOrder.owner a c)
   let ordered := Ixon.CheckOrder.wholeEnv table pre sub
   let rootSet : Std.HashSet Address := roots.foldl (·.insert ·) {}
   let mut st := pre.state
   let mut env := env
   let mut report : Report := {}
-  let mut kEnv? : Option (Option IxVM.PwHints.KernelEnv) := none
+  let mut work : Array (Address × Ixon.Constant × Ix.Kernel.Reader.BlockShape × List (Declaration .anon) × Bool) := #[]
   for a in ordered do
     let some c := store[a]? | continue
     match Ix.Kernel.Reader.readRecord cx st a c with
@@ -1084,30 +1202,53 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
       let some shape := cx.index.blocks[a]? | continue
       let gen0 := r.decls.toList.take r.generated
       let needNorm := gen0.any fun | .indDecl b nP => indNeedsRecNorm b nP | _ => false
-      if needNorm && kEnv?.isNone then
-        let view : IxVM.PwHints.View :=
-          { records := sub, support := records, blobs := env.blobs,
-            hints := env.anonHints, table := some table.toBytes }
-        kEnv? := some (IxVM.PwHints.KernelEnv.ofView view (prelude? := some (table, pre))).toOption
-      let gen := if needNorm then
-          match kEnv?.join with | some k => normGeneratedRecs gen0 k | none => gen0
-        else gen0
-      let advice := blockAdvice table look cx a c shape gen tweak
-        >>= (·.withSections records env.blobs env.anonHints (table, pre))
-      match advice with
-      | .error e => report := { report with blocks := report.blocks.push (a, .error e) }
-      | .ok adv =>
-        for (ra, rc) in adv.records do
-          env := { env with modelRecords := env.modelRecords.insert ra rc }
-        for (ha, h) in adv.hints do
-          env := { env with modelHints := env.modelHints.insert ha h }
-        for (ba, bytes) in adv.blobs do
-          unless env.blobs.contains ba do env := { env with modelBlobs := env.modelBlobs.insert ba bytes }
-        env := { env with models := env.models.insert a adv.payload,
-                          modelDeps := env.modelDeps.insert a adv.deps }
-        report := { report with
-          blocks := report.blocks.push (a, .ok (adv.records.size, adv.layout.witnesses.map fun (x, k, _, _) => (x, k))),
-          advice := report.advice.push (a, adv) }
+      work := work.push (a, c, shape, gen0, needNorm)
+  let anyNorm := work.any fun (_, _, _, _, n) => n
+  let kEnv? : Option IxVM.PwHints.KernelEnv :=
+    if anyNorm then
+      let view : IxVM.PwHints.View :=
+        { records := sub, support := supportFor #[], blobs := env.blobs,
+          hints := env.anonHints, table := some table.toBytes }
+      (IxVM.PwHints.KernelEnv.ofView view (prelude? := some (table, pre))).toOption
+    else none
+  let runOne (item : Address × Ixon.Constant × Ix.Kernel.Reader.BlockShape × List (Declaration .anon) × Bool) :
+      Address × Except String BlockAdvice :=
+    let (a, c, shape, gen0, needNorm) := item
+    let gen := if needNorm then
+        match kEnv? with | some k => normGeneratedRecs gen0 k | none => gen0
+      else gen0
+    let advice := blockAdvice table look cx a c shape gen tweak >>= fun adv =>
+      let advSet : Std.HashSet Address := adv.records.foldl (fun s (x, _) => s.insert x) {}
+      let seeds : Array Address := Id.run do
+        let mut s : Array Address := #[a]
+        for (_, rc) in adv.records do
+          for r in rc.refs do
+            if !advSet.contains r && store.contains r then s := s.push r
+        for d in adv.deps do
+          if !advSet.contains d && store.contains d then s := s.push d
+        return s
+      adv.withSections (supportFor seeds) env.blobs env.anonHints (table, pre)
+    (a, advice)
+  let results : Array (Address × Except String BlockAdvice) :=
+    if work.size ≤ 1 then work.map runOne
+    else
+      let tasks := work.map fun item => Task.spawn fun _ => runOne item
+      tasks.map (·.get)
+  for (a, advice) in results do
+    match advice with
+    | .error e => report := { report with blocks := report.blocks.push (a, .error e) }
+    | .ok adv =>
+      for (ra, rc) in adv.records do
+        env := { env with modelRecords := env.modelRecords.insert ra rc }
+      for (ha, h) in adv.hints do
+        env := { env with modelHints := env.modelHints.insert ha h }
+      for (ba, bytes) in adv.blobs do
+        unless env.blobs.contains ba do env := { env with modelBlobs := env.modelBlobs.insert ba bytes }
+      env := { env with models := env.models.insert a adv.payload,
+                        modelDeps := env.modelDeps.insert a adv.deps }
+      report := { report with
+        blocks := report.blocks.push (a, .ok (adv.records.size, adv.layout.witnesses.map fun (x, k, _, _) => (x, k))),
+        advice := report.advice.push (a, adv) }
   return ({ withEmptyPayloads env with modelsAttached := true }, report)
 
 def generate (env : Ixon.Env) : Except String Ixon.Env := (·.1) <$> generateReport env

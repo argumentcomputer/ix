@@ -324,8 +324,12 @@ def hostChecks (leanEnv : Lean.Environment) (env : Ixon.Env)
   -- the inert axioms and the constants that use one: owned by nobody and refused by
   -- `ix check`; the accepted seeds use none
   let inert := inertUsers env
+  for (_, n) in accepted do
+    let a ← addrOf n
+    if reachesInert env a != inert.contains a then throw s!"eligibility walks disagree for {n}"
   for n in inertNames do
     let a ← addrOf n
+    unless reachesInert env a do throw s!"the forward claim walk missed an inert dependency of {n}"
     unless inert.contains a do throw s!"{n} is not among the constants that use an inert axiom"
     if owned.contains a then throw s!"the shard owner kept {n}"
     if (Ix.Check.seedError? env inert (toString n) a).isNone then

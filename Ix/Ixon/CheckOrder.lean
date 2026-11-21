@@ -36,17 +36,13 @@ def owner (address : Address) (source : Ixon.Constant) : Address :=
   | .cPrj p => p.block
   | _ => address
 
-/-- Primary records in dependency order: an iterative depth-first postorder
-over table references (and the `extra` edges), with projections replaced by
-their owners; `first` comes first, in its own order. -/
-def order (store : RecordStore) (extra : Std.HashMap Address (Array Address))
-    (first : Array Address) : Array Address := Id.run do
-  let mut done : Std.HashSet Address := Std.HashSet.emptyWithCapacity store.size
+/-- Iterative depth-first postorder from `roots` over table references and `extra`
+edges, replacing projections with their owners. -/
+def postorder (store : RecordStore) (extra : Std.HashMap Address (Array Address))
+    (roots : Array Address) (cap : Nat) : Array Address := Id.run do
+  let mut done : Std.HashSet Address := Std.HashSet.emptyWithCapacity cap
   let mut active : Std.HashSet Address := Std.HashSet.emptyWithCapacity 256
-  let mut out : Array Address := Array.mkEmpty store.size
-  let mut keys : Array Address := Array.mkEmpty store.size
-  for (a, _) in store do keys := keys.push a
-  let roots := first ++ keys.qsort (fun a b => a.cmpBytes b == .lt)
+  let mut out : Array Address := Array.mkEmpty cap
   for address in roots do
     let some source := store[address]? | continue
     let root := owner address source
@@ -77,28 +73,20 @@ def order (store : RecordStore) (extra : Std.HashMap Address (Array Address))
                 stack := stack.push (dependency, false)
   return out
 
+/-- Primary records in dependency order: an iterative depth-first postorder
+over table references (and the `extra` edges), with projections replaced by
+their owners; `first` comes first, in its own order. -/
+def order (store : RecordStore) (extra : Std.HashMap Address (Array Address))
+    (first : Array Address) : Array Address := Id.run do
+  let mut keys : Array Address := Array.mkEmpty store.size
+  for (a, _) in store do keys := keys.push a
+  return postorder store extra (first ++ keys.qsort (fun a b => a.cmpBytes b == .lt)) store.size
+
 /-- Only the records reachable from `roots` (with projections replaced by
 owners), in dependency order. -/
 def closure (store : RecordStore) (extra : Std.HashMap Address (Array Address))
-    (roots : Array Address) : Array Address := Id.run do
-  let sub := order store extra roots
-  -- `order` continues with every other record after the roots' closures;
-  -- keep the prefix the roots reach
-  let mut reach : Std.HashSet Address := {}
-  let mut todo := roots
-  while h : todo.size > 0 do
-    let a := todo[todo.size - 1]
-    todo := todo.pop
-    let some c := store[a]? | continue
-    let o := owner a c
-    if reach.contains o then continue
-    reach := reach.insert o
-    for r in (store[o]?.map (·.refs)).getD #[] do
-      if store.contains r then todo := todo.push r
-    if let some ex := extra[o]? then
-      for r in ex do
-        if store.contains r then todo := todo.push r
-  return sub.filter reach.contains
+    (roots : Array Address) : Array Address :=
+  postorder store extra roots (min store.size (max 64 (roots.size * 4)))
 
 
 /-- The recursor records read with an inductive block. -/
