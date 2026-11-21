@@ -101,7 +101,8 @@ jobs:
           pinned=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' IxVMRefinement/Endpoint/ClosureManifest.lean)
           test -n "$pinned"
           printf '%s  Tests/Fixtures/circuit-composed-closure-manifest.txt\n' "$pinned" | sha256sum -c -
-          lake env leanchecker IxVMRefinement.Endpoint.ComposedResidual Ix.IxVM.ConsistencyAudit Ix.IxVM.ConsistencyModelAudit Ix.Cert.Compile
+          lake env leanchecker IxVMRefinement.Endpoint.ComposedResidual Ix.IxVM.ConsistencyAudit Ix.IxVM.ConsistencyModelAudit Ix.Cert.Compile \
+            Ix.Cert.MultiStark.Audit Ix.Cert.MultiStarkRefinement.Audit Ix.Cert.Aggr.Audit Ix.Cert.Compression.Audit Ix.Cert.IxccAiur.Audit Ix.Cert.RecordSectionsBridge
           tmp=$(mktemp -d)
           {
             echo "import IxC.Kernel.Audit.Axioms"
@@ -111,6 +112,15 @@ jobs:
           } > "$tmp/RefinementAxioms.lean"
           lake env lean -DwarningAsError=true "$tmp/RefinementAxioms.lean"
           rm -rf "$tmp"
+      - name: Bootstrap IxC certified kernel check (WS 2C)
+        if: github.event_name != 'push'
+        run: |
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          public_roots="Ix.Kernel.Admission.checkBytes_has_model,Ix.Kernel.Admission.checkBytesWith_has_model,Ix.Kernel.Admission.checkConstants_has_model,Ix.Kernel.Admission.checkConstantsWith_has_model,Ix.Kernel.Admission.checkBytes_has_model_values,Ix.Kernel.Admission.checkBytesWith_has_model_values,Ix.Kernel.Admission.checkBytes_no_proof_of_False,Ix.Kernel.Admission.checkBytesWith_no_proof_of_False,Ix.Kernel.Admission.checkBytes_no_False_theorem,Ix.Kernel.Admission.checkBytesWith_no_False_theorem,Ix.Kernel.Admission.checkBytesWith_no_False_reference,Ix.Kernel.Admission.checkBytes_authentic,Ix.Kernel.Admission.checkBytesWith_authentic,Ix.Kernel.Admission.checkBytes_binding,Ix.Kernel.Admission.checkBytesWith_binding,Ix.Kernel.Admission.checkConstantsAt_has_model,Ix.Kernel.Admission.checkBytes_resources,Ix.Kernel.Admission.checkBytesWith_resources,Ix.Kernel.model_exists,Ix.Kernel.no_False_theorem_accepted"
+          lake env .lake/build/bin/ix compile --no-build --workers 8 --consts "$public_roots" IxC/Kernel/Audit/Roots.lean --out "$tmp/roots.ixe"
+          lake env .lake/build/bin/kernel-check-ixe --jobs 8 "$tmp/roots.ixe" "$tmp/roots.jsonl"
+          lake env .lake/build/bin/kernel-check-ixe --entry authenticated "$tmp/roots.ixe"
       - name: Check new IxVM execution and proof fixture
         if: github.event_name != 'push'
         run: |
