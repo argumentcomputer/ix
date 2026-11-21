@@ -1,7 +1,8 @@
 # Plan
 
 The master planning doc: goal, current status, decisions with their reasons, experiment results,
-and what comes next. Pointers to code and sources live in `references.md`; detailed designs in
+and what comes next. The design of the system as it stands is in `design.md`, and the work that
+remains, item by item, in `todo.md`. Pointers to code and sources live in `references.md`; detailed designs in
 `aiur-composition.md` and `rl.md`; the wider strategy in `~/repos/notes/ix-ai-strategy.md`.
 
 ## Goal
@@ -129,7 +130,15 @@ record, so larger shards: 38 for 49) gives 701 s to 671 s, the setting now used 
 environment stage of the timed run; a 4-shard partition is slower than 3 (16:18). A build with
 compiled writers would not help: they bind only circuits already admitted to the device. The
 fix is a code change that exists upstream: validating a prepared record once (commit
-`5184ad11c` on `perf/aiur-single-gpu`), which should remove most of the stall. Not applied.
+`5184ad11c` on `perf/aiur-single-gpu`). Its validate-once part is ported by hand onto the fork
+(`cert-validate-once` `5540f0668`, merged into `ix-ai` as `85616431f`; the rest of the upstream
+commit is profiling, and its parallel depth count the fork already has): keys unchanged,
+the proof of `g5`'s smallest claim byte-identical, aiur's `trace::stark` tests (91) and
+`aiur-tracegen-tests` (3) pass. Measured on single claims, one run each, same session: the
+largest, trace 149.4 s to 80.4 s, stall 58.2 s to 12.1 s, end to end 491 s to 453 s; the
+smallest, stall 18.4 s to 5.6 s, 3:57 to 3:48. The gain is smaller than the stall removed,
+because execution (292 s) and GPU proving are untouched. Not measured: the environment in one
+run. The toolchain built from `cert` does not have the fix yet.
 
 **The timed run's harness (2026-11-20).** `ix/combined/train_run.sh` proves the training side
 from its 30 packages (rehearsed in full: block proofs 23.2 s, tree 263.0 s, wraps 22.9 s, 5:10 in all; the check
@@ -177,6 +186,14 @@ PLONK accepted under the pinned key `736588d0…`). Ix's test tier on the adopte
 circuit verdicts and claim safety among them; the failures are the same 149 pinned FFT costs
 and two stale generated files. The kernel is merged into `ix-ai` (`6ede60f3f`) and the
 certificate's record is `IxAI/certificates/m2` (tag `ixai-m2`).
+
+**Wrap-up (2026-11-21, 02:50, at the owner's request).** The remaining measurement runs were
+judged not worth the machine and stopped: the environment in one run with the validate-once
+fix, the six GPU trainer timing runs, and the premise-selection run at Mathlib scale (never
+started). The implementation is checkpointed on `ix-ai`: premise selection (`fdf740f02`), the
+verifier (`72cc8f01a`, `ix/verify-tests.sh` 48 of 48 on that code), validate-once
+(`85616431f`), and the GPU variants as an unrun patch series (`gpu/variants`). What each still
+needs is in `todo.md`. Nothing is queued.
 
 **Order (owner's direction, 2026-11-20).** G3 is closed before any further end-to-end run:
 aggregation of the training proofs, the join and compression are fixed costs that a run would
@@ -793,8 +810,8 @@ In progress:
   benefit is modest: it replaces a comparison across two certificates by one inside a single
   environment, and the checker must still confirm that the model constant encodes to the run's
   final commitment (done by script today: 331 of 331 words equal).
-- Second external review, premise selection (2026-11-20; parked behind the current goal, code
-  in the working directory, builds, not yet measured at Mathlib scale). Baseline on the code
+- Second external review, premise selection (2026-11-20; on `ix-ai` as `fdf740f02`, builds,
+  not yet measured at Mathlib scale). Baseline on the code
   as it was (all digests as recorded): module split 918 s (prepare 26.9 s, training 178 to 202 s
   per epoch, ranking 421 s, 6.14 GB peak); time split 1,959 s (ranking 437 s, 6.48 GB). The
   main cost was not on the review's list: `modelScore` bound the library embeddings in a `let`
@@ -833,8 +850,9 @@ In progress:
   if either fails, restore `.truthmines/snapshots/2026-11-20-before-review2-verify/`. Run
 2026-11-21 on those changes: `ix/verify-tests.sh` passes with 0 failures (372 s); after
 figures: package check 12.3 s (15.1), combined check 7.5 s (7.7), reading the 245 MB
-environment 2.13 s and 348 MB (2.15 s, 443 MB). The suites are queued once more on the build
-that also has the two circuit-digest options.
+environment 2.13 s and 348 MB (2.15 s, 443 MB). On the build that also has the two
+circuit-digest options: `ix/verify-tests.sh` 48 of 48 (2026-11-21, 02:58). On `ix-ai` as
+`72cc8f01a`.
 - Second external review, the rest (2026-11-20): in hand, split by subsystem. Premise
   selection at Mathlib scale and the typed benchmarks (`IxAIData`, `IxAIBench`); the GPU
   trainer (`gpu/cuda/step.cu`); the verification pipeline and reward path (`IxAIVerify`,

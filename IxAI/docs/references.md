@@ -142,6 +142,14 @@ Reinforcement learning:
   reproducibility docs, Thinking Machines on batch-invariant kernels, arXiv 2511.17826
   (deterministic inference across tensor-parallel sizes).
 
+Weight-space programming and self-rewriting:
+- Fan et al., *Language Models Can Rewrite Their Own Weights* (arXiv 2611.21885): Qwen3.5-27B
+  inspects its own hidden states and directly patches weight matrices in a Python sandbox without
+  gradients (+6.6 points on 490 unseen math problems; self-repair of corrupted weights; emerges at
+  27B, fails at 2B–9B). Motivates `∀ m : Model` safety gates (preserved under arbitrary weight
+  edits), `PROVED` vs `PREDICTED` provenance in `ixai-verify`, pure/isolated evaluation gates for
+  self-modifying agents, and asymmetric LLM weight-patching of tiny `IxAICore` integer MLPs.
+
 Lean AI-proving tooling (surveyed 2026-11-18; read-only clones of lean-beam, Pantograph and
 kimina-lean-server in `~/repos/clones/lean-ai/`):
 - leanprover-community/repl: JSON `{cmd, env}` → sorries with `proofState`; `{tactic,
@@ -192,6 +200,12 @@ Lean libraries:
 - RepDL (arXiv 2510.09180, microsoft/RepDL): bitwise-reproducible float training.
 - Transformer Engine MXFP8 (docs.nvidia.com/deeplearning/transformer-engine-releases): 32-element
   blocks, E8M0 scales; documented for SM 10.0/10.3.
+- BitNet b1.58 (Ma et al., arXiv 2402.17764): ternary weights `{-1, 0, +1}` (absmean-scaled) with
+  int8 activations (absmax-scaled), trained from scratch via STE over high-precision latent weights;
+  add/sub-only matmuls at inference. Relevant at larger encoder scale (≥1B; too coarse for tiny
+  MLPs): fits `limb_gemm<0, 0>`, zero-mul CPU/IxCC inference, tight dot bounds and compact Ixon
+  commitments; ZK-friendly QAT would need power-of-2 scales and L1/shift norm instead of exact
+  divisions and RMSNorm.
 - llm.c (github.com/karpathy/llm.c): minimal C/CUDA training template.
 - Ix CUDA already present: `crates/aiur/cuda/population.cu` (trace population),
   `crates/aiur-tracegen/src/cuda.rs` (circuits compiled to CUDA row writers),
