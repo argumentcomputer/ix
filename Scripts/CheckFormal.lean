@@ -7,7 +7,7 @@ and the `ix` CLI. Replaces `tools/ixvm/check-formal.sh`.
 Run from the repository root:
 
 ```sh
-lake env lean --run Scripts/CheckFormal.lean [--dry-run | --self-test | --help]
+lean --run Scripts/CheckFormal.lean [--dry-run | --self-test | --help]
 ```
 
 Environment variables:
@@ -26,7 +26,7 @@ namespace CheckFormal
 open System
 
 def usage : String :=
-  "usage: lake env lean --run Scripts/CheckFormal.lean [--dry-run | --self-test | --help]\n\n" ++
+  "usage: lean --run Scripts/CheckFormal.lean [--dry-run | --self-test | --help]\n\n" ++
   "Integration gate for IxVM, MultiStark, Aiur, and the ix CLI.\n" ++
   "Honors IX_TEST_OUTPUT_DIR, IX_TEST_CUDA, MULTI_STARK_CUDA_DEVICE,\n" ++
   "IX_AIUR_ARTIFACT, IX_RECURSION_ARTIFACT, and IX_AGGR_ARTIFACT."
@@ -264,8 +264,31 @@ def formatStep : Step → String
     s!"{e} .lake/build/bin/ix verify <last-line>; " ++
     s!"{eLookup} .lake/build/bin/ix verify <last-line>"
 
-def runExec (cwd : FilePath) (cmd : String) (args : Array String)
+/-- Remove entries under Lean's `sysroot` from a colon-separated `LD_LIBRARY_PATH`.
+Running under an outer `lake env` prepends Lean's bundled `libLLVM` (built without
+RTTI) to `LD_LIBRARY_PATH`, which breaks `bindgen`'s `dlopen` of the system
+`libclang` when `lake build` or `cargo` builds `lean-ffi`. -/
+def stripSysrootFromPath (sysroot : String) (ldPath : String) : Option String :=
+  let prefixSlash := if sysroot.endsWith "/" then sysroot else sysroot ++ "/"
+  let kept := (ldPath.splitOn ":").filter fun entry =>
+    !entry.isEmpty && entry != sysroot && !entry.startsWith prefixSlash
+  if kept.isEmpty then none else some (":".intercalate kept)
+
+/-- Sanitize `LD_LIBRARY_PATH` for `lake` and `cargo` child processes. -/
+def sanitizeEnvForCmd (sysroot : String) (cmd : String)
+    (env : Array (String × Option String)) : IO (Array (String × Option String)) := do
+  if cmd != "lake" && cmd != "cargo" then
+    return env
+  match ← IO.getEnv "LD_LIBRARY_PATH" with
+  | none => return env
+  | some ldPath =>
+    let cleaned := stripSysrootFromPath sysroot ldPath
+    if cleaned == some ldPath then return env
+    else return setEnv env "LD_LIBRARY_PATH" cleaned
+
+def runExec (cwd : FilePath) (sysroot : String) (cmd : String) (args : Array String)
     (env : Array (String × Option String)) : IO UInt32 := do
+  let env ← sanitizeEnvForCmd sysroot cmd env
   let child ← IO.Process.spawn {
     cmd, args, cwd := some cwd, env
     stdout := .inherit, stderr := .inherit
@@ -275,7 +298,7 @@ def runExec (cwd : FilePath) (cmd : String) (args : Array String)
     IO.eprintln s!"[check-formal] command failed (exit {code}): {cmd} {" ".intercalate args.toList}"
   return code
 
-def runProveAndVerify (cwd : FilePath) (proveLog : FilePath)
+def runProveAndVerify (cwd : FilePath) (sysroot : String) (proveLog : FilePath)
     (env : Array (String × Option String)) : IO UInt32 := do
   let child ← IO.Process.spawn {
     cmd := ".lake/build/bin/ix"
@@ -297,14 +320,14 @@ def runProveAndVerify (cwd : FilePath) (proveLog : FilePath)
   if formalProof.isEmpty then
     IO.eprintln s!"[check-formal] empty proof path in {proveLog}"
     return 1
-  let rc1 ← runExec cwd ".lake/build/bin/ix" #["verify", formalProof] env
+  let rc1 ← runExec cwd sysroot ".lake/build/bin/ix" #["verify", formalProof] env
   unless rc1 == 0 do return rc1
-  runExec cwd ".lake/build/bin/ix" #["verify", formalProof]
+  runExec cwd sysroot ".lake/build/bin/ix" #["verify", formalProof]
     (setEnv env "AIUR_TRACE_ONLY_LOOKUPS" (some "1"))
 
-def runStep (cwd : FilePath) : Step → IO UInt32
-  | .exec cmd args env => runExec cwd cmd args env
-  | .proveAndVerify proveLog env => runProveAndVerify cwd proveLog env
+def runStep (cwd : FilePath) (sysroot : String) : Step → IO UInt32
+  | .exec cmd args env => runExec cwd sysroot cmd args env
+  | .proveAndVerify proveLog env => runProveAndVerify cwd sysroot proveLog env
 
 def prepareWorkDir (repoRoot : FilePath) (cfg : EnvConfig) : IO (FilePath × Bool) := do
   if let some outDir := cfg.outputDir then
@@ -355,6 +378,10 @@ def selfTest : IO Unit := do
     | _ => false
   ensure hasCpuOnly "cpu plan runs cuda gate with --cpu-only"
   ensure cudaHasDevice "cuda plan runs controller with requested device"
+  ensure (stripSysrootFromPath "/opt/lean" "/opt/lean/lib/lean:/opt/lean/lib:/usr/local/lib" ==
+    some "/usr/local/lib") "stripSysrootFromPath removes lean sysroot entries"
+  ensure (stripSysrootFromPath "/opt/lean" "/opt/lean/lib/lean:/opt/lean/lib" == none)
+    "stripSysrootFromPath unsets empty LD_LIBRARY_PATH"
   IO.println "CheckFormal self-tests passed."
 
 end CheckFormal
@@ -388,6 +415,7 @@ def main (args : List String) : IO UInt32 := do
     return 0
   | .ok .run =>
     let repoRoot ← CheckFormal.findRepoRoot (← IO.currentDir)
+    let sysroot := (← Lean.findSysroot).toString
     let cfg ← CheckFormal.readEnvConfig
     let (formalTmp, cleanup) ← CheckFormal.prepareWorkDir repoRoot cfg
     let steps := CheckFormal.buildPlan cfg formalTmp
@@ -396,7 +424,7 @@ def main (args : List String) : IO UInt32 := do
         try IO.FS.removeDirAll formalTmp catch _ => pure ()
     try
       for step in steps do
-        let code ← CheckFormal.runStep repoRoot step
+        let code ← CheckFormal.runStep repoRoot sysroot step
         unless code == 0 do
           removeTmp
           return code

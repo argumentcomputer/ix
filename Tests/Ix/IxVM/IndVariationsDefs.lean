@@ -143,6 +143,27 @@ end
 theorem MA.eta' (p : MA) : p = ⟨p.n, p.b⟩ := rfl
 theorem MB.uniq (x y : MB) : x = y := rfl
 
+mutual
+/-- A constraint stores a reason that can refer back to another constraint,
+as in Lean's cutsat data structures. -/
+structure Constraint where
+  value : Nat
+  reason : Reason
+inductive Reason where
+  | given
+  | derived (c : Constraint)
+end
+
+theorem Constraint.value_mk (n : Nat) (r : Reason) : (Constraint.mk n r).value = n := rfl
+
+noncomputable def Constraint.valueRec (c : Constraint) : Nat :=
+  Constraint.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => PUnit)
+    (fun n _ _ => n) PUnit.unit (fun _ _ => PUnit.unit) c
+
+theorem Constraint.valueRec_mk (n : Nat) (r : Reason) : (Constraint.mk n r).valueRec = n := rfl
+
+example (c : Constraint) : c.valueRec = c.value := by cases c; rfl
+
 /-! ## Nested blocks -/
 
 inductive Rose
