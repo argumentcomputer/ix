@@ -125,7 +125,7 @@ def hintCount : Expr F → Nat
   | .tuple xs | .construct _ _ xs | .call _ xs => (xs.map hintCount).sum
   | .project x _ | .load x | .store x | .neg x => hintCount x
   | .hint _ key channel => hintCount key + 1
-  | .binary _ a b | .assertEq _ a b | .letValue _ a b => hintCount a + hintCount b
+  | .binary _ a b | .assertEq _ a b | .ptrEq a b | .letValue _ a b => hintCount a + hintCount b
   | .matchValue x arms => hintCount x + (arms.map fun arm => hintCount arm.2).sum
 termination_by expr => sizeOf expr
 decreasing_by
@@ -209,6 +209,16 @@ mutual
           if !left.type.pointerFree program.enums then throw "assertion contains pointers"
           equalValue scope left right
           pure (.tuple [])
+      | .ptrEq left right => do
+          let ⟨.ptr t₁, [a₁]⟩ ← lower program function locals scope left | throw "non-pointer ptr_eq"
+          let ⟨.ptr t₂, [a₂]⟩ ← lower program function locals scope right | throw "non-pointer ptr_eq"
+          if t₁ ≠ t₂ then throw "mismatched pointer types in ptr_eq"
+          let diff := Polynomial.sub a₁ a₂
+          let [eqBranch, neqBranch] ← choice scope [[diff], []] | throw "ptr_eq choice"
+          equation eqBranch diff
+          failure neqBranch [diff]
+          let eqScope ← core (Optimized.Compiler.getScope eqBranch)
+          pure (.field eqScope.activation)
       | .binary op left right => do
           let left ← asField (← lower program function locals scope left)
           let right ← asField (← lower program function locals scope right)

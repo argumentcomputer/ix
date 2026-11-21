@@ -9,7 +9,7 @@ def hasScope (names : List String) : Aiur.Expr F → Bool
   | .var n => names.contains n
   | .tuple xs | .construct _ _ xs | .call _ xs => (xs.map (hasScope names)).all id
   | .project x _ | .store x | .load x | .hint _ x channel | .neg x => hasScope names x
-  | .binary _ x y | .assertEq _ x y => hasScope names x && hasScope names y
+  | .binary _ x y | .assertEq _ x y | .ptrEq x y => hasScope names x && hasScope names y
   | .letValue p x b => hasScope names x && hasScope (patternNames p ++ names) b
   | .matchValue x arms => hasScope names x &&
       (arms.map fun a => hasScope (patternNames a.1 ++ names) a.2).all id
@@ -81,6 +81,11 @@ theorem changeLocals [Field F] [DecidableEq F] {world : Engine.World F}
       simp only [hasScope, Bool.and_eq_true] at safe
       have h := safe
       exact .assertEq (ih1 names other h.1 agree) (ih2 names other h.2 agree) op
+  | ptrEq _ _ h1 h2 s ih1 ih2 =>
+      intro names other safe agree
+      simp only [hasScope, Bool.and_eq_true] at safe
+      have h := safe
+      exact .ptrEq (ih1 names other h.1 agree) (ih2 names other h.2 agree) h1 h2 s
   | letValue _ matched _ ih1 ih2 =>
       intro names other safe agree
       simp only [hasScope, Bool.and_eq_true] at safe

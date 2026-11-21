@@ -83,6 +83,7 @@ theorem System.SemanticModel.evaluation_complete (model : system.SemanticModel p
   | hint _ typed ih => exact .hint ih typed
   | neg _ operation ih => exact .neg ih operation
   | assertEq _ _ operation leftIH rightIH => exact .assertEq leftIH rightIH operation
+  | ptrEq _ _ leftIH rightIH => exact .ptrEq leftIH rightIH
   | binary _ _ operation leftIH rightIH => exact .binary leftIH rightIH operation
   | call _ _ argsIH calleeIH => exact .call argsIH calleeIH
   | matchValue _ selected _ inputIH bodyIH => exact .matchValue inputIH selected bodyIH

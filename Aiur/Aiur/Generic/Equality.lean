@@ -37,7 +37,12 @@ mutual
     | .assertEq op x y, .assertEq oq z w => by
         letI := exprDecEq x z
         letI := exprDecEq y w
-        exact decidable_of_iff (op = oq ∧ x = z ∧ y = w) (by simp only [Aiur.Expr.assertEq.injEq])    | .binary op x y, .binary oq z w => by
+        exact decidable_of_iff (op = oq ∧ x = z ∧ y = w) (by simp only [Aiur.Expr.assertEq.injEq])
+    | .ptrEq x y, .ptrEq z w => by
+        letI := exprDecEq x z
+        letI := exprDecEq y w
+        exact decidable_of_iff (x = z ∧ y = w) (by simp only [Aiur.Expr.ptrEq.injEq])
+    | .binary op x y, .binary oq z w => by
         letI := exprDecEq x z
         letI := exprDecEq y w
         exact decidable_of_iff (op = oq ∧ x = z ∧ y = w) (by simp only [Aiur.Expr.binary.injEq])
@@ -230,6 +235,34 @@ mutual
     | .call _ _, .assertEq _ _ _ => isFalse (by intro h; cases h)
     | .assertEq _ _ _, .matchValue _ _ => isFalse (by intro h; cases h)
     | .matchValue _ _, .assertEq _ _ _ => isFalse (by intro h; cases h)
+    | .ptrEq _ _, .literal _ => isFalse (by intro h; cases h)
+    | .literal _, .ptrEq _ _ => isFalse (by intro h; cases h)
+    | .ptrEq _ _, .var _ => isFalse (by intro h; cases h)
+    | .var _, .ptrEq _ _ => isFalse (by intro h; cases h)
+    | .ptrEq _ _, .tuple _ => isFalse (by intro h; cases h)
+    | .tuple _, .ptrEq _ _ => isFalse (by intro h; cases h)
+    | .ptrEq _ _, .construct _ _ _ => isFalse (by intro h; cases h)
+    | .construct _ _ _, .ptrEq _ _ => isFalse (by intro h; cases h)
+    | .ptrEq _ _, .project _ _ => isFalse (by intro h; cases h)
+    | .project _ _, .ptrEq _ _ => isFalse (by intro h; cases h)
+    | .ptrEq _ _, .letValue _ _ _ => isFalse (by intro h; cases h)
+    | .letValue _ _ _, .ptrEq _ _ => isFalse (by intro h; cases h)
+    | .ptrEq _ _, .store _ => isFalse (by intro h; cases h)
+    | .store _, .ptrEq _ _ => isFalse (by intro h; cases h)
+    | .ptrEq _ _, .load _ => isFalse (by intro h; cases h)
+    | .load _, .ptrEq _ _ => isFalse (by intro h; cases h)
+    | .ptrEq _ _, .hint _ _ _ => isFalse (by intro h; cases h)
+    | .hint _ _ _, .ptrEq _ _ => isFalse (by intro h; cases h)
+    | .ptrEq _ _, .neg _ => isFalse (by intro h; cases h)
+    | .neg _, .ptrEq _ _ => isFalse (by intro h; cases h)
+    | .ptrEq _ _, .assertEq _ _ _ => isFalse (by intro h; cases h)
+    | .assertEq _ _ _, .ptrEq _ _ => isFalse (by intro h; cases h)
+    | .ptrEq _ _, .binary _ _ _ => isFalse (by intro h; cases h)
+    | .binary _ _ _, .ptrEq _ _ => isFalse (by intro h; cases h)
+    | .ptrEq _ _, .call _ _ => isFalse (by intro h; cases h)
+    | .call _ _, .ptrEq _ _ => isFalse (by intro h; cases h)
+    | .ptrEq _ _, .matchValue _ _ => isFalse (by intro h; cases h)
+    | .matchValue _ _, .ptrEq _ _ => isFalse (by intro h; cases h)
   termination_by sizeOf a
 
   def exprListDecEq [DecidableEq α] (a b : List (Aiur.Expr α)) : Decidable (a = b) :=

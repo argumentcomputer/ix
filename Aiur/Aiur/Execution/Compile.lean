@@ -142,6 +142,12 @@ mutual
         let right ← expression program caller locals right
         let _ ← emit (.assertEq left.words right.words message)
         return ⟨.tuple [], []⟩
+    | .ptrEq left right =>
+        let left ← expression program caller locals left
+        let right ← expression program caller locals right
+        let result ← fresh type program.enums
+        let _ ← emit (.ptrEq (← liftM (scalar result)) (← liftM (scalar left)) (← liftM (scalar right)))
+        return result
     | .call name args =>
         let values ← expressions program caller locals args
         let result ← fresh type program.enums

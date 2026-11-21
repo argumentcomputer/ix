@@ -46,6 +46,25 @@ theorem goldilocks_bound (bits : cfg.bits ≤ 24) :
   exact goldilocks_characteristic n positive
     (small.trans (Nat.mul_le_mul_left _ (Nat.pow_le_pow_right (by norm_num) bits)))
 
+/-- Combined executable exporter certificate for a Goldilocks depth-grouped plan:
+verifies `Depth.Certified`, `cfg.bits ≤ 24`, and `plan.WellFormedActivation`. -/
+def checkGoldilocksPlan (cfg : Config) (source : System F)
+    (plan : Grouping.Plan (system cfg source) id) : Bool :=
+  checkGoldilocks cfg source && plan.checkWellFormedActivation
+
+theorem checkGoldilocksPlan_iff (cfg : Config) (source : System F)
+    (plan : Grouping.Plan (system cfg source) id) :
+    checkGoldilocksPlan cfg source plan = true ↔
+      Certified cfg source ∧ cfg.bits ≤ 24 ∧ plan.WellFormedActivation := by
+  simp [checkGoldilocksPlan, checkGoldilocks_iff, Grouping.Plan.checkWellFormedActivation_iff,
+    and_assoc]
+
+theorem checkGoldilocksPlan_sound {cfg : Config} {source : System F}
+    {plan : Grouping.Plan (system cfg source) id}
+    (checked : checkGoldilocksPlan cfg source plan = true) :
+    Certified cfg source ∧ cfg.bits ≤ 24 ∧ plan.WellFormedActivation :=
+  (checkGoldilocksPlan_iff cfg source plan).mp checked
+
 end Aiur.Optimized.Depth
 
 namespace Aiur.Optimized.Physical

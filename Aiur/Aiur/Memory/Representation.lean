@@ -81,6 +81,50 @@ theorem ROM.functional (valid : rom.Valid) {address : F} {left right : Value F}
     (typed : left.type = right.type) : left = right :=
   valid _ a _ b rfl typed
 
+/-- Two source values that represent the same ROM value under a valid (functional)
+ROM are structurally equivalent through the heap (`HeapValueEq`). -/
+theorem Represents.heapValueEq (valid : rom.Valid) {s₁ s₂ : SourceValue F} {w : Value F}
+    (r₁ : Represents rom heap s₁ w) (r₂ : Represents rom heap s₂ w) :
+    HeapValueEq heap s₁ s₂ := by
+  revert s₂
+  induction r₁ using Represents.rec
+    (motive_2 := fun xs ws _ => ∀ ys, List.Forall₂ (Represents rom heap) ys ws →
+      List.Forall₂ (HeapValueEq heap) xs ys) with
+  | field =>
+      intro s₂ r₂
+      cases r₂
+      exact .refl _
+  | tuple _ ih =>
+      intro s₂ r₂
+      cases r₂ with
+      | tuple ys => exact .tuple (ih _ ys)
+  | construct _ ih =>
+      intro s₂ r₂
+      cases r₂ with
+      | construct ys => exact .construct (ih _ ys)
+  | @ptr loc₁ stored₁ addr enc₁ h₁ cell₁ c₁ ih =>
+      intro s₂ r₂
+      generalize hw : Value.ptr enc₁.type addr = w' at r₂
+      cases r₂ with
+      | field => cases hw
+      | tuple => cases hw
+      | construct => cases hw
+      | @ptr loc₂ stored₂ addr₂ enc₂ h₂ cell₂ c₂ =>
+          obtain ⟨hty, rfl⟩ := Value.ptr.inj hw
+          have hsame := ROM.functional valid cell₁ cell₂ hty
+          subst hsame
+          have hts : stored₁.type = stored₂.type := c₁.type.trans c₂.type.symm
+          rw [← hts]
+          exact .ptr h₁ h₂ rfl hts.symm (ih c₂)
+  | nil =>
+      rename_i ys hys
+      cases hys
+      exact .nil
+  | cons _ _ ihH ihT =>
+      rename_i ys hys
+      cases hys with
+      | cons hy hyt => exact .cons (ihH hy) (ihT _ hyt)
+
 /-- The pointer-free public interface can be represented in every ROM and heap. -/
 theorem Represents.of_pointerFree (source : SourceValue F) (free : source.pointerFree = true)
     (encode : Nat → F) : Represents rom heap source (source.mapAddress encode) := by

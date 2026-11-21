@@ -207,6 +207,50 @@ mutual
           have e₃ := constrainValue_complete equated e₂.layout e₂.valid (chainExt.bound enableBound)
             (leftBound.mono e₂.increase) rightBound (Or.inl ((chainExt.polynomial enableBound).trans inactive))
           exact ⟨b, chainExt.trans e₃, bounded_tuple.mpr (by simp)⟩
+    | ptrEq left right =>
+        simp only [lowerExpr] at compiled
+        obtain ⟨leftWire, s₁, leftRun, rest⟩ := bind_ok.mp compiled
+        rcases leftWire with ⟨t₁, ws₁⟩
+        cases t₁ with
+        | field | tuple | enum => simp at rest
+        | ptr target₁ =>
+            cases ws₁ with
+            | nil => simp at rest
+            | cons a₁ ws₁ => cases ws₁ with
+              | cons => simp at rest
+              | nil =>
+                  dsimp only at rest
+                  obtain ⟨rightWire, s₂, rightRun, rest⟩ := bind_ok.mp rest
+                  rcases rightWire with ⟨t₂, ws₂⟩
+                  cases t₂ with
+                  | field | tuple | enum => simp at rest
+                  | ptr target₂ =>
+                      cases ws₂ with
+                      | nil => simp at rest
+                      | cons a₂ ws₂ => cases ws₂ with
+                        | cons => simp at rest
+                        | nil =>
+                            dsimp only at rest
+                            split at rest
+                            · simp [StateT.bind, bind, Except.bind] at rest
+                            · obtain ⟨⟨⟩, s₃, unchanged, rest⟩ := bind_ok.mp rest
+                              obtain ⟨_, rfl⟩ := pure_ok.mp unchanged
+                              obtain ⟨test, s₄, indRun, finished⟩ := bind_ok.mp rest
+                              obtain ⟨rfl, rfl⟩ := pure_ok.mp finished
+                              obtain ⟨a, e₁, leftBound⟩ :=
+                                lowerExpr_inactive leftRun layout valid localsBound enableBound inactive
+                              obtain ⟨b, e₂, rightBound⟩ :=
+                                lowerExpr_inactive rightRun e₁.layout e₁.valid
+                                  (localsBound.mono e₁.increase) (e₁.bound enableBound)
+                                  ((e₁.polynomial enableBound).trans inactive)
+                              have lb : a₁.inBounds s₂.nextVar = true :=
+                                e₂.bound (leftBound a₁ (by simp))
+                              have rb : a₂.inBounds s₂.nextVar = true := rightBound a₂ (by simp)
+                              have diffBound : (ArithExpr.sub a₁ a₂).inBounds s₂.nextVar = true := by
+                                simp [ArithExpr.inBounds, Scalar.Circuit.ArithExpr.inBounds, lb, rb]
+                              obtain ⟨c, e₃, testBound⟩ :=
+                                equalIndicator_complete indRun e₂.layout e₂.valid diffBound
+                              exact ⟨c, (e₁.trans e₂).trans e₃, bounded_field.mpr testBound⟩
     | binary op left right =>
         simp only [lowerExpr] at compiled
         obtain ⟨leftValue, s₁, leftRun, rest⟩ := bind_ok.mp compiled

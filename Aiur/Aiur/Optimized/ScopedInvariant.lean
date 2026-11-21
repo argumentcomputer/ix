@@ -453,6 +453,69 @@ mutual
             obtain ⟨equalityExtension, finalLayout⟩ := equalValue_structural equalityRun rightLayout
               (prefixExtension.scopeValid scopeValid)
             exact ⟨prefixExtension.trans equalityExtension, finalLayout⟩
+      | ptrEq left right =>
+          obtain ⟨leftWire, s₁, leftRun, rightBind⟩ := bind_ok.mp stepRun
+          rcases leftWire with ⟨lt, lw⟩
+          cases lt with
+          | field | tuple | enum => simp at rightBind
+          | ptr t₁ =>
+              cases lw with
+              | nil => simp at rightBind
+              | cons a₁ lrest =>
+                  cases lrest with
+                  | cons => simp at rightBind
+                  | nil =>
+                      dsimp only at rightBind
+                      obtain ⟨rightWire, s₂, rightRun, typeCheck⟩ := bind_ok.mp rightBind
+                      rcases rightWire with ⟨rt, rw'⟩
+                      cases rt with
+                      | field | tuple | enum => simp at typeCheck
+                      | ptr t₂ =>
+                          cases rw' with
+                          | nil => simp at typeCheck
+                          | cons a₂ rrest =>
+                              cases rrest with
+                              | cons => simp at typeCheck
+                              | nil =>
+                                  dsimp only at typeCheck
+                                  split at typeCheck
+                                  · simp [StateT.bind, bind, Except.bind] at typeCheck
+                                  · obtain ⟨⟨⟩, s₂', unchanged, choiceBind⟩ := bind_ok.mp typeCheck
+                                    obtain ⟨_, stateEq⟩ := pure_ok.mp unchanged
+                                    subst s₂'
+                                    obtain ⟨branches, s₃, choiceRun, branchBind⟩ := bind_ok.mp choiceBind
+                                    cases branches with
+                                    | nil => simp at branchBind
+                                    | cons eqBranch brest =>
+                                        cases brest with
+                                        | nil => simp at branchBind
+                                        | cons neqBranch brest₂ =>
+                                            cases brest₂ with
+                                            | cons => simp at branchBind
+                                            | nil =>
+                                                dsimp only at branchBind
+                                                obtain ⟨⟨⟩, s₄, eqRun, failBind⟩ := bind_ok.mp branchBind
+                                                obtain ⟨⟨⟩, s₅, failRun, scopeBind⟩ := bind_ok.mp failBind
+                                                obtain ⟨eqScope, s₆, scopeRun, pureRun⟩ := bind_ok.mp scopeBind
+                                                obtain ⟨_, stateEq⟩ := getScope_eq scopeRun
+                                                subst s₆
+                                                obtain ⟨_, stateEq⟩ := pure_ok.mp pureRun
+                                                subst middle
+                                                obtain ⟨leftExt, leftLayout⟩ := lower_scoped leftRun scopeLayout scopeValid
+                                                obtain ⟨rightExt, rightLayout⟩ := lower_scoped rightRun leftLayout
+                                                  (leftExt.scopeValid scopeValid)
+                                                have choiceExt := choice_extends choiceRun
+                                                have choiceLayout := choice_scoped choiceRun rightLayout
+                                                have eqBranchValid : eqBranch < s₃.scopes.size :=
+                                                  choice_child_bound choiceRun eqBranch (by simp)
+                                                have neqBranchValid : neqBranch < s₃.scopes.size :=
+                                                  choice_child_bound choiceRun neqBranch (by simp)
+                                                have eqExt := equation_grow eqRun
+                                                have eqLayout := equation_scoped eqRun choiceLayout eqBranchValid
+                                                obtain ⟨failExt, failLayout⟩ := failure_scoped failRun eqLayout
+                                                  (eqExt.scopeValid neqBranchValid)
+                                                exact ⟨(((leftExt.trans rightExt).trans choiceExt).trans eqExt).trans failExt,
+                                                  failLayout⟩
       | binary op left right =>
           obtain ⟨leftWire, s₁, leftRun, leftFieldBind⟩ := bind_ok.mp stepRun
           obtain ⟨leftWord, s₂, leftFieldRun, rightBind⟩ := bind_ok.mp leftFieldBind

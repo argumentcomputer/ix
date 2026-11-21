@@ -276,6 +276,11 @@ pub(crate) enum Action<F> {
     left: u32,
     right: u32,
   },
+  PtrEq {
+    dest: u32,
+    left: u32,
+    right: u32,
+  },
   BranchEq1 {
     reg: u32,
     otherwise_cursor: u32,
@@ -610,6 +615,16 @@ pub(crate) fn prepare<B: FieldBackend>(
                 },
                 _ => None,
               }
+            },
+            Instruction::PtrEq { dest, left, right } => match (
+              u32::try_from(*dest).ok(),
+              u32::try_from(*left).ok(),
+              u32::try_from(*right).ok(),
+            ) {
+              (Some(dest), Some(left), Some(right)) => {
+                Some(Action::PtrEq { dest, left, right })
+              },
+              _ => None,
             },
             Instruction::Branch { tests, otherwise } if tests.len() == 1 => {
               let (reg, value) = tests[0];

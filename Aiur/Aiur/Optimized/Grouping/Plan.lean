@@ -25,6 +25,39 @@ instance (source : Circuit.System F) (singles : List (Chip F))
   unfold PlanCertificate
   infer_instance
 
+/-- Executable boolean checker for `PlanCertificate`. -/
+def checkPlanCertificate (source : Circuit.System F) (singles : List (Chip F))
+    (groups : List (Packed F id)) : Bool :=
+  singles.all (fun c => decide (source.findChip? c.name = some c)) &&
+    groups.all (fun p => p.sources.all fun c => decide (source.findChip? c.name = some c)) &&
+    source.chips.all (fun c =>
+      singles.any (fun d => decide (d = c)) ||
+        groups.any (fun p => p.sources.any fun d => decide (d = c)))
+
+theorem checkPlanCertificate_iff (source : Circuit.System F) (singles : List (Chip F))
+    (groups : List (Packed F id)) :
+    checkPlanCertificate source singles groups = true ↔
+      PlanCertificate source singles groups := by
+  simp only [checkPlanCertificate, PlanCertificate, Bool.and_eq_true, Bool.or_eq_true,
+    List.all_eq_true, List.any_eq_true, decide_eq_true_eq, and_assoc]
+  constructor
+  · rintro ⟨h1, h2, h3⟩
+    refine ⟨h1, h2, fun c hc => ?_⟩
+    rcases h3 c hc with ⟨d, hd, rfl⟩ | ⟨p, hp, d, hd, rfl⟩
+    · exact Or.inl hd
+    · exact Or.inr ⟨p, hp, hd⟩
+  · rintro ⟨h1, h2, h3⟩
+    refine ⟨h1, h2, fun c hc => ?_⟩
+    rcases h3 c hc with hs | ⟨p, hp, hg⟩
+    · exact Or.inl ⟨c, hs, rfl⟩
+    · exact Or.inr ⟨p, hp, c, hg, rfl⟩
+
+theorem checkPlanCertificate_sound {source : Circuit.System F} {singles : List (Chip F)}
+    {groups : List (Packed F id)}
+    (checked : checkPlanCertificate source singles groups = true) :
+    PlanCertificate source singles groups :=
+  (checkPlanCertificate_iff source singles groups).mp checked
+
 structure Plan (source : Circuit.System F) (id : String → Except String Nat) where
   singles : List (Chip F)
   groups : List (Packed F id)

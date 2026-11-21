@@ -24,6 +24,7 @@ import Aiur.Library.IxVMRep
 import Aiur.Library.Blake3.Correctness
 import Aiur.Library.Blake3.Goldilocks
 import Aiur.Library.Blake3.BlockLoop
+import Aiur.MultiStarkSpec
 
 /-!
 # Frozen Certification Audit for Aiur
@@ -194,7 +195,7 @@ info: @compiler_heap_complete : ∀ {F : Type} [inst : Field F] [inst_1 : Decida
   Circuit.compile program = Except.ok system →
     ∀ {name : String} {args : List (SourceValue F)} {value : SourceValue F} {heap : Heap F},
       checkEntry program name = Except.ok () →
-        EvalFn program name args [] value heap →
+        ExactEvalFn program name args [] value heap →
           ∀ (encode : ℕ → F),
             (∀ (i j : ℕ), i < List.length heap → j < List.length heap → encode i = encode j → i = j) →
               Circuit.EncodedEntryDerives system name (entryValues args) (Value.mapAddress encode value)
@@ -211,7 +212,7 @@ info: @compiler_heap_complete_finite : ∀ {F : Type} [inst : Field F] [inst_1 :
   Circuit.compile program = Except.ok system →
     ∀ {name : String} {args : List (SourceValue F)} {value : SourceValue F} {heap : Heap F},
       checkEntry program name = Except.ok () →
-        EvalFn program name args [] value heap →
+        ExactEvalFn program name args [] value heap →
           List.length heap ≤ Fintype.card F →
             ∃ encode, Circuit.EncodedEntryDerives system name (entryValues args) (Value.mapAddress encode value)
 -/
@@ -220,6 +221,28 @@ info: @compiler_heap_complete_finite : ∀ {F : Type} [inst : Field F] [inst_1 :
 /-- info: 'Aiur.compiler_heap_complete_finite' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.compiler_heap_complete_finite
+
+/-- info: 'Aiur.HeapValueEq.mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.HeapValueEq.mono
+/-- info: 'Aiur.HeapValueEq.load' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.HeapValueEq.load
+/-- info: 'Aiur.HeapValueEq.eq_of_pointerFree' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.HeapValueEq.eq_of_pointerFree
+/-- info: 'Aiur.Represents.heapValueEq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Represents.heapValueEq
+/-- info: 'Aiur.evalExpr_spec_exact' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.evalExpr_spec_exact
+/-- info: 'Aiur.evalExpr_ptrEq_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.evalExpr_ptrEq_iff
+/-- info: 'Aiur.EvalFn.toExact_of_ptrEqFree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.EvalFn.toExact_of_ptrEqFree
 
 /--
 info: @compiler_run_complete : ∀ {F : Type} [inst : Field F] [inst_1 : DecidableEq F] [inst_2 : Fintype F]
@@ -5549,5 +5572,84 @@ info: Library.IxVMRep.tagn_tail_two_byte_spec : ∀ (lo v0 : UInt8) (q h carry :
 /-- info: 'Aiur.Library.IxVMRep.tagn_tail_two_byte_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Aiur.Library.IxVMRep.tagn_tail_two_byte_spec
+
+/-! ### Formal Depth/Activation Certificates (`WS 2B-1`) and Multi-STARK Lowering Spec (`WS 2B-2`) -/
+
+/-- info: 'Aiur.Optimized.Depth.certify_iff' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.certify_iff
+/-- info: 'Aiur.Optimized.Depth.certify_sound' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.certify_sound
+/-- info: 'Aiur.Optimized.Depth.certify_facts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.certify_facts
+/-- info: 'Aiur.Optimized.Depth.checkGoldilocks_iff' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.checkGoldilocks_iff
+/-- info: 'Aiur.Optimized.Depth.checkGoldilocks_sound' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.checkGoldilocks_sound
+/-- info: 'Aiur.Optimized.Depth.checkGoldilocksPlan_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.checkGoldilocksPlan_iff
+/-- info: 'Aiur.Optimized.Depth.checkGoldilocksPlan_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Depth.checkGoldilocksPlan_sound
+/-- info: 'Aiur.Optimized.Grouping.checkPlanCertificate_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Grouping.checkPlanCertificate_iff
+/-- info: 'Aiur.Optimized.Grouping.checkPlanCertificate_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Grouping.checkPlanCertificate_sound
+/-- info: 'Aiur.Optimized.Grouping.Plan.checkWellFormedActivation_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Grouping.Plan.checkWellFormedActivation_iff
+/-- info: 'Aiur.Optimized.Grouping.Plan.checkWellFormedActivation_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Grouping.Plan.checkWellFormedActivation_sound
+/-- info: 'Aiur.Optimized.Grouping.Plan.wellFormedActivation_decide_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Grouping.Plan.wellFormedActivation_decide_iff
+/-- info: 'Aiur.Optimized.Grouping.Plan.checkWellFormedActivation_eq_decide' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.Optimized.Grouping.Plan.checkWellFormedActivation_eq_decide
+
+/-- info: 'Aiur.MultiStarkSpec.AirExpr.eval_fold' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.AirExpr.eval_fold
+/-- info: 'Aiur.MultiStarkSpec.eval_lowerPoly' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.eval_lowerPoly
+/-- info: 'Aiur.MultiStarkSpec.balancedLookupOrder_perm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.balancedLookupOrder_perm
+/-- info: 'Aiur.MultiStarkSpec.retune_lookups_perm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.retune_lookups_perm
+/-- info: 'Aiur.MultiStarkSpec.chunkNumeratorPrefixSuffix_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.chunkNumeratorPrefixSuffix_eq
+/-- info: 'Aiur.MultiStarkSpec.chunk_constraint_iff_sum_inv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.chunk_constraint_iff_sum_inv
+/-- info: 'Aiur.MultiStarkSpec.retune_logup_equiv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.retune_logup_equiv
+/-- info: 'Aiur.MultiStarkSpec.retune_batch_logup_equiv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.retune_batch_logup_equiv
+/-- info: 'Aiur.MultiStarkSpec.lowerSingleChip_row_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.lowerSingleChip_row_sound
+/-- info: 'Aiur.MultiStarkSpec.lowerGroupLayout_row_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.lowerGroupLayout_row_sound
+/-- info: 'Aiur.MultiStarkSpec.lowered_trace_checkMemo_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.lowered_trace_checkMemo_sound
+/-- info: 'Aiur.MultiStarkSpec.lowered_trace_depth_sound_goldilocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Aiur.MultiStarkSpec.lowered_trace_depth_sound_goldilocks
 
 end Aiur.Audit

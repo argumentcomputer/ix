@@ -231,6 +231,7 @@ theorem ROMEvalExprWith.provenance [Field F] [DecidableEq F]
       exact .of_pointerFree _ (Constant.toValue_pointerFree constant)
   | neg _ operation _ => intro _; exact .neg operation
   | assertEq _ _ operation _ _ => intro _; exact .assertEq operation
+  | ptrEq _ _ _ _ => intro _; exact .field
   | binary _ _ operation _ _ => intro _; exact .binary operation
   | call _ callee ih => intro env; exact callProvenance _ _ _ callee (ih env)
   | matchValue _ selected _ valueIH bodyIH =>
@@ -294,6 +295,7 @@ theorem ROMEvalExpr.provenance [Field F] [DecidableEq F]
       exact .of_pointerFree _ (Constant.toValue_pointerFree constant)
   | neg _ operation _ => intro _; exact .neg operation
   | assertEq _ _ operation _ _ => intro _; exact .assertEq operation
+  | ptrEq _ _ _ _ => intro _; exact .field
   | binary _ _ operation _ _ => intro _; exact .binary operation
   | call _ _ argsIH calleeIH => intro env; exact calleeIH (argsIH env)
   | matchValue _ selected _ valueIH bodyIH =>

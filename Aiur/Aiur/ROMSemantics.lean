@@ -34,6 +34,9 @@ mutual
     | assertEq (left : ROMEvalExpr rom program locals lhs x) (right : ROMEvalExpr rom program locals rhs y)
         (operation : evalAssertEq op x y = .ok result) :
         ROMEvalExpr rom program locals (.assertEq op lhs rhs) result
+    | ptrEq (left : ROMEvalExpr rom program locals lhs (.ptr target a₁))
+        (right : ROMEvalExpr rom program locals rhs (.ptr target a₂)) :
+        ROMEvalExpr rom program locals (.ptrEq lhs rhs) (.field (if a₁ = a₂ then 1 else 0))
     | binary (left : ROMEvalExpr rom program locals lhs x) (right : ROMEvalExpr rom program locals rhs y)
         (operation : evalBinOp op x y = .ok result) :
         ROMEvalExpr rom program locals (.binary op lhs rhs) result

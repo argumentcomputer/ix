@@ -223,7 +223,7 @@ def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
   let plan ← Grouping.preparePlan system id packed
   -- The backend theorems (`grouped_activated_heap_sound` and its siblings) assume
   -- `plan.WellFormedActivation`; refuse to export a plan that does not meet it.
-  unless decide plan.WellFormedActivation do
+  unless plan.checkWellFormedActivation do
     throw "an ungrouped chip is not well-formed before or after activation (Plan.WellFormedActivation)"
   let trace ← Ixon.run do
     nat planVersion
@@ -281,7 +281,7 @@ def exportPreparedPlanPar [Field F] [DecidableEq F] (modulus : Nat) (encode : F 
     let group ← Grouping.compile name id chips
     pure ⟨chips, group⟩
   let plan ← Grouping.preparePlan system id packed
-  unless decide plan.WellFormedActivation do
+  unless plan.checkWellFormedActivation do
     throw "an ungrouped chip is not well-formed before or after activation (Plan.WellFormedActivation)"
   let fnItems := (program.functions.zip artifact.layouts).zip original.functions
   let chipItems := system.chips.zip physical.system.chips

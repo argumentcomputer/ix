@@ -101,6 +101,13 @@ theorem completeExpr (sameEnums : p.enums = q.enums) (forward : ForwardCalls p q
       simp only [Tree.target]
       rcases same with ⟨rfl,first,last⟩
       exact .assertEq (ih1 _ first safe.1) (ih2 _ last safe.2) op
+  | ptrEq _ _ h1 h2 sound ih1 ih2 =>
+      intro tree same safe
+      cases tree <;> simp only [Tree.source, Aiur.Expr.ptrEq.injEq, reduceCtorEq] at same
+      simp only [Tree.Safe] at safe
+      simp only [Tree.target]
+      rcases same with ⟨first,last⟩
+      exact .ptrEq (ih1 _ first safe.1) (ih2 _ last safe.2) h1 h2 sound
   | @call ls es b values middle n v a arguments callee ih1 ih2 =>
       intro tree same safe
       cases tree <;> simp only [Tree.source, Aiur.Expr.call.injEq, reduceCtorEq] at same <;> simp only [Tree.Safe] at safe <;> simp only [Tree.target]

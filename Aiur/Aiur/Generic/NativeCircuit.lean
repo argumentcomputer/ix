@@ -153,8 +153,10 @@ theorem Compiled.heap_complete {q : Specialized s entries} (c : Compiled q)
     (evaluated : SourceSemantics.EvalFn s.world name args [] value heap) (encode : Nat → F)
     (distinct : ∀ i j, i < heap.length → j < heap.length → encode i = encode j → i = j) :
     Aiur.Circuit.EncodedEntryDerives c.system name (entryValues args) (value.mapAddress encode) :=
+  have coreEval := (c.native_entry_iff selected).mp evaluated
   compiler_heap_complete c.compiled (c.inlined.valid.2.2 name selected).2
-    ((c.native_entry_iff selected).mp evaluated) encode distinct
+    (coreEval.toExact_of_ptrEqFree (c.inlined.program_ptrEqFree q.program_ptrEqFree))
+    encode distinct
 
 theorem Compiled.heap_sound {q : Specialized s entries} (c : Compiled q) (selected : name ∈ entries)
     {rom : WireROM F} (valid : rom.Valid)

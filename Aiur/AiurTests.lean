@@ -3,6 +3,7 @@ import AiurTests.Circuit
 import AiurTests.Semantics
 import AiurTests.Memo
 import AiurTests.Depth
+import AiurTests.MultiStarkSpec
 import AiurTests.Observed
 import AiurTests.TupleRuntime
 import AiurTests.Enums
@@ -235,3 +236,4 @@ def main : IO Unit := do
   AiurU64Tests.run
   AiurU32Tests.run
   AiurOptimizedTests.run
+  AiurMultiStarkSpecTests.run

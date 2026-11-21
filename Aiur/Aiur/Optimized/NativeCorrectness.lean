@@ -24,9 +24,11 @@ theorem GenericArtifact.heap_complete {prepared : Generic.Specialized source ent
   have model := compile_semanticModel compiled.compiled
   have originalEnums : compiled.artifact.unmerged.enums = compiled.inlined.program.enums := by
     rw [stages.2.2.2.2.2]
+  have coreEval := (compiled.native_entry_iff selected).mp evaluated
   obtain ⟨wires, output, arguments, decoded, formed, free, rom, valid, derived⟩ :=
     model.heap_complete stages.1 stages.2.1 originalEnums (compiled.inlined.valid.2.2 name selected).2
-      ((compiled.native_entry_iff selected).mp evaluated) encode distinct
+      (coreEval.toExact_of_ptrEqFree (compiled.inlined.program_ptrEqFree prepared.program_ptrEqFree))
+      encode distinct
   have sameEnums : compiled.system.enums = compiled.artifact.unmerged.enums :=
     compiled.artifact.deduplication.2.2.2.2.2.1
   refine ⟨wires, output, ?_, ?_, ?_, ?_, rom, valid, ?_⟩

@@ -108,6 +108,27 @@ instance (plan : Plan source id) : Decidable plan.WellFormedActivation := by
   unfold Plan.WellFormedActivation
   infer_instance
 
+/-- Executable boolean checker for `Plan.WellFormedActivation`. -/
+def Plan.checkWellFormedActivation (plan : Plan source id) : Bool :=
+  plan.singles.all fun c => c.wellFormed && (Activation.compile c).wellFormed
+
+theorem Plan.checkWellFormedActivation_iff (plan : Plan source id) :
+    plan.checkWellFormedActivation = true ↔ plan.WellFormedActivation := by
+  simp [Plan.checkWellFormedActivation, Plan.WellFormedActivation]
+
+theorem Plan.checkWellFormedActivation_sound {plan : Plan source id}
+    (checked : plan.checkWellFormedActivation = true) : plan.WellFormedActivation :=
+  plan.checkWellFormedActivation_iff.mp checked
+
+theorem Plan.wellFormedActivation_decide_iff (plan : Plan source id) :
+    decide plan.WellFormedActivation = true ↔ plan.WellFormedActivation :=
+  decide_eq_true_iff
+
+theorem Plan.checkWellFormedActivation_eq_decide (plan : Plan source id) :
+    plan.checkWellFormedActivation = decide plan.WellFormedActivation := by
+  apply Bool.eq_iff_iff.mpr
+  rw [plan.checkWellFormedActivation_iff, plan.wellFormedActivation_decide_iff]
+
 /-- Local rule of a grouped physical plan after applying `Activation.compile` to
 every ungrouped single chip (grouped chips already include activation in
 `Layout.RowRule`). -/

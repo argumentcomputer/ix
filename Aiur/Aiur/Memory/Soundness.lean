@@ -85,6 +85,43 @@ theorem ROMEvalExpr.realize [Field F] [DecidableEq F] (valid : rom.Valid)
       obtain ⟨right, after, rightEval, second, rightRep⟩ := rightIH middle locals (related.mono first)
       obtain ⟨value, operation, result⟩ := (leftRep.mono second).assertEq rightRep operation
       exact ⟨value, after, .assertEq leftEval rightEval operation, first.trans second, result⟩
+  | @ptrEq locals lhs target a₁ rhs a₂ _ _ leftIH rightIH =>
+      intro heap locals related
+      obtain ⟨left, middle, leftEval, first, leftRep⟩ := leftIH heap locals related
+      obtain ⟨right, after, rightEval, second, rightRep⟩ := rightIH middle locals (related.mono first)
+      have leftRepAfter := leftRep.mono second
+      generalize hw₁ : Value.ptr target a₁ = w₁ at leftRepAfter
+      cases leftRepAfter with
+      | field => cases hw₁
+      | tuple => cases hw₁
+      | construct => cases hw₁
+      | @ptr l₁ s₁ _ e₁ h₁ cell₁ c₁ =>
+          obtain ⟨hty₁, rfl⟩ := Value.ptr.inj hw₁
+          generalize hw₂ : Value.ptr target a₂ = w₂ at rightRep
+          cases rightRep with
+          | field => cases hw₂
+          | tuple => cases hw₂
+          | construct => cases hw₂
+          | @ptr l₂ s₂ _ e₂ h₂ cell₂ c₂ =>
+              obtain ⟨hty₂, rfl⟩ := Value.ptr.inj hw₂
+              have hts₁ : s₁.type = target := c₁.type.trans hty₁.symm
+              have hts₂ : s₂.type = target := c₂.type.trans hty₂.symm
+              have h1 : l₁ < after.length := (List.getElem?_eq_some_iff.mp h₁).1
+              have h2 : l₂ < after.length := (List.getElem?_eq_some_iff.mp h₂).1
+              have hsound : decide (a₁ = a₂) = true → HeapValueEq after (.ptr target l₁) (.ptr target l₂) := by
+                intro hdec
+                have haeq : a₁ = a₂ := of_decide_eq_true hdec
+                subst haeq
+                have hsame := ROM.functional valid cell₁ cell₂ (hty₁.symm.trans hty₂)
+                subst hsame
+                exact .ptr h₁ h₂ hts₁ hts₂ (Represents.heapValueEq valid c₁ c₂)
+              have hres : (if decide (a₁ = a₂) then (1 : F) else 0) = (if a₁ = a₂ then 1 else 0) := by
+                by_cases h : a₁ = a₂ <;> simp [h]
+              refine ⟨.field (if decide (a₁ = a₂) then 1 else 0), after,
+                .ptrEq (hts₁ ▸ leftEval) (hts₂ ▸ rightEval) h1 h2 hsound,
+                first.trans second, ?_⟩
+              rw [hres]
+              exact .field
   | binary _ _ operation leftIH rightIH =>
       intro heap locals related
       obtain ⟨left, middle, leftEval, first, leftRep⟩ := leftIH heap locals related
