@@ -885,23 +885,9 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
 
     enum StepExit<'a> {
       Return,
-      CallMiss {
-        callee: usize,
-        hash: u64,
-        dest: &'a [u32],
-      },
-      CallFull {
-        callee: usize,
-        dest: &'a [u32],
-        pc: usize,
-        next: usize,
-      },
-      Bytecode {
-        pc: usize,
-        next: usize,
-        memory_type: usize,
-        branch: usize,
-      },
+      CallMiss { callee: usize, hash: u64, dest: &'a [u32] },
+      CallFull { callee: usize, dest: &'a [u32], pc: usize, next: usize },
+      Bytecode { pc: usize, next: usize, memory_type: usize, branch: usize },
     }
 
     #[inline(always)]
@@ -972,7 +958,8 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
                 profile.operation("copy");
               }
               let len = *len as usize;
-              let dsts = &reg_lists[*dest_off as usize..*dest_off as usize + len];
+              let dsts =
+                &reg_lists[*dest_off as usize..*dest_off as usize + len];
               let srcs = &reg_lists[*src_off as usize..*src_off as usize + len];
               for (&d, &s) in dsts.iter().zip(srcs) {
                 regs[d as usize] = regs[s as usize];
@@ -1131,19 +1118,16 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
               {
                 return Err(site_error(program, cur_fn, step.pc, e));
               }
-              let index = match memory.intern(
-                memory_type,
-                arguments,
-                field.modulus(),
-              ) {
-                Ok(index) => index,
-                Err(crate::budget::StorageError::Resource(e)) => {
-                  return Err(ExecutionError::from(e));
-                },
-                Err(crate::budget::StorageError::Invalid(e)) => {
-                  return Err(site_error(program, cur_fn, step.pc, e));
-                },
-              };
+              let index =
+                match memory.intern(memory_type, arguments, field.modulus()) {
+                  Ok(index) => index,
+                  Err(crate::budget::StorageError::Resource(e)) => {
+                    return Err(ExecutionError::from(e));
+                  },
+                  Err(crate::budget::StorageError::Invalid(e)) => {
+                    return Err(site_error(program, cur_fn, step.pc, e));
+                  },
+                };
               let address = memory.address(index) as u64;
               let count = memory.multiplicity_mut(index);
               let Some(next_count) = count.checked_add(1) else {
@@ -1459,14 +1443,14 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
                 self.arguments.clear();
                 self.arguments.extend(args.iter().map(|r| frame.registers[*r]));
                 self.output_buffer.resize(dest.len(), field.zero());
-                let result =
-                  map.call(&self.arguments, &mut self.output_buffer).map(
-                    |()| {
-                      frame.write(dest, &self.output_buffer);
-                    },
-                  );
-                result
-                  .map_err(|message| site_error(program, cur_fn, pc, message))?;
+                let result = map
+                  .call(&self.arguments, &mut self.output_buffer)
+                  .map(|()| {
+                    frame.write(dest, &self.output_buffer);
+                  });
+                result.map_err(|message| {
+                  site_error(program, cur_fn, pc, message)
+                })?;
                 frame.pc = pc + 1;
                 frame.cursor = next;
                 continue;

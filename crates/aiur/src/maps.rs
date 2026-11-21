@@ -82,10 +82,7 @@ impl<F> MapOverrides<F> {
     self.insert_fixed_inner(name, function, None)
   }
 
-  pub(crate) fn insert_direct_fixed<
-    const INPUTS: usize,
-    const OUTPUTS: usize,
-  >(
+  pub(crate) fn insert_direct_fixed<const INPUTS: usize, const OUTPUTS: usize>(
     &mut self,
     name: impl Into<String>,
     direct: DirectMapKind,

@@ -334,7 +334,10 @@ pub(crate) enum Action<F> {
 fn push_regs(arena: &mut Vec<u32>, regs: &[usize]) -> Option<(u32, u32)> {
   let off = u32::try_from(arena.len()).ok()?;
   let len = u32::try_from(regs.len()).ok()?;
-  if arena.len().checked_add(regs.len()).is_none_or(|end| end > u32::MAX as usize)
+  if arena
+    .len()
+    .checked_add(regs.len())
+    .is_none_or(|end| end > u32::MAX as usize)
   {
     return None;
   }
@@ -548,12 +551,9 @@ pub(crate) fn prepare<B: FieldBackend>(
           }
           let op = &code[step.pc];
           let action = match op {
-            Instruction::Literal { dest, value } => {
-              u32::try_from(*dest).ok().map(|dest| Action::Literal {
-                dest,
-                value: *value,
-              })
-            },
+            Instruction::Literal { dest, value } => u32::try_from(*dest)
+              .ok()
+              .map(|dest| Action::Literal { dest, value: *value }),
             Instruction::Copy { dest, source }
               if dest.len() == source.len() =>
             {
@@ -632,9 +632,16 @@ pub(crate) fn prepare<B: FieldBackend>(
                 u32::try_from(step.memory_type).ok(),
                 push_regs(&mut reg_lists, dest),
               ) {
-                (Some(pointer), Some(memory_type), Some((dest_off, dest_len))) => {
-                  Some(Action::Load { pointer, memory_type, dest_off, dest_len })
-                },
+                (
+                  Some(pointer),
+                  Some(memory_type),
+                  Some((dest_off, dest_len)),
+                ) => Some(Action::Load {
+                  pointer,
+                  memory_type,
+                  dest_off,
+                  dest_len,
+                }),
                 _ => {
                   reg_lists.truncate(start);
                   None
@@ -648,14 +655,16 @@ pub(crate) fn prepare<B: FieldBackend>(
                 u32::try_from(step.memory_type).ok(),
                 push_regs(&mut reg_lists, value),
               ) {
-                (Some(dest), Some(memory_type), Some((value_off, value_len))) => {
-                  Some(Action::Store {
-                    dest,
-                    memory_type,
-                    value_off,
-                    value_len,
-                  })
-                },
+                (
+                  Some(dest),
+                  Some(memory_type),
+                  Some((value_off, value_len)),
+                ) => Some(Action::Store {
+                  dest,
+                  memory_type,
+                  value_off,
+                  value_len,
+                }),
                 _ => {
                   reg_lists.truncate(start);
                   None

@@ -2,13 +2,16 @@
 use std::{
   borrow::Cow,
   fs::File,
-  io::{BufWriter, Read, Seek, SeekFrom, Write},
+  io::{Read, Seek, SeekFrom},
   ops::Range,
-  path::{Path, PathBuf},
-  sync::{
-    Arc, Mutex,
-    atomic::{AtomicU64, Ordering},
-  },
+  path::PathBuf,
+  sync::{Arc, Mutex},
+};
+#[cfg(not(feature = "cuda"))]
+use std::{
+  io::{BufWriter, Write},
+  path::Path,
+  sync::atomic::{AtomicU64, Ordering},
 };
 
 use super::curve::Fr;
@@ -30,6 +33,7 @@ impl DiskFile {
     Self { file, remove_on_drop: None }
   }
 
+  #[cfg(not(feature = "cuda"))]
   pub(super) fn temporary(dir: &Path) -> std::io::Result<Self> {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     std::fs::create_dir_all(dir)?;
@@ -37,11 +41,7 @@ impl DiskFile {
       let id = NEXT.fetch_add(1, Ordering::Relaxed);
       let path =
         dir.join(format!(".kzg-spill-{}-{id}.bin", std::process::id()));
-      match File::options()
-        .create_new(true)
-        .read(true)
-        .write(true)
-        .open(&path)
+      match File::options().create_new(true).read(true).write(true).open(&path)
       {
         Ok(file) => {
           #[cfg(unix)]
@@ -178,6 +178,7 @@ impl Column {
   }
 
   /// Construct a disk-backed column from an already-written and hashed span.
+  #[cfg(not(feature = "cuda"))]
   pub(super) fn from_disk(
     file: Arc<Mutex<DiskFile>>,
     offset: u64,
@@ -190,6 +191,7 @@ impl Column {
   /// Write non-constant coefficients to `file` at `*offset`, hashing them on
   /// the fly, and return a disk-backed [`Column`]. Constant polynomials stay
   /// compact in memory without touching disk.
+  #[cfg(not(feature = "cuda"))]
   pub(super) fn spill_to_disk(
     file: &Arc<Mutex<DiskFile>>,
     offset: &mut u64,
@@ -248,7 +250,12 @@ impl Column {
         "spilled column file offset overflow",
       )
     })?;
-    Ok(Self::Disk { file: Arc::clone(file), offset: start, len: coeffs.len(), digest })
+    Ok(Self::Disk {
+      file: Arc::clone(file),
+      offset: start,
+      len: coeffs.len(),
+      digest,
+    })
   }
 
   /// Check the bytes on every access; changing/truncating a checkpoint fails

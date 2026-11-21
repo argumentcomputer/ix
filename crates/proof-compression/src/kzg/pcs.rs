@@ -814,6 +814,7 @@ impl KzgPcs {
 
   /// Stream-commit each column of `matrix` over `domain`, returning only the
   /// normalized KZG commitments without keeping all column vectors resident.
+  #[cfg(not(feature = "cuda"))]
   pub(crate) fn commit_matrix_commitment_only(
     &self,
     domain: Radix2Coset,
@@ -828,10 +829,9 @@ impl KzgPcs {
       let first = matrix.values[0].0;
       if matrix.values.par_iter().all(|v| v.0 == first) {
         drop(matrix);
-        commits.push(self.commit_column(&Column::Constant {
-          value: first,
-          len: height,
-        }));
+        commits.push(
+          self.commit_column(&Column::Constant { value: first, len: height }),
+        );
       } else {
         let mut coeffs: Vec<Fr> =
           matrix.values.into_iter().map(|v| v.0).collect();
@@ -845,10 +845,9 @@ impl KzgPcs {
           .into_par_iter()
           .all(|row| matrix.values[row * width + column].0 == first);
         if is_constant {
-          commits.push(self.commit_column(&Column::Constant {
-            value: first,
-            len: height,
-          }));
+          commits.push(
+            self.commit_column(&Column::Constant { value: first, len: height }),
+          );
         } else {
           let mut coeffs = generate_buffer(height, |row| {
             matrix.values[row * width + column].0
@@ -866,13 +865,16 @@ impl KzgPcs {
   /// file in the exact [`KzgProverData::write_checkpoint`] format, avoiding a
   /// full transposed copy in memory and avoiding re-reading the written file
   /// to compute per-column digests.
+  #[cfg(not(feature = "cuda"))]
   pub(crate) fn commit_matrix_to_checkpoint(
     &self,
     domain: Radix2Coset,
     matrix: RowMajorMatrix<Scalar>,
     temp_path: &std::path::Path,
-  ) -> Result<(KzgCommitment, Vec<StreamedColumn>), ark_serialize::SerializationError>
-  {
+  ) -> Result<
+    (KzgCommitment, Vec<StreamedColumn>),
+    ark_serialize::SerializationError,
+  > {
     use std::{
       fs::File,
       io::{BufWriter, Seek, SeekFrom, Write},
@@ -899,21 +901,24 @@ impl KzgPcs {
     assert_eq!(matrix.height(), domain.size(), "matrix height != domain size");
     let width = matrix.width();
     let height = domain.size();
-    let encode_header =
-      |commitment: &KzgCommitment| -> Result<Vec<u8>, ark_serialize::SerializationError> {
-        let mut header = Vec::new();
-        header.extend_from_slice(CHECKPOINT_MAGIC);
-        commitment.0.serialize_compressed(&mut header)?;
-        1u64.serialize_compressed(&mut header)?;
-        (domain.log_size as u64).serialize_compressed(&mut header)?;
-        domain.shift.0.serialize_compressed(&mut header)?;
-        (width as u64).serialize_compressed(&mut header)?;
-        Ok(header)
-      };
+    let encode_header = |commitment: &KzgCommitment| -> Result<
+      Vec<u8>,
+      ark_serialize::SerializationError,
+    > {
+      let mut header = Vec::new();
+      header.extend_from_slice(CHECKPOINT_MAGIC);
+      commitment.0.serialize_compressed(&mut header)?;
+      1u64.serialize_compressed(&mut header)?;
+      (domain.log_size as u64).serialize_compressed(&mut header)?;
+      domain.shift.0.serialize_compressed(&mut header)?;
+      (width as u64).serialize_compressed(&mut header)?;
+      Ok(header)
+    };
 
     let placeholder = KzgCommitment(vec![vec![G1Affine::default(); width]]);
     let placeholder_header = encode_header(&placeholder)?;
-    let mut writer = BufWriter::with_capacity(1 << 20, File::create(temp_path)?);
+    let mut writer =
+      BufWriter::with_capacity(1 << 20, File::create(temp_path)?);
     writer.write_all(&placeholder_header)?;
     let mut file_offset = u64::try_from(placeholder_header.len())
       .map_err(|_error| ark_serialize::SerializationError::InvalidData)?;
@@ -939,9 +944,8 @@ impl KzgPcs {
           if result.is_err() {
             return;
           }
-          result =
-            super::encoding::write_fields(&mut *writer, values, |v| *v)
-              .map_err(ark_serialize::SerializationError::from);
+          result = super::encoding::write_fields(&mut *writer, values, |v| *v)
+            .map_err(ark_serialize::SerializationError::from);
         })?;
         result?;
         *file_offset += column_bytes;
@@ -968,10 +972,9 @@ impl KzgPcs {
       let first = matrix.values[0].0;
       if matrix.values.par_iter().all(|v| v.0 == first) {
         drop(matrix);
-        commits.push(self.commit_column(&Column::Constant {
-          value: first,
-          len: height,
-        }));
+        commits.push(
+          self.commit_column(&Column::Constant { value: first, len: height }),
+        );
         columns.push(write_constant(&mut writer, first, &mut file_offset)?);
       } else {
         let mut coeffs: Vec<Fr> =
@@ -987,10 +990,9 @@ impl KzgPcs {
           .into_par_iter()
           .all(|row| matrix.values[row * width + column].0 == first);
         if is_constant {
-          commits.push(self.commit_column(&Column::Constant {
-            value: first,
-            len: height,
-          }));
+          commits.push(
+            self.commit_column(&Column::Constant { value: first, len: height }),
+          );
           columns.push(write_constant(&mut writer, first, &mut file_offset)?);
         } else {
           let mut coeffs = generate_buffer(height, |row| {
@@ -1004,7 +1006,8 @@ impl KzgPcs {
       drop(matrix);
     }
 
-    let commitment = KzgCommitment(vec![G1Projective::normalize_batch(&commits)]);
+    let commitment =
+      KzgCommitment(vec![G1Projective::normalize_batch(&commits)]);
     let real_header = encode_header(&commitment)?;
     assert_eq!(
       real_header.len(),
@@ -1012,9 +1015,9 @@ impl KzgPcs {
       "checkpoint header length changed after commitment"
     );
     writer.flush()?;
-    let mut file = writer
-      .into_inner()
-      .map_err(|error| ark_serialize::SerializationError::from(error.into_error()))?;
+    let mut file = writer.into_inner().map_err(|error| {
+      ark_serialize::SerializationError::from(error.into_error())
+    })?;
     file.seek(SeekFrom::Start(0))?;
     file.write_all(&real_header)?;
     file.flush()?;
@@ -1023,6 +1026,7 @@ impl KzgPcs {
 
   /// Open a persisted streamed checkpoint without re-reading its coefficient
   /// payload to recompute column digests.
+  #[cfg(not(feature = "cuda"))]
   pub(crate) fn open_streamed_checkpoint(
     path: &std::path::Path,
     domain: Radix2Coset,
@@ -1030,8 +1034,9 @@ impl KzgPcs {
     columns: Vec<StreamedColumn>,
   ) -> std::io::Result<KzgProverData> {
     let height = domain.size();
-    let needs_file =
-      columns.iter().any(|column| matches!(column, StreamedColumn::Disk { .. }));
+    let needs_file = columns
+      .iter()
+      .any(|column| matches!(column, StreamedColumn::Disk { .. }));
     let file = if needs_file {
       Some(Arc::new(std::sync::Mutex::new(DiskFile::persistent(
         std::fs::File::open(path)?,
@@ -1042,7 +1047,9 @@ impl KzgPcs {
     let columns = columns
       .into_iter()
       .map(|column| match column {
-        StreamedColumn::Constant(value) => Column::Constant { value, len: height },
+        StreamedColumn::Constant(value) => {
+          Column::Constant { value, len: height }
+        },
         StreamedColumn::Disk { offset, digest } => Column::from_disk(
           Arc::clone(file.as_ref().expect("file opened for disk columns")),
           offset,
@@ -1059,6 +1066,7 @@ impl KzgPcs {
 
   /// Stream-commit `matrix` one column at a time on CPU and spill non-constant
   /// coefficient columns to a temporary disk file in `spill_dir`.
+  #[cfg(not(feature = "cuda"))]
   pub(crate) fn commit_matrix_spilled(
     &self,
     domain: Radix2Coset,
@@ -1128,7 +1136,8 @@ impl KzgPcs {
       drop(matrix);
     }
 
-    let commitment = KzgCommitment(vec![G1Projective::normalize_batch(&commits)]);
+    let commitment =
+      KzgCommitment(vec![G1Projective::normalize_batch(&commits)]);
     let data = KzgProverData {
       commitment: commitment.clone(),
       matrices: vec![CommittedMatrix::new(domain, columns)],
@@ -1138,6 +1147,7 @@ impl KzgPcs {
 
   /// Interpolate, slice, commit and spill a quotient polynomial to a temporary
   /// disk file in `spill_dir`, dropping the resident coefficients immediately.
+  #[cfg(not(feature = "cuda"))]
   pub(crate) fn commit_quotient_spilled(
     &self,
     quotient_domain: Radix2Coset,
@@ -1152,8 +1162,10 @@ impl KzgPcs {
       Self::interpolate_columns(quotient_domain, evaluations).columns;
     let mut spill_file: Option<Arc<std::sync::Mutex<DiskFile>>> = None;
     let mut spill_offset = 0u64;
-    let mut commits = Vec::with_capacity(quotient_degree * coefficient_columns.len());
-    let mut columns = Vec::with_capacity(quotient_degree * coefficient_columns.len());
+    let mut commits =
+      Vec::with_capacity(quotient_degree * coefficient_columns.len());
+    let mut columns =
+      Vec::with_capacity(quotient_degree * coefficient_columns.len());
     for k in 0..quotient_degree {
       let range = k * n..(k + 1) * n;
       for c in &coefficient_columns {
@@ -1181,7 +1193,11 @@ impl KzgPcs {
                   spill_file.insert(created)
                 },
               };
-              columns.push(Column::spill_to_disk(file, &mut spill_offset, coeffs)?);
+              columns.push(Column::spill_to_disk(
+                file,
+                &mut spill_offset,
+                coeffs,
+              )?);
             }
           },
           Column::Disk { .. } => {
@@ -1191,7 +1207,8 @@ impl KzgPcs {
       }
     }
     drop(coefficient_columns);
-    let commitment = KzgCommitment(vec![G1Projective::normalize_batch(&commits)]);
+    let commitment =
+      KzgCommitment(vec![G1Projective::normalize_batch(&commits)]);
     let matrix = CommittedMatrix::new(
       Radix2Coset {
         log_size: p3_util::log2_strict_usize(n),
@@ -1199,7 +1216,8 @@ impl KzgPcs {
       },
       columns,
     );
-    let data = KzgProverData { commitment: commitment.clone(), matrices: vec![matrix] };
+    let data =
+      KzgProverData { commitment: commitment.clone(), matrices: vec![matrix] };
     Ok((commitment, data))
   }
 
@@ -1315,6 +1333,7 @@ impl KzgPcs {
 }
 
 /// Column metadata recorded while streaming a matrix into a checkpoint file.
+#[cfg(not(feature = "cuda"))]
 pub(crate) enum StreamedColumn {
   Constant(Fr),
   Disk { offset: u64, digest: blake3::Hash },

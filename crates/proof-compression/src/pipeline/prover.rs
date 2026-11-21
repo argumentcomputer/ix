@@ -7,6 +7,8 @@ use crate::{
     pcs::KzgProverData,
   },
 };
+#[cfg(test)]
+use multi_stark::plonkish::TraceShards;
 use multi_stark::{
   config::ProofConfig,
   lookup::LookupValues,
@@ -15,8 +17,6 @@ use multi_stark::{
   system::{Circuit, ProverKey, System},
   traits::Pcs,
 };
-#[cfg(test)]
-use multi_stark::plonkish::TraceShards;
 use p3_matrix::Matrix;
 use std::{
   fs::{self, File},
@@ -133,26 +133,26 @@ impl Committed {
     let mut main = Vec::with_capacity(count);
     let parent = tracing::Span::current();
     let dispatch = tracing::dispatcher::get_default(Clone::clone);
-    let generate_witness =
-      |source: &S, i: usize| -> std::result::Result<_, String> {
-        let _span =
-          tracing::info_span!(parent: &parent, "compression/trace", circuit = i)
-            .entered();
-        let started = Instant::now();
-        let trace = source.trace(i)?;
-        if (trace.height(), trace.width()) != dimensions[i] {
-          return Err(
-            "generated trace dimensions differ from the compiled circuit"
-              .into(),
-          );
-        }
-        tracing::info!(
-          circuit = i,
-          seconds = started.elapsed().as_secs_f64(),
-          "KZG witness generated"
+    let generate_witness = |source: &S,
+                            i: usize|
+     -> std::result::Result<_, String> {
+      let _span =
+        tracing::info_span!(parent: &parent, "compression/trace", circuit = i)
+          .entered();
+      let started = Instant::now();
+      let trace = source.trace(i)?;
+      if (trace.height(), trace.width()) != dimensions[i] {
+        return Err(
+          "generated trace dimensions differ from the compiled circuit".into(),
         );
-        Ok(trace)
-      };
+      }
+      tracing::info!(
+        circuit = i,
+        seconds = started.elapsed().as_secs_f64(),
+        "KZG witness generated"
+      );
+      Ok(trace)
+    };
     let mut prefetched = None;
     for i in 0..count {
       // Without prefetch, generate fixed columns before the witness so their
@@ -190,8 +190,7 @@ impl Committed {
             seconds = started.elapsed().as_secs_f64(),
             "KZG fixed prepared"
           );
-          let witness =
-            witness.map_or_else(|| generate_witness(src, i), Ok)?;
+          let witness = witness.map_or_else(|| generate_witness(src, i), Ok)?;
           let started = Instant::now();
           let (_, data) =
             tracing::info_span!(parent: &parent, "compression/main_commit", circuit = i)
@@ -867,7 +866,10 @@ mod tests {
     let encode_setup = |parts: &[FixedSetup]| -> Result<Vec<u8>> {
       Ok(bincode::serde::encode_to_vec(parts, bincode::config::standard())?)
     };
-    assert_eq!(encode_setup(&setup_streamed)?, encode_setup(&setup_in_streamed)?);
+    assert_eq!(
+      encode_setup(&setup_streamed)?,
+      encode_setup(&setup_in_streamed)?
+    );
 
     for i in 0..compiled.num_circuits() {
       let definition = compiled.kzg_circuit_input(i, 64, 2)?.unwrap();
@@ -906,8 +908,9 @@ mod tests {
         fs::read(fresh_dir.join(format!("fixed-{i}.bin")))?,
         expected_fixed
       );
-      let reopened =
-        KzgProverData::read_checkpoint_file(fresh_dir.join(format!("fixed-{i}.bin")))?;
+      let reopened = KzgProverData::read_checkpoint_file(
+        fresh_dir.join(format!("fixed-{i}.bin")),
+      )?;
       let domain = streamed_data.matrices[0].domain();
       assert_eq!(
         config.pcs().get_evaluations_on_domain(&streamed_data, 0, domain),
@@ -959,8 +962,8 @@ mod tests {
         .with_transcript(kind)
         .with_streaming_lookups()
         .with_streaming_quotient();
-      let expected =
-        Committed::prepare(resident.clone(), &traces, None, 0)?.prove(&claims)?;
+      let expected = Committed::prepare(resident.clone(), &traces, None, 0)?
+        .prove(&claims)?;
       let spilled = resident.with_disk_spill(&spill_dir);
       let actual = Committed::prepare(spilled, &traces, Some(&prep_dir), 0)?
         .prove(&claims)?;

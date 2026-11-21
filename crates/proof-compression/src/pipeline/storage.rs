@@ -158,7 +158,11 @@ pub(crate) fn load<T: DeserializeOwned>(path: &Path) -> Result<T> {
 
 #[cfg(all(
   target_os = "linux",
-  any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64")
+  any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "riscv64"
+  )
 ))]
 fn fadvise(fd: std::os::fd::RawFd, offset: i64, len: i64, advice: i32) {
   unsafe extern "C" {

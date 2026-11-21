@@ -34,10 +34,12 @@ pub fn register_maps<B: FieldBackend>(
       };
     }
     match map.name.as_str() {
-      "UInt8::from_field" => bind!(1, 1, 256, DirectMapKind::FromField, move |input| {
-        let row = unary::<256, _>(field, &input)?;
-        Ok((row, input))
-      }),
+      "UInt8::from_field" => {
+        bind!(1, 1, 256, DirectMapKind::FromField, move |input| {
+          let row = unary::<256, _>(field, &input)?;
+          Ok((row, input))
+        })
+      },
       "UInt8::raw_bit_decomposition" => {
         bind!(1, 8, 256, DirectMapKind::RawBitDecomp, move |input| {
           let row = unary::<256, _>(field, &input)?;
@@ -52,42 +54,59 @@ pub fn register_maps<B: FieldBackend>(
           Ok((pair(field, &input)?.2, []))
         })
       },
-      "UInt8::raw_xor" => bind!(2, 1, 65536, DirectMapKind::RawXor, move |input| {
-        let (a, b, row) = pair(field, &input)?;
-        Ok((row, [field.from_u64(a ^ b)]))
-      }),
-      "UInt8::raw_and" => bind!(2, 1, 65536, DirectMapKind::RawAnd, move |input| {
-        let (a, b, row) = pair(field, &input)?;
-        Ok((row, [field.from_u64(a & b)]))
-      }),
-      "UInt8::raw_or" => bind!(2, 1, 65536, DirectMapKind::RawOr, move |input| {
-        let (a, b, row) = pair(field, &input)?;
-        Ok((row, [field.from_u64(a | b)]))
-      }),
-      "UInt8::raw_lt" => bind!(2, 1, 65536, DirectMapKind::RawLt, move |input| {
-        let (a, b, row) = pair(field, &input)?;
-        Ok((row, [field.from_u64(u64::from(a < b))]))
-      }),
-      "UInt8::raw_add" => bind!(2, 2, 65536, DirectMapKind::RawAdd, move |input| {
-        let (a, b, row) = pair(field, &input)?;
-        let sum = a + b;
-        Ok((row, [field.from_u64(sum & 255), field.from_u64(sum >> 8)]))
-      }),
-      "UInt8::raw_sub" => bind!(2, 2, 65536, DirectMapKind::RawSub, move |input| {
-        let (a, b, row) = pair(field, &input)?;
-        Ok((
-          row,
-          [
-            field.from_u64(a.wrapping_sub(b) & 255),
-            field.from_u64(u64::from(a < b)),
-          ],
-        ))
-      }),
-      "UInt8::raw_mul" => bind!(2, 2, 65536, DirectMapKind::RawMul, move |input| {
-        let (a, b, row) = pair(field, &input)?;
-        let product = a * b;
-        Ok((row, [field.from_u64(product & 255), field.from_u64(product >> 8)]))
-      }),
+      "UInt8::raw_xor" => {
+        bind!(2, 1, 65536, DirectMapKind::RawXor, move |input| {
+          let (a, b, row) = pair(field, &input)?;
+          Ok((row, [field.from_u64(a ^ b)]))
+        })
+      },
+      "UInt8::raw_and" => {
+        bind!(2, 1, 65536, DirectMapKind::RawAnd, move |input| {
+          let (a, b, row) = pair(field, &input)?;
+          Ok((row, [field.from_u64(a & b)]))
+        })
+      },
+      "UInt8::raw_or" => {
+        bind!(2, 1, 65536, DirectMapKind::RawOr, move |input| {
+          let (a, b, row) = pair(field, &input)?;
+          Ok((row, [field.from_u64(a | b)]))
+        })
+      },
+      "UInt8::raw_lt" => {
+        bind!(2, 1, 65536, DirectMapKind::RawLt, move |input| {
+          let (a, b, row) = pair(field, &input)?;
+          Ok((row, [field.from_u64(u64::from(a < b))]))
+        })
+      },
+      "UInt8::raw_add" => {
+        bind!(2, 2, 65536, DirectMapKind::RawAdd, move |input| {
+          let (a, b, row) = pair(field, &input)?;
+          let sum = a + b;
+          Ok((row, [field.from_u64(sum & 255), field.from_u64(sum >> 8)]))
+        })
+      },
+      "UInt8::raw_sub" => {
+        bind!(2, 2, 65536, DirectMapKind::RawSub, move |input| {
+          let (a, b, row) = pair(field, &input)?;
+          Ok((
+            row,
+            [
+              field.from_u64(a.wrapping_sub(b) & 255),
+              field.from_u64(u64::from(a < b)),
+            ],
+          ))
+        })
+      },
+      "UInt8::raw_mul" => {
+        bind!(2, 2, 65536, DirectMapKind::RawMul, move |input| {
+          let (a, b, row) = pair(field, &input)?;
+          let product = a * b;
+          Ok((
+            row,
+            [field.from_u64(product & 255), field.from_u64(product >> 8)],
+          ))
+        })
+      },
       "UInt8::raw_xor_split4" => {
         bind!(2, 2, 65536, DirectMapKind::RawXorSplit4, move |input| {
           let (a, b, row) = pair(field, &input)?;

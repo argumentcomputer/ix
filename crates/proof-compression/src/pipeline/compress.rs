@@ -75,9 +75,9 @@ fn parse_isolate_stages(value: Option<&str>) -> Result<bool> {
   match value {
     None | Some("1" | "true" | "yes") => Ok(true),
     Some("0" | "false" | "no") => Ok(false),
-    Some(other) => Err(
-      format!("{ISOLATE_STAGES_ENV} must be 0 or 1, not {other:?}").into(),
-    ),
+    Some(other) => {
+      Err(format!("{ISOLATE_STAGES_ENV} must be 0 or 1, not {other:?}").into())
+    },
   }
 }
 
@@ -122,7 +122,9 @@ fn ix_compress_reexec_args(args: &[OsString]) -> Option<Vec<OsString>> {
   }
   if matches!(
     args[2].to_str(),
-    Some("layout" | "normalize" | "setup" | "-h" | "--help" | "-v" | "--version")
+    Some(
+      "layout" | "normalize" | "setup" | "-h" | "--help" | "-v" | "--version"
+    )
   ) {
     return None;
   }
@@ -242,8 +244,10 @@ impl SubprocessRunner {
       use std::os::unix::process::ExitStatusExt;
       if let Some(signal) = status.signal() {
         return Err(
-          format!("stage {stage_name} subprocess terminated by signal {signal}")
-            .into(),
+          format!(
+            "stage {stage_name} subprocess terminated by signal {signal}"
+          )
+          .into(),
         );
       }
     }
@@ -253,9 +257,7 @@ impl SubprocessRunner {
           .into(),
       );
     }
-    Err(
-      format!("stage {stage_name} subprocess terminated abnormally").into(),
-    )
+    Err(format!("stage {stage_name} subprocess terminated abnormally").into())
   }
 }
 
@@ -1107,12 +1109,7 @@ mod tests {
     };
     assert_eq!(
       ix_compress_reexec_args(&to_os(&[
-        "ix",
-        "compress",
-        "--fresh",
-        "--out",
-        "/tmp/dir",
-        "deadbeef",
+        "ix", "compress", "--fresh", "--out", "/tmp/dir", "deadbeef",
         "--plonk",
       ])),
       Some(to_os(&["compress", "--out", "/tmp/dir", "deadbeef", "--plonk"]))
@@ -1253,11 +1250,8 @@ mod tests {
       rerun: false,
       runner: None,
     })?;
-    let mut isolated = Checkpoints {
-      out: &isolated_out,
-      rerun: false,
-      runner: Some(runner),
-    };
+    let mut isolated =
+      Checkpoints { out: &isolated_out, rerun: false, runner: Some(runner) };
     let isolated_bytes = run_pipeline(&mut isolated)?;
     assert_eq!(isolated_bytes, expected_bytes);
 
