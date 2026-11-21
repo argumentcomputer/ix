@@ -20,7 +20,38 @@ abbrev Addr := Digest
 def addrKey (d : Addr) : Nat := (d.bytes.get! 0).toNat * 256 + (d.bytes.get! 1).toNat
 
 /-- Lean's `Name.toString` wraps some components in `«»`, Ix's display does not. -/
-def normName (s : String) : String := String.ofList (s.toList.filter fun c => c ≠ '«' && c ≠ '»')
+def normNameSpec (s : String) : String := String.ofList (s.toList.filter fun c => c ≠ '«' && c ≠ '»')
+
+/-- `normNameSpec`, returning a name without `«` or `»` unchanged (`normName_eq`). -/
+def normName (s : String) : String :=
+  if s.contains '«' || s.contains '»' then normNameSpec s else s
+
+theorem normName_eq (s : String) : normName s = normNameSpec s := by
+  unfold normName normNameSpec
+  split
+  · rfl
+  · rename_i h
+    simp only [Bool.or_eq_true, String.contains_char_eq, decide_eq_true_eq, not_or] at h
+    rw [List.filter_eq_self.mpr, String.ofList_toList]
+    intro c hc
+    simp only [Bool.and_eq_true, decide_eq_true_eq]
+    exact ⟨fun e => h.1 (e ▸ hc), fun e => h.2 (e ▸ hc)⟩
+
+/-- `f` folded over the lines of a file, split as `IO.FS.lines` splits them, reading one line at
+a time. -/
+partial def foldLines {σ : Type} (path : System.FilePath) (init : σ) (f : σ → String → σ) : IO σ := do
+  let h ← IO.FS.Handle.mk path .read
+  let rec go (s : σ) : IO σ := do
+    let line ← h.getLine
+    if line.isEmpty then
+      return s
+    else if line.back == '\n' then
+      let line := line.dropEnd 1 |>.copy
+      let line := if line.back == '\r' then line.dropEnd 1 |>.copy else line
+      go (f s line)
+    else
+      return f s line
+  go init
 
 structure Module where
   name : String
@@ -43,17 +74,14 @@ def splitTab (l : String) : List String := l.splitOn "\t"
 def splitComma (s : String) : List String := if s.isEmpty then [] else s.splitOn ","
 
 /-- `NAME → ADDRESS`, and each address's first name in file order. -/
-def readNames (path : System.FilePath) : IO (Std.HashMap String Addr × Std.HashMap Addr String) := do
-  let mut m : Std.HashMap String Addr := {}
-  let mut inv : Std.HashMap Addr String := {}
-  for l in (← IO.FS.lines path) do
+def readNames (path : System.FilePath) : IO (Std.HashMap String Addr × Std.HashMap Addr String) :=
+  foldLines path ({}, {}) fun (m, inv) l =>
     match splitTab l with
     | [n, a] =>
-      if let some d := Digest.ofHex? a then
-        m := m.insert (normName n) d
-        if !inv.contains d then inv := inv.insert d (normName n)
-    | _ => pure ()
-  return (m, inv)
+      match Digest.ofHex? a with
+      | some d => (m.insert (normName n) d, if inv.contains d then inv else inv.insert d (normName n))
+      | none => (m, inv)
+    | _ => (m, inv)
 
 /-- `name*count` entries of a statement, as addresses. -/
 def parseStatement (names : Std.HashMap String Addr) (consts kinds : String) :
@@ -87,37 +115,42 @@ def itemOf (names : Std.HashMap String Addr) (thm : Premise Addr) (pcs axs nat :
   { thm, uses := uses.filterMap id, axioms := axioms.filterMap id, native := nat == "1"
     unresolved := (uses.filter (·.isNone)).length + (axioms.filter (·.isNone)).length }
 
+/-- What `readExtraction` has read of `decls.tsv` so far. -/
+structure DeclsAcc where
+  modules : Array Module := #[]
+  library : Array (Premise Addr × String) := #[]
+  byName : Std.HashMap String (Premise Addr) := {}
+  items : Array (Item Addr × String) := #[]
+  unjoined : Nat := 0
+
+/-- One line of `decls.tsv`. -/
+def DeclsAcc.line (names : Std.HashMap String Addr) (acc : DeclsAcc) (l : String) : DeclsAcc :=
+  match splitTab l with
+  | ["mod", _, n, imps] => { acc with modules := acc.modules.push ⟨n, (splitComma imps).map String.toNat!⟩ }
+  | "lib" :: n :: m :: d :: tc :: ks :: shape =>
+    let (stmt, miss) := parseStatement names tc ks
+    let stmt := match shape with
+      | [hs, ar] => withShape names stmt hs ar
+      | _ => stmt
+    let acc := { acc with unjoined := acc.unjoined + miss }
+    match names.get? (normName n) with
+    | some a =>
+      let p : Premise Addr := ⟨a, m.toNat!, d.toNat!, stmt⟩
+      { acc with library := acc.library.push (p, n), byName := acc.byName.insert n p }
+    | none => { acc with unjoined := acc.unjoined + 1 }
+  | ["item", n, pcs, axs, nat] =>
+    match acc.byName.get? n with
+    | some p =>
+      let it := itemOf names p pcs axs nat
+      { acc with unjoined := acc.unjoined + it.unresolved, items := acc.items.push (it, n) }
+    | none => acc
+  | _ => acc
+
 def readExtraction (dir : System.FilePath) : IO Extraction := do
   let (names, addrNames) ← readNames (dir / "names.tsv")
-  let mut modules : Array Module := #[]
-  let mut library : Array (Premise Addr × String) := #[]
-  let mut byName : Std.HashMap String (Premise Addr) := {}
-  let mut items : Array (Item Addr × String) := #[]
-  let mut unjoined := 0
-  for l in (← IO.FS.lines (dir / "decls.tsv")) do
-    match splitTab l with
-    | ["mod", _, n, imps] => modules := modules.push ⟨n, (splitComma imps).map String.toNat!⟩
-    | "lib" :: n :: m :: d :: tc :: ks :: shape =>
-      let (stmt, miss) := parseStatement names tc ks
-      let stmt := match shape with
-        | [hs, ar] => withShape names stmt hs ar
-        | _ => stmt
-      unjoined := unjoined + miss
-      match names.get? (normName n) with
-      | some a =>
-        let p : Premise Addr := ⟨a, m.toNat!, d.toNat!, stmt⟩
-        library := library.push (p, n)
-        byName := byName.insert n p
-      | none => unjoined := unjoined + 1
-    | ["item", n, pcs, axs, nat] =>
-      match byName.get? n with
-      | some p =>
-        let it := itemOf names p pcs axs nat
-        unjoined := unjoined + it.unresolved
-        items := items.push (it, n)
-      | none => pure ()
-    | _ => pure ()
-  return { modules, library, items, unjoined, names, addrNames }
+  let acc ← foldLines (dir / "decls.tsv") {} (DeclsAcc.line names)
+  return { modules := acc.modules, library := acc.library, items := acc.items
+           unjoined := acc.unjoined, names, addrNames }
 
 /-! ## Accessibility -/
 
@@ -135,10 +168,51 @@ def reachability (modules : Array Module) : Array (Array Bool) := Id.run do
     reach := reach.push r
   return reach
 
+/-- `reachability` as rows of bits: module `i` reaches module `k` when bit `k % 8` of byte
+`i * words + k / 8` is set. Out-of-range modules reach nothing and are reached by nothing. -/
+structure Reach where
+  n : Nat
+  words : Nat
+  bits : ByteArray
+  deriving Inhabited
+
+/-- `(reachability modules)[i]![k]!` (checked by `#guard`s in `IxAITest`). -/
+def Reach.get (r : Reach) (i k : Nat) : Bool :=
+  i < r.n && k < r.n && (r.bits.get! (i * r.words + k / 8) >>> (k % 8).toUInt8) &&& 1 == 1
+
+/-- `reachability` with a row of bits per module; an import row is ORed in byte by byte. As there,
+an import that is not listed before the module contributes nothing. -/
+def reachBits (modules : Array Module) : Reach := Id.run do
+  let n := modules.size
+  let w := (n + 7) / 8
+  let mut bits := ByteArray.emptyWithCapacity (n * w)
+  for _ in [:n * w] do bits := bits.push 0
+  for i in [:n] do
+    let row := i * w
+    bits := bits.set! (row + i / 8) (bits.get! (row + i / 8) ||| ((1 : UInt8) <<< (i % 8).toUInt8))
+    for j in modules[i]!.imports do
+      if j < i then
+        let src := j * w
+        for b in [:w] do
+          bits := bits.set! (row + b) (bits.get! (row + b) ||| bits.get! (src + b))
+  return { n, words := w, bits }
+
+/-- The modules module `i` reaches, ascending: `(List.range r.n).toArray.filter (r.get i ·)`. -/
+def Reach.row (r : Reach) (i : Nat) : Array Nat := Id.run do
+  let mut out := #[]
+  if i < r.n then
+    for b in [:r.words] do
+      let byte := r.bits.get! (i * r.words + b)
+      if byte != 0 then
+        for t in [:8] do
+          let k := 8 * b + t
+          if k < r.n && (byte >>> t.toUInt8) &&& 1 == 1 then out := out.push k
+  return out
+
 /-- A premise is accessible to a theorem when its module is imported, or it comes earlier in the
 same module. -/
-def accessible (reach : Array (Array Bool)) (p : Premise Addr) (t : Premise Addr) : Bool :=
-  if p.module == t.module then p.decl < t.decl else reach[t.module]![p.module]!
+def accessible (reach : Reach) (p : Premise Addr) (t : Premise Addr) : Bool :=
+  if p.module == t.module then p.decl < t.decl else reach.get t.module p.module
 
 /-! ## Curation -/
 
@@ -209,14 +283,14 @@ structure Library where
   constNames : Std.HashMap Addr String
   byAddr : Std.HashMap Addr (Premise Addr)
   byModule : Array (Array (Premise Addr))
-  reach : Array (Array Bool)
+  reach : Reach
   /-- Per module, the modules it imports transitively. -/
   ancestors : Array (Array Nat)
   /-- Per constant, how many library statements mention it. -/
   docFreq : Std.HashMap Addr Nat
 
 def Library.of (ex : Extraction) : Library :=
-  let reach := reachability ex.modules
+  let reach := reachBits ex.modules
   let n := ex.modules.size
   let byModule := ex.library.foldl (fun acc (p, _) => acc.modify p.module (·.push p))
     (Array.replicate n #[])
@@ -225,7 +299,7 @@ def Library.of (ex : Extraction) : Library :=
     constNames := ex.addrNames
     byAddr := ex.library.foldl (fun m (p, _) => if m.contains p.addr then m else m.insert p.addr p) {}
     byModule, reach
-    ancestors := reach.map fun r => (List.range n).toArray.filter (r[·]!)
+    ancestors := (Array.range n).map reach.row
     docFreq := ex.library.foldl (fun m (p, _) =>
       p.stmt.consts.foldl (fun m (c, _) => m.insert c (m.getD c 0 + 1)) m) {} }
 

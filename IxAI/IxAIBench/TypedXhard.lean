@@ -80,6 +80,17 @@ def optChecksum (as : List (Option Answer)) : Nat :=
 /-- Per second, from a count and the nanoseconds it took. -/
 def perSecond (k ns : Nat) : Nat := k * 1000000000 / max ns 1
 
+/-- `timeNs` that also returns the timed function's result. -/
+def timeResult {α β : Type} (input : α) (f : α → β) (force : β → Nat) : IO (Nat × β) := do
+  let inp ← IO.mkRef input
+  let res ← IO.mkRef 0
+  let t0 ← IO.monoNanosNow
+  let x ← inp.get
+  let r := f x
+  res.set (force r)
+  let t1 ← IO.monoNanosNow
+  return (t1 - t0, r)
+
 /-- On the `prop-xhard` evaluation items the solver leaves unresolved at the `prop-xhard-cert`
 budget, the certified model's answers against the outer-form rule's; and on all evaluation items,
 the time and throughput of the solver alone, the solver with the rule, and the solver with the
@@ -93,14 +104,13 @@ def unresolvedSection (mc : Model) (sc : Split PForm) : IO Unit := do
   let xs := sc.test
   let n := xs.length
   let statusLabels := ["contradiction", "contingent", "tautology"]
-  let (sNs, _) ← timeNs xs (fun xs => xs.map (solverAnswer rc)) optChecksum
-  let (rNs, _) ← timeNs xs (fun xs => xs.map (solverRuleAnswer rc)) Answer.checksum
-  let (mNs, _) ← timeNs xs (fun xs => xs.map (certAnswerOf rc mc · xFam)) Answer.checksum
+  let (sNs, solverAns) ← timeResult xs (fun xs => xs.map (solverAnswer rc)) optChecksum
+  let (rNs, ruleAns) ← timeResult xs (fun xs => xs.map (solverRuleAnswer rc)) Answer.checksum
+  let (mNs, modelAns) ← timeResult xs (fun xs => xs.map (certAnswerOf rc mc · xFam)) Answer.checksum
   let labels := xs.map (targetOf spec 0)
-  let solver := (xs.map (solverAnswer rc)).toArray
+  let solver := solverAns.toArray
   let join := fun (as : List Answer) => ((as.zip labels).map fun (a, t) => a.withTarget t).toArray
-  let modelAns := xs.map (certAnswerOf rc mc · xFam)
-  let ruleP := join (xs.map (solverRuleAnswer rc))
+  let ruleP := join ruleAns
   let modelP := join modelAns
   let reference := (xs.map fun f => (certPredOf rc mc f xFam).1).toArray
   let joinedOk := modelP.size == reference.size && (modelP.zip reference).all fun (a, b) =>
@@ -202,19 +212,20 @@ def runXhard : IO UInt32 := do
   let unsat := (vx.filter (kindOf · == "unsatisfiable core")).map (·.form.core)
   let traps := (vx.filter (kindOf · == "trap")).map (·.form.core)
   let evens := (vx.filter (kindOf · == "even")).map (·.form.core)
-  let nodeRow := fun (name : String) (cs : List Dpll.CNF) =>
-    let ns := cs.map dpllNodes
-    [name, toString cs.length, toString (ns.foldl min 1000000000), toString (median ns), toString (ns.foldl max 0)]
+  let nU := unsat.map dpllNodes
+  let nT := traps.map dpllNodes
+  let nE := evens.map dpllNodes
+  let nodeRow := fun (name : String) (ns : List Nat) =>
+    [name, toString ns.length, toString (ns.foldl min 1000000000), toString (median ns), toString (ns.foldl max 0)]
   IO.println "### DPLL and the refutation search (validation draws)\n"
   IO.println (table ["core", "n", "DPLL nodes min", "median", "max"]
-    [nodeRow "unsatisfiable" unsat, nodeRow "trap" traps, nodeRow "even" evens])
-  for (name, cs) in [("unsat", unsat), ("trap", traps), ("even", evens)] do
-    let ns := cs.map dpllNodes
+    [nodeRow "unsatisfiable" nU, nodeRow "trap" nT, nodeRow "even" nE])
+  for (name, ns) in [("unsat", nU), ("trap", nT), ("even", nE)] do
     o.put "dpll_nodes" name s!"{ns.foldl min 1000000000} {median ns} {ns.foldl max 0}"
   let mut hrows : Array (List String) := #[]
   for rc in xBudgets do
-    let (uNs, _) ← timeNs unsat (fun fs => fs.map (refuteCore n rc)) (fun rs => rs.foldl (· + ·.2) 0)
-    let hits := ((unsat.map (refuteCore n rc)).filter (·.1)).length
+    let (uNs, refuted) ← timeResult unsat (fun fs => fs.map (refuteCore n rc)) (fun rs => rs.foldl (· + ·.2) 0)
+    let hits := (refuted.filter (·.1)).length
     let wrong := ((traps ++ evens).filter fun F => (refuteCore n rc F).1).length
     hrows := hrows.push [toString rc.budget, toString rc.depth, s!"{hits}/{unsat.length}",
       showPct (bp hits unsat.length), toString wrong, s!"{uNs / 1000 / max unsat.length 1}"]

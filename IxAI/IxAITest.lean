@@ -3,7 +3,7 @@ import IxAI.Examples
 import IxAI.TrainClaim
 import IxAI.Float
 import IxAICore
-import IxAIData.Dataset
+import IxAIData.Scorer
 import IxAIVerify.Ixon
 
 /-!
@@ -153,6 +153,47 @@ def fixtureEx : Extraction :=
 #guard accepted fixturePolicy (itemOf fixtureNames fixtureThm "bad" "" "0")
 
 end Curation
+
+section Ranking
+open IxAIData
+
+/-- Module lists, each module listed after its imports (as `reachability` requires), with
+repeated imports. -/
+def reachFixture (n : Nat) : Array Module :=
+  (Array.range n).map fun i =>
+    ⟨s!"M{i}", if i == 0 then [] else [(i * 7 + 3) % i, (i * i + 5) % i, i / 2, i - 1, i - 1]⟩
+
+/-- `reachBits` against the specification `reachability`, every entry and every row. -/
+def reachAgrees (ms : Array Module) : Bool :=
+  let spec := reachability ms
+  let r := reachBits ms
+  let n := ms.size
+  ((List.range (n + 2)).all fun i => (List.range (n + 2)).all fun k => r.get i k == ((spec[i]?.getD #[])[k]?.getD false)) &&
+    (List.range n).all fun i => r.row i == (List.range n).toArray.filter ((spec[i]!)[·]!)
+
+#guard [0, 1, 7, 8, 9, 17, 40].all fun n => reachAgrees (reachFixture n)
+
+/-- Scores with many ties. -/
+def tieScores (n m : Nat) : Array Int := (Array.range n).map fun i => Int.ofNat (i * 37 % m) - 3
+
+-- `topBy` gives the first `k` of the sorted ranking, so the first 30 of a longer top are the top 30.
+#guard [(0, 7), (1, 5), (29, 11), (60, 13)].all fun (n, m) =>
+  let ss := tieScores n m
+  let sorted := rankBy ((Array.range n).map fun i => (ss[i]!, i))
+  [0, 1, 30, 50, 80].all (fun k => topBy k n (scoreBefore ss) == sorted.extract 0 k) &&
+    topBy 30 n (scoreBefore ss) == (topBy 50 n (scoreBefore ss)).extract 0 30
+
+-- The `k` nearest references of `thmStats`, in any order of filling.
+#guard [3, 40].all fun n =>
+  let sims : Array (Int × Nat) := (Array.range n).map fun i => (Int.ofNat (i * 13 % 7), (i * 31) % 1009)
+  let lt := fun (a b : Int × Nat) => a.1 > b.1 || (a.1 == b.1 && a.2 < b.2)
+  [0, 1, 8, 50].all fun k =>
+    (topBy k sims.size fun a b => lt sims[a]! sims[b]!).map (sims[·]!) == (sims.qsort lt).extract 0 k
+
+#guard [(0, []), (10, [3, 3, 1, 9, 0, 1]), (100, (List.range 60).map (· * 7 % 100) ++ (List.range 60).map (· * 3 % 100))].all
+  fun (n, xs) => markedPositions n xs.toArray == (dedupNat xs).qsort (· < ·)
+
+end Ranking
 
 /-! ### Decisions -/
 

@@ -115,6 +115,15 @@ def sparseFeatures (f : FeatureConfig) (key : Addr → Nat) (s : Statement Addr)
     if d[i]! != 0 then out := out.push (i, d[i]!)
   return out
 
+/-- `f` on every element, in at most `chunks` chunks (and no more than there are elements) run as
+parallel tasks; the result is `xs.map f`. -/
+def parMap {α β : Type} [Inhabited β] (xs : Array α) (f : α → β) (chunks : Nat := 96) : Array β :=
+  let chunks := max 1 (min chunks xs.size)
+  let size := xs.size / chunks + 1
+  let tasks := (List.range chunks).map fun c =>
+    Task.spawn fun _ => (xs.extract (c * size) ((c + 1) * size)).map f
+  tasks.foldl (fun acc t => acc ++ t.get) #[]
+
 /-! ## Pair features -/
 
 /-- Inverse document frequency in quarter bits: `⌊log₂ ((n/df)⁴)⌋ = ⌊4 log₂ (n/df)⌋`. -/
@@ -130,8 +139,12 @@ structure Prepared where
   idf : Array Nat
   /-- `Σ idf` over the statement's constants. -/
   mass : Nat
-  constSet : Std.HashSet Addr
+  /-- The constants' indices in the library's numbering of constants (`PreparedLib.of`), one
+  number per address, so that membership tests hash a number rather than an address. -/
+  constIds : Array Nat
+  idSet : Std.HashSet Nat
   heads : Array (Option Addr)
+  headIds : Array (Option Nat)
   name : NameToks
   nameSet : Std.HashSet Nat
   /-- The name's tokens and the tokens of the names of the statement's constants. -/
@@ -143,7 +156,7 @@ structure Prepared where
 
 /-- `tokDf`: per token, how many library names contain it. -/
 def prepare (f : FeatureConfig) (lib : Library) (tokDf : Std.HashMap Nat Nat) (name : NameToks)
-    (p : Premise Addr) (constToks : Addr → Option (Array Nat) := fun c => (lib.constNames.get? c).map fun n => (nameToks n).all) :
+    (p : Premise Addr) (constToks : Addr → Option (Array Nat)) (idOf : Addr → Nat) :
     Prepared :=
   let n := lib.premises.size
   let consts := (p.stmt.consts.map (·.1)).toArray
@@ -153,8 +166,10 @@ def prepare (f : FeatureConfig) (lib : Library) (tokDf : Std.HashMap Nat Nat) (n
   { premise := p, x := sparseFeatures f addrKey p.stmt name.all
     xAddr := sparseFeatures f addrKey p.stmt #[], consts, idf
     mass := idf.foldl (· + ·) 0
-    constSet := consts.foldl (·.insert ·) {}
+    constIds := consts.map idOf
+    idSet := consts.foldl (fun s c => s.insert (idOf c)) {}
     heads := p.stmt.heads.toArray
+    headIds := p.stmt.heads.toArray.map (·.map idOf)
     name, nameSet
     ctxSet := consts.foldl (fun s c => match constToks c with
       | some ts => ts.foldl (·.insert ·) s
@@ -176,16 +191,21 @@ covers plus the overlap itself, so specific premises fully covered by the theore
 def idfScore (t p : Prepared) : Int := Id.run do
   let mut overlap := 0
   for i in [:p.consts.size] do
-    if t.constSet.contains p.consts[i]! then overlap := overlap + p.idf[i]!
+    if t.idSet.contains p.constIds[i]! then overlap := overlap + p.idf[i]!
   return Int.ofNat (1024 * overlap / (p.mass + 1) + overlap)
 
-/-- The name analogue of `idfScore`: the IDF-weighted share of the premise's name tokens found
-among the theorem's name tokens and the names of its statement's constants, plus that overlap. -/
-def nameScore (t p : Prepared) : Int := Id.run do
+/-- The IDF-weighted overlap of `p`'s name tokens with `t`'s name and constants' names. -/
+def nameOverlap (t p : Prepared) : Nat := Id.run do
   let mut overlap := 0
   for i in [:p.name.all.size] do
     if t.ctxSet.contains p.name.all[i]! then overlap := overlap + p.nameIdf[i]!
-  return Int.ofNat (1024 * overlap / (p.nameMass + 1) + overlap)
+  return overlap
+
+/-- The name analogue of `idfScore`: the IDF-weighted share of the premise's name tokens found
+among the theorem's name tokens and the names of its statement's constants, plus that overlap. -/
+def nameScore (t p : Prepared) : Int :=
+  let overlap := nameOverlap t p
+  Int.ofNat (1024 * overlap / (p.nameMass + 1) + overlap)
 
 /-- Name features of a pair: shared name tokens (log count, and Jaccard in sixteenths), the
 length of the shared namespace prefix, the IDF-weighted overlap of the premise's name with the
@@ -200,14 +220,12 @@ def nameContext (t p : Prepared) : Array Int := Id.run do
   let mut pfx := 0
   for i in [:min t.name.ns.size p.name.ns.size] do
     if pfx == i && t.name.ns[i]! == p.name.ns[i]! then pfx := pfx + 1
-  let mut overlap := 0
-  for i in [:p.name.all.size] do
-    if t.ctxSet.contains p.name.all[i]! then overlap := overlap + p.nameIdf[i]!
+  let overlap := nameOverlap t p
   let lastIn := fun (s : Std.HashSet Nat) =>
     if !p.name.last.isEmpty && p.name.last.all s.contains then (1 : Int) else 0
   return #[capLog 3 shared, Int.ofNat (16 * shared / max union 1), Int.ofNat (min pfx 4),
     Int.ofNat (overlap / 16), Int.ofNat (16 * overlap / (p.nameMass + 1)),
-    lastIn t.nameSet, lastIn t.ctxSet, nameScore t p / 64]
+    lastIn t.nameSet, lastIn t.ctxSet, Int.ofNat (1024 * overlap / (p.nameMass + 1) + overlap) / 64]
 
 /-! ## Training-set statistics -/
 
@@ -256,7 +274,7 @@ plus that of their name tokens. Symmetric, as each constant and token has one ID
 def similarity (t r : Prepared) : Nat := Id.run do
   let mut ov := 0
   for i in [:r.consts.size] do
-    if t.constSet.contains r.consts[i]! then ov := ov + r.idf[i]!
+    if t.idSet.contains r.constIds[i]! then ov := ov + r.idf[i]!
   let mut ovn := 0
   for i in [:r.name.all.size] do
     if t.nameSet.contains r.name.all[i]! then ovn := ovn + r.nameIdf[i]!
@@ -305,6 +323,21 @@ where
 /-- Constants and name tokens mentioned by more references than this do not propose neighbours. -/
 def postingCap : Nat := 4096
 
+/-- The first `k` of the positions `0 … n−1` under the strict total order `lt`, in order, by one
+pass with an insertion buffer. -/
+def topBy (k n : Nat) (lt : Nat → Nat → Bool) : Array Nat := Id.run do
+  let mut top : Array Nat := #[]
+  if k == 0 then return top
+  for i in [:n] do
+    if top.size < k || lt i top.back! then
+      let mut buf := top.push i
+      let mut q := buf.size - 1
+      while q > 0 && lt buf[q]! buf[q - 1]! do
+        buf := buf.swapIfInBounds q (q - 1)
+        q := q - 1
+      top := if buf.size > k then buf.pop else buf
+  return top
+
 /-- `t`'s view of the reference proofs, keeping those `keep` admits (`keep` drops at most `t`'s
 own proof and proofs of `t`'s module): the prior's left-out uses; the votes of its `k` most similar
 kept references among those sharing a constant or name token with it outside postings longer
@@ -338,12 +371,15 @@ def thmStats (k : Nat) (keep : Premise Addr → Bool) (t : Prepared) (R : Refs)
     for h in t.name.all do
       let ps := R.byToken.getD h #[]
       if ps.size ≤ cap then touched := ps.foldl (·.insert ·) touched
-    for i in touched.toArray.qsort (· < ·) do
+    for i in touched.toArray do
       let r := refs[i]!.1
       if !dropped.contains i && keep r.premise then
         let s := similarity t r
         if s > 0 then sims := sims.push (Int.ofNat s, i)
-  let top := (sims.qsort fun a b => a.1 > b.1 || (a.1 == b.1 && a.2 < b.2)).extract 0 k
+  -- The order is total on distinct references, so the `k` first do not depend on the order in
+  -- which `sims` was filled.
+  let top := (topBy k sims.size fun a b =>
+    sims[a]!.1 > sims[b]!.1 || (sims[a]!.1 == sims[b]!.1 && sims[a]!.2 < sims[b]!.2)).map (sims[·]!)
   let mut votes : Std.HashMap Addr Nat := {}
   let mut count : Std.HashMap Addr Nat := {}
   for (s, i) in top do
@@ -363,13 +399,13 @@ def pairContext (st : Stats) (ts : ThmStats) (t p : Prepared) : Array Int := Id.
   let mut sharedRare := 0
   let mut overlap := 0
   for i in [:p.consts.size] do
-    if t.constSet.contains p.consts[i]! then
+    if t.idSet.contains p.constIds[i]! then
       shared := shared + 1
       overlap := overlap + p.idf[i]!
       if p.idf[i]! ≥ 4 * 7 then sharedRare := sharedRare + 1
   let head := fun (s : Prepared) (k : Nat) => (s.heads[k]?).bind id
-  let inT := fun (a? : Option Addr) => match a? with
-    | some a => if t.constSet.contains a then (1 : Int) else 0
+  let inT := fun (k : Nat) => match (p.headIds[k]?).bind id with
+    | some a => if t.idSet.contains a then (1 : Int) else 0
     | none => 0
   let same := p.premise.module == t.premise.module
   let dist := t.premise.decl - p.premise.decl
@@ -377,16 +413,16 @@ def pairContext (st : Stats) (ts : ThmStats) (t p : Prepared) : Array Int := Id.
   let pr := st.prior.getD a 0 - ts.sub.getD a 0
   let votes := ts.votes.getD a 0
   let eqSome := fun (x y : Option Addr) => if x != none && x == y then (1 : Int) else 0
-  let tHeadInP : Int := match head t 0 with
-    | some h => if p.constSet.contains h then 1 else 0
+  let tHeadInP : Int := match (t.headIds[0]?).bind id with
+    | some h => if p.idSet.contains h then 1 else 0
     | none => 0
   return #[capLog 7 shared, capLog 7 sharedRare, Int.ofNat (overlap / 16),
     Int.ofNat (16 * overlap / (p.mass + 1)), Int.ofNat (16 * overlap / (t.mass + 1)),
     eqSome (head p 0) (head t 0),
-    inT (head p 0), inT (head p 1), inT (head p 2),
+    inT 0, inT 1, inT 2,
     if same then 1 else 0, if same && dist ≤ 4 then 1 else 0, if same && dist ≤ 16 then 1 else 0,
     if same && dist ≤ 64 then 1 else 0, capLog 7 pr, if pr > 0 then 1 else 0,
-    capLog 7 p.consts.size, idfScore t p / 64] ++ nameContext t p ++
+    capLog 7 p.consts.size, Int.ofNat (1024 * overlap / (p.mass + 1) + overlap) / 64] ++ nameContext t p ++
     #[capLog 15 votes, Int.ofNat (16 * votes / (ts.vmax + 1)), capLog 4 (ts.count.getD a 0),
       if votes > 0 && votes == ts.vmax then 1 else 0,
       eqSome (head p 1) (head t 1) + eqSome (head p 2) (head t 2),
@@ -524,7 +560,24 @@ structure Grad where
 def Grad.zero (n : Nat) : Grad := ⟨Array.replicate n 0, Array.replicate n 0⟩
 
 def Grad.add (gr : Grad) (i : Nat) (t : Int) : Grad :=
-  ⟨gr.g.modify i (· + t), gr.a.modify i (· + t.natAbs)⟩
+  ⟨gr.g.set! i (gr.g[i]! + t), gr.a.set! i (gr.a[i]! + t.natAbs)⟩
+
+theorem set!_getElem!_eq_modify {α : Type} [Inhabited α] (xs : Array α) (i : Nat) (f : α → α) :
+    xs.set! i (f xs[i]!) = xs.modify i f := by
+  apply Array.ext
+  · simp
+  · intro j h1 h2
+    simp only [Array.set!, Array.getElem_modify]
+    split
+    · subst_vars
+      have hi : j < xs.size := by simpa using h2
+      simp [getElem!_pos xs j hi]
+    · rw [Array.getElem_setIfInBounds_ne (by simpa using h2) (by assumption)]
+
+/-- `Grad.add` is `Array.modify` on both arrays, computed without a closure. -/
+theorem Grad.add_eq (gr : Grad) (i : Nat) (t : Int) :
+    gr.add i t = ⟨gr.g.modify i (· + t), gr.a.modify i (· + t.natAbs)⟩ := by
+  rw [Grad.add, ← set!_getElem!_eq_modify gr.g, ← set!_getElem!_eq_modify gr.a]
 
 /-- Add `sign · x ⊗ y` to a `width × dim` gradient. -/
 def Grad.outer (gr : Grad) (dim : Nat) (sign : Int) (x : Sparse) (y : Array Int) : Grad := Id.run do
@@ -533,6 +586,18 @@ def Grad.outer (gr : Grad) (dim : Nat) (sign : Int) (x : Sparse) (y : Array Int)
     for i in [:dim] do
       gr := gr.add (f * dim + i) (sign * v * y[i]!)
   return gr
+
+/-- Add `x ⊗ y` to a `width × dim` gradient whose absolute sums grow by `|x| ⊗ ya`: the sum of
+`outer` over terms `x ⊗ yⱼ` when `y = Σ yⱼ` and `ya = Σ |yⱼ|`, as `|v · yⱼ| = |v| · |yⱼ|`. -/
+def Grad.outerSum (gr : Grad) (dim : Nat) (x : Sparse) (y : Array Int) (ya : Array Nat) : Grad := Id.run do
+  let mut g := gr.g
+  let mut a := gr.a
+  for (f, v) in x do
+    for i in [:dim] do
+      let k := f * dim + i
+      g := g.set! k (g[k]! + v * y[i]!)
+      a := a.set! k (a[k]! + v.natAbs * ya[i]!)
+  return ⟨g, a⟩
 
 /-- Apply `Fx16.step` to every weight, or with `nearest` the same update rounded to nearest (half
 up), checking the accumulations and the new values. Rounding toward negative infinity moves every
@@ -574,6 +639,94 @@ premise, `Σⱼ (qⱼ − yⱼ) ∇sⱼ` over the gold premise and the theorem's
 probability and an activation rounded once, averaged over the batch's gold premises. All sums are
 exact. -/
 def step (c : ScorerConfig) (prep : Array Prepared) (st : Stats) (lrRaw : Int) (m : ScorerModel)
+    (batch : List Group) : Except BoundError ScorerModel := do
+  let b := c.bounds
+  let n := m.width * m.dim
+  let mut ges := Grad.zero n
+  let mut gep := Grad.zero n
+  let mut gwc := Grad.zero numContext
+  let mut triples := 0
+  for grp in batch do
+    let t := prep[grp.thm]!
+    let ts := st.thm.getD t.premise.addr {}
+    let u ← embed b m.dim m.es (t.feats c)
+    let negs ← grp.neg.mapM fun j => do
+      let p := prep[j]!
+      let v ← embed b m.dim m.ep (p.feats c)
+      let cx := c.context st ts t p
+      return (p, v, cx, ← scoreRaw b m u v cx)
+    let mut negY := Array.replicate negs.size (Array.replicate m.dim (0 : Int))
+    let mut negYa := Array.replicate negs.size (Array.replicate m.dim (0 : Nat))
+    let mut negW := Array.replicate negs.size (0 : Int)
+    let mut negWa := Array.replicate negs.size (0 : Nat)
+    let mut tY := Array.replicate m.dim (0 : Int)
+    let mut tYa := Array.replicate m.dim (0 : Nat)
+    for j in grp.pos do
+      let p := prep[j]!
+      let vp ← embed b m.dim m.ep (p.feats c)
+      let cp := c.context st ts t p
+      let sp ← scoreRaw b m u vp cp
+      match c.loss with
+      | .hinge =>
+        for (q, vn, cn, sn) in negs do
+          triples := triples + 1
+          if c.marginRaw - sp + sn > 0 then
+            ges := ges.outer m.dim 1 (t.feats c) (Array.zipWith (· - ·) vn vp)
+            gep := gep.outer m.dim 1 (q.feats c) u
+            gep := gep.outer m.dim (-1) (p.feats c) u
+            for k in [:numContext] do
+              gwc := gwc.add k ((cn[k]! - cp[k]!) * Fx16.scale)
+      | .softmax =>
+        if negs.isEmpty then continue
+        triples := triples + 1
+        let q := softmaxRaw (#[sp] ++ negs.map fun (_, _, _, s) => s)
+        let mut vsum := Array.replicate m.dim (0 : Int)
+        let mut vabs := Array.replicate m.dim (0 : Nat)
+        for i in [:q.size] do
+          let v := if i == 0 then vp else (negs[i - 1]!).2.1
+          let w := q[i]! - (if i == 0 then Fx16.scale else 0)
+          if w != 0 then
+            for d in [:m.dim] do
+              let y := (w * v[d]!) >>> 16
+              vsum := vsum.set! d (vsum[d]! + y)
+              vabs := vabs.set! d (vabs[d]! + y.natAbs)
+            if i == 0 then
+              gep := gep.outer m.dim 1 (p.feats c) (u.map fun x => (w * x) >>> 16)
+              for k in [:numContext] do
+                gwc := gwc.add k (w * cp[k]!)
+            else
+              let j := i - 1
+              for d in [:m.dim] do
+                let y := (w * u[d]!) >>> 16
+                negY := negY.modify j fun row => row.set! d (row[d]! + y)
+                negYa := negYa.modify j fun row => row.set! d (row[d]! + y.natAbs)
+              negW := negW.set! j (negW[j]! + w)
+              negWa := negWa.set! j (negWa[j]! + w.natAbs)
+        for d in [:m.dim] do
+          b.checkAcc "softmax gradient" vabs[d]!
+          b.checkValue "softmax gradient" vsum[d]!
+        for d in [:m.dim] do
+          tY := tY.set! d (tY[d]! + vsum[d]!)
+          tYa := tYa.set! d (tYa[d]! + vsum[d]!.natAbs)
+    if c.loss == .softmax then
+      for j in [:negs.size] do
+        if negWa[j]! != 0 then
+          let (r, _, cx, _) := negs[j]!
+          gep := gep.outerSum m.dim (r.feats c) negY[j]! negYa[j]!
+          for k in [:numContext] do
+            gwc := ⟨gwc.g.set! k (gwc.g[k]! + negW[j]! * cx[k]!),
+                    gwc.a.set! k (gwc.a[k]! + negWa[j]! * cx[k]!.natAbs)⟩
+      ges := ges.outerSum m.dim (t.feats c) tY tYa
+  if triples == 0 then return m
+  if c.residual then gwc := { gwc with g := gwc.g.set! idfFeature 0 }
+  return { m with es := ← applyGrad b lrRaw triples "statement embedding" m.es ges c.nearest
+                  ep := ← applyGrad b lrRaw triples "premise embedding" m.ep gep c.nearest
+                  wc := ← applyGrad b lrRaw triples "pair weights" m.wc gwc c.nearest }
+
+/-- The specification of `step`: every softmax term's gradient is added on its own. `step` adds a
+negative's terms over all gold premises of its theorem at once, which gives the same exact sums
+(`Grad.outerSum`); `trainLogged` checks the two agree on the first steps of a run. -/
+def stepSpec (c : ScorerConfig) (prep : Array Prepared) (st : Stats) (lrRaw : Int) (m : ScorerModel)
     (batch : List Group) : Except BoundError ScorerModel := do
   let b := c.bounds
   let n := m.width * m.dim
@@ -717,7 +870,7 @@ structure PreparedLib where
   declSorted : Bool := false
 
 def PreparedLib.of (f : FeatureConfig) (lib : Library) : PreparedLib :=
-  let toks := lib.names.map nameToks
+  let toks := parMap lib.names nameToks
   let tokDf : Std.HashMap Nat Nat := toks.foldl (fun m t =>
     t.all.foldl (fun m h => m.insert h (m.getD h 0 + 1)) m) {}
   let n := lib.byModule.size
@@ -726,11 +879,17 @@ def PreparedLib.of (f : FeatureConfig) (lib : Library) : PreparedLib :=
   let (lo, hi) := ps.zipIdx.foldl (fun (lo, hi) (p, i) =>
     (if lo[p.module]! > i then lo.set! p.module i else lo, hi.set! p.module (i + 1)))
     (Array.replicate n ps.size, Array.replicate n 0)
-  let constToks : Std.HashMap Addr (Array Nat) := lib.docFreq.fold (fun m c _ =>
-    match lib.constNames.get? c with
-    | some cn => m.insert c (nameToks cn).all
+  let named := parMap lib.docFreq.keysArray fun c => (c, (lib.constNames.get? c).map fun cn => (nameToks cn).all)
+  let constToks : Std.HashMap Addr (Array Nat) := named.foldl (fun m (c, ts?) =>
+    match ts? with
+    | some ts => m.insert c ts
     | none => m) {}
-  { lib, prep := (lib.premises.zip toks).map fun (p, t) => prepare f lib tokDf t p constToks.get?
+  let ids : Std.HashMap Addr Nat := ps.foldl (fun m p =>
+    let m := p.stmt.consts.foldl (fun m (c, _) => if m.contains c then m else m.insert c m.size) m
+    p.stmt.heads.foldl (fun m h => match h with
+      | some c => if m.contains c then m else m.insert c m.size
+      | none => m) m) {}
+  { lib, prep := parMap (lib.premises.zip toks) fun (p, t) => prepare f lib tokDf t p constToks.get? (ids.getD · 0)
     index := lib.premises.zipIdx.foldl (fun m (p, i) => if m.contains p.addr then m else m.insert p.addr i) {}
     indices := postings (lib.premises.zipIdx.foldl (fun m (p, i) => pushAt m p.addr i) {})
     contiguous := sorted && ps.all (·.module < n), modLo := lo, modHi := hi
@@ -845,15 +1004,6 @@ def Pool.inModules (pl : PreparedLib) (p : Pool) (thmModule : Nat) (mods : Array
     if m == thmModule then p.own
     else if p.ranges.contains pl.modLo[m]! then Array.range' pl.modLo[m]! (pl.modHi[m]! - pl.modLo[m]!)
     else #[]).filter fun j => !sortedContains p.excl j
-
-/-- `f` on every element, in at most `chunks` chunks (and no more than there are elements) run as
-parallel tasks; the result is `xs.map f`. -/
-def parMap {α β : Type} [Inhabited β] (xs : Array α) (f : α → β) (chunks : Nat := 96) : Array β :=
-  let chunks := max 1 (min chunks xs.size)
-  let size := xs.size / chunks + 1
-  let tasks := (List.range chunks).map fun c =>
-    Task.spawn fun _ => (xs.extract (c * size) ((c + 1) * size)).map f
-  tasks.foldl (fun acc t => acc ++ t.get) #[]
 
 /-- The statistics of the training proofs `train`: the prior, and for every training theorem
 (leaving out what `lo` says) and every `eval` theorem its prior corrections, the votes of its
@@ -1035,12 +1185,37 @@ def nameRankScore (pl : PreparedLib) : Item Addr → Array Nat → Array Int :=
       nameScore t p * 4096 + idfScore t p
     | none => cs.map fun _ => 0
 
-/-- The model's scores; premise embeddings are computed once. A bound error scores everything 0. -/
-def modelScore (c : ScorerConfig) (pl : PreparedLib) (st : Stats) (m : ScorerModel) :
-    Item Addr → Array Nat → Array Int :=
+/-- A ranking score over an item's candidates, kept as a structure so that what it precomputes is
+computed once: a definition whose value is a function is compiled to take that function's
+arguments too, and would recompute it on every call. It coerces to the function. -/
+structure ScoreFn where
+  run : Item Addr → Array Nat → Array Int
+
+instance : CoeFun ScoreFn (fun _ => Item Addr → Array Nat → Array Int) := ⟨ScoreFn.run⟩
+instance : Coe ScoreFn (Item Addr → Array Nat → Array Int) := ⟨ScoreFn.run⟩
+
+/-- `nameRankScore` from the item's `idfRankScore` of the same candidates (`nameRankScoreFrom_eq`). -/
+def nameRankScoreFrom (pl : PreparedLib) (it : Item Addr) (cs : Array Nat) (idf : Array Int) :
+    Array Int :=
+  match pl.index.get? it.addr with
+  | some ti => Array.zipWith (fun j s => nameScore pl.prep[ti]! pl.prep[j]! * 4096 + s) cs idf
+  | none => cs.map fun _ => 0
+
+theorem nameRankScoreFrom_eq (pl : PreparedLib) (it : Item Addr) (cs : Array Nat) :
+    nameRankScoreFrom pl it cs (idfRankScore pl it cs) = nameRankScore pl it cs := by
+  unfold nameRankScoreFrom nameRankScore idfRankScore
+  split
+  · apply Array.ext
+    · simp
+    · intro i h1 h2; simp
+  · rfl
+
+/-- The model's scores; every library premise's embedding is computed once, in parallel. A bound
+error scores everything 0. -/
+def modelScorer (c : ScorerConfig) (pl : PreparedLib) (st : Stats) (m : ScorerModel) : ScoreFn :=
   let b := c.bounds
-  let vs := pl.prep.map fun p => (embed b m.dim m.ep (p.feats c)).toOption.getD #[]
-  fun it cs => match pl.index.get? it.addr with
+  let vs := parMap pl.prep fun p => (embed b m.dim m.ep (p.feats c)).toOption.getD #[]
+  ⟨fun it cs => match pl.index.get? it.addr with
     | none => cs.map fun _ => 0
     | some ti =>
       let t := pl.prep[ti]!
@@ -1049,7 +1224,7 @@ def modelScore (c : ScorerConfig) (pl : PreparedLib) (st : Stats) (m : ScorerMod
       | .error _ => cs.map fun _ => 0
       | .ok u => cs.map fun j =>
         let p := pl.prep[j]!
-        (scoreRaw b m u vs[j]! (c.context st ts t p)).toOption.getD 0
+        (scoreRaw b m u vs[j]! (c.context st ts t p)).toOption.getD 0⟩
 
 /-- Each item's IDF top `n` candidates reordered by `score`, measured on its top 10: the reranking
 task of the language-model baseline (`IxAIBench.Baseline`). -/
@@ -1071,10 +1246,10 @@ def trainEnsemble (c : ScorerConfig) (pl : PreparedLib) (st : Stats) (items : Li
   List.toArray <$> c.members.mapM fun m => trainScorer m pl.prep st (groupsOf m pl items)
 
 /-- The sum of the members' scores. -/
-def ensembleScore (c : ScorerConfig) (pl : PreparedLib) (st : Stats) (ms : Array ScorerModel) :
-    Item Addr → Array Nat → Array Int :=
-  let fs := ms.toList.map (modelScore c pl st)
-  fun it cs => fs.foldl (fun acc f => Array.zipWith (· + ·) acc (f it cs)) (cs.map fun _ => 0)
+def ensembleScorer (c : ScorerConfig) (pl : PreparedLib) (st : Stats) (ms : Array ScorerModel) :
+    ScoreFn :=
+  let fs := ms.toList.map (modelScorer c pl st)
+  ⟨fun it cs => fs.foldl (fun acc f => Array.zipWith (· + ·) acc (f.run it cs)) (cs.map fun _ => 0)⟩
 
 def pad3 (n : Nat) : String :=
   (if n < 100 then "0" else "") ++ (if n < 10 then "0" else "") ++ toString n
@@ -1094,20 +1269,22 @@ def RankEval.summary (e : RankEval) : List (String × String) :=
 @[inline] def scoreBefore (ss : Array Int) (i j : Nat) : Bool :=
   ss[i]! > ss[j]! || (ss[i]! == ss[j]! && i < j)
 
-/-- The first `k` of the positions `0 … n−1` under the strict total order `lt`, in order, by one
-pass with an insertion buffer. -/
-def topBy (k n : Nat) (lt : Nat → Nat → Bool) : Array Nat := Id.run do
-  let mut top : Array Nat := #[]
-  if k == 0 then return top
-  for i in [:n] do
-    if top.size < k || lt i top.back! then
-      let mut buf := top.push i
-      let mut q := buf.size - 1
-      while q > 0 && lt buf[q]! buf[q - 1]! do
-        buf := buf.swapIfInBounds q (q - 1)
-        q := q - 1
-      top := if buf.size > k then buf.pop else buf
-  return top
+/-- A fold over the positions below `n` that pass `p` is a `Nat.fold` that skips the others, so
+`ItemRank.ofOrder` scans positions without building `Array.range`. -/
+theorem foldl_filter_range {β : Type} (n : Nat) (p : Nat → Bool) (g : β → Nat → β) (b : β) :
+    ((Array.range n).filter p).foldl g b = Nat.fold n (fun i _ acc => if p i then g acc i else acc) b := by
+  induction n with
+  | zero => rfl
+  | succ n ih =>
+    rw [Array.range_succ, Array.filter_append, Array.foldl_append, Nat.fold_succ, ← ih]
+    · cases hp : p n <;> simp [hp]
+    · simp
+
+theorem foldl_range {β : Type} (n : Nat) (g : β → Nat → β) (b : β) :
+    (Array.range n).foldl g b = Nat.fold n (fun i _ acc => g acc i) b := by
+  induction n with
+  | zero => rfl
+  | succ n ih => rw [Array.range_succ, Array.foldl_append, Nat.fold_succ, ← ih]; rfl
 
 /-- `ItemRank.ofRanked` of the candidates `cs` ranked by the strict total order `lt` on positions,
 from the first `max ks` positions and the rank of the first gold premise, without sorting. -/
@@ -1117,14 +1294,15 @@ def ItemRank.ofOrder (ks : List Nat) (pl : PreparedLib) (it : Item Addr) (cs : A
     (pl.indices.getD a #[]).foldl (·.insert ·) s) {}
   let top := topBy (ks.foldl max 0) cs.size lt
   let ranked := top.map fun i => pl.prep[cs[i]!]!.premise.addr
-  let golds := (Array.range cs.size).filter fun i => goldIdx.contains cs[i]!
-  let first := golds.foldl (fun b i => match b with
-    | some g => if lt i g then some i else some g
-    | none => some i) none
+  let first := Nat.fold cs.size (fun i _ b =>
+    if goldIdx.contains cs[i]! then match b with
+      | some g => if lt i g then some i else some g
+      | none => some i
+    else b) none
   { hits := ks.map fun k => (it.premises.filter fun a => (ranked.extract 0 k).contains a).length
     gold := it.premises.length
     rrMicro := match first with
-      | some g => 1000000 / ((Array.range cs.size).foldl (fun n i => if lt i g then n + 1 else n) 0 + 1)
+      | some g => 1000000 / (Nat.fold cs.size (fun i _ n => if lt i g then n + 1 else n) 0 + 1)
       | none => 0
     candidates := cs.size }
 
@@ -1149,13 +1327,19 @@ structure FullRank where
   poolSize : Nat
   deriving Inhabited
 
+/-- The positions below `n` among `xs`, ascending, each once: `(dedupNat xs.toList).qsort (· < ·)`
+for `xs` below `n`. -/
+def markedPositions (n : Nat) (xs : Array Nat) : Array Nat :=
+  let marks := xs.foldl (fun m i => m.set! i true) (Array.replicate n false)
+  (Array.range n).filter (marks[·]!)
+
 def rankFull (ks : List Nat) (pl : PreparedLib) (pool : Nat)
     (score : Item Addr → Array Nat → Array Int) (it : Item Addr) : FullRank :=
   let cs := candidates pl it
   let idf := idfRankScore pl it cs
-  let nm := nameRankScore pl it cs
-  let ps := (dedupNat ((topBy pool cs.size (scoreBefore idf)).toList ++
-    (topBy pool cs.size (scoreBefore nm)).toList)).qsort (· < ·)
+  let nm := nameRankScoreFrom pl it cs idf
+  let idfTop := topBy pool cs.size (scoreBefore idf)
+  let ps := markedPositions cs.size (idfTop ++ topBy pool cs.size (scoreBefore nm))
   let ms := score it (ps.map (cs[·]!))
   let inPool : Array (Option Int) := (Array.range ps.size).foldl (fun a k => a.set! ps[k]! (some ms[k]!))
     (Array.replicate cs.size none)
@@ -1164,7 +1348,7 @@ def rankFull (ks : List Nat) (pl : PreparedLib) (pool : Nat)
     | some _, none => true
     | none, some _ => false
     | none, none => scoreBefore idf i j
-  let top30 := topBy 30 cs.size (scoreBefore idf)
+  let top30 := if 30 ≤ pool then idfTop.extract 0 30 else topBy 30 cs.size (scoreBefore idf)
   let goldIdx : Std.HashSet Nat := it.premises.foldl (fun s a => (pl.indices.getD a #[]).foldl (·.insert ·) s) {}
   let rerank := fun (ss : Array Int) =>
     let order := topBy 10 top30.size (fun a b => ss[top30[a]!]! > ss[top30[b]!]! || (ss[top30[a]!]! == ss[top30[b]!]! && a < b))

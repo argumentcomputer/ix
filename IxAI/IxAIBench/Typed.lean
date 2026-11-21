@@ -138,12 +138,31 @@ structure Split (σ : Type) where
   /-- Evaluation instances equal to a training instance after filtering; 0 by `fresh_disjoint`. -/
   overlap : Nat
 
-def splitOf {σ : Type} [DecidableEq σ] (s : Spec σ) (c : Config) : Split σ :=
+/-- The split by its definition: `fresh`, and the duplicates and the overlap counted by separate
+passes over the training set. -/
+def splitOfSpec {σ : Type} [DecidableEq σ] (s : Spec σ) (c : Config) : Split σ :=
   let tr := c.data s
   let drawn := (s.sampleN evalN (Rng.seeded evalSeed)).1
   let test := fresh s tr evalSeed evalN
   { train := tr, drawn := drawn.length, duplicates := (drawn.filter (tr.contains ·)).length, test
     overlap := (test.filter (tr.contains ·)).length }
+
+/-- `splitOfSpec` with one pass of the draws over the training set (`splitOf_eq`): the draws found
+in it are the duplicates, the others the evaluation set, whose overlap is 0 (`fresh_disjoint`). -/
+def splitOf {σ : Type} [DecidableEq σ] (s : Spec σ) (c : Config) : Split σ :=
+  let tr := c.data s
+  let drawn := (s.sampleN evalN (Rng.seeded evalSeed)).1
+  let (dups, test) := drawn.partition (tr.contains ·)
+  { train := tr, drawn := drawn.length, duplicates := dups.length, test, overlap := 0 }
+
+theorem splitOf_eq {σ : Type} [DecidableEq σ] (s : Spec σ) (c : Config) :
+    splitOf s c = splitOfSpec s c := by
+  have h0 : ((fresh s (c.data s) evalSeed evalN).filter ((c.data s).contains ·)).length = 0 := by
+    rw [List.length_eq_zero_iff, List.filter_eq_nil_iff]
+    intro x hx
+    simpa using fresh_disjoint s (c.data s) evalSeed evalN x hx
+  simp only [splitOf, splitOfSpec, List.partition_eq_filter_filter, h0]
+  rfl
 
 /-! ## Report -/
 

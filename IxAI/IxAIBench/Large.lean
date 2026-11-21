@@ -81,6 +81,9 @@ def loadFull (o : Out) : IO (Except String Full) := do
 
 def maxAbs (xs : Array Int) : Nat := xs.foldl (fun a x => max a x.natAbs) 0
 
+/-- Steps of a run on which `trainLogged` also runs `stepSpec` and compares. -/
+def specSteps : Nat := 1000
+
 /-- `trainScorer`, step by step in `IO`, reporting the weights' magnitudes after each epoch and
 the step at which a bound is left. -/
 def trainLogged (c : ScorerConfig) (prep : Array Prepared) (st : Stats) (groups : Array Group) :
@@ -88,9 +91,20 @@ def trainLogged (c : ScorerConfig) (prep : Array Prepared) (st : Stats) (groups 
   let sched := (schedule c groups.size).toArray
   let perEpoch := sched.size / max c.epochs 1
   let mut m := ScorerModel.init c
+  let mut specAgrees := true
   let t0 ← IO.monoMsNow
   for s in [:sched.size] do
-    match step c prep st (c.lrAt s sched.size) m (sched[s]!.filterMap (groups[·]?)) with
+    let batch := sched[s]!.filterMap (groups[·]?)
+    let next := step c prep st (c.lrAt s sched.size) m batch
+    if s < specSteps then
+      let same := match next, stepSpec c prep st (c.lrAt s sched.size) m batch with
+        | .ok a, .ok b => a.es == b.es && a.ep == b.ep && a.wc == b.wc
+        | .error a, .error b => (repr a).pretty == (repr b).pretty
+        | _, _ => false
+      specAgrees := specAgrees && same
+      if s + 1 == min specSteps sched.size then
+        IO.println s!"`step` agrees with `stepSpec` on the first {s + 1} steps: {specAgrees}"
+    match next with
     | .error e =>
       IO.println s!"bound left at step {s} of {sched.size} (epoch {s / max perEpoch 1 + 1}): {repr e}; |wc| {maxAbs m.wc}, |es| {maxAbs m.es}, |ep| {maxAbs m.ep}"
       return .error e
@@ -247,7 +261,7 @@ def excluded (rule : String) (lib : Library) (items : List (Item Addr)) (held : 
     let mods := (dedupNat (held.map (·.module))).toList
     let out : Std.HashSet Addr := {}
     return items.foldl (fun s it =>
-      if mods.any (lib.reach[it.module]!.getD · false) then s.insert it.addr else s) out
+      if mods.any (lib.reach.get it.module ·) then s.insert it.addr else s) out
   let users : Std.HashMap Addr (List Addr) := items.foldl (fun m it =>
     it.premises.foldl (fun m p => m.insert p (it.addr :: m.getD p [])) m) {}
   let mut seen : Std.HashSet Addr := held.foldl (fun s it => s.insert it.addr) {}
@@ -282,12 +296,13 @@ def runRerank (rule : String) : IO UInt32 := do
     ((rankAmong p.pl ri.item ri.cands (idfRankScore p.pl)).extract 0 10) candidateCount).toArray
   let some fv3 := (← fitScorer (pinnedScorer .time) p.pl (p.split .time)).toOption
     | IO.eprintln "order-basic scorer left its bounds"; return 1
+  let s3 := fv3.score p.pl
   let v3 := (rr.map fun ri => ItemRank.ofRanked benchKs ri.item.premises
-    ((rankAmong p.pl ri.item ri.cands (fv3.score p.pl)).extract 0 10) candidateCount).toArray
+    ((rankAmong p.pl ri.item ri.cands s3).extract 0 10) candidateCount).toArray
   IO.println s!"order-basic: {rr.length} rerank items, {parsed.ranking.size} answered by the LLM; v3 model {fv3.digest.short}"
   let same := fun (a b : ItemRank) => a.hits == b.hits && a.gold == b.gold && a.rrMicro == b.rrMicro && a.candidates == b.candidates
   let fastOk := (p.split .time).test.all fun it =>
-    same (rankItemFast benchKs p.pl (fv3.score p.pl) it) (rankItem benchKs p.pl (fv3.score p.pl) it) &&
+    same (rankItemFast benchKs p.pl s3 it) (rankItem benchKs p.pl s3 it) &&
     same (rankItemFast benchKs p.pl (idfRankScore p.pl) it) (rankItem benchKs p.pl (idfRankScore p.pl) it)
   IO.println s!"`ItemRank.ofOrder` agrees with the sorted ranking on the order-basic time test set: {fastOk}"
   o.put "integrity" "fast_ranking_agrees_order_basic" (passFail fastOk)

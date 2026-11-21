@@ -260,7 +260,7 @@ def namedGrid (name : String) (k : SplitKind) (base : ScorerConfig) : List Score
 def validate (c : ScorerConfig) (pl : PreparedLib) (s : SplitData) (st : Stats) (log : Bool) :
     Except BoundError (RankEval × Array ItemRank × String) := do
   let ms ← trainEnsemble c pl st s.fit
-  let score := ensembleScore c pl st ms
+  let score : ScoreFn := ensembleScorer c pl st ms
   let maxAbs := fun (xs : Array Int) => xs.foldl (fun a x => max a x.natAbs) 0
   let mags := ms.map fun m => s!"max |wc| {maxAbs m.wc} at {m.wc.findIdx? (·.natAbs == maxAbs m.wc)}, |es| {maxAbs m.es}, |ep| {maxAbs m.ep}"
   return (evalRanking ks pl s.val score, if log then rerankItems ks 30 pl s.val score else #[], s!"{mags}")
@@ -306,8 +306,8 @@ def Fitted.prior (f : Fitted) : Prior := f.stats.prior
 def Fitted.digest (f : Fitted) : Digest :=
   digestOf "premises/scorer" (f.models.toList.flatMap fun m => m.es.toList ++ m.ep.toList ++ m.wc.toList)
 
-def Fitted.score (f : Fitted) (pl : PreparedLib) : Item Addr → Array Nat → Array Int :=
-  ensembleScore f.config pl f.stats f.models
+def Fitted.score (f : Fitted) (pl : PreparedLib) : ScoreFn :=
+  ensembleScorer f.config pl f.stats f.models
 
 /-- Train config `c` on the split's training set. -/
 def fitScorer (c : ScorerConfig) (pl : PreparedLib) (s : SplitData) : IO (Except BoundError Fitted) := do
@@ -445,7 +445,7 @@ def run (scope : Scope) (opts : Options) : IO UInt32 := do
   IO.println s!"dataset root {root}; records root {recordsRoot} ({rootFormat}); items {itemsPath} BLAKE3 {itemsDigest}; committed at {(← IO.monoMsNow) - t0} ms"
   IO.println s!"version 1 roots of the same leaves (for recorded artifacts only): {merkleRootV1 rootLeaves}, {merkleRootV1 (trainLeaves ++ testLeaves)}"
   let pl := if opts.train then PreparedLib.of opts.scorerConfig.features (Library.of ex) else
-    { lib := { premises := #[], names := #[], constNames := {}, byAddr := {}, byModule := #[], reach := #[],
+    { lib := { premises := #[], names := #[], constNames := {}, byAddr := {}, byModule := #[], reach := default,
                ancestors := #[], docFreq := {} }, prep := #[], index := {} }
   let lib := pl.lib
   let mut results : List (String × Json) := []
