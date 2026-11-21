@@ -44,6 +44,13 @@ mutual
         (right : EvalExpr world calls locals rhs middle y after)
         (operation : evalAssertEq op x y = .ok result) :
         EvalExpr world calls locals (.assertEq op lhs rhs) before result after
+    | ptrEq {target : Aiur.Ty} {a₁ a₂ : Nat} {equal : Bool}
+        (left : EvalExpr world calls locals lhs before (.ptr target a₁) middle)
+        (right : EvalExpr world calls locals rhs middle (.ptr target a₂) after)
+        (inBounds₁ : a₁ < after.length)
+        (inBounds₂ : a₂ < after.length)
+        (sound : equal = true → HeapValueEq after (.ptr target a₁) (.ptr target a₂)) :
+        EvalExpr world calls locals (.ptrEq lhs rhs) before (.field (if equal then 1 else 0)) after
     | binary (left : EvalExpr world calls locals lhs before x middle)
         (right : EvalExpr world calls locals rhs middle y after)
         (operation : evalBinOp op x y = .ok result) :
@@ -84,6 +91,7 @@ theorem EvalExpr.mapCalls
   | hint _ h ih => exact .hint ih h
   | neg _ h ih => exact .neg ih h
   | assertEq _ _ h ih1 ih2 => exact .assertEq ih1 ih2 h
+  | ptrEq _ _ h1 h2 s ih1 ih2 => exact .ptrEq ih1 ih2 h1 h2 s
   | binary _ _ h ih1 ih2 => exact .binary ih1 ih2 h
   | matchValue _ h _ ih1 ih2 => exact .matchValue ih1 h ih2
   | nil => exact .nil
@@ -106,6 +114,7 @@ theorem EvalExpr.close
   | hint _ h ih => exact .hint ih h
   | neg _ h ih => exact .neg ih h
   | assertEq _ _ h ih1 ih2 => exact .assertEq ih1 ih2 h
+  | ptrEq _ _ h1 h2 s ih1 ih2 => exact .ptrEq ih1 ih2 h1 h2 s
   | binary _ _ h ih1 ih2 => exact .binary ih1 ih2 h
   | matchValue _ h _ ih1 ih2 => exact .matchValue ih1 h ih2
   | nil => exact .nil
@@ -129,6 +138,7 @@ theorem of_closed
   | hint _ h ih => exact .hint ih h
   | neg _ h ih => exact .neg ih h
   | assertEq _ _ h ih1 ih2 => exact .assertEq ih1 ih2 h
+  | ptrEq _ _ h1 h2 s ih1 ih2 => exact .ptrEq ih1 ih2 h1 h2 s
   | binary _ _ h ih1 ih2 => exact .binary ih1 ih2 h
   | matchValue _ h _ ih1 ih2 => exact .matchValue ih1 h ih2
   | nil => exact .nil

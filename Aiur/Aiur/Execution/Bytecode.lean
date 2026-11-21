@@ -21,6 +21,7 @@ inductive Instruction (F : Type) where
   | assertEq (left right : List Register) (assertion : Assertion)
   | ret (value : List Register)
   | fail (message : String)
+  | ptrEq (dest left right : Register)
   deriving Repr, BEq
 
 structure Function (F : Type) where

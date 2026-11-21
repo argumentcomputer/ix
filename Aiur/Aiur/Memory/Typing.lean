@@ -171,6 +171,18 @@ theorem EvalExpr.wellTyped [Field F] [DecidableEq F] {program : Program F}
         subst type
         have heapGood := (rightIH (leftIH memory formed caller leftType leftRun).2.2 formed caller rightType rightRun).2.2
         exact ⟨by simp [Value.type], by simp, heapGood⟩
+  | @ptrEq locals lhs before target a₁ middle rhs a₂ after equal _ _ _ _ _ leftIH rightIH =>
+      intro memory formed caller type checked
+      simp only [inferType] at checked
+      obtain ⟨leftType, leftRun, rest⟩ := except_bind_ok.mp checked
+      obtain ⟨leftShape, _, middleGood⟩ := leftIH memory formed caller leftType leftRun
+      simp only [Value.type] at leftShape
+      subst leftType
+      obtain ⟨rightType, rightRun, rest⟩ := except_bind_ok.mp rest
+      obtain ⟨finished, _, rest⟩ := except_bind_ok.mp rest
+      obtain rfl := except_pure_ok.mp rest
+      have heapGood := (rightIH middleGood formed caller rightType rightRun).2.2
+      exact ⟨by simp [Value.type], by simp, heapGood⟩
   | @binary locals lhs before x middle rhs y after op result _ _ operation leftIH rightIH =>
       intro memory formed caller type checked
       simp only [inferType] at checked

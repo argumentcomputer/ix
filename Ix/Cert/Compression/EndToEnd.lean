@@ -52,20 +52,16 @@ and the extracted Multi-STARK trace satisfying sharded `MEMSEG` + `Plan.inspectR
 either a BLAKE3 collision on `"ix/outer-ir/v1"` occurred, OR all four stages hold simultaneously
 including the observed `IxVM::verify_claim` derivation satisfying `P calls d`! -/
 theorem compression_pipeline_sound
-    -- Stage 5: Gnark Outer-IR
     {vk : GnarkVerifyingKey} {inp : OuterInputs} {PairingCheck : OuterOutputs → Prop}
     (acc : GnarkOuterAccepted vk inp PairingCheck)
-    -- Stage 3: Recursive KZG circuit in BN254Fr
     (kzgBase : Circuit BN254Fr) (kzgLayout : FiveChannelLayout)
     (kzgPub : List BN254Fr) (wKzg : Wire → BN254Fr)
     (hKzg : (buildRecursiveKzgCircuit kzgBase kzgLayout).Satisfies kzgPub wKzg)
-    -- Stage 2: Foreign BN254 -> Goldilocks FRI verifier circuit
     (friBase : Circuit GoldilocksF) (friLayout : FriVerifierLayout)
     (hMerkleLen : ∀ s ∈ friLayout.merkleSteps, s.2.1.length = s.2.2.1.length)
     (friPub : List GoldilocksF) (wFriFr : Wire → BN254Fr)
     (hFri : (foreignCompile (buildFriVerifierCircuit friBase friLayout)).Satisfies
       (liftPublicInputs friPub) wFriFr)
-    -- Stage 1: Multi-STARK -> IxVM CircuitSound
     {P : List (Aiur.Generic.SourceSemantics.Call IxVM.F) → IxVM.Refinement.Digest → Prop}
     (hcirc : IxVM.Refinement.CircuitSound P)
     {id : String → Except String ℕ}

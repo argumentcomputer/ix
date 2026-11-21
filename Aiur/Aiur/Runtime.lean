@@ -74,6 +74,46 @@ theorem evalAssertEq_mapAddress [DecidableEq F] [DecidableEq A] [DecidableEq B]
   obtain ⟨free, rfl, rfl⟩ := evalAssertEq_ok.mp operation
   exact evalAssertEq_ok.mpr ⟨by simpa using free, rfl, by simp [Value.mapAddress]⟩
 
+/-- Typed pointer equality in the reference evaluator: requires two in-bounds
+pointers of identical target type and returns `1` on equal addresses, `0` otherwise. -/
+def evalPtrEq [Field F] (heap : Heap F) (left right : SourceValue F) :
+    Except EvalError (SourceValue F) :=
+  match left, right with
+  | .ptr t₁ a₁, .ptr t₂ a₂ =>
+      if t₁ ≠ t₂ then .error (.memoryTypeMismatch t₁ t₂)
+      else if a₁ ≥ heap.length then .error (.danglingPointer a₁)
+      else if a₂ ≥ heap.length then .error (.danglingPointer a₂)
+      else .ok (.field (if a₁ = a₂ then 1 else 0))
+  | _, _ => .error .expectedPointer
+
+theorem evalPtrEq_ok [Field F] {heap : Heap F} {left right result : SourceValue F} :
+    evalPtrEq heap left right = .ok result ↔
+      ∃ target a₁ a₂, left = .ptr target a₁ ∧ right = .ptr target a₂ ∧
+        a₁ < heap.length ∧ a₂ < heap.length ∧
+        result = .field (if a₁ = a₂ then 1 else 0) := by
+  cases left <;> cases right <;> simp [evalPtrEq]
+  rename_i t₁ a₁ t₂ a₂
+  constructor
+  · intro h
+    by_cases ht : t₁ = t₂
+    · subst ht
+      by_cases h1 : a₁ < heap.length
+      · by_cases h2 : a₂ < heap.length
+        · have h1' : ¬ heap.length ≤ a₁ := by omega
+          have h2' : ¬ heap.length ≤ a₂ := by omega
+          simp only [ne_eq, not_true_eq_false, ↓reduceIte, ge_iff_le, h1', h2', Except.ok.injEq] at h
+          exact ⟨rfl, h1, h2, h.symm⟩
+        · have h1' : ¬ heap.length ≤ a₁ := by omega
+          have h2' : heap.length ≤ a₂ := by omega
+          simp [h1', h2'] at h
+      · have h1' : heap.length ≤ a₁ := by omega
+        simp [h1'] at h
+    · simp [ht] at h
+  · rintro ⟨rfl, h1, h2, rfl⟩
+    have h1' : ¬ heap.length ≤ a₁ := by omega
+    have h2' : ¬ heap.length ≤ a₂ := by omega
+    simp [h1', h2']
+
 
 mutual
   /-- Match the whole value and collect bindings in left-to-right order. -/

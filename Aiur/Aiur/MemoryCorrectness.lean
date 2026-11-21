@@ -68,19 +68,20 @@ theorem compiler_heap_complete [Field F] [DecidableEq F]
     {program : Program F} {system : Circuit.System F}
     (compiled : Circuit.compile program = .ok system)
     {name : String} {args : List (SourceValue F)} {value : SourceValue F} {heap : Heap F}
-    (entry : checkEntry program name = .ok ()) (evaluated : EvalFn program name args [] value heap)
+    (entry : checkEntry program name = .ok ()) (evaluated : ExactEvalFn program name args [] value heap)
     (encode : Nat → F)
     (distinct : ∀ i j, i < heap.length → j < heap.length → encode i = encode j → i = j) :
     Circuit.EncodedEntryDerives system name (entryValues args) (value.mapAddress encode) := by
   have stages := Circuit.compile_stages compiled
   have declarations := typecheck_declarations stages.1
-  have free := evaluated.public_pointerFree entry
-  have heapGood := (evaluated.heap_good stages.1 (by simp [Heap.Good])
+  have baseEval := evaluated.toEvalFn
+  have free := baseEval.public_pointerFree entry
+  have heapGood := (baseEval.heap_good stages.1 (by simp [Heap.Good])
     (fun arg member => Value.pointerNames_of_free (free arg member))).2
   let table := ROM.ofHeap heap encode
   have good := ROM.ofHeap_good heapGood encode
   have decodeTable := ROM.decode_encode declarations stages.2.1 good
-  have body := evaluated.toROM (ROM.ofHeap_cells heap encode)
+  have body := evaluated.toROM (ROM.ofHeap_cells heap encode) distinct
   have encodedBody : ROMEvalCall ((table.encode program.enums).decode program.enums) program name
       (args.map (Value.mapAddress encode)) (value.mapAddress encode) := by
     rw [decodeTable]; exact body
@@ -89,7 +90,7 @@ theorem compiler_heap_complete [Field F] [DecidableEq F]
   have argsFree : ∀ arg ∈ entryValues args, arg.type.pointerFree program.enums = true := by
     intro arg member
     obtain ⟨source, sourceMember, rfl⟩ := List.mem_map.mp member
-    simpa using (evaluated.publicArguments entry source sourceMember).1
+    simpa using (baseEval.publicArguments entry source sourceMember).1
   have tableValid := ROM.encode_valid declarations good (ROM.ofHeap_valid heap encode distinct)
   refine ⟨wires, output, ?_, ?_, ?_⟩
   · simpa only [stages.2.2.2.1] using arguments
@@ -105,7 +106,7 @@ theorem compiler_heap_complete_finite [Field F] [DecidableEq F] [Fintype F]
     {program : Program F} {system : Circuit.System F}
     (compiled : Circuit.compile program = .ok system)
     {name : String} {args : List (SourceValue F)} {value : SourceValue F} {heap : Heap F}
-    (entry : checkEntry program name = .ok ()) (evaluated : EvalFn program name args [] value heap)
+    (entry : checkEntry program name = .ok ()) (evaluated : ExactEvalFn program name args [] value heap)
     (capacity : heap.length ≤ Fintype.card F) :
     ∃ encode : Nat → F, Circuit.EncodedEntryDerives system name (entryValues args) (value.mapAddress encode) := by
   obtain ⟨encode, distinct⟩ := heap_address_embedding heap capacity
@@ -120,7 +121,7 @@ theorem compiler_run_complete [Field F] [DecidableEq F] [Fintype F]
     (executed : run program name args fuel hints = .ok (value, heap)) (capacity : heap.length ≤ Fintype.card F) :
     ∃ encode : Nat → F, Circuit.EncodedEntryDerives system name (entryValues args) (value.mapAddress encode) := by
   obtain ⟨_, entry, locals, expr, prepared, body⟩ := run_eq_ok_iff.mp executed
-  exact compiler_heap_complete_finite compiled entry (.intro prepared (evalExpr_spec body)) capacity
+  exact compiler_heap_complete_finite compiled entry (.intro prepared (evalExpr_spec_exact body)) capacity
 
 /-- Memoized completeness reuses the same tree witness and allocation bound. -/
 theorem memo_run_complete [Field F] [DecidableEq F] [Fintype F]

@@ -272,6 +272,16 @@ mutual
           if !left.type.pointerFree program.enums then throw "assertion contains pointers"
           equalValue scope left right
           pure (.tuple [])
+      | .ptrEq left right => do
+          let ⟨.ptr t₁, [a₁]⟩ ← lower program function locals scope left | throw "non-pointer ptr_eq"
+          let ⟨.ptr t₂, [a₂]⟩ ← lower program function locals scope right | throw "non-pointer ptr_eq"
+          if t₁ ≠ t₂ then throw "mismatched pointer types in ptr_eq"
+          let diff := Polynomial.sub a₁ a₂
+          let [eqBranch, neqBranch] ← choice scope 2 | throw "ptr_eq choice"
+          equation eqBranch diff
+          failure neqBranch [diff]
+          let eqScope ← getScope eqBranch
+          pure (.field eqScope.activation)
       | .binary op left right => do
           let left ← asField (← lower program function locals scope left)
           let right ← asField (← lower program function locals scope right)

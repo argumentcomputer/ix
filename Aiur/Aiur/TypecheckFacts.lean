@@ -207,6 +207,17 @@ theorem ROMEvalExprWith.wellTyped [Field F] [DecidableEq F] {program : Program F
       · have same : type = .tuple [] := by simpa [bind, Except.bind, pure, Except.pure] using rest.symm
         subst type
         simp [Value.type]
+  | @ptrEq locals lhs target a₁ rhs a₂ _ _ leftIH rightIH =>
+      intro formed caller type checked
+      simp only [inferType] at checked
+      obtain ⟨leftType, leftRun, rest⟩ := except_bind_ok.mp checked
+      have leftShape := (leftIH formed caller leftType leftRun).1
+      simp only [Value.type] at leftShape
+      subst leftType
+      obtain ⟨rightType, _, rest⟩ := except_bind_ok.mp rest
+      obtain ⟨finished, _, rest⟩ := except_bind_ok.mp rest
+      obtain rfl := except_pure_ok.mp rest
+      simp [Value.type]
   | @binary locals lhs x rhs y op result _ _ operation leftIH rightIH =>
       intro formed caller type checked
       simp only [inferType] at checked

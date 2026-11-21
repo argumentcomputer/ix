@@ -46,7 +46,6 @@ open Lean
 def refusedByDesign : List (String × String) := [
   ("h-mutual-nonrec-eta", "no structure eta at a mutual block"),
   ("h-mutual-nonrec-unit", "no unit-like conversion at a mutual block"),
-  ("h-nested-binder", "a nested occurrence under a binder has no model"),
   ("a-redex-rec", "a field that mentions the block only where reduction erases it"),
   ("a-phantom-def", "a field that mentions the block only where reduction erases it"),
   -- positivity on the native route reads the field as stored: an occurrence of the block

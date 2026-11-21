@@ -163,7 +163,13 @@ private partial def lowerExpr (stx : Syntax) : Except String (Aiur.Expr Nat) := 
       else if kind == ``mul then .mul else .div
     return .binary op (← lowerExpr stx[0]) (← lowerExpr stx[2])
   else if kind == ``call then
-    return .call (← readName stx[0]) (← stx[2].getSepArgs.toList.mapM lowerExpr)
+    let name ← readName stx[0]
+    let args ← stx[2].getSepArgs.toList.mapM lowerExpr
+    if name == "ptr_eq" then
+      match args with
+      | [left, right] => return .ptrEq left right
+      | _ => throw "ptr_eq expects 2 pointer arguments"
+    return .call name args
   else if kind == ``matchValue then
     let scrutinee ← lowerExpr stx[1]
     let arms ← stx[3].getSepArgs.toList.mapM fun arm => do
@@ -341,6 +347,8 @@ private def quoteExpr : Aiur.Expr Nat → Lean.Expr
       let metadata := mkApp2 (mkConst ``Aiur.Assertion.mk)
         (toExpr assertion.message) (toExpr assertion.runtimeCheck)
       mkApp4 (mkConst ``Aiur.Expr.assertEq) natType metadata (quoteExpr left) (quoteExpr right)
+  | .ptrEq left right =>
+      mkApp3 (mkConst ``Aiur.Expr.ptrEq) natType (quoteExpr left) (quoteExpr right)
   | .binary op left right =>
       mkApp4 (mkConst ``Aiur.Expr.binary) natType (quoteOp op) (quoteExpr left) (quoteExpr right)
   | .call name args =>

@@ -327,6 +327,7 @@ inductive Expr (α : Type) where
   | neg (value : Expr α)
   | binary (op : BinOp) (left right : Expr α)
   | assertEq (assertion : Assertion) (left right : Expr α)
+  | ptrEq (left right : Expr α)
   | call (function : String) (args : List (Expr α))
   | matchValue (scrutinee : Expr α) (arms : List (Pattern α × Expr α))
   deriving Repr
@@ -345,6 +346,7 @@ mutual
     | .neg v, .neg v' => Expr.beq v v'
     | .binary op l r, .binary op' l' r' => op == op' && Expr.beq l l' && Expr.beq r r'
     | .assertEq a l r, .assertEq a' l' r' => a == a' && Expr.beq l l' && Expr.beq r r'
+    | .ptrEq l r, .ptrEq l' r' => Expr.beq l l' && Expr.beq r r'
     | .call f xs, .call f' ys => f == f' && Expr.listBeq xs ys
     | .matchValue s arms, .matchValue s' arms' => Expr.beq s s' && Expr.armsBeq arms arms'
     | _, _ => false
@@ -458,6 +460,7 @@ def Expr.map (f : α → β) : Expr α → Expr β
   | .neg value => .neg (value.map f)
   | .binary op left right => .binary op (left.map f) (right.map f)
   | .assertEq message left right => .assertEq message (left.map f) (right.map f)
+  | .ptrEq left right => .ptrEq (left.map f) (right.map f)
   | .call name args => .call name (args.map (Expr.map f))
   | .matchValue scrutinee arms =>
       .matchValue (scrutinee.map f) (arms.map fun arm => (arm.1.map f, arm.2.map f))
@@ -485,7 +488,7 @@ def Program.toField (F : Type) [NatCast F] (program : Program Nat) : Program F :
 
 /-- A syntactic boundary for the original deterministic fragment. -/
 def Expr.noHints : Expr α → Bool
-  | .hint _ _ _ => false
+  | .hint _ _ _ | .ptrEq _ _ => false
   | .literal _ | .var _ => true
   | .tuple items | .construct _ _ items | .call _ items =>
       (items.map Expr.noHints).all id
@@ -505,5 +508,29 @@ decreasing_by
 
 def Program.noHints (program : Program α) : Bool :=
   (program.functions.map fun function => function.body.noHints).all id
+
+/-- Syntactic predicate excluding `ptr_eq` expressions. -/
+def Expr.ptrEqFree : Expr α → Bool
+  | .ptrEq _ _ => false
+  | .literal _ | .var _ => true
+  | .tuple items | .construct _ _ items | .call _ items =>
+      (items.map Expr.ptrEqFree).all id
+  | .project value _ | .store value | .load value | .neg value | .hint _ value _ => value.ptrEqFree
+  | .letValue _ value body | .binary _ value body | .assertEq _ value body =>
+      value.ptrEqFree && body.ptrEqFree
+  | .matchValue value arms => value.ptrEqFree && (arms.map fun arm => arm.2.ptrEqFree).all id
+termination_by expr => sizeOf expr
+decreasing_by
+  all_goals simp_wf
+  all_goals
+    first
+    | omega
+    | have h := List.sizeOf_lt_of_mem ‹_ ∈ _›
+      first
+      | omega
+      | cases arm; simp_all only [Prod.mk.sizeOf_spec]; omega
+
+def Program.ptrEqFree (program : Program α) : Bool :=
+  (program.functions.map fun function => function.body.ptrEqFree).all id
 
 end Aiur

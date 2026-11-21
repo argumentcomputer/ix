@@ -257,4 +257,60 @@ def checkGroupedCases : Bool :=
 
 #guard checkGroupedCases
 
+/-! ### `N9b`: per-call & per-slot exclusivity in `Depth.Classify` -/
+
+/-- Two unmerged mutually-exclusive intra-SCC sends on the same channel are
+both classified `.exact` (and certify) without needing any gap limbs. -/
+def branchExclusiveChip : Chip Rat := {
+  name := "branch"
+  inputs := [⟨.field, [0]⟩]
+  output := ⟨.field, [.var 1]⟩
+  numVars := 4
+  constraints := []
+  sends := [
+    ⟨"branch", [⟨.field, [.var 0]⟩], ⟨.field, [1]⟩, .var 2⟩,
+    ⟨"branch", [⟨.field, [.var 0]⟩], ⟨.field, [1]⟩, .var 3⟩]
+  memory := [] }
+
+def branchExclusiveSys : System Rat := ⟨[branchExclusiveChip], [], [], []⟩
+
+def checkN9bUnmergedExclusive : Bool :=
+  let calls : String → Option (List (String × Path)) := fun name =>
+    if name == "branch" then some [("branch", [⟨0, 0⟩]), ("branch", [⟨0, 1⟩])] else none
+  let cfg := Depth.plan branchExclusiveSys calls []
+  (cfg.plan "branch").slots == [.exact, .exact] && Depth.certify cfg branchExclusiveSys
+
+#guard checkN9bUnmergedExclusive
+
+/-- A chip with one exclusive-branch intra-SCC slot and two co-firing intra-SCC
+slots on the same channel upgrades the exclusive slot to `.exact` while keeping
+the two co-firing slots as `.gap`. -/
+def mixedSlotChip : Chip Rat := {
+  name := "mix"
+  inputs := [⟨.field, [0]⟩]
+  output := ⟨.field, [.var 1]⟩
+  numVars := 5
+  constraints := []
+  sends := [
+    ⟨"mix", [⟨.field, [.var 0]⟩], ⟨.field, [1]⟩, .var 2⟩,
+    ⟨"mix", [⟨.field, [.var 0]⟩], ⟨.field, [1]⟩, .var 3⟩,
+    ⟨"mix", [⟨.field, [.var 0]⟩], ⟨.field, [1]⟩, .var 4⟩]
+  memory := [] }
+
+def mixedSlotSys : System Rat := ⟨[mixedSlotChip], [], [], []⟩
+
+def checkN9bPerSlotExclusive : Bool :=
+  let calls : String → Option (List (String × Path)) := fun name =>
+    if name == "mix" then
+      some [("mix", [⟨0, 0⟩]), ("mix", [⟨0, 1⟩]), ("mix", [⟨0, 1⟩])]
+    else none
+  let slotCalls : String → Option (List (List (Nat × Path))) := fun name =>
+    if name == "mix" then
+      some [[(0, [⟨0, 0⟩])], [(1, [⟨0, 1⟩])], [(2, [⟨0, 1⟩])]]
+    else none
+  let cfg := Depth.planWithSlots mixedSlotSys calls slotCalls [16, 8]
+  (cfg.plan "mix").slots == [.exact, .gap, .gap] && Depth.certify cfg mixedSlotSys
+
+#guard checkN9bPerSlotExclusive
+
 end AiurDepthTests

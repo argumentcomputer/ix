@@ -65,6 +65,20 @@ module Extra {
     let first = match x { 0 => hint::<Field>(1), _ => hint::<Field>(2), 9 => hint::<Field>(9) };
     (first, hint::<Field>(49))
   }
+  fn two_exclusive(n: Field) -> Field {
+    match n {
+      0 => 1,
+      1 => two_exclusive(0) + 2,
+      _ => two_exclusive(n - 1) + 3,
+    }
+  }
+  fn mixed_exclusive(n: Field) -> Field {
+    match n {
+      0 => 1,
+      1 => mixed_exclusive(0) + 2,
+      _ => mixed_exclusive(n - 1) + mixed_exclusive(n - 2),
+    }
+  }
 }
 "
 
@@ -126,6 +140,7 @@ def run : IO Unit := do
         "Extra::store_input", "Extra::store_hint", "Extra::forwarded", "Extra::returned",
         "Extra::hinted", "Extra::recursive", "Extra::disjoint", "Extra::partial_overlap",
         "Extra::overlap", "Extra::conflicting_component", "Extra::repeated",
+        "Extra::two_exclusive", "Extra::mixed_exclusive",
         "Merge::identities", "Merge::grouping", "Merge::lists", "Merge::hints",
         "Merge::public_binary", "Merge::public_ternary"]))
   let exported ← IO.ofExcept prepared.exportExecution
@@ -168,7 +183,9 @@ def run : IO Unit := do
     ("Witness::lazy", #[0]), ("Witness::lazy", #[49]),
     ("Extra::high", #[7,3]), ("Extra::branches", #[0,0]), ("Extra::branches", #[0,3]),
     ("Extra::branches", #[3,0]), ("Extra::branches", #[3,3]),
-    ("Extra::different", #[]), ("Extra::sites", #[0]), ("Extra::sites", #[1])] ++
+    ("Extra::different", #[]), ("Extra::sites", #[0]), ("Extra::sites", #[1]),
+    ("Extra::two_exclusive", #[0]), ("Extra::two_exclusive", #[1]), ("Extra::two_exclusive", #[4]),
+    ("Extra::mixed_exclusive", #[0]), ("Extra::mixed_exclusive", #[1]), ("Extra::mixed_exclusive", #[5])] ++
     ["Extra::disjoint", "Extra::partial_overlap", "Extra::overlap", "Extra::conflicting_component",
       "Extra::repeated"].flatMap
       (fun name => [0, 1, 2].flatMap fun x => [0, 1, 2].map fun y => (name, #[x, y]))
@@ -198,6 +215,16 @@ def run : IO Unit := do
     unless plan == planPar do
       throw (IO.userError "exportPreparedPlanPar output differs from exportPreparedPlan")
     let cfg ← IO.ofExcept (Trace.depthConfig 97 physical)
+    -- N9b: verify mutually-exclusive intra-SCC sends upgrade to `.exact` even
+    -- without lookup merging, and mixed exclusive+co-firing chips upgrade the
+    -- exclusive branch slot to `.exact` while keeping co-firing slots `.gap`.
+    let twoSlots := (cfg.plan (physical.representative "Extra::two_exclusive")).slots
+    unless !twoSlots.isEmpty && twoSlots.all (· == .exact) do
+      throw (IO.userError s!"N9b: expected all exact slots in Extra::two_exclusive, got {reprStr twoSlots}")
+    let mixedSlots := (cfg.plan (physical.representative "Extra::mixed_exclusive")).slots
+    if !config.mergeLookups then
+      unless mixedSlots.contains .exact && mixedSlots.contains .gap do
+        throw (IO.userError s!"N9b: expected both exact and gap slots in unmerged Extra::mixed_exclusive, got {reprStr mixedSlots}")
     let depthSystem := Optimized.Depth.system cfg physical.system
     for (name, args) in cases do
       for pad in [false, true] do
@@ -246,6 +273,62 @@ def run : IO Unit := do
             throw (IO.userError "Lean checker accepted a mutated provide count")
     IO.println s!"Trace: {cases.length * 2} executions accepted by Lean checkMemo ({reprStr config})"
 
+/-- N6b end-to-end Lean -> Rust FFI bytecode + trace population + Lean `checkMemo`
+verification for typed `ptr_eq` (including interned equal cells `&x == &x` and
+distinct cells `&x != &(x + 1)`). -/
+def runPtrEq : IO Unit := do
+  let prog : Program F := (aiur% "
+    fn same(x: Field) -> Field { let p = &x; ptr_eq(p, p) }
+    fn interned(x: Field) -> Field { let p = &x; let q = &x; ptr_eq(p, q) }
+    fn distinct(x: Field) -> Field { let p = &x; let q = &(x + 1); ptr_eq(p, q) }
+    fn branched(flag: Field, x: Field) -> Field {
+      let p = &x;
+      let q = &(x + 1);
+      match flag { 0 => ptr_eq(p, p), _ => ptr_eq(p, q) }
+    }
+  ").toField F
+  let entries := ["same", "interned", "distinct", "branched"]
+  let bytecode ← IO.ofExcept (Execution.compile prog entries)
+  let interfaces : List Execution.Interface := [
+    ⟨"same", [.field], some .field⟩,
+    ⟨"interned", [.field], some .field⟩,
+    ⟨"distinct", [.field], some .field⟩,
+    ⟨"branched", [.field, .field], some .field⟩
+  ]
+  let exported : Execution.Export F := { bytecode, interfaces }
+  let artifact ← IO.ofExcept (Optimized.compile prog {})
+  let physical ← IO.ofExcept (Optimized.Physical.prepare artifact)
+  let (traced, plan) ← IO.ofExcept (Trace.exportPreparedPlan 97 ZMod.val prog artifact physical exported)
+  let (tracedPar, planPar) ← IO.ofExcept (Trace.exportPreparedPlanPar 97 ZMod.val prog artifact physical exported)
+  unless traced == tracedPar && plan == planPar do
+    throw (IO.userError "ptr_eq: exportPreparedPlanPar differed from exportPreparedPlan")
+  let cfg ← IO.ofExcept (Trace.depthConfig 97 physical)
+  let depthSystem := Optimized.Depth.system cfg physical.system
+  let cases : List (String × Array Nat × Nat) := [
+    ("same", #[7], 1),
+    ("interned", #[7], 1),
+    ("distinct", #[7], 0),
+    ("branched", #[0, 7], 1),
+    ("branched", #[1, 7], 0)
+  ]
+  for (name, args, expected) in cases do
+    for pad in [false, true] do
+      let result ← IO.ofExcept (← Trace.run traced plan name args #[] pad)
+      unless result.execution.output == #[expected] do
+        throw (IO.userError s!"ptr_eq {name}({args}) pad={pad}: expected #[{expected}], got {result.execution.output}")
+      let rows ← IO.ofExcept (result.rows 97)
+      let rom ← IO.ofExcept (result.widthROM 97)
+      for weighted in ← IO.ofExcept (result.paddedRows 97) do
+        let some source := depthSystem.findChip? weighted.row.chip
+          | throw (IO.userError "unknown padded ptr_eq chip")
+        let padded := Optimized.Activation.compile source
+        let _ ← IO.ofExcept ((padded.checkRow (Circuit.Erasure.rawROM rom) weighted.row).mapError reprStr)
+      let root := Circuit.Message.mk name (args.toList.map fun n => WireValue.field (n : F))
+        (WireValue.field (expected : F))
+      let root ← IO.ofExcept (depthRoot cfg depthSystem rows (Circuit.Erasure.message artifact.system root))
+      IO.ofExcept ((depthSystem.checkMemo (Circuit.Erasure.rawROM rom) root rows).mapError reprStr)
+  IO.println s!"Trace: {cases.length * 2} ptr_eq executions accepted by Rust FFI + Lean checkMemo"
+
 private instance : Fact (Nat.Prime 2) := ⟨by decide⟩
 
 def runSmallField : IO Unit := do
@@ -284,5 +367,6 @@ def runSmallField : IO Unit := do
       let root ← IO.ofExcept (depthRoot cfg depthSystem rows (Circuit.Erasure.message artifact.system root))
       IO.ofExcept ((depthSystem.checkMemo (Circuit.Erasure.rawROM rom) root rows).mapError reprStr)
   IO.println s!"Trace: {cases.length * 2} executions accepted by Lean checkMemo over F₂"
+  runPtrEq
 
 end AiurTraceTests

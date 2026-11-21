@@ -49,14 +49,14 @@ theorem lift_ok {computation : Except EvalError α} {value : α} {before after :
 
 end Evaluation
 
-private theorem evalArgs_of_mapM [Field F] [DecidableEq F]
+private theorem evalArgs_of_mapM_exact [Field F] [DecidableEq F]
     {locals : Environment F Nat} {fuel : Nat}
     (sound : ∀ expr before result after,
       evalExprWith program hints locals fuel expr before = .ok (result, after) →
-        EvalExpr program locals expr before result after)
+        ExactEvalExpr program locals expr before result after)
     {args : List (Expr F)} {values : List (SourceValue F)} {before after : Heap F}
     (executed : args.mapM (evalExprWith program hints locals fuel) before = .ok (values, after)) :
-    EvalArgs program locals args before values after := by
+    ExactEvalArgs program locals args before values after := by
   induction args generalizing before values with
   | nil =>
       obtain ⟨rfl, rfl⟩ := Evaluation.pure_ok.mp executed
@@ -68,12 +68,13 @@ private theorem evalArgs_of_mapM [Field F] [DecidableEq F]
       obtain ⟨rfl, rfl⟩ := Evaluation.pure_ok.mp finished
       exact .cons (sound head before value middle headRun) (ih tailRun)
 
-/-- Every successful run, including its final heap, has a fuel-free evaluation proof. -/
-theorem evalExpr_spec [Field F] [DecidableEq F]
+/-- Every successful run, including its final heap, has an exact-address fuel-free
+evaluation proof. -/
+theorem evalExpr_spec_exact [Field F] [DecidableEq F]
     {locals : Environment F Nat} {fuel : Nat} {expr : Expr F}
     {before after : Heap F} {result : SourceValue F}
     (executed : evalExprWith program hints locals fuel expr before = .ok (result, after)) :
-    EvalExpr program locals expr before result after := by
+    ExactEvalExpr program locals expr before result after := by
   induction fuel generalizing locals expr before result after with
   | zero => simp [evalExprWith] at executed
   | succ fuel ih =>
@@ -95,12 +96,12 @@ theorem evalExpr_spec [Field F] [DecidableEq F]
           simp only [evalExprWith] at executed
           obtain ⟨values, middle, itemsRun, finished⟩ := Evaluation.bind_ok.mp executed
           obtain ⟨rfl, rfl⟩ := Evaluation.pure_ok.mp finished
-          exact .tuple (evalArgs_of_mapM (fun _ _ _ _ h => ih h) itemsRun)
+          exact .tuple (evalArgs_of_mapM_exact (fun _ _ _ _ h => ih h) itemsRun)
       | construct name ctor items =>
           simp only [evalExprWith] at executed
           obtain ⟨values, middle, itemsRun, finished⟩ := Evaluation.bind_ok.mp executed
           obtain ⟨rfl, rfl⟩ := Evaluation.pure_ok.mp finished
-          exact .construct (evalArgs_of_mapM (fun _ _ _ _ h => ih h) itemsRun)
+          exact .construct (evalArgs_of_mapM_exact (fun _ _ _ _ h => ih h) itemsRun)
       | project value index =>
           simp only [evalExprWith] at executed
           obtain ⟨input, middle, operand, operation⟩ := Evaluation.bind_ok.mp executed
@@ -139,6 +140,15 @@ theorem evalExpr_spec [Field F] [DecidableEq F]
           obtain ⟨rightValue, last, rightRun, operation⟩ := Evaluation.bind_ok.mp rest
           obtain ⟨operationOK, rfl⟩ := Evaluation.lift_ok.mp operation
           exact .assertEq (ih leftRun) (ih rightRun) operationOK
+      | ptrEq left right =>
+          simp only [evalExprWith] at executed
+          obtain ⟨leftValue, middle, leftRun, rest⟩ := Evaluation.bind_ok.mp executed
+          obtain ⟨rightValue, last, rightRun, operation⟩ := Evaluation.bind_ok.mp rest
+          have lifted : (liftM (evalPtrEq last leftValue rightValue) : Evaluation F _) last = .ok (result, after) := by
+            simpa [bind, StateT.bind, Evaluation.get_apply, Except.bind] using operation
+          obtain ⟨opOK, rfl⟩ := Evaluation.lift_ok.mp lifted
+          obtain ⟨target, a₁, a₂, rfl, rfl, h1, h2, rfl⟩ := evalPtrEq_ok.mp opOK
+          exact .ptrEq (ih leftRun) (ih rightRun) h1 h2
       | binary op left right =>
           simp only [evalExprWith] at executed
           obtain ⟨leftValue, middle, leftRun, rest⟩ := Evaluation.bind_ok.mp executed
@@ -150,8 +160,7 @@ theorem evalExpr_spec [Field F] [DecidableEq F]
           obtain ⟨input, middle, operand, rest⟩ := Evaluation.bind_ok.mp executed
           cases matched : pattern.bindings input with
           | none => simp [matched] at rest
-          | some bindings =>
-              exact .letValue (ih operand) matched (ih (by simpa only [matched] using rest))
+          | some bindings => exact .letValue (ih operand) matched (ih (by simpa only [matched] using rest))
       | matchValue scrutinee arms =>
           simp only [evalExprWith] at executed
           obtain ⟨input, middle, operand, rest⟩ := Evaluation.bind_ok.mp executed
@@ -165,7 +174,15 @@ theorem evalExpr_spec [Field F] [DecidableEq F]
           obtain ⟨values, middle, arguments, rest⟩ := Evaluation.bind_ok.mp executed
           obtain ⟨⟨bindings, body⟩, last, prepared, called⟩ := Evaluation.bind_ok.mp rest
           obtain ⟨prepareOK, rfl⟩ := Evaluation.lift_ok.mp prepared
-          exact .call (evalArgs_of_mapM (fun _ _ _ _ h => ih h) arguments) (.intro prepareOK (ih called))
+          exact .call (evalArgs_of_mapM_exact (fun _ _ _ _ h => ih h) arguments) (.intro prepareOK (ih called))
+
+/-- Every successful run, including its final heap, has a fuel-free evaluation proof. -/
+theorem evalExpr_spec [Field F] [DecidableEq F]
+    {locals : Environment F Nat} {fuel : Nat} {expr : Expr F}
+    {before after : Heap F} {result : SourceValue F}
+    (executed : evalExprWith program hints locals fuel expr before = .ok (result, after)) :
+    EvalExpr program locals expr before result after :=
+  (evalExpr_spec_exact executed).toEvalExpr
 
 /-- Evaluations in the hint-free fragment run with every provider and enough fuel. -/
 theorem EvalExpr.eventually_runs [Field F] [DecidableEq F]
@@ -221,6 +238,7 @@ theorem EvalExpr.eventually_runs [Field F] [DecidableEq F]
           simp [evalExprWith, runs fuel (by omega), bind, StateT.bind, Except.bind,
             Evaluation.get_apply, set, StateT.set, pure, StateT.pure, Except.pure]
   | hint => intro impossible; simp [Expr.noHints] at impossible
+  | ptrEq => intro impossible; simp [Expr.noHints] at impossible
   | assertEq _ _ operation leftIH rightIH =>
       intro exprSafe
       simp only [Expr.noHints, Bool.and_eq_true] at exprSafe

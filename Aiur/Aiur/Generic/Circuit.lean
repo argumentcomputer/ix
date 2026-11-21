@@ -81,7 +81,9 @@ theorem Specialized.core_heap_complete (q : Specialized s entries)
     (distinct : ∀ i j, i < heap.length → j < heap.length → encode i = encode j → i = j) :
     Aiur.Circuit.EncodedEntryDerives system name (entryValues args) (value.mapAddress encode) := by
   have root := q.valid.2.2.2.2.2.2.2 name selected
-  exact compiler_heap_complete compiled root.2.2 ((q.coreEvalFn_iff root.1).mp evaluated) encode distinct
+  have coreEval := (q.coreEvalFn_iff root.1).mp evaluated
+  exact compiler_heap_complete compiled root.2.2
+    (coreEval.toExact_of_ptrEqFree q.program_ptrEqFree) encode distinct
 
 theorem Specialized.core_run_complete [Fintype F] (q : Specialized s entries)
     (selected : name ∈ entries) {system : Aiur.Circuit.System F}

@@ -16,9 +16,50 @@ module Aggregation {
       More(Bytes::AddressRef, Field, Lists::List<Bytes::AddressRef>, Lists::List<Bytes::AddressRef>)
     }
 
+  enum AggrOptBridge {
+      NoBridge,
+      SomeBridge(Bytes::AddressRef, UInt64::U64, Bytes::AddressRef)
+    }
+
+  enum AggrOptCircuitRef {
+      NoCircuitRef,
+      SomeCircuitRef(Bytes::AddressRef, UInt64::U64)
+    }
+
   fn aggr_read_byte(stream: Bytes::Stream) -> (UInt8::U8, Bytes::Stream) {
       let Lists::Node::Cons(byte, rest) = (*(stream));
       (byte, rest)
+    }
+
+  fn aggr_read_u32_le(stream: Bytes::Stream) -> (Field, Bytes::Stream) {
+      let (b0, s1) = aggr_read_byte(stream);
+      let (b1, s2) = aggr_read_byte(s1);
+      let (b2, s3) = aggr_read_byte(s2);
+      let (b3, s4) = aggr_read_byte(s3);
+      (UInt8::to_field(b0) + 256 * UInt8::to_field(b1)
+        + 65536 * UInt8::to_field(b2) + 16777216 * UInt8::to_field(b3), s4)
+    }
+
+  fn aggr_read_u64(stream: Bytes::Stream) -> (UInt64::U64, Bytes::Stream) {
+      let (b0, s0) = aggr_read_byte(stream);
+      let (b1, s1) = aggr_read_byte(s0);
+      let (b2, s2) = aggr_read_byte(s1);
+      let (b3, s3) = aggr_read_byte(s2);
+      let (b4, s4) = aggr_read_byte(s3);
+      let (b5, s5) = aggr_read_byte(s4);
+      let (b6, s6) = aggr_read_byte(s5);
+      let (b7, s7) = aggr_read_byte(s6);
+      ([b0, b1, b2, b3, b4, b5, b6, b7], s7)
+    }
+
+  fn aggr_read_u64_list_n(stream: Bytes::Stream, n: Field) -> (Lists::List<UInt64::U64>, Bytes::Stream) {
+      match n {
+        0 => { ((&(Lists::Node::Nil)), stream) } ,
+        _ => {
+          let (w, s1) = aggr_read_u64(stream);
+          let (rest, s2) = aggr_read_u64_list_n(s1, n - 1);
+          ((&(Lists::Node::Cons(w, rest))), s2) } ,
+      }
     }
 
   fn aggr_read_address(stream: Bytes::Stream) -> (Bytes::AddressRef, Bytes::Stream) {
@@ -539,6 +580,50 @@ module Aggregation {
       }
     }
 
+  fn aggr_assert_same_context_base(a: (Bytes::AddressRef, Bytes::AddressRef, Options::Option<Bytes::AddressRef>, Field),
+        b: (Bytes::AddressRef, Bytes::AddressRef, Options::Option<Bytes::AddressRef>, Field)) -> () {
+      let (spec_a, binding_a, _axioms_a, validator_a) = a;
+      let (spec_b, binding_b, _axioms_b, validator_b) = b;
+      assert_eq!(Bytes::address_eq(spec_a, spec_b), 1,
+        "aggr: claims differ in specification digest");
+      assert_eq!(Bytes::address_eq(binding_a, binding_b), 1,
+        "aggr: claims differ in binding hash");
+      assert_eq!(validator_a, validator_b,
+        "aggr: claims differ in whether they assume their binding");
+      ()
+    }
+
+  fn aggr_assert_axioms_merge(left: Options::Option<Bytes::AddressRef>,
+        right: Options::Option<Bytes::AddressRef>,
+        output: Options::Option<Bytes::AddressRef>) -> () {
+      match left {
+        Options::Option::None => {
+          assert_eq!(aggr_opt_address_eq(right, output), 1,
+            "aggr: claims differ in axioms");
+          () } ,
+        Options::Option::Some(la) => {
+          match right {
+            Options::Option::None => {
+              assert_eq!(aggr_opt_address_eq(left, output), 1,
+                "aggr: claims differ in axioms");
+              () } ,
+            Options::Option::Some(ra) => {
+              match Bytes::address_eq(la, ra) {
+                1 => {
+                  assert_eq!(aggr_opt_address_eq(left, output), 1,
+                    "aggr: claims differ in axioms");
+                  () } ,
+                _ => {
+                  let Options::Option::Some(oa) = output;
+                  let left_leaves = aggr_load_canonical_tree(la);
+                  let right_leaves = aggr_load_canonical_tree(ra);
+                  let out_leaves = aggr_load_canonical_tree(oa);
+                  aggr_assert_union(left_leaves, right_leaves, out_leaves) } ,
+              } } ,
+          } } ,
+      }
+    }
+
   fn aggr_assert_same_context(a: (Bytes::AddressRef, Bytes::AddressRef, Options::Option<Bytes::AddressRef>, Field),
         b: (Bytes::AddressRef, Bytes::AddressRef, Options::Option<Bytes::AddressRef>, Field)) -> () {
       let (spec_a, binding_a, axioms_a, validator_a) = a;
@@ -672,8 +757,12 @@ module Aggregation {
       assert_eq!(Blake3::pack_digest(Blake3::hash(output_bytes)), out_claim_digest,
         "aggr: output claim digest mismatch");
       let (output_ctx, output_root, output_asm) = aggr_parse_check_env(output_bytes);
-      aggr_assert_same_context(left_ctx, right_ctx);
-      aggr_assert_same_context(left_ctx, output_ctx);
+      aggr_assert_same_context_base(left_ctx, right_ctx);
+      aggr_assert_same_context_base(left_ctx, output_ctx);
+      let (_ls, _lb, left_axioms, _lv) = left_ctx;
+      let (_rs, _rb, right_axioms, _rv) = right_ctx;
+      let (_os, _ob, output_axioms, _ov) = output_ctx;
+      aggr_assert_axioms_merge(left_axioms, right_axioms, output_axioms);
 
       let left_subjects = aggr_load_canonical_tree(left_root);
       let right_subjects = aggr_load_canonical_tree(right_root);
@@ -708,8 +797,12 @@ module Aggregation {
       assert_eq!(Blake3::pack_digest(Blake3::hash(output_bytes)), out_claim_digest,
         "aggr structural: output claim digest mismatch");
       let (output_ctx, output_root, output_asm) = aggr_parse_check_env(output_bytes);
-      aggr_assert_same_context(left_ctx, right_ctx);
-      aggr_assert_same_context(left_ctx, output_ctx);
+      aggr_assert_same_context_base(left_ctx, right_ctx);
+      aggr_assert_same_context_base(left_ctx, output_ctx);
+      let (_ls, _lb, left_axioms, _lv) = left_ctx;
+      let (_rs, _rb, right_axioms, _rv) = right_ctx;
+      let (_os, _ob, output_axioms, _ov) = output_ctx;
+      aggr_assert_axioms_merge(left_axioms, right_axioms, output_axioms);
 
       assert_eq!(Bytes::address_eq(left_root, right_root), 0,
         "aggr structural: child subject roots must be distinct");
@@ -852,8 +945,10 @@ module Aggregation {
       assert_eq!(Blake3::pack_digest(Blake3::hash(output_bytes)), out_claim_digest,
         "aggr cross-binding: output claim digest mismatch");
       let (output_ctx, output_root, output_asm) = aggr_parse_check_env(output_bytes);
-      aggr_assert_same_context((left_spec, left_class, left_axioms, 5), output_ctx);
-      aggr_assert_same_context((right_spec, right_class, right_axioms, 5), output_ctx);
+      let (_os, _ob, output_axioms, _ov) = output_ctx;
+      aggr_assert_same_context_base((left_spec, left_class, left_axioms, 5), output_ctx);
+      aggr_assert_same_context_base((right_spec, right_class, right_axioms, 5), output_ctx);
+      aggr_assert_axioms_merge(left_axioms, right_axioms, output_axioms);
 
       assert_eq!(Bytes::address_eq(left_root, right_root), 0,
         "aggr cross-binding: child subject roots must be distinct");
@@ -1109,6 +1204,593 @@ module Aggregation {
       assert_eq!(aggr_claim_field(claim, 1), verify_idx,
         "aggr range: batch claim has the wrong entrypoint");
       aggr_assert_digest(aggr_claim_digest(claim, 2), out_claim_digest)
+    }
+
+  -- ── Shape 17: Dynamic Circuit Linking (`aggr_dynamic_link`, tag 0xE8 0x0D) ──
+
+  fn aggr_parse_dynamic_link(bytes: Bytes::Stream)
+        -> (Bytes::AddressRef, UInt64::U64, Lists::List<UInt64::U64>, Lists::List<UInt64::U64>, AggrOptBridge) {
+      let (tag0, s) = aggr_read_byte(bytes);
+      assert_eq!(UInt8::to_field(tag0), 232, "aggr dynamic link: wrong tag byte 0");
+      let (tag1, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(tag1), 13, "aggr dynamic link: wrong tag byte 1");
+      let (vk_digest, s) = aggr_read_address(s);
+      let (entry_idx, s) = aggr_read_u64(s);
+      let (nin, s) = aggr_read_u32_le(s);
+      let (pub_inputs, s) = aggr_read_u64_list_n(s, nin);
+      let (nout, s) = aggr_read_u32_le(s);
+      let (pub_outputs, s) = aggr_read_u64_list_n(s, nout);
+      let (btag, s) = aggr_read_byte(s);
+      match UInt8::to_field(btag) {
+        0 => {
+          let Lists::Node::Nil = (*(s));
+          (vk_digest, entry_idx, pub_inputs, pub_outputs, AggrOptBridge::NoBridge) } ,
+        1 => {
+          let (target_const, s1) = aggr_read_address(s);
+          let (codec, s2) = aggr_read_u64(s1);
+          let (cert_const, stop) = aggr_read_address(s2);
+          let Lists::Node::Nil = (*(stop));
+          (vk_digest, entry_idx, pub_inputs, pub_outputs,
+            AggrOptBridge::SomeBridge(target_const, codec, cert_const)) } ,
+      }
+    }
+
+  -- Enforce the uniform Multi-STARK security envelope (`Ix.Aiur.meetsSecurityFloor` +
+  -- `Ix.Cert.MultiStark.checkParams`) on an external accelerator verifying key:
+  -- `cap_height = 0`, `log_final_poly_len = 0`, `max_log_arity = 1`,
+  -- `1 <= log_blowup <= 4`, `num_queries >= 1`, `commit_pow_bits <= 32`,
+  -- `query_pow_bits <= 32`, and `log_blowup * num_queries + query_pow_bits >= 220`.
+  fn aggr_assert_security_envelope(sys: SystemDeserialize::Sys) -> () {
+      let SystemDeserialize::Sys::Mk(params, _tlimbs, _circuits, _commit, _prep_indices) = sys;
+      let SystemDeserialize::SysParams::Mk(log_blowup, cap_height, log_final_poly_len,
+        max_log_arity, num_queries, commit_pow_bits, query_pow_bits) = params;
+      assert_eq!(cap_height, 0, "aggr dynamic link: cap_height must be 0");
+      assert_eq!(log_final_poly_len, 0, "aggr dynamic link: log_final_poly_len must be 0");
+      assert_eq!(max_log_arity, 1, "aggr dynamic link: max_log_arity must be 1");
+      assert_eq!(UInt32::less_than_fields(0, log_blowup), 1,
+        "aggr dynamic link: log_blowup must be >= 1");
+      assert_eq!(UInt32::less_than_fields(log_blowup, 5), 1,
+        "aggr dynamic link: log_blowup must be <= 4");
+      assert_eq!(UInt32::less_than_fields(0, num_queries), 1,
+        "aggr dynamic link: num_queries must be >= 1");
+      assert_eq!(UInt32::less_than_fields(commit_pow_bits, 33), 1,
+        "aggr dynamic link: commit_pow_bits exceeds 32");
+      assert_eq!(UInt32::less_than_fields(query_pow_bits, 33), 1,
+        "aggr dynamic link: query_pow_bits exceeds 32");
+      assert_eq!(UInt32::less_than_fields(219, log_blowup * num_queries + query_pow_bits), 1,
+        "aggr dynamic link: security bits below floor 220");
+      ()
+    }
+
+  fn aggr_parse_check(bytes: Bytes::Stream)
+        -> ((Bytes::AddressRef, Bytes::AddressRef, Options::Option<Bytes::AddressRef>, Field), Bytes::AddressRef, Options::Option<Bytes::AddressRef>) {
+      let (tag, s) = aggr_read_byte(bytes);
+      assert_eq!(UInt8::to_field(tag), 228, "aggr: claim is not Check");
+      let (format, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(format), 4, "aggr: unsupported object format");
+      let (validator_byte, s) = aggr_read_byte(s);
+      let validator = UInt8::to_field(validator_byte);
+      assert_eq!((validator - 3) * (validator - 4), 0,
+        "aggr: wrong validator identity");
+      let (spec, s) = aggr_read_address(s);
+      let (binding, s) = aggr_read_address(s);
+      let (axioms, s) = aggr_get_opt_address(s);
+      let (const_addr, s2) = aggr_read_address(s);
+      let (assumptions, stop) = aggr_get_opt_address(s2);
+      let Lists::Node::Nil = (*(stop));
+      ((spec, binding, axioms, validator), const_addr, assumptions)
+    }
+
+  fn aggr_parse_eval(bytes: Bytes::Stream)
+        -> ((Bytes::AddressRef, Bytes::AddressRef, Options::Option<Bytes::AddressRef>, Field), Bytes::AddressRef, Bytes::AddressRef, Options::Option<Bytes::AddressRef>) {
+      let (tag, s) = aggr_read_byte(bytes);
+      assert_eq!(UInt8::to_field(tag), 227, "aggr: claim is not Eval");
+      let (format, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(format), 4, "aggr: unsupported object format");
+      let (validator_byte, s) = aggr_read_byte(s);
+      let validator = UInt8::to_field(validator_byte);
+      assert_eq!(validator, 3, "aggr: wrong validator identity");
+      let (spec, s) = aggr_read_address(s);
+      let (binding, s) = aggr_read_address(s);
+      let (axioms, s) = aggr_get_opt_address(s);
+      let (input_addr, s) = aggr_read_address(s);
+      let (output_addr, s2) = aggr_read_address(s);
+      let (assumptions, stop) = aggr_get_opt_address(s2);
+      let Lists::Node::Nil = (*(stop));
+      ((spec, binding, axioms, validator), input_addr, output_addr, assumptions)
+    }
+
+  fn aggr_verify_bridge_cert(cert_const: Bytes::AddressRef,
+        ixvm_vk_digest: [Field; 8], self_vk_digest: [Field; 8],
+        verify_idx: Field, aggr_idx: Field, allowed_digest: [Field; 8]) -> () {
+      let (kidx, klen) = hint::<(Field, Field)>("stark.io.info", (6, 1));
+      assert_eq!(klen, 1, "aggr dynamic link: bridge cert kind hint must be 1 byte");
+      let kstream = StarkIO::read_byte_stream(6, kidx, klen);
+      let (kbyte, kstop) = aggr_read_byte(kstream);
+      let Lists::Node::Nil = (*(kstop));
+      let cert_kind = UInt8::to_field(kbyte);
+      assert_eq!(cert_kind * (cert_kind - 1), 0,
+        "aggr dynamic link: bridge cert kind must be 0 or 1");
+      let cert_digest = aggr_child_check_env_digest(cert_kind, 1,
+        ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+      let cert_bytes = aggr_load_preimage(cert_digest);
+      let cert_claim_addr = Blake3::bytes_to_addr(cert_bytes);
+      let (tag, _rest) = aggr_read_byte(cert_bytes);
+      match UInt8::to_field(tag) {
+        228 => {
+          let (ctx, checked_const, asm) = aggr_parse_check(cert_bytes);
+          let (_spec, _binding, axioms, validator) = ctx;
+          assert_eq!(validator, 3,
+            "aggr dynamic link: bridge cert check claim must validate its binding");
+          assert_eq!(aggr_opt_address_eq(axioms, Options::Option::None), 1,
+            "aggr dynamic link: bridge cert must not depend on user axioms");
+          assert_eq!(aggr_opt_address_eq(asm, Options::Option::None), 1,
+            "aggr dynamic link: bridge cert must be unconditional");
+          let eq_claim = Bytes::address_eq(cert_claim_addr, cert_const);
+          let eq_const = Bytes::address_eq(checked_const, cert_const);
+          assert_eq!(Fields::is_zero((1 - eq_claim) * (1 - eq_const)), 1,
+            "aggr dynamic link: bridge cert does not match certConst");
+          () } ,
+        229 => {
+          let (ctx, _root, asm) = aggr_parse_check_env(cert_bytes);
+          let (_spec, _binding, axioms, validator) = ctx;
+          assert_eq!((validator - 3) * (validator - 5), 0,
+            "aggr dynamic link: bridge cert checkEnv must not assume its binding");
+          assert_eq!(aggr_opt_address_eq(axioms, Options::Option::None), 1,
+            "aggr dynamic link: bridge cert must not depend on user axioms");
+          assert_eq!(aggr_opt_address_eq(asm, Options::Option::None), 1,
+            "aggr dynamic link: bridge cert must be unconditional");
+          assert_eq!(Bytes::address_eq(cert_claim_addr, cert_const), 1,
+            "aggr dynamic link: bridge cert claim digest does not match certConst");
+          () } ,
+      }
+    }
+
+  fn aggr_dynamic_link(ixvm_vk_digest: [Field; 8], self_vk_digest: [Field; 8],
+        verify_idx: Field, aggr_idx: Field, allowed_digest: [Field; 8],
+        out_claim_digest: [Field; 8]) -> () {
+      let (sidx, slen) = hint::<(Field, Field)>("stark.io.info", (1, 2));
+      let sbytes = StarkIO::read_byte_stream(1, sidx, slen);
+      let ext_vk_addr = Blake3::bytes_to_addr(sbytes);
+      let (sys, srest) = SystemDeserialize::read_system(sbytes);
+      let Lists::Node::Nil = (*(srest));
+      aggr_assert_security_envelope(sys);
+
+      let ext_claim = aggr_only_claim(aggr_verify_child(sys, 0));
+
+      let (oidx, olen) = hint::<(Field, Field)>("stark.io.info", (2, 2));
+      let output_bytes = StarkIO::read_byte_stream(2, oidx, olen);
+      assert_eq!(Blake3::pack_digest(Blake3::hash(output_bytes)), out_claim_digest,
+        "aggr dynamic link: output statement digest mismatch");
+      let (vk_digest, entry_idx, pub_inputs, pub_outputs, bridge) =
+        aggr_parse_dynamic_link(output_bytes);
+      assert_eq!(Bytes::address_eq(vk_digest, ext_vk_addr), 1,
+        "aggr dynamic link: statement vkDigest does not match external VK");
+      let expected_claim = (&(Lists::Node::Cons(UInt64::ONE,
+        (&(Lists::Node::Cons(entry_idx, Lists::concat(pub_inputs, pub_outputs)))))));
+      assert_eq!(StarkVerifier::assert_same_limbs(ext_claim, expected_claim), 1,
+        "aggr dynamic link: external claim words mismatch");
+
+      match bridge {
+        AggrOptBridge::NoBridge => { () } ,
+        AggrOptBridge::SomeBridge(_target_const, _codec, cert_const) => {
+          aggr_verify_bridge_cert(cert_const, ixvm_vk_digest, self_vk_digest,
+            verify_idx, aggr_idx, allowed_digest) } ,
+      }
+    }
+
+  -- ── Shape 18: Tier 2 Eval-Assumption Discharge (`aggr_discharge_eval`) ──
+
+  fn aggr_parse_eval_assumption(bytes: Bytes::Stream)
+        -> (Bytes::AddressRef, Bytes::AddressRef, Bytes::AddressRef, AggrOptCircuitRef) {
+      let (tag0, s) = aggr_read_byte(bytes);
+      assert_eq!(UInt8::to_field(tag0), 232, "aggr discharge eval: leaf wrong tag byte 0");
+      let (tag1, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(tag1), 14, "aggr discharge eval: leaf wrong tag byte 1");
+      let (lhs, s) = aggr_read_address(s);
+      let (rhs, s) = aggr_read_address(s);
+      let (typ, s) = aggr_read_address(s);
+      let (ctag, s) = aggr_read_byte(s);
+      match UInt8::to_field(ctag) {
+        0 => {
+          let Lists::Node::Nil = (*(s));
+          (lhs, rhs, typ, AggrOptCircuitRef::NoCircuitRef) } ,
+        1 => {
+          let (vk, s1) = aggr_read_address(s);
+          let (entry, stop) = aggr_read_u64(s1);
+          let Lists::Node::Nil = (*(stop));
+          (lhs, rhs, typ, AggrOptCircuitRef::SomeCircuitRef(vk, entry)) } ,
+      }
+    }
+
+  fn aggr_parse_eval_assumed(bytes: Bytes::Stream)
+        -> (Field, (Bytes::AddressRef, Bytes::AddressRef, Options::Option<Bytes::AddressRef>, Field),
+            Bytes::AddressRef, Options::Option<Bytes::AddressRef>, Bytes::AddressRef) {
+      let (tag_byte, s) = aggr_read_byte(bytes);
+      let tag = UInt8::to_field(tag_byte);
+      assert_eq!((tag - 228) * (tag - 229), 0,
+        "aggr discharge eval: child 0 is not Check or CheckEnv");
+      let (format, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(format), 4, "aggr discharge eval: unsupported object format");
+      let (val_byte, s) = aggr_read_byte(s);
+      let validator = UInt8::to_field(val_byte);
+      assert_eq!((validator - 10) * (validator - 11), 0,
+        "aggr discharge eval: child 0 does not carry evalAssumptions (validator 10 or 11)");
+      let (spec, s) = aggr_read_address(s);
+      let (binding, s) = aggr_read_address(s);
+      let (axioms, s) = aggr_get_opt_address(s);
+      let (target, s) = aggr_read_address(s);
+      let (assumptions, s) = aggr_get_opt_address(s);
+      let (eval_asm, stop) = aggr_read_address(s);
+      let Lists::Node::Nil = (*(stop));
+      (tag, (spec, binding, axioms, validator), target, assumptions, eval_asm)
+    }
+
+  fn aggr_parse_eval_discharge_out(bytes: Bytes::Stream, expected_tag: Field, c0_validator: Field)
+        -> ((Bytes::AddressRef, Bytes::AddressRef, Options::Option<Bytes::AddressRef>, Field),
+            Bytes::AddressRef, Options::Option<Bytes::AddressRef>, Options::Option<Bytes::AddressRef>) {
+      let (tag_byte, s) = aggr_read_byte(bytes);
+      assert_eq!(UInt8::to_field(tag_byte), expected_tag,
+        "aggr discharge eval: output claim tag differs from child 0");
+      let (format, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(format), 4, "aggr discharge eval: unsupported object format");
+      let (val_byte, s) = aggr_read_byte(s);
+      let out_validator = UInt8::to_field(val_byte);
+      let (spec, s) = aggr_read_address(s);
+      let (binding, s) = aggr_read_address(s);
+      let (axioms, s) = aggr_get_opt_address(s);
+      let (target, s) = aggr_read_address(s);
+      let (assumptions, s) = aggr_get_opt_address(s);
+      match Fields::is_zero(out_validator - c0_validator) {
+        1 => {
+          let (eval_asm, stop) = aggr_read_address(s);
+          let Lists::Node::Nil = (*(stop));
+          ((spec, binding, axioms, out_validator), target, assumptions, Options::Option::Some(eval_asm)) } ,
+        _ => {
+          assert_eq!(out_validator, c0_validator - 7,
+            "aggr discharge eval: full discharge must transition validator 10->3 or 11->4");
+          let Lists::Node::Nil = (*(s));
+          ((spec, binding, axioms, out_validator), target, assumptions, Options::Option::None) } ,
+      }
+    }
+
+  -- Extract the unique removed leaf `a` such that strictly sorted `before = after ∪ {a}` (`a ∉ after`).
+  fn aggr_extract_removed_leaf(before: Lists::List<Bytes::AddressRef>,
+        after: Lists::List<Bytes::AddressRef>) -> Bytes::AddressRef {
+      let Lists::Node::Cons(a, ar) = (*(before));
+      match (*(after)) {
+        Lists::Node::Nil => {
+          let Lists::Node::Nil = (*(ar));
+          a } ,
+        Lists::Node::Cons(b, br) => {
+          match Bytes::address_eq(a, b) {
+            1 => { aggr_extract_removed_leaf(ar, br) } ,
+            _ => {
+              aggr_assert_same_list(ar, after);
+              a } ,
+          } } ,
+      }
+    }
+
+  fn aggr_assert_packed_addr_u64s(words: Lists::List<UInt64::U64>, addr: Bytes::AddressRef) -> () {
+      let a = (*(addr));
+      let Lists::Node::Cons(w0, r1) = (*(words));
+      let Lists::Node::Cons(w1, r2) = (*(r1));
+      let Lists::Node::Cons(w2, r3) = (*(r2));
+      let Lists::Node::Cons(w3, r4) = (*(r3));
+      let Lists::Node::Cons(w4, r5) = (*(r4));
+      let Lists::Node::Cons(w5, r6) = (*(r5));
+      let Lists::Node::Cons(w6, r7) = (*(r6));
+      let Lists::Node::Cons(w7, r8) = (*(r7));
+      let Lists::Node::Nil = (*(r8));
+      assert_eq!(UInt64::eq(w0, [a[0], a[1], a[2], a[3], UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]), 1,
+        "aggr discharge eval: packed address word 0 mismatch");
+      assert_eq!(UInt64::eq(w1, [a[4], a[5], a[6], a[7], UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]), 1,
+        "aggr discharge eval: packed address word 1 mismatch");
+      assert_eq!(UInt64::eq(w2, [a[8], a[9], a[10], a[11], UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]), 1,
+        "aggr discharge eval: packed address word 2 mismatch");
+      assert_eq!(UInt64::eq(w3, [a[12], a[13], a[14], a[15], UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]), 1,
+        "aggr discharge eval: packed address word 3 mismatch");
+      assert_eq!(UInt64::eq(w4, [a[16], a[17], a[18], a[19], UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]), 1,
+        "aggr discharge eval: packed address word 4 mismatch");
+      assert_eq!(UInt64::eq(w5, [a[20], a[21], a[22], a[23], UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]), 1,
+        "aggr discharge eval: packed address word 5 mismatch");
+      assert_eq!(UInt64::eq(w6, [a[24], a[25], a[26], a[27], UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]), 1,
+        "aggr discharge eval: packed address word 6 mismatch");
+      assert_eq!(UInt64::eq(w7, [a[28], a[29], a[30], a[31], UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]), 1,
+        "aggr discharge eval: packed address word 7 mismatch");
+      ()
+    }
+
+  fn aggr_read_u16_le(stream: Bytes::Stream) -> (Field, Bytes::Stream) {
+      let (b0, s1) = aggr_read_byte(stream);
+      let (b1, s2) = aggr_read_byte(s1);
+      (UInt8::to_field(b0) + 256 * UInt8::to_field(b1), s2)
+    }
+
+  fn aggr_read_u24_le(stream: Bytes::Stream) -> (Field, Bytes::Stream) {
+      let (b0, s1) = aggr_read_byte(stream);
+      let (b1, s2) = aggr_read_byte(s1);
+      let (b2, s3) = aggr_read_byte(s2);
+      (UInt8::to_field(b0) + 256 * UInt8::to_field(b1) + 65536 * UInt8::to_field(b2), s3)
+    }
+
+  fn aggr_read_tagn0(stream: Bytes::Stream) -> (Field, Bytes::Stream) {
+      let (b, s1) = aggr_read_byte(stream);
+      let bits = UInt8::bit_decomposition(b);
+      let bv = UInt8::to_field(b);
+      match bits[7] {
+        0 => { (bv, s1) } ,
+        _ => {
+          match bits[6] {
+            0 => {
+              let (b1, s2) = aggr_read_byte(s1);
+              (128 + (bv - 128) * 256 + UInt8::to_field(b1), s2) } ,
+            _ => {
+              match bv - 192 {
+                0 => {
+                  let (v, s2) = aggr_read_u16_le(s1);
+                  (16512 + v, s2) } ,
+                1 => {
+                  let (v, s2) = aggr_read_u24_le(s1);
+                  (82048 + v, s2) } ,
+                2 => {
+                  let (v, s2) = aggr_read_u32_le(s1);
+                  (16859264 + v, s2) } ,
+                3 => {
+                  let (u, s2) = aggr_read_u64(s1);
+                  (4311826560 + UInt64::to_field(u), s2) } ,
+              } } ,
+          } } ,
+      }
+    }
+
+  fn aggr_skip_tagn0_n(stream: Bytes::Stream, n: Field) -> Bytes::Stream {
+      match n {
+        0 => { stream } ,
+        _ => {
+          let (_v, s1) = aggr_read_tagn0(stream);
+          aggr_skip_tagn0_n(s1, n - 1) } ,
+      }
+    }
+
+  fn aggr_read_tagn4(stream: Bytes::Stream) -> (Field, Field, Bytes::Stream) {
+      let (b, s1) = aggr_read_byte(stream);
+      let bits = UInt8::bit_decomposition(b);
+      let flag = bits[4] + 2 * bits[5] + 4 * bits[6] + 8 * bits[7];
+      let payload = bits[0] + 2 * bits[1] + 4 * bits[2] + 8 * bits[3];
+      match bits[3] {
+        0 => { (flag, payload, s1) } ,
+        _ => {
+          match bits[2] {
+            0 => {
+              let (b1, s2) = aggr_read_byte(s1);
+              (flag, 8 + (payload - 8) * 256 + UInt8::to_field(b1), s2) } ,
+            _ => {
+              match payload - 12 {
+                0 => {
+                  let (v, s2) = aggr_read_u16_le(s1);
+                  (flag, 1032 + v, s2) } ,
+                1 => {
+                  let (v, s2) = aggr_read_u24_le(s1);
+                  (flag, 66568 + v, s2) } ,
+                2 => {
+                  let (v, s2) = aggr_read_u32_le(s1);
+                  (flag, 16843784 + v, s2) } ,
+                3 => {
+                  let (u, s2) = aggr_read_u64(s1);
+                  (flag, 4311811080 + UInt64::to_field(u), s2) } ,
+              } } ,
+          } } ,
+      }
+    }
+
+  fn aggr_skip_expr(stream: Bytes::Stream) -> Bytes::Stream {
+      let (flag, val, s1) = aggr_read_tagn4(stream);
+      match flag {
+        0 => { s1 } ,
+        1 => { s1 } ,
+        2 => { aggr_skip_tagn0_n(s1, 1 + val) } ,
+        3 => { aggr_skip_tagn0_n(s1, 1 + val) } ,
+        4 => {
+          let (_tref, s2) = aggr_read_tagn0(s1);
+          aggr_skip_expr(s2) } ,
+        5 => { s1 } ,
+        6 => { s1 } ,
+        7 => {
+          assert_eq!(Fields::is_zero(val), 0, "aggr discharge eval: empty app spine");
+          aggr_skip_exprs_n(s1, 1 + val) } ,
+        8 => {
+          assert_eq!(Fields::is_zero(val), 0, "aggr discharge eval: empty lam telescope");
+          aggr_skip_exprs_n(s1, 1 + val) } ,
+        9 => {
+          assert_eq!(Fields::is_zero(val), 0, "aggr discharge eval: empty all telescope");
+          aggr_skip_exprs_n(s1, 1 + val) } ,
+        10 => { aggr_skip_exprs_n(s1, 3) } ,
+        11 => { s1 } ,
+      }
+    }
+
+  fn aggr_skip_exprs_n(stream: Bytes::Stream, n: Field) -> Bytes::Stream {
+      match n {
+        0 => { stream } ,
+        _ => {
+          let s1 = aggr_skip_expr(stream);
+          aggr_skip_exprs_n(s1, n - 1) } ,
+      }
+    }
+
+  fn aggr_find_role_addr(stream: Bytes::Stream, remaining: Field, target_role: Field) -> Bytes::AddressRef {
+      assert_eq!(Fields::is_zero(remaining), 0,
+        "aggr discharge eval: role not found in binding section");
+      let (role, s1) = aggr_read_byte(stream);
+      let (addr, s2) = aggr_read_address(s1);
+      match Fields::is_zero(UInt8::to_field(role) - target_role) {
+        1 => { addr } ,
+        _ => { aggr_find_role_addr(s2, remaining - 1, target_role) } ,
+      }
+    }
+
+  fn aggr_binding_eq_addr(binding: Bytes::AddressRef) -> Bytes::AddressRef {
+      let bytes = aggr_load_preimage(aggr_pack_address(binding));
+      let (tag0, s) = aggr_read_byte(bytes);
+      assert_eq!(UInt8::to_field(tag0), 232, "aggr discharge eval: not a role binding section");
+      let (tag1, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(tag1), 3, "aggr discharge eval: not a role binding section");
+      let (_version, s) = aggr_read_byte(s);
+      let (count, s) = aggr_read_byte(s);
+      aggr_find_role_addr(s, UInt8::to_field(count), 8)
+    }
+
+  -- Verify a `Claim.check` constant record is a safe, closed `defn`/`thm` whose type
+  -- is `@Eq.{u} leaf.typ leaf.lhs leaf.rhs` with `refs[0..3] = [binding[Role.eq], typ, lhs, rhs]`.
+  fn aggr_verify_eq_check_record(const_addr: Bytes::AddressRef, binding: Bytes::AddressRef,
+        leaf_lhs: Bytes::AddressRef, leaf_rhs: Bytes::AddressRef, leaf_typ: Bytes::AddressRef) -> () {
+      let eq_addr = aggr_binding_eq_addr(binding);
+      let rec_bytes = aggr_load_preimage(aggr_pack_address(const_addr));
+      let (ctag, s) = aggr_read_byte(rec_bytes);
+      assert_eq!(UInt8::to_field(ctag), 208,
+        "aggr discharge eval: check witness must be a Definition/Theorem constant");
+      let (flags, s) = aggr_read_byte(s);
+      let fbits = UInt8::bit_decomposition(flags);
+      let safety = fbits[0] + 2 * fbits[1];
+      let kind = fbits[2] + 2 * fbits[3];
+      assert_eq!(safety, 1, "aggr discharge eval: check witness must be safe");
+      assert_eq!(kind * (kind - 2), 0, "aggr discharge eval: check witness must be defn or thm");
+      let (lvls, s) = aggr_read_tagn0(s);
+      assert_eq!(lvls, 0, "aggr discharge eval: check witness must be closed (0 level params)");
+      -- Type must be `App(3, Ref(0, [u]), Ref(1, []), Ref(2, []), Ref(3, []))`
+      let (t0, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(t0), 115, "aggr discharge eval: type must be 3-arg App");
+      let (t1, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(t1), 33, "aggr discharge eval: head must be Ref(_, [u])");
+      let (t2, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(t2), 0, "aggr discharge eval: Eq ref index must be 0");
+      let (_u_idx, s) = aggr_read_tagn0(s);
+      let (t3, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(t3), 32, "aggr discharge eval: typ arg must be Ref(_, [])");
+      let (t4, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(t4), 1, "aggr discharge eval: typ ref index must be 1");
+      let (t5, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(t5), 32, "aggr discharge eval: lhs arg must be Ref(_, [])");
+      let (t6, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(t6), 2, "aggr discharge eval: lhs ref index must be 2");
+      let (t7, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(t7), 32, "aggr discharge eval: rhs arg must be Ref(_, [])");
+      let (t8, s) = aggr_read_byte(s);
+      assert_eq!(UInt8::to_field(t8), 3, "aggr discharge eval: rhs ref index must be 3");
+      let s = aggr_skip_expr(s);
+      let (nshare, s) = aggr_read_tagn0(s);
+      let s = aggr_skip_exprs_n(s, nshare);
+      let (nrefs, s) = aggr_read_tagn0(s);
+      assert_eq!(UInt32::less_than_fields(3, nrefs), 1,
+        "aggr discharge eval: check witness refs table too short");
+      let (r0, s) = aggr_read_address(s);
+      let (r1, s) = aggr_read_address(s);
+      let (r2, s) = aggr_read_address(s);
+      let (r3, _s) = aggr_read_address(s);
+      assert_eq!(Bytes::address_eq(r0, eq_addr), 1,
+        "aggr discharge eval: check witness ref[0] is not Eq");
+      assert_eq!(Bytes::address_eq(r1, leaf_typ), 1,
+        "aggr discharge eval: check witness ref[1] differs from leaf typ");
+      assert_eq!(Bytes::address_eq(r2, leaf_lhs), 1,
+        "aggr discharge eval: check witness ref[2] differs from leaf lhs");
+      assert_eq!(Bytes::address_eq(r3, leaf_rhs), 1,
+        "aggr discharge eval: check witness ref[3] differs from leaf rhs");
+      ()
+    }
+
+  fn aggr_discharge_eval(ixvm_vk_digest: [Field; 8], self_vk_digest: [Field; 8],
+        verify_idx: Field, aggr_idx: Field, allowed_digest: [Field; 8],
+        out_claim_digest: [Field; 8]) -> () {
+      let (kidx, klen) = hint::<(Field, Field)>("stark.io.info", (6, 1));
+      assert_eq!(klen, 2, "aggr discharge eval: child-kind hint must be 2 bytes");
+      let kstream = StarkIO::read_byte_stream(6, kidx, klen);
+      let (k0b, ks1) = aggr_read_byte(kstream);
+      let (k1b, kstop) = aggr_read_byte(ks1);
+      let Lists::Node::Nil = (*(kstop));
+      let kind0 = UInt8::to_field(k0b);
+      let kind1 = UInt8::to_field(k1b);
+      assert_eq!(kind0 * (kind0 - 1), 0, "aggr discharge eval: child 0 kind must be 0 or 1");
+      assert_eq!(kind1 * (kind1 - 1), 0, "aggr discharge eval: child 1 kind must be 0 or 1");
+
+      let c0_digest = aggr_child_check_env_digest(kind0, 0,
+        ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+      let c1_digest = aggr_child_check_env_digest(kind1, 1,
+        ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+      let (c0_tag, c0_ctx, c0_target, c0_asm, c0_eval_root) =
+        aggr_parse_eval_assumed(aggr_load_preimage(c0_digest));
+      let (c0_spec, c0_binding, c0_axioms, c0_validator) = c0_ctx;
+
+      let (oidx, olen) = hint::<(Field, Field)>("stark.io.info", (2, 2));
+      let output_bytes = StarkIO::read_byte_stream(2, oidx, olen);
+      assert_eq!(Blake3::pack_digest(Blake3::hash(output_bytes)), out_claim_digest,
+        "aggr discharge eval: output claim digest mismatch");
+      let (out_ctx, out_target, out_asm, out_eval_opt) =
+        aggr_parse_eval_discharge_out(output_bytes, c0_tag, c0_validator);
+      let (out_spec, out_binding, out_axioms, _out_validator) = out_ctx;
+      assert_eq!(Bytes::address_eq(c0_spec, out_spec), 1,
+        "aggr discharge eval: output specification digest differs from child 0");
+      assert_eq!(Bytes::address_eq(c0_binding, out_binding), 1,
+        "aggr discharge eval: output binding differs from child 0");
+      assert_eq!(Bytes::address_eq(c0_target, out_target), 1,
+        "aggr discharge eval: output subject differs from child 0");
+      assert_eq!(aggr_opt_address_eq(c0_asm, out_asm), 1,
+        "aggr discharge eval: output typing assumptions differ from child 0");
+
+      let c0_eval_leaves = aggr_load_canonical_tree(c0_eval_root);
+      let out_eval_leaves = aggr_load_optional_tree(out_eval_opt);
+      let removed_leaf_addr = aggr_extract_removed_leaf(c0_eval_leaves, out_eval_leaves);
+      let leaf_bytes = aggr_load_preimage(aggr_pack_address(removed_leaf_addr));
+      let (leaf_lhs, leaf_rhs, leaf_typ, leaf_circuit) = aggr_parse_eval_assumption(leaf_bytes);
+
+      let c1_bytes = aggr_load_preimage(c1_digest);
+      let (c1_tag, _c1_rest) = aggr_read_byte(c1_bytes);
+      match UInt8::to_field(c1_tag) {
+        227 => {
+          let (c1_ctx, input_addr, output_addr, c1_asm) = aggr_parse_eval(c1_bytes);
+          let (c1_spec, c1_binding, c1_axioms, _c1_val) = c1_ctx;
+          assert_eq!(Bytes::address_eq(c0_spec, c1_spec), 1,
+            "aggr discharge eval: eval child has different specification digest");
+          assert_eq!(Bytes::address_eq(c0_binding, c1_binding), 1,
+            "aggr discharge eval: eval child has different binding");
+          assert_eq!(aggr_opt_address_eq(c1_asm, Options::Option::None), 1,
+            "aggr discharge eval: eval child must be unconditional");
+          assert_eq!(Bytes::address_eq(input_addr, leaf_lhs), 1,
+            "aggr discharge eval: eval input differs from leaf lhs");
+          assert_eq!(Bytes::address_eq(output_addr, leaf_rhs), 1,
+            "aggr discharge eval: eval output differs from leaf rhs");
+          aggr_assert_axioms_merge(c0_axioms, c1_axioms, out_axioms) } ,
+        228 => {
+          let (c1_ctx, const_addr, c1_asm) = aggr_parse_check(c1_bytes);
+          let (c1_spec, c1_binding, c1_axioms, c1_val) = c1_ctx;
+          assert_eq!(c1_val, 3,
+            "aggr discharge eval: check child must validate its binding");
+          assert_eq!(Bytes::address_eq(c0_spec, c1_spec), 1,
+            "aggr discharge eval: check child has different specification digest");
+          assert_eq!(Bytes::address_eq(c0_binding, c1_binding), 1,
+            "aggr discharge eval: check child has different binding");
+          assert_eq!(aggr_opt_address_eq(c1_asm, Options::Option::None), 1,
+            "aggr discharge eval: check child must be unconditional");
+          aggr_verify_eq_check_record(const_addr, c0_binding, leaf_lhs, leaf_rhs, leaf_typ);
+          aggr_assert_axioms_merge(c0_axioms, c1_axioms, out_axioms) } ,
+        232 => {
+          assert_eq!(kind1, 1,
+            "aggr discharge eval: DynamicLink child must be an ix_aggr proof");
+          let (dl_vk, dl_entry, dl_inputs, dl_outputs, dl_bridge) =
+            aggr_parse_dynamic_link(c1_bytes);
+          let AggrOptCircuitRef::SomeCircuitRef(leaf_vk, leaf_entry) = leaf_circuit;
+          assert_eq!(Bytes::address_eq(dl_vk, leaf_vk), 1,
+            "aggr discharge eval: DynamicLink vkDigest differs from leaf circuit");
+          assert_eq!(UInt64::eq(dl_entry, leaf_entry), 1,
+            "aggr discharge eval: DynamicLink entryIdx differs from leaf circuit");
+          let AggrOptBridge::SomeBridge(_target_const, codec, _cert_const) = dl_bridge;
+          assert_eq!(UInt64::eq(codec, UInt64::ONE), 1,
+            "aggr discharge eval: DynamicLink codec must be ixonAddrPair (1)");
+          aggr_assert_packed_addr_u64s(dl_inputs, leaf_lhs);
+          aggr_assert_packed_addr_u64s(dl_outputs, leaf_rhs);
+          aggr_assert_axioms_merge(c0_axioms, Options::Option::None, out_axioms) } ,
+      }
     }
 }
 ⟧

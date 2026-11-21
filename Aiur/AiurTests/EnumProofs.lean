@@ -31,7 +31,7 @@ example : EncodedEntryDerives system "main" (entryValues [7]) 7 := by
   have executed : run (source.toField Rat) "main" [7] 32 =
       .ok (.field 7, [.construct "List" "Nil" []]) := by decide +kernel
   obtain ⟨_, entry, locals, expr, prepared, body⟩ := run_eq_ok_iff.mp executed
-  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec body))
+  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec_exact body))
     (fun _ => (99 : Rat)) (by intro i j hi hj _; simp at hi hj; omega)
   simp only [Value.mapAddress, List.map_cons, List.map_nil] at complete
   exact complete
@@ -42,7 +42,7 @@ example : EncodedEntryDerives system "wrap" (entryValues [7])
   have executed : run (source.toField Rat) "wrap" [7] 16 =
       .ok (.construct "Outcome" "Pair" [.tuple [.field 7, .field 8]], []) := by decide +kernel
   obtain ⟨_, entry, locals, expr, prepared, body⟩ := run_eq_ok_iff.mp executed
-  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec body))
+  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec_exact body))
     (fun _ => (0 : Rat)) (by simp)
   simp only [Value.mapAddress, List.map_cons, List.map_nil] at complete
   exact complete

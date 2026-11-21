@@ -126,7 +126,7 @@ theorem EvalExpr.grows [Field F] [DecidableEq F] {program : Program F}
     (motive_3 := fun _ _ before _ after _ => before <+: after) with
   | literal | var | nil => exact List.prefix_refl _
   | tuple _ ih | construct _ ih | project _ _ ih | neg _ _ ih | load _ _ ih | hint _ _ ih | intro _ _ ih => exact ih
-  | letValue _ _ _ a b | binary _ _ _ a b | assertEq _ _ _ a b | call _ _ a b | matchValue _ _ _ a b | cons _ _ a b => exact a.trans b
+  | letValue _ _ _ a b | binary _ _ _ a b | assertEq _ _ _ a b | ptrEq _ _ _ _ _ a b | call _ _ a b | matchValue _ _ _ a b | cons _ _ a b => exact a.trans b
   | store _ ih => exact ih.trans ⟨_, rfl⟩
 
 theorem EvalFn.grows [Field F] [DecidableEq F] {program : Program F}
