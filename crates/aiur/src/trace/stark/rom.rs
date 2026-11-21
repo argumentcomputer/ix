@@ -115,19 +115,42 @@ impl Rom {
     index: usize,
     min_height: Option<usize>,
   ) -> Result<RowMajorMatrix<Val>, String> {
+    Ok(self.witness_with_active(record, index, min_height)?.0)
+  }
+
+  /// Populate the ROM trace in parallel when large, returning both the padded
+  /// matrix and the count of active rows (`0..active_rows`).
+  pub(super) fn witness_with_active<B: WitnessField>(
+    &self,
+    record: &Execution<B>,
+    index: usize,
+    min_height: Option<usize>,
+  ) -> Result<(RowMajorMatrix<Val>, usize), String> {
     let bucket = record.memory.indices_for_width(self.widths[index]);
     let width = self.widths[index] + 3;
     let mut trace = empty_trace(bucket.len(), width, min_height)?;
-    for (&index, row) in bucket.iter().zip(trace.values.chunks_mut(width)) {
-      let cell = record.memory.get(index).unwrap();
+    let active_values = &mut trace.values[..bucket.len() * width];
+    let write_row = |(&cell_index, row): (&usize, &mut [Val])| {
+      let cell = record.memory.get(cell_index).unwrap();
       row[0] = Val::from_u64(cell.multiplicity);
       row[1] = Val::ONE;
       row[2] = Val::from_usize(cell.address);
       for (dest, &value) in row[3..].iter_mut().zip(cell.cell.value) {
         *dest = B::into_stark(value);
       }
+    };
+    #[cfg(feature = "parallel")]
+    if bucket.len() >= 256 {
+      bucket
+        .par_iter()
+        .zip(active_values.par_chunks_mut(width))
+        .for_each(write_row);
+    } else {
+      bucket.iter().zip(active_values.chunks_mut(width)).for_each(write_row);
     }
-    Ok(trace)
+    #[cfg(not(feature = "parallel"))]
+    bucket.iter().zip(active_values.chunks_mut(width)).for_each(write_row);
+    Ok((trace, bucket.len()))
   }
 }
 

@@ -1593,3 +1593,236 @@ fn gpu_depth_population_proves_identically() {
     assert_eq!(device.to_bytes().unwrap(), host.to_bytes().unwrap());
   }
 }
+
+#[test]
+fn member_lookup_plans_match_generic_and_prune_grouped_work() {
+  let package = grouping_fixture();
+  let program = package.program.check().unwrap();
+  let plan = TracePlan::new(&program, package.trace).unwrap();
+  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let record = program.execute("Grouped::run", vec![3]).unwrap();
+  let witness = backend.generate(&record, "Grouped::run", &[3]).unwrap();
+
+  let normalize = |mut entries: Vec<(usize, Val, Vec<Val>)>| {
+    for (_, _, args) in &mut entries {
+      while args.last() == Some(&Val::ZERO) {
+        args.pop();
+      }
+    }
+    entries.sort_by_key(|(slot, _, _)| *slot);
+    entries
+  };
+
+  let mut saw_pruned = false;
+  for (ci, trace) in
+    witness.traces.iter().enumerate().take(backend.members.len())
+  {
+    let generic = &backend.lookup_plans[ci];
+    let (gen_arith, gen_slots) = generic.stats();
+    for &chip in &backend.circuit_chips[ci] {
+      let mlp = &backend.member_lookup_plans[chip];
+      let (spec_arith, spec_slots) = mlp.plan.stats();
+      if backend.placements[chip].grouped
+        && (spec_arith < gen_arith || spec_slots < gen_slots)
+      {
+        saw_pruned = true;
+      }
+    }
+    for r in 0..trace.height() {
+      let row = &trace.values[r * trace.width..(r + 1) * trace.width];
+      let mut expected = Vec::new();
+      generic.evaluate(row, &[], |slot, mult, args| {
+        expected.push((slot, mult, args.to_vec()));
+      });
+      if let Some(&chip) = backend.circuit_chips[ci].iter().find(|&&chip| {
+        let mlp = &backend.member_lookup_plans[chip];
+        row[mlp.selector] == Val::ONE
+      }) {
+        let mlp = &backend.member_lookup_plans[chip];
+        assert!(mlp.zero_cols.iter().all(|&col| row[col] == Val::ZERO));
+        let mut actual = Vec::new();
+        mlp.plan.evaluate(row, &[], |slot, mult, args| {
+          actual.push((slot, mult, args.to_vec()));
+        });
+        assert_eq!(normalize(actual), normalize(expected));
+      } else {
+        assert!(expected.is_empty(), "padding row emitted lookups");
+      }
+    }
+  }
+  assert!(
+    saw_pruned,
+    "expected member specialization to prune slots or arithmetic on grouped circuits"
+  );
+
+  // Verify auxiliary_lookups falls back soundly on a tampered row where an
+  // inactive member's private column is nonzero.
+  let grouped_ci =
+    backend.placements.iter().find(|p| p.grouped).unwrap().circuit;
+  let mut tampered = witness.traces[grouped_ci].clone();
+  let active_chip = backend.circuit_chips[grouped_ci]
+    .iter()
+    .copied()
+    .find(|&chip| {
+      let sel = backend.member_lookup_plans[chip].selector;
+      tampered.values[sel] == Val::ONE
+    })
+    .unwrap();
+  if let Some(&zero_col) =
+    backend.member_lookup_plans[active_chip].zero_cols.first()
+  {
+    tampered.values[zero_col] = Val::from_u64(7);
+  }
+  let mut traces = witness.traces.clone();
+  traces[grouped_ci] = tampered;
+  let via_aux = backend.witness_from_main(traces.clone());
+  let via_graph = SystemWitness::from_stage_1(traces, &backend.system);
+  let stage2 = |w: SystemWitness<Val>| {
+    let (lookups, groups): (Vec<_>, Vec<_>) = w
+      .traces
+      .into_iter()
+      .zip(w.lookups)
+      .zip(&backend.system.circuits)
+      .filter(|((trace, _), _)| trace.height() != 0)
+      .map(|((_, lookups), circuit)| (lookups, circuit.lookup_group_size))
+      .unzip();
+    multi_stark::lookup::LookupValues::stage_2_traces(
+      &lookups,
+      &groups,
+      multi_stark::types::ExtVal::from_u64(1000000007),
+      &multi_stark::types::ExtVal::from_u64(1000000009),
+      multi_stark::types::ExtVal::ZERO,
+    )
+  };
+  let (actual, actual_acc) = stage2(via_aux);
+  let (expected, expected_acc) = stage2(via_graph);
+  assert_eq!(actual_acc, expected_acc);
+  for (a, b) in actual.iter().zip(expected) {
+    assert_eq!(a.width, b.width);
+    assert_eq!(a.values, b.values);
+  }
+}
+
+#[test]
+fn parallel_rom_witness_and_prefix_lookups_match_reference() {
+  // Store 300 distinct ROM cells (>= 256 threshold) to exercise parallel
+  // Rom::witness population and active-prefix lookup writing.
+  let p = Val::ORDER_U64;
+  let raw_program: Program = serde_json::from_value(json!({
+    "version": 2,
+    "modulus": p,
+    "enums": [],
+    "tables": [],
+    "maps": [],
+    "functions": [{
+      "name": "store_loop",
+      "params": [f()],
+      "result": f(),
+      "registers": 5,
+      "code": [
+        {"op": "store", "type": f(), "value": [0], "dest": 1},
+        {"op": "branch", "tests": [[0, 0]], "otherwise": 3},
+        {"op": "ret", "value": [1]},
+        {"op": "literal", "dest": 2, "value": 1},
+        {"op": "binary", "operator": "sub", "dest": 3, "left": 0, "right": 2},
+        {"op": "call", "function": 0, "args": [3], "dest": [4]},
+        {"op": "ret", "value": [1]}
+      ]
+    }],
+    "entries": [{
+      "name": "store_loop",
+      "function": 0,
+      "inputs": [f()],
+      "output": f()
+    }]
+  }))
+  .unwrap();
+  let sub = |a: Json, b: Json| json!({"sub": [a, b]});
+  let mul = |a: Json, b: Json| json!({"mul": [a, b]});
+  let add = |a: Json, b: Json| json!({"add": [a, b]});
+  // Witnesses: 0=x, 1=out(ptr), 2=s0(x==0), 3=s1(x!=0), 4=inv(x^-1), 5=rec_res.
+  let trace = activate(raw_artifact(json!({
+    "version": 1,
+    "modulus": p,
+    "functions": [{
+      "name": "store_loop",
+      "chip": "store_loop",
+      "witnesses": 6,
+      "inputs": [0],
+      "output": [1],
+      "steps": [
+        step(json!({"op": "store", "type": f(), "values": [v(0)], "dest": 1})),
+        step(json!({"op": "choose", "dest": [2, 3], "tests": [[v(0)], []]})),
+        {"guard": v(3), "action": {"op": "failure", "dest": [4], "differences": [v(0)]}},
+        {"guard": v(3), "action": {"op": "call", "name": "store_loop", "args": [sub(v(0), k(1))], "dest": [5]}}
+      ],
+      "writes": writes(6)
+    }],
+    "chips": [{
+      "name": "store_loop",
+      "width": 6,
+      "inputs": [0],
+      "output": [v(1)],
+      "constraints": [
+        mul(v(2), sub(v(2), k(1))),
+        mul(v(3), sub(v(3), k(1))),
+        mul(v(2), v(3)),
+        sub(add(v(2), v(3)), k(1)),
+        mul(v(2), v(0)),
+        mul(v(3), sub(mul(v(0), v(4)), k(1)))
+      ],
+      "sends": [{
+        "channel": "store_loop",
+        "args": [sub(v(0), k(1))],
+        "result": [5],
+        "enable": v(3)
+      }],
+      "memory": [{
+        "type": f(),
+        "address": v(1),
+        "values": [v(0)],
+        "enable": k(1)
+      }]
+    }]
+  })));
+  let checked = raw_program.check_field::<Val>().unwrap();
+  let plan = TracePlan::new(&checked, trace).unwrap();
+  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let n = Val::from_u64(299);
+  let record = checked.execute("store_loop", vec![n]).unwrap();
+  assert_eq!(record.memory.len(), 300);
+  let witness = backend.generate(&record, "store_loop", &[n]).unwrap();
+  let reference =
+    SystemWitness::from_stage_1(witness.traces.clone(), &backend.system);
+  let stage2 = |w: &SystemWitness<Val>| {
+    let groups: Vec<_> =
+      backend.system.circuits.iter().map(|c| c.lookup_group_size).collect();
+    multi_stark::lookup::LookupValues::stage_2_traces(
+      &w.lookups,
+      &groups,
+      multi_stark::types::ExtVal::from_u64(1000000007),
+      &multi_stark::types::ExtVal::from_u64(1000000009),
+      multi_stark::types::ExtVal::ZERO,
+    )
+  };
+  let (actual, actual_acc) = stage2(&witness);
+  let (expected, expected_acc) = stage2(&reference);
+  assert_eq!(actual_acc, expected_acc);
+  for (a, b) in actual.iter().zip(expected) {
+    assert_eq!(a.width, b.width);
+    assert_eq!(a.values, b.values);
+  }
+  let rom_ci = backend.names.iter().position(|name| name == "<ROM:1>").unwrap();
+  assert_eq!(witness.traces[rom_ci].height(), 512);
+  let proof = backend
+    .prove_batch(
+      "store_loop",
+      &[n],
+      &record.output,
+      witness,
+      512,
+      multi_stark::batch::Retention::Retain,
+    )
+    .unwrap();
+  backend.verify_batch("store_loop", &[n], &record.output, &proof).unwrap();
+}

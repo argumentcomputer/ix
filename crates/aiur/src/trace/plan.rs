@@ -3,6 +3,246 @@
 //! immutable sources. Pure arithmetic is shared across recipes. Runtime code
 //! has no polynomial trees, degree tracking, or column allocation decisions.
 use super::*;
+use crate::host::{DirectHintKind, DirectMapKind};
+
+#[inline(always)]
+#[allow(clippy::cast_possible_truncation)] // Bounds are checked before casting.
+fn eval_direct_map<B: FieldBackend>(
+  kind: DirectMapKind,
+  field: B,
+  args: &[Value<B::Element>],
+  scratch: &mut [B::Element],
+  start: usize,
+  width: usize,
+) -> Result<(), String> {
+  macro_rules! pair {
+    () => {{
+      if args.len() != 2 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let va = field.to_u64(args[0].get(scratch));
+      let vb = field.to_u64(args[1].get(scratch));
+      if (va | vb) > 255 {
+        return Err("no table entry for map input".into());
+      }
+      (va, vb)
+    }};
+  }
+  match kind {
+    DirectMapKind::FromField => {
+      if args.len() != 1 || width != 1 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let val = args[0].get(scratch);
+      if field.to_u64(val) >= 256 {
+        return Err("no table entry for map input".into());
+      }
+      scratch[start] = val;
+    },
+    DirectMapKind::RangePair => {
+      if width != 0 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let _ = pair!();
+    },
+    DirectMapKind::RawXor => {
+      if width != 1 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      scratch[start] = field.from_u64(va ^ vb);
+    },
+    DirectMapKind::RawAnd => {
+      if width != 1 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      scratch[start] = field.from_u64(va & vb);
+    },
+    DirectMapKind::RawOr => {
+      if width != 1 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      scratch[start] = field.from_u64(va | vb);
+    },
+    DirectMapKind::RawLt => {
+      if width != 1 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      scratch[start] = field.from_u64(u64::from(va < vb));
+    },
+    DirectMapKind::RawAdd => {
+      if width != 2 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      let sum = va + vb;
+      scratch[start] = field.from_u64(sum & 255);
+      scratch[start + 1] = field.from_u64(sum >> 8);
+    },
+    DirectMapKind::RawSub => {
+      if width != 2 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      scratch[start] = field.from_u64(va.wrapping_sub(vb) & 255);
+      scratch[start + 1] = field.from_u64(u64::from(va < vb));
+    },
+    DirectMapKind::RawMul => {
+      if width != 2 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      let product = va * vb;
+      scratch[start] = field.from_u64(product & 255);
+      scratch[start + 1] = field.from_u64(product >> 8);
+    },
+    DirectMapKind::RawXorSplit4 => {
+      if width != 2 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      let xor = va ^ vb;
+      scratch[start] = field.from_u64(xor >> 4);
+      scratch[start + 1] = field.from_u64((xor & 15) << 4);
+    },
+    DirectMapKind::RawXorSplit7 => {
+      if width != 2 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let (va, vb) = pair!();
+      let xor = va ^ vb;
+      scratch[start] = field.from_u64(xor >> 7);
+      scratch[start + 1] = field.from_u64((xor & 127) << 1);
+    },
+    DirectMapKind::RawSumByte => {
+      if args.len() != 1 || width != 1 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let row = field.to_u64(args[0].get(scratch));
+      if row >= 768 {
+        return Err("no table entry for map input".into());
+      }
+      scratch[start] = field.from_u64(row & 255);
+    },
+    DirectMapKind::RawBitDecomp => {
+      if args.len() != 1 || width != 8 {
+        return Err("map argument/output width mismatch".into());
+      }
+      let row = field.to_u64(args[0].get(scratch));
+      if row >= 256 {
+        return Err("no table entry for map input".into());
+      }
+      for i in 0..8 {
+        scratch[start + i] = field.from_u64((row >> i) & 1);
+      }
+    },
+  }
+  Ok(())
+}
+
+#[inline(always)]
+#[allow(clippy::cast_possible_truncation)]
+fn eval_direct_hint<B: FieldBackend>(
+  kind: DirectHintKind,
+  field: B,
+  key: &[Value<B::Element>],
+  scratch: &mut [B::Element],
+  start: usize,
+  width: usize,
+) -> Result<(), String> {
+  #[inline(always)]
+  fn read_u32_word<B: FieldBackend>(
+    field: B,
+    scratch: &[B::Element],
+    vals: &[Value<B::Element>],
+  ) -> Result<u32, String> {
+    let b0 = field.to_u64(vals[0].get(scratch));
+    let b1 = field.to_u64(vals[1].get(scratch));
+    let b2 = field.to_u64(vals[2].get(scratch));
+    let b3 = field.to_u64(vals[3].get(scratch));
+    if (b0 | b1 | b2 | b3) > 255 {
+      return Err("non-byte u32 sum operand".into());
+    }
+    Ok(u32::from_le_bytes([b0 as u8, b1 as u8, b2 as u8, b3 as u8]))
+  }
+
+  #[inline(always)]
+  fn write_u32_bytes<B: FieldBackend>(
+    field: B,
+    scratch: &mut [B::Element],
+    start: usize,
+    word: u32,
+  ) {
+    let bytes = word.to_le_bytes();
+    scratch[start] = field.from_u64(u64::from(bytes[0]));
+    scratch[start + 1] = field.from_u64(u64::from(bytes[1]));
+    scratch[start + 2] = field.from_u64(u64::from(bytes[2]));
+    scratch[start + 3] = field.from_u64(u64::from(bytes[3]));
+  }
+
+  match kind {
+    DirectHintKind::U32Bytes => {
+      if key.len() != 1 || width != 4 {
+        return Err("hint input width mismatch".into());
+      }
+      let word = field.to_u64(key[0].get(scratch)) as u32;
+      write_u32_bytes(field, scratch, start, word);
+    },
+    DirectHintKind::U32Sub => {
+      if key.len() != 2 || width != 4 {
+        return Err("hint input width mismatch".into());
+      }
+      let a = field.to_u64(key[0].get(scratch)) as u32;
+      let b = field.to_u64(key[1].get(scratch)) as u32;
+      write_u32_bytes(field, scratch, start, a.wrapping_sub(b));
+    },
+    DirectHintKind::U32Add => {
+      if key.len() != 8 || width != 4 {
+        return Err("hint input width mismatch".into());
+      }
+      let w0 = read_u32_word(field, scratch, &key[0..4])?;
+      let w1 = read_u32_word(field, scratch, &key[4..8])?;
+      write_u32_bytes(field, scratch, start, w0.wrapping_add(w1));
+    },
+    DirectHintKind::U32Add3 => {
+      if key.len() != 12 || width != 4 {
+        return Err("hint input width mismatch".into());
+      }
+      let w0 = read_u32_word(field, scratch, &key[0..4])?;
+      let w1 = read_u32_word(field, scratch, &key[4..8])?;
+      let w2 = read_u32_word(field, scratch, &key[8..12])?;
+      write_u32_bytes(
+        field,
+        scratch,
+        start,
+        w0.wrapping_add(w1).wrapping_add(w2),
+      );
+    },
+    DirectHintKind::U32Lt => {
+      if key.len() != 2 || width != 12 {
+        return Err("hint input width mismatch".into());
+      }
+      let a = field.to_u64(key[0].get(scratch)) as u32;
+      let b = field.to_u64(key[1].get(scratch)) as u32;
+      write_u32_bytes(field, scratch, start, a);
+      write_u32_bytes(field, scratch, start + 4, a.wrapping_sub(b));
+      write_u32_bytes(field, scratch, start + 8, b);
+    },
+    DirectHintKind::BytesLe => {
+      if key.len() != 1 || width != 8 {
+        return Err("hint input width mismatch".into());
+      }
+      let bytes = field.to_u64(key[0].get(scratch)).to_le_bytes();
+      for (i, &byte) in bytes.iter().enumerate() {
+        scratch[start + i] = field.from_u64(u64::from(byte));
+      }
+    },
+  }
+  Ok(())
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Value<F> {
@@ -341,14 +581,20 @@ impl<B: FieldBackend> FillPlan<B> {
             field.inverse(v).ok_or("zero failure witness")?;
         },
         Node::Call { callable, args } => {
-          buffer.clear();
-          buffer.extend(args.iter().map(|v| v.get(scratch)));
           let table = &record.queries.tables[*callable];
           if let Some(map) = &table.static_map {
-            map
-              .binding
-              .evaluate(buffer, &mut scratch[k.start..k.start + k.width])?;
+            if let Some(kind) = map.binding.direct {
+              eval_direct_map(kind, field, args, scratch, k.start, k.width)?;
+            } else {
+              buffer.clear();
+              buffer.extend(args.iter().map(|v| v.get(scratch)));
+              map
+                .binding
+                .evaluate(buffer, &mut scratch[k.start..k.start + k.width])?;
+            }
           } else {
+            buffer.clear();
+            buffer.extend(args.iter().map(|v| v.get(scratch)));
             if let Some(id) = table.lookup(buffer).1 {
               scratch[k.start..k.start + k.width]
                 .copy_from_slice(table.output(id).output);
@@ -380,16 +626,20 @@ impl<B: FieldBackend> FillPlan<B> {
           scratch[k.start..k.start + k.width].copy_from_slice(cell.value);
         },
         Node::Hint { instruction, key } => {
-          buffer.clear();
-          buffer.extend(key.iter().map(|v| v.get(scratch)));
-          record.hints.sites[self.function][*instruction]
+          let site = record.hints.sites[self.function][*instruction]
             .as_ref()
-            .ok_or("missing hint site")?
-            .evaluate(
+            .ok_or("missing hint site")?;
+          if let Some(kind) = site.direct {
+            eval_direct_hint(kind, field, key, scratch, k.start, k.width)?;
+          } else {
+            buffer.clear();
+            buffer.extend(key.iter().map(|v| v.get(scratch)));
+            site.evaluate(
               buffer,
               &mut scratch[k.start..k.start + k.width],
               field,
             )?;
+          }
         },
       }
     }

@@ -167,6 +167,8 @@ pub struct Backend<'p, 'a, B: WitnessField = PrimeField> {
   tables: Vec<tables::FixedTable>,
   rom: rom::Rom,
   lookup_plans: Vec<witness::LookupPlan>,
+  member_lookup_plans: Vec<witness::MemberLookupPlan>,
+  circuit_chips: Vec<Vec<usize>>,
   members: Vec<Vec<usize>>,
   placements: Vec<grouping::Placement>,
   parameters: Parameters,
@@ -407,6 +409,12 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       .iter()
       .map(|circuit| witness::LookupPlan::compile(&circuit.graph))
       .collect::<Result<_, _>>()?;
+    let member_lookup_plans =
+      witness::compile_member_lookup_plans(&placements, &system.circuits)?;
+    let mut circuit_chips = vec![vec![]; function_circuits];
+    for (chip, placement) in placements.iter().enumerate() {
+      circuit_chips[placement.circuit].push(chip);
+    }
     let mut members = vec![vec![]; function_circuits];
     for (function, &chip) in plan.members.iter().enumerate() {
       members[placements[chip].circuit].push(function);
@@ -419,6 +427,8 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       tables,
       rom,
       lookup_plans,
+      member_lookup_plans,
+      circuit_chips,
       members,
       placements,
       parameters,
