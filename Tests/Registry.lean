@@ -37,24 +37,30 @@ import Ix.Meta
 
 namespace Tests.Registry
 
-/-- A CI job that runs registry entries by tier. `cli` and `ixvm` are steps of
-`ci.yml`'s `lean-test` job; the others are `merge-tests.yml` partitions. -/
+/-- A CI job that runs registry entries by tier. `cli`, `ixvm`,
+`compiler-closures`, `binding-proof`, `misc` and `landing-initstd-cli` run in
+`ci.yml` as parallel path-gated jobs; `nightly` runs in `nightly.yml`. -/
 inductive CiJob where
   | cli
-  /-- Claims through the formal IxVM program (`ixvm-proof test`), after
-  `Scripts/CheckFormal.lean` has built its host and exported its artifact. -/
+  /-- Claims through the formal IxVM program (`ixvm-proof test`), on the
+  cached/exported claim artifact. -/
   | ixvm
   | compilerClosures
+  /-- `ix prove-binding` + shard binding reuse through the `ix` binary. -/
+  | bindingProof
   | misc
   /-- Init+Std through the `ix` binary: `ix compile-lean` with its report
   checks, whose artifact must match the reference digest and which
-  `ix check-lean` checks with every bound role admitted, and
-  `ix validate-lean` fidelity. -/
+  `ix check-lean` checks with every bound role admitted, `ix validate-lean`
+  fidelity reusing that artifact, and reader coverage. -/
   | landingInitStdCli
+  /-- Heavy full sweeps (adversarial `.binding` / TagN / Eval / Arena sweeps
+  and whole-Init+Std pure BLAKE3 hash parity) run nightly on `main`. -/
+  | nightly
   deriving DecidableEq, Repr
 
 def CiJob.all : List CiJob :=
-  [.cli, .ixvm, .compilerClosures, .misc, .landingInitStdCli]
+  [.cli, .ixvm, .compilerClosures, .bindingProof, .misc, .landingInitStdCli, .nightly]
 
 /-- The jobs that `--tier landing` selects together. -/
 def CiJob.isLanding : CiJob → Bool
@@ -66,8 +72,10 @@ def CiJob.key : CiJob → String
   | .cli => "cli"
   | .ixvm => "ixvm"
   | .compilerClosures => "compiler-closures"
+  | .bindingProof => "binding-proof"
   | .misc => "misc"
   | .landingInitStdCli => "landing-initstd-cli"
+  | .nightly => "nightly"
 
 /-- Where an entry runs. -/
 inductive Tier where
@@ -191,7 +199,7 @@ def problems (entries : List Entry) (workflows : List (String × String)) : List
   return out
 
 def workflowFiles : List System.FilePath :=
-  [".github/workflows/ci.yml", ".github/workflows/merge-tests.yml"]
+  [".github/workflows/ci.yml", ".github/workflows/nightly.yml"]
 
 /-- Retained behavior checks must occur exactly once in their required tier,
 including entries that would otherwise disappear silently from CI. -/

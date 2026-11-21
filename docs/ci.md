@@ -50,24 +50,26 @@ the entry runs:
 
 | Tier | Where it runs | What it holds |
 | --- | --- | --- |
-| `primary` | `lake test` with no arguments: the `lean-test` job of CI Jobs, and Nix CI's `ix-tests` | the quick suites |
-| `ci:cli` | a step of the `lean-test` job | the command-line integration tests |
-| `ci:ixvm` | a step of the `lean-test` job, after `Scripts/CheckFormal.lean`, on its claim artifact | claims through the formal IxVM program (`ixvm-proof test`) under the circuit verdict (every assertion checked, `IX_AIUR_CIRCUIT_VERDICT`; `=0` for plain execution): kernel verdicts, the exploit, arena, TagN, evaluation, binding, IO-ingress and circuit-verdict suites |
-| `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, auxiliary closure addresses, checker-support grounding, packing, the certified checker's pinned subjects and acceleration inputs, and the binding proof through the `ix` binary |
-| `ci:misc` | a merge-tests partition, with the ZK voting prover | the tutorial, catalog and commit I/O |
-| `ci:landing-initstd-cli` | a merge-tests partition | Init+Std through the `ix` binary: `ix compile-lean` with its report checks, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which `ix check-lean` must check with every role of the default table admitted; the Rust, pure and admission BLAKE3 on every record, blob and binding of that artifact; and `ix validate-lean` fidelity |
+| `primary` | `lake test` with no arguments: `ci.yml`'s `host-test-primary`, and Nix's `ix-tests` | the quick host suites (including pure-host `ixvm-pw-hints` and `ixvm-binder-data`) |
+| `ci:cli` | `ci.yml`'s `host-test-cli` | the command-line integration tests |
+| `ci:ixvm` | `ci.yml`'s `ixvm-tier-tests`, on the cached/exported `ixvm.ixa` artifact | PR completeness, exact FFT cost pins, out-of-scope claims (`eval`, `reveal`, `user-axioms`, `assumed`), and Rust-host circuit-verdict smokes (`IX_AIUR_CIRCUIT_VERDICT`; `=0` for plain execution) |
+| `ci:compiler-closures` | `ci.yml`'s `host-test-closures` | selected closures against the whole environment, auxiliary closure addresses, checker-support grounding, packing, `cert-evidence-agreement`, and the certified checker's pinned subjects and acceleration inputs |
+| `ci:binding-proof` | `ci.yml`'s `binding-proof-cli`, on the cached `ixvm.ixa` and prebuilt Rust hosts | `ix prove-binding`, shard proofs assuming the binding, and composition/refusal checks (64 GiB budget) |
+| `ci:misc` | `ci.yml`'s `host-test-misc`, with the ZK voting prover | the tutorial, catalog and commit I/O |
+| `ci:landing-initstd-cli` | `ci.yml`'s `host-test-landing` | Init+Std through the `ix` binary: `ix compile-lean` with its report checks and reference digest pin (`Tests/Fixtures/initstd-reference.txt`), `ix check-lean` with bound roles admitted, `ix validate-lean` fidelity reusing that artifact (avoiding a second full Init+Std compile), and `ixvm-reader-coverage` |
+| `ci:nightly` | `nightly.yml` (scheduled daily on `main`) | exhaustive adversarial `.binding`, TagN (4,128-claim), Eval (24-term / every-byte truncation), Arena (`bad_*`), and SafeReferences sweeps plus the whole-Init+Std pure-Lean BLAKE3 sweep (`admission-hash-diff-initstd`) |
 | `manual` | by hand only | entries that need inputs outside the repository, take minutes or hours, or are diagnostics; each states its reason |
 
 The manual runner that proves through the production `ix_aggr` circuit,
 `aggregate-binding-reuse`, takes minutes of recursion and about 190 GB, three
-quarters of a 32-CPU merge-tests runner's memory, so it stays manual.
-`binding-proof-cli` (`ci:compiler-closures`) runs `aggregate-binding-reuse`'s
+quarters of a 32-CPU runner's memory, so it stays manual.
+`binding-proof-cli` (`ci:binding-proof`) runs `aggregate-binding-reuse`'s
 flow without its two aggregates: the binding proof, the shard proofs that
 assume it, their composition with it, and the refusals without it; the
 aggregation circuit's handling of the binding is tested in
 `formal-aggregate-tests` (`Scripts/CheckFormal.lean`). Its proving budget is
-64 GiB, so it runs in the merge queue, on a 32-CPU runner, rather than in every
-pull request's `lean-test`.
+64 GiB, so it runs in its own 32-CPU `ci.yml` job on the S3-cached `ixvm.ixa`
+artifact and prebuilt Rust hosts.
 
 `aggregate-toolchains` is also manual: it proves the committed library fixtures
 from Lean 4.29.0, 4.33.1, 4.34.1 and 4.35.0 with one IxVM key, discharges each
@@ -93,58 +95,57 @@ textual: a step disabled by an `if:` still counts. A merge-tests partition
 must finish well within the merge queue's status-check timeout: split a tier
 into two jobs before it approaches it.
 
-The primary tier runs in two places per event: incrementally in `lean-test`,
-and in Nix CI's sandbox from the Nix-built test binary on a fresh copy of the
-tracked sources (the flake's one check, `ix-tests`; the Rust lints and tests
-are `rust-test`'s). Nix CI's development shell only builds the library. In the
-merge queue, the `build` job of Merge tests builds the partitions' targets once
-on their sticky lineage, and the partitions start from its snapshot; each
-partition's log says whether it did. Valgrind runs `ffi-tests`, the `ffi`
-suite as an executable of its own, whose import closure leaves out the test
-binary's proofs. The certification statements' freeze, `Ix.Cert.Audit`, is
-built by `check-kernel` and `lake lint`, not by the test binary.
+The primary tier runs incrementally in `ci.yml`'s `host-test-primary` on every
+host PR, and in Nix's sandbox (`checks.ix-tests`) on PRs that touch Nix
+packaging, toolchains, or lockfiles as well as daily in `nightly.yml` (ordinary
+PRs run parallel `nix build` + `nix run .#ix -- --help` + `nix develop --command lake build`
+without duplicating the 29-minute `ix-tests` run). In `ci.yml`, `host-build`
+builds non-Mathlib host targets once on the dedicated `ci-host` sticky lineage
+and fans out to parallel test/lint jobs (`host-test-primary`, `host-test-cli`,
+`host-audits-lint`, `host-test-landing`, `host-test-closures`, `host-test-misc`);
+`formal-build-export` builds formal packages and Rust hosts once on `ci-formal`,
+restores or exports `{ixvm,recursion,aggregate}.ixa` in parallel into the S3
+cache, and fans out to `formal-unit-tests`, `formal-check`, `ixvm-tier-tests`,
+and `binding-proof-cli`; `ixvm-refinement` and `certified-kernel` run in
+parallel from `t=0` on their own sticky lineages (`ci-refinement`, `ci-kernel`).
+Valgrind runs `ffi-tests` (without Mathlib) whenever Rust/FFI files change. The
+certification statements' freeze, `Ix.Cert.Audit`, is built by `check-kernel`
+and `lake lint`, not by the test binary.
 
-## Required checks
+## Path filtering, draft PRs, and required checks
 
-The branch protection or ruleset for `main` must require these aggregate
-checks in place of their individual job checks:
+`ci.yml`, `nix.yml`, and `bench-main.yml` use `dorny/paths-filter` so changes
+only trigger the subsystems they affect (with conservative global triggers on
+toolchains, `lakefile.lean`, `Cargo.*`, and workflow files). On **draft** pull
+requests, `ci.yml` runs only the fast dev loop (`quick-checks`, `lints`,
+`host-build`, `host-test-primary`, `host-test-cli`, `host-audits-lint`,
+`rust-test`, `cuda-compile`); marking a PR **ready for review** runs the full
+path-gated parallel DAG including `certified-kernel`, Init+Std & compiler
+closures, `valgrind-ffi`, `ixvm-refinement`, `formal-check`, `ixvm-tier-tests`,
+and `binding-proof-cli`. Pushes to `main` run build-only cache-warming steps so
+sticky disks and the S3 `.ixa` cache stay fresh without re-running tests.
+
+Because `runs-on/spot-retry-gate` requires every job in `job_results` to have
+`result == "success"`, a lightweight `check-results` job sits before `ci-gate`
+and `nix-gate`: it allows `skipped` only when `changes` intentionally gated
+that job (rejecting failures, cancellations, and cascading skips) while
+preserving RunsOn's automatic EC2 Spot interruption detection and retries.
+
+The branch protection or ruleset for `main` should enable **"Require branches
+to be up to date before merging"** (no separate merge queue needed) and require
+these aggregate checks:
 
 | Workflow | Required check |
 | --- | --- |
 | CI Jobs | `ci-gate / pass` |
 | Nix CI | `nix-gate / pass` |
-| Merge tests | `merge-gate / pass` |
 
-Remove the raw RunsOn job checks, `Nix Tests`, and the old `Merge tests`
-aggregate from the required-check list when enabling these gates. Requiring
-an individual Spot job would still eject the PR as soon as it is interrupted.
-Do not require the gates' `interrupted` or `Detect Spot interruption` checks.
-Independent GitHub-hosted or security requirements can remain, provided they
-also report the checks the merge queue expects.
-
-CI Jobs and Nix CI run on both `pull_request` and `merge_group`. The
-merge-queue test tiers and the certified kernel gate (`lake run check-kernel
---with-model`, a merge-tests partition) run against the merge group's synthetic
-commit, or on an authorized `!merge-tests` comment. The pull-request-only stub
-publishes `merge-gate / pass` so a PR can enter the queue before the
-merge-queue suites run.
-It never runs on `merge_group`, and merge-tests.yml never runs on
-`pull_request`, so each commit shows one `merge-gate / pass` check under the
-shared workflow name.
-
-The stub runs nothing: a green `merge-gate / pass` on a pull request says
-nothing about the merge-queue tiers, the certified kernel gate (the only job
-that builds the standalone `IxC` package with its audits, and the set-theory
-model) or Valgrind. They guard `main` only while `main` requires
-`merge-gate / pass` and every merge goes through the queue, which are
-repository settings these files cannot check. To run them on a pull request
-before queueing it, comment `!merge-tests`.
-
-`Report merge tests` runs only for authorized `!merge-tests` comments, after
-the gate finishes. It reports a pending Spot retry when the gate succeeds
-with unsuccessful test jobs, and updates the same comment after the retry.
-The report does not contribute to the gate's verdict and is not a required
-check. Gate failures, including detector errors, are reported as failures.
+During the transition off the legacy merge queue, `merge-tests-stub.yml`
+temporarily publishes `merge-gate / pass` on `pull_request` and `merge_group`;
+once the ruleset drops `merge-gate / pass` and disables the merge queue, delete
+`merge-tests-stub.yml`. Remove raw RunsOn job checks and `Nix Tests` from the
+required-check list, and do not require `interrupted` or `Detect Spot interruption`.
+Independent GitHub-hosted or security requirements (`CodeQL`) can remain.
 
 ## Spot recovery
 
