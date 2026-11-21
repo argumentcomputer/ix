@@ -827,40 +827,93 @@ def applyLamArgs (body : Expr .anon) (args : List (Expr .anon)) : Expr .anon :=
     | a :: rest => go (e.instantiate1Lift a (rem - 1)) (rem - 1) rest
   go body args.length args
 
-/-- An internal `Eq.rec`-at-`Eq.refl` congruence helper (`congrPack_j`): when applied to `arity`
-arguments whose last argument is `Eq.refl _ _`, reduces definitionally to `base` instantiated at
-those levels and arguments. -/
+/-- An `Eq.rec`-at-`Eq.refl` helper (`congrPack_j`, `Eq.ndrec`, `Eq.recOn`,
+`Eq.ndrecOn`, `Eq.subst`, `congrArg`, `congrFun`): when applied to `arity`
+arguments whose `prfArgIdx`-th argument is `Eq.refl _ _`, reduces definitionally
+to `base` instantiated at those levels and arguments. When `guardSize` is true
+(external helpers), arguments referenced more than once in `base` are guarded
+against term-size blowup. -/
 structure EqReflHelper where
   levelParams : List Nat
   arity : Nat
+  prfArgIdx : Nat
   base : Expr .anon
+  guardSize : Bool := false
 
-/-- Extract internal congruence helpers of the form `λ x_0 ... x_{k-1}, Eq.rec _ _ _ base _ (.bvar 0)`
-where `base` is an `Eq.refl` application. -/
-def extractEqReflHelpers (gen : Array (Declaration .anon)) (req : Std.HashSet (Key .anon)) :
+/-- True when `e` references no constant (or projection struct) other than `.role .eqRefl`. -/
+def exprOnlyEqReflConsts : Expr .anon → Bool
+  | .const (.role .eqRefl) _ => true
+  | .const _ _ => false
+  | .proj _ _ _ => false
+  | .app f a => exprOnlyEqReflConsts f && exprOnlyEqReflConsts a
+  | .lam t b _ | .forallE t b _ => exprOnlyEqReflConsts t && exprOnlyEqReflConsts b
+  | .letE t v b _ => exprOnlyEqReflConsts t && exprOnlyEqReflConsts v && exprOnlyEqReflConsts b
+  | _ => true
+
+/-- Recognize a helper `λ x_0 ... x_{k-1}, Head ... (.bvar prfBVar)` whose head is either
+`Eq.rec` or an already-recognized `EqReflHelper` (allowing `Eq.ndrec` / `Eq.subst` →
+`congrArg` / `congrFun` / `Eq.ndrecOn` chaining). For internal helpers (`external = false`),
+`base` may be an `Eq.refl` application or `.bvar j` (`j < arity`). For external helpers
+(`external = true`), `base` must also introduce no constants other than `.role .eqRefl` and
+stay within 64 AST nodes so reduction never introduces un-witnessed outside references. -/
+def recognizeEqReflHelper (known : Std.HashMap (Key .anon) EqReflHelper)
+    (external : Bool) (cv : ConstantVal .anon) (v : Expr .anon) : Option EqReflHelper :=
+  let (arity, body) := peelLamArity v 0
+  if arity == 0 then none
+  else
+    let (fn, args) := splitAppSpine body
+    let matched : Option (Nat × Expr .anon) := match fn, args with
+      | .const (.role .eqRec) _, [_α, _a, _mot, base, _b, .bvar prfBVar] =>
+        if prfBVar < arity then some (arity - 1 - prfBVar, base) else none
+      | .const k us, _ =>
+        match known[k]? with
+        | some eh =>
+          if args.length == eh.arity && us.length == eh.levelParams.length then
+            match args[eh.prfArgIdx]? with
+            | some (.bvar prfBVar) =>
+              if prfBVar < arity then
+                let base := applyLamArgs (eh.base.instantiateLevelParams eh.levelParams us) args
+                some (arity - 1 - prfBVar, base)
+              else none
+            | _ => none
+          else none
+        | none => none
+      | _, _ => none
+    match matched with
+    | none => none
+    | some (prfArgIdx, base) =>
+      let baseOk : Bool := match base with
+        | .bvar j => j < arity
+        | _ =>
+          let (bh, bargs) := splitAppSpine base
+          match bh with
+          | .const (.role .eqRefl) _ =>
+            bargs.length == 2 &&
+              (!external || (exprOnlyEqReflConsts base && exprNodesBounded 64 base 0 ≤ 64))
+          | _ => false
+      if baseOk then
+        some { levelParams := cv.levelParams, arity, prfArgIdx, base, guardSize := external }
+      else none
+
+/-- Extract internal `Eq.rec`-at-`Eq.refl` helpers from `gen`, seeded with any external helpers
+recognized from the environment (`Eq.ndrec`, `Eq.subst`, `congrArg`, `congrFun`, etc.). -/
+def extractEqReflHelpers (gen : Array (Declaration .anon)) (req : Std.HashSet (Key .anon))
+    (external : Std.HashMap (Key .anon) EqReflHelper := {}) :
     Std.HashMap (Key .anon) EqReflHelper := Id.run do
-  let mut out : Std.HashMap (Key .anon) EqReflHelper := {}
+  let mut out : Std.HashMap (Key .anon) EqReflHelper := external
   for d in gen do
     let .defnDecl cv v _ := d | continue
     if req.contains cv.name then continue
-    let (arity, body) := peelLamArity v 0
-    if arity == 0 then continue
-    let (fn, args) := splitAppSpine body
-    match fn, args with
-    | .const (.role .eqRec) _, [_α, _a, _mot, base, _b, .bvar 0] =>
-      let (bh, bargs) := splitAppSpine base
-      match bh with
-      | .const (.role .eqRefl) _ =>
-        if bargs.length == 2 then
-          out := out.insert cv.name { levelParams := cv.levelParams, arity, base }
-      | _ => pure ()
-    | _, _ => pure ()
+    if let some eh := recognizeEqReflHelper out false cv v then
+      out := out.insert cv.name eh
   return out
 
-/-- Safe bottom-up β + `tag.rec`-ι + `Eq.rec`-ι + `congrPack`-at-`Eq.refl` compaction on generated
-model expressions. Structural descent is unbounded; `stepFuel` bounds only actual reduction steps.
-Preserves definitional equality and well-typedness, never ζ-reduces `letE`, and guards β-reduction
-against term blowup (`occs ≤ 1`, tag constructor argument, or `occs * size ≤ 64`). -/
+/-- Safe bottom-up β + dead-`let` + `tag.rec`-ι + `Eq.rec`-ι + `Eq`-at-`Eq.refl` helper
+(`congrPack_j`, `Eq.ndrec`, `congrArg`, `congrFun`) compaction on generated model expressions.
+Structural descent is unbounded; `stepFuel` bounds only actual reduction steps. Preserves
+definitional equality and well-typedness, never ζ-reduces live `letE` (only eliminates unused
+`letE` bindings), and guards β-reduction and external helper substitutions against term blowup
+(`occs ≤ 1`, tag constructor argument, or `occs * size ≤ 64`). -/
 partial def compactExpr (tag? : Option TagRecInfo)
     (eqHelpers : Std.HashMap (Key .anon) EqReflHelper) (e : Expr .anon) : Expr .anon :=
   go 256 e
@@ -869,7 +922,12 @@ where
     match e with
     | .lam t b bm => .lam (go stepFuel t) (go stepFuel b) bm
     | .forallE t b bm => .forallE (go stepFuel t) (go stepFuel b) bm
-    | .letE t v b lm => .letE (go stepFuel t) (go stepFuel v) (go stepFuel b) lm
+    | .letE t v b lm =>
+      let b' := go stepFuel b
+      if bvarOccsBounded 1 0 b' 0 == 0 then
+        b'.instantiate1Lift (.sort .zero) 0
+      else
+        .letE (go stepFuel t) (go stepFuel v) b' lm
     | .proj s i x => .proj s i (go stepFuel x)
     | .app .. =>
       let (fn0, args0) := splitAppSpine e
@@ -908,18 +966,25 @@ where
           reduceSpine stepFuel fn' (extra ++ rest)
         else Expr.mkAppN fn args
       -- `tag.rec p⃗ mot m_0 ... m_{k-1} (tag.j p⃗ f⃗) rest ↦ m_j f⃗ rest`
-      -- and `congrPack_j p⃗ idx x x (Eq.refl _ x) rest ↦ Eq.refl _ (pack_j p⃗ idx x) rest`
+      -- and `Eq`-at-`Eq.refl` helpers (`congrPack_j`, `Eq.ndrec`, `congrArg`, `congrFun`)
       | .const k us, _ =>
         match eqHelpers[k]? with
         | some eh =>
           if args.length ≥ eh.arity && us.length == eh.levelParams.length then
-            match args[eh.arity - 1]? with
+            match args[eh.prfArgIdx]? with
             | some prf =>
               if isEqReflApp prf then
-                let inst := applyLamArgs (eh.base.instantiateLevelParams eh.levelParams us)
-                  (args.take eh.arity)
-                let (fn', extra) := splitAppSpine (go stepFuel inst)
-                reduceSpine stepFuel fn' (extra ++ args.drop eh.arity)
+                let taken := args.take eh.arity
+                let sizeOk := !eh.guardSize || (taken.zipIdx).all fun (arg, idx) =>
+                  let occs := bvarOccsBounded 64 (eh.arity - 1 - idx) eh.base 0
+                  if occs ≤ 1 then true
+                  else if occs ≤ 64 then occs * exprNodesBounded (64 / occs) arg 0 ≤ 64
+                  else false
+                if sizeOk then
+                  let inst := applyLamArgs (eh.base.instantiateLevelParams eh.levelParams us) taken
+                  let (fn', extra) := splitAppSpine (go stepFuel inst)
+                  reduceSpine stepFuel fn' (extra ++ args.drop eh.arity)
+                else Expr.mkAppN fn args
               else Expr.mkAppN fn args
             | none => Expr.mkAppN fn args
           else Expr.mkAppN fn args
@@ -1007,11 +1072,12 @@ def pruneGenReachable (decls : Array (Declaration .anon)) (req : Std.HashSet (Ke
 
 /-- Compact expressions in generated model declarations (leaving public root types and
 inductive blocks intact) and prune declarations unreachable from the required public roots. -/
-def compactAndPruneGen (gen : List (Declaration .anon)) (req : Std.HashSet (Key .anon)) :
+def compactAndPruneGen (gen : List (Declaration .anon)) (req : Std.HashSet (Key .anon))
+    (extEqHelpers : Std.HashMap (Key .anon) EqReflHelper := {}) :
     List (Declaration .anon) := Id.run do
   let genArr := gen.toArray
   let tag? := extractTagRecInfo gen
-  let eqHelpers := extractEqReflHelpers genArr req
+  let eqHelpers := extractEqReflHelpers genArr req extEqHelpers
   let compacted : Array (Declaration .anon) := genArr.map fun d => match d with
     | .defnDecl cv v h =>
       let ty := if req.contains cv.name then cv.type else compactExpr tag? eqHelpers cv.type
@@ -1026,7 +1092,8 @@ def compactAndPruneGen (gen : List (Declaration .anon)) (req : Std.HashSet (Key 
 def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Constant)
     (cx : Ix.Kernel.Reader.Ctx .anon) (b : Address) (bc : Ixon.Constant)
     (shape : Ix.Kernel.Reader.BlockShape) (gen : List (Declaration .anon))
-    (tweak : Declaration .anon → Declaration .anon := id) :
+    (tweak : Declaration .anon → Declaration .anon := id)
+    (extEqHelpers : Std.HashMap (Key .anon) EqReflHelper := {}) :
     Except String BlockAdvice := do
   let fk ← familyKeys cx b bc shape
   -- Determine eligible modeled-projection keys once (reused for pruning and payload assembly)
@@ -1049,7 +1116,7 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
     for j in [0:n] do req := req.insert (auxKey (auxKey k .model) (.iota j))
   for (pmKey, piKey) in projKeys do
     req := (req.insert pmKey).insert piKey
-  let liveGen := compactAndPruneGen (gen.map tweak) req
+  let liveGen := (compactAndPruneGen gen req extEqHelpers).map tweak
   let roles : Std.HashMap Ix.Kernel.Role Address := table.bound.foldl (fun m (r, a) => m.insert r a) {}
   let mut nm : Names := { roles := roles }
   let mut records : Array (Address × Ixon.Constant) := #[]
@@ -1503,6 +1570,7 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
   let ordered := Ixon.CheckOrder.wholeEnv table pre sub
   let rootSet : Std.HashSet Address := roots.foldl (·.insert ·) {}
   let mut st := pre.state
+  let mut extEqHelpers : Std.HashMap (Key .anon) EqReflHelper := {}
   let mut env := env
   let mut report : Report := {}
   let mut kEnv? : Option (Option IxVM.PwHints.KernelEnv) := none
@@ -1513,6 +1581,12 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
       if rootSet.contains a then report := { report with blocks := report.blocks.push (a, .error s!"the reader: {why}") }
     | .ok r =>
       st := st.commit r
+      for d in r.decls do
+        match d with
+        | .defnDecl cv v _ | .thmDecl cv v =>
+          if let some eh := recognizeEqReflHelper extEqHelpers true cv v then
+            extEqHelpers := extEqHelpers.insert cv.name eh
+        | _ => pure ()
       unless rootSet.contains a do continue
       if r.generated == 0 then
         report := { report with blocks := report.blocks.push (a, .error "the reader generated no model")}
@@ -1528,7 +1602,7 @@ def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .
       let gen := if needNorm then
           match kEnv?.join with | some k => normGeneratedRecs gen0 k | none => gen0
         else gen0
-      let advice := blockAdvice table look cx a c shape gen tweak
+      let advice := blockAdvice table look cx a c shape gen tweak extEqHelpers
         >>= (·.withSections records env.blobs env.anonHints (table, pre))
       match advice with
       | .error e => report := { report with blocks := report.blocks.push (a, .error e) }
