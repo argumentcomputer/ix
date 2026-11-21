@@ -257,6 +257,140 @@ private theorem exprInstLevels_of_ne_nil {us : List KLevel} (hne : us ≠ []) (e
   | nil => exact absurd rfl hne
   | cons _ _ => rfl
 
+/-- **`KernelLevels::expr_has_level_param`** never allocates, returns `0` or `1`, and `0` implies
+`exprInstLevelsWalk us E = E` syntactically for any level parameter list `us`. -/
+private theorem exprHasLevelParam_tmExact {κ : _root_.Address → KKey} {Γ : Nat → KExpr} {k : Nat}
+    {E : KExpr} {pe r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsFn Obs.W "KernelLevels::expr_has_level_param" [pe] h r h' cs)
+    (hE : TmExact κ 0 Γ h k E pe) :
+    h' = h ∧ (r = .field 0 ∨ r = .field 1) ∧
+      (r = .field 0 → ∀ us, exprInstLevelsWalk us E = E) := by
+  cases Obs.«KernelLevels::expr_has_level_param».obs ev with
+  | BVar w ld hr hm hc =>
+    subst hr hm
+    obtain ⟨i, rfl, -, hcase⟩ := hE.bvar_of_load ld
+    rcases hcase with ⟨_, rfl⟩ | ⟨_, hd, _⟩
+    · exact ⟨rfl, .inl rfl, fun _ _ => rfl⟩
+    · omega
+  | Lit w ld hr hm hc =>
+    subst hr hm
+    rcases hE.toTm.lit_of_load ld with ⟨_, _, rfl, _, _, rfl⟩ | ⟨_, _, _, rfl, _, _, rfl⟩ <;>
+      exact ⟨rfl, .inl rfl, fun _ _ => rfl⟩
+  | Srt x_l cs1 ld ev1 hc =>
+    obtain ⟨l, rfl, rl⟩ := hE.sort_of_load ld
+    obtain ⟨hh', h01, h0⟩ := IxVM.Refinement.Levels.levelHasParam_obs ev1 rl
+    refine ⟨hh', h01, fun hr us => ?_⟩
+    obtain ⟨-, hsub⟩ := h0 hr us
+    simp [exprInstLevelsWalk, hsub]
+  | Const w x_lvls cs1 ld ev1 hc =>
+    obtain ⟨a, ls, rfl, -, rls⟩ := hE.const_of_load ld
+    obtain ⟨hh', h01, h0⟩ := IxVM.Refinement.Levels.levelListHasParam_obs ev1 rls
+    refine ⟨hh', h01, fun hr us => ?_⟩
+    obtain ⟨-, hsub⟩ := h0 hr us
+    simp [exprInstLevelsWalk, hsub]
+  | App_n1 x_f x_a m1 cs1 ld ev1 hr hm hc =>
+    obtain ⟨Ef, Ea, rfl, hf, -⟩ := hE.app_of_load ld
+    obtain ⟨hm1, -, -⟩ := exprHasLevelParam_tmExact ev1 hf
+    subst hm1 hr hm
+    exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+  | App_other x_f x_a v1 m1 cs1 cs2 ld ev1 hne1 ev2 hc =>
+    obtain ⟨Ef, Ea, rfl, hf, ha⟩ := hE.app_of_load ld
+    obtain ⟨hm1, h01f, h0f⟩ := exprHasLevelParam_tmExact ev1 hf
+    subst hm1
+    have hv1 : v1 = .field 0 := h01f.resolve_right hne1
+    obtain ⟨hh', h01a, h0a⟩ := exprHasLevelParam_tmExact ev2 ha
+    refine ⟨hh', h01a, fun hr us => ?_⟩
+    simp [exprInstLevelsWalk, h0f hv1 us, h0a hr us]
+  | Lam x_ty x_body x_bl cs1 ld evb hc =>
+    obtain ⟨T, B, ℓ, rfl, ht, hb, hl⟩ := hE.lam_of_load ld
+    cases Obs.«KernelLevels::expr_has_level_param_binder».obs evb with
+    | n1 m1 csb evl hr hm hcb =>
+      obtain ⟨hm1, -, -⟩ := IxVM.Refinement.Levels.levelHasParam_obs evl hl
+      subst hm1 hr hm
+      exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+    | other_n1 v1 m1 csb m2 cst evl hne1 evt hr hm hcb =>
+      obtain ⟨hm1, -, -⟩ := IxVM.Refinement.Levels.levelHasParam_obs evl hl
+      subst hm1
+      obtain ⟨hm2, -, -⟩ := exprHasLevelParam_tmExact evt ht
+      subst hm2 hr hm
+      exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+    | other_other v1 m1 csb v2 m2 cst cs3 evl hne1 evt hne2 evbd hcb =>
+      obtain ⟨hm1, h01l, h0l⟩ := IxVM.Refinement.Levels.levelHasParam_obs evl hl
+      subst hm1
+      have hv1 : v1 = .field 0 := h01l.resolve_right hne1
+      obtain ⟨hm2, h01t, h0t⟩ := exprHasLevelParam_tmExact evt ht
+      subst hm2
+      have hv2 : v2 = .field 0 := h01t.resolve_right hne2
+      obtain ⟨hh', h01b, h0b⟩ := exprHasLevelParam_tmExact evbd hb
+      refine ⟨hh', h01b, fun hr us => ?_⟩
+      obtain ⟨-, hsubl⟩ := h0l hv1 us
+      simp only [exprInstLevelsWalk, h0t hv2 us, h0b hr us,
+        IxVM.Refinement.Core.SubstAux.bmeta_subst (LvEqList.refl us), hsubl]
+  | Forall x_ty x_body x_bl cs1 ld evb hc =>
+    obtain ⟨T, B, ℓ, rfl, ht, hb, hl⟩ := hE.forallE_of_load ld
+    cases Obs.«KernelLevels::expr_has_level_param_binder».obs evb with
+    | n1 m1 csb evl hr hm hcb =>
+      obtain ⟨hm1, -, -⟩ := IxVM.Refinement.Levels.levelHasParam_obs evl hl
+      subst hm1 hr hm
+      exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+    | other_n1 v1 m1 csb m2 cst evl hne1 evt hr hm hcb =>
+      obtain ⟨hm1, -, -⟩ := IxVM.Refinement.Levels.levelHasParam_obs evl hl
+      subst hm1
+      obtain ⟨hm2, -, -⟩ := exprHasLevelParam_tmExact evt ht
+      subst hm2 hr hm
+      exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+    | other_other v1 m1 csb v2 m2 cst cs3 evl hne1 evt hne2 evbd hcb =>
+      obtain ⟨hm1, h01l, h0l⟩ := IxVM.Refinement.Levels.levelHasParam_obs evl hl
+      subst hm1
+      have hv1 : v1 = .field 0 := h01l.resolve_right hne1
+      obtain ⟨hm2, h01t, h0t⟩ := exprHasLevelParam_tmExact evt ht
+      subst hm2
+      have hv2 : v2 = .field 0 := h01t.resolve_right hne2
+      obtain ⟨hh', h01b, h0b⟩ := exprHasLevelParam_tmExact evbd hb
+      refine ⟨hh', h01b, fun hr us => ?_⟩
+      obtain ⟨-, hsubl⟩ := h0l hv1 us
+      simp only [exprInstLevelsWalk, h0t hv2 us, h0b hr us,
+        IxVM.Refinement.Core.SubstAux.bmeta_subst (LvEqList.refl us), hsubl]
+  | Let x_ty x_val x_body cs1 ld evl hc =>
+    obtain ⟨T, V, B, rfl, ht, hv, hb⟩ := hE.letE_of_load ld
+    cases Obs.«KernelLevels::expr_has_level_param_let».obs evl with
+    | n1 m1 cst evt hr hm hcl =>
+      obtain ⟨hm1, -, -⟩ := exprHasLevelParam_tmExact evt ht
+      subst hm1 hr hm
+      exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+    | other_n1 v1 m1 cst m2 csv evt hne1 evv hr hm hcl =>
+      obtain ⟨hm1, -, -⟩ := exprHasLevelParam_tmExact evt ht
+      subst hm1
+      obtain ⟨hm2, -, -⟩ := exprHasLevelParam_tmExact evv hv
+      subst hm2 hr hm
+      exact ⟨rfl, .inr rfl, fun h10 => absurd (Value.field.inj h10) one_ne_zero⟩
+    | other_other v1 m1 cst v2 m2 csv cs3 evt hne1 evv hne2 evbd hcl =>
+      obtain ⟨hm1, h01t, h0t⟩ := exprHasLevelParam_tmExact evt ht
+      subst hm1
+      have hv1 : v1 = .field 0 := h01t.resolve_right hne1
+      obtain ⟨hm2, h01v, h0v⟩ := exprHasLevelParam_tmExact evv hv
+      subst hm2
+      have hv2 : v2 = .field 0 := h01v.resolve_right hne2
+      obtain ⟨hh', h01b, h0b⟩ := exprHasLevelParam_tmExact evbd hb
+      refine ⟨hh', h01b, fun hr us => ?_⟩
+      rw [show exprInstLevelsWalk us (IxVM.Refinement.Core.instShift V 0 B) =
+          IxVM.Refinement.Core.instShift (exprInstLevelsWalk us V) 0
+            (exprInstLevelsWalk us B) from exprInstLevelsWalk_instantiate1Lift us V B 0,
+        h0v hv2 us, h0b hr us]
+  | Proj w1 w2 x_e1 cs1 ld ev1 hc =>
+    obtain ⟨a, i, Es, rfl, rfl, -, hes⟩ := hE.proj_of_load ld
+    obtain ⟨hh', h01, h0⟩ := exprHasLevelParam_tmExact ev1 hes
+    refine ⟨hh', h01, fun hr us => ?_⟩
+    simp [exprInstLevelsWalk, h0 hr us]
+termination_by cs.length
+decreasing_by
+  all_goals
+    try subst hc
+    try subst hcb
+    try subst hcl
+    simp only [List.length_cons, List.length_append]
+    omega
+
 private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
     ∀ (fname : String) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)),
@@ -291,8 +425,26 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
           have hus' : RepList klevelListEnum RepKLevel h' us pus := by rwa [klevelListEnum_eq]
           obtain rfl := IxVM.Refinement.Core.RepList.nil_of_load hus' ld
           exact hE
-        | .other (ld12 := ld) (hne24 := hne24) (ev33 := e1) (hc50 := hc) .. =>
+        | .other_n0 (ld12 := ld) (hne24 := hne24) (ev_ogebasxu := ehp)
+            (he_yyggzpmq := hr) (he_krlanrqd := hh) .. =>
+          subst hr hh
+          obtain ⟨hm1, -, h0⟩ := exprHasLevelParam_tmExact ehp hE
+          subst hm1
+          have hne : us ≠ [] := by
+            rintro rfl
+            have hus' : RepList klevelListEnum RepKLevel h' [] pus := by rwa [klevelListEnum_eq]
+            cases hus' with
+            | nil cell =>
+              rw [Lib.load_enum_cell cell] at ld
+              injection ld with hv
+              exact hne24 [] rfl hv.symm
+          rw [exprInstLevels_of_ne_nil hne, h0 rfl us]
+          exact hE
+        | .other_other (m_wvoaahvw := m1) (ld12 := ld) (hne24 := hne24) (ev_ogebasxu := ehp)
+            (ev_nzgqgvgw := e1) (hc_bmwtsztg := hc) .. =>
           subst hc
+          obtain ⟨hm1, -, -⟩ := exprHasLevelParam_tmExact ehp hE
+          subst m1
           have hne : us ≠ [] := by
             rintro rfl
             have hus' : RepList klevelListEnum RepKLevel h [] pus := by rwa [klevelListEnum_eq]
@@ -302,15 +454,15 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
               injection ld with hv
               exact hne24 [] rfl hv.symm
           rw [exprInstLevels_of_ne_nil hne]
-          exact (ih _ _ _ _ _ _ (by simp) e1 (sub fun c hc' => by simp [hc'])).2
+          exact (ih _ _ _ _ _ _ (by simp; omega) e1 (sub fun c hc' => by simp [hc'])).2
             rfl pe pus Γ k E us rfl hne hE hus
       · subst hfn hargs
         match Obs.«KernelLevels::expr_inst_levels_walk».obs ev with
-        | .BVar (ld12 := ld) (he29 := hr) (hm28 := hm) .. =>
+        | .BVar (ld12 := ld) (he_wafvjlei := hr) (he_iewaezri := hm) .. =>
           subst hr hm
           obtain ⟨i, rfl, hsm, hcase⟩ := hE.bvar_of_load ld
-          rcases hcase with ⟨hlt, rfl⟩ | ⟨_, hd, _⟩
-          · exact .bvarLocal (by simp) hsm hlt
+          rcases hcase with ⟨_, rfl⟩ | ⟨_, hd, _⟩
+          · exact hE
           · omega
         | .Srt (ld12 := ld) (ev74 := e1) (he58 := hr) (hm57 := hm) (hc91 := hc) .. =>
           subst hc hr hm
@@ -400,14 +552,10 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
             (((st.mono e2.heap_extends).mono e3.heap_extends).mono (Heap.Extends.snoc _ _))
             ((sv.mono e3.heap_extends).mono (Heap.Extends.snoc _ _))
             (sb.mono (Heap.Extends.snoc _ _))
-        | .Lit (ld12 := ld) (he609 := hr) (hm608 := hm) .. =>
+        | .Lit (ld12 := ld) (he_jqvjdxzf := hr) (he_vxvydceu := hm) .. =>
           subst hr hm
           rcases hE.toTm.lit_of_load ld with ⟨_, limbs, rfl, rl, hc, rfl⟩ |
-            ⟨_, bs, s, rfl, rb, hs, rfl⟩
-          · exact .litNat (by simp)
-              (repList_heapMono₂ _ repU64_heapMono₂ (Heap.Extends.snoc _ _) rl) hc
-          · exact .litStr (by simp)
-              (Bytes.repByteStream_heapMono₂ _ (Heap.Extends.snoc _ _) rb) hs
+            ⟨_, bs, s, rfl, rb, hs, rfl⟩ <;> exact hE
         | .Proj (ld12 := ld) (he648 := hr) (hm647 := hm) (ev680 := e1) (hc697 := hc) .. =>
           subst hc hr hm
           obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := hE.proj_of_load ld

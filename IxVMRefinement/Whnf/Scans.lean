@@ -54,6 +54,44 @@ theorem type_sort_never_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
   · exact (hr he163).elim
   · exact (hr he170).elim
 
+/-- `KernelWhnf::type_sort_may_be_nonzero`: a nonzero answer is a telescope of exactly `n` `∀`s
+ending in a sort that is nonzero at some level assignment after instantiation at `lvls`. -/
+theorem type_sort_may_be_nonzero_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
+    {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelWhnf::type_sort_may_be_nonzero" args h r h' calls) (ih : IH c calls) :
+    Specs.Whnf.type_sort_may_be_nonzero c args h r h' calls := by
+  intro ty n lvls hargs good d Γ k T m us hT hn hus hr
+  subst hargs hn
+  rcases Obs.«KernelWhnf::type_sort_may_be_nonzero».obs ev with
+    ⟨_, _, _, _, _, he, _, _⟩ |
+    ⟨_, x_body, _, cs1, v1, ld12, hne, op1, ev1, hc⟩ |
+    ⟨x_l, cs2, v1, m1, cs1, ld12, hv0, ev1, ev2, hc⟩ |
+    ⟨_, _, _, he, _, _⟩ |
+    ⟨_, _, _, _, he, _, _⟩
+  · exact (hr he).elim
+  · subst hc
+    have hm : m ≠ 0 := fun e => hne (by rw [e])
+    obtain rfl := Lib.sub_one_inv op1
+    obtain ⟨T0, B, ℓ, rfl, -, hB, -⟩ := hT.forallE_of_load ld12
+    obtain ⟨l, hl, hnz⟩ := ih.get (.whnf .type_sort_may_be_nonzero) (by lt_calls) ev1 x_body _ lvls
+      rfl (good.sub fun x hx => by simp [hx]) d Γ (k + 1) B (m - 1) us hB rfl hus hr
+    refine ⟨l, ?_, hnz⟩
+    rw [← Lib.val_sub_one hm]
+    exact hl
+  · subst hc
+    have hm : m = 0 := Value.field.inj hv0
+    subst hm
+    obtain ⟨u, rfl, l0, hl0, hul⟩ := hT.sort_of_load ld12
+    obtain ⟨ls, hls, hus'⟩ := hus
+    obtain ⟨-, hsub, -⟩ := ih.get (.levelOps .level_inst_params) (by lt_calls) ev1 x_l lvls rfl
+      (good.sub fun x hx => by simp [hx]).2 l0 ls hl0 hls
+    obtain ⟨-, hnz⟩ := ih.get (.infer .level_may_be_nonzero) (by lt_calls) ev2 v1
+      (Ix.Kernel.Level.subst (List.range us.length) us u) rfl
+      (good.sub fun x hx => by simp [hx]) ⟨_, hsub, WhnfAux.lvEq_subst_range hul hus'⟩
+    exact ⟨u, by rw [ZMod.val_zero]; rfl, hnz hr⟩
+  · exact (hr he).elim
+  · exact (hr he).elim
+
 /-- `KernelWhnf::slots_never`: a nonzero answer is `n` leading `∀`s whose data are `never`. -/
 theorem slots_never_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}

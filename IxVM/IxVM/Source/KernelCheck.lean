@@ -2697,17 +2697,36 @@ def doms_have_let := aiur_fn⟦
     }
 ⟧
 
+def head_has_let := aiur_fn⟦
+  fn head_has_let(e: KernelTypes::KExpr) -> Field {
+      match (*(e)) {
+        KernelTypes::KExprNode::Let(_, _, _) => {  1 } ,
+        KernelTypes::KExprNode::App(f, _) => {  head_has_let(f) } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
 def check_rec_header_lets := aiur_fn⟦
   fn check_rec_header_lets(ty: KernelTypes::KExpr, n_p: Field, n_mot: Field, n_min: Field,
                            n_i: Field) -> () {
-      let (mot_let, after_mot) = doms_have_let(peel_n_foralls(ty, n_p), n_mot);
+      let (mot_let, after_m0) = doms_have_let(peel_n_foralls(ty, n_p), 1);
       assert_eq!(mot_let, 0, "recursor header: a let in a motive's domain");
-      let (idx_let, after_idx) = doms_have_let(peel_n_foralls(after_mot, n_min), n_i);
-      assert_eq!(idx_let, 0, "recursor header: a let in an index's domain");
-      let KernelTypes::KExprNode::Forall(major, concl, _) = (*(after_idx));
-      assert_eq!(expr_has_let(major), 0, "recursor header: a let in the major premise's domain");
-      assert_eq!(expr_has_let(concl), 0, "recursor header: a let in the result");
-      ()
+      match n_mot - 1 {
+        0 => {
+          let (idx_let, after_idx) = doms_have_let(peel_n_foralls(after_m0, n_min), n_i);
+          assert_eq!(idx_let, 0, "recursor header: a let in an index's domain");
+          let KernelTypes::KExprNode::Forall(major, concl, _) = (*(after_idx));
+          assert_eq!(expr_has_let(major), 0, "recursor header: a let in the major premise's domain");
+          assert_eq!(expr_has_let(concl), 0, "recursor header: a let in the result");
+          () } ,
+        _ => {
+          let after_idx = peel_n_foralls(after_m0, ((n_mot - 1) + n_min) + n_i);
+          let KernelTypes::KExprNode::Forall(major, concl, _) = (*(after_idx));
+          assert_eq!(head_has_let(major), 0, "recursor header: a let in the major premise's domain");
+          assert_eq!(expr_has_let(concl), 0, "recursor header: a let in the result");
+          () } ,
+      }
     }
 ⟧
 

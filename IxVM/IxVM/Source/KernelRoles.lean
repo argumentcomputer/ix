@@ -393,6 +393,17 @@ def role_ctx_axioms := aiur_fn⟦
     }
 ⟧
 
+def role_ctx_without_axioms := aiur_fn⟦
+  fn role_ctx_without_axioms(rc: RoleCtx) -> RoleCtx {
+      match (*(rc)) {
+        RoleCtxNode::Mk(tbl, limit, _) => {
+          (&(RoleCtxNode::Mk(tbl, limit, RBTreeMap::RBTreeMap::Nil))) } ,
+        RoleCtxNode::Assumed(tbl, _) => {
+          (&(RoleCtxNode::Assumed(tbl, RBTreeMap::RBTreeMap::Nil))) } ,
+      }
+    }
+⟧
+
 def role_ctx_is_assumed := aiur_fn⟦
   fn role_ctx_is_assumed(rc: RoleCtx) -> Field {
       match (*(rc)) {

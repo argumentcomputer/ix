@@ -174,19 +174,57 @@ theorem g_expr_glb (κ : _root_.Address → KKey) {args : List (SourceValue F)}
     exact idxAll_forallE_of_load ld
       (idxAll_mono (st d Γ T ht) (fun n i hi => by omega))
       (idxAll_imp n2 (fun n i hi => by omega))
-  | .other_Let (ev29 := e1) (op51 := op) (ev15 := e2) (ld_hdultwxn := ld)
-      (ev_sfhifciv := e3) (hc_thparjte := hc) .. =>
+  | .other_Let_n0 (ev29 := e1) (op51 := op) (ev15 := e2) (ev_hiqskhkq := e3)
+      (he_xfdsatmk := hr) (he_akwmkycs := he) (hc_sdtmxbxm := hc) .. =>
+    subst hc hr he
+    rw [add_ok op] at e2
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨_, _, _, _, _, _, _, rfl⟩ := ltf e2
+    obtain ⟨rfl, -⟩ := ih.get .expr_glb lt_calls e3 _ _ rfl (bounded_sub sub_calls bd) hc0
+    exact ⟨rfl, 0, by simp, by decide, fun d Γ E hE => noIdx_of_le hE (by omega)⟩
+  | .other_Let_bind_n0 (ev29 := e1) (op51 := op) (ev15 := e2) (ev_hiqskhkq := e3)
+      (ev_fxcwdgkk := e4) (he_uhlpzaxy := hr) (he_nmrjwnkr := he) (hc_usteapca := hc) .. =>
+    subst hc hr he
+    rw [add_ok op] at e2
+    obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨_, _, _, _, _, _, _, rfl⟩ := ltf e2
+    obtain ⟨rfl, -⟩ := ih.get .expr_glb lt_calls e3 _ _ rfl (bounded_sub sub_calls bd) hc0
+    obtain ⟨rfl, -⟩ := ih.get .expr_glb lt_calls e4 _ _ rfl (bounded_sub sub_calls bd) hc0
+    exact ⟨rfl, 0, by simp, by decide, fun d Γ E hE => noIdx_of_le hE (by omega)⟩
+  | .other_Let_bind_bind (ev29 := e1) (op51 := op) (ev15 := e2) (ld_hdultwxn := ld)
+      (ev_hiqskhkq := e3) (ev_fxcwdgkk := e4) (ev_cavkthrj := e5) (op_zgjfocek := op2)
+      (ev_zcesmlfw := e6) (ev_ikcnbycm := e7) (hc_psxrvywh := hc) .. =>
     subst hc
     rw [add_ok op] at e2
+    rw [add_ok op2] at e6
     obtain ⟨rfl, -⟩ := ih.get .expr_lbr lt_calls e1 _ rfl (bounded_sub sub_calls bd)
     obtain ⟨_, y, _, hy, -, hy32, _, rfl⟩ := ltf e2
     injection hy with hy; subst hy
-    obtain ⟨rfl, g, hr, g1, sl⟩ :=
-      ih.get .expr_glb_let lt_calls e3 _ _ _ _ rfl (bounded_sub sub_calls bd) (succ_small hc0 hy32)
-    refine ⟨rfl, g, hr, g1, fun d Γ E hE => ?_⟩
+    have hc1 := succ_small hc0 hy32
+    obtain ⟨rfl, gt, rfl, gt1, st⟩ :=
+      ih.get .expr_glb lt_calls e3 _ _ rfl (bounded_sub sub_calls bd) hc0
+    obtain ⟨rfl, gv, rfl, gv1, sv⟩ :=
+      ih.get .expr_glb lt_calls e4 _ _ rfl (bounded_sub sub_calls bd) hc0
+    obtain ⟨x, y', hx, hy', -, -, hr1, rfl⟩ := lbr_min_obs e5
+    injection hx with hx; injection hy' with hy'; subst hx hy'
+    obtain ⟨rfl, gb, rfl, gb1, sb⟩ :=
+      ih.get .expr_glb lt_calls e6 _ _ rfl (bounded_sub sub_calls bd)
+        (by rw [val_succ_small hc1]; exact hc1)
+    obtain ⟨x2, y2, hx2, hy2, -, -, hr, rfl⟩ := lbr_min_obs e7
+    have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
+    obtain ⟨g1, hg1, g11, g12, g13⟩ := min_spec (a := gt) (b := gv) (by omega) (by omega)
+    rw [hr1, hg1] at hx2
+    injection hx2 with hx2; injection hy2 with hy2; subst hx2 hy2
+    obtain ⟨g, hg, g21, g22, g23⟩ := min_spec (a := g1) (b := gb) (by omega) (by omega)
+    rw [hg] at hr
+    refine ⟨rfl, g, hr, by omega, fun d Γ E hE => ?_⟩
     obtain ⟨T, V, B, rfl, ht, hv, hb⟩ := Tm.letE_of_load hE ld
-    obtain ⟨n1, n2, n3⟩ := sl d Γ T V B ht hv hb
-    exact idxAll_letE_of_load ld n1 n2 (idxAll_imp n3 (fun n i hi => by omega))
+    have n3 := sb d Γ B (by rw [val_succ_small hc1]; exact hb)
+    rw [val_succ_small hc1] at n3
+    exact idxAll_letE_of_load ld
+      (idxAll_mono (st d Γ T ht) (fun n i hi => by omega))
+      (idxAll_mono (sv d Γ V hv) (fun n i hi => by omega))
+      (idxAll_imp n3 (fun n i hi => by omega))
   | .other_Proj (ev29 := e1) (op51 := op) (ev15 := e2) (ld_hdultwxn := ld)
       (ev_zykxeexd := e3) (hc_kzchhfit := hc) .. =>
     subst hc
@@ -208,49 +246,5 @@ theorem g_expr_glb (κ : _root_.Address → KKey) {args : List (SourceValue F)}
     obtain ⟨_, _, _, _, _, _, _, rfl⟩ := ltf e2
     exact ⟨rfl, 4294967295, cast_glb_top, by decide, fun d Γ E hE =>
       idxAll_of_other hE ld n1 n2 n3 n4 n5 n6⟩
-
-theorem g_expr_glb_let (κ : _root_.Address → KKey) {args : List (SourceValue F)}
-    {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelSubst::expr_glb_let" args h r h' calls) (ih : GIH κ calls) :
-    G.expr_glb_let κ args h r h' calls := by
-  intro ty val body c hargs bd hc1
-  subst hargs
-  match Obs.«KernelSubst::expr_glb_let».obs ev with
-  | .n0 (ev15 := e1) (he36 := hr) (he37 := he) (hc38 := hc) .. =>
-    subst hc hr he
-    obtain ⟨rfl, -⟩ := ih.get .expr_glb lt_calls e1 _ _ rfl (bounded_sub sub_calls bd) (by omega)
-    exact ⟨rfl, 0, by simp, by decide, fun d Γ T V B ht hv hb =>
-      ⟨noIdx_of_le ht (by omega), noIdx_of_le hv (by omega), noIdx_of_le hb (by omega)⟩⟩
-  | .bind_n0 (ev15 := e1) (ev57 := e2) (he78 := hr) (he79 := he) (hc80 := hc) .. =>
-    subst hc hr he
-    obtain ⟨rfl, -⟩ := ih.get .expr_glb lt_calls e1 _ _ rfl (bounded_sub sub_calls bd) (by omega)
-    obtain ⟨rfl, -⟩ := ih.get .expr_glb lt_calls e2 _ _ rfl (bounded_sub sub_calls bd) (by omega)
-    exact ⟨rfl, 0, by simp, by decide, fun d Γ T V B ht hv hb =>
-      ⟨noIdx_of_le ht (by omega), noIdx_of_le hv (by omega), noIdx_of_le hb (by omega)⟩⟩
-  | .bind_bind (ev15 := e1) (ev57 := e2) (ev104 := e3) (op155 := op) (ev132 := e4) (ev90 := e5)
-      (hc157 := hc) .. =>
-    subst hc
-    rw [add_ok op] at e4
-    obtain ⟨rfl, gt, rfl, gt1, st⟩ :=
-      ih.get .expr_glb lt_calls e1 _ _ rfl (bounded_sub sub_calls bd) (by omega)
-    obtain ⟨rfl, gv, rfl, gv1, sv⟩ :=
-      ih.get .expr_glb lt_calls e2 _ _ rfl (bounded_sub sub_calls bd) (by omega)
-    obtain ⟨x, y, hx, hy, -, -, hr1, rfl⟩ := lbr_min_obs e3
-    injection hx with hx; injection hy with hy; subst hx hy
-    obtain ⟨rfl, gb, rfl, gb1, sb⟩ :=
-      ih.get .expr_glb lt_calls e4 _ _ rfl (bounded_sub sub_calls bd) (by rw [val_succ_small hc1]; exact hc1)
-    obtain ⟨x2, y2, hx2, hy2, -, -, hr, rfl⟩ := lbr_min_obs e5
-    have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
-    obtain ⟨g1, hg1, g11, g12, g13⟩ := min_spec (a := gt) (b := gv) (by omega) (by omega)
-    rw [hr1, hg1] at hx2
-    injection hx2 with hx2; injection hy2 with hy2; subst hx2 hy2
-    obtain ⟨g, hg, g21, g22, g23⟩ := min_spec (a := g1) (b := gb) (by omega) (by omega)
-    rw [hg] at hr
-    refine ⟨rfl, g, hr, by omega, fun d Γ T V B ht hv hb => ⟨?_, ?_, ?_⟩⟩
-    · exact idxAll_mono (st d Γ T ht) (fun n i hi => by omega)
-    · exact idxAll_mono (sv d Γ V hv) (fun n i hi => by omega)
-    · have := sb d Γ B (by rw [val_succ_small hc1]; exact hb)
-      rw [val_succ_small hc1] at this
-      exact idxAll_mono this (fun n i hi => by omega)
 
 end IxVM.Refinement.Core.SubstAux

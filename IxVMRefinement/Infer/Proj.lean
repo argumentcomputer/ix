@@ -348,8 +348,8 @@ theorem level_may_be_nonzero_step (c : ScopedCtx) {args : List (SourceValue F)} 
   intro x u hargs good hu
   subst hargs
   obtain ⟨l, rl, hul⟩ := hu
-  refine (fun (H : h' = h ∧ (r = .field 1 → ¬ ∀ φ, Ix.Kernel.Level.eval φ l = 0)) =>
-    ⟨H.1, fun h1 hall => H.2 h1 fun φ => (hul φ).symm.trans (hall φ)⟩) ?_
+  refine (fun (H : h' = h ∧ (r ≠ .field 0 → ¬ ∀ φ, Ix.Kernel.Level.eval φ l = 0)) =>
+    ⟨H.1, fun hne hall => H.2 hne fun φ => (hul φ).symm.trans (hall φ)⟩) ?_
   rcases Obs.«KernelInfer::level_may_be_nonzero».obs ev with
     ⟨ld12, he20, he21, hc22⟩ |
     ⟨w30, ld12, he36, he37, hc38⟩ |
@@ -359,7 +359,7 @@ theorem level_may_be_nonzero_step (c : ScopedCtx) {args : List (SourceValue F)} 
     ⟨w128, x_b, cs142, ld12, ev144, hc153⟩
   · -- `zero`: answer `0`
     subst he20
-    exact ⟨he21, fun h1 => absurd h1.symm field_one_ne_zero⟩
+    exact ⟨he21, fun hne => absurd rfl hne⟩
   · -- `succ`
     obtain ⟨v, rfl⟩ := ProjAux.lv_succ_of_load rl ld12
     exact ⟨he37, fun _ hall => ProjAux.eval_succ_ne_zero (fun _ => 0) v (hall _)⟩
@@ -371,7 +371,7 @@ theorem level_may_be_nonzero_step (c : ScopedCtx) {args : List (SourceValue F)} 
     subst hc101
     obtain ⟨hm, hnz⟩ := ih.get (.infer .level_may_be_nonzero) (by lt_calls) ev86 _ la rfl
       (good.sub fun x hx => by simp [hx]) ⟨la, ra, LvEq.refl la⟩
-    refine ⟨he100.trans hm, fun _ hall => hnz rfl fun φ => ?_⟩
+    refine ⟨he100.trans hm, fun _ hall => hnz field_one_ne_zero fun φ => ?_⟩
     by_contra hne
     exact ProjAux.eval_max_ne_zero_left (b := lb) hne (hall φ)
   · -- `max`, its right side's answer
@@ -382,17 +382,17 @@ theorem level_may_be_nonzero_step (c : ScopedCtx) {args : List (SourceValue F)} 
     subst hm
     obtain ⟨hm', hnz⟩ := ih.get (.infer .level_may_be_nonzero) (by lt_calls) ev111 _ lb rfl
       (good.sub fun x hx => by simp [hx]) ⟨lb, rb, LvEq.refl lb⟩
-    refine ⟨hm', fun h1 hall => hnz h1 fun φ => ?_⟩
-    by_contra hne
-    exact ProjAux.eval_max_ne_zero_right (a := la) hne (hall φ)
+    refine ⟨hm', fun hne hall => hnz hne fun φ => ?_⟩
+    by_contra hne'
+    exact ProjAux.eval_max_ne_zero_right (a := la) hne' (hall φ)
   · -- `imax`: its right side's answer
     obtain ⟨la, lb, rfl, ra, rb⟩ := ProjAux.lv_imax_of_load rl ld12
     subst hc153
     obtain ⟨hm, hnz⟩ := ih.get (.infer .level_may_be_nonzero) (by lt_calls) ev144 _ lb rfl
       (good.sub fun x hx => by simp [hx]) ⟨lb, rb, LvEq.refl lb⟩
-    refine ⟨hm, fun h1 hall => hnz h1 fun φ => ?_⟩
-    by_contra hne
-    exact ProjAux.eval_imax_ne_zero (a := la) hne (hall φ)
+    refine ⟨hm, fun hne hall => hnz hne fun φ => ?_⟩
+    by_contra hne'
+    exact ProjAux.eval_imax_ne_zero (a := la) hne' (hall φ)
 
 /-! ## `peel_n_alls_whnf` -/
 
@@ -496,7 +496,7 @@ theorem is_inductive_prop_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
     obtain ⟨-, hnz⟩ := ih.get (.infer .level_may_be_nonzero) (by lt_calls) ev149 _ u rfl
       (good.sub fun x hx => by simp [hx]) (LvRep.mono e2 hu)
     exact ⟨k, Γ', u, hk, hpeel, .inr rfl, fun h1 => absurd h1.symm field_one_ne_zero,
-      fun _ => hnz rfl⟩
+      fun _ => hnz field_one_ne_zero⟩
 
 /-! ## The field telescope -/
 

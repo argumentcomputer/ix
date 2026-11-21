@@ -553,8 +553,11 @@ def check_witnesses := aiur_fn⟦
         _ => {
           let (x, s2) = IxonDeserialize::get_address(s);
           let (kind, s3) = IxonDeserialize::read_byte(s2);
-          -- a witnessed reference is reached through the payload, past every `walk_ctx`
+          -- a witnessed reference is reached through the payload, past every `walk_ctx`;
+          -- model advice may not witness any user axiom of the claim
           KernelRoles::assert_in_order(rc, x);
+          assert_eq!(RBTreeMap::rbtree_map_lookup_or_default(x, KernelRoles::role_ctx_axioms(rc), 0), 0,
+            "model advice: a witness is a user axiom");
           let s4 = check_witness(rc, block, x, UInt8::to_field(kind), s3);
           let (rest, s5) = check_witnesses(rc, block, s4, n - 1);
           ((&(Lists::Node::Cons(x, rest))), s5) } ,
@@ -1111,15 +1114,15 @@ def check_modeled_block := aiur_fn⟦
 
 def check_family := aiur_fn⟦
   fn check_family(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, rec_block: Bytes::AddressRef) -> () {
-      -- No model advice under user axioms: the claim's axioms tree is empty, so every axiom
-      -- this claim checks, the advice's and the block closure's, is standard or inert, and
-      -- no accepted constant uses an inert one. The role binding binds Lean's compiler-trust
-      -- axioms as inert roles, so a claim over Lean's `Init` lists no user axiom.
-      match KernelRoles::role_ctx_axioms(rc) {
-        RBTreeMap::RBTreeMap::Nil => {  () } ,
+      -- Model advice itself may not depend on any user axiom: when the claim carries user
+      -- axioms, strip them from the context used to check the advice records, and reject any
+      -- user axiom among the witnessed outside references (`check_witnesses`). Non-axiomatic
+      -- modeled blocks (e.g., `Lean.Syntax` pulled in by `autoParam`) check cleanly alongside
+      -- user axioms in the claim.
+      let adv_rc = match KernelRoles::role_ctx_axioms(rc) {
+        RBTreeMap::RBTreeMap::Nil => {  rc } ,
         RBTreeMap::RBTreeMap::Node(_, _, _, _, _) => {
-          assert_eq!(0, 1, "model advice: a claim with user axioms");
-          () } ,
+          KernelRoles::role_ctx_without_axioms(rc) } ,
       };
       let s0 = read_payload(block);
       let (rb, s1) = IxonDeserialize::get_address(s0);
@@ -1134,7 +1137,7 @@ def check_family := aiur_fn⟦
       let (outside, s5) = check_witnesses(rc, block, s4, n_w);
       let wset = KernelClaim::addr_set_build(outside, RBTreeMap::RBTreeMap::Nil);
       container_recs_refs(rc, outside, wset);
-      let aset = check_advice_records(rc, advice, RBTreeMap::RBTreeMap::Nil, wset);
+      let aset = check_advice_records(adv_rc, advice, RBTreeMap::RBTreeMap::Nil, wset);
       let bc = Ingress::load_verified_constant(block);
       match bc {
         Ixon::Constant::Mk(binfo, _, _, _, _) => {
@@ -1956,14 +1959,15 @@ def check_rules := aiur_fn⟦
         KernelTypes::KConstantInfo::Induct(_, _, inp, _, inct, _, iblock, iidx) => {
           assert_eq!(Lists::length(rules), inct,
             "recursor rule count differs from its major's constructor count");
-          check_rules_go(rc, rm, nl, ty, rp, ni, rules, iblock, iidx, inp, ilvls, pins,
+          let ty_m = rename(ty, src, dst);
+          check_rules_go(rc, rm, nl, ty_m, rp, ni, rules, iblock, iidx, inp, ilvls, pins,
                          src, dst, aset, s, 0) } ,
       }
     }
 ⟧
 
 def check_rules_go := aiur_fn⟦
-  fn check_rules_go(rc: KernelRoles::RoleCtx, rm: Bytes::AddressRef, nl: Field, ty: KernelTypes::KExpr,
+  fn check_rules_go(rc: KernelRoles::RoleCtx, rm: Bytes::AddressRef, nl: Field, ty_m: KernelTypes::KExpr,
                     rp: Field, ni: Field, rules: Lists::List<KernelTypes::KRecRule>,
                     iblock: Bytes::AddressRef, iidx: Field, inp: Field,
                     ilvls: Lists::List<KernelTypes::KLevel>, pins: Lists::List<KernelTypes::KExpr>,
@@ -1980,11 +1984,11 @@ def check_rules_go := aiur_fn⟦
                 KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, cnp, cnf, _) => {
                   assert_eq!(cnp, inp, "constructor parameter count differs from its inductive's");
                   assert_eq!(rnf, cnf, "rule field count mismatch");
-                  check_iota_rule(rc, rm, nl, ty, rp, ni, rhs, cprj, cty, cnp, cnf, ilvls, pins,
+                  check_iota_rule(rc, rm, nl, ty_m, rp, ni, rhs, cprj, cty, cnp, cnf, ilvls, pins,
                                   t, src, dst, aset) } ,
               } } ,
           };
-          check_rules_go(rc, rm, nl, ty, rp, ni, rest, iblock, iidx, inp, ilvls, pins,
+          check_rules_go(rc, rm, nl, ty_m, rp, ni, rest, iblock, iidx, inp, ilvls, pins,
                          src, dst, aset, s2, j + 1) } ,
       }
     }
@@ -1995,7 +1999,7 @@ def check_rules_go := aiur_fn⟦
   -- stored instantiations; both are `pins`, the major domain's parameter arguments.
 
 def check_iota_rule := aiur_fn⟦
-  fn check_iota_rule(rc: KernelRoles::RoleCtx, rm: Bytes::AddressRef, nl: Field, ty_r: KernelTypes::KExpr,
+  fn check_iota_rule(rc: KernelRoles::RoleCtx, rm: Bytes::AddressRef, nl: Field, ty_m: KernelTypes::KExpr,
                      rp: Field, ni: Field, rhs: KernelTypes::KExpr,
                      cprj: Bytes::AddressRef, cty: KernelTypes::KExpr, cnp: Field, cnf: Field,
                      ilvls: Lists::List<KernelTypes::KLevel>, pins: Lists::List<KernelTypes::KExpr>,
@@ -2054,7 +2058,8 @@ def check_iota_rule := aiur_fn⟦
               match (*(chead0)) {
                 KernelTypes::KExprNode::Const(_, _) => {  () } ,
               };
-              let crest = inst_params(rename(cty_l, src, dst), pins_ren);
+              let cty_m = rename(cty_l, src, dst);
+              let crest = inst_params(cty_m, pins_ren);
               let (cres, _) = peel_collect(crest, cnf, (&(Lists::Node::Nil)));
               let (chead, cargs) = KernelTypes::collect_spine(cres);
               match (*(chead)) {
@@ -2064,14 +2069,13 @@ def check_iota_rule := aiur_fn⟦
               assert_eq!(defeq_list_ok(rc, Lists::take(Lists::drop(largs, rp), ni), Lists::drop(cargs, cnp), ctx), 1,
                 "iota statement index mismatch");
               -- the statement's domains: the renamed recursor's prefix, the constructor's fields
-              let ty_m = rename(ty_r, src, dst);
               defeq_tele(rc, tty, ty_m, rp, (&(Lists::Node::Nil)));
               defeq_tele(rc, KernelCheck::peel_n_foralls(tty, rp), crest, cnf, Lists::drop(ctx, cnf));
               -- the rule's side, renamed like the statement's: the comparands inhabit the
               -- constructor's parameter domains, and the rule's λ-domains are the recursor's
               -- prefix and the fields
               let (_, ctx_p) = peel_collect(ty_m, rp, (&(Lists::Node::Nil)));
-              let crest_p = inst_params_typed(rc, rename(cty_l, src, dst), pins_ren, ctx_p);
+              let crest_p = inst_params_typed(rc, cty_m, pins_ren, ctx_p);
               let (rhs_rp, lctx) = defeq_lam_tele(rc, rhs_m, ty_m, rp, (&(Lists::Node::Nil)));
               let (_, _) = defeq_lam_tele(rc, rhs_rp, crest_p, cnf, lctx);
               -- the right side: the rule applied to the opened variables

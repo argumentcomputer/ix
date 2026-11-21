@@ -875,38 +875,122 @@ def level_reduce := aiur_fn⟦
     }
 ⟧
 
+  -- Whether `l` needs level instantiation or reduction (`Param`, `Max`, or `IMax`).
+  -- Answering 0 guarantees `l` is a pure `Zero`/`Succ` chain, so `level_inst_params(l, _)`
+  -- is syntactically equal to `l` with zero allocation.
+
+def level_has_param := aiur_fn⟦
+  fn level_has_param(l: KernelTypes::KLevel) -> Field {
+      match (*(l)) {
+        KernelTypes::KLevelNode::Zero => {  0 } ,
+        KernelTypes::KLevelNode::Succ(u) => {  level_has_param(u) } ,
+        _ => {  1 } ,
+      }
+    }
+⟧
+
+def level_list_has_param := aiur_fn⟦
+  fn level_list_has_param(lvls: Lists::List<KernelTypes::KLevel>) -> Field {
+      match (*(lvls)) {
+        Lists::Node::Nil => {  0 } ,
+        Lists::Node::Cons(l, rest) => {
+          match level_has_param(l) {
+            1 => {  1 } ,
+            _ => {  level_list_has_param(rest) } ,
+          } } ,
+      }
+    }
+⟧
+
+def expr_has_level_param := aiur_fn⟦
+  fn expr_has_level_param(e: KernelTypes::KExpr) -> Field {
+      match (*(e)) {
+        KernelTypes::KExprNode::BVar(_) => {  0 } ,
+        KernelTypes::KExprNode::Lit(_) => {  0 } ,
+        KernelTypes::KExprNode::Srt(l) => {  level_has_param(l) } ,
+        KernelTypes::KExprNode::Const(_, lvls) => {  level_list_has_param(lvls) } ,
+        KernelTypes::KExprNode::App(f, a) => {
+          match expr_has_level_param(f) {
+            1 => {  1 } ,
+            _ => {  expr_has_level_param(a) } ,
+          } } ,
+        KernelTypes::KExprNode::Lam(ty, body, bl) => {  expr_has_level_param_binder(ty, body, bl) } ,
+        KernelTypes::KExprNode::Forall(ty, body, bl) => {  expr_has_level_param_binder(ty, body, bl) } ,
+        KernelTypes::KExprNode::Let(ty, val, body) => {  expr_has_level_param_let(ty, val, body) } ,
+        KernelTypes::KExprNode::Proj(_, _, e1) => {  expr_has_level_param(e1) } ,
+      }
+    }
+⟧
+
+def expr_has_level_param_binder := aiur_fn⟦
+  fn expr_has_level_param_binder(ty: KernelTypes::KExpr, body: KernelTypes::KExpr, bl: KernelTypes::KLevel) -> Field {
+      match level_has_param(bl) {
+        1 => {  1 } ,
+        _ => {
+          match expr_has_level_param(ty) {
+            1 => {  1 } ,
+            _ => {  expr_has_level_param(body) } ,
+          } } ,
+      }
+    }
+⟧
+
+def expr_has_level_param_let := aiur_fn⟦
+  fn expr_has_level_param_let(ty: KernelTypes::KExpr, val: KernelTypes::KExpr, body: KernelTypes::KExpr) -> Field {
+      match expr_has_level_param(ty) {
+        1 => {  1 } ,
+        _ => {
+          match expr_has_level_param(val) {
+            1 => {  1 } ,
+            _ => {  expr_has_level_param(body) } ,
+          } } ,
+      }
+    }
+⟧
+
 def level_inst_params := aiur_fn⟦
   fn level_inst_params(l: KernelTypes::KLevel, params: Lists::List<KernelTypes::KLevel>) -> KernelTypes::KLevel {
-      match (*(l)) {
-        KernelTypes::KLevelNode::Zero => {  (&(KernelTypes::KLevelNode::Zero)) } ,
-        KernelTypes::KLevelNode::Succ(u) => {  (&(KernelTypes::KLevelNode::Succ(level_inst_params(u, params)))) } ,
-        KernelTypes::KLevelNode::Max(a, b) => {
-          level_max(level_inst_params(a, params), level_inst_params(b, params)) } ,
-        KernelTypes::KLevelNode::IMax(a, b) => {
-          level_imax(level_inst_params(a, params), level_inst_params(b, params)) } ,
-        KernelTypes::KLevelNode::Param(i) => {  Lists::lookup(params, i) } ,
+      match level_has_param(l) {
+        0 => {  l } ,
+        _ => {
+          match (*(l)) {
+            KernelTypes::KLevelNode::Zero => {  l } ,
+            KernelTypes::KLevelNode::Succ(u) => {  (&(KernelTypes::KLevelNode::Succ(level_inst_params(u, params)))) } ,
+            KernelTypes::KLevelNode::Max(a, b) => {
+              level_max(level_inst_params(a, params), level_inst_params(b, params)) } ,
+            KernelTypes::KLevelNode::IMax(a, b) => {
+              level_imax(level_inst_params(a, params), level_inst_params(b, params)) } ,
+            KernelTypes::KLevelNode::Param(i) => {  Lists::lookup(params, i) } ,
+          } } ,
       }
     }
 ⟧
 
 def level_list_inst := aiur_fn⟦
   fn level_list_inst(lvls: Lists::List<KernelTypes::KLevel>, params: Lists::List<KernelTypes::KLevel>) -> Lists::List<KernelTypes::KLevel> {
-      match (*(lvls)) {
-        Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
-        Lists::Node::Cons(l, rest) => {
-          (&(Lists::Node::Cons(
-            level_inst_params(l, params),
-            level_list_inst(rest, params)))) } ,
+      match level_list_has_param(lvls) {
+        0 => {  lvls } ,
+        _ => {
+          match (*(lvls)) {
+            Lists::Node::Nil => {  lvls } ,
+            Lists::Node::Cons(l, rest) => {
+              (&(Lists::Node::Cons(
+                level_inst_params(l, params),
+                level_list_inst(rest, params)))) } ,
+          } } ,
       }
     }
 ⟧
 
 def expr_inst_levels := aiur_fn⟦
   fn expr_inst_levels(e: KernelTypes::KExpr, params: Lists::List<KernelTypes::KLevel>) -> KernelTypes::KExpr {
-
       match (*(params)) {
         Lists::Node::Nil => {  e } ,
-        _ => {  expr_inst_levels_walk(e, params) } ,
+        _ => {
+          match expr_has_level_param(e) {
+            0 => {  e } ,
+            _ => {  expr_inst_levels_walk(e, params) } ,
+          } } ,
       }
     }
 ⟧
@@ -914,7 +998,7 @@ def expr_inst_levels := aiur_fn⟦
 def expr_inst_levels_walk := aiur_fn⟦
   fn expr_inst_levels_walk(e: KernelTypes::KExpr, params: Lists::List<KernelTypes::KLevel>) -> KernelTypes::KExpr {
       match (*(e)) {
-        KernelTypes::KExprNode::BVar(i) => {  (&(KernelTypes::KExprNode::BVar(i))) } ,
+        KernelTypes::KExprNode::BVar(_) => {  e } ,
         KernelTypes::KExprNode::Srt(l) => {
           (&(KernelTypes::KExprNode::Srt(level_inst_params(l, params)))) } ,
         KernelTypes::KExprNode::Const(idx, lvls) => {
@@ -932,7 +1016,7 @@ def expr_inst_levels_walk := aiur_fn⟦
             expr_inst_levels(ty, params),
             expr_inst_levels(val, params),
             expr_inst_levels(body, params)))) } ,
-        KernelTypes::KExprNode::Lit(lit) => {  (&(KernelTypes::KExprNode::Lit(lit))) } ,
+        KernelTypes::KExprNode::Lit(_) => {  e } ,
         KernelTypes::KExprNode::Proj(tidx, fidx, e1) => {
           (&(KernelTypes::KExprNode::Proj(tidx, fidx, expr_inst_levels(e1, params)))) } ,
       }

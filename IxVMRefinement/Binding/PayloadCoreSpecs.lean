@@ -406,16 +406,17 @@ theorem familyCall_block_indc_nonempty {calls : List (Call F)} {bAddr : _root_.A
       (msB.toList.filter Core.Specs.Callees.isIndc).length = msB.size := by
   obtain ⟨h, h', rc, xb, xrb, r, -, ⟨bB, hbB, rfl⟩, -, ev, -, hsub⟩ := hfc
   match Obs.«KernelModeled::check_family».obs ev with
-  | .run (m105 := m105) (m501 := m501) (x_members := x_members) (v588 := v588) (m589 := m589)
+  | .run (m_vcemfqfp := m105) (m501 := m501) (x_members := x_members) (v588 := v588) (m589 := m589)
       (cs599 := cs599) (m624 := m624)
-      (cs511 := cs511) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+      (cs511 := cs511) (sg_barfcuni := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
       (ev_yqjbwijz := evo) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309) (ev344 := ev344)
       (ev403 := ev403) (ev435 := ev435) (ev465 := ev465) (ev513 := ev513) (ev601 := ev601)
       (ev634 := ev634) (heq650 := heq650) (ev664 := ev664) (hc1474 := hc) .. =>
     have e0 : Heap.Extends h m105 := by
       match sg112 with
-      | .Nil (ev15 := ev15) (he33 := he33) .. => rw [he33]; exact ev15.heap_extends
-      | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
+      | .Nil (ev_wxupbkvw := ev15) (he_heykuhzf := he33) .. => rw [he33]; exact ev15.heap_extends
+      | .Node (ev_wxupbkvw := ev15) (ev_kastmihc := ev_wo) .. =>
+        exact ev15.heap_extends.trans ev_wo.heap_extends
     have e453 : Heap.Extends h _ :=
       e0.trans <| ev126.heap_extends.trans <| ev148.heap_extends.trans <|
         ev194.heap_extends.trans <| evo.heap_extends.trans <| ev231.heap_extends.trans <|
@@ -485,11 +486,11 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
   obtain ⟨cb, msB, hcb, hmsB, hposB, hfilt⟩ := familyCall_block_indc_nonempty hS hH hfc
   obtain ⟨h, h', rc, xb, xrb, r, hrc, ⟨bB, hbB, rfl⟩, ⟨bR, hbR, rfl⟩, ev, -, hsub⟩ := hfc
   match Obs.«KernelModeled::check_family».obs ev with
-  | .run (m105 := m105) (cs850 := cs850) (m1191 := m1191) (x_univ_offset := x_uo)
+  | .run (m_vcemfqfp := m105) (cs850 := cs850) (m1191 := m1191) (x_univ_offset := x_uo)
       (v_qwfkpklj := v_flat) (m_ialrkdmk := m_flat) (cs_pblrtsmj := cs_flat)
       (m1234 := m1234) (v_arypxepi := v_arypxepi)
       (m_soowcubw := m_soowcubw) (y_xxqgtlpp := y_xxqgtlpp) (cs_owchsduj := cs_owchsduj)
-      (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+      (sg_barfcuni := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
       (ev_yqjbwijz := ev_ord) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
       (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465) (ev513 := ev513)
       (ev601 := ev601) (ev634 := ev634) (ev664 := ev664) (ev686 := ev686) (ev716 := ev716)
@@ -505,8 +506,9 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
       (op_zaucahqq := op_or) (heq_sujkqzii := heq_or) (hc1474 := hc1474) .. =>
     have e0 : Heap.Extends h m105 := by
       match sg112 with
-      | .Nil (ev15 := ev15) (he33 := he33) .. => rw [he33]; exact ev15.heap_extends
-      | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
+      | .Nil (ev_wxupbkvw := ev15) (he_heykuhzf := he33) .. => rw [he33]; exact ev15.heap_extends
+      | .Node (ev_wxupbkvw := ev15) (ev_kastmihc := ev_wo) .. =>
+        exact ev15.heap_extends.trans ev_wo.heap_extends
     have ext_453 : Heap.Extends h _ :=
       e0.trans <| ev126.heap_extends.trans <| ev148.heap_extends.trans <|
         ev194.heap_extends.trans <| ev_ord.heap_extends.trans <| ev231.heap_extends.trans <|
@@ -1844,7 +1846,7 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
         rw [← Array.getElem?_toList, hrl]; rfl
       obtain ⟨h, h', rc, xb, xrb, r, -, ⟨bb, hbb, rfl⟩, ⟨brb, hbrb, rfl⟩, ev, -, hsub⟩ := hfc
       match Obs.«KernelModeled::check_family».obs ev with
-      | .run (m105 := m105) (x_members := x_members) (m652 := m652) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+      | .run (m_vcemfqfp := m105) (x_members := x_members) (m652 := m652) (sg_barfcuni := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
           (ev_yqjbwijz := evo) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
           (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465)
           (cs511 := cs511) (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
@@ -1858,8 +1860,9 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
           (ev1305 := ev1305) (cs1341 := cs1341) (ev1343 := ev1343) (hc1474 := hc) .. =>
         have e0 : Heap.Extends h m105 := by
           match sg112 with
-          | .Nil (ev15 := ev15) (he33 := he33) .. => rw [he33]; exact ev15.heap_extends
-          | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
+          | .Nil (ev_wxupbkvw := ev15) (he_heykuhzf := he33) .. => rw [he33]; exact ev15.heap_extends
+          | .Node (ev_wxupbkvw := ev15) (ev_kastmihc := ev_wo) .. =>
+            exact ev15.heap_extends.trans ev_wo.heap_extends
         have e453 : Heap.Extends h _ :=
           e0.trans <| ev126.heap_extends.trans <| ev148.heap_extends.trans <|
             ev194.heap_extends.trans <| evo.heap_extends.trans <| ev231.heap_extends.trans <|

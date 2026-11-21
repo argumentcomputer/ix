@@ -21,10 +21,13 @@ model is witness data. Two properties are tested here:
   must accept the same claims with it. Likewise a model whose proofs use the
   quotient (`Quot`, `Quot.mk`, `Quot.lift`, `Quot.ind`, `Quot.sound`, the roles
   function extensionality comes from), which advice may reference.
-* **No advice under user axioms** (third part): a claim whose axioms tree is
-  not empty gets no model advice ("model advice: a claim with user axioms").
-  The environments above declare Lean's compiler-trust axioms, which the
-  default table binds as inert roles, so their claims name no user axiom and
+* **User axioms with modeled blocks (`A6`)** (third part): a claim whose axioms
+  tree is non-empty may still check modeled inductive blocks because model
+  advice is checked under `role_ctx_without_axioms(rc)` and witnesses refuse
+  user axioms. An unused, well-typed user axiom is accepted on `Even` and
+  `Even.rec`, while a model whose advice proofs reference that user axiom is
+  rejected. The environments above declare Lean's compiler-trust axioms, which
+  the default table binds as inert roles, so their claims name no user axiom and
   are accepted.
 * **Verdicts at nested blocks the modeller models** (`nestedVerdicts`: an index
   domain that mentions a parameter, a reflexive field into a member): ι
@@ -576,7 +579,8 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
   let mkCase (e : Ixon.Env) (tag : String) (n : Lean.Name) : Builder := fun u => do
     let c ← mkPlain e tag n u
     return if isRecursor n then c.throughModeledRecursor else c
-  -- no advice under user axioms: `Even` and `Even.rec` with an unused, well-typed `axiom ax : Prop`
+  -- A6: user axioms with modeled blocks: `Even` and `Even.rec` with an unused, well-typed
+  -- `axiom ax : Prop` are accepted, while model advice that references `ax` is rejected.
   let underAxiom (name : String) : Builder := fun _ => do
     let ax : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero], #[]⟩
     let a := Address.blake3 (Ixon.ser ax)
@@ -587,18 +591,28 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     let ctx ← Ix.ClaimContext.ofEnv e true
     let claim : Ix.Claim := .check { ctx with axioms := some axioms.root } target none
     let trees := ({} : Std.HashMap _ _).insert axioms.root axioms
-    if isRecursor (nameOfString name) then
-      Case.ofClaim s!"check {name} under a user axiom (no model advice)" e claim trees
-        (accept := false)
-        (rejectsWith := some (if modeledRecursorsRefused then modeledRecursorRefusal
-          else "model advice: a claim with user axioms"))
-    else
-      Case.ofClaim s!"check {name} under a user axiom (no model advice)" e claim trees
-        (accept := false) (rejectsWith := some "model advice: a claim with user axioms")
+    let c ← Case.ofClaim s!"check {name} under an unused user axiom (A6)" e claim trees (accept := true)
+    return if isRecursor (nameOfString name) then c.throughModeledRecursor else c
+  let underAxiomAdviceRef (name : String) : Builder := fun _ => do
+    let ax : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero], #[]⟩
+    let a := Address.blake3 (Ixon.ser ax)
+    let e0 := env.storeConst a ax
+    let axiomProofs : Ix.Kernel.Declaration .anon → Ix.Kernel.Declaration .anon
+      | .thmDecl cv v => .thmDecl cv (.letE (.sort .zero) (.const (.id a) []) v default)
+      | d => d
+    let (e, _) ← IO.ofExcept (IxVM.Model.generateReport { withoutModels e0 with modelsAttached := false } axiomProofs)
+    let some axioms := Ix.AssumptionTree.canonical #[a] | throw "no tree for the axiom"
+    let some target := e.getAddr? (Ix.Name.fromLeanName (nameOfString name))
+      | throw s!"{name} is not in the Ixon environment"
+    let ctx ← Ix.ClaimContext.ofEnv e true
+    let claim : Ix.Claim := .check { ctx with axioms := some axioms.root } target none
+    let trees := ({} : Std.HashMap _ _).insert axioms.root axioms
+    Case.ofClaim s!"refuse {name} when model advice references a user axiom (A6 negative control)"
+      e claim trees (accept := false)
   let cases := (names.map (mkCase env "modeller's model")) ++
     (names.map (mkCase tweaked "a different valid model")) ++
     (quotNames.map fun n => mkCase quotEnv "a model whose proofs use the quotient" (nameOfString n)) ++
-    [underAxiom "IxVMInd.Even", underAxiom "IxVMInd.Even.rec"] ++
+    [underAxiom "IxVMInd.Even", underAxiom "IxVMInd.Even.rec", underAxiomAdviceRef "IxVMInd.Even"] ++
     [mkPlain tagEnv "its tag enumeration is Tri" `IxVMInd.TriA,
      mkPlain tagEnv "the recursor of TriA's tag enumeration" `IxVMInd.Tri.rec]
   -- the verdicts on `NB4`'s claims, from the entry's host cases (loaded at run time)

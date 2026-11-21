@@ -183,7 +183,7 @@ level is not zero at every assignment (it replaces a negative reading of
 `level_equal(l, 0) = 0`). Nothing is claimed for `0`. Allocates nothing. -/
 def level_may_be_nonzero : SpecFn := fun c args h r h' calls =>
   ∀ (l : SourceValue F) (u : KLevel), args = [l] → CoreGood c calls → LvRep h u l →
-    h' = h ∧ (r = .field 1 → ¬ ∀ φ, Ix.Kernel.Level.eval φ u = 0)
+    h' = h ∧ (r ≠ .field 0 → ¬ ∀ φ, Ix.Kernel.Level.eval φ u = 0)
 
 /-- `proj_shape_ok(n_indices, args, n_params, lvls, n_lvls)` (unit; its run is the check):
 **`Infer.proj`'s arity premises**: no indices, the scrutinee type's argument count is the

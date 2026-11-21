@@ -135,7 +135,7 @@ def red_proj := aiur_fn⟦
           match (*(head)) {
             KernelTypes::KExprNode::Const(caddr, clvls) => {
               match (*(Ingress::get_ci(caddr))) {
-                KernelTypes::KConstantInfo::Ctor(cnl, _, cblock, cind, _, nparams, nfields, _) => {
+                KernelTypes::KConstantInfo::Ctor(cnl, cty, cblock, cind, _, nparams, nfields, _) => {
                   match (*(Ingress::get_ci(struct_addr))) {
                     KernelTypes::KConstantInfo::Induct(snl, sty, snp, sni, snc, _, sblock, sidx) => {
                       let owner = (Bytes::address_eq(cblock, sblock) * Fields::is_zero(cind - sidx)) * Fields::is_zero(snl - cnl);
@@ -148,7 +148,16 @@ def red_proj := aiur_fn⟦
                             1 => {
                               match type_sort_never(sty, snp, clvls) {
                                 1 => {  (1, Lists::lookup(args, nparams + fidx)) } ,
-                                _ => {  (0, scrut) } ,
+                                _ => {
+                                  match type_sort_may_be_nonzero(sty, snp, clvls) {
+                                    1 => {
+                                      let cty_i = KernelLevels::expr_inst_levels(cty, clvls);
+                                      match certs_licensed(rc, cty_i, args, (&(Lists::Node::Nil)), types) {
+                                        1 => {  (1, Lists::lookup(args, nparams + fidx)) } ,
+                                        _ => {  (0, scrut) } ,
+                                      } } ,
+                                    _ => {  (0, scrut) } ,
+                                  } } ,
                               } } ,
                             _ => {  (0, scrut) } ,
                           } } ,
@@ -179,6 +188,28 @@ def type_sort_never := aiur_fn⟦
         KernelTypes::KExprNode::Srt(l) => {
           match n {
             0 => {  KernelLevels::level_is_not_zero(KernelLevels::level_inst_params(l, lvls)) } ,
+            _ => {  0 } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+  -- Whether the sort a stored type former's telescope ends in, after `n` binders and
+  -- at the levels `lvls`, may be nonzero (`KernelInfer::level_may_be_nonzero`, so it is
+  -- not equivalent to `Prop` = `Sort 0`). Handles universe-polymorphic `Sort u` structures.
+
+def type_sort_may_be_nonzero := aiur_fn⟦
+  fn type_sort_may_be_nonzero(ty: KernelTypes::KExpr, n: Field, lvls: Lists::List<KernelTypes::KLevel>) -> Field {
+      match (*(ty)) {
+        KernelTypes::KExprNode::Forall(_, body, _) => {
+          match n {
+            0 => {  0 } ,
+            _ => {  type_sort_may_be_nonzero(body, n - 1, lvls) } ,
+          } } ,
+        KernelTypes::KExprNode::Srt(l) => {
+          match n {
+            0 => {  KernelInfer::level_may_be_nonzero(KernelLevels::level_inst_params(l, lvls)) } ,
             _ => {  0 } ,
           } } ,
         _ => {  0 } ,
@@ -767,14 +798,17 @@ def red_iota := aiur_fn⟦
                         1 => {
                           let rec_ty_i = KernelLevels::expr_inst_levels(rec_ty, lvls);
                           let pre = Lists::take(spine, major_idx);
-                          match iota_cmp(rc, rec_ty_i, pre, major_idx, cty, clvls, cnp, margs, nindices, types)
-                                * iota_certs(rc, rec_ty_i, Lists::snoc(pre, major), major_idx + 1, cty, clvls, margs,
-                                             cnp + cnf, types) {
+                          match iota_cmp(rc, rec_ty_i, pre, major_idx, cty, clvls, cnp, margs, nindices, types) {
                             1 => {
-                              let rhs_lvled = KernelLevels::expr_inst_levels(rrhs, lvls);
-                              let r1 = apply_spine(rhs_lvled, Lists::take(spine, pmm_end));
-                              let r2 = apply_spine(r1, Lists::drop(margs, cnp));
-                              (1, apply_spine(r2, Lists::drop(spine, major_idx + 1))) } ,
+                              match iota_certs(rc, rec_ty_i, pre, major, major_idx + 1, cty, clvls, margs,
+                                               cnp + cnf, types) {
+                                1 => {
+                                  let rhs_lvled = KernelLevels::expr_inst_levels(rrhs, lvls);
+                                  let r1 = apply_spine(rhs_lvled, Lists::take(spine, pmm_end));
+                                  let r2 = apply_spine(r1, Lists::drop(margs, cnp));
+                                  (1, apply_spine(r2, Lists::drop(spine, major_idx + 1))) } ,
+                                _ => {  (0, major) } ,
+                              } } ,
                             _ => {  (0, major) } ,
                           } } ,
                         _ => {  (0, major) } ,
@@ -849,19 +883,20 @@ def iota_cmp := aiur_fn⟦
 
 def iota_certs := aiur_fn⟦
   fn iota_certs(rc: KernelRoles::RoleCtx, rec_ty_i: KernelTypes::KExpr,
-                rec_args: Lists::List<KernelTypes::KExpr>, n_rec: Field, cty: KernelTypes::KExpr,
+                pre: Lists::List<KernelTypes::KExpr>, major: KernelTypes::KExpr,
+                n_rec: Field, cty: KernelTypes::KExpr,
                 clvls: Lists::List<KernelTypes::KLevel>, margs: Lists::List<KernelTypes::KExpr>,
                 n_ctor: Field, types: Lists::List<KernelTypes::KExpr>) -> Field {
       let c1 = match slots_never(rec_ty_i, n_rec) {
         1 => {  1 } ,
-        _ => {  certs_all(rc, rec_ty_i, rec_args, (&(Lists::Node::Nil)), types) } ,
+        _ => {  certs_licensed(rc, rec_ty_i, Lists::snoc(pre, major), (&(Lists::Node::Nil)), types) } ,
       };
       match c1 {
         1 => {
           let cty_i = KernelLevels::expr_inst_levels(cty, clvls);
           match slots_never(cty_i, n_ctor) {
             1 => {  1 } ,
-            _ => {  certs_all(rc, cty_i, margs, (&(Lists::Node::Nil)), types) } ,
+            _ => {  certs_licensed(rc, cty_i, margs, (&(Lists::Node::Nil)), types) } ,
           } } ,
         _ => {  0 } ,
       }
@@ -1068,6 +1103,37 @@ def certs_all := aiur_fn⟦
               let t_w = whnf(rc, KernelInfer::inst_subs(t, subs_rev), types);
               match (*(t_w)) {
                 KernelTypes::KExprNode::Forall(_, _, _) => {  certs_all(rc, t_w, args, (&(Lists::Node::Nil)), types) } ,
+                _ => {  0 } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The licensed telescope certificate (`Certs env d true`): skips any `∀` slot whose
+  -- binder datum is never zero (`Certs.skip`), certifying only potentially-`Prop` slots.
+
+def certs_licensed := aiur_fn⟦
+  fn certs_licensed(rc: KernelRoles::RoleCtx, t: KernelTypes::KExpr, args: Lists::List<KernelTypes::KExpr>,
+                    subs_rev: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>) -> Field {
+      match (*(args)) {
+        Lists::Node::Nil => {  1 } ,
+        Lists::Node::Cons(a, rest) => {
+          match (*(t)) {
+            KernelTypes::KExprNode::Forall(dom, cod, bl) => {
+              match KernelLevels::level_is_not_zero(bl) {
+                1 => {  certs_licensed(rc, cod, rest, (&(Lists::Node::Cons(a, subs_rev))), types) } ,
+                _ => {
+                  let ta = KernelInferOnly::k_infer_only(rc, a, types);
+                  match KernelDefEq::k_is_def_eq(rc, ta, KernelInfer::inst_subs(dom, subs_rev), types) {
+                    1 => {  certs_licensed(rc, cod, rest, (&(Lists::Node::Cons(a, subs_rev))), types) } ,
+                    _ => {  0 } ,
+                  } } ,
+              } } ,
+            _ => {
+              let t_w = whnf(rc, KernelInfer::inst_subs(t, subs_rev), types);
+              match (*(t_w)) {
+                KernelTypes::KExprNode::Forall(_, _, _) => {  certs_licensed(rc, t_w, args, (&(Lists::Node::Nil)), types) } ,
                 _ => {  0 } ,
               } } ,
           } } ,

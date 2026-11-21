@@ -231,7 +231,7 @@ theorem check_prop_fields_call {c : ScopedCtx} (hc : ScopedCoreFacts c)
     have spec := Registry.induction c (scoped_steps c hc) (.infer .level_may_be_nonzero)
       _ _ _ _ _ nonzero
     have result := spec level u rfl (hg.sub included) ⟨u, represented.mono extension, LvEq.refl u⟩
-    exact (result.2 answer zero).elim
+    exact (result.2 (by rw [answer]; exact Core.field_one_ne_zero) zero).elim
 
 /-- A successful outer check for a structure-like proposition supplies actual checked field
 sorts, with provenance relative to the entire outer invocation. -/

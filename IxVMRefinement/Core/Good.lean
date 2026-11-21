@@ -309,7 +309,8 @@ structure LoadFacts (c : Ctx) : Prop where
       ObsFn W "KernelModeled::block_is_modeled" [bq] h3 (.field 0) h4 cs3 ∧ Good c cs3 ∧
         Bytes.RepAddressRef addrTy h3 b bq) →
     piSortAt cnP (posOf cvT.levelParams cvT.type) = some l →
-    (Ix.Kernel.Level.subst (List.range us.length) us l).isNeverZero = true →
+    ¬ (∀ φ : Ix.Kernel.LevelParam → Nat,
+      Ix.Kernel.Level.eval φ (Ix.Kernel.Level.subst (List.range us.length) us l) = 0) →
     (∃ (sp v : SourceValue F) (h5 h6 : Heap F) (cs5 : List (Call F)),
       ObsFn W "KernelWhnf::struct_is_rec" [sp] h5 v h6 cs5 ∧ v ≠ .field 1 ∧ Good c cs5 ∧
         Bytes.RepAddressRef addrTy h5 sa sp) →

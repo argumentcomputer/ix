@@ -2494,8 +2494,15 @@ theorem rulesTrace_walk
       RepList addrListEnum (Bytes.RepAddressRef addrTy) h (typeAs ++ ctorAs ++ recAs) src →
       RepList addrListEnum (Bytes.RepAddressRef addrTy) h dstAs dst →
       AddrMapAll addrMapEnum (fun _ k _ => AdvChecked calls bAddr t lim csFam advAs k) h aset →
-      Decl.TmCExact (Core.keyOf t) h (Core.posOf ps tyA) ty_r →
-      (∀ a, AddrIn h ty_r a → UsedRef E₀ rb (ixAddr a)) →
+      (∀ {E : Ixon.Env} {env : Ix.Kernel.Env .anon},
+        (∀ b ∈ dstAs, ∃ ci, env.find? (Core.keyOf t (ixAddr b)) = some ci) →
+        (∀ x, UsedRef E₀ rb x →
+          (∃ ci, env.find? (Core.keyOf t x) = some ci) ∨
+            x ∈ (typeAs ++ ctorAs ++ recAs).map ixAddr) →
+        Decl.NoProjIn ((typeAs ++ ctorAs ++ recAs).map fun b => Core.keyOf t (ixAddr b)) tyA = true →
+        Decl.TmExact (Core.Ctx.stored ⟨E, env, t, lim⟩).κ 0 zeroGhost h 0
+          (Core.posOf ps (tyA.renameConsts (aliasMap (((typeAs ++ ctorAs ++ recAs).map fun b =>
+            Core.keyOf t (ixAddr b)).zip (dstAs.map fun b => Core.keyOf t (ixAddr b)))))) ty_r) →
       RepKLevelList h (lvls.map (Level.subst ps (Core.posLevels ps))) ilvls →
       RepList kexprListEnum
         (fun h P p => Decl.TmExact (Core.keyOf t) 0 zeroGhost h rP P p ∧
@@ -2550,7 +2557,7 @@ theorem rulesTrace_walk
     Ingress.BlobReadAgreement.of_mem hblob
   induction rus with
   | nil =>
-    intro j root rules_ptr s_in bytes h h' cs_go _ _ _ _ _ _ _ _ _ _ _ _ _ hrls hstr ev
+    intro j root rules_ptr s_in bytes h h' cs_go _ _ _ _ _ _ _ _ _ _ _ _ hrls hstr ev
     match Obs.«KernelModeled::check_rules_go».obs ev with
     | .Nil (he21 := hr) (he22 := hh) .. =>
       subst hr hh
@@ -2561,7 +2568,7 @@ theorem rulesTrace_walk
       | nil cell => exact absurd ld (by simp [loadValue_enum_cell cell])
   | cons ru rus ih =>
     intro j root rules_ptr s_in bytes h h' cs_go hlen_j hctors_lt hsub hrc hrm hbBlkM hsrc hdst
-      haset hty_rep hty_used hilvls hpins hrls hstr ev
+      haset hty_m_of_env hilvls hpins hrls hstr ev
     match Obs.«KernelModeled::check_rules_go».obs ev with
     | .Nil (ld12 := ld) .. =>
       cases hrls with
@@ -2694,8 +2701,6 @@ theorem rulesTrace_walk
           RepLinkedList.mono (fun _ _ _ _ ext ⟨ht', hu'⟩ =>
             ⟨ht'.mono ext, fun a ha => hu' a (Binding.TmExact.addrIn_back ht' ext a ha)⟩)
             ext_h_m77 hpins
-        have hty_used_m77 : ∀ a, AddrIn m77 ty_r a → UsedRef E₀ rb (ixAddr a) :=
-          fun a ha => hty_used a (Binding.TmExact.addrIn_back (hty_rep 0 zeroGhost) ext_h_m77 a ha)
         obtain ⟨rules_rest, rhss_rest, thms_rest, rlsCan_rest, remBytes, hstr_out, hrr_rest,
             hsc_rest, hcan_rest, hf2_rest, hcprj_rest, hfacts_rest⟩ :=
           ih (fun ru' hru' => hrus_sub ru' (List.mem_cons_of_mem _ hru'))
@@ -2705,7 +2710,8 @@ theorem rulesTrace_walk
             (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_m77 hsrc)
             (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_m77 hdst)
             (AddrMapAll.mono (fun _ _ _ _ _ x => x) ext_h_m77 haset)
-            (hty_rep.mono ext_h_m77) hty_used_m77 (hilvls.mono ext_h_m77) hpins_mono
+            (fun hm hu hnp => (hty_m_of_env hm hu hnp).mono ext_h_m77)
+            (hilvls.mono ext_h_m77) hpins_mono
             (hrls_rest.mono ext_h_m77 (fun _ hm => hm)) (hstr_m42.mono ext_m42_m77) ev_rec
         -- 6. Assemble canonical rules and outputs
         let rlCan : RecRule .anon := { rl₀ with rhs := rhsA, k := rc.k, ctorParams := rc.params.toNat }
@@ -2729,14 +2735,10 @@ theorem rulesTrace_walk
         · -- Discharge `RulesFacts` at any `FamilyStepEnv`
           intro L adv E env recsBlk recsTys hSE hadvHyp hdefSrc hmodels hnp_ty hleaves
           refine ⟨?_, hfacts_rest recsBlk recsTys hSE hadvHyp hdefSrc hmodels hnp_ty hleaves⟩
-          -- `hty_cells` and `hrhs_cells` and `hpins_rep` at `m155`
+          -- `hused_rb` and `hrhs_cells` and `hpins_rep` at `m155`
           have hused_rb : ∀ x, UsedRef E₀ rb x →
               (∃ ci, env.find? (Core.keyOf t x) = some ci) ∨ x ∈ srcAs.map ixAddr := fun x hx =>
             usedRef_stored_or_src_lists hB hR htypes hctors hrecs hSE (Or.inr hx) (hrecRefs x hx)
-          have hty_cells_m155 : ∀ a, AddrIn m155 ty_r a →
-              (∃ ci, env.find? (Core.keyOf t (ixAddr a)) = some ci) ∨ ixAddr a ∈ srcAs.map ixAddr :=
-            fun a ha => hused_rb _ (hty_used a
-              (Binding.TmExact.addrIn_back (hty_rep 0 zeroGhost) ext_h_m155 a ha))
           have hrhs_cells_m155 : ∀ a, AddrIn m155 x_rhs a →
               (∃ ci, env.find? (Core.keyOf t (ixAddr a)) = some ci) ∨ ixAddr a ∈ srcAs.map ixAddr := by
             intro a ha
@@ -2977,7 +2979,7 @@ theorem rulesTrace_walk
             (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_m155 hsrc)
             (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_m155 hdst)
             (AddrMapAll.mono (fun _ _ _ _ _ x => x) ext_h_m155 haset)
-            (hty_rep.mono ext_h_m155) hty_cells_m155
+            ((hty_m_of_env hmodels hused_rb hnp_ty).mono ext_h_m155)
             (htm_rhs.mono ext_h_m155) hrhs_cells_m155
             hcty_of_find (hilvls.mono ext_h_m155) hpins_m155 inv'
 
@@ -3646,9 +3648,10 @@ theorem recMember_of_cons
       (x_pins := x_pins) (m58 := mInd) (p66 := pInd) (cs72 := csInd)
       (w89 := w89) (w90 := w90) (x_inp := x_inp) (w91 := w91) (x_inct := x_inct) (w92 := w92)
       (x_iblock := x_iblock) (x_iidx := x_iidx)
-      (v144 := v144) (m147 := mLen) (cs155 := csLen) (cs177 := csGo)
+      (v144 := v144) (m147 := mLen) (cs155 := csLen)
+      (v_rnhjwdes := x_ty_m) (m_omqdqrpp := mRen) (cs_tniefsju := csRen) (cs177 := csGo)
       (ev14 := evRmp) (ev74 := evGetInd) (ld68 := ldInd) (ev157 := evRlen)
-      (heq173 := heqInct) (ev179 := evGo) (hc315 := hcRules) .. =>
+      (heq173 := heqInct) (ev_bcyyrzqq := evRen) (ev179 := evGo) (hc315 := hcRules) .. =>
     have hsub_rmp : CallSub csRmp calls := fun cl hcl => hsub_rules cl (by rw [hcRules]; simp [hcl])
     have hsub_ind : CallSub csInd calls := fun cl hcl => hsub_rules cl (by rw [hcRules]; simp [hcl])
     have hsub_go : CallSub csGo calls := fun cl hcl => hsub_rules cl (by rw [hcRules]; simp [hcl])
@@ -4093,6 +4096,46 @@ theorem recMember_of_cons
         evGetInd.heap_extends hrmp_used
     -- 8. Run `rulesTrace_walk` on `evGo`!
     have ext_h_mInd : Heap.Extends h mInd := C.evGetRec.extends.trans ext_67_mInd
+    have ext_mInd_mRen : Heap.Extends mInd mRen := evRen.heap_extends
+    have ext_67_mRen : Heap.Extends C.m67 mRen := ext_67_mInd.trans ext_mInd_mRen
+    have ext_h_mRen : Heap.Extends h mRen := ext_h_mInd.trans ext_mInd_mRen
+    have hty_m_of_env :
+        ∀ {E : Ixon.Env} {env : Ix.Kernel.Env .anon},
+          (∀ b ∈ dstAs, ∃ ci, env.find? (Core.keyOf t (ixAddr b)) = some ci) →
+          (∀ x, UsedRef E₀ rb x →
+            (∃ ci, env.find? (Core.keyOf t x) = some ci) ∨
+              x ∈ (typeAs ++ ctorAs ++ recAs).map ixAddr) →
+          Decl.NoProjIn ((typeAs ++ ctorAs ++ recAs).map fun b => Core.keyOf t (ixAddr b)) tyA = true →
+          Decl.TmExact (Core.Ctx.stored ⟨E, env, t, lim⟩).κ 0 zeroGhost mRen 0
+            (Core.posOf ps (tyA.renameConsts (aliasMap (((typeAs ++ ctorAs ++ recAs).map fun b =>
+              Core.keyOf t (ixAddr b)).zip (dstAs.map fun b => Core.keyOf t (ixAddr b)))))) x_ty_m := by
+      intro E env hmodels hused_rb hnp_ty
+      have hcells : ∀ a, AddrIn mInd C.ty a →
+          (∃ ci, env.find? (Core.keyOf t (ixAddr a)) = some ci) ∨
+            ixAddr a ∈ (typeAs ++ ctorAs ++ recAs).map ixAddr :=
+        fun a ha => hused_rb _ (hty_used_67 a
+          (Binding.TmExact.addrIn_back (htm_tyA 0 zeroGhost) ext_67_mInd a ha))
+      have hr := rename_stored_of_src (E₀ := E) (lim := lim) (Γ₂ := zeroGhost) htwf evRen
+        hlenSD (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_mInd hsrc_rep)
+        (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_mInd hdst_rep)
+        ((htm_tyA 0 zeroGhost).mono ext_67_mInd) hmodels hcells
+      have hout : ∀ k, ((typeAs ++ ctorAs ++ recAs).map fun b => Core.keyOf t (ixAddr b)).contains k = false →
+          aliasMap (((typeAs ++ ctorAs ++ recAs).map fun b => Core.keyOf t (ixAddr b)).zip
+            (dstAs.map fun b => Core.keyOf t (ixAddr b))) k = k :=
+        fun k hk => aliasMap_out_of_zip hk
+      have hnp_ty_pos : Decl.NoProjIn ((typeAs ++ ctorAs ++ recAs).map fun b => Core.keyOf t (ixAddr b))
+          (Core.posOf ps tyA) = true := by
+        unfold Core.posOf; rw [Decl.noProjIn_instantiateLevelParams]; exact hnp_ty
+      rw [Decl.renameAll_eq_renameConsts_of_noProjIn hout hnp_ty_pos] at hr
+      have hcomm : (Core.posOf ps tyA).renameConsts
+          (aliasMap (((typeAs ++ ctorAs ++ recAs).map fun b => Core.keyOf t (ixAddr b)).zip
+            (dstAs.map fun b => Core.keyOf t (ixAddr b)))) =
+          Core.posOf ps (tyA.renameConsts
+            (aliasMap (((typeAs ++ ctorAs ++ recAs).map fun b => Core.keyOf t (ixAddr b)).zip
+              (dstAs.map fun b => Core.keyOf t (ixAddr b))))) := by
+        unfold Core.posOf
+        exact (Decl.instantiateLevelParams_renameConsts ps (Core.posLevels ps) _ tyA).symm
+      rwa [hcomm] at hr
     have evGo' := evGo
     rw [hnl_eq, ← hps_len, hrp_eq, hni_eq, show rc.indices.toNat = mI - rP by omega,
       hx_iidx_eq, hx_inp_eq] at evGo'
@@ -4106,14 +4149,17 @@ theorem recMember_of_cons
         (rus := rc.rules.toList) (fun _ hm => hm)
         (j := 0) (root := ((Ingress.mutsRootOffset rs.toList k : Nat) : F) + 1)
         (by rw [Nat.zero_add, Array.length_toList]; exact hcntRules) hindM_nc_lt hsub_go
-        (RCRep.mono ext_h_mInd hrc) (Bytes.repAddressRef_heapMono₂ addrTy ext_h_mInd haMd_rep)
-        hbBlkM_ref (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_mInd hsrc_rep)
-        (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_mInd hdst_rep)
-        (AddrMapAll.mono (fun _ _ _ _ _ x => x) ext_h_mInd haset_rep)
-        (htm_tyA.mono ext_67_mInd)
-        (fun a ha => hty_used_67 a (Binding.TmExact.addrIn_back (htm_tyA 0 zeroGhost) ext_67_mInd a ha))
-        (hilvls_rmp.mono evGetInd.heap_extends) hpins_mInd
-        (hrlsTrace.mono ext_67_mInd (fun _ hm => hm)) (hstr_s.mono ext_h_mInd) evGo'
+        (RCRep.mono ext_h_mRen hrc) (Bytes.repAddressRef_heapMono₂ addrTy ext_h_mRen haMd_rep)
+        (Bytes.repAddressRef_heapMono₂ addrTy ext_mInd_mRen hbBlkM_ref)
+        (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_mRen hsrc_rep)
+        (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_mRen hdst_rep)
+        (AddrMapAll.mono (fun _ _ _ _ _ x => x) ext_h_mRen haset_rep)
+        hty_m_of_env
+        (hilvls_rmp.mono (evGetInd.heap_extends.trans ext_mInd_mRen))
+        (RepLinkedList.mono (fun _ _ _ _ ext ⟨ht', hu'⟩ =>
+          ⟨ht'.mono ext, fun a ha => hu' a (Binding.TmExact.addrIn_back ht' ext a ha)⟩)
+          ext_mInd_mRen hpins_mInd)
+        (hrlsTrace.mono ext_67_mRen (fun _ hm => hm)) (hstr_s.mono ext_h_mRen) evGo'
     -- 9. Assemble `RecMemberData`!
     have hrules_len : rules₀.length = rc.rules.size := by
       have h1 := List.Forall₂.length_eq hrr_rules

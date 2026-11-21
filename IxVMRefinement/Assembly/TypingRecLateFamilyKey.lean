@@ -876,11 +876,13 @@ theorem rec_header_lets_rawTm {κ : _root_.Address → Core.KKey} {d : Nat}
       R.stripPis (ZMod.val np) = some (rbs, .forallE Rd Rb mR) ∧
       Ix.Kernel.Semantics.letFree Rd = true := by
   match Obs.«KernelCheck::check_rec_header_lets».obs ev with
-  | .run (ev28 := evPeel) (ev14 := evDoms) (heq91 := hlet) .. =>
+  | .n0 (ev_dfdjpkmx := evPeel) (ev_gnffltwv := evDoms) (heq91 := hlet) ..
+  | .other (ev_dfdjpkmx := evPeel) (ev_gnffltwv := evDoms) (heq91 := hlet) .. =>
     obtain ⟨hh, rbs, rbody, ebody, hstrip, hbody⟩ :=
       peel_n_foralls_rawTm_val (ZMod.val np) rfl rep evPeel
     subst hh
-    obtain ⟨Rd, Rb, mR, rfl, hlf⟩ := doms_have_let_rawTm_head hbody hmot evDoms hlet
+    obtain ⟨Rd, Rb, mR, rfl, hlf⟩ :=
+      doms_have_let_rawTm_head hbody (by decide : (1 : F) ≠ 0) evDoms hlet
     exact ⟨rbs, Rd, Rb, mR, hstrip, hlf⟩
 
 /-- **The member check runs the header's let check** on the record's type and counts, at a

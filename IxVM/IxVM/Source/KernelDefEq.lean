@@ -684,7 +684,7 @@ def try_eta_struct := aiur_fn⟦
                           let shape_ok = ((Fields::is_zero(nindices) * Fields::is_zero(nctors - 1))
                             * Fields::is_zero(KernelModeled::block_is_modeled(ind_block_addr)))
                             * ((1 - Fields::is_zero(nfields))
-                              * KernelWhnf::type_sort_never(ind_ty, nparams, s_lvls));
+                              * KernelWhnf::type_sort_may_be_nonzero(ind_ty, nparams, s_lvls));
                           match shape_ok {
                             0 => {  0 } ,
                             _ => {
