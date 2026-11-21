@@ -1,0 +1,69 @@
+--- a/gpu/cuda/step.cu
++++ b/gpu/cuda/step.cu
+@@ -190,12 +190,26 @@
+   w[i] = sub_checked(w[i], shr8(p), flag);
+ }
+ 
+-// `IxAIGpu.transposeK`: `dst[c][r] = src[r][c]`, as `transposeN`.
++// Transposes move `kTransposeTile × kTransposeTile` tiles through shared memory, so that a warp
++// both reads and writes 32 consecutive values: a row of the tile from `src` and a column of it into
++// a row of `dst`. A tile is one warp wide; its pitch of 33 values puts the 16 values of a column
++// that a half-warp moves per 64-bit access in distinct bank pairs. Each block is
++// `kWarpsPerBlock` warps, and each warp moves `kTransposeTile / kWarpsPerBlock` rows of the tile.
++constexpr int kTransposeTile = kLanes;
++
++// `IxAIGpu.transposeK`: `dst[c][r] = src[r][c]`, as `transposeN`. One block per tile, on a flat
++// row-major grid of tiles.
+ __global__ void transpose_kernel(const i64* src, int rows, int cols, i64* dst) {
+-  long long i = thread_index();
+-  if (i >= (long long)rows * cols) return;
+-  int r = (int)(i / cols), c = (int)(i % cols);
+-  dst[(size_t)c * rows + r] = src[i];
++  __shared__ i64 tile[kTransposeTile][kTransposeTile + 1];
++  const long long col_tiles = (cols + kTransposeTile - 1) / kTransposeTile;
++  const int r0 = (int)(blockIdx.x / col_tiles) * kTransposeTile;
++  const int c0 = (int)(blockIdx.x % col_tiles) * kTransposeTile;
++  const int lane = threadIdx.x % kLanes, warp = threadIdx.x / kLanes;
++  for (int y = warp; y < kTransposeTile; y += kWarpsPerBlock)
++    if (r0 + y < rows && c0 + lane < cols) tile[y][lane] = src[(size_t)(r0 + y) * cols + c0 + lane];
++  __syncthreads();
++  for (int y = warp; y < kTransposeTile; y += kWarpsPerBlock)
++    if (c0 + y < cols && r0 + lane < rows) dst[(size_t)(c0 + y) * rows + r0 + lane] = tile[lane][y];
+ }
+ 
+ // `IxAIGpu.updateB`: `bias[r] −= (lr · Σ_b gT[r][b]) >>> 8`, in place. `key_lr` is `lr · Σ`.
+@@ -445,6 +459,13 @@
+ 
+ unsigned flat_blocks(long long n) { return (unsigned)((n + 255) / 256); }
+ 
++// `IxAIGpu.transposeK` of a `rows × cols` matrix, both positive.
++void transpose(const i64* src, int rows, int cols, i64* dst) {
++  long long tiles = ((long long)rows + kTransposeTile - 1) / kTransposeTile *
++                    (((long long)cols + kTransposeTile - 1) / kTransposeTile);
++  transpose_kernel<<<(unsigned)tiles, kWarpsPerBlock * kLanes>>>(src, rows, cols, dst);
++}
++
+ long long round_up(long long n, long long m) { return (n + m - 1) / m * m; }
+ 
+ }  // namespace
+@@ -711,15 +732,15 @@
+     gemm(g, 1, g->h, B, g->w2, O, H, g->key_o);
+     output_epilogue<<<flat_blocks(BO), 256>>>(g->key_o, g->b2, g->t, O, BO, g->dout, flag);
+   }
+-  if (O > 0 && H > 0) transpose_kernel<<<flat_blocks((long long)O * H), 256>>>(g->w2, O, H, g->w2t);
++  if (O > 0 && H > 0) transpose(g->w2, O, H, g->w2t);
+   if (H > 0) {
+     gemm(g, 2, g->dout, B, g->w2t, H, O, g->key_dz);
+     dz_epilogue<<<flat_blocks(BH), 256>>>(g->key_dz, g->z, BH, g->dz);
+   }
+-  if (H > 0) transpose_kernel<<<flat_blocks(BH), 256>>>(g->dz, B, H, g->dzt);
+-  if (I > 0) transpose_kernel<<<flat_blocks((long long)B * I), 256>>>(g->x, B, I, g->xt);
+-  if (H > 0) transpose_kernel<<<flat_blocks(BH), 256>>>(g->h, B, H, g->ht);
+-  if (O > 0) transpose_kernel<<<flat_blocks(BO), 256>>>(g->dout, B, O, g->doutt);
++  if (H > 0) transpose(g->dz, B, H, g->dzt);
++  if (I > 0) transpose(g->x, B, I, g->xt);
++  if (H > 0) transpose(g->h, B, H, g->ht);
++  if (O > 0) transpose(g->dout, B, O, g->doutt);
+   // `gpuStep` computes every gradient from the old weights: the `dz` GEMM above used `w2t`, a copy
+   // of the old `w2`, so `w2` may now be updated in place.
+   if (H > 0 && I > 0) {

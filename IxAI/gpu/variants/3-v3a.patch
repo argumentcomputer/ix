@@ -1,0 +1,298 @@
+--- a/gpu/cuda/step.cu
++++ b/gpu/cuda/step.cu
+@@ -20,7 +20,9 @@
+ // product that overflows. Lanes of the shuffle tree whose sums are discarded add nothing. A
+ // violation sets the context's flag and the host rejects the step.
+ 
++#include <algorithm>
+ #include <cstdint>
++#include <cstring>
+ #include <cuda_runtime.h>
+ 
+ typedef long long i64;
+@@ -460,10 +462,10 @@
+ unsigned flat_blocks(long long n) { return (unsigned)((n + 255) / 256); }
+ 
+ // `IxAIGpu.transposeK` of a `rows × cols` matrix, both positive.
+-void transpose(const i64* src, int rows, int cols, i64* dst) {
++void transpose(const i64* src, int rows, int cols, i64* dst, cudaStream_t stream) {
+   long long tiles = ((long long)rows + kTransposeTile - 1) / kTransposeTile *
+                     (((long long)cols + kTransposeTile - 1) / kTransposeTile);
+-  transpose_kernel<<<(unsigned)tiles, kWarpsPerBlock * kLanes>>>(src, rows, cols, dst);
++  transpose_kernel<<<(unsigned)tiles, kWarpsPerBlock * kLanes, 0, stream>>>(src, rows, cols, dst);
+ }
+ 
+ long long round_up(long long n, long long m) { return (n + m - 1) / m * m; }
+@@ -487,7 +489,12 @@
+ 
+ // Device buffers of one model shape. Weights stay on the device across steps. The model is one
+ // buffer `w1 ++ b1 ++ w2 ++ b2`, and a step's keys are one buffer in the order of `ixai_gpu_keys`,
+-// laid out for that step's batch, so that each crosses to the host in a single copy.
++// laid out for that step's batch, so that each crosses to the host in a single copy. A step's
++// inputs and targets are likewise one buffer `in = x ++ t`.
++//
++// All of a context's work runs in order on its own stream, whichever host thread calls it. A step
++// enqueues its upload, kernels and status download and blocks once, at the end; the status and a
++// small batch go through pinned host buffers, so that their copies are asynchronous.
+ //
+ // `limbs[i]` is GEMM `i`'s limb counts minus one, from its operands' magnitudes in the last step
+ // that measured them, or -1 before that. A tensor-core GEMM uses them without waiting for the
+@@ -496,8 +503,11 @@
+   int n_in, n_hidden, n_out, max_batch;
+   i64 *model, *w1, *b1, *w2, *b2;
+   i64 *keys, *key_h, *key_o, *key_dz, *z, *key_gw1, *key_gw2, *key_p1, *key_pb1, *key_p2, *key_pb2;
+-  i64 *x, *t, *xt, *h, *ht, *dout, *doutt, *w2t, *dz, *dzt;
+-  IxaiGpuStatus* status;
++  i64 *in, *x, *t, *xt, *h, *ht, *dout, *doutt, *w2t, *dz, *dzt;
++  IxaiGpuStatus *status, *host_status;
++  i64* staged;
++  size_t staged_length;
++  cudaStream_t stream;
+   int limbs[kGemms][2];
+   bool measured[kGemms];
+   uint8_t *planes_a, *planes_b;
+@@ -515,6 +525,11 @@
+ // more than it saves.
+ constexpr long long kTensorMinWork = 1LL << 24;
+ 
++// Batches of at most this many bytes of inputs and targets are staged in pinned memory. A larger
++// batch is copied from the caller's pageable buffers, which the driver stages in pieces, overlapping
++// its host copies with the transfer; a host copy into one pinned buffer would precede it instead.
++constexpr size_t kStageBytes = 256 << 10;
++
+ // The first CUDA error of the running entry point on this thread, reported by `ixai_gpu_error`.
+ // A launch error is visible only through `cudaGetLastError`, which also clears it, so it is kept
+ // here once read.
+@@ -575,9 +590,24 @@
+   return kMaxLimbs;
+ }
+ 
+-void magnitude(const i64* a, long long n, u64* out) {
++void magnitude(const i64* a, long long n, u64* out, cudaStream_t stream) {
+   long long blocks = (n + 255) / 256;
+-  magnitude_kernel<<<(unsigned)(blocks < 1024 ? (blocks ? blocks : 1) : 1024), 256>>>(a, n, out);
++  magnitude_kernel<<<(unsigned)(blocks < 1024 ? (blocks ? blocks : 1) : 1024), 256, 0, stream>>>(a, n, out);
++}
++
++// A null host buffer is rejected, as `cudaMemcpy` rejects it, before a host copy reads it.
++bool host_buffer(const void* p, size_t bytes) { return bytes == 0 || p || ok(cudaErrorInvalidValue); }
++
++// Upload a batch, `x` (`nx` values) then `t` (`nt` values), into `in`.
++bool upload_batch(IxaiGpu* g, const i64* x, size_t nx, const i64* t, size_t nt) {
++  if (!host_buffer(x, nx * sizeof(i64)) || !host_buffer(t, nt * sizeof(i64))) return false;
++  if (nx + nt <= g->staged_length) {
++    if (nx) memcpy(g->staged, x, nx * sizeof(i64));
++    if (nt) memcpy(g->staged + nx, t, nt * sizeof(i64));
++    return ok(cudaMemcpyAsync(g->in, g->staged, (nx + nt) * sizeof(i64), cudaMemcpyHostToDevice, g->stream));
++  }
++  return ok(cudaMemcpyAsync(g->in, x, nx * sizeof(i64), cudaMemcpyHostToDevice, g->stream)) &&
++         ok(cudaMemcpyAsync(g->in + nx, t, nt * sizeof(i64), cudaMemcpyHostToDevice, g->stream));
+ }
+ 
+ // GEMM `i` of the step: `out[r][c] = Σ_k a[r][k] · b[c][k]` for `a` of `rows × k_len` and `b` of
+@@ -598,13 +628,15 @@
+     int ka = g->limbs[i][0], kb = g->limbs[i][1];
+     const bool fused = ka >= 0 && ka < kMaxLimbs && kb < kMaxLimbs;
+     if (!fused) {
+-      magnitude(a, (long long)rows * k_len, mag);
+-      magnitude(b, (long long)cols * k_len, mag + 1);
++      magnitude(a, (long long)rows * k_len, mag, g->stream);
++      magnitude(b, (long long)cols * k_len, mag + 1, g->stream);
+     }
+     if (ka < 0) {
+       // No earlier magnitudes: wait for these.
+-      u64 m[2];
+-      if (!ok(cudaMemcpy(m, mag, sizeof m, cudaMemcpyDeviceToHost))) return;
++      u64* m = g->host_status->magnitude[i];
++      if (!ok(cudaMemcpyAsync(m, mag, 2 * sizeof(u64), cudaMemcpyDeviceToHost, g->stream)) ||
++          !ok(cudaStreamSynchronize(g->stream)))
++        return;
+       ka = limb_top(m[0]);
+       kb = limb_top(m[1]);
+     }
+@@ -614,20 +646,20 @@
+       if (!grow(&g->planes_a, &g->planes_a_size, (size_t)(ka + 1) * rows_pad * k_pad) ||
+           !grow(&g->planes_b, &g->planes_b_size, (size_t)(kb + 1) * cols_pad * k_pad))
+         return;
+-      split_kernel<<<flat_blocks(rows_pad * k_pad / 4), 256>>>(a, rows, k_len, ka + 1, (int)rows_pad,
++      split_kernel<<<flat_blocks(rows_pad * k_pad / 4), 256, 0, g->stream>>>(a, rows, k_len, ka + 1, (int)rows_pad,
+                                                                (int)k_pad, g->planes_a, fused ? mag : nullptr);
+-      split_kernel<<<flat_blocks(cols_pad * k_pad / 4), 256>>>(b, cols, k_len, kb + 1, (int)cols_pad,
++      split_kernel<<<flat_blocks(cols_pad * k_pad / 4), 256, 0, g->stream>>>(b, cols, k_len, kb + 1, (int)cols_pad,
+                                                                (int)k_pad, g->planes_b,
+                                                                fused ? mag + 1 : nullptr);
+       unsigned tiles = (unsigned)((rows_pad / kTile) * (cols_pad / kTile));
+-      kLimbGemms[ka][kb]<<<tiles, 256>>>(g->planes_a, g->planes_b, a, b, mag, rows, cols, k_len,
++      kLimbGemms[ka][kb]<<<tiles, 256, 0, g->stream>>>(g->planes_a, g->planes_b, a, b, mag, rows, cols, k_len,
+                                          (int)rows_pad, (int)cols_pad, (int)k_pad, out,
+                                          &g->status->flag, &g->status->tensor);
+       return;
+     }
+   }
+-  dot_kernel<<<warp_blocks((long long)rows * cols), kWarpsPerBlock * kLanes>>>(a, b, rows, cols, k_len,
+-                                                                               out, &g->status->flag);
++  dot_kernel<<<warp_blocks((long long)rows * cols), kWarpsPerBlock * kLanes, 0, g->stream>>>(
++      a, b, rows, cols, k_len, out, &g->status->flag);
+ }
+ 
+ }  // namespace
+@@ -649,11 +681,15 @@
+   size_t I = n_in, H = n_hidden, O = n_out, B = max_batch;
+   struct { i64** p; size_t n; } bufs[] = {
+       {&g->model, model_length(g)}, {&g->keys, keys_length(g, B)},
+-      {&g->x, B * I}, {&g->t, B * O}, {&g->xt, I * B}, {&g->h, B * H}, {&g->ht, H * B},
++      {&g->in, B * (I + O)}, {&g->xt, I * B}, {&g->h, B * H}, {&g->ht, H * B},
+       {&g->dout, B * O}, {&g->doutt, O * B}, {&g->w2t, H * O}, {&g->dz, B * H}, {&g->dzt, H * B}};
+-  bool good = ok(cudaEventCreate(&g->start)) && ok(cudaEventCreate(&g->stop));
++  g->staged_length = std::min(B * (I + O), kStageBytes / sizeof(i64));
++  bool good = ok(cudaStreamCreateWithFlags(&g->stream, cudaStreamNonBlocking)) &&
++              ok(cudaEventCreate(&g->start)) && ok(cudaEventCreate(&g->stop));
+   for (auto& b : bufs) good = good && ok(cudaMalloc(b.p, (b.n ? b.n : 1) * sizeof(i64)));
+-  good = good && ok(cudaMalloc(&g->status, sizeof(IxaiGpuStatus)));
++  good = good && ok(cudaMalloc(&g->status, sizeof(IxaiGpuStatus))) &&
++         ok(cudaMallocHost(&g->host_status, sizeof(IxaiGpuStatus))) &&
++         ok(cudaMallocHost(&g->staged, (g->staged_length ? g->staged_length : 1) * sizeof(i64)));
+   if (!good) {
+     ixai_gpu_destroy(g);
+     return nullptr;
+@@ -669,14 +705,17 @@
+ 
+ void ixai_gpu_destroy(IxaiGpu* g) {
+   if (!g) return;
+-  for (i64* p : {g->model, g->keys, g->x, g->t, g->xt, g->h, g->ht, g->dout, g->doutt, g->w2t, g->dz,
+-                 g->dzt})
++  if (g->stream) cudaStreamSynchronize(g->stream);
++  for (i64* p : {g->model, g->keys, g->in, g->xt, g->h, g->ht, g->dout, g->doutt, g->w2t, g->dz, g->dzt})
+     cudaFree(p);
+   cudaFree(g->status);
++  cudaFreeHost(g->host_status);
++  cudaFreeHost(g->staged);
+   cudaFree(g->planes_a);
+   cudaFree(g->planes_b);
+   if (g->start) cudaEventDestroy(g->start);
+   if (g->stop) cudaEventDestroy(g->stop);
++  if (g->stream) cudaStreamDestroy(g->stream);
+   delete g;
+ }
+ 
+@@ -696,13 +735,25 @@
+ // error.
+ int ixai_gpu_set_model(IxaiGpu* g, const i64* model) {
+   begin();
+-  return ok(cudaMemcpy(g->model, model, model_length(g) * sizeof(i64), cudaMemcpyHostToDevice)) ? 0 : -1;
++  size_t bytes = model_length(g) * sizeof(i64);
++  if (bytes == 0) return 0;
++  return host_buffer(model, bytes) &&
++                 ok(cudaMemcpyAsync(g->model, model, bytes, cudaMemcpyHostToDevice, g->stream)) &&
++                 ok(cudaStreamSynchronize(g->stream))
++             ? 0
++             : -1;
+ }
+ 
+ // Download the model, as `ixai_gpu_set_model` takes it.
+ int ixai_gpu_get_model(IxaiGpu* g, i64* model) {
+   begin();
+-  return ok(cudaMemcpy(model, g->model, model_length(g) * sizeof(i64), cudaMemcpyDeviceToHost)) ? 0 : -1;
++  size_t bytes = model_length(g) * sizeof(i64);
++  if (bytes == 0) return 0;
++  return host_buffer(model, bytes) &&
++                 ok(cudaMemcpyAsync(model, g->model, bytes, cudaMemcpyDeviceToHost, g->stream)) &&
++                 ok(cudaStreamSynchronize(g->stream))
++             ? 0
++             : -1;
+ }
+ 
+ // `IxAIGpu.gpuStep ⟨5⟩ ⟨lr⟩ m batch` on the device's model, with the batch's inputs `x` (B×I) and
+@@ -717,54 +768,60 @@
+   if (n_batch == 0) return 0;
+   const int I = g->n_in, H = g->n_hidden, O = g->n_out, B = n_batch;
+   place_keys(g, B);
++  g->x = g->in;
++  g->t = g->in + (size_t)B * I;
+   for (bool& m : g->measured) m = false;
+-  if (!ok(cudaMemcpy(g->x, x, (size_t)B * I * sizeof(i64), cudaMemcpyHostToDevice)) ||
+-      !ok(cudaMemcpy(g->t, t, (size_t)B * O * sizeof(i64), cudaMemcpyHostToDevice)) ||
+-      !ok(cudaMemset(g->status, 0, sizeof(IxaiGpuStatus))) || !ok(cudaEventRecord(g->start)))
++  if (!upload_batch(g, x, (size_t)B * I, t, (size_t)B * O) ||
++      !ok(cudaMemsetAsync(g->status, 0, sizeof(IxaiGpuStatus), g->stream)) ||
++      !ok(cudaEventRecord(g->start, g->stream))) {
++    // The pinned staging buffer may still be read by the upload until the stream is idle.
++    cudaStreamSynchronize(g->stream);
+     return -1;
++  }
++  cudaStream_t st = g->stream;
+   int* flag = &g->status->flag;
+   const long long BH = (long long)B * H, BO = (long long)B * O;
+   if (H > 0) {
+     gemm(g, 0, g->x, B, g->w1, H, I, g->key_h);
+-    hidden_epilogue<<<flat_blocks(BH), 256>>>(g->key_h, g->b1, H, BH, g->z, g->h, flag);
++    hidden_epilogue<<<flat_blocks(BH), 256, 0, st>>>(g->key_h, g->b1, H, BH, g->z, g->h, flag);
+   }
+   if (O > 0) {
+     gemm(g, 1, g->h, B, g->w2, O, H, g->key_o);
+-    output_epilogue<<<flat_blocks(BO), 256>>>(g->key_o, g->b2, g->t, O, BO, g->dout, flag);
++    output_epilogue<<<flat_blocks(BO), 256, 0, st>>>(g->key_o, g->b2, g->t, O, BO, g->dout, flag);
+   }
+-  if (O > 0 && H > 0) transpose(g->w2, O, H, g->w2t);
++  if (O > 0 && H > 0) transpose(g->w2, O, H, g->w2t, st);
+   if (H > 0) {
+     gemm(g, 2, g->dout, B, g->w2t, H, O, g->key_dz);
+-    dz_epilogue<<<flat_blocks(BH), 256>>>(g->key_dz, g->z, BH, g->dz);
++    dz_epilogue<<<flat_blocks(BH), 256, 0, st>>>(g->key_dz, g->z, BH, g->dz);
+   }
+-  if (H > 0) transpose(g->dz, B, H, g->dzt);
+-  if (I > 0) transpose(g->x, B, I, g->xt);
+-  if (H > 0) transpose(g->h, B, H, g->ht);
+-  if (O > 0) transpose(g->dout, B, O, g->doutt);
++  if (H > 0) transpose(g->dz, B, H, g->dzt, st);
++  if (I > 0) transpose(g->x, B, I, g->xt, st);
++  if (H > 0) transpose(g->h, B, H, g->ht, st);
++  if (O > 0) transpose(g->dout, B, O, g->doutt, st);
+   // `gpuStep` computes every gradient from the old weights: the `dz` GEMM above used `w2t`, a copy
+   // of the old `w2`, so `w2` may now be updated in place.
+   if (H > 0 && I > 0) {
+     gemm(g, 3, g->dzt, H, g->xt, I, B, g->key_gw1);
+-    update_w_epilogue<<<flat_blocks((long long)H * I), 256>>>(g->w1, g->key_gw1, (long long)H * I, lr,
++    update_w_epilogue<<<flat_blocks((long long)H * I), 256, 0, st>>>(g->w1, g->key_gw1, (long long)H * I, lr,
+                                                               g->key_p1, flag);
+   }
+   if (H > 0)
+-    update_b_kernel<<<warp_blocks(H), kWarpsPerBlock * kLanes>>>(g->b1, g->dzt, H, B, lr, g->key_pb1,
++    update_b_kernel<<<warp_blocks(H), kWarpsPerBlock * kLanes, 0, st>>>(g->b1, g->dzt, H, B, lr, g->key_pb1,
+                                                                  flag);
+   if (O > 0 && H > 0) {
+     gemm(g, 4, g->doutt, O, g->ht, H, B, g->key_gw2);
+-    update_w_epilogue<<<flat_blocks((long long)O * H), 256>>>(g->w2, g->key_gw2, (long long)O * H, lr,
++    update_w_epilogue<<<flat_blocks((long long)O * H), 256, 0, st>>>(g->w2, g->key_gw2, (long long)O * H, lr,
+                                                               g->key_p2, flag);
+   }
+   if (O > 0)
+-    update_b_kernel<<<warp_blocks(O), kWarpsPerBlock * kLanes>>>(g->b2, g->doutt, O, B, lr, g->key_pb2,
++    update_b_kernel<<<warp_blocks(O), kWarpsPerBlock * kLanes, 0, st>>>(g->b2, g->doutt, O, B, lr, g->key_pb2,
+                                                                  flag);
+   ok(cudaGetLastError());
+-  ok(cudaEventRecord(g->stop));
+-  // The copy waits for every kernel of the step, on this thread's stream.
+-  IxaiGpuStatus status;
+-  ok(cudaMemcpy(&status, g->status, sizeof status, cudaMemcpyDeviceToHost));
++  ok(cudaEventRecord(g->stop, st));
++  ok(cudaMemcpyAsync(g->host_status, g->status, sizeof(IxaiGpuStatus), cudaMemcpyDeviceToHost, st));
++  ok(cudaStreamSynchronize(st));
+   if (last_error != cudaSuccess) return -1;
++  const IxaiGpuStatus& status = *g->host_status;
+   for (int i = 0; i < kGemms; i++)
+     if (g->measured[i])
+       for (int j = 0; j < 2; j++) g->limbs[i][j] = limb_top(status.magnitude[i][j]);
+@@ -781,7 +838,11 @@
+   begin();
+   size_t n = g->last_batch ? keys_length(g, g->last_batch) : 0;
+   if (n == 0) return 0;
+-  return ok(cudaMemcpy(out, g->keys, n * sizeof(i64), cudaMemcpyDeviceToHost)) ? 0 : -1;
++  return host_buffer(out, n * sizeof(i64)) &&
++                 ok(cudaMemcpyAsync(out, g->keys, n * sizeof(i64), cudaMemcpyDeviceToHost, g->stream)) &&
++                 ok(cudaStreamSynchronize(g->stream))
++             ? 0
++             : -1;
+ }
+ 
+ }  // extern "C"

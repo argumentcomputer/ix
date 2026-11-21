@@ -1,0 +1,61 @@
+--- a/gpu/cuda/error_test.cu
++++ b/gpu/cuda/error_test.cu
+@@ -4,6 +4,7 @@
+ #include <cstdint>
+ #include <cstdio>
+ #include <cstring>
++#include <tuple>
+ #include <vector>
+ 
+ struct IxaiGpu;
+@@ -15,6 +16,7 @@
+ int ixai_gpu_get_model(IxaiGpu* g, int64_t* model);
+ int ixai_gpu_step(IxaiGpu* g, const int64_t* x, const int64_t* t, int n_batch, int64_t lr);
+ int ixai_gpu_keys(IxaiGpu* g, int64_t* out);
++int ixai_gpu_set_path(IxaiGpu* g, int path);
+ }
+ 
+ static int failures = 0;
+@@ -51,6 +53,42 @@
+          "keys and model download");
+   ixai_gpu_destroy(g);
+ 
++  // Repeated steps of one configuration are replayed from a captured graph, on both GEMM paths. A
++  // failure between them still reports its own error, and the steps after it compute what the
++  // steps before it did.
++  for (int path : {1, 2}) {
++    g = ixai_gpu_create(I, H, O, B);
++    ixai_gpu_set_path(g, path);
++    std::vector<int64_t> first(keys.size()), again(keys.size());
++    bool good = true;
++    for (int i = 0; i < 4; i++) {
++      good = good && ixai_gpu_set_model(g, model.data()) == 0 && ixai_gpu_step(g, x.data(), t.data(), B, 1) == 0;
++      good = good && ixai_gpu_keys(g, (i == 0 ? first : again).data()) == 0 && first == again;
++      if (i == 0) again = first;
++    }
++    expect(good, path == 1 ? "repeated steps agree (CUDA cores)" : "repeated steps agree (tensor cores)");
++    rc = ixai_gpu_step(g, x.data(), nullptr, B, 1);
++    printf("path %d: step(t = null) after repeated steps = %d, error \"%s\"\n", path, rc, ixai_gpu_error());
++    expect(rc == -1 && !strcmp(ixai_gpu_error(), "invalid argument"), "a failure between replayed steps reports its error");
++    good = ixai_gpu_set_model(g, model.data()) == 0 && ixai_gpu_step(g, x.data(), t.data(), B, 1) == 0 &&
++           !strcmp(ixai_gpu_error(), "no error") && ixai_gpu_keys(g, again.data()) == 0 && again == first;
++    expect(good, "the step after it succeeds with the same keys");
++    ixai_gpu_destroy(g);
++  }
++
++  // Shapes with an empty dimension: the products with an empty output are skipped, those with an
++  // empty sum are zero, and nothing is reported as an error.
++  for (auto [i, h, o] : {std::tuple{0, 3, 2}, {2, 0, 2}, {2, 3, 0}, {0, 0, 0}}) {
++    IxaiGpu* z = ixai_gpu_create(i, h, o, B);
++    std::vector<int64_t> m(h * i + h + o * h + o, 1), zx(B * i, 2), zt(B * o, 3), zk(3 * B * h + B * o + 2 * h * i + 2 * o * h + h + o);
++    rc = z ? ixai_gpu_set_model(z, m.data()) : -2;
++    if (rc == 0) rc = ixai_gpu_step(z, zx.data(), zt.data(), B, 1);
++    if (rc == 0) rc = ixai_gpu_keys(z, zk.data());
++    printf("shape %d×%d×%d: step = %d, error \"%s\"\n", i, h, o, rc, ixai_gpu_error());
++    expect(rc == 0 && !strcmp(ixai_gpu_error(), "no error"), "a shape with an empty dimension steps without error");
++    ixai_gpu_destroy(z);
++  }
++
+   // About 8 TB of weights: the allocation fails.
+   IxaiGpu* huge = ixai_gpu_create(1 << 20, 1 << 20, 1, 1);
+   printf("create(2^20 × 2^20) = %s, error \"%s\"\n", huge ? "context" : "null", ixai_gpu_error());

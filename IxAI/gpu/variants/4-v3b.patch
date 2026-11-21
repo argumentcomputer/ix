@@ -1,0 +1,220 @@
+--- a/gpu/cuda/step.cu
++++ b/gpu/cuda/step.cu
+@@ -487,6 +487,15 @@
+   u64 magnitude[kGemms][2];
+ };
+ 
++// What a step's kernels depend on besides the model's shape and the device buffers fixed at
++// creation: steps with equal keys enqueue the same work with the same arguments.
++struct IxaiGpuGraphKey {
++  int batch, path;
++  i64 lr;
++  int limbs[kGemms][2];
++  const uint8_t *planes_a, *planes_b;
++};
++
+ // Device buffers of one model shape. Weights stay on the device across steps. The model is one
+ // buffer `w1 ++ b1 ++ w2 ++ b2`, and a step's keys are one buffer in the order of `ixai_gpu_keys`,
+ // laid out for that step's batch, so that each crosses to the host in a single copy. A step's
+@@ -499,6 +508,11 @@
+ // `limbs[i]` is GEMM `i`'s limb counts minus one, from its operands' magnitudes in the last step
+ // that measured them, or -1 before that. A tensor-core GEMM uses them without waiting for the
+ // current magnitudes, which `limb_gemm` checks on the device.
++//
++// A staged step whose key equals the previous step's is captured once as a CUDA graph, `graph`
++// (`graph_key`, with the `measured` flags of its GEMMs), and replayed while the key stays the same:
++// one launch instead of one per kernel. A step whose key differs, whose batch is not staged, or
++// that must wait for magnitudes or grow the limb planes mid-step runs its kernels directly.
+ struct IxaiGpu {
+   int n_in, n_hidden, n_out, max_batch;
+   i64 *model, *w1, *b1, *w2, *b2;
+@@ -517,6 +531,13 @@
+   int tensor_gemms;
+   float kernel_ms;
+   cudaEvent_t start, stop;
++  cudaGraphExec_t graph;
++  IxaiGpuGraphKey graph_key, last_key;
++  bool graph_measured[kGemms];
++  bool has_last_key;
++  // Set while the step is being captured; `gemm` sets `capture_aborted` instead of waiting or
++  // allocating, which a capture cannot record.
++  bool capturing, capture_aborted;
+ };
+ 
+ namespace {
+@@ -598,16 +619,13 @@
+ // A null host buffer is rejected, as `cudaMemcpy` rejects it, before a host copy reads it.
+ bool host_buffer(const void* p, size_t bytes) { return bytes == 0 || p || ok(cudaErrorInvalidValue); }
+ 
+-// Upload a batch, `x` (`nx` values) then `t` (`nt` values), into `in`.
+-bool upload_batch(IxaiGpu* g, const i64* x, size_t nx, const i64* t, size_t nt) {
+-  if (!host_buffer(x, nx * sizeof(i64)) || !host_buffer(t, nt * sizeof(i64))) return false;
+-  if (nx + nt <= g->staged_length) {
+-    if (nx) memcpy(g->staged, x, nx * sizeof(i64));
+-    if (nt) memcpy(g->staged + nx, t, nt * sizeof(i64));
+-    return ok(cudaMemcpyAsync(g->in, g->staged, (nx + nt) * sizeof(i64), cudaMemcpyHostToDevice, g->stream));
+-  }
+-  return ok(cudaMemcpyAsync(g->in, x, nx * sizeof(i64), cudaMemcpyHostToDevice, g->stream)) &&
+-         ok(cudaMemcpyAsync(g->in + nx, t, nt * sizeof(i64), cudaMemcpyHostToDevice, g->stream));
++bool same_key(const IxaiGpuGraphKey& a, const IxaiGpuGraphKey& b) {
++  if (a.batch != b.batch || a.path != b.path || a.lr != b.lr || a.planes_a != b.planes_a ||
++      a.planes_b != b.planes_b)
++    return false;
++  for (int i = 0; i < kGemms; i++)
++    if (a.limbs[i][0] != b.limbs[i][0] || a.limbs[i][1] != b.limbs[i][1]) return false;
++  return true;
+ }
+ 
+ // GEMM `i` of the step: `out[r][c] = Σ_k a[r][k] · b[c][k]` for `a` of `rows × k_len` and `b` of
+@@ -631,6 +649,10 @@
+       magnitude(a, (long long)rows * k_len, mag, g->stream);
+       magnitude(b, (long long)cols * k_len, mag + 1, g->stream);
+     }
++    if (ka < 0 && g->capturing) {
++      g->capture_aborted = true;
++      return;
++    }
+     if (ka < 0) {
+       // No earlier magnitudes: wait for these.
+       u64* m = g->host_status->magnitude[i];
+@@ -643,6 +665,11 @@
+     if (ka < kMaxLimbs && kb < kMaxLimbs) {
+       long long rows_pad = round_up(rows, kTile), cols_pad = round_up(cols, kTile);
+       long long k_pad = round_up(k_len, kStep);
++      if (g->capturing && (g->planes_a_size < (size_t)(ka + 1) * rows_pad * k_pad ||
++                           g->planes_b_size < (size_t)(kb + 1) * cols_pad * k_pad)) {
++        g->capture_aborted = true;
++        return;
++      }
+       if (!grow(&g->planes_a, &g->planes_a_size, (size_t)(ka + 1) * rows_pad * k_pad) ||
+           !grow(&g->planes_b, &g->planes_b_size, (size_t)(kb + 1) * cols_pad * k_pad))
+         return;
+@@ -715,6 +742,7 @@
+   cudaFree(g->planes_b);
+   if (g->start) cudaEventDestroy(g->start);
+   if (g->stop) cudaEventDestroy(g->stop);
++  if (g->graph) cudaGraphExecDestroy(g->graph);
+   if (g->stream) cudaStreamDestroy(g->stream);
+   delete g;
+ }
+@@ -756,29 +784,18 @@
+              : -1;
+ }
+ 
+-// `IxAIGpu.gpuStep ⟨5⟩ ⟨lr⟩ m batch` on the device's model, with the batch's inputs `x` (B×I) and
+-// targets `t` (B×O). Returns 0, 1 if a fixed-width bound was violated (the model is then invalid),
+-// or -1 on a CUDA error. An empty batch leaves the model unchanged, as `Model.step` does.
+-int ixai_gpu_step(IxaiGpu* g, const i64* x, const i64* t, int n_batch, i64 lr) {
+-  begin();
+-  g->tensor_gemms = 0;
+-  g->kernel_ms = 0;
+-  if (n_batch < 0 || n_batch > g->max_batch) return -1;
+-  g->last_batch = n_batch;
+-  if (n_batch == 0) return 0;
+-  const int I = g->n_in, H = g->n_hidden, O = g->n_out, B = n_batch;
+-  place_keys(g, B);
+-  g->x = g->in;
+-  g->t = g->in + (size_t)B * I;
+-  for (bool& m : g->measured) m = false;
+-  if (!upload_batch(g, x, (size_t)B * I, t, (size_t)B * O) ||
+-      !ok(cudaMemsetAsync(g->status, 0, sizeof(IxaiGpuStatus), g->stream)) ||
+-      !ok(cudaEventRecord(g->start, g->stream))) {
+-    // The pinned staging buffer may still be read by the upload until the stream is idle.
+-    cudaStreamSynchronize(g->stream);
+-    return -1;
+-  }
++}  // extern "C"
++
++namespace {
++
++// Enqueue a step's work after its upload: clear the status, run the kernels, download the status.
++void enqueue_step(IxaiGpu* g, int B, i64 lr) {
++  const int I = g->n_in, H = g->n_hidden, O = g->n_out;
+   cudaStream_t st = g->stream;
++  for (bool& m : g->measured) m = false;
++  ok(cudaMemsetAsync(g->status, 0, sizeof(IxaiGpuStatus), st));
++  // An external record is a node of a captured graph rather than an edge between streams.
++  ok(cudaEventRecordWithFlags(g->start, st, cudaEventRecordExternal));
+   int* flag = &g->status->flag;
+   const long long BH = (long long)B * H, BO = (long long)B * O;
+   if (H > 0) {
+@@ -817,8 +834,78 @@
+     update_b_kernel<<<warp_blocks(O), kWarpsPerBlock * kLanes, 0, st>>>(g->b2, g->doutt, O, B, lr, g->key_pb2,
+                                                                  flag);
+   ok(cudaGetLastError());
+-  ok(cudaEventRecord(g->stop, st));
++  ok(cudaEventRecordWithFlags(g->stop, st, cudaEventRecordExternal));
+   ok(cudaMemcpyAsync(g->host_status, g->status, sizeof(IxaiGpuStatus), cudaMemcpyDeviceToHost, st));
++}
++
++// Capture the step with the batch `n` values already staged, as `g->graph` for `key`. False if the
++// step cannot be captured (`capture_aborted`) or on a CUDA error, recorded in `last_error`.
++bool capture_step(IxaiGpu* g, int B, i64 lr, size_t n, const IxaiGpuGraphKey& key) {
++  if (!ok(cudaStreamBeginCapture(g->stream, cudaStreamCaptureModeThreadLocal))) return false;
++  g->capturing = true;
++  g->capture_aborted = false;
++  ok(cudaMemcpyAsync(g->in, g->staged, n * sizeof(i64), cudaMemcpyHostToDevice, g->stream));
++  enqueue_step(g, B, lr);
++  g->capturing = false;
++  cudaGraph_t graph = nullptr;
++  bool good = ok(cudaStreamEndCapture(g->stream, &graph)) && !g->capture_aborted && last_error == cudaSuccess;
++  cudaGraphExec_t exec = nullptr;
++  if (good) good = ok(cudaGraphInstantiate(&exec, graph, 0));
++  if (graph) cudaGraphDestroy(graph);
++  if (!good) return false;
++  if (g->graph) cudaGraphExecDestroy(g->graph);
++  g->graph = exec;
++  g->graph_key = key;
++  for (int i = 0; i < kGemms; i++) g->graph_measured[i] = g->measured[i];
++  return true;
++}
++
++}  // namespace
++
++extern "C" {
++
++// `IxAIGpu.gpuStep ⟨5⟩ ⟨lr⟩ m batch` on the device's model, with the batch's inputs `x` (B×I) and
++// targets `t` (B×O). Returns 0, 1 if a fixed-width bound was violated (the model is then invalid),
++// or -1 on a CUDA error. An empty batch leaves the model unchanged, as `Model.step` does.
++int ixai_gpu_step(IxaiGpu* g, const i64* x, const i64* t, int n_batch, i64 lr) {
++  begin();
++  g->tensor_gemms = 0;
++  g->kernel_ms = 0;
++  if (n_batch < 0 || n_batch > g->max_batch) return -1;
++  g->last_batch = n_batch;
++  if (n_batch == 0) return 0;
++  const int I = g->n_in, O = g->n_out, B = n_batch;
++  const size_t nx = (size_t)B * I, nt = (size_t)B * O;
++  if (!host_buffer(x, nx * sizeof(i64)) || !host_buffer(t, nt * sizeof(i64))) return -1;
++  place_keys(g, B);
++  g->x = g->in;
++  g->t = g->in + nx;
++  cudaStream_t st = g->stream;
++  // The previous step ended with the stream idle, so no copy still reads the staging buffer.
++  const bool staged = nx + nt <= g->staged_length;
++  if (staged) {
++    if (nx) memcpy(g->staged, x, nx * sizeof(i64));
++    if (nt) memcpy(g->staged + nx, t, nt * sizeof(i64));
++  }
++  IxaiGpuGraphKey key{B, g->path, lr, {}, g->planes_a, g->planes_b};
++  for (int i = 0; i < kGemms; i++) key.limbs[i][0] = g->limbs[i][0], key.limbs[i][1] = g->limbs[i][1];
++  bool replay = staged && g->graph && same_key(key, g->graph_key);
++  if (!replay && staged && g->has_last_key && same_key(key, g->last_key)) {
++    replay = capture_step(g, B, lr, nx + nt, key);
++    if (!replay && last_error != cudaSuccess) return -1;
++  }
++  g->last_key = key;
++  g->has_last_key = true;
++  if (replay) {
++    for (int i = 0; i < kGemms; i++) g->measured[i] = g->graph_measured[i];
++    ok(cudaGraphLaunch(g->graph, st));
++  } else {
++    bool uploaded =
++        staged ? ok(cudaMemcpyAsync(g->in, g->staged, (nx + nt) * sizeof(i64), cudaMemcpyHostToDevice, st))
++               : ok(cudaMemcpyAsync(g->in, x, nx * sizeof(i64), cudaMemcpyHostToDevice, st)) &&
++                     ok(cudaMemcpyAsync(g->in + nx, t, nt * sizeof(i64), cudaMemcpyHostToDevice, st));
++    if (uploaded) enqueue_step(g, B, lr);
++  }
+   ok(cudaStreamSynchronize(st));
+   if (last_error != cudaSuccess) return -1;
+   const IxaiGpuStatus& status = *g->host_status;

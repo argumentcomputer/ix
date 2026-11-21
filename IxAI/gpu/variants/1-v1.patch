@@ -1,0 +1,144 @@
+--- a/gpu/cuda/step.cu
++++ b/gpu/cuda/step.cu
+@@ -226,39 +226,63 @@
+ // Limbs per operand: 4 limbs cover `[-2^31, 2^31)`.
+ constexpr int kMaxLimbs = 4;
+ 
+-// The largest `x ≥ 0 ? x : ~x` of `a`, into `*out` (zero before the first launch): `a` fits `k + 1`
+-// limbs iff it is below `2^(8k + 7)`.
++// The magnitude `x ≥ 0 ? x : ~x` of a value: `x` fits `k + 1` limbs iff it is below `2^(8k + 7)`.
++__device__ __forceinline__ u64 magnitude_of(i64 x) { return (u64)(x ^ (x >> 63)); }
++
++// The largest `m` of the block's threads, into `*out` with one `atomicMax` per block. Every thread
++// of the block must call it (it synchronises the block), in blocks of `kWarpsPerBlock` warps.
++__device__ __forceinline__ void block_max(u64 m, u64* out) {
++  __shared__ u64 warp_max[kWarpsPerBlock];
++  for (int s = kLanes / 2; s > 0; s >>= 1) {
++    u64 o = __shfl_down_sync(0xffffffffu, m, s);
++    m = o > m ? o : m;
++  }
++  if (threadIdx.x % kLanes == 0) warp_max[threadIdx.x / kLanes] = m;
++  __syncthreads();
++  if (threadIdx.x == 0) {
++    for (int w = 1; w < kWarpsPerBlock; w++) m = warp_max[w] > m ? warp_max[w] : m;
++    if (m) atomicMax(out, m);
++  }
++}
++
++// The largest magnitude of `a`, into `*out` (zero before the first launch).
+ __global__ void magnitude_kernel(const i64* a, long long n, u64* out) {
+   u64 m = 0;
+   for (long long i = thread_index(); i < n; i += (long long)gridDim.x * blockDim.x) {
+-    i64 x = a[i];
+-    u64 v = (u64)(x ^ (x >> 63));
++    u64 v = magnitude_of(a[i]);
+     m = v > m ? v : m;
+   }
+-  for (int s = kLanes / 2; s > 0; s >>= 1) {
+-    u64 o = __shfl_down_sync(0xffffffffu, m, s);
+-    m = o > m ? o : m;
+-  }
+-  if (threadIdx.x % kLanes == 0 && m) atomicMax(out, m);
++  block_max(m, out);
+ }
+ 
+ // Limb planes of a `rows × k_len` matrix, zero-padded to `rows_pad × k_pad`: plane `p` holds
+ // `limb (n_limbs - 1) p x`, the byte `x >>> 8p` (unsigned below the top limb, signed at the top).
+ // Each thread writes four consecutive bytes of every plane.
++//
++// The threads together read every value of the matrix exactly once, so when `mag` is not null the
++// kernel also accumulates the matrix's largest magnitude into `*mag`, as `magnitude_kernel` would
++// in a separate pass. The planes do not depend on it: `n_limbs` is chosen beforehand, and a matrix
++// that does not fit `n_limbs` limbs is split wrongly but then rejected by `limb_gemm` from `*mag`.
+ __global__ void split_kernel(const i64* src, int rows, int k_len, int n_limbs, int rows_pad, int k_pad,
+-                             uint8_t* dst) {
++                             uint8_t* dst, u64* mag) {
+   long long i = thread_index() * 4;
+   long long plane = (long long)rows_pad * k_pad;
+-  if (i >= plane) return;
+-  int r = (int)(i / k_pad), c = (int)(i % k_pad);
+-  i64 x[4];
+-  for (int e = 0; e < 4; e++)
+-    x[e] = (r < rows && c + e < k_len) ? src[(size_t)r * k_len + c + e] : 0;
+-  for (int p = 0; p < n_limbs; p++) {
+-    uint32_t word = 0;
+-    for (int e = 0; e < 4; e++) word |= (uint32_t)(uint8_t)(x[e] >> (8 * p)) << (8 * e);
+-    *(uint32_t*)(dst + p * plane + i) = word;
++  u64 m = 0;
++  if (i < plane) {
++    int r = (int)(i / k_pad), c = (int)(i % k_pad);
++    i64 x[4];
++    for (int e = 0; e < 4; e++) {
++      x[e] = (r < rows && c + e < k_len) ? src[(size_t)r * k_len + c + e] : 0;
++      u64 v = magnitude_of(x[e]);
++      m = v > m ? v : m;
++    }
++    for (int p = 0; p < n_limbs; p++) {
++      uint32_t word = 0;
++      for (int e = 0; e < 4; e++) word |= (uint32_t)(uint8_t)(x[e] >> (8 * p)) << (8 * e);
++      *(uint32_t*)(dst + p * plane + i) = word;
++    }
+   }
++  if (mag) block_max(m, mag);
+ }
+ 
+ // `c += a · b` on one `m16n8k32` tile; the top limb is signed, the others unsigned. The int32
+@@ -305,7 +329,7 @@
+ // at the end of the chunk it is added to the 128-bit sums with weight `256^s`.
+ //
+ // The limb counts are chosen on the host before the operands' magnitudes are known there, so the
+-// kernel checks them against `mag` (the `magnitude_kernel` maxima of `a` and `b`): if an operand
++// kernel checks them against `mag` (the largest magnitudes of `a` and `b`): if an operand
+ // does not fit its planes, every block computes its tile from the int64 operands `a` and `b` on
+ // CUDA cores, as `dot_kernel` does. Otherwise block 0 counts one tensor-core GEMM in `tensor`.
+ template <int KA, int KB>
+@@ -522,7 +546,7 @@
+   return true;
+ }
+ 
+-// Limbs minus one needed by values of magnitude `m` (`magnitude_kernel`), or `kMaxLimbs` if they do
++// Limbs minus one needed by values of largest magnitude `m` (`magnitude_of`), or `kMaxLimbs` if they do
+ // not fit `kMaxLimbs` limbs.
+ int limb_top(u64 m) {
+   for (int k = 0; k < kMaxLimbs; k++)
+@@ -537,15 +561,25 @@
+ 
+ // GEMM `i` of the step: `out[r][c] = Σ_k a[r][k] · b[c][k]` for `a` of `rows × k_len` and `b` of
+ // `cols × k_len`. A CUDA failure is recorded in `last_error`.
++//
++// A tensor-core GEMM measures its operands' magnitudes for `limb_gemm`'s check and for the next
++// step's limb counts. With limb counts from an earlier step, the split kernels measure them as they
++// read the operands. Without (the first step, or an operand that did not fit last time), the limb
++// counts are not known before the magnitudes, or no split runs, so a separate pass measures them.
+ void gemm(IxaiGpu* g, int i, const i64* a, int rows, const i64* b, int cols, int k_len, i64* out) {
++  // An empty output has no entries to compute, and CUDA rejects a launch of zero blocks.
++  if (rows <= 0 || cols <= 0) return;
+   long long work = (long long)rows * cols * k_len;
+   bool tensor = k_len > 0 && (g->path == kPathTensor || (g->path == kPathAuto && work >= kTensorMinWork));
+   if (tensor) {
+     u64* mag = g->status->magnitude[i];
+-    magnitude(a, (long long)rows * k_len, mag);
+-    magnitude(b, (long long)cols * k_len, mag + 1);
+     g->measured[i] = true;
+     int ka = g->limbs[i][0], kb = g->limbs[i][1];
++    const bool fused = ka >= 0 && ka < kMaxLimbs && kb < kMaxLimbs;
++    if (!fused) {
++      magnitude(a, (long long)rows * k_len, mag);
++      magnitude(b, (long long)cols * k_len, mag + 1);
++    }
+     if (ka < 0) {
+       // No earlier magnitudes: wait for these.
+       u64 m[2];
+@@ -560,9 +594,10 @@
+           !grow(&g->planes_b, &g->planes_b_size, (size_t)(kb + 1) * cols_pad * k_pad))
+         return;
+       split_kernel<<<flat_blocks(rows_pad * k_pad / 4), 256>>>(a, rows, k_len, ka + 1, (int)rows_pad,
+-                                                               (int)k_pad, g->planes_a);
++                                                               (int)k_pad, g->planes_a, fused ? mag : nullptr);
+       split_kernel<<<flat_blocks(cols_pad * k_pad / 4), 256>>>(b, cols, k_len, kb + 1, (int)cols_pad,
+-                                                               (int)k_pad, g->planes_b);
++                                                               (int)k_pad, g->planes_b,
++                                                               fused ? mag + 1 : nullptr);
+       unsigned tiles = (unsigned)((rows_pad / kTile) * (cols_pad / kTile));
+       kLimbGemms[ka][kb]<<<tiles, 256>>>(g->planes_a, g->planes_b, a, b, mag, rows, cols, k_len,
+                                          (int)rows_pad, (int)cols_pad, (int)k_pad, out,

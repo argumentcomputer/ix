@@ -1,0 +1,39 @@
+--- a/gpu/cuda/step.cu
++++ b/gpu/cuda/step.cu
+@@ -387,17 +387,29 @@
+     }
+   bool ov = false;
+ 
++  // The next stage's 16 bytes of each plane are loaded into registers before the MMAs of the
++  // current stage, so that their global-memory latency overlaps the MMAs instead of preceding them.
++  const uint8_t* a_src = ap + (size_t)(row0 + load_row) * k_pad + load_col;
++  const uint8_t* b_src = bp + (size_t)(col0 + load_row) * k_pad + load_col;
++  int4 a_next[KA + 1], b_next[KB + 1];
++#pragma unroll
++  for (int p = 0; p <= KA; p++) a_next[p] = *(const int4*)(a_src + p * a_plane);
++#pragma unroll
++  for (int q = 0; q <= KB; q++) b_next[q] = *(const int4*)(b_src + q * b_plane);
++
+   for (int k0 = 0; k0 < k_pad; k0 += kStep) {
+     __syncthreads();
+ #pragma unroll
+-    for (int p = 0; p <= KA; p++)
+-      *(int4*)&as[p][load_row][load_col] =
+-          *(const int4*)(ap + p * a_plane + (size_t)(row0 + load_row) * k_pad + k0 + load_col);
+-#pragma unroll
+-    for (int q = 0; q <= KB; q++)
+-      *(int4*)&bs[q][load_row][load_col] =
+-          *(const int4*)(bp + q * b_plane + (size_t)(col0 + load_row) * k_pad + k0 + load_col);
++    for (int p = 0; p <= KA; p++) *(int4*)&as[p][load_row][load_col] = a_next[p];
++#pragma unroll
++    for (int q = 0; q <= KB; q++) *(int4*)&bs[q][load_row][load_col] = b_next[q];
+     __syncthreads();
++    if (k0 + kStep < k_pad) {
++#pragma unroll
++      for (int p = 0; p <= KA; p++) a_next[p] = *(const int4*)(a_src + p * a_plane + k0 + kStep);
++#pragma unroll
++      for (int q = 0; q <= KB; q++) b_next[q] = *(const int4*)(b_src + q * b_plane + k0 + kStep);
++    }
+ #pragma unroll
+     for (int kk = 0; kk < kStep; kk += 32) {
+       unsigned af[KA + 1][4];
