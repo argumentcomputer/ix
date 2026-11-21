@@ -5,7 +5,7 @@ import Tests.Ix.Kernel.FocusedLeanCheck
 import Ix.CompileM
 import Ix.CompileCertified
 import Ix.RoleBinding.Compile
-import Ix.Resource.Typing
+import Ix.Typing
 import LSpec
 
 /-!
@@ -52,14 +52,15 @@ import LSpec
   recursors can meet the compile's recursor check on alpha-equivalent
   families, which refuses it whole; closed over them it compiles.
 
-  Only the `selected` and `pack` artifacts are type-checked. IxC reads an
-  inductive block together with its recursor and declines it otherwise
-  (`reader: inductive block without a recursor in the input`,
-  `Ix.EnvScope.ClosureOptions.recursors`), and neither the `collectDeps`
-  nor the `raw` closure carries the recursors of the library families it
-  reaches (`PProd`, `Nat`, …). The selected closure of either leg's closure
-  is the seed's own selected closure (`collectSelectedDeps` is a fixed
-  point, and each leg's closure lies inside the seed's), so the `selected`
+  Only the `selected` and `pack` artifacts are type-checked. IxC declines an
+  inductive block without its recursor (a block of several types at the
+  reader, `reader: inductive block without a recursor in the input`; a block
+  of one type at the checker; `Ix.EnvScope.ClosureOptions.recursors`),
+  and neither the `collectDeps` nor the `raw` closure carries the recursors
+  of the library families it reaches (`PProd`, `Nat`, …). The selected
+  closure of either leg's closure is the seed's own selected closure
+  (`collectSelectedDeps` is a fixed point, and each leg's closure lies inside
+  the seed's), so the `selected`
   leg checks the seed in exactly the closure that makes either leg's input
   self-contained. Likewise `ix pack` carries the recursors of the
   inductives a bundle reaches only for a bound artifact
@@ -204,7 +205,7 @@ def compileClosure (env : Lean.Environment) (dir : System.FilePath)
     try
       artifact ← Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.certifiedBackend 32) env
         Ix.RoleBinding.Compile.nativeCertSource (Ix.Compile.CompileInput.plain consts) out.env
-        Ix.Resource.typingLimits (existing? := out.existing?)
+        Ix.Typing.typingLimits (existing? := out.existing?)
     catch e => return .error s!"finalize: {e}"
   let path := artifactPath dir tag
   let bytes ← IO.ofExcept (Ixon.serEnv artifact)

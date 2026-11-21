@@ -77,23 +77,23 @@ the certified byte admission
 (`Ix.Kernel.Admission.Audit`), with the same ruled constructs and the same
 codec: projection records are written with Ixon v4's TagN writer
 (`Ixon.putTagN`, `tagNHeader`, `tagNEnd1..6`) and read with its reader
-(`getTagN`, `getTagNWide`, `getTagN0Values`). Step 5a (typed keys) moved the
-count from 5687 by the entry's change (`IxC/Kernel/Audit/Roots.lean`); step 5b's
-`LetMeta` from 5478, by the let contract's equality, hash and `Repr`; step 5b's
-walk change from 5505, by the sources of the arity-reduced `f._redArg` the walk
-reaches (no extern, `unsafe`, `csimp` or `partial` constant among them); step
-5b's mode index from 5598, by the entry's change; its address keys from 5610
+(`getTagN`, `getTagNWide`, `getTagN0Values`). Typed keys moved the
+count from 5687 by the entry's change (`IxC/Kernel/Audit/Roots.lean`);
+`LetMeta` from 5478, by the let contract's equality, hash and `Repr`; the
+arity-reduced walk change from 5505, by the sources of the arity-reduced `f._redArg` the walk
+reaches (no extern, `unsafe`, `csimp` or `partial` constant among them); the
+mode index from 5598, by the entry's change; its address keys from 5610
 and 111 inherited externs, by the entry's change; the per-step memo reset,
 shared binder metadata, fixed-width TagN fast paths, and task-parallel phase B
 from 5574 and 113 inherited externs, by the entry's
 change (`IxC/Kernel/Audit/Roots.lean`: the memo state reset, the shared
 binder metadata, the codec's TagN twins with their two ruled csimps, which
 the projection writer and reader also call, and phase B on tasks with
-`Init`'s `Task.spawn` and `Task.get`). Step 6's structured errors moved it from 5592 and 115
+`Init`'s `Task.spawn` and `Task.get`). Structured errors moved it from 5592 and 115
 inherited externs, by the entry's change (`IxC/Kernel/Audit/Roots.lean`: the
 fold no longer spells keys or prints terms, and a fixed message is a one-part
 list, two more closed objects per message site); the validation of the four
-install anchors from 5810, by the entry's change; step 6b's display annotations from
+install anchors from 5810, by the entry's change; display annotations from
 5821, by the entry's change (8 more, one more ruled csimp), and its failure display
 from 5829 (30 more, one more ruled csimp); the reader's conversion to Lean `module`s from
 5859, by the entry's change (28 more: the module's own specialisations,
@@ -136,9 +136,35 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- The indexed inductive shape guard adds 14 compiled functions net and the
 -- proved indShapeOk_eq_indShapeOkFast replacement (27 -> 28 ruled csimps; see
 -- `IxC/Kernel/Audit/Roots.lean`).
+-- The decisions' `of_decide_eq_*` dependencies (`Role.deps`) add 7 compiled functions
+-- to each closure here (`IxC/Kernel/Audit/Roots.lean`).
+-- Specification version 5 (the compiler-trust roles) adds the entry's 49
+-- (`IxC/Kernel/Audit/Roots.lean`).
+-- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
+-- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions, the entry's
+-- (`IxC/Kernel/Audit/Roots.lean`).
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+-- The canonical rule's level link and the declines of rules that would not fire add
+-- 17 compiled functions (`IxC/Kernel/Audit/Roots.lean`).
+-- The Ixon v5 binder-data section (its parser and the local canonical check that
+-- `Admission.decodeRecords` runs on every record) adds 38 compiled functions, as for
+-- `Admission.checkBytes` (`IxC/Kernel/Admission/Audit.lean`). Externs, implemented_by,
+-- unsafe, csimp and all ruling counts are unchanged.
+-- Modes in records (the section nodes' modes, let headers, definition assertions and
+-- constructor field modes, `Constant.modesCanonical`) take the closure from 7009 compiled
+-- functions and 113 inherited externs to 7028 and 114, as for `Admission.checkBytes`.
+-- The reader's canonical natural-literal check (`ECx.natAt`) adds 5.
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
+-- csimp and all ruling counts are unchanged.
+-- Normalized recursor analysis and the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`)
+-- move the closure from 7092 compiled functions and 28 ruled csimps to 7139 and 29.
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 6875 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ixon.Projection.checkBytes]: 7139 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

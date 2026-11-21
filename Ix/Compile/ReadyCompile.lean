@@ -43,7 +43,7 @@ def validate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Except Strin
 
 def initialWith (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (sched : FoldSchedule) (limits : Ix.Sharing.Exact.Limits) : FoldState :=
-  let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
+  let view : Ix.Environment := env.lookupView
   let cenv := { CompileEnv.new view with sharingLimits := limits }
   FoldState.init cenv blocks sched
 
@@ -106,15 +106,15 @@ def reportFromDriver (env : Ix.Environment)
   return (artifact, failures)
 
 theorem report_decomposition (env : Ix.Environment) :
-    reportFromDriver env (Ix.Cert.groundSplit { consts := env.consts })
-      (Ix.CondenseM.run (Ix.Cert.groundSplit { consts := env.consts }).1)
-      (compileEnvFold { consts := env.consts }
-        (Ix.CondenseM.run (Ix.Cert.groundSplit { consts := env.consts }).1)) =
+    reportFromDriver env (Ix.Cert.groundSplit env.materialized)
+      (Ix.CondenseM.run (Ix.Cert.groundSplit env.materialized).1)
+      (compileEnvFold env.materialized
+        (Ix.CondenseM.run (Ix.Cert.groundSplit env.materialized).1)) =
       Ix.Cert.compileReport env := by
   rw [Ix.Cert.compileReport_eq_shared]
   dsimp only [Ix.Cert.compileReportShared, Ix.Cert.compileUncheckedWith, reportFromDriver]
-  cases compileEnvFold { consts := env.consts }
-      (Ix.CondenseM.run (Ix.Cert.groundSplit { consts := env.consts }).1) with
+  cases compileEnvFold env.materialized
+      (Ix.CondenseM.run (Ix.Cert.groundSplit env.materialized).1) with
   | error message => rfl
   | ok result =>
     obtain ⟨artifact, bytes, cenv⟩ := result
@@ -125,11 +125,11 @@ its original failure map and every report check. -/
 def reportIO (config : ReadyQueue.Config) (env : Ix.Environment) :
     IO ({ result : ReportResult // result = Ix.Cert.compileReport env } × ReadyQueue.Metrics) := do
   let split ← IO.lazyPure fun _ =>
-    (⟨Ix.Cert.groundSplit { consts := env.consts }, rfl⟩ :
-      { result // result = Ix.Cert.groundSplit { consts := env.consts } })
+    (⟨Ix.Cert.groundSplit env.materialized, rfl⟩ :
+      { result // result = Ix.Cert.groundSplit env.materialized })
   let blocks ← IO.lazyPure fun _ =>
     (⟨Ix.CondenseM.run split.val.1, rfl⟩ : { result // result = Ix.CondenseM.run split.val.1 })
-  let (driver, metrics) ← driverIO config { consts := env.consts } blocks.val
+  let (driver, metrics) ← driverIO config env.materialized blocks.val
   let result ← IO.lazyPure fun _ =>
     (⟨reportFromDriver env split.val blocks.val driver.val, by
       rw [driver.property, blocks.property, split.property]

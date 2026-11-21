@@ -100,15 +100,15 @@ def wireCounts : Ixon.Expr → Option (Nat × Nat × Nat)
     match wireCounts f, wireCounts a with
     | some (n, _, _), some _ => if n + 1 < UInt64.size then some (n + 1, 0, 0) else none
     | _, _ => none
-  | .lam _ ty b =>
+  | .lam ty b =>
     match wireCounts ty, wireCounts b with
     | some _, some (_, n, _) => if n + 1 < UInt64.size then some (0, n + 1, 0) else none
     | _, _ => none
-  | .all _ _ ty b =>
+  | .all ty b =>
     match wireCounts ty, wireCounts b with
     | some _, some (_, _, n) => if n + 1 < UInt64.size then some (0, 0, n + 1) else none
     | _, _ => none
-  | .letE _ ty v b =>
+  | .letE _ _ ty v b =>
     match wireCounts ty, wireCounts v, wireCounts b with
     | some _, some _, some _ => some (0, 0, 0)
     | _, _, _ => none
@@ -151,21 +151,21 @@ def sizeInfoWith (shareCost : Nat → Nat) : Ixon.Expr → SizeInfo
     let b' := b + (sizeInfoWith shareCost a).full
     let full := tag4Size n' + b'
     ⟨full, (n', b'), (0, full), (0, full)⟩
-  | .lam _ ty body =>
+  | .lam ty body =>
     let (n, b) := (sizeInfoWith shareCost body).lamCont
     let n' := n + 1
-    let b' := 1 + (sizeInfoWith shareCost ty).full + b
+    let b' := (sizeInfoWith shareCost ty).full + b
     let full := tag4Size n' + b'
     ⟨full, (0, full), (n', b'), (0, full)⟩
-  | .all _ _ ty body =>
+  | .all ty body =>
     let (n, b) := (sizeInfoWith shareCost body).allCont
     let n' := n + 1
-    let b' := 1 + (sizeInfoWith shareCost ty).full + b
+    let b' := (sizeInfoWith shareCost ty).full + b
     let full := tag4Size n' + b'
     ⟨full, (0, full), (0, full), (n', b')⟩
-  | .letE c ty v body =>
-    .plain (tag4Size c.flags.toNat + 1 + (sizeInfoWith shareCost ty).full + (sizeInfoWith shareCost v).full +
-      (sizeInfoWith shareCost body).full)
+  | .letE nonDep mode ty v body =>
+    .plain (tag4Size (LetMode.header nonDep mode).toNat + (sizeInfoWith shareCost ty).full +
+      (sizeInfoWith shareCost v).full + (sizeInfoWith shareCost body).full)
   | .share i => .plain (shareCost i.toNat)
 
 /-- Size facts with the real `Share` widths. -/
@@ -204,9 +204,9 @@ inductive Head where
   | str (refIdx : UInt64)
   | nat (refIdx : UInt64)
   | app
-  | lam (contract : BinderContract)
-  | all (contract : BinderContract) (result : ValueContract)
-  | letE (contract : LetContract)
+  | lam
+  | all
+  | letE (nonDep : Bool) (mode : LetMode)
   deriving BEq, Hashable, Repr, Inhabited
 
 namespace Head
@@ -221,11 +221,14 @@ def tag : Head → Nat
   | .str _ => 0x5
   | .nat _ => 0x6
   | .app => 0x7
-  | .lam _ => 0x8
-  | .all .. => 0x9
-  | .letE _ => 0xA
+  | .lam => 0x8
+  | .all => 0x9
+  | .letE .. => 0xA
 
-/-- §3.2 scalar payload vector, compared numerically. -/
+/-- §3.2 scalar payload vector, compared numerically. A binder head has none
+(its mode is in the record's binder-data section); a `let`'s is its header
+(`LetMode.header`, the TagN value it writes), which determines its `nonDep`
+and mode. -/
 def scalars : Head → List Nat
   | .sort i => [i.toNat]
   | .var i => [i.toNat]
@@ -234,16 +237,14 @@ def scalars : Head → List Nat
   | .prj t f => [t.toNat, f.toNat]
   | .str i => [i.toNat]
   | .nat i => [i.toNat]
-  | .app => []
-  | .lam c => [c.toBits.toNat]
-  | .all c r => [(packAllContract c r).toNat]
-  | .letE c => [c.flags.toNat, c.binder.toBits.toNat]
+  | .app | .lam | .all => []
+  | .letE nonDep mode => [(LetMode.header nonDep mode).toNat]
 
 /-- Number of ordered children. -/
 def arity : Head → Nat
   | .prj .. => 1
-  | .app | .lam _ | .all .. => 2
-  | .letE _ => 3
+  | .app | .lam | .all => 2
+  | .letE .. => 3
   | _ => 0
 
 /-- Ixon expression flag of the inline node. -/
@@ -256,9 +257,9 @@ def flag : Head → UInt8
   | .str _ => Ixon.Expr.FLAG_STR
   | .nat _ => Ixon.Expr.FLAG_NAT
   | .app => Ixon.Expr.FLAG_APP
-  | .lam _ => Ixon.Expr.FLAG_LAM
-  | .all .. => Ixon.Expr.FLAG_ALL
-  | .letE _ => Ixon.Expr.FLAG_LET
+  | .lam => Ixon.Expr.FLAG_LAM
+  | .all => Ixon.Expr.FLAG_ALL
+  | .letE .. => Ixon.Expr.FLAG_LET
 
 /-- The TagN (`f = 4`) value written by `putExpr` for a non-telescope head. -/
 def tag4Field : Head → UInt64
@@ -269,8 +270,8 @@ def tag4Field : Head → UInt64
   | .prj _ f => f
   | .str i => i
   | .nat i => i
-  | .letE c => c.flags
-  | .app | .lam _ | .all .. => 0
+  | .letE nonDep mode => LetMode.header nonDep mode
+  | .app | .lam | .all => 0
 
 /-- Bytes a non-telescope node writes itself, excluding its children.
 Telescope heads (`app`/`lam`/`all`) are priced by the telescope recurrence
@@ -283,8 +284,8 @@ def ownBytes : Head → Nat
   | .prj t f => tag4Size f.toNat + tag0Size t.toNat
   | .str i => tag4Size i.toNat
   | .nat i => tag4Size i.toNat
-  | .letE c => tag4Size c.flags.toNat + 1
-  | .app | .lam _ | .all .. => 0
+  | .letE nonDep mode => tag4Size (LetMode.header nonDep mode).toNat
+  | .app | .lam | .all => 0
 
 end Head
 
@@ -316,9 +317,9 @@ def Node.toExpr (n : Node) (child : Nat → Ixon.Expr) : Ixon.Expr :=
   | .str i => .str i
   | .nat i => .nat i
   | .app => .app (child (n.child 0)) (child (n.child 1))
-  | .lam c => .lam c (child (n.child 0)) (child (n.child 1))
-  | .all c r => .all c r (child (n.child 0)) (child (n.child 1))
-  | .letE c => .letE c (child (n.child 0)) (child (n.child 1)) (child (n.child 2))
+  | .lam => .lam (child (n.child 0)) (child (n.child 1))
+  | .all => .all (child (n.child 0)) (child (n.child 1))
+  | .letE nonDep mode => .letE nonDep mode (child (n.child 0)) (child (n.child 1)) (child (n.child 2))
 
 /-! ## Errors, limits and work counters -/
 

@@ -56,7 +56,7 @@ run_meta do
   let it : InductiveType := InductiveType.mk `Tests.Ix.Kernel.SourceIngressReducedDefs.Box ty [ctor]
   addDecl (Declaration.inductDecl [`u] 1 [it] false)
 
--- `T.{u} : Sort u` with `mk : K True (Box T) → T` (lane P's reproducer).
+-- `T.{u} : Sort u` with `mk : K True (Box T) → T`.
 run_meta do
   let u : Level := Level.param `u
   let t := mkConst `Tests.Ix.Kernel.SourceIngressReducedDefs.T [u]

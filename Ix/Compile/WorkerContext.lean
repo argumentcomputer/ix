@@ -208,12 +208,14 @@ theorem compileNames_stable (names : Array Ix.Name) : Stable (compileNames names
   exact Stable.applyState _ left right same block state
 
 theorem buildBlockConstant_stable (info : Ixon.ConstantInfo) (refs : Array Address)
-    (univs : Array Ixon.Univ) : Stable (buildBlockConstant info refs univs) := by
+    (univs : Array Ixon.Univ) (names : Array Ix.Name) :
+    Stable (buildBlockConstant info refs univs names) := by
   intro left right same block state
-  change run (liftSharing (buildConstantWithSharing left.sharingLimits info refs univs))
-    (left, block) state = run (liftSharing (buildConstantWithSharing right.sharingLimits info refs univs))
-      (right, block) state
-  rw [same.sharing]
+  change run (liftSharing (buildConstantWithSharing left.sharingLimits info refs univs >>=
+      withBinderSection left.env.binderAnnotator? names)) (left, block) state =
+    run (liftSharing (buildConstantWithSharing right.sharingLimits info refs univs >>=
+      withBinderSection right.env.binderAnnotator? names)) (right, block) state
+  rw [same.sharing, same.env]
   exact Stable.liftSharing _ left right same block state
 
 scoped macro "stable_step" : tactic => `(tactic|
@@ -232,7 +234,7 @@ scoped macro "stable_step" : tactic => `(tactic|
     | exact storeBlob_stable _
     | exact compileName_stable _
     | exact compileNames_stable _
-    | exact buildBlockConstant_stable _ _ _
+    | exact buildBlockConstant_stable _ _ _ _
     | apply Stable.discard
     | refine Stable.bind ?_ (fun _ => ?_)
     | refine Stable.mapM_array _ _ (fun _ _ => ?_)
@@ -718,14 +720,14 @@ theorem finishMutualCompilation_stable (sources : List Ix.MutConst)
   intro _
   apply Stable.bind Stable.get
   intro cache left right same block state
-  change run (match buildCompiledMutualBlock left.sharingLimits sources payloads metas cache with
+  change run (match buildCompiledMutualBlock left.sharingLimits left.env.binderAnnotator? sources payloads metas cache with
       | .ok result => pure result
       | .error error => throw error) (left, block) state =
-    run (match buildCompiledMutualBlock right.sharingLimits sources payloads metas cache with
+    run (match buildCompiledMutualBlock right.sharingLimits right.env.binderAnnotator? sources payloads metas cache with
       | .ok result => pure result
       | .error error => throw error) (right, block) state
-  rw [same.sharing]
-  cases buildCompiledMutualBlock right.sharingLimits sources payloads metas cache <;> rfl
+  rw [same.sharing, same.env]
+  cases buildCompiledMutualBlock right.sharingLimits right.env.binderAnnotator? sources payloads metas cache <;> rfl
 
 theorem compileMutualBlock_stable (sources : List Ix.MutConst) : Stable (compileMutualBlock sources) := by
   unfold compileMutualBlock compileMutualPayload

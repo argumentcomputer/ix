@@ -39,8 +39,8 @@ variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 set_option maxHeartbeats 3200000 in
 /-- **The truthfulness transport, at the reading** (`annotS`). -/
-theorem annotTransport {m : EnvModel V env} {F : Nat}
-    (hclaims : DefEqClaim μ m φ F)
+theorem annotTransport {m : EnvModel V env} {J : Judgements md}
+    (hclaims : DefEqClaimJ J m φ)
     {K : Nat}
     -- the public frame
     {pfvs : List (Expr md)} (hPlen : pfvs.length = K)
@@ -70,7 +70,7 @@ theorem annotTransport {m : EnvModel V env} {F : Nat}
     (hokRa : ∀ σ : Nat → V, WellDenotedV V σ Ra)
     {ldomsL : List (Expr md)} {lrest2 : Expr md}
     (hinstLam : Expr.instLamsAt pfvs rhsA = some (ldomsL, lrest2))
-    (hdeLam : DefEqListOk μ F env K (pfvs.map Expr.fvarTypeD) ldomsL)
+    (hdeLam : DefEqListJ J env K (pfvs.map Expr.fvarTypeD) ldomsL)
     -- the fired spine
     {zs : List AnnotTerm} {ρ : Nat → V} (hzslen : zs.length = K)
     (hsat : Sat V Δa (chain V ρ zs))

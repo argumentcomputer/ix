@@ -104,7 +104,7 @@ def rawNatLitC? (e : Expr md) : Option Nat :=
   | .const c [] .. => if c == natZeroName then some 0 else none
   | _ => none
 
-/-- Twin of `etaCtorShape` (the audit's D13 gate; `Expr = Expr`). -/
+/-- Twin of `etaCtorShape` (constructor-shape pre-check; `Expr = Expr`). -/
 def etaCtorShapeC (fe : FEnv md) (e : Expr md) : Bool :=
   match Expr.getAppFn e with
   | .const c _ =>
@@ -264,7 +264,7 @@ comparison is never recomputed within a declaration. -/
 sides, compare, then the `leqCore` cascade both ways.
 
 The `l == r` head test is official's `is_equivalent` disjunct
-(`level.cpp:518`, task #176 P2) and is what makes the *shared* case —
+(`level.cpp:518`) and is what makes the *shared* case —
 the overwhelming majority: the parser hands one object per stream
 level index — cost one pointer compare instead of a
 `(Level × Level)`-keyed memo probe.  It writes no cache entry, so the

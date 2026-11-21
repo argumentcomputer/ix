@@ -23,7 +23,7 @@ names constants itself:
   (`Key.role`), or a constant the checker or the front ends' shared back half
   generates from another key (`Key.aux`);
 * `Role`, the closed set of constants the checker names (the basis blocks,
-  the standard and trust axioms, the literal support, the certified `Nat`
+  the standard and inert axioms, the literal support, the certified `Nat`
   operations), each at `roleKey r = .role r`;
 * `Derived`, the shapes of the generated constants, each at
   `auxKey k d = .aux k d`.
@@ -56,15 +56,15 @@ namespace Ix.Kernel
 
 /-- The constants the checker names: the pinned basis blocks and their
 recursors, the standard axioms with the families they quantify over, the
-literal support and the certified `Nat` operations. Closed: a constant
-outside it is an input or a derived key.
+literal support, the certified `Nat` operations and the inert axioms. Closed:
+a constant outside it is an input or a derived key.
 
-The certified theory is Lean with its three standard axioms:
-native evaluation
-(`Lean.reduceBool`, `Lean.reduceNat`, `Lean.ofReduceBool`,
-`Lean.ofReduceNat`, `Lean.trustCompiler`) is outside it, so none of those
-constants is a role; their Lean names key ordinary input constants, and the
-three axioms among them are non-standard axioms. -/
+The certified theory is Lean with its three standard axioms. Native
+evaluation is outside it. Its three axioms (`Lean.trustCompiler`,
+`Lean.ofReduceBool`, `Lean.ofReduceNat`) are roles so that a binding names
+them as inert axioms, as it names `sorryAx`: declared, and used by no accepted
+constant. The opaques `Lean.reduceBool` and `Lean.reduceNat` are roles because
+those axioms' types mention them; no rule reduces either. -/
 inductive Role where
   | nat | natZero | natSucc | natRec | bool | boolFalse | boolTrue | boolRec
   | eq | eqRefl | eqRec | punit | punitUnit | punitRec | empty | emptyRec | false | falseRec
@@ -83,6 +83,7 @@ inductive Role where
   | stringDecEq | byteArray | byteArrayEmpty | stringToByteArray | listAppend | stringAppend
   | ifThenElse | intLe | intDecEq | intDecLe | intDecLt | intBmod | intBdiv
   | charUtf8Size | stringUtf8ByteSize | stringBack
+  | trustCompiler | reduceBool | reduceNat | ofReduceBool | ofReduceNat
   deriving DecidableEq, Hashable, Ord, Repr, Inhabited
 
 namespace Role
@@ -199,6 +200,11 @@ role key's rendering. -/
   | .charUtf8Size => subName "Char" "utf8Size"
   | .stringUtf8ByteSize => subName "String" "utf8ByteSize"
   | .stringBack => subName "String" "back"
+  | .trustCompiler => subName "Lean" "trustCompiler"
+  | .reduceBool => subName "Lean" "reduceBool"
+  | .reduceNat => subName "Lean" "reduceNat"
+  | .ofReduceBool => subName "Lean" "ofReduceBool"
+  | .ofReduceNat => subName "Lean" "ofReduceNat"
 
 /-- Every role, in declaration order. -/
 def all : List Role :=
@@ -217,7 +223,8 @@ def all : List Role :=
    .bitVec, .bitVecOfNat, .bitVecToNat, .bitVecUlt,
    .stringDecEq, .byteArray, .byteArrayEmpty, .stringToByteArray, .listAppend, .stringAppend,
    .ifThenElse, .intLe, .intDecEq, .intDecLe, .intDecLt, .intBmod, .intBdiv,
-   .charUtf8Size, .stringUtf8ByteSize, .stringBack]
+   .charUtf8Size, .stringUtf8ByteSize, .stringBack,
+   .trustCompiler, .reduceBool, .reduceNat, .ofReduceBool, .ofReduceNat]
 
 theorem mem_all (r : Role) : r ∈ all := by cases r <;> decide
 

@@ -712,9 +712,9 @@ def univCount : Ixon.Expr → Nat
   | .recur _ us => us.size
   | .prj _ _ v => univCount v
   | .app f a => univCount f + univCount a
-  | .lam _ t b => univCount t + univCount b
-  | .all _ _ t b => univCount t + univCount b
-  | .letE _ t v b => univCount t + univCount v + univCount b
+  | .lam t b => univCount t + univCount b
+  | .all t b => univCount t + univCount b
+  | .letE _ _ t v b => univCount t + univCount v + univCount b
   | _ => 0
 
 /-- **The size of a sharing input**: its expression nodes plus its universe
@@ -728,9 +728,9 @@ def RefsWithin (K : Nat) : Ixon.Expr → Prop
   | .recur _ us => us.size ≤ K
   | .prj _ _ v => RefsWithin K v
   | .app f a => RefsWithin K f ∧ RefsWithin K a
-  | .lam _ t b => RefsWithin K t ∧ RefsWithin K b
-  | .all _ _ t b => RefsWithin K t ∧ RefsWithin K b
-  | .letE _ t v b => RefsWithin K t ∧ RefsWithin K v ∧ RefsWithin K b
+  | .lam t b => RefsWithin K t ∧ RefsWithin K b
+  | .all t b => RefsWithin K t ∧ RefsWithin K b
+  | .letE _ _ t v b => RefsWithin K t ∧ RefsWithin K v ∧ RefsWithin K b
   | _ => True
 
 /-- A reference head carries at most `K` universes. -/
@@ -746,13 +746,13 @@ theorem refsWithin_univCount (K : Nat) : ∀ e : Ixon.Expr, univCount e ≤ K �
   | .app f a, h => by
     simp only [univCount] at h
     exact ⟨refsWithin_univCount K f (by omega), refsWithin_univCount K a (by omega)⟩
-  | .lam _ t b, h => by
+  | .lam t b, h => by
     simp only [univCount] at h
     exact ⟨refsWithin_univCount K t (by omega), refsWithin_univCount K b (by omega)⟩
-  | .all _ _ t b, h => by
+  | .all t b, h => by
     simp only [univCount] at h
     exact ⟨refsWithin_univCount K t (by omega), refsWithin_univCount K b (by omega)⟩
-  | .letE _ t v b, h => by
+  | .letE _ _ t v b, h => by
     simp only [univCount] at h
     exact ⟨refsWithin_univCount K t (by omega), refsWithin_univCount K v (by omega),
       refsWithin_univCount K b (by omega)⟩
@@ -782,7 +782,7 @@ theorem refsWithin_toExpr {K : Nat} (n : Node) (f : Nat → Ixon.Expr) (h : Refs
     · exact h.1
     · exact h.2
     · omega
-  | lam c =>
+  | lam =>
     simp only [hh, RefsWithin] at h
     refine ⟨trivial, fun k hk => ?_⟩
     simp only [Head.arity] at hk
@@ -790,7 +790,7 @@ theorem refsWithin_toExpr {K : Nat} (n : Node) (f : Nat → Ixon.Expr) (h : Refs
     · exact h.1
     · exact h.2
     · omega
-  | all c r =>
+  | all =>
     simp only [hh, RefsWithin] at h
     refine ⟨trivial, fun k hk => ?_⟩
     simp only [Head.arity] at hk
@@ -798,7 +798,7 @@ theorem refsWithin_toExpr {K : Nat} (n : Node) (f : Nat → Ixon.Expr) (h : Refs
     · exact h.1
     · exact h.2
     · omega
-  | letE c =>
+  | letE nonDep mode =>
     simp only [hh, RefsWithin] at h
     refine ⟨trivial, fun k hk => ?_⟩
     simp only [Head.arity] at hk
@@ -828,8 +828,8 @@ theorem headWithin_of_desc {K : Nat} {dag : Dag} (hwf : DagWF dag) :
 theorem headFits_of_within {K : Nat} (small : K < UInt64.size) : ∀ {h : Head}, HeadWithin K h → HeadFits h
   | .ref _ _, w => by simp only [HeadWithin] at w; simp only [HeadFits]; omega
   | .recur _ _, w => by simp only [HeadWithin] at w; simp only [HeadFits]; omega
-  | .sort _, _ | .var _, _ | .prj _ _, _ | .str _, _ | .nat _, _ | .app, _ | .lam _, _ | .all _ _, _
-  | .letE _, _ => trivial
+  | .sort _, _ | .var _, _ | .prj _ _, _ | .str _, _ | .nat _, _ | .app, _ | .lam, _ | .all, _
+  | .letE _ _, _ => trivial
 
 theorem tag0Size_le_nine (n : Nat) : tag0Size n ≤ 9 := by
   unfold tag0Size Ixon.tagNByteWidth
@@ -878,12 +878,15 @@ theorem ownBytes_le {K : Nat} : ∀ {h : Head}, HeadWithin K h → h.ownBytes �
     omega
   | .str i, _ => by have := tag4Size_le_nine i.toNat; simp only [Head.ownBytes]; omega
   | .nat i, _ => by have := tag4Size_le_nine i.toNat; simp only [Head.ownBytes]; omega
-  | .letE c, _ => by have := tag4Size_le_nine c.flags.toNat; simp only [Head.ownBytes]; omega
-  | .app, _ | .lam _, _ | .all _ _, _ => by simp only [Head.ownBytes]; omega
+  | .letE nonDep mode, _ => by
+    have := tag4Size_le_nine (Ixon.LetMode.header nonDep mode).toNat
+    simp only [Head.ownBytes]
+    omega
+  | .app, _ | .lam, _ | .all, _ => by simp only [Head.ownBytes]; omega
 
 theorem sideExtra_le (n : Node) : n.sideExtra ≤ 1 := by
   unfold Node.sideExtra
-  split <;> omega
+  omega
 
 theorem arity_le_three (h : Head) : h.arity ≤ 3 := by
   cases h <;> simp [Head.arity]
@@ -1171,9 +1174,9 @@ theorem refsWithin_substShares {K : Nat} {σ : Nat → Ixon.Expr} {P : Nat → P
   | .share _, hs, _ => hσ _ hs
   | .prj _ _ v, hs, hr => refsWithin_substShares hσ v hs hr
   | .app f a, hs, hr => ⟨refsWithin_substShares hσ f hs.1 hr.1, refsWithin_substShares hσ a hs.2 hr.2⟩
-  | .lam _ t b, hs, hr => ⟨refsWithin_substShares hσ t hs.1 hr.1, refsWithin_substShares hσ b hs.2 hr.2⟩
-  | .all _ _ t b, hs, hr => ⟨refsWithin_substShares hσ t hs.1 hr.1, refsWithin_substShares hσ b hs.2 hr.2⟩
-  | .letE _ t v b, hs, hr => ⟨refsWithin_substShares hσ t hs.1 hr.1, refsWithin_substShares hσ v hs.2.1 hr.2.1,
+  | .lam t b, hs, hr => ⟨refsWithin_substShares hσ t hs.1 hr.1, refsWithin_substShares hσ b hs.2 hr.2⟩
+  | .all t b, hs, hr => ⟨refsWithin_substShares hσ t hs.1 hr.1, refsWithin_substShares hσ b hs.2 hr.2⟩
+  | .letE _ _ t v b, hs, hr => ⟨refsWithin_substShares hσ t hs.1 hr.1, refsWithin_substShares hσ v hs.2.1 hr.2.1,
       refsWithin_substShares hσ b hs.2.2 hr.2.2⟩
   | .ref _ _, _, hr => by simpa [substShares, RefsWithin] using hr
   | .recur _ _, _, hr => by simpa [substShares, RefsWithin] using hr

@@ -77,6 +77,15 @@ meta def elabIxEval : CommandElab := fun stx => do
         for r in Ix.Replay.constantInfoReferences ci do
           unless seen.contains r do
             work := work.push r
+        -- an inductive's recursors too: the binder-data annotator installs a block
+        -- only with its recursor, and over a block it could not install the
+        -- records get undecided binder data, which IxVM refuses
+        if let .inductInfo v := ci then
+          let recs := v.all.map Lean.mkRecName ++
+            (List.range v.numNested).map fun i => Lean.Name.mkStr (v.all.headD v.name) s!"rec_{i + 1}"
+          for r in recs do
+            unless seen.contains r || !env.contains r do
+              work := work.push r
       let phases ← Ix.CompileM.compilePhasesOf env closure
       let compileEnv := Ix.Commit.mkCompileEnv phases
       let ctx ← match Ix.ClaimContext.ofDefaultTable with

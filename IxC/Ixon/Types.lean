@@ -2,6 +2,7 @@ module
 public import IxC.Address.Core
 public import IxC.Ixon.Types.Kinds
 public import IxC.Ixon.Types.Contract
+public import IxC.Ixon.Types.Modes
 
 /-! # Pure Ixon data
 
@@ -37,7 +38,9 @@ end Univ
 
 /-- Expression in the Ixon format.
     Alpha-invariant representation of Lean expressions.
-    Names are stripped, binder info is stored in metadata. -/
+    Names are stripped, binder info is stored in metadata. A binder's mode
+    is in the record's binder-data section (`BinderNode`), a `let`'s in its
+    header (`letE`'s `mode`). -/
 inductive Expr where
   | sort : UInt64 → Expr
   | var : UInt64 → Expr
@@ -47,9 +50,9 @@ inductive Expr where
   | str : UInt64 → Expr
   | nat : UInt64 → Expr
   | app : Expr → Expr → Expr
-  | lam : BinderContract → Expr → Expr → Expr
-  | all : BinderContract → ValueContract → Expr → Expr → Expr
-  | letE : LetContract → Expr → Expr → Expr → Expr
+  | lam : Expr → Expr → Expr
+  | all : Expr → Expr → Expr
+  | letE : (nonDep : Bool) → LetMode → Expr → Expr → Expr → Expr
   | share : UInt64 → Expr
   deriving BEq, Repr, Inhabited, Hashable
 
@@ -68,28 +71,14 @@ namespace Expr
   def FLAG_SHARE : UInt8 := 0xB
 
   /-- Embed an ordinary Lean lambda in Ixon. -/
-  def leanLam (ty body : Expr) : Expr := .lam .many ty body
+  def leanLam (ty body : Expr) : Expr := .lam ty body
 
   /-- Embed an ordinary Lean forall in Ixon. -/
-  def leanAll (ty body : Expr) : Expr := .all .many .shared ty body
+  def leanAll (ty body : Expr) : Expr := .all ty body
 
-  /-- Embed an ordinary Lean let with default contracts. -/
+  /-- Embed an ordinary Lean let, at the default mode. -/
   def leanLet (nonDep : Bool) (ty val body : Expr) : Expr :=
-    .letE (.lean nonDep) ty val body
-
-  /-- The ordinary Lean fragment uses explicit default contracts. -/
-  def leanFragment : Expr → Bool
-    | .lam contract ty body =>
-      contract == BinderContract.many && leanFragment ty && leanFragment body
-    | .all contract result ty body =>
-      contract == BinderContract.many && result == ValueContract.shared &&
-        leanFragment ty && leanFragment body
-    | .app fn arg => leanFragment fn && leanFragment arg
-    | .prj _ _ val => leanFragment val
-    | .letE contract ty val body =>
-      contract.kind == .value && contract.binder == BinderContract.many &&
-        leanFragment ty && leanFragment val && leanFragment body
-    | _ => true
+    .letE nonDep (.value .many) ty val body
 end Expr
 
 /-! ## Constant Types -/
@@ -98,9 +87,12 @@ end Expr
 
 open Ix (DefKind DefinitionSafety QuotKind)
 
+/-- A definition, opaque or theorem. `asserts` is the high nibble of its kind and
+safety byte; a theorem asserts nothing (`Constant.modesCanonical`). -/
 structure Definition where
   kind : DefKind
   safety : DefinitionSafety
+  asserts : DefAsserts := {}
   lvls : UInt64
   typ : Expr
   value : Expr
@@ -135,14 +127,22 @@ structure Quotient where
   typ : Expr
   deriving BEq, Repr, Inhabited
 
+/-- A constructor. `fieldModes` are its fields' modes: all `inherited` (the
+flag bit of its first byte clear), or one byte per field. -/
 structure Constructor where
   isUnsafe : Bool
   lvls : UInt64
   cidx : UInt64
   params : UInt64
   fields : UInt64
+  fieldModes : FieldModes fields.toNat := .inherited
   typ : Expr
-  deriving BEq, Repr, Inhabited
+  deriving Repr, Inhabited
+
+instance : BEq Constructor where
+  beq a b := a.isUnsafe == b.isUnsafe && a.lvls == b.lvls && a.cidx == b.cidx &&
+    a.params == b.params && a.fields == b.fields &&
+    a.fieldModes.toArray == b.fieldModes.toArray && a.typ == b.typ
 
 structure Inductive where
   isUnsafe : Bool
@@ -207,12 +207,78 @@ namespace ConstantInfo
   def CONST_DPRJ : UInt64 := 7
 end ConstantInfo
 
-/-- A top-level constant with sharing, refs, and univs tables. -/
+/-! ## Binder data
+
+The binder-data section of a record: for every `lam` and `all` binder, the
+zero-ness of its codomain sort, as IxC's `PropWhen` (`never`, or "zero exactly
+when all of the parameters are zero"), and its mode (`AllMode`: its bound
+variable's and its arrow's result's, default for Lean source). The section is
+part of the record's bytes, so the record's address covers both.
+
+A block holds the data of one expression: a root (`shared = false`, `index`
+the root's number, `variant = 0`) or a sharing entry (`shared = true`, `index`
+the entry's index, `variant` one of its variants). Its nodes follow the
+expression's numbered nodes in pre-order: every `lam` and `all`, and every
+`share` whose entry has a binder (`BinderNode.share` names the entry's
+variant there). A record without binders has no block. -/
+
+/-- One numbered node of a binder-data block. A binder's node carries its mode
+(`AllMode`, the node byte's high five bits; the byte is the tag alone at the
+default mode); a share node has none. -/
+inductive BinderNode where
+  /-- A binder whose codomain sort is never zero (wire tag 0). -/
+  | never (mode : AllMode) : BinderNode
+  /-- A binder whose codomain sort is always zero (`ifAllZero []`, wire tag 1). -/
+  | zero (mode : AllMode) : BinderNode
+  /-- A binder whose codomain sort is zero exactly when every universe
+  parameter in `params` is (wire tag 2). Canonical: nonempty and strictly
+  ascending. -/
+  | ifAllZero (params : Array UInt64) (mode : AllMode) : BinderNode
+  /-- A share site whose entry has a binder: the entry at variant `v` (wire tag 3). -/
+  | share : UInt64 → BinderNode
+  /-- A binder whose datum the compiler could not decide (wire tag 4).
+  Readers accept it; a checker that needs the datum rejects it. -/
+  | undecided (mode : AllMode) : BinderNode
+  deriving BEq, Repr, Inhabited, Hashable
+
+namespace BinderNode
+  def TAG_NEVER : UInt8 := 0
+  def TAG_ZERO : UInt8 := 1
+  def TAG_IF_ALL_ZERO : UInt8 := 2
+  def TAG_SHARE : UInt8 := 3
+  def TAG_UNDECIDED : UInt8 := 4
+
+  /-- The node's mode: `none` at a share node. -/
+  def mode? : BinderNode → Option AllMode
+    | .never m | .zero m | .ifAllZero _ m | .undecided m => some m
+    | .share _ => none
+
+  /-- Whether the node is an undecided binder (tag 4). -/
+  def isUndecided : BinderNode → Bool
+    | .undecided _ => true
+    | _ => false
+end BinderNode
+
+/-- The binder data of one expression of a record (one variant of it, for a
+sharing entry). -/
+structure BinderBlock where
+  /-- `false` for a root expression, `true` for a sharing entry (wire byte 0 or 1). -/
+  shared : Bool
+  /-- The root's number, or the sharing entry's index. -/
+  index : UInt64
+  /-- The variant: 0 for a root. -/
+  variant : UInt64
+  nodes : Array BinderNode
+  deriving BEq, Repr, Inhabited, Hashable
+
+/-- A top-level constant with sharing, refs, and univs tables, and its
+binder-data section (blocks sorted by `(shared, index, variant)`). -/
 structure Constant where
   info : ConstantInfo
   sharing : Array Expr
   refs : Array Address
   univs : Array Univ
+  binders : Array BinderBlock := #[]
   deriving BEq, Repr, Inhabited
 
 namespace Constant

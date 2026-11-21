@@ -56,7 +56,8 @@ def runTreeCanonical (p : Cli.Parsed) : IO UInt32 := do
   return 0
 
 /-- Build the canonical merkle tree over every `Ixon.Env` constant
-    address and persist it at `~/.ix/store/<root>`. Same shape as
+    address in Lean's logic (the unsafe and partial constants, which no claim
+    certifies, left out) and persist it at `~/.ix/store/<root>`. It is
     `IxVM.ClaimHarness.envCanonicalTree`; the root is what
     `Claim.checkEnv root _` expects. -/
 def runTreeEnv (p : Cli.Parsed) : IO UInt32 := do
@@ -94,7 +95,7 @@ def treeCanonicalCmd : Cli.Cmd := `[Cli|
 open Ix.Cli.TreeCmd in
 def treeEnvCmd : Cli.Cmd := `[Cli|
   env VIA runTreeEnv;
-  "Compute the canonical merkle tree over every constant in a `.ixe` and persist it at `~/.ix/store/<env-root-hex>`. Prints the env root hex — that root is what `ix claim check-env <root>` expects."
+  "Compute the canonical merkle tree over every constant in Lean's logic in a `.ixe` (unsafe and partial constants left out) and persist it at `~/.ix/store/<env-root-hex>`. Prints the env root hex — that root is what `ix claim check-env <root>` expects."
 
   ARGS:
     ixe : String; "Path to a serialized Ixon env (`.ixe`)."

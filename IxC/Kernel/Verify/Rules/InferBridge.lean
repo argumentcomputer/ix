@@ -175,7 +175,8 @@ theorem infer_bridge_succ (hw : WhnfBridge env fuel) (hd : DefEqBridge env fuel)
     obtain ⟨tpe, te, T, us, entry, hpe, hwpe, hfn, hentry, hlen, hlvl, hprop,
       rfl, rfl⟩ := inferTypeCore_proj_inv h
     simp only [beq_iff_eq] at hprop
-    exact .proj (hi hpe) (hw hwpe) hfn hentry hlen hlvl hprop
+    exact .proj (hi hpe) (hw hwpe) hfn hentry hlen hlvl
+      (fun hs => isEquiv_zero_sound (hprop hs))
   | .lam ty body mb, h =>
     obtain ⟨tty, u, bt, hty, hwt, hbt, hleaf, hchain, rfl⟩ :=
       inferTypeCore_lam_inv h
@@ -230,7 +231,8 @@ theorem inferIO_bridge_succ (hw : WhnfBridge env fuel) (hd : DefEqBridge env fue
     obtain ⟨tpe, te, T, us, entry, hpe, hwpe, hfn, hentry, hlen, hlvl, hprop,
       rfl, rfl⟩ := inferTypeCoreIO_proj_inv h
     simp only [beq_iff_eq] at hprop
-    exact .proj (hio hpe) (hw hwpe) hfn hentry hlen hlvl hprop
+    exact .proj (hio hpe) (hw hwpe) hfn hentry hlen hlvl
+      (fun hs => isEquiv_zero_sound (hprop hs))
   | .app f a, h =>
     obtain ⟨tf, ty', body', m', htf, hwf, rfl, hcert⟩ :=
       inferTypeCoreIO_app_inv h

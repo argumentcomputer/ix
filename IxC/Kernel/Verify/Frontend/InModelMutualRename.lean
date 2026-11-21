@@ -61,13 +61,15 @@ def BlockRec.Good (b : BlockRec md) : Prop :=
   (∀ t ∈ b.types, t.Good P) ∧ (∀ c ∈ b.ctors, c.Good P) ∧ ∀ r ∈ b.recs, r.Good P
 
 /-- **The generator's context agrees on the scope**: at every renamed good key
-the renamed declared type, the same height, the renamed parsed block; and the
-types and blocks at good keys are good. -/
+the renamed declared type, the same height, the renamed parsed block, the
+renamed definition value; and the types, blocks and values at good keys are
+good. -/
 structure CtxAgree (ctx : Ctx md) (ctx' : Ctx md') : Prop where
   tbl : TblOn P f ctx.tbl ctx'.tbl
   heights : ∀ k : Key md, k.Good P → ctx'.heights (k.map f) = ctx.heights k
   blocks : ∀ k : Key md, k.Good P → ctx'.blocks (k.map f) = (ctx.blocks k).map (BlockRec.mapKeys f)
   blocksGood : ∀ k : Key md, k.Good P → ∀ b, ctx.blocks k = some b → b.Good P
+  values : TblOn P f ctx.values ctx'.values
 
 /-- Rename a classified constructor. -/
 def MCtor.mapKeys (mc : MCtor md) : MCtor md' :=

@@ -7,7 +7,7 @@ public import IxC.Kernel.Verify.Denote.Inst
 public section
 
 /-!
-# `denoteMeta` commutes with instantiation (task #161, P3 batch 2)
+# `denoteMeta` commutes with instantiation
 
 `denote_substFvarAt`/`denote_beta` (`Verify/Denote/Inst.lean`)
 mirrored for the validated-annotation reading — the substitution
@@ -28,15 +28,15 @@ copied verbatim.  So the numeral is literally the same expression on
 both sides of every binder clause and each closes by the recursion
 alone.
 
-**It costs two leaf premises, not one.**  The brief proposed the
-single `inst`-invariance premise `hainst`; the walk needs a second.
+**It costs two leaf premises, not one.**  In addition to
+`inst`-invariance (`hainst`), the walk needs lift-invariance (`hacl`):
 
 * `hainst : ∀ n ψ y k, (acval n ψ).inst y k = acval n ψ` is what the
-  `.const` and `.lit` clauses read — the exact analogue of v1's
-  `Term.inst_eq_self_of_closed (hcl _ _)`, and of batch 1's `hacl`
+  `.const` and `.lit` clauses read — the exact analogue of
+  `Term.inst_eq_self_of_closed (hcl _ _)`, and of `hacl`
   one operation over.
-* `hacl : ∀ n ψ k, (acval n ψ).liftN 1 k = acval n ψ` — batch 1's
-  premise, unchanged — is what the **`fvar`-at-`p` clause** reads,
+* `hacl : ∀ n ψ k, (acval n ψ).liftN 1 k = acval n ψ`
+  is what the **`fvar`-at-`p` clause** reads,
   through `denoteMeta_lift` below.  That clause is v1's
   `denote_lift hcl hwa.fvarsBelow D hpD` step; v1 hides the split
   because `Term.Closed` implies both invariances at once, while the
@@ -85,6 +85,9 @@ theorem liftN_zero : ∀ (e : AnnotTerm) (k : Nat), liftN 0 e k = e := by
   | eqE a b iha ihb => intro k; rw [liftN_eqE, iha, ihb]
   | fst e ihe => intro k; rw [liftN_fst, ihe]
   | snd e ihe => intro k; rw [liftN_snd, ihe]
+  | chain g e ihg ihe =>
+    intro k; rw [liftN_chain, ihe]; congr 1; funext j; exact ihg j k
+  | bgraph _ f ihf => intro k; rw [liftN_bgraph, ihf]
 
 /-- Two lifts at the same cut compose. -/
 theorem liftN_liftN : ∀ (e : AnnotTerm) (n m k : Nat),
@@ -114,6 +117,10 @@ theorem liftN_liftN : ∀ (e : AnnotTerm) (n m k : Nat),
     intro n m k; rw [liftN_fst, liftN_fst, ihe]; rfl
   | snd e ihe =>
     intro n m k; rw [liftN_snd, liftN_snd, ihe]; rfl
+  | chain g e ihg ihe =>
+    intro n m k; rw [liftN_chain, liftN_chain, ihe]; congr 1; funext j; exact ihg j n m k
+  | bgraph _ f ihf =>
+    intro n m k; rw [liftN_bgraph, liftN_bgraph, ihf]; rfl
 
 end Ix.Kernel.Semantics.AnnotTerm
 
@@ -306,7 +313,15 @@ theorem denoteMeta_substFvarAt
     | some ea =>
       simp only [Option.map_some]
       split
-      · exact congrArg some (projAV_inst _ ea x (D - p)).symm
+      · rename_i entry
+        unfold projNodeAV?
+        split
+        · exact congrArg some (projAV_inst _ ea x (D - p)).symm
+        · split
+          · show some _ = some ((AnnotTerm.chain _ _).inst _ _)
+            rw [AnnotTerm.inst_chain]
+            congr 2; funext m; exact (hainst _ _ _ _).symm
+          · rfl
       · rcases i with _ | _ | i <;> rfl
   | .lit (.natVal k), D, hpD, hfb => by
     simp only [Ix.Kernel.Expr.substFvarAt, denoteMeta]

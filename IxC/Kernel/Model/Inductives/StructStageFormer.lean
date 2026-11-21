@@ -5,7 +5,7 @@ import IxC.Kernel.Verify.Inductives.StructInv
 public section
 
 /-!
-# The former's cons (task #175 W4c, P3 module 6, part 2)
+# The former's cons
 
 `stageFormer`: the P step at the type former's cons, for a given
 field chain `Fs`.  The leaf is `structTyAV (resSort.eval ψ) (pps ψ)

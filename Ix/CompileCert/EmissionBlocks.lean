@@ -1,4 +1,5 @@
 import Ix.CompileCert.Emission
+import Ix.CompileCert.Sectioned
 
 /-! # The singleton blocks read back as their sources, and decode exactly
 
@@ -39,20 +40,41 @@ open Ix.Sharing.Verify (BlockWireTablesWF ConstantInfoHeaderWF BlockResultCodecW
 theorem finish_run (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta) (context : CompileEnv × BlockEnv)
     (state : BlockState) :
     rawRun (finishConstantInfoWithSharing info blockMeta) context state =
-      ((buildConstantWithSharing context.1.sharingLimits info state.refs state.univs).map
+      ((buildConstantWithSharing context.1.sharingLimits info state.refs state.univs >>=
+          withBinderSection context.1.env.binderAnnotator? #[context.2.current]).map
         (fun block => BlockResult.mk' block blockMeta), state) := by
   have readRun : rawRun (read : CompileM (CompileEnv × BlockEnv)) context state = (.ok context, state) := rfl
+  have envRun : rawRun getBlockEnv context state = (.ok context.2, state) := rfl
   simp only [finishConstantInfoWithSharing, finishConstantWithSharing, buildBlockConstant, rawRun_bind,
-    rawRun_get, readRun]
-  cases buildConstantWithSharing context.1.sharingLimits info state.refs state.univs <;> rfl
+    rawRun_get, readRun, envRun]
+  cases buildConstantWithSharing context.1.sharingLimits info state.refs state.univs >>=
+    withBinderSection context.1.env.binderAnnotator? #[context.2.current] <;> rfl
 
 theorem build_block_run (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Array Ixon.Univ)
-    (context : CompileEnv × BlockEnv) (state : BlockState) :
-    rawRun (buildBlockConstant info refs univs) context state =
-      (buildConstantWithSharing context.1.sharingLimits info refs univs, state) := by
+    (names : Array Ix.Name) (context : CompileEnv × BlockEnv) (state : BlockState) :
+    rawRun (buildBlockConstant info refs univs names) context state =
+      (buildConstantWithSharing context.1.sharingLimits info refs univs >>=
+        withBinderSection context.1.env.binderAnnotator? names, state) := by
   have readRun : rawRun (read : CompileM (CompileEnv × BlockEnv)) context state = (.ok context, state) := rfl
   simp only [buildBlockConstant, rawRun_bind, readRun]
-  cases buildConstantWithSharing context.1.sharingLimits info refs univs <;> rfl
+  cases buildConstantWithSharing context.1.sharingLimits info refs univs >>=
+    withBinderSection context.1.env.binderAnnotator? names <;> rfl
+
+/-- A built record with its section: what the sharing built, with an admitted section. -/
+theorem sectioned_of_bind {limits : Ix.Sharing.Exact.Limits} {info : Ixon.ConstantInfo}
+    {refs : Array Address} {univs : Array Ixon.Univ} {annotator? : Option Ix.BinderAnnotator}
+    {names : Array Ix.Name} {block : Ixon.Constant}
+    (h : (buildConstantWithSharing limits info refs univs >>= withBinderSection annotator? names) = .ok block) :
+    buildConstantWithSharing limits info refs univs = .ok { block with binders := #[] } ∧
+      Sectioned.Sectioned { block with binders := #[] } block := by
+  cases hb : buildConstantWithSharing limits info refs univs with
+  | error e => rw [hb] at h; cases h
+  | ok c₀ =>
+    rw [hb] at h
+    have sec := Sectioned.of_withBinderSection (annotator? := annotator?) (names := names) (c₀ := c₀) h
+    have strip := Sectioned.strip sec (Sectioned.built_binders hb)
+    rw [strip]
+    exact ⟨rfl, sec⟩
 
 /-- **The block finisher's inversion**: a successful block ran its payload,
 built the payload's sharing over the final tables, and wraps the built
@@ -63,27 +85,48 @@ theorem block_ok {action : CompileM α} {next : α → CompileM BlockResult}
     {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
     (ran : rawRun (action >>= next) context before = (.ok output, after)) :
     ∃ value, rawRun action context before = (.ok value, after) ∧
-      buildConstantWithSharing context.1.sharingLimits (info value) after.refs after.univs = .ok output.block ∧
+      buildConstantWithSharing context.1.sharingLimits (info value) after.refs after.univs =
+        .ok { output.block with binders := #[] } ∧
       output = BlockResult.mk' output.block (blockMeta value) := by
   obtain ⟨value, middle, first, last⟩ := bind_ok ran
   rw [shape, finish_run] at last
-  cases built : buildConstantWithSharing context.1.sharingLimits (info value) middle.refs middle.univs with
+  cases built : (buildConstantWithSharing context.1.sharingLimits (info value) middle.refs middle.univs >>=
+      withBinderSection context.1.env.binderAnnotator? #[context.2.current]) with
   | error error => rw [built] at last; cases last
   | ok block =>
     rw [built] at last
     simp only [Except.map, Prod.mk.injEq, Except.ok.injEq] at last
     obtain ⟨rfl, rfl⟩ := last
-    exact ⟨value, first, built, rfl⟩
+    exact ⟨value, first, (sectioned_of_bind built).1, rfl⟩
+
+/-- The block the finisher returns is the built one with an admitted section. -/
+theorem block_section {action : CompileM α} {next : α → CompileM BlockResult}
+    (info : α → Ixon.ConstantInfo) (blockMeta : α → Ixon.ConstantMeta)
+    (shape : ∀ value, next value = finishConstantInfoWithSharing (info value) (blockMeta value))
+    {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
+    (ran : rawRun (action >>= next) context before = (.ok output, after)) :
+    Sectioned.Sectioned { output.block with binders := #[] } output.block := by
+  obtain ⟨value, middle, first, last⟩ := bind_ok ran
+  rw [shape, finish_run] at last
+  cases built : (buildConstantWithSharing context.1.sharingLimits (info value) middle.refs middle.univs >>=
+      withBinderSection context.1.env.binderAnnotator? #[context.2.current]) with
+  | error error => rw [built] at last; cases last
+  | ok block =>
+    rw [built] at last
+    simp only [Except.map, Prod.mk.injEq, Except.ok.injEq] at last
+    obtain ⟨rfl, rfl⟩ := last
+    exact (sectioned_of_bind built).2
 
 /-- A built block with header-valid payload and wire-valid tables decodes
 exactly. -/
 theorem block_codec {limits : Ix.Sharing.Exact.Limits} {info : Ixon.ConstantInfo} {state : BlockState}
     {block : Ixon.Constant} (header : ConstantInfoHeaderWF info) (tables : BlockWireTablesWF state)
-    (built : buildConstantWithSharing limits info state.refs state.univs = .ok block)
+    (built : buildConstantWithSharing limits info state.refs state.univs = .ok { block with binders := #[] })
+    (sec : Sectioned.Sectioned { block with binders := #[] } block)
     (blockMeta : Ixon.ConstantMeta) (projections : Array (Ix.Name × Ixon.Constant × Ixon.ConstantMeta)) :
     BlockResultCodecWF (BlockResult.mk' block blockMeta projections) :=
   Ix.Sharing.Verify.BlockResult.mk'_codecWF _ _ _
-    (Ix.Sharing.Verify.buildConstantWithSharing_wireWF_headers header tables built)
+    (Sectioned.wireWF sec (Ix.Sharing.Verify.buildConstantWithSharing_wireWF_headers header tables built))
 
 /-! ## Skeletons: what the source fixes of each payload -/
 
@@ -236,8 +279,8 @@ theorem definitionBlock_correct (context : CompileEnv × BlockEnv)
   obtain ⟨clean, growth, shape, _, roots⟩ := Emission.definition_correct cx param self names σ bindings context
     aligned external source typeScope valueScope good compiled
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits (.defn payload.1)
-    output.block built roots
-  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, read⟩
+    _ built roots
+  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, SharingRoots.RootsRead.same_tables read rfl rfl rfl⟩
   rw [erased, shape]
   exact definition_erase _ _ _
 
@@ -249,9 +292,11 @@ theorem definitionBlock_codec (context : CompileEnv × BlockEnv)
   unfold compileDefinitionDataBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .defn payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _, _⟩ := payload; rfl) ran
+  have sec := block_section (fun payload => .defn payload.1) (fun payload => payload.2.1)
+    (fun payload => by obtain ⟨_, _, _, _⟩ := payload; rfl) ran
   have tables := (EmissionWire.Safe.definitionData source context before payload after valid compiled).1.1
   rw [wrapped]
-  exact block_codec (info := .defn payload.1) trivial tables built _ _
+  exact block_codec (info := .defn payload.1) trivial tables built sec _ _
 
 /-- **The preseeded definition-like block reads back as its source**, from
 a clean state. -/
@@ -308,8 +353,8 @@ theorem axiomBlock_correct (context : CompileEnv × BlockEnv)
   obtain ⟨clean, growth, shape, _, roots⟩ := Emission.axiom_correct cx param self names σ bindings context
     aligned external source scope good compiled
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits (.axio payload.1)
-    output.block built roots
-  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, read⟩
+    _ built roots
+  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, SharingRoots.RootsRead.same_tables read rfl rfl rfl⟩
   rw [erased, shape]
   exact axiom_erase _ _
 
@@ -321,9 +366,11 @@ theorem axiomBlock_codec (context : CompileEnv × BlockEnv)
   unfold compileAxiomBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .axio payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
+  have sec := block_section (fun payload => .axio payload.1) (fun payload => payload.2.1)
+    (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
   have tables := (EmissionWire.Safe.axiomPayload source context before payload after valid compiled).1.1
   rw [wrapped]
-  exact block_codec (info := .axio payload.1) trivial tables built _ _
+  exact block_codec (info := .axio payload.1) trivial tables built sec _ _
 
 theorem axiomInfo_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
@@ -375,8 +422,8 @@ theorem quotientBlock_correct (context : CompileEnv × BlockEnv)
   obtain ⟨clean, growth, shape, _, roots⟩ := Emission.quotient_correct cx param self names σ bindings context
     aligned external source scope good compiled
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits (.quot payload.1)
-    output.block built roots
-  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, read⟩
+    _ built roots
+  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, SharingRoots.RootsRead.same_tables read rfl rfl rfl⟩
   rw [erased, shape]
   exact quotient_erase _ _
 
@@ -388,9 +435,11 @@ theorem quotientBlock_codec (context : CompileEnv × BlockEnv)
   unfold compileQuotientBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .quot payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
+  have sec := block_section (fun payload => .quot payload.1) (fun payload => payload.2.1)
+    (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
   have tables := (EmissionWire.Safe.quotientPayload source context before payload after valid compiled).1.1
   rw [wrapped]
-  exact block_codec (info := .quot payload.1) trivial tables built _ _
+  exact block_codec (info := .quot payload.1) trivial tables built sec _ _
 
 theorem quotientInfo_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
@@ -456,8 +505,8 @@ theorem recursorBlock_correct (context : CompileEnv × BlockEnv)
   obtain ⟨clean, growth, shape, fields, _, roots⟩ := Emission.recursor_correct cx param self names σ bindings
     context aligned external source scope ruleScope good compiled
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits (.recr payload.1)
-    output.block built roots
-  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, read⟩
+    _ built roots
+  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, SharingRoots.RootsRead.same_tables read rfl rfl rfl⟩
   rw [erased, shape]
   exact recursor_erase _ _ _ fields
 
@@ -469,10 +518,12 @@ theorem recursorBlock_codec (context : CompileEnv × BlockEnv)
   unfold compileRecursorBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .recr payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
+  have sec := block_section (fun payload => .recr payload.1) (fun payload => payload.2.1)
+    (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
   have tables := (EmissionWire.Safe.recursorPayload source context before payload after valid compiled).1.1
   have header := recursorPayload_rules source context before payload after compiled
   rw [wrapped]
-  exact block_codec (info := .recr payload.1) header tables built _ _
+  exact block_codec (info := .recr payload.1) header tables built sec _ _
 
 theorem recursorInfo_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
@@ -509,13 +560,14 @@ theorem recursorInfo_codec (context : CompileEnv × BlockEnv)
 /-- **The family finisher's inversion**: it changes no state, builds the
 one-member mutual payload's sharing over the tables, and wraps it with the
 family's projections at the built block's address. -/
-theorem familyFinish_ok (source : InductiveVal) (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
+theorem familyFinish_full (source : InductiveVal) (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (pairs : Array (Ix.Name × Ixon.ConstantMeta)) {context : CompileEnv × BlockEnv}
     {before after : BlockState} {output : BlockResult}
     (ran : rawRun (finishInductiveFamilyBlock source ind indMeta pairs) context before = (.ok output, after)) :
     after = before ∧
       buildConstantWithSharing context.1.sharingLimits (.muts #[.indc ind]) before.refs before.univs =
-        .ok output.block ∧
+        .ok { output.block with binders := #[] } ∧
+      Sectioned.Sectioned { output.block with binders := #[] } output.block ∧
       output = BlockResult.mk' output.block .empty
         (buildInductiveProjections source indMeta pairs (Address.admissionHash (Ixon.ser output.block))) := by
   unfold finishInductiveFamilyBlock at ran
@@ -542,7 +594,26 @@ theorem familyFinish_ok (source : InductiveVal) (ind : Ixon.Inductive) (indMeta 
   rw [rawRun_pure] at returned
   obtain ⟨outputEq, afterEq⟩ := Prod.mk.inj returned
   cases Except.ok.inj outputEq
-  exact ⟨afterEq.symm, buildEq, rfl⟩
+  exact ⟨afterEq.symm, (sectioned_of_bind buildEq).1, (sectioned_of_bind buildEq).2, rfl⟩
+
+theorem familyFinish_ok (source : InductiveVal) (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
+    (pairs : Array (Ix.Name × Ixon.ConstantMeta)) {context : CompileEnv × BlockEnv}
+    {before after : BlockState} {output : BlockResult}
+    (ran : rawRun (finishInductiveFamilyBlock source ind indMeta pairs) context before = (.ok output, after)) :
+    after = before ∧
+      buildConstantWithSharing context.1.sharingLimits (.muts #[.indc ind]) before.refs before.univs =
+        .ok { output.block with binders := #[] } ∧
+      output = BlockResult.mk' output.block .empty
+        (buildInductiveProjections source indMeta pairs (Address.admissionHash (Ixon.ser output.block))) :=
+  have full := familyFinish_full source ind indMeta pairs ran
+  ⟨full.1, full.2.1, full.2.2.2⟩
+
+theorem familyFinish_section (source : InductiveVal) (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
+    (pairs : Array (Ix.Name × Ixon.ConstantMeta)) {context : CompileEnv × BlockEnv}
+    {before after : BlockState} {output : BlockResult}
+    (ran : rawRun (finishInductiveFamilyBlock source ind indMeta pairs) context before = (.ok output, after)) :
+    Sectioned.Sectioned { output.block with binders := #[] } output.block :=
+  (familyFinish_full source ind indMeta pairs ran).2.2.1
 
 theorem inductiveData_ctors (source : Ix.Ind) :
     Emission.Yields (compileInductiveData source) (fun output => output.1.ctors.size < UInt64.size) := by
@@ -592,8 +663,9 @@ theorem familyBlock_correct (context : CompileEnv × BlockEnv)
   have rootsList := family_roots ind
   rw [← rootsList] at roots
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits
-    (.muts #[.indc ind]) output.block built roots
-  refine ⟨clean, growth, ⟨indMeta, pairs, wrapped⟩, ?_, read⟩
+    (.muts #[.indc ind]) _ built roots
+  refine ⟨clean, growth, ⟨indMeta, pairs, wrapped⟩, ?_,
+    SharingRoots.RootsRead.same_tables read rfl rfl rfl⟩
   rw [erased, shape]
   exact inductive_erase _ _ _ ctorShapes
 
@@ -611,6 +683,7 @@ theorem familyBlock_codec (context : CompileEnv × BlockEnv)
   obtain ⟨ind, indMeta, pairs, exprs⟩ := payload
   dsimp only at finished
   obtain ⟨same, built, wrapped⟩ := familyFinish_ok source ind indMeta pairs finished
+  have sec := familyFinish_section source ind indMeta pairs finished
   subst same
   have header : ConstantInfoHeaderWF (.muts #[.indc ind]) := by
     refine ⟨by change 1 < UInt64.size; decide, ?_⟩
@@ -619,7 +692,7 @@ theorem familyBlock_codec (context : CompileEnv × BlockEnv)
     subst memberEq
     exact bounded
   rw [wrapped]
-  exact block_codec header tables built _ _
+  exact block_codec header tables built sec _ _
 
 theorem familyInfo_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)

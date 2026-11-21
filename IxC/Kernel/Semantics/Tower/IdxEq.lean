@@ -7,7 +7,7 @@ public import IxC.Kernel.Semantics.Tower.TowerWire
 @[expose] public section
 
 /-!
-# The index equation, spelled (task #175 indexed)
+# The index equation, spelled
 
 An indexed family's carrier at an index tuple `ı⃗` is the tagged union
 of the constructor towers **restricted** to the constructors' index

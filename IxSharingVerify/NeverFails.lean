@@ -54,17 +54,17 @@ theorem shareIndices_mem {P : Nat → Prop} :
     rcases iha _ h.2 j hj with hj | hj
     · exact ihf acc h.1 j hj
     · exact Or.inr hj
-  | lam _ t b iht ihb =>
+  | lam t b iht ihb =>
     intro acc h j hj
     rcases ihb _ h.2 j hj with hj | hj
     · exact iht acc h.1 j hj
     · exact Or.inr hj
-  | all _ _ t b iht ihb =>
+  | all t b iht ihb =>
     intro acc h j hj
     rcases ihb _ h.2 j hj with hj | hj
     · exact iht acc h.1 j hj
     · exact Or.inr hj
-  | letE _ t v b iht ihv ihb =>
+  | letE _ _ t v b iht ihv ihb =>
     intro acc h j hj
     rcases ihb _ h.2.2 j hj with hj | hj
     · rcases ihv _ h.2.1 j hj with hj | hj
@@ -220,9 +220,9 @@ def RefsFit : Ixon.Expr → Prop
   | .recur _ us => us.size < UInt64.size
   | .prj _ _ v => RefsFit v
   | .app f a => RefsFit f ∧ RefsFit a
-  | .lam _ t b => RefsFit t ∧ RefsFit b
-  | .all _ _ t b => RefsFit t ∧ RefsFit b
-  | .letE _ t v b => RefsFit t ∧ RefsFit v ∧ RefsFit b
+  | .lam t b => RefsFit t ∧ RefsFit b
+  | .all t b => RefsFit t ∧ RefsFit b
+  | .letE _ _ t v b => RefsFit t ∧ RefsFit v ∧ RefsFit b
   | _ => True
 
 theorem refsFit_toExpr (n : Node) (f : Nat → Ixon.Expr) (h : RefsFit (n.toExpr f)) :
@@ -249,7 +249,7 @@ theorem refsFit_toExpr (n : Node) (f : Nat → Ixon.Expr) (h : RefsFit (n.toExpr
     · exact h.1
     · exact h.2
     · omega
-  | lam c =>
+  | lam =>
     simp only [hh, RefsFit] at h
     refine ⟨trivial, fun k hk => ?_⟩
     simp only [Head.arity] at hk
@@ -257,7 +257,7 @@ theorem refsFit_toExpr (n : Node) (f : Nat → Ixon.Expr) (h : RefsFit (n.toExpr
     · exact h.1
     · exact h.2
     · omega
-  | all c r =>
+  | all =>
     simp only [hh, RefsFit] at h
     refine ⟨trivial, fun k hk => ?_⟩
     simp only [Head.arity] at hk
@@ -265,7 +265,7 @@ theorem refsFit_toExpr (n : Node) (f : Nat → Ixon.Expr) (h : RefsFit (n.toExpr
     · exact h.1
     · exact h.2
     · omega
-  | letE c =>
+  | letE nonDep mode =>
     simp only [hh, RefsFit] at h
     refine ⟨trivial, fun k hk => ?_⟩
     simp only [Head.arity] at hk

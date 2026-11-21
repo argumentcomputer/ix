@@ -1,0 +1,476 @@
+import Ix.Meta
+import Ix.Check
+import Ix.Shard.Environment
+import Ix.Shard.Check
+import Ix.IxVM.ClaimHarness
+import Tests.Ix.IxVM.Harness
+
+/-!
+# Typing claims on constants outside Lean's logic
+
+A typing claim certifies its seeds, a `check` target or a `checkEnv` claim's
+owned leaves, only in Lean's logic. IxVM refuses a seed whose record, or the
+block it projects from, is unsafe or partial (`KernelClaim::assert_claimable`):
+Lean's kernel accepts an unsafe constant of any type, `False` included, and a
+`partial` block (Lean's `_unsafe_rec` companions) may refer to itself. The face
+of a `partial def` is a safe opaque and stays claimable. The claim builders
+leave the others out of seed and owned lists (`IxVM.ClaimHarness.claimableOwned`,
+`Ix.Shard.ownedConstsPer`, `Ix.Check.outsideLogicError?`).
+
+The fixtures are compiled from Lean: `Tests.Ix.Kernel.EntryCaseDefs` (its own
+library, `EntryCaseFixtures`, loaded at run time), `IxVMInd.UnsafeSquash`
+(`Tests.Ix.IxVMFixtures`) and `Init`'s partial `Lean.extractMainModule`.
+
+- **Refused** (`check`): an unsafe definition, and one of `False`; an unsafe
+  opaque; an unsafe axiom of `False`; a partial definition (`loop._unsafe_rec`);
+  a member of a mutual partial block (`ping._unsafe_rec`), and the block itself;
+  the self-referential partial definition `badFalse : False := badFalse`; an
+  unsafe inductive, its constructor and its recursor; and
+  `Lean.extractMainModule._unsafe_rec`. Each is refused at the seed, before the
+  walk, with `claim seed is unsafe or partial`.
+- **Refused** (`checkEnv`): a shard whose owned tree holds `loop._unsafe_rec`
+  beside the safe `loop`.
+- **Refused**: the inert axiom `Lean.trustCompiler` as a `check` target and
+  among a `checkEnv` claim's owned leaves, with `claim seed is an inert axiom`:
+  an inert axiom installs nothing and may have no model.
+- **Accepted**: the safe opaques `loop` and `ping`, and the shard claims the
+  builder makes from the same owned lists, which leave `loop._unsafe_rec` and
+  `Lean.trustCompiler` out.
+
+Beside the circuit cases, the host side is checked without running the
+program: `Ixon.Env.outsideLogicAt` agrees with Lean's own flags on every
+fixture, the shard owner and the claim builder leave out the refused seeds and
+the inert axioms with the constants that use one (`inertUsers`), and every
+walk edge from a constant in Lean's logic lands on one (so the owned sets
+stay closed). `corpus` checks the last on a compiled corpus. The parts of a split
+manifest own, with owned sets computed once per manifest and divided among the parts,
+what a pass over the environment gives their blocks, with the same claims
+(`splitOwnership`).
+-/
+
+namespace Tests.Ix.IxVM.ClaimSafety
+
+open IxVM.ClaimHarness
+
+/-- A name from its dotted form, numeric components as numbers. -/
+private def nameOfString (str : String) : Lean.Name :=
+  str.splitOn "." |>.foldl (init := .anonymous) fun acc s =>
+    match s.toNat? with
+    | some n => .mkNum acc n
+    | none => .mkStr acc s
+
+private def defs (n : String) : Lean.Name := `Tests.Ix.Kernel.EntryCaseDefs ++ n.toName
+
+/-- The seeds IxVM must refuse. -/
+def refused : List (String × Lean.Name) := [
+  ("an unsafe definition", defs "unsafeSucc"),
+  ("an unsafe definition of False", defs "unsafeFalse"),
+  ("an unsafe opaque", defs "unsafeOpq"),
+  ("an unsafe axiom of False", defs "unsafeAx"),
+  ("a partial definition", defs "loop._unsafe_rec"),
+  ("a member of a mutual partial block", defs "ping._unsafe_rec"),
+  ("a self-referential partial definition of False", defs "badFalse"),
+  ("an unsafe inductive", `IxVMInd.UnsafeSquash),
+  ("an unsafe inductive's constructor", `IxVMInd.UnsafeSquash.mk),
+  ("an unsafe inductive's recursor", `IxVMInd.UnsafeSquash.rec),
+  ("Init's partial companion",
+    nameOfString "_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec")]
+
+/-- The seeds IxVM must accept: the safe opaques of `partial def`s. -/
+def accepted : List (String × Lean.Name) := [
+  ("the safe opaque of a partial definition", defs "loop"),
+  ("the safe opaque of a mutual partial definition", defs "ping")]
+
+/-- The message `KernelClaim::assert_claimable` refuses a seed with. -/
+def seedMessage : String := "claim seed is unsafe or partial"
+
+/-- The inert axioms of the environment's binding and the constants that use one
+(`inertUsers`): no claim names them. -/
+def inertNames : List Lean.Name :=
+  [``sorryAx, ``Lean.trustCompiler, ``Lean.reduceBool, ``Lean.reduceNat, ``Lean.ofReduceBool,
+    ``Lean.ofReduceNat]
+
+/-- The message `KernelClaim::assert_claimable` refuses an inert axiom with. -/
+def inertSeedMessage : String := "claim seed is an inert axiom"
+
+/-- Store a hand-built record at its content address, supplying a definition hint when needed. -/
+private def storeSafetyRecord (env : Ixon.Env) (c : Ixon.Constant) : Ixon.Env × Address :=
+  let a := Address.blake3 (Ixon.serConstant c)
+  let env := env.storeConst a c
+  let env := match c.info with
+    | .defn _ | .dPrj _ => { env with anonHints := env.anonHints.insert a .opaque }
+    | _ => env
+  (env, a)
+
+/-- A native recursor whose first rule has an unused let referencing a separate definition.
+The projection variant places that reference in the projection's type-address field. -/
+private def ruleSafetyFixture (unsafeDependency projection : Bool) :
+    Except String (Ixon.Env × Address × Address) := do
+  let env ← withRoleTable {} (← Ix.Kernel.Reader.defaultTableBytes)
+  let table ← Ix.Kernel.Reader.defaultTable
+  let some original := table.addressOf? .natRec | throw "missing Nat.rec role"
+  let some c := env.getConst? original | throw "missing Nat.rec record"
+  let .recr recursor := c.info | throw "Nat.rec is not a standalone recursor"
+  let dependency : Ixon.Constant :=
+    ⟨.defn ⟨.defn, (if unsafeDependency then .unsaf else .safe), {}, 0, .sort 1, .sort 0⟩,
+      #[], #[], #[.zero, .succ .zero], #[]⟩
+  let (env, dependencyAddr) := storeSafetyRecord env dependency
+  let some rule := recursor.rules[0]? | throw "Nat.rec has no first rule"
+  let index := c.refs.size.toUInt64
+  let ty : Ixon.Expr := .sort c.univs.size.toUInt64
+  let value : Ixon.Expr := if projection then .prj index 0 ty else .ref index #[]
+  let rule := { rule with rhs := Ixon.Expr.leanLet false ty value rule.rhs }
+  let recursor := { recursor with rules := recursor.rules.set! 0 rule }
+  let c := { c with
+    info := .recr recursor
+    refs := c.refs.push dependencyAddr
+    univs := c.univs.push (.succ .zero) }
+  let (env, target) := storeSafetyRecord env c
+  return (env, target, dependencyAddr)
+
+/-- Safety is checked on the stored rule expressions, before they are compared with the generated
+rules. A rule under a `let` that the generated rule does not have is then refused by that
+comparison, whatever the `let` names. -/
+private def ruleSafetyCases : Array Tests.Ix.IxVM.Builder :=
+  #[fun _ => do
+      let (env, target, _) ← ruleSafetyFixture false false
+      let ctx ← Ix.ClaimContext.ofDefaultTable
+      Tests.Ix.IxVM.Case.ofClaim "refuse a safe dependency in a dead recursor-rule let"
+        env (.check ctx target none) {} false
+        (some "native recursor: a stored rule is not the generated one up to consumed wrappers"),
+    fun _ => do
+      let (env, target, _) ← ruleSafetyFixture true false
+      let ctx ← Ix.ClaimContext.ofDefaultTable
+      Tests.Ix.IxVM.Case.ofClaim "refuse an unsafe dependency in a dead recursor-rule let"
+        env (.check ctx target none) {} false
+        (some "safe constant references an unsafe constant"),
+    fun _ => do
+      let (env, target, _) ← ruleSafetyFixture true true
+      let ctx ← Ix.ClaimContext.ofDefaultTable
+      Tests.Ix.IxVM.Case.ofClaim "refuse an unsafe projection target in a dead recursor-rule let"
+        env (.check ctx target none) {} false
+        (some "safe constant references an unsafe constant"),
+    fun _ => do
+      let (env, _, dependency) ← ruleSafetyFixture true false
+      let ctx ← Ix.ClaimContext.ofDefaultTable
+      Tests.Ix.IxVM.Case.ofClaim "refuse the unsafe rule dependency as a direct claim"
+        env (.check ctx dependency none) {} false (some seedMessage)]
+
+/-- A constructor parameter either uses the former's domain directly or contains the family
+inside an argument erased by beta reduction. The family is fully applied under a lambda. -/
+private def nativeParameterBlock (betaDomain withField : Bool) : Ixon.Constant :=
+  let former : Ixon.Expr := .all (.sort 1) (.sort 1)
+  let argument : Ixon.Expr := .lam (.sort 1) (.app (.recur 0 #[]) (.var 0))
+  let domain : Ixon.Expr := if betaDomain then
+    .app (.lam former (.sort 1)) argument else .sort 1
+  let result : Ixon.Expr := if withField then
+    .all (.var 0) (.app (.recur 0 #[]) (.var 1)) else .app (.recur 0 #[]) (.var 0)
+  let constructor : Ixon.Constructor :=
+    ⟨false, 0, 0, 1, (if withField then 1 else 0), .inherited, .all domain result⟩
+  let ind : Ixon.Inductive := ⟨false, 0, 1, 0, former, #[constructor]⟩
+  let nodes : Array Ixon.BinderNode := if betaDomain then
+    #[.never {}, .never {}, .never {}, .never {}] else #[.never {}]
+  let nodes := if withField then nodes.push (.never {}) else nodes
+  { info := .muts #[.indc ind]
+    sharing := #[]
+    refs := #[]
+    univs := #[.zero, .succ .zero]
+    binders := #[⟨false, 0, 0, #[.never {}]⟩, ⟨false, 1, 0, nodes⟩] }
+
+private def nativeParameterFixture (betaDomain withField : Bool) :
+    Except String (Ixon.Env × Address) := do
+  let base ← withRoleTable {} (← Ix.Kernel.Reader.defaultTableBytes)
+  let (env, block) := storeSafetyRecord base (nativeParameterBlock betaDomain withField)
+  let (env, target) := storeSafetyRecord env ⟨.iPrj ⟨0, block⟩, #[], #[], #[], #[]⟩
+  let (env, _) := storeSafetyRecord env ⟨.cPrj ⟨0, 0, block⟩, #[], #[], #[], #[]⟩
+  return (env, target)
+
+private def nativeParameterCases : Array Tests.Ix.IxVM.Builder :=
+  [(false, false), (true, false), (false, true), (true, true)].toArray.map
+    fun (betaDomain, withField) _ => do
+      let (env, target) ← nativeParameterFixture betaDomain withField
+      let ctx ← Ix.ClaimContext.ofDefaultTable
+      let c ← Tests.Ix.IxVM.Case.ofClaim
+        s!"accept native parameter domain: beta={betaDomain}, field={withField}"
+        env (.check ctx target none)
+      return { c with exercises := some (if !betaDomain && !withField then
+        "KernelCheck::projection_addr_ctor" else "KernelCheck::check_param_agreement") }
+
+/-- Checking the beta-erased argument of the second parameter requires the unit-like
+capability of `T A B`, whose only constructor has no fields. -/
+private def nativeUnitParameterCase : Tests.Ix.IxVM.Builder := fun _ => do
+  let family (a b : UInt64) : Ixon.Expr := .app (.app (.recur 0 #[]) (.var a)) (.var b)
+  let argumentType : Ixon.Expr :=
+    .all (.sort 1)
+      (.all (.all (family 1 0) (.sort 1))
+        (.all (family 2 1)
+          (.all (family 3 2)
+            (.all (.app (.var 2) (.var 1)) (.app (.var 3) (.var 1))))))
+  let argument : Ixon.Expr :=
+    .lam (.sort 1)
+      (.lam (.all (family 1 0) (.sort 1))
+        (.lam (family 2 1)
+          (.lam (family 3 2)
+            (.lam (.app (.var 2) (.var 1)) (.var 0)))))
+  let former : Ixon.Expr := .all (.sort 1) (.all (.sort 1) (.sort 1))
+  let domain : Ixon.Expr := .app (.lam argumentType (.sort 1)) argument
+  let ctor : Ixon.Constructor :=
+    ⟨false, 0, 0, 2, 0, .inherited, .all (.sort 1) (.all domain (family 1 0))⟩
+  let ind : Ixon.Inductive := ⟨false, 0, 2, 0, former, #[ctor]⟩
+  let block : Ixon.Constant :=
+    { info := .muts #[.indc ind]
+      sharing := #[], refs := #[], univs := #[.zero, .succ .zero]
+      binders := #[⟨false, 0, 0, Array.replicate 2 (.never {})⟩,
+        ⟨false, 1, 0, Array.replicate 15 (.never {})⟩] }
+  let base ← withRoleTable {} (← Ix.Kernel.Reader.defaultTableBytes)
+  let (env, addr) := storeSafetyRecord base block
+  let (env, target) := storeSafetyRecord env ⟨.iPrj ⟨0, addr⟩, #[], #[], #[], #[]⟩
+  let (env, _) := storeSafetyRecord env ⟨.cPrj ⟨0, 0, addr⟩, #[], #[], #[], #[]⟩
+  let ctx ← Ix.ClaimContext.ofDefaultTable
+  let c ← Tests.Ix.IxVM.Case.ofClaim "accept native parameter domain requiring unit-like conversion"
+    env (.check ctx target none)
+  return { c with exercises := some "KernelDefEq::is_unit_like_type" }
+
+/-- Focused reference-safety cases, usable with a verdict-only execution artifact. -/
+def runReferenceSafety : IO UInt32 :=
+  Tests.Ix.IxVM.runCases "ixvm-reference-safety" (ruleSafetyCases ++ nativeParameterCases ++ #[nativeUnitParameterCase])
+
+/-- The walk edges of `env` from a constant in Lean's logic to one outside it,
+with the number of constants outside it. None means that an owned set without
+the constants outside Lean's logic loses nothing its claim walk reaches. -/
+def logicEdgeViolations (env : Ixon.Env) : Array (Address × Address) × Nat := Id.run do
+  let aside := env.outsideLogicRecords
+  let outside (a : Address) (c : Ixon.Constant) : Bool := aside.contains (c.ownerAt a)
+  let mut bad : Array (Address × Address) := #[]
+  let mut count := 0
+  for (a, lc) in env.consts do
+    let some c := lc.get? | continue
+    if outside a c then
+      count := count + 1
+      continue
+    for e in walkEdges c do
+      if let some ce := env.getConst? e then
+        if outside e ce then bad := bad.push (a, e)
+  return (bad, count)
+
+/-- The check-schedule blocks of `env`: every record that is its own block's owner. -/
+def ownerBlocks (env : Ixon.Env) : Array Address :=
+  env.consts.fold (init := #[]) fun acc a lc =>
+    match lc.get? with
+    | some c => if c.ownerAt a == a then acc.push a else acc
+    | none => acc
+
+/-- A manifest of `blocks` in three shards, each cut as the split loop of `ix check` and
+`ix prove` cuts a part that does not fit (`Ix.Shard.Check.cutOwned`): into three parts,
+then each part in halves, four levels deep. The shards' owned constants come from one pass
+over the environment (`Ix.Shard.ownedConstsPer`, as both manifest routes take them) and a
+part's are divided from its parent's. Every shard and part must own exactly the constants
+`Ix.Shard.ownedConstsForBlocks` computes for its blocks from the environment, in the same
+order, and its claim must be the one `Ix.Shard.shardClaimDigest` reconstructs for its
+blocks. Returns the number of shards and parts compared and of those that hold a block
+outside Lean's logic. -/
+def splitOwnership (env : Ixon.Env) (blocks : Array Address) : Except String (Nat × Nat) := do
+  let shards := Ix.Shard.Check.cutBlocks blocks 3
+  let owners := Ix.Shard.ownedConstsPer env shards
+  let mut pending : Array (Array Address × Array Address × Nat) :=
+    shards.zipIdx.map fun (shard, k) => (shard, owners[k]!, 0)
+  let mut compared := 0
+  let mut withAside := 0
+  while !pending.isEmpty do
+    let (part, owned, depth) := pending.back!
+    pending := pending.pop
+    let reference := Ix.Shard.ownedConstsForBlocks env part
+    unless owned == reference do
+      throw s!"a part of {part.size} block(s) from {part[0]!} at depth {depth}: \
+        {owned.size} owned constants divided from its parent, {reference.size} computed"
+    unless owned.isEmpty do
+      let (claim, _) ← shardCheckEnvClaimTrees env owned true
+      let digest ← Ix.Shard.shardClaimDigest env part true
+      unless Address.blake3 (Ix.Claim.ser claim) == digest do
+        throw s!"a part of {part.size} block(s) from {part[0]!} at depth {depth}: its claim \
+          is not the one reconstructed for its blocks"
+    compared := compared + 1
+    if part.any env.outsideLogicAt then withAside := withAside + 1
+    if part.size > 1 && depth < 4 then
+      for (sub, subOwned) in Ix.Shard.Check.cutOwned env part owned (if depth == 0 then 3 else 2) do
+        pending := pending.push (sub, subOwned, depth + 1)
+  return (compared, withAside)
+
+/-- The host side: the predicate against Lean's flags, the owner, the claim
+builder, `ix check`'s refusal and the closure of what stays owned. -/
+def hostChecks (leanEnv : Lean.Environment) (env : Ixon.Env)
+    (addrOf : Lean.Name → Except String Address) : Except String Unit := do
+  let flagged (n : Lean.Name) : Bool := (leanEnv.find? n).any fun ci => ci.isUnsafe || ci.isPartial
+  for (label, n) in refused do
+    let a ← addrOf n
+    unless flagged n do throw s!"{n} ({label}) is not unsafe or partial in Lean"
+    unless env.outsideLogicAt a do throw s!"{n} ({label}) is not outside Lean's logic"
+    if (Ix.Check.outsideLogicError? env label a).isNone then
+      throw s!"ix check would not refuse {n} ({label})"
+  for (label, n) in accepted do
+    let a ← addrOf n
+    if flagged n then throw s!"{n} ({label}) is unsafe or partial in Lean"
+    if env.outsideLogicAt a then throw s!"{n} ({label}) is outside Lean's logic"
+    if (Ix.Check.outsideLogicError? env label a).isSome then
+      throw s!"ix check would refuse {n} ({label})"
+  -- one shard owning every block: the refused seeds are owned by nobody, the
+  -- accepted ones are owned
+  let blocks := ownerBlocks env
+  let owned := (Ix.Shard.ownedConstsPer env #[blocks])[0]!
+  for (label, n) in refused do
+    if owned.contains (← addrOf n) then throw s!"the shard owner kept {n} ({label})"
+  for (label, n) in accepted do
+    unless owned.contains (← addrOf n) do throw s!"the shard owner dropped {n} ({label})"
+  -- the inert axioms and the constants that use one: owned by nobody and refused by
+  -- `ix check`; the accepted seeds use none
+  let inert := inertUsers env
+  for (_, n) in accepted do
+    let a ← addrOf n
+    if reachesInert env a != inert.contains a then throw s!"eligibility walks disagree for {n}"
+  for n in inertNames do
+    let a ← addrOf n
+    unless reachesInert env a do throw s!"the forward claim walk missed an inert dependency of {n}"
+    unless inert.contains a do throw s!"{n} is not among the constants that use an inert axiom"
+    if owned.contains a then throw s!"the shard owner kept {n}"
+    if (Ix.Check.seedError? env inert (toString n) a).isNone then
+      throw s!"ix check would not refuse {n}"
+  for (label, n) in accepted do
+    if inert.contains (← addrOf n) then throw s!"{n} ({label}) uses an inert axiom"
+  unless owned.size == (claimableConsts env).size do
+    throw s!"the shard owns {owned.size} constants, {(claimableConsts env).size} are claimable"
+  -- the claim builder: an owned list of refused seeds alone has no claim, and
+  -- the loop pair's claim is the safe face's alone
+  let loopA ← addrOf (defs "loop")
+  let loopRecA ← addrOf (defs "loop._unsafe_rec")
+  if (claimableOwned env #[loopRecA]).toOption.isSome then
+    throw "the claim builder made a claim over loop._unsafe_rec alone"
+  let (pair, _) ← shardCheckEnvClaimTrees env #[loopA, loopRecA] true
+  let (face, _) ← shardCheckEnvClaimTrees env #[loopA] true
+  unless pair == face do throw "the claim builder kept loop._unsafe_rec"
+  -- the canonical whole-environment tree has no refused seed
+  let some tree := envCanonicalTree env | throw "the environment has no tree"
+  for (label, n) in refused do
+    if tree.leaves.contains (← addrOf n) then throw s!"envCanonicalTree kept {n} ({label})"
+  for n in inertNames do
+    if tree.leaves.contains (← addrOf n) then throw s!"envCanonicalTree kept {n}"
+  -- the claim builder leaves an inert axiom out of an owned list
+  let trustA ← addrOf ``Lean.trustCompiler
+  if (claimableOwned env #[trustA]).toOption.isSome then
+    throw "the claim builder made a claim over Lean.trustCompiler alone"
+  let (bad, _) := logicEdgeViolations env
+  unless bad.isEmpty do
+    throw s!"{bad.size} walk edge(s) from a constant in Lean's logic reach one outside it \
+      (first {(bad[0]!).1} → {(bad[0]!).2})"
+
+def run : IO UInt32 := do
+  let leanEnv ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs, `Tests.Ix.IxVMFixtures]
+  let names := (refused ++ accepted).map (·.2)
+  let missing := names.filter (!leanEnv.contains ·)
+  unless missing.isEmpty do
+    IO.eprintln s!"[ixvm-claim-safety] not in the environment: {missing}"
+    return 1
+  let env ← loadSharedIxonEnv names.toArray leanEnv
+  let addrOf (n : Lean.Name) : Except String Address :=
+    match env.getAddr? (Ix.Name.fromLeanName n) with
+    | some a => pure a
+    | none => throw s!"{n} is not in the Ixon environment"
+  match hostChecks leanEnv env addrOf with
+  | .ok () => IO.println "[ixvm-claim-safety] host checks passed"
+  | .error e =>
+    IO.eprintln s!"[ixvm-claim-safety] host check failed: {e}"
+    return 1
+  match splitOwnership env (ownerBlocks env) with
+  | .ok (compared, withAside) =>
+    IO.println s!"[ixvm-claim-safety] split manifest: {compared} shards and parts own what \
+      the environment gives their blocks, with the same claims; {withAside} hold a block \
+      outside Lean's logic"
+    -- the parts have to reach the blocks the owner sets aside
+    if withAside == 0 then
+      IO.eprintln "[ixvm-claim-safety] no part of the split manifest holds a block outside Lean's logic"
+      return 1
+  | .error e =>
+    IO.eprintln s!"[ixvm-claim-safety] split manifest: {e}"
+    return 1
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
+  let check (label : String) (a : Address) (accept : Bool) : Builder := fun _ =>
+    Case.ofClaim label env (.check ctx a none) {} accept
+      (if accept then none else some seedMessage)
+  let mut cases : Array Builder := #[]
+  for (label, n) in refused do
+    let a ← IO.ofExcept (addrOf n)
+    cases := cases.push (check s!"refuse {label} ({n})" a false)
+  -- the partial block itself, through its member's projection record
+  let pingRec ← IO.ofExcept (addrOf (defs "ping._unsafe_rec"))
+  match env.getConst? pingRec with
+  | some c =>
+    if c.ownerAt pingRec == pingRec then
+      IO.eprintln "[ixvm-claim-safety] ping._unsafe_rec is not a block member"
+      return 1
+    cases := cases.push (check "refuse a mutual partial block" (c.ownerAt pingRec) false)
+  | none =>
+    IO.eprintln "[ixvm-claim-safety] ping._unsafe_rec has no record"
+    return 1
+  for (label, n) in accepted do
+    let a ← IO.ofExcept (addrOf n)
+    cases := cases.push (check s!"accept {label} ({n})" a true)
+  -- a shard whose owned tree holds a partial companion beside its face
+  let loopA ← IO.ofExcept (addrOf (defs "loop"))
+  let loopRecA ← IO.ofExcept (addrOf (defs "loop._unsafe_rec"))
+  let some ownedTree := Ix.AssumptionTree.canonical #[loopA, loopRecA]
+    | IO.eprintln "[ixvm-claim-safety] no owned tree"; return 1
+  let trees := ({} : Std.HashMap Address Ix.AssumptionTree).insert ownedTree.root ownedTree
+  cases := cases.push fun _ =>
+    Case.ofClaim "refuse a checkEnv shard owning loop._unsafe_rec" env
+      (.checkEnv ctx ownedTree.root none) trees false (some seedMessage)
+  -- the builder's claim over the same owned list leaves the companion out
+  cases := cases.push fun _ => do
+    let (_, witness) ← buildShardCheckEnvWitness env #[loopA, loopRecA] (assumeBinding := true)
+    return { label := "accept the builder's shard over loop and loop._unsafe_rec", accept := true,
+             witness }
+  -- an inert axiom among a checkEnv claim's owned leaves, and among a check target
+  let trustA ← IO.ofExcept (addrOf ``Lean.trustCompiler)
+  let some inertTree := Ix.AssumptionTree.canonical #[loopA, trustA]
+    | IO.eprintln "[ixvm-claim-safety] no owned tree"; return 1
+  let inertTrees := ({} : Std.HashMap Address Ix.AssumptionTree).insert inertTree.root inertTree
+  cases := cases.push fun _ =>
+    Case.ofClaim "refuse a checkEnv shard owning Lean.trustCompiler" env
+      (.checkEnv ctx inertTree.root none) inertTrees false (some inertSeedMessage)
+  cases := cases.push fun _ =>
+    Case.ofClaim "refuse a check of Lean.trustCompiler" env (.check ctx trustA none) {} false
+      (some inertSeedMessage)
+  -- the builder's claim over the same owned list leaves the inert axiom out
+  cases := cases.push fun _ => do
+    let (_, witness) ← buildShardCheckEnvWitness env #[loopA, trustA] (assumeBinding := true)
+    return { label := "accept the builder's shard over loop and Lean.trustCompiler", accept := true,
+             witness }
+  Tests.Ix.IxVM.runCases "ixvm-claim-safety" (cases ++ ruleSafetyCases ++ nativeParameterCases ++ #[nativeUnitParameterCase])
+
+/-- The closure of what stays owned on a compiled corpus (`IX_SAFETY_IXE`, an
+`.ixe`): every walk edge from a constant in Lean's logic lands on one, so a
+shard that leaves out the constants outside it loses nothing its walk reaches.
+With `IX_SAFETY_IXES` (a manifest of that environment), each shard's owned
+count before and after. -/
+def corpus : IO UInt32 := do
+  let some path ← IO.getEnv "IX_SAFETY_IXE"
+    | IO.eprintln "[ixvm-claim-safety-corpus] set IX_SAFETY_IXE to a .ixe"; return 1
+  let env ← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile path))
+  let started ← IO.monoMsNow
+  let (bad, aside) := logicEdgeViolations env
+  IO.println s!"[ixvm-claim-safety-corpus] {path}: {env.consts.size} constants, {aside} outside \
+    Lean's logic (unsafe or partial, or projected from such a block), {bad.size} walk edge(s) \
+    from a constant in Lean's logic to one outside it, {(← IO.monoMsNow) - started} ms"
+  for (a, e) in bad.extract 0 20 do
+    IO.println s!"  {a} → {e}"
+  if let some ixes ← IO.getEnv "IX_SAFETY_IXES" then
+    let shards ← IO.ofExcept (Ix.Shard.parseIxesAllShards (← IO.FS.readBinFile ixes))
+    let owned := Ix.Shard.ownedConstsPer env shards
+    let records := env.consts.fold (init := (({} : Std.HashMap Address Nat))) fun m a lc =>
+      match lc.get? with
+      | some c => m.insert (c.ownerAt a) (m.getD (c.ownerAt a) 0 + 1)
+      | none => m
+    for (blocks, k) in shards.mapIdx fun k b => (b, k) do
+      let all := blocks.foldl (fun n b => n + records.getD b 0) 0
+      IO.println s!"  shard {k}: {all} constants, {(owned[k]?.map (·.size)).getD 0} owned"
+  return if bad.isEmpty then 0 else 1
+
+end Tests.Ix.IxVM.ClaimSafety

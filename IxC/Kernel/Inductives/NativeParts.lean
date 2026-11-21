@@ -43,7 +43,7 @@ is a later task.  The recogniser classifies the raw types; the install
 re-checks the classification on the annotated types
 (`nativeFieldsOk`), so the proof reads it off the stored constants.
 
-**The recursor** is generated and compared (task #175 S2): each
+**The recursor** is generated and compared: each
 minor premise binds the constructor's fields, then one **inductive
 hypothesis** `f_i_ih : motive e⃗_i f_i` per recursive field in field
 order (`e⃗_i` the field's index expressions), and concludes

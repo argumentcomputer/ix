@@ -462,8 +462,8 @@ theorem punitRecLaw {m : EnvModel V env}
 theorem extendPUnit (mp : EnvModelM V μ env)
     (hfresh : env.find? punitName = none)
     (hwf : EnvWF ⟨punitA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨punitA :: env.consts⟩) := by
-  refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
+    ConsLeaf mp punitA := by
+  refine consLeaf_of (declStep_preserves_of_basis_cons mp
     (A := fun ψ => AnnotTerm.const .punit [ψ uN]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -495,11 +495,11 @@ theorem extendPUnitUnit (mp : EnvModelM V μ env)
     (hP : env.find? punitName = some punitA)
     (hfresh : env.find? punitUnitName = none)
     (hwf : EnvWF ⟨punitUnitA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨punitUnitA :: env.consts⟩) := by
+    ConsLeaf mp punitUnitA := by
   have hty := fun ψ =>
     denoteMeta_punitUnitA_type (m := mp.base2)
       (A := fun ψ => AnnotTerm.const .punitUnit [ψ uN]) ψ hP
-  refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
+  refine consLeaf_of (declStep_preserves_of_basis_cons mp
     (A := fun ψ => AnnotTerm.const .punitUnit [ψ uN]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -533,11 +533,11 @@ theorem extendPUnitRec (mp : EnvModelM V μ env)
     (hU : env.find? punitUnitName = some punitUnitA)
     (hfresh : env.find? punitRecA.name = none)
     (hwf : EnvWF ⟨punitRecA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨punitRecA :: env.consts⟩) := by
+    ConsLeaf mp punitRecA := by
   have hty := fun ψ =>
     denoteMeta_punitRecA_type (m := mp.base2)
       (A := fun ψ => AnnotTerm.const .punitRec [ψ uN, ψ u1N]) ψ hP hU
-  refine nonempty_of_exists (declStep_preserves_of_basis_rec_cons mp
+  refine consLeaf_of (declStep_preserves_of_basis_rec_cons mp
     (A := fun ψ => AnnotTerm.const .punitRec [ψ uN, ψ u1N]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -550,10 +550,12 @@ theorem extendPUnitRec (mp : EnvModelM V μ env)
         rfl)
       (fun _ h => nomatch h)
       (fun _ _ _ _ heq r hr => by
-        injection heq with _ _ _ h4
+        injection heq with h1 h2 h3 h4
+        subst h1 h2 h3
         rw [← h4] at hr
         rcases List.mem_cons.mp hr with rfl | hr'
-        · exact ⟨⟨_, _, _, hU⟩, fun hb => Bool.noConfusion hb,
+        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hU rfl (by first | rfl | (cases md <;> decide))
+            (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
             fun _ => recRuleEtaOf_of hU rfl hP rfl rfl rfl rfl⟩
         · exact nomatch hr'))
     (fun _ _ => rfl) ?_
@@ -587,7 +589,7 @@ theorem extendPUnitRec (mp : EnvModelM V μ env)
 theorem declBasisPB_punitK {env₂ : Env md} (mp : EnvModelM V μ env)
     (h : Ix.Kernel.Semantics.BasisInstallRun env
       Ix.Kernel.BasisKind.punitK.declsA env₂) :
-    Nonempty (EnvModelM V μ env₂) := by
+    ∃ mp₂ : EnvModelM V μ env₂, ModelExt mp mp₂ := by
   rw [show Ix.Kernel.BasisKind.punitK.declsA
     = [punitA, punitUnitA, punitRecA] from rfl] at h
   obtain ⟨h1, h2, h3, hnil⟩ := h
@@ -602,7 +604,7 @@ theorem declBasisPB_punitK {env₂ : Env md} (mp : EnvModelM V μ env)
         | (refine Ix.Kernel.IndCapsWF.of_caps ?_ ?_ <;> intro h <;>
             first | exact absurd h (by decide) | rfl)
         | exact fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
-  obtain ⟨mp1⟩ := extendPUnit mp hf1  hwf1
+  obtain ⟨_, mp1, hac1⟩ := extendPUnit mp hf1  hwf1
   have hP1 : (⟨punitA :: env.consts⟩ : Env md).find? punitName
       = some punitA := by
     rw [Ix.Kernel.Env.find?_cons]; exact if_pos rfl
@@ -624,7 +626,7 @@ theorem declBasisPB_punitK {env₂ : Env md} (mp : EnvModelM V μ env)
         = Expr.const punitName [.param uN] from rfl,
       Expr.constsResolve, hf]
     rfl
-  obtain ⟨mp2⟩ := extendPUnitUnit mp1 hP1 hf2  hwf2
+  obtain ⟨_, mp2, hac2⟩ := extendPUnitUnit mp1 hP1 hf2  hwf2
   have hP2 : (⟨punitUnitA :: punitA :: env.consts⟩ : Env md).find?
       punitName = some punitA := by
     rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hP1
@@ -684,7 +686,8 @@ theorem declBasisPB_punitK {env₂ : Env md} (mp : EnvModelM V μ env)
           simp only [Expr.constsResolve, hfP, hfU, Option.isSome_some,
             Bool.and_self]
       · exact nomatch hr'
-  exact extendPUnitRec mp2 hP2 hU2 hf3  hwf3
+  obtain ⟨_, mp3, hac3⟩ := extendPUnitRec mp2 hP2 hU2 hf3  hwf3
+  exact ⟨mp3, ((((ModelExt.refl (mp₁ := mp)).plain hac1 hf1).plain hac2 hf2).plain hac3 hf3)⟩
 
 end PUnit
 
@@ -873,8 +876,8 @@ theorem extendNat (mp : EnvModelM V μ env)
     (hfresh : env.find? natName = none)
     (hguard : Ix.Kernel.natLitSupported ⟨natA :: env.consts⟩ = false)
     (hwf : EnvWF ⟨natA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨natA :: env.consts⟩) := by
-  refine nonempty_of_exists (declStep_preserves_of_basis_cons_gen mp
+    ConsLeaf mp natA := by
+  refine consLeaf_of (declStep_preserves_of_basis_cons_gen mp
     (A := fun _ => AnnotTerm.const .nat []) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -909,11 +912,11 @@ theorem extendNatZero (mp : EnvModelM V μ env)
     (hfresh : env.find? natZeroName = none)
     (hguard : Ix.Kernel.natLitSupported ⟨natZeroA :: env.consts⟩ = false)
     (hwf : EnvWF ⟨natZeroA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨natZeroA :: env.consts⟩) := by
+    ConsLeaf mp natZeroA := by
   have hty := fun ψ =>
     denoteMeta_natZeroA_type (m := mp.base2)
       (A := fun _ => AnnotTerm.const .natZero []) ψ hN
-  refine nonempty_of_exists (declStep_preserves_of_basis_cons_gen mp
+  refine consLeaf_of (declStep_preserves_of_basis_cons_gen mp
     (A := fun _ => AnnotTerm.const .natZero []) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -950,11 +953,11 @@ theorem extendNatSucc (mp : EnvModelM V μ env)
     (hZ : env.find? natZeroName = some natZeroA)
     (hfresh : env.find? natSuccName = none)
     (hwf : EnvWF ⟨natSuccA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨natSuccA :: env.consts⟩) := by
+    ConsLeaf mp natSuccA := by
   have hty := fun ψ =>
     denoteMeta_natSuccA_type (m := mp.base2)
       (A := fun _ => AnnotTerm.const .natSucc []) ψ hN
-  refine nonempty_of_exists (declStep_preserves_of_basis_cons_gen mp
+  refine consLeaf_of (declStep_preserves_of_basis_cons_gen mp
     (A := fun _ => AnnotTerm.const .natSucc []) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -1848,11 +1851,11 @@ theorem extendNatRec (mp : EnvModelM V μ env)
     (hS : env.find? natSuccName = some natSuccA)
     (hfresh : env.find? natRecA.name = none)
     (hwf : EnvWF ⟨natRecA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨natRecA :: env.consts⟩) := by
+    ConsLeaf mp natRecA := by
   have hty := fun ψ =>
     denoteMeta_natRecA_type (m := mp.base2)
       (A := fun ψ => AnnotTerm.const .natRec [ψ uN]) ψ hN hZ hS
-  refine nonempty_of_exists (declStep_preserves_of_basis_rec_cons mp
+  refine consLeaf_of (declStep_preserves_of_basis_rec_cons mp
     (A := fun ψ => AnnotTerm.const .natRec [ψ uN]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -1865,13 +1868,16 @@ theorem extendNatRec (mp : EnvModelM V μ env)
         rfl)
       (fun _ h => nomatch h)
       (fun _ _ _ _ heq r hr => by
-        injection heq with _ _ _ h4
+        injection heq with h1 h2 h3 h4
+        subst h1 h2 h3
         rw [← h4] at hr
         rcases List.mem_cons.mp hr with rfl | hr'
-        · exact ⟨⟨_, _, _, hZ⟩, fun hb => Bool.noConfusion hb,
+        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hZ rfl (by first | rfl | (cases md <;> decide))
+            (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
             fun hb => Bool.noConfusion hb⟩
         rcases List.mem_cons.mp hr' with rfl | hr''
-        · exact ⟨⟨_, _, _, hS⟩, fun hb => Bool.noConfusion hb,
+        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hS rfl (by first | rfl | (cases md <;> decide))
+            (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
             fun hb => Bool.noConfusion hb⟩
         · exact nomatch hr''))
     (fun _ _ => rfl) ?_
@@ -1903,7 +1909,7 @@ theorem extendNatRec (mp : EnvModelM V μ env)
 theorem declBasisPB_natK {env₁ : Env md} (mp : EnvModelM V μ env)
     (h : Ix.Kernel.Semantics.BasisInstallRun env
       Ix.Kernel.BasisKind.natK.declsA env₁) :
-    Nonempty (EnvModelM V μ env₁) := by
+    ∃ mp₂ : EnvModelM V μ env₁, ModelExt mp mp₂ := by
   rw [show Ix.Kernel.BasisKind.natK.declsA
     = [natA, natZeroA, natSuccA, natRecA] from rfl] at h
   obtain ⟨h1, h2, h3, h4, hnil⟩ := h
@@ -1920,7 +1926,7 @@ theorem declBasisPB_natK {env₁ : Env md} (mp : EnvModelM V μ env)
         | exact fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
   have hf2 : (⟨natA :: env.consts⟩ : Env md).find? natZeroA.name = none :=
     Option.isNone_iff_eq_none.mp h2
-  obtain ⟨mp1⟩ := extendNat mp hf1
+  obtain ⟨_, mp1, hac1⟩ := extendNat mp hf1
     (by simp [Ix.Kernel.natLitSupported, Ix.Kernel.natZeroOk,
       show (⟨natA :: env.consts⟩ : Env md).find? natZeroName = none
         from hf2]) hwf1
@@ -1944,7 +1950,7 @@ theorem declBasisPB_natK {env₁ : Env md} (mp : EnvModelM V μ env)
     simp [Expr.constsResolve, hf]
   have hf3 : (⟨natZeroA :: natA :: env.consts⟩ : Env md).find?
       natSuccA.name = none := Option.isNone_iff_eq_none.mp h3
-  obtain ⟨mp2⟩ := extendNatZero mp1 hN1 hf2
+  obtain ⟨_, mp2, hac2⟩ := extendNatZero mp1 hN1 hf2
     (by simp [Ix.Kernel.natLitSupported, Ix.Kernel.natSuccOk,
       show (⟨natZeroA :: natA :: env.consts⟩ : Env md).find? natSuccName
         = none from hf3]) hwf2
@@ -1970,7 +1976,7 @@ theorem declBasisPB_natK {env₁ : Env md} (mp : EnvModelM V μ env)
       = Expr.forallE (.const natName [])
         (.const natName []) { pw := .never } from rfl]
     simp [Expr.constsResolve, hf]
-  obtain ⟨mp3⟩ := extendNatSucc mp2 hN2 hZ2 hf3  hwf3
+  obtain ⟨_, mp3, hac3⟩ := extendNatSucc mp2 hN2 hZ2 hf3  hwf3
   have hN3 : (⟨natSuccA :: natZeroA :: natA :: env.consts⟩
       : Env md).find? natName = some natA := by
     rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hN2
@@ -2048,7 +2054,8 @@ theorem declBasisPB_natK {env₁ : Env md} (mp : EnvModelM V μ env)
             simp only [natRecSuccRule, Expr.constsResolve, hfN, hfZ,
               hfS, hfR, Option.isSome_some, Bool.and_self]
         · exact nomatch hr''
-  exact extendNatRec mp3 hN3 hZ3 hS3 hf4  hwf4
+  obtain ⟨_, mp4, hac4⟩ := extendNatRec mp3 hN3 hZ3 hS3 hf4  hwf4
+  exact ⟨mp4, (((((ModelExt.refl (mp₁ := mp)).plain hac1 hf1).plain hac2 hf2).plain hac3 hf3).plain hac4 hf4)⟩
 
 end Nat
 

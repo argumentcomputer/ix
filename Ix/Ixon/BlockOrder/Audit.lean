@@ -33,15 +33,21 @@ run_cmd Ixon.Projection.Audit.checkImports #[`Ix.Ixon.BlockOrder.Theorems] Ixon.
 
 /- Measured before freezing: a block of recursors is checked in motive order
 (`checkRecord`, `isRecursor`, `checkMotives`, `recursorMotive`), which reuses
-the reader's `stripAll` and `appHead` (`Reader.analyseRecursor`). Every other
+the reader's normalized recursor analysis (`Reader.analyseRecursor`). Every other
 block is stored in its source's order, which is admissible, so the
 structural order check of those blocks, and the certified entry that ran it
-before the checker, are gone. -/
-/-- info: runtime closure of [Ixon.BlockOrder.checkRecord]: 27 compiled functions; inherited externs 13, implemented_by 0, unsafe 2, csimp 0 -/
+before the checker, are gone. Moving motive extraction onto normalized symbolic
+recursor analysis (reusing normalized sharing across each record's recursors)
+moved the runtime closure from 27 compiled functions (13 inherited externs, 2
+unsafe) to 177 compiled functions (45 inherited externs, 18 unsafe, 14 ruled
+computed_field, 2 ruled csimp) with no externs or unsafe primitives beyond
+`Ixon.Projection.Audit`, and removed `Classical.choice` from
+`recursorMotive_of_analyse`. -/
+/-- info: runtime closure of [Ixon.BlockOrder.checkRecord]: 177 compiled functions; inherited externs 45, implemented_by 0, unsafe 18, csimp 0; ruled computed_field 14, csimp 2 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
-#guard_kernel_axioms Ixon.BlockOrder.recursorMotive_of_analyse [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ixon.BlockOrder.recursorMotive_of_analyse [propext, Quot.sound]
 #guard_kernel_axioms Ixon.BlockOrder.motivesFrom_cons [propext, Quot.sound]
 #guard_kernel_axioms Ixon.BlockOrder.checkMotives_ok_iff [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ixon.BlockOrder.checkMotiveOrder_ok_iff [propext, Classical.choice, Quot.sound]

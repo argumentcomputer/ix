@@ -60,6 +60,9 @@ pub(super) fn run(
   )?;
   assert_eq!(prepared.public_values(), fixture.public);
   let public = super::stage::scalar_statement(&fixture.public);
+  drop(plan);
+  drop(fixture.key);
+  drop(fixture.proof);
   let lowered = lowering::prepare_first(prepared, trace_height)?;
   assert_eq!(lowered.assignment.public_values(), public);
   eprintln!(
@@ -225,7 +228,11 @@ fn prove(
   fs::write(out.join("SECURITY.txt"), setup.security_description())?;
   let start = Instant::now();
   let prefetch_bytes = config.prefetch_bytes;
-  let config = proving_config(&setup, height)?;
+  let mut config = proving_config(&setup, height)?;
+  if let Some(spill_dir) = crate::kzg::KzgConfig::resolve_disk_spill_dir(&out)?
+  {
+    config = config.with_disk_spill(spill_dir);
+  }
   eprintln!("KZG parameters ready: {:?}", start.elapsed());
   eprintln!("Partition prefetch budget: {} GiB", prefetch_bytes >> 30);
   let fixed = cache.fixed_directory(dir)?;

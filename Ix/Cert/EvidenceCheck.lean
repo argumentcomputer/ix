@@ -37,6 +37,8 @@ deriving instance DecidableEq for Ixon.Definition, Ixon.RecursorRule, Ixon.Recur
   Ixon.RecursorProj, Ixon.DefinitionProj
 deriving instance DecidableEq for Ixon.MutConst
 deriving instance DecidableEq for Ixon.ConstantInfo
+deriving instance DecidableEq for Ixon.BinderNode
+deriving instance DecidableEq for Ixon.BinderBlock
 deriving instance DecidableEq for Ixon.Constant
 
 namespace Ix.Cert.EvidenceCheck

@@ -76,6 +76,8 @@ theorem NoBVar_congr {P P' : Nat → Prop} (h : ∀ i, P i ↔ P' i) :
   | eqE a b iha ihb => intro hn; exact ⟨iha h hn.1, ihb h hn.2⟩
   | fst e ih => intro hn; exact ih h hn
   | snd e ih => intro hn; exact ih h hn
+  | chain g e ihg ihe => intro hn; exact ⟨fun m => ihg m h (hn.1 m), ihe h hn.2⟩
+  | bgraph _ f ihf => intro hn; exact ihf h hn
 
 omit [SetTheory V] in
 theorem NoBVar_projAV {P : Nat → Prop} :
@@ -172,8 +174,12 @@ theorem noBVar_of_leaf_free {env : Env md} (m : EnvModel V env) {φ : LevelParam
     obtain ⟨ia, hia, hcase⟩ := denoteMeta_proj_inv h
     simp only [Expr.WScoped] at hw
     have h1 := ihe hw hQ (fun l hl' => hl l (by simpa [Expr.fvarLeaves] using hl')) hia
-    rcases hcase with ⟨_, -, rfl⟩ | ⟨-, hdec⟩
-    · exact NoBVar_projAV _ ia h1
+    rcases hcase with ⟨entry, -, hnode⟩ | ⟨-, hdec⟩
+    · obtain ⟨-, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode
+      unfold projNodeAV
+      split
+      · exact NoBVar_projAV _ ia h1
+      · exact ⟨fun n => NoBVar_of_bvarsBelow (m.cval_closedL _ _) (fun j _ => Nat.zero_le j), h1⟩
     · rcases AnnotTerm.projPair?_cases hdec with rfl | rfl
       · exact h1
       · exact h1

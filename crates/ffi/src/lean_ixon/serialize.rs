@@ -50,6 +50,18 @@ pub extern "C" fn rs_eq_constant_serialization(
   buf == bytes_data
 }
 
+/// Whether Rust reads `bytes` as one canonical record
+/// (`Constant::get_canonical`): the codec reads them whole, the record
+/// re-encodes to the same bytes, its level count and binder data are in
+/// canonical form, and no theorem asserts anything, as Lean's
+/// `Ixon.Canonical.deConstant` requires.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_constant_canonical(
+  bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> bool {
+  ixon::constant::Constant::get_canonical(bytes_obj.as_bytes()).is_ok()
+}
+
 /// Check if Lean's Ixon.Env serialization can be deserialized by Rust and content matches.
 /// Due to HashMap ordering differences, we compare deserialized content rather than bytes.
 ///

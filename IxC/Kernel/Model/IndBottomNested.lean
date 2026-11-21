@@ -54,11 +54,13 @@ variable {V : Type w} [SetTheory V]
 set_option maxHeartbeats 25600000 in
 /-- **The nested bottom, at the reading** (`indBottomNestedS`). -/
 theorem indBottomNested {μ : CheckMode} {env : Env md}
-    (mp : EnvModelM V μ env) {F : Nat}
-    (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
-    (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
+    (mp : EnvModelM V μ env) {J : Judgements md}
+    (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaimJ J mp.base2 ψ)
+    (hinf : ∀ ψ : LevelParam → Nat, InferClaimJ J mp.base2 ψ)
     -- the totality residue (routed: `inferReads_of` at the caller)
-    (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
+    (hreadsP : ∀ ψ : LevelParam → Nat, InferReadsJ J mp.base2 ψ)
+    -- the inferred type's frame, where the subject reads
+    (hframe : ∀ ψ : LevelParam → Nat, InferFrameJ J mp.base2 ψ)
     {f : Key md → Key md} (hroT : RenameOk mp.base2.acval env f)
     (heqfE : env.find? eqName = some eqA)
     {Rn : Key md} {lps : List LevelParam} {tyA : Expr md} {mI rP : Nat}
@@ -135,23 +137,23 @@ theorem indBottomNested {μ : CheckMode} {env : Env md}
     (hinstLam : Expr.instLamsAt (fvsP ++ xFvsP) rhsA
       = some (ldomsL, lrest2))
     -- the recorded runs (`IotaRuns`, plus the second widening's rows)
-    (hTypedP : TypedListOk μ F env (rP + cnF)
+    (hTypedP : TypedListJ J env (rP + cnF)
       (pins.map (Expr.instSpine (fvsP.take rP) (rP - 1))) cdomsP)
-    (hdeIdx : DefEqListOk μ F env (rP + cnF)
+    (hdeIdx : DefEqListJ J env (rP + cnF)
       ((lhsS.getAppArgs.drop rP).take (mI - rP))
       (cres.getAppArgs.drop cnP))
-    (hdePre : DefEqListOk μ F env (rP + cnF)
+    (hdePre : DefEqListJ J env (rP + cnF)
       ((fvs.take rP).map Expr.fvarTypeD) rdoms)
-    (hdeFld : DefEqListOk μ F env (rP + cnF)
+    (hdeFld : DefEqListJ J env (rP + cnF)
       ((fvs.drop rP).map Expr.fvarTypeD) (cdoms.drop cnP))
-    (hdeLam : DefEqListOk μ F env (rP + cnF)
+    (hdeLam : DefEqListJ J env (rP + cnF)
       ((fvsP ++ xFvsP).map Expr.fvarTypeD) ldomsL)
-    (hdeRhs : isDefEqCore μ env F (rP + cnF) rhsS
-      (Expr.mkAppN (rhsA.renameConsts f) fvs) = .ok true)
-    (hsideL : ∃ tl, inferTypeCore μ env F (rP + cnF) lhsS = .ok tl ∧
-      isDefEqCore μ env F (rP + cnF) tl αS = .ok true)
-    (hsideR : ∃ tr, inferTypeCore μ env F (rP + cnF) rhsS = .ok tr ∧
-      isDefEqCore μ env F (rP + cnF) tr αS = .ok true) :
+    (hdeRhs : J.defeq env (rP + cnF) rhsS
+      (Expr.mkAppN (rhsA.renameConsts f) fvs))
+    (hsideL : ∃ tl, J.infer env (rP + cnF) lhsS tl ∧
+      J.defeq env (rP + cnF) tl αS)
+    (hsideR : ∃ tr, J.infer env (rP + cnF) rhsS tr ∧
+      J.defeq env (rP + cnF) tr αS) :
     ∀ (φ : LevelParam → Nat) (us : List Level), us.length = lps.length →
       ∃ Ra : AnnotTerm,
         denoteMeta mp.base2.acval env φ 0
@@ -964,7 +966,7 @@ theorem indBottomNested {μ : CheckMode} {env : Env md}
           interp V ρ' w ∈ˢ interp V ρ' dw := by
     intro N hrPN hN
     refine nestedParamSupply (m := mp.base2) (hdeq _) (hinf _)
-      (hreadsP _) hroT hrPN hfvslen hΓslen hfvsPlen hshapeP hwsFvsP
+      (hreadsP _) (hframe _) hroT hrPN hfvslen hΓslen hfvsPlen hshapeP hwsFvsP
       hleafClosedP hlbFvsP htowerP hokTV hdomsP0 (hpadLen N hN)
       (hpadEnt N hN)
       (prefixGradeFire (hdeq _) hfvslen hshapeS hwsFvs hleafClosed
@@ -1016,24 +1018,19 @@ theorem indBottomNested {μ : CheckMode} {env : Env md}
   -- ===== the sides' memberships and gradings =====
   obtain ⟨tl, hInfL, hDeqL⟩ := hsideL
   obtain ⟨tr, hInfR, hDeqR⟩ := hsideR
-  have hwsTl : Expr.WScoped (rP + cnF) tl :=
-    inferTypeCore_WScoped mp.base2.wf F hInfL hwsL
-  have hwsTr : Expr.WScoped (rP + cnF) tr :=
-    inferTypeCore_WScoped mp.base2.wf F hInfR hwsR
+  -- the inferred types' frames, where the sides read
+  obtain ⟨hwsTl, hbTl, hsubTl⟩ := hframe (Level.substFn φ lps us) hInfL hwsL hbL
+    hLL (hctxOf lhsS hleafL hltL) hvl0
+  obtain ⟨hwsTr, hbTr, hsubTr⟩ := hframe (Level.substFn φ lps us) hInfR hwsR hbR
+    hLR (hctxOf rhsS hleafR hltR) hvr0
   have hleafTl : ∀ l ∈ tl.fvarLeaves, Expr.fvar l.1 l.2 ∈ fvs :=
-    fun l hl => hleafL l
-      (inferTypeCore_fvarLeaves mp.base2.wf F hInfL hwsL l hl)
+    fun l hl => hleafL l (hsubTl l hl)
   have hleafTr : ∀ l ∈ tr.fvarLeaves, Expr.fvar l.1 l.2 ∈ fvs :=
-    fun l hl => hleafR l
-      (inferTypeCore_fvarLeaves mp.base2.wf F hInfR hwsR l hl)
+    fun l hl => hleafR l (hsubTr l hl)
   have hltTl : ∀ l ∈ tl.fvarLeaves, l.1 < rP + cnF :=
     fun l hl => hfvsLt l (hleafTl l hl)
   have hltTr : ∀ l ∈ tr.fvarLeaves, l.1 < rP + cnF :=
     fun l hl => hfvsLt l (hleafTr l hl)
-  have hbTl : tl.looseBVarsBounded 0 = true :=
-    inferTypeCore_looseBVars mp.base2.wf F hInfL hwsL hbL hLL
-  have hbTr : tr.looseBVarsBounded 0 = true :=
-    inferTypeCore_looseBVars mp.base2.wf F hInfR hwsR hbR hLR
   have hLTl : Expr.LeavesBounded tl := fun l hl =>
     hlbFvs l.1 l.2 (hleafTl l hl)
   have hLTr : Expr.LeavesBounded tr := fun l hl =>

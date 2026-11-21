@@ -92,8 +92,9 @@ theorem annotConstantValC_run (hμ : μ.verifiedChecks = true) {env : Env md} (h
     (ssimC hμ env henv checkFuel).annotate hs rfl
       (Expr.WScoped.of_not_hasFvar (Bool.not_eq_true _ ▸ h6)) jA s₁ hann
   obtain rfl := hjA
-  rw [Expr.allLevelParamsDefinedC_spec] at h
-  by_cases h7 : Expr.allLevelParamsDefined cv.levelParams jA = true
+  rw [Expr.allLevelParamsDefinedC_spec, Expr.allLevelParamsDefinedC_spec] at h
+  by_cases h7 : (Expr.allLevelParamsDefined cv.levelParams cv.type &&
+      Expr.allLevelParamsDefined cv.levelParams jA) = true
   case neg => rw [if_neg h7] at h; exact absurd h throwC_bind_ok
   rw [if_pos h7] at h
   rw [constsResolveFC_spec, constsResolveF_eq] at h
@@ -126,8 +127,9 @@ theorem annotValC_run (hμ : μ.verifiedChecks = true) {env : Env md} (henv : En
     (ssimC hμ env henv checkFuel).annotate hs rfl
       (Expr.WScoped.of_not_hasFvar (Bool.not_eq_true _ ▸ h2)) jA s₁ hann
   obtain rfl := hjA
-  rw [Expr.allLevelParamsDefinedC_spec] at h
-  by_cases h3 : Expr.allLevelParamsDefined cvA.levelParams jA = true
+  rw [Expr.allLevelParamsDefinedC_spec, Expr.allLevelParamsDefinedC_spec] at h
+  by_cases h3 : (Expr.allLevelParamsDefined cvA.levelParams value &&
+      Expr.allLevelParamsDefined cvA.levelParams jA) = true
   case neg => rw [if_neg h3] at h; exact absurd h throwC_bind_ok
   rw [if_pos h3] at h
   rw [constsResolveFC_spec, constsResolveF_eq] at h

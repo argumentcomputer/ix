@@ -20,7 +20,7 @@ variable {md : Mode}
 This constructs no new interpretation and promotes no arbitrary ValueModel. -/
 noncomputable def ofStrong {V : Type w} [SetTheory V] {env : Env md}
     (M : Cached.StrongModel V env) : ValueModel V env :=
-  { M.model with defn_value := fun _ _ _ h φ ρ => M.defn_value h φ ρ }
+  ValueModel.ofModel M.model
 
 theorem ofStrong_cval {V : Type w} [SetTheory V] {env : Env md}
     (M : Cached.StrongModel V env) : (ofStrong M).cval = M.model.cval := rfl

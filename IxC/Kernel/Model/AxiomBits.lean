@@ -306,4 +306,40 @@ theorem choice_bits (hμ : μ.verifiedChecks = true)
     exact imax_eq_zero_iff _ _
   exact ⟨hb1, hb2⟩
 
+/-! ## The two named facts over a judgement package
+
+`propext_bits` and `choice_bits` read the recorded `inferTypeCore` run on the
+stored type through its `forallE` inversion (the binder's `pw` validation).
+`AxiomBitsJ` names their conclusions for a package's inference relation, so
+that the standard-axiom branch (`axiomStdJ`, `Model/AxiomPin.lean`) is stated
+once; `axiomBits_runJ` is the kernel's instance. -/
+
+/-- **The pinned axioms' binder bits, from a package's inference.** -/
+structure AxiomBitsJ (J : Judgements md) (env : Env md) : Prop where
+  propext_bits : env.find? eqName = some eqA →
+    ∀ {m₁ m₂ m₃ : BinderMeta} {d : Nat} {stype : Expr md},
+    J.infer env d
+      (.forallE (.sort .zero)
+        (.forallE (.sort .zero)
+          (.forallE
+            (.app (.app (.const iffName []) (.bvar 1)) (.bvar 0))
+            (.app (.app (.app (.const eqName [.succ .zero])
+                (.sort .zero)) (.bvar 2)) (.bvar 1)) m₃) m₂) m₁) stype →
+    ∀ φ : LevelParam → Nat,
+      pwBit φ m₁.pw = 0 ∧ pwBit φ m₂.pw = 0 ∧ pwBit φ m₃.pw = 0
+  choice_bits : ∀ {m₁ m₂ : BinderMeta} {d : Nat} {stype : Expr md},
+    J.infer env d
+      (.forallE (.sort (.param uN))
+        (.forallE
+          (.app (.const nonemptyName [.param uN]) (.bvar 0))
+          (.bvar 1) m₂) m₁) stype →
+    ∀ φ : LevelParam → Nat,
+      (pwBit φ m₁.pw = 0 ↔ φ uN = 0) ∧ (pwBit φ m₂.pw = 0 ↔ φ uN = 0)
+
+/-- **The kernel's instance.** -/
+theorem axiomBits_runJ (hμ : μ.verifiedChecks = true) (F : Nat) :
+    AxiomBitsJ (runJ μ F) env where
+  propext_bits := fun hEq _ _ _ _ _ hrun φ => propext_bits hμ hEq hrun φ
+  choice_bits := fun hrun φ => choice_bits hμ hrun φ
+
 end Ix.Kernel.Model

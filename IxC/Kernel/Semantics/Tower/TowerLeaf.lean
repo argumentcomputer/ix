@@ -4,7 +4,7 @@ public import IxC.Kernel.Semantics.Tower.TowerIntro
 @[expose] public section
 
 /-!
-# The carrier body and the uniform projection spelling (task #175, stage 2)
+# The carrier body and the uniform projection spelling
 
 The value-introduction half of the direct-structure bridge: the tier's
 semantic values must be *stored*, and the P dialect stores constant
@@ -59,7 +59,7 @@ def towerBodyAVPos (w : Nat) : List AnnotTerm → AnnotTerm
 (`piR 0`'s ∀ over an empty codomain). -/
 def negAV (P : AnnotTerm) : AnnotTerm := .pi 0 0 P (.const .empty [0])
 
-/-- The carrier body, **squash regime** (task #175 W4c/O4): the truth
+/-- The carrier body, **squash regime**: the truth
 value of the field chain's inhabitation, spelled classically as
 `¬ ∀ x₀ : F₀, ¬ ∀ x₁ : F₁, … ¬ True` with bit-`0` Π nodes.  The
 `.psigma [0, 0]` spelling cannot serve here — its pinned valuation
@@ -93,7 +93,7 @@ def projAV : Nat → AnnotTerm → AnnotTerm
 consumes — each domain is itself graded and, in the graph regime, its
 interpretation is bounded, at every fitting prefix.  (At squash the
 carrier is a truth value whatever the fields are — `towerBodyAV`'s
-`sqBodyAV` spelling — so no bound is asked; task #175 W4c/O4.) -/
+`sqBodyAV` spelling — so no bound is asked.) -/
 def FieldsOkB (w : Nat) (ρ : Nat → V) : List AnnotTerm → Prop
   | [] => True
   | F :: Fs => WellDenoted V ρ F ∧ (w ≠ 0 → interp V ρ F ∈ˢ (univ w : V)) ∧

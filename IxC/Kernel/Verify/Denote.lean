@@ -3,6 +3,7 @@ module
 public import IxC.Kernel.Checker
 public import IxC.Kernel.Verify.Level
 public import IxC.Kernel.Verify.EnvWF
+public import IxC.Kernel.Denotes
 public import IxC.Kernel.Term.Const
 
 public section
@@ -168,13 +169,24 @@ exactly as the `.const` clause values it on that form.  Transpose of
       (cval natSuccName (Level.substFn φ [] []))
       s.toList)
 
-/-- The tower projection's `Term` spelling (task #175 wiring W3):
+/-- The tower projection's `Term` spelling:
 `.fst ∘ .snd^i` — the erase image of the P reading's `projAV`
 (`SetBase/TowerLeaf.lean`), interpreting to `projS i` on the tuple
 tier's carriers.  Depends only on the index. -/
 @[expose] def projNV : Nat → Term → Term
   | 0, e => .fst e
   | i + 1, e => projNV i (.snd e)
+
+/-- The `Term` reading of a stored projection-table entry: pair-chain spelling
+`projNV (i + entry.off)` when `entry.off ≤ 1`, or the universe-indexed graph
+chain `.chain` when `entry.off ≥ 2` and its internal chain constant is present
+in `env`. -/
+@[expose] def projNodeNV? (cval : TConstVal md) (env : Env md) (sn : Key md) (i : Nat)
+    (entry : ProjEntry md) (ve : Term) : Option Term :=
+  if entry.off ≤ 1 then some (projNV (i + entry.off) ve)
+  else if (env.find? (projChainKey sn i)).isSome then
+    some (.chain (fun n => cval (projChainKey sn i) (fun _ => n)) ve)
+  else none
 
 /-- Denote an expression under constant valuation `cval`, level
 assignment `φ` and binder depth `d`.  See the module docstring, in
@@ -215,14 +227,14 @@ the `.proj` clause. -/
     none
   | d, .proj sn i e =>
     -- the transpose of `interpExpr`'s clause, the pair side's index
-    -- decoded by `projPair?`; a tower-backed entry (task #175 wiring W3)
+    -- decoded by `projPair?`; a tower-backed entry
     -- reads field `i` by the uniform iterated spelling instead — the
     -- entry key consumed at the reading, never carried in the syntax
     match denote cval env φ d e with
     | none => none
     | some ve =>
       match env.findProj? sn i with
-      | some entry => some (projNV (i + entry.off) ve)
+      | some entry => projNodeNV? cval env sn i entry ve
       | none => Term.projPair? i ve
   | _, .lit (.natVal n) =>
     -- guarded exactly like the checker's literal paths
@@ -315,7 +327,7 @@ theorem denote_proj (cval : TConstVal md) (env : Env md) (φ : LevelParam → Na
       | none => none
       | some ve =>
         match env.findProj? T i with
-        | some entry => some (projNV (i + entry.off) ve)
+        | some entry => projNodeNV? cval env T i entry ve
         | none => Term.projPair? i ve := by
   rw [denote]
 

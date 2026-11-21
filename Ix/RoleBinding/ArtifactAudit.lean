@@ -46,19 +46,82 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- These entries use the supplied binding, so they gain no committed-fixture
 -- helpers. All direct and reached implementation, extern, unsafe, csimp,
 -- replacement and opaque entries were compared exactly and are unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6777 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- The decisions' `of_decide_eq_*` dependencies (`Role.deps`) add 7 compiled functions
+-- to each closure here (`IxC/Kernel/Audit/Roots.lean`).
+-- Specification version 5 (the compiler-trust roles) adds the entry's 49 to each
+-- closure here, the conditional entries' included (`IxC/Kernel/Audit/Roots.lean`).
+-- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
+-- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions to each closure
+-- here, the entry's (`IxC/Kernel/Audit/Roots.lean`).
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+-- The Ixon v5 binder-data section (its parser and the local canonical check that
+-- `Admission.decodeRecords` runs on every record) adds 38 compiled functions to each closure
+-- here, as for `Admission.checkBytes`. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+-- Modes in records (`Constant.modesCanonical` and the mode readers) and the reader's canonical
+-- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
+-- extern, as for `Admission.checkBytes`.
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+-- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
+-- Factoring `Ixon.CheckOrder.postorder` out of `order` adds 1 compiled function; externs and rulings are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 7043 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 6911 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+-- Modes in records (`Constant.modesCanonical` and the mode readers) and the reader's canonical
+-- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
+-- extern, as for `Admission.checkBytes`.
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+-- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
+-- Factoring `Ixon.CheckOrder.postorder` out of `order` adds 1 compiled function; externs and rulings are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 7177 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6777 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+-- Modes in records (`Constant.modesCanonical` and the mode readers) and the reader's canonical
+-- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
+-- extern, as for `Admission.checkBytes`.
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+-- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
+-- Factoring `Ixon.CheckOrder.postorder` out of `order` adds 1 compiled function; externs and rulings are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 7043 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 6911 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+-- Modes in records (`Constant.modesCanonical` and the mode readers) and the reader's canonical
+-- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
+-- extern, as for `Admission.checkBytes`.
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+-- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
+-- Factoring `Ixon.CheckOrder.postorder` out of `order` adds 1 compiled function; externs and rulings are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 7177 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
 
@@ -72,8 +135,21 @@ and the list); the extern, implemented_by, unsafe and csimp counts and every
 ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.checkBytesUnder`,
 `checkBytesTieredUsingUnder`) are frozen apart in
 `IxC/Kernel/Audit/Roots.lean` (`userAxiomOperations`). -/
+-- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
+-- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions to each closure
+-- here, the entry's (`IxC/Kernel/Audit/Roots.lean`).
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
+-- csimp and all ruling counts are unchanged.
+-- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
+-- Factoring `Ixon.CheckOrder.postorder` out of `order` adds 1 compiled function; externs and rulings are unchanged.
 /-- info: runtime closure of [Ix.RoleBinding.Artifact.checkConditional,
- Ix.RoleBinding.Artifact.checkTieredConditional]: 6972 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.RoleBinding.Artifact.checkTieredConditional]: 7238 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith

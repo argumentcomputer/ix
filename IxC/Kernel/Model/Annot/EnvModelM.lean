@@ -12,26 +12,24 @@ public section
 /-!
 # `EnvModelM` — the P-tier environment invariant (task #161, P4)
 
-The install tier's target, per the P4 design note in DESIGN.md: the
+The install tier's target: the
 denoteAnnot-free environment carrier (`EnvModel`) *contained*, plus the
-fields the P bundles read.  (Batch 8 slimmed the containment from
-`EnvModelUM` to `EnvModel` — the FINDING in `Annot/EnvModel.lean`: the
-P fold stores `denoteMeta`-numeraled leaves and so can never supply the
-denoteAnnot-currency fields, which the P surface never reads.)
+fields the P bundles read.  (`EnvModelM` contains `EnvModel` rather than
+`EnvModelUM` because the P fold stores `denoteMeta`-numeraled leaves and
+so never uses the `denoteAnnot`-currency fields.)
 
 **The laws the fields are stated over live in `Model/Annot/Laws.lean`**
-since task #305 closing — `NatOps`, `DivMod`, `EqLaw`, the
-caps kit, the iota kit and the tower kit were in this file until then,
-and were moved out (unchanged, docstrings included) so that the rules
-tier's inputs can name them without importing the establishment
-surface below.  This file keeps the structure, its namespace, the empty
-model, and the `Nat`-op guard law the literal tier reads.
+— `NatOps`, `DivMod`, `EqLaw`, the caps kit, the iota kit and the tower
+kit live there so that the rules tier's inputs can name them without
+importing the establishment surface below.  This file keeps the structure,
+its namespace, the empty model, and the `Nat`-op guard law the literal
+tier reads.
 
 The deltas against the canonical fields, each a payoff of the fuel-free
 reading:
 
-* **existence, not uniqueness** — `defn_reads` is `AcvalDefnInst`
-  (batch 4): a stored definition's or theorem's value *reads*, to the
+* **existence, not uniqueness** — `defn_reads` is `AcvalDefnInst`:
+  a stored definition's or theorem's value *reads*, to the
   constant's own leaf.  The canonical `acval_defn` retreated to a
   uniqueness form because all-fuel existence is refutable
   (`envS2_defn_lam_refuted` — `denoteAnnot` fails on binders at small
@@ -69,10 +67,9 @@ variable (V : Type w) [SetTheory V]
 /-- **The P-tier environment invariant, at one mode** (see the module
 docstring). -/
 structure EnvModelM (μ : CheckMode) (env : Env md) where
-  /-- the denoteAnnot-free environment carrier, contained (batch 8: the
-  P fold stores `denoteMeta`-numeraled leaves, so it can never supply the
-  denoteAnnot-currency fields `EnvModelUM` carries — and the P surface reads
-  none of them) -/
+  /-- the denoteAnnot-free environment carrier, contained (the
+  P fold stores `denoteMeta`-numeraled leaves, so it does not carry the
+  `denoteAnnot`-currency fields) -/
   base2 : EnvModel V env
   /-- every leaf is bit-valid (`acval_wellDenoted`'s `AnnotValid` half) -/
   acval_validV : ∀ (n : Key md) (ψ : LevelParam → Nat) (ρ : Nat → V),
@@ -85,10 +82,10 @@ structure EnvModelM (μ : CheckMode) (env : Env md) where
   type_wellDenotedV : ∀ c ∈ env.consts, ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
     denoteMeta base2.acval env ψ 0 c.toConstantVal.type = some ta →
     ∀ ρ : Nat → V, WellDenotedV V ρ ta
-  /-- stored constants inhabit their types' readings (task #175 S1:
-  a projection table's constant type is the closed dummy `Sort 1`
-  and its leaf is `Sort 0`, so the row holds of tables too — the
-  W4c-era `isTowerEntry` guard is gone; that a table is not a term is
+  /-- stored constants inhabit their types' readings (a projection
+  table's constant type is the closed dummy `Sort 1`
+  and its leaf is `Sort 0`, so the row holds of tables too — that a
+  table is not a term is enforced by
   `inferTypeCore`'s own rejection of a `.const` naming one) -/
   mem_type : ∀ c ∈ env.consts,
     ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
@@ -130,7 +127,7 @@ structure EnvModelM (μ : CheckMode) (env : Env md) where
   `RulesInputs.rec_rules`) -/
   rec_rules : ∀ φ : LevelParam → Nat, RecRules base2 φ
   /-- the stored tower-backed projection entries' typing and iota
-  laws (task #175 wiring W5; an *environment law* for the same reason
+  laws (an *environment law* for the same reason
   `rec_rules` is — a direct structure's entries are fixed by its
   install and by nothing else, so the supplier is the direct install
   step.  Consumed by the `.proj` rows' tower branches) -/

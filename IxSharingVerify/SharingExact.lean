@@ -149,26 +149,6 @@ theorem exprListBytes_size (enc : Ixon.Expr → ByteArray) (xs : List Ixon.Expr)
   | nil => rfl
   | cons x xs ih => simp [exprListBytes, ih]
 
-theorem lamBinderListBytes_size (enc : Ixon.Expr → ByteArray)
-    (bs : List (Ixon.BinderContract × Ixon.Expr)) :
-    (lamBinderListBytes enc bs).size = (bs.map fun b => 1 + (enc b.2).size).sum := by
-  induction bs with
-  | nil => rfl
-  | cons b bs ih =>
-    obtain ⟨u, ty⟩ := b
-    simp [lamBinderListBytes, ih]
-    all_goals omega
-
-theorem allBinderListBytes_size (enc : Ixon.Expr → ByteArray)
-    (bs : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr)) :
-    (allBinderListBytes enc bs).size = (bs.map fun b => 1 + (enc b.2.2).size).sum := by
-  induction bs with
-  | nil => rfl
-  | cons b bs ih =>
-    obtain ⟨u, o, ty⟩ := b
-    simp [allBinderListBytes, ih]
-    all_goals omega
-
 theorem tag0ListBytes_size (xs : List UInt64) :
     (tag0ListBytes xs).size = (xs.map fun u => tag0Size u.toNat).sum := by
   induction xs with
@@ -193,9 +173,9 @@ def Spec (i : SizeInfo) (e : Ixon.Expr) : Prop :=
   i.appCont = (e.collectAppArgs.1.length,
     S e.collectAppArgs.2 + (e.collectAppArgs.1.map S).sum) ∧
   i.lamCont = (e.collectLamBinders.1.length,
-    (e.collectLamBinders.1.map fun b => 1 + S b.2).sum + S e.collectLamBinders.2) ∧
+    (e.collectLamBinders.1.map S).sum + S e.collectLamBinders.2) ∧
   i.allCont = (e.collectAllBinders.1.length,
-    (e.collectAllBinders.1.map fun b => 1 + S b.2.2).sum + S e.collectAllBinders.2)
+    (e.collectAllBinders.1.map S).sum + S e.collectAllBinders.2)
 
 /-- A node that continues no telescope satisfies the spec once its length
 is right. -/
@@ -210,15 +190,6 @@ theorem toNat_toUInt64_of_lt {n : Nat} (h : n < UInt64.size) : n.toUInt64.toNat 
 theorem exprListBytes_size_S (xs : List Ixon.Expr) :
     (exprListBytes spineWireEncode xs).size = (xs.map S).sum :=
   exprListBytes_size spineWireEncode xs
-
-theorem lamBinderListBytes_size_S (bs : List (Ixon.BinderContract × Ixon.Expr)) :
-    (lamBinderListBytes spineWireEncode bs).size = (bs.map fun b => 1 + S b.2).sum :=
-  lamBinderListBytes_size spineWireEncode bs
-
-theorem allBinderListBytes_size_S
-    (bs : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr)) :
-    (allBinderListBytes spineWireEncode bs).size = (bs.map fun b => 1 + S b.2.2).sum :=
-  allBinderListBytes_size spineWireEncode bs
 
 theorem S_def (e : Ixon.Expr) : S e = (spineWireEncode e).size := rfl
 
@@ -236,16 +207,14 @@ theorem sizeInfoWith_app_lamCont (sc : Nat → Nat) (f a : Ixon.Expr) :
     (sizeInfoWith sc (.app f a)).lamCont = (0, (sizeInfoWith sc (.app f a)).full) := rfl
 theorem sizeInfoWith_app_allCont (sc : Nat → Nat) (f a : Ixon.Expr) :
     (sizeInfoWith sc (.app f a)).allCont = (0, (sizeInfoWith sc (.app f a)).full) := rfl
-theorem sizeInfoWith_lam_appCont (sc : Nat → Nat) (c : Ixon.BinderContract) (t b : Ixon.Expr) :
-    (sizeInfoWith sc (.lam c t b)).appCont = (0, (sizeInfoWith sc (.lam c t b)).full) := rfl
-theorem sizeInfoWith_lam_allCont (sc : Nat → Nat) (c : Ixon.BinderContract) (t b : Ixon.Expr) :
-    (sizeInfoWith sc (.lam c t b)).allCont = (0, (sizeInfoWith sc (.lam c t b)).full) := rfl
-theorem sizeInfoWith_all_appCont (sc : Nat → Nat) (c : Ixon.BinderContract)
-    (r : Ixon.ValueContract) (t b : Ixon.Expr) :
-    (sizeInfoWith sc (.all c r t b)).appCont = (0, (sizeInfoWith sc (.all c r t b)).full) := rfl
-theorem sizeInfoWith_all_lamCont (sc : Nat → Nat) (c : Ixon.BinderContract)
-    (r : Ixon.ValueContract) (t b : Ixon.Expr) :
-    (sizeInfoWith sc (.all c r t b)).lamCont = (0, (sizeInfoWith sc (.all c r t b)).full) := rfl
+theorem sizeInfoWith_lam_appCont (sc : Nat → Nat) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.lam t b)).appCont = (0, (sizeInfoWith sc (.lam t b)).full) := rfl
+theorem sizeInfoWith_lam_allCont (sc : Nat → Nat) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.lam t b)).allCont = (0, (sizeInfoWith sc (.lam t b)).full) := rfl
+theorem sizeInfoWith_all_appCont (sc : Nat → Nat) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.all t b)).appCont = (0, (sizeInfoWith sc (.all t b)).full) := rfl
+theorem sizeInfoWith_all_lamCont (sc : Nat → Nat) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.all t b)).lamCont = (0, (sizeInfoWith sc (.all t b)).full) := rfl
 
 theorem sizeInfoWith_app_full (sc : Nat → Nat) (f a : Ixon.Expr) :
     (sizeInfoWith sc (.app f a)).full =
@@ -255,24 +224,22 @@ theorem sizeInfoWith_app_appCont (sc : Nat → Nat) (f a : Ixon.Expr) :
     (sizeInfoWith sc (.app f a)).appCont =
       ((sizeInfoWith sc f).appCont.1 + 1,
         (sizeInfoWith sc f).appCont.2 + (sizeInfoWith sc a).full) := rfl
-theorem sizeInfoWith_lam_full (sc : Nat → Nat) (c : Ixon.BinderContract) (t b : Ixon.Expr) :
-    (sizeInfoWith sc (.lam c t b)).full =
+theorem sizeInfoWith_lam_full (sc : Nat → Nat) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.lam t b)).full =
       tag4Size ((sizeInfoWith sc b).lamCont.1 + 1) +
-        (1 + (sizeInfoWith sc t).full + (sizeInfoWith sc b).lamCont.2) := rfl
-theorem sizeInfoWith_lam_lamCont (sc : Nat → Nat) (c : Ixon.BinderContract) (t b : Ixon.Expr) :
-    (sizeInfoWith sc (.lam c t b)).lamCont =
+        ((sizeInfoWith sc t).full + (sizeInfoWith sc b).lamCont.2) := rfl
+theorem sizeInfoWith_lam_lamCont (sc : Nat → Nat) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.lam t b)).lamCont =
       ((sizeInfoWith sc b).lamCont.1 + 1,
-        1 + (sizeInfoWith sc t).full + (sizeInfoWith sc b).lamCont.2) := rfl
-theorem sizeInfoWith_all_full (sc : Nat → Nat) (c : Ixon.BinderContract)
-    (r : Ixon.ValueContract) (t b : Ixon.Expr) :
-    (sizeInfoWith sc (.all c r t b)).full =
+        (sizeInfoWith sc t).full + (sizeInfoWith sc b).lamCont.2) := rfl
+theorem sizeInfoWith_all_full (sc : Nat → Nat) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.all t b)).full =
       tag4Size ((sizeInfoWith sc b).allCont.1 + 1) +
-        (1 + (sizeInfoWith sc t).full + (sizeInfoWith sc b).allCont.2) := rfl
-theorem sizeInfoWith_all_allCont (sc : Nat → Nat) (c : Ixon.BinderContract)
-    (r : Ixon.ValueContract) (t b : Ixon.Expr) :
-    (sizeInfoWith sc (.all c r t b)).allCont =
+        ((sizeInfoWith sc t).full + (sizeInfoWith sc b).allCont.2) := rfl
+theorem sizeInfoWith_all_allCont (sc : Nat → Nat) (t b : Ixon.Expr) :
+    (sizeInfoWith sc (.all t b)).allCont =
       ((sizeInfoWith sc b).allCont.1 + 1,
-        1 + (sizeInfoWith sc t).full + (sizeInfoWith sc b).allCont.2) := rfl
+        (sizeInfoWith sc t).full + (sizeInfoWith sc b).allCont.2) := rfl
 
 theorem sizeInfo_spec (e : Ixon.Expr) (h : e.wireWF) : Spec (sizeInfoWith tag4Size e) e := by
   induction e with
@@ -303,13 +270,12 @@ theorem sizeInfo_spec (e : Ixon.Expr) (h : e.wireWF) : Spec (sizeInfoWith tag4Si
     exact spec_plain _ _ (by
       simp only [hv, S, spineWireEncode, ByteArray.size_append,
         tag4Bytes_size, tag0Bytes_size]) rfl rfl rfl
-  | letE c ty v body iht ihv ihb =>
+  | letE nonDep mode ty v body iht ihv ihb =>
     have h1 : (sizeInfoWith tag4Size ty).full = (spineWireEncode ty).size := (iht h.1).1
     have h2 : (sizeInfoWith tag4Size v).full = (spineWireEncode v).size := (ihv h.2.1).1
     have h3 : (sizeInfoWith tag4Size body).full = (spineWireEncode body).size := (ihb h.2.2).1
     exact spec_plain _ _ (by
-      simp only [h1, h2, h3, S, spineWireEncode, ByteArray.size_append,
-        tag4Bytes_size, List.size_toByteArray, List.length_singleton]
+      simp only [h1, h2, h3, S, spineWireEncode, ByteArray.size_append, tag4Bytes_size]
       omega) rfl rfl rfl
   | app f a ihf iha =>
     obtain ⟨hf, ha, hcount⟩ := h
@@ -338,20 +304,19 @@ theorem sizeInfo_spec (e : Ixon.Expr) (h : e.wireWF) : Spec (sizeInfoWith tag4Si
       simp [Ixon.Expr.collectLamBinders]
     · rw [sizeInfoWith_app_allCont, hfull]
       simp [Ixon.Expr.collectAllBinders]
-  | lam c ty body iht ihb =>
+  | lam ty body iht ihb =>
     obtain ⟨ht, hb, hcount⟩ := h
     have htFull : (sizeInfoWith tag4Size ty).full = S ty := (iht ht).1
     obtain ⟨_, _, hbLam, _⟩ := ihb hb
     have hlenLt : body.collectLamBinders.1.length + 1 < UInt64.size := by
       rw [collectLamBinders_length]; exact hcount
-    have hS : S (.lam c ty body) = tag4Size (body.collectLamBinders.1.length + 1) +
-        (1 + S ty + ((body.collectLamBinders.1.map fun b => 1 + S b.2).sum +
-          S body.collectLamBinders.2)) := by
+    have hS : S (.lam ty body) = tag4Size (body.collectLamBinders.1.length + 1) +
+        (S ty + ((body.collectLamBinders.1.map S).sum + S body.collectLamBinders.2)) := by
       rw [S_def, spineWireEncode_lam]
-      simp only [← S_def, ByteArray.size_append, tag4Bytes_size, lamBinderListBytes_size_S, Ixon.Expr.collectLamBinders, List.length_cons,
+      simp only [← S_def, ByteArray.size_append, tag4Bytes_size, exprListBytes_size_S, Ixon.Expr.collectLamBinders, List.length_cons,
         toNat_toUInt64_of_lt hlenLt, List.map_cons, List.sum_cons]
       omega
-    have hfull : (sizeInfoWith tag4Size (.lam c ty body)).full = S (.lam c ty body) := by
+    have hfull : (sizeInfoWith tag4Size (.lam ty body)).full = S (.lam ty body) := by
       rw [sizeInfoWith_lam_full, hbLam, htFull, hS]
     refine ⟨hfull, ?_, ?_, ?_⟩
     · rw [sizeInfoWith_lam_appCont, hfull]
@@ -362,20 +327,19 @@ theorem sizeInfo_spec (e : Ixon.Expr) (h : e.wireWF) : Spec (sizeInfoWith tag4Si
       constructor <;> first | trivial | omega
     · rw [sizeInfoWith_lam_allCont, hfull]
       simp [Ixon.Expr.collectAllBinders]
-  | all c r ty body iht ihb =>
+  | all ty body iht ihb =>
     obtain ⟨ht, hb, hcount⟩ := h
     have htFull : (sizeInfoWith tag4Size ty).full = S ty := (iht ht).1
     obtain ⟨_, _, _, hbAll⟩ := ihb hb
     have hlenLt : body.collectAllBinders.1.length + 1 < UInt64.size := by
       rw [collectAllBinders_length]; exact hcount
-    have hS : S (.all c r ty body) = tag4Size (body.collectAllBinders.1.length + 1) +
-        (1 + S ty + ((body.collectAllBinders.1.map fun b => 1 + S b.2.2).sum +
-          S body.collectAllBinders.2)) := by
+    have hS : S (.all ty body) = tag4Size (body.collectAllBinders.1.length + 1) +
+        (S ty + ((body.collectAllBinders.1.map S).sum + S body.collectAllBinders.2)) := by
       rw [S_def, spineWireEncode_all]
-      simp only [← S_def, ByteArray.size_append, tag4Bytes_size, allBinderListBytes_size_S, Ixon.Expr.collectAllBinders, List.length_cons,
+      simp only [← S_def, ByteArray.size_append, tag4Bytes_size, exprListBytes_size_S, Ixon.Expr.collectAllBinders, List.length_cons,
         toNat_toUInt64_of_lt hlenLt, List.map_cons, List.sum_cons]
       omega
-    have hfull : (sizeInfoWith tag4Size (.all c r ty body)).full = S (.all c r ty body) := by
+    have hfull : (sizeInfoWith tag4Size (.all ty body)).full = S (.all ty body) := by
       rw [sizeInfoWith_all_full, hbAll, htFull, hS]
     refine ⟨hfull, ?_, ?_, ?_⟩
     · rw [sizeInfoWith_all_appCont, hfull]
@@ -426,7 +390,7 @@ def ruleFixed (rl : Ixon.RecursorRule) : Nat := tag0Size rl.fields.toNat
 
 def ctorFixed (c : Ixon.Constructor) : Nat :=
   1 + tag0Size c.lvls.toNat + tag0Size c.cidx.toNat + tag0Size c.params.toNat +
-    tag0Size c.fields.toNat
+    tag0Size c.fields.toNat + c.fieldModes.toArray.size
 
 def recFixed (r : Ixon.Recursor) : Nat :=
   1 + tag0Size r.lvls.toNat + tag0Size r.params.toNat + tag0Size r.indices.toNat +
@@ -464,7 +428,7 @@ theorem ctors_bytes (f : Ixon.Expr → Ixon.Expr) (ctors : Array Ixon.Constructo
       (ctors.toList.map ctorFixed).sum + ((ctors.toList.map (·.typ)).map fun r => S (f r)).sum := by
   rw [listBytes_size, Array.toList_map, List.map_map, List.map_map]
   simp only [Function.comp_def, constructorBytes, ByteArray.size_append, tag0Bytes_size,
-    List.size_toByteArray, List.length_singleton]
+    List.size_toByteArray, List.length_singleton, fieldModeListBytes_size, Array.length_toList]
   rw [← sum_map_add]
   congr 1
 
@@ -686,7 +650,8 @@ theorem constantBytes_size (c : Ixon.Constant) :
         (c.sharing.toList.map S).sum +
           ((tag0Bytes c.refs.size.toUInt64).size + (listBytes Address.hash c.refs.toList).size +
             (tag0Bytes c.univs.size.toUInt64).size +
-              (listBytes Ixon.Verify.Codec.Univ.wireEncode c.univs.toList).size) := by
+              (listBytes Ixon.Verify.Codec.Univ.wireEncode c.univs.toList).size +
+                (Ixon.Verify.Codec.ConstantTables.bindersBytes c.binders).size) := by
   simp only [Ixon.Verify.Codec.MutualConstant.constantBytes, ByteArray.size_append,
     tag0Bytes_size, listBytes_size]
   rw [map_S_eq]
@@ -701,18 +666,18 @@ theorem serConstant_size_decomposition (c : Ixon.Constant) (h : c.wireWF) :
     (Ixon.serConstant c).size =
       fixedConstantBytes c + exprsSize (constantInfoRoots c.info) + tag0Size c.sharing.size +
         exprsSize c.sharing := by
-  obtain ⟨hinfo, hsharingSize, hsharing, hrefsSize, hrefs, hunivsSize, hunivs⟩ := h
+  obtain ⟨hinfo, hsharingSize, hsharing, hrefsSize, hrefs, hunivsSize, hunivs, hbinders⟩ := h
   let c' : Ixon.Constant :=
     { c with info := mapRoots (fun _ => Ixon.Expr.var 0) c.info, sharing := #[] }
   have h' : c'.wireWF := by
     refine ⟨mapRoots_wireWF (fun _ => Ixon.Expr.var 0)
       (fun _ => by unfold Ixon.Expr.wireWF; trivial) _ hinfo,
       by simp [c'], ?_, hrefsSize, hrefs,
-      hunivsSize, hunivs⟩
+      hunivsSize, hunivs, hbinders⟩
     intro e he
     simp [c'] at he
   have hc := serConstant_eq_constantBytes c
-    ⟨hinfo, hsharingSize, hsharing, hrefsSize, hrefs, hunivsSize, hunivs⟩
+    ⟨hinfo, hsharingSize, hsharing, hrefsSize, hrefs, hunivsSize, hunivs, hbinders⟩
   have hc' := serConstant_eq_constantBytes c' h'
   have hfixed : fixedConstantBytes c = (Ixon.serConstant c').size -
       (constantInfoRoots c.info).size - tag0Size 0 := rfl
@@ -779,22 +744,12 @@ instance compareBytes_lawfulEq : Std.LawfulEqCmp compareBytes where
 
 /-! ### Structural keys -/
 
-theorem BinderContract.toBits_inj {a b : Ixon.BinderContract} (h : a.toBits = b.toBits) :
-    a = b := by
-  have := congrArg Ixon.BinderContract.ofBits? h
+/-- A `let` header determines the `let`'s `nonDep` and mode. -/
+theorem LetMode.header_inj {nonDep nonDep' : Bool} {mode mode' : Ixon.LetMode}
+    (h : Ixon.LetMode.header nonDep mode = Ixon.LetMode.header nonDep' mode') :
+    nonDep = nonDep' ∧ mode = mode' := by
+  have := congrArg Ixon.LetMode.ofHeader? h
   simpa using this
-
-theorem packAllContract_inj {c c' : Ixon.BinderContract} {r r' : Ixon.ValueContract}
-    (h : Ixon.packAllContract c r = Ixon.packAllContract c' r') : c = c' ∧ r = r' := by
-  have := congrArg Ixon.unpackAllContract? h
-  simpa using this
-
-theorem LetContract.eq_of_flags {c c' : Ixon.LetContract} (hf : c.flags = c'.flags)
-    (hb : c.binder = c'.binder) : c = c' := by
-  have h1 := Ixon.LetContract.ofFlags?_flags c
-  have h2 := Ixon.LetContract.ofFlags?_flags c'
-  rw [hf, hb, h2] at h1
-  exact (Option.some.inj h1).symm
 
 theorem map_toNat_inj : ∀ {xs ys : List UInt64},
     xs.map UInt64.toNat = ys.map UInt64.toNat → xs = ys
@@ -826,14 +781,11 @@ theorem Head.eq_of_tag_scalars {h₁ h₂ : Head} (ht : h₁.tag = h₂.tag)
     obtain ⟨h1, h2⟩ := hs
     rw [UInt64.toNat_inj.mp h1, UInt64.toNat_inj.mp h2]
   case app.app => rfl
-  case lam.lam c c' => rw [BinderContract.toBits_inj (UInt8.toNat_inj.mp hs)]
-  case all.all c r c' r' =>
-    obtain ⟨h1, h2⟩ := packAllContract_inj (UInt8.toNat_inj.mp hs)
+  case lam.lam => rfl
+  case all.all => rfl
+  case letE.letE nonDep mode nonDep' mode' =>
+    obtain ⟨h1, h2⟩ := LetMode.header_inj (UInt64.toNat_inj.mp hs)
     rw [h1, h2]
-  case letE.letE c c' =>
-    obtain ⟨h1, h2⟩ := hs
-    rw [LetContract.eq_of_flags (UInt64.toNat_inj.mp h1)
-      (BinderContract.toBits_inj (UInt8.toNat_inj.mp h2))]
 
 /-- Structural keys determine nodes: `compareKey` is `eq` exactly on equal
 nodes (collision-free identity). -/
@@ -917,9 +869,9 @@ def substShares (σ : Nat → Ixon.Expr) : Ixon.Expr → Ixon.Expr
   | .share i => σ i.toNat
   | .prj t f v => .prj t f (substShares σ v)
   | .app f a => .app (substShares σ f) (substShares σ a)
-  | .lam c t b => .lam c (substShares σ t) (substShares σ b)
-  | .all c r t b => .all c r (substShares σ t) (substShares σ b)
-  | .letE c t v b => .letE c (substShares σ t) (substShares σ v) (substShares σ b)
+  | .lam t b => .lam (substShares σ t) (substShares σ b)
+  | .all t b => .all (substShares σ t) (substShares σ b)
+  | .letE nonDep mode t v b => .letE nonDep mode (substShares σ t) (substShares σ v) (substShares σ b)
   | e => e
 
 /-- `E` interprets every term of the DAG as the expression its node
@@ -976,11 +928,11 @@ theorem spineFold_correct (p : Prep) (E σ : Nat → Ixon.Expr) (hE : DagModel p
       simp only [rebuildSpineNode, hh] at hre
       cases hre
       simp only [substShares, hinner, hside', Node.toExpr, hh, Node.spineNext, Node.sideChild]
-    | lam bc =>
+    | lam =>
       simp only [rebuildSpineNode, hh] at hre
       cases hre
       simp only [substShares, hinner, hside', Node.toExpr, hh, Node.spineNext, Node.sideChild]
-    | all bc r =>
+    | all =>
       simp only [rebuildSpineNode, hh] at hre
       cases hre
       simp only [substShares, hinner, hside', Node.toExpr, hh, Node.spineNext, Node.sideChild]
@@ -1018,7 +970,7 @@ theorem build_correct (p : Prep) (ev : DictEval) (index width : Array (Option Na
             obtain ⟨v, hv, hpure⟩ := bind_eq_ok h
             cases hpure
             simp only [substShares, Node.toExpr, hh, ih false _ v hv]
-          case letE lc =>
+          case letE nonDep mode =>
             obtain ⟨ty, hty, h2⟩ := bind_eq_ok h
             obtain ⟨v, hv, h3⟩ := bind_eq_ok h2
             obtain ⟨b, hb, hpure⟩ := bind_eq_ok h3
@@ -1048,9 +1000,9 @@ def SharesIn (P : Nat → Prop) : Ixon.Expr → Prop
   | .share i => P i.toNat
   | .prj _ _ v => SharesIn P v
   | .app f a => SharesIn P f ∧ SharesIn P a
-  | .lam _ t b => SharesIn P t ∧ SharesIn P b
-  | .all _ _ t b => SharesIn P t ∧ SharesIn P b
-  | .letE _ t v b => SharesIn P t ∧ SharesIn P v ∧ SharesIn P b
+  | .lam t b => SharesIn P t ∧ SharesIn P b
+  | .all t b => SharesIn P t ∧ SharesIn P b
+  | .letE _ _ t v b => SharesIn P t ∧ SharesIn P v ∧ SharesIn P b
   | _ => True
 
 theorem spineFold_shares (P : Nat → Prop) (buildSide : Node → Except SharingError Ixon.Expr)
@@ -1106,7 +1058,7 @@ theorem build_shares (p : Prep) (ev : DictEval) (index width : Array (Option Nat
             obtain ⟨v, hv, hpure⟩ := bind_eq_ok h
             cases hpure
             exact ih false _ v hv
-          case letE lc =>
+          case letE nonDep mode =>
             obtain ⟨ty, hty, h2⟩ := bind_eq_ok h
             obtain ⟨v, hv, h3⟩ := bind_eq_ok h2
             obtain ⟨b, hb, hpure⟩ := bind_eq_ok h3

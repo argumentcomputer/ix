@@ -9,8 +9,8 @@
   `t = t₀, t₁, …, t_{l-1}` with natural tail `t_l` of another family, and every
   inline prefix length `j ∈ 1..l` is a candidate:
 
-  * Tag4 header for `j`, plus every emitted contract byte and every side
-    child's optimal standalone cost along the prefix;
+  * Tag4 header for `j`, plus every side child's optimal standalone cost
+    along the prefix (a binder writes only its type);
   * for `j < l` the prefix ends at the same-family node `t_j`, which can only
     be written as a Share (an inline tail would be merged back by the
     canonical writer), so the cut is legal only if `t_j` is available;
@@ -56,8 +56,8 @@ inductive Family where
 /-- Family of a head. -/
 def Head.family : Head → Family
   | .app => .app
-  | .lam _ => .lam
-  | .all .. => .all
+  | .lam => .lam
+  | .all => .all
   | _ => .none
 
 /-- Next node on a telescope spine: the function of an `App`, the body of a
@@ -74,15 +74,13 @@ of a `Lam`/`All`. -/
   | .app => n.child 1
   | _ => n.child 0
 
-/-- Bytes a telescope node emits besides its side child: the contract byte of
-a `Lam`/`All` binder. -/
-@[inline] def Node.sideExtra (n : Node) : Nat :=
-  match n.head with
-  | .app => 0
-  | _ => 1
+/-- Bytes a telescope node emits besides its side child: none. A `Lam`/`All`
+binder writes only its type (its mode is in the record's binder-data
+section), an `App` only its argument. -/
+@[inline] def Node.sideExtra (_ : Node) : Nat := 0
 
 /-- One dictionary evaluation. `cost[t] = C_M(t)`. For a telescope node `t`,
-`sides[t]` is the byte sum of the contract bytes and side-child costs along
+`sides[t]` is the byte sum of the side-child costs along
 its maximal spine, and `below[t]` is the nearest available node strictly
 below `t` on that spine. Non-telescope nodes have `sides = 0`,
 `below = none`. -/
@@ -405,8 +403,8 @@ and side child. -/
 def rebuildSpineNode (n : Node) (inner side : Ixon.Expr) : Except SharingError Ixon.Expr :=
   match n.head with
   | .app => .ok (.app inner side)
-  | .lam bc => .ok (.lam bc side inner)
-  | .all bc r => .ok (.all bc r side inner)
+  | .lam => .ok (.lam side inner)
+  | .all => .ok (.all side inner)
   | _ => .error (.internal "spine node is not a telescope node")
 
 /-- Build the chosen encoding of `t`. With `entry = true` the top may not be
@@ -437,12 +435,12 @@ def Prep.build (p : Prep) (ev : DictEval) (index width : Array (Option Nat)) :
       | .prj ti f => do
         let v ← p.build ev index width false fuel (node.child 0)
         pure (Ixon.Expr.prj ti f v)
-      | .letE lc => do
+      | .letE nonDep mode => do
         let ty ← p.build ev index width false fuel (node.child 0)
         let v ← p.build ev index width false fuel (node.child 1)
         let b ← p.build ev index width false fuel (node.child 2)
-        pure (Ixon.Expr.letE lc ty v b)
-      | .app | .lam _ | .all .. => throw (.internal "inline choice at a telescope head")
+        pure (Ixon.Expr.letE nonDep mode ty v b)
+      | .app | .lam | .all => throw (.internal "inline choice at a telescope head")
       | _ => pure (node.toExpr fun _ => default)
     | .cut j =>
       if j = 0 then throw (.internal "empty telescope cut") else do
@@ -677,12 +675,12 @@ def Prep.buildFast (p : Prep) (ev : DictEval) (index width : Array (Option Nat))
       | .prj ti f => do
         let v ← p.buildFast ev index width false fuel (node.child 0)
         pure (Ixon.Expr.prj ti f v)
-      | .letE lc => do
+      | .letE nonDep mode => do
         let ty ← p.buildFast ev index width false fuel (node.child 0)
         let v ← p.buildFast ev index width false fuel (node.child 1)
         let b ← p.buildFast ev index width false fuel (node.child 2)
-        pure (Ixon.Expr.letE lc ty v b)
-      | .app | .lam _ | .all .. => throw (.internal "inline choice at a telescope head")
+        pure (Ixon.Expr.letE nonDep mode ty v b)
+      | .app | .lam | .all => throw (.internal "inline choice at a telescope head")
       | _ => pure (node.toExpr fun _ => default)
     | .cut j =>
       if j = 0 then throw (.internal "empty telescope cut") else do
@@ -794,12 +792,12 @@ def Prep.buildTop (p : Prep) (ev : DictEval) (index width : Array (Option Nat)) 
       | .prj ti f => do
         let v ← p.build ev index width false fuel (node.child 0)
         pure (Ixon.Expr.prj ti f v)
-      | .letE lc => do
+      | .letE nonDep mode => do
         let ty ← p.build ev index width false fuel (node.child 0)
         let v ← p.build ev index width false fuel (node.child 1)
         let b ← p.build ev index width false fuel (node.child 2)
-        pure (Ixon.Expr.letE lc ty v b)
-      | .app | .lam _ | .all .. => throw (.internal "inline choice at a telescope head")
+        pure (Ixon.Expr.letE nonDep mode ty v b)
+      | .app | .lam | .all => throw (.internal "inline choice at a telescope head")
       | _ => pure (node.toExpr fun _ => default)
     | .cut j =>
       if j = 0 then throw (.internal "empty telescope cut") else do

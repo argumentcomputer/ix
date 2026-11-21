@@ -1,5 +1,7 @@
 module
 
+public import IxC.Kernel.Term.UnpackSpec
+
 @[expose] public section
 
 /-!
@@ -35,8 +37,8 @@ Differences from `Ix.Kernel.Expr`, each deliberate:
   constants at all.
 * **There is no `letE`.**  No stored expression carries a `let`: the
   annotation pass runs the official `infer_let` triple and returns the
-  ζ *reduct* (task #217), and every kernel arm that used to accept a
-  `letE` node downstream of it is a positive error (task #241).  So the
+  ζ *reduct*, and every kernel arm that used to accept a
+  `letE` node downstream of it is a positive error.  So the
   denotation's `letE` clause is `none`, the former is gone, and the
   substitution metatheory stays as small as it was — see
   `IxC/Kernel/Verify/Denote.lean`'s "There is no `let` in the term
@@ -44,8 +46,8 @@ Differences from `Ix.Kernel.Expr`, each deliberate:
 * **`fst`/`snd` are formers, and their type arguments live in the
   premise.**  A projection on a *modeled* structure never reaches this
   layer: the checker accepts no `.proj` node without a native table
-  entry (task #175 wiring W5 — the annotation-time rewrites into
-  eliminations are gone).  A projection on the **pinned pair** or on a
+  entry (there are no annotation-time rewrites into
+  eliminations).  A projection on the **pinned pair** or on a
   direct structure's tower entry does: `ProjEntry.native` nodes are
   first-class by design and survive into stored terms — carrying the
   structure's name and the field index, and *not* the pair's type
@@ -173,6 +175,10 @@ inductive BConst where
   hypothesis that a closed family exists.  (The non-indexed `lfp` of
   the route's checkpoint was removed once the indexed leaf landed.) -/
   | lfpFam
+  /-- `unpackGraph spec.{n,k} : Sort (n + 1)` — the bounded graph at universe
+  `n` of `x ↦ treeUnpack spec (projS k x)`, used to interpret projections on
+  modeled structures. -/
+  | unpackGraph (spec : UnpackSpec)
   deriving Repr, DecidableEq, Inhabited
 
 /-- Terms.  See the module docstring for what is *not* here. -/
@@ -204,7 +210,13 @@ inductive Term where
   | snd (e : Term)
   /-- the canonical (irrelevant) proof of a derivable equation -/
   | prf
-  deriving Repr, Inhabited
+  /-- universe-indexed partial-graph chain application (`chainApp`), interpreting
+  `.proj` on a modeled structure -/
+  | chain (g : Nat → Term) (e : Term)
+  /-- bounded graph of `x ↦ app f x` at universe `n` (`boundedGraph`), used for
+  parameter-free monomorphic modeled projections -/
+  | bgraph (n : Nat) (f : Term)
+  deriving Inhabited
 
 namespace Term
 
@@ -238,7 +250,7 @@ def BConst.numLevels : BConst → Nat
   | .nat | .natZero | .natSucc | .propext => 0
   | .natRec | .punit | .punitUnit | .empty
   | .quot | .quotMk | .quotInd | .quotSound | .choice => 1
-  | .lfpFam => 2
+  | .lfpFam | .unpackGraph _ => 2
   | .punitRec | .psigma | .psigmaMk
   | .emptyRec | .quotLift => 2
 

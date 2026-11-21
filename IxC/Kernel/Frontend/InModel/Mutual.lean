@@ -130,6 +130,17 @@ structure Ctx (md : Mode) where
   /-- the parsed inductive blocks so far, by member type name (the
   nested rung reads a container's shape off it) -/
   blocks : Key md → Option (BlockRec md) := fun _ => none
+  /-- the definitions so far, by name: level parameters and value (a former
+  declared at a definition is read at its unfolding, `formerTele`) -/
+  values : ConstTable md := fun _ => none
+
+/-- The definition values a front end gives the modeller (`Ctx.values`): its own
+table's, except at a derived key (a generated record's name), which no former is
+declared at. -/
+def valuesOff (vals : ConstTable md) : ConstTable md := fun n =>
+  match n with
+  | .aux _ _ => none
+  | n => vals n
 
 /-- A constructor of member `m`, classified: its record, its recursive
 field positions with the target member of each. -/

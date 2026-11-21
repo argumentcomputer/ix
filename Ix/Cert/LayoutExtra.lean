@@ -130,6 +130,8 @@ theorem buildIndex_muts (store : Store) (records : Array (Address × Ixon.Consta
   · intro x _ s hs
     rcases x with ⟨owner, c⟩
     dsimp only
+    split
+    · exact hs
     refine forIn_array_bind (Filed store)
       (fun (st : ForInStep (RecIndex × Std.HashMap Address (Array (Nat × Ix.Kernel.ConstRef Address)))) =>
         Filed store st.value) _ _ ?_ ?_ _ hs
@@ -140,6 +142,7 @@ theorem buildIndex_muts (store : Store) (records : Array (Address × Ixon.Consta
       all_goals simp only [yield_value]
       all_goals first
         | (with_reducible exact hs)
+        | (exact fun b h => hs b h)
         | (with_reducible refine filed_add hs (mutsAt_of (by assumption) (by assumption)) _ _ (fun b' h => .inl h))
         | (with_reducible refine filed_add hs (mutsAt_of (by assumption) (by assumption)) _ _ (fun b' h => ?_)
            dsimp only at h
@@ -501,29 +504,26 @@ theorem lowered_bases {ρ : FiberMap} {hints : Ix.Kernel.Reader.CName .source �
       · exact .inr (.inl ⟨e, Array.mem_def.mpr he, rfl⟩)
       · exact .inr (.inr ⟨e, Array.mem_def.mpr he, rfl⟩)
   | definitions ms =>
-    rcases ReaderUnits.lower_lowering hK hl with ⟨-, hall⟩ | ⟨gens, d0, hdecls, hgl, hk0⟩
+    rcases ReaderUnits.lower_lowering hK hl with ⟨-, hall⟩ | ⟨gens, suffix, hdecls, hgl, -, hk0⟩
     · exact direct k (hall d hd k hk)
     · rw [lower_generated_zero hl (fun rb h => by cases h)] at hgl
       rw [List.eq_nil_of_length_eq_zero hgl.symm, List.nil_append] at hdecls
-      rw [hdecls, List.mem_singleton] at hd
-      subst hd
-      exact direct k (hk0 k hk)
+      rw [hdecls] at hd
+      exact direct k (hk0 d hd k hk)
   | «axiom» cv =>
-    rcases ReaderUnits.lower_lowering hK hl with ⟨-, hall⟩ | ⟨gens, d0, hdecls, hgl, hk0⟩
+    rcases ReaderUnits.lower_lowering hK hl with ⟨-, hall⟩ | ⟨gens, suffix, hdecls, hgl, -, hk0⟩
     · exact direct k (hall d hd k hk)
     · rw [lower_generated_zero hl (fun rb h => by cases h)] at hgl
       rw [List.eq_nil_of_length_eq_zero hgl.symm, List.nil_append] at hdecls
-      rw [hdecls, List.mem_singleton] at hd
-      subst hd
-      exact direct k (hk0 k hk)
+      rw [hdecls] at hd
+      exact direct k (hk0 d hd k hk)
   | quot kind cv =>
-    rcases ReaderUnits.lower_lowering hK hl with ⟨-, hall⟩ | ⟨gens, d0, hdecls, hgl, hk0⟩
+    rcases ReaderUnits.lower_lowering hK hl with ⟨-, hall⟩ | ⟨gens, suffix, hdecls, hgl, -, hk0⟩
     · exact direct k (hall d hd k hk)
     · rw [lower_generated_zero hl (fun rb h => by cases h)] at hgl
       rw [List.eq_nil_of_length_eq_zero hgl.symm, List.nil_append] at hdecls
-      rw [hdecls, List.mem_singleton] at hd
-      subst hd
-      exact direct k (hk0 k hk)
+      rw [hdecls] at hd
+      exact direct k (hk0 d hd k hk)
 
 /-- **Every read a trace keeps is part of a scheduled item's lowering.** -/
 theorem trace_reads {g : Graph} {start st : State .source} {xs : List Scheduled} {rs : List (Read .source)}
@@ -603,13 +603,16 @@ def RowsMuts (r : BlockResult) : Prop :=
 theorem finishConstant_rows (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta) :
     Returns RowsMuts (finishConstantInfoWithSharing info blockMeta) := by
   intro ctx s x s' ran
-  unfold finishConstantInfoWithSharing finishConstantWithSharing at ran
-  obtain ⟨cache, mid, -, ran⟩ := bind_ok ran
-  obtain ⟨block, mid', hb, ran⟩ := bind_ok ran
-  rw [rawRun_pure] at ran
-  cases ran
-  intro p hp
-  simp [BlockResult.mk'] at hp
+  rw [Ix.CompileCert.EmissionBlocks.finish_run] at ran
+  cases built : (Ix.CompileM.buildConstantWithSharing ctx.1.sharingLimits info s.refs s.univs >>=
+      Ix.CompileM.withBinderSection ctx.1.env.binderAnnotator? #[ctx.2.current]) with
+  | error e => rw [built] at ran; cases ran
+  | ok block =>
+    rw [built] at ran
+    simp only [Except.map, Prod.mk.injEq, Except.ok.injEq] at ran
+    obtain ⟨rfl, -⟩ := ran
+    intro p hp
+    simp [BlockResult.mk'] at hp
 
 theorem finishInductive_rows (i : Ix.InductiveVal) (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (pairs : Array (Ix.Name × Ixon.ConstantMeta)) :
@@ -639,13 +642,14 @@ theorem finishInductive_rows (i : Ix.InductiveVal) (ind : Ixon.Inductive) (indMe
 
 theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
-    {out : BlockResult} (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) :
+    {out : BlockResult} {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes payloads metas cache = .ok out) :
     RowsMuts out := by
   unfold buildCompiledMutualBlock at ran
   cases hs : standaloneMutConstInfo? payloads with
   | some info =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     intro p hp hne
     exfalso
@@ -658,7 +662,7 @@ theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
     exact (Prod.mk.inj e).2.symm
   | none =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     intro p hp _
     obtain ⟨targets, h, -⟩ := ProjectionLayout.sharing_mutual_shape _ _ _ _ _ hb
@@ -932,12 +936,17 @@ theorem finishConstant_erase (info : Ixon.ConstantInfo) (blockMeta : Ixon.Consta
     Yields (finishConstantInfoWithSharing info blockMeta)
       (fun r => SharingRoots.erase r.block.info = SharingRoots.erase info ∧ r.projections = #[]) := by
   intro ctx s x s' ran
-  unfold finishConstantInfoWithSharing finishConstantWithSharing at ran
-  obtain ⟨cache, mid, -, ran⟩ := bind_ok ran
-  obtain ⟨block, mid', hb, ran⟩ := bind_ok ran
-  rw [rawRun_pure] at ran
-  cases ran
-  exact ⟨(SharingRoots.build_roots (md := .anon) _ _ _ _ _ (BlockLayout.buildBlockConstant_ok hb)).1, rfl⟩
+  rw [Ix.CompileCert.EmissionBlocks.finish_run] at ran
+  cases built : (Ix.CompileM.buildConstantWithSharing ctx.1.sharingLimits info s.refs s.univs >>=
+      Ix.CompileM.withBinderSection ctx.1.env.binderAnnotator? #[ctx.2.current]) with
+  | error e => rw [built] at ran; cases ran
+  | ok block =>
+    rw [built] at ran
+    simp only [Except.map, Prod.mk.injEq, Except.ok.injEq] at ran
+    obtain ⟨rfl, -⟩ := ran
+    have erased := (SharingRoots.build_roots (md := .anon) _ _ _ _ _
+      (Ix.CompileCert.EmissionBlocks.sectioned_of_bind built).1).1
+    exact ⟨erased, rfl⟩
 
 theorem erase_defn_kind {info : Ixon.ConstantInfo} {d₀ : Ixon.Definition}
     (h : SharingRoots.erase info = SharingRoots.erase (.defn d₀)) {d : Ixon.Definition} (hd : info = .defn d) :
@@ -1115,12 +1124,13 @@ theorem buildMutual_defn {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
     {out : BlockResult}
     (kinds : payloads.toList.map payloadKind = classes.map srcKind)
-    (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) : MutDefnOut classes out := by
+    {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes payloads metas cache = .ok out) : MutDefnOut classes out := by
   unfold buildCompiledMutualBlock at ran
   cases hs : standaloneMutConstInfo? payloads with
   | some info =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     intro d hd hk
     have erased := (SharingRoots.build_roots (md := .anon) _ _ _ _ _ hb).1
@@ -1163,7 +1173,7 @@ theorem buildMutual_defn {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
       · simp at kinds
   | none =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     intro d hd _
     obtain ⟨targets, h, -⟩ := ProjectionLayout.sharing_mutual_shape _ _ _ _ _ hb

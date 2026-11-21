@@ -51,8 +51,8 @@ set_option maxHeartbeats 3200000 in
 `prefixGradeFire`'s field twin.  See the module docstring; the
 parameter positions of the constructor run enter as `hpar`, which is
 where the two fire modes differ and nothing else does. -/
-theorem fieldGradeFire {m : EnvModel V env} {F : Nat}
-    (hclaims : DefEqClaim μ m φ F)
+theorem fieldGradeFire {m : EnvModel V env} {J : Judgements md}
+    (hclaims : DefEqClaimJ J m φ)
     {rP cnP cnF : Nat}
     -- the statement frame
     {fvs : List (Expr md)} (hfvslen : fvs.length = rP + cnF)
@@ -89,7 +89,7 @@ theorem fieldGradeFire {m : EnvModel V env} {F : Nat}
       ∀ l ∈ (cdoms.getD (cnP + j) default).fvarLeaves,
         Expr.fvar l.1 l.2 ∈ fvs ∧ l.1 < rP + j)
     -- the recorded field run
-    (hdeFld : DefEqListOk μ F env (rP + cnF)
+    (hdeFld : DefEqListJ J env (rP + cnF)
       ((fvs.drop rP).map Expr.fvarTypeD) (cdoms.drop cnP))
     -- the padding level
     {N : Nat} (hN : N ≤ rP + cnF)
@@ -267,8 +267,8 @@ theorem fieldGradeFire {m : EnvModel V env} {F : Nat}
   intro ρ' hsat dw hdw
   refine ⟨hgbAll ρ' hsat dw hdw, ?_⟩
   -- the equality: fire the recorded field run at the padded frame
-  have hrun : isDefEqCore μ env F (rP + cnF) ty
-      (cdoms.getD (cnP + (n - rP)) default) = .ok true := by
+  have hrun : J.defeq env (rP + cnF) ty
+      (cdoms.getD (cnP + (n - rP)) default) := by
     have h := defEqListOk_getD hdeFld (n - rP)
       (by rw [List.length_map, List.length_drop, hfvslen]; omega)
     rw [show ((fvs.drop rP).map Expr.fvarTypeD).getD (n - rP) default

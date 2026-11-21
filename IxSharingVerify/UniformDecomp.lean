@@ -1,7 +1,7 @@
 import IxSharingVerify.UniformClasses
 
 /-!
-# Stage 4 (part): additive decomposition of the uniform cost
+# Additive decomposition of the uniform cost
 
 With an *opaque* set `O` of available terms that cost exactly `w` wherever
 they occur and end every telescope running into them (`OpaqueAt`; the
@@ -24,7 +24,7 @@ certain-stored terms are opaque in every candidate set containing them,
   available and only the decided entries paid is at most the length of
   every completion.
 
-The rest of Stage 4 builds on these facts in other modules: that the
+The remaining uniform-optimality proofs build on these facts in other modules: that the
 uncertain components are such a labeling (`componentsChecked_spec`,
 `UniformChecks`), the invariants of the component search
 (`UniformSearchSpec`), and the final theorems, a successful run stores a
@@ -860,7 +860,7 @@ theorem certainStored_opaque {dag : Dag} (hwf : DagWF dag) (roots : Array Nat)
   · have := hb1 hf; have := hbs.2.1; omega
   · have := hb2 hf; have := (hbs.2.2 hf).1; omega
 
-/-- **Decomposition over components (Stage 4).** Let `cs` list the
+/-- **Decomposition over components.** Let `cs` list the
 certain-stored terms (threshold `θ ≥ 1`), and `z₁`, `z₂` uncertain terms
 from different components of a labeling that is constant along non-opaque
 paths between uncertain terms. Then the uniform length is modular:

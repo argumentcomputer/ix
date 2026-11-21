@@ -51,28 +51,34 @@ def claimUnits : TestSeq :=
        (claimSerde (.checkEnv { ctx with literalClass := true } addr1 none))
   -- Reveal claim variants (carried over from previous suite)
   ++ test "Reveal defn safety-only" (claimSerde (.reveal addr1
-    (.defn none (some .safe) none none none)))
+    (.defn none (some .safe) none none none none) none))
   ++ test "Reveal defn all fields" (claimSerde (.reveal addr1
-    (.defn (some .defn) (some .safe) (some 3) (some addr2) (some addr3))))
+    (.defn (some .defn) (some .safe) (some 3) (some addr2) (some addr3)
+      (some { alloc := .noAlloc, boundedStack := true })) (some addr3)))
   ++ test "Reveal axio with type" (claimSerde (.reveal addr1
-    (.axio none none (some addr2))))
+    (.axio none none (some addr2)) none))
   ++ test "Reveal recr with rules" (claimSerde (.reveal addr1
     (.recr (some true) none (some 2) none none none none none
-      (some #[⟨0, 3, addr2⟩]))))
+      (some #[⟨0, 3, addr2⟩])) none))
   ++ test "Reveal muts with component" (claimSerde (.reveal addr1
-    (.muts #[(0, .defn (some .defn) (some .safe) none none none)])))
+    (.muts #[(0, .defn (some .defn) (some .safe) none none none
+      (some { alloc := .noRc, boundedStack := false }))]) none))
+  ++ test "Reveal muts constructor field modes" (claimSerde (.reveal addr1
+    (.muts #[(0, .indc none none none none none
+      (some #[(0, { fieldModes := some #[.inherited, .shared] }),
+              (1, { fieldModes := some #[] })]))]) (some addr2)))
   ++ test "Reveal cPrj" (claimSerde (.reveal addr1
-    (.cPrj (some 0) (some 1) (some addr2))))
+    (.cPrj (some 0) (some 1) (some addr2)) none))
   ++ test "Reveal rPrj" (claimSerde (.reveal addr1
-    (.rPrj (some 2) (some addr2))))
+    (.rPrj (some 2) (some addr2)) none))
   ++ test "Reveal iPrj" (claimSerde (.reveal addr1
-    (.iPrj (some 3) (some addr2))))
+    (.iPrj (some 3) (some addr2)) none))
   ++ test "Reveal dPrj" (claimSerde (.reveal addr1
-    (.dPrj (some 0) (some addr2))))
+    (.dPrj (some 0) (some addr2)) none))
   ++ test "Reveal defn all none" (claimSerde (.reveal addr1
-    (.defn none none none none none)))
+    (.defn none none none none none none) none))
   ++ test "Reveal quot" (claimSerde (.reveal addr1
-    (.quot (some .type) (some 1) (some addr2))))
+    (.quot (some .type) (some 1) (some addr2)) none))
 
 /-! ## Byte-level encoding tests
 
@@ -92,9 +98,10 @@ def claimEncodingTests : TestSeq :=
   let checkEnvBytes := Claim.ser (.checkEnv ctx addr1 none)
   let containsBytes := Claim.ser (.contains addr1 addr2)
   let revealSafetyOnly := Claim.ser
-    (.reveal addr1 (.defn none (some .safe) none none none))
+    (.reveal addr1 (.defn none (some .safe) none none none none) none)
   let revealAllFields := Claim.ser (.reveal addr1
-    (.defn (some .defn) (some .safe) (some 3) (some addr2) (some addr3)))
+    (.defn (some .defn) (some .safe) (some 3) (some addr2) (some addr3)
+      (some { alloc := .noAlloc, boundedStack := true })) (some addr3))
   let retiredRefused : Bool := match Claim.de (checkBytes.set! 2 1) with
     | .error e => (e.splitOn "erased-lean-v1 is retired").length > 1
     | .ok _ => false
@@ -121,8 +128,8 @@ def claimEncodingTests : TestSeq :=
        (claimSerde (.check { ctx with axioms := some addr3 } addr1 none))
   -- Reveal claim: 0xE6
   ++ test "Reveal tag byte is 0xE6" (revealSafetyOnly.data[0]! == 0xE6)
-  -- Reveal: tag + scope + commitment + variant + mask + safety = 38
-  ++ test "Reveal safety-only defn size is 38" (revealSafetyOnly.size == 38)
+  -- Reveal: tag + scope + commitment + variant + mask + safety + binders(none) = 39
+  ++ test "Reveal safety-only defn size is 39" (revealSafetyOnly.size == 39)
   ++ test "Reveal all-fields defn is larger"
        (revealAllFields.size > revealSafetyOnly.size)
   -- Contains: tag + scope + two addresses = 67
@@ -166,12 +173,26 @@ def catalogClaimTests : TestSeq :=
 /-- A reveal mask bit beyond the variant's fields is refused, so one claim has
 one encoding. The Rust reader refuses the same bytes
 (`proof.rs::reveal_mask_refuses_unknown_bits`): a Reveal claim over the zero
-commitment, its variant byte, then the one-byte mask. -/
+commitment, its variant byte, the one-byte mask, then `0x00` (`binders = none`). -/
 def revealMaskTests : TestSeq :=
   let header : Array UInt8 := #[0xE6, 0x04, 0x00] ++ Array.replicate 32 0
-  let bytes (variant mask : UInt8) : ByteArray := ⟨header ++ #[variant, mask]⟩
+  let bytes (variant mask : UInt8) : ByteArray := ⟨header ++ #[variant, mask, 0x00]⟩
   test "Reveal defn with no fields reads" (Ix.Claim.de (bytes 0 0) matches .ok _)
-  ++ test "Reveal defn mask bit 5 refused" (Ix.Claim.de (bytes 0 0x20) matches .error _)
+  ++ test "Reveal defn mask bit 5 reads valid DefAsserts"
+       (Ix.Claim.de ⟨header ++ #[0, 0x20, 0x06, 0x00]⟩ matches .ok _)
+  ++ test "Reveal defn mask bit 5 refuses alloc 3"
+       (Ix.Claim.de ⟨header ++ #[0, 0x20, 0x03, 0x00]⟩ matches .error _)
+  ++ test "Reveal defn mask bit 5 refuses code 8"
+       (Ix.Claim.de ⟨header ++ #[0, 0x20, 0x08, 0x00]⟩ matches .error _)
+  ++ test "Reveal defn mask bit 6 refused" (Ix.Claim.de (bytes 0 0x40) matches .error _)
+  ++ test "Reveal muts ctor mask bit 6 reads fieldModes"
+       (Ix.Claim.de ⟨header ++ #[8, 1, 1, 0, 1, 0x20, 1, 0, 0x40, 2, 0, 1, 0x00]⟩ matches .ok _)
+  ++ test "Reveal muts ctor fieldMode 2 refused"
+       (Ix.Claim.de ⟨header ++ #[8, 1, 1, 0, 1, 0x20, 1, 0, 0x40, 2, 0, 2, 0x00]⟩ matches .error _)
+  ++ test "Reveal muts ctor mask bit 7 refused"
+       (Ix.Claim.de ⟨header ++ #[8, 1, 1, 0, 1, 0x20, 1, 0, 0x80, 0x00, 0x00]⟩ matches .error _)
+  ++ test "Reveal binders opt tag 2 refused"
+       (Ix.Claim.de ⟨header ++ #[0, 0, 0x02]⟩ matches .error _)
   ++ test "Reveal axio with no fields reads" (Ix.Claim.de (bytes 2 0) matches .ok _)
   ++ test "Reveal axio mask bit 3 refused" (Ix.Claim.de (bytes 2 0x08) matches .error _)
   ++ test "Reveal dprj mask bit 2 refused" (Ix.Claim.de (bytes 7 0x04) matches .error _)

@@ -42,10 +42,8 @@ on the renaming.  Transpose of `RenameOk`. -/
     ci'.toConstantVal.levelParams = ci.toConstantVal.levelParams) ∧
   (∀ n, env.find? n = none → env.find? (f n) = none) ∧
   (∀ (n : Key md) (ψ : LevelParam → Nat), cval (f n) ψ = cval n ψ)
-  -- (task #175 wiring W3 added a fourth, tower-freeness conjunct here
-  -- because the branched `.proj` reading consulted the table at both
-  -- the source and the image name; W5 fixed the struct name under
-  -- `renameConsts` instead, and the conjunct is gone.)
+  -- (no tower-freeness conjunct is needed: `renameConsts` keeps `.proj`
+  -- struct names fixed, so the table lookup stays invariant.)
 
 /-- Renaming constants along a `RenameOkT` map preserves the
 denotation.  Transpose of `interp_renameConsts`, clause for clause;

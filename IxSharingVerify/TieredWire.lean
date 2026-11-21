@@ -68,7 +68,7 @@ theorem wireCounts_spec : ∀ (e : Ixon.Expr) (c : Nat × Nat × Nat), wireCount
           refine ⟨⟨hwf, (iha ca ha).1, by rw [← hc.1]; exact hn⟩, ?_⟩
           simp [Ixon.Expr.appCount, Ixon.Expr.lamCount, Ixon.Expr.allCount, hc.1]
         · cases h
-  | lam _ ty b iht ihb =>
+  | lam ty b iht ihb =>
     intro c h
     simp only [wireCounts] at h
     cases ht : wireCounts ty with
@@ -89,7 +89,7 @@ theorem wireCounts_spec : ∀ (e : Ixon.Expr) (c : Nat × Nat × Nat), wireCount
           refine ⟨⟨(iht ct ht).1, hwf, by rw [← hc.2.1]; exact hn⟩, ?_⟩
           simp [Ixon.Expr.appCount, Ixon.Expr.lamCount, Ixon.Expr.allCount, hc.2.1]
         · cases h
-  | all _ _ ty b iht ihb =>
+  | all ty b iht ihb =>
     intro c h
     simp only [wireCounts] at h
     cases ht : wireCounts ty with
@@ -110,7 +110,7 @@ theorem wireCounts_spec : ∀ (e : Ixon.Expr) (c : Nat × Nat × Nat), wireCount
           refine ⟨⟨(iht ct ht).1, hwf, by rw [← hc.2.2]; exact hn⟩, ?_⟩
           simp [Ixon.Expr.appCount, Ixon.Expr.lamCount, Ixon.Expr.allCount, hc.2.2]
         · cases h
-  | letE _ ty v b iht ihv ihb =>
+  | letE _ _ ty v b iht ihv ihb =>
     intro c h
     simp only [wireCounts] at h
     cases ht : wireCounts ty with

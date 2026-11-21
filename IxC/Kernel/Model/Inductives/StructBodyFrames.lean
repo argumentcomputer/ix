@@ -13,7 +13,7 @@ import IxC.Kernel.Model.Inductives.StructIntro
 public section
 
 /-!
-# The projection body's frame (task #175 S1)
+# The projection body's frame
 
 The table stores, per field, a **body** `F_i[p⃗ ↦ bvars, f_j ↦ .proj T
 j (bvar 0)]` (`structProjBodies`), and the tower law (A) reads it
@@ -138,6 +138,7 @@ theorem bodyFrames {env : Env md} (m : EnvModel V env)
     -- the earlier fields' entries, at the table's projection offset
     -- (task #210 Part A: the tagged tower of the fixpoint route reads
     -- its fields at offset `1`)
+    (hoff : off ≤ 1 := by omega)
     (hprev : ∀ j, j < i → ∃ entry, env.findProj? T j = some entry ∧ entry.off = off)
     (hi : i < nF)
     {ds : List (Nat × Nat × AnnotTerm)} {bodyA : AnnotTerm} {ψ : LevelParam → Nat} {w : Nat}
@@ -213,7 +214,7 @@ theorem bodyFrames {env : Env md} (m : EnvModel V env)
   have hspP := denoteMetaSpine_entryParams (acval := m.acval) (env := env) (φ := ψ)
     hfvsDidx hlenP
   have hspX := denoteMetaSpine_entryProjs (acval := m.acval) (env := env) (φ := ψ)
-    (nP := nP) (sdom := .sort .zero) hprev
+    (nP := nP) (sdom := .sort .zero) hoff hprev
   have hsp : DenoteMetaSpine m.acval env ψ (nP + 1) (Ix.Kernel.fvsD nP ++ Ix.Kernel.projArgsD T i nP)
       (entryParamBvars nP ++ entryProjAVs off i) :=
     DenoteMetaSpine.append hspP hspX

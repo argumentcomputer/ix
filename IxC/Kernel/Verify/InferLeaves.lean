@@ -24,7 +24,7 @@ variable {mode : CheckMode}
 
 open Expr in
 /-- `instPisAt` residual leaves come from the telescope or the
-arguments (task #175 wiring W2c: the tower-entry residual's leaves). -/
+arguments (the tower-entry residual's leaves). -/
 theorem instPisAt_fvarLeaves :
     ∀ (args : List (Expr md)) (ty : Expr md) {doms : List (Expr md)} {res : Expr md},
       Expr.instPisAt args ty = some (doms, res) →
@@ -817,7 +817,7 @@ theorem inferTypeCore_WScoped {env : Env md} (henv : EnvWF env) :
       simp only [WScoped] at hw
       have hwte := inferTypeCore_WScoped henv fuel hte hw
       have hwPi := whnf_WScoped henv fuel hwt hwte
-      -- task #175 S1: the body at the spine and the subject — the
+      -- the body at the spine and the subject — the
       -- stored body is fvar-free and the spine and subject are scoped
       exact projEntry_typeAt_WScoped henv hfp us hlen
         (fun a ha => hwPi.getAppArgs a ha) hw
@@ -947,7 +947,7 @@ theorem inferTypeCore_fvarLeaves {env : Env md} (henv : EnvWF env) :
         fun l' hl' =>
         inferTypeCore_fvarLeaves henv fuel hte hw l'
           (whnf_fvarLeaves henv fuel hwt l' hl')
-      -- task #175 S1: the body's leaves come from the spine or the
+      -- the body's leaves come from the spine or the
       -- subject (the stored body is fvar-free)
       rw [ProjEntry.typeAt_eq_instSpine entry us hlen pe] at hl
       rcases fvarLeaves_instSpine _ hl with hty | ⟨a, ha, hla⟩
@@ -1081,7 +1081,7 @@ theorem inferTypeCore_looseBVars {env : Env md} (henv : EnvWF env) :
         simp only [fvarLeaves]; exact hl)
       have hbte := inferTypeCore_looseBVars henv fuel hte hw hb hLbe
       have hbPi := whnf_looseBVars henv fuel hwt hbte
-      -- task #175 S1: the body at bvar-closed arguments is bvar-closed
+      -- the body at bvar-closed arguments is bvar-closed
       exact projEntry_typeAt_looseBVars henv hfp us hlen
         (fun a ha => looseBVarsBounded_getAppArgs hbPi _ ha) hb
     | bvar i =>

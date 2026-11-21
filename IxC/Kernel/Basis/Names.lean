@@ -114,7 +114,7 @@ abbrev andIntroName : Key md := roleKey .andIntro
 abbrev charOfNatName : Key md := roleKey .charOfNat
 
 /-- Names reserved for the pinned basis blocks; no other declaration
-may use them.  `PSigma'` is not among them (task #175 W6): the
+may use them.  `PSigma'` is not among them: the
 modelled basis's tight pair installs through the direct
 simple-structure path as an ordinary two-field structure. -/
 def reservedBasisNames : List (Key md) :=

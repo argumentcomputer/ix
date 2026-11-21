@@ -4,7 +4,7 @@ public import IxC.Kernel.Model.Inductives.StructRecSpine
 public section
 
 /-!
-# The recursor's frame kit, continued (task #175 W4c, P3 module 6, part 9)
+# The recursor's frame kit, continued
 
 Openings at any depth, per-index scoping of an opening's variables and
 of an `instPisAt` residual, frame shifts under a consed spine,
@@ -161,7 +161,7 @@ theorem mkPisAV_append :
 /-! ## The minor space as a Π-tower reading -/
 
 /-! ## Lifted domains, field spines, and frame arithmetic (from the retired
-`StructRecMinorP`, task #175 S2) -/
+`StructRecMinorP`) -/
 
 theorem liftDoms_take (n : Nat) :
     ∀ (ds : List (Nat × Nat × AnnotTerm)) (k j : Nat),

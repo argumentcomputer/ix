@@ -39,8 +39,7 @@ model-freeing is S4/S5's measurable bill.
 
 This module is model-free by construction: no `V`, no `SetTheory`, no
 `EnvS`.  It sits in the R tree only because `DeclR` does; when
-`SetR/Decl.lean` moves to the shared base (S2's finding 2 removed its
-blocker), this file moves with it.
+`SetR/Decl.lean` moves to the shared base, this file moves with it.
 -/
 
 namespace Ix.Kernel.Semantics
@@ -149,8 +148,8 @@ theorem declEtaStepRun {μ : CheckMode} {F : Nat}
     · exact basisInstallRun_etaClosed _ h.2 (basisIndOk_declsA _) hE
     · exact hind h
 
-/-! `declEtaStep` — the `DeclR` instance — moved to
-`SetBase/DeclStructEta.lean` at task #175 wiring W5, where the
+/-! `declEtaStep` — the `DeclR` instance — lives in
+`SetBase/DeclStructEta.lean`, where the
 `.indDecl` dispatch's η half is proved for BOTH arms and the instance
 reads the kernel's own case split instead of the flag. -/
 

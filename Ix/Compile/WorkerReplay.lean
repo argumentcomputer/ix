@@ -782,7 +782,7 @@ def compileEnvFoldWindowedWith (config : WindowConfig) (env : Ix.Environment)
   if let some message := missingBlockRefs? blocks then throw message
   validateInductiveFlags env
   validateMutualSafety env blocks
-  let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
+  let view : Ix.Environment := env.lookupView
   let sched := FoldSchedule.of blocks
   let initial := { CompileEnv.new view with sharingLimits }
   let state ← foldWavesWindowedWith config blocks sched width dbg (blocks.blocks.size + 1)

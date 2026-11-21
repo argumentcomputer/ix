@@ -6,7 +6,7 @@ import IxC.Kernel.Model.Annot.BitInst
 public section
 
 /-!
-# The generated recursor, read (task #175 S2)
+# The generated recursor, read
 
 The direct install stores the recursor it generates
 (`structRecTy`/`structRecRhs`), so its reading is **syntactic**: the

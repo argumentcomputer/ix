@@ -150,11 +150,11 @@ def leq (l r : Level) : Option Bool :=
 
 /-- Decide semantic equality of two levels; `none` is an internal error.
 Syntactic equality decides directly — first on the levels themselves
-(`l == r`, which is pointer- and hash-first, task #176 P2), then on
+(`l == r`, which is pointer- and hash-first), then on
 their simplified forms (the reference kernels' fast path); otherwise
 antisymmetric `leq`, short-circuited.
 
-**Conformance note (restrictions-are-findings, task #176 P2).**  The
+**Conformance note.**  The
 first disjunct is what official's `is_equivalent` does and con-leche did
 not: `bool is_equivalent(level const & lhs, level const & rhs) {
 return lhs == rhs || normalize(lhs) == normalize(rhs); }`

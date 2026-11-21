@@ -41,17 +41,17 @@ theorem checkExpr_complete (e : Expr) (wf : e.wireWF) :
     obtain ⟨arg, readArg⟩ := ihArg wf.2.1
     have fits : fn.apps + 1 < UInt64.size := by simpa [fn.apps_eq] using wf.2.2
     simp [checkExpr, readFn, readArg, fits]
-  | lam uses ty body ihTy ihBody =>
+  | lam ty body ihTy ihBody =>
     obtain ⟨ty, readTy⟩ := ihTy wf.1
     obtain ⟨body, readBody⟩ := ihBody wf.2.1
     have fits : body.lams + 1 < UInt64.size := by simpa [body.lams_eq] using wf.2.2
     simp [checkExpr, readTy, readBody, fits]
-  | all uses owned ty body ihTy ihBody =>
+  | all ty body ihTy ihBody =>
     obtain ⟨ty, readTy⟩ := ihTy wf.1
     obtain ⟨body, readBody⟩ := ihBody wf.2.1
     have fits : body.alls + 1 < UInt64.size := by simpa [body.alls_eq] using wf.2.2
     simp [checkExpr, readTy, readBody, fits]
-  | letE nonDep ty value body ihTy ihValue ihBody =>
+  | letE nonDep mode ty value body ihTy ihValue ihBody =>
     obtain ⟨ty, readTy⟩ := ihTy wf.1
     obtain ⟨value, readValue⟩ := ihValue wf.2.1
     obtain ⟨body, readBody⟩ := ihBody wf.2.2
@@ -93,9 +93,18 @@ theorem checkExpr_complete (e : Expr) (wf : e.wireWF) :
 
 /-- Soundness and completeness for every production constant variant and
 every structural condition in the retained wire invariant. -/
+@[simp] theorem validBinderNode_iff (node : BinderNode) :
+    validBinderNode node = true ↔ node.wireWF := by
+  cases node <;> simp [validBinderNode, BinderNode.wireWF]
+
+@[simp] theorem validBinderBlock_iff (block : BinderBlock) :
+    validBinderBlock block = true ↔ block.wireWF := by
+  simp [validBinderBlock, BinderBlock.wireWF, validArray, -Array.all_eq_true,
+    Array.all_eq_true']
+
 theorem validConstant_iff (constant : Constant) :
     validConstant constant = true ↔ constant.wireWF := by
-  simp [validConstant, Constant.wireWF, validArray, -Array.all_eq_true,
+  simp [validConstant, Constant.wireWF, bindersWireWF, validArray, -Array.all_eq_true,
     Array.all_eq_true', and_assoc]
 
 end Ixon.Verify.WireCheck

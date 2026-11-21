@@ -21,14 +21,14 @@ theorem projFnName_inj {T T' : Key md} {i i' : Nat}
   obtain ⟨hT, hi⟩ := auxKey_inj₂ (d := .projFn i) (d' := .projFn i') h
   exact ⟨hT, Derived.projFn.inj hi⟩
 
-/-- The projection-table name shape is injective (task #175 S1). -/
+/-- The projection-table name shape is injective. -/
 theorem projTableName_inj {T T' : Key md} (h : projTableName T = projTableName T') :
     T = T' := by
   exact auxKey_inj.mp h
 
 /-- Unfold a successful projection-table lookup to the stored table:
 the structure's table is stored, the index is in range, and the entry
-is the table's view at it (task #175 S1). -/
+is the table's view at it. -/
 theorem Env.findProj?_some {env : Env md} {T : Key md} {i : Nat}
     {entry : ProjEntry md} (h : env.findProj? T i = some entry) :
     ∃ tbl : ProjTable md, env.find? (projTableName T) = some (.projInfo tbl) ∧
@@ -182,7 +182,7 @@ theorem stripPis_isSome_of_le :
   -- (a theorem's stored value carries NO clause: a theorem is opaque
   -- to reduction and stored by its statement — the value is the
   -- record's own, unread by the kernel and by the invariant)
-  -- a projection table's bodies (task #175 S1): closed with respect to
+  -- a projection table's bodies: closed with respect to
   -- free variables, level parameters within the structure's list,
   -- resolving, and scoped at the parameters and the subject; there
   -- are exactly `numFields` of them

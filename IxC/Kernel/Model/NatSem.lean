@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.Model.NatEqs
+public import IxC.Kernel.Model.NatAddRec
 import IxC.Kernel.Semantics.LitStep
 import IxC.Kernel.Model.Annot.ValidSpine
 
@@ -22,8 +23,8 @@ clause verbatim (`natLit` below **is** `denoteMeta_natLit`'s output).
 
 Worked example: `natOpV_add` (the lead-proved species).  The other
 six structural operations follow the same recipe: read the two
-recurrence clauses at values (`natEq_value` at computed `denoteMeta`
-readings), close by the literal meta-induction
+recurrence clauses at values (`natEq_value`, `Model/NatAddRec.lean`, at
+computed `denoteMeta` readings), close by the literal meta-induction
 (`natOpV_bin_of_clauses` for the binary `(op x 0, op x (succ y))`
 shape).
 -/
@@ -93,29 +94,6 @@ theorem natLit_mem (m : EnvModel V env) (hnh : NatHeads m φ)
       ∈ˢ interp V ρ (m.acval Ix.Kernel.natName φ) :=
   (natLit_facts m hnh hval hs ρ n).2
 
-/-! ## Reading one recurrence at values -/
-
-/-- One certified recurrence equation, read at value slots
-(`natEq_value`'s mirror over `NatOps`). -/
-theorem natEq_value (m : EnvModel V env) (hops : NatOps m φ)
-    {c : Key md} (hc : c ∈ Ix.Kernel.natOpNames) {cv : ConstantVal md}
-    {v : Expr md} {hint : ReducibilityHint}
-    (hf : env.find? c = some (.defnInfo cv v hint))
-    {eq : Expr md × Expr md} (heq : eq ∈ Ix.Kernel.natOpEquations 0 c)
-    {L R : AnnotTerm}
-    (hdL : denoteMeta m.acval env φ 2 eq.1 = some L)
-    (hdR : denoteMeta m.acval env φ 2 eq.2 = some R)
-    {ρ : Nat → V} {x y : V}
-    (hx : x ∈ˢ interp V ρ (m.acval Ix.Kernel.natName φ))
-    (hy : y ∈ˢ interp V ρ (m.acval Ix.Kernel.natName φ)) :
-    interp V (cons y (cons x ρ)) L
-      = interp V (cons y (cons x ρ)) R := by
-  obtain ⟨L', R', hdL', hdR', hval⟩ :=
-    (hops c hc cv v hint hf).2 eq heq
-  obtain rfl : L' = L := Option.some.inj (hdL'.symm.trans hdL)
-  obtain rfl : R' = R := Option.some.inj (hdR'.symm.trans hdR)
-  exact hval ρ x y hx hy
-
 /-! ## The binary meta-induction -/
 
 /-- The common shape of the binary structural recurrences: a base
@@ -166,99 +144,8 @@ theorem natOpV_add (m : EnvModel V env) (hops : NatOps m φ)
         (interp V ρ (natLit m φ b))
       = interp V ρ (natLit m φ (a + b)) := by
   obtain ⟨hg, -⟩ := hops Ix.Kernel.natAddName (by (cases md <;> decide)) cv v hint hf
-  obtain ⟨hs, hdeps, -⟩ := Ix.Kernel.natOpGuard_inv hg
-  obtain ⟨cvc, vc, hcnt, hfc, hlpc⟩ := hdeps Ix.Kernel.natAddName
-    (by (cases md <;> decide))
-  obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN,
-    hlpZ, hlpS, -⟩ := Ix.Kernel.natLitSupported_inv hs
-  have hKc : ∀ d : Nat, denoteMeta m.acval env φ d
-      (.const Ix.Kernel.natAddName [])
-      = some (m.acval Ix.Kernel.natAddName φ) :=
-    fun d => denoteMeta_levelless_const hfc
-      (show (ConstantInfo.defnInfo cvc vc hcnt).toConstantVal.levelParams
-        = [] from hlpc)
-  have hKz : ∀ d : Nat, denoteMeta m.acval env φ d
-      (.const Ix.Kernel.natZeroName [])
-      = some (m.acval Ix.Kernel.natZeroName φ) :=
-    fun d => denoteMeta_levelless_const hfZ
-      (show (ConstantInfo.ctorInfo cv0 i0 j0).toConstantVal.levelParams
-        = [] from hlpZ)
-  have hKs : ∀ d : Nat, denoteMeta m.acval env φ d
-      (.const Ix.Kernel.natSuccName [])
-      = some (m.acval Ix.Kernel.natSuccName φ) :=
-    fun d => denoteMeta_levelless_const hfS
-      (show (ConstantInfo.ctorInfo cv1 i1 j1).toConstantVal.levelParams
-        = [] from hlpS)
-  have hzm := natLit_mem m hnh hval hs ρ 0
-  -- base clause, read at values
-  have h0 : ∀ x : V,
-      x ∈ˢ interp V ρ (m.acval Ix.Kernel.natName φ) →
-      SetTheory.app (SetTheory.app
-          (interp V ρ (m.acval Ix.Kernel.natAddName φ)) x)
-        (interp V ρ (m.acval Ix.Kernel.natZeroName φ))
-      = x := by
-    intro x hx
-    have h := natEq_value m hops (by (cases md <;> decide)) hf
-      (eq := (.app (.app (.const Ix.Kernel.natAddName [])
-          (.fvar 0
-            (.const Ix.Kernel.natName [])))
-        (.const Ix.Kernel.natZeroName []),
-        .fvar 0 (.const Ix.Kernel.natName [])))
-      (by (cases md <;> decide))
-      (L := .app (.app (m.acval Ix.Kernel.natAddName φ) (.bvar 1))
-        (m.acval Ix.Kernel.natZeroName φ))
-      (R := .bvar 1)
-      (by rw [denoteMeta_app, denoteMeta_app, hKc 2, denoteMeta_fvar, hKz 2]
-          rfl)
-      (by rw [denoteMeta_fvar])
-      hx hzm
-    simp only [interp_app, interp_bvar, cons_succ, cons_zero,
-      acval_interp_closedC m Ix.Kernel.natAddName φ _ ρ,
-      acval_interp_closedC m Ix.Kernel.natZeroName φ _ ρ] at h
-    exact h
-  -- successor clause, read at values
-  have hS : ∀ x y : V,
-      x ∈ˢ interp V ρ (m.acval Ix.Kernel.natName φ) →
-      y ∈ˢ interp V ρ (m.acval Ix.Kernel.natName φ) →
-      SetTheory.app (SetTheory.app
-          (interp V ρ (m.acval Ix.Kernel.natAddName φ)) x)
-        (SetTheory.app
-          (interp V ρ (m.acval Ix.Kernel.natSuccName φ)) y)
-      = SetTheory.app
-          (interp V ρ (m.acval Ix.Kernel.natSuccName φ))
-          (SetTheory.app (SetTheory.app
-            (interp V ρ (m.acval Ix.Kernel.natAddName φ)) x) y) := by
-    intro x y hx hy
-    have h := natEq_value m hops (by (cases md <;> decide)) hf
-      (eq := (.app (.app (.const Ix.Kernel.natAddName [])
-          (.fvar 0
-            (.const Ix.Kernel.natName [])))
-        (.app (.const Ix.Kernel.natSuccName [])
-          (.fvar 1
-            (.const Ix.Kernel.natName []))),
-        .app (.const Ix.Kernel.natSuccName [])
-          (.app (.app (.const Ix.Kernel.natAddName [])
-            (.fvar 0
-              (.const Ix.Kernel.natName [])))
-            (.fvar 1
-              (.const Ix.Kernel.natName [])))))
-      (by (cases md <;> decide))
-      (L := .app (.app (m.acval Ix.Kernel.natAddName φ) (.bvar 1))
-        (.app (m.acval Ix.Kernel.natSuccName φ) (.bvar 0)))
-      (R := .app (m.acval Ix.Kernel.natSuccName φ)
-        (.app (.app (m.acval Ix.Kernel.natAddName φ) (.bvar 1))
-          (.bvar 0)))
-      (by rw [denoteMeta_app, denoteMeta_app, hKc 2, denoteMeta_fvar,
-            denoteMeta_app, hKs 2, denoteMeta_fvar]
-          rfl)
-      (by rw [denoteMeta_app, hKs 2, denoteMeta_app, denoteMeta_app, hKc 2,
-            denoteMeta_fvar, denoteMeta_fvar]
-          rfl)
-      hx hy
-    simp only [interp_app, interp_bvar, cons_succ, cons_zero,
-      acval_interp_closedC m Ix.Kernel.natAddName φ _ ρ,
-      acval_interp_closedC m Ix.Kernel.natSuccName φ _ ρ] at h
-    exact h
+  obtain ⟨hs, -, -⟩ := Ix.Kernel.natOpGuard_inv hg
+  obtain ⟨h0, hS⟩ := natAdd_clauses m hops hnh hf ρ
   refine natOpV_bin_of_clauses m (fun a b => a + b) (fun a => ?_)
     (fun a b ih => ?_)
   · exact h0 (interp V ρ (natLit m φ a))

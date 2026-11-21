@@ -482,10 +482,10 @@ value is `eq_law`'s (the field, at the pin's own level instantiation
 `u ↦ 1`), and `iff_forces_eq` supplies the equation. -/
 
 /-- **`propext` inhabits its stored type's reading.** -/
-theorem propext_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
+theorem propext_mem {J : Judgements md} (hbits : AxiomBitsJ J env) (mp : EnvModelM V μ env)
     {cvA : ConstantVal md} (hok : Ix.Kernel.stdAxiomOk env cvA = true)
-    (hn : cvA.name = propextName) {F d : Nat} {stype : Expr md}
-    (hrun : Ix.Kernel.inferTypeCore μ env F d cvA.type = .ok stype)
+    (hn : cvA.name = propextName) {d : Nat} {stype : Expr md}
+    (hrun : J.infer env d cvA.type stype)
     (ψ : LevelParam → Nat) (ta : AnnotTerm)
     (hta : denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta)
     (ρ : Nat → V) :
@@ -500,7 +500,7 @@ theorem propext_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     exact hApin.2
   obtain ⟨m₁, m₂, m₃, hsh⟩ := propext_shapeS hApinT
   rw [hsh] at hrun hta
-  obtain ⟨hb₁, hb₂, hb₃⟩ := propext_bits hμ hEq hrun ψ
+  obtain ⟨hb₁, hb₂, hb₃⟩ := hbits.propext_bits hEq hrun ψ
   -- the `Eq` former's one level parameter is pinned to `1`
   have heqψ : Level.substFn ψ (eqA (md := md)).toConstantVal.levelParams
       [Level.zero.succ] uN = 1 := rfl
@@ -876,10 +876,10 @@ witness's two `lamR`s and the reading's two `piR`s agree on zero-ness
 and `lamR_mem_zero_agree` crosses each.  `dneg_eq_nonempty` identifies
 the witness's double-negation domain with the checker's stored
 `Nonempty`. -/
-theorem choice_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
+theorem choice_mem {J : Judgements md} (hbits : AxiomBitsJ J env) (mp : EnvModelM V μ env)
     {cvA : ConstantVal md} (hok : Ix.Kernel.stdAxiomOk env cvA = true)
-    (hn : cvA.name = choiceName) {F d : Nat} {stype : Expr md}
-    (hrun : Ix.Kernel.inferTypeCore μ env F d cvA.type = .ok stype)
+    (hn : cvA.name = choiceName) {d : Nat} {stype : Expr md}
+    (hrun : J.infer env d cvA.type stype)
     (ψ : LevelParam → Nat) (ta : AnnotTerm)
     (hta : denoteMeta mp.base2.acval env ψ 0 cvA.type = some ta)
     (ρ : Nat → V) :
@@ -894,7 +894,7 @@ theorem choice_mem (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     exact hApin.2
   obtain ⟨m₁, m₂, hsh⟩ := choice_shapeS hApinT
   rw [hsh] at hrun hta
-  obtain ⟨hb₁, hb₂⟩ := choice_bits hμ hrun ψ
+  obtain ⟨hb₁, hb₂⟩ := hbits.choice_bits hrun ψ
   have hN : ∀ e, denoteMeta mp.base2.acval env ψ e
       (.const nonemptyName [.param uN])
       = some (mp.base2.acval nonemptyName ψ) :=

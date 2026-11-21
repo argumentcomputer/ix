@@ -309,7 +309,7 @@ def normalizeFamilyArea (cfg : Config) (layout : ShareLayout) (constant : Ixon.C
   let expanded ← expand limits constant.sharing (constantInfoRoots constant.info) true
   let result ← familyExpandedArea cfg layout limits expanded
   let info ← withRoots constant.info result.result.roots
-  return ({ constant with info, sharing := result.result.sharing }, result)
+  return ({ constant with info, sharing := result.result.sharing, binders := #[] }, result)
 
 theorem normalizeFamily_eq_area : @normalizeFamily = @normalizeFamilyArea := by
   funext cfg layout constant limits

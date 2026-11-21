@@ -88,11 +88,12 @@ theorem denoteMeta_cons_fresh {acval : Key md → (LevelParam → Nat) → Annot
     (hfresh : env.find? c₀.name = none)
     (hntc : ∀ entry, c₀ ≠ .projInfo entry)
     (hlga : LitGuardsAgree env ⟨c₀ :: env.consts⟩)
+    (hpok : Ix.Kernel.ProjOkT env)
     (ψ : LevelParam → Nat) (d : Nat) (e : Expr md) (hcb : ConstsBound env e) :
     denoteMeta (acvalWith acval c₀.name A) ⟨c₀ :: env.consts⟩ ψ d e
       = denoteMeta acval env ψ d e := by
   rw [← denoteMeta_envExtend (findPreserved_cons hfresh) hlga
-      (Ix.Kernel.Verify.findProj?_cons_of_base_none hntc)
+      (Ix.Kernel.Verify.findProj?_cons_of_base_none hntc) hpok
       d e hcb,
     denoteMeta_acvalWith_fresh hfresh d e]
 
@@ -115,7 +116,7 @@ theorem denoteMeta_cons_fresh_mono {acval : Key md → (LevelParam → Nat) → 
     (Ix.Kernel.Verify.findProj?_cons_of_base_none hntc) d e hcb
     (by rw [denoteMeta_acvalWith_fresh hfresh]; exact h)
 
-/-- **The P cons crossing at any head** (task #175 W4c, module 4): a
+/-- **The P cons crossing at any head**: a
 prefix reading of a subject the head's slot does not mention
 (`ConsCrossAt`) survives the cons — the fresh crossing at a non-table
 head, the table-slot refinement (`denoteMeta_envExtend_mono_at`) at a
@@ -190,20 +191,17 @@ structure ConsHead (env : Env md) (c₀ : ConstantInfo md)
     ∀ (ψ : LevelParam → Nat) (t : Term),
       pinnedStructT c₀.name ψ = some t → (A ψ).erase = t
   /-- a head table's slots are mentioned by no stored piece, so
-  the store's readings survive the cons (task #175 W4c, module 4;
-  vacuous at every other head — `ConsCrossEnv.ofNtc`) -/
+  the store's readings survive the cons (vacuous at every other head — `ConsCrossEnv.ofNtc`) -/
   projTower : ConsCrossEnv env c₀
   /-- a head table carries its head data, at every field, at the
-  extension (task #175 S1) -/
+  extension -/
   projTowerHead : ∀ tbl, c₀ = .projInfo tbl →
     ∀ i, i < tbl.numFields → Ix.Kernel.TowerHead ⟨c₀ :: env.consts⟩ (tbl.entry i)
   /-- a head recursor's rules' constructors are stored and its two
   rescue bits are the store's own verdict (`RecCtorsStored`'s head) -/
   ctorsHead : ∀ cvR mI rP rules, c₀ = .recInfo cvR mI rP rules →
     ∀ r ∈ rules,
-      (∃ cvj cnP cnF,
-        env.find? (Ix.Kernel.RecRule.ctor r)
-          = some (.ctorInfo cvj cnP cnF)) ∧
+      Ix.Kernel.RuleCtorOk env.find? cvR mI rP r ∧
       (r.k = true → Ix.Kernel.recRuleKOf env.find? r.ctor = true) ∧
       (r.eta = true →
         Ix.Kernel.recRuleEtaOf env.find? c₀.name r.ctor = true)
@@ -221,9 +219,7 @@ theorem ConsHead.ofBasis {c₀ : ConstantInfo md}
     (hnotproj : ∀ tbl, c₀ ≠ .projInfo tbl)
     (hctors : ∀ cvR mI rP rules, c₀ = .recInfo cvR mI rP rules →
       ∀ r ∈ rules,
-        (∃ cvj cnP cnF,
-          env.find? (Ix.Kernel.RecRule.ctor r)
-            = some (.ctorInfo cvj cnP cnF)) ∧
+        Ix.Kernel.RuleCtorOk env.find? cvR mI rP r ∧
         (r.k = true → Ix.Kernel.recRuleKOf env.find? r.ctor = true) ∧
         (r.eta = true →
           Ix.Kernel.recRuleEtaOf env.find? c₀.name r.ctor = true)) :
@@ -242,9 +238,7 @@ theorem ConsHead.ofFresh {c₀ : ConstantInfo md}
     (hprojTower : ∀ tbl, c₀ ≠ .projInfo tbl)
     (hctors : ∀ cvR mI rP rules, c₀ = .recInfo cvR mI rP rules →
       ∀ r ∈ rules,
-        (∃ cvj cnP cnF,
-          env.find? (Ix.Kernel.RecRule.ctor r)
-            = some (.ctorInfo cvj cnP cnF)) ∧
+        Ix.Kernel.RuleCtorOk env.find? cvR mI rP r ∧
         (r.k = true → Ix.Kernel.recRuleKOf env.find? r.ctor = true) ∧
         (r.eta = true →
           Ix.Kernel.recRuleEtaOf env.find? c₀.name r.ctor = true)) :

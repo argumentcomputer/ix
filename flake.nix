@@ -220,6 +220,28 @@
           # Local packages build in the workspace; buildDeps only supports Git sources.
           lakeDeps = builtins.removeAttrs (lake2nix.buildDeps {
             src = leanSrc;
+            # Formal Aiur's proofs require mathlib, which brings these packages
+            # into the workspace. Nothing the flake builds (the Ix library, the
+            # CLI and the test binary) imports them, so Lake needs only their
+            # sources to resolve the workspace. Building them would compile all
+            # of Mathlib and its shared library, and lean4-nix's library target
+            # guess (`Proofwidgets`) does not exist.
+            depOverride =
+              pkgs.lib.genAttrs
+                [
+                  "mathlib"
+                  "proofwidgets"
+                  "LeanSearchClient"
+                  "importGraph"
+                  "aesop"
+                  "Qq"
+                ]
+                (_: {
+                  buildPhase = ''
+                    runHook preBuild
+                    runHook postBuild
+                  '';
+                });
             depOverrideDeriv = {
               # Blake3.lean's `rust` package builds only its `Blake3Rust`
               # library (`Blake3.Rust` and the `Blake3` root). Ix also imports
@@ -268,6 +290,22 @@
               mkdir -p target/release
               ln -s ${rustLib}/lib/libix_ffi.a target/release/
             '';
+            # lean4-nix's installPhase excludes nested `.lake` directories,
+            # leaving out local path packages (`Aiur`, `IxVM`, `MultiStark`)
+            # whose `.olean`s live under `<pkg>/.lake/build/lib/lean` rather
+            # than top-level `.lake`. Preserve their `.lake` outputs so wrapped
+            # binaries can resolve them on `LEAN_PATH` at runtime.
+            postInstall = ''
+              if [ -d .lake/build/bin ]; then
+                cp -R .lake/build/bin $out
+              fi
+              for pkg in Aiur IxVM MultiStark; do
+                if [ -d "$pkg/.lake" ]; then
+                  mkdir -p "$out/$pkg"
+                  cp -rP "$pkg/.lake" "$out/$pkg/.lake"
+                fi
+              done
+            '';
             buildInputs = [
               pkgs.gmp
               lean
@@ -297,8 +335,14 @@
             # Binaries that import Ix.Meta need .olean files at runtime via LEAN_PATH
             installArtifacts = true;
           };
+          localPkgLeanPaths = drv: [
+            "${drv}/Aiur/.lake/build/lib/lean"
+            "${drv}/IxVM/.lake/build/lib/lean"
+            "${drv}/MultiStark/.lake/build/lib/lean"
+          ];
           leanPath = pkgs.lib.concatStringsSep ":" (
             [ "${ixLib}/.lake/kernel/lib/lean" ]
+            ++ localPkgLeanPaths ixLib
             ++ map (d: "${d}/.lake/build/lib/lean") ([ ixLib ] ++ builtins.attrValues lakeDeps)
           );
           wrapBin =
@@ -309,7 +353,15 @@
                 [ -x "$f" ] || continue
                 makeWrapper "$f" "$out/bin/$(basename "$f")" \
                   --set LEAN_SYSROOT "${lean}" \
-                  --set LEAN_PATH "${drv}/.lake/build/lib/lean:${drv}/.lake/kernel/lib/lean:${leanPath}"
+                  --set LEAN_PATH "${
+                    pkgs.lib.concatStringsSep ":" (
+                      [
+                        "${drv}/.lake/build/lib/lean"
+                        "${drv}/.lake/kernel/lib/lean"
+                      ]
+                      ++ localPkgLeanPaths drv
+                    )
+                  }:${leanPath}"
               done
             '';
           # The CLI links rustPkgNet (lakefile: `ix` uses `ix_rs_net`), reusing
@@ -371,6 +423,16 @@
               # with writable copies of all artifacts that Lake may rebuild.
               cp -rP ${ixTestArtifacts}/.lake src/.lake
               chmod -R u+w src/.lake
+              for pkg in Aiur IxVM MultiStark; do
+                if [ -d "${ixTestArtifacts}/$pkg/.lake" ]; then
+                  cp -rP "${ixTestArtifacts}/$pkg/.lake" "src/$pkg/.lake"
+                  chmod -R u+w "src/$pkg/.lake"
+                fi
+              done
+              # Mathlib is in the workspace only through formal Aiur and is
+              # left unbuilt (`lakeDeps`). Mark it present, or the source-mode
+              # commands try to download its cache (`Ix.fetchMathlibCache`).
+              mkdir -p src/.lake/packages/mathlib/.lake/build
               cp ${ixTestArtifacts}/lakefile.lean src/lakefile.lean
               # The configured lakefile delegates Cargo to Crane; preserve
               # its prebuilt archive input if a Lake target needs refreshing.

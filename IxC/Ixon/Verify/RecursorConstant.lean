@@ -337,6 +337,7 @@ structure StandaloneConstantWireWF (constant : Ixon.Constant) : Prop where
   univsCount : ArrayCountWF constant.univs
   univsEntries : ∀ value, value ∈ constant.univs.toList →
     Ixon.Verify.Codec.Univ.WireWF value
+  binders : Ixon.bindersWireWF constant.binders
 
 def standaloneConstantBytes (constant : Ixon.Constant) : ByteArray :=
   standaloneInfoBytes constant.info ++
@@ -347,7 +348,8 @@ def standaloneConstantBytes (constant : Ixon.Constant) : ByteArray :=
           listBytes Address.hash constant.refs.toList ++
             tag0Bytes constant.univs.size.toUInt64 ++
               listBytes Ixon.Verify.Codec.Univ.wireEncode
-                constant.univs.toList
+                constant.univs.toList ++
+                bindersBytes constant.binders
 
 theorem putConstant_writes_standalone (constant : Ixon.Constant)
     (h : StandaloneConstantWireWF constant) :
@@ -358,7 +360,8 @@ theorem putConstant_writes_standalone (constant : Ixon.Constant)
         ((putTag0_writes constant.refs.size.toUInt64).bind
           ((putAddressArray_writes constant.refs h.refsEntries).bind
             ((putTag0_writes constant.univs.size.toUInt64).bind
-              (putUnivArray_writes constant.univs h.univsEntries))))))
+              ((putUnivArray_writes constant.univs h.univsEntries).bind
+                (putBinders_writes constant.binders)))))))
   simpa [Ixon.putConstant, standaloneConstantBytes,
     ByteArray.append_assoc] using hwrite
 
@@ -367,8 +370,8 @@ theorem getConstant_reads_standalone (constant : Ixon.Constant)
     Reads Ixon.getConstant (standaloneConstantBytes constant) constant := by
   have hinfo := getConstantInfo_reads_standalone constant.info h.info
   have htail := getConstantAfterInfo_reads_core constant.info
-    constant.sharing constant.refs constant.univs h.sharingCount
-    h.sharingEntries h.refsCount h.refsEntries h.univsCount h.univsEntries
+    constant.sharing constant.refs constant.univs constant.binders h.sharingCount
+    h.sharingEntries h.refsCount h.refsEntries h.univsCount h.univsEntries h.binders
   have hall := Reads.bind (next := getConstantAfterInfo) hinfo htail
   rw [getConstant_eq]
   simpa [standaloneConstantBytes, ByteArray.append_assoc] using hall

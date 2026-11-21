@@ -77,8 +77,8 @@ theorem denoteMeta_mkAppN_of {d : Nat} :
 
 set_option maxHeartbeats 3200000 in
 /-- **The reduct stage, at the reading** (`reductS`). -/
-theorem reduct {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
-    (hclaims : DefEqClaim μ m ψ' F)
+theorem reduct {m : EnvModel V env} {J : Judgements md} {ψ' : LevelParam → Nat}
+    (hclaims : DefEqClaimJ J m ψ')
     {f : Key md → Key md} (hroT : RenameOk m.acval env f)
     {rP cnF : Nat} {fvs : List (Expr md)}
     (hfvslen : fvs.length = rP + cnF)
@@ -112,8 +112,8 @@ theorem reduct {m : EnvModel V env} {F : Nat} {ψ' : LevelParam → Nat}
     (hokR : ∀ σ : Nat → V, Sat V Δa σ → WellDenotedV V σ vR)
     -- the recorded rhs run, and the applied form's grading (the third
     -- exposure's row is what discharges the latter)
-    (hdeRhs : isDefEqCore μ env F (rP + cnF) rhsS
-      (Expr.mkAppN (rhsA.renameConsts f) fvs) = .ok true)
+    (hdeRhs : J.defeq env (rP + cnF) rhsS
+      (Expr.mkAppN (rhsA.renameConsts f) fvs))
     (hokApp : ∀ σ : Nat → V, Sat V Δa σ → ∀ ba : AnnotTerm,
       denoteMeta m.acval env ψ' (rP + cnF)
         (Expr.mkAppN (rhsA.renameConsts f) fvs) = some ba →

@@ -118,11 +118,14 @@ helpers leave no functions of their own), with no extern (351 before). The
 references `getTagN` and `putTagN` stay in the closure: the twins call them
 for a width other than 0, 2 and 4, so both replacements are reported where
 the walk reaches them (`csimp 2`) and where it reaches their targets (`ruled
-csimp 2`). -/
+csimp 2`). Modes in records (the section nodes' modes, the let header's mode, the
+definition's assertions and the constructor's field modes, with their codes
+and `Constant.modesCanonical`) took the closure from 398 functions and 55
+inherited externs to 437 and 57. -/
 /-- info: runtime closure of [Ixon.serUniv, Ixon.deUniv, Ixon.serExpr, Ixon.deExpr,
 Ixon.serConstant, Ixon.deConstant, Ixon.deConstantExact, Ixon.Bounded.deUniv,
-Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 359 compiled functions;
-inherited externs 53, implemented_by 0, unsafe 2, csimp 2; ruled csimp 2 -/
+Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 437 compiled functions;
+inherited externs 57, implemented_by 0, unsafe 2, csimp 2; ruled csimp 2 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Audit.operations #[`Init, `Std] Ixon.Audit.rulings
 
@@ -189,7 +192,8 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Audit.operations #[`Init, `Std] Ix
   (bytes : ByteArray) (constant : Ixon.Constant),
   Ixon.Canonical.deConstant maxBytes maxUnivNodes bytes = Except.ok constant ↔
   constant.wireWF ∧ Ixon.serConstant constant = bytes ∧ bytes.size ≤ maxBytes ∧
-  Ixon.Bounded.univNodes constant.univs ≤ maxUnivNodes -/
+  Ixon.Bounded.univNodes constant.univs ≤ maxUnivNodes ∧ constant.bindersCanonical = true ∧
+  constant.modesCanonical = true -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Verify.Canonical.deConstant_ok_iff
 

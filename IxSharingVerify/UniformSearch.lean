@@ -2,7 +2,7 @@ import IxSharingVerify.UniformChecks
 import IxSharingVerify.UniformFinal
 
 /-!
-# Stage 4: specifications of the component search's checks and tables
+# Specifications of the component search's checks and tables
 
 The restricted reach-label pass (`reachLabelsOn`) over the members'
 ancestors (`upClosure`), the label and mark tables, and what a passing

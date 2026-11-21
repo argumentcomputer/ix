@@ -5,10 +5,10 @@ public import IxC.Kernel.Model.IndCons
 public section
 
 /-!
-# The P step at a tower-table cons (task #175 W4c, P3 module 4, part 2; S1)
+# The P step at a tower-table cons
 
 `declStep_preserves_of_tower_cons`: the install kit at a head that is a
-tower-backed projection **table** (task #175 S1: one constant per
+tower-backed projection **table** (one constant per
 structure, the fields' bodies).  The head's crossing condition is the
 `NoProjEnv` of the prefix at the structure's every slot
 (`BitConsCross`), the head data is `TowerHead` at every field, and

@@ -48,7 +48,7 @@ theorem closure_authentic {env : Ix.Environment} {ixe : Ixon.Env} (compiled : co
       simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at he
       obtain ⟨rfl, rfl⟩ := he
       obtain ⟨lc, hlc, hget⟩ := Option.bind_eq_some_iff.mp hr
-      obtain ⟨c'', hget', -, enc⟩ := canonical _ ha' lc hlc
+      obtain ⟨c'', hget', -, enc, -⟩ := canonical _ ha' lc hlc
       rw [hget] at hget'
       cases hget'
       rw [enc, Address.admissionHash_eq]

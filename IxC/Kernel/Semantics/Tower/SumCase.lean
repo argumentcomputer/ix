@@ -6,7 +6,7 @@ public import IxC.Kernel.SetModel.TaggedSum
 @[expose] public section
 
 /-!
-# The numeral case split, spelled (task #175 sum-types, stage S1)
+# The numeral case split, spelled
 
 The tagged sum's tag is a `Nat` numeral and its case split is
 `Nat.rec`: this module spells both in the `AnnotTerm` alphabet and reads

@@ -5,7 +5,7 @@ public import IxC.Kernel.Verify.Abstract
 public section
 
 /-!
-# Projection nodes and their table slots (task #175 wiring, W4c S6)
+# Projection nodes and their table slots
 
 The tower-cons transport's syntactic side condition.  Consing a
 tower-backed entry `(T, i)` changes the reading of exactly one node

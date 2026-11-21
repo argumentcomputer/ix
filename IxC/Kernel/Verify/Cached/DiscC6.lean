@@ -12,7 +12,7 @@ task #163): the simulation walks for `isPropTypeI` and `annotateBodyI`
 (`IxC/Kernel/Cached/CoreC.lean`), whose bodies are character-identical to
 their `IxC/Kernel/CoreI.lean` originals up to `EIdx → Expr` /
 `CheckIM → CheckCM` (plus the two recorded `peelFuelM` deviation lines
-in `annotateBodyI`'s binder clauses).  Task #175 wiring W5: the
+in `annotateBodyI`'s binder clauses).  The
 projection elimination fallbacks (`projFieldDomI`,
 `annotateProjRecI`, `annotateProjElimI`) and their walks are gone —
 every supported projection is a tower table entry, and the

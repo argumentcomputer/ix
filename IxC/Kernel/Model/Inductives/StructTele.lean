@@ -5,7 +5,7 @@ import IxC.Kernel.Semantics.Tower.TowerRec
 public section
 
 /-!
-# The direct structure's telescope walks (task #175 W4c, P3 module 3, part 3)
+# The direct structure's telescope walks
 
 The tower leaves' hereditary premises (`ParamsOkT`, `MkPre`, `RecPre`,
 `FieldsOkB`) walk a binder list in `cons` form; the opened-type record
@@ -72,7 +72,8 @@ theorem piTeleAV_of_stripPisAV :
   | k + 1, .app _ _, _, _, h | k + 1, .lam _ _ _, _, _, h
   | k + 1, .eqE _ _, _, _, h
   | k + 1, .fst _, _, _, h | k + 1, .snd _, _, _, h
-  | k + 1, .prf, _, _, h => by
+  | k + 1, .prf, _, _, h
+  | k + 1, .chain _ _, _, _, h | k + 1, .bgraph _ _, _, _, h => by
     simp [stripPisAV] at h
 
 /-- The peel's entries, read off the reversed context. -/

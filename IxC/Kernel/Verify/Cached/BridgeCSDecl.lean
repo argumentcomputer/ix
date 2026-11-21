@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.Verify.Cached.BridgeCS4
+public import IxC.Kernel.Verify.Cached.ModeledRun
 import IxC.Kernel.Verify.Inductives.StructWF
 import IxC.Kernel.Verify.Inductives.SumWF
 import IxC.Kernel.Verify.Inductives.FixWF
@@ -83,8 +84,7 @@ theorem installBasisFoldF_pushC :
     refine bindC_congr fun e => ?_
     rw [pure_bind, installBasisFoldF_pushC l e]
 
-/-! ### The direct simple-structure path's extending stages (task #175
-W4c: the cached run bridge restored) -/
+/-! ### The direct simple-structure path's extending stages (the cached run bridge restored) -/
 
 /-- The former's telescope stage through the index (task #195): the
 whnf loop reads the index's environment, the re-check is the indexed
@@ -100,8 +100,7 @@ theorem checkSumTeleF_pushC (ops : (CheckerOps md) (CheckCM md)) (env : Env md)
     obtain ⟨bs, body⟩ := q
     cases body <;> simp only [checkConstantValF_eq, mkFEnv_env]
 
-/-- The direct sum's type-former stage through the index (task #175
-sum-types). -/
+/-- The direct sum's type-former stage through the index. -/
 theorem checkSumIndF_pushC (ops : (CheckerOps md) (CheckCM md)) (env : Env md)
     (p : InductiveShape md) (capsOf : InductiveShape md → IndCaps md) :
     checkSumIndF ops (mkFEnv env) p capsOf
@@ -111,7 +110,7 @@ theorem checkSumIndF_pushC (ops : (CheckerOps md) (CheckCM md)) (env : Env md)
   simp only [checkConstantValF_eq, checkSumTeleF_pushC, push_mkFEnv, bind_assoc,
     pure_bind, ite_bindC, throwC_bind_eq] <;> rfl
 
-/-- The projection table through the index (task #175 S1). -/
+/-- The projection table through the index. -/
 theorem checkStructProjTableF_pushC (T C : Key md) (lps : List LevelParam)
     (nP nF : Nat) (rs : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal md)
     (env : Env md) :
@@ -124,12 +123,10 @@ theorem checkStructProjTableF_pushC (T C : Key md) (lps : List LevelParam)
 
 /-! ## `checkModeled` and the final bridge -/
 
-/-! ## The direct simple-structure install (task #82; the cached run
-bridge restored at task #175 W4c, the direct install being the only
+/-! ## The direct simple-structure install (the direct install is the only
 projection route) -/
 
-/-- The projection-table stage of the cached driver, run-level (task
-#175 S1): operation-free, the state is unchanged, the environment is
+/-- The projection-table stage of the cached driver, run-level: operation-free, the state is unchanged, the environment is
 the pure stage's. -/
 theorem checkStructProjTableS_run {T C : Key md} {lps : List LevelParam} {nP nF : Nat}
     {rs : Level} {guards : List Level} {off : Nat} {cvCa : ConstantVal md}
@@ -393,6 +390,11 @@ theorem checkNativeTailS_run (hμ : mode.verifiedChecks = true) {env env₁ : En
       p cvTa ctorsA = .ok (cvRa, rhss) := by
     rw [← checkNativeRec_datF]; exact hF₃
   have henv₃ := direct_fix_rec_wf henv₂ hF₃p
+  -- every stored rule fires
+  by_cases hpl : ctorsA.all (fun c => Expr.recRulePlain cvRa.type p.majorIdx p.rulePrefix p.nP
+      c.1.levelParams) = true
+  case neg => rw [if_neg hpl] at h; exact absurd h throwC_bind_ok
+  rw [if_pos hpl] at h
   -- the projection table at a structure-like block (task #210 Part A)
   rw [push_mkFEnv, show FEnv.find? (mkFEnv (consSumCtors p.nP ctorsA env₁))
     = (consSumCtors p.nP ctorsA env₁).find? from
@@ -424,6 +426,8 @@ theorem checkNativeTailS_run (hμ : mode.verifiedChecks = true) {env env₁ : En
   rw [if_pos hk, if_pos hr]
   rw [g₃]
   simp only [Except.bind]
+  rw [if_pos hpl]
+  try simp only [Bind.bind, Except.bind, pure, Except.pure]
   exact g₆
 
 /-- The direct recursive install at the cached driver is reproduced by
@@ -511,210 +515,6 @@ theorem checkNativeS_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv
   rw [g₂]
   simp only [Except.bind, ↓reduceIte]
   exact g₃
-
-/-- The inductive block at the cached driver is reproduced by the
-pure fueled `checkModeled`. -/
-theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv : EnvWF env)
-    {block : List (ConstantInfo md)} {s₀ : CState md} (hwf : CSOKF s₀)
-    {feOut : FEnv md} {s' : CState md}
-    (h : checkIndDeclSF mode (mkFEnv env) block s₀ = .ok (feOut, s')) :
-    CSOKF s' ∧ feOut = mkFEnv feOut.env ∧
-    ∃ F, checkModeled mode (fueledOps mode F) env block = .ok feOut.env := by
-  unfold checkIndDeclSF at h
-  have hbnAll : ∀ ci ∈ block.filter (fun ci => match ci with
-      | .recInfo _ _ _ _ => true | _ => false),
-      (block.map (·.name)).contains ci.name = true := by
-    intro ci hci
-    have : ci.name ∈ block.map (·.name) :=
-      List.mem_map_of_mem (List.mem_filter.mp hci).1
-    simpa using this
-  split at h
-  case isFalse hsplit =>
-    exact absurd h throwC_bind_ok
-  case isTrue hsplit =>
-  split at h
-  case _ cvT c0 cvC nP nF heq1 heq2 =>
-    obtain ⟨caps, s₁, hcaps, h⟩ := bindC_ok h
-    obtain ⟨hcapsv, rfl⟩ := pureC_ok hcaps
-    have hcapsv' : indBlockCaps mode env cvT cvC nP nF = caps := by
-      rw [← indBlockCapsF_eq]; exact hcapsv
-    obtain ⟨fe₂, s₂, hfold, h⟩ := bindC_ok h
-    -- the block's capability ev at its (single) inductive member:
-    -- the member IS the former the record was computed for
-    obtain ⟨hwf₂, hfe₂, henv₂, F₁, hF₁⟩ :=
-      foldIndMemberS_run hμ _ env henv hwf (by
-        intro ci hci cv caps₀ hceq
-        have hmemI : ci ∈ [ConstantInfo.indInfo cvT c0] := by
-          rw [← heq1]
-          exact List.mem_filter.mpr ⟨(List.mem_filter.mp hci).1, by subst hceq; rfl⟩
-        obtain ⟨rfl, -⟩ := ConstantInfo.indInfo.inj
-          (hceq ▸ List.mem_singleton.mp hmemI)
-        rw [← hcapsv']
-        exact Ix.Kernel.etaPins_of_indBlockCaps) hfold
-    obtain ⟨fe₃, s₃, hrecs, h⟩ := bindC_ok h
-    rw [hfe₂] at hrecs
-    obtain ⟨hwf₃, hfe₃, henv₃, F₂, hF₂⟩ :=
-      checkIndRecsS_run hμ henv₂ hbnAll hwf₂ hrecs
-    rw [hfe₃] at h
-    simp only [mkFEnv_find?] at h
-    rw [ctorResidualOkF_eq] at h
-    by_cases hctorRes : ctorResidualOk mode fe₃.env cvT.name cvC.name
-        cvT.levelParams nP nF caps.eta = true
-    case neg =>
-      rw [if_neg hctorRes] at h
-      exact absurd h throwC_bind_ok
-    rw [if_pos hctorRes] at h
-    by_cases hguard : (List.range nF).all
-        (fun j => (fe₃.env.find? (projFnName cvT.name j)).isNone) = true
-    case neg =>
-      rw [if_neg hguard] at h
-      exact absurd h throwC_bind_ok
-    rw [if_pos hguard] at h
-    -- the projection phase: structure-like blocks only (task #175
-    -- SigmaHom); off the shape the phase is the identity
-    by_cases hsl : ctorTargetsFam cvC.type cvT.name cvT.levelParams nP nF
-        = true
-    case neg =>
-      rw [if_neg hsl] at h
-      obtain ⟨hfe₄, rfl⟩ := pureC_ok h
-      subst hfe₄
-      refine ⟨hwf₃, rfl, max F₁ F₂, ?_⟩
-      have hF₁p := FueledM.up (Nat.le_max_left F₁ F₂) hF₁
-      rw [foldlM_atF] at hF₁p
-      simp only [checkIndMember_datF] at hF₁p
-      have hF₂p := FueledM.up (Nat.le_max_right F₁ F₂) hF₂
-      rw [checkIndRecs_datF] at hF₂p
-      have hF₁p' : List.foldlM (checkIndMember (fueledOps mode (max F₁ F₂))
-          (block.map (·.name)) caps) env _ = .ok fe₂.env := hF₁p
-      simp only [checkModeled]
-      split
-      case isFalse hgs => exact absurd hsplit hgs
-      case isTrue hgs =>
-      split
-      next cvT' c0' cvC' nP' nF' heq1' heq2' =>
-        have h12 : ([(.indInfo cvT c0 : ConstantInfo md)]) =
-            [(.indInfo cvT' c0' : ConstantInfo md)] :=
-          heq1.symm.trans heq1'
-        have h34 : ([(.ctorInfo cvC nP nF : ConstantInfo md)]) =
-            [(.ctorInfo cvC' nP' nF' : ConstantInfo md)] :=
-          heq2.symm.trans heq2'
-        simp only [List.cons.injEq, and_true,
-          ConstantInfo.indInfo.injEq, ConstantInfo.ctorInfo.injEq]
-          at h12 h34
-        obtain ⟨rfl, rfl⟩ := h12
-        obtain ⟨rfl, rfl, rfl⟩ := h34
-        simp only [Bind.bind, Except.bind, pure, Except.pure]
-        rw [hcapsv']
-        split
-        next err herr => exact nomatch (hF₁p'.symm.trans herr)
-        next v hok =>
-        obtain rfl : fe₂.env = v := by
-          have hv : (Except.ok fe₂.env : Except (CheckError md) (Env md)) = .ok v :=
-            hF₁p'.symm.trans hok
-          injection hv
-        split
-        next err herr => exact nomatch (hF₂p.symm.trans herr)
-        next v hok =>
-        obtain rfl : fe₃.env = v := by
-          have hv : (Except.ok fe₃.env : Except (CheckError md) (Env md)) = .ok v :=
-            hF₂p.symm.trans hok
-          injection hv
-        rw [if_pos hctorRes, if_pos hguard, if_neg hsl]
-        rfl
-      next x1 x2 hne' =>
-        exact (hne' cvT c0 cvC nP nF heq1 heq2).elim
-    rw [if_pos hsl] at h
-    obtain ⟨hwf₄, hfe₄, henv₄, F₃, hF₃⟩ :=
-      foldProjFnS_run hμ _ fe₃.env henv₃ hwf₃ h
-    refine ⟨hwf₄, hfe₄, max F₁ (max F₂ F₃), ?_⟩
-    have hF₁p := FueledM.up (Nat.le_max_left F₁ (max F₂ F₃)) hF₁
-    rw [foldlM_atF] at hF₁p
-    simp only [checkIndMember_datF] at hF₁p
-    have hF₂p := FueledM.up (Nat.le_trans (Nat.le_max_left F₂ F₃)
-      (Nat.le_max_right F₁ (max F₂ F₃))) hF₂
-    rw [checkIndRecs_datF] at hF₂p
-    have hF₃p := FueledM.up (Nat.le_trans (Nat.le_max_right F₂ F₃)
-      (Nat.le_max_right F₁ (max F₂ F₃))) hF₃
-    rw [foldlM_atF] at hF₃p
-    simp only [installProjFnStep_datF] at hF₃p
-    have hF₁p' : List.foldlM (checkIndMember
-        (fueledOps mode (max F₁ (max F₂ F₃)))
-        (block.map (·.name)) caps) env _ = .ok fe₂.env := hF₁p
-    have hF₃p' : List.foldlM (installProjFnStep mode
-        (fueledOps mode (max F₁ (max F₂ F₃)))
-        cvT.name cvC.name cvT.levelParams nP nF) fe₃.env _ =
-        .ok feOut.env := hF₃p
-    simp only [checkModeled]
-    split
-    case isFalse hgs => exact absurd hsplit hgs
-    case isTrue hgs =>
-    split
-    next cvT' c0' cvC' nP' nF' heq1' heq2' =>
-      have h12 : ([(.indInfo cvT c0 : ConstantInfo md)]) =
-          [(.indInfo cvT' c0' : ConstantInfo md)] :=
-        heq1.symm.trans heq1'
-      have h34 : ([(.ctorInfo cvC nP nF : ConstantInfo md)]) =
-          [(.ctorInfo cvC' nP' nF' : ConstantInfo md)] :=
-        heq2.symm.trans heq2'
-      simp only [List.cons.injEq, and_true,
-        ConstantInfo.indInfo.injEq, ConstantInfo.ctorInfo.injEq]
-        at h12 h34
-      obtain ⟨rfl, rfl⟩ := h12
-      obtain ⟨rfl, rfl, rfl⟩ := h34
-      simp only [Bind.bind, Except.bind, pure, Except.pure]
-      rw [hcapsv']
-      split
-      next err herr => exact nomatch (hF₁p'.symm.trans herr)
-      next v hok =>
-      obtain rfl : fe₂.env = v := by
-        have hv : (Except.ok fe₂.env : Except (CheckError md) (Env md)) = .ok v :=
-          hF₁p'.symm.trans hok
-        injection hv
-      split
-      next err herr => exact nomatch (hF₂p.symm.trans herr)
-      next v hok =>
-      obtain rfl : fe₃.env = v := by
-        have hv : (Except.ok fe₃.env : Except (CheckError md) (Env md)) = .ok v :=
-          hF₂p.symm.trans hok
-        injection hv
-      rw [if_pos hctorRes, if_pos hguard, if_pos hsl]
-      exact hF₃p'
-    next x1 x2 hne' =>
-      exact (hne' cvT c0 cvC nP nF heq1 heq2).elim
-  case _ =>
-    rename_i x1 x2 hne
-    obtain ⟨fe₂, s₂, hfold, h⟩ := bindC_ok h
-    obtain ⟨hwf₂, hfe₂, henv₂, F₁, hF₁⟩ :=
-      foldIndMemberS_run hμ _ env henv hwf
-        (fun _ _ _ _ _ => ⟨(fun h => absurd h (by (cases md <;> decide))), (fun h => absurd h (by (cases md <;> decide)))⟩) hfold
-    rw [hfe₂] at h
-    obtain ⟨hwf₃, hfe₃, henv₃, F₂, hF₂⟩ :=
-      checkIndRecsS_run hμ henv₂ hbnAll hwf₂ h
-    refine ⟨hwf₃, hfe₃, max F₁ F₂, ?_⟩
-    have hF₁p := FueledM.up (Nat.le_max_left F₁ F₂) hF₁
-    rw [foldlM_atF] at hF₁p
-    simp only [checkIndMember_datF] at hF₁p
-    have hF₂p := FueledM.up (Nat.le_max_right F₁ F₂) hF₂
-    rw [checkIndRecs_datF] at hF₂p
-    have hF₁p' : List.foldlM (checkIndMember (fueledOps mode (max F₁ F₂))
-        (block.map (·.name)) {}) env _ = .ok fe₂.env := hF₁p
-    simp only [checkModeled]
-    split
-    case isFalse hgs => exact absurd hsplit hgs
-    case isTrue hgs =>
-    split
-    next cvT' c0' cvC' nP' nF' heq1' heq2' =>
-      exact (hne cvT' c0' cvC' nP' nF' heq1' heq2').elim
-    next y1 y2 hne' =>
-      simp only [Bind.bind, Except.bind, pure, Except.pure]
-      split
-      next err herr => exact nomatch (hF₁p'.symm.trans herr)
-      next v hok =>
-      obtain rfl : fe₂.env = v := by
-        have hv : (Except.ok fe₂.env : Except (CheckError md) (Env md)) = .ok v :=
-          hF₁p'.symm.trans hok
-        injection hv
-      exact hF₂p
 
 /-- The inductive-block dispatch of the cached driver: a RECOGNISED
 block goes to `checkNativeS`, everything else to `checkIndDeclSF`,

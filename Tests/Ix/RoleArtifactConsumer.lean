@@ -41,7 +41,7 @@ private def withCheat (env : Env) (falseAddress : Address) : Env × Address × A
     info := .axio ⟨false, 0, .ref 0 #[]⟩, sharing := #[], refs := #[falseAddress], univs := #[] }
   let (env, cheatAddress) := insert env cheat
   let useCheat : Constant := {
-    info := .defn ⟨.thm, .safe, 0, .ref 0 #[], .ref 1 #[]⟩, sharing := #[]
+    info := .defn ⟨.thm, .safe, {}, 0, .ref 0 #[], .ref 1 #[]⟩, sharing := #[]
     refs := #[falseAddress, cheatAddress], univs := #[] }
   let (env, useAddress) := insert env useCheat
   (publish (publish env "cheat" cheatAddress) "useCheat" useAddress, cheatAddress, useAddress)

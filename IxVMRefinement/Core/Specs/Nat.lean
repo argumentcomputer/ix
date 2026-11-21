@@ -1,0 +1,1022 @@
+import IxVMRefinement.Core.Specs.Common
+
+/-! # Specs of the `Nat` and `String` natives: `KernelNatPrim`, `KernelKlimbs`, the division hints
+
+A `Nat` literal is a list of little-endian 64-bit limbs (`KernelTypes::KLimbs`), read as its
+value (`RepLimbs`); a limb list may carry trailing zero limbs, so the limb functions are stated on
+values, and a result is claimed canonical (`RepLimbsC`, no trailing zero limb) only where the code
+normalizes it. Every literal node the core builds has canonical limbs (`Convert::bytes_to_limbs`
+and every `mk_nat_lit` argument are normalized), and `Nat.beq` compares limbs structurally
+(`KernelLevels::klimbs_eq`), so the specs that read or build literal nodes are stated at canonical
+limbs; `try_extract_nat`'s claim needs the term seam to record that a literal's limbs are canonical.
+
+The native reductions target the kernel's rules: `Red.natLit`, `Red.natZeroLit`, `Red.strLit`,
+`Red.natSucc`, `Red.natOp` (with `natOpResult`, the `Nat.pow` cap included),
+`Red.natAddSucc`, `Red.natAddZero`, and the congruences `Red.appArg`/`appFn` for the stuck forms
+the circuit keeps (`mk_nat_offset_stuck`, `mk_nat_binop_stuck`).
+
+**Role facts.** The dispatchers fire on an operation's role (`natPrimOp`, the family-`1` column of
+`KernelRoleSpec::role_prim_family`); the rules' stored-shape guards come from `EnvFacts`
+(`natLit`, `strLit`, `natOps`, `natAdd`) once the roles they name are bound. A role the circuit
+reads (`role_is`, `role_addr`, `role_used_implicitly`) is bound; the roles of its block and its
+dependencies are then bound too (`RoleTable.check`, through `EnvFacts.tableWf`), and the key of a
+bound address is its role (`keyOf`, no address bound twice). A proof of a spec below reads those
+facts from `ScopedCoreBase`; the one environment guard a spec states is `strLitSupported`, which
+`str_lit_to_ctor` gives and `str_lit_delta_step` takes. -/
+
+namespace IxVM.Refinement.Core.Specs.Nat
+
+open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open Aiur.Library Aiur.Library.List
+open Ix.Kernel.Rules (Red)
+
+set_option linter.unusedVariables false
+
+/-! ## Vocabulary -/
+
+/-- **A canonical limb list**: `RepLimbs` with no trailing zero limb (the empty list is `0`), so
+the list is a function of its value. -/
+def RepLimbsC (h : Heap F) (n : Nat) (p : SourceValue F) : Prop :=
+  ∃ limbs, RepList limbListEnum RepU64 h limbs p ∧ limbsVal limbs = n ∧ limbs.getLast? ≠ some 0
+
+/-- **The `Nat` primitive a role is**: its operation code in `KernelRoleSpec::role_prim_family`
+(family `1`), by role. -/
+def natPrimOp : Ix.Kernel.Role → Option Nat
+  | .natSucc => some 1
+  | .natPred => some 2
+  | .natAdd => some 3
+  | .natSub => some 4
+  | .natMul => some 5
+  | .natDiv => some 6
+  | .natMod => some 7
+  | .natGcd => some 8
+  | .natPow => some 9
+  | .natLand => some 10
+  | .natLor => some 11
+  | .natXor => some 12
+  | .natShiftLeft => some 13
+  | .natShiftRight => some 14
+  | .natBeq => some 15
+  | .natBle => some 16
+  | _ => none
+
+/-- **The address `a` is bound to the `Nat` operation with code `o`, a role in force**, by the
+run's table (what `KernelWhnf::prim_family` reads before it dispatches: `role_index_of`'s binding
+and `role_of`'s group test). -/
+def NatOpAt (c : ScopedCtx) (a : Bytes.Address) (o : Nat) : Prop :=
+  ∃ r, natPrimOp r = some o ∧ c.t.addressOf? r = some (ixAddr a) ∧ c.inForce r
+
+/-- **The `Int` primitive a role is**: its operation code in `KernelRoleSpec::role_prim_family`
+(family `6`), by role. -/
+def intPrimOp : Ix.Kernel.Role → Option Nat
+  | .intNeg => some 1
+  | .intNatAbs => some 2
+  | .intBmod => some 3
+  | .intBdiv => some 4
+  | .intPow => some 5
+  | .intAdd => some 6
+  | .intSub => some 7
+  | .intMul => some 8
+  | .intEmod => some 9
+  | .intEdiv => some 10
+  | _ => none
+
+/-- **The address `a` is bound to the `Int` operation with code `o`, a role in force.** -/
+def IntOpAt (c : ScopedCtx) (a : Bytes.Address) (o : Nat) : Prop :=
+  ∃ r, intPrimOp r = some o ∧ c.t.addressOf? r = some (ixAddr a) ∧ c.inForce r
+
+/-- **The `String`/`Char` primitive a role is**: its operation code in family `2`, by role. -/
+def strPrimOp : Ix.Kernel.Role → Option Nat
+  | .stringOfList => some 1
+  | .stringUtf8ByteSize => some 2
+  | .stringBack => some 3
+  | .stringToByteArray => some 4
+  | .stringDecEq => some 5
+  | .stringAppend => some 6
+  | .charUtf8Size => some 7
+  | _ => none
+
+/-- **The address `a` is bound to the `String`/`Char` operation with code `o`, a role in force.** -/
+def StrOpAt (c : ScopedCtx) (a : Bytes.Address) (o : Nat) : Prop :=
+  ∃ r, strPrimOp r = some o ∧ c.t.addressOf? r = some (ixAddr a) ∧ c.inForce r
+
+/-- **The `BitVec` primitive a role is**: its operation code in family `3`, by role. -/
+def bvPrimOp : Ix.Kernel.Role → Option Nat
+  | .bitVecToNat => some 1
+  | .bitVecUlt => some 2
+  | _ => none
+
+/-- **The address `a` is bound to the `BitVec` operation with code `o`, a role in force.** -/
+def BvOpAt (c : ScopedCtx) (a : Bytes.Address) (o : Nat) : Prop :=
+  ∃ r, bvPrimOp r = some o ∧ c.t.addressOf? r = some (ixAddr a) ∧ c.inForce r
+
+/-- The signed integer represented by a sign bit `s ∈ {0, 1}` and magnitude `m : Nat`:
+zero is always `Int.ofNat 0`; `s = 0` gives `Int.ofNat m`, `s = 1` with `m > 0` gives
+`Int.negSucc (m - 1)`. -/
+def intOfSignMag (s : F) (m : Nat) : Int :=
+  if s = 0 ∨ m = 0 then Int.ofNat m else Int.negSucc (m - 1)
+
+/-- **The character list a string literal expands to**, over the expansion's `List.nil Char`
+(`N`), `List.cons Char` (`C`) and `Char.ofNat` (`K`): `strLitToConstructor`'s fold. -/
+def charList (N C K : KExpr) : List Char → KExpr
+  | [] => N
+  | ch :: cs => .app (.app C (.app K (.lit (.natVal ch.toNat)))) (charList N C K cs)
+
+/-- The `Nat` literal of a value. -/
+abbrev natLit (n : Nat) : KExpr := .lit (.natVal n)
+
+abbrev mkAppN : KExpr → List KExpr → KExpr := Ix.Kernel.Expr.mkAppN
+
+/-! ## `KernelKlimbs` -/
+
+/-- `klimbs_succ(n)`: the successor, `n + 1`; canonical when the input is (a carry out of the
+last limb adds a limb `1`). -/
+def klimbs_succ : SpecFn := fun c args h r h' calls =>
+  ∀ a, args = [a] → CoreGood c calls → ∀ n,
+    (RepLimbs h n a → RepLimbs h' (n + 1) r) ∧ (RepLimbsC h n a → RepLimbsC h' (n + 1) r)
+
+/-- `klimbs_add_carry(a, b, carry)` with a carry `0` or `1`: `a + b + carry` (the callers pass
+`0`, and recurse with the limbs' carry, which is at most `1`). -/
+def klimbs_add_carry : SpecFn := fun c args h r h' calls =>
+  ∀ a b (k : F), args = [a, b, .field k] → CoreGood c calls → (ZMod.val k) ≤ 1 →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbs h' (n + m + (ZMod.val k)) r
+
+/-- `klimbs_add(a, b)`: `a + b`. -/
+def klimbs_add : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbs h' (n + m) r
+
+/-- `klimbs_sub_borrow(a, b, borrow)` with a borrow `0` or `1`: the borrow out is `0` exactly when
+`b + borrow ≤ a`, and then the limbs are `a - b - borrow`; at borrow out `1` the limbs are not
+claimed. -/
+def klimbs_sub_borrow : SpecFn := fun c args h r h' calls =>
+  ∀ a b (β : F), args = [a, b, .field β] → CoreGood c calls → (ZMod.val β) ≤ 1 →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b →
+      ∃ (res : SourceValue F) (bf : F), r = .tuple [res, .field bf] ∧
+        ((bf = 0 ∧ m + (ZMod.val β) ≤ n ∧ RepLimbs h' (n - m - (ZMod.val β)) res) ∨
+          (bf = 1 ∧ n < m + (ZMod.val β)))
+
+/-- `klimbs_normalize(n)`: the same value, canonical. -/
+def klimbs_normalize : SpecFn := fun c args h r h' calls =>
+  ∀ a, args = [a] → CoreGood c calls → ∀ n, RepLimbs h n a → RepLimbsC h' n r
+
+/-- `klimbs_sub(a, b)`: truncated subtraction `a - b` (`Nat`'s), canonical. -/
+def klimbs_sub : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbsC h' (n - m) r
+
+/-- `klimbs_le(a, b)`: `1` exactly when `a ≤ b` (exact both ways). -/
+def klimbs_le : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → r = .field (if n ≤ m then 1 else 0)
+
+/-- `klimbs_dec(a)`: truncated predecessor `a - 1`, canonical. -/
+def klimbs_dec : SpecFn := fun c args h r h' calls =>
+  ∀ a, args = [a] → CoreGood c calls → ∀ n, RepLimbs h n a → RepLimbsC h' (n - 1) r
+
+/-- `divmod_256(x, q)`: `(x mod 256, q + x div 256)`. A derivation exists only at `x < 2^32`
+(the range of `UInt32::less_than_fields`, which it tests), which the claim records. -/
+def divmod_256 : SpecFn := fun c args h r h' calls =>
+  ∀ (x q : F), args = [.field x, .field q] → CoreGood c calls → (ZMod.val x) < 2 ^ 32 ∧
+    r = .tuple [.field (((ZMod.val x) % 256 : Nat) : F),
+      .field (q + (((ZMod.val x) / 256 : Nat) : F))] ∧ h' = h
+
+/-- `klimbs_mul(a, b)`: `a * b` (not canonical: a zero factor can leave zero limbs). -/
+def klimbs_mul : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbs h' (n * m) r
+
+/-- `klimbs_mul_single(a_limb, b, carry)`: `a_limb * b + carry`, for 64-bit `a_limb` and
+`carry`. -/
+def klimbs_mul_single : SpecFn := fun c args h r h' calls =>
+  ∀ al b cr, args = [al, b, cr] → CoreGood c calls →
+    ∀ (x y : UInt64) m, RepU64 h x al → RepU64 h y cr → RepLimbs h m b →
+      RepLimbs h' (x.toNat * m + y.toNat) r
+
+/-- `klimbs_is_zero(x)`: `1` exactly when the value is `0` (exact both ways). -/
+def klimbs_is_zero : SpecFn := fun c args h r h' calls =>
+  ∀ a, args = [a] → CoreGood c calls → ∀ n, RepLimbs h n a → r = .field (if n = 0 then 1 else 0)
+
+/-- `klimbs_div_mod(a, b)`: `(a / b, a % b)` (`Nat`'s, so `(0, a)` at `b = 0`), both canonical.
+The hint (`IxVMCompat::ordinary_div_mod`) is checked: `q * b + r = a`, `q = 0` at `b = 0`, and
+`r < b` otherwise; so the claim does not rest on the hint. -/
+def klimbs_div_mod : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b →
+      ∃ q rr, r = .tuple [q, rr] ∧ RepLimbsC h' (n / m) q ∧ RepLimbsC h' (n % m) rr
+
+/-- `klimbs_div(a, b)`: `a / b`, canonical. -/
+def klimbs_div : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbsC h' (n / m) r
+
+/-- `klimbs_mod(a, b)`: `a % b`, canonical. -/
+def klimbs_mod : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbsC h' (n % m) r
+
+/-- `klimbs_gcd(a, b)`: `Nat.gcd a b` (not canonical: at `b = 0` it returns `a` as given). -/
+def klimbs_gcd : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbs h' (Nat.gcd n m) r
+
+/-- `klimbs_pow(base, exp)`: `base ^ exp`, at every exponent (square and multiply). -/
+def klimbs_pow : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbs h' (n ^ m) r
+
+/-- `klimbs_land(a, b)`: `Nat.land a b` (limbwise, truncated to the shorter list). -/
+def klimbs_land : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbs h' (Nat.land n m) r
+
+/-- `klimbs_lor(a, b)`: `Nat.lor a b`. -/
+def klimbs_lor : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbs h' (Nat.lor n m) r
+
+/-- `klimbs_xor_op(a, b)`: `Nat.xor a b`. -/
+def klimbs_xor_op : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbs h' (Nat.xor n m) r
+
+/-- `klimbs_shl(a, n)`: `Nat.shiftLeft a n` (`a * 2^n`). -/
+def klimbs_shl : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbs h' (Nat.shiftLeft n m) r
+
+/-- `klimbs_shr(a, n)`: `Nat.shiftRight a n` (`a / 2^n`). -/
+def klimbs_shr : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbs h' (Nat.shiftRight n m) r
+
+/-! ## The division hints (`IxVMCompat`) -/
+
+/-- `IxVMCompat::divide_grow(a, b)` at a nonzero divisor: `(a / b, a % b)` (doubling the
+divisor; no claim at `b = 0`, where it does not terminate). Values only. -/
+def divide_grow : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b → 0 < m →
+      ∃ q rr, r = .tuple [q, rr] ∧ RepLimbs h' (n / m) q ∧ RepLimbs h' (n % m) rr
+
+/-- `IxVMCompat::ordinary_div_mod(a, b)`: `(a / b, a % b)` (`Nat`'s, `(0, a)` at `b = 0`).
+Values only. `klimbs_div_mod` checks the result again, so it reads from this spec only that the
+two results are limb lists. -/
+def ordinary_div_mod : SpecFn := fun c args h r h' calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ n m, RepLimbs h n a → RepLimbs h m b →
+      ∃ q rr, r = .tuple [q, rr] ∧ RepLimbs h' (n / m) q ∧ RepLimbs h' (n % m) rr
+
+/-! ## `KernelNatPrim`: construction -/
+
+/-- `mk_bool(rc, g)`: the closed `Bool.false` at `g = 0`, else `Bool.true` (the roles' keys at
+an empty level list: `natOpResult`'s `Bool` results). -/
+def mk_bool : SpecFn := fun c args h r h' calls =>
+  ∀ rc (g : F), args = [rc, .field g] → CoreGood c calls → c.rc h rc →
+    c.tmc h' (.const (if g = 0 then Ix.Kernel.boolFalseName else Ix.Kernel.boolTrueName) []) r
+
+/-- `mk_nat_lit(n)`: the closed literal of the limbs' value, at canonical limbs (every literal
+node the core builds has canonical limbs). -/
+def mk_nat_lit : SpecFn := fun c args h r h' calls =>
+  ∀ a, args = [a] → CoreGood c calls → ∀ n, RepLimbsC h n a → c.tmc h' (natLit n) r
+
+/-- `np_apply_spine(head, spine)`: the application `mkAppN head spine`. -/
+def np_apply_spine : SpecFn := fun c args h r h' calls =>
+  ∀ hd sp, args = [hd, sp] → CoreGood c calls →
+    ∀ d Γ H As, c.tm d Γ h H hd → c.tml d Γ h As sp → c.tm d Γ h' (mkAppN H As) r
+
+/-- `lvls_empty(lvls)`: `1` exactly when the level list is empty (exact both ways). -/
+def lvls_empty : SpecFn := fun c args h r h' calls =>
+  ∀ lp, args = [lp] → CoreGood c calls →
+    ∀ us, LvListRep h us lp → r = .field (if us = [] then 1 else 0) ∧ h' = h
+
+/-- `split_u32(x)`: the four base-256 digits of `x`, least significant first. A derivation exists
+only at `x < 2^32` (`divmod_256`), which the claim records. -/
+def split_u32 : SpecFn := fun c args h r h' calls =>
+  ∀ (x : F), args = [.field x] → CoreGood c calls → (ZMod.val x) < 2 ^ 32 ∧
+    r = .tuple [.field (((ZMod.val x) % 256 : Nat) : F), .field (((ZMod.val x) / 256 % 256 : Nat) : F),
+      .field (((ZMod.val x) / 65536 % 256 : Nat) : F), .field (((ZMod.val x) / 16777216 % 256 : Nat) : F)] ∧
+      h' = h
+
+/-- `klimbs_from_g(x)`: the canonical limbs of `x`'s value. The byte split is range-checked and
+recomposed (`constrain_eq!`), so a derivation exists only at `x < 2^32`, which the claim
+records. -/
+def klimbs_from_g : SpecFn := fun c args h r h' calls =>
+  ∀ (x : F), args = [.field x] → CoreGood c calls → (ZMod.val x) < 2 ^ 32 ∧ RepLimbsC h' (ZMod.val x) r
+
+/-- `mk_nat_offset_stuck(rc, base_w, n, post)`: tag `1`, and `base + n` in the offset rules'
+spelling (`natAddLit`: the base itself at `n = 0`, else `Nat.add base (lit n)`), applied to
+`post`. The `Nat.add` head is the role's key at an empty level list. -/
+def mk_nat_offset_stuck : SpecFn := fun c args h r h' calls =>
+  ∀ rc b np post, args = [rc, b, np, post] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ B n Ps, c.tm d Γ h B b → RepLimbsC h n np → c.tml d Γ h Ps post →
+      ∃ x, r = .tuple [.field 1, x] ∧
+        c.tm d Γ h' (mkAppN (Ix.Kernel.Rules.natAddLit B n) Ps) x
+
+/-- `mk_nat_binop_stuck(op_addr, base_w, n, post)`: the operation applied to the base and the
+literal, applied to `post`: `mkAppN (op base (lit n)) post`, the operation at its address's key
+and an empty level list. -/
+def mk_nat_binop_stuck : SpecFn := fun c args h r h' calls =>
+  ∀ ap b np post, args = [ap, b, np, post] → CoreGood c calls →
+    ∀ a d Γ B n Ps, RepAddr h a ap → c.κ (ixAddr a) ≠ unresolvedKey → c.tm d Γ h B b →
+      RepLimbsC h n np → c.tml d Γ h Ps post →
+      c.tm d Γ h' (mkAppN (.app (.app (.const (c.κ (ixAddr a)) []) B) (natLit n)) Ps) r
+
+/-- `build_succ_offset(rc, base, lit)`: `Nat.succ (base + (lit - 1))` in the offset rules'
+spelling (`natAddLit`), the right side of `Red.natAddSucc`. At `lit = 0` it builds
+`Nat.succ base` (truncated predecessor). -/
+def build_succ_offset : SpecFn := fun c args h r h' calls =>
+  ∀ rc b lp, args = [rc, b, lp] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ B n, c.tm d Γ h B b → RepLimbs h n lp →
+      c.tm d Γ h' (.app (.const Ix.Kernel.natSuccName []) (Ix.Kernel.Rules.natAddLit B (n - 1))) r
+
+/-! ## `KernelNatPrim`: UTF-8 and string literals -/
+
+/-- `utf8_cont(b)`: a continuation byte's payload. A derivation exists only at
+`128 ≤ b < 192`. -/
+def utf8_cont : SpecFn := fun c args h r h' calls =>
+  ∀ bp, args = [bp] → CoreGood c calls → ∀ b : UInt8, RepU8 h b bp →
+    128 ≤ b.toNat ∧ b.toNat < 192 ∧ r = .field ((b.toNat - 128 : Nat) : F) ∧ h' = h
+
+/-- `utf8_decode_one(b0, rest)`: one UTF-8 scalar value off the front. A derivation exists only
+on a valid (shortest-form, non-surrogate, at most `U+10FFFF`) encoding, so the bytes start with
+the encoding (`String.utf8EncodeChar`) of a character whose code point is the result, and the rest
+is returned. -/
+def utf8_decode_one : SpecFn := fun c args h r h' calls =>
+  ∀ bp rest, args = [bp, rest] → CoreGood c calls → ∀ (b : UInt8) bs, RepU8 h b bp → RepBytes h bs rest →
+    ∃ (ch : Char) (bs' : List UInt8) (rem : SourceValue F), b :: bs = String.utf8EncodeChar ch ++ bs' ∧
+      r = .tuple [.field (ch.toNat : F), rem] ∧ RepBytes h' bs' rem
+
+/-- `utf8_validate(bs)`: the bytes decode as UTF-8 (`String.fromUTF8?`, as the kernel reader
+decodes a string literal's blob): what `Convert` reads off a literal's blob, and what the term
+seam's `StrBytes` needs. -/
+def utf8_validate : SpecFn := fun c args h r h' calls =>
+  ∀ bp, args = [bp] → CoreGood c calls → ∀ bs, RepBytes h bs bp → ∃ s, StrBytes s bs
+
+/-- `build_char_list(bs, nil_app, cons_partial, con_const)`: the character list of the string
+whose UTF-8 encoding the bytes are, over the given `List.nil Char`, `List.cons Char` and
+`Char.ofNat` (`charList`): there are characters whose encodings (`String.utf8EncodeChar`, one
+each) the bytes are, and the result is their list. The characters are the string's: a byte string
+has at most one such reading (`List.utf8Encode` is injective). -/
+def build_char_list : SpecFn := fun c args h r h' calls =>
+  ∀ bp n cp k, args = [bp, n, cp, k] → CoreGood c calls → ∀ bs, RepBytes h bs bp →
+    ∃ cs : List Char, cs.flatMap String.utf8EncodeChar = bs ∧
+      ∀ d Γ N C K, c.tm d Γ h N n → c.tm d Γ h C cp → c.tm d Γ h K k →
+        c.tm d Γ h' (charList N C K cs) r
+
+/-- `str_lit_to_ctor(rc, bs)`: the closed constructor form of the string literal
+(`strLitToConstructor s`, the right side of `Red.strLit`), for the string `s` the bytes decode to
+(`StrBytes`: `String.fromUTF8?`).
+The constants are the roles' (`role_used_implicitly`: bound, and checked), at the level `0`
+where `strLitToConstructor` writes one. It also gives the rule's guard, `strLitSupported`: the
+five roles it reads are bound, hence (their blocks and dependencies) all ten of
+`EnvFacts.strLit`; its callers need the guard for `Red.strLit` and for `str_lit_delta_step`. -/
+def str_lit_to_ctor : SpecFn := fun c args h r h' calls =>
+  ∀ rc bp, args = [rc, bp] → CoreGood c calls → c.rc h rc →
+    ∀ bs s, RepBytes h bs bp → StrBytes s bs →
+      Ix.Kernel.strLitSupported c.env = true ∧ c.tmc h' (Ix.Kernel.strLitToConstructor s) r
+
+/-- `str_lit_delta_step(rc, expanded, types)` on a `String.ofList` application (the form
+`str_lit_to_ctor` builds, its only callers' input), under the string support
+(`strLitSupported`, which `str_lit_to_ctor` gives): a reduct, by `Red.delta` at the role's
+definition (level-free by `strLitSupported`'s `stringOfListTyOk`: the circuit instantiates the
+value at no levels without testing the count), `Red.betaGate` at a `never` binder
+(`level_is_not_zero`), and `whnf_nd`'s `Red`. Not stated for another head. -/
+def str_lit_delta_step : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    Ix.Kernel.strLitSupported c.env = true →
+    ∀ d Γ, c.types Γ h d types → ∀ L, c.tm d Γ h (.app (.const Ix.Kernel.stringOfListName []) L) e →
+      ∃ E', c.tm d Γ h' E' r ∧ Red c.env d (.app (.const Ix.Kernel.stringOfListName []) L) E'
+
+/-- `str_lit_to_ctor_app_or_self(rc, e)`: a reduct (`Red.strLit` then
+`str_lit_delta_step` at depth `0` lifted to `d`, or `Red.refl` on any other term). -/
+def str_lit_to_ctor_app_or_self : SpecFn := fun c args h r h' calls =>
+  ∀ rc e, args = [rc, e] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ E, c.tm d Γ h E e → ∃ E', c.tm d Γ h' E' r ∧ Red c.env d E E'
+
+/-! ## `KernelNatPrim`: reading and dispatching -/
+
+/-- `try_extract_nat(rc, e)`: tag `1` reads a `Nat` value off a literal, `Nat.zero`, or
+`Nat.succ x` with `x` readable, each at an empty level list: the term reduces to that literal
+(`Red.refl`, `Red.natZeroLit`, `Red.natSucc`; `natLitSupported` from `EnvFacts.natLit`, the
+`Nat` block being bound once `role_is` finds `Nat.zero` or `Nat.succ`). The limbs are canonical:
+a literal node's limbs are canonical (every producer normalizes; the term seam must record it at
+`Tm.litNat`), `Nat.zero` reads as the empty list, and `klimbs_succ` keeps canonicity. Nothing at
+tag `0`. -/
+def try_extract_nat : SpecFn := fun c args h r h' calls =>
+  ∀ rc e, args = [rc, e] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ E, c.tm d Γ h E e → ∀ x, r = .tuple [.field 1, x] →
+      ∃ n, RepLimbsC h' n x ∧ Red c.env d E (natLit n)
+
+/-- `try_extract_nat_app(rc, f, a)`: tag `1` at `f = Nat.succ` (empty level list) and `a`
+readable: the application reduces to the successor literal (`Red.natSucc`). -/
+def try_extract_nat_app : SpecFn := fun c args h r h' calls =>
+  ∀ rc f a, args = [rc, f, a] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ Fh A, c.tm d Γ h Fh f → c.tm d Γ h A a → ∀ x, r = .tuple [.field 1, x] →
+      ∃ n, RepLimbsC h' n x ∧ Red c.env d (.app Fh A) (natLit n)
+
+/-- `try_nat_binop_addr(rc, op, a, b)`: tag `1` gives the closed term `natOpResult` gives for the
+operation with code `op` on the two values (a canonical literal, or a `Bool` constructor;
+`Nat.pow` only up to the exponent cap `2^24`, as `natOpResult`). Nothing at tag `0` (an
+operation it does not fold, `succ` and `pred` among them). -/
+def try_nat_binop_addr : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) a b, args = [rc, .field o, a, b] → CoreGood c calls → c.rc h rc →
+    ∀ n m, RepLimbsC h n a → RepLimbsC h m b → ∀ x, r = .tuple [.field 1, x] →
+      ∀ role, natPrimOp role = some (ZMod.val o) →
+        ∃ E, Ix.Kernel.natOpResult (.role role) n m = some E ∧ c.tmc h' E x
+
+/-- `try_match_nat_add(rc, head, args)`: tag `1` at a `Nat.add` head (any level list) applied to
+exactly two arguments, the second a `Nat` literal: the base and the literal's limbs. -/
+def try_match_nat_add : SpecFn := fun c args h r h' calls =>
+  ∀ rc hd sp, args = [rc, hd, sp] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ H As, c.tm d Γ h H hd → c.tml d Γ h As sp → ∀ b l, r = .tuple [.field 1, b, l] →
+      ∃ us B n, H = .const Ix.Kernel.natAddName us ∧ As = [B, natLit n] ∧
+        c.tm d Γ h' B b ∧ RepLimbsC h' n l
+
+/-- `cleanup_nat_offset_major(rc, e)`: a reduct: `Nat.add b (lit (k + 1))` becomes
+`Nat.succ (b + k)` (`Red.natAddSucc`; `natLitSupported` and `natAddTyOk` from `EnvFacts`), any
+other term itself. -/
+def cleanup_nat_offset_major : SpecFn := fun c args h r h' calls =>
+  ∀ rc e, args = [rc, e] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ E, c.tm d Γ h E e → ∃ E', c.tm d Γ h' E' r ∧ Red c.env d E E'
+
+/-- `try_nat_offset_dispatch(rc, head_addr, op, a0_w, nb, spine)`, at a head bound to the
+operation `op`, a spine `A₀ :: A₁ :: post` whose first argument `a0_w` represents and whose second
+reduces to the literal `nb`: a nonzero tag gives a reduct of the applied operation, its stuck
+form (`Nat.add`: `A₀ + nb` by `Red.natAddZero` at `0`, else `Red.appArg`; `div`/`mod` by
+`Red.appArg`). -/
+def try_nat_offset_dispatch : SpecFn := fun c args h r h' calls =>
+  ∀ rc ap (o : F) a0 nb sp, args = [rc, ap, .field o, a0, nb, sp] → CoreGood c calls → c.rc h rc →
+    ∀ a, RepAddr h a ap → NatOpAt c a (ZMod.val o) →
+      ∀ d Γ A₀ A₁ Ps n, c.tml d Γ h (A₀ :: A₁ :: Ps) sp → c.tm d Γ h A₀ a0 → RepLimbsC h n nb →
+        Red c.env d A₁ (natLit n) →
+        ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+          ∃ E', c.tm d Γ h' E' x ∧
+            Red c.env d (mkAppN (.const (c.κ (ixAddr a)) []) (A₀ :: A₁ :: Ps)) E'
+
+/-- `try_nat_binop_dispatch(rc, head_addr, op, spine, spine_len)`, at a head bound to the
+operation `op`: a nonzero tag gives a reduct of the operation applied (at an empty level list)
+to the spine: `Red.natOp` on two readable arguments, or the offset dispatch's stuck form. -/
+def try_nat_binop_dispatch : SpecFn := fun c args h r h' calls =>
+  ∀ rc ap (o : F) sp sl, args = [rc, ap, .field o, sp, sl] → CoreGood c calls → c.rc h rc →
+    ∀ a, RepAddr h a ap → NatOpAt c a (ZMod.val o) →
+      ∀ d Γ As, c.tml d Γ h As sp →
+        ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+          ∃ E', c.tm d Γ h' E' x ∧ Red c.env d (mkAppN (.const (c.κ (ixAddr a)) []) As) E'
+
+/-- `try_nat_dispatch(rc, head_addr, op, spine, types)` (the spine already head-normalized by its
+caller), at a head bound to the operation `op`: a nonzero tag gives a reduct of the operation
+applied (at an empty level list) to the spine (`Red.natSucc` for `Nat.succ`; the binary
+dispatch otherwise; `Nat.pred` is not native). -/
+def try_nat_dispatch : SpecFn := fun c args h r h' calls =>
+  ∀ rc ap (o : F) sp types, args = [rc, ap, .field o, sp, types] → CoreGood c calls → c.rc h rc →
+    ∀ a, RepAddr h a ap → NatOpAt c a (ZMod.val o) →
+      ∀ d Γ, c.types Γ h d types → ∀ As, c.tml d Γ h As sp →
+        ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+          ∃ E', c.tm d Γ h' E' x ∧ Red c.env d (mkAppN (.const (c.κ (ixAddr a)) []) As) E'
+
+/-! ## `KernelNatPrim`: `Int` natives -/
+
+/-- `try_extract_nat_or_whnf(rc, e, types)`: tag `1` reads a `Nat` value from `e` directly or
+after `whnf(rc, e, types)`. -/
+def try_extract_nat_or_whnf : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → ∀ x, r = .tuple [.field 1, x] →
+      ∃ n, RepLimbsC h' n x ∧ Red c.env d E (natLit n)
+
+/-- `try_extract_int_prim(rc, e, types)`: tag `1` reads a signed integer literal (`Int.ofNat n` or
+`Int.negSucc n`, empty level list) whose argument extracts as a `Nat` directly or after `whnf`. -/
+def try_extract_int_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → ∀ sv m, r = .tuple [.field 1, sv, m] →
+      ∃ (s : F) (n : Nat), sv = .field s ∧ (s = 0 ∨ s = 1) ∧ (s = 1 → 0 < n) ∧ RepLimbsC h' n m ∧
+        Red c.env d E (intLitExpr (intOfSignMag s n))
+
+/-- `mk_int_prim(rc, sign, magnitude)`: the closed expression `intLitExpr (intOfSignMag sign m)`
+under `PrimEqnEnv c.env` (which keeps `Int.ofNat` and `Int.negSucc` stored). -/
+def mk_int_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (s : F) mag, args = [rc, .field s, mag] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env → (s = 0 ∨ s = 1) → ∀ m, RepLimbs h m mag →
+      c.tmc h' (intLitExpr (intOfSignMag s m)) r
+
+/-- `int_add_prim(rc, sa, a, sb, b)`: the signed sum. -/
+def int_add_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (sa : F) a (sb : F) b, args = [rc, .field sa, a, .field sb, b] → CoreGood c calls →
+    c.rc h rc → PrimEqnEnv c.env → (sa = 0 ∨ sa = 1) → (sb = 0 ∨ sb = 1) →
+    ∀ na nb, RepLimbs h na a → RepLimbs h nb b →
+      c.tmc h' (intLitExpr (intOfSignMag sa na + intOfSignMag sb nb)) r
+
+/-- `int_emod_prim(rc, sa, a, b)`: the Euclidean remainder modulo `nb` (equals `x.emod y` for
+any sign of `y` with magnitude `nb`). -/
+def int_emod_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (sa : F) a b, args = [rc, .field sa, a, b] → CoreGood c calls →
+    c.rc h rc → PrimEqnEnv c.env → (sa = 0 ∨ sa = 1) →
+    ∀ na nb, RepLimbs h na a → RepLimbs h nb b →
+      c.tmc h' (intLitExpr ((intOfSignMag sa na).emod (Int.ofNat nb))) r
+
+/-- `int_ediv_prim(rc, sa, a, sb, b)`: the Euclidean quotient. -/
+def int_ediv_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (sa : F) a (sb : F) b, args = [rc, .field sa, a, .field sb, b] → CoreGood c calls →
+    c.rc h rc → PrimEqnEnv c.env → (sa = 0 ∨ sa = 1) → (sb = 0 ∨ sb = 1) →
+    ∀ na nb, RepLimbs h na a → RepLimbs h nb b →
+      c.tmc h' (intLitExpr ((intOfSignMag sa na).ediv (intOfSignMag sb nb))) r
+
+/-- `int_bmod_prim(rc, sa, a, m)`: the balanced remainder modulo `m`. -/
+def int_bmod_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (sa : F) a m, args = [rc, .field sa, a, m] → CoreGood c calls →
+    c.rc h rc → PrimEqnEnv c.env → (sa = 0 ∨ sa = 1) →
+    ∀ na nm, RepLimbs h na a → RepLimbs h nm m →
+      c.tmc h' (intLitExpr ((intOfSignMag sa na).bmod nm)) r
+
+/-- `int_bdiv_prim(rc, sa, a, m)`: the balanced quotient modulo `m`. -/
+def int_bdiv_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (sa : F) a m, args = [rc, .field sa, a, m] → CoreGood c calls →
+    c.rc h rc → PrimEqnEnv c.env → (sa = 0 ∨ sa = 1) →
+    ∀ na nm, RepLimbs h na a → RepLimbs h nm m →
+      c.tmc h' (intLitExpr ((intOfSignMag sa na).bdiv nm)) r
+
+/-- `try_int_unop_dispatch(rc, op, a0, post, types)`: unary `Int` dispatch (`op ∈ {1, 2}`). -/
+def try_int_unop_dispatch : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) a0 post types, args = [rc, .field o, a0, post, types] → CoreGood c calls →
+    c.rc h rc → (ZMod.val o = 1 ∨ ZMod.val o = 2) →
+    ∀ headAddr, IntOpAt c headAddr (ZMod.val o) →
+      ∀ d Γ, c.types Γ h d types → ∀ A₀ Ps, c.tm d Γ h A₀ a0 → c.tml d Γ h Ps post →
+        ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+          ∃ E', c.tm d Γ h' E' x ∧
+            Red c.env d (mkAppN (.const (c.κ (ixAddr headAddr)) []) (A₀ :: Ps)) E'
+
+/-- `try_int_nat_arg_prim(rc, op, sa, a, b)`: binary `Int × Nat` operations (`bmod`, `bdiv`, `pow`). -/
+def try_int_nat_arg_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) (sa : F) a b, args = [rc, .field o, .field sa, a, b] → CoreGood c calls →
+    c.rc h rc → PrimEqnEnv c.env → (sa = 0 ∨ sa = 1) →
+    ∀ na nb, RepLimbs h na a → RepLimbs h nb b →
+    ∀ headAddr, IntOpAt c headAddr (ZMod.val o) →
+      ∀ x, r = .tuple [.field 1, x] →
+        ∃ E', c.tmc h' E' x ∧
+          ∀ d, Red c.env d
+            (.app (.app (.const (c.κ (ixAddr headAddr)) []) (intLitExpr (intOfSignMag sa na)))
+              (natLit nb)) E'
+
+/-- `try_int_int_arg_prim(rc, op, sa, a, sb, b)`: binary `Int × Int` operations
+(`add`, `sub`, `mul`, `emod`, `ediv`). -/
+def try_int_int_arg_prim : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) (sa : F) a (sb : F) b, args = [rc, .field o, .field sa, a, .field sb, b] →
+    CoreGood c calls → c.rc h rc → PrimEqnEnv c.env → (sa = 0 ∨ sa = 1) → (sb = 0 ∨ sb = 1) →
+    ∀ na nb, RepLimbs h na a → RepLimbs h nb b →
+    ∀ headAddr, IntOpAt c headAddr (ZMod.val o) →
+      ∀ x, r = .tuple [.field 1, x] →
+        ∃ E', c.tmc h' E' x ∧
+          ∀ d, Red c.env d
+            (.app (.app (.const (c.κ (ixAddr headAddr)) []) (intLitExpr (intOfSignMag sa na)))
+              (intLitExpr (intOfSignMag sb nb))) E'
+
+/-- `try_int_binop_second(rc, op, a1, post, types, sa, a)`: second argument and result for
+binary `Int` operations. -/
+def try_int_binop_second : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) a1 post types (sa : F) a, args = [rc, .field o, a1, post, types, .field sa, a] →
+    CoreGood c calls → c.rc h rc → (sa = 0 ∨ sa = 1) →
+    ∀ headAddr, IntOpAt c headAddr (ZMod.val o) →
+      ∀ d Γ, c.types Γ h d types →
+        ∀ A₀ A₁ Ps na, RepLimbs h na a → Red c.env d A₀ (intLitExpr (intOfSignMag sa na)) →
+          c.tm d Γ h A₁ a1 → c.tml d Γ h Ps post →
+          ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+            ∃ E', c.tm d Γ h' E' x ∧
+              Red c.env d (mkAppN (.const (c.κ (ixAddr headAddr)) []) (A₀ :: A₁ :: Ps)) E'
+
+/-- `try_int_prim_dispatch(rc, op, spine, types)`: top-level dispatcher for family `6` (`Int`). -/
+def try_int_prim_dispatch : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) sp types, args = [rc, .field o, sp, types] → CoreGood c calls → c.rc h rc →
+    ∀ headAddr, IntOpAt c headAddr (ZMod.val o) →
+      ∀ d Γ, c.types Γ h d types → ∀ As, c.tml d Γ h As sp →
+        ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+          ∃ E', c.tm d Γ h' E' x ∧
+            Red c.env d (mkAppN (.const (c.κ (ixAddr headAddr)) []) As) E'
+
+/-! ## `KernelNatPrim`: `String` / `Char` natives -/
+
+/-- `utf8_last_go(bs, prev)`: the code point of the last character decoded from `bs`, or `prev`
+if `bs` is empty. -/
+def utf8_last_go : SpecFn := fun c args h r h' calls =>
+  ∀ bp (pv : F), args = [bp, .field pv] → CoreGood c calls →
+    ∀ bs, Bytes.RepByteStream byteListEnum h bs bp →
+      ∀ (p : Char), pv = (p.toNat : F) →
+        ∀ cs : List Char, cs.flatMap String.utf8EncodeChar = bs →
+          r = .field ((cs.getLastD p).toNat : F)
+
+/-- `utf8_last_codepoint(bs)`: the code point of the last character of a valid UTF-8 stream
+(`'A'` = 65 on empty). -/
+def utf8_last_codepoint : SpecFn := fun c args h r h' calls =>
+  ∀ bp, args = [bp] → CoreGood c calls →
+    ∀ bs s, Bytes.RepByteStream byteListEnum h bs bp → StrBytes s bs →
+      r = .field ((s.toList.getLastD 'A').toNat : F)
+
+/-- `utf8_encode_prepend(cp, tail)`: prepends the UTF-8 encoding of a valid scalar value `cp`
+onto `tail`. -/
+def utf8_encode_prepend : SpecFn := fun c args h r h' calls =>
+  ∀ (cp : F) tp, args = [.field cp, tp] → CoreGood c calls →
+    ∀ (ch : Char), cp = (ch.toNat : F) →
+      ∀ tail, Bytes.RepByteStream byteListEnum h tail tp →
+        Bytes.RepByteStream byteListEnum h' (String.utf8EncodeChar ch ++ tail) r
+
+/-- `klimbs_scalar_value(limbs)`: tag `1` reads a valid Unicode scalar value from a limb list;
+nothing allocated. -/
+def klimbs_scalar_value : SpecFn := fun c args h r h' calls =>
+  ∀ a, args = [a] → CoreGood c calls →
+    ∀ n, RepLimbs h n a → ∀ v, r = .tuple [.field 1, v] →
+      ∃ ch : Char, ch.toNat = n ∧ v = .field (ch.toNat : F) ∧ h' = h
+
+/-- `lvls_is_zero1(lvls)`: `1` only when `lvls` represents `[u]` with `∀ φ, Level.eval φ u = 0`;
+nothing allocated. -/
+def lvls_is_zero1 : SpecFn := fun c args h r h' calls =>
+  ∀ lp, args = [lp] → CoreGood c calls →
+    ∀ us, LvListRep h us lp → r = .field 1 →
+      (∃ u, us = [u] ∧ ∀ φ, Ix.Kernel.Level.eval φ u = 0) ∧ h' = h
+
+/-- `is_char_const(rc, e)`: `1` only when `e` is `.const Char []`. -/
+def is_char_const : SpecFn := fun c args h r h' calls =>
+  ∀ rc e, args = [rc, e] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ E, c.tm d Γ h E e → r = .field 1 → E = .const Ix.Kernel.charName []
+
+/-- `is_char_const_or_whnf(rc, e, types)`: `1` only when `e` reduces to `.const Char []`. -/
+def is_char_const_or_whnf : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → r = .field 1 →
+      Red c.env d E (.const Ix.Kernel.charName [])
+
+/-- `char_lit_codepoint_syn(rc, e, types)`: tag `1` reads a `Char.ofNat n` whose `Nat` argument
+reduces to a valid Unicode scalar value. -/
+def char_lit_codepoint_syn : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → ∀ v, r = .tuple [.field 1, v] →
+      ∃ ch : Char, v = .field (ch.toNat : F) ∧
+        Red c.env d E (.app (.const Ix.Kernel.charOfNatName []) (natLit ch.toNat))
+
+/-- `char_lit_codepoint(rc, e, types)`: tag `1` reads a `Char` literal directly or after `whnf`. -/
+def char_lit_codepoint : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → ∀ v, r = .tuple [.field 1, v] →
+      ∃ ch : Char, v = .field (ch.toNat : F) ∧
+        Red c.env d E (.app (.const Ix.Kernel.charOfNatName []) (natLit ch.toNat))
+
+/-- `match_char_list_head_syn(rc, e, types)`: under `strLitSupported`, tag `1` matches
+`List.nil.{0} Char` and tag `2` matches `List.cons.{0} Char ch tail` (up to level/type reduction). -/
+def match_char_list_head_syn : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    Ix.Kernel.strLitSupported c.env = true →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
+      ∀ (t : F) x y, r = .tuple [.field t, x, y] →
+        (t = 1 → Red c.env d E (.app (.const Ix.Kernel.listNilName [.zero]) (.const Ix.Kernel.charName []))) ∧
+        (t = 2 → ∃ Ch Tl, c.tm d Γ h' Ch x ∧ c.tm d Γ h' Tl y ∧
+          Red c.env d E (.app (.app (.app (.const Ix.Kernel.listConsName [.zero]) (.const Ix.Kernel.charName [])) Ch) Tl))
+
+/-- `walk_char_list_bytes(rc, list, types)`: under `strLitSupported`, tag `1` gives a character
+list `cs` whose UTF-8 bytes are represented by `bs` and to whose `charList` `E` reduces. -/
+def walk_char_list_bytes : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    Ix.Kernel.strLitSupported c.env = true →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → ∀ bp, r = .tuple [.field 1, bp] →
+      ∃ cs : List Char,
+        Bytes.RepByteStream byteListEnum h' (cs.flatMap String.utf8EncodeChar) bp ∧
+        Red c.env d E (charList
+          (.app (.const Ix.Kernel.listNilName [.zero]) (.const Ix.Kernel.charName []))
+          (.app (.const Ix.Kernel.listConsName [.zero]) (.const Ix.Kernel.charName []))
+          (.const Ix.Kernel.charOfNatName []) cs)
+
+/-- `try_str_of_list(rc, a0, post, types)`: `String.ofList` literal fold (`Red.strLitFold`). -/
+def try_str_of_list : SpecFn := fun c args h r h' calls =>
+  ∀ rc a0 post types, args = [rc, a0, post, types] → CoreGood c calls → c.rc h rc →
+    Ix.Kernel.strLitSupported c.env = true →
+    ∀ d Γ, c.types Γ h d types → ∀ A₀ Ps, c.tm d Γ h A₀ a0 → c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const Ix.Kernel.stringOfListName []) (A₀ :: Ps)) E'
+
+/-- `try_str_utf8_byte_size(rc, a0, post, types)`: `String.utf8ByteSize` on a string literal. -/
+def try_str_utf8_byte_size : SpecFn := fun c args h r h' calls =>
+  ∀ rc a0 post types, args = [rc, a0, post, types] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ A₀ Ps, c.tm d Γ h A₀ a0 → c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .stringUtf8ByteSize) []) (A₀ :: Ps)) E'
+
+/-- `try_str_back(rc, a0, post, types)`: `String.back` on a string literal. -/
+def try_str_back : SpecFn := fun c args h r h' calls =>
+  ∀ rc a0 post types, args = [rc, a0, post, types] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ A₀ Ps, c.tm d Γ h A₀ a0 → c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .stringBack) []) (A₀ :: Ps)) E'
+
+/-- `try_str_to_byte_array(rc, a0, post, types)`: `String.toByteArray ""`. -/
+def try_str_to_byte_array : SpecFn := fun c args h r h' calls =>
+  ∀ rc a0 post types, args = [rc, a0, post, types] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ A₀ Ps, c.tm d Γ h A₀ a0 → c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .stringToByteArray) []) (A₀ :: Ps)) E'
+
+/-- `try_str_dec_eq(rc, a0, a1, post, types)`: reflexive `String.decEq s s`. -/
+def try_str_dec_eq : SpecFn := fun c args h r h' calls =>
+  ∀ rc a0 a1 post types, args = [rc, a0, a1, post, types] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ A₀ A₁ Ps, c.tm d Γ h A₀ a0 → c.tm d Γ h A₁ a1 →
+      c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .stringDecEq) []) (A₀ :: A₁ :: Ps)) E'
+
+/-- `try_str_append(rc, a0, a1, post, types)`: `String.append` on two string literals. -/
+def try_str_append : SpecFn := fun c args h r h' calls =>
+  ∀ rc a0 a1 post types, args = [rc, a0, a1, post, types] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ A₀ A₁ Ps, c.tm d Γ h A₀ a0 → c.tm d Γ h A₁ a1 →
+      c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .stringAppend) []) (A₀ :: A₁ :: Ps)) E'
+
+/-- `try_char_utf8_size(rc, a0, post, types)`: `Char.utf8Size` on a character literal. -/
+def try_char_utf8_size : SpecFn := fun c args h r h' calls =>
+  ∀ rc a0 post types, args = [rc, a0, post, types] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ A₀ Ps, c.tm d Γ h A₀ a0 → c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .charUtf8Size) []) (A₀ :: Ps)) E'
+
+/-- `try_str_dispatch(rc, op, spine, types)`: top-level dispatcher for family `2` (`String`/`Char`). -/
+def try_str_dispatch : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) sp types, args = [rc, .field o, sp, types] → CoreGood c calls → c.rc h rc →
+    ∀ headAddr, StrOpAt c headAddr (ZMod.val o) →
+      ∀ d Γ, c.types Γ h d types → ∀ As, c.tml d Γ h As sp →
+        ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+          ∃ E', c.tm d Γ h' E' x ∧
+            Red c.env d (mkAppN (.const (c.κ (ixAddr headAddr)) []) As) E'
+
+/-! ## `KernelNatPrim`: `BitVec` natives -/
+
+/-- `bitvec_of_nat_args_direct(rc, e)`: syntactic match on `BitVec.ofNat w_e n_e` (empty levels). -/
+def bitvec_of_nat_args_direct : SpecFn := fun c args h r h' calls =>
+  ∀ rc e, args = [rc, e] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ E, c.tm d Γ h E e → ∀ we ne, r = .tuple [.field 1, we, ne] →
+      ∃ W_E N_E, E = .app (.app (.const (.role .bitVecOfNat) []) W_E) N_E ∧
+        c.tm d Γ h' W_E we ∧ c.tm d Γ h' N_E ne
+
+/-- `bv_extract_of_nat(rc, val_e, types)`: match `BitVec.ofNat vw_e n_e`, directly or after
+`whnf_nd`. -/
+def bv_extract_of_nat : SpecFn := fun c args h r h' calls =>
+  ∀ rc e types, args = [rc, e, types] → CoreGood c calls → c.rc h rc →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → ∀ we ne, r = .tuple [.field 1, we, ne] →
+      ∃ W_E N_E, Red c.env d E (.app (.app (.const (.role .bitVecOfNat) []) W_E) N_E) ∧
+        c.tm d Γ h' W_E we ∧ c.tm d Γ h' N_E ne
+
+/-- `bv_extract_checked_val(rc, w_kl, val_e, types)`: extract `n` from `BitVec.ofNat w n`,
+checking that the inner width limb list equals `w_kl`. -/
+def bv_extract_checked_val : SpecFn := fun c args h r h' calls =>
+  ∀ rc wkl e types, args = [rc, wkl, e, types] → CoreGood c calls → c.rc h rc →
+    ∀ w, RepLimbsC h w wkl →
+    ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → ∀ x, r = .tuple [.field 1, x] →
+      ∃ n, RepLimbsC h' n x ∧
+        Red c.env d E (.app (.app (.const (.role .bitVecOfNat) []) (natLit w)) (natLit n))
+
+/-- `try_bitvec_to_nat(rc, width_e, val_e, post, types)`: `BitVec.toNat` on `BitVec.ofNat w n`. -/
+def try_bitvec_to_nat : SpecFn := fun c args h r h' calls =>
+  ∀ rc we ve post types, args = [rc, we, ve, post, types] → CoreGood c calls → c.rc h rc →
+    PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ W V Ps,
+      c.tm d Γ h W we → c.tm d Γ h V ve → c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .bitVecToNat) []) (W :: V :: Ps)) E'
+
+/-- `try_bitvec_ult(rc, width_e, lhs_e, rhs_e, post, types)`: `BitVec.ult` on two
+`BitVec.ofNat w` operands. -/
+def try_bitvec_ult : SpecFn := fun c args h r h' calls =>
+  ∀ rc we le re post types, args = [rc, we, le, re, post, types] → CoreGood c calls →
+    c.rc h rc → PrimEqnEnv c.env →
+    ∀ d Γ, c.types Γ h d types → ∀ W L R Ps,
+      c.tm d Γ h W we → c.tm d Γ h L le → c.tm d Γ h R re → c.tml d Γ h Ps post →
+      ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+        ∃ E', c.tm d Γ h' E' x ∧
+          Red c.env d (mkAppN (.const (.role .bitVecUlt) []) (W :: L :: R :: Ps)) E'
+
+/-- `try_bitvec_dispatch(rc, op, spine, types)`: top-level dispatcher for family `3` (`BitVec`). -/
+def try_bitvec_dispatch : SpecFn := fun c args h r h' calls =>
+  ∀ rc (o : F) sp types, args = [rc, .field o, sp, types] → CoreGood c calls → c.rc h rc →
+    ∀ headAddr, BvOpAt c headAddr (ZMod.val o) →
+      ∀ d Γ, c.types Γ h d types → ∀ As, c.tml d Γ h As sp →
+        ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+          ∃ E', c.tm d Γ h' E' x ∧
+            Red c.env d (mkAppN (.const (c.κ (ixAddr headAddr)) []) As) E'
+
+/-! ## The family -/
+
+/-- The functions of the family. -/
+inductive Fn where
+  | klimbs_succ | klimbs_add_carry | klimbs_add | klimbs_sub_borrow | klimbs_normalize
+  | klimbs_sub | klimbs_le | klimbs_dec | divmod_256 | klimbs_mul
+  | klimbs_mul_single | klimbs_is_zero | klimbs_div_mod | klimbs_div
+  | klimbs_mod | klimbs_gcd | klimbs_pow | klimbs_land | klimbs_lor | klimbs_xor_op
+  | klimbs_shl | klimbs_shr
+  | divide_grow | ordinary_div_mod
+  | mk_bool | mk_nat_lit | np_apply_spine | lvls_empty | split_u32 | klimbs_from_g
+  | mk_nat_offset_stuck | mk_nat_binop_stuck | build_succ_offset
+  | utf8_cont | utf8_decode_one | utf8_validate | build_char_list | str_lit_to_ctor
+  | str_lit_delta_step | str_lit_to_ctor_app_or_self
+  | try_extract_nat | try_extract_nat_app | try_nat_binop_addr | try_match_nat_add
+  | cleanup_nat_offset_major | try_nat_offset_dispatch | try_nat_binop_dispatch
+  | try_nat_dispatch
+  | try_extract_nat_or_whnf | try_extract_int_prim | mk_int_prim | int_add_prim | int_emod_prim | int_ediv_prim
+  | int_bmod_prim | int_bdiv_prim | try_int_unop_dispatch | try_int_nat_arg_prim
+  | try_int_int_arg_prim | try_int_binop_second | try_int_prim_dispatch
+  | utf8_last_go | utf8_last_codepoint | utf8_encode_prepend | klimbs_scalar_value
+  | lvls_is_zero1 | is_char_const | is_char_const_or_whnf | char_lit_codepoint_syn
+  | char_lit_codepoint | match_char_list_head_syn | walk_char_list_bytes
+  | try_str_of_list | try_str_utf8_byte_size | try_str_back | try_str_to_byte_array
+  | try_str_dec_eq | try_str_append | try_char_utf8_size | try_str_dispatch
+  | bitvec_of_nat_args_direct | bv_extract_of_nat | bv_extract_checked_val
+  | try_bitvec_to_nat | try_bitvec_ult | try_bitvec_dispatch
+  deriving DecidableEq, Repr
+
+/-- The function's symbol, as `ObsFn` names it. -/
+def Fn.name : Fn → String
+  | .klimbs_succ => "KernelKlimbs::klimbs_succ"
+  | .klimbs_add_carry => "KernelKlimbs::klimbs_add_carry"
+  | .klimbs_add => "KernelKlimbs::klimbs_add"
+  | .klimbs_sub_borrow => "KernelKlimbs::klimbs_sub_borrow"
+  | .klimbs_normalize => "KernelKlimbs::klimbs_normalize"
+  | .klimbs_sub => "KernelKlimbs::klimbs_sub"
+  | .klimbs_le => "KernelKlimbs::klimbs_le"
+  | .klimbs_dec => "KernelKlimbs::klimbs_dec"
+  | .divmod_256 => "KernelKlimbs::divmod_256"
+  | .klimbs_mul => "KernelKlimbs::klimbs_mul"
+  | .klimbs_mul_single => "KernelKlimbs::klimbs_mul_single"
+  | .klimbs_is_zero => "KernelKlimbs::klimbs_is_zero"
+  | .klimbs_div_mod => "KernelKlimbs::klimbs_div_mod"
+  | .klimbs_div => "KernelKlimbs::klimbs_div"
+  | .klimbs_mod => "KernelKlimbs::klimbs_mod"
+  | .klimbs_gcd => "KernelKlimbs::klimbs_gcd"
+  | .klimbs_pow => "KernelKlimbs::klimbs_pow"
+  | .klimbs_land => "KernelKlimbs::klimbs_land"
+  | .klimbs_lor => "KernelKlimbs::klimbs_lor"
+  | .klimbs_xor_op => "KernelKlimbs::klimbs_xor_op"
+  | .klimbs_shl => "KernelKlimbs::klimbs_shl"
+  | .klimbs_shr => "KernelKlimbs::klimbs_shr"
+  | .divide_grow => "IxVMCompat::divide_grow"
+  | .ordinary_div_mod => "IxVMCompat::ordinary_div_mod"
+  | .mk_bool => "KernelNatPrim::mk_bool"
+  | .mk_nat_lit => "KernelNatPrim::mk_nat_lit"
+  | .np_apply_spine => "KernelNatPrim::np_apply_spine"
+  | .lvls_empty => "KernelNatPrim::lvls_empty"
+  | .split_u32 => "KernelNatPrim::split_u32"
+  | .klimbs_from_g => "KernelNatPrim::klimbs_from_g"
+  | .mk_nat_offset_stuck => "KernelNatPrim::mk_nat_offset_stuck"
+  | .mk_nat_binop_stuck => "KernelNatPrim::mk_nat_binop_stuck"
+  | .build_succ_offset => "KernelNatPrim::build_succ_offset"
+  | .utf8_cont => "KernelNatPrim::utf8_cont"
+  | .utf8_decode_one => "KernelNatPrim::utf8_decode_one"
+  | .utf8_validate => "KernelNatPrim::utf8_validate"
+  | .build_char_list => "KernelNatPrim::build_char_list"
+  | .str_lit_to_ctor => "KernelNatPrim::str_lit_to_ctor"
+  | .str_lit_delta_step => "KernelNatPrim::str_lit_delta_step"
+  | .str_lit_to_ctor_app_or_self => "KernelNatPrim::str_lit_to_ctor_app_or_self"
+  | .try_extract_nat => "KernelNatPrim::try_extract_nat"
+  | .try_extract_nat_app => "KernelNatPrim::try_extract_nat_app"
+  | .try_nat_binop_addr => "KernelNatPrim::try_nat_binop_addr"
+  | .try_match_nat_add => "KernelNatPrim::try_match_nat_add"
+  | .cleanup_nat_offset_major => "KernelNatPrim::cleanup_nat_offset_major"
+  | .try_nat_offset_dispatch => "KernelNatPrim::try_nat_offset_dispatch"
+  | .try_nat_binop_dispatch => "KernelNatPrim::try_nat_binop_dispatch"
+  | .try_nat_dispatch => "KernelNatPrim::try_nat_dispatch"
+  | .try_extract_nat_or_whnf => "KernelNatPrim::try_extract_nat_or_whnf"
+  | .try_extract_int_prim => "KernelNatPrim::try_extract_int_prim"
+  | .mk_int_prim => "KernelNatPrim::mk_int_prim"
+  | .int_add_prim => "KernelNatPrim::int_add_prim"
+  | .int_emod_prim => "KernelNatPrim::int_emod_prim"
+  | .int_ediv_prim => "KernelNatPrim::int_ediv_prim"
+  | .int_bmod_prim => "KernelNatPrim::int_bmod_prim"
+  | .int_bdiv_prim => "KernelNatPrim::int_bdiv_prim"
+  | .try_int_unop_dispatch => "KernelNatPrim::try_int_unop_dispatch"
+  | .try_int_nat_arg_prim => "KernelNatPrim::try_int_nat_arg_prim"
+  | .try_int_int_arg_prim => "KernelNatPrim::try_int_int_arg_prim"
+  | .try_int_binop_second => "KernelNatPrim::try_int_binop_second"
+  | .try_int_prim_dispatch => "KernelNatPrim::try_int_prim_dispatch"
+  | .utf8_last_go => "KernelNatPrim::utf8_last_go"
+  | .utf8_last_codepoint => "KernelNatPrim::utf8_last_codepoint"
+  | .utf8_encode_prepend => "KernelNatPrim::utf8_encode_prepend"
+  | .klimbs_scalar_value => "KernelNatPrim::klimbs_scalar_value"
+  | .lvls_is_zero1 => "KernelNatPrim::lvls_is_zero1"
+  | .is_char_const => "KernelNatPrim::is_char_const"
+  | .is_char_const_or_whnf => "KernelNatPrim::is_char_const_or_whnf"
+  | .char_lit_codepoint_syn => "KernelNatPrim::char_lit_codepoint_syn"
+  | .char_lit_codepoint => "KernelNatPrim::char_lit_codepoint"
+  | .match_char_list_head_syn => "KernelNatPrim::match_char_list_head_syn"
+  | .walk_char_list_bytes => "KernelNatPrim::walk_char_list_bytes"
+  | .try_str_of_list => "KernelNatPrim::try_str_of_list"
+  | .try_str_utf8_byte_size => "KernelNatPrim::try_str_utf8_byte_size"
+  | .try_str_back => "KernelNatPrim::try_str_back"
+  | .try_str_to_byte_array => "KernelNatPrim::try_str_to_byte_array"
+  | .try_str_dec_eq => "KernelNatPrim::try_str_dec_eq"
+  | .try_str_append => "KernelNatPrim::try_str_append"
+  | .try_char_utf8_size => "KernelNatPrim::try_char_utf8_size"
+  | .try_str_dispatch => "KernelNatPrim::try_str_dispatch"
+  | .bitvec_of_nat_args_direct => "KernelNatPrim::bitvec_of_nat_args_direct"
+  | .bv_extract_of_nat => "KernelNatPrim::bv_extract_of_nat"
+  | .bv_extract_checked_val => "KernelNatPrim::bv_extract_checked_val"
+  | .try_bitvec_to_nat => "KernelNatPrim::try_bitvec_to_nat"
+  | .try_bitvec_ult => "KernelNatPrim::try_bitvec_ult"
+  | .try_bitvec_dispatch => "KernelNatPrim::try_bitvec_dispatch"
+
+/-- The function's spec. -/
+def Fn.spec : Fn → SpecFn
+  | .klimbs_succ => Specs.Nat.klimbs_succ
+  | .klimbs_add_carry => Specs.Nat.klimbs_add_carry
+  | .klimbs_add => Specs.Nat.klimbs_add
+  | .klimbs_sub_borrow => Specs.Nat.klimbs_sub_borrow
+  | .klimbs_normalize => Specs.Nat.klimbs_normalize
+  | .klimbs_sub => Specs.Nat.klimbs_sub
+  | .klimbs_le => Specs.Nat.klimbs_le
+  | .klimbs_dec => Specs.Nat.klimbs_dec
+  | .divmod_256 => Specs.Nat.divmod_256
+  | .klimbs_mul => Specs.Nat.klimbs_mul
+  | .klimbs_mul_single => Specs.Nat.klimbs_mul_single
+  | .klimbs_is_zero => Specs.Nat.klimbs_is_zero
+  | .klimbs_div_mod => Specs.Nat.klimbs_div_mod
+  | .klimbs_div => Specs.Nat.klimbs_div
+  | .klimbs_mod => Specs.Nat.klimbs_mod
+  | .klimbs_gcd => Specs.Nat.klimbs_gcd
+  | .klimbs_pow => Specs.Nat.klimbs_pow
+  | .klimbs_land => Specs.Nat.klimbs_land
+  | .klimbs_lor => Specs.Nat.klimbs_lor
+  | .klimbs_xor_op => Specs.Nat.klimbs_xor_op
+  | .klimbs_shl => Specs.Nat.klimbs_shl
+  | .klimbs_shr => Specs.Nat.klimbs_shr
+  | .divide_grow => Specs.Nat.divide_grow
+  | .ordinary_div_mod => Specs.Nat.ordinary_div_mod
+  | .mk_bool => Specs.Nat.mk_bool
+  | .mk_nat_lit => Specs.Nat.mk_nat_lit
+  | .np_apply_spine => Specs.Nat.np_apply_spine
+  | .lvls_empty => Specs.Nat.lvls_empty
+  | .split_u32 => Specs.Nat.split_u32
+  | .klimbs_from_g => Specs.Nat.klimbs_from_g
+  | .mk_nat_offset_stuck => Specs.Nat.mk_nat_offset_stuck
+  | .mk_nat_binop_stuck => Specs.Nat.mk_nat_binop_stuck
+  | .build_succ_offset => Specs.Nat.build_succ_offset
+  | .utf8_cont => Specs.Nat.utf8_cont
+  | .utf8_decode_one => Specs.Nat.utf8_decode_one
+  | .utf8_validate => Specs.Nat.utf8_validate
+  | .build_char_list => Specs.Nat.build_char_list
+  | .str_lit_to_ctor => Specs.Nat.str_lit_to_ctor
+  | .str_lit_delta_step => Specs.Nat.str_lit_delta_step
+  | .str_lit_to_ctor_app_or_self => Specs.Nat.str_lit_to_ctor_app_or_self
+  | .try_extract_nat => Specs.Nat.try_extract_nat
+  | .try_extract_nat_app => Specs.Nat.try_extract_nat_app
+  | .try_nat_binop_addr => Specs.Nat.try_nat_binop_addr
+  | .try_match_nat_add => Specs.Nat.try_match_nat_add
+  | .cleanup_nat_offset_major => Specs.Nat.cleanup_nat_offset_major
+  | .try_nat_offset_dispatch => Specs.Nat.try_nat_offset_dispatch
+  | .try_nat_binop_dispatch => Specs.Nat.try_nat_binop_dispatch
+  | .try_nat_dispatch => Specs.Nat.try_nat_dispatch
+  | .try_extract_nat_or_whnf => Specs.Nat.try_extract_nat_or_whnf
+  | .try_extract_int_prim => Specs.Nat.try_extract_int_prim
+  | .mk_int_prim => Specs.Nat.mk_int_prim
+  | .int_add_prim => Specs.Nat.int_add_prim
+  | .int_emod_prim => Specs.Nat.int_emod_prim
+  | .int_ediv_prim => Specs.Nat.int_ediv_prim
+  | .int_bmod_prim => Specs.Nat.int_bmod_prim
+  | .int_bdiv_prim => Specs.Nat.int_bdiv_prim
+  | .try_int_unop_dispatch => Specs.Nat.try_int_unop_dispatch
+  | .try_int_nat_arg_prim => Specs.Nat.try_int_nat_arg_prim
+  | .try_int_int_arg_prim => Specs.Nat.try_int_int_arg_prim
+  | .try_int_binop_second => Specs.Nat.try_int_binop_second
+  | .try_int_prim_dispatch => Specs.Nat.try_int_prim_dispatch
+  | .utf8_last_go => Specs.Nat.utf8_last_go
+  | .utf8_last_codepoint => Specs.Nat.utf8_last_codepoint
+  | .utf8_encode_prepend => Specs.Nat.utf8_encode_prepend
+  | .klimbs_scalar_value => Specs.Nat.klimbs_scalar_value
+  | .lvls_is_zero1 => Specs.Nat.lvls_is_zero1
+  | .is_char_const => Specs.Nat.is_char_const
+  | .is_char_const_or_whnf => Specs.Nat.is_char_const_or_whnf
+  | .char_lit_codepoint_syn => Specs.Nat.char_lit_codepoint_syn
+  | .char_lit_codepoint => Specs.Nat.char_lit_codepoint
+  | .match_char_list_head_syn => Specs.Nat.match_char_list_head_syn
+  | .walk_char_list_bytes => Specs.Nat.walk_char_list_bytes
+  | .try_str_of_list => Specs.Nat.try_str_of_list
+  | .try_str_utf8_byte_size => Specs.Nat.try_str_utf8_byte_size
+  | .try_str_back => Specs.Nat.try_str_back
+  | .try_str_to_byte_array => Specs.Nat.try_str_to_byte_array
+  | .try_str_dec_eq => Specs.Nat.try_str_dec_eq
+  | .try_str_append => Specs.Nat.try_str_append
+  | .try_char_utf8_size => Specs.Nat.try_char_utf8_size
+  | .try_str_dispatch => Specs.Nat.try_str_dispatch
+  | .bitvec_of_nat_args_direct => Specs.Nat.bitvec_of_nat_args_direct
+  | .bv_extract_of_nat => Specs.Nat.bv_extract_of_nat
+  | .bv_extract_checked_val => Specs.Nat.bv_extract_checked_val
+  | .try_bitvec_to_nat => Specs.Nat.try_bitvec_to_nat
+  | .try_bitvec_ult => Specs.Nat.try_bitvec_ult
+  | .try_bitvec_dispatch => Specs.Nat.try_bitvec_dispatch
+
+end IxVM.Refinement.Core.Specs.Nat

@@ -258,10 +258,9 @@ pub fn export_parameters(
   out.flush()?;
   drop(out);
   storage::persist(&temporary, path)?;
-  let mut hash = blake3::Hasher::new();
-  hash.update_mmap_rayon(path)?;
+  let digest = blake3::Hash::from_bytes(storage::blake3_file(path)?);
   let receipt = serde_json::json!({
-    "format": "ix-bn254-plonk-srs-export-v2", "blake3": hash.finalize().to_hex().as_str(),
+    "format": "ix-bn254-plonk-srs-export-v2", "blake3": digest.to_hex().as_str(),
     "setupId": blake3::Hash::from_bytes(srs.public_setup.id).to_hex().as_str(),
     "publicMaxDegree": srs.public_setup.max_degree, "powers": count,
     "setupClass": config.class().label(),
@@ -329,9 +328,7 @@ fn cached_parameters(
   {
     return Err("PLONK parameter header differs from its pinned setup".into());
   }
-  let mut hash = blake3::Hasher::new();
-  hash.update_mmap_rayon(&path)?;
-  if *hash.finalize().as_bytes() != digest(&receipt.blake3)? {
+  if storage::blake3_file(&path)? != digest(&receipt.blake3)? {
     return Err("cached PLONK parameter export is damaged".into());
   }
   Ok((path, receipt.blake3))

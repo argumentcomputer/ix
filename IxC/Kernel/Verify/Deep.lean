@@ -608,8 +608,7 @@ private theorem iotaCerts_shift (henv : EnvWF env)
     | .lit l => rfl
     | .proj sp i' e' => rfl
 
-/-- The fabricated projections commute with the shift (task #175 W4c:
-both entry kinds — the `.proj` nodes by `shiftFrom`'s own clause, the
+/-- The fabricated projections commute with the shift (both entry kinds — the `.proj` nodes by `shiftFrom`'s own clause, the
 projection-function applications by `shiftFrom_mkAppN`). -/
 private theorem etaProjs_shift (p : Nat) (env : Env md) (T : Key md)
     (us : List Level) (targs : List (Expr md)) (b : Expr md) (nF : Nat) :
@@ -752,7 +751,7 @@ private theorem structEtaProjCerts_shift (henv : EnvWF env)
     | none => rfl
     | some ci =>
       cases ci <;> try rfl
-      -- a tower-backed slot (task #175 S1) runs no certificate
+      -- a tower-backed slot runs no certificate
       case recInfo cvp mI rP rules =>
       rw [List.length_map]
       refine ite_congr' (fun _ => ?_) (fun _ => rfl)
@@ -1835,8 +1834,7 @@ private theorem whnf_step (henv : EnvWF env)
   rw [whnf_succ, whnf_succ]
   exact whnfLoop_shift henv ih whnfLoopFuel hpd hw
 
-/-- `instPisAt` commutes with the frame shift (task #175 wiring W2c:
-the tower residual's depth invariance). -/
+/-- `instPisAt` commutes with the frame shift (the tower residual's depth invariance). -/
 private theorem instPisAt_shiftFrom (p : Nat) :
     ∀ (args : List (Expr md)) (ty : Expr md),
       Expr.instPisAt (args.map (Expr.shiftFrom p)) (Expr.shiftFrom p ty)
@@ -2031,12 +2029,12 @@ private theorem infer_step (henv : EnvWF env)
       dsimp only
       simp only [getAppArgs_shiftFrom, List.length_map]
       refine ite_rel _ (fun hc => ?_) (fun _ => rfl)
-      -- task #175 S1: the body's instantiation commutes with the
+      -- the body's instantiation commutes with the
       -- shift — the body is fvar-free, so the shift passes to the
       -- spine and the subject
       obtain ⟨-, hlen, -⟩ := hc
       have hsh := ProjEntry.typeAt_shiftFrom (p := p) henv hfp us₂ hlen pe
-      -- the Prop guard (task #175 W4c) is shift-independent: split it
+      -- the Prop guard is shift-independent: split it
       -- on both sides, then the residual
       by_cases hs : (entry.structSort.isEquiv Level.zero == some true) = true
       · rw [if_pos hs, if_pos hs]
@@ -2241,12 +2239,12 @@ private theorem inferIOCore_step (henv : EnvWF env)
       dsimp only
       simp only [getAppArgs_shiftFrom, List.length_map]
       refine ite_rel _ (fun hc => ?_) (fun _ => rfl)
-      -- task #175 S1: the body's instantiation commutes with the
+      -- the body's instantiation commutes with the
       -- shift — the body is fvar-free, so the shift passes to the
       -- spine and the subject
       obtain ⟨-, hlen, -⟩ := hc
       have hsh := ProjEntry.typeAt_shiftFrom (p := p) henv hfp us₂ hlen pe
-      -- the Prop guard (task #175 W4c) is shift-independent: split it
+      -- the Prop guard is shift-independent: split it
       -- on both sides, then the residual
       by_cases hs : (entry.structSort.isEquiv Level.zero == some true) = true
       · rw [if_pos hs, if_pos hs]
@@ -2284,7 +2282,7 @@ private theorem isBoolTrue_shiftFrom {p : Nat} {e : Expr md} :
     | rfl
     | (simp only [shiftFrom]; split <;> rfl)
 
-/-- The eq-true shortcut (the audit's E2) is shift-invariant: one `whnf`
+/-- The eq-true shortcut is shift-invariant: one `whnf`
 and a head test that ignores the shift. -/
 private theorem boolTrueShortcut_shift (_henv : EnvWF env)
     (ih : ShiftClaims mode env fuel) {p d : Nat} (hpd : p ≤ d) {a : Expr md}
@@ -2313,7 +2311,7 @@ private theorem quickPair_shiftFrom {p : Nat} {a b : Expr md} :
     | rfl
     | (simp only [shiftFrom]; (repeat split) <;> rfl)
 
-/-- `propIrrel_shift` under the once-per-entry gate (the audit's D3). -/
+/-- `propIrrel_shift` under the once-per-entry gate. -/
 private theorem propIrrelIf_shift (henv : EnvWF env)
     (ih : ShiftClaims mode env fuel) {p d : Nat} (hpd : p ≤ d) {a b : Expr md}
     (hwa : WScoped d a) (hwb : WScoped d b) (g : Bool) :

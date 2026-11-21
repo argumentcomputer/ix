@@ -541,6 +541,9 @@ theorem checkNativeTailS_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
       q.p.nP q.p.majorIdx q.p.rulePrefix cvRa.type q.ctorsA rhss))
     (by show (consSumCtorsF q.p.nP q.ctorsA q.env₁).find? cvRa.name = none
         rw [hnR]; exact hfrR)
+  split
+  case isFalse => exact Yields.ofThrowBind
+  case isTrue _ =>
   exact checkNativeTableF_push hpush q.p q.ctorsA q.sortss
 
 theorem checkNativeS_push (mode : CheckMode) {env : Env md} {fe : FEnv md}

@@ -32,19 +32,19 @@ def generic : Array Lean.Name :=
 
 end Ixon.Authenticated.Audit
 
--- Step 5a (typed keys) moved the count from 5839 by the generic entries' change
--- (`IxC/Kernel/Audit/Roots.lean`); step 5b's `LetMeta` from 5630, by the let
--- contract's equality, hash and `Repr`; step 5b's walk change from 5657, by the
+-- Typed keys moved the count from 5839 by the generic entries' change
+-- (`IxC/Kernel/Audit/Roots.lean`); `LetMeta` from 5630, by the let
+-- contract's equality, hash and `Repr`; the arity-reduced walk change from 5657, by the
 -- sources of the arity-reduced `f._redArg` the walk reaches (no extern, `unsafe`,
--- `csimp` or `partial` constant among them); step 5b's mode index from 5752, by
+-- `csimp` or `partial` constant among them); the mode index from 5752, by
 -- the generic entries' change; its address keys from 5764 and 115 inherited
 -- externs, by the generic entries' change; the per-step memo reset, shared
 -- binder metadata, fixed-width TagN fast paths, and task-parallel phase B
 -- from 5727 and 117 inherited externs, by the generic
--- entries' change (`IxC/Kernel/Audit/Roots.lean`); step 6's structured errors
+-- entries' change (`IxC/Kernel/Audit/Roots.lean`); structured errors
 -- from 5745 and 119 inherited externs, by the generic entries' change; the
 -- validation of the four install anchors from 5963, by the generic entries' change;
--- step 6b's display annotations from 5974, by the generic entries' change (8
+-- display annotations from 5974, by the generic entries' change (8
 -- more, one more ruled csimp), and its failure display from 5982 (30 more, one
 -- more ruled csimp); the reader's conversion to Lean `module`s from 6012, by the
 -- generic entries' change (29 more, the block-order entry's); the block
@@ -102,9 +102,33 @@ end Ixon.Authenticated.Audit
 -- Auditing `@[csimp]` replacements whose target was inlined into its caller
 -- records `Ix.Kernel.Cached.withChain_eq_impl` (`@[inline] def withChainImpl`) in
 -- `Ix.Kernel.Cached` (26 -> 27; see `IxC/Kernel/Audit/Roots.lean`).
+-- The decisions' `of_decide_eq_*` dependencies (`Role.deps`) add 7 compiled functions
+-- to each closure here (`IxC/Kernel/Audit/Roots.lean`).
+-- Specification version 5 (the compiler-trust roles) adds the entry's 49
+-- (`IxC/Kernel/Audit/Roots.lean`).
+-- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
+-- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions, the entry's
+-- (`IxC/Kernel/Audit/Roots.lean`).
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+-- The Ixon v5 binder-data section (its parser and the local canonical check that
+-- `Admission.decodeRecords` runs on every record) adds 38 compiled functions, as for
+-- `Admission.checkBytes` (`IxC/Kernel/Admission/Audit.lean`). Externs, implemented_by,
+-- unsafe, csimp and all ruling counts are unchanged.
+-- Modes in records (the section nodes' modes, let headers, definition assertions and
+-- constructor field modes, `Constant.modesCanonical`) and the reader's canonical
+-- natural-literal check (`ECx.natAt`) take the closure from 7025 compiled functions and 116
+-- inherited externs to 7049 and 117, as for `Admission.checkBytes`.
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
+-- csimp and all ruling counts are unchanged.
+-- Normalized recursor analysis and the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`)
+-- move the closure from 7108 compiled functions and 28 ruled csimps to 7155 and 29.
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
- Address.admissionHash]: 6891 compiled functions; inherited externs 116, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
+ Address.admissionHash]: 7155 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -219,7 +243,7 @@ fun binding maxProjections limits records blobs hint =>
 The tiered entry's closure is frozen apart, so the entries' above is
 unchanged: the generic tiered entries' (`Ix.Kernel.Audit.tierOperations`)
 and the same one assumed substitution: 5878 and 10 more, the Rust BLAKE3
-backend's three externs among them (ruled assumed 4). Step 6b's display
+backend's three externs among them (ruled assumed 4). Display
 annotations moved it from 5888 by the generic tiered entries' change (8 more,
 one more ruled csimp), and its failure display from 5896, likewise (33 more,
 one more ruled csimp). The reader's conversion to Lean `module`s moved it from 5929,
@@ -254,7 +278,26 @@ and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, lik
 -- refreezing; externs, implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- The role-shape validation merge adds the same four compiled functions,
 -- measured with the fallback-record guard. Execution allowances are unchanged.
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6973 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Specification version 5 adds the tiered entry's 49.
+-- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
+-- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions, the entry's
+-- (`IxC/Kernel/Audit/Roots.lean`).
+-- Reflexive fields, members behind definitions and erasing fields in the in-model generator
+-- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
+-- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
+-- counts are unchanged.
+-- The Ixon v5 binder-data section (its parser and the local canonical check that
+-- `Admission.decodeRecords` runs on every record) adds 38 compiled functions, as for
+-- `Admission.checkBytes` (`IxC/Kernel/Admission/Audit.lean`). Externs, implemented_by,
+-- unsafe, csimp and all ruling counts are unchanged.
+-- Modes in records and the reader's canonical natural-literal check take the closure from
+-- 7107 compiled functions and 116 inherited externs to 7131 and 117.
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
+-- csimp and all ruling counts are unchanged.
+-- Normalized recursor analysis and the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`)
+-- move the tiered closure from 7190 compiled functions and 28 ruled csimps to 7237 and 29.
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7237 compiled functions; inherited externs 117, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

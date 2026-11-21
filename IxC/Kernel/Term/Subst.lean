@@ -40,6 +40,8 @@ def liftN (n : Nat) : Term → (k : Nat := 0) → Term
   | .fst e, k => .fst (liftN n e k)
   | .snd e, k => .snd (liftN n e k)
   | .prf, _ => .prf
+  | .chain g e, k => .chain (fun m => liftN n (g m) k) (liftN n e k)
+  | .bgraph m f, k => .bgraph m (liftN n f k)
 
 /-- Weakening by one. -/
 abbrev lift (e : Term) : Term := liftN 1 e
@@ -58,6 +60,8 @@ def inst : Term → Term → (k : Nat := 0) → Term
   | .fst e, a, k => .fst (inst e a k)
   | .snd e, a, k => .snd (inst e a k)
   | .prf, _, _ => .prf
+  | .chain g e, a, k => .chain (fun m => inst (g m) a k) (inst e a k)
+  | .bgraph m f, a, k => .bgraph m (inst f a k)
 
 @[simp] theorem liftN_bvar (n k i : Nat) :
     liftN n (.bvar i) k = .bvar (if i < k then i else i + n) := rfl
@@ -78,6 +82,10 @@ def inst : Term → Term → (k : Nat := 0) → Term
 @[simp] theorem liftN_snd (n k : Nat) (e : Term) :
     liftN n (.snd e) k = .snd (liftN n e k) := rfl
 @[simp] theorem liftN_prf (n k : Nat) : liftN n .prf k = .prf := rfl
+@[simp] theorem liftN_chain (n k : Nat) (g : Nat → Term) (e : Term) :
+    liftN n (.chain g e) k = .chain (fun m => liftN n (g m) k) (liftN n e k) := rfl
+@[simp] theorem liftN_bgraph (n k m : Nat) (f : Term) :
+    liftN n (.bgraph m f) k = .bgraph m (liftN n f k) := rfl
 
 @[simp] theorem inst_bvar (a : Term) (k i : Nat) :
     inst (.bvar i) a k =
@@ -100,6 +108,10 @@ def inst : Term → Term → (k : Nat := 0) → Term
 @[simp] theorem inst_snd (a : Term) (k : Nat) (e : Term) :
     inst (.snd e) a k = .snd (inst e a k) := rfl
 @[simp] theorem inst_prf (a : Term) (k : Nat) : inst .prf a k = .prf := rfl
+@[simp] theorem inst_chain (a : Term) (k : Nat) (g : Nat → Term) (e : Term) :
+    inst (.chain g e) a k = .chain (fun m => inst (g m) a k) (inst e a k) := rfl
+@[simp] theorem inst_bgraph (a : Term) (k m : Nat) (f : Term) :
+    inst (.bgraph m f) a k = .bgraph m (inst f a k) := rfl
 
 end Term
 

@@ -5,7 +5,7 @@ public import IxC.Kernel.Model.Inductives.TowerCons
 public section
 
 /-!
-# `CapsOk` across the direct block's member conses (task #175 W4c, P3 module 5, part 1)
+# `CapsOk` across the direct block's member conses
 
 The block's three non-entry conses — the former, the constructor and
 the recursor — are exactly the head kinds `capsOk_cons_fresh`

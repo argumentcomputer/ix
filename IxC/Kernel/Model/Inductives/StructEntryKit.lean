@@ -4,7 +4,7 @@ public import IxC.Kernel.Model.Inductives.StructRecLawKit
 public section
 
 /-!
-# The projection entry's kit (task #175 W4c, P3 module 7, part 1)
+# The projection entry's kit
 
 Semantic and syntactic pieces of a tower entry's install:
 

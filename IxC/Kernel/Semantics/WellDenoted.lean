@@ -106,6 +106,8 @@ def WellDenoted : (Nat → V) → AnnotTerm → Prop
   | _, .sort _ => True
   | _, .const _ _ => True
   | _, .prf => True
+  | ρ, .chain g e => (∀ m, WellDenoted ρ (g m)) ∧ WellDenoted ρ e
+  | ρ, .bgraph _ f => WellDenoted ρ f
 
 /-! ### Clause equations -/
 
@@ -154,6 +156,12 @@ theorem WellDenoted_snd (ρ : Nat → V) (e : AnnotTerm) :
 theorem WellDenoted_eqE (ρ : Nat → V) (a b : AnnotTerm) :
     WellDenoted V ρ (.eqE a b) = (WellDenoted V ρ a ∧ WellDenoted V ρ b) := by
   rw [WellDenoted]
+theorem WellDenoted_chain (ρ : Nat → V) (g : Nat → AnnotTerm) (e : AnnotTerm) :
+    WellDenoted V ρ (.chain g e) = ((∀ m, WellDenoted V ρ (g m)) ∧ WellDenoted V ρ e) := by
+  rw [WellDenoted]
+theorem WellDenoted_bgraph (ρ : Nat → V) (n : Nat) (f : AnnotTerm) :
+    WellDenoted V ρ (.bgraph n f) = WellDenoted V ρ f := by
+  rw [WellDenoted]
 
 /-! ### The substitution metatheory (the `AnnotOkV` pair, transposed) -/
 
@@ -199,6 +207,13 @@ theorem WellDenoted_liftN (n : Nat) :
     rw [AnnotTerm.liftN_snd, WellDenoted_snd, WellDenoted_snd, ihe,
       interp_liftN]
   | prf => intro k ρ; simp
+  | chain g e ihg ihe =>
+    intro k ρ
+    rw [AnnotTerm.liftN_chain, WellDenoted_chain, WellDenoted_chain, ihe]
+    exact and_congr (forall_congr' fun m => ihg m k ρ) Iff.rfl
+  | bgraph m f ihf =>
+    intro k ρ
+    rw [AnnotTerm.liftN_bgraph, WellDenoted_bgraph, WellDenoted_bgraph, ihf]
 
 /-- Truthfulness through instantiation. -/
 theorem WellDenoted_inst :
@@ -260,6 +275,13 @@ theorem WellDenoted_inst :
     rw [AnnotTerm.inst_snd, WellDenoted_snd, WellDenoted_snd, ihe a k ρ ha,
       interp_inst]
   | prf => intro a k ρ _; simp [AnnotTerm.inst]
+  | chain g e ihg ihe =>
+    intro a k ρ ha
+    rw [AnnotTerm.inst_chain, WellDenoted_chain, WellDenoted_chain, ihe a k ρ ha]
+    exact and_congr (forall_congr' fun m => ihg m a k ρ ha) Iff.rfl
+  | bgraph m f ihf =>
+    intro a k ρ ha
+    rw [AnnotTerm.inst_bgraph, WellDenoted_bgraph, WellDenoted_bgraph, ihf a k ρ ha]
 
 /-- Substitution at the outermost binder — the β/ζ transport form. -/
 theorem WellDenoted_inst0 {e a : AnnotTerm} {ρ : Nat → V}

@@ -1,6 +1,6 @@
 import Ix.CompileCert.ReaderIndex
 
-/-! # The reader's recursor index: coverage and one recursor per motive
+/-! # Canonical recursor coverage and uniqueness per motive
 
 The stream facts `stream_covers` and `published_stream_order` use admission's
 store coherence and the compile driver's publication. Over records coherent
@@ -11,7 +11,7 @@ with the store:
   motive is in the block's shape (`buildIndex_covers`), the eligible one
   itself if no other eligible recursor has its role
   (`buildIndex_unique_reference`);
-* the index holds at most one recursor per block and motive
+* the canonical map holds at most one recursor per block and motive
   (`buildIndex_role_unique`). -/
 
 namespace Ix.CompileCert.ReaderIndexDiscovery
@@ -113,6 +113,7 @@ theorem candidate_transition (store : Store) (owner : Address) (constant : Ixon.
   refine ⟨after, ran, ?_⟩
   cases step with
   | keep => exact ⟨fun _ _ h => h, fun _ _ h => h, id⟩
+  | twin => exact ⟨fun _ _ h => h, fun _ _ h => h, id⟩
   | add motive carriers major block firstIndex blockRecord members slot first fresh =>
     refine ⟨?_, ?_, backed_added owner member before motive major block _ first⟩
     · intro query old found
@@ -189,7 +190,8 @@ private theorem list_hit (P Q : β → Prop) (items : List α) (target : α) (pr
       · exact ih later after valid restStep
     simpa only [List.forIn_cons, ran, pure, bind] using result
 
-private theorem array_hit (P Q : β → Prop) (items : Array α) (target : α) (present : target ∈ items)
+/-- A loop that preserves its invariant and a witnessed property retains the property after its target. -/
+theorem array_hit (P Q : β → Prop) (items : Array α) (target : α) (present : target ∈ items)
     (body : α → β → Id (ForInStep β)) (initial : β) (start : P initial)
     (step : ∀ item ∈ items, ∀ before, P before → ∃ after, body item before = .yield after ∧
       P after ∧ (Q before → Q after) ∧ (item = target → Q after)) :
@@ -414,6 +416,7 @@ theorem candidate_unique (store : Store) (owner : Address) (constant : Ixon.Cons
   rw [ran]
   cases step with
   | keep => exact unique
+  | twin => exact unique
   | add motive carriers major block firstIndex blockRecord members slot first _ _ _ _ _ _ _ unused =>
     change OnePerMotive (added owner member before motive major block _ first).2
     rw [added_found]

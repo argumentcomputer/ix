@@ -10,14 +10,11 @@ import IxC.Kernel.Model.Annot.BitClosed
 public section
 
 /-!
-# The soundness of the definitional-equality rules (task #305, lanes
-S-defeq / S-caps)
+# The soundness of the definitional-equality rules
 
-One lemma per constructor of `DefEq`.  Lane S-defeq owns `refl` …
-`proofIrrel` (the structural rules, the recursive-structure rule, η,
-the two proof-irrelevance arms); lane S-caps owns `unitLike`,
-`structEta`, `structUnit` (the capability rows of
-`Model/Steps/CapsRows.lean` and `Irrel.lean`).
+One lemma per constructor of `DefEq`: the structural rules, the
+recursive-structure rule, η, proof irrelevance (`refl` … `proofIrrel`),
+and the capability rules (`unitLike`, `structEta`, `structUnit`).
 -/
 
 namespace Ix.Kernel.Model.Rules
@@ -57,13 +54,13 @@ theorem DefEq.redL_sound {d : Nat} {a a' b : Expr md}
 
 /-- `defeqStuck_claim`'s sort arm (`Steps/DefEq.lean:873`). -/
 theorem DefEq.sort_sound {d : Nat} {u v : Level}
-    (h : Level.isEquiv u v = some true) :
+    (h : ∀ φ, Level.eval φ u = Level.eval φ v) :
     DefEqSem m φ d (.sort u) (.sort v) := by
   intro _ _ Δa aa ba _ _ haa hba _ _ ρ _
   rw [denoteMeta_sort] at haa hba
   obtain rfl : aa = AnnotTerm.sort (u.eval φ) := (Option.some.inj haa).symm
   obtain rfl : ba = AnnotTerm.sort (v.eval φ) := (Option.some.inj hba).symm
-  rw [Level.isEquiv_sound h φ]
+  rw [h φ]
 
 /-- The `fvar` arm: the reading ignores the annotation. -/
 theorem DefEq.fvar_sound {d i : Nat} {ty₁ ty₂ : Expr md} :
@@ -77,7 +74,7 @@ theorem DefEq.fvar_sound {d i : Nat} {ty₁ ty₂ : Expr md} :
 /-- `acval_const_congr` (`Steps/DefEq.lean:844`) with `AcvalParams`
 (`Model/Annot/EnvModel.lean:164`, `acvalParams m`). -/
 theorem DefEq.const_sound {d : Nat} {n : Key md} {us us' : List Level}
-    (h : Level.isEquivList us us' = some true) :
+    (h : ∀ φ, Level.EvalEqList φ us us') :
     DefEqSem m φ d (.const n us) (.const n us') := by
   intro _ _ Δa aa ba _ _ haa hba _ _ ρ _
   obtain rfl : aa = ba := acval_const_congr' (acvalParams m) h haa hba
@@ -178,11 +175,13 @@ theorem DefEq.proj_sound {d : Nat} {s : Key md} {i : Nat} {e₁ e₂ : Expr md}
   intro hfa hfb Δa aa ba hCa hCb haa hba hga hgb ρ hρ
   obtain ⟨ia₁, he₁, hrd₁⟩ := denoteMeta_proj_inv haa
   obtain ⟨ia₂, he₂, hrd₂⟩ := denoteMeta_proj_inv hba
-  rcases hrd₁ with ⟨entry, hfe, rfl⟩ | ⟨hnt, hdec₁⟩
-  · rcases hrd₂ with ⟨entry', hfe', rfl⟩ | ⟨hnt', -⟩
+  rcases hrd₁ with ⟨entry, hfe, hnode₁⟩ | ⟨hnt, hdec₁⟩
+  · rcases hrd₂ with ⟨entry', hfe', hnode₂⟩ | ⟨hnt', -⟩
     · obtain rfl : entry = entry' := Option.some.inj (hfe.symm.trans hfe')
-      exact ProjAV.interp_congr (h hfa.proj_arg hfb.proj_arg hCa.proj_arg
-        hCb.proj_arg he₁ he₂ (Graded.projAV hga) (Graded.projAV hgb) ρ hρ)
+      obtain ⟨-, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode₁
+      obtain ⟨-, rfl⟩ := projNodeAV?_eq_some_iff.mp hnode₂
+      exact ProjNodeAV.interp_congr (h hfa.proj_arg hfb.proj_arg hCa.proj_arg
+        hCb.proj_arg he₁ he₂ (Graded.projNodeAV hga) (Graded.projNodeAV hgb) ρ hρ)
     · rw [hnt'] at hfe; exact nomatch hfe
   · rcases hrd₂ with ⟨entry', hfe', -⟩ | ⟨-, hdec₂⟩
     · rw [hnt] at hfe'; exact nomatch hfe'
@@ -313,9 +312,9 @@ sort is zero-equivalent interprets to the point. -/
 theorem DefEq.proofIrrel_sound {d : Nat}
     {a ta tta b tb ttb : Expr md} {u v : Level}
     (hta : InferSemIO m φ d a ta) (htta : InferSemIO m φ d ta tta)
-    (hu : RedSem m φ d tta (.sort u)) (hu0 : Level.isEquiv u .zero = some true)
+    (hu : RedSem m φ d tta (.sort u)) (hu0 : ∀ φ, Level.eval φ u = 0)
     (htb : InferSemIO m φ d b tb) (httb : InferSemIO m φ d tb ttb)
-    (hv : RedSem m φ d ttb (.sort v)) (hv0 : Level.isEquiv v .zero = some true) :
+    (hv : RedSem m φ d ttb (.sort v)) (hv0 : ∀ φ, Level.eval φ v = 0) :
     DefEqSem m φ d a b := by
   intro hfa hfb Δa aa ba hCa hCb haa hba hga hgb ρ hρ
   rw [prop_side_pt' hta htta hu hu0 hfa hCa haa hga ρ hρ,
@@ -354,7 +353,7 @@ theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
     (hlps : cvc.levelParams = cvT.levelParams)
     (hslots : (Ix.Kernel.towerSlotsAll env T caps.etaFields ||
       Ix.Kernel.recSlotsAll env T caps.etaFields) = true)
-    (hus : Level.isEquivList us us' = some true)
+    (hus : ∀ φ, Level.EvalEqList φ us us')
     (hcerts : CertsSem m φ d false
       (cvT.type.instantiateLevelParams cvT.levelParams us') wtb.getAppArgs)
     (hproj : Ix.Kernel.towerSlotsAll env T caps.etaFields = false →
@@ -402,8 +401,7 @@ theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
   have hψc : Level.substFn φ cvc.levelParams us
       = Level.substFn φ cvT.levelParams us' := by
     rw [hlps]
-    exact Ix.Kernel.Level.substFn_congr
-      (Ix.Kernel.Level.isEquivList_sound hus φ)
+    exact Ix.Kernel.Level.substFn_congr (hus φ)
   -- the slot discipline: every slot is a tower entry (and there is
   -- one), or every slot is a projection function
   have hkind : (Ix.Kernel.towerSlotsAll env T caps.etaFields = true ∧
@@ -518,11 +516,11 @@ theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
     have hcapsT' : capsT' = caps := by
       rw [hind] at hfT'
       exact (ConstantInfo.indInfo.inj (Option.some.inj hfT')).2.symm
-    obtain ⟨-, hctr', hpar', hfld'⟩ := himp' (by rw [hcapsT']; exact heta)
+    obtain ⟨-, hctr', hpar', hfld', hoff0⟩ := himp' (by rw [hcapsT']; exact heta)
     rw [hcvT'] at hlpsT'
     rw [hcapsT'] at hctr' hpar' hfld'
     obtain ⟨TVa, hTVa, hokTVa, hlaw⟩ :=
-      hetaL cvT caps hind us' (by rw [← hlpsT']; exact hlv)
+      hetaL hoff0 cvT caps hind us' (by rw [← hlpsT']; exact hlv)
     obtain ⟨rest, hfitT⟩ := hfitOf TVa hTVa hokTVa
     have hb := hlaw ρ (tsa.map (interp V ρ)) rest (interp V ρ ba)
       (by rw [hlenTs, hpar']) hfitT (by rw [← hlpsT']; exact hmemFam)
@@ -534,20 +532,22 @@ theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
           = some (projAV (j + e0.off) ba) := by
       intro j hj
       obtain ⟨entry, hfe, -⟩ := hslotE j (List.mem_range.mp hj)
-      rw [← hoffE j entry hfe]
-      exact denoteMeta_proj_tower hfe hdb
+      have hoffj : entry.off ≤ 1 := (hoffE j entry hfe) ▸ hoff0
+      rw [← hoffE j entry hfe, ← projNodeAV_of_le_one (acval := m.acval) (sn := T) (i := j) hoffj]
+      exact denoteMeta_proj_tower hfe (Or.inl hoffj) hdb
     have hokProj : ∀ x ∈ (List.range caps.etaFields).map
           (fun j => projAV (j + e0.off) ba), Graded V Δa x := by
       intro x hx σ hσ
       obtain ⟨j, hj, rfl⟩ := List.mem_map.mp hx
       obtain ⟨entry, hfe, hlpe⟩ := hslotE j (List.mem_range.mp hj)
+      have hoffj : entry.off ≤ 1 := (hoffE j entry hfe) ▸ hoff0
       rw [← hoffE j entry hfe]
       obtain ⟨-, -, -, ⟨cvTj, capsTj, hfTj, -, himpj⟩, hO5j, _,
         -, -, hlawj, -⟩ := hin.tower_ok T j entry hfe
       have hcapsTj : capsTj = caps := by
         rw [hind] at hfTj
         exact (ConstantInfo.indInfo.inj (Option.some.inj hfTj)).2.symm
-      obtain ⟨hnpj, -, hparj, -⟩ := himpj (by rw [hcapsTj]; exact heta)
+      obtain ⟨hnpj, -, hparj, -, -⟩ := himpj (by rw [hcapsTj]; exact heta)
       rw [hcapsTj] at hparj
       have hgj : TowerGuardAt φ entry us' :=
         towerGuardAt_of hO5j (fun hp => by rw [hp] at hnpj; exact nomatch hnpj)
@@ -561,8 +561,9 @@ theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
           (by rw [Ix.Kernel.projTele_stripPis]; rfl) (hTad d)
       obtain ⟨restj, hpeel⟩ := peelPis_of_piChain _ hpc
       rw [hlpe] at hA
-      exact (hA hgj σ tsa ba restj hlenVs (hokW σ hσ) (hokB σ hσ)
+      have hAj := (hA hgj σ tsa ba restj hlenVs (hokW σ hσ) (hokB σ hσ)
         (hmemB σ hσ) hpeel).1
+      rwa [projNodeAV_of_le_one hoffj] at hAj
     have hframeProj : ∀ x ∈ (List.range caps.etaFields).map
           (fun j => Expr.proj T j b), Frame d x ∧ CtxOk m φ d Δa x := by
       intro x hx

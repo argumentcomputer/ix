@@ -219,18 +219,51 @@ either lane (relocated verbatim from
 
 /-- A canonical rule's constructor parameters are among the recursor's
 prefix. -/
-theorem recRulePlain_leT {recTy : Expr md} {mI rP cnP : Nat}
-    (h : Expr.recRulePlain recTy mI rP cnP = true) :
+theorem recRulePlain_leT {recTy : Expr md} {mI rP cnP : Nat} {cjLps : List LevelParam}
+    (h : Expr.recRulePlain recTy mI rP cnP cjLps = true) :
     cnP ≤ rP := by
   rw [Expr.recRulePlain, Bool.and_eq_true, Bool.and_eq_true] at h
   exact of_decide_eq_true h.1.1
 
 /-- A canonical rule's prefix fits under the major's position. -/
-theorem recRulePlain_le_mIT {recTy : Expr md} {mI rP cnP : Nat}
-    (h : Expr.recRulePlain recTy mI rP cnP = true) :
+theorem recRulePlain_le_mIT {recTy : Expr md} {mI rP cnP : Nat} {cjLps : List LevelParam}
+    (h : Expr.recRulePlain recTy mI rP cnP cjLps = true) :
     rP ≤ mI := by
   rw [Expr.recRulePlain, Bool.and_eq_true, Bool.and_eq_true] at h
   exact of_decide_eq_true h.1.2
+
+/-- **The canonical shape, read off the test**: the recursor's major
+premise has the type of the family at the constructor's own level
+parameters, applied first to the recursor's leading `cnP` variables. -/
+theorem recRulePlain_shapeT {recTy : Expr md} {mI rP cnP : Nat} {cjLps : List LevelParam}
+    (h : Expr.recRulePlain recTy mI rP cnP cjLps = true) :
+    ∃ pre dom body bm D,
+      recTy.stripPis mI = some (pre, .forallE dom body bm) ∧
+      dom.getAppFn = .const D (cjLps.map Level.param) ∧
+      dom.getAppArgs.take cnP =
+        (List.range cnP).map (fun k => Expr.bvar (mI - 1 - k)) := by
+  rw [Expr.recRulePlain, Bool.and_eq_true] at h
+  obtain ⟨-, h⟩ := h
+  revert h
+  match hs : recTy.stripPis mI with
+  | some (pre, .forallE dom body bm) =>
+    intro h
+    try dsimp only at h
+    rw [Bool.and_eq_true] at h
+    obtain ⟨hl, ha⟩ := h
+    revert hl
+    match hfn : dom.getAppFn with
+    | .const D ls =>
+      intro hl
+      try dsimp only at hl
+      exact ⟨pre, dom, body, bm, D, by first | rfl | exact hs,
+        by first | rw [of_decide_eq_true hl] | rw [hfn, of_decide_eq_true hl], eq_of_beq ha⟩
+    | .bvar _ | .fvar _ _ | .sort _ | .app _ _ | .lam _ _ _ | .forallE _ _ _
+    | .letE _ _ _ _ | .lit _ | .proj _ _ _ => intro hl; exact nomatch hl
+  | none | some (_, .bvar _) | some (_, .fvar _ _) | some (_, .sort _)
+  | some (_, .const _ _) | some (_, .app _ _) | some (_, .lam _ _ _)
+  | some (_, .letE _ _ _ _) | some (_, .lit _) | some (_, .proj _ _ _) =>
+    intro h; exact nomatch h
 
 /-- The fire comparand levels of a plain rule. -/
 theorem recFireComparands_plain {rl : RecRule md} {lps : List LevelParam}

@@ -11,8 +11,7 @@ public section
 The reserved-recursor refutation both verified lanes use to identify
 the checker's shape tests with the pinned basis families: only `PUnit`
 passes `isUnitLikeTy`.  (Its sibling — only `PSigma'` passed the
-pair-eta test — retired with the pinned pair and `pairEtaCert`, task
-#175 W6.)
+pair-eta test — retired with the pinned pair and `pairEtaCert`.)
 Relocated from `IxC/Kernel/TTVerify/{ProofIrrelStep,PairEtaStep}.lean`
 (task #148 T4, the T1-style move), generalized from `EnvTT` to the one
 field they consume (`BasisPinnedTT` — itself relocated here-adjacent,

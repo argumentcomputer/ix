@@ -5,7 +5,7 @@ public import IxC.Kernel.Model.Inductives.StructIntro
 public section
 
 /-!
-# The constructor's frames (task #175 W4c, P3 module 6, part 4)
+# The constructor's frames
 
 `ctorFrames`: from the former's and the constructor's data at the
 environment holding the former, the binder-domain pins identify the

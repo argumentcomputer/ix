@@ -17,14 +17,16 @@ use crate::fri::{self, VerifierKey};
 use crate::kzg::{
   KzgCommitment, KzgConfig, Scalar, Srs, TranscriptKind, VerifierParams,
 };
+use multi_stark::lookup::LookupValues;
 use multi_stark::plonkish::{Assignment, Circuit};
 use multi_stark::prover::Proof;
-use multi_stark::system::{System, SystemWitness};
+use multi_stark::system::{System, SystemWitness, compute_lookup_values_range};
 #[cfg(test)]
 use multi_stark::traits::Algebra;
 use multi_stark::traits::{Field, TwoAdicField};
 use multi_stark::types::{GoldilocksBlake3Config, Val};
 use p3_field::PrimeField64;
+use p3_matrix::Matrix;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 
@@ -101,22 +103,54 @@ impl Prepared<Val> {
       self.assignment.public_values().len(),
     )?;
     let claims = statement.claims(self.assignment.public_values())?;
-    let trace_span = tracing::info_span!("compression/trace").entered();
     let definitions = lowering::fri_definitions(&compiled);
     validate_config(&config, &definitions)?;
-    let traces = compiled.traces(&self.assignment)?;
+    let (system, key) = tracing::info_span!("compression/setup")
+      .in_scope(|| System::new_without_preprocessed(config, definitions));
+    // Materialize each circuit's trace and lookup messages one at a time so
+    // preprocessed matrices are never cloned across all circuits and frontend
+    // state (`compiled` and `assignment`) is dropped before stage-1 LDEs.
+    let trace_span = tracing::info_span!("compression/trace").entered();
+    let count = system.circuits.len();
+    let shards = compiled.trace_shards(&self.assignment)?;
+    let mut traces = Vec::with_capacity(count);
+    let mut lookups = Vec::with_capacity(count);
+    for ci in 0..count {
+      let trace = shards.trace(ci)?;
+      let circuit = &system.circuits[ci];
+      let lookup = if trace.height() == 0 || circuit.graph.lookups.is_empty() {
+        LookupValues::builder(trace.height(), &[]).finish()
+      } else {
+        let preprocessed = (circuit.preprocessed_width > 0)
+          .then(|| {
+            compiled
+              .circuit_input(ci)
+              .and_then(|input| input.preprocessed)
+              .ok_or("missing compiled preprocessed matrix")
+          })
+          .transpose()?;
+        if let Some(pp) = &preprocessed {
+          assert_eq!(
+            trace.height(),
+            pp.height(),
+            "circuit {ci}: main trace height must equal preprocessed trace height"
+          );
+        }
+        compute_lookup_values_range(
+          &circuit.graph,
+          &trace,
+          preprocessed.as_ref(),
+          0..trace.height(),
+        )
+      };
+      traces.push(trace);
+      lookups.push(lookup);
+    }
     drop(trace_span);
     drop(compiled);
     drop(self.assignment);
-    let (mut system, key) = tracing::info_span!("compression/setup")
-      .in_scope(|| System::new(config, definitions));
     let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
-    let witness = SystemWitness::from_stage_1(traces, &system);
-    // Lookup messages now own everything needed from the fixed evaluations.
-    // Quotients/openings use PCS data; the returned verifier needs neither.
-    for circuit in &mut system.circuits {
-      circuit.preprocessed = None;
-    }
+    let witness = SystemWitness { traces, lookups };
     let proof = tracing::info_span!("compression/prove")
       .in_scope(|| system.prove_multiple_claims(&key, &refs, witness));
     drop(key);
@@ -146,9 +180,9 @@ pub fn prepare_kzg(
   let source =
     lowering::FriConstruction::build(&plan, verifier.statement.schema())?
       .assign(&plan, proof, claims)?;
+  drop(plan);
   let foreign = lowering::translate(&source.circuit);
   drop(source.circuit);
-  drop(plan);
   let assignment = lowering::assign_foreign(
     &foreign.inputs,
     &foreign.circuit,
@@ -266,9 +300,14 @@ impl Prepared<Scalar> {
     if height > srs.max_len() {
       return Err("compression trace exceeds the SRS range".into());
     }
-    let config = KzgConfig::with_max_trace_len(srs, height, 2)
+    let mut config = KzgConfig::with_max_trace_len(srs, height, 2)
       .with_streaming_lookups()
       .with_streaming_quotient();
+    if let Some(spill_dir) =
+      KzgConfig::resolve_disk_spill_dir(&std::env::temp_dir())?
+    {
+      config = config.with_disk_spill(spill_dir);
+    }
     prove_lowered(
       lowering::Lowered { compiled, assignment: self.assignment },
       config,

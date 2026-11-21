@@ -190,8 +190,8 @@ theorem intern_meaning (before : Interner) (sound : IndexSound before)
 def SharesValid (context : ShareCtx) : Ixon.Expr → Prop
   | .share index => ∃ id, resolveShare context index = .ok id
   | .prj _ _ value => SharesValid context value
-  | .app fn arg | .lam _ fn arg | .all _ _ fn arg => SharesValid context fn ∧ SharesValid context arg
-  | .letE _ type value body => SharesValid context type ∧ SharesValid context value ∧ SharesValid context body
+  | .app fn arg | .lam fn arg | .all fn arg => SharesValid context fn ∧ SharesValid context arg
+  | .letE _ _ type value body => SharesValid context type ∧ SharesValid context value ∧ SharesValid context body
   | _ => True
 
 def ResolvedBounded (context : ShareCtx) (nodes : Array Node) : Prop :=
@@ -350,19 +350,19 @@ def ingestBody (next : Ixon.Expr → IngestM Nat) (limits : Limits) (context : S
     let first ← next fn
     let second ← next arg
     internNode limits ⟨.app, #[first, second]⟩
-  | .lam contract type body => do
+  | .lam type body => do
     let first ← next type
     let second ← next body
-    internNode limits ⟨.lam contract, #[first, second]⟩
-  | .all contract result type body => do
+    internNode limits ⟨.lam, #[first, second]⟩
+  | .all type body => do
     let first ← next type
     let second ← next body
-    internNode limits ⟨.all contract result, #[first, second]⟩
-  | .letE contract type value body => do
+    internNode limits ⟨.all, #[first, second]⟩
+  | .letE nonDep mode type value body => do
     let first ← next type
     let second ← next value
     let third ← next body
-    internNode limits ⟨.letE contract, #[first, second, third]⟩
+    internNode limits ⟨.letE nonDep mode, #[first, second, third]⟩
   | .share index => Ix.Sharing.Exact.liftExcept (resolveShare context index)
 
 theorem ingestExpr_eq (limits : Limits) (context : ShareCtx) (depth : Nat) (source : Ixon.Expr) :
@@ -509,22 +509,22 @@ theorem ingestExpr_checked (limits : Limits) (context : ShareCtx) (depth : Nat) 
     intro nodes leftId rightId left right
     refine ⟨⟨left.2.1, right.2.1⟩, ?_⟩
     simp [Node.toExpr, Node.child, substShares, left.2.2, right.2.2]
-  case lam contract type body =>
+  case lam type body =>
     apply pair_checked context limits _ type body _ _
-      (ingestExpr_checked limits context (depth + 1) type) (ingestExpr_checked limits context (depth + 1) body) (.lam contract) rfl
+      (ingestExpr_checked limits context (depth + 1) type) (ingestExpr_checked limits context (depth + 1) body) .lam rfl
     intro nodes leftId rightId left right
     refine ⟨⟨left.2.1, right.2.1⟩, ?_⟩
     simp [Node.toExpr, Node.child, substShares, left.2.2, right.2.2]
-  case all contract result type body =>
+  case all type body =>
     apply pair_checked context limits _ type body _ _
-      (ingestExpr_checked limits context (depth + 1) type) (ingestExpr_checked limits context (depth + 1) body) (.all contract result) rfl
+      (ingestExpr_checked limits context (depth + 1) type) (ingestExpr_checked limits context (depth + 1) body) .all rfl
     intro nodes leftId rightId left right
     refine ⟨⟨left.2.1, right.2.1⟩, ?_⟩
     simp [Node.toExpr, Node.child, substShares, left.2.2, right.2.2]
-  case letE contract type value body =>
+  case letE nonDep mode type value body =>
     apply triple_checked context limits _ type value body _ _ _
       (ingestExpr_checked limits context (depth + 1) type) (ingestExpr_checked limits context (depth + 1) value)
-      (ingestExpr_checked limits context (depth + 1) body) (.letE contract) rfl
+      (ingestExpr_checked limits context (depth + 1) body) (.letE nonDep mode) rfl
     intro nodes typeId valueId bodyId typeRead valueRead bodyRead
     refine ⟨⟨typeRead.2.1, valueRead.2.1, bodyRead.2.1⟩, ?_⟩
     simp [Node.toExpr, Node.child, substShares, typeRead.2.2, valueRead.2.2, bodyRead.2.2]
@@ -551,9 +551,9 @@ theorem SharesValid.unshared {context : ShareCtx} (unshared : context.allowShare
     simp [resolveShare, unshared] at resolved
   | prj index field value ih => exact congrArg (Ixon.Expr.prj index field) (ih valid)
   | app fn arg ihf iha => simp only [substShares, ihf valid.1, iha valid.2]
-  | lam contract type body iht ihb => simp only [substShares, iht valid.1, ihb valid.2]
-  | all contract result type body iht ihb => simp only [substShares, iht valid.1, ihb valid.2]
-  | letE contract type value body iht ihv ihb =>
+  | lam type body iht ihb => simp only [substShares, iht valid.1, ihb valid.2]
+  | all type body iht ihb => simp only [substShares, iht valid.1, ihb valid.2]
+  | letE nonDep mode type value body iht ihv ihb =>
     simp only [substShares, iht valid.1, ihv valid.2.1, ihb valid.2.2]
   | _ => rfl
 

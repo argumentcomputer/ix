@@ -48,7 +48,7 @@ private def extFixture :
   let ty : Ixon.Expr := .leanAll (.ref 1 #[]) (.sort 1)
   let aAddr := Address.blake3 "ext-fixture-A".toUTF8
   let cnst : Ixon.Constant :=
-    ⟨.axio ⟨false, 1, ty⟩, #[], #[aAddr], #[.var 0]⟩
+    ⟨.axio ⟨false, 1, ty⟩, #[], #[aAddr], #[.var 0], #[]⟩
   let bAddr := Address.blake3 "ext-fixture-B".toUTF8
   let cm : ConstantMeta :=
     { metaRefs := #[bAddr], metaUnivs := #[.max (.var 0) .zero] }
@@ -150,7 +150,7 @@ private def msOutOfRange : Bool :=
     the constant. -/
 private def msAxiomUnreadEntryRejected : Bool :=
   let ax : Ixon.Axiom := ⟨false, 0, .sort 0⟩
-  let cnst : Ixon.Constant := ⟨.axio ax, #[prim0], #[], #[.zero]⟩
+  let cnst : Ixon.Constant := ⟨.axio ax, #[prim0], #[], #[.zero], #[]⟩
   -- Entry 2 references itself (`share 3 = p + 2`).
   let cm : ConstantMeta :=
     { info := .axio nAx.getHash #[] ⟨#[.leaf]⟩ 0,

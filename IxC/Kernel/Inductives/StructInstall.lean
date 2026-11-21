@@ -49,7 +49,7 @@ def checkStructDomsAt (ops : (CheckerOps md) m) (env : Env md) (off : Nat)
       throw (.notImplemented "direct structure: binder domain mismatch")
     checkStructDomsAt ops env off fvs doms j
 
-/-- Stage 5: **the projection table** (task #175 S1).  One constant
+/-- **Projection-table install**.  One constant
 per structure: the fields' result-type bodies read off the
 *annotated* constructor type by substitution alone
 (`structProjBodies`), the per-field guard levels

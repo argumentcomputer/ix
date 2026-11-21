@@ -190,6 +190,17 @@ def mapTele (f : md.Id → md'.Id) (p : List (Expr md × BinderMeta) × Expr md)
       cases stripPis k b <;> rfl
     | _ => rfl
 
+@[simp] theorem ctorTeleOk_mapKeys (e : Expr md) (k : Nat) :
+    ctorTeleOk (e.mapKeys f) k = ctorTeleOk e k := by
+  unfold ctorTeleOk
+  rw [stripPis_mapKeys]
+  rcases stripPis k e with _ | ⟨bs, body⟩
+  · rfl
+  · simp only [Option.map_some, mapTele]
+    rw [← mapKeys_getAppFn]
+    generalize body.getAppFn = g
+    cases g <;> rfl
+
 @[simp] theorem instPis_mapKeys (e : Expr md) (as : List (Expr md)) :
     instPis (e.mapKeys f) (as.map (mapKeys f)) = (instPis e as).map (mapKeys f) := by
   induction as generalizing e with
@@ -373,8 +384,9 @@ theorem map_mapKeys_beq_bvars {α : Type} (g : α → Nat) :
     congr 1
     rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq, mapKeys_eq_bvar_iff]
 
-@[simp] theorem recRulePlain_mapKeys (recTy : Expr md) (mI rP cnP : Nat) :
-    recRulePlain (recTy.mapKeys f) mI rP cnP = recRulePlain recTy mI rP cnP := by
+@[simp] theorem recRulePlain_mapKeys (recTy : Expr md) (mI rP cnP : Nat)
+    (cjLps : List LevelParam) :
+    recRulePlain (recTy.mapKeys f) mI rP cnP cjLps = recRulePlain recTy mI rP cnP cjLps := by
   unfold recRulePlain
   rw [stripPis_mapKeys]
   cases stripPis mI recTy with
@@ -384,7 +396,8 @@ theorem map_mapKeys_beq_bvars {α : Type} (g : α → Nat) :
     cases body with
     | forallE dom b m =>
       simp only [Option.map_some, mapTele, mapKeys, getAppArgs_mapKeys, ← List.map_take,
-        map_mapKeys_beq_bvars]
+        map_mapKeys_beq_bvars, ← mapKeys_getAppFn]
+      all_goals (cases dom.getAppFn <;> rfl)
     | _ => rfl
 
 /-! ## Good results -/

@@ -87,9 +87,9 @@ def render : Except String String := do
   let digest ← Ix.SpecDigest.specDigest
   let mut out := header ++ s!"// Specification version {specVersion}; digest {digest}.\n\n"
   out := out ++ "#[rustfmt::skip]\npub(super) const GROUPS: &[SpecGroup] = &[\n"
-  for group in IxVM.RoleSpecGen.groups do
+  for group in Ix.SpecDigest.groups do
     let roles := ", ".intercalate (group.map role)
-    let needs := ", ".intercalate ((IxVM.RoleSpecGen.groupNeeds group).map role)
+    let needs := ", ".intercalate ((Ix.SpecDigest.groupNeeds group).map role)
     out := out ++ s!"  SpecGroup \{ roles: &[{roles}], needs: &[{needs}] },\n"
   out := out ++ "];\n\n#[rustfmt::skip]\npub(super) fn specification(role: Role, source: &ArtifactSource) -> Result<Option<Specification>, String> {\n  Ok(Some(match role.index() {\n"
   let mut arms : Array (List Nat × String) := #[]

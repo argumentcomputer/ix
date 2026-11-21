@@ -40,22 +40,82 @@ namespace Ix.ClaimContext
 open Ix.Kernel (Role RoleTable)
 
 /-- The context of a claim over the role binding with hash `binding`. -/
-def ofBinding (binding : Address) : Except String ClaimContext := do
-  return { spec := ← Ix.SpecDigest.specDigest, binding, axioms := none }
+def ofBinding (binding : Address) (bindingAssumed : Bool := false) : Except String ClaimContext := do
+  return { spec := ← Ix.SpecDigest.specDigest, binding, axioms := none, bindingAssumed }
 
-/-- Safe axioms in `env` not bound by its role binding (`propext`,
-    `Classical.choice` and `sorryAx` are role-bound; `Quot.sound` is a `.quot`
-    record). Mirrors `ClaimContext::user_axioms` in `crates/ixon/src/proof.rs`. -/
+/-- Whether `name` is an auxiliary compiler-trust axiom synthesized by Lean 4's
+`Lean.Meta.nativeEqTrue` (`native_decide`, `decide +native`, `bv_decide`):
+`<decl>._native.<tactic>.ax` or `<decl>._native.<tactic>.ax_<suffix>`.
+Mirrors `ClaimContext::is_native_eval_axiom_name` in `crates/ixon/src/proof.rs`. -/
+def isNativeEvalAxiomName : Ix.Name → Bool
+  | .str (.str (.str _ "_native" _) tac _) leaf _ =>
+    (tac == "native_decide" || tac == "decide" || tac == "bv_decide") &&
+      (leaf == "ax" || leaf.startsWith "ax_")
+  | _ => false
+
+def isSafeAxiomFast (lc : Ixon.LazyConstant) : Bool :=
+  if lc.len >= 2 && lc.off + 1 < lc.buf.size &&
+      lc.buf[lc.off]! == 0xD2 && lc.buf[lc.off + 1]! == 0x00 then
+    match lc.get? with
+    | some { info := .axio a, .. } => !a.isUnsafe
+    | _ => false
+  else
+    false
+
+def classifyNativeEvalAxioms (env : Ixon.Env) (candidates : Std.HashSet Address) :
+    Std.HashSet Address := Id.run do
+  if candidates.isEmpty || env.named.isEmpty then return {}
+  let mut native : Std.HashSet Address := {}
+  let mut other : Std.HashSet Address := {}
+  for (name, named) in env.named do
+    let addr := named.addr
+    if !candidates.contains addr then continue
+    if isNativeEvalAxiomName name then
+      native := native.insert addr
+    else
+      other := other.insert addr
+  if native.isEmpty then return {}
+  return native.fold (init := {}) fun s a => if other.contains a then s else s.insert a
+
+/-- Safe unbound axiom addresses in `env` whose named entries are all Lean 4
+native-evaluation auxiliary axioms (`isNativeEvalAxiomName`). Because Ixon
+deduplicates alpha-equivalent axioms, an address that also carries a non-native
+user axiom name is NOT classified as compiler-trust. Mirrors
+`ClaimContext::native_eval_axiom_addrs` in `crates/ixon/src/proof.rs`. -/
+def nativeEvalAxiomAddrs (env : Ixon.Env) : Std.HashSet Address := Id.run do
+  let bytes := match env.roleBinding with
+    | some b => some b.bytes
+    | none => Ix.Kernel.Reader.defaultTableBytes.toOption
+  let bound : Std.HashSet Address := match bytes.bind RoleTable.ofBytes with
+    | some t => t.bound.foldl (fun s (_, a) => s.insert a) {}
+    | none => {}
+  let mut candidates : Std.HashSet Address := {}
+  for (addr, lc) in env.consts do
+    if isSafeAxiomFast lc && !bound.contains addr then
+      candidates := candidates.insert addr
+  return classifyNativeEvalAxioms env candidates
+
+/-- Safe axioms in `env` not bound by its role binding and not Lean 4
+    native-evaluation auxiliary axioms (`nativeEvalAxiomAddrs`). The default
+    table binds `propext` and `Classical.choice` and the inert `sorryAx`,
+    `Lean.trustCompiler`, `Lean.ofReduceBool` and `Lean.ofReduceNat`, so a
+    claim over Lean's `Init` lists none of them; it binds `Quot.sound`, an
+    axiom record, as its role. Mirrors `ClaimContext::user_axioms` in
+    `crates/ixon/src/proof.rs`. -/
 def userAxioms (env : Ixon.Env) : Array Address := Id.run do
   let some binding := env.roleBinding | return #[]
   let some table := RoleTable.ofBytes binding.bytes | return #[]
   let bound : Std.HashSet Address := table.bound.foldl (fun s (_, a) => s.insert a) {}
-  let mut out : Array Address := #[]
+  let mut candidates : Array Address := #[]
+  let mut candSet : Std.HashSet Address := {}
   for (addr, lc) in env.consts do
-    let bytes := lc.rawBytes
-    if bytes.size >= 2 && bytes[0]! == 0xD2 && bytes[1]! == 0x00 && !bound.contains addr then
-      out := out.push addr
-  return out
+    if isSafeAxiomFast lc && !bound.contains addr then
+      candidates := candidates.push addr
+      candSet := candSet.insert addr
+  if candidates.isEmpty then return #[]
+  let native := classifyNativeEvalAxioms env candSet
+  if native.isEmpty then return candidates
+  return candidates.filter (!native.contains ·)
 
 /-- The canonical assumption tree of safe user axioms in `env` (`none` when
     there are none). Mirrors `ClaimContext::user_axiom_tree` in
@@ -65,12 +125,13 @@ def userAxiomTree (env : Ixon.Env) : Option AssumptionTree :=
 
 /-- The context of a claim over an environment's own role binding and user
     axioms. -/
-def ofEnv (env : Ixon.Env) : Except String ClaimContext := do
+def ofEnv (env : Ixon.Env) (bindingAssumed : Bool := false) : Except String ClaimContext := do
   let some binding := env.roleBinding
     | throw "claim context: the environment carries no role binding"
   return { spec := ← Ix.SpecDigest.specDigest
            binding := binding.address
-           axioms := (userAxiomTree env).map (·.root) }
+           axioms := (userAxiomTree env).map (·.root)
+           bindingAssumed }
 
 /-- The context of a claim over the default role table
 (`Ix.Kernel.Reader.defaultTable`), the generated table of the compiled
@@ -84,17 +145,18 @@ def ofDefaultTable : Except String ClaimContext := do
 - `List`, `List.nil`, `List.cons`, `String`, `String.ofList`, `Char` and
   `Char.ofNat`: a `String` literal's type and constructor form (IxVM
   `str_lit_to_ctor`; IxC `litStrKeys`);
-- `propext` and `Classical.choice`: the standard axioms the axiom policy
-  admits as the binding binds them (IxVM `axiom_standing`; IxC `stdAxiomOk`).
-`Quot.sound` and the quotient block are fixed by their specifications. -/
+- `Quot.sound`, `propext` and `Classical.choice`: the standard axioms the axiom
+  policy admits as the binding binds them (IxVM `axiom_standing`; IxC `stdAxiomOk`).
+  `Quot.sound` is an axiom record, not a quotient record.
+The quotient block's other members are fixed by their specifications. -/
 def classRoles : List Role :=
-  [.nat, .natZero, .natSucc, .list, .listNil, .listCons, .string, .stringOfList,
-   .char, .charOfNat, .propext, .choice]
+  [.nat, .natZero, .natSucc, .list, .listNil, .listCons, .quotSound, .string,
+   .stringOfList, .char, .charOfNat, .propext, .choice]
 
 /-- The class roles' indices in a binding section: `ix_aggr` reads a complete
 table's entries for them at these positions. -/
 theorem classRoles_idx :
-    classRoles.map Role.idx = [0, 1, 2, 29, 30, 31, 37, 38, 39, 40, 56, 57] := by
+    classRoles.map Role.idx = [0, 1, 2, 29, 30, 31, 36, 37, 38, 39, 40, 56, 57] := by
   decide
 
 /-- The tag of a literal class preimage: `N4(0xE, 12)`, after the binding

@@ -1348,13 +1348,37 @@ structure Env where
   anonHints : Std.HashMap Address Lean.ReducibilityHints := {}
   /-- Anonymous artifact binding, retained independently of named metadata. -/
   roleBinding : Option RoleBinding := none
+  /-- IxVM model advice (`IxVM.Model`): prover-side witness data, never
+      serialized and never part of a claim or of the claimed environment.
+      For each modeled (mutual or nested) inductive block, keyed by its `muts`
+      record's address, the payload IxVM's modeled route reads on IO channel 7
+      (`KernelModeled`'s layout). -/
+  models : Std.HashMap Address ByteArray := {}
+  /-- The generated model records, served to IxVM on the IO store like any
+      record (channel 2, hash-checked when loaded), but not in `consts`. -/
+  modelRecords : Std.HashMap Address Ixon.Constant := {}
+  /-- Reducibility hints of the generated model definitions (channel 3). -/
+  modelHints : Std.HashMap Address Lean.ReducibilityHints := {}
+  /-- Literal blobs of the generated model records that `blobs` lacks (channel 4). -/
+  modelBlobs : Std.HashMap Address ByteArray := {}
+  /-- Per modeled block, the model records and the container recursors its
+      payload names: the witness byte scope of a run that checks the block. -/
+  modelDeps : Std.HashMap Address (Array Address) := {}
+  /-- Whether `IxVM.Model.attach` has run on this environment. -/
+  modelsAttached : Bool := false
   deriving Inhabited
 
 namespace Env
 
+/-- Clear the derived prover-side model advice maps and attachment flag so
+    the next `IxVM.Model.attach` rebuilds from the current environment. -/
+def clearModels (env : Env) : Env :=
+  { env with models := {}, modelRecords := {}, modelHints := {}, modelBlobs := {},
+             modelDeps := {}, modelsAttached := false }
+
 /-- Store a constant at the given address. Caches the materialized value. -/
 def storeConst (env : Env) (addr : Address) (const : Constant) : Env :=
-  { env with consts := env.consts.insert addr (LazyConstant.ofConstant const) }
+  { env.clearModels with consts := env.consts.insert addr (LazyConstant.ofConstant const) }
 
 /-- Get a constant by address, materializing on demand. -/
 def getConst? (env : Env) (addr : Address) : Option Constant :=
@@ -1385,7 +1409,7 @@ def getName? (env : Env) (addr : Address) : Option Ix.Name :=
 /-- Store a blob and return its content address. -/
 def storeBlob (env : Env) (bytes : ByteArray) : Env × Address :=
   let addr := Address.admissionHash bytes
-  ({ env with blobs := env.blobs.insert addr bytes }, addr)
+  ({ env.clearModels with blobs := env.blobs.insert addr bytes }, addr)
 
 /-- Get a blob by address. -/
 def getBlob? (env : Env) (addr : Address) : Option ByteArray :=

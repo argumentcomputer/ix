@@ -213,8 +213,7 @@ theorem etaCert_sim (mode : CheckMode) (hr : CoreSim P f r r') (d : Nat)
       (.app b (.fvar d ty₁)) (Expr.Good.instantiate1 (v := .fvar d ty₁) hbody hty 0) ⟨hb, hty⟩))
       (fun ok₂ _ => ?_)
     refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => ?_)
-    · refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimV.pureT false)
-      refine SimE.ite Iff.rfl (fun _ => SimE.throw') (fun _ => SimV.pureT true)
+    · exact SimE.ite Iff.rfl (fun _ => SimE.throw') (fun _ => SimV.pureT true)
     · exact SimV.pureT false
   | _ => exact SimV.pureT false
 

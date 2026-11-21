@@ -55,7 +55,7 @@ theorem checkDeclRun_ofEnvFactsE
     (h : checkDecl μ (fueledOps μ F) ev env d = .ok env₂) :
     DeclRun μ F (DeclIndRunDispatch μ F env) env d env₂ :=
   checkDeclRun_of
-    -- FLAG-AGNOSTIC (task #175 wiring W4): case on the `.indDecl`
+    -- FLAG-AGNOSTIC: case on the `.indDecl`
     -- clause's own `nativeParts?` dispatch — `declNativeRun_of`
     -- on the direct arm, `declIndRun_of` on the modeled one.
     (fun {block nP} hpin hh => by

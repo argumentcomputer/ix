@@ -15,19 +15,16 @@ them; a syntactic read is now the operation itself.
 
 See DESIGN.md, "The cached checker".
 
-**One body, two modes (2026-09-06, `agent/coret-retire`; the mode is
-the only parameter since task #185).**  Every body below is a template
+**One body, two modes.**  Every body below is a template
 over `mode : CheckMode`, and the knot at the end (`coreKnotI mode`)
 ties them at a mode.  The verified core is this knot at `.verified`;
 the trusted core is this same knot at `.trusted` — there is no second
-implementation.  The hand-written cert-skipping twin
-(`IxC/Kernel/Cached/CoreT.lean`, retired with this batch) is gone: what
-the trusted mode omits is exactly what `mode.verifiedChecks` gates
-here (group A: the annotation validations, the λ-codomain sort check,
-the projection certificate) plus what `mode.certs` gates (the
-certificate families: every `certAtI` / `certUnlessI` site and the
-`betaSkip` / `ioSkip` reads), and nothing else (DESIGN.md, "CORET
-RETIRED").  Every read is a `match` on the two-constructor enum
+implementation.  What the trusted mode omits is exactly what
+`mode.verifiedChecks` gates here (the annotation validations, the
+λ-codomain sort check, the projection certificate) plus what
+`mode.certs` gates (the certificate families: every `certAtI` /
+`certUnlessI` site and the `betaSkip` / `ioSkip` reads), and nothing
+else.  Every read is a `match` on the two-constructor enum
 (`IxC/Kernel/Env.lean`), so at either literal mode it reduces by
 `rfl` and the branch is gone, not collapsed.
 -/
@@ -267,17 +264,14 @@ def proofIrrelI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (a b : Expr md) :
       | _ => pure false
     | _ => pure false
 
-/- Task #172 batch B2 — **THE BODY TEMPLATE'S PARAMETER** (the mode
-itself since task #185).  Every configured body below takes
+/- **The body template's parameter**: every configured body below takes
 `mode : CheckMode` and is instantiated at the two named concrete cores
-at the end of this module (`…PC` at `.verified`, `…TC` at `.trusted`;
-the `…RC` half retired with the R core, 2026-09-05).  Every read below
-is one of the `CheckMode` functions of `IxC/Kernel/Env.lean`, each
-a `match` on the enum.  The ι cone (`structEtaCertWithI` →
-`majorToCtorI` → `prepareMajorI` → `iotaRecI`) reads its ι-slot
-licence off `mode.betaGate` — the same function the β site reads —
-and keeps only the TT-lane residue on `mode.ttChecks`, a literal
-`false` at each mode. -/
+at the end of this module (`…PC` at `.verified`, `…TC` at `.trusted`).
+Every read below is one of the `CheckMode` functions of
+`IxC/Kernel/Env.lean`, each a `match` on the enum.  The ι cone
+(`structEtaCertWithI` → `majorToCtorI` → `prepareMajorI` → `iotaRecI`)
+reads its ι-slot licence off `mode.betaGate` — the same function the β
+site reads — and keeps `mode.ttChecks` at `false` for both modes. -/
 variable (mode : CheckMode)
 
 /-! ### The certificate-family switch (the twin's retirement, 2026-09-06)
@@ -366,8 +360,7 @@ def projAppsFnI (T : Key md) (us' : List Level) (targs : List (Expr md))
     let rs ← projAppsFnI T us' targs b rest
     pure (r :: rs)
 
-/-- The `.proj T i b` spine (the tower spelling, task #175
-W4c). -/
+/-- The `.proj T i b` spine (the tower spelling). -/
 def projNodesI (T : Key md) (b : Expr md) : List Nat → (CheckCM md) (List (Expr md))
   | [] => pure []
   | i :: rest => do
@@ -435,8 +428,8 @@ def structEtaCertWithI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
                 -- per-slot ones are certificate families (official's
                 -- `try_eta_struct_core` runs neither); off at `.trusted`
                 if ← certAtI mode (iotaCertsI r fe depth false tyT targs) then do
-                  -- the per-slot certificates are the projection-function
-                  -- kind's; a tabled family has none (task #175 S1)
+                  -- the per-slot certificates are for the projection-function
+                  -- kind only; a tabled family has none
                   if ← certAtI mode
                       (if fe.towerSlotsAllF Tn caps.etaFields then pure true
                       else structEtaProjCertsI r fe depth T Tn us'
@@ -520,14 +513,13 @@ def etaCertI (r : CoreFnsI md) (_fe : FEnv md) (depth : Nat)
   let wtb ← r.whnf depth tb
   match wtb with
   | .forallE ty₂ _ m₂ => do
-    -- input contracts compared, and prop-ness agreement checked LAST
+    -- prop-ness agreement checked LAST
     -- (task #161); see `etaCert`
     if ← r.defeq depth ty₂ ty₁ then do
       let fv ← pure (Expr.fvar depth ty₁)
       let b₁ ← inst1M body₁ fv
       let ba ← pure (Expr.app b fv)
       unless ← r.defeq (depth + 1) b₁ ba do return false
-      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (eta)")
       pure true
@@ -769,8 +761,8 @@ def iotaRecI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (e : Expr md) :
                  throw (.notImplemented
                    "iota reduction over a nested auxiliary recursor rule")
                else do
-                -- (the ι batch: the two `stripPis` pins are gone — see
-                -- the spec's `iotaRec`)
+                -- the two `stripPis` arity invariants are established
+                -- at install time — see `iotaRec`
                 -- the comparands (canonical: recursor's levels/args;
                 -- nested: the stored major-domain instantiations)
                 let cmpLvls : List Level ←
@@ -981,7 +973,7 @@ def whnfCoreStepI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
             -- task #100 de-gating: the certificate runs
             -- unconditionally at the verified mode (the former
             -- nonzero-sort gate is unsound-to-model under the
-            -- domain-relative collapse); task #175 W6: the spine
+            -- domain-relative collapse); the spine is certified
             -- against the constructor's type (see `projCert`); the
             -- trusted mode runs none (`projCertAt`).
             if ← projCertAtI r fe depth mode.verifiedChecks mode.betaGate c us args then
@@ -1371,16 +1363,15 @@ def inferBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM m
           let targs ← pure (Expr.getAppArgsC te)
           if T = sn ∧ targs.length = entry.numParams ∧
               us.length = entry.levelParams.length then do
-            -- the official `infer_proj` restriction (task #175
-            -- W4c/O4), as in the spec body
+            -- the official `infer_proj` restriction, as in the spec body
             if Level.isEquiv entry.structSort .zero == some true then
               unless Level.isEquiv
                   (Level.subst entry.levelParams us entry.fieldSort) .zero
                   == some true do
                 throw (.invalid
                   "projection from a propositional structure must be a proposition")
-            -- the body at the arguments and the subject, as in the
-            -- spec body (task #175 S1) — through the memoized,
+            -- instantiate the stored body at the arguments and the
+            -- subject, as in the spec body — through the memoized,
             -- sharing-preserving `Expr` instantiations
             -- (`ProjEntry.typeAtI`; the spec's `typeAt` is a tree walk
             -- that copied the subject and the parameters — the affine
@@ -1392,7 +1383,7 @@ def inferBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM m
     | .letE _ _ _ _ =>
       -- unreachable by construction, as in the spec body (task #241):
       -- the official `infer_let` triple lives in `annotateBodyI`'s own
-      -- `.letE` clause, which returns the ζ reduct (task #217)
+      -- `.letE` clause, which returns the ζ reduct
       throw (.internal "inferType: `let` in an annotated expression")
     | .bvar _ =>
       throw (.notImplemented "inferType beyond the supported fragment")
@@ -1578,14 +1569,13 @@ def defeqStepI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
         else stuckIrrelI mode r fe depth a' b'
       else stuckIrrelI mode r fe depth a' b'
     | .forallE ty₁ body₁ m₁, .forallE ty₂ body₂ m₂ => do
-      -- input contracts compared, results not, and prop-ness agreement
+      -- prop-ness agreement
       -- checked LAST (task #161); see `defeqBody`
       unless ← r.defeq depth ty₁ ty₂ do return false
       let fv ← pure (Expr.fvar depth ty₂)
       let b₁ ← inst1M body₁ fv
       let b₂ ← inst1M body₂ fv
       unless ← r.defeq (depth + 1) b₁ b₂ do return false
-      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (defeq-forall)")
       pure true
@@ -1595,7 +1585,6 @@ def defeqStepI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
       let b₁ ← inst1M body₁ fv
       let b₂ ← inst1M body₂ fv
       unless ← r.defeq (depth + 1) b₁ b₂ do return false
-      unless m₁.contract == m₂.contract do return false
       if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
         throw (.notImplemented "sort-annotation mismatch (defeq-lam)")
       pure true
@@ -1653,7 +1642,7 @@ domain, binder info. -/
 abbrev AnnotBinderEntry (md : Mode) := Expr md × BinderMeta
 
 /-- The cached twin of `annotBinderMeta`, writing through
-`BinderMeta.withPw` (a shared object where one exists, PERF P14;
+`BinderMeta.withPw` (reusing a shared object where one exists;
 `annotBinderMetaI_eq`). -/
 def annotBinderMetaI (pw? : Option PropWhen) (mb : BinderMeta) : BinderMeta :=
   match pw? with
@@ -1845,8 +1834,8 @@ def annotateBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckC
       -- official `infer_let` check order (see the spec body): the
       -- annotation is a type, the value's inferred type matches it,
       -- then the body with the value transparent (zeta at annotate;
-      -- `inst1M` keeps the substitution sharing-preserving).  Task #217
-      -- (audit follow-up #206-S1) put the triple back: the pass returns
+      -- `inst1M` keeps the substitution sharing-preserving). The
+      -- official `infer_let` triple runs here because this pass returns
       -- the ζ reduct, so `inferBodyI`'s `.letE` arm never sees the node
       -- — task #241 made that arm a positive `.internal` error.
       let ty' ← r.annotate depth ty
@@ -1959,10 +1948,8 @@ def coreKnotI (fe : FEnv md) : Nat → CoreFnsI md
     -- `Thunk.get ⟨f⟩` is `f ()` by structure eta, so this is the same
     -- term: no proof in `IxC/Kernel/Verify/Cached/*` moved.
     let prev : Unit → CoreFnsI md := fun _ => coreKnotI fe fuel
-    -- task #172 B2 / #185: the template's parameter is the mode, an
-    -- enum passed down once per *driver* — nothing is built per knot
-    -- level or per call (at B2 a record allocation at every
-    -- head-normalization entry cost +0.155 % on `init-prelude`).
+    -- The template's parameter is the mode, an enum passed down once
+    -- per driver — nothing is built per knot level or per call.
     { whnfCore := memoEI (·.whnfCoreC)
         (fun st mp => { st with whnfCoreC := mp })
         (fun d e => whnfCoreBodyI mode (prev ()) fe d e)
@@ -1990,8 +1977,7 @@ def coreKnotI (fe : FEnv md) : Nat → CoreFnsI md
           memoEI (·.inferC) (fun st mp => { st with inferC := mp })
             (fun d e => inferBodyI mode (prev ()) fe d e) }
 
-/-! ## The named concrete cores (task #172, batches B2 and B3; the R
-half retired 2026-09-05; the T half instantiated 2026-09-06)
+/-! ## The named concrete cores
 
 The template's whole point, spelled out: these are **definitions, not
 clones** — one body, one name per family, and each unfolds to a term

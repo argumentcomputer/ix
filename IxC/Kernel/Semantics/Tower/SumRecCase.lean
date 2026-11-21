@@ -6,7 +6,7 @@ public import IxC.Kernel.Semantics.Univ
 @[expose] public section
 
 /-!
-# The sum recursor's case split, spelled (task #175 sum-types, stage S4a; indexed)
+# The sum recursor's case split, spelled
 
 The body of a direct sum's recursor cases on the major's tag with a
 nested `Nat.rec` tower (`caseRecAV`): stage `j` is a `Nat.rec` whose
@@ -18,7 +18,7 @@ component, the index-equation proof, is not passed), and whose step
 descends to stage `j + 1` on the predecessor tag; past the last
 constructor the branch is the vacuous `λ (y : Empty), prf`.
 
-**The frame** (task #175 indexed).  Every piece is spelled at an
+**The frame**.  Every piece is spelled at an
 explicit depth `D` below the recursor's **K-frame** — the frame
 `(p⃗, motive, minors, ı⃗)` holding the parameters, the motive, the `n`
 minors and the `nIdx` index variables — so the motive is `bvar (D +

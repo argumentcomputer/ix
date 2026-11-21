@@ -8,7 +8,7 @@ public section
 The one generic lemma the checker's do-block inversions share.  It
 lived in `IxC/Kernel/Verify/ProjPinInv.lean` until that module — the
 pinned pair entries' install-time invariant — was retired with the
-`PSigma'` pin (task #175 W6, 2026-09-05); relocated verbatim.
+`PSigma'` pin; relocated verbatim.
 -/
 
 namespace Ix.Kernel

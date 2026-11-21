@@ -156,6 +156,109 @@ pub(crate) fn load<T: DeserializeOwned>(path: &Path) -> Result<T> {
   Ok(value)
 }
 
+#[cfg(all(
+  target_os = "linux",
+  any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "riscv64"
+  )
+))]
+fn fadvise(fd: std::os::fd::RawFd, offset: i64, len: i64, advice: i32) {
+  unsafe extern "C" {
+    fn posix_fadvise(fd: i32, offset: i64, len: i64, advice: i32) -> i32;
+  }
+  // Best-effort kernel page-cache hint; ignoring errors never affects results.
+  let _ = unsafe { posix_fadvise(fd, offset, len, advice) };
+}
+
+/// Stream-hash a file with BLAKE3 using a bounded buffer so multi-gigabyte
+/// cache files are never memory-mapped into `VmRSS`/`VmHWM`.
+pub(crate) fn blake3_file(path: &Path) -> io::Result<[u8; 32]> {
+  const CHUNK_BYTES: usize = 16 << 20;
+  const RAYON_THRESHOLD: usize = 128 << 10;
+  #[cfg(all(
+    target_os = "linux",
+    any(
+      target_arch = "x86_64",
+      target_arch = "aarch64",
+      target_arch = "riscv64"
+    )
+  ))]
+  const POSIX_FADV_SEQUENTIAL: i32 = 2;
+  #[cfg(all(
+    target_os = "linux",
+    any(
+      target_arch = "x86_64",
+      target_arch = "aarch64",
+      target_arch = "riscv64"
+    )
+  ))]
+  const POSIX_FADV_DONTNEED: i32 = 4;
+
+  let mut file = File::open(path)?;
+  #[cfg(all(
+    target_os = "linux",
+    any(
+      target_arch = "x86_64",
+      target_arch = "aarch64",
+      target_arch = "riscv64"
+    )
+  ))]
+  let fd = {
+    use std::os::fd::AsRawFd;
+    let fd = file.as_raw_fd();
+    fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+    fd
+  };
+  let mut hasher = blake3::Hasher::new();
+  let mut buffer = vec![0u8; CHUNK_BYTES];
+  #[cfg(all(
+    target_os = "linux",
+    any(
+      target_arch = "x86_64",
+      target_arch = "aarch64",
+      target_arch = "riscv64"
+    )
+  ))]
+  let mut offset: i64 = 0;
+  loop {
+    let mut filled = 0;
+    while filled < buffer.len() {
+      match file.read(&mut buffer[filled..]) {
+        Ok(0) => break,
+        Ok(n) => filled += n,
+        Err(error) if error.kind() == io::ErrorKind::Interrupted => {},
+        Err(error) => return Err(error),
+      }
+    }
+    if filled == 0 {
+      break;
+    }
+    if filled >= RAYON_THRESHOLD {
+      hasher.update_rayon(&buffer[..filled]);
+    } else {
+      hasher.update(&buffer[..filled]);
+    }
+    #[cfg(all(
+      target_os = "linux",
+      any(
+        target_arch = "x86_64",
+        target_arch = "aarch64",
+        target_arch = "riscv64"
+      )
+    ))]
+    if let Ok(len) = i64::try_from(filled) {
+      fadvise(fd, offset, len, POSIX_FADV_DONTNEED);
+      offset = offset.saturating_add(len);
+    }
+    if filled < buffer.len() {
+      break;
+    }
+  }
+  Ok(*hasher.finalize().as_bytes())
+}
+
 #[cfg(all(test, feature = "groth16"))]
 mod tests {
   use super::*;

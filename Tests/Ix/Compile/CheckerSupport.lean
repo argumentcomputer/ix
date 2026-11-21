@@ -28,6 +28,11 @@ import Tests.Ix.Compile.ClosureHarness
     - The certified checker accepts `Nat.land`, `Nat.mul` and the helpers.
       Every fixture constant is accepted, typed by the typing tier (the
       partial `go._unsafe_rec`), or declined in a documented class.
+  - Both closures are certified as `ix compile` compiles them, with binder
+    data and without finalization (`ClosureHarness.certifiedClosure`): the
+    Lean entry's records carry no binder data, so they are not the records
+    the default role table binds, and finalization's role support would
+    give the raw closure `Nat.mul`.
     - The output decompiles to the source.
 
   Ported from 650500c2 and a9cf3607 `Tests/Ix/Compile/CheckerSupport.lean`:
@@ -57,12 +62,13 @@ namespace Tests.Ix.Compile.CheckerSupport
 def fixture : System.FilePath := "Tests/Ix/Compile/CheckerSupport/Single.lean"
 
 /-- The certified checker's reason for declining `Nat.land` in the raw
-closure (`IxC/Kernel/DeclCheck.lean:882`), as `kernel-check-ixe` renders it
+closure's certified compile (`IxC/Kernel/DeclCheck.lean:882`), as `kernel-check-ixe` renders it
 since IxC step 6: the key as its Lean name and the first eight hexadecimal
 digits of its record address (`Ix.Kernel.Reader.spellWith`). Recorded from a
 run of this tree, character for character; re-record it when the raw
-closure's `Nat.land` record moves. -/
-def rawLandDecline : String := "unsupported Nat.div/mod environment (Nat.land@de8c100c)"
+closure's `Nat.land` record moves (with binder data, it is the default role
+table's `Nat.land`). -/
+def rawLandDecline : String := "unsupported Nat.div/mod environment (Nat.land@a4f25748)"
 
 /-- The constants the certificate ground concerns: the fixture's three
 `isBase` helpers (blocked in the raw closure), then `Nat.land` and `Nat.mul`. -/
@@ -122,25 +128,28 @@ def run : IO UInt32 := do
     require (whole.env.blobs[address]? == some blob) s!"whole blob differs at {address}"
   for (name, nd) in negative.env.named do
     require (closed.env.named[name]? == some nd) s!"support changed raw Named {name.pretty}"
-  -- the selected closure certifies
-  let positive ← certify dir "selected" closed.bytes
+  -- the selected closure certifies, as `ix compile` compiles it (binder data on,
+  -- not finalized: finalization's role support would add `Nat.mul` to any closure)
+  let (closedCert, closedCertBytes) ← certifiedClosure env selected (workers := 4)
+  let positive ← certify dir "selected" closedCertBytes
   for name in required do
-    let row ← verdict positive closed.env name
+    let row ← verdict positive closedCert name
     require (row.outcome == "accept") s!"selected: {name}: {row.outcome}: {row.reason}"
   for name in seeds do
-    let row ← verdict positive closed.env name
+    let row ← verdict positive closedCert name
     -- `typed`: a partial or unsafe fixture constant (`go._unsafe_rec`) is a
     -- tier record, which the typing tier types (`KernelReport.outcomes`)
     require (row.outcome == "accept" || row.outcome == "typed" ||
         (row.outcome == "decline" && Tests.Ix.Compile.ClosureHarness.documentedDecline row.reason))
       s!"selected: fixture {name}: {row.outcome}: {row.reason}"
   -- the raw closure: the exact decline, and the helpers blocked
-  let rawReport ← certify dir "raw" negative.bytes
-  let decline ← verdict rawReport negative.env ``Nat.land
+  let (rawCert, rawCertBytes) ← certifiedClosure env raw (workers := 4)
+  let rawReport ← certify dir "raw" rawCertBytes
+  let decline ← verdict rawReport rawCert ``Nat.land
   require (decline.outcome == "decline" && decline.reason == rawLandDecline)
     s!"raw control lost its exact Nat.land decline: {decline.outcome}: {decline.reason}"
   for name in required.take 3 do
-    let blocked ← verdict rawReport negative.env name
+    let blocked ← verdict rawReport rawCert name
     require (blocked.outcome == "blocked") s!"raw helper {name} is not blocked: {blocked.outcome}"
   let (errors, summary) ← decompileCheck env selected closed
   require errors.isEmpty s!"decompile: {errors}"
