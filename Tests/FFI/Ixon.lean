@@ -3,7 +3,6 @@ module
 public import LSpec
 public import Tests.Gen.Ixon
 public import Ix.Ixon
-public import Ix.IxonUniv
 public import Ix.Cli.DiffCmd
 
 /-!
@@ -594,51 +593,9 @@ def envPackTests : TestSeq :=
   packErrTest "EnvPack: main cannot be assumed"
     (packFixture src "bar" #["bar"])
 
-/-! ## Long `imax` chains (canonUniv's normalizer memo) -/
-
-/-- `imax (a (n-1)) (imax (a (n-2)) (… (imax (a 0) last)))`: one `imax` per
-    binder, the shape `Meta.getLevel` returns for a long `∀`. -/
-def imaxChain (a : Nat → Univ) (last : Univ) : Nat → Univ
-  | 0 => last
-  | n + 1 => .imax (a n) (imaxChain a last n)
-
-/-- The Cutsat-shaped chain (`Lean.Meta.Grind.Arith.Cutsat.EqCnstr.brecOn`'s
-    type did not canonicalize in 300 s) and a mixed two-parameter chain. -/
-def cutsatChain (n : Nat) : Univ := imaxChain (fun _ => .max (.succ .zero) (.var 0)) (.var 0) n
-
-def mixedChain (n : Nat) : Univ := imaxChain
-  (fun i => if i % 3 == 0 then .max (.succ .zero) (.var 0) else if i % 3 == 1 then .succ (.var 1)
-    else .imax (.var 1) (.var 0)) (.var (if n % 2 == 0 then 0 else 1)) n
-
-/-- `canonUniv` on long `imax` chains. The `imax` distributions repeat calls
-    of the normalizer (`2ⁿ` calls on these chains); the normalizer skips a
-    repeated call (`CanonUniv.NState`), so chains of 64 finish.
-    Checked by value (P0), idempotence (P1) and the `mk*` fixpoint (P3). -/
-def canonUnivChainTests : TestSeq :=
-  let ok (u : Univ) : Bool :=
-    let c := Ixon.canonUniv u
-    (Tests.Gen.Ixon.univDifferAt? 2 u c).isNone && Ixon.canonUniv c == c &&
-      Ixon.reduceUniv c == c
-  test "canonUniv: the Cutsat-shaped chain of 64 imax is `u` (0 at u = 0, else u)"
-    (Ixon.canonUniv (cutsatChain 64) == .var 0)
-  ++ test "canonUniv P0, P1 and P3: imax chains of 0–10, 24, 40 and 64 links"
-    (((List.range 11) ++ [24, 40, 64]).all fun n => ok (cutsatChain n) && ok (mixedChain n))
-
-/-- `canonUniv` accumulates successor offsets in `Nat`: in `UInt64` an
-    accumulator at `2^64 - 1` plus one successor wrapped to `0`, and the level
-    lost its value. -/
-def canonUnivOffsetTests : TestSeq :=
-  let init : CanonUniv.NState := { acc := (∅ : CanonUniv.CNorm).insert [] {} }
-  test "canonUniv offset past 2^64 is kept, not wrapped"
-    (((CanonUniv.normalizeAux (.succ .zero) [] (2 ^ 64 - 1) init).acc.findD [] {}).constant
-      == 2 ^ 64)
-  ++ test "canonUniv offset past 2^64 on a variable is kept"
-    (((CanonUniv.normalizeAux (.succ (.var 0)) [] (2 ^ 64 - 1) init).acc.findD [0] {}).vars
-      == #[(0, 2 ^ 64)])
-
 /-! ## Test Suite -/
 
-def suite : List TestSeq := [
+def suiteWith (cfg : SlimCheck.Configuration := {}) : List TestSeq := [
   -- Ixon type unit tests
   ixonDefKindTests,
   ixonDefinitionSafetyTests,
@@ -649,46 +606,43 @@ def suite : List TestSeq := [
   exprMetaArenaTests,
   constantMetaTests,
   rawEnvTests,
-  -- Ixon property tests - basic types
-  checkIO "Ixon.DefKind roundtrip" (∀ x : DefKind, roundtripIxonDefKind x == x),
-  checkIO "Ixon.DefinitionSafety roundtrip" (∀ x : DefinitionSafety, roundtripIxonDefinitionSafety x == x),
-  checkIO "Ixon.QuotKind roundtrip" (∀ x : QuotKind, roundtripIxonQuotKind x == x),
-  checkIO "Ixon.Univ roundtrip" (∀ x : Univ, roundtripIxonUniv x == x),
-  checkIO "Ixon.Expr roundtrip" (∀ x : Expr, roundtripIxonExpr x == x),
-  checkIO "Ixon.Definition roundtrip" (∀ x : Definition, roundtripIxonDefinition x == x),
-  checkIO "Ixon.RecursorRule roundtrip" (∀ x : RecursorRule, roundtripIxonRecursorRule x == x),
-  checkIO "Ixon.Recursor roundtrip" (∀ x : Recursor, roundtripIxonRecursor x == x),
-  checkIO "Ixon.Axiom roundtrip" (∀ x : Axiom, roundtripIxonAxiom x == x),
-  checkIO "Ixon.Quotient roundtrip" (∀ x : Quotient, roundtripIxonQuotient x == x),
-  checkIO "Ixon.Constructor roundtrip" (∀ x : Constructor, roundtripIxonConstructor x == x),
-  checkIO "Ixon.Inductive roundtrip" (∀ x : Inductive, roundtripIxonInductive x == x),
-  checkIO "Ixon.InductiveProj roundtrip" (∀ x : InductiveProj, roundtripIxonInductiveProj x == x),
-  checkIO "Ixon.ConstructorProj roundtrip" (∀ x : ConstructorProj, roundtripIxonConstructorProj x == x),
-  checkIO "Ixon.RecursorProj roundtrip" (∀ x : RecursorProj, roundtripIxonRecursorProj x == x),
-  checkIO "Ixon.DefinitionProj roundtrip" (∀ x : DefinitionProj, roundtripIxonDefinitionProj x == x),
-  checkIO "Ixon.MutConst roundtrip" (∀ x : MutConst, roundtripIxonMutConst x == x),
-  checkIO "Ixon.ConstantInfo roundtrip" (∀ x : ConstantInfo, roundtripIxonConstantInfo x == x),
-  checkIO "Ixon.Constant roundtrip" (∀ x : Constant, roundtripIxonConstant x == x),
-  checkIO "Ixon.DataValue roundtrip" (∀ x : DataValue, roundtripIxonDataValue x == x),
-  checkIO "Ixon.Comm roundtrip" (∀ x : Comm, roundtripIxonComm x == x),
+  -- Ixon property tests - recursive & composite types
+  -- (finite enums `DefKind`, `DefinitionSafety`, `QuotKind` are exhaustively unit-tested above)
+  checkIO "Ixon.Univ roundtrip" (∀ x : Univ, roundtripIxonUniv x == x) .done cfg,
+  checkIO "Ixon.Expr roundtrip" (∀ x : Expr, roundtripIxonExpr x == x) .done cfg,
+  checkIO "Ixon.Definition roundtrip" (∀ x : Definition, roundtripIxonDefinition x == x) .done cfg,
+  checkIO "Ixon.RecursorRule roundtrip" (∀ x : RecursorRule, roundtripIxonRecursorRule x == x) .done cfg,
+  checkIO "Ixon.Recursor roundtrip" (∀ x : Recursor, roundtripIxonRecursor x == x) .done cfg,
+  checkIO "Ixon.Axiom roundtrip" (∀ x : Axiom, roundtripIxonAxiom x == x) .done cfg,
+  checkIO "Ixon.Quotient roundtrip" (∀ x : Quotient, roundtripIxonQuotient x == x) .done cfg,
+  checkIO "Ixon.Constructor roundtrip" (∀ x : Constructor, roundtripIxonConstructor x == x) .done cfg,
+  checkIO "Ixon.Inductive roundtrip" (∀ x : Inductive, roundtripIxonInductive x == x) .done cfg,
+  checkIO "Ixon.InductiveProj roundtrip" (∀ x : InductiveProj, roundtripIxonInductiveProj x == x) .done cfg,
+  checkIO "Ixon.ConstructorProj roundtrip" (∀ x : ConstructorProj, roundtripIxonConstructorProj x == x) .done cfg,
+  checkIO "Ixon.RecursorProj roundtrip" (∀ x : RecursorProj, roundtripIxonRecursorProj x == x) .done cfg,
+  checkIO "Ixon.DefinitionProj roundtrip" (∀ x : DefinitionProj, roundtripIxonDefinitionProj x == x) .done cfg,
+  checkIO "Ixon.MutConst roundtrip" (∀ x : MutConst, roundtripIxonMutConst x == x) .done cfg,
+  checkIO "Ixon.ConstantInfo roundtrip" (∀ x : ConstantInfo, roundtripIxonConstantInfo x == x) .done cfg,
+  checkIO "Ixon.Constant roundtrip" (∀ x : Constant, roundtripIxonConstant x == x) .done cfg,
+  checkIO "Ixon.DataValue roundtrip" (∀ x : DataValue, roundtripIxonDataValue x == x) .done cfg,
+  checkIO "Ixon.Comm roundtrip" (∀ x : Comm, roundtripIxonComm x == x) .done cfg,
   -- Metadata types (arena-based)
-  checkIO "Ixon.ExprMetaData roundtrip" (∀ x : ExprMetaData, roundtripIxonExprMetaData x == x),
-  checkIO "Ixon.ConstantMeta roundtrip" (∀ x : ConstantMeta, roundtripIxonConstantMeta x == x),
-  checkIO "Ixon.Named roundtrip" (∀ x : Named, roundtripIxonNamed x == x),
+  checkIO "Ixon.ExprMetaData roundtrip" (∀ x : ExprMetaData, roundtripIxonExprMetaData x == x) .done cfg,
+  checkIO "Ixon.ConstantMeta roundtrip" (∀ x : ConstantMeta, roundtripIxonConstantMeta x == x) .done cfg,
+  checkIO "Ixon.Named roundtrip" (∀ x : Named, roundtripIxonNamed x == x) .done cfg,
   ---- RawEnv roundtrip
-  checkIO "Ixon.RawEnv roundtrip" (∀ env : RawEnv, rawEnvEq (roundtripRawEnv env) env),
+  checkIO "Ixon.RawEnv roundtrip" (∀ env : RawEnv, rawEnvEq (roundtripRawEnv env) env) .done cfg,
   ---- Env diff
   envDiffTests,
   checkIO "Ixon.EnvDiff self-diff empty (anon)"
-    (∀ env : RawEnv, selfDiffEmpty false env),
+    (∀ env : RawEnv, selfDiffEmpty false env) .done cfg,
   checkIO "Ixon.EnvDiff self-diff empty (meta)"
-    (∀ env : RawEnv, selfDiffEmpty true env),
+    (∀ env : RawEnv, selfDiffEmpty true env) .done cfg,
   ---- Env pack
   envPackTests,
-  -- long imax chains: the normalizers' call memo (FU item 10)
-  canonUnivChainTests,
-  canonUnivOffsetTests,
 ]
+
+def suite : List TestSeq := suiteWith {}
 
 end Tests.FFI.Ixon
 

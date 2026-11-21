@@ -13,24 +13,21 @@ use p3_symmetric::MerkleCap;
 fn every_verifier_boundary_rejects_tampering_without_native_prevalidation() {
   let (system, pk) = fixture::setup();
   let claims = fixture::claims();
+  let ordinary =
+    system.prove_multiple_claims(&pk, &[&claims[0]], fixture::witness(&system));
+  let batch = system.prove_batch(
+    &pk,
+    vec![ShardInput {
+      claims: claims.clone(),
+      witness: fixture::witness(&system),
+    }],
+    vec![],
+  );
+  system.verify_multiple_claims(&[&claims[0]], &ordinary).unwrap();
+  system.verify_batch(&batch).unwrap();
+  let shape =
+    FixedPcsShape::from_profile(&system, &fixture::ACTIVE, &fixture::LOGS);
   for envelope in [Envelope::Ordinary, Envelope::SingleBatch] {
-    let ordinary = system.prove_multiple_claims(
-      &pk,
-      &[&claims[0]],
-      fixture::witness(&system),
-    );
-    let batch = system.prove_batch(
-      &pk,
-      vec![ShardInput {
-        claims: claims.clone(),
-        witness: fixture::witness(&system),
-      }],
-      vec![],
-    );
-    system.verify_multiple_claims(&[&claims[0]], &ordinary).unwrap();
-    system.verify_batch(&batch).unwrap();
-    let shape =
-      FixedPcsShape::from_profile(&system, &fixture::ACTIVE, &fixture::LOGS);
     let mut b = CircuitBuilder::new();
     b.enable_compact_blake3();
     let bytes = ByteGadgets::new(&mut b);

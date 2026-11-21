@@ -1604,56 +1604,64 @@ def report (name : String) (action : IO (Array String × Array String)) (count :
     let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
     return (errors.isEmpty, count, 0, msg)) .done
 
+initialize fixtureEnvCache : IO.Ref (Option Lean.Environment) ← IO.mkRef none
+
+private def fixtureEnv : IO Lean.Environment := do
+  if let some env ← fixtureEnvCache.get then return env
+  let env ← getCompileEnv #[defsModule, ownModule]
+  fixtureEnvCache.set (some env)
+  return env
+
 def suite : List TestSeq := [
   report "Ix.Cert.compile against the IO pipeline and the Rust compiler, on the fixtures" (do
-    let leanEnv ← getCompileEnv #[defsModule, ownModule]
+    let leanEnv ← fixtureEnv
     parity "fixtures" (← fixtureConsts leanEnv) 4) 1,
   report "an axiom α-equal to sorryAx is published at its address and keyed by its role" (do
-    sorryAliasCase (← getCompileEnv #[defsModule, ownModule])) 1,
+    sorryAliasCase (← fixtureEnv)) 1,
   report "the statements' hypotheses and conclusion, per root, on the accepted fixtures" (do
-    perRoot (← getCompileEnv #[defsModule, ownModule])) 1,
+    perRoot (← fixtureEnv)) 1,
   report "CompileCorrect.checked's premises hold on the closures of Nat.add and List.length" (do
-    Tests.Ix.Cert.ExecutedChecks.checkedCase (← getCompileEnv #[defsModule, ownModule])) 1,
+    Tests.Ix.Cert.ExecutedChecks.checkedCase (← fixtureEnv)) 1,
   report "the evidence check refuses a misbound table and a replaced fallback record" (do
-    Tests.Ix.Cert.ExecutedChecks.evidenceRefusals (← getCompileEnv #[defsModule, ownModule])) 1,
+    Tests.Ix.Cert.ExecutedChecks.evidenceRefusals (← fixtureEnv)) 1,
   report "annotated source refused on both sides, on the resolved source-contract syntax fixtures" (do
     contractAgreement (← getCompileEnv #[syntaxModule])) 1,
   report "the shipped role table's certificates check on their pinned closure (Route A, B6b)"
     roleEvidenceCase 1,
   report "a closure with a well-founded Nat operation, at the bundle evidence (Nat.div)" (do
-    natDivClosure (← getCompileEnv #[defsModule, ownModule])) 1,
+    natDivClosure (← fixtureEnv)) 1,
   report "a closure with a string literal holds its literal support (outOfBounds)" (do
-    literalClosure (← getCompileEnv #[defsModule, ownModule]) `outOfBounds) 1,
+    literalClosure (← fixtureEnv) `outOfBounds) 1,
   report "a Nat literal whose bytes are another constant's record is refused (blob check)"
     blobRecordCase 1,
   report "a recursor with all = [J] in I's motive slot is refused (recursor check)" (do
-    recursorFamilyCase (← getCompileEnv #[defsModule, ownModule])) 1,
+    recursorFamilyCase (← fixtureEnv)) 1,
   report "a record of the wrong kind at a bound role's address is refused (role check)" (do
-    roleKindCase (← getCompileEnv #[defsModule, ownModule])) 1,
+    roleKindCase (← fixtureEnv)) 1,
   report "a copy of Nat without Nat: accepted alone, refused beside a Nat literal" (do
     literalRoleCase (← getCompileEnv #[`Tests.Ix.Kernel.TutorialDefs])) 1,
   report "a recursor rule naming a hash twin of its constructor is refused (inductive input check)" (do
-    familyNameCase (← getCompileEnv #[defsModule, ownModule])) 1,
+    familyNameCase (← fixtureEnv)) 1,
   report "constructors declaring each other's index are refused (inductive input check)" (do
-    constructorIndexCase (← getCompileEnv #[defsModule, ownModule])) 1,
+    constructorIndexCase (← fixtureEnv)) 1,
   report "a constructor with its inductive's level parameters reordered is refused (inductive input check)" (do
-    levelParamsCase (← getCompileEnv #[defsModule, ownModule])) 1,
+    levelParamsCase (← fixtureEnv)) 1,
   report "a recursor with two level parameters too many is refused (inductive input check)" (do
-    recursorLevelCountCase (← getCompileEnv #[defsModule, ownModule])) 1,
+    recursorLevelCountCase (← fixtureEnv)) 1,
   report "a recursor whose all is not its family's is refused (inductive input check)" (do
-    familyBlockCase (← getCompileEnv #[defsModule, ownModule])) 1,
+    familyBlockCase (← fixtureEnv)) 1,
   report "two recursors filed at one motive are refused (inductive input check)" (do
-    recursorSlotCase (← getCompileEnv #[defsModule, ownModule])) 1,
+    recursorSlotCase (← fixtureEnv)) 1,
   report "recursors with each other's types are refused (inductive input check)" (do
-    recursorShapeCase (← getCompileEnv #[defsModule, ownModule])) 1,
+    recursorShapeCase (← fixtureEnv)) 1,
   report "an artifact with a published definition's hint erased is refused (hint check)" (do
-    hintCase (← getCompileEnv #[defsModule, ownModule])) 1]
+    hintCase (← fixtureEnv)) 1]
 
 /-- `cert-evidence-agreement` (landing): the role table's evidence against quotient Source's on the
 well-founded operations' closure (`evidenceAgreement`); it compiles and reads the closure, so it
 stays out of the primary tier. -/
 def evidenceSuite : List TestSeq := [
   report "the role table's evidence against quotient Source's, on the well-founded operations" (do
-    evidenceAgreement (← getCompileEnv #[defsModule, ownModule])) 1]
+    evidenceAgreement (← fixtureEnv)) 1]
 
 end Tests.Ix.Cert.Statement

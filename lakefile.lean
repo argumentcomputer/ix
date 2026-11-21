@@ -319,8 +319,26 @@ lean_exe IxTests where
   needs := #[`@/ix, `@/«kernel-check-ixe», `@/EntryCaseFixtures]
   moreLinkObjs := #[ix_rs_test]
 
+/-- IxVM circuit-verdict and FFT-pin test runner (`--tier ci:ixvm`,
+`--tier ci:nightly-ixvm`, and opt-in manual sweeps). Kept separate from
+`IxTests` so host-only builds do not compile or link the 22 IxVM test modules. -/
+lean_exe IxVMTests where
+  root := `Tests.IxVMMain
+  supportInterpreter := true
+  needs := #[`@/ix, `@/«kernel-check-ixe»]
+  moreLinkObjs := #[ix_rs_test]
+
+/-- Manual-only benchmark, corpus, and differential test runner. Kept separate
+from `IxTests` and `IxVMTests` so PR CI builds skip manual-only corpus drivers
+while `lake lint` continues to typecheck every module. -/
+lean_exe IxManualTests where
+  root := `Tests.ManualMain
+  supportInterpreter := true
+  needs := #[`@/ix, `@/«kernel-check-ixe»]
+  moreLinkObjs := #[ix_rs_test]
+
 /-- The FFI suite (`IxTests ffi`) on its own, linked like `IxTests` with the
-test-only FFI code, for the merge queue's Valgrind job: its import closure is
+test-only FFI code, for the Valgrind job: its import closure is
 the host library's, without the test binary's proofs. -/
 lean_exe «ffi-tests» where
   root := `Tests.FFIMain
@@ -335,18 +353,18 @@ lean_exe «source-contract-tests» where
   root := `Tests.SourceContractMain
   supportInterpreter := true
 
-/-- Focused Ixon v4 codec, locality, and cross-language transport checks;
+/-- Focused Ixon codec, locality, and cross-language transport checks;
 `--export-fixtures` regenerates the generated text fixtures.
-Scratch files live in `$IX_IXON_V4_DIR` (default `/tmp`); see `--help`. -/
-lean_exe «ixon-v4-tests» where
-  root := `Tests.IxonV4Main
+Scratch files live in `$IX_IXON_TEST_DIR` (default `/tmp`); see `--help`. -/
+lean_exe «ixon-tests» where
+  root := `Tests.IxonMain
   supportInterpreter := true
   moreLinkObjs := #[ix_rs_test]
 
 /-- Regenerate format-specific primitive identities from the installed Lean
-environment, into `$IX_IXON_V4_DIR` (default `/tmp`); see `--help`. -/
-lean_exe «ixon-v4-primitives» where
-  root := `Tests.IxonV4Primitives
+environment, into `$IX_IXON_TEST_DIR` (default `/tmp`); see `--help`. -/
+lean_exe «ixon-primitives» where
+  root := `Tests.IxonPrimitives
   supportInterpreter := true
   moreLinkObjs := #[ix_rs_test]
 
@@ -657,6 +675,11 @@ script "build-all" (args) := do
     cmd := "lake", args := #["env", "lean", "--run", "Scripts/SourceHygiene.lean"]
     stdout := .inherit, stderr := .inherit }
   if (← hygiene.wait) != 0 then failed := failed.push "check-source-docs"
+  IO.println "Checking: CI path-filter coverage of closure manifests (check-ci-filters)"
+  let ciFilters ← IO.Process.spawn {
+    cmd := "lake", args := #["env", "lean", "--run", "Scripts/CheckCiFilters.lean"]
+    stdout := .inherit, stderr := .inherit }
+  if (← ciFilters.wait) != 0 then failed := failed.push "check-ci-filters"
   if failed.isEmpty then return 0
   IO.eprintln s!"Failed {failed.size} build and lint check(s): {", ".intercalate failed.toList}"
   return 1
@@ -666,6 +689,14 @@ and documentation. The scanner has no grandfather baseline. -/
 script "check-source-docs" := do
   let child ← IO.Process.spawn {
     cmd := "lake", args := #["env", "lean", "--run", "Scripts/SourceHygiene.lean"]
+    stdout := .inherit, stderr := .inherit }
+  return ← child.wait
+
+/-- Verify `.github/workflows/ci.yml` path filters cover every project module
+in the transitive definitional closure manifests and TCB fence files. -/
+script "check-ci-filters" := do
+  let child ← IO.Process.spawn {
+    cmd := "lake", args := #["env", "lean", "--run", "Scripts/CheckCiFilters.lean"]
     stdout := .inherit, stderr := .inherit }
   return ← child.wait
 
@@ -824,7 +855,7 @@ script "check-kernel" (args) := do
   -- executables into one Lake invocation so dependency tracing runs once.
   run "lake" #["build", "--wfail",
     "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit",
-    "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Ix.Cert.Audit",
+    "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Ix.Cert.Audit", "Ix.Cert.ClosureManifest",
     "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection",
     "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication",
     "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.ModelLaws", "Tests.Ix.Kernel.Axioms",

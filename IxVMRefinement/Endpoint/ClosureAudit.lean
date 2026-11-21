@@ -1,4 +1,6 @@
 import IxVMRefinement.Endpoint.ComposedResidual
+import IxVMRefinement.Ingress.Decode
+import IxVMRefinement.Claim.RefSafety
 import Lean
 import Std.Data.HashSet
 
@@ -130,3 +132,55 @@ elab "#audit_proof_closure" : command => do
 #audit_proof_closure
 
 end IxVM.Refinement.ClosureAudit
+
+/-! ## Compile-time statement pins for core ingress and reference-safety specs -/
+
+example {bytes : List UInt8} {i : Nat}
+    {stream r : Aiur.SourceValue IxVM.F} {h h' : Aiur.Heap IxVM.F}
+    {cs : List (Aiur.Generic.SourceSemantics.Call IxVM.F)}
+    (rep : Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h (bytes.drop i) stream)
+    (ev : Aiur.Generic.SourceSemantics.ObsFn IxVM.Refinement.Obs.W
+      "IxonDeserialize::get_constant" [stream] h r h' cs) :
+    Aiur.Heap.Extends h h' ∧
+    ∃ (c : Ixon.Constant) (n : Nat) (cVal restPtr : Aiur.SourceValue IxVM.F),
+      Ixon.getConstant { idx := i, bytes := ⟨bytes.toArray⟩ } =
+        .ok c { idx := i + n, bytes := ⟨bytes.toArray⟩ } ∧
+      r = .tuple [cVal, restPtr] ∧
+      c.info.maxLvls < Ixon.maxLevelCount ∧
+      IxVM.Refinement.Ingress.infoLvlsLt 4294967296 c.info ∧
+      IxVM.Refinement.Ingress.BinderBlocksParamsLt c.info.maxLvls c.binders ∧
+      IxVM.Refinement.Ingress.BinderBlocksParamsLt 4294967296 c.binders ∧
+      IxVM.Refinement.Ingress.ConstantTablesValid c ∧
+      IxVM.Refinement.Ingress.RepConstant h' c cVal ∧
+      Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h' (bytes.drop (i + n)) restPtr :=
+  IxVM.Refinement.Ingress.get_constant_spec rep ev
+
+example {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {E₀ : Ixon.Env}
+    {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : Option Nat}
+    (hS : IxVM.Refinement.LoadedReads.RunStore calls E₀) (refs : List _root_.Address) :
+    ∀ (i : Nat) {idxs : List Nat} {rc rp used r : Aiur.SourceValue IxVM.F}
+      {h h' : Aiur.Heap IxVM.F} {cs : List (Aiur.Generic.SourceSemantics.Call IxVM.F)},
+      i + refs.length < 8589934592 →
+      IxVM.Refinement.Claim.RCLimRep t bAddr lim h rc →
+      Aiur.Library.List.RepList IxVM.Refinement.Obs.Names.«Lists::Node<&[Field; 32]>»
+        IxVM.Refinement.Claim.RepAddrElem h refs rp →
+      IxVM.Refinement.Claim.RepSortedIdxFrom h idxs i used →
+      Aiur.Generic.SourceSemantics.ObsFn IxVM.Refinement.Obs.W "KernelClaim::assert_safe_used_refs"
+        [rc, rp, used, .field (i : IxVM.F), .construct IxVM.Refinement.Core.addrMapEnum "Nil" []]
+        h r h' cs →
+      (∀ cl ∈ cs, cl ∈ calls) →
+      ∀ j, (hj : j < refs.length) → i + j ∈ idxs →
+        ¬ IxVM.Refinement.Claim.CoveredAt t lim refs[j] →
+        IxVM.Refinement.Claim.SourceSafe E₀ refs[j] :=
+  IxVM.Refinement.Claim.assert_safe_used_refs_spec hS refs
+
+example {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {E₀ : Ixon.Env}
+    {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address} {lim : Option Nat} {c : Ixon.Constant}
+    (hS : IxVM.Refinement.LoadedReads.RunStore calls E₀)
+    (hH : IxVM.Refinement.LoadedReads.HashedRecordsStored calls E₀)
+    (hc : IxVM.Consistency.recordOf E₀ a = some c)
+    (hsafe : IxVM.Refinement.Claim.SourceSafe E₀ a)
+    (hg : IxVM.Refinement.Claim.RecordRefsIn calls t bAddr lim a c) :
+    ∀ i ∈ IxVM.Consistency.usedRefIdxs c, ∀ x, c.refs.toList[i]? = some x →
+      ¬ IxVM.Refinement.Claim.CoveredAt t lim x → IxVM.Refinement.Claim.SourceSafe E₀ x :=
+  hg.safe hS hH hc hsafe

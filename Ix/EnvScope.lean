@@ -266,8 +266,8 @@ Walks each seed's type + value + recursor rules + ctor links + `all` links
 family siblings (`Lean.auxFamilySiblings`) until no new names are
 discovered, plus what `opts` asks for at every visited declaration. With
 `opts = {}` this is the raw collector of before, unchanged. The returned
-list preserves the source environment's iteration order over the computed
-name set. -/
+list is deterministically sorted by constant name (`Lean.Name.lt`),
+independent of seed order. -/
 private partial def collectDepsStep (env : Lean.Environment) (units : UnitIndex)
     (opts : ClosureOptions) (initNeeded : Std.HashSet Lean.Name) (seeds : List Lean.Name) :
     Std.HashSet Lean.Name := Id.run do
@@ -349,11 +349,30 @@ private partial def collectDepsStep (env : Lean.Environment) (units : UnitIndex)
             worklist := r :: worklist
   return needed
 
-partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
+/-- Resolve the computed name set against `env.constants` in `O(|needed|)` time. -/
+private def resolveNeededArray (env : Lean.Environment) (needed : Std.HashSet Lean.Name) :
+    Array (Lean.Name × Lean.ConstantInfo) :=
+  needed.fold (init := Array.emptyWithCapacity needed.size) fun acc n =>
+    match env.constants.find? n with
+    | some ci => acc.push (n, ci)
+    | none => acc
+
+/-- Resolve and deterministically order the computed name set (`Lean.Name.lt`). -/
+private def resolveNeeded (env : Lean.Environment) (needed : Std.HashSet Lean.Name) :
+    List (Lean.Name × Lean.ConstantInfo) :=
+  ((resolveNeededArray env needed).qsort fun a b => Lean.Name.lt a.1 b.1).toList
+
+/-- `collectDeps` reusing a precomputed `UnitIndex` (avoids rebuilding the
+environment-wide auxiliary index across repeated closure walks). -/
+def collectDepsWith (env : Lean.Environment) (units : UnitIndex) (seeds : List Lean.Name)
+    (opts : ClosureOptions := {}) : List (Lean.Name × Lean.ConstantInfo) :=
+  let needed := collectDepsStep env units opts {} seeds
+  resolveNeeded env needed
+
+def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
     (opts : ClosureOptions := {}) : List (Lean.Name × Lean.ConstantInfo) :=
   let units : UnitIndex := if opts.units then unitIndex env.constants else {}
-  let needed := collectDepsStep env units opts {} seeds
-  env.constants.toList.filter fun (n, _) => needed.contains n
+  collectDepsWith env units seeds opts
 
 /-- The library constants every selected closure carries besides its seeds'
 dependencies (design document §6.3): the `And`/`True` and `PProd`/`PUnit`
@@ -393,18 +412,26 @@ The closure is **self-contained for IxC**: when a closed constant holds a
 `String` literal and the closure lacks some of the string-literal support
 (`literalSupportLeanNames`), it is closed again with that support as seeds
 (the certified checker declines a string literal before `String.ofList` and
-its fellows are installed, and the literal names none of them). -/
-def collectSelectedDeps (env : Lean.Environment) (seeds : List Lean.Name) :
-    List (Lean.Name × Lean.ConstantInfo) :=
+its fellows are installed, and the literal names none of them).
+
+Reuses a precomputed `UnitIndex` (avoids rebuilding the environment-wide
+auxiliary index across repeated closure walks). -/
+def collectSelectedDepsWith (env : Lean.Environment) (units : UnitIndex)
+    (seeds : List Lean.Name) : List (Lean.Name × Lean.ConstantInfo) :=
   let seeds := seeds ++ introducedSupport env
-  let units := unitIndex env.constants
   let needed := collectDepsStep env units .selected {} seeds
   let support := literalSupportLeanNames.filter env.contains
-  let closed := env.constants.toList.filter fun (n, _) => needed.contains n
-  if !support.all needed.contains && closed.any (hasStringLiteral ·.2) then
-    let needed2 := collectDepsStep env units .selected needed support
-    env.constants.toList.filter fun (n, _) => needed2.contains n
-  else closed
+  let closedArr := resolveNeededArray env needed
+  let finalArr :=
+    if !support.all needed.contains && closedArr.any (hasStringLiteral ·.2) then
+      let needed2 := collectDepsStep env units .selected needed support
+      resolveNeededArray env needed2
+    else closedArr
+  (finalArr.qsort fun a b => Lean.Name.lt a.1 b.1).toList
+
+def collectSelectedDeps (env : Lean.Environment) (seeds : List Lean.Name) :
+    List (Lean.Name × Lean.ConstantInfo) :=
+  collectSelectedDepsWith env (unitIndex env.constants) seeds
 
 /-- Default (unfiltered) constant list for a file env. Classic files keep the
 historical whole-import-env behavior (byte-identical artifacts). Module-mode

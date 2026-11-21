@@ -287,6 +287,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     mut plan: StreamPlan,
     mut supply: impl FnMut(usize) -> Result<Vec<RowMajorMatrix<Val>>, String>,
   ) -> Result<BatchProof, String> {
+    self.require_committed()?;
     if !self.segmented_memory || !(1..=65536).contains(&plan.shards) {
       return Err("invalid streamed batch".into());
     }
@@ -467,6 +468,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   pub fn verifying_key_bytes(&self) -> Result<Vec<u8>, String> {
+    self.require_committed()?;
     if !self.segmented_memory {
       return Err("export a batch backend key for recursion".into());
     }
@@ -528,6 +530,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     entry: &str,
     args: &[B::Element],
   ) -> Result<StageOne, String> {
+    self.require_committed()?;
     #[cfg(feature = "cuda")]
     if let Some(plans) = &self.device_plans {
       self.plan.validate_record(record)?;
@@ -557,6 +560,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     max_rows: usize,
     retention: Retention,
   ) -> Result<BatchProof, String> {
+    self.require_committed()?;
     if !self.segmented_memory {
       return Err("batch proving requires Backend::for_batch".into());
     }
@@ -695,6 +699,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     output: &[B::Element],
     proof: &BatchProof,
   ) -> Result<(), String> {
+    self.require_committed()?;
     if !self.segmented_memory {
       return Err("batch verification requires Backend::for_batch".into());
     }
@@ -797,6 +802,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     record: Execution<B>,
     log_heights: &[u8],
   ) -> Result<(Vec<Val>, BatchProof), String> {
+    self.require_committed()?;
     if !self.segmented_memory {
       return Err("normalized proving requires Backend::for_batch".into());
     }

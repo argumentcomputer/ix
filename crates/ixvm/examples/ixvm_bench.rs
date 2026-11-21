@@ -246,6 +246,17 @@ fn main() -> Result<(), Box<dyn Error>> {
   };
   let rows: usize = witness.traces.iter().map(|t| t.height()).sum();
   drop(record);
+  if mode == "witness" {
+    println!(
+      "{}",
+      json!({"engine": "new-aiur-bytecode", "mode": mode, "args": args, "output": Vec::<u64>::new(),
+          "prepare_seconds": prepare_seconds, "setup_seconds": setup_seconds,
+          "execution_seconds": execution_seconds, "witness_seconds": times[0], "seconds": times,
+          "counts": counts, "function_counts": function_counts, "checked_scope": checked_scope, "stage1_words": stage1_words, "rows": rows, "depth": depth, "circuits": circuits,
+          "record_fingerprint": record_fingerprint, "trace_fingerprint": trace_fingerprint})
+    );
+    return Ok(());
+  }
   let start = Instant::now();
   let proof = backend.prove(entry, &args, &[], witness)?;
   let prove_seconds = start.elapsed().as_secs_f64();

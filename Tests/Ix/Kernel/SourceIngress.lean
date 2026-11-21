@@ -332,10 +332,20 @@ def sharing : TestSeq :=
 
 /-! ## The fixtures -/
 
+initialize sharedEnvCache : IO.Ref (Option Lean.Environment) ← IO.mkRef none
+
+/-- Load the superset environment once and reuse it across `evaluate`,
+`evaluateQuotient`, and `evaluateShape`. -/
+private def sharedEnv : IO Lean.Environment := do
+  if let some env ← sharedEnvCache.get then return env
+  let env ← getCompileEnv #[defsModule, ownModule, reducedModule, `IxC.Kernel.PinGen.Certs]
+  sharedEnvCache.set (some env)
+  return env
+
 /-- The run on the fixture closure, its expected verdicts, and `checkSource` on
 the accepted closure: failures as messages, and lines for the report. -/
 def evaluate : IO (Array String × Array String) := do
-  let leanEnv ← getCompileEnv #[defsModule, ownModule, reducedModule, `IxC.Kernel.PinGen.Certs]
+  let leanEnv ← sharedEnv
   let some idx := leanEnv.getModuleIdx? defsModule | throw (IO.userError "fixture module not loaded")
   let some idx' := leanEnv.getModuleIdx? ownModule | throw (IO.userError "fixture module not loaded")
   let some idx'' := leanEnv.getModuleIdx? reducedModule | throw (IO.userError "fixture module not loaded")
@@ -416,7 +426,7 @@ def mapOf (pairs : List (Lean.Name × Ix.Kernel.Key .source)) : FiberMap :=
   pairs.foldl (fun m (n, k) => m.insert (kname n) k) {}
 
 def evaluateQuotient : IO (Array String × Array String) := do
-  let leanEnv ← getCompileEnv #[ownModule]
+  let leanEnv ← sharedEnv
   let pre ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude.mapError IO.userError)
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
@@ -676,7 +686,7 @@ def withCtorNamingCtor (ds : Array (Ix.Kernel.Declaration .source)) :
     | d => d
 
 def evaluateShape : IO (Array String × Array String) := do
-  let leanEnv ← getCompileEnv #[defsModule]
+  let leanEnv ← sharedEnv
   let pre ← IO.ofExcept (Ix.Kernel.Reader.builtinPrelude.mapError IO.userError)
   let env ← envOf leanEnv #[defs "Tm"]
   let mut errors : Array String := #[]

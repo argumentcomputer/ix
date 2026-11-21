@@ -81,7 +81,7 @@ private def require (ok : Bool) (message : String) : IO Unit :=
 /-- `compileClosure`, with no refusal. -/
 private def compileClean (label : String) (env : Environment)
     (closure : List (Name × ConstantInfo)) : IO ClosureOut := do
-  let out ← compileClosure env closure (workers := 4)
+  let out ← compileClosure env closure (workers := 16) (serialize := false)
   require out.cenv.ungrounded.isEmpty
     s!"{label}: {out.cenv.ungrounded.size} refusals, first \
       {out.cenv.ungrounded.toList.head?.map (·.1.pretty)}"
@@ -95,16 +95,17 @@ def run : IO UInt32 := do
   let env ← getFileEnv fixture
   let seeds := ownConstants env
   require (!seeds.isEmpty) "empty Single fixture"
+  let units := Ix.EnvScope.unitIndex env.constants
   let raw := Ix.EnvScope.collectDeps env seeds { recursors := true }
-  let selected := Ix.EnvScope.collectSelectedDeps env seeds
+  let selected := Ix.EnvScope.collectSelectedDepsWith env units seeds
   let rawNames := nameSet raw
   let selectedNames := nameSet selected
   require (rawNames.contains ``Nat.land) "the raw closure lacks Nat.land (fixture)"
   require (!rawNames.contains ``Nat.mul) "raw negative control unexpectedly contains Nat.mul"
   require (selectedNames.contains ``Nat.mul) "the selected closure lacks Nat.mul"
-  require (sameNames selected (Ix.EnvScope.collectSelectedDeps env (selected.map (·.1))))
+  require (sameNames selected (Ix.EnvScope.collectSelectedDepsWith env units (selected.map (·.1))))
     "the selected closure is not a fixed point"
-  require (sameNames selected (Ix.EnvScope.collectSelectedDeps env seeds.reverse))
+  require (sameNames selected (Ix.EnvScope.collectSelectedDepsWith env units seeds.reverse))
     "the selected closure depends on the seed order"
   let dir ← IO.FS.createTempDir
   IO.println s!"[checker-support] files in {dir}"
@@ -130,7 +131,7 @@ def run : IO UInt32 := do
     require (closed.env.named[name]? == some nd) s!"support changed raw Named {name.pretty}"
   -- the selected closure certifies, as `ix compile` compiles it (binder data on,
   -- not finalized: finalization's role support would add `Nat.mul` to any closure)
-  let (closedCert, closedCertBytes) ← certifiedClosure env selected (workers := 4)
+  let (closedCert, closedCertBytes) ← certifiedClosure env selected (workers := 16)
   let positive ← certify dir "selected" closedCertBytes
   for name in required do
     let row ← verdict positive closedCert name
@@ -143,7 +144,7 @@ def run : IO UInt32 := do
         (row.outcome == "decline" && Tests.Ix.Compile.ClosureHarness.documentedDecline row.reason))
       s!"selected: fixture {name}: {row.outcome}: {row.reason}"
   -- the raw closure: the exact decline, and the helpers blocked
-  let (rawCert, rawCertBytes) ← certifiedClosure env raw (workers := 4)
+  let (rawCert, rawCertBytes) ← certifiedClosure env raw (workers := 16)
   let rawReport ← certify dir "raw" rawCertBytes
   let decline ← verdict rawReport rawCert ``Nat.land
   require (decline.outcome == "decline" && decline.reason == rawLandDecline)

@@ -194,7 +194,7 @@ def runWithGuard (guarded : Bool) : IO UInt32 := do
   cases := cases.push (fun _ => do bindingCase "binding: unchanged full default table" (← base) true)
   cases := cases.push (fun _ => standardAxiomCase guarded)
   for mode in List.range 3 do cases := cases.push (fun _ => certificateCase guarded mode)
-  runCases "ixvm-safe-references" cases (jobs := 4) (circuit := some true)
+  runCases "ixvm-safe-references" cases (circuit := some true)
 
 /-- PR fast suite: all out-of-scope (`assumed = true`) reference checks plus
 representative `assumed = false` host smokes. The five full `.binding` runs
@@ -214,7 +214,7 @@ def run : IO UInt32 := do
   cases := cases.push (fun _ => ownerCase true false true)
   cases := cases.push (fun _ => inertCase true)
   cases := cases.push (fun _ => coveredCase)
-  runCases "ixvm-safe-references" cases (jobs := 4) (circuit := some true)
+  runCases "ixvm-safe-references" cases (circuit := some true)
 
 /-- Full nightly suite, including all five `.binding` runs. -/
 def runFull : IO UInt32 := runWithGuard true

@@ -9,13 +9,18 @@ use crate::fri::{VerifierLimits, VerifierPlan};
 use crate::kzg::Scalar;
 use multi_stark::config::ProofConfig;
 #[cfg(test)]
-use multi_stark::plonkish::{Assignment, MultiStarkCircuit};
+use multi_stark::plonkish::Assignment;
+use multi_stark::plonkish::MultiStarkCircuit;
 #[cfg(test)]
 use multi_stark::traits::Field;
 use multi_stark::traits::TwoAdicField;
 use multi_stark::types::Val;
 use p3_field::PrimeCharacteristicRing;
-use std::{fs, path::Path, time::Instant};
+use std::{
+  fs,
+  path::{Path, PathBuf},
+  time::Instant,
+};
 
 #[cfg(test)]
 use super::init_fri::INIT_PUBLIC_WORDS;
@@ -174,16 +179,21 @@ pub(super) fn setup(
   Ok((manifest, parts, prepared))
 }
 
-/// Commit the fixed and witness traces of every partition, prove them
-/// together, verify the proof and write it with its packet. Fixed
-/// preprocessing comes from the cache when it holds this verifying key and is
-/// published to it after the proof verifies.
-fn prove(
+struct StageContext {
+  manifest: storage::Manifest,
+  setup: SetupSource,
+  setup_id: [u8; 32],
+  plan_id: [u8; 32],
+  out: PathBuf,
+  start: Instant,
+}
+
+fn validate_stage(
   dir: &Path,
-  lowered: Lowered,
+  compiled: &MultiStarkCircuit<Scalar>,
   cache: &FixedCache,
   config: &super::StageConfig,
-) -> storage::Result<()> {
+) -> storage::Result<(StageContext, crate::kzg::KzgConfig, PathBuf, usize)> {
   let manifest: storage::Manifest = storage::load(&dir.join("manifest.bin"))?;
   let count = manifest.heights.len();
   if count < MIN_PARTITIONS
@@ -198,7 +208,6 @@ fn prove(
   {
     return Err("unsupported trace height".into());
   }
-  let compiled = &lowered.compiled;
   if compiled.num_circuits() != count
     || (0..count).any(|i| {
       compiled.trace_dimensions(i)
@@ -228,17 +237,31 @@ fn prove(
   fs::write(out.join("SECURITY.txt"), setup.security_description())?;
   let start = Instant::now();
   let prefetch_bytes = config.prefetch_bytes;
-  let mut config = proving_config(&setup, height)?;
+  let mut kzg_config = proving_config(&setup, height)?;
   if let Some(spill_dir) = crate::kzg::KzgConfig::resolve_disk_spill_dir(&out)?
   {
-    config = config.with_disk_spill(spill_dir);
+    kzg_config = kzg_config.with_disk_spill(spill_dir);
   }
   eprintln!("KZG parameters ready: {:?}", start.elapsed());
   eprintln!("Partition prefetch budget: {} GiB", prefetch_bytes >> 30);
   let fixed = cache.fixed_directory(dir)?;
-  let prover::Proved { system, bytes, verify_seconds, .. } = lowered
-    .commit(config, Some(&fixed), prefetch_bytes)?
-    .prove(&manifest.claims)?;
+  Ok((
+    StageContext { manifest, setup, setup_id, plan_id, out, start },
+    kzg_config,
+    fixed,
+    prefetch_bytes,
+  ))
+}
+
+fn finalize_stage(
+  dir: &Path,
+  ctx: StageContext,
+  proved: prover::Proved,
+  cache: &FixedCache,
+) -> storage::Result<()> {
+  let StageContext { manifest, setup, setup_id, plan_id, out, start } = ctx;
+  let prover::Proved { system, bytes, verify_seconds, .. } = proved;
+  let count = manifest.heights.len();
   let output_span = tracing::info_span!("compression/write_output").entered();
   // Identifies this proof instance, not its key: the manifest holds the claim
   // rows. Recursion verifies the proof against the setup files, so the
@@ -288,6 +311,45 @@ fn prove(
     start.elapsed().as_secs_f64()
   );
   Ok(())
+}
+
+/// Commit the fixed and witness traces of every partition, prove them
+/// together, verify the proof and write it with its packet. Fixed
+/// preprocessing comes from the cache when it holds this verifying key and is
+/// published to it after the proof verifies.
+fn prove(
+  dir: &Path,
+  lowered: Lowered,
+  cache: &FixedCache,
+  config: &super::StageConfig,
+) -> storage::Result<()> {
+  let (ctx, kzg_config, fixed, prefetch_bytes) =
+    validate_stage(dir, &lowered.compiled, cache, config)?;
+  let proved = lowered
+    .commit(kzg_config, Some(&fixed), prefetch_bytes)?
+    .prove(&ctx.manifest.claims)?;
+  finalize_stage(dir, ctx, proved, cache)
+}
+
+#[cfg(test)]
+fn prove_borrowed(
+  dir: &Path,
+  compiled: &MultiStarkCircuit<Scalar>,
+  assignment: &Assignment<Scalar>,
+  cache: &FixedCache,
+  config: &super::StageConfig,
+) -> storage::Result<()> {
+  let (ctx, kzg_config, fixed, prefetch_bytes) =
+    validate_stage(dir, compiled, cache, config)?;
+  let traces = compiled.trace_shards(assignment)?;
+  let proved = prover::Committed::prepare(
+    kzg_config,
+    &traces,
+    Some(&fixed),
+    prefetch_bytes,
+  )?
+  .prove(&ctx.manifest.claims)?;
+  finalize_stage(dir, ctx, proved, cache)
 }
 
 #[cfg(test)]
@@ -387,34 +449,50 @@ mod tests {
   #[test]
   fn fused_fixture_proves_and_reuses_fixed_preprocessing() -> storage::Result<()>
   {
-    let partitioned = prove_fixture(16)?;
-    let single = prove_fixture(17)?;
+    let partitioned = prove_fixture_full(16)?;
+    let single = prove_fixture_cold(17)?;
     assert!(single < partitioned, "fewer partitions should reduce this proof");
     Ok(())
   }
 
-  fn prove_fixture(log_height: usize) -> storage::Result<usize> {
+  /// Cold run via the owned [`prove`] path, checking fewer partitions shrink
+  /// the proof without duplicating cache/manifest checks across both heights.
+  fn prove_fixture_cold(log_height: usize) -> storage::Result<usize> {
+    let root = TempDir::new(&format!("init-fri-kzg-fixture-{log_height}"));
+    let fixture = fixture(log_height)?;
+    assert_eq!(fixture.compiled.num_circuits(), 11);
+    let cache_root = root.join("cache");
+    let dir = root.join("cold");
+    let cache = stage(&dir, &fixture.compiled, &fixture.public, &cache_root)?;
+    let assignment = fixture.assign(9)?;
+    prove(
+      &dir,
+      Lowered { compiled: fixture.compiled, assignment },
+      &cache,
+      &OPTIONS,
+    )?;
+    Ok(artifacts(&dir)?[0].len())
+  }
+
+  fn prove_fixture_full(log_height: usize) -> storage::Result<usize> {
     let root = TempDir::new(&format!("init-fri-kzg-fixture-{log_height}"));
     let fixture = fixture(log_height)?;
     let (compiled, public) = (&fixture.compiled, &fixture.public);
-    assert_eq!(compiled.num_circuits(), if log_height == 16 { 12 } else { 11 });
-    let prove =
-      |dir: &Path, cache: &FixedCache, private: u8| -> storage::Result<()> {
-        let fixture = self::fixture(log_height)?;
-        let assignment = fixture.assign(private)?;
-        prove(
-          dir,
-          Lowered { compiled: fixture.compiled, assignment },
-          cache,
-          &OPTIONS,
-        )
-      };
+    assert_eq!(compiled.num_circuits(), 12);
+    let assignment_9 = fixture.assign(9)?;
+    let assignment_231 = fixture.assign(231)?;
+    let prove_with = |dir: &Path,
+                      cache: &FixedCache,
+                      assignment: &Assignment<Scalar>|
+     -> storage::Result<()> {
+      prove_borrowed(dir, compiled, assignment, cache, &OPTIONS)
+    };
     let cache_root = root.join("cache");
 
     // A cold run commits the fixed traces, proves and publishes the cache.
     let dir = root.join("cold");
     let cache = stage(&dir, compiled, public, &cache_root)?;
-    prove(&dir, &cache, 9)?;
+    prove_with(&dir, &cache, &assignment_9)?;
     let first = artifacts(&dir)?;
     let manifest: storage::Manifest = storage::load(&dir.join("manifest.bin"))?;
     let entries = fs::read_dir(&cache_root)?
@@ -442,7 +520,7 @@ mod tests {
       assert!(warm.join(format!("kzg/setup-{i}.bin")).exists());
       assert!(!warm.join(format!("kzg/fixed-{i}.bin")).exists());
     }
-    prove(&warm, &cache, 9)?;
+    prove_with(&warm, &cache, &assignment_9)?;
     assert_eq!(first, artifacts(&warm)?);
     let different = FixedCache::from_identity(&cache_root, b"different-vk");
     assert!(different.restore(&root.join("miss"))?.is_none());
@@ -450,7 +528,7 @@ mod tests {
     // A different witness changes the proof but not the verifying key.
     let changed = root.join("changed");
     let cache = stage(&changed, compiled, public, &cache_root)?;
-    prove(&changed, &cache, 231)?;
+    prove_with(&changed, &cache, &assignment_231)?;
     let second = artifacts(&changed)?;
     assert_ne!(first[0], second[0]);
     assert_eq!(first[2], second[2]);
@@ -474,7 +552,7 @@ mod tests {
       let malformed = root.join(format!("invalid-shape-{case}"));
       let cache = stage(&malformed, compiled, public, &cache_root)?;
       storage::save(&malformed.join("manifest.bin"), &shape)?;
-      let error = prove(&malformed, &cache, 9).unwrap_err();
+      let error = prove_with(&malformed, &cache, &assignment_9).unwrap_err();
       assert!(error.to_string().contains("trace dimensions differ"));
       assert!(!malformed.join("kzg/proof.compact.bin").exists());
     }
@@ -487,12 +565,12 @@ mod tests {
     };
     shape.heights[1] = 3;
     storage::save(&malformed.join("manifest.bin"), &shape)?;
-    let error = prove(&malformed, &cache, 9).unwrap_err();
+    let error = prove_with(&malformed, &cache, &assignment_9).unwrap_err();
     assert!(error.to_string().contains("trace height"));
     shape.heights[1] = manifest.heights[1];
     shape.widths[1] = 0;
     storage::save(&malformed.join("manifest.bin"), &shape)?;
-    let error = prove(&malformed, &cache, 9).unwrap_err();
+    let error = prove_with(&malformed, &cache, &assignment_9).unwrap_err();
     assert!(error.to_string().contains("unexpected trace layout"));
 
     // Removing a claim invalidates the staged claims.
@@ -503,7 +581,7 @@ mod tests {
     };
     fewer.claims.pop();
     storage::save(&malformed.join("manifest.bin"), &fewer)?;
-    let error = prove(&malformed, &cache, 9).unwrap_err();
+    let error = prove_with(&malformed, &cache, &assignment_9).unwrap_err();
     assert!(error.to_string().contains("staged claims differ"));
 
     // A damaged cache entry is rejected before anything is staged, whether

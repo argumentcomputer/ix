@@ -118,7 +118,7 @@ def checkUniform (w : Nat) (roots : Array Ixon.Expr) :
   | .error e, _, _ => .error s!"w={w}: uniform error {reprStr e} roots={reprStr roots}"
   | _, .error e, _ | _, _, .error e => .error s!"w={w}: reference error {reprStr e} roots={reprStr roots}"
 
-def agreementTests (_ : Unit) : TestSeq :=
+def agreementTestsWith (target : Nat) (_ : Unit) : TestSeq :=
   let (checked, cs, ce, un, maxComp, withUncertain, err) := runGen 61 do
     let mut checked := 0
     let mut cs := 0
@@ -128,7 +128,7 @@ def agreementTests (_ : Unit) : TestSeq :=
     let mut withUncertain := 0
     let mut err : Option String := none
     for i in [0:3000] do
-      if checked ≥ 400 || err.isSome then break
+      if checked ≥ target || err.isSome then break
       let roots ← genUniformRoots
       let w := [1, 2, 3, 5][← rand 4]!
       -- Keep the reference search small.
@@ -148,8 +148,11 @@ def agreementTests (_ : Unit) : TestSeq :=
     return (checked, cs, ce, un, maxComp, withUncertain, err)
   group "uniform optimizer vs width-state reference (uniform widths)" <|
     test s!"{checked} generated inputs (w ∈ 1,2,3,5; prefixes, 2-byte payloads, parent/child pairs, App chains, general): equal minimum (also = in-degree-≥2 reference); certain-stored ⊆ restricted optimum; certain-excluded in neither optimum; ≤ unshared ({cs} certain-stored, {ce} certain-excluded, {un} uncertain terms; {withUncertain} inputs with uncertain terms; largest component {maxComp})"
-      (err.isNone && checked == 400) ++
+      (err.isNone && checked == target) ++
     (match err with | some m => test m false | none => .done)
+
+def agreementTests (_ : Unit) : TestSeq := agreementTestsWith 400 ()
+def agreementTestsPR (_ : Unit) : TestSeq := agreementTestsWith 60 ()
 
 def witnessTests (_ : Unit) : TestSeq :=
   let roots := constantInfoRoots witness2.info
@@ -207,11 +210,11 @@ def bracketTests (_ : Unit) : TestSeq :=
            some (atomsUniformBrute w (as.map exprSize) occs)) ++
     test "sizes" ((sizes 3).all (· == 3))
 
-def propertyTests (_ : Unit) : TestSeq :=
+def propertyTestsWith (target : Nat) (_ : Unit) : TestSeq :=
   let (checked, err) := runGen 67 do
     let mut checked := 0
     let mut err : Option String := none
-    for i in [0:200] do
+    for i in [0:target] do
       if err.isSome then break
       let roots ← genRoots 6 16 4
       let c := wrapRoots roots i
@@ -228,8 +231,11 @@ def propertyTests (_ : Unit) : TestSeq :=
       | .error e => err := some s!"case {i}: error {reprStr e}"
     return (checked, err)
   group "uniform properties" <|
-    test s!"{checked} constants: normalize is idempotent and independent of pointer layout" (err.isNone && checked == 200) ++
+    test s!"{checked} constants: normalize is idempotent and independent of pointer layout" (err.isNone && checked == target) ++
     (match err with | some m => test m false | none => .done)
+
+def propertyTests (_ : Unit) : TestSeq := propertyTestsWith 200 ()
+def propertyTestsPR (_ : Unit) : TestSeq := propertyTestsWith 60 ()
 
 /-- `mk a₁ … aₙ`-style prefix chains: `uₖ = uₖ₋₁ aₖ`, each prefix also
 used once as the head of a longer spine with other arguments (the shape of
@@ -316,27 +322,26 @@ def searchOutcome (i w : Nat) (roots : Array Ixon.Expr) : SearchOutcome :=
 enumeration returns (same set, so the same tie-break), on inputs with larger
 uncertain components. The inputs are drawn in order from one seed; both
 searches run on batches of them in parallel, and the outcomes are read in
-draw order, so the inputs checked are the first 600 with a component of
+draw order, so the inputs checked are the first `target` with a component of
 ≥ 2 uncertain terms, as when the searches ran on one input at a time. -/
-def searchTests (_ : Unit) : TestSeq :=
+def searchTestsWith (target : Nat) (_ : Unit) : TestSeq :=
   let inputs := runGen 71 do
     let mut out : Array (Array Ixon.Expr × Nat) := #[]
     for _ in [0:4000] do
       let roots ← genSearchRoots
       out := out.push (roots, [1, 2, 3, 5][← rand 4]!)
     return out
-  let batch := 64
   let (checked, skipped, maxComp, err) := Id.run do
     let mut checked := 0
     let mut skipped := 0
     let mut maxComp := 0
     let mut err : Option String := none
-    for start in [0:inputs.size:batch] do
-      if checked ≥ 600 || err.isSome then break
-      let tasks := (inputs.extract start (start + batch)).zipIdx.map fun ((roots, w), k) =>
+    for start in [0:inputs.size:64] do
+      if checked ≥ target || err.isSome then break
+      let tasks := (inputs.extract start (start + 64)).zipIdx.map fun ((roots, w), k) =>
         Task.spawn fun _ => searchOutcome (start + k) w roots
       for task in tasks do
-        if checked ≥ 600 || err.isSome then break
+        if checked ≥ target || err.isSome then break
         match task.get with
         | .small => pure ()
         | .agree comp =>
@@ -351,8 +356,11 @@ def searchTests (_ : Unit) : TestSeq :=
     return (checked, skipped, maxComp, err)
   group "uniform branch and bound vs subset enumeration" <|
     test s!"{checked} generated inputs with a component of ≥ 2 uncertain terms (prefix chains, telescopes, App chains, long spines, prefixes, general; w ∈ 1,2,3,5; largest component {maxComp}; {skipped} skipped where the enumeration exceeded 2^16 states): identical retained per-count optima/ties, stored set, model length and bracket choice"
-      (err.isNone && checked == 600) ++
+      (err.isNone && checked == target) ++
     (match err with | some m => test m false | none => .done)
+
+def searchTests (_ : Unit) : TestSeq := searchTestsWith 600 ()
+def searchTestsPR (_ : Unit) : TestSeq := searchTestsWith 60 ()
 
 /-- Search agreement across the 128-entry table-count bracket: 120 one-byte
 atoms used twice (uncertain, gain 1) plus an App prefix chain. -/
@@ -418,12 +426,19 @@ def tieOrderTests (_ : Unit) : TestSeq :=
 public def suite : List TestSeq := [
   deferred "uniform tie order" tieOrderTests,
   deferred "uniform witness" witnessTests,
-  deferred "uniform vs reference" agreementTests,
+  deferred "uniform vs reference" agreementTestsPR,
   deferred "uniform T16" t16Tests,
   deferred "uniform table-count brackets" bracketTests,
-  deferred "uniform properties" propertyTests,
-  deferred "uniform search vs enumeration" searchTests,
+  deferred "uniform properties" propertyTestsPR,
+  deferred "uniform search vs enumeration" searchTestsPR,
   deferred "uniform search across a bracket" searchBracketTests,
+]
+
+/-- Full randomized sweeps for nightly CI (`exact-sharing-full`). -/
+public def nightlySuite : List TestSeq := [
+  deferred "uniform vs reference (full)" agreementTests,
+  deferred "uniform properties (full)" propertyTests,
+  deferred "uniform search vs enumeration (full)" searchTests,
 ]
 
 end Tests.SharingUniform

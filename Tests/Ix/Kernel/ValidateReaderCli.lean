@@ -92,14 +92,21 @@ private def check : IO Nat := do
   let neutral : Array (String × Option String) :=
     #["IX_ANON_CAP", "IX_ANON_STAGE", "IX_ANON_SEQ", "IX_ANON_HOLD", "IX_META_EAGER",
       "IX_SHARING_LIMITS", "LD_LIBRARY_PATH"].map (·, none) ++ #[("IX_SKIP_PHASES", some "5")]
-  let mut details := #[]
-  for eager in [false, true] do
+  let runMode (eager : Bool) : IO (String × System.FilePath × IO.Process.Output) := do
     let label := if eager then "eager" else "lazy"
     let path := dir / s!"{label}.json"
     let out ← IO.Process.output {
       cmd := ix.toString, args := #["validate-lean", file.toString, "--ns", toString defsModule,
-        "--workers", "1", "--report", path.toString],
+        "--workers", "4", "--report", path.toString],
       env := neutral ++ (if eager then #[("IX_META_EAGER", some "1")] else #[]) }
+    return (label, path, out)
+  let lazyTask ← IO.asTask (prio := .dedicated) (runMode false)
+  let eagerTask ← IO.asTask (prio := .dedicated) (runMode true)
+  let lazyRes ← IO.wait lazyTask
+  let eagerRes ← IO.wait eagerTask
+  let mut details := #[]
+  for (eager, res) in [(false, lazyRes), (true, eagerRes)] do
+    let (label, path, out) ← IO.ofExcept res
     IO.FS.writeFile (dir / s!"{label}.log") (out.stdout ++ out.stderr)
     ensure (out.exitCode == 0) s!"{label} source CLI failed; artifacts: {dir}"
     let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile path))

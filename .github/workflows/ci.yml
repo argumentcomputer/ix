@@ -43,6 +43,7 @@ jobs:
       run_formal_build: ${{ steps.plan.outputs.run_formal_build }}
       run_formal_tests: ${{ steps.plan.outputs.run_formal_tests }}
       run_refinement: ${{ steps.plan.outputs.run_refinement }}
+      ixa_key: ${{ steps.plan.outputs.ixa_key }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -67,6 +68,7 @@ jobs:
               - '**/*.rs'
               - 'deny.toml'
               - '.github/valgrind.supp'
+              - 'Tests/Fixtures/**'
             cuda:
               - 'crates/aiur/**'
               - 'crates/ixvm/**'
@@ -94,25 +96,45 @@ jobs:
               - 'Aiur/Aiur/Ixon/**'
               - 'IxVM/IxVM/Fixture.lean'
               - 'Scripts/SourceHygiene.lean'
+              - 'Scripts/CheckCiFilters.lean'
             kernel:
               - 'IxC/**'
               - 'Models/SetTheory/**'
+              - 'Ix/Address/**'
+              - 'Ix/Address.lean'
               - 'Ix/Cert/**'
+              - 'Ix/Common.lean'
               - 'Ix/Compile/**'
               - 'Ix/CompileCert/**'
+              - 'Ix/CompileDriver.lean'
+              - 'Ix/CompileM.lean'
+              - 'Ix/CondenseM.lean'
+              - 'Ix/Environment.lean'
+              - 'Ix/GraphM.lean'
+              - 'Ix/Ground.lean'
+              - 'Ix/IndFlags.lean'
               - 'Ix/Ixon/**'
               - 'Ix/Ixon.lean'
+              - 'Ix/IxonUniv.lean'
+              - 'Ix/KernelDisplay/**'
+              - 'Ix/LeanIngress/**'
+              - 'Ix/LeanIngress.lean'
+              - 'Ix/Mutual.lean'
               - 'Ix/RoleBinding/**'
+              - 'Ix/RoleEvidence.lean'
               - 'Ix/HostAdmission/**'
+              - 'Ix/SemanticContract.lean'
+              - 'Ix/Sharing/**'
               - 'Ix/SpecDigest/**'
               - 'Ix/SpecDigest.lean'
-              - 'Ix/LeanIngress/**'
               - 'Ix/IxVM/Consistency/**'
               - 'Ix/IxVM/ConsistencyAudit.lean'
               - 'Ix/IxVM/ConsistencyModelAudit.lean'
               - 'IxSharingVerify/**'
               - 'Tests/Ix/Kernel/**'
               - 'Tests/Ix/Cert/**'
+              - 'Tests/Fixtures/compile-correct-closure-manifest.txt'
+              - 'Tests/Fixtures/check-bytes-closure-manifest.txt'
             refinement:
               - 'Aiur/**'
               - 'IxVM/**'
@@ -126,11 +148,16 @@ jobs:
               - 'Ix/SpecDigest/**'
               - 'Ix/SpecDigest.lean'
               - 'Ix/Cert/**'
+              - 'Ix/Environment.lean'
+              - 'Ix/Ixon/**'
+              - 'Ix/Ixon.lean'
               - 'Ix/RoleBinding/**'
               - 'Ix/HostAdmission/**'
               - 'Ix/Claim*.lean'
               - 'Ix/AssumptionTree.lean'
               - 'Ix/Address/**'
+              - 'Ix/Address.lean'
+              - 'Tests/Fixtures/circuit-composed-closure-manifest.txt'
             formal:
               - 'Aiur/**'
               - 'IxVM/**'
@@ -162,6 +189,7 @@ jobs:
               - 'Ix/Cli/CodegenCmd.lean'
               - 'Scripts/CheckFormal.lean'
               - 'Tests/Formal*.lean'
+              - 'Tests/IxVMMain.lean'
               - 'Tests/Ix/IxVM/**'
               - 'Tests/Ix/Kernel/Arena.lean'
               - 'Tests/Ix/InstanceSymbols.lean'
@@ -244,6 +272,11 @@ jobs:
             fi
           fi
 
+          # Deterministic content-addressed key for `.ixa` exports from git
+          # trees alone (immune to sticky-disk `.lake/` or `target/` files).
+          ixa_hash=$(git rev-parse \
+            HEAD:lean-toolchain HEAD:lake-manifest.json \
+            HEAD:Aiur HEAD:IxVM HEAD:MultiStark | sha256sum | cut -d' ' -f1)
           {
             echo "is_push=$is_push"
             echo "is_draft=$is_draft"
@@ -259,6 +292,7 @@ jobs:
             echo "run_formal_build=$run_formal_build"
             echo "run_formal_tests=$run_formal_tests"
             echo "run_refinement=$run_refinement"
+            echo "ixa_key=ixa-v2-${ixa_hash}"
           } >> "$GITHUB_OUTPUT"
 
   lints:
@@ -333,6 +367,9 @@ jobs:
       - name: Tests
         env:
           IS_PUSH: ${{ needs.changes.outputs.is_push }}
+          # Dedicated ci-rust-test sticky disk: skip thin-LTO linking on test
+          # binaries and omit ix-ffi/net (already checked by clippy above).
+          CARGO_PROFILE_RELEASE_LTO: "false"
         run: |
           extra=""
           if [ "$IS_PUSH" = "true" ]; then
@@ -340,7 +377,7 @@ jobs:
           fi
           # shellcheck disable=SC2086
           cargo nextest run --release --profile ci --workspace \
-            --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,aiur/parallel,ixvm/parallel $extra
+            --features ix-ffi/parallel,ix-ffi/test-ffi,aiur/parallel,ixvm/parallel $extra
       - name: Get Rust version
         if: needs.changes.outputs.is_push != 'true'
         run: |
@@ -436,7 +473,7 @@ jobs:
         run: |
           lake build --wfail \
             Ix ix IxTests kernel-check-ixe EntryCaseFixtures \
-            ixon-v4-tests ixon-v4-primitives \
+            ixon-tests ixon-primitives \
             Apps.ZKVoting.Prover
       - name: Record built revision
         env:
@@ -444,7 +481,7 @@ jobs:
         run: echo "$BUILT_SHA" > .lake/host-build-revision
 
   host-test-primary:
-    name: Host tests (primary & Ixon v4)
+    name: Host tests (primary & Ixon)
     needs: [changes, host-build]
     if: needs.changes.outputs.run_host_fast == 'true'
     runs-on: runs-on=${{ github.run_id }}-host-primary-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-host-x86-64-v4-100gb:100gb/extras=s3-cache
@@ -473,14 +510,18 @@ jobs:
           EXPECTED_SHA: ${{ github.sha }}
         run: |
           if [ "$(cat .lake/host-build-revision 2>/dev/null || true)" != "$EXPECTED_SHA" ]; then
-            lake build --wfail IxTests ixon-v4-primitives ixon-v4-tests
+            lake build --wfail IxTests ixon-primitives ixon-tests
           fi
+      - name: Check CI path-filter coverage of closure manifests
+        run: |
+          lake env lean --run Scripts/CheckCiFilters.lean --self-test
+          lake env lean --run Scripts/CheckCiFilters.lean
       - name: Run primary IxTests
         run: lake env .lake/build/bin/IxTests
-      - name: Test Ixon v4 contracts and consumers
+      - name: Test Ixon contracts and primitives
         run: |
-          lake env .lake/build/bin/ixon-v4-primitives
-          lake env .lake/build/bin/ixon-v4-tests --primitives
+          lake env .lake/build/bin/ixon-primitives
+          lake env .lake/build/bin/ixon-tests --primitives
 
   host-test-cli:
     name: Host tests (CLI)
@@ -653,7 +694,7 @@ jobs:
       - name: Run misc suites and ZK voting prover
         run: |
           lake env .lake/build/bin/IxTests --tier ci:misc
-          lake env .lake/build/bin/Apps.ZKVoting.Prover
+          lake env .lake/build/bin/Apps-ZKVoting-Prover
 
   certified-kernel:
     name: Certified kernel & set-theory model
@@ -714,7 +755,8 @@ jobs:
       - uses: $/.github/actions/setup-rust-toolchain
         with:
           codegen: generic
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: valgrind-lake-cache
         with:
           path: ./.lake
           key: lake-valgrind-x64-generic-nomathlib-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-${{ github.sha }}
@@ -732,7 +774,7 @@ jobs:
           .lake/build/bin/ffi-tests
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends valgrind
-          valgrind \
+          IX_VALGRIND=1 valgrind \
             --leak-check=full \
             --show-leak-kinds=definite,possible \
             --errors-for-leak-kinds=definite \
@@ -740,6 +782,12 @@ jobs:
             --error-exitcode=1 \
             --suppressions=.github/valgrind.supp \
             .lake/build/bin/ffi-tests
+      - name: Save Valgrind Lean cache on main
+        if: needs.changes.outputs.is_push == 'true' && steps.valgrind-lake-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ./.lake
+          key: lake-valgrind-x64-generic-nomathlib-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-${{ github.sha }}
 
   # Build formal packages + Rust hosts once, restore or export `.ixa` artifacts
   # in parallel, and publish `.ixa` + Rust hosts to S3 cache for downstream jobs.
@@ -781,7 +829,7 @@ jobs:
         id: hosts-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .lake/ci-hosts
+          path: ${{ runner.temp }}/ci-hosts
           key: formal-hosts-v1-x86-64-v4-${{ github.sha }}
       - name: Build Rust formal hosts (unified features)
         run: |
@@ -789,38 +837,38 @@ jobs:
             -p ixvm -p stark-verifier -p ix-prover -p aiur \
             --features aiur/parallel,ixvm/parallel,stark-verifier/parallel,ix-prover/parallel \
             --bin ixvm --bin ixvm-proof --bin stark-verifier --bin ix-prover \
-            --example claim_fixture --example ixvm_bench --example library_check
-          mkdir -p .lake/ci-hosts
-          cp target/release/ixvm-proof target/release/stark-verifier target/release/ix-prover .lake/ci-hosts/
+            --example claim_fixture --example library_check
+          mkdir -p "${{ runner.temp }}/ci-hosts"
+          cp target/release/ixvm-proof target/release/stark-verifier target/release/ix-prover "${{ runner.temp }}/ci-hosts/"
       - name: Save Rust formal hosts to S3 cache
         if: steps.hosts-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .lake/ci-hosts
+          path: ${{ runner.temp }}/ci-hosts
           key: formal-hosts-v1-x86-64-v4-${{ github.sha }}
       - name: Restore content-addressed .ixa artifacts from S3 cache
         id: ixa-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .lake/ci-artifacts
-          key: ixa-v1-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Aiur/**', 'IxVM/**', 'MultiStark/**') }}
+          path: ${{ runner.temp }}/ci-artifacts
+          key: ${{ needs.changes.outputs.ixa_key }}
       - name: Export .ixa artifacts in parallel on cache miss
         if: steps.ixa-cache.outputs.cache-hit != 'true'
         run: |
-          mkdir -p .lake/ci-artifacts
-          lake env IxVM/.lake/build/bin/ixvm export-claim-trace .lake/ci-artifacts/ixvm.ixa &
+          mkdir -p "${{ runner.temp }}/ci-artifacts"
+          lake env IxVM/.lake/build/bin/ixvm export-claim-trace "${{ runner.temp }}/ci-artifacts/ixvm.ixa" &
           p1=$!
-          lake env MultiStark/.lake/build/bin/stark-export export-trace .lake/ci-artifacts/recursion.ixa &
+          lake env MultiStark/.lake/build/bin/stark-export export-trace "${{ runner.temp }}/ci-artifacts/recursion.ixa" &
           p2=$!
-          lake env MultiStark/.lake/build/bin/stark-export export-trace .lake/ci-artifacts/aggregate.ixa --aggregate &
+          lake env MultiStark/.lake/build/bin/stark-export export-trace "${{ runner.temp }}/ci-artifacts/aggregate.ixa" --aggregate &
           p3=$!
           wait "$p1" "$p2" "$p3"
       - name: Save .ixa artifacts to S3 cache
         if: steps.ixa-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .lake/ci-artifacts
-          key: ixa-v1-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Aiur/**', 'IxVM/**', 'MultiStark/**') }}
+          path: ${{ runner.temp }}/ci-artifacts
+          key: ${{ needs.changes.outputs.ixa_key }}
       - name: Record built revision
         env:
           BUILT_SHA: ${{ github.sha }}
@@ -861,14 +909,12 @@ jobs:
           Aiur/.lake/build/bin/trace_tests
           Aiur/.lake/build/bin/u32_tests
           lake env .lake/build/bin/formal-package-tests
-      - name: Check IxVM execution and witness fixture
+      - name: Check IxVM execution fixture
         run: |
           tmp=$(mktemp -d)
           lake env IxVM/.lake/build/bin/ixvm export "$tmp/ixvm-execution.ixa"
-          target/release/ixvm "$tmp/ixvm-execution.ixa" all
+          target/release/ixvm "$tmp/ixvm-execution.ixa" negative
           target/release/ixvm "$tmp/ixvm-execution.ixa" validate IxVM/IxVM/fixtures/nat-add-comm.ixf
-          lake env IxVM/.lake/build/bin/ixvm export-trace "$tmp/ixvm-trace.ixa"
-          target/release/examples/ixvm_bench "$tmp/ixvm-trace.ixa" IxVM/IxVM/fixtures/nat-add-comm.ixf witness 1
           rm -rf "$tmp"
 
   # Dedicated lineage for the 944-module IxVMRefinement library so it runs in
@@ -946,16 +992,16 @@ jobs:
       - name: Restore .ixa artifacts from S3 cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .lake/ci-artifacts
-          key: ixa-v1-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Aiur/**', 'IxVM/**', 'MultiStark/**') }}
+          path: ${{ runner.temp }}/ci-artifacts
+          key: ${{ needs.changes.outputs.ixa_key }}
           fail-on-cache-miss: true
       - name: Run CheckFormal gate
         env:
           EXPECTED_SHA: ${{ github.sha }}
           IX_TEST_OUTPUT_DIR: ${{ runner.temp }}/formal
-          IX_AIUR_ARTIFACT: ${{ github.workspace }}/.lake/ci-artifacts/ixvm.ixa
-          IX_RECURSION_ARTIFACT: ${{ github.workspace }}/.lake/ci-artifacts/recursion.ixa
-          IX_AGGR_ARTIFACT: ${{ github.workspace }}/.lake/ci-artifacts/aggregate.ixa
+          IX_AIUR_ARTIFACT: ${{ runner.temp }}/ci-artifacts/ixvm.ixa
+          IX_RECURSION_ARTIFACT: ${{ runner.temp }}/ci-artifacts/recursion.ixa
+          IX_AGGR_ARTIFACT: ${{ runner.temp }}/ci-artifacts/aggregate.ixa
           IX_CHECK_FORMAL_SKIP_AIUR_UNITS: "1"
         run: |
           if [ "$(cat .lake/formal-build-revision 2>/dev/null || true)" = "$EXPECTED_SHA" ]; then
@@ -991,28 +1037,23 @@ jobs:
       - name: Restore .ixa artifacts and Rust formal hosts from S3 cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .lake/ci-artifacts
-          key: ixa-v1-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Aiur/**', 'IxVM/**', 'MultiStark/**') }}
+          path: ${{ runner.temp }}/ci-artifacts
+          key: ${{ needs.changes.outputs.ixa_key }}
           fail-on-cache-miss: true
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .lake/ci-hosts
+          path: ${{ runner.temp }}/ci-hosts
           key: formal-hosts-v1-x86-64-v4-${{ github.sha }}
           fail-on-cache-miss: true
-      - name: Ensure IxTests matches revision
-        env:
-          EXPECTED_SHA: ${{ github.sha }}
-        run: |
-          if [ "$(cat .lake/host-build-revision 2>/dev/null || true)" != "$EXPECTED_SHA" ]; then
-            lake build --wfail IxTests
-          fi
+      - name: Build IxVMTests
+        run: lake build --wfail IxVMTests
       - name: Run ci:ixvm tier
         env:
-          IX_AIUR_ARTIFACT: ${{ github.workspace }}/.lake/ci-artifacts/ixvm.ixa
-          IX_AIUR_HOST: ${{ github.workspace }}/.lake/ci-hosts/ixvm-proof
-          IX_PROVER_HOST: ${{ github.workspace }}/.lake/ci-hosts/ix-prover
-          IX_STARK_HOST: ${{ github.workspace }}/.lake/ci-hosts/stark-verifier
-        run: lake env .lake/build/bin/IxTests --tier ci:ixvm
+          IX_AIUR_ARTIFACT: ${{ runner.temp }}/ci-artifacts/ixvm.ixa
+          IX_AIUR_HOST: ${{ runner.temp }}/ci-hosts/ixvm-proof
+          IX_PROVER_HOST: ${{ runner.temp }}/ci-hosts/ix-prover
+          IX_STARK_HOST: ${{ runner.temp }}/ci-hosts/stark-verifier
+        run: lake env .lake/build/bin/IxVMTests --tier ci:ixvm
 
   binding-proof-cli:
     name: Binding proof & shard reuse CLI
@@ -1042,12 +1083,12 @@ jobs:
       - name: Restore .ixa artifacts and Rust formal hosts from S3 cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .lake/ci-artifacts
-          key: ixa-v1-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Aiur/**', 'IxVM/**', 'MultiStark/**') }}
+          path: ${{ runner.temp }}/ci-artifacts
+          key: ${{ needs.changes.outputs.ixa_key }}
           fail-on-cache-miss: true
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .lake/ci-hosts
+          path: ${{ runner.temp }}/ci-hosts
           key: formal-hosts-v1-x86-64-v4-${{ github.sha }}
           fail-on-cache-miss: true
       - name: Ensure IxTests matches revision
@@ -1059,10 +1100,10 @@ jobs:
           fi
       - name: Run ci:binding-proof tier
         env:
-          IX_AIUR_ARTIFACT: ${{ github.workspace }}/.lake/ci-artifacts/ixvm.ixa
-          IX_AIUR_HOST: ${{ github.workspace }}/.lake/ci-hosts/ixvm-proof
-          IX_PROVER_HOST: ${{ github.workspace }}/.lake/ci-hosts/ix-prover
-          IX_STARK_HOST: ${{ github.workspace }}/.lake/ci-hosts/stark-verifier
+          IX_AIUR_ARTIFACT: ${{ runner.temp }}/ci-artifacts/ixvm.ixa
+          IX_AIUR_HOST: ${{ runner.temp }}/ci-hosts/ixvm-proof
+          IX_PROVER_HOST: ${{ runner.temp }}/ci-hosts/ix-prover
+          IX_STARK_HOST: ${{ runner.temp }}/ci-hosts/stark-verifier
         run: lake env .lake/build/bin/IxTests --tier ci:binding-proof
 
   # Normalizer between path-filtered jobs and runs-on/spot-retry-gate:

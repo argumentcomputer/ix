@@ -41,24 +41,33 @@ that only run them.
 `lake run check-source-docs` rejects retired compiler API names, numbered
 private work-queue labels and references to internal plan files in Lean,
 Rust and Markdown sources. It runs scanner controls on every invocation and
-uses no grandfather baseline. `lake lint` runs it after the strict module
-build and coverage checks.
+uses no grandfather baseline. `lake run check-ci-filters` verifies that
+`.github/workflows/ci.yml`'s `refinement:` and `kernel:` path filters cover
+every project module in the SHA-256 transitive definitional closure manifests
+(`circuit-composed`, `compile-correct`, and `check-bytes`) as well as the TCB
+files `Ix/Address/Admission.lean` and `Ix/KernelDisplay/Peek.lean`. `lake lint`
+runs both after the strict module build and coverage checks.
 
-Every Lean test entry is registered once, with its tier, in
-`Tests/Main.lean` (the registry is `Tests/Registry.lean`). The tier says where
-the entry runs:
+Lean test entries are split across three drivers sharing `Tests/Registry.lean`:
 
-| Tier | Where it runs | What it holds |
+- **`IxTests` (`Tests/Main.lean`)**: host `primary`, `ci:cli`, `ci:compiler-closures`, `ci:binding-proof`, `ci:misc`, `ci:landing-initstd-cli`, and `ci:nightly`.
+- **`IxVMTests` (`Tests/IxVMMain.lean`)**: IxVM circuit-verdict suites (`ci:ixvm`, `ci:nightly-ixvm`, and opt-in `manual` sweeps) — kept out of `host-build` so host-only PRs do not build or link the 22 IxVM circuit test modules.
+- **`IxManualTests` (`Tests/ManualMain.lean`)**: manual-only benchmark, corpus, and differential runners (`lake lint` still typechecks every module).
+
+The tier says where each entry runs:
+
+| Tier | Driver & Where it runs | What it holds |
 | --- | --- | --- |
-| `primary` | `lake test` with no arguments: `ci.yml`'s `host-test-primary`, and Nix's `ix-tests` | the quick host suites (including pure-host `ixvm-pw-hints` and `ixvm-binder-data`) |
-| `ci:cli` | `ci.yml`'s `host-test-cli` | the command-line integration tests |
-| `ci:ixvm` | `ci.yml`'s `ixvm-tier-tests`, on the cached/exported `ixvm.ixa` artifact | PR completeness, exact FFT cost pins, out-of-scope claims (`eval`, `reveal`, `user-axioms`, `assumed`), and Rust-host circuit-verdict smokes (`IX_AIUR_CIRCUIT_VERDICT`; `=0` for plain execution) |
-| `ci:compiler-closures` | `ci.yml`'s `host-test-closures` | selected closures against the whole environment, auxiliary closure addresses, checker-support grounding, packing, `cert-evidence-agreement`, and the certified checker's pinned subjects and acceleration inputs |
-| `ci:binding-proof` | `ci.yml`'s `binding-proof-cli`, on the cached `ixvm.ixa` and prebuilt Rust hosts | `ix prove-binding`, shard proofs assuming the binding, and composition/refusal checks (64 GiB budget) |
-| `ci:misc` | `ci.yml`'s `host-test-misc`, with the ZK voting prover | the tutorial, catalog and commit I/O |
-| `ci:landing-initstd-cli` | `ci.yml`'s `host-test-landing` | Init+Std through the `ix` binary: `ix compile-lean` with its report checks and reference digest pin (`Tests/Fixtures/initstd-reference.txt`), `ix check-lean` with bound roles admitted, `ix validate-lean` fidelity reusing that artifact (avoiding a second full Init+Std compile), and `ixvm-reader-coverage` |
-| `ci:nightly` | `nightly.yml` (scheduled daily on `main`) | exhaustive adversarial `.binding`, TagN (4,128-claim), Eval (24-term / every-byte truncation), Arena (`bad_*`), and SafeReferences sweeps plus the whole-Init+Std pure-Lean BLAKE3 sweep (`admission-hash-diff-initstd`) |
-| `manual` | by hand only | entries that need inputs outside the repository, take minutes or hours, or are diagnostics; each states its reason |
+| `primary` | `IxTests` (`lake test`): `ci.yml`'s `host-test-primary`, and Nix's `ix-tests` | the quick host suites (including pure-host `ixvm-pw-hints`, `ixvm-binder-data`, and `ixvm-differential-attribution`) |
+| `ci:cli` | `IxTests`: `ci.yml`'s `host-test-cli` | the command-line integration tests |
+| `ci:ixvm` | `IxVMTests`: `ci.yml`'s `ixvm-tier-tests`, on the S3-cached `ixvm.ixa` artifact | PR completeness, FFT cost pins, out-of-scope claims (`eval`, `reveal`, `user-axioms`, `assumed`), and Rust-host circuit-verdict smokes (`IX_AIUR_CIRCUIT_VERDICT`; `=0` for plain execution) |
+| `ci:compiler-closures` | `IxTests`: `ci.yml`'s `host-test-closures` | selected closures against the whole environment, auxiliary closure addresses, checker-support grounding, packing, `cert-evidence-agreement`, and the certified checker's pinned subjects and acceleration inputs |
+| `ci:binding-proof` | `IxTests`: `ci.yml`'s `binding-proof-cli`, on the cached `ixvm.ixa` and prebuilt Rust hosts | `ix prove-binding`, shard proofs assuming the binding, and composition/refusal checks (64 GiB budget) |
+| `ci:misc` | `IxTests`: `ci.yml`'s `host-test-misc`, with the ZK voting prover | the tutorial, catalog and commit I/O |
+| `ci:landing-initstd-cli` | `IxTests`: `ci.yml`'s `host-test-landing` | Init+Std through the `ix` binary: `ix compile-lean` with its report checks and reference digest pin (`Tests/Fixtures/initstd-reference.txt`), `ix check-lean` with bound roles admitted, `ix validate-lean` fidelity reusing that artifact (avoiding a second full Init+Std compile), and `ixvm-reader-coverage` |
+| `ci:nightly` | `IxTests`: `nightly.yml` (scheduled daily on `main`) | whole-Init+Std pure-Lean BLAKE3 sweep (`admission-hash-diff-initstd`) and brute-force exact-sharing sweeps (`exact-sharing-full`) |
+| `ci:nightly-ixvm` | `IxVMTests`: `nightly.yml` (scheduled daily on `main`) | full 24-term generated arithmetic `Claim.eval` suite (`ixvm-eval-full`; `Claim.eval` has no soundness proof yet) |
+| `manual` | `IxVMTests` / `IxManualTests` by hand only | entries that need inputs outside the repository, take minutes or hours, diagnostics, or opt-in adversarial sweeps formally superseded by `circuitComposed` (`ixvm-exploits-full`, `ixvm-safe-references-full`, `ixvm-tagn-sweep`, `ixvm-arena-full`); each states its reason |
 
 The manual runner that proves through the production `ix_aggr` circuit,
 `aggregate-binding-reuse`, takes minutes of recursion and about 190 GB, three

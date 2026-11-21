@@ -68,6 +68,25 @@ impl Profile {
     )
   }
 
+  /// Same blowup and query count as [`Self::config`], without PoW grinding
+  /// (PoW verification is already exercised by [`Self::Smoke`]).
+  pub(crate) fn config_without_pow(self) -> GoldilocksBlake3Config {
+    let queries = match self {
+      Self::Smoke => 4,
+      Self::FullSize => 100,
+    };
+    GoldilocksBlake3Config::new(
+      CommitmentParameters { log_blowup: 2, cap_height: 0 },
+      FriParameters {
+        log_final_poly_len: 0,
+        max_log_arity: 1,
+        num_queries: queries,
+        commit_proof_of_work_bits: 0,
+        query_proof_of_work_bits: 0,
+      },
+    )
+  }
+
   pub(crate) fn shape(
     self,
     system: &System<GoldilocksBlake3Config>,

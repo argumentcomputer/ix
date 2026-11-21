@@ -3574,7 +3574,7 @@ mod tests {
   use quickcheck::{Arbitrary, Gen};
   use quickcheck_macros::quickcheck;
 
-  fn v4_fixture_exprs() -> Vec<(&'static str, Arc<Expr>)> {
+  fn fixture_exprs() -> Vec<(&'static str, Arc<Expr>)> {
     use crate::modes::BinderMode;
     let let_ = |non_dep, mode, val| {
       Expr::let_mode(non_dep, mode, Expr::sort(0), val, Expr::var(0))
@@ -3667,7 +3667,7 @@ mod tests {
       ("borrow", &[0xA8, 0x06, 0x00, 0x41, 0x02, 0x11, 0x10]),
       ("borrow_nondep", &[0xA8, 0x07, 0x00, 0x11, 0x10]),
     ];
-    let cases = v4_fixture_exprs();
+    let cases = fixture_exprs();
     for (name, expected) in rows {
       let (_, expr) = cases.iter().find(|(n, _)| *n == name).unwrap();
       let mut actual = vec![];
@@ -3677,15 +3677,15 @@ mod tests {
   }
 
   #[test]
-  fn v4_independent_golden_expressions() {
-    let file = include_str!("../../../Tests/Fixtures/ixon-v4/expressions.txt");
+  fn independent_golden_expressions() {
+    let file = include_str!("../../../Tests/Fixtures/ixon/expressions.txt");
     // Every row of the file is a case here (and in the Lean golden test).
     let rows = file
       .lines()
       .filter(|line| !line.is_empty() && !line.starts_with('#'))
       .count();
-    assert_eq!(rows, v4_fixture_exprs().len(), "fixture rows without a case");
-    for (name, expr) in v4_fixture_exprs() {
+    assert_eq!(rows, fixture_exprs().len(), "fixture rows without a case");
+    for (name, expr) in fixture_exprs() {
       let line = file
         .lines()
         .find(|line| line.starts_with(&format!("{name} ")))

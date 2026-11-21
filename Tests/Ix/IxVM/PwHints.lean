@@ -188,7 +188,7 @@ def setNode (sec : Array Ixon.BinderBlock) (b i : Nat) (n : Ixon.BinderNode) : A
   sec.modify b fun blk => { blk with nodes := blk.nodes.set! i n }
 
 def circuitCases : Except String (Array Tests.Ix.IxVM.Builder) := do
-  let ctx ← _root_.Ix.ClaimContext.ofDefaultTable
+  let ctx := { (← _root_.Ix.ClaimContext.ofDefaultTable) with bindingAssumed := true }
   let s := idPolySection
   return #[
     idPolyCase ctx "the compiler's data" s (accept := true),

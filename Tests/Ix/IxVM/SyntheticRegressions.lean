@@ -34,9 +34,9 @@ End-to-end regressions covering:
 5. **Semantic `imax` universe algebra (`imaxCases`)**: 5 valid `imax` identities accepted
    by BOTH IxC and IxVM, paired with 2 false negative controls rejected by BOTH.
 6. **Adversarial boundary controls (`adversarialCases`)**: forged large eliminator on a
-   2-constructor `Prop` inductive, retired `resource-v1` claim variant 9, invalid UTF-8
-   and non-canonical `Nat` literal blobs, and an unused sharing entry referencing an
-   unsafe definition.
+   2-constructor `Prop` inductive (UTF-8, non-canonical `Nat` literal blobs, unused-sharing
+   unsafe refs, and the retired `resource-v1` claim are covered by `Exploits`, `Eval`,
+   `SafeReferences`, and `Codec`).
 -/
 
 namespace Tests.Ix.IxVM.SyntheticRegressions
@@ -49,7 +49,13 @@ abbrev E := Ixon.Expr
 private def storeNamed (env : Ixon.Env) (nm : Lean.Name) (c : Ixon.Constant)
     (hint : Lean.ReducibilityHints := .regular 0) : Ixon.Env × Address :=
   let a := Address.blake3 (Ixon.ser c)
-  let env := env.storeConst a c
+  let isIndOrRec := match c.info with
+    | .recr _ | .iPrj _ | .cPrj _ | .rPrj _ => true
+    | .muts ms => ms.any fun
+      | .indc _ | .recr _ => true
+      | .defn _ => false
+    | _ => false
+  let env := if isIndOrRec then env.storeConst a c else env.storeConstKeepModels a c
   let env := match c.info with
     | .defn _ | .dPrj _ => { env with anonHints := env.anonHints.insert a hint }
     | _ => env
@@ -69,10 +75,6 @@ private def storeNamedAnnot (env : Ixon.Env) (nm : Lean.Name) (c : Ixon.Constant
   let blocks := (tables.find? (·.1 == a0)).map (·.2) |>.getD #[]
   let sec ← IO.ofExcept (Ix.Compile.BinderData.sectionOf c blocks)
   pure (storeNamed env nm { c with binders := sec } hint)
-
-private def storeBlobAt (env : Ixon.Env) (bs : ByteArray) : Ixon.Env × Address :=
-  let a := Address.blake3 bs
-  ({ env with blobs := env.blobs.insert a bs }, a)
 
 private def checkIxcOutcome (verdicts : Std.HashMap (Ix.Kernel.Key .source) (String × String))
     (nm : Lean.Name) (expectAccept : Bool) (expectReasonSubstr : Option String := none) :
@@ -381,16 +383,10 @@ private def imaxCases (leanEnv : Lean.Environment) : IO (Array Builder) := do
 
 private def adversarialCases (leanEnv : Lean.Environment) : IO (Array Builder) := do
   let env ← loadSharedIxonEnv
-    #[`SynReg.TwoProp, `SynReg.TwoProp.left, `SynReg.TwoProp.right,
-      ``Nat, ``Nat.zero, ``String, ``True, ``True.intro] leanEnv
+    #[`SynReg.TwoProp, `SynReg.TwoProp.left, `SynReg.TwoProp.right] leanEnv
   let twoA ← lookupAddr env `SynReg.TwoProp
   let twoLA ← lookupAddr env `SynReg.TwoProp.left
   let twoRA ← lookupAddr env `SynReg.TwoProp.right
-  let natA ← lookupAddr env ``Nat
-  let zeroA ← lookupAddr env ``Nat.zero
-  let strA ← lookupAddr env ``String
-  let trueA ← lookupAddr env ``True
-  let introA ← lookupAddr env ``True.intro
 
   -- Forged large eliminator (`lvls = 1`, `Sort u` motive) on 2-ctor `Prop` inductive `TwoProp`.
   let motiveDom : E := .leanAll (.ref 0 #[]) (.sort 0)
@@ -404,67 +400,14 @@ private def adversarialCases (leanEnv : Lean.Environment) : IO (Array Builder) :
     ⟨.recr ⟨false, false, 1, 0, 0, 1, 2, recTy, #[mkRule 1, mkRule 0]⟩,
       #[], #[twoA, twoLA, twoRA], #[.var 0], #[]⟩
   let (env, forgedLargeRecA) ← storeNamedAnnot env `SynReg.Raw.forgedLargeRec forgedLargeRec
-  -- Verify IxC also rejects the forged large eliminator before adding invalid blobs.
+  -- Verify IxC also rejects the forged large eliminator.
   let forgedLargeVerdicts ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts env
   checkIxcOutcome forgedLargeVerdicts `SynReg.Raw.forgedLargeRec false
 
-  -- Invalid UTF-8 string blobs.
-  let badUtf8Specs : Array (String × ByteArray) := #[
-    ("utf8-overlong", ByteArray.mk #[0xC0, 0xAF]),
-    ("utf8-surrogate", ByteArray.mk #[0xED, 0xA0, 0x80]),
-    ("utf8-above-max", ByteArray.mk #[0xF4, 0x90, 0x80, 0x80]),
-    ("utf8-truncated", ByteArray.mk #[0xE2, 0x82])]
-  let mut env := env
-  let mut blobCases : Array (String × Address × Option String) := #[]
-  for (label, bs) in badUtf8Specs do
-    let (env1, bA) := storeBlobAt env bs
-    let (env2, dA) := storeNamed env1 (Lean.Name.mkStr `SynReg.Raw label)
-      ⟨.defn ⟨.defn, .safe, {}, 0, .ref 0 #[], .str 1⟩, #[], #[strA, bA], #[], #[]⟩
-    env := env2
-    blobCases := blobCases.push (label, dA, none)
-
-  -- Non-canonical Nat literal blobs (trailing zero and empty).
-  let (env1, trailBlobA) := storeBlobAt env (ByteArray.mk #[0x01, 0x00])
-  let (env2, trailingZeroNatA) := storeNamed env1 `SynReg.Raw.noncanonNatTrailingZero
-    ⟨.defn ⟨.defn, .safe, {}, 0, .ref 0 #[], .nat 1⟩, #[], #[natA, trailBlobA], #[], #[]⟩
-  env := env2
-  blobCases := blobCases.push ("noncanon-nat-trailing0", trailingZeroNatA,
-    some "a blob with a trailing zero byte")
-
-  let (env1, emptyBlobA) := storeBlobAt env ByteArray.empty
-  let (env2, emptyNatA) := storeNamed env1 `SynReg.Raw.noncanonNatEmpty
-    ⟨.defn ⟨.defn, .safe, {}, 0, .ref 0 #[], .nat 1⟩, #[], #[natA, emptyBlobA], #[], #[]⟩
-  env := env2
-  blobCases := blobCases.push ("noncanon-nat-empty", emptyNatA,
-    some "an empty blob")
-
-  -- Safe defn whose unused `sharing` entry references an unsafe defn.
-  let (env1, unsafA) := storeNamed env `SynReg.Raw.unsafeLeaf
-    ⟨.defn ⟨.defn, .unsaf, {}, 0, .ref 0 #[], .ref 1 #[]⟩, #[], #[trueA, introA], #[], #[]⟩
-  let (env2, unusedSharingUnsafeA) := storeNamed env1 `SynReg.Raw.unusedSharingUnsafe
-    ⟨.defn ⟨.defn, .safe, {}, 0, .ref 0 #[], .ref 1 #[]⟩,
-      #[.ref 2 #[]], #[natA, zeroA, unsafA], #[], #[]⟩
-  env := env2
-
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
-  let mut out : Array Builder := #[
+  return #[
     fun _ => Case.ofClaim "forged-large-elim-on-2ctor-prop" env (.check ctx forgedLargeRecA none) {} false
-      (some "recursor universe-parameter count is not its block's plus the elimination parameter"),
-    fun _ => Case.ofClaim "unused-sharing-unsafe-ref" env (.check ctx unusedSharingUnsafeA none) {} false
-      (some "safe walked source references an unsafe or partial record"),
-    -- Retired `resource-v1` claim variant 9 (`TagN4(0xE, 9) = [0xE8, 0x01]`, format 4, val 2).
-    fun _ =>
-      let rawClaim := ByteArray.mk #[0xE8, 0x01, 0x04, 0x02]
-      let key := packedDigestKey (Address.blake3 rawClaim)
-      let io := (default : Aiur.IOBuffer).extend 0 key (rawClaim.data.map .ofUInt8)
-      return {
-        label := "retired-resource-v1-claim"
-        accept := false
-        rejectsWith := some "resource-v1 is not implemented by IxVM"
-        witness := { funcName := `verify_claim, input := key, inputIOBuffer := io } }]
-  for (label, a, msg) in blobCases do
-    out := out.push fun _ => Case.ofClaim label env (.check ctx a none) {} false msg
-  return out
+      (some "recursor universe-parameter count is not its block's plus the elimination parameter")]
 
 def run (leanEnv : Lean.Environment) : IO UInt32 := do
   let cases :=

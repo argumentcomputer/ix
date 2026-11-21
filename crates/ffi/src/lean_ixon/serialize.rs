@@ -1,7 +1,6 @@
 //! Ixon serialization compatibility FFI.
 //!
-//! Contains FFI functions for comparing Lean and Rust serialization outputs,
-//! and Env serialization roundtrip testing.
+//! Contains FFI functions for comparing Lean and Rust serialization outputs.
 
 use crate::lean::{
   LeanIxonConstant, LeanIxonExpr, LeanIxonRawEnv, LeanIxonUniv,
@@ -9,7 +8,7 @@ use crate::lean::{
 use ix_common::address::Address;
 use ixon::serialize::put_expr;
 use ixon::univ::put_univ;
-use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanOwned};
+use lean_ffi::object::{LeanBorrowed, LeanByteArray};
 
 /// Check if Lean's Ixon.Univ serialization matches Rust.
 #[unsafe(no_mangle)]
@@ -284,77 +283,4 @@ pub extern "C" fn rs_eq_env_serialization(
   }
 
   true
-}
-
-/// FFI: Test Env serialization roundtrip.
-/// Takes:
-///   - lean_bytes_obj: pointer to ByteArray containing serialized Env from Lean
-///
-/// Returns: true if Rust can deserialize and re-serialize to the same bytes
-#[unsafe(no_mangle)]
-extern "C" fn rs_env_serde_roundtrip(
-  lean_bytes_obj: LeanByteArray<LeanOwned>,
-) -> bool {
-  use ixon::env::Env;
-
-  // Get bytes from Lean ByteArray
-  let lean_bytes = lean_bytes_obj.as_bytes().to_vec();
-
-  // Try to deserialize with Rust
-  let mut slice = lean_bytes.as_slice();
-  let env = match Env::get(&mut slice) {
-    Ok(e) => e,
-    Err(e) => {
-      eprintln!("Rust Env::get failed: {}", e);
-      return false;
-    },
-  };
-
-  // Re-serialize
-  let mut rust_bytes = Vec::new();
-  if let Err(e) = env.put(&mut rust_bytes) {
-    eprintln!("Rust Env::put failed: {}", e);
-    return false;
-  }
-
-  // Compare
-  if lean_bytes != rust_bytes {
-    eprintln!("Env roundtrip mismatch:");
-    eprintln!("  Input:  {} bytes", lean_bytes.len());
-    eprintln!("  Output: {} bytes", rust_bytes.len());
-    if lean_bytes.len() <= 200 {
-      eprintln!("  Input bytes:  {:?}", lean_bytes);
-    }
-    if rust_bytes.len() <= 200 {
-      eprintln!("  Output bytes: {:?}", rust_bytes);
-    }
-    return false;
-  }
-
-  true
-}
-
-/// FFI: Compare Env serialization between Lean and Rust.
-/// Takes:
-///   - lean_bytes_obj: pointer to ByteArray containing serialized Env from Lean
-///
-/// Returns: true if Rust can deserialize and the counts match
-#[unsafe(no_mangle)]
-extern "C" fn rs_env_serde_check(
-  lean_bytes_obj: LeanByteArray<LeanOwned>,
-) -> bool {
-  use ixon::env::Env;
-
-  // Get bytes from Lean ByteArray
-  let lean_bytes = lean_bytes_obj.as_bytes().to_vec();
-
-  // Try to deserialize with Rust
-  let mut slice = lean_bytes.as_slice();
-  match Env::get(&mut slice) {
-    Ok(_) => true,
-    Err(e) => {
-      eprintln!("Rust Env::get failed: {}", e);
-      false
-    },
-  }
 }

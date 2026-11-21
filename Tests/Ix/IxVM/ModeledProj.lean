@@ -323,6 +323,6 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
 
   cases := cases.push fun _ => sortPolyMutProjCase
 
-  runCases "ixvm-modeled-proj" cases (jobs := 4) (circuit := some true)
+  runCases "ixvm-modeled-proj" cases (circuit := some true)
 
 end Tests.Ix.IxVM.ModeledProj

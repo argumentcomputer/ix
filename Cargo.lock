@@ -1926,6 +1926,7 @@ dependencies = [
  "aiur",
  "blake3",
  "multi-stark",
+ "rayon",
  "serde",
  "serde_json",
 ]

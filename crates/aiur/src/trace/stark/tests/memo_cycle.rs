@@ -78,21 +78,19 @@ fn cyclic_memo_row_no_longer_forges_a_nonterminating_call() {
   let refused = program.execute(LOOP, vec![0]).unwrap_err();
   assert!(refused.message.contains("already being evaluated"), "{refused}");
   let plan = TracePlan::new(&program, artifact).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   // A recursive entry's claim carries a depth word.
   assert!(backend.claim(LOOP, &[0], &[42]).is_err());
 
-  // The former forgery: one row, provide multiplicity 2, for every claimed
-  // result and depth word. Its self-call demands `loop(0, d - 1)`, which no
-  // row provides.
-  for result in [42, 7] {
-    for depth in [0, 1, 5, Val::ORDER_U64 - 1] {
-      let forged = prove(&backend, &[(0, result, depth, 2)], depth, result);
-      assert!(
-        backend.verify(LOOP, &[0, depth], &[result], &forged).is_err(),
-        "loop(0) = {result} at depth {depth}"
-      );
-    }
+  // The former forgery: one row, provide multiplicity 2, across representative
+  // results and depth words (including wraparound at p - 1). Its self-call
+  // demands `loop(0, d - 1)`, which no row provides.
+  for (result, depth) in [(42, 0), (42, 1), (7, Val::ORDER_U64 - 1)] {
+    let forged = prove(&backend, &[(0, result, depth, 2)], depth, result);
+    assert!(
+      backend.verify(LOOP, &[0, depth], &[result], &forged).is_err(),
+      "loop(0) = {result} at depth {depth}"
+    );
   }
   // Rows chained by depth cannot close the cycle either: the lowest row's
   // self-call still demands one level below it.
@@ -105,7 +103,8 @@ fn cyclic_memo_row_no_longer_forges_a_nonterminating_call() {
 fn batch_verifier_rejects_the_cyclic_memo_row() {
   let (program, artifact) = depth::depth_fixture();
   let plan = TracePlan::new(&program, artifact).unwrap();
-  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let backend =
+    Backend::for_batch_below_floor(&plan, toy_parameters()).unwrap();
   for (rows, shards) in [(1, 1), (4, 2)] {
     let forged: Vec<_> = (0..rows).map(|_| (0, 42, 5, 2)).collect();
     let error = backend

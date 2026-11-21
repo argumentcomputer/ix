@@ -249,7 +249,7 @@ fn root_statement_codec_and_unit_consumer_policy_are_explicit() {
 fn root_profile_full_size_native_proof() {
   let profile = fixture::Profile::FullSize;
   let (system, key) =
-    System::new(profile.config(), fixture::circuit_inputs(profile));
+    System::new(profile.config_without_pow(), fixture::circuit_inputs(profile));
   let subject = [0x5a; 32];
   let claim = fixture::claim(subject);
   let proof = system.prove(

@@ -172,6 +172,7 @@ pub struct Backend<'p, 'a, B: WitnessField = PrimeField> {
   parameters: Parameters,
   segmented_memory: bool,
   gpu_lookup_only: bool,
+  committed: bool,
   /// The device a CUDA backend proves on, and its device population plans
   /// when `AIUR_GPU_TRACE=generated`.
   #[cfg(feature = "cuda")]
@@ -252,6 +253,29 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Self::build_with_lookup_policy(plan, parameters, true, None, false)
   }
 
+  /// Build circuit shapes, widths and lookup groupings without committing
+  /// preprocessed fixed tables, for execution statistics and shape inspection.
+  /// Prover-only lookup settings are ignored; proving, verification, witness
+  /// generation and key export fail closed on the returned backend.
+  pub fn for_statistics(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+  ) -> Result<Self, String> {
+    Self::assemble(plan, parameters, true, None, false, true, false)
+  }
+
+  /// Like [`Self::for_statistics`], but honors prover lookup and device
+  /// placement policy so resource planning matches [`Self::for_batch_on_device`]
+  /// without committing preprocessed fixed tables.
+  pub fn for_planning(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    device: Option<i32>,
+  ) -> Result<Self, String> {
+    let gpu_lookup_only = device_lookups()?;
+    Self::assemble(plan, parameters, true, device, gpu_lookup_only, true, false)
+  }
+
   /// Explicit CUDA placement. CPU builds reject a requested device instead of
   /// silently running a different backend. Device placement does not change keys.
   pub fn for_batch_on_device(
@@ -260,6 +284,17 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     device: Option<i32>,
   ) -> Result<Self, String> {
     Self::build(plan, parameters, true, device, true)
+  }
+
+  /// [`Self::new`] without the security floor, for tests whose toy parameters
+  /// keep proving fast. A verifier must never trust a proof from such a
+  /// backend.
+  #[doc(hidden)]
+  pub fn new_below_floor(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+  ) -> Result<Self, String> {
+    Self::build(plan, parameters, false, None, false)
   }
 
   /// [`Self::for_batch`] without the security floor, for tests whose toy
@@ -297,6 +332,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       device,
       gpu_lookup_only,
       floor,
+      true,
     )?;
     // Only proving backends populate traces; verification ignores this.
     #[cfg(feature = "cuda")]
@@ -320,6 +356,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       device,
       gpu_lookup_only,
       true,
+      true,
     )
   }
 
@@ -330,6 +367,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     device: Option<i32>,
     gpu_lookup_only: bool,
     floor: bool,
+    commit: bool,
   ) -> Result<Self, String> {
     if floor {
       parameters.check()?;
@@ -367,6 +405,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       &mut inputs,
       &mut names,
       parameters.log_blowup,
+      commit,
     )?;
     rom.append_circuits(&mut inputs, &mut names, segmented_memory)?;
     // Fail with an error before System::new's degree assertion. Grouping
@@ -395,18 +434,31 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       parameters.fri(),
       device,
     );
-    let (mut system, key) = System::new(config, inputs);
+    let (mut system, key) = if commit {
+      System::new(config, inputs)
+    } else {
+      Self::compile_system_without_commit(
+        config,
+        inputs,
+        function_circuits..function_circuits + tables.len(),
+        &tables,
+      )?
+    };
     // Tune lookup group sizes against the FFT cost model within the blowup
     // budget before exposing the system, compiling lookup plans, or exporting keys.
     let blowup = 1usize << parameters.log_blowup;
     for circuit in &mut system.circuits {
       lookup_groups::retune(circuit, blowup, 2);
     }
-    let lookup_plans = system
-      .circuits
-      .iter()
-      .map(|circuit| witness::LookupPlan::compile(&circuit.graph))
-      .collect::<Result<_, _>>()?;
+    let lookup_plans = if commit {
+      system
+        .circuits
+        .iter()
+        .map(|circuit| witness::LookupPlan::compile(&circuit.graph))
+        .collect::<Result<_, _>>()?
+    } else {
+      vec![]
+    };
     let mut members = vec![vec![]; function_circuits];
     for (function, &chip) in plan.members.iter().enumerate() {
       members[placements[chip].circuit].push(function);
@@ -424,6 +476,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       parameters,
       segmented_memory,
       gpu_lookup_only,
+      committed: commit,
       #[cfg(feature = "cuda")]
       device: device.unwrap_or_else(|| {
         std::env::var("MULTI_STARK_CUDA_DEVICE")
@@ -435,6 +488,100 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       device_plans: None,
     };
     Ok(backend)
+  }
+
+  /// Compile constraint graphs and derive circuit metadata identically to
+  /// [`System::new`], skipping preprocessed fixed-table PCS commitment.
+  fn compile_system_without_commit(
+    config: GoldilocksBlake3Config,
+    inputs: Vec<CircuitInputs<Val>>,
+    table_range: std::ops::Range<usize>,
+    tables: &[tables::FixedTable],
+  ) -> Result<
+    (System<GoldilocksBlake3Config>, ProverKey<GoldilocksBlake3Config>),
+    String,
+  > {
+    use multi_stark::{
+      config::ProofConfig,
+      lookup::{
+        MAX_LOOKUP_GROUP, logup_constraint_count, logup_max_degree,
+        num_publics, stage2_width,
+      },
+      system::{Circuit, extension_params},
+    };
+    let params = extension_params::<GoldilocksBlake3Config>();
+    let d = params.degree;
+    let mut circuits = Vec::with_capacity(inputs.len());
+    let mut preprocessed_indices = Vec::with_capacity(inputs.len());
+    for (i, mut input) in inputs.into_iter().enumerate() {
+      let num_lookups = input.lookups.len();
+      let group_size = input.lookup_group_size.max(1);
+      if group_size > MAX_LOOKUP_GROUP {
+        return Err(format!(
+          "circuit {i}: lookup_group_size {group_size} exceeds MAX_LOOKUP_GROUP"
+        ));
+      }
+      input.lookup_group_size = group_size;
+      let (preprocessed_width, preprocessed_height) =
+        if table_range.contains(&i) {
+          let table = &tables[i - table_range.start];
+          (table.preprocessed_width, table.height)
+        } else {
+          (
+            input.preprocessed.as_ref().map_or(0, Matrix::width),
+            input.preprocessed.as_ref().map_or(0, Matrix::height),
+          )
+        };
+      let s2_width = stage2_width(num_lookups, group_size, d);
+      let n_publics = num_publics(d);
+      let graph = input.compile_graph(&params).map_err(|e| {
+        format!("circuit {i}: constraint compilation failed: {e:?}")
+      })?;
+      let constraint_count =
+        graph.zeros.len() + logup_constraint_count(num_lookups, group_size, d);
+      let max_constraint_degree =
+        (graph.max_constraint_degree.max(logup_max_degree(&graph, group_size)))
+          as usize;
+      let circuit = Circuit {
+        graph,
+        main_width: input.main_width,
+        preprocessed: None,
+        preprocessed_width,
+        preprocessed_height,
+        num_lookups,
+        stage_2_width: s2_width,
+        num_publics: n_publics,
+        lookup_group_size: group_size,
+        constraint_count,
+        max_constraint_degree,
+      };
+      if circuit.quotient_degree() > config.max_quotient_degree() {
+        return Err(format!(
+          "circuit {i}: constraint degree {} needs quotient degree {}, but PCS supports {}",
+          circuit.max_constraint_degree(),
+          circuit.quotient_degree(),
+          config.max_quotient_degree(),
+        ));
+      }
+      preprocessed_indices.push(None);
+      circuits.push(circuit);
+    }
+    let system = System {
+      config,
+      circuits,
+      preprocessed_commit: None,
+      preprocessed_indices,
+    };
+    Ok((system, ProverKey { preprocessed_data: None }))
+  }
+
+  fn require_committed(&self) -> Result<(), String> {
+    if !self.committed {
+      return Err(
+        "statistics/planning backend has no preprocessed commitment".into(),
+      );
+    }
+    Ok(())
   }
 
   pub const fn parameters(&self) -> Parameters {
@@ -501,6 +648,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     record: &Execution<B>,
     trace: &Trace<B::Element>,
   ) -> Result<SystemWitness<Val>, String> {
+    self.require_committed()?;
     self.plan.validate_record(record)?;
     if trace.matrices.len() != self.plan.artifact.chips.len() {
       return Err("trace matrix count mismatch".into());
@@ -803,6 +951,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     output: &[B::Element],
     witness: SystemWitness<Val>,
   ) -> Result<Proof, String> {
+    self.require_committed()?;
     if self.segmented_memory {
       return Err("segmented memory requires a batch proof".into());
     }
@@ -824,6 +973,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     output: &[B::Element],
     proof: &Proof,
   ) -> Result<(), String> {
+    self.require_committed()?;
     if self.segmented_memory {
       return Err("segmented memory requires a batch proof".into());
     }

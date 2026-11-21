@@ -4,7 +4,7 @@ The Ix frontend records three independent properties: usage, ownership, and
 relative locality. Aiur is one consumer of this shared frontend.
 
 The source frontend resolves exact binder occurrences before canonicalization
-and sharing. Both environment compilers preserve those contracts in Ixon v4
+and sharing. Both environment compilers preserve those contracts in Ixon
 and run resource and erased-type validation before emitting annotated output.
 Persistent registrations and annotations survive imports. The decompiler
 reconstructs committed contracts independently of optional presentation data.
@@ -19,7 +19,7 @@ recursor generation currently reports an unsupported transformation before
 emission. Ordinary source keeps its existing
 compilation path. Source syntax alone does not establish resource validity.
 
-The complete semantic and binary design is in [Ixon v4](Ixon-v4.md).
+The complete binary format specification is in [Ixon](Ixon.md).
 
 ## Modes
 
@@ -197,6 +197,6 @@ The focused `source-contract-tests` target checks source identity, distinct
 occurrences of equal terms, every arrow contract, syntax, imported interfaces,
 native metadata, result placement, both let kinds, and rejection of unadmitted
 external interfaces before artifacts are written. Syntax fixtures also reject accidental
-`sorryAx` insertion. The `ixon-v4-tests` target separately exercises binary
+`sorryAx` insertion. The `ixon-tests` target separately exercises binary
 representations, FFI, accepted compilation and decompilation,
 resource admission, VM execution, interpretation, and proving.

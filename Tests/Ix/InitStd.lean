@@ -249,7 +249,7 @@ def fidelity : IO UInt32 := do
   let dir ← IO.FS.createTempDir
   try
     let reportPath := dir / "validate-report.json"
-    let mut args := #["validate-lean", source, "--report", reportPath.toString]
+    let mut args := #["validate-lean", source, "--report", reportPath.toString, "--workers", "32"]
     if ← keptArtifact.pathExists then
       args := args ++ #["--ixe", keptArtifact.toString]
     let out ← runIx args

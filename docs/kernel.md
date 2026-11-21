@@ -162,11 +162,11 @@ does not build the proof tree: the import closure of
 `Ix.Kernel.MainTheorem`.
 
 `records` is an ordered list of `(Address, ByteArray)` pairs, one canonical
-Ixon v4 constant payload per pair (the bytes of one `Ixon.Constant`, without
+Ixon constant payload per pair (the bytes of one `Ixon.Constant`, without
 an environment header); `blobs` holds literal payloads (`Nat` little-endian
 bytes, `String` UTF-8 bytes) by address; `hint` is an optional, untrusted
 reducibility hint per constant. The entry takes no format version: a payload
-is read as Ixon v4, and the host's `.ixe` readers, which supply the payloads
+is read as Ixon v5, and the host's `.ixe` readers, which supply the payloads
 of a compiled environment, reject a file of any other version by its header.
 The entry runs, in order:
 
@@ -503,13 +503,13 @@ block*. It says nothing about meaning. Unsafe inductives still decline.
 
 ## Keys, roles and the prelude
 
-**Records** are Ixon v4 constant payloads ([Ixon](Ixon.md), [Ixon v4](Ixon-v4.md)):
-TagN integers, and a sharing table per constant. The reader consumes decoded
+**Records** are Ixon v5 constant payloads ([Ixon](Ixon.md)):
+TagN integers, a sharing table per constant, and a binder-data section. The reader consumes decoded
 constants (`Ix.Ixon.Types`) and never sees the integer code; only the byte
 stage (`Ix/Ixon/{Codec,Bounded/*,Canonical,WireCheck}.lean`) and its proofs
 (`IxC/Ixon/Verify`, including the TagN laws in `IxC/Ixon/Verify/TagN.lean`) do.
 
-**Sharing tables.** In Ixon v4 the table the compiler writes is canonical:
+**Sharing tables.** In Ixon the table the compiler writes is canonical:
 `Ix.Sharing.Exact.canonicalSharingTiered .tagN` of the constant's expanded
 roots ([Ixon](Ixon.md), "Sharing System"). The certified entry does not check
 that. It accepts any table whose entries refer only to earlier entries: the
@@ -1066,8 +1066,7 @@ Mathlib tag but regenerates nothing), the change also does the following.
 
 ### On a format change
 
-A change of the Ixon wire format (a new `Ixon.Env.VERSION`, as from v3 to
-v4) moves essentially every address: an integer whose bytes change, or a
+A change of the Ixon wire format (a new `Ixon.wireFormatId` or envelope version) moves essentially every address: an integer whose bytes change, or a
 different sharing table, changes a constant's hash, and addresses propagate
 through references. The readers reject files of another version, so every
 stored artifact is regenerated, not converted. The change does everything a
@@ -1080,27 +1079,27 @@ interleaved:
    `IxC/Ixon/Audit.lean` list them; the byte stage's theorems in
    `IxC/Kernel/Admission/Bytes/Theorems.lean` must then build unchanged).
    `lake -d IxC build --wfail IxC` is the acceptance.
-2. **Primitive addresses.** `lake exe ixon-v4-primitives` compiles the
-   primitive closure into `$IX_IXON_V4_DIR` and fails if
-   `Tests/Fixtures/ixon-v4/primitives.tsv` differs from the live addresses;
+2. **Primitive addresses.** `lake exe ixon-primitives` compiles the
+   primitive closure into `$IX_IXON_TEST_DIR` and fails if
+   `Tests/Fixtures/ixon/primitives.tsv` differs from the live addresses;
    copy the file it names over the fixture. Mirror every changed address
    into `crates/common/src/prim_addrs.rs` (`PrimAddrs::new`),
    `Ix/PrimAddrs.lean`. IxVM reads every primitive through the claim's
    binding and has no address literal but its specification digest, which
    `prim-addrs` checks. The suites
    `prim-addrs` and `primitive-address-parity` and
-   `lake exe ixon-v4-tests --primitives` must pass.
+   `lake exe ixon-tests --primitives` must pass.
 3. **The rendered role specifications.** `lake exe ix codegen` rewrites
    `IxVM/IxVM/Source/KernelRoleSpec.lean`, the role specifications rendered as
    circuit terms by `Ix/IxVM/RoleSpecGen.lean`, which change with `specVersion`
    or the specification digest; `lake exe ix codegen --check` must pass. The
    other IxVM modules (`IxVM/IxVM/Source/*.lean`) are source, written by hand.
-4. **Fixtures.** `lake exe ixon-v4-tests --export-fixtures`
-   writes `claims.tsv` to `$IX_IXON_V4_DIR`; copy it into `Tests/Fixtures/ixon-v4/` after
-   `lake exe ixon-v4-tests` validates them. If they moved, so did the
+4. **Fixtures.** `lake exe ixon-tests --export-fixtures`
+   writes `claims.tsv` to `$IX_IXON_TEST_DIR`; copy it into `Tests/Fixtures/ixon/` after
+   `lake exe ixon-tests` validates them. If they moved, so did the
    catalog claim digest (`Tests/Ix/Claim.lean`, `crates/ixon/src/proof.rs`);
    re-pin it from the serializers' output. The independent expression vectors
-   (`Tests/Fixtures/ixon-v4/expressions.txt`) are written by hand from the
+   (`Tests/Fixtures/ixon/expressions.txt`) are written by hand from the
    specification.
 5. **The default role table**, as step 2 of a toolchain bump: the three commands under
    "Regeneration" above. Write the two environments to fresh files, never
@@ -1124,7 +1123,7 @@ interleaved:
    `CompileMathlib.lean`), and compare environment-check rows with the
    previous format's by name, not by address.
 10. **Gate.** `lake run check-kernel --with-model`, `lake test --wfail`, and
-    `lake exe ixon-v4-primitives && lake exe ixon-v4-tests --primitives`.
+    `lake exe ixon-primitives && lake exe ixon-tests --primitives`.
 
 Version-pinned external artifacts (a benchmark artifact pinned by hash, a
 dated proof fixture) cannot be regenerated without their inputs; they stay

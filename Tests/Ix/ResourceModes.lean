@@ -452,8 +452,18 @@ structure Built where
 def fixtureSeeds : List Lean.Name :=
   [`ModeFixture.main, `ModeFixture.mainRec, `ModeFixture.callF, `ModeFixture.callAdd, `ModeFixture.mkQ]
 
-def buildFixture : IO (Except String Built) := do
-  let lenv ← getFileEnv "Tests/Ix/ResourceModesFixture.lean"
+initialize fixtureFileEnvCache : IO.Ref (Option Lean.Environment) ← IO.mkRef none
+
+def fixtureFileEnv : IO Lean.Environment := do
+  if let some env ← fixtureFileEnvCache.get then return env
+  let env ← getFileEnv "Tests/Ix/ResourceModesFixture.lean"
+  fixtureFileEnvCache.set (some env)
+  return env
+
+initialize builtFixtureCache : IO.Ref (Option (Except String Built)) ← IO.mkRef none
+
+def buildFixtureUncached : IO (Except String Built) := do
+  let lenv ← fixtureFileEnv
   let consts := Ix.EnvScope.collectSelectedDeps lenv fixtureSeeds
   let (prepared, annotated) ← match Ix.Compile.prepareSourceConstants consts >>= fun p =>
       (Ix.CompileM.checkPreparedSource p).map (p, ·) with
@@ -481,6 +491,12 @@ def buildFixture : IO (Except String Built) := do
   let addrOf : Lean.Name → Option Address := fun n => (named.get? (Ix.Name.fromLeanName n)).map (·.addr)
   let built : Built := { env := env, table := input.table, store := store, blob := blob, named := addrOf }
   return .ok built
+
+def buildFixture : IO (Except String Built) := do
+  if let some cached ← builtFixtureCache.get then return cached
+  let built ← buildFixtureUncached
+  builtFixtureCache.set (some built)
+  return built
 
 /-- Erase the `i`-th leading binder of root `root` of `c` (whose expression is `e`; its
 λs with `lam`, else its ∀s): its input mode, in the record's binder-data section, becomes
@@ -735,7 +751,7 @@ def runAnnotatedCompileSuite : IO (Array String) := do
         errs := errs.push s!"surface must-reject {bad}: expected borrowEscape, got: {e}"
 
   -- 3. `ModeFixture` source contracts: `let borrow`, 2-variant shared `lam`, tier retry, and must-rejects
-  let fenv ← getFileEnv "Tests/Ix/ResourceModesFixture.lean"
+  let fenv ← fixtureFileEnv
   -- 3a. Valid `let borrow` + borrowed parameter on heap cell `BoxE`
   let borrowConsts := Ix.EnvScope.collectSelectedDeps fenv [`ModeFixture.letBorrowBox]
   match fenv.find? `ModeFixture.inspectBox, fenv.find? `ModeFixture.letBorrowBox with
@@ -1056,7 +1072,7 @@ def completenessAndAssertsTest : LSpec.TestSeq :=
 
 def runUndecidedRoleDiagnosticSuite : IO (Array String) := do
   let mut errs : Array String := #[]
-  let fenv ← getFileEnv "Tests/Ix/ResourceModesFixture.lean"
+  let fenv ← fixtureFileEnv
   let consts := Ix.EnvScope.collectSelectedDeps fenv [`ModeFixture.callAdd]
   -- Compile with `binderData := false, defaultRoles := false`: safe records carry `0x04` undecided sections
   match ← Ix.CompileM.compileCertified fenv consts 2 (defaultRoles := false) (binderData := false) with

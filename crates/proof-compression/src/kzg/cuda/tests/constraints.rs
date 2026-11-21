@@ -127,6 +127,7 @@ fn quotient_reference(
         alpha,
         coset,
         ratio,
+        1 << 12,
         &mut values,
       );
     }

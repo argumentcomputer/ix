@@ -74,9 +74,10 @@ def compilerLimits : IO Ix.Sharing.Exact.Limits :=
 
 /-- Compile `closure` through the unvalidated Lean entry
 (`compileInputFromEnv`, then `compileEnvFold`), before CLI finalization.
-Recorded failures are in `out.cenv.ungrounded`; the caller checks them. -/
+Recorded failures are in `out.cenv.ungrounded`; the caller checks them.
+With `serialize := false`, skips `Ixon.serEnv` and leaves `bytes` empty. -/
 def compileClosure (env : Environment) (closure : List (Name × ConstantInfo))
-    (workers : Nat := 32) : IO ClosureOut := do
+    (workers : Nat := 32) (serialize : Bool := true) : IO ClosureOut := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
   let prepared ← IO.ofExcept input.prepare
   let rawEnv := Ix.CompileM.canonInput prepared.toArray workers
@@ -87,7 +88,7 @@ def compileClosure (env : Environment) (closure : List (Name × ConstantInfo))
     (Ix.CompileM.compileEnvFold rawEnv blocks (sharingLimits := limits) (width := workers))
   let ungrounded := split.2.fold (init := cenv.ungrounded) fun m n e =>
     m.insert n (e.refusal split.2.contains)
-  let bytes ← IO.ofExcept (Ixon.serEnv ixon)
+  let bytes ← if serialize then IO.ofExcept (Ixon.serEnv ixon) else pure .empty
   return { bytes, env := ixon, cenv := { cenv with ungrounded } }
 
 /-- **The closure as `ix compile` compiles it**, before finalization: the certified
@@ -196,7 +197,7 @@ private def certExe : System.FilePath := ".lake" / "build" / "bin" / "kernel-che
 `CHECK_IXE_ROOTS` is unset, since string roots cannot spell a private
 name's numeric component. `LD_LIBRARY_PATH` is unset, as for every spawned
 binary. Acceptance is a row verdict (`KernelReport.parse`), not exit 0. -/
-def certify (dir : System.FilePath) (label : String) (bytes : ByteArray) (jobs : Nat := 4) :
+def certify (dir : System.FilePath) (label : String) (bytes : ByteArray) (jobs : Nat := 16) :
     IO KernelReport.Report := do
   let path := dir / s!"{label}.ixe"
   let rows := dir / s!"{label}.jsonl"

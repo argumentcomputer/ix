@@ -38,6 +38,16 @@ fn parameters() -> Parameters {
   }
 }
 
+fn toy_parameters() -> Parameters {
+  // Fast toy parameters for non-security-floor unit tests.
+  Parameters {
+    log_blowup: 1,
+    num_queries: 2,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 0,
+  }
+}
+
 #[cfg(not(feature = "cuda"))]
 #[test]
 fn cpu_verification_ignores_gpu_prover_environment() {
@@ -92,7 +102,8 @@ fn batch_memory_partition_and_persisted_key() {
   use multi_stark::batch::Retention;
   let (program, artifact) = fixture();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let backend =
+    Backend::for_batch_below_floor(&plan, toy_parameters()).unwrap();
   let record = program.execute("root", vec![3]).unwrap();
   let mut witness = backend.generate(&record, "root", &[3]).unwrap();
   let memory = witness.traces.last_mut().unwrap();
@@ -117,7 +128,7 @@ fn batch_memory_partition_and_persisted_key() {
   assert_eq!(proof.proofs.len(), 2);
   assert_eq!(proof.to_bytes().unwrap(), retained.to_bytes().unwrap());
   let bytes = backend.verifying_key_bytes().unwrap();
-  let key = VerifyingKey::from_bytes(&bytes).unwrap();
+  let key = VerifyingKey::from_bytes_below_floor(&bytes).unwrap();
   assert_eq!(key.to_bytes(), bytes);
   let claim = backend.claim("root", &[3], &[9]).unwrap();
   key.verify(&[claim], &proof).unwrap();
@@ -269,7 +280,8 @@ fn gpu_lookup_policy_retains_single_shards_without_growing_multi_shard_residency
   use super::planning::{Options, RetentionPolicy};
   let (program, artifact) = fixture();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let mut backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let mut backend =
+    Backend::for_batch_below_floor(&plan, toy_parameters()).unwrap();
   // Planning is host-only: exercise the GPU policy without needing a device
   // or asking the CPU prover to consume shape-only lookup buffers.
   backend.gpu_lookup_only = true;
@@ -395,7 +407,7 @@ fn fused_rows_and_lookups_match_reference_and_verify() {
   let layout = wide.layout(&program.program.enums, &mut vec![]).unwrap();
   program.memory_layouts.insert(wide, layout);
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let shapes = backend.statistics();
   assert_eq!(
     shapes.iter().find(|s| s.name == "<ROM:1>").unwrap().stage1_width,
@@ -412,7 +424,7 @@ fn fused_rows_and_lookups_match_reference_and_verify() {
   for unit in [false, true] {
     let (program, artifact) = identity(unit);
     let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-    let backend = Backend::new(&plan, parameters()).unwrap();
+    let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
     let args = if unit { vec![] } else { vec![7] };
     let record = program.execute("id", args.clone()).unwrap();
     compare_generated(&backend, &record, "id", &args);
@@ -429,7 +441,7 @@ fn erased_rom_views_use_existing_width_buckets() {
     }
   }
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let record = program.execute("root", vec![3]).unwrap();
   compare_generated(&backend, &record, "root", &[3]);
 }
@@ -442,7 +454,7 @@ fn erased_rom_views_use_existing_width_buckets() {
 pub(super) fn host_lookups<'p, 'a>(
   plan: &'p TracePlan<'a, PrimeField>,
 ) -> Backend<'p, 'a, PrimeField> {
-  Backend::build_with_lookup_policy(plan, parameters(), true, None, false)
+  Backend::assemble(plan, toy_parameters(), true, None, false, false, true)
     .unwrap()
 }
 
@@ -496,9 +508,11 @@ fn fixture() -> (CheckedProgram, TraceArtifact) {
 fn execution_statistics_report_raw_rows_fixed_heights_and_cache_hits() {
   let (program, artifact) = fixture();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::for_batch_verification(&plan, parameters()).unwrap();
+  let committed = Backend::for_batch_verification(&plan, parameters()).unwrap();
+  let stats_only = Backend::for_statistics(&plan, parameters()).unwrap();
+  let planning = Backend::for_planning(&plan, parameters(), None).unwrap();
   let record = program.execute("root", vec![3]).unwrap();
-  let stats = backend.execution_statistics(&record);
+  let stats = stats_only.execution_statistics(&record);
   assert_eq!(stats.log_blowup, 1);
   assert_eq!(stats.extension_degree, 2);
   let rows: Vec<_> =
@@ -508,16 +522,58 @@ fn execution_statistics_report_raw_rows_fixed_heights_and_cache_hits() {
   assert_eq!(rows, vec![(1, 0), (1, 0), (4, 0), (1, 1)]);
   assert_eq!(stats.circuits[3].shape.name, "<ROM:1>");
   let serialized = serde_json::to_value(stats).unwrap();
+  assert_eq!(
+    serialized,
+    serde_json::to_value(committed.execution_statistics(&record)).unwrap()
+  );
+  assert_eq!(
+    serialized,
+    serde_json::to_value(planning.execution_statistics(&record)).unwrap()
+  );
   assert_eq!(serialized["circuits"][2]["preprocessed_height"], 4);
   assert!(serialized["circuits"][0]["stage1_width"].is_number());
   assert!(serialized["circuits"][0].get("fft_cost").is_none());
+  // Commitment-free planning matches committed planning on the same options.
+  let options =
+    planning::Options { max_ram_bytes: Some(1 << 30), ..Default::default() };
+  assert_eq!(
+    serde_json::to_value(stats_only.plan_fixed(&options, 0).unwrap()).unwrap(),
+    serde_json::to_value(committed.plan_fixed(&options, 0).unwrap()).unwrap()
+  );
+  assert_eq!(
+    serde_json::to_value(stats_only.plan_record(&record, &options, 0).unwrap())
+      .unwrap(),
+    serde_json::to_value(committed.plan_record(&record, &options, 0).unwrap())
+      .unwrap()
+  );
+  // Commitment-free backends fail closed on key export, witness generation,
+  // proving and verification.
+  assert!(stats_only.verifying_key_bytes().is_err());
+  assert!(stats_only.generate(&record, "root", &[3]).is_err());
+  assert!(stats_only.generate_stage_1(&record, "root", &[3]).is_err());
+  assert!(stats_only.prepare_stage_1(&record, "root", &[3]).is_err());
+  let trace = plan.generate(&record, "root", &[3], true).unwrap();
+  assert!(stats_only.witness(&record, &trace).is_err());
+  let witness = committed.generate(&record, "root", &[3]).unwrap();
+  assert!(
+    stats_only
+      .prove_batch(
+        "root",
+        &[3],
+        &[9],
+        witness,
+        1,
+        multi_stark::batch::Retention::Retain
+      )
+      .is_err()
+  );
 }
 
 #[test]
 fn proves_calls_fixed_maps_and_rom_and_verifies_without_record() {
   let (program, artifact) = fixture();
   let plan = TracePlan::new(&program, activate(artifact.clone())).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let record = program.execute("root", vec![3]).unwrap();
   let trace = plan.generate(&record, "root", &[3], true).unwrap();
   let witness = backend.witness(&record, &trace).unwrap();
@@ -533,7 +589,7 @@ fn proves_calls_fixed_maps_and_rom_and_verifies_without_record() {
   let bytes = proof.to_bytes().unwrap();
   let proof = Proof::from_bytes(&bytes).unwrap();
   // Independent verifier setup reads only the trusted program/circuits/tables.
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   backend.verify("root", &[3], &[9], &proof).unwrap();
   for (entry, args, output) in [
     ("root", vec![4], vec![9]),
@@ -549,7 +605,8 @@ fn proves_calls_fixed_maps_and_rom_and_verifies_without_record() {
   different.tables[1].rows[1][0] = 10;
   let different = different.check().unwrap();
   let different_plan = TracePlan::new(&different, activate(artifact)).unwrap();
-  let different_backend = Backend::new(&different_plan, parameters()).unwrap();
+  let different_backend =
+    Backend::new_below_floor(&different_plan, toy_parameters()).unwrap();
   assert!(different_backend.verify("root", &[3], &[9], &proof).is_err());
   let mut wrong_height = proof.clone();
   wrong_height.log_degrees[2] = 1;
@@ -597,7 +654,7 @@ fn map_overrides_populate_witnesses_but_cannot_replace_certifying_tables() {
     .constraints
     .push(Polynomial::Sub(Box::new([Polynomial::Var(1), Polynomial::Var(2)])));
   let plan = TracePlan::new(&program, activate(artifact.clone())).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let original = program.execute("root", vec![3]).unwrap();
   let reference =
     plan.generate_reference(&original, "root", &[3], true).unwrap();
@@ -650,7 +707,8 @@ fn map_overrides_populate_witnesses_but_cannot_replace_certifying_tables() {
     let verifier_program = program.program().clone().check().unwrap();
     let verifier_plan =
       TracePlan::new(&verifier_program, activate(artifact.clone())).unwrap();
-    let verifier = Backend::new(&verifier_plan, parameters()).unwrap();
+    let verifier =
+      Backend::new_below_floor(&verifier_plan, toy_parameters()).unwrap();
     assert_eq!(
       verifier.verify("root", &[3], &record.output, &proof).is_ok(),
       correct
@@ -664,7 +722,7 @@ fn map_overrides_populate_witnesses_but_cannot_replace_certifying_tables() {
 fn an_accelerator_cannot_certify_a_missing_input_by_returning_a_valid_row() {
   let (program, artifact) = fixture();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let mut maps = crate::maps::MapOverrides::<u64>::new();
   maps
     .insert_fixed::<1, 1>("square", |[x]| {
@@ -693,7 +751,7 @@ fn an_accelerator_cannot_certify_a_missing_input_by_returning_a_valid_row() {
 fn proof_rejects_corrupt_counts_memory_and_fixed_lookup() {
   let (program, artifact) = fixture();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let record = program.execute("root", vec![3]).unwrap();
   let trace = plan.generate(&record, "root", &[3], true).unwrap();
   let witness = backend.witness(&record, &trace).unwrap();
@@ -729,7 +787,7 @@ fn proof_rejects_corrupt_counts_memory_and_fixed_lookup() {
 fn recorded_lookup_counts_are_checked_by_the_proof() {
   let (program, artifact) = fixture();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let record = program.execute("root", vec![3]).unwrap();
   let trace = plan.generate(&record, "root", &[3], true).unwrap();
   for corrupt_memory in [false, true] {
@@ -815,7 +873,7 @@ fn mixed_memory() -> (CheckedProgram, TraceArtifact) {
 fn width_local_rom_shares_types_and_preserves_functionality() {
   let (program, artifact) = mixed_memory();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let index =
     |name: &str| backend.names.iter().position(|n| n == name).unwrap();
   assert!(!backend.names.iter().any(|n| n == "<ROM:addresses>"));
@@ -911,7 +969,7 @@ fn proves_zero_width_and_height_one_without_auxiliary_tables() {
   for unit in [true, false] {
     let (program, artifact) = identity(unit);
     let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-    let backend = Backend::new(&plan, parameters()).unwrap();
+    let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
     let args: Vec<_> = if unit { vec![] } else { vec![7] };
     let record = program.execute("id", args.clone()).unwrap();
     let trace = plan.generate(&record, "id", &args, true).unwrap();
@@ -927,7 +985,7 @@ fn proves_zero_width_and_height_one_without_auxiliary_tables() {
 fn zero_padding_verifies_but_inactive_providers_and_nonboolean_rows_do_not() {
   let (program, artifact) = identity(false);
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let record = program.execute("id", vec![7]).unwrap();
   let mut trace = plan.generate(&record, "id", &[7], true).unwrap();
   let matrix = &mut trace.matrices[0];
@@ -1009,7 +1067,7 @@ fn arithmetic_constraints_are_enforced_even_when_lookups_balance() {
   ]))
   .unwrap();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let record = program.execute("id", vec![7]).unwrap();
   let trace = plan.generate(&record, "id", &[7], true).unwrap();
   let witness = backend.witness(&record, &trace).unwrap();
@@ -1053,7 +1111,7 @@ fn shares_fixed_columns_and_handles_empty_maps_and_inactive_chips() {
   .unwrap();
   let program = program.check().unwrap();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   assert_eq!(backend.statistics()[2].stage1_width, 2);
   assert_eq!(backend.statistics()[2].preprocessed_width, 1);
   let record = program.execute("id", vec![]).unwrap();
@@ -1115,7 +1173,7 @@ fn fixed_tables_share_height_without_sharing_domains_or_row_order() {
   );
   let program = program.check().unwrap();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   assert_eq!(backend.tables.len(), 1);
   assert_eq!(backend.statistics()[2].stage1_width, 2);
   assert_eq!(backend.statistics()[2].preprocessed_width, 6);
@@ -1194,8 +1252,9 @@ fn native_field_witnesses_and_proofs_match_the_integer_backend() {
     )
     .unwrap()
   );
-  let raw_backend = Backend::new(&raw_plan, parameters()).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let raw_backend =
+    Backend::new_below_floor(&raw_plan, toy_parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let expected = raw_backend.generate(&raw_record, "root", &[3]).unwrap();
   let witness = backend.generate(&record, "root", &args).unwrap();
   for (a, b) in expected.traces.iter().zip(&witness.traces) {
@@ -1314,7 +1373,8 @@ fn device_cell_budget_bounds_every_shard() {
   use super::planning::Options;
   let (program, artifact) = fixture();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let backend =
+    Backend::for_batch_below_floor(&plan, toy_parameters()).unwrap();
   let heights: Vec<_> =
     backend
       .system
@@ -1361,7 +1421,8 @@ fn cuda_host_plan_omits_device_phases() {
   use super::planning::{Options, RetentionPolicy};
   let (program, artifact) = fixture();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let backend =
+    Backend::for_batch_below_floor(&plan, toy_parameters()).unwrap();
   let rows = 32768;
   let heights: Vec<_> = backend
     .system
@@ -1427,8 +1488,10 @@ fn lean_grouped_layout_shares_rows_and_preserves_proofs() {
   plain.groups.clear();
   let ungrouped = TracePlan::new(&program, plain).unwrap();
   let plan = TracePlan::new(&program, package.trace).unwrap();
-  let backend = Backend::for_batch(&plan, parameters()).unwrap();
-  let plain_backend = Backend::for_batch(&ungrouped, parameters()).unwrap();
+  let backend =
+    Backend::for_batch_below_floor(&plan, toy_parameters()).unwrap();
+  let plain_backend =
+    Backend::for_batch_below_floor(&ungrouped, toy_parameters()).unwrap();
   assert_eq!(plain_backend.statistics().len(), backend.statistics().len() + 2);
   assert!(backend.statistics().iter().all(|c| c.quotient_degree <= 2));
   let entry = "Grouped::run";
@@ -1505,7 +1568,7 @@ fn gpu_population_proves_identically() {
   let program = package.program.check().unwrap();
   let plan = TracePlan::new(&program, package.trace).unwrap();
   let mut backend =
-    Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
+    Backend::assemble(&plan, toy_parameters(), true, None, true, false, true)
       .unwrap();
   let plans = gpu::DevicePlans::new(&backend);
   let device_circuits: Vec<_> = plans
@@ -1564,7 +1627,7 @@ fn gpu_depth_population_proves_identically() {
   let (program, trace) = depth::depth_fixture();
   let plan = TracePlan::new(&program, trace).unwrap();
   let mut backend =
-    Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
+    Backend::assemble(&plan, toy_parameters(), true, None, true, false, true)
       .unwrap();
   let plans = gpu::DevicePlans::new(&backend);
   let fib = backend.names.iter().position(|n| n == "Depth::fib").unwrap();

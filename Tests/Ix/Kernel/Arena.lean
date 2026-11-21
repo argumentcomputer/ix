@@ -73,11 +73,6 @@ rejects the declaration; the arena's outcome for its nearest test is `either`. -
 def modeledDeclines : Array Lean.Name :=
   #[`nestedSpecLocalF, `nestedSpecLocalF.mk, `nestedSpecLocalF.rec]
 
-/-- Recursors of mutual or nested families among the good fixtures: refused while
-the program refuses such recursors (`Tests.Ix.IxVM.modeledRecursorsRefused`). -/
-def modeledRecursorFixtures : Array Lean.Name :=
-  #[`Tests.Ix.Kernel.TutorialDefs.R8A.rec, `Tests.Ix.Kernel.TutorialDefs.R8B.rec]
-
 /-- Fixtures the native route declines because a constructor field domain
 mentions the block in a non-syntactic occurrence (`id (reduceCtorParam A)`
 and its reflexive variants), which would require rewriting the stored
@@ -115,16 +110,33 @@ private def blockOf : Ixon.ConstantInfo → Option Address
   | .dPrj p => some p.block
   | _ => none
 
+/-- Precompute the constant closure graph and projection-to-block map once for
+the shared arena environment so `subjectClaim` never re-deserializes constants
+per fixture. -/
+private def buildArenaGraph (env : Ixon.Env) : EnvGraph × Std.HashMap Address Address := Id.run do
+  let mut closureRefs : Std.HashMap Address (Array Address) :=
+    Std.HashMap.emptyWithCapacity env.consts.size
+  let mut blockMap : Std.HashMap Address Address := {}
+  for (a, lc) in env.consts do
+    if let some c := lc.get? then
+      let edges := closureEdgesOf a c
+      unless edges.isEmpty do
+        closureRefs := closureRefs.insert a edges
+      if let some b := blockOf c.info then
+        blockMap := blockMap.insert a b
+  return ({ closureRefs }, blockMap)
+
 /-- The subject-only claim on `target`: its closure is assumed, except the
 target, the block it projects from, and that block's other projections. -/
-private def subjectClaim (env : Ixon.Env) (ctx : Ix.ClaimContext) (target : Address) :
+private def subjectClaim (env : Ixon.Env) (graph : EnvGraph)
+    (blockMap : Std.HashMap Address Address) (ctx : Ix.ClaimContext) (target : Address) :
     Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
-  let some c := env.getConst? target | throw s!"{target} is not in the environment"
-  let block := blockOf c.info
+  unless env.consts.contains target do throw s!"{target} is not in the environment"
+  let block := blockMap[target]?
   let isSubject (a : Address) : Bool :=
     a == target || some a == block ||
-      (block.isSome && ((env.getConst? a).bind (blockOf ·.info)) == block)
-  let deps := (closureFromRoots env #[target]).toArray.filter fun a =>
+      (block.isSome && blockMap[a]? == block)
+  let deps := (closureFromRootsWithGraph env graph #[target]).toArray.filter fun a =>
     env.consts.contains a && !isSubject a
   match Ix.AssumptionTree.canonical deps with
   | none => return (.check ctx target none, {})
@@ -146,6 +158,7 @@ def arenaCases (env : Lean.Environment) (includeAllBad : Bool := true) :
   let input ← IxVM.ClaimHarness.withKernelAnnotator (Ix.CompileM.canonInput allConsts.toArray 32)
   let (rawEnv, _, _) ← IO.ofExcept <| Ix.Cert.compileUnchecked input
   let ixonEnv ← IO.ofExcept (withDefaultRoleBinding rawEnv)
+  let (graph, blockMap) := buildArenaGraph ixonEnv
   -- The fixtures' own axioms are assumed like any other dependency, so the
   -- claims carry no user axioms; and the claims assume their role binding
   -- (validator 4), as an aggregate's claims do, which keeps the witnesses to
@@ -172,10 +185,8 @@ def arenaCases (env : Lean.Environment) (includeAllBad : Bool := true) :
             {} false (some "an axiom that is not one of Lean's standard axioms")
       else
         out := out.push fun _ => do
-          let (claim, trees) ← subjectClaim ixonEnv ctx addr
-          let kase ← Tests.Ix.IxVM.Case.ofClaim label ixonEnv claim trees c.expectPass
-          return if modeledRecursorFixtures.contains c.name then kase.throughModeledRecursor
-            else kase
+          let (claim, trees) ← subjectClaim ixonEnv graph blockMap ctx addr
+          Tests.Ix.IxVM.Case.ofClaim label ixonEnv claim trees c.expectPass
   return out
 
 /-- PR fast suite: all `good_*` completeness fixtures, `native_decide` checks,

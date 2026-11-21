@@ -38,9 +38,16 @@ jobs:
           auto-config: false
           use-github-cache: false
           use-mathlib-cache: true
-      - name: Build IxTests, ix and IxVM exporter
+      - name: Compute git-tree .ixa cache key
+        id: ixa-key
         run: |
-          lake build --wfail IxTests ix ixvm/ixvm
+          ixa_hash=$(git rev-parse \
+            HEAD:lean-toolchain HEAD:lake-manifest.json \
+            HEAD:Aiur HEAD:IxVM HEAD:MultiStark | sha256sum | cut -d' ' -f1)
+          echo "key=ixa-v2-${ixa_hash}" >> "$GITHUB_OUTPUT"
+      - name: Build IxTests, IxVMTests, ix and IxVM exporter
+        run: |
+          lake build --wfail IxTests IxVMTests ix ixvm/ixvm
           cargo build --release --locked -p ixvm -p stark-verifier -p ix-prover \
             --features aiur/parallel,ixvm/parallel,stark-verifier/parallel,ix-prover/parallel \
             --bin ixvm-proof --bin stark-verifier --bin ix-prover
@@ -48,22 +55,24 @@ jobs:
         id: ixa-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .lake/ci-artifacts
-          key: ixa-v1-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'Aiur/**', 'IxVM/**', 'MultiStark/**') }}
+          path: ${{ runner.temp }}/ci-artifacts
+          key: ${{ steps.ixa-key.outputs.key }}
       - name: Export ixvm.ixa on cache miss
         if: steps.ixa-cache.outputs.cache-hit != 'true'
         run: |
-          mkdir -p .lake/ci-artifacts
-          lake env IxVM/.lake/build/bin/ixvm export-claim-trace .lake/ci-artifacts/ixvm.ixa
+          mkdir -p "${{ runner.temp }}/ci-artifacts"
+          lake env IxVM/.lake/build/bin/ixvm export-claim-trace "${{ runner.temp }}/ci-artifacts/ixvm.ixa"
       - name: Compile Init+Std reference artifact for admission-hash-diff-initstd
         run: lake env .lake/build/bin/IxTests initstd-reference
-      - name: Run ci:nightly tier
+      - name: Run ci:nightly host sweeps
+        run: lake env .lake/build/bin/IxTests --tier ci:nightly
+      - name: Run ci:nightly-ixvm sweeps
         env:
-          IX_AIUR_ARTIFACT: ${{ github.workspace }}/.lake/ci-artifacts/ixvm.ixa
+          IX_AIUR_ARTIFACT: ${{ runner.temp }}/ci-artifacts/ixvm.ixa
           IX_AIUR_HOST: ${{ github.workspace }}/target/release/ixvm-proof
           IX_PROVER_HOST: ${{ github.workspace }}/target/release/ix-prover
           IX_STARK_HOST: ${{ github.workspace }}/target/release/stark-verifier
-        run: lake env .lake/build/bin/IxTests --tier ci:nightly
+        run: lake env .lake/build/bin/IxVMTests --tier ci:nightly-ixvm
 
   nightly-nix-check:
     name: Nightly Nix sandboxed ix-tests

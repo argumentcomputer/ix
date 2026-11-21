@@ -53,23 +53,6 @@ pub extern "C" fn rs_lean_set_thread_stack_size(
   LeanIOResult::ok(LeanOwned::box_usize(0))
 }
 
-#[cfg(feature = "test-ffi")]
-use lean_ffi::object::{LeanArray, LeanBorrowed, LeanByteArray, LeanRef};
-
-#[cfg(feature = "test-ffi")]
-#[unsafe(no_mangle)]
-extern "C" fn rs_boxed_u32s_are_equivalent_to_bytes(
-  u32s: LeanArray<LeanOwned>,
-  bytes: LeanByteArray<LeanBorrowed<'_>>,
-) -> bool {
-  let u32s_flat: Vec<u8> = u32s
-    .map(|elem| elem.unbox_u32())
-    .into_iter()
-    .flat_map(u32::to_le_bytes)
-    .collect();
-  u32s_flat == bytes.as_bytes()
-}
-
 #[cfg(test)]
 mod tests {
   /// `aiur::ixon` carries the Aiur crate's copy of Ixon's TagN integer code

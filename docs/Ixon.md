@@ -1438,7 +1438,7 @@ a 32-byte canonical merkle root and the bundle header fields. Version 5
 then carries an artifact role binding. Six sections follow (hot data first,
 metadata last); nothing follows the last one.
 
-The checked constant grammar retains the stable identifier `ixon-v4`.
+The checked constant grammar uses the wire format identifier `ixon-v5`.
 Environment readers accept these two envelope versions:
 
 | Version | First byte | Selected when |
@@ -1779,7 +1779,7 @@ fixed-width little-endian like `.ixes`; source of truth
 magic    b"IXC\0\0\0\0\0"            (8)
 version  u32 = 3
 flags    u32                          # bit0: storage profile (0 = fat, 1 = chunked)
-object_format     u8 = 4              # ixon-v4
+object_format     u8 = 4              # checked object format 4 (Ixon.Env.OBJECT_FORMAT)
 validator         u8 = 3              # erased-lean-v2 catalog claims
 members_root      32 bytes
 content_root      32 bytes
@@ -2153,11 +2153,11 @@ Total: 68 bytes.
 A Check or CheckEnv claim that assumes its binding is the validator-3 layout
 with `04 04` (object format 4, erased-lean-v2-assumed) as its scope bytes.
 
-The claims fixture `Tests/Fixtures/ixon-v4/claims.tsv` holds the canonical
+The claims fixture `Tests/Fixtures/ixon/claims.tsv` holds the canonical
 bytes and BLAKE3 digest of one claim of every variant; its headers and scope
-bytes match the claim examples above. `lake exe ixon-v4-tests` compares the file
+bytes match the claim examples above. `lake exe ixon-tests` compares the file
 with the serializers' output, and `--export-fixtures` regenerates it under
-`ixon-v4-fixtures/` in the scratch directory `$IX_IXON_V4_DIR` (default
+`ixon-fixtures/` in the scratch directory `$IX_IXON_TEST_DIR` (default
 `/tmp`).
 
 

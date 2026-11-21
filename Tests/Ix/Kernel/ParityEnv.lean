@@ -12,7 +12,7 @@ import Ix.Cli.ConstsFile
 
 /-!
 Selected fixture for the IxC regression pins (`tc-pins`):
-the serialized `.ixe` env they check against. Compiled on demand from `Ix.lean`
+the serialized `.ixe` env they check against. Compiled on demand from `Init`/`Std`
 plus the checked-in seed list when the file isn't already present, so the tests
 run unconditionally instead of skipping when no fixture is supplied.
 -/
@@ -32,13 +32,12 @@ def headerVersion? (path : System.FilePath) : IO (Option UInt64) := do
 /-- Path to the parity `.ixe`, compiling it from the seed closure if absent or
 written under an unsupported `.ixe` envelope version. Both v4 and v5 caches
 are readable and do not need a fresh corpus compilation.
-`buildFile` first: the test suite only builds what `IxTests` needs, not the rest
-of `Ix.lean`'s closure (e.g. the benchmarks it also imports), and `getFileEnv`
-needs every olean present. Then it loads the env and hands the transitive seed
-closure to the same FFI compile step `ix compile` uses. A seed that no longer
-resolves is a hard error, not a skip. -/
+All seeds in `.github/fixtures/tc-parity-consts.txt` live in `Init`/`Std`, so
+loading `getCompileEnv #[`Init, `Std]` avoids building and elaborating `Ix.lean`.
+Stored under `.lake/build/` so CI build caches preserve it across runs. A seed
+that no longer resolves is a hard error, not a skip. -/
 public def ensureSelected : IO System.FilePath := do
-  let out : System.FilePath := "tc-pins-ixc-v1.ixe"
+  let out : System.FilePath := ".lake" / "build" / "tc-pins-ixc-v1.ixe"
   let constsFile := ".github/fixtures/tc-parity-consts.txt"
   if ← out.pathExists then
     match ← headerVersion? out with
@@ -50,8 +49,7 @@ public def ensureSelected : IO System.FilePath := do
       IO.println s!"tc-parity: {out} has no .ixe header — recompiling from {constsFile}"
   else
     IO.println s!"tc-parity: {out} not found — compiling from {constsFile}"
-  buildFile "Ix.lean"
-  let leanEnv ← getFileEnv "Ix.lean"
+  let leanEnv ← getCompileEnv #[`Init, `Std]
   let raw ← Ix.Cli.ConstsFile.read constsFile
   let mut seeds : List Name := []
   for s in raw do
@@ -59,15 +57,17 @@ public def ensureSelected : IO System.FilePath := do
     if leanEnv.constants.contains name then
       seeds := name :: seeds
     else
-      throw <| IO.userError s!"tc-parity: seed constant not found in Ix.lean env: {s}"
+      throw <| IO.userError s!"tc-parity: seed constant not found in Init/Std env: {s}"
   let closed := Ix.EnvScope.collectSelectedDeps leanEnv seeds
-  -- Fail-closed: with `getFileEnv` always full-content, every referenced
+  -- Fail-closed: with `getCompileEnv` always full-content, every referenced
   -- constant — `_private.*` proof auxiliaries included — must ground; a silent
   -- drop here is exactly how the exported-level trim regression hid until the
   -- tc gates fired.
   let outEnv ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv closed)
   if !outEnv.failures.isEmpty then
     throw (IO.userError s!"tc-pins: selected fixture compilation refused {outEnv.failures.toMap.size} constants")
+  if let some parent := out.parent then
+    IO.FS.createDirAll parent
   IO.FS.writeBinFile out (← IO.ofExcept (Ixon.serEnv outEnv.env))
   return out
 

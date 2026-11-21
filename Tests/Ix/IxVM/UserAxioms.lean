@@ -69,7 +69,7 @@ def badMessage : String := "inferred type is not def-eq to the expected type"
 
 /-- The cases. -/
 def cases : Except String (Array Builder) := do
-  let base ← Ix.ClaimContext.ofDefaultTable
+  let base := { (← Ix.ClaimContext.ofDefaultTable) with bindingAssumed := true }
   let (env, dep) := store {} (definition idType beta)
   let (env, target) := store env (definition idType (.ref 0 #[]) #[dep])
   let (env, output) := store env (definition idType idValue)

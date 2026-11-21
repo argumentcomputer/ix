@@ -94,7 +94,7 @@
             fileset = pkgs.lib.fileset.unions [
               cargoSource
               compressionData
-              ./Tests/Fixtures/ixon-v4
+              ./Tests/Fixtures/ixon
               ./Tests/Fixtures/host-admission-v1
               ./Tests/Fixtures/role-binding-v2
               ./crates/ixon/tests/fixtures

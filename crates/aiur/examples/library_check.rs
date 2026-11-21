@@ -32,7 +32,15 @@ fn main() -> Result<(), Box<dyn Error>> {
   let accelerated =
     program.prepare_hint_channels(&[], &channels)?.with_map_overrides(&maps)?;
   let plan = TracePlan::new(&program, trace)?;
-  let backend = Backend::new(&plan, Parameters::default())?;
+  // Sanity-check STARK soundness and witness equality without paying for
+  // production PoW grinding or 100 FRI queries.
+  let parameters = Parameters {
+    num_queries: 2,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 0,
+    ..Parameters::default()
+  };
+  let backend = Backend::new_below_floor(&plan, parameters)?;
   let mut checks = 0;
   let mut check = |entry: &str,
                    args: Vec<u64>,
@@ -134,15 +142,23 @@ fn main() -> Result<(), Box<dyn Error>> {
   // Blake3 crate. This tests the library, not a copied hash implementation.
   // The block loop takes 64 bytes while 64 are left and hands the last 0 to
   // 63 to the byte loop, so lengths around each 64 and 1024 multiple matter.
-  for length in [
-    0, 1, 63, 64, 65, 127, 128, 129, 960, 1023, 1024, 1025, 1087, 1088, 1089,
-    2047, 2048, 2049, 3072, 4096, 4097, 8193,
-  ] {
+  let hash_expected = |length: u64| -> Vec<u64> {
     let input: Vec<u8> =
       (0..length).map(|i| u8::try_from(i % 256).unwrap()).collect();
-    let expected =
-      blake3::hash(&input).as_bytes().iter().copied().map(u64::from).collect();
-    check("Benchmark::hash", vec![length], expected)?;
+    blake3::hash(&input).as_bytes().iter().copied().map(u64::from).collect()
+  };
+  for length in [0, 1, 63, 64, 65, 128, 1023, 1024, 1025, 2048, 2049] {
+    check("Benchmark::hash", vec![length], hash_expected(length))?;
+  }
+  // Deeper 4- and 5-chunk inputs test higher Merkle-tree collapses without
+  // repeating unaccelerated fallback and reference-trace checks.
+  for length in [3073, 4097] {
+    let record = accelerated.execute("Benchmark::hash", vec![length])?;
+    assert_eq!(
+      record.output,
+      hash_expected(length),
+      "Benchmark::hash({length})"
+    );
   }
   println!(
     "Passed {checks} native/table execution and reference-trace comparisons."

@@ -1,5 +1,7 @@
 import Tests.Ix.IxVM
 import Tests.Ix.IxVM.InductiveDeclBench
+import Tests.Ix.Compile.Mutual
+import Tests.Ix.Kernel.StringReduction
 import Ix.RoleBinding.Artifact
 
 /-! # The trusted reader on the closures IxVM accepts
@@ -126,23 +128,26 @@ def run (env : Lean.Environment) : IO UInt32 := do
     #[nameOfString "Std.HashMap.getElem?_insert_self"])
   for pre in [`Std.Data.HashMap, `Std.Data.DHashMap] do
     groups := groups.push (s!"module shard {pre}", moduleNames env pre)
-  let mut failed := 0
-  for (label, names) in groups do
+  let tasks ← groups.mapM fun (label, names) => IO.asTask (prio := .dedicated) do
     let missing := names.filter (!env.constants.contains ·)
     unless missing.isEmpty do
       IO.eprintln s!"[reader-coverage] {label}: not in the environment: {missing}"
-      failed := failed + 1
-      continue
+      return false
     -- the environment as the IxVM suites compile it: what a run may load
     let loaded ← loadSharedIxonEnv names env
-    if ← readerAccepts s!"{label} (as loaded)" loaded then continue
+    if ← readerAccepts s!"{label} (as loaded)" loaded then return true
     -- the same, with the recursors the reading may add (`Draws`)
     let names' := withRecursors env names
     let added := (names'.filter (!names.contains ·)).filter fun r =>
       (loaded.getAddr? (Ix.Name.fromLeanName r)).isNone
     IO.println s!"[reader-coverage] {label}: recursors absent from the loaded records: {added}"
     let supplemented ← loadSharedIxonEnv names' env
-    unless ← readerAccepts s!"{label} (with those recursors)" supplemented do failed := failed + 1
+    readerAccepts s!"{label} (with those recursors)" supplemented
+  let mut failed := 0
+  for task in tasks do
+    match ← IO.wait task with
+    | .ok ok => unless ok do failed := failed + 1
+    | .error e => throw e
   return if failed == 0 then 0 else 1
 
 end Tests.Ix.Kernel.ReaderCoverage

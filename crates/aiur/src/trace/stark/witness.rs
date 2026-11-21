@@ -360,6 +360,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     device_ranges: &RangeCounts,
     min_heights: Option<&[usize]>,
   ) -> Result<SystemWitness<Val>, String> {
+    self.require_committed()?;
     #[cfg(feature = "trace-profile")]
     let mut profile = super::profile::Phases::new();
     self.plan.validate_record(record)?;

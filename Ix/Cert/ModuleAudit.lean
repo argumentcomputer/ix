@@ -93,3 +93,52 @@ bound. A named module fails if it is no longer imported or declares nothing. -/
 #guard_kernel_axioms Ix.Cert.TableAdmission.tableAdmitted_of_check [propext, Classical.choice, Quot.sound]
 
 #guard_module_axioms_under Ix.Cert Ix.CompileCert
+
+/-! ### Compile-time statement pins for tiered and user-axiom admission theorems -/
+
+section StatementPins
+universe u
+
+example (V : Type u) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
+    {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits}
+    {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+    {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env Ix.Kernel.Mode.anon}
+    {ts : List (Ix.Kernel.Tier.TierConst Ix.Kernel.Mode.anon)}
+    (h : Ix.Kernel.Admission.checkBytesTiered hash binding limits records blobs hint = .ok (env, ts)) :
+    Nonempty (Ix.Kernel.Model V env) :=
+  Ix.Kernel.Admission.checkBytesTiered_has_model V h
+
+example (V : Type u) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
+    {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits}
+    {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+    {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env Ix.Kernel.Mode.anon}
+    {ts : List (Ix.Kernel.Tier.TierConst Ix.Kernel.Mode.anon)}
+    (h : Ix.Kernel.Admission.checkBytesTiered hash binding limits records blobs hint = .ok (env, ts)) :
+    Ix.Kernel.EnvWF env ∧ (∀ c ∈ ts, env.find? c.cv.name = none) ∧
+      ∃ tds : List (Ix.Kernel.Tier.TierDecl Ix.Kernel.Mode.anon),
+        ∀ c ∈ ts, Ix.Kernel.Tier.TypedIn env tds ts c :=
+  Ix.Kernel.Admission.checkBytesTiered_typed V h
+
+example {policy : Ix.Kernel.Cached.AxiomPolicy}
+    {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+    {pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon}
+    {limits : Ix.Kernel.Admission.Limits} {records : Ix.Kernel.Admission.Records}
+    {blobs : Ix.Kernel.Ingress.Blobs}
+    {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {env : Ix.Kernel.Env Ix.Kernel.Mode.anon}
+    (h : Ix.Kernel.Admission.checkBytesUnder policy hash binding pre limits records blobs hint = .ok (env, [])) :
+    Ix.Kernel.Admission.checkBytesWith hash binding pre limits records blobs hint = .ok env :=
+  Ix.Kernel.Admission.checkBytesUnder_strict_of_nil h
+
+example {md : Ix.Kernel.Mode} {V : Type u} [Ix.Kernel.SetTheory V]
+    {μ : Ix.Kernel.CheckMode} {ev : Ix.Kernel.Evidences md}
+    (hμ : μ.verifiedChecks = true)
+    {ds : Array (Ix.Kernel.Declaration md)} {env' : Ix.Kernel.Env md}
+    (h : Ix.Kernel.Cached.checkDeclsWithUserAxioms μ ev ds = .ok env')
+    (hnone : Ix.Kernel.userAxiomsOfDecls ds.toList = []) :
+    Nonempty (Ix.Kernel.Model.EnvModelM V μ env') :=
+  Ix.Kernel.Cached.checkDeclsWithUserAxioms_sound (V := V) hμ h hnone
+
+end StatementPins

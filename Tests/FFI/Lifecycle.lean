@@ -316,12 +316,12 @@ def serdeRoundtripOk (env : RawEnv) : Bool :=
   | .error _ => false
 
 /-- Property test: random well-formed RawEnv → serialize → deserialize → compare -/
-def serdePropertyTest : TestSeq :=
-  checkIO "serde RawEnv roundtrip" (∀ e : serdeRawEnv, serdeRoundtripOk e.env)
+def serdePropertyTest (cfg : SlimCheck.Configuration := {}) : TestSeq :=
+  checkIO "serde RawEnv roundtrip" (∀ e : serdeRawEnv, serdeRoundtripOk e.env) .done cfg
 
 /-! ## Test Suite -/
 
-public def suite : List TestSeq := [
+public def suiteWith (cfg : SlimCheck.Configuration := {}) : List TestSeq := [
   keccakBasicTests,
   keccakMultiUpdateTests,
   keccakLargeInputTests,
@@ -330,7 +330,9 @@ public def suite : List TestSeq := [
   blake3LargeInputTests,
   sha256Tests,
   serdeTests,
-  serdePropertyTest,
+  serdePropertyTest cfg,
 ]
+
+public def suite : List TestSeq := suiteWith {}
 
 end Tests.FFI.Lifecycle

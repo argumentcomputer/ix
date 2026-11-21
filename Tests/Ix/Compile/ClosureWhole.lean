@@ -1,5 +1,6 @@
 import Ix.Meta
 import Ix.EnvScope
+import Ix.CompileCertified
 import Tests.Ix.Compile.ClosureHarness
 
 /-!
@@ -104,17 +105,18 @@ def discoveredRoots (whole : List (Name × ConstantInfo)) (k : Nat) : List Name 
     | _ => pure ()
   return (ind ++ size ++ clq ++ eqd).toList
 
-/-- The whole compile, as read back from its bytes: `CLOSURE_WHOLE_IXE`, or
-the Lean pipeline on `whole`. -/
+/-- The whole compile: `CLOSURE_WHOLE_IXE` when set, otherwise the certified
+parallel ready-queue compile (`binderData := false`, matching `compileClosure`
+bit-for-bit without redundant wave barriers or `serEnv`/`rsDeEnv`). -/
 def loadOrCompile (env : Environment) (whole : List (Name × ConstantInfo)) : IO Ixon.Env := do
   if let some path ← IO.getEnv "CLOSURE_WHOLE_IXE" then
     say s!"whole: reading {path}"
     return ← readIxe path
-  say s!"whole: compiling {whole.length} Init+Std constants (Lean pipeline)"
-  let out ← compileClosure env whole
-  unless out.cenv.ungrounded.isEmpty do
-    throw (IO.userError s!"whole: {out.cenv.ungrounded.size} refusals")
-  IO.ofExcept (Ixon.rsDeEnv out.bytes)
+  say s!"whole: compiling {whole.length} Init+Std constants (certified parallel pipeline, binderData := false)"
+  let out ← IO.ofExcept (← Ix.CompileM.compileCertified env whole 32 (binderData := false))
+  unless out.failures.isEmpty do
+    throw (IO.userError s!"whole: {out.failures.toMap.size} refusals")
+  return out.env
 
 /-- The references of the constant at `addr` (a projection's are its block's). -/
 def constRefs (env : Ixon.Env) (addr : Address) : Array Address :=
@@ -185,72 +187,63 @@ def localPhaseProblems (exitCode : UInt32) (phases : Array (String × String × 
         errors := errors.push "local collapse: phase 4 lacks complete nonzero source coverage"
   return errors
 
-/-- The local scope of a mutual-inductive fixture: the selected closure of
-the file's own constants (the scope of `ix compile --local`) compiles with
-no refusal through the harness, the certified compile is byte-identical, it
-decompiles to the source, and its output introduces no reference. The closure
-with recursors only also compiles without refusal or added support.
+private structure RootCheckResult where
+  root : Name
+  closureLen : Nat
+  namedSize : Nat
+  compared : Nat
+  addrDiffs : Nat
+  metaDiffs : Nat
+  missing : Nat
+  classes : Std.HashMap String Nat
+  introduced : Std.HashSet Name
+  errors : Array String
 
-`ix validate-lean --ns LocalCollapse` must pass all five phases (compile,
-serde, projection/order fidelity, source/reader fidelity, decompile), with
-complete nonzero source coverage in its `--report`. `workers` controls that
-CLI invocation; the harness calls retain their default worker count. -/
-def localCollapse (dir : System.FilePath) (workers : Nat := 8) : IO (Array String) := do
-  let file := "Tests/Ix/Compile/Fixtures/LocalCollapse.lean"
-  let env ← getFileEnv file
-  let own := ownConstants env
-  let full := Ix.EnvScope.collectSelectedDeps env own
-  let noSupport := Ix.EnvScope.collectDeps env own { recursors := true }
+private def checkRootClosure (env : Environment) (ref : Ixon.Env)
+    (r : Name) (c : List (Name × ConstantInfo)) (base : Std.HashSet Name) :
+    IO RootCheckResult := do
+  let out ← compileClosure env c (workers := 4) (serialize := false)
   let mut errors : Array String := #[]
-  let out ← compileClosure env full
+  -- 3. no refusal
   unless out.cenv.ungrounded.isEmpty do
-    errors := errors.push s!"local collapse: {out.cenv.ungrounded.size} refusals, first \
+    errors := errors.push s!"{r}: {out.cenv.ungrounded.size} refusals, first \
       {out.cenv.ungrounded.toList.head?.map (·.1.pretty)}"
-  if let some e ← rustCheck "local collapse" env full out (dir / "local-collapse.ixe") then
-    errors := errors.push e
-  let (de, summary) ← decompileCheck env full out
-  errors := errors ++ de.map (s!"local collapse: {·}")
-  let outEnv ← IO.ofExcept (Ixon.rsDeEnv out.bytes)
-  let base := nameSet (Ix.EnvScope.collectDeps env own .selected)
-  let (intro, bad) := introducedRefs outEnv base (nameSet full)
-  errors := errors ++ bad.map (s!"local collapse: {·}")
-  unless intro.isEmpty do
-    errors := errors.push s!"local collapse: the output introduces references {sortedNames intro}"
-  say s!"local collapse: references introduced by the output (derived): {sortedNames intro}"
-  say s!"local collapse: closure {full.length} (without the introduced references \
-    {noSupport.length}); {out.cenv.ungrounded.size} refusals; {summary}"
-  let neg : List (String × String) ← try
-      let o ← compileClosure env noSupport
-      pure (o.cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
-    catch e => pure [("compile", toString e)]
-  unless neg.isEmpty do
-    errors := errors.push s!"local collapse: the closure with recursors only was refused: \
-      {neg.length} refusal(s), first {neg.head?}"
-  say s!"local collapse with recursors only: {neg.length} refusal(s)"
-  let exe ← IO.FS.realPath (".lake" / "build" / "bin" / "ix")
-  let report := dir / "local-collapse-validate-lean.json"
-  let r ← IO.Process.output
-    { cmd := exe.toString
-      args := #["validate-lean", "--ns", "LocalCollapse", "--workers", toString workers,
-        "--report", report.toString, file] }
-  say s!"local collapse: ix validate-lean --ns LocalCollapse: exit {r.exitCode}"
-  -- the phase table: (name, result, detail) per phase
-  let phases : Except String (Array (String × String × String)) ← try
-      let j ← IO.ofExcept (Json.parse (← IO.FS.readFile report))
-      let rows ← IO.ofExcept (j.getObjValAs? (Array Json) "phases")
-      let ps ← rows.mapM fun row => IO.ofExcept do
-        return (← row.getObjValAs? String "name", ← row.getObjValAs? String "result",
-          ← row.getObjValAs? String "detail")
-      pure (.ok ps)
-    catch e => pure (.error (toString e))
-  match phases with
-  | .error e =>
-    errors := errors.push s!"local collapse: validate-lean (exit {r.exitCode}) wrote no report: \
-      {e}; stderr ends {((r.stderr.splitOn "\n").filter (!·.isEmpty)).getLast?}"
-  | .ok ps =>
-    for (name, result, _) in ps do say s!"local collapse: validate-lean {name}: {result}"
-    errors := errors ++ localPhaseProblems r.exitCode ps
-  return errors
+  let outEnv := out.env
+  -- 5. every closure constant is in the output
+  let mut missing := 0
+  for (n, _) in c do
+    unless outEnv.named.contains (ixN n) do
+      missing := missing + 1
+      errors := errors.push s!"{r}: {n} is not in the closure's output"
+  -- 4. closure against whole, classified
+  let mut compared := 0
+  let mut a := 0
+  let mut m := 0
+  let mut classes : Std.HashMap String Nat := {}
+  for (name, named) in outEnv.named do
+    compared := compared + 1
+    let cls? := match ref.named[name]? with
+      | none => some "absent from the whole output"
+      | some w => namedDiff named w
+    let some cls := cls? | continue
+    classes := classes.insert cls (classes.getD cls 0 + 1)
+    if cls.startsWith "metadata" then
+      m := m + 1
+      if m ≤ 5 then errors := errors.push s!"{r}: {name.pretty}: {cls} differs from the whole compile"
+    else
+      a := a + 1
+      if a ≤ 5 then
+        let w := (ref.named[name]?).map (toString ·.addr) |>.getD "none"
+        errors := errors.push s!"{r}: {name.pretty}: {cls}: {named.addr} in the closure, \
+          {w} in the whole compile"
+  if a > 5 then errors := errors.push s!"{r}: … {a - 5} more address differences"
+  if m > 5 then errors := errors.push s!"{r}: … {m - 5} more metadata differences"
+  -- 6. the references the output introduces are carried
+  let (intro, bad) := introducedRefs outEnv base (nameSet c)
+  errors := errors ++ bad.map (s!"{r}: {·}")
+  return {
+    root := r, closureLen := c.length, namedSize := outEnv.named.size
+    compared, addrDiffs := a, metaDiffs := m, missing, classes, introduced := intro, errors }
 
 def run : IO UInt32 := do
   let env ← getFileEnv "Benchmarks/Compile/CompileInitStd.lean"
@@ -271,7 +264,7 @@ def run : IO UInt32 := do
   -- 6: the carried library support
   let support := Ix.EnvScope.introducedSupport env
   for r in roots do
-    let c := Ix.EnvScope.collectSelectedDeps env [r]
+    let c := Ix.EnvScope.collectSelectedDepsWith env units [r]
     let cn := nameSet c
     for (n, _) in c do
       unless wholeNames.contains n do
@@ -282,12 +275,12 @@ def run : IO UInt32 := do
     for s in support do
       unless cn.contains s do errors := errors.push s!"{r}: the introduced reference {s} is not carried"
     -- the closure without the introduced references, for the derived check
-    let base := nameSet (Ix.EnvScope.collectDeps env [r] .selected)
+    let base := nameSet (Ix.EnvScope.collectDepsWith env units [r] .selected)
     closures := closures.push (r, c, base)
   say s!"introduced references carried by every closure: {support}"
   say s!"closures: {closures.foldl (· + ·.2.1.length) 0} constants over {roots.length} roots; \
     {unitChecks} unit memberships checked"
-  -- 3, 4, 5: each closure compiled, against the whole compile
+  -- 3, 4, 5: each closure compiled in parallel batches, against the whole compile
   let ref ← loadOrCompile env whole
   let mut compared := 0
   let mut addrDiffs := 0
@@ -295,47 +288,27 @@ def run : IO UInt32 := do
   let mut classes : Std.HashMap String Nat := {}
   let mut missing := 0
   let mut introduced : Std.HashSet Name := {}
-  for (r, c, base) in closures do
-    let out ← compileClosure env c
-    -- 3. no refusal
-    unless out.cenv.ungrounded.isEmpty do
-      errors := errors.push s!"{r}: {out.cenv.ungrounded.size} refusals, first \
-        {out.cenv.ungrounded.toList.head?.map (·.1.pretty)}"
-    let outEnv := out.env
-    -- 5. every closure constant is in the output
-    for (n, _) in c do
-      unless outEnv.named.contains (ixN n) do
-        missing := missing + 1
-        errors := errors.push s!"{r}: {n} is not in the closure's output"
-    -- 4. closure against whole, classified
-    let mut a := 0
-    let mut m := 0
-    for (name, named) in outEnv.named do
-      compared := compared + 1
-      let cls? := match ref.named[name]? with
-        | none => some "absent from the whole output"
-        | some w => namedDiff named w
-      let some cls := cls? | continue
-      classes := classes.insert cls (classes.getD cls 0 + 1)
-      if cls.startsWith "metadata" then
-        m := m + 1
-        if m ≤ 5 then errors := errors.push s!"{r}: {name.pretty}: {cls} differs from the whole compile"
-      else
-        a := a + 1
-        if a ≤ 5 then
-          let w := (ref.named[name]?).map (toString ·.addr) |>.getD "none"
-          errors := errors.push s!"{r}: {name.pretty}: {cls}: {named.addr} in the closure, \
-            {w} in the whole compile"
-    if a > 5 then errors := errors.push s!"{r}: … {a - 5} more address differences"
-    if m > 5 then errors := errors.push s!"{r}: … {m - 5} more metadata differences"
-    -- 6. the references the output introduces are carried
-    let (intro, bad) := introducedRefs outEnv base (nameSet c)
-    introduced := intro.fold (·.insert ·) introduced
-    errors := errors ++ bad.map (s!"{r}: {·}")
-    addrDiffs := addrDiffs + a
-    metaDiffs := metaDiffs + m
-    say s!"{r}: closure {c.length}, output {outEnv.named.size} names; {a} address, \
-      {m} metadata differences"
+  let maxConc := 8
+  for start in [0:closures.size:maxConc] do
+    let stop := min (start + maxConc) closures.size
+    let mut tasks : Array (Task (Except IO.Error RootCheckResult)) :=
+      Array.emptyWithCapacity (stop - start)
+    for (r, c, base) in closures.extract start stop do
+      tasks := tasks.push (← IO.asTask (prio := .dedicated) (checkRootClosure env ref r c base))
+    for task in tasks do
+      let res ← match ← IO.wait task with
+        | .ok res => pure res
+        | .error e => throw e
+      compared := compared + res.compared
+      addrDiffs := addrDiffs + res.addrDiffs
+      metaDiffs := metaDiffs + res.metaDiffs
+      missing := missing + res.missing
+      for (cls, count) in res.classes do
+        classes := classes.insert cls (classes.getD cls 0 + count)
+      introduced := res.introduced.fold (·.insert ·) introduced
+      errors := errors ++ res.errors
+      say s!"{res.root}: closure {res.closureLen}, output {res.namedSize} names; {res.addrDiffs} address, \
+        {res.metaDiffs} metadata differences"
   let classLine := classes.toList.map (fun (k, v) => s!"{k} {v}") |>.toArray.qsort (· < ·)
   say s!"{roots.length} roots, {compared} carried names compared with the whole compile: \
     {addrDiffs} address differences, {metaDiffs} metadata differences (classes: {classLine}), \
