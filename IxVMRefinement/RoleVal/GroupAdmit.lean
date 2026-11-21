@@ -1161,8 +1161,9 @@ private theorem walk_covered_mk {t : Ix.Kernel.RoleTable} {n : Nat}
   rcases hnode with ⟨n', _, _, rfl⟩ | ⟨hnone, _⟩
   · match Obs.«KernelRoles::walk_covered».obs ev with
     | .Mk (he38 := hr) (he39 := hh) .. => exact ⟨hr, hh⟩
-    | .Assumed_n0 (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
-    | .Assumed_other (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Assumed_n0 (ld12 := ld12) .. | .Assumed_other (ld12 := ld12) ..
+    | .MkEval (ld12 := ld12) .. | .AssumedEval_n0 (ld12 := ld12) ..
+    | .AssumedEval_other (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
   · cases hnone
 
 /-- **`KernelRoles::walk_ctx` under `RCRep`**: the context it returns is a context of the same
@@ -1200,6 +1201,11 @@ theorem walk_ctx_rcRep {t : Ix.Kernel.RoleTable} {lim : Option Nat}
       .inl ⟨groupValLimit g, rfl, groupValLimit_lt_u32 g, rfl⟩, htbl'.mono ext⟩
   | .Assumed (he325 := hr) (he326 := hh) .. =>
     subst hr hh; exact ⟨lim, hrc.mono ext⟩
+  | .MkEval_n0 (ld12 := ld12) .. | .MkEval_other_n0 (ld12 := ld12) ..
+  | .MkEval_other_other (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
+    obtain ⟨_, _, _, hl, hnode, _⟩ := hrc
+    rw [hl] at ld12
+    rcases hnode with ⟨_, _, _, rfl⟩ | ⟨_, rfl⟩ <;> simp at ld12
 
 /-- `1 - [b = a]` and a field `x` multiply to `1` only when `x = 1` and `b ≠ a`. -/
 private theorem except_guard {x y y' v : SourceValue F} {p : Prop} [Decidable p]
@@ -2613,8 +2619,8 @@ theorem role_addr_admit_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat} {ro : 
         ∀ g', GroupReachable (Ix.SpecDigest.groupOf ro) g' →
           ∀ ro' ∈ groupRoles g', RoleValidatedAt t calls g' ro') := by
   obtain ⟨tbl, ax, node, hload, hnode, htbl⟩ := hrc
-  cases Obs.«KernelRoles::role_addr».obs ev with
-  | Mk x_tbl x_limit w20 v47 m50 cs58 v61 m64 cs72 v97 m98 cs108 v127 m128 cs138
+  match Obs.«KernelRoles::role_addr».obs ev with
+  | .Mk x_tbl x_limit w20 v47 m50 cs58 v61 m64 cs72 v97 m98 cs108 v127 m128 cs138
       v142 m151 cs159 ld12 ev74 ev60 heq96 ev110 ev161 ev140 he171 he172 hc173 =>
     rw [hload] at ld12
     rcases hnode with ⟨n, hlim, hn_lt, rfl⟩ | ⟨_, rfl⟩
@@ -2642,7 +2648,7 @@ theorem role_addr_admit_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat} {ro : 
       exact ⟨hlt_val, ⟨_, _, tbl, v127, cs138, htbl.mono ext_ba, ev140,
         by rw [hc173]; simp, hsub_ga⟩, fun g' hr ro' hro' => (hval_ga g' hr ro' hro').mono hsub_ga⟩
     · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
-  | Assumed x_tbl w181 cs195 ld12 ev197 _ =>
+  | .Assumed x_tbl w181 cs195 ld12 ev197 _ =>
     rw [hload] at ld12
     rcases hnode with ⟨_, _, _, rfl⟩ | ⟨hlim, rfl⟩
     · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
@@ -2652,6 +2658,10 @@ theorem role_addr_admit_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat} {ro : 
       subst hxt
       obtain ⟨ext_ba, a, ha_h', had⟩ := role_bound_addr_uncond htbl ev197
       exact ⟨ext_ba, a, ha_h', had, fun n hn => by rw [hlim] at hn; cases hn⟩
+  | .MkEval (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
+    rw [hload] at ld12
+    rcases hnode with ⟨_, _, _, rfl⟩ | ⟨_, rfl⟩ <;>
+      exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
 
 /-- **`KernelRoles::role_addr(rc, .field (roleNum ro))` under `Claim.RCFullRep`**. -/
 theorem role_addr_full_admit_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
@@ -2674,11 +2684,11 @@ theorem role_addr_full_admit_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
   obtain ⟨ext, a, ha, had, hmk⟩ := role_addr_admit_spec hrc.toRCRep ev
   obtain ⟨hlt, hga, hval⟩ := hmk lim rfl
   obtain ⟨_, tbl, hload, htbl⟩ := hrc
-  cases Obs.«KernelRoles::role_addr».obs ev with
-  | Assumed _ _ _ ld12 _ _ =>
+  match Obs.«KernelRoles::role_addr».obs ev with
+  | .Assumed (ld12 := ld12) .. | .MkEval (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
     rw [hload] at ld12
     exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
-  | Mk x_tbl _ _ _ m50 _ _ m64 _ _ m98 _ _ m128 cs138 _ m151 _
+  | .Mk x_tbl _ _ _ m50 _ _ m64 _ _ m98 _ _ m128 cs138 _ m151 _
       ld12 ev74 ev60 _ ev110 ev161 ev140 _ _ hc173 =>
     rw [hload] at ld12
     injection ld12 with hv
@@ -2796,12 +2806,12 @@ theorem role_of_admit_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat} {addr : 
   obtain ⟨a_bytes, ha_rep, rfl⟩ := ha
   obtain ⟨tbl, ax, node, hload, hnode, htbl⟩ := hrc
   refine ⟨ev.heap_extends, ?_⟩
-  cases Obs.«KernelRoles::role_of».obs ev with
-  | Mk_n0 _ _ _ _ _ _ _ _ _ _ _ he100 _ _ =>
+  match Obs.«KernelRoles::role_of».obs ev with
+  | .Mk_n0 (he100 := he100) .. =>
     exact .inl he100
-  | Mk_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ he222 _ _ =>
+  | .Mk_other_other (he222 := he222) .. =>
     exact .inl he222
-  | Mk_other_n1 x_tbl x_limit w20 v36 m37 cs47 v51 m61 cs69 m108 cs119 v122 m125 cs133 v136
+  | .Mk_other_n1 x_tbl x_limit w20 v36 m37 cs47 v51 m61 cs69 m108 cs119 v122 m125 cs133 v136
       v163 m164 cs174 v178 m187 cs195 v198
       ld12 ev71 ev49 hne103 op150 ev135 ev121 op212 ev197 ev176 he215 _ hc217 =>
     rw [hload] at ld12
@@ -2845,7 +2855,7 @@ theorem role_of_admit_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat} {addr : 
           by rw [hc217]; simp, hsub_ga⟩,
           fun g' hr ro' hro' => (hval_ga g' hr ro' hro').mono hsub_ga⟩
     · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
-  | Assumed x_tbl w232 cs246 v250 m260 cs268 ld12 ev270 ev248 _ =>
+  | .Assumed x_tbl w232 cs246 v250 m260 cs268 ld12 ev270 ev248 _ =>
     rw [hload] at ld12
     rcases hnode with ⟨_, _, _, rfl⟩ | ⟨hlim, rfl⟩
     · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
@@ -2860,6 +2870,11 @@ theorem role_of_admit_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat} {addr : 
       rcases hlookup with hr0 | ⟨ro, hr_eq, had⟩
       · exact .inl hr0
       · exact .inr ⟨ro, hr_eq, had, fun n hn => by rw [hlim] at hn; cases hn⟩
+  | .MkEval_n0 (ld12 := ld12) .. | .MkEval_other_n1 (ld12 := ld12) ..
+  | .MkEval_other_other (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
+    rw [hload] at ld12
+    rcases hnode with ⟨_, _, _, rfl⟩ | ⟨_, rfl⟩ <;>
+      exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
 
 /-- **`KernelRoles::role_of(rc, ap)` under `Claim.RCFullRep`**. -/
 theorem role_of_full_admit_spec {t : Ix.Kernel.RoleTable} {bAddr addr : _root_.Address}
@@ -2888,17 +2903,19 @@ theorem role_of_full_admit_spec {t : Ix.Kernel.RoleTable} {bAddr addr : _root_.A
   · exact .inl hr0
   · obtain ⟨hlt, hga, hval⟩ := hmk lim rfl
     obtain ⟨_, tbl, hload, htbl⟩ := hrc
-    cases Obs.«KernelRoles::role_of».obs ev with
-    | Mk_n0 _ _ _ _ _ _ _ _ _ _ _ he100 _ _ =>
+    match Obs.«KernelRoles::role_of».obs ev with
+    | .Mk_n0 (he100 := he100) .. =>
       exfalso
       exact RolesAux.roleNum_add_one_ne_zero ro (Value.field.inj (hr_eq.symm.trans he100))
-    | Mk_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ he222 _ _ =>
+    | .Mk_other_other (he222 := he222) .. =>
       exfalso
       exact RolesAux.roleNum_add_one_ne_zero ro (Value.field.inj (hr_eq.symm.trans he222))
-    | Assumed _ _ _ _ _ _ ld12 _ _ _ =>
+    | .Assumed (ld12 := ld12) .. | .MkEval_n0 (ld12 := ld12) ..
+    | .MkEval_other_n1 (ld12 := ld12) .. | .MkEval_other_other (ld12 := ld12) ..
+    | .AssumedEval (ld12 := ld12) .. =>
       rw [hload] at ld12
       exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
-    | Mk_other_n1 x_tbl _ _ v36 m37 _ _ m61 _ m108 _ _ m125 _ _
+    | .Mk_other_n1 x_tbl _ _ v36 m37 _ _ m61 _ m108 _ _ m125 _ _
         _ m164 cs174 v178 m187 _ v198
         ld12 ev71 ev49 _ _ ev135 ev121 op212 ev197 ev176 he215 _ hc217 =>
       rw [hload] at ld12

@@ -6,7 +6,7 @@ import IxVMRefinement.Obs.KernelModeled0
 import IxVMRefinement.Obs.KernelModeled1
 import IxVMRefinement.Obs.KernelModeled2
 import IxVMRefinement.Obs.KernelModeled3
-import IxVMRefinement.Obs.KernelRoles1
+import IxVMRefinement.Obs.KernelRoles
 import IxVMRefinement.Obs.Ingress0
 
 /-! # Call-tree descent for `check_family` and `check_witness`
@@ -2060,7 +2060,8 @@ theorem check_family_first_get_address {x_rc x_block x_rec_block v104 v113 : Sou
     | .Nil (cs_thydysml := cs0) (ev_wxupbkvw := ev15) (hc_ouotrhcf := hc34) .. =>
       have hcs0 : cs0 = [] := by
         match Obs.«KernelRoles::role_ctx_axioms».obs ev15 with
-        | .Mk (hc40 := h0) .. | .Assumed (hc62 := h0) .. => exact h0
+        | .Mk (hc40 := h0) .. | .Assumed (hc62 := h0) ..
+        | .MkEval (hc_mtegehcw := h0) .. | .AssumedEval (hc_fdveciok := h0) .. => exact h0
       intro cl hcl
       rw [hc34, hcs0] at hcl
       rcases List.mem_cons.mp hcl with rfl | hcl'
@@ -2070,10 +2071,12 @@ theorem check_family_first_get_address {x_rc x_block x_rec_block v104 v113 : Sou
         (ev_kastmihc := ev_wo) (hc_bosnamra := hc102) .. =>
       have hcs0 : cs0 = [] := by
         match Obs.«KernelRoles::role_ctx_axioms».obs ev15 with
-        | .Mk (hc40 := h0) .. | .Assumed (hc62 := h0) .. => exact h0
+        | .Mk (hc40 := h0) .. | .Assumed (hc62 := h0) ..
+        | .MkEval (hc_mtegehcw := h0) .. | .AssumedEval (hc_fdveciok := h0) .. => exact h0
       have hcs1 : cs1 = [] := by
         match Obs.«KernelRoles::role_ctx_without_axioms».obs ev_wo with
-        | .Mk (hc_pfkmcbip := h1) .. | .Assumed (hc_reopitlb := h1) .. => exact h1
+        | .Mk (hc_pfkmcbip := h1) .. | .Assumed (hc_reopitlb := h1) ..
+        | .MkEval (hc_mtegehcw := h1) .. | .AssumedEval (hc_fdveciok := h1) .. => exact h1
       intro cl hcl
       rw [hc102, hcs0, hcs1] at hcl
       simp only [List.nil_append, List.mem_cons, List.not_mem_nil, or_false] at hcl

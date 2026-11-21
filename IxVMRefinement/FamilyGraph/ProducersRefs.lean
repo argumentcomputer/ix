@@ -19,7 +19,7 @@ import IxVMRefinement.Obs.KernelModeled1
 import IxVMRefinement.Obs.KernelModeled2
 import IxVMRefinement.Obs.KernelModeled3
 import IxVMRefinement.Obs.KernelModeled4
-import IxVMRefinement.Obs.KernelRoles1
+import IxVMRefinement.Obs.KernelRoles
 import IxVMRefinement.Obs.RBTreeMap0
 
 /-! # Reference closure and container witness obligations from `check_family`
@@ -197,12 +197,12 @@ private theorem role_ctx_table_lim_spec_ext {t : Ix.Kernel.RoleTable} {bAddr : _
       obtain ⟨rfl, -⟩ := hargs
       subst he
       exact ⟨hh, htbl⟩
-    | .Assumed (ld12 := ld12) .. =>
+    | .Assumed (ld12 := ld12) .. | .MkEval (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
       have hl' := ext.loadValue_eq ld12
       rw [hl] at hl'
       simp at hl'
   · match Obs.«KernelRoles::role_ctx_table».obs ev with
-    | .Mk (ld12 := ld12) .. =>
+    | .Mk (ld12 := ld12) .. | .MkEval (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
       have hl' := ext.loadValue_eq ld12
       rw [hl] at hl'
       simp at hl'
@@ -289,7 +289,9 @@ private theorem role_of_ne_zero_lim_ext {t : Ix.Kernel.RoleTable} {bAddr a : _ro
   · match Obs.«KernelRoles::role_of».obs ev with
     | .Mk_n0 (he100 := hr) .. => exact absurd hr hne
     | .Mk_other_other (he222 := hr) .. => exact absurd hr hne
-    | .Assumed (ld12 := ld12) .. =>
+    | .Assumed (ld12 := ld12) .. | .MkEval_n0 (ld12 := ld12) ..
+    | .MkEval_other_n1 (ld12 := ld12) .. | .MkEval_other_other (ld12 := ld12) ..
+    | .AssumedEval (ld12 := ld12) .. =>
       have hl' := ext.loadValue_eq ld12
       rw [hl] at hl'
       simp at hl'
@@ -307,7 +309,9 @@ private theorem role_of_ne_zero_lim_ext {t : Ix.Kernel.RoleTable} {bAddr a : _ro
       · exact ⟨ro, hr.trans hro, hof⟩
   · match Obs.«KernelRoles::role_of».obs ev with
     | .Mk_n0 (ld12 := ld12) .. | .Mk_other_n1 (ld12 := ld12) ..
-    | .Mk_other_other (ld12 := ld12) .. =>
+    | .Mk_other_other (ld12 := ld12) .. | .MkEval_n0 (ld12 := ld12) ..
+    | .MkEval_other_n1 (ld12 := ld12) .. | .MkEval_other_other (ld12 := ld12) ..
+    | .AssumedEval (ld12 := ld12) .. =>
       have hl' := ext.loadValue_eq ld12
       rw [hl] at hl'
       simp at hl'

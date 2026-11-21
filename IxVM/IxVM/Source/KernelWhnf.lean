@@ -435,9 +435,37 @@ def quot_certs := aiur_fn⟦
 
 
 
+  -- Closed rewrite hook for verified `evalAssumptions` carried by validator 10/11 claims
+  -- (`RoleCtxNode::MkEval` / `AssumedEval`). On standard `Mk` / `Assumed` contexts
+  -- `role_ctx_evals(rc)` is `EvalMap::Nil`, returning `(0, head)` with zero allocations.
+  -- Only level-monomorphic closed constants (`lvls = Nil`) matching an explicit `(lhs, rhs, typ)`
+  -- leaf rewrite `Const(lhs, Nil) ↦ Const(rhs, Nil)`.
+def try_eval_assumption := aiur_fn⟦
+  fn try_eval_assumption(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef,
+                         lvls: Lists::List<KernelTypes::KLevel>, head: KernelTypes::KExpr)
+        -> (Field, KernelTypes::KExpr) {
+      let evals = KernelRoles::role_ctx_evals(rc);
+      match evals {
+        KernelRoles::EvalMap::Nil => {  (0, head) } ,
+        _ => {
+          match (*(lvls)) {
+            Lists::Node::Nil => {
+              match KernelRoles::eval_map_lookup(addr, evals) {
+                (1, rhs) => {  (1, (&(KernelTypes::KExprNode::Const(rhs, (&(Lists::Node::Nil)))))) } ,
+                _ => {  (0, head) } ,
+              } } ,
+            _ => {  (0, head) } ,
+          } } ,
+      }
+    }
+⟧
+
 def whnf_const_head := aiur_fn⟦
   fn whnf_const_head(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef, lvls: Lists::List<KernelTypes::KLevel>, head: KernelTypes::KExpr,
                            spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+      match try_eval_assumption(rc, addr, lvls, head) {
+        (1, ev_head) => {  whnf_with_spine(rc, ev_head, spine, types) } ,
+        _ => {
       let (fam, op) = prim_family(rc, addr);
       let prim = match fam {
         0 => {  (0, head) } ,
@@ -481,6 +509,7 @@ def whnf_const_head := aiur_fn⟦
             _ => {  apply_spine(head, spine) } ,
           } } ,
         _ => {  apply_spine(head, spine) } ,
+      } } ,
       } } ,
       }
     }
@@ -1489,7 +1518,9 @@ def whnf_nd_proj_head := aiur_fn⟦
 def whnf_nd_const_head := aiur_fn⟦
   fn whnf_nd_const_head(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef, lvls: Lists::List<KernelTypes::KLevel>, head: KernelTypes::KExpr,
                               spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
-
+      match try_eval_assumption(rc, addr, lvls, head) {
+        (1, ev_head) => {  whnf_nd_with_spine(rc, ev_head, spine, types) } ,
+        _ => {
       let (fam, op) = prim_family(rc, addr);
       let prim = match fam {
         0 => {  (0, head) } ,
@@ -1533,6 +1564,7 @@ def whnf_nd_const_head := aiur_fn⟦
             _ => {  apply_spine(head, spine) } ,
           } } ,
         _ => {  apply_spine(head, spine) } ,
+      } } ,
       } } ,
       }
     }

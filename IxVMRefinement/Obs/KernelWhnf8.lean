@@ -17,349 +17,365 @@ namespace IxVM.Refinement.Obs
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 
-/-- The `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[1, 0]`: one constructor per combination of selected arms. -/
-inductive «KernelWhnf::whnf_nd_const_head».Seg1 (e0_fam e1_op e2_rc e3_addr e4_lvls e5_head e6_spine e7_types : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+/-- The `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[2, 1, 0]`: one constructor per combination of selected arms. -/
+inductive «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu (e0_fam e1_op e2_rc e3_addr e4_lvls e5_head e6_spine e7_types : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | n0
-      (hv57 : e0_fam = (.field 0))
-      (he62 : r = (.tuple [(.field 0), e5_head]))
-      (he89 : h' = h)
-      (hc90 : calls = [])
+      (hv_bisqebif : e0_fam = (.field 0))
+      (he_gqbreeoy : r = (.tuple [(.field 0), e5_head]))
+      (he_zuufauri : h' = h)
+      (hc_fodovbau : calls = [])
   | n1_n0
-      (v96 : SourceValue F) (m97 : Heap F) (cs107 : List (Call F)) (m127 : Heap F) (cs138 : List (Call F)) (cs156 : List (Call F))
-      (hne91 : (e0_fam : SourceValue F) ≠ (.field 0))
-      (hv95 : e0_fam = (.field 1))
-      (ev109 : ObsFn W "KernelWhnf::apply_spine" [e5_head, e6_spine] h v96 m97 cs107)
-      (ev140 : ObsFn W "KernelSubst::expr_lbr" [v96] m97 (.field 0) m127 cs138)
-      (ev158 : ObsFn W "KernelWhnf::try_prim_dispatch" [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types] m127 r h' cs156)
-      (hc199 : calls = ((⟨"KernelWhnf::apply_spine", [e5_head, e6_spine], h⟩ : Call F) :: (cs107 ++ ((⟨"KernelSubst::expr_lbr", [v96], m97⟩ : Call F) :: (cs138 ++ ((⟨"KernelWhnf::try_prim_dispatch", [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types], m127⟩ : Call F) :: cs156))))))
+      (v_prolxfmy : SourceValue F) (m_dtyiobwe : Heap F) (cs_spgqgpxw : List (Call F)) (m_ztqoeocy : Heap F) (cs_ptwwisti : List (Call F)) (cs_fvtwmote : List (Call F))
+      (hne_ofwkkhtu : (e0_fam : SourceValue F) ≠ (.field 0))
+      (hv_hutswczd : e0_fam = (.field 1))
+      (ev_gygcyqai : ObsFn W "KernelWhnf::apply_spine" [e5_head, e6_spine] h v_prolxfmy m_dtyiobwe cs_spgqgpxw)
+      (ev_xvhaeqlg : ObsFn W "KernelSubst::expr_lbr" [v_prolxfmy] m_dtyiobwe (.field 0) m_ztqoeocy cs_ptwwisti)
+      (ev_qdmfqaao : ObsFn W "KernelWhnf::try_prim_dispatch" [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types] m_ztqoeocy r h' cs_fvtwmote)
+      (hc_difsyewj : calls = ((⟨"KernelWhnf::apply_spine", [e5_head, e6_spine], h⟩ : Call F) :: (cs_spgqgpxw ++ ((⟨"KernelSubst::expr_lbr", [v_prolxfmy], m_dtyiobwe⟩ : Call F) :: (cs_ptwwisti ++ ((⟨"KernelWhnf::try_prim_dispatch", [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types], m_ztqoeocy⟩ : Call F) :: cs_fvtwmote))))))
   | n1_other
-      (v96 : SourceValue F) (m97 : Heap F) (cs107 : List (Call F)) (v126 : SourceValue F) (m127 : Heap F) (cs138 : List (Call F))
-      (hne91 : (e0_fam : SourceValue F) ≠ (.field 0))
-      (hv95 : e0_fam = (.field 1))
-      (ev109 : ObsFn W "KernelWhnf::apply_spine" [e5_head, e6_spine] h v96 m97 cs107)
-      (ev140 : ObsFn W "KernelSubst::expr_lbr" [v96] m97 v126 m127 cs138)
-      (hne200 : (v126 : SourceValue F) ≠ (.field 0))
-      (he208 : r = (.tuple [(.field 0), e5_head]))
-      (he235 : h' = m127)
-      (hc236 : calls = ((⟨"KernelWhnf::apply_spine", [e5_head, e6_spine], h⟩ : Call F) :: (cs107 ++ ((⟨"KernelSubst::expr_lbr", [v96], m97⟩ : Call F) :: cs138))))
+      (v_prolxfmy : SourceValue F) (m_dtyiobwe : Heap F) (cs_spgqgpxw : List (Call F)) (v_bmlzweeh : SourceValue F) (m_ztqoeocy : Heap F) (cs_ptwwisti : List (Call F))
+      (hne_ofwkkhtu : (e0_fam : SourceValue F) ≠ (.field 0))
+      (hv_hutswczd : e0_fam = (.field 1))
+      (ev_gygcyqai : ObsFn W "KernelWhnf::apply_spine" [e5_head, e6_spine] h v_prolxfmy m_dtyiobwe cs_spgqgpxw)
+      (ev_xvhaeqlg : ObsFn W "KernelSubst::expr_lbr" [v_prolxfmy] m_dtyiobwe v_bmlzweeh m_ztqoeocy cs_ptwwisti)
+      (hne_osnwiwuw : (v_bmlzweeh : SourceValue F) ≠ (.field 0))
+      (he_ktdlxhjl : r = (.tuple [(.field 0), e5_head]))
+      (he_dqlhyhtd : h' = m_ztqoeocy)
+      (hc_kmgjukew : calls = ((⟨"KernelWhnf::apply_spine", [e5_head, e6_spine], h⟩ : Call F) :: (cs_spgqgpxw ++ ((⟨"KernelSubst::expr_lbr", [v_prolxfmy], m_dtyiobwe⟩ : Call F) :: cs_ptwwisti))))
   | other
-      (cs244 : List (Call F))
-      (hne91 : (e0_fam : SourceValue F) ≠ (.field 0))
-      (hne237 : (e0_fam : SourceValue F) ≠ (.field 1))
-      (ev246 : ObsFn W "KernelWhnf::try_prim_dispatch" [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types] h r h' cs244)
-      (hc287 : calls = ((⟨"KernelWhnf::try_prim_dispatch", [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types], h⟩ : Call F) :: cs244))
+      (cs_fofoovjq : List (Call F))
+      (hne_ofwkkhtu : (e0_fam : SourceValue F) ≠ (.field 0))
+      (hne_xvxksapw : (e0_fam : SourceValue F) ≠ (.field 1))
+      (ev_oyscqeer : ObsFn W "KernelWhnf::try_prim_dispatch" [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types] h r h' cs_fofoovjq)
+      (hc_xqikrzpu : calls = ((⟨"KernelWhnf::try_prim_dispatch", [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types], h⟩ : Call F) :: cs_fofoovjq))
 
-/-- **Every observed derivation of the `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[1, 0]` takes one of its paths.** -/
-theorem «KernelWhnf::whnf_nd_const_head».seg1 {e0_fam e1_op e2_rc e3_addr e4_lvls e5_head e6_spine e7_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+/-- **Every observed derivation of the `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[2, 1, 0]` takes one of its paths.** -/
+theorem «KernelWhnf::whnf_nd_const_head».seg_xdpobhsu {e0_fam e1_op e2_rc e3_addr e4_lvls e5_head e6_spine e7_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)}
-    (d0 : ObsExpr W [] [("fam", e0_fam), ("op", e1_op), ("rc", e2_rc), ("addr", e3_addr), ("lvls", e4_lvls), ("head", e5_head), ("spine", e6_spine), ("types", e7_types)] (Expr.sub IxVM.KernelWhnf.whnf_nd_const_head.body [1, 0]) h r h' calls) :
-    «KernelWhnf::whnf_nd_const_head».Seg1 e0_fam e1_op e2_rc e3_addr e4_lvls e5_head e6_spine e7_types h r h' calls := by
+    (d0 : ObsExpr W [] [("fam", e0_fam), ("op", e1_op), ("rc", e2_rc), ("addr", e3_addr), ("lvls", e4_lvls), ("head", e5_head), ("spine", e6_spine), ("types", e7_types)] (Expr.sub IxVM.KernelWhnf.whnf_nd_const_head.body [2, 1, 0]) h r h' calls) :
+    «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu e0_fam e1_op e2_rc e3_addr e4_lvls e5_head e6_spine e7_types h r h' calls := by
   simp only [Expr.sub, Expr.childAt, Expr.children, IxVM.KernelWhnf.whnf_nd_const_head, List.map_cons, List.map_nil] at d0
-  obtain ⟨v44, m45, bs46, body47, c48, c49, d50, sel51, d52, rfl⟩ := d0.matchValue_inv
-  obtain ⟨l53, rfl, rfl⟩ := d50.var_inv
-  simp at l53
-  subst l53
-  rcases selectArm_cons_inv sel51 with ⟨mt54, rfl⟩ | ⟨nm55, sel56⟩
-  · obtain ⟨hv57, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt54
-    obtain ⟨vs58, a59, rfl⟩ := d52.tuple_inv
-    obtain ⟨v60, vs63, m64, c65, c66, rfl, d67, a68, rfl⟩ := a59.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d67.literal_inv
-    obtain ⟨v61, vs69, m70, c71, c72, rfl, d73, a74, rfl⟩ := a68.cons_inv
-    obtain ⟨l75, rfl, rfl⟩ := d73.var_inv
-    simp at l75
-    subst l75
-    obtain ⟨rfl, rfl, rfl⟩ := a74.nil_inv
-    exact «KernelWhnf::whnf_nd_const_head».Seg1.n0 hv57 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-  · have hne91 := MatchesConst.none_inv (MatchesConst.literal 0) nm55
-    rcases selectArm_cons_inv sel56 with ⟨mt79, rfl⟩ | ⟨nm80, sel81⟩
-    · obtain ⟨hv95, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt79
-      obtain ⟨v96, m97, bs85, c86, c87, d88, mt89, d90, rfl⟩ := d52.letValue_inv
-      obtain ⟨vs91, m92, c93, cs107, a95, ev109, rfl⟩ := d88.call_inv
-      rw [instanceName_plain_some] at ev109
-      obtain ⟨v97, vs99, m100, c101, c102, rfl, d103, a104, rfl⟩ := a95.cons_inv
-      obtain ⟨l105, rfl, rfl⟩ := d103.var_inv
-      simp at l105
-      subst l105
-      obtain ⟨v98, vs106, m107, c108, c109, rfl, d110, a111, rfl⟩ := a104.cons_inv
-      obtain ⟨l112, rfl, rfl⟩ := d110.var_inv
-      simp at l112
-      subst l112
-      obtain ⟨rfl, rfl, rfl⟩ := a111.nil_inv
-      obtain rfl := matchPattern_bind_inv mt89
-      obtain ⟨v126, m127, bs115, body116, c117, c118, d119, sel120, d121, rfl⟩ := d90.matchValue_inv
-      obtain ⟨vs122, m123, c124, cs138, a126, ev140, rfl⟩ := d119.call_inv
-      rw [instanceName_plain_some] at ev140
-      obtain ⟨v128, vs129, m130, c131, c132, rfl, d133, a134, rfl⟩ := a126.cons_inv
-      obtain ⟨l135, rfl, rfl⟩ := d133.var_inv
-      simp at l135
-      subst l135
-      obtain ⟨rfl, rfl, rfl⟩ := a134.nil_inv
-      rcases selectArm_cons_inv sel120 with ⟨mt136, rfl⟩ | ⟨nm137, sel138⟩
-      · obtain ⟨hv139, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt136
-        subst hv139
-        obtain ⟨vs140, m141, c142, cs156, a144, ev158, rfl⟩ := d121.call_inv
-        rw [instanceName_plain_some] at ev158
-        obtain ⟨v146, vs153, m154, c155, c156, rfl, d157, a158, rfl⟩ := a144.cons_inv
-        obtain ⟨l159, rfl, rfl⟩ := d157.var_inv
-        simp at l159
-        subst l159
-        obtain ⟨v147, vs160, m161, c162, c163, rfl, d164, a165, rfl⟩ := a158.cons_inv
-        obtain ⟨l166, rfl, rfl⟩ := d164.var_inv
-        simp at l166
-        subst l166
-        obtain ⟨v148, vs167, m168, c169, c170, rfl, d171, a172, rfl⟩ := a165.cons_inv
-        obtain ⟨l173, rfl, rfl⟩ := d171.var_inv
-        simp at l173
-        subst l173
-        obtain ⟨v149, vs174, m175, c176, c177, rfl, d178, a179, rfl⟩ := a172.cons_inv
-        obtain ⟨l180, rfl, rfl⟩ := d178.var_inv
-        simp at l180
-        subst l180
-        obtain ⟨v150, vs181, m182, c183, c184, rfl, d185, a186, rfl⟩ := a179.cons_inv
-        obtain ⟨l187, rfl, rfl⟩ := d185.var_inv
-        simp at l187
-        subst l187
-        obtain ⟨v151, vs188, m189, c190, c191, rfl, d192, a193, rfl⟩ := a186.cons_inv
-        obtain ⟨l194, rfl, rfl⟩ := d192.var_inv
-        simp at l194
-        subst l194
-        obtain ⟨v152, vs195, m196, c197, c198, rfl, d199, a200, rfl⟩ := a193.cons_inv
-        obtain ⟨l201, rfl, rfl⟩ := d199.var_inv
-        simp at l201
-        subst l201
-        obtain ⟨rfl, rfl, rfl⟩ := a200.nil_inv
-        exact «KernelWhnf::whnf_nd_const_head».Seg1.n1_n0 _ _ _ _ _ _ hne91 hv95 ev109 ev140 ev158 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-      · have hne200 := MatchesConst.none_inv (MatchesConst.literal 0) nm137
-        rcases selectArm_cons_inv sel138 with ⟨mt204, rfl⟩ | ⟨nm205, sel206⟩
-        · obtain rfl := matchPattern_wildcard_inv mt204
-          obtain ⟨vs207, a208, rfl⟩ := d121.tuple_inv
-          obtain ⟨v209, vs212, m213, c214, c215, rfl, d216, a217, rfl⟩ := a208.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d216.literal_inv
-          obtain ⟨v210, vs218, m219, c220, c221, rfl, d222, a223, rfl⟩ := a217.cons_inv
-          obtain ⟨l224, rfl, rfl⟩ := d222.var_inv
-          simp at l224
-          subst l224
-          obtain ⟨rfl, rfl, rfl⟩ := a223.nil_inv
-          exact «KernelWhnf::whnf_nd_const_head».Seg1.n1_other _ _ _ _ _ _ hne91 hv95 ev109 ev140 hne200 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-        · exact (matchPattern_wildcard_none nm205).elim
-    · have hne237 := MatchesConst.none_inv (MatchesConst.literal 1) nm80
-      rcases selectArm_cons_inv sel81 with ⟨mt228, rfl⟩ | ⟨nm229, sel230⟩
-      · obtain rfl := matchPattern_wildcard_inv mt228
-        obtain ⟨vs231, m232, c233, cs244, a235, ev246, rfl⟩ := d52.call_inv
-        rw [instanceName_plain_some] at ev246
-        obtain ⟨v237, vs244, m245, c246, c247, rfl, d248, a249, rfl⟩ := a235.cons_inv
-        obtain ⟨l250, rfl, rfl⟩ := d248.var_inv
-        simp at l250
-        subst l250
-        obtain ⟨v238, vs251, m252, c253, c254, rfl, d255, a256, rfl⟩ := a249.cons_inv
-        obtain ⟨l257, rfl, rfl⟩ := d255.var_inv
-        simp at l257
-        subst l257
-        obtain ⟨v239, vs258, m259, c260, c261, rfl, d262, a263, rfl⟩ := a256.cons_inv
-        obtain ⟨l264, rfl, rfl⟩ := d262.var_inv
-        simp at l264
-        subst l264
-        obtain ⟨v240, vs265, m266, c267, c268, rfl, d269, a270, rfl⟩ := a263.cons_inv
-        obtain ⟨l271, rfl, rfl⟩ := d269.var_inv
-        simp at l271
-        subst l271
-        obtain ⟨v241, vs272, m273, c274, c275, rfl, d276, a277, rfl⟩ := a270.cons_inv
-        obtain ⟨l278, rfl, rfl⟩ := d276.var_inv
-        simp at l278
-        subst l278
-        obtain ⟨v242, vs279, m280, c281, c282, rfl, d283, a284, rfl⟩ := a277.cons_inv
-        obtain ⟨l285, rfl, rfl⟩ := d283.var_inv
-        simp at l285
-        subst l285
-        obtain ⟨v243, vs286, m287, c288, c289, rfl, d290, a291, rfl⟩ := a284.cons_inv
-        obtain ⟨l292, rfl, rfl⟩ := d290.var_inv
-        simp at l292
-        subst l292
-        obtain ⟨rfl, rfl, rfl⟩ := a291.nil_inv
-        exact «KernelWhnf::whnf_nd_const_head».Seg1.other _ hne91 hne237 ev246 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-      · exact (matchPattern_wildcard_none nm229).elim
+  obtain ⟨v151, m152, bs153, body154, c155, c156, d157, sel158, d159, rfl⟩ := d0.matchValue_inv
+  obtain ⟨l160, rfl, rfl⟩ := d157.var_inv
+  simp at l160
+  subst l160
+  rcases selectArm_cons_inv sel158 with ⟨mt161, rfl⟩ | ⟨nm162, sel163⟩
+  · obtain ⟨hv_bisqebif, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt161
+    obtain ⟨vs165, a166, rfl⟩ := d159.tuple_inv
+    obtain ⟨v167, vs170, m171, c172, c173, rfl, d174, a175, rfl⟩ := a166.cons_inv
+    obtain ⟨rfl, rfl, rfl⟩ := d174.literal_inv
+    obtain ⟨v168, vs176, m177, c178, c179, rfl, d180, a181, rfl⟩ := a175.cons_inv
+    obtain ⟨l182, rfl, rfl⟩ := d180.var_inv
+    simp at l182
+    subst l182
+    obtain ⟨rfl, rfl, rfl⟩ := a181.nil_inv
+    exact «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu.n0 hv_bisqebif rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne_ofwkkhtu := MatchesConst.none_inv (MatchesConst.literal 0) nm162
+    rcases selectArm_cons_inv sel163 with ⟨mt186, rfl⟩ | ⟨nm187, sel188⟩
+    · obtain ⟨hv_hutswczd, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt186
+      obtain ⟨v_prolxfmy, m_dtyiobwe, bs192, c193, c194, d195, mt196, d197, rfl⟩ := d159.letValue_inv
+      obtain ⟨vs198, m199, c200, cs_spgqgpxw, a202, ev_gygcyqai, rfl⟩ := d195.call_inv
+      rw [instanceName_plain_some] at ev_gygcyqai
+      obtain ⟨v204, vs206, m207, c208, c209, rfl, d210, a211, rfl⟩ := a202.cons_inv
+      obtain ⟨l212, rfl, rfl⟩ := d210.var_inv
+      simp at l212
+      subst l212
+      obtain ⟨v205, vs213, m214, c215, c216, rfl, d217, a218, rfl⟩ := a211.cons_inv
+      obtain ⟨l219, rfl, rfl⟩ := d217.var_inv
+      simp at l219
+      subst l219
+      obtain ⟨rfl, rfl, rfl⟩ := a218.nil_inv
+      obtain rfl := matchPattern_bind_inv mt196
+      obtain ⟨v_bmlzweeh, m_ztqoeocy, bs222, body223, c224, c225, d226, sel227, d228, rfl⟩ := d197.matchValue_inv
+      obtain ⟨vs229, m230, c231, cs_ptwwisti, a233, ev_xvhaeqlg, rfl⟩ := d226.call_inv
+      rw [instanceName_plain_some] at ev_xvhaeqlg
+      obtain ⟨v235, vs236, m237, c238, c239, rfl, d240, a241, rfl⟩ := a233.cons_inv
+      obtain ⟨l242, rfl, rfl⟩ := d240.var_inv
+      simp at l242
+      subst l242
+      obtain ⟨rfl, rfl, rfl⟩ := a241.nil_inv
+      rcases selectArm_cons_inv sel227 with ⟨mt243, rfl⟩ | ⟨nm244, sel245⟩
+      · obtain ⟨hv246, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt243
+        subst hv246
+        obtain ⟨vs247, m248, c249, cs_fvtwmote, a251, ev_qdmfqaao, rfl⟩ := d228.call_inv
+        rw [instanceName_plain_some] at ev_qdmfqaao
+        obtain ⟨v253, vs260, m261, c262, c263, rfl, d264, a265, rfl⟩ := a251.cons_inv
+        obtain ⟨l266, rfl, rfl⟩ := d264.var_inv
+        simp at l266
+        subst l266
+        obtain ⟨v254, vs267, m268, c269, c270, rfl, d271, a272, rfl⟩ := a265.cons_inv
+        obtain ⟨l273, rfl, rfl⟩ := d271.var_inv
+        simp at l273
+        subst l273
+        obtain ⟨v255, vs274, m275, c276, c277, rfl, d278, a279, rfl⟩ := a272.cons_inv
+        obtain ⟨l280, rfl, rfl⟩ := d278.var_inv
+        simp at l280
+        subst l280
+        obtain ⟨v256, vs281, m282, c283, c284, rfl, d285, a286, rfl⟩ := a279.cons_inv
+        obtain ⟨l287, rfl, rfl⟩ := d285.var_inv
+        simp at l287
+        subst l287
+        obtain ⟨v257, vs288, m289, c290, c291, rfl, d292, a293, rfl⟩ := a286.cons_inv
+        obtain ⟨l294, rfl, rfl⟩ := d292.var_inv
+        simp at l294
+        subst l294
+        obtain ⟨v258, vs295, m296, c297, c298, rfl, d299, a300, rfl⟩ := a293.cons_inv
+        obtain ⟨l301, rfl, rfl⟩ := d299.var_inv
+        simp at l301
+        subst l301
+        obtain ⟨v259, vs302, m303, c304, c305, rfl, d306, a307, rfl⟩ := a300.cons_inv
+        obtain ⟨l308, rfl, rfl⟩ := d306.var_inv
+        simp at l308
+        subst l308
+        obtain ⟨rfl, rfl, rfl⟩ := a307.nil_inv
+        exact «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu.n1_n0 _ _ _ _ _ _ hne_ofwkkhtu hv_hutswczd ev_gygcyqai ev_xvhaeqlg ev_qdmfqaao (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · have hne_osnwiwuw := MatchesConst.none_inv (MatchesConst.literal 0) nm244
+        rcases selectArm_cons_inv sel245 with ⟨mt311, rfl⟩ | ⟨nm312, sel313⟩
+        · obtain rfl := matchPattern_wildcard_inv mt311
+          obtain ⟨vs314, a315, rfl⟩ := d228.tuple_inv
+          obtain ⟨v316, vs319, m320, c321, c322, rfl, d323, a324, rfl⟩ := a315.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d323.literal_inv
+          obtain ⟨v317, vs325, m326, c327, c328, rfl, d329, a330, rfl⟩ := a324.cons_inv
+          obtain ⟨l331, rfl, rfl⟩ := d329.var_inv
+          simp at l331
+          subst l331
+          obtain ⟨rfl, rfl, rfl⟩ := a330.nil_inv
+          exact «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu.n1_other _ _ _ _ _ _ hne_ofwkkhtu hv_hutswczd ev_gygcyqai ev_xvhaeqlg hne_osnwiwuw rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        · exact (matchPattern_wildcard_none nm312).elim
+    · have hne_xvxksapw := MatchesConst.none_inv (MatchesConst.literal 1) nm187
+      rcases selectArm_cons_inv sel188 with ⟨mt335, rfl⟩ | ⟨nm336, sel337⟩
+      · obtain rfl := matchPattern_wildcard_inv mt335
+        obtain ⟨vs338, m339, c340, cs_fofoovjq, a342, ev_oyscqeer, rfl⟩ := d159.call_inv
+        rw [instanceName_plain_some] at ev_oyscqeer
+        obtain ⟨v344, vs351, m352, c353, c354, rfl, d355, a356, rfl⟩ := a342.cons_inv
+        obtain ⟨l357, rfl, rfl⟩ := d355.var_inv
+        simp at l357
+        subst l357
+        obtain ⟨v345, vs358, m359, c360, c361, rfl, d362, a363, rfl⟩ := a356.cons_inv
+        obtain ⟨l364, rfl, rfl⟩ := d362.var_inv
+        simp at l364
+        subst l364
+        obtain ⟨v346, vs365, m366, c367, c368, rfl, d369, a370, rfl⟩ := a363.cons_inv
+        obtain ⟨l371, rfl, rfl⟩ := d369.var_inv
+        simp at l371
+        subst l371
+        obtain ⟨v347, vs372, m373, c374, c375, rfl, d376, a377, rfl⟩ := a370.cons_inv
+        obtain ⟨l378, rfl, rfl⟩ := d376.var_inv
+        simp at l378
+        subst l378
+        obtain ⟨v348, vs379, m380, c381, c382, rfl, d383, a384, rfl⟩ := a377.cons_inv
+        obtain ⟨l385, rfl, rfl⟩ := d383.var_inv
+        simp at l385
+        subst l385
+        obtain ⟨v349, vs386, m387, c388, c389, rfl, d390, a391, rfl⟩ := a384.cons_inv
+        obtain ⟨l392, rfl, rfl⟩ := d390.var_inv
+        simp at l392
+        subst l392
+        obtain ⟨v350, vs393, m394, c395, c396, rfl, d397, a398, rfl⟩ := a391.cons_inv
+        obtain ⟨l399, rfl, rfl⟩ := d397.var_inv
+        simp at l399
+        subst l399
+        obtain ⟨rfl, rfl, rfl⟩ := a398.nil_inv
+        exact «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu.other _ hne_ofwkkhtu hne_xvxksapw ev_oyscqeer (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · exact (matchPattern_wildcard_none nm336).elim
 
-/-- The `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[1, 1, 3, 1, 1, 0]`: one constructor per combination of selected arms. -/
-inductive «KernelWhnf::whnf_nd_const_head».Seg_waxxjudx (e0_nl e1_value e2_ci e3_prim e4_fam e5_op e6_rc e7_addr e8_lvls e9_head e10_spine e11_types : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+/-- The `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[2, 1, 1, 3, 1, 1, 0]`: one constructor per combination of selected arms. -/
+inductive «KernelWhnf::whnf_nd_const_head».Seg_sdelzezn (e0_nl e1_value e2_ci e3_prim e4_fam e5_op e6_rc e7_addr e8_lvls e9_head e10_spine e11_types : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | n1_other_other_other_other
-      (m_xpczizjj : Heap F) (cs_wzohxgcy : List (Call F)) (w_uheovjdl : SourceValue F) (w_tzsohxfl : SourceValue F) (w_wxzcmmej : SourceValue F) (w_ogtxechq : SourceValue F) (cs_arhjnadr : List (Call F))
-      (ev_dimnpwvb : ObsFn W "KernelWhnf::projection_definition_info" [e1_value, (.field 0)] h (.tuple [(.field 1), w_uheovjdl, w_tzsohxfl, w_wxzcmmej, w_ogtxechq]) m_xpczizjj cs_wzohxgcy)
-      (ev_uisnwuxc : ObsFn W "KernelWhnf::try_reduce_projection_definition" [e1_value, e0_nl, e8_lvls, e10_spine] m_xpczizjj r h' cs_arhjnadr)
-      (hc_sqflwnyf : calls = ((⟨"KernelWhnf::projection_definition_info", [e1_value, (.field 0)], h⟩ : Call F) :: (cs_wzohxgcy ++ ((⟨"KernelWhnf::try_reduce_projection_definition", [e1_value, e0_nl, e8_lvls, e10_spine], m_xpczizjj⟩ : Call F) :: cs_arhjnadr))))
+      (m_dlaveory : Heap F) (cs_witehbzp : List (Call F)) (w_hgcgyeuj : SourceValue F) (w_izsbnygo : SourceValue F) (w_okkjarrn : SourceValue F) (w_susdaxfx : SourceValue F) (cs_lwmaklqp : List (Call F))
+      (ev_dfgvpbaf : ObsFn W "KernelWhnf::projection_definition_info" [e1_value, (.field 0)] h (.tuple [(.field 1), w_hgcgyeuj, w_izsbnygo, w_okkjarrn, w_susdaxfx]) m_dlaveory cs_witehbzp)
+      (ev_wwrcabba : ObsFn W "KernelWhnf::try_reduce_projection_definition" [e1_value, e0_nl, e8_lvls, e10_spine] m_dlaveory r h' cs_lwmaklqp)
+      (hc_unqgnmyd : calls = ((⟨"KernelWhnf::projection_definition_info", [e1_value, (.field 0)], h⟩ : Call F) :: (cs_witehbzp ++ ((⟨"KernelWhnf::try_reduce_projection_definition", [e1_value, e0_nl, e8_lvls, e10_spine], m_dlaveory⟩ : Call F) :: cs_lwmaklqp))))
   | other
-      (v_ujrrbuxi : SourceValue F) (m_xpczizjj : Heap F) (cs_wzohxgcy : List (Call F))
-      (ev_dimnpwvb : ObsFn W "KernelWhnf::projection_definition_info" [e1_value, (.field 0)] h v_ujrrbuxi m_xpczizjj cs_wzohxgcy)
-      (he_gaqzagfj : r = (.tuple [(.field 0), e9_head]))
-      (he_fzuwfbub : h' = m_xpczizjj)
-      (hc_dizkfrrh : calls = ((⟨"KernelWhnf::projection_definition_info", [e1_value, (.field 0)], h⟩ : Call F) :: cs_wzohxgcy))
+      (v_xgssiwed : SourceValue F) (m_dlaveory : Heap F) (cs_witehbzp : List (Call F))
+      (ev_dfgvpbaf : ObsFn W "KernelWhnf::projection_definition_info" [e1_value, (.field 0)] h v_xgssiwed m_dlaveory cs_witehbzp)
+      (he_kbtinlld : r = (.tuple [(.field 0), e9_head]))
+      (he_ndcjychs : h' = m_dlaveory)
+      (hc_chwrozqd : calls = ((⟨"KernelWhnf::projection_definition_info", [e1_value, (.field 0)], h⟩ : Call F) :: cs_witehbzp))
 
-/-- **Every observed derivation of the `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[1, 1, 3, 1, 1, 0]` takes one of its paths.** -/
-theorem «KernelWhnf::whnf_nd_const_head».seg_waxxjudx {e0_nl e1_value e2_ci e3_prim e4_fam e5_op e6_rc e7_addr e8_lvls e9_head e10_spine e11_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+/-- **Every observed derivation of the `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[2, 1, 1, 3, 1, 1, 0]` takes one of its paths.** -/
+theorem «KernelWhnf::whnf_nd_const_head».seg_sdelzezn {e0_nl e1_value e2_ci e3_prim e4_fam e5_op e6_rc e7_addr e8_lvls e9_head e10_spine e11_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)}
-    (d0 : ObsExpr W [] [("nl", e0_nl), ("value", e1_value), ("ci", e2_ci), ("prim", e3_prim), ("fam", e4_fam), ("op", e5_op), ("rc", e6_rc), ("addr", e7_addr), ("lvls", e8_lvls), ("head", e9_head), ("spine", e10_spine), ("types", e11_types)] (Expr.sub IxVM.KernelWhnf.whnf_nd_const_head.body [1, 1, 3, 1, 1, 0]) h r h' calls) :
-    «KernelWhnf::whnf_nd_const_head».Seg_waxxjudx e0_nl e1_value e2_ci e3_prim e4_fam e5_op e6_rc e7_addr e8_lvls e9_head e10_spine e11_types h r h' calls := by
+    (d0 : ObsExpr W [] [("nl", e0_nl), ("value", e1_value), ("ci", e2_ci), ("prim", e3_prim), ("fam", e4_fam), ("op", e5_op), ("rc", e6_rc), ("addr", e7_addr), ("lvls", e8_lvls), ("head", e9_head), ("spine", e10_spine), ("types", e11_types)] (Expr.sub IxVM.KernelWhnf.whnf_nd_const_head.body [2, 1, 1, 3, 1, 1, 0]) h r h' calls) :
+    «KernelWhnf::whnf_nd_const_head».Seg_sdelzezn e0_nl e1_value e2_ci e3_prim e4_fam e5_op e6_rc e7_addr e8_lvls e9_head e10_spine e11_types h r h' calls := by
   simp only [Expr.sub, Expr.childAt, Expr.children, IxVM.KernelWhnf.whnf_nd_const_head, List.map_cons, List.map_nil] at d0
-  obtain ⟨v_ujrrbuxi, m_xpczizjj, bs458, body459, c460, c461, d462, sel463, d464, rfl⟩ := d0.matchValue_inv
-  obtain ⟨vs465, m466, c467, cs_wzohxgcy, a469, ev_dimnpwvb, rfl⟩ := d462.call_inv
-  rw [instanceName_plain_some] at ev_dimnpwvb
-  obtain ⟨v471, vs473, m474, c475, c476, rfl, d477, a478, rfl⟩ := a469.cons_inv
-  obtain ⟨l479, rfl, rfl⟩ := d477.var_inv
-  simp at l479
-  subst l479
-  obtain ⟨v472, vs480, m481, c482, c483, rfl, d484, a485, rfl⟩ := a478.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d484.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a485.nil_inv
-  rcases selectArm_cons_inv sel463 with ⟨mt486, rfl⟩ | ⟨nm487, sel488⟩
-  · obtain ⟨vs489, hv490, -, ml491⟩ := matchPattern_tuple_inv mt486
-    subst hv490
-    obtain ⟨w492, vs497, b498, b499, rfl, mt500, ml501, rfl⟩ := matchListWith_cons_inv ml491
-    obtain ⟨hv502, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt500
-    subst hv502
-    obtain ⟨w_uheovjdl, vs503, b504, b505, rfl, mt506, ml507, rfl⟩ := matchListWith_cons_inv ml501
-    obtain rfl := matchPattern_wildcard_inv mt506
-    obtain ⟨w_tzsohxfl, vs508, b509, b510, rfl, mt511, ml512, rfl⟩ := matchListWith_cons_inv ml507
-    obtain rfl := matchPattern_wildcard_inv mt511
-    obtain ⟨w_wxzcmmej, vs513, b514, b515, rfl, mt516, ml517, rfl⟩ := matchListWith_cons_inv ml512
-    obtain rfl := matchPattern_wildcard_inv mt516
-    obtain ⟨w_ogtxechq, vs518, b519, b520, rfl, mt521, ml522, rfl⟩ := matchListWith_cons_inv ml517
-    obtain rfl := matchPattern_wildcard_inv mt521
-    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml522
-    obtain ⟨vs523, m524, c525, cs_arhjnadr, a527, ev_uisnwuxc, rfl⟩ := d464.call_inv
-    rw [instanceName_plain_some] at ev_uisnwuxc
-    obtain ⟨v529, vs533, m534, c535, c536, rfl, d537, a538, rfl⟩ := a527.cons_inv
-    obtain ⟨l539, rfl, rfl⟩ := d537.var_inv
-    simp at l539
-    subst l539
-    obtain ⟨v530, vs540, m541, c542, c543, rfl, d544, a545, rfl⟩ := a538.cons_inv
-    obtain ⟨l546, rfl, rfl⟩ := d544.var_inv
-    simp at l546
-    subst l546
-    obtain ⟨v531, vs547, m548, c549, c550, rfl, d551, a552, rfl⟩ := a545.cons_inv
-    obtain ⟨l553, rfl, rfl⟩ := d551.var_inv
-    simp at l553
-    subst l553
-    obtain ⟨v532, vs554, m555, c556, c557, rfl, d558, a559, rfl⟩ := a552.cons_inv
-    obtain ⟨l560, rfl, rfl⟩ := d558.var_inv
-    simp at l560
-    subst l560
-    obtain ⟨rfl, rfl, rfl⟩ := a559.nil_inv
-    exact «KernelWhnf::whnf_nd_const_head».Seg_waxxjudx.n1_other_other_other_other _ _ _ _ _ _ _ ev_dimnpwvb ev_uisnwuxc (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-  · clear nm487
-    rcases selectArm_cons_inv sel488 with ⟨mt562, rfl⟩ | ⟨nm563, sel564⟩
-    · obtain rfl := matchPattern_wildcard_inv mt562
-      obtain ⟨vs565, a566, rfl⟩ := d464.tuple_inv
-      obtain ⟨v567, vs570, m571, c572, c573, rfl, d574, a575, rfl⟩ := a566.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d574.literal_inv
-      obtain ⟨v568, vs576, m577, c578, c579, rfl, d580, a581, rfl⟩ := a575.cons_inv
-      obtain ⟨l582, rfl, rfl⟩ := d580.var_inv
-      simp at l582
-      subst l582
-      obtain ⟨rfl, rfl, rfl⟩ := a581.nil_inv
-      exact «KernelWhnf::whnf_nd_const_head».Seg_waxxjudx.other _ _ _ ev_dimnpwvb rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-    · exact (matchPattern_wildcard_none nm563).elim
+  obtain ⟨v_xgssiwed, m_dlaveory, bs565, body566, c567, c568, d569, sel570, d571, rfl⟩ := d0.matchValue_inv
+  obtain ⟨vs572, m573, c574, cs_witehbzp, a576, ev_dfgvpbaf, rfl⟩ := d569.call_inv
+  rw [instanceName_plain_some] at ev_dfgvpbaf
+  obtain ⟨v578, vs580, m581, c582, c583, rfl, d584, a585, rfl⟩ := a576.cons_inv
+  obtain ⟨l586, rfl, rfl⟩ := d584.var_inv
+  simp at l586
+  subst l586
+  obtain ⟨v579, vs587, m588, c589, c590, rfl, d591, a592, rfl⟩ := a585.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d591.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a592.nil_inv
+  rcases selectArm_cons_inv sel570 with ⟨mt593, rfl⟩ | ⟨nm594, sel595⟩
+  · obtain ⟨vs596, hv597, -, ml598⟩ := matchPattern_tuple_inv mt593
+    subst hv597
+    obtain ⟨w599, vs604, b605, b606, rfl, mt607, ml608, rfl⟩ := matchListWith_cons_inv ml598
+    obtain ⟨hv609, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt607
+    subst hv609
+    obtain ⟨w_hgcgyeuj, vs610, b611, b612, rfl, mt613, ml614, rfl⟩ := matchListWith_cons_inv ml608
+    obtain rfl := matchPattern_wildcard_inv mt613
+    obtain ⟨w_izsbnygo, vs615, b616, b617, rfl, mt618, ml619, rfl⟩ := matchListWith_cons_inv ml614
+    obtain rfl := matchPattern_wildcard_inv mt618
+    obtain ⟨w_okkjarrn, vs620, b621, b622, rfl, mt623, ml624, rfl⟩ := matchListWith_cons_inv ml619
+    obtain rfl := matchPattern_wildcard_inv mt623
+    obtain ⟨w_susdaxfx, vs625, b626, b627, rfl, mt628, ml629, rfl⟩ := matchListWith_cons_inv ml624
+    obtain rfl := matchPattern_wildcard_inv mt628
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml629
+    obtain ⟨vs630, m631, c632, cs_lwmaklqp, a634, ev_wwrcabba, rfl⟩ := d571.call_inv
+    rw [instanceName_plain_some] at ev_wwrcabba
+    obtain ⟨v636, vs640, m641, c642, c643, rfl, d644, a645, rfl⟩ := a634.cons_inv
+    obtain ⟨l646, rfl, rfl⟩ := d644.var_inv
+    simp at l646
+    subst l646
+    obtain ⟨v637, vs647, m648, c649, c650, rfl, d651, a652, rfl⟩ := a645.cons_inv
+    obtain ⟨l653, rfl, rfl⟩ := d651.var_inv
+    simp at l653
+    subst l653
+    obtain ⟨v638, vs654, m655, c656, c657, rfl, d658, a659, rfl⟩ := a652.cons_inv
+    obtain ⟨l660, rfl, rfl⟩ := d658.var_inv
+    simp at l660
+    subst l660
+    obtain ⟨v639, vs661, m662, c663, c664, rfl, d665, a666, rfl⟩ := a659.cons_inv
+    obtain ⟨l667, rfl, rfl⟩ := d665.var_inv
+    simp at l667
+    subst l667
+    obtain ⟨rfl, rfl, rfl⟩ := a666.nil_inv
+    exact «KernelWhnf::whnf_nd_const_head».Seg_sdelzezn.n1_other_other_other_other _ _ _ _ _ _ _ ev_dfgvpbaf ev_wwrcabba (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · clear nm594
+    rcases selectArm_cons_inv sel595 with ⟨mt669, rfl⟩ | ⟨nm670, sel671⟩
+    · obtain rfl := matchPattern_wildcard_inv mt669
+      obtain ⟨vs672, a673, rfl⟩ := d571.tuple_inv
+      obtain ⟨v674, vs677, m678, c679, c680, rfl, d681, a682, rfl⟩ := a673.cons_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d681.literal_inv
+      obtain ⟨v675, vs683, m684, c685, c686, rfl, d687, a688, rfl⟩ := a682.cons_inv
+      obtain ⟨l689, rfl, rfl⟩ := d687.var_inv
+      simp at l689
+      subst l689
+      obtain ⟨rfl, rfl, rfl⟩ := a688.nil_inv
+      exact «KernelWhnf::whnf_nd_const_head».Seg_sdelzezn.other _ _ _ ev_dfgvpbaf rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · exact (matchPattern_wildcard_none nm670).elim
 
 /-- The evaluation paths of `KernelWhnf::whnf_nd_const_head`: one constructor per combination of selected arms. -/
 inductive «KernelWhnf::whnf_nd_const_head».Path (x_rc x_addr x_lvls x_head x_spine x_types : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | n1_bind
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (x_reduced : SourceValue F) (cs328 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».Seg1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx (.tuple [(.field 1), x_reduced]) m289 cs291)
-      (ev330 : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m289 r h' cs328)
-      (hc355 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m289⟩ : Call F) :: cs328)))))
-  | n2_bind
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (x_stuck : SourceValue F)
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».Seg1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx (.tuple [(.field 2), x_stuck]) m289 cs291)
-      (he375 : r = x_stuck)
-      (he376 : h' = m289)
-      (hc377 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ cs291)))
-  | other_Defn_n1_bind
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (x_nl : SourceValue F) (w422 : SourceValue F) (x_value : SourceValue F) (w423 : SourceValue F) (w424 : SourceValue F) (m451 : Heap F) (cs_kgewcjlt : List (Call F)) (x_reduced : SourceValue F) (cs527 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».Seg1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w422, x_value, w423, w424]))
-      (sg_kziakmbq : «KernelWhnf::whnf_nd_const_head».Seg_waxxjudx x_nl x_value (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w422, x_value, w423, w424]) v288 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m382 (.tuple [(.field 1), x_reduced]) m451 cs_kgewcjlt)
-      (ev529 : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m451 r h' cs527)
-      (hc554 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ (cs_kgewcjlt ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m451⟩ : Call F) :: cs527))))))))
-  | other_Defn_other
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (x_nl : SourceValue F) (w422 : SourceValue F) (x_value : SourceValue F) (w423 : SourceValue F) (w424 : SourceValue F) (v450 : SourceValue F) (m451 : Heap F) (cs_kgewcjlt : List (Call F)) (cs561 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».Seg1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w422, x_value, w423, w424]))
-      (sg_kziakmbq : «KernelWhnf::whnf_nd_const_head».Seg_waxxjudx x_nl x_value (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w422, x_value, w423, w424]) v288 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m382 v450 m451 cs_kgewcjlt)
-      (ev563 : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m451 r h' cs561)
-      (hc580 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ (cs_kgewcjlt ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m451⟩ : Call F) :: cs561))))))))
-  | other_Quot_n1_bind
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (w588 : SourceValue F) (w589 : SourceValue F) (w590 : SourceValue F) (m607 : Heap F) (cs617 : List (Call F)) (x_reduced : SourceValue F) (cs691 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».Seg1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Quot" [w588, w589, w590]))
-      (ev619 : ObsFn W "KernelWhnf::try_quot_iota" [x_rc, x_addr, x_lvls, x_spine, x_types] m382 (.tuple [(.field 1), x_reduced]) m607 cs617)
-      (ev693 : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m607 r h' cs691)
-      (hc718 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ ((⟨"KernelWhnf::try_quot_iota", [x_rc, x_addr, x_lvls, x_spine, x_types], m382⟩ : Call F) :: (cs617 ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m607⟩ : Call F) :: cs691)))))))))
-  | other_Quot_other
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (w588 : SourceValue F) (w589 : SourceValue F) (w590 : SourceValue F) (v606 : SourceValue F) (m607 : Heap F) (cs617 : List (Call F)) (cs725 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».Seg1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Quot" [w588, w589, w590]))
-      (ev619 : ObsFn W "KernelWhnf::try_quot_iota" [x_rc, x_addr, x_lvls, x_spine, x_types] m382 v606 m607 cs617)
-      (ev727 : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m607 r h' cs725)
-      (hc744 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ ((⟨"KernelWhnf::try_quot_iota", [x_rc, x_addr, x_lvls, x_spine, x_types], m382⟩ : Call F) :: (cs617 ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m607⟩ : Call F) :: cs725)))))))))
-  | other_Rec_n1_bind
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w752 : SourceValue F) (w753 : SourceValue F) (w754 : SourceValue F) (m811 : Heap F) (cs822 : List (Call F)) (x_reduced : SourceValue F) (cs950 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».Seg1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w752, w753, w754]))
-      (ev824 : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m382 (.tuple [(.field 1), x_reduced]) m811 cs822)
-      (ev952 : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m811 r h' cs950)
-      (hc977 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m382⟩ : Call F) :: (cs822 ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m811⟩ : Call F) :: cs950)))))))))
-  | other_Rec_n2_bind
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w752 : SourceValue F) (w753 : SourceValue F) (w754 : SourceValue F) (m811 : Heap F) (cs822 : List (Call F)) (x_stuck : SourceValue F)
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».Seg1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w752, w753, w754]))
-      (ev824 : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m382 (.tuple [(.field 2), x_stuck]) m811 cs822)
-      (he997 : r = x_stuck)
-      (he998 : h' = m811)
-      (hc999 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m382⟩ : Call F) :: cs822)))))))
-  | other_Rec_n3_bind
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w752 : SourceValue F) (w753 : SourceValue F) (w754 : SourceValue F) (m811 : Heap F) (cs822 : List (Call F)) (x_k_reduct : SourceValue F) (cs1021 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».Seg1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w752, w753, w754]))
-      (ev824 : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m382 (.tuple [(.field 3), x_k_reduct]) m811 cs822)
-      (ev1023 : ObsFn W "KernelWhnf::whnf" [x_rc, x_k_reduct, x_types] m811 r h' cs1021)
-      (hc1048 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m382⟩ : Call F) :: (cs822 ++ ((⟨"KernelWhnf::whnf", [x_rc, x_k_reduct, x_types], m811⟩ : Call F) :: cs1021)))))))))
-  | other_Rec_other
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w752 : SourceValue F) (w753 : SourceValue F) (w754 : SourceValue F) (v810 : SourceValue F) (m811 : Heap F) (cs822 : List (Call F)) (cs1055 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».Seg1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w752, w753, w754]))
-      (ev824 : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m382 v810 m811 cs822)
-      (ev1057 : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m811 r h' cs1055)
-      (hc1074 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m382⟩ : Call F) :: (cs822 ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m811⟩ : Call F) :: cs1055)))))))))
-  | other_other
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (v381 : SourceValue F) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (cs1082 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».Seg1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok v381)
-      (hne581 : ∀ vs : List (SourceValue F), vs.length = 5 → (v381 : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Defn" vs)
-      (hne745 : ∀ vs : List (SourceValue F), vs.length = 3 → (v381 : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Quot" vs)
-      (hne1075 : ∀ vs : List (SourceValue F), vs.length = 11 → (v381 : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Rec" vs)
-      (ev1084 : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m382 r h' cs1082)
-      (hc1101 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m382⟩ : Call F) :: cs1082)))))))
+      (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (x_ev_head : SourceValue F) (cs_uudeljoh : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h (.tuple [(.field 1), x_ev_head]) m_rcpqfuna cs_npmyidqv)
+      (ev_yajqyjcl : ObsFn W "KernelWhnf::whnf_nd_with_spine" [x_rc, x_ev_head, x_spine, x_types] m_rcpqfuna r h' cs_uudeljoh)
+      (hc355 : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::whnf_nd_with_spine", [x_rc, x_ev_head, x_spine, x_types], m_rcpqfuna⟩ : Call F) :: cs_uudeljoh))))
+  | other_n1_bind
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (x_reduced : SourceValue F) (cs_hfcybjza : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu (.tuple [(.field 1), x_reduced]) m_olmidfdk cs_bqqznmms)
+      (ev_jnwcimse : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m_olmidfdk r h' cs_hfcybjza)
+      (hc_gxrhttrm : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m_olmidfdk⟩ : Call F) :: cs_hfcybjza)))))))
+  | other_n2_bind
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (x_stuck : SourceValue F)
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu (.tuple [(.field 2), x_stuck]) m_olmidfdk cs_bqqznmms)
+      (he_cbmfelhn : r = x_stuck)
+      (he_luurucli : h' = m_olmidfdk)
+      (hc_dbyswfmu : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ cs_bqqznmms)))))
+  | other_other_Defn_n1_bind
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (x_nl : SourceValue F) (w_jchmwsum : SourceValue F) (x_value : SourceValue F) (w_odpmahhz : SourceValue F) (w_gxyvyame : SourceValue F) (m_pbjawmcr : Heap F) (cs_rnqluocq : List (Call F)) (x_reduced : SourceValue F) (cs_cfggwuhd : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w_jchmwsum, x_value, w_odpmahhz, w_gxyvyame]))
+      (sg_vrfrttsr : «KernelWhnf::whnf_nd_const_head».Seg_sdelzezn x_nl x_value (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w_jchmwsum, x_value, w_odpmahhz, w_gxyvyame]) v_ohowagql x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_miaxjajz (.tuple [(.field 1), x_reduced]) m_pbjawmcr cs_rnqluocq)
+      (ev_kxzrwdyo : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m_pbjawmcr r h' cs_cfggwuhd)
+      (hc_hcmpckmd : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ (cs_rnqluocq ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m_pbjawmcr⟩ : Call F) :: cs_cfggwuhd))))))))))
+  | other_other_Defn_other
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (x_nl : SourceValue F) (w_jchmwsum : SourceValue F) (x_value : SourceValue F) (w_odpmahhz : SourceValue F) (w_gxyvyame : SourceValue F) (v_rvllbjxi : SourceValue F) (m_pbjawmcr : Heap F) (cs_rnqluocq : List (Call F)) (cs_vbdbzufq : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w_jchmwsum, x_value, w_odpmahhz, w_gxyvyame]))
+      (sg_vrfrttsr : «KernelWhnf::whnf_nd_const_head».Seg_sdelzezn x_nl x_value (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w_jchmwsum, x_value, w_odpmahhz, w_gxyvyame]) v_ohowagql x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_miaxjajz v_rvllbjxi m_pbjawmcr cs_rnqluocq)
+      (ev_itkecbcl : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m_pbjawmcr r h' cs_vbdbzufq)
+      (hc_eauisouw : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ (cs_rnqluocq ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m_pbjawmcr⟩ : Call F) :: cs_vbdbzufq))))))))))
+  | other_other_Quot_n1_bind
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (w_eoufnpzg : SourceValue F) (w_aidalvhw : SourceValue F) (w_wbseoant : SourceValue F) (m_fkohqbgg : Heap F) (cs_sokkokar : List (Call F)) (x_reduced : SourceValue F) (cs_ircsbyrj : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Quot" [w_eoufnpzg, w_aidalvhw, w_wbseoant]))
+      (ev_itwpptuu : ObsFn W "KernelWhnf::try_quot_iota" [x_rc, x_addr, x_lvls, x_spine, x_types] m_miaxjajz (.tuple [(.field 1), x_reduced]) m_fkohqbgg cs_sokkokar)
+      (ev_fxwzvrpa : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m_fkohqbgg r h' cs_ircsbyrj)
+      (hc_mifoubrb : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ ((⟨"KernelWhnf::try_quot_iota", [x_rc, x_addr, x_lvls, x_spine, x_types], m_miaxjajz⟩ : Call F) :: (cs_sokkokar ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m_fkohqbgg⟩ : Call F) :: cs_ircsbyrj)))))))))))
+  | other_other_Quot_other
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (w_eoufnpzg : SourceValue F) (w_aidalvhw : SourceValue F) (w_wbseoant : SourceValue F) (v_zjubsilu : SourceValue F) (m_fkohqbgg : Heap F) (cs_sokkokar : List (Call F)) (cs_nrhygazl : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Quot" [w_eoufnpzg, w_aidalvhw, w_wbseoant]))
+      (ev_itwpptuu : ObsFn W "KernelWhnf::try_quot_iota" [x_rc, x_addr, x_lvls, x_spine, x_types] m_miaxjajz v_zjubsilu m_fkohqbgg cs_sokkokar)
+      (ev_rsdptzcy : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m_fkohqbgg r h' cs_nrhygazl)
+      (hc_jyoozkii : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ ((⟨"KernelWhnf::try_quot_iota", [x_rc, x_addr, x_lvls, x_spine, x_types], m_miaxjajz⟩ : Call F) :: (cs_sokkokar ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m_fkohqbgg⟩ : Call F) :: cs_nrhygazl)))))))))))
+  | other_other_Rec_n1_bind
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w_bxopnjji : SourceValue F) (w_pqjdsgqf : SourceValue F) (w_ixuqwahp : SourceValue F) (m_vnxlntqp : Heap F) (cs_ymeraxrl : List (Call F)) (x_reduced : SourceValue F) (cs_rzelxeiv : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w_bxopnjji, w_pqjdsgqf, w_ixuqwahp]))
+      (ev_pxjjrnur : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m_miaxjajz (.tuple [(.field 1), x_reduced]) m_vnxlntqp cs_ymeraxrl)
+      (ev_fsfewuii : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m_vnxlntqp r h' cs_rzelxeiv)
+      (hc_bymcoknc : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m_miaxjajz⟩ : Call F) :: (cs_ymeraxrl ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m_vnxlntqp⟩ : Call F) :: cs_rzelxeiv)))))))))))
+  | other_other_Rec_n2_bind
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w_bxopnjji : SourceValue F) (w_pqjdsgqf : SourceValue F) (w_ixuqwahp : SourceValue F) (m_vnxlntqp : Heap F) (cs_ymeraxrl : List (Call F)) (x_stuck : SourceValue F)
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w_bxopnjji, w_pqjdsgqf, w_ixuqwahp]))
+      (ev_pxjjrnur : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m_miaxjajz (.tuple [(.field 2), x_stuck]) m_vnxlntqp cs_ymeraxrl)
+      (he_dpdsttep : r = x_stuck)
+      (he_zxzulvfj : h' = m_vnxlntqp)
+      (hc_lbwikhrc : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m_miaxjajz⟩ : Call F) :: cs_ymeraxrl)))))))))
+  | other_other_Rec_n3_bind
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w_bxopnjji : SourceValue F) (w_pqjdsgqf : SourceValue F) (w_ixuqwahp : SourceValue F) (m_vnxlntqp : Heap F) (cs_ymeraxrl : List (Call F)) (x_k_reduct : SourceValue F) (cs_uuxbvbof : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w_bxopnjji, w_pqjdsgqf, w_ixuqwahp]))
+      (ev_pxjjrnur : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m_miaxjajz (.tuple [(.field 3), x_k_reduct]) m_vnxlntqp cs_ymeraxrl)
+      (ev_iscgrqhn : ObsFn W "KernelWhnf::whnf" [x_rc, x_k_reduct, x_types] m_vnxlntqp r h' cs_uuxbvbof)
+      (hc_wjgeqtvb : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m_miaxjajz⟩ : Call F) :: (cs_ymeraxrl ++ ((⟨"KernelWhnf::whnf", [x_rc, x_k_reduct, x_types], m_vnxlntqp⟩ : Call F) :: cs_uuxbvbof)))))))))))
+  | other_other_Rec_other
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w_bxopnjji : SourceValue F) (w_pqjdsgqf : SourceValue F) (w_ixuqwahp : SourceValue F) (v_kfywwtlw : SourceValue F) (m_vnxlntqp : Heap F) (cs_ymeraxrl : List (Call F)) (cs_hmdzhwjh : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w_bxopnjji, w_pqjdsgqf, w_ixuqwahp]))
+      (ev_pxjjrnur : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m_miaxjajz v_kfywwtlw m_vnxlntqp cs_ymeraxrl)
+      (ev_jfcinslu : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m_vnxlntqp r h' cs_hmdzhwjh)
+      (hc_nbsvlmgy : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m_miaxjajz⟩ : Call F) :: (cs_ymeraxrl ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m_vnxlntqp⟩ : Call F) :: cs_hmdzhwjh)))))))))))
+  | other_other_other
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (v_nabzexqm : SourceValue F) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (cs_kdyihfvp : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».Seg_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok v_nabzexqm)
+      (hne_xzxwjlzo : ∀ vs : List (SourceValue F), vs.length = 5 → (v_nabzexqm : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Defn" vs)
+      (hne_mlcusths : ∀ vs : List (SourceValue F), vs.length = 3 → (v_nabzexqm : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Quot" vs)
+      (hne_gvmylidg : ∀ vs : List (SourceValue F), vs.length = 11 → (v_nabzexqm : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Rec" vs)
+      (ev_zargqiml : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m_miaxjajz r h' cs_kdyihfvp)
+      (hc_hmobajgf : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m_miaxjajz⟩ : Call F) :: cs_kdyihfvp)))))))))
 
 /-- **Every observed derivation of `KernelWhnf::whnf_nd_const_head` takes one of its paths.** -/
 theorem «KernelWhnf::whnf_nd_const_head».obs {x_rc x_addr x_lvls x_head x_spine x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -368,792 +384,872 @@ theorem «KernelWhnf::whnf_nd_const_head».obs {x_rc x_addr x_lvls x_head x_spin
   have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelWhnf.whnf_nd_const_head.lookup
     (by simp [IxVM.KernelWhnf.whnf_nd_const_head, ControlLower.hasControl]) ev
   simp only [IxVM.KernelWhnf.whnf_nd_const_head] at d0
-  obtain ⟨v1, m_jkmztdfx, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
-  obtain ⟨vs9, m10, c11, cs_cfolovls, a13, ev_luskmowx, rfl⟩ := d6.call_inv
-  rw [instanceName_plain_some] at ev_luskmowx
-  obtain ⟨v15, vs17, m18, c19, c20, rfl, d21, a22, rfl⟩ := a13.cons_inv
-  obtain ⟨l23, rfl, rfl⟩ := d21.var_inv
-  simp at l23
-  subst l23
-  obtain ⟨v16, vs24, m25, c26, c27, rfl, d28, a29, rfl⟩ := a22.cons_inv
-  obtain ⟨l30, rfl, rfl⟩ := d28.var_inv
-  simp at l30
-  subst l30
-  obtain ⟨rfl, rfl, rfl⟩ := a29.nil_inv
-  obtain ⟨vs31, hv32, -, ml33⟩ := matchPattern_tuple_inv mt7
-  subst hv32
-  obtain ⟨x_fam, vs34, b35, b36, rfl, mt37, ml38, rfl⟩ := matchListWith_cons_inv ml33
-  obtain rfl := matchPattern_bind_inv mt37
-  obtain ⟨x_op, vs39, b40, b41, rfl, mt42, ml43, rfl⟩ := matchListWith_cons_inv ml38
-  obtain rfl := matchPattern_bind_inv mt42
-  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml43
-  obtain ⟨v288, m289, bs296, cs291, c298, d299, mt300, d301, rfl⟩ := d8.letValue_inv
-  have sg296 := «KernelWhnf::whnf_nd_const_head».seg1 d299
-  clear d299
-  obtain rfl := matchPattern_bind_inv mt300
-  obtain ⟨v303, m304, bs305, body306, c307, c308, d309, sel310, d311, rfl⟩ := d301.matchValue_inv
-  obtain ⟨l312, rfl, rfl⟩ := d309.var_inv
-  simp at l312
-  subst l312
-  rcases selectArm_cons_inv sel310 with ⟨mt313, rfl⟩ | ⟨nm314, sel315⟩
-  · obtain ⟨vs316, hv317, -, ml318⟩ := matchPattern_tuple_inv mt313
-    subst hv317
-    obtain ⟨w319, vs320, b321, b322, rfl, mt323, ml324, rfl⟩ := matchListWith_cons_inv ml318
-    obtain ⟨hv325, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt323
-    subst hv325
-    obtain ⟨x_reduced, vs326, b327, b328, rfl, mt329, ml330, rfl⟩ := matchListWith_cons_inv ml324
-    obtain rfl := matchPattern_bind_inv mt329
-    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml330
-    obtain ⟨vs331, m332, c333, cs328, a335, ev330, rfl⟩ := d311.call_inv
-    rw [instanceName_plain_some] at ev330
-    obtain ⟨v337, vs340, m341, c342, c343, rfl, d344, a345, rfl⟩ := a335.cons_inv
-    obtain ⟨l346, rfl, rfl⟩ := d344.var_inv
-    simp at l346
-    subst l346
-    obtain ⟨v338, vs347, m348, c349, c350, rfl, d351, a352, rfl⟩ := a345.cons_inv
-    obtain ⟨l353, rfl, rfl⟩ := d351.var_inv
-    simp at l353
-    subst l353
-    obtain ⟨v339, vs354, m355, c356, c357, rfl, d358, a359, rfl⟩ := a352.cons_inv
-    obtain ⟨l360, rfl, rfl⟩ := d358.var_inv
-    simp at l360
-    subst l360
-    obtain ⟨rfl, rfl, rfl⟩ := a359.nil_inv
-    exact «KernelWhnf::whnf_nd_const_head».Path.n1_bind _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev330 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-  · clear nm314
-    rcases selectArm_cons_inv sel315 with ⟨mt362, rfl⟩ | ⟨nm363, sel364⟩
-    · obtain ⟨vs365, hv366, -, ml367⟩ := matchPattern_tuple_inv mt362
-      subst hv366
-      obtain ⟨w368, vs369, b370, b371, rfl, mt372, ml373, rfl⟩ := matchListWith_cons_inv ml367
-      obtain ⟨hv374, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 2) mt372
-      subst hv374
-      obtain ⟨x_stuck, vs375, b376, b377, rfl, mt378, ml379, rfl⟩ := matchListWith_cons_inv ml373
-      obtain rfl := matchPattern_bind_inv mt378
-      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml379
-      obtain ⟨l380, rfl, rfl⟩ := d311.var_inv
-      simp at l380
-      subst l380
-      exact «KernelWhnf::whnf_nd_const_head».Path.n2_bind _ _ _ _ _ _ _ ev_luskmowx sg296 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-    · clear nm363
-      rcases selectArm_cons_inv sel364 with ⟨mt384, rfl⟩ | ⟨nm385, sel386⟩
-      · obtain rfl := matchPattern_wildcard_inv mt384
-        obtain ⟨v381, m382, bs389, c390, c391, d392, mt393, d394, rfl⟩ := d311.letValue_inv
-        obtain ⟨p389, d396, ld391⟩ := d392.load_inv
-        obtain ⟨vs398, m399, c400, cs395, a402, ev397, rfl⟩ := d396.call_inv
-        rw [instanceName_plain_some] at ev397
-        obtain ⟨v404, vs405, m406, c407, c408, rfl, d409, a410, rfl⟩ := a402.cons_inv
-        obtain ⟨l411, rfl, rfl⟩ := d409.var_inv
-        simp at l411
-        subst l411
-        obtain ⟨rfl, rfl, rfl⟩ := a410.nil_inv
-        obtain rfl := matchPattern_bind_inv mt393
-        obtain ⟨v412, m413, bs414, body415, c416, c417, d418, sel419, d420, rfl⟩ := d394.matchValue_inv
-        obtain ⟨l421, rfl, rfl⟩ := d418.var_inv
-        simp at l421
-        subst l421
-        rcases selectArm_cons_inv sel419 with ⟨mt422, rfl⟩ | ⟨nm423, sel424⟩
-        · obtain ⟨vs425, hv426, -, ml427⟩ := matchPattern_construct_inv mt422
-          rw [Names.n11677430323439928978] at hv426
-          subst hv426
-          obtain ⟨x_nl, vs431, b432, b433, rfl, mt434, ml435, rfl⟩ := matchListWith_cons_inv ml427
-          obtain rfl := matchPattern_bind_inv mt434
-          obtain ⟨w422, vs436, b437, b438, rfl, mt439, ml440, rfl⟩ := matchListWith_cons_inv ml435
-          obtain rfl := matchPattern_wildcard_inv mt439
-          obtain ⟨x_value, vs441, b442, b443, rfl, mt444, ml445, rfl⟩ := matchListWith_cons_inv ml440
-          obtain rfl := matchPattern_bind_inv mt444
-          obtain ⟨w423, vs446, b447, b448, rfl, mt449, ml450, rfl⟩ := matchListWith_cons_inv ml445
-          obtain rfl := matchPattern_wildcard_inv mt449
-          obtain ⟨w424, vs451, b452, b453, rfl, mt454, ml455, rfl⟩ := matchListWith_cons_inv ml450
-          obtain rfl := matchPattern_wildcard_inv mt454
-          obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml455
-          obtain ⟨v450, m451, bs587, cs_kgewcjlt, c589, d590, mt591, d592, rfl⟩ := d420.letValue_inv
-          have sg_kziakmbq := «KernelWhnf::whnf_nd_const_head».seg_waxxjudx d590
-          clear d590
-          obtain rfl := matchPattern_bind_inv mt591
-          obtain ⟨v594, m595, bs596, body597, c598, c599, d600, sel601, d602, rfl⟩ := d592.matchValue_inv
-          obtain ⟨l603, rfl, rfl⟩ := d600.var_inv
-          simp at l603
-          subst l603
-          rcases selectArm_cons_inv sel601 with ⟨mt604, rfl⟩ | ⟨nm605, sel606⟩
-          · obtain ⟨vs607, hv608, -, ml609⟩ := matchPattern_tuple_inv mt604
-            subst hv608
-            obtain ⟨w610, vs611, b612, b613, rfl, mt614, ml615, rfl⟩ := matchListWith_cons_inv ml609
-            obtain ⟨hv616, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt614
-            subst hv616
-            obtain ⟨x_reduced, vs617, b618, b619, rfl, mt620, ml621, rfl⟩ := matchListWith_cons_inv ml615
-            obtain rfl := matchPattern_bind_inv mt620
-            obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml621
-            obtain ⟨vs622, m623, c624, cs527, a626, ev529, rfl⟩ := d602.call_inv
-            rw [instanceName_plain_some] at ev529
-            obtain ⟨v628, vs631, m632, c633, c634, rfl, d635, a636, rfl⟩ := a626.cons_inv
-            obtain ⟨l637, rfl, rfl⟩ := d635.var_inv
-            simp at l637
-            subst l637
-            obtain ⟨v629, vs638, m639, c640, c641, rfl, d642, a643, rfl⟩ := a636.cons_inv
-            obtain ⟨l644, rfl, rfl⟩ := d642.var_inv
-            simp at l644
-            subst l644
-            obtain ⟨v630, vs645, m646, c647, c648, rfl, d649, a650, rfl⟩ := a643.cons_inv
-            obtain ⟨l651, rfl, rfl⟩ := d649.var_inv
-            simp at l651
-            subst l651
-            obtain ⟨rfl, rfl, rfl⟩ := a650.nil_inv
-            exact «KernelWhnf::whnf_nd_const_head».Path.other_Defn_n1_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 sg_kziakmbq ev529 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-          · clear nm605
-            rcases selectArm_cons_inv sel606 with ⟨mt653, rfl⟩ | ⟨nm654, sel655⟩
-            · obtain rfl := matchPattern_wildcard_inv mt653
-              obtain ⟨vs656, m657, c658, cs561, a660, ev563, rfl⟩ := d602.call_inv
-              rw [instanceName_plain_some] at ev563
-              obtain ⟨v662, vs664, m665, c666, c667, rfl, d668, a669, rfl⟩ := a660.cons_inv
-              obtain ⟨l670, rfl, rfl⟩ := d668.var_inv
-              simp at l670
-              subst l670
-              obtain ⟨v663, vs671, m672, c673, c674, rfl, d675, a676, rfl⟩ := a669.cons_inv
-              obtain ⟨l677, rfl, rfl⟩ := d675.var_inv
-              simp at l677
-              subst l677
-              obtain ⟨rfl, rfl, rfl⟩ := a676.nil_inv
-              exact «KernelWhnf::whnf_nd_const_head».Path.other_Defn_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 sg_kziakmbq ev563 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-            · exact (matchPattern_wildcard_none nm654).elim
-        · have hne581 := matchPattern_construct_none (by trivial) nm423
-          simp only [Names.n11677430323439928978] at hne581
-          rcases selectArm_cons_inv sel424 with ⟨mt680, rfl⟩ | ⟨nm681, sel682⟩
-          · obtain ⟨vs683, hv684, -, ml685⟩ := matchPattern_construct_inv mt680
-            rw [Names.n11677430323439928978] at hv684
-            subst hv684
-            obtain ⟨w588, vs689, b690, b691, rfl, mt692, ml693, rfl⟩ := matchListWith_cons_inv ml685
-            obtain rfl := matchPattern_wildcard_inv mt692
-            obtain ⟨w589, vs694, b695, b696, rfl, mt697, ml698, rfl⟩ := matchListWith_cons_inv ml693
-            obtain rfl := matchPattern_wildcard_inv mt697
-            obtain ⟨w590, vs699, b700, b701, rfl, mt702, ml703, rfl⟩ := matchListWith_cons_inv ml698
-            obtain rfl := matchPattern_wildcard_inv mt702
-            obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml703
-            obtain ⟨v606, m607, bs706, c707, c708, d709, mt710, d711, rfl⟩ := d420.letValue_inv
-            obtain ⟨vs712, m713, c714, cs617, a716, ev619, rfl⟩ := d709.call_inv
-            rw [instanceName_plain_some] at ev619
-            obtain ⟨v718, vs723, m724, c725, c726, rfl, d727, a728, rfl⟩ := a716.cons_inv
-            obtain ⟨l729, rfl, rfl⟩ := d727.var_inv
-            simp at l729
-            subst l729
-            obtain ⟨v719, vs730, m731, c732, c733, rfl, d734, a735, rfl⟩ := a728.cons_inv
-            obtain ⟨l736, rfl, rfl⟩ := d734.var_inv
-            simp at l736
-            subst l736
-            obtain ⟨v720, vs737, m738, c739, c740, rfl, d741, a742, rfl⟩ := a735.cons_inv
-            obtain ⟨l743, rfl, rfl⟩ := d741.var_inv
-            simp at l743
-            subst l743
-            obtain ⟨v721, vs744, m745, c746, c747, rfl, d748, a749, rfl⟩ := a742.cons_inv
-            obtain ⟨l750, rfl, rfl⟩ := d748.var_inv
-            simp at l750
-            subst l750
-            obtain ⟨v722, vs751, m752, c753, c754, rfl, d755, a756, rfl⟩ := a749.cons_inv
-            obtain ⟨l757, rfl, rfl⟩ := d755.var_inv
-            simp at l757
-            subst l757
-            obtain ⟨rfl, rfl, rfl⟩ := a756.nil_inv
-            obtain rfl := matchPattern_bind_inv mt710
-            obtain ⟨v758, m759, bs760, body761, c762, c763, d764, sel765, d766, rfl⟩ := d711.matchValue_inv
-            obtain ⟨l767, rfl, rfl⟩ := d764.var_inv
-            simp at l767
-            subst l767
-            rcases selectArm_cons_inv sel765 with ⟨mt768, rfl⟩ | ⟨nm769, sel770⟩
-            · obtain ⟨vs771, hv772, -, ml773⟩ := matchPattern_tuple_inv mt768
-              subst hv772
-              obtain ⟨w774, vs775, b776, b777, rfl, mt778, ml779, rfl⟩ := matchListWith_cons_inv ml773
-              obtain ⟨hv780, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt778
-              subst hv780
-              obtain ⟨x_reduced, vs781, b782, b783, rfl, mt784, ml785, rfl⟩ := matchListWith_cons_inv ml779
-              obtain rfl := matchPattern_bind_inv mt784
-              obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml785
-              obtain ⟨vs786, m787, c788, cs691, a790, ev693, rfl⟩ := d766.call_inv
-              rw [instanceName_plain_some] at ev693
-              obtain ⟨v792, vs795, m796, c797, c798, rfl, d799, a800, rfl⟩ := a790.cons_inv
-              obtain ⟨l801, rfl, rfl⟩ := d799.var_inv
-              simp at l801
-              subst l801
-              obtain ⟨v793, vs802, m803, c804, c805, rfl, d806, a807, rfl⟩ := a800.cons_inv
-              obtain ⟨l808, rfl, rfl⟩ := d806.var_inv
-              simp at l808
-              subst l808
-              obtain ⟨v794, vs809, m810, c811, c812, rfl, d813, a814, rfl⟩ := a807.cons_inv
-              obtain ⟨l815, rfl, rfl⟩ := d813.var_inv
-              simp at l815
-              subst l815
-              obtain ⟨rfl, rfl, rfl⟩ := a814.nil_inv
-              exact «KernelWhnf::whnf_nd_const_head».Path.other_Quot_n1_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 ev619 ev693 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-            · clear nm769
-              rcases selectArm_cons_inv sel770 with ⟨mt817, rfl⟩ | ⟨nm818, sel819⟩
-              · obtain rfl := matchPattern_wildcard_inv mt817
-                obtain ⟨vs820, m821, c822, cs725, a824, ev727, rfl⟩ := d766.call_inv
-                rw [instanceName_plain_some] at ev727
-                obtain ⟨v826, vs828, m829, c830, c831, rfl, d832, a833, rfl⟩ := a824.cons_inv
-                obtain ⟨l834, rfl, rfl⟩ := d832.var_inv
-                simp at l834
-                subst l834
-                obtain ⟨v827, vs835, m836, c837, c838, rfl, d839, a840, rfl⟩ := a833.cons_inv
-                obtain ⟨l841, rfl, rfl⟩ := d839.var_inv
-                simp at l841
-                subst l841
-                obtain ⟨rfl, rfl, rfl⟩ := a840.nil_inv
-                exact «KernelWhnf::whnf_nd_const_head».Path.other_Quot_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 ev619 ev727 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-              · exact (matchPattern_wildcard_none nm818).elim
-          · have hne745 := matchPattern_construct_none (by trivial) nm681
-            simp only [Names.n11677430323439928978] at hne745
-            rcases selectArm_cons_inv sel682 with ⟨mt844, rfl⟩ | ⟨nm845, sel846⟩
-            · obtain ⟨vs847, hv848, -, ml849⟩ := matchPattern_construct_inv mt844
-              rw [Names.n11677430323439928978] at hv848
-              subst hv848
-              obtain ⟨x_rnl, vs853, b854, b855, rfl, mt856, ml857, rfl⟩ := matchListWith_cons_inv ml849
-              obtain rfl := matchPattern_bind_inv mt856
-              obtain ⟨x_rec_ty, vs858, b859, b860, rfl, mt861, ml862, rfl⟩ := matchListWith_cons_inv ml857
-              obtain rfl := matchPattern_bind_inv mt861
-              obtain ⟨x_nparams, vs863, b864, b865, rfl, mt866, ml867, rfl⟩ := matchListWith_cons_inv ml862
-              obtain rfl := matchPattern_bind_inv mt866
-              obtain ⟨x_nindices, vs868, b869, b870, rfl, mt871, ml872, rfl⟩ := matchListWith_cons_inv ml867
-              obtain rfl := matchPattern_bind_inv mt871
-              obtain ⟨x_nmotives, vs873, b874, b875, rfl, mt876, ml877, rfl⟩ := matchListWith_cons_inv ml872
-              obtain rfl := matchPattern_bind_inv mt876
-              obtain ⟨x_nminors, vs878, b879, b880, rfl, mt881, ml882, rfl⟩ := matchListWith_cons_inv ml877
-              obtain rfl := matchPattern_bind_inv mt881
-              obtain ⟨x_rules, vs883, b884, b885, rfl, mt886, ml887, rfl⟩ := matchListWith_cons_inv ml882
-              obtain rfl := matchPattern_bind_inv mt886
-              obtain ⟨x_k_flag, vs888, b889, b890, rfl, mt891, ml892, rfl⟩ := matchListWith_cons_inv ml887
-              obtain rfl := matchPattern_bind_inv mt891
-              obtain ⟨w752, vs893, b894, b895, rfl, mt896, ml897, rfl⟩ := matchListWith_cons_inv ml892
-              obtain rfl := matchPattern_wildcard_inv mt896
-              obtain ⟨w753, vs898, b899, b900, rfl, mt901, ml902, rfl⟩ := matchListWith_cons_inv ml897
-              obtain rfl := matchPattern_wildcard_inv mt901
-              obtain ⟨w754, vs903, b904, b905, rfl, mt906, ml907, rfl⟩ := matchListWith_cons_inv ml902
-              obtain rfl := matchPattern_wildcard_inv mt906
-              obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml907
-              obtain ⟨v810, m811, bs910, body911, c912, c913, d914, sel915, d916, rfl⟩ := d420.matchValue_inv
-              obtain ⟨vs917, m918, c919, cs822, a921, ev824, rfl⟩ := d914.call_inv
-              rw [instanceName_plain_some] at ev824
-              obtain ⟨v923, vs936, m937, c938, c939, rfl, d940, a941, rfl⟩ := a921.cons_inv
-              obtain ⟨l942, rfl, rfl⟩ := d940.var_inv
-              simp at l942
-              subst l942
-              obtain ⟨v924, vs943, m944, c945, c946, rfl, d947, a948, rfl⟩ := a941.cons_inv
-              obtain ⟨l949, rfl, rfl⟩ := d947.var_inv
-              simp at l949
-              subst l949
-              obtain ⟨v925, vs950, m951, c952, c953, rfl, d954, a955, rfl⟩ := a948.cons_inv
-              obtain ⟨l956, rfl, rfl⟩ := d954.var_inv
-              simp at l956
-              subst l956
-              obtain ⟨v926, vs957, m958, c959, c960, rfl, d961, a962, rfl⟩ := a955.cons_inv
-              obtain ⟨l963, rfl, rfl⟩ := d961.var_inv
-              simp at l963
-              subst l963
-              obtain ⟨v927, vs964, m965, c966, c967, rfl, d968, a969, rfl⟩ := a962.cons_inv
-              obtain ⟨l970, rfl, rfl⟩ := d968.var_inv
-              simp at l970
-              subst l970
-              obtain ⟨v928, vs971, m972, c973, c974, rfl, d975, a976, rfl⟩ := a969.cons_inv
-              obtain ⟨l977, rfl, rfl⟩ := d975.var_inv
-              simp at l977
-              subst l977
-              obtain ⟨v929, vs978, m979, c980, c981, rfl, d982, a983, rfl⟩ := a976.cons_inv
-              obtain ⟨l984, rfl, rfl⟩ := d982.var_inv
-              simp at l984
-              subst l984
-              obtain ⟨v930, vs985, m986, c987, c988, rfl, d989, a990, rfl⟩ := a983.cons_inv
-              obtain ⟨l991, rfl, rfl⟩ := d989.var_inv
-              simp at l991
-              subst l991
-              obtain ⟨v931, vs992, m993, c994, c995, rfl, d996, a997, rfl⟩ := a990.cons_inv
-              obtain ⟨l998, rfl, rfl⟩ := d996.var_inv
-              simp at l998
-              subst l998
-              obtain ⟨v932, vs999, m1000, c1001, c1002, rfl, d1003, a1004, rfl⟩ := a997.cons_inv
-              obtain ⟨l1005, rfl, rfl⟩ := d1003.var_inv
-              simp at l1005
-              subst l1005
-              obtain ⟨v933, vs1006, m1007, c1008, c1009, rfl, d1010, a1011, rfl⟩ := a1004.cons_inv
-              obtain ⟨l1012, rfl, rfl⟩ := d1010.var_inv
-              simp at l1012
-              subst l1012
-              obtain ⟨v934, vs1013, m1014, c1015, c1016, rfl, d1017, a1018, rfl⟩ := a1011.cons_inv
-              obtain ⟨l1019, rfl, rfl⟩ := d1017.var_inv
-              simp at l1019
-              subst l1019
-              obtain ⟨v935, vs1020, m1021, c1022, c1023, rfl, d1024, a1025, rfl⟩ := a1018.cons_inv
-              obtain ⟨l1026, rfl, rfl⟩ := d1024.var_inv
-              simp at l1026
-              subst l1026
-              obtain ⟨rfl, rfl, rfl⟩ := a1025.nil_inv
-              rcases selectArm_cons_inv sel915 with ⟨mt1027, rfl⟩ | ⟨nm1028, sel1029⟩
-              · obtain ⟨vs1030, hv1031, -, ml1032⟩ := matchPattern_tuple_inv mt1027
-                subst hv1031
-                obtain ⟨w1033, vs1034, b1035, b1036, rfl, mt1037, ml1038, rfl⟩ := matchListWith_cons_inv ml1032
-                obtain ⟨hv1039, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt1037
-                subst hv1039
-                obtain ⟨x_reduced, vs1040, b1041, b1042, rfl, mt1043, ml1044, rfl⟩ := matchListWith_cons_inv ml1038
-                obtain rfl := matchPattern_bind_inv mt1043
-                obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1044
-                obtain ⟨vs1045, m1046, c1047, cs950, a1049, ev952, rfl⟩ := d916.call_inv
-                rw [instanceName_plain_some] at ev952
-                obtain ⟨v1051, vs1054, m1055, c1056, c1057, rfl, d1058, a1059, rfl⟩ := a1049.cons_inv
-                obtain ⟨l1060, rfl, rfl⟩ := d1058.var_inv
-                simp at l1060
-                subst l1060
-                obtain ⟨v1052, vs1061, m1062, c1063, c1064, rfl, d1065, a1066, rfl⟩ := a1059.cons_inv
-                obtain ⟨l1067, rfl, rfl⟩ := d1065.var_inv
-                simp at l1067
-                subst l1067
-                obtain ⟨v1053, vs1068, m1069, c1070, c1071, rfl, d1072, a1073, rfl⟩ := a1066.cons_inv
-                obtain ⟨l1074, rfl, rfl⟩ := d1072.var_inv
-                simp at l1074
-                subst l1074
-                obtain ⟨rfl, rfl, rfl⟩ := a1073.nil_inv
-                exact «KernelWhnf::whnf_nd_const_head».Path.other_Rec_n1_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 ev824 ev952 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-              · clear nm1028
-                rcases selectArm_cons_inv sel1029 with ⟨mt1076, rfl⟩ | ⟨nm1077, sel1078⟩
-                · obtain ⟨vs1079, hv1080, -, ml1081⟩ := matchPattern_tuple_inv mt1076
-                  subst hv1080
-                  obtain ⟨w1082, vs1083, b1084, b1085, rfl, mt1086, ml1087, rfl⟩ := matchListWith_cons_inv ml1081
-                  obtain ⟨hv1088, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 2) mt1086
-                  subst hv1088
-                  obtain ⟨x_stuck, vs1089, b1090, b1091, rfl, mt1092, ml1093, rfl⟩ := matchListWith_cons_inv ml1087
-                  obtain rfl := matchPattern_bind_inv mt1092
-                  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1093
-                  obtain ⟨l1094, rfl, rfl⟩ := d916.var_inv
-                  simp at l1094
-                  subst l1094
-                  exact «KernelWhnf::whnf_nd_const_head».Path.other_Rec_n2_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 ev824 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-                · clear nm1077
-                  rcases selectArm_cons_inv sel1078 with ⟨mt1098, rfl⟩ | ⟨nm1099, sel1100⟩
-                  · obtain ⟨vs1101, hv1102, -, ml1103⟩ := matchPattern_tuple_inv mt1098
-                    subst hv1102
-                    obtain ⟨w1104, vs1105, b1106, b1107, rfl, mt1108, ml1109, rfl⟩ := matchListWith_cons_inv ml1103
-                    obtain ⟨hv1110, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 3) mt1108
-                    subst hv1110
-                    obtain ⟨x_k_reduct, vs1111, b1112, b1113, rfl, mt1114, ml1115, rfl⟩ := matchListWith_cons_inv ml1109
-                    obtain rfl := matchPattern_bind_inv mt1114
-                    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1115
-                    obtain ⟨vs1116, m1117, c1118, cs1021, a1120, ev1023, rfl⟩ := d916.call_inv
-                    rw [instanceName_plain_some] at ev1023
-                    obtain ⟨v1122, vs1125, m1126, c1127, c1128, rfl, d1129, a1130, rfl⟩ := a1120.cons_inv
-                    obtain ⟨l1131, rfl, rfl⟩ := d1129.var_inv
-                    simp at l1131
-                    subst l1131
-                    obtain ⟨v1123, vs1132, m1133, c1134, c1135, rfl, d1136, a1137, rfl⟩ := a1130.cons_inv
-                    obtain ⟨l1138, rfl, rfl⟩ := d1136.var_inv
-                    simp at l1138
-                    subst l1138
-                    obtain ⟨v1124, vs1139, m1140, c1141, c1142, rfl, d1143, a1144, rfl⟩ := a1137.cons_inv
-                    obtain ⟨l1145, rfl, rfl⟩ := d1143.var_inv
-                    simp at l1145
-                    subst l1145
-                    obtain ⟨rfl, rfl, rfl⟩ := a1144.nil_inv
-                    exact «KernelWhnf::whnf_nd_const_head».Path.other_Rec_n3_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 ev824 ev1023 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-                  · clear nm1099
-                    rcases selectArm_cons_inv sel1100 with ⟨mt1147, rfl⟩ | ⟨nm1148, sel1149⟩
-                    · obtain rfl := matchPattern_wildcard_inv mt1147
-                      obtain ⟨vs1150, m1151, c1152, cs1055, a1154, ev1057, rfl⟩ := d916.call_inv
-                      rw [instanceName_plain_some] at ev1057
-                      obtain ⟨v1156, vs1158, m1159, c1160, c1161, rfl, d1162, a1163, rfl⟩ := a1154.cons_inv
-                      obtain ⟨l1164, rfl, rfl⟩ := d1162.var_inv
-                      simp at l1164
-                      subst l1164
-                      obtain ⟨v1157, vs1165, m1166, c1167, c1168, rfl, d1169, a1170, rfl⟩ := a1163.cons_inv
-                      obtain ⟨l1171, rfl, rfl⟩ := d1169.var_inv
-                      simp at l1171
-                      subst l1171
-                      obtain ⟨rfl, rfl, rfl⟩ := a1170.nil_inv
-                      exact «KernelWhnf::whnf_nd_const_head».Path.other_Rec_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 ev824 ev1057 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-                    · exact (matchPattern_wildcard_none nm1148).elim
-            · have hne1075 := matchPattern_construct_none (by trivial) nm845
-              simp only [Names.n11677430323439928978] at hne1075
-              rcases selectArm_cons_inv sel846 with ⟨mt1174, rfl⟩ | ⟨nm1175, sel1176⟩
-              · obtain rfl := matchPattern_wildcard_inv mt1174
-                obtain ⟨vs1177, m1178, c1179, cs1082, a1181, ev1084, rfl⟩ := d420.call_inv
-                rw [instanceName_plain_some] at ev1084
-                obtain ⟨v1183, vs1185, m1186, c1187, c1188, rfl, d1189, a1190, rfl⟩ := a1181.cons_inv
-                obtain ⟨l1191, rfl, rfl⟩ := d1189.var_inv
-                simp at l1191
-                subst l1191
-                obtain ⟨v1184, vs1192, m1193, c1194, c1195, rfl, d1196, a1197, rfl⟩ := a1190.cons_inv
-                obtain ⟨l1198, rfl, rfl⟩ := d1196.var_inv
-                simp at l1198
-                subst l1198
-                obtain ⟨rfl, rfl, rfl⟩ := a1197.nil_inv
-                exact «KernelWhnf::whnf_nd_const_head».Path.other_other _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 hne581 hne745 hne1075 ev1084 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-              · exact (matchPattern_wildcard_none nm1175).elim
-      · exact (matchPattern_wildcard_none nm385).elim
+  obtain ⟨v_hirlhoca, m_rcpqfuna, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨vs10, m11, c12, cs_npmyidqv, a14, ev_avswdmlx, rfl⟩ := d7.call_inv
+  rw [instanceName_plain_some] at ev_avswdmlx
+  obtain ⟨v16, vs20, m21, c22, c23, rfl, d24, a25, rfl⟩ := a14.cons_inv
+  obtain ⟨l26, rfl, rfl⟩ := d24.var_inv
+  simp at l26
+  subst l26
+  obtain ⟨v17, vs27, m28, c29, c30, rfl, d31, a32, rfl⟩ := a25.cons_inv
+  obtain ⟨l33, rfl, rfl⟩ := d31.var_inv
+  simp at l33
+  subst l33
+  obtain ⟨v18, vs34, m35, c36, c37, rfl, d38, a39, rfl⟩ := a32.cons_inv
+  obtain ⟨l40, rfl, rfl⟩ := d38.var_inv
+  simp at l40
+  subst l40
+  obtain ⟨v19, vs41, m42, c43, c44, rfl, d45, a46, rfl⟩ := a39.cons_inv
+  obtain ⟨l47, rfl, rfl⟩ := d45.var_inv
+  simp at l47
+  subst l47
+  obtain ⟨rfl, rfl, rfl⟩ := a46.nil_inv
+  rcases selectArm_cons_inv sel8 with ⟨mt48, rfl⟩ | ⟨nm49, sel50⟩
+  · obtain ⟨vs51, hv52, -, ml53⟩ := matchPattern_tuple_inv mt48
+    subst hv52
+    obtain ⟨w54, vs55, b56, b57, rfl, mt58, ml59, rfl⟩ := matchListWith_cons_inv ml53
+    obtain ⟨hv60, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt58
+    subst hv60
+    obtain ⟨x_ev_head, vs61, b62, b63, rfl, mt64, ml65, rfl⟩ := matchListWith_cons_inv ml59
+    obtain rfl := matchPattern_bind_inv mt64
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml65
+    obtain ⟨vs66, m67, c68, cs_uudeljoh, a70, ev_yajqyjcl, rfl⟩ := d9.call_inv
+    rw [instanceName_plain_some] at ev_yajqyjcl
+    obtain ⟨v72, vs76, m77, c78, c79, rfl, d80, a81, rfl⟩ := a70.cons_inv
+    obtain ⟨l82, rfl, rfl⟩ := d80.var_inv
+    simp at l82
+    subst l82
+    obtain ⟨v73, vs83, m84, c85, c86, rfl, d87, a88, rfl⟩ := a81.cons_inv
+    obtain ⟨l89, rfl, rfl⟩ := d87.var_inv
+    simp at l89
+    subst l89
+    obtain ⟨v74, vs90, m91, c92, c93, rfl, d94, a95, rfl⟩ := a88.cons_inv
+    obtain ⟨l96, rfl, rfl⟩ := d94.var_inv
+    simp at l96
+    subst l96
+    obtain ⟨v75, vs97, m98, c99, c100, rfl, d101, a102, rfl⟩ := a95.cons_inv
+    obtain ⟨l103, rfl, rfl⟩ := d101.var_inv
+    simp at l103
+    subst l103
+    obtain ⟨rfl, rfl, rfl⟩ := a102.nil_inv
+    exact «KernelWhnf::whnf_nd_const_head».Path.n1_bind _ _ _ _ ev_avswdmlx ev_yajqyjcl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · clear nm49
+    rcases selectArm_cons_inv sel50 with ⟨mt105, rfl⟩ | ⟨nm106, sel107⟩
+    · obtain rfl := matchPattern_wildcard_inv mt105
+      obtain ⟨v108, m_yfpnaauu, bs110, c111, c112, d113, mt114, d115, rfl⟩ := d9.letValue_inv
+      obtain ⟨vs116, m117, c118, cs_vtcjjeeu, a120, ev_znalsizj, rfl⟩ := d113.call_inv
+      rw [instanceName_plain_some] at ev_znalsizj
+      obtain ⟨v122, vs124, m125, c126, c127, rfl, d128, a129, rfl⟩ := a120.cons_inv
+      obtain ⟨l130, rfl, rfl⟩ := d128.var_inv
+      simp at l130
+      subst l130
+      obtain ⟨v123, vs131, m132, c133, c134, rfl, d135, a136, rfl⟩ := a129.cons_inv
+      obtain ⟨l137, rfl, rfl⟩ := d135.var_inv
+      simp at l137
+      subst l137
+      obtain ⟨rfl, rfl, rfl⟩ := a136.nil_inv
+      obtain ⟨vs138, hv139, -, ml140⟩ := matchPattern_tuple_inv mt114
+      subst hv139
+      obtain ⟨x_fam, vs141, b142, b143, rfl, mt144, ml145, rfl⟩ := matchListWith_cons_inv ml140
+      obtain rfl := matchPattern_bind_inv mt144
+      obtain ⟨x_op, vs146, b147, b148, rfl, mt149, ml150, rfl⟩ := matchListWith_cons_inv ml145
+      obtain rfl := matchPattern_bind_inv mt149
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml150
+      obtain ⟨v_ohowagql, m_olmidfdk, bs403, cs_bqqznmms, c405, d406, mt407, d408, rfl⟩ := d115.letValue_inv
+      have sg_rsqiotdh := «KernelWhnf::whnf_nd_const_head».seg_xdpobhsu d406
+      clear d406
+      obtain rfl := matchPattern_bind_inv mt407
+      obtain ⟨v410, m411, bs412, body413, c414, c415, d416, sel417, d418, rfl⟩ := d408.matchValue_inv
+      obtain ⟨l419, rfl, rfl⟩ := d416.var_inv
+      simp at l419
+      subst l419
+      rcases selectArm_cons_inv sel417 with ⟨mt420, rfl⟩ | ⟨nm421, sel422⟩
+      · obtain ⟨vs423, hv424, -, ml425⟩ := matchPattern_tuple_inv mt420
+        subst hv424
+        obtain ⟨w426, vs427, b428, b429, rfl, mt430, ml431, rfl⟩ := matchListWith_cons_inv ml425
+        obtain ⟨hv432, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt430
+        subst hv432
+        obtain ⟨x_reduced, vs433, b434, b435, rfl, mt436, ml437, rfl⟩ := matchListWith_cons_inv ml431
+        obtain rfl := matchPattern_bind_inv mt436
+        obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml437
+        obtain ⟨vs438, m439, c440, cs_hfcybjza, a442, ev_jnwcimse, rfl⟩ := d418.call_inv
+        rw [instanceName_plain_some] at ev_jnwcimse
+        obtain ⟨v444, vs447, m448, c449, c450, rfl, d451, a452, rfl⟩ := a442.cons_inv
+        obtain ⟨l453, rfl, rfl⟩ := d451.var_inv
+        simp at l453
+        subst l453
+        obtain ⟨v445, vs454, m455, c456, c457, rfl, d458, a459, rfl⟩ := a452.cons_inv
+        obtain ⟨l460, rfl, rfl⟩ := d458.var_inv
+        simp at l460
+        subst l460
+        obtain ⟨v446, vs461, m462, c463, c464, rfl, d465, a466, rfl⟩ := a459.cons_inv
+        obtain ⟨l467, rfl, rfl⟩ := d465.var_inv
+        simp at l467
+        subst l467
+        obtain ⟨rfl, rfl, rfl⟩ := a466.nil_inv
+        exact «KernelWhnf::whnf_nd_const_head».Path.other_n1_bind _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_jnwcimse (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · clear nm421
+        rcases selectArm_cons_inv sel422 with ⟨mt469, rfl⟩ | ⟨nm470, sel471⟩
+        · obtain ⟨vs472, hv473, -, ml474⟩ := matchPattern_tuple_inv mt469
+          subst hv473
+          obtain ⟨w475, vs476, b477, b478, rfl, mt479, ml480, rfl⟩ := matchListWith_cons_inv ml474
+          obtain ⟨hv481, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 2) mt479
+          subst hv481
+          obtain ⟨x_stuck, vs482, b483, b484, rfl, mt485, ml486, rfl⟩ := matchListWith_cons_inv ml480
+          obtain rfl := matchPattern_bind_inv mt485
+          obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml486
+          obtain ⟨l487, rfl, rfl⟩ := d418.var_inv
+          simp at l487
+          subst l487
+          exact «KernelWhnf::whnf_nd_const_head».Path.other_n2_bind _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        · clear nm470
+          rcases selectArm_cons_inv sel471 with ⟨mt491, rfl⟩ | ⟨nm492, sel493⟩
+          · obtain rfl := matchPattern_wildcard_inv mt491
+            obtain ⟨v_nabzexqm, m_miaxjajz, bs496, c497, c498, d499, mt500, d501, rfl⟩ := d418.letValue_inv
+            obtain ⟨p_yuubbzvg, d503, ld_ccmkhhry⟩ := d499.load_inv
+            obtain ⟨vs505, m506, c507, cs_gfldjzyv, a509, ev_ghgzvwmd, rfl⟩ := d503.call_inv
+            rw [instanceName_plain_some] at ev_ghgzvwmd
+            obtain ⟨v511, vs512, m513, c514, c515, rfl, d516, a517, rfl⟩ := a509.cons_inv
+            obtain ⟨l518, rfl, rfl⟩ := d516.var_inv
+            simp at l518
+            subst l518
+            obtain ⟨rfl, rfl, rfl⟩ := a517.nil_inv
+            obtain rfl := matchPattern_bind_inv mt500
+            obtain ⟨v519, m520, bs521, body522, c523, c524, d525, sel526, d527, rfl⟩ := d501.matchValue_inv
+            obtain ⟨l528, rfl, rfl⟩ := d525.var_inv
+            simp at l528
+            subst l528
+            rcases selectArm_cons_inv sel526 with ⟨mt529, rfl⟩ | ⟨nm530, sel531⟩
+            · obtain ⟨vs532, hv533, -, ml534⟩ := matchPattern_construct_inv mt529
+              rw [Names.n11677430323439928978] at hv533
+              subst hv533
+              obtain ⟨x_nl, vs538, b539, b540, rfl, mt541, ml542, rfl⟩ := matchListWith_cons_inv ml534
+              obtain rfl := matchPattern_bind_inv mt541
+              obtain ⟨w_jchmwsum, vs543, b544, b545, rfl, mt546, ml547, rfl⟩ := matchListWith_cons_inv ml542
+              obtain rfl := matchPattern_wildcard_inv mt546
+              obtain ⟨x_value, vs548, b549, b550, rfl, mt551, ml552, rfl⟩ := matchListWith_cons_inv ml547
+              obtain rfl := matchPattern_bind_inv mt551
+              obtain ⟨w_odpmahhz, vs553, b554, b555, rfl, mt556, ml557, rfl⟩ := matchListWith_cons_inv ml552
+              obtain rfl := matchPattern_wildcard_inv mt556
+              obtain ⟨w_gxyvyame, vs558, b559, b560, rfl, mt561, ml562, rfl⟩ := matchListWith_cons_inv ml557
+              obtain rfl := matchPattern_wildcard_inv mt561
+              obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml562
+              obtain ⟨v_rvllbjxi, m_pbjawmcr, bs694, cs_rnqluocq, c696, d697, mt698, d699, rfl⟩ := d527.letValue_inv
+              have sg_vrfrttsr := «KernelWhnf::whnf_nd_const_head».seg_sdelzezn d697
+              clear d697
+              obtain rfl := matchPattern_bind_inv mt698
+              obtain ⟨v701, m702, bs703, body704, c705, c706, d707, sel708, d709, rfl⟩ := d699.matchValue_inv
+              obtain ⟨l710, rfl, rfl⟩ := d707.var_inv
+              simp at l710
+              subst l710
+              rcases selectArm_cons_inv sel708 with ⟨mt711, rfl⟩ | ⟨nm712, sel713⟩
+              · obtain ⟨vs714, hv715, -, ml716⟩ := matchPattern_tuple_inv mt711
+                subst hv715
+                obtain ⟨w717, vs718, b719, b720, rfl, mt721, ml722, rfl⟩ := matchListWith_cons_inv ml716
+                obtain ⟨hv723, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt721
+                subst hv723
+                obtain ⟨x_reduced, vs724, b725, b726, rfl, mt727, ml728, rfl⟩ := matchListWith_cons_inv ml722
+                obtain rfl := matchPattern_bind_inv mt727
+                obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml728
+                obtain ⟨vs729, m730, c731, cs_cfggwuhd, a733, ev_kxzrwdyo, rfl⟩ := d709.call_inv
+                rw [instanceName_plain_some] at ev_kxzrwdyo
+                obtain ⟨v735, vs738, m739, c740, c741, rfl, d742, a743, rfl⟩ := a733.cons_inv
+                obtain ⟨l744, rfl, rfl⟩ := d742.var_inv
+                simp at l744
+                subst l744
+                obtain ⟨v736, vs745, m746, c747, c748, rfl, d749, a750, rfl⟩ := a743.cons_inv
+                obtain ⟨l751, rfl, rfl⟩ := d749.var_inv
+                simp at l751
+                subst l751
+                obtain ⟨v737, vs752, m753, c754, c755, rfl, d756, a757, rfl⟩ := a750.cons_inv
+                obtain ⟨l758, rfl, rfl⟩ := d756.var_inv
+                simp at l758
+                subst l758
+                obtain ⟨rfl, rfl, rfl⟩ := a757.nil_inv
+                exact «KernelWhnf::whnf_nd_const_head».Path.other_other_Defn_n1_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry sg_vrfrttsr ev_kxzrwdyo (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+              · clear nm712
+                rcases selectArm_cons_inv sel713 with ⟨mt760, rfl⟩ | ⟨nm761, sel762⟩
+                · obtain rfl := matchPattern_wildcard_inv mt760
+                  obtain ⟨vs763, m764, c765, cs_vbdbzufq, a767, ev_itkecbcl, rfl⟩ := d709.call_inv
+                  rw [instanceName_plain_some] at ev_itkecbcl
+                  obtain ⟨v769, vs771, m772, c773, c774, rfl, d775, a776, rfl⟩ := a767.cons_inv
+                  obtain ⟨l777, rfl, rfl⟩ := d775.var_inv
+                  simp at l777
+                  subst l777
+                  obtain ⟨v770, vs778, m779, c780, c781, rfl, d782, a783, rfl⟩ := a776.cons_inv
+                  obtain ⟨l784, rfl, rfl⟩ := d782.var_inv
+                  simp at l784
+                  subst l784
+                  obtain ⟨rfl, rfl, rfl⟩ := a783.nil_inv
+                  exact «KernelWhnf::whnf_nd_const_head».Path.other_other_Defn_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry sg_vrfrttsr ev_itkecbcl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                · exact (matchPattern_wildcard_none nm761).elim
+            · have hne_xzxwjlzo := matchPattern_construct_none (by trivial) nm530
+              simp only [Names.n11677430323439928978] at hne_xzxwjlzo
+              rcases selectArm_cons_inv sel531 with ⟨mt787, rfl⟩ | ⟨nm788, sel789⟩
+              · obtain ⟨vs790, hv791, -, ml792⟩ := matchPattern_construct_inv mt787
+                rw [Names.n11677430323439928978] at hv791
+                subst hv791
+                obtain ⟨w_eoufnpzg, vs796, b797, b798, rfl, mt799, ml800, rfl⟩ := matchListWith_cons_inv ml792
+                obtain rfl := matchPattern_wildcard_inv mt799
+                obtain ⟨w_aidalvhw, vs801, b802, b803, rfl, mt804, ml805, rfl⟩ := matchListWith_cons_inv ml800
+                obtain rfl := matchPattern_wildcard_inv mt804
+                obtain ⟨w_wbseoant, vs806, b807, b808, rfl, mt809, ml810, rfl⟩ := matchListWith_cons_inv ml805
+                obtain rfl := matchPattern_wildcard_inv mt809
+                obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml810
+                obtain ⟨v_zjubsilu, m_fkohqbgg, bs813, c814, c815, d816, mt817, d818, rfl⟩ := d527.letValue_inv
+                obtain ⟨vs819, m820, c821, cs_sokkokar, a823, ev_itwpptuu, rfl⟩ := d816.call_inv
+                rw [instanceName_plain_some] at ev_itwpptuu
+                obtain ⟨v825, vs830, m831, c832, c833, rfl, d834, a835, rfl⟩ := a823.cons_inv
+                obtain ⟨l836, rfl, rfl⟩ := d834.var_inv
+                simp at l836
+                subst l836
+                obtain ⟨v826, vs837, m838, c839, c840, rfl, d841, a842, rfl⟩ := a835.cons_inv
+                obtain ⟨l843, rfl, rfl⟩ := d841.var_inv
+                simp at l843
+                subst l843
+                obtain ⟨v827, vs844, m845, c846, c847, rfl, d848, a849, rfl⟩ := a842.cons_inv
+                obtain ⟨l850, rfl, rfl⟩ := d848.var_inv
+                simp at l850
+                subst l850
+                obtain ⟨v828, vs851, m852, c853, c854, rfl, d855, a856, rfl⟩ := a849.cons_inv
+                obtain ⟨l857, rfl, rfl⟩ := d855.var_inv
+                simp at l857
+                subst l857
+                obtain ⟨v829, vs858, m859, c860, c861, rfl, d862, a863, rfl⟩ := a856.cons_inv
+                obtain ⟨l864, rfl, rfl⟩ := d862.var_inv
+                simp at l864
+                subst l864
+                obtain ⟨rfl, rfl, rfl⟩ := a863.nil_inv
+                obtain rfl := matchPattern_bind_inv mt817
+                obtain ⟨v865, m866, bs867, body868, c869, c870, d871, sel872, d873, rfl⟩ := d818.matchValue_inv
+                obtain ⟨l874, rfl, rfl⟩ := d871.var_inv
+                simp at l874
+                subst l874
+                rcases selectArm_cons_inv sel872 with ⟨mt875, rfl⟩ | ⟨nm876, sel877⟩
+                · obtain ⟨vs878, hv879, -, ml880⟩ := matchPattern_tuple_inv mt875
+                  subst hv879
+                  obtain ⟨w881, vs882, b883, b884, rfl, mt885, ml886, rfl⟩ := matchListWith_cons_inv ml880
+                  obtain ⟨hv887, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt885
+                  subst hv887
+                  obtain ⟨x_reduced, vs888, b889, b890, rfl, mt891, ml892, rfl⟩ := matchListWith_cons_inv ml886
+                  obtain rfl := matchPattern_bind_inv mt891
+                  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml892
+                  obtain ⟨vs893, m894, c895, cs_ircsbyrj, a897, ev_fxwzvrpa, rfl⟩ := d873.call_inv
+                  rw [instanceName_plain_some] at ev_fxwzvrpa
+                  obtain ⟨v899, vs902, m903, c904, c905, rfl, d906, a907, rfl⟩ := a897.cons_inv
+                  obtain ⟨l908, rfl, rfl⟩ := d906.var_inv
+                  simp at l908
+                  subst l908
+                  obtain ⟨v900, vs909, m910, c911, c912, rfl, d913, a914, rfl⟩ := a907.cons_inv
+                  obtain ⟨l915, rfl, rfl⟩ := d913.var_inv
+                  simp at l915
+                  subst l915
+                  obtain ⟨v901, vs916, m917, c918, c919, rfl, d920, a921, rfl⟩ := a914.cons_inv
+                  obtain ⟨l922, rfl, rfl⟩ := d920.var_inv
+                  simp at l922
+                  subst l922
+                  obtain ⟨rfl, rfl, rfl⟩ := a921.nil_inv
+                  exact «KernelWhnf::whnf_nd_const_head».Path.other_other_Quot_n1_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry ev_itwpptuu ev_fxwzvrpa (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                · clear nm876
+                  rcases selectArm_cons_inv sel877 with ⟨mt924, rfl⟩ | ⟨nm925, sel926⟩
+                  · obtain rfl := matchPattern_wildcard_inv mt924
+                    obtain ⟨vs927, m928, c929, cs_nrhygazl, a931, ev_rsdptzcy, rfl⟩ := d873.call_inv
+                    rw [instanceName_plain_some] at ev_rsdptzcy
+                    obtain ⟨v933, vs935, m936, c937, c938, rfl, d939, a940, rfl⟩ := a931.cons_inv
+                    obtain ⟨l941, rfl, rfl⟩ := d939.var_inv
+                    simp at l941
+                    subst l941
+                    obtain ⟨v934, vs942, m943, c944, c945, rfl, d946, a947, rfl⟩ := a940.cons_inv
+                    obtain ⟨l948, rfl, rfl⟩ := d946.var_inv
+                    simp at l948
+                    subst l948
+                    obtain ⟨rfl, rfl, rfl⟩ := a947.nil_inv
+                    exact «KernelWhnf::whnf_nd_const_head».Path.other_other_Quot_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry ev_itwpptuu ev_rsdptzcy (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                  · exact (matchPattern_wildcard_none nm925).elim
+              · have hne_mlcusths := matchPattern_construct_none (by trivial) nm788
+                simp only [Names.n11677430323439928978] at hne_mlcusths
+                rcases selectArm_cons_inv sel789 with ⟨mt951, rfl⟩ | ⟨nm952, sel953⟩
+                · obtain ⟨vs954, hv955, -, ml956⟩ := matchPattern_construct_inv mt951
+                  rw [Names.n11677430323439928978] at hv955
+                  subst hv955
+                  obtain ⟨x_rnl, vs960, b961, b962, rfl, mt963, ml964, rfl⟩ := matchListWith_cons_inv ml956
+                  obtain rfl := matchPattern_bind_inv mt963
+                  obtain ⟨x_rec_ty, vs965, b966, b967, rfl, mt968, ml969, rfl⟩ := matchListWith_cons_inv ml964
+                  obtain rfl := matchPattern_bind_inv mt968
+                  obtain ⟨x_nparams, vs970, b971, b972, rfl, mt973, ml974, rfl⟩ := matchListWith_cons_inv ml969
+                  obtain rfl := matchPattern_bind_inv mt973
+                  obtain ⟨x_nindices, vs975, b976, b977, rfl, mt978, ml979, rfl⟩ := matchListWith_cons_inv ml974
+                  obtain rfl := matchPattern_bind_inv mt978
+                  obtain ⟨x_nmotives, vs980, b981, b982, rfl, mt983, ml984, rfl⟩ := matchListWith_cons_inv ml979
+                  obtain rfl := matchPattern_bind_inv mt983
+                  obtain ⟨x_nminors, vs985, b986, b987, rfl, mt988, ml989, rfl⟩ := matchListWith_cons_inv ml984
+                  obtain rfl := matchPattern_bind_inv mt988
+                  obtain ⟨x_rules, vs990, b991, b992, rfl, mt993, ml994, rfl⟩ := matchListWith_cons_inv ml989
+                  obtain rfl := matchPattern_bind_inv mt993
+                  obtain ⟨x_k_flag, vs995, b996, b997, rfl, mt998, ml999, rfl⟩ := matchListWith_cons_inv ml994
+                  obtain rfl := matchPattern_bind_inv mt998
+                  obtain ⟨w_bxopnjji, vs1000, b1001, b1002, rfl, mt1003, ml1004, rfl⟩ := matchListWith_cons_inv ml999
+                  obtain rfl := matchPattern_wildcard_inv mt1003
+                  obtain ⟨w_pqjdsgqf, vs1005, b1006, b1007, rfl, mt1008, ml1009, rfl⟩ := matchListWith_cons_inv ml1004
+                  obtain rfl := matchPattern_wildcard_inv mt1008
+                  obtain ⟨w_ixuqwahp, vs1010, b1011, b1012, rfl, mt1013, ml1014, rfl⟩ := matchListWith_cons_inv ml1009
+                  obtain rfl := matchPattern_wildcard_inv mt1013
+                  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1014
+                  obtain ⟨v_kfywwtlw, m_vnxlntqp, bs1017, body1018, c1019, c1020, d1021, sel1022, d1023, rfl⟩ := d527.matchValue_inv
+                  obtain ⟨vs1024, m1025, c1026, cs_ymeraxrl, a1028, ev_pxjjrnur, rfl⟩ := d1021.call_inv
+                  rw [instanceName_plain_some] at ev_pxjjrnur
+                  obtain ⟨v1030, vs1043, m1044, c1045, c1046, rfl, d1047, a1048, rfl⟩ := a1028.cons_inv
+                  obtain ⟨l1049, rfl, rfl⟩ := d1047.var_inv
+                  simp at l1049
+                  subst l1049
+                  obtain ⟨v1031, vs1050, m1051, c1052, c1053, rfl, d1054, a1055, rfl⟩ := a1048.cons_inv
+                  obtain ⟨l1056, rfl, rfl⟩ := d1054.var_inv
+                  simp at l1056
+                  subst l1056
+                  obtain ⟨v1032, vs1057, m1058, c1059, c1060, rfl, d1061, a1062, rfl⟩ := a1055.cons_inv
+                  obtain ⟨l1063, rfl, rfl⟩ := d1061.var_inv
+                  simp at l1063
+                  subst l1063
+                  obtain ⟨v1033, vs1064, m1065, c1066, c1067, rfl, d1068, a1069, rfl⟩ := a1062.cons_inv
+                  obtain ⟨l1070, rfl, rfl⟩ := d1068.var_inv
+                  simp at l1070
+                  subst l1070
+                  obtain ⟨v1034, vs1071, m1072, c1073, c1074, rfl, d1075, a1076, rfl⟩ := a1069.cons_inv
+                  obtain ⟨l1077, rfl, rfl⟩ := d1075.var_inv
+                  simp at l1077
+                  subst l1077
+                  obtain ⟨v1035, vs1078, m1079, c1080, c1081, rfl, d1082, a1083, rfl⟩ := a1076.cons_inv
+                  obtain ⟨l1084, rfl, rfl⟩ := d1082.var_inv
+                  simp at l1084
+                  subst l1084
+                  obtain ⟨v1036, vs1085, m1086, c1087, c1088, rfl, d1089, a1090, rfl⟩ := a1083.cons_inv
+                  obtain ⟨l1091, rfl, rfl⟩ := d1089.var_inv
+                  simp at l1091
+                  subst l1091
+                  obtain ⟨v1037, vs1092, m1093, c1094, c1095, rfl, d1096, a1097, rfl⟩ := a1090.cons_inv
+                  obtain ⟨l1098, rfl, rfl⟩ := d1096.var_inv
+                  simp at l1098
+                  subst l1098
+                  obtain ⟨v1038, vs1099, m1100, c1101, c1102, rfl, d1103, a1104, rfl⟩ := a1097.cons_inv
+                  obtain ⟨l1105, rfl, rfl⟩ := d1103.var_inv
+                  simp at l1105
+                  subst l1105
+                  obtain ⟨v1039, vs1106, m1107, c1108, c1109, rfl, d1110, a1111, rfl⟩ := a1104.cons_inv
+                  obtain ⟨l1112, rfl, rfl⟩ := d1110.var_inv
+                  simp at l1112
+                  subst l1112
+                  obtain ⟨v1040, vs1113, m1114, c1115, c1116, rfl, d1117, a1118, rfl⟩ := a1111.cons_inv
+                  obtain ⟨l1119, rfl, rfl⟩ := d1117.var_inv
+                  simp at l1119
+                  subst l1119
+                  obtain ⟨v1041, vs1120, m1121, c1122, c1123, rfl, d1124, a1125, rfl⟩ := a1118.cons_inv
+                  obtain ⟨l1126, rfl, rfl⟩ := d1124.var_inv
+                  simp at l1126
+                  subst l1126
+                  obtain ⟨v1042, vs1127, m1128, c1129, c1130, rfl, d1131, a1132, rfl⟩ := a1125.cons_inv
+                  obtain ⟨l1133, rfl, rfl⟩ := d1131.var_inv
+                  simp at l1133
+                  subst l1133
+                  obtain ⟨rfl, rfl, rfl⟩ := a1132.nil_inv
+                  rcases selectArm_cons_inv sel1022 with ⟨mt1134, rfl⟩ | ⟨nm1135, sel1136⟩
+                  · obtain ⟨vs1137, hv1138, -, ml1139⟩ := matchPattern_tuple_inv mt1134
+                    subst hv1138
+                    obtain ⟨w1140, vs1141, b1142, b1143, rfl, mt1144, ml1145, rfl⟩ := matchListWith_cons_inv ml1139
+                    obtain ⟨hv1146, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt1144
+                    subst hv1146
+                    obtain ⟨x_reduced, vs1147, b1148, b1149, rfl, mt1150, ml1151, rfl⟩ := matchListWith_cons_inv ml1145
+                    obtain rfl := matchPattern_bind_inv mt1150
+                    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1151
+                    obtain ⟨vs1152, m1153, c1154, cs_rzelxeiv, a1156, ev_fsfewuii, rfl⟩ := d1023.call_inv
+                    rw [instanceName_plain_some] at ev_fsfewuii
+                    obtain ⟨v1158, vs1161, m1162, c1163, c1164, rfl, d1165, a1166, rfl⟩ := a1156.cons_inv
+                    obtain ⟨l1167, rfl, rfl⟩ := d1165.var_inv
+                    simp at l1167
+                    subst l1167
+                    obtain ⟨v1159, vs1168, m1169, c1170, c1171, rfl, d1172, a1173, rfl⟩ := a1166.cons_inv
+                    obtain ⟨l1174, rfl, rfl⟩ := d1172.var_inv
+                    simp at l1174
+                    subst l1174
+                    obtain ⟨v1160, vs1175, m1176, c1177, c1178, rfl, d1179, a1180, rfl⟩ := a1173.cons_inv
+                    obtain ⟨l1181, rfl, rfl⟩ := d1179.var_inv
+                    simp at l1181
+                    subst l1181
+                    obtain ⟨rfl, rfl, rfl⟩ := a1180.nil_inv
+                    exact «KernelWhnf::whnf_nd_const_head».Path.other_other_Rec_n1_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry ev_pxjjrnur ev_fsfewuii (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                  · clear nm1135
+                    rcases selectArm_cons_inv sel1136 with ⟨mt1183, rfl⟩ | ⟨nm1184, sel1185⟩
+                    · obtain ⟨vs1186, hv1187, -, ml1188⟩ := matchPattern_tuple_inv mt1183
+                      subst hv1187
+                      obtain ⟨w1189, vs1190, b1191, b1192, rfl, mt1193, ml1194, rfl⟩ := matchListWith_cons_inv ml1188
+                      obtain ⟨hv1195, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 2) mt1193
+                      subst hv1195
+                      obtain ⟨x_stuck, vs1196, b1197, b1198, rfl, mt1199, ml1200, rfl⟩ := matchListWith_cons_inv ml1194
+                      obtain rfl := matchPattern_bind_inv mt1199
+                      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1200
+                      obtain ⟨l1201, rfl, rfl⟩ := d1023.var_inv
+                      simp at l1201
+                      subst l1201
+                      exact «KernelWhnf::whnf_nd_const_head».Path.other_other_Rec_n2_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry ev_pxjjrnur rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                    · clear nm1184
+                      rcases selectArm_cons_inv sel1185 with ⟨mt1205, rfl⟩ | ⟨nm1206, sel1207⟩
+                      · obtain ⟨vs1208, hv1209, -, ml1210⟩ := matchPattern_tuple_inv mt1205
+                        subst hv1209
+                        obtain ⟨w1211, vs1212, b1213, b1214, rfl, mt1215, ml1216, rfl⟩ := matchListWith_cons_inv ml1210
+                        obtain ⟨hv1217, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 3) mt1215
+                        subst hv1217
+                        obtain ⟨x_k_reduct, vs1218, b1219, b1220, rfl, mt1221, ml1222, rfl⟩ := matchListWith_cons_inv ml1216
+                        obtain rfl := matchPattern_bind_inv mt1221
+                        obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1222
+                        obtain ⟨vs1223, m1224, c1225, cs_uuxbvbof, a1227, ev_iscgrqhn, rfl⟩ := d1023.call_inv
+                        rw [instanceName_plain_some] at ev_iscgrqhn
+                        obtain ⟨v1229, vs1232, m1233, c1234, c1235, rfl, d1236, a1237, rfl⟩ := a1227.cons_inv
+                        obtain ⟨l1238, rfl, rfl⟩ := d1236.var_inv
+                        simp at l1238
+                        subst l1238
+                        obtain ⟨v1230, vs1239, m1240, c1241, c1242, rfl, d1243, a1244, rfl⟩ := a1237.cons_inv
+                        obtain ⟨l1245, rfl, rfl⟩ := d1243.var_inv
+                        simp at l1245
+                        subst l1245
+                        obtain ⟨v1231, vs1246, m1247, c1248, c1249, rfl, d1250, a1251, rfl⟩ := a1244.cons_inv
+                        obtain ⟨l1252, rfl, rfl⟩ := d1250.var_inv
+                        simp at l1252
+                        subst l1252
+                        obtain ⟨rfl, rfl, rfl⟩ := a1251.nil_inv
+                        exact «KernelWhnf::whnf_nd_const_head».Path.other_other_Rec_n3_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry ev_pxjjrnur ev_iscgrqhn (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                      · clear nm1206
+                        rcases selectArm_cons_inv sel1207 with ⟨mt1254, rfl⟩ | ⟨nm1255, sel1256⟩
+                        · obtain rfl := matchPattern_wildcard_inv mt1254
+                          obtain ⟨vs1257, m1258, c1259, cs_hmdzhwjh, a1261, ev_jfcinslu, rfl⟩ := d1023.call_inv
+                          rw [instanceName_plain_some] at ev_jfcinslu
+                          obtain ⟨v1263, vs1265, m1266, c1267, c1268, rfl, d1269, a1270, rfl⟩ := a1261.cons_inv
+                          obtain ⟨l1271, rfl, rfl⟩ := d1269.var_inv
+                          simp at l1271
+                          subst l1271
+                          obtain ⟨v1264, vs1272, m1273, c1274, c1275, rfl, d1276, a1277, rfl⟩ := a1270.cons_inv
+                          obtain ⟨l1278, rfl, rfl⟩ := d1276.var_inv
+                          simp at l1278
+                          subst l1278
+                          obtain ⟨rfl, rfl, rfl⟩ := a1277.nil_inv
+                          exact «KernelWhnf::whnf_nd_const_head».Path.other_other_Rec_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry ev_pxjjrnur ev_jfcinslu (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                        · exact (matchPattern_wildcard_none nm1255).elim
+                · have hne_gvmylidg := matchPattern_construct_none (by trivial) nm952
+                  simp only [Names.n11677430323439928978] at hne_gvmylidg
+                  rcases selectArm_cons_inv sel953 with ⟨mt1281, rfl⟩ | ⟨nm1282, sel1283⟩
+                  · obtain rfl := matchPattern_wildcard_inv mt1281
+                    obtain ⟨vs1284, m1285, c1286, cs_kdyihfvp, a1288, ev_zargqiml, rfl⟩ := d527.call_inv
+                    rw [instanceName_plain_some] at ev_zargqiml
+                    obtain ⟨v1290, vs1292, m1293, c1294, c1295, rfl, d1296, a1297, rfl⟩ := a1288.cons_inv
+                    obtain ⟨l1298, rfl, rfl⟩ := d1296.var_inv
+                    simp at l1298
+                    subst l1298
+                    obtain ⟨v1291, vs1299, m1300, c1301, c1302, rfl, d1303, a1304, rfl⟩ := a1297.cons_inv
+                    obtain ⟨l1305, rfl, rfl⟩ := d1303.var_inv
+                    simp at l1305
+                    subst l1305
+                    obtain ⟨rfl, rfl, rfl⟩ := a1304.nil_inv
+                    exact «KernelWhnf::whnf_nd_const_head».Path.other_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry hne_xzxwjlzo hne_mlcusths hne_gvmylidg ev_zargqiml (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                  · exact (matchPattern_wildcard_none nm1282).elim
+          · exact (matchPattern_wildcard_none nm492).elim
+    · exact (matchPattern_wildcard_none nm106).elim
 
-/-- The `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[1, 0]`: one constructor per combination of selected arms. -/
-inductive «KernelWhnf::whnf_nd_const_head».SegX1 (e0_fam e1_op e2_rc e3_addr e4_lvls e5_head e6_spine e7_types : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+/-- The `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[2, 1, 0]`: one constructor per combination of selected arms. -/
+inductive «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu (e0_fam e1_op e2_rc e3_addr e4_lvls e5_head e6_spine e7_types : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | n0
-      (hv57 : e0_fam = (.field 0))
-      (he62 : r = (.tuple [(.field 0), e5_head]))
-      (he89 : h' = h)
-      (hc90 : calls = [])
+      (hv_bisqebif : e0_fam = (.field 0))
+      (he_gqbreeoy : r = (.tuple [(.field 0), e5_head]))
+      (he_zuufauri : h' = h)
+      (hc_fodovbau : calls = [])
   | n1_n0
-      (v96 : SourceValue F) (m97 : Heap F) (cs107 : List (Call F)) (m127 : Heap F) (cs138 : List (Call F)) (cs156 : List (Call F))
-      (hne91 : (e0_fam : SourceValue F) ≠ (.field 0))
-      (hv95 : e0_fam = (.field 1))
-      (ev109 : ObsFn W "KernelWhnf::apply_spine" [e5_head, e6_spine] h v96 m97 cs107)
-      (ev140 : ObsFn W "KernelSubst::expr_lbr" [v96] m97 (.field 0) m127 cs138)
-      (ev158 : ObsFn W "KernelWhnf::try_prim_dispatch" [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types] m127 r h' cs156)
-      (hc199 : calls = ((⟨"KernelWhnf::apply_spine", [e5_head, e6_spine], h⟩ : Call F) :: (cs107 ++ ((⟨"KernelSubst::expr_lbr", [v96], m97⟩ : Call F) :: (cs138 ++ ((⟨"KernelWhnf::try_prim_dispatch", [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types], m127⟩ : Call F) :: cs156))))))
+      (v_prolxfmy : SourceValue F) (m_dtyiobwe : Heap F) (cs_spgqgpxw : List (Call F)) (m_ztqoeocy : Heap F) (cs_ptwwisti : List (Call F)) (cs_fvtwmote : List (Call F))
+      (hne_ofwkkhtu : (e0_fam : SourceValue F) ≠ (.field 0))
+      (hv_hutswczd : e0_fam = (.field 1))
+      (ev_gygcyqai : ObsFn W "KernelWhnf::apply_spine" [e5_head, e6_spine] h v_prolxfmy m_dtyiobwe cs_spgqgpxw)
+      (ev_xvhaeqlg : ObsFn W "KernelSubst::expr_lbr" [v_prolxfmy] m_dtyiobwe (.field 0) m_ztqoeocy cs_ptwwisti)
+      (ev_qdmfqaao : ObsFn W "KernelWhnf::try_prim_dispatch" [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types] m_ztqoeocy r h' cs_fvtwmote)
+      (hc_difsyewj : calls = ((⟨"KernelWhnf::apply_spine", [e5_head, e6_spine], h⟩ : Call F) :: (cs_spgqgpxw ++ ((⟨"KernelSubst::expr_lbr", [v_prolxfmy], m_dtyiobwe⟩ : Call F) :: (cs_ptwwisti ++ ((⟨"KernelWhnf::try_prim_dispatch", [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types], m_ztqoeocy⟩ : Call F) :: cs_fvtwmote))))))
   | n1_other
-      (v96 : SourceValue F) (m97 : Heap F) (cs107 : List (Call F)) (v126 : SourceValue F) (m127 : Heap F) (cs138 : List (Call F))
-      (hne91 : (e0_fam : SourceValue F) ≠ (.field 0))
-      (hv95 : e0_fam = (.field 1))
-      (ev109 : ObsFn W "KernelWhnf::apply_spine" [e5_head, e6_spine] h v96 m97 cs107)
-      (ev140 : ObsFn W "KernelSubst::expr_lbr" [v96] m97 v126 m127 cs138)
-      (hne200 : (v126 : SourceValue F) ≠ (.field 0))
-      (he208 : r = (.tuple [(.field 0), e5_head]))
-      (he235 : h' = m127)
-      (hc236 : calls = ((⟨"KernelWhnf::apply_spine", [e5_head, e6_spine], h⟩ : Call F) :: (cs107 ++ ((⟨"KernelSubst::expr_lbr", [v96], m97⟩ : Call F) :: cs138))))
+      (v_prolxfmy : SourceValue F) (m_dtyiobwe : Heap F) (cs_spgqgpxw : List (Call F)) (v_bmlzweeh : SourceValue F) (m_ztqoeocy : Heap F) (cs_ptwwisti : List (Call F))
+      (hne_ofwkkhtu : (e0_fam : SourceValue F) ≠ (.field 0))
+      (hv_hutswczd : e0_fam = (.field 1))
+      (ev_gygcyqai : ObsFn W "KernelWhnf::apply_spine" [e5_head, e6_spine] h v_prolxfmy m_dtyiobwe cs_spgqgpxw)
+      (ev_xvhaeqlg : ObsFn W "KernelSubst::expr_lbr" [v_prolxfmy] m_dtyiobwe v_bmlzweeh m_ztqoeocy cs_ptwwisti)
+      (hne_osnwiwuw : (v_bmlzweeh : SourceValue F) ≠ (.field 0))
+      (he_ktdlxhjl : r = (.tuple [(.field 0), e5_head]))
+      (he_dqlhyhtd : h' = m_ztqoeocy)
+      (hc_kmgjukew : calls = ((⟨"KernelWhnf::apply_spine", [e5_head, e6_spine], h⟩ : Call F) :: (cs_spgqgpxw ++ ((⟨"KernelSubst::expr_lbr", [v_prolxfmy], m_dtyiobwe⟩ : Call F) :: cs_ptwwisti))))
   | other
-      (cs244 : List (Call F))
-      (hne91 : (e0_fam : SourceValue F) ≠ (.field 0))
-      (hne237 : (e0_fam : SourceValue F) ≠ (.field 1))
-      (ev246 : ObsFn W "KernelWhnf::try_prim_dispatch" [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types] h r h' cs244)
-      (hc287 : calls = ((⟨"KernelWhnf::try_prim_dispatch", [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types], h⟩ : Call F) :: cs244))
+      (cs_fofoovjq : List (Call F))
+      (hne_ofwkkhtu : (e0_fam : SourceValue F) ≠ (.field 0))
+      (hne_xvxksapw : (e0_fam : SourceValue F) ≠ (.field 1))
+      (ev_oyscqeer : ObsFn W "KernelWhnf::try_prim_dispatch" [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types] h r h' cs_fofoovjq)
+      (hc_xqikrzpu : calls = ((⟨"KernelWhnf::try_prim_dispatch", [e2_rc, e0_fam, e1_op, e3_addr, e4_lvls, e6_spine, e7_types], h⟩ : Call F) :: cs_fofoovjq))
 
-/-- **Every observed derivation of the `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[1, 0]` takes one of its paths.** -/
-theorem «KernelWhnf::whnf_nd_const_head».segX1 {e0_fam e1_op e2_rc e3_addr e4_lvls e5_head e6_spine e7_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+/-- **Every observed derivation of the `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[2, 1, 0]` takes one of its paths.** -/
+theorem «KernelWhnf::whnf_nd_const_head».segX_xdpobhsu {e0_fam e1_op e2_rc e3_addr e4_lvls e5_head e6_spine e7_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)}
-    (d0 : ObsExpr W [] [("fam", e0_fam), ("op", e1_op), ("rc", e2_rc), ("addr", e3_addr), ("lvls", e4_lvls), ("head", e5_head), ("spine", e6_spine), ("types", e7_types)] (Expr.sub IxVM.KernelWhnf.whnf_nd_const_head.body [1, 0]) h r h' calls) :
-    «KernelWhnf::whnf_nd_const_head».SegX1 e0_fam e1_op e2_rc e3_addr e4_lvls e5_head e6_spine e7_types h r h' calls := by
+    (d0 : ObsExpr W [] [("fam", e0_fam), ("op", e1_op), ("rc", e2_rc), ("addr", e3_addr), ("lvls", e4_lvls), ("head", e5_head), ("spine", e6_spine), ("types", e7_types)] (Expr.sub IxVM.KernelWhnf.whnf_nd_const_head.body [2, 1, 0]) h r h' calls) :
+    «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu e0_fam e1_op e2_rc e3_addr e4_lvls e5_head e6_spine e7_types h r h' calls := by
   simp only [Expr.sub, Expr.childAt, Expr.children, IxVM.KernelWhnf.whnf_nd_const_head, List.map_cons, List.map_nil] at d0
-  obtain ⟨v44, m45, bs46, body47, c48, c49, d50, sel51, d52, rfl⟩ := d0.matchValue_inv
-  obtain ⟨l53, rfl, rfl⟩ := d50.var_inv
-  simp at l53
-  subst l53
-  rcases selectArm_cons_inv sel51 with ⟨mt54, rfl⟩ | ⟨nm55, sel56⟩
-  · obtain ⟨hv57, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt54
-    obtain ⟨vs58, a59, rfl⟩ := d52.tuple_inv
-    obtain ⟨v60, vs63, m64, c65, c66, rfl, d67, a68, rfl⟩ := a59.cons_inv
-    obtain ⟨rfl, rfl, rfl⟩ := d67.literal_inv
-    obtain ⟨v61, vs69, m70, c71, c72, rfl, d73, a74, rfl⟩ := a68.cons_inv
-    obtain ⟨l75, rfl, rfl⟩ := d73.var_inv
-    simp at l75
-    subst l75
-    obtain ⟨rfl, rfl, rfl⟩ := a74.nil_inv
-    exact «KernelWhnf::whnf_nd_const_head».SegX1.n0 hv57 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-  · have hne91 := MatchesConst.none_inv (MatchesConst.literal 0) nm55
-    rcases selectArm_cons_inv sel56 with ⟨mt79, rfl⟩ | ⟨nm80, sel81⟩
-    · obtain ⟨hv95, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt79
-      obtain ⟨v96, m97, bs85, c86, c87, d88, mt89, d90, rfl⟩ := d52.letValue_inv
-      obtain ⟨vs91, m92, c93, cs107, a95, ev109, rfl⟩ := d88.call_inv
-      rw [instanceName_plain_some] at ev109
-      obtain ⟨v97, vs99, m100, c101, c102, rfl, d103, a104, rfl⟩ := a95.cons_inv
-      obtain ⟨l105, rfl, rfl⟩ := d103.var_inv
-      simp at l105
-      subst l105
-      obtain ⟨v98, vs106, m107, c108, c109, rfl, d110, a111, rfl⟩ := a104.cons_inv
-      obtain ⟨l112, rfl, rfl⟩ := d110.var_inv
-      simp at l112
-      subst l112
-      obtain ⟨rfl, rfl, rfl⟩ := a111.nil_inv
-      obtain rfl := matchPattern_bind_inv mt89
-      obtain ⟨v126, m127, bs115, body116, c117, c118, d119, sel120, d121, rfl⟩ := d90.matchValue_inv
-      obtain ⟨vs122, m123, c124, cs138, a126, ev140, rfl⟩ := d119.call_inv
-      rw [instanceName_plain_some] at ev140
-      obtain ⟨v128, vs129, m130, c131, c132, rfl, d133, a134, rfl⟩ := a126.cons_inv
-      obtain ⟨l135, rfl, rfl⟩ := d133.var_inv
-      simp at l135
-      subst l135
-      obtain ⟨rfl, rfl, rfl⟩ := a134.nil_inv
-      rcases selectArm_cons_inv sel120 with ⟨mt136, rfl⟩ | ⟨nm137, sel138⟩
-      · obtain ⟨hv139, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt136
-        subst hv139
-        obtain ⟨vs140, m141, c142, cs156, a144, ev158, rfl⟩ := d121.call_inv
-        rw [instanceName_plain_some] at ev158
-        obtain ⟨v146, vs153, m154, c155, c156, rfl, d157, a158, rfl⟩ := a144.cons_inv
-        obtain ⟨l159, rfl, rfl⟩ := d157.var_inv
-        simp at l159
-        subst l159
-        obtain ⟨v147, vs160, m161, c162, c163, rfl, d164, a165, rfl⟩ := a158.cons_inv
-        obtain ⟨l166, rfl, rfl⟩ := d164.var_inv
-        simp at l166
-        subst l166
-        obtain ⟨v148, vs167, m168, c169, c170, rfl, d171, a172, rfl⟩ := a165.cons_inv
-        obtain ⟨l173, rfl, rfl⟩ := d171.var_inv
-        simp at l173
-        subst l173
-        obtain ⟨v149, vs174, m175, c176, c177, rfl, d178, a179, rfl⟩ := a172.cons_inv
-        obtain ⟨l180, rfl, rfl⟩ := d178.var_inv
-        simp at l180
-        subst l180
-        obtain ⟨v150, vs181, m182, c183, c184, rfl, d185, a186, rfl⟩ := a179.cons_inv
-        obtain ⟨l187, rfl, rfl⟩ := d185.var_inv
-        simp at l187
-        subst l187
-        obtain ⟨v151, vs188, m189, c190, c191, rfl, d192, a193, rfl⟩ := a186.cons_inv
-        obtain ⟨l194, rfl, rfl⟩ := d192.var_inv
-        simp at l194
-        subst l194
-        obtain ⟨v152, vs195, m196, c197, c198, rfl, d199, a200, rfl⟩ := a193.cons_inv
-        obtain ⟨l201, rfl, rfl⟩ := d199.var_inv
-        simp at l201
-        subst l201
-        obtain ⟨rfl, rfl, rfl⟩ := a200.nil_inv
-        exact «KernelWhnf::whnf_nd_const_head».SegX1.n1_n0 _ _ _ _ _ _ hne91 hv95 ev109 ev140 ev158 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-      · have hne200 := MatchesConst.none_inv (MatchesConst.literal 0) nm137
-        rcases selectArm_cons_inv sel138 with ⟨mt204, rfl⟩ | ⟨nm205, sel206⟩
-        · obtain rfl := matchPattern_wildcard_inv mt204
-          obtain ⟨vs207, a208, rfl⟩ := d121.tuple_inv
-          obtain ⟨v209, vs212, m213, c214, c215, rfl, d216, a217, rfl⟩ := a208.cons_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d216.literal_inv
-          obtain ⟨v210, vs218, m219, c220, c221, rfl, d222, a223, rfl⟩ := a217.cons_inv
-          obtain ⟨l224, rfl, rfl⟩ := d222.var_inv
-          simp at l224
-          subst l224
-          obtain ⟨rfl, rfl, rfl⟩ := a223.nil_inv
-          exact «KernelWhnf::whnf_nd_const_head».SegX1.n1_other _ _ _ _ _ _ hne91 hv95 ev109 ev140 hne200 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-        · exact (matchPattern_wildcard_none nm205).elim
-    · have hne237 := MatchesConst.none_inv (MatchesConst.literal 1) nm80
-      rcases selectArm_cons_inv sel81 with ⟨mt228, rfl⟩ | ⟨nm229, sel230⟩
-      · obtain rfl := matchPattern_wildcard_inv mt228
-        obtain ⟨vs231, m232, c233, cs244, a235, ev246, rfl⟩ := d52.call_inv
-        rw [instanceName_plain_some] at ev246
-        obtain ⟨v237, vs244, m245, c246, c247, rfl, d248, a249, rfl⟩ := a235.cons_inv
-        obtain ⟨l250, rfl, rfl⟩ := d248.var_inv
-        simp at l250
-        subst l250
-        obtain ⟨v238, vs251, m252, c253, c254, rfl, d255, a256, rfl⟩ := a249.cons_inv
-        obtain ⟨l257, rfl, rfl⟩ := d255.var_inv
-        simp at l257
-        subst l257
-        obtain ⟨v239, vs258, m259, c260, c261, rfl, d262, a263, rfl⟩ := a256.cons_inv
-        obtain ⟨l264, rfl, rfl⟩ := d262.var_inv
-        simp at l264
-        subst l264
-        obtain ⟨v240, vs265, m266, c267, c268, rfl, d269, a270, rfl⟩ := a263.cons_inv
-        obtain ⟨l271, rfl, rfl⟩ := d269.var_inv
-        simp at l271
-        subst l271
-        obtain ⟨v241, vs272, m273, c274, c275, rfl, d276, a277, rfl⟩ := a270.cons_inv
-        obtain ⟨l278, rfl, rfl⟩ := d276.var_inv
-        simp at l278
-        subst l278
-        obtain ⟨v242, vs279, m280, c281, c282, rfl, d283, a284, rfl⟩ := a277.cons_inv
-        obtain ⟨l285, rfl, rfl⟩ := d283.var_inv
-        simp at l285
-        subst l285
-        obtain ⟨v243, vs286, m287, c288, c289, rfl, d290, a291, rfl⟩ := a284.cons_inv
-        obtain ⟨l292, rfl, rfl⟩ := d290.var_inv
-        simp at l292
-        subst l292
-        obtain ⟨rfl, rfl, rfl⟩ := a291.nil_inv
-        exact «KernelWhnf::whnf_nd_const_head».SegX1.other _ hne91 hne237 ev246 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-      · exact (matchPattern_wildcard_none nm229).elim
+  obtain ⟨v151, m152, bs153, body154, c155, c156, d157, sel158, d159, rfl⟩ := d0.matchValue_inv
+  obtain ⟨l160, rfl, rfl⟩ := d157.var_inv
+  simp at l160
+  subst l160
+  rcases selectArm_cons_inv sel158 with ⟨mt161, rfl⟩ | ⟨nm162, sel163⟩
+  · obtain ⟨hv_bisqebif, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt161
+    obtain ⟨vs165, a166, rfl⟩ := d159.tuple_inv
+    obtain ⟨v167, vs170, m171, c172, c173, rfl, d174, a175, rfl⟩ := a166.cons_inv
+    obtain ⟨rfl, rfl, rfl⟩ := d174.literal_inv
+    obtain ⟨v168, vs176, m177, c178, c179, rfl, d180, a181, rfl⟩ := a175.cons_inv
+    obtain ⟨l182, rfl, rfl⟩ := d180.var_inv
+    simp at l182
+    subst l182
+    obtain ⟨rfl, rfl, rfl⟩ := a181.nil_inv
+    exact «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu.n0 hv_bisqebif rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne_ofwkkhtu := MatchesConst.none_inv (MatchesConst.literal 0) nm162
+    rcases selectArm_cons_inv sel163 with ⟨mt186, rfl⟩ | ⟨nm187, sel188⟩
+    · obtain ⟨hv_hutswczd, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt186
+      obtain ⟨v_prolxfmy, m_dtyiobwe, bs192, c193, c194, d195, mt196, d197, rfl⟩ := d159.letValue_inv
+      obtain ⟨vs198, m199, c200, cs_spgqgpxw, a202, ev_gygcyqai, rfl⟩ := d195.call_inv
+      rw [instanceName_plain_some] at ev_gygcyqai
+      obtain ⟨v204, vs206, m207, c208, c209, rfl, d210, a211, rfl⟩ := a202.cons_inv
+      obtain ⟨l212, rfl, rfl⟩ := d210.var_inv
+      simp at l212
+      subst l212
+      obtain ⟨v205, vs213, m214, c215, c216, rfl, d217, a218, rfl⟩ := a211.cons_inv
+      obtain ⟨l219, rfl, rfl⟩ := d217.var_inv
+      simp at l219
+      subst l219
+      obtain ⟨rfl, rfl, rfl⟩ := a218.nil_inv
+      obtain rfl := matchPattern_bind_inv mt196
+      obtain ⟨v_bmlzweeh, m_ztqoeocy, bs222, body223, c224, c225, d226, sel227, d228, rfl⟩ := d197.matchValue_inv
+      obtain ⟨vs229, m230, c231, cs_ptwwisti, a233, ev_xvhaeqlg, rfl⟩ := d226.call_inv
+      rw [instanceName_plain_some] at ev_xvhaeqlg
+      obtain ⟨v235, vs236, m237, c238, c239, rfl, d240, a241, rfl⟩ := a233.cons_inv
+      obtain ⟨l242, rfl, rfl⟩ := d240.var_inv
+      simp at l242
+      subst l242
+      obtain ⟨rfl, rfl, rfl⟩ := a241.nil_inv
+      rcases selectArm_cons_inv sel227 with ⟨mt243, rfl⟩ | ⟨nm244, sel245⟩
+      · obtain ⟨hv246, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt243
+        subst hv246
+        obtain ⟨vs247, m248, c249, cs_fvtwmote, a251, ev_qdmfqaao, rfl⟩ := d228.call_inv
+        rw [instanceName_plain_some] at ev_qdmfqaao
+        obtain ⟨v253, vs260, m261, c262, c263, rfl, d264, a265, rfl⟩ := a251.cons_inv
+        obtain ⟨l266, rfl, rfl⟩ := d264.var_inv
+        simp at l266
+        subst l266
+        obtain ⟨v254, vs267, m268, c269, c270, rfl, d271, a272, rfl⟩ := a265.cons_inv
+        obtain ⟨l273, rfl, rfl⟩ := d271.var_inv
+        simp at l273
+        subst l273
+        obtain ⟨v255, vs274, m275, c276, c277, rfl, d278, a279, rfl⟩ := a272.cons_inv
+        obtain ⟨l280, rfl, rfl⟩ := d278.var_inv
+        simp at l280
+        subst l280
+        obtain ⟨v256, vs281, m282, c283, c284, rfl, d285, a286, rfl⟩ := a279.cons_inv
+        obtain ⟨l287, rfl, rfl⟩ := d285.var_inv
+        simp at l287
+        subst l287
+        obtain ⟨v257, vs288, m289, c290, c291, rfl, d292, a293, rfl⟩ := a286.cons_inv
+        obtain ⟨l294, rfl, rfl⟩ := d292.var_inv
+        simp at l294
+        subst l294
+        obtain ⟨v258, vs295, m296, c297, c298, rfl, d299, a300, rfl⟩ := a293.cons_inv
+        obtain ⟨l301, rfl, rfl⟩ := d299.var_inv
+        simp at l301
+        subst l301
+        obtain ⟨v259, vs302, m303, c304, c305, rfl, d306, a307, rfl⟩ := a300.cons_inv
+        obtain ⟨l308, rfl, rfl⟩ := d306.var_inv
+        simp at l308
+        subst l308
+        obtain ⟨rfl, rfl, rfl⟩ := a307.nil_inv
+        exact «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu.n1_n0 _ _ _ _ _ _ hne_ofwkkhtu hv_hutswczd ev_gygcyqai ev_xvhaeqlg ev_qdmfqaao (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · have hne_osnwiwuw := MatchesConst.none_inv (MatchesConst.literal 0) nm244
+        rcases selectArm_cons_inv sel245 with ⟨mt311, rfl⟩ | ⟨nm312, sel313⟩
+        · obtain rfl := matchPattern_wildcard_inv mt311
+          obtain ⟨vs314, a315, rfl⟩ := d228.tuple_inv
+          obtain ⟨v316, vs319, m320, c321, c322, rfl, d323, a324, rfl⟩ := a315.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d323.literal_inv
+          obtain ⟨v317, vs325, m326, c327, c328, rfl, d329, a330, rfl⟩ := a324.cons_inv
+          obtain ⟨l331, rfl, rfl⟩ := d329.var_inv
+          simp at l331
+          subst l331
+          obtain ⟨rfl, rfl, rfl⟩ := a330.nil_inv
+          exact «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu.n1_other _ _ _ _ _ _ hne_ofwkkhtu hv_hutswczd ev_gygcyqai ev_xvhaeqlg hne_osnwiwuw rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        · exact (matchPattern_wildcard_none nm312).elim
+    · have hne_xvxksapw := MatchesConst.none_inv (MatchesConst.literal 1) nm187
+      rcases selectArm_cons_inv sel188 with ⟨mt335, rfl⟩ | ⟨nm336, sel337⟩
+      · obtain rfl := matchPattern_wildcard_inv mt335
+        obtain ⟨vs338, m339, c340, cs_fofoovjq, a342, ev_oyscqeer, rfl⟩ := d159.call_inv
+        rw [instanceName_plain_some] at ev_oyscqeer
+        obtain ⟨v344, vs351, m352, c353, c354, rfl, d355, a356, rfl⟩ := a342.cons_inv
+        obtain ⟨l357, rfl, rfl⟩ := d355.var_inv
+        simp at l357
+        subst l357
+        obtain ⟨v345, vs358, m359, c360, c361, rfl, d362, a363, rfl⟩ := a356.cons_inv
+        obtain ⟨l364, rfl, rfl⟩ := d362.var_inv
+        simp at l364
+        subst l364
+        obtain ⟨v346, vs365, m366, c367, c368, rfl, d369, a370, rfl⟩ := a363.cons_inv
+        obtain ⟨l371, rfl, rfl⟩ := d369.var_inv
+        simp at l371
+        subst l371
+        obtain ⟨v347, vs372, m373, c374, c375, rfl, d376, a377, rfl⟩ := a370.cons_inv
+        obtain ⟨l378, rfl, rfl⟩ := d376.var_inv
+        simp at l378
+        subst l378
+        obtain ⟨v348, vs379, m380, c381, c382, rfl, d383, a384, rfl⟩ := a377.cons_inv
+        obtain ⟨l385, rfl, rfl⟩ := d383.var_inv
+        simp at l385
+        subst l385
+        obtain ⟨v349, vs386, m387, c388, c389, rfl, d390, a391, rfl⟩ := a384.cons_inv
+        obtain ⟨l392, rfl, rfl⟩ := d390.var_inv
+        simp at l392
+        subst l392
+        obtain ⟨v350, vs393, m394, c395, c396, rfl, d397, a398, rfl⟩ := a391.cons_inv
+        obtain ⟨l399, rfl, rfl⟩ := d397.var_inv
+        simp at l399
+        subst l399
+        obtain ⟨rfl, rfl, rfl⟩ := a398.nil_inv
+        exact «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu.other _ hne_ofwkkhtu hne_xvxksapw ev_oyscqeer (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · exact (matchPattern_wildcard_none nm336).elim
 
-/-- The `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[1, 1, 3, 1, 1, 0]`: one constructor per combination of selected arms. -/
-inductive «KernelWhnf::whnf_nd_const_head».SegX_waxxjudx (e0_nl e1_value e2_ci e3_prim e4_fam e5_op e6_rc e7_addr e8_lvls e9_head e10_spine e11_types : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+/-- The `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[2, 1, 1, 3, 1, 1, 0]`: one constructor per combination of selected arms. -/
+inductive «KernelWhnf::whnf_nd_const_head».SegX_sdelzezn (e0_nl e1_value e2_ci e3_prim e4_fam e5_op e6_rc e7_addr e8_lvls e9_head e10_spine e11_types : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | n1_other_other_other_other
-      (m_xpczizjj : Heap F) (cs_wzohxgcy : List (Call F)) (w_uheovjdl : SourceValue F) (w_tzsohxfl : SourceValue F) (w_wxzcmmej : SourceValue F) (w_ogtxechq : SourceValue F) (cs_arhjnadr : List (Call F))
-      (ev_dimnpwvb : ObsFn W "KernelWhnf::projection_definition_info" [e1_value, (.field 0)] h (.tuple [(.field 1), w_uheovjdl, w_tzsohxfl, w_wxzcmmej, w_ogtxechq]) m_xpczizjj cs_wzohxgcy)
-      (ev_uisnwuxc : ObsFn W "KernelWhnf::try_reduce_projection_definition" [e1_value, e0_nl, e8_lvls, e10_spine] m_xpczizjj r h' cs_arhjnadr)
-      (hc_sqflwnyf : calls = ((⟨"KernelWhnf::projection_definition_info", [e1_value, (.field 0)], h⟩ : Call F) :: (cs_wzohxgcy ++ ((⟨"KernelWhnf::try_reduce_projection_definition", [e1_value, e0_nl, e8_lvls, e10_spine], m_xpczizjj⟩ : Call F) :: cs_arhjnadr))))
+      (m_dlaveory : Heap F) (cs_witehbzp : List (Call F)) (w_hgcgyeuj : SourceValue F) (w_izsbnygo : SourceValue F) (w_okkjarrn : SourceValue F) (w_susdaxfx : SourceValue F) (cs_lwmaklqp : List (Call F))
+      (ev_dfgvpbaf : ObsFn W "KernelWhnf::projection_definition_info" [e1_value, (.field 0)] h (.tuple [(.field 1), w_hgcgyeuj, w_izsbnygo, w_okkjarrn, w_susdaxfx]) m_dlaveory cs_witehbzp)
+      (ev_wwrcabba : ObsFn W "KernelWhnf::try_reduce_projection_definition" [e1_value, e0_nl, e8_lvls, e10_spine] m_dlaveory r h' cs_lwmaklqp)
+      (hc_unqgnmyd : calls = ((⟨"KernelWhnf::projection_definition_info", [e1_value, (.field 0)], h⟩ : Call F) :: (cs_witehbzp ++ ((⟨"KernelWhnf::try_reduce_projection_definition", [e1_value, e0_nl, e8_lvls, e10_spine], m_dlaveory⟩ : Call F) :: cs_lwmaklqp))))
   | other
-      (v_ujrrbuxi : SourceValue F) (m_xpczizjj : Heap F) (cs_wzohxgcy : List (Call F))
-      (ev_dimnpwvb : ObsFn W "KernelWhnf::projection_definition_info" [e1_value, (.field 0)] h v_ujrrbuxi m_xpczizjj cs_wzohxgcy)
-      (he_gaqzagfj : r = (.tuple [(.field 0), e9_head]))
-      (he_fzuwfbub : h' = m_xpczizjj)
-      (hc_dizkfrrh : calls = ((⟨"KernelWhnf::projection_definition_info", [e1_value, (.field 0)], h⟩ : Call F) :: cs_wzohxgcy))
-      (hnt_eymfsklq : ∀ a7 a8 a9 a10 : SourceValue F, (v_ujrrbuxi : SourceValue F) ≠ .tuple [(.field 1), a7, a8, a9, a10])
+      (v_xgssiwed : SourceValue F) (m_dlaveory : Heap F) (cs_witehbzp : List (Call F))
+      (ev_dfgvpbaf : ObsFn W "KernelWhnf::projection_definition_info" [e1_value, (.field 0)] h v_xgssiwed m_dlaveory cs_witehbzp)
+      (he_kbtinlld : r = (.tuple [(.field 0), e9_head]))
+      (he_ndcjychs : h' = m_dlaveory)
+      (hc_chwrozqd : calls = ((⟨"KernelWhnf::projection_definition_info", [e1_value, (.field 0)], h⟩ : Call F) :: cs_witehbzp))
+      (hnt_mwlbropr : ∀ a10 a11 a12 a13 : SourceValue F, (v_xgssiwed : SourceValue F) ≠ .tuple [(.field 1), a10, a11, a12, a13])
 
-/-- **Every observed derivation of the `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[1, 1, 3, 1, 1, 0]` takes one of its paths.** -/
-theorem «KernelWhnf::whnf_nd_const_head».segX_waxxjudx {e0_nl e1_value e2_ci e3_prim e4_fam e5_op e6_rc e7_addr e8_lvls e9_head e10_spine e11_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+/-- **Every observed derivation of the `let`-bound match of `KernelWhnf::whnf_nd_const_head` at `[2, 1, 1, 3, 1, 1, 0]` takes one of its paths.** -/
+theorem «KernelWhnf::whnf_nd_const_head».segX_sdelzezn {e0_nl e1_value e2_ci e3_prim e4_fam e5_op e6_rc e7_addr e8_lvls e9_head e10_spine e11_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)}
-    (d0 : ObsExpr W [] [("nl", e0_nl), ("value", e1_value), ("ci", e2_ci), ("prim", e3_prim), ("fam", e4_fam), ("op", e5_op), ("rc", e6_rc), ("addr", e7_addr), ("lvls", e8_lvls), ("head", e9_head), ("spine", e10_spine), ("types", e11_types)] (Expr.sub IxVM.KernelWhnf.whnf_nd_const_head.body [1, 1, 3, 1, 1, 0]) h r h' calls) :
-    «KernelWhnf::whnf_nd_const_head».SegX_waxxjudx e0_nl e1_value e2_ci e3_prim e4_fam e5_op e6_rc e7_addr e8_lvls e9_head e10_spine e11_types h r h' calls := by
+    (d0 : ObsExpr W [] [("nl", e0_nl), ("value", e1_value), ("ci", e2_ci), ("prim", e3_prim), ("fam", e4_fam), ("op", e5_op), ("rc", e6_rc), ("addr", e7_addr), ("lvls", e8_lvls), ("head", e9_head), ("spine", e10_spine), ("types", e11_types)] (Expr.sub IxVM.KernelWhnf.whnf_nd_const_head.body [2, 1, 1, 3, 1, 1, 0]) h r h' calls) :
+    «KernelWhnf::whnf_nd_const_head».SegX_sdelzezn e0_nl e1_value e2_ci e3_prim e4_fam e5_op e6_rc e7_addr e8_lvls e9_head e10_spine e11_types h r h' calls := by
   simp only [Expr.sub, Expr.childAt, Expr.children, IxVM.KernelWhnf.whnf_nd_const_head, List.map_cons, List.map_nil] at d0
-  obtain ⟨v_ujrrbuxi, m_xpczizjj, bs458, body459, c460, c461, d462, sel463, d464, rfl⟩ := d0.matchValue_inv
-  obtain ⟨vs465, m466, c467, cs_wzohxgcy, a469, ev_dimnpwvb, rfl⟩ := d462.call_inv
-  rw [instanceName_plain_some] at ev_dimnpwvb
-  obtain ⟨v471, vs473, m474, c475, c476, rfl, d477, a478, rfl⟩ := a469.cons_inv
-  obtain ⟨l479, rfl, rfl⟩ := d477.var_inv
-  simp at l479
-  subst l479
-  obtain ⟨v472, vs480, m481, c482, c483, rfl, d484, a485, rfl⟩ := a478.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d484.literal_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a485.nil_inv
-  rcases selectArm_cons_inv sel463 with ⟨mt486, rfl⟩ | ⟨nm487, sel488⟩
-  · obtain ⟨vs489, hv490, -, ml491⟩ := matchPattern_tuple_inv mt486
-    subst hv490
-    obtain ⟨w492, vs497, b498, b499, rfl, mt500, ml501, rfl⟩ := matchListWith_cons_inv ml491
-    obtain ⟨hv502, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt500
-    subst hv502
-    obtain ⟨w_uheovjdl, vs503, b504, b505, rfl, mt506, ml507, rfl⟩ := matchListWith_cons_inv ml501
-    obtain rfl := matchPattern_wildcard_inv mt506
-    obtain ⟨w_tzsohxfl, vs508, b509, b510, rfl, mt511, ml512, rfl⟩ := matchListWith_cons_inv ml507
-    obtain rfl := matchPattern_wildcard_inv mt511
-    obtain ⟨w_wxzcmmej, vs513, b514, b515, rfl, mt516, ml517, rfl⟩ := matchListWith_cons_inv ml512
-    obtain rfl := matchPattern_wildcard_inv mt516
-    obtain ⟨w_ogtxechq, vs518, b519, b520, rfl, mt521, ml522, rfl⟩ := matchListWith_cons_inv ml517
-    obtain rfl := matchPattern_wildcard_inv mt521
-    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml522
-    obtain ⟨vs523, m524, c525, cs_arhjnadr, a527, ev_uisnwuxc, rfl⟩ := d464.call_inv
-    rw [instanceName_plain_some] at ev_uisnwuxc
-    obtain ⟨v529, vs533, m534, c535, c536, rfl, d537, a538, rfl⟩ := a527.cons_inv
-    obtain ⟨l539, rfl, rfl⟩ := d537.var_inv
-    simp at l539
-    subst l539
-    obtain ⟨v530, vs540, m541, c542, c543, rfl, d544, a545, rfl⟩ := a538.cons_inv
-    obtain ⟨l546, rfl, rfl⟩ := d544.var_inv
-    simp at l546
-    subst l546
-    obtain ⟨v531, vs547, m548, c549, c550, rfl, d551, a552, rfl⟩ := a545.cons_inv
-    obtain ⟨l553, rfl, rfl⟩ := d551.var_inv
-    simp at l553
-    subst l553
-    obtain ⟨v532, vs554, m555, c556, c557, rfl, d558, a559, rfl⟩ := a552.cons_inv
-    obtain ⟨l560, rfl, rfl⟩ := d558.var_inv
-    simp at l560
-    subst l560
-    obtain ⟨rfl, rfl, rfl⟩ := a559.nil_inv
-    exact «KernelWhnf::whnf_nd_const_head».SegX_waxxjudx.n1_other_other_other_other _ _ _ _ _ _ _ ev_dimnpwvb ev_uisnwuxc (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-  · have hnt_eymfsklq : ∀ a7 a8 a9 a10 : SourceValue F, (v_ujrrbuxi : SourceValue F) ≠ .tuple [(.field 1), a7, a8, a9, a10] := fun a7 a8 a9 a10 hv11 => by rw [hv11] at nm487; exact matchPattern_tuple_mixed_none nm487 (.cons (Or.inr ⟨_, (MatchesConst.literal 1), rfl⟩) (.cons (Or.inl trivial) (.cons (Or.inl trivial) (.cons (Or.inl trivial) (.cons (Or.inl trivial) .nil)))))
-    rcases selectArm_cons_inv sel488 with ⟨mt562, rfl⟩ | ⟨nm563, sel564⟩
-    · obtain rfl := matchPattern_wildcard_inv mt562
-      obtain ⟨vs565, a566, rfl⟩ := d464.tuple_inv
-      obtain ⟨v567, vs570, m571, c572, c573, rfl, d574, a575, rfl⟩ := a566.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d574.literal_inv
-      obtain ⟨v568, vs576, m577, c578, c579, rfl, d580, a581, rfl⟩ := a575.cons_inv
-      obtain ⟨l582, rfl, rfl⟩ := d580.var_inv
-      simp at l582
-      subst l582
-      obtain ⟨rfl, rfl, rfl⟩ := a581.nil_inv
-      exact «KernelWhnf::whnf_nd_const_head».SegX_waxxjudx.other _ _ _ ev_dimnpwvb rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt_eymfsklq
-    · exact (matchPattern_wildcard_none nm563).elim
+  obtain ⟨v_xgssiwed, m_dlaveory, bs565, body566, c567, c568, d569, sel570, d571, rfl⟩ := d0.matchValue_inv
+  obtain ⟨vs572, m573, c574, cs_witehbzp, a576, ev_dfgvpbaf, rfl⟩ := d569.call_inv
+  rw [instanceName_plain_some] at ev_dfgvpbaf
+  obtain ⟨v578, vs580, m581, c582, c583, rfl, d584, a585, rfl⟩ := a576.cons_inv
+  obtain ⟨l586, rfl, rfl⟩ := d584.var_inv
+  simp at l586
+  subst l586
+  obtain ⟨v579, vs587, m588, c589, c590, rfl, d591, a592, rfl⟩ := a585.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d591.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a592.nil_inv
+  rcases selectArm_cons_inv sel570 with ⟨mt593, rfl⟩ | ⟨nm594, sel595⟩
+  · obtain ⟨vs596, hv597, -, ml598⟩ := matchPattern_tuple_inv mt593
+    subst hv597
+    obtain ⟨w599, vs604, b605, b606, rfl, mt607, ml608, rfl⟩ := matchListWith_cons_inv ml598
+    obtain ⟨hv609, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt607
+    subst hv609
+    obtain ⟨w_hgcgyeuj, vs610, b611, b612, rfl, mt613, ml614, rfl⟩ := matchListWith_cons_inv ml608
+    obtain rfl := matchPattern_wildcard_inv mt613
+    obtain ⟨w_izsbnygo, vs615, b616, b617, rfl, mt618, ml619, rfl⟩ := matchListWith_cons_inv ml614
+    obtain rfl := matchPattern_wildcard_inv mt618
+    obtain ⟨w_okkjarrn, vs620, b621, b622, rfl, mt623, ml624, rfl⟩ := matchListWith_cons_inv ml619
+    obtain rfl := matchPattern_wildcard_inv mt623
+    obtain ⟨w_susdaxfx, vs625, b626, b627, rfl, mt628, ml629, rfl⟩ := matchListWith_cons_inv ml624
+    obtain rfl := matchPattern_wildcard_inv mt628
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml629
+    obtain ⟨vs630, m631, c632, cs_lwmaklqp, a634, ev_wwrcabba, rfl⟩ := d571.call_inv
+    rw [instanceName_plain_some] at ev_wwrcabba
+    obtain ⟨v636, vs640, m641, c642, c643, rfl, d644, a645, rfl⟩ := a634.cons_inv
+    obtain ⟨l646, rfl, rfl⟩ := d644.var_inv
+    simp at l646
+    subst l646
+    obtain ⟨v637, vs647, m648, c649, c650, rfl, d651, a652, rfl⟩ := a645.cons_inv
+    obtain ⟨l653, rfl, rfl⟩ := d651.var_inv
+    simp at l653
+    subst l653
+    obtain ⟨v638, vs654, m655, c656, c657, rfl, d658, a659, rfl⟩ := a652.cons_inv
+    obtain ⟨l660, rfl, rfl⟩ := d658.var_inv
+    simp at l660
+    subst l660
+    obtain ⟨v639, vs661, m662, c663, c664, rfl, d665, a666, rfl⟩ := a659.cons_inv
+    obtain ⟨l667, rfl, rfl⟩ := d665.var_inv
+    simp at l667
+    subst l667
+    obtain ⟨rfl, rfl, rfl⟩ := a666.nil_inv
+    exact «KernelWhnf::whnf_nd_const_head».SegX_sdelzezn.n1_other_other_other_other _ _ _ _ _ _ _ ev_dfgvpbaf ev_wwrcabba (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hnt_mwlbropr : ∀ a10 a11 a12 a13 : SourceValue F, (v_xgssiwed : SourceValue F) ≠ .tuple [(.field 1), a10, a11, a12, a13] := fun a10 a11 a12 a13 hv14 => by rw [hv14] at nm594; exact matchPattern_tuple_mixed_none nm594 (.cons (Or.inr ⟨_, (MatchesConst.literal 1), rfl⟩) (.cons (Or.inl trivial) (.cons (Or.inl trivial) (.cons (Or.inl trivial) (.cons (Or.inl trivial) .nil)))))
+    rcases selectArm_cons_inv sel595 with ⟨mt669, rfl⟩ | ⟨nm670, sel671⟩
+    · obtain rfl := matchPattern_wildcard_inv mt669
+      obtain ⟨vs672, a673, rfl⟩ := d571.tuple_inv
+      obtain ⟨v674, vs677, m678, c679, c680, rfl, d681, a682, rfl⟩ := a673.cons_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d681.literal_inv
+      obtain ⟨v675, vs683, m684, c685, c686, rfl, d687, a688, rfl⟩ := a682.cons_inv
+      obtain ⟨l689, rfl, rfl⟩ := d687.var_inv
+      simp at l689
+      subst l689
+      obtain ⟨rfl, rfl, rfl⟩ := a688.nil_inv
+      exact «KernelWhnf::whnf_nd_const_head».SegX_sdelzezn.other _ _ _ ev_dfgvpbaf rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt_mwlbropr
+    · exact (matchPattern_wildcard_none nm670).elim
 
 /-- The evaluation paths of `KernelWhnf::whnf_nd_const_head`: one constructor per combination of selected arms, with the facts of the arms not taken. -/
 inductive «KernelWhnf::whnf_nd_const_head».PathX (x_rc x_addr x_lvls x_head x_spine x_types : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | n1_bind
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (x_reduced : SourceValue F) (cs328 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».SegX1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx (.tuple [(.field 1), x_reduced]) m289 cs291)
-      (ev330 : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m289 r h' cs328)
-      (hc355 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m289⟩ : Call F) :: cs328)))))
-  | n2_bind
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (x_stuck : SourceValue F)
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».SegX1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx (.tuple [(.field 2), x_stuck]) m289 cs291)
-      (he375 : r = x_stuck)
-      (he376 : h' = m289)
-      (hc377 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ cs291)))
-      (hnt0 : ∀ a1 : SourceValue F, ((.tuple [(.field 2), x_stuck]) : SourceValue F) ≠ .tuple [(.field 1), a1])
-  | other_Defn_n1_bind
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (x_nl : SourceValue F) (w422 : SourceValue F) (x_value : SourceValue F) (w423 : SourceValue F) (w424 : SourceValue F) (m451 : Heap F) (cs_kgewcjlt : List (Call F)) (x_reduced : SourceValue F) (cs527 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».SegX1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w422, x_value, w423, w424]))
-      (sg_kziakmbq : «KernelWhnf::whnf_nd_const_head».SegX_waxxjudx x_nl x_value (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w422, x_value, w423, w424]) v288 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m382 (.tuple [(.field 1), x_reduced]) m451 cs_kgewcjlt)
-      (ev529 : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m451 r h' cs527)
-      (hc554 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ (cs_kgewcjlt ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m451⟩ : Call F) :: cs527))))))))
-      (hnt0 : ∀ a1 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 1), a1])
-      (hnt3 : ∀ a4 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 2), a4])
-  | other_Defn_other
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (x_nl : SourceValue F) (w422 : SourceValue F) (x_value : SourceValue F) (w423 : SourceValue F) (w424 : SourceValue F) (v450 : SourceValue F) (m451 : Heap F) (cs_kgewcjlt : List (Call F)) (cs561 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».SegX1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w422, x_value, w423, w424]))
-      (sg_kziakmbq : «KernelWhnf::whnf_nd_const_head».SegX_waxxjudx x_nl x_value (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w422, x_value, w423, w424]) v288 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m382 v450 m451 cs_kgewcjlt)
-      (ev563 : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m451 r h' cs561)
-      (hc580 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ (cs_kgewcjlt ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m451⟩ : Call F) :: cs561))))))))
-      (hnt0 : ∀ a1 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 1), a1])
-      (hnt3 : ∀ a4 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 2), a4])
-      (hnt6 : ∀ a7 : SourceValue F, (v450 : SourceValue F) ≠ .tuple [(.field 1), a7])
-  | other_Quot_n1_bind
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (w588 : SourceValue F) (w589 : SourceValue F) (w590 : SourceValue F) (m607 : Heap F) (cs617 : List (Call F)) (x_reduced : SourceValue F) (cs691 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».SegX1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Quot" [w588, w589, w590]))
-      (ev619 : ObsFn W "KernelWhnf::try_quot_iota" [x_rc, x_addr, x_lvls, x_spine, x_types] m382 (.tuple [(.field 1), x_reduced]) m607 cs617)
-      (ev693 : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m607 r h' cs691)
-      (hc718 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ ((⟨"KernelWhnf::try_quot_iota", [x_rc, x_addr, x_lvls, x_spine, x_types], m382⟩ : Call F) :: (cs617 ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m607⟩ : Call F) :: cs691)))))))))
-      (hnt0 : ∀ a1 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 1), a1])
-      (hnt3 : ∀ a4 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 2), a4])
-  | other_Quot_other
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (w588 : SourceValue F) (w589 : SourceValue F) (w590 : SourceValue F) (v606 : SourceValue F) (m607 : Heap F) (cs617 : List (Call F)) (cs725 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».SegX1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Quot" [w588, w589, w590]))
-      (ev619 : ObsFn W "KernelWhnf::try_quot_iota" [x_rc, x_addr, x_lvls, x_spine, x_types] m382 v606 m607 cs617)
-      (ev727 : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m607 r h' cs725)
-      (hc744 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ ((⟨"KernelWhnf::try_quot_iota", [x_rc, x_addr, x_lvls, x_spine, x_types], m382⟩ : Call F) :: (cs617 ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m607⟩ : Call F) :: cs725)))))))))
-      (hnt0 : ∀ a1 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 1), a1])
-      (hnt3 : ∀ a4 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 2), a4])
-      (hnt9 : ∀ a10 : SourceValue F, (v606 : SourceValue F) ≠ .tuple [(.field 1), a10])
-  | other_Rec_n1_bind
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w752 : SourceValue F) (w753 : SourceValue F) (w754 : SourceValue F) (m811 : Heap F) (cs822 : List (Call F)) (x_reduced : SourceValue F) (cs950 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».SegX1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w752, w753, w754]))
-      (ev824 : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m382 (.tuple [(.field 1), x_reduced]) m811 cs822)
-      (ev952 : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m811 r h' cs950)
-      (hc977 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m382⟩ : Call F) :: (cs822 ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m811⟩ : Call F) :: cs950)))))))))
-      (hnt0 : ∀ a1 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 1), a1])
-      (hnt3 : ∀ a4 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 2), a4])
-  | other_Rec_n2_bind
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w752 : SourceValue F) (w753 : SourceValue F) (w754 : SourceValue F) (m811 : Heap F) (cs822 : List (Call F)) (x_stuck : SourceValue F)
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».SegX1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w752, w753, w754]))
-      (ev824 : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m382 (.tuple [(.field 2), x_stuck]) m811 cs822)
-      (he997 : r = x_stuck)
-      (he998 : h' = m811)
-      (hc999 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m382⟩ : Call F) :: cs822)))))))
-      (hnt0 : ∀ a1 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 1), a1])
-      (hnt3 : ∀ a4 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 2), a4])
-      (hnt12 : ∀ a13 : SourceValue F, ((.tuple [(.field 2), x_stuck]) : SourceValue F) ≠ .tuple [(.field 1), a13])
-  | other_Rec_n3_bind
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w752 : SourceValue F) (w753 : SourceValue F) (w754 : SourceValue F) (m811 : Heap F) (cs822 : List (Call F)) (x_k_reduct : SourceValue F) (cs1021 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».SegX1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w752, w753, w754]))
-      (ev824 : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m382 (.tuple [(.field 3), x_k_reduct]) m811 cs822)
-      (ev1023 : ObsFn W "KernelWhnf::whnf" [x_rc, x_k_reduct, x_types] m811 r h' cs1021)
-      (hc1048 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m382⟩ : Call F) :: (cs822 ++ ((⟨"KernelWhnf::whnf", [x_rc, x_k_reduct, x_types], m811⟩ : Call F) :: cs1021)))))))))
-      (hnt0 : ∀ a1 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 1), a1])
-      (hnt3 : ∀ a4 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 2), a4])
-      (hnt12 : ∀ a13 : SourceValue F, ((.tuple [(.field 3), x_k_reduct]) : SourceValue F) ≠ .tuple [(.field 1), a13])
-      (hnt15 : ∀ a16 : SourceValue F, ((.tuple [(.field 3), x_k_reduct]) : SourceValue F) ≠ .tuple [(.field 2), a16])
-  | other_Rec_other
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w752 : SourceValue F) (w753 : SourceValue F) (w754 : SourceValue F) (v810 : SourceValue F) (m811 : Heap F) (cs822 : List (Call F)) (cs1055 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».SegX1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w752, w753, w754]))
-      (ev824 : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m382 v810 m811 cs822)
-      (ev1057 : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m811 r h' cs1055)
-      (hc1074 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m382⟩ : Call F) :: (cs822 ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m811⟩ : Call F) :: cs1055)))))))))
-      (hnt0 : ∀ a1 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 1), a1])
-      (hnt3 : ∀ a4 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 2), a4])
-      (hnt12 : ∀ a13 : SourceValue F, (v810 : SourceValue F) ≠ .tuple [(.field 1), a13])
-      (hnt15 : ∀ a16 : SourceValue F, (v810 : SourceValue F) ≠ .tuple [(.field 2), a16])
-      (hnt18 : ∀ a19 : SourceValue F, (v810 : SourceValue F) ≠ .tuple [(.field 3), a19])
-  | other_other
-      (m_jkmztdfx : Heap F) (cs_cfolovls : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v288 : SourceValue F) (m289 : Heap F) (cs291 : List (Call F)) (v381 : SourceValue F) (m382 : Heap F) (p389 : SourceValue F) (cs395 : List (Call F)) (cs1082 : List (Call F))
-      (ev_luskmowx : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] h (.tuple [x_fam, x_op]) m_jkmztdfx cs_cfolovls)
-      (sg296 : «KernelWhnf::whnf_nd_const_head».SegX1 x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_jkmztdfx v288 m289 cs291)
-      (ev397 : ObsFn W "Ingress::get_ci" [x_addr] m289 p389 m382 cs395)
-      (ld391 : loadValue m382 p389 = .ok v381)
-      (hne581 : ∀ vs : List (SourceValue F), vs.length = 5 → (v381 : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Defn" vs)
-      (hne745 : ∀ vs : List (SourceValue F), vs.length = 3 → (v381 : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Quot" vs)
-      (hne1075 : ∀ vs : List (SourceValue F), vs.length = 11 → (v381 : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Rec" vs)
-      (ev1084 : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m382 r h' cs1082)
-      (hc1101 : calls = ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], h⟩ : Call F) :: (cs_cfolovls ++ (cs291 ++ ((⟨"Ingress::get_ci", [x_addr], m289⟩ : Call F) :: (cs395 ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m382⟩ : Call F) :: cs1082)))))))
-      (hnt0 : ∀ a1 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 1), a1])
-      (hnt3 : ∀ a4 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 2), a4])
+      (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (x_ev_head : SourceValue F) (cs_uudeljoh : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h (.tuple [(.field 1), x_ev_head]) m_rcpqfuna cs_npmyidqv)
+      (ev_yajqyjcl : ObsFn W "KernelWhnf::whnf_nd_with_spine" [x_rc, x_ev_head, x_spine, x_types] m_rcpqfuna r h' cs_uudeljoh)
+      (hc355 : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::whnf_nd_with_spine", [x_rc, x_ev_head, x_spine, x_types], m_rcpqfuna⟩ : Call F) :: cs_uudeljoh))))
+  | other_n1_bind
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (x_reduced : SourceValue F) (cs_hfcybjza : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu (.tuple [(.field 1), x_reduced]) m_olmidfdk cs_bqqznmms)
+      (ev_jnwcimse : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m_olmidfdk r h' cs_hfcybjza)
+      (hc_gxrhttrm : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m_olmidfdk⟩ : Call F) :: cs_hfcybjza)))))))
+      (hnt0 : ∀ a1 : SourceValue F, (v_hirlhoca : SourceValue F) ≠ .tuple [(.field 1), a1])
+  | other_n2_bind
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (x_stuck : SourceValue F)
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu (.tuple [(.field 2), x_stuck]) m_olmidfdk cs_bqqznmms)
+      (he_cbmfelhn : r = x_stuck)
+      (he_luurucli : h' = m_olmidfdk)
+      (hc_dbyswfmu : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ cs_bqqznmms)))))
+      (hnt0 : ∀ a1 : SourceValue F, (v_hirlhoca : SourceValue F) ≠ .tuple [(.field 1), a1])
+      (hnt_gdwgaggw : ∀ a4 : SourceValue F, ((.tuple [(.field 2), x_stuck]) : SourceValue F) ≠ .tuple [(.field 1), a4])
+  | other_other_Defn_n1_bind
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (x_nl : SourceValue F) (w_jchmwsum : SourceValue F) (x_value : SourceValue F) (w_odpmahhz : SourceValue F) (w_gxyvyame : SourceValue F) (m_pbjawmcr : Heap F) (cs_rnqluocq : List (Call F)) (x_reduced : SourceValue F) (cs_cfggwuhd : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w_jchmwsum, x_value, w_odpmahhz, w_gxyvyame]))
+      (sg_vrfrttsr : «KernelWhnf::whnf_nd_const_head».SegX_sdelzezn x_nl x_value (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w_jchmwsum, x_value, w_odpmahhz, w_gxyvyame]) v_ohowagql x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_miaxjajz (.tuple [(.field 1), x_reduced]) m_pbjawmcr cs_rnqluocq)
+      (ev_kxzrwdyo : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m_pbjawmcr r h' cs_cfggwuhd)
+      (hc_hcmpckmd : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ (cs_rnqluocq ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m_pbjawmcr⟩ : Call F) :: cs_cfggwuhd))))))))))
+      (hnt0 : ∀ a1 : SourceValue F, (v_hirlhoca : SourceValue F) ≠ .tuple [(.field 1), a1])
+      (hnt_gdwgaggw : ∀ a4 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 1), a4])
+      (hnt_tfnviflv : ∀ a7 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 2), a7])
+  | other_other_Defn_other
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (x_nl : SourceValue F) (w_jchmwsum : SourceValue F) (x_value : SourceValue F) (w_odpmahhz : SourceValue F) (w_gxyvyame : SourceValue F) (v_rvllbjxi : SourceValue F) (m_pbjawmcr : Heap F) (cs_rnqluocq : List (Call F)) (cs_vbdbzufq : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w_jchmwsum, x_value, w_odpmahhz, w_gxyvyame]))
+      (sg_vrfrttsr : «KernelWhnf::whnf_nd_const_head».SegX_sdelzezn x_nl x_value (.construct "KernelTypes::KConstantInfo" "Defn" [x_nl, w_jchmwsum, x_value, w_odpmahhz, w_gxyvyame]) v_ohowagql x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_miaxjajz v_rvllbjxi m_pbjawmcr cs_rnqluocq)
+      (ev_itkecbcl : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m_pbjawmcr r h' cs_vbdbzufq)
+      (hc_eauisouw : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ (cs_rnqluocq ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m_pbjawmcr⟩ : Call F) :: cs_vbdbzufq))))))))))
+      (hnt0 : ∀ a1 : SourceValue F, (v_hirlhoca : SourceValue F) ≠ .tuple [(.field 1), a1])
+      (hnt_gdwgaggw : ∀ a4 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 1), a4])
+      (hnt_tfnviflv : ∀ a7 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 2), a7])
+      (hnt_bkwqjxhf : ∀ a10 : SourceValue F, (v_rvllbjxi : SourceValue F) ≠ .tuple [(.field 1), a10])
+  | other_other_Quot_n1_bind
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (w_eoufnpzg : SourceValue F) (w_aidalvhw : SourceValue F) (w_wbseoant : SourceValue F) (m_fkohqbgg : Heap F) (cs_sokkokar : List (Call F)) (x_reduced : SourceValue F) (cs_ircsbyrj : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Quot" [w_eoufnpzg, w_aidalvhw, w_wbseoant]))
+      (ev_itwpptuu : ObsFn W "KernelWhnf::try_quot_iota" [x_rc, x_addr, x_lvls, x_spine, x_types] m_miaxjajz (.tuple [(.field 1), x_reduced]) m_fkohqbgg cs_sokkokar)
+      (ev_fxwzvrpa : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m_fkohqbgg r h' cs_ircsbyrj)
+      (hc_mifoubrb : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ ((⟨"KernelWhnf::try_quot_iota", [x_rc, x_addr, x_lvls, x_spine, x_types], m_miaxjajz⟩ : Call F) :: (cs_sokkokar ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m_fkohqbgg⟩ : Call F) :: cs_ircsbyrj)))))))))))
+      (hnt0 : ∀ a1 : SourceValue F, (v_hirlhoca : SourceValue F) ≠ .tuple [(.field 1), a1])
+      (hnt_gdwgaggw : ∀ a4 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 1), a4])
+      (hnt_tfnviflv : ∀ a7 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 2), a7])
+  | other_other_Quot_other
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (w_eoufnpzg : SourceValue F) (w_aidalvhw : SourceValue F) (w_wbseoant : SourceValue F) (v_zjubsilu : SourceValue F) (m_fkohqbgg : Heap F) (cs_sokkokar : List (Call F)) (cs_nrhygazl : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Quot" [w_eoufnpzg, w_aidalvhw, w_wbseoant]))
+      (ev_itwpptuu : ObsFn W "KernelWhnf::try_quot_iota" [x_rc, x_addr, x_lvls, x_spine, x_types] m_miaxjajz v_zjubsilu m_fkohqbgg cs_sokkokar)
+      (ev_rsdptzcy : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m_fkohqbgg r h' cs_nrhygazl)
+      (hc_jyoozkii : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ ((⟨"KernelWhnf::try_quot_iota", [x_rc, x_addr, x_lvls, x_spine, x_types], m_miaxjajz⟩ : Call F) :: (cs_sokkokar ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m_fkohqbgg⟩ : Call F) :: cs_nrhygazl)))))))))))
+      (hnt0 : ∀ a1 : SourceValue F, (v_hirlhoca : SourceValue F) ≠ .tuple [(.field 1), a1])
+      (hnt_gdwgaggw : ∀ a4 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 1), a4])
+      (hnt_tfnviflv : ∀ a7 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 2), a7])
+      (hnt_rguvcfjc : ∀ a13 : SourceValue F, (v_zjubsilu : SourceValue F) ≠ .tuple [(.field 1), a13])
+  | other_other_Rec_n1_bind
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w_bxopnjji : SourceValue F) (w_pqjdsgqf : SourceValue F) (w_ixuqwahp : SourceValue F) (m_vnxlntqp : Heap F) (cs_ymeraxrl : List (Call F)) (x_reduced : SourceValue F) (cs_rzelxeiv : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w_bxopnjji, w_pqjdsgqf, w_ixuqwahp]))
+      (ev_pxjjrnur : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m_miaxjajz (.tuple [(.field 1), x_reduced]) m_vnxlntqp cs_ymeraxrl)
+      (ev_fsfewuii : ObsFn W "KernelWhnf::whnf_nd" [x_rc, x_reduced, x_types] m_vnxlntqp r h' cs_rzelxeiv)
+      (hc_bymcoknc : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m_miaxjajz⟩ : Call F) :: (cs_ymeraxrl ++ ((⟨"KernelWhnf::whnf_nd", [x_rc, x_reduced, x_types], m_vnxlntqp⟩ : Call F) :: cs_rzelxeiv)))))))))))
+      (hnt0 : ∀ a1 : SourceValue F, (v_hirlhoca : SourceValue F) ≠ .tuple [(.field 1), a1])
+      (hnt_gdwgaggw : ∀ a4 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 1), a4])
+      (hnt_tfnviflv : ∀ a7 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 2), a7])
+  | other_other_Rec_n2_bind
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w_bxopnjji : SourceValue F) (w_pqjdsgqf : SourceValue F) (w_ixuqwahp : SourceValue F) (m_vnxlntqp : Heap F) (cs_ymeraxrl : List (Call F)) (x_stuck : SourceValue F)
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w_bxopnjji, w_pqjdsgqf, w_ixuqwahp]))
+      (ev_pxjjrnur : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m_miaxjajz (.tuple [(.field 2), x_stuck]) m_vnxlntqp cs_ymeraxrl)
+      (he_dpdsttep : r = x_stuck)
+      (he_zxzulvfj : h' = m_vnxlntqp)
+      (hc_lbwikhrc : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m_miaxjajz⟩ : Call F) :: cs_ymeraxrl)))))))))
+      (hnt0 : ∀ a1 : SourceValue F, (v_hirlhoca : SourceValue F) ≠ .tuple [(.field 1), a1])
+      (hnt_gdwgaggw : ∀ a4 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 1), a4])
+      (hnt_tfnviflv : ∀ a7 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 2), a7])
+      (hnt_vzukuavw : ∀ a16 : SourceValue F, ((.tuple [(.field 2), x_stuck]) : SourceValue F) ≠ .tuple [(.field 1), a16])
+  | other_other_Rec_n3_bind
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w_bxopnjji : SourceValue F) (w_pqjdsgqf : SourceValue F) (w_ixuqwahp : SourceValue F) (m_vnxlntqp : Heap F) (cs_ymeraxrl : List (Call F)) (x_k_reduct : SourceValue F) (cs_uuxbvbof : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w_bxopnjji, w_pqjdsgqf, w_ixuqwahp]))
+      (ev_pxjjrnur : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m_miaxjajz (.tuple [(.field 3), x_k_reduct]) m_vnxlntqp cs_ymeraxrl)
+      (ev_iscgrqhn : ObsFn W "KernelWhnf::whnf" [x_rc, x_k_reduct, x_types] m_vnxlntqp r h' cs_uuxbvbof)
+      (hc_wjgeqtvb : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m_miaxjajz⟩ : Call F) :: (cs_ymeraxrl ++ ((⟨"KernelWhnf::whnf", [x_rc, x_k_reduct, x_types], m_vnxlntqp⟩ : Call F) :: cs_uuxbvbof)))))))))))
+      (hnt0 : ∀ a1 : SourceValue F, (v_hirlhoca : SourceValue F) ≠ .tuple [(.field 1), a1])
+      (hnt_gdwgaggw : ∀ a4 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 1), a4])
+      (hnt_tfnviflv : ∀ a7 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 2), a7])
+      (hnt_vzukuavw : ∀ a16 : SourceValue F, ((.tuple [(.field 3), x_k_reduct]) : SourceValue F) ≠ .tuple [(.field 1), a16])
+      (hnt_gmenbabh : ∀ a19 : SourceValue F, ((.tuple [(.field 3), x_k_reduct]) : SourceValue F) ≠ .tuple [(.field 2), a19])
+  | other_other_Rec_other
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (x_rnl : SourceValue F) (x_rec_ty : SourceValue F) (x_nparams : SourceValue F) (x_nindices : SourceValue F) (x_nmotives : SourceValue F) (x_nminors : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (w_bxopnjji : SourceValue F) (w_pqjdsgqf : SourceValue F) (w_ixuqwahp : SourceValue F) (v_kfywwtlw : SourceValue F) (m_vnxlntqp : Heap F) (cs_ymeraxrl : List (Call F)) (cs_hmdzhwjh : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok (.construct "KernelTypes::KConstantInfo" "Rec" [x_rnl, x_rec_ty, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, w_bxopnjji, w_pqjdsgqf, w_ixuqwahp]))
+      (ev_pxjjrnur : ObsFn W "KernelWhnf::red_rec" [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types] m_miaxjajz v_kfywwtlw m_vnxlntqp cs_ymeraxrl)
+      (ev_jfcinslu : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m_vnxlntqp r h' cs_hmdzhwjh)
+      (hc_nbsvlmgy : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ ((⟨"KernelWhnf::red_rec", [x_rc, x_rnl, x_rec_ty, x_lvls, x_head, x_spine, x_nparams, x_nindices, x_nmotives, x_nminors, x_rules, x_k_flag, x_types], m_miaxjajz⟩ : Call F) :: (cs_ymeraxrl ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m_vnxlntqp⟩ : Call F) :: cs_hmdzhwjh)))))))))))
+      (hnt0 : ∀ a1 : SourceValue F, (v_hirlhoca : SourceValue F) ≠ .tuple [(.field 1), a1])
+      (hnt_gdwgaggw : ∀ a4 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 1), a4])
+      (hnt_tfnviflv : ∀ a7 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 2), a7])
+      (hnt_vzukuavw : ∀ a16 : SourceValue F, (v_kfywwtlw : SourceValue F) ≠ .tuple [(.field 1), a16])
+      (hnt_gmenbabh : ∀ a19 : SourceValue F, (v_kfywwtlw : SourceValue F) ≠ .tuple [(.field 2), a19])
+      (hnt_bfucyyak : ∀ a22 : SourceValue F, (v_kfywwtlw : SourceValue F) ≠ .tuple [(.field 3), a22])
+  | other_other_other
+      (v_hirlhoca : SourceValue F) (m_rcpqfuna : Heap F) (cs_npmyidqv : List (Call F)) (m_yfpnaauu : Heap F) (cs_vtcjjeeu : List (Call F)) (x_fam : SourceValue F) (x_op : SourceValue F) (v_ohowagql : SourceValue F) (m_olmidfdk : Heap F) (cs_bqqznmms : List (Call F)) (v_nabzexqm : SourceValue F) (m_miaxjajz : Heap F) (p_yuubbzvg : SourceValue F) (cs_gfldjzyv : List (Call F)) (cs_kdyihfvp : List (Call F))
+      (ev_avswdmlx : ObsFn W "KernelWhnf::try_eval_assumption" [x_rc, x_addr, x_lvls, x_head] h v_hirlhoca m_rcpqfuna cs_npmyidqv)
+      (ev_znalsizj : ObsFn W "KernelWhnf::prim_family" [x_rc, x_addr] m_rcpqfuna (.tuple [x_fam, x_op]) m_yfpnaauu cs_vtcjjeeu)
+      (sg_rsqiotdh : «KernelWhnf::whnf_nd_const_head».SegX_xdpobhsu x_fam x_op x_rc x_addr x_lvls x_head x_spine x_types m_yfpnaauu v_ohowagql m_olmidfdk cs_bqqznmms)
+      (ev_ghgzvwmd : ObsFn W "Ingress::get_ci" [x_addr] m_olmidfdk p_yuubbzvg m_miaxjajz cs_gfldjzyv)
+      (ld_ccmkhhry : loadValue m_miaxjajz p_yuubbzvg = .ok v_nabzexqm)
+      (hne_xzxwjlzo : ∀ vs : List (SourceValue F), vs.length = 5 → (v_nabzexqm : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Defn" vs)
+      (hne_mlcusths : ∀ vs : List (SourceValue F), vs.length = 3 → (v_nabzexqm : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Quot" vs)
+      (hne_gvmylidg : ∀ vs : List (SourceValue F), vs.length = 11 → (v_nabzexqm : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Rec" vs)
+      (ev_zargqiml : ObsFn W "KernelWhnf::apply_spine" [x_head, x_spine] m_miaxjajz r h' cs_kdyihfvp)
+      (hc_hmobajgf : calls = ((⟨"KernelWhnf::try_eval_assumption", [x_rc, x_addr, x_lvls, x_head], h⟩ : Call F) :: (cs_npmyidqv ++ ((⟨"KernelWhnf::prim_family", [x_rc, x_addr], m_rcpqfuna⟩ : Call F) :: (cs_vtcjjeeu ++ (cs_bqqznmms ++ ((⟨"Ingress::get_ci", [x_addr], m_olmidfdk⟩ : Call F) :: (cs_gfldjzyv ++ ((⟨"KernelWhnf::apply_spine", [x_head, x_spine], m_miaxjajz⟩ : Call F) :: cs_kdyihfvp)))))))))
+      (hnt0 : ∀ a1 : SourceValue F, (v_hirlhoca : SourceValue F) ≠ .tuple [(.field 1), a1])
+      (hnt_gdwgaggw : ∀ a4 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 1), a4])
+      (hnt_tfnviflv : ∀ a7 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 2), a7])
 
 /-- **Every observed derivation of `KernelWhnf::whnf_nd_const_head` takes one of its paths.** -/
 theorem «KernelWhnf::whnf_nd_const_head».obsx {x_rc x_addr x_lvls x_head x_spine x_types : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -1162,420 +1258,473 @@ theorem «KernelWhnf::whnf_nd_const_head».obsx {x_rc x_addr x_lvls x_head x_spi
   have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelWhnf.whnf_nd_const_head.lookup
     (by simp [IxVM.KernelWhnf.whnf_nd_const_head, ControlLower.hasControl]) ev
   simp only [IxVM.KernelWhnf.whnf_nd_const_head] at d0
-  obtain ⟨v1, m_jkmztdfx, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
-  obtain ⟨vs9, m10, c11, cs_cfolovls, a13, ev_luskmowx, rfl⟩ := d6.call_inv
-  rw [instanceName_plain_some] at ev_luskmowx
-  obtain ⟨v15, vs17, m18, c19, c20, rfl, d21, a22, rfl⟩ := a13.cons_inv
-  obtain ⟨l23, rfl, rfl⟩ := d21.var_inv
-  simp at l23
-  subst l23
-  obtain ⟨v16, vs24, m25, c26, c27, rfl, d28, a29, rfl⟩ := a22.cons_inv
-  obtain ⟨l30, rfl, rfl⟩ := d28.var_inv
-  simp at l30
-  subst l30
-  obtain ⟨rfl, rfl, rfl⟩ := a29.nil_inv
-  obtain ⟨vs31, hv32, -, ml33⟩ := matchPattern_tuple_inv mt7
-  subst hv32
-  obtain ⟨x_fam, vs34, b35, b36, rfl, mt37, ml38, rfl⟩ := matchListWith_cons_inv ml33
-  obtain rfl := matchPattern_bind_inv mt37
-  obtain ⟨x_op, vs39, b40, b41, rfl, mt42, ml43, rfl⟩ := matchListWith_cons_inv ml38
-  obtain rfl := matchPattern_bind_inv mt42
-  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml43
-  obtain ⟨v288, m289, bs296, cs291, c298, d299, mt300, d301, rfl⟩ := d8.letValue_inv
-  have sg296 := «KernelWhnf::whnf_nd_const_head».segX1 d299
-  clear d299
-  obtain rfl := matchPattern_bind_inv mt300
-  obtain ⟨v303, m304, bs305, body306, c307, c308, d309, sel310, d311, rfl⟩ := d301.matchValue_inv
-  obtain ⟨l312, rfl, rfl⟩ := d309.var_inv
-  simp at l312
-  subst l312
-  rcases selectArm_cons_inv sel310 with ⟨mt313, rfl⟩ | ⟨nm314, sel315⟩
-  · obtain ⟨vs316, hv317, -, ml318⟩ := matchPattern_tuple_inv mt313
-    subst hv317
-    obtain ⟨w319, vs320, b321, b322, rfl, mt323, ml324, rfl⟩ := matchListWith_cons_inv ml318
-    obtain ⟨hv325, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt323
-    subst hv325
-    obtain ⟨x_reduced, vs326, b327, b328, rfl, mt329, ml330, rfl⟩ := matchListWith_cons_inv ml324
-    obtain rfl := matchPattern_bind_inv mt329
-    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml330
-    obtain ⟨vs331, m332, c333, cs328, a335, ev330, rfl⟩ := d311.call_inv
-    rw [instanceName_plain_some] at ev330
-    obtain ⟨v337, vs340, m341, c342, c343, rfl, d344, a345, rfl⟩ := a335.cons_inv
-    obtain ⟨l346, rfl, rfl⟩ := d344.var_inv
-    simp at l346
-    subst l346
-    obtain ⟨v338, vs347, m348, c349, c350, rfl, d351, a352, rfl⟩ := a345.cons_inv
-    obtain ⟨l353, rfl, rfl⟩ := d351.var_inv
-    simp at l353
-    subst l353
-    obtain ⟨v339, vs354, m355, c356, c357, rfl, d358, a359, rfl⟩ := a352.cons_inv
-    obtain ⟨l360, rfl, rfl⟩ := d358.var_inv
-    simp at l360
-    subst l360
-    obtain ⟨rfl, rfl, rfl⟩ := a359.nil_inv
-    exact «KernelWhnf::whnf_nd_const_head».PathX.n1_bind _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev330 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-  · have hnt0 : ∀ a1 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 1), a1] := fun a1 hv2 => by rw [hv2] at nm314; exact matchPattern_tuple_mixed_none nm314 (.cons (Or.inr ⟨_, (MatchesConst.literal 1), rfl⟩) (.cons (Or.inl trivial) .nil))
-    rcases selectArm_cons_inv sel315 with ⟨mt362, rfl⟩ | ⟨nm363, sel364⟩
-    · obtain ⟨vs365, hv366, -, ml367⟩ := matchPattern_tuple_inv mt362
-      subst hv366
-      obtain ⟨w368, vs369, b370, b371, rfl, mt372, ml373, rfl⟩ := matchListWith_cons_inv ml367
-      obtain ⟨hv374, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 2) mt372
-      subst hv374
-      obtain ⟨x_stuck, vs375, b376, b377, rfl, mt378, ml379, rfl⟩ := matchListWith_cons_inv ml373
-      obtain rfl := matchPattern_bind_inv mt378
-      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml379
-      obtain ⟨l380, rfl, rfl⟩ := d311.var_inv
-      simp at l380
-      subst l380
-      exact «KernelWhnf::whnf_nd_const_head».PathX.n2_bind _ _ _ _ _ _ _ ev_luskmowx sg296 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0
-    · have hnt3 : ∀ a4 : SourceValue F, (v288 : SourceValue F) ≠ .tuple [(.field 2), a4] := fun a4 hv5 => by rw [hv5] at nm363; exact matchPattern_tuple_mixed_none nm363 (.cons (Or.inr ⟨_, (MatchesConst.literal 2), rfl⟩) (.cons (Or.inl trivial) .nil))
-      rcases selectArm_cons_inv sel364 with ⟨mt384, rfl⟩ | ⟨nm385, sel386⟩
-      · obtain rfl := matchPattern_wildcard_inv mt384
-        obtain ⟨v381, m382, bs389, c390, c391, d392, mt393, d394, rfl⟩ := d311.letValue_inv
-        obtain ⟨p389, d396, ld391⟩ := d392.load_inv
-        obtain ⟨vs398, m399, c400, cs395, a402, ev397, rfl⟩ := d396.call_inv
-        rw [instanceName_plain_some] at ev397
-        obtain ⟨v404, vs405, m406, c407, c408, rfl, d409, a410, rfl⟩ := a402.cons_inv
-        obtain ⟨l411, rfl, rfl⟩ := d409.var_inv
-        simp at l411
-        subst l411
-        obtain ⟨rfl, rfl, rfl⟩ := a410.nil_inv
-        obtain rfl := matchPattern_bind_inv mt393
-        obtain ⟨v412, m413, bs414, body415, c416, c417, d418, sel419, d420, rfl⟩ := d394.matchValue_inv
-        obtain ⟨l421, rfl, rfl⟩ := d418.var_inv
-        simp at l421
-        subst l421
-        rcases selectArm_cons_inv sel419 with ⟨mt422, rfl⟩ | ⟨nm423, sel424⟩
-        · obtain ⟨vs425, hv426, -, ml427⟩ := matchPattern_construct_inv mt422
-          rw [Names.n11677430323439928978] at hv426
-          subst hv426
-          obtain ⟨x_nl, vs431, b432, b433, rfl, mt434, ml435, rfl⟩ := matchListWith_cons_inv ml427
-          obtain rfl := matchPattern_bind_inv mt434
-          obtain ⟨w422, vs436, b437, b438, rfl, mt439, ml440, rfl⟩ := matchListWith_cons_inv ml435
-          obtain rfl := matchPattern_wildcard_inv mt439
-          obtain ⟨x_value, vs441, b442, b443, rfl, mt444, ml445, rfl⟩ := matchListWith_cons_inv ml440
-          obtain rfl := matchPattern_bind_inv mt444
-          obtain ⟨w423, vs446, b447, b448, rfl, mt449, ml450, rfl⟩ := matchListWith_cons_inv ml445
-          obtain rfl := matchPattern_wildcard_inv mt449
-          obtain ⟨w424, vs451, b452, b453, rfl, mt454, ml455, rfl⟩ := matchListWith_cons_inv ml450
-          obtain rfl := matchPattern_wildcard_inv mt454
-          obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml455
-          obtain ⟨v450, m451, bs587, cs_kgewcjlt, c589, d590, mt591, d592, rfl⟩ := d420.letValue_inv
-          have sg_kziakmbq := «KernelWhnf::whnf_nd_const_head».segX_waxxjudx d590
-          clear d590
-          obtain rfl := matchPattern_bind_inv mt591
-          obtain ⟨v594, m595, bs596, body597, c598, c599, d600, sel601, d602, rfl⟩ := d592.matchValue_inv
-          obtain ⟨l603, rfl, rfl⟩ := d600.var_inv
-          simp at l603
-          subst l603
-          rcases selectArm_cons_inv sel601 with ⟨mt604, rfl⟩ | ⟨nm605, sel606⟩
-          · obtain ⟨vs607, hv608, -, ml609⟩ := matchPattern_tuple_inv mt604
-            subst hv608
-            obtain ⟨w610, vs611, b612, b613, rfl, mt614, ml615, rfl⟩ := matchListWith_cons_inv ml609
-            obtain ⟨hv616, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt614
-            subst hv616
-            obtain ⟨x_reduced, vs617, b618, b619, rfl, mt620, ml621, rfl⟩ := matchListWith_cons_inv ml615
-            obtain rfl := matchPattern_bind_inv mt620
-            obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml621
-            obtain ⟨vs622, m623, c624, cs527, a626, ev529, rfl⟩ := d602.call_inv
-            rw [instanceName_plain_some] at ev529
-            obtain ⟨v628, vs631, m632, c633, c634, rfl, d635, a636, rfl⟩ := a626.cons_inv
-            obtain ⟨l637, rfl, rfl⟩ := d635.var_inv
-            simp at l637
-            subst l637
-            obtain ⟨v629, vs638, m639, c640, c641, rfl, d642, a643, rfl⟩ := a636.cons_inv
-            obtain ⟨l644, rfl, rfl⟩ := d642.var_inv
-            simp at l644
-            subst l644
-            obtain ⟨v630, vs645, m646, c647, c648, rfl, d649, a650, rfl⟩ := a643.cons_inv
-            obtain ⟨l651, rfl, rfl⟩ := d649.var_inv
-            simp at l651
-            subst l651
-            obtain ⟨rfl, rfl, rfl⟩ := a650.nil_inv
-            exact «KernelWhnf::whnf_nd_const_head».PathX.other_Defn_n1_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 sg_kziakmbq ev529 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt3
-          · have hnt6 : ∀ a7 : SourceValue F, (v450 : SourceValue F) ≠ .tuple [(.field 1), a7] := fun a7 hv8 => by rw [hv8] at nm605; exact matchPattern_tuple_mixed_none nm605 (.cons (Or.inr ⟨_, (MatchesConst.literal 1), rfl⟩) (.cons (Or.inl trivial) .nil))
-            rcases selectArm_cons_inv sel606 with ⟨mt653, rfl⟩ | ⟨nm654, sel655⟩
-            · obtain rfl := matchPattern_wildcard_inv mt653
-              obtain ⟨vs656, m657, c658, cs561, a660, ev563, rfl⟩ := d602.call_inv
-              rw [instanceName_plain_some] at ev563
-              obtain ⟨v662, vs664, m665, c666, c667, rfl, d668, a669, rfl⟩ := a660.cons_inv
-              obtain ⟨l670, rfl, rfl⟩ := d668.var_inv
-              simp at l670
-              subst l670
-              obtain ⟨v663, vs671, m672, c673, c674, rfl, d675, a676, rfl⟩ := a669.cons_inv
-              obtain ⟨l677, rfl, rfl⟩ := d675.var_inv
-              simp at l677
-              subst l677
-              obtain ⟨rfl, rfl, rfl⟩ := a676.nil_inv
-              exact «KernelWhnf::whnf_nd_const_head».PathX.other_Defn_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 sg_kziakmbq ev563 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt3 hnt6
-            · exact (matchPattern_wildcard_none nm654).elim
-        · have hne581 := matchPattern_construct_none (by trivial) nm423
-          simp only [Names.n11677430323439928978] at hne581
-          rcases selectArm_cons_inv sel424 with ⟨mt680, rfl⟩ | ⟨nm681, sel682⟩
-          · obtain ⟨vs683, hv684, -, ml685⟩ := matchPattern_construct_inv mt680
-            rw [Names.n11677430323439928978] at hv684
-            subst hv684
-            obtain ⟨w588, vs689, b690, b691, rfl, mt692, ml693, rfl⟩ := matchListWith_cons_inv ml685
-            obtain rfl := matchPattern_wildcard_inv mt692
-            obtain ⟨w589, vs694, b695, b696, rfl, mt697, ml698, rfl⟩ := matchListWith_cons_inv ml693
-            obtain rfl := matchPattern_wildcard_inv mt697
-            obtain ⟨w590, vs699, b700, b701, rfl, mt702, ml703, rfl⟩ := matchListWith_cons_inv ml698
-            obtain rfl := matchPattern_wildcard_inv mt702
-            obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml703
-            obtain ⟨v606, m607, bs706, c707, c708, d709, mt710, d711, rfl⟩ := d420.letValue_inv
-            obtain ⟨vs712, m713, c714, cs617, a716, ev619, rfl⟩ := d709.call_inv
-            rw [instanceName_plain_some] at ev619
-            obtain ⟨v718, vs723, m724, c725, c726, rfl, d727, a728, rfl⟩ := a716.cons_inv
-            obtain ⟨l729, rfl, rfl⟩ := d727.var_inv
-            simp at l729
-            subst l729
-            obtain ⟨v719, vs730, m731, c732, c733, rfl, d734, a735, rfl⟩ := a728.cons_inv
-            obtain ⟨l736, rfl, rfl⟩ := d734.var_inv
-            simp at l736
-            subst l736
-            obtain ⟨v720, vs737, m738, c739, c740, rfl, d741, a742, rfl⟩ := a735.cons_inv
-            obtain ⟨l743, rfl, rfl⟩ := d741.var_inv
-            simp at l743
-            subst l743
-            obtain ⟨v721, vs744, m745, c746, c747, rfl, d748, a749, rfl⟩ := a742.cons_inv
-            obtain ⟨l750, rfl, rfl⟩ := d748.var_inv
-            simp at l750
-            subst l750
-            obtain ⟨v722, vs751, m752, c753, c754, rfl, d755, a756, rfl⟩ := a749.cons_inv
-            obtain ⟨l757, rfl, rfl⟩ := d755.var_inv
-            simp at l757
-            subst l757
-            obtain ⟨rfl, rfl, rfl⟩ := a756.nil_inv
-            obtain rfl := matchPattern_bind_inv mt710
-            obtain ⟨v758, m759, bs760, body761, c762, c763, d764, sel765, d766, rfl⟩ := d711.matchValue_inv
-            obtain ⟨l767, rfl, rfl⟩ := d764.var_inv
-            simp at l767
-            subst l767
-            rcases selectArm_cons_inv sel765 with ⟨mt768, rfl⟩ | ⟨nm769, sel770⟩
-            · obtain ⟨vs771, hv772, -, ml773⟩ := matchPattern_tuple_inv mt768
-              subst hv772
-              obtain ⟨w774, vs775, b776, b777, rfl, mt778, ml779, rfl⟩ := matchListWith_cons_inv ml773
-              obtain ⟨hv780, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt778
-              subst hv780
-              obtain ⟨x_reduced, vs781, b782, b783, rfl, mt784, ml785, rfl⟩ := matchListWith_cons_inv ml779
-              obtain rfl := matchPattern_bind_inv mt784
-              obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml785
-              obtain ⟨vs786, m787, c788, cs691, a790, ev693, rfl⟩ := d766.call_inv
-              rw [instanceName_plain_some] at ev693
-              obtain ⟨v792, vs795, m796, c797, c798, rfl, d799, a800, rfl⟩ := a790.cons_inv
-              obtain ⟨l801, rfl, rfl⟩ := d799.var_inv
-              simp at l801
-              subst l801
-              obtain ⟨v793, vs802, m803, c804, c805, rfl, d806, a807, rfl⟩ := a800.cons_inv
-              obtain ⟨l808, rfl, rfl⟩ := d806.var_inv
-              simp at l808
-              subst l808
-              obtain ⟨v794, vs809, m810, c811, c812, rfl, d813, a814, rfl⟩ := a807.cons_inv
-              obtain ⟨l815, rfl, rfl⟩ := d813.var_inv
-              simp at l815
-              subst l815
-              obtain ⟨rfl, rfl, rfl⟩ := a814.nil_inv
-              exact «KernelWhnf::whnf_nd_const_head».PathX.other_Quot_n1_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 ev619 ev693 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt3
-            · have hnt9 : ∀ a10 : SourceValue F, (v606 : SourceValue F) ≠ .tuple [(.field 1), a10] := fun a10 hv11 => by rw [hv11] at nm769; exact matchPattern_tuple_mixed_none nm769 (.cons (Or.inr ⟨_, (MatchesConst.literal 1), rfl⟩) (.cons (Or.inl trivial) .nil))
-              rcases selectArm_cons_inv sel770 with ⟨mt817, rfl⟩ | ⟨nm818, sel819⟩
-              · obtain rfl := matchPattern_wildcard_inv mt817
-                obtain ⟨vs820, m821, c822, cs725, a824, ev727, rfl⟩ := d766.call_inv
-                rw [instanceName_plain_some] at ev727
-                obtain ⟨v826, vs828, m829, c830, c831, rfl, d832, a833, rfl⟩ := a824.cons_inv
-                obtain ⟨l834, rfl, rfl⟩ := d832.var_inv
-                simp at l834
-                subst l834
-                obtain ⟨v827, vs835, m836, c837, c838, rfl, d839, a840, rfl⟩ := a833.cons_inv
-                obtain ⟨l841, rfl, rfl⟩ := d839.var_inv
-                simp at l841
-                subst l841
-                obtain ⟨rfl, rfl, rfl⟩ := a840.nil_inv
-                exact «KernelWhnf::whnf_nd_const_head».PathX.other_Quot_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 ev619 ev727 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt3 hnt9
-              · exact (matchPattern_wildcard_none nm818).elim
-          · have hne745 := matchPattern_construct_none (by trivial) nm681
-            simp only [Names.n11677430323439928978] at hne745
-            rcases selectArm_cons_inv sel682 with ⟨mt844, rfl⟩ | ⟨nm845, sel846⟩
-            · obtain ⟨vs847, hv848, -, ml849⟩ := matchPattern_construct_inv mt844
-              rw [Names.n11677430323439928978] at hv848
-              subst hv848
-              obtain ⟨x_rnl, vs853, b854, b855, rfl, mt856, ml857, rfl⟩ := matchListWith_cons_inv ml849
-              obtain rfl := matchPattern_bind_inv mt856
-              obtain ⟨x_rec_ty, vs858, b859, b860, rfl, mt861, ml862, rfl⟩ := matchListWith_cons_inv ml857
-              obtain rfl := matchPattern_bind_inv mt861
-              obtain ⟨x_nparams, vs863, b864, b865, rfl, mt866, ml867, rfl⟩ := matchListWith_cons_inv ml862
-              obtain rfl := matchPattern_bind_inv mt866
-              obtain ⟨x_nindices, vs868, b869, b870, rfl, mt871, ml872, rfl⟩ := matchListWith_cons_inv ml867
-              obtain rfl := matchPattern_bind_inv mt871
-              obtain ⟨x_nmotives, vs873, b874, b875, rfl, mt876, ml877, rfl⟩ := matchListWith_cons_inv ml872
-              obtain rfl := matchPattern_bind_inv mt876
-              obtain ⟨x_nminors, vs878, b879, b880, rfl, mt881, ml882, rfl⟩ := matchListWith_cons_inv ml877
-              obtain rfl := matchPattern_bind_inv mt881
-              obtain ⟨x_rules, vs883, b884, b885, rfl, mt886, ml887, rfl⟩ := matchListWith_cons_inv ml882
-              obtain rfl := matchPattern_bind_inv mt886
-              obtain ⟨x_k_flag, vs888, b889, b890, rfl, mt891, ml892, rfl⟩ := matchListWith_cons_inv ml887
-              obtain rfl := matchPattern_bind_inv mt891
-              obtain ⟨w752, vs893, b894, b895, rfl, mt896, ml897, rfl⟩ := matchListWith_cons_inv ml892
-              obtain rfl := matchPattern_wildcard_inv mt896
-              obtain ⟨w753, vs898, b899, b900, rfl, mt901, ml902, rfl⟩ := matchListWith_cons_inv ml897
-              obtain rfl := matchPattern_wildcard_inv mt901
-              obtain ⟨w754, vs903, b904, b905, rfl, mt906, ml907, rfl⟩ := matchListWith_cons_inv ml902
-              obtain rfl := matchPattern_wildcard_inv mt906
-              obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml907
-              obtain ⟨v810, m811, bs910, body911, c912, c913, d914, sel915, d916, rfl⟩ := d420.matchValue_inv
-              obtain ⟨vs917, m918, c919, cs822, a921, ev824, rfl⟩ := d914.call_inv
-              rw [instanceName_plain_some] at ev824
-              obtain ⟨v923, vs936, m937, c938, c939, rfl, d940, a941, rfl⟩ := a921.cons_inv
-              obtain ⟨l942, rfl, rfl⟩ := d940.var_inv
-              simp at l942
-              subst l942
-              obtain ⟨v924, vs943, m944, c945, c946, rfl, d947, a948, rfl⟩ := a941.cons_inv
-              obtain ⟨l949, rfl, rfl⟩ := d947.var_inv
-              simp at l949
-              subst l949
-              obtain ⟨v925, vs950, m951, c952, c953, rfl, d954, a955, rfl⟩ := a948.cons_inv
-              obtain ⟨l956, rfl, rfl⟩ := d954.var_inv
-              simp at l956
-              subst l956
-              obtain ⟨v926, vs957, m958, c959, c960, rfl, d961, a962, rfl⟩ := a955.cons_inv
-              obtain ⟨l963, rfl, rfl⟩ := d961.var_inv
-              simp at l963
-              subst l963
-              obtain ⟨v927, vs964, m965, c966, c967, rfl, d968, a969, rfl⟩ := a962.cons_inv
-              obtain ⟨l970, rfl, rfl⟩ := d968.var_inv
-              simp at l970
-              subst l970
-              obtain ⟨v928, vs971, m972, c973, c974, rfl, d975, a976, rfl⟩ := a969.cons_inv
-              obtain ⟨l977, rfl, rfl⟩ := d975.var_inv
-              simp at l977
-              subst l977
-              obtain ⟨v929, vs978, m979, c980, c981, rfl, d982, a983, rfl⟩ := a976.cons_inv
-              obtain ⟨l984, rfl, rfl⟩ := d982.var_inv
-              simp at l984
-              subst l984
-              obtain ⟨v930, vs985, m986, c987, c988, rfl, d989, a990, rfl⟩ := a983.cons_inv
-              obtain ⟨l991, rfl, rfl⟩ := d989.var_inv
-              simp at l991
-              subst l991
-              obtain ⟨v931, vs992, m993, c994, c995, rfl, d996, a997, rfl⟩ := a990.cons_inv
-              obtain ⟨l998, rfl, rfl⟩ := d996.var_inv
-              simp at l998
-              subst l998
-              obtain ⟨v932, vs999, m1000, c1001, c1002, rfl, d1003, a1004, rfl⟩ := a997.cons_inv
-              obtain ⟨l1005, rfl, rfl⟩ := d1003.var_inv
-              simp at l1005
-              subst l1005
-              obtain ⟨v933, vs1006, m1007, c1008, c1009, rfl, d1010, a1011, rfl⟩ := a1004.cons_inv
-              obtain ⟨l1012, rfl, rfl⟩ := d1010.var_inv
-              simp at l1012
-              subst l1012
-              obtain ⟨v934, vs1013, m1014, c1015, c1016, rfl, d1017, a1018, rfl⟩ := a1011.cons_inv
-              obtain ⟨l1019, rfl, rfl⟩ := d1017.var_inv
-              simp at l1019
-              subst l1019
-              obtain ⟨v935, vs1020, m1021, c1022, c1023, rfl, d1024, a1025, rfl⟩ := a1018.cons_inv
-              obtain ⟨l1026, rfl, rfl⟩ := d1024.var_inv
-              simp at l1026
-              subst l1026
-              obtain ⟨rfl, rfl, rfl⟩ := a1025.nil_inv
-              rcases selectArm_cons_inv sel915 with ⟨mt1027, rfl⟩ | ⟨nm1028, sel1029⟩
-              · obtain ⟨vs1030, hv1031, -, ml1032⟩ := matchPattern_tuple_inv mt1027
-                subst hv1031
-                obtain ⟨w1033, vs1034, b1035, b1036, rfl, mt1037, ml1038, rfl⟩ := matchListWith_cons_inv ml1032
-                obtain ⟨hv1039, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt1037
-                subst hv1039
-                obtain ⟨x_reduced, vs1040, b1041, b1042, rfl, mt1043, ml1044, rfl⟩ := matchListWith_cons_inv ml1038
-                obtain rfl := matchPattern_bind_inv mt1043
-                obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1044
-                obtain ⟨vs1045, m1046, c1047, cs950, a1049, ev952, rfl⟩ := d916.call_inv
-                rw [instanceName_plain_some] at ev952
-                obtain ⟨v1051, vs1054, m1055, c1056, c1057, rfl, d1058, a1059, rfl⟩ := a1049.cons_inv
-                obtain ⟨l1060, rfl, rfl⟩ := d1058.var_inv
-                simp at l1060
-                subst l1060
-                obtain ⟨v1052, vs1061, m1062, c1063, c1064, rfl, d1065, a1066, rfl⟩ := a1059.cons_inv
-                obtain ⟨l1067, rfl, rfl⟩ := d1065.var_inv
-                simp at l1067
-                subst l1067
-                obtain ⟨v1053, vs1068, m1069, c1070, c1071, rfl, d1072, a1073, rfl⟩ := a1066.cons_inv
-                obtain ⟨l1074, rfl, rfl⟩ := d1072.var_inv
-                simp at l1074
-                subst l1074
-                obtain ⟨rfl, rfl, rfl⟩ := a1073.nil_inv
-                exact «KernelWhnf::whnf_nd_const_head».PathX.other_Rec_n1_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 ev824 ev952 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt3
-              · have hnt12 : ∀ a13 : SourceValue F, (v810 : SourceValue F) ≠ .tuple [(.field 1), a13] := fun a13 hv14 => by rw [hv14] at nm1028; exact matchPattern_tuple_mixed_none nm1028 (.cons (Or.inr ⟨_, (MatchesConst.literal 1), rfl⟩) (.cons (Or.inl trivial) .nil))
-                rcases selectArm_cons_inv sel1029 with ⟨mt1076, rfl⟩ | ⟨nm1077, sel1078⟩
-                · obtain ⟨vs1079, hv1080, -, ml1081⟩ := matchPattern_tuple_inv mt1076
-                  subst hv1080
-                  obtain ⟨w1082, vs1083, b1084, b1085, rfl, mt1086, ml1087, rfl⟩ := matchListWith_cons_inv ml1081
-                  obtain ⟨hv1088, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 2) mt1086
-                  subst hv1088
-                  obtain ⟨x_stuck, vs1089, b1090, b1091, rfl, mt1092, ml1093, rfl⟩ := matchListWith_cons_inv ml1087
-                  obtain rfl := matchPattern_bind_inv mt1092
-                  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1093
-                  obtain ⟨l1094, rfl, rfl⟩ := d916.var_inv
-                  simp at l1094
-                  subst l1094
-                  exact «KernelWhnf::whnf_nd_const_head».PathX.other_Rec_n2_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 ev824 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt3 hnt12
-                · have hnt15 : ∀ a16 : SourceValue F, (v810 : SourceValue F) ≠ .tuple [(.field 2), a16] := fun a16 hv17 => by rw [hv17] at nm1077; exact matchPattern_tuple_mixed_none nm1077 (.cons (Or.inr ⟨_, (MatchesConst.literal 2), rfl⟩) (.cons (Or.inl trivial) .nil))
-                  rcases selectArm_cons_inv sel1078 with ⟨mt1098, rfl⟩ | ⟨nm1099, sel1100⟩
-                  · obtain ⟨vs1101, hv1102, -, ml1103⟩ := matchPattern_tuple_inv mt1098
-                    subst hv1102
-                    obtain ⟨w1104, vs1105, b1106, b1107, rfl, mt1108, ml1109, rfl⟩ := matchListWith_cons_inv ml1103
-                    obtain ⟨hv1110, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 3) mt1108
-                    subst hv1110
-                    obtain ⟨x_k_reduct, vs1111, b1112, b1113, rfl, mt1114, ml1115, rfl⟩ := matchListWith_cons_inv ml1109
-                    obtain rfl := matchPattern_bind_inv mt1114
-                    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1115
-                    obtain ⟨vs1116, m1117, c1118, cs1021, a1120, ev1023, rfl⟩ := d916.call_inv
-                    rw [instanceName_plain_some] at ev1023
-                    obtain ⟨v1122, vs1125, m1126, c1127, c1128, rfl, d1129, a1130, rfl⟩ := a1120.cons_inv
-                    obtain ⟨l1131, rfl, rfl⟩ := d1129.var_inv
-                    simp at l1131
-                    subst l1131
-                    obtain ⟨v1123, vs1132, m1133, c1134, c1135, rfl, d1136, a1137, rfl⟩ := a1130.cons_inv
-                    obtain ⟨l1138, rfl, rfl⟩ := d1136.var_inv
-                    simp at l1138
-                    subst l1138
-                    obtain ⟨v1124, vs1139, m1140, c1141, c1142, rfl, d1143, a1144, rfl⟩ := a1137.cons_inv
-                    obtain ⟨l1145, rfl, rfl⟩ := d1143.var_inv
-                    simp at l1145
-                    subst l1145
-                    obtain ⟨rfl, rfl, rfl⟩ := a1144.nil_inv
-                    exact «KernelWhnf::whnf_nd_const_head».PathX.other_Rec_n3_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 ev824 ev1023 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt3 hnt12 hnt15
-                  · have hnt18 : ∀ a19 : SourceValue F, (v810 : SourceValue F) ≠ .tuple [(.field 3), a19] := fun a19 hv20 => by rw [hv20] at nm1099; exact matchPattern_tuple_mixed_none nm1099 (.cons (Or.inr ⟨_, (MatchesConst.literal 3), rfl⟩) (.cons (Or.inl trivial) .nil))
-                    rcases selectArm_cons_inv sel1100 with ⟨mt1147, rfl⟩ | ⟨nm1148, sel1149⟩
-                    · obtain rfl := matchPattern_wildcard_inv mt1147
-                      obtain ⟨vs1150, m1151, c1152, cs1055, a1154, ev1057, rfl⟩ := d916.call_inv
-                      rw [instanceName_plain_some] at ev1057
-                      obtain ⟨v1156, vs1158, m1159, c1160, c1161, rfl, d1162, a1163, rfl⟩ := a1154.cons_inv
-                      obtain ⟨l1164, rfl, rfl⟩ := d1162.var_inv
-                      simp at l1164
-                      subst l1164
-                      obtain ⟨v1157, vs1165, m1166, c1167, c1168, rfl, d1169, a1170, rfl⟩ := a1163.cons_inv
-                      obtain ⟨l1171, rfl, rfl⟩ := d1169.var_inv
-                      simp at l1171
-                      subst l1171
-                      obtain ⟨rfl, rfl, rfl⟩ := a1170.nil_inv
-                      exact «KernelWhnf::whnf_nd_const_head».PathX.other_Rec_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 ev824 ev1057 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt3 hnt12 hnt15 hnt18
-                    · exact (matchPattern_wildcard_none nm1148).elim
-            · have hne1075 := matchPattern_construct_none (by trivial) nm845
-              simp only [Names.n11677430323439928978] at hne1075
-              rcases selectArm_cons_inv sel846 with ⟨mt1174, rfl⟩ | ⟨nm1175, sel1176⟩
-              · obtain rfl := matchPattern_wildcard_inv mt1174
-                obtain ⟨vs1177, m1178, c1179, cs1082, a1181, ev1084, rfl⟩ := d420.call_inv
-                rw [instanceName_plain_some] at ev1084
-                obtain ⟨v1183, vs1185, m1186, c1187, c1188, rfl, d1189, a1190, rfl⟩ := a1181.cons_inv
-                obtain ⟨l1191, rfl, rfl⟩ := d1189.var_inv
-                simp at l1191
-                subst l1191
-                obtain ⟨v1184, vs1192, m1193, c1194, c1195, rfl, d1196, a1197, rfl⟩ := a1190.cons_inv
-                obtain ⟨l1198, rfl, rfl⟩ := d1196.var_inv
-                simp at l1198
-                subst l1198
-                obtain ⟨rfl, rfl, rfl⟩ := a1197.nil_inv
-                exact «KernelWhnf::whnf_nd_const_head».PathX.other_other _ _ _ _ _ _ _ _ _ _ _ _ ev_luskmowx sg296 ev397 ld391 hne581 hne745 hne1075 ev1084 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt3
-              · exact (matchPattern_wildcard_none nm1175).elim
-      · exact (matchPattern_wildcard_none nm385).elim
+  obtain ⟨v_hirlhoca, m_rcpqfuna, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨vs10, m11, c12, cs_npmyidqv, a14, ev_avswdmlx, rfl⟩ := d7.call_inv
+  rw [instanceName_plain_some] at ev_avswdmlx
+  obtain ⟨v16, vs20, m21, c22, c23, rfl, d24, a25, rfl⟩ := a14.cons_inv
+  obtain ⟨l26, rfl, rfl⟩ := d24.var_inv
+  simp at l26
+  subst l26
+  obtain ⟨v17, vs27, m28, c29, c30, rfl, d31, a32, rfl⟩ := a25.cons_inv
+  obtain ⟨l33, rfl, rfl⟩ := d31.var_inv
+  simp at l33
+  subst l33
+  obtain ⟨v18, vs34, m35, c36, c37, rfl, d38, a39, rfl⟩ := a32.cons_inv
+  obtain ⟨l40, rfl, rfl⟩ := d38.var_inv
+  simp at l40
+  subst l40
+  obtain ⟨v19, vs41, m42, c43, c44, rfl, d45, a46, rfl⟩ := a39.cons_inv
+  obtain ⟨l47, rfl, rfl⟩ := d45.var_inv
+  simp at l47
+  subst l47
+  obtain ⟨rfl, rfl, rfl⟩ := a46.nil_inv
+  rcases selectArm_cons_inv sel8 with ⟨mt48, rfl⟩ | ⟨nm49, sel50⟩
+  · obtain ⟨vs51, hv52, -, ml53⟩ := matchPattern_tuple_inv mt48
+    subst hv52
+    obtain ⟨w54, vs55, b56, b57, rfl, mt58, ml59, rfl⟩ := matchListWith_cons_inv ml53
+    obtain ⟨hv60, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt58
+    subst hv60
+    obtain ⟨x_ev_head, vs61, b62, b63, rfl, mt64, ml65, rfl⟩ := matchListWith_cons_inv ml59
+    obtain rfl := matchPattern_bind_inv mt64
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml65
+    obtain ⟨vs66, m67, c68, cs_uudeljoh, a70, ev_yajqyjcl, rfl⟩ := d9.call_inv
+    rw [instanceName_plain_some] at ev_yajqyjcl
+    obtain ⟨v72, vs76, m77, c78, c79, rfl, d80, a81, rfl⟩ := a70.cons_inv
+    obtain ⟨l82, rfl, rfl⟩ := d80.var_inv
+    simp at l82
+    subst l82
+    obtain ⟨v73, vs83, m84, c85, c86, rfl, d87, a88, rfl⟩ := a81.cons_inv
+    obtain ⟨l89, rfl, rfl⟩ := d87.var_inv
+    simp at l89
+    subst l89
+    obtain ⟨v74, vs90, m91, c92, c93, rfl, d94, a95, rfl⟩ := a88.cons_inv
+    obtain ⟨l96, rfl, rfl⟩ := d94.var_inv
+    simp at l96
+    subst l96
+    obtain ⟨v75, vs97, m98, c99, c100, rfl, d101, a102, rfl⟩ := a95.cons_inv
+    obtain ⟨l103, rfl, rfl⟩ := d101.var_inv
+    simp at l103
+    subst l103
+    obtain ⟨rfl, rfl, rfl⟩ := a102.nil_inv
+    exact «KernelWhnf::whnf_nd_const_head».PathX.n1_bind _ _ _ _ ev_avswdmlx ev_yajqyjcl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hnt0 : ∀ a1 : SourceValue F, (v_hirlhoca : SourceValue F) ≠ .tuple [(.field 1), a1] := fun a1 hv2 => by rw [hv2] at nm49; exact matchPattern_tuple_mixed_none nm49 (.cons (Or.inr ⟨_, (MatchesConst.literal 1), rfl⟩) (.cons (Or.inl trivial) .nil))
+    rcases selectArm_cons_inv sel50 with ⟨mt105, rfl⟩ | ⟨nm106, sel107⟩
+    · obtain rfl := matchPattern_wildcard_inv mt105
+      obtain ⟨v108, m_yfpnaauu, bs110, c111, c112, d113, mt114, d115, rfl⟩ := d9.letValue_inv
+      obtain ⟨vs116, m117, c118, cs_vtcjjeeu, a120, ev_znalsizj, rfl⟩ := d113.call_inv
+      rw [instanceName_plain_some] at ev_znalsizj
+      obtain ⟨v122, vs124, m125, c126, c127, rfl, d128, a129, rfl⟩ := a120.cons_inv
+      obtain ⟨l130, rfl, rfl⟩ := d128.var_inv
+      simp at l130
+      subst l130
+      obtain ⟨v123, vs131, m132, c133, c134, rfl, d135, a136, rfl⟩ := a129.cons_inv
+      obtain ⟨l137, rfl, rfl⟩ := d135.var_inv
+      simp at l137
+      subst l137
+      obtain ⟨rfl, rfl, rfl⟩ := a136.nil_inv
+      obtain ⟨vs138, hv139, -, ml140⟩ := matchPattern_tuple_inv mt114
+      subst hv139
+      obtain ⟨x_fam, vs141, b142, b143, rfl, mt144, ml145, rfl⟩ := matchListWith_cons_inv ml140
+      obtain rfl := matchPattern_bind_inv mt144
+      obtain ⟨x_op, vs146, b147, b148, rfl, mt149, ml150, rfl⟩ := matchListWith_cons_inv ml145
+      obtain rfl := matchPattern_bind_inv mt149
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml150
+      obtain ⟨v_ohowagql, m_olmidfdk, bs403, cs_bqqznmms, c405, d406, mt407, d408, rfl⟩ := d115.letValue_inv
+      have sg_rsqiotdh := «KernelWhnf::whnf_nd_const_head».segX_xdpobhsu d406
+      clear d406
+      obtain rfl := matchPattern_bind_inv mt407
+      obtain ⟨v410, m411, bs412, body413, c414, c415, d416, sel417, d418, rfl⟩ := d408.matchValue_inv
+      obtain ⟨l419, rfl, rfl⟩ := d416.var_inv
+      simp at l419
+      subst l419
+      rcases selectArm_cons_inv sel417 with ⟨mt420, rfl⟩ | ⟨nm421, sel422⟩
+      · obtain ⟨vs423, hv424, -, ml425⟩ := matchPattern_tuple_inv mt420
+        subst hv424
+        obtain ⟨w426, vs427, b428, b429, rfl, mt430, ml431, rfl⟩ := matchListWith_cons_inv ml425
+        obtain ⟨hv432, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt430
+        subst hv432
+        obtain ⟨x_reduced, vs433, b434, b435, rfl, mt436, ml437, rfl⟩ := matchListWith_cons_inv ml431
+        obtain rfl := matchPattern_bind_inv mt436
+        obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml437
+        obtain ⟨vs438, m439, c440, cs_hfcybjza, a442, ev_jnwcimse, rfl⟩ := d418.call_inv
+        rw [instanceName_plain_some] at ev_jnwcimse
+        obtain ⟨v444, vs447, m448, c449, c450, rfl, d451, a452, rfl⟩ := a442.cons_inv
+        obtain ⟨l453, rfl, rfl⟩ := d451.var_inv
+        simp at l453
+        subst l453
+        obtain ⟨v445, vs454, m455, c456, c457, rfl, d458, a459, rfl⟩ := a452.cons_inv
+        obtain ⟨l460, rfl, rfl⟩ := d458.var_inv
+        simp at l460
+        subst l460
+        obtain ⟨v446, vs461, m462, c463, c464, rfl, d465, a466, rfl⟩ := a459.cons_inv
+        obtain ⟨l467, rfl, rfl⟩ := d465.var_inv
+        simp at l467
+        subst l467
+        obtain ⟨rfl, rfl, rfl⟩ := a466.nil_inv
+        exact «KernelWhnf::whnf_nd_const_head».PathX.other_n1_bind _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_jnwcimse (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0
+      · have hnt_gdwgaggw : ∀ a4 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 1), a4] := fun a4 hv5 => by rw [hv5] at nm421; exact matchPattern_tuple_mixed_none nm421 (.cons (Or.inr ⟨_, (MatchesConst.literal 1), rfl⟩) (.cons (Or.inl trivial) .nil))
+        rcases selectArm_cons_inv sel422 with ⟨mt469, rfl⟩ | ⟨nm470, sel471⟩
+        · obtain ⟨vs472, hv473, -, ml474⟩ := matchPattern_tuple_inv mt469
+          subst hv473
+          obtain ⟨w475, vs476, b477, b478, rfl, mt479, ml480, rfl⟩ := matchListWith_cons_inv ml474
+          obtain ⟨hv481, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 2) mt479
+          subst hv481
+          obtain ⟨x_stuck, vs482, b483, b484, rfl, mt485, ml486, rfl⟩ := matchListWith_cons_inv ml480
+          obtain rfl := matchPattern_bind_inv mt485
+          obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml486
+          obtain ⟨l487, rfl, rfl⟩ := d418.var_inv
+          simp at l487
+          subst l487
+          exact «KernelWhnf::whnf_nd_const_head».PathX.other_n2_bind _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt_gdwgaggw
+        · have hnt_tfnviflv : ∀ a7 : SourceValue F, (v_ohowagql : SourceValue F) ≠ .tuple [(.field 2), a7] := fun a7 hv8 => by rw [hv8] at nm470; exact matchPattern_tuple_mixed_none nm470 (.cons (Or.inr ⟨_, (MatchesConst.literal 2), rfl⟩) (.cons (Or.inl trivial) .nil))
+          rcases selectArm_cons_inv sel471 with ⟨mt491, rfl⟩ | ⟨nm492, sel493⟩
+          · obtain rfl := matchPattern_wildcard_inv mt491
+            obtain ⟨v_nabzexqm, m_miaxjajz, bs496, c497, c498, d499, mt500, d501, rfl⟩ := d418.letValue_inv
+            obtain ⟨p_yuubbzvg, d503, ld_ccmkhhry⟩ := d499.load_inv
+            obtain ⟨vs505, m506, c507, cs_gfldjzyv, a509, ev_ghgzvwmd, rfl⟩ := d503.call_inv
+            rw [instanceName_plain_some] at ev_ghgzvwmd
+            obtain ⟨v511, vs512, m513, c514, c515, rfl, d516, a517, rfl⟩ := a509.cons_inv
+            obtain ⟨l518, rfl, rfl⟩ := d516.var_inv
+            simp at l518
+            subst l518
+            obtain ⟨rfl, rfl, rfl⟩ := a517.nil_inv
+            obtain rfl := matchPattern_bind_inv mt500
+            obtain ⟨v519, m520, bs521, body522, c523, c524, d525, sel526, d527, rfl⟩ := d501.matchValue_inv
+            obtain ⟨l528, rfl, rfl⟩ := d525.var_inv
+            simp at l528
+            subst l528
+            rcases selectArm_cons_inv sel526 with ⟨mt529, rfl⟩ | ⟨nm530, sel531⟩
+            · obtain ⟨vs532, hv533, -, ml534⟩ := matchPattern_construct_inv mt529
+              rw [Names.n11677430323439928978] at hv533
+              subst hv533
+              obtain ⟨x_nl, vs538, b539, b540, rfl, mt541, ml542, rfl⟩ := matchListWith_cons_inv ml534
+              obtain rfl := matchPattern_bind_inv mt541
+              obtain ⟨w_jchmwsum, vs543, b544, b545, rfl, mt546, ml547, rfl⟩ := matchListWith_cons_inv ml542
+              obtain rfl := matchPattern_wildcard_inv mt546
+              obtain ⟨x_value, vs548, b549, b550, rfl, mt551, ml552, rfl⟩ := matchListWith_cons_inv ml547
+              obtain rfl := matchPattern_bind_inv mt551
+              obtain ⟨w_odpmahhz, vs553, b554, b555, rfl, mt556, ml557, rfl⟩ := matchListWith_cons_inv ml552
+              obtain rfl := matchPattern_wildcard_inv mt556
+              obtain ⟨w_gxyvyame, vs558, b559, b560, rfl, mt561, ml562, rfl⟩ := matchListWith_cons_inv ml557
+              obtain rfl := matchPattern_wildcard_inv mt561
+              obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml562
+              obtain ⟨v_rvllbjxi, m_pbjawmcr, bs694, cs_rnqluocq, c696, d697, mt698, d699, rfl⟩ := d527.letValue_inv
+              have sg_vrfrttsr := «KernelWhnf::whnf_nd_const_head».segX_sdelzezn d697
+              clear d697
+              obtain rfl := matchPattern_bind_inv mt698
+              obtain ⟨v701, m702, bs703, body704, c705, c706, d707, sel708, d709, rfl⟩ := d699.matchValue_inv
+              obtain ⟨l710, rfl, rfl⟩ := d707.var_inv
+              simp at l710
+              subst l710
+              rcases selectArm_cons_inv sel708 with ⟨mt711, rfl⟩ | ⟨nm712, sel713⟩
+              · obtain ⟨vs714, hv715, -, ml716⟩ := matchPattern_tuple_inv mt711
+                subst hv715
+                obtain ⟨w717, vs718, b719, b720, rfl, mt721, ml722, rfl⟩ := matchListWith_cons_inv ml716
+                obtain ⟨hv723, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt721
+                subst hv723
+                obtain ⟨x_reduced, vs724, b725, b726, rfl, mt727, ml728, rfl⟩ := matchListWith_cons_inv ml722
+                obtain rfl := matchPattern_bind_inv mt727
+                obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml728
+                obtain ⟨vs729, m730, c731, cs_cfggwuhd, a733, ev_kxzrwdyo, rfl⟩ := d709.call_inv
+                rw [instanceName_plain_some] at ev_kxzrwdyo
+                obtain ⟨v735, vs738, m739, c740, c741, rfl, d742, a743, rfl⟩ := a733.cons_inv
+                obtain ⟨l744, rfl, rfl⟩ := d742.var_inv
+                simp at l744
+                subst l744
+                obtain ⟨v736, vs745, m746, c747, c748, rfl, d749, a750, rfl⟩ := a743.cons_inv
+                obtain ⟨l751, rfl, rfl⟩ := d749.var_inv
+                simp at l751
+                subst l751
+                obtain ⟨v737, vs752, m753, c754, c755, rfl, d756, a757, rfl⟩ := a750.cons_inv
+                obtain ⟨l758, rfl, rfl⟩ := d756.var_inv
+                simp at l758
+                subst l758
+                obtain ⟨rfl, rfl, rfl⟩ := a757.nil_inv
+                exact «KernelWhnf::whnf_nd_const_head».PathX.other_other_Defn_n1_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry sg_vrfrttsr ev_kxzrwdyo (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt_gdwgaggw hnt_tfnviflv
+              · have hnt_bkwqjxhf : ∀ a10 : SourceValue F, (v_rvllbjxi : SourceValue F) ≠ .tuple [(.field 1), a10] := fun a10 hv11 => by rw [hv11] at nm712; exact matchPattern_tuple_mixed_none nm712 (.cons (Or.inr ⟨_, (MatchesConst.literal 1), rfl⟩) (.cons (Or.inl trivial) .nil))
+                rcases selectArm_cons_inv sel713 with ⟨mt760, rfl⟩ | ⟨nm761, sel762⟩
+                · obtain rfl := matchPattern_wildcard_inv mt760
+                  obtain ⟨vs763, m764, c765, cs_vbdbzufq, a767, ev_itkecbcl, rfl⟩ := d709.call_inv
+                  rw [instanceName_plain_some] at ev_itkecbcl
+                  obtain ⟨v769, vs771, m772, c773, c774, rfl, d775, a776, rfl⟩ := a767.cons_inv
+                  obtain ⟨l777, rfl, rfl⟩ := d775.var_inv
+                  simp at l777
+                  subst l777
+                  obtain ⟨v770, vs778, m779, c780, c781, rfl, d782, a783, rfl⟩ := a776.cons_inv
+                  obtain ⟨l784, rfl, rfl⟩ := d782.var_inv
+                  simp at l784
+                  subst l784
+                  obtain ⟨rfl, rfl, rfl⟩ := a783.nil_inv
+                  exact «KernelWhnf::whnf_nd_const_head».PathX.other_other_Defn_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry sg_vrfrttsr ev_itkecbcl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt_gdwgaggw hnt_tfnviflv hnt_bkwqjxhf
+                · exact (matchPattern_wildcard_none nm761).elim
+            · have hne_xzxwjlzo := matchPattern_construct_none (by trivial) nm530
+              simp only [Names.n11677430323439928978] at hne_xzxwjlzo
+              rcases selectArm_cons_inv sel531 with ⟨mt787, rfl⟩ | ⟨nm788, sel789⟩
+              · obtain ⟨vs790, hv791, -, ml792⟩ := matchPattern_construct_inv mt787
+                rw [Names.n11677430323439928978] at hv791
+                subst hv791
+                obtain ⟨w_eoufnpzg, vs796, b797, b798, rfl, mt799, ml800, rfl⟩ := matchListWith_cons_inv ml792
+                obtain rfl := matchPattern_wildcard_inv mt799
+                obtain ⟨w_aidalvhw, vs801, b802, b803, rfl, mt804, ml805, rfl⟩ := matchListWith_cons_inv ml800
+                obtain rfl := matchPattern_wildcard_inv mt804
+                obtain ⟨w_wbseoant, vs806, b807, b808, rfl, mt809, ml810, rfl⟩ := matchListWith_cons_inv ml805
+                obtain rfl := matchPattern_wildcard_inv mt809
+                obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml810
+                obtain ⟨v_zjubsilu, m_fkohqbgg, bs813, c814, c815, d816, mt817, d818, rfl⟩ := d527.letValue_inv
+                obtain ⟨vs819, m820, c821, cs_sokkokar, a823, ev_itwpptuu, rfl⟩ := d816.call_inv
+                rw [instanceName_plain_some] at ev_itwpptuu
+                obtain ⟨v825, vs830, m831, c832, c833, rfl, d834, a835, rfl⟩ := a823.cons_inv
+                obtain ⟨l836, rfl, rfl⟩ := d834.var_inv
+                simp at l836
+                subst l836
+                obtain ⟨v826, vs837, m838, c839, c840, rfl, d841, a842, rfl⟩ := a835.cons_inv
+                obtain ⟨l843, rfl, rfl⟩ := d841.var_inv
+                simp at l843
+                subst l843
+                obtain ⟨v827, vs844, m845, c846, c847, rfl, d848, a849, rfl⟩ := a842.cons_inv
+                obtain ⟨l850, rfl, rfl⟩ := d848.var_inv
+                simp at l850
+                subst l850
+                obtain ⟨v828, vs851, m852, c853, c854, rfl, d855, a856, rfl⟩ := a849.cons_inv
+                obtain ⟨l857, rfl, rfl⟩ := d855.var_inv
+                simp at l857
+                subst l857
+                obtain ⟨v829, vs858, m859, c860, c861, rfl, d862, a863, rfl⟩ := a856.cons_inv
+                obtain ⟨l864, rfl, rfl⟩ := d862.var_inv
+                simp at l864
+                subst l864
+                obtain ⟨rfl, rfl, rfl⟩ := a863.nil_inv
+                obtain rfl := matchPattern_bind_inv mt817
+                obtain ⟨v865, m866, bs867, body868, c869, c870, d871, sel872, d873, rfl⟩ := d818.matchValue_inv
+                obtain ⟨l874, rfl, rfl⟩ := d871.var_inv
+                simp at l874
+                subst l874
+                rcases selectArm_cons_inv sel872 with ⟨mt875, rfl⟩ | ⟨nm876, sel877⟩
+                · obtain ⟨vs878, hv879, -, ml880⟩ := matchPattern_tuple_inv mt875
+                  subst hv879
+                  obtain ⟨w881, vs882, b883, b884, rfl, mt885, ml886, rfl⟩ := matchListWith_cons_inv ml880
+                  obtain ⟨hv887, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt885
+                  subst hv887
+                  obtain ⟨x_reduced, vs888, b889, b890, rfl, mt891, ml892, rfl⟩ := matchListWith_cons_inv ml886
+                  obtain rfl := matchPattern_bind_inv mt891
+                  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml892
+                  obtain ⟨vs893, m894, c895, cs_ircsbyrj, a897, ev_fxwzvrpa, rfl⟩ := d873.call_inv
+                  rw [instanceName_plain_some] at ev_fxwzvrpa
+                  obtain ⟨v899, vs902, m903, c904, c905, rfl, d906, a907, rfl⟩ := a897.cons_inv
+                  obtain ⟨l908, rfl, rfl⟩ := d906.var_inv
+                  simp at l908
+                  subst l908
+                  obtain ⟨v900, vs909, m910, c911, c912, rfl, d913, a914, rfl⟩ := a907.cons_inv
+                  obtain ⟨l915, rfl, rfl⟩ := d913.var_inv
+                  simp at l915
+                  subst l915
+                  obtain ⟨v901, vs916, m917, c918, c919, rfl, d920, a921, rfl⟩ := a914.cons_inv
+                  obtain ⟨l922, rfl, rfl⟩ := d920.var_inv
+                  simp at l922
+                  subst l922
+                  obtain ⟨rfl, rfl, rfl⟩ := a921.nil_inv
+                  exact «KernelWhnf::whnf_nd_const_head».PathX.other_other_Quot_n1_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry ev_itwpptuu ev_fxwzvrpa (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt_gdwgaggw hnt_tfnviflv
+                · have hnt_rguvcfjc : ∀ a13 : SourceValue F, (v_zjubsilu : SourceValue F) ≠ .tuple [(.field 1), a13] := fun a13 hv14 => by rw [hv14] at nm876; exact matchPattern_tuple_mixed_none nm876 (.cons (Or.inr ⟨_, (MatchesConst.literal 1), rfl⟩) (.cons (Or.inl trivial) .nil))
+                  rcases selectArm_cons_inv sel877 with ⟨mt924, rfl⟩ | ⟨nm925, sel926⟩
+                  · obtain rfl := matchPattern_wildcard_inv mt924
+                    obtain ⟨vs927, m928, c929, cs_nrhygazl, a931, ev_rsdptzcy, rfl⟩ := d873.call_inv
+                    rw [instanceName_plain_some] at ev_rsdptzcy
+                    obtain ⟨v933, vs935, m936, c937, c938, rfl, d939, a940, rfl⟩ := a931.cons_inv
+                    obtain ⟨l941, rfl, rfl⟩ := d939.var_inv
+                    simp at l941
+                    subst l941
+                    obtain ⟨v934, vs942, m943, c944, c945, rfl, d946, a947, rfl⟩ := a940.cons_inv
+                    obtain ⟨l948, rfl, rfl⟩ := d946.var_inv
+                    simp at l948
+                    subst l948
+                    obtain ⟨rfl, rfl, rfl⟩ := a947.nil_inv
+                    exact «KernelWhnf::whnf_nd_const_head».PathX.other_other_Quot_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry ev_itwpptuu ev_rsdptzcy (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt_gdwgaggw hnt_tfnviflv hnt_rguvcfjc
+                  · exact (matchPattern_wildcard_none nm925).elim
+              · have hne_mlcusths := matchPattern_construct_none (by trivial) nm788
+                simp only [Names.n11677430323439928978] at hne_mlcusths
+                rcases selectArm_cons_inv sel789 with ⟨mt951, rfl⟩ | ⟨nm952, sel953⟩
+                · obtain ⟨vs954, hv955, -, ml956⟩ := matchPattern_construct_inv mt951
+                  rw [Names.n11677430323439928978] at hv955
+                  subst hv955
+                  obtain ⟨x_rnl, vs960, b961, b962, rfl, mt963, ml964, rfl⟩ := matchListWith_cons_inv ml956
+                  obtain rfl := matchPattern_bind_inv mt963
+                  obtain ⟨x_rec_ty, vs965, b966, b967, rfl, mt968, ml969, rfl⟩ := matchListWith_cons_inv ml964
+                  obtain rfl := matchPattern_bind_inv mt968
+                  obtain ⟨x_nparams, vs970, b971, b972, rfl, mt973, ml974, rfl⟩ := matchListWith_cons_inv ml969
+                  obtain rfl := matchPattern_bind_inv mt973
+                  obtain ⟨x_nindices, vs975, b976, b977, rfl, mt978, ml979, rfl⟩ := matchListWith_cons_inv ml974
+                  obtain rfl := matchPattern_bind_inv mt978
+                  obtain ⟨x_nmotives, vs980, b981, b982, rfl, mt983, ml984, rfl⟩ := matchListWith_cons_inv ml979
+                  obtain rfl := matchPattern_bind_inv mt983
+                  obtain ⟨x_nminors, vs985, b986, b987, rfl, mt988, ml989, rfl⟩ := matchListWith_cons_inv ml984
+                  obtain rfl := matchPattern_bind_inv mt988
+                  obtain ⟨x_rules, vs990, b991, b992, rfl, mt993, ml994, rfl⟩ := matchListWith_cons_inv ml989
+                  obtain rfl := matchPattern_bind_inv mt993
+                  obtain ⟨x_k_flag, vs995, b996, b997, rfl, mt998, ml999, rfl⟩ := matchListWith_cons_inv ml994
+                  obtain rfl := matchPattern_bind_inv mt998
+                  obtain ⟨w_bxopnjji, vs1000, b1001, b1002, rfl, mt1003, ml1004, rfl⟩ := matchListWith_cons_inv ml999
+                  obtain rfl := matchPattern_wildcard_inv mt1003
+                  obtain ⟨w_pqjdsgqf, vs1005, b1006, b1007, rfl, mt1008, ml1009, rfl⟩ := matchListWith_cons_inv ml1004
+                  obtain rfl := matchPattern_wildcard_inv mt1008
+                  obtain ⟨w_ixuqwahp, vs1010, b1011, b1012, rfl, mt1013, ml1014, rfl⟩ := matchListWith_cons_inv ml1009
+                  obtain rfl := matchPattern_wildcard_inv mt1013
+                  obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1014
+                  obtain ⟨v_kfywwtlw, m_vnxlntqp, bs1017, body1018, c1019, c1020, d1021, sel1022, d1023, rfl⟩ := d527.matchValue_inv
+                  obtain ⟨vs1024, m1025, c1026, cs_ymeraxrl, a1028, ev_pxjjrnur, rfl⟩ := d1021.call_inv
+                  rw [instanceName_plain_some] at ev_pxjjrnur
+                  obtain ⟨v1030, vs1043, m1044, c1045, c1046, rfl, d1047, a1048, rfl⟩ := a1028.cons_inv
+                  obtain ⟨l1049, rfl, rfl⟩ := d1047.var_inv
+                  simp at l1049
+                  subst l1049
+                  obtain ⟨v1031, vs1050, m1051, c1052, c1053, rfl, d1054, a1055, rfl⟩ := a1048.cons_inv
+                  obtain ⟨l1056, rfl, rfl⟩ := d1054.var_inv
+                  simp at l1056
+                  subst l1056
+                  obtain ⟨v1032, vs1057, m1058, c1059, c1060, rfl, d1061, a1062, rfl⟩ := a1055.cons_inv
+                  obtain ⟨l1063, rfl, rfl⟩ := d1061.var_inv
+                  simp at l1063
+                  subst l1063
+                  obtain ⟨v1033, vs1064, m1065, c1066, c1067, rfl, d1068, a1069, rfl⟩ := a1062.cons_inv
+                  obtain ⟨l1070, rfl, rfl⟩ := d1068.var_inv
+                  simp at l1070
+                  subst l1070
+                  obtain ⟨v1034, vs1071, m1072, c1073, c1074, rfl, d1075, a1076, rfl⟩ := a1069.cons_inv
+                  obtain ⟨l1077, rfl, rfl⟩ := d1075.var_inv
+                  simp at l1077
+                  subst l1077
+                  obtain ⟨v1035, vs1078, m1079, c1080, c1081, rfl, d1082, a1083, rfl⟩ := a1076.cons_inv
+                  obtain ⟨l1084, rfl, rfl⟩ := d1082.var_inv
+                  simp at l1084
+                  subst l1084
+                  obtain ⟨v1036, vs1085, m1086, c1087, c1088, rfl, d1089, a1090, rfl⟩ := a1083.cons_inv
+                  obtain ⟨l1091, rfl, rfl⟩ := d1089.var_inv
+                  simp at l1091
+                  subst l1091
+                  obtain ⟨v1037, vs1092, m1093, c1094, c1095, rfl, d1096, a1097, rfl⟩ := a1090.cons_inv
+                  obtain ⟨l1098, rfl, rfl⟩ := d1096.var_inv
+                  simp at l1098
+                  subst l1098
+                  obtain ⟨v1038, vs1099, m1100, c1101, c1102, rfl, d1103, a1104, rfl⟩ := a1097.cons_inv
+                  obtain ⟨l1105, rfl, rfl⟩ := d1103.var_inv
+                  simp at l1105
+                  subst l1105
+                  obtain ⟨v1039, vs1106, m1107, c1108, c1109, rfl, d1110, a1111, rfl⟩ := a1104.cons_inv
+                  obtain ⟨l1112, rfl, rfl⟩ := d1110.var_inv
+                  simp at l1112
+                  subst l1112
+                  obtain ⟨v1040, vs1113, m1114, c1115, c1116, rfl, d1117, a1118, rfl⟩ := a1111.cons_inv
+                  obtain ⟨l1119, rfl, rfl⟩ := d1117.var_inv
+                  simp at l1119
+                  subst l1119
+                  obtain ⟨v1041, vs1120, m1121, c1122, c1123, rfl, d1124, a1125, rfl⟩ := a1118.cons_inv
+                  obtain ⟨l1126, rfl, rfl⟩ := d1124.var_inv
+                  simp at l1126
+                  subst l1126
+                  obtain ⟨v1042, vs1127, m1128, c1129, c1130, rfl, d1131, a1132, rfl⟩ := a1125.cons_inv
+                  obtain ⟨l1133, rfl, rfl⟩ := d1131.var_inv
+                  simp at l1133
+                  subst l1133
+                  obtain ⟨rfl, rfl, rfl⟩ := a1132.nil_inv
+                  rcases selectArm_cons_inv sel1022 with ⟨mt1134, rfl⟩ | ⟨nm1135, sel1136⟩
+                  · obtain ⟨vs1137, hv1138, -, ml1139⟩ := matchPattern_tuple_inv mt1134
+                    subst hv1138
+                    obtain ⟨w1140, vs1141, b1142, b1143, rfl, mt1144, ml1145, rfl⟩ := matchListWith_cons_inv ml1139
+                    obtain ⟨hv1146, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt1144
+                    subst hv1146
+                    obtain ⟨x_reduced, vs1147, b1148, b1149, rfl, mt1150, ml1151, rfl⟩ := matchListWith_cons_inv ml1145
+                    obtain rfl := matchPattern_bind_inv mt1150
+                    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1151
+                    obtain ⟨vs1152, m1153, c1154, cs_rzelxeiv, a1156, ev_fsfewuii, rfl⟩ := d1023.call_inv
+                    rw [instanceName_plain_some] at ev_fsfewuii
+                    obtain ⟨v1158, vs1161, m1162, c1163, c1164, rfl, d1165, a1166, rfl⟩ := a1156.cons_inv
+                    obtain ⟨l1167, rfl, rfl⟩ := d1165.var_inv
+                    simp at l1167
+                    subst l1167
+                    obtain ⟨v1159, vs1168, m1169, c1170, c1171, rfl, d1172, a1173, rfl⟩ := a1166.cons_inv
+                    obtain ⟨l1174, rfl, rfl⟩ := d1172.var_inv
+                    simp at l1174
+                    subst l1174
+                    obtain ⟨v1160, vs1175, m1176, c1177, c1178, rfl, d1179, a1180, rfl⟩ := a1173.cons_inv
+                    obtain ⟨l1181, rfl, rfl⟩ := d1179.var_inv
+                    simp at l1181
+                    subst l1181
+                    obtain ⟨rfl, rfl, rfl⟩ := a1180.nil_inv
+                    exact «KernelWhnf::whnf_nd_const_head».PathX.other_other_Rec_n1_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry ev_pxjjrnur ev_fsfewuii (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt_gdwgaggw hnt_tfnviflv
+                  · have hnt_vzukuavw : ∀ a16 : SourceValue F, (v_kfywwtlw : SourceValue F) ≠ .tuple [(.field 1), a16] := fun a16 hv17 => by rw [hv17] at nm1135; exact matchPattern_tuple_mixed_none nm1135 (.cons (Or.inr ⟨_, (MatchesConst.literal 1), rfl⟩) (.cons (Or.inl trivial) .nil))
+                    rcases selectArm_cons_inv sel1136 with ⟨mt1183, rfl⟩ | ⟨nm1184, sel1185⟩
+                    · obtain ⟨vs1186, hv1187, -, ml1188⟩ := matchPattern_tuple_inv mt1183
+                      subst hv1187
+                      obtain ⟨w1189, vs1190, b1191, b1192, rfl, mt1193, ml1194, rfl⟩ := matchListWith_cons_inv ml1188
+                      obtain ⟨hv1195, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 2) mt1193
+                      subst hv1195
+                      obtain ⟨x_stuck, vs1196, b1197, b1198, rfl, mt1199, ml1200, rfl⟩ := matchListWith_cons_inv ml1194
+                      obtain rfl := matchPattern_bind_inv mt1199
+                      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1200
+                      obtain ⟨l1201, rfl, rfl⟩ := d1023.var_inv
+                      simp at l1201
+                      subst l1201
+                      exact «KernelWhnf::whnf_nd_const_head».PathX.other_other_Rec_n2_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry ev_pxjjrnur rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt_gdwgaggw hnt_tfnviflv hnt_vzukuavw
+                    · have hnt_gmenbabh : ∀ a19 : SourceValue F, (v_kfywwtlw : SourceValue F) ≠ .tuple [(.field 2), a19] := fun a19 hv20 => by rw [hv20] at nm1184; exact matchPattern_tuple_mixed_none nm1184 (.cons (Or.inr ⟨_, (MatchesConst.literal 2), rfl⟩) (.cons (Or.inl trivial) .nil))
+                      rcases selectArm_cons_inv sel1185 with ⟨mt1205, rfl⟩ | ⟨nm1206, sel1207⟩
+                      · obtain ⟨vs1208, hv1209, -, ml1210⟩ := matchPattern_tuple_inv mt1205
+                        subst hv1209
+                        obtain ⟨w1211, vs1212, b1213, b1214, rfl, mt1215, ml1216, rfl⟩ := matchListWith_cons_inv ml1210
+                        obtain ⟨hv1217, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 3) mt1215
+                        subst hv1217
+                        obtain ⟨x_k_reduct, vs1218, b1219, b1220, rfl, mt1221, ml1222, rfl⟩ := matchListWith_cons_inv ml1216
+                        obtain rfl := matchPattern_bind_inv mt1221
+                        obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml1222
+                        obtain ⟨vs1223, m1224, c1225, cs_uuxbvbof, a1227, ev_iscgrqhn, rfl⟩ := d1023.call_inv
+                        rw [instanceName_plain_some] at ev_iscgrqhn
+                        obtain ⟨v1229, vs1232, m1233, c1234, c1235, rfl, d1236, a1237, rfl⟩ := a1227.cons_inv
+                        obtain ⟨l1238, rfl, rfl⟩ := d1236.var_inv
+                        simp at l1238
+                        subst l1238
+                        obtain ⟨v1230, vs1239, m1240, c1241, c1242, rfl, d1243, a1244, rfl⟩ := a1237.cons_inv
+                        obtain ⟨l1245, rfl, rfl⟩ := d1243.var_inv
+                        simp at l1245
+                        subst l1245
+                        obtain ⟨v1231, vs1246, m1247, c1248, c1249, rfl, d1250, a1251, rfl⟩ := a1244.cons_inv
+                        obtain ⟨l1252, rfl, rfl⟩ := d1250.var_inv
+                        simp at l1252
+                        subst l1252
+                        obtain ⟨rfl, rfl, rfl⟩ := a1251.nil_inv
+                        exact «KernelWhnf::whnf_nd_const_head».PathX.other_other_Rec_n3_bind _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry ev_pxjjrnur ev_iscgrqhn (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt_gdwgaggw hnt_tfnviflv hnt_vzukuavw hnt_gmenbabh
+                      · have hnt_bfucyyak : ∀ a22 : SourceValue F, (v_kfywwtlw : SourceValue F) ≠ .tuple [(.field 3), a22] := fun a22 hv23 => by rw [hv23] at nm1206; exact matchPattern_tuple_mixed_none nm1206 (.cons (Or.inr ⟨_, (MatchesConst.literal 3), rfl⟩) (.cons (Or.inl trivial) .nil))
+                        rcases selectArm_cons_inv sel1207 with ⟨mt1254, rfl⟩ | ⟨nm1255, sel1256⟩
+                        · obtain rfl := matchPattern_wildcard_inv mt1254
+                          obtain ⟨vs1257, m1258, c1259, cs_hmdzhwjh, a1261, ev_jfcinslu, rfl⟩ := d1023.call_inv
+                          rw [instanceName_plain_some] at ev_jfcinslu
+                          obtain ⟨v1263, vs1265, m1266, c1267, c1268, rfl, d1269, a1270, rfl⟩ := a1261.cons_inv
+                          obtain ⟨l1271, rfl, rfl⟩ := d1269.var_inv
+                          simp at l1271
+                          subst l1271
+                          obtain ⟨v1264, vs1272, m1273, c1274, c1275, rfl, d1276, a1277, rfl⟩ := a1270.cons_inv
+                          obtain ⟨l1278, rfl, rfl⟩ := d1276.var_inv
+                          simp at l1278
+                          subst l1278
+                          obtain ⟨rfl, rfl, rfl⟩ := a1277.nil_inv
+                          exact «KernelWhnf::whnf_nd_const_head».PathX.other_other_Rec_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry ev_pxjjrnur ev_jfcinslu (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt_gdwgaggw hnt_tfnviflv hnt_vzukuavw hnt_gmenbabh hnt_bfucyyak
+                        · exact (matchPattern_wildcard_none nm1255).elim
+                · have hne_gvmylidg := matchPattern_construct_none (by trivial) nm952
+                  simp only [Names.n11677430323439928978] at hne_gvmylidg
+                  rcases selectArm_cons_inv sel953 with ⟨mt1281, rfl⟩ | ⟨nm1282, sel1283⟩
+                  · obtain rfl := matchPattern_wildcard_inv mt1281
+                    obtain ⟨vs1284, m1285, c1286, cs_kdyihfvp, a1288, ev_zargqiml, rfl⟩ := d527.call_inv
+                    rw [instanceName_plain_some] at ev_zargqiml
+                    obtain ⟨v1290, vs1292, m1293, c1294, c1295, rfl, d1296, a1297, rfl⟩ := a1288.cons_inv
+                    obtain ⟨l1298, rfl, rfl⟩ := d1296.var_inv
+                    simp at l1298
+                    subst l1298
+                    obtain ⟨v1291, vs1299, m1300, c1301, c1302, rfl, d1303, a1304, rfl⟩ := a1297.cons_inv
+                    obtain ⟨l1305, rfl, rfl⟩ := d1303.var_inv
+                    simp at l1305
+                    subst l1305
+                    obtain ⟨rfl, rfl, rfl⟩ := a1304.nil_inv
+                    exact «KernelWhnf::whnf_nd_const_head».PathX.other_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev_avswdmlx ev_znalsizj sg_rsqiotdh ev_ghgzvwmd ld_ccmkhhry hne_xzxwjlzo hne_mlcusths hne_gvmylidg ev_zargqiml (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some]) hnt0 hnt_gdwgaggw hnt_tfnviflv
+                  · exact (matchPattern_wildcard_none nm1282).elim
+          · exact (matchPattern_wildcard_none nm492).elim
+    · exact (matchPattern_wildcard_none nm106).elim
 
 /-- The evaluation paths of `KernelWhnf::type_sort_never_zeta`: one constructor per combination of selected arms. -/
 inductive «KernelWhnf::type_sort_never_zeta».Path (x_ty x_n x_lvls : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)

@@ -1798,6 +1798,68 @@ def run_contains := aiur_fn⟦
     }
 ⟧
 
+  -- Eval-assumed `CheckEnv` walk: always traverses owned leaves under `rc` (never routing
+  -- through `IxVMCompat::check_owned`, which does not carry `evalAssumptions`).
+def run_check_env_eval := aiur_fn⟦
+  fn run_check_env_eval(rc: KernelRoles::RoleCtx, env_root: Bytes::AddressRef,
+                        asm: Options::Option<Bytes::AddressRef>) -> () {
+      let owned = load_assumption_tree(env_root);
+      match (*(owned)) {
+        Lists::Node::Nil => {
+          assert_eq!(0, 1, "CheckEnv: owned tree has no leaves");
+          () } ,
+        Lists::Node::Cons(_, _) => {  () } ,
+      };
+      assert_leaves_claimable(rc, owned);
+      match asm {
+        Options::Option::None => {  walk_leaves_transitive(rc, owned) } ,
+        Options::Option::Some(r) => {
+          let owned_set = addr_set_build(owned, RBTreeMap::RBTreeMap::Nil);
+          let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap::RBTreeMap::Nil);
+          env_walk_leaves(rc, owned, owned_set, asm_set) } ,
+      }
+    }
+⟧
+
+  -- Eval-assumed `Check` claim (validators 10 / 11): decodes `eval_root` after `asm`
+  -- matching `Ix.DynamicLink.getEvalAssumedClaim`, loads verified `EvalAssumption` leaves,
+  -- and runs the typing walk under `MkEval` / `AssumedEval`.
+def run_check_claim_eval := aiur_fn⟦
+  fn run_check_claim_eval(validator: Field, s: Bytes::Stream) -> () {
+      let (binding, axioms, s) = get_claim_context(s);
+      let (target, s2) = IxonDeserialize::get_address(s);
+      let (asm, s3) = get_opt_addr(s2);
+      let (eval_root, rest) = IxonDeserialize::get_address(s3);
+      let Lists::Node::Nil = (*(rest));
+      let rc = KernelRoles::load_role_ctx_eval(binding, validator, axioms, eval_root);
+      assert_claimable(rc, target);
+      match asm {
+        Options::Option::None => {  run_check_transitive(rc, target) } ,
+        Options::Option::Some(r) => {
+          let asm_leaves = load_assumption_tree(r);
+          let asm_set = addr_set_build(asm_leaves, RBTreeMap::RBTreeMap::Nil);
+          env_walk(rc, target, RBTreeMap::RBTreeMap::Nil, asm_set, 2) } ,
+      };
+      check_axiom_leaves(rc, axioms, asm)
+    }
+⟧
+
+  -- Eval-assumed `CheckEnv` claim (validators 10 / 11): decodes `eval_root` after `asm`
+  -- matching `Ix.DynamicLink.getEvalAssumedClaim`, loads verified `EvalAssumption` leaves,
+  -- and runs the environment walk under `MkEval` / `AssumedEval`.
+def run_check_env_claim_eval := aiur_fn⟦
+  fn run_check_env_claim_eval(validator: Field, s: Bytes::Stream) -> () {
+      let (binding, axioms, s) = get_claim_context(s);
+      let (root, s2) = IxonDeserialize::get_address(s);
+      let (asm, s3) = get_opt_addr(s2);
+      let (eval_root, rest) = IxonDeserialize::get_address(s3);
+      let Lists::Node::Nil = (*(rest));
+      let rc = KernelRoles::load_role_ctx_eval(binding, validator, axioms, eval_root);
+      run_check_env_eval(rc, root, asm);
+      check_axiom_leaves(rc, axioms, asm)
+    }
+⟧
+
 def run_claim := aiur_fn⟦
   fn run_claim(digest: [Field; 8]) -> () {
 
@@ -1834,30 +1896,39 @@ def run_claim := aiur_fn⟦
           KernelEval::run_eval(rc, input, output, asm);
           check_axiom_leaves(rc, axioms, asm) } ,
         4 => {
+          match UInt8::to_field(validator) {
+            10 => {  run_check_claim_eval(10, s) } ,
+            11 => {  run_check_claim_eval(11, s) } ,
+            _ => {
+              let (binding, axioms, s) = get_claim_context(s);
+              let rc = KernelRoles::load_role_ctx(binding, UInt8::to_field(validator), axioms);
+              let (target, s2) = IxonDeserialize::get_address(s);
+              let (asm, rest) = get_opt_addr(s2);
+              let Lists::Node::Nil = (*(rest));
+              assert_claimable(rc, target);
+              match asm {
+                Options::Option::None => {  run_check_transitive(rc, target) } ,
+                Options::Option::Some(r) => {
+                  let asm_leaves = load_assumption_tree(r);
+                  let asm_set = addr_set_build(asm_leaves, RBTreeMap::RBTreeMap::Nil);
 
-          let (binding, axioms, s) = get_claim_context(s);
-          let rc = KernelRoles::load_role_ctx(binding, UInt8::to_field(validator), axioms);
-          let (target, s2) = IxonDeserialize::get_address(s);
-          let (asm, rest) = get_opt_addr(s2);
-          let Lists::Node::Nil = (*(rest));
-          assert_claimable(rc, target);
-          match asm {
-            Options::Option::None => {  run_check_transitive(rc, target) } ,
-            Options::Option::Some(r) => {
-              let asm_leaves = load_assumption_tree(r);
-              let asm_set = addr_set_build(asm_leaves, RBTreeMap::RBTreeMap::Nil);
-
-              env_walk(rc, target, RBTreeMap::RBTreeMap::Nil, asm_set, 2) } ,
-          };
-          check_axiom_leaves(rc, axioms, asm) } ,
+                  env_walk(rc, target, RBTreeMap::RBTreeMap::Nil, asm_set, 2) } ,
+              };
+              check_axiom_leaves(rc, axioms, asm) } ,
+          } } ,
         5 => {
-          let (binding, axioms, s) = get_claim_context(s);
-          let rc = KernelRoles::load_role_ctx(binding, UInt8::to_field(validator), axioms);
-          let (root, s2) = IxonDeserialize::get_address(s);
-          let (asm, rest) = get_opt_addr(s2);
-          let Lists::Node::Nil = (*(rest));
-          run_check_env(rc, root, asm);
-          check_axiom_leaves(rc, axioms, asm) } ,
+          match UInt8::to_field(validator) {
+            10 => {  run_check_env_claim_eval(10, s) } ,
+            11 => {  run_check_env_claim_eval(11, s) } ,
+            _ => {
+              let (binding, axioms, s) = get_claim_context(s);
+              let rc = KernelRoles::load_role_ctx(binding, UInt8::to_field(validator), axioms);
+              let (root, s2) = IxonDeserialize::get_address(s);
+              let (asm, rest) = get_opt_addr(s2);
+              let Lists::Node::Nil = (*(rest));
+              run_check_env(rc, root, asm);
+              check_axiom_leaves(rc, axioms, asm) } ,
+          } } ,
         6 => {
           assert_eq!(UInt8::to_field(validator), 0, "claim: wrong validator identity");
           let (comm, s2) = IxonDeserialize::get_address(s);

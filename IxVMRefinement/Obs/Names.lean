@@ -993,6 +993,8 @@ theorem n253830841395321305 : constructorName [] (.named "Options::Option" [(.pt
 
 theorem n2169480615683866491 : constructorName [] (.named "KernelRoles::RoleCtxNode" []) = "KernelRoles::RoleCtxNode" := by decide +kernel
 
+theorem n4489227656273905977 : constructorName [] (.named "KernelRoles::EvalMap" []) = "KernelRoles::EvalMap" := by decide +kernel
+
 theorem n8637239332885517644 : constructorName [] (.named "KernelRoles::RoleTableNode" []) = "KernelRoles::RoleTableNode" := by decide +kernel
 
 theorem n7341824060654231630 : instanceName [] "KernelRoles::role_map_lookup_or_default" (some [(.ptr (.array .field 32))]) = Names.«KernelRoles::role_map_lookup_or_default<&[Field; 32]>» := by decide +kernel

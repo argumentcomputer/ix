@@ -6,7 +6,7 @@ import IxVMRefinement.Claim.RefSafety
 import IxVMRefinement.Assembly.TypingSkeleton
 import IxVMRefinement.Assembly.TypingDefnStep
 import IxVMRefinement.StatementRel.LoadedReadsWalked
-import IxVMRefinement.Obs.KernelRoles2
+import IxVMRefinement.Obs.KernelRoles
 import IxVMRefinement.Obs.KernelRoleSpec0
 import IxVMRefinement.Obs.KernelClaim1
 

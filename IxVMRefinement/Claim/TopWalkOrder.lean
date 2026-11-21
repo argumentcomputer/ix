@@ -127,7 +127,10 @@ theorem walk_ctx_ordered {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
         rw [sub_one_roleNum_ord op168] at ev151
         obtain ⟨rfl, rfl⟩ := RolesAux.role_group_spec ev121
         exact assert_op_reached_in_order_spec hn' ev151 h2 h33
-    | .Assumed (ld12 := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Assumed (ld12 := ld12) ..
+    | .MkEval_n0 (ld12 := ld12) .. | .MkEval_other_n0 (ld12 := ld12) ..
+    | .MkEval_other_other (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
+      rw [hl] at ld12; simp at ld12
   · cases hn
 
 /-! ## The walk's records, ordered -/

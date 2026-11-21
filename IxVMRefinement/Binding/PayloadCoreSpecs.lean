@@ -18,8 +18,7 @@ import IxVMRefinement.Obs.KernelModeled1
 import IxVMRefinement.Obs.KernelModeled2
 import IxVMRefinement.Obs.KernelModeled3
 import IxVMRefinement.Obs.KernelModeled5
-import IxVMRefinement.Obs.KernelRoles1
-import IxVMRefinement.Obs.KernelRoles2
+import IxVMRefinement.Obs.KernelRoles
 
 /-! # Core circuit specifications for the payload of a binding run
 
@@ -152,7 +151,9 @@ theorem assert_in_order_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address
         rw [sub_one_roleNum_pcs op1] at evo
         obtain ⟨rfl, rfl⟩ := Core.RolesAux.role_group_spec evg
         exact Claim.assert_op_reached_in_order_spec hn' evo h2 h33
-    | .Assumed (ld_bolbylmd := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Assumed (ld_bolbylmd := ld12) ..
+    | .MkEval_n0 (ld_bolbylmd := ld12) .. | .MkEval_other (ld_bolbylmd := ld12) ..
+    | .AssumedEval (ld_bolbylmd := ld12) .. => rw [hl] at ld12; simp at ld12
   · cases hn
 
 /-- **`KernelModeled::assert_used_not_block`** checks `Claim.NotBlockIn` on every used
@@ -320,7 +321,9 @@ theorem rc_validates_group_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addres
         Core.RolesAux.val_natCast (Nat.lt_trans hn (by decide))
       have h77v : ZMod.val (77 : F) = 77 := Core.RolesAux.val_natCast (by decide)
       exact ⟨hiff.mpr (by rw [hnv, h77v]; exact hn), hh⟩
-    | .Assumed (ld_bolbylmd := ld12) .. => rw [hl] at ld12; simp at ld12
+    | .Assumed (ld_bolbylmd := ld12) ..
+    | .MkEval (ld_bolbylmd := ld12) .. | .AssumedEval (ld_bolbylmd := ld12) .. =>
+      rw [hl] at ld12; simp at ld12
   · cases hnone
 
 private abbrev flatEntryTy : Generic.Ty :=
