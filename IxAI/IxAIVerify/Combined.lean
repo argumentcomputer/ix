@@ -47,19 +47,32 @@ def defaultBinding : String := "IxAICombined.blockRun"
 /-- Scheduled steps per `Fixed::train_block` execution. -/
 def defaultBlockSteps : Nat := 20
 
-/-- The pinned artifacts' files: `IXAI_IXVM_ARTIFACT` and `IXAI_JOIN_AGGREGATOR`, by default
-`ix/artifacts/ixvm-PIN.ixa` and `ix/artifacts/aggregate-PIN.ixa` of this project: found by the
-pinned digests, never through the `cert` profile of `ix/ixw`, whose digests may move on. -/
+/-- The two circuits the consumer approves, each by the BLAKE3 of its artifact, and the artifacts'
+files. The digests default to `ixvmPin` and `joinAggregatorPin`; a certificate made under other
+circuits is checked by naming their digests, which is the consumer's approval of them. The files
+are `IXAI_IXVM_ARTIFACT` and `IXAI_JOIN_AGGREGATOR`, by default `ix/artifacts/ixvm-DIGEST.ixa` and
+`ix/artifacts/aggregate-DIGEST.ixa` of this project: found by digest, never through the `cert`
+profile of `ix/ixw`, whose digests may move on. -/
 structure Artifacts where
   ixvm : System.FilePath
   joinAggregator : System.FilePath
+  ixvmDigest : String := ixvmPin
+  joinAggregatorDigest : String := joinAggregatorPin
 
-def Artifacts.fromEnv : IO Artifacts := do
+def Artifacts.fromEnv (ixvmDigest : String := ixvmPin)
+    (joinAggregatorDigest : String := joinAggregatorPin) : IO Artifacts := do
   let get := fun (var : String) (dflt : System.FilePath) => do
     return ((← IO.getEnv var).map System.FilePath.mk).getD dflt
   let dir := projectDir / "ix" / "artifacts"
-  return { ixvm := ← get "IXAI_IXVM_ARTIFACT" (dir / s!"ixvm-{ixvmPin}.ixa")
-           joinAggregator := ← get "IXAI_JOIN_AGGREGATOR" (dir / s!"aggregate-{joinAggregatorPin}.ixa") }
+  return { ixvm := ← get "IXAI_IXVM_ARTIFACT" (dir / s!"ixvm-{ixvmDigest}.ixa")
+           joinAggregator := ← get "IXAI_JOIN_AGGREGATOR" (dir / s!"aggregate-{joinAggregatorDigest}.ixa")
+           ixvmDigest, joinAggregatorDigest }
+
+/-- How the two circuit digests were approved, for the hypothesis that names them. -/
+def Artifacts.approval (arts : Artifacts) : String :=
+  if arts.ixvmDigest == ixvmPin && arts.joinAggregatorDigest == joinAggregatorPin then
+    "pinned by BLAKE3 here"
+  else "given by BLAKE3 on the command line"
 
 /-- What the consumer brings: the approved run aggregator and program (by BLAKE3), its own
 compilation of the job's templates, and the names of the theorem and binding the environment must
@@ -123,10 +136,11 @@ def parseJoinVerdict (out : String) : Option JoinVerdict := do
   pure { oks := ls.filter (·.startsWith "ok: "), proved, hypotheses := hyps.filter (· != "")
          assumed := ls.find? (·.startsWith "assumed: "), references := ls.filterMap parseReference }
 
-/-- The run's expected 104-byte output claim, and its execution count. -/
-def expectedOutput (c : Config) (steps : Nat) (final : List Int) : Except String (Nat × ByteArray) := do
-  let (count, data) ← Compression.execData (.blocks steps) c.lrRaw (scheduledBatches c)
-  return (count, Compression.execOutput count (rawOfModel (c.init Triage.spec)) final data)
+/-- The run's expected 104-byte output claim from `m0` over `batches`, and its execution count. -/
+def expectedOutput (c : Config) (steps : Nat) (m0 : List Int) (batches : List (List Int × List Int))
+    (final : List Int) : Except String (Nat × ByteArray) := do
+  let (count, data) ← Compression.execData (.blocks steps) c.lrRaw batches
+  return (count, Compression.execOutput count m0 final data)
 
 /-- The one 18-word claim of a root's `root-claims.bin`. -/
 def rootClaimOf (bytes : ByteArray) : Option (List Nat) :=
@@ -137,10 +151,10 @@ def rootClaimOf (bytes : ByteArray) : Option (List Nat) :=
 /-! ## The check -/
 
 def combinedHypotheses (tools : Tools) (checker verifier : String) (pin : Compression.Pin)
-    (ap : Approved) (join : List String) : List String :=
+    (arts : Artifacts) (ap : Approved) (join : List String) : List String :=
   [baseHypotheses.headD "",
    s!"the run aggregator (BLAKE3 {ap.runAggregatorDigest.short}…) and the `Fixed::train_block` program (BLAKE3 {ap.programDigest.short}…) are the compilation of the programs the consumer approved; their digests are given on the command line, not named by the job",
-   s!"the IxVM artifact ({short ixvmPin}…) and the `ix_aggr` artifact with the join shapes ({short joinAggregatorPin}…) are the circuits the consumer approved: pinned by BLAKE3 here, recompiled to keys by `aiur_join_check`",
+   s!"the IxVM artifact ({short arts.ixvmDigest}…) and the `ix_aggr` artifact with the join shapes ({short arts.joinAggregatorDigest}…) are the circuits the consumer approved: {arts.approval}, recompiled to keys by `aiur_join_check`",
    s!"`aiur_join_check` (BLAKE3 {checker}, {tools.aiurJoinCheck}) recompiles those keys, rebuilds the environment's CheckEnv claim from the environment and its partition, and reads the joined claim, the run's claims and the environment's records as Ix and the circuits do; it does not verify the root's proof, which the certificate binds",
    s!"`{ap.theoremName}` states the refinement its name says: its statement is checked to reference `IxAICore.train` and `IxAICore.Triage.spec` at the job's addresses and `IxAIAiur.fullConfig` at the address of the consumer's compiled config, and `{ap.binding}` to name the program key and the theorem; the statement itself is not compared with an expected term",
    "IxVM soundness for the CheckEnv claim: the pinned IxVM kernel differs from the one Ix PR 678 proves in `try_nat_dispatch_prewhnf`"] ++
@@ -165,15 +179,17 @@ def verifyCombined (tools : Tools) (cm : Commitment) (arts : Artifacts) (ap : Ap
   let kind := "combined"
   let some pin := cm.compression
     | return { kind, status := .incomplete, detail := ["the job pins no compression pipeline: the certificate cannot be checked against it"] }
-  let base := combinedHypotheses tools checker verifier pin ap []
+  let base := combinedHypotheses tools checker verifier pin arts ap []
   let done : RouteStatus → List String → IO RouteResult := fun status detail =>
     pure { kind, status, detail, hypotheses := base }
   if let .error e := checkModelWords c.hidden final then return ← done .rejected [s!"the submitted model: {e}"]
-  let (count, out) ← match expectedOutput c ap.blockSteps final with
+  let m0 := rawOfModel (c.init Triage.spec)
+  let batches := scheduledBatches c
+  let (count, out) ← match expectedOutput c ap.blockSteps m0 batches final with
     | .ok x => pure x
     | .error e => return ← done .rejected [s!"the expected run: {e}"]
   -- The consumer's own files.
-  for (path, pinHex, what) in [(arts.ixvm, ixvmPin, "IxVM artifact"), (arts.joinAggregator, joinAggregatorPin, "ix_aggr artifact")] do
+  for (path, pinHex, what) in [(arts.ixvm, arts.ixvmDigest, "IxVM artifact"), (arts.joinAggregator, arts.joinAggregatorDigest, "ix_aggr artifact")] do
     match ← fileDigest? path with
     | none => return ← done .incomplete [s!"the pinned {what} {path} is missing"]
     | some d => if d.hex != pinHex then return ← done .incomplete [s!"the {what} {path} has BLAKE3 {d}, not the pinned {pinHex}"]
@@ -202,14 +218,13 @@ def verifyCombined (tools : Tools) (cm : Commitment) (arts : Artifacts) (ap : Ap
   let missing := (← copyFiles ev.root root rootFiles) ++ (← copyFiles ev.runRoot runRoot runRootFiles) ++
     (← [ev.env, ev.partition, ev.plonk].filterM fun p => do return !(← p.pathExists)).map (·.toString)
   -- The run's arguments and expected model, from the specification and the submitted model.
-  let batches := scheduledBatches c
-  let specArgs := rawOfModel (c.init Triage.spec) ++ [c.lrRaw] ++ (batches.map (·.1)).flatten ++ (batches.map (·.2)).flatten
+  let specArgs := m0 ++ [c.lrRaw] ++ (batches.map (·.1)).flatten ++ (batches.map (·.2)).flatten
   let argsFile := work / "spec-args.txt"
   let outFile := work / "expected-output.txt"
   IO.FS.writeFile argsFile (joinInts specArgs ++ "\n")
   IO.FS.writeFile outFile (joinInts final ++ "\n")
   let t0 ← IO.monoMsNow
-  let r? ← run? tools.aiurJoinCheck #[arts.ixvm.toString, ixvmPin, arts.joinAggregator.toString, joinAggregatorPin,
+  let r? ← run? tools.aiurJoinCheck #[arts.ixvm.toString, arts.ixvmDigest, arts.joinAggregator.toString, arts.joinAggregatorDigest,
       ev.env.toString, ev.partition.toString, root.toString, runAggr.toString, program.toString, runRoot.toString,
       argsFile.toString, outFile.toString, toString count, toString ap.blockSteps, ap.theoremName, ap.binding]
   let ms := (← IO.monoMsNow) - t0
@@ -229,7 +244,7 @@ def verifyCombined (tools : Tools) (cm : Commitment) (arts : Artifacts) (ap : Ap
     return ← done .rejected [s!"aiur_join_check (exit {r.exitCode}): {lastChars all 300}"]
   let some v := parseJoinVerdict r.stdout
     | return ← done .rejected [s!"aiur_join_check exited 0 without a PROVED verdict: {lastChars all 300}"]
-  let hyps := combinedHypotheses tools checker verifier pin ap v.hypotheses
+  let hyps := combinedHypotheses tools checker verifier pin arts ap v.hypotheses
   let done : RouteStatus → List String → IO RouteResult := fun status detail =>
     pure { kind, status, detail, hypotheses := hyps }
   let joinLines := s!"aiur_join_check accepted the joined root ({ms} ms, {v.oks.length} checks):" ::

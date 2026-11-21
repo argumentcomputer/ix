@@ -178,6 +178,67 @@ def route (kind : String) (status : RouteStatus) : RouteResult := { kind, status
   (Ixon.tagN0.run { bytes := ⟨(Ixon.nat v).toArray⟩ }).toOption.map (fun (x, c) => (x, c.pos)) ==
     some (v, (Ixon.nat v).length)
 
+/-- The TagN reader as first written, powers recomputed and bytes copied: the specification of
+`Ixon.tagN`. -/
+def tagNSpec (f : Nat) : Ixon.Get (Nat × Nat) := do
+  let b := (← Ixon.u8).toNat
+  let flag := b / 2 ^ (8 - f)
+  let p := b % 2 ^ (8 - f)
+  let lead := 2 ^ (8 - f - 1)
+  let mbit := 2 ^ (8 - f - 2)
+  let e1 := lead
+  let e2 := e1 + 2 ^ (8 - f - 2 + 8)
+  let e3 := e2 + 2 ^ 16
+  let e4 := e3 + 2 ^ 24
+  let e5 := e4 + 2 ^ 32
+  if p < lead then return (flag, p)
+  else if p - lead < mbit then return (flag, e1 + (p - lead) * 256 + (← Ixon.u8).toNat)
+  else match p - lead - mbit with
+    | 0 => return (flag, e2 + Ixon.leNat (← Ixon.takeBytes 2))
+    | 1 => return (flag, e3 + Ixon.leNat (← Ixon.takeBytes 3))
+    | 2 => return (flag, e4 + Ixon.leNat (← Ixon.takeBytes 4))
+    | 3 =>
+      let v := e5 + Ixon.leNat (← Ixon.takeBytes 8)
+      if v < 2 ^ 64 then return (flag, v) else throw "TagN value exceeds UInt64"
+    | c => throw s!"invalid TagN code {c}"
+
+def runGet {α : Type} (g : Ixon.Get α) (bytes : List UInt8) : Except String (α × Nat) :=
+  (g.run { bytes := ⟨bytes.toArray⟩ }).map fun (x, c) => (x, c.pos)
+
+-- `tagN` reads what its specification reads, for every flag width the format uses, every first
+-- byte, and every length of what follows (including too short), with the same errors.
+#guard [0, 2, 4].all fun f => (List.range 256).all fun b => (List.range 10).all fun k =>
+  let bs := b.toUInt8 :: ((List.range k).map fun i => (0x11 * (i + 1) + 0xF0 * (i % 2)).toUInt8)
+  match runGet (Ixon.tagN f) bs, runGet (tagNSpec f) bs with
+  | .ok x, .ok y => x == y
+  | .error e, .error e' => e == e'
+  | _, _ => false
+#guard (runGet (Ixon.tagN 0) [0xC3, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]).toOption.isNone
+
+-- `Term.spine` collects arguments in order.
+#guard (Ixon.Term.app (.app (.var 9) (.var 1)) (.var 2)).spine == (.var 9, [.var 1, .var 2])
+#guard (Ixon.Term.var 9).spine == (.var 9, [])
+
+/-- A definition whose value is sharing entry `n`, entry `i + 1` applying entry `i` to itself:
+its value expands to `2 ^ (n + 2) - 2` nodes, counting each `share` node. -/
+def doubling (n : Nat) : Ixon.Definition :=
+  { kind := 0, safety := 1, lvls := 0, typ := .sort 0, value := .share n
+    sharing := (List.range (n + 1)).toArray.map fun i =>
+      if i == 0 then .var 0 else .app (.share (i - 1)) #[.share (i - 1)]
+    refs := #[], univs := #[] }
+
+def noEnv : Ixon.Env := { version := 5, binding := none, bytes := .empty, blobs := {}, consts := {} }
+
+def doubled : Nat → Ixon.Term
+  | 0 => .var 0
+  | k + 1 => .app (doubled k) (doubled k)
+
+-- Sharing is resolved once per entry, and the budget counts the expanded term: a budget of
+-- exactly its size passes, one less is refused, and a term of 2^62 nodes is refused at once.
+#guard (noEnv.resolve (doubling 10) (.share 10) (2 ^ 12 - 2)).toOption == some (doubled 10)
+#guard (noEnv.resolve (doubling 10) (.share 10) (2 ^ 12 - 3)) matches .error "expression exceeds the expansion budget"
+#guard (noEnv.resolve (doubling 60) (.share 60)) matches .error "expression exceeds the expansion budget"
+
 def addr (k : Nat) : Digest := ⟨ByteArray.mk (Array.replicate 32 k.toUInt8)⟩
 
 def specD : Digest := addr 1
@@ -376,6 +437,10 @@ def Certified.computed (c : Certified) : Digest :=
 #guard (u64le (2 ^ 64 + 5)).data == (u64le 5).data
 #guard fieldWord (-1) == 18446744069414584320
 #guard (encWords [-1, 2]).data == (u64le 18446744069414584320 ++ u64le 2).data
+-- `encWords` writes the bytes of its specification, over every model word and the field's edges.
+#guard let ws := ((List.range 8416).map fun i => (i : Int) - 4096) ++
+    [goldilocks - 1, goldilocks, goldilocks + 1, -goldilocks, 2 ^ 64, -(2 ^ 64) - 1]
+  (encWords ws).data == (encWordsSpec ws).data
 #guard (enc16 [-32768, 0, 32767]).map (·.data) == some #[0, 0, 0, 128, 255, 255]
 #guard (enc16 [32768]).isNone
 #guard (enc16 [-32769]).isNone

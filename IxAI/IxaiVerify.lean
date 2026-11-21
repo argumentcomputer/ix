@@ -37,6 +37,8 @@ A small executable with only the specification (`IxAICore`) and the verification
   refinement theorem (`IxAIVerify.Combined`): `aiur_join_check` on the joined root against the
   pinned artifacts and the run computed from the specification, then the PLONK proof against the
   job's pinned key and the statement computed here. Outcome `PROVED`, `REJECTED` or `INCOMPLETE`.
+* `ixai-verify read-env FILE`: read an `.ixe` as the verifier does, every record authenticated by
+  its address, and report its size and the time taken.
 -/
 
 open IxAI IxAIVerify IxAIVerify.Cli
@@ -127,7 +129,7 @@ def cmdCompressed (args : List String) : IO UInt32 := do
   | _, _, _, _, _, _, _, _, _ => IO.eprintln usage; return 2
 
 def cmdCombined (args : List String) : IO UInt32 := do
-  let usage := "usage: ixai-verify combined --commitment FILE [--commitment-blake3 HEX] --template-env FILE --root DIR --plonk FILE --plonk-key FILE --env FILE --partition FILE --run-root DIR --aggregator FILE --aggregator-blake3 HEX --program FILE --program-blake3 HEX --model FILE [--theorem NAME] [--binding NAME] [--block-steps N]"
+  let usage := "usage: ixai-verify combined --commitment FILE [--commitment-blake3 HEX] --template-env FILE --root DIR --plonk FILE --plonk-key FILE --env FILE --partition FILE --run-root DIR --aggregator FILE --aggregator-blake3 HEX --program FILE --program-blake3 HEX --model FILE [--theorem NAME] [--binding NAME] [--block-steps N] [--ixvm-blake3 HEX] [--join-aggregator-blake3 HEX]"
   let d := fun (k : String) => (flag args k).bind Digest.ofHex?
   let steps? := match flag args "--block-steps" with
     | none => some Combined.defaultBlockSteps
@@ -139,7 +141,15 @@ def cmdCombined (args : List String) : IO UInt32 := do
   | some cmPath, some tenv, some root, some plonk, some key, some env, some part, some runRoot,
     some ax, some axD, some prog, some progD, some model, some blockSteps =>
     let tools ← Tools.fromEnv
-    let arts ← Combined.Artifacts.fromEnv
+    -- The two circuits are approved by digest: the built-in pins, or digests named here.
+    let circuit := fun (k : String) (pin : String) => match flag args k with
+      | none => some pin
+      | some h => (Digest.ofHex? h).map Digest.hex
+    let (ixvmD, aggrD) ← match circuit "--ixvm-blake3" Combined.ixvmPin,
+        circuit "--join-aggregator-blake3" Combined.joinAggregatorPin with
+      | some a, some b => pure (a, b)
+      | _, _ => IO.eprintln usage; return 2
+    let arts ← Combined.Artifacts.fromEnv ixvmD aggrD
     let finish := fun (o : Outcome) (lines : Array String) (rr : Option RouteResult) => do
       for l in lines do IO.println l
       if let some x := rr then printRoute x
@@ -268,6 +278,13 @@ def main (args : List String) : IO UInt32 := do
   | "template" :: rest => cmdTemplate rest
   | "commit" :: rest => cmdCommit rest
   | ["blake3", f] => do IO.println (IxAI.blake3 (← IO.FS.readBinFile f)).hex; return 0
+  | ["read-env", f] => do
+    let t0 ← IO.monoMsNow
+    match Ixon.readEnv (← IO.FS.readBinFile f) with
+    | .ok e =>
+      IO.println s!"{f}: {e.blobs.size} blobs and {e.consts.size} constants, each authenticated by its address ({(← IO.monoMsNow) - t0} ms)"
+      return 0
+    | .error e => IO.println s!"REJECT: {f}: {e}"; return 1
   | _ =>
-    IO.eprintln "usage: ixai-verify (package|chain|compressed|combined|trajectory|job|template|commit|blake3) …; see docs/verification.md"
+    IO.eprintln "usage: ixai-verify (package|chain|compressed|combined|trajectory|job|template|commit|blake3|read-env) …; see docs/verification.md"
     return 2

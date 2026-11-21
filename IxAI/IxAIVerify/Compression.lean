@@ -43,9 +43,18 @@ def u64le (n : Nat) : ByteArray :=
 /-- A signed word as the circuit's Goldilocks field element. -/
 def fieldWord (v : Int) : Nat := (v % goldilocks).toNat
 
-/-- Words as the aggregator hashes them: each field element as a little-endian `u64`. -/
-def encWords (vs : List Int) : ByteArray :=
+/-- Words as the aggregator hashes them: each field element as a little-endian `u64`. The
+specification; `encWords` computes the same bytes into one buffer. -/
+def encWordsSpec (vs : List Int) : ByteArray :=
   vs.foldl (fun b v => b ++ u64le (fieldWord v)) ByteArray.empty
+
+/-- `encWordsSpec`, written into one preallocated buffer (`IxAIVerifyTest` checks the equality). -/
+def encWords (vs : List Int) : ByteArray := Id.run do
+  let mut b := ByteArray.emptyWithCapacity (8 * vs.length)
+  for v in vs do
+    let n := fieldWord v
+    for i in [0:8] do b := b.push ((n >>> (8 * i)) % 256).toUInt8
+  return b
 
 /-- A digest as eight little-endian `u32` words. -/
 def digestWords (d : Digest) : List Nat :=

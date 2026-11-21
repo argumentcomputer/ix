@@ -120,7 +120,9 @@ must hash to its address, so the file needs no digest of its own. For each claim
 - `T` must be a theorem of the environment whose type is the template's statement with each hole
   replaced by a closed term (`Ixon.matchTemplate`);
 - `ix verify PROOF` must exit 0 and print `ok: proof PROOF verifies claim D` with `D` the BLAKE3 of
-  the expected claim.
+  the expected claim. All the claims' proofs go to one `ix verify` process first, which builds the
+  IxVM key once; a proof whose own `ok:` line names its expected claim there is verified, and any
+  other proof is verified again in a process of its own, whose result is the verdict.
 
 The `trainedOutput` hole must be the same constant in every claim. Its Ixon record, a safe
 definition, possibly through other definitions, is read as a model literal through the committed
@@ -331,7 +333,7 @@ and the statement read the same bytes:
 | `m₀`, `lr`, the 600 scheduled batches, their 30 blocks | computed here from the job's config (`IxAICore` evaluated natively) |
 | the final model | the submitted model, checked canonical and in `[-4096, 4320)` |
 | the run's output claim (count, `BLAKE3(enc m₀)`, `BLAKE3(enc m₃₀)`, data root) | computed here and compared with `out.bin`; `aiur_join_check` recomputes it too, from the files written here |
-| IxVM key, `ix_aggr` key (the root key) | recompiled by `aiur_join_check` from the artifacts pinned by BLAKE3 in `IxAIVerify.Combined` (`0cbcb681…`, `80d584ab…`; files `ix/artifacts/ixvm-PIN.ixa` and `aggregate-PIN.ixa`, or `IXAI_IXVM_ARTIFACT`, `IXAI_JOIN_AGGREGATOR`; never the `cert` profile's current digests) |
+| IxVM key, `ix_aggr` key (the root key) | recompiled by `aiur_join_check` from the artifacts the consumer approves by BLAKE3: the pins in `IxAIVerify.Combined` by default (`0cbcb681…`, `80d584ab…`, the circuits of the first combined certificate), or the digests given with `--ixvm-blake3` and `--join-aggregator-blake3` for a certificate made under other circuits, in which case the hypothesis that names them says so; files `ix/artifacts/ixvm-PIN.ixa` and `aggregate-PIN.ixa`, or `IXAI_IXVM_ARTIFACT`, `IXAI_JOIN_AGGREGATOR`; never the `cert` profile's current digests) |
 | the run aggregator's and program's keys, the run's identity | recompiled by `aiur_join_check` from the approved packages (BLAKE3 given by the consumer) |
 | the environment's `CheckEnv` claim and subject root | rebuilt by `aiur_join_check` from the trainer's environment and partition |
 | theorem and binding addresses | read by `aiur_join_check` from the environment, by the names the consumer gives |

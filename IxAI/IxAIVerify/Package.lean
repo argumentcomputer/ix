@@ -449,9 +449,10 @@ def claimHypotheses (tools : Tools) (ixw : String) (cm : Commitment) : List Stri
 /-- Find the receipt's proof for template `id`: an entry whose `claim` is `id`, or else whose
 `name` ends in `.id`. -/
 def receiptProof (proofs : List Json) (id : String) : Option String :=
-  let byClaim := proofs.find? fun p => (jStr p ["claim"]).toOption == some id
-  let byName := proofs.find? fun p => ((jStr p ["name"]).toOption.map fun n => n == id || n.endsWith s!".{id}") == some true
-  (byClaim.orElse fun _ => byName).bind fun p => (jStr p ["proof"]).toOption
+  let found := match proofs.find? fun p => (jStr p ["claim"]).toOption == some id with
+    | some p => some p
+    | none => proofs.find? fun p => ((jStr p ["name"]).toOption.map fun n => n == id || n.endsWith s!".{id}") == some true
+  found.bind fun p => (jStr p ["proof"]).toOption
 
 /-- A claim that passed every check short of running `ix verify`. -/
 structure PendingClaim where
@@ -527,11 +528,23 @@ def verifyClaims (tools : Tools) (cm : Commitment) (rj : Json) (base : System.Fi
   | some _ => r := r.reject "the claims' model is not a constant"; ok := false
   | none => ok := false
   if r.rejected || !ok then return (false, r)
-  let results ← runPool 4 (pending.toList.map fun p => do
+  -- `ix verify` takes several proofs and builds the IxVM key once for all of them; a proof is
+  -- verified by the batch when its own `ok:` line names the expected claim. Any other proof is
+  -- verified again on its own, so every verdict and message is the one of a process per proof.
+  let batch := pending.toList
+  let batchOut ← run? tools.ixw (#["verify"] ++ (batch.map (·.proof)).toArray)
+  let verifiedInBatch := fun (p : PendingClaim) => match batchOut with
+    | some o => !notRun o && (o.stdout.splitOn s!"ok: proof {p.proof} verifies claim {p.expected.digest.hex}").length > 1
+    | none => false
+  let results ← runPool 4 (batch.map fun p => do
+    if verifiedInBatch p then return (p, none, true)
     let r? ← run? tools.ixw #["verify", p.proof]
-    return (p, r?))
-  for (p, r?) in results do
+    return (p, r?, false))
+  for (p, r?, inBatch) in results do
     let digest := p.expected.digest.hex
+    if inBatch then
+      r := r.say s!"  [{p.claim.role}] {p.claim.id}: Check({short p.expected.const.hex}…) under the policy, claim {short digest}…, proof {short p.proof}… verified"
+      continue
     match r? with
     | none => r := r.missing s!"{p.claim.id}: cannot run {tools.ixw}"; ok := false
     | some o =>

@@ -69,11 +69,10 @@ def stepHypotheses (tools : Tools) (verifier : String) : List String :=
    "the claim encoding (`IxAIVerify.stepClaimEncoding`) is read the same way by the circuit: checker code, not a Lean definition the claim names",
    "native evaluation of the specification here (examples, schedule, `config.init`; compiled Lean) agrees with kernel evaluation (`#eval` parity of the compiler)"]
 
-/-- Write the approved program, wrapped, into `work`, after checking its digest. -/
-def approvedPackage (program : System.FilePath) (expected : Digest) (work : System.FilePath) :
-    IO (Except String System.FilePath) := do
-  unless ← program.pathExists do return .error s!"approved program package {program} is missing"
-  let bytes ← IO.FS.readBinFile program
+/-- Write `bytes`, the contents of the approved program package `program`, wrapped, into `work`,
+after checking their digest. -/
+def approvedPackageBytes (program : System.FilePath) (bytes : ByteArray) (expected : Digest)
+    (work : System.FilePath) : IO (Except String System.FilePath) := do
   let d := blake3 bytes
   if d != expected then
     return .error s!"program package {program} has BLAKE3 {d}, not the approved {expected}"
@@ -82,6 +81,12 @@ def approvedPackage (program : System.FilePath) (expected : Digest) (work : Syst
   let path := work / s!"approved-{expected.short}.exec.ixa"
   IO.FS.writeBinFile path (Ixon.wrapPackage bytes)
   return .ok path
+
+/-- Write the approved program, wrapped, into `work`, after checking its digest. -/
+def approvedPackage (program : System.FilePath) (expected : Digest) (work : System.FilePath) :
+    IO (Except String System.FilePath) := do
+  unless ← program.pathExists do return .error s!"approved program package {program} is missing"
+  approvedPackageBytes program (← IO.FS.readBinFile program) expected work
 
 /-- A process that never reached its own code: not found, not executable, or its shared libraries
 not loadable. Anything else a verifier does once started, including a panic, is its verdict on the
@@ -267,7 +272,7 @@ def approvedProgram (program : System.FilePath) (expected : Digest) (work : Syst
     IO (Except String System.FilePath) := do
   unless ← program.pathExists do return .error s!"approved program {program} is missing"
   let bytes ← IO.FS.readBinFile program
-  if Ixon.isPackage bytes then return ← approvedPackage program expected work
+  if Ixon.isPackage bytes then return ← approvedPackageBytes program bytes expected work
   let d := blake3 bytes
   if d != expected then
     return .error s!"program {program} has BLAKE3 {d}, not the approved {expected}"

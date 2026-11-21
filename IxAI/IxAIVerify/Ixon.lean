@@ -89,6 +89,12 @@ application and binder telescopes made binary.
 
 The same reader serves the package verifier (claims, templates, the model constant) and the reward
 harness (`checkGoalType`).
+
+Every record is hashed when the file is read, though only a few are ever looked up: those callers'
+verdicts cover the whole file (see `Env`), so a damaged record that is never dereferenced must
+still be refused. What the reader avoids is copying: records stay slices of the file until looked
+up. Shared subterms are resolved once per sharing entry (`Env.resolve`), with the expansion budget
+still charged for every occurrence.
 -/
 
 namespace IxAIVerify.Ixon
@@ -116,28 +122,38 @@ def takeBytes (n : Nat) : Get ByteArray := do
 
 def leNat (bs : ByteArray) : Nat := bs.data.foldr (fun b acc => acc * 256 + b.toNat) 0
 
+/-- `leNat (← takeBytes n)`, with the same bounds check and message, without copying the bytes. -/
+def leBytes (n : Nat) : Get Nat := do
+  let c ← get
+  if c.pos + n > c.bytes.size then throw s!"needs {n} bytes, {c.bytes.size - c.pos} left"
+  set { c with pos := c.pos + n }
+  let mut v := 0
+  for k in [0:n] do v := v + (c.bytes.get! (c.pos + k)).toNat <<< (8 * k)
+  return v
+
 def address : Get Digest := return ⟨← takeBytes 32⟩
 
 /-- A TagN integer with an `f`-bit flag: `(flag, value)`. -/
 def tagN (f : Nat) : Get (Nat × Nat) := do
   let b := (← u8).toNat
-  let flag := b / 2 ^ (8 - f)
-  let p := b % 2 ^ (8 - f)
-  let lead := 2 ^ (8 - f - 1)
-  let mbit := 2 ^ (8 - f - 2)
-  let e1 := lead
-  let e2 := e1 + 2 ^ (8 - f - 2 + 8)
-  let e3 := e2 + 2 ^ 16
-  let e4 := e3 + 2 ^ 24
-  let e5 := e4 + 2 ^ 32
+  let w := 8 - f
+  let flag := b >>> w
+  let p := b % (1 <<< w)
+  let lead := 1 <<< (w - 1)
   if p < lead then return (flag, p)
-  else if p - lead < mbit then return (flag, e1 + (p - lead) * 256 + (← u8).toNat)
-  else match p - lead - mbit with
-    | 0 => return (flag, e2 + leNat (← takeBytes 2))
-    | 1 => return (flag, e3 + leNat (← takeBytes 3))
-    | 2 => return (flag, e4 + leNat (← takeBytes 4))
+  let mbit := 1 <<< (w - 2)
+  let e1 := lead
+  if p - lead < mbit then return (flag, e1 + (p - lead) * 256 + (← u8).toNat)
+  let e2 := e1 + (1 <<< (w - 2 + 8))
+  let e3 := e2 + (1 <<< 16)
+  let e4 := e3 + (1 <<< 24)
+  let e5 := e4 + (1 <<< 32)
+  match p - lead - mbit with
+    | 0 => return (flag, e2 + (← leBytes 2))
+    | 1 => return (flag, e3 + (← leBytes 3))
+    | 2 => return (flag, e4 + (← leBytes 4))
     | 3 =>
-      let v := e5 + leNat (← takeBytes 8)
+      let v := e5 + (← leBytes 8)
       if v < 2 ^ 64 then return (flag, v) else throw "TagN value exceeds UInt64"
     | c => throw s!"invalid TagN code {c}"
 
@@ -240,9 +256,11 @@ inductive Term where
   deriving BEq, Inhabited
 
 /-- `head a₁ … aₙ` as `(head, [a₁, …, aₙ])`. -/
-def Term.spine : Term → Term × List Term
-  | .app f a => let (h, args) := f.spine; (h, args ++ [a])
-  | t => (t, [])
+def Term.spine (t : Term) : Term × List Term := go t []
+where
+  go : Term → List Term → Term × List Term
+    | .app f a, args => go f (a :: args)
+    | t, args => (t, args)
 
 /-- Does `t` have a free variable when read under `depth` binders? `t.loose 0`: is `t` open? -/
 def Term.loose (depth : Nat) : Term → Bool
@@ -280,12 +298,37 @@ def definition : Get Definition := do
   let univs ← times (← count) univ
   return { kind, safety, lvls, typ, value, sharing, refs, univs }
 
-/-- An environment's authenticated records: every blob and constant hashes to its address. -/
+/-- An environment's authenticated records: every blob and constant hashes to its address. Records
+are kept as `(offset, length)` in `bytes`, the file they were read from, and copied out only when
+looked up (`Env.blob?`, `Env.const?`).
+
+Every record is still hashed when the file is read, not when it is first looked up. A lazy check
+would be enough for the lookups themselves, which are by address and would hash a record before
+its first use, but the verdicts of this reader's callers say more than that: `verifyClaims`
+reports the environment as authenticated record by record, and `checkGoalType` refuses an
+environment with any record that does not hash to its address. Both would change for a file whose
+damaged records are never dereferenced. -/
 structure Env where
   version : Nat
   binding : Option Digest
-  blobs : Std.HashMap Digest ByteArray
-  consts : Std.HashMap Digest ByteArray
+  bytes : ByteArray
+  blobs : Std.HashMap Digest (Nat × Nat)
+  consts : Std.HashMap Digest (Nat × Nat)
+
+def Env.slice (e : Env) : Nat × Nat → ByteArray
+  | (o, n) => e.bytes.extract o (o + n)
+
+def Env.blob? (e : Env) (a : Digest) : Option ByteArray := (e.blobs.get? a).map e.slice
+def Env.const? (e : Env) (a : Digest) : Option ByteArray := (e.consts.get? a).map e.slice
+
+/-- A length-prefixed record at the cursor: its `(offset, length)`, after checking that its bytes
+hash to `a` (`what` names it in the error). -/
+def record (a : Digest) (what : String) : Get (Nat × Nat) := do
+  let n ← tagN0
+  let o := (← get).pos
+  let bytes ← takeBytes n
+  unless blake3 bytes == a do throw s!"{what} {a} does not hash to its address"
+  return (o, n)
 
 def env : Get Env := do
   let (flag, version) ← tagN 4
@@ -303,57 +346,63 @@ def env : Get Env := do
       unless blake3 bytes == a do throw "the role binding does not hash to its address"
       pure (some a)
     else pure none
-  let mut blobs : Std.HashMap Digest ByteArray := {}
+  let mut blobs : Std.HashMap Digest (Nat × Nat) := {}
   let nBlobs ← count 33
   for _ in [0:nBlobs] do
     let a ← address
-    let bytes ← takeBytes (← tagN0)
-    unless blake3 bytes == a do throw s!"blob {a} does not hash to its address"
-    blobs := blobs.insert a bytes
-  let mut consts : Std.HashMap Digest ByteArray := {}
+    blobs := blobs.insert a (← record a "blob")
+  let mut consts : Std.HashMap Digest (Nat × Nat) := {}
   let nConsts ← count 33
   for _ in [0:nConsts] do
     let a ← address
-    let bytes ← takeBytes (← tagN0)
-    unless blake3 bytes == a do throw s!"constant {a} does not hash to its address"
-    consts := consts.insert a bytes
-  return { version, binding, blobs, consts }
+    consts := consts.insert a (← record a "constant")
+  return { version, binding, bytes := (← get).bytes, blobs, consts }
 
 def readEnv (bytes : ByteArray) : Except String Env := (env.run { bytes }).map (·.1)
 
 def Env.definition? (e : Env) (a : Digest) : Except String Definition := do
-  let some bytes := e.consts.get? a | throw s!"constant {a} is not in the environment"
+  let some bytes := e.const? a | throw s!"constant {a} is not in the environment"
   let (d, c) ← definition.run { bytes }
   unless c.pos == bytes.size do throw s!"constant {a}: trailing bytes"
   return d
 
+/-- The state of `Env.resolve`: the nodes left in the budget, and each sharing entry already
+resolved, with the number of nodes its expansion counts. -/
+structure ResolveState where
+  budget : Nat
+  shared : Std.HashMap Nat (Term × Nat) := {}
+
 /-- Resolve a stored expression of `d`. Shared subterms are expanded under a node budget, so a
-record whose sharing would expand beyond it is refused rather than unfolded. -/
+record whose sharing would expand beyond it is refused rather than unfolded. The budget counts the
+nodes of the expanded term; each sharing entry is resolved once and reused (the resulting `Term`
+shares it), and every reuse charges its full expanded size, so the work is linear in the stored
+expression while the verdict is the one of expanding every occurrence. -/
 partial def Env.resolve (e : Env) (d : Definition) (r : Raw) (budget : Nat := 4000000) :
     Except String Term := do
-  let (t, _) ← (go r).run budget
+  let (t, _) ← (go r).run { budget }
   return t
 where
-  tick : StateT Nat (Except String) Unit := do
-    let n ← get
-    if n == 0 then throw "expression exceeds the expansion budget"
-    set (n - 1)
-  refAt (i : Nat) : StateT Nat (Except String) Digest := do
+  exceeded : String := "expression exceeds the expansion budget"
+  tick : StateT ResolveState (Except String) Unit := do
+    let s ← get
+    if s.budget == 0 then throw exceeded
+    set { s with budget := s.budget - 1 }
+  refAt (i : Nat) : StateT ResolveState (Except String) Digest := do
     let some a := d.refs[i]? | throw s!"reference index {i} out of range"
     return a
-  univAt (i : Nat) : StateT Nat (Except String) Univ := do
+  univAt (i : Nat) : StateT ResolveState (Except String) Univ := do
     let some u := d.univs[i]? | throw s!"universe index {i} out of range"
     return u
-  blob (i : Nat) : StateT Nat (Except String) ByteArray := do
+  blob (i : Nat) : StateT ResolveState (Except String) ByteArray := do
     let a ← refAt i
-    let some b := e.blobs.get? a | throw s!"literal blob {a} is not in the environment"
+    let some b := e.blob? a | throw s!"literal blob {a} is not in the environment"
     return b
   binders (bs : List (UInt8 × Raw)) (body : Raw) (mk : UInt8 → Term → Term → Term) :
-      StateT Nat (Except String) Term := do
+      StateT ResolveState (Except String) Term := do
     match bs with
     | [] => go body
     | (c, ty) :: rest => return mk c (← go ty) (← binders rest body mk)
-  go (r : Raw) : StateT Nat (Except String) Term := do
+  go (r : Raw) : StateT ResolveState (Except String) Term := do
     tick
     match r with
     | .sort u => return .sort (← univAt u)
@@ -369,7 +418,17 @@ where
     | .letE fl b ty v body => return .letE fl b (← go ty) (← go v) (← go body)
     | .share i =>
       let some s := d.sharing[i]? | throw s!"share index {i} out of range"
-      go s
+      match (← get).shared.get? i with
+      | some (t, cost) =>
+        let st ← get
+        if st.budget < cost then throw exceeded
+        set { st with budget := st.budget - cost }
+        return t
+      | none =>
+        let before := (← get).budget
+        let t ← go s
+        modify fun st => { st with shared := st.shared.insert i (t, before - st.budget) }
+        return t
 
 /-! ## Theorem statements
 
