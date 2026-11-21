@@ -69,6 +69,10 @@ module MultiStark {
           verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
         16 => {  Aggregation::aggr_catalog_join(ixvm_vk_digest, self_vk_digest,
           verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        17 => {  Aggregation::aggr_dynamic_link(ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        18 => {  Aggregation::aggr_discharge_eval(ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
       }
     }
 }

@@ -2,6 +2,7 @@ module
 public import Ix.Aggr.Parameters
 public import Ix.AssumptionTree
 public import Ix.Claim
+public import Ix.DynamicLink.Codec
 
 /-! Aggregation identity, shape codes, and advice encoding. -/
 
@@ -52,23 +53,37 @@ def structuralShapeCode (left right : ChildKind) : Nat :=
 
 /-! ## Range-sum recursion -/
 
-def rangeLeafShape : Nat := 10
-def rangeJoinShape : Nat := 11
-def rangeRootShape : Nat := 12
+@[expose] def rangeLeafShape : Nat := 10
+@[expose] def rangeJoinShape : Nat := 11
+@[expose] def rangeRootShape : Nat := 12
 
 /-! ## Binding discharge -/
 
 /-- The binding-discharge shape for a child of kind `kind`. -/
-def dischargeShapeCode (kind : ChildKind) : Nat := 13 + kind.code
+@[expose] def dischargeShapeCode (kind : ChildKind) : Nat := 13 + kind.code
 
 /-- The cross-binding structural pair: two `ix_aggr` children whose role
 bindings have one literal class, joined into a claim under that class. -/
-def crossBindingShapeCode : Nat := 15
+@[expose] def crossBindingShapeCode : Nat := 15
 
 /-- The catalog join: two `ix_aggr` children, each an unconditional `CheckEnv`
 claim or a `Catalog` claim, joined into the `Catalog` of all their member
 statements. -/
-def catalogShapeCode : Nat := 16
+@[expose] def catalogShapeCode : Nat := 16
+
+/-- Dynamic circuit linking (`aggr_dynamic_link`, Tier 1 Workstream 5A):
+verifies an external Multi-STARK proof against an advice-supplied VK on IO
+channel 1 key 2 under the uniform security envelope, optionally paired with an
+unconditional IxVM/`ix_aggr` bridge theorem proof on slot 1, and emits a
+canonical `DynamicLinkStatement` (`0xE8 0x0D`). -/
+@[expose] def dynamicLinkShapeCode : Nat := 17
+
+/-- Tier 2 eval-assumption discharge (`aggr_discharge_eval`, Workstream 5B):
+discharges one `EvalAssumption` leaf (`0xE8 0x0E`) from an `EvalAssumedClaim`
+(validator `10`/`11`) via a `Claim.eval`, `Claim.check`, or Shape 17
+`DynamicLinkStatement` child, transitioning validator `10 → 3` (or `11 → 4`)
+when the final eval assumption is discharged. -/
+@[expose] def dischargeEvalShapeCode : Nat := 18
 
 /-- The byte that opens every range statement; no `Ix.Claim` starts with it,
 so a range statement never parses as a `CheckEnv` claim. -/
@@ -168,6 +183,107 @@ def extendVk (io : Aiur.IOBuffer) (kind : ChildKind)
 /-- Channel 2 key 2: the output claim bytes of a pair fold. -/
 def extendOutputClaim (io : Aiur.IOBuffer) (bytes : ByteArray) : Aiur.IOBuffer :=
   io.extend 2 #[.ofNat 2] (byteGs bytes)
+
+/-- Channel 1 key 2: external accelerator verifying-key bytes for Shape 17
+(`aggr_dynamic_link`). -/
+def extendExternalVk (io : Aiur.IOBuffer) (vkBytes : ByteArray) : Aiur.IOBuffer :=
+  io.extend 1 #[.ofNat 2] (byteGs vkBytes)
+
+/-- Channel 6 key 1: auxiliary shape-selector bytes (1-byte bridge-cert child
+kind for Shape 17 when `bridge?.isSome`, or 2-byte `(child0Kind, child1Kind)`
+for Shape 18). -/
+def extendShapeAux (io : Aiur.IOBuffer) (bytes : ByteArray) : Aiur.IOBuffer :=
+  io.extend 6 #[.ofNat 1] (byteGs bytes)
+
+/-- Channel 5 trees needed for `A7` axiom-set merging when two children carry
+distinct non-empty user-axiom trees. No advice is added on the fast path
+(identical or single-sided axiom sets). -/
+def extendAxiomMergeTrees (io : Aiur.IOBuffer)
+    (left right output : Option Ix.AssumptionTree) : Aiur.IOBuffer :=
+  match left, right, output with
+  | some lt, some rt, some ot =>
+    if lt.root == rt.root then io
+    else extendTree (extendTree (extendTree io lt) rt) ot
+  | _, _, _ => io
+
+/-- Pack a 32-byte Ixon `Address` into 8 little-endian `u32` values stored as
+`UInt64` words (matching `Ix.DynamicLink.CodecTag.ixonAddrPair` and
+`Aggregation::aggr_assert_packed_addr_u64s`). -/
+def packAddressU64s (addr : Address) : Array UInt64 :=
+  (Array.range 8).map fun i =>
+    let b0 := (addr.hash.data.getD (4 * i) 0).toNat
+    let b1 := (addr.hash.data.getD (4 * i + 1) 0).toNat
+    let b2 := (addr.hash.data.getD (4 * i + 2) 0).toNat
+    let b3 := (addr.hash.data.getD (4 * i + 3) 0).toNat
+    UInt64.ofNat (b0 + 256 * b1 + 65536 * b2 + 16777216 * b3)
+
+/-- Build IO advice for Shape 17 (`aggr_dynamic_link`).
+- `extVkBytes`: serialized external Multi-STARK verifying key (placed on channel 1 key 2).
+- `extProofBytes`: serialized external Multi-STARK batch proof (placed on channel 0 key 0).
+- `stmt`: canonical `DynamicLinkStatement` whose bytes are placed on channel 2 key 2.
+- `bridgeCert?`: when `stmt.bridge?.isSome`, supplies
+  `(certKind, certVkBytes, certProofBytes, certClaimsBytes, certClaimBytes)` for slot 1. -/
+def dynamicLinkAdvice (allowed extVkBytes extProofBytes : ByteArray)
+    (stmt : Ix.DynamicLink.DynamicLinkStatement)
+    (bridgeCert? : Option (ChildKind × ByteArray × ByteArray × ByteArray × ByteArray) := none) :
+    Aiur.IOBuffer :=
+  let extClaimGs : Array Aiur.G := stmt.expectedMultiStarkClaim.map fun w => .ofNat w.toNat
+  let extClaimsBytes := MultiStark.serializeClaims #[extClaimGs]
+  let stmtBytes := Ix.DynamicLink.serDynamicLink stmt
+  let io := extendIdentity default allowed dynamicLinkShapeCode
+  let io := extendExternalVk io extVkBytes
+  let io := extendChild io 0 extProofBytes extClaimsBytes
+  let io := extendOutputClaim io stmtBytes
+  match bridgeCert? with
+  | none => io
+  | some (certKind, certVkBytes, certProofBytes, certClaimsBytes, certClaimBytes) =>
+    let io := extendShapeAux io ⟨#[UInt8.ofNat certKind.code]⟩
+    let io := extendVk io certKind certVkBytes
+    let io := extendChild io 1 certProofBytes certClaimsBytes
+    extendPreimage io certClaimBytes
+
+/-- Build IO advice for Shape 18 (`aggr_discharge_eval`).
+- Slot 0 carries the `EvalAssumedClaim` child (`validator = 10` or `11`).
+- Slot 1 carries the discharging child (`Claim.eval`, `Claim.check`, or Shape 17 `DynamicLinkStatement`).
+- `evalBeforeTree` / `evalAfterTree?` are the canonical `evalAssumptions` trees before and after
+  removing `dischargedLeaf`.
+- `extraPreimages` / `extraTrees` carry any constant/binding preimages (for `Claim.check` discharge)
+  and A7 axiom-merge trees (when both children carry distinct non-empty axiom trees). -/
+def dischargeEvalAdvice (allowed : ByteArray)
+    (child0Kind : ChildKind) (child0VkBytes child0ProofBytes child0ClaimsBytes child0ClaimBytes : ByteArray)
+    (child1Kind : ChildKind) (child1VkBytes child1ProofBytes child1ClaimsBytes child1ClaimBytes : ByteArray)
+    (outputClaimBytes : ByteArray)
+    (evalBeforeTree : Ix.AssumptionTree)
+    (evalAfterTree? : Option Ix.AssumptionTree)
+    (dischargedLeaf : Ix.DynamicLink.EvalAssumption)
+    (extraPreimages : Array ByteArray := #[])
+    (extraTrees : Array Ix.AssumptionTree := #[]) : Aiur.IOBuffer :=
+  let io := extendIdentity default allowed dischargeEvalShapeCode
+  let io := extendShapeAux io ⟨#[UInt8.ofNat child0Kind.code, UInt8.ofNat child1Kind.code]⟩
+  let io := extendVk io child0Kind child0VkBytes
+  let io := extendVk io child1Kind child1VkBytes
+  let io := extendChild io 0 child0ProofBytes child0ClaimsBytes
+  let io := extendChild io 1 child1ProofBytes child1ClaimsBytes
+  let io := extendOutputClaim io outputClaimBytes
+  let io := extendPreimage io child0ClaimBytes
+  let io := extendPreimage io child1ClaimBytes
+  let io := extendPreimage io (Ix.DynamicLink.serEvalAssumption dischargedLeaf)
+  let io := extraPreimages.foldl extendPreimage io
+  let io := extendTree io evalBeforeTree
+  let io := match evalAfterTree? with
+    | some afterTree => extendTree io afterTree
+    | none => io
+  extraTrees.foldl extendTree io
+
+/-- Outer `ix_aggr` public claim for a Tier 1 `DynamicLinkStatement`. -/
+def dynamicLinkOuterClaim (allowed : ByteArray) (aggrIdx : Nat)
+    (stmt : Ix.DynamicLink.DynamicLinkStatement) : Array Aiur.G :=
+  Aiur.buildClaim aggrIdx (Aggr.pubInput allowed (Ix.DynamicLink.serDynamicLink stmt)) #[]
+
+/-- Outer `ix_aggr` public claim for a Tier 2 `EvalAssumedClaim`. -/
+def evalAssumedOuterClaim (allowed : ByteArray) (aggrIdx : Nat)
+    (claim : Ix.DynamicLink.EvalAssumedClaim) : Array Aiur.G :=
+  Aiur.buildClaim aggrIdx (Aggr.pubInput allowed (Ix.DynamicLink.serEvalAssumedClaim claim)) #[]
 
 /-- Bump when aggregate cache identity changes beyond the recursion verifying
 key. Version 2 uses uniform `ix_aggr` outer claims. -/
