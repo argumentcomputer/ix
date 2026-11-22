@@ -117,6 +117,12 @@ module Goldilocks: GoldilocksSignature {
     inverse
   }
 
+  fn gl_inv_nonzero(a: Goldilocks) -> Goldilocks {
+    let inverse = hint::<Field>("goldilocks.emulated.inverse", a);
+    assert_eq!(gl_mul(a, inverse), 1, "Goldilocks nonzero inverse relation");
+    inverse
+  }
+
   inline fn eg_add(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
     [gl_add(a[0], b[0]), gl_add(a[1], b[1])]
   }
@@ -135,8 +141,16 @@ module Goldilocks: GoldilocksSignature {
     let inverse = gl_inverse(norm);
     [gl_mul(a[0], inverse), gl_mul(gl_neg(a[1]), inverse)]
   }
+  inline fn eg_inv_nonzero(a: ExtGoldilocks) -> ExtGoldilocks {
+    let norm = gl_sub(gl_mul(a[0], a[0]), gl_mul(7, gl_mul(a[1], a[1])));
+    let inverse = gl_inv_nonzero(norm);
+    [gl_mul(a[0], inverse), gl_mul(gl_neg(a[1]), inverse)]
+  }
   inline fn eg_div(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
     eg_mul(a, eg_inverse(b))
+  }
+  inline fn eg_div_nonzero(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
+    eg_mul(a, eg_inv_nonzero(b))
   }
   inline fn eg_eq(a: ExtGoldilocks, b: ExtGoldilocks) -> Field {
     gl_eq(a[0], b[0]) * gl_eq(a[1], b[1])

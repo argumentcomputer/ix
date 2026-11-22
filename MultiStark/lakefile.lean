@@ -11,8 +11,14 @@ require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @ "3f8b805614a0bae1c033469ff893a8f0ee85f601"
 
 @[default_target]
-lean_lib MultiStark
+lean_lib MultiStark where
+  globs := #[.andSubmodules `MultiStark]
 
 lean_exe «stark-export» where
   root := `MultiStark.Main
   supportInterpreter := true
+
+lean_exe compress_gl_export where
+  root := `Examples.CompressGL
+lean_exe compress_gl_fixed_export where
+  root := `Examples.CompressGLFixed

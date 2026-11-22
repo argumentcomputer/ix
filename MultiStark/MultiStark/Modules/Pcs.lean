@@ -108,10 +108,10 @@ module Pcs {
       match (*(bits)) {
         Lists::Node::Nil => {  1 } ,
         Lists::Node::Cons(b, rest) => {
-          let half = exp_by_bits(base * base, rest);
+          let half = exp_by_bits(Goldilocks::gl_mul(base, base), rest);
           match b {
             0 => {  half } ,
-            _ => {  base * half } ,
+            _ => {  Goldilocks::gl_mul(base, half) } ,
           } } ,
       }
     }
@@ -119,9 +119,12 @@ module Pcs {
   fn fri_fold2(index_bits: Lists::List<Field>, log_height: Field, beta: ProofDeserialize::Ext, e0: ProofDeserialize::Ext, e1: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
       let g = StarkVerifier::two_adic_gen(log_height + 1);
       let s = exp_by_bits(g, glist_rev(index_bits, (&(Lists::Node::Nil))));
-      let inv_2s = Goldilocks::gl_inv_nonzero(s + s);
-      let t1 = [(e0[0] + e1[0]) * 9223372034707292161, (e0[1] + e1[1]) * 9223372034707292161];
-      let diff_div = [(e0[0] - e1[0]) * inv_2s, (e0[1] - e1[1]) * inv_2s];
+      let two_s = Goldilocks::gl_add(s, s);
+      let inv_2s = Goldilocks::gl_inv_nonzero(two_s);
+      let t1 = [Goldilocks::gl_mul(Goldilocks::gl_add(e0[0], e1[0]), 9223372034707292161),
+                Goldilocks::gl_mul(Goldilocks::gl_add(e0[1], e1[1]), 9223372034707292161)];
+      let diff_div = [Goldilocks::gl_mul(Goldilocks::gl_sub(e0[0], e1[0]), inv_2s),
+                      Goldilocks::gl_mul(Goldilocks::gl_sub(e0[1], e1[1]), inv_2s)];
       Goldilocks::eg_add(t1, Goldilocks::eg_mul(beta, diff_div))
     }
 
@@ -314,7 +317,7 @@ module Pcs {
           let Bucket::Mk(h, _ap, ro0, ro1) = b;
           let HeightInfo::Mk(_hi_h, zn, g_h) = info;
           let bits_h = Lists::drop(cur_bits, prev_h - h);
-          let x = 7 * exp_by_bits(g_h, glist_rev(bits_h, (&(Lists::Node::Nil))));
+          let x = Goldilocks::gl_mul(7, exp_by_bits(g_h, glist_rev(bits_h, (&(Lists::Node::Nil)))));
           let d0 = Goldilocks::eg_sub(zeta, [x, 0]);
           let d1 = Goldilocks::eg_sub(zn, [x, 0]);
           let q0 = Goldilocks::eg_inverse(d0);

@@ -28,12 +28,15 @@ signature GoldilocksSignature {
   fn gl_from_bytes(bytes: [UInt8::U8; 8]) -> Goldilocks;
   fn gl_to_bytes(value: Goldilocks) -> [UInt8::U8; 8];
   fn gl_inverse(value: Goldilocks) -> Goldilocks;
+  fn gl_inv_nonzero(value: Goldilocks) -> Goldilocks;
   fn eg_add(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks;
   fn eg_sub(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks;
   fn eg_neg(a: ExtGoldilocks) -> ExtGoldilocks;
   fn eg_mul(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks;
   fn eg_inverse(a: ExtGoldilocks) -> ExtGoldilocks;
+  fn eg_inv_nonzero(a: ExtGoldilocks) -> ExtGoldilocks;
   fn eg_div(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks;
+  fn eg_div_nonzero(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks;
   fn eg_eq(a: ExtGoldilocks, b: ExtGoldilocks) -> Field;
 }
 ⟧

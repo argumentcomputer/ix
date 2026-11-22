@@ -12,7 +12,7 @@ namespace MultiStark.Source
 def starkVerifier : Aiur.Modules.Program Nat := aiur⟦
 module StarkVerifier {
   inline fn ext_is_zero(e: ProofDeserialize::Ext) -> Field {
-      Fields::is_zero(e[0]) * Fields::is_zero(e[1])
+      Goldilocks::gl_is_zero(e[0]) * Goldilocks::gl_is_zero(e[1])
     }
 
   fn b8_onto(b: [UInt8::U8; 8], tail: Bytes::Stream) -> Bytes::Stream {
@@ -126,7 +126,7 @@ module StarkVerifier {
         32 => {  1753635133440165772 } ,
         _  => {
           let g = two_adic_gen(bits + 1);
-          g * g } ,
+          Goldilocks::gl_mul(g, g) } ,
       }
     }
 
@@ -419,7 +419,7 @@ module StarkVerifier {
           let publics = build_publics(lch, fch, accp, naccp);
           let height = pow2(l);
           assert_eq!((1 - Fields::is_zero(ph)) * (height - ph), 0);
-          let inorm = Goldilocks::gl_inv_nonzero(height * g);
+          let inorm = Goldilocks::gl_inv_nonzero(Goldilocks::gl_mul(height, g));
           let comp = ood_composition(nodes, zeros, lks, k,
                                      main, main_next, prep, prep_next, s2row, s2next,
                                      publics, lch, fch, accp, naccp,
@@ -859,7 +859,7 @@ module StarkVerifier {
           let ProofDeserialize::BatchMessage::Mk(qargs, qmult) = push;
           assert_eq!(Goldilocks::gl_lt_p(pmult), 1);
           assert_eq!(Goldilocks::gl_lt_p(qmult), 1);
-          assert_eq!(Goldilocks::gl_val(pmult) + 1, 0);
+          assert_eq!(Goldilocks::gl_add(Goldilocks::gl_val(pmult), 1), 0);
           assert_eq!(Goldilocks::gl_val(qmult), 1);
           let (pc, pw, pa) = three_limbs(pargs);
           let (qc, qw, qb) = three_limbs(qargs);
