@@ -3,9 +3,9 @@
 use crate::{
   bytecode::Type,
   field::FieldBackend,
-  hints::{HintChannels, HintEntry},
+  hints::{ArenaData, DeviceArenas, HintChannels, HintEntry},
 };
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 /// One input stream: a channel, its key, and the values read under it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,10 +63,119 @@ impl Streams {
   }
 }
 
-impl<B: FieldBackend> Arenas<'_, B> {
+/// A source of stream advice that applications bind to their hint names.
+/// [`Arenas`] is the reference adapter over the JSON interchange format;
+/// [`super::advice::Advice`] is the compact representation.
+pub trait StreamAdvice<B: FieldBackend> {
   /// Bind a fixed-size array read. Array elements are raw fields; the Aiur
   /// program must range-check them before constructing opaque bytes.
-  pub fn register_read<const N: usize>(
+  fn register_read<const N: usize>(
+    &self,
+    name: &str,
+    scalar: bool,
+    channels: &mut HintChannels<B::Element>,
+  ) -> Result<(), String>;
+
+  /// Metadata and tag hints for the streams `accepts` selects by channel and
+  /// key, in submission order. With `value`, each selected stream must hold
+  /// one field, which becomes the hint output; otherwise the output is its
+  /// `(offset, length)`.
+  fn metadata(
+    &self,
+    name: &str,
+    key_type: &Type,
+    fixed_channel: Option<u64>,
+    accepts: impl Fn(u64, &[u64]) -> bool,
+    value: bool,
+  ) -> Result<Vec<HintEntry>, String>;
+}
+
+#[expect(clippy::too_many_arguments, reason = "one stream's metadata row")]
+pub(super) fn metadata_entry(
+  name: &str,
+  key_type: &Type,
+  fixed_channel: Option<u64>,
+  value: bool,
+  channel: u64,
+  stream_key: &[u64],
+  offset: usize,
+  len: usize,
+  single_value: impl FnOnce() -> Result<u64, String>,
+) -> Result<Option<HintEntry>, String> {
+  let mut key = if let Some(fixed) = fixed_channel {
+    if channel != fixed {
+      return Ok(None);
+    }
+    vec![]
+  } else {
+    vec![channel]
+  };
+  key.extend(stream_key);
+  let output = if value {
+    if len != 1 {
+      return Err("IO value hint must contain one field".into());
+    }
+    vec![single_value()?]
+  } else {
+    vec![offset as u64, len as u64]
+  };
+  Ok(Some(HintEntry {
+    channel: name.to_owned(),
+    key_type: key_type.clone(),
+    key,
+    r#type: if value {
+      Type::Field
+    } else {
+      Type::Tuple { items: vec![Type::Field; 2] }
+    },
+    output,
+  }))
+}
+
+impl<B: FieldBackend> Arenas<'_, B> {
+  /// Bytes held by the prepared field-element arenas.
+  pub fn retained_bytes(&self) -> usize {
+    self.values.capacity() * size_of::<Vec<B::Element>>()
+      + self
+        .values
+        .iter()
+        .map(|v| v.capacity() * size_of::<B::Element>())
+        .sum::<usize>()
+  }
+}
+
+/// Field-element arenas as a read channel's [`DeviceArenas`].
+pub struct Values<B: FieldBackend> {
+  pub field: B,
+  pub values: Arc<Vec<Vec<B::Element>>>,
+}
+
+impl<B: FieldBackend> DeviceArenas for Values<B> {
+  fn arenas(&self) -> Vec<ArenaData<'_>> {
+    self
+      .values
+      .iter()
+      .map(|arena| {
+        ArenaData::Words(Cow::Owned(
+          arena
+            .iter()
+            .map(|&w| {
+              // Device population runs only over 64-bit fields.
+              self.field.try_to_u64(w).expect("device arena word beyond 64 bits")
+            })
+            .collect(),
+        ))
+      })
+      .collect()
+  }
+
+  fn identity(&self) -> *const () {
+    Arc::as_ptr(&self.values).cast()
+  }
+}
+
+impl<B: FieldBackend> StreamAdvice<B> for Arenas<'_, B> {
+  fn register_read<const N: usize>(
     &self,
     name: &str,
     scalar: bool,
@@ -77,6 +186,7 @@ impl<B: FieldBackend> Arenas<'_, B> {
     }
     let values = self.values.clone();
     let field = self.field;
+    let device = Arc::new(Values { field, values: values.clone() });
     channels.insert_fixed::<2, N>(
       name,
       Type::Tuple { items: vec![Type::Field; 2] },
@@ -86,12 +196,16 @@ impl<B: FieldBackend> Arenas<'_, B> {
         Type::Tuple { items: vec![Type::Field; N] }
       },
       move |[channel, offset]| {
-        let channel = usize::try_from(field.to_u64(channel))
-          .ok()
-          .ok_or("IO channel overflow")?;
-        let offset = usize::try_from(field.to_u64(offset))
-          .ok()
-          .ok_or("IO offset overflow")?;
+        let channel = usize::try_from(
+          field.try_to_u64(channel).map_err(|_error| "IO channel overflow")?,
+        )
+        .ok()
+        .ok_or("IO channel overflow")?;
+        let offset = usize::try_from(
+          field.try_to_u64(offset).map_err(|_error| "IO offset overflow")?,
+        )
+        .ok()
+        .ok_or("IO offset overflow")?;
         let end = offset.checked_add(N).ok_or("IO offset overflow")?;
         let row = values
           .get(channel)
@@ -99,52 +213,36 @@ impl<B: FieldBackend> Arenas<'_, B> {
           .ok_or("missing hint data: IO read out of bounds")?;
         Ok(std::array::from_fn(|i| row[i]))
       },
-    )
+    )?;
+    channels.set_device_arenas(name, device)
   }
 
-  /// Metadata and tag hints retain ordinary data semantics. Reads use the
-  /// shared vectors above, including when hints are replayed during tracing.
-  pub fn metadata(
+  /// Reads use the shared vectors above, including when hints are replayed
+  /// during tracing.
+  fn metadata(
     &self,
     name: &str,
     key_type: &Type,
     fixed_channel: Option<u64>,
-    accepts: impl Fn(&Stream) -> bool,
+    accepts: impl Fn(u64, &[u64]) -> bool,
     value: bool,
   ) -> Result<Vec<HintEntry>, String> {
     let mut result = Vec::new();
     for (stream, offset) in &self.entries {
-      if !accepts(stream) {
+      if !accepts(stream.channel, &stream.key) {
         continue;
       }
-      let mut key = if let Some(channel) = fixed_channel {
-        if stream.channel != channel {
-          continue;
-        }
-        vec![]
-      } else {
-        vec![stream.channel]
-      };
-      key.extend(&stream.key);
-      let output = if value {
-        if stream.values.len() != 1 {
-          return Err("IO value hint must contain one field".into());
-        }
-        stream.values.clone()
-      } else {
-        vec![*offset as u64, stream.values.len() as u64]
-      };
-      result.push(HintEntry {
-        channel: name.to_owned(),
-        key_type: key_type.clone(),
-        key,
-        r#type: if value {
-          Type::Field
-        } else {
-          Type::Tuple { items: vec![Type::Field; 2] }
-        },
-        output,
-      });
+      result.extend(metadata_entry(
+        name,
+        key_type,
+        fixed_channel,
+        value,
+        stream.channel,
+        &stream.key,
+        *offset,
+        stream.values.len(),
+        || Ok(stream.values[0]),
+      )?);
     }
     Ok(result)
   }

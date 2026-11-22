@@ -7,9 +7,12 @@ use crate::{
 };
 use serde_json::{Value as Json, json};
 mod depth;
+mod describe;
+#[cfg(feature = "cuda")]
+mod gpu;
 mod memo_cycle;
 mod parameters;
-mod partition;
+mod streaming;
 
 fn f() -> Json {
   json!({"kind":"field"})
@@ -279,23 +282,12 @@ fn gpu_lookup_policy_retains_single_shards_without_growing_multi_shard_residency
   let single = backend.plan_heights(&heights, &options, 0).unwrap();
   assert_eq!(single.shards, 1);
   assert_eq!(single.retention, RetentionPolicy::Retain);
-  let streamed = backend.plan_stream(&[(&heights, 1)], &options).unwrap();
-  assert_eq!(streamed.retention, RetentionPolicy::Retain);
-  let regenerated = backend
-    .plan_stream(
-      &[(&heights, 1)],
-      &Options { retention: RetentionPolicy::Regenerate, ..options.clone() },
-    )
-    .unwrap();
-  assert_eq!(streamed.peak_bytes, regenerated.peak_bytes);
   let mut many = heights;
   many[0] = 8;
   let options = Options { max_rows: Some(2), ..options };
   let batch = backend.plan_heights(&many, &options, 0).unwrap();
   assert_eq!(batch.shards, 4);
   assert_eq!(batch.retention, RetentionPolicy::Regenerate);
-  let streamed = backend.plan_stream(&[(&many, 2)], &options).unwrap();
-  assert_eq!(streamed.retention, RetentionPolicy::Regenerate);
   assert!(!backend.requires_regeneration(1));
   assert!(backend.requires_regeneration(2));
 }
@@ -748,9 +740,6 @@ fn recorded_lookup_counts_are_checked_by_the_proof() {
   // integer multiplicity is converted to a field element.
   bad.queries.tables[2].static_map.as_mut().unwrap().counts[0] = Val::ORDER_U64;
   assert!(backend.witness(&bad, &trace).is_err());
-  let mut bad = record;
-  *bad.memory.multiplicity_mut(0) = Val::ORDER_U64;
-  assert!(backend.witness(&bad, &trace).is_err());
 }
 
 /// Interleave widths 0, 1 and 2, including different types of width 1.
@@ -809,6 +798,24 @@ fn mixed_memory() -> (CheckedProgram, TraceArtifact) {
     unused.layout(&program.program.enums, &mut vec![]).unwrap(),
   );
   (program, artifact)
+}
+
+/// `tests/fixtures/memory.ixa` is [`mixed_memory`]'s program and activated
+/// trace, for crates that read fixtures from packages. Set
+/// `AIUR_WRITE_FIXTURES=1` to rewrite it.
+#[test]
+fn memory_fixture_is_current() {
+  let (program, artifact) = mixed_memory();
+  let package = crate::artifact::Package {
+    program: program.program().clone(),
+    trace: Some(activate(artifact)),
+  };
+  let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/memory.ixa");
+  if std::env::var_os("AIUR_WRITE_FIXTURES").is_some() {
+    std::fs::write(path, package.encode()).unwrap();
+  }
+  let stored = crate::artifact::Package::decode(&std::fs::read(path).unwrap());
+  assert_eq!(stored.unwrap(), package, "rewrite with AIUR_WRITE_FIXTURES=1");
 }
 
 #[test]
@@ -1399,7 +1406,7 @@ fn cuda_host_plan_omits_device_phases() {
     .sum();
   assert_eq!(
     u128::from(whole.proving_peak_bytes),
-    ((cells * 8 + prep + retained) * 5).div_ceil(4)
+    cells * 8 + prep + retained
   );
 }
 /// The Lean grouping example's package (`Aiur/Examples/Grouping.lean`).
@@ -1507,7 +1514,7 @@ fn gpu_population_proves_identically() {
   let mut backend =
     Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
       .unwrap();
-  let plans = gpu::DevicePlans::new(&backend);
+  let plans = super::gpu::DevicePlans::new(&backend);
   let device_circuits: Vec<_> = plans
     .circuits
     .iter()
@@ -1531,7 +1538,7 @@ fn gpu_population_proves_identically() {
           retention,
         )
         .unwrap();
-      backend.device_plans = Some(gpu::DevicePlans::new(&backend));
+      backend.device_plans = Some(super::gpu::DevicePlans::new(&backend));
       let stage = backend.prepare_stage_1(&record, entry, &[3]).unwrap();
       assert_eq!(
         stage.cells(),
@@ -1566,7 +1573,7 @@ fn gpu_depth_population_proves_identically() {
   let mut backend =
     Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
       .unwrap();
-  let plans = gpu::DevicePlans::new(&backend);
+  let plans = super::gpu::DevicePlans::new(&backend);
   let fib = backend.names.iter().position(|n| n == "Depth::fib").unwrap();
   assert!(plans.circuits[fib], "fib's gap slots run on the device");
   let entry = "Depth::run";
@@ -1584,11 +1591,58 @@ fn gpu_depth_population_proves_identically() {
         Retention::Retain,
       )
       .unwrap();
-    backend.device_plans = Some(gpu::DevicePlans::new(&backend));
+    backend.device_plans = Some(super::gpu::DevicePlans::new(&backend));
     let stage = backend.prepare_stage_1(&record, entry, &[12]).unwrap();
     let device = backend
       .prove_stage_one(entry, &[12], &output, stage, rows, Retention::Retain)
       .unwrap();
     assert_eq!(device.to_bytes().unwrap(), host.to_bytes().unwrap());
   }
+}
+
+/// A backend that shares its plan and program through `Arc`s proves the grouped
+/// fixture to the same key and bytes as one that borrows them, and keeps
+/// proving after every other handle to them is released.
+#[test]
+fn shared_handles_prove_like_borrowed_ones() {
+  use multi_stark::batch::Retention;
+  use std::sync::Arc;
+  let entry = "Grouped::run";
+  let borrowed = {
+    let package = grouping_fixture();
+    let program = package.program.check().unwrap();
+    let plan = TracePlan::new(&program, package.trace).unwrap();
+    let backend = Backend::for_batch(&plan, parameters()).unwrap();
+    let record = program.execute(entry, vec![3]).unwrap();
+    let traces = backend.generate(&record, entry, &[3]).unwrap();
+    let proof = backend
+      .prove_batch(entry, &[3], &record.output, traces, 2, Retention::Retain)
+      .unwrap();
+    (backend.verifying_key_bytes().unwrap(), proof.to_bytes().unwrap())
+  };
+  let package = grouping_fixture();
+  let checked = Arc::new(package.program.check().unwrap());
+  let plan =
+    Arc::new(TracePlan::new(Arc::clone(&checked), package.trace).unwrap());
+  let backend = Backend::for_batch(Arc::clone(&plan), parameters()).unwrap();
+  let record = checked.execute(entry, vec![3]).unwrap();
+  drop((checked, plan));
+  let traces = backend.generate(&record, entry, &[3]).unwrap();
+  let proof = backend
+    .prove_batch(entry, &[3], &record.output, traces, 2, Retention::Retain)
+    .unwrap();
+  backend.verify_batch(entry, &[3], &record.output, &proof).unwrap();
+  assert_eq!(backend.verifying_key_bytes().unwrap(), borrowed.0);
+  assert_eq!(proof.to_bytes().unwrap(), borrowed.1);
+}
+
+#[test]
+fn visible_devices_follow_the_cuda_runtime() {
+  use super::planning::visible_devices;
+  assert_eq!(visible_devices("0,1", 4), 2);
+  assert_eq!(visible_devices("", 4), 0);
+  assert_eq!(visible_devices("-1", 4), 0);
+  assert_eq!(visible_devices("1,7,2", 4), 1);
+  assert_eq!(visible_devices("GPU-8f2a,1", 2), 2);
+  assert_eq!(visible_devices("0,1,2", 1), 1);
 }

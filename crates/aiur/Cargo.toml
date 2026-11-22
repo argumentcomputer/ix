@@ -19,6 +19,7 @@ rayon = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 blake3 = { workspace = true }
+stacker = { version = "0.1", optional = true }
 
 [lints]
 workspace = true
@@ -34,6 +35,8 @@ trace-profile = ["stark"]
 stark = ["dep:stark-key"]
 parallel = ["stark", "multi-stark/parallel", "dep:rayon"]
 cuda = ["stark", "multi-stark/cuda"]
+# Runtime for generated executors (`aiur-codegen`).
+native = ["dep:stacker"]
 
 [[example]]
 name = "prove"

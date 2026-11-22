@@ -1,10 +1,22 @@
 //! Optional counted storage reservations for resident execution pools.
-//! Charges cover allocation capacity, conservatively including hash buckets.
+//! Charges cover allocation capacity, including hash index buckets.
 //! Program artifacts, host advice and prover workspaces are charged by the host.
 pub use record_pool::{BudgetError, RecordPool, RecordReservation};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Budget(pub Option<RecordReservation>);
+
+pub(crate) struct ReplacedAllocation {
+  reservation: Option<RecordReservation>,
+  bytes: usize,
+}
+impl Drop for ReplacedAllocation {
+  fn drop(&mut self) {
+    if let Some(reservation) = &self.reservation {
+      reservation.release(self.bytes);
+    }
+  }
+}
 
 #[derive(Debug)]
 pub(crate) enum StorageError {
@@ -30,7 +42,29 @@ impl std::fmt::Display for StorageError {
   }
 }
 
+/// Rows a query table or the ROM may hold: their hash indexes store 32-bit
+/// row numbers plus one ([`crate::index`]).
+pub(crate) const MAX_ROWS: usize = u32::MAX as usize;
+
 impl Budget {
+  /// The index entry number of `row`, in a table whose rows take
+  /// `row_bytes` each. A table beyond [`MAX_ROWS`] rows is a resource error,
+  /// reservation or not, as if it had exceeded its record budget.
+  #[inline(always)]
+  pub(crate) fn row(
+    &self,
+    row: usize,
+    row_bytes: usize,
+  ) -> Result<u32, BudgetError> {
+    u32::try_from(row).ok().filter(|&row| row != u32::MAX).ok_or_else(|| {
+      let row_bytes = row_bytes.max(1);
+      BudgetError::Exceeded {
+        bytes: row.saturating_add(1).saturating_mul(row_bytes),
+        cap: MAX_ROWS.saturating_mul(row_bytes),
+      }
+    })
+  }
+
   #[inline]
   pub(crate) fn reserve(&self, bytes: usize) -> Result<(), BudgetError> {
     if let Some(reservation) = &self.0 {
@@ -39,13 +73,21 @@ impl Budget {
     Ok(())
   }
 
+  /// Return the charge of `bytes` already freed.
+  #[inline]
+  pub(crate) fn release(&self, bytes: usize) {
+    if let Some(reservation) = &self.0 {
+      reservation.release(bytes);
+    }
+  }
+
   #[inline]
   pub(crate) fn vector<T>(
     &self,
-    values: &Vec<T>,
+    values: &mut Vec<T>,
     additional: usize,
   ) -> Result<(), BudgetError> {
-    if self.0.is_some()
+    if let Some(reservation) = &self.0
       && values.len().saturating_add(additional) > values.capacity()
     {
       let capacity = values
@@ -54,26 +96,94 @@ impl Budget {
         .max(values.capacity().saturating_mul(2))
         .max(8);
       self.reserve(capacity.saturating_mul(size_of::<T>()))?;
+      let old = values.capacity().saturating_mul(size_of::<T>());
+      values.reserve_exact(capacity - values.len());
+      reservation.release(old);
     }
     Ok(())
   }
 
+  /// Grow `values` to exactly `capacity` elements, charging the new
+  /// allocation before releasing the old one.
   #[inline]
-  pub(crate) fn hash<T>(
+  pub(crate) fn resize<T>(
     &self,
-    len: usize,
+    values: &mut Vec<T>,
     capacity: usize,
   ) -> Result<(), BudgetError> {
-    if self.0.is_some() && len == capacity {
-      // At least twice the required capacity, including the control bytes.
-      self.reserve(
-        len
-          .saturating_add(1)
-          .next_power_of_two()
-          .saturating_mul(4)
-          .saturating_mul(size_of::<T>() + 1),
-      )?;
+    if capacity <= values.capacity() {
+      return Ok(());
+    }
+    self.reserve(capacity.saturating_mul(size_of::<T>()))?;
+    let old = values.capacity().saturating_mul(size_of::<T>());
+    values.reserve_exact(capacity - values.len());
+    if let Some(reservation) = &self.0 {
+      reservation.release(old);
     }
     Ok(())
+  }
+
+  /// Charge an index's next allocation, `growth` bytes if the coming
+  /// insertion grows it ([`crate::index::RowIndex::growth`]). The returned
+  /// guard releases the old allocation's charge once it has been freed.
+  #[inline]
+  pub(crate) fn index(
+    &self,
+    growth: Option<usize>,
+    charged: &mut usize,
+  ) -> Result<ReplacedAllocation, BudgetError> {
+    let mut replaced = ReplacedAllocation { reservation: None, bytes: 0 };
+    if self.0.is_some()
+      && let Some(bytes) = growth
+    {
+      self.reserve(bytes)?;
+      replaced =
+        ReplacedAllocation { reservation: self.0.clone(), bytes: *charged };
+      *charged = bytes;
+    }
+    Ok(replaced)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn vector_growth_charges_live_capacity_and_transient_peak() {
+    let pool = RecordPool::new(4096, 8);
+    let reservation = pool.try_admit().unwrap().unwrap();
+    let budget = Budget(Some(reservation.clone()));
+    let mut values = Vec::<u64>::new();
+    for value in 0..128 {
+      budget.vector(&mut values, 1).unwrap();
+      values.push(value);
+      assert_eq!(reservation.bytes(), values.capacity() * 8);
+    }
+    assert!(pool.stats().peak_reserved >= (64 + 128) * 8);
+    reservation.finish_execution();
+    assert_eq!(pool.stats().reserved, 128 * 8);
+  }
+
+  #[test]
+  fn rows_beyond_the_index_width_are_resource_errors() {
+    for budget in [
+      Budget(None),
+      Budget(Some(RecordPool::new(64, 8).try_admit().unwrap().unwrap())),
+    ] {
+      assert_eq!(budget.row(0, 24), Ok(0));
+      assert_eq!(budget.row(MAX_ROWS - 1, 24), Ok(u32::MAX - 1));
+      assert_eq!(
+        budget.row(MAX_ROWS, 24),
+        Err(BudgetError::Exceeded {
+          bytes: (MAX_ROWS + 1) * 24,
+          cap: MAX_ROWS * 24
+        })
+      );
+      assert!(matches!(
+        budget.row(usize::MAX, 0),
+        Err(BudgetError::Exceeded { .. })
+      ));
+    }
   }
 }

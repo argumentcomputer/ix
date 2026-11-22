@@ -85,10 +85,10 @@ fn dynamic_keys_and_cached_queries() {
   let child =
     &result.queries.get(&QueryInput { function: 0, args: vec![4] }).unwrap();
   assert_eq!(child.multiplicity, 2);
-  assert_eq!(child.output, [6]);
+  assert_eq!(*child.output, [6]);
   let parent =
     &result.queries.get(&QueryInput { function: 1, args: vec![4] }).unwrap();
-  assert_eq!(parent.output, [7]);
+  assert_eq!(*parent.output, [7]);
   // A fresh session can select different witnesses for the same root query.
   let again = p
     .execute_with_hints("main", vec![4], &[row(4, 5), row(5, 6), row(6, 8)])

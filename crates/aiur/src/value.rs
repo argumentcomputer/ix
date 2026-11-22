@@ -13,6 +13,9 @@ pub enum IoType {
   Struct { name: String, fields: Vec<(String, IoType)> },
   Enum { name: String, constructors: Vec<(String, Vec<IoType>)> },
 }
+/// Structured IO with `u64` field values. Unflattening a larger native field
+/// element returns an error; raw execution inputs and outputs retain the
+/// backend's full element type.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Value {
@@ -130,7 +133,9 @@ impl IoType {
   ) -> Result<Vec<B::Element>, String> {
     let mut output = vec![];
     match (self, value) {
-      (Self::Field, Value::Field { value }) if field.contains(*value) => {
+      (Self::Field, Value::Field { value })
+        if field.contains((*value).into()) =>
+      {
         output.push(field.from_u64(*value))
       },
       (Self::Tuple { items: types }, Value::Tuple { items }) => {
@@ -165,7 +170,9 @@ impl IoType {
           .enumerate()
           .find(|(_, (n, _))| n == constructor)
           .ok_or("unknown enum constructor")?;
-        if constructors.len() as u128 > u128::from(field.modulus()) {
+        let count = u64::try_from(constructors.len())
+          .map_err(|_error| "enum tags do not fit in field")?;
+        if B::Word::from(count) > field.modulus() {
           return Err("enum tags do not fit in field".into());
         }
         if constructors.len() > 1 {
@@ -193,7 +200,14 @@ impl IoType {
       return Err("invalid flat entry value".into());
     }
     match self {
-      Self::Field => Ok(field.to_u64(words[0]).into()),
+      Self::Field => Ok(
+        field
+          .try_to_u64(words[0])
+          .map_err(|error| {
+            format!("field value exceeds legacy u64 IO: {error}")
+          })?
+          .into(),
+      ),
       Self::Tuple { items } => {
         Ok(Value::Tuple { items: unflatten_list(items, words, field)? })
       },
@@ -219,13 +233,17 @@ impl IoType {
       },
       Self::Enum { name, constructors } => {
         let tagged = constructors.len() > 1;
-        if constructors.len() as u128 > u128::from(field.modulus()) {
+        let count = u64::try_from(constructors.len())
+          .map_err(|_error| "enum tags do not fit in field")?;
+        if B::Word::from(count) > field.modulus() {
           return Err("enum tags do not fit in field".into());
         }
         let tag = if tagged {
-          usize::try_from(field.to_u64(words[0]))
-            .ok()
-            .ok_or("invalid enum tag")?
+          usize::try_from(
+            field.try_to_u64(words[0]).map_err(|_error| "invalid enum tag")?,
+          )
+          .ok()
+          .ok_or("invalid enum tag")?
         } else {
           0
         };

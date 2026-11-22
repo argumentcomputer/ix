@@ -6,7 +6,10 @@ use crate::{
 };
 use multi_stark::p3_goldilocks::Goldilocks;
 
-fn pairs<B: FieldBackend>(field: B, permuted: bool) -> CheckedProgram<B> {
+fn pairs<B: FieldBackend<Word = u64>>(
+  field: B,
+  permuted: bool,
+) -> CheckedProgram<B> {
   let mut rows: Vec<_> =
     (0..256).flat_map(|a| (0..256).map(move |b| vec![a, b])).collect();
   if permuted {
@@ -44,7 +47,7 @@ fn pairs<B: FieldBackend>(field: B, permuted: bool) -> CheckedProgram<B> {
   .unwrap()
 }
 
-fn all_pairs<B: FieldBackend>(field: B) {
+fn all_pairs<B: FieldBackend<Word = u64>>(field: B) {
   let program = pairs(field, false);
   let mut overrides = MapOverrides::new();
   register_maps(&program, &mut overrides).unwrap();

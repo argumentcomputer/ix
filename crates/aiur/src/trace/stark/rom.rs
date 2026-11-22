@@ -115,11 +115,11 @@ impl Rom {
     index: usize,
     min_height: Option<usize>,
   ) -> Result<RowMajorMatrix<Val>, String> {
-    let bucket = record.memory.indices_for_width(self.widths[index]);
+    let cells = record.memory.width_cells(self.widths[index]);
     let width = self.widths[index] + 3;
-    let mut trace = empty_trace(bucket.len(), width, min_height)?;
-    for (&index, row) in bucket.iter().zip(trace.values.chunks_mut(width)) {
-      let cell = record.memory.get(index).unwrap();
+    let mut trace = empty_trace(cells.len(), width, min_height)?;
+    for (address, row) in trace.values.chunks_mut(width).enumerate() {
+      let Some(cell) = cells.get(address) else { break };
       row[0] = Val::from_u64(cell.multiplicity);
       row[1] = Val::ONE;
       row[2] = Val::from_usize(cell.address);
