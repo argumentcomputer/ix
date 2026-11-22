@@ -45,10 +45,10 @@ def blockIndexOf (lists : Array (Array Address)) :
     only because `shardsCover` fails the run when any exist; without
     that gate a silent skip here means a constant no shard ever
     checks. -/
-def ownedConstsPer (ixonEnv : Ixon.Env) (lists : Array (Array Address)) :
+def ownedConstsPer (ixonEnv : Ixon.Env) (lists : Array (Array Address))
+    (inert : Std.HashSet Address := IxVM.ClaimHarness.inertUsers ixonEnv) :
     Array (Array Address) :=
   let blockTo := blockIndexOf lists
-  let inert := IxVM.ClaimHarness.inertUsers ixonEnv
   let (owned, aside) := ixonEnv.consts.fold
     (init := (Array.replicate lists.size (#[] : Array (Address × Address)),
       ({} : Std.HashSet Address)))
@@ -65,9 +65,10 @@ def ownedConstsPer (ixonEnv : Ixon.Env) (lists : Array (Array Address)) :
     if aside.contains blk || inert.contains a then none else some a
 
 /-- Owned constants of one shard: `ownedConstsPer` over a singleton. -/
-def ownedConstsForBlocks (ixonEnv : Ixon.Env) (blocks : Array Address) :
+def ownedConstsForBlocks (ixonEnv : Ixon.Env) (blocks : Array Address)
+    (inert : Std.HashSet Address := IxVM.ClaimHarness.inertUsers ixonEnv) :
     Array Address :=
-  (ownedConstsPer ixonEnv #[blocks])[0]!
+  (ownedConstsPer ixonEnv #[blocks] inert)[0]!
 
 /-- Partition a shard's already-known `owned` constants among `parts`
     (block lists) by check-schedule block: one pass over the owned
@@ -90,8 +91,9 @@ so without the constants outside Lean's logic). Callers first run
 `shardsCover`, so every check-schedule block has exactly one owner. This is
 the subject-leaf count used by aggregate structural-threshold scheduling. -/
 def ownedConstCountsForShards (ixonEnv : Ixon.Env)
-    (shards : Array (Array Address)) : Array Nat :=
-  (ownedConstsPer ixonEnv shards).map (·.size)
+    (shards : Array (Array Address))
+    (inert : Std.HashSet Address := IxVM.ClaimHarness.inertUsers ixonEnv) : Array Nat :=
+  (ownedConstsPer ixonEnv shards inert).map (·.size)
 
 /-- Remove manifest shards that provably own no environment constants, then
 contract and densely reindex the corresponding aggregation-tree leaves.
@@ -101,14 +103,17 @@ that every constant is owned exactly once; the zero counts here therefore prove
 that dropping these leaves cannot omit a checked subject. `shardIds` preserves
 the original ids for diagnostics and for matching legacy manifests. -/
 def IxesManifestView.pruneEmpty (view : IxesManifestView)
-    (ixonEnv : Ixon.Env) : Except String (IxesManifestView × Array Nat) := do
+    (ixonEnv : Ixon.Env)
+    (inert : Std.HashSet Address := IxVM.ClaimHarness.inertUsers ixonEnv) :
+    Except String (IxesManifestView × Array Nat) := do
   if view.shards.size != view.shardIds.size then
     throw "ixes: internal shard/id cardinality mismatch"
-  let counts := ownedConstCountsForShards ixonEnv view.shards
+  let counts := ownedConstCountsForShards ixonEnv view.shards inert
   let mut remap : Array (Option Nat) := Array.replicate view.shards.size none
   let mut shards : Array (Array Address) := #[]
   let mut shardIds : Array Nat := #[]
   let mut measuredPeakBytes : Array Nat := #[]
+  let mut measuredRecordBytes : Array Nat := #[]
   let mut keptCounts : Array Nat := #[]
   for (count, oldIdx) in counts.mapIdx fun oldIdx count => (count, oldIdx) do
     if count != 0 then
@@ -120,18 +125,22 @@ def IxesManifestView.pruneEmpty (view : IxesManifestView)
       shards := shards.push blocks
       shardIds := shardIds.push originalId
       measuredPeakBytes := measuredPeakBytes.push ((view.measuredPeakBytes[oldIdx]?).getD 0)
+      measuredRecordBytes := measuredRecordBytes.push ((view.measuredRecordBytes[oldIdx]?).getD 0)
       keptCounts := keptCounts.push count
   let some aggregationTree := view.aggregationTree.pruneAndRemap remap
     | throw "aggregate: manifest has no shard owning an environment constant"
-  pure ({ shards, shardIds, aggregationTree, measuredPeakBytes }, keptCounts)
+  pure ({ shards, shardIds, aggregationTree, measuredPeakBytes, measuredRecordBytes },
+    keptCounts)
 
 /-- The `CheckEnv` claim digest a shard's proof commits to — reconstructed
     deterministically from the env + the shard's owned blocks. Matches the
     digest `prove --shard K` produced, so a proof can be bound to its shard. -/
 def shardClaimDigest (ixonEnv : Ixon.Env) (blocks : Array Address)
-    (assumeBinding : Bool := false) : Except String Address := do
+    (assumeBinding : Bool := false)
+    (inert : Std.HashSet Address := IxVM.ClaimHarness.inertUsers ixonEnv) :
+    Except String Address := do
   let (claim, _) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv
-    (ownedConstsForBlocks ixonEnv blocks) assumeBinding
+    (ownedConstsForBlocks ixonEnv blocks inert) assumeBinding inert
   pure (Address.blake3 (Ix.Claim.ser claim))
 
 /-- Load the `.ixe` env and the `.ixes` shard partition together (each file

@@ -47,6 +47,12 @@ private def verifyDevelopmentInputs (p : Cli.Parsed) : IO UInt32 := do
     return 1
 
 def runVerifyCmd (p : Cli.Parsed) : IO UInt32 := do
+  if AiurCompression.selected p && !p.hasFlag "aggregate" then
+    throw (IO.userError "Aiur compression verification requires --aggregate")
+  if AiurCompression.selected p && p.hasFlag "ixc" then
+    throw (IO.userError "Aiur compression currently accepts CheckEnv proofs, not --ixc catalog proofs")
+  if AiurCompression.selected p then
+    let _ ← AiurCompression.options p
   if p.hasFlag "verifier-bundle" || p.hasFlag "verifier-bundle-blake3" then
     return ← verifyDevelopmentInputs p
   if p.hasFlag "aggregate" then
@@ -63,6 +69,14 @@ def verifyCmd : Cli.Cmd := `[Cli|
   "Verify proof(s) against their bundled claims, or a `.ixes` shard partition, and print each claim's kind, subject and conditions. By default only unconditional typing claims (eval, check, check-env) under this build's specifications and the default role table, or a table the kernel admits, are accepted; the --allow-* flags accept more. A catalog claim needs --aggregate --ixc."
 
   FLAGS:
+    "aiur-chain" : String; "Trusted GL-to-BN chain manifest; verification needs no proving powers."
+    "aiur-chain-blake3" : String; "Independent BLAKE3 pin for the exact --aiur-chain manifest bytes."
+    "aiur-gl" : String; "Use the Aiur CompressGL KZG stage with this independently trusted compiler artifact."
+    "aiur-gl-blake3" : String; "Independent BLAKE3 pin for --aiur-gl."
+    "aiur-kzg-key" : String; "Independently trusted CompressGL KZG verifier key."
+    "aiur-kzg-key-blake3" : String; "Independent BLAKE3 pin for --aiur-kzg-key."
+    "aiur-max-log-height" : Nat; "Fixed public Aiur trace-height bound (default 24)."
+    "aiur-quotient-degree" : Nat; "Fixed public Aiur quotient-degree budget (default 2)."
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
     "aiur-artifact-digest" : String; "Refuse an IxVM artifact whose BLAKE3 digest is not this one."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
@@ -76,8 +90,7 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "shard" : Nat;   "0-based shard index K (with --ixe + --ixes). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."
     "aggregate";      "Interpret proofs as single-entrypoint aggregate roots. With --ixe, audit every environment constant and bind the canonical claim; add --ixes for the exact manifest-relative hybrid root."
     "ixc" : String;   "For --aggregate: a .ixc catalog directory. Recompute the catalog's root claim from its manifest and pieces (`ix aggregate --ixc`'s plan), check that each proof states it, verify it, and print every member's statement: label, toolchain, binding, literal class, specification digest and subjects."
-    "distributed";    "Bind one default-backend distributed proof to the whole environment. Requires --ixe and --ixes; the manifest must cover the environment exactly."
-    "structural-above" : Nat; "For --aggregate + --ixes, reproduce structural joins above N subject leaves (default 4096; must match proving)."
+    "structural-above" : Nat; "For --aggregate + --ixes, reproduce structural joins above N subject leaves (default 0; must match proving)."
     "record";         "With --ixe + --ixes and proof(s): after a proof binds to its shard and verifies, record it in the shard-proof index (`~/.ix/cache/formal-shard-proofs/<claim-digest>` → address) so `ix prove --skip-proven` and `ix shard refine` reuse it."
     "binding-env" : String; "An `.ixe` whose role binding is the claim's table, with the records it binds and its evidence theorems: the kernel admits the table over them (once per table; recorded in `~/.ix/cache/table-admission`). --ixe serves when its binding is the claim's; a catalog's pieces serve their members."
     "allow-custom-binding"; "Accept a claim relative to a role binding the kernel does not admit here, or to a literal class (outside the IxVM consistency theorem)."

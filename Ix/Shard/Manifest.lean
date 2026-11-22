@@ -103,6 +103,10 @@ structure IxesManifestView where
   section — or `0` when it was never measured (planner output, or a manifest
   written before the section existed). -/
   measuredPeakBytes : Array Nat
+  /-- Per dense slot, the counted bytes of the shard's claim execution record
+  as the aggregate controller last measured it — the manifest's trailing
+  measured-records section — or `0` when unmeasured. -/
+  measuredRecordBytes : Array Nat
   deriving BEq, Repr
 
 /-- The deepest aggregation tree a manifest may carry, in internal nodes on a
@@ -150,8 +154,10 @@ serialized `.ixes`
     zero presence byte) receive a balanced ascending-id fallback. After the tree
     an optional measured-peaks section follows: presence byte, then one `u64`
     analytic prover peak per shard in id order (`0` = unmeasured); absent on
-    manifests written before it existed. Anything after the last known section
-    is an error. Bounds-checked: a truncated/malformed file yields `.error`,
+    manifests written before it existed. Then an optional measured-records
+    section in the same layout: one `u64` measured execution-record size per
+    shard (`0` = unmeasured), written only when a run measured some claim.
+    Anything after the last known section is an error. Bounds-checked: a truncated/malformed file yields `.error`,
     never a panic. -/
 def parseIxesManifest (bytes : ByteArray) : Except String IxesManifestView :=
   let go : IxesP IxesManifestView := do
@@ -200,10 +206,22 @@ def parseIxesManifest (bytes : ByteArray) : Except String IxesManifestView :=
           pure peaks
         | tag => throw s!"ixes: invalid measured-peaks presence tag {tag.toNat}"
     let (buffer, position) ← get
+    let measuredRecordBytes ← if position == buffer.size then
+        pure (Array.replicate n.toNat 0)
+      else
+        match ← ixesU8 with
+        | 0 => pure (Array.replicate n.toNat 0)
+        | 1 => do
+          let mut records : Array Nat := #[]
+          for _ in [0:n.toNat] do
+            records := records.push (← ixesU64).toNat
+          pure records
+        | tag => throw s!"ixes: invalid measured-records presence tag {tag.toNat}"
+    let (buffer, position) ← get
     if position != buffer.size then
-      throw s!"ixes: {buffer.size - position} trailing bytes after the measured-peaks section"
+      throw s!"ixes: {buffer.size - position} trailing bytes after the measured-records section"
     pure { shards, shardIds := Array.range n.toNat, aggregationTree := tree,
-           measuredPeakBytes }
+           measuredPeakBytes, measuredRecordBytes }
   go.run' (bytes, 0)
 
 /-- Backward-compatible shard-only view used by check/prove/verify paths that

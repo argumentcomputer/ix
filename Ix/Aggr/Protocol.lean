@@ -10,16 +10,22 @@ namespace Aggr
 
 /-! ## Identity and public input -/
 
-/-- The digest-bound 80-byte identity blob:
+/-- The 80-byte identity blob of the verifying-key digests `ixvmDigest`
+and `selfDigest`:
 
-`blake3(ixvm vk) ‖ verify_claim index as u64-LE ‖ blake3(self vk) ‖
-ix_aggr index as u64-LE`. -/
+`ixvmDigest ‖ verify_claim index as u64-LE ‖ selfDigest ‖ ix_aggr index as
+u64-LE`. -/
+def allowedOfDigests (ixvmDigest : ByteArray) (verifyClaimIdx : Nat)
+    (selfDigest : ByteArray) (aggrIdx : Nat) : ByteArray :=
+  ⟨ixvmDigest.data ++ MultiStark.u64le verifyClaimIdx ++
+    selfDigest.data ++ MultiStark.u64le aggrIdx⟩
+
+/-- The digest-bound identity blob of the verifying keys themselves:
+`allowedOfDigests (blake3 ixvm vk) … (blake3 self vk) …`. -/
 def allowedBlob (ixvmVkBytes : ByteArray) (verifyClaimIdx : Nat)
     (selfVkBytes : ByteArray) (aggrIdx : Nat) : ByteArray :=
-  let ixvmDigest := (Address.blake3 ixvmVkBytes).hash.data
-  let selfDigest := (Address.blake3 selfVkBytes).hash.data
-  ⟨ixvmDigest ++ MultiStark.u64le verifyClaimIdx ++
-    selfDigest ++ MultiStark.u64le aggrIdx⟩
+  allowedOfDigests (Address.blake3 ixvmVkBytes).hash verifyClaimIdx
+    (Address.blake3 selfVkBytes).hash aggrIdx
 
 /-- Public input of `ix_aggr`: the packed Blake3 digest of the identity blob
 followed by the packed digest of the output `CheckEnv` claim bytes. -/

@@ -1,0 +1,12 @@
+# Pinned identities and verifying keys of the certified formal Aiur programs.
+#
+# Each line: program, program identity (the content digest of its compiled
+# artifact), BLAKE3 digest of its verifying key under the parameters below.
+# `ix verify` and the aggregate acceptance check require the keys they derive
+# to equal these, and aggregate proofs commit to the IxVM and aggregation keys.
+# A change means the compiled circuits changed: review it, then regenerate
+# with tools/check-formal-keys.sh --update in a commit of its own.
+parameters log_blowup 2 num_queries 100
+ixvm c8a58c5f771b83bb2e897799b5abfd83531fbf183c79d47f9bb24039fe81b1c0 458cbd643b28752655edf22b996ab71e771b8827c12aa1e3ff8d9543f8a55b61
+verifier c43f59dcc883d791b118ccb07a6ec800285f9d3e2f55cc047d8a478a03e2a8b8 880747561658be9b54248891220f64782ba1b41f0169a107e88a3b83be4fb50d
+aggregation 2c23a74634a8ee284f4b3bea1b6a21c4b698c63af1ed2d31eab504ddeee78969 8b8823412e375d290eae2e7abb9c323d4d274f828d9558f6b8f87e8f00a75a83

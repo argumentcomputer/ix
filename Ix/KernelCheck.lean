@@ -36,24 +36,19 @@ opaque rsEnvExtractFFI :
     IO Unit
 
 /-- FFI: partition a `.ixe` with the STATIC strategy (no out-of-circuit
-    profiling). Layout `mincut`: byte-balanced min-cut over the static
-    walk-edge nets + a predicted-FFT-cost rebalance post-pass
-    (`ixon::shard::shard_static`; model constants documented there).
-    Layout `ordered`: contiguous ranges of a dependency order, shard 0 at
-    the top, so a shard's reference closure lies in its own shard and later
-    ones (`ixon::shard::shard_static_ordered`; what the distributed
-    prover wants). A nonzero `numShards` fixes the count; otherwise `ramGib`
-    selects the static block-shape seed after the `.ixe` has been profiled.
+    profiling): a byte-balanced min-cut over the static walk-edge nets + a
+    predicted-FFT-cost rebalance post-pass (`ixon::shard::shard_static`;
+    model constants documented there). A nonzero `numShards` fixes the count; otherwise the
+    static block-shape seed sizes it for the process budget `ramGib` (0: `MemTotal` less the
+    host reservation, the budget `ix prove` defaults to).
     Writes a `.ixes` manifest; prints the report to stderr. -/
 @[extern "rs_shard_env_static"]
 opaque rsShardEnvStaticFFI :
     @& String →                          -- .ixe path
     USize →                              -- num_shards (N; 0 = score seed)
-    UInt64 →                             -- max RAM GiB (used when N = 0)
+    UInt64 →                             -- process RAM budget GiB (0 = default; used when N = 0)
     UInt64 →                             -- balance percent
-    @& String →                          -- layout: "mincut" or "ordered"
     @& String →                          -- .ixes output path ("" = skip)
-    USize →                              -- executions ahead of each prover (trace-shard seed)
     IO Unit
 
 /-- FFI: dump the static block-level reference graph of a `.ixe` as text:
