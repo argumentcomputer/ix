@@ -106,9 +106,9 @@ def pushAll (fe : FEnv md) : List (ConstantInfo md) → FEnv md
   | [] => fe
   | ci :: cis => pushAll (fe.push ci) cis
 
-/-- A cached check from the empty memo state. -/
-def runC (act : (CheckCM md) α) : Except (CheckError md) α :=
-  match act {} with
+/-- A cached check from the empty memo state at `core`. -/
+def runC (act : (CheckCM md) α) (core : CoreConfig := {}) : Except (CheckError md) α :=
+  match act { core } with
   | .ok (a, _) => .ok a
   | .error e => .error e
 
@@ -160,9 +160,10 @@ def indShape (b : TierInd md) : Except (CheckError md) (List LevelParam) := do
 
 /-- **A former** at `fe`: its header checked, its type a sort after its
 parameters and indices; the annotated header and that sort. -/
-def typeC (fe : FEnv md) (nP : Nat) (cv : ConstantVal md) (nIdx : Nat) :
+def typeC (fe : FEnv md) (nP : Nat) (cv : ConstantVal md) (nIdx : Nat)
+    (core : CoreConfig := {}) :
     Except (CheckError md) (ConstantVal md × Level) := do
-  let (cvA, _) ← runC (checkConstantValC .verified fe cv)
+  let (cvA, _) ← runC (checkConstantValC .verified fe cv) core
   let some (_, body) := cvA.type.stripPis (nP + nIdx)
     | throw (.notImplemented msg!"tier: the type of {cv.name} has fewer binders than its parameters and indices")
   let .sort s := body
@@ -184,8 +185,8 @@ def fieldSortsC (fe : FEnv md) (s : Level) (cname : Key md) :
     let r := coreKnotI .verified fe checkFuel
     let ty ← r.infer d fv.fvarTypeD
     let u ← ensureSortI r d ty
-    unless Level.isEquiv s .zero == some true do
-      unless Level.leq u s == some true do
+    unless Level.isZero s do
+      unless ← isLeqLM u s do
         throw (.invalid msg!"tier: a field of {cname} lives in a universe above its type's")
     let us ← fieldSortsC fe s cname (d + 1) fvs
     pure (u :: us)
@@ -194,10 +195,11 @@ def fieldSortsC (fe : FEnv md) (s : Level) (cname : Key md) :
 its parameters its former's; its result its former at those parameters with
 the former's index count of arguments; its fields' sorts. -/
 def ctorC (fe : FEnv md) (nP : Nat) (tys : List (ConstantVal md × Nat × Level))
-    (cv : ConstantVal md) (i nF : Nat) : Except (CheckError md) (ConstantVal md × List Level) := do
+    (cv : ConstantVal md) (i nF : Nat) (core : CoreConfig := {}) :
+    Except (CheckError md) (ConstantVal md × List Level) := do
   let some (cvT, nIdx, s) := tys[i]?
     | throw (.internal msg!"tier: the former of {cv.name}")
-  let (cvA, _) ← runC (checkConstantValC .verified fe cv)
+  let (cvA, _) ← runC (checkConstantValC .verified fe cv) core
   let some (fvs, body) := openPisAtFvars (nP + nF) cvA.type 0
     | throw (.notImplemented msg!"tier: the type of {cv.name} has fewer binders than its parameters and fields")
   unless paramDoms nP cvA.type == paramDoms nP cvT.type do
@@ -207,7 +209,7 @@ def ctorC (fe : FEnv md) (nP : Nat) (tys : List (ConstantVal md × Nat × Level)
   let args := body.getAppArgs
   unless args.length == nP + nIdx && args.take nP == fvs.take nP do
     throw (.notImplemented msg!"tier: {cv.name} does not return {cvT.name} at its parameters and indices")
-  let sorts ← runC (fieldSortsC fe s cv.name nP (fvs.drop nP))
+  let sorts ← runC (fieldSortsC fe s cv.name nP (fvs.drop nP)) core
   pure (cvA, sorts)
 
 /-- **A structure-like former's projection table** (one constructor, no
@@ -250,7 +252,8 @@ def nestedPins (tyA : Expr md) (mI rP cnP : Nat) : Option (List Level × List (E
 /-- **A rule, typed** at `fe` (the block installed, its recursors without
 rules): the rule with its right-hand side annotated, its constructor's
 parameter count and its firing mode. -/
-def ruleC (fe : FEnv md) (cvR : ConstantVal md) (sh : TierRecShape) (rl : RecRule md) :
+def ruleC (fe : FEnv md) (cvR : ConstantVal md) (sh : TierRecShape) (rl : RecRule md)
+    (core : CoreConfig := {}) :
     Except (CheckError md) (RecRule md) := do
   let mI := sh.majorIdx
   let rP := sh.rulePrefix
@@ -258,7 +261,7 @@ def ruleC (fe : FEnv md) (cvR : ConstantVal md) (sh : TierRecShape) (rl : RecRul
     | throw (.invalid msg!"tier: the constructor {rl.ctor} of a rule of {cvR.name} is not stored")
   unless rl.nfields == cnF do
     throw (.invalid msg!"tier: a rule of {cvR.name} declares a field count that is not {rl.ctor}'s")
-  let rhsA ← runC (annotValC .verified fe cvR rl.rhs)
+  let rhsA ← runC (annotValC .verified fe cvR rl.rhs) core
   let some (fvs, _) := openPisAtFvars rP cvR.type 0
     | throw (.notImplemented msg!"tier: the type of {cvR.name} has fewer binders than its rule prefix")
   let plain := Expr.recRulePlain cvR.type mI rP cnP cvj.levelParams
@@ -284,7 +287,7 @@ def ruleC (fe : FEnv md) (cvR : ConstantVal md) (sh : TierRecShape) (rl : RecRul
     let tl ← r.infer d lhs
     let tr ← r.infer d rhs
     unless ← r.defeq d tl tr do
-      throw (.notImplemented msg!"tier: the rule of {rl.ctor} in {cvR.name} does not have its equation's type"))
+      throw (.notImplemented msg!"tier: the rule of {rl.ctor} in {cvR.name} does not have its equation's type")) core
   pure { rl with rhs := rhsA, ctorParams := cnP, fire := fire, paramsBlind := plain }
 
 /-- Each item checked in order, the first failure the result's. -/
@@ -307,12 +310,13 @@ def recLevelsMatch (lps rlps : List LevelParam) : Bool :=
 
 /-- **The typing-only check of an inductive block** at `fe` (see the
 module's documentation). -/
-def indC (fe : FEnv md) (b : TierInd md) : Except (CheckError md) (TierIndOut md) := do
+def indC (fe : FEnv md) (b : TierInd md) (core : CoreConfig := {}) :
+    Except (CheckError md) (TierIndOut md) := do
   let lps ← indShape b
   let nP := b.numParams
   -- the formers, each at `fe`
   let tys ← mapC (fun (cv, nIdx) => do
-      let (cvA, s) ← typeC fe nP cv nIdx
+      let (cvA, s) ← typeC fe nP cv nIdx core
       pure (cvA, nIdx, s)) b.types
   let some (cv₀, _, _) := tys.head? | throw (.internal "tier: no former")
   for (cvA, _, _) in tys do
@@ -321,7 +325,7 @@ def indC (fe : FEnv md) (b : TierInd md) : Except (CheckError md) (TierIndOut md
   let fe₁ := pushAll fe (tys.map fun (cv, _, _) => .indInfo cv {})
   -- the constructors, each at the formers' index
   let cts ← mapC (fun (cv, i, nF) => do
-      let (cvA, sorts) ← ctorC fe₁ nP tys cv i nF
+      let (cvA, sorts) ← ctorC fe₁ nP tys cv i nF core
       pure (cvA, i, nF, sorts)) b.ctors
   let fe₂ := pushAll fe₁ (cts.map fun (cv, _, nF, _) => .ctorInfo cv nP nF)
   let tables ← mapC (fun (iT : Nat × (ConstantVal md × Nat × Level)) =>
@@ -333,7 +337,7 @@ def indC (fe : FEnv md) (b : TierInd md) : Except (CheckError md) (TierIndOut md
   let fe₂ := pushAll fe₂ (tables.map .projInfo)
   -- the recursors' headers, each at the block's index; then their rules
   let rhs ← mapC (fun (cv, sh, rules) => do
-      let (cvA, _) ← runC (checkConstantValC .verified fe₂ cv)
+      let (cvA, _) ← runC (checkConstantValC .verified fe₂ cv) core
       unless recLevelsMatch lps cvA.levelParams do
         throw (.notImplemented msg!"tier: the universe parameters of {cv.name} are not its block's")
       unless (cvA.type.stripPis (sh.majorIdx + 1)).isSome do
@@ -341,7 +345,7 @@ def indC (fe : FEnv md) (b : TierInd md) : Except (CheckError md) (TierIndOut md
       pure (cvA, sh, rules)) b.recs
   let fe₃ := pushAll fe₂ (rhs.map fun (cv, sh, _) => .recInfo cv sh.majorIdx sh.rulePrefix [])
   let recs ← mapC (fun (cvA, sh, rules) => do
-      let rules' ← mapC (ruleC fe₃ cvA sh) rules
+      let rules' ← mapC (fun rl => ruleC fe₃ cvA sh rl core) rules
       pure (cvA, sh, rules')) rhs
   pure { numParams := nP, types := tys, ctors := cts.map fun (cv, i, nF, _) => (cv, i, nF),
          recs, tables }

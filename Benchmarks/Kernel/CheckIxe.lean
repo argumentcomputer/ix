@@ -4,6 +4,7 @@ import Benchmarks.Kernel.CheckIxePool
 import Benchmarks.Kernel.CheckIxeMeta
 import Ix.KernelCheck.Binding
 import Ix.RoleBinding.UserAxioms
+import IxC.Host.Limits
 
 /-! # Environment check of a compiled Ixon environment (untrusted)
 
@@ -56,7 +57,7 @@ Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] [--allow-user-axioms
 
 The watchdog (`CHECK_IXE_WATCH_MS`, default 60000; `CHECK_IXE_WATCH_MB`,
 default 20000) appends a runaway record's address to `<output>.runaway` and
-exits with code 3; when the memory limit is passed with no record running
+exits with code 7 (`Ix.Kernel.Host.exitWatchdog`); when the memory limit is passed with no record running
 (during the load), it exits with code 4. `CHECK_IXE_SKIP` (comma-separated
 addresses) declines those records unchecked, as `kernel-check-ixe --guarded`
 does to rerun past runaways. `CHECK_IXE_ROOTS` (comma-separated Lean names, resolved through the
@@ -151,7 +152,8 @@ def orderOf (s : Setup) (named : Std.HashMap Ix.Name Ixon.Named) (pre : Prelude 
 /-- The watchdog, every half second until `running` is false: when the
 longest-running check in the slots has run longer than `watchMs`, or the
 process's resident memory exceeds `watchKb` while a check runs, it appends
-that check's record to `runaway` and exits with code 3. When the memory
+that check's record to `runaway` and exits with code 7 (`Ix.Kernel.Host.exitWatchdog`, a
+code of its own: 3 is a host's rejection). When the memory
 exceeds `watchKb` while no check runs (the load, before the first record),
 there is no record to skip: it exits with code 4. -/
 def watchdog (slots : Array CheckIxePool.Slot) (running : IO.Ref Bool) (watchMs watchKb : Nat)
@@ -172,7 +174,7 @@ def watchdog (slots : Array CheckIxePool.Slot) (running : IO.Ref Bool) (watchMs 
         let file ← IO.FS.Handle.mk runaway .append
         file.putStrLn (toString address)
         file.flush
-        IO.Process.exit 3
+        IO.Process.exit Ix.Kernel.Host.exitWatchdog.toUInt8
     | none =>
       if rss > watchKb then
         IO.eprintln s!"check-ixe: watchdog: RSS {rss / 1024} MB with no check running; exiting"
@@ -202,7 +204,8 @@ def markInputs (s : Setup) (names : Std.HashMap Address (Array String)) : IO Uni
 /-- Counts of a run: outcomes and first causes. -/
 abbrev Counts := Std.HashMap String Nat × Std.HashMap String Nat
 
-def run (args : List String) : IO UInt32 := do
+def runWith (settings : Ix.Kernel.Host.Resolved) (running : IO.Ref Bool) (args : List String) :
+    IO UInt32 := do
   let some options := parseArgs args
     | IO.eprintln usage; return 2
   let started ← IO.monoMsNow
@@ -216,12 +219,12 @@ def run (args : List String) : IO UInt32 := do
   let parse : IO Ixon.Env := do
     let env ← IO.ofExcept (match options.load with
       | .stream => Ixon.deEnvAnon bytes
-      | .eager => Ixon.deEnv bytes)
+      | .eager => Ixon.deEnv bytes settings.limits.maxDepth)
     log s!"parsed: {env.consts.size} records, {env.named.size} names, {env.blobs.size} blobs"
     pure env
   -- the role table and the prelude the artifact is read under
   let context (env : Ixon.Env) : IO (Ix.Kernel.RoleTable × Prelude .anon) := do
-    let (table, pre) ← IO.ofExcept ((Ix.KernelCheck.Binding.context env).mapError
+    let (table, pre) ← IO.ofExcept ((Ix.KernelCheck.Binding.context env settings.limits).mapError
       fun e => s!"check-ixe: the artifact's role table and prelude: {e}")
     log s!"context: prelude {pre.records.size} records"
     pure (table, pre)
@@ -260,7 +263,6 @@ def run (args : List String) : IO UInt32 := do
   let others : Array CheckIxePool.Slot ←
     (Array.range (options.jobs.getD 1 - 1)).mapM fun _ => IO.mkRef (none : Option (Address × Nat))
   let slots := #[slot0] ++ others
-  let running ← IO.mkRef true
   let handle ← IO.FS.Handle.mk options.output .write
   let emitBuf ← IO.mkRef ("", 0)
   let flushEmit : IO Unit := do
@@ -269,11 +271,7 @@ def run (args : List String) : IO UInt32 := do
     handle.flush
   let _ ← IO.asTask (prio := .dedicated)
     (watchdog slots running watchMs watchKb (options.output.toString ++ ".runaway") flushEmit)
-  -- the watchdog runs until `running` is cleared, on every exit, an error's
-  -- too: the runtime finalizes its task manager, which waits for the
-  -- watchdog's dedicated task, before it prints an uncaught error
-  try
-    let emit := fun (row : Row) => do
+  let emit := fun (row : Row) => do
       -- only the user axioms' rows (a record is read before its row): the
       -- refs are shared with the loop's thread, and a value shared between
       -- threads is never updated in place, so a set of every accepted record
@@ -288,148 +286,183 @@ def run (args : List String) : IO UInt32 := do
       if let some chunk := flushNow? then
         handle.putStr chunk
         handle.flush
-    let limited := fun (a : Array Address) => match options.limit with
-      | some n => a.extract 0 (min n a.size)
-      | none => a
-    -- the loop over a source: the per-record check, or with `--jobs` the pool;
-    -- strict unless `--allow-user-axioms`, on every source (streamed, eager or
-    -- the read cache's plan)
-    let allowUserAxioms := options.allowUserAxioms
-    let check {σ : Type} (ev : Ix.Kernel.Evidences .anon) (src : LoopSource σ) (names : Address → Array String)
-        (addresses : Array Address)
-        (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit)
-        (spell : Ix.Kernel.Key .anon → String := toString) : IO Counts := do
-      let onRead := fun (a : Address) (r : Except ReadError (Read .anon)) (n : Nat) => do
-        if allowUserAxioms then
-          if let .ok rd := r then
-            for x in Ix.RoleBinding.UserAxioms.ofDecls rd.decls.toList do
-              userAxioms.modify (·.insert x (names x))
-        onRead a r n
-      let total := addresses.size
-      let progress := fun (i : Nat) (counts : Std.HashMap String Nat) => do
-        if i % 1000 == 0 then
-          IO.eprintln s!"check-ixe: {i}/{total} after {(← IO.monoMsNow) - started} ms; {counts.toList}; \
-            RSS {(← statusKb "VmRSS:") / 1024} MB"
-      match options.jobs with
-      | some _ =>
-        CheckIxePool.run src ev names addresses skip slots emit log progress onRead spell
-          (tier := if cacheDir.isNone then src.tierHook else none)
-          (allowUserAxioms := allowUserAxioms)
-      | none => do
-        let st ← src.init
-        let out ← checkLoopWith src.view src.read src.commit st
-          (Checker.stepRecordWithUserAxioms ev allowUserAxioms) {}
-          names addresses skip emit
-          (before := fun a => do slot0.set (some (a, ← IO.monoMsNow)))
-          (after := slot0.set none)
-          (progress := fun i o => progress i o.counts) (onRead := onRead) (spell := spell)
-          (tier := if cacheDir.isNone then src.tierHook else none)
-        pure (out.counts, out.reasons)
-    -- a full-order live run records its readings and writes its plan, on the
-    -- loop's own thread: readings handed to another thread would be marked
-    -- multi-threaded, and every reference count on them made atomic
-    let record := cache.isSome && options.limit.isNone && rootsEnv.isNone
-    let live {σ : Type} (s : Setup) (src : LoopSource σ) (names : Std.HashMap Address (Array String))
-        (addresses : Array Address) (display : Thunk (DisplayTable .anon)) : IO Counts := do
-      let readings ← IO.mkRef (#[] : Array (Address × Except ReadError (Read .anon)))
-      let out ← check s.evidence src (names.getD · #[]) addresses
-        (fun a r _ => if record then readings.modify (·.push (a, r)) else pure ())
-        (spell := fun k => spellWith display.get k)
-      if let some (path, ixe) := cache then
-        if record then
-          let t0 ← IO.monoMsNow
-          let header := s!"check-ixe: {s.store.size} records, {s.ordered.size} primary"
-          CheckIxeReadCache.save path (CheckIxeReadCache.ofRun s ixe header names (← readings.get))
-          IO.eprintln s!"check-ixe: read cache {path} written in {(← IO.monoMsNow) - t0} ms"
-      pure out
-    -- The loop runs as upstream con-leche's driver runs its check phase
-    -- (`Main.lean`, `checkDeclsIO`): on a dedicated thread, whose allocator
-    -- heap is fresh (this thread's holds the decoded inputs and the
-    -- temporaries of decoding them), with the read-only inputs marked
-    -- persistent first, so that handing them to the thread does not mark
-    -- them multi-threaded (atomic reference counts) and the loop pays no
-    -- reference counting on them at all. A plan's objects are persistent
-    -- already: they live in the mapped region.
-    let onThread := fun (loop : IO Counts) => do
-      if thread then IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) loop)) else loop
-    let missingRoots ← IO.mkRef (#[] : Array String)
-    let (counts, reasons) ← match plan with
-      | some plan => do
-        let path := (cache.map (·.1.toString)).getD ""
-        IO.eprintln s!"{plan.header}; read cache {path}, mapped in {(← IO.monoMsNow) - started} ms"
-        let names := plan.nameMap
-        onThread (check plan.evidence plan.source (names.getD · #[]) (plan.addresses options.limit)
-          fun _ _ _ => pure ())
-      | none => do
-        match options.load with
-        | .eager => do
-          let env ← match parsed with
-            | some env => pure env
-            | none => parse
-          let (table, pre) ← context env
-          let mut store : RecordStore := Std.HashMap.emptyWithCapacity env.consts.size
-          for (address, lazy) in env.consts do
-            store := store.insert address (← IO.ofExcept lazy.get)
-          let names := reportNames env store
-          let hints := Hints.ofStore store env.anonHints
-          let s := setup store (env.blobs[·]?) table pre hints.lookup
-          log s!"eager load: {setupLine s env.blobs.size s.cx.roles.names.size hints.hints.size pre}"
-          let (ordered, missing) ← orderOf s env.named pre rootsEnv
-          missingRoots.set missing
-          let addresses := limited ordered
-          if thread then markInputs s names
-          onThread (live s s.source names addresses
-            (Thunk.mk fun () => CheckIxeMeta.displayTable env s.cx))
-        | .stream => do
-          let contextEnv ← match parsed with
-            | some env => pure env
-            | none => parse
-          let (table, pre) ← context contextEnv
-          -- the setup is marked persistent by the load itself, before its
-          -- pre-read workers share it, when the loop runs on its own thread
-          let l ← CheckIxeStream.loadEnv contextEnv table pre (persistent := thread) (log := log)
-          let s := l.setup
-          let names := reportNames l.env s.store
-          log s!"streaming load: {setupLine s l.env.blobs.size s.cx.roles.names.size l.env.anonHints.size pre}"
-          let (ordered, missing) ← orderOf s l.env.named pre rootsEnv
-          missingRoots.set missing
-          let addresses := limited ordered
-          -- the setup (marked by the load) and the names only: the records'
-          -- windows go to the loop unmarked, so that they are freed once it has
-          -- taken their bytes
-          if thread then markNames names
-          onThread (live s l.source names addresses
-            (Thunk.mk fun () => CheckIxeMeta.displayTable l.env s.cx))
-    flushEmit
-    handle.flush
-    let ranked := reasons.toArray.qsort (fun a b => a.2 > b.2)
-    IO.eprintln s!"check-ixe: done in {(← IO.monoMsNow) - started} ms; {counts.toList}"
-    IO.eprintln s!"check-ixe: peak RSS {(← statusKb "VmHWM:") / 1024} MB"
-    IO.eprintln "check-ixe: first-cause reasons by frequency:"
-    for (reason, count) in ranked.extract 0 25 do
-      IO.eprintln s!"  {count}\t{reason}"
-    if allowUserAxioms then
-      let accepted ← accepted.get
-      let admitted := (← userAxioms.get).toArray.filter (accepted.contains ·.1)
-        |>.qsort (fun a b => compare a.1 b.1 == .lt)
-      IO.eprintln s!"check-ixe: CONDITIONAL on {admitted.size} user axioms:"
-      for (address, names) in admitted do
-        IO.eprintln s!"  {address} {" | ".intercalate names.toList}"
-    if options.failOnNonAccept || options.strict then
-      let missing ← missingRoots.get
-      unless missing.isEmpty do
-        IO.eprintln s!"check-ixe: failing due to {missing.size} missing CHECK_IXE_ROOTS constant(s): {missing.toList}"
-        return 1
-      let bad := counts.fold (init := 0) fun acc outcome n =>
-        let ok := if options.failOnNonAccept then outcome == "accept"
-                  else outcome == "accept" || outcome == "typed"
-        if ok then acc else acc + n
-      let okCount := counts.getD "accept" 0 + (if options.failOnNonAccept then 0 else counts.getD "typed" 0)
-      if bad > 0 || okCount == 0 then
-        IO.eprintln s!"check-ixe: failing due to {bad} non-accepted record(s) (ok: {okCount})"
-        return 1
-    return 0
-  finally
-    running.set false
+  let limited := fun (a : Array Address) => match options.limit with
+    | some n => a.extract 0 (min n a.size)
+    | none => a
+  -- the loop over a source: the per-record check, or with `--jobs` the pool;
+  -- strict unless `--allow-user-axioms`, on every source (streamed, eager or
+  -- the read cache's plan)
+  let allowUserAxioms := options.allowUserAxioms
+  let check {σ : Type} (ev : Ix.Kernel.Evidences .anon) (src : LoopSource σ) (names : Address → Array String)
+      (addresses : Array Address)
+      (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit)
+      (spell : Ix.Kernel.Key .anon → String := toString) : IO Counts := do
+    let onRead := fun (a : Address) (r : Except ReadError (Read .anon)) (n : Nat) => do
+      if allowUserAxioms then
+        if let .ok rd := r then
+          for x in Ix.RoleBinding.UserAxioms.ofDecls rd.decls.toList do
+            userAxioms.modify (·.insert x (names x))
+      onRead a r n
+    let total := addresses.size
+    let progress := fun (i : Nat) (counts : Std.HashMap String Nat) => do
+      if i % 1000 == 0 then
+        IO.eprintln s!"check-ixe: {i}/{total} after {(← IO.monoMsNow) - started} ms; {counts.toList}; \
+          RSS {(← statusKb "VmRSS:") / 1024} MB"
+    match options.jobs with
+    | some _ =>
+      CheckIxePool.run src ev names addresses skip slots emit log progress onRead spell
+        (tier := if cacheDir.isNone then src.tierHook else none)
+        (allowUserAxioms := allowUserAxioms)
+        (core := settings.limits.fold.core)
+    | none => do
+      let st ← src.init
+      let out ← checkLoopWith src.view src.read src.commit st
+        (Checker.stepRecordWithUserAxioms ev allowUserAxioms)
+        { cs := { core := settings.limits.fold.core } }
+        names addresses skip emit
+        (before := fun a => do slot0.set (some (a, ← IO.monoMsNow)))
+        (after := slot0.set none)
+        (progress := fun i o => progress i o.counts) (onRead := onRead) (spell := spell)
+        (tier := if cacheDir.isNone then src.tierHook else none)
+        (core := settings.limits.fold.core)
+      pure (out.counts, out.reasons)
+  -- a full-order live run records its readings and writes its plan, on the
+  -- loop's own thread: readings handed to another thread would be marked
+  -- multi-threaded, and every reference count on them made atomic
+  let record := cache.isSome && options.limit.isNone && rootsEnv.isNone
+  let live {σ : Type} (s : Setup) (src : LoopSource σ) (names : Std.HashMap Address (Array String))
+      (addresses : Array Address) (display : Thunk (DisplayTable .anon)) : IO Counts := do
+    let readings ← IO.mkRef (#[] : Array (Address × Except ReadError (Read .anon)))
+    let out ← check s.evidence src (names.getD · #[]) addresses
+      (fun a r _ => if record then readings.modify (·.push (a, r)) else pure ())
+      (spell := fun k => spellWith display.get k)
+    if let some (path, ixe) := cache then
+      if record then
+        let t0 ← IO.monoMsNow
+        let header := s!"check-ixe: {s.store.size} records, {s.ordered.size} primary"
+        CheckIxeReadCache.save path (CheckIxeReadCache.ofRun s ixe header names (← readings.get))
+        IO.eprintln s!"check-ixe: read cache {path} written in {(← IO.monoMsNow) - t0} ms"
+    pure out
+  -- The loop runs as upstream con-leche's driver runs its check phase
+  -- (`Main.lean`, `checkDeclsIO`): on a dedicated thread, whose allocator
+  -- heap is fresh (this thread's holds the decoded inputs and the
+  -- temporaries of decoding them), with the read-only inputs marked
+  -- persistent first, so that handing them to the thread does not mark
+  -- them multi-threaded (atomic reference counts) and the loop pays no
+  -- reference counting on them at all. A plan's objects are persistent
+  -- already: they live in the mapped region.
+  let onThread := fun (loop : IO Counts) => do
+    if thread then IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) loop)) else loop
+  let missingRoots ← IO.mkRef (#[] : Array String)
+  let (counts, reasons) ← match plan with
+    | some plan => do
+      let path := (cache.map (·.1.toString)).getD ""
+      IO.eprintln s!"{plan.header}; read cache {path}, mapped in {(← IO.monoMsNow) - started} ms"
+      let names := plan.nameMap
+      onThread (check plan.evidence plan.source (names.getD · #[]) (plan.addresses options.limit)
+        fun _ _ _ => pure ())
+    | none => do
+      match options.load with
+      | .eager => do
+        let env ← match parsed with
+          | some env => pure env
+          | none => parse
+        let (table, pre) ← context env
+        let mut store : RecordStore := Std.HashMap.emptyWithCapacity env.consts.size
+        for (address, lazy) in env.consts do
+          store := store.insert address (← IO.ofExcept lazy.get)
+        let names := reportNames env store
+        let hints := Hints.ofStore store env.anonHints
+        let s := setup store (env.blobs[·]?) table pre hints.lookup
+        log s!"eager load: {setupLine s env.blobs.size s.cx.roles.names.size hints.hints.size pre}"
+        let (ordered, missing) ← orderOf s env.named pre rootsEnv
+        missingRoots.set missing
+        let addresses := limited ordered
+        if thread then markInputs s names
+        onThread (live s s.source names addresses
+          (Thunk.mk fun () => CheckIxeMeta.displayTable env s.cx))
+      | .stream => do
+        let contextEnv ← match parsed with
+          | some env => pure env
+          | none => parse
+        let (table, pre) ← context contextEnv
+        -- the setup is marked persistent by the load itself, before its
+        -- pre-read workers share it, when the loop runs on its own thread
+        let l ← CheckIxeStream.loadEnv contextEnv table pre (persistent := thread) (log := log)
+          (maxDepth := settings.limits.maxDepth)
+        let s := l.setup
+        let names := reportNames l.env s.store
+        log s!"streaming load: {setupLine s l.env.blobs.size s.cx.roles.names.size l.env.anonHints.size pre}"
+        let (ordered, missing) ← orderOf s l.env.named pre rootsEnv
+        missingRoots.set missing
+        let addresses := limited ordered
+        -- the setup (marked by the load) and the names only: the records'
+        -- windows go to the loop unmarked, so that they are freed once it has
+        -- taken their bytes
+        if thread then markNames names
+        onThread (live s l.source names addresses
+          (Thunk.mk fun () => CheckIxeMeta.displayTable l.env s.cx))
+  flushEmit
+  handle.flush
+  let ranked := reasons.toArray.qsort (fun a b => a.2 > b.2)
+  IO.eprintln s!"check-ixe: done in {(← IO.monoMsNow) - started} ms; {counts.toList}"
+  IO.eprintln s!"check-ixe: peak RSS {(← statusKb "VmHWM:") / 1024} MB"
+  IO.eprintln "check-ixe: first-cause reasons by frequency:"
+  for (reason, count) in ranked.extract 0 25 do
+    IO.eprintln s!"  {count}\t{reason}"
+  if allowUserAxioms then
+    let accepted ← accepted.get
+    let admitted := (← userAxioms.get).toArray.filter (accepted.contains ·.1)
+      |>.qsort (fun a b => compare a.1 b.1 == .lt)
+    IO.eprintln s!"check-ixe: CONDITIONAL on {admitted.size} user axioms:"
+    for (address, names) in admitted do
+      IO.eprintln s!"  {address} {" | ".intercalate names.toList}"
+  if options.failOnNonAccept || options.strict then
+    let missing ← missingRoots.get
+    unless missing.isEmpty do
+      IO.eprintln s!"check-ixe: failing due to {missing.size} missing CHECK_IXE_ROOTS constant(s): {missing.toList}"
+      return 1
+    let bad := counts.fold (init := 0) fun acc outcome n =>
+      let ok := if options.failOnNonAccept then outcome == "accept"
+                else outcome == "accept" || outcome == "typed"
+      if ok then acc else acc + n
+    let okCount := counts.getD "accept" 0 + (if options.failOnNonAccept then 0 else counts.getD "typed" 0)
+    if bad > 0 || okCount == 0 then
+      IO.eprintln s!"check-ixe: failing due to {bad} non-accepted record(s) (ok: {okCount})"
+      return 1
+  return 0
+
+/-- `kernel-check-ixe`: the kernel's limits from the `IX_KERNEL_*` variables over
+`Ix.KernelCheck.Binding.limits` (a malformed one exits 2), printed when set; a decline by one
+(the loaders' depth scan, `Ixon.depthLimitError`, or the artifact's admission) exits 6 with
+the message every host prints. The threads keep the caller's stack (`LEAN_STACK_SIZE_KB`, else
+the runtime's 1 GiB), against which the address-space check runs (`Ix.Kernel.Host.spaceCheck`:
+exit 2 only when the run certainly cannot fit, else a warning line when it may not). -/
+def run (args : List String) : IO UInt32 := do
+  let settings ← match ← Ix.Kernel.Host.resolveIO Ix.KernelCheck.Binding.limits (fun _ => none) with
+    | .ok s => pure s
+    | .error e => IO.eprintln s!"check-ixe: {e}"; return 2
+  if let some h := Ix.Kernel.Host.header settings then IO.eprintln s!"check-ixe: {h}"
+  -- the address-space check with the stack the threads will have (the caller's: not resized)
+  match ← Ix.Kernel.Host.spaceCheck (← Ix.Kernel.Host.callerStack) settings.limits.workers
+      (← Ix.Kernel.Host.poolSize)
+      "LEAN_STACK_SIZE_KB, or IX_KERNEL_WORKERS" "IX_KERNEL_WORKERS, or LEAN_STACK_SIZE_KB" with
+  | .refuse why => IO.eprintln s!"check-ixe: {why}"; return 2
+  | .warn line => IO.eprintln s!"check-ixe: {line}"
+  | .fits => pure ()
+  -- the watchdog runs until `running` is false: set on every way out, an exception's too (a
+  -- dedicated task still running when `main` returns keeps the process from exiting)
+  let running ← IO.mkRef true
+  try runWith settings running args
+  catch e =>
+    let text := toString e
+    let limit : Option Ix.Kernel.Admission.Resource :=
+      if Ixon.isDepthLimitError text then some .depth else Ix.Kernel.Host.limitOfText text
+    match limit with
+    | some r =>
+      IO.eprintln s!"check-ixe: {Ix.Kernel.Host.declineMessage settings r}"
+      return Ix.Kernel.Host.exitDeclined
+    | none => throw e
+  finally running.set false
 
 end Benchmarks.Kernel.CheckIxe

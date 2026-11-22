@@ -299,7 +299,7 @@ def structPartsCore? (block : List (ConstantInfo md)) : Option (StructParts md) 
          | none => false) then
       match cvT.type.stripPis nP with
       | some (_, .sort s) =>
-        let isProp := Level.isEquiv s .zero == some true
+        let isProp := Level.isZero s
         -- the large eliminator: a fresh elimination level parameter in
         -- front of the block's own; else the small eliminator at the
         -- block's own level parameters

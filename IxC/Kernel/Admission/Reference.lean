@@ -32,7 +32,7 @@ theorem Installed.refines_ref (V : Type u) [Ix.Kernel.SetTheory V]
     ∃ decls st', StreamRead (streamContext hash t pre constants blobs hint) pre.state constants st' decls ∧
       Ix.Kernel.Cached.AcceptsRef .verified (evidenceOf (streamContext hash t pre constants blobs hint) st' t)
         (Ix.Kernel.Frontend.preparePrelude pre.ix decls).toList env := by
-  obtain ⟨decls, st', hs, hc⟩ := h.reading
+  obtain ⟨decls, st', _, hs, hc⟩ := h.reading
   exact ⟨decls, st', hs, Ix.Kernel.Cached.checkDecls_refines_ref V rfl hc⟩
 
 /-- **The certified entry's accept is a reference accept**, for every hash
@@ -61,8 +61,8 @@ theorem checkBytes_strongModel (V : Type u) [Ix.Kernel.SetTheory V]
     (h : checkBytes hash binding limits records blobs hint = .ok env) :
     Nonempty (Ix.Kernel.Cached.StrongModel V env) := by
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, inst⟩ := checkBytes_reading h
-  obtain ⟨_, _, _, hc⟩ := inst.reading
-  exact Ix.Kernel.Cached.checkDecls_strongModel V hc
+  obtain ⟨_, _, _, _, hc⟩ := inst.reading
+  exact Ix.Kernel.Cached.checkDecls_strongModel_cfg V hc
 
 /-- **Model existence with the value clauses** for the certified entry:
 definitions denote their values, and values read only their own level

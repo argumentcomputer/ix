@@ -10,7 +10,7 @@ theorem TierReceipt.strongModel (V : Type u) [Ix.Kernel.SetTheory V]
   obtain ⟨_, _, _, _, _, _, _, checked⟩ := Ix.Kernel.Admission.checkBytesTieredUsing_ok receipt.checked
   obtain ⟨_, _, folded⟩ := Ix.Kernel.Admission.checkConstantsWith_checkDecls
     (Ix.Kernel.Admission.checkConstantsTiered_ok V checked).1
-  exact Ix.Kernel.Cached.checkDecls_strongModel V folded
+  exact Ix.Kernel.Cached.checkDecls_strongModel_cfg V folded
 
 theorem TierReceipt.authentic {artifact : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
     (receipt : TierReceipt artifact limits) :

@@ -183,9 +183,9 @@ theorem installConstantVal_typeFacts {E : Env md} {F : Nat} {cv c : ConstantVal 
 
 /-- A block's headers, checked at `mkFEnv E`: each the install of its
 member's header at `E`, well scoped. -/
-theorem headersC_ok {E : Env md} (hE : EnvWF E) :
+theorem headersC_ok {E : Env md} (hE : EnvWF E) {core : CoreConfig} :
     ∀ {ms : List (ConstantVal md × Expr md)} {hs : List (ConstantVal md)},
-      headersC (mkFEnv E) ms = .ok hs →
+      headersC (mkFEnv E) ms core = .ok hs →
       Pairs (fun (m : ConstantVal md × Expr md) (c : ConstantVal md) =>
         (∃ F, installConstantVal (fueledOps .verified F) E m.1 = .ok c) ∧
           Expr.WScoped 0 c.type) ms hs
@@ -203,7 +203,7 @@ theorem headersC_ok {E : Env md} (hE : EnvWF E) :
       · rename_i rest hr
         simp only [Except.ok.injEq] at h
         subst h
-        obtain ⟨-, hcvA, hwty, F, hI⟩ := annotConstantValC_run rfl hE (CSOK.empty E) ha
+        obtain ⟨-, hcvA, hwty, F, hI⟩ := annotConstantValC_run rfl hE (CSOK.ofCore E core) ha
         refine .cons ⟨⟨F, hI⟩, ?_⟩ (headersC_ok hE hr)
         rw [hcvA]
         exact hwty
@@ -233,7 +233,8 @@ theorem envWF_blockConsts : ∀ {E : Env md} (_hE : EnvWF E) (s : Safety) {hs : 
 
 /-- A member's value checked at `mkFEnv E`: typed in `E`. -/
 theorem valueC_ok {E : Env md} (hE : EnvWF E) {c : ConstantVal md} {v : Expr md}
-    (hwty : Expr.WScoped 0 c.type) (h : valueC (mkFEnv E) c v = .ok ()) : Typed E c v := by
+    {core : CoreConfig}
+    (hwty : Expr.WScoped 0 c.type) (h : valueC (mkFEnv E) c v core = .ok ()) : Typed E c v := by
   simp only [valueC] at h
   split at h
   · exact nomatch h
@@ -241,11 +242,11 @@ theorem valueC_ok {E : Env md} (hE : EnvWF E) {c : ConstantVal md} {v : Expr md}
     split at h
     · exact nomatch h
     · rename_i r hchk
-      obtain ⟨-, hwjv, F₁, hV⟩ := annotValC_run rfl hE (CSOK.empty E) hval
+      obtain ⟨-, hwjv, F₁, hV⟩ := annotValC_run rfl hE (CSOK.ofCore E core) hval
       rcases r with ⟨⟨⟩, s₂⟩
       obtain ⟨-, F₂, hC⟩ := checkPending_run (feFinal := mkFEnv E)
         (pc := ⟨⟨.defn, c, jv⟩, 0, (mkFEnv E).visibleBelow⟩) rfl hE
-        (fun n => mkFEnv_find? E n) hwty (fun _ => hwjv) CSOKF.empty hchk
+        (fun n => mkFEnv_find? E n) hwty (fun _ => hwjv) (CSOKF.ofCore core) hchk
       obtain ⟨stype, u, hst, hsort, -, jv', -, hjv', vtype, hvt, hde⟩ := checkValueGroup_inv hC
       obtain rfl : jv' = jv := hjv' (fun h => nomatch h)
       exact ⟨⟨stype, u, Rules.inferTypeCore_bridge hst,
@@ -253,11 +254,11 @@ theorem valueC_ok {E : Env md} (hE : EnvWF E) {c : ConstantVal md} {v : Expr md}
         F₁, _, vtype, hV, Rules.inferTypeCore_bridge hvt, Rules.isDefEqCore_bridge hde⟩
 
 /-- Every member's value checked at `mkFEnv E`. -/
-theorem valuesC_ok {E : Env md} (hE : EnvWF E)
+theorem valuesC_ok {E : Env md} (hE : EnvWF E) {core : CoreConfig}
     {R : ConstantVal md × Expr md → ConstantVal md → Prop}
     (hR : ∀ m c, R m c → Expr.WScoped 0 c.type) :
     ∀ {ms : List (ConstantVal md × Expr md)} {hs : List (ConstantVal md)},
-      Pairs R ms hs → valuesC (mkFEnv E) hs ms = .ok () →
+      Pairs R ms hs → valuesC (mkFEnv E) hs ms core = .ok () →
       Pairs (fun m c => R m c ∧ Typed E c m.2) ms hs
   | [], [], .nil, _ => .nil
   | (cv, v) :: ms, c :: hs, .cons hr rest, h => by
@@ -269,8 +270,8 @@ theorem valuesC_ok {E : Env md} (hE : EnvWF E)
 
 /-- A header's type checked to be a sort at `mkFEnv E` (`sortC`): a sort in
 `E`. -/
-theorem sortC_ok {E : Env md} (hE : EnvWF E) {c : ConstantVal md}
-    (hwty : Expr.WScoped 0 c.type) (h : sortC (mkFEnv E) c = .ok ()) : SortTyped E c := by
+theorem sortC_ok {E : Env md} (hE : EnvWF E) {c : ConstantVal md} {core : CoreConfig}
+    (hwty : Expr.WScoped 0 c.type) (h : sortC (mkFEnv E) c core = .ok ()) : SortTyped E c := by
   simp only [sortC] at h
   split at h
   · exact nomatch h
@@ -278,7 +279,7 @@ theorem sortC_ok {E : Env md} (hE : EnvWF E) {c : ConstantVal md}
     obtain ⟨⟨⟩, s₄⟩ := r
     obtain ⟨jsty, s₂, hst, h₂⟩ := bindC_ok hrun
     obtain ⟨hs₂, wsty, ⟨rfl, hwsty⟩, F₁, hF₁⟩ :=
-      (ssimC rfl E hE checkFuel).infer (CSOK.empty E) rfl hwty jsty s₂ hst
+      (ssimC rfl E hE checkFuel).infer (CSOK.ofCore E core) rfl hwty jsty s₂ hst
     obtain ⟨u, s₃, hsort, -⟩ := bindC_ok h₂
     obtain ⟨-, u', rfl, F₂, hF₂⟩ := opSIxC_sim rfl hE hs₂ rfl hwsty u s₃ hsort
     exact ⟨jsty, u, Rules.inferTypeCore_bridge hF₁, Rules.whnf_bridge (ensureSortCore_inv hF₂)⟩
@@ -300,7 +301,8 @@ the extension by its constants, which is well formed, every one of its
 constants has its safety, and each is the install of a member's header at
 `E`, typed in the extension. -/
 theorem blockC_ok {E : Env md} (hE : EnvWF E) {s : Safety} {ms : List (ConstantVal md × Expr md)}
-    {fe' : FEnv md} {blk : List (TierConst md)} (h : blockC (mkFEnv E) s ms = .ok (fe', blk)) :
+    {fe' : FEnv md} {blk : List (TierConst md)} {core : CoreConfig}
+    (h : blockC (mkFEnv E) s ms core = .ok (fe', blk)) :
     fe' = mkFEnv (E.extendOpaque blk) ∧ EnvWF (E.extendOpaque blk) ∧
       ∀ c ∈ blk, c.safety = s ∧ ∃ m ∈ ms,
         (∃ F, installConstantVal (fueledOps .verified F) E m.1 = .ok c.cv) ∧
@@ -356,8 +358,8 @@ by its one constant, which is well formed, an unsafe constant that is the
 install of its header at `env` and typed in `env`. -/
 theorem opaqueC_ok {env : Env md} (henv : EnvWF env) {acc : List (TierConst md)}
     (hE : EnvWF (env.extendOpaque acc)) {cv : ConstantVal md} {v : Expr md}
-    {fe' : FEnv md} {blk : List (TierConst md)}
-    (h : opaqueC (mkFEnv env) (mkFEnv (env.extendOpaque acc)) cv v = .ok (fe', blk)) :
+    {fe' : FEnv md} {blk : List (TierConst md)} {core : CoreConfig}
+    (h : opaqueC (mkFEnv env) (mkFEnv (env.extendOpaque acc)) cv v core = .ok (fe', blk)) :
     fe' = mkFEnv ((env.extendOpaque acc).extendOpaque blk) ∧
       EnvWF ((env.extendOpaque acc).extendOpaque blk) ∧
       ∃ c, blk = [c] ∧ c.safety = .unsaf ∧
@@ -375,7 +377,7 @@ theorem opaqueC_ok {env : Env md} (henv : EnvWF env) {acc : List (TierConst md)}
   rename_i hval
   simp only [Except.ok.injEq, Prod.mk.injEq] at h
   obtain ⟨rfl, rfl⟩ := h
-  obtain ⟨-, hcvA, hwty, F, hI⟩ := annotConstantValC_run rfl henv (CSOK.empty env) ha
+  obtain ⟨-, hcvA, hwty, F, hI⟩ := annotConstantValC_run rfl henv (CSOK.ofCore env core) ha
   have hwty' : Expr.WScoped 0 cvA.type := by rw [hcvA]; exact hwty
   obtain ⟨g1, g2, g3, g4, -⟩ := installConstantVal_typeFacts hI
   refine ⟨push_single _ .unsaf cvA,
@@ -386,7 +388,8 @@ theorem opaqueC_ok {env : Env md} (henv : EnvWF env) {acc : List (TierConst md)}
 extension by its one constant, which is well formed, an unsafe constant that
 is the install of its header at `E`, its type a sort in `E`. -/
 theorem axiomC_ok {E : Env md} (hE : EnvWF E) {cv : ConstantVal md}
-    {fe' : FEnv md} {blk : List (TierConst md)} (h : axiomC (mkFEnv E) cv = .ok (fe', blk)) :
+    {fe' : FEnv md} {blk : List (TierConst md)} {core : CoreConfig}
+    (h : axiomC (mkFEnv E) cv core = .ok (fe', blk)) :
     fe' = mkFEnv (E.extendOpaque blk) ∧ EnvWF (E.extendOpaque blk) ∧
       ∃ c, blk = [c] ∧ c.safety = .unsaf ∧
         (∃ F, installConstantVal (fueledOps .verified F) E cv = .ok c.cv) ∧ SortTyped E c.cv := by
@@ -401,7 +404,7 @@ theorem axiomC_ok {E : Env md} (hE : EnvWF E) {cv : ConstantVal md}
   rename_i hsort
   simp only [Except.ok.injEq, Prod.mk.injEq] at h
   obtain ⟨rfl, rfl⟩ := h
-  obtain ⟨-, hcvA, hwty, F, hI⟩ := annotConstantValC_run rfl hE (CSOK.empty E) ha
+  obtain ⟨-, hcvA, hwty, F, hI⟩ := annotConstantValC_run rfl hE (CSOK.ofCore E core) ha
   have hwty' : Expr.WScoped 0 cvA.type := by rw [hcvA]; exact hwty
   obtain ⟨g1, g2, g3, g4, -⟩ := installConstantVal_typeFacts hI
   exact ⟨push_single _ .unsaf cvA, envWF_single hE .unsaf ⟨g1, g2, g3, g4⟩,
@@ -413,8 +416,8 @@ its constants `blk` too, which is well formed; every constant of `blk` has
 the declaration's safety and is typed in its scope (`DeclTyped`). -/
 theorem checkDeclC_ok {env : Env md} (henv : EnvWF env) {acc : List (TierConst md)}
     (hE : EnvWF (env.extendOpaque acc)) {d : TierDecl md} {fe' : FEnv md}
-    {blk : List (TierConst md)}
-    (h : checkDeclC (mkFEnv env) (mkFEnv (env.extendOpaque acc)) d = .ok (fe', blk)) :
+    {blk : List (TierConst md)} {core : CoreConfig}
+    (h : checkDeclC (mkFEnv env) (mkFEnv (env.extendOpaque acc)) d core = .ok (fe', blk)) :
     fe' = mkFEnv (env.extendOpaque (blk ++ acc)) ∧ EnvWF (env.extendOpaque (blk ++ acc)) ∧
       ∀ c ∈ blk, c.safety = d.safety ∧ DeclTyped env acc blk c d := by
   rw [← extendOpaque_append]
@@ -442,11 +445,11 @@ theorem checkDeclC_ok {env : Env md} (henv : EnvWF env) {acc : List (TierConst m
 the returned index is the extension by the constants, which is well formed,
 and every new constant is typed in its scope as a constant of one of the
 declarations, whose constants all have its safety. -/
-theorem checkTierFrom_typed {env : Env md} (henv : EnvWF env) :
+theorem checkTierFrom_typed {env : Env md} (henv : EnvWF env) {core : CoreConfig} :
     ∀ {xs : List (Nat × TierDecl md)} {acc : List (TierConst md)}
       {fe' : FEnv md} {ts : List (TierConst md)},
       EnvWF (env.extendOpaque acc) →
-      checkTierFrom (mkFEnv env) (mkFEnv (env.extendOpaque acc)) acc xs = .ok (fe', ts) →
+      checkTierFrom (mkFEnv env) (mkFEnv (env.extendOpaque acc)) acc xs core = .ok (fe', ts) →
       fe' = mkFEnv (env.extendOpaque ts) ∧ EnvWF (env.extendOpaque ts) ∧
         (∃ new, ts = new ++ acc) ∧
         ∀ c ∈ ts, c ∈ acc ∨ ∃ later blk pre, ts = later ++ blk ++ pre ∧ c ∈ blk ∧
@@ -475,12 +478,12 @@ theorem checkTierFrom_typed {env : Env md} (henv : EnvWF env) :
 
 /-- The fold over two lists is the fold over the first, then over the
 second from where it stopped. -/
-theorem checkTierFrom_append {fe₀ : FEnv md} :
+theorem checkTierFrom_append {fe₀ : FEnv md} {core : CoreConfig} :
     ∀ {xs ys : List (Nat × TierDecl md)} {fe : FEnv md} {acc : List (TierConst md)}
       {r : FEnv md × List (TierConst md)},
-      checkTierFrom fe₀ fe acc (xs ++ ys) = .ok r →
-      ∃ fe₁ acc₁, checkTierFrom fe₀ fe acc xs = .ok (fe₁, acc₁) ∧
-        checkTierFrom fe₀ fe₁ acc₁ ys = .ok r
+      checkTierFrom fe₀ fe acc (xs ++ ys) core = .ok r →
+      ∃ fe₁ acc₁, checkTierFrom fe₀ fe acc xs core = .ok (fe₁, acc₁) ∧
+        checkTierFrom fe₀ fe₁ acc₁ ys core = .ok r
   | [], ys, fe, acc, r, h => ⟨fe, acc, rfl, h⟩
   | (i, d) :: xs, ys, fe, acc, r, h => by
     simp only [List.cons_append, checkTierFrom] at h ⊢
@@ -516,8 +519,8 @@ returned index is that of `env.extendOpaque ts`, which is well formed; no
 tier constant is a constant of `env`; and every tier constant is typed in
 its scope (`TypedIn`). -/
 theorem checkTierC_typed {env : Env md} (hwf : EnvWF env) {ds : List (TierDecl md)}
-    {fe' : FEnv md} {ts : List (TierConst md)}
-    (h : checkTierC (mkFEnv env) ds = .ok (fe', ts)) :
+    {fe' : FEnv md} {ts : List (TierConst md)} {core : CoreConfig}
+    (h : checkTierC (mkFEnv env) ds core = .ok (fe', ts)) :
     fe' = mkFEnv (env.extendOpaque ts) ∧ EnvWF (env.extendOpaque ts) ∧
       (∀ c ∈ ts, env.find? c.cv.name = none) ∧ ∀ c ∈ ts, TypedIn env ds ts c := by
   simp only [checkTierC, staged] at h
@@ -578,9 +581,9 @@ theorem checkTierC_typed {env : Env md} (hwf : EnvWF env) {ds : List (TierDecl m
 resolves in it (`EnvWF`). Stated at a set theory, like the entry theorems:
 it is the model's well-formedness (`checkDecls_sound`). -/
 theorem checkDecls_closed (V : Type w) [SetTheory V] {ev : Evidences md}
-    {ds : Array (Declaration md)} {env : Env md}
-    (h : checkDecls .verified ev ds = .ok env) : EnvWF env := by
-  obtain ⟨mp⟩ := checkDecls_sound (V := V) rfl h
+    {ds : Array (Declaration md)} {cfg : FoldConfig} {env : Env md}
+    (h : checkDecls .verified ev ds cfg = .ok env) : EnvWF env := by
+  obtain ⟨mp⟩ := checkDecls_sound_cfg (V := V) rfl h
   exact mp.toEnvFacts.wf
 
 /-- **The tier over the logical fold's accept**: the logical environment is
@@ -588,10 +591,11 @@ well formed, no tier constant resolves in it (so no accepted logical
 declaration names one: every term it stores resolves), and every tier
 constant is typed in its scope. -/
 theorem checkDecls_checkTierC (V : Type w) [SetTheory V] {ev : Evidences md}
-    {decls : Array (Declaration md)} {env : Env md} {ds : List (TierDecl md)}
+    {decls : Array (Declaration md)} {cfg : FoldConfig} {env : Env md}
+    {ds : List (TierDecl md)} {core : CoreConfig}
     {fe' : FEnv md} {ts : List (TierConst md)}
-    (hl : checkDecls .verified ev decls = .ok env)
-    (ht : checkTierC (mkFEnv env) ds = .ok (fe', ts)) :
+    (hl : checkDecls .verified ev decls cfg = .ok env)
+    (ht : checkTierC (mkFEnv env) ds core = .ok (fe', ts)) :
     EnvWF env ∧ (∀ c ∈ ts, env.find? c.cv.name = none) ∧
       EnvWF (env.extendOpaque ts) ∧ ∀ c ∈ ts, TypedIn env ds ts c := by
   have hwf := checkDecls_closed V hl

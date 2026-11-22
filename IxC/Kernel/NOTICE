@@ -57,6 +57,79 @@ Modifications
     largest family first, and declines a group that would share a member
     with an earlier one, so that the result does not depend on the order
     of the block's auxiliary motives.
+  * Levels the ∀ rule shares (2026-11): Expr.lean gives Level a second
+    computed field, its has-parameter bit (hasParamData), and levelHasParam
+    runs as that field (a proved @[csimp]); Cached/ExprNodes.lean's census
+    names it. The ∀ rule keeps the original's level, imax u v (an earlier
+    change that folded it, Level.mkIMax, was withdrawn); Cached/StateC.lean
+    adds a table to the cached core's state and internLM, which returns
+    its argument (a hit only after == confirms it), and Cached/CoreC.lean
+    hash-conses the rule's level with it at its two sites (inferPisOutI,
+    inferBodyIOI); Verify/Cached/SimCEff.lean proves internLM_eff and
+    Verify/Cached/{BinderLoopC,DiscC4}.lean use it. With the plain imax, a
+    ∀ chain over one shared type builds a level whose tree doubles per
+    binder, the level functions walk levels as trees, and the binder loop
+    rebuilds equal levels as new objects. Expr.lean's Level.beqPtr (the executed Level.beq,
+    by a proved @[csimp]) decides its structural case by a descent
+    memoised on the pairs it proves equal (Level.decMemo, Expr.beqMemo's
+    arrangement), so that equal levels built apart as DAGs, which the
+    folds compare, are compared in time linear in their DAGs.
+  * Level walks on shared levels and budgeted comparison (2026-11):
+    Level.lean runs simplify, leqCore, zeronessOf and isNeverZero, through
+    four proved @[csimp] theorems (simplify_eq_simplifyFast,
+    leqCore_eq_leqCoreFast, zeronessOf_eq_zeronessOfFast,
+    isNeverZero_eq_isNeverZeroFast), as walks memoised per call on the
+    nodes they finish (for leqCore, on its subproblems (fuel, l, r, diff),
+    with a memoised subst, substMemo, in its case split), and below a small
+    tree size as exact copies of the plain recursion. Level.leqCoreB adds a
+    raisable per-direction work budget (memo misses plus weighted Géran
+    sublevels, w := c / 64, default 65,536) proved equal to Level.leqCore
+    whenever it returns an answer (leqCoreB_eq). Cached/StateC.lean threads
+    CoreConfig (carrying levelBudget) through CState (preserved across
+    resetC/flushC) and runs budgeted isEquivLM and isLeqLM; CheckerOps adds
+    leqLevel (wired to isLeqLM in sharedOpsC) so inductive field-sort checks
+    in SumInstallF and Tier/Ind are budgeted too; direct .zero-RHS checks
+    use Level.isZero (proved equal to isEquiv l .zero == some true by
+    Level.isEquiv_zero_beq_true).
+  * Native stack per step and per record (2026-11): Cached/CoreC.lean runs
+    whnfCoreLoopI, whnfLoopI and defeqLoopI, through three proved @[csimp]
+    theorems (whnfCoreLoopI_eq_whnfCoreLoopFast, whnfLoopI_eq_whnfLoopFast,
+    defeqLoopI_eq_defeqLoopFast), as loops over a twin of the step that
+    returns its tail call of the continuation instead of making it
+    (whnfCoreStepR, whnfAppR, betaPeelR, whnfStepR, defeqStepR; each step
+    proved to factor through its twin); FEnv.lean runs mkFEnvGo
+    (mkFEnvGo_eq_mkFEnvGoFast) as a fold over the reversed list and
+    Units.lean runs unitsGo (unitsGo_eq_unitsGoFast) with an accumulator.
+    The functions themselves are unchanged. The loops called their
+    continuation through a closure, which kept native frames per
+    reduction step, and the two recursions kept one per installed
+    constant or declaration.
+  * Telescopes that stop at a checked tail (2026-11): Cached/StateC.lean
+    adds peelFuelTo and peelFuelToM, and Cached/CoreC.lean's inference and
+    annotation clauses for ∀ and λ take the binder loops' peel fuel from
+    them (the binders before the first closed residual the memo already
+    holds) in place of the constant peelFuel; the loops' simulations hold
+    for every peel fuel, and Verify/Cached/SimCEff.lean proves
+    peelFuelToM_eff, which Verify/Cached/{DiscC4,DiscC6}.lean take in place
+    of peelFuelM_eff. StateC.lean's isEquivLM simplifies through
+    simplifyMemoC, Level.simplifyGo seeded with the declaration's memo
+    (simplifyMemoC_spec). A chain T (j+1) = T j → T j re-peeled the whole
+    telescope below each step, and annotation rebuilt it as fresh nodes.
+  * A 64-bit term hash (2026-11): Expr.lean computes the node hash as a
+    field of its own (Expr.hashW, the original mixHash recurrence without
+    truncation) instead of the low 32 bits kept in the packed word, whose
+    upper bits are now reserved; Expr.beqMemo tests both words before
+    descending. A chain of nodes built by one step made the 32-bit hashes
+    iterate one function and cycle, and memo probes then descended terms
+    of equal hash.
+  * Phase B's task bound and FoldConfig (2026-11): Cached/Installed.lean's
+    checkPendingTasks takes a bound on its tasks, and checkDecls,
+    checkDeclsUnder and checkDeclsWithUserAxioms (Cached/Policy.lean) take
+    a defaulted FoldConfig carrying workers and CoreConfig;
+    checkPendingTasks_eq holds for every bound and checkDecls_cfg,
+    checkDeclsUnder_cfg show the worker count changes no result. One task
+    per 64 records let the number of threads, each reserving a stack, grow
+    with the input.
   * MainTheorem.lean keeps only model_exists; the corollary about NDJSON
     files and the imports it needs are dropped.
   * Verify/Cached/AgreeFloor.lean and Verify/Cached/PushChain.lean import

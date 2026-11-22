@@ -63,11 +63,11 @@ def Checker.step (ev : Ix.Kernel.Evidences md) (c : Checker md) (d : Ix.Kernel.D
     else
       Ix.Kernel.Cached.annotDeclStep .verified ev
   match stepFn (pos, fe, #[]) d cs with
-  | .error (e, _) => (⟨Ix.Kernel.mkFEnv before, {}, pos + 1⟩, some e)
+  | .error (e, _) => (⟨Ix.Kernel.mkFEnv before, cs.reset, pos + 1⟩, some e)
   | .ok ((pos', fe', pend), cs') =>
-    match Ix.Kernel.Cached.checkPendingList .verified fe' pend.toList with
+    match Ix.Kernel.Cached.checkPendingList .verified fe' pend.toList cs'.core with
     | .ok () => (⟨fe', cs', pos'⟩, none)
-    | .error (e, _) => (⟨Ix.Kernel.mkFEnv before, {}, pos'⟩, some e)
+    | .error (e, _) => (⟨Ix.Kernel.mkFEnv before, cs.reset, pos'⟩, some e)
 
 /-- One record's declarations, in order; the first failure ends it. -/
 def Checker.steps (ev : Ix.Kernel.Evidences md) (c : Checker md)
@@ -346,10 +346,11 @@ def readTierAt (cx : Ctx md) (address : Address) (source : Ixon.Constant) :
 /-- One tier declaration at `fe`, with `fe₀` the logical view (the index before
 any tier constant); a failure leaves the index as it was (rebuilt from its
 environment, as `Checker.step` rolls back). -/
-def stepTier (fe₀ fe : Ix.Kernel.FEnv md) (d : Ix.Kernel.Tier.TierDecl md) :
+def stepTier (fe₀ fe : Ix.Kernel.FEnv md) (d : Ix.Kernel.Tier.TierDecl md)
+    (core : Ix.Kernel.Cached.CoreConfig := {}) :
     Ix.Kernel.FEnv md × Option (Ix.Kernel.CheckError md) :=
   let before := fe.env
-  match Ix.Kernel.Tier.checkDeclC fe₀ fe d with
+  match Ix.Kernel.Tier.checkDeclC fe₀ fe d core with
   | .ok (fe', _) => (fe', none)
   | .error e => (Ix.Kernel.mkFEnv before, some e)
 
@@ -382,6 +383,29 @@ def Checker.stepRecordWithUserAxioms (ev : Ix.Kernel.Evidences md) (allowUserAxi
     Checker md × Option (Ix.Kernel.CheckError md) :=
   c.steps ev rd.decls allowUserAxioms
 
+/-- Run `body` over `xs` from index `i`, threading `s`. A self tail call in
+`IO`, which the compiler emits as a loop. `checkLoopWith`'s loops over the
+records were `for` loops that compiled to the generic array loop with the
+monad passed as a value (not specialised to `IO`), whose binds go through
+closures and kept two native frames per record: Init+Std's 98,000 records
+overflowed a 16 MiB stack. -/
+def forArrayIO {β α : Type} (xs : Array β) (body : α → β → IO α) (i : Nat) (s : α) : IO α :=
+  if h : i < xs.size then do
+    let s ← body s xs[i]
+    forArrayIO xs body (i + 1) s
+  else pure s
+termination_by xs.size - i
+
+/-- The variables `checkLoopWith`'s record loop threads. -/
+structure LoopVars (κ : Type) (md : Ix.Kernel.Mode) where
+  out : LoopOutcome κ
+  consumed : Std.HashSet Address := {}
+  /-- the tier records, deferred in order: address, view, declaration,
+  dependencies, reading time -/
+  deferred : Array (Address × RecordView × Ix.Kernel.Tier.TierDecl md × Array Address × Nat) := #[]
+  deferredSet : Std.HashSet Address := {}
+  index : Nat := 0
+
 /-- Check `addresses` in order, continuing past failures; each row is passed
 to `emit`. The records' views and readings come from `view` and `read`; the
 reading state `σ` is threaded through `commit` after every reading that
@@ -405,26 +429,26 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
     (onRead : Address → Except ReadError (Read md) → Nat → IO Unit := fun _ _ _ => pure ())
     (spell : Ix.Kernel.Key md → String := toString)
     (tier : Option (TierHook σ κ md) := none)
-    (onView : Address → RecordView → IO Unit := fun _ _ => pure ()) :
+    (onView : Address → RecordView → IO Unit := fun _ _ => pure ())
+    (core : Ix.Kernel.Cached.CoreConfig := {}) :
     IO (LoopOutcome κ) := do
-  let mut out : LoopOutcome κ := { checker := default }
   -- the reading state and the step state live in references of the loop's
-  -- own, not in its mutable variables: the `for` loop's state tuple holds
-  -- those while the body runs, so `commit` and `step` would see them shared
-  -- and copy what they update
+  -- own, not in its threaded variables: those are held while the body runs,
+  -- so `commit` and `step` would see them shared and copy what they update
   let state ← IO.mkRef init
   let stepper ← IO.mkRef start
-  let mut consumed : Std.HashSet Address := {}
-  -- the tier records, deferred in order: address, view, declaration,
-  -- dependencies, reading time
-  let mut deferred : Array (Address × RecordView × Ix.Kernel.Tier.TierDecl md × Array Address × Nat) := #[]
-  let mut deferredSet : Std.HashSet Address := {}
-  let mut index := 0
-  for address in addresses do
+  -- one record: the body of the record loop, its variables threaded through
+  -- `forArrayIO` (a loop in the emitted C; see there)
+  let recordStep : LoopVars κ md → Address → IO (LoopVars κ md) := fun vars address => do
+    let mut out := vars.out
+    let mut consumed := vars.consumed
+    let mut deferred := vars.deferred
+    let mut deferredSet := vars.deferredSet
+    let mut index := vars.index
     index := index + 1
     progress index out
-    if consumed.contains address then continue
-    let some v := view address | continue
+    if consumed.contains address then return { out, consumed, deferred, deferredSet, index }
+    let some v := view address | return { out, consumed, deferred, deferredSet, index }
     let recs := v.recs
     let rowsFor (outcome reason : String) (micros readMicros : Nat) : Array Row :=
       #[⟨address, names address, v.kind, outcome, reason, micros, readMicros⟩] ++
@@ -462,7 +486,7 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
         | none =>
           deferred := deferred.push (address, v, d, deps, readMicros)
           deferredSet := deferredSet.insert address
-      continue
+      return { out, consumed, deferred, deferredSet, index }
     let reading ← IO.lazyPure fun _ => read st address
     let readMicros := ((← IO.monoNanosNow) - r0) / 1000
     onRead address reading readMicros
@@ -499,7 +523,7 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
                               counts := out.counts.insert "decline" (out.counts.getD "decline" 0 + 1) }
             emit row
           out := { out with reasons := out.reasons.insert "fence" (out.reasons.getD "fence" 0 + 1) }
-          continue
+          return { out, consumed, deferred, deferredSet, index }
         if !skip.isEmpty && skip.contains (toString address) then
           let reason := "check-ixe: skipped: exceeded the watchdog's limits on an earlier run"
           for row in rowsFor "decline" reason 0 readMicros do
@@ -507,7 +531,7 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
                               counts := out.counts.insert "decline" (out.counts.getD "decline" 0 + 1) }
             emit row
           out := { out with reasons := out.reasons.insert reason (out.reasons.getD reason 0 + 1) }
-          continue
+          return { out, consumed, deferred, deferredSet, index }
         before address
         let t0 ← IO.monoNanosNow
         let checker ← stepper.modifyGet fun c => (c, default)
@@ -527,6 +551,10 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
                               counts := out.counts.insert outcome (out.counts.getD outcome 0 + 1) }
             emit row
           out := { out with reasons := out.reasons.insert reason (out.reasons.getD reason 0 + 1) }
+    return { out, consumed, deferred, deferredSet, index }
+  let vars ← forArrayIO addresses recordStep 0 { out := { checker := default } }
+  let mut out := vars.out
+  let deferred := vars.deferred
   let checker ← stepper.get
   -- the typing tier, staged, from the final step state's index (also the
   -- logical view of the unsafe opaques)
@@ -534,7 +562,9 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
     unless deferred.isEmpty do
       let logical := th.index checker
       let fe ← IO.mkRef logical
-      for (address, v, d, deps, readMicros) in stageDeferred (·.2.2.1) deferred do
+      out ← forArrayIO (stageDeferred (·.2.2.1) deferred)
+        (fun out (address, v, d, deps, readMicros) => do
+        let mut out := out
         let row (outcome reason : String) (micros : Nat) : Row :=
           ⟨address, names address, v.kind, outcome, reason, micros, readMicros⟩
         match if out.failed.isEmpty then none else deps.find? out.failed.contains with
@@ -546,7 +576,7 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
         | none =>
           let t0 ← IO.monoNanosNow
           let fe₀ ← fe.modifyGet fun x => (x, Ix.Kernel.mkFEnv Ix.Kernel.Env.empty)
-          let (fe₁, err) ← IO.lazyPure fun _ => stepTier logical fe₀ d
+          let (fe₁, err) ← IO.lazyPure fun _ => stepTier logical fe₀ d core
           fe.set fe₁
           let micros := ((← IO.monoNanosNow) - t0) / 1000
           match err with
@@ -559,6 +589,7 @@ def checkLoopWith {σ κ : Type} [Inhabited κ] (view : Address → Option Recor
                               counts := out.counts.insert outcome (out.counts.getD outcome 0 + 1),
                               reasons := out.reasons.insert reason (out.reasons.getD reason 0 + 1) }
             emit (row outcome reason micros)
+        return out) 0 out
   return { out with checker := checker }
 
 /-- A record of a check setup, read by the reader at the state `st`. -/

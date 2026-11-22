@@ -177,7 +177,9 @@ The entry runs, in order:
 | batch limits: record and blob counts, total payload bytes | `Admission.preflight` | `.limit resource` |
 | key uniqueness: no two records and no two blobs under one address | `Admission.uniqueKeys` | `.duplicate table position address` |
 | authentication: every record and every blob under `hash` of its bytes, as supplied (a record's payload is hashed before it is decoded, never re-encoded) | `Admission.authenticate` | `.mismatch table position address` |
-| canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason` |
+| the depth limit, as stored: every record's expressions (shares as leaves) and universes nest at most `limits.maxDepth` levels, read from the bytes before decoding | `Admission.scanDepths` | `.limit .depth` |
+| canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason`; a record over `maxRecordBytes`, or a universe table past `maxRecordUnivNodes`: `.limit .recordBytes`, `.limit .recordUnivNodes` (`ByteError.asLimit`) |
+| the depth limit, shares expanded: every decoded record's expressions nest at most `limits.maxDepth` levels as the reader builds them | `Admission.expandedDepths` | `.limit .depth` |
 | the Ixon reader: records to `Array Ix.Kernel.Declaration`, bound addresses named by their role keys | `Reader.readRecords` | `.read position (.malformed _ / .declined _)` |
 | the table's evidence, each proof entry resolved to its theorem's key and value | `Reader.evidenceOf` | (an unresolved proof leaves its operation without evidence) |
 | the prelude is put in front (`Ix.Kernel.Frontend.preparePrelude`) | | |
@@ -431,6 +433,361 @@ would admit as a user axiom. The entries run that check themselves; the
 record-by-record drivers never reach admission, so the host runs it first
 (`Ix.RoleBinding.UserAxioms.requireAxiomRoles`), and such an artifact, like
 one with no binding, is refused before any checking.
+
+**Running time.** The theorems are about what the entry accepts; none bounds
+its running time, and the checker's fuel (`checkFuel`) bounds recursion
+depth, not work. Universe levels are one place where the checker itself
+builds a term much larger than its input. The ∀ rule's level combines the
+domain's and the codomain's, and on a chain of ∀s over one shared type
+(`T (j+1) = T j → T j` in a sharing table, or `let a(j+1) : Type := aj → aj`,
+which the annotation pass substitutes) the plain `imax u v` built a level
+shared as a DAG of linear size whose tree doubles per binder, which the
+level functions walk as trees (`Level.simplify`, from the comparison of the
+inferred sort with the declared one, and `levelHasParam`, at every `.sort`
+node built): a 225-byte constant took 52 s, twice as long per further step.
+The rule's level stays upstream's `imax u v` (`Infer.forallE`); the executed
+tier is what changed. `Level` caches its has-parameter bit; the cached core
+hash-conses the ∀ rule's levels (`Cached.internLM`, the identity in the
+logic: a hit is returned only after `==` confirms it), so that the level the
+binder loop builds again for a telescope's tail is the object built before
+(without it a `let` chain is cubic, 9 s at 2,000 steps); and the level walks
+below are memoised. The hash-consing is an executed-tier device: `internLM l`
+is `l` in the logic (a hit is returned only after `==`, which is lawful, has
+confirmed it; `internLM_eff`, with `CSOK.withIntern`: no clause of the cached
+core's state invariant reads the table), and the only proofs it changes are
+the cached core's two simulation steps at the ∀ sites, `inferPisOutC_sim` and
+`inferBodyIOC_sim`. `IxC/Kernel/Rules/`, `IxC/Kernel/Model/`,
+`IxC/Kernel/Core.lean`, `IxC/Kernel/Denotes.lean` and
+`IxC/Kernel/Verify/{BinderLoop,InferLemmas,InferIOLemmas,Level,PropWhen}.lean`
+are byte-identical to upstream, checked by `git diff`. Levels stay shared as
+DAGs whose trees double per step: the ∀ chains above, two chains at two
+parameters, each step mentioning the other's (`A (j+1) = A j → B j`,
+`B (j+1) = B j → A j`), and the levels unfolding builds when each of a chain
+of definitions instantiates the previous at `max u u` (`Level.subst` puts one
+object at both sides). Level equality (`==`) is memoised below its pointer
+and hash tests on the pairs it proves equal (`Level.decMemo`), and the
+executed forms of `Level.simplify`, `Level.leqCore`, `Level.zeronessOf` and
+`Level.isNeverZero` remember, for one call, the result at every node (for
+`leqCore`, every subproblem `(fuel, l, r, diff)`) they have finished;
+`leqCore`'s case split on a large level substitutes with a memoised `subst`
+(`Level.substMemo`). Each executed form is proved equal to its specification
+and swapped in by `@[csimp]`; below 64 nodes (32 for `leqCore`'s two operands)
+an exact copy of the plain recursion runs instead, so ordinary levels cost
+what they did. So every level walk is linear in the level's DAG, and such
+constants check in milliseconds at hundreds of steps (the
+`kernel-level-sharing` test checks the families at 200, the `let` chain and
+its parameter variant at 2,000 within a bound, and the printing of a failure
+about such a level: the display shows at most 64 `max`/`imax` nodes of a
+level, `⋯` past them).
+
+Terms repeat the same pattern one level up. The binder-telescope loops
+(`Cached.inferPisI`, `inferLamsI`, `annotatePisI`, `annotateLamsI`) peel a
+telescope to its end, and on a chain `T (j+1) = T j → T j` that meant
+re-peeling, at every step, the whole telescope below it, although its tail
+`T j` was inferred and annotated the step before; annotation also rebuilt
+the peeled spine as fresh nodes, so an annotated chain of `k` steps held
+about `k²/2` distinct nodes, and comparing two annotations of the same
+chain built in different declarations (a function's declared type against
+its value's) visited them all. The loops now stop at the first closed
+residual the memo already holds (`Cached.peelFuelToM`: the peel fuel is the
+number of binders before it; the fuel is semantically transparent, the
+loops' simulations hold for every fuel, and `peelFuelToM_eff` says the
+choice reads the state and changes nothing), so the leaf is a memo hit
+and the rebuild shares the memoised term. And a level is simplified
+through the declaration's memo (`Cached.simplifyMemoC`, the memoised walk
+seeded with `lsimpC`), so a level built on levels already simplified costs
+its new nodes. A residual the memo lacks is peeled as before: no knot
+nesting is added. On the build box a 16,000-step `let` chain (a 112 KB
+constant) checks in under a second where 8,000 steps took 27 s and 1.6 GB,
+and comparing two annotations of a 2,000-step chain in 50 ms where it took
+6.5 s (the `kernel-level-sharing` test bounds them). Two chains stay
+quadratic: at a universe parameter, the specification's `Level.simplify`
+does not merge `max u u`, so the simplified sort of each step is a DAG as
+deep as the chain and `leqCore` walks it (8.8 s at 8,000 steps; at 16,000
+the comparison's depth fuel declines it); and a chain of λs over the
+previous value (`lamlet` in the test), where `Level.zeronessOf` walks the
+∀ rule's level of each step's type (3.6 s at 8,000 steps, 18.8 s at
+16,000).
+
+Every memo of the cached core is a `Std.HashMap` keyed by terms, and the
+term's hash is a field computed at construction. That hash was the low 32
+bits of a `mixHash` recurrence over the node's fields, kept in the packed
+word beside the variable ranges. A chain of nodes built by one repeated
+step (`E_k = (λx. E_(k-1)) P L`, each head normalisation nesting once)
+makes the hashes of successive levels iterate one function on 2^32 values,
+which enters a cycle: at `P = Prop` level 8,323 repeats level 5,987. Past
+the cycle every memo probe meets entries of equal hash and descends them
+structurally, so the run is cubic past the entry: 32,000 levels took 83 s.
+The hash is now 64 bits in a word of its own (`Expr.hashW`; equality's
+fast reject tests both words), and the same chains first repeat beyond
+1,000,000 levels (the `kernel-depth` test checks it and bounds the chain
+at 32,000 levels, 35 to 49 ms). What it costs: the second word, +17 to
++20 % peak memory on Init+Std (2.79 to 2.83 GB against 2.33 to 2.40);
+time within that run's noise (five rounds, ±7 % per round on a loaded
+machine; an earlier, quieter paired run gave +10.5 to +11.9 %). The packed
+word's freed bits 63 to 31 are reserved, for the cached depth the depth
+limit may need. Measured alternative, rejected: a 48-bit hash in the
+existing word, which narrows the range fields to 8 and 7 bits; their
+saturated fallback (an exact walk per cutoff test) then costs seconds on
+honest inputs (a 255-field structure, 90 ms before, 4.4 s or 10.4 s by the
+split) and a 16,384-binder telescope 26 to 36 s.
+
+What the wider hash closes and what it does not. The cycle of a chain is
+an accident of the function a step iterates; an adversary can also search
+for a step whose cycle starts early and is short. Treating each truncated
+node as a random function, which a simulation of the recurrence confirms
+at 24, 32, 40 and 48 bits (it reproduces the measured 32-bit cycles
+exactly), a step cycles with entry at most `a` and period at most `p` with
+probability about `a p / 2^b`, and the run it buys costs about
+`(n - a)^3 / (3 p)` comparison steps at depth `n`. At 32 bits such chains
+are free; at 48 bits about 2^40 hash evaluations buy tens of seconds per
+chain and about 2^49 a fixed point (`p = 1`, hours); at 64 bits the same
+need about 2^56 and 2^65 (each candidate step costs about 2^13 to 2^14
+evaluations to test). Not closed: (1) a collision bought between two
+different terms (about 2^32 evaluations at 64 bits) makes each lookup of
+one descend the other: quadratic in their depth, bounded by the depth
+limit. (2) **Bucket flooding, independent of the hash's width**: a map's
+bucket is the low bits of `scrambleHash` of the hash, and the hash is not
+keyed, so an input can carry R distinct terms that share a bucket of one
+memo (finding them costs about 1.3 R² hash evaluations); each insertion
+then scans the others, Θ(R²) comparisons in one map, bounded by the
+batch's size, not by depth.
+
+**The level-comparison budget (`Limits.levelBudget`).** `Level.leqCore`
+decides `eval l ≤ eval r + diff` at every assignment by nanoda's case
+analysis: splitting on a parameter being zero or not (`byCases`),
+distributing `imax` over `imax` and `max`, and Géran's sublevels for the
+case nanoda's split misses; it is complete when it answers. Deciding
+`l ≤ r` at every assignment for levels built from `zero`, `succ`, `max`,
+`imax` and parameters is coNP-hard, by a reduction from satisfiability: a
+CNF formula φ over variables `1 … n` becomes, with two parameters `xi`,
+`yi` per variable, `2 = succ (succ zero)` and
+`I [c1, …, cm] = imax (… (imax 2 c1) …) cm`, the levels
+`G = I [max x1 y1, …, max xn yn]` and
+`R = max (T_C1, …, T_Cm, x1, y1, …, xn, yn)`, where `T_C` is `I` of the
+complements of clause `C`'s literals (`yi` for `i`, `xi` for `¬i`).
+`G ≤ R` can fail only where every parameter is `0` or `1`, and there it
+fails exactly where each pair has a nonzero member and each clause has a
+literal whose complement is `0`. So no complete comparison is polynomial
+unless P = NP: some bound or some incompleteness is unavoidable.
+
+The executed checker bounds each level-comparison direction (`leqCoreB`) by
+a raisable work budget `Limits.levelBudget` (default `65,536`, threaded
+through `FoldConfig.core` / `CoreConfig.levelBudget` into `CState.core`).
+Each direction (`isLeqLM` runs one; `isEquivLM` runs at most two,
+short-circuiting on `false` or decline) charges `1` work unit per `leqCore`
+memo miss plus `⌊c / 64⌋` per Géran fallback call (`geranStepB`), where
+`c` is the sublevel count bounded per call by `budget / 16` (`4,096` at
+default) via `geranCost`. `Level.leqCoreB_eq` proves that whenever
+`leqCoreB` returns `some r`, `r` equals the unbudgeted `Level.leqCore`; on
+`none` (exhausted), `isLeqLM` and `isEquivLM` throw `.internal` with
+`levelBudgetPrefix` (`"fuel exhausted: level comparison budget (...)"`), a
+decline reported by every host as exit 6 (`--level-budget` /
+`IX_KERNEL_LEVEL_BUDGET`). Because `defeqSpineI` catches `isEquivLM`
+inconclusiveness on equal-head argument spines only as a non-fatal fallback
+to `false` (`| _ => pure false`), a `levelBudget` decline in `defeqSpineI`
+does not bypass soundness: it falls through to the outer `defeq` path or
+re-declines cleanly. Every arbitrary-level comparison outside `isEquivLM`
+also uses the budgeted path: `Inductives/SumInstallF.lean`
+(`checkStructFieldSortsIF`/`IFA`) and `SumInstall.lean` call
+`CheckerOps.leqLevel` (`isLeqLM` in `sharedOpsC`), and `Tier/Ind.lean`
+(`fieldSortsC`) runs `isLeqLM` under `core : CoreConfig`. All `.zero`-RHS
+sites (`CoreC`, `ParsedC`, `SumInstall`, `SumInstallF`, `StructParts`,
+`NativeParts`, `SumParts`, `Tier/Ind`, `Frontend/InModel/Mutual`) use the
+`O(DAG)` `Level.isZero` fast path (`Level.isEquiv_zero_of_isZero`,
+`Level.isEquiv_zero_beq_true`) rather than `Level.isEquiv l .zero`, so
+left-nested `imax` chains (`leftimax 5000`, previously ~20 s) decide in
+milliseconds. (Open: a left-nested `imax` chain compared against a
+*non-zero* RHS still goes through `leqCoreB` and declines at `levelBudget`,
+which is safe as a DoS bound; a dedicated normaliser for non-zero RHS is
+not needed.) Calibrated on Init+Std (2,235,228 `leqCore` calls, max 916
+weighted units/dir, 71× headroom), all 66 committed closures (max 916/dir),
+`cnfChain 6` (2,041/dir, 32× headroom), and committed `imaxswap 40`
+(32,827/dir, 2.00× headroom), while hostile `imaxswap 64`/`128`,
+`cnfChain 10`–`16`, and `geranwide 10`–`14` decline in ≤ 0.5 s (`kernel-level-sharing`
+tests default declines, raised acceptance at `250,000`, both inductive
+field-sort sites, and `leftimax 5000`). A host that checks third-party
+bytes still needs its own wall-clock and memory limit.
+
+**Native stack.** The executed kernel recurses on the native stack, so how
+deep an input it survives depends on the thread it runs on. Two drivers of
+that depth are removed: neither the number of reduction steps nor the
+number of records takes native stack. The reduction loops
+(`Cached.whnfCoreLoopI`, `whnfLoopI`, `defeqLoopI`) hand the loop to the
+step as a continuation; called through a closure, that kept native frames
+per step, so a chain of 52,000 unfoldings of one-line definitions overflowed
+an 8 MiB stack. Each loop's executed form runs a twin of the step that
+returns its tail call instead of making it, then continues by a self tail
+call, a loop in the emitted C (`whnfCoreLoopFast`, `whnfLoopFast`,
+`defeqLoopFast`, swapped in by `@[csimp]`; `…Step_factor` proves the step
+equal to its twin followed by the continuation, for every continuation).
+The index build (`mkFEnvGo`, run again by the record-by-record check after
+every failing declaration) and the whole-unit check of the certified entry
+(`unitsGo`) recursed once per constant; their executed forms are a fold and
+an accumulator loop (`mkFEnvGo_eq_mkFEnvGoFast`, `unitsGo_eq_unitsGoFast`),
+and the host's record loop (`CheckIxeStep.checkLoopWith`) is a tail-recursive
+loop in `IO` (`forArrayIO`). The `kernel-depth` test runs 90,000 unfoldings,
+100,000 ι reductions, 200,000 one-line records through the certified entry
+and 200,000 through the record-by-record check on a 2 MiB stack, and
+Init+Std checks with every thread at 8 MiB (`initstd-stack`); before, each
+of them overflowed (Init+Std on every stack up to 16 MiB).
+
+The five substitutions are compiled-code replacements under the project
+`@[csimp]` ruling (`runtimeRulings.csimpModules`); each theorem depends on
+the standard axioms only:
+
+| `@[csimp]` theorem | runs | in place of | proved from |
+| --- | --- | --- | --- |
+| `Cached.whnfCoreLoopI_eq_whnfCoreLoopFast` | `whnfCoreLoopFast` | `whnfCoreLoopI` | `whnfCoreStepI_factor` (with `whnfAppI_factor` and `betaPeelI_factor`, by well-founded recursion on the spine), by induction on the fuel |
+| `Cached.whnfLoopI_eq_whnfLoopFast` | `whnfLoopFast` | `whnfLoopI` | `whnfStepI_factor`, by induction on the fuel |
+| `Cached.defeqLoopI_eq_defeqLoopFast` | `defeqLoopFast` | `defeqLoopI` | `defeqStepI_factor`, by induction on the fuel |
+| `mkFEnvGo_eq_mkFEnvGoFast` | `mkFEnvGoFast` | `mkFEnvGo` | `mkFEnvGo_eq_foldr` and `List.foldl_reverse` |
+| `unitsGo_eq_unitsGoFast` | `unitsGoFast` | `unitsGo` | `unitsGoTR_spec`, by induction on the list |
+
+What this bounds, and what it does not. The three loops and the two
+record-count recursions take no native stack per iteration: a reduction
+step or a record costs heap, not stack. The loops' fuels stay as bounds on
+the steps (1,000,000 head-normalisation steps, 100,000 `whnf` and 100,000
+conversion steps, each exhausted as a decline). Two calls of the
+head-normalisation loop are not iterations and stay nested: `whnfAppR` after
+an ι reduction with arguments left over, and `betaPeelR` when the peeled body
+is not a λ and arguments remain, need the reduct's normal form before the
+spine continues. Each nested call costs one step of the same loop's fuel, so
+the nesting is at most 1,000,000 deep. Measured on a chain whose head
+normalisation nests once per level (`(λx. E) P L`, each `E` the next link),
+a level takes 750 to 780 bytes of stack: 2 MiB holds 2,750 levels, 8 MiB
+10,500; at that rate the fuel's 1,000,000 levels would need about 750 MB, and
+the command line's 256 MiB thread holds about 340,000 (inferred, not run).
+In every construction found so far this nesting follows the input's own β
+structure; whether ι reduction can produce it from a shallow input is not
+settled. Init+Std still needs more than 2 MiB (it aborts on 2 MiB, 1 MiB and
+512 KiB, in the typing core's nesting through `iotaRecI`, `prepareMajorI` and
+`whnf`); see the next paragraph.
+
+What still takes native stack is nesting: the canonical decoder on a record
+nested without shares (about 30,000 levels overflow a 2 MiB stack, 100,000 an
+8 MiB one), the reader and the install walks on the nesting of the terms they
+read, the typing core on the nesting of the terms it infers and compares, and
+the level functions on a level's depth. **The depth limit** bounds the input's
+part of it. `Limits.maxDepth` (default 16,384: 13 times the deepest record
+found in Mathlib, 1,221 with shares expanded; Init+Std's deepest is 325) is
+checked twice in the byte stage (`Admission.decodeWithin`, which every byte
+entry and the hosts' own record decoders run in place of `decodeRecords`):
+before decoding, `scanDepths` reads each record's bytes in the codec's Ixon
+v5 grammar without building anything, with a stack of its own (words in an
+array: no native stack and no allocation per level; integer headers of one
+and two bytes read in place, proved equal to the codec's reader,
+`Depth.tagAt_eq` and `Depth.u8At_eq`, wider ones by the reader itself), and
+declines (`.limit .depth`) at the first expression or universe nested past
+the limit, shares counted as leaves; after decoding, `expandedDepths`
+measures each record's expressions with their shares expanded, as the reader
+builds them: the sharing entries in order, each against the depths of the
+entries before it (the only references the reader admits), then the payload.
+That walk recurses on the native stack, one frame per stored level and never
+past one level beyond the limit, so its depth is bounded by the stored
+nesting the scan has just admitted under the same limit, at every value of
+the limit. Its frame is about 80 bytes; the codec's is 110 (λ telescopes) to
+206 bytes (argument nests, `let`s) per level, measured on 8 MiB
+(`kernel-depth-case frame-walk-*`, `frame-decode-*`); a spine is the one
+shape the codec reads without nesting and the walk nests on, so a stack
+sized for the limit must cover the larger of the two per level, which
+`Limits.stackFor`'s 16 KiB per level does. A table in which an entry refers
+to itself or to a later entry (which the reader refuses) is measured instead
+by an explicit post-order (`Depth.expandedPost`: each entry memoised, a
+share that reaches itself past every limit), linear in the record: the same
+spine of 65,536 levels behind a forward reference takes 4 ms, a cyclic table
+2 ms (`kernel-depth` `post-spine`, `post-cycle`). `kernel-depth`
+`differential` checks the scan against its first form and the walk against
+the post-order on generated records, mutated bytes included. The hosts run
+both stages in parallel (`RoleBinding.RecordDecoding.scanDepthsParallel`,
+`expandedDepthsParallel`, proved equal to the sequential stages). A record
+that cannot reach the limit is not walked: an expression's levels grow by at
+most one per byte that writes it and a universe's by at most the decoder's
+node budget (`storedDepthBound`), and a record within the byte limit has at
+most two decoded nodes per byte, which an acyclic expansion meets once each
+(`expandedDepthBound`); the statements about a compiled closure choose a
+limit above both (`Ix.Cert.Stream.closure_decodes`). `kernel-depth`'s
+`bounds` case checks both on the shapes that nest most per byte. Open: prove
+the two bounds, or remove the skip by proving depth ≤ size where
+`closure_decodes` needs it. Levels count as the kernel's terms nest: an
+application of `n` arguments has its head `n` levels down, a telescope of
+`n` binders its body `n` levels down, `succ^k u` has `u` `k` levels down.
+The checks are coverage bounds: nothing is proved about what they compute,
+and `decodeWithin_error` shows they add no failure but the decline; what an
+accepted input decodes to is `decodeRecords`'s (`decodeWithin_ok_iff`). A
+host runs the entry on a thread of `Limits.stackFor` bytes (16 KiB per level
+of `maxDepth`, at least 256 MiB: 256 MiB at the default).
+
+The core's nesting is not only the input's: the conversion that unfolding
+across records builds nests as deep as the records together (10,000 levels from
+five records overflow 2 MiB, 40,000 from twenty 8 MiB), and so does a long
+string literal met as a constructor, one level per character. That nesting is
+bounded by the typing core's recursion fuel (`checkFuel`, 100,000 nested
+calls, under 1 KiB of stack each as measured, which the 256 MiB thread holds),
+not by the depth limit. Init+Std itself needs more than 2 MiB for this (it
+checks on 8 MiB).
+
+**Limits.** Every bound the entry applies to its input is a field of
+`Admission.Limits`, which each entry takes and every host sets:
+
+| field | bounds | past it | default at the command line |
+| --- | --- | --- | --- |
+| `maxRecords`, `maxBlobs` | the batch's record and blob counts | `.limit .records`, `.limit .blobs` | 2^22 each |
+| `maxTotalBytes` | the payload bytes of records and blobs together | `.limit .totalBytes` | 2^34 |
+| `maxRecordBytes` | one record's payload | `.limit .recordBytes` | 2^28 |
+| `maxRecordUnivNodes` | one record's universe table, expanded | `.limit .recordUnivNodes` | 2^26 |
+| `maxDepth` | how deep a record's expressions and universes nest, as stored and with shares expanded | `.limit .depth` | 16,384 (the field's default) |
+| `levelBudget` | per-direction weighted work in `Level.leqCoreB` (`1` per memo miss + `⌊c / 64⌋` per Géran call, per-call cap `budget / 16`) | `.kernel (.internal "fuel exhausted: level comparison budget (N)")` (mapped to `.levelBudget` by `Host.limitOfAdmissionError`) | 65,536 (the field's default) |
+| `workers` | the tasks phase B of the fold runs on | nothing: no verdict changes | `none`, one task per 64 records (the field's default) |
+
+A limit only turns an answer into a decline: `.limit` and `levelBudget`
+exhaustion are declines (`Error.outcome`), and an input accepted under some
+limits is accepted under any larger ones. For the batch limits this is their
+definition (`preflight` compares counts and sums with them,
+`preflight_ok_iff`); for `maxRecordBytes` and `maxRecordUnivNodes`, the
+decoder's byte check and node budget succeed under a larger value on what
+they accept under a smaller one, with the same result (its budget is only
+charged, never read otherwise); the decoder reports both as decode errors
+with fixed messages, which `decodeWithin` reads as the limits they are
+(`ByteError.asLimit`), and `decodeWithin_error` states that it adds no
+failure but these declines and `.limit .depth`; for `maxDepth`, both checks
+compare levels with the limit and read the same input whatever its value;
+for `levelBudget`, `Level.leqCoreB_eq` guarantees every answered comparison
+agrees with the unbudgeted `Level.leqCore` (so `checkDecls` soundness and
+refinement hold for every `FoldConfig`, and raising `levelBudget` only
+converts declines into answers); `workers` changes how phase B runs, not
+what it returns (`Cached.checkDecls_workers`, `checkConstantsWith_workers`,
+`checkConstantsAt_workers` and their tiered and policy twins, all from
+`checkPendingTasks_eq`). A verifier run under smaller limits than the
+producer's may decline what the producer accepted; the decline names the
+limit. Statements whose text the depth limit and raisable `levelBudget`
+changed: `Admission.checkBytesWith_eq` (its right side decodes with
+`decodeWithin` and passes `limits.fold`), `Admission.Installed.singleton`
+(existential `cfg : FoldConfig`), `Ixon.Projection.checkBytes_run_iff` and
+`checkBytes_ok_iff` (a `DepthsWithin` conjunct and `limits.fold`),
+`Ixon.Projection.checkBytes_of_expansion` and `checkBytes_authentic`
+(`DepthsWithin` / `limits.fold`), `Ixon.Authenticated.checkBytesProjection_authentic`
+(`limits.fold`), `Ix.Cert.Stream.prepareWith_ok` (a `DepthsWithin`
+hypothesis), `Ix.Cert.Stream.closure_decodes` (a `DepthsWithin` conjunct and
+`limits.fold = {}`, keeping `closure_prepares` and `closure_accepts`
+unchanged); the certified entry's public soundness/reading/authentic
+theorems about `checkBytes` are unchanged.
+
+Five bounds are fixed: no setting raises them, because the cached core must
+return what the reference core returns and these are constants of the
+reference core or of the fold's use of it. Each exhausts as a decline
+(`.internal "fuel exhausted: …"`): the head-normalisation loop's 1,000,000
+steps (`whnfCoreLoopFuel`), the `whnf` and conversion loops' 100,000 each
+(`whnfLoopFuel`, `defeqLoopFuel`), the level comparison's depth fuel of 10,000
+(`Level.defaultFuel`, which `Level.isEquiv` uses), and the typing core's
+recursion fuel of 100,000 nested calls (`checkFuel`, the knot's fuel in the
+fold and in the typing tier). Raising `maxDepth` therefore has effect only up to
+where `checkFuel` declines first. Measured with `maxDepth` raised to 1,000,000 on a stack of
+16 KiB per level (`kernel-depth-case limit1000000-…`): an argument nest, a spine and a `let`
+nest are accepted at 98,304 levels and declined at 114,688 with "fuel exhausted: annotate"; λ
+and ∀ telescopes are accepted at 196,608 (their loops do not nest the knot). So a `maxDepth`
+above about 100,000 admits nothing more of those shapes, and their decline names the fuel, which
+no setting raises.
 
 ## The typing tier
 
@@ -912,7 +1269,7 @@ Project-level execution constructs are admitted only as named by
 
 | Construct | Where | Why admitted |
 | --- | --- | --- |
-| `@[computed_field]` overrides | `Ix.Kernel.Level`, `Ix.Kernel.Expr`, `Ix.Kernel.Name`, `Ix.Kernel.Key` | cached hashes and packed data; a compiler feature, trusted with the compiler |
+| `@[computed_field]` overrides | `Ix.Kernel.Level`, `Ix.Kernel.Expr`, `Ix.Kernel.Name`, `Ix.Kernel.Key` | cached hashes, the level's has-parameter bit and packed data; a compiler feature, trusted with the compiler |
 | project `@[csimp]` | `Ix.Kernel` | each replacement theorem depends on the standard axioms only |
 | the codec's TagN `@[csimp]` twins (`getTagN_eq_fast`, `putTagN_eq_fast`) | `IxC.Ixon.Codec` (also `Ixon.Audit.rulings`) | the reader and writer at a fixed flag width with their powers folded; each theorem depends on the standard axioms only |
 | `withPtrEq`, `withPtrAddr`, `ptrEq`, `isExclusiveUnsafe` and their unsafe implementations | Lean's `Init` | the continuation carries the obligation that it does not observe the answer |
@@ -1162,6 +1519,15 @@ files carry further changes:
 | `IxC/Kernel/Verify/Cached/{AgreeFloor,PushChain}.lean` | `import all Init.LetFun` | Lean 4.34.0 no longer exposes `letFun`'s body, which these proofs unfold |
 | `IxC/Kernel/Frontend/InModel/Nested.lean` | container groups formed largest family first | Larger container families claim their members first, preventing overlapping nested-model groups from emitting a member twice |
 | `IxC/Kernel/Level.lean`, `IxC/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels, with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`) |
+| `IxC/Kernel/Expr.lean`, `IxC/Kernel/Cached/ExprNodes.lean` | `Level` caches its has-parameter bit (`hasParamData`), and `levelHasParam` runs as it (`levelHasParam_eq_csimp`) | the walk visited a level shared as a DAG once per path, at every `.sort` node built |
+| `IxC/Kernel/Cached/{StateC,CoreC}.lean`, `IxC/Kernel/Verify/Cached/{SimCEff,DiscC4,DiscC6}.lean` | the binder-telescope loops' peel fuel is `peelFuelToM` (the binders before the first closed residual the memo holds) in place of the constant `peelFuel`, at the ∀ and λ clauses of inference and annotation, with `peelFuelToM_eff` in place of `peelFuelM_eff`; `isEquivLM` simplifies through `simplifyMemoC` (`Level.simplifyGo` seeded with `lsimpC`; `simplifyMemoC_spec`) | a chain `T (j+1) = T j → T j` re-peeled the telescope below each step and annotation rebuilt it unshared: quadratic time and memory, and quadratic comparison of two annotations ("Running time") |
+| `IxC/Kernel/Cached/{StateC,CoreC}.lean`, `IxC/Kernel/Verify/Cached/{SimCEff,BinderLoopC,DiscC4}.lean` | the cached core hash-conses the ∀ rule's levels: a table `lvlIntern` in `CState`, and `internLM (.imax u v)` in place of `pure (.imax u v)` in `inferPisOutI` and `inferBodyIOI`; `internLM` returns its argument on every branch (a hit is returned after `==` confirms it), proved by `internLM_eff` (with `CSOK.withIntern`: no clause reads the table), which the two simulation steps take in place of `pureEq_eff`. The rule, the model and the reference core are upstream's | without it the binder loop rebuilds the level of a telescope's tail as a new object equal to the one built before, and a `let` chain over one shared type is cubic ("Running time") |
+| `IxC/Kernel/Expr.lean`, `IxC/Kernel/Cached/ExprNodes.lean` | the executed level equality (`Level.beqPtr`, through `Level.beq_eq_beqPtr`) decides its structural case by a descent memoised on the pairs it proves equal (`Level.decMemo`, `Expr.beqMemo`'s arrangement); `Level.beqPtr_eq` is unchanged in statement | the folds compare two levels, and on equal levels built apart as DAGs the structural walk visited their trees ("Running time") |
+| `IxC/Kernel/Level.lean` | the executed `simplify`, `leqCore`, `zeronessOf` and `isNeverZero` are memoised per call on the nodes (for `leqCore`, the subproblems) they finish (`simplifyFast`, `leqCoreFast`, `zeronessOfFast`, `isNeverZeroFast`, each swapped in by a `@[csimp]` theorem proving it equal to the unchanged specification), and the memoised `leqCore`'s case split substitutes with a memoised `subst` (`substMemo`); below a small tree size each runs an exact copy of the plain recursion; `leqCoreB` / `geranStepB` add a raisable per-direction work budget (`CoreConfig.levelBudget`, default 65,536, `leqCoreB_eq`), and `isZero` (`isEquiv_zero_of_isZero`, `isEquiv_zero_beq_true`) gives an `O(DAG)` `.zero`-RHS fast path | the walks visited a level shared as a DAG once per path, `leqCore` re-solved subproblems, coNP-hard level comparisons need a raisable work cap, and `.zero`-RHS sites no longer split parameter chains ("Running time") |
+| `IxC/Kernel/CheckerBase.lean`, `IxC/Kernel/Cached/{StateC,CheckerC,CoreC}.lean`, `IxC/Kernel/Inductives/{SumInstall,SumInstallF}.lean`, `IxC/Kernel/Tier/Ind.lean` | `CoreConfig` (`levelBudget`) threads through `FoldConfig` and `CState` into `isEquivLM` and `isLeqLM`; `CheckerOps.leqLevel` routes `SumInstall`/`SumInstallF` field-sort checks through `isLeqLM`; `Tier/Ind.fieldSortsC` runs `isLeqLM` under `core : CoreConfig` | closes unbudgeted `Level.leq` DoS bypasses on direct and typing-tier inductives while preserving `SimC` refinement |
+| `IxC/Kernel/Cached/CoreC.lean`, `IxC/Kernel/FEnv.lean`, `IxC/Kernel/Units.lean` | the executed `whnfCoreLoopI`, `whnfLoopI` and `defeqLoopI` are loops over a twin of the step that returns its tail call of the continuation (`whnfCoreLoopFast`, `whnfLoopFast`, `defeqLoopFast`), and the executed `mkFEnvGo` and `unitsGo` a fold and an accumulator loop (`mkFEnvGoFast`, `unitsGoFast`), each swapped in by a `@[csimp]` theorem proving it equal to the unchanged function | the loops called their continuation through a closure, which kept native frames per reduction step, and the two recursions one per constant ("Native stack") |
+| `IxC/Kernel/Expr.lean` | the node hash is 64 bits in a computed field of its own (`Expr.hashW`, the untruncated `mixHash` recurrence); the packed word keeps the ranges and the flag, its upper 33 bits reserved; equality's fast reject tests both words (`beqMemo_eq` unchanged in statement) | a chain built by one step cycled through the 32-bit hash, and memo probes then descended equal-hash terms ("Running time") |
+| `IxC/Kernel/Cached/{Installed,Policy}.lean` | `checkPendingTasks` takes a bound on its tasks (`workers`: `none` keeps one task per 64 records, `some 0` walks on the calling thread, `some w` cuts the walk into at most `w` contiguous chunks, `phaseBChunkFor`), and `checkDecls`, `checkDeclsUnder` and `checkDeclsWithUserAxioms` take the fold's settings (`FoldConfig`, defaulted, carrying `workers` and `core`); `checkPendingTasks_eq` holds for every bound, and `checkDecls_workers` / `checkDeclsUnder_workers` state that `workers` changes no result | phase B spawned one task per 64 records, so threads could exhaust an address-space limit ("Limits") |
 | `IxC/Kernel/MainTheorem.lean` | only `model_exists` kept | the NDJSON corollary needs a frontend Ix does not use |
 
 Ix's own files under `IxC/Kernel/` are `Admission.lean` and the `Admission`
@@ -1211,6 +1577,103 @@ paths (`ConLeche/Kernel/X` and `ConLeche/X` to `IxC/Kernel/X`) and names
 `IxC/Kernel/NOTICE`, and run the full gate. A module the closure newly
 imports is added the same way. A changed closure moves the frozen counts;
 re-record each with its explanation, and re-record changed statements.
+
+## Limits at the command line, and exit codes
+
+Every host that runs the kernel on input it did not make reads each field of
+`Admission.Limits` ("Limits" above) as a setting (`IxC/Host/Limits.lean`,
+namespace `Ix.Kernel.Host`, outside the certified closure): its flag if given,
+else its environment variable, else the host's default (`resolve`). A value must
+be a positive whole number in decimal; anything else, `0` included, is a usage
+error that names the flag or the variable (exit 2). The settings given by a flag
+or a variable are printed, with their sources, before the kernel runs
+(`kernel limits: max-depth 20000 (--max-depth), …`); nothing is printed when all
+are at their defaults.
+
+| field | flag | variable | `ix check-lean`, `ix verify-host`, `ix compile`, `kernel-check-ixe` default |
+| --- | --- | --- | --- |
+| `maxRecords` | `--max-records` | `IX_KERNEL_MAX_RECORDS` | 2^22 |
+| `maxBlobs` | `--max-blobs` | `IX_KERNEL_MAX_BLOBS` | 2^22 |
+| `maxTotalBytes` | `--max-total-bytes` | `IX_KERNEL_MAX_TOTAL_BYTES` | 2^34 |
+| `maxRecordBytes` | `--max-record-bytes` | `IX_KERNEL_MAX_RECORD_BYTES` | 2^28 |
+| `maxRecordUnivNodes` | `--max-record-univ-nodes` | `IX_KERNEL_MAX_RECORD_UNIV_NODES` | 2^26 |
+| `maxDepth` | `--max-depth` | `IX_KERNEL_MAX_DEPTH` | 16,384 |
+| `levelBudget` | `--level-budget` | `IX_KERNEL_LEVEL_BUDGET` | 65,536 |
+| `workers` | `--workers` | `IX_KERNEL_WORKERS` | unbounded (one phase-B task per 64 records) |
+
+`kernel-check-ixe` reads the variables only (it is a measurement harness; its
+flags are its own). `--workers` keeps the meaning it had on `ix check-lean`
+(the requested worker count) and on `ix compile` (the compiler's worker count,
+default 32), and, given, also bounds the tasks of the kernel's phase B;
+`IX_KERNEL_WORKERS` applies to the kernel when the flag is absent. A host passes
+a bound to phase B only when the flag or the variable is given: by default the
+entry runs as it did, one task per 64 records over the runtime's pool.
+
+**A decline by a limit** is reported in one form by every host, and exits 6:
+
+```text
+declined by the depth limit (16384, default); raise it with --max-depth N or IX_KERNEL_MAX_DEPTH=N
+```
+
+naming the limit, its value, its source (`default`, the flag or the variable)
+and how to raise it. A limit only turns an answer into a decline: an input
+accepted under some limits is accepted under any larger ones with the same
+result, so an artifact, object or certificate made under raised limits is the
+one the defaults give, and a verifier run under lower limits than its producer
+declines (exit 6); it does not reject. A host statement (`docs/host-admission.md`)
+does not record the limits it was issued under. The fixed bounds ("Five bounds
+are fixed" above: the reference core's loop fuels, `Level.defaultFuel`,
+`checkFuel`) are not settings; their exhaustion is a fixed decline, exit 3.
+
+**Exit codes** of the hosts that run the kernel (the one table; the sections
+below refer to it):
+
+| exit | meaning |
+| --- | --- |
+| 0 | `ix check-lean`: everything asked for passed; for a whole bound run, through the certified entry. `ix verify-host`: the statement replayed. `ix compile`: the output written. `kernel-check-ixe`: the run completed; its rows carry each record's outcome, a rejection included |
+| 1 | an infrastructure failure: an unreadable file, an artifact the loader refuses; `ix compile`: also a failure of the compile or of its typing; `kernel-check-ixe`: also a check that raises an error other than a decline by a limit |
+| 2 | a usage error: a bad flag or selector, a malformed limit setting (`0` included), a run that certainly cannot fit the address-space limit ("Under an address-space limit" below); `ix check-lean`: also a selected name that resolves to no declaration, or a host statement the run cannot issue (a selected, capped, unbound, `--allow-declined` or conditional run); `kernel-check-ixe --allow-user-axioms`: an artifact whose binding does not bind `sorryAx`, `propext` and `Classical.choice` |
+| 3 | `ix check-lean`: a declaration failed (or, under `--allow-declined`, a declaration or dependency record was rejected), or the artifact was refused. `ix verify-host`: the replay rejected or failed. Both: a fixed decline (a fixed bound's exhaustion, above) |
+| 4 | `ix check-lean`, partial: every declaration passed, but the whole artifact asked for carries no role binding, so its admission did not run |
+| 5 | `ix check-lean`, conditional: everything passed, but only with the listed user axioms admitted |
+| 6 | declined by a limit a setting raises (every host): the message names the limit, its value and source, and the flag and variable that raise it |
+| 7 | `kernel-check-ixe`'s watchdog (`CHECK_IXE_WATCH_MS`, `CHECK_IXE_WATCH_MB`, "Environment check" below); `--guarded` reruns on it |
+
+**Threads.** `ix check-lean`, `ix verify-host` and `ix compile` set the stack of
+every thread started afterwards to `Limits.stackFor` (16 KiB per level of
+`maxDepth`, at least 256 MiB) before they start any task
+(`Ix.Cli.KernelLimits.prepareThreads`), and run everything after option
+parsing, the loading of the artifact included, on one dedicated thread of that
+size. `kernel-check-ixe` keeps its caller's stack (`LEAN_STACK_SIZE_KB`, else
+the runtime's default, 1 GiB), which `initstd-stack` relies on.
+
+**Under an address-space limit** (`ulimit -v`), the Lean runtime aborts the
+process when it cannot create a thread ("failed to create thread", exit 134),
+which no host can intercept, and the number of threads is the runtime's: its
+pool is `LEAN_NUM_THREADS`, else the processor count, and it starts another
+worker when one blocks on a task, whatever `--workers` says. So every host
+(`Ix.Kernel.Host.spaceCheck`, with the stack its threads will have) refuses a
+run only when it certainly cannot fit: one stack over the soft limit, or, when
+the caller gave `--workers` or `IX_KERNEL_WORKERS` = w, w stacks over it
+(exit 2, naming the settings that lower it). Otherwise, when the estimate
+(twice the pool plus 8 threads, each with its stack and a 64 MiB malloc arena,
+plus 1 GiB) does not fit, it prints one line on standard error before it starts,
+`warning: this run may fail to create a thread under the address-space limit …`,
+with the estimate and the settings that lower it (`LEAN_NUM_THREADS` first,
+then `--workers`/`IX_KERNEL_WORKERS`, `--max-depth`/`IX_KERNEL_MAX_DEPTH`, and
+for `kernel-check-ixe` `LEAN_STACK_SIZE_KB`), and runs. To run under a cap,
+bound the pool and the workers together, `LEAN_NUM_THREADS=n` with `--workers n`
+(`IX_KERNEL_WORKERS=n`), and give `kernel-check-ixe` a stack,
+`LEAN_STACK_SIZE_KB=8192` for example.
+
+**The loaders scan before they decode.** The root's artifact loaders
+(`Ixon.deEnvVerifiedLazy`, used by `ix check-lean` and `ix verify-host`;
+`Ixon.deEnv`; the streaming load of `Ix/KernelCheck/Stream.lean`) decode each
+record with the codec, which recurses once per level, before any entry runs.
+Each record's bytes are now scanned first with the entry's own scan
+(`Depth.within`, at the run's `maxDepth`), and a record nested past it is
+refused as a decline by the depth limit (`Ixon.depthLimitError`, exit 6)
+without being decoded.
 
 ## Environment check
 
@@ -1262,10 +1725,13 @@ rows print a failure with its terms and Lean's names
 (`Ix.KernelDisplay.renderFailure`). Environment:
 
 - `CHECK_IXE_WATCH_MS` (default 60000) and `CHECK_IXE_WATCH_MB` (default 20000):
-  a watchdog ends the run with exit code 3 when one constant's check exceeds
+  a watchdog ends the run with exit code 7 when one constant's check exceeds
   the time or the process's resident memory exceeds the size, and appends
   the constant's address to `<output>.runaway` (with `--jobs`, every
-  worker's check is watched). The resident size includes what the driver
+  worker's check is watched). A run whose check raises an error ends with that
+  error: exit code 6 for a decline by a limit (the artifact's admission, or the
+  loader's depth scan), 1 for anything else (an artifact the loader refuses).
+  The resident size includes what the driver
   holds of the environment. Measured peaks: Init+Std 1.5 GB streaming and
   3.6 GB with `--load eager`; Mathlib 14.7 GB streaming (15.7 GB with
   `--jobs 32`) and 34.2 GB with `--load eager`
@@ -1282,7 +1748,12 @@ rows print a failure with its terms and Lean's names
   prelude and the dependency closure of those constants;
 - `CHECK_IXE_THREAD=0` runs the check on the main thread instead of a
   dedicated one, and `CHECK_IXE_READ_CACHE=<dir>` keeps a persistent read
-  cache (`Benchmarks/Kernel/CheckIxeReadCache.lean`).
+  cache (`Benchmarks/Kernel/CheckIxeReadCache.lean`);
+- the kernel's limits, by their variables only (`IX_KERNEL_MAX_RECORDS`,
+  `IX_KERNEL_MAX_BLOBS`, `IX_KERNEL_MAX_TOTAL_BYTES`, `IX_KERNEL_MAX_RECORD_BYTES`,
+  `IX_KERNEL_MAX_RECORD_UNIV_NODES`, `IX_KERNEL_MAX_DEPTH`, `IX_KERNEL_LEVEL_BUDGET`,
+  `IX_KERNEL_WORKERS`; "Limits at the command line, and exit codes" above), and
+  `LEAN_STACK_SIZE_KB`, the stack it keeps (it does not resize its threads).
 
 Run one environment check at a time, under a memory cap, with no concurrent build.
 `kernel-check-ixe --report` and `--summary` summarize a run's rows, and
@@ -1320,14 +1791,8 @@ one line per axiom, the name in meta mode only, and never the `accepted all`
 line of a certified run. A selected run whose declaration checks read a user
 axiom prints the same list under `selected checking:`.
 
-| Exit | Meaning |
-| --- | --- |
-| 0 | everything asked for passed; for a whole bound run, through the certified entry |
-| 1 | an infrastructure failure |
-| 2 | a usage error: a bad flag or selector, a selected name that resolves to no declaration, or a host statement the run cannot issue (a selected, capped, unbound, `--allow-declined` or conditional run) |
-| 3 | a declaration failed (or, under `--allow-declined`, a declaration or dependency record was rejected), or the artifact was refused |
-| 4 | partial: every declaration passed, but the whole artifact asked for carries no role binding, so its admission did not run |
-| 5 | conditional: everything passed, but only with the listed user axioms admitted |
+Its exit codes, 0 to 6, are in the table of "Limits at the command line, and
+exit codes" above.
 
 `--allow-declined` runs the record-by-record check (as the `ooc` whole-env
 benchmark uses it on upstream libraries that contain `Lean.trustCompiler` or

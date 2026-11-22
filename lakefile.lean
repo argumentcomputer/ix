@@ -420,7 +420,7 @@ lean_exe «formal-package-tests» where
 lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
-  needs := #[`@/ix, `@/«kernel-check-ixe», `@/EntryCaseFixtures]
+  needs := #[`@/ix, `@/«kernel-check-ixe», `@/«kernel-depth-case», `@/EntryCaseFixtures]
   moreLinkObjs := #[ix_rs_test]
 
 /-- IxVM circuit-verdict and FFT-pin test runner (`--tier ci:ixvm`,
@@ -440,6 +440,13 @@ lean_exe IxManualTests where
   supportInterpreter := true
   needs := #[`@/ix, `@/«kernel-check-ixe»]
   moreLinkObjs := #[ix_rs_test]
+
+/-- One case of the `kernel-depth` test (`kernel-depth-case NAME N`), in a
+process of its own on the stack `LEAN_STACK_SIZE_KB` sets: a small binary,
+so that each case starts in milliseconds. -/
+lean_exe «kernel-depth-case» where
+  root := `Tests.Ix.Kernel.DepthCaseMain
+  moreLinkObjs := #[ix_rs]
 
 /-- The FFI suite (`IxTests ffi`) on its own, linked like `IxTests` with the
 test-only FFI code, for the Valgrind job: its import closure is

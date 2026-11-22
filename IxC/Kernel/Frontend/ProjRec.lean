@@ -357,7 +357,7 @@ def projRecOwners (block : List (ConstantInfo md))
       let [C] := cs | none
       guard (nI == 0)
       let (_, .sort s) ← tty.stripPis nP | none
-      guard (Level.isEquiv s .zero != some true)
+      guard (!Level.isZero s)
       let (_, nF, _) ← ctors.find? (·.1 == C)
       let (rn, rlps, rty, nM, nm) ← recs[m]?
       guard (rlps.length == lps.length + 1)

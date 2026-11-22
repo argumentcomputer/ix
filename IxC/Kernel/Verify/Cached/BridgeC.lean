@@ -237,15 +237,20 @@ theorem checkThmValC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) {
   refine SimC.bind (opSIxC_sim hμ henv hs₁ hjsty hwsty)
     (fun s₂ u u' hs₂ hP₂ => ?_)
   obtain rfl : u = u' := hP₂
-  refine SimC.bind (SimC.liftFueled _ _ hs₂)
-    (fun s₃ b b' hs₃ hP₃ => ?_)
-  obtain rfl : b = b' := hP₃
-  cases b with
-  | false =>
-    simp only [Bool.false_eq_true, ↓reduceIte]
+  by_cases hz : Level.isZero u = true
+  case neg =>
+    simp only [if_neg hz]
     exact SimC.throw_bind
-  | true =>
+  simp only [if_pos hz]
+  have hle : Level.isEquiv u .zero = some true := Level.isEquiv_zero_of_isZero hz
+  have hrhs : ∀ {α} (k : Bool → FueledM md α),
+      (liftFueled "level comparison" (Level.isEquiv u .zero) >>= k) = k true := by
+    intro α k
+    apply Subtype.ext; funext F
+    simp [liftFueled, hle, pure, Pure.pure, Except.pure, Bind.bind, Except.bind]
+  rw [hrhs]
   simp only [↓reduceIte]
+  have hs₃ := hs₂
   obtain rfl := hdenv
   by_cases h1 : Expr.looseBVarsBounded 0 value = true
   case neg =>
@@ -634,8 +639,8 @@ theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env md} (he
   obtain ⟨u, s₁, hreset, h⟩ := bindC_ok h
   rw [resetC_run] at hreset
   injection hreset with hreset
-  obtain rfl : ({} : CState md) = s₁ := congrArg Prod.snd hreset
-  have hcsok : CSOK mode env ({} : CState md) := CSOK.empty env
+  obtain rfl : s₀.reset = s₁ := congrArg Prod.snd hreset
+  have hcsok : CSOK mode env s₀.reset := CSOK.reset s₀ env
   have main : (∀ block nP, pd ≠ .indDecl block nP) →
       CSOKF s' ∧ fe' = mkFEnv fe'.env ∧
       ∃ F, checkDecl mode (fueledOps mode F) ev env pd = .ok fe'.env := by
@@ -666,7 +671,7 @@ theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env md} (he
               | some p => checkNativeS mode (mkFEnv env) p
               | none => checkIndDeclSF mode (mkFEnv env) block)
           else throw (CheckError.invalid "number of parameters mismatch"))
-        ({} : CState md) = .ok (fe', s') := hd
+        s₀.reset = .ok (fe', s') := hd
     cases hpin : basisPinHit block with
     | some kind =>
       rw [hpin] at hd
@@ -682,7 +687,7 @@ theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env md} (he
       by_cases hok : indParamsOk nP block = true
       · rw [if_pos hok] at hd
         obtain ⟨hres', hfe, F, hF⟩ :=
-          checkModeledOrNativeSF_run hμ henv hshape hpin hok CSOKF.empty hd
+          checkModeledOrNativeSF_run hμ henv hshape hpin hok (CSOKF.reset s₀) hd
         exact ⟨hres', hfe, F, hF⟩
       · rw [if_neg hok] at hd
         exact nomatch hd

@@ -35,7 +35,9 @@ is then its install plus its checks, on whichever workers ran them.
 ```
 
 `--guarded` reruns the check, in a fresh process, with every constant the
-driver's watchdog recorded in `<output>.runaway` skipped, until it completes,
+driver's watchdog recorded in `<output>.runaway` skipped (the watchdog exits 7, a code of
+its own; a decline by a kernel limit exits 6: `docs/kernel.md`, "Limits at the command
+line, and exit codes"), until it completes,
 and `--binary <path>` runs another build of the driver with the same contract;
 the arguments after these are the check's (`--load`, `--jobs`, input, output,
 limit). `--report <rows> [top]` prints outcome counts, check time, decline

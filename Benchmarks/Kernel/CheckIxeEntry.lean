@@ -1,5 +1,6 @@
 import Benchmarks.Kernel.CheckIxeFold
 import Ix.Ixon.Authenticated
+import IxC.Host.Limits
 
 /-! # The certified entry over an environment check's accepted records (untrusted harness)
 
@@ -15,12 +16,15 @@ the entry.
 
 Modes:
 * `authenticated`: the entry, `preflight → uniqueKeys → authenticate →
-  decodeRecords → reader → fold`.
+  decodeWithin → reader → fold`.
 * `unauthenticated`: the same stages without `authenticate`, composed from
   the entry's own functions (`Admission.checkBytesWith` minus the one
   stage): the entry as it ran before authentication, for comparison.
+* `user`: the entry with user axioms admitted (`checkBytesWithUserAxioms`).
 * `hash`: authentication alone (`Admission.authenticate`), at the
   admission hash (the Rust BLAKE3) and at pure BLAKE3 (`Address.blake3Pure`).
+* `depth`: the depth limit's two stages (`scanDepths`, `expandedDepths`) beside
+  `decodeRecords`, each timed alone.
 
 Run one at a time, each in its own process, with no concurrent build. -/
 
@@ -30,19 +34,21 @@ open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
 
 /-- Bounds wide enough for a whole compiled library. -/
-def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+def limits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+    maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
 
 def millis (t0 t1 : Nat) : Nat := (t1 - t0) / 1000000
 
 /-- The entry's stages without authentication, at the selected actual context. -/
-def unauthenticated (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
+def unauthenticated (limits : Ix.Kernel.Admission.Limits) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     (records : Ix.Kernel.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) :
     Except Ix.Kernel.Admission.Error (Ix.Kernel.Env .anon) := do
   (Ix.Kernel.Admission.preflight limits records blobs).mapError .ofBytes
   (Ix.Kernel.Admission.uniqueKeys records blobs).mapError .ofBytes
-  let constants ← (Ix.Kernel.Admission.decodeRecords limits records).mapError .ofBytes
-  Ix.Kernel.Admission.checkConstantsWith Address.blake3 table pre constants blobs hint
+  let constants ← (Ix.Kernel.Admission.decodeWithin limits records).mapError .ofBytes
+  Ix.Kernel.Admission.checkConstantsWith Address.blake3 table pre constants blobs hint limits.fold
 
 def verdict : Except Ix.Kernel.Admission.Error (Ix.Kernel.Env .anon) → String
   | .ok env => s!"accepted, {env.consts.length} constants installed"
@@ -56,7 +62,7 @@ structure Options where
 
 def usage : String :=
   "usage: kernel-check-ixe --entry [--strict|--allow-dropped] [--require-roots <r1,r2,...>] \
-   authenticated|unauthenticated|hash <input.ixe>"
+   authenticated|unauthenticated|user|hash|depth <input.ixe>"
 
 def parseArgs (args : List String) : Option Options :=
   go args {} #[]
@@ -72,6 +78,11 @@ where
       | [mode, input] => some { o with mode, input }
       | _ => none
 
+/-- `limits` under the `IX_KERNEL_*` variables (`Ix.Kernel.Host.resolve`; `IX_KERNEL_WORKERS` bounds
+phase B's tasks); a malformed one prints its usage error. -/
+def settingsFromEnv : IO (Except String Ix.Kernel.Host.Resolved) :=
+  Ix.Kernel.Host.resolveIO limits (fun _ => none)
+
 def run (args : List String) : IO UInt32 := do
   let some options := parseArgs args
     | IO.eprintln usage; return 2
@@ -80,12 +91,16 @@ def run (args : List String) : IO UInt32 := do
   -- `--entry authenticated` is fail-closed on dropped records by default unless
   -- `--allow-dropped` is explicitly passed.
   let strict := options.strict?.getD (mode == "authenticated")
+  let settings ← match ← settingsFromEnv with
+    | .ok s => pure s
+    | .error e => IO.eprintln s!"entry: {e}"; return 2
+  let limits := settings.limits
   let started ← IO.monoMsNow
-  let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile input))
+  let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile input) limits.maxDepth)
   let mut store : RecordStore := {}
   for (address, lazy) in env.consts.toList do
     store := store.insert address (← IO.ofExcept lazy.get)
-  let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context env)
+  let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context env limits)
   let binding ← match env.roleBinding with
     | some raw => pure (⟨raw.address, raw.bytes⟩ : Ix.Kernel.Admission.Binding)
     | none => IO.ofExcept Ix.Kernel.Admission.defaultBinding
@@ -130,17 +145,59 @@ def run (args : List String) : IO UInt32 := do
         for m in missing do IO.eprintln s!"  {m}"
         return 1
     return 0
+  | "depth" =>
+    -- the depth limit's two stages beside the decoding they surround, each timed alone
+    let t0 ← IO.monoNanosNow
+    let scan ← IO.lazyPure fun _ => Ix.Kernel.Admission.scanDepths limits records
+    let t1 ← IO.monoNanosNow
+    let decoded ← IO.lazyPure fun _ => Ix.Kernel.Admission.decodeRecords limits records
+    let t2 ← IO.monoNanosNow
+    let expanded ← IO.lazyPure fun _ => match decoded with
+      | .ok constants => Ix.Kernel.Admission.expandedDepths limits constants
+      | .error e => .error e
+    let t3 ← IO.monoNanosNow
+    let deepest ← IO.lazyPure fun _ => records.foldl (fun m (_, bytes) =>
+      max m (((Ix.Kernel.Admission.Depth.record limits.maxDepth bytes).toOption).getD 0)) 0
+    let word (r : Except Ix.Kernel.Admission.ByteError Unit) : String :=
+      match r with | .ok () => "within" | .error e => s!"{repr e}"
+    IO.eprintln s!"entry: depth scan {word scan} in {millis t0 t1} ms; decodeRecords \
+      {if decoded.isOk then "ok" else "failed"} in {millis t1 t2} ms; expanded depths {word expanded} in \
+      {millis t2 t3} ms; deepest stored nesting {deepest} (maxDepth {limits.maxDepth}); \
+      {records.length} records, workers {repr limits.workers}"
+    return if scan.isOk && expanded.isOk then 0 else 1
+  | "user" =>
+    -- the entry with user axioms admitted (`checkBytesWithUserAxioms`): phase B runs over every
+    -- record even when the input holds an axiom the strict entry declines
+    let t0 ← IO.monoNanosNow
+    let result ← IO.lazyPure fun _ =>
+      Ix.Kernel.Admission.checkBytesWithUserAxioms Address.admissionHash binding pre limits records blobs
+        hints.lookup
+    let t1 ← IO.monoNanosNow
+    IO.eprintln s!"entry: user: {verdict result} in {millis t0 t1} ms; peak RSS {(← statusKb "VmHWM:") / 1024} MB"
+    match result with
+    | .ok _ => return 0
+    | .error e =>
+      match Ix.Kernel.Host.limitOfError e with
+      | some r =>
+        IO.eprintln s!"entry: user: {Ix.Kernel.Host.declineMessage settings r}"
+        return Ix.Kernel.Host.exitDeclined
+      | none => return 1
   | "authenticated" | "unauthenticated" =>
     let t0 ← IO.monoNanosNow
     let result ← IO.lazyPure fun _ =>
       if mode == "authenticated" then
         Ix.Kernel.Admission.checkBytesWith Address.admissionHash binding pre limits records blobs hints.lookup
-      else unauthenticated table pre records blobs hints.lookup
+      else unauthenticated limits table pre records blobs hints.lookup
     let t1 ← IO.monoNanosNow
     IO.eprintln s!"entry: {mode}: {verdict result} in {millis t0 t1} ms; \
       peak RSS {(← statusKb "VmHWM:") / 1024} MB"
     match result with
-    | .error _ => return 1
+    | .error e =>
+      match Ix.Kernel.Host.limitOfError e with
+      | some r =>
+        IO.eprintln s!"entry: {mode}: {Ix.Kernel.Host.declineMessage settings r}"
+        return Ix.Kernel.Host.exitDeclined
+      | none => return 1
     | .ok kenv =>
       unless options.requireRoots.isEmpty do
         let installed : Std.HashSet (Ix.Kernel.Key .anon) :=

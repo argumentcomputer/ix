@@ -77,14 +77,15 @@ def blockShape (ms : List (ConstantVal md × Expr md)) : Except (CheckError md) 
     keyShape cv.name
 
 /-- **A block's headers**, each checked at `fe`, where no member is visible,
-from a fresh memo state (`annotConstantValC`). -/
-def headersC (fe : FEnv md) : List (ConstantVal md × Expr md) → Except (CheckError md) (List (ConstantVal md))
-  | [] => .ok []
-  | (cv, _) :: ms =>
-    match annotConstantValC .verified fe cv {} with
+from a fresh memo state at `core` (`annotConstantValC`). -/
+def headersC (fe : FEnv md) : List (ConstantVal md × Expr md) → (core : CoreConfig := {}) →
+    Except (CheckError md) (List (ConstantVal md))
+  | [], _ => .ok []
+  | (cv, _) :: ms, core =>
+    match annotConstantValC .verified fe cv { core } with
     | .error e => .error e
     | .ok ((cvA, _), _) =>
-      match headersC fe ms with
+      match headersC fe ms core with
       | .error e => .error e
       | .ok hs => .ok (cvA :: hs)
 
@@ -96,23 +97,24 @@ def pushHeaders (fe : FEnv md) : List (ConstantVal md) → FEnv md
 
 /-- **A member's value** at `fe` (its block installed): annotated
 (`annotValC`), then typed against its header (`checkPending`: the header's
-sort, the value's type, the conversion), each from a fresh memo state. -/
-def valueC (fe : FEnv md) (cvA : ConstantVal md) (v : Expr md) : Except (CheckError md) Unit :=
-  match annotValC .verified fe cvA v {} with
+sort, the value's type, the conversion), each from a fresh memo state at `core`. -/
+def valueC (fe : FEnv md) (cvA : ConstantVal md) (v : Expr md)
+    (core : CoreConfig := {}) : Except (CheckError md) Unit :=
+  match annotValC .verified fe cvA v { core } with
   | .error e => .error e
   | .ok (jv, _) =>
-    match checkPending .verified fe ⟨⟨.defn, cvA, jv⟩, 0, fe.visibleBelow⟩ {} with
+    match checkPending .verified fe ⟨⟨.defn, cvA, jv⟩, 0, fe.visibleBelow⟩ { core } with
     | .error e => .error e
     | .ok _ => .ok ()
 
 /-- Every member's value against its header, in order. -/
 def valuesC (fe : FEnv md) : List (ConstantVal md) → List (ConstantVal md × Expr md) →
-    Except (CheckError md) Unit
-  | cvA :: hs, (_, v) :: ms =>
-    match valueC fe cvA v with
+    (core : CoreConfig := {}) → Except (CheckError md) Unit
+  | cvA :: hs, (_, v) :: ms, core =>
+    match valueC fe cvA v core with
     | .error e => .error e
-    | .ok () => valuesC fe hs ms
-  | _, _ => .ok ()
+    | .ok () => valuesC fe hs ms core
+  | _, _, _ => .ok ()
 
 /-- A block's constants, newest first, from its headers in order. -/
 def blockConsts (s : Safety) (hs : List (ConstantVal md)) : List (TierConst md) :=
@@ -120,68 +122,73 @@ def blockConsts (s : Safety) (hs : List (ConstantVal md)) : List (TierConst md) 
 
 /-- **A definition block** `defs s ms` at `fe`: its shape, its headers at
 `fe`, the install, its values at the extension. -/
-def blockC (fe : FEnv md) (s : Safety) (ms : List (ConstantVal md × Expr md)) :
+def blockC (fe : FEnv md) (s : Safety) (ms : List (ConstantVal md × Expr md))
+    (core : CoreConfig := {}) :
     Except (CheckError md) (FEnv md × List (TierConst md)) :=
   match blockShape ms with
   | .error e => .error e
   | .ok () =>
-    match headersC fe ms with
+    match headersC fe ms core with
     | .error e => .error e
     | .ok hs =>
       let fe' := pushHeaders fe hs
-      match valuesC fe' hs ms with
+      match valuesC fe' hs ms core with
       | .error e => .error e
       | .ok () => .ok (fe', blockConsts s hs)
 
 /-- **An unsafe opaque**, in Lean's safe mode: its key must be an input key
 (`keyShape`), its header and its value at the logical view `fe₀` (no tier
 constant visible), its key fresh at `fe`, then pushed onto `fe`. -/
-def opaqueC (fe₀ fe : FEnv md) (cv : ConstantVal md) (v : Expr md) :
+def opaqueC (fe₀ fe : FEnv md) (cv : ConstantVal md) (v : Expr md)
+    (core : CoreConfig := {}) :
     Except (CheckError md) (FEnv md × List (TierConst md)) :=
   match keyShape cv.name with
   | .error e => .error e
   | .ok () =>
-    match annotConstantValC .verified fe₀ cv {} with
+    match annotConstantValC .verified fe₀ cv { core } with
     | .error e => .error e
     | .ok ((cvA, _), _) =>
       if (fe.find? cvA.name).isSome then .error (.invalid msg!"duplicate declaration {cvA.name}")
       else
-        match valueC fe₀ cvA v with
+        match valueC fe₀ cvA v core with
         | .error e => .error e
         | .ok () => .ok (fe.push (.axiomInfo cvA), blockConsts .unsaf [cvA])
 
 /-- **A header's type is a sort** at `fe`: `checkPending`'s first half (the
-type's inference, then `ensureSort`), from a fresh memo state. -/
-def sortC (fe : FEnv md) (cvA : ConstantVal md) : Except (CheckError md) Unit :=
+type's inference, then `ensureSort`), from a fresh memo state at `core`. -/
+def sortC (fe : FEnv md) (cvA : ConstantVal md) (core : CoreConfig := {}) :
+    Except (CheckError md) Unit :=
   match (do
       let jsty ← (coreKnotI .verified fe checkFuel).infer 0 cvA.type
       let _ ← opSIxC .verified fe 0 jsty
-      pure () : (CheckCM md) Unit) {} with
+      pure () : (CheckCM md) Unit) { core } with
   | .error e => .error e
   | .ok _ => .ok ()
 
 /-- **An unsafe axiom**, in Lean's unsafe mode: its key must be an input key
 (`keyShape`), its header at `fe` (every tier constant before it visible), its
 type a sort there, then pushed. -/
-def axiomC (fe : FEnv md) (cv : ConstantVal md) :
+def axiomC (fe : FEnv md) (cv : ConstantVal md) (core : CoreConfig := {}) :
     Except (CheckError md) (FEnv md × List (TierConst md)) :=
   match keyShape cv.name with
   | .error e => .error e
   | .ok () =>
-    match annotConstantValC .verified fe cv {} with
+    match annotConstantValC .verified fe cv { core } with
     | .error e => .error e
     | .ok ((cvA, _), _) =>
-      match sortC fe cvA with
+      match sortC fe cvA core with
       | .error e => .error e
       | .ok () => .ok (fe.push (.axiomInfo cvA), blockConsts .unsaf [cvA])
 
 /-- **One tier declaration** at `fe`, with `fe₀` the logical view (the index
 before any tier constant): the extended index, and the declaration's
 constants, newest first. -/
-def checkDeclC (fe₀ fe : FEnv md) : TierDecl md → Except (CheckError md) (FEnv md × List (TierConst md))
-  | .defs s ms => blockC fe s ms
-  | .unsafeOpaque cv v => opaqueC fe₀ fe cv v
-  | .unsafeAxiom cv => axiomC fe cv
+def checkDeclC (fe₀ fe : FEnv md) (d : TierDecl md) (core : CoreConfig := {}) :
+    Except (CheckError md) (FEnv md × List (TierConst md)) :=
+  match d with
+  | .defs s ms => blockC fe s ms core
+  | .unsafeOpaque cv v => opaqueC fe₀ fe cv v core
+  | .unsafeAxiom cv => axiomC fe cv core
 
 /-- A tier declaration's stage in Lean's lattice: a partial block (0), an
 unsafe opaque (1), an unsafe block or axiom (2). -/
@@ -205,19 +212,20 @@ def staged (ds : List (TierDecl md)) : List (Nat × TierDecl md) :=
 /-- The fold from an accumulator, over positioned declarations: the logical
 view, the index, the constants so far (newest first). -/
 def checkTierFrom (fe₀ fe : FEnv md) (acc : List (TierConst md)) :
-    List (Nat × TierDecl md) → Except (CheckError md × Nat) (FEnv md × List (TierConst md))
-  | [] => .ok (fe, acc)
-  | (i, d) :: ds =>
-    match checkDeclC fe₀ fe d with
-    | .ok (fe', ts) => checkTierFrom fe₀ fe' (ts ++ acc) ds
+    List (Nat × TierDecl md) → (core : CoreConfig := {}) →
+    Except (CheckError md × Nat) (FEnv md × List (TierConst md))
+  | [], _ => .ok (fe, acc)
+  | (i, d) :: ds, core =>
+    match checkDeclC fe₀ fe d core with
+    | .ok (fe', ts) => checkTierFrom fe₀ fe' (ts ++ acc) ds core
     | .error e => .error (e, i)
 
 /-- **The tier fold**: the declarations staged (`staged`), each at the index
 the ones before it extended, from the logical index `fe`, which is also the
 logical view; a failure is tagged with its position in `ds`. The result is
 the extended index and the tier constants, newest first. -/
-def checkTierC (fe : FEnv md) (ds : List (TierDecl md)) :
+def checkTierC (fe : FEnv md) (ds : List (TierDecl md)) (core : CoreConfig := {}) :
     Except (CheckError md × Nat) (FEnv md × List (TierConst md)) :=
-  checkTierFrom fe fe [] (staged ds)
+  checkTierFrom fe fe [] (staged ds) core
 
 end Ix.Kernel.Tier

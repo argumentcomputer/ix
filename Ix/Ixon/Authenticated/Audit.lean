@@ -131,6 +131,7 @@ end Ixon.Authenticated.Audit
 -- following `implemented_by`/`csimp` targets and checking `@[extern]`/`opaque`/`isUnsafe`)
 -- surfaces specialized kernel helpers, ruled `withExclusive`/`computed_field` overrides, and
 -- all 5 `@[extern]` methods on `Blake3.Rust.instHasherOpsHasher`.
+-- Kernel hardening updates counts (refreshed in reconciliation).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Address.admissionHash]: 8256 compiled functions; inherited externs 119, implemented_by 1, unsafe 41, csimp 8; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
@@ -248,7 +249,7 @@ fun binding maxProjections limits records blobs hint =>
     Ix.Kernel.Admission.Authentic Address.blake3Pure records blobs ∧
       ∃ output,
         Ix.Kernel.Admission.Hashed Address.blake3Pure output ∧
-          Ix.Kernel.Admission.checkConstantsAt Address.blake3Pure binding output blobs hint = Except.ok env -/
+          Ix.Kernel.Admission.checkConstantsAt Address.blake3Pure binding output blobs hint limits.fold = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Authenticated.checkBytesProjection_authentic
 
@@ -313,6 +314,7 @@ and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, lik
 -- move the tiered closure from 7190 compiled functions and 28 ruled csimps to 7237 and 29.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
 -- Hardened `Runtime.lean` surfaces specialized kernel helpers, ruled overrides, and all 5 `Blake3.Rust` externs.
+-- Kernel hardening updates counts (refreshed in reconciliation).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 8340 compiled functions; inherited externs 119, implemented_by 0, unsafe 41, csimp 8; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings

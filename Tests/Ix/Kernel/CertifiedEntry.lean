@@ -214,7 +214,7 @@ example {binding : Ix.Kernel.Admission.Binding} {records : Ix.Kernel.Admission.R
   obtain ⟨t, pre, _, _, _, _, _, constants, _, reading, _, installed⟩ :=
     Ixon.Authenticated.checkBytes_reading h
   refine ⟨t, pre, constants, reading, fun owner c hmem hs => ?_⟩
-  obtain ⟨st, decl, _, _, hread, _, _, hinst⟩ := installed.singleton hmem hs
+  obtain ⟨st, decl, _, _, _, hread, _, _, hinst⟩ := installed.singleton hmem hs
   exact ⟨st, decl, hread, hinst⟩
 
 /-- Key uniqueness at the API: no two records and no two blobs of accepted

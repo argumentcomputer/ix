@@ -93,6 +93,14 @@ theorem CSOK.withLsimpEqv {s : CState md} (hs : CSOK mode env s)
   ⟨hs.constTy, hs.constVal, hs.ruleRhs, hs.whnfCoreC, hs.whnfC,
     hs.inferC, hs.inferIOC, hs.annotC, hs.defeqC, hm, he, hs.instC⟩
 
+/-- Replace the hash-consing table of the ∀ rule's levels: no clause reads
+it (`internLM` validates a hit itself). -/
+theorem CSOK.withIntern {s : CState md} (hs : CSOK mode env s)
+    (t : Std.HashMap Level Level) :
+    CSOK mode env { s with lvlIntern := t } :=
+  ⟨hs.constTy, hs.constVal, hs.ruleRhs, hs.whnfCoreC, hs.whnfC,
+    hs.inferC, hs.inferIOC, hs.annotC, hs.defeqC, hs.lsimp, hs.eqv, hs.instC⟩
+
 /-! ### The memo-insert closures -/
 
 /-- Inserting the spec value at a key keeps the `lsimpC` clause. -/
@@ -253,22 +261,45 @@ section LevelEffects
 
 variable {s₀ : CState md}
 
-/-- The inlined `simplify`-with-memo step of `isEquivLM` (the clone's
-counterpart of the interned `simplifyLIGo` call). -/
+/-- The `simplify`-with-memo step of `isEquivLM` (`simplifyMemoC`): the
+result is the specification, and the memo keeps its invariant (the
+seeded walk is `simplifyGo`, whose invariant is the same). -/
+theorem simplifyMemoC_spec {mp : Std.HashMap Level Level}
+    (hmp : ∀ u v, mp[u]? = some v → v = Level.simplify u) (u : Level) :
+    (simplifyMemoC mp u).1 = Level.simplify u ∧
+      ∀ a b, (simplifyMemoC mp u).2[a]? = some b → b = Level.simplify a := by
+  unfold simplifyMemoC
+  cases hc : mp[u]? with
+  | some x => exact ⟨hmp u x hc, hmp⟩
+  | none =>
+    dsimp only
+    split
+    · exact ⟨rfl, lsimpInv_insert hmp u⟩
+    · exact Level.simplifyGo_spec u mp hmp
+
+/-- The name the cascade's proof below uses. -/
 private def simplifyMemo (mp : Std.HashMap Level Level) (u : Level) :
     Level × Std.HashMap Level Level :=
-  match mp[u]? with
-  | some x => (x, mp)
-  | none => let x := Level.simplify u; (x, mp.insert u x)
+  simplifyMemoC mp u
 
 private theorem simplifyMemo_spec {mp : Std.HashMap Level Level}
     (hmp : ∀ u v, mp[u]? = some v → v = Level.simplify u) (u : Level) :
     (simplifyMemo mp u).1 = Level.simplify u ∧
-      ∀ a b, (simplifyMemo mp u).2[a]? = some b → b = Level.simplify a := by
-  unfold simplifyMemo
-  cases hc : mp[u]? with
-  | some x => exact ⟨hmp u x hc, hmp⟩
-  | none => exact ⟨rfl, lsimpInv_insert hmp u⟩
+      ∀ a b, (simplifyMemo mp u).2[a]? = some b → b = Level.simplify a :=
+  simplifyMemoC_spec hmp u
+
+/-- The telescope loops' peel fuel reads the state and returns it
+unchanged; its value is irrelevant to the loop simulations, which hold
+for every peel fuel. -/
+theorem peelFuelToM_eff (hs : CSOK mode env s₀) (pi : Bool)
+    (sel : CState md → Std.HashMap (Expr md) (Expr md)) (t : Expr md) :
+    CEff mode env s₀ (fun _ => True) (peelFuelToM pi sel t) := by
+  intro v' s' hrun
+  have h : peelFuelToM pi sel t s₀ = .ok (peelFuelTo pi (sel s₀) peelFuel t 0, s₀) := rfl
+  rw [h] at hrun
+  injection hrun with h1
+  obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
+  exact ⟨hs, trivial⟩
 
 /-- The task-#176 P2 head test: syntactically equal levels answer
 without touching the state or the cache. -/
@@ -278,28 +309,52 @@ private theorem isEquivLM_run_ptr {l r : Level} (h : (l == r) = true)
 
 private theorem isEquivLM_run {l r : Level} (h : ¬ (l == r) = true)
     (s : CState md) :
-    isEquivLM l r s = .ok
-      (match s.eqvC[(l, r)]? with
-       | some b => (some b, s)
-       | none =>
-         let (ls, mp) := simplifyMemo s.lsimpC l
-         let (rs, mp) := simplifyMemo mp r
-         if ls == rs then
-           (some true,
-             { s with lsimpC := mp, eqvC := s.eqvC.insert (l, r) true })
-         else
-           match Level.leqCore Level.defaultFuel ls rs 0 with
-           | some false =>
-             (some false,
-               { s with lsimpC := mp, eqvC := s.eqvC.insert (l, r) false })
-           | some true =>
-             match Level.leqCore Level.defaultFuel rs ls 0 with
-             | some b =>
-               (some b,
-                 { s with lsimpC := mp, eqvC := s.eqvC.insert (l, r) b })
-             | none => (none, { s with lsimpC := mp })
-           | none => (none, { s with lsimpC := mp })) := by
-  unfold isEquivLM; rw [if_neg h]; rfl
+    isEquivLM l r s =
+      match s.eqvC[(l, r)]? with
+      | some b => .ok (some b, s)
+      | none =>
+        let (ls, mp) := simplifyMemo s.lsimpC l
+        let (rs, mp) := simplifyMemo mp r
+        if ls == rs then
+          .ok (some true,
+            { s with lsimpC := mp, eqvC := s.eqvC.insert (l, r) true })
+        else
+          match Level.leqCoreB s.core.levelBudget Level.defaultFuel ls rs 0 with
+          | none => .error (.internal (levelBudgetMsg s.core.levelBudget))
+          | some (some false) =>
+            .ok (some false,
+              { s with lsimpC := mp, eqvC := s.eqvC.insert (l, r) false })
+          | some (some true) =>
+            match Level.leqCoreB s.core.levelBudget Level.defaultFuel rs ls 0 with
+            | none => .error (.internal (levelBudgetMsg s.core.levelBudget))
+            | some (some b) =>
+              .ok (some b,
+                { s with lsimpC := mp, eqvC := s.eqvC.insert (l, r) b })
+            | some none => .ok (none, { s with lsimpC := mp })
+          | some none => .ok (none, { s with lsimpC := mp }) := by
+  unfold isEquivLM; rw [if_neg h]
+  rcases s with ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, ec, c12, c13, core⟩
+  dsimp only [simplifyMemo, get, getThe, MonadStateOf.get, set, MonadStateOf.set,
+    pure, Pure.pure, bind, Bind.bind, throw, throwThe, MonadExceptOf.throw,
+    StateT.get, StateT.set, StateT.pure, StateT.bind, StateT.lift,
+    Except.pure, Except.bind, Function.comp_def]
+  cases _ : ec[(l, r)]?
+  · by_cases hbeq : ((simplifyMemoC c10 l).1 == (simplifyMemoC (simplifyMemoC c10 l).2 r).1) = true
+    · simp only [hbeq]; rfl
+    · simp only [hbeq]
+      cases _ : Level.leqCoreB core.levelBudget Level.defaultFuel _ _ 0 with
+      | none => rfl
+      | some ob =>
+        cases ob with
+        | none => rfl
+        | some b =>
+          cases b with
+          | false => rfl
+          | true =>
+            cases _ : Level.leqCoreB core.levelBudget Level.defaultFuel _ _ 0 with
+            | none => rfl
+            | some ob2 => cases ob2 <;> rfl
+  · rfl
 
 /-- `Level.isEquiv` in the shape the cascade decides it: the
 simplified-form test, then the two `leqCore` runs. -/
@@ -329,12 +384,42 @@ private theorem isEquiv_cascade (l r : Level)
       | none => rfl
       | some b2 => rfl
 
+private theorem internLM_run (l : Level) (s : CState md) :
+    internLM l s = .ok
+      (match s.lvlIntern[l]? with
+       | some l' => if l' == l then (l', s) else (l, s)
+       | none => (l, { s with lvlIntern := s.lvlIntern.insert l l })) := rfl
+
+/-- **Hash-consing returns its argument**: a hit is returned only when `==`
+(lawful) has confirmed it equal to the query, and only the table, which no
+`CSOK` clause reads, changes. -/
+theorem internLM_eff (hs : CSOK mode env s₀) (l : Level) :
+    CEff mode env s₀ (fun v => v = l) (internLM l) := by
+  intro v' s' hrun
+  rw [internLM_run] at hrun
+  injection hrun with h1
+  cases hc : s₀.lvlIntern[l]? with
+  | some l' =>
+    rw [hc] at h1
+    dsimp only at h1
+    by_cases hb : (l' == l) = true
+    · rw [if_pos hb] at h1
+      obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
+      exact ⟨hs, eq_of_beq hb⟩
+    · rw [if_neg hb] at h1
+      obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
+      exact ⟨hs, rfl⟩
+  | none =>
+    rw [hc] at h1
+    dsimp only at h1
+    obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
+    exact ⟨hs.withIntern _, rfl⟩
+
 /-- The `isEquiv` result cache: a hit is certified by the `eqvC`
-clause, a miss runs the same `simplify`/`leqCore` cascade the interned
-wrapper runs — through the `lsimpC` memo, whose entries are the spec
-values by the `lsimp` clause.  Where the interned proof needed
-`denoteL_inj` to turn index equality into level equality, the tree keys
-are `LawfulBEq`, so `ls == rs` *is* `ls = rs`. -/
+clause, a miss runs the budgeted `simplify`/`leqCoreB` cascade — through
+the `lsimpC` memo, whose entries are the spec values by the `lsimp`
+clause, and `Level.leqCoreB_eq`, which pins every non-exhausted `leqCoreB`
+answer to `Level.leqCore`. -/
 theorem isEquivLM_eff (hs : CSOK mode env s₀) (l r : Level) :
     CEff mode env s₀ (fun ob => ob = Level.isEquiv l r) (isEquivLM l r) := by
   intro v' s' hrun
@@ -382,35 +467,106 @@ theorem isEquivLM_eff (hs : CSOK mode env s₀) (l r : Level) :
         exact Bool.true_eq_false ▸ hbeq
       have hcas := isEquiv_cascade l r hss
       rw [← hls, ← hrs] at hcas
-      cases hb1 : Level.leqCore Level.defaultFuel ls rs 0 with
+      cases hb1 : Level.leqCoreB s₀.core.levelBudget Level.defaultFuel ls rs 0 with
       | none =>
         rw [hb1] at hrun
-        injection hrun with h1
-        obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
-        exact ⟨hs.withLsimp hmp2, by rw [hcas, hb1]⟩
-      | some b1 =>
-        cases b1 with
-        | false =>
+        exact nomatch hrun
+      | some ob1 =>
+        have hq1 : ob1 = Level.leqCore Level.defaultFuel ls rs 0 := by
+          rcases Level.leqCoreB_eq s₀.core.levelBudget Level.defaultFuel ls rs 0 with h | h
+          · rw [hb1] at h; exact nomatch h
+          · rw [hb1] at h; exact Option.some.inj h
+        cases ob1 with
+        | none =>
           rw [hb1] at hrun
           injection hrun with h1
           obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
-          have hob : (some false : Option Bool) = Level.isEquiv l r := by
-            rw [hcas, hb1]
-          exact ⟨hs.withLsimpEqv hmp2 (eqvInv_insert hs.eqv hob.symm), hob⟩
-        | true =>
-          cases hb2 : Level.leqCore Level.defaultFuel rs ls 0 with
-          | none =>
-            rw [hb1, hb2] at hrun
+          exact ⟨hs.withLsimp hmp2, by rw [hcas, ← hq1]⟩
+        | some b1 =>
+          cases b1 with
+          | false =>
+            rw [hb1] at hrun
             injection hrun with h1
             obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
-            exact ⟨hs.withLsimp hmp2, by rw [hcas, hb1, hb2]⟩
-          | some b2 =>
-            rw [hb1, hb2] at hrun
-            injection hrun with h1
-            obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
-            have hob : (some b2 : Option Bool) = Level.isEquiv l r := by
-              rw [hcas, hb1, hb2]
+            have hob : (some false : Option Bool) = Level.isEquiv l r := by
+              rw [hcas, ← hq1]
             exact ⟨hs.withLsimpEqv hmp2 (eqvInv_insert hs.eqv hob.symm), hob⟩
+          | true =>
+            cases hb2 : Level.leqCoreB s₀.core.levelBudget Level.defaultFuel rs ls 0 with
+            | none =>
+              rw [hb1, hb2] at hrun
+              exact nomatch hrun
+            | some ob2 =>
+              have hq2 : ob2 = Level.leqCore Level.defaultFuel rs ls 0 := by
+                rcases Level.leqCoreB_eq s₀.core.levelBudget Level.defaultFuel rs ls 0 with h | h
+                · rw [hb2] at h; exact nomatch h
+                · rw [hb2] at h; exact Option.some.inj h
+              cases ob2 with
+              | none =>
+                rw [hb1, hb2] at hrun
+                injection hrun with h1
+                obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
+                exact ⟨hs.withLsimp hmp2, by rw [hcas, ← hq1, ← hq2]⟩
+              | some b2 =>
+                rw [hb1, hb2] at hrun
+                injection hrun with h1
+                obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
+                have hob : (some b2 : Option Bool) = Level.isEquiv l r := by
+                  rw [hcas, ← hq1, ← hq2]
+                exact ⟨hs.withLsimpEqv hmp2 (eqvInv_insert hs.eqv hob.symm), hob⟩
+
+private theorem isLeqLM_run (l r : Level) (s : CState md) :
+    isLeqLM l r s =
+      let (ls, mp) := simplifyMemo s.lsimpC l
+      let (rs, mp) := simplifyMemo mp r
+      match Level.leqCoreB s.core.levelBudget Level.defaultFuel ls rs 0 with
+      | none => .error (.internal (levelBudgetMsg s.core.levelBudget))
+      | some none => .error (.internal "fuel exhausted: level comparison")
+      | some (some b) => .ok (b, { s with lsimpC := mp }) := by
+  unfold isLeqLM; cases s
+  dsimp only [simplifyMemo, get, getThe, MonadStateOf.get, set, MonadStateOf.set,
+    pure, Pure.pure, bind, Bind.bind, throw, throwThe, MonadExceptOf.throw,
+    StateT.get, StateT.set, StateT.pure, StateT.bind, StateT.lift,
+    Except.pure, Except.bind, Function.comp_def]
+  cases _ : Level.leqCoreB _ Level.defaultFuel _ _ 0 with
+  | none => rfl
+  | some ob => cases ob <;> rfl
+
+/-- Budgeted one-directional level comparison (`isLeqLM`): every `.ok` answer
+equals `Level.leq` by `Level.leqCoreB_eq`, keeping `CSOK`. -/
+theorem isLeqLM_eff (hs : CSOK mode env s₀) (l r : Level) :
+    CEff mode env s₀ (fun b => Level.leq l r = some b) (isLeqLM l r) := by
+  intro v' s' hrun
+  rw [isLeqLM_run] at hrun
+  rcases hm1 : simplifyMemo s₀.lsimpC l with ⟨ls, mp1⟩
+  obtain ⟨hls, hmp1⟩ := simplifyMemo_spec hs.lsimp l
+  simp only [hm1] at hls hmp1
+  rcases hm2 : simplifyMemo mp1 r with ⟨rs, mp2⟩
+  obtain ⟨hrs, hmp2⟩ := simplifyMemo_spec hmp1 r
+  simp only [hm2] at hrs hmp2
+  rw [hm1] at hrun
+  dsimp only at hrun
+  rw [hm2] at hrun
+  dsimp only at hrun
+  cases hb : Level.leqCoreB s₀.core.levelBudget Level.defaultFuel ls rs 0 with
+  | none =>
+    rw [hb] at hrun
+    exact nomatch hrun
+  | some ob =>
+    have hq : ob = Level.leqCore Level.defaultFuel ls rs 0 := by
+      rcases Level.leqCoreB_eq s₀.core.levelBudget Level.defaultFuel ls rs 0 with h | h
+      · rw [hb] at h; exact nomatch h
+      · rw [hb] at h; exact Option.some.inj h
+    cases ob with
+    | none =>
+      rw [hb] at hrun
+      exact nomatch hrun
+    | some b =>
+      rw [hb] at hrun
+      injection hrun with h1
+      obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
+      refine ⟨hs.withLsimp hmp2, ?_⟩
+      simp only [Level.leq, ← hls, ← hrs, ← hq]
 
 /-- Pointwise `isEquivLM`. -/
 theorem isEquivListLM_eff :

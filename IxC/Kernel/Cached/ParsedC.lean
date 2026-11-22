@@ -104,7 +104,7 @@ def checkThmValC (fe : FEnv md) (cvA : ConstantVal md) (jty : Expr md)
     (value : Expr md) : (CheckCM md) (FEnv md) := do
   let jsty ← (coreKnotI mode fe checkFuel).infer 0 jty
   let ul ← opSIxC mode fe 0 jsty
-  unless (← liftFueled "level comparison" (Level.isEquiv ul .zero)) do
+  unless Level.isZero ul do
     throw (.invalid msg!"type of theorem {cvA.name} is not a proposition")
   unless Expr.looseBVarsBounded 0 value do
     throw (.invalid msg!"loose bound variable in value of {cvA.name}")

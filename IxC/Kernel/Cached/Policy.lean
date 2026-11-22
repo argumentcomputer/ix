@@ -196,10 +196,11 @@ def annotDeclStepUnder (policy : AxiomPolicy) (ev : Evidences md)
 on tasks, check units, return the environment). At `strict` it is
 `checkDecls` (`checkDeclsUnder_strict`). -/
 def checkDeclsUnder (mode : CheckMode) (policy : AxiomPolicy) (ev : Evidences md)
-    (ds : Array (Declaration md)) :
+    (ds : Array (Declaration md)) (cfg : FoldConfig := {}) :
     Except (CheckError md × Nat) (Env md) := do
-  let (p, _) ← (ds.foldlM (annotDeclStepUnder mode policy ev) (0, mkFEnv Env.empty, #[])) {}
-  checkPendingTasks mode p.2.1 p.2.2
+  let (p, _) ← (ds.foldlM (annotDeclStepUnder mode policy ev) (0, mkFEnv Env.empty, #[]))
+    { core := cfg.core }
+  checkPendingTasks mode p.2.1 p.2.2 cfg.workers cfg.core
   checkUnits ds
   pure p.2.1.env
 
@@ -214,9 +215,16 @@ def annotDeclStepWithUserAxioms (ev : Evidences md)
 `allowUser`. An accept is conditional on `userAxiomsOfDecls ds.toList`; with
 none it is `checkDecls`'s (`checkDeclsWithUserAxioms_eq_checkDecls`). -/
 def checkDeclsWithUserAxioms (mode : CheckMode) (ev : Evidences md)
-    (ds : Array (Declaration md)) :
+    (ds : Array (Declaration md)) (cfg : FoldConfig := {}) :
     Except (CheckError md × Nat) (Env md) :=
-  checkDeclsUnder mode .allowUser ev ds
+  checkDeclsUnder mode .allowUser ev ds cfg
+
+/-- The fold under a policy: its worker count changes no verdict (`checkDecls_cfg`). -/
+theorem checkDeclsUnder_cfg (policy : AxiomPolicy) (ev : Evidences md)
+    (ds : Array (Declaration md)) (cfg : FoldConfig) :
+    checkDeclsUnder mode policy ev ds cfg = checkDeclsUnder mode policy ev ds { core := cfg.core } := by
+  unfold checkDeclsUnder
+  simp only [checkPendingTasks_eq]
 
 /-! ## `strict` is the certified fold -/
 
@@ -244,8 +252,9 @@ theorem annotDeclStepUnder_strict (ev : Evidences md) :
 
 /-- **At `strict`, the fold is `checkDecls`**, so every theorem about the
 certified fold is a theorem about `checkDeclsUnder _ .strict`. -/
-theorem checkDeclsUnder_strict (ev : Evidences md) (ds : Array (Declaration md)) :
-    checkDeclsUnder mode .strict ev ds = checkDecls mode ev ds := by
+theorem checkDeclsUnder_strict (ev : Evidences md) (ds : Array (Declaration md))
+    (cfg : FoldConfig := {}) :
+    checkDeclsUnder mode .strict ev ds cfg = checkDecls mode ev ds cfg := by
   unfold checkDeclsUnder checkDecls
   rw [annotDeclStepUnder_strict]
 
@@ -312,14 +321,13 @@ theorem foldlM_stateT_congr {σ ε α β : Type} {f g : α → β → StateT σ 
       obtain ⟨a', s'⟩ := v
       exact ih a' s'
 
-/-- **T1: without user axioms, every policy's fold is the certified fold.**
-When no record is a user axiom (`userAxiomsOfDecls ds.toList = []`), the fold
-under any policy, `allowUser` included, is `checkDecls`: the same verdict, the
-same environment, the same failure and position. -/
-theorem checkDeclsUnder_eq_checkDecls (policy : AxiomPolicy) (ev : Evidences md)
-    (ds : Array (Declaration md)) (hnone : userAxiomsOfDecls ds.toList = []) :
-    checkDeclsUnder mode policy ev ds = checkDecls mode ev ds := by
-  rw [← checkDeclsUnder_strict]
+/-- **T1: without user axioms, every policy's fold is the certified fold**
+(for any `FoldConfig`). -/
+theorem checkDeclsUnder_eq_checkDecls_cfg (policy : AxiomPolicy) (ev : Evidences md)
+    (ds : Array (Declaration md)) (hnone : userAxiomsOfDecls ds.toList = [])
+    (cfg : FoldConfig := {}) :
+    checkDeclsUnder mode policy ev ds cfg = checkDecls mode ev ds cfg := by
+  rw [← checkDeclsUnder_strict mode ev ds cfg]
   have hstep : ∀ pd ∈ ds.toList, ∀ p s,
       annotDeclStepUnder mode policy ev p pd s = annotDeclStepUnder mode .strict ev p pd s := by
     intro pd hpd p s
@@ -340,11 +348,21 @@ theorem checkDeclsUnder_eq_checkDecls (policy : AxiomPolicy) (ev : Evidences md)
   unfold checkDeclsUnder
   rw [hfold]
 
+/-- **T1: without user axioms, every policy's fold is the certified fold.**
+When no record is a user axiom (`userAxiomsOfDecls ds.toList = []`), the fold
+under any policy, `allowUser` included, is `checkDecls`: the same verdict, the
+same environment, the same failure and position. -/
+theorem checkDeclsUnder_eq_checkDecls (policy : AxiomPolicy) (ev : Evidences md)
+    (ds : Array (Declaration md)) (hnone : userAxiomsOfDecls ds.toList = []) :
+    checkDeclsUnder mode policy ev ds = checkDecls mode ev ds :=
+  checkDeclsUnder_eq_checkDecls_cfg mode policy ev ds hnone {}
+
 /-- **T1 at the user-axiom fold**: with no user axiom among the records,
 `checkDeclsWithUserAxioms` is `checkDecls`. -/
 theorem checkDeclsWithUserAxioms_eq_checkDecls (ev : Evidences md)
-    (ds : Array (Declaration md)) (hnone : userAxiomsOfDecls ds.toList = []) :
-    checkDeclsWithUserAxioms mode ev ds = checkDecls mode ev ds :=
-  checkDeclsUnder_eq_checkDecls mode .allowUser ev ds hnone
+    (ds : Array (Declaration md)) (hnone : userAxiomsOfDecls ds.toList = [])
+    (cfg : FoldConfig := {}) :
+    checkDeclsWithUserAxioms mode ev ds cfg = checkDecls mode ev ds cfg :=
+  checkDeclsUnder_eq_checkDecls_cfg mode .allowUser ev ds hnone cfg
 
 end Ix.Kernel.Cached

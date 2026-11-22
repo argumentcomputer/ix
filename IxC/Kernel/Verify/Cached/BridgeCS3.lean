@@ -102,7 +102,11 @@ theorem checkStructFieldSortsIS_sim (hμ : mode.verifiedChecks = true) (henv : E
     obtain rfl : u = u' := hP₃
     by_cases hnp : (!isProp) = true
     · simp only [if_pos hnp]
-      refine SimC.bind (SimC.liftFueled _ _ hs₃)
+      have hleq : SimC mode env s₃ RelVC (isLeqLM u s) (((fueledOpsM (md := md)) mode).leqLevel u s) := by
+        intro v' s' hrun
+        obtain ⟨hs', hle⟩ := isLeqLM_eff hs₃ u s v' s' hrun
+        exact ⟨hs', v', rfl, 0, by simp [fueledOpsM, liftFueled, hle, pure, Pure.pure, Except.pure]⟩
+      refine SimC.bind hleq
         (fun s₃ c c' hs₃ hC => ?_)
       obtain rfl : c = c' := hC
       cases c with
@@ -118,7 +122,7 @@ theorem checkStructFieldSortsIS_sim (hμ : mode.verifiedChecks = true) (henv : E
     · simp only [if_neg hnp]
       by_cases hl : large = true
       · simp only [if_pos hl]
-        by_cases hz : (Level.isEquiv u .zero == some true || idxArgs.contains fv) = true
+        by_cases hz : (Level.isZero u || idxArgs.contains fv) = true
         · simp only [if_pos hz]
           refine SimC.bind (checkStructFieldSortsIS_sim hμ henv hfvs hs₃)
             (fun s₄ rest rest' hs₄ hR => ?_)

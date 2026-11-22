@@ -327,7 +327,9 @@ def universeVariableCases (_ : Unit) : Array Builder :=
         (rejectsWith := if admitted then none else some "u32 comparison")
 
 /-- The admission limits of `levelCountParityCases`' kernel reading. -/
-def parityLimits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+def parityLimits : Ix.Kernel.Admission.Limits :=
+  { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+    maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
 
 /-- **Every reader agrees on the level-count bound** (`Ixon.maxLevelCount`).
 The wire carries any `UInt64` level count, which the host's codec reads. A

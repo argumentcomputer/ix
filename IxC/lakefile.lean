@@ -55,6 +55,16 @@ lean_lib IxC.Ixon where
   roots := #[`IxC.Address.Core, `IxC.Ixon]
   globs := #[.one `IxC.Address.Core, .submodules `IxC.Ixon]
 
+/-- The hosts' side of the kernel's limits: each field of
+`Admission.Limits` as a flag and an `IX_KERNEL_*` variable, the decline
+message and the exit codes (`IxC.Host.Limits`). Outside the certified
+closure: no `IxC.Kernel` module imports it. -/
+@[default_target]
+lean_lib IxC.Host where
+  srcDir := ".."
+  roots := #[`IxC.Host.Limits]
+  globs := #[.submodules `IxC.Host]
+
 /-- The resource-mode model and the mode checker: run programs read from
 Ixon records, the reference evaluator `runR` with its four monitors, the
 mode-safety statement `ModeSafe` (a definition; nothing here is proved

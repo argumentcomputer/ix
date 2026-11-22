@@ -209,7 +209,7 @@ theorem checkStructFieldSortsI_sim (hops : OpsSim P f L ops ops') {env : Env md}
     have hcont := checkStructFieldSortsI_sim hops hE isProp large s nP hfvs hidx j
     have hc := contains_mapKeys_ren hE.inj hidx hfv
     split
-    · refine SimE.bind (SimE.liftFueled _ _) (fun ok _ => ?_)
+    · refine SimE.bind (hops.leqLevel u s) (fun ok _ => ?_)
       refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.throw_bind)
       refine SimE.bind hcont (fun rest _ => ?_)
       exact SimV.pureT _

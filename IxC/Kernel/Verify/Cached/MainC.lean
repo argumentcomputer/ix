@@ -47,13 +47,20 @@ universe w
 variable {V : Type w} [SetTheory V] {μ : CheckMode}
 variable {ev : Evidences md}
 
+/-- **Acceptance** (at any `FoldConfig`): what the fold accepts carries the model. -/
+theorem checkDecls_sound_cfg (hμ : μ.verifiedChecks = true)
+    {ds : Array (Declaration md)} {cfg : FoldConfig} {env' : Env md}
+    (h : checkDecls μ ev ds cfg = .ok env') :
+    Nonempty (EnvModelM V μ env') := by
+  obtain ⟨fc, rfl⟩ := checkDecls_fullyChecked μ h
+  exact fullyChecked_sound V hμ fc
+
 /-- **Acceptance**: what the fold accepts carries the model. -/
 theorem checkDecls_sound (hμ : μ.verifiedChecks = true)
     {ds : Array (Declaration md)} {env' : Env md}
     (h : checkDecls μ ev ds = .ok env') :
-    Nonempty (EnvModelM V μ env') := by
-  obtain ⟨fc, rfl⟩ := checkDecls_fullyChecked μ h
-  exact fullyChecked_sound V hμ fc
+    Nonempty (EnvModelM V μ env') :=
+  checkDecls_sound_cfg hμ h
 
 /-- **The fold's letter about `Empty`**: the checker, running a
 validating mode, never accepts a stream in which some stored constant
@@ -67,6 +74,16 @@ theorem no_proof_of_Empty_cached (V : Type w) [SetTheory V]
   obtain ⟨mp⟩ := checkDecls_sound (V := V) hμ h
   exact fun c hc hty => no_constant_of_Empty mp c hc hty
 
+/-- **The fold's letter about `False`** (at any `FoldConfig`). -/
+theorem no_proof_of_False_cached_cfg (V : Type w) [SetTheory V]
+    {μ : CheckMode} (hμ : μ.verifiedChecks = true)
+    {ds : Array (Declaration md)} {cfg : FoldConfig} {env' : Env md}
+    (h : checkDecls μ ev ds cfg = .ok env') :
+    ∀ c ∈ env'.consts,
+      c.toConstantVal.type = .const falseName [] → False := by
+  obtain ⟨mp⟩ := checkDecls_sound_cfg (V := V) hμ h
+  exact fun c hc hty => no_constant_of_False mp c hc hty
+
 /-- **The fold's letter about `False`** (task #181): the same letter at
 the pinned `False` block — no hypothesis about how the stream declared
 `False`.  The step the main corollary rests on is this at `.verified`. -/
@@ -75,9 +92,8 @@ theorem no_proof_of_False_cached (V : Type w) [SetTheory V]
     {ds : Array (Declaration md)} {env' : Env md}
     (h : checkDecls μ ev ds = .ok env') :
     ∀ c ∈ env'.consts,
-      c.toConstantVal.type = .const falseName [] → False := by
-  obtain ⟨mp⟩ := checkDecls_sound (V := V) hμ h
-  exact fun c hc hty => no_constant_of_False mp c hc hty
+      c.toConstantVal.type = .const falseName [] → False :=
+  no_proof_of_False_cached_cfg V hμ h
 
 /-! ## The fold that admits user axioms
 
@@ -90,15 +106,24 @@ unconditionally: over records that declare no user axiom
 `no_proof_of_False_cached_conditional`, were about `checkDecls`, with a
 premise of type `… → True`.) -/
 
+/-- **Acceptance without user axioms** (at any `FoldConfig`): what the fold that
+admits user axioms accepts from records that declare none carries the model. -/
+theorem checkDeclsWithUserAxioms_sound_cfg (hμ : μ.verifiedChecks = true)
+    {ds : Array (Declaration md)} {cfg : FoldConfig} {env' : Env md}
+    (h : checkDeclsWithUserAxioms μ ev ds cfg = .ok env')
+    (hnone : userAxiomsOfDecls ds.toList = []) :
+    Nonempty (EnvModelM V μ env') := by
+  rw [checkDeclsWithUserAxioms_eq_checkDecls μ ev ds hnone cfg] at h
+  exact checkDecls_sound_cfg hμ h
+
 /-- **Acceptance without user axioms**: what the fold that admits user axioms
 accepts from records that declare none carries the model. -/
 theorem checkDeclsWithUserAxioms_sound (hμ : μ.verifiedChecks = true)
     {ds : Array (Declaration md)} {env' : Env md}
     (h : checkDeclsWithUserAxioms μ ev ds = .ok env')
     (hnone : userAxiomsOfDecls ds.toList = []) :
-    Nonempty (EnvModelM V μ env') := by
-  rw [checkDeclsWithUserAxioms_eq_checkDecls μ ev ds hnone] at h
-  exact checkDecls_sound hμ h
+    Nonempty (EnvModelM V μ env') :=
+  checkDeclsWithUserAxioms_sound_cfg hμ h hnone
 
 /-- **The letter about `False`, without user axioms**: the fold that admits
 user axioms, running a validating mode, never accepts records that declare

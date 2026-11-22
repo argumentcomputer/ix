@@ -31,8 +31,9 @@ universe u
 theorem checkConstantsWith_checkDecls {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable}
     {pre : Prelude .anon} {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env .anon} (h : checkConstantsWith hash t pre constants blobs hint = .ok env) :
-    ∃ ev decls, Ix.Kernel.Cached.checkDecls .verified ev decls = .ok env := by
+    {cfg : Ix.Kernel.Cached.FoldConfig} {env : Ix.Kernel.Env .anon}
+    (h : checkConstantsWith hash t pre constants blobs hint cfg = .ok env) :
+    ∃ ev decls, Ix.Kernel.Cached.checkDecls .verified ev decls cfg = .ok env := by
   unfold checkConstantsWith at h
   cases hr : readStream hash t pre constants blobs hint with
   | error e => simp [hr, bind, Except.bind] at h
@@ -40,7 +41,7 @@ theorem checkConstantsWith_checkDecls {hash : ByteArray → Address} {t : Ix.Ker
     obtain ⟨ev, decls⟩ := p
     simp only [hr, bind, Except.bind] at h
     cases hc : Ix.Kernel.Cached.checkDecls .verified ev
-        (Ix.Kernel.Frontend.preparePrelude pre.ix decls) with
+        (Ix.Kernel.Frontend.preparePrelude pre.ix decls) cfg with
     | error e => simp [hc, Except.mapError] at h
     | ok env' =>
       simp only [hc, Except.mapError, Except.ok.injEq] at h
@@ -54,9 +55,10 @@ declarations. -/
 theorem checkConstantsTiered_ok (V : Type u) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
     {t : Ix.Kernel.RoleTable} {pre : Prelude .anon} {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {cfg : Ix.Kernel.Cached.FoldConfig}
     {env : Ix.Kernel.Env .anon} {ts : List (TierConst .anon)}
-    (h : checkConstantsTiered hash t pre constants blobs hint = .ok (env, ts)) :
-    checkConstantsWith hash t pre (partitionTier constants).1 blobs hint = .ok env ∧
+    (h : checkConstantsTiered hash t pre constants blobs hint cfg = .ok (env, ts)) :
+    checkConstantsWith hash t pre (partitionTier constants).1 blobs hint cfg = .ok env ∧
       Ix.Kernel.EnvWF env ∧ (∀ c ∈ ts, env.find? c.cv.name = none) ∧
       Ix.Kernel.EnvWF (env.extendOpaque ts) ∧
       ∃ tds, readTier (streamContext hash t pre constants blobs hint) (partitionTier constants).2 = .ok tds ∧
@@ -68,7 +70,7 @@ theorem checkConstantsTiered_ok (V : Type u) [Ix.Kernel.SetTheory V] {hash : Byt
   | some x => simp [hf, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
   | none =>
     simp only [hf, bind, Except.bind, pure, Except.pure] at h
-    cases hc : checkConstantsWith hash t pre logical blobs hint with
+    cases hc : checkConstantsWith hash t pre logical blobs hint cfg with
     | error e => simp [hc, Except.mapError] at h
     | ok env' =>
       simp only [hc, Except.mapError] at h
@@ -76,7 +78,7 @@ theorem checkConstantsTiered_ok (V : Type u) [Ix.Kernel.SetTheory V] {hash : Byt
       | error e => simp [hr] at h
       | ok tds =>
         simp only [hr] at h
-        cases ht : Ix.Kernel.Tier.checkTierC (Ix.Kernel.mkFEnv env') (tds.toList.map (·.2)) with
+        cases ht : Ix.Kernel.Tier.checkTierC (Ix.Kernel.mkFEnv env') (tds.toList.map (·.2)) cfg.core with
         | error e => simp [ht, throw, throwThe, MonadExceptOf.throw] at h
         | ok r =>
           obtain ⟨fe', ts'⟩ := r
@@ -100,7 +102,7 @@ theorem checkBytesTieredUsing_ok {prelude : Ix.Kernel.RoleTable → Except Strin
     Authentic hash records blobs ∧ ∃ t pre constants,
       admitBinding hash binding = .ok t ∧ prelude t = .ok pre ∧
       decodeRecords limits records = .ok constants ∧
-      checkConstantsTiered hash t pre constants blobs hint = .ok (env, ts) := by
+      checkConstantsTiered hash t pre constants blobs hint limits.fold = .ok (env, ts) := by
   unfold checkBytesTieredUsing at h
   cases h1 : preflight limits records blobs with
   | error e => simp [h1, bind, Except.bind, Except.mapError] at h
@@ -117,13 +119,13 @@ theorem checkBytesTieredUsing_ok {prelude : Ix.Kernel.RoleTable → Except Strin
   cases h5 : prelude t with
   | error e => simp [h1, h2, h3, h4, h5, bind, Except.bind, Except.mapError] at h
   | ok pre =>
-  cases h6 : decodeRecords limits records with
+  cases h6 : decodeWithin limits records with
   | error e => simp [h1, h2, h3, h4, h5, h6, bind, Except.bind, Except.mapError] at h
   | ok constants =>
   simp only [h1, h2, h3, h4, h5, h6, bind, Except.bind, Except.mapError] at h
   cases u3
   exact ⟨(authenticate_ok_iff hash records blobs).mp h3, t, pre, constants, rfl,
-    by first | rfl | exact h5, by first | rfl | exact h6, h⟩
+    by first | rfl | exact h5, decodeWithin_decodeRecords h6, h⟩
 
 /-- **The tiered Ixon entry**, behind the committed prelude: `checkBytesTieredUsing_ok`
 at `preludeFor`. -/
@@ -135,7 +137,7 @@ theorem checkBytesTiered_ok {hash : ByteArray → Address} {binding : Binding} {
     Authentic hash records blobs ∧ ∃ t pre constants,
       admitBinding hash binding = .ok t ∧ preludeFor t = .ok pre ∧
       decodeRecords limits records = .ok constants ∧
-      checkConstantsTiered hash t pre constants blobs hint = .ok (env, ts) :=
+      checkConstantsTiered hash t pre constants blobs hint limits.fold = .ok (env, ts) :=
   checkBytesTieredUsing_ok h
 
 /-- **Model existence for the tiered entry's logical part**: the logical

@@ -78,8 +78,9 @@ def checkSubject (s : IxC.Resource.Subject) : Except String Bool := do
 
 /-- **Mode checking of an artifact** (uncertified): the message of an accept,
 or the refusal or decline as the error. -/
-def checkArtifact (ixe : Ixon.Env) : Except String String := do
-  let input ← Ix.Typing.typingInput ixe
+def checkArtifact (ixe : Ixon.Env) (limits : Ix.Kernel.Admission.Limits := Ix.Typing.typingLimits) :
+    Except String String := do
+  let input ← Ix.Typing.typingInput ixe limits
   let records : Std.HashMap Address Ixon.Constant :=
     input.ordered.foldl (fun m (a, c, _) => m.insert a c) {}
   let prelude : Std.HashMap Address Ixon.Constant :=
@@ -98,19 +99,19 @@ def checkArtifact (ixe : Ixon.Env) : Except String String := do
       Ix.Typing.undecidedRoleNote true
     else ""
   let unc := Ix.Typing.splitOf input
-  let env ← match Ix.Typing.checkCertified input unc with
+  let env ← match Ix.Typing.checkCertified input unc limits with
     | .ok env₀ =>
       unless unc.isEmpty do
-        (Ix.Typing.typeUncertified input unc env₀).mapError fun e =>
+        (Ix.Typing.typeUncertified input unc env₀ limits).mapError fun e =>
           s!"mode checking (uncertified): the typing it reads with failed: {e}{note}"
       pure env₀
     | .error (e, isTier) =>
       unless isTier do
         throw s!"mode checking (uncertified): the typing it reads with failed: {e}{note}"
       let unc := (Ix.Typing.tierOwnersOf input).fold (·.insert ·) unc
-      let env₀ ← (Ix.Typing.checkCertified input unc).mapError fun (e', _) =>
+      let env₀ ← (Ix.Typing.checkCertified input unc limits).mapError fun (e', _) =>
         s!"mode checking (uncertified): the typing it reads with failed: {e'}{note}"
-      (Ix.Typing.typeUncertified input unc env₀).mapError fun e' =>
+      (Ix.Typing.typeUncertified input unc env₀ limits).mapError fun e' =>
         s!"mode checking (uncertified): the typing it reads with failed: {e'}{note}"
       pure env₀
   let v := IxC.Resource.check {} env s

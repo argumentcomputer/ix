@@ -275,7 +275,7 @@ private def ownerCandidate (ctors : List (OwnerCtor md)) (recs : List (OwnerRec 
   let [C] := cs | none
   guard (nI == 0)
   let (_, .sort s) ← tty.stripPis nP | none
-  guard (Ix.Kernel.Level.isEquiv s .zero != some true)
+  guard (!Ix.Kernel.Level.isZero s)
   let (_, nF, _) ← ctors.find? (·.1 == C)
   let (rn, rlps, rty, nM, nm) ← recs[x.2]?
   guard (rlps.length == lps.length + 1)
@@ -306,7 +306,7 @@ private theorem ownerCandidate_map (hf : InjOn f P) {ctors : List (OwnerCtor md)
           cases body <;> try rfl
           case sort s =>
             simp only [Option.map_some, Expr.mapTele, Expr.mapKeys]
-            by_cases hs : (Ix.Kernel.Level.isEquiv s .zero != some true) = true
+            by_cases hs : (!Ix.Kernel.Level.isZero s) = true
             · simp only [hs, ↓reduceIte]
               rw [ownerCtors_find_map hf hC hc]
               cases found : ctors.find? (·.1 == C) with

@@ -33,6 +33,9 @@ structure CheckerOps (md : Mode) (m : Type → Type) where
   isDefEq : Env md → Nat → Expr md → Expr md → m Bool
   ensureSort : Env md → Nat → Expr md → m Level
   whnf : Env md → Nat → Expr md → m (Expr md)
+  /-- Level inequality check (`l ≤ r`), budgeted on the cached core
+  (`isLeqLM`) and fueled on the reference core (`liftFueled … (Level.leq l r)`). -/
+  leqLevel : Level → Level → m Bool
   /-- **The evidence-fallback combinator** (task #273).  Run the
   attempt; on `true` the whole is `pure ()`; on `false` OR ON AN ERROR
   the continuation runs.  The only place the checker recovers from a
@@ -61,6 +64,7 @@ def fueledOps (F : Nat) : (CheckerOps md) (CheckM md) where
   isDefEq env d a b := isDefEqCore mode env F d a b
   ensureSort env d e := ensureSortCore mode env F d e
   whnf env d e := Ix.Kernel.whnf mode env F d e
+  leqLevel u s := liftFueled "level comparison" (Level.leq u s)
   orElse x k := match x with
     | .ok true => pure ()
     | _ => k none

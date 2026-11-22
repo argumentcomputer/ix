@@ -51,10 +51,10 @@ def checkStructFieldSortsIF (ops : (CheckerOps md) m) (fe : FEnv md) (isProp lar
     let ty ← ops.inferType fe.env (nP + j) fv.fvarTypeD
     let u ← ops.ensureSort fe.env (nP + j) ty
     if !isProp then
-      unless ← liftFueled "level comparison" (Level.leq u s) do
+      unless ← ops.leqLevel u s do
         throw (.invalid "direct sum: field universe too large")
     else if large then
-      unless Level.isEquiv u .zero == some true || idxArgs.contains fv do
+      unless Level.isZero u || idxArgs.contains fv do
         throw (.invalid "direct sum: large eliminator with a non-propositional \
           field outside the indices")
     let rest ← checkStructFieldSortsIF ops fe isProp large s nP fvs idxArgs j
@@ -71,10 +71,10 @@ def checkStructFieldSortsIFA (ops : (CheckerOps md) m) (fe : FEnv md) (isProp la
     let ty ← ops.inferType fe.env (nP + j) fv.fvarTypeD
     let u ← ops.ensureSort fe.env (nP + j) ty
     if !isProp then
-      unless ← liftFueled "level comparison" (Level.leq u s) do
+      unless ← ops.leqLevel u s do
         throw (.invalid "direct sum: field universe too large")
     else if large then
-      unless Level.isEquiv u .zero == some true || idxArgs.contains fv do
+      unless Level.isZero u || idxArgs.contains fv do
         throw (.invalid "direct sum: large eliminator with a non-propositional \
           field outside the indices")
     let rest ← checkStructFieldSortsIFA ops fe isProp large s nP fvs idxArgs j

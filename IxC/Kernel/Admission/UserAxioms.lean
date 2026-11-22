@@ -67,25 +67,28 @@ theorem map_fst_ok_iff {ε α β : Type} {x : Except ε (α × β)} {a : α} :
 /-- **At `strict`, the fold over decoded records is `checkConstantsWith`.** -/
 theorem checkConstantsUnder_strict (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable)
     (pre : Prelude .anon) (constants : List (Address × Ixon.Constant))
-    (blobs : Ix.Kernel.Ingress.Blobs) (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) :
-    Prod.fst <$> checkConstantsUnder .strict hash t pre constants blobs hint =
-      checkConstantsWith hash t pre constants blobs hint := by
+    (blobs : Ix.Kernel.Ingress.Blobs) (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint)
+    (cfg : Ix.Kernel.Cached.FoldConfig := {}) :
+    Prod.fst <$> checkConstantsUnder .strict hash t pre constants blobs hint cfg =
+      checkConstantsWith hash t pre constants blobs hint cfg := by
   unfold checkConstantsUnder checkConstantsWith
   cases hr : readStream hash t pre constants blobs hint with
   | error e => rfl
   | ok p =>
     obtain ⟨ev, decls⟩ := p
     simp only [admitAxiomPolicy, bind, Except.bind, Ix.Kernel.Cached.checkDeclsUnder_strict]
-    cases Ix.Kernel.Cached.checkDecls .verified ev (Ix.Kernel.Frontend.preparePrelude pre.ix decls) <;> rfl
+    cases Ix.Kernel.Cached.checkDecls .verified ev
+      (Ix.Kernel.Frontend.preparePrelude pre.ix decls) cfg <;> rfl
 
 /-- **T1 over decoded records**: an accept under any policy that lists no user
 axiom is `checkConstantsWith`'s accept, with the same environment. -/
 theorem checkConstantsUnder_strict_of_nil {policy : Ix.Kernel.Cached.AxiomPolicy}
     {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
     {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
-    (h : checkConstantsUnder policy hash t pre constants blobs hint = .ok (env, [])) :
-    checkConstantsWith hash t pre constants blobs hint = .ok env := by
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {cfg : Ix.Kernel.Cached.FoldConfig} {env : Ix.Kernel.Env .anon}
+    (h : checkConstantsUnder policy hash t pre constants blobs hint cfg = .ok (env, [])) :
+    checkConstantsWith hash t pre constants blobs hint cfg = .ok env := by
   unfold checkConstantsUnder at h
   unfold checkConstantsWith
   cases hp : admitAxiomPolicy policy t with
@@ -98,12 +101,12 @@ theorem checkConstantsUnder_strict_of_nil {policy : Ix.Kernel.Cached.AxiomPolicy
       simp only [hp, hr, bind, Except.bind] at h
       simp only [bind, Except.bind]
       cases hc : Ix.Kernel.Cached.checkDeclsUnder .verified policy ev
-          (Ix.Kernel.Frontend.preparePrelude pre.ix decls) with
+          (Ix.Kernel.Frontend.preparePrelude pre.ix decls) cfg with
       | error e => simp [hc, Except.mapError] at h
       | ok env' =>
         simp only [hc, Except.mapError, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨rfl, hnil⟩ := h
-        rw [← Ix.Kernel.Cached.checkDeclsUnder_eq_checkDecls .verified policy ev _ hnil, hc]
+        rw [← Ix.Kernel.Cached.checkDeclsUnder_eq_checkDecls_cfg .verified policy ev _ hnil cfg, hc]
         rfl
 
 /-- An accept of `checkConstantsWithUserAxioms` is an accept under `allowUser`. -/
@@ -136,10 +139,10 @@ theorem checkBytesUnder_strict (hash : ByteArray → Address) (binding : Binding
         cases admitBinding hash binding with
         | error e => rfl
         | ok t =>
-          cases decodeRecords limits records with
+          cases decodeWithin limits records with
           | error e => rfl
           | ok constants =>
-            refine (checkConstantsUnder_strict hash t pre constants blobs hint).trans ?_
+            refine (checkConstantsUnder_strict hash t pre constants blobs hint limits.fold).trans ?_
             unfold checkConstantsWith
             show Except.bind (readStream hash t pre constants blobs hint) _ =
               Except.bind (Except.bind (readStream hash t pre constants blobs hint) _) _
@@ -167,7 +170,7 @@ theorem checkBytesUnder_strict_of_nil {policy : Ix.Kernel.Cached.AxiomPolicy}
         cases h4 : admitBinding hash binding with
         | error e => simp [h1, h2, h3, h4, bind, Except.bind, Except.mapError] at h
         | ok t =>
-          cases h5 : decodeRecords limits records with
+          cases h5 : decodeWithin limits records with
           | error e => simp [h1, h2, h3, h4, h5, bind, Except.bind, Except.mapError] at h
           | ok constants =>
             simp only [h1, h2, h3, h4, h5, bind, Except.bind, Except.mapError] at h
@@ -211,9 +214,10 @@ theorem map_bind_eq {ε α β γ : Type} (f : β → γ) (m : Except ε α) {k�
 `checkConstantsTiered`.** -/
 theorem checkConstantsTieredUnder_strict (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable)
     (pre : Prelude .anon) (constants : List (Address × Ixon.Constant))
-    (blobs : Ix.Kernel.Ingress.Blobs) (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) :
-    Prod.fst <$> checkConstantsTieredUnder .strict hash t pre constants blobs hint =
-      checkConstantsTiered hash t pre constants blobs hint := by
+    (blobs : Ix.Kernel.Ingress.Blobs) (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint)
+    (cfg : Ix.Kernel.Cached.FoldConfig := {}) :
+    Prod.fst <$> checkConstantsTieredUnder .strict hash t pre constants blobs hint cfg =
+      checkConstantsTiered hash t pre constants blobs hint cfg := by
   unfold checkConstantsTieredUnder checkConstantsTiered
   generalize partitionTier constants = p
   obtain ⟨logical, tier⟩ := p
@@ -224,8 +228,8 @@ theorem checkConstantsTieredUnder_strict (hash : ByteArray → Address) (t : Ix.
     rfl
   | none =>
     simp only [bind, Except.bind, pure, Except.pure]
-    rw [← checkConstantsUnder_strict hash t pre logical blobs hint]
-    cases checkConstantsUnder .strict hash t pre logical blobs hint with
+    rw [← checkConstantsUnder_strict hash t pre logical blobs hint cfg]
+    cases checkConstantsUnder .strict hash t pre logical blobs hint cfg with
     | error e => rfl
     | ok q =>
       obtain ⟨env, axs⟩ := q
@@ -234,7 +238,7 @@ theorem checkConstantsTieredUnder_strict (hash : ByteArray → Address) (t : Ix.
       | error e => rfl
       | ok tds =>
         try simp only []
-        cases Ix.Kernel.Tier.checkTierC (Ix.Kernel.mkFEnv env) (tds.toList.map (·.2)) with
+        cases Ix.Kernel.Tier.checkTierC (Ix.Kernel.mkFEnv env) (tds.toList.map (·.2)) cfg.core with
         | ok r => obtain ⟨_, ts⟩ := r; rfl
         | error r => obtain ⟨e, k⟩ := r; rfl
 
@@ -244,9 +248,10 @@ theorem checkConstantsTieredUnder_strict_of_nil {policy : Ix.Kernel.Cached.Axiom
     {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
     {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {cfg : Ix.Kernel.Cached.FoldConfig}
     {r : Ix.Kernel.Env .anon × List (TierConst .anon)}
-    (h : checkConstantsTieredUnder policy hash t pre constants blobs hint = .ok (r, [])) :
-    checkConstantsTiered hash t pre constants blobs hint = .ok r := by
+    (h : checkConstantsTieredUnder policy hash t pre constants blobs hint cfg = .ok (r, [])) :
+    checkConstantsTiered hash t pre constants blobs hint cfg = .ok r := by
   unfold checkConstantsTieredUnder at h
   unfold checkConstantsTiered
   generalize partitionTier constants = p at h ⊢
@@ -255,7 +260,7 @@ theorem checkConstantsTieredUnder_strict_of_nil {policy : Ix.Kernel.Cached.Axiom
   | some x => simp [hf, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
   | none =>
     simp only [hf, bind, Except.bind, pure, Except.pure] at h ⊢
-    cases hc : checkConstantsUnder policy hash t pre logical blobs hint with
+    cases hc : checkConstantsUnder policy hash t pre logical blobs hint cfg with
     | error e => simp [hc, Except.mapError] at h
     | ok q =>
       obtain ⟨env, axs⟩ := q
@@ -264,7 +269,7 @@ theorem checkConstantsTieredUnder_strict_of_nil {policy : Ix.Kernel.Cached.Axiom
       | error e => simp [hr] at h
       | ok tds =>
         simp only [hr] at h
-        cases ht : Ix.Kernel.Tier.checkTierC (Ix.Kernel.mkFEnv env) (tds.toList.map (·.2)) with
+        cases ht : Ix.Kernel.Tier.checkTierC (Ix.Kernel.mkFEnv env) (tds.toList.map (·.2)) cfg.core with
         | error e => simp [ht, throw, throwThe, MonadExceptOf.throw] at h
         | ok q' =>
           obtain ⟨fe', ts'⟩ := q'
@@ -287,7 +292,7 @@ theorem checkBytesTieredUsingUnder_strict (prelude : Ix.Kernel.RoleTable → Exc
   refine map_bind_eq _ _ fun t => ?_
   refine map_bind_eq _ _ fun pre => ?_
   refine map_bind_eq _ _ fun constants => ?_
-  exact checkConstantsTieredUnder_strict hash t pre constants blobs hint
+  exact checkConstantsTieredUnder_strict hash t pre constants blobs hint limits.fold
 
 /-- **T1 for the tiered Ixon entry**: an accept under any policy that lists no
 user axiom is `checkBytesTieredUsing`'s accept. -/

@@ -381,7 +381,7 @@ theorem inferPisOutC_sim :
           if mode.verifiedChecks && !(Level.zeronessOf v == pw) then
             throw (.notImplemented
               "sort-annotation mismatch (forall-cod)")
-          pure (.imax u v) >>= fun v' =>
+          internLM (.imax u v) >>= fun v' =>
             inferPisOutI mode rest v' (Level.zeronessOf v))
         (do
           if mode.verifiedChecks && !(Level.zeronessOf v == pw) then
@@ -391,7 +391,7 @@ theorem inferPisOutC_sim :
       dsimp only
       split
       · exact SimC.throw_bind
-      refine SimC.bind_left (pureEq_eff hs (Level.imax u v))
+      refine SimC.bind_left (internLM_eff hs (Level.imax u v))
         (fun s₁ v' hs₁ hv' => ?_)
       subst hv'
       exact ih (stkx := rx) (lv := .imax u v) hs₁ hrest rfl rfl

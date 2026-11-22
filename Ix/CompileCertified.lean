@@ -419,7 +419,8 @@ def compileAndFinalize (source : Lean.Environment)
     (strip : Ixon.Env → Ixon.Env := id) (defaultRoles : Bool := true)
     (prefetch : Bool := false) (binderData : BinderDataMode := .inline)
     (onBinders : Ix.Compile.BinderData.Report → Ixon.Env → IO Unit := fun _ _ => pure ())
-    (modeCheck : ModeChecker := noModeChecker) :
+    (modeCheck : ModeChecker := noModeChecker)
+    (limits : Ix.Kernel.Admission.Limits := Ix.Typing.typingLimits) :
     IO (Except String (CertifiedOut × Finalization)) := do
   let inline := binderData == .inline
   let backend := Ix.RoleBinding.Compile.certifiedBackend workers defaultRoles inline modeCheck
@@ -436,7 +437,7 @@ def compileAndFinalize (source : Lean.Environment)
     try
       let t0 ← IO.monoMsNow
       let artifact ← Ix.RoleBinding.Compile.finalize backend source certSource
-        (.plain constants) out.env Ix.Typing.typingLimits (existing? := out.existing?)
+        (.plain constants) out.env limits (existing? := out.existing?)
         (prefetched? := certificates?) (binderData := inline)
       let tb ← IO.monoMsNow
       log s!"finalize: {tb - t0}ms, rss {← Ix.Cli.residentSetSize}"

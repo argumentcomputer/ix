@@ -27,7 +27,7 @@ def kExpectedOf (rb : BlockRead md) : Option Bool :=
   match rb.types.toList, rb.ctorNames.toList, rb.ctors.toList with
   | [(ty, _, _)], [[_]], [(_, _, nF)] =>
     match ty.type.piResult with
-    | .sort s => some (nF == 0 && Ix.Kernel.Level.isEquiv s .zero == some true)
+    | .sort s => some (nF == 0 && Ix.Kernel.Level.isZero s)
     | _ => none
   | _, _, _ => some false
 

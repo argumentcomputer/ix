@@ -237,24 +237,24 @@ theorem annotDeclStep_ok {mode : CheckMode} {ev : Evidences md}
     obtain ⟨rfl, rfl⟩ := h
     exact ⟨fe', pend', rfl, rfl⟩
 
-/-- **Phase A's step body reads nothing from the memo state**:
+/-- **Phase A's step body reads nothing from the memo caches**:
 every branch of `annotStepC` starts with `resetC` — in
 `annotValueC`, in the theorem branch and in `checkDeclStepC` — so the
-step from any state is the step from the empty one. -/
+step from any state is the step from `s.reset` (which keeps `s.core`). -/
 theorem annotStepC_state_irrel (ev : Evidences md) (i : Nat) (fe : FEnv md)
     (pend : Array (PendingCheck md)) (pd : Declaration md) (s : CState md) :
-    annotStepC mode ev i fe pend pd s = annotStepC mode ev i fe pend pd {} := by
+    annotStepC mode ev i fe pend pd s = annotStepC mode ev i fe pend pd s.reset := by
   unfold annotStepC
   cases pd <;> dsimp only
   all_goals first
     | rfl
     | (split <;> rfl)
 
-/-- **A step of the fold reads nothing from the memo state**: the
+/-- **A step of the fold reads nothing from the memo caches**: the
 state-independence of a step that the locality lemmas start from. -/
 theorem annotDeclStep_state_irrel (ev : Evidences md)
     (p : Nat × FEnv md × Array (PendingCheck md)) (pd : Declaration md) (s : CState md) :
-    annotDeclStep mode ev p pd s = annotDeclStep mode ev p pd {} := by
+    annotDeclStep mode ev p pd s = annotDeclStep mode ev p pd s.reset := by
   unfold annotDeclStep
   rw [annotStepC_state_irrel]
 
@@ -273,15 +273,16 @@ theorem InstallRun.snoc {ev : Evidences md} {ds : List (Declaration md)}
 /-- **An environment properly installed from `ds`**: the index and the
 records phase A produced, with the accepting run that produced them
 from the empty environment and the fresh memo state. -/
-structure InstalledEnv (ev : Evidences md) (ds : List (Declaration md)) where
+structure InstalledEnv (ev : Evidences md) (ds : List (Declaration md))
+    (core : CoreConfig := {}) where
   fe : FEnv md
   pend : Array (PendingCheck md)
   run : ∃ (n : Nat) (s : CState md),
-    InstallRun mode ev ds (0, mkFEnv Env.empty, #[]) {} (n, fe, pend) s
+    InstallRun mode ev ds (0, mkFEnv Env.empty, #[]) { core } (n, fe, pend) s
 
 /-- The environment of an installed environment. -/
-def InstalledEnv.env {ev : Evidences md} {ds : List (Declaration md)}
-    (e : InstalledEnv mode ev ds) : Env md := e.fe.env
+def InstalledEnv.env {ev : Evidences md} {ds : List (Declaration md)} {core : CoreConfig}
+    (e : InstalledEnv mode ev ds core) : Env md := e.fe.env
 
 /-! ## Phase B: check -/
 
@@ -296,7 +297,7 @@ def checkPending (fe : FEnv md) (pc : PendingCheck md) : (CheckCM md) Unit := do
   let jsty ← (coreKnotI mode fe checkFuel).infer 0 pc.vg.cvA.type
   let u ← opSIxC mode fe 0 jsty
   let jv ← if pc.vg.kind = .thm then do
-      unless (← liftFueled "level comparison" (Level.isEquiv u .zero)) do
+      unless Level.isZero u do
         throw (.invalid (Msg.withTerms msg!"type of theorem {pc.vg.cvA.name} is not a proposition"
           [("type", pc.vg.cvA.type)]))
       -- a theorem's value arrives raw: its guards and annotation run
@@ -309,28 +310,29 @@ def checkPending (fe : FEnv md) (pc : PendingCheck md) : (CheckCM md) Unit := do
       [("has type", jvt), ("but is expected to have type", pc.vg.cvA.type)]))
 
 /-- **In a properly installed environment, record `i` has been
-checked**: its check against the prefix view, from a fresh memo state,
-succeeded.  (A declaration without a record was checked in full at its
-install, inside `InstallRun`.) -/
-def GroupChecked {ev : Evidences md} {ds : List (Declaration md)}
-    (e : InstalledEnv mode ev ds) (i : Nat) : Prop :=
+checked**: its check against the prefix view, from a fresh memo state
+at `core`, succeeded.  (A declaration without a record was checked in
+full at its install, inside `InstallRun`.) -/
+def GroupChecked {ev : Evidences md} {ds : List (Declaration md)} {core : CoreConfig}
+    (e : InstalledEnv mode ev ds core) (i : Nat) : Prop :=
   match e.pend[i]? with
-  | some pc => ∃ s', checkPending mode e.fe pc {} = .ok ((), s')
+  | some pc => ∃ s', checkPending mode e.fe pc { core } = .ok ((), s')
   | none => True
 
 /-- **A fully checked environment from `ds`**: properly installed, every
 record checked. -/
-def FullyChecked (ev : Evidences md) (ds : List (Declaration md)) : Type :=
-  { e : InstalledEnv mode ev ds // ∀ i, GroupChecked mode e i }
+def FullyChecked (ev : Evidences md) (ds : List (Declaration md))
+    (core : CoreConfig := {}) : Type :=
+  { e : InstalledEnv mode ev ds core // ∀ i, GroupChecked mode e i }
 
 /-- Properly installed plus every record checked is fully checked. -/
-def FullyChecked.assemble {ev : Evidences md} {ds : List (Declaration md)}
-    (e : InstalledEnv mode ev ds)
-    (h : ∀ i, GroupChecked mode e i) : FullyChecked mode ev ds := ⟨e, h⟩
+def FullyChecked.assemble {ev : Evidences md} {ds : List (Declaration md)} {core : CoreConfig}
+    (e : InstalledEnv mode ev ds core)
+    (h : ∀ i, GroupChecked mode e i) : FullyChecked mode ev ds core := ⟨e, h⟩
 
 /-- The environment of a fully checked environment. -/
-def FullyChecked.env {ev : Evidences md} {ds : List (Declaration md)}
-    (fc : FullyChecked mode ev ds) : Env md := fc.1.fe.env
+def FullyChecked.env {ev : Evidences md} {ds : List (Declaration md)} {core : CoreConfig}
+    (fc : FullyChecked mode ev ds core) : Env md := fc.1.fe.env
 
 /-! ## The records' checks, in the type
 
@@ -341,26 +343,26 @@ time — and these are its three lemmas: a record's check as its
 argument. -/
 
 /-- Record `k`'s check, as its `GroupChecked` fact. -/
-theorem groupChecked_of_run {ev : Evidences md} {ds : List (Declaration md)}
-    (e : InstalledEnv mode ev ds) {k : Nat}
+theorem groupChecked_of_run {ev : Evidences md} {ds : List (Declaration md)} {core : CoreConfig}
+    (e : InstalledEnv mode ev ds core) {k : Nat}
     (hk : k < e.pend.size) {s' : CState md}
-    (h : checkPending mode e.fe e.pend[k] {} = .ok ((), s')) :
+    (h : checkPending mode e.fe e.pend[k] { core } = .ok ((), s')) :
     GroupChecked mode e k := by
   unfold GroupChecked
   rw [Array.getElem?_eq_getElem hk]
   exact ⟨s', h⟩
 
 /-- Beyond the records, nothing is pending. -/
-theorem groupChecked_of_ge {ev : Evidences md} {ds : List (Declaration md)}
-    (e : InstalledEnv mode ev ds) {k : Nat}
+theorem groupChecked_of_ge {ev : Evidences md} {ds : List (Declaration md)} {core : CoreConfig}
+    (e : InstalledEnv mode ev ds core) {k : Nat}
     (hk : e.pend.size ≤ k) : GroupChecked mode e k := by
   unfold GroupChecked
   rw [Array.getElem?_eq_none hk]
   trivial
 
 /-- The accumulator, one record further. -/
-theorem groupChecked_extend {ev : Evidences md} {ds : List (Declaration md)}
-    {e : InstalledEnv mode ev ds} {k : Nat}
+theorem groupChecked_extend {ev : Evidences md} {ds : List (Declaration md)} {core : CoreConfig}
+    {e : InstalledEnv mode ev ds core} {k : Nat}
     (acc : ∀ j, j < k → GroupChecked mode e j) (hk : GroupChecked mode e k) :
     ∀ j, j < k + 1 → GroupChecked mode e j := by
   intro j hj
@@ -372,8 +374,8 @@ theorem groupChecked_extend {ev : Evidences md} {ds : List (Declaration md)}
 
 /-- The closing argument: every record below the size, and nothing
 beyond it. -/
-theorem groupChecked_all {ev : Evidences md} {ds : List (Declaration md)}
-    {e : InstalledEnv mode ev ds}
+theorem groupChecked_all {ev : Evidences md} {ds : List (Declaration md)} {core : CoreConfig}
+    {e : InstalledEnv mode ev ds core}
     (acc : ∀ j, j < e.pend.size → GroupChecked mode e j) : ∀ i, GroupChecked mode e i := by
   intro i
   by_cases hi : i < e.pend.size
@@ -397,28 +399,28 @@ record in fold order.  Nothing here is `IO`. -/
 
 /-- Record `k`'s check: its `GroupChecked` fact, or the error tagged with
 its fold position. -/
-def checkRecord {ev : Evidences md} {ds : List (Declaration md)}
-    (e : InstalledEnv mode ev ds) (k : Nat)
+def checkRecord {ev : Evidences md} {ds : List (Declaration md)} {core : CoreConfig}
+    (e : InstalledEnv mode ev ds core) (k : Nat)
     (hk : k < e.pend.size) : Except (CheckError md × Nat) (PLift (GroupChecked mode e k)) :=
-  match h : checkPending mode e.fe e.pend[k] {} with
+  match h : checkPending mode e.fe e.pend[k] { core } with
   | .ok ((), _) => .ok ⟨groupChecked_of_run mode e hk h⟩
   | .error err => .error (err, e.pend[k].pos)
 
 /-- A checked record: its index with its `GroupChecked` fact — a `Nat`
 at run time. -/
-abbrev CheckedRecord {ev : Evidences md} {ds : List (Declaration md)}
-    (e : InstalledEnv mode ev ds) : Type :=
+abbrev CheckedRecord {ev : Evidences md} {ds : List (Declaration md)} {core : CoreConfig}
+    (e : InstalledEnv mode ev ds core) : Type :=
   { k : Nat // GroupChecked mode e k }
 
 /-- A worker's result for one record: the checked record, or the error
 tagged with the record's fold position. -/
-abbrev RecordResult {ev : Evidences md} {ds : List (Declaration md)}
-    (e : InstalledEnv mode ev ds) : Type :=
+abbrev RecordResult {ev : Evidences md} {ds : List (Declaration md)} {core : CoreConfig}
+    (e : InstalledEnv mode ev ds core) : Type :=
   Except (CheckError md × Nat) (CheckedRecord mode e)
 
 /-- Record `k`'s check as a worker's result. -/
-def checkRecordResult {ev : Evidences md} {ds : List (Declaration md)}
-    (e : InstalledEnv mode ev ds) (k : Nat)
+def checkRecordResult {ev : Evidences md} {ds : List (Declaration md)} {core : CoreConfig}
+    (e : InstalledEnv mode ev ds core) (k : Nat)
     (hk : k < e.pend.size) : RecordResult mode e :=
   match checkRecord mode e k hk with
   | .ok ⟨h⟩ => .ok ⟨k, h⟩
@@ -431,8 +433,8 @@ is therefore `checkPendingList`'s whatever order the results were
 produced in.  A slot that is empty or holds another record's result is
 an internal error (a pool that did not do its job), never a verdict on
 the input. -/
-def collectChecks {ev : Evidences md} {ds : List (Declaration md)}
-    (e : InstalledEnv mode ev ds)
+def collectChecks {ev : Evidences md} {ds : List (Declaration md)} {core : CoreConfig}
+    (e : InstalledEnv mode ev ds core)
     (tab : Array (Option (RecordResult mode e))) :
     (j : Nat) → (∀ i, i < j → GroupChecked mode e i) →
       Except (CheckError md × Nat) (PLift (∀ i, GroupChecked mode e i))
@@ -463,12 +465,13 @@ exception in CLAUDE.md), so they live beside the fold: a `Verify`
 module holding them would enter every capstone's proof closure. -/
 
 /-- Phase B as a pure walk: every record checked from a fresh memo
-state, a failure tagged with the record's fold position. -/
-def checkPendingList (fe : FEnv md) : List (PendingCheck md) → Except (CheckError md × Nat) Unit
-  | [] => .ok ()
-  | pc :: rest =>
-    match checkPending mode fe pc {} with
-    | .ok _ => checkPendingList fe rest
+state at `core`, a failure tagged with the record's fold position. -/
+def checkPendingList (fe : FEnv md) : List (PendingCheck md) → (core : CoreConfig := {}) →
+    Except (CheckError md × Nat) Unit
+  | [], _ => .ok ()
+  | pc :: rest, core =>
+    match checkPending mode fe pc { core } with
+    | .ok _ => checkPendingList fe rest core
     | .error e => .error (e, pc.pos)
 
 /-! ## Phase B on tasks (parallel validation)
@@ -519,12 +522,30 @@ def awaitInOrder {ε : Type} : List (Task (Except ε Unit)) → Except ε Unit
     | .ok () => awaitInOrder ts
     | .error e => .error e
 
+/-- Records per phase-B task under a bound of `w + 1` tasks: enough that `n`
+records make at most `w + 1` chunks, and never fewer than `phaseBChunk`. -/
+def phaseBChunkFor (w n : Nat) : Nat := max phaseBChunk ((n + w) / (w + 1))
+
+/-- The chunk length of phase B's tasks under `workers` (`Admission.Limits.workers`):
+`phaseBChunk` with no bound (one task per 64 records), `phaseBChunkFor` under a bound. -/
+def phaseBChunkLen (workers : Option Nat) (n : Nat) : Nat :=
+  match workers with
+  | some (w + 1) => phaseBChunkFor w n
+  | _ => phaseBChunk
+
 /-- **Phase B on tasks**: the records in chunks, each chunk's walk on a
-task of its own, the verdicts read back in record order. -/
-def checkPendingTasks (fe : FEnv md) (pend : Array (PendingCheck md)) :
+task of its own, the verdicts read back in record order. `workers` bounds the
+tasks: `none`, one per 64 records; `some 0`, none (the walk runs on the calling
+thread); `some w`, at most `w`. The bound is a setting, not a function of the
+input, so a host can fit the threads it may cause into its address space. -/
+def checkPendingTasks (fe : FEnv md) (pend : Array (PendingCheck md))
+    (workers : Option Nat := none) (core : CoreConfig := {}) :
     Except (CheckError md × Nat) Unit :=
-  awaitInOrder ((chunksOf (phaseBChunk - 1) pend.toList).map fun l =>
-    Task.spawn fun _ => checkPendingList mode fe l)
+  match workers with
+  | some 0 => checkPendingList mode fe pend.toList core
+  | _ =>
+    awaitInOrder ((chunksOf (phaseBChunkLen workers pend.size - 1) pend.toList).map fun l =>
+      Task.spawn fun _ => checkPendingList mode fe l core)
 
 /-- A spawned task's value is the function's (`Task.spawn` is `⟨fn ()⟩`). -/
 theorem task_get_spawn {α : Type} (fn : Unit → α) (prio : Task.Priority) :
@@ -532,38 +553,52 @@ theorem task_get_spawn {α : Type} (fn : Unit → α) (prio : Task.Priority) :
 
 /-- The walk over `l₁ ++ l₂` is the walk over `l₁`, then, on success, the
 walk over `l₂`. -/
-theorem checkPendingList_append (fe : FEnv md) :
+theorem checkPendingList_append (fe : FEnv md) (core : CoreConfig) :
     ∀ (l₁ l₂ : List (PendingCheck md)),
-      checkPendingList mode fe (l₁ ++ l₂) =
-        match checkPendingList mode fe l₁ with
-        | .ok () => checkPendingList mode fe l₂
+      checkPendingList mode fe (l₁ ++ l₂) core =
+        match checkPendingList mode fe l₁ core with
+        | .ok () => checkPendingList mode fe l₂ core
         | .error e => .error e
   | [], _ => rfl
   | pc :: rest, l₂ => by
     rw [List.cons_append, checkPendingList, checkPendingList]
-    cases checkPending mode fe pc {} with
-    | ok _ => exact checkPendingList_append fe rest l₂
+    cases checkPending mode fe pc { core } with
+    | ok _ => exact checkPendingList_append fe core rest l₂
     | error e => rfl
 
 /-- Reading back the chunks' walks in order is the walk over their
 concatenation. -/
-theorem awaitInOrder_walks (fe : FEnv md) : ∀ (ls : List (List (PendingCheck md))),
-    awaitInOrder (ls.map fun l => Task.spawn fun _ => checkPendingList mode fe l) =
-      checkPendingList mode fe ls.flatten
+theorem awaitInOrder_walks (fe : FEnv md) (core : CoreConfig) :
+    ∀ (ls : List (List (PendingCheck md))),
+    awaitInOrder (ls.map fun l => Task.spawn fun _ => checkPendingList mode fe l core) =
+      checkPendingList mode fe ls.flatten core
   | [] => rfl
   | l :: ls => by
     rw [List.map_cons, List.flatten_cons, checkPendingList_append, awaitInOrder,
       task_get_spawn]
-    cases checkPendingList mode fe l with
-    | ok u => cases u; exact awaitInOrder_walks fe ls
+    cases checkPendingList mode fe l core with
+    | ok u => cases u; exact awaitInOrder_walks fe core ls
     | error e => rfl
 
 /-- **Phase B on tasks is the walk**: the same verdict, the same first
 failure. -/
-theorem checkPendingTasks_eq (fe : FEnv md) (pend : Array (PendingCheck md)) :
-    checkPendingTasks mode fe pend = checkPendingList mode fe pend.toList := by
+theorem checkPendingTasks_eq (fe : FEnv md) (pend : Array (PendingCheck md))
+    (workers : Option Nat) (core : CoreConfig) :
+    checkPendingTasks mode fe pend workers core = checkPendingList mode fe pend.toList core := by
   unfold checkPendingTasks
-  rw [awaitInOrder_walks, chunksOf_flatten]
+  split
+  · rfl
+  · rw [awaitInOrder_walks, chunksOf_flatten]
+
+/-- **The fold's settings**, set by an entry from its limits
+(`Admission.Limits.fold`): `workers` bounds the tasks phase B runs on
+(`checkPendingTasks`, which changes no verdict: `checkDecls_cfg`), and
+`core` carries the per-declaration core bounds (`CoreConfig.levelBudget`,
+and future configurable core bounds). -/
+structure FoldConfig where
+  workers : Option Nat := none
+  core : CoreConfig := {}
+  deriving Repr, Inhabited
 
 /-- **The declaration fold**: install every record (phase A), check
 every recorded declaration (phase B, on tasks), return the environment.
@@ -579,12 +614,20 @@ which is where `InstallRun` and every lemma above it live; the
 position in the fold, in the frontend's half of the same error type
 the input's LINE number (`IxC/Kernel/Frontend/Export.lean`). -/
 def checkDecls (mode : CheckMode) (ev : Evidences md)
-    (ds : Array (Declaration md)) :
+    (ds : Array (Declaration md)) (cfg : FoldConfig := {}) :
     Except (CheckError md × Nat) (Env md) := do
-  let (p, _) ← (ds.foldlM (annotDeclStep mode ev) (0, mkFEnv Env.empty, #[])) {}
-  checkPendingTasks mode p.2.1 p.2.2
+  let (p, _) ← (ds.foldlM (annotDeclStep mode ev) (0, mkFEnv Env.empty, #[])) { core := cfg.core }
+  checkPendingTasks mode p.2.1 p.2.2 cfg.workers cfg.core
   checkUnits ds
   pure p.2.1.env
+
+/-- **The fold's worker count changes no verdict**: the same result under
+any `workers` setting for the same `core` configuration (phase B's task
+bound changes only how the walk runs, `checkPendingTasks_eq`). -/
+theorem checkDecls_cfg (ev : Evidences md) (ds : Array (Declaration md)) (cfg : FoldConfig) :
+    checkDecls mode ev ds cfg = checkDecls mode ev ds { core := cfg.core } := by
+  unfold checkDecls
+  simp only [checkPendingTasks_eq]
 
 /-- An accepting run is an accepting `foldlM`. -/
 theorem InstallRun.foldlM {ev : Evidences md} {ds : List (Declaration md)}
@@ -620,38 +663,38 @@ theorem InstallRun.of_foldlM {ev : Evidences md} :
       exact .cons hstep (InstallRun.of_foldlM ds p₁ s₁ h)
 
 /-- Every record checked is the walk's accept. -/
-theorem checkPendingList_ok (fe : FEnv md) :
+theorem checkPendingList_ok (fe : FEnv md) (core : CoreConfig := {}) :
     ∀ (l : List (PendingCheck md)),
-      (∀ pc ∈ l, ∃ s', checkPending mode fe pc {} = .ok ((), s')) →
-      checkPendingList mode fe l = .ok ()
+      (∀ pc ∈ l, ∃ s', checkPending mode fe pc { core } = .ok ((), s')) →
+      checkPendingList mode fe l core = .ok ()
   | [], _ => rfl
   | pc :: rest, h => by
     obtain ⟨s', hpc⟩ := h pc List.mem_cons_self
     unfold checkPendingList
     rw [hpc]
-    exact checkPendingList_ok fe rest fun pc' hpc' => h pc' (List.mem_cons_of_mem _ hpc')
+    exact checkPendingList_ok fe core rest fun pc' hpc' => h pc' (List.mem_cons_of_mem _ hpc')
 
 /-- The walk's accept checks every record. -/
-theorem checkPendingList_records (fe : FEnv md) :
-    ∀ (l : List (PendingCheck md)), checkPendingList mode fe l = .ok () →
-      ∀ pc ∈ l, ∃ s', checkPending mode fe pc {} = .ok ((), s')
+theorem checkPendingList_records (fe : FEnv md) (core : CoreConfig := {}) :
+    ∀ (l : List (PendingCheck md)), checkPendingList mode fe l core = .ok () →
+      ∀ pc ∈ l, ∃ s', checkPending mode fe pc { core } = .ok ((), s')
   | [], _, _, hpc => (List.not_mem_nil hpc).elim
   | pc :: rest, h, pc', hpc' => by
     unfold checkPendingList at h
-    cases hchk : checkPending mode fe pc {} with
+    cases hchk : checkPending mode fe pc { core } with
     | error e => rw [hchk] at h; exact nomatch h
     | ok r =>
       obtain ⟨⟨⟩, s'⟩ := r
       rw [hchk] at h
       rcases List.mem_cons.mp hpc' with rfl | hpc'
       · exact ⟨s', hchk⟩
-      · exact checkPendingList_records fe rest h pc' hpc'
+      · exact checkPendingList_records fe core rest h pc' hpc'
 
 /-- Every record of a fully checked environment was checked from a
-fresh memo state. -/
-theorem FullyChecked.records {ev : Evidences md} {ds : List (Declaration md)}
-    (fc : FullyChecked mode ev ds) :
-    ∀ pc ∈ fc.1.pend.toList, ∃ s'', checkPending mode fc.1.fe pc {} = .ok ((), s'') := by
+fresh memo state at `core`. -/
+theorem FullyChecked.records {ev : Evidences md} {ds : List (Declaration md)} {core : CoreConfig}
+    (fc : FullyChecked mode ev ds core) :
+    ∀ pc ∈ fc.1.pend.toList, ∃ s'', checkPending mode fc.1.fe pc { core } = .ok ((), s'') := by
   intro pc hpc
   obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hpc
   have h := fc.2 k
@@ -664,33 +707,35 @@ theorem FullyChecked.records {ev : Evidences md} {ds : List (Declaration md)}
 the driver's loops assembled, `checkDecls` computes — the proof the
 driver returns beside its environment. -/
 theorem fullyChecked_checkDecls {ev : Evidences md} {ds : Array (Declaration md)}
-    (fc : FullyChecked mode ev ds.toList) (hu : checkUnits ds = .ok ()) :
-    checkDecls mode ev ds = .ok fc.env := by
+    {core : CoreConfig} (fc : FullyChecked mode ev ds.toList core)
+    (hu : checkUnits ds = .ok ()) (workers : Option Nat := none) :
+    checkDecls mode ev ds { workers, core } = .ok fc.env := by
   obtain ⟨n, s, r⟩ := fc.1.run
   unfold checkDecls
   rw [← Array.foldlM_toList, r.foldlM]
-  show (checkPendingTasks mode fc.1.fe fc.1.pend >>= fun _ =>
+  show (checkPendingTasks mode fc.1.fe fc.1.pend workers core >>= fun _ =>
     checkUnits ds >>= fun _ => pure fc.1.fe.env) = _
-  rw [checkPendingTasks_eq, checkPendingList_ok mode fc.1.fe fc.1.pend.toList fc.records]
+  rw [checkPendingTasks_eq, checkPendingList_ok mode fc.1.fe core fc.1.pend.toList fc.records]
   show (checkUnits ds >>= fun _ => pure fc.1.fe.env) = _
   rw [hu]
   rfl
 
 /-- **Every accept of the fold is a fully checked environment.** -/
 theorem checkDecls_fullyChecked {ev : Evidences md} {ds : Array (Declaration md)}
-    {env : Env md} (h : checkDecls mode ev ds = .ok env) :
-    ∃ fc : FullyChecked mode ev ds.toList, fc.env = env := by
+    {cfg : FoldConfig} {env : Env md} (h : checkDecls mode ev ds cfg = .ok env) :
+    ∃ fc : FullyChecked mode ev ds.toList cfg.core, fc.env = env := by
   unfold checkDecls at h
   rw [← Array.foldlM_toList] at h
-  cases hrun : (ds.toList.foldlM (annotDeclStep mode ev) (0, mkFEnv Env.empty, #[])) {} with
+  cases hrun : (ds.toList.foldlM (annotDeclStep mode ev) (0, mkFEnv Env.empty, #[]))
+      { core := cfg.core } with
   | error e => rw [hrun] at h; exact nomatch h
   | ok r =>
     obtain ⟨⟨n, fe, pend⟩, s⟩ := r
     rw [hrun] at h
-    change (checkPendingTasks mode fe pend >>= fun _ =>
+    change (checkPendingTasks mode fe pend cfg.workers cfg.core >>= fun _ =>
       checkUnits ds >>= fun _ => pure fe.env) = _ at h
     rw [checkPendingTasks_eq] at h
-    cases hchk : checkPendingList mode fe pend.toList with
+    cases hchk : checkPendingList mode fe pend.toList cfg.core with
     | error e => rw [hchk] at h; exact nomatch h
     | ok u =>
       rw [hchk] at h
@@ -701,28 +746,30 @@ theorem checkDecls_fullyChecked {ev : Evidences md} {ds : Array (Declaration md)
         | ok v => rfl
       rw [hu] at h
       obtain rfl : fe.env = env := Except.ok.inj h
-      let e : InstalledEnv mode ev ds.toList :=
+      let e : InstalledEnv mode ev ds.toList cfg.core :=
         ⟨fe, pend, n, s, InstallRun.of_foldlM mode ds.toList _ _ hrun⟩
       refine ⟨⟨e, fun i => ?_⟩, rfl⟩
       unfold GroupChecked
       cases hi : pend[i]? with
       | none => trivial
       | some pc =>
-        exact checkPendingList_records mode fe pend.toList hchk pc
+        exact checkPendingList_records mode fe cfg.core pend.toList hchk pc
           (List.mem_iff_getElem?.mpr ⟨i, by rw [Array.getElem?_toList]; exact hi⟩)
 
 /-- **An accept of the fold passed the units check** (`checkUnits`). -/
-theorem checkDecls_units {ev : Evidences md} {ds : Array (Declaration md)} {env : Env md}
-    (h : checkDecls mode ev ds = .ok env) : checkUnits ds = .ok () := by
+theorem checkDecls_units {ev : Evidences md} {ds : Array (Declaration md)}
+    {cfg : FoldConfig} {env : Env md}
+    (h : checkDecls mode ev ds cfg = .ok env) : checkUnits ds = .ok () := by
   unfold checkDecls at h
-  cases hrun : (ds.foldlM (annotDeclStep mode ev) (0, mkFEnv Env.empty, #[])) {} with
+  cases hrun : (ds.foldlM (annotDeclStep mode ev) (0, mkFEnv Env.empty, #[]))
+      { core := cfg.core } with
   | error e => rw [hrun] at h; exact nomatch h
   | ok r =>
     obtain ⟨⟨n, fe, pend⟩, s⟩ := r
     rw [hrun] at h
-    change (checkPendingTasks mode fe pend >>= fun _ =>
+    change (checkPendingTasks mode fe pend cfg.workers cfg.core >>= fun _ =>
       checkUnits ds >>= fun _ => pure fe.env) = _ at h
-    cases hchk : checkPendingTasks mode fe pend with
+    cases hchk : checkPendingTasks mode fe pend cfg.workers cfg.core with
     | error e => rw [hchk] at h; exact nomatch h
     | ok u =>
       rw [hchk] at h

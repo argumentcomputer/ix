@@ -64,9 +64,9 @@ theorem nativeShape?_inv {nPd : Nat} {block : List (ConstantInfo md)} {p : Induc
             exact ⟨this.1.2, this.2⟩
           split at h
           · obtain rfl := Option.some.inj h
-            exact ⟨rfl, hcs, hc.1.1, hc.1.2⟩
+            exact ⟨(Level.isEquiv_zero_beq_true _).symm, hcs, hc.1.1, hc.1.2⟩
           · obtain rfl := Option.some.inj h
-            exact ⟨rfl, hcs, hc.1.1, hc.1.2⟩
+            exact ⟨(Level.isEquiv_zero_beq_true _).symm, hcs, hc.1.1, hc.1.2⟩
         · exact nomatch h
     · exact nomatch h
   · exact nomatch h

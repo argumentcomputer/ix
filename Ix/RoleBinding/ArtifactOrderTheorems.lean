@@ -104,8 +104,8 @@ theorem prepareRecordsAt_order {artifact : Ixon.Env} {limits : Limits} {order : 
     · simp [size] at rest
       obtain ⟨⟨records,readConstants⟩,ordered,returned⟩ := except_bind_ok.mp rest
       cases returned
-      refine ⟨size,constants,?_,materializeOrder_sound ordered⟩
-      cases h : decodeRecords limits _ <;> simp_all [Except.mapError]
+      refine ⟨size,constants,decodeWithin_decodeRecords ?_,materializeOrder_sound ordered⟩
+      cases h : decodeWithin limits _ <;> simp_all [Except.mapError]
     · simp [size,throw,throwThe,MonadExceptOf.throw,bind,Except.bind] at rest
 
 /-- The selected records are a permutation of every actual (address,bytes)

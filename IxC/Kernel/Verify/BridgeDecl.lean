@@ -75,6 +75,7 @@ def OpsRel {M₁ M₂ : Type → Type} [Monad M₁] [Monad M₂]
   (∀ env d a b, rel.R (o₁.isDefEq env d a b) (o₂.isDefEq env d a b)) ∧
   (∀ env d e, rel.R (o₁.ensureSort env d e) (o₂.ensureSort env d e)) ∧
   (∀ env d e, rel.R (o₁.whnf env d e) (o₂.whnf env d e)) ∧
+  (∀ u v, rel.R (o₁.leqLevel u v) (o₂.leqLevel u v)) ∧
   (∀ (x₁ : M₁ Bool) (x₂ : M₂ Bool) (k₁ : Option (CheckError md) → M₁ Unit)
       (k₂ : Option (CheckError md) → M₂ Unit),
     rel.R x₁ x₂ → (∀ r, rel.R (k₁ r) (k₂ r)) →
@@ -93,10 +94,11 @@ def pairOps {M₁ M₂ : Type → Type} [Monad M₁] [Monad M₂]
   ensureSort env d e :=
     ⟨(o₁.ensureSort env d e, o₂.ensureSort env d e), h.2.2.2.1 env d e⟩
   whnf env d e := ⟨(o₁.whnf env d e, o₂.whnf env d e), h.2.2.2.2.1 env d e⟩
+  leqLevel u v := ⟨(o₁.leqLevel u v, o₂.leqLevel u v), h.2.2.2.2.2.1 u v⟩
   orElse x k :=
     ⟨(o₁.orElse x.val.1 (fun r => (k r).val.1),
       o₂.orElse x.val.2 (fun r => (k r).val.2)),
-      h.2.2.2.2.2 _ _ _ _ x.property (fun r => (k r).property)⟩
+      h.2.2.2.2.2.2 _ _ _ _ x.property (fun r => (k r).property)⟩
 
 /-- The fueled operations as monotone families. -/
 @[expose] def fueledOpsM (mode : CheckMode) : (CheckerOps md) (FueledM md) where
@@ -110,6 +112,8 @@ def pairOps {M₁ M₂ : Type → Type} [Monad M₁] [Monad M₂]
     ⟨fun F => ensureSortCore mode env F d e, fun hle h => ensureSortCore_mono hle h⟩
   whnf env d e :=
     ⟨fun F => whnf mode env F d e, fun hle h => whnf_mono hle h⟩
+  leqLevel u v :=
+    ⟨fun _ => liftFueled "level comparison" (Level.leq u v), fun _ h => h⟩
   -- the variant-fallback combinator (task #273): monotone because the
   -- result is `Unit` — an attempt that errs at one fuel and matches at
   -- a larger one changes the branch, not the success; the continuation
@@ -135,6 +139,10 @@ def pairOps {M₁ M₂ : Type → Type} [Monad M₁] [Monad M₂]
           | true => cases v; rfl
           | false => exact (k none).property hle h
         | error e' => exact (k none).property hle h⟩
+
+@[simp] theorem fueledOpsM_leqLevel_atF (u v : Level) (F : Nat) :
+    (((fueledOpsM (md := md)) mode).leqLevel u v).val F =
+      ((fueledOps (md := md)) mode F).leqLevel u v := rfl
 
 /-- `fueledOpsM`'s combinator at a fuel, by definition. -/
 @[simp] theorem fueledOpsM_orElse_atF (x : FueledM md Bool)
@@ -207,7 +215,8 @@ noncomputable def wfOpsM (mode : CheckMode) : (CheckerOps md) (FueledM md) where
       ⟨fun F => whnf mode env F d e, fun hle h => whnf_mono hle h⟩
     else ⟨fun _ => throw (.internal "wfOpsM: precondition failed"),
       fun _ h => h⟩
-  -- no precondition: the combinator runs no core body of its own
+  -- no precondition: level comparison and the combinator run no core body
+  leqLevel u v := ((fueledOpsM (md := md)) mode).leqLevel u v
   orElse x k := ((fueledOpsM (md := md)) mode).orElse x k
 
 /-- Over a well-formed environment and a well-scoped argument `wfOpsM mode`
@@ -658,7 +667,7 @@ theorem checkStructFieldSortsI_datF (env : Env md) (isProp large : Bool)
     unfold checkStructFieldSortsI
     simp only [FueledM.atF_bind, FueledM.atF_pure, FueledM.atF_throw,
       FueledM.atF_ite, fueledOpsM_inferType_atF, fueledOpsM_ensureSort_atF,
-      liftFueled_atF, unwrapOr_atF,
+      fueledOpsM_leqLevel_atF, unwrapOr_atF,
       checkStructFieldSortsI_datF env isProp large s nP fvs idxArgs F j]
 
 /-- Official's positivity walk as a normalisation (task #210 Part D)

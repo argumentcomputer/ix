@@ -74,19 +74,24 @@ theorem annotate_const_of_miss {mode : CheckMode} {fe : FEnv md} {f d : Nat}
     Prod.mk.injEq] at h
   exact h.1.symm
 
-/-- The annotation memo of the empty state (`resetC`) is empty. -/
+/-- The annotation memo of a reset state (`resetC`) is empty. -/
+theorem reset_annotC_none (s : CState md) (e : Expr md) :
+    s.reset.annotC[e]? = none := by
+  simp [CState.reset]
+
+/-- The annotation memo of the empty state is empty. -/
 theorem empty_annotC_none (e : Expr md) :
     ({} : CState md).annotC[e]? = none := by
   simp
 
 /-! ## Phase A's header install keeps a bare declared type -/
 
-/-- Phase A's header install, at the empty state, returns the header
+/-- Phase A's header install, at a reset state, returns the header
 with the declared type unchanged when that type is a bare constant. -/
 theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv md}
     {cv cvA : ConstantVal md} {jty : Expr md} {n : Key md} {ls : List Level}
-    {s' : CState md} (hty : cv.type = .const n ls)
-    (h : annotConstantValC mode fe cv ({} : CState md) = .ok ((cvA, jty), s')) :
+    {s₀ s' : CState md} (hty : cv.type = .const n ls)
+    (h : annotConstantValC mode fe cv s₀.reset = .ok ((cvA, jty), s')) :
     cvA = ⟨cv.name, cv.levelParams, .const n ls⟩ := by
   unfold annotConstantValC at h
   by_cases h1 : (fe.find? cv.name).isSome = true
@@ -110,7 +115,7 @@ theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv md}
   obtain ⟨jA, s₁, hann, h⟩ := bindC_ok h
   rw [hty] at hann
   obtain rfl : jA = .const n ls :=
-    annotate_const_of_miss (f := checkFuel - 1) (empty_annotC_none _)
+    annotate_const_of_miss (f := checkFuel - 1) (reset_annotC_none s₀ _)
       (by rw [show checkFuel - 1 + 1 = checkFuel from rfl]; exact hann)
   by_cases h7 : (Expr.allLevelParamsDefinedC cv.levelParams cv.type &&
       Expr.allLevelParamsDefinedC cv.levelParams (Expr.const n ls)) = true
@@ -139,7 +144,7 @@ theorem annotStepC_thm_consts {mode : CheckMode} {i : Nat} {fe : FEnv md}
   simp only [] at h
   obtain ⟨_, s₁, hfl, h⟩ := bindC_ok h
   rw [resetC_run] at hfl
-  have hs₁ : ({} : CState md) = s₁ := congrArg Prod.snd (Except.ok.inj hfl)
+  have hs₁ : s₀.reset = s₁ := congrArg Prod.snd (Except.ok.inj hfl)
   subst hs₁
   obtain ⟨p, s₂, hcv, h⟩ := bindC_ok h
   obtain ⟨cvA, jty⟩ := p
@@ -179,10 +184,11 @@ theorem installRun_thmDecl_const {mode : CheckMode} {ds : List (Declaration md)}
 /-- **The main corollary's ingredient at the stream**: an accepted stream
 that declares a theorem of a bare constant type leaves a constant of
 that type in the environment. -/
-theorem checkDecls_thmDecl_const {mode : CheckMode} {ds : Array (Declaration md)} {env : Env md}
+theorem checkDecls_thmDecl_const {mode : CheckMode} {ds : Array (Declaration md)}
+    {cfg : FoldConfig} {env : Env md}
     {cv : ConstantVal md} {value : Expr md} {n : Key md} {ls : List Level}
     (hty : cv.type = .const n ls) (hmem : Declaration.thmDecl cv value ∈ ds)
-    (h : checkDecls mode ev ds = .ok env) :
+    (h : checkDecls mode ev ds cfg = .ok env) :
     ∃ c ∈ env.consts, c.toConstantVal.type = .const n ls := by
   obtain ⟨fc, rfl⟩ := checkDecls_fullyChecked mode h
   obtain ⟨_, _, run⟩ := fc.1.run
@@ -193,6 +199,16 @@ end Ix.Kernel.Cached
 namespace Ix.Kernel
 
 universe w
+
+/-- **The main corollary, at the stream** (at any `FoldConfig`). -/
+theorem no_False_theorem_accepted_cfg (V : Type w) [SetTheory V]
+    (ds : Array (Declaration md)) (cv : ConstantVal md) (v : Expr md)
+    (hmem : Declaration.thmDecl cv v ∈ ds) (hty : cv.type = .const falseName [])
+    (cfg : Cached.FoldConfig) :
+    ∀ env, Cached.checkDecls .verified ev ds cfg ≠ .ok env := by
+  intro env accepted
+  obtain ⟨c, hc, hcty⟩ := Cached.checkDecls_thmDecl_const hty hmem accepted
+  exact Cached.no_proof_of_False_cached_cfg V rfl accepted c hc hcty
 
 /-- **The main corollary, at the stream.**  A stream that declares a
 theorem of type `False` is never accepted.  Two steps: the record is
@@ -206,9 +222,7 @@ set, which the constant would have to be a member of
 theorem no_False_theorem_accepted (V : Type w) [SetTheory V]
     (ds : Array (Declaration md)) (cv : ConstantVal md) (v : Expr md)
     (hmem : Declaration.thmDecl cv v ∈ ds) (hty : cv.type = .const falseName []) :
-    ∀ env, Cached.checkDecls .verified ev ds ≠ .ok env := by
-  intro env accepted
-  obtain ⟨c, hc, hcty⟩ := Cached.checkDecls_thmDecl_const hty hmem accepted
-  exact Cached.no_proof_of_False_cached V rfl accepted c hc hcty
+    ∀ env, Cached.checkDecls .verified ev ds ≠ .ok env :=
+  no_False_theorem_accepted_cfg V ds cv v hmem hty {}
 
 end Ix.Kernel

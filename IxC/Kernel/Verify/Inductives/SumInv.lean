@@ -171,6 +171,7 @@ theorem checkStructFieldSortsI_inv {env : Env md} {isProp large : Bool}
     · rw [if_pos hnp] at h
       obtain ⟨b, hb, h⟩ := exceptBind_ok h
       have hb' : Level.leq u s = some b := by
+        dsimp only [fueledOps] at hb
         cases hl : Level.leq u s with
         | none =>
           rw [hl] at hb
@@ -194,7 +195,7 @@ theorem checkStructFieldSortsI_inv {env : Env md} {isProp large : Bool}
       have hp : isProp = true := by simpa using hnp
       by_cases hl : large = true
       · rw [if_pos hl] at h
-        by_cases hz : (Level.isEquiv u .zero == some true || idxArgs.contains fv) = true
+        by_cases hz : (Level.isZero u || idxArgs.contains fv) = true
         · rw [if_pos hz] at h
           simp only [pure, Except.pure, bind, Except.bind] at h
           obtain ⟨rest, hrest, h⟩ := exceptBind_ok h
@@ -202,7 +203,8 @@ theorem checkStructFieldSortsI_inv {env : Env md} {isProp large : Bool}
           refine ⟨rest, hrest, h.symm, fun h0 => ?_, fun _ _ => ?_⟩
           · rw [hp] at h0
             exact nomatch h0
-          · exact Bool.or_eq_true_iff.mp hz
+          · rw [Level.isEquiv_zero_beq_true]
+            exact Bool.or_eq_true_iff.mp hz
         · rw [if_neg hz] at h
           close_throw
       · rw [if_neg hl] at h

@@ -116,7 +116,7 @@ on this record.  `isProp` is recomputed so that the recogniser's
 invariant `isProp = (isEquiv resSort zero == some true)` holds by
 definition. -/
 def InductiveShape.withSort (p : InductiveShape md) (s : Level) : InductiveShape md :=
-  { p with resSort := s, isProp := Level.isEquiv s .zero == some true }
+  { p with resSort := s, isProp := Level.isZero s }
 
 @[simp] theorem InductiveShape.withSort_cvT (p : InductiveShape md) (s : Level) :
     (p.withSort s).cvT = p.cvT := rfl
@@ -136,7 +136,7 @@ theorem InductiveShape.withSort_self (p : InductiveShape md)
   | mk cvT ctors nP nIdx cvR elim resSort rhss large isProp =>
     simp only [InductiveShape.withSort]
     simp only at h
-    rw [← h]
+    rw [← Level.isEquiv_zero_beq_true, ← h]
 @[simp] theorem InductiveShape.withSort_cvR (p : InductiveShape md) (s : Level) :
     (p.withSort s).cvR = p.cvR := rfl
 @[simp] theorem InductiveShape.withSort_elim (p : InductiveShape md) (s : Level) :
@@ -148,6 +148,7 @@ theorem InductiveShape.withSort_self (p : InductiveShape md)
 @[simp] theorem InductiveShape.withSort_large (p : InductiveShape md) (s : Level) :
     (p.withSort s).large = p.large := rfl
 @[simp] theorem InductiveShape.withSort_isProp (p : InductiveShape md) (s : Level) :
-    (p.withSort s).isProp = (Level.isEquiv s .zero == some true) := rfl
+    (p.withSort s).isProp = (Level.isEquiv s .zero == some true) :=
+  (Level.isEquiv_zero_beq_true s).symm
 
 end Ix.Kernel

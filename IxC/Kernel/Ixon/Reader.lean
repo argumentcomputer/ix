@@ -974,7 +974,7 @@ def lowerInductiveDecls (st : State md) (rb : BlockRead md) : ReadM (Read md) :=
     match types.toList, ctorNames.toList, ctors.toList with
     | [(ty, _, _)], [[_]], [(_, _, nF)] =>
       match ty.type.piResult with
-      | .sort s => some (nF == 0 && Ix.Kernel.Level.isEquiv s .zero == some true)
+      | .sort s => some (nF == 0 && Ix.Kernel.Level.isZero s)
       | _ => none
     | _, _, _ => some false
   if nested then
@@ -1069,7 +1069,7 @@ def lowerInductiveDeclsBare (rb : BlockRead md) : ReadM (Read md) := do
     match types.toList, ctorNames.toList, ctors.toList with
     | [(ty, _, _)], [[_]], [(_, _, nF)] =>
       match ty.type.piResult with
-      | .sort s => some (nF == 0 && Ix.Kernel.Level.isEquiv s .zero == some true)
+      | .sort s => some (nF == 0 && Ix.Kernel.Level.isZero s)
       | _ => none
     | _, _, _ => some false
   if nested then
@@ -1221,7 +1221,7 @@ def lowerTwin (cx : Ctx md) (twins : Array (ConstRef Address × RecEntry)) : Rea
       match ind.ctors.toList with
       | [ctor] =>
         match ty.piResult with
-        | .sort s => some (ctor.fields.toNat == 0 && Ix.Kernel.Level.isEquiv s .zero == some true)
+        | .sort s => some (ctor.fields.toNat == 0 && Ix.Kernel.Level.isZero s)
         | _ => none
       | _ => some false
     | _, _ => some false

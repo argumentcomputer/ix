@@ -128,10 +128,10 @@ def checkStructFieldSortsI (ops : (CheckerOps md) m) (env : Env md) (isProp larg
     let ty ← ops.inferType env (nP + j) fv.fvarTypeD
     let u ← ops.ensureSort env (nP + j) ty
     if !isProp then
-      unless ← liftFueled "level comparison" (Level.leq u s) do
+      unless ← ops.leqLevel u s do
         throw (.invalid "direct sum: field universe too large")
     else if large then
-      unless Level.isEquiv u .zero == some true || idxArgs.contains fv do
+      unless Level.isZero u || idxArgs.contains fv do
         throw (.invalid "direct sum: large eliminator with a non-propositional \
           field outside the indices")
     let rest ← checkStructFieldSortsI ops env isProp large s nP fvs idxArgs j

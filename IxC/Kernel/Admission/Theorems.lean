@@ -131,20 +131,20 @@ closure does not reach the main theorem (`Ix.Kernel.MainTheorem`). -/
 
 /-- Every accept of the entry, at any hash, role table and prelude, is an
 accept of the verified fold on the prepared declarations, at the evidence
-the reader resolved. -/
+the reader resolved and the entry's fold configuration (`limits.fold`). -/
 theorem checkBytesWith_checkDecls {hash : ByteArray → Address} {binding : Binding} {pre : Prelude .anon}
     {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
     (h : checkBytesWith hash binding pre limits records blobs hint = .ok env) :
     ∃ ev decls, prepareWith hash binding pre limits records blobs hint = .ok (ev, decls) ∧
-      Ix.Kernel.Cached.checkDecls .verified ev decls = .ok env := by
+      Ix.Kernel.Cached.checkDecls .verified ev decls limits.fold = .ok env := by
   unfold checkBytesWith at h
   cases hp : prepareWith hash binding pre limits records blobs hint with
   | error e => simp [hp, bind, Except.bind] at h
   | ok p =>
     obtain ⟨ev, decls⟩ := p
     simp only [hp, bind, Except.bind] at h
-    cases hc : Ix.Kernel.Cached.checkDecls .verified ev decls with
+    cases hc : Ix.Kernel.Cached.checkDecls .verified ev decls limits.fold with
     | error e => simp [hc, Except.mapError] at h
     | ok env' =>
       simp only [hc, Except.mapError, Except.ok.injEq] at h
@@ -159,7 +159,7 @@ theorem checkBytesWith_has_model (V : Type u) [Ix.Kernel.SetTheory V] {hash : By
     (h : checkBytesWith hash binding pre limits records blobs hint = .ok env) :
     Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨ev, decls, _, hc⟩ := checkBytesWith_checkDecls h
-  exact Ix.Kernel.model_exists V ev decls env hc
+  exact Ix.Kernel.model_exists_cfg V ev decls limits.fold env hc
 
 /-- `checkBytesUsing` is `checkBytesWith` at the prelude its source gives the
 admitted table. -/
@@ -207,8 +207,8 @@ the entry (`Ix.Kernel.Admission`). -/
 
 /-- The bytes entry is byte admission (`preflight`, `uniqueKeys`,
 `authenticate`), the role table's admission (`admitBinding`), decoding
-(`decodeRecords`), and then the check of the decoded records under the
-admitted table. -/
+within the depth limit (`decodeWithin`), and then the check of the decoded
+records under the admitted table and fold settings (`limits.fold`). -/
 theorem checkBytesWith_eq (hash : ByteArray → Address) (binding : Binding) (pre : Prelude .anon)
     (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) :
@@ -217,8 +217,8 @@ theorem checkBytesWith_eq (hash : ByteArray → Address) (binding : Binding) (pr
       (uniqueKeys records blobs).mapError Error.ofBytes
       (authenticate hash records blobs).mapError Error.ofBytes
       let t ← (admitBinding hash binding).mapError .binding
-      let constants ← (decodeRecords limits records).mapError Error.ofBytes
-      checkConstantsWith hash t pre constants blobs hint) := by
+      let constants ← (decodeWithin limits records).mapError Error.ofBytes
+      checkConstantsWith hash t pre constants blobs hint limits.fold) := by
   unfold checkBytesWith prepareWith checkConstantsWith
   cases preflight limits records blobs with
   | error e => rfl
@@ -232,7 +232,7 @@ theorem checkBytesWith_eq (hash : ByteArray → Address) (binding : Binding) (pr
         cases admitBinding hash binding with
         | error e => rfl
         | ok t =>
-          cases decodeRecords limits records with
+          cases decodeWithin limits records with
           | error e => rfl
           | ok constants =>
             show (Except.bind (Except.bind (readStream hash t pre constants blobs hint) _) _) =
@@ -244,9 +244,10 @@ gives the table. -/
 theorem checkConstantsUsing_with {hash : ByteArray → Address} {prelude : Ix.Kernel.RoleTable → Except String (Prelude .anon)}
     {t : Ix.Kernel.RoleTable} {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
-    (h : checkConstantsUsing prelude hash t constants blobs hint = .ok env) :
-    ∃ pre, prelude t = .ok pre ∧ checkConstantsWith hash t pre constants blobs hint = .ok env := by
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {cfg : Ix.Kernel.Cached.FoldConfig} {env : Ix.Kernel.Env .anon}
+    (h : checkConstantsUsing prelude hash t constants blobs hint cfg = .ok env) :
+    ∃ pre, prelude t = .ok pre ∧ checkConstantsWith hash t pre constants blobs hint cfg = .ok env := by
   unfold checkConstantsUsing at h
   cases hq : prelude t with
   | error e => simp [hq, bind, Except.bind, Except.mapError] at h
@@ -258,9 +259,10 @@ theorem checkConstantsUsing_with {hash : ByteArray → Address} {prelude : Ix.Ke
 under the table. -/
 theorem checkConstants_with {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable} {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
-    (h : checkConstants hash t constants blobs hint = .ok env) :
-    ∃ pre, preludeFor t = .ok pre ∧ checkConstantsWith hash t pre constants blobs hint = .ok env :=
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {cfg : Ix.Kernel.Cached.FoldConfig} {env : Ix.Kernel.Env .anon}
+    (h : checkConstants hash t constants blobs hint cfg = .ok env) :
+    ∃ pre, preludeFor t = .ok pre ∧ checkConstantsWith hash t pre constants blobs hint cfg = .ok env :=
   checkConstantsUsing_with h
 
 /-- An accepted reading of decoded records is a record-by-record reading
@@ -319,15 +321,16 @@ of that array. -/
 structure Installed (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (env : Ix.Kernel.Env .anon) : Prop where
-  reading : ∃ decls st', StreamRead (streamContext hash t pre constants blobs hint) pre.state constants st' decls ∧
+  reading : ∃ decls st' cfg, StreamRead (streamContext hash t pre constants blobs hint) pre.state constants st' decls ∧
     Ix.Kernel.Cached.checkDecls .verified (evidenceOf (streamContext hash t pre constants blobs hint) st' t)
-      (Ix.Kernel.Frontend.preparePrelude pre.ix decls) = .ok env
+      (Ix.Kernel.Frontend.preparePrelude pre.ix decls) cfg = .ok env
   keys : (constants.map Prod.fst).Nodup
 
 theorem checkConstantsWith_installed {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
     {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env .anon} (h : checkConstantsWith hash t pre constants blobs hint = .ok env) :
+    {cfg : Ix.Kernel.Cached.FoldConfig} {env : Ix.Kernel.Env .anon}
+    (h : checkConstantsWith hash t pre constants blobs hint cfg = .ok env) :
     Installed hash t pre constants blobs hint env := by
   unfold checkConstantsWith at h
   cases hr : readStream hash t pre constants blobs hint with
@@ -335,13 +338,13 @@ theorem checkConstantsWith_installed {hash : ByteArray → Address} {t : Ix.Kern
   | ok p =>
     obtain ⟨ev, decls⟩ := p
     simp only [hr, bind, Except.bind] at h
-    cases hc : Ix.Kernel.Cached.checkDecls .verified ev (Ix.Kernel.Frontend.preparePrelude pre.ix decls) with
+    cases hc : Ix.Kernel.Cached.checkDecls .verified ev (Ix.Kernel.Frontend.preparePrelude pre.ix decls) cfg with
     | error e => simp [hc, Except.mapError] at h
     | ok env' =>
       simp only [hc, Except.mapError, Except.ok.injEq] at h
       subst h
       obtain ⟨st', hs, rfl, -⟩ := readStream_spec hr
-      exact ⟨⟨decls, st', hs, hc⟩, readStream_nodup hr⟩
+      exact ⟨⟨decls, st', cfg, hs, hc⟩, readStream_nodup hr⟩
 
 /-- The installed environment has exactly the install skeletons of the
 accepted array (`Ix.Kernel.Cached.checkDecls_skels`): the same constants,
@@ -354,7 +357,7 @@ theorem Installed.skels {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable}
     ∃ decls st', StreamRead (streamContext hash t pre constants blobs hint) pre.state constants st' decls ∧
       Ix.Kernel.Cached.envSkels env =
         Ix.Kernel.Cached.streamSkels (Ix.Kernel.Frontend.preparePrelude pre.ix decls).toList := by
-  obtain ⟨decls, st', hs, hc⟩ := h.reading
+  obtain ⟨decls, st', _, hs, hc⟩ := h.reading
   exact ⟨decls, st', hs, Ix.Kernel.Cached.checkDecls_skels hc⟩
 
 /-- **Per-record fidelity.** Every definition, theorem, opaque, axiom or
@@ -369,13 +372,13 @@ theorem Installed.singleton {hash : ByteArray → Address} {t : Ix.Kernel.RoleTa
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
     (h : Installed hash t pre constants blobs hint env) {owner : Address} {c : Ixon.Constant}
     (hmem : (owner, c) ∈ constants) (hs : isSingleton c.info = true) :
-    ∃ st decl ev ds, SingletonRead (streamContext hash t pre constants blobs hint) st owner c decl ∧
-      decl ∈ ds ∧ Ix.Kernel.Cached.checkDecls .verified ev ds = .ok env ∧
+    ∃ st decl ev ds cfg, SingletonRead (streamContext hash t pre constants blobs hint) st owner c decl ∧
+      decl ∈ ds ∧ Ix.Kernel.Cached.checkDecls .verified ev ds cfg = .ok env ∧
       ∀ s, declSkel decl = some s → ∃ ci ∈ env.consts, Ix.Kernel.Cached.ciSkel ci = s := by
-  obtain ⟨decls, st', hstream, hc⟩ := h.reading
+  obtain ⟨decls, st', cfg, hstream, hc⟩ := h.reading
   obtain ⟨st, decl, hread, hd⟩ := hstream.singleton hmem hs
   have hd' := Ix.Kernel.Frontend.mem_preparePrelude (pre := pre.ix) hd
-  exact ⟨st, decl, _, _, hread, hd', hc, fun s hsk => checkDecls_installs hc hd' hsk⟩
+  exact ⟨st, decl, _, _, cfg, hread, hd', hc, fun s hsk => Ix.Kernel.Cached.checkDecls_installs_cfg hc hd' hsk⟩
 
 /-! ## Model existence and no proof of `False` -/
 
@@ -384,8 +387,8 @@ theorem Installed.has_model (V : Type u) [Ix.Kernel.SetTheory V] {hash : ByteArr
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Kernel.Env .anon} (h : Installed hash t pre constants blobs hint env) :
     Nonempty (Ix.Kernel.Model V env) := by
-  obtain ⟨decls, _, _, hc⟩ := h.reading
-  exact Ix.Kernel.model_exists V _ _ env hc
+  obtain ⟨decls, _, cfg, _, hc⟩ := h.reading
+  exact Ix.Kernel.model_exists_cfg V _ _ cfg env hc
 
 /-- The model can be chosen so that every stored definition's value denotes
 the constant (the counterpart of Ix's `Realizes.bodyValue` for
@@ -396,22 +399,22 @@ theorem Installed.has_model_values (V : Type u) [Ix.Kernel.SetTheory V] {hash : 
     {env : Ix.Kernel.Env .anon} (h : Installed hash t pre constants blobs hint env) :
     ∃ M : Ix.Kernel.Model V env, ∀ cv value hint', Ix.Kernel.ConstantInfo.defnInfo cv value hint' ∈ env.consts →
       ∀ φ ρ, Ix.Kernel.Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
-  obtain ⟨decls, _, _, hc⟩ := h.reading
-  exact Ix.Kernel.Cached.checkDecls_model_defn_values V _ _ env hc
+  obtain ⟨decls, _, cfg, _, hc⟩ := h.reading
+  exact Ix.Kernel.Cached.checkDecls_model_defn_values_cfg V _ _ cfg env hc
 
 /-- No constant of an accepted environment has `False`'s role key as its
-type (`Ix.Kernel.Cached.no_proof_of_False_cached`); the statement does not
+type (`Ix.Kernel.Cached.no_proof_of_False_cached_cfg`); the statement does not
 depend on the table. -/
 theorem Installed.no_proof_of_False (V : Type u) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable}
     {pre : Prelude .anon} {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Kernel.Env .anon} (h : Installed hash t pre constants blobs hint env) :
     ∀ ci ∈ env.consts, ci.toConstantVal.type = .const (Ix.Kernel.roleKey .false) [] → False := by
-  obtain ⟨decls, _, _, hc⟩ := h.reading
-  exact Ix.Kernel.Cached.no_proof_of_False_cached V rfl hc
+  obtain ⟨decls, _, _, _, hc⟩ := h.reading
+  exact Ix.Kernel.Cached.no_proof_of_False_cached_cfg V rfl hc
 
 /-- No theorem record of an accepted input has a type that reads as
-`False`'s role key: `Ix.Kernel.no_False_theorem_accepted` at the record's
+`False`'s role key: `Ix.Kernel.no_False_theorem_accepted_cfg` at the record's
 reading. -/
 theorem Installed.no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable}
     {pre : Prelude .anon} {constants : List (Address × Ixon.Constant)}
@@ -421,7 +424,7 @@ theorem Installed.no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V] {hash : 
     (hmem : (owner, c) ∈ constants) (hc : c.info = .defn d) (hk : d.kind = .thm)
     (hty : (definitionReader (streamContext hash t pre constants blobs hint) owner c d).read d.typ =
       .ok (.const (Ix.Kernel.roleKey .false) [])) : False := by
-  obtain ⟨decls, st', hstream, hcheck⟩ := h.reading
+  obtain ⟨decls, st', cfg, hstream, hcheck⟩ := h.reading
   obtain ⟨st, decl, hread, hd⟩ := hstream.singleton hmem (by simp [isSingleton, hc])
   cases hread with
   | defn info _ type _ kind =>
@@ -431,8 +434,8 @@ theorem Installed.no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V] {hash : 
     cases type
     rw [hk] at kind
     cases kind
-    exact Ix.Kernel.no_False_theorem_accepted V _ _ _ (Ix.Kernel.Frontend.mem_preparePrelude hd) rfl
-      env hcheck
+    exact Ix.Kernel.no_False_theorem_accepted_cfg V _ _ _ (Ix.Kernel.Frontend.mem_preparePrelude hd) rfl
+      cfg env hcheck
   | axio info => rw [hc] at info; cases info
   | quot info => rw [hc] at info; cases info
 
@@ -466,12 +469,13 @@ theorem checkBytesWith_reading {hash : ByteArray → Address} {binding : Binding
         cases hb : admitBinding hash binding with
         | error e => simp [hf, hu, ha, hb, Except.mapError, bind, Except.bind] at h
         | ok t =>
-          cases hd : decodeRecords limits records with
+          cases hd : decodeWithin limits records with
           | error e => simp [hf, hu, ha, hb, hd, Except.mapError, bind, Except.bind] at h
           | ok constants =>
             simp only [hf, hu, ha, hb, hd, Except.mapError, bind, Except.bind] at h
             have authentic := (Ix.Kernel.Admission.authenticate_ok_iff _ _ _).mp ha
-            have reading := (Ix.Kernel.Admission.decodeRecords_ok_iff _ _ _).mp hd
+            have reading := (Ix.Kernel.Admission.decodeRecords_ok_iff _ _ _).mp
+              (decodeWithin_decodeRecords hd)
             exact ⟨(Ix.Kernel.Admission.preflight_ok_iff _ _ _).mp hf,
               (Ix.Kernel.Admission.uniqueKeys_ok_iff _ _).mp hu, authentic, t, constants,
               (admitBinding_ok_iff _ _ _).mp hb, reading, reading.hashed authentic.1,
@@ -557,11 +561,12 @@ theorem checkBytesWith_no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V]
       cases ha : authenticate hash records blobs with
       | error e => simp [hf, hu, ha, Except.mapError, bind, Except.bind] at h
       | ok w =>
-        cases hd : decodeRecords limits records with
+        cases hd : decodeWithin limits records with
         | error e => simp [hf, hu, ha, ht, hd, Except.mapError, bind, Except.bind] at h
         | ok constants' =>
           simp only [hf, hu, ha, ht, hd, Except.mapError, bind, Except.bind] at h
-          have reading' := (Ix.Kernel.Admission.decodeRecords_ok_iff _ _ _).mp hd
+          have reading' := (Ix.Kernel.Admission.decodeRecords_ok_iff _ _ _).mp
+            (decodeWithin_decodeRecords hd)
           obtain rfl := reading.deterministic reading'
           exact (checkConstantsWith_installed h).no_False_theorem V hmem hc hk hty
 
@@ -689,14 +694,16 @@ theorem checkBytes_no_False_theorem (V : Type u) [Ix.Kernel.SetTheory V]
 theorem checkConstantsWith_has_model (V : Type u) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable}
     {pre : Prelude .anon} {constants : List (Address × Ixon.Constant)}
     {blobs : Ix.Kernel.Ingress.Blobs} {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
-    {env : Ix.Kernel.Env .anon} (h : checkConstantsWith hash t pre constants blobs hint = .ok env) :
+    {cfg : Ix.Kernel.Cached.FoldConfig} {env : Ix.Kernel.Env .anon}
+    (h : checkConstantsWith hash t pre constants blobs hint cfg = .ok env) :
     Nonempty (Ix.Kernel.Model V env) :=
   (checkConstantsWith_installed h).has_model V
 
 theorem checkConstants_has_model (V : Type u) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable}
     {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
-    (h : checkConstants hash t constants blobs hint = .ok env) : Nonempty (Ix.Kernel.Model V env) := by
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {cfg : Ix.Kernel.Cached.FoldConfig} {env : Ix.Kernel.Env .anon}
+    (h : checkConstants hash t constants blobs hint cfg = .ok env) : Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨_, _, hw⟩ := checkConstants_with h
   exact checkConstantsWith_has_model V hw
 
@@ -713,10 +720,11 @@ universe w
 the prelude read under it. -/
 theorem checkConstantsAt_with {hash : ByteArray → Address} {binding : Binding}
     {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
-    (h : checkConstantsAt hash binding constants blobs hint = .ok env) :
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {cfg : Ix.Kernel.Cached.FoldConfig} {env : Ix.Kernel.Env .anon}
+    (h : checkConstantsAt hash binding constants blobs hint cfg = .ok env) :
     ∃ t pre, BindingAdmitted hash binding t ∧ preludeFor t = .ok pre ∧
-      checkConstantsWith hash t pre constants blobs hint = .ok env := by
+      checkConstantsWith hash t pre constants blobs hint cfg = .ok env := by
   unfold checkConstantsAt at h
   cases ht : admitBinding hash binding with
   | error e => simp [ht, bind, Except.bind, Except.mapError] at h
@@ -727,8 +735,9 @@ theorem checkConstantsAt_with {hash : ByteArray → Address} {binding : Binding}
 
 theorem checkConstantsAt_has_model (V : Type w) [Ix.Kernel.SetTheory V] {hash : ByteArray → Address}
     {binding : Binding} {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
-    (h : checkConstantsAt hash binding constants blobs hint = .ok env) :
+    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+    {cfg : Ix.Kernel.Cached.FoldConfig} {env : Ix.Kernel.Env .anon}
+    (h : checkConstantsAt hash binding constants blobs hint cfg = .ok env) :
     Nonempty (Ix.Kernel.Model V env) := by
   obtain ⟨_, _, _, _, hw⟩ := checkConstantsAt_with h
   exact checkConstantsWith_has_model V hw

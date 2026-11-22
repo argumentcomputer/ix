@@ -313,14 +313,30 @@ structure CSOKF (s : CState md) : Prop where
 theorem CSOK.residue {env : Env md} {s : CState md} (h : CSOK mode env s) :
     CSOKF s := ⟨h.lsimp, h.eqv⟩
 
-/-- The empty state satisfies the invariant for any environment. -/
-theorem CSOK.empty (env : Env md) : CSOK mode env ({} : CState md) := by
+/-- A fresh state at any `CoreConfig` satisfies the invariant for any environment. -/
+theorem CSOK.ofCore (env : Env md) (core : CoreConfig) : CSOK mode env ({ core } : CState md) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
     (intros; simp_all)
 
-/-- The empty state carries the residue. -/
-theorem CSOKF.empty : CSOKF ({} : CState md) := by
+/-- The empty state satisfies the invariant for any environment. -/
+theorem CSOK.empty (env : Env md) : CSOK mode env ({} : CState md) :=
+  CSOK.ofCore env {}
+
+/-- A reset state satisfies the invariant for any environment. -/
+theorem CSOK.reset (s : CState md) (env : Env md) : CSOK mode env s.reset :=
+  CSOK.ofCore env s.core
+
+/-- A fresh state at any `CoreConfig` carries the residue. -/
+theorem CSOKF.ofCore (core : CoreConfig) : CSOKF ({ core } : CState md) := by
   refine ⟨?_, ?_⟩ <;> (intros; simp_all)
+
+/-- The empty state carries the residue. -/
+theorem CSOKF.empty : CSOKF ({} : CState md) :=
+  CSOKF.ofCore {}
+
+/-- A reset state carries the residue. -/
+theorem CSOKF.reset (s : CState md) : CSOKF s.reset :=
+  CSOKF.ofCore s.core
 
 /-! ## Flush
 
@@ -347,10 +363,10 @@ theorem CSOKF.flushed {s : CState md} (hs : CSOKF s) : CSOKF s.flushed :=
 /-! ## Reset
 
 `resetC` (the start of every step of the declaration fold)
-replaces the state by the empty one, where the invariant holds
-for any environment (`CSOK.empty`). -/
+drops every memo cache while keeping `core`, so the invariant holds
+for any environment (`CSOK.reset`). -/
 
-theorem resetC_run (s : CState md) : resetC s = .ok ((), ({} : CState md)) := rfl
+theorem resetC_run (s : CState md) : resetC s = .ok ((), s.reset) := rfl
 
 /-! ## The simulation and effect relations -/
 

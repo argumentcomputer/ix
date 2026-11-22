@@ -362,7 +362,7 @@ def genMutual (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         (List.range own.length).all (fun j =>
           (r.rules.getD j default).ctor == (own.getD j default).c.cv.name) do
       throw s!"recursor {r.cv.name}: rules do not list the member's constructors"
-  let isProp := Level.isEquiv u .zero == some true
+  let isProp := Level.isZero u
   if isProp && large then
     throw "Prop block with a large eliminator (the auxiliary family eliminates into Prop only)"
   let ℓ := structElimLevel elim large

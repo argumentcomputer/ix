@@ -172,6 +172,7 @@ structure OpsSim (P : KeyScope md) (f : md.Id → md'.Id) (L : Env md → Env md
     e.Good P → SimV (ops.ensureSort env d e) (ops'.ensureSort env' d (e.mapKeys f))
   whnf : ∀ {env : Env md} {env' : Env md'}, EnvRelG P f L env env' → ∀ d (e : Expr md), e.Good P →
     SimX P f (ops.whnf env d e) (ops'.whnf env' d (e.mapKeys f))
+  leqLevel : ∀ u v, SimV (ops.leqLevel u v) (ops'.leqLevel u v)
   orElse : ∀ (x : CheckM md Bool) (x' : CheckM md' Bool)
     (k : Option (CheckError md) → CheckM md Unit) (k' : Option (CheckError md') → CheckM md' Unit),
     SimV x x' → SimV (k none) (k' none) → SimV (ops.orElse x k) (ops'.orElse x' k')
@@ -185,6 +186,7 @@ theorem fueledOps_sim (mode : CheckMode) (F : Nat) :
   isDefEq hE d _ _ ha hb := (coreKnot_sim mode hE F).defeq d _ _ ha hb
   ensureSort {env} {env'} hE d _ he := ensureSort_sim (env := env) (env' := env') (coreKnot_sim mode hE F) d he
   whnf hE d _ he := (coreKnot_sim mode hE F).whnf d _ he
+  leqLevel _ _ := SimE.liftFueled _ _
   orElse x x' k k' hx hk := by
     show SimV (match x with | .ok true => pure () | _ => k none)
       (match x' with | .ok true => pure () | _ => k' none)

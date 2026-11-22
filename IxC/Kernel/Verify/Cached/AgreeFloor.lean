@@ -1452,7 +1452,7 @@ theorem installRun_skels (mode : CheckMode) {ds : List (Declaration md)}
 /-- **The skeleton spec, at every mode.**  This is the floor's whole
 content since the twin's retirement: one fold, one proof. -/
 theorem checkDecls_skels {mode : CheckMode} {ds : Array (Declaration md)}
-    {env : Env md} (h : checkDecls mode ev ds = .ok env) :
+    {cfg : FoldConfig} {env : Env md} (h : checkDecls mode ev ds cfg = .ok env) :
     envSkels env = streamSkels ds.toList := by
   obtain ⟨fc, rfl⟩ := checkDecls_fullyChecked mode h
   obtain ⟨n, s, r⟩ := fc.1.run

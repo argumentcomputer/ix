@@ -161,6 +161,10 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- move the byte-entry closure from 7067 compiled functions and 28 ruled csimps to 7114 and 29.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
 -- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
+-- Inert compiler-trust handling (`§7.10`) and reflexive mimic fields (`h-nested-binder` / M8)
+-- add 63 compiled functions net (`IxC/Kernel/Audit/Roots.lean`).
+-- Kernel hardening (depth scanner, memoised level/expr walks, `Level.hasParamData`,
+-- `Level.isZero`, and raisable `Limits.levelBudget` / `Level.leqCoreB`) updates counts (refreshed in reconciliation).
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,

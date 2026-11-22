@@ -46,6 +46,8 @@ import Tests.RoleTableWire
 import Tests.Ix.ResourceHints
 import Tests.Ix.ResourceModes
 import Tests.Ix.Kernel.RecordCheck
+import Tests.Ix.Kernel.LevelSharing
+import Tests.Ix.Kernel.Depth
 import Tests.Ix.Kernel.CheckLeanTargets
 import Tests.Ix.Kernel.CheckLeanCli
 import Tests.Ix.Kernel.ValidateReaderCli
@@ -156,6 +158,10 @@ def registry : List Entry := [
   -- the per-root hypotheses and conclusion
   .suite "cert-statement" .primary Tests.Ix.Cert.Statement.suite,
   .suite "kernel-record-check" .primary Tests.Ix.Kernel.RecordCheck.suite,
+  -- levels the ∀ rule shares, memoised level walks, and the level-comparison budget
+  .runner "kernel-level-sharing" .primary Tests.LevelSharing.run,
+  -- stack-safe reduction/record loops, 64-bit Expr hash, and stored/expanded depth limits
+  .runner "kernel-depth" .primary Tests.Ix.Kernel.Depth.run,
   -- the fold and the role table's admission under each axiom policy (user axioms)
   .suite "kernel-user-axioms" .primary Tests.Ix.Kernel.UserAxioms.suite,
   .suite "kernel-check-lean-targets" .primary Tests.Ix.Kernel.CheckLeanTargets.suite,
@@ -223,6 +229,8 @@ def registry : List Entry := [
   -- `ix validate-lean` on Init+Std: compile, serde, projection, reader and
   -- decompile fidelity (reusing `.lake/build/initstd-reference.ixe`)
   .runner "fidelity-initstd" (.ci .landingInitStdCli) Tests.Ix.InitStd.fidelity,
+  -- `kernel-check-ixe --entry user` on Init+Std with every thread on an 8 MiB stack
+  .runner "initstd-stack" (.ci .landingInitStdCli) Tests.Ix.InitStd.stack,
   -- The trusted reader (`prepareWith`) accepts the logical records of the closures
   -- the IxVM suites check (`IxVM.consistent`'s `ReadIn`).
   .env "ixvm-reader-coverage" (.ci .landingInitStdCli) Tests.Ix.Kernel.ReaderCoverage.run,
@@ -279,6 +287,8 @@ def required : List (String × String) := [
   ("role-equations", "primary"),
   ("ixes-manifest", "primary"),
   ("kernel-record-check", "primary"),
+  ("kernel-level-sharing", "primary"),
+  ("kernel-depth", "primary"),
   ("compile-ind-flags", "primary"),
   ("admission-hash-diff", "primary"),
   ("spec-digest-rendering", "primary"),
@@ -302,6 +312,7 @@ def required : List (String × String) := [
   ("kernel-tutorial", "ci:misc"),
   ("initstd-reference", "ci:landing-initstd-cli"),
   ("fidelity-initstd", "ci:landing-initstd-cli"),
+  ("initstd-stack", "ci:landing-initstd-cli"),
   ("ixvm-reader-coverage", "ci:landing-initstd-cli"),
   ("admission-hash-diff-initstd", "ci:nightly"),
   ("exact-sharing-full", "ci:nightly")]

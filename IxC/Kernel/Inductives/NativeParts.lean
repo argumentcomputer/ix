@@ -591,7 +591,7 @@ def nativeShape? (nPd : Nat) (block : List (ConstantInfo md)) : Option (Inductiv
         let s : Level := match cvT.type.stripPis (nP + nIdx) with
           | some (_, .sort s) => s
           | _ => .zero
-        let isProp := Level.isEquiv s .zero == some true
+        let isProp := Level.isZero s
         let ctors := cs.map fun c => (c.1, c.2.2)
         let rhss := rules.map (·.rhs)
         -- WHICH ELIMINATOR the block's recursor is: the LARGE one

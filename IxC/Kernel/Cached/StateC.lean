@@ -115,12 +115,21 @@ def etaCtorShapeC (fe : FEnv md) (e : Expr md) : Bool :=
 
 /-! ## The state -/
 
+/-- Per-declaration configuration of the cached core: settings a caller
+may raise or lower (`Admission.Limits`), carried on `CState` and preserved
+across `resetC` and `flushC`. Future configurable core bounds (such as
+`checkFuel`) join this record. -/
+structure CoreConfig where
+  levelBudget : Nat := Level.defaultLevelBudget
+  deriving Repr, DecidableEq, Inhabited
+
 /-- Per-declaration state: the memo caches for the five entry points,
 the lazy caches for level-instantiated stored constants, the
-level-operation memos, and the bulk-instantiation memo (task #145).
-Each step of the declaration fold starts from the empty state
-(`resetC`), and phase B starts every record from it, so the state lives
-for one declaration.
+level-operation memos, the bulk-instantiation memo (task #145), the
+hash-consing table of the ∀ rule's levels, and the core configuration.
+Each step of the declaration fold starts from a reset state (`resetC`,
+which preserves `core`), and phase B starts every record from `{ core }`,
+so the memo caches live for one declaration.
 
 (The converted-constant cache `ienv` and the
 never-filled `Level.isNonZero` memo `lnzC` were deleted with the reset.
@@ -150,6 +159,13 @@ structure CState (md : Mode) where
   lsimpC : Std.HashMap Level Level := {}
   eqvC : Std.HashMap (Level × Level) Bool := {}
   instC : Std.HashMap (Expr md × List (Expr md) × Nat) (Expr md) := {}
+  /-- **The ∀ rule's levels, hash-consed** (`internLM`): each level the
+  rule has built, mapped to itself. No invariant is kept or needed: a hit
+  is used only after `==` has confirmed it equal to the query. -/
+  lvlIntern : Std.HashMap Level Level := {}
+  /-- Configurable core bounds (`levelBudget`, future `checkFuel`),
+  preserved across `resetC` and `flushC`. -/
+  core : CoreConfig := {}
 
 instance : Inhabited (CState md) := ⟨{}⟩
 
@@ -196,6 +212,28 @@ which is exactly the chained specification's next step. -/
 def peelFuel : Nat := 16777216
 
 @[inline] def peelFuelM : (CheckCM md) Nat := pure peelFuel
+
+/-- How far a binder-telescope loop peels: the binders of `t`'s spine
+(`∀` binders when `pi`, else `λ` binders) before the first residual that
+is closed (`bvarB = 0`: it mentions no binder peeled so far) and is a key
+of `memo`, at most `n`. -/
+def peelFuelTo (pi : Bool) (memo : Std.HashMap (Expr md) (Expr md)) :
+    Nat → Expr md → Nat → Nat
+  | 0, _, acc => acc
+  | n + 1, t, acc =>
+    if t.bvarB == 0 && memo.contains t then acc
+    else match pi, t with
+      | true, .forallE _ b _ => peelFuelTo pi memo n b (acc + 1)
+      | false, .lam _ b _ => peelFuelTo pi memo n b (acc + 1)
+      | _, _ => acc
+
+/-- The peel fuel of a telescope loop over the body `t` of its first
+binder: `peelFuelTo` against the memo its leaf consults (`sel`). It reads
+the state and changes nothing (`peelFuelToM_eff`). -/
+@[inline] def peelFuelToM (pi : Bool) (sel : CState md → Std.HashMap (Expr md) (Expr md))
+    (t : Expr md) : (CheckCM md) Nat := do
+  let s ← get
+  pure (peelFuelTo pi (sel s) peelFuel t 0)
 
 /-- The per-node loose-bvar bound — an `O(1)` field read. -/
 @[inline] def bvarBoundM (e : Expr md) : (CheckCM md) Nat := pure e.bvarB
@@ -260,44 +298,91 @@ comparison is never recomputed within a declaration. -/
     (ls : List Level) : (CheckCM md) (List Level) :=
   pure (ls.map (Level.subst ks us))
 
-/-- Level equivalence with a persistent result cache: simplify both
-sides, compare, then the `leqCore` cascade both ways.
+/-- `simplify` through the state's memo `mp` (`lsimpC`): a hit; else a
+small level by the plain walk, recorded at its root; else the memoised
+walk `Level.simplifyGo` seeded with `mp`, which keeps every node it
+simplifies. -/
+def simplifyMemoC (mp : Std.HashMap Level Level) (u : Level) :
+    Level × Std.HashMap Level Level :=
+  match mp[u]? with
+  | some x => (x, mp)
+  | none =>
+    if Level.sizeLeft Level.smallWalk u != 0 then
+      let x := Level.simplify u; (x, mp.insert u x)
+    else Level.simplifyGo mp u
+
+/-- Structured prose prefix of a level-budget decline message, matched by
+`Ix.Kernel.Host.limitOfCheckError` / `limitOfText` without string formatting
+inside the fold's runtime closure. -/
+def levelBudgetPrefix : String := "level comparison exceeded budget ("
+
+/-- Structured message thrown on level-budget exhaustion (`.internal`). -/
+def levelBudgetMsg (budget : Nat) : Msg md :=
+  [.text levelBudgetPrefix, .nat budget, .text ")"]
+
+/-- Level equivalence with a persistent result cache and per-direction
+work budget (`s.core.levelBudget`): simplify both sides, compare, then
+run `Level.leqCoreB` independently in each direction (short-circuiting on
+`false`, throwing `.internal (levelBudgetMsg b)` on budget exhaustion).
 
 The `l == r` head test is official's `is_equivalent` disjunct
-(`level.cpp:518`) and is what makes the *shared* case —
-the overwhelming majority: the parser hands one object per stream
-level index — cost one pointer compare instead of a
-`(Level × Level)`-keyed memo probe.  It writes no cache entry, so the
-`CSOK.eqv` invariant is untouched. -/
-def isEquivLM (l r : Level) : (CheckCM md) (Option Bool) :=
+(`level.cpp:518`) and costs one pointer compare on shared levels.
+`isEquivLM` deliberately stays faithful to `Level.isEquiv` on every `.ok`
+return (no `.zero` short-circuit via `isZero` here, so `isEquivLM_eff`
+and all `DiscC` proofs remain verbatim). -/
+def isEquivLM (l r : Level) : (CheckCM md) (Option Bool) := do
   if l == r then pure (some true) else
-  modifyGet fun s =>
-    match s.eqvC[(l, r)]? with
-    | some b => (some b, s)
-    | none =>
-      let mp := s.lsimpC
-      let ec := s.eqvC
-      let s := { s with lsimpC := {}, eqvC := {} }
-      let (ls, mp) :=
-        match mp[l]? with
-        | some x => (x, mp)
-        | none => let x := Level.simplify l; (x, mp.insert l x)
-      let (rs, mp) :=
-        match mp[r]? with
-        | some x => (x, mp)
-        | none => let x := Level.simplify r; (x, mp.insert r x)
-      if ls == rs then
-        (some true, { s with lsimpC := mp, eqvC := ec.insert (l, r) true })
-      else
-        match Level.leqCore Level.defaultFuel ls rs 0 with
-        | some false =>
-          (some false, { s with lsimpC := mp, eqvC := ec.insert (l, r) false })
-        | some true =>
-          match Level.leqCore Level.defaultFuel rs ls 0 with
-          | some b =>
-            (some b, { s with lsimpC := mp, eqvC := ec.insert (l, r) b })
-          | none => (none, { s with lsimpC := mp, eqvC := ec })
-        | none => (none, { s with lsimpC := mp, eqvC := ec })
+  let s ← get
+  match s.eqvC[(l, r)]? with
+  | some b => pure (some b)
+  | none =>
+    let mp := s.lsimpC
+    let ec := s.eqvC
+    let budget := s.core.levelBudget
+    let s := { s with lsimpC := {}, eqvC := {} }
+    let (ls, mp) := simplifyMemoC mp l
+    let (rs, mp) := simplifyMemoC mp r
+    if ls == rs then
+      set { s with lsimpC := mp, eqvC := ec.insert (l, r) true }
+      pure (some true)
+    else
+      match Level.leqCoreB budget Level.defaultFuel ls rs 0 with
+      | none => throw (.internal (levelBudgetMsg budget))
+      | some (some false) =>
+        set { s with lsimpC := mp, eqvC := ec.insert (l, r) false }
+        pure (some false)
+      | some (some true) =>
+        match Level.leqCoreB budget Level.defaultFuel rs ls 0 with
+        | none => throw (.internal (levelBudgetMsg budget))
+        | some (some b) =>
+          set { s with lsimpC := mp, eqvC := ec.insert (l, r) b }
+          pure (some b)
+        | some none =>
+          set { s with lsimpC := mp, eqvC := ec }
+          pure none
+      | some none =>
+        set { s with lsimpC := mp, eqvC := ec }
+        pure none
+
+/-- Budgeted one-directional level comparison (`l ≤ r`), for inductive
+field-universe checks outside `isEquivLM` (`SumInstallF`, `Tier/Ind`).
+Throws `.internal (levelBudgetMsg b)` on budget exhaustion and
+`.internal "fuel exhausted: level comparison"` on `defaultFuel` exhaustion. -/
+def isLeqLM (l r : Level) : (CheckCM md) Bool := do
+  let s ← get
+  let mp := s.lsimpC
+  let budget := s.core.levelBudget
+  let s := { s with lsimpC := {} }
+  let (ls, mp) := simplifyMemoC mp l
+  let (rs, mp) := simplifyMemoC mp r
+  match Level.leqCoreB budget Level.defaultFuel ls rs 0 with
+  | none => throw (.internal (levelBudgetMsg budget))
+  | some none =>
+    set { s with lsimpC := mp }
+    throw (.internal "fuel exhausted: level comparison")
+  | some (some b) =>
+    set { s with lsimpC := mp }
+    pure b
 
 /-- Pointwise `isEquivLM`. -/
 def isEquivListLM : List Level → List Level → (CheckCM md) (Option Bool)
@@ -308,6 +393,16 @@ def isEquivListLM : List Level → List Level → (CheckCM md) (Option Bool)
     | some false => pure (some false)
     | some true => isEquivListLM ls rs
   | _, _ => pure (some false)
+
+/-- **The level `l`, hash-consed**: the object of the table equal to `l`
+when there is one, else `l`, now recorded. In the logic it is `l` on
+every branch (a hit is returned only after `==`, which is lawful, has
+confirmed it), so no statement sees it (`internLM_eff`). -/
+@[inline] def internLM (l : Level) : (CheckCM md) Level :=
+  modifyGet fun s =>
+    match s.lvlIntern[l]? with
+    | some l' => if l' == l then (l', s) else (l, s)
+    | none => (l, { s with lvlIntern := s.lvlIntern.insert l l })
 
 /-! ## Lazy stored-constant instantiations -/
 
@@ -378,12 +473,15 @@ def CState.flushed (s : CState md) : CState md :=
 
 def flushC : (CheckCM md) Unit := modify (·.flushed)
 
-/-- Start a declaration from the empty state: the step
-of the declaration fold then reads nothing from the state it is given
+/-- Drop every memo cache while keeping `core`. -/
+def CState.reset (s : CState md) : CState md := { core := s.core }
+
+/-- Start a declaration from a fresh memo state (preserving `core`): the step
+of the declaration fold then reads no memo from the state it is given
 (`annotDeclStep_state_irrel`), and phase A's results depend only on the
-declaration and the index.  The flushes inside a block (an environment
+declaration, the index, and `core`.  The flushes inside a block (an environment
 transition) keep the level memos. -/
-def resetC : (CheckCM md) Unit := set ({} : CState md)
+def resetC : (CheckCM md) Unit := modify (·.reset)
 
 
 /-! ## The parsed-index driver's syntactic guards

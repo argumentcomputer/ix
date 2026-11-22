@@ -713,7 +713,9 @@ entry under the default table. -/
 def natBlobParity (env : Ixon.Env) : IO TestSeq := do
   let some binding := Ix.Kernel.Admission.defaultBinding.toOption
     | return test "the default role table loads" false
-  let limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+  let limits : Ix.Kernel.Admission.Limits :=
+    { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+      maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
   let mut tests := TestSeq.done
   for (label, blob, canonical) in [("[0]", ByteArray.mk #[0], true), ("[42]", ByteArray.mk #[42], true),
       ("[42, 0]", ByteArray.mk #[42, 0], false), ("[]", ByteArray.empty, false)] do

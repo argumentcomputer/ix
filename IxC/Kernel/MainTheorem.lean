@@ -51,6 +51,16 @@ open Ix.Kernel.Cached (checkDecls)
 
 universe w
 
+/-- **The main theorem at any `FoldConfig`.**  Every environment the checker
+accepts under any fold configuration (`workers`, `core.levelBudget`, …) has a
+model in every set theory. -/
+theorem model_exists_cfg {md : Mode} [md.Certified] (V : Type w) [SetTheory V]
+    (ev : Evidences md) (ds : Array (Declaration md)) (cfg : Cached.FoldConfig)
+    (env : Env md) (accepted : checkDecls .verified ev ds cfg = .ok env) :
+    Nonempty (Model V env) := by
+  obtain ⟨m⟩ := Cached.checkDecls_sound_cfg (V := V) rfl accepted
+  exact ⟨Model.Model.ofEnvModelM m⟩
+
 /-- **The main theorem.**  Every environment the checker accepts has a
 model in every set theory — at every role-table evidence `ev`, so
 consistency does not depend on the evidence the install gates are
@@ -61,9 +71,18 @@ ingress's); `.meta`'s verdicts are never reported. -/
 theorem model_exists {md : Mode} [md.Certified] (V : Type w) [SetTheory V]
     (ev : Evidences md) (ds : Array (Declaration md)) (env : Env md)
     (accepted : checkDecls .verified ev ds = .ok env) :
+    Nonempty (Model V env) :=
+  model_exists_cfg V ev ds {} env accepted
+
+/-- **The main theorem for the fold that admits user axioms, without them, at any `FoldConfig`.** -/
+theorem model_exists_of_no_user_axioms_cfg {md : Mode} [md.Certified] (V : Type w) [SetTheory V]
+    (ev : Evidences md) (ds : Array (Declaration md)) (cfg : Cached.FoldConfig)
+    (env : Env md)
+    (accepted : Cached.checkDeclsWithUserAxioms .verified ev ds cfg = .ok env)
+    (hnone : userAxiomsOfDecls ds.toList = []) :
     Nonempty (Model V env) := by
-  obtain ⟨m⟩ := Cached.checkDecls_sound (V := V) rfl accepted
-  exact ⟨Model.Model.ofEnvModelM m⟩
+  rw [Cached.checkDeclsWithUserAxioms_eq_checkDecls .verified ev ds hnone cfg] at accepted
+  exact model_exists_cfg V ev ds cfg env accepted
 
 /-- **The main theorem for the fold that admits user axioms, without them.**
 An accept of `checkDeclsWithUserAxioms` from records that declare no user axiom

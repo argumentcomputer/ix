@@ -70,7 +70,7 @@ mentions a former of the block). -/
 def leanCaps (o : TierIndOut md) (isRec : Bool) (i : Nat) : IndCaps md :=
   match o.types[i]?, o.ctors.filter (·.2.1 == i) with
   | some (_, nIdx, s), [(cvC, _, nF)] =>
-    let isProp := Level.isEquiv s .zero == some true
+    let isProp := Level.isZero s
     { eta := nIdx == 0 && !isProp && !isRec
       etaCtor := some cvC.name
       etaParams := o.numParams
@@ -104,12 +104,13 @@ def AnswerView.pushInd (av : AnswerView md) (o : TierIndOut md) : AnswerView md 
 /-- **A definition block's δ forms**, for a block the tier accepted at `fe`
 (`checkDeclC`): its headers at `fe`, then its values annotated with the block
 installed, each with its hint. -/
-def defsAnswerC (fe : FEnv md) (ms : List (ConstantVal md × Expr md × ReducibilityHint)) :
+def defsAnswerC (fe : FEnv md) (ms : List (ConstantVal md × Expr md × ReducibilityHint))
+    (core : CoreConfig := {}) :
     Except (CheckError md) (List (ConstantInfo md)) := do
-  let hs ← headersC fe (ms.map fun (cv, v, _) => (cv, v))
+  let hs ← headersC fe (ms.map fun (cv, v, _) => (cv, v)) core
   let fe' := pushHeaders fe hs
   mapC (fun (cvA, (_, v, h)) => do
-      let jv ← runC (annotValC .verified fe' cvA v)
+      let jv ← runC (annotValC .verified fe' cvA v) core
       pure (ConstantInfo.defnInfo cvA jv h)) (hs.zip ms)
 
 end Ix.Kernel.Tier

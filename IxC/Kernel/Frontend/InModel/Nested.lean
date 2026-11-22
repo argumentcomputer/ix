@@ -965,7 +965,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
   unless pending.isEmpty do
     throw s!"the container groups form a cycle: {pending.map (·.tags)}"
   let _ := groupOf
-  let isProp := Level.isEquiv u .zero == some true
+  let isProp := Level.isZero u
   if isProp && large then
     throw "Prop block with a large eliminator (the auxiliary family eliminates into Prop only)"
   let ℓ := structElimLevel elim large
@@ -1203,7 +1203,7 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
     let cRec := fun (k : Nat) (ℓe : Level) => do
       let some rn := g.recNames[k]? | throw s!"container group {g.tags}: no recursor {k}"
       pure (Expr.const rn ((if g.large then [ℓe] else []) ++ g.lv))
-    if !g.large && !(Level.isEquiv u .zero == some true) then
+    if !g.large && !Level.isZero u then
       throw s!"container of group {g.tags} eliminates into Prop only but the block is not Prop"
     let pinsAt := fun (o : Nat) => (carrM (mems.getD (g.tags.getD 0 0) default) o []).getAppArgs.take g.nPI
     let inGroup := fun (k : Option Nat) => match k with

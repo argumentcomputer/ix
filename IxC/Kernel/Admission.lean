@@ -64,6 +64,11 @@ namespace Ix.Kernel.Admission
 open Ix.Kernel (ConstRef)
 open Ix.Kernel.Reader
 
+/-- The fold's settings from the entry's limits: phase B's task bound and
+the cached core's configurable bounds (`levelBudget`). -/
+def Limits.fold (l : Limits) : Ix.Kernel.Cached.FoldConfig :=
+  { workers := l.workers, core := { levelBudget := l.levelBudget } }
+
 /-- **The role table as the entry receives it**: the binding section's
 bytes, under the address a claim commits to. -/
 structure Binding where
@@ -188,7 +193,7 @@ def prepareWith (hash : ByteArray → Address) (binding : Binding) (pre : Prelud
   (uniqueKeys records blobs).mapError Error.ofBytes
   (authenticate hash records blobs).mapError Error.ofBytes
   let t ← (admitBinding hash binding).mapError .binding
-  let constants ← (decodeRecords limits records).mapError Error.ofBytes
+  let constants ← (decodeWithin limits records).mapError Error.ofBytes
   let (ev, decls) ← readStream hash t pre constants blobs hint
   pure (ev, Ix.Kernel.Frontend.preparePrelude pre.ix decls)
 
@@ -241,7 +246,7 @@ def checkBytesWith (hash : ByteArray → Address) (binding : Binding) (pre : Pre
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except Error (Ix.Kernel.Env .anon) := do
   let (ev, decls) ← prepareWith hash binding pre limits records blobs hint
-  (Ix.Kernel.Cached.checkDecls .verified ev decls).mapError
+  (Ix.Kernel.Cached.checkDecls .verified ev decls limits.fold).mapError
     fun (e, i) => .kernel e i
 
 /-- `checkBytes` over a source of preludes: the prelude for the admitted
@@ -277,28 +282,44 @@ caller that starts here vouches for its keys and its table; `hash` keys the
 block members whose projection records the input omits. -/
 def checkConstantsWith (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none)
+    (cfg : Ix.Kernel.Cached.FoldConfig := {}) :
     Except Error (Ix.Kernel.Env .anon) := do
   let (ev, decls) ← readStream hash t pre constants blobs hint
-  (Ix.Kernel.Cached.checkDecls .verified ev (Ix.Kernel.Frontend.preparePrelude pre.ix decls)).mapError
+  (Ix.Kernel.Cached.checkDecls .verified ev (Ix.Kernel.Frontend.preparePrelude pre.ix decls) cfg).mapError
     fun (e, i) => .kernel e i
+
+/-- The fold's worker count changes no verdict of `checkConstantsWith` (`Cached.checkDecls_cfg`). -/
+theorem checkConstantsWith_cfg (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable)
+    (pre : Prelude .anon) (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (cfg : Ix.Kernel.Cached.FoldConfig) :
+    checkConstantsWith hash t pre constants blobs hint cfg =
+      checkConstantsWith hash t pre constants blobs hint { core := cfg.core } := by
+  unfold checkConstantsWith
+  cases readStream hash t pre constants blobs hint with
+  | error e => rfl
+  | ok p =>
+    simp only [bind, Except.bind]
+    rw [Ix.Kernel.Cached.checkDecls_cfg _ _ _ cfg]
 
 /-- `checkConstantsWith` under a role table, behind the prelude `prelude t`. -/
 def checkConstantsUsing (prelude : Ix.Kernel.RoleTable → Except String (Prelude .anon))
     (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (constants : List (Address × Ixon.Constant))
     (blobs : Ix.Kernel.Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none)
+    (cfg : Ix.Kernel.Cached.FoldConfig := {}) :
     Except Error (Ix.Kernel.Env .anon) := do
   let pre ← (prelude t).mapError Error.prelude
-  checkConstantsWith hash t pre constants blobs hint
+  checkConstantsWith hash t pre constants blobs hint cfg
 
 /-- `checkConstantsWith` under a role table, behind the committed prelude read
 under it. -/
 def checkConstants (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (constants : List (Address × Ixon.Constant))
     (blobs : Ix.Kernel.Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none)
+    (cfg : Ix.Kernel.Cached.FoldConfig := {}) :
     Except Error (Ix.Kernel.Env .anon) :=
-  checkConstantsUsing preludeFor hash t constants blobs hint
+  checkConstantsUsing preludeFor hash t constants blobs hint cfg
 
 /-- `checkConstants` under a role table's section: the table admitted
 (`admitBinding`: authentic under `hash`, canonical, well formed), then
@@ -306,10 +327,11 @@ def checkConstants (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (con
 (`Ixon.Projection`) ends in it. -/
 def checkConstantsAt (hash : ByteArray → Address) (binding : Binding)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none)
+    (cfg : Ix.Kernel.Cached.FoldConfig := {}) :
     Except Error (Ix.Kernel.Env .anon) := do
   let t ← (admitBinding hash binding).mapError .binding
-  checkConstants hash t constants blobs hint
+  checkConstants hash t constants blobs hint cfg
 
 /-- The default role table's section, under the address the generator
 committed it at (`RoleData.tableAddress`, BLAKE3 of its bytes). For tests and
@@ -409,19 +431,38 @@ and the user axioms it is conditional on (`preparedUserAxioms`, empty under
 def checkConstantsUnder (policy : Ix.Kernel.Cached.AxiomPolicy) (hash : ByteArray → Address)
     (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
-    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none)
+    (cfg : Ix.Kernel.Cached.FoldConfig := {}) :
     Except Error (Ix.Kernel.Env .anon × List (Ix.Kernel.ConstantVal .anon)) := do
   admitAxiomPolicy policy t
   let (ev, decls) ← readStream hash t pre constants blobs hint
   let ds := Ix.Kernel.Frontend.preparePrelude pre.ix decls
-  let env ← (Ix.Kernel.Cached.checkDeclsUnder .verified policy ev ds).mapError
+  let env ← (Ix.Kernel.Cached.checkDeclsUnder .verified policy ev ds cfg).mapError
     fun (e, i) => .kernel e i
   pure (env, preparedUserAxioms ds)
 
+/-- The fold's worker count changes no verdict of `checkConstantsUnder` (`Cached.checkDeclsUnder_cfg`). -/
+theorem checkConstantsUnder_cfg (policy : Ix.Kernel.Cached.AxiomPolicy) (hash : ByteArray → Address)
+    (t : Ix.Kernel.RoleTable) (pre : Prelude .anon) (constants : List (Address × Ixon.Constant))
+    (blobs : Ix.Kernel.Ingress.Blobs) (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint)
+    (cfg : Ix.Kernel.Cached.FoldConfig) :
+    checkConstantsUnder policy hash t pre constants blobs hint cfg =
+      checkConstantsUnder policy hash t pre constants blobs hint { core := cfg.core } := by
+  unfold checkConstantsUnder
+  cases admitAxiomPolicy policy t with
+  | error e => rfl
+  | ok _ =>
+    simp only [bind, Except.bind]
+    cases readStream hash t pre constants blobs hint with
+    | error e => rfl
+    | ok p =>
+      dsimp only
+      rw [Ix.Kernel.Cached.checkDeclsUnder_cfg _ _ _ _ cfg]
+
 /-- **The bytes entry under an axiom policy**: `checkBytesWith`'s byte
 admission (`checkBytesWith_eq`: the batch limits, key uniqueness,
-authentication, the role table's admission, canonical decoding), then
-`checkConstantsUnder`. -/
+authentication, the role table's admission, canonical decoding within
+the depth limit), then `checkConstantsUnder`. -/
 def checkBytesUnder (policy : Ix.Kernel.Cached.AxiomPolicy) (hash : ByteArray → Address)
     (binding : Binding) (pre : Prelude .anon)
     (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
@@ -431,8 +472,8 @@ def checkBytesUnder (policy : Ix.Kernel.Cached.AxiomPolicy) (hash : ByteArray �
   (uniqueKeys records blobs).mapError Error.ofBytes
   (authenticate hash records blobs).mapError Error.ofBytes
   let t ← (admitBinding hash binding).mapError .binding
-  let constants ← (decodeRecords limits records).mapError Error.ofBytes
-  checkConstantsUnder policy hash t pre constants blobs hint
+  let constants ← (decodeWithin limits records).mapError Error.ofBytes
+  checkConstantsUnder policy hash t pre constants blobs hint limits.fold
 
 /-- `checkBytesWith` with user axioms admitted: the environment of
 `checkBytesUnder .allowUser`, which also lists the user axioms the accept is

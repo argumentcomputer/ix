@@ -112,11 +112,11 @@ travels beside the walk, as in `installRun_model`. -/
 theorem installRun_ref {V : Type w} [SetTheory V] (hμ : μ.verifiedChecks = true)
     {ds : List (Declaration md)}
     {p : Nat × FEnv md × Array (PendingCheck md)} {s : CState md}
-    {q : Nat × FEnv md × Array (PendingCheck md)} {s' : CState md}
+    {q : Nat × FEnv md × Array (PendingCheck md)} {s' : CState md} {core : CoreConfig}
     (hrun : InstallRun μ ev ds p s q s') :
     p.2.1 = mkFEnv p.2.1.env → EnvModelOk V μ p.2.1.env →
     NodupNames q.2.1.env →
-    (∀ pc ∈ q.2.2.toList, ∃ s'', checkPending μ q.2.1 pc {} = .ok ((), s'')) →
+    (∀ pc ∈ q.2.2.toList, ∃ s'', checkPending μ q.2.1 pc { core } = .ok ((), s'')) →
     ∃ F, ds.foldlM (checkDecl μ (fueledOps μ F) ev) p.2.1.env = .ok q.2.1.env := by
   induction hrun with
   | nil p s => exact fun _ _ _ _ => ⟨0, rfl⟩
@@ -138,11 +138,12 @@ theorem installRun_ref {V : Type w} [SetTheory V] (hμ : μ.verifiedChecks = tru
     exact checkDeclsFrom_mono (Nat.le_max_right F₁ F₂) hF₂
 
 /-- **The executed fold refines the reference fold**: an
-accept of `Cached.checkDecls` is a reference accept of the same
+accept of `Cached.checkDecls` (at any `FoldConfig`) is a reference accept of the same
 environment. The set theory is a hypothesis of the walk, not of the
 statement's meaning (see `installRun_ref`). -/
 theorem checkDecls_refines_ref (V : Type w) [SetTheory V] (hμ : μ.verifiedChecks = true)
-    {ds : Array (Declaration md)} {env : Env md} (h : checkDecls μ ev ds = .ok env) :
+    {ds : Array (Declaration md)} {cfg : FoldConfig} {env : Env md}
+    (h : checkDecls μ ev ds cfg = .ok env) :
     AcceptsRef μ ev ds.toList env := by
   obtain ⟨fc, rfl⟩ := checkDecls_fullyChecked μ h
   obtain ⟨n, s, r⟩ := fc.1.run

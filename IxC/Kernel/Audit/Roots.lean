@@ -742,6 +742,9 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.UserAxioms.Mode
 -- `Constant.modesCanonical`. From 3708 compiled functions to 3689; externs unchanged.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (26 -> 29).
 -- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`17 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
+-- Kernel hardening (memoised level walks, `Expr.hashW`, `Level.beqPtr`,
+-- `Level.hasParamData`, `Level.isZero`, budgeted `Level.leqCoreB` / `FoldConfig`,
+-- and the depth-limited byte/record reader) updates counts (refreshed in reconciliation).
 /-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 4685 compiled functions; inherited externs 67, implemented_by 0, unsafe 38, csimp 6; ruled computed_field 29, implemented_by 1, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
@@ -782,6 +785,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Ker
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (8 -> 11).
 -- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
+-- Kernel hardening (`Level.hasParamData`, memoised level/expr helpers, and reader/codec updates) updates counts (refreshed in reconciliation).
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
  Ix.Kernel.Admission.readStream]: 2702 compiled functions; inherited externs 91, implemented_by 0, unsafe 41, csimp 2; ruled computed_field 29, implemented_by 1, csimp 11 -/
 #guard_msgs (whitespace := lax) in
@@ -824,6 +828,8 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 -- unchanged.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
 -- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
+-- Kernel hardening (depth scanner, memoised level/expr walks, `Level.hasParamData`,
+-- `Level.isZero`, and raisable `Limits.levelBudget` / `Level.leqCoreB`) updates counts (refreshed in reconciliation).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
@@ -895,6 +901,8 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- unchanged.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
 -- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
+-- Kernel hardening (depth scanner, memoised level/expr walks, `Level.hasParamData`,
+-- `Level.isZero`, and raisable `Limits.levelBudget` / `Level.leqCoreB`) updates counts (refreshed in reconciliation).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
  Ix.Kernel.Admission.checkConstantsTiered]: 8328 compiled functions; inherited externs 114, implemented_by 0, unsafe 41, csimp 8; ruled computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
@@ -931,6 +939,8 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Tier] Ix.Kernel
 -- unchanged.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
 -- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
+-- Kernel hardening (depth scanner, memoised level/expr walks, `Level.hasParamData`,
+-- `Level.isZero`, and raisable `Limits.levelBudget` / `Level.leqCoreB`) updates counts (refreshed in reconciliation).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesWithUserAxioms,
  Ix.Kernel.Admission.checkConstantsWithUserAxioms,
  Ix.Kernel.Admission.checkBytesTieredUsingWithUserAxioms,
@@ -1100,11 +1110,11 @@ fun hash constants =>
     ∀ {owner : Address} {c : Ixon.Constant},
       (owner, c) ∈ constants →
         Ix.Kernel.Reader.isSingleton c.info = true →
-          ∃ st decl ev ds,
+          ∃ st decl ev ds cfg,
             Ix.Kernel.Reader.SingletonRead (Ix.Kernel.Admission.streamContext hash t pre constants blobs hint) st owner
                 c decl ∧
               decl ∈ ds ∧
-                Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified ev ds = Except.ok env ∧
+                Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified ev ds cfg = Except.ok env ∧
                   ∀ (s : Ix.Kernel.Cached.InstallSkel Ix.Kernel.Mode.anon),
                     Ix.Kernel.Cached.declSkel decl = some s → ∃ ci, ci ∈ env.consts ∧ Ix.Kernel.Cached.ciSkel ci = s -/
 #guard_msgs (whitespace := lax) in

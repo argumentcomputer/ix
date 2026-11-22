@@ -86,6 +86,7 @@ def sharedOpsC (fe : FEnv md) : (CheckerOps md) (CheckCM md) where
   isDefEq _ d a b := opB mode fe d a b
   ensureSort _ d e := opS mode fe d e
   whnf _ d e := opE mode fe (·.whnf) d e
+  leqLevel u s := isLeqLM u s
   -- the executable's instantiation delivers the attempt's outcome to
   -- the continuation (the decline message names what each pin variant
   -- failed on); after an error the state is the PRE-attempt one — the

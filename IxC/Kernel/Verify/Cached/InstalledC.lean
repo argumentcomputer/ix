@@ -208,23 +208,14 @@ theorem checkPending_run (hμ : μ.verifiedChecks = true) {env : Env md} (henv :
         isDefEqCore_mono (Nat.le_max_right _ _) hF₄⟩
   by_cases hk : pc.vg.kind = .thm
   · rw [if_pos hk] at h
-    obtain ⟨b, s₄, hlift, h⟩ := bindC_ok h
-    obtain ⟨hs₄, b', rfl, F₀, hF₀⟩ := SimC.liftFueled _ _ hs₃ b s₄ hlift
-    rw [liftFueled_atF] at hF₀
-    cases heqv : Level.isEquiv u .zero with
-    | none => rw [heqv] at hF₀; exact nomatch hF₀
-    | some b₀ =>
-    rw [heqv] at hF₀
-    simp only [liftFueled, pure, Except.pure, Except.ok.injEq] at hF₀
-    subst hF₀
-    cases b₀ with
-    | false =>
-      simp only [Bool.false_eq_true, ↓reduceIte] at h
+    by_cases hz : Level.isZero u = true
+    case neg =>
+      simp only [if_neg hz] at h
       exact absurd h throwC_bind_ok
-    | true =>
-    simp only [↓reduceIte] at h
+    simp only [if_pos hz] at h
+    have heqv : Level.isEquiv u .zero = some true := Level.isEquiv_zero_of_isZero hz
     obtain ⟨jv, s₅, hval, h⟩ := bindC_ok h
-    obtain ⟨hs₅, hwjv, F₃, hV⟩ := annotValC_run hμ henv hs₄ hval
+    obtain ⟨hs₅, hwjv, F₃, hV⟩ := annotValC_run hμ henv hs₃ hval
     obtain ⟨hres', F₅, jvt, hvt, hde⟩ := tail jv hs₅ hwjv h
     refine ⟨hres', max (max (max F₁ F₂) F₃) F₅, ?_⟩
     exact checkValueGroup_of_facts (jv := jv)
@@ -256,10 +247,10 @@ theorem annotValueC_run (hμ : μ.verifiedChecks = true) {env : Env md} (henv : 
   obtain ⟨u₀, s₁, hreset, h⟩ := bindC_ok h
   rw [resetC_run] at hreset
   injection hreset with hreset
-  obtain rfl : ({} : CState md) = s₁ := congrArg Prod.snd hreset
+  obtain rfl : s₀.reset = s₁ := congrArg Prod.snd hreset
   obtain ⟨pr, s₂, hcv, h⟩ := bindC_ok h
   obtain ⟨cvA', jty'⟩ := pr
-  obtain ⟨hs₂, hcvA, hwty, F₁, hI⟩ := annotConstantValC_run hμ henv (CSOK.empty env) hcv
+  obtain ⟨hs₂, hcvA, hwty, F₁, hI⟩ := annotConstantValC_run hμ henv (CSOK.reset s₀ env) hcv
   obtain ⟨jv', s₃, hv, h⟩ := bindC_ok h
   obtain ⟨hs₃, hwv, F₂, hV⟩ := annotValC_run hμ henv hs₂ hv
   obtain ⟨hv, rfl⟩ := pureC_ok h
@@ -312,6 +303,7 @@ environment, from a fresh memo state — is what the model step consumes. -/
 theorem annotStepC_model (hμ : μ.verifiedChecks = true)
     {i : Nat} {fe fe₁ : FEnv md} {pend pend₁ : Array (PendingCheck md)} {pd : Declaration md}
     {s s₁ : CState md} {q : Nat × FEnv md × Array (PendingCheck md)} {new₁ : List (PendingCheck md)}
+    {core : CoreConfig}
     (hfe : fe = mkFEnv fe.env) (hfe₁ : fe₁ = mkFEnv fe₁.env)
     (hm : EnvModelOk V μ fe.env)
     (hanc : pd.anchorMismatch? = none)
@@ -319,7 +311,7 @@ theorem annotStepC_model (hμ : μ.verifiedChecks = true)
     (hchainF : PushChain fe₁.env q.2.1)
     (hpend₁ : q.2.2.toList = pend₁.toList ++ new₁)
     (hnd : NodupNames q.2.1.env)
-    (hB : ∀ pc ∈ q.2.2.toList, ∃ s'', checkPending μ q.2.1 pc {} = .ok ((), s'')) :
+    (hB : ∀ pc ∈ q.2.2.toList, ∃ s'', checkPending μ q.2.1 pc { core } = .ok ((), s'')) :
     EnvModelOk V μ fe₁.env ∧ CSOKF s₁ ∧
       ∃ F, checkDecl μ (fueledOps μ F) ev fe.env pd = .ok fe₁.env := by
     obtain ⟨⟨mp⟩, hE⟩ := hm
@@ -367,7 +359,7 @@ theorem annotStepC_model (hμ : μ.verifiedChecks = true)
           (new := newF ++ [mk cvA jv]) (by rw [hnewF, List.append_assoc]; rfl)
       obtain ⟨-, F₂, hC⟩ := checkPending_run hμ henv
         (pc := ⟨⟨kind, cvA, jv⟩, i, fe.visibleBelow⟩) (by rw [hvis]; exact hfind)
-        hwty hwv CSOKF.empty hchk
+        hwty hwv (CSOKF.ofCore core) hchk
       -- the two halves are the declaration's check
       obtain ⟨F', hF⟩ := hsplit F₂ hC
       have hm₁ : EnvModelOk V μ (fe.push (mk cvA jv)).env :=
@@ -416,12 +408,12 @@ theorem annotStepC_model (hμ : μ.verifiedChecks = true)
       obtain ⟨u₀, s₁', hreset, h⟩ := bindC_ok hstepC
       rw [resetC_run] at hreset
       injection hreset with hreset
-      obtain rfl : ({} : CState md) = s₁' := congrArg Prod.snd hreset
+      obtain rfl : s.reset = s₁' := congrArg Prod.snd hreset
       obtain ⟨pr, s₂, hcv, h⟩ := bindC_ok h
       obtain ⟨cvA, jty⟩ := pr
       rw [hfe] at hcv
       obtain ⟨hs₂, hcvA, hwty, F₁, hI⟩ :=
-        annotConstantValC_run hμ henv (CSOK.empty _) hcv
+        annotConstantValC_run hμ henv (CSOK.reset s _) hcv
       obtain ⟨hv, rfl⟩ := pureC_ok h
       simp only [Prod.mk.injEq] at hv
       obtain ⟨rfl, rfl⟩ := hv
@@ -477,11 +469,11 @@ installed the header alone, and phase B's check — which annotates the
 value — is what the theorem's model step consumes. -/
 theorem installRun_model (hμ : μ.verifiedChecks = true) {ds : List (Declaration md)}
     {p : Nat × FEnv md × Array (PendingCheck md)} {s : CState md}
-    {q : Nat × FEnv md × Array (PendingCheck md)} {s' : CState md}
+    {q : Nat × FEnv md × Array (PendingCheck md)} {s' : CState md} {core : CoreConfig}
     (hrun : InstallRun μ ev ds p s q s') :
     p.2.1 = mkFEnv p.2.1.env → EnvModelOk V μ p.2.1.env →
     NodupNames q.2.1.env →
-    (∀ pc ∈ q.2.2.toList, ∃ s'', checkPending μ q.2.1 pc {} = .ok ((), s'')) →
+    (∀ pc ∈ q.2.2.toList, ∃ s'', checkPending μ q.2.1 pc { core } = .ok ((), s'')) →
     EnvModelOk V μ q.2.1.env := by
   induction hrun with
   | nil p s => exact fun _ hm _ _ => hm
@@ -505,7 +497,7 @@ theorem installRun_model (hμ : μ.verifiedChecks = true) {ds : List (Declaratio
 is a hypothesis because the walk threads the model for the
 well-formedness it needs; the conclusion is the model itself. -/
 theorem fullyChecked_sound (V : Type w) [SetTheory V] (hμ : μ.verifiedChecks = true)
-    {ds : List (Declaration md)} (fc : FullyChecked μ ev ds) :
+    {ds : List (Declaration md)} {core : CoreConfig} (fc : FullyChecked μ ev ds core) :
     Nonempty (EnvModelM V μ fc.env) := by
   obtain ⟨n, s, r⟩ := fc.1.run
   have hchain := installRun_trace μ r (PushChain.refl Env.empty)
@@ -519,7 +511,7 @@ corollary rests on (`IxC/Kernel/MainTheorem.lean`, about `checkDecls`) is
 this under `checkDecls_fullyChecked`. -/
 theorem no_proof_of_False_checked (V : Type w) [SetTheory V]
     {μ : CheckMode} (hμ : μ.verifiedChecks = true) {ds : List (Declaration md)}
-    (fc : FullyChecked μ ev ds) :
+    {core : CoreConfig} (fc : FullyChecked μ ev ds core) :
     ∀ c ∈ fc.env.consts,
       c.toConstantVal.type = .const falseName [] → False := by
   obtain ⟨mp⟩ := fullyChecked_sound V hμ fc
@@ -528,7 +520,7 @@ theorem no_proof_of_False_checked (V : Type w) [SetTheory V]
 /-- The same letter about the pinned `Empty`. -/
 theorem no_proof_of_Empty_checked (V : Type w) [SetTheory V]
     {μ : CheckMode} (hμ : μ.verifiedChecks = true) {ds : List (Declaration md)}
-    (fc : FullyChecked μ ev ds) :
+    {core : CoreConfig} (fc : FullyChecked μ ev ds core) :
     ∀ c ∈ fc.env.consts,
       c.toConstantVal.type = .const emptyName [] → False := by
   obtain ⟨mp⟩ := fullyChecked_sound V hμ fc

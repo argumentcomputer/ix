@@ -233,7 +233,7 @@ theorem admit_foldlM_inv :
               exact ⟨s'', by
                 rw [← checkPending_transport hfe hnd hfe₁ hnd₁' hmore (hrec.single hold)]
                 exact hs⟩
-            · exact checkPendingList_records mode p₁'.2.1 _ hl pc (by rw [drop_new hnew]; exact hnw)
+            · exact checkPendingList_records mode p₁'.2.1 _ _ hl pc (by rw [drop_new hnew]; exact hnw)
           obtain ⟨hrun, hBq⟩ := admit_foldlM_inv ds p₁' s₁' h hfe₁ hnd₁' hrec₁ hB₁
           exact ⟨.cons ha hrun, hBq⟩
 

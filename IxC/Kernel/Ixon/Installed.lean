@@ -142,6 +142,17 @@ theorem streamSkels_mem {ds : List (Declaration md)} {d : Declaration md} (hd : 
   rw [List.foldl_append, List.foldl_cons]
   exact (foldl_suffix (fun acc pd => declCSkels_suffix pd acc) l₂ _).mem (declSkel_mem hs _)
 
+/-- **Installation by name and kind** (at any `FoldConfig`). -/
+theorem checkDecls_installs_cfg {ev : Evidences md} {mode : CheckMode}
+    {ds : Array (Declaration md)} {cfg : FoldConfig}
+    {env : Env md} (h : checkDecls mode ev ds cfg = .ok env) {d : Declaration md} (hd : d ∈ ds)
+    {s : InstallSkel md} (hs : declSkel d = some s) : ∃ ci ∈ env.consts, ciSkel ci = s := by
+  have hm : s ∈ envSkels env := by
+    rw [checkDecls_skels h]
+    exact streamSkels_mem (Array.mem_toList_iff.mpr hd) hs
+  obtain ⟨ci, hci, rfl⟩ := List.mem_map.mp hm
+  exact ⟨ci, hci, rfl⟩
+
 /-- **Installation by name and kind.** A definition, theorem, opaque or
 axiom declaration of an accepted array is installed under its name, as a
 constant of its kind (a definition as a definition, a theorem as a theorem,
@@ -149,11 +160,7 @@ an opaque or an axiom as an axiom); `sorryAx`, `Quot.sound`, and the five
 inert compiler-trust declarations (`§7.10`) excepted. -/
 theorem checkDecls_installs {ev : Evidences md} {mode : CheckMode} {ds : Array (Declaration md)}
     {env : Env md} (h : checkDecls mode ev ds = .ok env) {d : Declaration md} (hd : d ∈ ds)
-    {s : InstallSkel md} (hs : declSkel d = some s) : ∃ ci ∈ env.consts, ciSkel ci = s := by
-  have hm : s ∈ envSkels env := by
-    rw [checkDecls_skels h]
-    exact streamSkels_mem (Array.mem_toList_iff.mpr hd) hs
-  obtain ⟨ci, hci, rfl⟩ := List.mem_map.mp hm
-  exact ⟨ci, hci, rfl⟩
+    {s : InstallSkel md} (hs : declSkel d = some s) : ∃ ci ∈ env.consts, ciSkel ci = s :=
+  checkDecls_installs_cfg h hd hs
 
 end Ix.Kernel.Cached

@@ -79,8 +79,9 @@ theorem InstallRun.step_of_mem {mode : CheckMode} {ds : List (Declaration md)}
     · exact ih pd hpd
 
 /-- **The certified fold accepts no user axiom.** -/
-theorem checkDecls_userAxioms_nil {mode : CheckMode} {ds : Array (Declaration md)} {env : Env md}
-    (h : checkDecls mode ev ds = .ok env) : userAxiomsOfDecls ds.toList = [] := by
+theorem checkDecls_userAxioms_nil {mode : CheckMode} {ds : Array (Declaration md)}
+    {cfg : FoldConfig} {env : Env md}
+    (h : checkDecls mode ev ds cfg = .ok env) : userAxiomsOfDecls ds.toList = [] := by
   obtain ⟨fc, -⟩ := checkDecls_fullyChecked mode h
   obtain ⟨n, s, r⟩ := fc.1.run
   refine List.eq_nil_iff_forall_not_mem.mpr fun cv hcv => ?_
@@ -88,18 +89,26 @@ theorem checkDecls_userAxioms_nil {mode : CheckMode} {ds : Array (Declaration md
   obtain ⟨q, s₀, q', s₀', hok⟩ := r.step_of_mem _ hmem
   exact annotDeclStep_userAxiom mode q helig s₀ q' s₀' hok
 
+/-- **The certified fold is the user-axiom fold without user axioms**
+(for any `FoldConfig`). -/
+theorem checkDecls_iff_userAxioms_cfg (mode : CheckMode) (ds : Array (Declaration md)) (env : Env md)
+    (cfg : FoldConfig := {}) :
+    checkDecls mode ev ds cfg = .ok env ↔
+      checkDeclsWithUserAxioms mode ev ds cfg = .ok env ∧ userAxiomsOfDecls ds.toList = [] := by
+  constructor
+  · intro h
+    have hnone := checkDecls_userAxioms_nil h
+    exact ⟨by rw [checkDeclsWithUserAxioms_eq_checkDecls mode ev ds hnone cfg]; exact h, hnone⟩
+  · rintro ⟨h, hnone⟩
+    rw [checkDeclsWithUserAxioms_eq_checkDecls mode ev ds hnone cfg] at h
+    exact h
+
 /-- **The certified fold is the user-axiom fold without user axioms**:
 `checkDecls` accepts exactly when `checkDeclsWithUserAxioms` accepts with the
 same environment and the records declare no user axiom. -/
 theorem checkDecls_iff_userAxioms (mode : CheckMode) (ds : Array (Declaration md)) (env : Env md) :
     checkDecls mode ev ds = .ok env ↔
-      checkDeclsWithUserAxioms mode ev ds = .ok env ∧ userAxiomsOfDecls ds.toList = [] := by
-  constructor
-  · intro h
-    have hnone := checkDecls_userAxioms_nil h
-    exact ⟨by rw [checkDeclsWithUserAxioms_eq_checkDecls mode ev ds hnone]; exact h, hnone⟩
-  · rintro ⟨h, hnone⟩
-    rw [checkDeclsWithUserAxioms_eq_checkDecls mode ev ds hnone] at h
-    exact h
+      checkDeclsWithUserAxioms mode ev ds = .ok env ∧ userAxiomsOfDecls ds.toList = [] :=
+  checkDecls_iff_userAxioms_cfg mode ds env {}
 
 end Ix.Kernel.Cached

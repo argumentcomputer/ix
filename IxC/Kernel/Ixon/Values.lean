@@ -46,6 +46,16 @@ private theorem fvarsBelow_zero_of_not_hasFvar :
   intro e
   induction e <;> simp_all [Expr.fvarsBelow, Expr.hasFvar]
 
+/-- **Model existence with definition values** (at any `FoldConfig`). -/
+theorem checkDecls_model_defn_values_cfg (V : Type w) [SetTheory V] (ev : Evidences md)
+    (ds : Array (Declaration md)) (cfg : FoldConfig) (env : Env md)
+    (accepted : Cached.checkDecls .verified ev ds cfg = .ok env) :
+    ∃ M : Ix.Kernel.Model V env, ∀ (cv : ConstantVal md) (value : Expr md) (hint : ReducibilityHint),
+      ConstantInfo.defnInfo cv value hint ∈ env.consts →
+      ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V), Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
+  obtain ⟨m⟩ := Cached.checkDecls_sound_cfg (V := V) rfl accepted
+  exact ⟨Model.ofEnvModelM m, (Model.ofEnvModelM m).defn_value⟩
+
 /-- **Model existence with definition values.** Every environment the fold
 accepts has a model in which every stored definition's value denotes the
 constant, at every level assignment and variable environment. -/
@@ -54,9 +64,8 @@ theorem checkDecls_model_defn_values (V : Type w) [SetTheory V] (ev : Evidences 
     (accepted : Cached.checkDecls .verified ev ds = .ok env) :
     ∃ M : Ix.Kernel.Model V env, ∀ (cv : ConstantVal md) (value : Expr md) (hint : ReducibilityHint),
       ConstantInfo.defnInfo cv value hint ∈ env.consts →
-      ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V), Denotes M.cval env φ ρ value (M.cval cv.name φ) := by
-  obtain ⟨m⟩ := Cached.checkDecls_sound (V := V) rfl accepted
-  exact ⟨Model.ofEnvModelM m, (Model.ofEnvModelM m).defn_value⟩
+      ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V), Denotes M.cval env φ ρ value (M.cval cv.name φ) :=
+  checkDecls_model_defn_values_cfg V ev ds {} env accepted
 
 /-! ## The strong model (step 7.2) -/
 
@@ -170,11 +179,17 @@ theorem AcceptsRef.no_proof_of_False (V : Type w) [SetTheory V] {ds : List (Decl
   obtain ⟨_, hF⟩ := h
   exact no_proof_of_False_pure V rfl hF
 
+/-- **An accept of the executed fold has a strong model** (at any `FoldConfig`). -/
+theorem checkDecls_strongModel_cfg (V : Type w) [SetTheory V] {ds : Array (Declaration md)}
+    {cfg : FoldConfig} (h : Cached.checkDecls .verified ev ds cfg = .ok env) :
+    Nonempty (StrongModel V env) :=
+  (checkDecls_refines_ref V rfl h).strongModel V
+
 /-- **An accept of the executed fold has a strong model**, through its
 reference accept (`checkDecls_refines_ref`). -/
 theorem checkDecls_strongModel (V : Type w) [SetTheory V] {ds : Array (Declaration md)}
     (h : Cached.checkDecls .verified ev ds = .ok env) : Nonempty (StrongModel V env) :=
-  (checkDecls_refines_ref V rfl h).strongModel V
+  checkDecls_strongModel_cfg V h
 
 /-- **Model existence with the value clauses**, for the executed fold. -/
 theorem checkDecls_model_values (V : Type w) [SetTheory V] {ds : Array (Declaration md)}

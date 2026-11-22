@@ -164,6 +164,7 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- move the closure from 7092 compiled functions and 28 ruled csimps to 7139 and 29.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
 -- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
+-- Kernel hardening updates counts (refreshed in reconciliation).
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
  Ixon.Projection.checkBytes]: 8238 compiled functions; inherited externs 114, implemented_by 0, unsafe 41, csimp 8; ruled computed_field 29, implemented_by 1, csimp 32 -/
@@ -270,8 +271,9 @@ fun hash record => hash (Ixon.serConstant record) -/
         Ix.Kernel.Admission.Authentic hash records blobs ∧
           ∃ input output,
             Ix.Kernel.Admission.RecordsRead limits records input ∧
-              Ixon.Projection.Expanded hash maxProjections input output ∧
-                Ix.Kernel.Admission.checkConstantsAt hash binding output blobs hint = Except.ok env -/
+              Ix.Kernel.Admission.DepthsWithin limits records input ∧
+                Ixon.Projection.Expanded hash maxProjections input output ∧
+                  Ix.Kernel.Admission.checkConstantsAt hash binding output blobs hint limits.fold = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Projection.checkBytes_ok_iff
 
@@ -283,10 +285,11 @@ fun hash record => hash (Ixon.serConstant record) -/
     Ix.Kernel.Admission.UniqueKeys records blobs →
       Ix.Kernel.Admission.Authentic hash records blobs →
         Ix.Kernel.Admission.RecordsRead limits records input →
-          Ixon.Projection.Expanded hash maxProjections input output →
-            Ixon.Projection.checkBytes hash binding maxProjections limits records blobs hint =
-              Except.mapError Ixon.Projection.CheckError.checker
-                (Ix.Kernel.Admission.checkConstantsAt hash binding output blobs hint) -/
+          Ix.Kernel.Admission.DepthsWithin limits records input →
+            Ixon.Projection.Expanded hash maxProjections input output →
+              Ixon.Projection.checkBytes hash binding maxProjections limits records blobs hint =
+                Except.mapError Ixon.Projection.CheckError.checker
+                  (Ix.Kernel.Admission.checkConstantsAt hash binding output blobs hint limits.fold) -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Projection.checkBytes_of_expansion
 
@@ -316,7 +319,7 @@ fun hash record => hash (Ixon.serConstant record) -/
     Ix.Kernel.Admission.Authentic hash records blobs ∧
       ∃ output,
         Ix.Kernel.Admission.Hashed hash output ∧
-          Ix.Kernel.Admission.checkConstantsAt hash binding output blobs hint = Except.ok env -/
+          Ix.Kernel.Admission.checkConstantsAt hash binding output blobs hint limits.fold = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ixon.Projection.checkBytes_authentic
 

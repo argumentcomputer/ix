@@ -99,4 +99,35 @@ theorem parallel_eq (tasks : Nat) (limits : Limits) (records : Records) :
     List.mapM_map, Function.comp_def, id_eq]
   exact (decodeLoop_eq_mapM limits records 0 []).symm
 
+/-- The depth limit's stored-nesting scan over bounded parallel chunks: one test per record, so
+the order of the chunks cannot change the answer (`scanDepthsParallel_eq`). -/
+@[expose] def scanDepthsParallel (tasks : Nat) (limits : Limits) (records : Records) :
+    Except ByteError Unit :=
+  if (Ix.Compile.Parallel.map tasks (fun p : Address × ByteArray => !scanFails limits p.2)
+      records.toArray).toList.all id then .ok ()
+  else .error (.limit .depth)
+
+theorem scanDepthsParallel_eq (tasks : Nat) (limits : Limits) (records : Records) :
+    scanDepthsParallel tasks limits records = scanDepths limits records := by
+  rw [scanDepths_eq_all]
+  unfold scanDepthsParallel
+  rw [Ix.Compile.Parallel.map_eq, Array.toList_map, List.all_map]
+  rfl
+
+/-- The depth limit's expanded check over bounded parallel chunks
+(`expandedDepthsParallel_eq`). -/
+@[expose] def expandedDepthsParallel (tasks : Nat) (limits : Limits)
+    (constants : Ix.Kernel.Ingress.Constants) : Except ByteError Unit :=
+  if (Ix.Compile.Parallel.map tasks (fun p : Address × Ixon.Constant => !expandedFails limits p.2)
+      constants.toArray).toList.all id then .ok ()
+  else .error (.limit .depth)
+
+theorem expandedDepthsParallel_eq (tasks : Nat) (limits : Limits)
+    (constants : Ix.Kernel.Ingress.Constants) :
+    expandedDepthsParallel tasks limits constants = expandedDepths limits constants := by
+  rw [expandedDepths_eq_all]
+  unfold expandedDepthsParallel
+  rw [Ix.Compile.Parallel.map_eq, Array.toList_map, List.all_map]
+  rfl
+
 end Ix.RoleBinding.RecordDecoding

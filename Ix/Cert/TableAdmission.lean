@@ -613,7 +613,9 @@ theorem declsOk_sound {t : RoleTable} {b : Binding} {envA : Env .anon} {ev : Evi
   cases hcv
 
 /-- The coverage limits of the reading (input bounds only). -/
-def admissionLimits : Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+def admissionLimits : Limits :=
+  { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
+    maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
 
 /-- The map `hintsOf` reads (each definition block member's projection record). -/
 def hintsProjAt (ixe : Ixon.Env) : Std.HashMap (ConstRef Address) Address :=
