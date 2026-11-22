@@ -209,8 +209,10 @@
               (pkgs.lib.fileset.fromSource (lake2nix.cleanLakeSource ./.))
               ./IxC/lake-manifest.json
               ./IxC/lean-toolchain
-              # The pinned verifying keys `FormalAiurKeys` embeds.
+              # The pinned verifying keys `FormalAiurKeys` embeds, and the
+              # verify-path fingerprint checked by tests/tools.
               ./tools/formal-aiur.keys
+              ./tools/verify-path.fingerprint
               # What its Rust archive target traces, as Crane sees it.
               cargoSource
               compressionData
@@ -323,6 +325,8 @@
               substituteInPlace lakefile.lean --replace-fail 'cmd := "cargo"' 'cmd := "true"'
               substituteInPlace lakefile.lean \
                 --replace-fail 'def nativeExecutors : Bool := true' 'def nativeExecutors : Bool := false'
+              substituteInPlace Main.lean \
+                --replace-fail 'import Ix.FormalCompiler' '-- omitted in Mathlib-free Nix build (falls back to standalone exporters)'
             '';
             # Preserve workspace-relative paths instead of shadowing local packages.
             preConfigure = ''

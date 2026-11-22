@@ -296,14 +296,29 @@ target formal_generated pkg : FilePath := do
   let cuda ← cudaEnabled
   let directory := pkg.buildDir / "formal-generated"
   buildFileAfterDep (directory / "inputs") codegen (extraDepTrace := do
-      return .ofHash (pureHash cuda) s!"cuda: {cuda}") fun exe => do
+      let envKey := s!"cuda={cuda};compiledTrace={(← IO.getEnv "IX_FORMAL_COMPILED_TRACE").getD ""};" ++
+        s!"aiur={(← IO.getEnv "IX_AIUR_ARTIFACT").getD ""};" ++
+        s!"verifier={(← IO.getEnv "IX_VERIFIER_ARTIFACT").getD ""};" ++
+        s!"aggr={(← IO.getEnv "IX_AGGR_ARTIFACT").getD ""}"
+      return .ofHash (Hash.ofString envKey) s!"formal_generated: {envKey}") fun exe => do
     proc {
       cmd := exe.toString
       args := #[directory.toString] ++ (if cuda then #["--cuda"] else #[])
       cwd := pkg.dir
       env := #[("IX_ROOT", some pkg.dir.toString)]
     }
-    IO.FS.writeFile (directory / "inputs") s!"cuda {cuda}\n"
+    let inputsPath := directory / "inputs"
+    let mut files : Array FilePath := #[]
+    if ← directory.pathExists then
+      for entry in ← directory.walkDir do
+        if entry != inputsPath && !(← entry.isDir) then
+          files := files.push entry
+    files := files.qsort (·.toString < ·.toString)
+    let mut manifest := s!"cuda {cuda}\n"
+    for f in files do
+      let h := Hash.ofByteArray (← IO.FS.readBinFile f)
+      manifest := manifest ++ s!"{f.toString} {h}\n"
+    IO.FS.writeFile inputsPath manifest
 
 /-- Build the Rust static lib with `net` for the `ix` CLI, with the native
 executors generated from the certified programs. -/

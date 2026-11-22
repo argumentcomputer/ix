@@ -88,17 +88,26 @@ jobs:
               - 'contracts/**'
               - 'crates/proof-compression/verifying-keys/**'
             cuda:
+              - 'crates/aggregate-controller/**'
               - 'crates/aiur/**'
+              - 'crates/aiur-codegen/**'
+              - 'crates/aiur-codegen-tests/**'
+              - 'crates/aiur-tracegen/**'
+              - 'crates/formal-generated/**'
               - 'crates/ixvm/**'
+              - 'crates/ixvm-native/**'
               - 'crates/ffi/**'
               - 'crates/proof-compression/**'
               - 'crates/stark-verifier/**'
+              - 'crates/stark-verifier-native/**'
               - 'crates/ix-prover/**'
               - 'crates/common/**'
               - 'crates/ixon/**'
               - 'crates/record-pool/**'
               - 'crates/stark-key/**'
             host:
+              - 'FormalAiurKeys.lean'
+              - 'FormalCodegen.lean'
               - 'Ix.lean'
               - 'Ix/**'
               - 'IxC/**'
@@ -117,6 +126,7 @@ jobs:
               - 'Scripts/SourceHygiene.lean'
               - 'Scripts/CheckCiFilters.lean'
               - 'Scripts/FriSecurity.lean'
+              - 'tools/formal-aiur.keys'
             kernel:
               - 'IxC/**'
               - 'Models/SetTheory/**'
@@ -235,13 +245,18 @@ jobs:
               - 'MultiStark/**'
               - 'IxVMRefinement/**'
               - 'IxC/**'
+              - 'FormalAiurKeys.lean'
+              - 'FormalCodegen.lean'
               - 'Ix/Address/**'
               - 'Ix/Address.lean'
               - 'Ix/CanonM.lean'
               - 'Ix/Cert/**'
+              - 'Ix/Check.lean'
               - 'Ix/Common.lean'
+              - 'Ix/FormalCompiler.lean'
+              - 'Ix/FormalCompiler/**'
+              - 'Ix/FormalProver.lean'
               - 'Ix/IxVM/**'
-              - 'Ix/Cert/**'
               - 'Ix/Compile/**'
               - 'Ix/CompileCert/**'
               - 'Ix/CompileM.lean'
@@ -279,16 +294,18 @@ jobs:
               - 'Ix/SpecDigest.lean'
               - 'Ix/Store.lean'
               - 'Ix/Aiur*.lean'
+              - 'Ix/Cli/CatalogAggregate.lean'
+              - 'Ix/Cli/CheckCmd.lean'
               - 'Ix/Cli/Formal*.lean'
               - 'Ix/Cli/Prove*.lean'
               - 'Ix/Cli/Verify*.lean'
               - 'Ix/Cli/Aggr*.lean'
-              - 'Ix/Cli/PrepareCmd.lean'
               - 'Ix/Cli/ClaimPolicy.lean'
               - 'Ix/Cli/CodegenCmd.lean'
               - 'Scripts/CheckFormal.lean'
               - 'Tests/Formal*.lean'
               - 'Tests/FormalChecks/**'
+              - 'Tests/VerifyPath.lean'
               - 'Tests/Fixtures/MultiStark/**'
               - 'Tests/IxVMMain.lean'
               - 'Tests/Ix/IxVM/**'
@@ -299,6 +316,10 @@ jobs:
               - 'Tests/Ix/VMSource.lean'
               - 'Tests/Ix/IOIngress.lean'
               - 'Tests/AggrBindingReuse.lean'
+              - 'tools/formal-aiur.keys'
+              - 'tools/verify-path.fingerprint'
+              - 'tools/check-formal-keys.sh'
+              - 'tools/check-verify-path.sh'
               - 'crates/**'
       - name: Resolve job plan
         id: plan
@@ -540,7 +561,7 @@ jobs:
         with:
           auto-config: false
           use-github-cache: false
-          use-mathlib-cache: false
+          use-mathlib-cache: true
       # Share a single Cargo target directory across all CUDA compile/link steps
       # so Plonky3, multi-stark, and CUDA kernels compile once instead of twice.
       - name: Compile CUDA Rust targets
@@ -588,10 +609,12 @@ jobs:
           forge test --root contracts/plonk -vv
           forge test --root contracts/groth16 -vv
 
-  # Build all non-Mathlib host targets ONCE on a 32-vCPU runner and snapshot the
+  # Build host targets ONCE on a 32-vCPU runner and snapshot the
   # `ci-host` sticky disk so downstream test and lint jobs fan out in parallel.
+  # `ix` links `Ix.FormalCompiler` and generates native executors via `formal-codegen`,
+  # which pull Mathlib oleans from cache.
   host-build:
-    name: Host build (no Mathlib)
+    name: Host build
     needs: changes
     if: needs.changes.outputs.run_host_build == 'true'
     runs-on: runs-on=${{ github.run_id }}-host-build-${{ github.run_attempt }}/cpu=32/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-host-x86-64-v4-100gb:100gb/extras=s3-cache
@@ -614,7 +637,7 @@ jobs:
         with:
           auto-config: false
           use-github-cache: false
-          use-mathlib-cache: false
+          use-mathlib-cache: true
       - name: Build host libraries and test executables
         run: |
           lake build --wfail \
@@ -728,7 +751,7 @@ jobs:
         with:
           auto-config: false
           use-github-cache: false
-          use-mathlib-cache: false
+          use-mathlib-cache: true
       - name: Run host-only batched lint, module coverage and source hygiene
         run: lake lint -- --host-only --wfail
 
@@ -1000,6 +1023,7 @@ jobs:
         run: |
           lake build --wfail \
             ix formal-aiur-tests formal-aggregate-tests formal-checks formal-package-tests \
+            formal-keys verify-path \
             aiur/Aiur ixvm/IxVM multiStark/MultiStark \
             aiur/aiur_tests aiur/execution_tests aiur/trace_tests \
             aiur/u32_tests aiur/library_tests aiur/grouping_example aiur/depth_example \
@@ -1089,8 +1113,22 @@ jobs:
               aiur/trace_tests aiur/u32_tests ixvm/ixvm
             cargo build --release --locked -p ixvm --features parallel --bin ixvm
           fi
+      - name: Restore .ixa artifacts from S3 cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ci-artifacts
+          key: ${{ needs.changes.outputs.ixa_key }}
+          fail-on-cache-miss: true
       - name: Check formal-only root modules
         run: lake run check-formal-modules --wfail
+      - name: Check pinned formal verifying keys and verify-path fingerprint
+        env:
+          IX_AIUR_ARTIFACT: ${{ runner.temp }}/ci-artifacts/ixvm.ixa
+          IX_VERIFIER_ARTIFACT: ${{ runner.temp }}/ci-artifacts/recursion.ixa
+          IX_AGGR_ARTIFACT: ${{ runner.temp }}/ci-artifacts/aggregate.ixa
+        run: |
+          bash tools/check-formal-keys.sh
+          bash tools/check-verify-path.sh
       - name: Run Aiur axiom sweep, unit tests and formal-package-tests
         run: |
           lake env Aiur/.lake/build/bin/axiom_sweep Aiur
