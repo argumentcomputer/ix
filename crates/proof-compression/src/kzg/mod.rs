@@ -13,9 +13,11 @@ pub mod encoding;
 mod fft_batch;
 pub mod field;
 mod msm_cpu;
+pub mod packed_shplonk;
 pub mod pcs;
 mod quotient;
 mod quotient_plan;
+pub mod shplonk;
 pub mod srs;
 pub mod transcript;
 

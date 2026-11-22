@@ -22,7 +22,7 @@ use aiur::{
 };
 use multi_stark::{
   batch::{BatchMessage, BatchPreamble, ShardHeader},
-  plonkish::{Circuit, CircuitBuilder, Value},
+  plonkish::{Circuit, CircuitBuilder, CircuitStats, Value},
   types::Val,
 };
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
@@ -42,6 +42,13 @@ pub struct FixedRoot {
 
 struct Built {
   circuit: Circuit<Val>,
+  public: Vec<Value>,
+  ends: Vec<Value>,
+  inputs: FixedVerifierInputs,
+  shape: FixedPcsShape,
+}
+
+struct BoundInputs {
   public: Vec<Value>,
   ends: Vec<Value>,
   inputs: FixedVerifierInputs,
@@ -251,11 +258,12 @@ impl FixedRoot {
     }
   }
 
-  fn build(
+  fn constrain(
     &self,
     key: &AiurVerifyingKey,
     limits: VerifierLimits,
-  ) -> Result<Built> {
+    b: &mut CircuitBuilder<Val>,
+  ) -> Result<BoundInputs> {
     let preamble = self.preamble(
       key,
       &vec![Val::ZERO; self.claim_len],
@@ -279,7 +287,6 @@ impl FixedRoot {
       limits,
     )?;
     let shape = plan.shape().clone();
-    let mut b = CircuitBuilder::new();
     b.enable_compact_blake3();
     let public: Vec<_> = (0..self.claim_len)
       .map(|i| b.public_input(format!("claim[{i}]")))
@@ -323,22 +330,39 @@ impl FixedRoot {
       messages
         .push(Message { args: vec![channel, width, end], multiplicity: one });
     }
-    let bytes = ByteGadgets::new(&mut b);
+    let bytes = ByteGadgets::new(b);
     let mut inputs = constrain_batch_verifier(
-      &mut b,
+      b,
       &bytes,
       key.system(),
       std::slice::from_ref(&shape),
       vec![vec![public.clone()]],
       &messages,
     );
-    Ok(Built {
-      circuit: b.finish(),
-      public,
-      ends,
-      inputs: inputs.remove(0),
-      shape,
-    })
+    Ok(BoundInputs { public, ends, inputs: inputs.remove(0), shape })
+  }
+
+  fn build(
+    &self,
+    key: &AiurVerifyingKey,
+    limits: VerifierLimits,
+  ) -> Result<Built> {
+    let mut b = CircuitBuilder::new();
+    let BoundInputs { public, ends, inputs, shape } =
+      self.constrain(key, limits, &mut b)?;
+    Ok(Built { circuit: b.finish(), public, ends, inputs, shape })
+  }
+
+  /// Count the complete fixed verifier without retaining its circuit or witness.
+  /// Frontend counts do not include physical trace or foreign-field expansion.
+  pub fn estimate(
+    &self,
+    key: &AiurVerifyingKey,
+    limits: VerifierLimits,
+  ) -> Result<CircuitStats> {
+    let mut b = CircuitBuilder::counting();
+    self.constrain(key, limits, &mut b)?;
+    Ok(b.stats())
   }
 
   /// Construct the verifier without any certificate or proof witness.
@@ -350,13 +374,12 @@ impl FixedRoot {
     Ok(self.build(key, limits)?.circuit)
   }
 
-  pub fn prepare(
+  pub(in crate::pipeline) fn check_instance(
     &self,
     key: &AiurVerifyingKey,
     proof: &AiurProof,
     expected: &[Val],
-    limits: VerifierLimits,
-  ) -> Result<Prepared<Val>> {
+  ) -> Result<Vec<Val>> {
     key
       .verify_normalized(&[expected.to_vec()], proof)
       .map_err(|e| format!("normalized root: {e:?}"))?;
@@ -397,6 +420,17 @@ impl FixedRoot {
         "root does not match the fixed normalization configuration".into(),
       );
     }
+    Ok(ends)
+  }
+
+  pub fn prepare(
+    &self,
+    key: &AiurVerifyingKey,
+    proof: &AiurProof,
+    expected: &[Val],
+    limits: VerifierLimits,
+  ) -> Result<Prepared<Val>> {
+    let ends = self.check_instance(key, proof, expected)?;
     let built = self.build(key, limits)?;
     let expanded = expand_batch_witness(
       key.system(),
@@ -504,11 +538,9 @@ mod tests {
     let other = FixedRoot::new(vec![4, 4, 2, 2], vec![(2, 3)], 4)?;
     assert_ne!(fixed.identity(&key), other.identity(&key));
     let config = || GoldilocksBlake3Config::new(cp, fp);
-    let local = FriVerifier::derive(
-      fixed.circuit(&key, Default::default())?,
-      config(),
-      1 << 19,
-    )?;
+    let circuit = fixed.circuit(&key, Default::default())?;
+    assert_eq!(fixed.estimate(&key, Default::default())?, circuit.stats());
+    let local = FriVerifier::derive(circuit, config(), 1 << 19)?;
     for value in [3, 7] {
       let input = vec![Val::from_u32(value)];
       let record = program.execute("Grouped::run", input.clone())?;
@@ -526,6 +558,15 @@ mod tests {
       )?;
       assert!(other.prepare(&key, &proof, &claim, Default::default()).is_err());
       let prepared = fixed.prepare(&key, &proof, &claim, Default::default())?;
+      let generic_key = VerifierKey::from_system(key.system());
+      let generic =
+        super::super::RootPlan::new(&generic_key, &proof, Default::default())?;
+      let counted =
+        generic.estimate(&proof, claim.len(), Default::default())?;
+      let generic_circuit =
+        generic.prepare(&proof, &claim, Default::default())?;
+      assert_eq!(counted, generic_circuit.circuit().stats());
+      drop(generic_circuit);
       let (verifier, proof) = prepared.prove_fri(config(), 1 << 19)?;
       assert_eq!(verifier.to_bytes()?, local.to_bytes()?);
       local.verify(&proof, &claim)?;

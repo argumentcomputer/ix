@@ -2,7 +2,7 @@
 mod claims;
 mod lowering;
 mod stage;
-pub use root::{FixedRoot, prepare_root};
+pub use root::{FixedRoot, count_root, prepare_root};
 pub use stage::{FriVerifier, KzgVerifier, Prepared, prepare_kzg};
 pub use wrap::{
   RecursiveProof, RecursiveStage, RecursiveVerifier, prepare_recursive,
@@ -25,6 +25,7 @@ pub mod gnark;
 pub mod groth16;
 mod init_fri;
 pub mod plonk;
+pub mod plonk_limits;
 mod prepare;
 pub use final_proof::{Artifact, FinalOptions, FinalSystem};
 pub use prepare::{prepare, prepare_plonk};
@@ -43,6 +44,12 @@ use std::{fs, path::Path};
 
 pub const PROOF_TAG: &[u8; 8] = b"IXBN\0\0\0\x01";
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+/// The released Ignition identity and pairing anchors, without proving powers.
+/// These are independent of the local SRS cache or a supplied proof.
+pub fn ignition_parameters() -> Result<crate::kzg::VerifierParams> {
+  verifying_keys::ignition_parameters()
+}
 
 /// The statement a compressed proof of `claim` exposes, as the caller
 /// derived it from its aggregation backend, checked to end in the packed
@@ -144,6 +151,15 @@ pub fn write_root_input(
 /// proving it.
 pub fn check_root(root: &Path, out: &Path) -> Result<()> {
   root::run(root, out, false)
+}
+
+/// Prove only the Goldilocks FRI compression stage and save its checked output.
+/// The caller authorizes the root key, claims and optional fixed layout in
+/// `root`. Place `out` at a pipeline's `fri/` directory to resume the KZG stages
+/// later, including with a separately built CUDA executable. This allocates
+/// the full FRI proving working set; inspect `count_root` and `check_root` first.
+pub fn prove_root(root: &Path, out: &Path) -> Result<()> {
+  root::run(root, out, true)
 }
 
 /// Write a root input directory: the backend key, root proof, expected

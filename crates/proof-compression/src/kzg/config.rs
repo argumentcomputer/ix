@@ -14,9 +14,13 @@ use multi_stark::traits::Pcs;
 #[cfg(feature = "cuda")]
 use super::cuda;
 use super::field::Scalar;
-use super::pcs::{KzgCommitment, KzgPcs, KzgProverData};
+use super::pcs::{
+  CoefficientConfig, CoefficientData, CommittedMatrix, KzgCommitment, KzgPcs,
+  KzgProverData,
+};
 use super::srs::Srs;
 use super::transcript::{KzgTranscript, TranscriptKind};
+use multi_stark::config::{LookupCommitInput, QuotientCommitInput};
 
 #[derive(Clone)]
 pub struct KzgConfig {
@@ -26,6 +30,7 @@ pub struct KzgConfig {
   /// (see the transcript contract on [`ProofConfig::initialise_challenger`]).
   transcript_seed: Vec<u8>,
   transcript_kind: TranscriptKind,
+  key_digest: Option<[u8; 32]>,
   max_log_degree: usize,
   stream_lookups: bool,
   stream_quotient: bool,
@@ -77,6 +82,7 @@ impl KzgConfig {
       pcs: KzgPcs::verifier_only(params, max_quotient_degree),
       transcript_seed,
       transcript_kind,
+      key_digest: None,
       max_log_degree,
       stream_lookups: false,
       stream_quotient: false,
@@ -93,7 +99,22 @@ impl KzgConfig {
       kind,
     );
     self.transcript_kind = kind;
+    if let Some(digest) = self.key_digest {
+      self.transcript_seed.extend_from_slice(b"ix/aiur/kzg-key/v1\0");
+      self.transcript_seed.extend_from_slice(&digest);
+    }
     self
+  }
+
+  /// Bind all proof challenges to an independently defined complete key.
+  pub fn with_key_digest(mut self, digest: [u8; 32]) -> Self {
+    self.key_digest = Some(digest);
+    let kind = self.transcript_kind;
+    self.with_transcript(kind)
+  }
+
+  pub fn key_digest(&self) -> Option<&[u8; 32]> {
+    self.key_digest.as_ref()
   }
 
   pub fn transcript_kind(&self) -> TranscriptKind {
@@ -134,6 +155,11 @@ impl KzgConfig {
 
   #[cfg(not(feature = "cuda"))]
   pub(crate) fn stream_lookups(&self) -> bool {
+    self.stream_lookups
+  }
+
+  /// Whether lookup messages can be rebuilt from committed stage-one traces.
+  pub const fn uses_streaming_lookups(&self) -> bool {
     self.stream_lookups
   }
 
@@ -203,323 +229,292 @@ impl KzgConfig {
         .map_or_else(|| default_dir.to_path_buf(), PathBuf::from),
     ))
   }
+}
 
-  /// One circuit's lookup trace, constructed on the host from committed
-  /// columns, with its local accumulator total.
-  fn host_lookup_part(
-    &self,
-    i: usize,
-    input: &multi_stark::config::LookupCommitInput<'_, Self>,
-    beta: Scalar,
-    gamma: Scalar,
-  ) -> (KzgProverData, Scalar) {
-    use ark_ff::AdditiveGroup;
-    use multi_stark::eval::VarValues;
-    use multi_stark::traits::Algebra;
-    use multi_stark::traits::EvaluationDomain;
-    let start = std::time::Instant::now();
-    let domain = input.stage_1.0.matrices[input.stage_1.1].domain;
-    let (selected, graph) =
-      super::quotient_plan::lookup_graph(&input.circuit.graph);
-    tracing::info!(
-      circuit = i,
-      fixed_columns = selected.len(),
-      "KZG lookup fixed columns"
-    );
-    let num_lookups = graph.lookups.len();
-    let width = input.circuit.stage_2_width;
-    let height = domain.size();
-    if num_lookups == 0 {
-      debug_assert_eq!(width, 1);
-      let data =
-        self.pcs.commit_constant_column(domain, super::curve::Fr::ZERO);
-      tracing::info!(
-        circuit = i,
-        seconds = start.elapsed().as_secs_f64(),
-        "KZG lookup committed"
-      );
-      return (data, Scalar::ZERO);
-    }
+/// The committed matrix at a round position.
+fn committed<D: CoefficientData>(
+  (data, index): (&D, usize),
+) -> &CommittedMatrix {
+  data.matrix(index).expect("committed matrix position")
+}
 
-    let fixed = input.preprocessed.filter(|_| !selected.is_empty()).map(
-      |(data, slot)| self.pcs.evaluate_columns(data, slot, domain, &selected),
-    );
-    #[cfg(not(feature = "cuda"))]
-    let main = input.stage_1.0.matrices[input.stage_1.1]
-      .take_spilled_evaluations(domain)
-      .unwrap_or_else(|| {
-        self.pcs.get_evaluations_on_domain(
-          input.stage_1.0,
-          input.stage_1.1,
-          domain,
+fn all_columns(matrix: &CommittedMatrix) -> Vec<usize> {
+  (0..matrix.width()).collect()
+}
+
+/// Every circuit's lookup trace as a coefficient matrix, passed to `commit`,
+/// with its local accumulator total. Device constructions run concurrently;
+/// shapes and storage the kernels do not support use one host working set at
+/// a time. Device admission failures are errors.
+pub(super) fn lookup_parts<SC: CoefficientConfig, T: Send>(
+  pcs: &KzgPcs,
+  inputs: &[LookupCommitInput<'_, SC>],
+  beta: Scalar,
+  gamma: Scalar,
+  commit: impl Fn(CommittedMatrix) -> T + Sync,
+) -> Vec<(T, Scalar)> {
+  #[cfg(feature = "cuda")]
+  {
+    use rayon::prelude::*;
+    let mut parts: Vec<_> = inputs
+      .par_iter()
+      .map(|input| {
+        cuda::lookup::coefficients(input, beta, gamma).map(
+          |(columns, local)| {
+            let domain = committed(input.stage_1).domain;
+            (commit(pcs.coefficient_matrix(domain.log_size, columns)), local)
+          },
         )
-      });
-    #[cfg(feature = "cuda")]
-    let main = self.pcs.get_evaluations_on_domain(
-      input.stage_1.0,
-      input.stage_1.1,
-      domain,
-    );
-    let group_size = input.circuit.lookup_group_size.max(1);
-    debug_assert_eq!(width, num_lookups.div_ceil(group_size));
-    let mut trace =
-      super::pcs::generate_buffer(height * width, |_| Scalar::ZERO);
-    let chunk_rows = self.streaming_chunk_size.unwrap_or_else(|| {
-      height.div_ceil(current_num_threads().max(1) * 4).max(1 << 12)
-    });
-    // Keep per-thread Montgomery batch-inverse scratch inside L2 cache.
-    let sub_rows = (4096 / num_lookups).clamp(1, 2048);
-    let empty: [Scalar; 0] = [];
-    let main_w = main.width;
-    let fixed_ref = fixed.as_ref();
-
-    // Every coarse chunk starts at zero; its local total determines the prefix
-    // offset applied in the second parallel pass. No nested Rayon is spawned.
-    let totals: Vec<Scalar> = trace
-      .par_chunks_mut(chunk_rows * width)
-      .enumerate()
-      .map_init(
-        || {
-          let batch_cap = sub_rows * num_lookups;
-          (
-            Vec::with_capacity(graph.nodes.len()),
-            Vec::with_capacity(batch_cap),
-            Vec::with_capacity(batch_cap),
-            vec![Scalar::ZERO; batch_cap],
-          )
-        },
-        |(sweep_buf, mults, msgs, invs), (chunk_idx, dst)| {
-          let chunk_start = chunk_idx * chunk_rows;
-          let rows = dst.len() / width;
-          let mut local = Scalar::ZERO;
-          for sub_offset in (0..rows).step_by(sub_rows) {
-            let sub_len = sub_rows.min(rows - sub_offset);
-            let total_msgs = sub_len * num_lookups;
-            mults.clear();
-            msgs.clear();
-            for row_idx in 0..sub_len {
-              let r = chunk_start + sub_offset + row_idx;
-              let r_next = if r + 1 == height { 0 } else { r + 1 };
-              let preprocessed =
-                fixed_ref.map_or([&empty[..], &empty[..]], |m| {
-                  [
-                    &m.values[r * m.width..(r + 1) * m.width],
-                    &m.values[r_next * m.width..(r_next + 1) * m.width],
-                  ]
-                });
-              let view = VarValues {
-                preprocessed,
-                main: [
-                  &main.values[r * main_w..(r + 1) * main_w],
-                  &main.values[r_next * main_w..(r_next + 1) * main_w],
-                ],
-                stage2: [&empty[..], &empty[..]],
-                publics: &empty[..],
-                is_first_row: if r == 0 { Scalar::ONE } else { Scalar::ZERO },
-                is_last_row: if r + 1 == height {
-                  Scalar::ONE
-                } else {
-                  Scalar::ZERO
-                },
-                is_transition: if r + 1 == height {
-                  Scalar::ZERO
-                } else {
-                  Scalar::ONE
-                },
-              };
-              graph.sweep_lookup_prefix(&view, sweep_buf);
-              for lookup in &graph.lookups {
-                mults.push(sweep_buf[lookup.multiplicity.index()]);
-                let fp =
-                  lookup.args.iter().rev().fold(Scalar::ZERO, |acc, a| {
-                    acc * gamma + sweep_buf[a.index()]
-                  });
-                msgs.push(beta + fp);
-              }
-            }
-            let inv_slice = &mut invs[..total_msgs];
-            super::quotient::batch_inverse_serial(msgs, inv_slice);
-            for row_idx in 0..sub_len {
-              let base = row_idx * num_lookups;
-              let row_mults = &mults[base..base + num_lookups];
-              let row_invs = &inv_slice[base..base + num_lookups];
-              let out_base = (sub_offset + row_idx) * width;
-              let out_row = &mut dst[out_base..out_base + width];
-              for (slot, (gm, gi)) in out_row.iter_mut().zip(
-                row_mults.chunks(group_size).zip(row_invs.chunks(group_size)),
-              ) {
-                *slot = local;
-                for (&m, &inv) in gm.iter().zip(gi) {
-                  local += m * inv;
-                }
-              }
-            }
-          }
-          local
-        },
-      )
-      .collect();
-    let mut local = Scalar::ZERO;
-    let offsets: Vec<_> = totals
-      .into_iter()
-      .map(|value| {
-        let offset = local;
-        local += value;
-        offset
       })
       .collect();
-    trace.par_chunks_mut(chunk_rows * width).zip(offsets).for_each(
-      |(dst, offset)| {
-        if offset != Scalar::ZERO {
-          for value in dst {
-            *value += offset;
-          }
-        }
-      },
-    );
-    drop(main);
-    drop(fixed);
-    let trace =
-      p3_matrix::dense::RowMajorMatrix::new(trace, input.circuit.stage_2_width);
-    #[cfg(not(feature = "cuda"))]
-    let (_, data) = if let Some(spill_dir) = &self.spill_dir {
-      let disk_chunk =
-        self.streaming_chunk_size.unwrap_or(super::coefficients::CHUNK);
-      self
-        .pcs
-        .commit_matrix_spilled_with_chunk(domain, trace, spill_dir, disk_chunk)
-        .expect("spilling lookup polynomial to disk")
-    } else {
-      self.pcs.commit(vec![(domain, trace)])
-    };
-    #[cfg(feature = "cuda")]
-    let (_, data) = self.pcs.commit(vec![(domain, trace)]);
-    tracing::info!(
-      circuit = i,
-      seconds = start.elapsed().as_secs_f64(),
-      "KZG lookup committed"
-    );
-    (data, local)
-  }
-
-  /// One circuit's quotient, evaluated on the host one trace-sized coset at
-  /// a time with fixed-column passes.
-  fn host_quotient_part(
-    &self,
-    i: usize,
-    input: &multi_stark::config::QuotientCommitInput<'_, Self>,
-    alpha: Scalar,
-  ) -> KzgProverData {
-    use multi_stark::traits::Algebra;
-    use multi_stark::traits::EvaluationDomain;
-    use multi_stark::traits::Field;
-    use multi_stark::traits::TwoAdicField;
-    let start = std::time::Instant::now();
-    let n = input.trace_domain.size();
-    let ratio = input.quotient_domain.size() / n;
-    let generator = Scalar::two_adic_generator(input.quotient_domain.log_size);
-    let mut shift = input.quotient_domain.shift;
-    let mut values =
-      super::pcs::generate_buffer(input.quotient_domain.size(), |_| {
-        Scalar::ZERO
-      });
-    let mut powers: Vec<_> =
-      alpha.powers().take(input.constraint_count).collect();
-    powers.reverse();
-    let passes = super::quotient_plan::plan(
-      &input.circuit.graph,
-      input.circuit.lookup_group_size.max(1),
-    );
-    tracing::info!(circuit = i, fixed_columns = ?passes.iter().map(|p| p.fixed.len()).collect::<Vec<_>>(), "KZG quotient fixed-column passes");
-    for coset in 0..ratio {
-      let domain = super::domain::Radix2Coset {
-        log_size: input.trace_domain.log_size,
-        shift,
-      };
-      let main = self.pcs.get_evaluations_on_domain(
-        input.stage_1.0,
-        input.stage_1.1,
-        domain,
-      );
-      let stage2 = self.pcs.get_evaluations_on_domain(
-        input.stage_2.0,
-        input.stage_2.1,
-        domain,
-      );
-      let selectors =
-        super::quotient::CosetSelectors::new(input.trace_domain, domain);
-      for pass in &passes {
-        let fixed = input.preprocessed.filter(|_| !pass.fixed.is_empty()).map(
-          |(data, slot)| {
-            self.pcs.evaluate_columns(data, slot, domain, &pass.fixed)
-          },
+    for (i, (input, part)) in inputs.iter().zip(&mut parts).enumerate() {
+      if part.is_none() {
+        tracing::info!(
+          curve = super::curve::NAME,
+          circuit = i,
+          reason = "shape or storage unsupported by CUDA lookup kernels",
+          "KZG lookup using CPU construction"
         );
-        super::quotient::evaluate_coset(
-          input,
-          pass,
-          domain,
-          &selectors,
-          &powers,
-          fixed.as_ref(),
-          &main,
-          &stage2,
-          coset,
-          ratio,
-          self.streaming_chunk_size,
-          &mut values,
-        );
+        let (matrix, local) = host_lookup_matrix(pcs, i, input, beta, gamma);
+        *part = Some((commit(matrix), local));
       }
-      drop(selectors);
-      drop(stage2);
-      drop(main);
-      shift *= generator;
-      tracing::info!(
-        circuit = i,
+    }
+    parts.into_iter().map(Option::unwrap).collect()
+  }
+  #[cfg(not(feature = "cuda"))]
+  inputs
+    .iter()
+    .enumerate()
+    .map(|(i, input)| {
+      let (matrix, local) = host_lookup_matrix(pcs, i, input, beta, gamma);
+      (commit(matrix), local)
+    })
+    .collect()
+}
+
+/// Every circuit's quotient slices as a coefficient matrix, passed to
+/// `commit`, with the same device and host split as [`lookup_parts`].
+pub(super) fn quotient_parts<SC: CoefficientConfig, T: Send>(
+  pcs: &KzgPcs,
+  inputs: &[QuotientCommitInput<'_, SC>],
+  alpha: Scalar,
+  commit: impl Fn(CommittedMatrix) -> T + Sync,
+) -> Vec<T> {
+  quotient_parts_with_block_size(pcs, inputs, alpha, None, commit)
+}
+
+fn quotient_parts_with_block_size<SC: CoefficientConfig, T: Send>(
+  pcs: &KzgPcs,
+  inputs: &[QuotientCommitInput<'_, SC>],
+  alpha: Scalar,
+  block_size: Option<usize>,
+  commit: impl Fn(CommittedMatrix) -> T + Sync,
+) -> Vec<T> {
+  #[cfg(feature = "cuda")]
+  {
+    use rayon::prelude::*;
+    let mut parts: Vec<_> = inputs
+      .par_iter()
+      .map(|input| {
+        cuda::quotient::coefficients(input, alpha).map(|columns| {
+          assert!(
+            !columns.is_empty() && columns.len() <= pcs.max_quotient_degree()
+          );
+          commit(pcs.coefficient_matrix(input.trace_domain.log_size, columns))
+        })
+      })
+      .collect();
+    for (i, (input, part)) in inputs.iter().zip(&mut parts).enumerate() {
+      if part.is_none() {
+        tracing::info!(
+          curve = super::curve::NAME,
+          circuit = i,
+          reason = "shape or storage unsupported by CUDA quotient kernels",
+          "KZG quotient using CPU construction"
+        );
+        *part = Some(commit(host_quotient_matrix(
+          pcs, i, input, alpha, block_size,
+        )));
+      }
+    }
+    parts.into_iter().map(Option::unwrap).collect()
+  }
+  #[cfg(not(feature = "cuda"))]
+  inputs
+    .iter()
+    .enumerate()
+    .map(|(i, input)| {
+      commit(host_quotient_matrix(pcs, i, input, alpha, block_size))
+    })
+    .collect()
+}
+
+/// One circuit's lookup trace, constructed on the host from committed
+/// columns and interpolated, with its local accumulator total.
+fn host_lookup_matrix<SC: CoefficientConfig>(
+  pcs: &KzgPcs,
+  i: usize,
+  input: &LookupCommitInput<'_, SC>,
+  beta: Scalar,
+  gamma: Scalar,
+) -> (CommittedMatrix, Scalar) {
+  use multi_stark::traits::Algebra;
+  use multi_stark::traits::EvaluationDomain;
+  let start = std::time::Instant::now();
+  let stage_1 = committed(input.stage_1);
+  let domain = stage_1.domain;
+  let (selected, graph) =
+    super::quotient_plan::lookup_graph(&input.circuit.graph);
+  tracing::info!(
+    circuit = i,
+    fixed_columns = selected.len(),
+    "KZG lookup fixed columns"
+  );
+  let fixed = input.preprocessed.filter(|_| !selected.is_empty()).map(|data| {
+    pcs.evaluate_matrix_columns(committed(data), domain, &selected)
+  });
+  let main =
+    pcs.evaluate_matrix_columns(stage_1, domain, &all_columns(stage_1));
+  const CHUNK: usize = 1 << 12;
+  let width = input.circuit.stage_2_width;
+  let mut trace = vec![Scalar::ZERO; domain.size() * width];
+  // Every chunk starts at zero. Its total determines the prefix
+  // offset applied in a second bounded, parallel pass.
+  let totals: Vec<_> = trace
+    .par_chunks_mut(CHUNK * width)
+    .enumerate()
+    .map(|(i, dst)| {
+      let start = i * CHUNK;
+      let values = multi_stark::system::compute_lookup_values_range(
+        &graph,
+        &main,
+        fixed.as_ref(),
+        start..start + dst.len() / width,
+      );
+      let (mut chunks, next) =
+        multi_stark::lookup::LookupValues::stage_2_traces(
+          &[values],
+          &[input.circuit.lookup_group_size],
+          beta,
+          &gamma,
+          Scalar::ZERO,
+        );
+      dst.copy_from_slice(&chunks.remove(0).values);
+      next[0]
+    })
+    .collect();
+  let mut local = Scalar::ZERO;
+  let offsets: Vec<_> = totals
+    .into_iter()
+    .map(|value| {
+      let offset = local;
+      local += value;
+      offset
+    })
+    .collect();
+  trace.par_chunks_mut(CHUNK * width).zip(offsets).for_each(|(dst, offset)| {
+    if offset != Scalar::ZERO {
+      for value in dst {
+        *value += offset;
+      }
+    }
+  });
+  drop(main);
+  drop(fixed);
+  let trace = p3_matrix::dense::RowMajorMatrix::new(trace, width);
+  let matrix = KzgPcs::interpolate_columns(domain, trace);
+  tracing::info!(
+    circuit = i,
+    seconds = start.elapsed().as_secs_f64(),
+    "KZG lookup constructed"
+  );
+  (matrix, local)
+}
+
+/// One circuit's quotient, evaluated on the host one trace-sized coset at a
+/// time with fixed-column passes, then interpolated and sliced.
+fn host_quotient_matrix<SC: CoefficientConfig>(
+  pcs: &KzgPcs,
+  i: usize,
+  input: &QuotientCommitInput<'_, SC>,
+  alpha: Scalar,
+  block_size: Option<usize>,
+) -> CommittedMatrix {
+  use multi_stark::traits::Algebra;
+  use multi_stark::traits::EvaluationDomain;
+  use multi_stark::traits::TwoAdicField;
+  let start = std::time::Instant::now();
+  let n = input.trace_domain.size();
+  let ratio = input.quotient_domain.size() / n;
+  let generator = Scalar::two_adic_generator(input.quotient_domain.log_size);
+  let mut shift = input.quotient_domain.shift;
+  let mut values = vec![Scalar::ZERO; input.quotient_domain.size()];
+  let mut powers: Vec<_> =
+    alpha.powers().take(input.constraint_count).collect();
+  powers.reverse();
+  let passes = super::quotient_plan::plan(
+    &input.circuit.graph,
+    input.circuit.lookup_group_size.max(1),
+  );
+  tracing::info!(circuit = i, fixed_columns = ?passes.iter().map(|p| p.fixed.len()).collect::<Vec<_>>(), "KZG quotient fixed-column passes");
+  let stage_1 = committed(input.stage_1);
+  let stage_2 = committed(input.stage_2);
+  for coset in 0..ratio {
+    let domain = super::domain::Radix2Coset {
+      log_size: input.trace_domain.log_size,
+      shift,
+    };
+    let main =
+      pcs.evaluate_matrix_columns(stage_1, domain, &all_columns(stage_1));
+    let stage2 =
+      pcs.evaluate_matrix_columns(stage_2, domain, &all_columns(stage_2));
+    let selectors =
+      super::quotient::CosetSelectors::new(input.trace_domain, domain);
+    for pass in &passes {
+      let fixed =
+        input.preprocessed.filter(|_| !pass.fixed.is_empty()).map(|data| {
+          pcs.evaluate_matrix_columns(committed(data), domain, &pass.fixed)
+        });
+      super::quotient::evaluate_coset(
+        input,
+        pass,
+        domain,
+        &selectors,
+        &powers,
+        fixed.as_ref(),
+        &main,
+        &stage2,
         coset,
-        seconds = start.elapsed().as_secs_f64(),
-        "KZG quotient coset evaluated"
+        ratio,
+        block_size,
+        &mut values,
       );
     }
-    #[cfg(not(feature = "cuda"))]
-    let (_, data) = if let Some(spill_dir) = &self.spill_dir {
-      let disk_chunk =
-        self.streaming_chunk_size.unwrap_or(super::coefficients::CHUNK);
-      self
-        .pcs
-        .commit_quotient_spilled_with_chunk(
-          input.quotient_domain,
-          p3_matrix::dense::RowMajorMatrix::new_col(values),
-          ratio,
-          spill_dir,
-          disk_chunk,
-        )
-        .expect("spilling quotient polynomial to disk")
-    } else {
-      self.pcs.commit_quotient(vec![(
-        input.quotient_domain,
-        p3_matrix::dense::RowMajorMatrix::new_col(values),
-        ratio,
-      )])
-    };
-    #[cfg(feature = "cuda")]
-    let (_, data) = self.pcs.commit_quotient(vec![(
-      input.quotient_domain,
-      p3_matrix::dense::RowMajorMatrix::new_col(values),
-      ratio,
-    )]);
+    shift *= generator;
     tracing::info!(
       circuit = i,
+      coset,
       seconds = start.elapsed().as_secs_f64(),
-      "KZG quotient committed"
+      "KZG quotient coset evaluated"
     );
-    data
   }
+  let matrix = KzgPcs::interpolate_quotient(
+    input.quotient_domain,
+    p3_matrix::dense::RowMajorMatrix::new_col(values),
+    ratio,
+  );
+  tracing::info!(
+    circuit = i,
+    seconds = start.elapsed().as_secs_f64(),
+    "KZG quotient constructed"
+  );
+  matrix
 }
 
 impl ProofConfig for KzgConfig {
   fn accelerated_lookup_commit(
     &self,
-    inputs: &[multi_stark::config::LookupCommitInput<'_, Self>],
+    inputs: &[LookupCommitInput<'_, Self>],
     beta: Scalar,
     gamma: Scalar,
     mut acc: Scalar,
@@ -527,44 +522,9 @@ impl ProofConfig for KzgConfig {
     if !self.stream_lookups {
       return None;
     }
-    #[cfg(feature = "cuda")]
-    let results: Vec<(KzgProverData, Scalar)> = {
-      use rayon::prelude::*;
-      let mut parts: Vec<_> = inputs
-        .par_iter()
-        .map(|input| {
-          cuda::lookup::coefficients(input, beta, gamma).map(
-            |(columns, local)| {
-              let domain = input.stage_1.0.matrices[input.stage_1.1].domain;
-              (
-                self.pcs.commit_trace_coefficients(domain.log_size, columns),
-                local,
-              )
-            },
-          )
-        })
-        .collect();
-      // Shapes and storage unsupported by the kernels use one host working
-      // set at a time. Device admission failures are errors.
-      for (i, (input, part)) in inputs.iter().zip(&mut parts).enumerate() {
-        if part.is_none() {
-          tracing::info!(
-            curve = super::curve::NAME,
-            circuit = i,
-            reason = "shape or storage unsupported by CUDA lookup kernels",
-            "KZG lookup using CPU construction"
-          );
-          *part = Some(self.host_lookup_part(i, input, beta, gamma));
-        }
-      }
-      parts.into_iter().map(Option::unwrap).collect()
-    };
-    #[cfg(not(feature = "cuda"))]
-    let results: Vec<(KzgProverData, Scalar)> = inputs
-      .iter()
-      .enumerate()
-      .map(|(i, input)| self.host_lookup_part(i, input, beta, gamma))
-      .collect();
+    let results = lookup_parts(&self.pcs, inputs, beta, gamma, |matrix| {
+      self.pcs.commit_matrix(matrix)
+    });
     let mut parts = Vec::with_capacity(results.len());
     let mut accumulators = Vec::with_capacity(results.len());
     // Local traces start at zero; only the ordered public totals depend
@@ -580,48 +540,19 @@ impl ProofConfig for KzgConfig {
 
   fn accelerated_quotient_commit(
     &self,
-    inputs: &[multi_stark::config::QuotientCommitInput<'_, Self>],
+    inputs: &[QuotientCommitInput<'_, Self>],
     alpha: Scalar,
   ) -> Option<(KzgCommitment, KzgProverData)> {
     if !self.stream_quotient {
       return None;
     }
-    #[cfg(feature = "cuda")]
-    {
-      use rayon::prelude::*;
-      let mut parts: Vec<_> = inputs
-        .par_iter()
-        .map(|input| {
-          cuda::quotient::coefficients(input, alpha).map(|columns| {
-            self.pcs.commit_quotient_coefficients(
-              input.trace_domain.log_size,
-              columns,
-            )
-          })
-        })
-        .collect();
-      for (i, (input, part)) in inputs.iter().zip(&mut parts).enumerate() {
-        if part.is_none() {
-          tracing::info!(
-            curve = super::curve::NAME,
-            circuit = i,
-            reason = "shape or storage unsupported by CUDA quotient kernels",
-            "KZG quotient using CPU construction"
-          );
-          *part = Some(self.host_quotient_part(i, input, alpha));
-        }
-      }
-      Some(KzgProverData::concatenate(parts.into_iter().map(Option::unwrap)))
-    }
-    #[cfg(not(feature = "cuda"))]
-    {
-      Some(KzgProverData::concatenate(
-        inputs
-          .iter()
-          .enumerate()
-          .map(|(i, input)| self.host_quotient_part(i, input, alpha)),
-      ))
-    }
+    Some(KzgProverData::concatenate(quotient_parts_with_block_size(
+      &self.pcs,
+      inputs,
+      alpha,
+      self.streaming_chunk_size,
+      |matrix| self.pcs.commit_matrix(matrix),
+    )))
   }
 
   fn omit_inactive_preprocessed_openings(&self) -> bool {

@@ -114,7 +114,8 @@ pub(super) fn check_release_prefix(words: &statement::Statement) -> Result<()> {
     return Err(
       format!(
         "the statement's aggregation backend differs from the one verifying \
-         keys {VERSION} were derived for"
+         keys {VERSION} were derived for: prefix {:?}",
+        &words[..10]
       )
       .into(),
     );

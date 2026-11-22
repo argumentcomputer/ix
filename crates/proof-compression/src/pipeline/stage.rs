@@ -17,11 +17,10 @@ use crate::fri::{self, VerifierKey};
 use crate::kzg::{
   KzgCommitment, KzgConfig, Scalar, Srs, TranscriptKind, VerifierParams,
 };
+use multi_stark::lookup::LookupValues;
 use multi_stark::plonkish::{Assignment, Circuit};
 use multi_stark::prover::Proof;
-use multi_stark::system::System;
-#[cfg(test)]
-use multi_stark::system::SystemWitness;
+use multi_stark::system::{System, SystemWitness};
 #[cfg(test)]
 use multi_stark::traits::Algebra;
 use multi_stark::traits::{Field, TwoAdicField};
@@ -105,54 +104,39 @@ impl Prepared<Val> {
     let claims = statement.claims(self.assignment.public_values())?;
     let definitions = lowering::fri_definitions(&compiled);
     validate_config(&config, &definitions)?;
-    let mut config = config;
-    if let Some(spill_dir) =
-      KzgConfig::resolve_disk_spill_dir(&std::env::temp_dir())?
-    {
-      config = config.with_disk_spill(spill_dir);
-    }
-    let (mut system, key) = tracing::info_span!("compression/setup")
+    let (system, key) = tracing::info_span!("compression/setup")
       .in_scope(|| System::new_without_preprocessed(config, definitions));
-    // Stream each circuit's main trace directly into stage-1 commitment (with
-    // CPU disk-backed LDE spilling when enabled) and drop frontend state
-    // (`compiled` and `assignment`) before stage-2 lookups and quotient work so
-    // all traces, lookup buffers, and 4x LDE matrices are never co-resident.
-    let count = system.circuits.len();
-    let mut trace_err: Option<Box<dyn std::error::Error + Send + Sync>> = None;
-    let stage_1 =
-      tracing::info_span!("compression/trace_stage1").in_scope(|| {
-        let shards = match compiled.trace_shards(&self.assignment) {
-          Ok(shards) => shards,
-          Err(err) => {
-            trace_err = Some(err.into());
-            return None;
-          },
-        };
-        let iter = (0..count).map(|ci| match shards.trace(ci) {
-          Ok(trace) => trace,
-          Err(err) => {
-            if trace_err.is_none() {
-              trace_err = Some(err.into());
-            }
-            p3_matrix::dense::RowMajorMatrix::new(
-              Vec::new(),
-              system.circuits[ci].main_width,
-            )
-          },
-        });
-        Some(system.prove_stage_1_streaming(iter))
-      });
-    if let Some(err) = trace_err {
-      return Err(err);
-    }
-    let stage_1 = stage_1.expect("trace_err handled above");
+    // Materialize each circuit's trace one at a time so preprocessed matrices
+    // are never cloned across all circuits, and drop the frontend state
+    // (`compiled` and `assignment`) before stage-1 LDEs.
+    let trace_span = tracing::info_span!("compression/trace").entered();
+    let shards = compiled.trace_shards(&self.assignment)?;
+    let traces = (0..system.circuits.len())
+      .map(|ci| shards.trace(ci))
+      .collect::<std::result::Result<Vec<_>, _>>()?;
+    drop(shards);
+    drop(trace_span);
     drop(compiled);
     drop(self.assignment);
     let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
+    // A materialized lookup witness is several times the size of the traces
+    // and would coexist with every stage-one LDE. With shape-only witnesses
+    // the prover evaluates one circuit's messages at a time, reading its
+    // trace and fixed matrix back from their commitments, as it builds that
+    // circuit's stage-two column. The proof bytes are the same.
+    let lookups = traces
+      .iter()
+      .zip(&system.circuits)
+      .map(|(trace, circuit)| {
+        let widths: Vec<_> =
+          circuit.graph.lookups.iter().map(|l| l.args.len()).collect();
+        LookupValues::shape_only(trace.height(), &widths)
+      })
+      .collect();
+    let witness = SystemWitness { traces, lookups };
     let proof = tracing::info_span!("compression/prove")
-      .in_scope(|| system.prove_committed(&key, &refs, stage_1));
+      .in_scope(|| system.prove_multiple_claims(&key, &refs, witness));
     drop(key);
-    system.config = system.config.without_disk_spill();
     tracing::info_span!("compression/verify")
       .in_scope(|| system.verify_multiple_claims(&refs, &proof))
       .map_err(|e| format!("new FRI proof: {e:?}"))?;

@@ -5,7 +5,7 @@ use super::quotient::{
   Column, Instruction, Lookup, PolynomialView, Program, allocation,
 };
 use super::*;
-use crate::kzg::{Scalar, config::KzgConfig};
+use crate::kzg::{Scalar, pcs::CoefficientConfig};
 use multi_stark::config::{LookupCommitInput, QuotientCommitInput};
 use multi_stark::traits::EvaluationDomain;
 
@@ -150,8 +150,8 @@ pub(super) fn admit(
   Some(device)
 }
 
-pub(super) fn lookup_coefficients(
-  input: &LookupCommitInput<'_, KzgConfig>,
+pub(super) fn lookup_coefficients<SC: CoefficientConfig>(
+  input: &LookupCommitInput<'_, SC>,
   parameters: &lookup::Parameters,
   all: &[PolynomialView<'_>],
   widths: [usize; 3],
@@ -218,8 +218,8 @@ pub(super) fn lookup_coefficients(
   Some((outputs, Scalar(Fr::new_unchecked(BigInt(total)))))
 }
 
-pub(super) fn quotient_coefficients(
-  input: &QuotientCommitInput<'_, KzgConfig>,
+pub(super) fn quotient_coefficients<SC: CoefficientConfig>(
+  input: &QuotientCommitInput<'_, SC>,
   parameters: &quotient::Parameters,
   all: &[PolynomialView<'_>],
   widths: [usize; 3],

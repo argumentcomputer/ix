@@ -184,7 +184,7 @@ fn compare_paths(log_size: usize) {
       Scalar::ZERO,
     );
     let expected = coefficients(&traces[0], ark_domain);
-    let input = LookupCommitInput {
+    let input = LookupCommitInput::<KzgConfig> {
       circuit: &circuit,
       lookup_values: &lookup_values,
       preprocessed: Some((&fixed_data, 0)),
