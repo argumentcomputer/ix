@@ -16,7 +16,7 @@
 use ix_common::address::Address;
 use ixon::env::Env as IxonEnv;
 use lean_ffi::object::{
-  LeanArray, LeanBool, LeanBorrowed, LeanIOResult, LeanOwned, LeanString,
+  LeanArray, LeanBorrowed, LeanIOResult, LeanOwned, LeanString,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -71,16 +71,16 @@ pub extern "C" fn rs_pack_env(
   main_name: LeanString<LeanBorrowed<'_>>,
   assume: LeanArray<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
-  anon: LeanBool<LeanBorrowed<'_>>,
-  verbose: LeanBool<LeanBorrowed<'_>>,
+  anon: u8,
+  verbose: u8,
 ) -> LeanIOResult<LeanOwned> {
   match pack_env(
     &env_path.to_string(),
     &main_name.to_string(),
     &assume.map(|obj| obj.as_string().to_string()),
     &out_path.to_string(),
-    anon.to_bool(),
-    verbose.to_bool(),
+    anon != 0,
+    verbose != 0,
   ) {
     Ok(()) => LeanIOResult::ok(LeanOwned::box_usize(0)),
     Err(e) => LeanIOResult::error_string(&e),

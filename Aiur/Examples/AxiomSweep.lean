@@ -49,13 +49,14 @@ partial def axiomsOf (env : Environment) (cache : IO.Ref (Std.HashMap Name (Arra
   let some info := env.find? c | return #[]
   let (exprs, more) : Array Expr × List Name := match info with
     | .axiomInfo v => (#[v.type], [])
-    | .defnInfo v => (#[v.type, v.value], [])
-    | .thmInfo v => (#[v.type, v.value], [])
-    | .opaqueInfo v => (#[v.type, v.value], [])
-    | .quotInfo _ => (#[], [])
-    | .ctorInfo v => (#[v.type], [])
-    | .recInfo v => (#[v.type], [])
-    | .inductInfo v => (#[v.type], v.ctors)
+    | .defnInfo v => (#[v.type, v.value], v.all)
+    | .thmInfo v => (#[v.type, v.value], v.all)
+    | .opaqueInfo v => (#[v.type, v.value], v.all)
+    | .quotInfo v => (#[v.type], [])
+    | .ctorInfo v => (#[v.type], [v.induct])
+    | .recInfo v =>
+      (#[v.type] ++ v.rules.toArray.map (·.rhs), v.all ++ v.rules.map (·.ctor))
+    | .inductInfo v => (#[v.type], v.all ++ v.ctors)
   let mut result : Array Name := if info matches .axiomInfo _ then #[c] else #[]
   for dependency in exprs.flatMap (·.getUsedConstants) ++ more.toArray do
     for a in ← axiomsOf env cache dependency do

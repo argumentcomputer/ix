@@ -15,14 +15,14 @@ operations: the IR the code generator emits, after proofs and types are
 erased and `csimp` and `implemented_by` replacements are applied. It reports
 every constant it reaches that execution treats specially:
 * `@[extern]` symbols;
-* `implemented_by` redirections, found by their source or, since a caller's
-  IR already calls the implementation, by their implementation (one found only
-  there is flagged unless inherited or ruled, and is not counted in the
-  summary; an implementation inlined into its caller leaves no call to
-  find), and `unsafe` declarations. The overrides that `@[computed_field]`
-  generates are both;
+* `implemented_by` redirections, found by their source, by their
+  implementation when a caller's IR already calls the implementation, or by
+  walking logical definition bodies from the reached functions when an
+  `@[inline]` or auto-inlined implementation (direct or behind inlined
+  wrappers) leaves no call in the IR, and `unsafe` declarations. The overrides
+  that `@[computed_field]` generates are both;
 * `csimp` replacements, found by their source, by their target when the IR
-  already calls the replacement, or by scanning a constant's logical body
+  already calls the replacement, or by walking logical definition bodies
   when an `@[inline]` replacement target was inlined into its caller;
 * the source `f` of each arity-reduced auxiliary `f._redArg` reached, whose
   code the auxiliary carries;
@@ -127,10 +127,66 @@ def reducedAritySource? (env : Environment) : Name → Option Name
     else none
   | _ => none
 
-/-- Compiled code reachable through execution from `roots`. -/
-partial def runtimeClosure (env : Environment) (roots : Array Name) : RuntimeReport :=
-  go (csimpByTarget env) (csimpBySource env) (implementedByTargets env) roots {} {}
+/-- Compiled code reachable through execution from `roots`. When `skipLogical`
+returns `true` for a constant (e.g. inherited runtime prefixes like `Init`/`Std`),
+its direct `implemented_by`/`csimp` status is still inspected, but the logical
+body walk does not recurse into its definition body. -/
+partial def runtimeClosure (env : Environment) (roots : Array Name)
+    (skipLogical : Name → Bool := fun _ => false) : RuntimeReport :=
+  let csimpSources := csimpBySource env
+  let report := go (csimpByTarget env) csimpSources (implementedByTargets env) roots {} {}
+  let seenImpl : NameSet :=
+    report.implementedBy.foldl (fun s (n, _) => s.insert n) <|
+      report.implementationsReached.foldl (fun s (n, _) => s.insert n) {}
+  let seenCSimp : NameSet :=
+    report.csimp.foldl (fun s (n, _) => s.insert n) <|
+      report.csimpTargets.foldl (fun s (n, _, _) => s.insert n) {}
+  let initTodo := report.visited.filter (!skipLogical ·)
+  let initQueued := initTodo.foldl (fun s n => s.insert n) {}
+  scanLogical csimpSources initTodo initQueued seenImpl seenCSimp report
 where
+  /-- Walk project-level logical definition bodies from reached functions so that
+  `@[inline]` or auto-inlined `@[implemented_by]` and `@[csimp]` sources (even
+  behind multiple inlined wrapper definitions) cannot vanish from post-inlining
+  IR undetected. `queued` deduplicates at push time (`O(V + E)`). -/
+  scanLogical (csimpSources : NameMap (Array Compiler.CSimp.Entry))
+      (todo : Array Name) (queued seenImpl seenCSimp : NameSet)
+      (report : RuntimeReport) : RuntimeReport :=
+    match todo.back? with
+    | none => report
+    | some name =>
+      let todo := todo.pop
+      let (seenImpl, report) :=
+        if seenImpl.contains name then (seenImpl, report)
+        else match Compiler.getImplementedBy? env name with
+          | some target =>
+            (seenImpl.insert name,
+              { report with implementationsReached := report.implementationsReached.push (name, target) })
+          | none => (seenImpl, report)
+      let (seenCSimp, report) :=
+        if seenCSimp.contains name then (seenCSimp, report)
+        else match csimpSources.find? name with
+          | some entries =>
+            let report := entries.foldl (init := report) fun report e =>
+              { report with
+                csimpTargets := report.csimpTargets.push (e.fromDeclName, e.toDeclName, e.thmName) }
+            (seenCSimp.insert name, report)
+          | none => (seenCSimp, report)
+      if skipLogical name then
+        scanLogical csimpSources todo queued seenImpl seenCSimp report
+      else
+        let val? := match env.find? name with
+          | some (.defnInfo v) => some v.value
+          | some (.opaqueInfo v) => some v.value
+          | _ => none
+        match val? with
+        | none => scanLogical csimpSources todo queued seenImpl seenCSimp report
+        | some val =>
+          let (todo, queued) := val.getUsedConstants.foldl (init := (todo, queued))
+            fun (todo, queued) c =>
+              if queued.contains c then (todo, queued)
+              else (todo.push c, queued.insert c)
+          scanLogical csimpSources todo queued seenImpl seenCSimp report
   go (targets : NameMap (Array Compiler.CSimp.Entry))
       (csimpSources : NameMap (Array Compiler.CSimp.Entry))
       (implementations : NameMap (Array Name))
@@ -183,22 +239,6 @@ where
             | some (.opaqueInfo _), none => { report with opaqueCode := report.opaqueCode.push name }
             | _, _ => report
           let usedIr := IR.collectUsedDecls env [decl]
-          -- If `name`'s logical body calls a `@[csimp]` source `c` whose replacement
-          -- target was inlined into `name` (leaving neither `c` nor `toDeclName` in
-          -- `usedIr`), record the inlined `@[csimp]` entries in `csimpTargets`.
-          let report : RuntimeReport := match (env.find? name).bind ConstantInfo.value? with
-            | some val =>
-              val.getUsedConstants.foldl (init := report) fun (report : RuntimeReport) c =>
-                match csimpSources.find? c with
-                | some entries =>
-                  if usedIr.contains c || entries.any (fun e => usedIr.contains e.toDeclName) then
-                    report
-                  else
-                    entries.foldl (init := report) fun (report : RuntimeReport) e =>
-                      { report with
-                        csimpTargets := report.csimpTargets.push (e.fromDeclName, e.toDeclName, e.thmName) }
-                | none => report
-            | none => report
           go targets csimpSources implementations (todo ++ usedIr) seen report
 
 /-- The module declaring `name`; the module being elaborated for a local
@@ -351,7 +391,7 @@ def checkRuntimeWith (roots : Array Name) (prefixes : Array Name) (rulings : Run
     let own := (runtimeClosure env #[s.target]).externs.filter (!inherited ·) |>.qsort Name.lt
     unless own == s.externs.qsort Name.lt do
       throwError m!"assumed substitution {s.source}: {s.target} reaches the externs {own}, not {s.externs}"
-  let report := runtimeClosure env roots
+  let report := runtimeClosure env roots inherited
   -- the substitution is applied where its implementation's primitives are reached
   let applied := rulings.assumed.filter fun s =>
     s.externs.any report.externs.contains || report.visited.contains s.target
@@ -452,7 +492,7 @@ def assumedRuling : Ix.Kernel.Audit.RuntimeRulings :=
   { assumed := #[{ source := ``assumedSource, target := ``assumedTarget, externs := #[``projectExtern] }] }
 
 /-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.usesAssumed]:
-[Ix.Kernel.Audit.RuntimeControls.projectExtern] -/
+[Ix.Kernel.Audit.RuntimeControls.assumedSource, Ix.Kernel.Audit.RuntimeControls.projectExtern] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime #[``usesAssumed] #[`Init]
 
@@ -520,8 +560,10 @@ with
 def treeSize (n : Nat) : Nat := (Tree.node (.leaf n) (.leaf 0)).size
 
 /-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.treeSize]:
-[Ix.Kernel.Audit.RuntimeControls.Tree.leaf,
+[Ix.Kernel.Audit.RuntimeControls.Tree.casesOn,
+ Ix.Kernel.Audit.RuntimeControls.Tree.leaf,
  Ix.Kernel.Audit.RuntimeControls.Tree.node,
+ Ix.Kernel.Audit.RuntimeControls.Tree.size,
  Ix.Kernel.Audit.RuntimeControls.Tree.leaf._override,
  Ix.Kernel.Audit.RuntimeControls.Tree.node._override] -/
 #guard_msgs (whitespace := lax) in
@@ -533,8 +575,10 @@ inherited externs 1, implemented_by 0, unsafe 2, csimp 0; ruled computed_field 2
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``treeSize] #[`Init] { computedFieldTypes := #[``Tree] }
 
 /-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.treeSize]:
-[Ix.Kernel.Audit.RuntimeControls.Tree.leaf,
+[Ix.Kernel.Audit.RuntimeControls.Tree.casesOn,
+ Ix.Kernel.Audit.RuntimeControls.Tree.leaf,
  Ix.Kernel.Audit.RuntimeControls.Tree.node,
+ Ix.Kernel.Audit.RuntimeControls.Tree.size,
  Ix.Kernel.Audit.RuntimeControls.Tree.leaf._override,
  Ix.Kernel.Audit.RuntimeControls.Tree.node._override] -/
 #guard_msgs (whitespace := lax) in
@@ -555,8 +599,10 @@ with
 def indexedTreeSize (n : Nat) : Nat := (IndexedTree.node (k := true) (.leaf n) (.leaf 0)).size
 
 /-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.indexedTreeSize]:
-[Ix.Kernel.Audit.RuntimeControls.IndexedTree.leaf,
+[Ix.Kernel.Audit.RuntimeControls.IndexedTree.casesOn,
+ Ix.Kernel.Audit.RuntimeControls.IndexedTree.leaf,
  Ix.Kernel.Audit.RuntimeControls.IndexedTree.node,
+ Ix.Kernel.Audit.RuntimeControls.IndexedTree.size,
  Ix.Kernel.Audit.RuntimeControls.IndexedTree.leaf._override,
  Ix.Kernel.Audit.RuntimeControls.IndexedTree.node._override] -/
 #guard_msgs (whitespace := lax) in
@@ -632,11 +678,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``metaEval] #[`Init] { elaborationMod
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``usesImplementedBy] #[`Init] { elaborationModules := #[`IxC.Kernel.Audit.Runtime] }
 
-/-! A substitution is found where its implementation is reached, too: a caller's compiled
-code calls the implementation in place of the source, so the walk never meets the source.
-Here the implementation is safe code, and then one reaching only an extern the closure reaches
-anyway; both substitutions are flagged. An implementation the code generator inlines into its
-caller leaves no call to meet, so the walk cannot see it (the second is kept out of line). -/
+/-! A substitution is found where its implementation is reached, AND even when
+the code generator inlines both the implementation and intermediate wrappers
+into the caller, via the logical-body walk. -/
 
 def wrongTarget (n : Nat) : Nat := n + 1
 
@@ -649,6 +693,27 @@ def callsSpecIdentity (n : Nat) : Nat := specIdentity n * 2
 [Ix.Kernel.Audit.RuntimeControls.specIdentity] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime #[``callsSpecIdentity] #[`Init]
+
+@[inline] def inlineWrongTarget (n : Nat) : Nat := n + 1
+
+@[inline, implemented_by inlineWrongTarget]
+def inlineSpecIdentity (n : Nat) : Nat := n
+
+def callsInlineSpecIdentity (n : Nat) : Nat := inlineSpecIdentity n * 2
+
+/-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.callsInlineSpecIdentity]:
+[Ix.Kernel.Audit.RuntimeControls.inlineSpecIdentity] -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntime #[``callsInlineSpecIdentity] #[`Init]
+
+@[inline] def inlineWrapper (n : Nat) : Nat := inlineSpecIdentity n + 3
+
+def callsInlineWrapper (n : Nat) : Nat := inlineWrapper n * 2
+
+/-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.callsInlineWrapper]:
+[Ix.Kernel.Audit.RuntimeControls.inlineSpecIdentity] -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntime #[``callsInlineWrapper] #[`Init]
 
 @[noinline] def hashTarget (n : Nat) : Nat := projectExtern n
 

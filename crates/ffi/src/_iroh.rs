@@ -29,7 +29,7 @@ extern "C" fn rs_iroh_get(
 
 /// `Iroh.Serve.serve' : Unit → Except String Unit`
 #[unsafe(no_mangle)]
-extern "C" fn rs_iroh_serve() -> LeanExcept<LeanOwned> {
+extern "C" fn rs_iroh_serve(_unit: LeanOwned) -> LeanExcept<LeanOwned> {
   LeanExcept::error_string(
     "Iroh functions not supported when the Rust `net` feature is disabled \
      or on MacOS aarch64-darwin",

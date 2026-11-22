@@ -12,11 +12,8 @@ use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanOwned, LeanRef};
 // =============================================================================
 
 lean_ffi::lean_domain_type! {
-  // Simple enums (passed as raw unboxed tag values)
+  // Simple enum helper namespace (encoded via to_u8/from_u8)
   LeanIxBinderInfo;
-  LeanIxonDefKind;
-  LeanIxonDefinitionSafety;
-  LeanIxonQuotKind;
 
   // Opaque types (passed through without field access)
   LeanIxonExprMetaArena;

@@ -104,7 +104,7 @@ extern "C" fn rs_iroh_get(
 
 /// `Iroh.Serve.serve' : Unit → Except String Unit`
 #[unsafe(no_mangle)]
-extern "C" fn rs_iroh_serve() -> LeanExcept<LeanOwned> {
+extern "C" fn rs_iroh_serve(_unit: LeanOwned) -> LeanExcept<LeanOwned> {
   let rt =
     tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 

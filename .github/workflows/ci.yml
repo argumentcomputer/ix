@@ -35,6 +35,8 @@ jobs:
       run_lints: ${{ steps.plan.outputs.run_lints }}
       run_rust: ${{ steps.plan.outputs.run_rust }}
       run_cuda: ${{ steps.plan.outputs.run_cuda }}
+      run_gnark: ${{ steps.plan.outputs.run_gnark }}
+      run_contracts: ${{ steps.plan.outputs.run_contracts }}
       run_host_build: ${{ steps.plan.outputs.run_host_build }}
       run_host_fast: ${{ steps.plan.outputs.run_host_fast }}
       run_host_heavy: ${{ steps.plan.outputs.run_host_heavy }}
@@ -66,9 +68,18 @@ jobs:
             rust:
               - 'crates/**'
               - '**/*.rs'
+              - 'c/**'
+              - 'Aiur/c/**'
               - 'deny.toml'
               - '.github/valgrind.supp'
               - 'Tests/Fixtures/**'
+            gnark:
+              - 'tools/gnark/**'
+              - 'crates/proof-compression/src/pipeline/wrap/outer/**'
+              - 'crates/proof-compression/verifying-keys/**'
+            contracts:
+              - 'contracts/**'
+              - 'crates/proof-compression/verifying-keys/**'
             cuda:
               - 'crates/aiur/**'
               - 'crates/ixvm/**'
@@ -92,6 +103,7 @@ jobs:
               - 'Apps.lean'
               - 'Apps/**'
               - 'Benchmarks/**'
+              - 'c/**'
               - 'Aiur/Aiur/Ixon.lean'
               - 'Aiur/Aiur/Ixon/**'
               - 'IxVM/IxVM/Fixture.lean'
@@ -205,6 +217,8 @@ jobs:
           F_GLOBAL: ${{ steps.filter.outputs.global }}
           F_RUST: ${{ steps.filter.outputs.rust }}
           F_CUDA: ${{ steps.filter.outputs.cuda }}
+          F_GNARK: ${{ steps.filter.outputs.gnark }}
+          F_CONTRACTS: ${{ steps.filter.outputs.contracts }}
           F_HOST: ${{ steps.filter.outputs.host }}
           F_KERNEL: ${{ steps.filter.outputs.kernel }}
           F_REFINEMENT: ${{ steps.filter.outputs.refinement }}
@@ -219,11 +233,13 @@ jobs:
           fi
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            rust=true; cuda=true; host=true; kernel=true; refinement=true; formal=true
+            rust=true; cuda=true; gnark=true; contracts=true; host=true; kernel=true; refinement=true; formal=true
           else
-            rust=false; cuda=false; host=false; kernel=false; refinement=false; formal=false
+            rust=false; cuda=false; gnark=false; contracts=false; host=false; kernel=false; refinement=false; formal=false
             [ "$F_GLOBAL" = "true" ] || [ "$F_RUST" = "true" ] && rust=true
             [ "$F_GLOBAL" = "true" ] || [ "$F_CUDA" = "true" ] && cuda=true
+            [ "$F_GLOBAL" = "true" ] || [ "$F_GNARK" = "true" ] && gnark=true
+            [ "$F_GLOBAL" = "true" ] || [ "$F_CONTRACTS" = "true" ] && contracts=true
             [ "$F_GLOBAL" = "true" ] || [ "$F_HOST" = "true" ] || [ "$F_RUST" = "true" ] && host=true
             [ "$F_GLOBAL" = "true" ] || [ "$F_KERNEL" = "true" ] && kernel=true
             [ "$F_GLOBAL" = "true" ] || [ "$F_REFINEMENT" = "true" ] && refinement=true
@@ -234,6 +250,8 @@ jobs:
           run_lints=false
           run_rust=false
           run_cuda=false
+          run_gnark=false
+          run_contracts=false
           run_host_build=false
           run_host_fast=false
           run_host_heavy=false
@@ -258,6 +276,8 @@ jobs:
             run_lints=true
             [ "$rust" = "true" ] && run_rust=true
             [ "$cuda" = "true" ] && run_cuda=true
+            [ "$gnark" = "true" ] && run_gnark=true
+            [ "$contracts" = "true" ] && run_contracts=true
             if [ "$host" = "true" ] || { [ "$is_draft" = "false" ] && [ "$formal" = "true" ]; }; then
               run_host_build=true
             fi
@@ -284,6 +304,8 @@ jobs:
             echo "run_lints=$run_lints"
             echo "run_rust=$run_rust"
             echo "run_cuda=$run_cuda"
+            echo "run_gnark=$run_gnark"
+            echo "run_contracts=$run_contracts"
             echo "run_host_build=$run_host_build"
             echo "run_host_fast=$run_host_fast"
             echo "run_host_heavy=$run_host_heavy"
@@ -441,6 +463,38 @@ jobs:
         with:
           path: .lake
           key: lake-cuda-13.3.1-ubuntu26-x86-64-v4-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-${{ github.sha }}
+
+  gnark-test:
+    name: Go gnark verifier tests
+    needs: changes
+    if: needs.changes.outputs.run_gnark == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: tools/gnark/go.mod
+          cache-dependency-path: tools/gnark/go.sum
+      - name: Run gnark Go tests (PLONK + Groth16)
+        working-directory: tools/gnark
+        run: go test -tags plonk,groth16 ./...
+
+  contracts-test:
+    name: Solidity verifier contract tests
+    needs: changes
+    if: needs.changes.outputs.run_contracts == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
+      - name: Run PLONK and Groth16 Solidity tests
+        run: |
+          forge test --root contracts/plonk -vv
+          forge test --root contracts/groth16 -vv
 
   # Build all non-Mathlib host targets ONCE on a 32-vCPU runner and snapshot the
   # `ci-host` sticky disk so downstream test and lint jobs fan out in parallel.
@@ -737,7 +791,22 @@ jobs:
           lake build --wfail Ix.Cert.Audit kernel-layering kernel-trust-surface kernel-entry-cases kernel-meta-names
       - name: Check certified kernel, host audits, model, fences, entry cases and meta names
         if: needs.changes.outputs.is_push != 'true'
-        run: lake run check-kernel --with-model
+        run: |
+          lake env lean --run Scripts/CheckCiFilters.lean
+          lake run check-kernel --with-model
+          pinned_cb=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' IxC/Kernel/Admission/ClosureManifest.lean)
+          test -n "$pinned_cb"
+          printf '%s  Tests/Fixtures/check-bytes-closure-manifest.txt\n' "$pinned_cb" | sha256sum -c -
+          pinned_cc=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' Ix/Cert/ClosureManifest.lean)
+          test -n "$pinned_cc"
+          printf '%s  Tests/Fixtures/compile-correct-closure-manifest.txt\n' "$pinned_cc" | sha256sum -c -
+          lake env leanchecker \
+            IxC.Kernel.Audit.Roots \
+            IxC.Kernel.Admission.Audit \
+            Ix.Ixon.Authenticated.Audit \
+            Ix.HostAdmission.Audit \
+            Ix.Cert.ModuleAudit
+          lake -d Models/SetTheory env leanchecker IxSetTheoryModel.Audit
 
   valgrind-ffi:
     name: Valgrind FFI
@@ -904,6 +973,7 @@ jobs:
       - name: Run Aiur axiom sweep, unit tests and formal-package-tests
         run: |
           lake env Aiur/.lake/build/bin/axiom_sweep Aiur
+          lake env leanchecker Aiur.Audit
           Aiur/.lake/build/bin/aiur_tests
           Aiur/.lake/build/bin/execution_tests
           Aiur/.lake/build/bin/trace_tests
@@ -951,8 +1021,18 @@ jobs:
           if [ "$IS_PUSH" != "true" ]; then
             lake exe ixvm/ixvm-proof-gen --check
           fi
-          lake build --wfail IxVMRefinement
+          lake build --wfail IxVMRefinement Ix.IxVM.ConsistencyAudit Ix.IxVM.ConsistencyModelAudit Ix.IxVM.Refinement.Audit
           if [ "$IS_PUSH" != "true" ]; then
+            lake env lean --run Scripts/CheckCiFilters.lean
+            pinned=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' IxVMRefinement/Endpoint/ClosureManifest.lean)
+            test -n "$pinned"
+            printf '%s  Tests/Fixtures/circuit-composed-closure-manifest.txt\n' "$pinned" | sha256sum -c -
+            lake env leanchecker \
+              IxVMRefinement.Endpoint.ComposedResidual \
+              IxVMRefinement.Endpoint.ClosureAudit \
+              Ix.IxVM.ConsistencyAudit \
+              Ix.IxVM.ConsistencyModelAudit \
+              Ix.IxVM.Refinement.Audit
             tmp=$(mktemp -d)
             {
               echo "import IxC.Kernel.Audit.Axioms"
@@ -1120,6 +1200,8 @@ jobs:
       - quick-checks
       - rust-test
       - cuda-compile
+      - gnark-test
+      - contracts-test
       - host-build
       - host-test-primary
       - host-test-cli
@@ -1148,6 +1230,10 @@ jobs:
           R_RUST: ${{ needs.rust-test.result }}
           E_CUDA: ${{ needs.changes.outputs.run_cuda }}
           R_CUDA: ${{ needs.cuda-compile.result }}
+          E_GNARK: ${{ needs.changes.outputs.run_gnark }}
+          R_GNARK: ${{ needs.gnark-test.result }}
+          E_CONTRACTS: ${{ needs.changes.outputs.run_contracts }}
+          R_CONTRACTS: ${{ needs.contracts-test.result }}
           E_HOST_BUILD: ${{ needs.changes.outputs.run_host_build }}
           R_HOST_BUILD: ${{ needs.host-build.result }}
           E_HOST_FAST: ${{ needs.changes.outputs.run_host_fast }}
@@ -1195,6 +1281,8 @@ jobs:
           check_job quick-checks "$E_QUICK" "$R_QUICK"
           check_job rust-test "$E_RUST" "$R_RUST"
           check_job cuda-compile "$E_CUDA" "$R_CUDA"
+          check_job gnark-test "$E_GNARK" "$R_GNARK"
+          check_job contracts-test "$E_CONTRACTS" "$R_CONTRACTS"
           check_job host-build "$E_HOST_BUILD" "$R_HOST_BUILD"
           check_job host-test-primary "$E_HOST_FAST" "$R_HOST_PRIMARY"
           check_job host-test-cli "$E_HOST_FAST" "$R_HOST_CLI"

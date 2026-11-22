@@ -251,11 +251,21 @@ def requiredKernelFiles : Array String := #[
   "Ix/Address/Admission.lean",
   "Ix/KernelDisplay/Peek.lean"]
 
+/-- Required non-Lean security-critical files and the CI filter groups that must cover them. -/
+def requiredFilterCoverage : Array (String × String) := #[
+  ("tools/gnark/circuit.go", "gnark"),
+  ("contracts/plonk/src/PlonkVerifier.sol", "contracts"),
+  ("contracts/groth16/src/IxGroth16Verifier.sol", "contracts"),
+  ("c/common.h", "rust"),
+  ("c/common.h", "host"),
+  ("Aiur/c/execution.c", "rust"),
+  ("Aiur/c/execution.c", "formal")]
+
 /-- Closure manifests to verify: `(manifestPath, ciFilterName, required)`. -/
 def manifestChecks : Array (String × String × Bool) := #[
   ("Tests/Fixtures/circuit-composed-closure-manifest.txt", "refinement", true),
-  ("Tests/Fixtures/compile-correct-closure-manifest.txt", "kernel", false),
-  ("Tests/Fixtures/check-bytes-closure-manifest.txt", "kernel", false)]
+  ("Tests/Fixtures/compile-correct-closure-manifest.txt", "kernel", true),
+  ("Tests/Fixtures/check-bytes-closure-manifest.txt", "kernel", true)]
 
 def ciWorkflowPath : System.FilePath := ".github/workflows/ci.yml"
 
@@ -308,6 +318,17 @@ def run : IO UInt32 := do
         checkedFiles := checkedFiles + 1
         unless matchesAny kernelGlobs p do
           IO.eprintln s!"[ci-filters] MISSING from 'kernel:' filter (required trust-surface file): {p}"
+          failures := failures + 1
+    -- Required non-Lean security-critical files (Go gnark, Solidity contracts, C headers)
+    for (p, filterName) in requiredFilterCoverage do
+      checkedFiles := checkedFiles + 1
+      match filters[filterName]? with
+      | none =>
+        IO.eprintln s!"[ci-filters] missing '{filterName}:' filter group in {ciWorkflowPath} (needed for {p})"
+        failures := failures + 1
+      | some globs =>
+        unless matchesAny globs p do
+          IO.eprintln s!"[ci-filters] MISSING from '{filterName}:' filter (required non-Lean file): {p}"
           failures := failures + 1
     if failures == 0 then
       IO.println s!"[ci-filters] OK: {checkedManifests} manifest(s), {checkedFiles} path checks passed against {ciWorkflowPath}."

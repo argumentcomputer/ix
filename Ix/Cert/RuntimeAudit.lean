@@ -60,14 +60,18 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.IndFlags.replaceCtorResultHeadWithAux,
  Ix.IndFlags.replaceFVarsMap,
  Ix.IndFlags.substLevel,
+ Ix.Kernel.withExclusive,
  Ix.Name.pretty,
  Ix.Name.toStringAux,
  Ixon.RawEnv.addNameComponentsWithBlobs,
  _private.Ix.Environment.0.Address.mutsName.go,
  _private.Ix.Environment.0.Ix.Expr.hashSyntax,
  Ix.Kernel.Expr.app,
+ Ix.Kernel.Expr.beq,
  Ix.Kernel.Expr.bvar,
+ Ix.Kernel.Expr.casesOn,
  Ix.Kernel.Expr.const,
+ Ix.Kernel.Expr.data,
  Ix.Kernel.Expr.forallE,
  Ix.Kernel.Expr.fvar,
  Ix.Kernel.Expr.instantiate1Lift,
@@ -77,10 +81,25 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.Kernel.Expr.lit,
  Ix.Kernel.Expr.proj,
  Ix.Kernel.Expr.sort,
+ Ix.Kernel.Key.aux,
+ Ix.Kernel.Key.beq,
+ Ix.Kernel.Key.casesOn,
+ Ix.Kernel.Key.hashData,
  Ix.Kernel.Key.id,
+ Ix.Kernel.Key.role,
+ Ix.Kernel.Level.beq,
+ Ix.Kernel.Level.casesOn,
  Ix.Kernel.Level.hashData,
+ Ix.Kernel.Level.imax,
+ Ix.Kernel.Level.max,
+ Ix.Kernel.Level.param,
+ Ix.Kernel.Level.succ,
+ Ix.Kernel.Level.zero,
+ Ix.Kernel.Name.anonymous,
+ Ix.Kernel.Name.casesOn,
  Ix.Kernel.Name.hashData,
  Ix.Kernel.Name.num,
+ Ix.Kernel.Name.str,
  Ix.Kernel.Expr.app._override,
  Ix.Kernel.Expr.bvar._override,
  Ix.Kernel.Expr.const._override,
@@ -94,7 +113,8 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.Kernel.Key.id._override,
  Ix.Kernel.Level.hashData._override,
  Ix.Kernel.Name.hashData._override,
- Ix.Kernel.Name.num._override] -/
+ Ix.Kernel.Name.num._override,
+ _private.Ix.Sharing.Exact.Basic.0.Ix.Sharing.Exact.exprPtr.unsafe_impl_2] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { csimpModules := #[`Ix] }
 
@@ -112,14 +132,18 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { c
  Ix.IndFlags.replaceCtorResultHeadWithAux,
  Ix.IndFlags.replaceFVarsMap,
  Ix.IndFlags.substLevel,
+ Ix.Kernel.withExclusive,
  Ix.Name.pretty,
  Ix.Name.toStringAux,
  Ixon.RawEnv.addNameComponentsWithBlobs,
  _private.Ix.Environment.0.Address.mutsName.go,
  _private.Ix.Environment.0.Ix.Expr.hashSyntax,
  Ix.Kernel.Expr.app,
+ Ix.Kernel.Expr.beq,
  Ix.Kernel.Expr.bvar,
+ Ix.Kernel.Expr.casesOn,
  Ix.Kernel.Expr.const,
+ Ix.Kernel.Expr.data,
  Ix.Kernel.Expr.forallE,
  Ix.Kernel.Expr.fvar,
  Ix.Kernel.Expr.instantiate1Lift,
@@ -129,10 +153,25 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { c
  Ix.Kernel.Expr.lit,
  Ix.Kernel.Expr.proj,
  Ix.Kernel.Expr.sort,
+ Ix.Kernel.Key.aux,
+ Ix.Kernel.Key.beq,
+ Ix.Kernel.Key.casesOn,
+ Ix.Kernel.Key.hashData,
  Ix.Kernel.Key.id,
+ Ix.Kernel.Key.role,
+ Ix.Kernel.Level.beq,
+ Ix.Kernel.Level.casesOn,
  Ix.Kernel.Level.hashData,
+ Ix.Kernel.Level.imax,
+ Ix.Kernel.Level.max,
+ Ix.Kernel.Level.param,
+ Ix.Kernel.Level.succ,
+ Ix.Kernel.Level.zero,
+ Ix.Kernel.Name.anonymous,
+ Ix.Kernel.Name.casesOn,
  Ix.Kernel.Name.hashData,
  Ix.Kernel.Name.num,
+ Ix.Kernel.Name.str,
  Ix.Kernel.Expr.app._override,
  Ix.Kernel.Expr.bvar._override,
  Ix.Kernel.Expr.const._override,
@@ -146,7 +185,8 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { c
  Ix.Kernel.Key.id._override,
  Ix.Kernel.Level.hashData._override,
  Ix.Kernel.Name.hashData._override,
- Ix.Kernel.Name.num._override] -/
+ Ix.Kernel.Name.num._override,
+ _private.Ix.Sharing.Exact.Basic.0.Ix.Sharing.Exact.exprPtr.unsafe_impl_2] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Compile.ReadyCompile.reportIO] #[`Init, `Std] { csimpModules := #[`Ix] }
 
@@ -181,7 +221,8 @@ These are the rulings of the authenticated entries
   names and keys, admitted in every kernel closure.
 
 The list that remains is a strict subset of `compile`'s list above: its
-`partial` definitions. -/
+`partial` definitions plus the inlined `unsafeImplOf` pointer helper in
+`Ix.Sharing.Exact.Basic` surfaced by `Runtime.lean`'s logical-body walk. -/
 
 /-- error: project-level execution replacements reached from [Ix.LeanIngress.checkSourceCollapsedBundledAt,
  Ix.Cert.compileChecked,
@@ -200,7 +241,8 @@ The list that remains is a strict subset of `compile`'s list above: its
  Ix.Name.toStringAux,
  Ixon.RawEnv.addNameComponentsWithBlobs,
  _private.Ix.Environment.0.Address.mutsName.go,
- _private.Ix.Environment.0.Ix.Expr.hashSyntax] -/
+ _private.Ix.Environment.0.Ix.Expr.hashSyntax,
+ _private.Ix.Sharing.Exact.Basic.0.Ix.Sharing.Exact.exprPtr.unsafe_impl_2] -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith
@@ -247,8 +289,15 @@ role-evidence and role-binding synthesis, frozen here. -/
  _private.Ix.Merkle.0.Ix.Merkle.buildTree,
  Ix.RoleBinding.Evidence.countUses,
  Ix.RoleBinding.Evidence.egress,
+ _private.Ix.CanonM.0.Ix.CanonM.leanExprPtr.unsafe_impl_2,
+ _private.Ix.CanonM.0.Ix.CanonM.leanLevelPtr.unsafe_impl_2,
+ _private.Ix.CanonM.0.Ix.CanonM.leanNamePtr.unsafe_impl_2,
  _private.Ix.Ixon.0.Ixon.Env.topologicalSortNames.visit,
- Ix.RoleBinding.Evidence.egress.build] -/
+ Ix.RoleBinding.Evidence.egress.build,
+ _private.Ix.Compile.KernelAnnotate.0.Ix.Compile.KernelAnnotate.install.unsafe_impl_24,
+ _private.Ix.Compile.KernelAnnotate.0.Ix.Compile.KernelAnnotate.install.unsafe_impl_27,
+ _private.Ix.Compile.KernelAnnotate.0.Ix.Compile.KernelAnnotate.phaseAWorkers.unsafe_impl_4,
+ _private.Ix.Sharing.Exact.Basic.0.Ix.Sharing.Exact.exprPtr.unsafe_impl_2] -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith

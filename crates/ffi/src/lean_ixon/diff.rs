@@ -25,8 +25,8 @@ use ixon::diff::{
 };
 use ixon::env::{Env as IxonEnv, LazyIndex};
 use lean_ffi::object::{
-  LeanArray, LeanBool, LeanBorrowed, LeanByteArray, LeanExcept, LeanIOResult,
-  LeanOption, LeanOwned, LeanProd, LeanString,
+  LeanArray, LeanBorrowed, LeanByteArray, LeanExcept, LeanIOResult, LeanOption,
+  LeanOwned, LeanProd, LeanString,
 };
 
 use crate::lean::{
@@ -250,12 +250,12 @@ fn run_diff(
 pub extern "C" fn rs_diff_envs(
   a: LeanByteArray<LeanBorrowed<'_>>,
   b: LeanByteArray<LeanBorrowed<'_>>,
-  meta: LeanBool<LeanBorrowed<'_>>,
+  meta: u8,
 ) -> LeanExcept<LeanOwned> {
   let (a_bytes, b_bytes) = (a.as_bytes(), b.as_bytes());
   let progress =
     a_bytes.len() >= PROGRESS_MIN_BYTES || b_bytes.len() >= PROGRESS_MIN_BYTES;
-  let want_meta = meta.to_bool();
+  let want_meta = meta != 0;
   let sides = parse_side_bytes(a_bytes, "first", progress)
     .and_then(|a| Ok((a, parse_side_bytes(b_bytes, "second", progress)?)));
   let ((ia, ea), (ib, eb)) = match sides {
@@ -320,9 +320,9 @@ fn parse_side_mmap(
 pub extern "C" fn rs_diff_env_files(
   a_path: LeanString<LeanBorrowed<'_>>,
   b_path: LeanString<LeanBorrowed<'_>>,
-  meta: LeanBool<LeanBorrowed<'_>>,
+  meta: u8,
 ) -> LeanIOResult<LeanOwned> {
-  let want_meta = meta.to_bool();
+  let want_meta = meta != 0;
   let a_path = a_path.to_string();
   let b_path = b_path.to_string();
   let sides = mmap_file(&a_path, "first")

@@ -163,6 +163,9 @@ registries = [
 # Lint level for when multiple versions of the same crate are detected
 multiple-versions = "warn"
 # Lint level for when a crate version requirement is `*`
+# Workspace path/git crates omit `version`, which cargo-deny classifies as wildcard;
+# supply-chain provenance is enforced by `[sources]` (`unknown-git = "deny"`,
+# `unknown-registry = "deny"`).
 wildcards = "allow"
 # The graph highlighting used when creating dotgraphs for crates
 # with multiple versions
@@ -235,19 +238,19 @@ skip-tree = [
 [sources]
 # Lint level for what to happen when a crate from a crate registry that is not
 # in the allow list is encountered
-unknown-registry = "warn"
+unknown-registry = "deny"
 # Lint level for what to happen when a crate from a git repository that is not
 # in the allow list is encountered
-unknown-git = "warn"
+unknown-git = "deny"
 # List of URLs for allowed crate registries. Defaults to the crates.io index
 # if not specified. If it is specified but empty, no registries are allowed.
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # List of URLs for allowed Git repositories
-allow-git = []
+allow-git = ["https://github.com/Plonky3/Plonky3"]
 
 [sources.allow-org]
 # github.com organizations to allow git sources for
-github = []
+github = ["argumentcomputer"]
 # gitlab.com organizations to allow git sources for
 gitlab = []
 # bitbucket.org organizations to allow git sources for

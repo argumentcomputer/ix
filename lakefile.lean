@@ -855,6 +855,7 @@ script "check-kernel" (args) := do
   -- executables into one Lake invocation so dependency tracing runs once.
   run "lake" #["build", "--wfail",
     "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit",
+    "Ix.HostAdmission.Audit",
     "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Ix.Cert.Audit", "Ix.Cert.ClosureManifest",
     "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection",
     "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication",

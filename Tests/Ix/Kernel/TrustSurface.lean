@@ -86,6 +86,24 @@ list fails just as loudly as one in a bare file.
       (a `meta section`) and splice the resulting literals. Nothing here
       is in the binary; the literals are ordinary data the proofs consume.
 
+  IxC/Kernel/Audit/ClosureManifest.lean  unsafe
+      NAME ONLY: matches `Lean.DefinitionSafety.unsafe` when hashing a
+      definition's safety tag into the SHA-256 closure manifest.
+
+  IxC/Kernel/Audit/Roots.lean   ptrAddrUnsafe
+      NAME ONLY: enumerates Lean's audited runtime primitives
+      (`withPtrAddrUnsafe`, `ptrEq`, `ptrAddrUnsafe`, `isExclusiveUnsafe`) in
+      `runtimeRulings`.
+
+  IxC/Kernel/Audit/Runtime.lean unsafe, implemented_by, computed_field, extern
+      AUDIT ENGINE & NEGATIVE CONTROLS: `Finding.unsafe` constructor and
+      elaboration-time `RuntimeControls` negative-control fixtures verifying
+      `checkRuntimeWith` rejects unruled escapes.
+
+  Ix/Cert/Compile.lean          ofReduceBool
+      NAME ONLY: matches `Ix.Kernel.Role.ofReduceBool` / `.ofReduceNat` when
+      classifying axiom roles in `roleRecordKind`.
+
   Ix/Address/Admission.lean     implemented_by
       The admission hash: `Address.admissionHash` is defined as pure
       BLAKE3 (`Address.blake3Pure`), which every theorem about the
@@ -147,7 +165,7 @@ open Tests.Ix.Kernel.KernelLayout
 
 def tokens : List String :=
   ["unsafe", "unsafeCast", "ptrAddrUnsafe", "implemented_by", "computed_field", "native_decide",
-   "ofReduceBool", "sorry", "lcProof", "extern", "axiom"]
+   "bv_decide", "ofReduceBool", "sorry", "lcProof", "extern", "axiom"]
 
 def allow : List (String × List String) := [
   ("IxC/Kernel/Expr.lean", ["computed_field"]),
@@ -156,8 +174,18 @@ def allow : List (String × List String) := [
   ("IxC/Kernel/Roles.lean", ["ofReduceBool"]),
   ("IxC/Kernel/BasisGen.lean", ["unsafe", "implemented_by"]),
   ("IxC/Kernel/Exclusive.lean", ["unsafe", "implemented_by"]),
+  ("IxC/Kernel/Audit/ClosureManifest.lean", ["unsafe"]),
+  ("IxC/Kernel/Audit/Roots.lean", ["ptrAddrUnsafe"]),
+  ("IxC/Kernel/Audit/Runtime.lean", ["unsafe", "implemented_by", "computed_field", "extern"]),
+  ("Ix/Cert/Compile.lean", ["ofReduceBool"]),
   ("Ix/Address/Admission.lean", ["implemented_by"]),
   ("Ix/KernelDisplay/Peek.lean", ["unsafe", "unsafeCast"])]
+
+/-- Additional certified-boundary directories scanned for lexical compiler
+escapes so inlined `@[implemented_by]` or `bv_decide` cannot hide outside the
+core checker/theory fence. -/
+def boundaryDirs : Array System.FilePath :=
+  #["IxC/Ixon", "Ix/Ixon/Authenticated", "Ix/HostAdmission", "Ix/Cert"]
 
 /-- Root-library files in the certified entries' execution that substitute
 code: the admission hash, which the authenticated entries run. -/
@@ -525,13 +553,18 @@ def selftest : IO UInt32 := do
 def run (args : List String) : IO UInt32 := do
   if args.contains "--selftest" then return ← selftest
   if (← selftest) != 0 then return 1
-  let (kernelSources, unclassified) ← covered
+  let (kernelCore, unclassified) ← covered
   if ← reportUnclassified "TRUST-SURFACE" unclassified then return 1
+  let allKernel ← leanFilesUnder "IxC/Kernel"
+  let kernelIx := allKernel.filter (fun f => part? f == some .ix)
+  let mut boundarySources : Array String := #[]
+  for dir in boundaryDirs do
+    boundarySources := boundarySources ++ (← leanFilesUnder dir)
   for rel in rootSources ++ displaySources do
     unless ← System.FilePath.pathExists rel do
       IO.println s!"TRUST-SURFACE FAIL - a root source is missing: {rel}"
       return 1
-  let sources := kernelSources ++ rootSources ++ displaySources
+  let sources := kernelCore ++ kernelIx ++ boundarySources ++ rootSources ++ displaySources
   let mut occurrences : Array (String × Nat × String × String) := #[]
   for rel in sources do
     match ← scanFile rel with

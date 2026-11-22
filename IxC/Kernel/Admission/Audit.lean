@@ -159,11 +159,12 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- csimp and all ruling counts are unchanged.
 -- Normalized recursor analysis and the proved csimp replacement matching `IxC/Kernel/Audit/Roots.lean`
 -- move the byte-entry closure from 7067 compiled functions and 28 ruled csimps to 7114 and 29.
+-- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 7114 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 29 -/
+ Ix.Kernel.Admission.checkBytes]: 7114 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
