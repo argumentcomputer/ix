@@ -207,13 +207,38 @@ def parseV5ModeRefusal (text : String) : Option (Producer × Bool) := do
     else ""
   return ({ verdict := "reject", stage := "resource", code, constant }, needsAddr)
 
+/-- Classify a deterministic v5 `IxC.Resource` limit decline (`mode checking [(uncertified)] declines: …`)
+into a structured `resource-decline` verdict code (never raw prose; still fail-closed on typing errors,
+crashes, or unrecognized declines). -/
+def parseV5ModeDecline (text : String) : Option Producer := do
+  let tail ←
+    match text.splitOn "mode checking (uncertified) declines: " with
+    | _ :: r :: _ => some r
+    | _ =>
+      match text.splitOn "mode checking declines: " with
+      | _ :: r :: _ => some r
+      | _ => none
+  let tail := (tail.splitOn "\n").headD tail
+  let code ←
+    if (tail.splitOn "the class oracle's depth limit").length > 1 then some "oracleDepthLimit"
+    else if (tail.splitOn "the class oracle's fuel limit").length > 1 ||
+        (tail.splitOn "the class oracle's kernel fuel").length > 1 then some "oracleFuelLimit"
+    else if (tail.splitOn "the checker's step limit").length > 1 then some "checkerStepLimit"
+    else if (tail.splitOn "the checker's depth limit").length > 1 then some "checkerDepthLimit"
+    else if (tail.splitOn "the closure's walk reached its step limit").length > 1 then some "closureWalkLimit"
+    else none
+  return { verdict := "reject", stage := "resource-decline", code }
+
 /-- The verdict of a failed `ix compile` from its log (as the verdict
 script of the ix usage-ownership fixtures reads it). Resource refusals come in
 v5 `Ix.ModeCheck` / `IxC.Resource` spelling (`mode checking [(uncertified)] refuses
-AT: WITNESS`) and legacy v4 spellings (Lean `resource admission (some ADDRESS):
+AT: WITNESS` or deterministic limit declines `mode checking [(uncertified)] declines: …`)
+and legacy v4 spellings (Lean `resource admission (some ADDRESS):
 Ix.Resource.Error.CODE` and retired Rust `… Hash("ADDRESS") …}): CODE" })`). -/
 def parseLog (log : String) : Producer :=
   if let some (p, _) := parseV5ModeRefusal log then
+    p
+  else if let some p := parseV5ModeDecline log then
     p
   else if (log.splitOn "resource admission (some ").length > 1 then
     let constant := ((between log "resource admission (some " ")").getD "").take 12 |>.toString
@@ -290,6 +315,10 @@ def completedRejection (status : UInt32) (log : String) : Except String Producer
           "UnrestrictedEscape", "Nonduplicable", "InvalidBorrow", "InvalidPlace", "InvalidScope"].contains constructor do
         throw s!"unknown or exhausted resource rejection: {p.code}"
       unless isHex 12 p.constant do throw "resource rejection has no constant address"
+  | "resource-decline" =>
+    unless line.startsWith "uncaught exception: mode checking (uncertified) declines: " ||
+        line.startsWith "uncaught exception: mode checking declines: " do
+      throw "incomplete v5 mode-checking decline"
   | "elaboration" =>
     unless line.startsWith "uncaught exception: source contract: Ix.Compile.SourceContractError." do
       throw "unrecognized source-contract rejection"
@@ -368,21 +397,23 @@ def check (p : FilePath := path) : IO (Nat × Nat × Nat) := do
     need (!e.consts.isEmpty && !e.categories.isEmpty) s!"{label}: no consts or categories"
     match e.producer.verdict with
     | "ok" =>
-      let some name := e.fixture | throw (IO.userError s!"{label}: accepted, but no corpus fixture")
-      let some fx := m.fixtures.find? (·.name == name)
-        | throw (IO.userError s!"{label}: no fixture {name} in {f.manifest}")
-      need (fx.source.path == e.source && fx.consts == e.consts && fx.source.variant == "annotated")
-        s!"{label}: fixture {name} has another source, consts or variant"
-      need (m.producer.profile.isNone || fx.resource.isSome)
-        s!"{label}: fixture {name} has no resource record although the family pins a profile"
-      if let some t := e.twin then
-        let some tw := m.fixtures.find? (·.name == t)
-          | throw (IO.userError s!"{label}: no twin {t} in {f.manifest}")
-        need (tw.source.variant == "plain" && tw.consts == e.consts && tw.roots.map (·.name) == fx.roots.map (·.name))
-          s!"{label}: twin {t} is not a plain fixture with the same roots"
+      if let some name := e.fixture then
+        let some fx := m.fixtures.find? (·.name == name)
+          | throw (IO.userError s!"{label}: no fixture {name} in {f.manifest}")
+        need (fx.source.path == e.source && fx.consts == e.consts && fx.source.variant == "annotated")
+          s!"{label}: fixture {name} has another source, consts or variant"
+        need (m.producer.profile.isNone || fx.resource.isSome)
+          s!"{label}: fixture {name} has no resource record although the family pins a profile"
+        if let some t := e.twin then
+          let some tw := m.fixtures.find? (·.name == t)
+            | throw (IO.userError s!"{label}: no twin {t} in {f.manifest}")
+          need (tw.source.variant == "plain" && tw.consts == e.consts && tw.roots.map (·.name) == fx.roots.map (·.name))
+            s!"{label}: twin {t} is not a plain fixture with the same roots"
+      else
+        need e.twin.isNone s!"{label}: twin without corpus fixture"
       accepted := accepted + 1
     | "reject" =>
-      need (e.fixture.isNone && ["resource", "elaboration", "profile", "other"].contains e.producer.stage &&
+      need (e.fixture.isNone && ["resource", "resource-decline", "elaboration", "profile", "other"].contains e.producer.stage &&
         !e.producer.code.isEmpty) s!"{label}: a rejection needs a stage and a code, and no fixture"
       rejected := rejected + 1
     | v => throw (IO.userError s!"{label}: verdict {v}")

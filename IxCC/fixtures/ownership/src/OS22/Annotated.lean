@@ -1,4 +1,5 @@
 import Ix.Compile.SourceContract.Elab
+open scoped Ix.Modes
 
 /-!
 OS-22 `local-forward` of the ownership suite (`fixtures/ownership/README.md`, MT.7).
@@ -9,9 +10,9 @@ driver for `lean --run`: each stdin line `ROOT ARG…` prints that root's
 value on those arguments.
 -/
 
-def localId (~ x : Nat) : ~ Nat := x
+def localId (@borrowed x : Nat) : @borrowed Nat := x
 
-def entry (~ n : Nat) : ~ Nat := localId n
+def entry (@borrowed n : Nat) : @borrowed Nat := localId n
 
 def main : IO Unit := do
   let input ← (← IO.getStdin).readToEnd

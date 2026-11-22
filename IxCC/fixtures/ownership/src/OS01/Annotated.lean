@@ -1,4 +1,5 @@
 import Ix.Compile.SourceContract.Elab
+open scoped Ix.Modes
 
 /-!
 OS-01 `erased-proof-arg` of the ownership suite (`fixtures/ownership/README.md`, MT.7).
@@ -9,7 +10,7 @@ driver for `lean --run`: each stdin line `ROOT ARG…` prints that root's
 value on those arguments.
 -/
 
-def pick (0 _h : True) (n : Nat) : Nat := n + 1
+def pick (@erased _h : True) (n : Nat) : Nat := n + 1
 
 def entry (n : Nat) : Nat := pick trivial n
 

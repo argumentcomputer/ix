@@ -1,4 +1,5 @@
 import Ix.Compile.SourceContract.Elab
+open scoped Ix.Modes
 
 /-!
 OS26 `borrow-match` of the ownership suite (`fixtures/ownership/README.md`, MT.7),
@@ -7,7 +8,7 @@ pinned ix rejects it; its verdict is recorded in `fixtures/ownership/verdicts.js
 -/
 
 def viaBorrow (xs : List Nat) : Nat :=
-  let borrow (~ v : List Nat) := xs
+  let @borrow v : List Nat := xs
   match v with
   | [] => 0
   | _ :: _ => 1

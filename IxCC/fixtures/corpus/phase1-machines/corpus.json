@@ -84,24 +84,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "machines.ixe",
-        "sha256": "16477f4a3870f6a46e55ceecb9efcb893bee211cae5a77c30840df873c5ac339",
-        "bytes": 373200
+        "sha256": "87fcd76dd6f2ad78793d95837b7198f00f7a3f6fe6d4d6cf188dc4e23c574deb",
+        "bytes": 398237
       },
       "equations": {
         "path": "machines.equations.json",
-        "sha256": "d62e0a66f4fd65b24851620dbe21d09dae9eadc3154dcd26894043b3ff0c5663",
+        "sha256": "6fcb56b2bf02eb256008741e5217b57e3c7899b68fe24f26c504db270b36dce6",
         "equations": 13,
         "failures": 0
       },
-      "named_env_sha256": "f7bbf83ea19a88ac679af765cce2d488d14eb53fde39c7123e8c24e7087cce5a",
+      "named_env_sha256": "3ae1e6ec4053f667da6974e1a1f4a69fde2781e9b7ed12e92c8f8c7597e6749b",
       "census": {
         "path": "machines.census.json",
-        "sha256": "12960f07a1be1f8c11edbdae6754b3307cdb94f7bd0b72f87459ad8c47649388"
+        "sha256": "28368ff29ee5679c295f28dace500946968c6c4d57a270e4dd303a8c7eda68dc"
       },
       "roots": [
         {
           "name": "Machines.fibMain",
-          "address": "c8975ec18f4dc34d92d97e1343bb415d50dd2deff9fc395a545db589f52774a3",
+          "address": "61ac69e8329d3c27c5f4bd9e26863006211f6fcb380e919322954a2ddd4df818",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -287,7 +287,7 @@
         },
         {
           "name": "Machines.fibMainHO",
-          "address": "7fa898ce9a4ace740b57a1d60b8def693b7a133f8c43f58c762bda0505ab01c5",
+          "address": "7ce75098288797dd61fe1a538bf8f5e09e35c7730d5ed899d25f4402405fd407",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -473,7 +473,7 @@
         },
         {
           "name": "Machines.idMain",
-          "address": "1030114168172d24a090574a87bf13a2bca5c7a297875f4d4658da4f5b9524eb",
+          "address": "5a056388221afd29aa1a68b804085bb7974c5917d922c504647e2eee7b806788",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -659,7 +659,7 @@
         },
         {
           "name": "Machines.badRequest",
-          "address": "de428a4fd49c972c17842ef2540a6e7433ee3f009e5e51dec47f74be054180b1",
+          "address": "f3d30595f0bfd415bb41b086a273dc42dd213f622af975022289c1c18ee83b68",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -687,7 +687,7 @@
         },
         {
           "name": "Machines.echo",
-          "address": "901859e8be236e2351be24f1df5188cb57c89d493f7f0035a8aa6cd41c151b8b",
+          "address": "b3086d897813de7e109be967b671d2c46a68f06203438144ae664923ca2d5bce",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -800,24 +800,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "natural.ixe",
-        "sha256": "cf4126fcc99c5a3e06a1362c15329c81d9d08ab9972ce94f05ad401cccfba4fc",
-        "bytes": 229887
+        "sha256": "2fc34a582da7c52fe325422a8d4ca1f27eaf31d4768787eec7a490f04bcf9d3e",
+        "bytes": 245720
       },
       "equations": {
         "path": "natural.equations.json",
-        "sha256": "8bbc4fe0253b386d5340662ab457596a4b8c2bf011715fda7f1924e159a15f6c",
+        "sha256": "2201eac14378bdbbff94c339508ccf47fb4b5870377f7f8baa2a03b076cce729",
         "equations": 11,
         "failures": 0
       },
-      "named_env_sha256": "4afd5db7692b6b5e9d93aad8e9785f8d34827fe47b3d7c5f0b8259b525365c80",
+      "named_env_sha256": "7dbae2d4bde1730b92e3437c29ff0c80e5bff44461f8e3a4e3fef2c37b76c05c",
       "census": {
         "path": "natural.census.json",
-        "sha256": "7c1a0e09eba9c6f80885c5bc357ff439995d601b1359af7da0be349aea39a4b5"
+        "sha256": "6db0748e5fe73c6a63b69f43e116f45112d8176d9a4c1f6d93bfbd7aef873065"
       },
       "roots": [
         {
           "name": "Natural.fibMain",
-          "address": "e3e901ee877577b51d98eb4af566947313dca16fdad58e7ed4142de55e6c457a",
+          "address": "01f07a484777d3e162c5c3dd47e0d5b07a1fec1ec3b171d7fb39bc8c7e9efbd5",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -1003,7 +1003,7 @@
         },
         {
           "name": "Natural.onMessage",
-          "address": "e9f2333db1a3e9d99cafaae62266063e6950750b2bff6f9b3527e2e6dbfb7a11",
+          "address": "6a371531e1c33e4a9f17663391318b16b7f1bf92b90fbbce16ab23b3f0250381",
           "params": 2,
           "result": "nat",
           "oracles": [

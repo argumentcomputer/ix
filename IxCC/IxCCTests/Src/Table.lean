@@ -421,9 +421,9 @@ def run (a : Assert) : IO Unit := do
   IO.println (← observed "sparse" (← loadSparse))
   sparseCases a 3
   for (name, eqns, cases, dropped, fullEqns, fullCases) in
-      [("fib", 3, 1, ([] : List String), 3, 16), ("sum-loop", 35, 22, unreachedK1, 40, 93),
-       ("ackermann", 35, 21, unreachedK1, 40, 91), ("tak", 7, 5, ([] : List String), 7, 21),
-       ("gcd", 9, 9, ["Nat.div.go"], 10, 23)] do
+      [("fib", 3, 1, ([] : List String), 3, 17), ("sum-loop", 35, 22, unreachedK1, 40, 93),
+       ("ackermann", 35, 21, unreachedK1, 40, 91), ("tak", 7, 5, ([] : List String), 7, 22),
+       ("gcd", 9, 9, ["Nat.div.go"], 10, 24)] do
     let l ← loadBench name
     packCounts a l name eqns dropped
     expectEq a l.tableStats.caseAccepted.size cases s!"{name}: case entries"

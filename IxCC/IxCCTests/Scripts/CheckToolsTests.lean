@@ -133,13 +133,19 @@ private def lexerTests : IO Unit := do
     "def f (native : Nat) := 1 + native\ndef g := { native := 0, kernel := true }\n" ++
     "def h := let native := 1; native\ndef r (p : P) := p.reduceBool\n" ++
     "-- by decide +native\n/- Lean.ofReduceBool -/\ndef s := \"native := true\"\n"))))
-  -- a dependency's constructor named `axiom` is not an axiom declaration;
-  -- every declaration form still is
+  -- a dependency's constructors named `axiom` or the specVersion 4 compiler-trust
+  -- role names are not axiom declarations or uses of Lean's compiler-trust axioms;
+  -- every declaration form and bare/Lean-qualified use still is
   checked (hygieneDependency (← checked (scan
-    "inductive Spec where\n  | axiom (n : Nat)\n  | other\ndef k : Spec := .axiom 0\ndef m : Spec → Nat\n  | .axiom n => n\n  | _ => 0\n")))
+    "inductive Spec where\n  | axiom (n : Nat)\n  | trustCompiler | ofReduceBool | ofReduceNat\n  | other\ndef k : Spec := .axiom 0\ndef m : Spec → Nat\n  | .axiom n => n\n  | .trustCompiler => 1\n  | _ => 0\n")))
   for source in ["axiom bad : False\n", "private axiom bad : False\n", "@[simp] axiom bad : False\n",
       "noncomputable axiom bad : False\n"] do
     rejects s!"dependency {source}" "axiom is not allowed" do
+      checked (hygieneDependency (← checked (scan source)))
+  for (source, fragment) in [("def bad := Lean.trustCompiler\n", "Lean.trustCompiler is not allowed"),
+      ("def bad := trustCompiler\n", "trustCompiler is not allowed"),
+      ("def bad := ofReduceBool\n", "ofReduceBool is not allowed")] do
+    rejects s!"dependency {source}" fragment do
       checked (hygieneDependency (← checked (scan source)))
   rejects "a project constructor named axiom" "axiom is not allowed" do
     checked (hygiene (← checked (scan "inductive Spec where\n  | axiom (n : Nat)\n")))

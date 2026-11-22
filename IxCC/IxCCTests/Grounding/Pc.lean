@@ -115,17 +115,17 @@ def run : IO Bool := do
       if (famFalse j rts true).isEmpty then famWP := famWP ++ [label]
       if label == "phase1-decline/strings" then strings? := some i
       if label == closuresLabel then closures? := some i
-    expect a (jobs.length == 52 && famW.length == 46 && (famW.filter (· != "src-words")).length == 45 &&
-        famWP.length == 47 && famW.all famWP.contains && famWP.filter (!famW.contains ·) == [closuresLabel])
+    expect a (jobs.length == 50 && famW.length == 44 && (famW.filter (· != "src-words")).length == 43 &&
+        famWP.length == 45 && famW.all famWP.contains && famWP.filter (!famW.contains ·) == [closuresLabel])
       s!"pc: on {jobs.length} closures the word family holds on {famW.length}, the Pc family on \
-        {famWP.length}, beyond the word family's {famWP.filter (!famW.contains ·)}, expected 46, 47 \
+        {famWP.length}, beyond the word family's {famWP.filter (!famW.contains ·)}, expected 44, 45 \
         and [{closuresLabel}]"
     let some ic := closures? | throw (IO.userError "pc: no closures closure")
     let jc := famOn ic
     -- the entry
     let es := subEntries jc
-    expect a (es == [(214, 71)]) s!"pc: closures' subsingleton-kind entries {es}, expected [(214, 71)]"
-    let (c, r) := (214, 71)
+    expect a (es == [(105, 101)]) s!"pc: closures' subsingleton-kind entries {es}, expected [(105, 101)]"
+    let (c, r) := (105, 101)
     let kindOk := jc.src.table.recKindOf r == some (.subsingleton (.allZero [1]) [])
     expect a (kindOk && !caseRecB jc.src jc.env jc.κ c && !caseShapeB jc.src jc.env jc.κ c &&
         caseRecPB jc.src jc.env jc.κ jc.ann jc.Sl c && caseShapePB jc.src jc.env jc.κ c &&
@@ -145,33 +145,36 @@ def run : IO Bool := do
       match instWalk ic.src [rt] 1000000 with
       | some Inst => Inst.filter (·.1 == c)
       | none => []
-    expect a (rts == [268, 116, 39, 140, 46, 207] && rW == [268, 116, 46, 207] && rWP == rts &&
-        instsAt 39 == [(c, [1, 1])] && instsAt 140 == [(c, [1, 1])] &&
-        failW (atRoot ic 39) == ["caseRec", "caseShape"] &&
-        failW (atRoot ic 140) == ["caseRec", "caseShape"])
+    expect a (rts == [78, 110, 262, 260, 276, 6] && rW == [78, 110, 276, 6] && rWP == rts &&
+        instsAt 262 == [(c, [1, 1])] && instsAt 260 == [(c, [1, 1])] &&
+        failW (atRoot ic 262) == ["caseRec", "caseShape"] &&
+        failW (atRoot ic 260) == ["caseRec", "caseShape"])
       s!"pc: closures' roots {rts}: the word family at {rW}, the Pc family at {rWP}; c{c}'s \
-        instances at c39 {instsAt 39}, at c140 {instsAt 140}"
-    -- control: the instance at level 0, at root c46 (the Inst plant); recorded at the others
+        instances at c262 {instsAt 262}, at c260 {instsAt 260}"
+    -- control: the instance at level 0, at root c276 (the Inst plant); recorded at the others
     let lvl0 (rt : CId) : Option (List String × Bool × Bool) := do
       let Inst ← instWalk ic.src [rt] 1000000
       let Inst' ← instWalk.go ic.src 1000000 [(rt, []), (c, [0, 0])] []
       let jr := atRoot ic rt
       some (failWP jr ++ falseOf (partsWith jr [rt] Inst'), pcInstB ic.src Inst,
         Inst'.length == Inst.length + 1 && Inst'.contains (c, [0, 0]))
-    expect a (lvl0 46 == some (["pcInstB"], true, true))
-      s!"pc: level-0 control at c46 (unplanted pcInstB, planted false parts, the plant adding \
-        exactly ({c}, [0, 0])): {lvl0 46}"
-    let others := [268, 116, 39, 140, 207].map fun rt => (rt, (lvl0 rt).map (·.1))
-    expect a (others == [(268, some ["pcInstB"]), (116, some ["pcInstB"]),
-        (39, some ["instCheckB", "pcInstB"]), (140, some ["instCheckB", "pcInstB"]),
-        (207, some ["instCheckB", "pcInstB"])])
+    expect a (lvl0 276 == some (["pcInstB"], true, true))
+      s!"pc: level-0 control at c276 (unplanted pcInstB, planted false parts, the plant adding \
+        exactly ({c}, [0, 0])): {lvl0 276}"
+    let others := [78, 110, 262, 260, 6].map fun rt => (rt, (lvl0 rt).map (·.1))
+    expect a (others == [(78, some ["pcInstB"]), (110, some ["pcInstB"]),
+        (262, some ["instCheckB", "pcInstB"]), (260, some ["instCheckB", "pcInstB"]),
+        (6, some ["instCheckB", "pcInstB"])])
       s!"pc: the level-0 plant at the other roots: {others}"
     -- controls on the closure: each plant changes what `caseRecPB` (or `caseProg`) reads
     let unpl := famFalse jc rts true
     expect a unpl.isEmpty s!"pc: closures unplanted: false {unpl}"
-    -- the datum each plant changes: the recursor's kind and declaration, c78's class
+    let unitC := match ic.src.decl? r with
+      | some (.recr _ _ _ _ _ _ _ _ (rl :: _) _) => rl.ctor
+      | _ => 0
+    -- the datum each plant changes: the recursor's kind and declaration, `unitC`'s class
     let datum (i' : Input) : String :=
-      s!"{repr (i'.src.table.recKindOf r)} {repr (i'.src.decl? r)} {repr (constClass i'.ann 78)}"
+      s!"{repr (i'.src.table.recKindOf r)} {repr (i'.src.decl? r)} {repr (constClass i'.ann unitC)}"
     let plant (tag : String) (i' : Input) (exp : List String) (expClauses : Option (List String)) :
         IO Unit := do
       let j' := famOn i'
@@ -195,28 +198,28 @@ def run : IO Bool := do
           so an index is refused by caseRecP and the landed caseProg together)"
         { ic with src := ic.src.setDecl r (.recr sf kk lv np nmot nmin 1 ind rules ty) }
         ["caseRecP", "caseProg"] (some ["ni"])
-      plant "the constructor c78's class made rel" (setClass ic 78 .rel) ["caseRecP"]
+      plant s!"the constructor c{unitC}'s class made rel" (setClass ic unitC .rel) ["caseRecP"]
         (some ["class"])
-      expect a (constClass ic.ann 78 == some (.proof (.allZero [0])))
-        s!"pc: c78's class {repr (constClass ic.ann 78)}, expected proof (allZero [0])"
-    | _, _ => throw (IO.userError "pc: c71 is not a subsingleton-kind recursor")
-    -- strings c823
+      expect a (constClass ic.ann unitC == some (.proof (.allZero [0])))
+        s!"pc: c{unitC}'s class {repr (constClass ic.ann unitC)}, expected proof (allZero [0])"
+    | _, _ => throw (IO.userError s!"pc: c{r} is not a subsingleton-kind recursor")
+    -- strings c1900
     let some is := strings? | throw (IO.userError "pc: no strings closure")
     let js := famOn is
     let esS := subEntries js
-    expect a (esS == [(823, 3002)] && clausesFalse js 823 3002 == ["np", "ni", "class"] &&
-        js.src.table.recKindOf 3002 == some (.subsingleton (.allZero []) []) &&
+    expect a (esS == [(1900, 145)] && clausesFalse js 1900 145 == ["np", "ni", "class"] &&
+        js.src.table.recKindOf 145 == some (.subsingleton (.allZero []) []) &&
         failWP js == ["caseRecP", "proj", "valueCorr", "caseShapeP", "caseProg"] &&
         failW js == ["caseRec", "proj", "valueCorr", "caseShape", "caseProg"])
-      s!"pc: strings: subsingleton-kind entries {esS}, c823's PUnit clauses false \
-        {clausesFalse js 823 3002}; false {failWP js} under the Pc family, {failW js} under the \
+      s!"pc: strings: subsingleton-kind entries {esS}, c1900's PUnit clauses false \
+        {clausesFalse js 1900 145}; false {failWP js} under the Pc family, {failW js} under the \
         word family"
     IO.println s!"pc: the word family holds on {famW.length} of {jobs.length} closures, the Pc family \
-      on {famWP.length} (with {closuresLabel}); closures' c214 admitted by caseRecP and caseShapeP, \
-      the Pc family at its six roots (c39 and c140 now in); six controls on closures (the level-0 \
-      instance refused by pcInstB alone at c46; a field, w made allZero [0], the class made rel by \
+      on {famWP.length} (with {closuresLabel}); closures' c{c} admitted by caseRecP and caseShapeP, \
+      the Pc family at its six roots (c262 and c260 now in); six controls on closures (the level-0 \
+      instance refused by pcInstB alone at c276; a field, w made allZero [0], the class made rel by \
       caseRecP alone; an index by caseRecP and caseProg; w made always by caseRecP and pcInstB); \
-      strings c823 (Eq-like) refused at np, ni, class"
+      strings c1900 (Eq-like) refused at np, ni, class"
     IO.println s!"tests-grounding (pc): {← a.get} assertions passed"
     return true
   catch error =>

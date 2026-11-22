@@ -4,27 +4,27 @@
   "roots": [
     {
       "name": "entry",
-      "address": "497cc6873bf43ed187fabe766a62e24e4c40a7c16d66eadeba684c14eb212493"
+      "address": "bd85bafc4e91ee5575695e882ce8c3a2466a3d164dc0c146a41ef7d50a4b7fd0"
     }
   ],
   "equations": [
     {
       "definition": "Nat.add",
-      "definition_address": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
+      "definition_address": "a04e7e6b19f5e48dbb0b53dae24db5dcc1b1a98c8e97551db8fb4b5f4a14caa8",
       "equation": "Nat.add.eq_def",
-      "equation_address": "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4"
+      "equation_address": "300f835ac35174de29416ee013ec8c57d5c01c6e448335ee4086f384f3f1a249"
     },
     {
       "definition": "Nat.ble",
-      "definition_address": "9e445b9d5f8252772347872e909b5db4e7eca7086cedf4fec6de840f6b7b5f92",
+      "definition_address": "a939cc7925834d04a7ced860c5c44484231c9f5c44728d83d55f19c08037f3b4",
       "equation": "Nat.ble.eq_def",
-      "equation_address": "235ab44718c8ecf20b3ceab949dfcfad022807cf7f1604d72ae42048c26e47e4"
+      "equation_address": "25a12692ef836a0d2771c46279e413f421082b3128e091b2931f9e9733348403"
     },
     {
       "definition": "Nat.mul",
-      "definition_address": "373b7d74f6b40da11b7ed79603a45ec7011a8831b720b57d2efe92e82a3d57f0",
+      "definition_address": "7e736639472dcc920bdc54d8ff0255a4c03b3c05375eacf08814e341deebd331",
       "equation": "Nat.mul.eq_def",
-      "equation_address": "2e64fe39a944df9f9d795cb840efa37ed024fa30f971e1f58c9cf321020f94c1"
+      "equation_address": "ab44c6c6e51692fbde3e413a5b90e4727eb15bfc1851cbd56869c27ecb615ee3"
     }
   ],
   "failures": []

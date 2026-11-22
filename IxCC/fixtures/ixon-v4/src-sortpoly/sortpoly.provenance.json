@@ -4,12 +4,12 @@
  "producer":
  "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
  "named_env_sha256":
- "33a52db2973236772ff3624bb28a551ecd19166881798c0cf7f262d01ed56e09",
+ "6da341f0a40cd9ca041d3e8601a185a3b814f61785c63b6e81cd5f324469c5e7",
  "files":
  {"sortpoly.ixe":
-  "5fca642f157698eff913be85f75db00d2b1442a57d8a47073c612e7665817e9c",
+  "dc78db6b367d9a02fadbee858fa73b6794eec6db1e41adfb420722aa3494ae5f",
   "sortpoly.equations.json":
-  "8e3f72dc2424a12c7aeddacd46f45d9114e10d2df2672f87de21938d96261a1d"},
+  "e5764b14a3e6a6d70a649c4bf97054393143a74b3e3fbdb2d5cb351b705bd53d"},
  "commands":
  ["ix compile --no-build --consts <roots> --no-equations --anon --out sortpoly.ixe SortPoly.lean",
   "ix compile --no-build --consts <roots> --no-equations --out sortpoly.named.ixe SortPoly.lean",

@@ -137,7 +137,7 @@ def lostConsts (i : Input) : List CId :=
 
 /-- The constants the witness case alone accepts, by closure (none elsewhere). -/
 def witExpected : List (String × List CId) :=
-  [("phase2-closures/closures", [19]), ("src-words", [619, 229, 803, 520])]
+  [("phase2-closures/closures", [48]), ("src-words", [60, 1015, 606, 1068])]
 
 /-- The closures holding the 67 constants: label, the number `corrSB []` accepts, the refused
 ones with their reasons. -/
@@ -145,8 +145,8 @@ def zetaTable : List (String × Nat × List (CId × String)) :=
   [("bench-k1/sum-loop", 3, []), ("bench-k1/collatz", 3, []), ("bench-k1/prime-count", 3, []),
    ("phase1-scalar/scalar", 12, []), ("phase1-boundary/fields254", 1, []),
    ("phase1-resource/resource", 4, []), ("phase1-decline/loops", 4, []),
-   ("phase1-decline/strings", 7, [(262, "string")]),
-   ("phase1-decline/panic", 2, [(363, "string"), (322, "string")]),
+   ("phase1-decline/strings", 7, [(1439, "string")]),
+   ("phase1-decline/panic", 2, [(257, "string"), (181, "string")]),
    ("phase2-closures/closures", 6, []),
    ("phase1-machines/machines", 3, []), ("phase1-machines/natural", 4, []),
    ("phase2-arity/arity", 1, []),
@@ -227,7 +227,7 @@ def run : IO Bool := do
       s!"zeta: corrSB accepts {total} constants of the eleven closures, expected 56"
     IO.println s!"zeta: corrSB [] accepts {total} of the constants the let-free check refuses in \
       the eleven closures (the other 8 of 64 in fields254, machines, natural); refused: strings \
-      c262, panic c363 c322 (string literals); closures c19 (the minor-premise shape) accepted by \
+      c1439, panic c257 c181 (string literals); closures c48 (the minor-premise shape) accepted by \
       the witness case; the eleven closures' false conjuncts as expected (arity: none)"
     -- planted, on `fib`'s root
     let some fs := subjects.head? | throw (IO.userError "no subject")

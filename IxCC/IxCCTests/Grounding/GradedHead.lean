@@ -111,7 +111,7 @@ def refused : List String := ["diag"]
 
 /-- The closure whose spines the η-short step reads, the constant they are at, and how many. -/
 def etaLabel : String := "phase2-closures/closures"
-def etaConst : CId := 38
+def etaConst : CId := 23
 def etaSpines : Nat := 10
 
 /-- The sites 1a's reading as written refuses on the accepted closures, at some `Ok` profile (322 on
@@ -275,7 +275,7 @@ def run : IO Bool := do
         catch _ => pure false
       expect a (!r) s!"graded1b: {label} loads; it was refused before the check"
     let js := js0.filter (!notLoaded.contains ·.1)
-    expect a (js.length == 51) s!"graded1b: {js.length} closures found, expected 51"
+    expect a (js.length == 49) s!"graded1b: {js.length} closures found, expected 49"
     let mut nAcc := 0
     let mut sFalse : List String := []
     let mut gap := 0
@@ -529,8 +529,8 @@ def run : IO Bool := do
       bound-variable plants refused and attributed (the unplanted reading true, the run term changed; \
       not attributable, the unplanted reading false: {bvUnattr}); all 51: {tS / 1000000} ms per spine, {tG / 1000000} ms per \
       site; {lines}"
-    expect a (nAcc == accepted.length && accepted.length == 37)
-      s!"graded1b: headRegimeSB true on {nAcc} of {accepted.length} accepted closures, expected 37 of 37"
+    expect a (nAcc == accepted.length && accepted.length == 35)
+      s!"graded1b: headRegimeSB true on {nAcc} of {accepted.length} accepted closures, expected 35 of 35"
     expect a (sFalse == refused) s!"graded1b: headRegimeSB false on {sFalse}, expected {refused}"
     -- the η-short step: nothing the landed reader read changes; it reads exactly the ten spines of
     -- `closures` at c38 more, and accepts them; the controls
@@ -571,7 +571,7 @@ def run : IO Bool := do
       {famAGp.filter (!accepted.contains ·)} beyond the {accepted.length} the check accepts"
     expect a (nAp == forLoops.length && nApPlants == 3 * forLoops.length)
       s!"Ap: {nAp} for-loop closures retyped, {nApPlants} plants"
-    expect a (famAGp.length == 44 && accepted.all famAGp.contains &&
+    expect a (famAGp.length == 42 && accepted.all famAGp.contains &&
         famAGp.filter (!accepted.contains ·) == forLoops ++ ["phase2-arity/arity"])
       s!"Ap: the family over six fields on selEnv holds on {famAGp}"
     expect a (nWords == 1 && !famAGp.contains wordsLabel) s!"words: {wordsLabel} seen {nWords} times"
@@ -584,7 +584,7 @@ def run : IO Bool := do
     IO.println s!"words: the word family (step W: groundCheckW and the other decided hypotheses of \
       rootSound_678AGpW_of_check, on selEnv with the word entries' runtime references) holds on \
       {famW.length}: the {famAGp.length} of the family over six fields and {wordsLabel}"
-    expect a (nWit == 51) s!"letWit: {nWit} closures checked, expected 51"
+    expect a (nWit == 49) s!"letWit: {nWit} closures checked, expected 49"
     IO.println s!"letWit: on all {nWit}: the conjunct letWit true, nothing accepted with step C \
       refused, the witness case alone accepting {wcAll}"
     IO.println s!"tests-grounding (graded1b): {← a.get} assertions passed"

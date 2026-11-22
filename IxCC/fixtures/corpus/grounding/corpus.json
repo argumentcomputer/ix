@@ -80,24 +80,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "decide.ixe",
-        "sha256": "5f7a473023cfe8da300c09d72eb1d159bce8ccaedda6402d8c51770129bc578a",
-        "bytes": 89319
+        "sha256": "a12a5977f225145f42ce70f550d242208017008ff7580c1d674e9ea34c7601e2",
+        "bytes": 98825
       },
       "equations": {
         "path": "decide.equations.json",
-        "sha256": "1b1c6dcb6b0b535a6ee0838c0454b08e6ceb85e0f0ab9f11304c4bd68df0a7be",
+        "sha256": "b88750022b9b796cf4f93f47de7eb0dfd484f0e95e813ccea74877f1261467c4",
         "equations": 4,
         "failures": 0
       },
-      "named_env_sha256": "4d3e93544309abef05252a9bf75fed3500aea68c19f58c813d302f5c50224fca",
+      "named_env_sha256": "e6ff29b34e0893a6847ab8f9a7da25a5b8cdae59ff739dba118d84761bb126b8",
       "census": {
         "path": "decide.census.json",
-        "sha256": "63a29eafc27e807d8754d2044cdf446662ecf28d4317ccf13dd45dd801a651ea"
+        "sha256": "9c985807ff8365a800a7a6589e785ca0558b5df20093641976b78218bab1ee21"
       },
       "roots": [
         {
           "name": "Grounding.decideFib10",
-          "address": "04334d0be1895fde49ef202d3ab1edc3c854be2e4a76ddb3de0555ee818bd316",
+          "address": "71636de09986dbba6b79b39c96b34a1daa44eee0878f04d9ac189e795a1c2749",
           "params": 0,
           "result": "bool",
           "oracles": [
@@ -135,24 +135,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "words.ixe",
-        "sha256": "7279500198f7f061d32aa86f853a59de4d57329a82061b20aad2c667a90ef791",
-        "bytes": 1025138
+        "sha256": "dda913e8f3330950513f3f2c629b9cdd345665935f99ae15defd7edbf2b2707b",
+        "bytes": 1077014
       },
       "equations": {
         "path": "words.equations.json",
-        "sha256": "cbc0ad202b8063643bea86ae2124a54f1df42fe22dd7c5795bda393bb3f63bbe",
+        "sha256": "6586c9d8cb86db7a12bc5f09a238d660f992dff7ac863d040733498cc4ad4975",
         "equations": 22,
         "failures": 0
       },
-      "named_env_sha256": "84a5d08029afc057cd1089f186980333edd302398ad9654395a9603a4b4002c6",
+      "named_env_sha256": "bc8a0a58c37d97b83681b92c5232621f48a9cc6cc979ab1c18d2e1d36f303e9f",
       "census": {
         "path": "words.census.json",
-        "sha256": "c10c2ae7280e6d310b38cb772e98d9a455cfa78508468a906560f5213cb2fb34"
+        "sha256": "dd44064ce456e5e2aef015523764eda4e12dabfa84382f44edf163e7abe55759"
       },
       "roots": [
         {
           "name": "Grounding.Words.add64",
-          "address": "2a5a61788ad4a32c949558a5e9cd0b121fd76a485aae42fc894dbaa888813b6b",
+          "address": "bd3e61a1f603a9daced3fb4632fe14c9fd456025c34d599ee59b4024030d7d09",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -197,7 +197,7 @@
         },
         {
           "name": "Grounding.Words.mulAdd32",
-          "address": "17ea9f1f98e52cb748e3ed3b08de7d3aaf5cba2a39bf310103d9df14e90ee0e2",
+          "address": "2142425184ae58e330f744d8a43293a277f3fbb9c1cce020e591a34c7c0bb321",
           "params": 3,
           "result": "nat",
           "oracles": [
@@ -242,7 +242,7 @@
         },
         {
           "name": "Grounding.Words.mix8",
-          "address": "26ca65992ca8d70bccf613b38b098c7d51fe8e0ae8342cb78ac50bc5384be697",
+          "address": "41186d7d908854ae3d87828db43fe2904e054e8a157d4a2dc166e80d4a0d54fd",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -283,7 +283,7 @@
         },
         {
           "name": "Grounding.Words.neg16",
-          "address": "1f8532556f8908db0768dc58343bd61b0170f5f4f55b2fc4ac11428a6e89433d",
+          "address": "39cf33123bfe4eda77dc8103bd06bb51a0651a0fe50c2d7aeb8209fd705b2771",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -324,7 +324,7 @@
         },
         {
           "name": "Grounding.Words.divMod32",
-          "address": "87f63bc6c6d9053f52e67f2d77955d452e73a20d2656c881d998c953a62308e2",
+          "address": "16075f633191a6fe439a46f94108fdefd209ac943c540cc4c53c29d6d1bb7f12",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -365,7 +365,7 @@
         },
         {
           "name": "Grounding.Words.convert",
-          "address": "ee1ce9368811427e6998d8c7b8a7299f19f5c74ba81cb57b168aee7e452455fd",
+          "address": "1b49dc70c9d78bbb0f6ddc095bc50b830fd7dcdd214bdf8239252c3c6da489c0",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -402,7 +402,7 @@
         },
         {
           "name": "Grounding.Words.shift64",
-          "address": "4d648ec89f5ab4f42c1e7020a5948d0c30acc48603068b1514fe913a9b7f545c",
+          "address": "f61112a738f6e0d2ef125d6ce62334e074265691eca8d4438bdfec7a8d2ddaf4",
           "params": 2,
           "result": "nat",
           "oracles": [

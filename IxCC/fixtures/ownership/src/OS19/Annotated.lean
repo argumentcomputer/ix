@@ -1,4 +1,5 @@
 import Ix.Compile.SourceContract.Elab
+open scoped Ix.Modes
 
 /-!
 OS19 `unique-tree-node` of the ownership suite (`fixtures/ownership/README.md`, MT.7),
@@ -10,7 +11,7 @@ inductive T where
   | leaf
   | node (l : T) (k : Nat) (r : T)
 
-def swapT (! t : T) : ! T :=
+def swapT (@unique t : T) : @unique T :=
   match t with
   | .leaf => .leaf
   | .node l k r => .node r k l

@@ -87,24 +87,24 @@
       "protocol": "args",
       "closure": {
         "path": "fib.ixe",
-        "sha256": "b5be82e89de1da5c5962a614a33b7823ab062cf372d4147ecf561f41fa574d50",
-        "bytes": 63719
+        "sha256": "047bb3c2ffdf74b6f66727cbd399210e288321685f0a9e658342a0c5fe7644c8",
+        "bytes": 71152
       },
       "equations": {
         "path": "fib.equations.json",
-        "sha256": "2e89cf6b0ad87f8cf476704f8dcad55283b36b878436317dd4840fb09aff186d",
+        "sha256": "2392697143c3a9ab7164da650dcfa8ff7b9e4fae489fae58b0a14c25062a5dcb",
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "d9bdc16f232427cc97b7323d6b08ba3c7d78288d19aa169164fbb1bf19447949",
+      "named_env_sha256": "f19cde826c429248a2be923c6f3ae14ad458c60f6fe97f8c10b14509c70e3f85",
       "census": {
         "path": "fib.census.json",
-        "sha256": "985ee0fb0dbfd9931ef3b3cb93d77838ef92fdee97577263fd18cbc9fc154eff"
+        "sha256": "e56d2e0db2d1d26c8c394b58fd2c685dccac2770dc1633e59d6dcd577b345ff8"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "716d5bdbea51fe80c954570c5520d0ac7ce5a86b9448e08259e73138c42a566a",
+          "address": "bff09ab49091f7e949d3d5ea3cfd4612a58c2e9fe82bd9d93993c2ae83e9d529",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -205,24 +205,24 @@
       "protocol": "args",
       "closure": {
         "path": "sum-loop.ixe",
-        "sha256": "c07f489dc85de7b04d6a8597957bf144bae482373977591b1f5b31bc6e47150a",
-        "bytes": 2482120
+        "sha256": "fbd430a0e65d532377c492395ebdfa92b4ccb4579c78237c75879b2ed0e778fa",
+        "bytes": 2607746
       },
       "equations": {
         "path": "sum-loop.equations.json",
-        "sha256": "b988946eb50445b3199df2e0adf1d25ad294d1a000b99ea1e34f6aca101ab4ab",
+        "sha256": "d2807c29f15b70e29d50485716586dbbc4e463ffb08bdcf9e1f2037d34634090",
         "equations": 40,
         "failures": 0
       },
-      "named_env_sha256": "db8364920b721454e70379938e49b53c0e3b21865c8e0ae78e51923a4b83ec23",
+      "named_env_sha256": "83a58c10969b97fb8946725e1ee04defd05b5b727bd7e63c2cf43d4e4d1def0e",
       "census": {
         "path": "sum-loop.census.json",
-        "sha256": "2bb704928227d69c19886982dddd2d465b770df29c2b2120c33d860ac8c87abc"
+        "sha256": "86a5b211f2b8cac91341c9fd8fa00bac288158c87debd0e745cfe35f9561473f"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "a53d8d87a951ce2714f657b922de5cc18bb6e88f082b403254d066eff9b635b6",
+          "address": "2c8da25ad7bef90e78214dc4a60c278f235ff41754d9b8537d19cc7b4eb07c81",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -323,24 +323,24 @@
       "protocol": "args",
       "closure": {
         "path": "ackermann.ixe",
-        "sha256": "d786e900777558ad19e7aac9d3eda38d094d50f9828a41692dca269fee0c9433",
-        "bytes": 2445302
+        "sha256": "96da4df66e848d81c09db5706ecfaa5bc36883b4b196232fffbbb79d4ccffad4",
+        "bytes": 2567431
       },
       "equations": {
         "path": "ackermann.equations.json",
-        "sha256": "93da6990cd7a8f8cb8cb3ad56653b4e8029942fb198d7283c87d3b9c1735e5a2",
+        "sha256": "e298eb6711be2c43680d7f02b704635a4a79a67b189a3d6b112802400cfa460f",
         "equations": 40,
         "failures": 0
       },
-      "named_env_sha256": "8832f7fb63ce79a13a3dbc837625dcf7bb4c30a2fd12643d74b08636725ff47a",
+      "named_env_sha256": "91cdaa996e8fbd59c0db386ae2dce2ba85b9dc176a421e8158de35dd4a27c2e2",
       "census": {
         "path": "ackermann.census.json",
-        "sha256": "e898e7d00f0f2ceb890e76dd01475acb7e4728c3229f2ba63d5abf9757865eb2"
+        "sha256": "a29156b7eec51dba5b03c6c9b58cb68d7f1bc6391d749d5ce6adcc51e6c33cda"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "8ffe337508df704c6c779b4524105a35c0b0ddc6934e772bc77479cf18da8a1e",
+          "address": "57add8fa2dc318d252939cb8fb1c476495fa0d3ee471dd2b5102895af884b868",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -478,24 +478,24 @@
       "protocol": "args",
       "closure": {
         "path": "tak.ixe",
-        "sha256": "77883a8a90ac25f36eac5491ccf5dbacd4fcd1d446d68abc6fb2d609ec8fe7f7",
-        "bytes": 119876
+        "sha256": "a9c46ba230ba51c4d32116ffedcf62bea258efa0b554f78236bab5bf42c6e7b3",
+        "bytes": 131882
       },
       "equations": {
         "path": "tak.equations.json",
-        "sha256": "549e30c8f3c0149f1539f508e45a5ae9e94b0d06d23b9365b62f408d64b5874c",
+        "sha256": "d055f1c2bc5ae9b2d5866253e1247f230e71abd8f483267712095450bb1cd4c2",
         "equations": 7,
         "failures": 0
       },
-      "named_env_sha256": "d4d91d128fb7795305a4dd41610dc3a48b96e7031ed0859869803d335e045aeb",
+      "named_env_sha256": "8336a2e536c3f6066101e2cc3f0835cd695289225864e1bac36b3dafcb5ef582",
       "census": {
         "path": "tak.census.json",
-        "sha256": "db61f17a10861b2c93f98c1bf656c2193c3c044bf50e368c9a3a66bb0adcf3f6"
+        "sha256": "8b07f6f37790dde57da9315d1e931fc132f23355d0154521f8bf16ed0bbdae35"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "94872d818eb602e1568c65e25d706b6e87657d6de88075cd7aa046926257684b",
+          "address": "d47a12e5b4d81f97e52450207809399efc8f47de6d13fb304d14199aa2b5858f",
           "params": 4,
           "result": "nat",
           "oracles": [
@@ -622,24 +622,24 @@
       "protocol": "args",
       "closure": {
         "path": "gcd.ixe",
-        "sha256": "8fa586564ac2e26df0a7febb3ee21b9a4505b5daf679edc47aaf06c21404f60d",
-        "bytes": 216642
+        "sha256": "346edcf2cce1ca602e61bd6a1b0a1d2865368fe2d19ae24d4dc64c0790979aaa",
+        "bytes": 233451
       },
       "equations": {
         "path": "gcd.equations.json",
-        "sha256": "231b7bc7299997f55409dc9e2fe23d80e90f6c0705159f81f68d4a461722c4bb",
+        "sha256": "d6eb902305d9a1757352b1a8b3f5b50ba2f4f06fbbddc266d10237475db0b853",
         "equations": 10,
         "failures": 0
       },
-      "named_env_sha256": "e89378fba8a26ba8947e4e64229d22698b5b00d0bbed6d21b57354e3d5db85e9",
+      "named_env_sha256": "4377a6e0952fd7967cf73486a1375f6070c291a8e9f9c9dee3d0c210216d4043",
       "census": {
         "path": "gcd.census.json",
-        "sha256": "89870a81111305aaa22c703c3312e006f07ece7468c7dd6f4fd76f1a66400408"
+        "sha256": "b54d97de0372437199e93d5d38b5f55e99386ac5491c388e209616008a6ae0ab"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "7ed9f5281635110cee22efbf072f66972423e13d09c0c68772a64b29c573de73",
+          "address": "45f86d62ec27981c402f48c00981902db81f0726d723a39c4d08211d03f992f8",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -775,24 +775,24 @@
       "protocol": "args",
       "closure": {
         "path": "collatz.ixe",
-        "sha256": "23ba3a3664bd27524fe755fb03c7bc73d3c7dda0fc1f2fb02e15c1d6ff5f2bf3",
-        "bytes": 2489734
+        "sha256": "373f92a042884b7317e5c6ef32f9998be291c5ee965f1ac8ad7fc4d85f845aa4",
+        "bytes": 2615868
       },
       "equations": {
         "path": "collatz.equations.json",
-        "sha256": "9421e6749b24b8f803a627761a8200625cab7f8dcbedc28c5bfdd8db188cfc20",
+        "sha256": "5e6143a2d9534bae551d163b70c44103318454438852d3f6b16b324985931c6f",
         "equations": 41,
         "failures": 0
       },
-      "named_env_sha256": "9e0f186415d23ea8470a29cb0febc1a42e8d7d1250c9d0e6d7f86b7ad93ef8a4",
+      "named_env_sha256": "6055366078b98f66f867093c050b937a2af579bf1e8175c64cc4fa8a192c1e44",
       "census": {
         "path": "collatz.census.json",
-        "sha256": "7aedde63f6a39599ebabfc37bcbffe2e4351b35b26434b6498ca0f5e0058d95f"
+        "sha256": "9a6cade22cd3f886d62db81128c369a3664cdbdd926d512cc2eb74849a98209a"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "232e0a3cd1eac79682f723f62d01447a695339f5d6a228571ed32d993ad8f203",
+          "address": "b1d430d5de7fa08f3fb5944de2419d67dc5e1bb12d8a7fda9ddec1cfb197f851",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -876,24 +876,24 @@
       "protocol": "args",
       "closure": {
         "path": "prime-count.ixe",
-        "sha256": "0a38dd18ca95088cdef03cc0cbdf3b52c2684c4c6fe068768779c5d6584c7ffb",
-        "bytes": 2489825
+        "sha256": "5761ca331c7c4657f0533e1e94e569a4dcd017537837724dda4bf74b779a2372",
+        "bytes": 2615886
       },
       "equations": {
         "path": "prime-count.equations.json",
-        "sha256": "edfb0bb596fc451403af817fa2182331461f333612030a32006a54f7f499f0e2",
+        "sha256": "13744833a49a1583d487c6f2afec912de3a9e84e2202450167d150e4345c41d0",
         "equations": 41,
         "failures": 0
       },
-      "named_env_sha256": "32d9a569634f8188d9dd3818c0fad70013c6892516a22afbf0e173827f809b77",
+      "named_env_sha256": "266d07551737fc9baa33047d6358ba77723760cffb8da74615def4cc50f6285e",
       "census": {
         "path": "prime-count.census.json",
-        "sha256": "b52e7fdd6a8f01208222b07c74287ef027c53722cfdcd4085a8ee7175edc925b"
+        "sha256": "edca1f79339ed6b43ab30c4f7e81f56dfcb9af68241271a8778149b9fbea8491"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "dacf247b838b58aef98d645629030593105fac9105d97f51b1bc1c7174925c21",
+          "address": "ac6ae17ed59e145366a4da1815c4d253733096fabab4491ddcdeeff75b65af08",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -973,24 +973,24 @@
       "protocol": "args",
       "closure": {
         "path": "even-odd.ixe",
-        "sha256": "18d4e4e09ded1eeec9f494426ff06685244e90cf218ba5c31622ca26e7df8028",
-        "bytes": 76836
+        "sha256": "eb53a3b7cba121c9451b6ad1878234bc7248c37b082d5694e9ddc85cc4a59841",
+        "bytes": 85311
       },
       "equations": {
         "path": "even-odd.equations.json",
-        "sha256": "e38f237bb92f80aabc301852dd4fbd0a7d2e5381a771b4730d083023174520ba",
+        "sha256": "7b2c089ea87f232876fd01488588f3fc655fbd225d6b814b3b2618bd9b8671ad",
         "equations": 4,
         "failures": 0
       },
-      "named_env_sha256": "e04d85b6cb28ab00e33ff1ae38cda105f0c66111cdddcdec4351a7984ebed374",
+      "named_env_sha256": "80b61dd15264f5a1668f5cbb121dff5ecec2a5c5149f0dc83d0201b52aa1fe62",
       "census": {
         "path": "even-odd.census.json",
-        "sha256": "65c97f34ac8a25be4f313d4012f01157b52eae2894b5a6a50cc8e54bfaaae592"
+        "sha256": "26c38e2ff57c16c5dd0c8056e3827ca7e07de8a64188475b26325f2966c5f254"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "be9dd49d53cc2465cecdc3d1a6d569fc9049c038490b3f82b9279e30dce12eb4",
+          "address": "029a844c11e0d4862cb5552678b7e3f1ecd237073a03d2822a7020bc978eaa25",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -1077,24 +1077,24 @@
       "protocol": "args",
       "closure": {
         "path": "sfib.ixe",
-        "sha256": "1bd16782179da8f176b4ba24df77b13883a447b5ec7337ba4b08bc53ac9e6c08",
-        "bytes": 113006
+        "sha256": "623d482e37077fa410ffb40fe25f47d37f1632729e8cae8d2857d59f448edb9d",
+        "bytes": 124225
       },
       "equations": {
         "path": "sfib.equations.json",
-        "sha256": "f3a5e6103234b9f9793351f628937af1ac37e2bf6088770d72854122ee208f24",
+        "sha256": "5544e2c2d90c14cafe7f706b951ea2800c21139951bf2f5cf5c868671c37e786",
         "equations": 5,
         "failures": 0
       },
-      "named_env_sha256": "496b556f26b8bd4fce091cc40f79cdd92265283d666fdf73aa5bdcef7af6e702",
+      "named_env_sha256": "570285c8c47b5f32d1637d26639fe9da9dc69ac73edd04f90d9cbec3e7188bc1",
       "census": {
         "path": "sfib.census.json",
-        "sha256": "a38ff92c9e5feb4b5ba1d656a46e63f33825879888471e8327085802aac9a455"
+        "sha256": "e0305b7faa7b8bdd374d5ba1260cb4420f8ca57d2d2b9d1073cef5327aea85c3"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "d7c0255a4c9a6ef2412af77bc250d625667becb01c8d77ef67f29eae0c4f3945",
+          "address": "2bc1d3f54c103cd39ec59046b73048dc8f7ab8fdb3bd31549fb20403474b3695",
           "params": 1,
           "result": "nat",
           "oracles": [

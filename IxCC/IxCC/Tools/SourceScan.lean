@@ -200,14 +200,16 @@ def hygiene (tokens : Array Token) : Except String Unit := do
           (tokens[index + 3]?.map (·.text)) == some "true" then
         throw s!"line {token.line}: native := true is not allowed in checked sources"
 
-/-- `hygiene` for a pure Lean dependency's closure file: the same, except that the
-name `axiom` right after `|` or `.` is a constructor named `axiom` (declared, or
-referred to with a leading dot), as a dependency's data types may have one; an
-`axiom` declaration, with or without modifiers and attributes, never follows
-either, so it is still refused. -/
+/-- `hygiene` for a pure Lean dependency's closure file: the same, except that a
+name right after `|` or `.` matching `axiom` or the specVersion 4 compiler-trust
+role constructors (`trustCompiler`, `ofReduceBool`, `ofReduceNat`) is a data-type
+constructor (such as `Ix.Kernel.Role.trustCompiler`), not an axiom declaration
+or a use of Lean's compiler-trust axioms; every `axiom` declaration and every
+bare or `Lean.*`-qualified compiler-trust name remains refused. -/
 def hygieneDependency (tokens : Array Token) : Except String Unit :=
   let keep := (List.range tokens.size).filter fun index =>
-    !(tokens[index]!.kind == .name && tokens[index]!.text == "axiom" &&
+    !(tokens[index]!.kind == .name &&
+      ["axiom", "trustCompiler", "ofReduceBool", "ofReduceNat"].contains tokens[index]!.text &&
       index > 0 && ["|", "."].contains tokens[index - 1]!.text)
   hygiene (keep.toArray.map (tokens[·]!))
 

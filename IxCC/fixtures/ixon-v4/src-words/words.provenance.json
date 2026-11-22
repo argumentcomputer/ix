@@ -4,12 +4,12 @@
  "producer":
  "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
  "named_env_sha256":
- "144e115947f07c017a3d153be22e436562c34f76cbf18d81ae1642594a679029",
+ "e1d8c07d418be26951e43c28a5216430bebeeb0da3197a0b6e8c69956e900392",
  "files":
  {"words.ixe":
-  "9c9b2557111d735c63a0fe69d6a304b439012df860b2c977a6b4aea1f7731862",
+  "af1c678683306d72bcc00e2b10de4f50a96595a972b32d29f92eacf10b29bead",
   "words.equations.json":
-  "9d96a5903bc44cf31064dbf3953c3fc3e25b7a6b246a482048fe1bab685f82fe"},
+  "cca7f7caaae721c1a4b83a5ba2b68c855dd1dffc9d07e756b6790b6bf3b64768"},
  "commands":
  ["ix compile --no-build --consts <roots> --equations --word-equations --anon --out words.ixe Words.lean",
   "ix compile --no-build --consts <roots> --equations --word-equations --out words.named.ixe Words.lean",

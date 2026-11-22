@@ -14,86 +14,86 @@ set_option maxRecDepth 100000
 def fib : Anf.Program :=
   { globals := Src.NatMap.ofList [
     (0, {
-      key := IxCC.Key.GKey.const 26 [],
+      key := IxCC.Key.GKey.const 46 [],
       ps := [Ixon.BinderMode.many],
       result := Ixon.ResultMode.shared,
       body := (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 0)]) (.ret (.var 0))) }),
     (1, {
-      key := IxCC.Key.GKey.const 34 [],
+      key := IxCC.Key.GKey.const 53 [],
       ps := [Ixon.BinderMode.many],
       result := Ixon.ResultMode.shared,
-      body := (.tick (.tick (.case (.var 0) [.mk (IxCC.Key.CtorKey.src 7) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.ret (.lit (.nat 0))))))))), .mk (IxCC.Key.CtorKey.src 8) 1 (.tick (.tick (.case (.var 0) [.mk (IxCC.Key.CtorKey.src 7) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.ret (.lit (.nat 1))))))))), .mk (IxCC.Key.CtorKey.src 8) 1 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 0)]) (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natAdd [(.var 1), (.lit (.nat 1))]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 0)]) (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natAdd [(.var 2), (.var 0)]) (.ret (.var 0))))))))))))))))))))))))))))))))] none)))] none))) })],
+      body := (.tick (.tick (.case (.var 0) [.mk (IxCC.Key.CtorKey.src 18) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.ret (.lit (.nat 0))))))))), .mk (IxCC.Key.CtorKey.src 19) 1 (.tick (.tick (.case (.var 0) [.mk (IxCC.Key.CtorKey.src 18) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.ret (.lit (.nat 1))))))))), .mk (IxCC.Key.CtorKey.src 19) 1 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 0)]) (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natAdd [(.var 1), (.lit (.nat 1))]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 0)]) (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natAdd [(.var 2), (.var 0)]) (.ret (.var 0))))))))))))))))))))))))))))))))] none)))] none))) })],
     size := 2,
     roots := [0],
-    ctors := [{ key := (IxCC.Key.CtorKey.src 7), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 8), tag := 1, arity := 1 }, { key := (IxCC.Key.CtorKey.src 15), tag := 0, arity := 0 }],
-    known := { natZero := (some (IxCC.Key.CtorKey.src 7)), natSucc := (some (IxCC.Key.CtorKey.src 8)), boolFalse := (some (IxCC.Key.CtorKey.src 50)), boolTrue := (some (IxCC.Key.CtorKey.src 51)) } }
+    ctors := [{ key := (IxCC.Key.CtorKey.src 18), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 19), tag := 1, arity := 1 }, { key := (IxCC.Key.CtorKey.src 34), tag := 0, arity := 0 }],
+    known := { natZero := (some (IxCC.Key.CtorKey.src 18)), natSucc := (some (IxCC.Key.CtorKey.src 19)), boolFalse := (some (IxCC.Key.CtorKey.src 62)), boolTrue := (some (IxCC.Key.CtorKey.src 63)) } }
 
 def sumLoop : Anf.Program :=
   { globals := Src.NatMap.ofList [
     (0, {
-      key := IxCC.Key.GKey.const 968 [],
+      key := IxCC.Key.GKey.const 261 [],
       ps := [Ixon.BinderMode.many],
       result := Ixon.ResultMode.shared,
       body := (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 0), (.lit (.nat 0)), (.lit (.nat 0))]) (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.ret (.var 0))))))))))))))))))))))))))))))))))))))))))))))))))))) }),
     (1, {
-      key := IxCC.Key.GKey.spec (IxCC.Key.GKey.const 737 [true, true]) [IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 0) [], IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 0) [], IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 625) [IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 1406) [IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 911) [IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 968 []) [0, 0]), IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 968 []) [0, 1])], IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 968 []) [0, 3]), IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 968 []) [0, 4]), IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 968 []) [0, 5]), IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 968 []) [0, 6])], IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 968 []) [0, 7])], IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 1050) [IxCC.Key.ArgKey.lit 0, IxCC.Key.ArgKey.hole 0, IxCC.Key.ArgKey.lit 1], IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 968 []) [0, 8]), IxCC.Key.ArgKey.hole 1, IxCC.Key.ArgKey.hole 2, IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 0) [], IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 0) []],
+      key := IxCC.Key.GKey.spec (IxCC.Key.GKey.const 1016 [true, true]) [IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 0) [], IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 0) [], IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 1039) [IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 154) [IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 570) [IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 261 []) [0, 0]), IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 261 []) [0, 1])], IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 261 []) [0, 3]), IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 261 []) [0, 4]), IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 261 []) [0, 5]), IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 261 []) [0, 6])], IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 261 []) [0, 7])], IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 1206) [IxCC.Key.ArgKey.lit 0, IxCC.Key.ArgKey.hole 0, IxCC.Key.ArgKey.lit 1], IxCC.Key.ArgKey.glob (IxCC.Key.GKey.lam (IxCC.Key.GKey.const 261 []) [0, 8]), IxCC.Key.ArgKey.hole 1, IxCC.Key.ArgKey.hole 2, IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 0) [], IxCC.Key.ArgKey.con (IxCC.Key.CtorKey.src 0) []],
       ps := [Ixon.BinderMode.many, Ixon.BinderMode.many, Ixon.BinderMode.many],
       result := Ixon.ResultMode.shared,
-      body := (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natBlt [(.var 0), (.var 2)]) (.tick (.tick (.tick (.case (.var 0) [.mk (IxCC.Key.CtorKey.src 1148) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.ret (.var 2)))))))))))))))))))))), .mk (IxCC.Key.CtorKey.src 1149) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natAdd [(.var 2), (.var 1)]) (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natAdd [(.var 2), (.lit (.nat 1))]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 5), (.var 1), (.var 0)]) (.ret (.var 0)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))] none)))))))))))))))) })],
+      body := (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natBlt [(.var 0), (.var 2)]) (.tick (.tick (.tick (.case (.var 0) [.mk (IxCC.Key.CtorKey.src 1448) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.ret (.var 2)))))))))))))))))))))), .mk (IxCC.Key.CtorKey.src 1449) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natAdd [(.var 2), (.var 1)]) (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natAdd [(.var 2), (.lit (.nat 1))]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 5), (.var 1), (.var 0)]) (.ret (.var 0)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))] none)))))))))))))))) })],
     size := 2,
     roots := [0],
-    ctors := [{ key := (IxCC.Key.CtorKey.src 1050), tag := 0, arity := 3 }, { key := (IxCC.Key.CtorKey.src 689), tag := 1, arity := 1 }, { key := (IxCC.Key.CtorKey.src 625), tag := 0, arity := 2 }, { key := (IxCC.Key.CtorKey.src 911), tag := 0, arity := 2 }, { key := (IxCC.Key.CtorKey.src 1406), tag := 0, arity := 5 }, { key := (IxCC.Key.CtorKey.src 837), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 273), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 688), tag := 0, arity := 1 }, { key := (IxCC.Key.CtorKey.src 1148), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 1149), tag := 1, arity := 0 }],
-    known := { natZero := (some (IxCC.Key.CtorKey.src 110)), natSucc := (some (IxCC.Key.CtorKey.src 111)), boolFalse := (some (IxCC.Key.CtorKey.src 1148)), boolTrue := (some (IxCC.Key.CtorKey.src 1149)) } }
+    ctors := [{ key := (IxCC.Key.CtorKey.src 1206), tag := 0, arity := 3 }, { key := (IxCC.Key.CtorKey.src 1139), tag := 1, arity := 1 }, { key := (IxCC.Key.CtorKey.src 1039), tag := 0, arity := 2 }, { key := (IxCC.Key.CtorKey.src 570), tag := 0, arity := 2 }, { key := (IxCC.Key.CtorKey.src 154), tag := 0, arity := 5 }, { key := (IxCC.Key.CtorKey.src 1360), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 845), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 1138), tag := 0, arity := 1 }, { key := (IxCC.Key.CtorKey.src 1448), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 1449), tag := 1, arity := 0 }],
+    known := { natZero := (some (IxCC.Key.CtorKey.src 452)), natSucc := (some (IxCC.Key.CtorKey.src 453)), boolFalse := (some (IxCC.Key.CtorKey.src 1448)), boolTrue := (some (IxCC.Key.CtorKey.src 1449)) } }
 
 def ackermann : Anf.Program :=
   { globals := Src.NatMap.ofList [
     (0, {
-      key := IxCC.Key.GKey.const 777 [],
+      key := IxCC.Key.GKey.const 466 [],
       ps := [Ixon.BinderMode.many, Ixon.BinderMode.many],
       result := Ixon.ResultMode.shared,
       body := (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 1), (.var 0)]) (.ret (.var 0))) }),
     (1, {
-      key := IxCC.Key.GKey.const 624 [],
+      key := IxCC.Key.GKey.const 956 [],
       ps := [Ixon.BinderMode.many, Ixon.BinderMode.many],
       result := Ixon.ResultMode.shared,
-      body := (.tick (.tick (.case (.var 1) [.mk (IxCC.Key.CtorKey.src 104) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natAdd [(.var 0), (.lit (.nat 1))]) (.ret (.var 0)))))))))))))))))), .mk (IxCC.Key.CtorKey.src 105) 1 (.tick (.tick (.case (.var 1) [.mk (IxCC.Key.CtorKey.src 104) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 0), (.lit (.nat 1))]) (.ret (.var 0))))))))), .mk (IxCC.Key.CtorKey.src 105) 1 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natAdd [(.var 1), (.lit (.nat 1))]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 0), (.var 1)]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 3), (.var 0)]) (.ret (.var 0))))))))))))))))))))))] none)))] none))) })],
+      body := (.tick (.tick (.case (.var 1) [.mk (IxCC.Key.CtorKey.src 413) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natAdd [(.var 0), (.lit (.nat 1))]) (.ret (.var 0)))))))))))))))))), .mk (IxCC.Key.CtorKey.src 414) 1 (.tick (.tick (.case (.var 1) [.mk (IxCC.Key.CtorKey.src 413) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 0), (.lit (.nat 1))]) (.ret (.var 0))))))))), .mk (IxCC.Key.CtorKey.src 414) 1 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natAdd [(.var 1), (.lit (.nat 1))]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 0), (.var 1)]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 3), (.var 0)]) (.ret (.var 0))))))))))))))))))))))] none)))] none))) })],
     size := 2,
     roots := [0],
-    ctors := [{ key := (IxCC.Key.CtorKey.src 104), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 105), tag := 1, arity := 1 }],
-    known := { natZero := (some (IxCC.Key.CtorKey.src 104)), natSucc := (some (IxCC.Key.CtorKey.src 105)), boolFalse := (some (IxCC.Key.CtorKey.src 1060)), boolTrue := (some (IxCC.Key.CtorKey.src 1061)) } }
+    ctors := [{ key := (IxCC.Key.CtorKey.src 413), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 414), tag := 1, arity := 1 }],
+    known := { natZero := (some (IxCC.Key.CtorKey.src 413)), natSucc := (some (IxCC.Key.CtorKey.src 414)), boolFalse := (some (IxCC.Key.CtorKey.src 1325)), boolTrue := (some (IxCC.Key.CtorKey.src 1326)) } }
 
 def tak : Anf.Program :=
   { globals := Src.NatMap.ofList [
     (0, {
-      key := IxCC.Key.GKey.const 84 [],
+      key := IxCC.Key.GKey.const 125 [],
       ps := [Ixon.BinderMode.many, Ixon.BinderMode.many, Ixon.BinderMode.many, Ixon.BinderMode.many],
       result := Ixon.ResultMode.shared,
       body := (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 3), (.var 2), (.var 1), (.var 0)]) (.ret (.var 0))) }),
     (1, {
-      key := IxCC.Key.GKey.const 98 [],
+      key := IxCC.Key.GKey.const 9 [],
       ps := [Ixon.BinderMode.many, Ixon.BinderMode.many, Ixon.BinderMode.many, Ixon.BinderMode.many],
       result := Ixon.ResultMode.shared,
-      body := (.tick (.tick (.case (.var 3) [.mk (IxCC.Key.CtorKey.src 15) 0 (.tick (.tick (.ret (.var 0)))), .mk (IxCC.Key.CtorKey.src 16) 1 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natBlt [(.var 2), (.var 3)]) (.tick (.tick (.tick (.case (.var 0) [.mk (IxCC.Key.CtorKey.src 110) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.ret (.var 2))))))))))))))), .mk (IxCC.Key.CtorKey.src 111) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natSub [(.var 4), (.lit (.nat 1))]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 2), (.var 0), (.var 4), (.var 3)]) (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natSub [(.var 5), (.lit (.nat 1))]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 4), (.var 0), (.var 5), (.var 7)]) (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natSub [(.var 6), (.lit (.nat 1))]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 6), (.var 0), (.var 9), (.var 8)]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 7), (.var 4), (.var 2), (.var 0)]) (.ret (.var 0)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))] none))))))))))))))))] none))) })],
+      body := (.tick (.tick (.case (.var 3) [.mk (IxCC.Key.CtorKey.src 45) 0 (.tick (.tick (.ret (.var 0)))), .mk (IxCC.Key.CtorKey.src 46) 1 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natBlt [(.var 2), (.var 3)]) (.tick (.tick (.tick (.case (.var 0) [.mk (IxCC.Key.CtorKey.src 145) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.ret (.var 2))))))))))))))), .mk (IxCC.Key.CtorKey.src 146) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natSub [(.var 4), (.lit (.nat 1))]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 2), (.var 0), (.var 4), (.var 3)]) (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natSub [(.var 5), (.lit (.nat 1))]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 4), (.var 0), (.var 5), (.var 7)]) (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natSub [(.var 6), (.lit (.nat 1))]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 6), (.var 0), (.var 9), (.var 8)]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 7), (.var 4), (.var 2), (.var 0)]) (.ret (.var 0)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))] none))))))))))))))))] none))) })],
     size := 2,
     roots := [0],
-    ctors := [{ key := (IxCC.Key.CtorKey.src 15), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 16), tag := 1, arity := 1 }, { key := (IxCC.Key.CtorKey.src 110), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 111), tag := 1, arity := 0 }, { key := (IxCC.Key.CtorKey.src 37), tag := 0, arity := 0 }],
-    known := { natZero := (some (IxCC.Key.CtorKey.src 15)), natSucc := (some (IxCC.Key.CtorKey.src 16)), boolFalse := (some (IxCC.Key.CtorKey.src 110)), boolTrue := (some (IxCC.Key.CtorKey.src 111)) } }
+    ctors := [{ key := (IxCC.Key.CtorKey.src 45), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 46), tag := 1, arity := 1 }, { key := (IxCC.Key.CtorKey.src 145), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 146), tag := 1, arity := 0 }, { key := (IxCC.Key.CtorKey.src 87), tag := 0, arity := 0 }],
+    known := { natZero := (some (IxCC.Key.CtorKey.src 45)), natSucc := (some (IxCC.Key.CtorKey.src 46)), boolFalse := (some (IxCC.Key.CtorKey.src 145)), boolTrue := (some (IxCC.Key.CtorKey.src 146)) } }
 
 def gcd : Anf.Program :=
   { globals := Src.NatMap.ofList [
     (0, {
-      key := IxCC.Key.GKey.const 133 [],
+      key := IxCC.Key.GKey.const 64 [],
       ps := [Ixon.BinderMode.many, Ixon.BinderMode.many],
       result := Ixon.ResultMode.shared,
       body := (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 1), (.var 0)]) (.ret (.var 0))) }),
     (1, {
-      key := IxCC.Key.GKey.const 112 [],
+      key := IxCC.Key.GKey.const 54 [],
       ps := [Ixon.BinderMode.many, Ixon.BinderMode.many],
       result := Ixon.ResultMode.shared,
-      body := (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natBeq [(.var 0), (.lit (.nat 0))]) (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.case (.var 0) [.mk (IxCC.Key.CtorKey.src 195) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natMod [(.var 2), (.var 1)]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 2), (.var 0)]) (.ret (.var 0))))))))))))))))), .mk (IxCC.Key.CtorKey.src 196) 0 (.tick (.tick (.tick (.ret (.var 2)))))] none))))))))))))))))))) })],
+      body := (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natBeq [(.var 0), (.lit (.nat 0))]) (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.case (.var 0) [.mk (IxCC.Key.CtorKey.src 250) 0 (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.tick (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.prim .natMod [(.var 2), (.var 1)]) (.bind (Ixon.LetMode.value (Ixon.BinderMode.many)) (.call 1 [(.var 2), (.var 0)]) (.ret (.var 0))))))))))))))))), .mk (IxCC.Key.CtorKey.src 251) 0 (.tick (.tick (.tick (.ret (.var 2)))))] none))))))))))))))))))) })],
     size := 2,
     roots := [0],
-    ctors := [{ key := (IxCC.Key.CtorKey.src 195), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 196), tag := 1, arity := 0 }],
-    known := { natZero := (some (IxCC.Key.CtorKey.src 25)), natSucc := (some (IxCC.Key.CtorKey.src 26)), boolFalse := (some (IxCC.Key.CtorKey.src 195)), boolTrue := (some (IxCC.Key.CtorKey.src 196)) } }
+    ctors := [{ key := (IxCC.Key.CtorKey.src 250), tag := 0, arity := 0 }, { key := (IxCC.Key.CtorKey.src 251), tag := 1, arity := 0 }],
+    known := { natZero := (some (IxCC.Key.CtorKey.src 75)), natSucc := (some (IxCC.Key.CtorKey.src 76)), boolFalse := (some (IxCC.Key.CtorKey.src 250)), boolTrue := (some (IxCC.Key.CtorKey.src 251)) } }
 
 end IxCCTests.Fir.Artifacts

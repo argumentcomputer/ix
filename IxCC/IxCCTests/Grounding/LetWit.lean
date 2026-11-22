@@ -84,9 +84,9 @@ def run : IO Bool := do
     let fc := failing ic
     expect a (fc == ["caseRec", "caseShape"])
       s!"letWit: closures: false conjuncts {fc}, expected [caseRec, caseShape]"
-    let rs := LetClo.rootsReaching ic 19
-    expect a (rs.length == 1) s!"letWit: closures: roots reaching c19: {rs}, expected one"
-    let some knot := rs.head? | throw (IO.userError "closures: no root reaching c19")
+    let rs := LetClo.rootsReaching ic 48
+    expect a (rs.length == 1) s!"letWit: closures: roots reaching c48: {rs}, expected one"
+    let some knot := rs.head? | throw (IO.userError "closures: no root reaching c48")
     expect a (LetClo.familyAt ic knot)
       s!"letWit: closures: a decided hypothesis of the widest family fails at c{knot}"
     let outs := [([0, 0], 0), ([3, 2], 103), ([5, 3], 5), ([10, 4], 110), ([4, 9], 4)].map
@@ -112,10 +112,10 @@ def run : IO Bool := do
       expect a (fr == ["noWord"] && sBAt iw rt)
         s!"letWit: src-words: at c{rt} false conjuncts {fr} (expected [noWord]), 1b {sBAt iw rt}"
     -- a witness whose stored type is the domain only up to unfolding
-    let some (t619, e619) := (runPairsB iw.src iw.env iw.κ 619).head?
-      | throw (IO.userError "src-words: no run pair at c619")
-    let doms := witDoms t619 e619
-    let some D := doms.head? | throw (IO.userError "src-words: no witness domain at c619")
+    let some (t60, e60) := (runPairsB iw.src iw.env iw.κ 60).head?
+      | throw (IO.userError "src-words: no run pair at c60")
+    let doms := witDoms t60 e60
+    let some D := doms.head? | throw (IO.userError "src-words: no witness domain at c60")
     let some Dk := (match D with | .const k [] => some k | _ => none)
       | throw (IO.userError "src-words: the witness domain is not a closed constant")
     let some (.defnInfo _ Dval _) := iw.env.find? Dk

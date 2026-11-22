@@ -2,28 +2,28 @@
  "roots":
  [{"name": "SortPoly.comp",
    "address":
-   "fb7e763295e5a91b2af2a4569e8e59926350f2087490621bc52f4de08ec7c0cf"},
+   "a4b4b6bfd9c7a5dd561150f480349edcc824e4ad457f52a7c6d5afacca6146f2"},
   {"name": "SortPoly.throughRoot",
    "address":
-   "517476474afd4152f06cb4bee744bc5806ff9b66a4e7dd8822bc945b3bafbecc"},
+   "09191977dcf019491e0075a12127b799f15a8fafae2c957289416cc3720403a5"},
   {"name": "SortPoly.punitCases",
    "address":
-   "61ed61a59193f215cbc6ab7b9702b83043f099c044542a56903adf1649393074"},
+   "503907e1ef6c6b863d3ecf4d25b62d57e4fd4b817e01502223ed292bde371b78"},
   {"name": "SortPoly.punitCasesType",
    "address":
-   "9b6bb4938e112651fb1821cd100bacd47b204659c1f4e8a5026bf1fe349e6d03"},
+   "c59c2c9335fb70aa66f32c70c83ccea00ffe945eb230769417143fc92df210f5"},
   {"name": "SortPoly.punitRec",
    "address":
-   "d7c330ce1e0ffffb2bab60fc4fb9e0d8c29d1eda3db3bdc3d79ea09a1fc4657f"},
+   "ad6c3ef97d5b665bc7e32fefa2f10db293e88bf10b0435f3b087a00f1e1c205d"},
   {"name": "SortPoly.unitBoth",
    "address":
-   "6bc76ecb60f01c4d69ec14205d837ee2ba22fb4bde5eb04d964c3f4090ca57a7"},
+   "22831298425c763a6ec513180fc6586803dde741326e65d4e300fe529c29fcf1"},
   {"name": "SortPoly.sigmaRoot",
    "address":
-   "14e038b9ccb609703cea287ec2dc428d352f4271a92ca4bab6027c1befe21d06"},
+   "7663db98af6e0c23082dcd9888c7fb75aff02d7b3891b40f719db981ebda81d2"},
   {"name": "SortPoly.typeArg",
    "address":
-   "a0bc40591c2cd95983b027a8b2a5895d883a7f4e4b982d773f3edaa76f17c768"}],
+   "07e07e7d38b1bebdcd5c151aaf5631dea3d25f1098aec0bf8d08c12a7dd7a8c1"}],
  "format": "ixcc/k1-equations/1",
  "failures": [],
  "equations": []}

@@ -89,24 +89,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "resource.ixe",
-        "sha256": "986598033b3f297c53550757a452c24d848026b2f417f58a88c0c280d61f9f3c",
-        "bytes": 2506891
+        "sha256": "b853f71e2260acec1b8a6accd83102ca672efbfdcc0a4dcef991975be0b7faf8",
+        "bytes": 2634910
       },
       "equations": {
         "path": "resource.equations.json",
-        "sha256": "8f4f38565696386231ca81a89b527a6ef76ca3cc14529c50f1f5e9a3eb7048a5",
+        "sha256": "9b83591f9f34c71816a56a8424b881687760d81b5116284b11044307c6883eda",
         "equations": 46,
         "failures": 0
       },
-      "named_env_sha256": "2f8c7936519d30733693f332e56985d8babc325b0a3f71d6654038b68b364c67",
+      "named_env_sha256": "af78a6e2084f852efe8e913734cb91b76f1c3640d59ed42cd0332a16ac72d0e4",
       "census": {
         "path": "resource.census.json",
-        "sha256": "c4e88e7eb22d3596a0df6efa56a6034637f6dbdda9997cbcabe9d12d87fe8f14"
+        "sha256": "9b9bc66318af4e3a6aa59bee87dbfdc91d7bf24f881826f441e44f5cf100d30e"
       },
       "roots": [
         {
           "name": "Resource.heapList",
-          "address": "28638c564b92e3018c9d70199342c139a2770cdca48be32467c29c8d1d491b61",
+          "address": "ac60aac9fc0fda4082a7ec724ed700a66be1f7c712528180bb90a326d87c93f9",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -164,7 +164,7 @@
         },
         {
           "name": "Resource.twoVars",
-          "address": "7010c92586b85d560dcebbc6c32b8b2230b834bfc476f163aac3142694a23e20",
+          "address": "fc4c9a0a00edcc44782d94c3232a74d1a8559853340e1acfeb7c5c0a8b05327a",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -231,7 +231,7 @@
         },
         {
           "name": "Resource.oneVar",
-          "address": "65faa70db27857509d6fcc8a8d224c6831da1ea79268110496d729582b139f52",
+          "address": "f7cdf54c7b311bd1ef18987b54a7d69458d1afe035a26ba9b2ee0d3f54d44fd9",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -261,7 +261,7 @@
         },
         {
           "name": "Resource.depth",
-          "address": "f81ae726847fead67405464836963e0bd615114bedb3cdb18c34b86dc9bc7467",
+          "address": "0334311d04579f08b4c66a4fee9e1a152b7eb37dd7b886b62a572cc96e16bbdb",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -318,7 +318,7 @@
         },
         {
           "name": "Resource.tail",
-          "address": "13dd70b3f01c8cfdfa5effa4afef0c40bf2b2f0174da2b92484022fb3c5d0cb0",
+          "address": "7de6ac1a560dcb6b2716dd99b712b231ef83d33765543791e1f4f9eaf00005b1",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -348,7 +348,7 @@
         },
         {
           "name": "Resource.isEven",
-          "address": "6a95c0e321c602cf788b502681a2d273157a5a0653c26af77691ea83721dcb5d",
+          "address": "aa66a1c372d490f64fe358b52e1b9172a9ad300a44e74f196d8cf0751ba81d04",
           "params": 1,
           "result": "bool",
           "oracles": [
@@ -378,7 +378,7 @@
         },
         {
           "name": "Resource.isOdd",
-          "address": "d0fbb9dc3009c45b10d6614048dd0c8f7fa62bed1b833946403b7730466d8bfc",
+          "address": "bf6e1c41cbbf92659668a89fb394297c2d697cef94c3420852a2b4ba49d1d876",
           "params": 1,
           "result": "bool",
           "oracles": [
@@ -407,7 +407,7 @@
         },
         {
           "name": "Resource.trapEmpty",
-          "address": "893d0b67173d89cdef2d573e0e14b62189061e4f66eace13da2786b39858c97f",
+          "address": "13e9e9810b5916328765b31656e60a8fef7d9ebac4f97a2d7691ab137deb5604",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -438,7 +438,7 @@
         },
         {
           "name": "Resource.trapFalse",
-          "address": "9aa371d698f89937366d21b4b573baf3117a4dc1e343a64352117210d2a78650",
+          "address": "00ebf50189e5e1e9ec48aac697764238790e1102a0517dffca481cf74b5ffc88",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -460,7 +460,7 @@
         },
         {
           "name": "Resource.trapAbsurd",
-          "address": "9f73ab07bb837426f8413a8760f60ccf6e61ec624c3739dccc00e9ac52e28e8a",
+          "address": "df3c3f759a4229a9322d2dd60cbdbc042317ce0bc6622ad2230efbdddd0af11e",
           "params": 2,
           "result": "nat",
           "oracles": [

@@ -69,7 +69,7 @@
       "name": "OS01-annotated",
       "source": {
         "path": "OS01/Annotated.lean",
-        "sha256": "a8d9d931c90a5924a4d82c5849492b4d5046dafe397c889b49eb484c98752d66",
+        "sha256": "c9347ba9dcbfb19f131d32a66d5f4c86dc452cc100f859a8f7cddc1388d1f893",
         "license": "Apache-2.0 OR MIT",
         "variant": "annotated",
         "origins": []
@@ -80,24 +80,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS01-annotated.ixe",
-        "sha256": "17351839b28509faa75c55b29382048a5f89215f45d8b049d09b374abc91c898",
-        "bytes": 58943
+        "sha256": "cd781c3613a20f874f0d249d844218d9103db2a7f3450c939ef678b4f532f921",
+        "bytes": 65816
       },
       "equations": {
         "path": "OS01-annotated.equations.json",
-        "sha256": "65e4974f7496771f4b6607ada5af5284f24fb15f9165708120b67e5fe55d394c",
+        "sha256": "04400b95c74030520c6deec48045fdc3a547876f1aee8af007e34aeffce3ca38",
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "4c9ac4d463a5a0192099fbc141f1e08126148d86ed201af06b5b08ce2a2cbd57",
+      "named_env_sha256": "44443ae5fba0a63483072e756a99429e43c3d03a4df72a2ed737deef3f8e0058",
       "census": {
         "path": "OS01-annotated.census.json",
-        "sha256": "8083e94630a9bf42a3f6afb32844e38dfcfd303492442adb7efc5589090c969b"
+        "sha256": "425afd9fed8c8946840042e11ed9175f3754f05cb79baab32a3cfe0f515cc070"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "d900a5162e2ac9bbfa348fe3ed14cfc9ed07b5141c2aad04d4df9c48170ba386",
+          "address": "d95ca194400734c0f2e2490634a1e19639df20a42a3a26b118f756eef64b3112",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -227,24 +227,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS01-plain.ixe",
-        "sha256": "9d826e1b93ad93fc41c0e5ae1e76812313d6e26590a52d9cfa27c5870b272e07",
-        "bytes": 58704
+        "sha256": "59a750396cbc2bea20ee08b149888bd051063805eafb2379fbdaac7c8d63c912",
+        "bytes": 65568
       },
       "equations": {
         "path": "OS01-plain.equations.json",
-        "sha256": "9388f08cfce7041ff9ea80e31b1153a205cb2ef2931bc780aaf190af50116ce6",
+        "sha256": "608cb63e238abdce420c378a901cbbc8705e268b5c5106d69de2c62b059e4081",
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "ede5a451e1e06db66e7a1749f5794bdc95455b51237d51ade3bfff04187b244c",
+      "named_env_sha256": "f5b3354238eb6f6cbbf7e8ab70ee6f047e855691cfd37902d1448f34147be475",
       "census": {
         "path": "OS01-plain.census.json",
-        "sha256": "fe2e392bd58f9676f0082b95c8b330377d1fc8914ab56e15391992854fab2c34"
+        "sha256": "9484716816fa19d11b3361c2743614a71fee3dbba14f68ade96282c7d4888deb"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "2a726344bddd0964b121b5829a7068fb65b18da10b4f55d2f2adcd121a896f8e",
+          "address": "7a6c67bccf9e0639e2b1335dc72a5cd5a2fb225720309c274053d86a7ffdc7f7",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -374,24 +374,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS02-plain.ixe",
-        "sha256": "693627bb60e365a703d021af1a57bd0860d46c99b03720ba1e0d9633816c0605",
-        "bytes": 109847
+        "sha256": "dc585c0b9d26fe413cab0c74ea67684742d1413467b88db3f6d1d56f494e0bc8",
+        "bytes": 120676
       },
       "equations": {
         "path": "OS02-plain.equations.json",
-        "sha256": "3a93bd1db2be167776d38b12566517a41d75114cb3eefa49ff1d08aeb689b7f9",
+        "sha256": "b03159e0e3aa07834da1c0f61d877cdb4f6fba67018a6ed64442be6f93436028",
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "6c0897fbb979b7bf443bb2c7a64d900b326b07b6a1769af75c90ef807411e595",
+      "named_env_sha256": "b0a45a7ee9542ea610be5605f460fb4eab630dda866a2cdea086523e8d6eb72e",
       "census": {
         "path": "OS02-plain.census.json",
-        "sha256": "0a54a2e6cb6783d83b5aa3e804d32355e2e2cfc425592e3d382d51cf2bd10504"
+        "sha256": "c11c9699c038d178c4d9eed52a6b102a37ed776302c7c07186466b129cd07647"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "41e89488e10ca52035a441aca3b6500d39ec243ad3af23fee56c58022c935d42",
+          "address": "647939bb3215784fa84de9b5568322727d175f743cee03c264e48591b5c57171",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -514,7 +514,7 @@
       "name": "OS03-annotated",
       "source": {
         "path": "OS03/Annotated.lean",
-        "sha256": "b0e19d4dac63549473cf2e19a78ec11f8993afd08f72b1b07c5f8843c654871e",
+        "sha256": "14fdc052528186d4661560f188b96a859552b4de7c9b9c19be9b09962dc996df",
         "license": "Apache-2.0 OR MIT",
         "variant": "annotated",
         "origins": []
@@ -525,24 +525,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS03-annotated.ixe",
-        "sha256": "35103a84a8c3f4e300154f9f9d2ee7948c003fad1c7850d2b08cd60ee8133ed3",
-        "bytes": 58734
+        "sha256": "6b7e5d4e14af547de04bdfc336b333a1640f4c5def73ce5a8d94e9d1826e4ec1",
+        "bytes": 65606
       },
       "equations": {
         "path": "OS03-annotated.equations.json",
-        "sha256": "544366a8340a83c56186b7ed84a5add9b99dfecd4ce4aaa0fe3e1fe0b729c899",
+        "sha256": "fe539ae983f27ab57fbcb876354e5ced74423e737da964a9ab3c69c2da0f9e48",
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "05c9358b6ed5b60abb396bc53f441944c3521667f0c7995d88099870a1b37513",
+      "named_env_sha256": "7693f6c0fae0dae5ee6f99d869e6902c93b32e7b85c1dfbc6aed6cc2b4016af0",
       "census": {
         "path": "OS03-annotated.census.json",
-        "sha256": "ec74acf81efb5c0e2ebf129eb818d05c1f43b54e7bd3a625ebcb173068a19560"
+        "sha256": "e8aadfb5d009167e1bf61e6d96a96042829b913732020d63a8b04144d0890765"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "eb2aba5a00871080fe6d67f94cad060e6f9856271d01a717ed5e6be5b82c2217",
+          "address": "4013b01fc04de8911d72500ed9680396a8c4d21045c21cc983564184e62ad27a",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -672,24 +672,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS03-plain.ixe",
-        "sha256": "55d15f0ee92e3b7e66ee0b26f9067d7ebd4f621e84db1246943c2aa6255c6b8b",
-        "bytes": 58495
+        "sha256": "e2ccc8254a493f20171e2775560e7e10c2373f51e0dd8f1753e78ae8a454fbc5",
+        "bytes": 65358
       },
       "equations": {
         "path": "OS03-plain.equations.json",
-        "sha256": "1b516aa4a9198c6210afe5926a98a6c597f87fce02985aeeb31e823d203ef3a7",
+        "sha256": "b93cf59124c9980787bd5abebfbd547ac0c8a34eb92e9c14d07d84b32dafa8a0",
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "60665b9a7ddd31254d43e0d2b4dd47306ae5ac5120070cc3b89201c439222d68",
+      "named_env_sha256": "7c19bb4e0859298ce27dacfdf1b431424e80d6c0a091a7cea3a0cc935e7444c0",
       "census": {
         "path": "OS03-plain.census.json",
-        "sha256": "0d8ef386d0b8149f0bbdcfec77f558218e3036537424a3bcb373221a9e474ee7"
+        "sha256": "d403860c1c50c6923331e05d1cebc598d5b0399cf4baea502fd246414a45b1b2"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "5c638db5e9b1d88c8ff61a00013006adcffe2fb6b6ba4ae1f16d6c09ee31b8bf",
+          "address": "12a72726763a172f540641602f8b4d8b6641e902ae768fbc6640b5ebab43ba59",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -808,7 +808,7 @@
       "name": "OS03b-annotated",
       "source": {
         "path": "OS03b/Annotated.lean",
-        "sha256": "84a0e57a03c2587590ee50e39cb2375bda92155a37e1ffee2d3b648c41214ebf",
+        "sha256": "3e06f0fd8e82a44cfd597a584a719764f9b4bbffc623c92937dd887780b7ab43",
         "license": "Apache-2.0 OR MIT",
         "variant": "annotated",
         "origins": []
@@ -819,24 +819,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS03b-annotated.ixe",
-        "sha256": "881660779c2b3e8852b8ef341c83ab39a5b63076b3e9fdbbaa8523d581758c68",
-        "bytes": 63624
+        "sha256": "13f7950828a62c3ed19af73186e23358adef06b8ba57ad36d2e1f181893e233f",
+        "bytes": 70983
       },
       "equations": {
         "path": "OS03b-annotated.equations.json",
-        "sha256": "794fe65f751c7c40f074ca24c4d84ccd9ded8f5d8dc3e8cdc0ce5bd454868122",
+        "sha256": "2ffaa4380215b2b046b64d28d80578258434ee9ae73ed5cfad98a515ec26ca6d",
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "3b38eb1e47ee3ef31822898a92bd5fe74b614246d552985ce19958897df304e7",
+      "named_env_sha256": "39185ca183b45c1395d1cce696364c077c98481e3d1eeb05fde264ea50467cc1",
       "census": {
         "path": "OS03b-annotated.census.json",
-        "sha256": "509e79a624501ecc64627c0a1825f316ede722a5c38095ff2577f8cebf94c064"
+        "sha256": "712287818bd3f75dd71693b8894ab62cff8ad89f01f97ff5e47932aa2caddb9e"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "497cc6873bf43ed187fabe766a62e24e4c40a7c16d66eadeba684c14eb212493",
+          "address": "bd85bafc4e91ee5575695e882ce8c3a2466a3d164dc0c146a41ef7d50a4b7fd0",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -966,24 +966,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS03b-plain.ixe",
-        "sha256": "ce3f45a9cc8f415ea9095ba1e9fecbba1a7e8e3184fbbde3393c20adf6295215",
-        "bytes": 63385
+        "sha256": "2ab2260fbe2b9078cdd1b65b64c172479c5a83eb18d4e7864aed9e45d971aaa5",
+        "bytes": 70735
       },
       "equations": {
         "path": "OS03b-plain.equations.json",
-        "sha256": "52689f3024db36311d703e5b8eb08e24c5efe250f4211478e11faf264065ab6a",
+        "sha256": "5f7c2ebe52cb5e12e669e8baa97780f2ecdfd3e1dbe1c6af140dfaa11a91385a",
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "dc50b897686751d50a52da16f597bbf546f4cfe2dd49dabe536110724e958c59",
+      "named_env_sha256": "4d5d30440c29b6303083a6b49f633d58c877fa16e639a3a37d9a043ec14c2448",
       "census": {
         "path": "OS03b-plain.census.json",
-        "sha256": "61ab854c1eb69bb73af18d3c07c8ea76ba47729521196da7694b485501c776ad"
+        "sha256": "a90edc2bcfce451b83849a5404c70383cdeb32961039d7092fd5b4f3f6f61285"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "94b2d3851196b5c6566362e9a72523b4973e35645251b94fef8c21657ed2b5af",
+          "address": "715905ecbd0782cebca69dcfcb2beab57edbae3e204dce7b056234f0e4872e2e",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -1099,536 +1099,10 @@
       ]
     },
     {
-      "name": "OS13-annotated",
-      "source": {
-        "path": "OS13/Annotated.lean",
-        "sha256": "bde79bcd6fac5387698f44bd14fdce90d1f40b360799b695ec2cbefba5609995",
-        "license": "Apache-2.0 OR MIT",
-        "variant": "annotated",
-        "origins": []
-      },
-      "consts": [
-        "linId",
-        "entry"
-      ],
-      "protocol": "stdin",
-      "closure": {
-        "path": "OS13-annotated.ixe",
-        "sha256": "f9f6ec6af0ee596bfb692cd6b4c06b222dface671b4c1f4270b3e35aa3a04b84",
-        "bytes": 58468
-      },
-      "equations": {
-        "path": "OS13-annotated.equations.json",
-        "sha256": "419cfa35c814085d52d10c8ba1fd558ff4af06697201ea8156149f1153b8d137",
-        "equations": 2,
-        "failures": 0
-      },
-      "named_env_sha256": "42682809cb836295030b07e4abd94de3b9ddd4ce27334edcc3b82101ab8d7ec4",
-      "census": {
-        "path": "OS13-annotated.census.json",
-        "sha256": "39fb7c3e3a53b78612dee7cf276d1e33df2cbe9c299af1a0ff7f7bcf1dc8767c"
-      },
-      "roots": [
-        {
-          "name": "linId",
-          "address": "3ddf7a1d927e6fe75e1d684daff3b0f43849bd4fa847b3e7659f6a3f33966706",
-          "params": 1,
-          "result": "nat",
-          "oracles": [
-            "lean-run"
-          ],
-          "decline": null,
-          "generate": {
-            "seed": 131,
-            "count": 6,
-            "ranges": [
-              [
-                0,
-                1000000
-              ]
-            ]
-          },
-          "cases": [
-            {
-              "args": [
-                0
-              ],
-              "value": "0",
-              "machine": true
-            },
-            {
-              "args": [
-                1
-              ],
-              "value": "1",
-              "machine": true
-            },
-            {
-              "args": [
-                7
-              ],
-              "value": "7",
-              "machine": true
-            },
-            {
-              "args": [
-                100
-              ],
-              "value": "100"
-            },
-            {
-              "args": [
-                4611686018427387903
-              ],
-              "value": "4611686018427387903"
-            },
-            {
-              "args": [
-                9223372036854775806
-              ],
-              "value": "9223372036854775806"
-            },
-            {
-              "args": [
-                9223372036854775807
-              ],
-              "value": "9223372036854775807"
-            },
-            {
-              "args": [
-                9223372036854775808
-              ],
-              "value": "-"
-            },
-            {
-              "args": [
-                186735
-              ],
-              "value": "186735",
-              "generated": true
-            },
-            {
-              "args": [
-                904595
-              ],
-              "value": "904595",
-              "generated": true
-            },
-            {
-              "args": [
-                938605
-              ],
-              "value": "938605",
-              "generated": true
-            },
-            {
-              "args": [
-                314229
-              ],
-              "value": "314229",
-              "generated": true
-            },
-            {
-              "args": [
-                746046
-              ],
-              "value": "746046",
-              "generated": true
-            },
-            {
-              "args": [
-                94435
-              ],
-              "value": "94435",
-              "generated": true
-            }
-          ]
-        },
-        {
-          "name": "entry",
-          "address": "930460b73ebce5680a1eb473cafdaf6267facc0a45b72e6affb7d642e22aeb62",
-          "params": 1,
-          "result": "nat",
-          "oracles": [
-            "lean-run"
-          ],
-          "decline": null,
-          "generate": {
-            "seed": 113,
-            "count": 6,
-            "ranges": [
-              [
-                0,
-                1000000
-              ]
-            ]
-          },
-          "cases": [
-            {
-              "args": [
-                0
-              ],
-              "value": "0",
-              "machine": true
-            },
-            {
-              "args": [
-                1
-              ],
-              "value": "1",
-              "machine": true
-            },
-            {
-              "args": [
-                7
-              ],
-              "value": "7",
-              "machine": true
-            },
-            {
-              "args": [
-                100
-              ],
-              "value": "100"
-            },
-            {
-              "args": [
-                4611686018427387903
-              ],
-              "value": "4611686018427387903"
-            },
-            {
-              "args": [
-                9223372036854775806
-              ],
-              "value": "9223372036854775806"
-            },
-            {
-              "args": [
-                9223372036854775807
-              ],
-              "value": "9223372036854775807"
-            },
-            {
-              "args": [
-                9223372036854775808
-              ],
-              "value": "-"
-            },
-            {
-              "args": [
-                805461
-              ],
-              "value": "805461",
-              "generated": true
-            },
-            {
-              "args": [
-                565860
-              ],
-              "value": "565860",
-              "generated": true
-            },
-            {
-              "args": [
-                151660
-              ],
-              "value": "151660",
-              "generated": true
-            },
-            {
-              "args": [
-                415150
-              ],
-              "value": "415150",
-              "generated": true
-            },
-            {
-              "args": [
-                326271
-              ],
-              "value": "326271",
-              "generated": true
-            },
-            {
-              "args": [
-                99034
-              ],
-              "value": "99034",
-              "generated": true
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "OS13-plain",
-      "source": {
-        "path": "OS13/Plain.lean",
-        "sha256": "f2278278d154a68dff3cb0e903fe45928b7d4822115781604c4e8ba424c20ea6",
-        "license": "Apache-2.0 OR MIT",
-        "variant": "plain",
-        "origins": []
-      },
-      "consts": [
-        "linId",
-        "entry"
-      ],
-      "protocol": "stdin",
-      "closure": {
-        "path": "OS13-plain.ixe",
-        "sha256": "8b903930ae48823aa4521563834f23974d674088471b636f4d99b8540197dcde",
-        "bytes": 58229
-      },
-      "equations": {
-        "path": "OS13-plain.equations.json",
-        "sha256": "b4f4e8a91ec5f0a9f93f73da3a4d5214899f8a7b75ac0f3fcfaac49c8ffadceb",
-        "equations": 2,
-        "failures": 0
-      },
-      "named_env_sha256": "9fead6b6fd069dda1f350c80b50027ff43b9f80ac2466ab03b8c68b0b5ccb176",
-      "census": {
-        "path": "OS13-plain.census.json",
-        "sha256": "8632c157d0fb9215204f352bc3ea0a522b849dfb1e3fc9afc87b74f271fef2e4"
-      },
-      "roots": [
-        {
-          "name": "linId",
-          "address": "733dc79213a887b5d8bc79e64b11efd9110c44b02c4b9f0669ea80df24c50da2",
-          "params": 1,
-          "result": "nat",
-          "oracles": [
-            "lean-run"
-          ],
-          "decline": null,
-          "generate": {
-            "seed": 131,
-            "count": 6,
-            "ranges": [
-              [
-                0,
-                1000000
-              ]
-            ]
-          },
-          "cases": [
-            {
-              "args": [
-                0
-              ],
-              "value": "0",
-              "machine": true
-            },
-            {
-              "args": [
-                1
-              ],
-              "value": "1",
-              "machine": true
-            },
-            {
-              "args": [
-                7
-              ],
-              "value": "7",
-              "machine": true
-            },
-            {
-              "args": [
-                100
-              ],
-              "value": "100"
-            },
-            {
-              "args": [
-                4611686018427387903
-              ],
-              "value": "4611686018427387903"
-            },
-            {
-              "args": [
-                9223372036854775806
-              ],
-              "value": "9223372036854775806"
-            },
-            {
-              "args": [
-                9223372036854775807
-              ],
-              "value": "9223372036854775807"
-            },
-            {
-              "args": [
-                9223372036854775808
-              ],
-              "value": "-"
-            },
-            {
-              "args": [
-                186735
-              ],
-              "value": "186735",
-              "generated": true
-            },
-            {
-              "args": [
-                904595
-              ],
-              "value": "904595",
-              "generated": true
-            },
-            {
-              "args": [
-                938605
-              ],
-              "value": "938605",
-              "generated": true
-            },
-            {
-              "args": [
-                314229
-              ],
-              "value": "314229",
-              "generated": true
-            },
-            {
-              "args": [
-                746046
-              ],
-              "value": "746046",
-              "generated": true
-            },
-            {
-              "args": [
-                94435
-              ],
-              "value": "94435",
-              "generated": true
-            }
-          ]
-        },
-        {
-          "name": "entry",
-          "address": "c69cddc711d189c2f0646968207608776df46cc4ac5fbafe51ab961343183cdc",
-          "params": 1,
-          "result": "nat",
-          "oracles": [
-            "lean-run"
-          ],
-          "decline": null,
-          "generate": {
-            "seed": 113,
-            "count": 6,
-            "ranges": [
-              [
-                0,
-                1000000
-              ]
-            ]
-          },
-          "cases": [
-            {
-              "args": [
-                0
-              ],
-              "value": "0",
-              "machine": true
-            },
-            {
-              "args": [
-                1
-              ],
-              "value": "1",
-              "machine": true
-            },
-            {
-              "args": [
-                7
-              ],
-              "value": "7",
-              "machine": true
-            },
-            {
-              "args": [
-                100
-              ],
-              "value": "100"
-            },
-            {
-              "args": [
-                4611686018427387903
-              ],
-              "value": "4611686018427387903"
-            },
-            {
-              "args": [
-                9223372036854775806
-              ],
-              "value": "9223372036854775806"
-            },
-            {
-              "args": [
-                9223372036854775807
-              ],
-              "value": "9223372036854775807"
-            },
-            {
-              "args": [
-                9223372036854775808
-              ],
-              "value": "-"
-            },
-            {
-              "args": [
-                805461
-              ],
-              "value": "805461",
-              "generated": true
-            },
-            {
-              "args": [
-                565860
-              ],
-              "value": "565860",
-              "generated": true
-            },
-            {
-              "args": [
-                151660
-              ],
-              "value": "151660",
-              "generated": true
-            },
-            {
-              "args": [
-                415150
-              ],
-              "value": "415150",
-              "generated": true
-            },
-            {
-              "args": [
-                326271
-              ],
-              "value": "326271",
-              "generated": true
-            },
-            {
-              "args": [
-                99034
-              ],
-              "value": "99034",
-              "generated": true
-            }
-          ]
-        }
-      ]
-    },
-    {
       "name": "OS14-annotated",
       "source": {
         "path": "OS14/Annotated.lean",
-        "sha256": "a983c58c209357a9a4590d5ff3a32a168483cb3ec95a2751abe8112fa9faff92",
+        "sha256": "43dcc5fb65a656c9d84c7cfccc913bfe14ad5c2e2cbca45e978bfa4d5b97ac4c",
         "license": "Apache-2.0 OR MIT",
         "variant": "annotated",
         "origins": []
@@ -1639,24 +1113,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS14-annotated.ixe",
-        "sha256": "5cbbc451d7bfd9feec54ae8dc2b250a4b38321ba8812e617d57fe93b2e02ddc5",
-        "bytes": 59030
+        "sha256": "de680fb68f8cc7ab279376fa745fb668a1c5bcfab20da320e0afcda312afbd79",
+        "bytes": 65957
       },
       "equations": {
         "path": "OS14-annotated.equations.json",
-        "sha256": "199ad671c60f0bc84a1c9a42c56ce36db5d7ac421c2ee6f85a0704222387568d",
+        "sha256": "417b7f070b72b92500f341206f911ea1ddcafbca0d7a472ea58c3b123d675874",
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "9aee18d0dc10f87a805f5b06026bcabb616ae19719a15d01e42f0bd02992c12f",
+      "named_env_sha256": "2e876bbb3ac844406bb0e4fd51eedd9cf5166c68472498a4363e3cfd3cdc4ac5",
       "census": {
         "path": "OS14-annotated.census.json",
-        "sha256": "e4694751cdaa43f09f70d56bbb75d78451029e1e26a4633c08961adb693a27ae"
+        "sha256": "e26d0baed031aaf4f9abb4a65df7c8815120f864f0d38e68a15cff196b2d90f6"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "3f64c2844bea1f66cb044be129be0290baf4543a779eed50a88241dd1fe3972f",
+          "address": "cbefe7e35d6750efae038476811bcb1d802354d09118d1aaebf288daa9a3a1a7",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -1786,24 +1260,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS14-plain.ixe",
-        "sha256": "d82fbae51b09c84d929f4db76f03cb6f4b4704f3c069d786fe410632f54c75c1",
-        "bytes": 58791
+        "sha256": "23c4530cc5487318f4033593719e0b64f0d99dbd046b2db27535bdf217a0d748",
+        "bytes": 65709
       },
       "equations": {
         "path": "OS14-plain.equations.json",
-        "sha256": "841717c00dc6d6ebb21e55f83ba312edc746869c44d7add4244dac1a395f0383",
+        "sha256": "756798a7d36378f13c379079c815abb0fca84cd81a1d75a0688e89603d255ed2",
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "bf287b7b38cc0158e7081e9e2c84409fd11bc87230fc043fa4fe5d0fb0eed1df",
+      "named_env_sha256": "63d9bf725533e03aeea43123f633d45108738f9e61cb4825751cf0510812b36c",
       "census": {
         "path": "OS14-plain.census.json",
-        "sha256": "534afc11b1f9d256ec5a4167d2cefb065e9efb425070784442b0dd8831445001"
+        "sha256": "2d3e7af9728076c65e4cc1e07268ef38ccf495ef7130474eaf0a332ec3529963"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "f29d1f7a307b35bd461881fccb794b7b2b8213b0ac145e54ae049868e730e598",
+          "address": "6e8345084dc7eb66393c4faf4b0d06b51d58475f9ec4eae8878e1ffd7255e2ed",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -1933,24 +1407,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS16-plain.ixe",
-        "sha256": "c42f26733b2b89f3886802713809b05c6f968080f76aa5153751e882d48e7f86",
-        "bytes": 79761
+        "sha256": "57ff2a01f26b496e00970226d95d3932005c7362509f0192e941b320fc7fa3ba",
+        "bytes": 88728
       },
       "equations": {
         "path": "OS16-plain.equations.json",
-        "sha256": "ed959f05f452414293adf1741c8984339b1e44e6b34bdb51aa691a19b7678c64",
+        "sha256": "06d3c1303eafed62bd07553a28bf2b65c107c4e7568ca85835ab98546150a13b",
         "equations": 5,
         "failures": 0
       },
-      "named_env_sha256": "213a458a1780c562826073dc2a2028db74264187d30766828f5c6713cac411a9",
+      "named_env_sha256": "e6c898d69813c74284cc8e02690bc46ba3ded0dc7e33cc4c8d2330f52f278b0c",
       "census": {
         "path": "OS16-plain.census.json",
-        "sha256": "2605086ee5017cac59ea0d47b2f2b2d3b24b5d60ff52c78f62404e9c99db6b00"
+        "sha256": "1ca363c7d534da77fddcdd0144e03527c4830076318f6cb8511bdfe267c2b577"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "6772d9f59ddae138bedc7fef91edb0643965c0b7f06d826896faad36ae754687",
+          "address": "9af2422849809a8f7143ada167a3aab46be9fc2b588287d8281654cda76923f7",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -1993,7 +1467,7 @@
       "name": "OS22-annotated",
       "source": {
         "path": "OS22/Annotated.lean",
-        "sha256": "21930e6bb9230f92c122b5f77f25fff03cf89650151f827f561cce262396c609",
+        "sha256": "d7a099d91212b5ca49d813f7a8982717f95d76e451cfc9ac58951c993058ef6d",
         "license": "Apache-2.0 OR MIT",
         "variant": "annotated",
         "origins": []
@@ -2004,24 +1478,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS22-annotated.ixe",
-        "sha256": "c9b705ef8f104d462647356830df59f0949969d8130d6c826f8f5bb4dcfe0a56",
-        "bytes": 58470
+        "sha256": "8d625366e8c1d4d335a1f657de4a8611c730d36c93187f81fe776a7cddf24c45",
+        "bytes": 65342
       },
       "equations": {
         "path": "OS22-annotated.equations.json",
-        "sha256": "81a015a3d0aae0a10417cadc85cba566d4ec96e5b0c60caaca92b184b8a8be78",
+        "sha256": "9ee1b58f4c591b0591efacef6519aa70462fd220817f308c34082b01071ca178",
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "33bd67fa9401dd491f2b1088ccb176096e0c2ccc7598f2f439f529d359d15119",
+      "named_env_sha256": "3c0ef86239e1761d956528748c112d8c1f747c1628a48cbc714261751fd5aa05",
       "census": {
         "path": "OS22-annotated.census.json",
-        "sha256": "476aee4ecedc05294a129e5ac0c5e2563e6b753416f91bed0d4fb459bfde1bc7"
+        "sha256": "8114e9592a07d99278d13ce7059faafa8d4d2c3d19795517a32a19844590d96b"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "fd7693502ee122203a968352bd9c5fa0e548d90a825292de81087bc3c2233fb1",
+          "address": "a9d336dc76b7dab1242e14ecd7c51d412456078bc49e6f6beb68bfb3a75bf1f7",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -2151,24 +1625,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS22-plain.ixe",
-        "sha256": "a3ecc8b55fea612b9cc6afdc010b21f96ed679cd53960013d4cda4e20add3bf0",
-        "bytes": 58231
+        "sha256": "cba1e77026e38a4fc84cfa79511adc74e2b400d57175ef5b3af381739d1b07ce",
+        "bytes": 65094
       },
       "equations": {
         "path": "OS22-plain.equations.json",
-        "sha256": "05ef4fe2911d5e78dcd1716b98ec52a6b04ad4109e017e2ece19a7712e6e9d1d",
+        "sha256": "daca2055bcad7d04f35b929e998821a31c71c0bbed2703db6ab56c231470402b",
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "1829b3d3133fdff539d4ab7160b53732dc3a67eb25a8ecaad3fb350311d81c11",
+      "named_env_sha256": "e8c944fb1f874c48802752f5dd36a918ce3c2c4f86b29460c041b466dd4d907f",
       "census": {
         "path": "OS22-plain.census.json",
-        "sha256": "b6ff9ba635e4295423bfef3928425c129e6630ed0d70eb7dd3e6483128a2aea1"
+        "sha256": "b160f17126a219a36dd40105388899655497e55e4ad8a5c2a1caf6a438a8e10d"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "c69cddc711d189c2f0646968207608776df46cc4ac5fbafe51ab961343183cdc",
+          "address": "db925848c56b7890a17c2f92e5fbb03f3b061f0a755cacee402c36adc7783f5d",
           "params": 1,
           "result": "nat",
           "oracles": [

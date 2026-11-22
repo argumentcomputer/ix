@@ -104,24 +104,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "arity.ixe",
-        "sha256": "09079c8d9699b577f2bcbca4fe38b35606c4ddb40fdeeb1e3ab964eb5dd7507e",
-        "bytes": 2496557
+        "sha256": "b55880f4bc7e57a8d35bfb6868310c302493372f4cf61cb80b8e9edb90b1fa7d",
+        "bytes": 2622743
       },
       "equations": {
         "path": "arity.equations.json",
-        "sha256": "b5b3b4e5e869ceb371bd2e57ea28b390c6628bf6ebea4f5742d1a58473fc0e51",
+        "sha256": "b0a4766ec01bc60d554d3bce07df5780ba6c068ec7f25c4a9c25675c8f218945",
         "equations": 43,
         "failures": 0
       },
-      "named_env_sha256": "d13c1c3505666a6f8848a28018caf509b7af810cef148df5f93de487573756eb",
+      "named_env_sha256": "be0c8e9f89c07f8b8751cf522b90abd881ea86b390adaad20782dbcf0e9f5c44",
       "census": {
         "path": "arity.census.json",
-        "sha256": "e628e5b84481d946b31312443d0da6f7fadc6dda8700bfe7c1f66aedceb37b5b"
+        "sha256": "66acdf727887f5c4a2a0cbfe30996f13b4e8e913ef617e74499c441394f91062"
       },
       "roots": [
         {
           "name": "Arity.main1",
-          "address": "5908b085c89cc32ab350c808f0f83179c4e5cf8ae757b577b0d5c285a82d6af4",
+          "address": "1772ffa0072fddf5cb800847c12f7e162073abc36a72953ea781b3e1ac335844",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -147,7 +147,7 @@
         },
         {
           "name": "Arity.main2",
-          "address": "5908b085c89cc32ab350c808f0f83179c4e5cf8ae757b577b0d5c285a82d6af4",
+          "address": "1772ffa0072fddf5cb800847c12f7e162073abc36a72953ea781b3e1ac335844",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -166,7 +166,7 @@
         },
         {
           "name": "Arity.main3",
-          "address": "6d873000874f1080bf0f639bd8fff1d6187974273e2e711362574e3ab48e435d",
+          "address": "42e6d34eca8db327a5068393858efcb8c963d6654050e3cbe44bf5960b244675",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -185,7 +185,7 @@
         },
         {
           "name": "Arity.main4",
-          "address": "8194accacc32a0a2bd251e2b530e6d9b2b4ac6bf99892ecc5c84f37abe7607af",
+          "address": "9e160dc73ebf362983ae43fd522bfb49a4531599194a0162600ea005a6b39bc9",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -211,7 +211,7 @@
         },
         {
           "name": "Arity.addTo",
-          "address": "59e5cca8d902f93bb24dccd4c190a27f26aadd3a8dbb5965ca88e093a522e8cb",
+          "address": "a0b25ac639c224e6ef14db6850911c44deb0cf9278865c3a5dc563ab22a7b5ea",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -237,7 +237,7 @@
         },
         {
           "name": "Arity.halve",
-          "address": "8455f197dbc98011c4f2de7411e09c84cef5c433c6cf01283c0e19bdf363d5ba",
+          "address": "59b7b3dbbc912c80bd8364aff67ad17b96f227035429b2b8f4ab0cccaea0d0f9",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -263,7 +263,7 @@
         },
         {
           "name": "Arity.pm",
-          "address": "5746956cd12174c900696ce1ad36ef7e4617bc6602f6d4d46fcfbd080c7c7904",
+          "address": "81de31905583a4a03975bc64a9e4681ed84bc96f559e2f0e7da4f69a219ec686",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -289,7 +289,7 @@
         },
         {
           "name": "Arity.main7",
-          "address": "f3659b18f62dee5e288d2d50e32a0e792fa4ff81ac4a907b6429e70aef979137",
+          "address": "37fdf5f492add06b2d977611ee5405ae259dec69e037103d90ccd5b56d1b5038",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -308,7 +308,7 @@
         },
         {
           "name": "Arity.main7b",
-          "address": "3650a520f3f05002ada77a14bf3f8cc501d61211402e8ac206e3db86be78077a",
+          "address": "6d91e59e4073b4adda5d96e3c7274e3ff06a39e0546a04dfd51c4ef906cb4afa",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -327,7 +327,7 @@
         },
         {
           "name": "Arity.main8",
-          "address": "bd40b61e1ee8c028f67e40b2d9f7d3c8d5c4f5e9f2a5401af738475aa8f15002",
+          "address": "59ff992da8c7574cbaed54ca29c65673565d6a1611dd8ed5607c8da7d1f48640",
           "params": 3,
           "result": "nat",
           "oracles": [
@@ -347,7 +347,7 @@
         },
         {
           "name": "Arity.main8t",
-          "address": "744301ba50add743c5bce2a1f4cc0914fc6b164b5906100d1cf55657d797151d",
+          "address": "289d67df548124d86915e442eef3e0cba837bc3762d22df57205907d559b545f",
           "params": 3,
           "result": "nat",
           "oracles": [
@@ -367,7 +367,7 @@
         },
         {
           "name": "Arity.main8p",
-          "address": "bb25e4c5044cb63638fb271bc2438176c3dbdffc11ab028c4d14e08179931f07",
+          "address": "295f5ba441064e081722858f14b84908e2131bba0f6d97ad1f71298b5564d875",
           "params": 3,
           "result": "nat",
           "oracles": [
@@ -387,7 +387,7 @@
         },
         {
           "name": "Arity.main9",
-          "address": "1a3b69654b6c642ad574a5803c65f4c6ae6cdbeecc62531f0b448eb59c4b8611",
+          "address": "8e6991bc2c59ea266e8c4034c9361f7f8652161d73bd2e5e4c72d580e6c6e4e7",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -406,7 +406,7 @@
         },
         {
           "name": "Arity.main9r",
-          "address": "ebc014507a9500e9beae88a9c7779b5c615d14ad1e5f9b553f056d870f2663fc",
+          "address": "f455a202b843a1c920247e6d5882b3176452f410225e3e83d4e7760befd6262f",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -425,7 +425,7 @@
         },
         {
           "name": "Arity.main10",
-          "address": "4a7ba4a51c6a78804ddf500b588620b78c887d1b039541e90b9d424d4b988056",
+          "address": "fde87fcfb39682b7bc1019c29d0d55c0647a5babd053584bea816231ca0e644d",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -443,7 +443,7 @@
         },
         {
           "name": "Arity.main10c",
-          "address": "62aa7dda01bdca8c0dd9f34b5c0432dd3012bc10d4e33e4159e581ccfc2b743d",
+          "address": "251333c60749b371b46139f7a4f71f937e773a56d254c9102947774a45291866",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -461,7 +461,7 @@
         },
         {
           "name": "Arity.main11",
-          "address": "5e7b6bb8c4d4c34e6da16783926180bb4b3cada421433f68cf914943ba4a622f",
+          "address": "60b236548d80e0c18c179451615a1baa533d618b03d903b3928d86e692b0b60f",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -480,7 +480,7 @@
         },
         {
           "name": "Arity.main12",
-          "address": "bba806a7de4d64468ae6e178fc7ee049480ee036b0c0936cd40868141e2072ed",
+          "address": "848d531fee19137d0b0208fdb80959b237a6cd0d05a1e14d09c99000c2eac021",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -506,7 +506,7 @@
         },
         {
           "name": "Arity.mainB3",
-          "address": "c9110e339a59ff0fd48e61c768d3f232bfafbe60dcdfb151625c1ffd592b23b0",
+          "address": "a07e0b5bc0f005b4b6382eb55053417b0ba9e40a01cf3bffdb9866cf509b55be",
           "params": 2,
           "result": "bool",
           "oracles": [
@@ -532,7 +532,7 @@
         },
         {
           "name": "Arity.mainB4",
-          "address": "66de3f603c4e1f8fd42ea7593fe6109385ddc0ff80451d3a55c9d7cbb275545b",
+          "address": "8aa7caae55de41771cb294127c52ebecf122e0ec17ad020d5d6b6b18dfd6a3dc",
           "params": 2,
           "result": "bool",
           "oracles": [
@@ -558,7 +558,7 @@
         },
         {
           "name": "Arity.slowDouble",
-          "address": "4d32a07d1313a18b280d138dea0a2a111e924792356d2b38dc7bc05939f0ad42",
+          "address": "385746d09caa29037d8a8520a44e2f8838093ccb7f85e1f8f54b11c646042c29",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -576,7 +576,7 @@
         },
         {
           "name": "Arity.spin",
-          "address": "cc67393dd3a3a6b15ec216fd5cfb1ca3b4599690360fbdacf6228c0e43424ec5",
+          "address": "409ede9bca1a69f224308432dcbef269f7e0abe2507925f60bf21f67860b6701",
           "params": 2,
           "result": "nat",
           "oracles": [

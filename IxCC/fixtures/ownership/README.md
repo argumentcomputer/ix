@@ -40,12 +40,11 @@ probes of the design note, renamed by fixture id.
 
 | ID | Annotated | ix | IxCC | Code against the twin |
 | --- | --- | --- | --- | --- |
-| OS-01 `erased-proof-arg` | `pick (0 _h : True) (n : Nat)` | accepted | compiled | equal Fir, Cfg and object |
-| OS-03 `erased-data` | `ignoreFirst (0 _n : Nat) (m : Nat)`, called with `n` | accepted | compiled (CX-1; `relevance-C0` before) | equal |
+| OS-01 `erased-proof-arg` | `pick (@erased _h : True) (n : Nat)` | accepted | compiled | equal Fir, Cfg and object |
+| OS-03 `erased-data` | `ignoreFirst (@erased _n : Nat) (m : Nat)`, called with `n` | accepted | compiled (CX-1; `relevance-C0` before) | equal |
 | OS-03b `erased-data-dead-work` | OS-03 called with `cube n` | accepted | compiled; no `natMul` in the code | equal |
-| OS-13 `linear-identity` | `linId (1 x : Nat)`, and a caller | accepted | compiled | equal |
-| OS-14 `unique-nat-match` | `pred (! n : Nat)` with `match`, caller `(! n)` | accepted | compiled | equal |
-| OS-22 `local-forward` | `localId (~ x : Nat) : ~ Nat`, caller `(~ n)` | accepted | compiled | equal |
+| OS-14 `unique-nat-match` | `pred (@unique n : Nat)` with `match`, caller `(@unique n)` | accepted | compiled | equal |
+| OS-22 `local-forward` | `localId (@borrowed x : Nat) : @borrowed Nat`, caller `(@borrowed n)` | accepted | compiled | equal |
 | OS-02 `subtype-decidable` | plain only | – | compiled; no allocation | – |
 | OS-16 `k0-reverse-plain` | plain only (its annotated twin OS-15 is rejected) | – | compiled; `2n` cells, `48n` bytes natively | – |
 
@@ -53,10 +52,14 @@ probes of the design note, renamed by fixture id.
 the root's content address in the object's provenance note: contracts are
 part of a constant's address, so that note differs and nothing else does.
 
-The other 40 annotated sources (OS-01b, OS-04 to OS-37, and the negatives
-N-01 to N-08) are rejected by ix; `verdicts.json` records each stage and
-code. OS-30 to OS-33, OS-38 and OS-39 have no source yet (Phase 2 and
-later).
+In Ixon v5 (`IxC.Resource.check`), 5 paired twins (`OS01`, `OS03`, `OS03b`,
+`OS14`, `OS22`) plus 2 plain-only fixtures (`OS02`, `OS16`) are compiled in
+`corpus.json`; 16 additional probe-only annotated sources are accepted by v5
+mode checking (`verdicts.json` `"ok"` without corpus fixtures), 23 are rejected
+(including `OS-13`, which v5 Repair S refuses with `onceReentry`), and 2
+(`OS-08`, `OS-36`) decline at the class oracle's depth limit (`resource-decline`,
+`oracleDepthLimit`). OS-30 to OS-33, OS-38 and OS-39 have no source yet
+(Phase 2 and later).
 
 ## The producer, and rebuilding
 

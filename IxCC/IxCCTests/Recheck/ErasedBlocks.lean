@@ -152,10 +152,12 @@ def tRec (blk : IxCC.Ixon.Address) (rfc : AllMode) : Constant :=
   let rule1 : RecursorRule :=
     ⟨1, lambda motiveTy (lambda minor0 (lambda minor1 (lambda tT (.app (.app (v 1) (v 0)) ih))))⟩
   -- Root 2 (`rule1.rhs`) pre-order ordinals: 0 motiveTy, 1 inside motiveTy, 2 minor0, 3 minor1,
-  -- 4-5 inside minor1, 6 `t : T`.
-  IxCCTests.IxonV3.Builder.withBinderModes
+  -- 4-5 inside minor1, 6 `t : T`. All binders have codomain `Sort u` except ordinal 1 (`T → Sort u`).
+  IxCCTests.IxonV3.Builder.completeBindersWith
     ⟨.recr ⟨false, false, 1, 0, 0, 1, 2, typ, #[rule0, rule1]⟩, #[], refs, #[.var 0], #[]⟩
-    (fun p => if p.index == 2 && p.ordinal == 6 then rfc else {})
+    (fun p =>
+      let m := if p.index == 2 && p.ordinal == 6 then rfc else {}
+      if p.ordinal == 1 then .never m else .ifAllZero #[0] m)
 
 /-- `main := T.rec.{1} (λ _. E) c₀ (λ (t : T) (ih : E). next ih) (mk (mk leaf))`: `c₂` (a dropped
 field read as `leaf` would give `c₁`). Refs: `E`, `T.rec`, `T`, `next`, `c₀`, `mk`, `leaf`. -/
@@ -182,10 +184,14 @@ def tProg (fc rfc : AllMode) : IO TProg := do
   let (e, rs) := ctorRoots e en.ind en.ctors
   return { env := e, roots := [("main", main)] ++ rs, tRec := tr, mkC := mk, main }
 
-/-- Through the certified kernel: it accepts, and the producer refuses with every needle. -/
+/-- Through the certified kernel: N5 mode-checking refuses at ingress, and bypassing N5 the
+producer's own relevance check refuses with every needle. -/
 def kernelThenRefused (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) (label : String) (pr : TProg) (needles : Src.Program → Src.CId → List String) :
     IO (Src.Program × Src.CId × String) := do
-  let inp ← ofErr s!"{label}: ingress" (Recheck.ingress (IxCCTests.Support.Bound.write pr.env) (sidecar pr.roots) [])
+  let bs := IxCCTests.Support.Bound.write pr.env
+  let js := sidecar pr.roots
+  let inp ← ofErr s!"{label}: ingress (without N5)"
+    (Recheck.ingress bs js [] (modeCheck := fun _ => pure ()))
   IxCCTests.KernelFront.LamRuns.agree label inp
   let P := inp.program
   let rId ← lookup P pr.tRec "T.rec"

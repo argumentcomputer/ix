@@ -181,7 +181,15 @@ def kernel (a : Assert) (hk : IxCCTests.Recheck.Erased.Hooks) (label : String) (
     expect a (objMain h.art == some (.ctor 1 []) && srcMain h.art mainId == some (.ctor 1 []))
       s!"{label}: object {repr (objMain h.art)}, SrcEval {repr (srcMain h.art mainId)}"
     return s!"{label}: kernel, produce, Recheck.run accept; c₁ (object and SrcEval)"
-  let inp ← ofErr s!"{label}: ingress" (Recheck.ingress (IxCCTests.Support.Bound.write e) (sidecar ([("main", main)] ++ rs)) [])
+  let bs := IxCCTests.Support.Bound.write e
+  let js := sidecar ([("main", main)] ++ rs)
+  match Recheck.ingress bs js [] with
+  | .ok _ => expect a false s!"{label}: default N5 ingress accepted it"
+  | .error err =>
+    expect a (err.stage == .ingress && err.code == "mode-check")
+      s!"{label}: default ingress refused it otherwise: {err.render}"
+  let inp ← ofErr s!"{label}: ingress (without N5)"
+    (Recheck.ingress bs js [] (modeCheck := fun _ => pure ()))
   let cfg := Recheck.Config.forInput {} inp
   let P := inp.program
   let (table, _, _) := Src.Table.build cfg.table P inp.hints.proposals

@@ -135,8 +135,8 @@ def run (a : Assert) : IO (List String) := do
   -- the refusals the builder avoids
   let (noRec, _) := block base (simpleBlock ((Array.range n).map fun _ => #[]))
   let r := Src.KernelFront.accept noRec
-  expect a (refusedAt r .read .declined)
-    s!"no recursor: an inductive block without its recursor was not declined by the reader: {describe r}"
+  expect a (refusedAt r .kernel .declined)
+    s!"no recursor: an inductive block without its recursor was not declined by the kernel: {describe r}"
   let (ill, _, _, _, _) := enumProgram base n (illTyped := true)
   let r := Src.KernelFront.accept ill
   expect a (refusedAt r .kernel .declined &&
@@ -175,7 +175,7 @@ def run (a : Assert) : IO (List String) := do
     s!"list: the kernel front end refused a list over the enumeration with its recursor: {errText lk}"
   return [s!"bound builder: the base ({base.consts.size} records) rewritten and accepted; enum-{n} on it \
     accepted ({env.consts.size} records), honest object returns constructor 1, Stage A accepts it; hostile \
-    certificate refused (relevance-S1, Stage A); Bool control; refusals: no recursor (read, declined), \
+    certificate refused (relevance-S1, Stage A); Bool control; refusals: no recursor (kernel, declined), \
     ill-typed (kernel, declined: type mismatch), axiom (kernel, declined); tree and list recursors accepted"]
 
 end IxCCTests.KernelFront.Bound

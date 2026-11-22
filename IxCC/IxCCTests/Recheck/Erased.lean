@@ -265,9 +265,12 @@ def casesOnC (en : IxCCTests.Support.Bound.Ind) (mc : AllMode) : Constant :=
   let body : X := .app (.app (.app (.app (.app (.ref 4 #[0]) (.var 4)) (.var 2)) (.var 1)) (.var 0)) (.var 3)
   let val : X := lambda mot (lambda E (lambda d0 (lambda d1 (lambda d2 body))))
   -- Pre-order ordinals in both `ty` and `val`: 0 mot, 1 inner arrow of mot, 2 E, 3 d0, 4 d1, 5 d2.
-  withBinderModes
+  -- Every binder has codomain `Sort u` (`ifAllZero #[0]`) except ordinal 1 (`E → Sort u : Sort (u + 1)`).
+  IxCCTests.IxonV3.Builder.completeBindersWith
     ⟨.defn ⟨.defn, .safe, {}, 1, ty, val⟩, #[], #[en.ind, en.ctors[0]!, en.ctors[1]!, en.ctors[2]!, en.recursor], #[.var 0], #[]⟩
-    (fun p => if p.ordinal == 4 then mc else {})
+    (fun p =>
+      let m := if p.ordinal == 4 then mc else {}
+      if p.ordinal == 1 then .never m else .ifAllZero #[0] m)
 
 /-- `main := E.casesOn.{1} (λ _ : E. E) c₁ c₀ c₂ c₁` (`c₂`). -/
 def casesEnv (mc : AllMode) : IO (Env × IxCC.Ixon.Address × List (String × IxCC.Ixon.Address)) := do
@@ -285,9 +288,18 @@ def caseEntry (a : Assert) (hk : Hooks) : IO (Array String) := do
   let h ← ingest "casesOn, nothing erased" e roots
   let some (_, main) := h.inp.program.roots.head? | throw (IO.userError "no root")
   expect a (objMain h.art == some c₂ && srcMain h.art main == some c₂) "casesOn control: not c₂"
-  -- the minor m₁ written erased: the kernel accepts the artifact, the producer refuses it
+  -- the minor m₁ written erased: the live N5 mode checker refuses it at ingress, and even
+  -- bypassing N5, the producer and recheck path refuse it at relevance-S1
   let (e, co, roots) ← casesEnv .erased
-  let inp ← ofErr "casesOn with m₁ erased: ingress" (Recheck.ingress (IxCCTests.Support.Bound.write e) (sidecar roots) [])
+  let erasedBytes := IxCCTests.Support.Bound.write e
+  let erasedJson := sidecar roots
+  match Recheck.ingress erasedBytes erasedJson [] with
+  | .ok _ => expect a false "casesOn with m₁ erased: default N5 ingress accepted it"
+  | .error err =>
+    expect a (err.stage == .ingress && err.code == "mode-check")
+      s!"casesOn with m₁ erased: default ingress refused it otherwise: {err.render}"
+  let inp ← ofErr "casesOn with m₁ erased: ingress (without N5)"
+    (Recheck.ingress erasedBytes erasedJson [] (modeCheck := fun _ => pure ()))
   IxCCTests.KernelFront.LamRuns.agree "casesOn with m₁ erased" inp
   let P := inp.program
   let coId ← lookup P co "casesOn"
@@ -325,7 +337,8 @@ def enumRec (blk : IxCC.Ixon.Address) (n : Nat) : Constant := Id.run do
       body := lambda (minor k') body
     return (⟨0, lambda motiveTy body⟩ : RecursorRule)
   let r : Recursor := ⟨false, false, 1, 0, 0, 1, n.toUInt64, typ, (Array.range n).map rule⟩
-  return ⟨.recr r, #[], refs, #[.var 0], #[]⟩
+  return IxCCTests.IxonV3.Builder.completeBindersWith ⟨.recr r, #[], refs, #[.var 0], #[]⟩
+    (fun p => if p.ordinal == 1 then .never {} else .ifAllZero #[0] {})
 
 def recursor (a : Assert) (hk : Hooks) : IO (Array String) := do
   let n := 4
@@ -371,7 +384,9 @@ def keyCasesOn (key : IxCCTests.Support.Bound.Ind) (eInd : IxCC.Ixon.Address) : 
   let wrapper : X := lambda eT (lambda eT (lambda eT (.app (.app (.app (.var 3) (.var 2)) (.var 1)) (.var 0))))
   let val : X := lambda mot (lambda keyT (lambda mDom
     (.app (.app (.app (.ref 3 #[0]) (.var 2)) wrapper) (.var 1))))
-  ⟨.defn ⟨.defn, .safe, {}, 1, ty, val⟩, #[], #[key.ind, key.ctors[0]!, eInd, key.recursor], #[.var 0], #[]⟩
+  IxCCTests.IxonV3.Builder.completeBindersWith
+    ⟨.defn ⟨.defn, .safe, {}, 1, ty, val⟩, #[], #[key.ind, key.ctors[0]!, eInd, key.recursor], #[.var 0], #[]⟩
+    (fun p => if p.ordinal == 1 then .never {} else .ifAllZero #[0] {})
 
 /-- `Key | mk (a b c : E)` with its recursor, `useG3 (a b c : E) : E := b`, and
 `main := Key.rec.{1} (λ _ : Key. E) useG3 (mk c₀ c₁ c₂)` (`c₁`), or with `viaCase`,

@@ -1,6 +1,6 @@
 {"runtime_suites": ["IxonV3", "KernelFront", "Grounding"],
  "runtime_failure_sha256":
- "8c1946cae2bdf7b64465cb15395a607d5420b1a5a65121e2768ea66934547490",
+ "fb18a8a9fac3359fbee22abbbb594f504d6a9be2c8f1e5deb1fc6a05b593039b",
  "runtime_failure_count": 3,
  "proof_modules":
  ["IxCC.Anf.Budget",
@@ -1664,10 +1664,10 @@
   "IxCCGrounding.WordLe",
   "IxCCGrounding.WordRoot"],
  "grounding_axiom_sha256":
- "771fdecd13be6e99b0899f74962ec8daaa6ca810086be38029ebe41bc8b31165",
- "grounding_axiom_count": 450,
+ "9f47a166392d75c5d925f9d8878818058e55ac3198aaf7ef87d6fc42a59675f9",
+ "grounding_axiom_count": 447,
  "baseline":
- "ixcc-v5-prep: R2/R3 mode accessors, R9-ixcc retire private v4 resource port, RL-3 retire legacy Aiur, retire 18 obsolete pre-Gen RC proof modules",
+ "ixcc-v5: Ixon v5 migration (R4-R10, N1-N7), N5 IxC.Resource.check mode gate, direct IxC.Kernel.Model grounding (447 fences)",
  "axiom_sha256":
- "42032201959c99a3172acb82f215f5906b22e903a8888240c3c62ffb66cbf2ef",
+ "efe157756a1d4a4ca217883d0b3dd30a02ec969b88be6ecec9b09203da6bcc98",
  "axiom_count": 6531}

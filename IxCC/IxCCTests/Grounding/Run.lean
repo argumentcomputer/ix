@@ -879,17 +879,17 @@ def run : IO Bool := do
     let some br := boolRec? ti.env | throw (IO.userError "tags16: no Bool.rec in the reading")
     let tm := mutateRecRules ti br
     -- attributed: `tags16` unplanted accepted, `Bool.rec`'s stored rules changed, and exactly 5
-    -- sites refused, all in c165 (sites whose conversion takes ι at `Bool.rec`)
+    -- sites refused, all in c36 (sites whose conversion takes ι at `Bool.rec`)
     let ttr := refusedSites tm
     expectL a (directOk ti && recRhss ti.env br != recRhss tm.env br && !directOk tm &&
-        ttr.length == 5 && (ttr.map (·.1)).eraseDups == [165]) fun _ =>
+        ttr.length == 5 && (ttr.map (·.1)).eraseDups == [36]) fun _ =>
       s!"tags16: Bool.rec's `true` rule given the `false` rule's right-hand side: unplanted \
         sitesDirect {directOk ti}, rules changed {recRhss ti.env br != recRhss tm.env br}; planted \
         sitesDirect {directOk tm}, {ttr.length} sites refused (expected 5) in {(ttr.map (·.1)).eraseDups} \
-        (expected [165])"
+        (expected [36])"
     IO.println s!"tags16: sitesDirect true, the kernel agrees at all {tt.acceptedInstances} accepted \
       site-profile instances; Bool.rec's `true` rule given `false`'s right-hand side: sitesDirect false \
-      ({ttr.length} sites refused, in c165)"
+      ({ttr.length} sites refused, in c36)"
     -- string literals, on `panic`: the landed route refused 34 of its 762 sites (25 at string
     -- literals), the widened one 1 (a `Char` validity proof), none since G3's cost fix (a
     -- telescope's width costs no fuel), the kernel agreeing. 698 sites since the closure carries
@@ -915,14 +915,14 @@ def run : IO Bool := do
     expectL a (typeAt pa.env sk != typeAt pm.env sk && paR.length == 405 && paR.all pmR.contains &&
         pmR.length == 405 + 25 && pnew.length == 25 &&
         pnew.all (fun (_, _, f, x) => hasStrLitK f || hasStrLitK x) &&
-        (pnew.map (·.1)).eraseDups == [363, 322]) fun _ =>
+        (pnew.map (·.1)).eraseDups == [257, 181]) fun _ =>
       s!"panic: String.ofList's codomain made Nat: type changed {typeAt pa.env sk != typeAt pm.env sk}; \
         {paR.length} sites refused unplanted (expected 405), {pmR.length} planted (expected 430), \
         {pnew.length} new (expected 25), {(pnew.filter fun (_, _, f, x) => hasStrLitK f || hasStrLitK x).length} \
-        of them holding a string literal, in {(pnew.map (·.1)).eraseDups} (expected [363, 322])"
+        of them holding a string literal, in {(pnew.map (·.1)).eraseDups} (expected [257, 181])"
     IO.println s!"panic: {pt.accepted} of {pt.sites} sites accepted, the kernel agrees at all \
       {pt.acceptedInstances} accepted instances; String.ofList's codomain made Nat: \
-      {pmR.length} refused, {pnew.length} more, each holding a string literal, in c363 and c322"
+      {pmR.length} refused, {pnew.length} more, each holding a string literal, in c257 and c181"
     -- the renaming-tolerant `case` shape, on `OS16-plain`: `List.casesOn`'s recursor names its
     -- level parameters apart; the landed check refused the closure at `caseShape` alone
     let (oi, _) ← loadClosure "OS16-plain" "fixtures/ownership/OS16-plain" []

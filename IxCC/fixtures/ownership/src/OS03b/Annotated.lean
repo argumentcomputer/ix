@@ -1,4 +1,5 @@
 import Ix.Compile.SourceContract.Elab
+open scoped Ix.Modes
 
 /-!
 OS-03b `erased-data-dead-work` of the ownership suite (`fixtures/ownership/README.md`, MT.7).
@@ -9,7 +10,7 @@ driver for `lean --run`: each stdin line `ROOT ARG…` prints that root's
 value on those arguments.
 -/
 
-def ignoreFirst (0 _n : Nat) (m : Nat) : Nat := m + 1
+def ignoreFirst (@erased _n : Nat) (m : Nat) : Nat := m + 1
 
 def cube (n : Nat) : Nat := n * n * n
 

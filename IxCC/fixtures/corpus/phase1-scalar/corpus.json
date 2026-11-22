@@ -171,24 +171,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "scalar.ixe",
-        "sha256": "729aa016b2f929d6718f5729a3f04b7d1a502c4b1cc48836743f765db163c79d",
-        "bytes": 2586918
+        "sha256": "d6988bfcc8049851624a18019516d363e1b92dfae9172bf4a5db5ce91fe140c2",
+        "bytes": 2718125
       },
       "equations": {
         "path": "scalar.equations.json",
-        "sha256": "e4a1f249ed35ca5b709cbb6d44104889cf766fb2c265b3252fbf1b0bd7510a9b",
+        "sha256": "2e10a391d6de31cbf6724717924bb2cf0f8b7aeb637b765a1a7c25098ab1db26",
         "equations": 56,
         "failures": 0
       },
-      "named_env_sha256": "06d89ab69f66516ccd459f95deecfabec86d0ff3f3003537c56969de55cfa481",
+      "named_env_sha256": "17a995a33144885cf40babdaffc155aac20f8add7523f5283cf899f3ed1e9ea6",
       "census": {
         "path": "scalar.census.json",
-        "sha256": "62de18b4772a254ff92827863a7331dc11594e11e7b99aa16613503a276c20dc"
+        "sha256": "906baec611fc3a0e6bb82f03d41845001d3a67d2fa015ffedfb12b47ca5924bc"
       },
       "roots": [
         {
           "name": "Scalar.tailfib",
-          "address": "c4d2abaefd23e6efcbb6e940ac2c20a7442115423bbdd374eb2855078f1ab204",
+          "address": "996ef19b85eeb55041068059eb2d3ddb0a7a09fc84537b53d48057e76388bb1e",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -289,7 +289,7 @@
         },
         {
           "name": "Scalar.nfib",
-          "address": "70ecce114d9bbf87e22bc4f1646b6e849fd020f2838f36a1ab5700ee6cd228b9",
+          "address": "f7939d3a7176f1cf4b5b18e559bcda63db4feb4b27476ecac5a0e09b50564999",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -363,7 +363,7 @@
         },
         {
           "name": "Scalar.isEven",
-          "address": "6a95c0e321c602cf788b502681a2d273157a5a0653c26af77691ea83721dcb5d",
+          "address": "aa66a1c372d490f64fe358b52e1b9172a9ad300a44e74f196d8cf0751ba81d04",
           "params": 1,
           "result": "bool",
           "oracles": [
@@ -444,7 +444,7 @@
         },
         {
           "name": "Scalar.isOdd",
-          "address": "d0fbb9dc3009c45b10d6614048dd0c8f7fa62bed1b833946403b7730466d8bfc",
+          "address": "bf6e1c41cbbf92659668a89fb394297c2d697cef94c3420852a2b4ba49d1d876",
           "params": 1,
           "result": "bool",
           "oracles": [
@@ -480,7 +480,7 @@
         },
         {
           "name": "Scalar.f91",
-          "address": "ebd0ed0e1f24ac8b4dfe086b962d906a8e8a75f26f5b428dd6743716b79a5e85",
+          "address": "6e01e66096646b3eaec1327c3785c7249bd3739301a25bb64a39d7ee49a3f822",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -589,7 +589,7 @@
         },
         {
           "name": "Scalar.factorial",
-          "address": "8a3d04bf59b11d0383835677b2d2fdd1462238e59cfb05c93cb48ee6f099c762",
+          "address": "a1a0b4d67621618531ea8e397b0607b0c84782503b32c093aab39429ffd30da2",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -662,7 +662,7 @@
         },
         {
           "name": "Scalar.impFor",
-          "address": "af8f23cc2a600c3bb46797f63e6d54e248f1b4048ec1182a87611896895f4b7d",
+          "address": "6a3295497af843866528a914c6fd8fcbdeea84596cd21b8ddca319badb58642b",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -705,7 +705,7 @@
         },
         {
           "name": "Scalar.pyth",
-          "address": "10c5cfce27175440d0806bf1fc34b35760a01870b4c9eb90a777af7c7fc711f7",
+          "address": "e8ca43264eb67e9cff5e4da65374be434b960e182e1e25b960c6c93697c53488",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -736,7 +736,7 @@
         },
         {
           "name": "Scalar.sfib",
-          "address": "2cea25217358036214f81e5acc74f6d95342fe05ae6a1dd5b8a4f11c5a8dfba8",
+          "address": "0aa29ac4cfdfa57f3df7f9e1b8f830ff72c7c1f5ede47fdea1cb1230b78bfd51",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -805,7 +805,7 @@
         },
         {
           "name": "Scalar.collatz",
-          "address": "767118c47d761b8d1fe44832eee8c125944333a5fb10e1e6f5116e5c2ec07cec",
+          "address": "6b7389d2167636e1f8c3082324f5502a1b4770fefe6584ff6d25946a838fd8a4",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -900,7 +900,7 @@
         },
         {
           "name": "Scalar.collatzBest",
-          "address": "87b87875a6207ea9989d88a2a7e74236690fba457d57d3b5c390ea32d8053bc4",
+          "address": "872090f6127189e69828a52a79be7b9e98246eaff98bb667504cdb2982acf1c8",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -929,7 +929,7 @@
         },
         {
           "name": "Scalar.isPrime",
-          "address": "cfa20527b29c37b0f82a136f085ef221241e9819bc2885433bc7b7685f62883c",
+          "address": "fcb2e8c22f24f43606de641d91bee5f2bb54f3eb549a5a711200658a8b201e5c",
           "params": 1,
           "result": "bool",
           "oracles": [
@@ -1030,7 +1030,7 @@
         },
         {
           "name": "Scalar.primeCount",
-          "address": "adeaf6412f1bb13a996917b3b3aad11f353d14df0f6187fc67f95ae3f6e3d395",
+          "address": "264b228c9927dcc46c5d954b41aacc3032ee26c74d4b42bd026ec35623731cac",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -1059,7 +1059,7 @@
         },
         {
           "name": "Scalar.sigma",
-          "address": "c1f0fd600712b28a125ff6047cf200c16a1fb49f00982c80d0523aec595f06cc",
+          "address": "ee80b9b8fd7fb08660608ea81cafaa5841ec94ec7931db841c3e3b35f8989fce",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -1139,7 +1139,7 @@
         },
         {
           "name": "Scalar.isPerfect",
-          "address": "2e6e1159fba67548a88d93196853eee3b666f876f26d5890cfbf7df682d04d17",
+          "address": "ced45a0225c601d66e2e26e46c0879d437a06951743de17bab01656972690673",
           "params": 1,
           "result": "bool",
           "oracles": [
@@ -1181,7 +1181,7 @@
         },
         {
           "name": "Scalar.perfectCount",
-          "address": "ceae11d5d7118a12cbec84ea8a9eb72805bbbd5bf3d44fc8dc68af41ad180ccd",
+          "address": "34e66df68f08b2e129dfa2fd4be9b1c6a02e4f84eacce5d690599b01ec7795d1",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -1210,7 +1210,7 @@
         },
         {
           "name": "Scalar.chooseMul",
-          "address": "75da2c62791acf7e08d0fd622df3453d57895219147784c79b6adf6e5a0c752a",
+          "address": "7b333a476be3b5e6e7c0c55684a7c2d47320304e8217ef332bc7f980923d2905",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -1322,7 +1322,7 @@
         },
         {
           "name": "Scalar.lcmUpTo",
-          "address": "1b9401e5df886b876bffc38b3dd17093ee7c69633c759cff449e30d38f408017",
+          "address": "c8582d5a308a3f5a11cdf7aba4c52e38ebeb44cfa077ff22c9f032b056c26ef6",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -1368,7 +1368,7 @@
         },
         {
           "name": "Scalar.choosePascal",
-          "address": "1e9b886b0f6ad34059b09733a25b8eb79bb312f8e6e9c3af9560b0a3b276ca85",
+          "address": "d661b3131c9209afc4c5eca84a65854ed15deb04640bfc73dafbeb49ca90c000",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -1406,7 +1406,7 @@
         },
         {
           "name": "Scalar.isqrt",
-          "address": "5f3afc43f66682cc879901ca16057675483dde20ac8bb271ff696e02992b4db5",
+          "address": "7a423a4c022c7a7a1a15770b54ea4ba0a126584fecc0b6cdfde0641bc1d8bb0d",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -1504,7 +1504,7 @@
         },
         {
           "name": "Scalar.powMod",
-          "address": "fb8a99989ae80258dcec3ef1315b75862fca1e796869ca099863d5d8dcf1eae5",
+          "address": "c4bf7c708dc4178425f8928d6567a7e0c62f2648f9bde0e8720512fa07547fab",
           "params": 3,
           "result": "nat",
           "oracles": [
@@ -1627,7 +1627,7 @@
         },
         {
           "name": "Scalar.digitSum",
-          "address": "e91ba1db9bfc1ac3585dc468c65b25fa8c03c62e04d53a06f58c62c0e8ad1afd",
+          "address": "37eb8caa815661b7997832c69e57d62ba8d0680758baaf10a74efeeec642f42a",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -1718,7 +1718,7 @@
         },
         {
           "name": "Scalar.gcdSub",
-          "address": "ceffccdfa2789eb1288352ffb2502f8c08979e2be1c1467b1bae9924cef5c403",
+          "address": "c17e9ea2f8c0546c804f76eab495e749fa81a9d05afdd75d8fcce8f6d43fecad",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -1844,24 +1844,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "strictAndOr.ixe",
-        "sha256": "e96bd163502f9657c1601230741247dd0b91b1265b5807b11bdff1dd7f2a962f",
-        "bytes": 88449
+        "sha256": "51e6399125e6db2040b3ba207fbdcca9c2c6ad244454d15f0755cd7e8a66dd58",
+        "bytes": 97763
       },
       "equations": {
         "path": "strictAndOr.equations.json",
-        "sha256": "2cd85cb22840377a42ee4ac6bebc3489d6a312701074b75bd20e34a9a274e334",
+        "sha256": "bde8bba7946d2b13218d1dc63ee600ccbacaa17ea148707f84416db4eb8517a1",
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "f8f20d7fb214ad47fd260cf2c7d8909aabfb6284dc8e0189ec9dd6d688b796c4",
+      "named_env_sha256": "d43a638e4699aff03e0957fee62c8607163fcbc9a0466d03f0364cef369b24a4",
       "census": {
         "path": "strictAndOr.census.json",
-        "sha256": "22aff76e2b2dcfa379e749a63e385530b8ef7f3981ebb2506ff88bceabe6d250"
+        "sha256": "8747e76da8181a44d71ee58c2ff4a58167023fa22bf9b2cda4f20c564e5c4738"
       },
       "roots": [
         {
           "name": "entryStrictOr",
-          "address": "1be57a4df5c9e29aac1c5d859b76404849193d8a23357b736404de6f9b390e72",
+          "address": "db41523e3b23969210ef4ed1c7b4930021e51bf6d20d74bc8d6906391ce1a96e",
           "params": 2,
           "result": "bool",
           "oracles": [
@@ -1911,7 +1911,7 @@
         },
         {
           "name": "entryStrictAnd",
-          "address": "7157f32f4209052af5f2ba1de23fb5511869270711607bd0b12d7f59d3e973de",
+          "address": "2b367af274de69a6ccb60f9c60e83561b33af27745106562279c90be8dd11694",
           "params": 2,
           "result": "bool",
           "oracles": [
@@ -1986,24 +1986,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "tuple.ixe",
-        "sha256": "cd87960f0ebc3ec94c0946ae42b24f332aed12fa4c353dd626168af393675ea4",
-        "bytes": 63612
+        "sha256": "45af00760c7f5300e5a271677d3d95ad3e78ebd2939368fbb0a43e55b62dc41a",
+        "bytes": 70858
       },
       "equations": {
         "path": "tuple.equations.json",
-        "sha256": "ad47931401285393c8bd1514ad31b5d4b6a51fc239bf0b9746df88bb760cfa51",
+        "sha256": "c4e62314ecafa3ae36a2ece418410f82fe5ba3ac73f088417544655a2c9824b7",
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "4e274ea03913964917111d64b59b8698445463dda1c17d7723d558f363c2ac51",
+      "named_env_sha256": "a31832240f7148200e5035e8c731bd0b0ae5cb933f5f4588e741f4de176cc340",
       "census": {
         "path": "tuple.census.json",
-        "sha256": "4b1c6687f06b83ed5eb9bd22c9449281c7b47d8fbb0163589027a71528c49be8"
+        "sha256": "aff87f92798638d8f5c027f24b8b408ccef8f0123b77ad76bd5d79ff6f90fd84"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "52c3c67b7d27d8e8c2e37fd2960eb7845d25fbaf635a07308def7ec8a5b24dec",
+          "address": "85a737e6c55d6661fd934d132402b1f6bdc4de6659fc4845da59602de45672bf",
           "params": 3,
           "result": "nat",
           "oracles": [
@@ -2114,24 +2114,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "bigctor.ixe",
-        "sha256": "fd7c8b48f0751483ddd56735ddf0929a921f7496e1faf58c5fdf00b4811a1ab3",
-        "bytes": 74874
+        "sha256": "a24ca81b3b147669d2564046a58fa052bd48d9a2e66056926ddb7fbbce4905cf",
+        "bytes": 83798
       },
       "equations": {
         "path": "bigctor.equations.json",
-        "sha256": "91b9ca42f7f702d1af3b3721547f62aef800d33c860be6998eda8f26b7ae201e",
+        "sha256": "9b133679702f0608768d8309b4f50d7fba9a5fceb79b6481cc5bf776aaaf6184",
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "c01794686cea03d575ec74c7f50cdf341929afd2aaac1b56afebee2e8082957f",
+      "named_env_sha256": "8a7d362cbac860238977261441744a03d2772d8379e23ec4c932142f122f059a",
       "census": {
         "path": "bigctor.census.json",
-        "sha256": "b68bda7512fd54abe227fe87fa47360e425e5fd2c9e426be5ceac3fcf277477f"
+        "sha256": "fd62e68439dfdcf15bec74412fb8343a630e33141c19c9d50f38d73b7f6f538f"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "13f7e2ff9d7191bcecedadd5e38aa746eb4a3ff0468e20218fefd8ab367a4cc6",
+          "address": "4434937ff593a8a6d622364cb7fa0c4c341f4f9274491ce17c4642d4d6fef014",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -2185,24 +2185,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "typeFormerPolymorphism.ixe",
-        "sha256": "5afe226d278f39aca2c89988f44162b2abc2044f6c09c4c0a2686a49aa86eb59",
-        "bytes": 63547
+        "sha256": "2c57c540261b4765bef13645c513767dbc40479d0c812c5cd9ff175979cba94e",
+        "bytes": 70837
       },
       "equations": {
         "path": "typeFormerPolymorphism.equations.json",
-        "sha256": "a551fc732c47a098dbbc0ea6d43fac34f81ed644e66ea80ce3b890e72c3f4667",
+        "sha256": "041583c7e1d0b097af640579fcf647929fffec5fa56b3983c28237df1757a16a",
         "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "17747092e15d439ddf18033ab1dbfc3feba5b3f1a29f6f58b9c67c725abeefbb",
+      "named_env_sha256": "a30932996352306cf65338aa2a0e677962dfba53f7c3aa84db5ad831645a7091",
       "census": {
         "path": "typeFormerPolymorphism.census.json",
-        "sha256": "d1f9699759e4e6c73ceaa818873c18665f66d72c81a79d2d0300efe3e58cf964"
+        "sha256": "83029569883c6290979dde181ad1bd40b2aacc713805ad9321920ed15b0a82e6"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "9cfb76a7c941bdb23068c25939fb0c3fa164632f1950630066897ed0f39e5302",
+          "address": "e2ed8647053e5d224fe3bffaf22cb2c34bfb562c8268e1f30fa2c23793eb7a84",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -2259,24 +2259,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "natShiftr.ixe",
-        "sha256": "961598c62261177fa2bd8bf8950c589891c67764530149426d0cf70653a312da",
-        "bytes": 168837
+        "sha256": "fd1431ac3570aa556e0d3db56e20c18f5a0436c175fc014b7cb3e17857c77b7e",
+        "bytes": 182407
       },
       "equations": {
         "path": "natShiftr.equations.json",
-        "sha256": "49962025c20673cbcd19e98b141d4bcf4e6064bb69a753274f6aa46666c63c83",
+        "sha256": "492f926b90a4607185ff1e5dec7ae13ef52541f64fbc0976314fd46d79296936",
         "equations": 9,
         "failures": 0
       },
-      "named_env_sha256": "927f3f7a0760b5d872462efa1d0d35664eb2e312e138df797eae6f88984cce0b",
+      "named_env_sha256": "79955b00065f5e84ffdb058b8b5e992d957619f745b6741349e6aa77e38d42fd",
       "census": {
         "path": "natShiftr.census.json",
-        "sha256": "c5d3a29e559bdc17670103e5dff75a0e6bafedbc862c3f0855e41e5b5a8ec79a"
+        "sha256": "a068c113bfbc334cb84825d35770d9eca67c252a240ce8c08a6cc8434fffe600"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "7e016253dce7009cd911f845473c2b5a673f3225ccdf53c57a5d923abb2a03dc",
+          "address": "7157f41966a92848e33e301677689c35b9358e96c14a5b6270c994b87512b26e",
           "params": 2,
           "result": "nat",
           "oracles": [

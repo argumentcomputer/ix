@@ -1,4 +1,5 @@
 import Ix.Compile.SourceContract.Elab
+open scoped Ix.Modes
 
 /-!
 OS-14 `unique-nat-match` of the ownership suite (`fixtures/ownership/README.md`, MT.7).
@@ -9,12 +10,12 @@ driver for `lean --run`: each stdin line `ROOT ARG…` prints that root's
 value on those arguments.
 -/
 
-def pred (! n : Nat) : Nat :=
+def pred (@unique n : Nat) : Nat :=
   match n with
   | 0 => 1
   | k+1 => k
 
-def entry (! n : Nat) : Nat := pred n
+def entry (@unique n : Nat) : Nat := pred n
 
 def main : IO Unit := do
   let input ← (← IO.getStdin).readToEnd

@@ -143,12 +143,26 @@ jobs:
         run: nix build .#default .#ix --no-link --print-build-logs
       - name: Smoke-test packaged ix CLI
         run: nix run .#ix -- --help
-      # Sandboxed `ix-tests` runs only when Nix/manifest/lockfiles changed (or
-      # via workflow_dispatch / nightly.yml), avoiding a 29m duplicate of
-      # `host-test-primary` on ordinary PRs and pushes to main.
-      - name: Run Nix flake check (ix-tests)
+      # Evaluate all flake checks (including `ixcc-*`), and build the host checks
+      # when Nix/manifest/lockfiles changed (or via workflow_dispatch / nightly.yml).
+      # IxCC's `ixcc-*` checks have their own job (`ixcc.yml` from CI Jobs).
+      - name: Evaluate flake checks
         if: needs.changes.outputs.run_flake_check == 'true'
-        run: nix flake check --print-build-logs
+        run: nix flake check --no-build
+      - name: Build host flake checks (excluding ixcc-*)
+        if: needs.changes.outputs.run_flake_check == 'true'
+        shell: bash
+        run: |
+          names=$(nix eval --json .#checks.x86_64-linux \
+            --apply 'checks: builtins.filter (name: builtins.substring 0 5 name != "ixcc-") (builtins.attrNames checks)' \
+            | jq -r '.[]')
+          if [ -z "$names" ]; then
+            echo "::error::The flake defines no checks other than IxCC's for x86_64-linux"
+            exit 1
+          fi
+          mapfile -t checks <<< "$names"
+          echo "Checks: ${checks[*]}"
+          nix build --print-build-logs --no-link "${checks[@]/#/.#checks.x86_64-linux.}"
       - name: Smoke-test development shell build
         run: nix develop --command lake build
 

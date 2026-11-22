@@ -49,6 +49,8 @@ jobs:
       run_formal_build: ${{ steps.plan.outputs.run_formal_build }}
       run_formal_tests: ${{ steps.plan.outputs.run_formal_tests }}
       run_refinement: ${{ steps.plan.outputs.run_refinement }}
+      run_ixcc: ${{ steps.plan.outputs.run_ixcc }}
+      run_kernel_bridge: ${{ steps.plan.outputs.run_kernel_bridge }}
       ixa_key: ${{ steps.plan.outputs.ixa_key }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -327,6 +329,33 @@ jobs:
               - 'Scripts/CheckFormalKeys.lean'
               - 'Scripts/CheckAiurCompressionFixtures.lean'
               - 'crates/**'
+            ixcc:
+              - 'IxCC/**'
+              - 'IxC/Ixon/**'
+              - 'IxC/Address/**'
+              - 'IxC/Kernel/**'
+              - 'IxC/Host/**'
+              - 'IxC/Resource/**'
+              - 'IxC/lakefile.lean'
+              - 'IxC/lake-manifest.json'
+              - 'IxC/lean-toolchain'
+              - 'flake.nix'
+              - 'flake.lock'
+              - 'lean-toolchain'
+              - '.github/workflows/ixcc.yml'
+              - '.github/actions/**'
+            kernel-bridge:
+              - 'IxCC/IxCC/**'
+              - 'IxCC/IxCC.lean'
+              - 'IxCC/lakefile.lean'
+              - 'IxCC/lake-manifest.json'
+              - 'IxCC/lean-toolchain'
+              - 'IxC/**'
+              - 'Models/KernelBridge/**'
+              - 'lean-toolchain'
+              - 'lakefile.lean'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/**'
       - name: Resolve job plan
         id: plan
         env:
@@ -341,6 +370,8 @@ jobs:
           F_KERNEL: ${{ steps.filter.outputs.kernel }}
           F_REFINEMENT: ${{ steps.filter.outputs.refinement }}
           F_FORMAL: ${{ steps.filter.outputs.formal }}
+          F_IXCC: ${{ steps.filter.outputs.ixcc }}
+          F_KERNEL_BRIDGE: ${{ steps.filter.outputs.kernel-bridge }}
         run: |
           is_push=false
           is_draft=false
@@ -351,9 +382,9 @@ jobs:
           fi
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            rust=true; cuda=true; gnark=true; contracts=true; host=true; kernel=true; refinement=true; formal=true
+            rust=true; cuda=true; gnark=true; contracts=true; host=true; kernel=true; refinement=true; formal=true; ixcc=true; kernel_bridge=true
           else
-            rust=false; cuda=false; gnark=false; contracts=false; host=false; kernel=false; refinement=false; formal=false
+            rust=false; cuda=false; gnark=false; contracts=false; host=false; kernel=false; refinement=false; formal=false; ixcc=false; kernel_bridge=false
             [ "$F_GLOBAL" = "true" ] || [ "$F_RUST" = "true" ] && rust=true
             [ "$F_GLOBAL" = "true" ] || [ "$F_CUDA" = "true" ] && cuda=true
             [ "$F_GLOBAL" = "true" ] || [ "$F_GNARK" = "true" ] && gnark=true
@@ -362,6 +393,8 @@ jobs:
             [ "$F_GLOBAL" = "true" ] || [ "$F_KERNEL" = "true" ] && kernel=true
             [ "$F_GLOBAL" = "true" ] || [ "$F_REFINEMENT" = "true" ] && refinement=true
             [ "$F_GLOBAL" = "true" ] || [ "$F_FORMAL" = "true" ] || [ "$F_REFINEMENT" = "true" ] && formal=true
+            [ "$F_IXCC" = "true" ] && ixcc=true
+            [ "$F_KERNEL_BRIDGE" = "true" ] && kernel_bridge=true
           fi
 
           run_quick=false
@@ -378,6 +411,8 @@ jobs:
           run_formal_build=false
           run_formal_tests=false
           run_refinement=false
+          run_ixcc=false
+          run_kernel_bridge=false
 
           if [ "$is_push" = "true" ]; then
             # Push to main only warms build/artifact caches; tests already ran on the PR.
@@ -389,6 +424,8 @@ jobs:
             [ "$kernel" = "true" ] && run_kernel=true
             [ "$formal" = "true" ] && run_formal_build=true
             [ "$refinement" = "true" ] && run_refinement=true
+            [ "$ixcc" = "true" ] && run_ixcc=true
+            [ "$kernel_bridge" = "true" ] && run_kernel_bridge=true
           else
             run_quick=true
             run_lints=true
@@ -407,6 +444,8 @@ jobs:
               [ "$formal" = "true" ] && run_formal_build=true
               [ "$formal" = "true" ] && run_formal_tests=true
               [ "$refinement" = "true" ] && run_refinement=true
+              [ "$ixcc" = "true" ] && run_ixcc=true
+              [ "$kernel_bridge" = "true" ] && run_kernel_bridge=true
             fi
           fi
 
@@ -432,6 +471,8 @@ jobs:
             echo "run_formal_build=$run_formal_build"
             echo "run_formal_tests=$run_formal_tests"
             echo "run_refinement=$run_refinement"
+            echo "run_ixcc=$run_ixcc"
+            echo "run_kernel_bridge=$run_kernel_bridge"
             echo "ixa_key=ixa-v2-${ixa_hash}"
           } >> "$GITHUB_OUTPUT"
 
@@ -1374,6 +1415,48 @@ jobs:
           IX_STARK_HOST: ${{ runner.temp }}/ci-hosts/stark-verifier
         run: lake env .lake/build/bin/IxTests --tier ci:binding-proof
 
+  ixcc:
+    name: IxCC
+    needs: changes
+    if: needs.changes.outputs.run_ixcc == 'true'
+    permissions:
+      contents: read
+    uses: $/.github/workflows/ixcc.yml
+    secrets:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+  # The kernel-bridge model's gate (`lake run check-kernel-bridge`: its build,
+  # whose modules treat warnings as errors, and its axiom-fence inventory).
+  kernel-bridge:
+    name: Kernel bridge model
+    needs: changes
+    if: needs.changes.outputs.run_kernel_bridge == 'true'
+    permissions:
+      contents: read
+    runs-on: runs-on=${{ github.run_id }}-kernel-bridge-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/sticky=ci-host-x86-64-v4-100gb:100gb/extras=s3-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
+        with:
+          sccache: s3
+          sticky_cache: |
+            rust
+            custom,path=.lake,path=Aiur/.lake,path=IxVM/.lake,path=MultiStark/.lake,path=target,path=IxCC/.lake,path=Models/KernelBridge/.lake
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - uses: $/.github/actions/setup-rust-toolchain
+        with:
+          codegen: portable
+          use-github-cache: "false"
+      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+        with:
+          auto-config: false
+          use-github-cache: false
+          use-mathlib-cache: false
+      - name: Check the kernel-bridge model and its fence inventory
+        run: lake run check-kernel-bridge
+
   # Normalizer between path-filtered jobs and runs-on/spot-retry-gate:
   # spot-retry-gate requires every job in `job_results` to be `success`, so
   # legitimately skipped jobs would otherwise fail the gate. This job verifies
@@ -1405,6 +1488,8 @@ jobs:
       - formal-check
       - ixvm-tier-tests
       - binding-proof-cli
+      - ixcc
+      - kernel-bridge
     runs-on: ubuntu-latest
     steps:
       - name: Verify planned jobs succeeded
@@ -1445,6 +1530,10 @@ jobs:
           R_BINDING_PROOF: ${{ needs.binding-proof-cli.result }}
           E_REFINEMENT: ${{ needs.changes.outputs.run_refinement }}
           R_REFINEMENT: ${{ needs.ixvm-refinement.result }}
+          E_IXCC: ${{ needs.changes.outputs.run_ixcc }}
+          R_IXCC: ${{ needs.ixcc.result }}
+          E_KERNEL_BRIDGE: ${{ needs.changes.outputs.run_kernel_bridge }}
+          R_KERNEL_BRIDGE: ${{ needs.kernel-bridge.result }}
         run: |
           if [ "$R_CHANGES" != "success" ]; then
             echo "::error::changes job ended with $R_CHANGES"
@@ -1486,6 +1575,8 @@ jobs:
           check_job ixvm-tier-tests "$E_FORMAL_TESTS" "$R_IXVM_TIER"
           check_job binding-proof-cli "$E_FORMAL_TESTS" "$R_BINDING_PROOF"
           check_job ixvm-refinement "$E_REFINEMENT" "$R_REFINEMENT"
+          check_job ixcc "$E_IXCC" "$R_IXCC"
+          check_job kernel-bridge "$E_KERNEL_BRIDGE" "$R_KERNEL_BRIDGE"
           exit "$failed"
 
   ci-gate:

@@ -4,63 +4,63 @@
   "roots": [
     {
       "name": "entry",
-      "address": "7e016253dce7009cd911f845473c2b5a673f3225ccdf53c57a5d923abb2a03dc"
+      "address": "7157f41966a92848e33e301677689c35b9358e96c14a5b6270c994b87512b26e"
     }
   ],
   "equations": [
     {
       "definition": "Nat.add",
-      "definition_address": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
+      "definition_address": "a04e7e6b19f5e48dbb0b53dae24db5dcc1b1a98c8e97551db8fb4b5f4a14caa8",
       "equation": "Nat.add.eq_def",
-      "equation_address": "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4"
+      "equation_address": "300f835ac35174de29416ee013ec8c57d5c01c6e448335ee4086f384f3f1a249"
     },
     {
       "definition": "Nat.beq",
-      "definition_address": "d3d8ff924af9dc4b5cd869760615b3e7ee80916bb617259d45890c69f4128337",
+      "definition_address": "dd0668fbe8c2b2a2260e95da62a2bea5df42c670a3e95ccffea03c3a7ffdc1c2",
       "equation": "Nat.beq.eq_def",
-      "equation_address": "9ac282a4ad68bf13a9138fbdc44c7cb161307ddba94ea3a73e86652682092134"
+      "equation_address": "a2262f61bc575994ebe308858282397b4e0c8ca19e626eba79956699501e124c"
     },
     {
       "definition": "Nat.ble",
-      "definition_address": "9e445b9d5f8252772347872e909b5db4e7eca7086cedf4fec6de840f6b7b5f92",
+      "definition_address": "a939cc7925834d04a7ced860c5c44484231c9f5c44728d83d55f19c08037f3b4",
       "equation": "Nat.ble.eq_def",
-      "equation_address": "235ab44718c8ecf20b3ceab949dfcfad022807cf7f1604d72ae42048c26e47e4"
+      "equation_address": "25a12692ef836a0d2771c46279e413f421082b3128e091b2931f9e9733348403"
     },
     {
       "definition": "Nat.div.go",
-      "definition_address": "8bddd43d36af159f8f1c7edf477d9f0a06a26bfbecf5a198c0e9ec4ac370f6e6",
+      "definition_address": "0d78a77d8ea6b073d86da27fd8ccb0fed5771b11062d5585f73279abdfe38784",
       "equation": "Nat.div.go.eq_def",
-      "equation_address": "bac3ccdefe551ee2cfbcd41d660bf053f7746acbcfa484a072d2ff4e68e28986"
+      "equation_address": "fbec97a8f4e8edc20956d9322bb93c4d16d01cb27f3554fe75bc6bdd82ecf9f4"
     },
     {
       "definition": "Nat.mul",
-      "definition_address": "373b7d74f6b40da11b7ed79603a45ec7011a8831b720b57d2efe92e82a3d57f0",
+      "definition_address": "7e736639472dcc920bdc54d8ff0255a4c03b3c05375eacf08814e341deebd331",
       "equation": "Nat.mul.eq_def",
-      "equation_address": "2e64fe39a944df9f9d795cb840efa37ed024fa30f971e1f58c9cf321020f94c1"
+      "equation_address": "ab44c6c6e51692fbde3e413a5b90e4727eb15bfc1851cbd56869c27ecb615ee3"
     },
     {
       "definition": "Nat.pow",
-      "definition_address": "5baaf05c969d2cf377312111be51bb64c600c13fa164ee722e92243b0f771bab",
+      "definition_address": "473d7239744c820ddb45b6ce56d0506734ba90e5699e985444fd7a6647e9b0a0",
       "equation": "Nat.pow.eq_def",
-      "equation_address": "25ea7f65c5fc9991fafe55cfca743b5a38e57db0febca11d81c7eaf895a63b3b"
+      "equation_address": "7db03b695da2842f3a309f783d03f8a5b71c7c083a9c443fba18f4383e14feeb"
     },
     {
       "definition": "Nat.shiftLeft",
-      "definition_address": "05bb657e8b9d5dc224e7ef3d53e54153ce3ac26da8d1f1b1d61069a3726566cd",
+      "definition_address": "c2a2258d56e14ebdb8c9986365cf0c0f6dfe4128a8faf847dd5e50b4ae7bb310",
       "equation": "Nat.shiftLeft.eq_def",
-      "equation_address": "dce69be8519f213784eb176a14d2c28730641a8832378fe5b123dc782d4b5b7a"
+      "equation_address": "492f48a67ad9ee6b523243728498f022ce79f6642d925ebb2a304a1bcfd18239"
     },
     {
       "definition": "Nat.shiftRight",
-      "definition_address": "25019ff485fcf5709597cd1e07fcc3ce796776ef3f715a6d187eb5831c63b4be",
+      "definition_address": "74a4836a0eddfd07e45e5da0929df974e0caef28fd26001f7de1712d5beddd4e",
       "equation": "Nat.shiftRight.eq_def",
-      "equation_address": "c32dc1f78e978e09fbb614f99ddd392a7f1aff1571028e8a21d9b74c137242db"
+      "equation_address": "013214b1403ee47e67c71a59668e01660308f761b1b15ee85f50e9e7e6923da5"
     },
     {
       "definition": "Nat.sub",
-      "definition_address": "03b3a041285b0fe202d90b227d405c4cec252df18ba7616acd6dae2792e672bb",
+      "definition_address": "f8410bb7b91afaa0cb6f9162faeee2a682e98cde21acf19712380f4e9dbcbf00",
       "equation": "Nat.sub.eq_def",
-      "equation_address": "832765d5edead81a6ce670de18784cdd6f9f58da57651b8a9c0da4b4977747b4"
+      "equation_address": "80ffad9e0b779752b2e73b7a35e69cce0463317b238fe9679447f01194f157ab"
     }
   ],
   "failures": []

@@ -1,4 +1,5 @@
 import Ix.Compile.SourceContract.Elab
+open scoped Ix.Modes
 
 /-!
 OS34 `static-vs-unique` of the ownership suite (`fixtures/ownership/README.md`, MT.7),
@@ -10,8 +11,8 @@ inductive Tree where
   | nil
   | node (l : Tree) (r : Tree)
 
-def leafPair (u : Unit) : ! Tree := .node .nil .nil
+def leafPair (u : Unit) : @unique Tree := .node .nil .nil
 
-def keep (! t : Tree) : ! Tree := t
+def keep (@unique t : Tree) : @unique Tree := t
 
-def entry (u : Unit) : ! Tree := keep (leafPair u)
+def entry (u : Unit) : @unique Tree := keep (leafPair u)

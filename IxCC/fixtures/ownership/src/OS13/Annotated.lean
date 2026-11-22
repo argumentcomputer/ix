@@ -1,4 +1,5 @@
 import Ix.Compile.SourceContract.Elab
+open scoped Ix.Modes
 
 /-!
 OS-13 `linear-identity` of the ownership suite (`fixtures/ownership/README.md`, MT.7).
@@ -9,7 +10,7 @@ driver for `lean --run`: each stdin line `ROOT ARG…` prints that root's
 value on those arguments.
 -/
 
-def linId (1 x : Nat) : Nat := x
+def linId (@once x : Nat) : Nat := x
 
 def entry (n : Nat) : Nat := linId n
 

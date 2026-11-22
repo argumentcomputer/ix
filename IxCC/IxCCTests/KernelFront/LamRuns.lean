@@ -140,8 +140,8 @@ def onClosures (closures : Array (System.FilePath × System.FilePath)) : IO Tall
 /-! ## Adversarial programs -/
 
 abbrev X := IxCC.Ixon.V3.Expr
-open IxCC.Ixon.V3 (AllMode)
-open IxCCTests.IxonV3.Builder (store arrow lambda withBinderModes)
+open IxCC.Ixon.V3 (AllMode BinderNode)
+open IxCCTests.IxonV3.Builder (store arrow lambda withBinderModes completeBindersWith)
 
 def dfn (lvls : Nat) (ty val : X) : IxCC.Ixon.V3.ConstantInfo := .defn ⟨.defn, .safe, {}, lvls.toUInt64, ty, val⟩
 
@@ -157,12 +157,16 @@ def lams (n : Nat) (ty body : X) : X := (List.range n).foldl (fun b _ => lambda 
 
 def arrows (n : Nat) (ty res : X) : X := (List.range n).foldl (fun b _ => arrow ty b) res
 
-/-- The adversarial programs, every definition a root. -/
-def adversarialEnv : IO (IxCC.Ixon.V3.Env × List (String × IxCC.Ixon.Address)) := do
-  let (e, en) := IxCCTests.Support.Bound.addEnum (← IxCCTests.Support.Bound.loadBase) 3
-  let (e, tr) := IxCCTests.Support.Bound.addTree e
+/-- The adversarial programs, every definition a root. `erasedRun` lives in its own environment
+(built on the same base + enum) so that its non-default `.erased` binder exercises live N5 mode
+checking without forcing `IxC.Resource.check`'s depth-16 class oracle to walk `deep`'s 102 binders. -/
+def adversarialEnvs : IO (List (String × IxCC.Ixon.V3.Env × List (String × IxCC.Ixon.Address))) := do
+  let (eBase, en) := IxCCTests.Support.Bound.addEnum (← IxCCTests.Support.Bound.loadBase) 3
+  let (e, tr) := IxCCTests.Support.Bound.addTree eBase
   let E : X := .ref 0 #[]
   let c (i : Nat) := en.ctors[i]!
+  let withNode (n : BinderNode) (k : IxCC.Ixon.V3.Constant) : IxCC.Ixon.V3.Constant :=
+    completeBindersWith k (fun _ => n)
   let (e, idc) := store e ⟨dfn 0 (arrow E E) (lambda E (.var 0)), #[], #[en.ind], #[], #[]⟩
   -- an η-short innermost body: λ x y, idc
   let (e, etaShort) := store e ⟨dfn 0 (arrow E (arrow E (arrow E E))) (lambda E (lambda E (.ref 1 #[]))),
@@ -173,28 +177,31 @@ def adversarialEnv : IO (IxCC.Ixon.V3.Env × List (String × IxCC.Ixon.Address))
   -- a run whose body is a β-redex of another run: λ x, (λ y w, y) x
   let (e, betaBody) := store e ⟨dfn 0 (arrow E (arrow E E))
     (lambda E (.app (lambda E (lambda E (.var 1))) (.var 0))), #[], #[en.ind], #[], #[]⟩
-  -- an erased binder in a run: λ (x :₀ E) (y : E), y
-  let (e, erasedRun) := store e (withBinderModes
+  -- an erased binder in a run: λ (x :₀ E) (y : E), y (own env so N5 mode-checks it cleanly)
+  let (eErased, erasedRun) := store eBase (withBinderModes
     ⟨dfn 0 (arrow E (arrow E E)) (lambda E (lambda E (.var 0))), #[], #[en.ind], #[], #[]⟩
     (fun p => if p.ordinal == 0 then .erased else {}))
   -- universe parameters: λ (α : Sort u) (a b : α), b
-  let (e, poly) := store e ⟨dfn 1 (arrow (.sort 0) (arrow (.var 0) (arrow (.var 1) (.var 2))))
-    (lambda (.sort 0) (lambda (.var 0) (lambda (.var 1) (.var 0)))), #[], #[], #[.var 0], #[]⟩
+  let (e, poly) := store e (withNode (.ifAllZero #[0] {})
+    ⟨dfn 1 (arrow (.sort 0) (arrow (.var 0) (arrow (.var 1) (.var 2))))
+      (lambda (.sort 0) (lambda (.var 0) (lambda (.var 1) (.var 0)))), #[], #[], #[.var 0], #[]⟩)
   -- λ (α : Sort u) (β : Sort v) (a : α) (b : β), b
-  let (e, poly2) := store e ⟨dfn 2 (arrow (.sort 0) (arrow (.sort 1)
-      (arrow (.var 1) (arrow (.var 1) (.var 2)))))
-    (lambda (.sort 0) (lambda (.sort 1) (lambda (.var 1) (lambda (.var 1) (.var 0))))), #[], #[], #[.var 0, .var 1], #[]⟩
+  let (e, poly2) := store e (withNode (.ifAllZero #[1] {})
+    ⟨dfn 2 (arrow (.sort 0) (arrow (.sort 1)
+        (arrow (.var 1) (arrow (.var 1) (.var 2)))))
+      (lambda (.sort 0) (lambda (.sort 1) (lambda (.var 1) (lambda (.var 1) (.var 0))))), #[], #[], #[.var 0, .var 1], #[]⟩)
   -- λ (γ : Sort ℓ) (c d : γ), d at ℓ = max u v, max v u, imax u v, imax (u+1) v
-  let gammaRun (ℓ : IxCC.Ixon.Univ) : IxCC.Ixon.V3.Constant :=
-    ⟨dfn 2 (arrow (.sort 0) (arrow (.var 0) (arrow (.var 1) (.var 2))))
+  let gammaRun (ℓ : IxCC.Ixon.Univ) (nd : BinderNode) : IxCC.Ixon.V3.Constant :=
+    withNode nd ⟨dfn 2 (arrow (.sort 0) (arrow (.var 0) (arrow (.var 1) (.var 2))))
       (lambda (.sort 0) (lambda (.var 0) (lambda (.var 1) (.var 0)))), #[], #[], #[ℓ], #[]⟩
-  let (e, maxUV) := store e (gammaRun (.max (.var 0) (.var 1)))
-  let (e, maxVU) := store e (gammaRun (.max (.var 1) (.var 0)))
-  let (e, imaxUV) := store e (gammaRun (.imax (.var 0) (.var 1)))
-  let (e, imaxSV) := store e (gammaRun (.imax (.succ (.var 0)) (.var 1)))
+  let (e, maxUV) := store e (gammaRun (.max (.var 0) (.var 1)) (.ifAllZero #[0, 1] {}))
+  let (e, maxVU) := store e (gammaRun (.max (.var 1) (.var 0)) (.ifAllZero #[0, 1] {}))
+  let (e, imaxUV) := store e (gammaRun (.imax (.var 0) (.var 1)) (.ifAllZero #[1] {}))
+  let (e, imaxSV) := store e (gammaRun (.imax (.succ (.var 0)) (.var 1)) (.ifAllZero #[1] {}))
   -- always a proof: λ (P : Prop) (h : P) (x : E), h
-  let (e, prfRun) := store e ⟨dfn 0 (arrow (.sort 0) (arrow (.var 0) (arrow (.ref 0 #[]) (.var 2))))
-    (lambda (.sort 0) (lambda (.var 0) (lambda (.ref 0 #[]) (.var 1)))), #[], #[en.ind], #[.zero], #[]⟩
+  let (e, prfRun) := store e (withNode (.zero {})
+    ⟨dfn 0 (arrow (.sort 0) (arrow (.var 0) (arrow (.ref 0 #[]) (.var 2))))
+      (lambda (.sort 0) (lambda (.var 0) (lambda (.ref 0 #[]) (.var 1)))), #[], #[en.ind], #[.zero], #[]⟩)
   -- a body that is a type: λ x y, Prop
   let (e, sortBody) := store e ⟨dfn 0 (arrow E (arrow E (.sort 1))) (lambda E (lambda E (.sort 0))),
     #[], #[en.ind], #[.zero, .succ .zero], #[]⟩
@@ -203,8 +210,9 @@ def adversarialEnv : IO (IxCC.Ixon.V3.Env × List (String × IxCC.Ixon.Address))
   let (e, typeLam) := store e ⟨dfn 0 (arrow redex (arrow E E)) (lambda redex (lambda E (.var 1))),
     #[], #[en.ind, c 0], #[], #[]⟩
   -- a run of 102 binders over a universe parameter: λ (α : Sort u) x₁ … x₁₀₀ (a : α), a
-  let (e, deep) := store e ⟨dfn 1 (arrow (.sort 0) (arrows 100 (.ref 0 #[]) (arrow (.var 100) (.var 101))))
-    (lambda (.sort 0) (lams 100 (.ref 0 #[]) (lambda (.var 100) (.var 0)))), #[], #[en.ind], #[.var 0], #[]⟩
+  let (e, deep) := store e (withNode (.ifAllZero #[0] {})
+    ⟨dfn 1 (arrow (.sort 0) (arrows 100 (.ref 0 #[]) (arrow (.var 100) (.var 101))))
+      (lambda (.sort 0) (lams 100 (.ref 0 #[]) (lambda (.var 100) (.var 0)))), #[], #[en.ind], #[.var 0], #[]⟩)
   -- a run in function position: (λ x y, x) c₀ c₁
   let (e, argRun) := store e ⟨dfn 0 E (.app (.app (lambda E (lambda E (.var 1))) (.ref 1 #[])) (.ref 2 #[])),
     #[], #[en.ind, c 0, c 1], #[], #[]⟩
@@ -225,22 +233,23 @@ def adversarialEnv : IO (IxCC.Ixon.V3.Env × List (String × IxCC.Ixon.Address))
   let (e, useRec) := store e ⟨dfn 0 E (.app (.app (.app (.app (.ref 1 #[0]) (lambda T (.ref 0 #[])))
       (.ref 3 #[])) (lambda T (lambda T (lambda E (lambda E (.var 1)))))) (.ref 4 #[])),
     #[], #[en.ind, tr.recursor, tr.ind, c 0, tr.ctors[0]!], #[.succ .zero], #[]⟩
-  let roots := [("etaShort", etaShort), ("letRun", letRun), ("betaBody", betaBody), ("erasedRun", erasedRun),
+  let roots := [("etaShort", etaShort), ("letRun", letRun), ("betaBody", betaBody),
     ("prfRun", prfRun), ("sortBody", sortBody), ("typeLam", typeLam), ("argRun", argRun),
     ("usePoly", usePoly), ("usePoly2", usePoly2), ("useMaxUV", useMaxUV), ("useMaxVU", useMaxVU),
     ("useImaxUV", useImaxUV), ("useImaxSV", useImaxSV), ("useDeep", useDeep), ("useRec", useRec)]
-  return (e, roots)
+  return [("adversarial", e, roots), ("adversarial-erased", eErased, [("erasedRun", erasedRun)])]
 
 /-- The adversarial programs: all roots at once, then each root alone (its own ingress). -/
 def adversarial : IO Tally := do
-  let (e, roots) ← adversarialEnv
-  let bytes := IxCCTests.Support.Bound.write e
-  let json := sidecar roots
-  let mut t ← compareBytes "adversarial" bytes json {}
-  for (name, _) in roots do
-    match Recheck.ingress bytes json [name] with
-    | .ok inp => t ← compareInput s!"adversarial {name}" inp t
-    | .error err => t := { t with differences := t.differences.push s!"adversarial {name}: ingress refused: {err.render.take 300}" }
+  let mut t : Tally := {}
+  for (group, e, roots) in ← adversarialEnvs do
+    let bytes := IxCCTests.Support.Bound.write e
+    let json := sidecar roots
+    t ← compareBytes group bytes json t
+    for (name, _) in roots do
+      match Recheck.ingress bytes json [name] with
+      | .ok inp => t ← compareInput s!"adversarial {name}" inp t
+      | .error err => t := { t with differences := t.differences.push s!"adversarial {name}: ingress refused: {err.render.take 300}" }
   return t
 
 def Tally.render (t : Tally) : String :=

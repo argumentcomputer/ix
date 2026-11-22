@@ -1,0 +1,104 @@
+name: IxCC
+
+# The certified compiler's required checks: every `ixcc-*` check of the flake
+# (IxCC/docs/ci.md). CI Jobs (ci.yml) calls this on pull requests and main
+# pushes whose changes reach IxCC; Merge tests (merge-tests.yml) calls it on
+# every merge group.
+#
+# IxCC's trust ledger (IxCC/docs/trusted-externs.json, policy.repository)
+# pins this file by its SHA-256 (integrity.repository_files) and audits the
+# repository-local actions it uses: every remote action here is pinned to a
+# full commit and listed in the ledger's ci_actions. Any change to this file
+# therefore means reviewing the ledger ("Routine updates" in
+# IxCC/docs/trusted-extern-ledger.md). The calling workflows are ix's and
+# outside that audit.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Revision to check out; empty for the triggering one
+        type: string
+        default: ""
+      revision:
+        description: Commit the checkout must resolve to; empty to skip the check
+        type: string
+        default: ""
+    secrets:
+      CACHIX_AUTH_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: IxCC checks
+    permissions:
+      contents: read
+    # Nix builds in its own store on the root volume; Cachix holds the
+    # artifacts between runs, so there is no sticky disk.
+    runs-on: runs-on=${{ github.run_id }}-ixcc-${{ github.run_attempt }}/cpu=32/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=150gb/extras=s3-cache
+    # IxCC/AGENTS.md aims for 30 minutes including cold compilation; all 16
+    # checks took 13.4 minutes on a 64-core machine with the toolchain and the
+    # codec already in the store. The seventeenth, ixcc-grounding, builds the
+    # grounding library beside the shared program build (46 s on the build
+    # box, reusing the production library) and runs its suite in under a
+    # second. Twice the target leaves room for a cold
+    # 32-core runner and stops a hung check well before the 360-minute default.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Verify test revision
+        if: ${{ inputs.revision != '' }}
+        env:
+          TEST_REVISION: ${{ inputs.revision }}
+        run: |
+          checked_out=$(git rev-parse HEAD)
+          if [ "$checked_out" != "$TEST_REVISION" ]; then
+            echo "::error::Checked out $checked_out, not the test revision $TEST_REVISION"
+            exit 1
+          fi
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          github_access_token: ${{ github.token }}
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: argumentcomputer
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      # Git-CLI fetches at evaluation time carry the job's token (see nix.yml).
+      - uses: $/.github/actions/authenticate-github-fetches
+
+      # Every check runs the programs of one shared build (`ixcc-proofs`);
+      # the checks then run concurrently. The flake's ixcc-* checks must be
+      # exactly the trust ledger's required_checks, each prefixed `ixcc-`
+      # (IxCC/nix/checks.nix defines them; the ledger check compares that file
+      # with the same list), so a check dropped from or added to the flake
+      # fails here. The lists are evaluated into variables, so a failed
+      # evaluation fails the step.
+      - name: Build and run the ixcc-* checks
+        shell: bash
+        run: |
+          system=$(nix eval --impure --raw --expr builtins.currentSystem)
+          names=$(nix eval --accept-flake-config --json ".#checks.$system" \
+            --apply 'checks: builtins.filter (name: builtins.substring 0 5 name == "ixcc-") (builtins.attrNames checks)' \
+            | jq -r '.[]')
+          expected=$(jq -r '.required_checks | map("ixcc-" + .) | sort | .[]' IxCC/docs/trusted-externs.json)
+          if [ -z "$expected" ]; then
+            echo "::error::IxCC/docs/trusted-externs.json lists no required_checks"
+            exit 1
+          fi
+          if [ "$names" != "$expected" ]; then
+            echo "::error::The flake's ixcc-* checks for $system differ from the trust ledger's required_checks"
+            diff <(echo "$expected") <(echo "$names") || true
+            exit 1
+          fi
+          mapfile -t checks <<< "$names"
+          echo "Checks: ${checks[*]}"
+          nix build --print-build-logs --accept-flake-config --keep-going --no-link \
+            "${checks[@]/#/.#checks.$system.}"

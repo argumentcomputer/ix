@@ -85,24 +85,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "closures.ixe",
-        "sha256": "f6569a6aa1ea3b603504a71b7d4974f42e9a70e29e27f5c6b282766b6e290b12",
-        "bytes": 281614
+        "sha256": "bb48b6c1b00e14be16cb4682693fb704fe2c5ad58a7796d7b2baa8c23770af01",
+        "bytes": 306442
       },
       "equations": {
         "path": "closures.equations.json",
-        "sha256": "c1b01984108ed794e762c9c9fb155ae2f6b07f14a662927f4d11e81f23f80be1",
+        "sha256": "326d822d2137e2ee4d3a7ca503806c7d10ca877ea0e48ed422420df3e0e6044a",
         "equations": 14,
         "failures": 0
       },
-      "named_env_sha256": "07a51879dde3582aa8e374921429dc7a2fd406b45dfdaddeabd46668385fb5b0",
+      "named_env_sha256": "68c1175eb5a1d3f0c316f09d224452198f24ad353cb2c05770d0d2808808effd",
       "census": {
         "path": "closures.census.json",
-        "sha256": "9e0aa6eee636fcd1bfdbb2bd4c247112ad9e629f50ace99fcadda3ec1f5ab495"
+        "sha256": "20d24782f4d7b9fa1998e5d11cd88cf84e2a324a2385d1999755bb940eef51a3"
       },
       "roots": [
         {
           "name": "Closures.composeClosure",
-          "address": "e7037cdabfdf3423c812789879bff16a2121a5e0ee79c7099850f15f8989fa9d",
+          "address": "46bb0e02bf940ad5fb203bc2fc93a2192cdf9641719cab6a1ca08da72a2fb2a3",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -142,7 +142,7 @@
         },
         {
           "name": "Closures.polyRec",
-          "address": "589d2509c7b0abd1ae46e1a8d3585c3fc3597a49ef89fe807abafa21c2756a72",
+          "address": "5fe7da8505499bc0ceb92ca6e60825d932ab8a66ffab85276cc4ccbd3735f10c",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -189,7 +189,7 @@
         },
         {
           "name": "Closures.stateLoop",
-          "address": "1cb6d3d0318185b9b1e4b76e8c23925b0e5c5c070d1e7dc28c2fa2059b413a3c",
+          "address": "d6f8bd3529cc26daa1f2ed97514b12a5d63079a792a6ef2b0e7e149bec9ba9b3",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -259,7 +259,7 @@
         },
         {
           "name": "Closures.stateLoopSE",
-          "address": "6d60da8dc2da63d1337ab820bf9bd2b612e9376e69342213c3d0776ff251168f",
+          "address": "d352679fc172cde905aa7bb16a9fd898b3244443e729e6f1b1da765f4eaed476",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -306,7 +306,7 @@
         },
         {
           "name": "Closures.storedApply",
-          "address": "203d548448ffb51a616fbeeb3316aefffcaee5c5297d5f946a4fe3596b2be65f",
+          "address": "e5462cd89bc46a4bc965e4a87676d154b3875c5ac03df1316943ef9707a3b111",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -346,7 +346,7 @@
         },
         {
           "name": "Closures.knot",
-          "address": "afa2e993e4eeef714ba8cca6cb899c3e78604175f6d2186094d2f5718d4fcf46",
+          "address": "07f01eaab86f16125d7bcc68b0b1f96a3f21b99c305f621a09fab4e48c19e2ef",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -417,24 +417,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "sparse.ixe",
-        "sha256": "945212cf0d57e6b29f572089beb065a9952533b0d98c42defc895c0ca10ca21c",
-        "bytes": 406046
+        "sha256": "74e21e2794ddb2c29144c0a39cab5f021e1ca1deaed8f212b9326216b30c2ace",
+        "bytes": 435098
       },
       "equations": {
         "path": "sparse.equations.json",
-        "sha256": "6229b510e4639c8798bdeea70148eefa10dda778a6df140e856c01814dfe4da2",
+        "sha256": "ee69cf478c5271e2cb2209937a65934df9fe4ecaa2bf9c296ab5cdf19c57497a",
         "equations": 18,
         "failures": 0
       },
-      "named_env_sha256": "da287e3f380e21f1a829de5604cd6e8880f02cce051d7a52e4a1dd9b4ffc335d",
+      "named_env_sha256": "d4f301ec92a6260b811e4226c734efd950a8cc249202aee7deb027a1eed8a10e",
       "census": {
         "path": "sparse.census.json",
-        "sha256": "3af4a39904d456c9694e679872d01194b45ff4d0fb3de7a3ca58140b44a48306"
+        "sha256": "542d19f6572470f689d5fcc5a0036a070640b50ba99ecff126ddea61a7760038"
       },
       "roots": [
         {
           "name": "Sparse.minS",
-          "address": "8bfbe012fcf18d050cd93651fc9cfefd3b9ec7d3e5278d2a01adaf9007f77898",
+          "address": "add57547e687fe1b41ad3ff5dc653c32aa6d5f1b3a06301d678b717a5f93b06d",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -482,7 +482,7 @@
         },
         {
           "name": "Sparse.minF",
-          "address": "e53db1fe65bf335b41b6d3933fa6389ea81e18af6e039e3305dc29cde7e9d408",
+          "address": "308129cf15e71482a828a5b566f77b08b52d786f0052702380dd75b4838720af",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -516,7 +516,7 @@
         },
         {
           "name": "Sparse.minO",
-          "address": "3ea4f2d084f2aef61117871434dc0c5c135dd43321ec3a31d36554f3a2060682",
+          "address": "e83bcdf36713abe38aaa7167003bf073fbdd524c273f96fe6881ed687b49e1ac",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -550,7 +550,7 @@
         },
         {
           "name": "Sparse.minE",
-          "address": "6a4d3a62a5aaa431dbbf62459b6bf475b6c6b799aebc1b49f81a8756bceadd8f",
+          "address": "d9563735599d95ce0d018e50e168930ba7027cd1e98f0f46445a1bd3aa23f992",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -584,7 +584,7 @@
         },
         {
           "name": "Sparse.minN",
-          "address": "02038afe6ec8a3533ea9c6d7362d410c2e716f52f795681d0c15bf6c2b422aba",
+          "address": "8b8cdb7c5591b8a01571732f02111776dea446f066a5a8b96d429a09b7f6d916",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -618,7 +618,7 @@
         },
         {
           "name": "Sparse.minD",
-          "address": "dac2b321412c26269e9017e9856e5f575e4ebcaadd4b215f45578d1636b48a1f",
+          "address": "f7b3a575ba03364857db30a7ac6a164e7d4360330db1b08baefbb2514d367592",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -655,7 +655,7 @@
         },
         {
           "name": "Sparse.minH",
-          "address": "ba9b4a5ffb3663334ea4df345be3fa99c4ad47e892dcdc6955a7d25618a40886",
+          "address": "60a93c80527092fc955d6eb874c7a4d0b46de73097eb86af290945d1a34bf212",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -692,7 +692,7 @@
         },
         {
           "name": "Sparse.sumS",
-          "address": "4a4500e2267bc9af1c3a11aa214ae7460476f3553b3908d1ea6f62ea08132ee6",
+          "address": "3cb982110278344bf7c0274875b9d8d92f8d648c4c521008ff9d33d99783efe5",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -733,7 +733,7 @@
         },
         {
           "name": "Sparse.sumF",
-          "address": "9226b3290890c8b6124d3eeb5481e1ecde07caff291e6638a932ab49673bee4a",
+          "address": "b3ce9c1d901d80c61d1c68c4ea6ef02cdba87c79907f806de2109a62593d0f4b",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -760,7 +760,7 @@
         },
         {
           "name": "Sparse.minM",
-          "address": "581bb23fcee7c8ea258238bf0d3c58c715bc4bb28019e421d1a22a3524988c5e",
+          "address": "0c01b8efaa6b06f1f0007fd02137ab5f87d63a1afd8c219003605fea9fe44dda",
           "params": 2,
           "result": "nat",
           "oracles": [

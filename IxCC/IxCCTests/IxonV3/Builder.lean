@@ -47,6 +47,7 @@ def blockKeyLt (a b : BinderBlock) : Bool :=
 private structure BuildState where
   shareVariants : Array (Array (Array BinderNode))
   blocks : Array BinderBlock
+  seen : Std.HashMap (Nat × UInt64) UInt64 := {}
 
 private def buildExprNodes (c : C) (full : Array Bool) (unchecked : Bool)
     (nodeOf : BinderPos → BinderNode) (shareHint : BinderPos → Option UInt64) :
@@ -65,22 +66,28 @@ private def buildExprNodes (c : C) (full : Array Bool) (unchecked : Bool)
         nodes := nodes.push node
       | some n =>
         let hint := (shareHint pos).getD 0
-        let entry := c.sharing[n]?.getD (.sort 0)
-        let (subNodes, st') := buildExprNodes c full unchecked nodeOf shareHint
-          fuel true n.toUInt64 hint entry st
-        st := st'
-        let existing := st.shareVariants[n]?.getD #[]
-        match existing.findIdx? (· == subNodes) with
+        match st.seen[(n, hint)]? with
         | some v =>
-          nodes := nodes.push (.share v.toUInt64)
+          nodes := nodes.push (.share v)
         | none =>
-          let v := existing.size
-          st := {
-            shareVariants := st.shareVariants.set! n (existing.push subNodes)
-            blocks := st.blocks.push
-              { shared := true, index := n.toUInt64, variant := v.toUInt64, nodes := subNodes }
-          }
-          nodes := nodes.push (.share v.toUInt64)
+          let entry := c.sharing[n]?.getD (.sort 0)
+          let (subNodes, st') := buildExprNodes c full unchecked nodeOf shareHint
+            fuel true n.toUInt64 hint entry st
+          st := st'
+          let existing := st.shareVariants[n]?.getD #[]
+          match existing.findIdx? (· == subNodes) with
+          | some v =>
+            st := { st with seen := st.seen.insert (n, hint) v.toUInt64 }
+            nodes := nodes.push (.share v.toUInt64)
+          | none =>
+            let v := existing.size
+            st := {
+              shareVariants := st.shareVariants.set! n (existing.push subNodes)
+              blocks := st.blocks.push
+                { shared := true, index := n.toUInt64, variant := v.toUInt64, nodes := subNodes }
+              seen := st.seen.insert (n, hint) v.toUInt64
+            }
+            nodes := nodes.push (.share v.toUInt64)
     return (nodes, st)
 
 /-- Populate a complete, canonical, sorted v5 binder-data section for `c` using

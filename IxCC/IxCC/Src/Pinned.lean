@@ -46,248 +46,248 @@ def addr (hex : String) : Ixon.Address := (Ixon.Address.fromString hex).getD def
 
 /-- Primitive operations, keyed by their `primitives.tsv` name. -/
 def primRows : List (PrimOp × String × String) :=
-  [ (.add, "Nat.add", "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8"),
-    (.sub, "Nat.sub", "03b3a041285b0fe202d90b227d405c4cec252df18ba7616acd6dae2792e672bb"),
-    (.mul, "Nat.mul", "373b7d74f6b40da11b7ed79603a45ec7011a8831b720b57d2efe92e82a3d57f0"),
-    (.div, "Nat.div", "824d1c53d8c1c3cf0a27f24639ec2be1ecc13d4a01c993171595edccf6949737"),
-    (.mod, "Nat.mod", "11abbf986481c53a21c8cb21ee2581ae6238aedbec15f972959d086bef1a1985"),
-    (.pow, "Nat.pow", "5baaf05c969d2cf377312111be51bb64c600c13fa164ee722e92243b0f771bab"),
-    (.gcd, "Nat.gcd", "aba94bfb41351d4db36172c379a512f04219ef21dc5454d71590967d4e8f913f"),
-    (.beq, "Nat.beq", "d3d8ff924af9dc4b5cd869760615b3e7ee80916bb617259d45890c69f4128337"),
-    (.ble, "Nat.ble", "9e445b9d5f8252772347872e909b5db4e7eca7086cedf4fec6de840f6b7b5f92"),
-    (.land, "Nat.land", "de8c100c22f82a5c3533c67e4370671813434a6fec5d023998ded090df4a4934"),
-    (.lor, "Nat.lor", "93afc1cd298c63606e5f468d1e5989ab4680d256e95d07a8642a88b5c6b858e1"),
-    (.xor, "Nat.xor", "77dd40d7b6ca310cc59466d1f24df4f180ef50e1b00fd850698458cd26901c5d"),
+  [ (.add, "Nat.add", "a04e7e6b19f5e48dbb0b53dae24db5dcc1b1a98c8e97551db8fb4b5f4a14caa8"),
+    (.sub, "Nat.sub", "f8410bb7b91afaa0cb6f9162faeee2a682e98cde21acf19712380f4e9dbcbf00"),
+    (.mul, "Nat.mul", "7e736639472dcc920bdc54d8ff0255a4c03b3c05375eacf08814e341deebd331"),
+    (.div, "Nat.div", "2f22b34c61096990d6ce6b2485b31ed9696feaae6902855de6116b6a58e90331"),
+    (.mod, "Nat.mod", "fdc3d6f24a0d4968b0e2bd5502a95a54506566a6d6f8bf5673b95b5278da8cdd"),
+    (.pow, "Nat.pow", "473d7239744c820ddb45b6ce56d0506734ba90e5699e985444fd7a6647e9b0a0"),
+    (.gcd, "Nat.gcd", "f1286e3ceac7bf4afa1c95a2f70c69ffc0667295035661b9be57ed6f0b08babb"),
+    (.beq, "Nat.beq", "dd0668fbe8c2b2a2260e95da62a2bea5df42c670a3e95ccffea03c3a7ffdc1c2"),
+    (.ble, "Nat.ble", "a939cc7925834d04a7ced860c5c44484231c9f5c44728d83d55f19c08037f3b4"),
+    (.land, "Nat.land", "a4f25748d7376a55ce31462ae4ad90ac33181a6000b9908f398cc850ad865f67"),
+    (.lor, "Nat.lor", "0330cfdb86165b40463f2931bf794d375aa7acecd21feaabe1319e03fd80a5d9"),
+    (.xor, "Nat.xor", "7c79bfc28b46cca9137779a26b8da0b4aedc718eaf554f76e6e38650074327d6"),
     (.shiftLeft, "Nat.shiftLeft",
-      "05bb657e8b9d5dc224e7ef3d53e54153ce3ac26da8d1f1b1d61069a3726566cd"),
+      "c2a2258d56e14ebdb8c9986365cf0c0f6dfe4128a8faf847dd5e50b4ae7bb310"),
     (.shiftRight, "Nat.shiftRight",
-      "25019ff485fcf5709597cd1e07fcc3ce796776ef3f715a6d187eb5831c63b4be"),
-    (.pred, "Nat.pred", "3244687301d779ec757274761d903def3eb3135177327b709bcbd854ef496f79") ]
+      "74a4836a0eddfd07e45e5da0929df974e0caef28fd26001f7de1712d5beddd4e"),
+    (.pred, "Nat.pred", "b8d8ab1875dbb7fdb150a34988c32d7006204b9506a0ba148f453e5c555bf218") ]
 
 /-- The other `primitives.tsv` rows Src reads. -/
 def constRows : List (String × String) :=
-  [ ("Nat", "35e1cc809f6f076521a43f85068d5592220407c0532b6a08952f40d8523d04bc"),
-    ("Nat.zero", "eeb2e6268ff6d0e6b2e9764d9940b81bb64b9f8f4b1358d294ff9817e6941a46"),
-    ("Nat.succ", "42d6ed31536f0958176f1dc973383808ac8583223746ebca78dbe389b65321a6"),
-    ("Nat.rec", "c8322e03d558f85a8edc7fe68524013880ad0bbcb7dc890136d247154b230992"),
-    ("Nat.casesOn", "937374ed09b8b62f36ef75f06f1ee46dd487c7a9f3e74db919bde48bb76b2cc6"),
-    ("Bool", "e6eba3c8b4d19f6a1076b39fa89aec61dccbb960f83d9a62e6acf35a69c9a0a4"),
-    ("Bool.true", "a29a636176cf1135d077eb074798f9007c78e7801383e9cff363bae5edf05762"),
-    ("Bool.false", "dda12bcb330727f6dfb816bc9752aabd0520e6515b79fc8a5a9e713866f4c63e"),
-    ("Eq", "c37d6290e00fb865fb5db7bce18fd69e6d1674ad573724b85466ea9f7578a207"),
-    ("Decidable.isFalse", "8cc0e1360c1b29108dab3d6172e7fce8a9aa9640daa4bbe99ba1305d9623624b"),
-    ("Decidable.isTrue", "363d071182be414e1a58599b83f5e19f9b873723054f4287ba69705aafef27da"),
-    ("Char", "065fc8b41393f525c1e541b9d4bc97c20c13bf23a7209a2093b6f4527330114a"),
-    ("Char.ofNat", "cff875914f3f8b4f0014d1eaa223c6b9da7201239bc5976e140b69d99cd1f357"),
-    ("String.ofList", "45dcb3c5e5ada3bc0ca52d62a66f7f9dda3507df71061a5c200adea0cf241014"),
-    ("List.nil", "3994bc51e3686f30a1d483d69d0a835a7b484d892393c084f87a5849de54f302"),
-    ("List.cons", "b3a7d80249fd823100ee03626232d1412a0e8335275d5df53b92943887b650f7"),
-    ("eagerReduce", "173299c76efa82e689210a09e49ad09c14ee1108f2da8d355ef9333b1583a1d5") ]
+  [ ("Nat", "ee5d424f6fbb5410ce82a4657c586ed8dc57eb2588947578636676e42ed0072b"),
+    ("Nat.zero", "09851a0422a18822447d9785123b46be1d53f1a2d0137992fe16ae693cb3f07d"),
+    ("Nat.succ", "757ca9ddbbfdfcb939a42c164c435dede6d6d234279f89e1d13668f3ef4d891d"),
+    ("Nat.rec", "a37d28a22a02cd33b3c87380f45c8990c95cce53f154ad332a9cb5f9b1638753"),
+    ("Nat.casesOn", "4c2eb46bd344dd88dd451538be890ecc4734373b8aeaf13b671c970570949109"),
+    ("Bool", "77db82d7052a606eaaf324893161d6989049ef4e0f393e2fe9edaf52f4225ed8"),
+    ("Bool.true", "ef156463a527bfd236472e606b2ccddf73f4585195e365e0430ee3c20921d8cc"),
+    ("Bool.false", "a5fc856de635cfc40ab703eea51cb704dce6985fd7de921f94b8d635e9d3667f"),
+    ("Eq", "9d3c7bcfcc8f1f1661bce87d371a5da0d5188c1bc05def21d4aa176138c91b10"),
+    ("Decidable.isFalse", "f1fe3bef188e3a340b3ba29ae5ecdd265c970439e3993b5b3fb3bf8d85342663"),
+    ("Decidable.isTrue", "23e3b904854e2f117770ac908a90ef0bdd50bf2ed11a6274b8c233db4cdb866f"),
+    ("Char", "f730fc437187a5bf297d6f68f125ab93a4f15da80eecf8379cef2a5ce3e9b015"),
+    ("Char.ofNat", "6b8d46124c1396c972f51482fe4f6afcf76bf50da76c9772be03a19ebf3564ac"),
+    ("String.ofList", "37f3bf73d4ef5dfa4705a3125b788141b980a48e7303e1f23e2465acca2e19d6"),
+    ("List.nil", "acc4102c8c32f222b755f3f15b5046484ca98618da9a4932143a9711786818fa"),
+    ("List.cons", "63cc7dc0943c85e1d79b41c5ca23cbb5e080b67aec17e5c6bfca4fd0073e01ab"),
+    ("eagerReduce", "5ce4e27ad8c4183700828a0798c3cba80b04043da2ef4dd3ce77de48355d5985") ]
 
 /-- `lazy` rows of `src-tables.tsv`: name, address and by-name arity. -/
 def lazyRows : List (String × String × Nat) :=
-  [ ("Bool.Internal.and", "8aecd1899a1abee9a31981b685d9ef3ce0c71ffb17e0c9f99156673eb9420321", 2),
-    ("Bool.Internal.or", "84e3d5d2658b83e7df8ba6671a718f4e5e7d26a659fdd7883df18aae805e8b4c", 2),
-    ("Bool.dcond", "e1fda335132697d6d1033672e926074305dfda2ba0eaedaacc80b2a1297d567a", 4),
-    ("Decidable.byCases", "ccedbaecf614590292f1a0056ebb08c52f50893b6a55e5985a76ae1c8bb39c03", 5),
-    ("Empty.elim", "dd0a1d92482375a620bb02be517bfa7888a89359c6d9c497fc02780fec0f77f6", 2),
-    ("Eq.mp", "b8968164f87ec4f5e47abba133802573ed3344bd8970ce6aa01a4da58a65dde6", 4),
-    ("Eq.mpr", "24b70f41992f54374a770e24aa9efcea1e482ee79acc03f59ebe669fe1a94bb6", 4),
-    ("False.elim", "37a4e5f7a83669fe4145c8798097172a8cf16d2d13053370a2b39ca0cc453892", 2),
-    ("IO.Promise.resultD", "373d75775b9c2330be5be327adbf315bce35973d9b1667f28ed90cbf7f064614", 3),
-    ("Option.getD", "3e8f690010de45112576cbc3757b7eb23d419bd17424f9b9ef3d5bd6997ddb66", 3),
-    ("Option.or", "5d03f769376a68dd9cd024fef1c2e595f2e4cf9746754c5319e53755b61ed4f8", 3),
-    ("Option.orElse", "2ae96ce801c763491f575b03200dcb754e55a6f6e75b49906513429ce2a993a4", 3),
-    ("Ordering.then", "3e4b7bd89de6a5960436112a201a3e0796ae0d20e9f17cff4163c21bff4c0453", 2),
-    ("PEmpty.elim", "58f691c06d6fa1845be65300442559b5c12e23df90e0792773f3641332139057", 2),
-    ("Quot.indep", "456c548337f901b432fed5364396628709e83737dbcd5dca046c9d24edb2dc41", 5),
-    ("absurd", "f79aee413ee47bb1fa6f2027fb04ef1597871a4086d4217cff4913fa1d6ae0ba", 4),
-    ("andM", "7e95d703176cd27ad0e683a2ea5311ff48d436f654de3cf129eb5ee0fb753c7b", 6),
-    ("bool", "cf4af596699212b63db5461637f587a3b8631f3e2fe571b0950e5c1d1128dd78", 6),
-    ("cast", "b8968164f87ec4f5e47abba133802573ed3344bd8970ce6aa01a4da58a65dde6", 4),
-    ("cond", "8e5edab25811750a5e2edaafb70ccf03cbd6ca091ca41ec81402549ba3df969b", 4),
-    ("dite", "e40e768eb60d4d15047d0dc3b820eaaf6bfdfbc8a1ad268dcd78722d32164ab9", 5),
-    ("instDecidableAnd", "c88094ee69ede73cf3ed4928a43cbc3899fb22829483557e30a136eb6d064910", 4),
-    ("instDecidableForall", "6aba75ff2b781cf5f24b4555ab3c26e3a3f972300b96678ea4bf5ec039dee227", 4),
-    ("instDecidableIte", "49343bf26d48be15080b3947b0149f5b636ee59f8d65d209b2b2c964cbeeb182", 6),
-    ("instDecidableOr", "a6037c1dcfd5fc3e1e63c157f6e543a85df3ce58561ac4757f193e9cab7765e2", 4),
-    ("ite", "717463825c552702ba1908b9fa5d8f3f7786d7730c633e41d8d380939feeb748", 5),
-    ("notM", "f80598d53042259ee247d25a61645831e38d5ef186ef3b1c06fb476415222521", 3),
-    ("orM", "c2c229cf2f49e5c368fcb79f6d9f816672224758778ed0dd77003e1a67c693d1", 6),
-    ("Bool.or", "a5c0e8c9e71e5afd925536c00092750ac8b34af67793c564617e2abbca5c100b", 2),
-    ("Bool.and", "83353e9273ba68884a3890c6411de16698457cc9d148a5bf29e73d280fbaf091", 2) ]
+  [ ("Bool.Internal.and", "207828ca439dbd1ba681a6a52ef9ab12fe87433b00f5ffd2b7bc6c257fe91bfe", 2),
+    ("Bool.Internal.or", "eda55fc8e9ad7ffde288ff95c372dae8d3aaa70428fbe251ac59341db4406472", 2),
+    ("Bool.dcond", "bdb78fb5445cba0cd32c073163e2639f73a799fb400a18e15d1c5d4b8a96afdd", 4),
+    ("Decidable.byCases", "c1e85af689a23980e3e15aa8a0783d66bf6098e69c6647c2de7f10b212bf6480", 5),
+    ("Empty.elim", "8f0ef7a6435dc0edbbd5c702998b33b576e50c644ef5a3bdd6f1651472e512ff", 2),
+    ("Eq.mp", "448d444158d5fd51384fe60e8678b0c2f7393fba59262815b50cf958bc697a1c", 4),
+    ("Eq.mpr", "5ff0d608be0093bb13e0ba60b412ea753a1ccfacc7d679223d71ceb1861bb0c2", 4),
+    ("False.elim", "933f8feaa1c979151ee62a9d1a3a508953d901adbefc5a439fb522a66de71a0b", 2),
+    ("IO.Promise.resultD", "2cc0c4e5d27a30a3dc7a68e947946509a1e86611239d179b8ac997483d3b8279", 3),
+    ("Option.getD", "3acceb9f17335493d53a4d0ca61358bc00fce8814b294913dfc4b16f6e2ad5f7", 3),
+    ("Option.or", "79144189ad3fa5b35b92ce28f38cbabb61f76d730bd9efcfce139c31ecc071a2", 3),
+    ("Option.orElse", "ecb79859410b47e92d29163c23e4ab7f2d5ceccc2191da4d43802934c9199974", 3),
+    ("Ordering.then", "d11d833e8aa2f04019eab97498e7836be293495c96adddee2530fdc5bce5c1ba", 2),
+    ("PEmpty.elim", "b3abb858af8bf20af4a09f1529ce1a275fbdcd6c549d485a1d9764e90434da62", 2),
+    ("Quot.indep", "3446b73fba862278fc292bc130dc8a16aa8271ab486ac601d0aa424ca1f3a205", 5),
+    ("absurd", "ef2c855de796c93a1042f60abc86c50cf943936a754814fa0d306785a1a9c30d", 4),
+    ("andM", "5259b2fc6c3b0b100efe6b2aa86a316c761203f5d88510507baf963f14016e67", 6),
+    ("bool", "6030191a98a912857a19364fb105d35c176cccf9e3278635b4fb53f861f7dd2b", 6),
+    ("cast", "448d444158d5fd51384fe60e8678b0c2f7393fba59262815b50cf958bc697a1c", 4),
+    ("cond", "559de6cf0d74533ecbc4626b11c44afca490bb8093f6d73fec4ce53e4e4834e0", 4),
+    ("dite", "1d157fb39979a14262b7c96f561a83d326dd2dd707b81691b9428116021fc695", 5),
+    ("instDecidableAnd", "ad08a9fd8c606d8abf2b08aefc58b27dc5d1cbf2178071e23cf1d554da3ab4da", 4),
+    ("instDecidableForall", "a79c540cdd21079b166171772bf46a83ffacdf03d160e2efd475afa3531f3bae", 4),
+    ("instDecidableIte", "d0f5893e681c156059ae3c74bab11fe1196d618e32026f993fc0bb203fb78dfd", 6),
+    ("instDecidableOr", "f21de22b0d618db57bb2cd1e2b78526933809b7936a93398ef1068d73cbc986e", 4),
+    ("ite", "1c4df88ba829b7b808219c037f304dde11b0c9d8ca752713c15ed5493c5fd1cf", 5),
+    ("notM", "7abec2fb5690a5d79051f79cf0e10d33d3d16e70286fa68cd75a4794c886c4c9", 3),
+    ("orM", "4e3d87a34ee4da3848ce269c2a0889e0c4bf27ea1437e13de71323a278ddd528", 6),
+    ("Bool.or", "a5fdd2b9dda72494da8456a3f5238df464d4c31b508f7d9f63d19b9f660a64f9", 2),
+    ("Bool.and", "ce948c1b65e29bed8a29906edf2c590ba1437fdeb0f05c56a440f04bdf6b7389", 2) ]
 
 /-- `opaque-by-value` rows of `src-tables.tsv` (the D12 allowlist). -/
 def opaqueByValueRows : List (String × String) :=
-  [ ("Lean.opaqueId", "d0e998ecf33a57f1fcf98311611d1402b361f426d81d6a8ade77123e2e7b8046") ]
+  [ ("Lean.opaqueId", "ef85cfcf05fee3d8108813b6b572dc2d4561a7b1ea5f177f245fe5c5adca5be9") ]
 
 /-- `word-type`, `word-ctor`, `word-part` and `word` rows of `src-tables.tsv` (stage W1): kind,
 name and address. The words' constants have no kernel role, so ingress always takes these. -/
 def wordTableRows : List (String × String × String) :=
   [ ("word-type", "UInt8",
-      "62b2c2eb4fe8c78580bf778bfe94c6ec2ccb25d308369fc00d87b885eebe5348"),
+      "93be7ce2ba5276dcfdc71099cb3d30f67a72965636ea4d24ceb7a845d2f52ca6"),
     ("word-type", "UInt16",
-      "9edaf9711f855f08bda9033b989550733f71572480654964275f9ee43f895e37"),
+      "f759e0d786f5911dcacd44a51f546ede706e4aecc7027dacaf336a09a8ad31af"),
     ("word-type", "UInt32",
-      "b4a8c4b8cce7b73f86b254f5a321827aea9caf280835f2c1e6385454eea8c7e9"),
+      "70fc2340e867d05c63df7e616cfa1f937fb080d2db7eb49b7e223ad2c9fdf203"),
     ("word-type", "UInt64",
-      "bda2030d38bdc5a5c26e2572628f70f15284002136a26d9ac801f40b9008d8c5"),
+      "7a31307b020bb907fa3c972dc19cdafcf213109498e9b124fd0466a71b429934"),
     ("word-ctor", "UInt8.ofBitVec",
-      "b61039bdd845d76ef19d9da023ac923b63e91a1b77df25ed7ff088e08d5109bf"),
+      "04059c9d4b0851a74177a675add3c99dd3042e41e37ca871d5e8000f5bb8412a"),
     ("word-ctor", "UInt16.ofBitVec",
-      "5875e015c1238d90f45a642961c1859d660ef982d32a7c697898d1f8504beae0"),
+      "6c9bc90402a456c3a7579e8e0beb4ac431c47afdfa0c78d328303fae8f639f3e"),
     ("word-ctor", "UInt32.ofBitVec",
-      "b46dbf91b4fa8ef044fec7ebe92dee20a1a8165320dfc8e2b26dc96838f19eaf"),
+      "1ece74a7af34175db6c6633af4cea37e9490f262835b2b46568faa7cdc4b8c02"),
     ("word-ctor", "UInt64.ofBitVec",
-      "5ac912f189d3253ffd43cb9c457c166544e52ddeadf68e7c190addeb794c4624"),
+      "3c0514850ce61d4ea2be26f444140aa56badd7d3fec77d6b3dce56a6ba09acef"),
     ("word-part", "BitVec.ofFin",
-      "0da4ec378fa26cb51e5ca8c58fbd279446868a921e2f14fb16754a4411886b58"),
+      "78863b037be3f1025dfb3cb04942b82942e1c7dd1dd97b285648c7e62b6766cf"),
     ("word-part", "Fin.mk",
-      "5ad910465035b6a70a6485e4ed6bac66184270cc39a2c1ee33aef0db9b7fcc42"),
+      "5539b6daf9043f34c808412384e515aa6503e72b411d04ef000bddc11a7b5a97"),
     ("word-part", "Nat.le",
-      "8f70b4a0ae9874c133f4b3d32433111988ab4b3dc1a47a6be6f6c341a7dbb0af"),
+      "e21c596c35b75e7bc59cf21bf4bb5cd494179366612215fb0b263bca4236ecdd"),
     ("word", "UInt8.add",
-      "48edc6f45381431fc8275e09b74553c545340fc7ca54b8be3b2770fed4a62168"),
+      "fc56b9c28ed33de651eb2987cdcd3955c15524c6a16900db20b7078821991b06"),
     ("word", "UInt8.sub",
-      "d94f3f405c25efe73af2fe0abf9e927364aa9e9e258f1d01bc493473df8692e3"),
+      "df4b7256512999e59132ce21043a45d46b7b3355af2f1233a1d705de1eeca80f"),
     ("word", "UInt8.mul",
-      "12ce08b13ad025af87c5438906ce5525854a964f4d0ac404525b09f6f3c41753"),
+      "ec21ae6609c843851a3cda0b0f68fe2d04b6fff27d46060a027e67ddb5f73ac2"),
     ("word", "UInt8.div",
-      "5cb0791461bcce4af11f0b06b0518529107093b1c2630dc19c2e4200630492c0"),
+      "f5a25c82817d935f7a2e785f814392e4e71dfa3d37188ae408f6c3e8b3fb5c6b"),
     ("word", "UInt8.mod",
-      "4f5e0cad829d77d6907ae7045fa4249ad05e0a72bc39ad1441a3c02401b9c682"),
+      "840b89085bb989e5e7a526edb48d5b58a06ce5fe5126e4cd4fb4614499496e11"),
     ("word", "UInt8.land",
-      "6f7dd9c646effd8d4321f14fbeb8350862e8ce818caeb98c771d935b4ca9b88d"),
+      "50a6b934d8a45dafd986b76abc29be993d5cc1ecd5bae3f167892070bbb9832e"),
     ("word", "UInt8.lor",
-      "b98e0cdf92233c59a9442afe7ed8798271a4940d9909e125f97d3ae8b423efe5"),
+      "96c0b1970d97a4ccd8b85043b4eec2625a6ebc491a0ff7be7ba6e535d2cef780"),
     ("word", "UInt8.xor",
-      "e5e30dacda5133de3017eaf80750339191a346607fd6649a2c6a88138f514937"),
+      "0e5f87983f211af1ba7ebea7a86c404fda131d254d27a96e786175a0c388a5e1"),
     ("word", "UInt8.shiftLeft",
-      "7a934932aff49725fcfee9bf5c24b0db12157f062112222bfbdc2c32d5f0392a"),
+      "59377487e72b3fa1cd4d49b5cb00ecb37224a446b0295ed0f72d7f2bc9863f75"),
     ("word", "UInt8.shiftRight",
-      "7cad2cfe37d3be267a14abe3ac42162edcb142b42261bd21263bce8dcc9b29c6"),
+      "efdd5ec1d9e2f2f96c0f6517d676b173fec1a418a8eca5daa48d0039caa52a6f"),
     ("word", "UInt8.complement",
-      "00e8026c75aad06c02528b58c6aa9db101d2905b981c3458853ede1692e1fb06"),
+      "95c05c20957bce2d90216a491308c578310272cbea53d30dc1a7327b9128f3fa"),
     ("word", "UInt8.neg",
-      "bbe247f20ac1ec6db6ab9e2e193e4131c15f2698480f7bbf4adffaa7760cc359"),
+      "ce7013ec1563bccdf1482180612610f8397395d1c8be5c09cd2f6617edbb8909"),
     ("word", "UInt8.ofNat",
-      "b75e8ba5273021b9e05be4cf12a6a84306ec45e56cea662e2827ffae2877c3ee"),
+      "7314090c6dff1b634aaa2283415a27cbc7db41d03f5664f18530b04692a8e3da"),
     ("word", "UInt8.toNat",
-      "bd08efcda40ec22666e466fd8f721243f612ffa6ffd10dc2e6d37ac9339b38c8"),
+      "a0c2c77fb7f42644f635a3d25f914baaa15a5cbfc006815c32d565751fa6c8ed"),
     ("word", "UInt8.toUInt16",
-      "18fae9008ee39328c7cec31413dd710ae3921e85533e03ecab123accca2ed614"),
+      "0bb457d6cb7a7d85b13e0a3d77411fac31d5b5af1ce4a95c4b8a100e724a6346"),
     ("word", "UInt8.toUInt32",
-      "458d21951d68df8d39a5892e05ec2bd39d4e6a5856813a70e63b87c6da6f1f2b"),
+      "446c80a5509fea7cb9a5f3f4dec8304eb10ac0913f5b6453a113c3ae4eb1716d"),
     ("word", "UInt8.toUInt64",
-      "496fc50009583a4ba57c4088870dcfbd39f1977120277d7cb59fabc889d188c7"),
+      "8ff9b8c0280d94eba5e39a380deac9689afb95558837bb62106a60e1f6a28a2f"),
     ("word", "UInt16.add",
-      "c089e9ca8b484f336e05a7ccbb7b38dcf3d7a662931e14fec2539c399aae8db6"),
+      "0d8ee0047e4ef6120cb9acbcd75bb1beddc556095ed601034ab01a3571a6b938"),
     ("word", "UInt16.sub",
-      "84ad8ab16179024cd2502886f5b05f6ed481f6b6f7bee53d14dcd56db395d440"),
+      "886a61979c44d21b38e1d1ebb83605a9d9b8a1da5bd275da0f91ab095535a4a1"),
     ("word", "UInt16.mul",
-      "e08db23d73394207ab2e5dd8150e2805f68e954aad28876234c6f0a58990aeed"),
+      "da120d4bf9fb8f8b5957136c0a2f89dda72b1464cb2531a6acef70bc7f13ccbc"),
     ("word", "UInt16.div",
-      "303f4aeee4cc94b1b8289644b331a5ca68dbb59428b34ea2d37ed4fa49dd5906"),
+      "304126634a53a9bd9c0aa1d5cc09ed81f4e5cc353546f16bc8cf7ddfe760bbd9"),
     ("word", "UInt16.mod",
-      "188ef4e2d722bb90e32917882ed24be0d67553864cdbd435e985a52f63b43be4"),
+      "5db1e86ed013772016f4a68c3cb006c43cdebc7580c83a830668771246267961"),
     ("word", "UInt16.land",
-      "1c638f93cd5ea9c69cbd08c0c3a249f0c3bfc4d4dd8c473e8faf514b885ef29d"),
+      "b68f086e1d2c3bddd0d54576bdf3dbb03b2d0df738ef04718fc0aeb5f9d213d7"),
     ("word", "UInt16.lor",
-      "d4dbf54a5e6f8a233df512bd2f8292b184f76a144fe189faba0e7f00f83e8b55"),
+      "0ca38582e573fd089c72bd34f542279ed1fe9b9442aa9244c12a1eaf8f713cc0"),
     ("word", "UInt16.xor",
-      "776a0917c960f730d8e9bf7609aa1cb3d85467b6340d1c918623ba4ea0f87a33"),
+      "a53c4613de0f7369a77def74fd3b15138134759842bc4d9d0fcc751cb6d5e731"),
     ("word", "UInt16.shiftLeft",
-      "3259327270435033d7c6923642f98fa106566e7ba9d581856ab0142c6c402a7b"),
+      "af89a898af86a8964ab99e6ff760c3f52fd2fc980ea8f227f4e887e823855ef4"),
     ("word", "UInt16.shiftRight",
-      "c424769b47cb5bd5e36b5fb8705d294e173b9bba594f23f2c495151dff0e4bba"),
+      "c515d10a2c94243e4acafd64a02e4f80ffdf53c31b1d6072e023c74de2579258"),
     ("word", "UInt16.complement",
-      "d1549abbf1fe5285e1d86c23b9246f35041143ef535c79b444363bbab943ad1b"),
+      "43c230af8c26fd5039880eaa34789cf6cb860f96152c979720aa6056000ec165"),
     ("word", "UInt16.neg",
-      "11a7ab2ae2be81cd5e854557dfd0da29e69a10e8a8b25ad3e046d05a1f0b1d9f"),
+      "7ba579706ac7835aaefb4c96c4636705c8107d90d82b952c4bc56a751517bd8a"),
     ("word", "UInt16.ofNat",
-      "3584c8d254f8af46d15544b79656ec5fa605ef2e456e9c5361b672cca56a0537"),
+      "686dd7580df6137349cba7e43d627beb19f90dea4d26e5c7676fc004d267f8fe"),
     ("word", "UInt16.toNat",
-      "01521667d2d5da64f88c9d5bb03ae1af9d50ee1f67489d94c85404b8738a98b6"),
+      "e39b3eacafc58b79d948a708d035ada7fba42628ce9f88ed978fef9a428c773f"),
     ("word", "UInt16.toUInt8",
-      "6e00f4abbc93a160ceed1b64bb58cb2f7c67d44bec117507c4167efcd61d1fc2"),
+      "804360d6c65855cb209bbf3f860239ae2b93d87fae350353803d8a46990923bc"),
     ("word", "UInt16.toUInt32",
-      "36fe72aa0f295fe627eef379cf4495c933093b7797712b62c8174d0561462241"),
+      "77e6472ef4ddd35faae6eedfce69840cbd90416481db76796cd3e7d82c7e4ec5"),
     ("word", "UInt16.toUInt64",
-      "1e1ebca5d269152e4638e9ac4e6a33896fcce78b3c8803ef5642662d70016ccc"),
+      "7f22212ead635eab0d608f557e282c9e7e7d9368e89f4e142a8a3e3a91bbef35"),
     ("word", "UInt32.add",
-      "cb990e9d2754b991d92c58ca7b146536547a408a0aed8c8aace5516617b1ca2b"),
+      "2777f287d20586bfc762300a0cddbb148a958f5fca01d28426863740c318fcbd"),
     ("word", "UInt32.sub",
-      "7b865c4d96eaa8aba773686365a6dd98fdbb5c2658d72145119ad0044d7b9609"),
+      "8008fe38585660bee22027ae68ec3094fb8f89fe6fcb06c24cde9eee1cadfed9"),
     ("word", "UInt32.mul",
-      "25aecdaf3d7959f92783083aa201c6212b2ed10410fa4f3a8e6a4348978b9ec9"),
+      "575b5ba790bc80b3a77447cdff119ca86e1735c5c2185dae069b309524e3daa2"),
     ("word", "UInt32.div",
-      "591870d2f660c861b872e5e3fde9edb81fa39c1302255f47226891e7410b356a"),
+      "9c84824847bafe925934238376bf52015ae8b507e33756b9fc76ec9f72f92e9b"),
     ("word", "UInt32.mod",
-      "905a5f42245d0f27847bc4cfd2c535199cfaaff8a0e5925538dfef061158b072"),
+      "803b1924aef6be11adf6026fef90edc7b3d05c3ff36acf50b4f93b5c1576a068"),
     ("word", "UInt32.land",
-      "3b1b4e64da05710bc2f4e1593c663c704ddf91e1f99a0464813486b7e0ac7056"),
+      "2663e08c39482aac31a319b86a84c47c8677f97cc034fe790e58f915f2113392"),
     ("word", "UInt32.lor",
-      "5d9eae6e8ebb660d11244e97a693913c03897caa4b0647be62587a5e532ab488"),
+      "3e946ce00a8daf1a672e46d35d060a02c83e4671e0595444b6f5e2944972a334"),
     ("word", "UInt32.xor",
-      "94397ae27a241722768e15808f6ac370bb73a8edb122d95125c1e456036507dc"),
+      "2b860fd097e555cf8d6f1a1431b455f656d5915d6f42ba83c6cf22f5ddfeb8bb"),
     ("word", "UInt32.shiftLeft",
-      "4274fabf5e96ffdcf418545d58acde7b8733df4268b73758825c2e281f853c89"),
+      "a71f5748e75913d4934dbff9cc01a93bef1df27825ce49d6094df587d95d1892"),
     ("word", "UInt32.shiftRight",
-      "69e5d36ee272871b882e737b3b9d02124bcb9240c782952273cc69ea2812cd0e"),
+      "cffba7a6990ebd5bc956dfebb16439f264b94b9084da72886ccdb22fc712912c"),
     ("word", "UInt32.complement",
-      "675e739c25ccd78070f555c5fe667bb1630858cef07062c94e9b65d07de0190f"),
+      "2af0ca4f6dfc7b45feb5fef246fa58918ce2ff4f939ef2e4913861611a5c456e"),
     ("word", "UInt32.neg",
-      "6abaaf1ee675f15fe589cc7f872e9209e12a32495c2a80f14c09965280d79bf4"),
+      "ea7fc9de90dc64b91630e52422717c1430ee672e9c88cba6fb276577e276d534"),
     ("word", "UInt32.ofNat",
-      "a3c473c618d4e1c54ef83fdc87e0775a6897a6f341ded5d76b9943fed6b0da07"),
+      "66e93962b9fd7c59ceb25f464d743cc91e1a71ede93531b8c2845365656247bb"),
     ("word", "UInt32.toNat",
-      "39e2b134273ce4ba230b50e6ab1fa434965198707788279dd271dbbe13c046a4"),
+      "5be965ce1a377f2906072c2e3ece076a225492b6494dd03f32104a7ce4d8bbd5"),
     ("word", "UInt32.toUInt8",
-      "e573640b31a131e4a31bc68375f111f8ac3cf47b2c2aeb71d419f1fbd938b900"),
+      "4432c7bb164ab242c83d7561b3ed52dd07e7b22057ad8f7def5811e3e7357625"),
     ("word", "UInt32.toUInt16",
-      "6d3395f5534d4840e5059bd82ae28ee298ebdcf14df5a6b89b42203a5fb5b41c"),
+      "6730293c3cec038e03b7afd228e657a2e946de72f54d66a3e77a7ebbd66875fd"),
     ("word", "UInt32.toUInt64",
-      "02ade99a41ebcd9b71f080401e37c1e6a5e17ac5ab7b985493c04888ca0b6e4e"),
+      "4810543904c09cbe37bd3ae0aa62120cf56970c6eb96d841541093092d6bd548"),
     ("word", "UInt64.add",
-      "c7fcffb6565f3c08960bcd52f0f47f62bc293bc6608af56f09d79a99bc374f8b"),
+      "aede79e0eb58dd8bbc0ebc8a62fcf9b4b0f1c4d9a2cb307aa52f55e4856070d7"),
     ("word", "UInt64.sub",
-      "ad5dfc44fd3c4198f7e5720cc3779d87e0a22c2ed851675728c433376c8c3464"),
+      "5d5bf18754b0e2b117409cf433957717f320174dd0c9249429067e1dadd5dd2b"),
     ("word", "UInt64.mul",
-      "ccd9d62c4bd3fe479ec31aae048aecccbc4f152ef133aa7ddd9baa1e79fb4d52"),
+      "56201633afdcbcec0c2ea478dafaa294c0567c4cacf5c9213acee77ef75afccf"),
     ("word", "UInt64.div",
-      "9e669a0c38d3edb5b7846f7aef1e37b51f23b733aa670fdc0fe031508dbc6348"),
+      "53771b78fc95038290543c451a98664a2f3c387eb7eb85ad6d6ed386d560491e"),
     ("word", "UInt64.mod",
-      "4af1ab3a0ebc54ea600726e51e24f49d2f7f7dd2adab1293c57f281cdd2f7380"),
+      "6653bc25dd5801201db6731b97976abb34d5425bbf93198f93e4e0d598ff6aca"),
     ("word", "UInt64.land",
-      "321030178298019832173dffcfc7590943e4640c045b0d60ee599ece42fe67b0"),
+      "712a83ec9fe8a1cf51db851554a7e746fc31a6ea1065ea0d4913faa4df2b4639"),
     ("word", "UInt64.lor",
-      "ceebd1a2935febc3ac02ee01d78959e0afc2d07c3e390e7f781f380489ee5ab7"),
+      "91b5ab70755d2d22a212b8e63a9dafeb6c67c0dbf5a5948277f13d66ce1bd8ed"),
     ("word", "UInt64.xor",
-      "28b0c33f818fd475cb26011d10553aa7c54f37a41af5f7f51129216558fa373c"),
+      "6ee654a8024610d5f893b9bb779b3059e50529cb0fec792e07c63accc05b8456"),
     ("word", "UInt64.shiftLeft",
-      "9c7fcdcf233eda35dd92dd9bf885f58741ade0410433b0b943a942a80fecfb0d"),
+      "a797b319a421a39ec619fd8d4dbdb9caf087f29e4fc5c73d977e182f2d97f1c9"),
     ("word", "UInt64.shiftRight",
-      "e70dc990e850e1cf7f8a939f3e5b75bf9c227ba8feffd3c25af35fc6db597675"),
+      "6a3eaecb08c2e75bac09d8ff001da3838511416290bdcbac59c049e54a6a694a"),
     ("word", "UInt64.complement",
-      "f99ba8ace4552b0829b1955783f5f39a7158bedfc226a2edd8774f3c30002691"),
+      "f39f5aaec910251b1fe78b7cb790f0197efb4a1ab2b6088918bc6497c92b7928"),
     ("word", "UInt64.neg",
-      "fb9ed5f996a2fceb3b6d1463a76854a67a97fceb314e11b750e9728fcc90ad8f"),
+      "333d59279c125c3b76eb9cb8ab196dac21962f45933b3735757b93eca095bb12"),
     ("word", "UInt64.ofNat",
-      "1528f3db357a69db747482babd2a0253f9c2eb59aed8ac4bf1ca9f6b732df779"),
+      "39d1228356e89b66707825b482f59a27b84417b58db3866939065878cabf7919"),
     ("word", "UInt64.toNat",
-      "16c69034212fa247f551a9508827b21651ae686ab9e3021b2a4dc81ac2176e46"),
+      "b15266d22b62aabf5799e9008036bbfcca016b7fee6d5937300e133079471ed2"),
     ("word", "UInt64.toUInt8",
-      "7299c0fec972cc77295b52475032139f3d98bbfef2018c0fdd31145358ad3f32"),
+      "7b9034c00374a5b444bfe0a5310cd8db77a523f68b7f3e2161c0b411b3c85fc8"),
     ("word", "UInt64.toUInt16",
-      "721ba830f58f50b65a3e6908dd9ace2076b6e99e2875f419f77ae8be7482bf8f"),
+      "46fc52f9a4f722e836fb971ec1d6f46d57f36eac9f6059bdd35bd4fef779d8d9"),
     ("word", "UInt64.toUInt32",
-      "d0909059dd930a1b057cb4af11bd8c63c30948308d683cf7961238f56a968a85") ]
+      "a313a2c84cf34dc3d899b5c485bdf77bcb91bd60988fedbc6eafab37ee7c6317") ]
 
 /-- The standard axioms' addresses in the fixed table. -/
 def stdAxiomRows : List (String × String) :=
-  [ ("propext", "209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34"),
-    ("Quot.sound", "9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a"),
-    ("Classical.choice", "cfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40") ]
+  [ ("propext", "a56bf0c90cd1e293cacb5ad709212c8ba11e3473c8b8bef8ca00e21dc6d094e1"),
+    ("Quot.sound", "84f6bad412f1b4ea4396a0c4d15eefc28d3078521bf00621cfbbfa5b2fe439cf"),
+    ("Classical.choice", "c68061d89f1d05288db51b6befa396d3c7d7941ea105a48609c92dec9afaf3bb") ]
 
 def constAddr (name : String) : Ixon.Address :=
   addr ((constRows.find? (·.1 == name)).map (·.2) |>.getD "")
@@ -318,36 +318,36 @@ def addrOfNat (n : Nat) : Ixon.Address :=
 /-- The `lazy` rows as the recheck path reads them: each row's address as a
 256-bit number and its by-name arity. -/
 def lazyPins : List (Nat × Nat) :=
-  [ (0x8aecd1899a1abee9a31981b685d9ef3ce0c71ffb17e0c9f99156673eb9420321, 2), -- Bool.Internal.and
-    (0x84e3d5d2658b83e7df8ba6671a718f4e5e7d26a659fdd7883df18aae805e8b4c, 2), -- Bool.Internal.or
-    (0xe1fda335132697d6d1033672e926074305dfda2ba0eaedaacc80b2a1297d567a, 4), -- Bool.dcond
-    (0xccedbaecf614590292f1a0056ebb08c52f50893b6a55e5985a76ae1c8bb39c03, 5), -- Decidable.byCases
-    (0xdd0a1d92482375a620bb02be517bfa7888a89359c6d9c497fc02780fec0f77f6, 2), -- Empty.elim
-    (0xb8968164f87ec4f5e47abba133802573ed3344bd8970ce6aa01a4da58a65dde6, 4), -- Eq.mp
-    (0x24b70f41992f54374a770e24aa9efcea1e482ee79acc03f59ebe669fe1a94bb6, 4), -- Eq.mpr
-    (0x37a4e5f7a83669fe4145c8798097172a8cf16d2d13053370a2b39ca0cc453892, 2), -- False.elim
-    (0x373d75775b9c2330be5be327adbf315bce35973d9b1667f28ed90cbf7f064614, 3), -- IO.Promise.resultD
-    (0x3e8f690010de45112576cbc3757b7eb23d419bd17424f9b9ef3d5bd6997ddb66, 3), -- Option.getD
-    (0x5d03f769376a68dd9cd024fef1c2e595f2e4cf9746754c5319e53755b61ed4f8, 3), -- Option.or
-    (0x2ae96ce801c763491f575b03200dcb754e55a6f6e75b49906513429ce2a993a4, 3), -- Option.orElse
-    (0x3e4b7bd89de6a5960436112a201a3e0796ae0d20e9f17cff4163c21bff4c0453, 2), -- Ordering.then
-    (0x58f691c06d6fa1845be65300442559b5c12e23df90e0792773f3641332139057, 2), -- PEmpty.elim
-    (0x456c548337f901b432fed5364396628709e83737dbcd5dca046c9d24edb2dc41, 5), -- Quot.indep
-    (0xf79aee413ee47bb1fa6f2027fb04ef1597871a4086d4217cff4913fa1d6ae0ba, 4), -- absurd
-    (0x7e95d703176cd27ad0e683a2ea5311ff48d436f654de3cf129eb5ee0fb753c7b, 6), -- andM
-    (0xcf4af596699212b63db5461637f587a3b8631f3e2fe571b0950e5c1d1128dd78, 6), -- bool
-    (0xb8968164f87ec4f5e47abba133802573ed3344bd8970ce6aa01a4da58a65dde6, 4), -- cast
-    (0x8e5edab25811750a5e2edaafb70ccf03cbd6ca091ca41ec81402549ba3df969b, 4), -- cond
-    (0xe40e768eb60d4d15047d0dc3b820eaaf6bfdfbc8a1ad268dcd78722d32164ab9, 5), -- dite
-    (0xc88094ee69ede73cf3ed4928a43cbc3899fb22829483557e30a136eb6d064910, 4), -- instDecidableAnd
-    (0x6aba75ff2b781cf5f24b4555ab3c26e3a3f972300b96678ea4bf5ec039dee227, 4), -- instDecidableForall
-    (0x49343bf26d48be15080b3947b0149f5b636ee59f8d65d209b2b2c964cbeeb182, 6), -- instDecidableIte
-    (0xa6037c1dcfd5fc3e1e63c157f6e543a85df3ce58561ac4757f193e9cab7765e2, 4), -- instDecidableOr
-    (0x717463825c552702ba1908b9fa5d8f3f7786d7730c633e41d8d380939feeb748, 5), -- ite
-    (0xf80598d53042259ee247d25a61645831e38d5ef186ef3b1c06fb476415222521, 3), -- notM
-    (0xc2c229cf2f49e5c368fcb79f6d9f816672224758778ed0dd77003e1a67c693d1, 6), -- orM
-    (0xa5c0e8c9e71e5afd925536c00092750ac8b34af67793c564617e2abbca5c100b, 2), -- Bool.or
-    (0x83353e9273ba68884a3890c6411de16698457cc9d148a5bf29e73d280fbaf091, 2) ] -- Bool.and
+  [ (0x207828ca439dbd1ba681a6a52ef9ab12fe87433b00f5ffd2b7bc6c257fe91bfe, 2), -- Bool.Internal.and
+    (0xeda55fc8e9ad7ffde288ff95c372dae8d3aaa70428fbe251ac59341db4406472, 2), -- Bool.Internal.or
+    (0xbdb78fb5445cba0cd32c073163e2639f73a799fb400a18e15d1c5d4b8a96afdd, 4), -- Bool.dcond
+    (0xc1e85af689a23980e3e15aa8a0783d66bf6098e69c6647c2de7f10b212bf6480, 5), -- Decidable.byCases
+    (0x8f0ef7a6435dc0edbbd5c702998b33b576e50c644ef5a3bdd6f1651472e512ff, 2), -- Empty.elim
+    (0x448d444158d5fd51384fe60e8678b0c2f7393fba59262815b50cf958bc697a1c, 4), -- Eq.mp
+    (0x5ff0d608be0093bb13e0ba60b412ea753a1ccfacc7d679223d71ceb1861bb0c2, 4), -- Eq.mpr
+    (0x933f8feaa1c979151ee62a9d1a3a508953d901adbefc5a439fb522a66de71a0b, 2), -- False.elim
+    (0x2cc0c4e5d27a30a3dc7a68e947946509a1e86611239d179b8ac997483d3b8279, 3), -- IO.Promise.resultD
+    (0x3acceb9f17335493d53a4d0ca61358bc00fce8814b294913dfc4b16f6e2ad5f7, 3), -- Option.getD
+    (0x79144189ad3fa5b35b92ce28f38cbabb61f76d730bd9efcfce139c31ecc071a2, 3), -- Option.or
+    (0xecb79859410b47e92d29163c23e4ab7f2d5ceccc2191da4d43802934c9199974, 3), -- Option.orElse
+    (0xd11d833e8aa2f04019eab97498e7836be293495c96adddee2530fdc5bce5c1ba, 2), -- Ordering.then
+    (0xb3abb858af8bf20af4a09f1529ce1a275fbdcd6c549d485a1d9764e90434da62, 2), -- PEmpty.elim
+    (0x3446b73fba862278fc292bc130dc8a16aa8271ab486ac601d0aa424ca1f3a205, 5), -- Quot.indep
+    (0xef2c855de796c93a1042f60abc86c50cf943936a754814fa0d306785a1a9c30d, 4), -- absurd
+    (0x5259b2fc6c3b0b100efe6b2aa86a316c761203f5d88510507baf963f14016e67, 6), -- andM
+    (0x6030191a98a912857a19364fb105d35c176cccf9e3278635b4fb53f861f7dd2b, 6), -- bool
+    (0x448d444158d5fd51384fe60e8678b0c2f7393fba59262815b50cf958bc697a1c, 4), -- cast
+    (0x559de6cf0d74533ecbc4626b11c44afca490bb8093f6d73fec4ce53e4e4834e0, 4), -- cond
+    (0x1d157fb39979a14262b7c96f561a83d326dd2dd707b81691b9428116021fc695, 5), -- dite
+    (0xad08a9fd8c606d8abf2b08aefc58b27dc5d1cbf2178071e23cf1d554da3ab4da, 4), -- instDecidableAnd
+    (0xa79c540cdd21079b166171772bf46a83ffacdf03d160e2efd475afa3531f3bae, 4), -- instDecidableForall
+    (0xd0f5893e681c156059ae3c74bab11fe1196d618e32026f993fc0bb203fb78dfd, 6), -- instDecidableIte
+    (0xf21de22b0d618db57bb2cd1e2b78526933809b7936a93398ef1068d73cbc986e, 4), -- instDecidableOr
+    (0x1c4df88ba829b7b808219c037f304dde11b0c9d8ca752713c15ed5493c5fd1cf, 5), -- ite
+    (0x7abec2fb5690a5d79051f79cf0e10d33d3d16e70286fa68cd75a4794c886c4c9, 3), -- notM
+    (0x4e3d87a34ee4da3848ce269c2a0889e0c4bf27ea1437e13de71323a278ddd528, 6), -- orM
+    (0xa5fdd2b9dda72494da8456a3f5238df464d4c31b508f7d9f63d19b9f660a64f9, 2), -- Bool.or
+    (0xce948c1b65e29bed8a29906edf2c590ba1437fdeb0f05c56a440f04bdf6b7389, 2) ] -- Bool.and
 
 #guard lazyRows.map (fun (_, hex, arity) => (addrNat (addr hex), arity)) == lazyPins
 #guard opaqueByValueRows.map (addrNat ∘ addr ∘ (·.2)) == Pins.fixed.opaqueByValue

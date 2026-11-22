@@ -60,8 +60,10 @@ def proofEnv (env0 : Env) (n : Nat) : IO (Base × Env × Addr × Addr × Addr) :
   let b := base env0 3
   let eqA ← roleAddr env0 .eq
   let reflA ← roleAddr env0 .eqRefl
-  let (e, idp) := store b.env ⟨defn (arrow (.sort 0) (arrow (.var 0) (.var 1)))
-    (lambda (.sort 0) (lambda (.var 0) (.var 0))), #[], #[], #[.zero], #[]⟩
+  let (e, idp) := store b.env (IxCCTests.IxonV3.Builder.completeBindersWith
+    ⟨defn (arrow (.sort 0) (arrow (.var 0) (.var 1)))
+      (lambda (.sort 0) (lambda (.var 0) (.var 0))), #[], #[], #[.zero], #[]⟩
+    (fun _ => .zero {}))
   -- refs: 0 Eq, 1 E, 2 c₀, 3 Eq.refl, 4 idp; universes: 0 is `1`
   let prop : X := .app (.app (.app (.ref 0 #[0]) (.ref 1 #[])) (.ref 2 #[])) (.ref 2 #[])
   let mut pf : X := .app (.app (.ref 3 #[0]) (.ref 1 #[])) (.ref 2 #[])

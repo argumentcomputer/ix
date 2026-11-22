@@ -1,9 +1,9 @@
 # IxCC
 
 The certified compiler of [ix](../README.md), implemented in Lean 4. It
-compiles Ixon v4, ix's content-addressed Lean kernel terms, to x86-64. The
+compiles Ixon v5, ix's content-addressed Lean kernel terms, to x86-64. The
 goal is end-to-end certification for two back ends, grounded in Ixon and the
-certified kernel IxCK: native x86 code that competes with Lean → Clang, and
+certified kernel IxC: native x86 code that competes with Lean → Clang, and
 Aiur, first through a fixed evaluator circuit that runs IxCC's source
 evaluator inside a proof system ([end-to-end certification](docs/end-to-end.md)).
 IxCC is the project's Lean namespace.
@@ -37,8 +37,9 @@ prove the accepted recheck, replay, and claim-verification paths correct
 relative to the source evaluator, run on the checked source the front end builds
 from the certificate, and the native driver model, on inputs where that source
 does not go wrong. The grounding library (`IxCCGrounding`, SP-1 in progress)
-discharges SrcEval soundness over IxCK's model on a growing fragment (47 of 52
-committed corpus closures through the Pc family). The plan to complete the
+discharges SrcEval soundness over IxC's model (`IxC.Kernel.Model` directly via
+`Laws678`) on a growing fragment (45 of 50 committed corpus closures through
+the Pc family). The plan to complete the
 *spine* shared by the two back ends is in the
 [certification design](docs/certification-design.md).
 
@@ -81,8 +82,10 @@ Main includes:
   `Ring0`), certificate rechecker (`Recheck`, `Recheck.RcReplay`,
   `Own.Plain.checkOwned`), P8 defunctionalisation, proof fences and native
   suites;
-- [Ixon v4 ingress](docs/ixon-v4.md) and the certified-kernel front end
-  (`Src.KernelFront`, through ix's `IxCK` package);
+- [Ixon v5 ingress](docs/ixon-v4.md) and the certified-kernel front end
+  (`Src.KernelFront`, through ix's `IxC` package, with certified N5
+  `IxC.Resource.check` mode gate (`IxC/Resource/Audit.lean`: `DefaultOk`,
+  `ReadsRespectErasure`, `CheckSound`) and L3b `IxC.Host.Limits`);
 - the grounding library (`IxCCGrounding`, SP-1 in progress);
 - the x86 target model with its certified
   [encoder](docs/x86-encoded-instructions.md) and
@@ -91,7 +94,7 @@ Main includes:
 
 The legacy Aiur bytecode model (`IxCC/Aiur`, `IxCC/Vendor`), IxCC's private v4
 resource port (`Ixon/V3/Resource`, `Src/Resource`), and 18 obsolete pre-Gen RC
-proof modules have been retired ahead of the Ixon v5 migration.
+proof modules have been retired as part of the Ixon v5 migration.
 
 The earlier pipeline, the Ixby backend and their measurements are on branch
 `jcb/ixby-archive` of the pre-merge `argumentcomputer/Compilatr.ix` repository.
@@ -99,10 +102,10 @@ The earlier pipeline, the Ixby backend and their measurements are on branch
 ## Build and check
 
 IxCC lives in ix under `IxCC/`, as its own Lake package (`«ix-cc»`). It
-requires the `IxCK` package beside it (`../IxCK`, of which it imports the Ixon
-codec, role vocabulary, executable certified kernel, host limits, and—for
-`IxCCGrounding` only—the kernel's model statement, 100 files total) and
-`Blake3.Pure`, and nothing of ix's root package. ix's flake
+requires the `IxC` package beside it (`../IxC`, of which it imports the Ixon
+v5 codec, role vocabulary, executable certified kernel, resource mode checker,
+host limits, and—for `IxCCGrounding` only—the kernel's model statement, 111
+files total) and `Blake3.Pure`, and nothing of ix's root package. ix's flake
 builds it and exposes its 16 required checks as `ixcc-*`:
 
 ```sh

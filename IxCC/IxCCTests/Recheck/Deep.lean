@@ -787,7 +787,8 @@ These inputs, built here (on this process's stack) and read in a child on an
 /-- The hostile depth inputs: a record past the kernel's depth bound, shared
 (chains of shares) and flat (no share), unreached and reached, of up to 100,000
 levels (the flat ones only where the kernel's codec, which decodes before the
-bound is checked, survives a 2 MiB stack: 10,000); and every shape exactly at
+bound is checked, survives a 2 MiB stack: 10,000, and 7,000 for flat `let` with
+v5's `LetMode` header); and every shape exactly at
 the bound and one level past it, unreached: at the bound it is read (the
 kernel's acceptance survives it on both stacks), past it refused. Each with
 whether the envelope admits it: the deepest expression, shares expanded, at
@@ -806,7 +807,7 @@ def depthInputs : List (String × Nat × Bool) :=
    ("unreached:deep", 10000, false), ("unreached:deep", 100000, false),
    ("unreached:deepLet", 100000, false), ("unreached:deepType", 100000, false),
    ("unreached:flat:deepApp", L, false), ("unreached:flat:deep", 10000, false),
-   ("unreached:flat:deepType", 10000, false), ("unreached:flat:deepLet", 10000, false),
+   ("unreached:flat:deepType", 10000, false), ("unreached:flat:deepLet", 7000, false),
    ("deep", 100000, false), ("flat:deepApp", 10000, false)]
 
 /-- `tests-recheck --hostile-depth DIR`, run by `depthPart` on each stack: ingress on

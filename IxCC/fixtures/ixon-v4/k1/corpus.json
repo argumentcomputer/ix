@@ -84,24 +84,24 @@
       "protocol": "stdin",
       "closure": {
         "path": "k1.ixe",
-        "sha256": "c089fddcfb6ceb5207ebf27431b3b7e43d9a3246605cc15025a89e59901d623b",
-        "bytes": 2534271
+        "sha256": "5808098574e3e6533d0ebdc88e638ee6bf95f84806d1d15f9477d8a5a903d038",
+        "bytes": 2663533
       },
       "equations": {
         "path": "equations.json",
-        "sha256": "d88626e0cb5aa2eb5ba689f6c724d0da847d2f22e0aa697cae83bc78b6d5a6eb",
+        "sha256": "8b6816f1c03b4f2aac0434ea3ac37bae731786e766c1716eb02bfc72b2d598a1",
         "equations": 46,
         "failures": 0
       },
-      "named_env_sha256": "198b7d8d6c3e3e7be64a603f94b426adee89d873fcdf676d20ebbb71f49fa01d",
+      "named_env_sha256": "bd22c3517dc2a2fb95482046275449438edeb655a4726bb3505661c1cc9f5450",
       "census": {
         "path": "census.json",
-        "sha256": "f1b8130fa762e198c1f4767be3ae689ac00068258e7d6ab8af6678409d5833c7"
+        "sha256": "07a3f12d9fe3f233e24e1ef850b86c982dd17fc595e5786f24126ef90c43a739"
       },
       "roots": [
         {
           "name": "K1.fib",
-          "address": "8fa2b0a45f209a79ba48a7dd59606257b44e358f04b0ce29856d6650ce0ea724",
+          "address": "cd029c138e7efc17ea41b293c78246928dc889b9685dcc7ffa156cb426d18a76",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -112,7 +112,7 @@
         },
         {
           "name": "K1.sumLoop",
-          "address": "0a3a0402460e57cda66f055bceb69ce8a51fb0359a60406c5d900f23359d5555",
+          "address": "212b1c6c5b74e34611a6ab18e3d1e72a15fff7149c046afb7b4f2d3850c41459",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -123,7 +123,7 @@
         },
         {
           "name": "K1.ack",
-          "address": "739d8762afda939eb3293b0ee8fc06e3b4960ec13ead3b4f5e1e12b8bb0cda7f",
+          "address": "b694a3e1d9fece15f74ea1caa8941588c53c865ebd7813e5e5b9a660ed4ca1e5",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -134,7 +134,7 @@
         },
         {
           "name": "K1.tak",
-          "address": "adc25602666f8402b986cdba49b0edec2efe00ccb757a187edfc06ac3b99b620",
+          "address": "0f12cd0f7b16ec91bfc0033592222cb09967fd88180e93e0bc006a78f0d8ec22",
           "params": 4,
           "result": "nat",
           "oracles": [
@@ -145,7 +145,7 @@
         },
         {
           "name": "K1.gcd",
-          "address": "6ae620c9935731c8f5a6a7ec7c587128ce094191b29c434b1748dcd5d8e8fd68",
+          "address": "3f19b240d06245bd50a447cb788aa8b054749940ee003118a20920b6daee31cc",
           "params": 2,
           "result": "nat",
           "oracles": [

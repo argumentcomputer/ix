@@ -4,12 +4,12 @@
  "producer":
  "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
  "named_env_sha256":
- "75f35261e7757967439be43d25ce7c17f7eadc87e76e787b8493107b3b45731b",
+ "d26a30e6bb0cd34f4c9db8f50f2800ab3f65f4ed105d43885b3d66728e032919",
  "files":
  {"sorry.ixe":
-  "ba6e29eb74b2e264be50892cb4dabac1f207e88258c5d3c944a2ff60727762cf",
+  "9349fb3893c426b4945423f4865790fe81e4fd125e7c284d129186e250e1aa0f",
   "sorry.equations.json":
-  "82722fad1a02827e111e8cc4338e98da5a44d28ced1c8cb6ef3155db4ad0125c"},
+  "9c25f30026a2f81b4e87c0fd7e1c8d13108fd7efd2cd08a9ed75c881290fb90f"},
  "commands":
  ["ix compile --no-build --consts <roots> --no-equations --anon --out sorry.ixe Diag.lean",
   "ix compile --no-build --consts <roots> --no-equations --out sorry.named.ixe Diag.lean",

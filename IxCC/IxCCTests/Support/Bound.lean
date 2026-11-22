@@ -33,7 +33,7 @@ recursor (the reader keeps one recursor per motive). -/
 namespace IxCCTests.Support.Bound
 
 open IxCC.Ixon IxCC.Ixon.V3
-open IxCCTests.IxonV3.Builder (record store block arrow lambda)
+open IxCCTests.IxonV3.Builder (record store block arrow lambda completeBindersWith)
 
 abbrev E := IxCC.Ixon.V3.Expr
 abbrev Addr := IxCC.Ixon.Address
@@ -140,7 +140,10 @@ def simpleRecursor (blk : Addr) (ctors : Array (Array Field)) : Constant := Id.r
       body := lambda (minor k) body
     return (⟨m.toUInt64, lambda motiveTy body⟩ : RecursorRule)
   let r : Recursor := ⟨false, false, 1, 0, 0, 1, n.toUInt64, typ, (Array.range n).map rule⟩
-  return ⟨.recr r, #[], refs, #[.var 0], #[]⟩
+  -- Every binder in `typ` and each rule has codomain `Sort u` (`ifAllZero #[0]`), except the
+  -- inner arrow of `motiveTy = T → Sort u` at pre-order ordinal 1 (codomain `Sort (u + 1)`).
+  return completeBindersWith ⟨.recr r, #[], refs, #[.var 0], #[]⟩
+    (fun p => if p.ordinal == 1 then .never {} else .ifAllZero #[0] {})
 
 /-- A simple inductive block and its recursor, as a test adds them. -/
 structure Ind where
