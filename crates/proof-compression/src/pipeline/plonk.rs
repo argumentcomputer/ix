@@ -45,18 +45,26 @@ fn setup_identity(config: &SetupConfig) -> [u8; 32] {
 
 #[cfg(feature = "plonk")]
 fn anchors(config: &SetupConfig, domain: usize) -> Result<crate::kzg::Srs> {
-  config.for_stage(FINAL_SRS_SEED, parameter_prefix(domain)?)?.srs(2, true)
+  let size = parameter_size(config, domain)?;
+  let height = match config {
+    SetupConfig::Ignition { .. } => domain,
+    SetupConfig::Development { .. } => size.loaded_powers().next_power_of_two(),
+  };
+  config.for_stage(FINAL_SRS_SEED, height)?.srs(2, true)
 }
 
 #[cfg(feature = "plonk")]
-fn parameter_prefix(domain: usize) -> Result<usize> {
-  if domain < 2 || !domain.is_power_of_two() {
-    return Err("PLONK domain must be a power of two >= 2".into());
+fn parameter_size(
+  config: &SetupConfig,
+  domain: usize,
+) -> Result<super::plonk_limits::ParameterSize> {
+  let size = super::plonk_limits::ParameterSize::for_domain(domain)?;
+  if matches!(config, SetupConfig::Ignition { .. }) {
+    size.check_public_degree(
+      verifying_keys::ignition_parameters()?.public_setup.max_degree,
+    )?;
   }
-  domain
-    .checked_add(3)
-    .and_then(usize::checked_next_power_of_two)
-    .ok_or_else(|| "PLONK SRS length overflow".into())
+  Ok(size)
 }
 
 #[cfg(feature = "plonk")]
@@ -231,22 +239,58 @@ pub fn export_parameters(
   path: &Path,
   config: &SetupConfig,
 ) -> Result<()> {
-  if domain < 2 || !domain.is_power_of_two() {
-    return Err("PLONK domain must be a power of two >= 2".into());
+  let size = parameter_size(config, domain)?;
+  if let SetupConfig::Ignition { srs } = config {
+    let mut count = [0; 4];
+    fs::File::open(srs)?.read_exact(&mut count)?;
+    size.check_capacity(
+      u32::from_be_bytes(count) as usize,
+      verifying_keys::ignition_parameters()?.public_setup.max_degree,
+    )?;
   }
-  let count = domain.checked_add(3).ok_or("PLONK SRS length overflow")?;
-  let prefix = parameter_prefix(domain)?;
+  let count = size.opening_powers();
   let manifest = setup_identity(config);
-  let source = config.for_stage(FINAL_SRS_SEED, prefix)?;
-  let srs = source.srs(prefix, false)?;
+  let (srs, public_setup) = match config {
+    SetupConfig::Ignition { srs } => {
+      let parameters = verifying_keys::ignition_parameters()?;
+      let powers = crate::kzg::srs::gnark::load_exact(
+        srs,
+        count,
+        parameters.public_setup,
+      )?;
+      if powers.g1[..2] != parameters.g1
+        || powers.g2 != parameters.g2
+        || powers.tau_g2 != parameters.tau_g2
+      {
+        return Err(
+          "PLONK powers differ from the released Ignition anchors".into(),
+        );
+      }
+      (powers, parameters.public_setup)
+    },
+    SetupConfig::Development { .. } => {
+      let prefix = count.next_power_of_two();
+      let source = config.for_stage(FINAL_SRS_SEED, prefix)?;
+      let mut srs = source.srs(prefix, false)?;
+      srs.g1.truncate(count);
+      (
+        crate::kzg::srs::gnark::Powers {
+          g1: srs.g1,
+          g2: srs.g2,
+          tau_g2: srs.tau_g2,
+        },
+        srs.public_setup,
+      )
+    },
+  };
   let temporary = storage::temporary_path(path);
   if let Some(parent) = path.parent() {
     fs::create_dir_all(parent)?;
   }
   let mut out = std::io::BufWriter::new(fs::File::create(&temporary)?);
   out.write_all(b"IXBPSR01")?;
-  out.write_all(&srs.public_setup.id)?;
-  out.write_all(&(srs.public_setup.max_degree as u64).to_le_bytes())?;
+  out.write_all(&public_setup.id)?;
+  out.write_all(&(public_setup.max_degree as u64).to_le_bytes())?;
   out.write_all(&manifest)?;
   out.write_all(&(count as u64).to_le_bytes())?;
   out.write_all(&encode_g2(srs.g2))?;
@@ -261,8 +305,8 @@ pub fn export_parameters(
   let digest = blake3::Hash::from_bytes(storage::blake3_file(path)?);
   let receipt = serde_json::json!({
     "format": "ix-bn254-plonk-srs-export-v2", "blake3": digest.to_hex().as_str(),
-    "setupId": blake3::Hash::from_bytes(srs.public_setup.id).to_hex().as_str(),
-    "publicMaxDegree": srs.public_setup.max_degree, "powers": count,
+    "setupId": blake3::Hash::from_bytes(public_setup.id).to_hex().as_str(),
+    "publicMaxDegree": public_setup.max_degree, "powers": count,
     "setupClass": config.class().label(),
     "setupIdentity": blake3::Hash::from_bytes(manifest).to_hex().as_str(),
   });
@@ -429,12 +473,14 @@ fn prepare_artifacts(
     metadata
   };
   let domain = usize::try_from(metadata.domain)?;
-  if !(2..=1 << 26).contains(&domain)
-    || !domain.is_power_of_two()
-    || metadata.public_inputs != 2
-  {
+  let size = super::plonk_limits::ParameterSize::for_circuit(
+    metadata.constraints,
+    metadata.public_inputs,
+  )?;
+  if size.domain() != domain || metadata.public_inputs != 2 {
     return Err("invalid PLONK circuit dimensions".into());
   }
+  parameter_size(setup, domain)?;
   if !metadata.keys_ready {
     let (srs, receipt) =
       cached_parameters(domain, &cache_root.join("parameters"), setup)?;
@@ -627,6 +673,34 @@ pub(super) fn wrap_packet(
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  #[cfg(feature = "plonk")]
+  fn ignition_capacity_is_rejected_before_opening_the_srs() {
+    let setup = SetupConfig::Ignition { srs: "/does-not-exist".into() };
+    let error = export_parameters(
+      1 << 26,
+      Path::new("/does-not-exist/output.bin"),
+      &setup,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("134217728-power prefix"));
+    assert!(error.to_string().contains("admitted maximum degree"));
+  }
+
+  #[test]
+  #[cfg(feature = "plonk")]
+  fn short_ignition_prefix_is_rejected_before_loading_points() -> Result<()> {
+    let temporary = crate::test_support::TempDir::new("plonk-short-prefix");
+    let srs = temporary.join("srs.bin");
+    fs::write(&srs, 16u32.to_be_bytes())?;
+    let setup = SetupConfig::Ignition { srs };
+    let out = temporary.join("export.bin");
+    let error = export_parameters(16, &out, &setup).unwrap_err();
+    assert!(error.to_string().contains("SRS retains 16 powers"));
+    assert!(!out.exists());
+    Ok(())
+  }
 
   #[test]
   #[cfg(feature = "plonk")]

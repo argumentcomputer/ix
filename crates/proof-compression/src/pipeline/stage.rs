@@ -20,7 +20,7 @@ use crate::kzg::{
 use multi_stark::lookup::LookupValues;
 use multi_stark::plonkish::{Assignment, Circuit};
 use multi_stark::prover::Proof;
-use multi_stark::system::{System, SystemWitness, compute_lookup_values_range};
+use multi_stark::system::{System, SystemWitness};
 #[cfg(test)]
 use multi_stark::traits::Algebra;
 use multi_stark::traits::{Field, TwoAdicField};
@@ -107,49 +107,33 @@ impl Prepared<Val> {
     validate_config(&config, &definitions)?;
     let (system, key) = tracing::info_span!("compression/setup")
       .in_scope(|| System::new_without_preprocessed(config, definitions));
-    // Materialize each circuit's trace and lookup messages one at a time so
-    // preprocessed matrices are never cloned across all circuits and frontend
-    // state (`compiled` and `assignment`) is dropped before stage-1 LDEs.
+    // Materialize each circuit's trace one at a time so preprocessed matrices
+    // are never cloned across all circuits, and drop the frontend state
+    // (`compiled` and `assignment`) before stage-1 LDEs.
     let trace_span = tracing::info_span!("compression/trace").entered();
-    let count = system.circuits.len();
     let shards = compiled.trace_shards(&self.assignment)?;
-    let mut traces = Vec::with_capacity(count);
-    let mut lookups = Vec::with_capacity(count);
-    for ci in 0..count {
-      let trace = shards.trace(ci)?;
-      let circuit = &system.circuits[ci];
-      let lookup = if trace.height() == 0 || circuit.graph.lookups.is_empty() {
-        LookupValues::builder(trace.height(), &[]).finish()
-      } else {
-        let preprocessed = (circuit.preprocessed_width > 0)
-          .then(|| {
-            compiled
-              .circuit_input(ci)
-              .and_then(|input| input.preprocessed)
-              .ok_or("missing compiled preprocessed matrix")
-          })
-          .transpose()?;
-        if let Some(pp) = &preprocessed {
-          assert_eq!(
-            trace.height(),
-            pp.height(),
-            "circuit {ci}: main trace height must equal preprocessed trace height"
-          );
-        }
-        compute_lookup_values_range(
-          &circuit.graph,
-          &trace,
-          preprocessed.as_ref(),
-          0..trace.height(),
-        )
-      };
-      traces.push(trace);
-      lookups.push(lookup);
-    }
+    let traces = (0..system.circuits.len())
+      .map(|ci| shards.trace(ci))
+      .collect::<std::result::Result<Vec<_>, _>>()?;
+    drop(shards);
     drop(trace_span);
     drop(compiled);
     drop(self.assignment);
     let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
+    // A materialized lookup witness is several times the size of the traces
+    // and would coexist with every stage-one LDE. With shape-only witnesses
+    // the prover evaluates one circuit's messages at a time, reading its
+    // trace and fixed matrix back from their commitments, as it builds that
+    // circuit's stage-two column. The proof bytes are the same.
+    let lookups = traces
+      .iter()
+      .zip(&system.circuits)
+      .map(|(trace, circuit)| {
+        let widths: Vec<_> =
+          circuit.graph.lookups.iter().map(|l| l.args.len()).collect();
+        LookupValues::shape_only(trace.height(), &widths)
+      })
+      .collect();
     let witness = SystemWitness { traces, lookups };
     let proof = tracing::info_span!("compression/prove")
       .in_scope(|| system.prove_multiple_claims(&key, &refs, witness));
