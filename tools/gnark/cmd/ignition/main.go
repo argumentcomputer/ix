@@ -28,16 +28,25 @@ func main() {
 	ceremony := flag.String("ceremony", mirrorCeremony, "ceremony directory under the base URL")
 	cache := flag.String("cache", "data", "directory for downloaded ceremony transcripts")
 	output := flag.String("out", "srs.bin", "new gnark SRS file")
-	powers := flag.Int("powers", 1<<26, "number of G1 powers to retain")
+	powers := flag.Int("powers", (1<<26)+3, "number of G1 powers to retain")
+	extendFrom := flag.String("extend-from", "", "authenticated existing gnark SRS prefix to extend")
+	sourceDigest := flag.String("source-sha256", "", "independently trusted SHA-256 of -extend-from")
+	additional := flag.String("additional-g1", "", "candidate additional G1 points in canonical gnark uncompressed encoding")
 	flag.Parse()
+	if *extendFrom != "" || *sourceDigest != "" || *additional != "" {
+		if err := extendSRS(*extendFrom, *sourceDigest, *additional, *output, *powers); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if err := run(*baseURL, *ceremony, *cache, *output, *powers); err != nil {
 		log.Fatal(err)
 	}
 }
 
 func run(baseURL, ceremony, cache, output string, powers int) error {
-	if powers < 2 || powers > 1<<26 || powers&(powers-1) != 0 {
-		return fmt.Errorf("powers must be a power of two in [2, 2^26]")
+	if !validPowerCount(powers) {
+		return fmt.Errorf("powers must be in [2, 100800000]")
 	}
 	if _, err := os.Stat(output); err == nil {
 		return fmt.Errorf("output already exists: %s", output)
@@ -107,3 +116,5 @@ func writeSRS(output string, srs *kzg.SRS) error {
 	}
 	return os.Link(file.Name(), output)
 }
+
+func validPowerCount(powers int) bool { return powers >= 2 && powers <= 100800000 }
