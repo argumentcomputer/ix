@@ -1637,9 +1637,17 @@ fn gpu_population_proves_identically() {
   let package = grouping_fixture();
   let program = package.program.check().unwrap();
   let plan = TracePlan::new(&program, package.trace).unwrap();
-  let mut backend =
-    Backend::assemble(&plan, toy_parameters(), true, None, true, false, true)
-      .unwrap();
+  let mut backend = Backend::assemble(
+    &plan,
+    toy_parameters(),
+    true,
+    RomLayout::Vectorized,
+    None,
+    true,
+    false,
+    true,
+  )
+  .unwrap();
   let plans = gpu::DevicePlans::new(&backend);
   let device_circuits: Vec<_> = plans
     .circuits
@@ -1696,9 +1704,17 @@ fn gpu_depth_population_proves_identically() {
   use multi_stark::batch::Retention;
   let (program, trace) = depth::depth_fixture();
   let plan = TracePlan::new(&program, trace).unwrap();
-  let mut backend =
-    Backend::assemble(&plan, toy_parameters(), true, None, true, false, true)
-      .unwrap();
+  let mut backend = Backend::assemble(
+    &plan,
+    toy_parameters(),
+    true,
+    RomLayout::Vectorized,
+    None,
+    true,
+    false,
+    true,
+  )
+  .unwrap();
   let plans = gpu::DevicePlans::new(&backend);
   let fib = backend.names.iter().position(|n| n == "Depth::fib").unwrap();
   assert!(plans.circuits[fib], "fib's gap slots run on the device");
