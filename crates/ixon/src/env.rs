@@ -15,6 +15,7 @@ use super::constant::{
 use super::lazy::LazyConstant;
 use super::map::IxonMap;
 use super::metadata::{ConstantMeta, ConstantMetaInfo, NameReverseIndex};
+use super::model_advice::ModelAdvice;
 use super::serialize::{
   decode_window_meta, decode_window_orig_header, decode_window_orig_meta,
 };
@@ -515,6 +516,9 @@ pub struct Env {
   pub assumptions: FxHashSet<Address>,
   /// Anonymous binding, preserved independently of named metadata.
   pub role_binding: Option<RoleBinding>,
+  /// IxVM model advice ([`ModelAdvice`]): prover-side witness, never
+  /// serialized and never part of a claim or of the claimed environment.
+  pub models: Arc<ModelAdvice>,
 }
 
 impl Env {
@@ -529,6 +533,7 @@ impl Env {
       main: None,
       assumptions: FxHashSet::default(),
       role_binding: None,
+      models: Arc::default(),
     }
   }
 

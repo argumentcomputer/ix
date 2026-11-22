@@ -156,9 +156,10 @@ def inertUsers (env : Ixon.Env) : Std.HashSet Address := Id.run do
 
 /-- `addrs` without the seeds no typing claim may name, in order: those outside
     Lean's logic (`Ixon.Env.dropOutsideLogic`) and those that use an inert axiom
-    (`inertUsers`). -/
-def dropUnclaimable (env : Ixon.Env) (addrs : Array Address) : Array Address :=
-  let inert := inertUsers env
+    (`inert`, which must be `inertUsers env`). `inertUsers` walks every constant
+    of `env`, so a caller filtering many sets passes it once computed. -/
+def dropUnclaimable (env : Ixon.Env) (addrs : Array Address)
+    (inert : Std.HashSet Address := inertUsers env) : Array Address :=
   (env.dropOutsideLogic addrs).filter (!inert.contains ·)
 
 /-- The constants of `env` a typing claim may name, in `env.consts` order: those

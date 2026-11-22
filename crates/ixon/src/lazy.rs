@@ -74,6 +74,23 @@ impl BytesSource {
       BytesSource::Mmap { mmap, offset, len } => &mmap[*offset..*offset + *len],
     }
   }
+
+  pub fn len(&self) -> usize {
+    match self {
+      BytesSource::Heap(arc) => arc.len(),
+      BytesSource::Mmap { len, .. } => *len,
+    }
+  }
+
+  pub fn is_empty(&self) -> bool {
+    self.len() == 0
+  }
+}
+
+impl From<Vec<u8>> for BytesSource {
+  fn from(bytes: Vec<u8>) -> Self {
+    BytesSource::Heap(bytes.into())
+  }
 }
 
 /// Tag identifying which `ConstantInfo` variant a `LazyConstant`
@@ -312,6 +329,12 @@ impl LazyConstant {
   /// Raw serialized bytes (the TagN constant body, no length prefix).
   pub fn raw_bytes(&self) -> &[u8] {
     self.bytes.as_slice()
+  }
+
+  /// The shared backing storage of [`Self::raw_bytes`]. Cloning it shares
+  /// the heap allocation or memory map instead of copying the bytes.
+  pub fn bytes_source(&self) -> &BytesSource {
+    &self.bytes
   }
 
   /// Whether a pre-materialized `Constant` is cached. True only for
