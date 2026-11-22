@@ -10,8 +10,8 @@ implements.
 
 | Row | Build |
 | --- | --- |
-| `ixcc` | The fixture's frozen Ixon closure (`fixtures/ixon-v4/bench-k1/<name>.ixe`, the closure of the same `entry`) through `ixcc compile … --no-typecheck`, linked with the timing driver |
-| `lean-clang` | The fixture's Lean source through `lean -c` and Lean's `leanc -O3 -DNDEBUG` (bundled clang and Lean runtime) |
+| `ixcc` | The fixture's frozen Ixon closure (`fixtures/ixon-v4/bench-k1/<name>.ixe`, the closure of the same `entry`) through `ixcc compile …`, linked with the timing driver |
+| `lean-clang` | The fixture's Lean source through `lean -c` and Lean's `leanc -O3 -DNDEBUG -fomit-frame-pointer -momit-leaf-frame-pointer` with `NIX_HARDENING_ENABLE=` (bundled clang and Lean runtime, matching upstream unhardened defaults) |
 | `clang-O2`, `clang-O3` | The fixture's natural C or C++ twin at `-O2` and `-O3` |
 | `clang-tagged` | Diagnostic, entry profile only: the K1 algorithms on ixcc's value representation (tagged words, carry-checked `+ 1`; [`../meas4/twins.c`](../meas4/twins.c) and [`entry/tagged.c`](entry/tagged.c)) at `-O2` |
 | `lir-kernel` | Diagnostic, entry profile only: the early backend probe's hand-written Lir kernels (fib, sum-loop, gcd) through the current backend, from `backend-probe` |
@@ -59,6 +59,11 @@ taskset -c 5 ./.lake/build/bin/runner measure OUT --profile entry --cpu 2 --bloc
 taskset -c 5 ./.lake/build/bin/runner measure OUT --profile process --cpu 2 --blocks 10
 taskset -c 5 ./.lake/build/bin/runner perf OUT --cpu 2 [--perf PATH] [--runs 3] [--gate 1]
 ./.lake/build/bin/runner report OUT         # report.md and entry-report.md (with .json)
+
+# Pure-Lean K4/K5 (or full K1–K5) apples-to-apples process-profile runner:
+lake build bench-k45
+./.lake/build/bin/bench-k45 run OUT --rungs K4,K5 --cpu 2 --blocks 10 \
+    [--closures DIR] [--rc off|on|auto|both] [--stack BYTES] [--region BYTES]
 ```
 
 `build` also writes each row's disassembly (`OUT/asm/<row>/<fixture>.txt`),

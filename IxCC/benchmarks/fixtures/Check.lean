@@ -174,6 +174,30 @@ def buildFailure (fixture check : String) (out : IO.Process.Output) : IO Outcome
   note fixture check false
     s!"build failed (exit {out.exitCode})\n    {firstLines (out.stdout ++ out.stderr) 20}"
 
+/-- Resolve extra `-I`/`-L`/`-Wl,-rpath` flags needed for `-lgmp` twins when
+`gmp.h` is not on the default compiler search path (e.g. inside `nix develop`). -/
+def resolveGmpFlags : IO (Array String) := do
+  if let (some dev, some lib) := (← IO.getEnv "GMP_DEV", ← IO.getEnv "GMP_LIB") then
+    return #[s!"-I{dev}/include", s!"-L{lib}/lib", s!"-Wl,-rpath,{lib}/lib"]
+  for p in ["/usr/include/gmp.h", "/usr/include/x86_64-linux-gnu/gmp.h"] do
+    if ← (p : FilePath).pathExists then return #[]
+  try
+    let pc ← run "pkg-config" #["--cflags", "--libs", "gmp"]
+    if pc.exitCode == 0 then
+      let flags := (pc.stdout.trimAscii.toString.splitOn " ").filter (fun w => !w.isEmpty && w != "-lgmp")
+      unless flags.isEmpty do return flags.toArray
+  catch _ => pure ()
+  try
+    let devOut ← run "nix" #["build", "--no-link", "--print-out-paths", "nixpkgs#gmp.dev"]
+    let libOut ← run "nix" #["build", "--no-link", "--print-out-paths", "nixpkgs#gmp"]
+    if devOut.exitCode == 0 && libOut.exitCode == 0 then
+      let dev := ((devOut.stdout.trimAscii.toString.splitOn "\n").headD "").trimAscii.toString
+      let lib := ((libOut.stdout.trimAscii.toString.splitOn "\n").headD "").trimAscii.toString
+      if !dev.isEmpty && !lib.isEmpty then
+        return #[s!"-I{dev}/include", s!"-L{lib}/lib", s!"-Wl,-rpath,{lib}/lib"]
+  catch _ => pure ()
+  return #[]
+
 /-! ## Per-fixture checks -/
 
 def checkFixture (o : Opts) (tools : Tools) (repoRoot : FilePath) (repos : Json) (fx : Json) :
@@ -272,7 +296,12 @@ def checkFixture (o : Opts) (tools : Tools) (repoRoot : FilePath) (repos : Json)
     | some "clang++" => o.cxx
     | some c => c
     | none => ""
-  let built ← run cmd (argv.extract 1 argv.size)
+  let rawArgs := argv.extract 1 argv.size
+  let buildArgs ← if rawArgs.contains "-lgmp" then do
+      let gmp ← resolveGmpFlags
+      pure (rawArgs.foldl (fun acc w => if w == "-lgmp" then acc ++ gmp ++ #[w] else acc.push w) #[])
+    else pure rawArgs
+  let built ← run cmd buildArgs
   if built.exitCode != 0 then
     results := results ++ [← buildFailure name "twin" built]
   else

@@ -26,6 +26,14 @@ twin that prints the same output. The data is in
 | [`const_fold`](const_fold) | K3 | upstream | Lean `const_fold.lean` | Koka `cpp/cfold.cpp` (adapted) | `15` | `23` |
 | [`binarytrees`](binarytrees) | K3 | total | Lean `binarytrees.lean` | Koka `cpp/binarytrees.cpp` (adapted) | `14` | `21` |
 | [`rbmap_fbip`](rbmap_fbip) | K3 | upstream | Lean `rbmap_fbip.lean` | the `rbmap` twin | `2000` | `2000000` |
+| [`blake3`](blake3) | K4 | original | IxCC standalone `ByteArray`/`Array UInt32` BLAKE3 | `blake3.c` (portable scalar C99) | `8193` | `4194304` |
+| [`array-qsort`](array-qsort) | K4 | original | IxCC in-place `Array UInt32` quicksort | `array_qsort.c` (original) | `1000` | `1000000` |
+| [`big-fib`](big-fib) | K5 | original | IxCC fast-doubling `Nat` Fibonacci | `big_fib.c` (C + GMP `-lgmp`) | `1000` | `5000000` |
+| [`factorial`](factorial) | K5 | original | IxCC binary-splitting `Nat` factorial | `factorial.c` (C + GMP `-lgmp`) | `100` | `300000` |
+| [`pi-digits`](pi-digits) | K5 | original | IxCC unbounded Lambert/Gibbons spigot (`Nat`) | `pi_digits.c` (C + GMP `-lgmp`) | `100` | `5000` |
+| [`big-mul`](big-mul) | K5 | original | IxCC dense multi-limb `Nat.mul` loop | `big_mul.c` (C + GMP `-lgmp`) | `64 20` | `2048 300` |
+| [`big-div`](big-div) | K5 | original | IxCC dense multi-limb `Nat.div`/`Nat.mod` loop | `big_div.c` (C + GMP `-lgmp`) | `64 20` | `1024 200` |
+| [`big-gcd`](big-gcd) | K5 | original | IxCC dense multi-limb `Nat.gcd` loop | `big_gcd.c` (C + GMP `-lgmp`) | `32 5` | `512 100` |
 
 The source commits are:
 

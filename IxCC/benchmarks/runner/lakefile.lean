@@ -11,3 +11,6 @@ lean_lib Runner
 @[default_target]
 lean_exe runner where
   root := `Main
+
+lean_exe «bench-k45» where
+  root := `BenchK45

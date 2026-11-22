@@ -14,12 +14,13 @@ the fixture's `entry` (see `Runner.Measure`).
 
 The `ixcc` row compiles the fixture's frozen closure
 (`<closures>/<fixture>.ixe` with its `.equations.json`) with the
-`ixcc` executable, `compile … --no-typecheck` (typing is gated by the
-compiler's own suites and costs 35–40 s on two closures). A decline or
+`ixcc` executable (`compile …`). A decline or
 rejection is recorded as the row's status, with the compiler's
-`stage: code: message`, and the row is left out. All C of the entry profile
-(driver, adapters, twins) is compiled with `cc` and the same flags, without
-the nixpkgs wrapper's hardening (`NIX_HARDENING_ENABLE=`), as the early backend probe does. -/
+`stage: code: message`, and the row is left out. All C of both profiles
+(driver, adapters, twins, and `leanc`'s C compilation) is compiled with the
+same unhardened flags, without the nixpkgs wrapper's hardening
+(`NIX_HARDENING_ENABLE=`) and with frame pointers omitted, as upstream clang
+does at `-O2`/`-O3`. -/
 
 namespace Runner
 
@@ -59,13 +60,46 @@ structure Options where
 
 def Options.selects (o : Options) (f : Fixture) : Bool := o.fixtures.all (·.contains f.name)
 
+/-- Flags that omit frame pointers, matching upstream clang at `-O2`/`-O3`
+when Nixpkgs wrapper hardening is disabled (`ccEnv`). -/
+def omitFpFlags : List String := ["-fomit-frame-pointer", "-momit-leaf-frame-pointer"]
+
 /-- How the entry profile compiles C: clang at `level`, without the nixpkgs
 wrapper's hardening (zeroing call-used registers, stack protectors,
 fortify, PIE) and with frame pointers omitted, as upstream clang does at
 `-O2`. -/
 def ccFlags (level : String) : List String :=
-  [level, "-fomit-frame-pointer", "-momit-leaf-frame-pointer", "-Wall", "-Wextra", "-Werror"]
+  [level] ++ omitFpFlags ++ ["-Wall", "-Wextra", "-Werror"]
 def ccEnv : Array (String × Option String) := #[("NIX_HARDENING_ENABLE", some "")]
+
+/-- Resolve extra `-I`/`-L`/`-Wl,-rpath` flags needed to compile and link with `-lgmp`
+when `gmp.h` is not on the default compiler search path (e.g. inside `nix develop`). -/
+def resolveGmpFlags : IO (List String) := do
+  -- 1. Explicit environment override
+  if let (some dev, some lib) := (← IO.getEnv "GMP_DEV", ← IO.getEnv "GMP_LIB") then
+    return [s!"-I{dev}/include", s!"-L{lib}/lib", s!"-Wl,-rpath,{lib}/lib"]
+  -- 2. Standard system header path
+  for p in ["/usr/include/gmp.h", "/usr/include/x86_64-linux-gnu/gmp.h"] do
+    if ← (p : FilePath).pathExists then return []
+  -- 3. pkg-config if configured
+  try
+    let pc ← IO.Process.output { cmd := "pkg-config", args := #["--cflags", "--libs", "gmp"] }
+    if pc.exitCode == 0 then
+      let words := (pc.stdout.trimAscii.toString.splitOn " ").filter (!·.isEmpty)
+      let flags := words.filter (· != "-lgmp")
+      unless flags.isEmpty do return flags
+  catch _ => pure ()
+  -- 4. Nix fallback (`nixpkgs#gmp.dev` and `nixpkgs#gmp`)
+  try
+    let devOut ← IO.Process.output { cmd := "nix", args := #["build", "--no-link", "--print-out-paths", "nixpkgs#gmp.dev"] }
+    let libOut ← IO.Process.output { cmd := "nix", args := #["build", "--no-link", "--print-out-paths", "nixpkgs#gmp"] }
+    if devOut.exitCode == 0 && libOut.exitCode == 0 then
+      let dev := ((devOut.stdout.trimAscii.toString.splitOn "\n").headD "").trimAscii.toString
+      let lib := ((libOut.stdout.trimAscii.toString.splitOn "\n").headD "").trimAscii.toString
+      if !dev.isEmpty && !lib.isEmpty then
+        return [s!"-I{dev}/include", s!"-L{lib}/lib", s!"-Wl,-rpath,{lib}/lib"]
+  catch _ => pure ()
+  return []
 
 def firstLine (cmd : String) (args : List String) : IO String := do
   try
@@ -116,7 +150,7 @@ def compileClosure (o : Options) (out : FilePath) (fixture : Fixture) (arity : N
   let obj := dir / s!"{fixture.name}.o"
   let sig := dir / s!"{fixture.name}.sig.json"
   let common := ["compile", closure.toString, "--equations", equations.toString,
-    "-o", obj.toString, "--no-typecheck"]
+    "-o", obj.toString]
   let cmd := o.ixcc.headD "ixcc"
   let lead := o.ixcc.drop 1
   let start ← IO.monoNanosNow
@@ -190,10 +224,10 @@ def buildEntryRow (o : Options) (root out : FilePath) (row : Row) (fixture : Fix
     IO.FS.writeFile (src / "BenchEntry.lean") (← IO.ofExcept (benchEntrySource text fixture arity))
     let c := obj / "BenchEntry.c"
     let _ ← run "lean" ["-c", c.toString, "BenchEntry.lean"] (cwd := some src)
-    let _ ← run "leanc" ["-O3", "-DNDEBUG", "-c", c.toString, "-o", (obj / "BenchEntry.o").toString]
-    let _ ← run "leanc" ["-O2", s!"-DARITY={arity}", "-c", (here / "row_lean.c").toString,
-      "-o", (obj / "row.o").toString]
-    let _ ← run "leanc" ["-o", target.toString, driver, (obj / "row.o").toString, (obj / "BenchEntry.o").toString]
+    let _ ← run "leanc" (["-O3", "-DNDEBUG"] ++ omitFpFlags ++ ["-c", c.toString, "-o", (obj / "BenchEntry.o").toString]) (env := ccEnv)
+    let _ ← run "leanc" (["-O2"] ++ omitFpFlags ++ [s!"-DARITY={arity}", "-c", (here / "row_lean.c").toString,
+      "-o", (obj / "row.o").toString]) (env := ccEnv)
+    let _ ← run "leanc" ["-o", target.toString, driver, (obj / "row.o").toString, (obj / "BenchEntry.o").toString] (env := ccEnv)
     objdump (obj / "BenchEntry.o") (out / "asm" / row.name / s!"{fixture.name}.txt")
     -- Lean's final IR, for attribution (an untimed second run with the trace on)
     let ir ← IO.Process.output { cmd := "lean", args := #["-Dtrace.compiler.ir.result=true", "-c",
@@ -241,7 +275,8 @@ def buildEntryRow (o : Options) (root out : FilePath) (row : Row) (fixture : Fix
 /-! ## Build -/
 
 /-- Build the process-profile row for a fixture. -/
-def buildProcessRow (o : Options) (manifest : Manifest) (root out : FilePath) (row : Row) (fixture : Fixture) :
+def buildProcessRow (o : Options) (manifest : Manifest) (root out : FilePath) (row : Row) (fixture : Fixture)
+    (gmpFlags : IO (List String) := resolveGmpFlags) :
     IO (Option String) := do
   let target := binary out row fixture
   IO.FS.createDirAll (target.parent.getD out)
@@ -254,14 +289,28 @@ def buildProcessRow (o : Options) (manifest : Manifest) (root out : FilePath) (r
     let compile := expand manifest.leanCompile subst
     let _ ← run compile.head! compile.tail! (cwd := some root)
     let link := expand manifest.leanLink subst
-    let _ ← run link.head! link.tail!
+    let linkArgs :=
+      if link.tail!.any (fun w => w == "-O3" || w == "-O2") then
+        link.tail!.flatMap fun w => if w == "-O3" || w == "-O2" then w :: omitFpFlags else [w]
+      else
+        omitFpFlags ++ link.tail!
+    let _ ← run link.head! linkArgs (env := ccEnv)
     return some "built"
   | .clangO2 | .clangO3 =>
     let level := if row == .clangO2 then "-O2" else "-O3"
     let command := expand fixture.twin.compile
       [("src", (root / fixture.twin.path).toString), ("out", target.toString)]
-    let command := command.map fun word => if word == "-O2" then level else word
-    let _ ← run command.head! command.tail!
+    let args :=
+      if command.tail!.any (fun w => w == "-O2" || w == "-O3") then
+        command.tail!.flatMap fun word =>
+          if word == "-O2" || word == "-O3" then level :: omitFpFlags else [word]
+      else
+        level :: omitFpFlags ++ command.tail!
+    let args ← if args.contains "-lgmp" then do
+        let gmp ← gmpFlags
+        pure (args.flatMap fun w => if w == "-lgmp" then gmp ++ [w] else [w])
+      else pure args
+    let _ ← run command.head! args (env := ccEnv)
     return some "built"
   | .ixcc =>
     let object := out / "ixcc" / s!"{fixture.name}.o"
@@ -293,6 +342,14 @@ def build (manifest : Manifest) (root out : FilePath) (o : Options) : IO Unit :=
     IO.FS.createDirAll (out / "probe")
     let probed ← run probe.toString [(out / "probe").toString, "--reps", "20"]
     IO.FS.writeFile (out / "probe" / "probe.jsonl") probed.stdout
+  let gmpCache ← IO.mkRef (none : Option (List String))
+  let getGmpFlags : IO (List String) := do
+    match ← gmpCache.get with
+    | some fs => pure fs
+    | none =>
+      let fs ← resolveGmpFlags
+      gmpCache.set (some fs)
+      pure fs
   for fixture in fixtures do
     let arity := fixture.natArity?
     -- the ixcc object, shared by both profiles
@@ -311,7 +368,7 @@ def build (manifest : Manifest) (root out : FilePath) (o : Options) : IO Unit :=
         | some s => statuses := statuses.push { profile := "entry", row := row.name, fixture := fixture.name, status := s }
         | none => pure ()
     for row in Row.process do
-      match ← buildProcessRow o manifest root out row fixture with
+      match ← buildProcessRow o manifest root out row fixture getGmpFlags with
       | some s => statuses := statuses.push { profile := "process", row := row.name, fixture := fixture.name, status := s }
       | none => pure ()
     IO.println s!"built {fixture.name}"
@@ -326,7 +383,9 @@ def build (manifest : Manifest) (root out : FilePath) (o : Options) : IO Unit :=
     ("versions", ← versions o),
     ("entry_cc_flags", toJson (ccFlags "-O2|-O3")),
     ("entry_cc_env", Json.str "NIX_HARDENING_ENABLE="),
-    ("entry_lean", Json.str "lean -c; leanc -O3 -DNDEBUG (BenchEntry.c); leanc -O2 (row_lean.c); leanc link")]).pretty ++ "\n")
+    ("entry_lean", Json.str "lean -c; NIX_HARDENING_ENABLE= leanc -O3 -DNDEBUG -fomit-frame-pointer -momit-leaf-frame-pointer (BenchEntry.c); leanc -O2 -fomit-frame-pointer -momit-leaf-frame-pointer (row_lean.c); leanc link"),
+    ("process_cc_env", Json.str "NIX_HARDENING_ENABLE="),
+    ("process_omit_fp_flags", toJson omitFpFlags)]).pretty ++ "\n")
 
 /-! ## Check -/
 

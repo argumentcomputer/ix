@@ -66,7 +66,7 @@ def reportProcess (manifest : Manifest) (out : FilePath) : IO Unit := do
       ("ratio_to_lean_clang", Json.mkObj (others.filterMap fun r =>
         if (paired r.name).isEmpty then none else some (r.name, toJson (median (paired r.name)))))])
   lines := lines ++ #["", "| Rung | Row | Geomean ratio to lean-clang | Fixtures |", "| --- | --- | ---: | ---: |"]
-  for rung in ["K1", "K2", "K3"] do
+  for rung in ["K1", "K2", "K3", "K4", "K5"] do
     for row in others do
       let values := rungRatios.filterMap fun (r, w, v) => if r == rung && w == row.name && v > 0 then some v else none
       unless values.isEmpty do
@@ -194,7 +194,7 @@ def reportEntry (manifest : Manifest) (out : FilePath) : IO Unit := do
     "| Rung | Row | Baseline | Geomean [95%] | Largest (fixture) | Without the largest [95%] | Fixtures | Missing |",
     "| --- | --- | --- | ---: | ---: | ---: | --- | --- |"]
   let mut geoJson : Array Json := #[]
-  for rung in ["K1", "K2", "K3"] do
+  for rung in ["K1", "K2", "K3", "K4", "K5"] do
     let rungFixtures := manifest.fixtures.filter (·.rung == rung) |>.map (·.name)
     for row in geomeanRows ++ variants do
       for base in baselinesAll do
@@ -223,7 +223,7 @@ def reportEntry (manifest : Manifest) (out : FilePath) : IO Unit := do
     let compiles := (b.getObjValD "ixcc_compiles").getArr?.toOption.getD #[]
     unless compiles.isEmpty do
       lines := lines ++ #["", "## ixcc compiles", "",
-        "`ixcc compile … --no-typecheck` per closure: wall time of the process, and its `--stats` lines.", "",
+        "`ixcc compile …` per closure: wall time of the process, and its `--stats` lines.", "",
         "| Fixture | Wall ms | Stats |", "| --- | ---: | --- |"]
       for c in compiles do
         let stats := ((c.getObjValD "stats").getStr?.toOption.getD "").splitOn "\n" |>.filter (!·.isEmpty)
