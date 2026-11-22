@@ -7,7 +7,7 @@ use multi_stark::{
   system::{
     Circuit, CircuitInputs, compute_lookup_values_range, extension_params,
   },
-  traits::{Algebra, EvaluationDomain as _},
+  traits::{Algebra, EvaluationDomain as _, Field as _},
 };
 use p3_matrix::dense::RowMajorMatrix;
 
