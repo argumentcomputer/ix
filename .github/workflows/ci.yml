@@ -88,17 +88,27 @@ jobs:
               - 'contracts/**'
               - 'crates/proof-compression/verifying-keys/**'
             cuda:
+              - 'crates/aggregate-controller/**'
               - 'crates/aiur/**'
+              - 'crates/aiur-codegen/**'
+              - 'crates/aiur-codegen-tests/**'
+              - 'crates/aiur-tracegen/**'
+              - 'crates/aiur-tracegen-tests/**'
+              - 'crates/formal-generated/**'
               - 'crates/ixvm/**'
+              - 'crates/ixvm-native/**'
               - 'crates/ffi/**'
               - 'crates/proof-compression/**'
               - 'crates/stark-verifier/**'
+              - 'crates/stark-verifier-native/**'
               - 'crates/ix-prover/**'
               - 'crates/common/**'
               - 'crates/ixon/**'
               - 'crates/record-pool/**'
               - 'crates/stark-key/**'
             host:
+              - 'FormalAiurKeys.lean'
+              - 'FormalCodegen.lean'
               - 'Ix.lean'
               - 'Ix/**'
               - 'IxC/**'
@@ -117,6 +127,7 @@ jobs:
               - 'Scripts/SourceHygiene.lean'
               - 'Scripts/CheckCiFilters.lean'
               - 'Scripts/FriSecurity.lean'
+              - 'tools/formal-aiur.keys'
             kernel:
               - 'IxC/**'
               - 'Models/SetTheory/**'
@@ -235,13 +246,18 @@ jobs:
               - 'MultiStark/**'
               - 'IxVMRefinement/**'
               - 'IxC/**'
+              - 'FormalAiurKeys.lean'
+              - 'FormalCodegen.lean'
               - 'Ix/Address/**'
               - 'Ix/Address.lean'
               - 'Ix/CanonM.lean'
               - 'Ix/Cert/**'
+              - 'Ix/Check.lean'
               - 'Ix/Common.lean'
+              - 'Ix/FormalCompiler.lean'
+              - 'Ix/FormalCompiler/**'
+              - 'Ix/FormalProver.lean'
               - 'Ix/IxVM/**'
-              - 'Ix/Cert/**'
               - 'Ix/Compile/**'
               - 'Ix/CompileCert/**'
               - 'Ix/CompileM.lean'
@@ -279,16 +295,19 @@ jobs:
               - 'Ix/SpecDigest.lean'
               - 'Ix/Store.lean'
               - 'Ix/Aiur*.lean'
+              - 'Ix/Cli/Aiur*.lean'
+              - 'Ix/Cli/CatalogAggregate.lean'
+              - 'Ix/Cli/CheckCmd.lean'
               - 'Ix/Cli/Formal*.lean'
               - 'Ix/Cli/Prove*.lean'
               - 'Ix/Cli/Verify*.lean'
               - 'Ix/Cli/Aggr*.lean'
-              - 'Ix/Cli/PrepareCmd.lean'
               - 'Ix/Cli/ClaimPolicy.lean'
               - 'Ix/Cli/CodegenCmd.lean'
               - 'Scripts/CheckFormal.lean'
               - 'Tests/Formal*.lean'
               - 'Tests/FormalChecks/**'
+              - 'Tests/VerifyPath.lean'
               - 'Tests/Fixtures/MultiStark/**'
               - 'Tests/IxVMMain.lean'
               - 'Tests/Ix/IxVM/**'
@@ -299,6 +318,11 @@ jobs:
               - 'Tests/Ix/VMSource.lean'
               - 'Tests/Ix/IOIngress.lean'
               - 'Tests/AggrBindingReuse.lean'
+              - 'tools/formal-aiur.keys'
+              - 'tools/verify-path.fingerprint'
+              - 'tools/check-formal-keys.sh'
+              - 'tools/check-verify-path.sh'
+              - 'tools/check-aiur-compression-fixtures.sh'
               - 'crates/**'
       - name: Resolve job plan
         id: plan
@@ -451,7 +475,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -515,7 +539,7 @@ jobs:
     env:
       MULTI_STARK_CUDA_ARCHS: "80"
     steps:
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -540,7 +564,7 @@ jobs:
         with:
           auto-config: false
           use-github-cache: false
-          use-mathlib-cache: false
+          use-mathlib-cache: true
       # Share a single Cargo target directory across all CUDA compile/link steps
       # so Plonky3, multi-stark, and CUDA kernels compile once instead of twice.
       - name: Compile CUDA Rust targets
@@ -599,7 +623,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -614,7 +638,7 @@ jobs:
         with:
           auto-config: false
           use-github-cache: false
-          use-mathlib-cache: false
+          use-mathlib-cache: true
       - name: Build host libraries and test executables
         run: |
           lake build --wfail \
@@ -635,7 +659,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -678,7 +702,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -713,7 +737,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -744,7 +768,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -779,7 +803,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -814,7 +838,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -851,7 +875,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -928,7 +952,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
@@ -980,7 +1004,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -1063,7 +1087,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -1100,6 +1124,8 @@ jobs:
           Aiur/.lake/build/bin/trace_tests
           Aiur/.lake/build/bin/u32_tests
           lake env .lake/build/bin/formal-package-tests
+      - name: Check Aiur compression compiler fixtures
+        run: bash tools/check-aiur-compression-fixtures.sh
       - name: Check IxVM execution fixture
         run: |
           tmp=$(mktemp -d)
@@ -1107,6 +1133,8 @@ jobs:
           target/release/ixvm "$tmp/ixvm-execution.ixa" negative
           target/release/ixvm "$tmp/ixvm-execution.ixa" validate IxVM/IxVM/fixtures/nat-add-comm.ixf
           rm -rf "$tmp"
+      - name: Check the formal verifying keys match their pins
+        run: bash tools/check-formal-keys.sh
 
   # Dedicated lineage for the 944-module IxVMRefinement library so it runs in
   # parallel from t=0 without competing for sticky-disk space with host/formal.
@@ -1119,7 +1147,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -1191,7 +1219,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -1236,7 +1264,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -1282,7 +1310,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
