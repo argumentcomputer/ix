@@ -31,7 +31,7 @@ def AddressEquation : Prop :=
 /-- **Source totality, from the address equation.** -/
 theorem sourceTotal_of_address (address : AddressEquation) : Obligation.SourceTotal := by
   intro env roots sub ixe failures t envQ hP
-  refine ⟨AcceptedKeys.sourceKeys_unique hP, fun n ci hn hsorry => ?_⟩
+  refine ⟨AcceptedKeys.sourceKeys_unique hP, fun n ci hn hsorry hct => ?_⟩
   obtain ⟨-, pre, ds, hpre, hprep, hacc⟩ := hP.source
   obtain ⟨d, hd, hk⟩ := SourceDeclares.preparedAt_declares hprep hn
   obtain ⟨st, decls, -, -, hds⟩ :=
@@ -40,7 +40,7 @@ theorem sourceTotal_of_address (address : AddressEquation) : Obligation.SourceTo
     rw [hds]
     exact SourceInstalls.prepared_quot hpre decls
   obtain ⟨c, hc, hname⟩ :=
-    SourceInstalls.accepts_names (k := quotientKey ixe t n) hacc hquot hd hk hsorry
+    SourceInstalls.accepts_names (k := quotientKey ixe t n) hacc hquot hd hk hsorry hct
   obtain ⟨named, hmem, hget⟩ := SourceStoredNames.stored_published hP hn
   refine ⟨c, hc, hname, ?_⟩
   rw [hname, hget, Option.map_some]

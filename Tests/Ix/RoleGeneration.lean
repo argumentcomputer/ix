@@ -23,6 +23,7 @@ private def inputs (operation : Role) (complete : Bool := false) :
   let table ← Ix.Kernel.Reader.defaultTable
   let prelude ← Ix.Kernel.Reader.preludeRecords
   let closure ← Ix.Kernel.Reader.decodeCommitted "fixture closure" Ix.Kernel.Reader.RoleData.closure
+  let inert ← Ix.Kernel.Reader.decodeCommitted "fixture inert" Ix.Kernel.Reader.RoleData.inert
   let proofs ← Ix.Kernel.Reader.evidenceRecords
   let literals ← Ix.Kernel.Reader.evidenceBlobs
   let closureLiterals ← Ix.Kernel.Reader.RoleData.closureBlobs.toList.mapM fun (hex, bytes) => do
@@ -30,7 +31,7 @@ private def inputs (operation : Role) (complete : Bool := false) :
     let some value := bytesOfHex bytes | throw "fixture: bad blob bytes"
     pure (address, value)
   let mut env : Env := {}
-  for (a, c) in prelude ++ closure do
+  for (a, c) in prelude ++ closure ++ inert do
     env := { env with consts := env.consts.insert a (LazyConstant.ofConstant c) }
   for (a, bytes) in literals ++ closureLiterals do
     env := { env with blobs := env.blobs.insert a bytes }

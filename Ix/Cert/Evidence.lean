@@ -42,6 +42,9 @@ theorem checkDecl_covers {mode : CheckMode} {ops : (CheckerOps md) (CheckM md)}
   cases d with
   | defnDecl cv value hint =>
     simp only [checkDecl] at hd ⊢
+    by_cases hct : cv.name.isCompilerTrust = true
+    · simp only [hct, ↓reduceIte] at hd ⊢; exact hd
+    simp only [hct, Bool.false_eq_true, ↓reduceIte] at hd ⊢
     cases h1 : checkConstantVal ops env cv with
     | error e => rw [h1] at hd; cases hd
     | ok cv' =>

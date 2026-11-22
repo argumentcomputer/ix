@@ -1,12 +1,16 @@
 # Formal Aiur orchestration
 
-The formal Aiur backend uses `crates/ix-prover` for resident proving. This
+The formal Aiur backend uses `crates/ix-prover` for resident checking and proving. This
 governs runtime scheduling and witness construction; it adds no Aiur primitive,
 constraint, axiom, or `sorry`.
 
 ## Commands
 
 ```sh
+# Check a manifest using all cores and one shared backend. Each leaf's proof
+# is planned for 100 GiB; execution memory is shared across workers.
+ix check --ixe env.ixe --ixes env.ixes --ram-budget 100 --report check.json
+
 # Independent manifest claims, two CPU prover lanes and four executions ahead.
 ix prove --ixe env.ixe --ixes env.ixes --jobs 2 --exec-jobs 4 \
   --trace-shards --max-ram 64 --report claims.json
@@ -67,9 +71,23 @@ frame, and distributed dependency storage growth to reservations. Advice is
 charged conservatively before parsing. Reservations follow record storage and
 are released when it drops. When executions mutually block on growth, the pool
 cancels the youngest and retries it after capacity is released. Completed
-records wait in a bounded priority queue.
+records wait in a bounded priority queue. A waiting execution has priority for
+growth and blocks new admissions until it finishes. Existing executions can
+use surplus capacity while preserving headroom for that execution, so a
+temporary full pool does not serialize the rest of the batch.
 
-After accounting for resident Rust artifacts/backends with a margin, half the
+Manifest checking uses the same admission pool and one immutable backend.
+Workers execute, collect circuit statistics, optionally plan, and immediately
+drop their records; no traces or proofs are generated. After the static-memory
+margin, the remaining execution budget is available to records. Checking uses
+85% of available host memory, or `--exec-ram` GiB when specified. Each plan uses
+the whole destination budget and that record's counted storage plus shared
+static residency, never process RSS containing other workers' records.
+Consequently `--jobs` does not divide the per-leaf proof budget. Check and refine
+default to available cores; `--jobs 1` selects sequential execution. The initial
+batch and subsequent split waves have separate timing in benchmark reports.
+
+For proving, after accounting for resident Rust artifacts/backends with a margin, half the
 remaining budget goes to record storage and half to a prover workspace shared
 by the lanes. Each job reserves its planned peak, normally within its lane's
 equal share. Trace generation and proving are planned before allocating traces;

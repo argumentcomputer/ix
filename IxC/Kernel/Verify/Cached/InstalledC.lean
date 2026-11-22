@@ -283,6 +283,18 @@ theorem restrictTo_find?_of_extends {feFinal : FEnv md} {env : Env md}
 
 /-! ## The model along the run -/
 
+/-- An accepting `annotDeclStep` passed `Declaration.anchorMismatch?`. -/
+theorem annotDeclStep_anchor_none {mode : CheckMode} {ev : Evidences md}
+    {p : Nat × FEnv md × Array (PendingCheck md)}
+    {pd : Declaration md} {s : CState md}
+    {q : Nat × FEnv md × Array (PendingCheck md)} {s' : CState md}
+    (h : annotDeclStep mode ev p pd s = .ok (q, s')) :
+    pd.anchorMismatch? = none := by
+  unfold annotDeclStep at h
+  cases hm : pd.anchorMismatch? with
+  | none => rfl
+  | some k => rw [hm] at h; exact nomatch h
+
 set_option maxHeartbeats 2000000 in
 /-- **One step of the run, with the model**: the cons case of
 `installRun_model`, as a lemma of its own — phase A's step at a record,
@@ -302,6 +314,7 @@ theorem annotStepC_model (hμ : μ.verifiedChecks = true)
     {s s₁ : CState md} {q : Nat × FEnv md × Array (PendingCheck md)} {new₁ : List (PendingCheck md)}
     (hfe : fe = mkFEnv fe.env) (hfe₁ : fe₁ = mkFEnv fe₁.env)
     (hm : EnvModelOk V μ fe.env)
+    (hanc : pd.anchorMismatch? = none)
     (hstepC : annotStepC μ ev i fe pend pd s = .ok ((fe₁, pend₁), s₁))
     (hchainF : PushChain fe₁.env q.2.1)
     (hpend₁ : q.2.2.toList = pend₁.toList ++ new₁)
@@ -362,6 +375,11 @@ theorem annotStepC_model (hμ : μ.verifiedChecks = true)
       exact ⟨hm₁, hres₁, F', hdrel ▸ hF⟩
     cases pd with
     | defnDecl cv val hint =>
+      have hct : cv.name.isCompilerTrust = false := by
+        simp only [Declaration.anchorMismatch?] at hanc
+        cases h : cv.name.isCompilerTrust with
+        | false => rfl
+        | true => simp [h] at hanc
       unfold annotStepC at hstepC
       simp only [] at hstepC
       split at hstepC
@@ -381,11 +399,16 @@ theorem annotStepC_model (hμ : μ.verifiedChecks = true)
         intro F hC
         have hnat' : (natOpNames.contains cv.name || natDivModNames.contains cv.name) = false :=
           Bool.not_eq_true _ ▸ hnat
-        exact ⟨max F₁ F, checkDecl_of_split_defn hnat' rfl
+        exact ⟨max F₁ F, checkDecl_of_split_defn hct hnat' rfl
           (installConstantVal_mono (Nat.le_max_left _ _) hI)
           (installValue_mono (Nat.le_max_left _ _) hV)
           (checkValueGroup_mono (Nat.le_max_right _ _) hC)⟩
     | thmDecl cv val =>
+      have hct : cv.name.isCompilerTrust = false := by
+        simp only [Declaration.anchorMismatch?] at hanc
+        cases h : cv.name.isCompilerTrust with
+        | false => rfl
+        | true => simp [h] at hanc
       -- phase A installed the header alone: the reset, the header's
       -- install half, the push of the RAW value
       unfold annotStepC at hstepC
@@ -406,27 +429,38 @@ theorem annotStepC_model (hμ : μ.verifiedChecks = true)
         rfl
         hs₂.residue rfl rfl (by rw [hcvA]; exact hwty) (fun h => absurd rfl h) ?_
       intro F hC
-      exact ⟨max F₁ F, checkDecl_of_split_thm rfl
+      exact ⟨max F₁ F, checkDecl_of_split_thm hct rfl
         (installConstantVal_mono (Nat.le_max_left _ _) hI) rfl
         (checkValueGroup_mono (Nat.le_max_right _ _) hC)⟩
     | opaqueDecl cv val =>
+      have hcta : cv.name.isCompilerTrustAxiom = false := by
+        simp only [Declaration.anchorMismatch?] at hanc
+        cases h : cv.name.isCompilerTrustAxiom with
+        | false => rfl
+        | true => simp [h] at hanc
       unfold annotStepC at hstepC
       simp only [] at hstepC
-      obtain ⟨r, s₁', hval, hp⟩ := bindC_ok hstepC
-      obtain ⟨cvA, jty, jv⟩ := r
-      obtain ⟨hv, rfl⟩ := pureC_ok hp
-      simp only [Prod.mk.injEq] at hv
-      obtain ⟨rfl, rfl⟩ := hv
-      rw [hfe] at hval
-      obtain ⟨hres₁, hcvA, hwty, hwv, F₁, hI, hV⟩ := annotValueC_run hμ henv hval
-      refine value .opaque (fun cvA _ => .axiomInfo cvA) (.opaqueDecl cv val)
-        cvA jv rfl
-        hres₁ rfl rfl (by rw [hcvA]; exact hwty) (fun _ => hwv) ?_
-      intro F hC
-      exact ⟨max F₁ F, checkDecl_of_split_opaque rfl
-        (installConstantVal_mono (Nat.le_max_left _ _) hI)
-        (installValue_mono (Nat.le_max_left _ _) hV)
-        (checkValueGroup_mono (Nat.le_max_right _ _) hC)⟩
+      by_cases hct : cv.name.isCompilerTrustOpaque = true
+      · rw [if_pos hct] at hstepC
+        exact ordinary _ hstepC
+      · rw [if_neg hct] at hstepC
+        have hnot : cv.name.isCompilerTrustOpaque = false :=
+          Bool.eq_false_iff.mpr hct
+        obtain ⟨r, s₁', hval, hp⟩ := bindC_ok hstepC
+        obtain ⟨cvA, jty, jv⟩ := r
+        obtain ⟨hv, rfl⟩ := pureC_ok hp
+        simp only [Prod.mk.injEq] at hv
+        obtain ⟨rfl, rfl⟩ := hv
+        rw [hfe] at hval
+        obtain ⟨hres₁, hcvA, hwty, hwv, F₁, hI, hV⟩ := annotValueC_run hμ henv hval
+        refine value .opaque (fun cvA _ => .axiomInfo cvA) (.opaqueDecl cv val)
+          cvA jv rfl
+          hres₁ rfl rfl (by rw [hcvA]; exact hwty) (fun _ => hwv) ?_
+        intro F hC
+        exact ⟨max F₁ F, checkDecl_of_split_opaque hnot hcta rfl
+          (installConstantVal_mono (Nat.le_max_left _ _) hI)
+          (installValue_mono (Nat.le_max_left _ _) hV)
+          (checkValueGroup_mono (Nat.le_max_right _ _) hC)⟩
     | axiomDecl cv => unfold annotStepC at hstepC; exact ordinary _ hstepC
     | basisDecl kind => unfold annotStepC at hstepC; exact ordinary _ hstepC
     | quotDecl k cv => unfold annotStepC at hstepC; exact ordinary _ hstepC
@@ -454,6 +488,7 @@ theorem installRun_model (hμ : μ.verifiedChecks = true) {ds : List (Declaratio
   | @cons pd ds p p₁ q s s₁ s' hstep rest ih =>
     intro hfe hm hnd hB
     obtain ⟨i, fe, pend⟩ := p
+    have hanc := annotDeclStep_anchor_none hstep
     obtain ⟨fe₁, pend₁, rfl, hstepC⟩ := annotDeclStep_ok hstep
     simp only at hfe hstepC
     obtain ⟨hpush₁, -⟩ :=
@@ -461,7 +496,7 @@ theorem installRun_model (hμ : μ.verifiedChecks = true) {ds : List (Declaratio
     have hfe₁ : fe₁ = mkFEnv fe₁.env := hpush₁.canon
     obtain ⟨hchainF, new₁, hpend₁⟩ := installRun_trace μ rest (PushChain.self hfe₁)
     obtain ⟨hm₁, -, -⟩ :=
-      annotStepC_model hμ hfe hfe₁ hm hstepC hchainF hpend₁ hnd hB
+      annotStepC_model hμ hfe hfe₁ hm hanc hstepC hchainF hpend₁ hnd hB
     exact ih hfe₁ hm₁ hnd hB
 
 /-! ## The letters on the fully checked environment -/

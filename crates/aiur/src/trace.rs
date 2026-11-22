@@ -897,18 +897,48 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       {
         return Err("query record is missing depth heights".into());
       }
-      if table.depths().iter().any(|&d| !self.program.field.contains(d)) {
+      let depths = table.depths();
+      #[cfg(feature = "parallel")]
+      let bad_depth = if depths.len() >= 4096 {
+        depths.par_iter().any(|&d| !self.program.field.contains(d))
+      } else {
+        depths.iter().any(|&d| !self.program.field.contains(d))
+      };
+      #[cfg(not(feature = "parallel"))]
+      let bad_depth = depths.iter().any(|&d| !self.program.field.contains(d));
+      if bad_depth {
         return Err("query record depth reaches field characteristic".into());
       }
-      for row in 0..table.len() {
+      let check_in =
+        !B::ALL_ELEMENTS_VALID || self.program.inputs[i].has_shape_checks();
+      let check_out =
+        !B::ALL_ELEMENTS_VALID || self.program.outputs[i].has_shape_checks();
+      let validate_row = |row: usize| -> Result<(), String> {
         let output = table.output(row);
         if output.multiplicity == 0 {
           return Err("incomplete query record".into());
         }
-        self.program.inputs[i]
-          .validate(table.input(row), self.program.field)?;
-        self.program.outputs[i].validate(output.output, self.program.field)?;
+        if check_in {
+          self.program.inputs[i]
+            .validate(table.input(row), self.program.field)?;
+        }
+        if check_out {
+          self.program.outputs[i]
+            .validate(output.output, self.program.field)?;
+        }
+        Ok(())
+      };
+      #[cfg(feature = "parallel")]
+      if table.len() >= 4096 {
+        (0..table.len())
+          .into_par_iter()
+          .with_min_len(1024)
+          .try_for_each(validate_row)?;
+      } else {
+        (0..table.len()).try_for_each(validate_row)?;
       }
+      #[cfg(not(feature = "parallel"))]
+      (0..table.len()).try_for_each(validate_row)?;
       Ok::<_, String>(())
     };
     #[cfg(feature = "parallel")]
@@ -920,25 +950,50 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       .try_for_each(validate_table)?;
     #[cfg(not(feature = "parallel"))]
     record.queries.tables.iter().enumerate().try_for_each(validate_table)?;
-    if record
-      .memory
-      .iter()
-      .any(|m| m.address as u128 >= u128::from(self.program.field.modulus()))
-    {
+    if record.memory.max_address().is_some_and(|max| {
+      max as u128 >= u128::from(self.program.field.modulus())
+    }) {
       return Err("ROM exceeds field capacity".into());
     }
-    let validate_memory = |m: crate::memory::MemoryEntryRef<'_, B::Element>| {
-      self
+    // Resolve every used ROM type once rather than hashing `Type` per cell,
+    // and skip element validation on plain-field layouts when every `B::Element`
+    // is canonical by representation.
+    let mut rom_layouts: Vec<Option<&crate::bytecode::Layout>> = Vec::new();
+    let mut needs_cell_validation = false;
+    for (type_id, ty) in record.memory.types_used() {
+      let layout = self
         .program
         .memory_layouts
-        .get(m.cell.r#type)
-        .ok_or("unknown recorded ROM type")?
-        .validate(m.cell.value, self.program.field)
-    };
-    #[cfg(feature = "parallel")]
-    record.memory.par_iter().try_for_each(validate_memory)?;
-    #[cfg(not(feature = "parallel"))]
-    record.memory.iter().try_for_each(validate_memory)?;
+        .get(ty)
+        .ok_or("unknown recorded ROM type")?;
+      if !B::ALL_ELEMENTS_VALID || layout.has_shape_checks() {
+        if rom_layouts.len() <= type_id {
+          rom_layouts.resize(type_id + 1, None);
+        }
+        rom_layouts[type_id] = Some(layout);
+        needs_cell_validation = true;
+      }
+    }
+    if needs_cell_validation {
+      let validate_cell = |index: usize| -> Result<(), String> {
+        let (type_id, words) = record.memory.cell_type_and_words(index);
+        if let Some(layout) = rom_layouts.get(type_id).copied().flatten() {
+          layout.validate(words, self.program.field)?;
+        }
+        Ok(())
+      };
+      #[cfg(feature = "parallel")]
+      if record.memory.len() >= 4096 {
+        (0..record.memory.len())
+          .into_par_iter()
+          .with_min_len(1024)
+          .try_for_each(validate_cell)?;
+      } else {
+        (0..record.memory.len()).try_for_each(validate_cell)?;
+      }
+      #[cfg(not(feature = "parallel"))]
+      (0..record.memory.len()).try_for_each(validate_cell)?;
+    }
     Ok(())
   }
 

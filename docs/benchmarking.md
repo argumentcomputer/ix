@@ -90,6 +90,26 @@ The per-constant Aiur proof pipeline (`aiur`) is disabled: its tool,
 for a formal-backend replacement; until then `aiur-sharded-env` is the Aiur
 benchmark.
 
+`aiur-sharded-env` uses one resident formal-bytecode host, sharing the checked
+program and backend across all available execution workers. Record reservations
+bound concurrent memory; `--ram-budget 100` remains a 100 GiB destination
+proof budget for each leaf regardless of worker count. Execution uses 85% of
+available host memory by default; `--exec-ram` sets a separate execution limit
+in GiB. `ix check --jobs 1`
+provides the sequential control.
+
+`check-time` measures shared host setup and the initial manifest batch, including
+witness construction, execution and resource planning, but excluding environment
+loading. Like the legacy batch timer, it includes one backend setup and ends
+before split waves.
+`check-total-time` additionally measures all split/re-execution waves;
+`setup-time` records shared controller startup. `execution-work-time` and
+`planning-work-time` sum worker durations and must not be added to wall time.
+The JSON report records the `formal-bytecode` engine; historical main results
+used generated native execution, so engine comparisons still need matching
+inputs, partition, hardware and concurrency. The workflow uploads the report
+and resident event/pool diagnostics next to its comparison table.
+
 ### Circuit cost profiling
 
 The legacy profilers (`proving-profile`, `function-grouping`) and native timing

@@ -167,6 +167,48 @@ def joinCrossBinding (klass : Address) (left right : CheckEnvTrees) : CheckEnvTr
   { joined with ctx := { left.ctx with binding := klass, bindingAssumed := false,
                                        literalClass := true } }
 
+/-- `A7` canonical union of two optional user-axiom trees.
+- `(none, none) ↦ none`
+- `(none, some r) ↦ some r`
+- `(some l, none) ↦ some l`
+- `(some l, some r) ↦` canonical tree over `l.leaves ++ r.leaves` (returning `some l`
+  directly when `l.root == r.root`). -/
+def mergeAxiomTrees (left right : Option Ix.AssumptionTree) : Option Ix.AssumptionTree :=
+  match left, right with
+  | none, none => none
+  | none, some r => some r
+  | some l, none => some l
+  | some l, some r =>
+    if l.root == r.root then some l
+    else Ix.AssumptionTree.canonical (l.leaves ++ r.leaves)
+
+/-- Channel-5 trees needed when `A7` axiom merging combines two distinct non-empty
+user-axiom trees (`aggr_assert_axioms_merge`). Empty on the fast path. -/
+def axiomMergeAdviceTrees (leftAx rightAx outAx : Option Ix.AssumptionTree) :
+    Array Ix.AssumptionTree :=
+  match leftAx, rightAx, outAx with
+  | some lt, some rt, some ot =>
+    if lt.root == rt.root then #[] else #[lt, rt, ot]
+  | _, _, _ => #[]
+
+/-- `A7`-aware flat pair fold merging user-axiom trees alongside subjects and
+typing assumptions. -/
+def joinWithAxioms (left right : CheckEnvTrees)
+    (leftAx rightAx : Option Ix.AssumptionTree) :
+    CheckEnvTrees × Option Ix.AssumptionTree :=
+  let mergedAx := mergeAxiomTrees leftAx rightAx
+  let base := join left right
+  ({ base with ctx := { base.ctx with axioms := mergedAx.map (·.root) } }, mergedAx)
+
+/-- `A7`-aware structural pair fold merging user-axiom trees alongside structural
+subject roots and typing assumptions. -/
+def joinStructuralWithAxioms (left right : CheckEnvTrees)
+    (leftAx rightAx : Option Ix.AssumptionTree) :
+    CheckEnvTrees × Option Ix.AssumptionTree :=
+  let mergedAx := mergeAxiomTrees leftAx rightAx
+  let base := joinStructural left right
+  ({ base with ctx := { base.ctx with axioms := mergedAx.map (·.root) } }, mergedAx)
+
 end CheckEnvTrees
 
 /-- A `Catalog` statement with its members tree: the canonical tree over the

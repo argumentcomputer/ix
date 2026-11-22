@@ -15,6 +15,12 @@ require aiur from "Aiur"
 require ixvm from "IxVM"
 require multiStark from "MultiStark"
 
+require certifri from git
+  "https://github.com/argumentcomputer/CertiFRI" @ "6cc8b2e3acc4c828987d877591fbfaf876e39fd2"
+
+require «certifri-proofs» from git
+  "https://github.com/argumentcomputer/CertiFRI" @ "6cc8b2e3acc4c828987d877591fbfaf876e39fd2" / "Proofs"
+
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
 
@@ -548,7 +554,14 @@ def isFormalOnlyModule (m : Lean.Name) : Bool :=
     m != `Ix.IxVM.Consistency.ReaderAdmission &&
     m != `Ix.IxVM.Consistency.ReaderFootprint) ||
   m == `Ix.IxVM.ConsistencyAudit ||
+  s.startsWith "Ix.Cert.MultiStark." ||
+  s.startsWith "Ix.Cert.MultiStarkRefinement." ||
+  s.startsWith "Ix.Cert.Aggr." ||
+  s.startsWith "Ix.Cert.Compression." ||
+  s.startsWith "Ix.Cert.IxccAiur." ||
+  m == `Ix.Cert.RecordSectionsBridge ||
   m == `Tests.FormalPackageMain ||
+  m == `Tests.Ix.MultiStarkVerifier ||
   m == `Tests.Ix.InstanceSymbols ||
   m == `Tests.Ix.VMSource ||
   m == `Tests.Ix.IxVM.SafeReferencesWalk ||

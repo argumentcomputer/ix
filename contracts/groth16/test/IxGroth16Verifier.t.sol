@@ -60,6 +60,34 @@ contract IxGroth16VerifierTest {
         require(!verifier.verify(proof, claim), "changed commitment proof accepted");
     }
 
+    function testInsufficientGasRevertsOnValidProof() public {
+        IxGroth16Verifier plainVerifier = facade(address(new PlainVerifier()));
+        (bytes memory plainProof, bytes32 plainClaim) = vector("plain");
+        _assertLowGasReverts(plainVerifier, plainProof, plainClaim);
+
+        IxGroth16Verifier wrapperVerifier = facade(address(new WrapperVerifier()));
+        (bytes memory wrapperProof, bytes32 wrapperClaim) = vector("wrapper");
+        _assertLowGasReverts(wrapperVerifier, wrapperProof, wrapperClaim);
+    }
+
+    function _assertLowGasReverts(IxGroth16Verifier verifier, bytes memory proof, bytes32 claim) private view {
+        uint256 threshold = (verifier.VERIFICATION_GAS() * 64) / 63 + 10_000;
+        uint256[4] memory lowBudgets = [uint256(100_000), uint256(200_000), verifier.VERIFICATION_GAS(), threshold - 1];
+        for (uint256 i; i < lowBudgets.length; ++i) {
+            try verifier.verify{gas: lowBudgets[i]}(proof, claim) returns (bool) {
+                revert("low-gas verify returned instead of reverting");
+            } catch Error(string memory reason) {
+                require(
+                    keccak256(bytes(reason)) == keccak256(bytes("insufficient gas")),
+                    "unexpected revert reason"
+                );
+            } catch {
+                revert("expected insufficient gas revert");
+            }
+        }
+        require(verifier.verify{gas: threshold + 20_000}(proof, claim), "valid proof rejected above threshold");
+    }
+
     function testMissingOrDifferentVerifierCodeRejected() public {
         try new IxGroth16Verifier(IGroth16Verifier(address(1)), bytes32(0)) {
             revert("missing verifier accepted");

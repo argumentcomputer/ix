@@ -22,7 +22,7 @@ fn config() -> Config {
     FriParameters {
       log_final_poly_len: 0,
       max_log_arity: 1,
-      num_queries: 2,
+      num_queries: 118,
       commit_proof_of_work_bits: 0,
       query_proof_of_work_bits: 0,
     },
@@ -333,8 +333,18 @@ fn key_transport_constants_and_implementation_equivalence() {
 #[test]
 fn generic_plan_handles_sparse_mixed_heights_and_grinding() {
   let profile = root::Profile::Smoke;
+  let smoke_floor_config = Config::new(
+    CommitmentParameters { log_blowup: 2, cap_height: 0 },
+    FriParameters {
+      log_final_poly_len: 0,
+      max_log_arity: 1,
+      num_queries: 113,
+      commit_proof_of_work_bits: 3,
+      query_proof_of_work_bits: 4,
+    },
+  );
   let (system, key) =
-    System::new(profile.config(), root::circuit_inputs(profile));
+    System::new(smoke_floor_config, root::circuit_inputs(profile));
   let vk = VerifierKey::from_system(&system);
   let plan = VerifierPlan::validate(
     &vk,

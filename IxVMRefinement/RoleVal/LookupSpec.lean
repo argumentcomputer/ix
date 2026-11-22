@@ -153,12 +153,12 @@ private theorem role_of_roles_step (c : ScopedCtx) {args h r h' calls}
   intro rc ap a hargs good hrc ha
   subst hargs
   obtain ⟨tbl, ax, node, hload, hnode, htbl⟩ := hrc
-  cases Obs.«KernelRoles::role_of».obs ev with
-  | Mk_n0 _ _ _ _ _ _ _ _ _ _ _ he100 _ _ =>
+  match Obs.«KernelRoles::role_of».obs ev with
+  | .Mk_n0 (he100 := he100) .. =>
     exact .inl he100
-  | Mk_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ he222 _ _ =>
+  | .Mk_other_other (he222 := he222) .. =>
     exact .inl he222
-  | Mk_other_n1 x_tbl x_limit w20 v36 m37 cs47 v51 m61 cs69 m108 cs119 v122 m125 cs133 v136
+  | .Mk_other_n1 x_tbl x_limit w20 v36 m37 cs47 v51 m61 cs69 m108 cs119 v122 m125 cs133 v136
       _ _ _ _ _ _ _ ld12 ev71 ev49 hne103 op150 ev135 ev121 _ _ _ he215 _ hc217 =>
     rw [hload] at ld12
     rcases hnode with ⟨n, hlim, hn_lt, rfl⟩ | ⟨_, rfl⟩
@@ -191,7 +191,7 @@ private theorem role_of_roles_step (c : ScopedCtx) {args h r h' calls}
           omega⟩
         exact .inr ⟨ro, he215, haddr, hinForce⟩
     · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
-  | Assumed x_tbl w232 cs246 v250 m260 cs268 ld12 ev270 ev248 hc285 =>
+  | .Assumed x_tbl w232 cs246 v250 m260 cs268 ld12 ev270 ev248 hc285 =>
     rw [hload] at ld12
     rcases hnode with ⟨n, _, _, rfl⟩ | ⟨hlim, rfl⟩
     · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
@@ -209,6 +209,11 @@ private theorem role_of_roles_step (c : ScopedCtx) {args h r h' calls}
       · have hbinds : c.binds ro := by simp [ScopedCtx.binds, haddr]
         have hinForce : c.inForce ro := ⟨hbinds, fun m hm => by rw [hlim] at hm; cases hm⟩
         exact .inr ⟨ro, hr, haddr, hinForce⟩
+  | .MkEval_n0 (ld12 := ld12) .. | .MkEval_other_n1 (ld12 := ld12) ..
+  | .MkEval_other_other (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
+    rw [hload] at ld12
+    rcases hnode with ⟨_, _, _, rfl⟩ | ⟨_, rfl⟩ <;>
+      exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
 
 private theorem role_is_roles_step (c : ScopedCtx) (hwf : c.t.wf = true) {args h r h' calls}
     (ev : ObsFn W "KernelRoles::role_is" args h r h' calls) (ih : RolesIH c calls) :
@@ -254,8 +259,8 @@ private theorem role_addr_roles_step (c : ScopedCtx) {args h r h' calls}
   intro rc ro hargs good hrc
   subst hargs
   obtain ⟨tbl, ax, node, hload, hnode, htbl⟩ := hrc
-  cases Obs.«KernelRoles::role_addr».obs ev with
-  | Mk x_tbl x_limit w20 v47 m50 cs58 v61 m64 cs72 v97 m98 cs108 v127 m128 cs138 v142 m151 cs159
+  match Obs.«KernelRoles::role_addr».obs ev with
+  | .Mk x_tbl x_limit w20 v47 m50 cs58 v61 m64 cs72 v97 m98 cs108 v127 m128 cs138 v142 m151 cs159
       ld12 ev74 ev60 heq96 ev110 ev161 ev140 he171 he172 hc173 =>
     rw [hload] at ld12
     rcases hnode with ⟨n, hlim, hn_lt, rfl⟩ | ⟨_, rfl⟩
@@ -284,7 +289,7 @@ private theorem role_addr_roles_step (c : ScopedCtx) {args h r h' calls}
         omega⟩
       exact ⟨a, Bytes.repAddressRef_heapMono₂ addrTy ext_tail ha_m98, haddr, hinForce⟩
     · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
-  | Assumed x_tbl w181 cs195 ld12 ev197 hc214 =>
+  | .Assumed x_tbl w181 cs195 ld12 ev197 hc214 =>
     rw [hload] at ld12
     rcases hnode with ⟨n, _, _, rfl⟩ | ⟨hlim, rfl⟩
     · exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
@@ -299,6 +304,10 @@ private theorem role_addr_roles_step (c : ScopedCtx) {args h r h' calls}
       have hbinds : c.binds ro := by simp [ScopedCtx.binds, haddr]
       have hinForce : c.inForce ro := ⟨hbinds, fun m hm => by rw [hlim] at hm; cases hm⟩
       exact ⟨a, ha_h', haddr, hinForce⟩
+  | .MkEval (ld12 := ld12) .. | .AssumedEval (ld12 := ld12) .. =>
+    rw [hload] at ld12
+    rcases hnode with ⟨_, _, _, rfl⟩ | ⟨_, rfl⟩ <;>
+      exact (RolesAux.ok_construct_ctor_ne (by decide) ld12).elim
 
 private theorem role_used_implicitly_roles_step (c : ScopedCtx) {args h r h' calls}
     (ev : ObsFn W "KernelRoles::role_used_implicitly" args h r h' calls) (ih : RolesIH c calls) :

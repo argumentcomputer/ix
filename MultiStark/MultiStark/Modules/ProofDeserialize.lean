@@ -78,7 +78,6 @@ module ProofDeserialize {
   fn read_u8(stream: Bytes::Stream) -> (UInt8::U8, Bytes::Stream) {
       match (*(stream)) {
         Lists::Node::Cons(byte, rest) => {  (byte, rest) } ,
-        Lists::Node::Nil => {  (UInt8::BYTE_0, (&(Lists::Node::Nil))) } ,
       }
     }
 
@@ -115,12 +114,13 @@ module ProofDeserialize {
       (UInt8::from_field(b), i + 1)
     }
 
-  fn read_u64_at(i: Field) -> (UInt64::U64, Field) {
+  inline fn read_u64_at(i: Field) -> (UInt64::U64, Field) {
       let [b0, b1, b2, b3, b4, b5, b6, b7] = hint::<[Field; 8]>("stark.io.read8", (0, i));
-      ([UInt8::from_field(b0), UInt8::from_field(b1),
-        UInt8::from_field(b2), UInt8::from_field(b3),
-        UInt8::from_field(b4), UInt8::from_field(b5),
-        UInt8::from_field(b6), UInt8::from_field(b7)], i + 8)
+      let (c0, c1) = UInt8::from_fields(b0, b1);
+      let (c2, c3) = UInt8::from_fields(b2, b3);
+      let (c4, c5) = UInt8::from_fields(b4, b5);
+      let (c6, c7) = UInt8::from_fields(b6, b7);
+      ([c0, c1, c2, c3, c4, c5, c6, c7], i + 8)
     }
 
   fn read_count_at(i: Field) -> (Field, Field) {
@@ -165,10 +165,14 @@ module ProofDeserialize {
   fn read_u64_vec_n(i: Field, n: Field) -> (Lists::List<UInt64::U64>, Field) {
       match n {
         0 => {  ((&(Lists::Node::Nil)), i) } ,
-        _ => {
+        1 => {
           let (x, j) = read_u64_at(i);
-          let (rest, j2) = read_u64_vec_n(j, n - 1);
-          ((&(Lists::Node::Cons(x, rest))), j2) } ,
+          ((&(Lists::Node::Cons(x, (&(Lists::Node::Nil))))), j) } ,
+        _ => {
+          let (x0, j0) = read_u64_at(i);
+          let (x1, j1) = read_u64_at(j0);
+          let (rest, j2) = read_u64_vec_n(j1, n - 2);
+          ((&(Lists::Node::Cons(x0, (&(Lists::Node::Cons(x1, rest)))))), j2) } ,
       }
     }
 
@@ -263,7 +267,10 @@ module ProofDeserialize {
     }
 
   inline fn read_merkle_cap_at(i: Field) -> (MerkleCap, Field) {
-      read_digest_vec_at(i)
+      let (n, j0) = read_count_at(i);
+      assert_eq!(n, 1);
+      let (x, j1) = read_digest_at(j0);
+      ((&(Lists::Node::Cons((&(x)), (&(Lists::Node::Nil))))), j1)
     }
 
   inline fn read_merkle_cap_vec(i: Field) -> (Lists::List<MerkleCap>, Field) {
@@ -361,7 +368,7 @@ module ProofDeserialize {
       let (tag, j) = read_u8_at(i);
       match UInt8::to_field(tag) {
         0 => {  (PreprocessedOpt::NoPreprocessed, j) } ,
-        _ => {
+        1 => {
           let (r, j2) = read_opened_round(j);
           (PreprocessedOpt::SomePreprocessed(r), j2) } ,
       }
@@ -382,11 +389,30 @@ module ProofDeserialize {
                 stage_1_opened_values, stage_2_opened_values), j7)
     }
 
+  fn assert_u64_list_lt_p(xs: Lists::List<UInt64::U64>) -> Field {
+      match (*(xs)) {
+        Lists::Node::Nil => {  1 } ,
+        Lists::Node::Cons(x, rest) => {
+          assert_eq!(Goldilocks::gl_lt_p(x), 1);
+          assert_u64_list_lt_p(rest) } ,
+      }
+    }
+
+  fn assert_u64_list_list_lt_p(xss: Lists::List<Lists::List<UInt64::U64>>) -> Field {
+      match (*(xss)) {
+        Lists::Node::Nil => {  1 } ,
+        Lists::Node::Cons(xs, rest) => {
+          assert_eq!(assert_u64_list_lt_p(xs), 1);
+          assert_u64_list_list_lt_p(rest) } ,
+      }
+    }
+
   inline fn read_header(i: Field) -> (ShardHeader, Field) {
       let (active, j0) = read_active(i);
       let (stage_1, j1) = read_merkle_cap_at(j0);
       let (log_degrees, j2) = read_u8_vec(j1);
       let (claims, j3) = read_u64_vec_vec(j2);
+      assert_eq!(assert_u64_list_list_lt_p(claims), 1);
       (ShardHeader::Mk(active, stage_1, log_degrees, claims), j3)
     }
 
@@ -407,7 +433,9 @@ module ProofDeserialize {
 
   inline fn read_message(i: Field) -> (BatchMessage, Field) {
       let (args, j0) = read_u64_vec(i);
+      assert_eq!(assert_u64_list_lt_p(args), 1);
       let (multiplicity, j1) = read_u64_at(j0);
+      assert_eq!(Goldilocks::gl_lt_p(multiplicity), 1);
       (BatchMessage::Mk(args, multiplicity), j1)
     }
 

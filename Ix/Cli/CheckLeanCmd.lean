@@ -64,6 +64,9 @@ structure CheckCfg where
   verbose : Bool := false
   silent : Bool := false
   allowDeclined : Bool := false
+  /-- Require per-record execution telemetry (`--per-const`, `--json`); disables
+  the single-pass `checkWhole`-first shortcut on bound whole-artifact runs. -/
+  perRecord : Bool := false
   progressMs : Nat := 2000
   slowMs : Nat := 7000
   stackBytes : Nat := 256 * 1024 * 1024
@@ -205,13 +208,66 @@ def ArtifactAdmission.ofRun {artifact : Ixon.Env} {limits : Admission.Limits} :
   | .logical receipt => .logical receipt.prepared.records.length
   | .tiered receipt => .tiered receipt.prepared.records.length receipt.tier.length
 
+/-- Installed logical and tier key sets observed from a whole-artifact admission
+receipt, used to verify emitted-key coverage in `wholeOnlyReport` (matching
+`CheckLeanTargets.results`). -/
+private structure WholeCoverage where
+  logicalKeys : Std.HashSet (Key .anon)
+  tierKeys : Std.HashSet (Key .anon)
+
+private def WholeCoverage.ofEnvs (logical : Ix.Kernel.Env .anon)
+    (tier : List (Ix.Kernel.Tier.TierConst .anon)) : WholeCoverage :=
+  { logicalKeys := logical.consts.foldl (fun s ci => s.insert ci.name) {}
+    tierKeys := tier.foldl (fun s tc => s.insert tc.cv.name) {} }
+
+private def WholeCoverage.ofRun {artifact : Ixon.Env} {limits : Admission.Limits} :
+    Ix.HostAdmission.Run artifact limits → WholeCoverage
+  | .logical receipt => WholeCoverage.ofEnvs receipt.target []
+  | .tiered receipt => WholeCoverage.ofEnvs receipt.logical receipt.tier
+
+/-- A certified run's verdict, coverage key sets, and host statement. -/
+private def certifiedVerdictWithCoverage (artifact : Ixon.Env)
+    (run : Ix.HostAdmission.Run artifact artifactLimits) :
+    Except DriverError (Option (ArtifactAdmission × Option Ix.HostAdmission.Statement × WholeCoverage)) := do
+  let statement ← (Ix.HostAdmission.statementOf artifact artifactLimits run).mapError
+    (DriverError.artifact ∘ toString)
+  return some (ArtifactAdmission.ofRun run, some statement, WholeCoverage.ofRun run)
+
 /-- A certified run's verdict and its host statement, derived from the run as
 `HostAdmission.certify` derives it (`HostAdmission.statementOf`). -/
 def certifiedVerdict (artifact : Ixon.Env) (run : Ix.HostAdmission.Run artifact artifactLimits) :
-    Except DriverError (Option (ArtifactAdmission × Option Ix.HostAdmission.Statement)) := do
-  let statement ← (Ix.HostAdmission.statementOf artifact artifactLimits run).mapError
-    (DriverError.artifact ∘ toString)
-  return some (ArtifactAdmission.ofRun run, some statement)
+    Except DriverError (Option (ArtifactAdmission × Option Ix.HostAdmission.Statement)) :=
+  (certifiedVerdictWithCoverage artifact run).map (·.map fun (a, s, _) => (a, s))
+
+/-- Internal whole-artifact admission returning the admitted logical/tier key
+sets alongside the verdict and host statement so `wholeFirst` enforces exact
+emitted-key coverage. -/
+private def checkWholeWithCoverage (p : PreparedInput) (selection : Selection) (maxGroups : Option Nat) :
+    Except DriverError (Option (ArtifactAdmission × Option Ix.HostAdmission.Statement × WholeCoverage)) := do
+  unless (← wholeEntry p selection maxGroups) do return none
+  let artifact := p.parts.env
+  unless p.allowUserAxioms do
+    let ⟨statement, checked⟩ ← (Ix.HostAdmission.certify artifact artifactLimits).mapError
+      (DriverError.artifact ∘ toString)
+    return some (ArtifactAdmission.ofRun checked.run, some statement, WholeCoverage.ofRun checked.run)
+  if p.hasTier then
+    let receipt ← (Ix.RoleBinding.Artifact.checkTieredConditional artifact artifactLimits).mapError
+      (DriverError.artifact ∘ toString)
+    match noAxioms : receipt.axioms with
+    | [] => certifiedVerdictWithCoverage artifact (.tiered (receipt.toTierReceipt noAxioms))
+    | _ :: _ =>
+      return some (.conditional receipt.prepared.records.length (some receipt.tier.length)
+        (Ix.RoleBinding.UserAxioms.addresses receipt.axioms), none,
+        WholeCoverage.ofEnvs receipt.logical receipt.tier)
+  else
+    let receipt ← (Ix.RoleBinding.Artifact.checkConditional artifact artifactLimits).mapError
+      (DriverError.artifact ∘ toString)
+    match noAxioms : receipt.axioms with
+    | [] => certifiedVerdictWithCoverage artifact (.logical (receipt.toReceipt noAxioms))
+    | _ :: _ =>
+      return some (.conditional receipt.prepared.records.length none
+        (Ix.RoleBinding.UserAxioms.addresses receipt.axioms), none,
+        WholeCoverage.ofEnvs receipt.target [])
 
 /-- Route from authenticated record headers before either entry runs. A
 failure never selects another checker. Selected/capped runs make no complete
@@ -225,29 +281,8 @@ with none, its receipt is the certified entry's (T1,
 host statement is derived from it as `certify` derives it; with some, the
 verdict is conditional on them and there is no statement. -/
 def checkWhole (p : PreparedInput) (selection : Selection) (maxGroups : Option Nat) :
-    Except DriverError (Option (ArtifactAdmission × Option Ix.HostAdmission.Statement)) := do
-  unless (← wholeEntry p selection maxGroups) do return none
-  let artifact := p.parts.env
-  unless p.allowUserAxioms do
-    let ⟨statement, checked⟩ ← (Ix.HostAdmission.certify artifact artifactLimits).mapError
-      (DriverError.artifact ∘ toString)
-    return some (ArtifactAdmission.ofRun checked.run, some statement)
-  if p.hasTier then
-    let receipt ← (Ix.RoleBinding.Artifact.checkTieredConditional artifact artifactLimits).mapError
-      (DriverError.artifact ∘ toString)
-    match noAxioms : receipt.axioms with
-    | [] => certifiedVerdict artifact (.tiered (receipt.toTierReceipt noAxioms))
-    | _ :: _ =>
-      return some (.conditional receipt.prepared.records.length (some receipt.tier.length)
-        (Ix.RoleBinding.UserAxioms.addresses receipt.axioms), none)
-  else
-    let receipt ← (Ix.RoleBinding.Artifact.checkConditional artifact artifactLimits).mapError
-      (DriverError.artifact ∘ toString)
-    match noAxioms : receipt.axioms with
-    | [] => certifiedVerdict artifact (.logical (receipt.toReceipt noAxioms))
-    | _ :: _ =>
-      return some (.conditional receipt.prepared.records.length none
-        (Ix.RoleBinding.UserAxioms.addresses receipt.axioms), none)
+    Except DriverError (Option (ArtifactAdmission × Option Ix.HostAdmission.Statement)) :=
+  (checkWholeWithCoverage p selection maxGroups).map (·.map fun (a, s, _) => (a, s))
 
 def success (outcome : String) : Bool := outcome == "accept" || outcome == "typed"
 def CheckReport.targetsCovered (r : CheckReport) : Nat := r.targets.size
@@ -430,10 +465,57 @@ def runMode (p : PreparedInput) (cfg : CheckCfg) (plan : Plan) (cx : Ctx md) (ev
     let _ ← IO.wait reporter
     pure ()
 
+/-- Verify that an inert declaration key (`sorryAx` or `§7.10` compiler-trust)
+which installs nothing into the logical environment was actually emitted by its
+producer record. -/
+private def inertEmittedBy (p : PreparedInput) (t : Target) : Bool :=
+  if t.key == sorryAxName || t.key.isCompilerTrust then
+    match p.record t.producer >>= readRecord p.setup.cx {} t.producer with
+    | .ok rd => (rd.decls.toList.flatMap Benchmarks.Kernel.CheckIxeMeta.declaredKeys).contains t.key
+    | .error _ => false
+  else
+    false
+
+private def wholeOnlyReport (p : PreparedInput) (plan : Plan) (admission : ArtifactAdmission)
+    (statement? : Option Ix.HostAdmission.Statement) (coverage : WholeCoverage)
+    (prepareMs artifactMs elapsedMs : Nat) :
+    Except DriverError CheckReport := do
+  if plan.targets.isEmpty then
+    throw (targetError (.coverage "" "no selected declaration subjects"))
+  let targets ← plan.targets.mapM fun t => do
+    let some prod := p.setup.store[t.producer]?
+      | throw (targetError (.coverage t.label "selected producer has no outcome row"))
+    let isTier := Ix.Kernel.Admission.isTierInfo prod.info
+    let covered :=
+      if isTier then
+        coverage.tierKeys.contains t.key
+      else
+        coverage.logicalKeys.contains t.key || inertEmittedBy p t
+    unless covered do
+      throw (targetError (.coverage t.label "selected key was not emitted by its actual producer"))
+    pure { target := t, outcome := if isTier then "typed" else "accept", reason := "", micros := 0 }
+  let records := match admission with
+    | .logical n | .tiered n _ | .conditional n _ _ => n
+  let userAxioms := match admission with
+    | .conditional _ _ axioms => axioms
+    | _ => #[]
+  return {
+    targets, rows := #[], execution := .serial, omitted := plan.omitted, records,
+    inputMs := p.prepareMs, prepareMs, elapsedMs,
+    subjectMicros := 0, supportMicros := 0, readMicros := 0,
+    bound := true, roles := some (p.setup.table.bound.size, 0),
+    userAxioms, artifactAdmission := some admission, hostStatement := statement?,
+    artifactMs
+  }
+
 /-- Preparation is shareable; every run owns ordinary reclaimable checker
-state. Tier support explicitly chooses one effective worker. The declaration
-checks run first; the whole-artifact entry (`checkWhole`) runs only when they
-all pass. -/
+state (the pool runs with `persist := false`). On a default/quiet whole-artifact
+check of a bound artifact (no `--per-const`, `--json`, `--verbose`,
+`--allow-declined`, `--fail-out`, selection, or cap), `checkWhole` runs first in
+a single pass and falls back to the parallel declaration pool only if
+`checkWhole` rejects, so per-record failure diagnostics are still reported.
+Otherwise declaration checks run first using `cfg.workers` parallel workers and
+`checkWhole` runs only when they all pass. -/
 def runPrepared (p : PreparedInput) (cfg : CheckCfg) (selection : Selection)
     (maxGroups : Option Nat := none) (failOut? : Option IO.FS.Handle := none) : IO (Except DriverError CheckReport) := do
   if cfg.workers == 0 then return .error (.usage "--workers must be greater than zero")
@@ -444,46 +526,71 @@ def runPrepared (p : PreparedInput) (cfg : CheckCfg) (selection : Selection)
     -- an unresolved thin whole run declines before any declaration is checked
     let whole ← match wholeEntry p selection maxGroups with
       | .ok w => pure w | .error e => return .error e
-    if !cfg.silent then IO.eprintln s!"{cfg.tag} {plan.targets.size} selected subjects, {plan.producers.size} producers, {plan.addresses.size} support/prelude records; workers requested {cfg.workers}, effective 1 (serial typing tier); {plan.omitted.size} omitted by cap"
-    let declarations : IO (Except DriverError CheckReport) ← if p.anon then
-      pure (runMode p cfg plan p.setup.cx p.setup.evidence id id id toString start failOut?)
-    else do
-      let mut included := plan.addresses.foldl (fun (s : Std.HashSet Address) a => s.insert a) {}
-      for a in plan.addresses do
-        for r in recursorRecords p.setup.cx.index a do included := included.insert r
-      let mut env := p.parts.env
-      for row in p.parts.namedRows do
-        if (p.setup.store[row.addr]?).any (fun c => included.contains (owner row.addr c)) then
-          let named ← IO.ofExcept (row.materialize p.parts.backing p.parts.nameRev)
-          env := { env with named := env.named.insert row.name named }
-      let pre : Prelude .meta ← IO.ofExcept <| if p.bound then do
-          let pre ← readPrelude p.setup.table p.pre.records #[] p.pre.blobs
-          checkPreludeShape pre
-          checkFallbackRecursors pre
-          pure pre
-        else preludeFor p.setup.table
-      let (cx, ev) := metaContext p.setup (env.blobs[·]?) p.setup.table pre p.hints.lookup
-      let display := displayTable env cx
-      let nc : Ix.KernelDisplay.NameCx := ⟨env.names, Ix.KernelDisplay.metaTable env cx⟩
-      pure (runMode p cfg plan cx ev (fun k => Key.map (md := .meta) (md' := .anon) id k)
-        (fun rd => (Ix.KernelDisplay.nameRead nc (withDisplay display rd)).1)
-        (fun d => (nameTier nc d {}).1) (spellWith display) start failOut?)
+    if !cfg.silent then IO.eprintln s!"{cfg.tag} {plan.targets.size} selected subjects, {plan.producers.size} producers, {plan.addresses.size} support/prelude records; workers {cfg.workers}; {plan.omitted.size} omitted by cap"
+    let runDeclarations : IO (Except DriverError CheckReport) := do
+      if p.anon then
+        runMode p cfg plan p.setup.cx p.setup.evidence id id id toString start failOut?
+      else
+        let mut included := plan.addresses.foldl (fun (s : Std.HashSet Address) a => s.insert a) {}
+        for a in plan.addresses do
+          for r in recursorRecords p.setup.cx.index a do included := included.insert r
+        let mut env := p.parts.env
+        for row in p.parts.namedRows do
+          if (p.setup.store[row.addr]?).any (fun c => included.contains (owner row.addr c)) then
+            let named ← IO.ofExcept (row.materialize p.parts.backing p.parts.nameRev)
+            env := { env with named := env.named.insert row.name named }
+        let pre : Prelude .meta ← IO.ofExcept <| if p.bound then do
+            let pre ← readPrelude p.setup.table p.pre.records #[] p.pre.blobs
+            checkPreludeShape pre
+            checkFallbackRecursors pre
+            pure pre
+          else preludeFor p.setup.table
+        let (cx, ev) := metaContext p.setup (env.blobs[·]?) p.setup.table pre p.hints.lookup
+        let display := displayTable env cx
+        let nc : Ix.KernelDisplay.NameCx := ⟨env.names, Ix.KernelDisplay.metaTable env cx⟩
+        runMode p cfg plan cx ev (fun k => Key.map (md := .meta) (md' := .anon) id k)
+          (fun rd => (Ix.KernelDisplay.nameRead nc (withDisplay display rd)).1)
+          (fun d => (nameTier nc d {}).1) (spellWith display) start failOut?
+    let wholeFirst := whole && !cfg.allowDeclined && !cfg.verbose && !cfg.perRecord && failOut?.isNone
     let run : IO (Except DriverError CheckReport) := do
-      match ← declarations with
-      | .error e => return .error e
-      | .ok report =>
-        let report := { report with
-          bound := p.bound, roles := if whole then some (roleCounts p report.rows) else none }
-        if !whole || cfg.allowDeclined || !report.failures.isEmpty then return .ok report
-        let started ← IO.monoMsNow
-        let admitted ← IO.lazyPure fun _ => checkWhole p selection maxGroups
-        let elapsed := (← IO.monoMsNow) - started
+      if wholeFirst then
+        let wholeStart ← IO.monoMsNow
+        let admitted ← IO.lazyPure fun _ => checkWholeWithCoverage p selection maxGroups
+        let now ← IO.monoMsNow
+        let artifactMs := now - wholeStart
         match admitted with
+        | .ok (some (admission, statement?, coverage)) =>
+          return wholeOnlyReport p plan admission statement? coverage
+            (wholeStart - start) artifactMs (now - start)
+        | .ok none =>
+          match ← runDeclarations with
+          | .error e => return .error e
+          | .ok report =>
+            return .ok { report with bound := p.bound, roles := some (roleCounts p report.rows) }
+        | .error wholeErr =>
+          match ← runDeclarations with
+          | .error e => return .error e
+          | .ok report =>
+            let report := { report with
+              bound := p.bound, roles := some (roleCounts p report.rows) }
+            if !report.failures.isEmpty then return .ok report
+            return .error wholeErr
+      else
+        match ← runDeclarations with
         | .error e => return .error e
-        | .ok admission =>
-          return .ok { report with
-            artifactAdmission := admission.map (·.1), hostStatement := admission.bind (·.2)
-            artifactMs := elapsed }
+        | .ok report =>
+          let report := { report with
+            bound := p.bound, roles := if whole then some (roleCounts p report.rows) else none }
+          if !whole || cfg.allowDeclined || !report.failures.isEmpty then return .ok report
+          let started ← IO.monoMsNow
+          let admitted ← IO.lazyPure fun _ => checkWhole p selection maxGroups
+          let elapsed := (← IO.monoMsNow) - started
+          match admitted with
+          | .error e => return .error e
+          | .ok admission =>
+            return .ok { report with
+              artifactAdmission := admission.map (·.1), hostStatement := admission.bind (·.2)
+              artifactMs := elapsed }
     if cfg.stackBytes != 0 then Ix.Runtime.setLeanThreadStackSize (USize.ofNat cfg.stackBytes)
     IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) run))
   catch e => return .error (.infrastructure e.toString)
@@ -514,6 +621,7 @@ def checkConfig (p : Cli.Parsed) : IO (Except DriverError CheckCfg) := do
   let slow ← envNat ["IX_KERNEL_CHECK_SLOW_MS"] 7000
   return do pure {
     workers, verbose := p.hasFlag "verbose", allowDeclined := p.hasFlag "allow-declined"
+    perRecord := (p.flag? "per-const").isSome || (p.flag? "json").isSome
     progressMs := ← progress, slowMs := ← slow }
 
 private def csvField (s : String) : String :=
@@ -653,7 +761,7 @@ def runPerName (o : Options) (p : PreparedInput) (json : String) :
     else index
   let key (name : String) := match o.jsonName? with | some stem => s!"{stem}/{name}" | none => name
   let mut merged : CheckReport := {
-    targets := #[], execution := .serialTier (some o.cfg.workers), omitted := #[], records := 0
+    targets := #[], execution := .pool o.cfg.workers, omitted := #[], records := 0
     inputMs := p.prepareMs, prepareMs := 0, elapsedMs := 0, subjectMicros := 0, supportMicros := 0
     readMicros := 0, bound := p.bound }
   let mut userAxioms : Std.HashSet Address := {}
@@ -779,7 +887,7 @@ def checkLeanCmd : Cli.Cmd := `[Cli|
   "Check authenticated .ixe declarations with IxC (bound whole inputs use actual artifact admission; meta display by default). Strict: a safe axiom other than propext, Classical.choice and Quot.sound declines unless --allow-user-axioms. Exit 0: everything asked for passed; 3: a declaration failed or the artifact was refused; 4: every declaration passed but the whole artifact, asked for, carries no role binding, so its admission did not run; 5: CONDITIONAL, everything passed only with the listed user axioms admitted (--allow-user-axioms); 2: usage, including a selector naming no declaration and a host statement the run could not issue; 1: infrastructure"
   FLAGS:
     anon; "Anonymous keys and #hex display labels"
-    workers : Nat; "Requested workers (>0); the tier-capable path reports effective 1"
+    workers : Nat; "Worker threads for parallel checking (>0)"
     "allow-user-axioms"; "Admit safe axioms beyond the standard three; the role binding must bind sorryAx, propext and Classical.choice. A whole run whose declarations hold any runs the uncertified conditional entry, lists the axioms, issues no host statement and exits 5; so does a selected run that reads one"
     "allow-declined"; "Record-check mode: tolerate declarations outside IxC's fragment (decline) and their dependents (blocked), failing with exit 3 only on a kernel or reader reject; skips whole-artifact admission and issues no host statement"
     "fail-out" : String; "Write failing selected labels in consts-file format"

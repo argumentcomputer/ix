@@ -721,7 +721,7 @@ theorem check_witness_spec {calls : List (Call F)} {bAddr : _root_.Address}
           recordOf E₀ ib = some cib ∧ ConstAddrOf ib cib (Core.ixAddr b_x))) := by
   match Obs.«KernelModeled::check_witness».obs ev with
   | .n0 (hv14 := hk0) (ev28 := evRo) (ev69 := evZ) (heq84 := hz0) (op124 := opSub)
-      (ev109 := evBas) (heq132 := hbas1) (ev146 := evRct) (he164 := hr) (he165 := hh) .. =>
+      (ev109 := evBas) (heq132 := hbas1) (ev_uyteqsqx := evStrip) (ev146 := evRct) (he164 := hr) (he165 := hh) .. =>
     obtain ⟨extRo, hro⟩ := RoleVal.role_of_admit_spec hrc.toRCRep ⟨b_x, hx, rfl⟩ evRo
     rcases hro with hv0 | ⟨ro, hvRo, haddrRo, -⟩
     · rw [hv0] at evZ
@@ -735,7 +735,8 @@ theorem check_witness_spec {calls : List (Call F)} {bAddr : _root_.Address}
       obtain ⟨-, hgrp, hwk⟩ := basis_role_allowed_spec evBas rfl
       have extAll : Heap.Extends h h' := by
         rw [hh]
-        exact extRo.trans (evZ.heap_extends.trans (evBas.heap_extends.trans evRct.heap_extends))
+        exact extRo.trans (evZ.heap_extends.trans (evBas.heap_extends.trans
+          (evStrip.heap_extends.trans evRct.heap_extends)))
       exact ⟨⟨bytes, by rw [hr]; exact Ingress.Stream.mono extAll hs⟩,
         Or.inl ⟨ro, haddrRo, hgrp, hwk⟩⟩
   | .n1 (hv171 := hk1) (ev185 := evCnt) (cs_jruoheya := csW) (ev_lbttumfo := evW)
@@ -783,7 +784,7 @@ theorem check_witness_spec {calls : List (Call F)} {bAddr : _root_.Address}
     exact ⟨⟨bytes3, by rw [hr, hh]; exact Ingress.Stream.mono extTail hs3⟩,
       Or.inr (Or.inl ⟨hpos, hnb, c, hrec, hprojFacts⟩)⟩
   | .n2 (hv314 := hk2) (ev328 := evCnt) (cs_gfiphqsh := csW) (ev_dpuowbtw := evW)
-      (cs412 := csCr) (ev414 := evCr) (ev_yqkzbtyw := evCov)
+      (ev_kjcbizia := evStrip) (cs412 := csCr) (ev414 := evCr) (ev_yqkzbtyw := evCov)
       (he440 := hr) (he441 := hh) (hc442 := hcs) .. =>
     obtain ⟨n, bytes2, -, hnEq, hs2, hm316⟩ := get_count_spec hs evCnt
     subst hnEq hm316
@@ -792,6 +793,8 @@ theorem check_witness_spec {calls : List (Call F)} {bAddr : _root_.Address}
     obtain ⟨b_ib, bytes3, hbIb, hs3, hpos⟩ :=
       walk_from_block_spec hC.runStore hC.hashedStored hblk hs2 evW hsubW
     have extW := evW.heap_extends
+    obtain ⟨hrcStrip, hmStrip⟩ := Decl.check_family_seg_nil_of_rc (hrc.mono extW).axiomsNil evStrip
+    subst hrcStrip hmStrip
     have extTail := evCr.heap_extends.trans evCov.heap_extends
     exact ⟨⟨bytes3, by rw [hr, hh]; exact Ingress.Stream.mono extTail hs3⟩,
       Or.inr (Or.inr (Or.inl ⟨hk2, Core.ixAddr b_ib, hpos, _, _, _, _, _, _, csCr,
@@ -928,11 +931,14 @@ theorem check_witnesses_spec {calls : List (Call F)} {bAddr : _root_.Address}
     | .other (m47 := m47) (cs57 := cs57) (x_x := x_x) (x_s2 := x_s2)
         (m82 := m82) (cs92 := cs92) (x_kind := x_kind) (x_s3 := x_s3)
         (m_phvyohte := m_ord) (cs_sjcjqvwo := cs_ord)
+        (m_pxkpudqu := m_ax) (cs_pghyfrde := cs_ax)
+        (m_ntilvixg := m_lkp) (cs_tjipnkek := cs_lkp)
         (v116 := v_ns) (m117 := m117) (cs127 := cs127)
         (v133 := v_kf) (m157 := m157) (cs165 := cs165)
         (m184 := m184) (cs194 := cs194) (v200 := v200) (x_rest := x_rest) (x_s5 := x_s5')
         (m256 := m256) (hne42 := hne)
         (ev59 := evAddr) (ev94 := evByte) (ev_updedcyj := evOrd)
+        (ev_zctcgyek := evAx) (ev_gspkxwao := evLkp)
         (ev167 := evU8) (ev129 := evWit) (op235 := opSub) (ev196 := evRec)
         (he254 := hr) (hm264 := hm) (he291 := hh) (hc292 := hcs) .. =>
       injection hr with hargs
@@ -957,7 +963,9 @@ theorem check_witnesses_spec {calls : List (Call F)} {bAddr : _root_.Address}
         assert_in_order_spec hrc82 ⟨b_x, hbx82, rfl⟩ evOrd
       obtain ⟨hvfEq, hm157⟩ := Lib.u8_to_field_spec evU8
       have extA82 : Heap.Extends h m82 := by rw [hm82]; exact extA
-      have extOrd157 : Heap.Extends m82 m157 := by rw [hm157]; exact evOrd.heap_extends
+      have extOrd157 : Heap.Extends m82 m157 := by
+        rw [hm157]
+        exact evOrd.heap_extends.trans (evAx.heap_extends.trans evLkp.heap_extends)
       have ext157 : Heap.Extends h m157 := extA82.trans extOrd157
       have hsub127 : ∀ cl ∈ cs127, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have hsub194 : ∀ cl ∈ cs194, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
@@ -1004,14 +1012,14 @@ theorem check_witnesses_spec {calls : List (Call F)} {bAddr : _root_.Address}
           · exact Or.inl h0
           · exact Or.inr (Or.inl h1)
           · subst hk2
-            exact Or.inr (Or.inr (Or.inl (DirectContWitness.head hne evAddr evByte evOrd evU8
-              evWit rfl evRec ⟨b, hbx157, rfl⟩ rfl hm hh hcs)))
+            exact Or.inr (Or.inr (Or.inl (DirectContWitness.head hne evAddr evByte evOrd evAx
+              evLkp evU8 evWit rfl evRec ⟨b, hbx157, rfl⟩ rfl hm hh hcs)))
           · exact Or.inr (Or.inr (Or.inr h3))
         · rcases hrestDc b hb' with h0 | h1 | h2 | h3
           · exact Or.inl h0
           · exact Or.inr (Or.inl h1)
-          · exact Or.inr (Or.inr (Or.inl (DirectContWitness.tail hne evAddr evByte evOrd evU8
-              evWit rfl evRec h2 rfl hm hh hcs)))
+          · exact Or.inr (Or.inr (Or.inl (DirectContWitness.tail hne evAddr evByte evOrd evAx
+              evLkp evU8 evWit rfl evRec h2 rfl hm hh hcs)))
           · exact Or.inr (Or.inr (Or.inr h3))
 
 /-- Two represented address lists at the same heap and pointer are equal. -/
@@ -1059,9 +1067,9 @@ theorem DirectContWitness.extract {calls : List (Call F)} {bAddr : _root_.Addres
             ObsFn Obs.W "KernelModeled::check_container_rec" [rc₁, xx₁, xib₁] h₁ r₁ h₂ cs₁ ∧
             (∀ cl ∈ cs₁, cl ∈ calls) ∧ cs₁.length < cs.length := by
   induction hdw with
-  | @head x_s x_n x_out x_s' h h' cs m47 m82 m_ord m157 m117 m184 m256
-      x_x x_s2 x_kind x_s3 v_ord v_ns x_rest v200 cs57 cs92 cs_ord cs165 cs127 cs194
-      hne evAddr evByte evOrd evU8 evWit opSub evRec hx hr hm hh hcs =>
+  | @head x_s x_n x_out x_s' h h' cs m47 m82 m_ord m_ax m_lkp m157 m117 m184 m256
+      x_x x_s2 x_kind x_s3 v_ord v_ax v_lkp v_ns x_rest v200 cs57 cs92 cs_ord cs_ax cs_lkp cs165 cs127 cs194
+      hne evAddr evByte evOrd evAx evLkp evU8 evWit opSub evRec hx hr hm hh hcs =>
     intro b_blk bytes hrc hblk hs hsub
     obtain ⟨b_x, rem2, x_t, x_s2', -, htupA, hbX, hs2, extA, -⟩ :=
       Decl.get_address_spec hs evAddr
@@ -1081,7 +1089,9 @@ theorem DirectContWitness.extract {calls : List (Call F)} {bAddr : _root_.Addres
       assert_in_order_spec hrc82 ⟨b_x, hbx82, rfl⟩ evOrd
     obtain ⟨-, hm157⟩ := Lib.u8_to_field_spec evU8
     have extA82 : Heap.Extends h m82 := by rw [hm82]; exact extA
-    have ext82_157 : Heap.Extends m82 m157 := by rw [hm157]; exact evOrd.heap_extends
+    have ext82_157 : Heap.Extends m82 m157 := by
+      rw [hm157]
+      exact evOrd.heap_extends.trans (evAx.heap_extends.trans evLkp.heap_extends)
     have ext157 : Heap.Extends h m157 := extA82.trans ext82_157
     have hbx157 := Bytes.repAddressRef_heapMono₂ Core.addrTy ext82_157 hbx82
     have hs3_82 : Ingress.Stream m82 rem3 x_s3 := by rw [hm82]; exact hs3
@@ -1097,9 +1107,10 @@ theorem DirectContWitness.extract {calls : List (Call F)} {bAddr : _root_.Addres
     | .n0 (hv14 := h0) .. => exact absurd (Value.field.inj h0) (by decide)
     | .n1 (hv171 := h1) .. => exact absurd (Value.field.inj h1) (by decide)
     | .n3 (hv447 := h3) .. => exact absurd (Value.field.inj h3) (by decide)
-    | .n2 (m_gmdkwlsb := mCr) (x_iblock := x_iblock) (ev328 := evCnt) (cs_gfiphqsh := csW)
-        (ev_dpuowbtw := evW) (cs412 := csCr) (ev414 := evCr) (ev_yqkzbtyw := evCov)
-        (he440 := hrW) (he441 := hhW) (hc442 := hcsW) .. =>
+    | .n2 (m_gmdkwlsb := mCr) (v_mbqavbbq := rcStrip) (m_hyzicuve := mStrip)
+        (x_iblock := x_iblock) (ev328 := evCnt) (cs_gfiphqsh := csW)
+        (ev_dpuowbtw := evW) (ev_kjcbizia := evStrip) (cs412 := csCr) (ev414 := evCr)
+        (ev_yqkzbtyw := evCov) (he440 := hrW) (he441 := hhW) (hc442 := hcsW) .. =>
       obtain ⟨_, bytes2, -, hnEq, hs2', hm316⟩ :=
         get_count_spec (Ingress.Stream.mono ext82_157 hs3_82) evCnt
       subst hnEq hm316
@@ -1110,6 +1121,9 @@ theorem DirectContWitness.extract {calls : List (Call F)} {bAddr : _root_.Addres
           (Bytes.repAddressRef_heapMono₂ Core.addrTy ext157 hblk)
           hs2' evW hsubW
       have extW := evW.heap_extends
+      obtain ⟨hrcStrip, hmStrip⟩ :=
+        Decl.check_family_seg_nil_of_rc (hrc.mono (ext157.trans extW)).axiomsNil evStrip
+      subst rcStrip mStrip
       have hcrCall : ContainerRecIn cs (Core.ixAddr b_x) := by
         refine ⟨x_rc, x_x, x_iblock, mCr, ?_,
           ⟨b_x, Bytes.repAddressRef_heapMono₂ Core.addrTy extW hbx157, rfl⟩⟩
@@ -1144,9 +1158,9 @@ theorem DirectContWitness.extract {calls : List (Call F)} {bAddr : _root_.Addres
         ⟨b_x, Bytes.repAddressRef_heapMono₂ Core.addrTy extW hbx157, rfl⟩,
         ⟨b_ib, hbIb, rfl⟩,
         evCr, hsubCr, by rw [hcs, hcsW]; simp; omega⟩
-  | @tail x_s x_n x_out x_s' h h' cs m47 m82 m_ord m157 m117 m184 m256
-      x_x x_s2 x_kind x_s3 v_ord v_kf v_ns x_rest v200 cs57 cs92 cs_ord cs165 cs127 cs194
-      hne evAddr evByte evOrd evU8 evWit opSub evRec htail hr hm hh hcs ih =>
+  | @tail x_s x_n x_out x_s' h h' cs m47 m82 m_ord m_ax m_lkp m157 m117 m184 m256
+      x_x x_s2 x_kind x_s3 v_ord v_ax v_lkp v_kf v_ns x_rest v200 cs57 cs92 cs_ord cs_ax cs_lkp cs165 cs127 cs194
+      hne evAddr evByte evOrd evAx evLkp evU8 evWit opSub evRec htail hr hm hh hcs ih =>
     intro b_blk bytes hrc hblk hs hsub
     obtain ⟨b_x, rem2, x_t, x_s2', -, htupA, hbX, hs2, extA, -⟩ :=
       Decl.get_address_spec hs evAddr
@@ -1162,7 +1176,9 @@ theorem DirectContWitness.extract {calls : List (Call F)} {bAddr : _root_.Addres
     subst h1B h3B
     obtain ⟨-, hm157⟩ := Lib.u8_to_field_spec evU8
     have extA82 : Heap.Extends h m82 := by rw [hm82]; exact extA
-    have ext82_157 : Heap.Extends m82 m157 := by rw [hm157]; exact evOrd.heap_extends
+    have ext82_157 : Heap.Extends m82 m157 := by
+      rw [hm157]
+      exact evOrd.heap_extends.trans (evAx.heap_extends.trans evLkp.heap_extends)
     have ext157 : Heap.Extends h m157 := extA82.trans ext82_157
     have hbx157 := Bytes.repAddressRef_heapMono₂ Core.addrTy ext82_157 (by rw [hm82]; exact hbX)
     have hs3_82 : Ingress.Stream m82 rem3 x_s3 := by rw [hm82]; exact hs3
@@ -1212,17 +1228,17 @@ private theorem directContWitness_toContainerRecIn {rc xb : SourceValue F} {x : 
     (hdw : DirectContWitness rc xb x x_s x_n x_out x_s' h h' cs_ws) :
     ContainerRecIn cs_ws x := by
   induction hdw with
-  | head _ _ _ _ _ evWit _ _ hx _ _ _ hcs =>
+  | head _ _ _ _ _ _ _ evWit _ _ hx _ _ _ hcs =>
     match Obs.«KernelModeled::check_witness».obs evWit with
     | .n0 (hv14 := h0) .. => exact absurd (Value.field.inj h0) (by decide)
     | .n1 (hv171 := h1) .. => exact absurd (Value.field.inj h1) (by decide)
     | .n3 (hv447 := h3) .. => exact absurd (Value.field.inj h3) (by decide)
-    | .n2 (m_gmdkwlsb := mCr) (x_iblock := x_iblock) (ev328 := evCnt) (ev_dpuowbtw := evW)
-        (hc442 := hcsW) .. =>
-      refine ⟨rc, _, x_iblock, mCr, ?_,
-        Core.BaseSeams.addr_mono (evCnt.heap_extends.trans evW.heap_extends) hx⟩
+    | .n2 (v_mbqavbbq := vStrip) (m_hyzicuve := mCr) (x_iblock := x_iblock) (ev328 := evCnt)
+        (ev_dpuowbtw := evW) (ev_kjcbizia := evStrip) (hc442 := hcsW) .. =>
+      refine ⟨vStrip, _, x_iblock, mCr, ?_,
+        Core.BaseSeams.addr_mono (evCnt.heap_extends.trans (evW.heap_extends.trans evStrip.heap_extends)) hx⟩
       rw [hcs, hcsW]; simp
-  | tail _ _ _ _ _ _ _ _ _ _ _ _ hcs ih =>
+  | tail _ _ _ _ _ _ _ _ _ _ _ _ _ _ hcs ih =>
     obtain ⟨rc₁, xa₁, ib₁, h₁, hmem₁, hxa₁⟩ := ih
     exact ⟨rc₁, xa₁, ib₁, h₁, by rw [hcs]; simp [hmem₁], hxa₁⟩
 
@@ -2745,7 +2761,7 @@ theorem familyCallExact_of_call {calls : List (Call F)} {bAddr : _root_.Address}
   obtain ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, hmem, hsub⟩ := hfc
   have hpath := Obs.«KernelModeled::check_family».obs ev
   match hpath with
-  | .run (m105 := m105) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+  | .run (v_nbvrulqd := vSeg) (m_vcemfqfp := m105) (ev_wsivmatu := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
       (ev_yqjbwijz := evOrd) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
       (ev344 := evWs) (ev403 := evAsb) (ev435 := evCrr) (ev465 := evAdv)
       (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
@@ -2758,10 +2774,10 @@ theorem familyCallExact_of_call {calls : List (Call F)} {bAddr : _root_.Address}
       (ev_cwwgzxtj := evFlat) (ev1246 := ev1246) (ev_mitevvsv := evFlen)
       (ev_rqpeovbn := evZ1) (ev_xrhmaojz := evZ2) (ev_whimdwjd := evVg)
       (ev1305 := evFro) (hc1474 := hc1474) .. =>
-    have e0 : Heap.Extends h m105 := by
-      match sg112 with
-      | .Nil (ev15 := ev15) (he33 := he33) .. => rw [he33]; exact ev15.heap_extends
-      | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
+    obtain ⟨hvSeg, hm105⟩ := Decl.check_family_seg_nil_of_rc hrc.axiomsNil sg112
+    subst vSeg
+    subst m105
+    have e0 : Heap.Extends h h := Heap.Extends.refl h
     have ext184 : Heap.Extends h _ :=
       e0.trans (ev126.heap_extends.trans (ev148.heap_extends.trans ev194.heap_extends))
     obtain ⟨-, bytes0, hst0⟩ := read_payload_stream ev126

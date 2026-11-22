@@ -1,9 +1,7 @@
 import IxVMRefinement.Binding.StoreOpOrder
 import IxVMRefinement.Binding.RunFamilies
 import IxVMRefinement.Binding.TableAdmitsValidate
-import IxVMRefinement.Obs.KernelRoles2
-import IxVMRefinement.Obs.KernelRoles3
-import IxVMRefinement.Obs.KernelRoles4
+import IxVMRefinement.Obs.KernelRoles
 
 /-! # Operation-order scan for the well-founded block (groups 33 to 40)
 

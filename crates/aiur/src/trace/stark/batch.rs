@@ -157,12 +157,84 @@ impl VerifyingKey {
   ) -> Result<(), String> {
     validate_preamble(&self.system, self.cp.log_blowup, &[claim], preamble)
   }
+  /// Validate a single-shard normalized root preamble (`FixedRoot`), where
+  /// each ROM width in `system` has exactly one `[0, end)` closure pair
+  /// (permitting `0..0` when a ROM width has zero active entries).
+  pub fn validate_normalized_preamble(
+    &self,
+    claim: &[Val],
+    preamble: &multi_stark::batch::BatchPreamble<GoldilocksBlake3Config>,
+  ) -> Result<(), String> {
+    validate_preamble_with(
+      &self.system,
+      self.cp.log_blowup,
+      &[claim],
+      preamble,
+      true,
+    )
+  }
   pub fn verify(
     &self,
     claims: &[Vec<Val>],
     proof: &BatchProof,
   ) -> Result<(), String> {
     verify(&self.system, self.cp.log_blowup, claims, proof)
+  }
+  /// Verify a single-shard normalized root proof (`FixedRoot` /
+  /// `Backend::prove_normalized`).
+  pub fn verify_normalized(
+    &self,
+    claims: &[Vec<Val>],
+    proof: &BatchProof,
+  ) -> Result<(), String> {
+    verify_with(&self.system, self.cp.log_blowup, claims, proof, true)
+  }
+}
+
+/// Maximum number of `MEMSEG` closure pairs permitted in a batch preamble
+/// (`2 * MAX_CLOSURE_PAIRS` messages), matching `StarkVerifier.lean` and
+/// `Ix.Cert.MultiStark.Preamble`.
+pub const MAX_CLOSURE_PAIRS: usize = 65536;
+
+/// Extract the ROM payload width from a segmented `<ROM:w>` circuit's
+/// `MEMSEG = 16` lookup (`args = [Const(16), Const(w), ...]`).
+pub fn circuit_memseg_width(circuit: &Circuit<Val>) -> Option<u64> {
+  use multi_stark::graph::Node;
+  for lookup in &circuit.graph.lookups {
+    if lookup.args.len() == 3 {
+      let ch = circuit.graph.nodes.get(lookup.args[0].0 as usize);
+      let w = circuit.graph.nodes.get(lookup.args[1].0 as usize);
+      if let (Some(Node::Const(c)), Some(Node::Const(width))) = (ch, w)
+        && *c == Val::from_u64(MEMSEG)
+      {
+        return Some(width.as_canonical_u64());
+      }
+    }
+  }
+  None
+}
+
+/// Logical entry weight per row of a circuit for `MAX_BATCH_ROWS` accounting:
+/// `K = rom_lanes(w)` for `C6` vectorized `<ROM:w>` circuits (`main_width ==
+/// 1 + K * (w + 2)`), and `1` for scalar ROM, function, and fixed-table circuits.
+pub(super) fn circuit_row_weight(circuit: &Circuit<Val>) -> u64 {
+  let Some(w) = circuit_memseg_width(circuit) else {
+    return 1;
+  };
+  let Ok(w_usize) = usize::try_from(w) else {
+    return 1;
+  };
+  let k = rom_lanes(w_usize);
+  if k > 1
+    && w_usize
+      .checked_add(2)
+      .and_then(|s| s.checked_mul(k))
+      .and_then(|n| n.checked_add(1))
+      == Some(circuit.main_width)
+  {
+    k as u64
+  } else {
+    1
   }
 }
 
@@ -171,6 +243,16 @@ fn validate_preamble<C: AsRef<[Val]>>(
   log_blowup: usize,
   claims: &[C],
   preamble: &multi_stark::batch::BatchPreamble<GoldilocksBlake3Config>,
+) -> Result<(), String> {
+  validate_preamble_with(system, log_blowup, claims, preamble, false)
+}
+
+fn validate_preamble_with<C: AsRef<[Val]>>(
+  system: &System<GoldilocksBlake3Config>,
+  log_blowup: usize,
+  claims: &[C],
+  preamble: &multi_stark::batch::BatchPreamble<GoldilocksBlake3Config>,
+  allow_normalized_empty: bool,
 ) -> Result<(), String> {
   let headers = &preamble.headers;
   if headers.is_empty() || headers.len() > 65536 {
@@ -183,6 +265,10 @@ fn validate_preamble<C: AsRef<[Val]>>(
   {
     return Err("batch public claims mismatch".into());
   }
+  let mut rom_widths: Vec<u64> =
+    system.circuits.iter().filter_map(circuit_memseg_width).collect();
+  rom_widths.sort_unstable();
+  rom_widths.dedup();
   let mut budget = claims.len() as u128;
   let mut rows = 0u128;
   for header in headers {
@@ -209,8 +295,11 @@ fn validate_preamble<C: AsRef<[Val]>>(
       {
         return Err("fixed table height mismatch".into());
       }
-      // The depth pass's row bound, over every shard ([`MAX_BATCH_ROWS`]).
-      rows += height;
+      // The depth pass's row bound, over every shard ([`MAX_BATCH_ROWS`]),
+      // weighting `C6` vectorized `<ROM:w>` circuits by their lane count `K`
+      // so `rom.entries.length <= 2^39` holds unconditionally.
+      let weight = u128::from(circuit_row_weight(circuit));
+      rows += height * weight;
       if rows > u128::from(MAX_BATCH_ROWS) {
         return Err("batch rows exceed the row bound (2^39)".into());
       }
@@ -227,8 +316,19 @@ fn validate_preamble<C: AsRef<[Val]>>(
   if !messages.len().is_multiple_of(2) {
     return Err("unpaired memory boundaries".into());
   }
+  let num_pairs = messages.len() / 2;
+  let max_pairs =
+    MAX_CLOSURE_PAIRS.min(headers.len().saturating_mul(rom_widths.len()));
+  if num_pairs > max_pairs {
+    return Err("too many memory boundary messages".into());
+  }
+  if allow_normalized_empty
+    && (headers.len() != 1 || num_pairs != rom_widths.len())
+  {
+    return Err("invalid normalized memory boundaries".into());
+  }
   let mut previous = None;
-  for pair in messages.as_chunks::<2>().0 {
+  for (idx, pair) in messages.as_chunks::<2>().0.iter().enumerate() {
     let (pull, push) = (&pair[0], &pair[1]);
     if pull.multiplicity != -Val::ONE
       || push.multiplicity != Val::ONE
@@ -241,11 +341,19 @@ fn validate_preamble<C: AsRef<[Val]>>(
       return Err("invalid memory boundary message".into());
     }
     let width = pull.args[1].as_canonical_u64();
+    if rom_widths.binary_search(&width).is_err() {
+      return Err("unknown ROM width in memory boundary message".into());
+    }
     let a = pull.args[2].as_canonical_u64();
     let b = push.args[2].as_canonical_u64();
-    if a > b
-      || previous.is_some_and(|(w, end)| width < w || (width == w && a < end))
-    {
+    if allow_normalized_empty {
+      if width != rom_widths[idx] || a != 0 || a > b {
+        return Err("invalid normalized memory interval".into());
+      }
+    } else if a >= b {
+      return Err("empty or inverted memory interval".into());
+    }
+    if previous.is_some_and(|(w, end)| width < w || (width == w && a < end)) {
       return Err("overlapping or unordered memory intervals".into());
     }
     previous = Some((width, b));
@@ -259,10 +367,26 @@ fn verify(
   claims: &[Vec<Val>],
   proof: &BatchProof,
 ) -> Result<(), String> {
+  verify_with(system, log_blowup, claims, proof, false)
+}
+
+fn verify_with(
+  system: &System<GoldilocksBlake3Config>,
+  log_blowup: usize,
+  claims: &[Vec<Val>],
+  proof: &BatchProof,
+  allow_normalized_empty: bool,
+) -> Result<(), String> {
   if proof.preamble.headers.len() != proof.proofs.len() {
     return Err("invalid batch shard count".into());
   }
-  validate_preamble(system, log_blowup, claims, &proof.preamble)?;
+  validate_preamble_with(
+    system,
+    log_blowup,
+    claims,
+    &proof.preamble,
+    allow_normalized_empty,
+  )?;
   system
     .verify_batch(proof)
     .map_err(|e| format!("STARK batch verification failed: {e:?}"))
@@ -299,9 +423,9 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       if start >= end
         || end >= Val::ORDER_U64
         || previous.is_some_and(|(w, e)| w == width && start < e)
-        || !self.system.circuits[self.members.len() + self.tables.len()..]
-          .iter()
-          .any(|c| (c.main_width - 3) as u64 == width)
+        || usize::try_from(width)
+          .ok()
+          .is_none_or(|w| self.rom.widths.binary_search(&w).is_err())
       {
         return Err("invalid streamed memory intervals".into());
       }
@@ -538,7 +662,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       let heights: Vec<_> =
         (0..self.system.circuits.len()).map(|ci| device.height(ci)).collect();
       let traces = self
-        .generate_with::<false>(
+        .generate_with_validated::<false>(
           record,
           Some((entry, args)),
           &heights,
@@ -587,14 +711,10 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     }
     let memory_start = self.members.len() + self.tables.len();
     let mut messages = Vec::new();
-    for trace in &traces[memory_start..] {
-      let total = trace
-        .values
-        .chunks_exact(trace.width)
-        .take_while(|row| row[1] == Val::ONE)
-        .count();
+    for (i, trace) in traces[memory_start..].iter().enumerate() {
+      let total = self.rom.active_entries(i, trace);
       if total != 0 {
-        let width = Val::from_usize(trace.width - 3);
+        let width = Val::from_usize(self.rom.widths[i]);
         messages.push(BatchMessage::pull(vec![
           Val::from_u64(MEMSEG),
           width,
@@ -711,6 +831,27 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     )
   }
 
+  /// Verify a single-shard normalized root proof (`prove_normalized`).
+  pub fn verify_normalized(
+    &self,
+    entry: &str,
+    args: &[B::Element],
+    output: &[B::Element],
+    proof: &BatchProof,
+  ) -> Result<(), String> {
+    self.require_committed()?;
+    if !self.segmented_memory {
+      return Err("batch verification requires Backend::for_batch".into());
+    }
+    verify_with(
+      &self.system,
+      self.parameters.log_blowup,
+      &[self.claim(entry, args, output)?],
+      proof,
+      true,
+    )
+  }
+
   /// Unpadded row count for every circuit in `self.system.circuits` order:
   /// function circuits (`0 .. self.members.len()`), fixed tables
   /// (`self.members.len() .. self.members.len() + self.tables.len()`), and
@@ -724,7 +865,11 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       rows.push(self.system.circuits[ci].preprocessed_height);
     }
     for &width in &self.rom.widths {
-      rows.push(record.memory.indices_for_width(width).len());
+      rows.push(
+        self
+          .rom
+          .row_count_for_entries(width, record.memory.width_cells(width).len()),
+      );
     }
     rows
   }
@@ -831,6 +976,12 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       }
     }
     let unpadded_rows = self.execution_rows(&record);
+    let rom_entries: Vec<usize> = self
+      .rom
+      .widths
+      .iter()
+      .map(|&width| record.memory.width_cells(width).len())
+      .collect();
     for (index, (&rows, &log)) in
       unpadded_rows.iter().zip(log_heights).enumerate()
     {
@@ -853,13 +1004,12 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       &target_heights,
     )?;
     drop(record);
-    let rom_base = self.members.len() + self.tables.len();
     let mut messages = Vec::with_capacity(self.rom.widths.len() * 2);
     for (i, &width) in self.rom.widths.iter().enumerate() {
-      let unpadded = unpadded_rows[rom_base + i];
+      let entries = rom_entries[i];
       messages.push(BatchMessage::pull(memseg_args(width, Val::ZERO).to_vec()));
       messages.push(BatchMessage::push(
-        memseg_args(width, Val::from_usize(unpadded)).to_vec(),
+        memseg_args(width, Val::from_usize(entries)).to_vec(),
       ));
     }
     let witness = self.witness_from_main(traces);
@@ -871,7 +1021,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       }],
       messages,
     );
-    self.verify_batch(entry, args, output, &proof)?;
+    self.verify_normalized(entry, args, output, &proof)?;
     Ok((claim, proof))
   }
 }

@@ -889,19 +889,16 @@ theorem memberCheckedLimAt_ind_levelsOk_blob {calls : List (Call F)} {bAddr : _r
       | .run (m2 := mb_m2) (cs53 := cs_cf) (ev27 := evrp) (ev14 := evga) (ev55 := evcf)
           (hc80 := hc_mb) .. =>
         match Obs.«KernelModeled::check_family».obs evcf with
-        | .run (m105 := mf1) (m114 := mf2) (m136 := mf3) (m184 := mf4) (m_judpcwze := mf5)
+        | .run (m_vcemfqfp := mf1) (m114 := mf2) (m136 := mf3) (m184 := mf4) (m_judpcwze := mf5)
             (m219 := mf6) (m254 := mf7) (m297 := mf8) (m332 := mf9) (m391 := mf10)
             (m423 := mf11) (m453 := mf12) (m501 := mf13) (cs511 := cs_lvc) (x_members := xmems)
             (m589 := mf14) (m624 := mf15)
-            (sg112 := sg1) (ev126 := evf1) (ev148 := evf2) (ev194 := evf3)
+            (ev_wsivmatu := sg1) (ev126 := evf1) (ev148 := evf2) (ev194 := evf3)
             (ev_yqjbwijz := evf4) (ev231 := evf5) (ev266 := evf6) (ev309 := evf7)
             (ev344 := evf8) (ev403 := evf9) (ev435 := evf10) (ev465 := evf11)
             (ev513 := evlvc) (ev601 := evlen) (ev634 := evmic) (ev664 := evbnp)
             (hc1474 := hc_cf) .. =>
-          have ext_sg1 : Heap.Extends mb_m2 mf1 := by
-            cases sg1 with
-            | Nil _ _ evax _ hh _ => rw [hh]; exact evax.heap_extends
-            | Node _ _ _ _ _ _ _ _ heq _ _ _ => exact absurd (Value.field.inj heq) (by decide)
+          have ext_sg1 : Heap.Extends mb_m2 mf1 := sg1.heap_extends
           have ext_to_lvc : Heap.Extends m_chk mf12 :=
             ext0_12.trans (evrp.heap_extends.trans (evga.heap_extends.trans (ext_sg1.trans
               (evf1.heap_extends.trans (evf2.heap_extends.trans (evf3.heap_extends.trans
@@ -1379,10 +1376,11 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
                 (blockSelf t (ixAddr rb_b) rs)).read ru.rhs = .ok E_rd →
             E_rd.allLevelParamsDefined (List.range rc.lvls.toNat) = true := by
           match Obs.«KernelModeled::check_rules».obs evrules with
-          | .run (ev14 := evrmp) (ev74 := evgci) (ev157 := evrlen) (ev179 := evgo)
+          | .run (ev14 := evrmp) (ev74 := evgci) (ev157 := evrlen) (ev_bcyyrzqq := evren) (ev179 := evgo)
               (hc315 := hc_ru) .. =>
             have ext_go : Heap.Extends m1 _ :=
-              ext1_21.trans (evrmp.heap_extends.trans (evgci.heap_extends.trans evrlen.heap_extends))
+              ext1_21.trans (evrmp.heap_extends.trans (evgci.heap_extends.trans
+                (evrlen.heap_extends.trans evren.heap_extends)))
             have hgo := check_rules_go_levelsOk (t := t) (E_b := E_b) hbd hnl32 rc.rules.toList 0
               (fun cl hcl => by
                 have h1 : cl ∈ cs_ru := mem_of_eq hc_ru (by call_mem)
@@ -1412,9 +1410,9 @@ theorem check_family_recr_levelsOk_blob {calls : List (Call F)} {t : Ix.Kernel.R
             (blockSelf t (ixAddr rb_b) rs)).read ru.rhs = .ok E_rd →
         E_rd.allLevelParamsDefined (List.range rc.lvls.toNat) = true) := by
   match Obs.«KernelModeled::check_family».obs ev with
-  | .run (m105 := mf1) (m784 := m_pre_fr) (m840 := m_post_fr) (m1293 := m_pre_cr)
+  | .run (m_vcemfqfp := mf1) (m784 := m_pre_fr) (m840 := m_post_fr) (m1293 := m_pre_cr)
       (cs850 := cs_fr) (cs1341 := cs_cr)
-      (sg112 := sg1) (ev126 := e1) (ev148 := e2) (ev194 := e3) (ev_yqjbwijz := e4)
+      (ev_wsivmatu := sg1) (ev126 := e1) (ev148 := e2) (ev194 := e3) (ev_yqjbwijz := e4)
       (ev231 := e5) (ev266 := e6) (ev309 := e7) (ev344 := e8) (ev403 := e9)
       (ev435 := e10) (ev465 := e11) (ev513 := e12) (ev601 := e13) (ev634 := e14)
       (ev664 := e15) (ev686 := e16) (ev716 := e17) (ev759 := e18) (ev817 := e19)
@@ -1425,10 +1423,7 @@ theorem check_family_recr_levelsOk_blob {calls : List (Call F)} {t : Ix.Kernel.R
       (ev1203 := f13) (ev_cwwgzxtj := f14) (ev1246 := f15) (ev_mitevvsv := f16)
       (ev_rqpeovbn := f17) (ev_xrhmaojz := f18) (ev_whimdwjd := f19) (ev1305 := f20)
       (ev1343 := evcr) (hc1474 := hc) .. =>
-    have ext_sg1 : Heap.Extends h mf1 := by
-      cases sg1 with
-      | Nil _ _ evax _ hh _ => rw [hh]; exact evax.heap_extends
-      | Node _ _ _ _ _ _ _ _ heq _ _ _ => exact absurd (Value.field.inj heq) (by decide)
+    have ext_sg1 : Heap.Extends h mf1 := sg1.heap_extends
     have ext_to_fr : Heap.Extends h m_pre_fr :=
       ext_sg1.trans <| e1.heap_extends.trans <| e2.heap_extends.trans <| e3.heap_extends.trans <|
         e4.heap_extends.trans <| e5.heap_extends.trans <| e6.heap_extends.trans <|

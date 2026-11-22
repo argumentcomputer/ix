@@ -322,8 +322,32 @@ fn propagate_bounds(
   }
 }
 
-/// Range checks use one shared 16-bit table. Rounding up the bit count remains
-/// sound: even the largest gate and quotient products are below 2^209 < Fr.
+/// Width of the shared range-check lookup table (`2^20` rows, matching
+/// `recursive::native_field` and fitting cleanly inside `TABLE_HEIGHT = 2^22`).
+const RANGE_BITS: usize = 20;
+const RANGE_MASK: u64 = (1u64 << RANGE_BITS) - 1;
+/// High-limb width paired with `u20` to enforce exact 32-bit canonical words
+/// (`20 + 12 = 32`).
+const CANONICAL_HIGH_BITS: usize = 32 - RANGE_BITS;
+const CANONICAL_HIGH_MASK: u64 = (1u64 << CANONICAL_HIGH_BITS) - 1;
+
+#[inline]
+fn extract_u20_limb(words: [u64; 4], i: usize) -> u64 {
+  let bit = i * RANGE_BITS;
+  let word = bit / 64;
+  let shift = bit % 64;
+  let low = words[word] >> shift;
+  let high = if shift > 64 - RANGE_BITS && word + 1 < words.len() {
+    words[word + 1] << (64 - shift)
+  } else {
+    0
+  };
+  (low | high) & RANGE_MASK
+}
+
+/// Range checks use one shared 20-bit table. Rounding up the bit count remains
+/// sound: even the largest gate and quotient products (`<= 7 * 20 = 140` bits)
+/// satisfy `2^140 * P < 2^204 < Fr`.
 fn range(
   b: &mut CircuitBuilder<Scalar>,
   table: Table,
@@ -339,16 +363,14 @@ fn range(
     b.assert_bool(value);
     return;
   }
-  match bits.div_ceil(16) {
-    1 => range_limbs::<1>(b, table, value),
+  match bits.div_ceil(RANGE_BITS) {
+    1 => b.lookup(table, &[value]),
     2 => range_limbs::<2>(b, table, value),
     3 => range_limbs::<3>(b, table, value),
     4 => range_limbs::<4>(b, table, value),
     5 => range_limbs::<5>(b, table, value),
     6 => range_limbs::<6>(b, table, value),
     7 => range_limbs::<7>(b, table, value),
-    8 => range_limbs::<8>(b, table, value),
-    9 => range_limbs::<9>(b, table, value),
     _ => panic!("Goldilocks range exceeds quotient bound"),
   }
 }
@@ -360,65 +382,87 @@ fn range_limbs<const N: usize>(
 ) {
   let limbs = b.hint_many_pure::<N>("integer limbs", &[value], |v| {
     let words = v[0].canonical_limbs_le();
-    Ok(std::array::from_fn(|i| {
-      Scalar::from_u64((words[i / 4] >> (16 * (i % 4))) & 0xffff)
-    }))
+    Ok(std::array::from_fn(|i| Scalar::from_u64(extract_u20_limb(words, i))))
   });
-  let mut terms = Vec::with_capacity(N);
-  let radix = Scalar::from_u32(1 << 16);
-  let mut coefficient = Scalar::ONE;
   for limb in limbs {
     b.lookup(table, &[limb]);
-    terms.push((coefficient, limb));
-    coefficient *= radix;
   }
-  let packed = b.linear_combination(&terms, Scalar::ZERO);
-  b.assert_equal(value, packed);
+  let radix = Scalar::from_u32(1 << RANGE_BITS);
+  let mut coefficient = Scalar::ONE;
+  let mut acc = limbs[0];
+  for &limb in &limbs[1..N - 1] {
+    coefficient *= radix;
+    acc = b.affine([acc, limb], [Scalar::ONE, coefficient], Scalar::ZERO);
+  }
+  coefficient *= radix;
+  b.constrain_gate(
+    [acc, limbs[N - 1], value],
+    [Scalar::ZERO, Scalar::ONE, coefficient, -Scalar::ONE, Scalar::ZERO],
+  );
 }
 
-/// The builder's zero test on a pure hint, so the translation stays eligible
-/// for a parallel witness schedule. Returns a constrained bit, including at
-/// zero.
-fn is_zero(b: &mut CircuitBuilder<Scalar>, value: Value) -> Value {
-  let inverse = b.hint_pure("zero-test inverse", &[value], |values| {
-    Ok(values[0].try_inverse().unwrap_or(Scalar::ZERO))
-  });
-  let product = b.mul(value, inverse);
-  let one = b.constant(Scalar::ONE);
-  let result = b.sub(one, product);
-  b.assert_bool(result);
+/// Canonical Goldilocks check (`value < 2^64 - 2^32 + 1`): decomposes `value`
+/// into exact 32-bit `lo = lo0 + 2^20·lo1` and `hi = hi0 + 2^20·hi1` with
+/// `lo0, hi0 ∈ u20` and `lo1, hi1 ∈ u12`, then enforces `hi = 0xffffffff ⇒ lo = 0`.
+fn canonical(
+  b: &mut CircuitBuilder<Scalar>,
+  u20: Table,
+  u12: Table,
+  value: Value,
+) {
+  let [lo0, lo1, hi0, hi1, inv, max_hi] =
+    b.hint_many_pure::<6>("Goldilocks canonical", &[value], |v| {
+      let x = v[0].canonical_low_u64();
+      let lo = x & u64::from(u32::MAX);
+      let hi = x >> 32;
+      let delta = Scalar::from_u64(hi) - Scalar::from_u32(u32::MAX);
+      let (inv, max_hi) = match delta.try_inverse() {
+        Some(inv) => (inv, Scalar::ZERO),
+        None => (Scalar::ZERO, Scalar::ONE),
+      };
+      Ok([
+        Scalar::from_u64(lo & RANGE_MASK),
+        Scalar::from_u64((lo >> RANGE_BITS) & CANONICAL_HIGH_MASK),
+        Scalar::from_u64(hi & RANGE_MASK),
+        Scalar::from_u64((hi >> RANGE_BITS) & CANONICAL_HIGH_MASK),
+        inv,
+        max_hi,
+      ])
+    });
+  b.lookup(u20, &[lo0]);
+  b.lookup(u12, &[lo1]);
+  b.lookup(u20, &[hi0]);
+  b.lookup(u12, &[hi1]);
+  let radix = Scalar::from_u32(1 << RANGE_BITS);
+  let lo = b.affine([lo0, lo1], [Scalar::ONE, radix], Scalar::ZERO);
+  let hi = b.affine([hi0, hi1], [Scalar::ONE, radix], Scalar::ZERO);
+  b.constrain_gate(
+    [lo, hi, value],
+    [
+      Scalar::ZERO,
+      Scalar::ONE,
+      Scalar::from_u64(1 << 32),
+      -Scalar::ONE,
+      Scalar::ZERO,
+    ],
+  );
+  // x < 0xffffffff00000001 iff the high word is not 0xffffffff or lo = 0.
+  b.assert_bool(max_hi);
+  b.constrain_gate(
+    [hi, inv, max_hi],
+    [
+      Scalar::ONE,
+      Scalar::ZERO,
+      -Scalar::from_u32(u32::MAX),
+      Scalar::ONE,
+      -Scalar::ONE,
+    ],
+  );
   let zero = b.constant(Scalar::ZERO);
   b.constrain_gate(
-    [value, result, zero],
+    [max_hi, lo, zero],
     [Scalar::ONE, Scalar::ZERO, Scalar::ZERO, Scalar::ZERO, Scalar::ZERO],
   );
-  result
-}
-
-fn canonical(b: &mut CircuitBuilder<Scalar>, table: Table, value: Value) {
-  let hi = b.hint_pure("Goldilocks high word", &[value], |v| {
-    Ok(Scalar::from_u64(v[0].canonical_low_u64() >> 32))
-  });
-  let lo = b.hint_pure("Goldilocks low word", &[value], |v| {
-    Ok(Scalar::from_u32(
-      u32::try_from(v[0].canonical_low_u64() & u64::from(u32::MAX)).unwrap(),
-    ))
-  });
-  range(b, table, hi, 32);
-  range(b, table, lo, 32);
-  let packed =
-    b.affine([hi, lo], [Scalar::from_u64(1 << 32), Scalar::ONE], Scalar::ZERO);
-  b.assert_equal(value, packed);
-  // x < 0xffffffff00000001 iff the high word is not 0xffffffff or lo = 0.
-  let delta = b.affine(
-    [hi, hi],
-    [Scalar::ONE, Scalar::ZERO],
-    -Scalar::from_u32(u32::MAX),
-  );
-  let max_hi = is_zero(b, delta);
-  let invalid = b.mul(max_hi, lo);
-  let zero = b.constant(Scalar::ZERO);
-  b.assert_equal(invalid, zero);
 }
 
 impl GoldilocksCircuit {
@@ -501,8 +545,14 @@ impl GoldilocksCircuit {
         }
       };
     let range_table = b.fixed_table(
-      "u16",
-      (0..=u16::MAX).map(|v| vec![Scalar::from_u16(v)]).collect(),
+      "u20",
+      (0..1u32 << RANGE_BITS).map(|v| vec![Scalar::from_u32(v)]).collect(),
+    );
+    let canonical_high_table = b.fixed_table(
+      "u12",
+      (0..1u32 << CANONICAL_HIGH_BITS)
+        .map(|v| vec![Scalar::from_u32(v)])
+        .collect(),
     );
     let mut bounds = vec![P - 1; source.num_values()];
     let mut checked = vec![false; source.num_values()];
@@ -579,7 +629,7 @@ impl GoldilocksCircuit {
         }
         let value = input(b, i);
         if !checked[i] {
-          canonical(b, range_table, value);
+          canonical(b, range_table, canonical_high_table, value);
         }
         wires.push(value);
         inputs.push(true);
@@ -721,23 +771,23 @@ fn constrain_gate(
     return;
   };
   let hint = quotient::QuotientHint::from_limbs(coefficients, offset);
-  let quotient =
-    b.hint_pure("Goldilocks quotient", &values, move |v| hint.evaluate(v));
-  range(b, table, quotient, bits);
   let [qm, qa, qb, qc, k] = coefficients.map(signed_scalar);
-  let product = b.mul(values[0], values[1]);
-  let residual = b.linear_combination(
-    &[
-      (qm, product),
-      (qa, values[0]),
-      (qb, values[1]),
-      (qc, values[2]),
-      (-Scalar::from_u64(P), quotient),
-    ],
-    k + Scalar::from_limbs_le(offset.0),
+  let k_plus_offset = k + Scalar::from_limbs_le(offset.0);
+  let [quotient, t1] =
+    b.hint_many_pure::<2>("Goldilocks quotient", &values, move |v| {
+      let q = hint.evaluate(v)?;
+      let t = qm * v[0] * v[1] + qa * v[0] + qb * v[1] + k_plus_offset;
+      Ok([q, t])
+    });
+  range(b, table, quotient, bits);
+  b.constrain_gate(
+    [values[0], values[1], t1],
+    [qm, qa, qb, -Scalar::ONE, k_plus_offset],
   );
-  let zero = b.constant(Scalar::ZERO);
-  b.assert_equal(residual, zero);
+  b.constrain_gate(
+    [t1, values[2], quotient],
+    [Scalar::ZERO, Scalar::ONE, qc, -Scalar::from_u64(P), Scalar::ZERO],
+  );
 }
 
 #[cfg(test)]
@@ -980,22 +1030,54 @@ mod tests {
       forged[quotient.index()] += Scalar::ONE;
       assert!(mapped.circuit.check_values(&forged).is_err());
     }
-    // Bypass the source witness API: noncanonical scalar inputs must fail
-    // the actual translated constraints, not just a conversion helper.
-    for invalid in [P, u64::MAX] {
+    // Bypass the source witness API: noncanonical scalar inputs (including
+    // `P`, `u64::MAX`, and `2^64`) must fail the translated constraints.
+    let two_pow_64 = Scalar::from_u64(1 << 32) * Scalar::from_u64(1 << 32);
+    for invalid in [
+      Scalar::from_u64(P),
+      Scalar::from_u64(u64::MAX),
+      two_pow_64,
+      two_pow_64 + Scalar::ONE,
+    ] {
       let mut witness = mapped.circuit.witness();
       for (i, &is_input) in mapped.inputs.is_input.iter().enumerate() {
         if is_input {
-          let value = if i == x.index() {
-            Scalar::from_u64(invalid)
-          } else {
-            Scalar::ZERO
-          };
+          let value = if i == x.index() { invalid } else { Scalar::ZERO };
           witness.set(mapped.inputs.wires[i], value).unwrap();
         }
       }
       assert!(witness.generate().is_err());
     }
+    // Forging a 12-bit canonical high limb to `2^12` while keeping every
+    // packing and canonical gate satisfied must be rejected by the `u12` table
+    // even though `2^12 ∈ u20`.
+    let mut witness = source.witness();
+    witness.set(x, Val::from_u64(1 << 32)).unwrap();
+    witness.set(y, Val::ZERO).unwrap();
+    let assignment = witness.generate().unwrap();
+    let mut witness = mapped.circuit.witness();
+    mapped.assign(&assignment, &mut witness).unwrap();
+    let output = witness.generate().unwrap();
+    // Canonical hint outputs for `x` are `[lo0, lo1, hi0, hi1, inv, max_hi]`,
+    // followed by `lo` and `hi` affine wires.
+    let lo1_wire = mapped
+      .circuit
+      .lookups()
+      .iter()
+      .find(|l| mapped.circuit.tables()[l.table.index()].name() == "u12")
+      .expect("canonical u12 lookup")
+      .values[0]
+      .index();
+    let mut forged = output.values(mapped.circuit.id()).unwrap().to_vec();
+    forged[lo1_wire] = Scalar::from_u32(1 << 12); // lo1 = 2^12 (fails u12)
+    forged[lo1_wire + 1] = Scalar::ZERO; // hi0 = 0
+    forged[lo1_wire + 3] = (-Scalar::from_u32(u32::MAX)).try_inverse().unwrap(); // inv
+    forged[lo1_wire + 5] = Scalar::from_u64(1 << 32); // lo = 2^32
+    forged[lo1_wire + 6] = Scalar::ZERO; // hi = 0
+    assert_eq!(
+      mapped.circuit.check_values(&forged),
+      Err(WitnessError::LookupMissing { table: "u12".into() })
+    );
   }
 
   #[test]

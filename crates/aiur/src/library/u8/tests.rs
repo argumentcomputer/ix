@@ -420,4 +420,104 @@ fn direct_byte_maps_and_word_hints_match_table_and_closure_execution() {
     .unwrap_err();
   assert_eq!(err_direct.instruction, err_table.instruction);
   assert_eq!(err_direct.message, err_table.message);
+
+  // Also verify FillPlan direct map/hint evaluation matches reference replay
+  // bit-for-bit across all 13 direct byte maps and 6 direct word hints.
+  let mut steps = Vec::new();
+  let mut next_dest = 2usize;
+  for (pc, op) in native.program().functions[0].code.iter().enumerate() {
+    match op {
+      Instruction::Call { function, args, dest } => {
+        let name = native.callable_name(*function).unwrap().to_owned();
+        steps.push(crate::trace::PopulationStep {
+          guard: crate::trace::Polynomial::Const(1),
+          action: crate::trace::Action::Call {
+            name,
+            args: args
+              .iter()
+              .map(|&r| crate::trace::Polynomial::Var(r))
+              .collect(),
+            dest: dest.clone(),
+          },
+        });
+        next_dest = next_dest.max(dest.iter().copied().max().unwrap_or(0) + 1);
+      },
+      Instruction::Hint { channel, r#type, key_type, key, dest } => {
+        steps.push(crate::trace::PopulationStep {
+          guard: crate::trace::Polynomial::Const(1),
+          action: crate::trace::Action::Hint {
+            channel: channel.clone(),
+            instruction: pc,
+            r#type: r#type.clone(),
+            key_type: key_type.clone(),
+            key: key
+              .iter()
+              .map(|&r| crate::trace::Polynomial::Var(r))
+              .collect(),
+            dest: dest.clone(),
+          },
+        });
+        next_dest = next_dest.max(dest.iter().copied().max().unwrap_or(0) + 1);
+      },
+      Instruction::Binary { dest, left, right, .. } => {
+        steps.push(crate::trace::PopulationStep {
+          guard: crate::trace::Polynomial::Const(1),
+          action: crate::trace::Action::Assign {
+            dest: vec![*dest],
+            values: vec![crate::trace::Polynomial::Add(Box::new([
+              crate::trace::Polynomial::Var(*left),
+              crate::trace::Polynomial::Var(*right),
+            ]))],
+          },
+        });
+        next_dest = next_dest.max(*dest + 1);
+      },
+      Instruction::Ret { .. } => (),
+      other => panic!("unexpected instruction in all_ops: {other:?}"),
+    }
+  }
+  let out_start = next_dest;
+  let total_witnesses = out_start + 59;
+  let writes: Vec<_> = (0..out_start)
+    .map(|col| crate::trace::ColumnWrite {
+      column: col,
+      source: col,
+      guard: crate::trace::Polynomial::Const(1),
+    })
+    .collect();
+  let artifact = crate::trace::TraceArtifact {
+    version: 3,
+    modulus: field.modulus(),
+    limbs: vec![],
+    functions: vec![crate::trace::FunctionPlan {
+      name: "all_ops".into(),
+      chip: "all_ops".into(),
+      witnesses: total_witnesses,
+      inputs: vec![0, 1],
+      output: (out_start..total_witnesses).collect(),
+      steps,
+      writes,
+    }],
+    chips: vec![crate::trace::Chip {
+      name: "all_ops".into(),
+      width: out_start + 1,
+      activation: out_start,
+      inputs: vec![0, 1],
+      output: (2..61).map(crate::trace::Polynomial::Var).collect(),
+      constraints: vec![],
+      sends: vec![],
+      memory: vec![],
+      depth: Default::default(),
+    }],
+    groups: vec![],
+  };
+  let plan = crate::trace::TracePlan::new(&native, artifact).unwrap();
+  for (a, b) in [(0u64, 0u64), (1, 255), (255, 1), (173, 99), (128, 128)] {
+    let args = [field.from_u64(a), field.from_u64(b)];
+    let record = direct_exec.execute("all_ops", args.to_vec()).unwrap();
+    let fast = plan.generate(&record, "all_ops", &args, true).unwrap();
+    let reference =
+      plan.generate_reference(&record, "all_ops", &args, true).unwrap();
+    assert_eq!(fast, reference);
+  }
 }

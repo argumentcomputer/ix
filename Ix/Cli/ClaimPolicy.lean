@@ -1,7 +1,9 @@
 module
 public import Cli
+public import Ix.AssumptionTree
 public import Ix.ClaimContext
 public import Ix.Cli.TableAdmission
+public import Ix.DynamicLink.Codec
 
 /-! # The claims `ix verify` and `ix compress` accept by default
 
@@ -51,6 +53,26 @@ public section
 
 namespace Ix.Cli.ClaimPolicy
 
+/-- Explicit allowlist entry for a Tier-1 standalone `DynamicLinkStatement` (`0xE8 0x0D`).
+VK-wide wildcards are forbidden: both `vkDigest` and exact `entryIdx` must be pinned. -/
+structure AllowedDynamicCircuit where
+  vkDigest : Address
+  entryIdx : UInt64
+  deriving BEq, Repr, Inhabited, DecidableEq
+
+/-- Explicit allowlist entry for a Mode-3a (`LinkedClaim`, validators `12`/`13`) equality-bridge
+accelerator circuit. Separate from Tier-1 `AllowedDynamicCircuit`: Mode 3a requires
+`codec = ixonAddrPair` and pins the full `(vkDigest, entryIdx, codec, targetConst, certConst, evalType)`
+tuple so a non-equality Tier-1 circuit or mismatched bridge/type can never discharge an `EvalAssumption`. -/
+structure AllowedLinkedCircuit where
+  vkDigest : Address
+  entryIdx : UInt64
+  codec : Ix.DynamicLink.CodecTag := .ixonAddrPair
+  targetConst : Address
+  certConst : Address
+  evalType : Address
+  deriving BEq, Repr, Inhabited, DecidableEq
+
 /-- Which claims a command accepts beyond the unconditional typing claims under
 the default role table or a table the kernel admits. -/
 structure Policy where
@@ -61,17 +83,119 @@ structure Policy where
   reveal : Bool := false
   contains : Bool := false
   binding : Bool := false
+  /-- Allowlisted Tier-1 external circuits (`<vkDigest>:<entryIdx>`; no VK wildcard).
+  Authorizes standalone `DynamicLinkStatement` (`0xE8 0x0D`) claims ONLY — NEVER Mode-3a
+  `LinkedClaim` (validators `12`/`13`). -/
+  allowedDynamicCircuits : Array AllowedDynamicCircuit := #[]
+  /-- Allowlisted Mode-3a equality-bridge circuits pinning
+  `(vkDigest, entryIdx, codec = ixonAddrPair, targetConst, certConst, evalType)`.
+  Empty by default: every validator `12`/`13` (`LinkedClaim`) proof or non-empty
+  `linkedCircuits` root is refused unless explicitly allowlisted via
+  `--allow-linked-circuit`. -/
+  allowedLinkedCircuits : Array AllowedLinkedCircuit := #[]
   deriving Repr, Inhabited
 
-/-- The policy the command line selects. -/
-def ofParsed (p : Cli.Parsed) : Policy where
-  customBinding := p.hasFlag "allow-custom-binding"
-  axioms := p.hasFlag "allow-axioms"
-  assumedBinding := p.hasFlag "allow-assumed-binding"
-  assumptions := p.hasFlag "allow-assumptions"
-  reveal := p.hasFlag "allow-reveal-claim"
-  contains := p.hasFlag "allow-contains-claim"
-  binding := p.hasFlag "allow-binding-claim"
+/-- Parse one `--allow-dynamic-circuit` allowlist specifier for Tier-1 `DynamicLinkStatement`:
+strictly `<64-hex-vk-digest>:<entry-idx>`. VK-wide `<vk-hex>` wildcards are rejected. -/
+def parseAllowedDynamicCircuit (spec : String) : Except String AllowedDynamicCircuit := do
+  let parts := spec.splitOn ":"
+  match parts with
+  | [_vkHex] =>
+    throw s!"--allow-dynamic-circuit: VK-wide wildcard is forbidden; expected <vk-hex>:<entry-idx>, got '{spec}'"
+  | [vkHex, idxStr] =>
+    let some vkDigest := Address.fromString vkHex
+      | throw s!"--allow-dynamic-circuit: invalid 64-hex VK digest '{vkHex}'"
+    let some idx := idxStr.toNat?
+      | throw s!"--allow-dynamic-circuit: invalid entry index '{idxStr}'"
+    if idx ≥ UInt64.size then
+      throw s!"--allow-dynamic-circuit: entry index '{idxStr}' exceeds u64"
+    pure { vkDigest, entryIdx := UInt64.ofNat idx }
+  | _ =>
+    throw s!"--allow-dynamic-circuit: expected <vk-hex>:<entry-idx>, got '{spec}'"
+
+/-- Parse all `--allow-dynamic-circuit` flag values, failing closed on any malformed entry. -/
+def parseAllowedDynamicCircuits (specs : Array String) :
+    Except String (Array AllowedDynamicCircuit) :=
+  specs.mapM parseAllowedDynamicCircuit
+
+/-- Parse one `--allow-linked-circuit` allowlist specifier for Mode-3a `LinkedClaim` (validators `12`/`13`).
+Accepts `<vk-hex>:<entry-idx>:<target-hex>:<cert-hex>:<eval-type-hex>` (pinning `codec = ixonAddrPair`)
+or `<vk-hex>:<entry-idx>:<codec>:<target-hex>:<cert-hex>:<eval-type-hex>` where `<codec>` must be
+`1` or `ixonAddrPair`. Rejects VK wildcards, unpinned `(vk, entry)` pairs, and non-`ixonAddrPair` codecs. -/
+def parseAllowedLinkedCircuit (spec : String) : Except String AllowedLinkedCircuit := do
+  let parts := spec.splitOn ":"
+  let (vkHex, idxStr, targetHex, certHex, evalTypeHex) ← match parts with
+    | [vkHex, idxStr, targetHex, certHex, evalTypeHex] =>
+      pure (vkHex, idxStr, targetHex, certHex, evalTypeHex)
+    | [vkHex, idxStr, codecStr, targetHex, certHex, evalTypeHex] =>
+      if codecStr == "1" || codecStr == "ixonAddrPair" then
+        pure (vkHex, idxStr, targetHex, certHex, evalTypeHex)
+      else
+        throw s!"--allow-linked-circuit: Mode 3a requires codec '1' or 'ixonAddrPair', got '{codecStr}'"
+    | _ =>
+      throw s!"--allow-linked-circuit: expected <vk-hex>:<entry-idx>:<target-hex>:<cert-hex>:<eval-type-hex> \
+        (or with explicit :ixonAddrPair: codec), got '{spec}'"
+  let some vkDigest := Address.fromString vkHex
+    | throw s!"--allow-linked-circuit: invalid 64-hex VK digest '{vkHex}'"
+  let some idx := idxStr.toNat?
+    | throw s!"--allow-linked-circuit: invalid entry index '{idxStr}'"
+  if idx ≥ UInt64.size then
+    throw s!"--allow-linked-circuit: entry index '{idxStr}' exceeds u64"
+  let some targetConst := Address.fromString targetHex
+    | throw s!"--allow-linked-circuit: invalid 64-hex targetConst '{targetHex}'"
+  let some certConst := Address.fromString certHex
+    | throw s!"--allow-linked-circuit: invalid 64-hex certConst '{certHex}'"
+  let some evalType := Address.fromString evalTypeHex
+    | throw s!"--allow-linked-circuit: invalid 64-hex evalType '{evalTypeHex}'"
+  pure {
+    vkDigest
+    entryIdx := UInt64.ofNat idx
+    codec := .ixonAddrPair
+    targetConst
+    certConst
+    evalType
+  }
+
+/-- Parse all `--allow-linked-circuit` flag values, failing closed on any malformed entry. -/
+def parseAllowedLinkedCircuits (specs : Array String) :
+    Except String (Array AllowedLinkedCircuit) :=
+  specs.mapM parseAllowedLinkedCircuit
+
+/-- Whether `pol` explicitly allowlists `(vkDigest, entryIdx)` for Tier-1 `DynamicLinkStatement`. -/
+def Policy.allowsDynamicCircuit (pol : Policy) (vkDigest : Address) (entryIdx : UInt64) : Bool :=
+  pol.allowedDynamicCircuits.any fun a =>
+    a.vkDigest == vkDigest && a.entryIdx == entryIdx
+
+/-- Whether `pol` explicitly allowlists a Mode-3a `LinkedCircuitEntry`, pinning the full
+`(vkDigest, entryIdx, codec = ixonAddrPair, targetConst, certConst, evalType)` tuple. -/
+def Policy.allowsLinkedEntry (pol : Policy) (entry : Ix.DynamicLink.LinkedCircuitEntry) : Bool :=
+  entry.codec == .ixonAddrPair &&
+  pol.allowedLinkedCircuits.any fun a =>
+    a.vkDigest == entry.vkDigest &&
+    a.entryIdx == entry.entryIdx &&
+    a.codec == .ixonAddrPair &&
+    a.targetConst == entry.targetConst &&
+    a.certConst == entry.certConst &&
+    a.evalType == entry.evalType
+
+/-- Checked policy parsing from CLI flags (fails closed on invalid `--allow-dynamic-circuit`
+or `--allow-linked-circuit`). -/
+def ofParsedChecked (p : Cli.Parsed) : Except String Policy := do
+  let rawDyn := (p.flag? "allow-dynamic-circuit").map (·.as! (Array String)) |>.getD #[]
+  let allowedDynamicCircuits ← parseAllowedDynamicCircuits rawDyn
+  let rawLinked := (p.flag? "allow-linked-circuit").map (·.as! (Array String)) |>.getD #[]
+  let allowedLinkedCircuits ← parseAllowedLinkedCircuits rawLinked
+  pure {
+    customBinding := p.hasFlag "allow-custom-binding"
+    axioms := p.hasFlag "allow-axioms"
+    assumedBinding := p.hasFlag "allow-assumed-binding"
+    assumptions := p.hasFlag "allow-assumptions"
+    reveal := p.hasFlag "allow-reveal-claim"
+    contains := p.hasFlag "allow-contains-claim"
+    binding := p.hasFlag "allow-binding-claim"
+    allowedDynamicCircuits
+    allowedLinkedCircuits
+  }
 
 /-- A typing claim's assumptions (assumed leaves). -/
 def assumptionsOf : Ix.Claim → Option Address
@@ -233,7 +357,7 @@ under a role table other than the default one is admitted without
 def admit (p : Cli.Parsed) (claim : Ix.Claim) (bindingDischarged : Bool := false)
     (assumptionsDischarged : Bool := false) (envs : IO (List Ixon.Env) := pure []) :
     IO String := do
-  let pol := ofParsed p
+  let pol ← IO.ofExcept (ofParsedChecked p)
   let mut tableAdmitted := false
   let mut unestablished : Option String := none
   if let some ctx := Ix.Claim.context? claim then
@@ -253,6 +377,180 @@ def admit (p : Cli.Parsed) (claim : Ix.Claim) (bindingDischarged : Bool := false
       | none => ""
     throw (IO.userError s!"refused: {why}{detail}")
   IO.ofExcept (statement claim bindingDischarged assumptionsDischarged tableAdmitted)
+
+/-! ## Dynamic Circuit Linking (`EvalAssumedClaim` / `LinkedClaim` / `DynamicLinkStatement`) Policy -/
+
+/-- Always refuse a Tier-2 `EvalAssumedClaim` (validators `10`/`11`): undischarged
+`evalAssumptions` must be discharged before verification. -/
+def refusalEvalAssumedClaim (claim : Ix.DynamicLink.EvalAssumedClaim) : String :=
+  s!"the claim retains undischarged eval assumptions {claim.evalAssumptions} \
+    (validator {claim.validator}); discharge all eval assumptions before verification"
+
+/-- Why `pol` refuses a validator `12`/`13` `LinkedClaim` (`linkedCircuits ≠ none`), if it does.
+Refused by default (`pol.allowedLinkedCircuits.isEmpty`) — even when `--allow-dynamic-circuit` is
+set for Tier-1 `DynamicLinkStatement`s — unless:
+1. `claim.evalAssumptions = none` (all eval assumptions discharged),
+2. `entries = some es` supplies the exact canonical `LinkedCircuitEntry` preimages whose
+   sorted canonical Merkle root equals `claim.linkedCircuits`,
+3. every entry `e ∈ es` binds `(e.spec, e.binding) == (claim.ctx.spec, claim.ctx.binding)`,
+   uses `e.codec = .ixonAddrPair`, AND matches a Mode-3a `--allow-linked-circuit` entry pinning
+   the full `(vkDigest, entryIdx, codec = ixonAddrPair, targetConst, certConst, evalType)` tuple,
+   and
+4. the underlying `(claim.ctx, claim.assumptions)` passes standard `ClaimPolicy` checks. -/
+def refusalLinkedClaim (pol : Policy) (claim : Ix.DynamicLink.LinkedClaim)
+    (entries : Option (Array Ix.DynamicLink.LinkedCircuitEntry) := none)
+    (bindingDischarged : Bool := false) (assumptionsDischarged : Bool := false)
+    (tableAdmitted : Bool := false) : Except String (Option String) := do
+  let spec ← Ix.SpecDigest.specDigest
+  if claim.ctx.spec != spec then
+    return some s!"the claim names the specification set {claim.ctx.spec}, not this build's {spec}; \
+      this build and the artifact the proof was made with disagree"
+  if let some evRoot := claim.evalAssumptions then
+    return some s!"the linked claim retains undischarged eval assumptions {evRoot} \
+      (validator {claim.validator}); discharge all eval assumptions before verification"
+  if pol.allowedLinkedCircuits.isEmpty then
+    return some s!"the claim depends on dynamically linked external circuits \
+      (linkedCircuits root {claim.linkedCircuits}, validator {claim.validator}); \
+      pass --allow-linked-circuit <vk>:<entry>:<target>:<cert>:<eval-type> to explicitly allowlist every linked circuit"
+  let some es := entries
+    | return some s!"the claim depends on dynamically linked external circuits \
+        (linkedCircuits root {claim.linkedCircuits}, validator {claim.validator}), \
+        but no LinkedCircuitEntry preimages were supplied to audit against the allowlist"
+  let some canonTree := Ix.AssumptionTree.canonical (es.map (·.address))
+    | return some s!"the linked claim {claim.linkedCircuits} has an empty linked-circuit entry list"
+  if canonTree.root != claim.linkedCircuits then
+    return some s!"supplied LinkedCircuitEntry preimages hash to canonical root {canonTree.root}, \
+      not the claim's committed linkedCircuits root {claim.linkedCircuits}"
+  for entry in es do
+    if entry.spec != claim.ctx.spec || entry.binding != claim.ctx.binding then
+      return some s!"linked circuit ({entry.vkDigest}:{entry.entryIdx}, cert {entry.certConst}) \
+        binds (spec={entry.spec}, binding={entry.binding}), which differs from the claim's \
+        (spec={claim.ctx.spec}, binding={claim.ctx.binding})"
+    if entry.codec != .ixonAddrPair then
+      return some s!"linked circuit ({entry.vkDigest}:{entry.entryIdx}, cert {entry.certConst}) \
+        uses codec {repr entry.codec}, but Mode 3a requires ixonAddrPair (1)"
+    unless pol.allowsLinkedEntry entry do
+      return some s!"linked circuit ({entry.vkDigest}:{entry.entryIdx}, target {entry.targetConst}, \
+        cert {entry.certConst}, evalType {entry.evalType}) is not allowlisted; pass \
+        --allow-linked-circuit {entry.vkDigest}:{entry.entryIdx}:{entry.targetConst}:{entry.certConst}:{entry.evalType} to accept it"
+  let stdClaim : Ix.Claim := match claim.kind with
+    | .check const => .check claim.ctx const claim.assumptions
+    | .checkEnv root => .checkEnv claim.ctx root claim.assumptions
+  refusal pol stdClaim bindingDischarged assumptionsDischarged tableAdmitted
+
+/-- Why `pol` refuses a standalone Tier 1 `DynamicLinkStatement` (`0xE8 0x0D`), if it does.
+Refused by default unless exact `(stmt.circuit.vkDigest, stmt.circuit.entryIdx)` is allowlisted via
+`--allow-dynamic-circuit`, and when bridged:
+- `bridge.spec` equals this build's spec,
+- `bridge.binding` is the default role table, kernel-admitted (`tableAdmitted`), or accepted via
+  `--allow-custom-binding`, and
+- codec-specific public I/O arities hold (`ixonAddrPair`: `8 + 8`, `ixonAddrSingle`: `8 + 0`). -/
+def refusalDynamicLinkStatement (pol : Policy) (stmt : Ix.DynamicLink.DynamicLinkStatement)
+    (tableAdmitted : Bool := false) :
+    Except String (Option String) := do
+  if let some b := stmt.bridge? then
+    let spec ← Ix.SpecDigest.specDigest
+    if b.spec != spec then
+      return some s!"the dynamic-link bridge names specification set {b.spec}, not this build's {spec}"
+    let default ← Ix.Kernel.Reader.defaultTableAddress
+    if !pol.customBinding && !tableAdmitted && b.binding != default then
+      return some s!"the dynamic-link bridge is relative to role binding {b.binding}, \
+        not the default role table {default}; pass --allow-custom-binding to accept it"
+    match b.codec with
+    | .ixonAddrPair =>
+      if stmt.pubInputs.size != 8 || stmt.pubOutputs.size != 8 then
+        return some s!"the dynamic-link bridge uses codec ixonAddrPair (1), which requires \
+          8 pubInputs and 8 pubOutputs (got {stmt.pubInputs.size} and {stmt.pubOutputs.size})"
+    | .ixonAddrSingle =>
+      if stmt.pubInputs.size != 8 || stmt.pubOutputs.size != 0 then
+        return some s!"the dynamic-link bridge uses codec ixonAddrSingle (2), which requires \
+          8 pubInputs and 0 pubOutputs (got {stmt.pubInputs.size} and {stmt.pubOutputs.size})"
+    | _ => pure ()
+  unless pol.allowsDynamicCircuit stmt.circuit.vkDigest stmt.circuit.entryIdx do
+    return some s!"the dynamic-link statement uses external circuit \
+      ({stmt.circuit.vkDigest}:{stmt.circuit.entryIdx}) which is not allowlisted; \
+      pass --allow-dynamic-circuit {stmt.circuit.vkDigest}:{stmt.circuit.entryIdx} to accept it"
+  return none
+
+/-- Uniform policy check over raw claim bytes covering standard `Ix.Claim` (validators `0, 3, 4, 5`),
+`LinkedClaim` (validators `12`/`13`), `EvalAssumedClaim` (validators `10`/`11`), and Tier 1
+`DynamicLinkStatement` (`0xE8 0x0D`). Refuses any non-empty `linkedCircuits` / validator `12`/`13`
+claim by default unless explicitly allowlisted via `--allow-linked-circuit`. -/
+def refusalDynamicBytes (pol : Policy) (bytes : ByteArray)
+    (linkedEntries : Option (Array Ix.DynamicLink.LinkedCircuitEntry) := none)
+    (bindingDischarged : Bool := false) (assumptionsDischarged : Bool := false)
+    (tableAdmitted : Bool := false) : Except String (Option String) := do
+  match Ix.Claim.de bytes with
+  | .ok c => refusal pol c bindingDischarged assumptionsDischarged tableAdmitted
+  | .error claimErr =>
+    match Ix.DynamicLink.deLinkedClaim bytes with
+    | .ok lc =>
+      refusalLinkedClaim pol lc linkedEntries bindingDischarged assumptionsDischarged tableAdmitted
+    | .error _ =>
+      match Ix.DynamicLink.deEvalAssumedClaim bytes with
+      | .ok ec => pure (some (refusalEvalAssumedClaim ec))
+      | .error _ =>
+        match Ix.DynamicLink.deDynamicLink bytes with
+        | .ok dl => refusalDynamicLinkStatement pol dl tableAdmitted
+        | .error _ => throw claimErr
+
+/-- CLI-facing admission over raw claim bytes covering standard `Ix.Claim`, Mode-3a `LinkedClaim`
+(validators `12`/`13`), `EvalAssumedClaim` (validators `10`/`11`), and Tier-1
+`DynamicLinkStatement` (`0xE8 0x0D`). Enforces `ofParsedChecked`, kernel `TableAdmission.standing`
+for custom role tables, and `refusalDynamicBytes`, returning a human-readable statement on
+admission or throwing `IO.userError "refused: ..."` on refusal. -/
+def admitDynamicBytes (p : Cli.Parsed) (bytes : ByteArray)
+    (linkedEntries : Option (Array Ix.DynamicLink.LinkedCircuitEntry) := none)
+    (bindingDischarged : Bool := false) (assumptionsDischarged : Bool := false)
+    (envs : IO (List Ixon.Env) := pure []) : IO String := do
+  let pol ← IO.ofExcept (ofParsedChecked p)
+  let ctx? : Option Ix.ClaimContext :=
+    match Ix.Claim.de bytes with
+    | .ok c => Ix.Claim.context? c
+    | .error _ =>
+      match Ix.DynamicLink.deLinkedClaim bytes with
+      | .ok lc => some lc.ctx
+      | .error _ =>
+        match Ix.DynamicLink.deDynamicLink bytes with
+        | .ok dl => dl.bridge?.map fun b =>
+            { spec := b.spec, binding := b.binding, axioms := none, bindingAssumed := false }
+        | .error _ => none
+  let mut tableAdmitted := false
+  let mut unestablished : Option String := none
+  if let some ctx := ctx? then
+    unless pol.customBinding do
+      match ← TableAdmission.standing ctx (TableAdmission.withSupplied p envs)
+          (← TableAdmission.checkerRef.get) with
+      | .default => pure ()
+      | .admitted recorded =>
+        tableAdmitted := true
+        IO.eprintln s!"role table {ctx.binding}: admitted by the kernel\
+          {if recorded then " (recorded by an earlier run)" else ""}"
+      | .unestablished why => unestablished := some why
+  if let some why ← IO.ofExcept
+      (refusalDynamicBytes pol bytes linkedEntries bindingDischarged assumptionsDischarged tableAdmitted) then
+    let detail := match unestablished with
+      | some reason => s!" (the kernel's admission of the table is not established: {reason})"
+      | none => ""
+    throw (IO.userError s!"refused: {why}{detail}")
+  match Ix.Claim.de bytes with
+  | .ok c => IO.ofExcept (statement c bindingDischarged assumptionsDischarged tableAdmitted)
+  | .error _ =>
+    match Ix.DynamicLink.deLinkedClaim bytes with
+    | .ok lc =>
+      let stdClaim : Ix.Claim := match lc.kind with
+        | .check const => .check lc.ctx const lc.assumptions
+        | .checkEnv root => .checkEnv lc.ctx root lc.assumptions
+      let base ← IO.ofExcept (statement stdClaim bindingDischarged assumptionsDischarged tableAdmitted)
+      pure s!"{base}\n    linked circuits: {lc.linkedCircuits} (validator {lc.validator}; explicitly allowlisted)"
+    | .error _ =>
+      match Ix.DynamicLink.deDynamicLink bytes with
+      | .ok dl =>
+        let bridgeDesc := match dl.bridge? with
+          | none => "none"
+          | some b => s!"spec={b.spec}, binding={b.binding}, target={b.targetConst}, codec={repr b.codec}, cert={b.certConst}"
+        pure s!"  kind: dynamic-link (external Multi-STARK circuit execution)\n  subject: {dl.circuit.vkDigest}:{dl.circuit.entryIdx} ({dl.pubInputs.size} inputs, {dl.pubOutputs.size} outputs)\n  conditions:\n    bridge: {bridgeDesc}\n    allowlist: explicitly allowlisted"
+      | .error err => throw (IO.userError s!"unrecognized dynamic claim bytes: {err}")
 
 end Ix.Cli.ClaimPolicy
 

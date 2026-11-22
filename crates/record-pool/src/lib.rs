@@ -294,20 +294,33 @@ impl RecordReservation {
       }
       let missing = bytes - credit;
       let available = pool.limit - state.stats.reserved;
-      if state.preferred.is_none_or(|preferred| preferred == id)
-        && available >= missing
-      {
+      // Keep enough headroom for the selected execution's pending growth
+      // (or its next chunk), but let existing peers use surplus capacity.
+      // Otherwise one full-pool event serializes every remaining execution,
+      // even after completed records have released most of the pool.
+      let headroom = state
+        .preferred
+        .filter(|&preferred| preferred != id)
+        .map_or(0, |preferred| {
+          state.entries[&preferred].needed.max(pool.chunk)
+        });
+      if available >= missing.saturating_add(headroom) {
         let extra = missing
           .max(pool.chunk)
-          .min(available)
+          .min(available - headroom)
           .min(pool.record_limit - entry.grant);
         let entry = state.entries.get_mut(&id).unwrap();
+        let was_waiting = entry.waiting;
         entry.grant += extra;
         entry.waiting = false;
+        entry.needed = 0;
         entry.credit.available.fetch_add(extra, Ordering::Relaxed);
         state.stats.reserved += extra;
         state.stats.peak_reserved =
           state.stats.peak_reserved.max(state.stats.reserved);
+        if was_waiting {
+          pool.changed.notify_all();
+        }
         break Ok(());
       }
       if began.is_none() {
@@ -440,7 +453,7 @@ mod tests {
   }
 
   #[test]
-  fn growth_priority_lasts_until_execution_finishes() {
+  fn growth_priority_preserves_needed_capacity_and_blocks_admission() {
     let pool = RecordPool::with_chunk(120, 30, 8);
     let _shutdown = Shutdown(pool.clone());
     let first = pool.try_admit().unwrap().unwrap();
@@ -461,7 +474,7 @@ mod tests {
     wait_for(&pool, 1);
     let (second_tx, second_rx) = mpsc::channel();
     let peer = thread::spawn(move || {
-      second.reserve(10).unwrap();
+      second.reserve(11).unwrap();
       second_tx.send(()).unwrap();
     });
     wait_for(&pool, 2);
@@ -474,6 +487,45 @@ mod tests {
     owner.join().unwrap();
     peer.join().unwrap();
     assert_eq!(pool.stats().retries, 0);
+  }
+
+  #[test]
+  fn peers_resume_with_surplus_before_preferred_execution_finishes() {
+    let pool = RecordPool::with_chunk(120, 30, 8);
+    let _shutdown = Shutdown(pool.clone());
+    let first = pool.try_admit().unwrap().unwrap();
+    let second = pool.try_admit().unwrap().unwrap();
+    let proving = pool.try_admit().unwrap().unwrap();
+    for record in [&first, &second, &proving] {
+      record.reserve(30).unwrap();
+    }
+    proving.finish_execution();
+    let (grown_tx, grown_rx) = mpsc::channel();
+    let (finish_tx, finish_rx) = mpsc::channel();
+    let owner = thread::spawn(move || {
+      first.reserve(50).unwrap();
+      grown_tx.send(()).unwrap();
+      finish_rx.recv().unwrap();
+      first.finish_execution();
+    });
+    wait_for(&pool, 1);
+    let (second_tx, second_rx) = mpsc::channel();
+    let peer = thread::spawn(move || {
+      second.reserve(1).unwrap();
+      second_tx.send(()).unwrap();
+    });
+    wait_for(&pool, 2);
+    drop(proving);
+    grown_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    // Both growth requests fit, so the peer must not wait for the owner's
+    // execution to finish. New admissions still wait for the owner.
+    second_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+    assert!(pool.try_admit().unwrap().is_none());
+    finish_tx.send(()).unwrap();
+    owner.join().unwrap();
+    peer.join().unwrap();
+    assert_eq!(pool.stats().retries, 0);
+    assert_eq!(pool.stats().reserved, 0);
   }
 
   #[test]

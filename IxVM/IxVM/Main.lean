@@ -5,6 +5,7 @@ import Aiur.Optimized.Program
 import Aiur.Trace.Export
 import IxVM.PropagationBench
 import IxVM.Fixture
+import Blake3.Rust
 
 /-! Experimental stage-one port of IxVM. Prepare source, export bytecode and
 typed data hints, execute Rust, or report circuit widths with `stats`,
@@ -13,6 +14,11 @@ typed data hints, execute Rust, or report circuit widths with `stats`,
 No proof generation runs here. -/
 namespace IxVM.Cli
 open Aiur Lean
+
+private def blake3Hex (bytes : ByteArray) : String :=
+  String.join ((Blake3.Rust.hash bytes).val.toList.map fun b =>
+    let digits := Nat.toDigits 16 b.toNat
+    if digits.length == 1 then s!"0{String.ofList digits}" else String.ofList digits)
 
 private def sourcePath (relative : String) : IO System.FilePath := do
   for base in ["IxVM", "IxVM/IxVM"] do
@@ -182,13 +188,14 @@ unsafe def main (args : List String) : IO Unit := do
       IO.eprintln "Compiling claim circuits and witness population plans..."
       let specialized ← IO.ofExcept (Generic.specialize source entries)
       let compiled ← IO.ofExcept (specialized.compileOptimized {})
-      let (exported, trace) ← IO.ofExcept (Trace.exportPlan modulus ZMod.val
+      let (exported, trace) ← IO.ofExcept (Trace.exportPlanPar modulus ZMod.val
         compiled.inlined.program compiled.artifact exported groups)
       pure (exported, some trace)
     else pure (exported, none)
     let path := args[1]?.getD "/tmp/ix-claim.ixa"
-    Artifact.write path (← IO.ofExcept (Artifact.package exported modulus ZMod.val trace))
-    IO.eprintln s!"Wrote {path}"
+    let pkg ← IO.ofExcept (Artifact.package exported modulus ZMod.val trace)
+    Artifact.write path pkg
+    IO.eprintln s!"Wrote {path} (blake3: {blake3Hex pkg})"
     return
   let source := IxVM.source
   IO.eprintln "Checking IxVM entrypoints..."
@@ -217,7 +224,7 @@ unsafe def main (args : List String) : IO Unit := do
     IO.eprintln "Compiling certified circuits and witness population plans..."
     let specialized ← IO.ofExcept (Generic.specialize source entries)
     let compiled ← IO.ofExcept (specialized.compileOptimized {})
-    let (exported, trace) ← IO.ofExcept (Trace.exportPlan modulus ZMod.val
+    let (exported, trace) ← IO.ofExcept (Trace.exportPlanPar modulus ZMod.val
       compiled.inlined.program compiled.artifact exported groups)
     pure (exported, some trace)
   else pure (exported, none)
@@ -228,7 +235,7 @@ unsafe def main (args : List String) : IO Unit := do
     IO.eprintln "Writing execution package..."
     let path := args[1]?.getD "/tmp/aiur-ixvm-package.ixa"
     Artifact.write path package
-    IO.eprintln s!"Wrote {path}"
+    IO.eprintln s!"Wrote {path} (blake3: {blake3Hex package})"
     return
   IO.eprintln s!"Executing {entry}: {fixture.name}"
   runHost package mode

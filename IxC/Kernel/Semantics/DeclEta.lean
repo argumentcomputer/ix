@@ -117,9 +117,10 @@ theorem declEtaStepRun {μ : CheckMode} {F : Nat}
     exact EtaFamiliesClosed.cons_nonind hE
       (Option.isNone_iff_eq_none.mp hcv.1) (fun _ _ heq => nomatch heq)
   | opaqueDecl cv value =>
-    obtain ⟨type', value', hcv, -, rfl⟩ := h
-    exact EtaFamiliesClosed.cons_nonind hE
-      (Option.isNone_iff_eq_none.mp hcv.1) (fun _ _ heq => nomatch heq)
+    rcases h with ⟨-, rfl⟩ | ⟨type', value', hcv, -, rfl⟩
+    · exact hE
+    · exact EtaFamiliesClosed.cons_nonind hE
+        (Option.isNone_iff_eq_none.mp hcv.1) (fun _ _ heq => nomatch heq)
   | axiomDecl cv =>
     -- the `Quot.sound` arm (task #293) installs nothing
     rcases h with ⟨-, rfl⟩ | h

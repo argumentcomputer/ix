@@ -169,6 +169,12 @@ theorem role_ctx_table_spec {t : Ix.Kernel.RoleTable} {lim : Option Nat}
       injection hnode with _ _ hargs
       injection hargs with htbl_eq _
       exact ⟨hh, hr ▸ htbl_eq ▸ htbl, hc⟩
+  | MkEval _ _ _ _ ld _ _ _ =>
+    rw [hl] at ld
+    rcases hn with ⟨_, _, _, rfl⟩ | ⟨_, rfl⟩ <;> simp at ld
+  | AssumedEval _ _ _ ld _ _ _ =>
+    rw [hl] at ld
+    rcases hn with ⟨_, _, _, rfl⟩ | ⟨_, rfl⟩ <;> simp at ld
 
 /-- Direct proof of `KernelRoles::role_addr_index` from its observed path. -/
 theorem role_addr_index_spec {t : Ix.Kernel.RoleTable} {tbl r : SourceValue F}
@@ -217,6 +223,12 @@ theorem role_ctx_axioms_nil {rc r : SourceValue F} {h h' : Heap F} {cs : List (C
       injection hargs with _ h1
       injection h1 with hax _
       exact ⟨hr.trans hax.symm, hh, hc⟩
+  | MkEval _ _ _ _ ld _ _ _ =>
+    rw [hl] at ld
+    rcases hshape with ⟨_, _, rfl⟩ | ⟨_, rfl⟩ <;> simp at ld
+  | AssumedEval _ _ _ ld _ _ _ =>
+    rw [hl] at ld
+    rcases hshape with ⟨_, _, rfl⟩ | ⟨_, rfl⟩ <;> simp at ld
 
 private theorem role_idx_of_roleNum_eq {ro : Ix.Kernel.Role} {k : Nat} (hk : k < 200)
     (h : roleNum ro = (k : F)) : ro.idx = k := by

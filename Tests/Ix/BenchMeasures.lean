@@ -42,6 +42,12 @@ def testStagePrefix : TestSeq :=
       ((backendSpecs.find? (·.name == "aiur-sharded-env")).any fun backend =>
         (backend.metrics.lookup "execute").any (·.contains "fft-cost") &&
         backend.thresholds.contains ("fft-cost", "0.05", "_"))
+  ++ test "engine metadata is not uploaded as a numeric Bencher measure"
+      (let rows := Lean.Json.mkObj [("ISLB", Lean.Json.mkObj [
+        ("status", "ok"), ("engine", "formal-bytecode"), ("check-time", Lean.toJson (3 : Nat))])]
+       let bmf := Ix.Cli.BenchReport.toBmf rows
+       (bmf.getObjVal? "ISLB" >>= fun row => row.getObjVal? "engine").toOption.isNone &&
+         (bmf.getObjVal? "ISLB" >>= fun row => row.getObjVal? "check-time").toOption.isSome)
   ++ test "aiur join pair is registered for dashboard filtering"
       ((backendSpecs.find? (·.name == "aiur")).any fun backend =>
         (backend.benchmarkNames "prove").contains

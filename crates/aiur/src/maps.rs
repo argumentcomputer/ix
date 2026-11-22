@@ -205,6 +205,11 @@ impl<F> MapOverrides<F> {
                         }
                     }
                 }
+                let direct =
+                  host::output_check(&checked.outputs[callable], checked.field)
+                    .is_none()
+                    .then_some(provider.and_then(|p| p.direct))
+                    .flatten();
                 Ok(Arc::new(PreparedMap {
                     program: checked.program.clone(),
                     tables: checked.tables.clone(),
@@ -216,6 +221,7 @@ impl<F> MapOverrides<F> {
                     output_layout: checked.outputs[callable].clone(),
                     field: checked.field,
                     function: provider.map(|p| p.function.clone()),
+                    direct,
                 }))
             })
             .collect()
@@ -233,6 +239,7 @@ pub(crate) struct PreparedMap<B: FieldBackend = PrimeField> {
   output_layout: Layout,
   field: B,
   function: Option<Arc<MapFunction<B::Element>>>,
+  pub(crate) direct: Option<DirectMapKind>,
 }
 
 impl<B: FieldBackend> fmt::Debug for PreparedMap<B> {

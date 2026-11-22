@@ -46,7 +46,66 @@ private def verifyDevelopmentInputs (p : Cli.Parsed) : IO UInt32 := do
     IO.eprintln s!"verify: {error}"
     return 1
 
+private def readBytesInput (input : String) : IO ByteArray := do
+  if let some addr := Address.fromString input then
+    let bytes ← StoreIO.toIO (Store.read addr)
+    let actual := Address.blake3 bytes
+    if actual != addr then
+      throw <| IO.userError s!"store object {addr} hashes to {actual}"
+    return bytes
+  IO.FS.readBinFile input
+
+/-- Policy-check and verify dynamic-linking claims (`DynamicLinkStatement` `0xE8 0x0D`,
+Mode-3a `LinkedClaim` validators `12`/`13`, or `EvalAssumedClaim` validators `10`/`11`)
+paired with `IXAGGR2` aggregate proof(s). Enforces `ClaimPolicy.admitDynamicBytes`
+(`refusalDynamicBytes` / `refusalLinkedClaim` / `refusalDynamicLinkStatement`) BEFORE
+invoking the STARK verifier. -/
+def verifyDynamicInputs (p : Cli.Parsed) : IO UInt32 := do
+  try
+    for flag in #["ixe", "ixes", "shard", "ixc", "record", "structural-above", "distributed",
+        "verifier-bundle", "verifier-bundle-blake3"] do
+      if p.hasFlag flag then
+        throw <| IO.userError s!"--dynamic-claim cannot be combined with --{flag}"
+    let claimInput := p.flag! "dynamic-claim" |>.as! String
+    let claimBytes ← readBytesInput claimInput
+    let rawEntryInputs := (p.flag? "linked-entry").map (·.as! (Array String)) |>.getD #[]
+    let linkedEntries? : Option (Array Ix.DynamicLink.LinkedCircuitEntry) ←
+      if rawEntryInputs.isEmpty then
+        pure none
+      else do
+        let mut entries : Array Ix.DynamicLink.LinkedCircuitEntry := #[]
+        for entryInput in rawEntryInputs do
+          let ebytes ← readBytesInput entryInput
+          let entry ← IO.ofExcept (Ix.DynamicLink.deLinkedCircuitEntry ebytes)
+          entries := entries.push entry
+        pure (some entries)
+    let statement ← ClaimPolicy.admitDynamicBytes p claimBytes linkedEntries?
+    let inputs := p.variableArgsAs! String
+    if inputs.isEmpty then
+      throw <| IO.userError "expected an IXAGGR2 aggregate proof file or store address for --dynamic-claim"
+    let ctx ← FormalAggregate.context p
+    let claimDigest := Address.blake3 claimBytes
+    for input in inputs do
+      let proofBytes ← readBytesInput input
+      let raw ← FormalAggregate.rawProof .aggr proofBytes
+      IO.FS.withTempFile fun _ path => do
+        IO.FS.writeBinFile path raw
+        FormalAggregate.invoke ctx.aggrArtifact "verify"
+          (FormalAiur.invocation (Aggr.pubInput ctx.allowed claimBytes) default "MultiStark::ix_aggr")
+          path.toString
+      IO.println s!"ok: aggregate proof {input} verifies dynamic claim {claimDigest}"
+      IO.println statement
+    return 0
+  catch error =>
+    IO.eprintln s!"verify: {error}"
+    return 1
+
 def runVerifyCmd (p : Cli.Parsed) : IO UInt32 := do
+  if let .error err := ClaimPolicy.ofParsedChecked p then
+    IO.eprintln s!"verify: {err}"
+    return 1
+  if p.hasFlag "dynamic-claim" then
+    return ← verifyDynamicInputs p
   if p.hasFlag "verifier-bundle" || p.hasFlag "verifier-bundle-blake3" then
     return ← verifyDevelopmentInputs p
   if p.hasFlag "aggregate" then
@@ -80,6 +139,8 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "structural-above" : Nat; "For --aggregate + --ixes, reproduce structural joins above N subject leaves (default 4096; must match proving)."
     "record";         "With --ixe + --ixes and proof(s): after a proof binds to its shard and verifies, record it in the shard-proof index (`~/.ix/cache/formal-shard-proofs/<claim-digest>` → address) so `ix prove --skip-proven` and `ix shard refine` reuse it."
     "binding-env" : String; "An `.ixe` whose role binding is the claim's table, with the records it binds and its evidence theorems: the kernel admits the table over them (once per table; recorded in `~/.ix/cache/table-admission`). --ixe serves when its binding is the claim's; a catalog's pieces serve their members."
+    "dynamic-claim" : String; "Path or 64-hex store address of raw dynamic claim bytes (DynamicLinkStatement 0xE8 0x0D, LinkedClaim validator 12/13, or EvalAssumedClaim validator 10/11) to admit via ClaimPolicy and verify against IXAGGR2 aggregate proof(s)."
+    "linked-entry" : Array String; "Path or 64-hex store address of a canonical LinkedCircuitEntry (0xE8 0x0F) preimage required to audit a validator 12/13 LinkedClaim passed via --dynamic-claim."
     "allow-custom-binding"; "Accept a claim relative to a role binding the kernel does not admit here, or to a literal class (outside the IxVM consistency theorem)."
     "allow-axioms"; "Accept a claim that depends on axioms beyond the standard three."
     "allow-assumed-binding"; "Accept a claim that assumes its role binding meets the specifications, with no binding proof."
@@ -87,6 +148,8 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "allow-reveal-claim"; "Accept a reveal claim (fields of a committed constant), which states no typing."
     "allow-contains-claim"; "Accept a contains claim (a leaf of a merkle tree), which states no typing."
     "allow-binding-claim"; "Accept a binding claim (a role table meets this build's specifications) verified on its own; --binding-proof needs no flag."
+    "allow-dynamic-circuit" : Array String; "Allowlist a Tier-1 standalone DynamicLinkStatement circuit (<vk-hex>:<entry-idx>; VK-wide wildcards are forbidden); does NOT authorize validator 12/13 LinkedClaim proofs."
+    "allow-linked-circuit" : Array String; "Allowlist a Mode-3a equality-bridge circuit (<vk-hex>:<entry-idx>:<target-hex>:<cert-hex>:<eval-type-hex> or with :ixonAddrPair: codec) for validator 12/13 LinkedClaim proofs; refused by default."
 
   ARGS:
     ...proofs : String; "32-byte hex addresses of persisted Ixon.Proof wrappers. With --verifier-bundle, proof-wrapper file paths are also accepted. Omit for --ixe + --ixes partition auditing."

@@ -36,7 +36,7 @@ mod setup;
 pub use setup::{SetupClass, SetupConfig};
 mod statement;
 pub use statement::backend_prefix;
-mod storage;
+pub(crate) mod storage;
 mod wrap;
 
 use std::{fs, path::Path};

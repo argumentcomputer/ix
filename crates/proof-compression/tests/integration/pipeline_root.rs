@@ -81,11 +81,24 @@ fn different_root_statements_and_trace_shard_counts() {
   let key_bytes = to_bytes(&system, cp, fp);
   assert!(AiurVerifyingKey::from_bytes(&key_bytes).is_err());
   let key = AiurVerifyingKey::from_bytes_below_floor(&key_bytes).unwrap();
-  // The production entry point decodes keys with the floor: 4 x 55 = 220
-  // conjectured bits, the fewest queries that reach it.
-  let (floor_system, floor_pk, floor_cp, floor_fp) = root_system_with(4, 55);
+  // 4 x 55 = 220 conjectured bits gives only 50.16 UD bits and must be rejected.
+  let (weak_system, _, weak_cp, weak_fp) = root_system_with(4, 55);
+  assert!(
+    AiurVerifyingKey::from_bytes(&to_bytes(&weak_system, weak_cp, weak_fp))
+      .is_err()
+  );
+  // The production entry point decodes keys meeting all floors:
+  // log_blowup = 4, 88 queries, 0 query PoW => 352 conj / 80.256 UD / 176 Johnson.
+  let (floor_system, floor_pk, floor_cp, floor_fp) = root_system_with(4, 88);
   let floor_key_bytes = to_bytes(&floor_system, floor_cp, floor_fp);
   let floor_key = AiurVerifyingKey::from_bytes(&floor_key_bytes).unwrap();
+  let stage_fri_fp = FriParameters {
+    log_final_poly_len: 0,
+    max_log_arity: 1,
+    num_queries: 118,
+    commit_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 0,
+  };
   for (seed, shards) in [(7, 1), (31, 2)] {
     let expected: Vec<_> = (0..18).map(|i| Val::from_u32(seed + i)).collect();
     let inputs = |system: &System<GoldilocksBlake3Config>| {
@@ -105,17 +118,14 @@ fn different_root_statements_and_trace_shard_counts() {
         .collect()
     };
     let proof = system.prove_batch(&pk, inputs(&system), vec![]);
-    let stage =
-      prepare_root(&key, &proof, &expected, Default::default()).unwrap();
-    assert_eq!(stage.public_values(), expected);
+    assert!(prepare_root(&key, &proof, &expected, Default::default()).is_err());
     let floor_proof =
       floor_system.prove_batch(&floor_pk, inputs(&floor_system), vec![]);
-    let floor_stats = (shards == 1).then(|| {
+    let stage =
       prepare_root(&floor_key, &floor_proof, &expected, Default::default())
-        .unwrap()
-        .circuit()
-        .stats()
-    });
+        .unwrap();
+    assert_eq!(stage.public_values(), expected);
+    let floor_stats = (shards == 1).then(|| stage.circuit().stats());
     check_root_directory(
       &floor_key_bytes,
       &floor_proof,
@@ -126,22 +136,31 @@ fn different_root_statements_and_trace_shard_counts() {
     check_root_rejects_below_floor(&key_bytes, &proof, &expected, shards);
     let mut wrong = expected.clone();
     wrong[17] += Val::ONE;
-    assert!(prepare_root(&key, &proof, &wrong, Default::default()).is_err());
-    let mut bad = proof.clone();
+    assert!(
+      prepare_root(&floor_key, &floor_proof, &wrong, Default::default())
+        .is_err()
+    );
+    let mut bad = floor_proof.clone();
     bad.proofs.pop();
-    assert!(prepare_root(&key, &bad, &expected, Default::default()).is_err());
+    assert!(
+      prepare_root(&floor_key, &bad, &expected, Default::default()).is_err()
+    );
     // A balanced pair can satisfy the generic batch protocol but violate
     // Aiur's memory-closure policy. The public root API must reject it.
     let messages = vec![
       multi_stark::batch::BatchMessage::push(vec![Val::ONE]),
       multi_stark::batch::BatchMessage::pull(vec![Val::ONE]),
     ];
-    let bad = system.prove_batch(&pk, inputs(&system), messages);
-    system.verify_batch(&bad).unwrap();
-    assert!(prepare_root(&key, &bad, &expected, Default::default()).is_err());
+    let bad =
+      floor_system.prove_batch(&floor_pk, inputs(&floor_system), messages);
+    floor_system.verify_batch(&bad).unwrap();
+    assert!(
+      prepare_root(&floor_key, &bad, &expected, Default::default()).is_err()
+    );
     if shards == 1 {
       let insufficient =
-        prepare_root(&key, &proof, &expected, Default::default()).unwrap();
+        prepare_root(&floor_key, &floor_proof, &expected, Default::default())
+          .unwrap();
       assert!(
         insufficient
           .prove_fri(GoldilocksBlake3Config::new(cp, fp), 1 << 16)
@@ -152,9 +171,9 @@ fn different_root_statements_and_trace_shard_counts() {
       .prove_fri(
         GoldilocksBlake3Config::new(
           CommitmentParameters { log_blowup: 2, cap_height: 0 },
-          fp,
+          stage_fri_fp,
         ),
-        1 << 16,
+        1 << 19,
       )
       .unwrap();
     verifier.verify(&compressed, &expected).unwrap();
@@ -171,7 +190,7 @@ fn shared_batch_root_preserves_single_batch_verifier_and_proof_bytes()
   };
   use multi_stark::plonkish::CircuitBuilder;
 
-  let (system, pk, cp, fp) = root_system_with_blowup(2);
+  let (system, pk, cp, fp) = root_system_with(2, 118);
   let key =
     AiurVerifyingKey::from_bytes_below_floor(&to_bytes(&system, cp, fp))?;
   let expected: Vec<_> = (0..18).map(|i| Val::from_u32(41 + i)).collect();
@@ -368,7 +387,10 @@ fn check_root_rejects_below_floor(
   })();
   fs::remove_dir_all(directory).unwrap();
   let error = result.unwrap();
-  assert!(error.contains("security floor"), "{error}");
+  assert!(
+    error.contains("security floor") || error.contains("query floor"),
+    "{error}"
+  );
 }
 
 /// Runs all real compression circuits; expensive because it includes two KZG provers.

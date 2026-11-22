@@ -254,6 +254,8 @@ def buildPlan (cfg : EnvConfig) (formalTmp : FilePath) : Array Step := Id.run do
   ]
   steps := push ".lake/build/bin/formal-checks"
     (#["controller", formalTmp.toString] ++ artifactArgs) env steps
+  steps := push ".lake/build/bin/formal-checks"
+    #["checking", formalTmp.toString, "--ixvm-artifact", aiurArt] env steps
 
   -- Optional hardware gate: prove with CUDA and independently verify with CPU
   -- binaries. The separate target directory is the same one the CLI selects.
@@ -425,8 +427,11 @@ def selfTest : IO Unit := do
       | .exec cmd args _ => pred cmd args
       | .parallel substeps => substeps.any fun (cmd, args, _) => pred cmd args
       | .proveAndVerify .. => false
-  ensure (cpuPlan.size == 10) s!"unexpected cpu plan length {cpuPlan.size}"
-  ensure (countSubsteps cpuPlan == 28) s!"unexpected cpu substep count {countSubsteps cpuPlan}"
+  ensure (cpuPlan.size == 11) s!"unexpected cpu plan length {cpuPlan.size}"
+  ensure (countSubsteps cpuPlan == 29) s!"unexpected cpu substep count {countSubsteps cpuPlan}"
+  ensure (hasSubcmd cpuPlan fun cmd args =>
+      cmd == ".lake/build/bin/formal-checks" && args.contains "checking")
+    "cpu plan runs formal-checks checking gate"
   ensure (cudaPlan.size == cpuPlan.size + 2) "cuda adds build + device controller"
   ensure (reusePlan.size == cpuPlan.size && countSubsteps reusePlan == countSubsteps cpuPlan - 3)
     "full artifact reuse skips 3 exports"

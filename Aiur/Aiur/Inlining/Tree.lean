@@ -20,6 +20,7 @@ inductive Tree (F : Type) where
   | neg (child : Tree F)
   | binary (op : BinOp) (left right : Tree F)
   | assertEq (assertion : Assertion) (left right : Tree F)
+  | ptrEq (left right : Tree F)
   | call (name : String) (args : List (Tree F))
   | expand (callee : Aiur.Function F) (args : List (Tree F)) (body : Tree F)
   | matchValue (value : Tree F) (arms : List (Aiur.Pattern F × Tree F))
@@ -37,6 +38,7 @@ def Tree.source : Tree F → Aiur.Expr F
   | .neg x => .neg x.source
   | .binary op x y => .binary op x.source y.source
   | .assertEq op x y => .assertEq op x.source y.source
+  | .ptrEq x y => .ptrEq x.source y.source
   | .call n xs => .call n (xs.map Tree.source)
   | .expand f xs _ => .call f.name (xs.map Tree.source)
   | .matchValue x arms => .matchValue x.source (arms.map fun a => (a.1,a.2.source))
@@ -58,6 +60,7 @@ def Tree.target : Tree F → Aiur.Expr F
   | .neg x => .neg x.target
   | .binary op x y => .binary op x.target y.target
   | .assertEq op x y => .assertEq op x.target y.target
+  | .ptrEq x y => .ptrEq x.target y.target
   | .call n xs => .call n (xs.map Tree.target)
   | .expand f xs b => .letValue (.tuple (f.params.map fun p => .bind p.1))
       (.tuple (xs.map Tree.target)) b.target
@@ -73,7 +76,7 @@ def Tree.Safe (p : Aiur.Program F) (inlineNames : List String) : Tree F → Prop
   | .literal _ | .var _ => True
   | .tuple xs | .construct _ _ xs => ∀ x ∈ xs, x.Safe p inlineNames
   | .project x _ | .store x | .load x | .hint _ x channel | .neg x => x.Safe p inlineNames
-  | .binary _ x y | .assertEq _ x y | .letValue _ x y => x.Safe p inlineNames ∧ y.Safe p inlineNames
+  | .binary _ x y | .assertEq _ x y | .ptrEq x y | .letValue _ x y => x.Safe p inlineNames ∧ y.Safe p inlineNames
   | .call n xs => n ∉ inlineNames ∧ ∀ x ∈ xs, x.Safe p inlineNames
   | .expand f xs b =>
       p.findFunction? f.name = some f ∧ f.name ∈ inlineNames ∧ b.source = f.body ∧
@@ -89,7 +92,7 @@ def Tree.safe [DecidableEq F] (p : Aiur.Program F) (names : List String) : Tree 
   | .literal _ | .var _ => true
   | .tuple xs | .construct _ _ xs => (xs.map (Tree.safe p names)).all id
   | .project x _ | .store x | .load x | .hint _ x channel | .neg x => x.safe p names
-  | .binary _ x y | .assertEq _ x y | .letValue _ x y => x.safe p names && y.safe p names
+  | .binary _ x y | .assertEq _ x y | .ptrEq x y | .letValue _ x y => x.safe p names && y.safe p names
   | .call n xs => decide (n ∉ names) && (xs.map (Tree.safe p names)).all id
   | .expand f xs b => decide (p.findFunction? f.name = some f) && decide (f.name ∈ names) &&
       decide (b.source = f.body) && hasScope (f.params.map Prod.fst) b.target &&
@@ -116,7 +119,7 @@ theorem Tree.safe_iff [DecidableEq F] (p : Aiur.Program F) (names : List String)
   | project x _ | store x | load x | hint _ x channel | neg x =>
       simp only [Tree.safe,Tree.Safe]
       exact sub x (by simp_wf; try omega)
-  | binary _ x y | assertEq _ x y | letValue _ x y =>
+  | binary _ x y | assertEq _ x y | ptrEq x y | letValue _ x y =>
       simp only [Tree.safe,Tree.Safe,Bool.and_eq_true]
       exact and_congr (sub x (by simp_wf; omega)) (sub y (by simp_wf; omega))
   | call n xs =>
@@ -145,7 +148,7 @@ def Tree.checkTypes (q : Aiur.Program F) (locals : List (String × Aiur.Ty)) (tr
     | .literal _ | .var _ => some ()
     | .tuple xs | .construct _ _ xs | .call _ xs => (xs.mapM (Tree.checkTypes q locals)).map fun _ => ()
     | .project x _ | .store x | .load x | .hint _ x channel | .neg x => (x.checkTypes q locals).map fun _ => ()
-    | .binary _ x y | .assertEq _ x y => do
+    | .binary _ x y | .assertEq _ x y | .ptrEq x y => do
         let _ ← x.checkTypes q locals
         let _ ← y.checkTypes q locals
         some ()
@@ -184,6 +187,7 @@ def expand (p : Aiur.Program F) (names : List String) (depth : Nat) (expr : Aiur
   | .neg x => return .neg (← expand p names depth x)
   | .binary op x y => return .binary op (← expand p names depth x) (← expand p names depth y)
   | .assertEq op x y => return .assertEq op (← expand p names depth x) (← expand p names depth y)
+  | .ptrEq x y => return .ptrEq (← expand p names depth x) (← expand p names depth y)
   | .letValue pat x b => return .letValue pat (← expand p names depth x) (← expand p names depth b)
   | .matchValue x arms =>
       let value ← expand p names depth x
@@ -197,6 +201,64 @@ def expand (p : Aiur.Program F) (names : List String) (depth : Nat) (expr : Aiur
       | 0 => throw s!"inline cycle through '{n}'"
       | depth + 1 => return .expand callee args (← expand p names depth callee.body)
 termination_by (depth, sizeOf expr)
+decreasing_by
+  all_goals simp_wf
+  all_goals first | omega | have h := List.sizeOf_lt_of_mem ‹_ ∈ _›; first | omega | cases ‹_ × _›; simp_all only [Prod.mk.sizeOf_spec]; omega
+
+theorem Tree.target_ptrEqFree {p : Aiur.Program F} {names : List String}
+    (hp : p.ptrEqFree = true) (t : Tree F) (hsafe : t.Safe p names)
+    (hsrc : t.source.ptrEqFree = true) : t.target.ptrEqFree = true := by
+  match t with
+  | .literal _ | .var _ => simp [Tree.target, Aiur.Expr.ptrEqFree]
+  | .tuple xs | .construct _ _ xs =>
+      simp only [Tree.Safe] at hsafe
+      simp only [Tree.source, Aiur.Expr.ptrEqFree, List.map_map, List.all_map, List.all_eq_true,
+        Function.comp_def, id_eq] at hsrc
+      simp only [Tree.target, Aiur.Expr.ptrEqFree, List.map_map, List.all_map, List.all_eq_true,
+        Function.comp_def, id_eq]
+      intro x hx
+      exact Tree.target_ptrEqFree hp x (hsafe x hx) (hsrc x hx)
+  | .call _ xs =>
+      simp only [Tree.Safe] at hsafe
+      simp only [Tree.source, Aiur.Expr.ptrEqFree, List.map_map, List.all_map, List.all_eq_true,
+        Function.comp_def, id_eq] at hsrc
+      simp only [Tree.target, Aiur.Expr.ptrEqFree, List.map_map, List.all_map, List.all_eq_true,
+        Function.comp_def, id_eq]
+      intro x hx
+      exact Tree.target_ptrEqFree hp x (hsafe.2 x hx) (hsrc x hx)
+  | .project x _ | .store x | .load x | .hint _ x _ | .neg x =>
+      simp only [Tree.Safe] at hsafe
+      simp only [Tree.source, Aiur.Expr.ptrEqFree] at hsrc
+      simp only [Tree.target, Aiur.Expr.ptrEqFree]
+      exact Tree.target_ptrEqFree hp x hsafe hsrc
+  | .binary _ x y | .assertEq _ x y | .letValue _ x y =>
+      simp only [Tree.Safe] at hsafe
+      simp only [Tree.source, Aiur.Expr.ptrEqFree, Bool.and_eq_true] at hsrc
+      simp only [Tree.target, Aiur.Expr.ptrEqFree, Bool.and_eq_true]
+      exact ⟨Tree.target_ptrEqFree hp x hsafe.1 hsrc.1, Tree.target_ptrEqFree hp y hsafe.2 hsrc.2⟩
+  | .ptrEq _ _ => simp [Tree.source, Aiur.Expr.ptrEqFree] at hsrc
+  | .expand f xs b =>
+      simp only [Tree.Safe] at hsafe
+      obtain ⟨hfind, _, hbsrc, _, hbsafe, hxsafe⟩ := hsafe
+      simp only [Tree.source, Aiur.Expr.ptrEqFree, List.map_map, List.all_map, List.all_eq_true,
+        Function.comp_def, id_eq] at hsrc
+      simp only [Tree.target, Aiur.Expr.ptrEqFree, Bool.and_eq_true, List.map_map, List.all_map,
+        List.all_eq_true, Function.comp_def, id_eq]
+      have hfmem : f ∈ p.functions := List.mem_of_find?_eq_some hfind
+      have hfbody : f.body.ptrEqFree = true := by
+        simp only [Aiur.Program.ptrEqFree, List.all_map, List.all_eq_true, Function.comp_def, id_eq] at hp
+        exact hp f hfmem
+      exact ⟨fun x hx => Tree.target_ptrEqFree hp x (hxsafe x hx) (hsrc x hx),
+        Tree.target_ptrEqFree hp b hbsafe (hbsrc.symm ▸ hfbody)⟩
+  | .matchValue x arms =>
+      simp only [Tree.Safe] at hsafe
+      simp only [Tree.source, Aiur.Expr.ptrEqFree, Bool.and_eq_true, List.map_map, List.all_map,
+        List.all_eq_true, Function.comp_def, id_eq] at hsrc
+      simp only [Tree.target, Aiur.Expr.ptrEqFree, Bool.and_eq_true, List.map_map, List.all_map,
+        List.all_eq_true, Function.comp_def, id_eq]
+      exact ⟨Tree.target_ptrEqFree hp x hsafe.1 hsrc.1,
+        fun a ha => Tree.target_ptrEqFree hp a.2 (hsafe.2 a ha) (hsrc.2 a ha)⟩
+termination_by sizeOf t
 decreasing_by
   all_goals simp_wf
   all_goals first | omega | have h := List.sizeOf_lt_of_mem ‹_ ∈ _›; first | omega | cases ‹_ × _›; simp_all only [Prod.mk.sizeOf_spec]; omega

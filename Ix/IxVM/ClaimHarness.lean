@@ -514,15 +514,32 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   let digestKey := packedDigestKey (Address.blake3 claimBytes)
   let mut ioBuffer : Aiur.IOBuffer := seedBinding env default
   ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
+  let customAxiomsOf (ctx : Ix.ClaimContext) : Array Address :=
+    (ctx.axioms.bind trees.get?).map (·.leaves) |>.getD #[]
   match claim with
   | .check ctx addr _ =>
-    ioBuffer := addScopedEntries env (closureFrom env addr ctx.bindingAssumed) ioBuffer
-  | .eval _ input output _ =>
-    let inputClosure := closureFrom env input
-    let outputClosure := closureFrom env output
-    ioBuffer := addScopedEntries env (inputClosure.union outputClosure) ioBuffer
-  | .checkEnv .. =>
-    ioBuffer := addEntries env (fun _ => true) ioBuffer
+    let roots := #[addr]
+      ++ Ix.primAddrSet.toArray.filter env.consts.contains
+      ++ bindingRoots env ctx.bindingAssumed
+      ++ Ix.ClaimContext.userAxioms env
+      ++ customAxiomsOf ctx
+    ioBuffer := addScopedEntries env (closureFromRoots env roots) ioBuffer
+  | .eval ctx input output _ =>
+    let roots := #[input, output]
+      ++ Ix.primAddrSet.toArray.filter env.consts.contains
+      ++ bindingRoots env ctx.bindingAssumed
+      ++ Ix.ClaimContext.userAxioms env
+      ++ customAxiomsOf ctx
+    ioBuffer := addScopedEntries env (closureFromRoots env roots) ioBuffer
+  | .checkEnv ctx root _ =>
+    let some ownedTree := trees.get? root
+      | throw s!"no assumption tree supplied for root {root}"
+    let roots := ownedTree.leaves
+      ++ Ix.primAddrSet.toArray.filter env.consts.contains
+      ++ bindingRoots env ctx.bindingAssumed
+      ++ Ix.ClaimContext.userAxioms env
+      ++ customAxiomsOf ctx
+    ioBuffer := addScopedEntries env (closureFromRoots env roots) ioBuffer
   | .reveal comm _info _binders =>
     ioBuffer := addScopedEntries env (closureFrom env comm) ioBuffer
   | .contains .. => pure ()
@@ -755,8 +772,19 @@ def buildOwnedShardWitness (env : Ixon.Env) (inputs : ShardWitnessInputs) (owned
     ioBuffer ← seedTreeAt root trees ioBuffer
   return (claim, { funcName := `verify_claim, input := digestKey, inputIOBuffer := ioBuffer })
 
+/-- Variant of `buildShardCheckEnvWitness` when `env` already carries its role
+    binding (`withDefaultRoleBinding`) and `owned` is already `claimableOwned`
+    (e.g. from one-pass shard partitioning or `Ix.Shard.partitionOwned`). -/
+def buildShardCheckEnvWitnessOf (env : Ixon.Env) (owned : Array Address)
+    (assumeBinding : Bool := false) :
+    Except String (Ix.Claim × ClaimWitness) := do
+  buildOwnedShardWitness env (← ShardWitnessInputs.ofEnv env assumeBinding) owned
+
+/-- Variant of `buildShardCheckEnvWitness`: THIN frontier asm (see
+    `shardCheckEnvClaimTrees`) with the `closureFrom` byte scope. -/
 def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address)
-    (assumeBinding : Bool := false) : Except String (Ix.Claim × ClaimWitness) := do
+    (assumeBinding : Bool := false) :
+    Except String (Ix.Claim × ClaimWitness) := do
   let env ← withDefaultRoleBinding env
   let owned ← claimableOwned env owned
   buildOwnedShardWitness env (← ShardWitnessInputs.ofEnv env assumeBinding) owned

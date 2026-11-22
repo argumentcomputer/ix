@@ -216,6 +216,7 @@ jobs:
               - 'Ix/RoleEvidence.lean'
               - 'Ix/SOrder.lean'
               - 'Ix/SemanticContract.lean'
+              - 'Ix/DynamicLink/**'
               - 'Ix/HostAdmission.lean'
               - 'Ix/HostAdmission/**'
               - 'Ix/Sharing/**'
@@ -240,6 +241,7 @@ jobs:
               - 'Ix/Cert/**'
               - 'Ix/Common.lean'
               - 'Ix/IxVM/**'
+              - 'Ix/Cert/**'
               - 'Ix/Compile/**'
               - 'Ix/CompileCert/**'
               - 'Ix/CompileM.lean'
@@ -263,6 +265,7 @@ jobs:
               - 'Ix/AssumptionTree.lean'
               - 'Ix/Aggr/**'
               - 'Ix/Aiur/**'
+              - 'Ix/DynamicLink/**'
               - 'Ix/MultiStark/**'
               - 'Ix/Shard/**'
               - 'Ix/Sharing/**'
@@ -289,6 +292,7 @@ jobs:
               - 'Tests/Fixtures/MultiStark/**'
               - 'Tests/IxVMMain.lean'
               - 'Tests/Ix/IxVM/**'
+              - 'Tests/Ix/MultiStarkVerifier.lean'
               - 'Tests/Ix/Kernel/Arena.lean'
               - 'Tests/Ix/Kernel/ModelLaws.lean'
               - 'Tests/Ix/InstanceSymbols.lean'
@@ -904,6 +908,16 @@ jobs:
             IxSharingVerify.Audit.CompiledCode \
             IxSharingVerify.Audit.SorryFrontier
           lake -d Models/SetTheory env leanchecker IxSetTheoryModel.Audit
+      - name: Bootstrap IxC certified kernel check (WS 2C)
+        if: needs.changes.outputs.is_push != 'true'
+        run: |
+          lake build --wfail ix kernel-check-ixe
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          public_roots="Ix.Kernel.Admission.checkBytes_has_model,Ix.Kernel.Admission.checkBytesWith_has_model,Ix.Kernel.Admission.checkConstants_has_model,Ix.Kernel.Admission.checkConstantsWith_has_model,Ix.Kernel.Admission.checkBytes_has_model_values,Ix.Kernel.Admission.checkBytesWith_has_model_values,Ix.Kernel.Admission.checkBytes_no_proof_of_False,Ix.Kernel.Admission.checkBytesWith_no_proof_of_False,Ix.Kernel.Admission.checkBytes_no_False_theorem,Ix.Kernel.Admission.checkBytesWith_no_False_theorem,Ix.Kernel.Admission.checkBytesWith_no_False_reference,Ix.Kernel.Admission.checkBytes_authentic,Ix.Kernel.Admission.checkBytesWith_authentic,Ix.Kernel.Admission.checkBytes_binding,Ix.Kernel.Admission.checkBytesWith_binding,Ix.Kernel.Admission.checkConstantsAt_has_model,Ix.Kernel.Admission.checkBytes_resources,Ix.Kernel.Admission.checkBytesWith_resources,Ix.Kernel.model_exists,Ix.Kernel.no_False_theorem_accepted"
+          lake env .lake/build/bin/ix compile --no-build --workers 8 --consts "$public_roots" IxC/Kernel/Audit/Roots.lean --out "$tmp/roots.ixe"
+          lake env .lake/build/bin/kernel-check-ixe --strict --jobs 8 "$tmp/roots.ixe" "$tmp/roots.jsonl"
+          lake env .lake/build/bin/kernel-check-ixe --entry --allow-dropped --require-roots "$public_roots" authenticated "$tmp/roots.ixe"
 
   valgrind-ffi:
     name: Valgrind FFI
@@ -1128,20 +1142,35 @@ jobs:
           if [ "$IS_PUSH" != "true" ]; then
             lake exe ixvm/ixvm-proof-gen --check
           fi
-          lake build --wfail IxVMRefinement Ix.IxVM.ConsistencyAudit Ix.IxVM.ConsistencyModelAudit Ix.IxVM.Refinement.Audit
+          lake build --wfail IxVMRefinement \
+            IxVM.CompiledCert \
+            IxVMRefinement.Endpoint.Companions \
+            Ix.IxVM.ConsistencyAudit Ix.IxVM.ConsistencyModelAudit Ix.IxVM.Refinement.Audit Ix.Cert.Compile \
+            Ix.Cert.MultiStark.Audit Ix.Cert.MultiStarkRefinement.Audit \
+            Ix.Cert.Aggr.Audit Ix.Cert.Compression.Audit Ix.Cert.IxccAiur.Audit \
+            Ix.Cert.RecordSectionsBridge
           if [ "$IS_PUSH" != "true" ]; then
             lake env lean --run Scripts/CheckCiFilters.lean
             pinned=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' IxVMRefinement/Endpoint/ClosureManifest.lean)
             test -n "$pinned"
             printf '%s  Tests/Fixtures/circuit-composed-closure-manifest.txt\n' "$pinned" | sha256sum -c -
             lake env leanchecker \
+              IxVM.CompiledCert \
               IxVMRefinement.Endpoint.ComposedResidual \
               IxVMRefinement.Endpoint.ClosureAudit \
+              IxVMRefinement.Endpoint.Companions \
               IxVMRefinement.Endpoint.ConsistencyCorollary \
               IxVMRefinement.Endpoint.ComposedResidualAudit \
               Ix.IxVM.ConsistencyAudit \
               Ix.IxVM.ConsistencyModelAudit \
-              Ix.IxVM.Refinement.Audit
+              Ix.IxVM.Refinement.Audit \
+              Ix.Cert.Compile \
+              Ix.Cert.MultiStark.Audit \
+              Ix.Cert.MultiStarkRefinement.Audit \
+              Ix.Cert.Aggr.Audit \
+              Ix.Cert.Compression.Audit \
+              Ix.Cert.IxccAiur.Audit \
+              Ix.Cert.RecordSectionsBridge
             tmp=$(mktemp -d)
             {
               echo "import IxC.Kernel.Audit.Axioms"

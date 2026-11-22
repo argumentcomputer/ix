@@ -28,7 +28,9 @@ module StarkVerifier {
   fn cap_onto(cap: ProofDeserialize::MerkleCap, tail: Bytes::Stream) -> Bytes::Stream {
       match (*(cap)) {
         Lists::Node::Nil => {  tail } ,
-        Lists::Node::Cons(d, rest) => {  digest_onto((*(d)), cap_onto(rest, tail)) } ,
+        Lists::Node::Cons(d, rest) => {
+          let Lists::Node::Nil = (*(rest));
+          digest_onto((*(d)), tail) } ,
       }
     }
 
@@ -67,7 +69,9 @@ module StarkVerifier {
     }
 
   fn snoc_cap(input: Bytes::Stream, cap: ProofDeserialize::MerkleCap) -> Bytes::Stream {
-      Lists::concat(input, cap_onto(cap, (&(Lists::Node::Nil))))
+      let &Lists::Node::Cons(d, cap_rest) = cap;
+      let Lists::Node::Nil = (*(cap_rest));
+      Lists::concat(input, digest_onto((*(d)), (&(Lists::Node::Nil))))
     }
 
   fn accs_onto(accs: Lists::List<ProofDeserialize::Ext>, tail: Bytes::Stream) -> Bytes::Stream {
@@ -137,14 +141,16 @@ module StarkVerifier {
       }
     }
 
-  inline fn trace_selectors(zeta: ProofDeserialize::Ext, l: Field) -> (ProofDeserialize::Ext, ProofDeserialize::Ext, ProofDeserialize::Ext, ProofDeserialize::Ext) {
-      let zh = trace_vanishing(zeta, l);
-      let ginv = Goldilocks::gl_inverse(two_adic_gen(l));
-      let is_first = Goldilocks::eg_div(zh, Goldilocks::eg_sub(zeta, [1, 0]));
-      let is_last = Goldilocks::eg_div(zh, Goldilocks::eg_sub(zeta, [ginv, 0]));
+  inline fn trace_selectors(zeta: ProofDeserialize::Ext, l: Field) -> (ProofDeserialize::Ext, ProofDeserialize::Ext, ProofDeserialize::Ext, ProofDeserialize::Ext, Goldilocks::Goldilocks, ProofDeserialize::Ext) {
+      let zeta_pow_n = ext_exp_pow2(zeta, l);
+      let zh = Goldilocks::eg_sub(zeta_pow_n, [1, 0]);
+      let g = two_adic_gen(l);
+      let ginv = Goldilocks::gl_inv_nonzero(g);
+      let is_first = Goldilocks::eg_div_nonzero(zh, Goldilocks::eg_sub(zeta, [1, 0]));
+      let is_last = Goldilocks::eg_div_nonzero(zh, Goldilocks::eg_sub(zeta, [ginv, 0]));
       let is_trans = Goldilocks::eg_sub(zeta, [ginv, 0]);
-      let inv_van = Goldilocks::eg_inverse(zh);
-      (is_first, is_last, is_trans, inv_van)
+      let inv_van = Goldilocks::eg_inv_nonzero(zh);
+      (is_first, is_last, is_trans, inv_van, g, zeta_pow_n)
     }
 
   fn ood_fold(acc: ProofDeserialize::Ext, alpha: ProofDeserialize::Ext, x: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
@@ -348,15 +354,19 @@ module StarkVerifier {
       }
     }
 
-  inline fn ood_prep_rows(prep_opt: ProofDeserialize::PreprocessedOpt, oi: SystemDeserialize::OptIdx) -> (Lists::List<ProofDeserialize::Ext>, Lists::List<ProofDeserialize::Ext>) {
+  inline fn ood_prep_rows(prep_opt: ProofDeserialize::PreprocessedOpt, oi: SystemDeserialize::OptIdx)
+        -> (Lists::List<ProofDeserialize::Ext>, Lists::List<ProofDeserialize::Ext>, ProofDeserialize::PreprocessedOpt) {
       match oi {
-        SystemDeserialize::OptIdx::NoIdx => {  ((&(Lists::Node::Nil)), (&(Lists::Node::Nil))) } ,
-        SystemDeserialize::OptIdx::SomeIdx(j) => {
+        SystemDeserialize::OptIdx::NoIdx => {  ((&(Lists::Node::Nil)), (&(Lists::Node::Nil)), prep_opt) } ,
+        SystemDeserialize::OptIdx::SomeIdx(_j) => {
           match prep_opt {
-            ProofDeserialize::PreprocessedOpt::NoPreprocessed => {  ((&(Lists::Node::Nil)), (&(Lists::Node::Nil))) } ,
+            ProofDeserialize::PreprocessedOpt::NoPreprocessed => {  ((&(Lists::Node::Nil)), (&(Lists::Node::Nil)), prep_opt) } ,
             ProofDeserialize::PreprocessedOpt::SomePreprocessed(round) => {
-              let pr = Lists::lookup(round, j);
-              (Lists::lookup(pr, 0), Lists::lookup(pr, 1)) } ,
+              let &Lists::Node::Cons(pr, round_rest) = round;
+              let &Lists::Node::Cons(p0, pr1) = pr;
+              let &Lists::Node::Cons(p1, pr2) = pr1;
+              let Lists::Node::Nil = (*(pr2));
+              (p0, p1, ProofDeserialize::PreprocessedOpt::SomePreprocessed(round_rest)) } ,
           } } ,
       }
     }
@@ -364,26 +374,40 @@ module StarkVerifier {
   fn ood_loop(circuits: Lists::List<SystemDeserialize::SysCircuit>, prep_indices: Lists::List<SystemDeserialize::OptIdx>,
         log_degrees: Lists::List<UInt8::U8>, accs: Lists::List<ProofDeserialize::Ext>,
         stage1: ProofDeserialize::OpenedRound, stage2: ProofDeserialize::OpenedRound, prep_opt: ProofDeserialize::PreprocessedOpt,
-        q_opened: ProofDeserialize::OpenedRound, i: Field, accp: ProofDeserialize::Ext,
+        q_opened: ProofDeserialize::OpenedRound, accp: ProofDeserialize::Ext,
         lch: ProofDeserialize::Ext, fch: ProofDeserialize::Ext, alpha: ProofDeserialize::Ext, zeta: ProofDeserialize::Ext) -> Field {
       match (*(circuits)) {
-        Lists::Node::Nil => {  1 } ,
+        Lists::Node::Nil => {
+          let Lists::Node::Nil = (*(prep_indices));
+          let Lists::Node::Nil = (*(log_degrees));
+          let Lists::Node::Nil = (*(accs));
+          let Lists::Node::Nil = (*(stage1));
+          let Lists::Node::Nil = (*(stage2));
+          let Lists::Node::Nil = (*(q_opened));
+          let _prep_done = match prep_opt {
+            ProofDeserialize::PreprocessedOpt::NoPreprocessed => {  1 } ,
+            ProofDeserialize::PreprocessedOpt::SomePreprocessed(rem) => {
+              let Lists::Node::Nil = (*(rem));
+              1 } ,
+          };
+          1 } ,
         Lists::Node::Cons(circ, rest) => {
           let SystemDeserialize::SysCircuit::Mk(nodes, _node_count, zeros, md, lks, k, mw, pw, ph, s2w) = circ;
-
-          let ld8 = Lists::lookup(log_degrees, i);
+          let &Lists::Node::Cons(pi, pi_rest) = prep_indices;
+          let &Lists::Node::Cons(ld8, ld_rest) = log_degrees;
           assert_eq!(UInt8::less_than(ld8, UInt8::BYTE_32), 1);
           let l = UInt8::to_field(ld8);
           let qd = quotient_degree_of(md);
-          let naccp = Lists::lookup(accs, i);
-          let s1 = Lists::lookup(stage1, i);
-          let main = Lists::lookup(s1, 0);
-          let main_next = Lists::lookup(s1, 1);
-          let s2 = Lists::lookup(stage2, i);
-
-          let s2row = Lists::lookup(s2, 0);
-          let s2next = Lists::lookup(s2, 1);
-          let (prep, prep_next) = ood_prep_rows(prep_opt, Lists::lookup(prep_indices, i));
+          let &Lists::Node::Cons(naccp, acc_rest) = accs;
+          let &Lists::Node::Cons(s1, s1_rest) = stage1;
+          let &Lists::Node::Cons(main, s1_1) = s1;
+          let &Lists::Node::Cons(main_next, s1_2) = s1_1;
+          let Lists::Node::Nil = (*(s1_2));
+          let &Lists::Node::Cons(s2, s2_rest) = stage2;
+          let &Lists::Node::Cons(s2row, s2_1) = s2;
+          let &Lists::Node::Cons(s2next, s2_2) = s2_1;
+          let Lists::Node::Nil = (*(s2_2));
+          let (prep, prep_next, prep_opt2) = ood_prep_rows(prep_opt, pi);
 
           assert_eq!(Fields::is_zero(Lists::length(main) - mw), 1);
           assert_eq!(Fields::is_zero(Lists::length(main_next) - mw), 1);
@@ -391,22 +415,25 @@ module StarkVerifier {
           assert_eq!(Fields::is_zero(Lists::length(s2next) - s2w), 1);
           assert_eq!(Fields::is_zero(Lists::length(prep) - pw), 1);
           assert_eq!(Fields::is_zero(Lists::length(prep_next) - pw), 1);
-          let (isf, isl, ist, invv) = trace_selectors(zeta, l);
+          let (isf, isl, ist, invv, g, zeta_pow_n) = trace_selectors(zeta, l);
           let publics = build_publics(lch, fch, accp, naccp);
           let height = pow2(l);
           assert_eq!((1 - Fields::is_zero(ph)) * (height - ph), 0);
-          let inorm = Goldilocks::gl_inverse(height * two_adic_gen(l));
+          let inorm = Goldilocks::gl_inv_nonzero(height * g);
           let comp = ood_composition(nodes, zeros, lks, k,
                                      main, main_next, prep, prep_next, s2row, s2next,
                                      publics, lch, fch, accp, naccp,
                                      isf, isl, ist, alpha, inorm);
 
-          let slices = reconstruct_ext_row(Lists::lookup(Lists::lookup(q_opened, i), 0));
+          let &Lists::Node::Cons(qmat, q_rest) = q_opened;
+          let &Lists::Node::Cons(qrow, qmat_rest) = qmat;
+          let Lists::Node::Nil = (*(qmat_rest));
+          let slices = reconstruct_ext_row(qrow);
           assert_eq!(Fields::is_zero(Lists::length(slices) - qd), 1);
-          let quot = quotient_eval(slices, ext_exp_pow2(zeta, l), [1, 0]);
+          let quot = quotient_eval(slices, zeta_pow_n, [1, 0]);
           assert_eq!(Goldilocks::eg_eq(Goldilocks::eg_mul(comp, invv), quot), 1);
-          ood_loop(rest, prep_indices, log_degrees, accs, stage1, stage2, prep_opt,
-                   q_opened, i + 1, naccp, lch, fch, alpha, zeta) } ,
+          ood_loop(rest, pi_rest, ld_rest, acc_rest, s1_rest, s2_rest, prep_opt2,
+                   q_rest, naccp, lch, fch, alpha, zeta) } ,
       }
     }
 
@@ -414,6 +441,7 @@ module StarkVerifier {
       match (*(vals)) {
         Lists::Node::Nil => {  [0, 0] } ,
         Lists::Node::Cons(v, rest) => {
+          assert_eq!(Goldilocks::gl_lt_p(v), 1);
           Goldilocks::eg_add([Goldilocks::gl_val(v), 0], Goldilocks::eg_mul(fch, fingerprint_vals(fch, rest))) } ,
       }
     }
@@ -423,7 +451,7 @@ module StarkVerifier {
         Lists::Node::Nil => {  acc } ,
         Lists::Node::Cons(c, rest) => {
           let msg = Goldilocks::eg_add(lch, fingerprint_vals(fch, c));
-          claims_acc(Goldilocks::eg_add(acc, Goldilocks::eg_inverse(msg)), rest, lch, fch) } ,
+          claims_acc(Goldilocks::eg_add(acc, Goldilocks::eg_inv_nonzero(msg)), rest, lch, fch) } ,
       }
     }
 
@@ -483,8 +511,10 @@ module StarkVerifier {
 
   fn header_onto(h: ProofDeserialize::ShardHeader, tail: Bytes::Stream) -> Bytes::Stream {
       let ProofDeserialize::ShardHeader::Mk(active, cap, lds, claims) = h;
+      let &Lists::Node::Cons(d, cap_rest) = cap;
+      let Lists::Node::Nil = (*(cap_rest));
       active_onto(active,
-        cap_onto(cap,
+        digest_onto((*(d)),
           count_onto(Lists::length(lds),
             log_degrees_onto(lds, claims_onto(claims, tail)))))
     }
@@ -589,7 +619,7 @@ module StarkVerifier {
         Lists::Node::Cons(m, rest) => {
           let ProofDeserialize::BatchMessage::Mk(args, mult) = m;
           let msg = Goldilocks::eg_add(lch, fingerprint_vals(fch, args));
-          let term = Goldilocks::eg_mul(Goldilocks::eg_inverse(msg), [Goldilocks::gl_val(mult), 0]);
+          let term = Goldilocks::eg_mul(Goldilocks::eg_inv_nonzero(msg), [Goldilocks::gl_val(mult), 0]);
           messages_acc(Goldilocks::eg_add(acc, term), rest, lch, fch) } ,
       }
     }
@@ -637,24 +667,139 @@ module StarkVerifier {
       Fields::is_zero(high) * (UInt8::less_than(b[4], UInt8::BYTE_128) + Fields::is_zero(n - 549755813888))
     }
 
-  -- A shard's rows: `2^ld` summed over its active circuits.
-  fn shard_rows(lds: Lists::List<UInt8::U8>) -> Field {
-      match (*(lds)) {
-        Lists::Node::Nil => {  0 } ,
-        Lists::Node::Cons(ld, rest) => {  pow2(UInt8::to_field(ld)) + shard_rows(rest) } ,
+  -- Lanes packed per row under `C6` vectorized ROM (`rom_lanes(w)`).
+  fn rom_lanes_of(w: Field) -> Field {
+      match w {
+        0 => {  8 } , 1 => {  8 } , 2 => {  8 } , 3 => {  8 } , 4 => {  8 } ,
+        5 => {  4 } , 6 => {  4 } , 7 => {  4 } , 8 => {  4 } ,
+        9 => {  4 } , 10 => {  4 } , 11 => {  4 } , 12 => {  4 } ,
+        _ => {  1 } ,
       }
     }
 
-  -- The running total of a batch's rows stays at most 2^39, so that the
-  -- next shard's sum (each `ld <= 32`) cannot wrap the field.
-  fn batch_rows(headers: Lists::List<ProofDeserialize::ShardHeader>, acc: Field) -> Field {
+  fn node_const_opt(nodes: Lists::List<SystemDeserialize::SysNode>, id: Field) -> (Field, Field) {
+      match Lists::lookup(nodes, id) {
+        SystemDeserialize::SysNode::Const(c) => {  (1, c) } ,
+        _ => {  (0, 0) } ,
+      }
+    }
+
+  fn lookup_memseg_width(nodes: Lists::List<SystemDeserialize::SysNode>, lk: SystemDeserialize::SysLookup) -> (Field, Field) {
+      let SystemDeserialize::SysLookup::Mk(_mid, args) = lk;
+      match (*(args)) {
+        Lists::Node::Cons(a0, r1) => {
+          match (*(r1)) {
+            Lists::Node::Cons(a1, r2) => {
+              match (*(r2)) {
+                Lists::Node::Cons(_a2, r3) => {
+                  match (*(r3)) {
+                    Lists::Node::Nil => {
+                      let (is_c0, c0) = node_const_opt(nodes, a0);
+                      let (is_c1, w) = node_const_opt(nodes, a1);
+                      let ok = is_c0 * is_c1 * Fields::is_zero(c0 - 16);
+                      (ok, ok * w) } ,
+                    _ => {  (0, 0) } ,
+                  } } ,
+                _ => {  (0, 0) } ,
+              } } ,
+            _ => {  (0, 0) } ,
+          } } ,
+        _ => {  (0, 0) } ,
+      }
+    }
+
+  fn circuit_memseg_width(nodes: Lists::List<SystemDeserialize::SysNode>, lks: Lists::List<SystemDeserialize::SysLookup>) -> (Field, Field) {
+      match (*(lks)) {
+        Lists::Node::Nil => {  (0, 0) } ,
+        Lists::Node::Cons(lk, rest) => {
+          let (found, w) = lookup_memseg_width(nodes, lk);
+          match found {
+            1 => {  (1, w) } ,
+            _ => {  circuit_memseg_width(nodes, rest) } ,
+          } } ,
+      }
+    }
+
+  fn circuit_row_weights(circuits: Lists::List<SystemDeserialize::SysCircuit>) -> Lists::List<Field> {
+      match (*(circuits)) {
+        Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
+        Lists::Node::Cons(circ, rest) => {
+          let SystemDeserialize::SysCircuit::Mk(nodes, _nc, _zeros, _md, lks, _k, mw, _pw, _ph, _s2w) = circ;
+          let (found, w) = circuit_memseg_width(nodes, lks);
+          let wt = match found {
+            0 => {  1 } ,
+            _ => {
+              let k = rom_lanes_of(w);
+              match Fields::is_zero(mw - (1 + k * (w + 2))) {
+                1 => {  k } ,
+                _ => {  1 } ,
+              } } ,
+          };
+          (&(Lists::Node::Cons(wt, circuit_row_weights(rest)))) } ,
+      }
+    }
+
+  fn field_in_list(xs: Lists::List<Field>, target: Field) -> Field {
+      match (*(xs)) {
+        Lists::Node::Nil => {  0 } ,
+        Lists::Node::Cons(x, rest) => {
+          match Fields::is_zero(x - target) {
+            1 => {  1 } ,
+            _ => {  field_in_list(rest, target) } ,
+          } } ,
+      }
+    }
+
+  fn system_rom_widths(circuits: Lists::List<SystemDeserialize::SysCircuit>) -> Lists::List<Field> {
+      match (*(circuits)) {
+        Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
+        Lists::Node::Cons(circ, rest) => {
+          let SystemDeserialize::SysCircuit::Mk(nodes, _nc, _zeros, _md, lks, _k, _mw, _pw, _ph, _s2w) = circ;
+          let (found, w) = circuit_memseg_width(nodes, lks);
+          let tail = system_rom_widths(rest);
+          match found {
+            1 => {
+              match field_in_list(tail, w) {
+                1 => {  tail } ,
+                _ => {  (&(Lists::Node::Cons(w, tail))) } ,
+              } } ,
+            _ => {  tail } ,
+          } } ,
+      }
+    }
+
+  -- A shard's logical rows: `weight(c) * 2^ld` summed over its active circuits,
+  -- weighting `C6` vectorized `<ROM:w>` circuits by their lane count `K` so
+  -- `rom.entries.length <= 2^39` holds unconditionally.
+  fn shard_rows(weights: Lists::List<Field>, active: Lists::List<Field>, lds: Lists::List<UInt8::U8>) -> Field {
+      match (*(weights)) {
+        Lists::Node::Nil => {
+          let Lists::Node::Nil = (*(active));
+          let Lists::Node::Nil = (*(lds));
+          0 } ,
+        Lists::Node::Cons(wt, wrest) => {
+          let &Lists::Node::Cons(b, arest) = active;
+          assert_eq!(b * (b - 1), 0);
+          match b {
+            0 => {  shard_rows(wrest, arest, lds) } ,
+            _ => {
+              let &Lists::Node::Cons(ld, lrest) = lds;
+              assert_eq!(log_degree_ok(ld), 1);
+              wt * pow2(UInt8::to_field(ld)) + shard_rows(wrest, arest, lrest) } ,
+          } } ,
+      }
+    }
+
+  -- The running total of a batch's weighted rows stays at most 2^39, so that
+  -- the next shard's sum (each `wt * 2^ld <= 2^35`) cannot wrap the field.
+  fn batch_rows(weights: Lists::List<Field>, headers: Lists::List<ProofDeserialize::ShardHeader>, acc: Field) -> Field {
       match (*(headers)) {
         Lists::Node::Nil => {  acc } ,
         Lists::Node::Cons(h, rest) => {
-          let ProofDeserialize::ShardHeader::Mk(_active, _cap, lds, _claims) = h;
-          let rows = acc + shard_rows(lds);
+          let ProofDeserialize::ShardHeader::Mk(active, _cap, lds, _claims) = h;
+          let rows = acc + shard_rows(weights, active, lds);
           assert_eq!(at_most_row_bound(rows), 1);
-          batch_rows(rest, rows) } ,
+          batch_rows(weights, rest, rows) } ,
       }
     }
 
@@ -672,16 +817,17 @@ module StarkVerifier {
     }
 
   -- The bounds every verifier of these proofs enforces, mirroring Rust's
-  -- `validate_preamble`. The rows of a batch, summed over shards and active
-  -- circuits, are at most 2^39 (`MAX_BATCH_ROWS`): the depth pass (Track A,
-  -- H1) excludes memo cycles because a cycle needs `p / 2^24` rows. With every
-  -- circuit below 2^24 lookups, the lookup budget `claims + sum of height *
-  -- max(lookups, 1)` is then below `2^63 + claims < p`, so no unit consumer
-  -- count wraps the field.
+  -- `validate_preamble`. The weighted rows of a batch, summed over shards and
+  -- active circuits (with `C6` vectorized ROM circuits weighted by `K` lanes),
+  -- are at most 2^39 (`MAX_BATCH_ROWS`): the depth pass (Track A, H1) excludes
+  -- memo cycles because a cycle needs `p / 2^24` rows, and `rom.entries.length <= 2^39`
+  -- holds unconditionally. With every circuit below 2^24 lookups, the lookup
+  -- budget `claims + sum of height * max(lookups, 1)` is below `2^63 + claims < p`.
   fn assert_batch_bounds(sys: SystemDeserialize::Sys, headers: Lists::List<ProofDeserialize::ShardHeader>) -> Field {
       let SystemDeserialize::Sys::Mk(_params, _tlimbs, circuits, _commit, _prep_indices) = sys;
       assert_eq!(lookups_ok(circuits), 1);
-      let _rows = batch_rows(headers, 0);
+      let weights = circuit_row_weights(circuits);
+      let _rows = batch_rows(weights, headers, 0);
       1
     }
 
@@ -703,31 +849,66 @@ module StarkVerifier {
           le_step(x[1], y[1], le_step(x[0], y[0], 1))))))))
     }
 
-  fn assert_closure_pairs(ms: Lists::List<ProofDeserialize::BatchMessage>, prev_w: Field, prev_b: Field) -> Field {
+  fn assert_closure_pairs_n(ms: Lists::List<ProofDeserialize::BatchMessage>, prev_w: Field, prev_b: Field, count: Field) -> Field {
       match (*(ms)) {
         Lists::Node::Nil => {  1 } ,
         Lists::Node::Cons(pull, rest1) => {
+          assert_eq!(UInt32::less_than_fields(count, 65536), 1);
           let Lists::Node::Cons(push, rest) = (*(rest1));
           let ProofDeserialize::BatchMessage::Mk(pargs, pmult) = pull;
           let ProofDeserialize::BatchMessage::Mk(qargs, qmult) = push;
+          assert_eq!(Goldilocks::gl_lt_p(pmult), 1);
+          assert_eq!(Goldilocks::gl_lt_p(qmult), 1);
           assert_eq!(Goldilocks::gl_val(pmult) + 1, 0);
           assert_eq!(Goldilocks::gl_val(qmult), 1);
           let (pc, pw, pa) = three_limbs(pargs);
           let (qc, qw, qb) = three_limbs(qargs);
+          assert_eq!(Goldilocks::gl_lt_p(pc), 1);
+          assert_eq!(Goldilocks::gl_lt_p(pw), 1);
+          assert_eq!(Goldilocks::gl_lt_p(pa), 1);
+          assert_eq!(Goldilocks::gl_lt_p(qc), 1);
+          assert_eq!(Goldilocks::gl_lt_p(qw), 1);
+          assert_eq!(Goldilocks::gl_lt_p(qb), 1);
           assert_eq!(Goldilocks::gl_val(pc), 16);
           assert_eq!(Goldilocks::gl_val(qc), 16);
           let w = Goldilocks::gl_val(pw);
           assert_eq!(Goldilocks::gl_val(qw), w);
-          let a = Goldilocks::gl_val(pa);
           let b = Goldilocks::gl_val(qb);
-          assert_eq!(bytes8_le(Goldilocks::gl_to_bytes(a), Goldilocks::gl_to_bytes(b)), 1);
+          -- Strict `a < b`: reject empty `a == b` no-op intervals.
+          assert_eq!(bytes8_le(qb, pa), 0);
 
           let same_w = Fields::is_zero(w - prev_w);
-          let w_up = 1 - bytes8_le(Goldilocks::gl_to_bytes(w), Goldilocks::gl_to_bytes(prev_w));
+          let w_up = 1 - bytes8_le(pw, Goldilocks::gl_to_bytes(prev_w));
           assert_eq!(
-            w_up + same_w * bytes8_le(Goldilocks::gl_to_bytes(prev_b), Goldilocks::gl_to_bytes(a)), 1);
-          assert_closure_pairs(rest, w, b) } ,
+            w_up + same_w * bytes8_le(Goldilocks::gl_to_bytes(prev_b), pa), 1);
+          assert_closure_pairs_n(rest, w, b, count + 1) } ,
       }
+    }
+
+  fn assert_closure_pairs(ms: Lists::List<ProofDeserialize::BatchMessage>, prev_w: Field, prev_b: Field) -> Field {
+      assert_closure_pairs_n(ms, prev_w, prev_b, 0)
+    }
+
+  fn assert_closure_widths_loop(ms: Lists::List<ProofDeserialize::BatchMessage>, rom_widths: Lists::List<Field>, pairs: Field) -> Field {
+      match (*(ms)) {
+        Lists::Node::Nil => {  pairs } ,
+        Lists::Node::Cons(pull, rest1) => {
+          let Lists::Node::Cons(_push, rest) = (*(rest1));
+          let ProofDeserialize::BatchMessage::Mk(pargs, _pmult) = pull;
+          let (_pc, pw, _pa) = three_limbs(pargs);
+          assert_eq!(field_in_list(rom_widths, Goldilocks::gl_val(pw)), 1);
+          assert_closure_widths_loop(rest, rom_widths, pairs + 1) } ,
+      }
+    }
+
+  fn assert_closure_widths_ok(circuits: Lists::List<SystemDeserialize::SysCircuit>,
+        headers: Lists::List<ProofDeserialize::ShardHeader>,
+        ms: Lists::List<ProofDeserialize::BatchMessage>) -> Field {
+      let rom_widths = system_rom_widths(circuits);
+      let pairs = assert_closure_widths_loop(ms, rom_widths, 0);
+      let max_pairs = Lists::length(headers) * Lists::length(rom_widths);
+      assert_eq!(UInt32::less_than_fields(pairs, max_pairs + 1), 1);
+      1
     }
 
   fn verify_shard(sys: SystemDeserialize::Sys, header: ProofDeserialize::ShardHeader, shard: Field, proof: ProofDeserialize::Proof,
@@ -759,13 +940,22 @@ module StarkVerifier {
       assert_eq!(assert_log_degrees_ok(log_degrees), 1);
       assert_eq!(count_ones(active), Lists::length(log_degrees));
       let prep_cap = opt_commit_cap(commit);
+      let _prep_match = match commit {
+        SystemDeserialize::OptCommit::NoCommit => {
+          let ProofDeserialize::PreprocessedOpt::NoPreprocessed = prep_opt;
+          1 } ,
+        SystemDeserialize::OptCommit::SomeCommit(_c) => {
+          let ProofDeserialize::PreprocessedOpt::SomePreprocessed(_r) = prep_opt;
+          1 } ,
+      };
       let (alpha, zeta, post_zeta_input) = Transcript::shard_fiat_shamir(input, shard, s2c, qc, accs);
+      assert_eq!(ext_is_zero(zeta), 0);
       let acc0 = claims_acc([0, 0], h_claims, lch, fch);
       let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
-               prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);
+               prep_opt, q_opened, acc0, lch, fch, alpha, zeta);
       assert_eq!(Pcs::pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
         s1c, s2c, qc, prep_cap, aprep, log_degrees, zeta,
-        Lists::length(acirc), log_blowup, num_queries, commit_pow_bits,
+        num_circuits, log_blowup, num_queries, commit_pow_bits,
         query_pow_bits), 1);
       last_acc(accs)
     }
@@ -798,7 +988,8 @@ module StarkVerifier {
       assert_eq!(assert_batch_bounds(sys, headers), 1);
       assert_eq!(Lists::length(proofs), Lists::length(headers));
       assert_eq!(assert_closure_pairs(messages, 0, 0), 1);
-      let SystemDeserialize::Sys::Mk(_params, tlimbs, _circuits, commit, _prep_indices) = sys;
+      let SystemDeserialize::Sys::Mk(_params, tlimbs, circuits, commit, _prep_indices) = sys;
+      assert_eq!(assert_closure_widths_ok(circuits, headers, messages), 1);
       let prep_cap = opt_commit_cap(commit);
       let (lch, fch, input) = Transcript::batch_fiat_shamir(tlimbs, prep_cap, headers, messages);
       let acc = messages_acc([0, 0], messages, lch, fch);
@@ -840,6 +1031,7 @@ module StarkVerifier {
         0 => {  ((&(Lists::Node::Nil)), stream) } ,
         _ => {
           let (x, s) = ProofDeserialize::read_u64(stream);
+          assert_eq!(Goldilocks::gl_lt_p(x), 1);
           let (rest, s2) = read_claim_vals_n(s, n - 1);
           ((&(Lists::Node::Cons(x, rest))), s2) } ,
       }

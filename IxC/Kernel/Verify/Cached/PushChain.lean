@@ -613,6 +613,9 @@ theorem checkDeclC_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
   cases pd with
   | defnDecl cv value hint =>
     simp only []
+    by_cases hct : cv.name.isCompilerTrust = true
+    · simp only [hct, ↓reduceIte]; exact Yields.ofThrowBind
+    simp only [hct, Bool.false_eq_true, ↓reduceIte]
     refine Yields.bind' (checkConstantValC_fresh mode fe cv) fun p hp => ?_
     obtain ⟨cvA, jty⟩ := p
     obtain ⟨hp, hfr⟩ := hp
@@ -628,6 +631,9 @@ theorem checkDeclC_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
     · exact key
   | thmDecl cv value =>
     simp only []
+    by_cases hct : cv.name.isCompilerTrust = true
+    · simp only [hct, ↓reduceIte]; exact Yields.ofThrowBind
+    simp only [hct, Bool.false_eq_true, ↓reduceIte]
     refine Yields.bind' (checkConstantValC_fresh mode fe cv) fun p hp => ?_
     obtain ⟨cvA, jty⟩ := p
     obtain ⟨hp, hfr⟩ := hp
@@ -635,6 +641,20 @@ theorem checkDeclC_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
       (by show fe.find? cvA.name = none; rw [hp]; exact hfr) jty value
   | opaqueDecl cv value =>
     simp only []
+    split
+    · split
+      · split
+        · exact Yields.ofThrow
+        · split
+          · exact Yields.ofThrow
+          · split
+            · exact Yields.ofThrow
+            · split
+              · exact Yields.ofThrow
+              · exact Yields.bind' (checkConstantValC_fresh mode fe cv) fun _ _ => Yields.pure h
+      · exact Yields.ofThrow
+    split
+    · exact Yields.ofThrow
     refine Yields.bind' (checkConstantValC_fresh mode fe cv) fun p hp => ?_
     obtain ⟨cvA, jty⟩ := p
     obtain ⟨hp, hfr⟩ := hp
@@ -642,12 +662,29 @@ theorem checkDeclC_push (mode : CheckMode) {env : Env md} {fe : FEnv md}
       (by show fe.find? cvA.name = none; rw [hp]; exact hfr) jty value
   | axiomDecl cv =>
     simp only []
-    -- task #293: `Quot.sound` is compared with the pin and pushes
-    -- nothing
+    -- task #293 & §7.10: `Quot.sound` and compiler-trust axioms push nothing
     split
     · split
       · exact Yields.pure h
       · exact Yields.ofThrow
+    split
+    · split
+      · split
+        · exact Yields.ofThrow
+        · split
+          · exact Yields.bind' (checkConstantValC_fresh mode fe cv) fun _ _ => Yields.pure h
+          · split
+            · exact Yields.ofThrow
+            · split
+              · exact Yields.ofThrow
+              · split
+                · exact Yields.ofThrow
+                · split
+                  · exact Yields.ofThrow
+                  · exact Yields.pure h
+      · exact Yields.ofThrow
+    split
+    · exact Yields.ofThrow
     refine Yields.bind' (checkConstantValC_fresh mode fe cv) fun p hp => ?_
     obtain ⟨cvA, jty⟩ := p
     obtain ⟨hp, hfr⟩ := hp
@@ -726,11 +763,13 @@ theorem annotStepC_push (mode : CheckMode) (i : Nat) {env : Env md} {fe : FEnv m
       Array.toList_push⟩
   | opaqueDecl cv value =>
     simp only []
-    refine Yields.bind' (annotValueC_fresh mode fe cv value) fun r hr => ?_
-    obtain ⟨cvA, jty, jv⟩ := r
-    obtain ⟨hp, hfr⟩ := hr
-    exact Yields.pure ⟨h.push (by show fe.find? cvA.name = none; rw [hp]; exact hfr), _,
-      Array.toList_push⟩
+    split
+    · exact hord _
+    · refine Yields.bind' (annotValueC_fresh mode fe cv value) fun r hr => ?_
+      obtain ⟨cvA, jty, jv⟩ := r
+      obtain ⟨hp, hfr⟩ := hr
+      exact Yields.pure ⟨h.push (by show fe.find? cvA.name = none; rw [hp]; exact hfr), _,
+        Array.toList_push⟩
   | axiomDecl cv => exact hord _
   | basisDecl kind => exact hord _
   | quotDecl k cv => exact hord _

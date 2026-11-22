@@ -103,6 +103,9 @@ fn quotient_reference(
     &input.circuit.graph,
     input.circuit.lookup_group_size,
   );
+  let mut powers: Vec<_> =
+    alpha.powers().take(input.constraint_count).collect();
+  powers.reverse();
   let mut shift = input.quotient_domain.shift;
   for coset in 0..ratio {
     let domain = Radix2Coset { log_size: input.trace_domain.log_size, shift };
@@ -112,6 +115,8 @@ fn quotient_reference(
       .unwrap();
     let main = evaluations(main, ark_domain);
     let stage2 = evaluations(stage2, ark_domain);
+    let selectors =
+      crate::kzg::quotient::CosetSelectors::new(input.trace_domain, domain);
     for pass in &passes {
       let selected: Vec<_> =
         pass.fixed.iter().map(|&i| fixed[i].clone()).collect();
@@ -121,13 +126,14 @@ fn quotient_reference(
         input,
         pass,
         domain,
+        &selectors,
+        &powers,
         fixed.as_ref(),
         &main,
         &stage2,
-        alpha,
         coset,
         ratio,
-        1 << 12,
+        None,
         &mut values,
       );
     }

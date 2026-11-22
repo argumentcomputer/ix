@@ -9,6 +9,17 @@ pub(crate) enum Kind {
   Recursion,
 }
 
+#[derive(
+  Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq,
+)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Mode {
+  Execute,
+  Plan,
+  #[default]
+  Prove,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Artifact {
@@ -21,6 +32,8 @@ pub(crate) struct Artifact {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Config {
+  #[serde(default)]
+  pub(crate) mode: Mode,
   pub(crate) artifacts: Vec<Artifact>,
   pub(crate) devices: Vec<Option<i32>>,
   pub(crate) exec_jobs: usize,

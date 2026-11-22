@@ -156,6 +156,8 @@ def checkDeclC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
     (CheckCM md) (FEnv md) :=
   match pd with
   | .defnDecl cv value hint => do
+    if cv.name.isCompilerTrust then
+      throw (.notImplemented msg!"compiler-trust constant cannot be a definition ({cv.name})")
     let (cvA, jty) ← checkConstantValC mode fe cv
     if natOpNames.contains cvA.name || natDivModNames.contains cvA.name then
       let fe2 ← checkDefnValC mode fe cvA jty value hint
@@ -184,20 +186,62 @@ def checkDeclC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
     else
       checkDefnValC mode fe cvA jty value hint
   | .thmDecl cv value => do
+    if cv.name.isCompilerTrust then
+      throw (.notImplemented msg!"compiler-trust constant cannot be a theorem ({cv.name})")
     let (cvA, jty) ← checkConstantValC mode fe cv
     checkThmValC mode fe cvA jty value
-  | .opaqueDecl cv value => do
-    let (cvA, jty) ← checkConstantValC mode fe cv
-    checkOpaqueValC mode fe cvA jty value
+  | .opaqueDecl cv value =>
+    if cv.name.isCompilerTrustOpaque then
+      if (anchorMismatch? cv).isNone then
+        if (fe.find? cv.name).isSome then
+          throw (.invalid msg!"duplicate declaration {cv.name}")
+        else if !Expr.looseBVarsBounded 0 value then
+          throw (.invalid msg!"loose bound variable in value of {cv.name}")
+        else if value.hasFvar then
+          throw (.invalid msg!"unexpected free variable in value of {cv.name}")
+        else if !Expr.allLevelParamsDefinedC cv.levelParams value then
+          throw (.invalid msg!"undeclared universe parameter in value of {cv.name}")
+        else do
+          let _ ← checkConstantValC mode fe cv
+          pure fe
+      else
+        throw (.notImplemented msg!"compiler-trust opaque shape mismatch ({cv.name})")
+    else if cv.name.isCompilerTrustAxiom then
+      throw (.notImplemented msg!"compiler-trust axiom cannot be an opaque ({cv.name})")
+    else do
+      let (cvA, jty) ← checkConstantValC mode fe cv
+      checkOpaqueValC mode fe cvA jty value
   | .axiomDecl cv =>
     -- `checkDecl`'s twin (task #293): `Quot.sound` is the pinned
     -- quotient block's own record — compared with the pin, installing
-    -- nothing, declining on a mismatch.
+    -- nothing, declining on a mismatch; compiler-trust axioms (§7.10)
+    -- likewise match their pin and install nothing.
     if cv.name = quotSoundName then
       (if ConstantInfo.canonEq (.axiomInfo cv) (quotBasis.getD 4 (.axiomInfo default)) then
         pure fe
       else
         throw (.notImplemented "quotient soundness axiom mismatch"))
+    else if cv.name.isCompilerTrustAxiom then
+      (if (anchorMismatch? cv).isNone then
+        if (fe.find? cv.name).isSome then
+          throw (.invalid msg!"duplicate declaration {cv.name}")
+        else if cv.name = roleKey .trustCompiler then do
+          let _ ← checkConstantValC mode fe cv
+          pure fe
+        else if !LevelParam.nodup cv.levelParams then
+          throw (.invalid msg!"duplicate universe parameters in {cv.name}")
+        else if !Expr.looseBVarsBounded 0 cv.type then
+          throw (.invalid msg!"loose bound variable in type of {cv.name}")
+        else if Expr.hasFvar cv.type then
+          throw (.invalid msg!"unexpected free variable in type of {cv.name}")
+        else if !Expr.allLevelParamsDefinedC cv.levelParams cv.type then
+          throw (.invalid msg!"undeclared universe parameter in type of {cv.name}")
+        else
+          pure fe
+      else
+        throw (.notImplemented msg!"compiler-trust axiom shape mismatch ({cv.name})"))
+    else if cv.name.isCompilerTrustOpaque then
+      throw (.notImplemented msg!"compiler-trust opaque cannot be an axiom ({cv.name})")
     else do
       let (cvA, _) ← checkConstantValC mode fe cv
       if stdAxiomOkF fe cvA then

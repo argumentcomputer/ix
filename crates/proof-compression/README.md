@@ -37,7 +37,7 @@ development parameters. Final setup is independent: PLONK defaults to Ignition,
 while `--dev-final-srs` prepares local keys for either PLONK or Groth16. With
 `--dev-kzg-srs` as well, neither stage needs Ignition.
 Default verification pins one version of the verifying keys,
-[`0.3`](verifying-keys/0.3): one key per proof system, with the root layout,
+[`0.4`](verifying-keys/0.4): one key per proof system, with the root layout,
 statement prefix and Ignition parameters they were derived for. They belong to
 the formal IxVM and aggregation backends under the default STARK parameters
 ([STARK parameters](../../docs/stark-parameters.md)); see
@@ -114,15 +114,15 @@ install it.
 
 `ix compress ROOT` and `ix prove ... --compress kzg|plonk|groth16` automatically
 normalize the aggregate root using the versioned
-[version 0.3 layout](verifying-keys/0.3/root-layout.ixl).
+[version 0.4 layout](verifying-keys/0.4/root-layout.ixl).
 `--fixed-root` is an optional layout override from `ix compress layout`. The
 default layout holds the roots of `Nat.add_comm`'s aggregate under all four
 root shapes (a wrapped leaf, ordinary and structural joins of wrapped leaves,
 and joins of raw leaves), which need the same heights, with one more doubling
-of every circuit (`--headroom 1`). It has 140 circuit heights, 12 of them
+of every circuit (`--headroom 1`). It has 45 circuit heights, 12 of them
 memory circuits, and 18 claim elements. Its root verifier is the formal
 aggregation key, BLAKE3
-`f6d00e0451de46e218aa17a93924ae8714d87c7ebe61301470fccc55b409b44e`.
+`81e744bbeec1f680ae1ad845f19a722d9e17cf07d409e48ea4b22a56f2d6f32d`.
 The default rejects another backend key, and normalization rejects executions
 that exceed the fixed bounds before allocating traces. A larger supported
 layout is a new release profile; compression does not resize it per proof.
@@ -309,8 +309,8 @@ environment and installs them once, before the first KZG stage:
 | --- | --- | --- |
 | `IX_KZG_CUDA_DEVICES` | CUDA ordinals, comma separated, in preference order | `0`; the library itself defaults to every supported device |
 | `IX_KZG_MSM_CHUNK_POINTS` | `1..=2^28` | `2^24` |
-| `IX_KZG_CUDA_RESIDENT_GIB` | device bytes kept for resident coefficients, in GiB | first stage: up to half the device memory; recursive stage: `8` |
-| `IX_KZG_CUDA_SRS_CACHE` | `0`, `1` | `0` |
+| `IX_KZG_CUDA_RESIDENT_GIB` | device bytes kept for resident coefficients, in GiB | adaptive (`total / 3`, bounded by `total / 2` and free VRAM minus reserve) |
+| `IX_KZG_CUDA_SRS_CACHE` | `0`, `1` | `1` |
 | `IX_KZG_CUDA_PASSES` | `0`, `1`, `force` | `1`: constraint passes when the dense working set does not fit |
 | `IX_KZG_CUDA_PROFILE` | set to record NVTX ranges and transfer timings | unset |
 

@@ -17,7 +17,7 @@ use aiur::{
   ixon::{Reader, Writer},
   trace::stark::{
     BatchProof as AiurProof, MEMSEG, VerifyingKey as AiurVerifyingKey,
-    batch::memseg_args,
+    batch::{circuit_memseg_width, memseg_args},
   },
 };
 use multi_stark::{
@@ -175,6 +175,82 @@ impl FixedRoot {
     })
   }
 
+  fn memory_lanes(
+    key: &AiurVerifyingKey,
+    width: usize,
+    index: usize,
+  ) -> Result<usize> {
+    let circuits = &key.system().circuits;
+    let circuit = circuits
+      .get(index)
+      .ok_or("fixed root memory circuit index out of bounds")?;
+    let expected_width = u64::try_from(width)
+      .map_err(|_overflow| "fixed root memory width exceeds u64")?;
+    if circuit_memseg_width(circuit) != Some(expected_width) {
+      return Err(
+        format!("circuit {index} is not a segmented <ROM:{width}> circuit")
+          .into(),
+      );
+    }
+    // Every MEMSEG lookup inside the selected circuit must target the same
+    // width, and no other circuit in the system may claim the same ROM width.
+    for lookup in &circuit.graph.lookups {
+      if lookup.args.len() == 3
+        && let Some(multi_stark::graph::Node::Const(ch)) =
+          circuit.graph.nodes.get(lookup.args[0].0 as usize)
+        && *ch == Val::from_u64(MEMSEG)
+      {
+        let w = match circuit.graph.nodes.get(lookup.args[1].0 as usize) {
+          Some(multi_stark::graph::Node::Const(v)) => v.as_canonical_u64(),
+          _ => {
+            return Err(
+              format!("circuit {index} has non-constant MEMSEG width").into(),
+            );
+          },
+        };
+        if w != expected_width {
+          return Err(
+            format!(
+              "circuit {index} mixes MEMSEG width {w} with expected {width}"
+            )
+            .into(),
+          );
+        }
+      }
+    }
+    let rom_matches = circuits
+      .iter()
+      .filter(|c| circuit_memseg_width(c) == Some(expected_width))
+      .count();
+    if rom_matches != 1 {
+      return Err(
+        format!(
+          "verifying key has {rom_matches} circuits for <ROM:{width}>, expected 1"
+        )
+        .into(),
+      );
+    }
+    let main_width = circuit.main_width;
+    let k = aiur::trace::stark::rom_lanes(width);
+    let vectorized_width = width
+      .checked_add(2)
+      .and_then(|s| s.checked_mul(k))
+      .and_then(|n| n.checked_add(1));
+    let scalar_width = width.checked_add(3);
+    if k > 1 && vectorized_width == Some(main_width) {
+      Ok(k)
+    } else if scalar_width == Some(main_width) {
+      Ok(1)
+    } else {
+      Err(
+        format!(
+          "unrecognized ROM circuit {index} main_width {main_width} for payload width {width}"
+        )
+        .into(),
+      )
+    }
+  }
+
   fn build(
     &self,
     key: &AiurVerifyingKey,
@@ -186,7 +262,7 @@ impl FixedRoot {
       &vec![Val::ZERO; self.memory_traces.len()],
     )?;
     key
-      .validate_preamble(&preamble.headers[0].claims[0], &preamble)
+      .validate_normalized_preamble(&preamble.headers[0].claims[0], &preamble)
       .map_err(|e| format!("fixed root policy: {e:?}"))?;
     let verifier = VerifierKey::from_system(key.system());
     let header = &preamble.headers[0];
@@ -213,8 +289,9 @@ impl FixedRoot {
       .collect();
     let mut messages = vec![];
     for (&(width, index), &end) in self.memory_traces.iter().zip(&ends) {
-      let log = self.log_heights[index];
-      // 0 <= end <= 2^log_height: low bits must vanish if the top bit is 1.
+      let lanes = Self::memory_lanes(key, width, index)?;
+      let log = usize::from(self.log_heights[index]) + lanes.ilog2() as usize;
+      // 0 <= end <= lanes * 2^log_height: low bits must vanish if the top bit is 1.
       // This also establishes canonical integer ordering for Aiur's policy.
       let mut low = b.constant(Val::ZERO);
       for bit in 0..log {
@@ -281,7 +358,7 @@ impl FixedRoot {
     limits: VerifierLimits,
   ) -> Result<Prepared<Val>> {
     key
-      .verify(&[expected.to_vec()], proof)
+      .verify_normalized(&[expected.to_vec()], proof)
       .map_err(|e| format!("normalized root: {e:?}"))?;
     if expected.len() != self.claim_len
       || proof.preamble.headers.len() != 1
@@ -299,12 +376,12 @@ impl FixedRoot {
       .step_by(2)
       .map(|m| m.args[2])
       .collect();
-    if ends
-      .iter()
-      .zip(&self.memory_traces)
-      .any(|(e, &(_, i))| e.as_canonical_u64() > 1u64 << self.log_heights[i])
-    {
-      return Err("memory closure exceeds normalization bound".into());
+    for (e, &(w, i)) in ends.iter().zip(&self.memory_traces) {
+      let lanes = Self::memory_lanes(key, w, i)?;
+      let max_entries = (lanes as u64) << self.log_heights[i];
+      if e.as_canonical_u64() > max_entries {
+        return Err("memory closure exceeds normalization bound".into());
+      }
     }
     let mut preamble = self.preamble(key, expected, &ends)?;
     preamble.headers[0].stage_1_trace =
@@ -372,20 +449,31 @@ mod tests {
     ]))?;
     let program = program.check_field::<Val>()?;
     let plan = TracePlan::new(&program, trace)?;
-    // Toy parameters keep the verifier circuit small; production keys must
-    // meet the security floor.
-    let params = Parameters {
+    // Verify toy/weak keys fail both `AiurVerifyingKey::from_bytes` and `fixed.circuit`
+    // (`fri::validate_parameters`), while production-floor keys pass end to end.
+    let toy_params = Parameters {
       log_blowup: 2,
       num_queries: 2,
       commit_proof_of_work_bits: 0,
       query_proof_of_work_bits: 0,
     };
-    let backend = Backend::for_batch_below_floor(&plan, params)?;
+    let toy_backend = Backend::for_batch_below_floor(&plan, toy_params)?;
+    let toy_bytes = toy_backend.verifying_key_bytes()?;
+    assert!(AiurVerifyingKey::from_bytes(&toy_bytes).is_err());
+    let toy_key = AiurVerifyingKey::from_bytes_below_floor(&toy_bytes)?;
+    let fixed = FixedRoot::new(vec![4, 4, 2, 1], vec![(2, 3)], 4)?;
+    assert!(fixed.circuit(&toy_key, Default::default()).is_err());
+
+    let params = Parameters {
+      log_blowup: 4,
+      num_queries: 70,
+      commit_proof_of_work_bits: 0,
+      query_proof_of_work_bits: 17,
+    };
+    let backend = Backend::for_batch(&plan, params)?;
     let (cp, fp) = (params.commitment(), params.fri());
     let bytes = backend.verifying_key_bytes()?;
-    assert!(AiurVerifyingKey::from_bytes(&bytes).is_err());
-    let key = AiurVerifyingKey::from_bytes_below_floor(&bytes)?;
-    let fixed = FixedRoot::new(vec![4, 4, 2, 1], vec![(2, 3)], 4)?;
+    let key = AiurVerifyingKey::from_bytes(&bytes)?;
     for logs in [vec![4, 4, 2, 1, 1], vec![4, 4, 3, 1]] {
       let invalid = FixedRoot::new(logs, vec![(2, 3)], 4)?;
       assert!(invalid.circuit(&key, Default::default()).is_err());
@@ -419,7 +507,7 @@ mod tests {
     let local = FriVerifier::derive(
       fixed.circuit(&key, Default::default())?,
       config(),
-      1 << 16,
+      1 << 19,
     )?;
     for value in [3, 7] {
       let input = vec![Val::from_u32(value)];
@@ -438,7 +526,7 @@ mod tests {
       )?;
       assert!(other.prepare(&key, &proof, &claim, Default::default()).is_err());
       let prepared = fixed.prepare(&key, &proof, &claim, Default::default())?;
-      let (verifier, proof) = prepared.prove_fri(config(), 1 << 16)?;
+      let (verifier, proof) = prepared.prove_fri(config(), 1 << 19)?;
       assert_eq!(verifier.to_bytes()?, local.to_bytes()?);
       local.verify(&proof, &claim)?;
     }
@@ -447,19 +535,19 @@ mod tests {
 
   #[test]
   fn fixed_key_binds_claims_and_enforces_memory_bounds() -> Result<()> {
-    let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };
+    let cp = CommitmentParameters { log_blowup: 4, cap_height: 0 };
     let fp = FriParameters {
       log_final_poly_len: 0,
       max_log_arity: 1,
-      num_queries: 2,
+      num_queries: 70,
       commit_proof_of_work_bits: 0,
-      query_proof_of_work_bits: 0,
+      query_proof_of_work_bits: 17,
     };
     let channel = Val::from_u64(MEMSEG);
     let (system, pk) = System::new(
       GoldilocksBlake3Config::new(cp, fp),
       [(8, 8), (1, 2)].into_iter().map(|(width, height)| CircuitInputs {
-        main_width: 4,
+        main_width: width + 3,
         preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; height])),
         lookups: vec![
           Lookup::pull(
@@ -485,18 +573,26 @@ mod tests {
     let key = AiurVerifyingKey::from_bytes_below_floor(&stark_key::to_bytes(
       &system, cp, fp,
     ))?;
+    // Unrecognized ROM circuit width must fail closed in `memory_lanes`.
+    let (bad_sys, _) = System::new(
+      GoldilocksBlake3Config::new(cp, fp),
+      [CircuitInputs {
+        main_width: 4,
+        preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; 8])),
+        ..Default::default()
+      }],
+    );
+    let bad_key = AiurVerifyingKey::from_bytes_below_floor(
+      &stark_key::to_bytes(&bad_sys, cp, fp),
+    )?;
+    assert!(FixedRoot::memory_lanes(&bad_key, 8, 0).is_err());
     let fixed = FixedRoot::new(vec![3, 1], vec![(1, 1), (8, 0)], 2)?;
-    let config = || {
-      GoldilocksBlake3Config::new(
-        CommitmentParameters { log_blowup: 2, cap_height: 0 },
-        fp,
-      )
-    };
+    let config = || GoldilocksBlake3Config::new(cp, fp);
     // Generated before, and independently of, every certificate and witness.
     let local = FriVerifier::derive(
       fixed.circuit(&key, Default::default())?,
       config(),
-      1 << 16,
+      1 << 19,
     )?;
     for (small_end, large_end) in [(0, 0), (2, 8), (3, 1), (1, 9)] {
       let expected =
@@ -516,17 +612,18 @@ mod tests {
           ]
         })
         .collect();
-      let traces = [(large_end, 8), (small_end, 2)]
+      let traces = [(8usize, large_end, 8usize), (1, small_end, 2)]
         .into_iter()
-        .map(|(end, height)| {
-          let mut values = vec![Val::ZERO; 4 * height];
+        .map(|(width, end, height)| {
+          let row_width = width + 3;
+          let mut values = vec![Val::ZERO; row_width * height];
           values[..4].copy_from_slice(&[
             expected[0],
             expected[1],
             Val::ONE,
             Val::from_u32(end),
           ]);
-          RowMajorMatrix::new(values, 4)
+          RowMajorMatrix::new(values, row_width)
         })
         .collect();
       let proof = system.prove_batch(
@@ -537,11 +634,16 @@ mod tests {
         }],
         messages,
       );
-      key.verify(std::slice::from_ref(&expected), &proof).unwrap();
+      key.verify_normalized(std::slice::from_ref(&expected), &proof).unwrap();
+      if small_end == 0 || large_end == 0 {
+        assert!(key.verify(std::slice::from_ref(&expected), &proof).is_err());
+      } else {
+        key.verify(std::slice::from_ref(&expected), &proof).unwrap();
+      }
       if small_end <= 2 && large_end <= 8 {
         let stage =
           fixed.prepare(&key, &proof, &expected, Default::default())?;
-        let (verifier, compressed) = stage.prove_fri(config(), 1 << 16)?;
+        let (verifier, compressed) = stage.prove_fri(config(), 1 << 19)?;
         assert_eq!(verifier.to_bytes()?, local.to_bytes()?);
         local.verify(&compressed, &expected)?;
         assert!(
@@ -571,6 +673,133 @@ mod tests {
         assert!(witness.generate().is_err());
       }
     }
+    Ok(())
+  }
+
+  #[test]
+  fn rejects_non_rom_and_width_aliased_memory_circuits() -> Result<()> {
+    let cp = CommitmentParameters { log_blowup: 4, cap_height: 0 };
+    let fp = FriParameters {
+      log_final_poly_len: 0,
+      max_log_arity: 1,
+      num_queries: 70,
+      commit_proof_of_work_bits: 0,
+      query_proof_of_work_bits: 17,
+    };
+    let channel = Val::from_u64(MEMSEG);
+    let memseg_lookups = |width: usize| {
+      vec![
+        Lookup::push(
+          Expr::main(1),
+          vec![channel.into(), Val::from_usize(width).into(), Val::ZERO.into()],
+        ),
+        Lookup::pull(
+          Expr::main(1),
+          vec![channel.into(), Val::from_usize(width).into(), Expr::main(2)],
+        ),
+      ]
+    };
+
+    // 1. Non-ROM circuits whose main_width matches scalar (w + 3 = 4) and
+    // vectorized (1 + 8*(1 + 2) = 25) ROM widths must be rejected.
+    let (non_rom_sys, _) = System::new(
+      GoldilocksBlake3Config::new(cp, fp),
+      [
+        CircuitInputs {
+          main_width: 4,
+          preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; 4])),
+          ..Default::default()
+        },
+        CircuitInputs {
+          main_width: 25,
+          preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; 4])),
+          ..Default::default()
+        },
+      ],
+    );
+    let non_rom_key =
+      AiurVerifyingKey::from_bytes(&stark_key::to_bytes(&non_rom_sys, cp, fp))?;
+    assert!(FixedRoot::memory_lanes(&non_rom_key, 1, 0).is_err());
+    assert!(FixedRoot::memory_lanes(&non_rom_key, 1, 1).is_err());
+    let bad_fixed = FixedRoot::new(vec![2, 2], vec![(1, 0)], 2)?;
+    assert!(bad_fixed.circuit(&non_rom_key, Default::default()).is_err());
+
+    // 2. Vectorized <ROM:1> (k=8, main_width = 1 + 8*(1+2) = 25) and scalar
+    // <ROM:22> (k=1, main_width = 22 + 3 = 25) share main_width == 25.
+    // Swapping their circuit indices in FixedRoot must be rejected, while
+    // matching indices succeed with distinct lane counts (8 vs 1).
+    let (aliased_sys, _) = System::new(
+      GoldilocksBlake3Config::new(cp, fp),
+      [
+        CircuitInputs {
+          main_width: 25,
+          preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; 4])),
+          lookups: memseg_lookups(1),
+          ..Default::default()
+        },
+        CircuitInputs {
+          main_width: 25,
+          preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; 4])),
+          lookups: memseg_lookups(22),
+          ..Default::default()
+        },
+      ],
+    );
+    let aliased_key =
+      AiurVerifyingKey::from_bytes(&stark_key::to_bytes(&aliased_sys, cp, fp))?;
+    assert_eq!(FixedRoot::memory_lanes(&aliased_key, 1, 0)?, 8);
+    assert_eq!(FixedRoot::memory_lanes(&aliased_key, 22, 1)?, 1);
+    assert!(FixedRoot::memory_lanes(&aliased_key, 1, 1).is_err());
+    assert!(FixedRoot::memory_lanes(&aliased_key, 22, 0).is_err());
+    let swapped = FixedRoot::new(vec![2, 2], vec![(1, 1), (22, 0)], 2)?;
+    assert!(swapped.circuit(&aliased_key, Default::default()).is_err());
+    let valid = FixedRoot::new(vec![2, 2], vec![(1, 0), (22, 1)], 2)?;
+    assert!(valid.circuit(&aliased_key, Default::default()).is_ok());
+
+    // 3. Duplicate <ROM:1> circuits in one verifying key must be rejected.
+    let (dup_sys, _) = System::new(
+      GoldilocksBlake3Config::new(cp, fp),
+      [
+        CircuitInputs {
+          main_width: 4,
+          preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; 4])),
+          lookups: memseg_lookups(1),
+          ..Default::default()
+        },
+        CircuitInputs {
+          main_width: 4,
+          preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; 4])),
+          lookups: memseg_lookups(1),
+          ..Default::default()
+        },
+      ],
+    );
+    let dup_key =
+      AiurVerifyingKey::from_bytes(&stark_key::to_bytes(&dup_sys, cp, fp))?;
+    assert!(FixedRoot::memory_lanes(&dup_key, 1, 0).is_err());
+
+    // 4. A circuit mixing distinct MEMSEG widths must be rejected.
+    let (mixed_sys, _) = System::new(
+      GoldilocksBlake3Config::new(cp, fp),
+      [CircuitInputs {
+        main_width: 4,
+        preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; 4])),
+        lookups: vec![
+          Lookup::push(
+            Expr::main(1),
+            vec![channel.into(), Val::from_usize(1).into(), Val::ZERO.into()],
+          ),
+          Lookup::pull(
+            Expr::main(1),
+            vec![channel.into(), Val::from_usize(2).into(), Expr::main(2)],
+          ),
+        ],
+        ..Default::default()
+      }],
+    );
+    let mixed_key =
+      AiurVerifyingKey::from_bytes(&stark_key::to_bytes(&mixed_sys, cp, fp))?;
+    assert!(FixedRoot::memory_lanes(&mixed_key, 1, 0).is_err());
     Ok(())
   }
 }

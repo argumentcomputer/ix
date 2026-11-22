@@ -53,9 +53,10 @@
 //!
 //! Per-node `degrees` are NOT serialized: they are derived (Const/Public/
 //! IsTransition = 0, Var/IsFirstRow/IsLastRow = 1, Add/Sub = max of children,
-//! Mul = sum, Neg = child) and recomputed on decode in node order (children
-//! precede parents in the compiled vector). Goldilocks constants are written
-//! canonically and reduced on read.
+//! Mul = checked sum, Neg = child) and recomputed on decode in node order
+//! (children precede parents in the compiled vector). Goldilocks constants are
+//! written canonically and validated on read (values `>= P` or `<= u16::MAX`
+//! encoded with `ConstBig` tag 1 are rejected).
 //!
 //! Every parameter that affects soundness is in the header, so it is covered
 //! by the key's digest, and multi-stark also seeds the transcript with it.
@@ -293,7 +294,16 @@ impl<'a> Seg<'a> {
 fn decode_node(seg: &mut Seg<'_>) -> Result<Node<Val>, String> {
   Ok(match seg.u8()? {
     0 => Node::Const(Val::from_u16(seg.u16()?)),
-    1 => Node::Const(Val::from_u64(seg.u64()?)),
+    1 => {
+      let raw = seg.u64()?;
+      if u16::try_from(raw).is_ok() {
+        return Err(format!("non-canonical ConstBig encoding for {raw}"));
+      }
+      if raw >= Val::ORDER_U64 {
+        return Err(format!("non-canonical Goldilocks constant {raw}"));
+      }
+      Node::Const(Val::from_u64(raw))
+    },
     2 => Node::Public(u32::from(seg.u8()?)),
     3 => Node::IsFirstRow,
     4 => Node::IsLastRow,
@@ -335,7 +345,9 @@ fn recompute_degrees(nodes: &[Node<Val>]) -> Result<Vec<u32>, String> {
       Node::Add(a, b) | Node::Sub(a, b) => {
         get(&degrees, a)?.max(get(&degrees, b)?)
       },
-      Node::Mul(a, b) => get(&degrees, a)? + get(&degrees, b)?,
+      Node::Mul(a, b) => get(&degrees, a)?
+        .checked_add(get(&degrees, b)?)
+        .ok_or_else(|| "constraint node degree overflow".to_string())?,
       Node::Neg(a) => get(&degrees, a)?,
     };
     degrees.push(d);
@@ -347,6 +359,17 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
   let main_width = seg.u16()? as usize;
   let preprocessed_width = seg.u16()? as usize;
   let preprocessed_height = seg.u32_usize()?;
+  if preprocessed_height == 0 {
+    if preprocessed_width != 0 {
+      return Err(format!(
+        "nonzero preprocessed_width {preprocessed_width} with zero preprocessed_height"
+      ));
+    }
+  } else if !preprocessed_height.is_power_of_two() {
+    return Err(format!(
+      "preprocessed_height {preprocessed_height} is not a power of two"
+    ));
+  }
   let max_constraint_degree = seg.u16()? as usize;
   let lookup_group_size = seg.u8()? as usize;
   if !(1..=multi_stark::lookup::MAX_LOOKUP_GROUP).contains(&lookup_group_size) {
@@ -383,9 +406,43 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
       Err(format!("node id {} out of bounds ({})", id.0, nodes.len()))
     }
   };
+  let ext_degree =
+    <multi_stark::types::ExtVal as multi_stark::p3_field::BasedVectorSpace<
+      Val,
+    >>::DIMENSION;
+  let num_lookups = lookups.len();
+  let stage_2_width = multi_stark::lookup::stage2_width(
+    num_lookups,
+    lookup_group_size,
+    ext_degree,
+  );
+  let num_publics = multi_stark::lookup::num_publics(ext_degree);
+  for node in &nodes {
+    match *node {
+      Node::Public(idx) if idx as usize >= num_publics => {
+        return Err(format!(
+          "public index {idx} out of bounds ({num_publics})"
+        ));
+      },
+      Node::Var(col) => {
+        let width = match col.source {
+          Source::Preprocessed => preprocessed_width,
+          Source::Main => main_width,
+          Source::Stage2 => stage_2_width,
+        };
+        if col.index as usize >= width {
+          return Err(format!(
+            "{:?} column index {} out of bounds ({width})",
+            col.source, col.index
+          ));
+        }
+      },
+      _ => {},
+    }
+  }
   // The graph's own max degree covers only the user roots (the serialized
   // `max_constraint_degree` is the combined user + analytic-logUp value).
-  let mut user_max_degree = 0;
+  let mut user_max_degree = 0u32;
   for &z in &zeros {
     user_max_degree = user_max_degree.max(degrees[check_id(z)?]);
   }
@@ -398,6 +455,35 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
       lookup_prefix_len = lookup_prefix_len.max(check_id(id)? + 1);
     }
   }
+  let mut lookup_degree = 1u64;
+  for group in lookups.chunks(lookup_group_size) {
+    let mut m_degs = Vec::with_capacity(group.len());
+    let mut sum = 0u64;
+    for l in group {
+      let md = l
+        .args
+        .iter()
+        .map(|n| u64::from(degrees[n.0 as usize]))
+        .max()
+        .unwrap_or(0);
+      sum = sum.checked_add(md).ok_or("lookup degree overflow")?;
+      m_degs.push(md);
+    }
+    let product_term = sum.checked_add(1).ok_or("lookup degree overflow")?;
+    lookup_degree = lookup_degree.max(product_term);
+    for (l, &md) in group.iter().zip(&m_degs) {
+      let mult_term = u64::from(degrees[l.multiplicity.0 as usize])
+        .checked_add(sum - md)
+        .ok_or("lookup degree overflow")?;
+      lookup_degree = lookup_degree.max(mult_term);
+    }
+  }
+  let expected_max_degree = u64::from(user_max_degree).max(lookup_degree);
+  if expected_max_degree != max_constraint_degree as u64 {
+    return Err(format!(
+      "max_constraint_degree {max_constraint_degree} does not match derived {expected_max_degree}"
+    ));
+  }
   let graph = ConstraintGraph {
     nodes,
     degrees,
@@ -406,11 +492,6 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
     lookup_prefix_len,
     max_constraint_degree: user_max_degree,
   };
-  let num_lookups = graph.lookups.len();
-  let ext_degree =
-    <multi_stark::types::ExtVal as multi_stark::p3_field::BasedVectorSpace<
-      Val,
-    >>::DIMENSION;
   Ok(Circuit {
     graph,
     main_width,
@@ -418,12 +499,8 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
     preprocessed_width,
     preprocessed_height,
     num_lookups,
-    stage_2_width: multi_stark::lookup::stage2_width(
-      num_lookups,
-      lookup_group_size,
-      ext_degree,
-    ),
-    num_publics: multi_stark::lookup::num_publics(ext_degree),
+    stage_2_width,
+    num_publics,
     lookup_group_size,
     constraint_count: zeros_plus_logup(
       zero_count,
@@ -505,11 +582,23 @@ fn decode(bytes: &[u8], floor: bool) -> Result<Decoded, String> {
   // multi-stark by rank, and the two agree only on keys in that form.
   let mut preprocessed_indices = Vec::with_capacity(n_circuits);
   let mut ranked = 0usize;
-  for _ in 0..n_circuits {
+  for (ci, circuit) in circuits.iter().enumerate() {
     let v = r.u16()?;
+    let has_prep = circuit.preprocessed_height > 0;
     preprocessed_indices.push(if v == NO_PREP_INDEX {
+      if has_prep {
+        return Err(format!(
+          "circuit {ci} has preprocessed_height {} but no preprocessed index",
+          circuit.preprocessed_height
+        ));
+      }
       None
     } else {
+      if !has_prep {
+        return Err(format!(
+          "circuit {ci} has preprocessed index {v} but zero preprocessed_height"
+        ));
+      }
       if v as usize != ranked {
         return Err(format!(
           "preprocessed index {v} is not the circuit's rank {ranked}"
@@ -518,6 +607,42 @@ fn decode(bytes: &[u8], floor: bool) -> Result<Decoded, String> {
       ranked += 1;
       Some(v as usize)
     });
+  }
+  match (&preprocessed_commit, ranked > 0) {
+    (Some(commit), true) => {
+      let max_prep_log = circuits
+        .iter()
+        .filter(|c| c.preprocessed_height > 0)
+        .map(|c| c.preprocessed_height.ilog2() as usize)
+        .max()
+        .unwrap_or(0);
+      let max_prep_lde_log = max_prep_log
+        .checked_add(commitment_parameters.log_blowup)
+        .ok_or("preprocessed LDE log height overflow")?;
+      let shift =
+        u32::try_from(commitment_parameters.cap_height.min(max_prep_lde_log))
+          .map_err(|_overflow| "preprocessed cap root count overflow")?;
+      let expected_roots = 1usize
+        .checked_shl(shift)
+        .ok_or("preprocessed cap root count overflow")?;
+      if commit.roots().len() != expected_roots {
+        return Err(format!(
+          "preprocessed commitment has {} roots, expected {expected_roots}",
+          commit.roots().len()
+        ));
+      }
+    },
+    (None, false) => {},
+    (Some(_), false) => {
+      return Err(
+        "preprocessed commitment present with no preprocessed circuits".into(),
+      );
+    },
+    (None, true) => {
+      return Err(format!(
+        "missing preprocessed commitment for {ranked} preprocessed circuits"
+      ));
+    },
   }
   r.done("vk")?;
   let system = System {
@@ -689,5 +814,215 @@ mod tests {
     let err =
       from_bytes(&bytes).err().expect("accepted non-topological child id");
     assert!(err.contains("out of topological order"), "{err}");
+  }
+
+  /// Build raw wire bytes for a minimal 1-circuit verifying key with caller-chosen
+  /// node records (after the global header and circuit metadata).
+  fn raw_single_circuit_vk(
+    main_width: u16,
+    max_constraint_degree: u16,
+    nodes_raw: &[(u8, &[u8])],
+    zeros: &[u16],
+  ) -> Vec<u8> {
+    let (cp, fp) = floor_parameters();
+    let mut buf = Vec::new();
+    for v in [
+      cp.log_blowup,
+      cp.cap_height,
+      fp.log_final_poly_len,
+      fp.max_log_arity,
+      fp.num_queries,
+      fp.commit_proof_of_work_bits,
+      fp.query_proof_of_work_bits,
+      1usize, // n_circuits
+    ] {
+      push_u16(&mut buf, v);
+    }
+    push_u16(&mut buf, main_width as usize);
+    push_u16(&mut buf, 0); // preprocessed_width
+    push_u32(&mut buf, 0); // preprocessed_height
+    push_u16(&mut buf, max_constraint_degree as usize);
+    buf.push(1); // lookup_group_size
+    push_u16(&mut buf, nodes_raw.len());
+    for &(tag, payload) in nodes_raw {
+      buf.push(tag);
+      buf.extend_from_slice(payload);
+    }
+    push_u16(&mut buf, zeros.len());
+    for &z in zeros {
+      push_u16(&mut buf, z as usize);
+    }
+    push_u16(&mut buf, 0); // lookup_count
+    buf.push(0); // preprocessed_commit = None
+    buf.extend_from_slice(&NO_PREP_INDEX.to_le_bytes());
+    buf
+  }
+
+  #[test]
+  fn rejects_degree_overflow_in_mul_dag() {
+    // 1 variable (degree 1) followed by 32 squarings reaches degree 2^32,
+    // which must fail with overflow rather than wrapping/panicking.
+    let mut payloads: Vec<[u8; 4]> = Vec::new();
+    let var_payload = 0u16.to_le_bytes();
+    for i in 0..32u16 {
+      let mut p = [0u8; 4];
+      p[..2].copy_from_slice(&i.to_le_bytes());
+      p[2..].copy_from_slice(&i.to_le_bytes());
+      payloads.push(p);
+    }
+    let mut nodes_raw: Vec<(u8, &[u8])> = vec![(12, &var_payload)]; // Var(Main, Current, 0)
+    for p in &payloads {
+      nodes_raw.push((8, p.as_slice())); // Mul(i, i)
+    }
+    let bytes = raw_single_circuit_vk(1, 1, &nodes_raw, &[32]);
+    let err = from_bytes(&bytes).err().expect("accepted degree-overflow DAG");
+    assert!(err.contains("overflow"), "{err}");
+    let err = from_bytes_below_floor(&bytes)
+      .err()
+      .expect("below_floor accepted degree-overflow DAG");
+    assert!(err.contains("overflow"), "{err}");
+  }
+
+  #[test]
+  fn rejects_non_canonical_constants() {
+    // Tag 1 (ConstBig) must strictly encode values in (u16::MAX, Val::ORDER_U64).
+    for bad in [
+      0u64,
+      1,
+      u64::from(u16::MAX),
+      Val::ORDER_U64,
+      Val::ORDER_U64 + 1,
+      u64::MAX,
+    ] {
+      let payload = bad.to_le_bytes();
+      let bytes = raw_single_circuit_vk(1, 1, &[(1, &payload)], &[]);
+      let err = from_bytes(&bytes)
+        .err()
+        .unwrap_or_else(|| panic!("accepted non-canonical ConstBig {bad}"));
+      assert!(err.contains("non-canonical"), "{bad}: {err}");
+      assert!(from_bytes_below_floor(&bytes).is_err());
+    }
+    // Canonical ConstBig boundary values decode and round-trip identically.
+    for good in [u64::from(u16::MAX) + 1, Val::ORDER_U64 - 1] {
+      let payload = good.to_le_bytes();
+      let bytes = raw_single_circuit_vk(1, 1, &[(1, &payload)], &[]);
+      let (sys, cp, fp) = from_bytes(&bytes)
+        .unwrap_or_else(|e| panic!("rejected canonical ConstBig {good}: {e}"));
+      assert_eq!(to_bytes(&sys, cp, fp), bytes);
+    }
+  }
+
+  #[test]
+  fn rejects_invalid_var_public_degree_and_preprocessed_metadata() {
+    // Out-of-bounds Main var (index 1 with main_width 1).
+    let idx1 = 1u16.to_le_bytes();
+    let bytes = raw_single_circuit_vk(1, 1, &[(12, &idx1)], &[]);
+    let err = from_bytes(&bytes).err().expect("accepted OOB Main var");
+    assert!(err.contains("out of bounds"), "{err}");
+
+    // Out-of-bounds Preprocessed var (index 0 with preprocessed_width 0).
+    let idx0 = 0u16.to_le_bytes();
+    let bytes = raw_single_circuit_vk(1, 1, &[(10, &idx0)], &[]);
+    let err = from_bytes(&bytes).err().expect("accepted OOB Preprocessed var");
+    assert!(err.contains("out of bounds"), "{err}");
+
+    // Out-of-bounds Stage2 var (stage_2_width = 2 for 0 lookups, ext_degree 2).
+    let idx2 = 2u16.to_le_bytes();
+    let bytes = raw_single_circuit_vk(1, 1, &[(14, &idx2)], &[]);
+    let err = from_bytes(&bytes).err().expect("accepted OOB Stage2 var");
+    assert!(err.contains("out of bounds"), "{err}");
+
+    // Out-of-bounds Public (num_publics = 8 for ext_degree 2).
+    let pub8 = [8u8];
+    let bytes = raw_single_circuit_vk(1, 1, &[(2, &pub8)], &[]);
+    let err = from_bytes(&bytes).err().expect("accepted OOB Public");
+    assert!(err.contains("out of bounds"), "{err}");
+
+    // Mismatched max_constraint_degree (claims 2 when derived is 1).
+    let bytes = raw_single_circuit_vk(1, 2, &[(12, &idx0)], &[0]);
+    let err =
+      from_bytes(&bytes).err().expect("accepted wrong max_constraint_degree");
+    assert!(err.contains("max_constraint_degree"), "{err}");
+
+    // Preprocessed commitment mismatches ranked > 0 or has extra cap roots.
+    let (cp, fp) = floor_parameters();
+    let mut system = test_system(cp, fp);
+    system.preprocessed_commit = None;
+    let err = from_bytes(&to_bytes(&system, cp, fp))
+      .err()
+      .expect("accepted missing preprocessed commit");
+    assert!(err.contains("missing preprocessed commitment"), "{err}");
+
+    let mut system = test_system(cp, fp);
+    let root = system.preprocessed_commit.as_ref().unwrap().roots()[0];
+    system.preprocessed_commit = Some(Commitment::from(vec![root, root]));
+    let err = from_bytes(&to_bytes(&system, cp, fp))
+      .err()
+      .expect("accepted extra preprocessed cap roots");
+    assert!(err.contains("roots"), "{err}");
+
+    let mut system = test_system(cp, fp);
+    system.preprocessed_indices[1] = None;
+    let err = from_bytes(&to_bytes(&system, cp, fp))
+      .err()
+      .expect("accepted missing preprocessed index for preprocessed circuit");
+    assert!(err.contains("preprocessed_height"), "{err}");
+  }
+
+  #[test]
+  fn rejects_unsupported_structural_header_parameters() {
+    // Field 1: cap_height != 0; field 2: log_final_poly_len != 0;
+    // field 3: max_log_arity != 1.
+    for (field, value, needle) in [
+      (1, 1, "cap_height"),
+      (1, u16::MAX, "cap_height"),
+      (2, 1, "log_final_poly_len"),
+      (2, u16::MAX, "log_final_poly_len"),
+      (3, 0, "max_log_arity"),
+      (3, 2, "max_log_arity"),
+    ] {
+      let bytes = with_header(field, value);
+      let err = from_bytes(&bytes)
+        .err()
+        .unwrap_or_else(|| panic!("accepted field {field} = {value}"));
+      assert!(err.contains(needle), "{err}");
+    }
+  }
+
+  #[test]
+  fn below_floor_validates_nonzero_cap_height_against_preprocessed_lde_height()
+  {
+    // Preprocessed trace height 2 (log 1) with log_blowup 2 has LDE height 8
+    // (log 3), so cap_height 2 (> max_prep_log = 1) commits 4 roots and
+    // cap_height 3 commits 8 roots.
+    for (cap_height, expected_roots) in [(2usize, 4usize), (3, 8)] {
+      let cp = CommitmentParameters { log_blowup: 2, cap_height };
+      let (_, fp) = floor_parameters();
+      let (mut system, _) = System::new(
+        AiurConfig::new(cp, fp),
+        [CircuitInputs {
+          main_width: 1,
+          preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; 2])),
+          ..Default::default()
+        }],
+      );
+      assert_eq!(
+        system.preprocessed_commit.as_ref().unwrap().roots().len(),
+        expected_roots
+      );
+      let bytes = to_bytes(&system, cp, fp);
+      assert!(from_bytes(&bytes).is_err());
+      let (decoded, dcp, dfp) =
+        from_bytes_below_floor(&bytes).expect("below_floor rejected valid cap");
+      assert_eq!(to_bytes(&decoded, dcp, dfp), bytes);
+
+      // Truncating to 2 roots (the unblown height cap) must be rejected.
+      let root = system.preprocessed_commit.as_ref().unwrap().roots()[0];
+      system.preprocessed_commit = Some(Commitment::from(vec![root; 2]));
+      let err = from_bytes_below_floor(&to_bytes(&system, cp, fp))
+        .err()
+        .expect("accepted wrong preprocessed cap root count");
+      assert!(err.contains("roots"), "{err}");
+    }
   }
 }

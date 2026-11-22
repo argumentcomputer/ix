@@ -52,6 +52,10 @@ theorem checkDecl_defn_core (μ : CheckMode) (ops : (CheckerOps md) (CheckM md))
   have hp : ExPost (checkDecl μ ops ev env (.defnDecl cv value hint)) (fun e =>
       ∃ cvA, checkConstantVal ops env cv = .ok cvA ∧ checkDefnVal ops env cvA value hint = .ok e) := by
     unfold checkDecl
+    dsimp only
+    by_cases hct : cv.name.isCompilerTrust = true
+    · simp [hct]
+    simp only [hct, Bool.false_eq_true, ↓reduceIte]
     rw [ExPost.post_bind]
     intro cvA hcvA
     rw [ExPost.post_bind]

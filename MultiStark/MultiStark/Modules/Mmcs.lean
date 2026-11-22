@@ -140,7 +140,10 @@ module Mmcs {
       let &Lists::Node::Cons(root, no_more) = roots;
       assert_eq!(Lists::length(no_more), 0);
       let Pcs::FrontierNode::Mk(capidx, _bits, _rows, digest) = root;
-      StarkHash::digest_eq(Lists::lookup(cap, capidx), digest)
+      assert_eq!(capidx, 0);
+      let &Lists::Node::Cons(expected, cap_rest) = cap;
+      let Lists::Node::Nil = (*(cap_rest));
+      StarkHash::digest_eq(expected, digest)
     }
 }
 ⟧

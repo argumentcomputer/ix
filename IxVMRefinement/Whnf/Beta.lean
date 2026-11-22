@@ -211,4 +211,90 @@ theorem certs_all_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Hea
     exact .red hred hrec
   · exact (hr he418).elim
 
+/-- `KernelWhnf::certs_licensed`: a nonzero answer is the licensed telescope certificate,
+skipping `Forall` slots whose binder level is never zero and certifying the rest (`CertsR … true`). -/
+theorem certs_licensed_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
+    {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelWhnf::certs_licensed" args h r h' calls) (ih : IH c calls) :
+    Specs.Whnf.certs_licensed c args h r h' calls := by
+  intro rc t zs subs types hargs good hrc d Γ htypes T Cs As hT hCs hAs hr
+  subst hargs
+  rcases Obs.«KernelWhnf::certs_licensed».obs ev with
+    ⟨ld12, he20, he21, hc22⟩ |
+    ⟨x_a, x_rest, x_dom, x_cod, x_bl, m1, cs1, cs2, m2, ld12, ld51, ev1, hm2, ev2, hc⟩ |
+    ⟨x_a, x_rest, x_dom, x_cod, x_bl, v0, m0, cs0, v1, m1, cs1, m3, cs3, v2, m2, cs2, cs4, m4,
+      ld12, ld51, ev0, hne0, ev1, ev2, ev3, hm4, ev4, hc⟩ |
+    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, he, _, _⟩ |
+    ⟨x_a, x_rest, v40, v265, m266, cs276, v280, m290, cs298, w343, w344, w345, cs364, m394,
+      ld12, ld51, hne261, ev300, ev278, ld335, hm402, ev366, hc413⟩ |
+    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, he, _, _⟩
+  · obtain rfl := RepList.nil_of_load hAs ld12
+    exact .nil
+  · subst hm2 hc
+    obtain ⟨A, As', rfl, hA, hAs'⟩ := RepList.cons_of_load hAs ld12
+    obtain ⟨D, B, ℓ, rfl, hD, hB, hℓ⟩ := hT.forallE_of_load ld51
+    obtain ⟨hr1, e1⟩ := ih.get (.levelOps .level_is_not_zero) (by lt_calls) ev1 x_bl rfl ℓ hℓ
+    subst m1
+    have hnz := WhnfAux.isNeverZero_of_answer hr1
+    have ext0 : Heap.Extends h (h ++ [.construct kexprListEnum "Cons" [x_a, subs]]) :=
+      Heap.Extends.snoc _ _
+    have hsubs : c.tml d Γ (h ++ [.construct kexprListEnum "Cons" [x_a, subs]]) (A :: Cs)
+        (.ptr (.enum kexprListEnum) h.length) :=
+      TmL.store_cons hA hCs
+    have hrec := ih.get (.whnf .certs_licensed) (by lt_calls) ev2 rc x_cod x_rest _ types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ext0 hrc) d Γ (types_mono ext0 htypes) B
+      (A :: Cs) As' (Tm.mono ext0 hB) hsubs (tml_mono ext0 hAs') hr
+    have hrec' : Specs.Whnf.CertsR c.env d true
+        ((B.instantiateList Cs (0 + 1)).instantiate1 A 0) As' := by
+      rw [← Ix.Kernel.Expr.instantiateList_cons]; exact hrec
+    rw [WhnfAux.instantiateList_forallE]
+    exact .skip rfl (by rw [bmeta_of_isNeverZero hnz]; exact nbMeta_isNever) hrec'
+  · subst hm4 hc
+    obtain ⟨A, As', rfl, hA, hAs'⟩ := RepList.cons_of_load hAs ld12
+    obtain ⟨D, B, ℓ, rfl, hD, hB, hℓ⟩ := hT.forallE_of_load ld51
+    obtain ⟨-, e0⟩ := ih.get (.levelOps .level_is_not_zero) (by lt_calls) ev0 x_bl rfl ℓ hℓ
+    subst m0
+    obtain ⟨TA, hTA, hinf⟩ := ih.get (.infer .k_infer_only) (by lt_calls) ev1 rc x_a types rfl
+      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A hA
+    have e1 := ObsFn.heap_extends ev1
+    have e2 := ObsFn.heap_extends ev2
+    have e3 := ObsFn.heap_extends ev3
+    have hdom := ih.get (.infer .inst_subs) (by lt_calls) ev2 x_dom subs rfl
+      (good.sub fun x hx => by simp [hx]) d Γ Cs D (tml_mono e1 hCs) (Tm.mono e1 hD)
+    have ext := e1.trans e2
+    have hde := ih.get (.defEq .k_is_def_eq) (by lt_calls) ev3 rc v1 v2 types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ (types_mono ext htypes) TA _
+      (Tm.mono e2 hTA) hdom field_one_ne_zero
+    have ext3 := ext.trans e3
+    have ext0 : Heap.Extends h (m3 ++ [.construct kexprListEnum "Cons" [x_a, subs]]) :=
+      ext3.trans (Heap.Extends.snoc _ _)
+    have hsubs : c.tml d Γ (m3 ++ [.construct kexprListEnum "Cons" [x_a, subs]]) (A :: Cs)
+        (.ptr (.enum kexprListEnum) m3.length) :=
+      TmL.store_cons (Tm.mono ext3 hA) (tml_mono ext3 hCs)
+    have hrec := ih.get (.whnf .certs_licensed) (by lt_calls) ev4 rc x_cod x_rest _ types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ext0 hrc) d Γ (types_mono ext0 htypes) B
+      (A :: Cs) As' (Tm.mono ext0 hB) hsubs (tml_mono ext0 hAs') hr
+    have hrec' : Specs.Whnf.CertsR c.env d true
+        ((B.instantiateList Cs (0 + 1)).instantiate1 A 0) As' := by
+      rw [← Ix.Kernel.Expr.instantiateList_cons]; exact hrec
+    rw [WhnfAux.instantiateList_forallE]
+    exact .cert hinf hde hrec'
+  · exact (hr he).elim
+  · subst hm402 hc413
+    have e1 := ObsFn.heap_extends ev300
+    have e2 := ObsFn.heap_extends ev278
+    have hinst := ih.get (.infer .inst_subs) (by lt_calls) ev300 t subs rfl
+      (good.sub fun x hx => by simp [hx]) d Γ Cs T hCs hT
+    obtain ⟨TW, hTW, hred⟩ := ih.get (.whnf .whnf) (by lt_calls) ev278 rc v280 types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono e1 hrc) d Γ (types_mono e1 htypes) _ hinst
+    have ext := e1.trans e2
+    have ext0 : Heap.Extends h (m266 ++ [.construct kexprListEnum "Nil" []]) :=
+      ext.trans (Heap.Extends.snoc _ _)
+    have hrec := ih.get (.whnf .certs_licensed) (by lt_calls) ev366 rc v265 zs _ types rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ext0 hrc) d Γ (types_mono ext0 htypes) TW
+      [] As (Tm.mono (Heap.Extends.snoc _ _) hTW) (TmL.store_nil m266) (tml_mono ext0 hAs) hr
+    rw [Ix.Kernel.Expr.instantiateList_nil] at hrec
+    exact .red hred hrec
+  · exact (hr he).elim
+
 end IxVM.Refinement.Core

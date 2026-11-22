@@ -9,6 +9,9 @@ import (
 	"testing"
 
 	bn "github.com/consensys/gnark-crypto/ecc/bn254"
+	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/frontend/cs/r1cs"
+	"github.com/consensys/gnark/frontend/cs/scs"
 	"github.com/consensys/gnark/test"
 )
 
@@ -54,6 +57,16 @@ func TestBN254FullVerifierRejectsTampering(t *testing.T) {
 	if err := test.IsSolved(newCircuit(p), assignment(), curveID.ScalarField()); err != nil {
 		t.Fatal(err)
 	}
+	csPlonk, err := frontend.Compile(curveID.ScalarField(), scs.NewBuilder, newCircuit(p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	csGroth16, err := frontend.Compile(curveID.ScalarField(), r1cs.NewBuilder, newCircuit(p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("wrapperCircuit(vk.json): PLONK(SCS)=%d Groth16(R1CS)=%d constraints",
+		csPlonk.GetNbConstraints(), csGroth16.GetNbConstraints())
 	for _, kind := range []string{"claim", "evaluation", "commitment", "deferred", "deferred-key", "outer-key"} {
 		w := assignment()
 		vkCopy := *p
@@ -84,7 +97,7 @@ func TestVerifyingKeyRequiresExplicitSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"accumulatorCount", "claims", "publics"} {
+	for _, field := range []string{"accumulatorCount", "claims", "publics", "programDigest"} {
 		for _, null := range []bool{false, true} {
 			var fields map[string]json.RawMessage
 			if err := json.Unmarshal(data, &fields); err != nil {

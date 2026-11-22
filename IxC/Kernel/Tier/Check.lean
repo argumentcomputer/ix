@@ -55,6 +55,13 @@ namespace Ix.Kernel.Tier
 
 open Ix.Kernel Ix.Kernel.Cached
 
+/-- **A tier declaration's key rule**: every tier key is an input key
+(`.id _`), never a role key nor a generated key. -/
+def keyShape (k : Key md) : Except (CheckError md) Unit :=
+  match k with
+  | .id _ => .ok ()
+  | k => .error (.notImplemented msg!"tier: a role key or a generated key ({k})")
+
 /-- **A definition block's shape** (Lean's `add_mutual`,
 `environment.cpp:229-249`, and the tier's own key rule): non-empty, distinct
 keys, the same level parameters for every member, every key an input key
@@ -67,9 +74,7 @@ def blockShape (ms : List (ConstantVal md × Expr md)) : Except (CheckError md) 
     unless cv.levelParams == cv₀.levelParams do
       throw (.notImplemented
         msg!"tier: the members of a definition block disagree on their universe parameters ({cv.name})")
-    match cv.name with
-    | .id _ => pure ()
-    | k => throw (.notImplemented msg!"tier: a role key or a generated key ({k})")
+    keyShape cv.name
 
 /-- **A block's headers**, each checked at `fe`, where no member is visible,
 from a fresh memo state (`annotConstantValC`). -/
@@ -128,19 +133,22 @@ def blockC (fe : FEnv md) (s : Safety) (ms : List (ConstantVal md × Expr md)) :
       | .error e => .error e
       | .ok () => .ok (fe', blockConsts s hs)
 
-/-- **An unsafe opaque**, in Lean's safe mode: its header and its value at the
-logical view `fe₀` (no tier constant visible), its key fresh at `fe`, then
-pushed onto `fe`. -/
+/-- **An unsafe opaque**, in Lean's safe mode: its key must be an input key
+(`keyShape`), its header and its value at the logical view `fe₀` (no tier
+constant visible), its key fresh at `fe`, then pushed onto `fe`. -/
 def opaqueC (fe₀ fe : FEnv md) (cv : ConstantVal md) (v : Expr md) :
     Except (CheckError md) (FEnv md × List (TierConst md)) :=
-  match annotConstantValC .verified fe₀ cv {} with
+  match keyShape cv.name with
   | .error e => .error e
-  | .ok ((cvA, _), _) =>
-    if (fe.find? cvA.name).isSome then .error (.invalid msg!"duplicate declaration {cvA.name}")
-    else
-      match valueC fe₀ cvA v with
-      | .error e => .error e
-      | .ok () => .ok (fe.push (.axiomInfo cvA), blockConsts .unsaf [cvA])
+  | .ok () =>
+    match annotConstantValC .verified fe₀ cv {} with
+    | .error e => .error e
+    | .ok ((cvA, _), _) =>
+      if (fe.find? cvA.name).isSome then .error (.invalid msg!"duplicate declaration {cvA.name}")
+      else
+        match valueC fe₀ cvA v with
+        | .error e => .error e
+        | .ok () => .ok (fe.push (.axiomInfo cvA), blockConsts .unsaf [cvA])
 
 /-- **A header's type is a sort** at `fe`: `checkPending`'s first half (the
 type's inference, then `ensureSort`), from a fresh memo state. -/
@@ -152,16 +160,20 @@ def sortC (fe : FEnv md) (cvA : ConstantVal md) : Except (CheckError md) Unit :=
   | .error e => .error e
   | .ok _ => .ok ()
 
-/-- **An unsafe axiom**, in Lean's unsafe mode: its header at `fe` (every tier
-constant before it visible), its type a sort there, then pushed. -/
+/-- **An unsafe axiom**, in Lean's unsafe mode: its key must be an input key
+(`keyShape`), its header at `fe` (every tier constant before it visible), its
+type a sort there, then pushed. -/
 def axiomC (fe : FEnv md) (cv : ConstantVal md) :
     Except (CheckError md) (FEnv md × List (TierConst md)) :=
-  match annotConstantValC .verified fe cv {} with
+  match keyShape cv.name with
   | .error e => .error e
-  | .ok ((cvA, _), _) =>
-    match sortC fe cvA with
+  | .ok () =>
+    match annotConstantValC .verified fe cv {} with
     | .error e => .error e
-    | .ok () => .ok (fe.push (.axiomInfo cvA), blockConsts .unsaf [cvA])
+    | .ok ((cvA, _), _) =>
+      match sortC fe cvA with
+      | .error e => .error e
+      | .ok () => .ok (fe.push (.axiomInfo cvA), blockConsts .unsaf [cvA])
 
 /-- **One tier declaration** at `fe`, with `fe₀` the logical view (the index
 before any tier constant): the extended index, and the declaration's

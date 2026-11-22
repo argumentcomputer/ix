@@ -29,6 +29,24 @@ def argOf (flag : String) : List String → Option String
   | f :: rest => if f == flag then rest.head? else argOf flag rest
   | [] => none
 
+/-- Recursively collect all `.lean` files (and any unexpected symlinks) under `dir`
+so nested files beneath `IxVMRefinement/Obs/` cannot slip past `--check` while being
+picked up by Lake's recursive `.submodules` glob. -/
+partial def collectObsFiles (dir : System.FilePath) : IO (Array System.FilePath) := do
+  let mut out : Array System.FilePath := #[]
+  for entry in ← dir.readDir do
+    let p := entry.path
+    let md ← p.symlinkMetadata
+    match md.type with
+    | .dir =>
+      out := out ++ (← collectObsFiles p)
+    | .symlink =>
+      out := out.push p
+    | _ =>
+      if p.extension == some "lean" then
+        out := out.push p
+  return out
+
 def main (args : List String) : IO UInt32 := do
   let check := args.contains "--check"
   let root := outDir args
@@ -95,8 +113,8 @@ def main (args : List String) : IO UInt32 := do
     let written := files.map fun (path, _) => match root with
       | some dir => dir / path
       | none => path
-    for entry in ← obsDir.readDir do
-      if entry.path.extension == some "lean" && !written.contains entry.path then
-        IO.eprintln s!"[ixvm-proof-gen] {entry.path} is not generated any more: delete it"
+    for p in ← collectObsFiles obsDir do
+      if !written.contains p then
+        IO.eprintln s!"[ixvm-proof-gen] {p} is not generated any more: delete it"
         if check then ok := false
   return if ok then 0 else 1

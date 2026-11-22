@@ -43,7 +43,8 @@ open Ix.Kernel.Reader
 open Benchmarks.Kernel.CheckIxeStep
 
 /-- The records the environment check would accept or check (in check order), and
-every recursor and projection record of their blocks. -/
+every recursor and projection record of their blocks. Any missing primary block,
+declined/failed primary block, or unkept/orphan projection record increments `dropped`. -/
 def acceptedRecords (s : Setup) : Array (Address × Ixon.Constant) × Nat := Id.run do
   let mut st : State .anon := {}
   let mut failed : Std.HashSet Address := {}
@@ -52,7 +53,9 @@ def acceptedRecords (s : Setup) : Array (Address × Ixon.Constant) × Nat := Id.
   let mut dropped := 0
   for address in s.ordered do
     if consumed.contains address then continue
-    let some source := s.store[address]? | continue
+    let some source := s.store[address]? | do
+      dropped := dropped + 1
+      continue
     let recs := recursorRecords s.cx.index address
     for r in recs do consumed := consumed.insert r
     match readRecord s.cx st address source with
@@ -69,12 +72,16 @@ def acceptedRecords (s : Setup) : Array (Address × Ixon.Constant) × Nat := Id.
         out := out.push (address, source)
         for r in recs do
           if let some c := s.store[r]? then out := out.push (r, c)
-  -- projection records of the kept blocks
+  -- projection records of the kept blocks; any unkept/orphan projection is counted in `dropped`
   let kept : Std.HashSet Address := out.foldl (fun acc (a, _) => acc.insert a) {}
   let mut projs : Array (Address × Ixon.Constant) := #[]
   for (a, c) in s.store.toArray do
     let o := owner a c
-    if o != a && kept.contains o && !kept.contains a then projs := projs.push (a, c)
+    if o != a && !kept.contains a then
+      if kept.contains o then
+        projs := projs.push (a, c)
+      else
+        dropped := dropped + 1
   projs := projs.qsort (fun x y => x.1.cmpBytes y.1 == .lt)
   return (out ++ projs, dropped)
 
@@ -173,11 +180,66 @@ def readStats (s : Setup) (records : Array (Address × Ixon.Constant)) : IO Unit
     key {(t4 - t3) / 1000000} ms ({same} equal); neighbouring keys {(t5 - t4) / 1000000} ms \
     ({neighbours} equal)"
 
+def parseRootName (n : String) : Lean.Name :=
+  (n.splitOn ".").foldl (init := .anonymous) fun acc c =>
+    let inner := ((c.drop 1).dropEnd 1).toString
+    if c.startsWith "«" && c.endsWith "»" && !inner.isEmpty && inner.all Char.isDigit then
+      .num acc inner.toNat!
+    else .str acc c
+
+/-- Parse a comma-separated `--require-roots` list into non-empty root names. -/
+def parseRequireRoots (s : String) : Array String :=
+  (s.splitOn ",").toArray.filterMap fun r =>
+    let t := r.trimAscii.toString
+    if t.isEmpty then none else some t
+
+/-- Check that every required root name exists in `env.named`, resolves to a
+kernel key in `cx`, and is installed in `installed`. Returns human-readable
+failure entries for any missing or unaccepted roots. -/
+def checkRequiredRoots (env : Ixon.Env) (cx : Ctx .anon)
+    (installed : Std.HashSet (Ix.Kernel.Key .anon))
+    (roots : Array String) : Array String := Id.run do
+  let mut missing : Array String := #[]
+  for name in roots do
+    match env.named[Ix.Name.fromLeanName (parseRootName name)]? with
+    | none =>
+      missing := missing.push s!"{name} (absent from .ixe named metadata)"
+    | some entry =>
+      match cx.keyAt entry.addr with
+      | .error e =>
+        missing := missing.push s!"{name} (key resolution failed at {entry.addr}: {e})"
+      | .ok key =>
+        if !installed.contains key then
+          missing := missing.push s!"{name} (key {key} at {entry.addr} not installed in accepted environment)"
+  return missing
+
+structure Options where
+  input : System.FilePath := ⟨""⟩
+  output : System.FilePath := ⟨""⟩
+  strict : Bool := false
+  requireRoots : Array String := #[]
+
+def usage : String :=
+  "usage: kernel-check-ixe --fold [--strict] [--require-roots <r1,r2,...>] <input.ixe> <output.jsonl>"
+
+def parseArgs (args : List String) : Option Options :=
+  go args {} #[]
+where
+  go : List String → Options → Array String → Option Options
+    | "--strict" :: rest, o, pos => go rest { o with strict := true } pos
+    | "--require-roots" :: list :: rest, o, pos =>
+      let rs := parseRequireRoots list
+      if rs.isEmpty then none else go rest { o with requireRoots := o.requireRoots ++ rs } pos
+    | a :: rest, o, pos => if a.startsWith "--" then none else go rest o (pos.push a)
+    | [], o, pos => match pos.toList with
+      | [input, output] => some { o with input, output }
+      | _ => none
+
 def run (args : List String) : IO UInt32 := do
-  let [input, output] := args
-    | IO.eprintln "usage: kernel-check-ixe --fold <input.ixe> <output.jsonl>"; return 2
+  let some options := parseArgs args
+    | IO.eprintln usage; return 2
   let started ← IO.monoMsNow
-  let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile input))
+  let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile options.input))
   let mut store : RecordStore := {}
   for (address, lazy) in env.consts.toList do
     store := store.insert address (← IO.ofExcept lazy.get)
@@ -188,9 +250,15 @@ def run (args : List String) : IO UInt32 := do
   let (records, dropped) ← IO.lazyPure fun _ => acceptedRecords s
   let tSelect ← IO.monoMsNow
   IO.eprintln s!"fold: {s.store.size} records, {s.ordered.size} primary; kept {records.size} \
-    (dropped {dropped} primary records the environment check declines or blocks); load {tLoad - started} ms, \
+    (dropped {dropped} records the environment check declines, blocks, or orphans); load {tLoad - started} ms, \
     selection {tSelect - tLoad} ms"
+  if options.strict && (dropped > 0 || records.size != s.store.size) then
+    IO.eprintln s!"fold: strict failure: dropped {dropped} record(s), kept {records.size} of {s.store.size} store record(s)"
+    return 1
   if (← IO.getEnv "FOLD_READSTATS") == some "1" then
+    unless options.requireRoots.isEmpty do
+      IO.eprintln "fold: FOLD_READSTATS=1 cannot be combined with --require-roots (skips phase A/B)"
+      return 2
     readStats s records
     return 0
   let blobs := env.blobs.toList
@@ -235,7 +303,7 @@ def run (args : List String) : IO UInt32 := do
   let b1 ← IO.monoNanosNow
   if let some (e, i) := err then
     IO.eprintln s!"fold: phase B failed at {i}: {e}"
-  let handle ← IO.FS.Handle.mk output .write
+  let handle ← IO.FS.Handle.mk options.output .write
   for (pc, t) in pend.zip times do
     handle.putStrLn (Lean.Json.mkObj [("name", Lean.toJson (toString pc.vg.cvA.name)),
       ("kind", Lean.toJson (kindWord pc)), ("micros", Lean.toJson t)]).compress
@@ -245,6 +313,16 @@ def run (args : List String) : IO UInt32 := do
     per-record sum {sum / 1000} ms over {times.size} records; median {percentile times 50} us, \
     p99 {percentile times 99} us, {over100} over 100 ms"
   IO.eprintln s!"fold: done in {(← IO.monoMsNow) - started} ms; peak RSS {(← statusKb "VmHWM:") / 1024} MB"
+  if err.isSome then
+    return 1
+  unless options.requireRoots.isEmpty do
+    let installed : Std.HashSet (Ix.Kernel.Key .anon) :=
+      fe.env.consts.foldl (fun acc ci => acc.insert ci.name) {}
+    let missing := checkRequiredRoots env s.cx installed options.requireRoots
+    unless missing.isEmpty do
+      IO.eprintln s!"fold: required roots missing or unaccepted ({missing.size}):"
+      for m in missing do IO.eprintln s!"  {m}"
+      return 1
   return 0
 
 end Benchmarks.Kernel.CheckIxeFold

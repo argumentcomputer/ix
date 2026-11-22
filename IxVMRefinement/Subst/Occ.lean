@@ -257,30 +257,61 @@ theorem g_expr_has_bvar_at (κ : _root_.Address → KKey) {args : List (SourceVa
     refine ⟨rfl, h01, fun hr d Γ k E hE => ?_⟩
     obtain ⟨Ef, Ea, rfl, hf, ha⟩ := Tm.app_of_load hE ld
     exact idxAll_app_of_load ld (sf (zero_of_ne_one f01 hne) d Γ k Ef hf) (sa hr d Γ k Ea ha)
-  | .Lam (ld12 := ld) (ev168 := e1) (hc193 := hc) .. =>
+  | .Lam_n1 (ev_ehcsflle := e1) (he_opcvlshe := hr) (he_hrwqhjwe := he)
+      (hc_sgloqhqt := hc) .. =>
+    subst hc hr he
+    obtain ⟨rfl, -⟩ := ih.get .expr_has_bvar_at lt_calls e1 _ _ rfl (bounded_sub sub_calls bd)
+    exact ⟨rfl, .inr rfl, fun h0 => absurd h0 field_one_ne_zero⟩
+  | .Lam_other (ld12 := ld) (ev_ehcsflle := e1) (hne_puvcobve := hne) (op_xsuckhej := o1)
+      (ev_hzubxzdt := e2) (hc_kjyrsefa := hc) .. =>
     subst hc
-    obtain ⟨rfl, h01, sb⟩ :=
-      ih.get .expr_has_bvar_at_binder lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd)
+    rw [add_ok o1] at e2
+    obtain ⟨rfl, t01, st⟩ := ih.get .expr_has_bvar_at lt_calls e1 _ _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨rfl, h01, sb⟩ := ih.get .expr_has_bvar_at lt_calls e2 _ _ rfl (bounded_sub sub_calls bd)
     refine ⟨rfl, h01, fun hr d Γ k E hE => ?_⟩
     obtain ⟨T, B, ℓ, rfl, ht, hb, -⟩ := Tm.lam_of_load hE ld
-    obtain ⟨n1, n2⟩ := sb hr d Γ k T B ht hb
-    exact idxAll_lam_of_load ld n1 (noIdx_body n2)
-  | .Forall (ld12 := ld) (ev222 := e1) (hc247 := hc) .. =>
+    exact idxAll_lam_of_load ld (st (zero_of_ne_one t01 hne) d Γ k T ht)
+      (noIdx_body (noIdx_succ (sb hr d Γ (k + 1) B hb)))
+  | .Forall_n1 (ev_yzpfnyxb := e1) (he_aimigplr := hr) (he_wduolnkx := he)
+      (hc_gwofqrgs := hc) .. =>
+    subst hc hr he
+    obtain ⟨rfl, -⟩ := ih.get .expr_has_bvar_at lt_calls e1 _ _ rfl (bounded_sub sub_calls bd)
+    exact ⟨rfl, .inr rfl, fun h0 => absurd h0 field_one_ne_zero⟩
+  | .Forall_other (ld12 := ld) (ev_yzpfnyxb := e1) (hne_oaofvnuw := hne) (op_lodmzmbq := o1)
+      (ev_xzylsozy := e2) (hc_hkhtpxta := hc) .. =>
     subst hc
-    obtain ⟨rfl, h01, sb⟩ :=
-      ih.get .expr_has_bvar_at_binder lt_calls e1 _ _ _ rfl (bounded_sub sub_calls bd)
+    rw [add_ok o1] at e2
+    obtain ⟨rfl, t01, st⟩ := ih.get .expr_has_bvar_at lt_calls e1 _ _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨rfl, h01, sb⟩ := ih.get .expr_has_bvar_at lt_calls e2 _ _ rfl (bounded_sub sub_calls bd)
     refine ⟨rfl, h01, fun hr d Γ k E hE => ?_⟩
     obtain ⟨T, B, ℓ, rfl, ht, hb, -⟩ := Tm.forallE_of_load hE ld
-    obtain ⟨n1, n2⟩ := sb hr d Γ k T B ht hb
-    exact idxAll_forallE_of_load ld n1 (noIdx_body n2)
-  | .Let (ld12 := ld) (ev275 := e1) (hc308 := hc) .. =>
+    exact idxAll_forallE_of_load ld (st (zero_of_ne_one t01 hne) d Γ k T ht)
+      (noIdx_body (noIdx_succ (sb hr d Γ (k + 1) B hb)))
+  | .Let_n1 (ev_bafbiisq := e1) (he_sxwvfoky := hr) (he_gcaqzehi := he)
+      (hc_pkcqbaim := hc) .. =>
+    subst hc hr he
+    obtain ⟨rfl, -⟩ := ih.get .expr_has_bvar_at lt_calls e1 _ _ rfl (bounded_sub sub_calls bd)
+    exact ⟨rfl, .inr rfl, fun h0 => absurd h0 field_one_ne_zero⟩
+  | .Let_other_n1 (ev_bafbiisq := e1) (ev_gtukkuqn := e2) (he_qgxgbmzs := hr)
+      (he_gspxrfrt := he) (hc_nbyvmsym := hc) .. =>
+    subst hc hr he
+    obtain ⟨rfl, -⟩ := ih.get .expr_has_bvar_at lt_calls e1 _ _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨rfl, -⟩ := ih.get .expr_has_bvar_at lt_calls e2 _ _ rfl (bounded_sub sub_calls bd)
+    exact ⟨rfl, .inr rfl, fun h0 => absurd h0 field_one_ne_zero⟩
+  | .Let_other_other (ld12 := ld) (ev_bafbiisq := e1) (hne_fzggprzf := hne1)
+      (ev_gtukkuqn := e2) (hne_ljkwlwlc := hne2) (op_myxviohh := o1)
+      (ev_jfwvejyy := e3) (hc_lswgdhyb := hc) .. =>
     subst hc
-    obtain ⟨rfl, h01, sl⟩ :=
-      ih.get .expr_has_bvar_at_let lt_calls e1 _ _ _ _ rfl (bounded_sub sub_calls bd)
+    rw [add_ok o1] at e3
+    obtain ⟨rfl, t01, st⟩ := ih.get .expr_has_bvar_at lt_calls e1 _ _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨rfl, v01, sv⟩ := ih.get .expr_has_bvar_at lt_calls e2 _ _ rfl (bounded_sub sub_calls bd)
+    obtain ⟨rfl, h01, sb⟩ := ih.get .expr_has_bvar_at lt_calls e3 _ _ rfl (bounded_sub sub_calls bd)
     refine ⟨rfl, h01, fun hr d Γ k E hE => ?_⟩
     obtain ⟨T, V, B, rfl, ht, hv, hb⟩ := Tm.letE_of_load hE ld
-    obtain ⟨n1, n2, n3⟩ := sl hr d Γ k T V B ht hv hb
-    exact idxAll_letE_of_load ld n1 n2 (noIdx_body n3)
+    exact idxAll_letE_of_load ld
+      (st (zero_of_ne_one t01 hne1) d Γ k T ht)
+      (sv (zero_of_ne_one v01 hne2) d Γ k V hv)
+      (noIdx_body (noIdx_succ (sb hr d Γ (k + 1) B hb)))
   | .Proj (ld12 := ld) (ev338 := e1) (hc355 := hc) .. =>
     subst hc
     obtain ⟨rfl, h01, s1⟩ := ih.get .expr_has_bvar_at lt_calls e1 _ _ rfl (bounded_sub sub_calls bd)
@@ -291,52 +322,6 @@ theorem g_expr_has_bvar_at (κ : _root_.Address → KKey) {args : List (SourceVa
       (hne309 := n5) (hne356 := n6) (he360 := hr) (he361 := he) .. =>
     subst hr he
     exact ⟨rfl, .inl rfl, fun _ d Γ k E hE => idxAll_of_other hE ld n1 n2 n3 n4 n5 n6⟩
-
-theorem g_expr_has_bvar_at_binder (κ : _root_.Address → KKey) {args : List (SourceValue F)}
-    {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelSubst::expr_has_bvar_at_binder" args h r h' calls) (ih : GIH κ calls) :
-    G.expr_has_bvar_at_binder κ args h r h' calls := by
-  intro ty body j hargs bd
-  subst hargs
-  match Obs.«KernelSubst::expr_has_bvar_at_binder».obs ev with
-  | .n1 (ev15 := e1) (he36 := hr) (he37 := he) (hc38 := hc) .. =>
-    subst hc hr he
-    obtain ⟨rfl, -⟩ := ih.get .expr_has_bvar_at lt_calls e1 _ _ rfl (bounded_sub sub_calls bd)
-    exact ⟨rfl, .inr rfl, fun h0 => absurd h0 field_one_ne_zero⟩
-  | .other (ev15 := e1) (hne39 := hne) (op71 := o1) (ev48 := e2) (hc73 := hc) .. =>
-    subst hc
-    rw [add_ok o1] at e2
-    obtain ⟨rfl, t01, st⟩ := ih.get .expr_has_bvar_at lt_calls e1 _ _ rfl (bounded_sub sub_calls bd)
-    obtain ⟨rfl, h01, sb⟩ := ih.get .expr_has_bvar_at lt_calls e2 _ _ rfl (bounded_sub sub_calls bd)
-    refine ⟨rfl, h01, fun hr d Γ k T B ht hb => ⟨st (zero_of_ne_one t01 hne) d Γ k T ht, ?_⟩⟩
-    exact noIdx_succ (sb hr d Γ (k + 1) B hb)
-
-theorem g_expr_has_bvar_at_let (κ : _root_.Address → KKey) {args : List (SourceValue F)}
-    {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelSubst::expr_has_bvar_at_let" args h r h' calls) (ih : GIH κ calls) :
-    G.expr_has_bvar_at_let κ args h r h' calls := by
-  intro ty val body j hargs bd
-  subst hargs
-  match Obs.«KernelSubst::expr_has_bvar_at_let».obs ev with
-  | .n1 (ev15 := e1) (he36 := hr) (he37 := he) (hc38 := hc) .. =>
-    subst hc hr he
-    obtain ⟨rfl, -⟩ := ih.get .expr_has_bvar_at lt_calls e1 _ _ rfl (bounded_sub sub_calls bd)
-    exact ⟨rfl, .inr rfl, fun h0 => absurd h0 field_one_ne_zero⟩
-  | .other_n1 (ev15 := e1) (ev57 := e2) (he78 := hr) (he79 := he) (hc80 := hc) .. =>
-    subst hc hr he
-    obtain ⟨rfl, -⟩ := ih.get .expr_has_bvar_at lt_calls e1 _ _ rfl (bounded_sub sub_calls bd)
-    obtain ⟨rfl, -⟩ := ih.get .expr_has_bvar_at lt_calls e2 _ _ rfl (bounded_sub sub_calls bd)
-    exact ⟨rfl, .inr rfl, fun h0 => absurd h0 field_one_ne_zero⟩
-  | .other_other (ev15 := e1) (hne39 := hne1) (ev57 := e2) (hne81 := hne2) (op113 := o1)
-      (ev90 := e3) (hc115 := hc) .. =>
-    subst hc
-    rw [add_ok o1] at e3
-    obtain ⟨rfl, t01, st⟩ := ih.get .expr_has_bvar_at lt_calls e1 _ _ rfl (bounded_sub sub_calls bd)
-    obtain ⟨rfl, v01, sv⟩ := ih.get .expr_has_bvar_at lt_calls e2 _ _ rfl (bounded_sub sub_calls bd)
-    obtain ⟨rfl, h01, sb⟩ := ih.get .expr_has_bvar_at lt_calls e3 _ _ rfl (bounded_sub sub_calls bd)
-    refine ⟨rfl, h01, fun hr d Γ k T V B ht hv hb =>
-      ⟨st (zero_of_ne_one t01 hne1) d Γ k T ht, sv (zero_of_ne_one v01 hne2) d Γ k V hv, ?_⟩⟩
-    exact noIdx_succ (sb hr d Γ (k + 1) B hb)
 
 /-! ## Direct node-level facts for fused substitution walks -/
 
@@ -392,8 +377,10 @@ theorem expr_has_bvar_at_bvar_one {h h' : Heap F} {e : SourceValue F} {i j : F} 
   | .BVar_other (he55 := hr) .. => exact absurd hr field_one_ne_zero
   | .other (he360 := hr) .. => exact absurd hr field_one_ne_zero
   | .App_n1 (ld12 := ld') .. | .App_other (ld12 := ld') ..
-  | .Lam (ld12 := ld') .. | .Forall (ld12 := ld') ..
-  | .Let (ld12 := ld') .. | .Proj (ld12 := ld') .. =>
+  | .Lam_n1 (ld12 := ld') .. | .Lam_other (ld12 := ld') ..
+  | .Forall_n1 (ld12 := ld') .. | .Forall_other (ld12 := ld') ..
+  | .Let_n1 (ld12 := ld') .. | .Let_other_n1 (ld12 := ld') ..
+  | .Let_other_other (ld12 := ld') .. | .Proj (ld12 := ld') .. =>
     have hsame := Except.ok.inj (ld.symm.trans ld')
     simp [kexprEnum] at hsame
 

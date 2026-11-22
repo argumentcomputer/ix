@@ -157,6 +157,10 @@ mutual
         requireType caller type (← inferType program caller locals right)
         if !type.pointerFree program.enums then throw (.pointerType "assert_eq!" type)
         return .tuple []
+    | .ptrEq left right =>
+        let .ptr target ← inferType program caller locals left | throw (.expectedPointer caller)
+        requireType caller (.ptr target) (← inferType program caller locals right)
+        return .field
     | .binary _ left right =>
         requireType caller .field (← inferType program caller locals left)
         requireType caller .field (← inferType program caller locals right)

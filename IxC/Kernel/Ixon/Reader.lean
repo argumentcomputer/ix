@@ -77,10 +77,11 @@ prelude's, whose every constant is bound to a role (`Mode.addressId?`).
   family at install; the standard axioms, with the `Iff` and `Nonempty`
   families, by `stdAxiomOk`), so a table entry on a constant of another shape
   is rejected or declined wherever the checker would use it. `True` and
-  `True.intro`, `Lean.reduceBool` and `Lean.reduceNat` are used nowhere and so
-  validated nowhere, `sorryAx` is matched against its type at install and
-  installs nothing, and the compiler-trust axioms are declined as non-standard
-  axioms (`Roles.lean`).
+  `True.intro` are used nowhere and so validated nowhere; `sorryAx` and the
+  five compiler-trust declarations (`§7.10`: `Lean.trustCompiler`,
+  `Lean.reduceBool`, `Lean.reduceNat`, `Lean.ofReduceBool`, `Lean.ofReduceNat`)
+  are matched against their specifications at install, install nothing, and any
+  use declines (`Roles.lean`).
 * **Evidence** (`evidenceOf`): a proof entry of the table names a theorem
   record; the reader resolves it to the record's key and its value's
   reading, which is what the fold checks the operation's certificates with.

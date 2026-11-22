@@ -36,6 +36,7 @@ theorem whnf_family_step (c : ScopedCtx) (hc : ScopedCoreBase c) :
   | .beta_more, _, _, _, _, _, ev, ih => beta_more_step c ev ih
   | .peel_beta_cert, _, _, _, _, _, ev, ih => peel_beta_cert_step c ev ih
   | .type_sort_never, _, _, _, _, _, ev, ih => type_sort_never_step c ev ih
+  | .type_sort_may_be_nonzero, _, _, _, _, _, ev, ih => type_sort_may_be_nonzero_step c ev ih
   | .red_unfold, _, _, _, _, _, ev, ih => red_unfold_step c ev ih
   | .whnf_with_spine, _, _, _, _, _, ev, ih => whnf_with_spine_step c ev ih
   | .whnf_proj_head, _, _, _, _, _, ev, ih => whnf_proj_head_step c ev ih
@@ -50,6 +51,7 @@ theorem whnf_family_step (c : ScopedCtx) (hc : ScopedCoreBase c) :
   | .lit_to_ctor_or_self, _, _, _, _, _, ev, ih => lit_to_ctor_or_self_step c ev ih
   | .slots_never, _, _, _, _, _, ev, ih => slots_never_step c ev ih
   | .certs_all, _, _, _, _, _, ev, ih => certs_all_step c ev ih
+  | .certs_licensed, _, _, _, _, _, ev, ih => certs_licensed_step c ev ih
   | .apply_n_projs, _, _, _, _, _, ev, ih => apply_n_projs_step c ev ih
   | .whnf, _, _, _, _, _, ev, ih => whnf_step c ev ih
   | .whnf_core, _, _, _, _, _, ev, ih => whnf_core_step c ev ih

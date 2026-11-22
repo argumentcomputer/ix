@@ -362,8 +362,8 @@ quotient record of an accepted input is read (`SingletonRead`: the record's
 name, its level-parameter names, its type's reading, and its value's
 reading or projection rewrite), its declaration is in the array the fold
 accepted, and the declaration is installed under its name with its kind
-(for every declaration but a quotient record's, `sorryAx` and
-`Quot.sound`, whose skeletons are the basis blocks'; `declSkel`). -/
+(for every declaration but a quotient record's, `sorryAx`, `Quot.sound`, and
+the five inert compiler-trust declarations (`§7.10`); `declSkel`). -/
 theorem Installed.singleton {hash : ByteArray → Address} {t : Ix.Kernel.RoleTable} {pre : Prelude .anon}
     {constants : List (Address × Ixon.Constant)} {blobs : Ix.Kernel.Ingress.Blobs}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}

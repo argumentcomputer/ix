@@ -2,15 +2,17 @@ import Ix.Meta
 import Tests.Ix.InstanceSymbols
 import Tests.Ix.VMSource
 import Tests.Ix.IxVM.SafeReferencesWalk
+import Tests.Ix.MultiStarkVerifier
 
 /-!
 Test driver for suites that import the formal `Aiur`/`IxVM`/`MultiStark`
 packages (and therefore Mathlib). Kept separate from `IxTests`
-(`Tests/Main.lean`) so the Nix flake and merge-test builds of `IxTests` stay
+(`Tests/Main.lean`) so the Nix flake and host CI builds of `IxTests` stay
 free of Mathlib.
 
-With no arguments, runs the CI checks (`instance-symbols`, `ixvm-source`).
-Named arguments select individual entries (including `ixvm-export-safe-walk`).
+With no arguments, runs the CI checks (`instance-symbols`, `ixvm-source`,
+`multistark-verifier`). Named arguments select individual entries (including
+`ixvm-export-safe-walk`).
 -/
 
 private def runNamed (getEnv : IO Lean.Environment) (name : String) : IO UInt32 := do
@@ -18,6 +20,9 @@ private def runNamed (getEnv : IO Lean.Environment) (name : String) : IO UInt32 
   let code ← match name with
     | "instance-symbols" => Tests.Ix.InstanceSymbols.run
     | "ixvm-source" => do Tests.Ix.VMSource.run (← getEnv)
+    | "multistark-verifier" => do
+      let ts ← Tests.Ix.MultiStarkVerifier.suite
+      LSpec.lspecIO (.ofList [("multistark-verifier", ts)]) []
     | "ixvm-export-safe-walk" => Tests.Ix.IxVM.SafeReferencesWalk.exportWalkArtifact
     | other =>
       IO.eprintln s!"[formal-package-tests] unknown entry: {other}"
@@ -30,8 +35,8 @@ private def runNamed (getEnv : IO Lean.Environment) (name : String) : IO UInt32 
   return code
 
 def main (args : List String) : IO UInt32 := do
-  let selected := if args.isEmpty then ["instance-symbols", "ixvm-source"] else args
-  if selected.any (fun n => n != "instance-symbols" && n != "ixvm-export-safe-walk") then
+  let selected := if args.isEmpty then ["instance-symbols", "ixvm-source", "multistark-verifier"] else args
+  if selected.any (fun n => n != "instance-symbols" && n != "ixvm-export-safe-walk" && n != "multistark-verifier") then
     initLeanSearchPath
   let envRef ← IO.mkRef (none : Option Lean.Environment)
   let getEnv : IO Lean.Environment := do

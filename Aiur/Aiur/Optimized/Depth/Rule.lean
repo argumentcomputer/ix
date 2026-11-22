@@ -64,6 +64,10 @@ theorem Certified.facts {cfg : Config} {source : System F} (certified : Certifie
     length := fun chip member => (each chip member).1.2
     slot := fun chip member => (each chip member).2 }
 
+theorem certify_facts {cfg : Config} {source : System F}
+    (checked : certify cfg source = true) : Facts cfg source :=
+  (certify_sound checked).facts
+
 /-- The kind of a certified slot matches its callee, and equal rank needs a depth word. -/
 theorem slot_spec {cfg : Config} {source : System F} {caller : String} {send : Send F}
     {kind : SlotKind} (ok : slotOK cfg source caller send kind = true) :

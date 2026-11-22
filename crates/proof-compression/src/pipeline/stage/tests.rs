@@ -21,10 +21,12 @@ fn fri_config(
   )
 }
 
+const FLOOR_QUERIES: usize = 118; // log_blowup=2, query_pow=0: 236b conj, 80.004b UD
+
 #[test]
 fn unsupported_fri_profiles_fail_before_proving() {
   for (cap, arity, final_log, queries) in
-    [(1, 1, 0, 2), (0, 2, 0, 2), (0, 1, 1, 2), (0, 1, 0, 0)]
+    [(1, 1, 0, 2), (0, 2, 0, 2), (0, 1, 1, 2), (0, 1, 0, 0), (0, 1, 0, 2)]
   {
     let config = || fri_config(cap, arity, final_log, queries);
     if cfg!(feature = "cuda") && (cap != 0 || arity > 1) {
@@ -58,10 +60,11 @@ fn fri_stage_preserves_publics_through_foreign_translation() -> Result<()> {
     let prepared = arithmetic(value, 2);
     let local = FriVerifier::derive(
       arithmetic(value, 2).circuit,
-      fri_config(0, 1, 0, 2),
+      fri_config(0, 1, 0, FLOOR_QUERIES),
       32,
     )?;
-    let (verifier, proof) = prepared.prove_fri(fri_config(0, 1, 0, 2), 32)?;
+    let (verifier, proof) =
+      prepared.prove_fri(fri_config(0, 1, 0, FLOOR_QUERIES), 32)?;
     assert_eq!(local.to_bytes()?, verifier.to_bytes()?);
     let key_bytes = verifier.to_bytes()?;
     let verifier = FriVerifier::from_bytes(&key_bytes)?;
@@ -107,8 +110,10 @@ fn fri_memory_reduction_preserves_the_dense_proof() -> Result<()> {
     32,
   )?;
   let claims = compiled.claims(prepared.assignment.public_values())?;
-  let (system, key) =
-    System::new(fri_config(0, 1, 0, 2), lowering::fri_definitions(&compiled));
+  let (system, key) = System::new(
+    fri_config(0, 1, 0, FLOOR_QUERIES),
+    lowering::fri_definitions(&compiled),
+  );
   let reference = system.prove_multiple_claims(
     &key,
     &claims.iter().map(Vec::as_slice).collect::<Vec<_>>(),
@@ -117,8 +122,8 @@ fn fri_memory_reduction_preserves_the_dense_proof() -> Result<()> {
       &system,
     ),
   );
-  let (verifier, proof) =
-    arithmetic(Val::TWO, 50).prove_fri(fri_config(0, 1, 0, 2), 32)?;
+  let (verifier, proof) = arithmetic(Val::TWO, 50)
+    .prove_fri(fri_config(0, 1, 0, FLOOR_QUERIES), 32)?;
   assert_eq!(proof.to_bytes()?, reference.to_bytes()?);
   assert!(
     verifier.key.system().circuits.iter().all(|c| c.preprocessed.is_none())

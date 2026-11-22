@@ -252,9 +252,12 @@ def rangeChild (ctx : Context) (io : Aiur.IOBuffer) (slot : Nat) (node : RangeNo
   extendPreimage (extendChild (extendVk io .aggr ctx.aggr.key) slot node.proof (rangeClaims ctx node.statement)) node.statement
 
 /-- The native host only slices serialized advice. Shapes 10, 11 and 12 in
-ordinary Aiur verify every range, sum, boundary, and final public claim. -/
+ordinary Aiur verify every range, sum, boundary, and final public claim.
+Independent range proofs run concurrently up to `jobs`, evicting child range
+proof buffers as soon as their consuming parent extracts them. -/
 def wrapRanges (p : Cli.Parsed) (ctx : Context) (source : Node)
-    (options : HostOptions) (size : Nat) (force : Bool := false) : IO Node := do
+    (options : HostOptions) (size : Nat) (force : Bool := false)
+    (jobs : Nat := 1) : IO Node := do
   unless force || noCacheReads p do
     if let some node ← cachedNode ctx source.statement then return node
   unless source.kind == .ixvm && size > 0 do throw (IO.userError "range wrapping requires an IxVM proof and positive range size")
@@ -263,23 +266,81 @@ def wrapRanges (p : Cli.Parsed) (ctx : Context) (source : Node)
     IO.FS.writeBinFile raw (← rawProof .ixvm source.wrapper.proof)
     command (← host) #["ranges", raw.toString, dir.toString, toString size]
     let specs ← IO.ofExcept (Json.parse (← IO.FS.readFile (dir / "ranges.json")) >>= Json.getArr?)
+    if specs.isEmpty then throw (IO.userError "empty range plan")
     let preamble ← IO.FS.readBinFile (dir / "preamble.bin")
-    let mut nodes : Array RangeNode := #[]
+    let mut planChildren : Array (Array Nat) := #[]
+    let mut users : Array Nat := Array.replicate specs.size 0
     for i in [:specs.size] do
       let children ← IO.ofExcept (specs[i]!.getObjValAs? (Array Nat) "children")
-      let statement ← IO.FS.readBinFile (dir / s!"{i}.statement")
-      let io ← if children.isEmpty then do
-          let io := extendVk (extendIdentity default ctx.allowed 10) .ixvm ctx.ixvm.key
-          let io := extendChild io 0 preamble ByteArray.empty
-          pure (extendChild io 1 (← IO.FS.readBinFile (dir / s!"{i}.proofs")) ByteArray.empty)
-        else do
-          unless children.size == 2 do throw (IO.userError "invalid range plan")
-          let some l := nodes[children[0]!]? | throw (IO.userError "missing range child")
-          let some r := nodes[children[1]!]? | throw (IO.userError "missing range child")
-          pure (rangeChild ctx (rangeChild ctx (extendIdentity default ctx.allowed 11) 0 l) 1 r)
-      let node ← proveRange p ctx statement (extendOutputClaim io statement) options
-      nodes := nodes.push node
-    let some rangeRoot := nodes.back? | throw (IO.userError "empty range plan")
+      unless children.isEmpty || children.size == 2 do
+        throw (IO.userError "invalid range plan")
+      for c in children do
+        unless c < i do throw (IO.userError "missing range child")
+        users := users.modify c (· + 1)
+      planChildren := planChildren.push children
+    let rootIdx := specs.size - 1
+    let mut nodes : Array (Option RangeNode) := Array.replicate specs.size none
+    let mut completed : Array Bool := Array.replicate specs.size false
+    let mut inFlight : Array Bool := Array.replicate specs.size false
+    let mut running : Array (Nat × Task (Except IO.Error RangeNode)) := #[]
+    let admitted ← IO.mkRef running
+    let limit := max 1 (min jobs specs.size)
+    let childOptions := if limit <= 1 || options.resident.isSome then options
+      else options.forWave 1 limit
+    try
+      while !completed[rootIdx]! do
+        let mut waiting := #[]
+        for (idx, task) in running do
+          if ← IO.hasFinished task then
+            inFlight := inFlight.set! idx false
+            let node ← IO.ofExcept task.get
+            nodes := nodes.set! idx (some node)
+            completed := completed.set! idx true
+          else waiting := waiting.push (idx, task)
+        running := waiting
+        admitted.set running
+        if !completed[rootIdx]! && running.size < limit then
+          let mut ready : Array Nat := #[]
+          for i in [:specs.size] do
+            if !completed[i]! && !inFlight[i]! then
+              let cs := planChildren[i]!
+              if cs.isEmpty || (completed[cs[0]!]! && completed[cs[1]!]!) then
+                ready := ready.push i
+          -- Prefer internal joins over leaves so finished child range proofs
+          -- can be evicted sooner.
+          let readyJoins := ready.filter fun i => !planChildren[i]!.isEmpty
+          let readyLeaves := ready.filter fun i => planChildren[i]!.isEmpty
+          for i in (readyJoins ++ readyLeaves).extract 0 (limit - running.size) do
+            let cs := planChildren[i]!
+            let task ← if cs.isEmpty then do
+                IO.asTask (prio := .dedicated) do
+                  let statement ← IO.FS.readBinFile (dir / s!"{i}.statement")
+                  let io := extendVk (extendIdentity default ctx.allowed 10) .ixvm ctx.ixvm.key
+                  let io := extendChild io 0 preamble ByteArray.empty
+                  let io := extendChild io 1 (← IO.FS.readBinFile (dir / s!"{i}.proofs")) ByteArray.empty
+                  proveRange p ctx statement (extendOutputClaim io statement) childOptions
+              else do
+                let lIdx := cs[0]!
+                let rIdx := cs[1]!
+                let some l := nodes[lIdx]! | throw (IO.userError "missing range child")
+                let some r := nodes[rIdx]! | throw (IO.userError "missing range child")
+                for c in #[lIdx, rIdx] do
+                  users := users.modify c (· - 1)
+                  if c != rootIdx && users[c]! == 0 then
+                    nodes := nodes.set! c none
+                IO.asTask (prio := .dedicated) do
+                  let statement ← IO.FS.readBinFile (dir / s!"{i}.statement")
+                  let io := rangeChild ctx (rangeChild ctx (extendIdentity default ctx.allowed 11) 0 l) 1 r
+                  proveRange p ctx statement (extendOutputClaim io statement) childOptions
+            inFlight := inFlight.set! i true
+            running := running.push (i, task)
+            admitted.set running
+        if !completed[rootIdx]! && running.isEmpty then
+          throw (IO.userError "range plan has no ready slot")
+        unless completed[rootIdx]! do IO.sleep 1
+    finally
+      for (_, task) in (← admitted.get) do let _ ← IO.wait task; pure ()
+    let some rangeRoot := nodes[rootIdx]! | throw (IO.userError "empty range plan")
     let io := rangeChild ctx (extendIdentity default ctx.allowed 12) 0 rangeRoot
     let io := extendVk (extendChild io 1 preamble ByteArray.empty) .ixvm ctx.ixvm.key
     let proof ← proveAdvice ctx (Ix.Claim.ser source.statement.claim) io options
@@ -310,27 +371,252 @@ def neededSlots (plan : Array Reference.ScheduledFold) (root : Nat) : Except Str
         needed := needed.set! l true |>.set! r true
   return needed
 
-def manifest (p : Cli.Parsed) (override : Option String := none) : IO (Ixon.Env × Ix.Shard.IxesManifestView × Array Nat) := do
+/-- The immutable result of simulating aggregate-slot admission. Runtime and
+unit tests share the same admission function; the simulator completes the
+lowest-numbered in-flight slot after every admission pass solely to make its
+trace deterministic. -/
+structure AggregateScheduleTrace where
+  admissionOrder : Array Nat
+  admissionBatches : Array (Array Nat)
+  maxReservedBytes : Nat
+  deriving BEq, Repr
+
+private def aggregateScheduleInputsValid (plan : Array Reference.ScheduledFold)
+    (weights : Array Nat) : Except String Unit := do
+  if weights.size != plan.size then
+    throw s!"aggregate scheduler received {weights.size} weights for {plan.size} slots"
+  for (item, slotIdx) in plan.mapIdx fun slotIdx item => (item, slotIdx) do
+    if weights[slotIdx]! == 0 then
+      throw s!"aggregate scheduler slot {slotIdx} has zero RAM weight"
+    match item.op with
+    | .leaf _ => pure ()
+    | .join left right =>
+      if left >= slotIdx || right >= slotIdx then
+        throw s!"aggregate scheduler slot {slotIdx} has non-prior child {left}, {right}"
+
+private def aggregateDependenciesComplete (item : Reference.ScheduledFold)
+    (completed : Array Bool) : Bool :=
+  match item.op with
+  | .leaf _ => true
+  | .join left right =>
+    (completed[left]?).getD false && (completed[right]?).getD false
+
+/-- Select one deterministic admission batch from the currently ready slots.
+Candidates are ordered by descending RAM weight, then joins before leaves
+(freeing child proof buffers sooner at equal weight), then ascending slot
+number. Slots that do not fit are skipped so lighter work can use the
+remaining budget. An individually oversized slot may run only when nothing
+else is reserved, following the Rust `RamGate` admit-when-alone rule.
+`jobs = 0` means no concurrency cap beyond the number of plan slots. When
+`pending?` is provided, only slots marked `true` in `pending` are admitted. -/
+def admitAggregateReady (plan : Array Reference.ScheduledFold) (weights : Array Nat)
+    (completed inFlight : Array Bool) (reservedBytes budgetBytes jobs : Nat)
+    (pending? : Option (Array Bool) := none) :
+    Array Nat := Id.run do
+  let active := inFlight.count true
+  let maxJobs := if jobs == 0 then max 1 plan.size else max 1 jobs
+  if active >= maxJobs then return #[]
+  let openJobs := maxJobs - active
+  let mut ready : Array Nat := #[]
+  for slotIdx in [:plan.size] do
+    let isPending := match pending? with
+      | some pending => (pending[slotIdx]?).getD false
+      | none => true
+    if isPending && !(completed[slotIdx]?).getD false &&
+        !(inFlight[slotIdx]?).getD false then
+      if let some item := plan[slotIdx]? then
+        if aggregateDependenciesComplete item completed then
+          ready := ready.push slotIdx
+  let isJoin (slot : Nat) : Bool :=
+    match plan[slot]? with
+    | some item => match item.op with | .join _ _ => true | .leaf _ => false
+    | none => false
+  ready := ready.qsort fun left right =>
+    let leftWeight := (weights[left]?).getD 0
+    let rightWeight := (weights[right]?).getD 0
+    if leftWeight != rightWeight then leftWeight > rightWeight
+    else if isJoin left != isJoin right then isJoin left
+    else left < right
+  let mut admitted : Array Nat := #[]
+  let mut admittedBytes := 0
+  for slotIdx in ready do
+    if admitted.size >= openJobs then break
+    let weight := (weights[slotIdx]?).getD 0
+    let nextReserved := reservedBytes + admittedBytes + weight
+    if nextReserved <= budgetBytes ||
+        (reservedBytes == 0 && admitted.isEmpty) then
+      admitted := admitted.push slotIdx
+      admittedBytes := admittedBytes + weight
+  return admitted
+
+/-- Pure deterministic exercise of the runtime admission algorithm. This is
+used to gate heaviest-first ordering, dependency release, job caps, and peak
+reservation without starting proof tasks. -/
+def simulateAggregateSchedule (plan : Array Reference.ScheduledFold)
+    (weights : Array Nat) (jobs budgetBytes : Nat) :
+    Except String AggregateScheduleTrace := do
+  aggregateScheduleInputsValid plan weights
+  if budgetBytes == 0 then throw "aggregate scheduler RAM budget must be positive"
+  let mut completed := Array.replicate plan.size false
+  let mut inFlight := Array.replicate plan.size false
+  let mut completedCount := 0
+  let mut reservedBytes := 0
+  let mut maxReservedBytes := 0
+  let mut admissionOrder : Array Nat := #[]
+  let mut admissionBatches : Array (Array Nat) := #[]
+  while completedCount < plan.size do
+    let admitted := admitAggregateReady plan weights completed inFlight
+      reservedBytes budgetBytes jobs
+    if !admitted.isEmpty then
+      admissionBatches := admissionBatches.push admitted
+      for slotIdx in admitted do
+        inFlight := inFlight.set! slotIdx true
+        reservedBytes := reservedBytes + weights[slotIdx]!
+        admissionOrder := admissionOrder.push slotIdx
+      maxReservedBytes := max maxReservedBytes reservedBytes
+    let mut finish? : Option Nat := none
+    for slotIdx in [:plan.size] do
+      if finish?.isNone && inFlight[slotIdx]! then finish? := some slotIdx
+    let some finished := finish?
+      | throw "aggregate scheduler deadlocked with unfinished slots"
+    inFlight := inFlight.set! finished false
+    completed := completed.set! finished true
+    reservedBytes := reservedBytes - weights[finished]!
+    completedCount := completedCount + 1
+  pure { admissionOrder, admissionBatches, maxReservedBytes }
+
+private def blockAddrOf (addr : Address) (c : Ixon.Constant) : Address :=
+  match c.info with
+  | .iPrj prj => prj.block
+  | .cPrj prj => prj.block
+  | .rPrj prj => prj.block
+  | .dPrj prj => prj.block
+  | _ => addr
+
+/-- Validate disjoint shard coverage, prune zero-constant manifest leaves, and
+partition claimable owned constants per retained shard in ONE `inertUsers`
+graph walk and ONE pass over `ixonEnv.consts`. Produces identical coverage
+diagnostics and errors to `Ix.Shard.shardsCover` followed by `pruneEmpty`. -/
+private def coverAndPrune (ixonEnv : Ixon.Env) (view : Ix.Shard.IxesManifestView) :
+    IO (Ix.Shard.IxesManifestView × Array Nat × Array (Array Address)) := do
+  let mut blockToShard : Std.HashMap Address Nat := {}
+  let mut dup : Nat := 0
+  for (blocks, k) in view.shards.mapIdx (fun k b => (b, k)) do
+    for blk in blocks do
+      match blockToShard.get? blk with
+      | some _ => dup := dup + 1
+      | none => blockToShard := blockToShard.insert blk k
+  let inert := IxVM.ClaimHarness.inertUsers ixonEnv
+  let mut blockOf : Array (Address × Address) := #[]
+  let mut aside : Std.HashSet Address := {}
+  let mut unparsed : Nat := 0
+  for (addr, lc) in ixonEnv.consts do
+    let some c := lc.get? | unparsed := unparsed + 1; continue
+    if c.outsideLogic then aside := aside.insert addr
+    blockOf := blockOf.push (addr, blockAddrOf addr c)
+  let mut ownedRaw : Array (Array Address) := Array.replicate view.shards.size #[]
+  let mut unowned : Nat := 0
+  let mut setAside : Nat := 0
+  let mut inertAside : Nat := 0
+  for (addr, blk) in blockOf do
+    if aside.contains addr || aside.contains blk then
+      setAside := setAside + 1
+      continue
+    if inert.contains addr then
+      inertAside := inertAside + 1
+      continue
+    match blockToShard.get? blk with
+    | some k => ownedRaw := ownedRaw.modify k (·.push addr)
+    | none => unowned := unowned + 1
+  IO.println s!"[shards] {view.shards.size} shards, {ixonEnv.consts.size} consts"
+  for (blocks, k) in view.shards.mapIdx (fun k b => (b, k)) do
+    IO.println s!"  shard {k}: {blocks.size} blocks, {(ownedRaw[k]?).map (·.size) |>.getD 0} consts"
+  if setAside != 0 then
+    IO.println s!"[shards] {setAside} const(s) outside Lean's logic (unsafe or partial) \
+      set aside: owned by no shard, claimed by none"
+  if inertAside != 0 then
+    IO.println s!"[shards] {inertAside} const(s) using an inert axiom (sorryAx or a \
+      compiler-trust axiom) set aside: owned by no shard, claimed by none"
+  if dup != 0 then
+    IO.eprintln s!"[shards] FAIL: {dup} block(s) owned by >1 shard (not disjoint)"
+  if unowned != 0 then
+    IO.eprintln s!"[shards] FAIL: {unowned} const(s) with no owning shard (coverage gap)"
+  if unparsed != 0 then
+    IO.eprintln s!"[shards] FAIL: {unparsed} const(s) whose bytes do not parse \
+      (cannot be assigned to a shard)"
+  let ok := dup == 0 && unowned == 0 && unparsed == 0
+  if ok then
+    IO.println s!"[shards] OK: partition covers all \
+      {ixonEnv.consts.size - setAside - inertAside} claimable consts, disjoint"
+  unless ok do throw (IO.userError "invalid manifest coverage")
+  if view.shards.size != view.shardIds.size then
+    throw (IO.userError "ixes: internal shard/id cardinality mismatch")
+  let mut remap : Array (Option Nat) := Array.replicate view.shards.size none
+  let mut shards : Array (Array Address) := #[]
+  let mut shardIds : Array Nat := #[]
+  let mut measuredPeakBytes : Array Nat := #[]
+  let mut keptCounts : Array Nat := #[]
+  let mut keptOwned : Array (Array Address) := #[]
+  for (owned, oldIdx) in ownedRaw.mapIdx fun oldIdx owned => (owned, oldIdx) do
+    if !owned.isEmpty then
+      let some blocks := view.shards[oldIdx]?
+        | throw (IO.userError s!"ixes: internal missing shard {oldIdx}")
+      let some originalId := view.shardIds[oldIdx]?
+        | throw (IO.userError s!"ixes: internal missing shard id {oldIdx}")
+      remap := remap.set! oldIdx (some shards.size)
+      shards := shards.push blocks
+      shardIds := shardIds.push originalId
+      measuredPeakBytes := measuredPeakBytes.push ((view.measuredPeakBytes[oldIdx]?).getD 0)
+      keptCounts := keptCounts.push owned.size
+      keptOwned := keptOwned.push owned
+  let some aggregationTree := view.aggregationTree.pruneAndRemap remap
+    | throw (IO.userError "aggregate: manifest has no shard owning an environment constant")
+  return ({ shards, shardIds, aggregationTree, measuredPeakBytes }, keptCounts, keptOwned)
+
+private def manifestWithOwned (p : Cli.Parsed) (override : Option String := none) :
+    IO (Ixon.Env × Ix.Shard.IxesManifestView × Array Nat × Array (Array Address)) := do
   let some envPath := (p.flag? "ixe").map (·.as! String) | throw (IO.userError "aggregate requires --ixe")
   let some path := override.orElse (fun _ => (p.flag? "ixes").map (·.as! String)) | throw (IO.userError "aggregate requires --ixes")
   let env ← IO.ofExcept (IxVM.ClaimHarness.withDefaultRoleBinding (← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile envPath))))
   let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile path))
-  unless ← Ix.Shard.shardsCover env view.shards do throw (IO.userError "invalid manifest coverage")
-  let (view, counts) ← IO.ofExcept (view.pruneEmpty env)
+  let (view, counts, ownedPerShard) ← coverAndPrune env view
+  return (env, view, counts, ownedPerShard)
+
+def manifest (p : Cli.Parsed) (override : Option String := none) : IO (Ixon.Env × Ix.Shard.IxesManifestView × Array Nat) := do
+  let (env, view, counts, _) ← manifestWithOwned p override
   return (env, view, counts)
 
+private def prepareOwnedShard (env : Ixon.Env) (owned : Array Address)
+    (assumeBinding : Bool := false) : Except String Reference.PreparedShard := do
+  let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTreesOf env owned assumeBinding
+  let statement ← Aggr.CheckEnvTrees.ofClaim claim trees
+  pure { claim, statement }
+
+private def prepareOwnedShards (env : Ixon.Env) (ownedPerShard : Array (Array Address))
+    (shardIds : Array Nat := #[]) (assumeBinding : Bool := false) :
+    Except String (Array Reference.PreparedShard) := do
+  let mut prepared : Array Reference.PreparedShard := #[]
+  for (owned, shard) in ownedPerShard.mapIdx fun shard owned => (owned, shard) do
+    let originalShard := (shardIds[shard]?).getD shard
+    let item ← match prepareOwnedShard env owned assumeBinding with
+      | .error e => throw s!"prepare shard {originalShard}: {e}"
+      | .ok item => pure item
+    prepared := prepared.push item
+  pure prepared
+
 private partial def proveBlocks (p : Cli.Parsed) (ctx : Context) (env : Ixon.Env)
-    (blocks : Array Address) (options : HostOptions)
+    (blocks owned : Array Address) (source? : Option Reference.PreparedShard)
+    (options : HostOptions)
     (progress : Array (Array Address × Nat) → IO Unit) (preferRaw : Bool := false)
-    (assumeBinding : Bool := false) : IO (Node × Array (Array Address × Nat)) := do
-  let some source := (← IO.ofExcept (Reference.prepareShards env #[blocks] #[] assumeBinding))[0]?
-    | throw (IO.userError "empty shard")
+    (assumeBinding : Bool := false) (jobs : Nat := 1) : IO (Node × Array (Array Address × Nat)) := do
+  let source ← match source? with
+    | some s => pure s
+    | none => IO.ofExcept (prepareOwnedShard env owned assumeBinding)
   unless preferRaw || noCacheReads p do
     if let some cached ← cachedNode ctx source.statement then
       progress #[(blocks, 0)]
       return (cached, #[(blocks, 0)])
-  let owned := Ix.Shard.ownedConstsForBlocks env blocks
-  let (claim, witness) ← IO.ofExcept (IxVM.ClaimHarness.buildShardCheckEnvWitness env owned assumeBinding)
+  let (claim, witness) ← IO.ofExcept (IxVM.ClaimHarness.buildShardCheckEnvWitnessOf env owned assumeBinding)
   let result ← FormalAiur.one p ctx.ixvmArtifact "" options "prove" claim (.leanW witness)
     s!"leaf ({blocks.size} blocks)" true
   if result.code == 0 then
@@ -344,12 +630,36 @@ private partial def proveBlocks (p : Cli.Parsed) (ctx : Context) (env : Ixon.Env
   let parts := Ix.Shard.Check.cutBlocks blocks 2
   unless parts.size == 2 && parts.all (fun b => !b.isEmpty && b.size < blocks.size) do
     throw (IO.userError "cannot refine oversized leaf")
+  let ownedParts := Ix.Shard.partitionOwned env owned parts
   IO.println s!"[aiur lanes] refining {blocks.size} blocks into {parts[0]!.size} + {parts[1]!.size}"
   progress #[(parts[0]!, 0), (parts[1]!, 0)]
-  let (left, lp) ← proveBlocks p ctx env parts[0]! options
-    (fun lp => progress (lp ++ #[(parts[1]!, 0)])) true assumeBinding
-  let (right, rp) ← proveBlocks p ctx env parts[1]! options
-    (fun rp => progress (lp ++ rp)) true assumeBinding
+  let ((left, lp), (right, rp)) ← if jobs <= 1 then do
+      let (left, lp) ← proveBlocks p ctx env parts[0]! ownedParts[0]! none options
+        (fun lp => progress (lp ++ #[(parts[1]!, 0)])) true assumeBinding 1
+      let (right, rp) ← proveBlocks p ctx env parts[1]! ownedParts[1]! none options
+        (fun rp => progress (lp ++ rp)) true assumeBinding 1
+      pure ((left, lp), (right, rp))
+    else do
+      let leftJobs := max 1 (jobs / 2)
+      let rightJobs := max 1 (jobs - leftJobs)
+      let childOpts := if options.resident.isSome then options else options.forWave 1 2
+      let splitState ← Std.Mutex.new (#[(parts[0]!, 0)], #[(parts[1]!, 0)])
+      let rightTask ← IO.asTask (prio := .dedicated) (proveBlocks p ctx env parts[1]! ownedParts[1]! none childOpts
+        (fun rp => splitState.atomically fun ref => do
+          let (l, _) ← ref.get
+          ref.set (l, rp)
+          progress (l ++ rp)) true assumeBinding rightJobs)
+      let leftRes ← try
+          proveBlocks p ctx env parts[0]! ownedParts[0]! none childOpts
+            (fun lp => splitState.atomically fun ref => do
+              let (_, r) ← ref.get
+              ref.set (lp, r)
+              progress (lp ++ r)) true assumeBinding leftJobs
+        catch e => do
+          let _ ← IO.wait rightTask
+          throw e
+      let rightRes ← IO.ofExcept rightTask.get
+      pure (leftRes, rightRes)
   let joined := left.statement.join right.statement
   unless joined.claim == source.claim do throw (IO.userError "refinement changed the original leaf statement")
   let node ← proveNode p ctx joined left (some right) false options
@@ -371,7 +681,7 @@ private def runCore (p : Cli.Parsed) (proveLeaves : Bool)
   let sourcePath ← match checkpoint with
     | some path => if ← path.pathExists then pure (some path.toString) else pure original
     | none => pure original
-  let (env, view, counts) ← manifest p sourcePath
+  let (env, view, counts, ownedPerShard) ← manifestWithOwned p sourcePath
   let above := ((p.flag? "structural-above").map (·.as! Nat)).getD defaultStructuralAbove
   let plan ← IO.ofExcept (Reference.schedulePlan view.aggregationTree.foldPlan counts above (p.hasFlag "direct-joins"))
   let subtree := (p.flag? "subtree").map (·.as! Nat)
@@ -435,7 +745,7 @@ private def runCore (p : Cli.Parsed) (proveLeaves : Bool)
               if ← temp.pathExists then IO.FS.removeFile temp
           pure ())
       else pure (fun (_ : Nat) (_ : Array (Array Address × Nat)) => pure ())
-    let prepared ← IO.ofExcept (Reference.prepareShards env view.shards view.shardIds assumeBinding)
+    let prepared ← IO.ofExcept (prepareOwnedShards env ownedPerShard view.shardIds assumeBinding)
     let mut statements : Array CheckEnvTrees := #[]
     for item in plan do
       let statement ← match item.op with
@@ -481,9 +791,18 @@ private def runCore (p : Cli.Parsed) (proveLeaves : Bool)
           let some item := plan[child]? | throw (IO.userError "missing child")
           if item.kind == .aggr && nodes[child]!.isNone then
             throw (IO.userError s!"--reprove-slot requires verified cached child {child}")
+    let slotWeights := Reference.aggregateSlotRamWeights plan
+    let lanes := ((p.flag? "lanes").map (·.as! Nat)).getD (if options.device.isSome then 1 else jobs)
+    let ramBudgetBytes ←
+      if (p.flag? "max-ram").isSome || (p.flag? "ram-budget").isSome then
+        pure (max 1 (if p.hasFlag "lanes" && p.hasFlag "max-ram" then options.ram * max 1 lanes else options.ram))
+      else
+        Aggr.defaultAggregateRamBudgetBytes
     let ahead ← executionJobs p jobs
     let capacity := if (p.flag? "exec-ahead").map (·.as! Nat) == some 0 then max jobs 1 else max 1 (jobs + ahead)
     let mut completed := nodes.map Option.isSome
+    let mut inFlight := Array.replicate plan.size false
+    let mut reservedBytes := 0
     let mut running : Array (Nat × Task (Except IO.Error Node)) := #[]
     let admitted ← IO.mkRef running
     let mut users := Array.replicate plan.size 0
@@ -497,49 +816,59 @@ private def runCore (p : Cli.Parsed) (proveLeaves : Bool)
         let mut waiting := #[]
         for (slot, task) in running do
           if ← IO.hasFinished task then
+            inFlight := inFlight.set! slot false
+            reservedBytes := reservedBytes - (slotWeights[slot]?).getD 0
             let node ← IO.ofExcept task.get
             nodes := nodes.set! slot (some node)
             completed := completed.set! slot true
-            if let some item := plan[slot]? then
-              if let .join l r := item.op then
-              for child in #[l, r] do
-                users := users.modify child (· - 1)
-                if users[child]! == 0 then nodes := nodes.set! child none
           else waiting := waiting.push (slot, task)
         running := waiting
         admitted.set running
-        let ready := (Array.range plan.size).filter fun i => pending[i]! && !completed[i]! &&
-          !running.any (fun (slot, _) => slot == i) &&
-          (plan[i]?.any fun item => match item.op with
-            | .leaf _ => true
-            | .join l r => nodes[l]!.isSome && nodes[r]!.isSome)
-        let joins := ready.filter fun i => plan[i]?.any fun item => match item.op with | .join _ _ => true | _ => false
-        let leaves := ready.filter fun i => plan[i]?.any fun item => match item.op with | .leaf _ => true | _ => false
-        for slot in (joins ++ leaves).extract 0 (capacity - running.size) do
-          let available := nodes
-          let task ← IO.asTask (prio := .dedicated) do
-            let nodes := available
+        if !completed[rootSlot]! then
+          let batch := admitAggregateReady plan slotWeights completed inFlight
+            reservedBytes ramBudgetBytes capacity (some pending)
+          for slot in batch do
             let some item := plan[slot]? | throw (IO.userError "missing slot")
-            IO.println s!"[aiur aggregate] slot {slot}/{plan.size}: shape {item.shape?}"
             let some output := statements[slot]? | throw (IO.userError "missing statement")
-            match item.op with
-            | .leaf shard => do
-              let some source := prepared[shard]? | throw (IO.userError "missing shard")
-              let raw ← if let some wrapper := byClaim.get? (Address.blake3 (Ix.Claim.ser source.claim)) then
-                  pure ({ statement := source.statement, kind := .ixvm, wrapper } : Node)
-                else if proveLeaves then do
-                  let (node, _) ← proveBlocks p ctx env view.shards[shard]! options (saveLeaf shard) (item.kind == .ixvm) assumeBinding
-                  pure node
-                else throw (IO.userError s!"missing proof of shard {view.shardIds[shard]!}")
-              if item.kind == .ixvm || raw.kind == .aggr then pure raw
-              else if rangeSize > 0 && (← traceShards raw) > rangeSize then wrapRanges p ctx raw options rangeSize (reproveSlot == some slot)
-              else proveNode p ctx output raw none false options (reproveSlot == some slot)
-            | .join l r => do
-              let some left := nodes[l]! | throw (IO.userError "missing left child")
-              let some right := nodes[r]! | throw (IO.userError "missing right child")
-              proveNode p ctx output left (some right) item.structural options (reproveSlot == some slot)
-          running := running.push (slot, task)
-          admitted.set running
+            let forceSlot := reproveSlot == some slot
+            let totalSlots := plan.size
+            -- Extract ONLY the child proof buffers / leaf inputs needed by this
+            -- slot before spawning `IO.asTask` so no task closure retains `nodes`.
+            let task ← match item.op with
+              | .leaf shard => do
+                let some source := prepared[shard]? | throw (IO.userError "missing shard")
+                let rawByClaim? := byClaim.get? (Address.blake3 (Ix.Claim.ser source.claim))
+                let blocks := view.shards[shard]!
+                let shardOwned := ownedPerShard[shard]!
+                let shardId := view.shardIds[shard]!
+                let onLeafProgress := saveLeaf shard
+                IO.asTask (prio := .dedicated) do
+                  IO.println s!"[aiur aggregate] slot {slot}/{totalSlots}: shape {item.shape?}"
+                  let raw ← if let some wrapper := rawByClaim? then
+                      pure ({ statement := source.statement, kind := .ixvm, wrapper } : Node)
+                    else if proveLeaves then do
+                      let (node, _) ← proveBlocks p ctx env blocks shardOwned (some source) options onLeafProgress
+                        (item.kind == .ixvm) assumeBinding jobs
+                      pure node
+                    else throw (IO.userError s!"missing proof of shard {shardId}")
+                  if item.kind == .ixvm || raw.kind == .aggr then pure raw
+                  else if rangeSize > 0 && (← traceShards raw) > rangeSize then
+                    wrapRanges p ctx raw options rangeSize forceSlot jobs
+                  else proveNode p ctx output raw none false options forceSlot
+              | .join l r => do
+                let some left := nodes[l]! | throw (IO.userError "missing left child")
+                let some right := nodes[r]! | throw (IO.userError "missing right child")
+                for child in #[l, r] do
+                  users := users.modify child (· - 1)
+                  if child != rootSlot && users[child]! == 0 then
+                    nodes := nodes.set! child none
+                IO.asTask (prio := .dedicated) do
+                  IO.println s!"[aiur aggregate] slot {slot}/{totalSlots}: shape {item.shape?}"
+                  proveNode p ctx output left (some right) item.structural options forceSlot
+            inFlight := inFlight.set! slot true
+            reservedBytes := reservedBytes + (slotWeights[slot]?).getD 0
+            running := running.push (slot, task)
+            admitted.set running
         if !completed[rootSlot]! && running.isEmpty then
           throw (IO.userError "aggregate plan has no ready slot")
         unless completed[rootSlot]! do IO.sleep 1
@@ -607,9 +936,21 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     let _ ← IO.ofExcept (auditAggregateConstants env statement)
     pure (some statement.claim, [env])
   | some _, some _ => do
-    let (env, view, _) ← manifest p
+    let (env, view, counts, ownedPerShard) ← manifestWithOwned p
     let above := ((p.flag? "structural-above").map (·.as! Nat)).getD defaultStructuralAbove
-    let root ← IO.ofExcept (Reference.expectedFromManifest env view above)
+    let plan ← IO.ofExcept (Reference.schedulePlan view.aggregationTree.foldPlan counts above)
+    let prepared ← IO.ofExcept (prepareOwnedShards env ownedPerShard view.shardIds)
+    let mut slots : Array CheckEnvTrees := #[]
+    for item in plan do
+      match item.op with
+      | .leaf shard =>
+        let some source := prepared[shard]? | throw (IO.userError s!"aggregate plan references missing shard {shard}")
+        slots := slots.push source.statement
+      | .join left right =>
+        let some leftStatement := slots[left]? | throw (IO.userError s!"aggregate plan references missing left slot {left}")
+        let some rightStatement := slots[right]? | throw (IO.userError s!"aggregate plan references missing right slot {right}")
+        slots := slots.push <| if item.structural then leftStatement.joinStructural rightStatement else leftStatement.join rightStatement
+    let some root := slots.back? | throw (IO.userError "aggregate manifest produced no root")
     let _ ← IO.ofExcept (auditAggregateConstants env root)
     pure (some root.claim, [env])
   let proofs := p.variableArgsAs! String

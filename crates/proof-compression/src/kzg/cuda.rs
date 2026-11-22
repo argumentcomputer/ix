@@ -51,11 +51,12 @@ pub struct Settings {
   /// Points per MSM chunk, in `1..=2^28`.
   pub msm_chunk_points: usize,
   /// Device bytes retained for resident coefficients per device; `None`
-  /// uses half of each device's memory. The default keeps 8 GiB so that the
-  /// lookup and quotient working sets of large partitions are always
-  /// admitted beside the retained columns on one device.
+  /// adapts to each device's VRAM (`total / 3`, capped by `total / 2` and
+  /// free memory minus the standing reserve) so lookup and quotient working
+  /// sets stay admitted beside retained columns on both 24 GiB and 80+ GiB GPUs.
   pub resident_limit_bytes: Option<usize>,
-  /// Keep uploaded SRS ranges resident across operations.
+  /// Keep uploaded SRS ranges resident across operations (evictable under
+  /// memory pressure).
   pub srs_cache: bool,
   pub passes: PassMode,
 }
@@ -65,11 +66,19 @@ impl Default for Settings {
     Self {
       devices: None,
       msm_chunk_points: 1 << 24,
-      resident_limit_bytes: Some(8 << 30),
-      srs_cache: false,
+      resident_limit_bytes: None,
+      srs_cache: true,
       passes: PassMode::Fallback,
     }
   }
+}
+
+/// Standing VRAM reserve kept free for the CUDA driver and runtime:
+/// bounded by `min(total / 10, 4 GiB)` instead of a fixed 25% share.
+const fn vram_reserve(total: usize) -> usize {
+  let tenth = total / 10;
+  let cap = 4 << 30;
+  if tenth < cap { tenth } else { cap }
 }
 
 static SETTINGS: OnceLock<Settings> = OnceLock::new();
@@ -238,7 +247,7 @@ impl Devices {
     );
     free
       .saturating_add(srs_residency::reclaimable(index))
-      .saturating_sub(total / 4)
+      .saturating_sub(vram_reserve(total))
   }
 
   fn get() -> &'static Self {
@@ -277,11 +286,12 @@ impl Devices {
         .map(|&id| {
           let (mut free, mut total) = (0, 0);
           check(unsafe { ix_kzg_memory(id, &mut free, &mut total) }, "memory query");
+          let reserve = vram_reserve(total);
           settings
             .resident_limit_bytes
-            .unwrap_or(total / 2)
+            .unwrap_or(total / 3)
             .min(total / 2)
-            .min(free.saturating_sub(total / 4))
+            .min(free.saturating_sub(reserve))
         })
         .collect();
       tracing::info!(curve = super::curve::NAME, ?ids, chunk_points, ?resident_limits, "KZG sppark CUDA backend");
@@ -389,7 +399,7 @@ impl<'a> Device<'a> {
       unsafe { ix_kzg_memory(self.id(), &mut free, &mut total) },
       "memory query",
     );
-    free.saturating_sub(total / 4)
+    free.saturating_sub(vram_reserve(total))
   }
 }
 

@@ -399,7 +399,8 @@ fn out_of_range_gap_limb_is_rejected_by_verifier() {
     .unwrap();
 }
 
-/// The row bound fires just above 2^39 rows and accepts just at or below it.
+/// The row bound fires just above 2^39 weighted rows (with `C6` vectorized ROM
+/// circuits weighted by their lane count `K`) and accepts just at or below it.
 #[test]
 fn row_bound_boundary() {
   let (program, artifact) = fixture();
@@ -409,7 +410,8 @@ fn row_bound_boundary() {
     VerifyingKey::from_bytes(&backend.verifying_key_bytes().unwrap()).unwrap();
   let claim = backend.claim("root", &[3], &[9]).unwrap();
   let max_log = u8::try_from(32 - parameters().log_blowup).unwrap();
-  let mut rows = 0u128;
+  let mut weighted_rows = 0u128;
+  let mut unweighted_rows = 0u128;
   let mut log_degrees = vec![];
   for circuit in &backend.system.circuits {
     let log = if circuit.preprocessed_height == 0 {
@@ -417,9 +419,13 @@ fn row_bound_boundary() {
     } else {
       u8::try_from(circuit.preprocessed_height.ilog2()).unwrap()
     };
-    rows += 1u128 << log;
+    let h = 1u128 << log;
+    unweighted_rows += h;
+    weighted_rows += h * u128::from(batch::circuit_row_weight(circuit));
     log_degrees.push(log);
   }
+  // Vectorized `<ROM:1>` (`K = 8`) strictly increases weighted rows over unweighted.
+  assert!(weighted_rows > unweighted_rows);
   let header = multi_stark::batch::ShardHeader {
     active: vec![true; backend.system.circuits.len()],
     stage_1_trace: backend.system.preprocessed_commit.clone().unwrap(),
@@ -427,14 +433,70 @@ fn row_bound_boundary() {
     claims: vec![],
   };
   let bound = 1u128 << 39;
-  let at_bound = usize::try_from(bound / rows).unwrap();
-  let preamble = |n: usize| {
-    let mut headers = vec![header.clone(); n];
-    headers[0].claims = vec![claim.clone()];
-    multi_stark::batch::BatchPreamble { headers, messages: vec![] }
-  };
-  key.validate_preamble(&claim, &preamble(at_bound)).unwrap();
+  let at_bound = usize::try_from(bound / weighted_rows).unwrap();
+  let unweighted_at_bound = usize::try_from(bound / unweighted_rows).unwrap();
+  assert!(unweighted_at_bound > at_bound);
+  use multi_stark::batch::BatchMessage;
+  let preamble =
+    |n: usize, messages: Vec<BatchMessage<GoldilocksBlake3Config>>| {
+      let mut headers = vec![header.clone(); n];
+      headers[0].claims = vec![claim.clone()];
+      multi_stark::batch::BatchPreamble { headers, messages }
+    };
+  key.validate_preamble(&claim, &preamble(at_bound, vec![])).unwrap();
   let error =
-    key.validate_preamble(&claim, &preamble(at_bound + 1)).unwrap_err();
+    key.validate_preamble(&claim, &preamble(at_bound + 1, vec![])).unwrap_err();
   assert!(error.contains("2^39"), "{error}");
+  // Unweighted shard count that previously slipped past 2^39 under C6 is rejected.
+  assert!(
+    key
+      .validate_preamble(&claim, &preamble(unweighted_at_bound, vec![]))
+      .is_err()
+  );
+
+  // Closure-pair hardening (HIGH-1): reject empty `a == b`, unknown ROM width,
+  // and excess pairs > shards * rom_widths.
+  let mk_pair = |w: u64, a: u64, b: u64| {
+    [
+      BatchMessage::pull(vec![
+        Val::from_u64(MEMSEG),
+        Val::from_u64(w),
+        Val::from_u64(a),
+      ]),
+      BatchMessage::push(vec![
+        Val::from_u64(MEMSEG),
+        Val::from_u64(w),
+        Val::from_u64(b),
+      ]),
+    ]
+  };
+  // Valid strict interval on known width 1 succeeds.
+  key
+    .validate_preamble(&claim, &preamble(1, mk_pair(1, 0, 5).to_vec()))
+    .unwrap();
+  // Empty `a == b` interval rejected.
+  assert!(
+    key
+      .validate_preamble(&claim, &preamble(1, mk_pair(1, 0, 0).to_vec()))
+      .is_err()
+  );
+  assert!(
+    key
+      .validate_preamble(&claim, &preamble(1, mk_pair(1, 7, 7).to_vec()))
+      .is_err()
+  );
+  // Unknown ROM width (99) rejected.
+  assert!(
+    key
+      .validate_preamble(&claim, &preamble(1, mk_pair(99, 0, 5).to_vec()))
+      .is_err()
+  );
+  // Too many pairs for 1 shard & 1 ROM width rejected.
+  let two_pairs: Vec<_> =
+    mk_pair(1, 0, 5).into_iter().chain(mk_pair(1, 5, 10)).collect();
+  assert!(
+    key.validate_preamble(&claim, &preamble(1, two_pairs.clone())).is_err()
+  );
+  // With 2 shards & 1 ROM width, 2 disjoint pairs succeed.
+  key.validate_preamble(&claim, &preamble(2, two_pairs)).unwrap();
 }

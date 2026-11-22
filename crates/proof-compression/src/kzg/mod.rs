@@ -12,6 +12,7 @@ pub mod domain;
 pub mod encoding;
 mod fft_batch;
 pub mod field;
+mod msm_cpu;
 pub mod pcs;
 mod quotient;
 mod quotient_plan;

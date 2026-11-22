@@ -344,6 +344,11 @@ pub(crate) fn validate_parameters(
   if fri.num_queries == 0 {
     return Err(VerifierError::Profile("zero FRI queries"));
   }
+  if stark_key::security::check(&commitment, &fri).is_err() {
+    return Err(VerifierError::Unsupported(
+      "FRI parameters below security floor",
+    ));
+  }
   Ok(())
 }
 

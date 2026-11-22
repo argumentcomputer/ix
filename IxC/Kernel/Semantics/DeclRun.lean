@@ -167,9 +167,11 @@ def DeclThmRun (μ : CheckMode) (F : Nat) (env : Env md)
     env₂ = ⟨.thmInfo ⟨cv.name, cv.levelParams, type'⟩ value ::
       env.consts⟩
 
-/-- `DeclOpaqueR`'s run/guard half. -/
+/-- `DeclOpaqueR`'s run/guard half: inert compiler-trust opaques install
+nothing (§7.10), ordinary opaques install an axiom of their checked type. -/
 def DeclOpaqueRun (μ : CheckMode) (F : Nat) (env : Env md)
     (cv : ConstantVal md) (value : Expr md) (env₂ : Env md) : Prop :=
+  (cv.name.isCompilerTrustOpaque = true ∧ env₂ = env) ∨
   ∃ type' value',
     ConstantValRun μ F env cv type' ∧
     ValueFrontRun μ F env cv value type' value' ∧
@@ -179,12 +181,10 @@ def DeclOpaqueRun (μ : CheckMode) (F : Nat) (env : Env md)
 stored-data guards and is carried verbatim. -/
 def DeclAxiomRun (μ : CheckMode) (F : Nat) (env : Env md)
     (cv : ConstantVal md) (env₂ : Env md) : Prop :=
-  -- **`Quot.sound`** (task #293): the pinned quotient block's own
-  -- record, compared with the pin BEFORE the common checks (its name is
-  -- a reserved basis name) and installing nothing of its own — the
-  -- block installs it.  No `ConstantValRun`: the record's type is not
-  -- annotated, exactly as the parser's comparison did not annotate it.
-  (cv.name = quotSoundName ∧ env₂ = env) ∨
+  -- **`Quot.sound`** (task #293) and **compiler-trust axioms** (§7.10):
+  -- compared with their pins BEFORE the common checks and installing
+  -- nothing of their own.
+  ((cv.name = quotSoundName ∨ cv.name.isCompilerTrustAxiom = true) ∧ env₂ = env) ∨
   ∃ type',
     ConstantValRun μ F env cv type' ∧
     (let cvA : ConstantVal md := ⟨cv.name, cv.levelParams, type'⟩

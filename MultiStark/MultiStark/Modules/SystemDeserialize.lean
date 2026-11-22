@@ -81,6 +81,7 @@ module SystemDeserialize {
 
   fn read_field(i: Bytes::Stream) -> (Field, Bytes::Stream) {
       let (u, j) = read_vk_u64(i);
+      assert_eq!(Goldilocks::gl_lt_p(u), 1);
       (Goldilocks::gl_val(u), j)
     }
 
@@ -182,7 +183,7 @@ module SystemDeserialize {
               let (idx, i2) = read_vk_u16(i1);
               let (rest, i3) = read_nodes_n(i2, n - 1, node_idx + 1);
               ((&(Lists::Node::Cons(SysNode::Var(2, 0, idx), rest))), i3) } ,
-            _ => {
+            15 => {
               let (idx, i2) = read_vk_u16(i1);
               let (rest, i3) = read_nodes_n(i2, n - 1, node_idx + 1);
               ((&(Lists::Node::Cons(SysNode::Var(2, 1, idx), rest))), i3) } ,
@@ -272,8 +273,9 @@ module SystemDeserialize {
       let (tag, j) = read_vk_u8(i);
       match UInt8::to_field(tag) {
         0 => {  (OptCommit::NoCommit, j) } ,
-        _ => {
+        1 => {
           let (n, j1) = read_vk_u16(j);
+          assert_eq!(n, 1);
           let (c, j2) = read_vk_cap_n(j1, n);
           (OptCommit::SomeCommit(c), j2) } ,
       }

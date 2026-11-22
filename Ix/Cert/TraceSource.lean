@@ -96,7 +96,27 @@ theorem accepted_axiom {md : Mode} {μ : CheckMode} {ev : Evidences md} {ds : Li
   · left
     have run := Semantics.checkDeclRun_ofEnvFactsE he
     rcases run with ⟨hn, -⟩ | ⟨type', hcv, -⟩
-    · exact absurd hn hq
+    · rcases hn with hqs | hct
+      · exact absurd hqs hq
+      · simp only [checkDecl, hq, ↓reduceIte, hct] at he
+        split at he
+        · rename_i hok
+          cases hnm : cv.name with
+          | role r =>
+            rw [hnm] at hct
+            cases r <;>
+              simp [Key.isCompilerTrustAxiom, Role.isCompilerTrustAxiom] at hct
+            all_goals
+              simp only [anchorMismatch?, hnm, installAnchorPin?, ConstantVal.matchesPin] at hok
+              split at hok
+              · rename_i hm
+                simp only [Bool.and_eq_true, decide_eq_true_eq] at hm
+                rw [hm.1.2]; rfl
+              · cases hok
+          | id _ | aux _ _ =>
+            rw [hnm] at hct
+            cases hct
+        · cases he
     · exact hcv.2.2.2.1
 
 /-- **A kept axiom's level parameters are distinct**, when the prepared stream is accepted. -/
@@ -541,9 +561,20 @@ theorem quotSoundPin_noSelf :
       quotSoundName = false := by
   decide
 
+/-- `Expr.erasePw` preserves constant occurrences. -/
+private theorem constsAll_erasePw {P : Key .source → Prop} :
+    ∀ {e : Ix.Kernel.Expr .source}, ConstsAll P e ↔ ConstsAll P e.erasePw
+  | .bvar _ | .fvar _ _ | .sort _ | .lit _ => Iff.rfl
+  | .const _ _ => Iff.rfl
+  | .app _ _ => and_congr constsAll_erasePw constsAll_erasePw
+  | .lam _ _ _ => and_congr constsAll_erasePw constsAll_erasePw
+  | .forallE _ _ _ => and_congr constsAll_erasePw constsAll_erasePw
+  | .letE _ _ _ _ => and_congr constsAll_erasePw (and_congr constsAll_erasePw constsAll_erasePw)
+  | .proj _ _ e => constsAll_erasePw (e := e)
+
 /-- **An accepted axiom's type names no constant by the axiom's name**: the front door's
 environment does not hold it and holds every constant of its type, or it is the pinned
-quotient soundness record, which matches its pin canonically. -/
+quotient soundness or compiler-trust record, which matches its pin canonically. -/
 theorem accepted_axiom_noSelf {μ : CheckMode} {ev : Evidences .source} {ds : List (Declaration .source)}
     {env : Env .source} (h : Cached.AcceptsRef μ ev ds env) {cv : Ix.Kernel.ConstantVal .source}
     (hd : .axiomDecl cv ∈ ds) : ConstsAll (· ≠ cv.name) cv.type := by
@@ -565,7 +596,31 @@ theorem accepted_axiom_noSelf {μ : CheckMode} {ev : Evidences .source} {ds : Li
     · cases he
   · have run := Semantics.checkDeclRun_ofEnvFactsE he
     rcases run with ⟨hn, -⟩ | ⟨type', hcv, -⟩
-    · exact absurd hn hq
+    · rcases hn with hqs | hct
+      · exact absurd hqs hq
+      · simp only [checkDecl, hq, ↓reduceIte, hct] at he
+        split at he
+        · rename_i hok
+          cases hnm : cv.name with
+          | role r =>
+            rw [hnm] at hct
+            cases r <;>
+              simp [Key.isCompilerTrustAxiom, Role.isCompilerTrustAxiom] at hct
+            all_goals
+              simp only [anchorMismatch?, hnm, installAnchorPin?, ConstantVal.matchesPin] at hok
+              split at hok
+              · rename_i hm
+                simp only [Bool.and_eq_true, beq_iff_eq] at hm
+                have hty : cv.type.erasePw = _ := hm.2
+                have hpin : (cv.type.erasePw).mentionsConst cv.name = false := by
+                  rw [hty, hnm]; decide
+                rw [hnm] at hpin
+                exact constsAll_erasePw.mpr (constsAll_of_mentions hpin)
+              · cases hok
+          | id _ | aux _ _ =>
+            rw [hnm] at hct
+            cases hct
+        · cases he
     · exact CheckedConsts.constantValRun_noSelf hcv
 
 /-- **A quotient header whose type names no constant by its key comes from a source type that

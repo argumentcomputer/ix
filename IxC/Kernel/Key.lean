@@ -689,4 +689,60 @@ theorem auxKey_projFn_ne {T n : Key md} {j : Nat} (h : n.isProjFnShape = false) 
   subst he
   exact absurd h (by rw [isProjFnShape_auxKey_projFn]; decide)
 
+/-! ## Compiler-trust inert roles (§7.10)
+
+The five compiler-trust roles (`Lean.trustCompiler`, `Lean.ofReduceBool`,
+`Lean.ofReduceNat`, and the opaques `Lean.reduceBool`, `Lean.reduceNat`) are
+tolerated as declarations without installing anything; any use declines.
+Predicates live here (the allowlisted module for the `Role` names) so other
+checker modules test them without naming the constructors directly. -/
+
+/-- Whether `r` is one of Lean's three compiler-trust axiom roles
+(`Lean.trustCompiler`, `Lean.ofReduceBool`, `Lean.ofReduceNat`). -/
+def Role.isCompilerTrustAxiom : Role → Bool
+  | .trustCompiler | .ofReduceBool | .ofReduceNat => Bool.true
+  | _ => Bool.false
+
+/-- Whether `r` is one of Lean's two compiler-trust opaque roles
+(`Lean.reduceBool`, `Lean.reduceNat`). -/
+def Role.isCompilerTrustOpaque : Role → Bool
+  | .reduceBool | .reduceNat => Bool.true
+  | _ => Bool.false
+
+/-- Whether `r` is any of Lean's five compiler-trust roles. -/
+def Role.isCompilerTrust (r : Role) : Bool :=
+  r.isCompilerTrustAxiom || r.isCompilerTrustOpaque
+
+/-- Whether `k` is one of Lean's three compiler-trust axiom role keys. -/
+def Key.isCompilerTrustAxiom : Key md → Bool
+  | .role r => r.isCompilerTrustAxiom
+  | _ => false
+
+/-- Whether `k` is one of Lean's two compiler-trust opaque role keys. -/
+def Key.isCompilerTrustOpaque : Key md → Bool
+  | .role r => r.isCompilerTrustOpaque
+  | _ => false
+
+/-- Whether `k` is any of Lean's five compiler-trust role keys. -/
+def Key.isCompilerTrust : Key md → Bool
+  | .role r => r.isCompilerTrust
+  | _ => false
+
+/-- The five compiler-trust role keys, for unresolved-constant diagnostics. -/
+def compilerTrustKeys : List (Key md) :=
+  [roleKey .trustCompiler, roleKey .reduceBool, roleKey .reduceNat,
+   roleKey .ofReduceBool, roleKey .ofReduceNat]
+
+@[simp] theorem Key.map_isCompilerTrustAxiom {md md' : Mode} (f : md.Id → md'.Id) (k : Key md) :
+    (k.map f).isCompilerTrustAxiom = k.isCompilerTrustAxiom := by
+  cases k <;> rfl
+
+@[simp] theorem Key.map_isCompilerTrustOpaque {md md' : Mode} (f : md.Id → md'.Id) (k : Key md) :
+    (k.map f).isCompilerTrustOpaque = k.isCompilerTrustOpaque := by
+  cases k <;> rfl
+
+@[simp] theorem Key.map_isCompilerTrust {md md' : Mode} (f : md.Id → md'.Id) (k : Key md) :
+    (k.map f).isCompilerTrust = k.isCompilerTrust := by
+  cases k <;> rfl
+
 end Ix.Kernel

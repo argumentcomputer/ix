@@ -68,6 +68,7 @@ pub(super) fn run(
   drop(plan);
   drop(fixture.key);
   drop(fixture.proof);
+  storage::release_host_memory();
   let lowered = lowering::prepare_first(prepared, trace_height)?;
   assert_eq!(lowered.assignment.public_values(), public);
   eprintln!(

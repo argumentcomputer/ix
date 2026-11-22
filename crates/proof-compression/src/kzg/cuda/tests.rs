@@ -690,6 +690,7 @@ fn concurrent_uncached_msm_completes() {
 
 fn concurrent_uncached_msm_body() {
   use std::sync::Barrier;
+  configure(Settings { srs_cache: false, ..Settings::default() });
   assert_eq!(Devices::get().ids.len(), 1, "run with one device selected");
   assert!(!srs_residency::enabled());
   let n = 1 << 20;

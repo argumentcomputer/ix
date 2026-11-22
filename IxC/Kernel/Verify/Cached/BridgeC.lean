@@ -411,13 +411,43 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
   | axiomDecl cv =>
     unfold checkDeclC checkDecl
     dsimp only
-    -- task #293: `Quot.sound` is compared with the pin on both sides
+    -- task #293 & §7.10: `Quot.sound` and compiler-trust axioms are compared with their pins
     by_cases hqs : cv.name = quotSoundName
     · simp only [if_pos hqs]
       split
       · exact SimC.pure hs ⟨rfl, rfl⟩
       · exact SimC.throw
     simp only [if_neg hqs]
+    by_cases hct : cv.name.isCompilerTrustAxiom = true
+    · simp only [if_pos hct]
+      by_cases hpin : (anchorMismatch? cv).isNone = true
+      case neg => simp only [if_neg hpin]; exact SimC.throw
+      simp only [if_pos hpin, mkFEnv_find?]
+      by_cases hdup : (env.find? cv.name).isSome = true
+      · simp only [if_pos hdup]; exact SimC.throw
+      simp only [if_neg hdup]
+      by_cases htc : cv.name = roleKey .trustCompiler
+      · simp only [if_pos htc]
+        exact SimC.bind (checkConstantValC_sim hμ henv hs rfl) fun s₁ _ _ hs₁ _ =>
+          SimC.pure hs₁ ⟨rfl, rfl⟩
+      simp only [if_neg htc, Expr.allLevelParamsDefinedC_spec]
+      by_cases hnd : LevelParam.nodup cv.levelParams = true
+      case neg => simp only [hnd, Bool.not_false, ↓reduceIte]; exact SimC.throw
+      simp only [hnd, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+      by_cases hlb : Expr.looseBVarsBounded 0 cv.type = true
+      case neg => simp only [hlb, Bool.not_false, ↓reduceIte]; exact SimC.throw
+      simp only [hlb, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+      by_cases hfv : Expr.hasFvar cv.type = true
+      · simp only [if_pos hfv]; exact SimC.throw
+      simp only [if_neg hfv]
+      by_cases hlp : Expr.allLevelParamsDefined cv.levelParams cv.type = true
+      case neg => simp only [hlp, Bool.not_false, ↓reduceIte]; exact SimC.throw
+      simp only [hlp, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+      exact SimC.pure hs ⟨rfl, rfl⟩
+    simp only [if_neg hct]
+    by_cases hcto : cv.name.isCompilerTrustOpaque = true
+    · simp only [if_pos hcto]; exact SimC.throw
+    simp only [if_neg hcto]
     refine SimC.bind (checkConstantValC_sim hμ henv hs rfl)
       (fun s₁ pr cvA hs₁ hP => ?_)
     obtain ⟨cvR, jty⟩ := pr
@@ -440,6 +470,9 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
   | thmDecl cv value =>
     unfold checkDeclC checkDecl
     dsimp only
+    by_cases hct : cv.name.isCompilerTrust = true
+    · simp only [if_pos hct]; exact SimC.throw_bind
+    simp only [if_neg hct]
     refine SimC.bind (checkConstantValC_sim hμ henv hs rfl)
       (fun s₁ pr cvA hs₁ hP => ?_)
     obtain ⟨cvR, jty⟩ := pr
@@ -450,6 +483,29 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
   | opaqueDecl cv value =>
     unfold checkDeclC checkDecl
     dsimp only
+    by_cases hct : cv.name.isCompilerTrustOpaque = true
+    · simp only [if_pos hct]
+      by_cases hpin : (anchorMismatch? cv).isNone = true
+      case neg => simp only [if_neg hpin]; exact SimC.throw
+      simp only [if_pos hpin, mkFEnv_find?]
+      by_cases hdup : (env.find? cv.name).isSome = true
+      · simp only [if_pos hdup]; exact SimC.throw
+      simp only [if_neg hdup]
+      by_cases hlb : Expr.looseBVarsBounded 0 value = true
+      case neg => simp only [hlb, Bool.not_false, ↓reduceIte]; exact SimC.throw
+      simp only [hlb, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+      by_cases hfv : value.hasFvar = true
+      · simp only [if_pos hfv]; exact SimC.throw
+      simp only [if_neg hfv, Expr.allLevelParamsDefinedC_spec]
+      by_cases hlp : Expr.allLevelParamsDefined cv.levelParams value = true
+      case neg => simp only [hlp, Bool.not_false, ↓reduceIte]; exact SimC.throw
+      simp only [hlp, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+      exact SimC.bind (checkConstantValC_sim hμ henv hs rfl) fun s₁ _ _ hs₁ _ =>
+        SimC.pure hs₁ ⟨rfl, rfl⟩
+    simp only [if_neg hct]
+    by_cases hcta : cv.name.isCompilerTrustAxiom = true
+    · simp only [if_pos hcta]; exact SimC.throw
+    simp only [if_neg hcta]
     refine SimC.bind (checkConstantValC_sim hμ henv hs rfl)
       (fun s₁ pr cvA hs₁ hP => ?_)
     obtain ⟨cvR, jty⟩ := pr
@@ -460,6 +516,9 @@ theorem checkDeclC_sim (hμ : mode.verifiedChecks = true) (henv : EnvWF env) (hs
   | defnDecl cv value hint =>
     unfold checkDeclC checkDecl
     dsimp only
+    by_cases hct : cv.name.isCompilerTrust = true
+    · simp only [if_pos hct]; exact SimC.throw_bind
+    simp only [if_neg hct]
     refine SimC.bind (checkConstantValC_sim hμ henv hs rfl)
       (fun s₁ pr cvA hs₁ hP => ?_)
     obtain ⟨cvR, jty⟩ := pr

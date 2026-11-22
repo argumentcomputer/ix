@@ -48,20 +48,9 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     }
     hits.extend(std::iter::repeat_n(0, self.tables.len()));
     for &width in &self.rom.widths {
+      let cells = record.memory.width_cells(width);
       hits.push(
-        record
-          .memory
-          .indices_for_width(width)
-          .iter()
-          .map(|&i| {
-            record
-              .memory
-              .get(i)
-              .expect("ROM row")
-              .multiplicity
-              .saturating_sub(1)
-          })
-          .sum(),
+        (0..cells.len()).map(|i| cells.multiplicity(i).saturating_sub(1)).sum(),
       );
     }
     ExecutionStatistics {

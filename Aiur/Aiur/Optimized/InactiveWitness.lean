@@ -212,6 +212,92 @@ unconditional Boolean/coverage equations introduced by nested choices. -/
             have c₂ := c₁.afterLower rightRun e₂
             obtain ⟨e₃, c₃⟩ := c₂.equal equalityRun (leftBound.mono e₂.increase) rightBound
             exact ⟨b, (e₁.trans e₂).trans e₃, c₃, Circuit.Compiler.bounded_tuple.mpr (by simp)⟩
+      | ptrEq left right =>
+          obtain ⟨leftWire, s₁, leftRun, rightBind⟩ := bind_ok.mp stepRun
+          rcases leftWire with ⟨lt, lw⟩
+          cases lt with
+          | field | tuple | enum => simp at rightBind
+          | ptr t₁ =>
+              cases lw with
+              | nil => simp at rightBind
+              | cons a₁ lrest =>
+                  cases lrest with
+                  | cons => simp at rightBind
+                  | nil =>
+                      dsimp only at rightBind
+                      obtain ⟨rightWire, s₂, rightRun, typeCheck⟩ := bind_ok.mp rightBind
+                      rcases rightWire with ⟨rt, rw'⟩
+                      cases rt with
+                      | field | tuple | enum => simp at typeCheck
+                      | ptr t₂ =>
+                          cases rw' with
+                          | nil => simp at typeCheck
+                          | cons a₂ rrest =>
+                              cases rrest with
+                              | cons => simp at typeCheck
+                              | nil =>
+                                  dsimp only at typeCheck
+                                  split at typeCheck
+                                  · simp [StateT.bind, bind, Except.bind] at typeCheck
+                                  · obtain ⟨⟨⟩, s₂', unchanged, choiceBind⟩ := bind_ok.mp typeCheck
+                                    obtain ⟨_, stateEq⟩ := pure_ok.mp unchanged
+                                    subst s₂'
+                                    obtain ⟨branches, s₃, choiceRun, branchBind⟩ := bind_ok.mp choiceBind
+                                    cases branches with
+                                    | nil => simp at branchBind
+                                    | cons eqBranch brest =>
+                                        cases brest with
+                                        | nil => simp at branchBind
+                                        | cons neqBranch brest₂ =>
+                                            cases brest₂ with
+                                            | cons => simp at branchBind
+                                            | nil =>
+                                                dsimp only at branchBind
+                                                obtain ⟨⟨⟩, s₄, eqRun, failBind⟩ := bind_ok.mp branchBind
+                                                obtain ⟨⟨⟩, s₅, failRun, scopeBind⟩ := bind_ok.mp failBind
+                                                obtain ⟨eqScope, s₆, scopeRun, pureRun⟩ := bind_ok.mp scopeBind
+                                                obtain ⟨eqScopeFound, stateEq⟩ := getScope_eq scopeRun
+                                                subst s₆
+                                                obtain ⟨rfl, stateEq⟩ := pure_ok.mp pureRun
+                                                subst middle
+                                                obtain ⟨a, e₁, leftBound⟩ := lower_inactive leftRun layout scopeLayout valid scopeValid localsBound (by simp) inactive
+                                                have c₁ := start.afterLower leftRun e₁
+                                                obtain ⟨b, e₂, rightBound⟩ := lower_inactive rightRun c₁.layout c₁.scopeLayout c₁.valid c₁.scopeValid
+                                                  (localsBound.mono e₁.increase) (by simp) c₁.inactive
+                                                have c₂ := c₁.afterLower rightRun e₂
+                                                obtain ⟨c, e₃, selected⟩ := choice_complete choiceRun c₂.layout c₂.scopeLayout c₂.valid none
+                                                  (by simpa using c₂.inactive)
+                                                have c₃ := c₂.advance ⟨choice_extends choiceRun, choice_scoped choiceRun c₂.scopeLayout⟩ e₃
+                                                have eqBranchValid : eqBranch < s₃.scopes.size :=
+                                                  choice_child_bound choiceRun eqBranch (by simp)
+                                                have neqBranchValid : neqBranch < s₃.scopes.size :=
+                                                  choice_child_bound choiceRun neqBranch (by simp)
+                                                have hEqInactive : (s₃.activation eqBranch).denote c = 0 := by
+                                                  simpa [choiceSelected] using selected ⟨0, by simp⟩
+                                                have hNeqInactive : (s₃.activation neqBranch).denote c = 0 := by
+                                                  simpa [choiceSelected] using selected ⟨1, by simp⟩
+                                                have hDiffBound₃ : (Polynomial.sub a₁ a₂).inBounds s₃.roles.size = true := by
+                                                  simpa only [Scalar.Circuit.ArithExpr.inBounds, Bool.and_eq_true, State.toReference] using
+                                                    And.intro ((e₂.trans e₃).bound (leftBound a₁ (by simp)))
+                                                      (e₃.bound (rightBound a₂ (by simp)))
+                                                have e₄ := equation_complete eqRun c₃.layout c₃.valid (by
+                                                  change ((s₃.activation eqBranch).inBounds s₃.roles.size &&
+                                                    (Polynomial.sub a₁ a₂).inBounds s₃.roles.size) = true
+                                                  rw [Bool.and_eq_true]
+                                                  exact ⟨c₃.scopeLayout.activation_bound eqBranch, hDiffBound₃⟩)
+                                                  (by simp [hEqInactive])
+                                                have eqStruct := equation_grow eqRun
+                                                have eqScoped := equation_scoped eqRun c₃.scopeLayout eqBranchValid
+                                                have c₄ := c₃.advance ⟨eqStruct, eqScoped⟩ e₄
+                                                obtain ⟨d, e₅⟩ := failure_complete failRun c₄.layout c₄.valid
+                                                  (c₄.scopeLayout.activation_bound neqBranch)
+                                                  (fun p hp => by simp only [List.mem_singleton] at hp; subst hp; exact e₄.bound hDiffBound₃)
+                                                  (Or.inl (by rw [eqStruct.activation_eq neqBranchValid]; exact hNeqInactive))
+                                                have c₅ := c₄.advance (failure_scoped failRun c₄.scopeLayout (eqStruct.scopeValid neqBranchValid)) e₅
+                                                have hEqScopeBound : eqScope.activation.inBounds s₅.roles.size = true :=
+                                                  c₅.scopeLayout.activations eqScope (by simpa using Array.mem_of_getElem? eqScopeFound)
+                                                exact ⟨d, (((e₁.trans e₂).trans e₃).trans e₄).trans e₅, c₅,
+                                                  Circuit.Compiler.bounded_field.mpr hEqScopeBound⟩
       | binary op left right =>
           obtain ⟨leftWire, s₁, leftRun, leftFieldBind⟩ := bind_ok.mp stepRun
           obtain ⟨leftWord, s₂, leftFieldRun, rightBind⟩ := bind_ok.mp leftFieldBind

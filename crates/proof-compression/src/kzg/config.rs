@@ -132,6 +132,11 @@ impl KzgConfig {
     self
   }
 
+  #[cfg(not(feature = "cuda"))]
+  pub(crate) fn stream_lookups(&self) -> bool {
+    self.stream_lookups
+  }
+
   /// Evaluate each quotient on trace-sized cosets, bounding temporary matrices.
   pub fn with_streaming_quotient(mut self) -> Self {
     self.stream_quotient = true;
@@ -159,8 +164,18 @@ impl KzgConfig {
     self.spill_dir.as_deref()
   }
 
+  /// Default CPU disk-spilling policy when `IX_KZG_DISK_SPILL` is unset:
+  /// disabled on CUDA and on CPU hosts with `>= 256 GiB` of available RAM
+  /// (where in-memory proving avoids slow network-attached disk I/O), and
+  /// enabled on smaller CPU hosts to keep peak RSS bounded around ~50 GiB.
+  fn adaptive_disk_spill(avail_gib: Option<usize>, is_cuda: bool) -> bool {
+    const IN_RAM_THRESHOLD_GIB: usize = 256;
+    !is_cuda && avail_gib.is_none_or(|gib| gib < IN_RAM_THRESHOLD_GIB)
+  }
+
   /// Resolve the CPU disk-spill directory from `IX_KZG_DISK_SPILL` (default
-  /// enabled on CPU, disabled on CUDA) and `IX_KZG_SPILL_DIR` (default `dir`).
+  /// adaptive on CPU — enabled below 256 GiB available RAM, disabled on high-RAM
+  /// servers and CUDA) and `IX_KZG_SPILL_DIR` (default `dir`).
   pub(crate) fn resolve_disk_spill_dir(
     default_dir: &Path,
   ) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
@@ -174,7 +189,10 @@ impl KzgConfig {
           );
         },
       },
-      Err(std::env::VarError::NotPresent) => !cfg!(feature = "cuda"),
+      Err(std::env::VarError::NotPresent) => Self::adaptive_disk_spill(
+        crate::pipeline::storage::available_host_gib(),
+        cfg!(feature = "cuda"),
+      ),
       Err(error) => return Err(error.into()),
     };
     if !enabled || cfg!(feature = "cuda") {
@@ -195,6 +213,8 @@ impl KzgConfig {
     beta: Scalar,
     gamma: Scalar,
   ) -> (KzgProverData, Scalar) {
+    use ark_ff::AdditiveGroup;
+    use multi_stark::eval::VarValues;
     use multi_stark::traits::Algebra;
     use multi_stark::traits::EvaluationDomain;
     let start = std::time::Instant::now();
@@ -206,41 +226,138 @@ impl KzgConfig {
       fixed_columns = selected.len(),
       "KZG lookup fixed columns"
     );
+    let num_lookups = graph.lookups.len();
+    let width = input.circuit.stage_2_width;
+    let height = domain.size();
+    if num_lookups == 0 {
+      debug_assert_eq!(width, 1);
+      let data =
+        self.pcs.commit_constant_column(domain, super::curve::Fr::ZERO);
+      tracing::info!(
+        circuit = i,
+        seconds = start.elapsed().as_secs_f64(),
+        "KZG lookup committed"
+      );
+      return (data, Scalar::ZERO);
+    }
+
     let fixed = input.preprocessed.filter(|_| !selected.is_empty()).map(
       |(data, slot)| self.pcs.evaluate_columns(data, slot, domain, &selected),
     );
+    #[cfg(not(feature = "cuda"))]
+    let main = input.stage_1.0.matrices[input.stage_1.1]
+      .take_spilled_evaluations(domain)
+      .unwrap_or_else(|| {
+        self.pcs.get_evaluations_on_domain(
+          input.stage_1.0,
+          input.stage_1.1,
+          domain,
+        )
+      });
+    #[cfg(feature = "cuda")]
     let main = self.pcs.get_evaluations_on_domain(
       input.stage_1.0,
       input.stage_1.1,
       domain,
     );
-    let chunk = self.streaming_chunk_size.unwrap_or(1 << 12);
-    let width = input.circuit.stage_2_width;
-    let mut trace = vec![Scalar::ZERO; domain.size() * width];
-    // Every chunk starts at zero. Its total determines the prefix
-    // offset applied in a second bounded, parallel pass.
-    let totals: Vec<_> = trace
-      .par_chunks_mut(chunk * width)
+    let group_size = input.circuit.lookup_group_size.max(1);
+    debug_assert_eq!(width, num_lookups.div_ceil(group_size));
+    let mut trace =
+      super::pcs::generate_buffer(height * width, |_| Scalar::ZERO);
+    let chunk_rows = self.streaming_chunk_size.unwrap_or_else(|| {
+      height.div_ceil(current_num_threads().max(1) * 4).max(1 << 12)
+    });
+    // Keep per-thread Montgomery batch-inverse scratch inside L2 cache.
+    let sub_rows = (4096 / num_lookups).clamp(1, 2048);
+    let empty: [Scalar; 0] = [];
+    let main_w = main.width;
+    let fixed_ref = fixed.as_ref();
+
+    // Every coarse chunk starts at zero; its local total determines the prefix
+    // offset applied in the second parallel pass. No nested Rayon is spawned.
+    let totals: Vec<Scalar> = trace
+      .par_chunks_mut(chunk_rows * width)
       .enumerate()
-      .map(|(i, dst)| {
-        let start = i * chunk;
-        let values = multi_stark::system::compute_lookup_values_range(
-          &graph,
-          &main,
-          fixed.as_ref(),
-          start..start + dst.len() / width,
-        );
-        let (mut chunks, next) =
-          multi_stark::lookup::LookupValues::stage_2_traces(
-            &[values],
-            &[input.circuit.lookup_group_size],
-            beta,
-            &gamma,
-            Scalar::ZERO,
-          );
-        dst.copy_from_slice(&chunks.remove(0).values);
-        next[0]
-      })
+      .map_init(
+        || {
+          let batch_cap = sub_rows * num_lookups;
+          (
+            Vec::with_capacity(graph.nodes.len()),
+            Vec::with_capacity(batch_cap),
+            Vec::with_capacity(batch_cap),
+            vec![Scalar::ZERO; batch_cap],
+          )
+        },
+        |(sweep_buf, mults, msgs, invs), (chunk_idx, dst)| {
+          let chunk_start = chunk_idx * chunk_rows;
+          let rows = dst.len() / width;
+          let mut local = Scalar::ZERO;
+          for sub_offset in (0..rows).step_by(sub_rows) {
+            let sub_len = sub_rows.min(rows - sub_offset);
+            let total_msgs = sub_len * num_lookups;
+            mults.clear();
+            msgs.clear();
+            for row_idx in 0..sub_len {
+              let r = chunk_start + sub_offset + row_idx;
+              let r_next = if r + 1 == height { 0 } else { r + 1 };
+              let preprocessed =
+                fixed_ref.map_or([&empty[..], &empty[..]], |m| {
+                  [
+                    &m.values[r * m.width..(r + 1) * m.width],
+                    &m.values[r_next * m.width..(r_next + 1) * m.width],
+                  ]
+                });
+              let view = VarValues {
+                preprocessed,
+                main: [
+                  &main.values[r * main_w..(r + 1) * main_w],
+                  &main.values[r_next * main_w..(r_next + 1) * main_w],
+                ],
+                stage2: [&empty[..], &empty[..]],
+                publics: &empty[..],
+                is_first_row: if r == 0 { Scalar::ONE } else { Scalar::ZERO },
+                is_last_row: if r + 1 == height {
+                  Scalar::ONE
+                } else {
+                  Scalar::ZERO
+                },
+                is_transition: if r + 1 == height {
+                  Scalar::ZERO
+                } else {
+                  Scalar::ONE
+                },
+              };
+              graph.sweep_lookup_prefix(&view, sweep_buf);
+              for lookup in &graph.lookups {
+                mults.push(sweep_buf[lookup.multiplicity.index()]);
+                let fp =
+                  lookup.args.iter().rev().fold(Scalar::ZERO, |acc, a| {
+                    acc * gamma + sweep_buf[a.index()]
+                  });
+                msgs.push(beta + fp);
+              }
+            }
+            let inv_slice = &mut invs[..total_msgs];
+            super::quotient::batch_inverse_serial(msgs, inv_slice);
+            for row_idx in 0..sub_len {
+              let base = row_idx * num_lookups;
+              let row_mults = &mults[base..base + num_lookups];
+              let row_invs = &inv_slice[base..base + num_lookups];
+              let out_base = (sub_offset + row_idx) * width;
+              let out_row = &mut dst[out_base..out_base + width];
+              for (slot, (gm, gi)) in out_row.iter_mut().zip(
+                row_mults.chunks(group_size).zip(row_invs.chunks(group_size)),
+              ) {
+                *slot = local;
+                for (&m, &inv) in gm.iter().zip(gi) {
+                  local += m * inv;
+                }
+              }
+            }
+          }
+          local
+        },
+      )
       .collect();
     let mut local = Scalar::ZERO;
     let offsets: Vec<_> = totals
@@ -251,7 +368,7 @@ impl KzgConfig {
         offset
       })
       .collect();
-    trace.par_chunks_mut(chunk * width).zip(offsets).for_each(
+    trace.par_chunks_mut(chunk_rows * width).zip(offsets).for_each(
       |(dst, offset)| {
         if offset != Scalar::ZERO {
           for value in dst {
@@ -295,13 +412,20 @@ impl KzgConfig {
   ) -> KzgProverData {
     use multi_stark::traits::Algebra;
     use multi_stark::traits::EvaluationDomain;
+    use multi_stark::traits::Field;
     use multi_stark::traits::TwoAdicField;
     let start = std::time::Instant::now();
     let n = input.trace_domain.size();
     let ratio = input.quotient_domain.size() / n;
     let generator = Scalar::two_adic_generator(input.quotient_domain.log_size);
     let mut shift = input.quotient_domain.shift;
-    let mut values = vec![Scalar::ZERO; input.quotient_domain.size()];
+    let mut values =
+      super::pcs::generate_buffer(input.quotient_domain.size(), |_| {
+        Scalar::ZERO
+      });
+    let mut powers: Vec<_> =
+      alpha.powers().take(input.constraint_count).collect();
+    powers.reverse();
     let passes = super::quotient_plan::plan(
       &input.circuit.graph,
       input.circuit.lookup_group_size.max(1),
@@ -322,6 +446,8 @@ impl KzgConfig {
         input.stage_2.1,
         domain,
       );
+      let selectors =
+        super::quotient::CosetSelectors::new(input.trace_domain, domain);
       for pass in &passes {
         let fixed = input.preprocessed.filter(|_| !pass.fixed.is_empty()).map(
           |(data, slot)| {
@@ -332,16 +458,20 @@ impl KzgConfig {
           input,
           pass,
           domain,
+          &selectors,
+          &powers,
           fixed.as_ref(),
           &main,
           &stage2,
-          alpha,
           coset,
           ratio,
-          self.streaming_chunk_size.unwrap_or(1 << 12),
+          self.streaming_chunk_size,
           &mut values,
         );
       }
+      drop(selectors);
+      drop(stage2);
+      drop(main);
       shift *= generator;
       tracing::info!(
         circuit = i,
@@ -749,5 +879,16 @@ mod tests {
     tampered.quotient_opened_values[0][0][0] +=
       <Scalar as Algebra<Scalar>>::ONE;
     assert!(system.verify_multiple_claims(no_claims, &tampered).is_err());
+  }
+
+  #[test]
+  fn adaptive_disk_spill_respects_host_ram_and_backend() {
+    assert!(KzgConfig::adaptive_disk_spill(None, false));
+    assert!(KzgConfig::adaptive_disk_spill(Some(64), false));
+    assert!(KzgConfig::adaptive_disk_spill(Some(192), false));
+    assert!(!KzgConfig::adaptive_disk_spill(Some(256), false));
+    assert!(!KzgConfig::adaptive_disk_spill(Some(495), false));
+    assert!(!KzgConfig::adaptive_disk_spill(None, true));
+    assert!(!KzgConfig::adaptive_disk_spill(Some(64), true));
   }
 }

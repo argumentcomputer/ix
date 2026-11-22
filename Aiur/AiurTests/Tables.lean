@@ -154,14 +154,14 @@ example : MemoDerives system ⟨[]⟩ ⟨"bit_add", [1, 1], 2⟩ := ⟨tableLeaf
 example : EncodedEntryDerives system "repeated" (entryValues []) (.field 4) := by
   have executed : run program "repeated" [] 16 = .ok (.field 4, []) := by decide +kernel
   obtain ⟨_, entry, locals, expr, prepared, body⟩ := run_eq_ok_iff.mp executed
-  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec body))
+  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec_exact body))
     (fun _ => (0 : Rat)) (by simp)
   simpa [Value.mapAddress] using complete
 
 example : EncodedEntryDerives system "lazy" (entryValues [0]) (.field 9) := by
   have executed : run program "lazy" [0] 16 = .ok (.field 9, []) := by decide +kernel
   obtain ⟨_, entry, locals, expr, prepared, body⟩ := run_eq_ok_iff.mp executed
-  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec body))
+  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec_exact body))
     (fun _ => (0 : Rat)) (by simp)
   simpa [Value.mapAddress] using complete
 
@@ -170,7 +170,7 @@ example : EncodedEntryDerives system "through_rom" (entryValues [])
   have executed : run program "through_rom" [] 20 =
       .ok (.construct "Choice" "Pair" [.tuple [.field 3, .field 2]], [.construct "Choice" "Pair" [.tuple [.field 3, .field 2]]]) := by decide +kernel
   obtain ⟨_, entry, locals, expr, prepared, body⟩ := run_eq_ok_iff.mp executed
-  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec body))
+  have complete := compiler_heap_complete compiled entry (.intro prepared (evalExpr_spec_exact body))
     (fun _ => (99 : Rat)) (by intro i j hi hj _; simp at hi hj; omega)
   simpa [Value.mapAddress] using complete
 

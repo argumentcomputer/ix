@@ -23,9 +23,16 @@ module KernelRoles {
 
   type RoleTable = &RoleTableNode;
 
+  enum EvalMap {
+      Nil,
+      Cons(Bytes::AddressRef, Bytes::AddressRef, Bytes::AddressRef, &EvalMap)
+    }
+
   enum RoleCtxNode {
       Mk(RoleTable, Field, RBTreeMap::RBTreeMap<Field>),
-      Assumed(RoleTable, RBTreeMap::RBTreeMap<Field>)
+      Assumed(RoleTable, RBTreeMap::RBTreeMap<Field>),
+      MkEval(RoleTable, Field, RBTreeMap::RBTreeMap<Field>, EvalMap),
+      AssumedEval(RoleTable, RBTreeMap::RBTreeMap<Field>, EvalMap)
     }
 
   type RoleCtx = &RoleCtxNode;
@@ -380,6 +387,8 @@ def role_ctx_table := aiur_fn⟦
       match (*(rc)) {
         RoleCtxNode::Mk(tbl, _, _) => {  tbl } ,
         RoleCtxNode::Assumed(tbl, _) => {  tbl } ,
+        RoleCtxNode::MkEval(tbl, _, _, _) => {  tbl } ,
+        RoleCtxNode::AssumedEval(tbl, _, _) => {  tbl } ,
       }
     }
 ⟧
@@ -389,6 +398,182 @@ def role_ctx_axioms := aiur_fn⟦
       match (*(rc)) {
         RoleCtxNode::Mk(_, _, axioms) => {  axioms } ,
         RoleCtxNode::Assumed(_, axioms) => {  axioms } ,
+        RoleCtxNode::MkEval(_, _, axioms, _) => {  axioms } ,
+        RoleCtxNode::AssumedEval(_, axioms, _) => {  axioms } ,
+      }
+    }
+⟧
+
+def role_ctx_evals := aiur_fn⟦
+  fn role_ctx_evals(rc: RoleCtx) -> EvalMap {
+      match (*(rc)) {
+        RoleCtxNode::Mk(_, _, _) => {  EvalMap::Nil } ,
+        RoleCtxNode::Assumed(_, _) => {  EvalMap::Nil } ,
+        RoleCtxNode::MkEval(_, _, _, evals) => {  evals } ,
+        RoleCtxNode::AssumedEval(_, _, evals) => {  evals } ,
+      }
+    }
+⟧
+
+def eval_map_lookup := aiur_fn⟦
+  fn eval_map_lookup(addr: Bytes::AddressRef, evals: EvalMap) -> (Field, Bytes::AddressRef) {
+      match evals {
+        EvalMap::Nil => {  (0, addr) } ,
+        EvalMap::Cons(lhs, rhs, _, rest) => {
+          match Bytes::address_eq(addr, lhs) {
+            1 => {  (1, rhs) } ,
+            _ => {  eval_map_lookup(addr, (*(rest))) } ,
+          } } ,
+      }
+    }
+⟧
+
+def skip_opt_circuit_ref := aiur_fn⟦
+  fn skip_opt_circuit_ref(s: Bytes::Stream) -> Bytes::Stream {
+      let (tag, s2) = IxonDeserialize::read_byte(s);
+      match UInt8::to_field(tag) {
+        0 => {  s2 } ,
+        1 => {
+          let (_vk, s3) = IxonDeserialize::get_address(s2);
+          let (_entry, s4) = IxonDeserialize::get_u64_le(s3, 8);
+          s4 } ,
+        _ => {
+          assert_eq!(0, 1, "eval assumption: invalid optional circuit ref tag");
+          s2 } ,
+      }
+    }
+⟧
+
+def assert_eval_endpoint := aiur_fn⟦
+  inline fn assert_eval_endpoint(rc: RoleCtx, addr: Bytes::AddressRef) -> () {
+      assert_eq!(role_index_of(rc, addr), 0,
+        "eval assumption: endpoint may not be a bound role");
+      KernelClaim::assert_not_block_ref(addr);
+      KernelClaim::assert_claimable(rc, addr);
+      match (*(Ingress::get_ci(addr))) {
+        KernelTypes::KConstantInfo::Defn(nl, _, _, _, _) => {
+          assert_eq!(nl, 0, "eval assumption: endpoint must be level-monomorphic");
+          () } ,
+        KernelTypes::KConstantInfo::Thm(nl, _, _) => {
+          assert_eq!(nl, 0, "eval assumption: endpoint must be level-monomorphic");
+          () } ,
+        KernelTypes::KConstantInfo::Opaque(nl, _, _, _) => {
+          assert_eq!(nl, 0, "eval assumption: endpoint must be level-monomorphic");
+          () } ,
+        _ => {
+          assert_eq!(0, 1, "eval assumption: endpoint must be a closed definition, theorem, or opaque");
+          () } ,
+      }
+    }
+⟧
+
+def assert_eval_type := aiur_fn⟦
+  inline fn assert_eval_type(rc: RoleCtx, addr: Bytes::AddressRef) -> () {
+      KernelClaim::assert_not_block_ref(addr);
+      KernelClaim::assert_claimable(rc, addr);
+      match (*(Ingress::get_ci(addr))) {
+        KernelTypes::KConstantInfo::Defn(nl, _, _, _, _) => {
+          assert_eq!(nl, 0, "eval assumption: type must be level-monomorphic");
+          () } ,
+        KernelTypes::KConstantInfo::Opaque(nl, _, _, _) => {
+          assert_eq!(nl, 0, "eval assumption: type must be level-monomorphic");
+          () } ,
+        KernelTypes::KConstantInfo::Induct(nl, _, _, _, _, _, _, _) => {
+          assert_eq!(nl, 0, "eval assumption: type must be level-monomorphic");
+          () } ,
+        _ => {
+          assert_eq!(0, 1, "eval assumption: type must be a closed safe type constant");
+          () } ,
+      }
+    }
+⟧
+
+def load_eval_assumption := aiur_fn⟦
+  fn load_eval_assumption(rc: RoleCtx, leaf: Bytes::AddressRef)
+        -> (Bytes::AddressRef, Bytes::AddressRef, Bytes::AddressRef) {
+      let raw = (*(leaf));
+      let (idx, len) = IxVMCompat::io_get_info(1, raw);
+      let bytes = IxByteStream::read_finite_byte_stream(1, idx, len);
+      Blake3::verify_bytes_against(bytes, raw);
+      let (t0, s) = IxonDeserialize::read_byte(bytes);
+      assert_eq!(UInt8::to_field(t0), 232, "eval assumption: wrong TagN header byte 0");
+      let (t1, s) = IxonDeserialize::read_byte(s);
+      assert_eq!(UInt8::to_field(t1), 14, "eval assumption: wrong TagN header byte 1");
+      let (lhs, s) = IxonDeserialize::get_address(s);
+      let (rhs, s) = IxonDeserialize::get_address(s);
+      let (typ, s) = IxonDeserialize::get_address(s);
+      let rest = skip_opt_circuit_ref(s);
+      let Lists::Node::Nil = (*(rest));
+      assert_eval_endpoint(rc, lhs);
+      assert_eval_endpoint(rc, rhs);
+      assert_eval_type(rc, typ);
+      (lhs, rhs, typ)
+    }
+⟧
+
+def load_eval_assumptions := aiur_fn⟦
+  fn load_eval_assumptions(rc: RoleCtx, leaves: Lists::List<Bytes::AddressRef>, acc: EvalMap) -> EvalMap {
+      match (*(leaves)) {
+        Lists::Node::Nil => {  acc } ,
+        Lists::Node::Cons(leaf, rest) => {
+          let (lhs, rhs, typ) = load_eval_assumption(rc, leaf);
+          load_eval_assumptions(rc, rest, EvalMap::Cons(lhs, rhs, typ, (&(acc)))) } ,
+      }
+    }
+⟧
+
+def load_role_ctx_eval := aiur_fn⟦
+  fn load_role_ctx_eval(binding: Bytes::AddressRef, validator: Field,
+        axioms_opt: Options::Option<Bytes::AddressRef>, eval_root: Bytes::AddressRef) -> RoleCtx {
+      let tbl = load_role_table(binding);
+      let axioms = match axioms_opt {
+        Options::Option::None => {  RBTreeMap::RBTreeMap::Nil } ,
+        Options::Option::Some(ax_root) => {
+          assert_axiom_roles_bound(tbl);
+          validate_user_axioms(tbl, KernelClaim::load_assumption_tree(ax_root), RBTreeMap::RBTreeMap::Nil) } ,
+      };
+      let eval_leaves = KernelClaim::load_assumption_tree(eval_root);
+      match (*(eval_leaves)) {
+        Lists::Node::Nil => {
+          assert_eq!(0, 1, "claim: evalAssumptions tree must be non-empty");
+          () } ,
+        Lists::Node::Cons(_, _) => {  () } ,
+      };
+      match validator {
+        10 => {
+          let base_rc = (&(RoleCtxNode::Mk(tbl, KernelRoleSpec::group_count(), axioms)));
+          let evals = load_eval_assumptions(base_rc, eval_leaves, EvalMap::Nil);
+          (&(RoleCtxNode::MkEval(tbl, KernelRoleSpec::group_count(), axioms, evals))) } ,
+        11 => {
+          let base_rc = (&(RoleCtxNode::Assumed(tbl, axioms)));
+          let evals = load_eval_assumptions(base_rc, eval_leaves, EvalMap::Nil);
+          (&(RoleCtxNode::AssumedEval(tbl, axioms, evals))) } ,
+        _ => {
+          assert_eq!(0, 1, "claim: wrong eval-assumed validator identity");
+          (&(RoleCtxNode::MkEval(tbl, KernelRoleSpec::group_count(), axioms, EvalMap::Nil))) } ,
+      }
+    }
+⟧
+
+def role_ctx_without_axioms := aiur_fn⟦
+  fn role_ctx_without_axioms(rc: RoleCtx) -> RoleCtx {
+      match (*(rc)) {
+        RoleCtxNode::Mk(tbl, limit, axioms) => {
+          match axioms {
+            RBTreeMap::RBTreeMap::Nil => {  rc } ,
+            RBTreeMap::RBTreeMap::Node(_, _, _, _, _) => {
+              (&(RoleCtxNode::Mk(tbl, limit, RBTreeMap::RBTreeMap::Nil))) } ,
+          } } ,
+        RoleCtxNode::Assumed(tbl, axioms) => {
+          match axioms {
+            RBTreeMap::RBTreeMap::Nil => {  rc } ,
+            RBTreeMap::RBTreeMap::Node(_, _, _, _, _) => {
+              (&(RoleCtxNode::Assumed(tbl, RBTreeMap::RBTreeMap::Nil))) } ,
+          } } ,
+        RoleCtxNode::MkEval(tbl, limit, _, _) => {
+          (&(RoleCtxNode::Mk(tbl, limit, RBTreeMap::RBTreeMap::Nil))) } ,
+        RoleCtxNode::AssumedEval(tbl, _, _) => {
+          (&(RoleCtxNode::Assumed(tbl, RBTreeMap::RBTreeMap::Nil))) } ,
       }
     }
 ⟧
@@ -398,6 +583,8 @@ def role_ctx_is_assumed := aiur_fn⟦
       match (*(rc)) {
         RoleCtxNode::Mk(_, _, _) => {  0 } ,
         RoleCtxNode::Assumed(_, _) => {  1 } ,
+        RoleCtxNode::MkEval(_, _, _, _) => {  0 } ,
+        RoleCtxNode::AssumedEval(_, _, _) => {  1 } ,
       }
     }
 ⟧
@@ -412,6 +599,9 @@ def rc_validates_group := aiur_fn⟦
         RoleCtxNode::Mk(_, limit, _) => {
           UInt32::less_than_fields(limit, KernelRoleSpec::group_count()) } ,
         RoleCtxNode::Assumed(_, _) => {  0 } ,
+        RoleCtxNode::MkEval(_, limit, _, _) => {
+          UInt32::less_than_fields(limit, KernelRoleSpec::group_count()) } ,
+        RoleCtxNode::AssumedEval(_, _, _) => {  0 } ,
       }
     }
 ⟧
@@ -476,6 +666,20 @@ def role_of := aiur_fn⟦
           } } ,
         RoleCtxNode::Assumed(tbl, _) => {
           RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0) } ,
+        RoleCtxNode::MkEval(tbl, limit, _, _) => {
+          let r1 = RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0);
+          match r1 {
+            0 => {  0 } ,
+            _ => {
+              match UInt32::less_than_fields(KernelRoleSpec::role_group(r1 - 1), limit) {
+                1 => {
+                  group_admit(tbl, KernelRoleSpec::role_group(r1 - 1));
+                  r1 } ,
+                _ => {  0 } ,
+              } } ,
+          } } ,
+        RoleCtxNode::AssumedEval(tbl, _, _) => {
+          RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0) } ,
       }
     }
 ⟧
@@ -525,6 +729,13 @@ def role_addr := aiur_fn⟦
           group_admit(tbl, KernelRoleSpec::role_group(r));
           a } ,
         RoleCtxNode::Assumed(tbl, _) => {  role_bound_addr(tbl, r) } ,
+        RoleCtxNode::MkEval(tbl, limit, _, _) => {
+          assert_eq!(UInt32::less_than_fields(KernelRoleSpec::role_group(r), limit), 1,
+            "a role is used before its group is admitted");
+          let a = role_bound_addr(tbl, r);
+          group_admit(tbl, KernelRoleSpec::role_group(r));
+          a } ,
+        RoleCtxNode::AssumedEval(tbl, _, _) => {  role_bound_addr(tbl, r) } ,
       }
     }
 ⟧
@@ -651,6 +862,36 @@ def walk_ctx := aiur_fn⟦
               } } ,
           } } ,
         RoleCtxNode::Assumed(_, _) => {  rc } ,
+        RoleCtxNode::MkEval(tbl, limit, _, _) => {
+          let r1 = RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0);
+          match r1 {
+            0 => {  rc } ,
+            _ => {
+              let g = KernelRoleSpec::role_group(r1 - 1);
+              assert_op_reached_in_order(r1 - 1, g, limit);
+              let walks = match KernelRoleSpec::role_spec_kind(r1 - 1) {
+                0 => {
+                  match KernelRoleSpec::role_member_kind(r1 - 1) {
+                    0 => {  1 } ,
+                    1 => {  1 } ,
+                    2 => {  1 } ,
+                    _ => {  0 } ,
+                  } } ,
+                2 => {  1 } ,
+                5 => {  1 } ,
+                _ => {  0 } ,
+              };
+              match UInt32::less_than_fields(g, limit) * walks {
+                0 => {  rc } ,
+                _ => {  (&(RoleCtxNode::Mk(tbl, group_validation_limit(g), RBTreeMap::RBTreeMap::Nil))) } ,
+              } } ,
+          } } ,
+        RoleCtxNode::AssumedEval(tbl, _, _) => {
+          let r1 = RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0);
+          match r1 {
+            0 => {  rc } ,
+            _ => {  (&(RoleCtxNode::Assumed(tbl, RBTreeMap::RBTreeMap::Nil))) } ,
+          } } ,
       }
     }
 ⟧
@@ -694,6 +935,13 @@ def assert_in_order := aiur_fn⟦
             _ => {  assert_op_reached_in_order(r1 - 1, KernelRoleSpec::role_group(r1 - 1), limit) } ,
           } } ,
         RoleCtxNode::Assumed(_, _) => {  () } ,
+        RoleCtxNode::MkEval(tbl, limit, _, _) => {
+          let r1 = RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0);
+          match r1 {
+            0 => {  () } ,
+            _ => {  assert_op_reached_in_order(r1 - 1, KernelRoleSpec::role_group(r1 - 1), limit) } ,
+          } } ,
+        RoleCtxNode::AssumedEval(_, _, _) => {  () } ,
       }
     }
 ⟧
@@ -799,6 +1047,13 @@ def walk_covered := aiur_fn⟦
       match (*(rc)) {
         RoleCtxNode::Mk(_, _, _) => {  0 } ,
         RoleCtxNode::Assumed(tbl, _) => {
+          let r1 = RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0);
+          match r1 {
+            0 => {  0 } ,
+            _ => {  role_admission_checks(r1 - 1) } ,
+          } } ,
+        RoleCtxNode::MkEval(_, _, _, _) => {  0 } ,
+        RoleCtxNode::AssumedEval(tbl, _, _) => {
           let r1 = RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0);
           match r1 {
             0 => {  0 } ,
@@ -1503,6 +1758,8 @@ def role_ctx_limit := aiur_fn⟦
       match (*(rc)) {
         RoleCtxNode::Assumed(_, _) => {  0 } ,
         RoleCtxNode::Mk(_, limit, _) => {  limit } ,
+        RoleCtxNode::AssumedEval(_, _, _) => {  0 } ,
+        RoleCtxNode::MkEval(_, limit, _, _) => {  limit } ,
       }
     }
 ⟧

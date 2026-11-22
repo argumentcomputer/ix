@@ -45,6 +45,8 @@ use multi_stark::traits::Transcript;
 use multi_stark::traits::TwoAdicField;
 use multi_stark::traits::VerifyRounds;
 
+#[cfg(not(feature = "cuda"))]
+use super::coefficients::SpilledEvaluations;
 use super::coefficients::{Column, DiskFile};
 #[cfg(feature = "cuda")]
 use super::cuda;
@@ -143,6 +145,11 @@ pub struct CommittedMatrix {
   /// the constant term are zero. Disk-backed columns are never flagged; the
   /// flag is an optimization.
   constants: Vec<bool>,
+  /// Optional one-shot spill of natural-domain stage-1 evaluations so
+  /// `host_lookup_part` can reload them sequentially instead of running
+  /// redundant forward BN254 FFTs.
+  #[cfg(not(feature = "cuda"))]
+  spilled_evaluations: std::sync::Mutex<Option<SpilledEvaluations>>,
   #[cfg(feature = "cuda")]
   resident: std::sync::OnceLock<Vec<Option<Arc<cuda::ResidentPolynomial>>>>,
 }
@@ -172,9 +179,27 @@ impl CommittedMatrix {
       domain,
       columns,
       constants,
+      #[cfg(not(feature = "cuda"))]
+      spilled_evaluations: std::sync::Mutex::new(None),
       #[cfg(feature = "cuda")]
       resident: Default::default(),
     }
+  }
+
+  /// Consume and reload spilled natural-domain evaluations once, immediately
+  /// closing and releasing the unlinked temporary spill file.
+  #[cfg(not(feature = "cuda"))]
+  pub(super) fn take_spilled_evaluations(
+    &self,
+    domain: Radix2Coset,
+  ) -> Option<RowMajorMatrix<Scalar>> {
+    let mut guard = self.spilled_evaluations.lock().ok()?;
+    if guard.as_ref().is_none_or(|spilled| spilled.domain() != domain) {
+      return None;
+    }
+    let spilled = guard.take()?;
+    drop(guard);
+    Some(spilled.load().expect("spilled natural-domain evaluations"))
   }
 
   fn constant_columns(&self) -> &[bool] {
@@ -393,6 +418,7 @@ impl KzgProverData {
     if reader.read(&mut tail)? != 0 {
       return Err(SerializationError::InvalidData);
     }
+    crate::pipeline::storage::fadvise_dontneed(reader.get_ref(), 0, 0);
     Ok(Self { commitment, matrices })
   }
 
@@ -805,24 +831,55 @@ impl KzgPcs {
       reason = "small MSM",
       "KZG commitment using CPU MSM"
     );
-    let concurrency = current_num_threads().div_ceil(8).min(4);
-    let mut result = G1Projective::zero();
-    for (batch, values) in coeffs.chunks(chunk * concurrency).enumerate() {
-      let partial: G1Projective = values
-        .par_chunks(chunk)
-        .enumerate()
-        .map(|(i, scalars)| {
-          let start = batch * chunk * concurrency + i * chunk;
-          G1Projective::msm(
-            &self.prover_srs().g1[start..start + scalars.len()],
-            scalars,
-          )
-          .expect("equal lengths")
-        })
-        .sum();
-      result += partial;
+    super::msm_cpu::msm(&self.prover_srs().g1[..coeffs.len()], coeffs)
+  }
+
+  /// Commit a single constant column without allocating evaluation or
+  /// coefficient buffers.
+  pub(super) fn commit_constant_column(
+    &self,
+    domain: Radix2Coset,
+    value: Fr,
+  ) -> KzgProverData {
+    let column = Column::Constant { value, len: domain.size() };
+    let point = self.commit_column(&column).into_affine();
+    let commitment = KzgCommitment(vec![vec![point]]);
+    KzgProverData {
+      commitment,
+      matrices: vec![CommittedMatrix::new(domain, vec![column])],
     }
-    result
+  }
+
+  /// Extract `column` from a row-major `matrix` into `dst` in a single
+  /// parallel pass, returning `Some(constant)` when every row equals the
+  /// first row so callers can skip IFFT/MSM without a second strided scan.
+  #[cfg(not(feature = "cuda"))]
+  fn extract_column_into(
+    matrix: &RowMajorMatrix<Scalar>,
+    column: usize,
+    dst: &mut Vec<Fr>,
+  ) -> Option<Fr> {
+    let height = matrix.height();
+    let width = matrix.width();
+    let first = matrix.values[column].0;
+    if dst.len() != height {
+      *dst = generate_buffer(height, |_| Fr::ZERO);
+    }
+    let is_constant = dst
+      .par_chunks_mut(1 << 14)
+      .enumerate()
+      .map(|(tile, chunk)| {
+        let base = tile << 14;
+        let mut all_equal = true;
+        for (offset, slot) in chunk.iter_mut().enumerate() {
+          let value = matrix.values[(base + offset) * width + column].0;
+          *slot = value;
+          all_equal &= value == first;
+        }
+        all_equal
+      })
+      .reduce(|| true, |a, b| a && b);
+    is_constant.then_some(first)
   }
 
   /// Stream-commit each column of `matrix` over `domain`, returning only the
@@ -852,23 +909,19 @@ impl KzgPcs {
         commits.push(self.msm(&coeffs));
       }
     } else {
+      let mut coeffs = Vec::new();
       for column in 0..width {
-        let first = matrix.values[column].0;
-        let is_constant = (1..height)
-          .into_par_iter()
-          .all(|row| matrix.values[row * width + column].0 == first);
-        if is_constant {
-          commits.push(
-            self.commit_column(&Column::Constant { value: first, len: height }),
-          );
+        if let Some(value) =
+          Self::extract_column_into(&matrix, column, &mut coeffs)
+        {
+          commits
+            .push(self.commit_column(&Column::Constant { value, len: height }));
         } else {
-          let mut coeffs = generate_buffer(height, |row| {
-            matrix.values[row * width + column].0
-          });
           ark.ifft_in_place(&mut coeffs);
           commits.push(self.msm(&coeffs));
         }
       }
+      drop(coeffs);
       drop(matrix);
     }
     KzgCommitment(vec![G1Projective::normalize_batch(&commits)])
@@ -997,25 +1050,21 @@ impl KzgPcs {
         columns.push(write_dense(&mut writer, &coeffs, &mut file_offset)?);
       }
     } else {
+      let mut coeffs = Vec::new();
       for column in 0..width {
-        let first = matrix.values[column].0;
-        let is_constant = (1..height)
-          .into_par_iter()
-          .all(|row| matrix.values[row * width + column].0 == first);
-        if is_constant {
-          commits.push(
-            self.commit_column(&Column::Constant { value: first, len: height }),
-          );
-          columns.push(write_constant(&mut writer, first, &mut file_offset)?);
+        if let Some(value) =
+          Self::extract_column_into(&matrix, column, &mut coeffs)
+        {
+          commits
+            .push(self.commit_column(&Column::Constant { value, len: height }));
+          columns.push(write_constant(&mut writer, value, &mut file_offset)?);
         } else {
-          let mut coeffs = generate_buffer(height, |row| {
-            matrix.values[row * width + column].0
-          });
           ark.ifft_in_place(&mut coeffs);
           commits.push(self.msm(&coeffs));
           columns.push(write_dense(&mut writer, &coeffs, &mut file_offset)?);
         }
       }
+      drop(coeffs);
       drop(matrix);
     }
 
@@ -1086,11 +1135,12 @@ impl KzgPcs {
     matrix: RowMajorMatrix<Scalar>,
     spill_dir: &std::path::Path,
   ) -> std::io::Result<(KzgCommitment, KzgProverData)> {
-    self.commit_matrix_spilled_with_chunk(
+    self.commit_matrix_spilled_with_options(
       domain,
       matrix,
       spill_dir,
       super::coefficients::CHUNK,
+      false,
     )
   }
 
@@ -1102,6 +1152,41 @@ impl KzgPcs {
     spill_dir: &std::path::Path,
     chunk: usize,
   ) -> std::io::Result<(KzgCommitment, KzgProverData)> {
+    self.commit_matrix_spilled_with_options(
+      domain, matrix, spill_dir, chunk, false,
+    )
+  }
+
+  /// Like [`Self::commit_matrix_spilled`], optionally spilling the input
+  /// natural-domain evaluations to a temporary raw-Montgomery file when
+  /// `retain_evaluations` is true and at least one column is non-constant, so
+  /// lookup construction can reload them without redundant forward FFTs.
+  #[cfg(not(feature = "cuda"))]
+  pub(crate) fn commit_matrix_spilled_with_evaluations(
+    &self,
+    domain: Radix2Coset,
+    matrix: RowMajorMatrix<Scalar>,
+    spill_dir: &std::path::Path,
+    retain_evaluations: bool,
+  ) -> std::io::Result<(KzgCommitment, KzgProverData)> {
+    self.commit_matrix_spilled_with_options(
+      domain,
+      matrix,
+      spill_dir,
+      super::coefficients::CHUNK,
+      retain_evaluations,
+    )
+  }
+
+  #[cfg(not(feature = "cuda"))]
+  fn commit_matrix_spilled_with_options(
+    &self,
+    domain: Radix2Coset,
+    matrix: RowMajorMatrix<Scalar>,
+    spill_dir: &std::path::Path,
+    chunk: usize,
+    retain_evaluations: bool,
+  ) -> std::io::Result<(KzgCommitment, KzgProverData)> {
     assert_eq!(matrix.height(), domain.size(), "matrix height != domain size");
     let width = matrix.width();
     let height = domain.size();
@@ -1110,6 +1195,7 @@ impl KzgPcs {
     let mut columns = Vec::with_capacity(width);
     let mut spill_file: Option<Arc<std::sync::Mutex<DiskFile>>> = None;
     let mut spill_offset = 0u64;
+    let mut spilled_evaluations: Option<SpilledEvaluations> = None;
 
     let mut spill_column = |coeffs: &[Fr]| -> std::io::Result<Column> {
       if coeffs.iter().skip(1).all(Zero::is_zero) {
@@ -1137,6 +1223,10 @@ impl KzgPcs {
         commits.push(self.commit_column(&col));
         columns.push(col);
       } else {
+        if retain_evaluations {
+          spilled_evaluations =
+            Some(SpilledEvaluations::spill(spill_dir, domain, &matrix)?);
+        }
         let mut coeffs: Vec<Fr> =
           matrix.values.into_iter().map(|v| v.0).collect();
         ark.ifft_in_place(&mut coeffs);
@@ -1144,32 +1234,37 @@ impl KzgPcs {
         columns.push(spill_column(&coeffs)?);
       }
     } else {
+      let mut coeffs = Vec::new();
+      let mut any_non_constant = false;
       for column in 0..width {
-        let first = matrix.values[column].0;
-        let is_constant = (1..height)
-          .into_par_iter()
-          .all(|row| matrix.values[row * width + column].0 == first);
-        if is_constant {
-          let col = Column::Constant { value: first, len: height };
+        if let Some(value) =
+          Self::extract_column_into(&matrix, column, &mut coeffs)
+        {
+          let col = Column::Constant { value, len: height };
           commits.push(self.commit_column(&col));
           columns.push(col);
         } else {
-          let mut coeffs = generate_buffer(height, |row| {
-            matrix.values[row * width + column].0
-          });
+          any_non_constant = true;
           ark.ifft_in_place(&mut coeffs);
           commits.push(self.msm(&coeffs));
           columns.push(spill_column(&coeffs)?);
         }
+      }
+      drop(coeffs);
+      if retain_evaluations && any_non_constant {
+        spilled_evaluations =
+          Some(SpilledEvaluations::spill(spill_dir, domain, &matrix)?);
       }
       drop(matrix);
     }
 
     let commitment =
       KzgCommitment(vec![G1Projective::normalize_batch(&commits)]);
+    let mut committed = CommittedMatrix::new(domain, columns);
+    committed.spilled_evaluations = std::sync::Mutex::new(spilled_evaluations);
     let data = KzgProverData {
       commitment: commitment.clone(),
-      matrices: vec![CommittedMatrix::new(domain, columns)],
+      matrices: vec![committed],
     };
     Ok((commitment, data))
   }
@@ -1338,6 +1433,8 @@ impl KzgPcs {
         .map(|column| column.expect("every column is interpolated"))
         .collect(),
       constants,
+      #[cfg(not(feature = "cuda"))]
+      spilled_evaluations: std::sync::Mutex::new(None),
       #[cfg(feature = "cuda")]
       resident,
     }

@@ -21,10 +21,13 @@ model is witness data. Two properties are tested here:
   must accept the same claims with it. Likewise a model whose proofs use the
   quotient (`Quot`, `Quot.mk`, `Quot.lift`, `Quot.ind`, `Quot.sound`, the roles
   function extensionality comes from), which advice may reference.
-* **No advice under user axioms** (third part): a claim whose axioms tree is
-  not empty gets no model advice ("model advice: a claim with user axioms").
-  The environments above declare Lean's compiler-trust axioms, which the
-  default table binds as inert roles, so their claims name no user axiom and
+* **User axioms with modeled blocks (`A6`)** (third part): a claim whose axioms
+  tree is non-empty may still check modeled inductive blocks because model
+  advice is checked under `role_ctx_without_axioms(rc)` and witnesses refuse
+  user axioms. An unused, well-typed user axiom is accepted on `Even` and
+  `Even.rec`, while a model whose advice proofs reference that user axiom is
+  rejected. The environments above declare Lean's compiler-trust axioms, which
+  the default table binds as inert roles, so their claims name no user axiom and
   are accepted.
 * **Verdicts at nested blocks the modeller models** (`nestedVerdicts`: an index
   domain that mentions a parameter, a reflexive field into a member): ι
@@ -523,6 +526,80 @@ def quotProofs : Ix.Kernel.Declaration .anon → Ix.Kernel.Declaration .anon
 /-- The claims run with the quotient-using model: a mutual and a nested block. -/
 def quotNames : List String := ["IxVMInd.Even.rec", "IxVMInd.Tree.rec"]
 
+/-- Pure unit checks for Round-2 model compactions (dead-`let` elimination,
+live-`let` preservation, `Eq.ndrec`/`congrArg`/`congrFun` at `Eq.refl` with
+chaining) and `.checkEnv` witness byte-scope trimming. -/
+def round2CompactionOk (env : Ixon.Env) : IO Bool := do
+  let natE : Ix.Kernel.Expr .anon := .const (.role .nat) []
+  let zeroE : Ix.Kernel.Expr .anon := .lit (.natVal 0)
+  let oneE : Ix.Kernel.Expr .anon := .lit (.natVal 1)
+  let eqRefl (u : Ix.Kernel.Level) (ty x : Ix.Kernel.Expr .anon) : Ix.Kernel.Expr .anon :=
+    Ix.Kernel.Expr.mkAppN (.const (.role .eqRefl) [u]) [ty, x]
+  let eqRec (lm la : Ix.Kernel.Level) (a x mot base b h : Ix.Kernel.Expr .anon) :
+      Ix.Kernel.Expr .anon :=
+    Ix.Kernel.Expr.mkAppN (.const (.role .eqRec) [lm, la]) [a, x, mot, base, b, h]
+  let mkLamN (n : Nat) (body : Ix.Kernel.Expr .anon) : Ix.Kernel.Expr .anon :=
+    (List.range n).foldl (fun b _ => .lam natE b default) body
+  -- 1. Dead `let` is eliminated with bvar lowering; live `let` is preserved.
+  let deadLet : Ix.Kernel.Expr .anon := .letE natE zeroE (.bvar 1) default
+  let liveLet : Ix.Kernel.Expr .anon := .letE natE zeroE (.bvar 0) default
+  let deadOk := IxVM.Model.compactExpr none {} deadLet == .bvar 0
+  let liveOk := IxVM.Model.compactExpr none {} liveLet == liveLet
+  -- 2. Recognize `Eq.ndrec` -> chain `congrArg` and `congrFun` (prfBVar = 1).
+  let ndrecKey : Ix.Kernel.Key .anon := .id (Address.blake3 "test.Eq.ndrec".toUTF8)
+  let congrArgKey : Ix.Kernel.Key .anon := .id (Address.blake3 "test.congrArg".toUTF8)
+  let congrFunKey : Ix.Kernel.Key .anon := .id (Address.blake3 "test.congrFun".toUTF8)
+  let ndrecCv : Ix.Kernel.ConstantVal .anon := { name := ndrecKey, levelParams := [0, 1], type := .sort .zero }
+  let ndrecVal : Ix.Kernel.Expr .anon :=
+    mkLamN 6 (eqRec (.param 0) (.param 1) (.bvar 5) (.bvar 4) (.bvar 3) (.bvar 2) (.bvar 1) (.bvar 0))
+  let mut helpers : Std.HashMap (Ix.Kernel.Key .anon) IxVM.Model.EqReflHelper := {}
+  if let some eh := IxVM.Model.recognizeEqReflHelper helpers true ndrecCv ndrecVal then
+    helpers := helpers.insert ndrecKey eh
+  let congrArgCv : Ix.Kernel.ConstantVal .anon := { name := congrArgKey, levelParams := [0, 1], type := .sort .zero }
+  let congrArgVal : Ix.Kernel.Expr .anon :=
+    mkLamN 6 (Ix.Kernel.Expr.mkAppN (.const ndrecKey [.zero, .param 0])
+      [.bvar 5, .bvar 3, .bvar 4, eqRefl (.param 1) (.bvar 4) (.app (.bvar 1) (.bvar 3)), .bvar 2, .bvar 0])
+  if let some eh := IxVM.Model.recognizeEqReflHelper helpers true congrArgCv congrArgVal then
+    helpers := helpers.insert congrArgKey eh
+  let congrFunCv : Ix.Kernel.ConstantVal .anon := { name := congrFunKey, levelParams := [0, 1], type := .sort .zero }
+  let congrFunVal : Ix.Kernel.Expr .anon :=
+    mkLamN 6 (Ix.Kernel.Expr.mkAppN (.const ndrecKey [.zero, .param 0])
+      [.bvar 5, .bvar 3, .bvar 4,
+       eqRefl (.param 1) (.app (.bvar 4) (.bvar 0)) (.app (.bvar 3) (.bvar 0)),
+       .bvar 2, .bvar 1])
+  if let some eh := IxVM.Model.recognizeEqReflHelper helpers true congrFunCv congrFunVal then
+    helpers := helpers.insert congrFunKey eh
+  let r0 := eqRefl (.succ .zero) natE zeroE
+  let ndrecRed := IxVM.Model.compactExpr none helpers
+    (Ix.Kernel.Expr.mkAppN (.const ndrecKey [.succ .zero, .succ .zero])
+      [natE, zeroE, natE, oneE, zeroE, r0])
+  let congrArgRed := IxVM.Model.compactExpr none helpers
+    (Ix.Kernel.Expr.mkAppN (.const congrArgKey [.succ .zero, .succ .zero])
+      [natE, natE, zeroE, zeroE, .lam natE (.bvar 0) default, r0])
+  let congrFunRed := IxVM.Model.compactExpr none helpers
+    (Ix.Kernel.Expr.mkAppN (.const congrFunKey [.succ .zero, .succ .zero])
+      [natE, .lam natE natE default, .lam natE (.bvar 0) default, .lam natE (.bvar 0) default, r0, oneE])
+  let ndrecOk := ndrecRed == oneE
+  let congrArgOk := congrArgRed == eqRefl (.succ .zero) natE zeroE
+  let congrFunOk := congrFunRed == eqRefl (.succ .zero) natE oneE
+  -- 3. `buildClaimWitness (.checkEnv ...)` trims unrelated constants from ch 2.
+  let unrelated : Ixon.Constant := ⟨.defn ⟨.defn, .safe, {}, 0, .sort 0, .sort 0⟩, #[], #[], #[.zero], #[]⟩
+  let uAddr := Address.blake3 (Ixon.ser unrelated)
+  let envWithExtra := env.storeConst uAddr unrelated
+  let target ← lookupAddr envWithExtra `IxVMInd.Even
+  let some ownedTree := Ix.AssumptionTree.canonical #[target]
+    | throw (IO.userError "round2CompactionOk: failed to build singleton tree")
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv envWithExtra true)
+  let w ← IO.ofExcept (buildClaimWitness envWithExtra (.checkEnv ctx ownedTree.root none)
+    (({} : Std.HashMap _ _).insert ownedTree.root ownedTree))
+  let uKey : Array Aiur.G := uAddr.hash.data.map .ofUInt8
+  let trimmedOk := !w.inputIOBuffer.map.contains (2, uKey)
+  let ok := deadOk && liveOk && ndrecOk && congrArgOk && congrFunOk && trimmedOk
+  unless ok do
+    IO.eprintln s!"[ixvm-model-advice] round2CompactionOk failed: dead={deadOk} live={liveOk} \
+      ndrec={ndrecOk} congrArg={congrArgOk} congrFun={congrFunOk} trimmed={trimmedOk}"
+  return ok
+
 def run (lenv : Lean.Environment) : IO UInt32 := do
   let names := modeledNames.map nameOfString
   let missing := (names ++ tagNames.toList ++ univNames.toList).filter (!lenv.constants.contains ·)
@@ -532,6 +609,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
   let env ← loadSharedIxonEnv names.toArray lenv
   let digestOk ← digestUnchanged env names
   let cacheOk ← cacheInvalidation env
+  let round2Ok ← round2CompactionOk env
   let tagEnv ← loadSharedIxonEnv (tagNames ++ univNames) lenv
   let tagsOk ← tagsCoincide tagEnv
   let univsOk ← univTables tagEnv
@@ -576,7 +654,8 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
   let mkCase (e : Ixon.Env) (tag : String) (n : Lean.Name) : Builder := fun u => do
     let c ← mkPlain e tag n u
     return if isRecursor n then c.throughModeledRecursor else c
-  -- no advice under user axioms: `Even` and `Even.rec` with an unused, well-typed `axiom ax : Prop`
+  -- A6: user axioms with modeled blocks: `Even` and `Even.rec` with an unused, well-typed
+  -- `axiom ax : Prop` are accepted, while model advice that references `ax` is rejected.
   let underAxiom (name : String) : Builder := fun _ => do
     let ax : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero], #[]⟩
     let a := Address.blake3 (Ixon.ser ax)
@@ -587,18 +666,28 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     let ctx ← Ix.ClaimContext.ofEnv e true
     let claim : Ix.Claim := .check { ctx with axioms := some axioms.root } target none
     let trees := ({} : Std.HashMap _ _).insert axioms.root axioms
-    if isRecursor (nameOfString name) then
-      Case.ofClaim s!"check {name} under a user axiom (no model advice)" e claim trees
-        (accept := false)
-        (rejectsWith := some (if modeledRecursorsRefused then modeledRecursorRefusal
-          else "model advice: a claim with user axioms"))
-    else
-      Case.ofClaim s!"check {name} under a user axiom (no model advice)" e claim trees
-        (accept := false) (rejectsWith := some "model advice: a claim with user axioms")
+    let c ← Case.ofClaim s!"check {name} under an unused user axiom (A6)" e claim trees (accept := true)
+    return if isRecursor (nameOfString name) then c.throughModeledRecursor else c
+  let underAxiomAdviceRef (name : String) : Builder := fun _ => do
+    let ax : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero], #[]⟩
+    let a := Address.blake3 (Ixon.ser ax)
+    let e0 := env.storeConst a ax
+    let axiomProofs : Ix.Kernel.Declaration .anon → Ix.Kernel.Declaration .anon
+      | .thmDecl cv v => .thmDecl cv (.letE (.sort .zero) (.const (.id a) []) v default)
+      | d => d
+    let (e, _) ← IxVM.Model.generateReport { withoutModels e0 with modelsAttached := false } axiomProofs
+    let some axioms := Ix.AssumptionTree.canonical #[a] | throw "no tree for the axiom"
+    let some target := e.getAddr? (Ix.Name.fromLeanName (nameOfString name))
+      | throw s!"{name} is not in the Ixon environment"
+    let ctx ← Ix.ClaimContext.ofEnv e true
+    let claim : Ix.Claim := .check { ctx with axioms := some axioms.root } target none
+    let trees := ({} : Std.HashMap _ _).insert axioms.root axioms
+    Case.ofClaim s!"refuse {name} when model advice references a user axiom (A6 negative control)"
+      e claim trees (accept := false)
   let cases := (names.map (mkCase env "modeller's model")) ++
     (names.map (mkCase tweaked "a different valid model")) ++
     (quotNames.map fun n => mkCase quotEnv "a model whose proofs use the quotient" (nameOfString n)) ++
-    [underAxiom "IxVMInd.Even", underAxiom "IxVMInd.Even.rec"] ++
+    [underAxiom "IxVMInd.Even", underAxiom "IxVMInd.Even.rec", underAxiomAdviceRef "IxVMInd.Even"] ++
     [mkPlain tagEnv "its tag enumeration is Tri" `IxVMInd.TriA,
      mkPlain tagEnv "the recursor of TriA's tag enumeration" `IxVMInd.Tri.rec]
   -- the verdicts on `NB4`'s claims, from the entry's host cases (loaded at run time)
@@ -613,7 +702,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     Case.ofClaim s!"{if accept then "accept" else "refuse"} {n}" fixEnv (.check ctx target none) {} accept
   let cases := cases ++ nestedVerdicts.map fun (n, accept) => verdictCase n accept
   let rc ← runCases "ixvm-model-advice" cases.toArray
-  return if digestOk && cacheOk && differ && quotOk && tagsOk && univsOk && adviceOk && rc == 0 then 0 else 1
+  return if digestOk && cacheOk && round2Ok && differ && quotOk && tagsOk && univsOk && adviceOk && rc == 0 then 0 else 1
 
 /-- The environment of an `.ixe` file under the default role table, without models. -/
 def loadIxe (path : String) : IO Ixon.Env := do

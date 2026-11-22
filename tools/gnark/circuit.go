@@ -21,6 +21,15 @@ type wrapperCircuit struct {
 }
 
 func scalarBytes(api frontend.API, u *uints.BinaryField[uints.U32], v frontend.Variable) []uints.U8 {
+	if constant, ok := api.Compiler().ConstantValue(v); ok {
+		var raw [32]byte
+		c := new(big.Int).Mod(constant, scalarModulus())
+		c.FillBytes(raw[:])
+		for i, j := 0, 31; i < j; i, j = i+1, j-1 {
+			raw[i], raw[j] = raw[j], raw[i]
+		}
+		return uints.NewU8Array(raw[:])
+	}
 	b := bits.ToBinary(api, v, bits.WithNbDigits(256))
 	out := make([]uints.U8, 32)
 	for i := range out {
@@ -43,7 +52,7 @@ func littleEndian(api frontend.API, u *uints.BinaryField[uints.U32], bytes []uin
 	return value
 }
 
-func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints.U32], encoded [][]uints.U8, publics []frontend.Variable) []frontend.Variable {
+func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints.U32], encoded [][]uints.U8, publics []frontend.Variable) ([]frontend.Variable, *transcript) {
 	p := c.VK
 	seed, _ := unhex(p.Seed, -1)
 	t := newTranscript(api, u, seed)
@@ -65,8 +74,11 @@ func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints
 			field(value)
 		}
 	}
-	field(1)
-	field(1)
+	// Every circuit in the recursive KZG proof is active, matching Rust's
+	// `for &active in &proof.active` transcript observation.
+	for range p.Circuits {
+		field(1)
+	}
 	commitment(3)
 	commitment(0)
 	for _, circuit := range p.Circuits {
@@ -112,7 +124,7 @@ func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints
 		t.observe(point)
 	}
 	ch[5] = t.sample()
-	return ch
+	return ch, t
 }
 
 func (p *scalarProgram) constrain(api frontend.API, challenges, values, publics []frontend.Variable) ([]frontend.Variable, []frontend.Variable) {
@@ -169,9 +181,7 @@ func (c *wrapperCircuit) Define(api frontend.API) error {
 	if err != nil {
 		return err
 	}
-	parameters := curveParameters()
-	parameters.PreferClassicGLV = true
-	curve, err := sw_emulated.New[baseField, scalarField](api, parameters)
+	curve, err := sw_emulated.New[baseField, scalarField](api, curveParameters())
 	if err != nil {
 		return err
 	}
@@ -207,9 +217,11 @@ func (c *wrapperCircuit) Define(api frontend.API) error {
 		}
 	}
 	deferredHalves := make([]frontend.Variable, 0, 2*len(c.Deferred))
+	deferredEncoded := make([][]uints.U8, len(c.Deferred))
 	for i := range c.Deferred {
 		pairing.AssertIsOnG1(&c.Deferred[i])
 		bytes := pointBytes(api, u, f, &c.Deferred[i])
+		deferredEncoded[i] = bytes
 		deferredHalves = append(deferredHalves, littleEndian(api, u, bytes[:pointLimbBytes]), littleEndian(api, u, bytes[pointLimbBytes:]))
 	}
 	sources := p.Publics
@@ -226,7 +238,7 @@ func (c *wrapperCircuit) Define(api frontend.API) error {
 			publics[i] = deferredHalves[*source.DeferredHalf]
 		}
 	}
-	challenges := c.challenges(api, u, encoded, publics)
+	challenges, transcript := c.challenges(api, u, encoded, publics)
 	coefficients, witnessCoefficients := p.Program.constrain(api, challenges, c.Values, publics)
 	leftPoints, leftCoefficients := foldFixedBases(api, p, points, coefficients)
 	left, err := completeMSM(api, curve, s, leftPoints, leftCoefficients)
@@ -239,15 +251,41 @@ func (c *wrapperCircuit) Define(api frontend.API) error {
 	}
 	outer, _ := g2Keys(p.OuterKeys)
 	h, tauH := newCircuitG2Fixed(outer[0]), newCircuitG2Fixed(outer[1])
-	if err := pairing.PairingCheck([]*circuitG1{left, curve.Neg(right)}, []*circuitG2{&h, &tauH}); err != nil {
+	if len(c.Deferred) == 0 {
+		return pairing.PairingCheck([]*circuitG1{left, curve.Neg(right)}, []*circuitG2{&h, &tauH})
+	}
+	// Derive Fiat-Shamir folding challenge ρ from the final transcript state
+	// plus both outer opening operands and both deferred pairing points so
+	// rogue cross-cancellation between the two pairing checks is infeasible.
+	leftReduced := circuitG1{X: *f.ReduceStrict(&left.X), Y: *f.ReduceStrict(&left.Y)}
+	rightReduced := circuitG1{X: *f.ReduceStrict(&right.X), Y: *f.ReduceStrict(&right.Y)}
+	transcript.observe(uints.NewU8Array([]byte("ix/pairing-fold/v1")))
+	transcript.observe(pointBytes(api, u, f, &leftReduced))
+	transcript.observe(pointBytes(api, u, f, &rightReduced))
+	transcript.observe(deferredEncoded[0])
+	transcript.observe(deferredEncoded[1])
+	rho := transcript.sampleFinal()
+	rhoScalar := s.FromBits(bits.ToBinary(api, rho)...)
+	scaledD0, err := curve.MultiScalarMul([]*circuitG1{&c.Deferred[0]}, []*circuitScalar{rhoScalar})
+	if err != nil {
 		return err
 	}
-	if len(c.Deferred) == 0 {
-		return nil
+	scaledD1, err := curve.MultiScalarMul([]*circuitG1{&c.Deferred[1]}, []*circuitScalar{rhoScalar})
+	if err != nil {
+		return err
 	}
+	negRight := curve.Neg(right)
 	inner, _ := g2Keys(p.DeferredKeys)
+	if outer[0].Equal(&inner[0]) && outer[1].Equal(&inner[1]) {
+		foldedLeft := curve.AddUnified(left, scaledD0)
+		foldedRight := curve.AddUnified(negRight, scaledD1)
+		return pairing.PairingCheck([]*circuitG1{foldedLeft, foldedRight}, []*circuitG2{&h, &tauH})
+	}
 	ih, itauH := newCircuitG2Fixed(inner[0]), newCircuitG2Fixed(inner[1])
-	return pairing.PairingCheck([]*circuitG1{&c.Deferred[0], &c.Deferred[1]}, []*circuitG2{&ih, &itauH})
+	return pairing.PairingCheck(
+		[]*circuitG1{left, negRight, scaledD0, scaledD1},
+		[]*circuitG2{&h, &tauH, &ih, &itauH},
+	)
 }
 
 // Fixed-point relations are checked at circuit construction. Variable inputs

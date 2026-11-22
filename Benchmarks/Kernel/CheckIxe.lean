@@ -105,10 +105,12 @@ structure Options where
   load : Load := .stream
   jobs : Option Nat := none
   allowUserAxioms : Bool := false
+  failOnNonAccept : Bool := false
+  strict : Bool := false
 
 def usage : String :=
   "usage: kernel-check-ixe [--load stream|eager] [--jobs <n>] [--allow-user-axioms] \
-   <input.ixe> <output.jsonl> [limit]"
+   [--fail-on-non-accept] [--strict] <input.ixe> <output.jsonl> [limit]"
 
 /-- The options; the flags may come before or after the positional arguments. -/
 def parseArgs (args : List String) : Option Options :=
@@ -122,6 +124,8 @@ where
       guard (k ≥ 1)
       go rest { o with jobs := some k } pos
     | "--allow-user-axioms" :: rest, o, pos => go rest { o with allowUserAxioms := true } pos
+    | "--fail-on-non-accept" :: rest, o, pos => go rest { o with failOnNonAccept := true } pos
+    | "--strict" :: rest, o, pos => go rest { o with strict := true } pos
     | a :: rest, o, pos => if a.startsWith "--" then none else go rest o (pos.push a)
     | [], o, pos => match pos.toList with
       | [input, output] => some { o with input, output }
@@ -129,16 +133,20 @@ where
       | _ => none
 
 /-- The order of a run: the setup's, or with `CHECK_IXE_ROOTS` the closure of
-those constants, resolved through the environment's names. -/
+those constants, resolved through the environment's names. Also returns any
+`CHECK_IXE_ROOTS` names missing from the environment's named metadata. -/
 def orderOf (s : Setup) (named : Std.HashMap Ix.Name Ixon.Named) (pre : Prelude .anon)
-    (roots : Option String) : IO (Array Address) := do
-  let some list := roots | return s.ordered
+    (roots : Option String) : IO (Array Address × Array String) := do
+  let some list := roots | return (s.ordered, #[])
   let mut starts : Array Address := pre.records.map (·.1)
+  let mut missing : Array String := #[]
   for n in (list.splitOn ",").filter (!·.isEmpty) do
     match named[Ix.Name.fromLeanName (rootName n)]? with
     | some entry => starts := starts.push entry.addr
-    | none => IO.eprintln s!"check-ixe: CHECK_IXE_ROOTS: no constant {n}"
-  return closure s.store s.extra starts
+    | none =>
+      IO.eprintln s!"check-ixe: CHECK_IXE_ROOTS: no constant {n}"
+      missing := missing.push n
+  return (closure s.store s.extra starts, missing)
 
 /-- The watchdog, every half second until `running` is false: when the
 longest-running check in the slots has run longer than `watchMs`, or the
@@ -344,6 +352,7 @@ def run (args : List String) : IO UInt32 := do
     -- already: they live in the mapped region.
     let onThread := fun (loop : IO Counts) => do
       if thread then IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) loop)) else loop
+    let missingRoots ← IO.mkRef (#[] : Array String)
     let (counts, reasons) ← match plan with
       | some plan => do
         let path := (cache.map (·.1.toString)).getD ""
@@ -365,7 +374,9 @@ def run (args : List String) : IO UInt32 := do
           let hints := Hints.ofStore store env.anonHints
           let s := setup store (env.blobs[·]?) table pre hints.lookup
           log s!"eager load: {setupLine s env.blobs.size s.cx.roles.names.size hints.hints.size pre}"
-          let addresses := limited (← orderOf s env.named pre rootsEnv)
+          let (ordered, missing) ← orderOf s env.named pre rootsEnv
+          missingRoots.set missing
+          let addresses := limited ordered
           if thread then markInputs s names
           onThread (live s s.source names addresses
             (Thunk.mk fun () => CheckIxeMeta.displayTable env s.cx))
@@ -380,7 +391,9 @@ def run (args : List String) : IO UInt32 := do
           let s := l.setup
           let names := reportNames l.env s.store
           log s!"streaming load: {setupLine s l.env.blobs.size s.cx.roles.names.size l.env.anonHints.size pre}"
-          let addresses := limited (← orderOf s l.env.named pre rootsEnv)
+          let (ordered, missing) ← orderOf s l.env.named pre rootsEnv
+          missingRoots.set missing
+          let addresses := limited ordered
           -- the setup (marked by the load) and the names only: the records'
           -- windows go to the loop unmarked, so that they are freed once it has
           -- taken their bytes
@@ -402,6 +415,19 @@ def run (args : List String) : IO UInt32 := do
       IO.eprintln s!"check-ixe: CONDITIONAL on {admitted.size} user axioms:"
       for (address, names) in admitted do
         IO.eprintln s!"  {address} {" | ".intercalate names.toList}"
+    if options.failOnNonAccept || options.strict then
+      let missing ← missingRoots.get
+      unless missing.isEmpty do
+        IO.eprintln s!"check-ixe: failing due to {missing.size} missing CHECK_IXE_ROOTS constant(s): {missing.toList}"
+        return 1
+      let bad := counts.fold (init := 0) fun acc outcome n =>
+        let ok := if options.failOnNonAccept then outcome == "accept"
+                  else outcome == "accept" || outcome == "typed"
+        if ok then acc else acc + n
+      let okCount := counts.getD "accept" 0 + (if options.failOnNonAccept then 0 else counts.getD "typed" 0)
+      if bad > 0 || okCount == 0 then
+        IO.eprintln s!"check-ixe: failing due to {bad} non-accepted record(s) (ok: {okCount})"
+        return 1
     return 0
   finally
     running.set false

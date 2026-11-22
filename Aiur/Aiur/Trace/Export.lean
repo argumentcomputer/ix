@@ -5,6 +5,7 @@ import Aiur.Optimized.Grouping.Plan
 import Aiur.Optimized.EndToEnd
 import Aiur.Optimized.Depth.Basic
 import Aiur.Optimized.Depth.Classify
+import Aiur.Optimized.Depth.Grouped
 import Aiur.Artifact
 
 /-! Ixon encoding of companion population plans and physical circuits: the
@@ -19,7 +20,7 @@ H1): the gap limb widths, and per circuit its depth column, SCC rank and call
 slots. -/
 def planVersion : Nat := 3
 
-partial def putPolynomial (encode : F → Nat) : Polynomial F → PutM Unit
+def putPolynomial (encode : F → Nat) : Polynomial F → PutM Unit
   | .const x => do u8 0; nat (encode x)
   | .var x => do u8 1; nat x
   | .add a b => do u8 2; putPolynomial encode a; putPolynomial encode b
@@ -71,29 +72,29 @@ def putChip [Field F] [DecidableEq F] (encode : F → Nat) (source : Circuit.Chi
 definitions and compaction columns. Equality checks fail closed if either
 compiler evolves without updating its companion metadata. -/
 def putFunction [Field F] [DecidableEq F] (encode : F → Nat) (program : Program F)
-    (config : Config) (fn : Function F) (layout : LaidOutChip F) (representative : String)
+    (config : Config) (func : Function F) (layout : LaidOutChip F) (representative : String)
     (bytecode : Execution.Function F) (validateInputs : Bool := true) : PutM Unit := do
-  let source ← MonadExcept.ofExcept (Compiler.function program config fn validateInputs)
+  let source ← MonadExcept.ofExcept (Compiler.function program config func validateInputs)
   let aliases ← MonadExcept.ofExcept (resolveAliases source.chip)
   let propagatedScopes := if config.propagateScopes then ScopedPropagation.transform aliases else aliases
   let simplified := if config.simplifyConstraints then (ConstraintElimination.run propagatedScopes).chip
     else propagatedScopes
   let degree ← MonadExcept.ofExcept (Degree.boundState config simplified)
-  unless degree.chip == layout.logical do throw s!"trace logical layout mismatch in {fn.name}"
+  unless degree.chip == layout.logical do throw s!"trace logical layout mismatch in {func.name}"
   let merged := (LookupMerging.run config degree.chip layout.layout).chip
   let columns ← if config.propagateValues then do
     let propagated := Propagation.propagate merged merged.numVars (.identity merged)
     let used := propagated.chip.variables
     let columns := (List.range propagated.chip.numVars).filter (used.contains ·)
     unless Propagation.compact propagated.chip columns == layout.chip do
-      throw s!"trace final compaction mismatch in {fn.name}"
+      throw s!"trace final compaction mismatch in {func.name}"
     pure columns
   else do
-    unless merged == layout.chip do throw s!"trace final layout mismatch in {fn.name}"
+    unless merged == layout.chip do throw s!"trace final layout mismatch in {func.name}"
     pure (List.range merged.numVars)
   let hintPCs := bytecode.code.toList.zipIdx.filterMap fun (op, pc) =>
     match op with | .hint .. => some pc | _ => none
-  unless source.hints == hintPCs.length do throw s!"trace hint occurrence mismatch in {fn.name}"
+  unless source.hints == hintPCs.length do throw s!"trace hint occurrence mismatch in {func.name}"
   let steps := source.steps ++ (degree.cache.reverse.map fun (scope, value, dest) =>
     Step.mk scope (.assign [dest] [value])).toArray
   let writes := columns.zipIdx.flatMap fun (old, column) =>
@@ -102,7 +103,7 @@ def putFunction [Field F] [DecidableEq F] (encode : F → Nat) (program : Progra
         | some (.auxiliary scope) => source.chip.activation scope
         | _ => .const 1
       (column, id, guard)
-  str fn.name
+  str func.name
   str representative
   nat degree.chip.roles.size
   nats (source.chip.inputs.flatMap WireValue.words)
@@ -221,18 +222,20 @@ def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
     used := used ++ chips.map (·.name)
     packed := packed ++ [⟨chips, group⟩]
   let plan ← Grouping.preparePlan system id packed
-  -- The backend theorems (`grouped_activated_heap_sound` and its siblings) assume
-  -- `plan.WellFormedActivation`; refuse to export a plan that does not meet it.
-  unless decide plan.WellFormedActivation do
-    throw "an ungrouped chip is not well-formed before or after activation (Plan.WellFormedActivation)"
+  -- Enforce all executable WS 2B-1 exporter safety certificates (`PlanCertificate`,
+  -- `Depth.Certified`, `cfg.bits ≤ 24`, and `Plan.WellFormedActivation`) before emitting bytes.
+  unless Grouping.checkPlanCertificate system plan.singles plan.groups do
+    throw "grouping partition failed executable certificate check (Grouping.checkPlanCertificate)"
+  unless Depth.checkGoldilocksPlan cfg physical.system plan do
+    throw "depth-grouped plan failed executable safety certificate (Depth.checkGoldilocksPlan)"
   let trace ← Ixon.run do
     nat planVersion
     nat modulus
     nats cfg.limbs
-    list ((program.functions.zip artifact.layouts).zip original.functions) fun ((fn, layout), code) => do
-      unless fn.name == code.name do throw "trace bytecode function order mismatch"
-      putFunction encode program artifact.config fn layout (physical.representative fn.name) code
-        (artifact.entries.contains fn.name)
+    list ((program.functions.zip artifact.layouts).zip original.functions) fun ((func, layout), code) => do
+      unless func.name == code.name do throw "trace bytecode function order mismatch"
+      putFunction encode program artifact.config func layout (physical.representative func.name) code
+        (artifact.entries.contains func.name)
     list (system.chips.zip physical.system.chips) fun (chip, source) => do
       putChip encode chip
       putDepth cfg source
@@ -244,5 +247,73 @@ def exportPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
     (program : Program F) (artifact : Optimized.Artifact F) (exported : Execution.Export F)
     (groups : List (String × List String) := []) : Except String (Execution.Export F × ByteArray) := do
   exportPreparedPlan modulus encode program artifact (← Physical.prepare artifact) exported groups
+
+private def parMapExcept (xs : List α) (f : α → Except String β) : Except String (List β) :=
+  let tasks := xs.map fun x => Task.spawn (prio := .default) fun _ => f x
+  tasks.mapM (·.get)
+
+/-- Parallel variant of `exportPreparedPlan` (`A8`). Evaluates independent group
+compilations, per-function population plans (`putFunction`), per-chip activations
+(`putChip`/`putDepth`), and per-group serializations (`putGroup`) concurrently via
+`Task.spawn`, then concatenates their raw byte chunks in exact source order to
+produce a byte-for-byte identical trace section without altering pure
+`exportPreparedPlan` or `Optimized.compile`. -/
+def exportPreparedPlanPar [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
+    (exported : Execution.Export F) (groups : List (String × List String) := []) :
+    Except String (Execution.Export F × ByteArray) := do
+  let original := exported.bytecode
+  unless program.functions.length == artifact.layouts.length && program.functions.length == original.functions.length do
+    throw "trace program/function count mismatch"
+  let cfg ← depthConfig modulus physical
+  let bytecode := depthBytecode cfg original
+  let system := Depth.system cfg physical.system
+  let callableNames := bytecode.functions.map (·.name) ++ bytecode.maps.map (·.name)
+  let id := fun name => if callableNames.contains name then pure (callableNames.idxOf name)
+    else throw s!"unknown grouped callable {name}"
+  let mut used : List String := []
+  let mut groupSpecs : List (String × List (Circuit.Chip F)) := []
+  for (name, names) in groups do
+    let names := (names.map physical.representative).dedup
+    let chips := system.chips.filter fun c =>
+      names.contains c.name && !used.contains c.name && !artifact.entries.contains c.name
+    if chips.length < 2 then continue
+    used := used ++ chips.map (·.name)
+    groupSpecs := groupSpecs ++ [(name, chips)]
+  let packed : List (Grouping.Packed F id) ← parMapExcept groupSpecs fun (name, chips) => do
+    let group ← Grouping.compile name id chips
+    pure ⟨chips, group⟩
+  let plan ← Grouping.preparePlan system id packed
+  unless Grouping.checkPlanCertificate system plan.singles plan.groups do
+    throw "grouping partition failed executable certificate check (Grouping.checkPlanCertificate)"
+  unless Depth.checkGoldilocksPlan cfg physical.system plan do
+    throw "depth-grouped plan failed executable safety certificate (Depth.checkGoldilocksPlan)"
+  let fnItems := (program.functions.zip artifact.layouts).zip original.functions
+  let chipItems := system.chips.zip physical.system.chips
+  let fnBytes ← parMapExcept fnItems fun ((func, layout), code) =>
+    Ixon.run (capacity := 4096) do
+      unless func.name == code.name do throw "trace bytecode function order mismatch"
+      putFunction encode program artifact.config func layout (physical.representative func.name) code
+        (artifact.entries.contains func.name)
+  let chipBytes ← parMapExcept chipItems fun (chip, source) =>
+    Ixon.run (capacity := 4096) do
+      putChip encode chip
+      putDepth cfg source
+  let groupBytes ← parMapExcept plan.groups fun p =>
+    Ixon.run (capacity := 4096) (putGroup encode p.checked.layout)
+  let trace ← Ixon.run do
+    nat planVersion
+    nat modulus
+    nats cfg.limbs
+    list fnBytes raw
+    list chipBytes raw
+    list groupBytes raw
+  return ({ exported with bytecode }, trace)
+
+/-- `exportPreparedPlanPar` after physical deduplication of `artifact`. -/
+def exportPlanPar [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (program : Program F) (artifact : Optimized.Artifact F) (exported : Execution.Export F)
+    (groups : List (String × List String) := []) : Except String (Execution.Export F × ByteArray) := do
+  exportPreparedPlanPar modulus encode program artifact (← Physical.prepare artifact) exported groups
 
 end Aiur.Trace

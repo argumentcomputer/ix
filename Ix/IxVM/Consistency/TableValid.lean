@@ -112,9 +112,9 @@ a `SetTheory`: the first takes one, the second speaks of every model in every on
   (`Reads` at a recursor; see the `Reads` documentation);
 * walk, in a `binding` run, what the records of the two standard axioms reference: `kept`
   keeps both records, so `UsedClosed` asks for every record they reference;
-* refuse a claim whose closure holds a recursor of a mutual or nested family. The proof of
-  the typing half relies on this refusal until it has a route for such recursors; the
-  statements do not mention it.
+* verify recursors of mutual and nested inductive families on the modeled route
+  (`KernelModeled::check_family`, model advice, twin-family projection/recursor laws),
+  refusing any mutual or nested recursor that lacks a valid checked model.
 
 ## What the statements do not cover
 

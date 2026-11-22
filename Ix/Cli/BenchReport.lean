@@ -665,6 +665,12 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
       else if backend == "aiur" && names.any pairNames.contains then "workload"
       else "constant"
   }
+  if backend == "aiur-sharded-env" then
+    let engine := fun (rows : Json) =>
+      let labels := (rowNames rows).filterMap fun name =>
+        (rows.getObjVal? name >>= fun row => row.getObjValAs? String "engine").toOption
+      if labels.isEmpty then "not recorded" else ", ".intercalate labels.toList.eraseDups
+    table := table ++ s!"\n- Execution engine: {baseLabel}: {engine mainRows}; PR: {engine prRows}.\n"
   -- Per-constant attribution drill-down: rendered whenever an
   -- attribution CSV (`--per-const`, written by the ooc whole-env run)
   -- sits next to BOTH results files.

@@ -252,12 +252,14 @@
           # Local packages build in the workspace; buildDeps only supports Git sources.
           lakeDeps = builtins.removeAttrs (lake2nix.buildDeps {
             src = leanLibSrc;
-            # Formal Aiur's proofs require mathlib, which brings these packages
-            # into the workspace. Nothing the flake builds (the Ix library, the
-            # CLI and the test binary) imports them, so Lake needs only their
-            # sources to resolve the workspace. Building them would compile all
-            # of Mathlib and its shared library, and lean4-nix's library target
-            # guess (`Proofwidgets`) does not exist.
+            # Formal Aiur's and CertiFRI's proofs require mathlib, which brings
+            # these packages into the workspace. Nothing the flake builds (the
+            # Ix library, the CLI and the test binary) imports them (only the
+            # standalone `Ix.Cert.*` proof targets import `CertiFRI` and
+            # `mathlib`), so Lake needs only their sources to resolve the
+            # workspace. Building them would compile all of Mathlib and its
+            # shared library, and lean4-nix's library target guess
+            # (`Proofwidgets`) does not exist.
             depOverride =
               pkgs.lib.genAttrs
                 [
@@ -267,6 +269,9 @@
                   "importGraph"
                   "aesop"
                   "Qq"
+                  "certifri"
+                  "certifri-proofs"
+                  "«certifri-proofs»"
                 ]
                 (_: {
                   buildPhase = ''

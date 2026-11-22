@@ -46,21 +46,30 @@ container `Carrier_j` (over the *model* names) and `aux p⃗ (tag.(r+j))`:
 
 Declines (the residual): a container that is itself nested or mutual or
 whose mimics
-form a cycle, a reflexive field into a mimic (`∀ a⃗, I As`: a nested
-occurrence under a binder), a `Prop` block with a large
+form a cycle, a `Prop` block with a large
 eliminator, a container field a later container field depends on, an
 index domain whose sort not even a ceiling bounds (`Kit.sortCeil`,
-task #227).  (Members' parameter telescopes and sorts are not
-compared: task #218, `Mutual.lean`'s header.)
+task #227), or a reflexive mimic field whose telescope binder's sort
+cannot be read syntactically (`Kit.sortOf`).  (Members' parameter
+telescopes and sorts are not compared: task #218, `Mutual.lean`'s
+header.)
 
-Reflexive fields.  A field `∀ a⃗, T_m p⃗ e⃗(a⃗)` into a real member — in a
-real constructor (`mk : (Nat → T) → List T → T`) or in a mimic's, the
-container pinned at a function into the block (`Option (Nat → T)`) — is
-recursive under its own telescope `a⃗` (`fieldKind`, `teleDoms`): its
-hypothesis binders are `∀ a⃗, mot (tag.m p⃗ e⃗(a⃗)) (f a⃗)` (`ihBinder`),
-its iota hypotheses `λ a⃗, R_m._model … e⃗(a⃗) (f a⃗)`, as the auxiliary
-family's own recursor has them (`Kit.recTy`).  A real member's carrier
-is its model, so such a field is never packed or transported.
+Reflexive fields.  A field `∀ a⃗, T_m p⃗ e⃗(a⃗)` into a real member or
+`∀ a⃗, I As e⃗(a⃗)` into a mimic — in a real constructor (`mk : (Nat → T)
+→ List T → T`, `mk : (Nat → List T) → T`) or in a mimic's, the container
+itself reflexive (`Rose (α) | mk : (Nat → Rose α) → Rose α`) or pinned
+at a function into the block (`Option (Nat → T)`, `List (Nat → List T)`)
+— is recursive under its own telescope `a⃗` (`fieldKind`, `teleDoms`):
+its hypothesis binders are `∀ a⃗, mot (tag.m p⃗ e⃗(a⃗)) (f a⃗)`
+(`ihBinder`), its iota hypotheses `λ a⃗, R_m._model … e⃗(a⃗) (f a⃗)`, as
+the auxiliary family's own recursor has them (`Kit.recTy`).  A real
+member's carrier is its model, so a reflexive real-member field is never
+packed or transported.  A reflexive mimic field (`t' ≥ r`, `nT > 0`) is
+packed and unpacked pointwise under `λ a⃗`, its round-trip equalities
+lifted across `a⃗` by function extensionality proved from the prelude's
+`Quot` (`mkFunextTele`), and its iota transports bridged by pointwise
+application congruence (`congrFunTele`) and packing congruence
+(`congrPackFun`).
 
 Members behind definitions.  Lean's kernel tests positivity after whnf,
 so a field `Id' T` (with `Id' α := α`), in a real constructor or a
@@ -478,11 +487,6 @@ def readCtors (fam : Family md) (M : Nat) (minors : List (Expr md))
     let nRec := kinds.filter (·.isSome) |>.length
     unless nRec == nIh do
       throw s!"minor {J} ({cname}): {nIh} inductive hypotheses for {nRec} recursive fields"
-    -- a reflexive field into a container occurrence (`∀ a⃗, I As`, an
-    -- occurrence nested under a binder) is not this rung's
-    for i in List.range nF do
-      if teles.getD i 0 != 0 && (kinds.getD i none).any (fam.r ≤ ·) then
-        throw s!"field {i} of {cname} is reflexive into a container occurrence (nested under a binder)"
     -- every other field must not mention the block once its whole carrier
     -- occurrences are rewritten into the auxiliary family, as the auxiliary
     -- constructors' fields are (`specAll`): Lean's kernel replaces nested
@@ -518,6 +522,103 @@ def mkEqRec (ℓm ℓα : Level) (α a motive refl b h : Expr md) : Expr md :=
 
 /-- Lift every entry. -/
 def liftAll (n : Nat) (es : List (Expr md)) : List (Expr md) := es.map (·.liftLooseBVars n 0)
+
+/-- The exact sort of a `∀`-telescope with binder sorts `sorts` ending in a type of sort `u`. -/
+def teleSort (u : Level) : List Level → Level
+  | [] => u
+  | ℓ :: rest => .imax ℓ (teleSort u rest)
+
+/-- Function extensionality from `Quot` (`Quot.mk`, `Quot.lift`, `Quot.sound`) and `Eq.rec`:
+given `A : Sort ℓA`, `B : Sort ℓB` (with `bvar 0 : A`), `f g : ∀ x : A, B`, and
+`h : ∀ x : A, f x = g x`, a proof of `f = g : ∀ x : A, B` at level `imax ℓA ℓB`. -/
+def mkFunext (ℓA ℓB : Level) (A B f g h : Expr md) : Expr md :=
+  let ℓF : Level := .imax ℓA ℓB
+  let F : Expr md := .forallE A B bm
+  let r : Expr md :=
+    .lam F
+      (.lam (F.liftLooseBVars 1 0)
+        (.forallE (A.liftLooseBVars 2 0)
+          (mkEq ℓB (B.liftLooseBVars 2 1) (.app (.bvar 2) (.bvar 0)) (.app (.bvar 1) (.bvar 0))) bm) bm) bm
+  let Q : Expr md := Expr.mkAppN (.const quotName [ℓF]) [F, r]
+  let extApp : Nat → Expr md → Expr md := fun o q =>
+    let Fo := F.liftLooseBVars (o + 1) 0
+    let ro := r.liftLooseBVars (o + 1) 0
+    let Bo := B.liftLooseBVars o 1
+    let evalX : Expr md := .lam Fo (.app (.bvar 0) (.bvar 1)) bm
+    let respX : Expr md :=
+      .lam Fo
+        (.lam (Fo.liftLooseBVars 1 0)
+          (.lam (Expr.mkAppN (ro.liftLooseBVars 2 0) [.bvar 1, .bvar 0])
+            (.app (.bvar 0) (.bvar 3)) bm) bm) bm
+    .lam (A.liftLooseBVars o 0)
+      (Expr.mkAppN (.const quotLiftName [ℓF, ℓB]) [Fo, ro, Bo, evalX, respX, q.liftLooseBVars 1 0]) bm
+  let qF : Expr md := Expr.mkAppN (.const quotMkName [ℓF]) [F, r, f]
+  let qG : Expr md := Expr.mkAppN (.const quotMkName [ℓF]) [F, r, g]
+  let hq : Expr md := Expr.mkAppN (.const quotSoundName [ℓF]) [F, r, f, g, h]
+  let motive : Expr md :=
+    .lam Q
+      (.lam (mkEq ℓF (Q.liftLooseBVars 1 0) (qF.liftLooseBVars 1 0) (.bvar 0))
+        (mkEq ℓF (F.liftLooseBVars 2 0) (extApp 2 (qF.liftLooseBVars 2 0)) (extApp 2 (.bvar 1))) bm) bm
+  mkEqRec .zero ℓF Q qF motive (mkRefl ℓF F (extApp 0 qF)) qG hq
+
+/-- Iterated function extensionality over a telescope `tele` with binder sorts `sorts` and
+codomain `cod : Sort u`: given `f g : mkPis tele cod` and a pointwise proof `h` under the
+`tele` binders (`Eq.{u} cod (f a⃗) (g a⃗)`), a proof of `Eq.{teleSort u sorts} (mkPis tele cod) f g`.
+At `tele = []`, returns `h` unchanged. -/
+def mkFunextTele (u : Level) :
+    List (Expr md) → List Level → Expr md → Expr md → Expr md → Expr md → Expr md
+  | [], _, _, _, _, h => h
+  | A :: rest, ℓA :: srest, cod, f, g, h =>
+    let B := mkPis rest cod
+    let ℓB := teleSort u srest
+    let f1 := .app (f.liftLooseBVars 1 0) (.bvar 0)
+    let g1 := .app (g.liftLooseBVars 1 0) (.bvar 0)
+    let h1 := mkFunextTele u rest srest cod f1 g1 h
+    mkFunext ℓA ℓB A B f g (.lam A h1 bm)
+  | _ :: _, [], _, _, _, h => h
+
+/-- Pointwise congruence from a function equality `h : Eq.{ℓF} fTy f g` (already lifted under
+the `nT` telescope binders `varsAt 0 nT`) to `Eq.{u} cod (f a⃗) (g a⃗)`. At `nT = 0`, returns `h`. -/
+def congrFunTele (u ℓF : Level) (nT : Nat) (fTy f g h cod : Expr md) : Expr md :=
+  if nT == 0 then h
+  else
+    let motive : Expr md :=
+      .lam fTy
+        (.lam (mkEq ℓF (fTy.liftLooseBVars 1 0) (f.liftLooseBVars 1 0) (.bvar 0))
+          (mkEq u (cod.liftLooseBVars 2 0)
+            (Expr.mkAppN (f.liftLooseBVars 2 0) (varsAt 2 nT))
+            (Expr.mkAppN (.bvar 1) (varsAt 2 nT))) bm) bm
+    mkEqRec .zero ℓF fTy f motive (mkRefl u cod (Expr.mkAppN f (varsAt 0 nT))) g h
+
+/-- Congruence of pointwise packing along a function equality `h_k : Eq.{ℓF} fTy u_k z_k`,
+proving `Eq.{ℓF} auxTy (packAt 0 u_k) (packAt 0 z_k)`. Reduces to `Eq.refl` at `Eq.refl`. -/
+def congrPackFun (ℓF : Level) (fTy auxTy : Expr md) (packAt : Nat → Expr md → Expr md)
+    (u_k z_k h_k : Expr md) : Expr md :=
+  let motive : Expr md :=
+    .lam fTy
+      (.lam (mkEq ℓF (fTy.liftLooseBVars 1 0) (u_k.liftLooseBVars 1 0) (.bvar 0))
+        (mkEq ℓF (auxTy.liftLooseBVars 2 0)
+          (packAt 2 (u_k.liftLooseBVars 2 0))
+          (packAt 2 (.bvar 1))) bm) bm
+  mkEqRec .zero ℓF fTy u_k motive (mkRefl ℓF auxTy (packAt 0 u_k)) z_k h_k
+
+/-- Transport of a packed field's inductive hypothesis in an iota proof's RHS: under the field's
+telescope `tele` (of length `nT`), transports `rVal a⃗` along `congrFunTele` applied to
+`hVal : Eq.{ℓF} carr uVal zVal`, giving `λ a⃗, Eq.rec (rVal a⃗) (congrFunTele hVal)`. -/
+def mkRhsPacked (ℓ u ℓF : Level) (nT : Nat) (tele idx : List (Expr md))
+    (cod carr uVal zVal rVal hVal mot : Expr md) : Expr md :=
+  let uApp := Expr.mkAppN (uVal.liftLooseBVars nT 0) (varsAt 0 nT)
+  let zApp := Expr.mkAppN (zVal.liftLooseBVars nT 0) (varsAt 0 nT)
+  let rApp := Expr.mkAppN (rVal.liftLooseBVars nT 0) (varsAt 0 nT)
+  let hAt := congrFunTele u ℓF nT
+    (carr.liftLooseBVars nT 0) (uVal.liftLooseBVars nT 0)
+    (zVal.liftLooseBVars nT 0) (hVal.liftLooseBVars nT 0) cod
+  mkLams tele
+    (mkEqRec ℓ u cod uApp
+      (.lam cod
+        (.lam (mkEq u (cod.liftLooseBVars 1 0) (uApp.liftLooseBVars 1 0) (.bvar 0))
+          (Expr.mkAppN mot (liftAll 2 idx ++ [.bvar 1])) bm) bm)
+      rApp zApp hAt)
 
 /-- The congruence chain (Prop motives): given a spine builder `F`
 (closed over the current frame), argument lists `l⃗`, `r⃗` (equal at
@@ -873,6 +974,34 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
   let blockNames := (b.types.map (·.cv.name)) ++ b.ctors.map (·.cv.name) ++ b.recs.map (·.cv.name)
   let rnF : Key md → Key md := fun x => if blockNames.contains x then modelName x else x
   let rn : Expr md → Expr md := Expr.renameConsts rnF
+  let genTypes : List (Key md × List LevelParam × Expr md) :=
+    (b.types.map fun t => (modelName t.cv.name, lps, t.cv.type)) ++
+    (b.ctors.map fun c => (modelName c.cv.name, lps, rn c.cv.type))
+  let tbl' : ConstTable md := fun x =>
+    match genTypes.find? (·.1 == x) with
+    | some (_, l, ty) => some (l, ty)
+    | none => ctx.tbl x
+  -- binder sorts for reflexive mimic fields (`∀ a⃗, I As e⃗(a⃗)`, `h-nested-binder`)
+  let mut ctorSorts : List (List (List Level)) := []
+  for c in ctors do
+    let mDoms0 := (List.range c.nF).map fun i => rn (c.doms.getD i default)
+    let mut fSorts : List (List Level) := []
+    for i in List.range c.nF do
+      let nT := c.teles.getD i 0
+      if nT != 0 && (c.kinds.getD i none).any (r ≤ ·) then
+        let td := teleDoms c i
+        let mut ls : List Level := []
+        for j in List.range nT do
+          let ctxIJ := (pbs ++ mDoms0.take i ++ td.take j).reverse
+          let some ℓj ← sortOf tbl' ctxIJ (td.getD j default)
+            | throw s!"cannot infer sort of binder {j} of reflexive field {i} of {c.cname}"
+          ls := ls ++ [ℓj]
+        fSorts := fSorts ++ [ls]
+      else
+        fSorts := fSorts ++ [[]]
+    ctorSorts := ctorSorts ++ [fSorts]
+  let fieldSorts := fun (c : ACtor md) (i : Nat) => (ctorSorts.getD c.J []).getD i []
+  let fieldLevel := fun (c : ACtor md) (i : Nat) => teleSort u (fieldSorts c i)
   let tag := tagName T
   let aux := auxName T
   let mut out : Array (Declaration md) := #[]
@@ -1095,7 +1224,9 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
       let ihbs := grpRec.map fun i =>
         let k := (grpRec.filter (· < i)).length
         let fo := c.nF + k
-        auxAt fam ((c.kinds.getD i none).getD 0) (o + fo) (fieldIdxAt c i o (fo - i))
+        let nT := c.teles.getD i 0
+        mkPis (liftTele (teleDoms c i) i o (fo - i))
+          (auxAt fam ((c.kinds.getD i none).getD 0) (o + fo + nT) (fieldIdxAt c i o (fo - i)))
       let gVar := fun (i : Nat) => Expr.bvar (nIhI + c.nF - 1 - i)
       let ihVarI := fun (i : Nat) => Expr.bvar (nIhI - 1 - (grpRec.filter (· < i)).length)
       let fo := c.nF + nIhI
@@ -1107,7 +1238,10 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
               if g.tags.contains t' then ihVarI i
               else if t' ≥ r then
                 let mem' := mems.getD t' default
-                appImpl (packName mem'.j) (o + fo) (fieldIdxAt c i o (fo - i)) [gVar i]
+                let nT := c.teles.getD i 0
+                mkLams (liftTele (teleDoms c i) i o (fo - i))
+                  (appImpl (packName mem'.j) (o + fo + nT) (fieldIdxAt c i o (fo - i))
+                    [Expr.mkAppN (.bvar (nIhI + c.nF - 1 - i + nT)) (varsAt 0 nT)])
               else gVar i
             | none => gVar i))
     for k in List.range g.tags.length do
@@ -1167,32 +1301,45 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         let k := (grpRec.filter (· < i)).length
         let fo' := c.nF + k
         let mem' := mems.getD ((c.kinds.getD i none).getD 0) default
-        upStmtOf mem' (o + fo') (fieldIdxAt c i o (fo' - i)) (.bvar (fo' - 1 - i))
+        let nT := c.teles.getD i 0
+        mkPis (liftTele (teleDoms c i) i o (fo' - i))
+          (upStmtOf mem' (o + fo' + nT) (fieldIdxAt c i o (fo' - i))
+            (Expr.mkAppN (.bvar (fo' - 1 - i + nT)) (varsAt 0 nT)))
       -- the spine's pins are the constructor's OWN container's (a group
       -- member's container differs from the group's head container)
       let F := fun (o' : Nat) (args : List (Expr md)) =>
         Expr.mkAppN (.const c.cname c.clv)
           ((carrM memC (o + fo + o') []).getAppArgs.take memC.pins.length ++ args)
+      let upF := fun (i : Nat) (mem' : Mem md) =>
+        let nT := c.teles.getD i 0
+        let idx := fieldIdxAt c i o (fo - i)
+        mkLams (liftTele (teleDoms c i) i o (fo - i))
+          (appImpl (unpackName mem'.j) (o + fo + nT) idx
+            [appImpl (packName mem'.j) (o + fo + nT) idx
+              [Expr.mkAppN (gVarAt i nT) (varsAt 0 nT)]])
       let ls := (List.range c.nF).map fun i =>
         match c.kinds.getD i none with
         | some t' =>
-          if t' ≥ r then
-            let mem' := mems.getD t' default
-            let idx := fieldIdxAt c i o (fo - i)
-            appImpl (unpackName mem'.j) (o + fo) idx [appImpl (packName mem'.j) (o + fo) idx [gVarAt i 0]]
-          else gVarAt i 0
+          if t' ≥ r then upF i (mems.getD t' default) else gVarAt i 0
         | none => gVarAt i 0
       let rs := (List.range c.nF).map fun i => gVarAt i 0
       let moved := (List.range c.nF).filterMap fun i =>
         match c.kinds.getD i none with
         | some t' =>
-          if g.tags.contains t' then
-            some (i, Expr.bvar (nIhI - 1 - (grpRec.filter (· < i)).length),
-              carrM (mems.getD t' default) (o + fo) (fieldIdxAt c i o (fo - i)), u)
-          else if t' ≥ r then
+          if g.tags.contains t' || t' ≥ r then
             let mem' := mems.getD t' default
+            let nT := c.teles.getD i 0
+            let tele := liftTele (teleDoms c i) i o (fo - i)
             let idx := fieldIdxAt c i o (fo - i)
-            some (i, appImpl (unpackPackName mem'.j) (o + fo) idx [gVarAt i 0], carrM mem' (o + fo) idx, u)
+            let cod := carrM mem' (o + fo + nT) idx
+            let ptPf :=
+              if g.tags.contains t' then
+                Expr.mkAppN (.bvar (nIhI - 1 - (grpRec.filter (· < i)).length + nT)) (varsAt 0 nT)
+              else
+                appImpl (unpackPackName mem'.j) (o + fo + nT) idx
+                  [Expr.mkAppN (gVarAt i nT) (varsAt 0 nT)]
+            let e := mkFunextTele u tele (fieldSorts c i) cod (upF i mem') (gVarAt i 0) ptPf
+            some (i, e, mkPis tele cod, fieldLevel c i)
           else none
         | none => none
       mkLams (gbs ++ ihbs)
@@ -1225,7 +1372,6 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
     let fbs := specDoms c o
     let fo := c.nF + nIh
     let fieldVar := fun (i : Nat) => Expr.bvar (nIh + c.nF - 1 - i)
-    let ihVar := fun (i : Nat) => Expr.bvar (nIh - 1 - ihPos c i)
     let ihbs := (List.range c.nF).filterMap fun i =>
       match c.kinds.getD i none with
       | some t =>
@@ -1238,20 +1384,32 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
       | some _ => mkRefl u (auxAt fam c.mem (o + fo) (c.idx.map (·.liftLooseBVars nIh 0))) self
       | none =>
         let F := fun (o' : Nat) (args : List (Expr md)) => Expr.mkAppN (constP (auxCtorName' c) lps) (varsAt (o + fo + o') nP ++ args)
+        let puF := fun (i : Nat) (mem' : Mem md) =>
+          let nT := c.teles.getD i 0
+          let idx := fieldIdxAt c i o (fo - i)
+          mkLams (liftTele (teleDoms c i) i o (fo - i))
+            (appImpl (packName mem'.j) (o + fo + nT) idx
+              [appImpl (unpackName mem'.j) (o + fo + nT) idx
+                [Expr.mkAppN (.bvar (nIh + c.nF - 1 - i + nT)) (varsAt 0 nT)]])
         let ls := (List.range c.nF).map fun i =>
           match c.kinds.getD i none with
           | some t' =>
-            if t' ≥ r then
-              let mem' := mems.getD t' default
-              let idx := fieldIdx c i (fo - i)
-              appImpl (packName mem'.j) (o + fo) idx [appImpl (unpackName mem'.j) (o + fo) idx [fieldVar i]]
-            else fieldVar i
+            if t' ≥ r then puF i (mems.getD t' default) else fieldVar i
           | none => fieldVar i
         let rs := (List.range c.nF).map fieldVar
         let moved := (List.range c.nF).filterMap fun i =>
           match c.kinds.getD i none with
           | some t' =>
-            if t' ≥ r then some (i, ihVar i, auxAt fam t' (o + fo) (fieldIdx c i (fo - i)), u) else none
+            if t' ≥ r then
+              let mem' := mems.getD t' default
+              let nT := c.teles.getD i 0
+              let tele := liftTele (teleDoms c i) i o (fo - i)
+              let idx := fieldIdxAt c i o (fo - i)
+              let cod := auxAt fam t' (o + fo + nT) idx
+              let ptPf := Expr.mkAppN (.bvar (nIh - 1 - ihPos c i + nT)) (varsAt 0 nT)
+              let e := mkFunextTele u tele (fieldSorts c i) cod (puF i mem') (fieldVar i) ptPf
+              some (i, e, mkPis tele cod, fieldLevel c i)
+            else none
           | none => none
         congrChain u (auxAt fam c.mem (o + fo) (c.idx.map (·.liftLooseBVars nIh 0))) F ls rs moved
     mkLams (fbs ++ ihbs) body
@@ -1286,7 +1444,10 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
             match c.kinds.getD i none with
             | some t' =>
               if t' ≥ r then
-                appImpl (packName (mems.getD t' default).j) nF (fieldIdx c i (nF - i)) [.bvar (nF - 1 - i)]
+                let nT := c.teles.getD i 0
+                mkLams (liftTele (teleDoms c i) i 0 (nF - i))
+                  (appImpl (packName (mems.getD t' default).j) (nF + nT) (fieldIdx c i (nF - i))
+                    [Expr.mkAppN (.bvar (nF - 1 - i + nT)) (varsAt 0 nT)])
               else .bvar (nF - 1 - i)
             | none => .bvar (nF - 1 - i))))
       (out, heights) := push out heights (modelName c.cname) lps ty value
@@ -1331,7 +1492,10 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
       match c.kinds.getD i none with
       | some t' =>
         if t' ≥ r then
-          appImpl (unpackName (mems.getD t' default).j) (oP + fo) (fieldIdxAt c i oP (fo - i)) [fieldVar i]
+          let nT := c.teles.getD i 0
+          mkLams (liftTele (teleDoms c i) i oP (fo - i))
+            (appImpl (unpackName (mems.getD t' default).j) (oP + fo + nT) (fieldIdxAt c i oP (fo - i))
+              [Expr.mkAppN (.bvar (nIh + c.nF - 1 - i + nT)) (varsAt 0 nT)])
         else fieldVar i
       | none => fieldVar i
     let X := Expr.mkAppN (minVar (o + fo) c.J)
@@ -1350,24 +1514,33 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
           Expr.mkAppN (motVar (o + fo + o') m) (liftAll o' idxC ++ [spineAt o' args])
         let packUnpackOf := fun (i : Nat) =>
           let mem' := mems.getD ((c.kinds.getD i none).getD 0) default
+          let nT := c.teles.getD i 0
+          let tele := liftTele (teleDoms c i) i oP (fo - i)
           let idx := fieldIdxAt c i oP (fo - i)
-          (appImpl (packName mem'.j) (oP + fo) idx [appImpl (unpackName mem'.j) (oP + fo) idx [fieldVar i]],
-           appImpl (packUnpackName mem'.j) (oP + fo) idx [fieldVar i],
-           auxAt fam mem'.tag (oP + fo) idx)
+          let fApp := Expr.mkAppN (.bvar (nIh + c.nF - 1 - i + nT)) (varsAt 0 nT)
+          let cod := auxAt fam mem'.tag (oP + fo + nT) idx
+          let pu := mkLams tele
+            (appImpl (packName mem'.j) (oP + fo + nT) idx
+              [appImpl (unpackName mem'.j) (oP + fo + nT) idx [fApp]])
+          let ptPrf := appImpl (packUnpackName mem'.j) (oP + fo + nT) idx [fApp]
+          (pu,
+           mkFunextTele u tele (fieldSorts c i) cod pu (fieldVar i) ptPrf,
+           mkPis tele cod)
         let rec go (ks : List Nat) (done : List Nat) (acc : Expr md) : Expr md :=
           match ks with
           | [] => acc
           | k :: rest =>
             let (pu, prf, ty) := packUnpackOf k
+            let ℓk := fieldLevel c k
             let args := fun (o' : Nat) (z : Expr md) => (List.range c.nF).map fun i =>
               if i == k then z
               else if done.contains i then (fieldVar i).liftLooseBVars o' 0
               else if packed.contains i then (packUnpackOf i).1.liftLooseBVars o' 0
               else (fieldVar i).liftLooseBVars o' 0
             let motive : Expr md := .lam ty
-              (.lam (mkEq u (ty.liftLooseBVars 1 0) (pu.liftLooseBVars 1 0) (.bvar 0))
+              (.lam (mkEq ℓk (ty.liftLooseBVars 1 0) (pu.liftLooseBVars 1 0) (.bvar 0))
                 (motApp 2 (args 2 (.bvar 1))) bm) bm
-            go rest (done ++ [k]) (mkEqRec ℓ u ty pu motive acc (fieldVar k) prf)
+            go rest (done ++ [k]) (mkEqRec ℓ ℓk ty pu motive acc (fieldVar k) prf)
         go packed [] X
     mkLams (fbs ++ ihbs) body
   let recAllTy := mkPis (prefixBsL ++ [Expr.mkAppN (constP tag lps) (varsAt (M + n) nP),
@@ -1440,25 +1613,40 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         else do
           -- the generalised statement over `(z_k, h_k)` at the packed
           -- positions, innermost base `Eq.refl`
+          let teleOf := fun (o' : Nat) (i : Nat) =>
+            liftTele (teleDoms c i) i (M + n) (nF - i + o')
+          let idxOf := fun (o' : Nat) (i : Nat) =>
+            ((fieldIdxAt c i (M + n) (nF - i)).map rn).map (·.liftLooseBVars o' (c.teles.getD i 0))
+          let fAppOf := fun (o' : Nat) (i : Nat) =>
+            Expr.mkAppN (.bvar (nF - 1 - i + o' + c.teles.getD i 0)) (varsAt 0 (c.teles.getD i 0))
           let uOf := fun (o' : Nat) (i : Nat) =>
             let mem' := mems.getD ((c.kinds.getD i none).getD 0) default
-            let idx := fieldIdx c i (nF - i) |>.map rn |>.map (·.liftLooseBVars (M + n) nF) |> liftAll o'
-            appImpl (unpackName mem'.j) (oP + o') idx [appImpl (packName mem'.j) (oP + o') idx [(Expr.bvar (nF - 1 - i)).liftLooseBVars o' 0]]
-          let eOf := fun (o' : Nat) (i : Nat) =>
-            let mem' := mems.getD ((c.kinds.getD i none).getD 0) default
-            let idx := fieldIdx c i (nF - i) |>.map rn |>.map (·.liftLooseBVars (M + n) nF) |> liftAll o'
-            appImpl (unpackPackName mem'.j) (oP + o') idx [(Expr.bvar (nF - 1 - i)).liftLooseBVars o' 0]
+            let nT := c.teles.getD i 0
+            let idx := idxOf o' i
+            mkLams (teleOf o' i)
+              (appImpl (unpackName mem'.j) (oP + o' + nT) idx
+                [appImpl (packName mem'.j) (oP + o' + nT) idx [fAppOf o' i]])
           let carrOf := fun (o' : Nat) (i : Nat) =>
             let mem' := mems.getD ((c.kinds.getD i none).getD 0) default
-            let idx := fieldIdx c i (nF - i) |>.map rn |>.map (·.liftLooseBVars (M + n) nF) |> liftAll o'
-            carrM mem' (oP + o') idx
-          -- R_k: the aux recursor at `pack f_k` (`_impl.rec … (tag.j e⃗) (pack f_k)`)
+            let nT := c.teles.getD i 0
+            mkPis (teleOf o' i) (carrM mem' (oP + o' + nT) (idxOf o' i))
+          let eOf := fun (o' : Nat) (i : Nat) =>
+            let mem' := mems.getD ((c.kinds.getD i none).getD 0) default
+            let nT := c.teles.getD i 0
+            let idx := idxOf o' i
+            let cod := carrM mem' (oP + o' + nT) idx
+            let ptPf := appImpl (unpackPackName mem'.j) (oP + o' + nT) idx [fAppOf o' i]
+            mkFunextTele u (teleOf o' i) (fieldSorts c i) cod (uOf o' i)
+              ((Expr.bvar (nF - 1 - i)).liftLooseBVars o' 0) ptPf
+          -- R_k: the aux recursor at `pack f_k` (`λ a⃗, _impl.rec … (tag.j e⃗(a⃗)) (pack (f_k a⃗))`)
           let rOf := fun (o' : Nat) (i : Nat) =>
             let mem' := mems.getD ((c.kinds.getD i none).getD 0) default
-            let idx := fieldIdx c i (nF - i) |>.map rn |>.map (·.liftLooseBVars (M + n) nF) |> liftAll o'
-            Expr.mkAppN (constP recAll rlps) (liftAll o' prefixVars ++
-              [Expr.mkAppN (constP (tagCtorName T mem'.tag) lps) (varsAt (oP + o') nP ++ idx),
-               appImpl (packName mem'.j) (oP + o') idx [(Expr.bvar (nF - 1 - i)).liftLooseBVars o' 0]])
+            let nT := c.teles.getD i 0
+            let idx := idxOf o' i
+            mkLams (teleOf o' i)
+              (Expr.mkAppN (constP recAll rlps) (liftAll (o' + nT) prefixVars ++
+                [Expr.mkAppN (constP (tagCtorName T mem'.tag) lps) (varsAt (oP + o' + nT) nP ++ idx),
+                 appImpl (packName mem'.j) (oP + o' + nT) idx [fAppOf o' i]]))
           -- the real-kind ihs through the model recursors
           -- generalisation state: for each packed position, either
           -- `.fixed` (at `f_k, e_k`), `.gen d` (bound `z_k`/`h_k` at
@@ -1481,14 +1669,12 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
                 match c.kinds.getD i none with
                 | some t' =>
                   if t' ≥ r then
-                    let carr := carrOf o' i
                     let mem' := mems.getD t' default
-                    let idx := fieldIdx c i (nF - i) |>.map rn |>.map (·.liftLooseBVars (M + n) nF) |> liftAll o'
-                    some (mkEqRec ℓ u carr (uOf o' i)
-                      (.lam carr
-                        (.lam (mkEq u (carr.liftLooseBVars 1 0) ((uOf o' i).liftLooseBVars 1 0) (.bvar 0))
-                          (Expr.mkAppN (motVar (nF + o' + 2) mem'.tag) (liftAll 2 idx ++ [.bvar 1])) bm) bm)
-                      (rOf o' i) (zOf i) (hOfk i))
+                    let nT := c.teles.getD i 0
+                    let idx := idxOf o' i
+                    some (mkRhsPacked ℓ u (fieldLevel c i) nT (teleOf o' i) idx
+                      (carrM mem' (oP + o' + nT) idx) (carrOf o' i) (uOf o' i) (zOf i)
+                      (rOf o' i) (hOfk i) (motVar (nF + o' + nT + 2) mem'.tag))
                   else some ((ihApp i).liftLooseBVars o' 0)
                 | none => none)
             -- LHS: the unfolded recursor: at a real member the transport
@@ -1504,8 +1690,11 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
               | some _ =>
                 let packOf := fun (o'' : Nat) (i : Nat) (x : Expr md) =>
                   let mem' := mems.getD ((c.kinds.getD i none).getD 0) default
-                  let idx := fieldIdx c i (nF - i) |>.map rn |>.map (·.liftLooseBVars (M + n) nF) |> liftAll (o' + o'')
-                  appImpl (packName mem'.j) (oP + o' + o'') idx [x]
+                  let nT := c.teles.getD i 0
+                  let idx := idxOf (o' + o'') i
+                  mkLams (teleOf (o' + o'') i)
+                    (appImpl (packName mem'.j) (oP + o' + o'' + nT) idx
+                      [Expr.mkAppN (x.liftLooseBVars nT 0) (varsAt 0 nT)])
                 let spineAt := fun (o'' : Nat) (args : List (Expr md)) =>
                   Expr.mkAppN (constP (auxCtorName' c) lps) (varsAt (oP + o' + o'') nP ++ args)
                 let motApp := fun (o'' : Nat) (args : List (Expr md)) =>
@@ -1514,8 +1703,10 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
                   match ks with
                   | [] => acc
                   | k :: rest =>
-                    let auxTyK := auxAt fam ((c.kinds.getD k none).getD 0) (oP + o')
-                      (fieldIdx c k (nF - k) |>.map rn |>.map (·.liftLooseBVars (M + n) nF) |> liftAll o')
+                    let nTk := c.teles.getD k 0
+                    let ℓk := fieldLevel c k
+                    let auxTyK := mkPis (teleOf o' k)
+                      (auxAt fam ((c.kinds.getD k none).getD 0) (oP + o' + nTk) (idxOf o' k))
                     let args := fun (o'' : Nat) (z : Expr md) => (List.range nF).map fun i =>
                       if i == k then z
                       else if packed.contains i then
@@ -1523,19 +1714,21 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
                          else packOf o'' i ((uOf o' i).liftLooseBVars o'' 0))
                       else (Expr.bvar (nF - 1 - i)).liftLooseBVars (o' + o'') 0
                     let motive : Expr md := .lam auxTyK
-                      (.lam (mkEq u (auxTyK.liftLooseBVars 1 0) (packOf 1 k ((uOf o' k).liftLooseBVars 1 0)) (.bvar 0))
+                      (.lam (mkEq ℓk (auxTyK.liftLooseBVars 1 0) (packOf 1 k ((uOf o' k).liftLooseBVars 1 0)) (.bvar 0))
                         (motApp 2 (args 2 (.bvar 1))) bm) bm
                     let mem' := mems.getD ((c.kinds.getD k none).getD 0) default
-                    let idx := fieldIdx c k (nF - k) |>.map rn |>.map (·.liftLooseBVars (M + n) nF) |> liftAll o'
-                    let cp := appImpl (congrPackName mem'.j) (oP + o') idx [uOf o' k, zOf k, hOfk k]
-                    goT rest (done ++ [k]) (mkEqRec ℓ u auxTyK (packOf 0 k (uOf o' k)) motive acc (packOf 0 k (zOf k)) cp)
+                    let cp := if nTk == 0 then
+                        appImpl (congrPackName mem'.j) (oP + o') (idxOf o' k) [uOf o' k, zOf k, hOfk k]
+                      else
+                        congrPackFun ℓk (carrOf o' k) auxTyK (fun d x => packOf d k x) (uOf o' k) (zOf k) (hOfk k)
+                    goT rest (done ++ [k]) (mkEqRec ℓ ℓk auxTyK (packOf 0 k (uOf o' k)) motive acc (packOf 0 k (zOf k)) cp)
                 goT packed [] X
               | none =>
                 let pinsAt := fun (o'' : Nat) => (carrM mem (oP + o' + o'') []).getAppArgs.take mem.pins.length
                 let F := fun (o'' : Nat) (args : List (Expr md)) => Expr.mkAppN (.const c.cname c.clv) (pinsAt o'' ++ args)
                 let ls := (List.range nF).map fun i => if packed.contains i then uOf o' i else (Expr.bvar (nF - 1 - i)).liftLooseBVars o' 0
                 let rs := fieldsG
-                let moved := packed.map fun k => (k, hOfk k, carrOf o' k, u)
+                let moved := packed.map fun k => (k, hOfk k, carrOf o' k, fieldLevel c k)
                 let carr := carrM mem (oP + o') idxCG
                 let chain := congrChain u carr F ls rs moved
                 mkEqRec ℓ u carr (F 0 ls)
@@ -1553,28 +1746,22 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
             | k :: rest =>
               -- J on `e_k` with motive `λ z h, stmt[z_k := z, h_k := h]`
               let carr := carrOf o' k
+              let ℓk := fieldLevel c k
               let zs' := fun (i : Nat) => if i == k then some (Expr.bvar 1) else (zs i).map (·.liftLooseBVars 2 0)
               let hs' := fun (i : Nat) => if i == k then some (Expr.bvar 0) else (hs i).map (·.liftLooseBVars 2 0)
               let (αM, lhsM, rhsM) := stmtAt (o' + 2) zs' hs'
               let motive : Expr md := .lam carr
-                (.lam (mkEq u (carr.liftLooseBVars 1 0) ((uOf o' k).liftLooseBVars 1 0) (.bvar 0))
+                (.lam (mkEq ℓk (carr.liftLooseBVars 1 0) ((uOf o' k).liftLooseBVars 1 0) (.bvar 0))
                   (mkEq ℓ αM lhsM rhsM) bm) bm
               -- the base: position k at `u_k`, `Eq.refl`
               let zsB := fun (i : Nat) => if i == k then some (uOf o' k) else zs i
-              let hsB := fun (i : Nat) => if i == k then some (mkRefl u carr (uOf o' k)) else hs i
-              mkEqRec .zero u carr (uOf o' k) motive (nest rest o' zsB hsB) ((Expr.bvar (nF - 1 - k)).liftLooseBVars o' 0) (eOf o' k)
+              let hsB := fun (i : Nat) => if i == k then some (mkRefl ℓk carr (uOf o' k)) else hs i
+              mkEqRec .zero ℓk carr (uOf o' k) motive (nest rest o' zsB hsB) ((Expr.bvar (nF - 1 - k)).liftLooseBVars o' 0) (eOf o' k)
           let body := nest packed 0 (fun _ => none) (fun _ => none)
           need "iota proof" (Expr.pisToLams (rP + nF) stmt body)
       out := out.push (.thmDecl ⟨iotaName rr.cv.name c.jIn, rlps, stmt⟩ proof)
   -- 10. projection artifacts of structure-like non-Prop real members
   -- (under a LARGE eliminator only: `Mutual.lean` step 7)
-  let genTypes : List (Key md × List LevelParam × Expr md) :=
-    (b.types.map fun t => (modelName t.cv.name, lps, t.cv.type)) ++
-    (b.ctors.map fun c => (modelName c.cv.name, lps, rn c.cv.type))
-  let tbl' : ConstTable md := fun x =>
-    match genTypes.find? (·.1 == x) with
-    | some (_, l, ty) => some (l, ty)
-    | none => ctx.tbl x
   if !isProp && large then
     for m in List.range r do
       let t := b.types.getD m default
@@ -1629,7 +1816,10 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
               match c'.kinds.getD i none with
               | some t' =>
                 if t' ≥ r then
-                  appImpl (unpackName (mems.getD t' default).j) (o + fo) (fieldIdxAt c' i o (fo - i)) [fieldVar i]
+                  let nT := c'.teles.getD i 0
+                  mkLams (liftTele (teleDoms c' i) i o (fo - i))
+                    (appImpl (unpackName (mems.getD t' default).j) (o + fo + nT) (fieldIdxAt c' i o (fo - i))
+                      [Expr.mkAppN (.bvar (nIh + c'.nF - 1 - i + nT)) (varsAt 0 nT)])
                 else fieldVar i
               | none => fieldVar i
             else .const punitUnitName [ℓi]
@@ -1648,7 +1838,17 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
         let pf := match c.kinds.getD i none with
           | some t' =>
             if t' ≥ r then
-              appImpl (unpackPackName (mems.getD t' default).j) nF (fieldIdx c i (nF - i) |>.map rn) [.bvar (nF - 1 - i)]
+              let mem' := mems.getD t' default
+              let nT := c.teles.getD i 0
+              let tele := liftTele (teleDoms c i) i 0 (nF - i)
+              let idx := (fieldIdx c i (nF - i)).map rn
+              let cod := carrM mem' (nF + nT) idx
+              let fApp := Expr.mkAppN (.bvar (nF - 1 - i + nT)) (varsAt 0 nT)
+              let upF := mkLams tele
+                (appImpl (unpackName mem'.j) (nF + nT) idx
+                  [appImpl (packName mem'.j) (nF + nT) idx [fApp]])
+              let ptPf := appImpl (unpackPackName mem'.j) (nF + nT) idx [fApp]
+              mkFunextTele u tele (fieldSorts c i) cod upF (.bvar (nF - 1 - i)) ptPf
             else mkRefl ℓi slot (.bvar (nF - 1 - i))
           | none => mkRefl ℓi slot (.bvar (nF - 1 - i))
         let some pfL := Expr.pisToLams (nP + nF) stmt pf | stop := true; continue

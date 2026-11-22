@@ -133,7 +133,7 @@ end Ixon.Authenticated.Audit
 -- all 5 `@[extern]` methods on `Blake3.Rust.instHasherOpsHasher`.
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
- Address.admissionHash]: 8180 compiled functions; inherited externs 119, implemented_by 1, unsafe 41, csimp 8; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
+ Address.admissionHash]: 8256 compiled functions; inherited externs 119, implemented_by 1, unsafe 41, csimp 8; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -313,7 +313,7 @@ and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, lik
 -- move the tiered closure from 7190 compiled functions and 28 ruled csimps to 7237 and 29.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
 -- Hardened `Runtime.lean` surfaces specialized kernel helpers, ruled overrides, and all 5 `Blake3.Rust` externs.
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 8262 compiled functions; inherited externs 119, implemented_by 0, unsafe 41, csimp 8; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 8340 compiled functions; inherited externs 119, implemented_by 0, unsafe 41, csimp 8; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

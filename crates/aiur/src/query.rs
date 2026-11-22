@@ -1,9 +1,10 @@
 //! Fixed-width query storage, indexed independently for each callable. Keys and
 //! outputs live in flat arenas; hash buckets contain stable row numbers. No
 //! pointer into a hash table is held while recursive calls can grow it.
+use crate::chunks::Chunks;
 use crate::execute::QueryInput;
 use crate::field::{FieldBackend, PrimeField};
-use hashbrown::HashTable;
+use crate::index::{RowIndex, tag};
 use serde::Serialize;
 use std::hash::{Hash, Hasher};
 
@@ -30,6 +31,12 @@ pub struct QueryOutputRef<'a, F = u64> {
   pub multiplicity: u64,
 }
 
+/// Bytes of one storage chunk.
+const CHUNK_BYTES: usize = 1 << 19;
+
+/// Rows a storage chunk is sized for, below [`CHUNK_BYTES`].
+const CHUNK_ROWS: usize = 4096;
+
 #[derive(Clone, Debug)]
 pub(crate) struct QueryTable<B: FieldBackend = PrimeField> {
   budget: crate::budget::Budget,
@@ -38,29 +45,24 @@ pub(crate) struct QueryTable<B: FieldBackend = PrimeField> {
   input_width: usize,
   output_width: usize,
   stride: usize,
-  rows: Vec<Vec<B::Element>>,
+  rows: Chunks<B::Element>,
   counts: Vec<u64>,
   // Honest heights of a recursive function's rows (depth pass), when tracked.
   track_depth: bool,
   depths: Vec<u64>,
-  chunk_shift: u32,
-  chunk_mask: usize,
-  hashes: Vec<u64>,
-  index: HashTable<usize>,
+  index: RowIndex,
   // A bounded front index for dense unary keys (especially ROM addresses).
   // Sparse or large keys still use the exact hash index. Entries are row IDs,
   // including pending rows, so this cannot bypass cycle detection.
-  dense_index: Vec<usize>,
+  dense_index: Vec<u32>,
 }
 
 impl<B: FieldBackend> QueryTable<B> {
   fn new(input_width: usize, output_width: usize, field: B) -> Self {
     let stride = input_width + output_width;
-    // At most 4096 rows / 512 KiB per chunk (one full row if wider).
-    let chunk_shift = (524288 / size_of::<B::Element>().max(1) / stride.max(1))
-      .max(1)
-      .ilog2()
-      .min(12);
+    let bytes = size_of::<B::Element>().max(1);
+    let chunk =
+      (CHUNK_ROWS * stride.max(1) * bytes).next_power_of_two().min(CHUNK_BYTES);
     Self {
       budget: Default::default(),
       field,
@@ -71,25 +73,24 @@ impl<B: FieldBackend> QueryTable<B> {
       input_width,
       output_width,
       stride,
-      chunk_shift,
-      chunk_mask: (1 << chunk_shift) - 1,
-      rows: vec![],
-      hashes: vec![],
-      index: HashTable::new(),
+      rows: Chunks::new(stride, chunk),
+      index: RowIndex::default(),
       dense_index: vec![],
     }
   }
 
+  pub(crate) fn drop_prefetched(&mut self) {
+    self.rows.drop_prefetched();
+  }
+
   #[inline(always)]
   fn row(&self, row: usize) -> &[B::Element] {
-    let start = (row & self.chunk_mask) * self.stride;
-    &self.rows[row >> self.chunk_shift][start..start + self.stride]
+    self.rows.row(row)
   }
 
   #[inline(always)]
   fn row_mut(&mut self, row: usize) -> &mut [B::Element] {
-    let start = (row & self.chunk_mask) * self.stride;
-    &mut self.rows[row >> self.chunk_shift][start..start + self.stride]
+    self.rows.row_mut(row)
   }
 
   /// Recorded rows in storage order for bulk transfer: chunks of
@@ -97,7 +98,7 @@ impl<B: FieldBackend> QueryTable<B> {
   /// maps keep their rows elsewhere and have none here.
   #[cfg(feature = "cuda")]
   pub(crate) fn row_chunks(&self) -> (&[Vec<B::Element>], usize, usize) {
-    (&self.rows, self.stride, 1 << self.chunk_shift)
+    (self.rows.chunks(), self.stride, self.rows.rows_per_chunk())
   }
 
   /// Each recorded row's multiplicity; zero marks a pending query.
@@ -164,12 +165,16 @@ impl<B: FieldBackend> QueryTable<B> {
       && self.input_width == 1
       && let Ok(key) = usize::try_from(self.field.to_u64(*key))
       && let Some(&row) = self.dense_index.get(key)
-      && row != usize::MAX
+      && row != u32::MAX
     {
-      return (0, Some(row));
+      return (0, Some(row as usize));
     }
     let hash = hash_words(args);
-    (hash, self.index.find(hash, |&row| self.input(row) == args).copied())
+    let found = self
+      .index
+      .find(tag(hash), |row| self.input(row as usize) == args)
+      .map(|row| row as usize);
+    (hash, found)
   }
 
   /// A zero count marks a pending query, which must never supply an output.
@@ -182,35 +187,27 @@ impl<B: FieldBackend> QueryTable<B> {
     debug_assert!(self.static_map.is_none());
     debug_assert_eq!(args.len(), self.input_width);
     let row = self.len();
-    if row & self.chunk_mask == 0 {
-      self.budget.vector(&self.rows, 1)?;
-      self.budget.reserve(
-        self
-          .stride
-          .saturating_mul(self.chunk_mask + 1)
-          .saturating_mul(size_of::<B::Element>()),
-      )?;
-      self.rows.push(Vec::with_capacity(self.stride * (self.chunk_mask + 1)));
-    }
-    let values = self.rows.last_mut().unwrap();
-    values.extend_from_slice(args);
-    values.resize(values.len() + self.output_width, self.field.zero());
+    let row_u32 = self.budget.row(
+      row,
+      self.stride.saturating_mul(size_of::<B::Element>()).saturating_add(16),
+    )?;
+    self.rows.reserve(&self.budget)?;
     self.budget.vector(&self.counts, 1)?;
-    self.budget.vector(&self.hashes, 1)?;
-    self.budget.hash::<usize>(self.index.len(), self.index.capacity())?;
-    self.counts.push(0);
     if self.track_depth {
       self.budget.vector(&self.depths, 1)?;
+    }
+    self.budget.index(self.index.growth())?;
+    self.rows.push_padded(args, self.field.zero());
+    self.counts.push(0);
+    if self.track_depth {
       self.depths.push(0);
     }
-    self.hashes.push(hash);
-    let hashes = &self.hashes;
-    self.index.insert_unique(hash, row, |&row| hashes[row]);
+    self.index.insert(tag(hash), row_u32);
     if let [key] = args
       && let Ok(key) = usize::try_from(self.field.to_u64(*key))
     {
       // Bound space by observed table size, with a small startup allowance
-      // and an absolute 8 MiB ceiling on 64-bit hosts. Never allocate in
+      // and an absolute 4 MiB ceiling on 64-bit hosts. Never allocate in
       // proportion to an arbitrary field element supplied as a key.
       let limit = row.saturating_mul(2).clamp(64, 1 << 20);
       if key < limit {
@@ -220,9 +217,9 @@ impl<B: FieldBackend> QueryTable<B> {
           self.budget.vector(&self.dense_index, extra)?;
           self
             .dense_index
-            .resize((key + 1).next_power_of_two().min(limit), usize::MAX);
+            .resize((key + 1).next_power_of_two().min(limit), u32::MAX);
         }
-        self.dense_index[key] = row;
+        self.dense_index[key] = row_u32;
       }
     }
     Ok(row)
@@ -263,7 +260,7 @@ impl<B: FieldBackend> QueryTable<B> {
     if let Some(map) = &self.static_map {
       return map.counts.len();
     }
-    self.hashes.len()
+    self.index.len()
   }
 
   pub(crate) fn widths(&self) -> (usize, usize) {
@@ -302,6 +299,11 @@ impl<B: FieldBackend> QueryMap<B> {
     Self {
       tables: widths.map(|(a, b)| QueryTable::new(a, b, field)).collect(),
       budget: Default::default(),
+    }
+  }
+  pub(crate) fn drop_prefetched(&mut self) {
+    for table in &mut self.tables {
+      table.drop_prefetched();
     }
   }
   /// Track honest heights for the functions whose SCC `sccs` names.

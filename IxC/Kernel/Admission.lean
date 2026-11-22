@@ -125,7 +125,7 @@ instance : ToString Error where
     | .preludeCopy => "prelude copy: the stream's reading leaves other entries than the prelude's at a prelude key"
     | .kernel e p => s!"kernel at {p}: {e}"
     | .axiomRoleUnbound r => s!"user axioms: the role table leaves {repr r} unbound; a check that \
-        admits user axioms requires sorryAx, propext and Classical.choice bound"
+        admits user axioms requires all axiom roles bound"
 
 /-- The byte stage's failures, unchanged. -/
 def Error.ofBytes : ByteError → Error
@@ -377,11 +377,17 @@ def preparedUserAxioms (decls : Array (Ix.Kernel.Declaration .anon)) :
     List (Ix.Kernel.ConstantVal .anon) :=
   Ix.Kernel.userAxiomsOfDecls decls.toList
 
-/-- **The roles a check that admits user axioms requires bound**: `sorryAx`,
-`propext` and `Classical.choice`. Left unbound, the role's own axiom (Lean's
-`sorryAx`, say) reads under an input key, which is eligible, and would be
-admitted as a user axiom. -/
-def userAxiomRoles : List Ix.Kernel.Role := [.sorryAx, .propext, .choice]
+/-- **The roles a check that admits user axioms requires bound**: every role in
+`Role.all` whose specification is an axiom (`Role.spec` is `.axiom`: `propext`,
+`Classical.choice`, `sorryAx`, `Lean.trustCompiler`, and the native-reduction
+axioms, plus any future axiom role). Auto-derived from `Role.all` so no axiom
+role can be omitted. Left unbound, the role's own axiom reads under an input
+key, which is eligible, and would be admitted as a user axiom. -/
+def userAxiomRoles : List Ix.Kernel.Role :=
+  Ix.Kernel.Role.all.filter fun r =>
+    match (Ix.Kernel.Role.spec (md := .anon)) r with
+    | .axiom .. => true
+    | _ => false
 
 /-- **The role table's admission under an axiom policy**: nothing more under
 `strict`; under `allowUser`, every role of `userAxiomRoles` bound, else the

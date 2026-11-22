@@ -159,7 +159,7 @@ fn unknown_tags_and_out_of_range_values_are_rejected() {
   let checks: [(&[u8], Check, &str); 6] = [
     (&[4], |r| ty(r).map(drop), "type tag 4"),
     (&[5], |r| io_type(r).map(drop), "IO type tag 5"),
-    (&[14], |r| instruction(r).map(drop), "instruction tag 14"),
+    (&[15], |r| instruction(r).map(drop), "instruction tag 15"),
     (&[3, 0, 4, 0, 0], |r| instruction(r).map(drop), "operator tag 4"),
     (&[2, 1, 0, 5], |r| poly(r).map(drop), "polynomial tag 5"),
     (&[8], |r| action(r).map(drop), "action tag 8"),

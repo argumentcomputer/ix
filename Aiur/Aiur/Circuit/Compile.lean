@@ -266,6 +266,11 @@ mutual
         if !left.type.pointerFree program.enums then throw .invalidShape
         constrainValue enable left right
         return .tuple []
+    | .ptrEq left right =>
+        let ⟨.ptr t₁, [a₁]⟩ ← lowerExpr program function locals enable left | throw .invalidShape
+        let ⟨.ptr t₂, [a₂]⟩ ← lowerExpr program function locals enable right | throw .invalidShape
+        if t₁ ≠ t₂ then throw .invalidShape
+        return .field (← equalIndicator (.sub a₁ a₂))
     | .binary op left right =>
         let left ← asField (← lowerExpr program function locals enable left)
         let right ← asField (← lowerExpr program function locals enable right)

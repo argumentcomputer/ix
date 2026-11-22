@@ -53,6 +53,12 @@ module Goldilocks {
       iv
     }
 
+  inline fn gl_inv_nonzero(x: Goldilocks::Goldilocks) -> Goldilocks::Goldilocks {
+      let iv = hint::<Field>("goldilocks.inverse", x);
+      assert_eq!(x * iv, 1);
+      iv
+    }
+
   inline fn eg_add(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
       [a[0] + b[0], a[1] + b[1]]
     }
@@ -78,8 +84,19 @@ module Goldilocks {
       [a[0] * ninv, (0 - a[1]) * ninv]
     }
 
+  inline fn eg_inv_nonzero(a: ExtGoldilocks) -> ExtGoldilocks {
+      let norm = (a[0] * a[0]) - (7 * (a[1] * a[1]));
+      let ninv = hint::<Field>("goldilocks.inverse", norm);
+      assert_eq!(norm * ninv, 1);
+      [a[0] * ninv, (0 - a[1]) * ninv]
+    }
+
   inline fn eg_div(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
       eg_mul(a, eg_inverse(b))
+    }
+
+  inline fn eg_div_nonzero(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
+      eg_mul(a, eg_inv_nonzero(b))
     }
 
   inline fn eg_eq(a: ExtGoldilocks, b: ExtGoldilocks) -> Field {

@@ -24,6 +24,9 @@ use multi_stark::{
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_BACKEND_ID: AtomicU64 = AtomicU64::new(1);
 
 pub mod batch;
 #[cfg(feature = "cuda")]
@@ -40,7 +43,9 @@ mod tables;
 mod tests;
 mod witness;
 pub use batch::{StageOne, StreamPlan, VerifyingKey};
+pub use rom::{RomLayout, rom_lanes};
 pub use statistics::{CircuitMeasurements, ExecutionStatistics};
+pub use witness::ValidatedRecord;
 
 /// Conversion at this concrete proving adapter only. The native configuration
 /// writes its existing field values directly into multi-stark's matrices.
@@ -160,6 +165,7 @@ pub struct CircuitStatistics {
 /// Set up once, then prove many records. Only this adapter selects Goldilocks;
 /// the compiler, circuit export and ordinary execution remain field generic.
 pub struct Backend<'p, 'a, B: WitnessField = PrimeField> {
+  id: u64,
   plan: &'p TracePlan<'a, B>,
   system: System<GoldilocksBlake3Config>,
   key: ProverKey<GoldilocksBlake3Config>,
@@ -167,6 +173,8 @@ pub struct Backend<'p, 'a, B: WitnessField = PrimeField> {
   tables: Vec<tables::FixedTable>,
   rom: rom::Rom,
   lookup_plans: Vec<witness::LookupPlan>,
+  member_lookup_plans: Vec<witness::MemberLookupPlan>,
+  circuit_chips: Vec<Vec<usize>>,
   members: Vec<Vec<usize>>,
   placements: Vec<grouping::Placement>,
   parameters: Parameters,
@@ -231,7 +239,15 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
   ) -> Result<Self, String> {
-    Self::with_memory_policy(plan, parameters, false)
+    Self::new_with_rom_layout(plan, parameters, RomLayout::Vectorized)
+  }
+
+  pub fn new_with_rom_layout(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    rom_layout: RomLayout,
+  ) -> Result<Self, String> {
+    Self::with_memory_policy(plan, parameters, false, rom_layout)
   }
 
   /// Batch proofs close contiguous memory ranges through authenticated
@@ -240,7 +256,15 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
   ) -> Result<Self, String> {
-    Self::with_memory_policy(plan, parameters, true)
+    Self::for_batch_with_rom_layout(plan, parameters, RomLayout::Vectorized)
+  }
+
+  pub fn for_batch_with_rom_layout(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    rom_layout: RomLayout,
+  ) -> Result<Self, String> {
+    Self::with_memory_policy(plan, parameters, true, rom_layout)
   }
 
   /// Reconstruct the trusted batch system for verification or key export.
@@ -250,7 +274,19 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
   ) -> Result<Self, String> {
-    Self::build_with_lookup_policy(plan, parameters, true, None, false)
+    Self::for_batch_verification_with_rom_layout(
+      plan,
+      parameters,
+      RomLayout::Vectorized,
+    )
+  }
+
+  pub fn for_batch_verification_with_rom_layout(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    rom_layout: RomLayout,
+  ) -> Result<Self, String> {
+    Self::assemble(plan, parameters, true, rom_layout, None, false, true, true)
   }
 
   /// Build circuit shapes, widths and lookup groupings without committing
@@ -261,7 +297,16 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
   ) -> Result<Self, String> {
-    Self::assemble(plan, parameters, true, None, false, true, false)
+    Self::assemble(
+      plan,
+      parameters,
+      true,
+      RomLayout::Vectorized,
+      None,
+      false,
+      true,
+      false,
+    )
   }
 
   /// Like [`Self::for_statistics`], but honors prover lookup and device
@@ -273,7 +318,16 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     device: Option<i32>,
   ) -> Result<Self, String> {
     let gpu_lookup_only = device_lookups()?;
-    Self::assemble(plan, parameters, true, device, gpu_lookup_only, true, false)
+    Self::assemble(
+      plan,
+      parameters,
+      true,
+      RomLayout::Vectorized,
+      device,
+      gpu_lookup_only,
+      true,
+      false,
+    )
   }
 
   /// Explicit CUDA placement. CPU builds reject a requested device instead of
@@ -283,7 +337,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     parameters: Parameters,
     device: Option<i32>,
   ) -> Result<Self, String> {
-    Self::build(plan, parameters, true, device, true)
+    Self::build(plan, parameters, true, RomLayout::Vectorized, device, true)
   }
 
   /// [`Self::new`] without the security floor, for tests whose toy parameters
@@ -294,7 +348,21 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
   ) -> Result<Self, String> {
-    Self::build(plan, parameters, false, None, false)
+    Self::new_below_floor_with_rom_layout(
+      plan,
+      parameters,
+      RomLayout::Vectorized,
+    )
+  }
+
+  /// [`Self::new_with_rom_layout`] without the security floor, for tests.
+  #[doc(hidden)]
+  pub fn new_below_floor_with_rom_layout(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    rom_layout: RomLayout,
+  ) -> Result<Self, String> {
+    Self::build(plan, parameters, false, rom_layout, None, false)
   }
 
   /// [`Self::for_batch`] without the security floor, for tests whose toy
@@ -305,21 +373,36 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
   ) -> Result<Self, String> {
-    Self::build(plan, parameters, true, None, false)
+    Self::for_batch_below_floor_with_rom_layout(
+      plan,
+      parameters,
+      RomLayout::Vectorized,
+    )
+  }
+
+  #[doc(hidden)]
+  pub fn for_batch_below_floor_with_rom_layout(
+    plan: &'p TracePlan<'a, B>,
+    parameters: Parameters,
+    rom_layout: RomLayout,
+  ) -> Result<Self, String> {
+    Self::build(plan, parameters, true, rom_layout, None, false)
   }
 
   fn with_memory_policy(
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
     segmented_memory: bool,
+    rom_layout: RomLayout,
   ) -> Result<Self, String> {
-    Self::build(plan, parameters, segmented_memory, None, true)
+    Self::build(plan, parameters, segmented_memory, rom_layout, None, true)
   }
 
   fn build(
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
     segmented_memory: bool,
+    rom_layout: RomLayout,
     device: Option<i32>,
     floor: bool,
   ) -> Result<Self, String> {
@@ -329,6 +412,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       plan,
       parameters,
       segmented_memory,
+      rom_layout,
       device,
       gpu_lookup_only,
       floor,
@@ -342,28 +426,11 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Ok(backend)
   }
 
-  fn build_with_lookup_policy(
-    plan: &'p TracePlan<'a, B>,
-    parameters: Parameters,
-    segmented_memory: bool,
-    device: Option<i32>,
-    gpu_lookup_only: bool,
-  ) -> Result<Self, String> {
-    Self::assemble(
-      plan,
-      parameters,
-      segmented_memory,
-      device,
-      gpu_lookup_only,
-      true,
-      true,
-    )
-  }
-
   fn assemble(
     plan: &'p TracePlan<'a, B>,
     parameters: Parameters,
     segmented_memory: bool,
+    rom_layout: RomLayout,
     device: Option<i32>,
     gpu_lookup_only: bool,
     floor: bool,
@@ -395,7 +462,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     if plan.program.field.modulus() != Val::ORDER_U64 {
       return Err("multi-stark adapter requires the Goldilocks field".into());
     }
-    let rom = rom::Rom::new(plan);
+    let rom = rom::Rom::new(plan, rom_layout);
     let mut inputs = vec![];
     let mut names = vec![];
     let placements = grouping::build(plan, &rom, &mut inputs, &mut names)?;
@@ -459,11 +526,21 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     } else {
       vec![]
     };
+    let member_lookup_plans = if commit {
+      witness::compile_member_lookup_plans(&placements, &system.circuits)?
+    } else {
+      vec![]
+    };
+    let mut circuit_chips = vec![vec![]; function_circuits];
+    for (chip, placement) in placements.iter().enumerate() {
+      circuit_chips[placement.circuit].push(chip);
+    }
     let mut members = vec![vec![]; function_circuits];
     for (function, &chip) in plan.members.iter().enumerate() {
       members[placements[chip].circuit].push(function);
     }
     let backend = Self {
+      id: NEXT_BACKEND_ID.fetch_add(1, Ordering::Relaxed),
       plan,
       system,
       key,
@@ -471,6 +548,8 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       tables,
       rom,
       lookup_plans,
+      member_lookup_plans,
+      circuit_chips,
       members,
       placements,
       parameters,
@@ -586,6 +665,10 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
 
   pub const fn parameters(&self) -> Parameters {
     self.parameters
+  }
+
+  pub const fn rom_layout(&self) -> RomLayout {
+    self.rom.layout
   }
 
   pub fn statistics(&self) -> Vec<CircuitStatistics> {
@@ -908,7 +991,10 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     let mut degrees = degrees.iter();
     let mut budget = 1u64; // one public root
     let mut rows = 0u64;
-    for (circuit, &on) in self.system.circuits.iter().zip(active) {
+    let rom_start = self.members.len() + self.tables.len();
+    for (ci, (circuit, &on)) in
+      self.system.circuits.iter().zip(active).enumerate()
+    {
       if !on {
         if circuit.preprocessed_height != 0 {
           return Err("inactive fixed table".into());
@@ -926,10 +1012,16 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       {
         return Err("fixed table height mismatch".into());
       }
-      rows += height;
-      if rows > MAX_BATCH_ROWS {
-        return Err("trace rows exceed the batch row bound (2^39)".into());
-      }
+      let weight = if ci >= rom_start {
+        self.rom.lanes_for_width(self.rom.widths[ci - rom_start]) as u64
+      } else {
+        1
+      };
+      rows = height
+        .checked_mul(weight)
+        .and_then(|w| rows.checked_add(w))
+        .filter(|&r| r <= MAX_BATCH_ROWS)
+        .ok_or("trace rows exceed the batch row bound (2^39)")?;
       budget = height
         .checked_mul(circuit.num_lookups.max(1) as u64)
         .and_then(|n| budget.checked_add(n))

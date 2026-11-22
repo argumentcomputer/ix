@@ -56,9 +56,149 @@ fn lean_mirror_matches() {
     stark_key::security::MIN_CONJECTURED_BITS
   );
   assert_eq!(
+    field("minProvableUdBits"),
+    stark_key::security::MIN_PROVABLE_UD_BITS
+  );
+  assert_eq!(field("minJohnsonBits"), stark_key::security::MIN_JOHNSON_BITS);
+  assert_eq!(
+    field("johnsonSlackMillibitsPerQuery"),
+    stark_key::security::JOHNSON_SLACK_MILLIBITS_PER_QUERY
+  );
+  assert_eq!(
     field("maxProofOfWorkBits"),
     stark_key::security::MAX_PROOF_OF_WORK_BITS
   );
+
+  // Extract `| k => some v` tables from `def <fn_name>` in `Parameters.lean`.
+  let table_entry = |fn_name: &str, key: usize| -> usize {
+    let mut in_fn = false;
+    let mut found = None;
+    let prefix = format!("| {key} => some ");
+    for line in source.lines() {
+      let trimmed = line.trim();
+      if trimmed.starts_with(&format!("def {fn_name} ")) {
+        in_fn = true;
+        continue;
+      }
+      if in_fn {
+        if trimmed.is_empty()
+          || trimmed.starts_with("def ")
+          || trimmed.starts_with("theorem ")
+        {
+          break;
+        }
+        if let Some(rest) = trimmed.strip_prefix(&prefix) {
+          let val: usize = rest
+            .split(|c: char| !c.is_ascii_digit())
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+          assert!(found.replace(val).is_none(), "{fn_name}({key}) set twice");
+        }
+      }
+    }
+    found.unwrap_or_else(|| panic!("{fn_name}({key}) not found in {path}"))
+  };
+
+  for lb in *stark_key::security::LOG_BLOWUP_RANGE.start()
+    ..=*stark_key::security::LOG_BLOWUP_RANGE.end()
+  {
+    assert_eq!(
+      table_entry("udMillibitsPerQuery", lb),
+      stark_key::security::ud_millibits_per_query(lb).unwrap(),
+      "udMillibitsPerQuery mismatch at log_blowup={lb}"
+    );
+    assert_eq!(
+      table_entry("minQueriesForLogBlowup", lb),
+      stark_key::security::min_queries_for_log_blowup(lb).unwrap(),
+      "minQueriesForLogBlowup mismatch at log_blowup={lb}"
+    );
+  }
+
+  // Verify `meetsSecurityFloor` wires all mirrored floors and agrees with
+  // `stark_key::security::check` on boundary cases including `(4, 55, 0)` and `(4, 52, 32)`.
+  let floor_section = source
+    .split("def meetsSecurityFloor")
+    .nth(1)
+    .expect("meetsSecurityFloor missing");
+  let floor_body = floor_section.split("theorem ").next().unwrap();
+  for required in [
+    "commitment.capHeight == 0",
+    "fri.logFinalPolyLen == 0",
+    "fri.maxLogArity == 1",
+    "minQueriesForLogBlowup",
+    "conjecturedSecurityBits",
+    "provableUdMillibits",
+    "minProvableUdBits",
+    "johnsonMillibits",
+    "minJohnsonBits",
+  ] {
+    assert!(
+      floor_body.contains(required),
+      "meetsSecurityFloor in {path} is missing {required}"
+    );
+  }
+
+  let min_conj = field("minConjecturedSecurityBits");
+  let min_ud = field("minProvableUdBits");
+  let min_johnson = field("minJohnsonBits");
+  let max_pow = field("maxProofOfWorkBits");
+  let johnson_slack = field("johnsonSlackMillibitsPerQuery");
+  let lean_meets_floor =
+    |lb: usize, q: usize, cpow: usize, qpow: usize| -> bool {
+      if !(1..=4).contains(&lb) || q == 0 || cpow > max_pow || qpow > max_pow {
+        return false;
+      }
+      let min_q = table_entry("minQueriesForLogBlowup", lb);
+      let ud_rate = table_entry("udMillibitsPerQuery", lb);
+      let conj = lb * q + qpow;
+      let ud_mb = q * ud_rate + qpow * 1000;
+      let johnson_mb = (lb * 500 - johnson_slack) * q + qpow * 1000;
+      q >= min_q
+        && conj >= min_conj
+        && ud_mb >= min_ud * 1000
+        && johnson_mb >= min_johnson * 1000
+    };
+
+  for (lb, q, cpow, qpow, expected) in [
+    (2, 100, 0, 20, true),   // default
+    (1, 220, 0, 0, true),    // blowup 1 floor
+    (2, 118, 0, 0, true),    // blowup 2 floor
+    (3, 73, 0, 20, true),    // blowup 3 floor
+    (4, 66, 0, 20, true),    // blowup 4 floor with PoW
+    (4, 88, 0, 0, true),     // blowup 4 floor without PoW
+    (4, 55, 0, 0, false),    // 220 conjectured, 50.2 UD (rejected)
+    (4, 52, 0, 32, false),   // below query floor 53 (rejected)
+    (2, 110, 0, 0, false),   // 220 conjectured, 74.6 UD (rejected)
+    (3, 67, 0, 20, false),   // 221 conjectured, 75.6 UD (rejected)
+    (4, 87, 0, 0, false),    // 79.3 UD (rejected)
+    (2, 99, 0, 20, false),   // 218 conjectured (rejected)
+    (2, 100, 0, 19, false),  // 219 conjectured (rejected)
+    (2, 100, 33, 20, false), // commit PoW > 32 (rejected)
+  ] {
+    let rust_ok = Parameters {
+      log_blowup: lb,
+      num_queries: q,
+      commit_proof_of_work_bits: cpow,
+      query_proof_of_work_bits: qpow,
+    }
+    .check()
+    .is_ok();
+    let lean_ok = lean_meets_floor(lb, q, cpow, qpow);
+    assert_eq!(
+      rust_ok, expected,
+      "Rust floor mismatch for ({lb}, {q}, {cpow}, {qpow})"
+    );
+    assert_eq!(
+      lean_ok, expected,
+      "Lean floor mismatch for ({lb}, {q}, {cpow}, {qpow})"
+    );
+    assert_eq!(
+      lean_ok, rust_ok,
+      "Lean/Rust parity mismatch for ({lb}, {q}, {cpow}, {qpow})"
+    );
+  }
 }
 
 #[test]
@@ -75,6 +215,20 @@ fn backends_reject_parameters_below_the_floor() {
       ..Parameters::DEFAULT
     },
     Parameters { commit_proof_of_work_bits: 33, ..parameters() },
+    // 220 conjectured bits, but only 50.2 provable UD bits (HIGH-8).
+    Parameters {
+      log_blowup: 4,
+      num_queries: 55,
+      commit_proof_of_work_bits: 0,
+      query_proof_of_work_bits: 0,
+    },
+    // 220 conjectured bits, but only 74.6 provable UD bits.
+    Parameters {
+      log_blowup: 2,
+      num_queries: 110,
+      commit_proof_of_work_bits: 0,
+      query_proof_of_work_bits: 0,
+    },
   ];
   for p in weak {
     let error = Backend::new(&plan, p).err().expect("accepted weak parameters");
@@ -101,7 +255,7 @@ fn proofs_are_bound_to_their_parameters() {
   let base = parameters();
   let variants = [
     base,
-    Parameters { log_blowup: 2, num_queries: 110, ..base },
+    Parameters { log_blowup: 2, num_queries: 118, ..base },
     Parameters { num_queries: 221, ..base },
     Parameters { commit_proof_of_work_bits: 1, ..base },
     Parameters { query_proof_of_work_bits: 1, ..base },

@@ -138,16 +138,6 @@ def expr_lbr : SpecFn := fun c args h r h' calls =>
       ∃ b : Nat, r = .field (b : F) ∧ b ≤ idxBound ∧ b ≤ k + d ∧ IdxLt h b e ∧
         (∀ b', b' < b → ¬ IdxLt h b' e) ∧ LbrLe c h e k E b
 
-/-- `KernelSubst::expr_lbr_let(ty, val, body)`: `expr_lbr` of `Let(ty, val, body)` from its
-components (the body under one more binder): the least `b` bounding the type's and the value's
-indices, and the body's by `b + 1`. -/
-def expr_lbr_let : SpecFn := fun c args h r h' calls =>
-  ∀ ty val body, args = [ty, val, body] → CoreGood c calls → h' = h ∧
-    ∀ d Γ k T V B, c.tmk d Γ k h T ty → c.tmk d Γ k h V val → c.tmk d Γ (k + 1) h B body →
-      ∃ b : Nat, r = .field (b : F) ∧ b ≤ idxBound ∧ b ≤ k + d ∧
-        IdxLt h b ty ∧ IdxLt h b val ∧ IdxLt h (b + 1) body ∧
-        ∀ b', b' < b → ¬ (IdxLt h b' ty ∧ IdxLt h b' val ∧ IdxLt h (b' + 1) body)
-
 /-- `KernelSubst::lbr_max(a, b)`: the maximum of two counts below `2^32` (the comparison fails
 otherwise). -/
 def lbr_max : SpecFn := fun c args h r h' calls =>
@@ -211,23 +201,6 @@ def expr_has_bvar_at : SpecFn := fun c args h r h' calls =>
     (r = .field 0 ∨ r = .field 1) ∧
     (r = .field 0 → ∀ d Γ k E, c.tmk d Γ k h E e → NoIdx h (ZMod.val j) (ZMod.val j + 1) e)
 
-/-- `KernelSubst::expr_has_bvar_at_binder(ty, body, depth)`: from a binder's components. -/
-def expr_has_bvar_at_binder : SpecFn := fun c args h r h' calls =>
-  ∀ ty body (j : F), args = [ty, body, .field j] → CoreGood c calls → h' = h ∧
-    (r = .field 0 ∨ r = .field 1) ∧
-    (r = .field 0 → ∀ d Γ k T B, c.tmk d Γ k h T ty → c.tmk d Γ (k + 1) h B body →
-      NoIdx h (ZMod.val j) (ZMod.val j + 1) ty ∧
-      NoIdx h (ZMod.val j + 1) (ZMod.val j + 2) body)
-
-/-- `KernelSubst::expr_has_bvar_at_let(ty, val, body, depth)`: from a let's components. -/
-def expr_has_bvar_at_let : SpecFn := fun c args h r h' calls =>
-  ∀ ty val body (j : F), args = [ty, val, body, .field j] → CoreGood c calls → h' = h ∧
-    (r = .field 0 ∨ r = .field 1) ∧
-    (r = .field 0 → ∀ d Γ k T V B, c.tmk d Γ k h T ty → c.tmk d Γ k h V val →
-      c.tmk d Γ (k + 1) h B body →
-      NoIdx h (ZMod.val j) (ZMod.val j + 1) ty ∧ NoIdx h (ZMod.val j) (ZMod.val j + 1) val ∧
-      NoIdx h (ZMod.val j + 1) (ZMod.val j + 2) body)
-
 /-! ## The smallest free index -/
 
 /-- `KernelSubst::expr_glb(e, cutoff)`, at a cutoff below `2^32`: **a lower bound `g` on the
@@ -239,17 +212,6 @@ def expr_glb : SpecFn := fun c args h r h' calls =>
   ∀ e (cut : F), args = [e, .field cut] → CoreGood c calls → ZMod.val cut < 4294967296 → h' = h ∧
     ∃ g : Nat, r = .field (g : F) ∧ g < 4294967296 ∧
       ∀ d Γ E, c.tmk d Γ (ZMod.val cut) h E e → NoIdx h (ZMod.val cut) (ZMod.val cut + g) e
-
-/-- `KernelSubst::expr_glb_let(ty, val, body, cutoff)`: from a let's components. -/
-def expr_glb_let : SpecFn := fun c args h r h' calls =>
-  ∀ ty val body (cut : F), args = [ty, val, body, .field cut] → CoreGood c calls →
-    ZMod.val cut + 1 < 4294967296 → h' = h ∧
-    ∃ g : Nat, r = .field (g : F) ∧ g < 4294967296 ∧
-      ∀ d Γ T V B, c.tmk d Γ (ZMod.val cut) h T ty → c.tmk d Γ (ZMod.val cut) h V val →
-        c.tmk d Γ (ZMod.val cut + 1) h B body →
-        NoIdx h (ZMod.val cut) (ZMod.val cut + g) ty ∧
-        NoIdx h (ZMod.val cut) (ZMod.val cut + g) val ∧
-        NoIdx h (ZMod.val cut + 1) (ZMod.val cut + 1 + g) body
 
 /-! ## Lifting and lowering -/
 
@@ -404,10 +366,10 @@ def expr_inst_levels_walk : SpecFn := fun c args h r h' calls =>
 
 /-- The functions of the family. -/
 inductive Fn where
-  | expr_lbr | expr_lbr_let | lbr_max | lbr_dec | lbr_min
+  | expr_lbr | lbr_max | lbr_dec | lbr_min
   | has_bvar_in_range | has_bvar_in_range_bvar | has_bvar_in_range_binder | has_bvar_in_range_let
-  | expr_has_bvar_at | expr_has_bvar_at_binder | expr_has_bvar_at_let
-  | expr_glb | expr_glb_let
+  | expr_has_bvar_at
+  | expr_glb
   | expr_lift | expr_lift_let
   | expr_lower | expr_lower_let
   | expr_inst1 | expr_inst1_let
@@ -419,7 +381,6 @@ inductive Fn where
 /-- The symbol `ObsFn` names each function by. -/
 def Fn.name : Fn → String
   | .expr_lbr => "KernelSubst::expr_lbr"
-  | .expr_lbr_let => "KernelSubst::expr_lbr_let"
   | .lbr_max => "KernelSubst::lbr_max"
   | .lbr_dec => "KernelSubst::lbr_dec"
   | .lbr_min => "KernelSubst::lbr_min"
@@ -428,10 +389,7 @@ def Fn.name : Fn → String
   | .has_bvar_in_range_binder => "KernelSubst::has_bvar_in_range_binder"
   | .has_bvar_in_range_let => "KernelSubst::has_bvar_in_range_let"
   | .expr_has_bvar_at => "KernelSubst::expr_has_bvar_at"
-  | .expr_has_bvar_at_binder => "KernelSubst::expr_has_bvar_at_binder"
-  | .expr_has_bvar_at_let => "KernelSubst::expr_has_bvar_at_let"
   | .expr_glb => "KernelSubst::expr_glb"
-  | .expr_glb_let => "KernelSubst::expr_glb_let"
   | .expr_lift => "KernelSubst::expr_lift"
   | .expr_lift_let => "KernelSubst::expr_lift_let"
   | .expr_lower => "KernelSubst::expr_lower"
@@ -453,7 +411,6 @@ def Fn.name : Fn → String
 /-- Each function's spec. -/
 def Fn.spec : Fn → SpecFn
   | .expr_lbr => Specs.Subst.expr_lbr
-  | .expr_lbr_let => Specs.Subst.expr_lbr_let
   | .lbr_max => Specs.Subst.lbr_max
   | .lbr_dec => Specs.Subst.lbr_dec
   | .lbr_min => Specs.Subst.lbr_min
@@ -462,10 +419,7 @@ def Fn.spec : Fn → SpecFn
   | .has_bvar_in_range_binder => Specs.Subst.has_bvar_in_range_binder
   | .has_bvar_in_range_let => Specs.Subst.has_bvar_in_range_let
   | .expr_has_bvar_at => Specs.Subst.expr_has_bvar_at
-  | .expr_has_bvar_at_binder => Specs.Subst.expr_has_bvar_at_binder
-  | .expr_has_bvar_at_let => Specs.Subst.expr_has_bvar_at_let
   | .expr_glb => Specs.Subst.expr_glb
-  | .expr_glb_let => Specs.Subst.expr_glb_let
   | .expr_lift => Specs.Subst.expr_lift
   | .expr_lift_let => Specs.Subst.expr_lift_let
   | .expr_lower => Specs.Subst.expr_lower

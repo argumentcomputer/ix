@@ -296,6 +296,15 @@ private def checks : IO Nat := do
       "bound whole check did not run the actual logical entry"
     ensure (logical.hostStatement.any (·.kind == .logical))
       "bound whole check omitted its receipt-derived host statement"
+    ensure (logical.rows.isEmpty && logical.execution == .serial)
+      "default quiet whole check did not take the single-pass checkWhole fast path"
+    let logicalFull ← checked (← runPrepared p { cfg with perRecord := true } .all)
+    ensure (logical.artifactAdmission == logicalFull.artifactAdmission &&
+      logical.hostStatement == logicalFull.hostStatement &&
+      logical.passed == logicalFull.passed && logical.typed == logicalFull.typed &&
+      logical.targetsCovered == logicalFull.targetsCovered &&
+      logical.roles == logicalFull.roles && !logicalFull.rows.isEmpty)
+      "single-pass whole check disagreed with per-record pool check"
     let selected := if anon then toString (generated.table.addressOf? .natDiv).get! else "Nat.div"
     let selected ← checked (← runPrepared p cfg (.only #[selected]))
     ensure (selected.failures.isEmpty && selected.artifactAdmission.isNone && selected.hostStatement.isNone)

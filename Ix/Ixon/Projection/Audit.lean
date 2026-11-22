@@ -166,7 +166,7 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 8162 compiled functions; inherited externs 114, implemented_by 0, unsafe 41, csimp 8; ruled computed_field 29, implemented_by 1, csimp 32 -/
+ Ixon.Projection.checkBytes]: 8238 compiled functions; inherited externs 114, implemented_by 0, unsafe 41, csimp 8; ruled computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

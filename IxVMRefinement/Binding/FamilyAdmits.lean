@@ -63,14 +63,17 @@ inductive DirectContWitness (x_rc x_block : SourceValue F) (x : _root_.Address) 
     SourceValue F → SourceValue F → SourceValue F → SourceValue F →
     Heap F → Heap F → List (Call F) → Prop where
   | head {x_s x_n x_out x_s' : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-      {m47 m82 m_ord m157 m117 m184 m256 : Heap F}
-      {x_x x_s2 x_kind x_s3 v_ord v_ns x_rest v200 : SourceValue F}
-      {cs57 cs92 cs_ord cs165 cs127 cs194 : List (Call F)}
+      {m47 m82 m_ord m_ax m_lkp m157 m117 m184 m256 : Heap F}
+      {x_x x_s2 x_kind x_s3 v_ord v_ax v_lkp v_ns x_rest v200 : SourceValue F}
+      {cs57 cs92 cs_ord cs_ax cs_lkp cs165 cs127 cs194 : List (Call F)}
       (hne : x_n ≠ .field 0)
       (ev59 : ObsFn Obs.W "IxonDeserialize::get_address" [x_s] h (.tuple [x_x, x_s2]) m47 cs57)
       (ev94 : ObsFn Obs.W "IxonDeserialize::read_byte" [x_s2] m47 (.tuple [x_kind, x_s3]) m82 cs92)
       (ev_ord : ObsFn Obs.W "KernelRoles::assert_in_order" [x_rc, x_x] m82 v_ord m_ord cs_ord)
-      (ev167 : ObsFn Obs.W "UInt8::to_field" [x_kind] m_ord (.field 2) m157 cs165)
+      (ev_ax : ObsFn Obs.W "KernelRoles::role_ctx_axioms" [x_rc] m_ord v_ax m_ax cs_ax)
+      (ev_lkp : ObsFn Obs.W Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>»
+        [x_x, v_ax, .field 0] m_ax v_lkp m_lkp cs_lkp)
+      (ev167 : ObsFn Obs.W "UInt8::to_field" [x_kind] m_lkp (.field 2) m157 cs165)
       (ev129 : ObsFn Obs.W "KernelModeled::check_witness" [x_rc, x_block, x_x, .field 2, x_s3]
         m157 v_ns m117 cs127)
       (op235 : evalBinOp .sub x_n (.field 1) = .ok v200)
@@ -83,20 +86,25 @@ inductive DirectContWitness (x_rc x_block : SourceValue F) (x : _root_.Address) 
       (hcs : cs = (⟨"IxonDeserialize::get_address", [x_s], h⟩ : Call F) ::
         (cs57 ++ (⟨"IxonDeserialize::read_byte", [x_s2], m47⟩ : Call F) ::
         (cs92 ++ (⟨"KernelRoles::assert_in_order", [x_rc, x_x], m82⟩ : Call F) ::
-        (cs_ord ++ (⟨"UInt8::to_field", [x_kind], m_ord⟩ : Call F) ::
+        (cs_ord ++ (⟨"KernelRoles::role_ctx_axioms", [x_rc], m_ord⟩ : Call F) ::
+        (cs_ax ++ (⟨Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>», [x_x, v_ax, .field 0], m_ax⟩ : Call F) ::
+        (cs_lkp ++ (⟨"UInt8::to_field", [x_kind], m_lkp⟩ : Call F) ::
         (cs165 ++ (⟨"KernelModeled::check_witness", [x_rc, x_block, x_x, .field 2, x_s3], m157⟩ : Call F) ::
         (cs127 ++ (⟨"KernelModeled::check_witnesses", [x_rc, x_block, v_ns, v200], m117⟩ : Call F) ::
-          cs194)))))) :
+          cs194)))))))) :
       DirectContWitness x_rc x_block x x_s x_n x_out x_s' h h' cs
   | tail {x_s x_n x_out x_s' : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-      {m47 m82 m_ord m157 m117 m184 m256 : Heap F}
-      {x_x x_s2 x_kind x_s3 v_ord v_kf v_ns x_rest v200 : SourceValue F}
-      {cs57 cs92 cs_ord cs165 cs127 cs194 : List (Call F)}
+      {m47 m82 m_ord m_ax m_lkp m157 m117 m184 m256 : Heap F}
+      {x_x x_s2 x_kind x_s3 v_ord v_ax v_lkp v_kf v_ns x_rest v200 : SourceValue F}
+      {cs57 cs92 cs_ord cs_ax cs_lkp cs165 cs127 cs194 : List (Call F)}
       (hne : x_n ≠ .field 0)
       (ev59 : ObsFn Obs.W "IxonDeserialize::get_address" [x_s] h (.tuple [x_x, x_s2]) m47 cs57)
       (ev94 : ObsFn Obs.W "IxonDeserialize::read_byte" [x_s2] m47 (.tuple [x_kind, x_s3]) m82 cs92)
       (ev_ord : ObsFn Obs.W "KernelRoles::assert_in_order" [x_rc, x_x] m82 v_ord m_ord cs_ord)
-      (ev167 : ObsFn Obs.W "UInt8::to_field" [x_kind] m_ord v_kf m157 cs165)
+      (ev_ax : ObsFn Obs.W "KernelRoles::role_ctx_axioms" [x_rc] m_ord v_ax m_ax cs_ax)
+      (ev_lkp : ObsFn Obs.W Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>»
+        [x_x, v_ax, .field 0] m_ax v_lkp m_lkp cs_lkp)
+      (ev167 : ObsFn Obs.W "UInt8::to_field" [x_kind] m_lkp v_kf m157 cs165)
       (ev129 : ObsFn Obs.W "KernelModeled::check_witness" [x_rc, x_block, x_x, v_kf, x_s3]
         m157 v_ns m117 cs127)
       (op235 : evalBinOp .sub x_n (.field 1) = .ok v200)
@@ -109,10 +117,12 @@ inductive DirectContWitness (x_rc x_block : SourceValue F) (x : _root_.Address) 
       (hcs : cs = (⟨"IxonDeserialize::get_address", [x_s], h⟩ : Call F) ::
         (cs57 ++ (⟨"IxonDeserialize::read_byte", [x_s2], m47⟩ : Call F) ::
         (cs92 ++ (⟨"KernelRoles::assert_in_order", [x_rc, x_x], m82⟩ : Call F) ::
-        (cs_ord ++ (⟨"UInt8::to_field", [x_kind], m_ord⟩ : Call F) ::
+        (cs_ord ++ (⟨"KernelRoles::role_ctx_axioms", [x_rc], m_ord⟩ : Call F) ::
+        (cs_ax ++ (⟨Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>», [x_x, v_ax, .field 0], m_ax⟩ : Call F) ::
+        (cs_lkp ++ (⟨"UInt8::to_field", [x_kind], m_lkp⟩ : Call F) ::
         (cs165 ++ (⟨"KernelModeled::check_witness", [x_rc, x_block, x_x, v_kf, x_s3], m157⟩ : Call F) ::
         (cs127 ++ (⟨"KernelModeled::check_witnesses", [x_rc, x_block, v_ns, v200], m117⟩ : Call F) ::
-          cs194)))))) :
+          cs194)))))))) :
       DirectContWitness x_rc x_block x x_s x_n x_out x_s' h h' cs
 
 /-- **Payload-stream anchor tying a family check's advice walk to the first
