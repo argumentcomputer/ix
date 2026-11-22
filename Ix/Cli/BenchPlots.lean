@@ -1,8 +1,8 @@
 /-
-  `ix bench plots`: sync the bencher.dev dashboard plots to the benchmark
+`ix bench plots`: sync the bencher.dev dashboard plots to the benchmark
   registry — one plot per (workload, measure) that bench-main.yml tracks,
-  with separate lines per benchmark row on Warp and r8i, plus the cross-cutting
-  shared input-constants trend. The spec derives from the registry
+  with one line per benchmark row (a constant or env name) on the current
+  machine's testbed, plus the cross-cutting shared input-constants trend. The spec derives from the registry
   (`Ix.Cli.BenchCmd`) + the shared constant set (`Ix.BenchConstants`), so
   nothing is hand-listed, and
   every join is on the bencher SLUG (the row-key identity uploads use;
@@ -51,127 +51,80 @@ def workloadOf (testbed : String) : String :=
     nicer name here. -/
 def plotTitle (workload measure : String) : String :=
   match workload, measure with
-  | "ix-compile-certified", "compile-time" => "Ix Compile Time"
-  | "ix-compile-certified", "throughput"   => "Ix Compile Throughput"
-  | "ix-compile-certified", "peak-rss"     => "Ix Compile Peak RAM Usage"
-  | "ix-compile-certified", "file-size"    => "Ix Environment Size"
-  | "ix-compile-certified", "constants"    => "Ix Input Constants"
-  | "ix-decompile", "decompile-time"     => "Ix Decompile Time"
-  | "ix-decompile", "throughput"         => "Ix Decompile Throughput"
-  | "ix-decompile", "peak-rss"           => "Ix Decompile Peak RAM Usage"
-  | "aiur", "total-time"             => "Aiur Total Time"
-  | "aiur", "pipeline-throughput"    => "Aiur Total Throughput"
-  | "aiur", "pipeline-peak-rss"      => "Aiur Total Peak RAM Usage"
-  | "aiur", "ixvm-prove-time"          => "Aiur IxVM Time"
-  | "aiur", "fri-verifier-prove-time"  => "Aiur FRI Verifier Time"
-  | "aiur", "ixvm-fft-cost"            => "Aiur IxVM FFT Cost"
-  | "aiur", "fri-verifier-fft-cost"    => "Aiur FRI Verifier FFT Cost"
-  | "aiur", "fri-verifier-verify-time" => "Aiur FRI Verifier Verify Time"
-  | "aiur", "fri-verifier-peak-rss"    => "Aiur FRI Verifier Peak RAM Usage"
-  | "aiur", "ixvm-proof-size"          => "Aiur IxVM Proof Size"
-  | "aiur", "fri-verifier-proof-size"  => "Aiur FRI Verifier Proof Size"
-  | "aiur", "join-prove-time"          => "Aiur Aggregate Join Time"
-  | "aiur", "join-fft-cost"            => "Aiur Aggregate Join FFT Cost"
-  | "aiur", "join-verify-time"         => "Aiur Aggregate Join Verify Time"
-  | "aiur", "join-peak-rss"            => "Aiur Aggregate Join Peak RAM Usage"
-  | "aiur", "join-proof-size"          => "Aiur Aggregate Join Proof Size"
-  | "ooc-check", "check-time"            => "OOC Check Time"
-  | "ooc-check", "throughput"            => "OOC Check Throughput"
-  | "ooc-check", "peak-rss"              => "OOC Check Peak RAM Usage"
-  | "aiur-sharded-env-check", "check-time" => "Aiur Env Check Time"
-  | "aiur-sharded-env-check", "check-total-time" => "Aiur Env Check Including Splits"
-  | "aiur-sharded-env-check", "setup-time" => "Aiur Env Shared Setup Time"
-  | "aiur-sharded-env-check", "execution-work-time" => "Aiur Env Execution Worker Time"
-  | "aiur-sharded-env-check", "planning-work-time" => "Aiur Env Planning Worker Time"
-  | "aiur-sharded-env-check", "throughput" => "Aiur Env Check Throughput"
-  | "aiur-sharded-env-check", "peak-rss"   => "Aiur Env Check Peak RAM Usage"
-  | "aiur-sharded-env-check", "constants"  => "Aiur Env Constants"
-  | "aiur-sharded-env-check", "fft-cost"   => "Aiur Env FFT Cost"
-  | "aiur-sharded-env-check", "shards"     => "Aiur Env Shards"
+  | "ix-compile-certified", "compile-time" => "Certified Compile Time"
+  | "ix-compile-certified", "throughput"   => "Certified Compile Throughput"
+  | "ix-compile-certified", "peak-rss"     => "Certified Compile Peak RAM Usage"
+  | "ix-compile-certified", "file-size"    => "Certified Compile Env Size"
+  | "ix-compile-certified", "constants"    => "Certified Compile Input Constants"
+  | "ix-decompile-lean", "decompile-time"     => "Ix Decompile Time"
+  | "ix-decompile-lean", "throughput"         => "Ix Decompile Throughput"
+  | "ix-decompile-lean", "peak-rss"           => "Ix Decompile Peak RAM Usage"
+  | "ixvm", "execute-time"     => "IxVM Execute Time"
+  | "ixvm", "throughput"       => "IxVM Execute Throughput"
+  | "ixvm", "peak-rss"         => "IxVM Check Peak RAM Usage"
+  | "ixvm", "shards"           => "IxVM Env Shards"
+  | "ixvm", "fft-cost"         => "IxVM FFT Cost"
+  | "ixvm", "prove-time"       => "IxVM Prove Time (prove + aggregate)"
+  | "ixvm", "prove-throughput" => "IxVM Prove Throughput"
+  | "ixvm", "prove-peak-rss"   => "IxVM Prove Peak RAM Usage"
+  | "ixvm", "prove-proof-size" => "IxVM Aggregate Root Proof Size"
+  | "ixvm", "prove-trace-shards" => "IxVM Claim Proof Trace Shards"
+  | "ixvm", "verify-time"      => "IxVM Root Verify Time"
+  | "ixvm", "compress-time"    => "IxVM KZG Compress Time"
+  | "ixvm", "compress-peak-rss" => "IxVM KZG Compress Peak RAM Usage"
+  | "ixvm", "compress-proof-size" => "IxVM KZG Proof Size"
+  | "ixvm", "compress-verify-time" => "IxVM KZG Verify Time"
+  | "ixvm-ooc", "check-time"   => "IxVM OOC (IxC) Check Time"
+  | "ixvm-ooc", "throughput"   => "IxVM OOC (IxC) Check Throughput"
+  | "ixvm-ooc", "peak-rss"     => "IxVM OOC (IxC) Check Peak RAM Usage"
   | w, m => s!"{w}: {m}"
 
-/-- Tracked but not plotted solo. `ix-decompile` reuses the compile run's `.ixe`, so its `file-size` /
-    `constants` duplicate "Ix Environment Size" / "Ix Input Constants"
+/-- Tracked but not plotted solo. `ix-decompile-lean` reuses the compile run's `.ixe`, so its `file-size` /
+    `constants` duplicate "Certified Compile Env Size" / "Certified Compile Input Constants"
     exactly — the decompile run tracks only its own decompile-time /
-    throughput / peak-rss trends. The aiur run's per-stage headline is
-    that stage's `prove-time` — a prove runs its own witness execution,
-    so it is the whole cost of producing the stage's proof, and the
-    standalone `execute-time` beside it is a second, instrumentation-only
-    run. The ixvm stage's peak-rss / verify-time are tracked for the
-    compare table but not plotted: their cost is inside `ixvm-prove-time`
-    and the deterministic `ixvm-fft-cost` trend, and that stage's proof
-    is an intermediate artifact consumed by the next stage. Its
-    `ixvm-proof-size` IS plotted: it sizes the next stage's in-circuit
-    verification workload. The whole-run `pipeline-peak-rss` too: which stage
-    sets the run's RAM ceiling can shift as pipeline stages are added,
-    so no per-stage peak plot stands in for it. The per-stage
-    throughputs are table columns only — over the exactly-pinned
-    `constants` they are the plotted stage times inverted — while the
-    end-to-end `pipeline-throughput` gets the backend's one throughput
-    plot, comparable with the other backends'. -/
+    throughput / peak-rss trends. -/
 def plotSkips : List (String × String) :=
-  [("ix-decompile", "file-size"), ("ix-decompile", "constants"),
-   ("aiur", "ixvm-peak-rss"), ("aiur", "ixvm-verify-time"),
-   ("aiur", "ixvm-execute-time"), ("aiur", "fri-verifier-execute-time"),
-   ("aiur", "join-execute-time"),
-   ("aiur", "ixvm-throughput"), ("aiur", "fri-verifier-throughput")]
+  [("ix-decompile-lean", "file-size"), ("ix-decompile-lean", "constants")]
 
 /-- Canonical units per measure slug, asserted on every sync: bencher
     auto-creates a measure with placeholder units ("Measure (units)") on
     its first upload, leaving plots unitless — and a console edit would
-    drift from this list, so the sync re-asserts it. Phase spans are
-    wall-clock seconds. A stage-qualified slug (`ixvm-prove-time`,
-    `pipeline-peak-rss`) carries its base measure's units, so only base
-    names are listed. -/
+    drift from this list, so the sync re-asserts it. -/
 def unitsFor (slug : String) : Option String :=
-  if slug.startsWith "phase-" then some "seconds (s)" else
-  [("execute-peak-rss", "bytes (B)"),
-   ("compile-time", "seconds (s)"),
-   ("decompile-time", "seconds (s)"),
-   ("execute-time", "seconds (s)"),
-   ("prove-time", "seconds (s)"),
-   ("verify-time", "seconds (s)"),
-   ("check-time", "seconds (s)"),
-   ("total-time", "seconds (s)"),
-   ("peak-rss", "bytes (B)"),
-   ("file-size", "bytes (B)"),
-   ("proof-size", "bytes (B)"),
+  if slug.endsWith "-time" then some "seconds (s)"
+  else if slug.endsWith "peak-rss" || slug.endsWith "proof-size" then some "bytes (B)" else
+  [("file-size", "bytes (B)"),
    ("constants", "constants"),
-   ("cycles", "cycles"),
-   ("max-shard-cycles", "cycles"),
-   ("shards", "shards"),
-   ("fft-cost", "FFTs"),
-   ("throughput", "constants / second")].lookup
-     (BenchCmd.dropStagePrefix slug)
+   ("shards", "env shards"),
+   ("prove-trace-shards", "trace shards"),
+   ("fft-cost", "FFT work"),
+   ("throughput", "constants / second"),
+   ("prove-throughput", "constants / second")].lookup slug
 
-/-- Dashboard group order (compile first, then the aiur pipeline,
-    ooc); unranked workloads (a future backend) sort last. -/
+/-- Dashboard group order (compile first, then decompile, IxVM execution,
+    IxVM out-of-circuit checks); unranked workloads (a future backend) sort last. -/
 def workloadOrder : List String :=
-  ["ix-compile-certified", "ix-decompile", "aiur", "ooc-check"]
+  ["ix-compile-certified", "ix-decompile-lean", "ixvm", "ixvm-ooc"]
 
 structure PlotSpec where
   testbed : String
-  measures : List String
-  benchmarks : Array String
+  /-- Each plotted measure with the benchmark rows that carry it. -/
+  measures : List (String × Array String)
 
 /-- One spec per bench-main workload: its measure slugs and the benchmark row
-    names uploaded there, both from the registry (`BackendSpec.benchmarkNames`,
-    keyed off `inputs`) — env-keyed backends (compile, decompile) key one row
-    per compiled env, the per-constant backends one row per primary, and ooc
-    adds a whole-env row. Dynamic
-    sub-rows (`<name>/shard-N`) are left out: their multiplicity shifts with the
-    shard manifest, and the parent row carries the headline trend. -/
+    names that carry each measure, both from the registry
+    (`BackendSpec.benchmarkNames`): the shared constants for a constant-row
+    measure, the envs for an env-row measure, both lines on one plot when
+    both kinds carry it. Dynamic sub-rows (`<name>/shard-N`) are left out: their
+    multiplicity shifts with the shard manifest, and the parent row carries
+    the headline trend. -/
 def plotSpecs : Array PlotSpec := Id.run do
   let mut specs : Array PlotSpec := #[]
   for b in BenchCmd.backendSpecs do
     if b.disabled.isSome then continue
-    for (mode, testbed) in b.testbeds do
-      -- On-demand modes (e.g. aiur `execute`) upload nothing, so there's
-      -- nothing to plot — the registry marks them explicitly.
-      if b.unscheduled.contains mode then continue
-      specs := specs.push
-        { testbed, measures := b.metricsFor mode,
-          benchmarks := b.benchmarkNames mode }
+    specs := specs.push
+      { testbed := b.testbed,
+        measures := b.trackedMetrics.map fun m => (m, b.benchmarkNames m) }
   return specs.qsort fun a b =>
     workloadOrder.idxOf (workloadOf a.testbed)
       < workloadOrder.idxOf (workloadOf b.testbed)
@@ -229,16 +182,11 @@ def findUuid (items : Array Json) (key val : String) : Option String :=
   items.findSome? fun it =>
     if objStr it key == some val then objStr it "uuid" else none
 
-/-- Historical and current testbeds share a plot as separate series, so
-    changing benchmark hardware or compiler preserves the visible history.
-    Alert baselines still use only the registry's current testbed. -/
+/-- The workload's testbeds on the benchmark machines: only the current
+    implementation's series, never a retired testbed. -/
 def testbedsForPlot (testbeds : Array Json) (workload : String) : Array String :=
-  let workloads := if workload == "ix-compile-certified"
-    then #[workload, "ix-compile"] else #[workload]
-  let slugs := workloads.flatMap fun w =>
-    #[s!"{w}-x64-32x"] ++
-      BenchCmd.benchmarkMachines.toArray.map (BenchCmd.testbedOnMachine w)
-  slugs.filterMap (findUuid testbeds "slug" ·)
+  (BenchCmd.benchmarkMachines.toArray.map (BenchCmd.testbedOnMachine workload)).filterMap
+    (findUuid testbeds "slug" ·)
 
 /-! ## Sync -/
 
@@ -308,8 +256,7 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
   let benchmarks ← fetchAll project "benchmark"
   let plots ← fetchAll project "plot"
 
-  -- Units first, so even a plotless measure (phase spans, PR-column-only
-  -- counters) renders with its unit everywhere bencher shows it.
+  -- Units first, so even a plotless measure renders with its unit everywhere bencher shows it.
   for m in measures do
     if let (some slug, some uuid) := (objStr m "slug", objStr m "uuid") then
       if let some want := unitsFor slug then
@@ -337,16 +284,16 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
     if testbedUuids.isEmpty then
       IO.eprintln s!"warn: no testbeds for '{spec.testbed}' on bencher yet — skipped"
       continue
-    -- Benchmark names → UUIDs, dropping the not-yet-uploaded ones loudly.
-    let mut benchUuids : Array String := #[]
-    for n in spec.benchmarks do
-      match findUuid benchmarks "name" n with
-      | some u => benchUuids := benchUuids.push u
-      | none => do
-        IO.eprintln
-          s!"warn: {spec.testbed}: benchmark '{n}' not on bencher yet — skipped"
-    for measure in spec.measures do
+    for (measure, names) in spec.measures do
       if plotSkips.contains (workload, measure) then continue
+      -- Benchmark names → UUIDs, dropping the not-yet-uploaded ones loudly.
+      let mut benchUuids : Array String := #[]
+      for n in names do
+        match findUuid benchmarks "name" n with
+        | some u => benchUuids := benchUuids.push u
+        | none => do
+          IO.eprintln
+            s!"warn: {spec.testbed}: benchmark '{n}' not on bencher yet — skipped"
       -- A measure bencher hasn't seen yet (first upload after a rename or
       -- a new tracked measure still pending) has no series to plot: warn
       -- and skip, like a not-yet-uploaded benchmark or testbed. Its
@@ -363,11 +310,11 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
   -- capacity. Select only the shared constants, excluding whole-env rows.
   let overlay : Option DesiredPlot := do
     let oocTb ← BenchCmd.benchmarkMachines.findSome? fun machine =>
-      findUuid testbeds "slug" (BenchCmd.testbedOnMachine "ooc-check" machine)
+      findUuid testbeds "slug" (BenchCmd.testbedOnMachine "ixvm-ooc" machine)
     let consts ← findUuid measures "slug" "constants"
     let names := Ix.BenchConstants.benchConstants.filterMap fun c =>
       findUuid benchmarks "name" c.name
-    return { title := "Kernel Input Constants",
+    return { title := "IxVM OOC (IxC) Input Constants",
              testbeds := #[oocTb], benchmarks := names,
              measure := consts, window }
   match overlay with
@@ -406,7 +353,7 @@ end Ix.Cli.BenchPlots
 open Ix.Cli.BenchPlots in
 def benchPlotsCmd : Cli.Cmd := `[Cli|
   plots VIA runPlotsCmd;
-  "Sync the bencher.dev dashboard plots to the registry: one plot per tracked (workload, measure) across historical Warp and current testbeds, plus the shared input-constants plot. Needs the bencher CLI; writes need BENCHER_API_KEY (plot create/delete permission)."
+  "Sync the bencher.dev dashboard plots to the registry: one plot per tracked (workload, measure) on the current machine's testbed, plus the shared input-constants plot. Needs the bencher CLI; writes need BENCHER_API_KEY (plot create/delete permission)."
 
   FLAGS:
     "dry-run";         "Print the create/replace/keep decisions without writing (no key needed)"

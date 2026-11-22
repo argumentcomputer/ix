@@ -11,7 +11,8 @@ watchdog are described in `docs/kernel.md` ("Environment check").
 ```sh
 lake build --wfail kernel-check-ixe
 lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/envs/initstd.ixe
-CHECK_IXE_WATCH_MB=12000 .lake/build/bin/kernel-check-ixe --guarded --memory-max 24 \
+CHECK_IXE_WATCH_MB=12000 systemd-run --user --scope -p MemoryMax=24G \
+  .lake/build/bin/kernel-check-ixe --guarded \
   .lake/envs/initstd.ixe .lake/envs/initstd.jsonl
 .lake/build/bin/kernel-check-ixe --report .lake/envs/initstd.jsonl
 .lake/build/bin/kernel-check-ixe --summary .lake/envs/initstd.jsonl --json initstd-summary.json
@@ -34,13 +35,11 @@ is then its install plus its checks, on whichever workers ran them.
 ```
 
 `--guarded` reruns the check, in a fresh process, with every constant the
-driver's watchdog recorded in `<output>.runaway` skipped, until it completes;
-`--memory-max <GB>` runs each attempt in a cgroup scope capped at that size
-(`Ix.Watchdog`; exit 137 when the cap kills it), and `--binary <path>` runs
-another build of the driver with the same contract; the arguments after
-these are the check's (`--load`, `--jobs`, input, output, limit). `--report
-<rows> [top]` prints outcome counts, check time, decline reasons and the
-blocking roots ranked by reach; `--summary <rows> [--top N] [--json <out>]`
+driver's watchdog recorded in `<output>.runaway` skipped, until it completes,
+and `--binary <path>` runs another build of the driver with the same contract;
+the arguments after these are the check's (`--load`, `--jobs`, input, output,
+limit). `--report <rows> [top]` prints outcome counts, check time, decline
+reasons and the blocking roots ranked by reach; `--summary <rows> [--top N] [--json <out>]`
 writes the same as Markdown tables, with timing quantiles and the slowest
 rows. A compressed row file is decompressed first.
 

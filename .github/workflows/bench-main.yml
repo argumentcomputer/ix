@@ -1,26 +1,28 @@
 name: Benchmark main
 
 # Benchmarks every push to main and uploads the results to bencher.dev.
-# Each measurement is one `ix bench run` with a (backend, env, mode)
+# Each measurement is one `ix bench run` with a (backend, env)
 # parameter combination — the same command you can run locally, and the
 # same one the !benchmark PR workflow uses. Four job roles:
 #
-#   1. build     — compiles and caches `ix` once.
+#   1. build     — compiles and caches `ix` once, with the compiled
+#                  programs `ix check` loads (IX_AIUR_CACHE).
 #   2. plan      — `ix bench ci matrix` prints the list of parameter
 #                  combinations to run. The list comes from the registry
 #                  (Ix/Cli/BenchCmd.lean) and each entry already carries
-#                  its bencher testbed, workload, and threshold flags, so
-#                  this file hardcodes none of that.
+#                  its bencher testbed, so this file hardcodes none of that.
 #   3. compile   — compiles each Lean env to a `.ixe` file (this IS the
 #                  compile benchmark) and caches the file for `benchmark`.
 #   4. benchmark — one job per remaining entry: restore the `.ixe` and
-#                  run the entry's backend over it (aiur-sharded-env, ooc, decompile).
+#                  run the entry's backend over it (ixvm, ixvm-ooc,
+#                  decompile): the env's constant rows and its env row.
 #
-# Each entry uploads to its own bencher testbed/workload, so a threshold
-# reset for one workload never touches another. When the kernel REJECTS a
+# Each entry uploads to its own bencher testbed. No regression thresholds
+# are configured, so uploads raise no alerts. When the kernel REJECTS a
 # constant, `ix bench run` exits 3 and that step fails visibly — but the
-# clean rows still upload, because `ix bench bmf` drops every non-ok row
-# (rejected or OOM) before the upload.
+# clean rows still upload, because `ix bench bmf` keeps only `ok` and
+# `conditional` rows (a complete check under listed user axioms), dropping
+# rejected and OOM rows before the upload.
 
 on:
   push:
@@ -39,6 +41,11 @@ env:
   IX_BENCH_MACHINE: r8i.8xlarge
   BENCH_CACHE: runs-on-r8i.8xlarge-native-v1
   COMPILE_DIR: Benchmarks/Compile
+  # The compiled-program cache `ix check` loads the certified Aiur programs
+  # from. `lake build ix` and `ix codegen --out` fill it; it ships beside
+  # the binaries so no measured run compiles a program. Outside the sticky
+  # `.lake`, so it holds only this revision's programs.
+  IX_AIUR_CACHE: ${{ github.workspace }}/.aiur-cache
 
 jobs:
   # Skip spawning 15+ 32-CPU r8i.8xlarge benchmark runners on docs-only,
@@ -84,8 +91,8 @@ jobs:
             echo "run_bench=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # Build the `ix` binary once and cache it;
-  # every later job restores it instead of rebuilding. It is built
+  # Build the `ix` binary once and cache it; every later job restores it
+  # instead of rebuilding. It is built
   # with native code generation for r8i, with caches and measured results
   # isolated from other hardware and compiler flags.
   build:
@@ -102,7 +109,7 @@ jobs:
       # Lake and cargo artifacts live on the sticky disk; sccache serves the
       # workspace crates cargo rebuilds after every fresh checkout (see
       # ci.yml), under entries the native codegen flags keep apart from CI's.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -120,20 +127,29 @@ jobs:
         with:
           auto-config: false
           build: true
-          build-args: "ix --wfail -v"
+          build-args: "ix bench-ixvm --wfail -v"
           use-github-cache: false
           use-mathlib-cache: false
       - run: |
           mkdir -p ~/.local/bin
           echo | lake run install            # copies ix -> ~/.local/bin/ix
+          cp .lake/build/bin/bench-ixvm ~/.local/bin/
+      - name: Warm the compiled-program cache
+        run: .github/scripts/warm-aiur-cache ~/.local/bin/ix
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ github.sha }}
+      # Its own entry: bench-pr restores it by SHA next to a base's cached
+      # binaries.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.IX_AIUR_CACHE }}
+          key: ${{ env.BENCH_CACHE }}-bench-aiur-${{ github.sha }}
 
   # Ask the registry which benchmarks to run. `ix bench ci matrix` prints
-  # one JSON entry per (backend, env, mode) combination, each carrying its
-  # own testbed, workload, and threshold flags — so nothing benchmark-
+  # one JSON entry per (backend, env) combination, each carrying its
+  # own testbed — so nothing benchmark-
   # specific is written into this file. Runs in parallel with the compile
   # job; only the benchmark job waits on it.
   plan:
@@ -143,7 +159,7 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -152,7 +168,7 @@ jobs:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ github.sha }}
           fail-on-cache-miss: true
-      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       # Provision the toolchain so `ix` finds libleanshared (no package build).
       - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
@@ -197,13 +213,10 @@ jobs:
         # constants in Ix/BenchConstants.lean.
         include:
           - { env: InitStd }
-          - { env: Lean }
-          # Init+Std+Lean+Batteries: the aiur-sharded-env (whole-env formal Aiur
-          # execution) benchmark's fast tier. Batteries builds from the
-          # shared Compile package; no mathlib cache needed.
+          # Init+Std+Lean+Batteries. Batteries builds from the shared
+          # Compile package; no mathlib cache needed.
           - { env: ISLB }
           - { env: Mathlib, mathlib: true }
-          - { env: FLT, mathlib: true }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -211,7 +224,7 @@ jobs:
       # The compile workspace's `.lake` persists on the sticky disk: its
       # Lake packages, the Mathlib oleans `cache get` fetched, and the env's
       # own build, so later runs replay instead of refetching and rebuilding.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sticky_cache: |
             custom,path=${{ env.COMPILE_DIR }}/.lake
@@ -221,14 +234,18 @@ jobs:
         with:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ github.sha }}
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.IX_AIUR_CACHE }}
+          key: ${{ env.BENCH_CACHE }}-bench-aiur-${{ github.sha }}
       - name: Log compile CPU
         id: cpu
         uses: $/.github/actions/log-cpu
         with:
           label: Compile measurement CPU
-      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       # Install the Lean toolchain. The mathlib olean cache is fetched only
-      # for envs that import Mathlib (Mathlib, FLT) — the shared
+      # for the env that imports Mathlib — the shared
       # Benchmarks/Compile package depends on mathlib, so without this
       # guard InitStd/Lean would download it for nothing.
       - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
@@ -246,15 +263,14 @@ jobs:
       # row to bencher's upload format.
       - name: Run ix compile benchmark
         run: |
-          ix bench run --backend compile --env ${{ matrix.env }} --out bench.json
+          .github/scripts/memory-cap ix bench run --backend compile --env ${{ matrix.env }} --out bench.json
           ix bench bmf --in bench.json --out benchmark.json
           cat benchmark.json
       # Ask the registry for this env's metadata (instead of keeping
       # hand-written env lists here):
       #   consumed — does any benchmark entry restore this env's `.ixe`?
       #              If yes, cache it below.
-      #   testbed / workload / thresholds — the upload metadata for this
-      #              env's own compile benchmark.
+      #   testbed  — the upload testbed for this env's own compile benchmark.
       - id: gates
         name: Read this env's registry metadata
         run: |
@@ -263,9 +279,6 @@ jobs:
           echo "consumed=$(gate '.backend == "compile" | not')" >> "$GITHUB_OUTPUT"
           meta() { jq -r --arg env "${{ matrix.env }}" "first(.[] | select(.backend == \"compile\" and .env == \$env)).$1" matrix.json; }
           echo "testbed=$(meta testbed)" >> "$GITHUB_OUTPUT"
-          echo "workload=$(meta workload)" >> "$GITHUB_OUTPUT"
-          echo "mode=$(meta mode)" >> "$GITHUB_OUTPUT"
-          { echo "thresholds<<EOF"; meta thresholds; echo "EOF"; } >> "$GITHUB_OUTPUT"
       # Cache the `.ixe` for the benchmark job. IMPORTANT: every restore of
       # this key must list the same paths — cache versions include the
       # entry by its path list, so a mismatched list is unreachable
@@ -292,35 +305,29 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: bench-hardware.txt
-          key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ github.sha }}-compile-${{ matrix.env }}-${{ steps.gates.outputs.mode }}
-      # Upload the compile metrics. Testbed, workload, and threshold flags
-      # all come from the registry (the reasoning behind each bound lives
-      # next to `thresholds` in Ix/Cli/BenchCmd.lean).
+          key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ github.sha }}-compile-${{ matrix.env }}
+      # Upload the compile metrics to the testbed the registry names.
       - uses: $/.github/actions/bencher-track
         with:
           testbed: ${{ steps.gates.outputs.testbed }}
-          workload: ${{ steps.gates.outputs.workload }}
           file: benchmark.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ github.token }}
-          thresholds: ${{ steps.gates.outputs.thresholds }}
 
   # One job per remaining matrix entry, all sharing this one step list
   # (same shape as bench-pr.yml's benchmark job). Each entry brings its
-  # own label, testbed, workload, and threshold flags. Every entry restores
+  # own label and testbed. Every entry restores
   # the compile job's cached `.ixe` — nothing recompiles here.
   #
   # What each backend measures:
-  #   - aiur-sharded-env: whole-env formal Aiur execution over a sharded
-  #     manifest — every leaf executed and its proof planned against the
-  #     runner's RAM budget, over-budget leaves split. One row per env.
-  #   - ooc: the same kernel run out-of-circuit and in parallel (much
-  #     faster). One whole-env row plus one row per constant.
+  #   - ixvm: the certified IxVM kernel executed in Aiur by `ix check`,
+  #     one process per constant, no proving; the env row shards the env
+  #     and executes it with one `ix check --ixes` across all cores.
+  #   - ixvm-ooc: the same kernel run out-of-circuit and in parallel (much
+  #     faster): one row per constant plus the whole-env row.
   #   - decompile: the inverse of compile. Roundtrip correctness is
   #     checked elsewhere (`ix validate` / roundtrip tests) — this only
   #     measures speed and memory.
-  # The per-constant proof pipeline (`aiur`) is disabled in the registry:
-  # its tool, `bench-typecheck`, was retired with the legacy backend.
   benchmark:
     name: ${{ matrix.params.label }}
     needs: [compile, plan]
@@ -337,7 +344,7 @@ jobs:
       matrix:
         params: ${{ fromJson(needs.plan.outputs.matrix) }}
     steps:
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -345,12 +352,19 @@ jobs:
         with:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ github.sha }}
+      # The build job's compiled programs, so `ix check` loads rather than
+      # compiles them inside the measured run.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.IX_AIUR_CACHE }}
+          key: ${{ env.BENCH_CACHE }}-bench-aiur-${{ github.sha }}
+          fail-on-cache-miss: true
       - name: Log run CPU
         id: cpu
         uses: $/.github/actions/log-cpu
         with:
           label: Benchmark measurement CPU
-      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       # Provision the toolchain so the staged binaries find libleanshared
       # (no package build). use-github-cache off: nothing to cache here, and
       # parallel matrix jobs share a key and would race the cache save.
@@ -370,33 +384,16 @@ jobs:
       # If the kernel rejects a constant, `ix bench run` exits 3 and this
       # step fails — that is a correctness regression, not a benchmark
       # blip. The completed rows are already on disk for the upload below.
+      # memory-cap runs it in a cgroup capped at the runner's RAM minus 15 GiB,
+      # swap off: an OOM kill lands on the measured tool, not `ix bench run`.
       - name: Run ${{ matrix.params.label }} benchmark
         run: >-
-          ix bench run --backend ${{ matrix.params.backend }}
-          --env ${{ matrix.params.env }} --mode ${{ matrix.params.mode }}
+          .github/scripts/memory-cap ix bench run --backend ${{ matrix.params.backend }}
+          --env ${{ matrix.params.env }}
           --ixe ${{ matrix.params.env }}.ixe --out bench.json
-      - name: Upload shard check diagnostics
-        if: always() && matrix.params.backend == 'aiur-sharded-env'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: diagnostics-${{ matrix.params.label }}
-          path: bench.json.report.json*
-          if-no-files-found: warn
-      # The ooc run writes a per-constant attribution CSV next to its
-      # results file. Bencher stores metric rows only, so cache the CSV by
-      # (SHA, cell) — bench-pr restores it to render the per-constant
-      # drill-down against a bencher-fetched main side (PR runs can read
-      # caches created on main). Best-effort: an evicted or missing entry
-      # just means the drill-down falls back to base-run-only availability.
-      - name: Cache per-constant attribution CSV
-        if: ${{ !cancelled() && matrix.params.backend == 'ooc' }}
-        continue-on-error: true
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: bench.json.perconst.csv
-          key: ${{ env.BENCH_CACHE }}-bench-perconst-${{ github.sha }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
       # The measurement host, by (SHA, parameters), for bench-pr to label a
-      # bencher-sourced base side — same best-effort contract as the CSV.
+      # bencher-sourced base side. Best-effort: a missing entry renders
+      # without the base side's hardware.
       - name: Record measurement hardware
         if: ${{ !cancelled() }}
         env:
@@ -408,10 +405,10 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: bench-hardware.txt
-          key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ github.sha }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
+          key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ github.sha }}-${{ matrix.params.backend }}-${{ matrix.params.env }}
       # Convert rows for upload even when the run step failed: bmf drops
-      # every non-ok row (rejected or OOM), so only clean measurements
-      # reach bencher. bmf exits nonzero when NO ok rows survive — the
+      # rejected and OOM rows, so only clean measurements reach bencher.
+      # bmf exits nonzero when NO measured rows survive — the
       # steady state for a cell whose only constant exceeds the RAM
       # ceiling (the OOM row documents the gap) — so that skips the
       # upload without failing the job; the run step above is the
@@ -427,15 +424,11 @@ jobs:
             echo "nonempty=false" >> "$GITHUB_OUTPUT"
           fi
           cat bench-bmf.json
-      # Upload under this entry's testbed and workload. The threshold
-      # flags (and the reasoning behind each bound) live next to the
-      # backend in Ix/Cli/BenchCmd.lean.
+      # Upload under this entry's testbed.
       - uses: $/.github/actions/bencher-track
         if: ${{ !cancelled() && steps.bmf.outputs.nonempty == 'true' }}
         with:
           testbed: ${{ matrix.params.testbed }}
-          workload: ${{ matrix.params.workload }}
           file: bench-bmf.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ github.token }}
-          thresholds: ${{ matrix.params.thresholds }}
