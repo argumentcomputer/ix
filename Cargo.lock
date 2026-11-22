@@ -1886,6 +1886,7 @@ dependencies = [
 name = "ix-ffi"
 version = "0.1.0"
 dependencies = [
+ "aggregate-controller",
  "aiur",
  "bincode",
  "blake3",
@@ -1893,6 +1894,7 @@ dependencies = [
  "iroh",
  "ix-common",
  "ix-proof-compression",
+ "ix-prover",
  "ixon",
  "lean-ffi",
  "memmap2",
@@ -1955,8 +1957,14 @@ dependencies = [
 name = "ix-prover"
 version = "0.1.0"
 dependencies = [
+ "aggregate-controller",
  "aiur",
+ "aiur-codegen",
+ "aiur-tracegen",
  "blake3",
+ "formal-generated",
+ "ix-common",
+ "ixon",
  "ixvm",
  "multi-stark",
  "rayon",
@@ -1964,6 +1972,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
+ "stark-key",
  "stark-verifier",
  "tracing",
  "tracing-subscriber",
@@ -2269,7 +2278,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=648fb13a9fcf3ede4393cab5aa21b3ab6af975f9#648fb13a9fcf3ede4393cab5aa21b3ab6af975f9"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=6625511141f93476528ad8694e08d11c0872ef39#6625511141f93476528ad8694e08d11c0872ef39"
 dependencies = [
  "bincode",
  "itertools 0.14.0",

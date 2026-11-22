@@ -33,16 +33,28 @@ pub struct EnvHandle {
 }
 
 impl EnvHandle {
-  /// Load via [`IxonEnv::get_anon_mmap`] (zero-copy mmap of the `.ixe` file).
-  pub fn from_ixe_path(path: &std::path::Path) -> Result<Self, String> {
-    let env = IxonEnv::get_anon_mmap(path)?;
-    Ok(Self { env })
+  /// Load via [`IxonEnv::get_anon_mmap`] (zero-copy mmap of the `.ixe`
+  /// file), with the encoded model advice `models` (empty for none).
+  pub fn from_ixe_path(
+    path: &std::path::Path,
+    models: &[u8],
+  ) -> Result<Self, String> {
+    Self::with_models(IxonEnv::get_anon_mmap(path)?, models)
   }
 
-  /// Decode a serialized env blob (`Ixon.serEnv` output) via [`IxonEnv::get`].
-  pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+  /// Decode a serialized env blob (`Ixon.serEnv` output) via
+  /// [`IxonEnv::get`], with the encoded model advice `models` (empty for
+  /// none).
+  pub fn from_bytes(bytes: &[u8], models: &[u8]) -> Result<Self, String> {
     let mut cursor: &[u8] = bytes;
-    let env = IxonEnv::get(&mut cursor)?;
+    Self::with_models(IxonEnv::get(&mut cursor)?, models)
+  }
+
+  fn with_models(mut env: IxonEnv, models: &[u8]) -> Result<Self, String> {
+    if !models.is_empty() {
+      env.models =
+        std::sync::Arc::new(ixon::model_advice::ModelAdvice::decode(models)?);
+    }
     Ok(Self { env })
   }
 }
@@ -55,9 +67,13 @@ static IX_ENV_HANDLE_CLASS: LazyLock<ExternalClass> =
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_aiur_env_handle_from_ixe(
   path_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  models: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let path_str = String::from_utf8_lossy(path_bytes.as_bytes()).into_owned();
-  match EnvHandle::from_ixe_path(std::path::Path::new(&path_str)) {
+  match EnvHandle::from_ixe_path(
+    std::path::Path::new(&path_str),
+    models.as_bytes(),
+  ) {
     Ok(h) => {
       let lean_handle: LeanOwned =
         LeanExternal::alloc(&IX_ENV_HANDLE_CLASS, h).into();
@@ -72,8 +88,9 @@ pub extern "C" fn rs_aiur_env_handle_from_ixe(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_aiur_env_handle_from_bytes(
   bytes: LeanByteArray<LeanBorrowed<'_>>,
+  models: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
-  match EnvHandle::from_bytes(bytes.as_bytes()) {
+  match EnvHandle::from_bytes(bytes.as_bytes(), models.as_bytes()) {
     Ok(h) => {
       let lean_handle: LeanOwned =
         LeanExternal::alloc(&IX_ENV_HANDLE_CLASS, h).into();
@@ -83,43 +100,13 @@ pub extern "C" fn rs_aiur_env_handle_from_bytes(
   }
 }
 
-/// FFI: the detected prover/execution RAM budget in bytes
-/// ([`ixon::shard::RAM_USABLE_FRAC`] of `MemAvailable`), or `0` when
+/// FFI: the default host budget in bytes, `MemTotal` less the one host
+/// reservation (`aiur::trace::stark::planning::default_budget`), or `0` when
 /// `/proc/meminfo` is unreadable.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_aiur_detected_ram_budget() -> LeanIOResult<LeanOwned> {
-  let bytes = detected_ram_budget().unwrap_or(0);
-  LeanIOResult::ok(LeanOwned::box_u64(bytes as u64))
-}
-
-fn trace_shard_max_cells() -> usize {
-  std::env::var("AIUR_TRACE_SHARD_MAX_CELLS")
-    .ok()
-    .and_then(|v| v.parse::<usize>().ok())
-    .unwrap_or(0)
-}
-
-fn record_budget(max_ram_bytes: usize, cells: usize) -> usize {
-  let reserve = cells.saturating_mul(16).saturating_add(256usize << 20);
-  max_ram_bytes.saturating_sub(reserve)
-}
-
-fn record_share(max_ram_bytes: usize, cells: usize, in_flight: usize) -> usize {
-  record_budget(max_ram_bytes, cells) / in_flight.max(1)
-}
-
-#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
-#[allow(clippy::cast_sign_loss)]
-fn detected_ram_budget() -> Option<usize> {
-  available_ram_bytes()
-    .map(|b| (b as f64 * ixon::shard::RAM_USABLE_FRAC) as usize)
-}
-
-fn available_ram_bytes() -> Option<usize> {
-  let s = std::fs::read_to_string("/proc/meminfo").ok()?;
-  let rest = s.lines().find_map(|l| l.strip_prefix("MemAvailable:"))?;
-  let kib: usize = rest.trim().trim_end_matches("kB").trim().parse().ok()?;
-  Some(kib * 1024)
+  let bytes = aiur::trace::stark::planning::default_budget().unwrap_or(0);
+  LeanIOResult::ok(LeanOwned::box_u64(bytes))
 }
 
 /// FFI: extract the named constants' dependency closure from a serialized
@@ -256,11 +243,9 @@ pub extern "C" fn rs_env_extract(
 /// profiling run. An explicit nonzero `num_shards` fixes the count. Otherwise,
 /// `ram_gib` seeds it from the static block-shape score after the profile is
 /// loaded ([`ixon::shard::static_seed_shards`]). Builds the static block
-/// profile ([`static_block_profile`]), then either the byte-balanced min-cut
-/// over the walk-edge nets with the predicted-cost rebalance post-pass
-/// (`ixon::shard::shard_static`, `layout` = `mincut`) or contiguous
-/// ranges of a dependency order (`ixon::shard::shard_static_ordered`,
-/// `layout` = `ordered`). Writes a `.ixes` manifest.
+/// profile ([`static_block_profile`]), then the byte-balanced min-cut over
+/// the walk-edge nets with the predicted-cost rebalance post-pass
+/// (`ixon::shard::shard_static`). Writes a `.ixes` manifest.
 #[allow(clippy::cast_precision_loss)] // balance_pct is a small percentage
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_env_static(
@@ -268,22 +253,26 @@ pub extern "C" fn rs_shard_env_static(
   requested_shards: usize,
   ram_gib: u64,
   balance_pct: u64,
-  layout: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
-  exec_ahead: usize,
 ) -> LeanIOResult<LeanOwned> {
   let path = env_path.to_string();
-  let layout = layout.to_string();
-  if layout != "mincut" && layout != "ordered" {
-    return LeanIOResult::error_string(&format!(
-      "rs_shard_env_static: unknown layout `{layout}` (mincut or ordered)"
-    ));
-  }
-  if requested_shards == 0 && ram_gib == 0 {
-    return LeanIOResult::error_string(
-      "rs_shard_env_static: pass a positive shard count or RAM budget",
-    );
-  }
+  // The process budget `ix prove` would run under: `--max-ram`, otherwise
+  // `MemTotal` less the host reservation. Unused when the count is fixed.
+  let budget = if ram_gib > 0 {
+    usize::try_from(ram_gib << 30).unwrap_or(usize::MAX)
+  } else if requested_shards > 0 {
+    0
+  } else {
+    match aiur::trace::stark::planning::default_budget() {
+      Some(bytes) => usize::try_from(bytes).unwrap_or(usize::MAX),
+      None => {
+        return LeanIOResult::error_string(
+          "rs_shard_env_static: cannot read MemTotal; pass --max-ram or --shards",
+        );
+      },
+    }
+  };
+  let budget_gib = u64::try_from(budget >> 30).unwrap_or(u64::MAX);
   let balance = (balance_pct as f64) / 100.0;
   let out = out_path.to_string();
   let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
@@ -310,30 +299,35 @@ pub extern "C" fn rs_shard_env_static(
     requested_shards
   } else if cfg!(feature = "cuda") {
     // The trace-shard prover: seed against one execution's record share,
-    // computed as `ix prove --lanes` computes it.
-    let cells = trace_shard_max_cells();
-    let budget = usize::try_from(ram_gib)
-      .ok()
-      .and_then(|g| g.checked_shl(30))
-      .unwrap_or(usize::MAX);
-    let share = record_share(budget, cells, exec_ahead.saturating_add(2));
+    // derived from the machine as `ix prove` derives its lanes and budget.
+    let cells = match aiur::trace::stark::planning::configured_cells() {
+      Ok(cells) => usize::try_from(cells).unwrap_or(usize::MAX),
+      Err(e) => {
+        return LeanIOResult::error_string(&format!(
+          "rs_shard_env_static: {e}"
+        ));
+      },
+    };
+    let gpus = aiur::trace::stark::planning::gpu_count();
+    let workspace =
+      aggregate_controller::lanes::cell_workspace(cells).unwrap_or(usize::MAX);
+    let ixon::shard::RecordShare { share, records } =
+      ixon::shard::record_share(budget, workspace, gpus);
     let tenths =
       u32::try_from(share.saturating_mul(10) >> 30).unwrap_or(u32::MAX);
     let share_gib = f64::from(tenths) / 10.0;
     let bytes = ixon::shard::static_env_bytes(&profile);
-    let n = ixon::shard::gpu_seed_shards(&profile, share_gib);
+    let n = ixon::shard::gpu_seed_shards(&profile, share);
     eprintln!(
-      "[shard] trace-shard seed (cuda build): bytes={bytes:.4e}; round({} x (bytes/{:.4e}) x ({} GiB / {share_gib:.1} GiB record share: {ram_gib} GiB per worker, {cells} cells, {exec_ahead} executions ahead)) -> {n} shard(s) (heuristic; the record cap names any shard over its share)",
-      ixon::shard::GPU_SEED_REFERENCE_SHARDS,
-      ixon::shard::GPU_SEED_REFERENCE_BYTES,
-      ixon::shard::GPU_SEED_REFERENCE_SHARE_GIB,
+      "[shard] trace-shard seed (cuda build): bytes={bytes:.4e}; round({:.0} record B/B x bytes / {share_gib:.1} GiB record share: {budget_gib} GiB budget, {cells} cells, {gpus} GPU(s), {records} records held) -> {n} shard(s) (heuristic; the record cap names any shard over its share)",
+      ixon::shard::RECORD_BYTES_PER_OWNED_BYTE * ixon::shard::RECORD_STORAGE_FACTOR,
     );
     n
   } else {
     let score = ixon::shard::static_env_score(&profile);
-    let n = ixon::shard::static_seed_shards(&profile, ram_gib);
+    let n = ixon::shard::static_seed_shards(&profile, budget_gib);
     eprintln!(
-      "[shard] static seed (cpu prover model): score={score:.3e}; round({} x (score/{:.3e})^{:.2} x ({}/{ram_gib})^{:.2}) -> {n} shard(s) (heuristic; gated execution corrects every boundary)",
+      "[shard] static seed (cpu prover model): score={score:.3e}; round({} x (score/{:.3e})^{:.2} x ({}/{budget_gib})^{:.2}) -> {n} shard(s) (heuristic; gated execution corrects every boundary)",
       ixon::shard::STATIC_SEED_REFERENCE_SHARDS,
       ixon::shard::STATIC_SEED_REFERENCE_SCORE,
       ixon::shard::STATIC_SEED_SCORE_EXPONENT,
@@ -342,20 +336,7 @@ pub extern "C" fn rs_shard_env_static(
     );
     n
   };
-  let report = if layout == "ordered" {
-    let (depends, primitives) =
-      ixon::shard::static_block_dependencies(&env, &profile);
-    ixon::shard::shard_static_ordered(
-      &profile,
-      &depends,
-      &primitives,
-      num_shards,
-      out_opt,
-    )
-  } else {
-    ixon::shard::shard_static(&profile, num_shards, balance, out_opt)
-  };
-  match report {
+  match ixon::shard::shard_static(&profile, num_shards, balance, out_opt) {
     Ok(report) => {
       eprintln!("[rs_shard_static]\n{report}");
       LeanIOResult::ok(LeanOwned::box_usize(0))
