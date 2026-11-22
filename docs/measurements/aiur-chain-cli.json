@@ -1,0 +1,239 @@
+{
+  "format": "ix-aiur-bn-cli-validation-v1",
+  "date_utc": "2026-11-13",
+  "scope": "CLI/FFI integration, key preparation, setup and trust-boundary checks. No full Init benchmark run by this task.",
+  "cli": "/tmp/ix.aiur-compression-stages/.lake/build/bin/ix",
+  "configuration": "target/chain-integration/cli-validation/portable-a/manifest.json",
+  "manifest_blake3": "306896e80464ffe23f119cf2445ad2ab99ac478813745311ce907299c24187ba",
+  "rust_ffi_unit_tests": 3,
+  "verifier_without_srs": "Passed prepared-manifest verifier loading with IX_KZG_SRS set to a missing path; no proving powers loaded.",
+  "lean_parser_tests": "Five positive benchmark-option tests and the invalid-mode rejection batch passed.",
+  "native_cli_checks": [
+    {
+      "args": [
+        "compress",
+        "aiur-check",
+        "--aiur-chain",
+        "/tmp/ix.aiur-compression-stages/target/chain-integration/cli-validation/portable-a/manifest.json"
+      ],
+      "exit": 1,
+      "passed": true,
+      "stdout": "",
+      "stderr": "compress aiur-check: Aiur compression requires --aiur-chain-blake3\n"
+    },
+    {
+      "args": [
+        "verify",
+        "--aggregate",
+        "--aiur-chain",
+        "/tmp/ix.aiur-compression-stages/target/chain-integration/cli-validation/portable-a/manifest.json",
+        "0000000000000000000000000000000000000000000000000000000000000000"
+      ],
+      "exit": 1,
+      "passed": true,
+      "stdout": "",
+      "stderr": "uncaught exception: Aiur compression requires --aiur-chain-blake3\n"
+    },
+    {
+      "args": [
+        "bench",
+        "run",
+        "--backend",
+        "ixvm",
+        "--constants",
+        "none",
+        "--env-mode",
+        "compress",
+        "--env-compression",
+        "aiur-bn",
+        "--aiur-chain",
+        "/tmp/ix.aiur-compression-stages/target/chain-integration/cli-validation/portable-a/manifest.json"
+      ],
+      "exit": 2,
+      "passed": true,
+      "stdout": "",
+      "stderr": "error: --env-compression aiur-bn requires --aiur-chain-blake3\nRun `ix bench run -h` for further information.\n"
+    },
+    {
+      "args": [
+        "compress",
+        "aiur-check",
+        "--aiur-chain",
+        "/tmp/ix.aiur-compression-stages/target/chain-integration/cli-validation/portable-a/manifest.json",
+        "--aiur-chain-blake3",
+        "306896e80464ffe23f119cf2445ad2ab99ac478813745311ce907299c24187ba"
+      ],
+      "exit": 0,
+      "passed": true,
+      "stdout": "ignition\n",
+      "stderr": "[compress] Aiur KZG CUDA settings: Settings { devices: Some([0]), msm_chunk_points: 16777216, resident_limit_bytes: Some(8589934592), srs_cache: false, passes: Fallback }\n2026-11-13T00:53:33.455990Z  INFO ix_proof_compression::kzg::cuda: KZG sppark CUDA backend curve=\"bn254\" ids=[0] chunk_points=16777216 resident_limits=[8589934592]\n"
+    },
+    {
+      "args": [
+        "compress",
+        "aiur-check",
+        "--aiur-chain",
+        "/tmp/ix.aiur-compression-stages/target/chain-integration/cli-validation/portable-a/mutated-manifest.json",
+        "--aiur-chain-blake3",
+        "306896e80464ffe23f119cf2445ad2ab99ac478813745311ce907299c24187ba"
+      ],
+      "exit": 1,
+      "passed": true,
+      "stdout": "",
+      "stderr": "[compress] Aiur KZG CUDA settings: Settings { devices: Some([0]), msm_chunk_points: 16777216, resident_limit_bytes: Some(8589934592), srs_cache: false, passes: Fallback }\ncompress aiur-check: illegal operation (error code: 2003770928, aiur chain manifest differs from the independently trusted pin)\n"
+    },
+    {
+      "args": [
+        "compress",
+        "aiur-check",
+        "--aiur-chain",
+        "/tmp/ix.aiur-compression-stages/target/chain-integration/cli-validation/portable-a/invalid-json.json",
+        "--aiur-chain-blake3",
+        "306896e80464ffe23f119cf2445ad2ab99ac478813745311ce907299c24187ba"
+      ],
+      "exit": 1,
+      "passed": true,
+      "stdout": "",
+      "stderr": "[compress] Aiur KZG CUDA settings: Settings { devices: Some([0]), msm_chunk_points: 16777216, resident_limit_bytes: Some(8589934592), srs_cache: false, passes: Fallback }\ncompress aiur-check: illegal operation (error code: 1735335488, aiur chain manifest differs from the independently trusted pin)\n"
+    },
+    {
+      "args": [
+        "compress",
+        "aiur-check",
+        "--aiur-chain",
+        "/tmp/ix.aiur-compression-stages/target/chain-integration/cli-validation/development/manifest.json",
+        "--aiur-chain-blake3",
+        "3c39945972a4b3f77eb12749290c042ddf278583a75d4b2ce09cf362886029ee"
+      ],
+      "exit": 1,
+      "passed": true,
+      "stdout": "",
+      "stderr": "[compress] Aiur KZG CUDA settings: Settings { devices: Some([0]), msm_chunk_points: 16777216, resident_limit_bytes: Some(8589934592), srs_cache: false, passes: Fallback }\ncompress aiur-check: illegal operation (error code: 763073104, aiur chain verifier does not use the released Ignition parameters; development parameters require explicit development mode)\n"
+    },
+    {
+      "args": [
+        "compress",
+        "aiur-check",
+        "--aiur-chain",
+        "/tmp/ix.aiur-compression-stages/target/chain-integration/cli-validation/development/manifest.json",
+        "--aiur-chain-blake3",
+        "3c39945972a4b3f77eb12749290c042ddf278583a75d4b2ce09cf362886029ee",
+        "--dev-srs"
+      ],
+      "exit": 0,
+      "passed": true,
+      "stdout": "development\n",
+      "stderr": "[compress] Aiur KZG CUDA settings: Settings { devices: Some([0]), msm_chunk_points: 16777216, resident_limit_bytes: Some(8589934592), srs_cache: false, passes: Fallback }\n2026-11-13T00:53:44.974519Z  INFO ix_proof_compression::kzg::cuda: KZG sppark CUDA backend curve=\"bn254\" ids=[0] chunk_points=16777216 resident_limits=[8589934592]\n"
+    },
+    {
+      "args": [
+        "compress",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "--aiur-chain",
+        "/tmp/ix.aiur-compression-stages/target/chain-integration/cli-validation/portable-a/manifest.json",
+        "--aiur-chain-blake3",
+        "306896e80464ffe23f119cf2445ad2ab99ac478813745311ce907299c24187ba",
+        "--fresh",
+        "--out",
+        "/tmp/ix.aiur-compression-stages/target/chain-integration/cli-validation/fresh-output"
+      ],
+      "exit": 1,
+      "passed": true,
+      "fresh_default_output": false,
+      "stdout": "",
+      "stderr": "compress: no such file or directory (error code: 2)\n  file: /tmp/ix.aiur-compression-stages/target/chain-integration/cli-validation/fresh-explicit-home/.ix/store/00/00/00/0000000000000000000000000000000000000000000000000000000000\n"
+    },
+    {
+      "args": [
+        "compress",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "--aiur-chain",
+        "/tmp/ix.aiur-compression-stages/target/chain-integration/cli-validation/portable-a/manifest.json",
+        "--aiur-chain-blake3",
+        "306896e80464ffe23f119cf2445ad2ab99ac478813745311ce907299c24187ba",
+        "--fresh"
+      ],
+      "exit": 1,
+      "passed": true,
+      "fresh_default_output": true,
+      "stdout": "",
+      "stderr": "compress: no such file or directory (error code: 2)\n  file: /tmp/ix.aiur-compression-stages/target/chain-integration/cli-validation/fresh-default-home/.ix/store/00/00/00/0000000000000000000000000000000000000000000000000000000000\n"
+    }
+  ],
+  "preparation": "Production Ignition and explicitly selected development templates prepared successfully; both preflights reproduced their pinned keys.",
+  "clippy": "ix-ffi library passed -D warnings.",
+  "lean_targets": "AiurCompression, CompressCmd, VerifyCmd, BenchCmd, BenchMeasures and CompressionCli build successfully.",
+  "source_files": [
+    "crates/ffi/src/aiur_chain.rs",
+    "crates/ffi/src/aiur_compression.rs",
+    "crates/ffi/src/lib.rs",
+    "Ix/Cli/AiurCompression.lean",
+    "Ix/Cli/CompressCmd.lean",
+    "Ix/Cli/Compression.lean",
+    "Ix/Cli/VerifyCmd.lean",
+    "Ix/Cli/BenchCmd.lean",
+    "Tests/CompressionCli.lean",
+    "Tests/Ix/BenchMeasures.lean",
+    "docs/aiur-chain-cli.md"
+  ],
+  "pin_review": {
+    "directory": "target/chain-integration/pin-review",
+    "applied": false,
+    "old": "74ab95cb51df2e493cb3a037132260fafdc0550807314053c629c68b0f890736",
+    "candidate": "ab371fd5bda958c8551d25dd8a903fc1125d86890da5a1cb5de51dc05ce027fc",
+    "changed_declarations": 7,
+    "added_declarations": 16,
+    "removed_declarations": 7,
+    "formal_aiur_keys_changed": false
+  },
+  "portable_bundle": "All five files are byte-identical in portable-a and portable-b; artifacts and keys use fixed relative names, manifest written last.",
+  "independent_manifest_pin": "Required for prove, verify, preflight and benchmark. Exact bytes authenticated before JSON parsing; changed valid metadata and invalid JSON reject at the pin check.",
+  "fresh_cleanup": "Failed explicit and default-output runs remove only the four known Aiur stage proof/report files and preserve unrelated.txt.",
+  "native_executors": {
+    "ixvm": "native-ixvm",
+    "verifier": "native-verifier",
+    "aggregation": "native-aggregation",
+    "evidence": "target/chain-integration/current-native-check.log"
+  },
+  "final_manifest_pin": "306896e80464ffe23f119cf2445ad2ab99ac478813745311ce907299c24187ba",
+  "fresh_gl_only": {
+    "args": [
+      "compress",
+      "0000000000000000000000000000000000000000000000000000000000000000",
+      "--aiur-gl",
+      "missing.ixa",
+      "--fresh",
+      "--out",
+      "/tmp/ix.aiur-compression-stages/target/chain-integration/cli-validation/fresh-gl-output"
+    ],
+    "exit": 1,
+    "passed": true,
+    "stdout": "",
+    "stderr": "compress: Aiur compression requires --aiur-gl-blake3\n"
+  },
+  "review": "Independent read-only review found no blocking issue; --out help wording corrected. Mandatory independent manifest-pin, portable-output and fresh-cleanup review fixes implemented and validated.",
+  "separate_acceptance_regression": {
+    "source": "crates/proof-compression/tests/aiur_chain.rs",
+    "result": "target/chain-integration/forged-opening/forged-result.json",
+    "log": "target/chain-integration/forged-opening.log",
+    "passed": true,
+    "scope": "Known-trapdoor development regression with a real valid BN outer proof and invalid carried pairing; no Init benchmark.",
+    "outer_proof_verified": true,
+    "chain_pairing_rejected": true,
+    "stage_test": "Verifier configured for stage2 and envelope stage2 pass the stage-count guard, then the stage1 outer proof fails binding.",
+    "accumulator_test": "Both complete canonical G1 points are swapped, canonical decoding passes, then the outer proof fails binding.",
+    "admission_test": "A real small-root GL execution exceeds an allowance set one byte below its measured trace size and is rejected before proving.",
+    "elapsed_seconds": 105.15
+  },
+  "acceptance_regression_summary": {
+    "accumulator_rejected": true,
+    "canonical_point_swap_proof_binding_rejected": true,
+    "chain_error": "CompressBN deferred pairing equation failed",
+    "chain_rejected": true,
+    "native_gl_rejected": true,
+    "outer_proof_verified": true,
+    "real_gl_trace_budget_rejected": true,
+    "stage_proof_binding_rejected": true
+  },
+  "review_scope": "Includes the mandatory independent manifest pin and portable bundle fixes, plus proof-binding and real admission regressions. Live verify-path pin remains pending separate human review."
+}

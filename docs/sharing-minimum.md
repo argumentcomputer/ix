@@ -852,7 +852,7 @@ instead; the exact uniform algorithm stays parameterised by `w` and is phase 1 o
 | G: nibble escapes 14/15 | 14 | 256 | −1.21% | 0 |
 | D: fixed per constant | 16 | 4,096 | +0.93% | 23,342 |
 
-Recommended layout **TagN** (nibble-bootstrapped; first called Ladder4): nibble `[L][M][c1][c0]`; `L=0` → 3-bit index; `L=1,M=0` → 2 bits +
+Recommended layout **TagN** (nibble-bootstrapped): nibble `[L][M][c1][c0]`; `L=0` → 3-bit index; `L=1,M=0` → 2 bits +
 1 byte (8..1031); `L=1,M=1,c∈{0,1,2}` → 2/4/8 following bytes (offsets continue; `c=3` invalid;
 superseded by the 4-byte rung of §12.16).
 Bijective (each index has one encoding), capped only at 2^64 like every other count.

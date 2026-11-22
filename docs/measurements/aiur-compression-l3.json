@@ -1,0 +1,838 @@
+{
+  "format": "ix-compression-l3-benchmark-v1",
+  "date_utc": "2026-11-16",
+  "base_revision": "4e27c5fcdaef0a7258e4e42693c695881a19e5e9",
+  "working_tree_modified": true,
+  "path": "Init, warm: normalized CompressWrap (m16384w64 v2) -> packed CompressGL (--gl-only) -> fixed-key narrow stage 1 (CompressNarrowFixed::step_v1, template v2, 1 shard) -> CompressFinalNarrow terminal -> gnark PLONK 2^25 on CUDA",
+  "command": "PIPELINE=1 target/e2e-l3/bench.sh 3",
+  "scope": "3 consecutive warm runs of target/e2e-l3/run.sh under target/heavy.lock on an idle machine (waits up to 30 min for no other GPU process, load < 4 and >= 200 GB available; the state each run started in is in machine_state_before_each_run). Every stage proves, verifies natively and rejects a changed output; the GL key and narrow key are compared with the pinned ones. Times are process wall clock (GNU time) and in-process phase timers; exposed time is a stage's end minus the previous stage's end, so exposed times sum to the end-to-end wall time. GPU memory is nvidia-smi sampled every 500 ms over each process's span (overlapping spans count in both).",
+  "scheduling": {
+    "pipeline": true,
+    "compress_gl_starts_with_wrap": true,
+    "tiling_export2": "replayed from target/e2e-l3/artifacts/export-cache, keyed by the SHA-256 of the exporter binary and its input (tiling-export-cached.sh)",
+    "fixed_commitment": "cached by layout digest (--fixed-commit-cache)",
+    "plonk_key": "raw proving key, --reuse",
+    "cpu_weight": "ixbench.slice CPUWeight=10000 (bench.sh)"
+  },
+  "hardware": {
+    "cpu": "Intel(R) Xeon(R) Platinum 8559C",
+    "logical_cpus_available": 32,
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition, 97887 MiB, 595.91.07",
+    "thread_limits_overridden": false
+  },
+  "runs": [
+    "target/e2e-l3/bench-v5/run-1",
+    "target/e2e-l3/bench-v5/run-2",
+    "target/e2e-l3/bench-v5/run-3"
+  ],
+  "machine_state_before_each_run": [
+    "gpu processes 0, load 3.23, available 206 GB",
+    "gpu processes 0, load 3.53, available 206 GB",
+    "gpu processes 0, load 3.02, available 206 GB"
+  ],
+  "stages": [
+    {
+      "stage": "wrap (CompressWrap m16384w64 v3)",
+      "hand_written": "wrap 25 s",
+      "witness_s": {
+        "median": 6.791,
+        "min": 6.728,
+        "max": 6.884,
+        "values": [
+          6.791,
+          6.884,
+          6.728
+        ]
+      },
+      "prove_s": {
+        "median": 3.498,
+        "min": 3.489,
+        "max": 3.571,
+        "values": [
+          3.489,
+          3.498,
+          3.571
+        ]
+      },
+      "verify_s": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "values": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "wait_s": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "values": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "other_s": {
+        "median": 1.152,
+        "min": 1.148,
+        "max": 1.26,
+        "values": [
+          1.26,
+          1.148,
+          1.152
+        ]
+      },
+      "total_s": {
+        "median": 11.53,
+        "min": 11.45,
+        "max": 11.54,
+        "values": [
+          11.54,
+          11.53,
+          11.45
+        ]
+      },
+      "exposed_s": {
+        "median": 11.55,
+        "min": 11.467,
+        "max": 11.559,
+        "values": [
+          11.559,
+          11.55,
+          11.467
+        ]
+      },
+      "process_wall_s": {
+        "median": 11.53,
+        "min": 11.45,
+        "max": 11.54,
+        "values": [
+          11.54,
+          11.53,
+          11.45
+        ]
+      },
+      "peak_rss_gb": {
+        "median": 11.532,
+        "min": 11.529,
+        "max": 11.541,
+        "values": [
+          11.529,
+          11.541,
+          11.532
+        ]
+      },
+      "peak_gpu_mib": {
+        "median": 55708,
+        "min": 55610,
+        "max": 55738,
+        "values": [
+          55738,
+          55708,
+          55610
+        ]
+      },
+      "proof_bytes": {
+        "median": 3374994,
+        "min": 3374994,
+        "max": 3374994,
+        "values": [
+          3374994,
+          3374994,
+          3374994
+        ]
+      }
+    },
+    {
+      "stage": "CompressGL packed (process)",
+      "hand_written": "FRI 94 s",
+      "witness_s": {
+        "median": 42.128,
+        "min": 41.804,
+        "max": 42.555,
+        "values": [
+          42.555,
+          41.804,
+          42.128
+        ]
+      },
+      "prove_s": {
+        "median": 34.134,
+        "min": 33.908,
+        "max": 34.141,
+        "values": [
+          34.141,
+          34.134,
+          33.908
+        ]
+      },
+      "verify_s": {
+        "median": 0.007,
+        "min": 0.007,
+        "max": 0.007,
+        "values": [
+          0.007,
+          0.007,
+          0.007
+        ]
+      },
+      "wait_s": {
+        "median": 6.961,
+        "min": 0.702,
+        "max": 7.002,
+        "values": [
+          6.961,
+          7.002,
+          0.702
+        ]
+      },
+      "other_s": {
+        "median": 5.785,
+        "min": 5.723,
+        "max": 11.944,
+        "values": [
+          5.785,
+          5.723,
+          11.944
+        ]
+      },
+      "total_s": {
+        "median": 82.489,
+        "min": 81.668,
+        "max": 87.988,
+        "values": [
+          82.489,
+          81.668,
+          87.988
+        ]
+      },
+      "exposed_s": {
+        "median": 77.238,
+        "min": 77.134,
+        "max": 77.905,
+        "values": [
+          77.905,
+          77.134,
+          77.238
+        ]
+      },
+      "process_wall_s": {
+        "median": 88.69,
+        "min": 88.67,
+        "max": 89.45,
+        "values": [
+          89.45,
+          88.67,
+          88.69
+        ]
+      },
+      "peak_rss_gb": {
+        "median": 85.101,
+        "min": 85.1,
+        "max": 85.103,
+        "values": [
+          85.101,
+          85.1,
+          85.103
+        ]
+      },
+      "peak_gpu_mib": {
+        "median": 39169,
+        "min": 39169,
+        "max": 39169,
+        "values": [
+          39169,
+          39169,
+          39169
+        ]
+      },
+      "proof_bytes": {
+        "median": 212701,
+        "min": 212701,
+        "max": 212701,
+        "values": [
+          212701,
+          212701,
+          212701
+        ]
+      }
+    },
+    {
+      "stage": "fixed-key narrow stage 1 (template v2, 1 shard)",
+      "hand_written": "first + recursive KZG 98 s",
+      "witness_s": {
+        "median": 7.372,
+        "min": 7.351,
+        "max": 7.378,
+        "values": [
+          7.378,
+          7.372,
+          7.351
+        ]
+      },
+      "prove_s": {
+        "median": 46.773,
+        "min": 46.572,
+        "max": 46.834,
+        "values": [
+          46.572,
+          46.773,
+          46.834
+        ]
+      },
+      "verify_s": {
+        "median": 0.002,
+        "min": 0.002,
+        "max": 0.002,
+        "values": [
+          0.002,
+          0.002,
+          0.002
+        ]
+      },
+      "wait_s": {
+        "median": 56.678,
+        "min": 56.598,
+        "max": 56.839,
+        "values": [
+          56.839,
+          56.678,
+          56.598
+        ]
+      },
+      "other_s": {
+        "median": 21.155,
+        "min": 21.025,
+        "max": 21.628,
+        "values": [
+          21.628,
+          21.025,
+          21.155
+        ]
+      },
+      "total_s": {
+        "median": 75.342,
+        "min": 75.172,
+        "max": 75.581,
+        "values": [
+          75.581,
+          75.172,
+          75.342
+        ]
+      },
+      "exposed_s": {
+        "median": 54.721,
+        "min": 54.528,
+        "max": 54.728,
+        "values": [
+          54.528,
+          54.728,
+          54.721
+        ]
+      },
+      "process_wall_s": {
+        "median": 131.94,
+        "min": 131.85,
+        "max": 132.42,
+        "values": [
+          132.42,
+          131.85,
+          131.94
+        ]
+      },
+      "peak_rss_gb": {
+        "median": 94.103,
+        "min": 94.102,
+        "max": 94.103,
+        "values": [
+          94.103,
+          94.102,
+          94.103
+        ]
+      },
+      "peak_gpu_mib": {
+        "median": 42614,
+        "min": 42612,
+        "max": 42614,
+        "values": [
+          42614,
+          42612,
+          42614
+        ]
+      },
+      "proof_bytes": {
+        "median": 3853,
+        "min": 3853,
+        "max": 3853,
+        "values": [
+          3853,
+          3853,
+          3853
+        ]
+      }
+    },
+    {
+      "stage": "terminal + PLONK 2^25 (CUDA)",
+      "hand_written": "PLONK ~36 s",
+      "witness_s": {
+        "median": 0.515,
+        "min": 0.513,
+        "max": 0.515,
+        "values": [
+          0.515,
+          0.513,
+          0.515
+        ]
+      },
+      "prove_s": {
+        "median": 22.702,
+        "min": 22.14,
+        "max": 22.782,
+        "values": [
+          22.14,
+          22.782,
+          22.702
+        ]
+      },
+      "verify_s": {
+        "median": 0.004,
+        "min": 0.004,
+        "max": 0.004,
+        "values": [
+          0.004,
+          0.004,
+          0.004
+        ]
+      },
+      "wait_s": {
+        "median": 110.199,
+        "min": 79.809,
+        "max": 116.828,
+        "values": [
+          79.809,
+          116.828,
+          110.199
+        ]
+      },
+      "other_s": {
+        "median": 22.28,
+        "min": 15.543,
+        "max": 53.143,
+        "values": [
+          53.143,
+          15.543,
+          22.28
+        ]
+      },
+      "total_s": {
+        "median": 45.501,
+        "min": 38.842,
+        "max": 75.801,
+        "values": [
+          75.801,
+          38.842,
+          45.501
+        ]
+      },
+      "exposed_s": {
+        "median": 23.758,
+        "min": 23.196,
+        "max": 23.829,
+        "values": [
+          23.196,
+          23.829,
+          23.758
+        ]
+      },
+      "process_wall_s": {
+        "median": 155.67,
+        "min": 155.61,
+        "max": 155.7,
+        "values": [
+          155.61,
+          155.67,
+          155.7
+        ]
+      },
+      "peak_rss_gb": {
+        "median": 43.554,
+        "min": 43.284,
+        "max": 43.559,
+        "values": [
+          43.284,
+          43.559,
+          43.554
+        ]
+      },
+      "peak_gpu_mib": {
+        "median": 38861,
+        "min": 38859,
+        "max": 38861,
+        "values": [
+          38861,
+          38859,
+          38861
+        ]
+      },
+      "proof_bytes": {
+        "median": 584,
+        "min": 584,
+        "max": 584,
+        "values": [
+          584,
+          584,
+          584
+        ]
+      }
+    }
+  ],
+  "end_to_end_s": {
+    "median": 167.192,
+    "min": 167.187,
+    "max": 167.244,
+    "values": [
+      167.192,
+      167.244,
+      167.187
+    ]
+  },
+  "process_sum_s": {
+    "median": 220.281,
+    "min": 207.212,
+    "max": 245.41,
+    "values": [
+      245.41,
+      207.212,
+      220.281
+    ]
+  },
+  "peak_gpu_mib": {
+    "median": 55708,
+    "min": 55610,
+    "max": 55738,
+    "values": [
+      55738,
+      55708,
+      55610
+    ]
+  },
+  "phases": {
+    "compress_gl": {
+      "execution": {
+        "median": 32.585,
+        "min": 32.045,
+        "max": 32.605,
+        "values": [
+          32.605,
+          32.045,
+          32.585
+        ]
+      },
+      "key": {
+        "median": 0.286,
+        "min": 0.283,
+        "max": 0.288,
+        "values": [
+          0.288,
+          0.283,
+          0.286
+        ]
+      },
+      "pcs_commit": {
+        "median": 14.563,
+        "min": 14.54,
+        "max": 14.612,
+        "values": [
+          14.54,
+          14.563,
+          14.612
+        ]
+      },
+      "pcs_open": {
+        "median": 8.617,
+        "min": 8.589,
+        "max": 8.622,
+        "values": [
+          8.622,
+          8.617,
+          8.589
+        ]
+      },
+      "prove": {
+        "median": 34.134,
+        "min": 33.908,
+        "max": 34.141,
+        "values": [
+          34.141,
+          34.134,
+          33.908
+        ]
+      },
+      "trace": {
+        "median": 9.476,
+        "min": 9.257,
+        "max": 9.662,
+        "values": [
+          9.662,
+          9.476,
+          9.257
+        ]
+      },
+      "verify": {
+        "median": 0.007,
+        "min": 0.007,
+        "max": 0.007,
+        "values": [
+          0.007,
+          0.007,
+          0.007
+        ]
+      }
+    },
+    "compress_gl_setup": {
+      "ready": {
+        "median": 4.599,
+        "min": 4.56,
+        "max": 10.771,
+        "values": [
+          4.599,
+          4.56,
+          10.771
+        ]
+      },
+      "srs": {
+        "median": 3.5,
+        "min": 3.448,
+        "max": 9.522,
+        "values": [
+          3.5,
+          3.448,
+          9.522
+        ]
+      },
+      "wait": {
+        "median": 6.961,
+        "min": 0.702,
+        "max": 7.002,
+        "values": [
+          6.961,
+          7.002,
+          0.702
+        ]
+      }
+    },
+    "narrow": {
+      "srs_load_seconds": {
+        "median": 0.001,
+        "min": 0.001,
+        "max": 0.001,
+        "values": [
+          0.001,
+          0.001,
+          0.001
+        ]
+      },
+      "fixed_commit_seconds": {
+        "median": 5.035,
+        "min": 4.781,
+        "max": 5.068,
+        "values": [
+          5.035,
+          4.781,
+          5.068
+        ]
+      },
+      "fixed_build_seconds": {
+        "median": 0.049,
+        "min": 0.049,
+        "max": 0.049,
+        "values": [
+          0.049,
+          0.049,
+          0.049
+        ]
+      },
+      "lean_layout_wait_seconds": null
+    },
+    "plonk": {
+      "execute": {
+        "median": 0.334,
+        "min": 0.331,
+        "max": 0.335,
+        "values": [
+          0.335,
+          0.331,
+          0.334
+        ]
+      },
+      "load": {
+        "median": 21.41,
+        "min": 14.695,
+        "max": 52.301,
+        "values": [
+          52.301,
+          14.695,
+          21.41
+        ]
+      },
+      "prove": {
+        "median": 22.702,
+        "min": 22.14,
+        "max": 22.782,
+        "values": [
+          22.14,
+          22.782,
+          22.702
+        ]
+      },
+      "scs_digest": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "values": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "setup": {
+        "median": 0.348,
+        "min": 0.333,
+        "max": 0.361,
+        "values": [
+          0.333,
+          0.348,
+          0.361
+        ]
+      },
+      "verify": {
+        "median": 0.004,
+        "min": 0.004,
+        "max": 0.004,
+        "values": [
+          0.004,
+          0.004,
+          0.004
+        ]
+      },
+      "wait": {
+        "median": 110.199,
+        "min": 79.809,
+        "max": 116.828,
+        "values": [
+          79.809,
+          116.828,
+          110.199
+        ]
+      },
+      "witness": {
+        "median": 0.181,
+        "min": 0.18,
+        "max": 0.182,
+        "values": [
+          0.18,
+          0.181,
+          0.182
+        ]
+      }
+    }
+  },
+  "baselines": {
+    "l3_sequential_2026_11_15_s": 209.7,
+    "l3_sequential_note": "target/e2e-l3/run (one run, before the export cache and pipelining): wrap 10.7, CompressGL 88.0, narrow 75.9 (19.7 s waiting for tiling_export2), PLONK 35.2",
+    "b0_s": 298.8,
+    "hand_written_warm_s": 403
+  },
+  "identities": {
+    "gl_key_blake3": [
+      "0b71c06784c5c76a1575c1a0893b280c6ad10425540acdaab5145457f9996df1"
+    ],
+    "narrow_key_blake3": [
+      "a955432ea0d2fb623ea02665951c7aef0eecc58f33ba5763eaf86df981b719b2"
+    ],
+    "root_key_blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+    "gl_artifact_blake3": "a05f4ee78f024e8aebfbbdd31a9c4ac9a974a6bcd1cb615b9bdd2eeea71b97ab",
+    "gl_proof_blake3": [
+      "799c026c16b8b022df64ca128b18ea6d8e220e69b6d9847ae69709e289a17545"
+    ],
+    "plonk_verifying_key_sha256": [
+      "30dd3ee852f4fb3b56b3835e5b237d51eac5d53301d5b5ba3c7b5d2b9750e148"
+    ],
+    "terminal_constraints": 27611602,
+    "plonk_domain": 33554432,
+    "narrow_layout_source": {
+      "exporter_ms": {
+        "check": 20836,
+        "fixed": 20153,
+        "lower": 190,
+        "parse": 1343,
+        "tables": 29463,
+        "total": 30996
+      },
+      "exporter_seconds": 14.038640104,
+      "exporter_wait_seconds": 14.23793625,
+      "input_format": "ix-tiling-v2-input-2",
+      "lean_exporter": true,
+      "lower_and_validate_seconds": 1.068660906,
+      "ready_after_seconds": 15.306699403
+    },
+    "narrow_fixed_commitment_cache_hit": [
+      true,
+      true,
+      true
+    ],
+    "tiling_export2_cache": [
+      "hit",
+      "hit",
+      "hit"
+    ]
+  },
+  "binaries_sha256": {
+    "gl/compress_gl_packed_chain": "940092dd0d5b2a6be063581234481052221595e2e2a63674e607fc71b2ddd815",
+    "gl/libix_bn254_cuda.so": "fcc5d8c5d2f392039ecc5f4d62533bce2f30a0cd3a761e6edcedf1655439b696",
+    "gl/libmulti_stark_cuda.so": "1e93bac17c60607e07c01a635395356992e6317d22e7db6352d17fbe193e13e9",
+    "narrow/aiur_packed_final_config": "e3a46dd055c0d96e4ffaba5ac02dc2af21f2065f64ec0fadf3bd2ab121896037",
+    "narrow/aiur_template_v2_init": "e0dd315b01775f08ffb5d72640734a54c76457e582e125a6cc48a7236d82162e",
+    "narrow/libix_bn254_cuda.so": "55d3d7c356c8b40a4057e24e865eb3dbb77e3739e2b285a2056c58875494a21d",
+    "narrow/libmulti_stark_cuda.so": "9c7883a9e55f158b29c2e322afc3e4475b77e96a214cb5fdfff8f4952c58d3c2",
+    "plonk/aiur_narrow_terminal_prove": "9922ca69fa183bc5a917c4d70390a125018c6131702d0ee93b76a9847d726ae1",
+    "plonk/libix_bn254_cuda.so": "55d3d7c356c8b40a4057e24e865eb3dbb77e3739e2b285a2056c58875494a21d",
+    "wrap/libmulti_stark_cuda.so": "26c97fa91765fd20001a0e1d5389b0492aebe09c4bcb3812447a6a2abf4922b5",
+    "wrap/stark-verifier": "aec5dcea15507218286bb35eccf1c08ae08f2db52e7244e0e31fccf78cd7aa94",
+    "bin/plonk_export": "7eb0e77031bbe312e92495f09abbab8c0f9b58a64042efdc492182d8433d1255",
+    "bin/tiling_export2": "0d2ca7711003c8cdeea5e8629c19fc6902169b49252b453d4d8c06f57e8398be",
+    "bin/wide_export": "fd8e71666378ea79775bd58b5305ef6225b73cd7c013f9a198afb4a6015f405f"
+  },
+  "cold_setup_times_s": {
+    "wrap": 51.396751074,
+    "gl": 78.097603744,
+    "export_narrow": 190.523464764,
+    "bootstrap_policy": 0.400218186,
+    "config_narrow": 2.401263973,
+    "narrow_bootstrap": 205.343365108,
+    "l3_policy": 0.522195095,
+    "narrow_l3": 173.010836528,
+    "terminal_config": 0.016461948,
+    "terminal_export": 165.379633274,
+    "terminal_stage": 0.999282668,
+    "plonk_export": 252.699557021,
+    "plonk_prepare": 284.685768491
+  },
+  "cold_setup_times_source": "target/e2e-l3/artifacts/setup-times.txt (setup.sh of the keys benchmarked)",
+  "cold_one_time_s": {
+    "source": "docs/aiur-compression-stage-study.md section 4 (target/e2e-l3/setup.sh, 2026-11-15), except export_cache_fill",
+    "narrow_program_export_lean": 197,
+    "terminal_export_lean": 168,
+    "bootstrap_narrow_proof_fixes_key": 86,
+    "plonk_compile": 45,
+    "plonk_srs_export": 19,
+    "plonk_setup_reused_lagrange": 92,
+    "first_plonk_key_load_writes_raw_key": 59,
+    "first_fixed_commitment_fills_cache_extra": 9.5,
+    "export_cache_fill": 25.5,
+    "export_cache_fill_note": "one tiling_export2 run through tiling-export-cached.sh (cache miss), 8.29 GB IXTLFX01 fixed matrix stored; a miss streams to the caller as before"
+  },
+  "note": "All-Lean L3 keys (switch of 2026-11-16, docs/aiur-compression-architecture.md section 3), stage binaries from target/e2e-l3/stage-bin. Each run ran under target/heavy.lock in the top-level user slice ixbench.slice with CPUWeight=10000, so other sessions' jobs (weight 100) did not set the host phases' timings; every run started on a quiet machine (load < 4, no other GPU process). All checks passed in every run (checks.json)."
+}

@@ -1,0 +1,7361 @@
+{
+ "format": "ix-aiur-packed-bn-stages-v1",
+ "date": "2026-11-13",
+ "scope": "Consecutive packed CompressBN stages (CompressBNPacked::compress_v1) on the saved actual Init input: stage 1 verifies the per-column CompressGL proof (target/fused-arithmetic/init-bn), each later stage the previous stage's packed-SHPLONK proof. Development measurements; no release pin depends on them.",
+ "command": "IX_KZG_SRS=<ignition prefix> IX_KZG_CUDA_SRS_CACHE=1 target/cuda/release/examples/compress_bn_packed_stages ARTIFACT 26 5 OUT --lookup-budget 4 --quotient-degree 4 --streaming",
+ "build": "CARGO_TARGET_DIR=target/cuda cargo build --release -p ix-proof-compression --features cuda --example compress_bn_packed_stages",
+ "artifact_export": "lake env MultiStark/.lake/build/bin/bn_grouping export ARTIFACT target/packed-bn-stages/p6-packed.policy.json --compress --packed",
+ "grouping_policy": "target/commitment-reuse/agent4/p6.policy.json with CompressBN::step_v1 replaced by CompressBNPacked::{step_v1,predecessor} and KzgPackedVerifier::verify in KzgGroup_reuse (target/packed-bn-stages/p6-packed.policy.json)",
+ "setup": {
+  "class": "ignition",
+  "srs": "/home/sam/repos/ix.ci-merge-tests/target/aiur-compression-stages-run/params/bn254-ignition-main-197/srs.bin (2^26 powers, SHA-256 06db33d8aa83291237aec6b8fa74752d3d4a516db0bb1221f4a554e8f8510a93)",
+  "loader": "SetupConfig::from_env -> for_stage -> gnark::load, anchors checked against the released Ignition parameters",
+  "capacity": {
+   "log_cap": 26,
+   "lookup_quotient_budget": 4,
+   "quotient_degree": 4
+  },
+  "note": "cap 2^26 requires quotient degree <= 4 (log cap + log q <= 28); the grouped Init system has quotient degree 4 under lookup budget 4"
+ },
+ "gpu": "NVIDIA RTX PRO 6000 Blackwell (96 GB)",
+ "policy": "anchors = Ignition; GL key/entry from the saved Init policy; BN key = BLAKE3 of this program's packed source-wire key, BN entry = CompressBNPacked::compress_v1",
+ "runs": {
+  "m2_height_planning": {
+   "description": "packs planned by height only (pre-M4)",
+   "artifact": "target/packed-bn-stages/p6-packed.ixa",
+   "artifact_blake3": "756c682ecbaf3e9fd9a64b6a135a51d0ccc6249644934164c7a009cb0636dc1b",
+   "key_wire_bytes": 462316,
+   "key_blake3": "992432f191efb8dfb9cd454edef73af1e5f12ca65511edf7b686719a0b2aed91",
+   "policy_blake3": "5b44a5e4469b5f6a69f65d918227cb0790a146e0d8fb97f02493d93a16166a45",
+   "process_peak_rss_bytes": 52394455040,
+   "stages": [
+    {
+     "stage": 1,
+     "predecessor": "per-column CompressGL proof",
+     "predecessor_key_bytes": 409162,
+     "predecessor_proof_bytes": 391515,
+     "variable_g1_points": 65,
+     "commitment_points": {
+      "lookup": 19,
+      "main": 25,
+      "quotient": 19
+     },
+     "committed_columns": {
+      "lookup": 245,
+      "main": 1802,
+      "quotient": 74
+     },
+     "requested_values": 2667,
+     "extra_values": 135,
+     "proof_wire_bytes": 95299,
+     "proof_blake3": "6a520b5b2189cf55609c19a6c25373a16b18f1f913a06e395c116dcef07b6256",
+     "accumulator_hex": "ee8663a82f1a96f39b43dff9de39624200000000000000000000000000000000e89263382c6aca853147c48611e5b8a20000000000000000000000000000000062fcf8ce1dea32580efe937b25c6d8be00000000000000000000000000000000f5ccc5f73e37b544828e27fa8145958200000000000000000000000000000000",
+     "accumulator_equals_column_baseline": true,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "active_circuits": 43,
+      "instructions": 1551026267,
+      "main_cells_padded": 673543080,
+      "max_height": 8388608,
+      "quotient_degree": 4,
+      "stage2_cells": 130618130,
+      "total_rows": 31855121
+     },
+     "seconds": {
+      "execution": 58.861567,
+      "pcs_commit": 35.389105029999996,
+      "pcs_open": 27.267687795,
+      "prove": 83.288672234,
+      "trace": 21.24101314,
+      "verify": 0.024144208
+     },
+     "peak_rss_bytes": 52394455040
+    },
+    {
+     "stage": 2,
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 462316,
+     "predecessor_proof_bytes": 95299,
+     "variable_g1_points": 64,
+     "commitment_points": {
+      "lookup": 20,
+      "main": 22,
+      "quotient": 20
+     },
+     "committed_columns": {
+      "lookup": 408,
+      "main": 3450,
+      "quotient": 168
+     },
+     "requested_values": 4731,
+     "extra_values": 878,
+     "proof_wire_bytes": 187599,
+     "proof_blake3": "456e7371c25c70f512c5def985b65d499a2a02a053792ad8944f3865b6a1319c",
+     "accumulator_hex": "53db9d5c6d1db831fe65f1a4b74c7e6d00000000000000000000000000000000f20a27540685840a602e95c4ebc5511b0000000000000000000000000000000048bb3357d6d11d7be5b23f184d6b5eeb0000000000000000000000000000000089caf0efe7dabff3fffb951293a2571900000000000000000000000000000000",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "active_circuits": 76,
+      "instructions": 359264720,
+      "main_cells_padded": 218289515,
+      "max_height": 2097152,
+      "quotient_degree": 4,
+      "stage2_cells": 36262908,
+      "total_rows": 7101431
+     },
+     "seconds": {
+      "execution": 6.210054867,
+      "pcs_commit": 6.210911020000005,
+      "pcs_open": 13.873887904999997,
+      "prove": 30.18271184,
+      "trace": 8.196149038,
+      "verify": 0.024389724
+     },
+     "peak_rss_bytes": 52394455040
+    },
+    {
+     "stage": 3,
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 462316,
+     "predecessor_proof_bytes": 187599,
+     "variable_g1_points": 66,
+     "commitment_points": {
+      "lookup": 20,
+      "main": 24,
+      "quotient": 20
+     },
+     "committed_columns": {
+      "lookup": 408,
+      "main": 3450,
+      "quotient": 168
+     },
+     "requested_values": 4731,
+     "extra_values": 839,
+     "proof_wire_bytes": 186415,
+     "proof_blake3": "2f4e7fe5c1218384e1c09afc877f884352d7cbdc8db2868b40a672ea10fa2e91",
+     "accumulator_hex": "fe43ee370e1c7d4bfa62ab2693d92f3400000000000000000000000000000000d1b15eaedf64df83fbcaba25b021162000000000000000000000000000000000c9138351db8e191dbdc95b1b37180ca900000000000000000000000000000000d76065a0c05faedf13f1bbf1f8e592a900000000000000000000000000000000",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "active_circuits": 76,
+      "instructions": 451297993,
+      "main_cells_padded": 358859851,
+      "max_height": 2097152,
+      "quotient_degree": 4,
+      "stage2_cells": 56372796,
+      "total_rows": 7778103
+     },
+     "seconds": {
+      "execution": 7.553722739,
+      "pcs_commit": 10.133259418999998,
+      "pcs_open": 18.113915116,
+      "prove": 40.890348509,
+      "trace": 10.419603844,
+      "verify": 0.021181574
+     },
+     "peak_rss_bytes": 52394455040
+    },
+    {
+     "stage": 4,
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 462316,
+     "predecessor_proof_bytes": 186415,
+     "variable_g1_points": 66,
+     "commitment_points": {
+      "lookup": 20,
+      "main": 24,
+      "quotient": 20
+     },
+     "committed_columns": {
+      "lookup": 408,
+      "main": 3450,
+      "quotient": 168
+     },
+     "requested_values": 4731,
+     "extra_values": 839,
+     "proof_wire_bytes": 186415,
+     "proof_blake3": "ae749c89d236407d05d02832ed2f2538da9810ac441b461e5e1eb85d729db51b",
+     "accumulator_hex": "4b2c0d5f2889fff0f0fc80d3baaa9c08000000000000000000000000000000006ee627b9166ee1990691bc9658cfda9f0000000000000000000000000000000073876d6bfa3ddf957a7027a9b7d324450000000000000000000000000000000049bf2fed89982b374c8236caaeacae0800000000000000000000000000000000",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "active_circuits": 76,
+      "instructions": 450530583,
+      "main_cells_padded": 358859851,
+      "max_height": 2097152,
+      "quotient_degree": 4,
+      "stage2_cells": 56372796,
+      "total_rows": 7778103
+     },
+     "seconds": {
+      "execution": 7.617088247,
+      "pcs_commit": 6.482145033000002,
+      "pcs_open": 6.296985808999999,
+      "prove": 19.529350987,
+      "trace": 10.853230653,
+      "verify": 0.006540393
+     },
+     "peak_rss_bytes": 52394455040
+    },
+    {
+     "stage": 5,
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 462316,
+     "predecessor_proof_bytes": 186415,
+     "variable_g1_points": 66,
+     "commitment_points": {
+      "lookup": 20,
+      "main": 24,
+      "quotient": 20
+     },
+     "committed_columns": {
+      "lookup": 408,
+      "main": 3450,
+      "quotient": 168
+     },
+     "requested_values": 4731,
+     "extra_values": 839,
+     "proof_wire_bytes": 186415,
+     "proof_blake3": "1e0d06309e44c2db7e30ffa723b0c1d47bd45dafbee50be74872f86beb705cf9",
+     "accumulator_hex": "9babbab34cdd13adc3e72b5efe7b2e0a000000000000000000000000000000000c95370e48e0ec57c4ab12f69c48360900000000000000000000000000000000493923d5d081e40b5a3c2eb6010b410800000000000000000000000000000000253fbbb6edaa41be4121a45173401e9600000000000000000000000000000000",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "active_circuits": 76,
+      "instructions": 450521196,
+      "main_cells_padded": 358859851,
+      "max_height": 2097152,
+      "quotient_degree": 4,
+      "stage2_cells": 56372796,
+      "total_rows": 7778103
+     },
+     "seconds": {
+      "execution": 6.157089126,
+      "pcs_commit": 6.451232689000001,
+      "pcs_open": 6.244511504000002,
+      "prove": 19.095339742,
+      "trace": 4.076721802,
+      "verify": 0.006565
+     },
+     "peak_rss_bytes": 52394455040
+    }
+   ],
+   "shape_convergence": [
+    {
+     "from": 1,
+     "to": 2,
+     "identical": false,
+     "circuits_with_different_height": 61
+    },
+    {
+     "from": 2,
+     "to": 3,
+     "identical": false,
+     "circuits_with_different_height": 18
+    },
+    {
+     "from": 3,
+     "to": 4,
+     "identical": true,
+     "circuits_with_different_height": 0
+    },
+    {
+     "from": 4,
+     "to": 5,
+     "identical": true,
+     "circuits_with_different_height": 0
+    }
+   ],
+   "report_dir": "target/packed-bn-stages/ign26-s5"
+  },
+  "m4_next_row_planning": {
+   "description": "packs planned by height and declared next-row class (IXPSHC02 commitments)",
+   "artifact": "target/packed-bn-stages/p6-packed-m4.ixa",
+   "artifact_blake3": "58c822c4c9ccdf0124063f7a7c059180d7c6475c388fd9e69e491227c388bf50",
+   "key_wire_bytes": 463203,
+   "key_blake3": "381f0523ba642b9249ababbfa924d3a8cb9fedbd8b8c8a6698d5ce33641c2842",
+   "policy_blake3": "a0cf7af2db80b3666f612ba55f33eec310c4cb49b17b5f5fa7a5e0c9a20e29eb",
+   "process_peak_rss_bytes": 52383924224,
+   "stages": [
+    {
+     "stage": 1,
+     "predecessor": "per-column CompressGL proof",
+     "predecessor_key_bytes": 409162,
+     "predecessor_proof_bytes": 391515,
+     "variable_g1_points": 69,
+     "commitment_points": {
+      "lookup": 19,
+      "main": 29,
+      "quotient": 19
+     },
+     "committed_columns": {
+      "lookup": 245,
+      "main": 1802,
+      "quotient": 74
+     },
+     "requested_values": 2667,
+     "extra_values": 0,
+     "proof_wire_bytes": 91236,
+     "proof_blake3": "43805a91245e8d57b77be041cce19f777a57a01837d38f222582f60e6e1e0a7e",
+     "accumulator_hex": "ee8663a82f1a96f39b43dff9de39624200000000000000000000000000000000e89263382c6aca853147c48611e5b8a20000000000000000000000000000000062fcf8ce1dea32580efe937b25c6d8be00000000000000000000000000000000f5ccc5f73e37b544828e27fa8145958200000000000000000000000000000000",
+     "accumulator_equals_column_baseline": true,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "active_circuits": 43,
+      "instructions": 1551026221,
+      "main_cells_padded": 673543080,
+      "max_height": 8388608,
+      "quotient_degree": 4,
+      "stage2_cells": 130618130,
+      "total_rows": 31855121
+     },
+     "seconds": {
+      "execution": 54.755261059,
+      "pcs_commit": 18.117797341,
+      "pcs_open": 32.144928891,
+      "prove": 71.561201796,
+      "trace": 21.95138694,
+      "verify": 0.017994518
+     },
+     "peak_rss_bytes": 52383924224
+    },
+    {
+     "stage": 2,
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 463203,
+     "predecessor_proof_bytes": 91236,
+     "variable_g1_points": 71,
+     "commitment_points": {
+      "lookup": 20,
+      "main": 29,
+      "quotient": 20
+     },
+     "committed_columns": {
+      "lookup": 409,
+      "main": 3476,
+      "quotient": 170
+     },
+     "requested_values": 4761,
+     "extra_values": 0,
+     "proof_wire_bytes": 160915,
+     "proof_blake3": "705f38c4ea5475abe5b986c848230bd6cdf841eb5578d31e0a3e8cbab0aaa20d",
+     "accumulator_hex": "d5ac57e8d2eaa2018538a87b088168d300000000000000000000000000000000efa207b8d57779791c918da2b547ab2b000000000000000000000000000000006927933c632da570a873fdc30dd88c25000000000000000000000000000000006f48a19393dba5a8e616d5c221da53a800000000000000000000000000000000",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "active_circuits": 76,
+      "instructions": 356533423,
+      "main_cells_padded": 218475499,
+      "max_height": 2097152,
+      "quotient_degree": 4,
+      "stage2_cells": 36271996,
+      "total_rows": 7105783
+     },
+     "seconds": {
+      "execution": 10.302467826,
+      "pcs_commit": 5.752972976999999,
+      "pcs_open": 6.210495784000003,
+      "prove": 18.469772602,
+      "trace": 8.359956003,
+      "verify": 0.045872447
+     },
+     "peak_rss_bytes": 52383924224
+    },
+    {
+     "stage": 3,
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 463203,
+     "predecessor_proof_bytes": 160915,
+     "variable_g1_points": 71,
+     "commitment_points": {
+      "lookup": 20,
+      "main": 29,
+      "quotient": 20
+     },
+     "committed_columns": {
+      "lookup": 409,
+      "main": 3476,
+      "quotient": 170
+     },
+     "requested_values": 4761,
+     "extra_values": 0,
+     "proof_wire_bytes": 160915,
+     "proof_blake3": "7f8b3abb5514e87e8a5cef48da7e547e80ce441c99af8934ac1ddf31399b128f",
+     "accumulator_hex": "0dc8620954a6c5598178ed3a68b100e9000000000000000000000000000000008b650540ef3e23db5c3434770554e496000000000000000000000000000000008ca9bef8c67e99a5bbc624e9381780fa000000000000000000000000000000003108692ea3eed1906d3a86df2d50db0d00000000000000000000000000000000",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "active_circuits": 76,
+      "instructions": 427015632,
+      "main_cells_padded": 263671115,
+      "max_height": 2097152,
+      "quotient_degree": 4,
+      "stage2_cells": 41971644,
+      "total_rows": 7786295
+     },
+     "seconds": {
+      "execution": 7.557413213,
+      "pcs_commit": 5.209694826,
+      "pcs_open": 6.602072426999996,
+      "prove": 18.36380579,
+      "trace": 5.843671196,
+      "verify": 0.006456408
+     },
+     "peak_rss_bytes": 52383924224
+    },
+    {
+     "stage": 4,
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 463203,
+     "predecessor_proof_bytes": 160915,
+     "variable_g1_points": 71,
+     "commitment_points": {
+      "lookup": 20,
+      "main": 29,
+      "quotient": 20
+     },
+     "committed_columns": {
+      "lookup": 409,
+      "main": 3476,
+      "quotient": 170
+     },
+     "requested_values": 4761,
+     "extra_values": 0,
+     "proof_wire_bytes": 160915,
+     "proof_blake3": "9ec0aa958bc5d2dcdc4bc28e74ae6629c2c6455917ec565f292365eda0222b58",
+     "accumulator_hex": "36b80604563cf27edc31a43d5809b255000000000000000000000000000000005939c3cf4a4459fb8769985fd8086fa800000000000000000000000000000000ab70a88ef85916da52d851bec66b9d6a0000000000000000000000000000000087df3aff7b1ee4bff32fa16907da662500000000000000000000000000000000",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "active_circuits": 76,
+      "instructions": 427053718,
+      "main_cells_padded": 263671115,
+      "max_height": 2097152,
+      "quotient_degree": 4,
+      "stage2_cells": 41971644,
+      "total_rows": 7786295
+     },
+     "seconds": {
+      "execution": 6.568753268,
+      "pcs_commit": 6.116156826000001,
+      "pcs_open": 4.969673516,
+      "prove": 16.761180594,
+      "trace": 4.090784568,
+      "verify": 0.00649946
+     },
+     "peak_rss_bytes": 52383924224
+    },
+    {
+     "stage": 5,
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 463203,
+     "predecessor_proof_bytes": 160915,
+     "variable_g1_points": 71,
+     "commitment_points": {
+      "lookup": 20,
+      "main": 29,
+      "quotient": 20
+     },
+     "committed_columns": {
+      "lookup": 409,
+      "main": 3476,
+      "quotient": 170
+     },
+     "requested_values": 4761,
+     "extra_values": 0,
+     "proof_wire_bytes": 160915,
+     "proof_blake3": "dd4f868aa8468bd685e28cc6ddc43591b81846d5901490871b331ffce2219234",
+     "accumulator_hex": "e67ce57d4f22f982aaeac86c058a61d600000000000000000000000000000000c3e2721436e8265ca5c13dbff6fe019300000000000000000000000000000000e0e4251a73c32765a9629662b2231f8b00000000000000000000000000000000a1187c2024dd7f05007924828fce32a300000000000000000000000000000000",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "active_circuits": 76,
+      "instructions": 426999027,
+      "main_cells_padded": 263671115,
+      "max_height": 2097152,
+      "quotient_degree": 4,
+      "stage2_cells": 41971644,
+      "total_rows": 7786295
+     },
+     "seconds": {
+      "execution": 5.785767465,
+      "pcs_commit": 4.501789187,
+      "pcs_open": 4.930553680999999,
+      "prove": 14.322946747,
+      "trace": 3.511796077,
+      "verify": 0.006506295
+     },
+     "peak_rss_bytes": 52383924224
+    }
+   ],
+   "shape_convergence": [
+    {
+     "from": 1,
+     "to": 2,
+     "identical": false,
+     "circuits_with_different_height": 61
+    },
+    {
+     "from": 2,
+     "to": 3,
+     "identical": false,
+     "circuits_with_different_height": 16
+    },
+    {
+     "from": 3,
+     "to": 4,
+     "identical": true,
+     "circuits_with_different_height": 0
+    },
+    {
+     "from": 4,
+     "to": 5,
+     "identical": true,
+     "circuits_with_different_height": 0
+    }
+   ],
+   "report_dir": "target/packed-bn-stages/ign26-m4"
+  },
+  "i1_split_programs": {
+   "description": "I1: stage one and steady state as separate programs/keys (CompressBNPacked::first_v1 with the per-column verifier, CompressBNPacked::compress_v1 with the packed verifier only), packed policy IXAUKP01 pinning GL, first and steady keys. Byte streams; same p6 grouping as m4.",
+   "first_artifact": "target/packed-bn-stages/i1-first.ixa",
+   "first_artifact_blake3": "fab0539c5ace63e97e3f15de5735ca449dc4f096c04cd83b242e8712a4e13267",
+   "artifact": "target/packed-bn-stages/i1-steady.ixa",
+   "artifact_blake3": "7876def818e3d3e5a81a90632c70e2ea90ddd08ec460f1dfc599103cdc1f7373",
+   "grouping_policies": {
+    "first": "target/packed-bn-stages/i1-first.policy.json",
+    "steady": "target/packed-bn-stages/i1-steady.policy.json"
+   },
+   "first_key_wire_bytes": 379542,
+   "first_key_blake3": "b963afe805c71f3581d862999b715014a114ac1fd2400bf125218bb13fab7edd",
+   "first_circuits": 43,
+   "key_wire_bytes": 399566,
+   "key_blake3": "34614cfc36dd36e1439cedbed4290840b26594853468e23b439da337b97e4501",
+   "circuits": 76,
+   "first_copies": [],
+   "copies": [],
+   "policy_blake3": "77e4b81c95d66e54db6d04a4bc25f3ff5e9f02c28c858e2bc3ec776d919a2108",
+   "process_peak_rss_bytes": 52537458688,
+   "stages": [
+    {
+     "stage": 1,
+     "program": "CompressBNPacked::first_v1",
+     "predecessor": "per-column CompressGL proof",
+     "predecessor_key_bytes": 409162,
+     "predecessor_proof_bytes": 391515,
+     "variable_g1_points": 69,
+     "commitment_points": {
+      "lookup": 19,
+      "main": 29,
+      "quotient": 19
+     },
+     "committed_columns": {
+      "lookup": 245,
+      "main": 1792,
+      "quotient": 74
+     },
+     "requested_values": 2657,
+     "extra_values": 0,
+     "proof_wire_bytes": 90881,
+     "proof_blake3": "7074367dc52bde4fbf4a7c81783fac47301659f6c5636384d5f5c842c5e20c54",
+     "accumulator_equals_column_baseline": true,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 547149559,
+      "main_cells_padded": 671183783,
+      "main_cells_padded_committed": 671183783,
+      "max_height": 8388608,
+      "active_circuits": 43,
+      "stage2_cells": 130618130,
+      "instructions": 1551027423
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 47.806,
+      "pcs_commit": 12.715,
+      "pcs_open": 14.505,
+      "prove": 37.679,
+      "trace": 11.205,
+      "verify": 0.005
+     }
+    },
+    {
+     "stage": 2,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed first-stage proof",
+     "predecessor_key_bytes": 379542,
+     "predecessor_proof_bytes": 90881,
+     "variable_g1_points": 68,
+     "commitment_points": {
+      "lookup": 19,
+      "main": 28,
+      "quotient": 19
+     },
+     "committed_columns": {
+      "lookup": 409,
+      "main": 3407,
+      "quotient": 170
+     },
+     "requested_values": 4692,
+     "extra_values": 0,
+     "proof_wire_bytes": 158609,
+     "proof_blake3": "dc1482598cbd5d4f2725ff78bd858066c3826f595a5029b3cf3cb45d07e0f181",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 138674403,
+      "main_cells_padded": 190487594,
+      "main_cells_padded_committed": 190487594,
+      "max_height": 2097152,
+      "active_circuits": 76,
+      "stage2_cells": 31543676,
+      "instructions": 309818226
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 4.82,
+      "pcs_commit": 3.939,
+      "pcs_open": 8.179,
+      "prove": 18.842,
+      "trace": 7.399,
+      "verify": 0.006
+     }
+    },
+    {
+     "stage": 3,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 399566,
+     "predecessor_proof_bytes": 158609,
+     "variable_g1_points": 70,
+     "commitment_points": {
+      "lookup": 20,
+      "main": 28,
+      "quotient": 20
+     },
+     "committed_columns": {
+      "lookup": 409,
+      "main": 3407,
+      "quotient": 170
+     },
+     "requested_values": 4692,
+     "extra_values": 0,
+     "proof_wire_bytes": 158673,
+     "proof_blake3": "b06bfdf230f82a9a96a2ea47718f38cac9a76c9d1a1f2650d6bb8ce609b2b311",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 172157621,
+      "main_cells_padded": 213929290,
+      "main_cells_padded_committed": 213929290,
+      "max_height": 2097152,
+      "active_circuits": 76,
+      "stage2_cells": 36777916,
+      "instructions": 391246981
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 6.526,
+      "pcs_commit": 6.342,
+      "pcs_open": 6.729,
+      "prove": 18.964,
+      "trace": 6.218,
+      "verify": 0.023
+     }
+    },
+    {
+     "stage": 4,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 399566,
+     "predecessor_proof_bytes": 158673,
+     "variable_g1_points": 70,
+     "commitment_points": {
+      "lookup": 20,
+      "main": 28,
+      "quotient": 20
+     },
+     "committed_columns": {
+      "lookup": 409,
+      "main": 3407,
+      "quotient": 170
+     },
+     "requested_values": 4692,
+     "extra_values": 0,
+     "proof_wire_bytes": 158673,
+     "proof_blake3": "6f4e498f8bb4496ae4e261853e09492e1c89c3ef967bd5378819d0613da05cf8",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 172328382,
+      "main_cells_padded": 213929290,
+      "main_cells_padded_committed": 213929290,
+      "max_height": 2097152,
+      "active_circuits": 76,
+      "stage2_cells": 36777916,
+      "instructions": 391577950
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 7.216,
+      "pcs_commit": 6.356,
+      "pcs_open": 11.797,
+      "prove": 25.126,
+      "trace": 3.13,
+      "verify": 0.007
+     }
+    },
+    {
+     "stage": 5,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 399566,
+     "predecessor_proof_bytes": 158673,
+     "variable_g1_points": 70,
+     "commitment_points": {
+      "lookup": 20,
+      "main": 28,
+      "quotient": 20
+     },
+     "committed_columns": {
+      "lookup": 409,
+      "main": 3407,
+      "quotient": 170
+     },
+     "requested_values": 4692,
+     "extra_values": 0,
+     "proof_wire_bytes": 158673,
+     "proof_blake3": "b634cbf2f37b05e6a116c0752b338753a57df29458fa6dd879990730a95e191e",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 172323703,
+      "main_cells_padded": 213929290,
+      "main_cells_padded_committed": 213929290,
+      "max_height": 2097152,
+      "active_circuits": 76,
+      "stage2_cells": 36777916,
+      "instructions": 391552858
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 6.233,
+      "pcs_commit": 5.768,
+      "pcs_open": 5.112,
+      "prove": 16.557,
+      "trace": 4.136,
+      "verify": 0.006
+     }
+    }
+   ],
+   "shape_convergence": [
+    {
+     "from": 1,
+     "to": 2,
+     "changed_circuit_heights": 68,
+     "changed_shards": false
+    },
+    {
+     "from": 2,
+     "to": 3,
+     "changed_circuit_heights": 20,
+     "changed_shards": false
+    },
+    {
+     "from": 3,
+     "to": 4,
+     "changed_circuit_heights": 0,
+     "changed_shards": false
+    },
+    {
+     "from": 4,
+     "to": 5,
+     "changed_circuit_heights": 0,
+     "changed_shards": false
+    }
+   ],
+   "report_dir": "target/packed-bn-stages/i1-split"
+  },
+  "i2_word_streams": {
+   "description": "I2: word-level streams merged (u32 channels, word BLAKE3 driver, word transcript); same grouping policies as i1, so the new word functions are ungrouped circuits.",
+   "first_artifact": "target/packed-bn-stages/i2-first.ixa",
+   "first_artifact_blake3": "0b89bf590d66a0f47ae8ae3ebb62c1f3bde7a853de436379dff7d547b2aec38a",
+   "artifact": "target/packed-bn-stages/i2-steady.ixa",
+   "artifact_blake3": "63cbae15acb4367722fdf0c1fd1268829db408f64d81c1d4222d480a628f2d2f",
+   "grouping_policies": {
+    "first": "target/packed-bn-stages/i1-first.policy.json",
+    "steady": "target/packed-bn-stages/i1-steady.policy.json"
+   },
+   "first_key_wire_bytes": 396183,
+   "first_key_blake3": "c0a581d94fe6c401f30a31bab6e8173fcd2d2e46aa499fc45de5e9d35b5cbce2",
+   "first_circuits": 59,
+   "key_wire_bytes": 415795,
+   "key_blake3": "4d3f0c19f44fa8c0c7006777d78a7b2fddcd3e188d0984e02b1548751d29551d",
+   "circuits": 92,
+   "first_copies": [],
+   "copies": [],
+   "policy_blake3": "f220db43f52af6eb87a9ea0b2a30356da92062adf6eda650d8c3ae0e457ac673",
+   "process_peak_rss_bytes": 52845735936,
+   "stages": [
+    {
+     "stage": 1,
+     "program": "CompressBNPacked::first_v1",
+     "predecessor": "per-column CompressGL proof",
+     "predecessor_key_bytes": 409162,
+     "predecessor_proof_bytes": 391515,
+     "variable_g1_points": 74,
+     "commitment_points": {
+      "lookup": 19,
+      "main": 34,
+      "quotient": 19
+     },
+     "committed_columns": {
+      "lookup": 316,
+      "main": 2969,
+      "quotient": 120
+     },
+     "requested_values": 4039,
+     "extra_values": 0,
+     "proof_wire_bytes": 136537,
+     "proof_blake3": "e49324dcd32e2d36205d8786a2ae90427752bc22096015229ba899f1488b5b1e",
+     "accumulator_equals_column_baseline": true,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 588413470,
+      "main_cells_padded": 854923679,
+      "main_cells_padded_committed": 854923679,
+      "max_height": 8388608,
+      "active_circuits": 59,
+      "stage2_cells": 144743326,
+      "instructions": 1514148405
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 55.189,
+      "pcs_commit": 17.454,
+      "pcs_open": 31.248,
+      "prove": 75.626,
+      "trace": 20.867,
+      "verify": 0.013
+     }
+    },
+    {
+     "stage": 2,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed first-stage proof",
+     "predecessor_key_bytes": 396183,
+     "predecessor_proof_bytes": 136537,
+     "variable_g1_points": 67,
+     "commitment_points": {
+      "lookup": 19,
+      "main": 27,
+      "quotient": 19
+     },
+     "committed_columns": {
+      "lookup": 460,
+      "main": 4592,
+      "quotient": 214
+     },
+     "requested_values": 6040,
+     "extra_values": 0,
+     "proof_wire_bytes": 202985,
+     "proof_blake3": "4c6febd9dc78d6d2db83a7dbcbd9c0d5a5acf6a93d107cefbb589c9213db4a1e",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 125303261,
+      "main_cells_padded": 173542059,
+      "main_cells_padded_committed": 173542059,
+      "max_height": 524288,
+      "active_circuits": 92,
+      "stage2_cells": 27027128,
+      "instructions": 346196208
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 4.496,
+      "pcs_commit": 4.894,
+      "pcs_open": 11.676,
+      "prove": 25.85,
+      "trace": 6.502,
+      "verify": 0.037
+     }
+    },
+    {
+     "stage": 3,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 415795,
+     "predecessor_proof_bytes": 202985,
+     "variable_g1_points": 67,
+     "commitment_points": {
+      "lookup": 19,
+      "main": 27,
+      "quotient": 19
+     },
+     "committed_columns": {
+      "lookup": 460,
+      "main": 4592,
+      "quotient": 214
+     },
+     "requested_values": 6040,
+     "extra_values": 0,
+     "proof_wire_bytes": 202985,
+     "proof_blake3": "51b64685e1054cc9bb43273aad61ce16532775d0858ad3d190f3513d3670d41a",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 148209669,
+      "main_cells_padded": 255984043,
+      "main_cells_padded_committed": 255984043,
+      "max_height": 524288,
+      "active_circuits": 92,
+      "stage2_cells": 41180536,
+      "instructions": 419956147
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 5.147,
+      "pcs_commit": 8.391,
+      "pcs_open": 13.293,
+      "prove": 32.966,
+      "trace": 4.256,
+      "verify": 0.022
+     }
+    },
+    {
+     "stage": 4,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 415795,
+     "predecessor_proof_bytes": 202985,
+     "variable_g1_points": 67,
+     "commitment_points": {
+      "lookup": 19,
+      "main": 27,
+      "quotient": 19
+     },
+     "committed_columns": {
+      "lookup": 460,
+      "main": 4592,
+      "quotient": 214
+     },
+     "requested_values": 6040,
+     "extra_values": 0,
+     "proof_wire_bytes": 202985,
+     "proof_blake3": "b6301d6ede0ce5d4f58b48caaea8e87a031319c61e4fe2727a4a31990a209c9c",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 148214119,
+      "main_cells_padded": 255984043,
+      "main_cells_padded_committed": 255984043,
+      "max_height": 524288,
+      "active_circuits": 92,
+      "stage2_cells": 41180536,
+      "instructions": 419993555
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 5.382,
+      "pcs_commit": 8.415,
+      "pcs_open": 9.207,
+      "prove": 28.134,
+      "trace": 8.031,
+      "verify": 0.026
+     }
+    },
+    {
+     "stage": 5,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 415795,
+     "predecessor_proof_bytes": 202985,
+     "variable_g1_points": 67,
+     "commitment_points": {
+      "lookup": 19,
+      "main": 27,
+      "quotient": 19
+     },
+     "committed_columns": {
+      "lookup": 460,
+      "main": 4592,
+      "quotient": 214
+     },
+     "requested_values": 6040,
+     "extra_values": 0,
+     "proof_wire_bytes": 202985,
+     "proof_blake3": "7dde644286c58c0a6df43112ac2224313ca93bceda4cb39137fa6db26058ce9e",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 148207496,
+      "main_cells_padded": 255984043,
+      "main_cells_padded_committed": 255984043,
+      "max_height": 524288,
+      "active_circuits": 92,
+      "stage2_cells": 41180536,
+      "instructions": 419984462
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 5.205,
+      "pcs_commit": 8.047,
+      "pcs_open": 14.531,
+      "prove": 34.383,
+      "trace": 7.951,
+      "verify": 0.015
+     }
+    }
+   ],
+   "shape_convergence": [
+    {
+     "from": 1,
+     "to": 2,
+     "changed_circuit_heights": 72,
+     "changed_shards": false
+    },
+    {
+     "from": 2,
+     "to": 3,
+     "changed_circuit_heights": 20,
+     "changed_shards": false
+    },
+    {
+     "from": 3,
+     "to": 4,
+     "changed_circuit_heights": 0,
+     "changed_shards": false
+    },
+    {
+     "from": 4,
+     "to": 5,
+     "changed_circuit_heights": 0,
+     "changed_shards": false
+    }
+   ],
+   "report_dir": "target/packed-bn-stages/i2-streams"
+  },
+  "i2_word_streams_regrouped": {
+   "description": "I2 with policies updated for word streams: first program drops KzgTranscript::observe_bytes from KzgGroup_cold_b and adds small word functions to KzgGroup_reuse; steady program adds KzgGroup_packed_small (small packed-verifier and word functions) and KzgGroup_packed_mid (KzgPcsPacked::{columns_at,columns_onto,split,has_next,values} and word stream helpers).",
+   "first_artifact": "target/packed-bn-stages/i2p-first.ixa",
+   "first_artifact_blake3": "f1714127d1bea19fdc99feefff6f547d389a8ef63f0a94f0e04d6457d753fa24",
+   "artifact": "target/packed-bn-stages/i2q-steady.ixa",
+   "artifact_blake3": "0f7ea416cd6827261fb8fbc757039ffb89604f8ee7b74fdddc32aa06978fa450",
+   "grouping_policies": {
+    "first": "target/packed-bn-stages/i2p-first.policy.json",
+    "steady": "target/packed-bn-stages/i2q-steady.policy.json"
+   },
+   "first_key_wire_bytes": 410966,
+   "first_key_blake3": "b1e205746a7e6f4c2c9e7fec2708be18db187911367a4945ad6ca14eae3edf16",
+   "first_circuits": 45,
+   "key_wire_bytes": 440350,
+   "key_blake3": "de58b0947bd7e43cfb3a35a8d8f8c2236a788f5de0433961d9f3c144973c1ccf",
+   "circuits": 42,
+   "first_copies": [],
+   "copies": [],
+   "policy_blake3": "20f21c3867e517e765c16b7ef51b60d7c5b5594968de2b5973412a4922c76e30",
+   "process_peak_rss_bytes": 45893033984,
+   "stages": [
+    {
+     "stage": 1,
+     "program": "CompressBNPacked::first_v1",
+     "predecessor": "per-column CompressGL proof",
+     "predecessor_key_bytes": 409162,
+     "predecessor_proof_bytes": 391515,
+     "variable_g1_points": 66,
+     "commitment_points": {
+      "lookup": 18,
+      "main": 28,
+      "quotient": 18
+     },
+     "committed_columns": {
+      "lookup": 262,
+      "main": 2150,
+      "quotient": 85
+     },
+     "requested_values": 3077,
+     "extra_values": 0,
+     "proof_wire_bytes": 104377,
+     "proof_blake3": "4b3222fc8a59263bc00caf5754f7c4b6733adde9a8e74ccde6a2d1271d9e1e90",
+     "accumulator_equals_column_baseline": true,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 499924156,
+      "main_cells_padded": 635988983,
+      "main_cells_padded_committed": 635988983,
+      "max_height": 8388608,
+      "active_circuits": 45,
+      "stage2_cells": 119045410,
+      "instructions": 1514148398
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 41.8,
+      "pcs_commit": 8.357,
+      "pcs_open": 10.427,
+      "prove": 29.142,
+      "trace": 14.164,
+      "verify": 0.005
+     }
+    },
+    {
+     "stage": 2,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed first-stage proof",
+     "predecessor_key_bytes": 410966,
+     "predecessor_proof_bytes": 104377,
+     "variable_g1_points": 62,
+     "commitment_points": {
+      "lookup": 18,
+      "main": 24,
+      "quotient": 18
+     },
+     "committed_columns": {
+      "lookup": 298,
+      "main": 2450,
+      "quotient": 84
+     },
+     "requested_values": 3444,
+     "extra_values": 0,
+     "proof_wire_bytes": 115753,
+     "proof_blake3": "6974fa1142a2448a8d8d29484bb483a48ae4b9e017e54941c147e5285f36270b",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 121504907,
+      "main_cells_padded": 172002871,
+      "main_cells_padded_committed": 172002871,
+      "max_height": 524288,
+      "active_circuits": 42,
+      "stage2_cells": 26019234,
+      "instructions": 320663210
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 3.297,
+      "pcs_commit": 3.075,
+      "pcs_open": 5.31,
+      "prove": 13.06,
+      "trace": 2.22,
+      "verify": 0.005
+     }
+    },
+    {
+     "stage": 3,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 440350,
+     "predecessor_proof_bytes": 115753,
+     "variable_g1_points": 60,
+     "commitment_points": {
+      "lookup": 18,
+      "main": 22,
+      "quotient": 18
+     },
+     "committed_columns": {
+      "lookup": 298,
+      "main": 2450,
+      "quotient": 84
+     },
+     "requested_values": 3444,
+     "extra_values": 0,
+     "proof_wire_bytes": 115689,
+     "proof_blake3": "dd078e2fdf8e400f32426c3266d92a49489358073cafa0a63818a61a16ef5aac",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 129485120,
+      "main_cells_padded": 175504951,
+      "main_cells_padded_committed": 175504951,
+      "max_height": 524288,
+      "active_circuits": 42,
+      "stage2_cells": 26826146,
+      "instructions": 343528039
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 3.429,
+      "pcs_commit": 4.012,
+      "pcs_open": 4.106,
+      "prove": 13.97,
+      "trace": 8.743,
+      "verify": 0.008
+     }
+    },
+    {
+     "stage": 4,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 440350,
+     "predecessor_proof_bytes": 115689,
+     "variable_g1_points": 61,
+     "commitment_points": {
+      "lookup": 18,
+      "main": 23,
+      "quotient": 18
+     },
+     "committed_columns": {
+      "lookup": 298,
+      "main": 2450,
+      "quotient": 84
+     },
+     "requested_values": 3444,
+     "extra_values": 0,
+     "proof_wire_bytes": 115721,
+     "proof_blake3": "c88dd7cfcc70869418a270d3cf4b83ccf4c4ff2f03cd2b0b47b89566901f6425",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 129330916,
+      "main_cells_padded": 175472183,
+      "main_cells_padded_committed": 175472183,
+      "max_height": 524288,
+      "active_circuits": 42,
+      "stage2_cells": 26822050,
+      "instructions": 343180766
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 6.696,
+      "pcs_commit": 6.576,
+      "pcs_open": 13.593,
+      "prove": 27.415,
+      "trace": 7.989,
+      "verify": 0.044
+     }
+    },
+    {
+     "stage": 5,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 440350,
+     "predecessor_proof_bytes": 115721,
+     "variable_g1_points": 61,
+     "commitment_points": {
+      "lookup": 18,
+      "main": 23,
+      "quotient": 18
+     },
+     "committed_columns": {
+      "lookup": 298,
+      "main": 2450,
+      "quotient": 84
+     },
+     "requested_values": 3444,
+     "extra_values": 0,
+     "proof_wire_bytes": 115721,
+     "proof_blake3": "6564d7ab8a28c5762e8bceef486266e08aa98ccf4b602f11abb8afec54002574",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 129406597,
+      "main_cells_padded": 175472183,
+      "main_cells_padded_committed": 175472183,
+      "max_height": 524288,
+      "active_circuits": 42,
+      "stage2_cells": 26822050,
+      "instructions": 343433094
+     },
+     "shards": [],
+     "seconds": {
+      "execution": 6.711,
+      "pcs_commit": 5.842,
+      "pcs_open": 14.795,
+      "prove": 27.305,
+      "trace": 8.701,
+      "verify": 0.033
+     }
+    }
+   ],
+   "shape_convergence": [
+    {
+     "from": 1,
+     "to": 2,
+     "changed_circuit_heights": 37,
+     "changed_shards": false
+    },
+    {
+     "from": 2,
+     "to": 3,
+     "changed_circuit_heights": 5,
+     "changed_shards": false
+    },
+    {
+     "from": 3,
+     "to": 4,
+     "changed_circuit_heights": 1,
+     "changed_shards": false
+    },
+    {
+     "from": 4,
+     "to": 5,
+     "changed_circuit_heights": 0,
+     "changed_shards": false
+    }
+   ],
+   "report_dir": "target/packed-bn-stages/i2q-streams"
+  },
+  "i3_sharding_k2": {
+   "description": "I3: function-circuit sharding, up to 2 copies per circuit fixed in the key (IXAUSK02 copies field), copies chosen from the i2q stage-1 (first) and stage-3 (steady) reports with net saving >= 2^20 padded main cells at 3600 cells per extra committed column.",
+   "first_artifact": "target/packed-bn-stages/i3-first.ixa",
+   "first_artifact_blake3": "f1714127d1bea19fdc99feefff6f547d389a8ef63f0a94f0e04d6457d753fa24",
+   "artifact": "target/packed-bn-stages/i3-steady.ixa",
+   "artifact_blake3": "e811635b61c3a8e0d5c62af2f74b328a6f9a4f8a13ab95505bcd42748049ddcb",
+   "grouping_policies": {
+    "first": "target/packed-bn-stages/i2p-first.policy.json",
+    "steady": "target/packed-bn-stages/i2q-steady.policy.json"
+   },
+   "first_key_wire_bytes": 411146,
+   "first_key_blake3": "6c84a20e03716b7091221de5b14c294772e5dd62337e3c17c8340b94a27630f2",
+   "first_circuits": 52,
+   "key_wire_bytes": 442580,
+   "key_blake3": "49289672f8a044c357aa35f827b5eedab944b06bc6cafdc5588f53451fcc9e33",
+   "circuits": 48,
+   "first_copies": [
+    [
+     "KzgIO::u32",
+     2
+    ],
+    [
+     "BN254Fq::from_limbs",
+     2
+    ],
+    [
+     "BN254FqRelation::assert_zero",
+     2
+    ],
+    [
+     "BN254FqRelation::range89",
+     2
+    ],
+    [
+     "KzgTranscript::push_byte",
+     2
+    ],
+    [
+     "KzgTranscript::observe_bytes",
+     2
+    ],
+    [
+     "KzgTranscript::reverse_words",
+     2
+    ]
+   ],
+   "copies": [
+    [
+     "KzgGroup_01",
+     2
+    ],
+    [
+     "KzgIO::read_words",
+     2
+    ],
+    [
+     "KzgBlake3::realign",
+     2
+    ],
+    [
+     "KzgGroup_cold_c",
+     2
+    ]
+   ],
+   "policy_blake3": "9d1edf177d1ab63d6da15a7a338b2c8a5fbee2e6888f240ac522356fb0c8e992",
+   "process_peak_rss_bytes": 45903876096,
+   "stages": [
+    {
+     "stage": 1,
+     "program": "CompressBNPacked::first_v1",
+     "predecessor": "per-column CompressGL proof",
+     "predecessor_key_bytes": 409162,
+     "predecessor_proof_bytes": 391515,
+     "variable_g1_points": 69,
+     "commitment_points": {
+      "lookup": 19,
+      "main": 29,
+      "quotient": 19
+     },
+     "committed_columns": {
+      "lookup": 283,
+      "main": 2249,
+      "quotient": 99
+     },
+     "requested_values": 3232,
+     "extra_values": 0,
+     "proof_wire_bytes": 109993,
+     "proof_blake3": "7ebc1cf04c2750fb5a62700c09b96c7987ef407f94a81b6d3476aa7e25d592a3",
+     "accumulator_equals_column_baseline": true,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 499924916,
+      "main_cells_padded": 635988983,
+      "main_cells_padded_committed": 607480823,
+      "max_height": 8388608,
+      "active_circuits": 45,
+      "stage2_cells": 119045410,
+      "instructions": 1514148429
+     },
+     "shards": [
+      [
+       "KzgIO::u32",
+       [
+        65536,
+        16384
+       ]
+      ],
+      [
+       "BN254Fq::from_limbs",
+       [
+        1048576,
+        524288
+       ]
+      ],
+      [
+       "BN254FqRelation::assert_zero",
+       [
+        1048576,
+        524288
+       ]
+      ],
+      [
+       "BN254FqRelation::range89",
+       [
+        2097152,
+        1048576
+       ]
+      ],
+      [
+       "KzgTranscript::push_byte",
+       [
+        262144,
+        131072
+       ]
+      ],
+      [
+       "KzgTranscript::observe_bytes",
+       [
+        262144,
+        131072
+       ]
+      ],
+      [
+       "KzgTranscript::reverse_words",
+       [
+        131072,
+        32768
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 41.883,
+      "pcs_commit": 10.176,
+      "pcs_open": 13.594,
+      "prove": 35.237,
+      "trace": 10.722,
+      "verify": 0.005
+     }
+    },
+    {
+     "stage": 2,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed first-stage proof",
+     "predecessor_key_bytes": 411146,
+     "predecessor_proof_bytes": 109993,
+     "variable_g1_points": 60,
+     "commitment_points": {
+      "lookup": 17,
+      "main": 24,
+      "quotient": 17
+     },
+     "committed_columns": {
+      "lookup": 318,
+      "main": 2622,
+      "quotient": 102
+     },
+     "requested_values": 3674,
+     "extra_values": 0,
+     "proof_wire_bytes": 123529,
+     "proof_blake3": "1a4f0b12ffcb2f45883953368dbbcd71acf4dd9ea0694a486d4b6e05b39dfa3c",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 124167046,
+      "main_cells_padded": 172499511,
+      "main_cells_padded_committed": 164831799,
+      "max_height": 524288,
+      "active_circuits": 44,
+      "stage2_cells": 26089250,
+      "instructions": 327743996
+     },
+     "shards": [
+      [
+       "KzgGroup_01",
+       [
+        65536,
+        16384
+       ]
+      ],
+      [
+       "KzgIO::read_words",
+       [
+        65536,
+        65536
+       ]
+      ],
+      [
+       "KzgBlake3::realign",
+       [
+        65536,
+        65536
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        8192
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 3.332,
+      "pcs_commit": 2.871,
+      "pcs_open": 6.205,
+      "prove": 13.443,
+      "trace": 6.475,
+      "verify": 0.005
+     }
+    },
+    {
+     "stage": 3,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 442580,
+     "predecessor_proof_bytes": 123529,
+     "variable_g1_points": 60,
+     "commitment_points": {
+      "lookup": 17,
+      "main": 24,
+      "quotient": 17
+     },
+     "committed_columns": {
+      "lookup": 318,
+      "main": 2622,
+      "quotient": 102
+     },
+     "requested_values": 3674,
+     "extra_values": 0,
+     "proof_wire_bytes": 123529,
+     "proof_blake3": "22e2080100bcf05a11ac5e885fb2c19183259803ce0df323a40e7583094cd1d3",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 129608769,
+      "main_cells_padded": 170680887,
+      "main_cells_padded_committed": 161833527,
+      "max_height": 524288,
+      "active_circuits": 44,
+      "stage2_cells": 25933602,
+      "instructions": 350457813
+     },
+     "shards": [
+      [
+       "KzgGroup_01",
+       [
+        65536,
+        16384
+       ]
+      ],
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        16384
+       ]
+      ],
+      [
+       "KzgBlake3::realign",
+       [
+        16384,
+        16384
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        16384
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 3.377,
+      "pcs_commit": 3.425,
+      "pcs_open": 5.886,
+      "prove": 13.589,
+      "trace": 6.035,
+      "verify": 0.005
+     }
+    },
+    {
+     "stage": 4,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 442580,
+     "predecessor_proof_bytes": 123529,
+     "variable_g1_points": 60,
+     "commitment_points": {
+      "lookup": 17,
+      "main": 24,
+      "quotient": 17
+     },
+     "committed_columns": {
+      "lookup": 318,
+      "main": 2622,
+      "quotient": 102
+     },
+     "requested_values": 3674,
+     "extra_values": 0,
+     "proof_wire_bytes": 123529,
+     "proof_blake3": "1515df08e0137df461bef9f3a2452beb204caf7f896ad1c985342a1137668daf",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 129589379,
+      "main_cells_padded": 170680887,
+      "main_cells_padded_committed": 161833527,
+      "max_height": 524288,
+      "active_circuits": 44,
+      "stage2_cells": 25933602,
+      "instructions": 350471526
+     },
+     "shards": [
+      [
+       "KzgGroup_01",
+       [
+        65536,
+        16384
+       ]
+      ],
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        16384
+       ]
+      ],
+      [
+       "KzgBlake3::realign",
+       [
+        16384,
+        16384
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        16384
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 3.417,
+      "pcs_commit": 3.375,
+      "pcs_open": 5.699,
+      "prove": 13.594,
+      "trace": 5.622,
+      "verify": 0.005
+     }
+    },
+    {
+     "stage": 5,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 442580,
+     "predecessor_proof_bytes": 123529,
+     "variable_g1_points": 60,
+     "commitment_points": {
+      "lookup": 17,
+      "main": 24,
+      "quotient": 17
+     },
+     "committed_columns": {
+      "lookup": 318,
+      "main": 2622,
+      "quotient": 102
+     },
+     "requested_values": 3674,
+     "extra_values": 0,
+     "proof_wire_bytes": 123529,
+     "proof_blake3": "0e3b80a3d1f36dcccb1c3067f7dd14c4e4358ffb27d5950ff453a643b8c15ddf",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 129579954,
+      "main_cells_padded": 170680887,
+      "main_cells_padded_committed": 161833527,
+      "max_height": 524288,
+      "active_circuits": 44,
+      "stage2_cells": 25933602,
+      "instructions": 350409249
+     },
+     "shards": [
+      [
+       "KzgGroup_01",
+       [
+        65536,
+        16384
+       ]
+      ],
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        16384
+       ]
+      ],
+      [
+       "KzgBlake3::realign",
+       [
+        16384,
+        16384
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        16384
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 3.351,
+      "pcs_commit": 2.981,
+      "pcs_open": 3.464,
+      "prove": 10.314,
+      "trace": 2.295,
+      "verify": 0.005
+     }
+    }
+   ],
+   "shape_convergence": [
+    {
+     "from": 1,
+     "to": 2,
+     "changed_circuit_heights": 39,
+     "changed_shards": true
+    },
+    {
+     "from": 2,
+     "to": 3,
+     "changed_circuit_heights": 4,
+     "changed_shards": true
+    },
+    {
+     "from": 3,
+     "to": 4,
+     "changed_circuit_heights": 0,
+     "changed_shards": false
+    },
+    {
+     "from": 4,
+     "to": 5,
+     "changed_circuit_heights": 0,
+     "changed_shards": false
+    }
+   ],
+   "report_dir": "target/packed-bn-stages/i3-shard2"
+  },
+  "i3_sharding_k3": {
+   "description": "I3: as k2 with up to 3 copies (column cost only). Extra copies of wide groups re-evaluate their constraint graph in the next verifier; the column-only model under-counts that.",
+   "first_artifact": "target/packed-bn-stages/i3-first.ixa",
+   "first_artifact_blake3": "f1714127d1bea19fdc99feefff6f547d389a8ef63f0a94f0e04d6457d753fa24",
+   "artifact": "target/packed-bn-stages/i3-steady.ixa",
+   "artifact_blake3": "e811635b61c3a8e0d5c62af2f74b328a6f9a4f8a13ab95505bcd42748049ddcb",
+   "grouping_policies": {
+    "first": "target/packed-bn-stages/i2p-first.policy.json",
+    "steady": "target/packed-bn-stages/i2q-steady.policy.json"
+   },
+   "first_key_wire_bytes": 411146,
+   "first_key_blake3": "ffbaf224181238688da45fa6c1b2249092936a5851c7c047eac366899718cfba",
+   "first_circuits": 66,
+   "key_wire_bytes": 442580,
+   "key_blake3": "5ce82776afc2d5af9e7dac8c0cbcb8f36ecb71e444c7f812ab3bbc30afe4fd0d",
+   "circuits": 53,
+   "first_copies": [
+    [
+     "KzgGroup_reuse",
+     3
+    ],
+    [
+     "KzgBlake3::realign",
+     3
+    ],
+    [
+     "KzgGroup_cold_b",
+     3
+    ],
+    [
+     "KzgIO::u32",
+     2
+    ],
+    [
+     "BN254Fq::from_limbs",
+     3
+    ],
+    [
+     "KzgGroup_cold_c",
+     3
+    ],
+    [
+     "BN254FqRelation::assert_zero",
+     3
+    ],
+    [
+     "BN254FqRelation::range89",
+     3
+    ],
+    [
+     "KzgTranscript::push_byte",
+     3
+    ],
+    [
+     "KzgTranscript::observe_bytes",
+     3
+    ],
+    [
+     "KzgTranscript::reverse_words",
+     3
+    ]
+   ],
+   "copies": [
+    [
+     "KzgGroup_reuse",
+     3
+    ],
+    [
+     "KzgGroup_01",
+     2
+    ],
+    [
+     "KzgIO::read_words",
+     3
+    ],
+    [
+     "KzgBlake3::realign",
+     2
+    ],
+    [
+     "KzgGroup_cold_b",
+     3
+    ],
+    [
+     "KzgGroup_cold_c",
+     2
+    ]
+   ],
+   "policy_blake3": "0d2b686d3a1337127b5e159bc63b4f3cc103a9aecd69b8406e9225d7d572165b",
+   "process_peak_rss_bytes": 45859950592,
+   "stages": [
+    {
+     "stage": 1,
+     "program": "CompressBNPacked::first_v1",
+     "predecessor": "per-column CompressGL proof",
+     "predecessor_key_bytes": 409162,
+     "predecessor_proof_bytes": 391515,
+     "variable_g1_points": 69,
+     "commitment_points": {
+      "lookup": 19,
+      "main": 29,
+      "quotient": 19
+     },
+     "committed_columns": {
+      "lookup": 614,
+      "main": 4592,
+      "quotient": 139
+     },
+     "requested_values": 6277,
+     "extra_values": 0,
+     "proof_wire_bytes": 208553,
+     "proof_blake3": "7e9e5d96192fab7f6c435f5f40d5fadf2e535e8949a1d104dac257134d80ee23",
+     "accumulator_equals_column_baseline": true,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 499924849,
+      "main_cells_padded": 635988983,
+      "main_cells_padded_committed": 535771639,
+      "max_height": 8388608,
+      "active_circuits": 45,
+      "stage2_cells": 119045410,
+      "instructions": 1514148342
+     },
+     "shards": [
+      [
+       "KzgGroup_reuse",
+       [
+        131072,
+        65536,
+        8192
+       ]
+      ],
+      [
+       "KzgBlake3::realign",
+       [
+        131072,
+        65536,
+        4096
+       ]
+      ],
+      [
+       "KzgGroup_cold_b",
+       [
+        131072,
+        65536,
+        16384
+       ]
+      ],
+      [
+       "KzgIO::u32",
+       [
+        65536,
+        16384
+       ]
+      ],
+      [
+       "BN254Fq::from_limbs",
+       [
+        1048576,
+        262144,
+        65536
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        65536,
+        16384
+       ]
+      ],
+      [
+       "BN254FqRelation::assert_zero",
+       [
+        1048576,
+        262144,
+        65536
+       ]
+      ],
+      [
+       "BN254FqRelation::range89",
+       [
+        2097152,
+        524288,
+        131072
+       ]
+      ],
+      [
+       "KzgTranscript::push_byte",
+       [
+        262144,
+        65536,
+        32768
+       ]
+      ],
+      [
+       "KzgTranscript::observe_bytes",
+       [
+        262144,
+        65536,
+        32768
+       ]
+      ],
+      [
+       "KzgTranscript::reverse_words",
+       [
+        131072,
+        16384,
+        256
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 76.688,
+      "pcs_commit": 19.509,
+      "pcs_open": 27.162,
+      "prove": 75.007,
+      "trace": 36.224,
+      "verify": 0.039
+     }
+    },
+    {
+     "stage": 2,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed first-stage proof",
+     "predecessor_key_bytes": 411146,
+     "predecessor_proof_bytes": 208553,
+     "variable_g1_points": 57,
+     "commitment_points": {
+      "lookup": 17,
+      "main": 21,
+      "quotient": 17
+     },
+     "committed_columns": {
+      "lookup": 615,
+      "main": 4514,
+      "quotient": 120
+     },
+     "requested_values": 6178,
+     "extra_values": 0,
+     "proof_wire_bytes": 203961,
+     "proof_blake3": "c7723aa45577099af81c557ab45fdadd8ede78cbf9b23241b90670a55ed86282",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 175167697,
+      "main_cells_padded": 220265335,
+      "main_cells_padded_committed": 192265079,
+      "max_height": 524288,
+      "active_circuits": 44,
+      "stage2_cells": 32077730,
+      "instructions": 420046819
+     },
+     "shards": [
+      [
+       "KzgGroup_reuse",
+       [
+        65536,
+        32768,
+        32768
+       ]
+      ],
+      [
+       "KzgGroup_01",
+       [
+        65536,
+        16384
+       ]
+      ],
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        16384,
+        8192
+       ]
+      ],
+      [
+       "KzgBlake3::realign",
+       [
+        131072,
+        32768
+       ]
+      ],
+      [
+       "KzgGroup_cold_b",
+       [
+        131072,
+        32768,
+        32768
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        65536
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 6.017,
+      "pcs_commit": 2.232,
+      "pcs_open": 3.325,
+      "prove": 10.645,
+      "trace": 3.855,
+      "verify": 0.022
+     }
+    },
+    {
+     "stage": 3,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 442580,
+     "predecessor_proof_bytes": 203961,
+     "variable_g1_points": 55,
+     "commitment_points": {
+      "lookup": 16,
+      "main": 21,
+      "quotient": 16
+     },
+     "committed_columns": {
+      "lookup": 615,
+      "main": 4514,
+      "quotient": 120
+     },
+     "requested_values": 6178,
+     "extra_values": 0,
+     "proof_wire_bytes": 203897,
+     "proof_blake3": "00525a7e875f9511ffe5ef506a32a948e5fec430725c8c22e4ca56aa169b354f",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 167317858,
+      "main_cells_padded": 214708791,
+      "main_cells_padded_committed": 179155511,
+      "max_height": 524288,
+      "active_circuits": 44,
+      "stage2_cells": 30832418,
+      "instructions": 421860451
+     },
+     "shards": [
+      [
+       "KzgGroup_reuse",
+       [
+        65536,
+        32768,
+        32768
+       ]
+      ],
+      [
+       "KzgGroup_01",
+       [
+        65536,
+        16384
+       ]
+      ],
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        16384,
+        16384
+       ]
+      ],
+      [
+       "KzgBlake3::realign",
+       [
+        32768,
+        32768
+       ]
+      ],
+      [
+       "KzgGroup_cold_b",
+       [
+        131072,
+        16384,
+        16384
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        65536
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 4.869,
+      "pcs_commit": 2.358,
+      "pcs_open": 3.083,
+      "prove": 10.404,
+      "trace": 3.684,
+      "verify": 0.007
+     }
+    },
+    {
+     "stage": 4,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 442580,
+     "predecessor_proof_bytes": 203897,
+     "variable_g1_points": 59,
+     "commitment_points": {
+      "lookup": 17,
+      "main": 23,
+      "quotient": 17
+     },
+     "committed_columns": {
+      "lookup": 615,
+      "main": 4514,
+      "quotient": 120
+     },
+     "requested_values": 6178,
+     "extra_values": 0,
+     "proof_wire_bytes": 204025,
+     "proof_blake3": "ba5d4dbe2b8e1aae352660b960877f596c154ff884a87f8bdb911b0dd1fb2423",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 167692630,
+      "main_cells_padded": 296623095,
+      "main_cells_padded_committed": 177560183,
+      "max_height": 524288,
+      "active_circuits": 44,
+      "stage2_cells": 45414050,
+      "instructions": 424249387
+     },
+     "shards": [
+      [
+       "KzgGroup_reuse",
+       [
+        131072,
+        256,
+        128
+       ]
+      ],
+      [
+       "KzgGroup_01",
+       [
+        65536,
+        16384
+       ]
+      ],
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        16384,
+        16384
+       ]
+      ],
+      [
+       "KzgBlake3::realign",
+       [
+        32768,
+        32768
+       ]
+      ],
+      [
+       "KzgGroup_cold_b",
+       [
+        131072,
+        16384,
+        16384
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        65536
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 3.936,
+      "pcs_commit": 3.064,
+      "pcs_open": 3.438,
+      "prove": 11.58,
+      "trace": 4.079,
+      "verify": 0.007
+     }
+    },
+    {
+     "stage": 5,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 442580,
+     "predecessor_proof_bytes": 204025,
+     "variable_g1_points": 55,
+     "commitment_points": {
+      "lookup": 16,
+      "main": 21,
+      "quotient": 16
+     },
+     "committed_columns": {
+      "lookup": 615,
+      "main": 4514,
+      "quotient": 120
+     },
+     "requested_values": 6178,
+     "extra_values": 0,
+     "proof_wire_bytes": 203897,
+     "proof_blake3": "c816b6ee07f652e3831351ac4c49d160b363f62387f823f8fa1a69c46a6e8c67",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 165412309,
+      "main_cells_padded": 215020087,
+      "main_cells_padded_committed": 179466807,
+      "max_height": 524288,
+      "active_circuits": 44,
+      "stage2_cells": 30897954,
+      "instructions": 414566470
+     },
+     "shards": [
+      [
+       "KzgGroup_reuse",
+       [
+        65536,
+        32768,
+        32768
+       ]
+      ],
+      [
+       "KzgGroup_01",
+       [
+        65536,
+        16384
+       ]
+      ],
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        16384,
+        16384
+       ]
+      ],
+      [
+       "KzgBlake3::realign",
+       [
+        32768,
+        32768
+       ]
+      ],
+      [
+       "KzgGroup_cold_b",
+       [
+        131072,
+        16384,
+        16384
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        65536
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 3.903,
+      "pcs_commit": 2.344,
+      "pcs_open": 3.084,
+      "prove": 10.353,
+      "trace": 3.678,
+      "verify": 0.007
+     }
+    }
+   ],
+   "shape_convergence": [
+    {
+     "from": 1,
+     "to": 2,
+     "changed_circuit_heights": 34,
+     "changed_shards": true
+    },
+    {
+     "from": 2,
+     "to": 3,
+     "changed_circuit_heights": 5,
+     "changed_shards": true
+    },
+    {
+     "from": 3,
+     "to": 4,
+     "changed_circuit_heights": 5,
+     "changed_shards": true
+    },
+    {
+     "from": 4,
+     "to": 5,
+     "changed_circuit_heights": 6,
+     "changed_shards": true
+    }
+   ],
+   "report_dir": "target/packed-bn-stages/i3-shard3"
+  },
+  "i3_sharding_k3_node_cost": {
+   "description": "I3: up to 3 copies with the cost model extended by 600 cells per constraint-graph node of every extra copy.",
+   "first_artifact": "target/packed-bn-stages/i3-first.ixa",
+   "first_artifact_blake3": "f1714127d1bea19fdc99feefff6f547d389a8ef63f0a94f0e04d6457d753fa24",
+   "artifact": "target/packed-bn-stages/i3-steady.ixa",
+   "artifact_blake3": "e811635b61c3a8e0d5c62af2f74b328a6f9a4f8a13ab95505bcd42748049ddcb",
+   "grouping_policies": {
+    "first": "target/packed-bn-stages/i2p-first.policy.json",
+    "steady": "target/packed-bn-stages/i2q-steady.policy.json"
+   },
+   "first_key_wire_bytes": 411146,
+   "first_key_blake3": "15836adda2f1e72d1e3039014938f90a5e2fcd9fabc09f4a36fa7bafa2c81874",
+   "first_circuits": 61,
+   "key_wire_bytes": 442580,
+   "key_blake3": "f94b9d6551396ffc0bdca9036fd03bb8152d344a7f89efaea8fbb587de13fc20",
+   "circuits": 48,
+   "first_copies": [
+    [
+     "KzgGroup_reuse",
+     3
+    ],
+    [
+     "KzgGroup_cold_b",
+     3
+    ],
+    [
+     "BN254Fq::from_limbs",
+     3
+    ],
+    [
+     "BN254FqRelation::assert_zero",
+     3
+    ],
+    [
+     "BN254FqRelation::range89",
+     3
+    ],
+    [
+     "KzgTranscript::push_byte",
+     3
+    ],
+    [
+     "KzgTranscript::observe_bytes",
+     3
+    ],
+    [
+     "KzgTranscript::reverse_words",
+     3
+    ]
+   ],
+   "copies": [
+    [
+     "KzgIO::read_words",
+     3
+    ],
+    [
+     "KzgBlake3::realign",
+     2
+    ],
+    [
+     "KzgGroup_cold_c",
+     2
+    ]
+   ],
+   "policy_blake3": "153c404612efba261b420e0c3db28de2a9d412fe9e4aca4b8c3534013c02b6ac",
+   "process_peak_rss_bytes": 45904887808,
+   "stages": [
+    {
+     "stage": 1,
+     "program": "CompressBNPacked::first_v1",
+     "predecessor": "per-column CompressGL proof",
+     "predecessor_key_bytes": 409162,
+     "predecessor_proof_bytes": 391515,
+     "variable_g1_points": 68,
+     "commitment_points": {
+      "lookup": 19,
+      "main": 28,
+      "quotient": 19
+     },
+     "committed_columns": {
+      "lookup": 594,
+      "main": 4414,
+      "quotient": 125
+     },
+     "requested_values": 6045,
+     "extra_values": 0,
+     "proof_wire_bytes": 200697,
+     "proof_blake3": "128ecbf238b08bd6a202c920d9461edab71cd547faf7643e4a0b865f37dd4181",
+     "accumulator_equals_column_baseline": true,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 499924923,
+      "main_cells_padded": 635988983,
+      "main_cells_padded_committed": 541006327,
+      "max_height": 8388608,
+      "active_circuits": 45,
+      "stage2_cells": 119045410,
+      "instructions": 1514148478
+     },
+     "shards": [
+      [
+       "KzgGroup_reuse",
+       [
+        131072,
+        65536,
+        8192
+       ]
+      ],
+      [
+       "KzgGroup_cold_b",
+       [
+        131072,
+        65536,
+        16384
+       ]
+      ],
+      [
+       "BN254Fq::from_limbs",
+       [
+        1048576,
+        262144,
+        65536
+       ]
+      ],
+      [
+       "BN254FqRelation::assert_zero",
+       [
+        1048576,
+        262144,
+        65536
+       ]
+      ],
+      [
+       "BN254FqRelation::range89",
+       [
+        2097152,
+        524288,
+        131072
+       ]
+      ],
+      [
+       "KzgTranscript::push_byte",
+       [
+        262144,
+        65536,
+        32768
+       ]
+      ],
+      [
+       "KzgTranscript::observe_bytes",
+       [
+        262144,
+        65536,
+        32768
+       ]
+      ],
+      [
+       "KzgTranscript::reverse_words",
+       [
+        131072,
+        16384,
+        256
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 42.986,
+      "pcs_commit": 6.873,
+      "pcs_open": 12.833,
+      "prove": 29.444,
+      "trace": 11.416,
+      "verify": 0.009
+     }
+    },
+    {
+     "stage": 2,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed first-stage proof",
+     "predecessor_key_bytes": 411146,
+     "predecessor_proof_bytes": 200697,
+     "variable_g1_points": 60,
+     "commitment_points": {
+      "lookup": 17,
+      "main": 24,
+      "quotient": 17
+     },
+     "committed_columns": {
+      "lookup": 317,
+      "main": 2610,
+      "quotient": 100
+     },
+     "requested_values": 3658,
+     "extra_values": 0,
+     "proof_wire_bytes": 123017,
+     "proof_blake3": "5dac6b36462f1deb5706c80a402ceb2111161c10af2c552809c3b00af862f399",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 171393925,
+      "main_cells_padded": 220262967,
+      "main_cells_padded_committed": 213201463,
+      "max_height": 524288,
+      "active_circuits": 44,
+      "stage2_cells": 32077602,
+      "instructions": 411399950
+     },
+     "shards": [
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        16384,
+        8192
+       ]
+      ],
+      [
+       "KzgBlake3::realign",
+       [
+        131072,
+        32768
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        65536
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 4.058,
+      "pcs_commit": 3.04,
+      "pcs_open": 3.963,
+      "prove": 11.481,
+      "trace": 2.748,
+      "verify": 0.005
+     }
+    },
+    {
+     "stage": 3,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 442580,
+     "predecessor_proof_bytes": 123017,
+     "variable_g1_points": 60,
+     "commitment_points": {
+      "lookup": 17,
+      "main": 24,
+      "quotient": 17
+     },
+     "committed_columns": {
+      "lookup": 317,
+      "main": 2610,
+      "quotient": 100
+     },
+     "requested_values": 3658,
+     "extra_values": 0,
+     "proof_wire_bytes": 123017,
+     "proof_blake3": "8f6aa512925263a0a09a526a614a8a17f3b4e0e1a44ef0010d3fb199f07bfc99",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 129418494,
+      "main_cells_padded": 170680887,
+      "main_cells_padded_committed": 163054135,
+      "max_height": 524288,
+      "active_circuits": 44,
+      "stage2_cells": 25933602,
+      "instructions": 349984333
+     },
+     "shards": [
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        8192,
+        4096
+       ]
+      ],
+      [
+       "KzgBlake3::realign",
+       [
+        16384,
+        16384
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        16384
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 3.402,
+      "pcs_commit": 2.981,
+      "pcs_open": 3.462,
+      "prove": 10.407,
+      "trace": 2.232,
+      "verify": 0.005
+     }
+    },
+    {
+     "stage": 4,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 442580,
+     "predecessor_proof_bytes": 123017,
+     "variable_g1_points": 60,
+     "commitment_points": {
+      "lookup": 17,
+      "main": 24,
+      "quotient": 17
+     },
+     "committed_columns": {
+      "lookup": 317,
+      "main": 2610,
+      "quotient": 100
+     },
+     "requested_values": 3658,
+     "extra_values": 0,
+     "proof_wire_bytes": 123017,
+     "proof_blake3": "3b3397418a780a16f0f322c74d17a98e41cb2b566af577e72e02ea83c7599991",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 129421109,
+      "main_cells_padded": 170680887,
+      "main_cells_padded_committed": 163054135,
+      "max_height": 524288,
+      "active_circuits": 44,
+      "stage2_cells": 25933602,
+      "instructions": 349997168
+     },
+     "shards": [
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        8192,
+        4096
+       ]
+      ],
+      [
+       "KzgBlake3::realign",
+       [
+        16384,
+        16384
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        16384
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 3.373,
+      "pcs_commit": 2.937,
+      "pcs_open": 3.387,
+      "prove": 10.272,
+      "trace": 2.244,
+      "verify": 0.005
+     }
+    },
+    {
+     "stage": 5,
+     "program": "CompressBNPacked::compress_v1",
+     "predecessor": "packed CompressBN proof",
+     "predecessor_key_bytes": 442580,
+     "predecessor_proof_bytes": 123017,
+     "variable_g1_points": 60,
+     "commitment_points": {
+      "lookup": 17,
+      "main": 24,
+      "quotient": 17
+     },
+     "committed_columns": {
+      "lookup": 317,
+      "main": 2610,
+      "quotient": 100
+     },
+     "requested_values": 3658,
+     "extra_values": 0,
+     "proof_wire_bytes": 123017,
+     "proof_blake3": "3d2938e39cbd6e98acec9268c2490f33b4ebf18917cf752c4be82ad98ab032d6",
+     "accumulator_equals_column_baseline": false,
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "deferred_pairing_holds": true,
+     "verify_cells": {
+      "main_cells_unpadded": 129430615,
+      "main_cells_padded": 170680887,
+      "main_cells_padded_committed": 163054135,
+      "max_height": 524288,
+      "active_circuits": 44,
+      "stage2_cells": 25933602,
+      "instructions": 350025097
+     },
+     "shards": [
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        8192,
+        4096
+       ]
+      ],
+      [
+       "KzgBlake3::realign",
+       [
+        16384,
+        16384
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        16384
+       ]
+      ]
+     ],
+     "seconds": {
+      "execution": 3.399,
+      "pcs_commit": 2.941,
+      "pcs_open": 3.374,
+      "prove": 10.235,
+      "trace": 2.242,
+      "verify": 0.005
+     }
+    }
+   ],
+   "shape_convergence": [
+    {
+     "from": 1,
+     "to": 2,
+     "changed_circuit_heights": 35,
+     "changed_shards": true
+    },
+    {
+     "from": 2,
+     "to": 3,
+     "changed_circuit_heights": 5,
+     "changed_shards": true
+    },
+    {
+     "from": 3,
+     "to": 4,
+     "changed_circuit_heights": 0,
+     "changed_shards": false
+    },
+    {
+     "from": 4,
+     "to": 5,
+     "changed_circuit_heights": 0,
+     "changed_shards": false
+    }
+   ],
+   "report_dir": "target/packed-bn-stages/i3b-shard3"
+  },
+  "g1_packed_gl_chain": {
+   "description": "G1: CompressGL proven with packed SHPLONK on the actual Init root, then CompressBNPacked::chain_v1 at every BN stage (no per-column verifier program, no first_v1). Chain policy IXAUKG01 pins the packed GL key at stage one and the chain key afterwards.",
+   "command": "IX_KZG_SRS=<ignition prefix> IX_KZG_CUDA_SRS_CACHE=1 LD_LIBRARY_PATH=<multi-stark cuda out> target/cuda/release/examples/compress_gl_packed_chain target/compress-gl/compress-gl.ixa target/compress-wrap/init-raw-root 55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86 target/packed-bn-stages/gl-chain/chain.ixa 26 4 OUT --lookup-budget 4 --quotient-degree 4 --streaming --gl-shards 2 --shards 2 --shard-profile target/packed-bn-stages/i3-shard2/stage-3/report.json",
+   "build": "CARGO_TARGET_DIR=target/cuda cargo build --release -p ix-proof-compression --features cuda --example compress_gl_packed_chain",
+   "artifact_export": "lake env MultiStark/.lake/build/bin/bn_grouping export target/packed-bn-stages/gl-chain/chain.ixa target/packed-bn-stages/gl-chain/chain.policy.json --compress --packed --chain",
+   "grouping_policy": "target/packed-bn-stages/gl-chain/chain.policy.json: i2q-steady with CompressBNPacked::{policy,step,bn_previous} replaced by CompressBNPacked::chain_step in KzgGroup_reuse",
+   "root_input": "target/compress-wrap/init-raw-root (root key 55f0b8b0..., claims c67d7ce5..., the same statement as the fresh Init run target/aiur-bn-bench/fresh-init-pinned-grouped; that run does not save the root proof)",
+   "report_dir": "target/packed-bn-stages/gl-chain/run-k2",
+   "artifact": "target/packed-bn-stages/gl-chain/chain.ixa",
+   "artifact_blake3": "85b20c2b0649c24a5fd25de86e9ab7e6547acf7107914399477b1264cb6d9df6",
+   "gl_artifact": "target/compress-gl/compress-gl.ixa",
+   "gl_artifact_blake3": "a05f4ee78f024e8aebfbbdd31a9c4ac9a974a6bcd1cb615b9bdd2eeea71b97ab",
+   "key_wire_bytes": 442749,
+   "key_blake3": "63a3ce917cb40e80f44ea407e21a4e8acb4c9e96b9027a9a0888394135cce681",
+   "circuits": 46,
+   "copies": [
+    [
+     "KzgIO::read_words",
+     2
+    ],
+    [
+     "KzgGroup_cold_c",
+     2
+    ]
+   ],
+   "policy_blake3": "84e826407654f915bcc16ccae6042dcdd2ac5f040459196859daeea589f2af85",
+   "gl": {
+    "artifact": "target/compress-gl/compress-gl.ixa",
+    "artifact_blake3": "a05f4ee78f024e8aebfbbdd31a9c4ac9a974a6bcd1cb615b9bdd2eeea71b97ab",
+    "cells": {
+     "active_circuits": 83,
+     "instructions": 3926448954,
+     "main_cells_padded": 1470770778,
+     "main_cells_padded_sharded": 1209118298,
+     "main_cells_unpadded": 1022134854,
+     "max_height": 8388608,
+     "quotient_degree": 4
+    },
+    "circuits": 92,
+    "copies": [
+     [
+      "verifier_group_05",
+      2
+     ],
+     [
+      "SystemDeserialize::read_vk_u8",
+      2
+     ],
+     [
+      "verifier_group_19",
+      2
+     ],
+     [
+      "verifier_group_20",
+      2
+     ],
+     [
+      "Goldilocks::gl_add",
+      2
+     ],
+     [
+      "verifier_group_28",
+      2
+     ],
+     [
+      "Goldilocks::gl_mul",
+      2
+     ],
+     [
+      "Pcs::rows_pop",
+      2
+     ],
+     [
+      "verifier_group_38",
+      2
+     ]
+    ],
+    "counts": {
+     "commitment_points": {
+      "lookup": 22,
+      "main": 42,
+      "quotient": 21
+     },
+     "committed_columns": {
+      "lookup": 621,
+      "main": 4436,
+      "quotient": 238
+     },
+     "extra_values": 0,
+     "requested_values": 6140,
+     "variable_g1_points": 87
+    },
+    "key_blake3": "86864e70e2b49494fca3d1f85389a401b1c902402609a33ecde2b7eb2f0f60a9",
+    "key_wire_bytes": 408685,
+    "native_accepts": true,
+    "native_rejects_changed_output": true,
+    "peak_rss_bytes": 109778862080,
+    "program": "CompressGL::verify_root",
+    "proof_blake3": "162c3133ad21a8ad7936c6156bb8870b9f77d97c8fd4782eba3d231d8a13f3a1",
+    "proof_wire_bytes": 206797,
+    "root_claims_blake3": "c67d7ce5ac847836c4962eef2eadc71de89c08577e63d25f1982a145c09a6908",
+    "root_key_blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+    "root_proof_blake3": "552154c3622f5c737366dbe379a7b7e97560f20865410d142d65fc58bec64399",
+    "seconds": {
+     "execution": 45.753413075,
+     "key": 0.449204783,
+     "pcs_commit": 23.382386039,
+     "pcs_open": 16.462499028,
+     "prove": 55.093943303,
+     "trace": 29.337164262,
+     "verify": 0.007280434
+    },
+    "shape": [
+     [
+      "CompressWrap::verify_root",
+      1
+     ],
+     [
+      "verifier_group_00",
+      524288
+     ],
+     [
+      "verifier_group_01",
+      16384
+     ],
+     [
+      "verifier_group_02",
+      16384
+     ],
+     [
+      "Blake3::compress",
+      1048576
+     ],
+     [
+      "Blake3::compress_chunks",
+      524288
+     ],
+     [
+      "verifier_group_03",
+      2048
+     ],
+     [
+      "verifier_group_04",
+      32768
+     ],
+     [
+      "Blake3::pad_block",
+      2048
+     ],
+     [
+      "verifier_group_05",
+      131072
+     ],
+     [
+      "verifier_group_06",
+      131072
+     ],
+     [
+      "verifier_group_07",
+      4096
+     ],
+     [
+      "verifier_group_22",
+      32768
+     ],
+     [
+      "StarkVerifier::b8_onto",
+      32768
+     ],
+     [
+      "MultiStark::verify_multi_stark_proof",
+      1
+     ],
+     [
+      "verifier_group_08",
+      65536
+     ],
+     [
+      "SystemDeserialize::read_vk_u8",
+      524288
+     ],
+     [
+      "verifier_group_09",
+      32768
+     ],
+     [
+      "verifier_group_10",
+      2048
+     ],
+     [
+      "SystemDeserialize::read_vk_tag",
+      65536
+     ],
+     [
+      "SystemDeserialize::read_nodes_n",
+      65536
+     ],
+     [
+      "verifier_group_11",
+      524288
+     ],
+     [
+      "SystemDeserialize::read_node_ids_n",
+      32768
+     ],
+     [
+      "verifier_group_12",
+      512
+     ],
+     [
+      "Goldilocks::gl_to_bytes",
+      8388608
+     ],
+     [
+      "verifier_group_13",
+      2048
+     ],
+     [
+      "verifier_group_14",
+      4096
+     ],
+     [
+      "verifier_group_15",
+      128
+     ],
+     [
+      "verifier_group_16",
+      65536
+     ],
+     [
+      "verifier_group_17",
+      512
+     ],
+     [
+      "verifier_group_18",
+      4096
+     ],
+     [
+      "verifier_group_19",
+      1048576
+     ],
+     [
+      "ProofDeserialize::read_u64_vec_vec_n",
+      32768
+     ],
+     [
+      "verifier_group_20",
+      1048576
+     ],
+     [
+      "verifier_group_21",
+      32768
+     ],
+     [
+      "verifier_group_23",
+      4096
+     ],
+     [
+      "verifier_group_24",
+      1024
+     ],
+     [
+      "verifier_group_25",
+      32768
+     ],
+     [
+      "verifier_group_26",
+      32768
+     ],
+     [
+      "StarkVerifier::assert_batch_bounds",
+      1
+     ],
+     [
+      "StarkVerifier::lookups_ok",
+      128
+     ],
+     [
+      "verifier_group_32",
+      32768
+     ],
+     [
+      "StarkVerifier::batch_rows",
+      2
+     ],
+     [
+      "StarkVerifier::shard_rows",
+      128
+     ],
+     [
+      "StarkVerifier::at_most_row_bound",
+      1
+     ],
+     [
+      "Goldilocks::gl_add",
+      8388608
+     ],
+     [
+      "verifier_group_27",
+      16384
+     ],
+     [
+      "verifier_group_28",
+      1048576
+     ],
+     [
+      "verifier_group_29",
+      16384
+     ],
+     [
+      "verifier_group_30",
+      256
+     ],
+     [
+      "verifier_group_31",
+      256
+     ],
+     [
+      "${\"name\":\"Lists::concat\",\"types\":[\"field\"]}",
+      4096
+     ],
+     [
+      "Goldilocks::gl_mul",
+      4194304
+     ],
+     [
+      "Goldilocks::gl_sub",
+      1048576
+     ],
+     [
+      "Goldilocks::gl_inverse",
+      8192
+     ],
+     [
+      "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"SystemDeserialize::SysCircuit\"}}]}",
+      128
+     ],
+     [
+      "verifier_group_33",
+      32768
+     ],
+     [
+      "verifier_group_34",
+      65536
+     ],
+     [
+      "StarkVerifier::two_adic_gen",
+      64
+     ],
+     [
+      "verifier_group_35",
+      65536
+     ],
+     [
+      "verifier_group_36",
+      65536
+     ],
+     [
+      "verifier_group_37",
+      32768
+     ],
+     [
+      "Goldilocks::gl_eq",
+      256
+     ],
+     [
+      "Transcript::ch_sample_bits",
+      128
+     ],
+     [
+      "StarkVerifier::take_bits",
+      4096
+     ],
+     [
+      "Pcs::rows_pop",
+      1048576
+     ],
+     [
+      "verifier_group_38",
+      2097152
+     ],
+     [
+      "Goldilocks::gl_is_zero",
+      1
+     ],
+     [
+      "<table:UInt8::byte_inputs>",
+      256
+     ],
+     [
+      "<table:UInt8::pair_inputs>",
+      65536
+     ],
+     [
+      "<table:UInt8::sum_inputs>",
+      1024
+     ],
+     [
+      "<ROM:3>",
+      1048576
+     ],
+     [
+      "<ROM:4>",
+      16384
+     ],
+     [
+      "<ROM:5>",
+      32
+     ],
+     [
+      "<ROM:6>",
+      131072
+     ],
+     [
+      "<ROM:7>",
+      524288
+     ],
+     [
+      "<ROM:8>",
+      512
+     ],
+     [
+      "<ROM:10>",
+      1048576
+     ],
+     [
+      "<ROM:11>",
+      32
+     ],
+     [
+      "<ROM:12>",
+      128
+     ],
+     [
+      "<ROM:26>",
+      2
+     ],
+     [
+      "<ROM:32>",
+      131072
+     ],
+     [
+      "<ROM:34>",
+      16384
+     ]
+    ],
+    "shards": [
+     [
+      "verifier_group_05",
+      [
+       65536,
+       32768
+      ]
+     ],
+     [
+      "SystemDeserialize::read_vk_u8",
+      [
+       262144,
+       16384
+      ]
+     ],
+     [
+      "verifier_group_19",
+      [
+       524288,
+       262144
+      ]
+     ],
+     [
+      "verifier_group_20",
+      [
+       524288,
+       131072
+      ]
+     ],
+     [
+      "Goldilocks::gl_add",
+      [
+       4194304,
+       16384
+      ]
+     ],
+     [
+      "verifier_group_28",
+      [
+       524288,
+       65536
+      ]
+     ],
+     [
+      "Goldilocks::gl_mul",
+      [
+       2097152,
+       524288
+      ]
+     ],
+     [
+      "Pcs::rows_pop",
+      [
+       524288,
+       32768
+      ]
+     ],
+     [
+      "verifier_group_38",
+      [
+       1048576,
+       524288
+      ]
+     ]
+    ]
+   },
+   "gl_per_column_baseline": {
+    "source": "target/aiur-bn-bench/fresh-init-pinned-grouped/metrics.json.env/compression/aiur-bn-report.json (stage 0) and target/compress-gl/bench/aiur-gl-key-bound-fresh (aiur-gl-report.json)",
+    "capacity": {
+     "max_log_height": 24,
+     "quotient_degree": 2,
+     "lookup_quotient_budget": null
+    },
+    "main_cells_padded": 1470279258,
+    "seconds": {
+     "execution": 42.864,
+     "trace": 24.705,
+     "prove": 46.651,
+     "prove_other_run": 50.211
+    },
+    "proof_bytes": [
+     375962,
+     388058
+    ],
+    "key_wire_bytes_source": 409162,
+    "peak_rss_bytes": 107160940544,
+    "next_stage_verify_cells": {
+     "main_cells_padded": 635988983,
+     "main_cells_padded_sharded": 607480823,
+     "execution_seconds": 41.883,
+     "prove_seconds": 35.237,
+     "source": "i3_sharding_k2 stage 1 (first_v1)"
+    }
+   },
+   "stages": [
+    {
+     "accumulator_hex": "f1ef31943bb395ac8202794f5908dcd900000000000000000000000000000000faa9d89052f939602dbe477a8bee111100000000000000000000000000000000acc3b4c8b7cd13688965a20ac6dcfb33000000000000000000000000000000000bc195a46647eb56bf4b205f8519db9200000000000000000000000000000000",
+     "counts": {
+      "commitment_points": {
+       "lookup": 16,
+       "main": 22,
+       "quotient": 16
+      },
+      "committed_columns": {
+       "lookup": 310,
+       "main": 2574,
+       "quotient": 96
+      },
+      "extra_values": 0,
+      "requested_values": 3604,
+      "variable_g1_points": 56
+     },
+     "deferred_pairing_holds": true,
+     "function_rows": [
+      [
+       "CompressBNPacked::chain_v1",
+       1
+      ],
+      [
+       "CompressBNPacked::chain_step",
+       1
+      ],
+      [
+       "CompressBN::digest_onto",
+       6
+      ],
+      [
+       "UInt32::less_than_fields",
+       49651
+      ],
+      [
+       "KzgIO::sized_channel",
+       4
+      ],
+      [
+       "KzgIO::split4",
+       10
+      ],
+      [
+       "KzgIO::read_words",
+       154074
+      ],
+      [
+       "KzgBlake3::hash_input",
+       3
+      ],
+      [
+       "KzgBlake3::aligned",
+       3
+      ],
+      [
+       "KzgBlake3::realign",
+       153872
+      ],
+      [
+       "KzgBlake3::word_root",
+       9
+      ],
+      [
+       "KzgBlake3::word_chunks",
+       13530
+      ],
+      [
+       "KzgBlake3::final_chunk",
+       9
+      ],
+      [
+       "KzgBlake3::pad_words",
+       95
+      ],
+      [
+       "KzgBlake3::zero_words",
+       15
+      ],
+      [
+       "UInt64::is_zero",
+       7
+      ],
+      [
+       "Blake3::compress",
+       115072
+      ],
+      [
+       "UInt64::wrapping_succ",
+       399
+      ],
+      [
+       "KzgBlake3::root",
+       34
+      ],
+      [
+       "KzgBlake3::next_layer",
+       844
+      ],
+      [
+       "KzgBlake3::parent",
+       836
+      ],
+      [
+       "KzgIO::next_word",
+       1308
+      ],
+      [
+       "KzgIO::read_bytes",
+       7
+      ],
+      [
+       "KzgIO::copy_words",
+       1299
+      ],
+      [
+       "KzgIO::byte",
+       41684
+      ],
+      [
+       "KzgIO::digest",
+       2
+      ],
+      [
+       "KzgIO::read32",
+       7886
+      ],
+      [
+       "KzgIO::u32",
+       80392
+      ],
+      [
+       "KzgPackedDeserialize::key",
+       1
+      ],
+      [
+       "KzgDeserialize::supported_power",
+       3
+      ],
+      [
+       "KzgIO::point",
+       89
+      ],
+      [
+       "BN254G1::from_bytes",
+       91
+      ],
+      [
+       "BN254G1::from_raw",
+       91
+      ],
+      [
+       "BN254Fq::from_limbs",
+       20613
+      ],
+      [
+       "BN254Fq::range80",
+       144797
+      ],
+      [
+       "BN254Fq::canonical_high",
+       10087
+      ],
+      [
+       "BN254Fq::mul",
+       90
+      ],
+      [
+       "BN254Fq::range84",
+       269
+      ],
+      [
+       "BN254FqRelation::assert_zero",
+       20430
+      ],
+      [
+       "BN254FqRelation::range17",
+       10287
+      ],
+      [
+       "BN254FqRelation::range89",
+       51688
+      ],
+      [
+       "BN254G1::to_bytes",
+       93
+      ],
+      [
+       "BN254G1::fq_bytes",
+       92
+      ],
+      [
+       "BN254G1::sign",
+       93
+      ],
+      [
+       "KzgPackedDeserialize::circuits",
+       84
+      ],
+      [
+       "KzgDeserialize::circuits",
+       166
+      ],
+      [
+       "KzgDeserialize::quotient_degree",
+       6
+      ],
+      [
+       "KzgDeserialize::nodes",
+       33006
+      ],
+      [
+       "KzgDeserialize::node",
+       32923
+      ],
+      [
+       "KzgIO::scalar",
+       7793
+      ],
+      [
+       "KzgIO::scalar_from_bytes",
+       5630
+      ],
+      [
+       "KzgDeserialize::check_child",
+       47247
+      ],
+      [
+       "KzgDeserialize::ids",
+       18693
+      ],
+      [
+       "KzgDeserialize::lookups",
+       1286
+      ],
+      [
+       "KzgDeserialize::group_count",
+       186
+      ],
+      [
+       "KzgPackedDeserialize::copies_of",
+       175
+      ],
+      [
+       "KzgPackedDeserialize::commitment",
+       4
+      ],
+      [
+       "KzgPackedDeserialize::shapes",
+       283
+      ],
+      [
+       "KzgDeserialize::points",
+       89
+      ],
+      [
+       "KzgIO::equal_bytes",
+       33
+      ],
+      [
+       "KzgDeserialize::scalar_rows",
+       664
+      ],
+      [
+       "KzgDeserialize::scalars",
+       6636
+      ],
+      [
+       "CompressBN::previous",
+       1
+      ],
+      [
+       "KzgPackedVerifier::verify",
+       1
+      ],
+      [
+       "KzgPackedShape::frames",
+       1
+      ],
+      [
+       "KzgPackedShape::walk",
+       93
+      ],
+      [
+       "UInt64::from_field",
+       8
+      ],
+      [
+       "UInt64::to_field",
+       8
+      ],
+      [
+       "UInt64::sub_with_borrow",
+       1
+      ],
+      [
+       "KzgPackedShape::consume",
+       92
+      ],
+      [
+       "KzgShape::power_log",
+       3
+      ],
+      [
+       "KzgPackedShape::shape",
+       279
+      ],
+      [
+       "KzgShape::rows_width",
+       434
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[\"field\"]}",
+       10772
+      ],
+      [
+       "KzgShape::power2",
+       27
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+       1200
+      ],
+      [
+       "KzgPackedShape::shapes",
+       4
+      ],
+      [
+       "KzgTranscript::observe_field",
+       7437
+      ],
+      [
+       "KzgTranscript::observe32",
+       7439
+      ],
+      [
+       "KzgIO::scalar_bytes",
+       5445
+      ],
+      [
+       "KzgTranscript::observe_input",
+       9
+      ],
+      [
+       "KzgTranscript::observe_words",
+       2375
+      ],
+      [
+       "KzgTranscript::push_word",
+       2934
+      ],
+      [
+       "KzgTranscript::push_byte",
+       66
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Circuit\"}}]}",
+       93
+      ],
+      [
+       "KzgVerifier::observe_shape",
+       93
+      ],
+      [
+       "KzgTranscript::observe_fields",
+       6526
+      ],
+      [
+       "KzgPcsPacked::commitment_bytes",
+       4
+      ],
+      [
+       "KzgTranscript::observe_claim_rows",
+       2
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[\"field\"],\"name\":\"Lists::Node\"}}}}]}",
+       378
+      ],
+      [
+       "KzgTranscript::sample",
+       6
+      ],
+      [
+       "KzgBlake3::xof96_words",
+       6
+      ],
+      [
+       "KzgBlake3::xof_output",
+       7
+      ],
+      [
+       "KzgBlake3::compress_full",
+       14
+      ],
+      [
+       "KzgBlake3::rounds",
+       112
+      ],
+      [
+       "KzgTranscript::reverse_words",
+       62508
+      ],
+      [
+       "KzgAlgebra::claims_accumulator",
+       2
+      ],
+      [
+       "KzgAlgebra::fingerprint",
+       19
+      ],
+      [
+       "KzgPackedShape::verify_frames",
+       93
+      ],
+      [
+       "KzgAlgebra::exp_power2",
+       288
+      ],
+      [
+       "KzgAlgebra::two_adic_gen",
+       29
+      ],
+      [
+       "KzgAlgebra::first_row",
+       377
+      ],
+      [
+       "KzgAlgebra::next_row",
+       275
+      ],
+      [
+       "KzgAlgebra::fold_roots",
+       5278
+      ],
+      [
+       "KzgAlgebra::eval_at",
+       36396
+      ],
+      [
+       "${\"name\":\"Lists::lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+       32923
+      ],
+      [
+       "${\"name\":\"Lists::drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+       32923
+      ],
+      [
+       "${\"name\":\"Lists::lookup\",\"types\":[\"field\"]}",
+       5192
+      ],
+      [
+       "${\"name\":\"Lists::drop\",\"types\":[\"field\"]}",
+       5207
+      ],
+      [
+       "KzgAlgebra::fold_lookups",
+       621
+      ],
+      [
+       "KzgAlgebra::group_summary",
+       1909
+      ],
+      [
+       "KzgAlgebra::lookup_fingerprint",
+       13668
+      ],
+      [
+       "${\"name\":\"Lists::is_empty\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+       488
+      ],
+      [
+       "KzgAlgebra::polynomial",
+       6343
+      ],
+      [
+       "KzgPcsPacked::rounds",
+       1
+      ],
+      [
+       "KzgPackedShape::matrices",
+       372
+      ],
+      [
+       "KzgPcsPacked::reduce",
+       1
+      ],
+      [
+       "KzgTranscript::observe_bytes",
+       61
+      ],
+      [
+       "KzgTranscript::observe_u64",
+       284
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"ptr\":{\"target\":{\"tuple\":{\"items\":[{\"named\":{\"args\":[],\"name\":\"KzgPackedDeserialize::Commitment\"}},{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"named\":{\"args\":[],\"name\":\"KzgPackedShape::Matrix\"}}],\"name\":\"Lists::Node\"}}}}]}}}}]}",
+       5
+      ],
+      [
+       "KzgPcsPacked::observe_rounds",
+       5
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPackedShape::Matrix\"}}]}",
+       280
+      ],
+      [
+       "KzgPcsPacked::observe_matrix_queries",
+       283
+      ],
+      [
+       "KzgPcsPacked::round_packs",
+       5
+      ],
+      [
+       "KzgPcsPacked::walk",
+       108
+      ],
+      [
+       "KzgPcsPacked::at_log",
+       225
+      ],
+      [
+       "KzgPcsPacked::split",
+       5408
+      ],
+      [
+       "KzgPcsPacked::columns_at",
+       15120
+      ],
+      [
+       "KzgPcsPacked::columns_onto",
+       5571
+      ],
+      [
+       "${\"name\":\"Lists::concat\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPcsPacked::Group\"}}]}",
+       222
+      ],
+      [
+       "KzgPcsPacked::group_packs",
+       92
+      ],
+      [
+       "KzgPcsPacked::has_next",
+       5321
+      ],
+      [
+       "KzgPcsPacked::values",
+       5323
+      ],
+      [
+       "${\"name\":\"Lists::concat\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPcsPacked::Pack\"}}]}",
+       92
+      ],
+      [
+       "KzgPcsPacked::weigh",
+       89
+      ],
+      [
+       "KzgPcsPacked::pow_u32",
+       40
+      ],
+      [
+       "KzgPcsPacked::pow_byte",
+       41
+      ],
+      [
+       "BN254G1::add",
+       6680
+      ],
+      [
+       "BN254G1::double",
+       342
+      ],
+      [
+       "KzgMsm::prepare",
+       92
+      ],
+      [
+       "KzgMsm::table",
+       90
+      ],
+      [
+       "KzgMsm::table_rows",
+       1440
+      ],
+      [
+       "BN254G1::scalar_limbs",
+       91
+      ],
+      [
+       "KzgMsm::windows",
+       133
+      ],
+      [
+       "KzgMsm::finish",
+       92
+      ],
+      [
+       "KzgMsm::split",
+       5824
+      ],
+      [
+       "${\"name\":\"Lists::lookup\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+       1323
+      ],
+      [
+       "${\"name\":\"Lists::drop\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+       1440
+      ],
+      [
+       "KzgMsm::add_points",
+       5408
+      ],
+      [
+       "KzgMsm::limb",
+       368
+      ],
+      [
+       "BN254Fq::sub",
+       2
+      ],
+      [
+       "KzgPackedDeserialize::proof",
+       1
+      ],
+      [
+       "KzgDeserialize::tags",
+       186
+      ],
+      [
+       "KzgDeserialize::opening_matrices",
+       283
+      ],
+      [
+       "KzgPackedDeserialize::proof_tail",
+       1
+      ],
+      [
+       "KzgPackedDeserialize::witness",
+       2
+      ],
+      [
+       "CompressBN::fold",
+       1
+      ],
+      [
+       "KzgIO::fields_to_bytes",
+       129
+      ],
+      [
+       "BN254G1::point_list_bytes",
+       5
+      ],
+      [
+       "KzgBlake3::xof96",
+       1
+      ],
+      [
+       "KzgBlake3::chunk",
+       5
+      ],
+      [
+       "KzgBlake3::read_block",
+       285
+      ],
+      [
+       "${\"name\":\"Lists::is_empty\",\"types\":[\"field\"]}",
+       5
+      ],
+      [
+       "Blake3::bytes_to_block",
+       5
+      ],
+      [
+       "Blake3::pad_block",
+       45
+      ],
+      [
+       "BN254G1Encoding::to_chunks",
+       1
+      ]
+     ],
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "peak_rss_bytes": 31296753664,
+     "predecessor": "packed CompressGL proof",
+     "predecessor_key_bytes": 408685,
+     "predecessor_proof_bytes": 206797,
+     "program": "CompressBNPacked::chain_v1",
+     "proof_blake3": "f24ba0c5abab93ae29a30ea8429d8df54a4747fb54d4a29a935da126ccf8ed99",
+     "proof_wire_bytes": 121001,
+     "seconds": {
+      "execution": 3.86302123,
+      "pcs_commit": 3.9877113480000013,
+      "pcs_open": 4.408918162999999,
+      "prove": 13.349872796,
+      "trace": 2.508281594,
+      "verify": 0.005297782
+     },
+     "shape": [
+      [
+       "CompressBNPacked::chain_v1",
+       1
+      ],
+      [
+       "KzgGroup_reuse",
+       262144
+      ],
+      [
+       "KzgGroup_01",
+       65536
+      ],
+      [
+       "KzgGroup_packed_small",
+       8192
+      ],
+      [
+       "KzgIO::read_words",
+       262144
+      ],
+      [
+       "KzgBlake3::realign",
+       262144
+      ],
+      [
+       "KzgBlake3::word_chunks",
+       16384
+      ],
+      [
+       "KzgGroup_packed_mid",
+       65536
+      ],
+      [
+       "KzgIO::byte",
+       65536
+      ],
+      [
+       "KzgGroup_cold_b",
+       131072
+      ],
+      [
+       "KzgIO::u32",
+       131072
+      ],
+      [
+       "BN254Fq::from_limbs",
+       32768
+      ],
+      [
+       "BN254Fq::range80",
+       262144
+      ],
+      [
+       "KzgGroup_cold_c",
+       262144
+      ],
+      [
+       "BN254FqRelation::assert_zero",
+       32768
+      ],
+      [
+       "BN254FqRelation::range89",
+       65536
+      ],
+      [
+       "KzgPackedDeserialize::circuits",
+       128
+      ],
+      [
+       "KzgDeserialize::nodes",
+       65536
+      ],
+      [
+       "KzgGroup_25",
+       65536
+      ],
+      [
+       "KzgPackedDeserialize::copies_of",
+       256
+      ],
+      [
+       "KzgTranscript::observe32",
+       8192
+      ],
+      [
+       "KzgTranscript::reverse_words",
+       65536
+      ],
+      [
+       "BN254G1::add",
+       8192
+      ],
+      [
+       "KzgGroup_10",
+       8192
+      ],
+      [
+       "KzgBlake3::read_block",
+       512
+      ],
+      [
+       "<table:UInt8::byte_inputs>",
+       256
+      ],
+      [
+       "<table:UInt8::pair_inputs>",
+       65536
+      ],
+      [
+       "<table:UInt8::sum_inputs>",
+       1024
+      ],
+      [
+       "<table:BN254Fq::add_sub_carry_inputs>",
+       4
+      ],
+      [
+       "<table:BN254FqRelation::weight_inputs>",
+       4
+      ],
+      [
+       "<table:BN254FqRelation::constant_inputs>",
+       8
+      ],
+      [
+       "<ROM:3>",
+       32768
+      ],
+      [
+       "<ROM:4>",
+       8192
+      ],
+      [
+       "<ROM:5>",
+       8192
+      ],
+      [
+       "<ROM:6>",
+       524288
+      ],
+      [
+       "<ROM:7>",
+       128
+      ],
+      [
+       "<ROM:10>",
+       128
+      ],
+      [
+       "<ROM:11>",
+       8192
+      ],
+      [
+       "<ROM:12>",
+       128
+      ],
+      [
+       "<ROM:13>",
+       512
+      ],
+      [
+       "<ROM:15>",
+       512
+      ],
+      [
+       "<ROM:21>",
+       128
+      ],
+      [
+       "<ROM:32>",
+       2048
+      ],
+      [
+       "<ROM:98>",
+       16
+      ]
+     ],
+     "shards": [
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        32768
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        32768
+       ]
+      ]
+     ],
+     "stage": 1,
+     "verify_cells": {
+      "active_circuits": 44,
+      "instructions": 420571711,
+      "main_cells_padded": 262222199,
+      "main_cells_padded_sharded": 255734135,
+      "max_height": 524288,
+      "quotient_degree": 4,
+      "stage2_cells": 41843490,
+      "total_rows": 2799265
+     }
+    },
+    {
+     "accumulator_hex": "0e3a198c61090593d630d60bde4bbbe5000000000000000000000000000000006b0290704f839445bf443d7e5d206ca00000000000000000000000000000000014d399f9ec324dc96d873801ccb10bee0000000000000000000000000000000049cf29b5c5d530f26036ca6facc0a32100000000000000000000000000000000",
+     "counts": {
+      "commitment_points": {
+       "lookup": 18,
+       "main": 25,
+       "quotient": 18
+      },
+      "committed_columns": {
+       "lookup": 310,
+       "main": 2574,
+       "quotient": 96
+      },
+      "extra_values": 0,
+      "requested_values": 3604,
+      "variable_g1_points": 63
+     },
+     "deferred_pairing_holds": true,
+     "function_rows": [
+      [
+       "CompressBNPacked::chain_v1",
+       1
+      ],
+      [
+       "CompressBNPacked::chain_step",
+       1
+      ],
+      [
+       "CompressBN::digest_onto",
+       6
+      ],
+      [
+       "UInt32::less_than_fields",
+       75483
+      ],
+      [
+       "KzgIO::sized_channel",
+       4
+      ],
+      [
+       "KzgIO::split4",
+       9
+      ],
+      [
+       "KzgIO::read_words",
+       141181
+      ],
+      [
+       "KzgBlake3::hash_input",
+       3
+      ],
+      [
+       "KzgBlake3::aligned",
+       3
+      ],
+      [
+       "KzgBlake3::realign",
+       140939
+      ],
+      [
+       "KzgBlake3::word_root",
+       9
+      ],
+      [
+       "KzgBlake3::word_chunks",
+       11079
+      ],
+      [
+       "KzgBlake3::final_chunk",
+       9
+      ],
+      [
+       "KzgBlake3::pad_words",
+       87
+      ],
+      [
+       "KzgBlake3::zero_words",
+       16
+      ],
+      [
+       "UInt64::is_zero",
+       6
+      ],
+      [
+       "Blake3::compress",
+       94240
+      ],
+      [
+       "UInt64::wrapping_succ",
+       432
+      ],
+      [
+       "KzgBlake3::root",
+       29
+      ],
+      [
+       "KzgBlake3::next_layer",
+       692
+      ],
+      [
+       "KzgBlake3::parent",
+       684
+      ],
+      [
+       "KzgIO::next_word",
+       872
+      ],
+      [
+       "KzgIO::read_bytes",
+       7
+      ],
+      [
+       "KzgIO::copy_words",
+       865
+      ],
+      [
+       "KzgIO::byte",
+       46114
+      ],
+      [
+       "KzgIO::digest",
+       2
+      ],
+      [
+       "KzgIO::read32",
+       4709
+      ],
+      [
+       "KzgIO::u32",
+       91807
+      ],
+      [
+       "KzgPackedDeserialize::key",
+       1
+      ],
+      [
+       "KzgDeserialize::supported_power",
+       3
+      ],
+      [
+       "KzgIO::point",
+       60
+      ],
+      [
+       "BN254G1::from_bytes",
+       64
+      ],
+      [
+       "BN254G1::from_raw",
+       64
+      ],
+      [
+       "BN254Fq::from_limbs",
+       16125
+      ],
+      [
+       "BN254Fq::range80",
+       111115
+      ],
+      [
+       "BN254Fq::canonical_high",
+       9010
+      ],
+      [
+       "BN254Fq::mul",
+       63
+      ],
+      [
+       "BN254Fq::range84",
+       188
+      ],
+      [
+       "BN254FqRelation::assert_zero",
+       15996
+      ],
+      [
+       "BN254FqRelation::range17",
+       9183
+      ],
+      [
+       "BN254FqRelation::range89",
+       41390
+      ],
+      [
+       "BN254G1::to_bytes",
+       68
+      ],
+      [
+       "BN254G1::fq_bytes",
+       67
+      ],
+      [
+       "BN254G1::sign",
+       68
+      ],
+      [
+       "KzgPackedDeserialize::circuits",
+       45
+      ],
+      [
+       "KzgDeserialize::circuits",
+       88
+      ],
+      [
+       "KzgDeserialize::quotient_degree",
+       6
+      ],
+      [
+       "KzgDeserialize::nodes",
+       40641
+      ],
+      [
+       "KzgDeserialize::node",
+       40597
+      ],
+      [
+       "KzgIO::scalar",
+       4645
+      ],
+      [
+       "KzgIO::scalar_from_bytes",
+       3841
+      ],
+      [
+       "KzgDeserialize::check_child",
+       73380
+      ],
+      [
+       "KzgDeserialize::ids",
+       13603
+      ],
+      [
+       "KzgDeserialize::lookups",
+       668
+      ],
+      [
+       "KzgDeserialize::group_count",
+       174
+      ],
+      [
+       "KzgPackedDeserialize::copies_of",
+       90
+      ],
+      [
+       "KzgPackedDeserialize::commitment",
+       4
+      ],
+      [
+       "KzgPackedDeserialize::shapes",
+       148
+      ],
+      [
+       "KzgDeserialize::points",
+       60
+      ],
+      [
+       "KzgIO::equal_bytes",
+       33
+      ],
+      [
+       "KzgDeserialize::scalar_rows",
+       349
+      ],
+      [
+       "KzgDeserialize::scalars",
+       3879
+      ],
+      [
+       "CompressBN::previous",
+       1
+      ],
+      [
+       "BN254G1Encoding::from_chunks",
+       1
+      ],
+      [
+       "BN254G1Encoding::chunk_bytes",
+       4
+      ],
+      [
+       "KzgPackedVerifier::verify",
+       1
+      ],
+      [
+       "KzgPackedShape::frames",
+       1
+      ],
+      [
+       "KzgPackedShape::walk",
+       47
+      ],
+      [
+       "UInt64::from_field",
+       8
+      ],
+      [
+       "UInt64::to_field",
+       8
+      ],
+      [
+       "UInt64::sub_with_borrow",
+       1
+      ],
+      [
+       "KzgPackedShape::consume",
+       46
+      ],
+      [
+       "KzgShape::power_log",
+       3
+      ],
+      [
+       "KzgPackedShape::shape",
+       144
+      ],
+      [
+       "KzgShape::rows_width",
+       240
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[\"field\"]}",
+       5929
+      ],
+      [
+       "KzgShape::power2",
+       27
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+       623
+      ],
+      [
+       "KzgPackedShape::shapes",
+       4
+      ],
+      [
+       "KzgTranscript::observe_field",
+       4293
+      ],
+      [
+       "KzgTranscript::observe32",
+       4295
+      ],
+      [
+       "KzgIO::scalar_bytes",
+       3463
+      ],
+      [
+       "KzgTranscript::observe_input",
+       9
+      ],
+      [
+       "KzgTranscript::observe_words",
+       1507
+      ],
+      [
+       "KzgTranscript::push_word",
+       1796
+      ],
+      [
+       "KzgTranscript::push_byte",
+       62
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Circuit\"}}]}",
+       47
+      ],
+      [
+       "KzgVerifier::observe_shape",
+       47
+      ],
+      [
+       "KzgTranscript::observe_fields",
+       3848
+      ],
+      [
+       "KzgPcsPacked::commitment_bytes",
+       4
+      ],
+      [
+       "KzgTranscript::observe_claim_rows",
+       2
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[\"field\"],\"name\":\"Lists::Node\"}}}}]}",
+       205
+      ],
+      [
+       "KzgTranscript::sample",
+       6
+      ],
+      [
+       "KzgBlake3::xof96_words",
+       6
+      ],
+      [
+       "KzgBlake3::xof_output",
+       7
+      ],
+      [
+       "KzgBlake3::compress_full",
+       14
+      ],
+      [
+       "KzgBlake3::rounds",
+       112
+      ],
+      [
+       "KzgTranscript::reverse_words",
+       36216
+      ],
+      [
+       "KzgAlgebra::claims_accumulator",
+       2
+      ],
+      [
+       "KzgAlgebra::fingerprint",
+       24
+      ],
+      [
+       "KzgPackedShape::verify_frames",
+       47
+      ],
+      [
+       "KzgAlgebra::exp_power2",
+       182
+      ],
+      [
+       "KzgAlgebra::two_adic_gen",
+       29
+      ],
+      [
+       "KzgAlgebra::first_row",
+       204
+      ],
+      [
+       "KzgAlgebra::next_row",
+       145
+      ],
+      [
+       "KzgAlgebra::fold_roots",
+       4173
+      ],
+      [
+       "KzgAlgebra::eval_at",
+       41926
+      ],
+      [
+       "${\"name\":\"Lists::lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+       40597
+      ],
+      [
+       "${\"name\":\"Lists::drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+       40597
+      ],
+      [
+       "${\"name\":\"Lists::lookup\",\"types\":[\"field\"]}",
+       2987
+      ],
+      [
+       "${\"name\":\"Lists::drop\",\"types\":[\"field\"]}",
+       3006
+      ],
+      [
+       "KzgAlgebra::fold_lookups",
+       310
+      ],
+      [
+       "KzgAlgebra::group_summary",
+       948
+      ],
+      [
+       "KzgAlgebra::lookup_fingerprint",
+       8712
+      ],
+      [
+       "${\"name\":\"Lists::is_empty\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+       259
+      ],
+      [
+       "KzgAlgebra::polynomial",
+       3714
+      ],
+      [
+       "KzgPcsPacked::rounds",
+       1
+      ],
+      [
+       "KzgPackedShape::matrices",
+       188
+      ],
+      [
+       "KzgPcsPacked::reduce",
+       1
+      ],
+      [
+       "KzgTranscript::observe_bytes",
+       61
+      ],
+      [
+       "KzgTranscript::observe_u64",
+       149
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"ptr\":{\"target\":{\"tuple\":{\"items\":[{\"named\":{\"args\":[],\"name\":\"KzgPackedDeserialize::Commitment\"}},{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"named\":{\"args\":[],\"name\":\"KzgPackedShape::Matrix\"}}],\"name\":\"Lists::Node\"}}}}]}}}}]}",
+       5
+      ],
+      [
+       "KzgPcsPacked::observe_rounds",
+       5
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPackedShape::Matrix\"}}]}",
+       145
+      ],
+      [
+       "KzgPcsPacked::observe_matrix_queries",
+       148
+      ],
+      [
+       "KzgPcsPacked::round_packs",
+       5
+      ],
+      [
+       "KzgPcsPacked::walk",
+       108
+      ],
+      [
+       "KzgPcsPacked::at_log",
+       172
+      ],
+      [
+       "KzgPcsPacked::split",
+       3066
+      ],
+      [
+       "KzgPcsPacked::columns_at",
+       7830
+      ],
+      [
+       "KzgPcsPacked::columns_onto",
+       3137
+      ],
+      [
+       "${\"name\":\"Lists::concat\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPcsPacked::Group\"}}]}",
+       163
+      ],
+      [
+       "KzgPcsPacked::group_packs",
+       63
+      ],
+      [
+       "KzgPcsPacked::has_next",
+       3018
+      ],
+      [
+       "KzgPcsPacked::values",
+       3019
+      ],
+      [
+       "${\"name\":\"Lists::concat\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPcsPacked::Pack\"}}]}",
+       63
+      ],
+      [
+       "KzgPcsPacked::weigh",
+       60
+      ],
+      [
+       "KzgPcsPacked::pow_u32",
+       31
+      ],
+      [
+       "KzgPcsPacked::pow_byte",
+       32
+      ],
+      [
+       "BN254G1::add",
+       4688
+      ],
+      [
+       "BN254G1::double",
+       811
+      ],
+      [
+       "KzgMsm::prepare",
+       64
+      ],
+      [
+       "KzgMsm::table",
+       63
+      ],
+      [
+       "KzgMsm::table_rows",
+       1008
+      ],
+      [
+       "BN254G1::scalar_limbs",
+       62
+      ],
+      [
+       "KzgMsm::windows",
+       204
+      ],
+      [
+       "KzgMsm::finish",
+       64
+      ],
+      [
+       "KzgMsm::split",
+       4029
+      ],
+      [
+       "${\"name\":\"Lists::lookup\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+       930
+      ],
+      [
+       "${\"name\":\"Lists::drop\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+       1008
+      ],
+      [
+       "KzgMsm::add_points",
+       3946
+      ],
+      [
+       "KzgMsm::limb",
+       256
+      ],
+      [
+       "BN254Fq::sub",
+       2
+      ],
+      [
+       "KzgPackedDeserialize::proof",
+       1
+      ],
+      [
+       "KzgDeserialize::tags",
+       94
+      ],
+      [
+       "KzgDeserialize::opening_matrices",
+       148
+      ],
+      [
+       "KzgPackedDeserialize::proof_tail",
+       1
+      ],
+      [
+       "KzgPackedDeserialize::witness",
+       2
+      ],
+      [
+       "CompressBN::fold",
+       1
+      ],
+      [
+       "KzgIO::fields_to_bytes",
+       129
+      ],
+      [
+       "BN254G1::point_list_bytes",
+       5
+      ],
+      [
+       "KzgBlake3::xof96",
+       1
+      ],
+      [
+       "KzgBlake3::chunk",
+       5
+      ],
+      [
+       "KzgBlake3::read_block",
+       285
+      ],
+      [
+       "${\"name\":\"Lists::is_empty\",\"types\":[\"field\"]}",
+       5
+      ],
+      [
+       "Blake3::bytes_to_block",
+       5
+      ],
+      [
+       "Blake3::pad_block",
+       45
+      ],
+      [
+       "BN254G1Encoding::to_chunks",
+       1
+      ]
+     ],
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "peak_rss_bytes": 30439288832,
+     "predecessor": "packed chain proof",
+     "predecessor_key_bytes": 442749,
+     "predecessor_proof_bytes": 121001,
+     "program": "CompressBNPacked::chain_v1",
+     "proof_blake3": "46bf410c108191ebfcdb7322df2d6626885abf2b9c1f88094168e5be5b29495a",
+     "proof_wire_bytes": 121225,
+     "seconds": {
+      "execution": 3.26251599,
+      "pcs_commit": 2.934769495000001,
+      "pcs_open": 3.2690608290000007,
+      "prove": 10.015213295,
+      "trace": 1.931833288,
+      "verify": 0.00521663
+     },
+     "shape": [
+      [
+       "CompressBNPacked::chain_v1",
+       1
+      ],
+      [
+       "KzgGroup_reuse",
+       131072
+      ],
+      [
+       "KzgGroup_01",
+       131072
+      ],
+      [
+       "KzgGroup_packed_small",
+       4096
+      ],
+      [
+       "KzgIO::read_words",
+       262144
+      ],
+      [
+       "KzgBlake3::realign",
+       262144
+      ],
+      [
+       "KzgBlake3::word_chunks",
+       16384
+      ],
+      [
+       "KzgGroup_packed_mid",
+       32768
+      ],
+      [
+       "KzgIO::byte",
+       65536
+      ],
+      [
+       "KzgGroup_cold_b",
+       131072
+      ],
+      [
+       "KzgIO::u32",
+       131072
+      ],
+      [
+       "BN254Fq::from_limbs",
+       16384
+      ],
+      [
+       "BN254Fq::range80",
+       131072
+      ],
+      [
+       "KzgGroup_cold_c",
+       262144
+      ],
+      [
+       "BN254FqRelation::assert_zero",
+       16384
+      ],
+      [
+       "BN254FqRelation::range89",
+       65536
+      ],
+      [
+       "KzgPackedDeserialize::circuits",
+       64
+      ],
+      [
+       "KzgDeserialize::nodes",
+       65536
+      ],
+      [
+       "KzgGroup_25",
+       131072
+      ],
+      [
+       "KzgPackedDeserialize::copies_of",
+       128
+      ],
+      [
+       "KzgTranscript::observe32",
+       8192
+      ],
+      [
+       "KzgTranscript::reverse_words",
+       65536
+      ],
+      [
+       "BN254G1::add",
+       8192
+      ],
+      [
+       "KzgGroup_10",
+       8192
+      ],
+      [
+       "KzgBlake3::read_block",
+       512
+      ],
+      [
+       "<table:UInt8::byte_inputs>",
+       256
+      ],
+      [
+       "<table:UInt8::pair_inputs>",
+       65536
+      ],
+      [
+       "<table:UInt8::sum_inputs>",
+       1024
+      ],
+      [
+       "<table:BN254Fq::add_sub_carry_inputs>",
+       4
+      ],
+      [
+       "<table:BN254FqRelation::weight_inputs>",
+       4
+      ],
+      [
+       "<table:BN254FqRelation::constant_inputs>",
+       8
+      ],
+      [
+       "<ROM:3>",
+       32768
+      ],
+      [
+       "<ROM:4>",
+       8192
+      ],
+      [
+       "<ROM:5>",
+       4096
+      ],
+      [
+       "<ROM:6>",
+       524288
+      ],
+      [
+       "<ROM:7>",
+       64
+      ],
+      [
+       "<ROM:10>",
+       64
+      ],
+      [
+       "<ROM:11>",
+       8192
+      ],
+      [
+       "<ROM:12>",
+       64
+      ],
+      [
+       "<ROM:13>",
+       256
+      ],
+      [
+       "<ROM:15>",
+       256
+      ],
+      [
+       "<ROM:21>",
+       64
+      ],
+      [
+       "<ROM:32>",
+       2048
+      ],
+      [
+       "<ROM:98>",
+       16
+      ]
+     ],
+     "shards": [
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        16384
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        16384
+       ]
+      ]
+     ],
+     "stage": 2,
+     "verify_cells": {
+      "active_circuits": 44,
+      "instructions": 349322728,
+      "main_cells_padded": 175250423,
+      "main_cells_padded_sharded": 167681015,
+      "max_height": 524288,
+      "quotient_degree": 4,
+      "stage2_cells": 26732194,
+      "total_rows": 2593505
+     }
+    },
+    {
+     "accumulator_hex": "81305e1fa0d5fb672898e7a104fb37af00000000000000000000000000000000ec70b3f5f3d10f2470139985485a6cab000000000000000000000000000000001630534478b9e5f18cdb5569353ceb5b0000000000000000000000000000000015857a38c2f9af33c627fa7113bd182b00000000000000000000000000000000",
+     "counts": {
+      "commitment_points": {
+       "lookup": 17,
+       "main": 24,
+       "quotient": 17
+      },
+      "committed_columns": {
+       "lookup": 310,
+       "main": 2574,
+       "quotient": 96
+      },
+      "extra_values": 0,
+      "requested_values": 3604,
+      "variable_g1_points": 60
+     },
+     "deferred_pairing_holds": true,
+     "function_rows": [
+      [
+       "CompressBNPacked::chain_v1",
+       1
+      ],
+      [
+       "CompressBNPacked::chain_step",
+       1
+      ],
+      [
+       "CompressBN::digest_onto",
+       6
+      ],
+      [
+       "UInt32::less_than_fields",
+       75485
+      ],
+      [
+       "KzgIO::sized_channel",
+       4
+      ],
+      [
+       "KzgIO::split4",
+       9
+      ],
+      [
+       "KzgIO::read_words",
+       141237
+      ],
+      [
+       "KzgBlake3::hash_input",
+       3
+      ],
+      [
+       "KzgBlake3::aligned",
+       3
+      ],
+      [
+       "KzgBlake3::realign",
+       140995
+      ],
+      [
+       "KzgBlake3::word_root",
+       9
+      ],
+      [
+       "KzgBlake3::word_chunks",
+       11090
+      ],
+      [
+       "KzgBlake3::final_chunk",
+       9
+      ],
+      [
+       "KzgBlake3::pad_words",
+       79
+      ],
+      [
+       "KzgBlake3::zero_words",
+       16
+      ],
+      [
+       "UInt64::is_zero",
+       6
+      ],
+      [
+       "Blake3::compress",
+       94336
+      ],
+      [
+       "UInt64::wrapping_succ",
+       432
+      ],
+      [
+       "KzgBlake3::root",
+       29
+      ],
+      [
+       "KzgBlake3::next_layer",
+       692
+      ],
+      [
+       "KzgBlake3::parent",
+       685
+      ],
+      [
+       "KzgIO::next_word",
+       928
+      ],
+      [
+       "KzgIO::read_bytes",
+       7
+      ],
+      [
+       "KzgIO::copy_words",
+       921
+      ],
+      [
+       "KzgIO::byte",
+       46114
+      ],
+      [
+       "KzgIO::digest",
+       2
+      ],
+      [
+       "KzgIO::read32",
+       4716
+      ],
+      [
+       "KzgIO::u32",
+       91807
+      ],
+      [
+       "KzgPackedDeserialize::key",
+       1
+      ],
+      [
+       "KzgDeserialize::supported_power",
+       3
+      ],
+      [
+       "KzgIO::point",
+       67
+      ],
+      [
+       "BN254G1::from_bytes",
+       71
+      ],
+      [
+       "BN254G1::from_raw",
+       71
+      ],
+      [
+       "BN254Fq::from_limbs",
+       17815
+      ],
+      [
+       "BN254Fq::range80",
+       121417
+      ],
+      [
+       "BN254Fq::canonical_high",
+       9470
+      ],
+      [
+       "BN254Fq::canonical_low",
+       1
+      ],
+      [
+       "BN254Fq::mul",
+       70
+      ],
+      [
+       "BN254Fq::range84",
+       209
+      ],
+      [
+       "BN254FqRelation::assert_zero",
+       17680
+      ],
+      [
+       "BN254FqRelation::range17",
+       9711
+      ],
+      [
+       "BN254FqRelation::range89",
+       45402
+      ],
+      [
+       "BN254G1::to_bytes",
+       75
+      ],
+      [
+       "BN254G1::fq_bytes",
+       74
+      ],
+      [
+       "BN254G1::sign",
+       75
+      ],
+      [
+       "KzgPackedDeserialize::circuits",
+       45
+      ],
+      [
+       "KzgDeserialize::circuits",
+       88
+      ],
+      [
+       "KzgDeserialize::quotient_degree",
+       6
+      ],
+      [
+       "KzgDeserialize::nodes",
+       40641
+      ],
+      [
+       "KzgDeserialize::node",
+       40597
+      ],
+      [
+       "KzgIO::scalar",
+       4645
+      ],
+      [
+       "KzgIO::scalar_from_bytes",
+       3841
+      ],
+      [
+       "KzgDeserialize::check_child",
+       73380
+      ],
+      [
+       "KzgDeserialize::ids",
+       13603
+      ],
+      [
+       "KzgDeserialize::lookups",
+       668
+      ],
+      [
+       "KzgDeserialize::group_count",
+       174
+      ],
+      [
+       "KzgPackedDeserialize::copies_of",
+       90
+      ],
+      [
+       "KzgPackedDeserialize::commitment",
+       4
+      ],
+      [
+       "KzgPackedDeserialize::shapes",
+       148
+      ],
+      [
+       "KzgDeserialize::points",
+       67
+      ],
+      [
+       "KzgIO::equal_bytes",
+       33
+      ],
+      [
+       "KzgDeserialize::scalar_rows",
+       349
+      ],
+      [
+       "KzgDeserialize::scalars",
+       3879
+      ],
+      [
+       "CompressBN::previous",
+       1
+      ],
+      [
+       "BN254G1Encoding::from_chunks",
+       1
+      ],
+      [
+       "BN254G1Encoding::chunk_bytes",
+       4
+      ],
+      [
+       "KzgPackedVerifier::verify",
+       1
+      ],
+      [
+       "KzgPackedShape::frames",
+       1
+      ],
+      [
+       "KzgPackedShape::walk",
+       47
+      ],
+      [
+       "UInt64::from_field",
+       8
+      ],
+      [
+       "UInt64::to_field",
+       8
+      ],
+      [
+       "UInt64::sub_with_borrow",
+       1
+      ],
+      [
+       "KzgPackedShape::consume",
+       46
+      ],
+      [
+       "KzgShape::power_log",
+       3
+      ],
+      [
+       "KzgPackedShape::shape",
+       144
+      ],
+      [
+       "KzgShape::rows_width",
+       240
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[\"field\"]}",
+       5622
+      ],
+      [
+       "KzgShape::power2",
+       27
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+       623
+      ],
+      [
+       "KzgPackedShape::shapes",
+       4
+      ],
+      [
+       "KzgTranscript::observe_field",
+       4293
+      ],
+      [
+       "KzgTranscript::observe32",
+       4295
+      ],
+      [
+       "KzgIO::scalar_bytes",
+       3463
+      ],
+      [
+       "KzgTranscript::observe_input",
+       9
+      ],
+      [
+       "KzgTranscript::observe_words",
+       1619
+      ],
+      [
+       "KzgTranscript::push_word",
+       1908
+      ],
+      [
+       "KzgTranscript::push_byte",
+       62
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Circuit\"}}]}",
+       47
+      ],
+      [
+       "KzgVerifier::observe_shape",
+       47
+      ],
+      [
+       "KzgTranscript::observe_fields",
+       3858
+      ],
+      [
+       "KzgPcsPacked::commitment_bytes",
+       4
+      ],
+      [
+       "KzgTranscript::observe_claim_rows",
+       2
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[\"field\"],\"name\":\"Lists::Node\"}}}}]}",
+       205
+      ],
+      [
+       "KzgTranscript::sample",
+       6
+      ],
+      [
+       "KzgBlake3::xof96_words",
+       6
+      ],
+      [
+       "KzgBlake3::xof_output",
+       7
+      ],
+      [
+       "KzgBlake3::compress_full",
+       14
+      ],
+      [
+       "KzgBlake3::rounds",
+       112
+      ],
+      [
+       "KzgTranscript::reverse_words",
+       36328
+      ],
+      [
+       "KzgAlgebra::claims_accumulator",
+       2
+      ],
+      [
+       "KzgAlgebra::fingerprint",
+       24
+      ],
+      [
+       "KzgPackedShape::verify_frames",
+       47
+      ],
+      [
+       "KzgAlgebra::exp_power2",
+       202
+      ],
+      [
+       "KzgAlgebra::two_adic_gen",
+       29
+      ],
+      [
+       "KzgAlgebra::first_row",
+       204
+      ],
+      [
+       "KzgAlgebra::next_row",
+       145
+      ],
+      [
+       "KzgAlgebra::fold_roots",
+       4173
+      ],
+      [
+       "KzgAlgebra::eval_at",
+       41926
+      ],
+      [
+       "${\"name\":\"Lists::lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+       40597
+      ],
+      [
+       "${\"name\":\"Lists::drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+       40597
+      ],
+      [
+       "${\"name\":\"Lists::lookup\",\"types\":[\"field\"]}",
+       2987
+      ],
+      [
+       "${\"name\":\"Lists::drop\",\"types\":[\"field\"]}",
+       3006
+      ],
+      [
+       "KzgAlgebra::fold_lookups",
+       310
+      ],
+      [
+       "KzgAlgebra::group_summary",
+       948
+      ],
+      [
+       "KzgAlgebra::lookup_fingerprint",
+       8712
+      ],
+      [
+       "${\"name\":\"Lists::is_empty\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+       259
+      ],
+      [
+       "KzgAlgebra::polynomial",
+       3716
+      ],
+      [
+       "KzgPcsPacked::rounds",
+       1
+      ],
+      [
+       "KzgPackedShape::matrices",
+       188
+      ],
+      [
+       "KzgPcsPacked::reduce",
+       1
+      ],
+      [
+       "KzgTranscript::observe_bytes",
+       61
+      ],
+      [
+       "KzgTranscript::observe_u64",
+       149
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"ptr\":{\"target\":{\"tuple\":{\"items\":[{\"named\":{\"args\":[],\"name\":\"KzgPackedDeserialize::Commitment\"}},{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"named\":{\"args\":[],\"name\":\"KzgPackedShape::Matrix\"}}],\"name\":\"Lists::Node\"}}}}]}}}}]}",
+       5
+      ],
+      [
+       "KzgPcsPacked::observe_rounds",
+       5
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPackedShape::Matrix\"}}]}",
+       145
+      ],
+      [
+       "KzgPcsPacked::observe_matrix_queries",
+       148
+      ],
+      [
+       "KzgPcsPacked::round_packs",
+       5
+      ],
+      [
+       "KzgPcsPacked::walk",
+       108
+      ],
+      [
+       "KzgPcsPacked::at_log",
+       183
+      ],
+      [
+       "KzgPcsPacked::split",
+       3071
+      ],
+      [
+       "KzgPcsPacked::columns_at",
+       7830
+      ],
+      [
+       "KzgPcsPacked::columns_onto",
+       3134
+      ],
+      [
+       "${\"name\":\"Lists::concat\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPcsPacked::Group\"}}]}",
+       183
+      ],
+      [
+       "KzgPcsPacked::group_packs",
+       70
+      ],
+      [
+       "KzgPcsPacked::has_next",
+       3018
+      ],
+      [
+       "KzgPcsPacked::values",
+       3019
+      ],
+      [
+       "${\"name\":\"Lists::concat\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPcsPacked::Pack\"}}]}",
+       70
+      ],
+      [
+       "KzgPcsPacked::weigh",
+       67
+      ],
+      [
+       "KzgPcsPacked::pow_u32",
+       33
+      ],
+      [
+       "KzgPcsPacked::pow_byte",
+       34
+      ],
+      [
+       "BN254G1::add",
+       5248
+      ],
+      [
+       "BN254G1::double",
+       826
+      ],
+      [
+       "KzgMsm::prepare",
+       71
+      ],
+      [
+       "KzgMsm::table",
+       70
+      ],
+      [
+       "KzgMsm::table_rows",
+       1120
+      ],
+      [
+       "BN254G1::scalar_limbs",
+       69
+      ],
+      [
+       "KzgMsm::windows",
+       204
+      ],
+      [
+       "KzgMsm::finish",
+       71
+      ],
+      [
+       "KzgMsm::split",
+       4478
+      ],
+      [
+       "${\"name\":\"Lists::lookup\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+       1031
+      ],
+      [
+       "${\"name\":\"Lists::drop\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+       1117
+      ],
+      [
+       "KzgMsm::add_points",
+       4401
+      ],
+      [
+       "KzgMsm::limb",
+       284
+      ],
+      [
+       "BN254Fq::sub",
+       2
+      ],
+      [
+       "KzgPackedDeserialize::proof",
+       1
+      ],
+      [
+       "KzgDeserialize::tags",
+       94
+      ],
+      [
+       "KzgDeserialize::opening_matrices",
+       148
+      ],
+      [
+       "KzgPackedDeserialize::proof_tail",
+       1
+      ],
+      [
+       "KzgPackedDeserialize::witness",
+       2
+      ],
+      [
+       "CompressBN::fold",
+       1
+      ],
+      [
+       "KzgIO::fields_to_bytes",
+       129
+      ],
+      [
+       "BN254G1::point_list_bytes",
+       5
+      ],
+      [
+       "KzgBlake3::xof96",
+       1
+      ],
+      [
+       "KzgBlake3::chunk",
+       5
+      ],
+      [
+       "KzgBlake3::read_block",
+       285
+      ],
+      [
+       "${\"name\":\"Lists::is_empty\",\"types\":[\"field\"]}",
+       5
+      ],
+      [
+       "Blake3::bytes_to_block",
+       5
+      ],
+      [
+       "Blake3::pad_block",
+       45
+      ],
+      [
+       "BN254G1Encoding::to_chunks",
+       1
+      ]
+     ],
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "peak_rss_bytes": 30423171072,
+     "predecessor": "packed chain proof",
+     "predecessor_key_bytes": 442749,
+     "predecessor_proof_bytes": 121225,
+     "program": "CompressBNPacked::chain_v1",
+     "proof_blake3": "d95815935183ab230818b6df4261322db88ae6af0cf1593a9b64799c93557819",
+     "proof_wire_bytes": 121129,
+     "seconds": {
+      "execution": 3.315920712,
+      "pcs_commit": 2.9065973010000015,
+      "pcs_open": 3.300542869000001,
+      "prove": 10.137355793,
+      "trace": 1.9406580199999999,
+      "verify": 0.005278895
+     },
+     "shape": [
+      [
+       "CompressBNPacked::chain_v1",
+       1
+      ],
+      [
+       "KzgGroup_reuse",
+       131072
+      ],
+      [
+       "KzgGroup_01",
+       131072
+      ],
+      [
+       "KzgGroup_packed_small",
+       8192
+      ],
+      [
+       "KzgIO::read_words",
+       262144
+      ],
+      [
+       "KzgBlake3::realign",
+       262144
+      ],
+      [
+       "KzgBlake3::word_chunks",
+       16384
+      ],
+      [
+       "KzgGroup_packed_mid",
+       32768
+      ],
+      [
+       "KzgIO::byte",
+       65536
+      ],
+      [
+       "KzgGroup_cold_b",
+       131072
+      ],
+      [
+       "KzgIO::u32",
+       131072
+      ],
+      [
+       "BN254Fq::from_limbs",
+       32768
+      ],
+      [
+       "BN254Fq::range80",
+       131072
+      ],
+      [
+       "KzgGroup_cold_c",
+       262144
+      ],
+      [
+       "BN254FqRelation::assert_zero",
+       32768
+      ],
+      [
+       "BN254FqRelation::range89",
+       65536
+      ],
+      [
+       "KzgPackedDeserialize::circuits",
+       64
+      ],
+      [
+       "KzgDeserialize::nodes",
+       65536
+      ],
+      [
+       "KzgGroup_25",
+       131072
+      ],
+      [
+       "KzgPackedDeserialize::copies_of",
+       128
+      ],
+      [
+       "KzgTranscript::observe32",
+       8192
+      ],
+      [
+       "KzgTranscript::reverse_words",
+       65536
+      ],
+      [
+       "BN254G1::add",
+       8192
+      ],
+      [
+       "KzgGroup_10",
+       8192
+      ],
+      [
+       "KzgBlake3::read_block",
+       512
+      ],
+      [
+       "<table:UInt8::byte_inputs>",
+       256
+      ],
+      [
+       "<table:UInt8::pair_inputs>",
+       65536
+      ],
+      [
+       "<table:UInt8::sum_inputs>",
+       1024
+      ],
+      [
+       "<table:BN254Fq::add_sub_carry_inputs>",
+       4
+      ],
+      [
+       "<table:BN254FqRelation::weight_inputs>",
+       4
+      ],
+      [
+       "<table:BN254FqRelation::constant_inputs>",
+       8
+      ],
+      [
+       "<ROM:3>",
+       32768
+      ],
+      [
+       "<ROM:4>",
+       8192
+      ],
+      [
+       "<ROM:5>",
+       8192
+      ],
+      [
+       "<ROM:6>",
+       524288
+      ],
+      [
+       "<ROM:7>",
+       128
+      ],
+      [
+       "<ROM:10>",
+       64
+      ],
+      [
+       "<ROM:11>",
+       8192
+      ],
+      [
+       "<ROM:12>",
+       128
+      ],
+      [
+       "<ROM:13>",
+       256
+      ],
+      [
+       "<ROM:15>",
+       256
+      ],
+      [
+       "<ROM:21>",
+       64
+      ],
+      [
+       "<ROM:32>",
+       2048
+      ],
+      [
+       "<ROM:98>",
+       16
+      ]
+     ],
+     "shards": [
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        16384
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        16384
+       ]
+      ]
+     ],
+     "stage": 3,
+     "verify_cells": {
+      "active_circuits": 44,
+      "instructions": 350758172,
+      "main_cells_padded": 177435191,
+      "main_cells_padded_sharded": 169865783,
+      "max_height": 524288,
+      "quotient_degree": 4,
+      "stage2_cells": 27031330,
+      "total_rows": 2634593
+     }
+    },
+    {
+     "accumulator_hex": "7e4de8f96632bc535fc53bb11df8df1600000000000000000000000000000000162312f0cde73689d7400e0fb54afb1e00000000000000000000000000000000b60a35b92e23e95ee11c1412f60520a100000000000000000000000000000000e7b906cf9bbac3e99dd6fd73ab123d8800000000000000000000000000000000",
+     "counts": {
+      "commitment_points": {
+       "lookup": 18,
+       "main": 25,
+       "quotient": 18
+      },
+      "committed_columns": {
+       "lookup": 310,
+       "main": 2574,
+       "quotient": 96
+      },
+      "extra_values": 0,
+      "requested_values": 3604,
+      "variable_g1_points": 63
+     },
+     "deferred_pairing_holds": true,
+     "function_rows": [
+      [
+       "CompressBNPacked::chain_v1",
+       1
+      ],
+      [
+       "CompressBNPacked::chain_step",
+       1
+      ],
+      [
+       "CompressBN::digest_onto",
+       6
+      ],
+      [
+       "UInt32::less_than_fields",
+       75483
+      ],
+      [
+       "KzgIO::sized_channel",
+       4
+      ],
+      [
+       "KzgIO::split4",
+       9
+      ],
+      [
+       "KzgIO::read_words",
+       141213
+      ],
+      [
+       "KzgBlake3::hash_input",
+       3
+      ],
+      [
+       "KzgBlake3::aligned",
+       3
+      ],
+      [
+       "KzgBlake3::realign",
+       140971
+      ],
+      [
+       "KzgBlake3::word_root",
+       9
+      ],
+      [
+       "KzgBlake3::word_chunks",
+       11085
+      ],
+      [
+       "KzgBlake3::final_chunk",
+       9
+      ],
+      [
+       "KzgBlake3::pad_words",
+       87
+      ],
+      [
+       "KzgBlake3::zero_words",
+       16
+      ],
+      [
+       "UInt64::is_zero",
+       6
+      ],
+      [
+       "Blake3::compress",
+       94296
+      ],
+      [
+       "UInt64::wrapping_succ",
+       432
+      ],
+      [
+       "KzgBlake3::root",
+       29
+      ],
+      [
+       "KzgBlake3::next_layer",
+       692
+      ],
+      [
+       "KzgBlake3::parent",
+       685
+      ],
+      [
+       "KzgIO::next_word",
+       904
+      ],
+      [
+       "KzgIO::read_bytes",
+       7
+      ],
+      [
+       "KzgIO::copy_words",
+       897
+      ],
+      [
+       "KzgIO::byte",
+       46114
+      ],
+      [
+       "KzgIO::digest",
+       2
+      ],
+      [
+       "KzgIO::read32",
+       4713
+      ],
+      [
+       "KzgIO::u32",
+       91807
+      ],
+      [
+       "KzgPackedDeserialize::key",
+       1
+      ],
+      [
+       "KzgDeserialize::supported_power",
+       3
+      ],
+      [
+       "KzgIO::point",
+       64
+      ],
+      [
+       "BN254G1::from_bytes",
+       68
+      ],
+      [
+       "BN254G1::from_raw",
+       68
+      ],
+      [
+       "BN254Fq::from_limbs",
+       17113
+      ],
+      [
+       "BN254Fq::range80",
+       117216
+      ],
+      [
+       "BN254Fq::canonical_high",
+       9261
+      ],
+      [
+       "BN254Fq::mul",
+       67
+      ],
+      [
+       "BN254Fq::range84",
+       200
+      ],
+      [
+       "BN254FqRelation::assert_zero",
+       16984
+      ],
+      [
+       "BN254FqRelation::range17",
+       9372
+      ],
+      [
+       "BN254FqRelation::range89",
+       43740
+      ],
+      [
+       "BN254G1::to_bytes",
+       72
+      ],
+      [
+       "BN254G1::fq_bytes",
+       71
+      ],
+      [
+       "BN254G1::sign",
+       72
+      ],
+      [
+       "KzgPackedDeserialize::circuits",
+       45
+      ],
+      [
+       "KzgDeserialize::circuits",
+       88
+      ],
+      [
+       "KzgDeserialize::quotient_degree",
+       6
+      ],
+      [
+       "KzgDeserialize::nodes",
+       40641
+      ],
+      [
+       "KzgDeserialize::node",
+       40597
+      ],
+      [
+       "KzgIO::scalar",
+       4645
+      ],
+      [
+       "KzgIO::scalar_from_bytes",
+       3851
+      ],
+      [
+       "KzgDeserialize::check_child",
+       73380
+      ],
+      [
+       "KzgDeserialize::ids",
+       13603
+      ],
+      [
+       "KzgDeserialize::lookups",
+       668
+      ],
+      [
+       "KzgDeserialize::group_count",
+       174
+      ],
+      [
+       "KzgPackedDeserialize::copies_of",
+       90
+      ],
+      [
+       "KzgPackedDeserialize::commitment",
+       4
+      ],
+      [
+       "KzgPackedDeserialize::shapes",
+       148
+      ],
+      [
+       "KzgDeserialize::points",
+       64
+      ],
+      [
+       "KzgIO::equal_bytes",
+       33
+      ],
+      [
+       "KzgDeserialize::scalar_rows",
+       349
+      ],
+      [
+       "KzgDeserialize::scalars",
+       3879
+      ],
+      [
+       "CompressBN::previous",
+       1
+      ],
+      [
+       "BN254G1Encoding::from_chunks",
+       1
+      ],
+      [
+       "BN254G1Encoding::chunk_bytes",
+       4
+      ],
+      [
+       "KzgPackedVerifier::verify",
+       1
+      ],
+      [
+       "KzgPackedShape::frames",
+       1
+      ],
+      [
+       "KzgPackedShape::walk",
+       47
+      ],
+      [
+       "UInt64::from_field",
+       8
+      ],
+      [
+       "UInt64::to_field",
+       8
+      ],
+      [
+       "UInt64::sub_with_borrow",
+       1
+      ],
+      [
+       "KzgPackedShape::consume",
+       46
+      ],
+      [
+       "KzgShape::power_log",
+       3
+      ],
+      [
+       "KzgPackedShape::shape",
+       144
+      ],
+      [
+       "KzgShape::rows_width",
+       240
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[\"field\"]}",
+       6060
+      ],
+      [
+       "KzgShape::power2",
+       27
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+       623
+      ],
+      [
+       "KzgPackedShape::shapes",
+       4
+      ],
+      [
+       "KzgTranscript::observe_field",
+       4293
+      ],
+      [
+       "KzgTranscript::observe32",
+       4295
+      ],
+      [
+       "KzgIO::scalar_bytes",
+       3473
+      ],
+      [
+       "KzgTranscript::observe_input",
+       9
+      ],
+      [
+       "KzgTranscript::observe_words",
+       1571
+      ],
+      [
+       "KzgTranscript::push_word",
+       1860
+      ],
+      [
+       "KzgTranscript::push_byte",
+       62
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Circuit\"}}]}",
+       47
+      ],
+      [
+       "KzgVerifier::observe_shape",
+       47
+      ],
+      [
+       "KzgTranscript::observe_fields",
+       3854
+      ],
+      [
+       "KzgPcsPacked::commitment_bytes",
+       4
+      ],
+      [
+       "KzgTranscript::observe_claim_rows",
+       2
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[\"field\"],\"name\":\"Lists::Node\"}}}}]}",
+       205
+      ],
+      [
+       "KzgTranscript::sample",
+       6
+      ],
+      [
+       "KzgBlake3::xof96_words",
+       6
+      ],
+      [
+       "KzgBlake3::xof_output",
+       7
+      ],
+      [
+       "KzgBlake3::compress_full",
+       14
+      ],
+      [
+       "KzgBlake3::rounds",
+       112
+      ],
+      [
+       "KzgTranscript::reverse_words",
+       36280
+      ],
+      [
+       "KzgAlgebra::claims_accumulator",
+       2
+      ],
+      [
+       "KzgAlgebra::fingerprint",
+       24
+      ],
+      [
+       "KzgPackedShape::verify_frames",
+       47
+      ],
+      [
+       "KzgAlgebra::exp_power2",
+       189
+      ],
+      [
+       "KzgAlgebra::two_adic_gen",
+       29
+      ],
+      [
+       "KzgAlgebra::first_row",
+       204
+      ],
+      [
+       "KzgAlgebra::next_row",
+       145
+      ],
+      [
+       "KzgAlgebra::fold_roots",
+       4173
+      ],
+      [
+       "KzgAlgebra::eval_at",
+       41926
+      ],
+      [
+       "${\"name\":\"Lists::lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+       40597
+      ],
+      [
+       "${\"name\":\"Lists::drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+       40597
+      ],
+      [
+       "${\"name\":\"Lists::lookup\",\"types\":[\"field\"]}",
+       2987
+      ],
+      [
+       "${\"name\":\"Lists::drop\",\"types\":[\"field\"]}",
+       3006
+      ],
+      [
+       "KzgAlgebra::fold_lookups",
+       310
+      ],
+      [
+       "KzgAlgebra::group_summary",
+       948
+      ],
+      [
+       "KzgAlgebra::lookup_fingerprint",
+       8712
+      ],
+      [
+       "${\"name\":\"Lists::is_empty\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+       259
+      ],
+      [
+       "KzgAlgebra::polynomial",
+       3715
+      ],
+      [
+       "KzgPcsPacked::rounds",
+       1
+      ],
+      [
+       "KzgPackedShape::matrices",
+       188
+      ],
+      [
+       "KzgPcsPacked::reduce",
+       1
+      ],
+      [
+       "KzgTranscript::observe_bytes",
+       61
+      ],
+      [
+       "KzgTranscript::observe_u64",
+       149
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"ptr\":{\"target\":{\"tuple\":{\"items\":[{\"named\":{\"args\":[],\"name\":\"KzgPackedDeserialize::Commitment\"}},{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"named\":{\"args\":[],\"name\":\"KzgPackedShape::Matrix\"}}],\"name\":\"Lists::Node\"}}}}]}}}}]}",
+       5
+      ],
+      [
+       "KzgPcsPacked::observe_rounds",
+       5
+      ],
+      [
+       "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPackedShape::Matrix\"}}]}",
+       145
+      ],
+      [
+       "KzgPcsPacked::observe_matrix_queries",
+       148
+      ],
+      [
+       "KzgPcsPacked::round_packs",
+       5
+      ],
+      [
+       "KzgPcsPacked::walk",
+       108
+      ],
+      [
+       "KzgPcsPacked::at_log",
+       178
+      ],
+      [
+       "KzgPcsPacked::split",
+       3068
+      ],
+      [
+       "KzgPcsPacked::columns_at",
+       7830
+      ],
+      [
+       "KzgPcsPacked::columns_onto",
+       3135
+      ],
+      [
+       "${\"name\":\"Lists::concat\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPcsPacked::Group\"}}]}",
+       174
+      ],
+      [
+       "KzgPcsPacked::group_packs",
+       67
+      ],
+      [
+       "KzgPcsPacked::has_next",
+       3018
+      ],
+      [
+       "KzgPcsPacked::values",
+       3019
+      ],
+      [
+       "${\"name\":\"Lists::concat\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPcsPacked::Pack\"}}]}",
+       67
+      ],
+      [
+       "KzgPcsPacked::weigh",
+       64
+      ],
+      [
+       "KzgPcsPacked::pow_u32",
+       29
+      ],
+      [
+       "KzgPcsPacked::pow_byte",
+       30
+      ],
+      [
+       "BN254G1::add",
+       5014
+      ],
+      [
+       "BN254G1::double",
+       821
+      ],
+      [
+       "KzgMsm::prepare",
+       68
+      ],
+      [
+       "KzgMsm::table",
+       67
+      ],
+      [
+       "KzgMsm::table_rows",
+       1072
+      ],
+      [
+       "BN254G1::scalar_limbs",
+       66
+      ],
+      [
+       "KzgMsm::windows",
+       204
+      ],
+      [
+       "KzgMsm::finish",
+       68
+      ],
+      [
+       "KzgMsm::split",
+       4289
+      ],
+      [
+       "${\"name\":\"Lists::lookup\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+       992
+      ],
+      [
+       "${\"name\":\"Lists::drop\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+       1072
+      ],
+      [
+       "KzgMsm::add_points",
+       4215
+      ],
+      [
+       "KzgMsm::limb",
+       272
+      ],
+      [
+       "BN254Fq::sub",
+       2
+      ],
+      [
+       "KzgPackedDeserialize::proof",
+       1
+      ],
+      [
+       "KzgDeserialize::tags",
+       94
+      ],
+      [
+       "KzgDeserialize::opening_matrices",
+       148
+      ],
+      [
+       "KzgPackedDeserialize::proof_tail",
+       1
+      ],
+      [
+       "KzgPackedDeserialize::witness",
+       2
+      ],
+      [
+       "CompressBN::fold",
+       1
+      ],
+      [
+       "KzgIO::fields_to_bytes",
+       129
+      ],
+      [
+       "BN254G1::point_list_bytes",
+       5
+      ],
+      [
+       "KzgBlake3::xof96",
+       1
+      ],
+      [
+       "KzgBlake3::chunk",
+       5
+      ],
+      [
+       "KzgBlake3::read_block",
+       285
+      ],
+      [
+       "${\"name\":\"Lists::is_empty\",\"types\":[\"field\"]}",
+       5
+      ],
+      [
+       "Blake3::bytes_to_block",
+       5
+      ],
+      [
+       "Blake3::pad_block",
+       45
+      ],
+      [
+       "BN254G1Encoding::to_chunks",
+       1
+      ]
+     ],
+     "native_accepts": true,
+     "native_rejects_changed_output": true,
+     "peak_rss_bytes": 30734704640,
+     "predecessor": "packed chain proof",
+     "predecessor_key_bytes": 442749,
+     "predecessor_proof_bytes": 121129,
+     "program": "CompressBNPacked::chain_v1",
+     "proof_blake3": "696d70847accb891771f9190b225a96f8effe830c9ca23fcea35b5f47bb6ca7d",
+     "proof_wire_bytes": 121225,
+     "seconds": {
+      "execution": 3.2918354389999998,
+      "pcs_commit": 2.9767871189999937,
+      "pcs_open": 3.2840064570000003,
+      "prove": 10.108978688,
+      "trace": 1.930989702,
+      "verify": 0.005273737
+     },
+     "shape": [
+      [
+       "CompressBNPacked::chain_v1",
+       1
+      ],
+      [
+       "KzgGroup_reuse",
+       131072
+      ],
+      [
+       "KzgGroup_01",
+       131072
+      ],
+      [
+       "KzgGroup_packed_small",
+       4096
+      ],
+      [
+       "KzgIO::read_words",
+       262144
+      ],
+      [
+       "KzgBlake3::realign",
+       262144
+      ],
+      [
+       "KzgBlake3::word_chunks",
+       16384
+      ],
+      [
+       "KzgGroup_packed_mid",
+       32768
+      ],
+      [
+       "KzgIO::byte",
+       65536
+      ],
+      [
+       "KzgGroup_cold_b",
+       131072
+      ],
+      [
+       "KzgIO::u32",
+       131072
+      ],
+      [
+       "BN254Fq::from_limbs",
+       32768
+      ],
+      [
+       "BN254Fq::range80",
+       131072
+      ],
+      [
+       "KzgGroup_cold_c",
+       262144
+      ],
+      [
+       "BN254FqRelation::assert_zero",
+       32768
+      ],
+      [
+       "BN254FqRelation::range89",
+       65536
+      ],
+      [
+       "KzgPackedDeserialize::circuits",
+       64
+      ],
+      [
+       "KzgDeserialize::nodes",
+       65536
+      ],
+      [
+       "KzgGroup_25",
+       131072
+      ],
+      [
+       "KzgPackedDeserialize::copies_of",
+       128
+      ],
+      [
+       "KzgTranscript::observe32",
+       8192
+      ],
+      [
+       "KzgTranscript::reverse_words",
+       65536
+      ],
+      [
+       "BN254G1::add",
+       8192
+      ],
+      [
+       "KzgGroup_10",
+       8192
+      ],
+      [
+       "KzgBlake3::read_block",
+       512
+      ],
+      [
+       "<table:UInt8::byte_inputs>",
+       256
+      ],
+      [
+       "<table:UInt8::pair_inputs>",
+       65536
+      ],
+      [
+       "<table:UInt8::sum_inputs>",
+       1024
+      ],
+      [
+       "<table:BN254Fq::add_sub_carry_inputs>",
+       4
+      ],
+      [
+       "<table:BN254FqRelation::weight_inputs>",
+       4
+      ],
+      [
+       "<table:BN254FqRelation::constant_inputs>",
+       8
+      ],
+      [
+       "<ROM:3>",
+       32768
+      ],
+      [
+       "<ROM:4>",
+       8192
+      ],
+      [
+       "<ROM:5>",
+       8192
+      ],
+      [
+       "<ROM:6>",
+       524288
+      ],
+      [
+       "<ROM:7>",
+       128
+      ],
+      [
+       "<ROM:10>",
+       64
+      ],
+      [
+       "<ROM:11>",
+       8192
+      ],
+      [
+       "<ROM:12>",
+       128
+      ],
+      [
+       "<ROM:13>",
+       256
+      ],
+      [
+       "<ROM:15>",
+       256
+      ],
+      [
+       "<ROM:21>",
+       64
+      ],
+      [
+       "<ROM:32>",
+       2048
+      ],
+      [
+       "<ROM:98>",
+       16
+      ]
+     ],
+     "shards": [
+      [
+       "KzgIO::read_words",
+       [
+        131072,
+        16384
+       ]
+      ],
+      [
+       "KzgGroup_cold_c",
+       [
+        131072,
+        16384
+       ]
+      ]
+     ],
+     "stage": 4,
+     "verify_cells": {
+      "active_circuits": 44,
+      "instructions": 350167748,
+      "main_cells_padded": 175727159,
+      "main_cells_padded_sharded": 168157751,
+      "max_height": 524288,
+      "quotient_degree": 4,
+      "stage2_cells": 26851106,
+      "total_rows": 2630497
+     }
+    }
+   ],
+   "shape_convergence": [
+    {
+     "from": 1,
+     "to": 2,
+     "changed_circuit_heights": 17
+    },
+    {
+     "from": 2,
+     "to": 3,
+     "changed_circuit_heights": 6
+    },
+    {
+     "from": 3,
+     "to": 4,
+     "changed_circuit_heights": 1
+    }
+   ],
+   "observations": [
+    "Packed CompressGL (budget 4, q 4, cap 2^26, k<=2 copies chosen from this execution): 87 points, 206,797 B proof (per-column 375,962 B), 6,140 values, 0 extra; prove 55.1 s + trace 29.3 s (per-column 46.7 s + 24.7 s); process peak RSS 109.8 GB (per-column compression 107.2 GB). 1.47B padded main cells, 1.21B committed after sharding.",
+    "Stage one (chain_v1 verifying packed CompressGL): 262.2M padded / 255.7M committed main cells, against 636.0M / 607.5M for first_v1 verifying the per-column proof (-58%); execution 3.9 s vs 41.9 s, prove 13.3 s vs 35.2 s, peak RSS 31 GB.",
+    "GL + first BN stage proving: 68.4 s vs 81.9 s (46.7 + 35.2), and the per-column first program/key disappear: one BN key (442,749 B) serves every stage.",
+    "Steady stages 2-4: 167.7M-169.9M committed (175.3M-177.4M padded), 121 KB proofs, 60-63 points, ~10 s prove. Slightly above i3 k2 (161.8M) because copies were planned from the i3 stage-3 report and only two circuits got copies here.",
+    "Shapes do not settle by stage 4: stage 2->3 changes 6 circuit heights, 3->4 changes one (KzgGroup_packed_small 8192 -> 4096); BN254Fq::from_limbs, assert_zero and a few ROM widths sit at a power-of-two boundary. This is the drift the normalization point (section 10) must absorb with configured capacities.",
+    "Every proof verifies natively, a changed last output word is rejected (GL and every BN stage), and every BN stage's deferred accumulator satisfies the pairing equation under the Ignition anchors."
+   ]
+  }
+ },
+ "stage_shapes_m4": {
+  "stage_1": {
+   "CompressBNPacked::compress_v1": 1,
+   "KzgGroup_reuse": 262144,
+   "KzgGroup_01": 524288,
+   "KzgIO::read_stream": 1048576,
+   "Blake3::compress_chunks": 1048576,
+   "KzgGroup_cold_b": 262144,
+   "KzgGroup_cold_c": 262144,
+   "KzgIO::byte": 1048576,
+   "KzgIO::u32": 131072,
+   "BN254Fq::range80": 8388608,
+   "BN254Fq::from_limbs": 2097152,
+   "BN254FqRelation::assert_zero": 2097152,
+   "BN254FqRelation::range89": 4194304,
+   "KzgDeserialize::nodes": 65536,
+   "KzgGroup_25": 262144,
+   "KzgTranscript::reverse_onto": 2097152,
+   "${\"name\":\"Lists::concat\",\"types\":[\"field\"]}": 262144,
+   "KzgBlake3::read_block": 1048576,
+   "KzgGroup_10": 524288,
+   "BN254G1::add": 524288,
+   "${\"name\":\"Lists::lookup\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}": 131072,
+   "${\"name\":\"Lists::drop\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}": 131072,
+   "<table:UInt8::byte_inputs>": 256,
+   "<table:UInt8::pair_inputs>": 65536,
+   "<table:UInt8::sum_inputs>": 1024,
+   "<table:BN254Fq::add_sub_carry_inputs>": 4,
+   "<table:BN254FqRelation::weight_inputs>": 4,
+   "<table:BN254FqRelation::constant_inputs>": 8,
+   "<ROM:3>": 4194304,
+   "<ROM:4>": 524288,
+   "<ROM:5>": 256,
+   "<ROM:6>": 65536,
+   "<ROM:7>": 8192,
+   "<ROM:8>": 512,
+   "<ROM:10>": 128,
+   "<ROM:11>": 524288,
+   "<ROM:12>": 32768,
+   "<ROM:13>": 128,
+   "<ROM:15>": 128,
+   "<ROM:25>": 128,
+   "<ROM:32>": 16384,
+   "<ROM:33>": 8192,
+   "<ROM:34>": 2048
+  },
+  "stage_2": {
+   "CompressBNPacked::compress_v1": 1,
+   "KzgGroup_reuse": 131072,
+   "KzgGroup_01": 131072,
+   "KzgIO::read_stream": 1048576,
+   "Blake3::compress_chunks": 1048576,
+   "KzgGroup_cold_b": 131072,
+   "KzgGroup_cold_c": 262144,
+   "KzgIO::byte": 1048576,
+   "KzgIO::u32": 131072,
+   "BN254Fq::range80": 131072,
+   "BN254Fq::from_limbs": 32768,
+   "BN254FqRelation::assert_zero": 32768,
+   "BN254FqRelation::range89": 65536,
+   "KzgDeserialize::nodes": 65536,
+   "KzgGroup_25": 131072,
+   "KzgTranscript::reverse_onto": 262144,
+   "KzgBlake3::read_block": 131072,
+   "KzgGroup_10": 8192,
+   "BN254G1::add": 8192,
+   "${\"name\":\"Lists::lookup\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}": 2048,
+   "${\"name\":\"Lists::drop\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}": 2048,
+   "KzgPackedDeserialize::key": 1,
+   "KzgPackedDeserialize::commitment": 4,
+   "KzgPackedDeserialize::shapes": 256,
+   "KzgPackedShape::frames": 1,
+   "KzgPackedShape::walk": 128,
+   "KzgPackedShape::consume": 64,
+   "KzgPackedShape::shape": 256,
+   "KzgPackedShape::shapes": 4,
+   "KzgPcsPacked::commitment_bytes": 4,
+   "KzgPackedShape::verify_frames": 64,
+   "KzgPcsPacked::rounds": 1,
+   "KzgPackedShape::matrices": 256,
+   "KzgPcsPacked::reduce": 1,
+   "KzgPcsPacked::observe_rounds": 8,
+   "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPackedShape::Matrix\"}}]}": 256,
+   "KzgPcsPacked::observe_matrix_queries": 256,
+   "KzgPcsPacked::round_packs": 8,
+   "KzgPcsPacked::walk": 128,
+   "KzgPcsPacked::at_log": 256,
+   "KzgPcsPacked::split": 4096,
+   "KzgPcsPacked::columns_at": 8192,
+   "KzgPcsPacked::columns_onto": 4096,
+   "${\"name\":\"Lists::concat\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPcsPacked::Group\"}}]}": 256,
+   "KzgPcsPacked::group_packs": 128,
+   "KzgPcsPacked::has_next": 4096,
+   "KzgPcsPacked::values": 4096,
+   "${\"name\":\"Lists::concat\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPcsPacked::Pack\"}}]}": 128,
+   "KzgPcsPacked::weigh": 128,
+   "KzgPcsPacked::pow_u32": 32,
+   "KzgPcsPacked::pow_byte": 32,
+   "BN254Fq::sub": 2,
+   "KzgPackedDeserialize::proof": 1,
+   "KzgPackedDeserialize::proof_tail": 1,
+   "KzgPackedDeserialize::witness": 2,
+   "<table:UInt8::byte_inputs>": 256,
+   "<table:UInt8::pair_inputs>": 65536,
+   "<table:UInt8::sum_inputs>": 1024,
+   "<table:BN254Fq::add_sub_carry_inputs>": 4,
+   "<table:BN254FqRelation::weight_inputs>": 4,
+   "<table:BN254FqRelation::constant_inputs>": 8,
+   "<ROM:3>": 2097152,
+   "<ROM:4>": 8192,
+   "<ROM:5>": 4096,
+   "<ROM:6>": 65536,
+   "<ROM:7>": 128,
+   "<ROM:8>": 512,
+   "<ROM:10>": 64,
+   "<ROM:11>": 8192,
+   "<ROM:12>": 128,
+   "<ROM:13>": 256,
+   "<ROM:15>": 256,
+   "<ROM:21>": 64,
+   "<ROM:32>": 16384,
+   "<ROM:33>": 4096,
+   "<ROM:34>": 2048
+  },
+  "stage_3": {
+   "CompressBNPacked::compress_v1": 1,
+   "KzgGroup_reuse": 131072,
+   "KzgGroup_01": 131072,
+   "KzgIO::read_stream": 1048576,
+   "Blake3::compress_chunks": 1048576,
+   "KzgGroup_cold_b": 262144,
+   "KzgGroup_cold_c": 262144,
+   "KzgIO::byte": 1048576,
+   "KzgIO::u32": 131072,
+   "BN254Fq::range80": 262144,
+   "BN254Fq::from_limbs": 32768,
+   "BN254FqRelation::assert_zero": 32768,
+   "BN254FqRelation::range89": 65536,
+   "KzgDeserialize::nodes": 65536,
+   "KzgGroup_25": 131072,
+   "KzgTranscript::reverse_onto": 524288,
+   "KzgBlake3::read_block": 262144,
+   "KzgGroup_10": 8192,
+   "BN254G1::add": 8192,
+   "${\"name\":\"Lists::lookup\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}": 2048,
+   "${\"name\":\"Lists::drop\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}": 2048,
+   "KzgPackedDeserialize::key": 1,
+   "KzgPackedDeserialize::commitment": 4,
+   "KzgPackedDeserialize::shapes": 256,
+   "KzgPackedShape::frames": 1,
+   "KzgPackedShape::walk": 128,
+   "KzgPackedShape::consume": 128,
+   "KzgPackedShape::shape": 256,
+   "KzgPackedShape::shapes": 4,
+   "KzgPcsPacked::commitment_bytes": 4,
+   "KzgPackedShape::verify_frames": 128,
+   "KzgPcsPacked::rounds": 1,
+   "KzgPackedShape::matrices": 512,
+   "KzgPcsPacked::reduce": 1,
+   "KzgPcsPacked::observe_rounds": 8,
+   "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPackedShape::Matrix\"}}]}": 256,
+   "KzgPcsPacked::observe_matrix_queries": 256,
+   "KzgPcsPacked::round_packs": 8,
+   "KzgPcsPacked::walk": 128,
+   "KzgPcsPacked::at_log": 256,
+   "KzgPcsPacked::split": 8192,
+   "KzgPcsPacked::columns_at": 16384,
+   "KzgPcsPacked::columns_onto": 8192,
+   "${\"name\":\"Lists::concat\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPcsPacked::Group\"}}]}": 256,
+   "KzgPcsPacked::group_packs": 128,
+   "KzgPcsPacked::has_next": 4096,
+   "KzgPcsPacked::values": 4096,
+   "${\"name\":\"Lists::concat\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgPcsPacked::Pack\"}}]}": 128,
+   "KzgPcsPacked::weigh": 128,
+   "KzgPcsPacked::pow_u32": 64,
+   "KzgPcsPacked::pow_byte": 64,
+   "BN254Fq::sub": 2,
+   "KzgPackedDeserialize::proof": 1,
+   "KzgPackedDeserialize::proof_tail": 1,
+   "KzgPackedDeserialize::witness": 2,
+   "<table:UInt8::byte_inputs>": 256,
+   "<table:UInt8::pair_inputs>": 65536,
+   "<table:UInt8::sum_inputs>": 1024,
+   "<table:BN254Fq::add_sub_carry_inputs>": 4,
+   "<table:BN254FqRelation::weight_inputs>": 4,
+   "<table:BN254FqRelation::constant_inputs>": 8,
+   "<ROM:3>": 2097152,
+   "<ROM:4>": 8192,
+   "<ROM:5>": 8192,
+   "<ROM:6>": 65536,
+   "<ROM:7>": 128,
+   "<ROM:8>": 512,
+   "<ROM:10>": 128,
+   "<ROM:11>": 8192,
+   "<ROM:12>": 128,
+   "<ROM:13>": 256,
+   "<ROM:15>": 256,
+   "<ROM:21>": 128,
+   "<ROM:32>": 16384,
+   "<ROM:33>": 8192,
+   "<ROM:34>": 2048
+  }
+ },
+ "stage_shapes_note": "Stages 4 and 5 have exactly stage 3's circuit heights in both runs. Stage 1 runs the per-column verifier path (43 active circuits), stage 2 the packed path on a 43-circuit predecessor, stage 3 onward the packed path on a 76-circuit predecessor.",
+ "observations": [
+  "verify_cells are the padded main cells of the stage execution that verifies the predecessor (whole CompressBNPacked step: policy/key/proof digests, verification, fold).",
+  "Shapes stop changing after stage 3 in both runs: stage 2 differs from stage 3 in 18 (height-only planning) or 16 (next-row planning) circuit heights, stages 3, 4 and 5 are identical. On Init a normalization point at stage 3 or later sees one predecessor shape; a second workload is still needed for capacities.",
+  "Next-row planning removes all extra values (135 / 839 per proof before) at the cost of 4-5 more packs; steady-state proof 186,415 -> 160,915 bytes and verification 358.9M -> 263.7M padded cells (one fewer power-of-two crossing).",
+  "Every stage: native verification accepts, a changed output is rejected, the deferred accumulator satisfies e(A,[1]2)e(B,[tau]2)=1 under the Ignition anchors; stage 1's accumulator equals the per-column Init baseline (source-claims.bin)."
+ ],
+ "command_split": "IX_KZG_SRS=<ignition prefix> IX_KZG_CUDA_SRS_CACHE=1 target/cuda/release/examples/compress_bn_packed_stages FIRST_ARTIFACT ARTIFACT 26 5 OUT --lookup-budget 4 --quotient-degree 4 --streaming [--shards K --shard-profile-first STAGE1_REPORT --shard-profile STAGE3_REPORT]",
+ "artifact_export_split": "lake env MultiStark/.lake/build/bin/bn_grouping export ARTIFACT POLICY --compress --packed [--first]",
+ "observations_split_streams_sharding": [
+  "Cells: main_cells_unpadded counts executed rows (function rows per circuit, ROM rows per width, full fixed tables); main_cells_padded is the unsharded power-of-two layout; main_cells_padded_committed is what the prover commits after sharding (equal to padded without sharding).",
+  "I1 (split programs): first key 379,542 B / 43 circuits, steady key 399,566 B / 76 circuits (single combined key was 463,203 B). Steady-state verification 263.7M -> 213.9M padded (172.2M unpadded); stage 2 190.5M padded. Proof 158,673 B, 4,692 values, 70 points.",
+  "I2 (word streams) with the byte-era grouping regressed padded cells (steady 256.0M, stage 1 854.9M) although unpadded fell (steady 148.2M): 16 new ungrouped word circuits (92 total), KzgGroup_reuse crossing 2^17 rows, and KzgTranscript::observe_bytes (per-byte push in the per-column commitment absorption, 345K rows) inside the 289-wide KzgGroup_cold_b. Transcript/digest bytes unchanged: kzg-xof.ixa and kzg-source.ixa regenerate byte-identically to the streams experiment and every native/Aiur check passes.",
+  "I2 regrouped (i2q): steady key 440,350 B / 42 circuits, proof 115,689 B, 3,444 values, 60 points; steady verification 175.5M padded / 129.5M unpadded (max height 2^19); stage 1 636.0M padded / 499.9M unpadded. Adding many members to an existing wide group widens it (columns add up across members): the i2p variant that put them into cold_b/cold_c (cold_b 289 -> 510 wide) measured 215.4M.",
+  "I3 (sharding, copies in key): k<=2 gives steady 161.8M committed padded (129.6M unpadded verification, unchanged) and stage 1 607.5M; k<=3 with a column-only cost model added 2.7K values to every steady proof and raised unpadded verification to 167M (each extra copy also re-evaluates the circuit's constraint graph in the next verifier); with 600 cells/node added to the model, k<=3 keeps steady at 163.1M/129.4M, cuts stage 1 to 541.0M but makes stage 2 213.2M (bigger first-program proof). Sharding also absorbs row drift across a power of two (k3 stage 4: KzgGroup_reuse 131,072+256+128 instead of 262,144).",
+  "Convergence: shapes are identical from stage 3 (i1, i2, i3 k2, k3+node cost) or stage 4 (i2q: one circuit height differs between stages 3 and 4)."
+ ]
+}

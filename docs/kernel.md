@@ -1114,9 +1114,10 @@ interleaved:
    byte vectors of `IxC/Fixtures/{Codec,ParserWork,ByteAdmission}.lean`
    are the codec's: rewrite them for the new grammar (their `#guard`s run
    when `lake -d IxC build --wfail` elaborates them).
-7. **IxVM costs.** `lake test --wfail -- --ignored ixvm` reports every
-   kernel-check FFT-cost pin of `Tests/Ix/LegacyIxVM.lean` and the shard pin in
-   `Tests/Main.lean` that moved; set each to the measured value.
+7. **IxVM checks.** `lake env lean --run Scripts/CheckFormal.lean` must pass: it runs
+   `formal-aiur-tests`, which proves and checks the IxVM claim fixtures and
+   the exploit corpus (`Tests/Ix/IxVM/Exploits.lean`) against the new
+   format, and `formal-aggregate-tests`.
 8. **Frozen audit records**, as step 3 of a toolchain bump, including the
    codec's own closure in `IxC/Ixon/Audit.lean`.
 9. **Stored environments.** Recompile every `.ixe` the documentation's
@@ -1228,7 +1229,8 @@ reason, micros, readMicros`).
 ```sh
 lake build --wfail kernel-check-ixe
 lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/envs/initstd.ixe
-CHECK_IXE_WATCH_MB=12000 .lake/build/bin/kernel-check-ixe --guarded --memory-max 24 \
+CHECK_IXE_WATCH_MB=12000 systemd-run --user --scope -p MemoryMax=24G \
+  .lake/build/bin/kernel-check-ixe --guarded \
   .lake/envs/initstd.ixe .lake/envs/initstd.jsonl
 .lake/build/bin/kernel-check-ixe --report .lake/envs/initstd.jsonl
 ```
@@ -1275,8 +1277,8 @@ rows print a failure with its terms and Lean's names
   above that);
 - `CHECK_IXE_SKIP` (comma-separated addresses) declines those constants
   unchecked; `kernel-check-ixe --guarded` reruns with every recorded runaway
-  skipped until the run completes (`--memory-max <GB>` runs each attempt in
-  a memory-capped cgroup scope, `Ix.Watchdog`);
+  skipped until the run completes; wrap it in `systemd-run --user --scope
+  -p MemoryMax=<GB>G` to cap the whole run;
 - `CHECK_IXE_ROOTS` (comma-separated Lean names) restricts the run to the
   prelude and the dependency closure of those constants;
 - `CHECK_IXE_THREAD=0` runs the check on the main thread instead of a
@@ -1292,7 +1294,7 @@ Mathlib's `.ixe` comes from `Benchmarks/Compile/CompileMathlib.lean`
 ### `ix check-lean`
 
 `ix check-lean <input.ixe>` (`Ix/Cli/CheckLeanCmd.lean`) is the host checker
-behind the merge-queue gate `initstd-reference` and the `ooc` benchmark. It
+behind the merge-queue gate `initstd-reference` and the `ixvm-ooc` benchmark. It
 authenticates the bytes and checks every declaration, or a selection
 (`--consts`, `--consts-file`, `--max`), with the same incremental step as the
 environment check. When a whole run of a bound artifact passes, it runs the
