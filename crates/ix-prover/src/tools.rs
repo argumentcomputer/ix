@@ -268,7 +268,6 @@ pub fn plan(
   let mut report = json!({"plan":batch, "execution_seconds":execute,
     "storage":record.storage_usage(),
     "execution_statistics":backend.execution_statistics(&record),
-    "execution_statistics":backend.execution_statistics(&record),
     "queries":record.queries.len(), "instructions":record.instructions,
     "executor":ran, "verified":false});
   for (key, value) in bound.report {
@@ -304,9 +303,6 @@ pub fn prove(
   }
   let mut report = json!({"execution_seconds":start.elapsed().as_secs_f64(),
     "executor":ran, "instructions":record.instructions,
-    "execution_statistics":backend.execution_statistics(&record),
-    "parameters":backend.parameters(),
-    "conjectured_security_bits":backend.parameters().conjectured_bits(),
     "execution_statistics":backend.execution_statistics(&record),
     "parameters":backend.parameters(),
     "conjectured_security_bits":backend.parameters().conjectured_bits(),

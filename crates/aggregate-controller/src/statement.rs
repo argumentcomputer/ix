@@ -217,8 +217,53 @@ pub struct Statement {
   pub ctx: ClaimContext,
   pub subjects: Arc<SubjectTree>,
   pub assumptions: Option<Arc<CanonicalTree>>,
+  pub axioms: Option<Arc<CanonicalTree>>,
   pub claim: Claim,
   pub claim_bytes: Vec<u8>,
+}
+
+/// A7 canonical union of two optional user-axiom sets (`aggr_assert_axioms_merge`).
+///
+/// Fast path (no Channel-5 trees opened): at least one side has `None`, or both
+/// carry identical roots. Slow path: both carry distinct `Some` roots, in which
+/// case both canonical trees must be supplied and their strictly sorted union is
+/// computed.
+pub fn merge_axiom_trees(
+  left_root: Option<&Address>,
+  left_tree: Option<&Arc<CanonicalTree>>,
+  right_root: Option<&Address>,
+  right_tree: Option<&Arc<CanonicalTree>>,
+) -> Result<(Option<Address>, Option<Arc<CanonicalTree>>), String> {
+  match (left_root, right_root) {
+    (None, None) => Ok((None, None)),
+    (None, Some(ra)) => Ok((Some(ra.clone()), right_tree.cloned())),
+    (Some(la), None) => Ok((Some(la.clone()), left_tree.cloned())),
+    (Some(la), Some(ra)) if la == ra => {
+      Ok((Some(la.clone()), left_tree.cloned().or_else(|| right_tree.cloned())))
+    },
+    (Some(la), Some(ra)) => {
+      let (Some(lt), Some(rt)) = (left_tree, right_tree) else {
+        return Err(
+          "aggregate children have distinct user-axiom roots without canonical axiom trees"
+            .into(),
+        );
+      };
+      if lt.root != *la {
+        return Err(
+          "left user-axiom tree root does not match claim context".into(),
+        );
+      }
+      if rt.root != *ra {
+        return Err(
+          "right user-axiom tree root does not match claim context".into(),
+        );
+      }
+      let leaves = merge_sorted(&lt.leaves, &rt.leaves);
+      let merged = CanonicalTree::from_sorted(leaves)?
+        .ok_or("merged user-axiom tree is empty")?;
+      Ok((Some(merged.root.clone()), Some(merged)))
+    },
+  }
 }
 
 impl Statement {
@@ -227,6 +272,31 @@ impl Statement {
     subjects: Arc<SubjectTree>,
     assumptions: Option<Arc<CanonicalTree>>,
   ) -> Arc<Self> {
+    Self::build(ctx, subjects, assumptions, None)
+  }
+
+  pub fn with_axioms(
+    ctx: ClaimContext,
+    subjects: Arc<SubjectTree>,
+    assumptions: Option<Arc<CanonicalTree>>,
+    axioms: Option<Arc<CanonicalTree>>,
+  ) -> Result<Arc<Self>, String> {
+    if let Some(tree) = &axioms
+      && Some(&tree.root) != ctx.axioms.as_ref()
+    {
+      return Err(
+        "statement user-axiom tree root does not match claim context".into(),
+      );
+    }
+    Ok(Self::build(ctx, subjects, assumptions, axioms))
+  }
+
+  fn build(
+    ctx: ClaimContext,
+    subjects: Arc<SubjectTree>,
+    assumptions: Option<Arc<CanonicalTree>>,
+    axioms: Option<Arc<CanonicalTree>>,
+  ) -> Arc<Self> {
     let claim = Claim::CheckEnv {
       ctx: ctx.clone(),
       root: subjects.root.clone(),
@@ -234,7 +304,7 @@ impl Statement {
     };
     let mut claim_bytes = Vec::new();
     claim.put(&mut claim_bytes);
-    Arc::new(Self { ctx, subjects, assumptions, claim, claim_bytes })
+    Arc::new(Self { ctx, subjects, assumptions, axioms, claim, claim_bytes })
   }
 
   pub fn join(
@@ -243,10 +313,21 @@ impl Statement {
     structural: bool,
     owner_by_address: &FxHashMap<Address, usize>,
   ) -> Result<Arc<Self>, String> {
-    // The fold keeps the left child's context; joined children share one.
-    if left.ctx != right.ctx {
+    // Joined children share base context (spec, binding, validator mode);
+    // user-axiom sets merge by A7 canonical union (`aggr_assert_axioms_merge`).
+    if left.ctx.spec != right.ctx.spec
+      || left.ctx.binding != right.ctx.binding
+      || left.ctx.binding_assumed != right.ctx.binding_assumed
+      || left.ctx.literal_class != right.ctx.literal_class
+    {
       return Err("aggregate children have different claim contexts".into());
     }
+    let (merged_axioms_root, merged_axioms_tree) = merge_axiom_trees(
+      left.ctx.axioms.as_ref(),
+      left.axioms.as_ref(),
+      right.ctx.axioms.as_ref(),
+      right.axioms.as_ref(),
+    )?;
     if !left.subjects.shards.is_disjoint(&right.subjects.shards)
       || left.subjects.root == right.subjects.root
     {
@@ -290,7 +371,9 @@ impl Statement {
       }
     }
     let assumptions = CanonicalTree::from_sorted(remaining)?;
-    Ok(Self::new(left.ctx.clone(), subjects, assumptions))
+    let out_ctx =
+      ClaimContext { axioms: merged_axioms_root, ..left.ctx.clone() };
+    Self::with_axioms(out_ctx, subjects, assumptions, merged_axioms_tree)
   }
 
   /// The output of a binding discharge (`ix_aggr` shapes 13 and 14): the
@@ -298,7 +381,12 @@ impl Statement {
   /// the role binding instead of assuming it.
   pub fn discharged(&self) -> Result<Arc<Self>, String> {
     let ctx = discharged_context(&self.ctx)?;
-    Ok(Self::new(ctx, self.subjects.clone(), self.assumptions.clone()))
+    Self::with_axioms(
+      ctx,
+      self.subjects.clone(),
+      self.assumptions.clone(),
+      self.axioms.clone(),
+    )
   }
 }
 

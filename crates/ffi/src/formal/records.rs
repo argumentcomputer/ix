@@ -46,8 +46,8 @@ lean_ffi::lean_inductive! {
   /// `manifest` … `options` (ten objects); `planOnly`, `useCache`,
   /// `writeOutputs`, `wrapRoot`, `assumeBinding`.
   LeanAggregateConfig [ { num_obj: 10, num_8: 5 } ];
-  /// `label`, `claim`, `bindingSection`, `literalClass`.
-  LeanCatalogMember [ { num_obj: 4 } ];
+  /// `label`, `claim`, `bindingSection`, `literalClass`, `axiomLeaves`.
+  LeanCatalogMember [ { num_obj: 5 } ];
   /// `members`, `proofs`, `expectedRoot`, `device`, `options`; `useCache`,
   /// `writeOutputs`.
   LeanCatalogConfig [ { num_obj: 5, num_8: 2 } ];
@@ -230,11 +230,17 @@ pub(super) fn aggregate_config(
 
 fn catalog_member(object: LeanBorrowed<'_>) -> Result<catalog::Member, String> {
   let m = record(object, LeanCatalogMember, "CatalogMember")?;
+  let mut axiom_leaves = addresses(m.get_obj(4))?;
+  axiom_leaves.sort_unstable();
+  axiom_leaves.dedup();
+  let axioms =
+    aggregate_controller::statement::CanonicalTree::from_sorted(axiom_leaves)?;
   Ok(catalog::Member {
     label: string(m.get_obj(0)),
     claim: ixon::Claim::from_bytes(m.get_obj(1).as_byte_array().as_bytes())?,
     binding_section: bytes(m.get_obj(2)),
     literal_class: option(m.get_obj(3), address)?,
+    axioms,
   })
 }
 

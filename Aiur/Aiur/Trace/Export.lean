@@ -149,8 +149,8 @@ structure Replay (F : Type) where
   columns : List Nat
 
 def replayFunction [Field F] [DecidableEq F] (program : Program F) (config : Config)
-    (fn : Function F) (validateInputs : Bool := true) : Except String (Replay F) := do
-  let source ← Compiler.function program config fn validateInputs
+    (func : Function F) (validateInputs : Bool := true) : Except String (Replay F) := do
+  let source ← Compiler.function program config func validateInputs
   let aliases ← resolveAliases source.chip
   let propagatedScopes := if config.propagateScopes then ScopedPropagation.transform aliases else aliases
   let simplified := if config.simplifyConstraints then (ConstraintElimination.run propagatedScopes).chip
@@ -170,17 +170,17 @@ def replayFunction [Field F] [DecidableEq F] (program : Program F) (config : Con
 plan. Equality checks fail closed if either compiler evolves without updating
 its companion metadata. -/
 def putFunctionOf [Field F] [DecidableEq F] (encode : F → Nat) (config : Config)
-    (fn : Function F) (replay : Replay F) (layout : LaidOutChip F) (representative : String)
+    (func : Function F) (replay : Replay F) (layout : LaidOutChip F) (representative : String)
     (bytecode : Execution.Function F) : PoolM Unit := do
   let ⟨source, degree, replayed, chip, columns⟩ := replay
-  unless degree.chip == layout.logical do throw s!"trace logical layout mismatch in {fn.name}"
-  unless replayed == layout.layout do throw s!"trace column allocation mismatch in {fn.name}"
+  unless degree.chip == layout.logical do throw s!"trace logical layout mismatch in {func.name}"
+  unless replayed == layout.layout do throw s!"trace column allocation mismatch in {func.name}"
   unless chip == layout.chip do
-    throw (if config.propagateValues then s!"trace final compaction mismatch in {fn.name}"
-      else s!"trace final layout mismatch in {fn.name}")
+    throw (if config.propagateValues then s!"trace final compaction mismatch in {func.name}"
+      else s!"trace final layout mismatch in {func.name}")
   let hintPCs := bytecode.code.toList.zipIdx.filterMap fun (op, pc) =>
     match op with | .hint .. => some pc | _ => none
-  unless source.hints == hintPCs.length do throw s!"trace hint occurrence mismatch in {fn.name}"
+  unless source.hints == hintPCs.length do throw s!"trace hint occurrence mismatch in {func.name}"
   let steps := source.steps ++ (degree.cache.reverse.map fun (scope, value, dest) =>
     Step.mk scope (.assign [dest] [value])).toArray
   let writes := columns.zipIdx.flatMap fun (old, column) =>
@@ -189,7 +189,7 @@ def putFunctionOf [Field F] [DecidableEq F] (encode : F → Nat) (config : Confi
         | some (.auxiliary scope) => source.chip.activation scope
         | _ => .const 1
       (column, id, guard)
-  str fn.name
+  str func.name
   str representative
   nat degree.chip.roles.size
   nats (source.chip.inputs.flatMap WireValue.words)
@@ -201,10 +201,10 @@ def putFunctionOf [Field F] [DecidableEq F] (encode : F → Nat) (config : Confi
     nat column; nat id; putPolynomial encode guard
 
 def putFunction [Field F] [DecidableEq F] (encode : F → Nat) (program : Program F)
-    (config : Config) (fn : Function F) (layout : LaidOutChip F) (representative : String)
+    (config : Config) (func : Function F) (layout : LaidOutChip F) (representative : String)
     (bytecode : Execution.Function F) (validateInputs : Bool := true) : PoolM Unit := do
-  putFunctionOf encode config fn
-    (← MonadExcept.ofExcept (replayFunction program config fn validateInputs)) layout
+  putFunctionOf encode config func
+    (← MonadExcept.ofExcept (replayFunction program config func validateInputs)) layout
     representative bytecode
 
 def putGroup [Field F] [DecidableEq F] (encode : F → Nat) (group : Grouping.Layout F) :
@@ -331,13 +331,13 @@ def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
     nats cfg.limbs
     withNodes do
       listP ((program.functions.zip artifact.layouts).zip original.functions).zipIdx
-          fun (((fn, layout), code), index) => do
-        unless fn.name == code.name do throw "trace bytecode function order mismatch"
+          fun (((func, layout), code), index) => do
+        unless func.name == code.name do throw "trace bytecode function order mismatch"
         let replay ← match replays with
           | some replays => MonadExcept.ofExcept (replays[index]?.getD (throw "missing trace replay"))
-          | none => MonadExcept.ofExcept (replayFunction program artifact.config fn
-              (artifact.entries.contains fn.name))
-        putFunctionOf encode artifact.config fn replay layout (physical.representative fn.name) code
+          | none => MonadExcept.ofExcept (replayFunction program artifact.config func
+              (artifact.entries.contains func.name))
+        putFunctionOf encode artifact.config func replay layout (physical.representative func.name) code
       listP (system.chips.zip physical.system.chips) fun (chip, source) => do
         putChip encode chip
         putDepth cfg source
@@ -359,9 +359,9 @@ def exportPreparedPlanPar [Field F] [DecidableEq F] (modulus : Nat) (encode : F 
     (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
     (exported : Execution.Export F) (groups : List (String × List String) := []) :
     Except String (Execution.Export F × ByteArray) := do
-  let replays := (program.functions.map fun fn =>
+  let replays := (program.functions.map fun func =>
     Task.spawn (prio := .default) fun _ =>
-      replayFunction program artifact.config fn (artifact.entries.contains fn.name)).map (·.get)
+      replayFunction program artifact.config func (artifact.entries.contains func.name)).map (·.get)
   exportPreparedPlan modulus encode program artifact physical exported groups (some replays)
 
 /-- `exportPreparedPlanPar` after physical deduplication of `artifact`. -/
@@ -382,8 +382,8 @@ def exportPlanParallel [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
   let specialized ← IO.ofExcept (Generic.specialize source entries)
   let inlined ← IO.ofExcept (Inlining.prepare specialized.program specialized.inlineNames entries)
   let program := inlined.program
-  let replays ← program.functions.mapM fun fn => IO.asTask <| IO.lazyPure fun _ =>
-    replayFunction program config fn (entries.contains fn.name)
+  let replays ← program.functions.mapM fun func => IO.asTask <| IO.lazyPure fun _ =>
+    replayFunction program config func (entries.contains func.name)
   let artifact ← IO.ofExcept (compileParallel program entries config)
   let physical ← IO.ofExcept (Physical.prepare artifact)
   let replays ← replays.mapM fun replay => do IO.ofExcept (← IO.wait replay)

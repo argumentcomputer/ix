@@ -56,6 +56,6 @@ def compileParallel (program : Program F) (entries : List String)
 theorem compileParallel_eq (program : Program F) (entries : List String) (config : Config) :
     compileParallel program entries config = compile program entries config := by
   unfold compileParallel compile
-  simp only [List.parMapM_eq]
+  simp only [List.parMapM_eq, Optimized.parMapM_eq_mapM]
 
 end Aiur.Trace

@@ -88,11 +88,8 @@ def verifyDynamicInputs (p : Cli.Parsed) : IO UInt32 := do
     for input in inputs do
       let proofBytes ← readBytesInput input
       let raw ← FormalAggregate.rawProof .aggr proofBytes
-      IO.FS.withTempFile fun _ path => do
-        IO.FS.writeBinFile path raw
-        FormalAggregate.invoke ctx.aggrArtifact "verify"
-          (FormalAiur.invocation (Aggr.pubInput ctx.allowed claimBytes) default "MultiStark::ix_aggr")
-          path.toString
+      let _ ← ctx.aggrSystem.verify "MultiStark::ix_aggr"
+        ((Aggr.pubInput ctx.allowed claimBytes).map (·.val)) raw
       IO.println s!"ok: aggregate proof {input} verifies dynamic claim {claimDigest}"
       IO.println statement
     return 0

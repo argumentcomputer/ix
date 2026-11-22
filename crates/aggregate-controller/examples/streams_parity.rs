@@ -86,6 +86,10 @@ fn members(value: &Value) -> Result<Vec<catalog::Member>, String> {
               .ok_or_else(|| format!("bad literal class {v}"))?,
           ),
         },
+        axioms: match &m["axioms"] {
+          Value::Null => None,
+          list => CanonicalTree::from_sorted(addresses(list)?)?,
+        },
       })
     })
     .collect()

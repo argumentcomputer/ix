@@ -262,7 +262,7 @@ def main (args : List String) : IO Unit := do
       let dir ← IO.FS.createTempDir
       pure (dir / "claims.ixt").toString
   IO.eprintln s!"[formal-aiur-tests] writing {path}"
-  let env ← getCompileEnv #[`Init]
+  let env ← getCompileEnv #[`Init, `Tests.Ix.IxVMFixtures, `Batteries.Data.Char.Basic]
   let fixture ← loadIxonEnv ``Nat.add_comm env
   IO.FS.writeBinFile (path ++ ".ixe") (← IO.ofExcept (Ixon.serEnv fixture))
   IO.FS.writeBinFile (path ++ ".controller.ixe") (← IO.ofExcept (Ixon.serEnv (← IO.ofExcept controllerEnv)))

@@ -3,7 +3,7 @@ import Ix.AiurInvocation
 
 /-! Execute every aggregation shape, 0 to 16 (wraps, flat and structural pairs,
 range sums, binding discharge, cross-binding joins and catalog joins), and the
-invalid shape 17, against small real STARK children, with negative cases for
+invalid shape 19, against small real STARK children, with negative cases for
 each binding the shapes check. The stand-in keys deliberately accept arbitrary
 digests; only the production aggregator's bindings and fold relation are under
 test.
@@ -146,7 +146,7 @@ private inductive NodeSpec where
   | checkEnv (sub : String) (kind : ChildKind) (statement : CheckEnvTrees)
   | claim (sub : String) (kind : ChildKind) (claim : Ix.Claim) (statement : CheckEnvTrees)
 
-private def buildNodeSpec (ctx : Context) (dir : System.FilePath) : NodeSpec → IO Node
+private def buildNodeSpec (ctx : Keys) (dir : System.FilePath) : NodeSpec → IO Node
   | .checkEnv sub kind st => node ctx (dir / sub) kind st
   | .claim sub kind cl st => claimNode ctx (dir / sub) kind cl st
 
@@ -439,7 +439,7 @@ def main (args : List String) : IO Unit := do
     let wrap ← advice ctx li none left false
     tests := tests.push (test ctx "wrong output digest" (Ix.Claim.ser right.claim) wrap false)
     tests := tests.push (test ctx "wrong child kind" bytes (extendIdentity wrap ctx.allowed 1) false)
-    tests := tests.push (test ctx "invalid shape" bytes (extendIdentity wrap ctx.allowed 17) false)
+    tests := tests.push (test ctx "invalid shape" bytes (extendIdentity wrap ctx.allowed 19) false)
     let badIdentity := ctx.allowed.set! 0 (ctx.allowed.data[0]! ^^^ 1)
     tests := tests.push (test ctx "wrong allowed identity" bytes (extendIdentity wrap badIdentity 0) false)
     let corrupt := li.wrapper.proof.extract 8 li.wrapper.proof.size
@@ -516,5 +516,5 @@ def main (args : List String) : IO Unit := do
     IO.FS.writeBinFile path (Ix.AiurInvocation.encodeCases tests)
     IO.FS.writeBinFile (path ++ ".wrap.ixi")
       (FormalAiur.invocation (pubInput ctx.allowed bytes) wrap "MultiStark::ix_aggr")
-    IO.println s!"Wrote {tests.size} aggregation cases: shapes 0 to 16, the invalid shape 17, \
+    IO.println s!"Wrote {tests.size} aggregation cases: shapes 0 to 16, the invalid shape 19, \
       and negative bindings"
