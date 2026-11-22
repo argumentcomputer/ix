@@ -90,6 +90,7 @@ impl DiskFile {
     ))
   }
 
+  #[cfg(not(feature = "cuda"))]
   pub(super) fn file(&self) -> &File {
     &self.file
   }
