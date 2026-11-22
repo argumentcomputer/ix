@@ -37,9 +37,11 @@ jobs:
       # cargo rebuilds after every fresh checkout because their mtimes moved,
       # come back as cache hits. RunsOn configures it before anything can
       # start an sccache server.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
+          # Merge tests owns the shared queue ref's snapshot.
+          sticky_save: ${{ github.event_name != 'merge_group' }}
           sticky_cache: |
             rust
             custom,path=.lake,path=Aiur/.lake,path=IxVM/.lake,path=MultiStark/.lake,path=target
@@ -107,6 +109,9 @@ jobs:
           } > "$tmp/RefinementAxioms.lean"
           lake env lean -DwarningAsError=true "$tmp/RefinementAxioms.lean"
           rm -rf "$tmp"
+      - name: Check Aiur compression compiler fixtures
+        if: github.event_name != 'push'
+        run: bash tools/check-aiur-compression-fixtures.sh
       - name: Check new IxVM execution and proof fixture
         if: github.event_name != 'push'
         run: |
@@ -129,6 +134,9 @@ jobs:
         env:
           IX_AIUR_ARTIFACT: ${{ runner.temp }}/formal/ixvm.ixa
         run: lake test --wfail -- --tier ci:ixvm
+      - name: Check the formal verifying keys match their pins
+        if: github.event_name != 'push'
+        run: bash tools/check-formal-keys.sh
       - name: Check Lean versions match for Ix, compiler bench, Aiur packages, certified kernel and its model
         if: github.event_name != 'push'
         run: |
@@ -160,7 +168,7 @@ jobs:
       # cargo rebuilds after every fresh checkout because their mtimes moved,
       # come back as cache hits. RunsOn configures it before anything can
       # start an sccache server.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -226,7 +234,7 @@ jobs:
       # instance role need checking first), and an `NVCC` wrapper running
       # `sccache nvcc` for the kernels, which multi-stark's build script
       # must compile with `-c` per source for sccache to cache them.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
