@@ -4,7 +4,8 @@ use super::*;
 
 pub(super) struct FixedTable {
   maps: Vec<usize>,
-  height: usize,
+  pub(super) height: usize,
+  pub(super) preprocessed_width: usize,
 }
 
 pub(super) fn fixed_tables<B: WitnessField>(
@@ -12,6 +13,7 @@ pub(super) fn fixed_tables<B: WitnessField>(
   circuits: &mut Vec<CircuitInputs<Val>>,
   names: &mut Vec<String>,
   log_blowup: usize,
+  materialize: bool,
 ) -> Result<Vec<FixedTable>, String> {
   let program = &plan.program.program;
   let mut groups: Vec<(usize, Vec<usize>)> = vec![];
@@ -83,6 +85,10 @@ pub(super) fn fixed_tables<B: WitnessField>(
     }
     let preprocessed = if height == 0 {
       None
+    } else if !materialize {
+      // Carry the preprocessed width for graph compilation without allocating
+      // or populating table rows.
+      Some(RowMajorMatrix::new(Vec::new(), width))
     } else {
       let mut values = Vec::with_capacity(
         height.checked_mul(width).ok_or("fixed table size overflow")?,
@@ -116,7 +122,11 @@ pub(super) fn fixed_tables<B: WitnessField>(
       ..Default::default()
     });
     names.push(format!("<table:{}>", input.name));
-    result.push(FixedTable { maps, height });
+    result.push(FixedTable {
+      maps,
+      height,
+      preprocessed_width: if height == 0 { 0 } else { width },
+    });
   }
   Ok(result)
 }

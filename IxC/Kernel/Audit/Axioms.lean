@@ -24,13 +24,15 @@ namespace Ix.Kernel.Audit
 constructor list. -/
 def directConstants : ConstantInfo → Array Name
   | .axiomInfo v => v.type.getUsedConstants
-  | .defnInfo v => v.type.getUsedConstants ++ v.value.getUsedConstants
-  | .thmInfo v => v.type.getUsedConstants ++ v.value.getUsedConstants
-  | .opaqueInfo v => v.type.getUsedConstants ++ v.value.getUsedConstants
-  | .quotInfo _ => #[]
-  | .ctorInfo v => v.type.getUsedConstants
-  | .recInfo v => v.type.getUsedConstants
-  | .inductInfo v => v.type.getUsedConstants ++ v.ctors
+  | .defnInfo v => v.type.getUsedConstants ++ v.value.getUsedConstants ++ v.all.toArray
+  | .thmInfo v => v.type.getUsedConstants ++ v.value.getUsedConstants ++ v.all.toArray
+  | .opaqueInfo v => v.type.getUsedConstants ++ v.value.getUsedConstants ++ v.all.toArray
+  | .quotInfo v => v.type.getUsedConstants
+  | .ctorInfo v => v.type.getUsedConstants ++ #[v.induct]
+  | .recInfo v =>
+    v.type.getUsedConstants ++ v.all.toArray ++
+      v.rules.toArray.flatMap (fun r => r.rhs.getUsedConstants.push r.ctor)
+  | .inductInfo v => v.type.getUsedConstants ++ v.all.toArray ++ v.ctors.toArray
 
 structure State where
   visited : NameSet := {}

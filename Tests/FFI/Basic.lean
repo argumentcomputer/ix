@@ -64,14 +64,16 @@ def dHashMapRawTests : TestSeq :=
 
 /-! ## Test Suite -/
 
-public def suite : List TestSeq := [
+public def suiteWith (cfg : SlimCheck.Configuration := {}) : List TestSeq := [
   assocListTests,
   hashMapTests,
   dHashMapRawTests,
-  checkIO "HashMap Nat Nat roundtrip" (∀ m : Std.HashMap Nat Nat, hashMapEq (roundtripHashMapNatNat m) m),
+  checkIO "HashMap Nat Nat roundtrip" (∀ m : Std.HashMap Nat Nat, hashMapEq (roundtripHashMapNatNat m) m) .done cfg,
   checkIO "DHashMapRaw Nat Nat roundtrip" (∀ m : Std.HashMap Nat Nat,
     let raw := m.toList.foldl (init := ({} : DHashMapRaw Nat (fun _ => Nat))) fun acc (k, v) => acc.insert k v
-    dHashMapRawEq (roundtripDHashMapRawNatNat raw) raw),
+    dHashMapRawEq (roundtripDHashMapRawNatNat raw) raw) .done cfg,
 ]
+
+public def suite : List TestSeq := suiteWith {}
 
 end Tests.FFI.Basic

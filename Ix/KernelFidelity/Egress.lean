@@ -132,61 +132,144 @@ def memberNames (ixon : Ixon.Env) (store : RecordStore) (block : Address) : List
 
 def maxProjections : Nat := 1 <<< 20
 
+/-- Per-block result of projection reconstruction and motive-order checking,
+    folded in block order to preserve `ProjectionReport` determinism. -/
+structure BlockProjectionOutcome where
+  block : Address
+  written : Nat := 0
+  matched : Nat := 0
+  covered : Array Address := #[]
+  problems : Array String := #[]
+  multiKind : Option String := none
+  motiveOrdered : Bool := false
+  swapRefused : Bool := false
+  refusedKind : Option String := none
+  deriving Inhabited
+
 /-- Projection and block-order fidelity through an ordered record view.
 Only projection addresses/tags and block addresses survive the first scan;
 each compared projection and mutual block is decoded on demand. -/
 def projectionsAccess (input : _root_.Ix.KernelFidelity.RecordAccess) :
     Except String ProjectionReport := do
+  let scanRange (lo hi : Nat) :
+      Except String (Array (Address × Address × Ixon.ConstTag) × Array Address) := do
+    let mut projs : Array (Address × Address × Ixon.ConstTag) := #[]
+    let mut blks : Array Address := #[]
+    for a in input.addresses.extract lo hi do
+      let tag ← (input.tag a).mapError fun e => s!"fidelity: tag {a}: {e}"
+      match tag with
+      | .iPrj | .cPrj | .rPrj | .dPrj =>
+        let c ← input.read a tag
+        projs := projs.push (owner a c, a, tag)
+      | .muts => blks := blks.push a
+      | _ => pure ()
+    return (projs, blks)
   let mut byOwner : Std.HashMap Address (Array (Address × Ixon.ConstTag)) := {}
   let mut blocks : Array Address := #[]
   let mut report : ProjectionReport := {}
-  for a in input.addresses do
-    let tag ← (input.tag a).mapError fun e => s!"fidelity: tag {a}: {e}"
-    match tag with
-    | .iPrj | .cPrj | .rPrj | .dPrj =>
-      let c ← input.read a tag
-      byOwner := byOwner.insert (owner a c) ((byOwner.getD (owner a c) #[]).push (a, tag))
+  if input.addresses.size ≤ 256 then
+    let (projs, blks) ← scanRange 0 input.addresses.size
+    for (own, a, tag) in projs do
+      byOwner := byOwner.insert own ((byOwner.getD own #[]).push (a, tag))
       report := { report with compiled := report.compiled + 1 }
-    | .muts => blocks := blocks.push a
-    | _ => pure ()
-  let mut covered : Std.HashSet Address := {}
-  for a in blocks do
+    blocks := blks
+  else
+    let scanChunk := Nat.max 256 ((input.addresses.size + 31) / 32)
+    let numScanChunks := (input.addresses.size + scanChunk - 1) / scanChunk
+    let scanTasks := (Array.range numScanChunks).map fun c =>
+      let lo := c * scanChunk
+      let hi := Nat.min ((c + 1) * scanChunk) input.addresses.size
+      Task.spawn fun _ => scanRange lo hi
+    for task in scanTasks do
+      let (projs, blks) ← task.get
+      for (own, a, tag) in projs do
+        byOwner := byOwner.insert own ((byOwner.getD own #[]).push (a, tag))
+        report := { report with compiled := report.compiled + 1 }
+      blocks := blocks ++ blks
+  let checkBlock (a : Address) : Except String BlockProjectionOutcome := do
     let c ← input.read a .muts
     let .muts ms := c.info | throw s!"fidelity: expected a mutual block at {a}"
-    report := { report with blocks := report.blocks + 1 }
+    let mut out : BlockProjectionOutcome := { block := a }
     match Ixon.Authenticated.reconstruct maxProjections [(a, c)] with
-    | .error e => report := { report with problems := report.problems.push s!"{a}: {reprStr e}" }
+    | .error e =>
+      out := { out with problems := out.problems.push s!"{a}: {reprStr e}" }
     | .ok expanded =>
       let written := expanded.filter (·.1 != a)
       let compiled := byOwner.getD a #[]
-      report := { report with written := report.written + written.length }
+      out := { out with written := written.length }
       for (k, w) in written do
         match compiled.find? (·.1 == k) with
         | some (_, tag) =>
           let c' ← input.read k tag
           if Ixon.serConstant w == Ixon.serConstant c' then
-            report := { report with matched := report.matched + 1 }
-            covered := covered.insert k
-          else report := { report with problems := report.problems.push s!"{a}: projection {k} differs" }
+            out := { out with matched := out.matched + 1, covered := out.covered.push k }
+          else
+            out := { out with problems := out.problems.push s!"{a}: projection {k} differs" }
         | none =>
-          report := { report with problems := report.problems.push (
+          out := { out with problems := out.problems.push (
             s!"{a}: written projection {k} is not a compiler record") }
     if ms.size ≥ 2 then
       let kind := blockKind ms
-      report := { report with ordered := report.ordered.insert kind (report.ordered.getD kind 0 + 1) }
+      out := { out with multiKind := some kind }
       -- Only a recursor block's order is checked (motive order): any other
       -- block is stored in its source's order, which is admissible.
       if kind == "recursor" then
         match Ixon.BlockOrder.checkRecord a c with
         | .ok () =>
-          report := { report with motiveOrdered := report.motiveOrdered.push a }
+          out := { out with motiveOrdered := true }
           -- the wrong order: the first two members swapped
           let swapped := { c with info := .muts (ms.swapIfInBounds 0 1) }
           if let .error (.motiveOrder ..) :=
               Ixon.BlockOrder.checkRecord a swapped then
-            report := { report with swapsRefused := report.swapsRefused + 1 }
+            out := { out with swapRefused := true }
         | .error _ =>
-          report := { report with refused := report.refused.insert kind ((report.refused.getD kind #[]).push a) }
+          out := { out with refusedKind := some kind }
+    return out
+  let checkBlockRange (lo hi : Nat) : Except String (Array BlockProjectionOutcome) := do
+    let mut outcomes : Array BlockProjectionOutcome := Array.emptyWithCapacity (hi - lo)
+    for a in blocks.extract lo hi do
+      outcomes := outcomes.push (← checkBlock a)
+    return outcomes
+  let mut covered : Std.HashSet Address := {}
+  let foldOutcomes (outcomes : Array BlockProjectionOutcome)
+      (state : ProjectionReport × Std.HashSet Address) :
+      ProjectionReport × Std.HashSet Address := Id.run do
+    let mut rep := state.1
+    let mut cov := state.2
+    for out in outcomes do
+      rep := { rep with
+        blocks := rep.blocks + 1
+        written := rep.written + out.written
+        matched := rep.matched + out.matched
+        problems := rep.problems ++ out.problems }
+      for k in out.covered do
+        cov := cov.insert k
+      if let some kind := out.multiKind then
+        rep := { rep with ordered := rep.ordered.insert kind (rep.ordered.getD kind 0 + 1) }
+      if out.motiveOrdered then
+        rep := { rep with motiveOrdered := rep.motiveOrdered.push out.block }
+      if out.swapRefused then
+        rep := { rep with swapsRefused := rep.swapsRefused + 1 }
+      if let some kind := out.refusedKind then
+        rep := { rep with refused := rep.refused.insert kind ((rep.refused.getD kind #[]).push out.block) }
+    return (rep, cov)
+  if blocks.size ≤ 64 then
+    let outcomes ← checkBlockRange 0 blocks.size
+    let next := foldOutcomes outcomes (report, covered)
+    report := next.1
+    covered := next.2
+  else
+    let blkChunk := Nat.max 32 ((blocks.size + 31) / 32)
+    let numBlkChunks := (blocks.size + blkChunk - 1) / blkChunk
+    let blkTasks := (Array.range numBlkChunks).map fun c =>
+      let lo := c * blkChunk
+      let hi := Nat.min ((c + 1) * blkChunk) blocks.size
+      Task.spawn fun _ => checkBlockRange lo hi
+    for task in blkTasks do
+      let outcomes ← task.get
+      let next := foldOutcomes outcomes (report, covered)
+      report := next.1
+      covered := next.2
   for (_, ps) in byOwner.toList do
     for (k, _) in ps do
       unless covered.contains k do

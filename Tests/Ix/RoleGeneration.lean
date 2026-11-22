@@ -66,12 +66,22 @@ private def inputs (operation : Role) (complete : Bool := false) :
       addresses := addresses.push address
   return (env, certificates, required, addresses)
 
-/-- A complete generated fixture shared with the actual consumer/CLI controls.
-The committed bytes remain test inputs, never a production fallback. -/
-public def completeArtifact (operation : Role) : Except String (Env × Ix.RoleBinding.Generated) := do
+private def computeCompleteArtifact (operation : Role) : Except String (Env × Ix.RoleBinding.Generated) := do
   let (env, certificates, required, _) ← inputs operation true
   let generated ← Ix.RoleBinding.generate Ix.Typing.typingLimits env certificates required Ix.Kernel.preludeShape
   return (← generated.emit Ix.Typing.typingLimits env, generated)
+
+-- `inputs _ true` ignores `operation` (it binds every role present in the committed
+-- closure), so one lazy `Thunk` memoizes the complete artifact across all callers
+-- (`RoleGeneration.artifactChecks`, `RolePacking`, `RoleArtifactConsumer`, `HostAdmission`, etc.).
+@[noinline]
+private def completeArtifactThunk : Thunk (Except String (Env × Ix.RoleBinding.Generated)) :=
+  Thunk.mk fun _ => computeCompleteArtifact .natDiv
+
+/-- A complete generated fixture shared with the actual consumer/CLI controls.
+The committed bytes remain test inputs, never a production fallback. -/
+public def completeArtifact (_operation : Role) : Except String (Env × Ix.RoleBinding.Generated) :=
+  completeArtifactThunk.get
 
 private def checks (operation : Role) : Except String Unit := do
   let (env, certificates, required, proofAddresses) ← inputs operation
@@ -212,9 +222,7 @@ private def artifactChecks (operation : Role) : Except String Unit := do
     (!(Ix.RoleBinding.Artifact.check partialArtifact limits).isOk)
   -- Keep the exact same input records, supplying their actual fixture-source
   -- roles and certificates. The original partial fixture is retained above.
-  let (env, certificates, required, _) ← inputs operation true
-  let generated ← Ix.RoleBinding.generate limits env certificates required Ix.Kernel.preludeShape
-  let emitted ← generated.emit limits env
+  let (emitted, generated) ← completeArtifact operation
   let receipt ← (Ix.RoleBinding.Artifact.check emitted limits).mapError toString
   need "actual certified fold checks a nonempty generated artifact" (!receipt.target.consts.isEmpty)
   need "receipt uses the exact emitted binding and every actual record"

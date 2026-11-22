@@ -126,9 +126,14 @@ end Ixon.Authenticated.Audit
 -- csimp and all ruling counts are unchanged.
 -- Normalized recursor analysis and the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`)
 -- move the closure from 7108 compiled functions and 28 ruled csimps to 7155 and 29.
+-- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
+-- Hardened `Runtime.lean` (`reducedAritySource?` stripping `._at_.<caller>`, `scanLogical`
+-- following `implemented_by`/`csimp` targets and checking `@[extern]`/`opaque`/`isUnsafe`)
+-- surfaces specialized kernel helpers, ruled `withExclusive`/`computed_field` overrides, and
+-- all 5 `@[extern]` methods on `Blake3.Rust.instHasherOpsHasher`.
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
- Address.admissionHash]: 7155 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 29 -/
+ Address.admissionHash]: 8180 compiled functions; inherited externs 119, implemented_by 1, unsafe 41, csimp 8; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -136,11 +141,20 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`
 /-- error: project-level execution replacements reached from [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Address.admissionHash]:
-[Address.admissionHash, Blake3.Rust.hasherFinalize, Blake3.Rust.hasherInit, Blake3.Rust.hasherUpdate] -/
+[Address.admissionHash,
+ Blake3.Rust.hasherFinalize,
+ Blake3.Rust.hasherInit,
+ Blake3.Rust.hasherInitDeriveKey,
+ Blake3.Rust.hasherInitKeyed,
+ Blake3.Rust.hasherUpdate] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
-/-- info: Additional authenticated-entry externs: [Blake3.Rust.hasherFinalize, Blake3.Rust.hasherUpdate, Blake3.Rust.hasherInit]
+/-- info: Additional authenticated-entry externs: [Blake3.Rust.hasherFinalize,
+ Blake3.Rust.hasherUpdate,
+ Blake3.Rust.hasherInit,
+ Blake3.Rust.hasherInitDeriveKey,
+ Blake3.Rust.hasherInitKeyed]
 ---
 info: Additional authenticated-entry implemented_by: [(Address.admissionHash, Address.blake3)]
 ---
@@ -297,7 +311,9 @@ and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, lik
 -- csimp and all ruling counts are unchanged.
 -- Normalized recursor analysis and the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`)
 -- move the tiered closure from 7190 compiled functions and 28 ruled csimps to 7237 and 29.
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7237 compiled functions; inherited externs 117, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 29 -/
+-- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
+-- Hardened `Runtime.lean` surfaces specialized kernel helpers, ruled overrides, and all 5 `Blake3.Rust` externs.
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 8262 compiled functions; inherited externs 119, implemented_by 0, unsafe 41, csimp 8; ruled assumed 6, computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

@@ -194,9 +194,30 @@ def runWithGuard (guarded : Bool) : IO UInt32 := do
   cases := cases.push (fun _ => do bindingCase "binding: unchanged full default table" (← base) true)
   cases := cases.push (fun _ => standardAxiomCase guarded)
   for mode in List.range 3 do cases := cases.push (fun _ => certificateCase guarded mode)
-  runCases "ixvm-safe-references" cases (jobs := 4) (circuit := some true)
+  runCases "ixvm-safe-references" cases (circuit := some true)
 
-def run : IO UInt32 := runWithGuard true
+/-- PR fast suite: all out-of-scope (`assumed = true`) reference checks plus
+representative `assumed = false` host smokes. The five full `.binding` runs
+(whose soundness is proved by `CircuitComposed` and whose default-table run is
+pinned in `ixvm-kernel-checks`) stay in `runFull` (`ci:nightly`). -/
+def run : IO UInt32 := do
+  let mut cases : Array Builder := #[]
+  for environment in [false, true] do
+    for mode in List.range 5 do
+      cases := cases.push (fun _ => sharingCase true true environment mode)
+    cases := cases.push (fun _ => assumedLeafCase true true environment)
+  -- Representative `assumed = false` Rust-host smokes.
+  cases := cases.push (fun _ => sharingCase true false false 0)
+  cases := cases.push (fun _ => assumedLeafCase true false false)
+  for unsafeOwner in [false, true] do
+    cases := cases.push (fun _ => ownerCase true true unsafeOwner)
+  cases := cases.push (fun _ => ownerCase true false true)
+  cases := cases.push (fun _ => inertCase true)
+  cases := cases.push (fun _ => coveredCase)
+  runCases "ixvm-safe-references" cases (circuit := some true)
+
+/-- Full nightly suite, including all five `.binding` runs. -/
+def runFull : IO UInt32 := runWithGuard true
 
 /-- A direct transitive walk is allowed to originate outside the logic. These controls use
 `IX_AIUR_WALK_ARTIFACT`, an export containing `IxVM::verify_transitive`, rather than a claim

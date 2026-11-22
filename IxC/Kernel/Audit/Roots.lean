@@ -493,12 +493,16 @@ library's admission hash `Address.admissionHash`
 executes as the Rust BLAKE3 `Address.blake3` (`@[implemented_by]`), on the
 explicit assumption that the two agree on every input
 (`Tests.Ix.Kernel.AddressPure` compares them on fixture inputs); with it, the
-Rust backend's foreign primitives. The root library's authenticated entries
-(`Ixon.Authenticated`) are audited with `runtimeRulings` and exactly this
-list; no kernel closure admits it. -/
+Rust backend's foreign primitives. Compiled IR calls only `hasherInit`,
+`hasherUpdate`, and `hasherFinalize`; the logical-body `.extern` walk also
+sees the sibling `hasherInitKeyed` and `hasherInitDeriveKey` fields of
+`Blake3.Rust.instHasherOpsHasher` passed by `Blake3.Rust.Hasher.finalizeWithLength`.
+The root library's authenticated entries (`Ixon.Authenticated`) are audited with
+`runtimeRulings` and exactly this list; no kernel closure admits it. -/
 def assumedSubstitutions : Array AssumedSubstitution :=
   #[{ source := `Address.admissionHash, target := `Address.blake3,
-      externs := #[`Blake3.Rust.hasherInit, `Blake3.Rust.hasherUpdate, `Blake3.Rust.hasherFinalize] }]
+      externs := #[`Blake3.Rust.hasherInit, `Blake3.Rust.hasherInitKeyed,
+        `Blake3.Rust.hasherInitDeriveKey, `Blake3.Rust.hasherUpdate, `Blake3.Rust.hasherFinalize] }]
 
 end Ix.Kernel.Audit
 
@@ -736,7 +740,9 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.UserAxioms.Mode
 -- writes the default modes and keeps a let's nonDep, and the record decoder reads the section
 -- nodes' modes, let headers, definition assertions and constructor field modes and checks
 -- `Constant.modesCanonical`. From 3708 compiled functions to 3689; externs unchanged.
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3688 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 26 -/
+-- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (26 -> 29).
+-- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`17 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 4620 compiled functions; inherited externs 67, implemented_by 0, unsafe 38, csimp 6; ruled computed_field 29, implemented_by 1, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -774,8 +780,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Ker
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`,
 -- and `readRecord`'s twin `.recr` and `.muts` arms) add 24 compiled functions. Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+-- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (8 -> 11).
+-- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2481 compiled functions; inherited externs 90, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8 -/
+ Ix.Kernel.Admission.readStream]: 2672 compiled functions; inherited externs 91, implemented_by 0, unsafe 41, csimp 2; ruled computed_field 29, implemented_by 1, csimp 11 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -814,10 +822,12 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
 -- add 24 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
 -- unchanged.
+-- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
+-- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 7117 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 29 -/
+ Ix.Kernel.Admission.checkConstants]: 8140 compiled functions; inherited externs 114, implemented_by 0, unsafe 41, csimp 8; ruled computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -883,8 +893,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
 -- add 24 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
 -- unchanged.
+-- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
+-- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 7227 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 29 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 8250 compiled functions; inherited externs 114, implemented_by 0, unsafe 41, csimp 8; ruled computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -917,6 +929,8 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Tier] Ix.Kernel
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
 -- add 24 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
 -- unchanged.
+-- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
+-- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesWithUserAxioms,
  Ix.Kernel.Admission.checkConstantsWithUserAxioms,
  Ix.Kernel.Admission.checkBytesTieredUsingWithUserAxioms,
@@ -926,7 +940,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Tier] Ix.Kernel
  Ix.Kernel.Admission.checkBytesTieredUsingUnder,
  Ix.Kernel.Admission.checkConstantsTieredUnder,
  Ix.Kernel.Cached.checkDeclsWithUserAxioms,
- Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 6940 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 29 -/
+ Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 7963 compiled functions; inherited externs 113, implemented_by 0, unsafe 41, csimp 8; ruled computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.userAxiomOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

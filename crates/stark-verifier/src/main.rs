@@ -197,7 +197,15 @@ fn main() -> Result<(), Box<dyn Error>> {
   let backend = trace_plan
     .as_ref()
     .map(|plan| {
-      Backend::for_batch_on_device(plan, Parameters::default(), options.device)
+      if mode == "plan" {
+        Backend::for_planning(plan, Parameters::default(), options.device)
+      } else {
+        Backend::for_batch_on_device(
+          plan,
+          Parameters::default(),
+          options.device,
+        )
+      }
     })
     .transpose()?;
   if let Some(backend) = &backend {

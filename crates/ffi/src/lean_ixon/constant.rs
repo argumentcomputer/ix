@@ -341,12 +341,12 @@ impl LeanIxonInductiveProj<LeanOwned> {
 }
 
 impl<R: LeanRef> LeanIxonInductiveProj<R> {
-  pub fn decode(&self) -> InductiveProj {
+  pub fn try_decode(&self) -> Result<InductiveProj, String> {
     let ctor = self.as_ctor();
     let block =
-      LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
+      LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).try_decode()?;
     let idx = self.get_num_64(0);
-    InductiveProj { idx, block }
+    Ok(InductiveProj { idx, block })
   }
 }
 
@@ -362,13 +362,13 @@ impl LeanIxonConstructorProj<LeanOwned> {
 }
 
 impl<R: LeanRef> LeanIxonConstructorProj<R> {
-  pub fn decode(&self) -> ConstructorProj {
+  pub fn try_decode(&self) -> Result<ConstructorProj, String> {
     let ctor = self.as_ctor();
     let block =
-      LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
+      LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).try_decode()?;
     let idx = self.get_num_64(0);
     let cidx = self.get_num_64(1);
-    ConstructorProj { idx, cidx, block }
+    Ok(ConstructorProj { idx, cidx, block })
   }
 }
 
@@ -383,12 +383,12 @@ impl LeanIxonRecursorProj<LeanOwned> {
 }
 
 impl<R: LeanRef> LeanIxonRecursorProj<R> {
-  pub fn decode(&self) -> RecursorProj {
+  pub fn try_decode(&self) -> Result<RecursorProj, String> {
     let ctor = self.as_ctor();
     let block =
-      LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
+      LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).try_decode()?;
     let idx = self.get_num_64(0);
-    RecursorProj { idx, block }
+    Ok(RecursorProj { idx, block })
   }
 }
 
@@ -403,12 +403,12 @@ impl LeanIxonDefinitionProj<LeanOwned> {
 }
 
 impl<R: LeanRef> LeanIxonDefinitionProj<R> {
-  pub fn decode(&self) -> DefinitionProj {
+  pub fn try_decode(&self) -> Result<DefinitionProj, String> {
     let ctor = self.as_ctor();
     let block =
-      LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
+      LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).try_decode()?;
     let idx = self.get_num_64(0);
-    DefinitionProj { idx, block }
+    Ok(DefinitionProj { idx, block })
   }
 }
 
@@ -518,10 +518,10 @@ impl LeanIxonConstantInfo<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonConstantInfo<R> {
   /// Decode Ixon.ConstantInfo.
-  pub fn decode(&self) -> IxonConstantInfo {
+  pub fn try_decode(&self) -> Result<IxonConstantInfo, String> {
     let ctor = self.as_ctor();
     let inner = ctor.get(0);
-    match ctor.tag() {
+    Ok(match ctor.tag() {
       0 => IxonConstantInfo::Defn(
         LeanIxonDefinition::new(inner.to_owned_ref()).decode(),
       ),
@@ -535,16 +535,16 @@ impl<R: LeanRef> LeanIxonConstantInfo<R> {
         LeanIxonQuotient::new(inner.to_owned_ref()).decode(),
       ),
       4 => IxonConstantInfo::CPrj(
-        LeanIxonConstructorProj::new(inner.to_owned_ref()).decode(),
+        LeanIxonConstructorProj::new(inner.to_owned_ref()).try_decode()?,
       ),
       5 => IxonConstantInfo::RPrj(
-        LeanIxonRecursorProj::new(inner.to_owned_ref()).decode(),
+        LeanIxonRecursorProj::new(inner.to_owned_ref()).try_decode()?,
       ),
       6 => IxonConstantInfo::IPrj(
-        LeanIxonInductiveProj::new(inner.to_owned_ref()).decode(),
+        LeanIxonInductiveProj::new(inner.to_owned_ref()).try_decode()?,
       ),
       7 => IxonConstantInfo::DPrj(
-        LeanIxonDefinitionProj::new(inner.to_owned_ref()).decode(),
+        LeanIxonDefinitionProj::new(inner.to_owned_ref()).try_decode()?,
       ),
       8 => {
         let arr = inner.as_array();
@@ -552,8 +552,8 @@ impl<R: LeanRef> LeanIxonConstantInfo<R> {
           arr.map(|x| LeanIxonMutConst::new(x.to_owned_ref()).decode());
         IxonConstantInfo::Muts(muts)
       },
-      tag => panic!("Invalid Ixon.ConstantInfo tag: {}", tag),
-    }
+      tag => return Err(format!("Invalid Ixon.ConstantInfo tag: {tag}")),
+    })
   }
 }
 
@@ -692,12 +692,13 @@ impl LeanIxonConstant<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonConstant<R> {
   /// Decode Ixon.Constant.
-  pub fn decode(&self) -> IxonConstant {
+  pub fn try_decode(&self) -> Result<IxonConstant, String> {
     let ctor = self.as_ctor();
-    IxonConstant {
-      info: LeanIxonConstantInfo::new(ctor.get(0).to_owned_ref()).decode(),
+    Ok(IxonConstant {
+      info: LeanIxonConstantInfo::new(ctor.get(0).to_owned_ref())
+        .try_decode()?,
       sharing: LeanIxonExpr::decode_array(&ctor.get(1).as_array()),
-      refs: LeanIxAddress::decode_array(ctor.get(2).as_array()),
+      refs: LeanIxAddress::try_decode_array(ctor.get(2).as_array())?,
       univs: LeanIxonUniv::decode_array(&ctor.get(3).as_array()),
       binders: ctor
         .get(4)
@@ -705,7 +706,7 @@ impl<R: LeanRef> LeanIxonConstant<R> {
         .iter()
         .map(|elem| LeanIxonBinderBlock(elem).decode())
         .collect(),
-    }
+    })
   }
 }
 
@@ -759,7 +760,7 @@ pub extern "C" fn rs_roundtrip_ixon_quotient(
 pub extern "C" fn rs_roundtrip_ixon_constant_info(
   obj: LeanIxonConstantInfo<LeanBorrowed<'_>>,
 ) -> LeanIxonConstantInfo<LeanOwned> {
-  let info = obj.decode();
+  let info = obj.try_decode().expect("valid ConstantInfo");
   LeanIxonConstantInfo::build(&info)
 }
 
@@ -769,7 +770,7 @@ pub extern "C" fn rs_roundtrip_ixon_constant_info(
 pub extern "C" fn rs_roundtrip_ixon_constant(
   obj: LeanIxonConstant<LeanBorrowed<'_>>,
 ) -> LeanIxonConstant<LeanOwned> {
-  let constant = obj.decode();
+  let constant = obj.try_decode().expect("valid Constant");
   LeanIxonConstant::build(&constant)
 }
 
@@ -809,7 +810,7 @@ pub extern "C" fn rs_roundtrip_ixon_inductive(
 pub extern "C" fn rs_roundtrip_ixon_inductive_proj(
   obj: LeanIxonInductiveProj<LeanBorrowed<'_>>,
 ) -> LeanIxonInductiveProj<LeanOwned> {
-  let proj = obj.decode();
+  let proj = obj.try_decode().expect("valid InductiveProj");
   LeanIxonInductiveProj::build(&proj)
 }
 
@@ -819,7 +820,7 @@ pub extern "C" fn rs_roundtrip_ixon_inductive_proj(
 pub extern "C" fn rs_roundtrip_ixon_constructor_proj(
   obj: LeanIxonConstructorProj<LeanBorrowed<'_>>,
 ) -> LeanIxonConstructorProj<LeanOwned> {
-  let proj = obj.decode();
+  let proj = obj.try_decode().expect("valid ConstructorProj");
   LeanIxonConstructorProj::build(&proj)
 }
 
@@ -829,7 +830,7 @@ pub extern "C" fn rs_roundtrip_ixon_constructor_proj(
 pub extern "C" fn rs_roundtrip_ixon_recursor_proj(
   obj: LeanIxonRecursorProj<LeanBorrowed<'_>>,
 ) -> LeanIxonRecursorProj<LeanOwned> {
-  let proj = obj.decode();
+  let proj = obj.try_decode().expect("valid RecursorProj");
   LeanIxonRecursorProj::build(&proj)
 }
 
@@ -839,7 +840,7 @@ pub extern "C" fn rs_roundtrip_ixon_recursor_proj(
 pub extern "C" fn rs_roundtrip_ixon_definition_proj(
   obj: LeanIxonDefinitionProj<LeanBorrowed<'_>>,
 ) -> LeanIxonDefinitionProj<LeanOwned> {
-  let proj = obj.decode();
+  let proj = obj.try_decode().expect("valid DefinitionProj");
   LeanIxonDefinitionProj::build(&proj)
 }
 

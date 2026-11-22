@@ -47,9 +47,13 @@ private def determinismLeg (source : String) :
   try
     let out1 := dir / "run1.ixe"
     let out2 := dir / "run2.ixe"
-    if let .error e ← compileOnce source out1 then
+    let task1 ← IO.asTask (prio := .dedicated) (compileOnce source out1)
+    let task2 ← IO.asTask (prio := .dedicated) (compileOnce source out2)
+    let res1 ← IO.wait task1
+    let res2 ← IO.wait task2
+    if let .error e ← IO.ofExcept res1 then
       return (false, 0, 0, some e)
-    if let .error e ← compileOnce source out2 then
+    if let .error e ← IO.ofExcept res2 then
       return (false, 0, 0, some e)
     let h1 ← try Ix.FileDigest.blake3File out1
       catch e => return (false, 0, 0, some s!"blake3 of {out1}: {e}")

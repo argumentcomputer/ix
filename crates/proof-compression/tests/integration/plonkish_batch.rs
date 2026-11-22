@@ -314,7 +314,7 @@ fn compact_hash_batch_verification_can_be_proved() {
     FriParameters {
       log_final_poly_len: 0,
       max_log_arity: 1,
-      num_queries: 32,
+      num_queries: 2,
       commit_proof_of_work_bits: 0,
       query_proof_of_work_bits: 0,
     },

@@ -405,10 +405,10 @@ def structuralIdTests (_ : Unit) : TestSeq :=
 
 /-- The same AST in three pointer layouts: generated (pool-shared), fresh
 (deserialized, no sharing), and maximally shared (from the DAG). -/
-def representationTests (_ : Unit) : TestSeq :=
+def representationTestsWith (count : Nat) (_ : Unit) : TestSeq :=
   let ok := runGen 13 do
     let mut ok := true
-    for i in [0:120] do
+    for i in [0:count] do
       let roots ← genRoots 5 10 3
       let c := wrapRoots roots i
       let fresh := match deConstant (serConstant c) with
@@ -426,7 +426,10 @@ def representationTests (_ : Unit) : TestSeq :=
         tiered.all (· == tiered.head!) && tiered.head!.isSome
     return ok
   group "representation independence" <|
-    test "pool-shared, deserialized, DAG-shared and uniform-w1-encoded inputs normalize to identical bytes, by the exact search and by the tiered construction (120 inputs)" ok
+    test s!"pool-shared, deserialized, DAG-shared and uniform-w1-encoded inputs normalize to identical bytes, by the exact search and by the tiered construction ({count} inputs)" ok
+
+def representationTests (_ : Unit) : TestSeq := representationTestsWith 120 ()
+def representationTestsPR (_ : Unit) : TestSeq := representationTestsWith 50 ()
 
 def cacheTests (_ : Unit) : TestSeq :=
   let empty : ExprCache Nat := {}
@@ -684,19 +687,19 @@ def deepTests (_ : Unit) : TestSeq :=
           r.variableBytes == exprSize nested + exprSize telescope + 1 &&
           r.variableBytes == (serExpr nested).size + (serExpr telescope).size + 1)
 
-def dictionaryTests (_ : Unit) : TestSeq :=
+def dictionaryTestsWith (fixMax fixOffMax genTarget genMaxOrders : Nat) (_ : Unit) : TestSeq :=
   let fixtures : List (String × Array Ixon.Expr) :=
     [("T2→T2", #[arr (chain 2) (chain 2)]), ("A→A→B→B", #[tiedMinimaRoot]),
      ("mixed spines", #[.app (.app (.lam P (arr P P)) (arr P P)) (.app (.var 0) (arr P P))]),
      ("let/prj", #[.letE false (.value .many) (arr P P) (.prj 0 1 (.app (.var 0) P)) (.app (.var 0) P)])]
   let fixtureSeq := fixtures.foldl (init := .done) fun acc (name, roots) =>
     acc ++ withOk name (expandRoots roots) fun ex =>
-      -- Up to 2000 of the ordered dictionaries (every 7th when there are
-      -- more), each at indices 0.., and 300 of them at every index offset.
+      -- Up to `fixMax` of the ordered dictionaries (strided when there are
+      -- more), each at indices 0.., and `fixOffMax` of them at every index offset.
       let total := (orderedSubsets ex.dag.size (List.range ex.dag.size)).length
-      let stride := if total > 2000 then 7 else 1
-      let (c1, e1) := dictionaryAgreement ex.dag [0] 2000 stride
-      let (c2, e2) := dictionaryAgreement ex.dag dictOffsets 300 (stride * 3)
+      let stride := if total > fixMax then 7 else 1
+      let (c1, e1) := dictionaryAgreement ex.dag [0] fixMax stride
+      let (c2, e2) := dictionaryAgreement ex.dag dictOffsets fixOffMax (stride * 3)
       let err := e1.or e2
       test s!"{name}: C_M and byte-least materialization = enumeration ({c1 + c2} cases over {total} ordered dictionaries, stride {stride}; {dictOffsets.length} index offsets)"
         (err.isNone) ++
@@ -706,13 +709,13 @@ def dictionaryTests (_ : Unit) : TestSeq :=
     let mut err : Option String := none
     let mut cases := 0
     for _ in [0:400] do
-      if cases ≥ 60 || err.isSome then break
+      if cases ≥ genTarget || err.isSome then break
       let roots ← genRoots 3 4 2
       match expandRoots roots with
       | .ok ex =>
         if ex.dag.size ≤ 5 then
           cases := cases + 1
-          let (c, e) := dictionaryAgreement ex.dag [0, 6, 254] 400
+          let (c, e) := dictionaryAgreement ex.dag [0, 6, 254] genMaxOrders
           checked := checked + c
           if let some m := e then err := some s!"{m} roots={reprStr roots}"
       | .error _ => pure ()
@@ -721,6 +724,9 @@ def dictionaryTests (_ : Unit) : TestSeq :=
     fixtureSeq ++
     test s!"generated inputs (N ≤ 5): {genChecked} (dictionary, term) cases agree" genErr.isNone ++
     (match genErr with | some m => test m false | none => .done)
+
+def dictionaryTests (_ : Unit) : TestSeq := dictionaryTestsWith 2000 300 60 400 ()
+def dictionaryTestsPR (_ : Unit) : TestSeq := dictionaryTestsWith 120 40 15 80 ()
 
 /-! ## Full optimizer vs exhaustive oracle (P1/P3) -/
 
@@ -754,14 +760,17 @@ def oracleAgreement (seed cases maxN : Nat) (product : Bool) : Nat × Nat × Nat
         err := some s!"case {attempts}: error {reprStr e} roots={reprStr roots}"
     return (checked, skipped, tables, err)
 
-def oracleTests (_ : Unit) : TestSeq :=
-  let (n1, s1, t1, e1) := oracleAgreement 23 150 6 false
-  let (n2, s2, t2, e2) := oracleAgreement 29 40 4 true
+def oracleTestsWith (partCases prodCases : Nat) (_ : Unit) : TestSeq :=
+  let (n1, s1, t1, e1) := oracleAgreement 23 partCases 6 false
+  let (n2, s2, t2, e2) := oracleAgreement 29 prodCases 4 true
   group "optimizer vs exhaustive oracle (full key)" <|
-    test s!"per-part oracle: {n1} generated constants (N ≤ 6, all kinds and let modes, {t1} tables) agree on bytes and table IDs ({s1} skipped: oracle budget)" (e1.isNone && n1 == 150) ++
+    test s!"per-part oracle: {n1} generated constants (N ≤ 6, all kinds and let modes, {t1} tables) agree on bytes and table IDs ({s1} skipped: oracle budget)" (e1.isNone && n1 == partCases) ++
     (match e1 with | some m => test m false | none => .done) ++
-    test s!"full-product oracle: {n2} generated constants (N ≤ 4, {t2} tables) agree ({s2} skipped: oracle budget)" (e2.isNone && n2 == 40) ++
+    test s!"full-product oracle: {n2} generated constants (N ≤ 4, {t2} tables) agree ({s2} skipped: oracle budget)" (e2.isNone && n2 == prodCases) ++
     (match e2 with | some m => test m false | none => .done)
+
+def oracleTests (_ : Unit) : TestSeq := oracleTestsWith 150 40 ()
+def oracleTestsPR (_ : Unit) : TestSeq := oracleTestsWith 30 10 ()
 
 /-- Unit-width relaxation (§4.1): with no telescope merging and at most 8
 positive-weight terms of indegree ≥ 2, the minimum variable length is
@@ -785,12 +794,12 @@ def unitWidthLength (roots : Array Ixon.Expr) : Option Nat := Id.run do
   return some (roots.size + kstar + tag0Size kstar +
     distinct.foldl (fun acc t => acc + w t) 0)
 
-def unitWidthTests (_ : Unit) : TestSeq :=
+def unitWidthTestsWith (target minRequired : Nat) (_ : Unit) : TestSeq :=
   let (checked, err) := runGen 31 do
     let mut checked := 0
     let mut err : Option String := none
     for i in [0:600] do
-      if checked ≥ 150 || err.isSome then break
+      if checked ≥ target || err.isSome then break
       let roots ← genRoots 6 14 4 (noMerge := true)
       let some expected := unitWidthLength roots | continue
       match optimizeSharing roots with
@@ -801,8 +810,11 @@ def unitWidthTests (_ : Unit) : TestSeq :=
       | .error e => err := some s!"case {i}: error {reprStr e}"
     return (checked, err)
   group "unit-width relaxation oracle" <|
-    test s!"exact length = unit-width optimum on {checked} merge-free generated inputs" (err.isNone && checked ≥ 100) ++
+    test s!"exact length = unit-width optimum on {checked} merge-free generated inputs" (err.isNone && checked ≥ minRequired) ++
     (match err with | some m => test m false | none => .done)
+
+def unitWidthTests (_ : Unit) : TestSeq := unitWidthTestsWith 150 100 ()
+def unitWidthTestsPR (_ : Unit) : TestSeq := unitWidthTestsWith 50 50 ()
 
 /-- Independent atoms: for a fixed stored set the optimal order gives the
 cheapest slots to the most-used atoms, so a brute force over subsets gives
@@ -873,7 +885,12 @@ def witnessTests (_ : Unit) : TestSeq :=
     withOk "oracle" (oracleConstant witness2) (fun (oc, o) =>
       test s!"per-part oracle: 15-byte unique minimum over {o.work.tables} ordered tables"
         (hexOf (serConstant oc) == "d2000091b0b0019200000000010000" &&
-          o.work.tables == 65 && o.minima.size == 1)) ++
+          o.work.tables == 65 && o.minima.size == 1))
+
+/-- Full-product brute-force oracle over all 3,061,082 complete candidates for
+`witness2` (nightly sweep). -/
+def witnessProductOracleTests (_ : Unit) : TestSeq :=
+  group "fixture T2 → T2 (full-product oracle)" <|
     withOk "product oracle" (oracleConstant witness2 {} true) (fun (oc, o) =>
       test s!"full-product oracle: {o.work.candidates} complete candidates, 15-byte unique minimum"
         (hexOf (serConstant oc) == "d2000091b0b0019200000000010000" &&
@@ -934,6 +951,18 @@ def nineRefTests (_ : Unit) : TestSeq :=
           (cbytes n == 579 && r.tableTerms == #[0, 1, 2, 3, 4, 5, 6, 7, 8] &&
             ((n.sharing.findIdx? (· == hot)).map fun i => decide (i < 8)) == some true))
 
+/-- Fast PR check for the tied-minima fixture: exact solver picks `[A]`. -/
+def tiedMinimaExactTests (_ : Unit) : TestSeq :=
+  let c := axiomOf tiedMinimaRoot #[.zero, .succ .zero]
+  let onlyA := "d2000094b0b0910001000101910000" ++ "000200010000"
+  group "fixture three 21-byte minima (exact)" <|
+    withOk "exact" (optimizeSharingTable #[] (constantInfoRoots c.info)) (fun r =>
+      withOk "exact" (normalizeConstantSharing c) fun n =>
+        test "exact picks the [A] minimum (table IDs [2])"
+          (hexOf (serConstant n) == onlyA && r.tableTerms == #[2]))
+
+/-- Full 13,700-table exhaustive oracle check for the tied-minima fixture
+(nightly sweep). -/
 def tiedMinimaTests (_ : Unit) : TestSeq :=
   let c := axiomOf tiedMinimaRoot #[.zero, .succ .zero]
   -- Table [A]: the root is one telescope with binders `Share 0`, `Share 0`, `B`, `P`
@@ -969,11 +998,11 @@ def orderingTests (_ : Unit) : TestSeq :=
 
 /-! ## Properties on generated inputs -/
 
-def propertyTests (_ : Unit) : TestSeq :=
+def propertyTestsWith (target : Nat) (_ : Unit) : TestSeq :=
   let (checked, err) := runGen 41 do
     let mut checked := 0
     let mut err : Option String := none
-    for i in [0:250] do
+    for i in [0:target] do
       if err.isSome then break
       let roots ← genRoots 5 12 4
       let c := wrapRoots roots i
@@ -1002,19 +1031,22 @@ def propertyTests (_ : Unit) : TestSeq :=
       | .error e, _ | _, .error e => err := some s!"case {i}: error {reprStr e}"
     return (checked, err)
   group "properties on generated inputs" <|
-    test s!"{checked} constants: exact ≤ unshared, exact ≤ uniform-w1, idempotent, normalize(uniform-w1) = normalize(expanded) = exact, check=minimum, decomposition, expansion preserved" (err.isNone && checked == 250) ++
+    test s!"{checked} constants: exact ≤ unshared, exact ≤ uniform-w1, idempotent, normalize(uniform-w1) = normalize(expanded) = exact, check=minimum, decomposition, expansion preserved" (err.isNone && checked == target) ++
     (match err with | some m => test m false | none => .done)
+
+def propertyTests (_ : Unit) : TestSeq := propertyTestsWith 250 ()
+def propertyTestsPR (_ : Unit) : TestSeq := propertyTestsWith 60 ()
 
 /-- LB pruning never changes a result: compare
 with the search with pruning disabled, on inputs with 9–11 candidates
 (beyond the oracle's reach; tables can cross the 8-slot width boundary). -/
-def pruningTests (_ : Unit) : TestSeq :=
+def pruningTestsWith (genTarget wideTarget : Nat) (_ : Unit) : TestSeq :=
   let (checked, wide, err) := runGen 43 do
     let mut checked := 0
     let mut wide := 0
     let mut err : Option String := none
     for i in [0:4000] do
-      if checked ≥ 25 || err.isSome then break
+      if checked ≥ genTarget || err.isSome then break
       let roots ← genRoots 8 24 6
       let cands := match sharingProfile (wrapRoots roots 0) with
         | .ok p => p.candidates
@@ -1050,7 +1082,7 @@ def pruningTests (_ : Unit) : TestSeq :=
     let mut wide := 0
     let mut err : Option String := none
     for i in [0:400] do
-      if checked ≥ 15 || err.isSome then break
+      if checked ≥ wideTarget || err.isSome then break
       let roots ← genWide
       let cands := match sharingProfile (wrapRoots roots 0) with
         | .ok p => p.candidates
@@ -1068,11 +1100,14 @@ def pruningTests (_ : Unit) : TestSeq :=
     return (checked, wide, err)
   group "pruning never changes the result" <|
     test s!"{checked} inputs with 9–11 candidates ({wide} with more than 8 table entries): pruned search = unpruned search"
-      (err.isNone && checked == 25) ++
+      (err.isNone && checked == genTarget) ++
     (match err with | some m => test m false | none => .done) ++
     test s!"{wChecked} atom-heavy inputs with ≤ 12 candidates ({wWide} with more than 8 table entries): pruned = unpruned"
-      (wErr.isNone && wChecked == 15 && wWide > 0) ++
+      (wErr.isNone && wChecked == wideTarget && wWide > 0) ++
     (match wErr with | some m => test m false | none => .done)
+
+def pruningTests (_ : Unit) : TestSeq := pruningTestsWith 25 15 ()
+def pruningTestsPR (_ : Unit) : TestSeq := pruningTestsWith 5 5 ()
 
 def profileTests (_ : Unit) : TestSeq :=
   group "sharing profile" <|
@@ -1231,26 +1266,39 @@ public def suite : List TestSeq := [
   deferred "exact expression length" exprSizeTests,
   deferred "Constant length decomposition" decompositionTests,
   deferred "structural IDs" structuralIdTests,
-  deferred "representation independence" representationTests,
+  deferred "representation independence" representationTestsPR,
   deferred "checked expression cache" cacheTests,
   deferred "bounded share expansion" expansionTests,
   deferred "root extraction and reassembly" rootApiTests,
-  deferred "fixed-dictionary optimizer vs enumeration" dictionaryTests,
+  deferred "fixed-dictionary optimizer vs enumeration" dictionaryTestsPR,
   deferred "telescope evaluation vs full spine walk" spineWalkTests,
   deferred "deep inputs" deepTests,
-  deferred "optimizer vs exhaustive oracle" oracleTests,
-  deferred "unit-width relaxation oracle" unitWidthTests,
+  deferred "optimizer vs exhaustive oracle" oracleTestsPR,
+  deferred "unit-width relaxation oracle" unitWidthTestsPR,
   deferred "multi-width buckets vs brute force" atomsTests,
   deferred "fixture T2 → T2" witnessTests,
   deferred "fixture T16 → T16" t16Tests,
   deferred "fixture nine Refs" nineRefTests,
-  deferred "fixture three 21-byte minima" tiedMinimaTests,
+  deferred "fixture three 21-byte minima (exact)" tiedMinimaExactTests,
   deferred "ordering: parent before descendant" orderingTests,
-  deferred "properties on generated inputs" propertyTests,
-  deferred "pruning never changes the result" pruningTests,
+  deferred "properties on generated inputs" propertyTestsPR,
+  deferred "pruning never changes the result" pruningTestsPR,
   deferred "sharing profile" profileTests,
   deferred "resource limits and edge cases" safetyTests,
   slimTests (),
+]
+
+/-- Full exhaustive oracle and large-sweep checks for nightly CI
+(`exact-sharing-full`). -/
+public def nightlySuite : List TestSeq := [
+  deferred "representation independence (full)" representationTests,
+  deferred "fixed-dictionary optimizer vs enumeration (full)" dictionaryTests,
+  deferred "optimizer vs exhaustive oracle (full)" oracleTests,
+  deferred "unit-width relaxation oracle (full)" unitWidthTests,
+  deferred "fixture T2 → T2 (full-product oracle)" witnessProductOracleTests,
+  deferred "fixture three 21-byte minima (exhaustive oracle)" tiedMinimaTests,
+  deferred "properties on generated inputs (full)" propertyTests,
+  deferred "pruning never changes the result (full)" pruningTests,
 ]
 
 end Tests.SharingExact

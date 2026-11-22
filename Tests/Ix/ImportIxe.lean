@@ -347,10 +347,12 @@ private def closureTest : IO (Bool × Nat × Nat × Option String) := do
   finally
     IO.FS.removeDirAll dir
 
-/-- C8: a consumer file `import_ixe`s the fixture artifact through the
-    real command elaborator (in-process frontend + interpreter) and
-    defines a term over the materialized constants. -/
-private def elabTest : IO (Bool × Nat × Nat × Option String) := do
+initialize consumerEnvCache : IO.Ref (Option Lean.Environment) ← IO.mkRef none
+
+/-- Elaborate the consumer file with `import_ixe` once and share its immutable
+    environment between `elabTest` and `zkPatternTest`. -/
+private def getConsumerEnv : IO Lean.Environment := do
+  if let some env ← consumerEnvCache.get then return env
   let dir ← IO.FS.createTempDir
   let ixePath := (dir / "fixture.ixe").toString
   let consumerPath := dir / "Consumer.lean"
@@ -370,6 +372,17 @@ private def elabTest : IO (Bool × Nat × Nat × Option String) := do
          theorem Consumer.alsoUses : TIxImp.T := TIxImp.thm\n\
          #ixeval TIxImp.dbl (TIxImp.N.succ TIxImp.N.zero)\n"
     let env ← getFileEnv consumerPath
+    consumerEnvCache.set (some env)
+    return env
+  finally
+    IO.FS.removeDirAll dir
+
+/-- C8: a consumer file `import_ixe`s the fixture artifact through the
+    real command elaborator (in-process frontend + interpreter) and
+    defines a term over the materialized constants. -/
+private def elabTest : IO (Bool × Nat × Nat × Option String) := do
+  try
+    let env ← getConsumerEnv
     let checks : List (String × Bool) := [
       ("consumer def elaborated", env.contains `Consumer.uses),
       ("consumer theorem elaborated", env.contains `Consumer.alsoUses),
@@ -381,8 +394,6 @@ private def elabTest : IO (Bool × Nat × Nat × Option String) := do
     | none => return (true, 0, 0, none)
   catch e =>
     return (false, 0, 0, some s!"consumer elaboration failed: {e}")
-  finally
-    IO.FS.removeDirAll dir
 
 /-- C9: the ZkVoting consumption pattern against an imported artifact —
     `import_ixe` the fixture, commit a private value of an imported
@@ -392,78 +403,68 @@ private def elabTest : IO (Bool × Nat × Nat × Option String) := do
     cost tracks the claim, not the environment. (Proving the claim is
     `ix prove`'s job; the IxVM eval arm is still landing.) -/
 private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
-  let dir ← IO.FS.createTempDir
-  let ixePath := (dir / "fixture.ixe").toString
-  let consumerPath := dir / "Consumer.lean"
-  try
-    let original ← buildFixtureConsts
-    let _ ← compileFixtureToFile original.toList ixePath
-    IO.FS.writeFile consumerPath
-      s!"import Ix.ImportIxe\nimport_ixe \"{ixePath}\"\n"
-    let env ← getFileEnv consumerPath
-    -- Closure-scoped compile env over what the claim touches.
-    let mut seen : Lean.NameSet := {}
-    let mut work : Array Lean.Name := #[`TIxImp.dbl, nN, nZero, nSucc]
-    let mut closure : List (Lean.Name × Lean.ConstantInfo) := []
-    while !work.isEmpty do
-      let n := work.back!
-      work := work.pop
-      if seen.contains n then continue
-      seen := seen.insert n
-      let some ci := env.find? n
-        | return (false, 0, 0, some s!"consumer env missing {n}")
-      closure := (n, ci) :: closure
-      for r in Ix.Replay.constantInfoReferences ci do
-        unless seen.contains r do
-          work := work.push r
-    let phases ← Ix.CompileM.compilePhasesOf env closure
-    let compileEnv := Ix.Commit.mkCompileEnv phases
-    -- A definition compiled over the input gets its binder data from the
-    -- compile's annotator, and in a chain of anonymous definitions each one is
-    -- annotated from its own source: compiled after another, a definition has
-    -- the address it has alone.
-    let idTy := Lean.mkForall `n .default cN cN
-    let idVal := Lean.mkLambda `n .default cN (.bvar 0)
-    let k2Ty := Lean.mkForall `n .default cN (Lean.mkForall `m .default cN cN)
-    let k2Val := Lean.mkLambda `n .default cN (Lean.mkLambda `m .default cN (.bvar 0))
-    let (_, env1) ← IO.ofExcept (Ix.Commit.compileDef compileEnv [] idTy idVal)
-    let (chained, env2) ← IO.ofExcept (Ix.Commit.compileDef env1 [] k2Ty k2Val)
-    let (alone, _) ← IO.ofExcept (Ix.Commit.compileDef compileEnv [] k2Ty k2Val)
-    unless chained == alone do
-      return (false, 0, 0, some "a chained anonymous definition has another address than alone")
-    let some bytes := env2.constants.get? chained
-      | return (false, 0, 0, some "compileDef stored no record")
-    let defn ← IO.ofExcept (Ixon.deConstantAt bytes 0 bytes.size)
-    if defn.binders.isEmpty || defn.binders.any (·.nodes.any (·.isUndecided)) then
-      return (false, 0, 0, some "a definition compiled over the input has no decided binder data")
-    -- Commit a private value of the imported type.
-    let voteType := Lean.Expr.const nN []
-    let vote := Lean.Expr.app (.const nSucc []) (.const nZero [])
-    let (commitAddr, env', compileEnv') ←
-      Ix.Commit.commitDef compileEnv env [] voteType vote
-    let commitName := Address.toUniqueName commitAddr
-    unless env'.contains commitName do
-      return (false, 0, 0,
-        some "commitDef did not register the commitment constant")
-    -- Claim: an imported function applied to the commitment evaluates
-    -- to the public result.
-    let input := Lean.mkApp (.const `TIxImp.dbl []) (.const commitName [])
-    let output := Lean.mkApp (.const nSucc [])
-      (Lean.mkApp (.const nSucc []) (.const nZero []))
-    let ctx : Ix.ClaimContext :=
-      { spec := default, binding := default, axioms := none }
-    let claim ← match Ix.Commit.evalClaim ctx compileEnv' [] input output
-        voteType with
-      | .ok claim => pure claim
-      | .error e => return (false, 0, 0, some s!"evalClaim failed: {e}")
-    match claim with
-    | .eval _ i o _ =>
-      if i == o then
-        return (false, 0, 0, some "degenerate claim: input addr = output addr")
-      return (true, 0, 0, none)
-    | _ => return (false, 0, 0, some "expected an eval claim")
-  finally
-    IO.FS.removeDirAll dir
+  let env ← getConsumerEnv
+  -- Closure-scoped compile env over what the claim touches.
+  let mut seen : Lean.NameSet := {}
+  let mut work : Array Lean.Name := #[`TIxImp.dbl, nN, nZero, nSucc]
+  let mut closure : List (Lean.Name × Lean.ConstantInfo) := []
+  while !work.isEmpty do
+    let n := work.back!
+    work := work.pop
+    if seen.contains n then continue
+    seen := seen.insert n
+    let some ci := env.find? n
+      | return (false, 0, 0, some s!"consumer env missing {n}")
+    closure := (n, ci) :: closure
+    for r in Ix.Replay.constantInfoReferences ci do
+      unless seen.contains r do
+        work := work.push r
+  let phases ← Ix.CompileM.compilePhasesOf env closure
+  let compileEnv := Ix.Commit.mkCompileEnv phases
+  -- A definition compiled over the input gets its binder data from the
+  -- compile's annotator, and in a chain of anonymous definitions each one is
+  -- annotated from its own source: compiled after another, a definition has
+  -- the address it has alone.
+  let idTy := Lean.mkForall `n .default cN cN
+  let idVal := Lean.mkLambda `n .default cN (.bvar 0)
+  let k2Ty := Lean.mkForall `n .default cN (Lean.mkForall `m .default cN cN)
+  let k2Val := Lean.mkLambda `n .default cN (Lean.mkLambda `m .default cN (.bvar 0))
+  let (_, env1) ← IO.ofExcept (Ix.Commit.compileDef compileEnv [] idTy idVal)
+  let (chained, env2) ← IO.ofExcept (Ix.Commit.compileDef env1 [] k2Ty k2Val)
+  let (alone, _) ← IO.ofExcept (Ix.Commit.compileDef compileEnv [] k2Ty k2Val)
+  unless chained == alone do
+    return (false, 0, 0, some "a chained anonymous definition has another address than alone")
+  let some bytes := env2.constants.get? chained
+    | return (false, 0, 0, some "compileDef stored no record")
+  let defn ← IO.ofExcept (Ixon.deConstantAt bytes 0 bytes.size)
+  if defn.binders.isEmpty || defn.binders.any (·.nodes.any (·.isUndecided)) then
+    return (false, 0, 0, some "a definition compiled over the input has no decided binder data")
+  -- Commit a private value of the imported type.
+  let voteType := Lean.Expr.const nN []
+  let vote := Lean.Expr.app (.const nSucc []) (.const nZero [])
+  let (commitAddr, env', compileEnv') ←
+    Ix.Commit.commitDef compileEnv env [] voteType vote
+  let commitName := Address.toUniqueName commitAddr
+  unless env'.contains commitName do
+    return (false, 0, 0,
+      some "commitDef did not register the commitment constant")
+  -- Claim: an imported function applied to the commitment evaluates
+  -- to the public result.
+  let input := Lean.mkApp (.const `TIxImp.dbl []) (.const commitName [])
+  let output := Lean.mkApp (.const nSucc [])
+    (Lean.mkApp (.const nSucc []) (.const nZero []))
+  let ctx : Ix.ClaimContext :=
+    { spec := default, binding := default, axioms := none }
+  let claim ← match Ix.Commit.evalClaim ctx compileEnv' [] input output
+      voteType with
+    | .ok claim => pure claim
+    | .error e => return (false, 0, 0, some s!"evalClaim failed: {e}")
+  match claim with
+  | .eval _ i o _ =>
+    if i == o then
+      return (false, 0, 0, some "degenerate claim: input addr = output addr")
+    return (true, 0, 0, none)
+  | _ => return (false, 0, 0, some "expected an eval claim")
 
 def suite : List TestSeq := [
   .individualIO "materialize ∘ compile is exact and root-stable" none

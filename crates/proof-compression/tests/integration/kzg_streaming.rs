@@ -113,6 +113,10 @@ fn streamed_chunks_preserve_global_rows_and_quotient_cosets() {
   use multi_stark::expr::Expr;
   use multi_stark::lookup::Lookup;
   use multi_stark::system::CircuitInputs;
+  // 512 rows with chunk size 128 exercises 4 lookup chunks, 4 quotient blocks
+  // per coset, and 4 disk-spill chunks without paying for 2^17 BN254 proofs.
+  const ROWS: usize = 1 << 9;
+  const CHUNK: usize = 1 << 7;
   let x = Expr::main(0);
   let next = Expr::main_next(0);
   let message = vec![x.clone(), next.clone(), Expr::preprocessed_next(0)];
@@ -120,7 +124,7 @@ fn streamed_chunks_preserve_global_rows_and_quotient_cosets() {
   let circuit = CircuitInputs {
     main_width: 1,
     preprocessed: Some(p3_matrix::dense::RowMajorMatrix::new_col(
-      (0..1 << 17).map(|i| Scalar::from_usize(i % 97)).collect(),
+      (0..ROWS).map(|i| Scalar::from_usize(i % 97)).collect(),
     )),
     constraints: vec![
       x.clone()
@@ -142,13 +146,13 @@ fn streamed_chunks_preserve_global_rows_and_quotient_cosets() {
     ..Default::default()
   };
   let config = KzgConfig::new(
-    Arc::new(Srs::unsafe_dev_setup(1 << 17, b"chunk-and-coset-test")),
+    Arc::new(Srs::unsafe_dev_setup(ROWS, b"chunk-and-coset-test")),
     4,
   );
   let (mut system, key) = System::new(config, [circuit, empty]);
   let traces = vec![
     p3_matrix::dense::RowMajorMatrix::new_col(
-      (0..1 << 17)
+      (0..ROWS)
         .map(|i| if i % 2 == 0 { Scalar::ONE } else { Scalar::NEG_ONE })
         .collect(),
     ),
@@ -159,8 +163,11 @@ fn streamed_chunks_preserve_global_rows_and_quotient_cosets() {
     &[],
     SystemWitness::from_stage_1(traces.clone(), &system),
   );
-  system.config =
-    system.config.with_streaming_lookups().with_streaming_quotient();
+  system.config = system
+    .config
+    .with_streaming_lookups()
+    .with_streaming_quotient()
+    .with_streaming_chunk_size(CHUNK);
   let streamed = system.prove_multiple_claims(
     &key,
     &[],

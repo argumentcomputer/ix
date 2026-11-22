@@ -14,7 +14,7 @@ harness. They require only the address representation, independently of the
 kernel typechecker.
 The addresses are hardcoded BLAKE3 hashes matching `PrimAddrs::new()` in
 `ix-common`; regenerate them as `docs/kernel.md` describes (`lake exe
-ixon-v4-primitives`; `lake test -- --ignored rust-kernel-build-primitives`
+ixon-primitives`; `lake test -- --ignored rust-kernel-build-primitives`
 prints the table in `PrimAddrs::new` form) and update both tables. The ordered
 live comparison is
 `Tests.Ix.Kernel.PrimitiveTable` in the `prim-addrs` entry.

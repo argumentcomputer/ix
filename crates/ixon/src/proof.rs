@@ -3056,9 +3056,8 @@ mod tests {
     }
   }
   #[test]
-  fn v4_claim_fixtures_and_strict_scope() {
-    for line in
-      include_str!("../../../Tests/Fixtures/ixon-v4/claims.tsv").lines()
+  fn claim_fixtures_and_strict_scope() {
+    for line in include_str!("../../../Tests/Fixtures/ixon/claims.tsv").lines()
     {
       if line.starts_with('#') || line.is_empty() {
         continue;

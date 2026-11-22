@@ -12,11 +12,8 @@ use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanOwned, LeanRef};
 // =============================================================================
 
 lean_ffi::lean_domain_type! {
-  // Simple enums (passed as raw unboxed tag values)
+  // Simple enum helper namespace (encoded via to_u8/from_u8)
   LeanIxBinderInfo;
-  LeanIxonDefKind;
-  LeanIxonDefinitionSafety;
-  LeanIxonQuotKind;
 
   // Opaque types (passed through without field access)
   LeanIxonExprMetaArena;
@@ -312,18 +309,29 @@ impl LeanIxAddress<LeanOwned> {
 }
 
 impl<R: LeanRef> LeanIxAddress<R> {
-  /// Decode a 32-byte Lean `Address` into a Rust [`Address`].
-  pub fn decode(&self) -> Address {
-    Address::from_slice(self.as_bytes()).expect("Lean Address must be 32 bytes")
+  /// Decode a 32-byte Lean `Address` into a Rust [`Address`], returning an
+  /// error instead of panicking if the underlying `ByteArray` is not 32 bytes.
+  pub fn try_decode(&self) -> Result<Address, String> {
+    let bytes = self.as_bytes();
+    Address::from_slice(bytes).map_err(|e| {
+      format!(
+        "invalid Lean Address length ({e}): expected 32 bytes, got {}",
+        bytes.len()
+      )
+    })
   }
 }
 
 impl LeanIxAddress<LeanBorrowed<'_>> {
   /// Decode a `LeanArray` of `Address` values into a `Vec<Address>`.
-  pub fn decode_array(arr: LeanArray<LeanBorrowed<'_>>) -> Vec<Address> {
+  pub fn try_decode_array(
+    arr: LeanArray<LeanBorrowed<'_>>,
+  ) -> Result<Vec<Address>, String> {
     arr
       .iter()
-      .map(|elem| LeanIxAddress::from_borrowed(elem.as_byte_array()).decode())
+      .map(|elem| {
+        LeanIxAddress::from_borrowed(elem.as_byte_array()).try_decode()
+      })
       .collect()
   }
 }

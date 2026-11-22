@@ -54,11 +54,14 @@ structure Variant where
   device : Option Nat
 
 /-- Prove `invocation` under `variant` with `rows`-row shards, check the proof
-verifies (and has `shards` shards when given, more than one otherwise), verify
-it independently on the CPU, and return its proof and key bytes and report. -/
+verifies (and has `shards` shards when given, more than one otherwise),
+optionally verify it independently on the CPU (skipped for subsequent variants
+immediately checked byte-for-byte identical to the just-verified reference), and
+return its proof and key bytes and report. -/
 def prove (c : Context) (cpu : FilePath) (name : String) (artifact invocation : FilePath)
     (ixvm : Bool) (directory : FilePath) (v : Variant) (rows : Nat)
-    (verifyEnv : Array (String × Option String)) (single : Bool) :
+    (verifyEnv : Array (String × Option String)) (single : Bool)
+    (verify : Bool := true) :
     IO (ByteArray × ByteArray × Json × FilePath) := do
   let target := directory / v.name
   IO.FS.createDir target
@@ -78,9 +81,10 @@ def prove (c : Context) (cpu : FilePath) (name : String) (artifact invocation : 
   else
     unless (← boolField result ["verified"]) && shards ≥ 2 do
       fail s!"{name}-{v.name}: proof did not verify across multiple shards"
-  -- Deliberately inherit the GPU lookup flag in the CPU verifier.
-  run c s!"{name}-{v.name}-verify" #[cpu.toString, "verify", artifact.toString,
-    invocation.toString, proof.toString] verifyEnv
+  if verify then
+    -- Deliberately inherit the GPU lookup flag in the CPU verifier.
+    run c s!"{name}-{v.name}-verify" #[cpu.toString, "verify", artifact.toString,
+      invocation.toString, proof.toString] verifyEnv
   let proofBytes ← IO.FS.readBinFile proof
   let keyBytes ← IO.FS.readBinFile key
   return (proofBytes, keyBytes, result, proof)
@@ -129,11 +133,15 @@ def main (argv : List String) : IO UInt32 := do
     let claim ← caseInvocation (fixtures / "claims.ixt") "CheckEnv frontier-asm (Nat.add_comm)"
     let claimPath := out / "claim.ixi"
     IO.FS.writeBinFile claimPath claim
-    let cases : Array (String × FilePath × FilePath × Bool) := #[
+    let allCases : Array (String × FilePath × FilePath × Bool) := #[
       ("ixvm", System.FilePath.mk ixvmArtifact, claimPath, true),
       ("recursion", System.FilePath.mk recursionArtifact, fixtures / "inner/input.ixi", false),
       ("aggregate", System.FilePath.mk aggregateArtifact, fixtures / "aggregation.ixt.wrap.ixi",
         false)]
+    -- In `--cpu-only` mode, `CheckFormal` and `Controller` have already proved and verified
+    -- all three artifacts; run the full CPU control matrix (retain/regenerate parity, single-
+    -- shard retain, key export, negative controls) on one representative artifact (`ixvm`).
+    let cases := if cpuOnly then #[allCases[0]!] else allCases
     for (name, artifact, invocation, ixvm) in cases do
       digests "artifact_sha256" artifact
       digests "input_sha256" invocation
@@ -178,6 +186,7 @@ def main (argv : List String) : IO UInt32 := do
       for v in variants do
         let (proofBytes, keyBytes, result, proof) ←
           prove c cpu name artifact invocation ixvm directory v rows verifyEnv false
+            (verify := reference.isNone)
         match reference with
         | none =>
           reference := some (proofBytes, keyBytes)
@@ -222,6 +231,7 @@ def main (argv : List String) : IO UInt32 := do
       for v in singleVariants do
         let (proofBytes, keyBytes, result, proof) ←
           prove c cpu name artifact invocation ixvm directory v maxRows verifyEnv true
+            (verify := singleReference.isNone)
         unless some keyBytes == reference.map (·.2) do
           fail s!"{name}-{v.name}: sharding changed the key"
         match singleReference with

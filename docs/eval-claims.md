@@ -1,6 +1,6 @@
 # Evaluation claims
 
-`Eval(input, output, assumptions)` uses the existing Ixon v4 claim encoding.
+`Eval(input, output, assumptions)` uses the existing Ixon claim encoding (object format 4).
 Both addresses identify ordinary constants; neither is the hash of an entire
 environment. There is no new expression object or wire-format version.
 

@@ -7,7 +7,6 @@ and the Ixon v4 (TagN) changes to that file at Ix revision
 -/
 
 import IxC.Ixon.Wire
-import Std.Tactic.BVDecide
 
 /-!
 # Proof-visible Ixon codecs
@@ -552,8 +551,7 @@ theorem nat_toUInt64_lt_32 {n : Nat} (h : n < 32) :
 
 theorem tag2_zero_header (size : UInt64) :
     (Ixon.Univ.FLAG_ZERO_SUCC <<< 6) ||| size.toUInt8 = size.toUInt8 := by
-  simp only [Ixon.Univ.FLAG_ZERO_SUCC]
-  bv_decide
+  simp [Ixon.Univ.FLAG_ZERO_SUCC]
 
 theorem tag2_max_zero_header :
     (Ixon.Univ.FLAG_MAX <<< 6) ||| (0 : UInt64).toUInt8 = 0x40 := by
@@ -565,8 +563,7 @@ theorem tag2_imax_zero_header :
 
 theorem tag2_var_header (idx : UInt64) :
     (Ixon.Univ.FLAG_VAR <<< 6) ||| idx.toUInt8 = 0xc0 ||| idx.toUInt8 := by
-  simp only [Ixon.Univ.FLAG_VAR]
-  bv_decide
+  rfl
 
 namespace Univ
 

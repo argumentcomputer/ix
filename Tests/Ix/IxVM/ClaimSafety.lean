@@ -134,25 +134,25 @@ comparison, whatever the `let` names. -/
 private def ruleSafetyCases : Array Tests.Ix.IxVM.Builder :=
   #[fun _ => do
       let (env, target, _) ← ruleSafetyFixture false false
-      let ctx ← Ix.ClaimContext.ofDefaultTable
+      let ctx := { (← Ix.ClaimContext.ofDefaultTable) with bindingAssumed := true }
       Tests.Ix.IxVM.Case.ofClaim "refuse a safe dependency in a dead recursor-rule let"
         env (.check ctx target none) {} false
         (some "native recursor: a stored rule is not the generated one up to consumed wrappers"),
     fun _ => do
       let (env, target, _) ← ruleSafetyFixture true false
-      let ctx ← Ix.ClaimContext.ofDefaultTable
+      let ctx := { (← Ix.ClaimContext.ofDefaultTable) with bindingAssumed := true }
       Tests.Ix.IxVM.Case.ofClaim "refuse an unsafe dependency in a dead recursor-rule let"
         env (.check ctx target none) {} false
         (some "safe constant references an unsafe constant"),
     fun _ => do
       let (env, target, _) ← ruleSafetyFixture true true
-      let ctx ← Ix.ClaimContext.ofDefaultTable
+      let ctx := { (← Ix.ClaimContext.ofDefaultTable) with bindingAssumed := true }
       Tests.Ix.IxVM.Case.ofClaim "refuse an unsafe projection target in a dead recursor-rule let"
         env (.check ctx target none) {} false
         (some "safe constant references an unsafe constant"),
     fun _ => do
       let (env, _, dependency) ← ruleSafetyFixture true false
-      let ctx ← Ix.ClaimContext.ofDefaultTable
+      let ctx := { (← Ix.ClaimContext.ofDefaultTable) with bindingAssumed := true }
       Tests.Ix.IxVM.Case.ofClaim "refuse the unsafe rule dependency as a direct claim"
         env (.check ctx dependency none) {} false (some seedMessage)]
 
@@ -189,7 +189,7 @@ private def nativeParameterCases : Array Tests.Ix.IxVM.Builder :=
   [(false, false), (true, false), (false, true), (true, true)].toArray.map
     fun (betaDomain, withField) _ => do
       let (env, target) ← nativeParameterFixture betaDomain withField
-      let ctx ← Ix.ClaimContext.ofDefaultTable
+      let ctx := { (← Ix.ClaimContext.ofDefaultTable) with bindingAssumed := true }
       let c ← Tests.Ix.IxVM.Case.ofClaim
         s!"accept native parameter domain: beta={betaDomain}, field={withField}"
         env (.check ctx target none)
@@ -226,7 +226,7 @@ private def nativeUnitParameterCase : Tests.Ix.IxVM.Builder := fun _ => do
   let (env, addr) := storeSafetyRecord base block
   let (env, target) := storeSafetyRecord env ⟨.iPrj ⟨0, addr⟩, #[], #[], #[], #[]⟩
   let (env, _) := storeSafetyRecord env ⟨.cPrj ⟨0, 0, addr⟩, #[], #[], #[], #[]⟩
-  let ctx ← Ix.ClaimContext.ofDefaultTable
+  let ctx := { (← Ix.ClaimContext.ofDefaultTable) with bindingAssumed := true }
   let c ← Tests.Ix.IxVM.Case.ofClaim "accept native parameter domain requiring unit-like conversion"
     env (.check ctx target none)
   return { c with exercises := some "KernelDefEq::is_unit_like_type" }

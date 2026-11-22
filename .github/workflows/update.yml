@@ -28,7 +28,8 @@ jobs:
       # an incompatible release shows up as a failing PR to review. Dependencies
       # pinned to a Lean version tag move with the toolchain; a dependency
       # pinned to a commit hash is reported and left alone.
-      - uses: argumentcomputer/lean-update@dev
+      # Pinned commit from `argumentcomputer/lean-update@dev` (no release tag).
+      - uses: argumentcomputer/lean-update@7215ebe130529284fd5e5dc9640af395bddf9c69
         with:
           # The root package plus every package under Benchmarks/ — `/**`
           # walks the whole tree (catching Catalog's nested fixture

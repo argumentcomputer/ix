@@ -148,7 +148,7 @@ private def mixedCase (guards assumed : Bool) : Except String Case := do
   let recursor : Ixon.Constant := ⟨.rPrj ⟨1, blockAddress⟩, #[], #[], #[], #[]⟩
   let env := ((env.storeConst blockAddress block).storeConst (address type) type).storeConst
     (address recursor) recursor
-  let context ← Ix.ClaimContext.ofEnv env
+  let context ← Ix.ClaimContext.ofEnv env true
   let tree? := if assumed then Ix.AssumptionTree.canonical #[blockAddress] else none
   let trees : Std.HashMap _root_.Address Ix.AssumptionTree := match tree? with
     | some tree => ({} : Std.HashMap _root_.Address Ix.AssumptionTree).insert tree.root tree
@@ -175,7 +175,7 @@ private def separateCase (basis : Bool) : Except String Case := do
   let recursor ← IxVM.RecordSections.withSection env
     ⟨.recr (emptyRecursor (.ref 0 #[])), #[], #[address type], #[.succ .zero, .var 0], #[]⟩
   let env := env.storeConst (address recursor) recursor
-  let context ← Ix.ClaimContext.ofEnv env
+  let context ← Ix.ClaimContext.ofEnv env true
   let witness ← IxVM.ClaimHarness.buildClaimWitness env (.check context (address recursor) none)
   if basis then
     return {
@@ -250,7 +250,7 @@ private def nativeHeaderCase (guards : Bool) (place : LetAt) : Except String Cas
     ⟨.recr (indexedRecursor 1 (headerType place)), #[], #[address type, nat, zero],
       #[.succ .zero, .var 0], #[]⟩
   let env := env.storeConst (address record) record
-  let context ← Ix.ClaimContext.ofEnv env
+  let context ← Ix.ClaimContext.ofEnv env true
   let witness ← IxVM.ClaimHarness.buildClaimWitness env (.check context (address record) none)
   return place.verdict guards {
     label := s!"native recursor: {place.label}"
@@ -297,7 +297,7 @@ private def modeledHeaderCase (guards recursorsRefused wrapped : Bool) : Except 
   let (env, report) ← IxVM.Model.generateReport env
   unless report.advice.size > 0 do
     throw s!"no model advice: {reprStr (report.blocks.map (fun (_, answer) => answer))}"
-  let context ← Ix.ClaimContext.ofEnv env
+  let context ← Ix.ClaimContext.ofEnv env true
   let witness ← IxVM.ClaimHarness.buildClaimWitness env (.check context recursorsAddress none)
   let c : Case := {
     label := if wrapped then "modeled recursor: a let in the index's domain"
@@ -351,7 +351,7 @@ private def parameterLetCase (lets dead : Bool) : Except String Case := do
   let record ← IxVM.RecordSections.withSection env
     ⟨.recr recursor, #[], #[address type, nat, zero], #[.succ .zero, .var 0], #[]⟩
   let env := env.storeConst (address record) record
-  let context ← Ix.ClaimContext.ofEnv env
+  let context ← Ix.ClaimContext.ofEnv env true
   let witness ← IxVM.ClaimHarness.buildClaimWitness env (.check context (address record) none)
   let c : Case := {
     label := if dead then "native recursor: a let in a parameter's domain that its family does not have"
@@ -398,7 +398,7 @@ private def declaredFormerCase (shape telescope declared : Bool) : Except String
   let q : Ixon.Constant := ⟨.iPrj ⟨1, blockAddress⟩, #[], #[], #[], #[]⟩
   let env := bare
     (((env.storeConst blockAddress block).storeConst (address p) p).storeConst (address q) q)
-  let context ← Ix.ClaimContext.ofEnv env
+  let context ← Ix.ClaimContext.ofEnv env true
   let witness ← IxVM.ClaimHarness.buildClaimWitness env (.check context (address p) none)
   let c : Case := {
     label := if declared then "a two-type family whose first type is declared at a definition, no model"
@@ -444,7 +444,7 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
   -- type's telescope, a family's recursors refused
   let (guards, lets, shape, telescope, recursors) : Bool × Bool × Bool × Bool × Bool :=
     match before with
-    | none => (true, true, false, true, modeledRecursorsRefused)
+    | none => (true, true, false, true, false)
     | some "declared" => (true, true, true, true, true)
     | some "recursors" => (true, true, true, true, false)
     | some "telescope" => (true, true, true, false, false)
@@ -468,6 +468,5 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     fun _ => declaredFormerCase shape telescope false,
     fun _ => declaredFormerCase shape telescope true]
   runCases "ixvm-shape-guards" (compiledCases guards env ++ familyCases shape recursors env ++ built)
-    (jobs := 4)
 
 end Tests.Ix.IxVM.ShapeGuards

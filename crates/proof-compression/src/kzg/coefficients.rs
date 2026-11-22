@@ -19,7 +19,7 @@ use ark_ff::Zero;
 use ark_serialize::{CanonicalDeserialize, SerializationError};
 use p3_maybe_rayon::prelude::*;
 
-const CHUNK: usize = 1 << 16;
+pub(super) const CHUNK: usize = 1 << 16;
 
 /// An open coefficient file. Temporary spill files unlink themselves on
 /// creation (Unix) or remove their path on drop (other targets).
@@ -91,6 +91,7 @@ pub(super) enum Column {
     file: Arc<Mutex<DiskFile>>,
     offset: u64,
     len: usize,
+    chunk: usize,
     digest: blake3::Hash,
   },
 }
@@ -158,15 +159,17 @@ impl Column {
     }
   }
 
-  pub(super) fn index(
+  pub(super) fn index_with_chunk(
     reader: &mut (impl Read + Seek),
     file: Arc<Mutex<DiskFile>>,
     len: usize,
+    chunk: usize,
   ) -> Result<Self, SerializationError> {
+    assert!(chunk > 0);
     let offset = reader.stream_position()?;
     let mut remaining =
       len.checked_mul(32).ok_or(SerializationError::InvalidData)?;
-    let mut bytes = vec![0u8; (CHUNK * 32).min(remaining)];
+    let mut bytes = vec![0u8; (chunk * 32).min(remaining)];
     let mut hash = blake3::Hasher::new();
     while remaining != 0 {
       let n = remaining.min(bytes.len());
@@ -174,7 +177,7 @@ impl Column {
       hash.update(&bytes[..n]);
       remaining -= n;
     }
-    Ok(Self::Disk { file, offset, len, digest: hash.finalize() })
+    Ok(Self::Disk { file, offset, len, chunk, digest: hash.finalize() })
   }
 
   /// Construct a disk-backed column from an already-written and hashed span.
@@ -185,18 +188,20 @@ impl Column {
     len: usize,
     digest: blake3::Hash,
   ) -> Self {
-    Self::Disk { file, offset, len, digest }
+    Self::Disk { file, offset, len, chunk: CHUNK, digest }
   }
 
   /// Write non-constant coefficients to `file` at `*offset`, hashing them on
   /// the fly, and return a disk-backed [`Column`]. Constant polynomials stay
   /// compact in memory without touching disk.
   #[cfg(not(feature = "cuda"))]
-  pub(super) fn spill_to_disk(
+  pub(super) fn spill_to_disk_with_chunk(
     file: &Arc<Mutex<DiskFile>>,
     offset: &mut u64,
     coeffs: &[Fr],
+    chunk: usize,
   ) -> std::io::Result<Self> {
+    assert!(chunk > 0);
     if coeffs.iter().skip(1).all(Zero::is_zero) {
       return Ok(Self::Constant {
         value: coeffs.first().copied().unwrap_or_default(),
@@ -254,6 +259,7 @@ impl Column {
       file: Arc::clone(file),
       offset: start,
       len: coeffs.len(),
+      chunk,
       digest,
     })
   }
@@ -273,16 +279,17 @@ impl Column {
         }
       },
       Self::Resident { values, range } => visit(0, &values[range.clone()]),
-      Self::Disk { file, offset, len, digest } => {
+      Self::Disk { file, offset, len, chunk, digest } => {
+        let chunk = *chunk;
         let mut guard =
           file.lock().map_err(|_error| SerializationError::InvalidData)?;
         let file = guard.file_mut();
         file.seek(SeekFrom::Start(*offset))?;
-        let mut bytes = vec![0u8; CHUNK.min(*len) * 32];
-        let mut values = vec![Fr::default(); CHUNK.min(*len)];
+        let mut bytes = vec![0u8; chunk.min(*len) * 32];
+        let mut values = vec![Fr::default(); chunk.min(*len)];
         let mut hash = blake3::Hasher::new();
-        for start in (0..*len).step_by(CHUNK) {
-          let count = CHUNK.min(len - start);
+        for start in (0..*len).step_by(chunk) {
+          let count = chunk.min(len - start);
           let bytes = &mut bytes[..count * 32];
           file.read_exact(bytes)?;
           hash.update(bytes);

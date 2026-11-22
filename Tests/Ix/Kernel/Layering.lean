@@ -125,34 +125,56 @@ def findImports (src : Array Char) (keywords : List String) (atLeastOne : Bool) 
       let mut j := i
       while j < n && isModChar src[j]! do j := j + 1
       return j
-    -- one match attempt at a line start; the end of the match and its name
-    let attempt (p : Nat) : Option (Nat × String) := Id.run do
+    -- one match attempt at `p`; returns `(endPos, matchedName?)`, where `some (e, some name)`
+    -- is a matching import and `some (e, none)` is a skipped `module` or non-matching
+    -- import statement on the same line (so `import A public import B` or `module import A`
+    -- still reaches subsequent imports on the same line).
+    let attempt (p : Nat) : Option (Nat × Option String) := Id.run do
       let mut i := spaces p
+      if let some j := word i "module" then
+        return some (j, none)
+      let allModifiers := ["public", "private", "meta"]
       let mut count := 0
+      let mut badMod := false
       let mut more := true
       while more do
-        match keywords.findSome? (word i ·) with
-        | some j => i := j; count := count + 1
+        match allModifiers.findSome? (fun kw => (word i kw).map (kw, ·)) with
+        | some (kw, j) =>
+          i := j
+          if keywords.contains kw then count := count + 1 else badMod := true
         | none => more := false
-      if atLeastOne && count == 0 then return none
       let some k := word i "import" | return none
-      -- `(?:all\s+)?`, falling back to reading `all` as the name
-      if let some j := word k "all" then
-        let e := ident j
-        if e > j then return some (e, String.ofList (src.extract j e).toList)
-      let e := ident k
-      if e > k then return some (e, String.ofList (src.extract k e).toList) else return none
-    -- `^` under `re.M`: position 0 and every position after a newline; a
-    -- search resumes at the first line start at or after a match's end
+      let some (e, name) := (
+        if let some j := word k "all" then
+          let e := ident j
+          if e > j then some (e, String.ofList (src.extract j e).toList)
+          else
+            let e' := ident k
+            if e' > k then some (e', String.ofList (src.extract k e').toList) else none
+        else
+          let e := ident k
+          if e > k then some (e, String.ofList (src.extract k e).toList) else none)
+        | return none
+      if badMod || (atLeastOne && count == 0) then
+        return some (e, none)
+      return some (e, some name)
+    -- Scan from position 0 and every position after a newline, resuming immediately
+    -- at the end of each matched `module` / `import` statement so multiple imports
+    -- on a single line (`import A import B`, `module public import A import B`) are
+    -- all captured, while comments (`-- import B`) and non-import lines skip to `\n`.
     let mut found := #[]
     let mut p := 0
     let mut more := true
     while more do
-      let mut from_ := p
-      if let some (e, name) := attempt p then
-        found := found.push name
-        from_ := e
-      let mut j := from_
+      match attempt p with
+      | some (e, name?) =>
+        if let some name := name? then
+          found := found.push name
+        if e > p then
+          p := e
+          continue
+      | none => pure ()
+      let mut j := p
       while j < n && src[j]! != '\n' do j := j + 1
       if j < n then p := j + 1 else more := false
     return found
@@ -280,12 +302,28 @@ def answersFence (imports : Array (String × Array String)) : Array (String × S
 
 /-- **The fence's self-test**: a planted import from a certified module and
 one from a mode-checker module beside the exception are found; the allowed ones
-(a test's, the exception's) are not. -/
+(a test's, the exception's) are not; and single-line multi-imports (`import A import B`,
+`module public import A public import B`, `import A public import B`, and
+commented `-- import C`) are parsed accurately. -/
 def answersFenceSelfTest : Bool :=
-  answersFence #[("Ix.Cert.Planted", #["Init", answersModule]),
-      ("Tests.Ix.Kernel.Planted", #[answersModule]), ("IxC.Kernel.Tier.Check", #["IxC.Kernel.Tier.Basic"]),
-      ("Ix.Typing", #[answersModule]), ("IxC.Resource.Check", #[answersModule])] ==
-    #[("Ix.Cert.Planted", answersModule), ("IxC.Resource.Check", answersModule)]
+  let fenceOk :=
+    answersFence #[("Ix.Cert.Planted", #["Init", answersModule]),
+        ("Tests.Ix.Kernel.Planted", #[answersModule]), ("IxC.Kernel.Tier.Check", #["IxC.Kernel.Tier.Basic"]),
+        ("Ix.Typing", #[answersModule]), ("IxC.Resource.Check", #[answersModule])] ==
+      #[("Ix.Cert.Planted", answersModule), ("IxC.Resource.Check", answersModule)]
+  let multiLine1 := findImports ("import Init.Core import IxC.Kernel.Tier.Answer\n".toList.toArray)
+    ["public", "private", "meta"] false
+  let multiLine2 := findImports ("module public import Init.Core public import IxC.Kernel.Core\n".toList.toArray)
+    ["public"] true
+  let multiLine3 := findImports ("import Init.Core public import IxC.Kernel.Core\n".toList.toArray)
+    ["public"] true
+  let withComment := findImports ("import Init.Core -- import IxC.Kernel.Tier.Answer\n".toList.toArray)
+    ["public", "private", "meta"] false
+  fenceOk &&
+    multiLine1 == #["Init.Core", "IxC.Kernel.Tier.Answer"] &&
+    multiLine2 == #["Init.Core", "IxC.Kernel.Core"] &&
+    multiLine3 == #["IxC.Kernel.Core"] &&
+    withComment == #["Init.Core"]
 
 def pairLt (a b : String × String) : Bool := a.1 < b.1 || (a.1 == b.1 && a.2 < b.2)
 

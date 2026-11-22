@@ -1,4 +1,4 @@
-//! The Ixon v4 primitives that Aiur artifacts are written with.
+//! The Ixon primitives that Aiur artifacts are written with.
 //!
 //! Aiur does not depend on the `ixon` crate, so this module carries the few
 //! Ixon conventions the artifact grammar (`crate::artifact`) needs:

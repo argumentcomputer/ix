@@ -37,24 +37,33 @@ import Ix.Meta
 
 namespace Tests.Registry
 
-/-- A CI job that runs registry entries by tier. `cli` and `ixvm` are steps of
-`ci.yml`'s `lean-test` job; the others are `merge-tests.yml` partitions. -/
+/-- A CI job that runs registry entries by tier. `cli`, `ixvm`,
+`compiler-closures`, `binding-proof`, `misc` and `landing-initstd-cli` run in
+`ci.yml` as parallel path-gated jobs; `nightly` runs in `nightly.yml`. -/
 inductive CiJob where
   | cli
-  /-- Claims through the formal IxVM program (`ixvm-proof test`), after
-  `Scripts/CheckFormal.lean` has built its host and exported its artifact. -/
+  /-- Claims through the formal IxVM program (`ixvm-proof test`), on the
+  cached/exported claim artifact. -/
   | ixvm
   | compilerClosures
+  /-- `ix prove-binding` + shard binding reuse through the `ix` binary. -/
+  | bindingProof
   | misc
   /-- Init+Std through the `ix` binary: `ix compile-lean` with its report
   checks, whose artifact must match the reference digest and which
-  `ix check-lean` checks with every bound role admitted, and
-  `ix validate-lean` fidelity. -/
+  `ix check-lean` checks with every bound role admitted, `ix validate-lean`
+  fidelity reusing that artifact, and reader coverage. -/
   | landingInitStdCli
+  /-- Heavy host sweeps (whole-Init+Std pure BLAKE3 hash parity and exhaustive
+  exact-sharing sweeps) run nightly on `main` via `IxTests`. -/
+  | nightly
+  /-- Heavy IxVM sweeps (full generated arithmetic `Claim.eval` suite) run
+  nightly on `main` via `IxVMTests`. -/
+  | nightlyIxvm
   deriving DecidableEq, Repr
 
 def CiJob.all : List CiJob :=
-  [.cli, .ixvm, .compilerClosures, .misc, .landingInitStdCli]
+  [.cli, .ixvm, .compilerClosures, .bindingProof, .misc, .landingInitStdCli, .nightly, .nightlyIxvm]
 
 /-- The jobs that `--tier landing` selects together. -/
 def CiJob.isLanding : CiJob → Bool
@@ -66,8 +75,11 @@ def CiJob.key : CiJob → String
   | .cli => "cli"
   | .ixvm => "ixvm"
   | .compilerClosures => "compiler-closures"
+  | .bindingProof => "binding-proof"
   | .misc => "misc"
   | .landingInitStdCli => "landing-initstd-cli"
+  | .nightly => "nightly"
+  | .nightlyIxvm => "nightly-ixvm"
 
 /-- Where an entry runs. -/
 inductive Tier where
@@ -159,9 +171,11 @@ the check is textual. -/
 def stripComments (text : String) : String :=
   "\n".intercalate ((text.splitOn "\n").map stripComment)
 
-/-- The registry's own consistency checks, against the workflows that name
-the CI jobs (comments removed). Returns the problems found (empty: consistent). -/
-def problems (entries : List Entry) (workflows : List (String × String)) : List String := Id.run do
+/-- The registry's own consistency checks for a binary that owns `ownedJobs`,
+against the workflows that name every CI job in `CiJob.all` (comments removed).
+Returns the problems found (empty: consistent). -/
+def problemsScoped (entries : List Entry) (ownedJobs : List CiJob)
+    (workflows : List (String × String)) : List String := Id.run do
   let workflows := workflows.map fun (file, text) => (file, stripComments text)
   let mut out : List String := []
   let names := entries.map (·.name)
@@ -177,9 +191,10 @@ def problems (entries : List Entry) (workflows : List (String × String)) : List
   let named : List String := workflows.flatMap fun (_, text) =>
     ((text.splitOn "--tier ci:").drop 1).map fun chunk =>
       (chunk.takeWhile (fun c => c.isAlphanum || c == '-')).toString
-  for job in CiJob.all do
+  for job in ownedJobs do
     unless entries.any (fun e => match e.tier with | .ci j => j == job | _ => false) do
       out := out ++ [s!"CI job ci:{job.key} has no entry"]
+  for job in CiJob.all do
     unless named.contains job.key do
       out := out ++ [s!"no workflow runs '--tier ci:{job.key}'"]
   -- every `--tier ci:<key>` a workflow names is a job of the registry
@@ -190,8 +205,12 @@ def problems (entries : List Entry) (workflows : List (String × String)) : List
         out := out ++ [s!"{file} names --tier ci:{key}, which is no CI job of the registry"]
   return out
 
+/-- The registry's own consistency checks when one binary owns every `CiJob`. -/
+def problems (entries : List Entry) (workflows : List (String × String)) : List String :=
+  problemsScoped entries CiJob.all workflows
+
 def workflowFiles : List System.FilePath :=
-  [".github/workflows/ci.yml", ".github/workflows/merge-tests.yml"]
+  [".github/workflows/ci.yml", ".github/workflows/nightly.yml"]
 
 /-- Retained behavior checks must occur exactly once in their required tier,
 including entries that would otherwise disappear silently from CI. -/
@@ -202,18 +221,30 @@ def coverageProblems (entries : List Entry) (required : List (String × String))
         some s!"required entry {name} runs in {entry.tier.key}, expected {tier}"
     | hits => some s!"required entry {name} is registered {hits.length} times"
 
+/-- The CI tier keys owned by a binary (`primary` when `hasPrimary`, plus each
+owned `CiJob`). -/
+def scopedTierKeys (hasPrimary : Bool) (ownedJobs : List CiJob) : List String :=
+  (if hasPrimary then ["primary"] else []) ++ ownedJobs.map (s!"ci:{·.key}")
+
 /-- The tiers that run in CI: `primary` and every CI job. -/
-def ciTierKeys : List String := "primary" :: CiJob.all.map (s!"ci:{·.key}")
+def ciTierKeys : List String := scopedTierKeys true CiJob.all
+
+/-- The required list for a scoped binary: names an entry in every owned CI
+tier, and only those tiers. -/
+def requiredProblemsScoped (hasPrimary : Bool) (ownedJobs : List CiJob)
+    (required : List (String × String)) : List String :=
+  let keys := scopedTierKeys hasPrimary ownedJobs
+  keys.filterMap (fun tier =>
+    if required.any (·.2 == tier) then none else some s!"no required entry runs in {tier}") ++
+  required.filterMap fun (name, tier) =>
+    if keys.contains tier then none else
+      some s!"required entry {name} names {tier}, which is not a tier that runs in CI"
 
 /-- The required list itself: it names an entry in every tier that runs in CI,
 and only such tiers, so that an emptied or truncated list is a problem rather
 than a check that passes on nothing. -/
 def requiredProblems (required : List (String × String)) : List String :=
-  ciTierKeys.filterMap (fun tier =>
-    if required.any (·.2 == tier) then none else some s!"no required entry runs in {tier}") ++
-  required.filterMap fun (name, tier) =>
-    if ciTierKeys.contains tier then none else
-      some s!"required entry {name} names {tier}, which is not a tier that runs in CI"
+  requiredProblemsScoped true CiJob.all required
 
 /-- Each required entry is load-bearing: with it removed, or moved to the
 manual tier, the coverage check fails. -/
@@ -227,26 +258,45 @@ def mutationProblems (entries : List Entry) (required : List (String × String))
       some s!"moving required entry {name} to the manual tier passes the coverage check"
     else none
 
+/-- Every check of the scoped self-test that reads no file. -/
+def selfTestProblemsScoped (hasPrimary : Bool) (ownedJobs : List CiJob)
+    (entries : List Entry) (required : List (String × String))
+    (workflows : List (String × String)) : List String :=
+  problemsScoped entries ownedJobs workflows ++
+    requiredProblemsScoped hasPrimary ownedJobs required ++
+    coverageProblems entries required ++
+    mutationProblems entries required
+
 /-- Every check of the self-test that reads no file. -/
 def selfTestProblems (entries : List Entry) (required : List (String × String))
     (workflows : List (String × String)) : List String :=
-  problems entries workflows ++ requiredProblems required ++ coverageProblems entries required ++
-    mutationProblems entries required
+  selfTestProblemsScoped true CiJob.all entries required workflows
 
-/-- The primary self-test `ixtests-registry`. -/
-def selfTest (entries : List Entry) (required : List (String × String)) : IO UInt32 := do
+/-- Scoped registry self-test (e.g. `ixtests-registry` or `ixvmtests-registry`). -/
+def selfTestScoped (label : String) (hasPrimary : Bool) (ownedJobs : List CiJob)
+    (entries : List Entry) (required : List (String × String)) : IO UInt32 := do
   let workflows ← workflowFiles.mapM fun f => do pure (f.toString, ← IO.FS.readFile f)
-  let ps := selfTestProblems entries required workflows
-  for p in ps do IO.eprintln s!"[ixtests-registry] {p}"
+  let ps := selfTestProblemsScoped hasPrimary ownedJobs entries required workflows
+  for p in ps do IO.eprintln s!"[{label}] {p}"
   if ps.isEmpty then
-    IO.println s!"[ixtests-registry] {entries.length} entries, {required.length} required; \
+    IO.println s!"[{label}] {entries.length} entries, {required.length} required; \
       CI jobs and workflows agree"
     return 0
   return 1
 
+/-- The primary self-test `ixtests-registry`. -/
+def selfTest (entries : List Entry) (required : List (String × String)) : IO UInt32 :=
+  selfTestScoped "ixtests-registry" true CiJob.all entries required
+
+/-- The registry with its scoped self-test in front. -/
+def withSelfTestScoped (label : String) (tier : Tier) (hasPrimary : Bool)
+    (ownedJobs : List CiJob) (entries : List Entry)
+    (required : List (String × String)) : List Entry :=
+  ⟨label, tier, .runner (selfTestScoped label hasPrimary ownedJobs entries required)⟩ :: entries
+
 /-- The registry with its own self-test in front. -/
 def withSelfTest (entries : List Entry) (required : List (String × String)) : List Entry :=
-  ⟨"ixtests-registry", .primary, .runner (selfTest entries required)⟩ :: entries
+  withSelfTestScoped "ixtests-registry" .primary true CiJob.all entries required
 
 structure Options where
   names : List String := []
@@ -302,12 +352,9 @@ def runEntry (getEnv : IO Lean.Environment) (e : Entry) : IO UInt32 := do
   | .runner run => run
   | .env run => run (← getEnv)
 
-/-- Run the selected entries; `required` lists the entries that must stay in
-their tier (checked by `ixtests-registry`), and `loadEnv` is `get_env!` of
-`Tests/Main.lean`, run at most once. -/
-def run (registry : List Entry) (required : List (String × String))
-    (loadEnv : IO Lean.Environment) (args : List String) : IO UInt32 := do
-  let entries := withSelfTest registry required
+/-- Internal dispatch shared by `run`, `runScoped`, and `runManual`. -/
+private def runEntries (entries : List Entry) (loadEnv : IO Lean.Environment)
+    (args : List String) : IO UInt32 := do
   let o ← match parseArgs args {} with
     | .ok o => pure o
     | .error msg => IO.eprintln s!"error: {msg}"; return 2
@@ -347,6 +394,27 @@ def run (registry : List Entry) (required : List (String × String))
   IO.println s!"[ixtests] {selected.length - failed.size} of {selected.length} passed\
     {if failed.isEmpty then "" else s!"; failed: {", ".intercalate failed.toList}"}"
   return first
+
+/-- Run selected entries for a binary that owns `ownedJobs` (and `primary` when
+`hasPrimary`). Prepends its registry self-test at `selfTestTier`. -/
+def runScoped (selfTestName : String) (selfTestTier : Tier)
+    (hasPrimary : Bool) (ownedJobs : List CiJob)
+    (registry : List Entry) (required : List (String × String))
+    (loadEnv : IO Lean.Environment) (args : List String) : IO UInt32 :=
+  runEntries (withSelfTestScoped selfTestName selfTestTier hasPrimary ownedJobs registry required)
+    loadEnv args
+
+/-- Run selected entries when one binary owns every `CiJob`. -/
+def run (registry : List Entry) (required : List (String × String))
+    (loadEnv : IO Lean.Environment) (args : List String) : IO UInt32 :=
+  runScoped "ixtests-registry" .primary true CiJob.all registry required loadEnv args
+
+/-- Run a manual-only benchmark/corpus binary (`IxManualTests`). With no
+arguments, lists all available manual entries rather than failing on an empty
+`primary` tier. -/
+def runManual (registry : List Entry) (loadEnv : IO Lean.Environment)
+    (args : List String) : IO UInt32 :=
+  runEntries registry loadEnv (if args.isEmpty then ["--list"] else args)
 
 
 /-! Selection, checked at elaboration on a small registry. -/

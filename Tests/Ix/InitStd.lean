@@ -243,12 +243,16 @@ def fidelityRows (report : String) : Except String Nat := do
     throw s!"{totalFailures} failure(s); phases not passed: {", ".intercalate notPassed.toList}"
   return phases.size
 
-/-- `fidelity-initstd`. -/
+/-- `fidelity-initstd`. Reuses `keptArtifact` (compiled and digest-verified by
+`initstd-reference`) when present so CI does not compile Init+Std twice. -/
 def fidelity : IO UInt32 := do
   let dir ← IO.FS.createTempDir
   try
     let reportPath := dir / "validate-report.json"
-    let out ← runIx #["validate-lean", source, "--report", reportPath.toString]
+    let mut args := #["validate-lean", source, "--report", reportPath.toString, "--workers", "32"]
+    if ← keptArtifact.pathExists then
+      args := args ++ #["--ixe", keptArtifact.toString]
+    let out ← runIx args
     for l in linesWith out.stdout ["[validate-lean]   ", "RESULT:"] do
       IO.println l
     let content ← try IO.FS.readFile reportPath catch _ => pure ""

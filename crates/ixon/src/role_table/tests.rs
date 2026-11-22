@@ -84,7 +84,7 @@ fn unhex(hex: &str) -> Vec<u8> {
 #[test]
 fn lean_interoperability_both_directions() {
   let lines: Vec<_> =
-    include_str!("../../../../Tests/Fixtures/ixon-v4/role-table.tsv")
+    include_str!("../../../../Tests/Fixtures/ixon/role-table.tsv")
       .lines()
       .filter(|l| !l.starts_with('#') && !l.is_empty())
       .collect();

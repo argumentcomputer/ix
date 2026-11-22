@@ -1,41 +1,40 @@
 import Tests.Ix.Kernel.BuildPrimitives
-import Tests.Ix.IxonV4Paths
+import Tests.Ix.IxonPaths
 import Ix.CompileCertified
 import Ix.EnvScope
 
 /-!
-  Export and verify the Ixon v4 primitive dependency closure and addresses.
+  Export and verify the Ixon primitive dependency closure and addresses.
 -/
 
 open Tests.Ix.Kernel.BuildPrimitives
 
 def usage : String :=
-  s!"usage: lake exe ixon-v4-primitives
+  s!"usage: lake exe ixon-primitives
 
 Compile the primitive dependency closure of the installed Lean environment (its
 selected closure, self-contained for the certified checker),
 write its canonical primitive addresses and the compiled closure to the scratch
-directory, and check the addresses against Tests/Fixtures/ixon-v4/primitives.tsv.
+directory, and check the addresses against Tests/Fixtures/ixon/primitives.tsv.
 
-{Tests.IxonV4.scratchUsage}"
+{Tests.IxonPaths.scratchUsage}"
 
 def main (args : List String) : IO Unit := do
   if args.contains "--help" then
     IO.println usage
     return
-  let dir ← Tests.IxonV4.scratchDir
+  let dir ← Tests.IxonPaths.scratchDir
   IO.FS.createDirAll dir
-  let tsvPath := Tests.IxonV4.primitivesTsv dir
+  let tsvPath := Tests.IxonPaths.primitivesTsv dir
   let leanEnv ← get_env!
   -- the selected closure, self-contained for IxC (recursors, literal support):
-  -- `ixon-v4-tests --primitives` validates it
-  let needed : Lean.NameSet := (Ix.EnvScope.collectSelectedDeps leanEnv
-    (kernelPrimitives.map parseNameToLean).toList).foldl (fun s (n, _) => s.insert n) {}
-  let constants := leanEnv.constants.toList.filter fun (name, _) => needed.contains name
+  -- `ixon-tests --primitives` validates it
+  let constants := Ix.EnvScope.collectSelectedDeps leanEnv
+    (kernelPrimitives.map parseNameToLean).toList
   IO.println s!"Compiling {constants.length} primitive dependency declarations"
   let out ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv constants)
   let env := out.env
-  let mut text := s!"# Ixon v{Ixon.Env.VERSION} canonical primitive addresses\n"
+  let mut text := s!"# {Ixon.wireFormatId} canonical primitive addresses\n"
   for name in kernelPrimitives do
     let some named := env.named[parseIxName name]?
       | throw <| IO.userError s!"missing primitive {name}"
@@ -44,11 +43,11 @@ def main (args : List String) : IO Unit := do
   let bytes ← match Ixon.serEnv env with
     | .ok bytes => pure bytes
     | .error error => throw <| IO.userError error
-  IO.FS.writeBinFile (Tests.IxonV4.primitivesIxe dir) bytes
+  IO.FS.writeBinFile (Tests.IxonPaths.primitivesIxe dir) bytes
   IO.println s!"Exported {kernelPrimitives.size} primitive addresses and \
     {env.consts.size} constants to {dir}"
   -- The checked-in table must be this output: it is the record the Rust
-  -- `PrimAddrs::new`, `Ix/Tc/Primitive.lean` and the IxVM literals mirror.
-  unless (← IO.FS.readFile "Tests/Fixtures/ixon-v4/primitives.tsv") == text do
-    throw <| IO.userError s!"Tests/Fixtures/ixon-v4/primitives.tsv differs from the live \
+  -- `PrimAddrs::new`, `Ix/PrimAddrs.lean` and the IxVM literals mirror.
+  unless (← IO.FS.readFile "Tests/Fixtures/ixon/primitives.tsv") == text do
+    throw <| IO.userError s!"Tests/Fixtures/ixon/primitives.tsv differs from the live \
       addresses; copy {tsvPath} over it and update `PrimAddrs::new`"

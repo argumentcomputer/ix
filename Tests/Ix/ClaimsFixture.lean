@@ -1,11 +1,10 @@
 module
 
 public import Ix.ClaimContext
-public import Tests.Ix.Claim
 
 public section
 
-namespace Tests.ClaimsV4
+namespace Tests.ClaimsFixture
 
 def fixtures : Array (String × Ix.Claim) :=
   let a := Address.blake3 "a".toUTF8
@@ -30,7 +29,7 @@ def mayAssume (claim : Ix.Claim) : Bool :=
   Ix.Claim.variantMayAssume (Ix.Claim.variantOf claim)
 
 def fixtureText : String := Id.run do
-  let mut text := s!"# Ixon v{Ixon.Env.VERSION} claims: name, BLAKE3, canonical bytes\n"
+  let mut text := s!"# Ixon claims (object format {Ixon.Env.OBJECT_FORMAT}): name, BLAKE3, canonical bytes\n"
   for (name, claim) in fixtures do
     text := text ++ s!"{name}\t{Ix.Claim.commit claim}\t{hexOfBytes (Ix.Claim.ser claim)}\n"
   return text
@@ -54,10 +53,10 @@ def checkRetired : IO Unit := do
       throw <| IO.userError s!"resource proof: unexpected error {e}"
 
 def run : IO Unit := do
-  let expected ← IO.FS.readFile "Tests/Fixtures/ixon-v4/claims.tsv"
+  let expected ← IO.FS.readFile "Tests/Fixtures/ixon/claims.tsv"
   unless expected == fixtureText do
     throw <| IO.userError "claim fixture differs from its producer; regenerate it with \
-      `lake exe ixon-v4-tests --export-fixtures`"
+      `lake exe ixon-tests --export-fixtures`"
   for (_, claim) in fixtures do
     let bytes := Ix.Claim.ser claim
     unless (Ix.Claim.de bytes).toOption == some claim do throw <| IO.userError "claim roundtrip"
@@ -105,10 +104,8 @@ def run : IO Unit := do
     unless (Ixon.Proof.de (proofBytes.set! 1 3)).toOption.isNone do
       throw <| IO.userError "proof with version 3 object format accepted"
   checkRetired
-  let result ← LSpec.lspecIO (.ofList [("claims", Tests.Claim.suite)]) []
-  unless result == 0 do throw <| IO.userError "existing claim tests failed"
-  IO.println s!"Ixon v{Ixon.Env.VERSION} claims: fixtures, strict envelopes, proof wrappers, and the retired resource claim passed"
+  IO.println s!"Ixon claims (object format {Ixon.Env.OBJECT_FORMAT}): fixtures, strict envelopes, proof wrappers, and the retired resource claim passed"
 
-end Tests.ClaimsV4
+end Tests.ClaimsFixture
 
 end

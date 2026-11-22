@@ -98,6 +98,8 @@ structure Case where
   exercises : Option String := none
   /-- Exact rounded FFT-work surrogate of the accepted execution. -/
   expectedFftCost : Option Nat := none
+  /-- Upper-bound rounded FFT-work budget of the accepted execution. -/
+  maxFftCost : Option Nat := none
   witness : ClaimWitness
 
 /-! ## Binder data for hand-built records
@@ -140,51 +142,140 @@ def renameClaim (a t : Address → Address) : Ix.Claim → Ix.Claim
   | .catalog members => .catalog (t members)
   | .binding spec b => .binding spec (a b)
 
+/-- Whether a `LazyConstant` may lack its binder-data section (`c.binders.isEmpty`).
+A canonical Ixon v5 constant with an empty binder section ends with the byte `0x00`
+(`numBinders = 0`). When `cache` is populated we check `needsSection c` directly; when
+`cache` is `none` (an unparsed slice), a non-zero trailing byte guarantees `c.binders`
+is non-empty (or the bytes are non-canonical), avoiding deserialization altogether. -/
+private def mayNeedSection (lc : Ixon.LazyConstant) : Bool :=
+  match lc.cache with
+  | some c => needsSection c
+  | none => lc.len > 0 && lc.off + lc.len ≤ lc.buf.size && lc.buf[lc.off + lc.len - 1]! == 0
+
 /-- `env`, `claim` and `trees` with every hand-built record that needs one given
 its section. Nothing changes when no record needs one. -/
 def withRecordSections (env : Ixon.Env) (claim : Ix.Claim)
     (trees : Std.HashMap Address Ix.AssumptionTree) :
     Except String (Ixon.Env × Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
-  -- the records whose bytes are their canonical encoding: a hand-crafted encoding is left as it is
-  let mut store : Std.HashMap Address Ixon.Constant := {}
+  -- Pass 1: find canonical records that actually need a binder-data section.
+  -- Check `mayNeedSection` / `needsSection` before calling `serConstant`, so compiled
+  -- environments return immediately without deserializing or re-serializing `env.consts`.
+  let mut pending : Array (Address × Ixon.Constant) := #[]
+  let mut pendingSet : Std.HashSet Address := {}
   for (a, lc) in env.consts do
+    if !mayNeedSection lc then continue
     if let some c := lc.get? then
-      if Ixon.serConstant c == lc.rawBytes then store := store.insert a c
-  let pending := store.toArray.filter (needsSection ·.2)
+      if needsSection c && Ixon.serConstant c == lc.rawBytes then
+        pending := pending.push (a, c)
+        pendingSet := pendingSet.insert a
   if pending.isEmpty then return (env, claim, trees)
-  let support := store.toArray.filter (!needsSection ·.2)
+  -- Build `support` from only the transitive dependency closure of `pending` (plus any
+  -- recursor records in `env.consts` for inductive blocks reached by that closure, so IxC
+  -- installs those blocks with their recursors instead of passing all of `env.consts`).
+  let drain (closed : Std.HashMap Address Ixon.Constant) (worklist : Array Address) :
+      Std.HashMap Address Ixon.Constant := Id.run do
+    let mut closed := closed
+    let mut wl := worklist
+    while !wl.isEmpty do
+      let a := wl.back!
+      wl := wl.pop
+      if closed.contains a then continue
+      let some lc := env.consts[a]? | continue
+      let some c := lc.get? | continue
+      if Ixon.serConstant c != lc.rawBytes then continue
+      closed := closed.insert a c
+      for r in closureEdgesOf a c do
+        if !closed.contains r then wl := wl.push r
+    return closed
+  let mut closed : Std.HashMap Address Ixon.Constant := {}
+  let mut initialSeeds : Array Address := #[]
+  for (a, c) in pending do
+    closed := closed.insert a c
+    for r in closureEdgesOf a c do
+      initialSeeds := initialSeeds.push r
+  closed := drain closed initialSeeds
+  let mut addedRecs := true
+  while addedRecs do
+    addedRecs := false
+    let mut indBlocks : Std.HashSet Address := {}
+    for (a, c) in closed do
+      if let .muts ms := c.info then
+        if ms.any (fun | .indc _ => true | _ => false) then
+          indBlocks := indBlocks.insert a
+    if indBlocks.isEmpty then break
+    let mut recSeeds : Array Address := #[]
+    for (a, lc) in env.consts do
+      if closed.contains a then continue
+      let isRecCandidate := match lc.cache with
+        | some c => match c.info with
+          | .recr _ => true
+          | .muts ms => ms.any (fun | .recr _ => true | _ => false)
+          | _ => false
+        | none => match lc.peekTag with
+          | .ok .recr | .ok .muts => true
+          | _ => false
+      if !isRecCandidate then continue
+      let some c := lc.get? | continue
+      let isRec := match c.info with
+        | .recr _ => true
+        | .muts ms => ms.any (fun | .recr _ => true | _ => false)
+        | _ => false
+      if !isRec then continue
+      let pointsToInd := c.refs.any fun r =>
+        indBlocks.contains r ||
+        match env.getConst? r with
+        | some rc => match rc.info with
+          | .iPrj p => indBlocks.contains p.block
+          | _ => false
+        | none => false
+      if pointsToInd then
+        recSeeds := recSeeds.push a
+    if !recSeeds.isEmpty then
+      closed := drain closed recSeeds
+      addedRecs := true
+  let mut support : Array (Address × Ixon.Constant) := #[]
+  for (a, c) in closed do
+    unless pendingSet.contains a do
+      support := support.push (a, c)
   let sections ← _root_.IxVM.RecordSections.sectionsOf pending support env.blobs env.anonHints
     (← _root_.IxVM.RecordSections.chosenOf env) (taint := false)
-  -- the records to rewrite: those needing a section, and every record naming one
-  let mut affected : Std.HashSet Address := pending.foldl (fun s (a, _) => s.insert a) {}
+  -- The records to rewrite: those needing a section, and every canonical record
+  -- transitively naming one. Non-canonical records naming one keep its old address alive.
+  let mut affected : Std.HashSet Address := pendingSet
+  let mut affectedStore : Std.HashMap Address Ixon.Constant :=
+    pending.foldl (fun m (a, c) => m.insert a c) {}
+  let mut stillNamed : Std.HashSet Address := {}
+  let mut nonCanonical : Std.HashSet Address := {}
   let mut grown := true
   while grown do
     grown := false
-    for (a, c) in store do
-      if affected.contains a then continue
-      if (Ix.Compile.BinderData.targets c).any affected.contains then
-        affected := affected.insert a
-        grown := true
-  let order ← Ix.Compile.BinderData.bottomUp store
-    (store.toArray.filter (affected.contains ·.1))
+    for (a, lc) in env.consts do
+      if affected.contains a || nonCanonical.contains a then continue
+      match lc.get? with
+      | none =>
+        nonCanonical := nonCanonical.insert a
+      | some c =>
+        if (Ix.Compile.BinderData.targets c).any affected.contains then
+          if Ixon.serConstant c == lc.rawBytes then
+            affected := affected.insert a
+            affectedStore := affectedStore.insert a c
+            grown := true
+          else
+            nonCanonical := nonCanonical.insert a
+            for x in Ix.Compile.BinderData.targets c do stillNamed := stillNamed.insert x
+  let order ← Ix.Compile.BinderData.bottomUp affectedStore affectedStore.toArray
   let mut renamed : Std.HashMap Address Address := {}
   let mut consts := env.consts
   for a in order do
     unless affected.contains a do continue
-    let some c := store[a]? | continue
+    let some c := affectedStore[a]? | continue
     let rename (x : Address) : Address := renamed.getD x x
-    let binders := if needsSection c then sections.getD a #[] else c.binders
+    let binders := if pendingSet.contains a then sections.getD a #[] else c.binders
     let c' := Ix.Compile.BinderData.rewriteRecord rename c binders
     let bytes := Ixon.serConstant c'
     let a' := Address.blake3 bytes
     consts := consts.insert a' { buf := bytes, len := bytes.size, cache := some c' }
     renamed := renamed.insert a a'
-  -- the old records go, except those a hand-crafted record (left as it is) still names
-  let mut stillNamed : Std.HashSet Address := {}
-  for (a, lc) in env.consts do
-    unless store.contains a do
-      if let some c := lc.get? then
-        for x in Ix.Compile.BinderData.targets c do stillNamed := stillNamed.insert x
   for (a, a') in renamed do
     unless a == a' || stillNamed.contains a do consts := consts.erase a
   let rename (x : Address) : Address := renamed.getD x x
@@ -264,12 +355,9 @@ def modeledRecursorsRefused : Bool := false
 /-- The refusal's message. -/
 def modeledRecursorRefusal : String := "a recursor of a mutual or nested family is refused"
 
-/-- `c`, a case that the program accepts when it checks families, as the program in force
-decides it: its closure holds a recursor of a mutual or nested family. -/
-def Case.throughModeledRecursor (c : Case) : Case :=
-  if modeledRecursorsRefused then
-    { c with accept := false, rejectsWith := some modeledRecursorRefusal, exercises := none }
-  else c
+/-- Retained compatibility identity helper for suites outside this batch (`ModelAdvice`,
+`IndVariations`); recursors of mutual and nested families are no longer refused. -/
+def Case.throughModeledRecursor (c : Case) : Case := c
 
 /-! ## The case file
 
@@ -298,13 +386,15 @@ added and then dropped. A file of about `limit` stream elements, or of
 `maxCases` cases, is closed and runs in a host process at once, up to `jobs`
 at a time, while the suite builds the next cases. -/
 
-/-- The case file being written: its path, handle, cases and stream elements. -/
+/-- The case file being written: its path, handle, cases and stream elements.
+Each entry in `fftPins` is `(label, cost, exact)`, where `exact = true` checks
+`actual == cost` and `exact = false` checks `actual ≤ cost`. -/
 structure OpenFile where
   path : System.FilePath
   handle : IO.FS.Handle
   cases : Nat
   size : Nat
-  fftPins : Array (String × Nat) := #[]
+  fftPins : Array (String × Nat × Bool) := #[]
 
 structure Runner where
   suite : String
@@ -317,7 +407,7 @@ structure Runner where
   limit : Nat
   maxCases : Nat
   current : IO.Ref (Option OpenFile)
-  tasks : IO.Ref (Array (System.FilePath × Array (String × Nat) × Task (Except IO.Error IO.Process.Output)))
+  tasks : IO.Ref (Array (System.FilePath × Array (String × Nat × Bool) × Task (Except IO.Error IO.Process.Output)))
   labels : IO.Ref (Std.HashSet String)
   broken : IO.Ref Nat
 
@@ -356,7 +446,7 @@ def Runner.fail (r : Runner) (message : String) : IO Unit := do
 
 /-- Write `c` to the current case file. -/
 def Runner.add (r : Runner) (c : Case) : IO Unit := do
-  if c.expectedFftCost.isSome && !c.accept then
+  if (c.expectedFftCost.isSome || c.maxFftCost.isSome) && !c.accept then
     return ← r.fail s!"FFT pin on rejection case {c.label}"
   if (← r.labels.get).contains c.label then
     return ← r.fail s!"two cases are labelled {c.label}"
@@ -370,8 +460,11 @@ def Runner.add (r : Runner) (c : Case) : IO Unit := do
       pure { path, handle, cases := 0, size := 0 }
   file.handle.write c.encode
   let fftPins := match c.expectedFftCost with
-    | some cost => file.fftPins.push (c.label, cost)
+    | some cost => file.fftPins.push (c.label, cost, true)
     | none => file.fftPins
+  let fftPins := match c.maxFftCost with
+    | some budget => fftPins.push (c.label, budget, false)
+    | none => fftPins
   let file := { file with cases := file.cases + 1, size := file.size + c.size, fftPins }
   r.current.set (some file)
   if file.size ≥ r.limit || file.cases ≥ r.maxCases then r.flush
@@ -385,9 +478,12 @@ def Runner.build (r : Runner) (c : Except String Case) : IO Unit :=
 /-- Run the cases `body` adds through the IxVM program (`ixvm-proof test`).
 Every case runs; the result is `0` when every case was built and every verdict
 and FFT cost are the expected ones. The host reports verdicts and execution
-times; Lean computes and checks costs from the raw statistics. -/
-def withRunner (suite : String) (body : Runner → IO Unit) (jobs : Nat := 8)
-    (limit : Nat := 4_000_000) (maxCases : Nat := 200) (circuit : Option Bool := none) :
+times; Lean computes and checks costs from the raw statistics.
+`ixvm-proof test` parallelizes cases internally with rayon, so default chunking
+keeps medium suites in one `.ixt` batch (loading `ixvm.ixa` once) while bounding
+peak memory for giant suites. -/
+def withRunner (suite : String) (body : Runner → IO Unit) (jobs : Nat := 2)
+    (limit : Nat := 64_000_000) (maxCases : Nat := 10_000) (circuit : Option Bool := none) :
     IO UInt32 := do
   let artifact ← programArtifact
   let host ← programHost
@@ -427,13 +523,19 @@ def withRunner (suite : String) (body : Runner → IO Unit) (jobs : Nat := 8)
       unless pins.isEmpty do
         try
           let raw ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (path.withExtension "stats.json")))
-          for (label, expected) in pins do
+          for (label, expected, exact) in pins do
             let measurements ← IO.ofExcept (raw.getObjVal? label >>= Aiur.ExecutionMeasurements.fromJson)
             let actual := (Aiur.computeStats measurements).roundedFftCost
-            IO.println s!"FFT {label}: {actual} (expected {expected})"
-            unless actual == expected do
-              failed := failed + 1
-              IO.eprintln s!"FAILED {label}: FFT cost {actual}, expected {expected}"
+            if exact then
+              IO.println s!"FFT {label}: {actual} (expected {expected})"
+              unless actual == expected do
+                failed := failed + 1
+                IO.eprintln s!"FAILED {label}: FFT cost {actual}, expected {expected}"
+            else
+              IO.println s!"FFT {label}: {actual} (budget ≤ {expected})"
+              unless actual ≤ expected do
+                failed := failed + 1
+                IO.eprintln s!"FAILED {label}: FFT cost {actual} exceeds budget {expected}"
         catch e =>
           failed := failed + 1
           IO.eprintln s!"[{suite}] {path}: invalid or missing FFT statistics: {e}"
@@ -450,20 +552,48 @@ def withRunner (suite : String) (body : Runner → IO Unit) (jobs : Nat := 8)
 /-- A case, built when it is written. -/
 abbrev Builder := Unit → Except String Case
 
-/-- Run `cases`, building each as it is written. -/
-def runCases (suite : String) (cases : Array Builder) (jobs : Nat := 8)
+/-- Run `cases`, building them concurrently via bounded `IO.asTask` and writing each
+in deterministic order so witnesses are dropped as they are flushed. -/
+def runCases (suite : String) (cases : Array Builder) (jobs : Nat := 2)
     (circuit : Option Bool := none) : IO UInt32 :=
   withRunner suite (jobs := jobs) (circuit := circuit) fun r => do
     IO.println s!"[{suite}] {cases.size} claims through the IxVM program"
     let trace := (← IO.getEnv "IX_CASE_TRACE").isSome
-    for (build, i) in cases.zipIdx do
+    let buildOne (i : Nat) (build : Builder) : IO (Except String Case) := do
       if trace then IO.eprintln s!"[{suite}] building case {i}"
       let t0 ← IO.monoMsNow
       let c ← IO.lazyPure fun _ => build ()
       if trace then
         let label := match c with | .ok c => c.label | .error e => s!"(not built: {e})"
         IO.eprintln s!"[{suite}] built case {i} in {(← IO.monoMsNow) - t0} ms: {label}"
-      r.build c
+      return c
+    let buildJobs := if trace then 1 else max 1 (min 16 cases.size)
+    if buildJobs ≤ 1 then
+      for (build, i) in cases.zipIdx do
+        r.build (← buildOne i build)
+    else
+      let mut active : Array (Option (Task (Except IO.Error (Except String Case)))) :=
+        Array.replicate buildJobs none
+      try
+        for i in [:buildJobs] do
+          let b := cases[i]!
+          active := active.set! i (some (← IO.asTask (prio := .dedicated) (buildOne i b)))
+        let mut next := buildJobs
+        for i in [:cases.size] do
+          let slot := i % buildJobs
+          let some task := active[slot]! | continue
+          active := active.set! slot none
+          let c ← IO.ofExcept (← IO.wait task)
+          if next < cases.size then
+            let idx := next
+            let b := cases[idx]!
+            active := active.set! slot (some (← IO.asTask (prio := .dedicated) (buildOne idx b)))
+            next := next + 1
+          r.build c
+      finally
+        for t? in active do
+          if let some t := t? then
+            discard (IO.wait t)
 
 end Tests.Ix.IxVM
 

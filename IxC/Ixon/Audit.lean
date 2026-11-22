@@ -122,10 +122,13 @@ csimp 2`). Modes in records (the section nodes' modes, the let header's mode, th
 definition's assertions and the constructor's field modes, with their codes
 and `Constant.modesCanonical`) took the closure from 398 functions and 55
 inherited externs to 437 and 57. -/
+-- Resolving `._at_.<caller>.spec_<n>` specializations and following `implemented_by`/`csimp`
+-- targets in `Runtime.lean` walks the underlying specialized `Init`/`Std` sources (437 -> 494
+-- compiled functions, inherited externs 57 -> 58, unsafe 2 -> 7; zero unruled findings).
 /-- info: runtime closure of [Ixon.serUniv, Ixon.deUniv, Ixon.serExpr, Ixon.deExpr,
 Ixon.serConstant, Ixon.deConstant, Ixon.deConstantExact, Ixon.Bounded.deUniv,
-Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 437 compiled functions;
-inherited externs 57, implemented_by 0, unsafe 2, csimp 2; ruled csimp 2 -/
+Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 494 compiled functions;
+inherited externs 58, implemented_by 0, unsafe 7, csimp 2; ruled csimp 2 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Audit.operations #[`Init, `Std] Ixon.Audit.rulings
 

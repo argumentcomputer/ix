@@ -283,7 +283,7 @@ holds the end-to-end checks on Init+Std; `--tier landing` selects it.
   `decompile` require 128 GB. `ixvm` checks typing and
   [evaluation claims](docs/eval-claims.md) through Aiur execution and
   generated-backend parity, without proving
-- `lake exe ixon-v4-tests` runs the Ixon v4 format suite (golden bytes, FFI, VM, text grammar, resource admission, claims, and the fixtures in `Tests/Fixtures/ixon-v4/`); `lake exe ixon-v4-primitives` regenerates the primitive closure and checks `primitives.tsv` against it; both keep their scratch files in `$IX_IXON_V4_DIR` (default `/tmp`)
+- `lake exe ixon-tests` runs the Ixon format suite (golden bytes, FFI, text grammar, resource contracts, claims, and the fixtures in `Tests/Fixtures/ixon/`); `lake exe ixon-primitives` regenerates the primitive closure and checks `primitives.tsv` against it; both keep their scratch files in `$IX_IXON_TEST_DIR` (default `/tmp`)
 - `lake build --wfail IxSharingVerify` builds the proofs of the canonical sharing construction (`IxSharingVerify`) and their audits; `lake lint` builds it too. The Ixon codec proofs, including TagN's, build with `lake -d IxC build --wfail`
 
 **Rust tests:** `cargo test` or `cargo nextest run`

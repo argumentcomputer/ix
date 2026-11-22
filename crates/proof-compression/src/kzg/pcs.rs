@@ -332,6 +332,13 @@ impl KzgProverData {
   pub fn read_checkpoint_file(
     path: impl AsRef<std::path::Path>,
   ) -> Result<Self, ark_serialize::SerializationError> {
+    Self::read_checkpoint_file_with_chunk(path, super::coefficients::CHUNK)
+  }
+
+  fn read_checkpoint_file_with_chunk(
+    path: impl AsRef<std::path::Path>,
+    chunk: usize,
+  ) -> Result<Self, ark_serialize::SerializationError> {
     use ark_serialize::SerializationError;
     use std::{
       fs::File,
@@ -372,10 +379,11 @@ impl KzgProverData {
         if len != 1u64 << log {
           return Err(SerializationError::InvalidData);
         }
-        columns.push(Column::index(
+        columns.push(Column::index_with_chunk(
           &mut reader,
           file.clone(),
           1usize << log_size,
+          chunk,
         )?);
       }
       matrices
@@ -750,6 +758,14 @@ impl KzgPcs {
   }
 
   fn msm(&self, coeffs: &[Fr]) -> G1Projective {
+    // Bound digit/bucket scratch and expose point-range parallelism in
+    // addition to the MSM implementation's small number of scalar windows.
+    const CHUNK: usize = 1 << 18;
+    self.msm_with_chunk(coeffs, CHUNK)
+  }
+
+  fn msm_with_chunk(&self, coeffs: &[Fr], chunk: usize) -> G1Projective {
+    assert!(chunk > 0);
     assert!(
       coeffs.len() <= self.verifier.max_trace_len(),
       "polynomial length {} exceeds the trace cap ({})",
@@ -789,17 +805,14 @@ impl KzgPcs {
       reason = "small MSM",
       "KZG commitment using CPU MSM"
     );
-    // Bound digit/bucket scratch and expose point-range parallelism in
-    // addition to the MSM implementation's small number of scalar windows.
-    const CHUNK: usize = 1 << 18;
     let concurrency = current_num_threads().div_ceil(8).min(4);
     let mut result = G1Projective::zero();
-    for (batch, values) in coeffs.chunks(CHUNK * concurrency).enumerate() {
+    for (batch, values) in coeffs.chunks(chunk * concurrency).enumerate() {
       let partial: G1Projective = values
-        .par_chunks(CHUNK)
+        .par_chunks(chunk)
         .enumerate()
         .map(|(i, scalars)| {
-          let start = batch * CHUNK * concurrency + i * CHUNK;
+          let start = batch * chunk * concurrency + i * chunk;
           G1Projective::msm(
             &self.prover_srs().g1[start..start + scalars.len()],
             scalars,
@@ -1073,6 +1086,22 @@ impl KzgPcs {
     matrix: RowMajorMatrix<Scalar>,
     spill_dir: &std::path::Path,
   ) -> std::io::Result<(KzgCommitment, KzgProverData)> {
+    self.commit_matrix_spilled_with_chunk(
+      domain,
+      matrix,
+      spill_dir,
+      super::coefficients::CHUNK,
+    )
+  }
+
+  #[cfg(not(feature = "cuda"))]
+  pub(super) fn commit_matrix_spilled_with_chunk(
+    &self,
+    domain: Radix2Coset,
+    matrix: RowMajorMatrix<Scalar>,
+    spill_dir: &std::path::Path,
+    chunk: usize,
+  ) -> std::io::Result<(KzgCommitment, KzgProverData)> {
     assert_eq!(matrix.height(), domain.size(), "matrix height != domain size");
     let width = matrix.width();
     let height = domain.size();
@@ -1097,7 +1126,7 @@ impl KzgPcs {
           spill_file.insert(created)
         },
       };
-      Column::spill_to_disk(file, &mut spill_offset, coeffs)
+      Column::spill_to_disk_with_chunk(file, &mut spill_offset, coeffs, chunk)
     };
 
     if width == 1 {
@@ -1148,12 +1177,13 @@ impl KzgPcs {
   /// Interpolate, slice, commit and spill a quotient polynomial to a temporary
   /// disk file in `spill_dir`, dropping the resident coefficients immediately.
   #[cfg(not(feature = "cuda"))]
-  pub(crate) fn commit_quotient_spilled(
+  pub(super) fn commit_quotient_spilled_with_chunk(
     &self,
     quotient_domain: Radix2Coset,
     evaluations: RowMajorMatrix<Scalar>,
     quotient_degree: usize,
     spill_dir: &std::path::Path,
+    chunk: usize,
   ) -> std::io::Result<(KzgCommitment, KzgProverData)> {
     let big = quotient_domain.size();
     debug_assert_eq!(big % quotient_degree, 0);
@@ -1193,10 +1223,11 @@ impl KzgPcs {
                   spill_file.insert(created)
                 },
               };
-              columns.push(Column::spill_to_disk(
+              columns.push(Column::spill_to_disk_with_chunk(
                 file,
                 &mut spill_offset,
                 coeffs,
+                chunk,
               )?);
             }
           },
@@ -2039,8 +2070,8 @@ mod tests {
     let path = directory.join("columns.bin");
     let mut file = std::fs::File::create_new(&path).unwrap();
     let pcs =
-      KzgPcs::new(Arc::new(Srs::unsafe_dev_setup(1 << 17, b"disk-columns")), 2);
-    let domain = pcs.natural_domain_for_degree(1 << 17);
+      KzgPcs::new(Arc::new(Srs::unsafe_dev_setup(1 << 9, b"disk-columns")), 2);
+    let domain = pcs.natural_domain_for_degree(1 << 9);
     let (_, resident) = pcs.commit(vec![(
       domain,
       RowMajorMatrix::new_col(
@@ -2050,7 +2081,9 @@ mod tests {
     let mut bytes = Vec::new();
     resident.write_checkpoint(&mut bytes).unwrap();
     file.write_all(&bytes).unwrap();
-    let disk = KzgProverData::read_checkpoint_file(&path).unwrap();
+    // Chunk size 128 splits the 512-coefficient column across 4 disk chunks.
+    let disk =
+      KzgProverData::read_checkpoint_file_with_chunk(&path, 1 << 7).unwrap();
     let mut roundtrip = Vec::new();
     disk.write_checkpoint(&mut roundtrip).unwrap();
     assert_eq!(bytes, roundtrip);
@@ -2124,9 +2157,11 @@ mod tests {
   #[test]
   fn chunked_commitment_matches_native_msm_with_tail() {
     let pcs =
-      KzgPcs::new(Arc::new(Srs::unsafe_dev_setup(1 << 18, b"chunked-msm")), 4);
+      KzgPcs::new(Arc::new(Srs::unsafe_dev_setup(256, b"chunked-msm")), 4);
     let mut value = Fr::from(17u64);
-    let coefficients: Vec<_> = (0..(2 * (1 << 16) + 3))
+    // 9 full chunks of 16 plus a 3-element tail spans multiple outer batches
+    // (at max concurrency 4, each batch is 64 elements) and parallel chunks.
+    let coefficients: Vec<_> = (0..(9 * 16 + 3))
       .map(|_| {
         value = value.square() + Fr::ONE;
         value
@@ -2137,6 +2172,7 @@ mod tests {
       &coefficients,
     )
     .unwrap();
+    assert_eq!(pcs.msm_with_chunk(&coefficients, 16), expected);
     assert_eq!(pcs.msm(&coefficients), expected);
   }
 

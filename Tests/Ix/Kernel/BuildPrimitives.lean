@@ -105,13 +105,11 @@ def parseNameToLean (s : String) : Lean.Name := Id.run do
   return name
 
 /-- The primitives' selected closure, self-contained for IxC (recursors, literal
-    support), which `lake exe ixon-v4-primitives` compiles for `PrimAddrs`: the
+    support), which `lake exe ixon-primitives` compiles for `PrimAddrs`: the
     binder data the annotator gives a record depends on the records IxC installs
     beside it, so a smaller closure can give a primitive another address. -/
 def primitiveClosure (env : Lean.Environment) : List (Lean.Name × Lean.ConstantInfo) :=
-  let needed : Lean.NameSet := (Ix.EnvScope.collectSelectedDeps env
-    (kernelPrimitives.map parseNameToLean).toList).foldl (fun s (n, _) => s.insert n) {}
-  env.constants.toList.filter fun (name, _) => needed.contains name
+  Ix.EnvScope.collectSelectedDeps env (kernelPrimitives.map parseNameToLean).toList
 
 /-- Parse a dotted string into an `Ix.Name`. -/
 def parseIxName (s : String) : Ix.Name := Id.run do

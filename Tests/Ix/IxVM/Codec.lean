@@ -1,12 +1,12 @@
 import Ix.Commit
-import Tests.Ix.IxonV4
+import Tests.Ix.IxonGolden
 import Tests.Ix.ResourceAddressed
 import Tests.Ix.IxVM.TagN
 
 /-!
 # The IxVM program's Ixon codec and claim boundary
 
-The VM half of `ixon-v4-tests`, which the legacy suite ran through test-only
+The VM half of `ixon-tests`, which the legacy suite ran through test-only
 codec entry points: the program reads expressions and constants as the host
 does, and refuses the claim bytes the host refuses.
 
@@ -14,7 +14,7 @@ Expressions are read as a constant's type (`TagN.rewrite .type`) and constants
 whole, through the differential of `Tests.Ix.IxVM.TagN`: when the host reads
 the constant, a `Reveal` of every field it read must be accepted (so the
 program re-encodes each expression to the host's bytes); when the host refuses
-it, the program must too. The vectors are `ixon-v4-tests`': the golden
+it, the program must too. The vectors are `ixon-tests`': the golden
 expressions with a trailing byte and every truncation, the rejected
 expressions, counted lists cut short, and hand-written declarations of every
 kind.
@@ -61,29 +61,31 @@ def countCases : Array Builder := Id.run do
         ("app-arguments", tag4 7 ++ .mk #[0x10, 0x10]),
         ("lambda-binders", finish (tag4 8 ++ .mk #[0x00]) (.mk #[0x10])),
         ("forall-binders", finish (tag4 9 ++ .mk #[0x00]) (.mk #[0x10]))] do
-      out := out.push (expression s!"codec count {label}-{countLabel}" bytes)
+      out := out.push (differentialExpect accept s!"codec count {label}-{countLabel}"
+        (rewrite .type bytes))
     let axiomPrefix : ByteArray := .mk #[0xd2, 0, 0, 0]
     for (label, bytes) in [
-        ("sharing", finish (axiomPrefix ++ tag0 ++ .mk #[0x10]) (.mk #[0, 0])),
+        ("sharing", finish (axiomPrefix ++ tag0 ++ .mk #[0x10]) (.mk #[0, 0, 0])),
         ("references", finish (axiomPrefix ++ .mk #[0] ++ tag0 ++
-          .mk (Array.replicate 32 0)) (.mk #[0])),
-        ("universes", axiomPrefix ++ .mk #[0, 0] ++ tag0 ++ .mk #[0]),
+          .mk (Array.replicate 32 0)) (.mk #[0, 0])),
+        ("universes", finish (axiomPrefix ++ .mk #[0, 0] ++ tag0 ++ .mk #[0]) (.mk #[0])),
         ("recursor-rules", finish (.mk #[0xd1, 0, 0, 0, 0, 0, 0, 0] ++
-          tag0 ++ .mk #[0, 0x10]) (.mk #[0, 0, 0])),
+          tag0 ++ .mk #[0, 0x10]) (.mk #[0, 0, 0, 0])),
         ("constructors", finish (.mk #[0xc1, 1, 0, 0, 0, 0, 0] ++
-          tag0 ++ .mk #[0, 0, 0, 0, 0, 0]) (.mk #[0, 0, 0])),
+          tag0 ++ .mk #[0, 0, 0, 0, 0, 0]) (.mk #[0, 0, 0, 0])),
         ("mutual-members", finish (tag4 12 ++ .mk #[0, 0x06, 0x05, 0x00, 0x10])
-          (.mk #[0, 0, 0]))] do
-      out := out.push (differential s!"codec count {label}-{countLabel}" bytes)
+          (.mk #[0, 0, 0, 0]))] do
+      out := out.push (differentialExpect accept s!"codec count {label}-{countLabel}" bytes)
   return out
 
-/-- Independently authored declaration bytes for the six headers. -/
+/-- Independently authored declaration bytes for the six headers (Ixon v5, with trailing
+`numBinders = 0`). -/
 def declarations : List (String × String) := [
-  ("definition", "d006050010000000"),
-  ("recursor", "d101050102030400010310000000"),
-  ("axiom", "d2010500000000"),
-  ("quotient", "d3020500000000"),
-  ("mutual", "c101000502030001010501020300000000")]
+  ("definition", "d00605001000000000"),
+  ("recursor", "d10105010203040001031000000000"),
+  ("axiom", "d201050000000000"),
+  ("quotient", "d302050000000000"),
+  ("mutual", "c10100050203000101050102030000000000")]
 
 /-- `witness` with its claim replaced by `bytes`. -/
 def replaceClaimBytes (witness : IxVM.ClaimHarness.ClaimWitness) (bytes : ByteArray) :
@@ -286,16 +288,20 @@ def revealModeCases (r : Runner) : IO Unit := do
     add label (replaceClaimBytes baseW rawBytes) false (some reason)
 
 def run : IO UInt32 := do
-  let golden ← Tests.IxonV4.readExprCases
+  let golden ← Tests.IxonGolden.readExprCases
   withRunner "ixvm-codec" fun r => do
     for c in golden do
       for build in encodingCases c.name c.bytes expression do r.build (build ())
-    for (name, bytes) in Tests.IxonV4.rejectedExprCases do
+    for (name, bytes) in Tests.IxonGolden.rejectedExprCases do
       r.build (expression s!"codec rejects {name}" bytes ())
     for build in countCases do r.build (build ())
     for (name, hex) in declarations do
       let some bytes := bytesOfHex hex
         | throw <| IO.userError s!"invalid declaration fixture hex: {name}"
+      match Ixon.Canonical.deConstant bytes.size Ixon.loadMaxUnivNodes bytes with
+      | .ok _ => pure ()
+      | .error e =>
+        throw <| IO.userError s!"declaration fixture {name} failed host Canonical.deConstant: {e}"
       for build in encodingCases s!"declaration {name}" bytes differential do r.build (build ())
     claimCases r
     revealModeCases r

@@ -9,12 +9,10 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
-use crate::iroh::common::{Request, Response};
+use crate::iroh::common::{READ_SIZE_LIMIT, Request, Response};
 
 // An example ALPN that we are using to communicate over the `Endpoint`
 const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
-// Maximum number of characters to read from the server. Connection automatically closed if this is exceeded
-const READ_SIZE_LIMIT: usize = 100_000_000;
 
 // Largely taken from https://github.com/n0-computer/iroh/blob/main/iroh/examples/connect.rs
 pub async fn connect(
@@ -30,7 +28,8 @@ pub async fn connect(
     .try_init();
   let secret_key = {
     let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes).expect("failed to generate random bytes");
+    getrandom::fill(&mut bytes)
+      .map_err(|e| n0_error::anyerr!("failed to generate random bytes: {e}"))?;
     SecretKey::from(bytes)
   };
   println!("public key: {}", secret_key.public());
@@ -84,12 +83,14 @@ pub async fn connect(
   // Use the Quinn API to send and recv content.
   let (mut send, mut recv) = conn.open_bi().await.anyerr()?;
 
-  send.write_all(&request.to_bytes()).await.anyerr()?;
+  let request_bytes = request.to_bytes().anyerr()?;
+  send.write_all(&request_bytes).await.anyerr()?;
 
   // Call `finish` to close the send side of the connection gracefully.
   send.finish().anyerr()?;
   let message = recv.read_to_end(READ_SIZE_LIMIT).await.anyerr()?;
-  let response = Response::from_bytes(&message);
+  let response =
+    Response::from_bytes(&message).map_err(|e| n0_error::anyerr!("{e}"))?;
 
   // Close the connection, then wait for the endpoint to flush.
   conn.close(0u32.into(), b"done");

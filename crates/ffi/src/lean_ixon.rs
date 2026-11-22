@@ -22,7 +22,7 @@ use ix_common::address::Address;
 use ix_common::env::normalize_displayed_name;
 use ixon::env::Env as IxonEnv;
 use lean_ffi::object::{
-  ExternalClass, LeanArray, LeanBool, LeanBorrowed, LeanByteArray, LeanExcept,
+  ExternalClass, LeanArray, LeanBorrowed, LeanByteArray, LeanExcept,
   LeanExternal, LeanIOResult, LeanOwned, LeanString,
 };
 use rustc_hash::FxHashMap;
@@ -100,7 +100,8 @@ fn trace_shard_max_cells() -> usize {
 }
 
 fn record_budget(max_ram_bytes: usize, cells: usize) -> usize {
-  max_ram_bytes.saturating_sub(2 * 8 * cells + (256 << 20))
+  let reserve = cells.saturating_mul(16).saturating_add(256usize << 20);
+  max_ram_bytes.saturating_sub(reserve)
 }
 
 fn record_share(max_ram_bytes: usize, cells: usize, in_flight: usize) -> usize {
@@ -132,13 +133,13 @@ pub extern "C" fn rs_env_extract(
   env_path: LeanString<LeanBorrowed<'_>>,
   names: LeanArray<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
-  quiet: LeanBool<LeanBorrowed<'_>>,
+  quiet: u8,
 ) -> LeanIOResult<LeanOwned> {
   use ixon::shard::{
     block_of_addr, build_anon_work, build_sub_env_named, work_block_addr,
   };
 
-  let quiet = quiet.to_bool();
+  let quiet = quiet != 0;
   let path = env_path.to_string();
   let out = out_path.to_string();
   let names_vec: Vec<String> = names.map(|obj| obj.as_string().to_string());
@@ -311,8 +312,11 @@ pub extern "C" fn rs_shard_env_static(
     // The trace-shard prover: seed against one execution's record share,
     // computed as `ix prove --lanes` computes it.
     let cells = trace_shard_max_cells();
-    let budget = usize::try_from(ram_gib << 30).unwrap_or(usize::MAX);
-    let share = record_share(budget, cells, exec_ahead + 2);
+    let budget = usize::try_from(ram_gib)
+      .ok()
+      .and_then(|g| g.checked_shl(30))
+      .unwrap_or(usize::MAX);
+    let share = record_share(budget, cells, exec_ahead.saturating_add(2));
     let tenths =
       u32::try_from(share.saturating_mul(10) >> 30).unwrap_or(u32::MAX);
     let share_gib = f64::from(tenths) / 10.0;
@@ -390,16 +394,29 @@ fn decode_refinements(
   }
   let mut c = Cur { b: bytes, p: 0 };
   let count = c.u32()?;
+  // Each refinement entry takes at least 8 bytes (id + nparts).
+  if count > (bytes.len() - c.p) / 8 {
+    return Err(format!("refinements blob: count {count} exceeds input size"));
+  }
   let mut out = Vec::with_capacity(count);
   for _ in 0..count {
     let id = u32::try_from(c.u32()?)
       .map_err(|e| format!("refinements blob: bad id: {e}"))?;
     let nparts = c.u32()?;
+    // Each part takes at least 12 bytes (nblocks + peak).
+    if nparts > (bytes.len() - c.p) / 12 {
+      return Err(format!(
+        "refinements blob: nparts {nparts} exceeds input size"
+      ));
+    }
     let mut parts = Vec::with_capacity(nparts);
     let mut part_peaks = Vec::with_capacity(nparts);
     for _ in 0..nparts {
       let nblocks = c.u32()?;
-      let raw = c.take(nblocks * 32)?;
+      let raw_len = nblocks.checked_mul(32).ok_or_else(|| {
+        format!("refinements blob: nblocks overflow {nblocks}")
+      })?;
+      let raw = c.take(raw_len)?;
       parts.push(
         raw
           .as_chunks::<32>()
@@ -454,8 +471,14 @@ pub extern "C" fn rs_shard_manifest_refine(
     Ok(r) => r,
     Err(e) => return fail(e),
   };
-  let measured: Vec<u64> = measured_blob
-    .as_bytes()
+  let measured_bytes = measured_blob.as_bytes();
+  if !measured_bytes.len().is_multiple_of(8) {
+    return fail(format!(
+      "measured_blob length {} is not a multiple of 8",
+      measured_bytes.len()
+    ));
+  }
+  let measured: Vec<u64> = measured_bytes
     .as_chunks::<8>()
     .0
     .iter()

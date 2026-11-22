@@ -333,6 +333,9 @@ term as a tree. On `denote_blastDivSubtractShift_q` (6,716 objects, more than
 10⁸ tree nodes) that took minutes per probe. The constant's objects outlive
 its translation, so an address names one object for the memo's lifetime. -/
 structure TrState where
+  /-- Read-only precomputed name map shared across parallel comparison tasks
+      without triggering copy-on-write cloning on cache misses. -/
+  baseNames : Std.HashMap Lean.Name (CName .anon) := {}
   names : Std.HashMap Lean.Name (CName .anon) := {}
   levels : Std.HashMap Lean.Level CLevel := {}
   exprs : Std.HashMap USize (CExpr .anon) := {}
@@ -352,7 +355,7 @@ structure TrCx where
   lps : List LevelParam
 
 def trName (cx : TrCx) (n : Lean.Name) : TrM (CName .anon) := do
-  if let some c ← modifyGet (fun s => (s.names[n]?, s)) then return c
+  if let some c ← modifyGet (fun s => (s.baseNames[n]?.orElse fun _ => s.names[n]?, s)) then return c
   let c ← liftRef (cx.ref.name n)
   modify fun s => { s with names := s.names.insert n c }
   return c
@@ -505,6 +508,36 @@ def Report.bump (r : Report) (n : Lean.Name) (v : Verdict) (keep : Bool) : Repor
 def Report.problem (r : Report) (p : String) : Report :=
   { r with problems := r.problems.push p }
 
+/-- Merge a worker slice's comparison report into `base` in deterministic order. -/
+def Report.merge (base sub : Report) : Report := Id.run do
+  let mut counts := base.counts
+  for (label, n) in sub.counts do
+    counts := counts.insert label (counts.getD label 0 + n)
+  let mut verdicts := base.verdicts
+  for (n, v) in sub.verdicts do
+    verdicts := verdicts.insert n v
+  let mut pairs := base.pairs
+  for (n, p) in sub.pairs do
+    pairs := pairs.insert n p
+  let mut examples := base.examples
+  for (label, exs) in sub.examples do
+    let mut cur := examples.getD label #[]
+    for n in exs do
+      if cur.size < 10 then cur := cur.push n
+    examples := examples.insert label cur
+  return { base with
+    constants := base.constants + sub.constants
+    counts
+    foreign := base.foreign + sub.foreign
+    reorderedBlocks := base.reorderedBlocks ++ sub.reorderedBlocks
+    unmatched := base.unmatched ++ sub.unmatched
+    problems := base.problems ++ sub.problems
+    unexplained := base.unexplained ++ sub.unexplained
+    verdicts
+    pairs
+    examples
+    slow := base.slow ++ sub.slow }
+
 /-- The report as text: counts, problems, the first unexplained. -/
 def Report.summary (r : Report) (shown : Nat := 25) : String := Id.run do
   let mut lines : Array String := #[
@@ -593,15 +626,39 @@ No decoded record is retained beyond its skeleton. -/
 def InputAccess.ofParts (lean : Lean.Environment) (parts : Ixon.LazyEnvParts) :
     Except String InputAccess := do
   let records := _root_.Ix.KernelFidelity.RecordAccess.ofParts parts
+  let constAddrs : Array Address := parts.env.consts.toList.toArray.map (·.1)
+  let readRange (lo hi : Nat) :
+      Except String (Array (Address × Ixon.Constant × Option Ixon.Constant)) := do
+    let mut out : Array (Address × Ixon.Constant × Option Ixon.Constant) :=
+      Array.emptyWithCapacity (hi - lo)
+    for a in constAddrs.extract lo hi do
+      let tag ← (records.tag a).mapError fun e => s!"fidelity: tag {a}: {e}"
+      let c ← records.read a tag
+      let (nat, str) := literalKinds c
+      let lit? := if nat || str then
+        some (Benchmarks.Kernel.CheckIxeStream.literalStandIn nat str)
+      else none
+      out := out.push (a, Benchmarks.Kernel.CheckIxeStream.skeleton c, lit?)
+    return out
   let mut store : RecordStore := {}
   let mut literals := #[]
-  for (a, _) in parts.env.consts.toList do
-    let tag ← (records.tag a).mapError fun e => s!"fidelity: tag {a}: {e}"
-    let c ← records.read a tag
-    let (nat, str) := literalKinds c
-    if nat || str then
-      literals := literals.push (a, Benchmarks.Kernel.CheckIxeStream.literalStandIn nat str)
-    store := store.insert a (Benchmarks.Kernel.CheckIxeStream.skeleton c)
+  if constAddrs.size ≤ 256 then
+    let rows ← readRange 0 constAddrs.size
+    for (a, skel, lit?) in rows do
+      if let some lit := lit? then literals := literals.push (a, lit)
+      store := store.insert a skel
+  else
+    let chunkSize := Nat.max 256 ((constAddrs.size + 31) / 32)
+    let numChunks := (constAddrs.size + chunkSize - 1) / chunkSize
+    let tasks := (Array.range numChunks).map fun c =>
+      let lo := c * chunkSize
+      let hi := Nat.min ((c + 1) * chunkSize) constAddrs.size
+      Task.spawn fun _ => readRange lo hi
+    for task in tasks do
+      let rows ← task.get
+      for (a, skel, lit?) in rows do
+        if let some lit := lit? then literals := literals.push (a, lit)
+        store := store.insert a skel
   let rowFor (n : _root_.Ix.Name) : Except String Ixon.NamedRow := do
     let some i := parts.rowIdx[n]? | throw s!"fidelity: missing named metadata for {n.pretty}"
     let some row := parts.namedRows[i]? | throw s!"fidelity: named row index out of range for {n.pretty}"
@@ -902,22 +959,42 @@ def runAccess (input : InputAccess) (limit : Option Nat := none) (keep : Lean.Na
   let s : Setup := setup input.store (input.blobs[·]?) table pre hints.lookup (literals := input.literals)
   let store := s.store
   -- the bridge: Lean name ↦ reference, from the compiled metadata
+  let resolveMetaRange (lo hi : Nat) :
+      Except String (Array (Lean.Name × NamedFacts × ConstRef Address)) := do
+    let mut out : Array (Lean.Name × NamedFacts × ConstRef Address) :=
+      Array.emptyWithCapacity (hi - lo)
+    for n in input.names.extract lo hi do
+      let ixName := _root_.Ix.Name.fromLeanName n
+      let some address := input.address ixName
+        | throw s!"fidelity: missing source-name header for {n}"
+      unless input.store.contains address do
+        throw s!"fidelity: source record {address} for {n} is missing"
+      let nd ← input.metadata ixName
+      unless nd.addr == address do
+        throw s!"fidelity: metadata address changed for {n}"
+      let some r := resolve (store[·]?) address
+        | throw s!"fidelity: source record {address} for {n} does not resolve"
+      out := out.push (n, { addr := address, original := nd.original.isSome }, r)
+    return out
   let mut refs : Std.HashMap Lean.Name (ConstRef Address) := {}
   let mut named : Std.HashMap Lean.Name NamedFacts := {}
-  for n in input.names do
-    let ixName := _root_.Ix.Name.fromLeanName n
-    let some address := input.address ixName
-      | throw (IO.userError s!"fidelity: missing source-name header for {n}")
-    unless input.store.contains address do
-      throw (IO.userError s!"fidelity: source record {address} for {n} is missing")
-    let nd ← IO.ofExcept (input.metadata ixName)
-    unless nd.addr == address do
-      throw (IO.userError s!"fidelity: metadata address changed for {n}")
-    named := named.insert n {
-      addr := address, original := nd.original.isSome }
-    let some r := resolve (store[·]?) address
-      | throw (IO.userError s!"fidelity: source record {address} for {n} does not resolve")
-    refs := refs.insert n r
+  if input.names.size ≤ 256 then
+    let rows ← IO.ofExcept (resolveMetaRange 0 input.names.size)
+    for (n, facts, r) in rows do
+      named := named.insert n facts
+      refs := refs.insert n r
+  else
+    let chunkSize := Nat.max 256 ((input.names.size + 31) / 32)
+    let numChunks := (input.names.size + chunkSize - 1) / chunkSize
+    let tasks := (Array.range numChunks).map fun c =>
+      let lo := c * chunkSize
+      let hi := Nat.min ((c + 1) * chunkSize) input.names.size
+      Task.spawn fun _ => resolveMetaRange lo hi
+    for task in tasks do
+      let rows ← IO.ofExcept task.get
+      for (n, facts, r) in rows do
+        named := named.insert n facts
+        refs := refs.insert n r
   let rcx : RefCx :=
     { find := input.lean, addrOf := fun n => (named[n]?).map (·.addr), refOf := (refs[·]?),
       roles := s.cx.roles }
@@ -925,11 +1002,13 @@ def runAccess (input : InputAccess) (limit : Option Nat := none) (keep : Lean.Na
   -- reference names, the inverse map, and the reader's own names
   let mut byName : Std.HashMap (CName .anon) (Array Lean.Name) := {}
   let mut byRef : Std.HashMap (ConstRef Address) (Array Lean.Name) := {}
+  let mut initTrNames : Std.HashMap Lean.Name (CName .anon) := {}
   for n in input.names do
     let some r := refs[n]? | continue
     byRef := byRef.insert r ((byRef.getD r #[]).push n)
     match rcx.name n with
     | .ok c =>
+      initTrNames := initTrNames.insert n c
       byName := byName.insert c ((byName.getD c #[]).push n)
       let actual := (s.cx.memberKey r).toOption
       if actual != some c then
@@ -953,45 +1032,98 @@ def runAccess (input : InputAccess) (limit : Option Nat := none) (keep : Lean.Na
     lean := input.lean, rcx, named, byName, foreign, preludeOnly
     keep, advisory, aliases, recursorKey := canonicalRecursor s.cx }
   -- read in the check order, comparing each record's constants at the
-  -- reader's state before it
+  -- reader's state before it, streamed in bounded batches so comparisons
+  -- run in parallel without retaining all decoded reads in memory.
   let base := match roots with
     | some rs => Benchmarks.Kernel.CheckIxeStep.closure store s.extra (pre.records.map (fun (p : Address × Ixon.Constant) => p.1) ++ rs)
     | none => s.ordered
   let ordered := match limit with | some k => base.extract 0 k | none => base
-  let mut st : State .anon := {}
-  let mut acc : Report × TrState × Std.HashSet (CName .anon) := (report, {}, {})
-  let mut readNs := 0
-  let mut failed : Std.HashMap Address String := {}
-  for address in ordered do
-    let some skeleton := store[address]?
-      | throw (IO.userError s!"fidelity: ordered record {address} is missing")
-    let source ← if input.store.contains address then
-        IO.ofExcept (input.read address skeleton)
-      else if pre.records.any (fun (a, _) => a == address) then pure skeleton
-      else throw (IO.userError s!"fidelity: ordered record {address} is not an input or prelude record")
-    let r0 ← IO.monoNanosNow
-    let reading ← IO.lazyPure fun _ => readRecord s.cx st address source
-    readNs := readNs + ((← IO.monoNanosNow) - r0)
-    match reading with
-    | .error e =>
-      if preludeOnly.contains address then
-        throw (IO.userError s!"fidelity: setup-only prelude record {address}: {e}")
-      acc := ({ acc.1 with records := acc.1.records + 1, readFailures := acc.1.readFailures + 1 },
-        acc.2)
-      failed := failed.insert address (toString e)
-    | .ok rd =>
-      acc := ({ acc.1 with records := acc.1.records + 1, generated := acc.1.generated + rd.generated,
-                           projRewrites := acc.1.projRewrites + rd.projRewrites }, acc.2)
+  let preludeAddrs : Std.HashSet Address := pre.records.foldl (fun acc (a, _) => acc.insert a) {}
+  let decodeBatchRange (batch : Array Address) (lo hi : Nat) :
+      Except String (Array (Address × Ixon.Constant)) := do
+    let mut out : Array (Address × Ixon.Constant) := Array.emptyWithCapacity (hi - lo)
+    for address in batch.extract lo hi do
+      let some skeleton := store[address]?
+        | throw s!"fidelity: ordered record {address} is missing"
+      let source ← if input.store.contains address then
+          input.read address skeleton
+        else if preludeAddrs.contains address then pure skeleton
+        else throw s!"fidelity: ordered record {address} is not an input or prelude record"
+      out := out.push (address, source)
+    return out
+  -- `st.commit` is monotonic: a declaration in check order never references a
+  -- struct committed later, so passing the batch-end `st` snapshot to parallel
+  -- comparisons gives identical `projRewrite` results while keeping `st`'s
+  -- refcount = 1 during every `st.commit` (avoiding O(N²) HashMap cloning).
+  let compareBatchSlice (stBatch : State .anon) (items : Array (Address × Read .anon)) (lo hi : Nat) :
+      IO (Report × Std.HashSet (CName .anon)) := do
+    let mut subAcc : Report × TrState × Std.HashSet (CName .anon) :=
+      ({}, { baseNames := initTrNames }, {})
+    for (address, rd) in items.extract lo hi do
       let c0 ← IO.monoNanosNow
-      acc ← IO.lazyPure fun _ => compareRecord cx st address rd acc
+      subAcc ← IO.lazyPure fun _ => compareRecord cx stBatch address rd subAcc
       let dt := ((← IO.monoNanosNow) - c0) / 1000000
       if dt > 200 then
         let label := ((rd.decls.findSome? fun d => (entriesOf d)[0]?).bind fun e =>
           (byName.getD e.name #[])[0]?).map toString |>.getD (toString address)
-        acc := ({ acc.1 with slow := acc.1.slow.push (label, dt) }, acc.2)
-      st := st.commit rd
-  let (report', _, seen) := acc
-  report := report'
+        subAcc := ({ subAcc.1 with slow := subAcc.1.slow.push (label, dt) }, subAcc.2)
+    return (subAcc.1, subAcc.2.2)
+  let mut st : State .anon := {}
+  let mut seen : Std.HashSet (CName .anon) := {}
+  let mut readNs := 0
+  let mut failed : Std.HashMap Address String := {}
+  let batchSize := 8192
+  for bStart in [0:ordered.size:batchSize] do
+    let batch := ordered.extract bStart (min (bStart + batchSize) ordered.size)
+    let decoded : Array (Address × Ixon.Constant) ← if batch.size ≤ 64 then
+      IO.ofExcept (decodeBatchRange batch 0 batch.size)
+    else do
+      let dChunk := max 64 ((batch.size + 31) / 32)
+      let numD := (batch.size + dChunk - 1) / dChunk
+      let dTasks := (Array.range numD).map fun c =>
+        let lo := c * dChunk
+        let hi := min ((c + 1) * dChunk) batch.size
+        Task.spawn fun _ => decodeBatchRange batch lo hi
+      let mut all : Array (Address × Ixon.Constant) := Array.emptyWithCapacity batch.size
+      for t in dTasks do
+        all := all ++ (← IO.ofExcept t.get)
+      pure all
+    let mut toCompare : Array (Address × Read .anon) := Array.emptyWithCapacity decoded.size
+    for (address, source) in decoded do
+      let r0 ← IO.monoNanosNow
+      let reading ← IO.lazyPure fun _ => readRecord s.cx st address source
+      readNs := readNs + ((← IO.monoNanosNow) - r0)
+      match reading with
+      | .error e =>
+        if preludeOnly.contains address then
+          throw (IO.userError s!"fidelity: setup-only prelude record {address}: {e}")
+        report := { report with records := report.records + 1, readFailures := report.readFailures + 1 }
+        failed := failed.insert address (toString e)
+      | .ok rd =>
+        report := { report with
+          records := report.records + 1
+          generated := report.generated + rd.generated
+          projRewrites := report.projRewrites + rd.projRewrites }
+        toCompare := toCompare.push (address, rd)
+        st := st.commit rd
+    let stSnap := st
+    if toCompare.size ≤ 32 then
+      let (subRep, subSeen) ← compareBatchSlice stSnap toCompare 0 toCompare.size
+      report := Report.merge report subRep
+      seen := subSeen.fold (·.insert ·) seen
+    else
+      let cChunk := max 32 ((toCompare.size + 31) / 32)
+      let numC := (toCompare.size + cChunk - 1) / cChunk
+      let cTasks ← (Array.range numC).mapM fun c =>
+        let lo := c * cChunk
+        let hi := min ((c + 1) * cChunk) toCompare.size
+        IO.asTask (compareBatchSlice stSnap toCompare lo hi)
+      for t in cTasks do
+        let (subRep, subSeen) ← match ← IO.wait t with
+          | .ok res => pure res
+          | .error e => throw e
+        report := Report.merge report subRep
+        seen := subSeen.fold (·.insert ·) seen
   -- Lean constants no reader entry matched: an expected decline, a failed
   -- record, or outside the limit
   let readOwners : Std.HashSet Address := ordered.foldl (·.insert ·) {}

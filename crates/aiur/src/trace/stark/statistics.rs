@@ -26,7 +26,8 @@ pub struct ExecutionStatistics {
 impl<B: WitnessField> Backend<'_, '_, B> {
   /// Raw unpadded heights and memoization counts in canonical circuit order.
   /// Fixed tables always use their full height and have no cache savings.
-  /// No witness matrices or proofs are allocated.
+  /// No witness matrices or proofs are allocated; pair with
+  /// [`Backend::for_statistics`] to also skip committing fixed tables.
   pub fn execution_statistics(
     &self,
     record: &Execution<B>,

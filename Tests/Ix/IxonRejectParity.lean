@@ -9,7 +9,7 @@ public import LSpec
 
 /-! # Malformed inputs Lean's readers refuse, as Rust's do
 
-The Lean side of the shared fixture `Tests/Fixtures/ixon-v4/reject-parity.txt`,
+The Lean side of the shared fixture `Tests/Fixtures/ixon/reject-parity.txt`,
 whose Rust side is `crates/ixon/tests/reject_parity.rs` (every kind but
 `ixes`): every reader of a case's kind refuses
 it, and accepts the kind's controls. The kinds and the readers:
@@ -32,7 +32,7 @@ public section
 
 namespace Tests.Ix.IxonRejectParity
 
-def fixturePath : System.FilePath := "Tests/Fixtures/ixon-v4/reject-parity.txt"
+def fixturePath : System.FilePath := "Tests/Fixtures/ixon/reject-parity.txt"
 
 /-- One fixture case. -/
 structure Case where

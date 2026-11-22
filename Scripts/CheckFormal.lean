@@ -19,6 +19,10 @@ Environment variables:
   (default `0`).
 - `IX_AIUR_ARTIFACT`, `IX_RECURSION_ARTIFACT`, `IX_AGGR_ARTIFACT`: reuse
   pre-exported `.ixa` artifacts instead of re-exporting them.
+- `IX_CHECK_FORMAL_SKIP_BUILD=1`: skip the initial `lake build` and `cargo build`
+  steps when an upstream CI build job has already compiled all binaries.
+- `IX_CHECK_FORMAL_SKIP_AIUR_UNITS=1`: skip `u32_tests` when an upstream CI job
+  has already run the standalone Aiur unit tests.
 -/
 
 namespace CheckFormal
@@ -97,6 +101,8 @@ structure EnvConfig where
   aiurArtifact : Option String := none
   recursionArtifact : Option String := none
   aggrArtifact : Option String := none
+  skipBuild : Bool := false
+  skipAiurUnits : Bool := false
   deriving BEq, Repr
 
 def readEnvConfig : IO EnvConfig := do
@@ -106,11 +112,17 @@ def readEnvConfig : IO EnvConfig := do
   let aiurArtifact ← getNonEmptyEnv "IX_AIUR_ARTIFACT"
   let recursionArtifact ← getNonEmptyEnv "IX_RECURSION_ARTIFACT"
   let aggrArtifact ← getNonEmptyEnv "IX_AGGR_ARTIFACT"
-  return { outputDir, testCuda, cudaDevice, aiurArtifact, recursionArtifact, aggrArtifact }
+  let skipBuild := (← getNonEmptyEnv "IX_CHECK_FORMAL_SKIP_BUILD") == some "1"
+  let skipAiurUnits := (← getNonEmptyEnv "IX_CHECK_FORMAL_SKIP_AIUR_UNITS") == some "1"
+  return {
+    outputDir, testCuda, cudaDevice, aiurArtifact, recursionArtifact, aggrArtifact,
+    skipBuild, skipAiurUnits
+  }
 
 /-- A single step in the formal gate plan. -/
 inductive Step where
   | exec (cmd : String) (args : Array String) (env : Array (String × Option String))
+  | parallel (substeps : Array (String × Array String × Array (String × Option String)))
   | proveAndVerify (proveLog : FilePath) (env : Array (String × Option String))
   deriving BEq, Repr
 
@@ -127,100 +139,113 @@ def buildPlan (cfg : EnvConfig) (formalTmp : FilePath) : Array Step := Id.run do
       (s : Array Step) : Array Step :=
     s.push (.exec cmd args e)
 
-  steps := push "lake" #[
-    "build", "ix", "ixvm/ixvm", "multiStark/stark-export",
-    "formal-aiur-tests", "formal-aggregate-tests", "formal-checks",
-    "aiur/grouping_example", "aiur/depth_example", "aiur/Aiur.Library.U8Facts",
-    "aiur/u32_tests", "aiur/library_tests"
-  ] env steps
+  unless cfg.skipBuild do
+    steps := push "lake" #[
+      "build", "ix", "ixvm/ixvm", "multiStark/stark-export",
+      "formal-aiur-tests", "formal-aggregate-tests", "formal-checks",
+      "aiur/grouping_example", "aiur/depth_example", "aiur/Aiur.Library.U8Facts",
+      "aiur/u32_tests", "aiur/library_tests"
+    ] env steps
+    steps := push "cargo" #[
+      "build", "--release", "--locked", "-p", "ixvm", "-p", "stark-verifier", "-p", "ix-prover",
+      "--features", "parallel",
+      "--bin", "ixvm-proof", "--bin", "stark-verifier", "--bin", "ix-prover",
+      "--example", "claim_fixture"
+    ] env steps
+
+  let aiurArt := match cfg.aiurArtifact with
+    | some path => path
+    | none => (formalTmp / "ixvm.ixa").toString
+  let recArt := match cfg.recursionArtifact with
+    | some path => path
+    | none => (formalTmp / "recursion.ixa").toString
+  let aggrArt := match cfg.aggrArtifact with
+    | some path => path
+    | none => (formalTmp / "aggregate.ixa").toString
+
+  -- Wave 1: independent codegen/Aiur unit/fixture checks and any missing `.ixa` exports.
   -- The IxVM and MultiStark modules are Lean source (`aiur⟦ … ⟧`). Only
   -- IxVM/IxVM/Source/KernelRoleSpec.lean is rendered, from IxC's role specifications.
-  steps := push ".lake/build/bin/ix" #["codegen", "--check"] env steps
-  steps := push "lake" #["env", "Aiur/.lake/build/bin/u32_tests"] env steps
-  steps := push "lake" #["env", "Aiur/.lake/build/bin/library_tests",
-    (formalTmp / "library.ixa").toString] env steps
-  steps := push "cargo" #[
-    "run", "--release", "--locked", "-p", "aiur", "--features", "stark",
-    "--example", "library_check", "--", (formalTmp / "library.ixa").toString
-  ] env steps
-  steps := push "lake" #[
-    "env", "Aiur/.lake/build/bin/grouping_example",
-    "crates/aiur/tests/fixtures/grouping.ixa", "--check"
-  ] env steps
-  steps := push "lake" #[
-    "env", "Aiur/.lake/build/bin/depth_example",
-    "crates/aiur/tests/fixtures/depth.ixa", "--check"
-  ] env steps
-  steps := push "cargo" #[
-    "build", "--release", "--locked", "-p", "ixvm", "-p", "stark-verifier", "-p", "ix-prover",
-    "--features", "parallel",
-    "--bin", "ixvm-proof", "--bin", "stark-verifier", "--bin", "ix-prover",
-    "--example", "claim_fixture"
-  ] env steps
-
-  let aiurArt ← match cfg.aiurArtifact with
-    | some path => pure path
-    | none =>
-      let path := (formalTmp / "ixvm.ixa").toString
-      steps := push "lake" #["env", "IxVM/.lake/build/bin/ixvm", "export-claim-trace", path] env steps
-      pure path
-  let recArt ← match cfg.recursionArtifact with
-    | some path => pure path
-    | none =>
-      let path := (formalTmp / "recursion.ixa").toString
-      steps := push "lake" #["env", "MultiStark/.lake/build/bin/stark-export", "export-trace", path] env steps
-      pure path
-  let aggrArt ← match cfg.aggrArtifact with
-    | some path => pure path
-    | none =>
-      let path := (formalTmp / "aggregate.ixa").toString
-      steps := push "lake" #["env", "MultiStark/.lake/build/bin/stark-export", "export-trace", path, "--aggregate"] env steps
-      pure path
+  let mut wave1 : Array (String × Array String × Array (String × Option String)) := #[
+    (".lake/build/bin/ix", #["codegen", "--check"], env)
+  ]
+  unless cfg.skipAiurUnits do
+    wave1 := wave1.push ("lake", #["env", "Aiur/.lake/build/bin/u32_tests"], env)
+  wave1 := wave1 ++ #[
+    ("lake", #["env", "Aiur/.lake/build/bin/library_tests",
+      (formalTmp / "library.ixa").toString], env),
+    ("lake", #["env", "Aiur/.lake/build/bin/grouping_example",
+      "crates/aiur/tests/fixtures/grouping.ixa", "--check"], env),
+    ("lake", #["env", "Aiur/.lake/build/bin/depth_example",
+      "crates/aiur/tests/fixtures/depth.ixa", "--check"], env)
+  ]
+  if cfg.aiurArtifact.isNone then
+    wave1 := wave1.push
+      ("lake", #["env", "IxVM/.lake/build/bin/ixvm", "export-claim-trace", aiurArt], env)
+  if cfg.recursionArtifact.isNone then
+    wave1 := wave1.push
+      ("lake", #["env", "MultiStark/.lake/build/bin/stark-export", "export-trace", recArt], env)
+  if cfg.aggrArtifact.isNone then
+    wave1 := wave1.push
+      ("lake", #["env", "MultiStark/.lake/build/bin/stark-export", "export-trace", aggrArt, "--aggregate"], env)
+  steps := steps.push (.parallel wave1)
 
   env := setEnv env "IX_AIUR_ARTIFACT" (some aiurArt)
   env := setEnv env "IX_AGGR_ARTIFACT" (some aggrArt)
 
-  steps := push "lake" #["env", ".lake/build/bin/formal-aiur-tests",
-    (formalTmp / "claims.ixt").toString] env steps
-  steps := push "target/release/ixvm-proof" #[
-    "test", aiurArt, (formalTmp / "claims.ixt").toString
-  ] env steps
-  steps := push ".lake/build/bin/ix" #[
-    "check", "--ixe", (formalTmp / "claims.ixt.ixe").toString, "Nat.add_comm"
-  ] env steps
-  steps := steps.push (.proveAndVerify (formalTmp / "prove.log") env)
+  -- Wave 2: Aiur library check + independent fixture generation for IxVM, recursion, and aggregate.
+  let libraryCheckStep : String × Array String × Array (String × Option String) :=
+    if cfg.skipBuild then
+      ("target/release/examples/library_check", #[(formalTmp / "library.ixa").toString], env)
+    else
+      ("cargo", #[
+        "run", "--release", "--locked", "-p", "aiur", "--features", "stark,parallel",
+        "--example", "library_check", "--", (formalTmp / "library.ixa").toString
+      ], env)
+  steps := steps.push (.parallel #[
+    libraryCheckStep,
+    ("lake", #["env", ".lake/build/bin/formal-aiur-tests",
+      (formalTmp / "claims.ixt").toString], env),
+    ("target/release/stark-verifier", #["fixture", (formalTmp / "inner").toString], env),
+    (".lake/build/bin/formal-aggregate-tests", #[(formalTmp / "aggregation.ixt").toString], env)
+  ])
 
-  steps := push "target/release/stark-verifier" #[
-    "fixture", (formalTmp / "inner").toString
-  ] env steps
-  steps := push "target/release/stark-verifier" #[
-    "ranges", (formalTmp / "inner" / "proof.bin").toString, (formalTmp / "ranges").toString, "1"
-  ] env steps
-  steps := push ".lake/build/bin/formal-checks" #["ranges", formalTmp.toString] env steps
-  steps := push "target/release/stark-verifier" #[
-    "test", recArt, (formalTmp / "inner" / "input.ixi").toString
-  ] env steps
-  steps := push "target/release/stark-verifier" #[
-    "prove", recArt, (formalTmp / "inner" / "input.ixi").toString, (formalTmp / "outer").toString
-  ] env steps
-  steps := push "target/release/stark-verifier" #[
-    "verify", recArt, (formalTmp / "outer" / "public.ixi").toString, (formalTmp / "outer" / "proof.bin").toString
-  ] env steps
-  steps := push "target/release/stark-verifier" #[
-    "verify", recArt, (formalTmp / "outer" / "public.ixi").toString, (formalTmp / "outer" / "proof.bin").toString
-  ] (setEnv env "AIUR_TRACE_ONLY_LOOKUPS" (some "1")) steps
-  steps := push ".lake/build/bin/formal-aggregate-tests" #[
-    (formalTmp / "aggregation.ixt").toString
-  ] env steps
-  steps := push "target/release/stark-verifier" #[
-    "cases", aggrArt, (formalTmp / "aggregation.ixt").toString
-  ] env steps
-  steps := push "target/release/stark-verifier" #[
-    "prove", aggrArt, (formalTmp / "aggregation.ixt.wrap.ixi").toString, (formalTmp / "aggregate").toString
-  ] env steps
-  steps := push "target/release/stark-verifier" #[
-    "verify", aggrArt, (formalTmp / "aggregate" / "public.ixi").toString, (formalTmp / "aggregate" / "proof.bin").toString
-  ] env steps
+  -- Wave 3: independent execution checks and range splitting across all three legs.
+  steps := steps.push (.parallel #[
+    ("target/release/ixvm-proof", #["test", aiurArt, (formalTmp / "claims.ixt").toString], env),
+    (".lake/build/bin/ix", #["check", "--ixe", (formalTmp / "claims.ixt.ixe").toString, "Nat.add_comm"], env),
+    ("target/release/stark-verifier",
+      #["ranges", (formalTmp / "inner" / "proof.bin").toString, (formalTmp / "ranges").toString, "1"], env),
+    ("target/release/stark-verifier",
+      #["test", recArt, (formalTmp / "inner" / "input.ixi").toString], env),
+    ("target/release/stark-verifier",
+      #["cases", aggrArt, (formalTmp / "aggregation.ixt").toString], env)
+  ])
+
+  -- Wave 4: range verification + independent recursion and aggregate STARK proofs.
+  steps := steps.push (.parallel #[
+    (".lake/build/bin/formal-checks", #["ranges", formalTmp.toString], env),
+    ("target/release/stark-verifier",
+      #["prove", recArt, (formalTmp / "inner" / "input.ixi").toString, (formalTmp / "outer").toString], env),
+    ("target/release/stark-verifier",
+      #["prove", aggrArt, (formalTmp / "aggregation.ixt.wrap.ixi").toString, (formalTmp / "aggregate").toString], env)
+  ])
+
+  -- Wave 5: independent STARK verifications of the recursion and aggregate proofs.
+  steps := steps.push (.parallel #[
+    ("target/release/stark-verifier",
+      #["verify", recArt, (formalTmp / "outer" / "public.ixi").toString,
+        (formalTmp / "outer" / "proof.bin").toString], env),
+    ("target/release/stark-verifier",
+      #["verify", recArt, (formalTmp / "outer" / "public.ixi").toString,
+        (formalTmp / "outer" / "proof.bin").toString],
+      setEnv env "AIUR_TRACE_ONLY_LOOKUPS" (some "1")),
+    ("target/release/stark-verifier",
+      #["verify", aggrArt, (formalTmp / "aggregate" / "public.ixi").toString,
+        (formalTmp / "aggregate" / "proof.bin").toString], env)
+  ])
+
+  steps := steps.push (.proveAndVerify (formalTmp / "prove.log") env)
 
   let artifactArgs := #[
     "--ixvm-artifact", aiurArt,
@@ -252,11 +277,17 @@ def formatEnv (env : Array (String × Option String)) : String :=
   " ".intercalate <| env.toList.filterMap fun (k, v) =>
     v.map fun val => s!"{k}={val}"
 
+def formatExec (cmd : String) (args : Array String) (env : Array (String × Option String)) : String :=
+  let e := formatEnv env
+  let argv := " ".intercalate (cmd :: args.toList)
+  if e.isEmpty then argv else s!"{e} {argv}"
+
 def formatStep : Step → String
-  | .exec cmd args env =>
-    let e := formatEnv env
-    let argv := " ".intercalate (cmd :: args.toList)
-    if e.isEmpty then argv else s!"{e} {argv}"
+  | .exec cmd args env => formatExec cmd args env
+  | .parallel substeps =>
+    let parts := substeps.toList.map fun (cmd, args, env) =>
+      formatExec cmd args env
+    s!"parallel [{"; ".intercalate parts}]"
   | .proveAndVerify log env =>
     let e := formatEnv env
     let eLookup := formatEnv (setEnv env "AIUR_TRACE_ONLY_LOOKUPS" (some "1"))
@@ -320,13 +351,25 @@ def runProveAndVerify (cwd : FilePath) (sysroot : String) (proveLog : FilePath)
   if formalProof.isEmpty then
     IO.eprintln s!"[check-formal] empty proof path in {proveLog}"
     return 1
-  let rc1 ← runExec cwd sysroot ".lake/build/bin/ix" #["verify", formalProof] env
-  unless rc1 == 0 do return rc1
-  runExec cwd sysroot ".lake/build/bin/ix" #["verify", formalProof]
-    (setEnv env "AIUR_TRACE_ONLY_LOOKUPS" (some "1"))
+  let t1 ← IO.asTask (prio := .dedicated)
+    (runExec cwd sysroot ".lake/build/bin/ix" #["verify", formalProof] env)
+  let t2 ← IO.asTask (prio := .dedicated)
+    (runExec cwd sysroot ".lake/build/bin/ix" #["verify", formalProof]
+      (setEnv env "AIUR_TRACE_ONLY_LOOKUPS" (some "1")))
+  let rc1 ← IO.ofExcept (← IO.wait t1)
+  let rc2 ← IO.ofExcept (← IO.wait t2)
+  return if rc1 != 0 then rc1 else rc2
 
 def runStep (cwd : FilePath) (sysroot : String) : Step → IO UInt32
   | .exec cmd args env => runExec cwd sysroot cmd args env
+  | .parallel substeps => do
+    let tasks ← substeps.mapM fun (cmd, args, env) =>
+      IO.asTask (prio := .dedicated) (runExec cwd sysroot cmd args env)
+    let mut firstErr : UInt32 := 0
+    for task in tasks do
+      let code ← IO.ofExcept (← IO.wait task)
+      if code != 0 && firstErr == 0 then firstErr := code
+    return firstErr
   | .proveAndVerify proveLog env => runProveAndVerify cwd sysroot proveLog env
 
 def prepareWorkDir (repoRoot : FilePath) (cfg : EnvConfig) : IO (FilePath × Bool) := do
@@ -367,9 +410,38 @@ def selfTest : IO Unit := do
     recursionArtifact := some "/a/rec.ixa"
     aggrArtifact := some "/a/aggr.ixa"
   } "/tmp/formal"
-  ensure (cpuPlan.size == 28) s!"unexpected cpu plan length {cpuPlan.size}"
+  let partialReusePlan := buildPlan {
+    aiurArtifact := some "/a/ixvm.ixa"
+    recursionArtifact := some "/a/rec.ixa"
+  } "/tmp/formal"
+  let skipPlan := buildPlan { skipBuild := true, skipAiurUnits := true } "/tmp/formal"
+  let countSubsteps (plan : Array Step) : Nat :=
+    plan.foldl (init := 0) fun acc s =>
+      acc + match s with
+      | .parallel substeps => substeps.size
+      | _ => 1
+  let hasSubcmd (plan : Array Step) (pred : String → Array String → Bool) : Bool :=
+    plan.any fun
+      | .exec cmd args _ => pred cmd args
+      | .parallel substeps => substeps.any fun (cmd, args, _) => pred cmd args
+      | .proveAndVerify .. => false
+  ensure (cpuPlan.size == 10) s!"unexpected cpu plan length {cpuPlan.size}"
+  ensure (countSubsteps cpuPlan == 28) s!"unexpected cpu substep count {countSubsteps cpuPlan}"
   ensure (cudaPlan.size == cpuPlan.size + 2) "cuda adds build + device controller"
-  ensure (reusePlan.size == cpuPlan.size - 3) "artifact reuse skips three exports"
+  ensure (reusePlan.size == cpuPlan.size && countSubsteps reusePlan == countSubsteps cpuPlan - 3)
+    "full artifact reuse skips 3 exports"
+  ensure (partialReusePlan.size == cpuPlan.size &&
+      countSubsteps partialReusePlan == countSubsteps cpuPlan - 2)
+    "partial artifact reuse skips 2 exports"
+  ensure (skipPlan.size == cpuPlan.size - 2 &&
+      countSubsteps skipPlan == countSubsteps cpuPlan - 3)
+    "skipBuild + skipAiurUnits drops 2 build steps and u32_tests"
+  ensure (hasSubcmd cpuPlan fun cmd args => cmd == "cargo" && args.contains "library_check")
+    "default cpu plan invokes library_check via cargo run"
+  ensure (hasSubcmd skipPlan fun cmd _ => cmd == "target/release/examples/library_check")
+    "skipBuild invokes target/release/examples/library_check directly"
+  ensure (!(hasSubcmd skipPlan fun cmd _ => cmd == "cargo"))
+    "skipBuild never invokes cargo"
   let hasCpuOnly := cpuPlan.any fun
     | .exec ".lake/build/bin/formal-checks" args _ => args.contains "--cpu-only"
     | _ => false

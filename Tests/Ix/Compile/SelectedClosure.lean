@@ -143,39 +143,30 @@ them eagerly (`Lean.Meta.mkSizeOfInstances`). If a run shows it is not
 carried, drop it from this list. Do not restore O11a's `compilerSupportOf`. -/
 def sizeOfUnitSupport : List Name := [``SizeOf.sizeOf]
 
-/-- Kernel names as Lean names. -/
-private def kernelNameToLean : Ix.Kernel.Name → Name
-  | .anonymous => .anonymous
-  | .str p s => .str (kernelNameToLean p) s
-  | .num p n => .num (kernelNameToLean p) n
-
-/-- The checker-support derivation (`checkerSupportOf`, from `Role.deps`
-with blocks) against the checker's install guard (`divModEnvGuardF` reads
-`natOpDeps`): for each of the 15 `Nat` operation roles, the operation roles
-in its support, plus the role itself, are exactly `natOpDeps` of its key,
-as a set. A drift between `Role.deps` and `natOpDeps` would make a selected
-closure miss a record the checker needs, or carry one it does not. -/
-def supportDrift (env : Environment) : Array String := Id.run do
+/-- The 15 `Nat` operation roles guarded by `Ix.Kernel.natOpDeps`. -/
+private def natOpRoles : List Ix.Kernel.Role :=
   let opKeys : List (Ix.Kernel.Key .anon) := Ix.Kernel.natOpNames ++ Ix.Kernel.natDivModNames
-  let roleOf : Ix.Kernel.Key .anon → Option Ix.Kernel.Role
+  opKeys.filterMap fun
     | .role r => some r
     | _ => none
-  let opRoles := opKeys.filterMap roleOf
-  let mut errors : Array String := #[]
-  unless opRoles.length == 15 do
-    errors := errors.push s!"expected 15 operation roles, found {opRoles.length}"
-  for r in opRoles do
-    let support := Ix.EnvScope.checkerSupportOf env.constants (kernelNameToLean r.leanName)
-    let supportOps := support.filterMap fun n =>
-      (Ix.Kernel.Role.ofLeanName? (Ix.Kernel.Name.ofLeanName n)).filter opRoles.contains
+
+/-- Compile-time drift check: for each of the 15 `Nat` operation roles, the
+operation roles derived from `Role.deps` and `Role.block` (what
+`Ix.EnvScope.checkerSupportOf` draws from), plus the role itself, match
+`Ix.Kernel.natOpDeps` as a set. Checked in the kernel at build time instead of
+at test runtime. -/
+private def checkerSupportMatchesNatOpDeps : Bool :=
+  natOpRoles.length == 15 &&
+  natOpRoles.all fun r =>
+    let supportOps := ((r.deps.flatMap Ix.Kernel.Role.block).eraseDups.filter (· != r)).filter
+      natOpRoles.contains
     let derived := (r :: supportOps).eraseDups
-    let guard := ((Ix.Kernel.natOpDeps (Ix.Kernel.roleKey r : Ix.Kernel.Key .anon)).filterMap
-      roleOf).eraseDups
-    unless derived.all guard.contains && guard.all derived.contains do
-      errors := errors.push s!"{kernelNameToLean r.leanName}: support operations \
-        {derived.map (kernelNameToLean ·.leanName)} ≠ natOpDeps \
-        {guard.map (kernelNameToLean ·.leanName)}"
-  return errors
+    let guard := ((Ix.Kernel.natOpDeps (Ix.Kernel.roleKey r : Ix.Kernel.Key .anon)).filterMap fun
+      | .role q => some q
+      | _ => none).eraseDups
+    derived.all guard.contains && guard.all derived.contains
+
+theorem checkerSupport_matches_natOpDeps : checkerSupportMatchesNatOpDeps = true := by decide
 
 private def report (errors : Array String) (checked : Nat) (what : String) :
     IO (Bool × Nat × Nat × Option String) := do
@@ -186,20 +177,21 @@ private def report (errors : Array String) (checked : Nat) (what : String) :
 def suite : List TestSeq := [
   .individualIO "selected closures carry the whole unit of PassO2.SA._sizeOf_N" none (do
     let env ← getFileEnv fixture
+    let units := Ix.EnvScope.unitIndex env.constants
     let required := sizeOfInstances ++ sizeOfUnitSupport
     let mut errors : Array String := #[]
     for n in sizeOfRoots ++ required do
       unless env.contains n do errors := errors.push s!"fixture lacks {n}"
     let mut closures : Array (List Name) := #[]
     for seeds in seedSets do
-      let closed := Ix.EnvScope.collectSelectedDeps env seeds
+      let closed := Ix.EnvScope.collectSelectedDepsWith env units seeds
       let ns := nameSet closed
       for n in required do
         unless ns.contains n do errors := errors.push s!"{seeds}: missing {n}"
-      unless sameNames closed (Ix.EnvScope.collectSelectedDeps env (closed.map (·.1))) do
+      unless sameNames closed (Ix.EnvScope.collectSelectedDepsWith env units (closed.map (·.1))) do
         errors := errors.push s!"{seeds}: the closure is not a fixed point"
       closures := closures.push (closed.map (·.1))
-    -- both roots, in either order: the same list (the environment's order)
+    -- both roots, in either order: the same list (deterministic name order)
     unless closures[2]? == closures[3]? do
       errors := errors.push "the seed order changed the closure"
     -- negative control: the raw collector follows references only
@@ -209,11 +201,12 @@ def suite : List TestSeq := [
     report errors (seedSets.length + 1) "unit closure")
     (.individualIO "selected closures: a matcher's unit, mutual siblings, checker support" none (do
     let env ← get_env!
+    let units := Ix.EnvScope.unitIndex env.constants
     let mut errors : Array String := #[]
     let mut checked := 0
     -- 2. the matcher's unit, and nothing outside it
-    let bare := nameSet (Ix.EnvScope.collectSelectedDeps env [``matcher])
-    let carried := nameSet (Ix.EnvScope.collectSelectedDeps env [``carriedProof])
+    let bare := nameSet (Ix.EnvScope.collectSelectedDepsWith env units [``matcher])
+    let carried := nameSet (Ix.EnvScope.collectSelectedDepsWith env units [``carriedProof])
     unless carried.contains ``matcher._arg_pusher do
       errors := errors.push "carriedProof lost its explicit dependency matcher._arg_pusher"
     unless bare.contains ``matcher._arg_pusher do
@@ -224,7 +217,7 @@ def suite : List TestSeq := [
     -- 3. mutual siblings
     for (root, sibling) in mutualSeeds do
       checked := checked + 1
-      unless (nameSet (Ix.EnvScope.collectSelectedDeps env [root])).contains sibling do
+      unless (nameSet (Ix.EnvScope.collectSelectedDepsWith env units [root])).contains sibling do
         errors := errors.push s!"{root}: missing its sibling {sibling}"
     -- 4. checker support
     unless (Ix.EnvScope.checkerSupportOf env.constants ``Nat.land).contains ``Nat.mul do
@@ -232,7 +225,7 @@ def suite : List TestSeq := [
     unless (Ix.EnvScope.checkerSupportOf {} ``Nat.land).isEmpty do
       errors := errors.push "checkerSupportOf synthesized records absent from the source"
     let raw := nameSet (Ix.EnvScope.collectDeps env [``landUser] {})
-    let selected := nameSet (Ix.EnvScope.collectSelectedDeps env [``landUser])
+    let selected := nameSet (Ix.EnvScope.collectSelectedDepsWith env units [``landUser])
     unless raw.contains ``Nat.land do
       errors := errors.push "landUser's raw closure lacks Nat.land"
     if raw.contains ``Nat.mul then
@@ -242,11 +235,11 @@ def suite : List TestSeq := [
     checked := checked + 1
     -- 5. self-contained for IxC: an inductive's recursor, and the string-literal
     -- support when a closed constant has a string literal
-    unless (nameSet (Ix.EnvScope.collectSelectedDeps env [``matcher])).contains ``Nat.rec do
+    unless bare.contains ``Nat.rec do
       errors := errors.push "the matcher's selected closure lacks Nat.rec"
     if (nameSet (Ix.EnvScope.collectDeps env [``matcher] {})).contains ``Nat.rec then
       errors := errors.push "raw negative control: the matcher's raw closure carries Nat.rec"
-    let greeted := nameSet (Ix.EnvScope.collectSelectedDeps env [``greeting])
+    let greeted := nameSet (Ix.EnvScope.collectSelectedDepsWith env units [``greeting])
     for n in Ix.EnvScope.literalSupportLeanNames.filter env.contains do
       unless greeted.contains n do
         errors := errors.push s!"greeting's selected closure lacks the literal support {n}"
@@ -259,17 +252,13 @@ def suite : List TestSeq := [
     let isStr : Expr → Bool | .lit (.strVal _) => true | _ => false
     unless (proofCi.type.find? isStr).isNone && Ix.EnvScope.hasStringLiteral proofCi do
       errors := errors.push "stringInProof: the literal is not in its proof only, or is not seen there"
-    unless (Ix.EnvScope.collectDeps env [``stringInProof] .selected).all fun (n, ci) =>
+    unless (Ix.EnvScope.collectDepsWith env units [``stringInProof] .selected).all fun (n, ci) =>
         n == ``stringInProof || !Ix.EnvScope.hasStringLiteral ci do
       errors := errors.push "stringInProof's closure holds another String literal (the case is vacuous)"
-    unless (nameSet (Ix.EnvScope.collectSelectedDeps env [``stringInProof])).contains ``String.ofList do
+    unless (nameSet (Ix.EnvScope.collectSelectedDepsWith env units [``stringInProof])).contains ``String.ofList do
       errors := errors.push "stringInProof's selected closure (a literal in a proof) lacks String.ofList"
     checked := checked + 1
-    report errors checked "selected closure")
-    (.individualIO "checker support agrees with the checker's install guard (natOpDeps)" none (do
-    let env ← get_env!
-    let errors := supportDrift env
-    report errors 15 "checker-support drift") .done))
+    report errors checked "selected closure") .done)
 ]
 
 /-- `compiler-selected-closure-e2e`: the fixture compiled whole and as each
@@ -287,13 +276,34 @@ def run : IO UInt32 := do
   let mut errors : Array String := #[]
   let wholeClosure := env.constants.toList
   IO.println s!"[selected-closure-e2e] whole environment: {wholeClosure.length} declarations"
-  let whole ← compileClosure env wholeClosure
+  let whole ← compileClosure env wholeClosure (serialize := false)
   unless whole.cenv.ungrounded.isEmpty do
     errors := errors.push s!"whole: {whole.cenv.ungrounded.size} refusals"
-  let mut subsetBytes : Option ByteArray := none
-  for (seeds, i) in seedSets.zipIdx do
-    let label := s!"selected-{i} {seeds}"
-    let closure := Ix.EnvScope.collectSelectedDeps env seeds
+  let units := Ix.EnvScope.unitIndex env.constants
+  let seedClosures := seedSets.zipIdx.map fun (seeds, i) =>
+    (i, seeds, Ix.EnvScope.collectSelectedDepsWith env units seeds)
+  -- All 4 seed sets belong to one logical unit and must produce the exact
+  -- same sorted closure name-set (seed and order invariance).
+  if let some (_, _, firstClosure) := seedClosures[0]? then
+    let firstNames := firstClosure.map (·.1)
+    for (i, seeds, closure) in seedClosures do
+      unless closure.map (·.1) == firstNames do
+        errors := errors.push s!"selected-{i} {seeds}: closure name-set differs from selected-0"
+  -- Deduplicate identical closure lists so we compile, decompile-check, and
+  -- certify once per distinct closure list.
+  let mut groups : Array (List Name × List (Name × ConstantInfo) × Array (Nat × List Name)) := #[]
+  for (i, seeds, closure) in seedClosures do
+    let names := closure.map (·.1)
+    match groups.findIdx? (fun g => g.1 == names) with
+    | some idx =>
+      let (ns, c, members) := groups[idx]!
+      groups := groups.set! idx (ns, c, members.push (i, seeds))
+    | none =>
+      groups := groups.push (names, closure, #[(i, seeds)])
+  for (_, closure, members) in groups do
+    let firstIdx := members[0]!.1
+    let allSeeds := (members.toList.flatMap (·.2)).eraseDups
+    let label := s!"selected-{firstIdx} {allSeeds}"
     let out ← compileClosure env closure
     unless out.cenv.ungrounded.isEmpty do
       errors := errors.push s!"{label}: {out.cenv.ungrounded.size} refusals"
@@ -304,23 +314,20 @@ def run : IO UInt32 := do
       | some reference =>
         if let some cls := namedDiff named reference then
           errors := errors.push s!"{label}: {name.pretty}: {cls} differs from the whole compile"
-    if i == 2 then subsetBytes := some out.bytes
-    if i == 3 && subsetBytes != some out.bytes then
-      errors := errors.push "the reversed subset changed the bytes"
     let (decompileErrors, summary) ← decompileCheck env closure out
     errors := errors ++ decompileErrors.map (s!"{label}: {·}")
     -- certification means accept, not a documented decline, of the closure as
     -- `ix compile` compiles it (binder data on; `certifiedClosure`)
     let (certEnv, certBytes) ← certifiedClosure env closure
-    let certReport ← certify dir s!"selected-{i}" certBytes
-    for seed in seeds do
+    let certReport ← certify dir s!"selected-{firstIdx}" certBytes
+    for seed in allSeeds do
       match verdictOf certReport certEnv seed with
       | .error e => errors := errors.push s!"{label}: {e}"
       | .ok v =>
         unless v.outcome == "accept" do
           errors := errors.push s!"{label}: {seed}'s owning record: {v.outcome}: {v.reason}"
-    IO.println s!"[selected-closure-e2e] {label}: closure {closure.length}, {out.bytes.size} B; \
-      {summary}"
+    IO.println s!"[selected-closure-e2e] {label} ({members.size} seed sets): closure {closure.length}, \
+      {out.bytes.size} B; {summary}"
   for e in errors do IO.println s!"[selected-closure-e2e] FAIL {e}"
   IO.println s!"[selected-closure-e2e] {errors.size} failure(s)"
   if errors.isEmpty then IO.FS.removeDirAll dir

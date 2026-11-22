@@ -16,12 +16,13 @@ hold them to the host codec (`Ixon.putTagN` / `Ixon.getTagN`) on the vectors of
 TagN-coded field the program reads belongs to a constant it loads by address.
 
 The cases rewrite one field of `unsafe axiom _ : Sort 0`, whose bytes are
-`[0xD2][isUnsafe][lvls: N0][type: N4…][sharing][refs][univs: count, N2…]`:
+`[0xD2][isUnsafe][lvls: N0][type: N4…][sharing][refs][univs: count, N2…][binders]`:
 
 - the level count `lvls` (`f = 0`, byte 2);
 - the type's root expression (`f = 4`, byte 3), a sort, variable, string,
   numeral or share node carrying the value;
-- the last universe (`f = 2`, the last byte), a variable or a successor count.
+- the last universe (`f = 2`, byte `bytes.size - 2`, before the trailing
+  `[binders]` count), a variable or a successor count.
 
 Each rewritten string is a differential case. If the host's canonical decoder
 (`Ixon.Canonical.deConstant`) accepts the whole constant, a `Reveal` of its
@@ -62,7 +63,7 @@ inductive Field where
   | lvls
   /-- The type's root expression, an `f = 4` tag. -/
   | type
-  /-- The last universe, an `f = 2` tag, at the end of the constant. -/
+  /-- The last universe, an `f = 2` tag, immediately before the trailing binders count. -/
   | univ
   deriving BEq
 
@@ -76,7 +77,7 @@ def Field.name : Field → String
 def rewrite (field : Field) (encoding : ByteArray) : ByteArray :=
   let bytes := Ixon.ser base
   let off := match field with
-    | .lvls => 2 | .type => 3 | .univ => bytes.size - 1
+    | .lvls => 2 | .type => 3 | .univ => bytes.size - 2
   bytes.extract 0 off ++ encoding ++ bytes.extract (off + 1) bytes.size
 
 /-- `env` bound to the default role table without the table's support records.
@@ -121,6 +122,16 @@ def differential (label : String) (bytes : ByteArray) : Builder := fun _ => do
     Case.ofClaim s!"{label} (the host refuses it: {e})" env
       (.reveal addr (.axio none none none) none) (accept := false)
 
+/-- `differential` with an assertion on whether the host's canonical decoder
+accepts `bytes`, so a stale wire offset cannot silently flip valid fixtures into
+host-rejected ones. -/
+def differentialExpect (expectOk : Bool) (label : String) (bytes : ByteArray) : Builder :=
+  fun u => do
+    let ok := (Ixon.Canonical.deConstant bytes.size Ixon.loadMaxUnivNodes bytes).isOk
+    unless ok == expectOk do
+      throw s!"{label}: host Canonical.deConstant returned ok={ok}, expected {expectOk}"
+    differential label bytes u
+
 def tagNBytes (f : Nat) (flag : UInt8) (v : Nat) : ByteArray :=
   Ixon.runPut (Ixon.putTagN f flag v.toUInt64)
 
@@ -157,7 +168,8 @@ def boundaryCases (_ : Unit) : Array Builder := Id.run do
       for flag in flags field v do
         let bytes := encodingOf field flag v
         let tag := s!"TagN f={field.width} flag={flag} value={v} in the {field.name}"
-        out := out.push (differential tag (rewrite field bytes))
+        let expectOk := field != .lvls || v < Ixon.maxLevelCount
+        out := out.push (differentialExpect expectOk tag (rewrite field bytes))
         out := out.push (differential s!"{tag} with a trailing byte" (rewrite field (bytes.push 0)))
         for n in [1:bytes.size] do
           out := out.push (differential s!"{tag} cut to {n} bytes" (rewrite field (bytes.extract 0 n)))
@@ -195,11 +207,28 @@ def expectedVectors : List (Nat × UInt8 × Nat × Array UInt8) := [
 
 def fieldOfWidth (f : Nat) : Field := if f == 0 then .lvls else if f == 2 then .univ else .type
 
-/-- The host writes the expected bytes. -/
+/-- The host writes the expected bytes, and `Canonical.deConstant` accepts every
+valid rewritten constant in `expectedVectors` and `boundaryCases` (rejecting
+only level counts `≥ Ixon.maxLevelCount`). -/
 def expectedHostTests : TestSeq :=
-  expectedVectors.foldl (init := .done) fun acc (f, flag, v, bytes) =>
+  let encodingTests := expectedVectors.foldl (init := .done) fun acc (f, flag, v, bytes) =>
+    let field := fieldOfWidth f
+    let effFlag := if field == .type && !(flags .type v).contains flag then 0x1 else flag
+    let enc : ByteArray := if field == .type then tagNBytes 4 effFlag v else ⟨bytes⟩
+    let rewritten := rewrite field enc
+    let expectOk := field != .lvls || v < Ixon.maxLevelCount
     acc ++ test s!"host TagN f={f} flag={flag} writes {v} as {bytes}"
       (tagNBytes f flag v == ⟨bytes⟩)
+      ++ test s!"host Canonical.deConstant accepts={expectOk} expected f={f} value={v}"
+        ((Ixon.Canonical.deConstant rewritten.size Ixon.loadMaxUnivNodes rewritten).isOk == expectOk)
+  let boundaryDecodeTests := fields.foldl (init := .done) fun acc field =>
+    (boundaries field.width).foldl (init := acc) fun acc v =>
+      (flags field v).foldl (init := acc) fun acc flag =>
+        let rewritten := rewrite field (encodingOf field flag v)
+        let expectOk := field != .lvls || v < Ixon.maxLevelCount
+        acc ++ test s!"host Canonical.deConstant accepts={expectOk} boundary f={field.width} flag={flag} value={v}"
+          ((Ixon.Canonical.deConstant rewritten.size Ixon.loadMaxUnivNodes rewritten).isOk == expectOk)
+  encodingTests ++ boundaryDecodeTests
 
 /-- The expected encodings in their field. A flag the field gives no free value
 (an expression of another kind) is read under the field's own flag. -/
@@ -208,7 +237,9 @@ def expectedCases (_ : Unit) : Array Builder :=
     let field := fieldOfWidth f
     let flag := if field == .type && !(flags .type v).contains flag then 0x1 else flag
     let bytes : ByteArray := if field == .type then tagNBytes 4 flag v else ⟨bytes⟩
-    differential s!"TagN f={f} expected bytes of {v} (flag {flag})" (rewrite field bytes)
+    let expectOk := field != .lvls || v < Ixon.maxLevelCount
+    differentialExpect expectOk s!"TagN f={f} expected bytes of {v} (flag {flag})"
+      (rewrite field bytes)
 
 /-- Little-endian bytes of `x`, `n` of them. -/
 def le (n x : Nat) : Array UInt8 :=
@@ -234,9 +265,10 @@ def rejectedVectors : List (String × Nat × Array UInt8) := [
   (s!"f={f} value 2^64", f,
     #[Ixon.tagNHeader f 0 (3 * 2 ^ (6 - f) + 3)] ++ le 8 (2 ^ 64 - Ixon.tagNEnd5 f))
 
-/-- The rejection vectors in their field. Only the last universe ends the
-constant, so a vector elsewhere is followed by the constant's remaining bytes,
-and the host's verdict on the whole constant is the expected one. -/
+/-- The rejection vectors in their field. Every field is followed by the
+constant's remaining bytes (the last universe is followed by the trailing
+`[binders]` count), and the host's verdict on the whole constant is the
+expected one. -/
 def rejectedCases (_ : Unit) : Array Builder :=
   rejectedVectors.toArray.map fun (name, f, bytes) =>
     differential s!"TagN rejects {name}" (rewrite (fieldOfWidth f) ⟨bytes⟩)
@@ -339,13 +371,33 @@ def levelCountCases (_ : Unit) : Array Builder :=
     Case.ofClaim s!"TagN f=0 level count {v} is not revealed as {other}" (← bare env)
       (.reveal addr (.axio none (some other.toUInt64) none) none) (accept := false)
 
+/-- Boundary sample of invalid codes (first and last invalid code per `(f, width)`):
+16 fast cases for PR CI, while `invalidCodeCases` + `sweepCases` run in `runSweep`. -/
+def invalidCodeSample (_ : Unit) : Array Builder := Id.run do
+  let mut out := #[]
+  for (f, lastCode, flag) in [(0, 63, (0 : UInt8)), (2, 15, 3)] do
+    for width in [2, 3, 4, 8] do
+      for c in [4, lastCode] do
+        let bytes : ByteArray :=
+          ⟨#[Ixon.tagNHeader f flag (3 * 2 ^ (6 - f) + c)] ++ Array.replicate width 0⟩
+        out := out.push (differential s!"TagN f={f} invalid code {c} with {width} following bytes"
+          (rewrite (fieldOfWidth f) bytes))
+  return out
+
+/-- PR fast suite: host checks, all expected/rejected/boundary/level-count/parity/
+universe-variable cases, and a boundary sample of invalid codes. -/
 def run : IO UInt32 := do
   let host ← lspecIO (.ofList [("ixvm-tagn host", [expectedHostTests])]) []
-  let cases := expectedCases () ++ rejectedCases () ++ boundaryCases () ++ invalidCodeCases ()
-    ++ levelCountCases () ++ levelCountParityCases () ++ universeVariableCases () ++ sweepCases ()
+  let cases := expectedCases () ++ rejectedCases () ++ boundaryCases () ++ invalidCodeSample ()
+    ++ levelCountCases () ++ levelCountParityCases () ++ universeVariableCases ()
   -- The universe-variable cases are decided by the circuit's range check, so
   -- this suite always takes the circuit verdict.
   let ixvm ← runCases "ixvm-tagn" cases (circuit := some true)
   return if host == 0 && ixvm == 0 then 0 else 1
+
+/-- Exhaustive nightly sweep: all 288 invalid-code cases and 3,840 1/2-byte sweep cases. -/
+def runSweep : IO UInt32 := do
+  let cases := invalidCodeCases () ++ sweepCases ()
+  runCases "ixvm-tagn-sweep" cases (circuit := some true)
 
 end Tests.Ix.IxVM.TagN

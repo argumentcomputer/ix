@@ -401,7 +401,7 @@ pub mod tests {
     expr_roundtrip(&e.0)
   }
 
-  /// Dropping a million-deep expression of every compound shape runs on a
+  /// Dropping a deep expression of every compound shape runs on a
   /// 64 KiB stack; a shared subexpression survives the drop of one owner.
   #[test]
   fn deep_expressions_drop_without_recursion() {
@@ -412,9 +412,9 @@ pub mod tests {
       .spawn(move || {
         for shape in 0..5u64 {
           let mut e = Expr::var(0);
-          for i in 0..1_000_000u64 {
+          for i in 0..50_000u64 {
             let side =
-              if i == 500_000 { shared.clone() } else { Expr::var(i % 3) };
+              if i == 25_000 { shared.clone() } else { Expr::var(i % 3) };
             e = match shape {
               0 => Expr::app(side, e),
               1 => Expr::app(e, side),

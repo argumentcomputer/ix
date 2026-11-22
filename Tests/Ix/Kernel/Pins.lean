@@ -81,11 +81,19 @@ public def run : IO UInt32 := do
   | .error e => IO.eprintln s!"tc-pins: {e.message}"; return e.exitCode
   | .ok prepared =>
     IO.println s!"tc-pins: authenticated input ready in {prepared.prepareMs}ms ({prepared.inventory.size} labels)"
-    let mut seq : TestSeq := .done
+    let mut activePins : Array Pin := #[]
     for pin in pins do
       if pin.slow && !includeSlow then
         IO.println s!"tc-pins: skipping known-slow {pin.label} (set IX_PINS_SLOW=1 to include)"
-      else seq := seq ++ (← checkPin prepared pin)
+      else
+        activePins := activePins.push pin
+    let tasks ← activePins.mapM fun pin =>
+      IO.asTask (prio := .dedicated) (checkPin prepared pin)
+    let mut seq : TestSeq := .done
+    for task in tasks do
+      match ← IO.wait task with
+      | .ok s => seq := seq ++ s
+      | .error e => throw e
     lspecIO (.ofList [("tc-pins", [seq])]) []
 
 end Tests.Tc.Pins

@@ -1311,6 +1311,94 @@ info: @IxVM.Refinement.TagN.getTagN0_refines : ∀ {stream r : Aiur.SourceValue 
 #check @IxVM.Refinement.TagN.getTagN0_refines
 
 /--
+info: @IxVM.Refinement.TagN.getTagN2_refines : ∀ {stream r : Aiur.SourceValue IxVM.F} {heap h' : Aiur.Heap IxVM.F}
+  {bytes : List UInt8},
+  Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap bytes stream →
+    Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_tagn2" [stream] heap r h' →
+      h' = heap ∧
+        ∃ t n restPtr,
+          Ixon.getTagN 2 (IxVM.Refinement.TagN.start bytes) =
+              EStateM.Result.ok t { idx := n, bytes := { data := bytes.toArray } } ∧
+            Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap (List.drop n bytes) restPtr ∧
+              r =
+                Aiur.Value.tuple
+                  [Aiur.Value.tuple [Aiur.Value.field ↑t.flag.toNat, IxVM.Refinement.TagN.u64Value t.value.toNat],
+                    restPtr]
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.TagN.getTagN2_refines
+
+/--
+info: @IxVM.Refinement.TagN.getTagN4_refines : ∀ {stream r : Aiur.SourceValue IxVM.F} {heap h' : Aiur.Heap IxVM.F}
+  {bytes : List UInt8},
+  Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap bytes stream →
+    Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_tagn4" [stream] heap r h' →
+      h' = heap ∧
+        ∃ t n restPtr,
+          Ixon.getTagN 4 (IxVM.Refinement.TagN.start bytes) =
+              EStateM.Result.ok t { idx := n, bytes := { data := bytes.toArray } } ∧
+            Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap (List.drop n bytes) restPtr ∧
+              r =
+                Aiur.Value.tuple
+                  [Aiur.Value.tuple [Aiur.Value.field ↑t.flag.toNat, IxVM.Refinement.TagN.u64Value t.value.toNat],
+                    restPtr]
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.TagN.getTagN4_refines
+
+/--
+info: @IxVM.Refinement.TagN.getTagN0_refines_at : ∀ {stream r : Aiur.SourceValue IxVM.F} {heap h' : Aiur.Heap IxVM.F}
+  {bytes : List UInt8} {i : ℕ},
+  Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap (List.drop i bytes) stream →
+    Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_tagn0" [stream] heap r h' →
+      h' = heap ∧
+        ∃ t n restPtr,
+          Ixon.getTagN 0 { idx := i, bytes := { data := bytes.toArray } } =
+              EStateM.Result.ok t { idx := i + n, bytes := { data := bytes.toArray } } ∧
+            t.flag = 0 ∧
+              Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap (List.drop (i + n) bytes) restPtr ∧
+                r = Aiur.Value.tuple [IxVM.Refinement.TagN.u64Value t.value.toNat, restPtr]
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.TagN.getTagN0_refines_at
+
+/--
+info: @IxVM.Refinement.TagN.getTagN2_refines_at : ∀ {stream r : Aiur.SourceValue IxVM.F} {heap h' : Aiur.Heap IxVM.F}
+  {bytes : List UInt8} {i : ℕ},
+  Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap (List.drop i bytes) stream →
+    Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_tagn2" [stream] heap r h' →
+      h' = heap ∧
+        ∃ t n restPtr,
+          Ixon.getTagN 2 { idx := i, bytes := { data := bytes.toArray } } =
+              EStateM.Result.ok t { idx := i + n, bytes := { data := bytes.toArray } } ∧
+            Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap (List.drop (i + n) bytes) restPtr ∧
+              r =
+                Aiur.Value.tuple
+                  [Aiur.Value.tuple [Aiur.Value.field ↑t.flag.toNat, IxVM.Refinement.TagN.u64Value t.value.toNat],
+                    restPtr]
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.TagN.getTagN2_refines_at
+
+/--
+info: @IxVM.Refinement.TagN.getTagN4_refines_at : ∀ {stream r : Aiur.SourceValue IxVM.F} {heap h' : Aiur.Heap IxVM.F}
+  {bytes : List UInt8} {i : ℕ},
+  Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap (List.drop i bytes) stream →
+    Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_tagn4" [stream] heap r h' →
+      h' = heap ∧
+        ∃ t n restPtr,
+          Ixon.getTagN 4 { idx := i, bytes := { data := bytes.toArray } } =
+              EStateM.Result.ok t { idx := i + n, bytes := { data := bytes.toArray } } ∧
+            Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum heap (List.drop (i + n) bytes) restPtr ∧
+              r =
+                Aiur.Value.tuple
+                  [Aiur.Value.tuple [Aiur.Value.field ↑t.flag.toNat, IxVM.Refinement.TagN.u64Value t.value.toNat],
+                    restPtr]
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.TagN.getTagN4_refines_at
+
+/--
 info: def IxVM.Refinement.TagN.u64Value : ℕ → Aiur.SourceValue IxVM.F :=
 fun n =>
   Aiur.Value.tuple
@@ -1342,6 +1430,203 @@ info: @Aiur.Generic.SourceSemantics.EvalFn.exec : ∀ {F : Type} [inst : Field F
 -/
 #guard_msgs in
 #check @Aiur.Generic.SourceSemantics.EvalFn.exec
+
+/--
+info: @IxVM.Refinement.Deserialize.readByte_refines : ∀ {bytes : List UInt8} {stream r : Aiur.SourceValue IxVM.F}
+  {h h' : Aiur.Heap IxVM.F},
+  Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h bytes stream →
+    Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::read_byte" [stream] h r h' →
+      h' = h ∧
+        ∃ b rest restPtr,
+          bytes = b :: rest ∧
+            Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h rest restPtr ∧
+              r = Aiur.Value.tuple [Aiur.Value.field ↑b.toNat, restPtr]
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.Deserialize.readByte_refines
+
+/--
+info: @IxVM.Refinement.Deserialize.assertWireBool_refines : ∀ {b : ℕ},
+  b < 256 →
+    ∀ {r : Aiur.SourceValue IxVM.F} {h h' : Aiur.Heap IxVM.F},
+      Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::assert_wire_bool" [Aiur.Value.field ↑b]
+          h r h' →
+        b < 2 ∧ r = Aiur.Value.tuple [] ∧ h' = h
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.Deserialize.assertWireBool_refines
+
+/--
+info: @IxVM.Refinement.Deserialize.getQuotKind_refines : ∀ {b : ℕ} (hb : b < 256) {r : Aiur.SourceValue IxVM.F}
+  {h h' : Aiur.Heap IxVM.F}
+  (ev :
+    Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_quot_kind" [Aiur.Value.field ↑b] h
+      r h'),
+  b < 4 ∧
+    h' = h ∧
+      r =
+        Aiur.Value.construct "Ixon::QuotKind"
+          (match b, hb, ev with
+          | 0, hb, ev => "Typ"
+          | 1, hb, ev => "Ctor"
+          | 2, hb, ev => "Lift"
+          | x, hb, ev => "Ind")
+          []
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.Deserialize.getQuotKind_refines
+
+/--
+info: @IxVM.Refinement.Deserialize.unpackDefKindSafety_refines : ∀ {b : ℕ},
+  b < 11 →
+    b % 4 < 3 →
+      ∀ {r : Aiur.SourceValue IxVM.F} {h h' : Aiur.Heap IxVM.F},
+        Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::unpack_def_kind_safety"
+            [Aiur.Value.field ↑b] h r h' →
+          h' = h ∧
+            r =
+              Aiur.Value.tuple
+                [Aiur.Value.construct "Ixon::DefKind" (IxVM.Refinement.Deserialize.defKindName b) [],
+                  Aiur.Value.construct "Ixon::DefinitionSafety" (IxVM.Refinement.Deserialize.defSafetyName b) [],
+                  Aiur.Value.field 0]
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.Deserialize.unpackDefKindSafety_refines
+
+/--
+info: IxVM.Refinement.Deserialize.buildSuccChain_refines : ∀ (base : Aiur.SourceValue IxVM.F) {count : ℕ},
+  count < 18446744073709551616 →
+    ∀ {r : Aiur.SourceValue IxVM.F} {h h' : Aiur.Heap IxVM.F},
+      Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::build_succ_chain"
+          [base, IxVM.Refinement.TagN.u64Value count] h r h' →
+        (r, h') = IxVM.Refinement.Deserialize.buildSuccChainSpec base count h
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.Deserialize.buildSuccChain_refines
+
+/--
+info: @IxVM.Refinement.Deserialize.getModedBinderNode_refines_at : ∀ {bytes : List UInt8} {i : ℕ} {b : UInt8}
+  {stream lvls r : Aiur.SourceValue IxVM.F} {h h' : Aiur.Heap IxVM.F},
+  Ixon.getU8 { idx := i, bytes := { data := bytes.toArray } } =
+      EStateM.Result.ok b { idx := i + 1, bytes := { data := bytes.toArray } } →
+    4 < b.toNat →
+      Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h (List.drop (i + 1) bytes) stream →
+        Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_moded_binder_node"
+            [Aiur.Value.field ↑b.toNat, stream, lvls] h r h' →
+          h.Extends h' ∧
+            ∃ node n nodeVal restPtr,
+              Ixon.getBinderNode { idx := i, bytes := { data := bytes.toArray } } =
+                  EStateM.Result.ok node { idx := i + 1 + n, bytes := { data := bytes.toArray } } ∧
+                r = Aiur.Value.tuple [nodeVal, restPtr] ∧
+                  IxVM.Refinement.Deserialize.RepBinderNode h' node nodeVal ∧
+                    Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h' (List.drop (i + 1 + n) bytes)
+                      restPtr
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.Deserialize.getModedBinderNode_refines_at
+
+/--
+info: @IxVM.Refinement.Deserialize.getBinderNode_refines_at : ∀ {bytes : List UInt8} {i : ℕ}
+  {stream lvls r : Aiur.SourceValue IxVM.F} {h h' : Aiur.Heap IxVM.F},
+  Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h (List.drop i bytes) stream →
+    Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_binder_node" [stream, lvls] h r h' →
+      h.Extends h' ∧
+        ∃ node n nodeVal restPtr,
+          Ixon.getBinderNode { idx := i, bytes := { data := bytes.toArray } } =
+              EStateM.Result.ok node { idx := i + n, bytes := { data := bytes.toArray } } ∧
+            r = Aiur.Value.tuple [nodeVal, restPtr] ∧
+              IxVM.Refinement.Deserialize.RepBinderNode h' node nodeVal ∧
+                Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h' (List.drop (i + n) bytes) restPtr
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.Deserialize.getBinderNode_refines_at
+
+/--
+info: IxVM.Refinement.Deserialize.getBinderNodeList_refines_at : ∀ count < 18446744073709551616,
+  ∀ {bytes : List UInt8} {i : ℕ} {stream lvls r : Aiur.SourceValue IxVM.F} {h h' : Aiur.Heap IxVM.F},
+    Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h (List.drop i bytes) stream →
+      Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_binder_node_list"
+          [stream, IxVM.Refinement.TagN.u64Value count, lvls] h r h' →
+        h.Extends h' ∧
+          ∃ nodes n listPtr restPtr,
+            Ixon.getArray Ixon.getBinderNode count { idx := i, bytes := { data := bytes.toArray } } =
+                EStateM.Result.ok nodes { idx := i + n, bytes := { data := bytes.toArray } } ∧
+              r = Aiur.Value.tuple [listPtr, restPtr] ∧
+                Aiur.Library.List.RepList IxVM.Refinement.Deserialize.binderNodeListEnum
+                    IxVM.Refinement.Deserialize.RepBinderNode h' nodes.toList listPtr ∧
+                  Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h' (List.drop (i + n) bytes) restPtr
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.Deserialize.getBinderNodeList_refines_at
+
+/--
+info: @IxVM.Refinement.Deserialize.getBinderBlock_refines_at : ∀ {bytes : List UInt8} {i : ℕ}
+  {stream lvls r : Aiur.SourceValue IxVM.F} {h h' : Aiur.Heap IxVM.F},
+  Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h (List.drop i bytes) stream →
+    Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_binder_block" [stream, lvls] h r
+        h' →
+      h.Extends h' ∧
+        ∃ block n blockVal restPtr,
+          Ixon.getBinderBlock { idx := i, bytes := { data := bytes.toArray } } =
+              EStateM.Result.ok block { idx := i + n, bytes := { data := bytes.toArray } } ∧
+            r = Aiur.Value.tuple [blockVal, restPtr] ∧
+              IxVM.Refinement.Deserialize.RepBinderBlock h' block blockVal ∧
+                Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h' (List.drop (i + n) bytes) restPtr
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.Deserialize.getBinderBlock_refines_at
+
+/--
+info: IxVM.Refinement.Deserialize.getBinderBlockList_refines_at : ∀ count < 18446744073709551616,
+  ∀ {bytes : List UInt8} {i : ℕ} {stream lvls r : Aiur.SourceValue IxVM.F} {h h' : Aiur.Heap IxVM.F},
+    Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h (List.drop i bytes) stream →
+      Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_binder_block_list"
+          [stream, IxVM.Refinement.TagN.u64Value count, lvls] h r h' →
+        h.Extends h' ∧
+          ∃ blocks n listPtr restPtr,
+            Ixon.getArray Ixon.getBinderBlock count { idx := i, bytes := { data := bytes.toArray } } =
+                EStateM.Result.ok blocks { idx := i + n, bytes := { data := bytes.toArray } } ∧
+              r = Aiur.Value.tuple [listPtr, restPtr] ∧
+                Aiur.Library.List.RepList IxVM.Refinement.Deserialize.binderBlockListEnum
+                    IxVM.Refinement.Deserialize.RepBinderBlock h' blocks.toList listPtr ∧
+                  Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h' (List.drop (i + n) bytes) restPtr
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.Deserialize.getBinderBlockList_refines_at
+
+/--
+info: @IxVM.Refinement.Deserialize.getBinders_refines_at : ∀ {bytes : List UInt8} {i : ℕ}
+  {stream lvls r : Aiur.SourceValue IxVM.F} {h h' : Aiur.Heap IxVM.F},
+  Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h (List.drop i bytes) stream →
+    Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_binders" [stream, lvls] h r h' →
+      h.Extends h' ∧
+        ∃ blocks n listPtr restPtr,
+          Ixon.getBinders { idx := i, bytes := { data := bytes.toArray } } =
+              EStateM.Result.ok blocks { idx := i + n, bytes := { data := bytes.toArray } } ∧
+            r = Aiur.Value.tuple [listPtr, restPtr] ∧
+              Aiur.Library.List.RepList IxVM.Refinement.Deserialize.binderBlockListEnum
+                  IxVM.Refinement.Deserialize.RepBinderBlock h' blocks.toList listPtr ∧
+                Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h' (List.drop (i + n) bytes) restPtr
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.Deserialize.getBinders_refines_at
+
+/--
+info: @IxVM.Refinement.Deserialize.getBinders_refines : ∀ {bytes : List UInt8} {stream lvls r : Aiur.SourceValue IxVM.F}
+  {h h' : Aiur.Heap IxVM.F},
+  Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h bytes stream →
+    Aiur.Generic.SourceSemantics.EvalFn IxVM.Refinement.TagN.W "IxonDeserialize::get_binders" [stream, lvls] h r h' →
+      h.Extends h' ∧
+        ∃ blocks n listPtr restPtr,
+          Ixon.getBinders (IxVM.Refinement.TagN.start bytes) =
+              EStateM.Result.ok blocks { idx := n, bytes := { data := bytes.toArray } } ∧
+            r = Aiur.Value.tuple [listPtr, restPtr] ∧
+              Aiur.Library.List.RepList IxVM.Refinement.Deserialize.binderBlockListEnum
+                  IxVM.Refinement.Deserialize.RepBinderBlock h' blocks.toList listPtr ∧
+                Aiur.Library.Bytes.RepByteStream IxVM.Refinement.byteStreamEnum h' (List.drop n bytes) restPtr
+-/
+#guard_msgs (whitespace := lax) in
+#check @IxVM.Refinement.Deserialize.getBinders_refines
 
 /-! ## Theorems and axioms -/
 

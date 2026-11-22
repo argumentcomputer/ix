@@ -88,8 +88,11 @@ def flagsMessage : String :=
   s!"non-canonical inductive flags for '{tName}': stored isRec=false \
 isReflexive=false numNested=0, computed isRec=true isReflexive=false numNested=0"
 
-/-- Certified compile (`ix compile`, fail-closed): `ok bytes`, or the refusal text. -/
-def rust (env : Environment) (cs : List (Name × ConstantInfo)) (out : System.FilePath) :
+/-- Certified IO compile (`compileCertifiedPrepared`, fail-closed): `ok bytes`,
+or the refusal text. Worker-count and pure-report equality are formally proved
+(`compileEnvFold_width`, `ReadyCompile.reportIO`), so one certified IO leg plus
+the pure compiler suffices. -/
+def certified (env : Environment) (cs : List (Name × ConstantInfo)) (out : System.FilePath) :
     IO (Except String ByteArray) := do
   let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants env cs)
   try
@@ -100,17 +103,6 @@ def rust (env : Environment) (cs : List (Name × ConstantInfo)) (out : System.Fi
     IO.FS.writeBinFile out bytes
     return .ok (← IO.FS.readBinFile out)
   catch e => return .error (toString e)
-
-/-- The Lean IO pipeline (`compile-lean`): `ok bytes`, or the refusal text. -/
-def lean (env : Environment) (cs : List (Name × ConstantInfo)) :
-    IO (Except String ByteArray) := do
-  -- without binder data, as the other two compiles write their records
-  match ← Ix.CompileM.compileCertified env cs 1 (binderData := false) with
-  | .error e => return .error e
-  | .ok o =>
-    if let some (n, m) := o.failures.toMap.toList.head? then
-      return .error s!"{n}: {m}"
-    return Ixon.serEnv o.env
 
 /-- The pure compiler (`Ix.Cert.compile`): `ok bytes`, or the refusal text. -/
 def pure (cs : List (Name × ConstantInfo)) : Except String ByteArray := do
@@ -158,31 +150,30 @@ def showLeg : Except String ByteArray → String
 /-- Every leg compiles `cs`, byte-identically; returns the failures. -/
 def checkCompiles (env : Environment) (dir : System.FilePath) (label : String)
     (cs : List (Name × ConstantInfo)) : IO Nat := do
-  match ← rust env cs (dir / s!"{label}.ixe"), ← lean env cs, pure cs with
-  | .ok r, .ok l, .ok p =>
-    if r == l && l == p then
-      IO.println s!"[ind-flags] {label}: all three compile, byte-identical ({r.size} bytes)"
+  match ← certified env cs (dir / s!"{label}.ixe"), pure cs with
+  | .ok c, .ok p =>
+    if c == p then
+      IO.println s!"[ind-flags] {label}: certified and pure compile, byte-identical ({c.size} bytes)"
       return 0
     IO.println s!"[ind-flags] {label}: FAIL: outputs differ \
-(rust {r.size}, lean {l.size}, pure {p.size} bytes)"
+(certified {c.size}, pure {p.size} bytes)"
     return 1
-  | r, l, p =>
-    IO.println s!"[ind-flags] {label}: FAIL: rust {showLeg r}; lean {showLeg l}; \
-pure {showLeg p}"
+  | c, p =>
+    IO.println s!"[ind-flags] {label}: FAIL: certified {showLeg c}; pure {showLeg p}"
     return 1
 
 /-- Every leg refuses `cs` with the same mixed-safety text, naming two
     members; returns the failures. -/
 def checkMixedSafety (env : Environment) (dir : System.FilePath) (label : String)
     (cs : List (Name × ConstantInfo)) : IO Nat := do
-  let legs := [← rust env cs (dir / s!"{label}.ixe"), ← lean env cs, pure cs]
+  let legs := [← certified env cs (dir / s!"{label}.ixe"), pure cs]
   let texts := legs.map fun result => match result with
     | .ok _ => none
     | .error e => safetyRefusal? e
   match texts with
   | some t :: rest =>
     if rest.all (· == some t) && (t.splitOn "' is ").length == 3 then
-      IO.println s!"[ind-flags] {label}: all three refuse: {t}"
+      IO.println s!"[ind-flags] {label}: both refuse: {t}"
       return 0
   | _ => Pure.pure ()
   IO.println s!"[ind-flags] {label}: FAIL: {legs.map showLeg}"
@@ -216,19 +207,19 @@ def run : IO UInt32 := do
     let good ← IO.ofExcept (closure env true)
     let bad ← IO.ofExcept (closure env false)
     -- valid neighbour: every leg compiles, byte-identically
-    match ← rust env good (dir / "good.ixe"), ← lean env good, pure good with
-    | .ok r, .ok l, .ok p =>
-      if r == l && l == p then
-        IO.println s!"[ind-flags] true flags: all three compile, byte-identical ({r.size} bytes)"
+    match ← certified env good (dir / "good.ixe"), pure good with
+    | .ok c, .ok p =>
+      if c == p then
+        IO.println s!"[ind-flags] true flags: certified and pure compile, byte-identical ({c.size} bytes)"
       else
         failures := failures + 1
         IO.println s!"[ind-flags] true flags: FAIL: outputs differ \
-(rust {r.size}, lean {l.size}, pure {p.size} bytes)"
-    | r, l, p =>
+(certified {c.size}, pure {p.size} bytes)"
+    | c, p =>
       failures := failures + 1
-      IO.println s!"[ind-flags] true flags: FAIL: rust {r.isOk}, lean {l.isOk}, pure {p.isOk}"
+      IO.println s!"[ind-flags] true flags: FAIL: certified {c.isOk}, pure {p.isOk}"
     -- stored `isRec := false`: every leg refuses with the same message
-    let legs := [("rust", ← rust env bad (dir / "bad.ixe")), ("lean", ← lean env bad),
+    let legs := [("certified", ← certified env bad (dir / "bad.ixe")),
       ("pure", pure bad)]
     for (label, result) in legs do
       match result with

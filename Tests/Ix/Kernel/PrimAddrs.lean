@@ -122,7 +122,7 @@ private def ixNameOf (s : String) : Ix.Name :=
 (`leanParityTable`, without the reserved markers, which are not constants) is the
 record a compiled environment (`IX_PRIM_IXE`, an `.ixe` file such as Init+Std's)
 holds and publishes under the primitive's Lean name. The table is hand-copied from
-the compiler's output (`ixon-v4-primitives`), so a change to the record format or
+the compiler's output (`ixon-primitives`), so a change to the record format or
 to the compiler's output that is not carried into it fails here. -/
 def artifact : IO UInt32 := do
   let some path ← IO.getEnv "IX_PRIM_IXE"

@@ -1,7 +1,6 @@
 module
 
 public import Tests.FFI.Basic
-public import Tests.FFI.CompileStatus
 public import Tests.FFI.Ixon
 public import Tests.FFI.Lifecycle
 public import Tests.FFI.Refcount
@@ -13,12 +12,14 @@ public import Tests.FFI.Refcount
 
 namespace Tests.FFI
 
-public def suite : List LSpec.TestSeq := List.foldr (· ++ ·) []
-  [ Tests.FFI.Basic.suite
-  , Tests.FFI.CompileStatus.suite
-  , Tests.FFI.Ixon.suite
-  , Tests.FFI.Lifecycle.suite
-  , Tests.FFI.Refcount.suite
+public def suiteWith (cfg : SlimCheck.Configuration := {}) (valgrind : Bool := false) :
+    List LSpec.TestSeq := List.foldr (· ++ ·) []
+  [ Tests.FFI.Basic.suiteWith cfg
+  , Tests.FFI.Ixon.suiteWith cfg
+  , Tests.FFI.Lifecycle.suiteWith cfg
+  , Tests.FFI.Refcount.suiteWith cfg valgrind
   ]
+
+public def suite : List LSpec.TestSeq := suiteWith {} false
 
 end Tests.FFI

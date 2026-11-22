@@ -104,6 +104,17 @@ private def tableOf (rebind : List Ix.Kernel.Role) (tag : String) (drop : Bool :
   Ix.Kernel.RoleTable.toBytes { version := Ix.Kernel.specVersion, evidence := #[]
                                 bound := if drop then bound.pop else bound }
 
+/-- Bounded concurrency for independent `claim_fixture` provers. -/
+private def fixtureJobs : Nat := 6
+
+private inductive NodeSpec where
+  | checkEnv (sub : String) (kind : ChildKind) (statement : CheckEnvTrees)
+  | claim (sub : String) (kind : ChildKind) (claim : Ix.Claim) (statement : CheckEnvTrees)
+
+private def buildNodeSpec (ctx : Context) (dir : System.FilePath) : NodeSpec → IO Node
+  | .checkEnv sub kind st => node ctx (dir / sub) kind st
+  | .claim sub kind cl st => claimNode ctx (dir / sub) kind cl st
+
 /-- Shapes 13 to 16: binding discharge, cross-binding joins and catalog joins,
 each with the negative cases of the bindings it checks. -/
 private def bindingShapeCases (ctx : Context) (dir : System.FilePath)
@@ -117,24 +128,6 @@ private def bindingShapeCases (ctx : Context) (dir : System.FilePath)
   let assumedCtx := { claimCtx with bindingAssumed := true }
   let assumedLeft : CheckEnvTrees := { left with ctx := assumedCtx }
   let assumedRight : CheckEnvTrees := { right with ctx := assumedCtx }
-  let binding := (← claimNode ctx (dir / "binding") .ixvm
-    (.binding claimCtx.spec claimCtx.binding) left).wrapper
-  let otherBinding := (← claimNode ctx (dir / "other-binding") .ixvm
-    (.binding claimCtx.spec (Address.blake3 "another binding".toUTF8)) left).wrapper
-  let ali ← node ctx (dir / "ali") .ixvm assumedLeft
-  let ari ← node ctx (dir / "ari") .ixvm assumedRight
-  let ala ← node ctx (dir / "ala") .aggr assumedLeft
-  let discharges : Array (String × Node × Ixon.Proof × CheckEnvTrees × Bool) := #[
-    ("shape 13 discharges an IxVM child's binding", ali, binding, left, true),
-    ("shape 13 discharges another claim set with the same binding proof", ari, binding, right, true),
-    ("shape 14 discharges an ix_aggr child's binding", ala, binding, left, true),
-    ("shape 13 rejects a child that validates its binding", li, binding, left, false),
-    ("shape 13 rejects a binding claim for another binding", ali, otherBinding, left, false),
-    ("shape 13 rejects an output that still assumes the binding", ali, binding, assumedLeft, false),
-    ("shape 13 rejects an output for other subjects", ali, binding, right, false)]
-  for (label, child, proof, output, accept) in discharges do
-    tests := tests.push (test ctx label (Ix.Claim.ser output.claim)
-      (← dischargeAdvice ctx child proof output) accept)
   -- ── claims under different role bindings (shapes 15–16) ──
   -- `tableA` and `tableB` bind every role and differ only in `Nat.land`, so
   -- they have one literal class; `tableC` also rebinds `Char.ofNat`, a class
@@ -156,14 +149,46 @@ private def bindingShapeCases (ctx : Context) (dir : System.FilePath)
   let assumedA := { memberA with ctx := { memberA.ctx with bindingAssumed := true } }
   let conditionalA := { memberA with assumptions := left.assumptions }
   let ser (s : CheckEnvTrees) := Ix.Claim.ser s.claim
-  let childA ← node ctx (dir / "member-a") .aggr memberA
-  let childB ← node ctx (dir / "member-b") .aggr memberB
-  let childC ← node ctx (dir / "member-c") .aggr memberC
-  let childIncomplete ← node ctx (dir / "member-incomplete") .aggr memberIncomplete
-  let childAssumedA ← node ctx (dir / "member-assumed") .aggr assumedA
-  let childConditional ← node ctx (dir / "member-conditional") .aggr conditionalA
   let crossAB := memberA.joinCrossBinding klass memberB
-  let childCross ← node ctx (dir / "cross") .aggr crossAB
+  let catalogAC := CatalogTrees.join (.inl memberA.claim) (.inl memberC.claim)
+  let catalogPartial := CatalogTrees.join (.inl memberA.claim) (.inl memberIncomplete.claim)
+  let catalogACB := CatalogTrees.join (.inr catalogAC) (.inl crossAB.claim)
+  let bindingMember : Ix.Claim := .binding claimCtx.spec (Address.blake3 tableA)
+  -- Build all 14 independent stand-in STARK children concurrently.
+  let nodeSpecs : Array NodeSpec := #[
+    .claim "binding" .ixvm (.binding claimCtx.spec claimCtx.binding) left,
+    .claim "other-binding" .ixvm (.binding claimCtx.spec (Address.blake3 "another binding".toUTF8)) left,
+    .checkEnv "ali" .ixvm assumedLeft,
+    .checkEnv "ari" .ixvm assumedRight,
+    .checkEnv "ala" .aggr assumedLeft,
+    .checkEnv "member-a" .aggr memberA,
+    .checkEnv "member-b" .aggr memberB,
+    .checkEnv "member-c" .aggr memberC,
+    .checkEnv "member-incomplete" .aggr memberIncomplete,
+    .checkEnv "member-assumed" .aggr assumedA,
+    .checkEnv "member-conditional" .aggr conditionalA,
+    .checkEnv "cross" .aggr crossAB,
+    .claim "catalog" .aggr catalogAC.claim memberA,
+    .claim "binding-member" .aggr bindingMember memberA]
+  let nodes ← FormalAiur.boundedMap fixtureJobs nodeSpecs fun _ spec =>
+    buildNodeSpec ctx dir spec
+  let [bindingNode, otherBindingNode, ali, ari, ala, childA, childB, childC,
+       childIncomplete, childAssumedA, childConditional, childCross,
+       childCatalog, childBindingMember] := nodes.toList
+    | throw (IO.userError s!"expected 14 binding shape nodes, got {nodes.size}")
+  let binding := bindingNode.wrapper
+  let otherBinding := otherBindingNode.wrapper
+  let discharges : Array (String × Node × Ixon.Proof × CheckEnvTrees × Bool) := #[
+    ("shape 13 discharges an IxVM child's binding", ali, binding, left, true),
+    ("shape 13 discharges another claim set with the same binding proof", ari, binding, right, true),
+    ("shape 14 discharges an ix_aggr child's binding", ala, binding, left, true),
+    ("shape 13 rejects a child that validates its binding", li, binding, left, false),
+    ("shape 13 rejects a binding claim for another binding", ali, otherBinding, left, false),
+    ("shape 13 rejects an output that still assumes the binding", ali, binding, assumedLeft, false),
+    ("shape 13 rejects an output for other subjects", ali, binding, right, false)]
+  for (label, child, proof, output, accept) in discharges do
+    tests := tests.push (test ctx label (Ix.Claim.ser output.claim)
+      (← dischargeAdvice ctx child proof output) accept)
   let crossCases : Array (String × Node × Node × Array ByteArray × Ix.Claim × Bool) := #[
     ("shape 15 joins two claims of one literal class", childA, childB,
       #[ser memberA, ser memberB, tableA, tableB], crossAB.claim, true),
@@ -193,12 +218,6 @@ private def bindingShapeCases (ctx : Context) (dir : System.FilePath)
       #[ser memberA, ser memberB] (memberA.adviceTrees memberB joined)) false)
   -- Catalog joins: two member claims, a member with an incomplete binding,
   -- then a catalog and a class claim.
-  let catalogAC := CatalogTrees.join (.inl memberA.claim) (.inl memberC.claim)
-  let catalogPartial := CatalogTrees.join (.inl memberA.claim) (.inl memberIncomplete.claim)
-  let catalogACB := CatalogTrees.join (.inr catalogAC) (.inl crossAB.claim)
-  let childCatalog ← claimNode ctx (dir / "catalog") .aggr catalogAC.claim memberA
-  let bindingMember : Ix.Claim := .binding claimCtx.spec (Address.blake3 tableA)
-  let childBindingMember ← claimNode ctx (dir / "binding-member") .aggr bindingMember memberA
   let catalogOf (claims : Array Ix.Claim) : Ix.AssumptionTree :=
     (Ix.AssumptionTree.canonical (claims.map Ix.Claim.commit)).get!
   -- The output missing a member keeps the member whose commit sorts last, so
@@ -289,8 +308,9 @@ def main (args : List String) : IO Unit := do
       pure (dir / "aggregation.ixt").toString
   IO.eprintln s!"[formal-aggregate-tests] writing {path}"
   IO.FS.withTempDir fun dir => do
-    fixture (dir / "ixvm") (Array.replicate 8 0)
-    fixture (dir / "self") (Array.replicate 16 0)
+    let _ ← FormalAiur.boundedMap 2
+      #[("ixvm", Array.replicate 8 (0 : Aiur.G)), ("self", Array.replicate 16 (0 : Aiur.G))]
+      fun _ (sub, args) => fixture (dir / sub) args
     let ixvmKey ← IO.FS.readBinFile (dir / "ixvm" / "key.bin")
     let aggrKey ← IO.FS.readBinFile (dir / "self" / "key.bin")
     let ctx : Context := {
@@ -307,10 +327,18 @@ def main (args : List String) : IO Unit := do
     let claimCtx ← IO.ofExcept Ix.ClaimContext.ofDefaultTable
     let left : CheckEnvTrees := { ctx := claimCtx, subjects := tree #[a, b], assumptions := some (tree #[c, d]) }
     let right : CheckEnvTrees := { ctx := claimCtx, subjects := tree #[c], assumptions := some (tree #[a]) }
-    let li ← node ctx (dir / "li") .ixvm left
-    let ri ← node ctx (dir / "ri") .ixvm right
-    let la ← node ctx (dir / "la") .aggr left
-    let ra ← node ctx (dir / "ra") .aggr right
+    let selfA : CheckEnvTrees := { ctx := claimCtx, subjects := tree #[a], assumptions := some (tree #[a]) }
+    let leftB : CheckEnvTrees := { ctx := claimCtx, subjects := tree #[a, b], assumptions := some (tree #[b, c]) }
+    let mainNodes ← FormalAiur.boundedMap fixtureJobs
+      #[NodeSpec.checkEnv "li" .ixvm left,
+        .checkEnv "ri" .ixvm right,
+        .checkEnv "la" .aggr left,
+        .checkEnv "ra" .aggr right,
+        .checkEnv "q" .ixvm selfA,
+        .checkEnv "lb" .ixvm leftB]
+      fun _ spec => buildNodeSpec ctx dir spec
+    let [li, ri, la, ra, qi, lbi] := mainNodes.toList
+      | throw (IO.userError s!"expected 6 main nodes, got {mainNodes.size}")
     let bytes := Ix.Claim.ser left.claim
     let mut tests : Array Ix.AiurInvocation.Case := #[]
     for n in #[li, la] do
@@ -328,10 +356,6 @@ def main (args : List String) : IO Unit := do
     -- No child assumes its own subject, the children's subjects are disjoint,
     -- and a structural join discharges an assumption only against the other
     -- child's subjects. `advice` derives trees and paths without these checks.
-    let selfA : CheckEnvTrees := { ctx := claimCtx, subjects := tree #[a], assumptions := some (tree #[a]) }
-    let leftB : CheckEnvTrees := { ctx := claimCtx, subjects := tree #[a, b], assumptions := some (tree #[b, c]) }
-    let qi ← node ctx (dir / "q") .ixvm selfA
-    let lbi ← node ctx (dir / "lb") .ixvm leftB
     let selfJoins : Array (String × Node × Node × CheckEnvTrees × Bool) := #[
       ("flat pair rejects duplicated self-assuming children", qi, qi,
         { ctx := claimCtx, subjects := tree #[a], assumptions := none }, false),
@@ -379,8 +403,9 @@ def main (args : List String) : IO Unit := do
       let bad := statement.set! 49 (statement.data[49]! ^^^ 1)
       tests := tests.push (test ctx s!"range leaf {hi} rejects false residual" bad (extendOutputClaim io bad) false)
     -- Stand-in self proofs have exactly the public statement a range node emits.
-    fixture (dir / "empty") (pubInput ctx.allowed empty)
-    fixture (dir / "full") (pubInput ctx.allowed full)
+    let _ ← FormalAiur.boundedMap 2
+      #[("empty", pubInput ctx.allowed empty), ("full", pubInput ctx.allowed full)]
+      fun _ (sub, args) => fixture (dir / sub) args
     let addRange (io : Aiur.IOBuffer) (slot : Nat) (name : String) (stmt : ByteArray) : IO Aiur.IOBuffer := do
       let io := extendVk io .aggr ctx.aggr.key
       let io := extendChild io slot (← IO.FS.readBinFile (dir / name / "proof.bin"))

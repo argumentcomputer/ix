@@ -29,6 +29,7 @@ pub struct KzgConfig {
   max_log_degree: usize,
   stream_lookups: bool,
   stream_quotient: bool,
+  streaming_chunk_size: Option<usize>,
   spill_dir: Option<PathBuf>,
 }
 
@@ -79,6 +80,7 @@ impl KzgConfig {
       max_log_degree,
       stream_lookups: false,
       stream_quotient: false,
+      streaming_chunk_size: None,
       spill_dir: None,
     }
   }
@@ -133,6 +135,15 @@ impl KzgConfig {
   /// Evaluate each quotient on trace-sized cosets, bounding temporary matrices.
   pub fn with_streaming_quotient(mut self) -> Self {
     self.stream_quotient = true;
+    self
+  }
+
+  /// Override streaming row/disk chunk sizes for testing multi-chunk boundaries
+  /// at small trace heights. Does not change proofs or transcripts.
+  #[doc(hidden)]
+  pub fn with_streaming_chunk_size(mut self, chunk: usize) -> Self {
+    assert!(chunk > 0, "streaming chunk size must be positive");
+    self.streaming_chunk_size = Some(chunk);
     self
   }
 
@@ -203,16 +214,16 @@ impl KzgConfig {
       input.stage_1.1,
       domain,
     );
-    const CHUNK: usize = 1 << 12;
+    let chunk = self.streaming_chunk_size.unwrap_or(1 << 12);
     let width = input.circuit.stage_2_width;
     let mut trace = vec![Scalar::ZERO; domain.size() * width];
     // Every chunk starts at zero. Its total determines the prefix
     // offset applied in a second bounded, parallel pass.
     let totals: Vec<_> = trace
-      .par_chunks_mut(CHUNK * width)
+      .par_chunks_mut(chunk * width)
       .enumerate()
       .map(|(i, dst)| {
-        let start = i * CHUNK;
+        let start = i * chunk;
         let values = multi_stark::system::compute_lookup_values_range(
           &graph,
           &main,
@@ -240,7 +251,7 @@ impl KzgConfig {
         offset
       })
       .collect();
-    trace.par_chunks_mut(CHUNK * width).zip(offsets).for_each(
+    trace.par_chunks_mut(chunk * width).zip(offsets).for_each(
       |(dst, offset)| {
         if offset != Scalar::ZERO {
           for value in dst {
@@ -255,9 +266,11 @@ impl KzgConfig {
       p3_matrix::dense::RowMajorMatrix::new(trace, input.circuit.stage_2_width);
     #[cfg(not(feature = "cuda"))]
     let (_, data) = if let Some(spill_dir) = &self.spill_dir {
+      let disk_chunk =
+        self.streaming_chunk_size.unwrap_or(super::coefficients::CHUNK);
       self
         .pcs
-        .commit_matrix_spilled(domain, trace, spill_dir)
+        .commit_matrix_spilled_with_chunk(domain, trace, spill_dir, disk_chunk)
         .expect("spilling lookup polynomial to disk")
     } else {
       self.pcs.commit(vec![(domain, trace)])
@@ -325,6 +338,7 @@ impl KzgConfig {
           alpha,
           coset,
           ratio,
+          self.streaming_chunk_size.unwrap_or(1 << 12),
           &mut values,
         );
       }
@@ -338,13 +352,16 @@ impl KzgConfig {
     }
     #[cfg(not(feature = "cuda"))]
     let (_, data) = if let Some(spill_dir) = &self.spill_dir {
+      let disk_chunk =
+        self.streaming_chunk_size.unwrap_or(super::coefficients::CHUNK);
       self
         .pcs
-        .commit_quotient_spilled(
+        .commit_quotient_spilled_with_chunk(
           input.quotient_domain,
           p3_matrix::dense::RowMajorMatrix::new_col(values),
           ratio,
           spill_dir,
+          disk_chunk,
         )
         .expect("spilling quotient polynomial to disk")
     } else {

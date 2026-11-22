@@ -2,7 +2,7 @@ import IxC.Kernel.Ixon.RoleTable
 
 /-! # Interoperability vectors for the role table's wire codec (`role-table-wire`)
 
-`Tests/Fixtures/ixon-v4/role-table.tsv` holds one encoded role table per line,
+`Tests/Fixtures/ixon/role-table.tsv` holds one encoded role table per line,
 produced by IxC's codec (`RoleTable.toBytes`, round-tripped through
 `RoleTable.ofBytes`). Rust's codec is checked against the file on every pull
 request (`crates/ixon/src/role_table/tests.rs`); the primary entry
@@ -17,7 +17,7 @@ namespace Tests.RoleTableWire
 
 open Ix.Kernel
 
-def path : System.FilePath := "Tests" / "Fixtures" / "ixon-v4" / "role-table.tsv"
+def path : System.FilePath := "Tests" / "Fixtures" / "ixon" / "role-table.tsv"
 
 private def addr (seed : Nat) : Address :=
   ⟨⟨(Array.range 32).map fun i => (seed + i).toUInt8⟩⟩

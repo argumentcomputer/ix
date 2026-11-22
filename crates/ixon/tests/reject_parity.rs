@@ -1,5 +1,5 @@
 //! Malformed inputs every Rust reader of their kind refuses: the Rust side of
-//! the shared fixture `Tests/Fixtures/ixon-v4/reject-parity.txt`, which the Lean suite
+//! the shared fixture `Tests/Fixtures/ixon/reject-parity.txt`, which the Lean suite
 //! `ixon-reject-parity` (`Tests/Ix/IxonRejectParity.lean`) reads too, so
 //! that both sides refuse the same byte strings. Only the Lean suite reads
 //! the `.ixes` cases.
@@ -10,7 +10,7 @@ use ixon::env::Env;
 use ixon::proof::Claim;
 
 const FIXTURE: &str =
-  include_str!("../../../Tests/Fixtures/ixon-v4/reject-parity.txt");
+  include_str!("../../../Tests/Fixtures/ixon/reject-parity.txt");
 
 /// The fixture's cases: kind, name and bytes.
 fn cases() -> Vec<(&'static str, &'static str, Vec<u8>)> {

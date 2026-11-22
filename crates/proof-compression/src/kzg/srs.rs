@@ -108,6 +108,14 @@ impl Srs {
   /// deserialization, including subgroup checks. This does not establish
   /// trusted provenance or an unknown trapdoor.
   pub fn validate(&self) -> Result<(), &'static str> {
+    // Bound both powers and MSM digit/bucket scratch independently of SRS
+    // length. All adjacent pairs still participate with their original weight.
+    const CHUNK: usize = 1 << 16;
+    self.validate_with_chunk(CHUNK)
+  }
+
+  fn validate_with_chunk(&self, chunk: usize) -> Result<(), &'static str> {
+    assert!(chunk > 0);
     if self.g1.len() < 2 || !self.g1.len().is_power_of_two() {
       return Err("SRS length must be a power of two >= 2");
     }
@@ -153,19 +161,16 @@ impl Srs {
       return Err("zero parameter-validation challenge");
     }
 
-    // Bound both powers and MSM digit/bucket scratch independently of SRS
-    // length. All adjacent pairs still participate with their original weight.
-    const CHUNK: usize = 1 << 16;
     let concurrency = current_num_threads().div_ceil(8).min(4);
     let mut low = G1Projective::zero();
     let mut high = G1Projective::zero();
-    for start in (0..self.g1.len() - 1).step_by(CHUNK * concurrency) {
-      let end = (start + CHUNK * concurrency).min(self.g1.len() - 1);
+    for start in (0..self.g1.len() - 1).step_by(chunk * concurrency) {
+      let end = (start + chunk * concurrency).min(self.g1.len() - 1);
       let parts: Vec<_> = self.g1[start..end]
-        .par_chunks(CHUNK)
+        .par_chunks(chunk)
         .enumerate()
         .map(|(index, points)| {
-          let offset = start + index * CHUNK;
+          let offset = start + index * chunk;
           let mut acc = r.pow([offset as u64]);
           let powers: Vec<_> = (0..points.len())
             .map(|_| {
@@ -215,18 +220,32 @@ impl Srs {
     public_max_degree: usize,
     seed: &[u8],
   ) -> Self {
+    // τ-powers in independent chunks (each chunk seeds itself with
+    // τ^start), so the scalar multiplications parallelize under the
+    // `parallel` feature; serial otherwise.
+    Self::unsafe_dev_setup_prefix_with_chunk(
+      max_len,
+      public_max_degree,
+      seed,
+      1usize << 14,
+    )
+  }
+
+  fn unsafe_dev_setup_prefix_with_chunk(
+    max_len: usize,
+    public_max_degree: usize,
+    seed: &[u8],
+    chunk: usize,
+  ) -> Self {
+    assert!(chunk > 0);
     assert!(max_len >= 2 && max_len.is_power_of_two());
     assert!(public_max_degree >= max_len - 1);
     let public_setup = PublicSetup::known_trapdoor(public_max_degree, seed);
     let tau = dev_tau(seed);
 
     let g1_gen = G1Projective::generator();
-    // τ-powers in independent chunks (each chunk seeds itself with
-    // τ^start), so the scalar multiplications parallelize under the
-    // `parallel` feature; serial otherwise. A bounded fixed-base table
-    // amortizes the generator multiplication across powers without a table
-    // whose size grows with the SRS degree.
-    let chunk = 1usize << 14;
+    // A bounded fixed-base table amortizes the generator multiplication across
+    // powers without a table whose size grows with the SRS degree.
     let table = ark_ec::scalar_mul::BatchMulPreprocessing::new(
       g1_gen,
       max_len.min(1 << 12),
@@ -260,7 +279,14 @@ mod tests {
   #[test]
   fn development_powers_match_naive_at_chunk_boundaries() {
     let seed = b"chunk-powers";
-    let srs = Srs::unsafe_dev_setup(1 << 16, seed);
+    let chunk = 1 << 6;
+    let srs = Srs::unsafe_dev_setup_prefix_with_chunk(
+      1 << 9,
+      (1 << 9) - 1,
+      seed,
+      chunk,
+    );
+    assert_eq!(srs.g1, Srs::unsafe_dev_setup(1 << 9, seed).g1);
     let mut wide = [0u8; 64];
     blake3::Hasher::new()
       .update(DEV_TAU_DOMAIN)
@@ -268,7 +294,17 @@ mod tests {
       .finalize_xof()
       .fill(&mut wide);
     let tau = Fr::from_le_bytes_mod_order(&wide);
-    for i in [0, 1, (1 << 14) - 1, 1 << 14, (1 << 15) - 1, (1 << 16) - 1] {
+    for i in [
+      0,
+      1,
+      chunk - 1,
+      chunk,
+      2 * chunk - 1,
+      2 * chunk,
+      4 * chunk - 1,
+      4 * chunk,
+      (1 << 9) - 1,
+    ] {
       assert_eq!(
         srs.g1[i],
         (G1Projective::generator() * tau.pow([i as u64])).into_affine()
@@ -278,12 +314,26 @@ mod tests {
 
   #[test]
   fn validation_covers_chunk_boundaries() {
-    let mut srs = Srs::unsafe_dev_setup(1 << 17, b"validation-chunks");
+    let chunk = 1 << 6;
+    let mut srs = Srs::unsafe_dev_setup(1 << 9, b"validation-chunks");
     srs.validate().unwrap();
-    for index in [(1 << 16) - 1, 1 << 16, (1 << 16) + 1, (1 << 17) - 2] {
+    srs.validate_with_chunk(chunk).unwrap();
+    // 512 / 64 = 8 chunks spans multiple chunks AND multiple outer batches.
+    for index in [
+      chunk - 1,
+      chunk,
+      chunk + 1,
+      4 * chunk - 1,
+      4 * chunk,
+      4 * chunk + 1,
+      (1 << 9) - 2,
+    ] {
       let saved = srs.g1[index];
       srs.g1[index] = srs.g1[index + 1];
-      assert!(srs.validate().is_err(), "accepted changed power {index}");
+      assert!(
+        srs.validate_with_chunk(chunk).is_err(),
+        "accepted changed power {index}"
+      );
       srs.g1[index] = saved;
     }
   }

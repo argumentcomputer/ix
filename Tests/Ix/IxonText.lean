@@ -1,4 +1,4 @@
-import Tests.Ix.IxonSyntax
+import Ix.IxonSyntax
 
 namespace Tests.IxonText
 open Ixon.Syntax
@@ -18,7 +18,7 @@ def textContractKey : Term → Option (String × Nat × Nat)
   | _ => none
 
 def runText : IO Nat := do
-  let bytes ← IO.FS.readFile "Tests/Fixtures/ixon-v4/text.tsv"
+  let bytes ← IO.FS.readFile "Tests/Fixtures/ixon/text.tsv"
   let mut count := 0
   for line in bytes.splitOn "\n" do
     if line.isEmpty then continue
@@ -59,9 +59,6 @@ def runText : IO Nat := do
     unless textContractKey reparsed == some ("lam", 7, 0) do
       throw (IO.userError "numeric unnamed binder changed its usage")
     count := count + 1
-  let result ← LSpec.lspecIO
-    (.ofList [("ixon-text", Tests.IxonSyntax.suite)]) []
-  unless result == 0 do throw (IO.userError "text grammar regression suite failed")
   return count
 
 end Tests.IxonText

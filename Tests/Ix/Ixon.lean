@@ -143,21 +143,23 @@ def exprExactUnits : TestSeq :=
     test "Expr full-buffer decoder rejects trailing bytes"
       (exprExactRejects bytes)
 
-def exprRejects (bytes : Array UInt8) : Bool :=
-  match deExpr (ByteArray.mk bytes) with
+def exprPrefixRejects (bytes : Array UInt8) : Bool :=
+  match runGet getExpr (ByteArray.mk bytes) with
   | .error _ => true
   | .ok _ => false
 
-/-- Directed malformed vectors for the maximal-telescope grammar. Reserved
-    binder, forall and let codes are covered by `Tests.IxonV4.rejectedExprCases`. -/
+/-- Directed malformed vectors for the maximal-telescope grammar, checked via
+    `runGet getExpr` so rejection comes from the grammar itself rather than
+    trailing bytes. Reserved let codes and additional malformed vectors are
+    covered by `Tests.IxonGolden.rejectedExprCases`. -/
 def strictExprUnits : TestSeq :=
-  test "rejects empty app spine" (exprRejects #[0x70]) ++
+  test "rejects empty app spine" (exprPrefixRejects #[0x70]) ++
   test "rejects nested app base"
-    (exprRejects #[0x71, 0x71, 0x10, 0x11, 0x12]) ++
+    (exprPrefixRejects #[0x71, 0x71, 0x10, 0x11, 0x12]) ++
   test "rejects nested lambda body"
-    (exprRejects #[0x81, 0x03, 0x00, 0x81, 0x03, 0x00, 0x10]) ++
+    (exprPrefixRejects #[0x81, 0x00, 0x81, 0x00, 0x10]) ++
   test "rejects nested forall codomain"
-    (exprRejects #[0x91, 0x07, 0x00, 0x91, 0x07, 0x00, 0x10])
+    (exprPrefixRejects #[0x91, 0x00, 0x91, 0x00, 0x10])
 
 /-! ## TagN integer code -/
 
@@ -469,6 +471,26 @@ def envBytesMatchRust (raw : RawEnv) : Bool :=
     | .ok rustBytes => bytes == rustBytes
     | .error _ => false
   | .error _ => false
+
+/-- Combined `RawEnv` property: Lean roundtrip, Rust decode parity, and strict
+    Lean==Rust byte identity on one generated `RawEnv`. -/
+def envSerdeAndRustParity (raw : RawEnv) : Bool :=
+  match serEnv raw.toEnv with
+  | .error _ => false
+  | .ok bytes1 =>
+    let leanRoundtrip :=
+      match deEnv bytes1 with
+      | .ok env' =>
+        match serEnv env' with
+        | .ok bytes2 => bytes1 == bytes2
+        | .error _ => false
+      | .error _ => false
+    let rustParity :=
+      rsEqEnvSerialization raw bytes1 &&
+      match rsSerEnvFFI raw with
+      | .ok rustBytes => bytes1 == rustBytes
+      | .error _ => false
+    leanRoundtrip && rustParity
 
 /-- Unit tests for Lean==Rust serialization comparison -/
 def envSerializationUnitTests : TestSeq :=
@@ -855,15 +877,12 @@ public def Tests.Ixon.suite : List TestSeq := [
   checkIO "Expr serde roundtrips" (∀ e : Expr, exprSerde e),
   checkIO "Constant serde roundtrips" (∀ c : Constant, constantSerde c),
   checkIO "Comm serde roundtrips" (∀ c : Comm, commSerde c),
-  checkIO "Env serde roundtrips" (∀ raw : RawEnv, envSerde raw),
   -- Cross-implementation serialization comparison (Lean == Rust)
   checkIO "Univ serialization Lean==Rust" (∀ u : Univ, univSerializationMatches u),
   checkIO "Expr serialization Lean==Rust" (∀ e : Expr, exprSerializationMatches e),
   checkIO "Constant serialization Lean==Rust" (∀ c : Constant, constantSerializationMatches c),
-  checkIO "Env serialization Lean==Rust" (∀ raw : RawEnv, envSerializationMatches raw),
-  -- Strict byte equality between the two writers over generated envs —
-  -- generated named entries carry full metadata (arena nodes,
-  -- extension tables, auxLayout), so this is the generator-driven gate
-  -- that the metadata wire format stays in sync.
-  checkIO "Env bytes Lean==Rust" (∀ raw : RawEnv, envBytesMatchRust raw),
+  -- Combined Env serde roundtrip + Lean==Rust decode and strict byte equality
+  -- (generated named entries carry full metadata: arena nodes, extension
+  -- tables, auxLayout — keeping the metadata wire format in sync).
+  checkIO "Env serde roundtrips and Lean==Rust bytes" (∀ raw : RawEnv, envSerdeAndRustParity raw),
 ]

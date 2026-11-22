@@ -159,7 +159,10 @@ def main (argv : List String) : IO UInt32 := do
       let proofBytes ← IO.FS.readBinFile proof
       let keyBytes ← IO.FS.readBinFile key
       references := references.push (proofBytes, keyBytes)
-      for copy in [0:2] do
+      -- Submit 2 copies of the recursion artifact to exercise concurrent resident execution
+      -- and 1 copy of the other two artifacts (all 3 artifacts + priority ordering covered).
+      let copies := if i == 1 then 2 else 1
+      for copy in [0:copies] do
         jobs := jobs.push (Json.mkObj [("id", toJson s!"case-{i}-{copy}"),
           ("artifact", toJson artifact.toString), ("input", toJson source.toString),
           ("output", toJson (out / s!"proof-{i}-{copy}").toString), ("priority", toJson (i != 0)),
@@ -179,11 +182,10 @@ def main (argv : List String) : IO UInt32 := do
       let i := ((id.splitOn "-")[1]!).toNat!
       let output ← IO.ofExcept (job.getObjValAs? String "output")
       let (proof, key) := productFiles output (i == 0)
+      -- `reference-i` was already verified by `host prove`; byte-for-byte identity makes
+      -- re-spawning a separate `verify` subprocess on each resident copy redundant.
       unless (← IO.FS.readBinFile proof) == references[i]!.1 do fail s!"{id}: proof differs"
       unless (← IO.FS.readBinFile key) == references[i]!.2 do fail s!"{id}: key differs"
-      let host := cpu / (if i == 0 then "ixvm-proof" else "stark-verifier")
-      let _ ← run c (id ++ "-verify") #[host.toString, "verify", artifacts[i]!.toString,
-        inputs[i]!.toString, proof.toString] #[("AIUR_TRACE_ONLY_LOOKUPS", some "1")]
     let limitedOutput := out / "limited-proof"
     let limited := (jobs[0]!.setObjVal! "id" "limited").setObjVal! "output" (toJson limitedOutput.toString)
     let _ ← resident c binary "record-limit" (config.setObjVal! "record_limit_bytes" (toJson 1024))

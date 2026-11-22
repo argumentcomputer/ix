@@ -159,11 +159,13 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- csimp and all ruling counts are unchanged.
 -- Normalized recursor analysis and the proved csimp replacement matching `IxC/Kernel/Audit/Roots.lean`
 -- move the byte-entry closure from 7067 compiled functions and 28 ruled csimps to 7114 and 29.
+-- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
+-- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 7114 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 29 -/
+ Ix.Kernel.Admission.checkBytes]: 8137 compiled functions; inherited externs 114, implemented_by 0, unsafe 41, csimp 8; ruled computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
@@ -328,6 +330,52 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytes_resources
 
+/-! ### Tiered and user-axiom statement pins -/
+
+/-- info: Ix.Kernel.Admission.checkBytesTiered_has_model : ∀ (V : Type u_1) [inst : Ix.Kernel.SetTheory V]
+  {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits}
+  {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon}
+  {ts : List (Ix.Kernel.Tier.TierConst Ix.Kernel.Mode.anon)},
+  Ix.Kernel.Admission.checkBytesTiered hash binding limits records blobs hint = Except.ok (env, ts) →
+    Nonempty (Ix.Kernel.Model V env) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.checkBytesTiered_has_model
+
+/-- info: Ix.Kernel.Admission.checkBytesTiered_typed : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V]
+  {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits}
+  {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon}
+  {ts : List (Ix.Kernel.Tier.TierConst Ix.Kernel.Mode.anon)},
+  Ix.Kernel.Admission.checkBytesTiered hash binding limits records blobs hint = Except.ok (env, ts) →
+    Ix.Kernel.EnvWF env ∧
+      (∀ (c : Ix.Kernel.Tier.TierConst Ix.Kernel.Mode.anon), c ∈ ts → env.find? c.cv.name = none) ∧
+        ∃ tds, ∀ (c : Ix.Kernel.Tier.TierConst Ix.Kernel.Mode.anon), c ∈ ts → Ix.Kernel.Tier.TypedIn env tds ts c -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.checkBytesTiered_typed
+
+/-- info: @Ix.Kernel.Admission.checkBytesUnder_strict_of_nil : ∀ {policy : Ix.Kernel.Cached.AxiomPolicy}
+  {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon} {limits : Ix.Kernel.Admission.Limits}
+  {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
+  Ix.Kernel.Admission.checkBytesUnder policy hash binding pre limits records blobs hint = Except.ok (env, []) →
+    Ix.Kernel.Admission.checkBytesWith hash binding pre limits records blobs hint = Except.ok env -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.checkBytesUnder_strict_of_nil
+
+section UserAxiomSoundPin
+universe u
+example {md : Ix.Kernel.Mode} {V : Type u} [Ix.Kernel.SetTheory V]
+    {μ : Ix.Kernel.CheckMode} {ev : Ix.Kernel.Evidences md}
+    (hμ : μ.verifiedChecks = true)
+    {ds : Array (Ix.Kernel.Declaration md)} {env' : Ix.Kernel.Env md}
+    (h : Ix.Kernel.Cached.checkDeclsWithUserAxioms μ ev ds = .ok env')
+    (hnone : Ix.Kernel.userAxiomsOfDecls ds.toList = []) :
+    Nonempty (Ix.Kernel.Model.EnvModelM V μ env') :=
+  Ix.Kernel.Cached.checkDeclsWithUserAxioms_sound (V := V) hμ h hnone
+end UserAxiomSoundPin
+
 /- The certified entry adds two Init externs beyond the codec, the reader
 and the fold: `ByteArray.mk` and `Array.pop`, used to load the committed
 default table and prelude (`Ix.Kernel.Reader.defaultTable`, `preludeFor`).
@@ -348,9 +396,7 @@ extern: its inherited externs went from 115 to 113. -/
  String.Internal.extract,
  String.Internal.posOf,
  String.Internal.offsetOfPos,
- String.Internal.length,
  String.Internal.pushn,
- ByteArray.mk,
  UInt32.decEq]
 ---
 info: Additional certified-entry unsafe: [] -/

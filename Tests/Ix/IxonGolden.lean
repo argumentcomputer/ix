@@ -3,7 +3,7 @@ public import Ix.Ixon
 
 public section
 
-namespace Tests.IxonV4
+namespace Tests.IxonGolden
 open Ixon
 
 structure ExprCase where
@@ -77,7 +77,7 @@ def modeCases : List ExprCase := Id.run do
 
 /-- Load independent golden bytes once for the Lean, Rust FFI, and VM suites. -/
 def readExprCases : IO (List ExprCase) := do
-  let file ← IO.FS.readFile "Tests/Fixtures/ixon-v4/expressions.txt"
+  let file ← IO.FS.readFile "Tests/Fixtures/ixon/expressions.txt"
   let lines := file.splitOn "\n"
   -- Every row of the file is a case here (and in the Rust golden test).
   let rows := lines.filter fun line => !line.isEmpty && !line.startsWith "#"
@@ -149,4 +149,4 @@ def runGolden (cases : List ExprCase) : IO Nat := do
     checks := checks + 1
   return checks
 
-end Tests.IxonV4
+end Tests.IxonGolden

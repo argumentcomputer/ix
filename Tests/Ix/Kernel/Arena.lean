@@ -73,11 +73,6 @@ rejects the declaration; the arena's outcome for its nearest test is `either`. -
 def modeledDeclines : Array Lean.Name :=
   #[`nestedSpecLocalF, `nestedSpecLocalF.mk, `nestedSpecLocalF.rec]
 
-/-- Recursors of mutual or nested families among the good fixtures: refused while
-the program refuses such recursors (`Tests.Ix.IxVM.modeledRecursorsRefused`). -/
-def modeledRecursorFixtures : Array Lean.Name :=
-  #[`Tests.Ix.Kernel.TutorialDefs.R8A.rec, `Tests.Ix.Kernel.TutorialDefs.R8B.rec]
-
 /-- Fixtures the native route declines because a constructor field domain
 mentions the block in a non-syntactic occurrence (`id (reduceCtorParam A)`
 and its reflexive variants), which would require rewriting the stored
@@ -115,16 +110,33 @@ private def blockOf : Ixon.ConstantInfo → Option Address
   | .dPrj p => some p.block
   | _ => none
 
+/-- Precompute the constant closure graph and projection-to-block map once for
+the shared arena environment so `subjectClaim` never re-deserializes constants
+per fixture. -/
+private def buildArenaGraph (env : Ixon.Env) : EnvGraph × Std.HashMap Address Address := Id.run do
+  let mut closureRefs : Std.HashMap Address (Array Address) :=
+    Std.HashMap.emptyWithCapacity env.consts.size
+  let mut blockMap : Std.HashMap Address Address := {}
+  for (a, lc) in env.consts do
+    if let some c := lc.get? then
+      let edges := closureEdgesOf a c
+      unless edges.isEmpty do
+        closureRefs := closureRefs.insert a edges
+      if let some b := blockOf c.info then
+        blockMap := blockMap.insert a b
+  return ({ closureRefs }, blockMap)
+
 /-- The subject-only claim on `target`: its closure is assumed, except the
 target, the block it projects from, and that block's other projections. -/
-private def subjectClaim (env : Ixon.Env) (ctx : Ix.ClaimContext) (target : Address) :
+private def subjectClaim (env : Ixon.Env) (graph : EnvGraph)
+    (blockMap : Std.HashMap Address Address) (ctx : Ix.ClaimContext) (target : Address) :
     Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
-  let some c := env.getConst? target | throw s!"{target} is not in the environment"
-  let block := blockOf c.info
+  unless env.consts.contains target do throw s!"{target} is not in the environment"
+  let block := blockMap[target]?
   let isSubject (a : Address) : Bool :=
     a == target || some a == block ||
-      (block.isSome && ((env.getConst? a).bind (blockOf ·.info)) == block)
-  let deps := (closureFromRoots env #[target]).toArray.filter fun a =>
+      (block.isSome && blockMap[a]? == block)
+  let deps := (closureFromRootsWithGraph env graph #[target]).toArray.filter fun a =>
     env.consts.contains a && !isSubject a
   match Ix.AssumptionTree.canonical deps with
   | none => return (.check ctx target none, {})
@@ -132,7 +144,8 @@ private def subjectClaim (env : Ixon.Env) (ctx : Ix.ClaimContext) (target : Addr
 
 /-- Every fixture as a claim over one shared Ixon env. A fixture the compile
 filtered (no Ixon address) is reported and skipped. -/
-def arenaCases (env : Lean.Environment) : IO (Array Tests.Ix.IxVM.Builder) := do
+def arenaCases (env : Lean.Environment) (includeAllBad : Bool := true) :
+    IO (Array Tests.Ix.IxVM.Builder) := do
   let checks := collectChecks env
   let rawConsts := getRawConsts env
   let rawMap : Std.HashMap Lean.Name Lean.ConstantInfo :=
@@ -145,6 +158,7 @@ def arenaCases (env : Lean.Environment) : IO (Array Tests.Ix.IxVM.Builder) := do
   let input ← IxVM.ClaimHarness.withKernelAnnotator (Ix.CompileM.canonInput allConsts.toArray 32)
   let (rawEnv, _, _) ← IO.ofExcept <| Ix.Cert.compileUnchecked input
   let ixonEnv ← IO.ofExcept (withDefaultRoleBinding rawEnv)
+  let (graph, blockMap) := buildArenaGraph ixonEnv
   -- The fixtures' own axioms are assumed like any other dependency, so the
   -- claims carry no user axioms; and the claims assume their role binding
   -- (validator 4), as an aggregate's claims do, which keeps the witnesses to
@@ -152,7 +166,12 @@ def arenaCases (env : Lean.Environment) : IO (Array Tests.Ix.IxVM.Builder) := do
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv (bindingAssumed := true))
   let ctx := { ctx with axioms := none }
   let mut out : Array Tests.Ix.IxVM.Builder := #[]
+  let mut badSmokes : Nat := 0
   for c in checks do
+    let isNative := nativeEvaluationFixtures.contains c.name
+    if !includeAllBad && !c.expectPass && !isNative then
+      if badSmokes ≥ 3 then continue
+      badSmokes := badSmokes + 1
     let label := s!"arena {if c.expectPass then "GOOD" else "BAD"} {c.name}"
     match ixonEnv.getAddr? (Ix.Name.fromLeanName c.name) with
     | none => IO.println s!"{label}: skipped (ungrounded by the compile)"
@@ -160,19 +179,24 @@ def arenaCases (env : Lean.Environment) : IO (Array Tests.Ix.IxVM.Builder) := do
       -- A `native_decide` proof cites an auxiliary axiom asserting the native
       -- result: assumed, it makes the claim a vacuous conditional one, so the
       -- claim checks the closure and the axiom policy must refuse it.
-      if nativeEvaluationFixtures.contains c.name then
+      if isNative then
         out := out.push fun _ =>
           Tests.Ix.IxVM.Case.ofClaim s!"{label}, its closure checked" ixonEnv (.check ctx addr none)
             {} false (some "an axiom that is not one of Lean's standard axioms")
       else
         out := out.push fun _ => do
-          let (claim, trees) ← subjectClaim ixonEnv ctx addr
-          let kase ← Tests.Ix.IxVM.Case.ofClaim label ixonEnv claim trees c.expectPass
-          return if modeledRecursorFixtures.contains c.name then kase.throughModeledRecursor
-            else kase
+          let (claim, trees) ← subjectClaim ixonEnv graph blockMap ctx addr
+          Tests.Ix.IxVM.Case.ofClaim label ixonEnv claim trees c.expectPass
   return out
 
+/-- PR fast suite: all `good_*` completeness fixtures, `native_decide` checks,
+and 3 representative `bad_*` host smokes (`bad_*` soundness is proved by
+`CircuitComposed` and exercised in IxC by `kernel-tutorial`). -/
 def run (env : Lean.Environment) : IO UInt32 := do
-  Tests.Ix.IxVM.runCases "ixvm-arena" (← arenaCases env)
+  Tests.Ix.IxVM.runCases "ixvm-arena" (← arenaCases env (includeAllBad := false))
+
+/-- Full nightly suite: every `good_*` and `bad_*` arena fixture through IxVM. -/
+def runFull (env : Lean.Environment) : IO UInt32 := do
+  Tests.Ix.IxVM.runCases "ixvm-arena-full" (← arenaCases env (includeAllBad := true))
 
 end Tests.Ix.Kernel.Arena

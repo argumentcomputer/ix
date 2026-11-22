@@ -436,8 +436,8 @@ def compressedApp : Ixon.Expr :=
 #guard compressedApp.resourceSize > (Ixon.serExpr compressedApp).size
 #guard resourceExpr compressedApp
 -- `18 00`, which Ixon v3 rejected as a nonminimal Tag4 spelling of `var 0`,
--- is in v4 the unique encoding of `var 8` (the first value of rung 2 of
--- `f = 4`; `tagn4_rung2_first` in `Tests/Fixtures/ixon-v4/expressions.txt`).
+-- is in TagN the unique encoding of `var 8` (the first value of rung 2 of
+-- `f = 4`; `tagn4_rung2_first` in `Tests/Fixtures/ixon/expressions.txt`).
 #guard match Ixon.deExpr ⟨#[0x18, 0]⟩ with
   | .ok value => value == .var 8 && Ixon.serExpr value == ⟨#[0x18, 0]⟩
   | .error _ => false
@@ -483,12 +483,12 @@ example (bytes : ByteArray) (value : Ixon.Constant)
 end Tests.Ix.Kernel.Codec
 
 /-- Independently specified Ixon expression bytes, every vector of
-`Tests/Fixtures/ixon-v4/expressions.txt`: binder telescopes (domains only),
+`Tests/Fixtures/ixon/expressions.txt`: binder telescopes (domains only),
 let headers at every let mode (`nonDep + 2 ·` the mode's code), and the
 multi-byte TagN cases (the first and last value of every rung of `f = 4` and
 `f = 0`, a count of 8 and a rung-3 `Share`), checked for the codec's exact
 round trip. -/
-def upstreamV4Expressions : List (String × List UInt8) := [
+def upstreamExpressions : List (String × List UInt8) := [
   ("app", [0x73, 0x13, 0x12, 0x11, 0x10]),
   ("lam", [0x83, 0x00, 0x00, 0x00, 0x10]),
   ("all", [0x92, 0x00, 0x00, 0x10]),
@@ -527,8 +527,8 @@ def upstreamV4Expressions : List (String × List UInt8) := [
   ("ref_univs_8", [0x28, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
   ("share_rung3", [0xbc, 0x00, 0x00])]
 
-#guard upstreamV4Expressions.length == 37
-#guard upstreamV4Expressions.all fun (_, bytes) =>
+#guard upstreamExpressions.length == 37
+#guard upstreamExpressions.all fun (_, bytes) =>
   match Ixon.deExpr ⟨bytes.toArray⟩ with
   | .ok source => Ixon.serExpr source == ⟨bytes.toArray⟩
   | .error _ => false
@@ -542,7 +542,7 @@ def rungValue (f : Nat) (first : Bool) (rung : Nat) : UInt64 :=
     Ixon.tagNEnd5 f, 2 ^ 64]
   (if first then ends[rung - 1]! else ends[rung]! - 1).toUInt64
 
-def upstreamV4Values : List (String × Ixon.Expr) :=
+def upstreamValues : List (String × Ixon.Expr) :=
   ("tagn4_rung1_last", .var (rungValue 4 false 1)) ::
   ("tagn0_rung1_last", .ref (rungValue 0 false 1) #[]) ::
   ([2, 3, 4, 5, 6].flatMap fun rung =>
@@ -563,9 +563,9 @@ def upstreamV4Values : List (String × Ixon.Expr) :=
    ("borrow", .letE false .borrow (.sort 0) (.prj 2 1 (.var 1)) (.var 0)),
    ("borrow_nondep", .letE true .borrow (.sort 0) (.var 1) (.var 0))]
 
-#guard upstreamV4Values.length == 34
-#guard upstreamV4Values.all fun (name, value) =>
-  match upstreamV4Expressions.lookup name with
+#guard upstreamValues.length == 34
+#guard upstreamValues.all fun (name, value) =>
+  match upstreamExpressions.lookup name with
   | some bytes => match Ixon.deExpr ⟨bytes.toArray⟩ with
     | .ok decoded => decoded == value
     | .error _ => false

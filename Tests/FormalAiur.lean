@@ -2,6 +2,7 @@ import Ix.Cli.FormalAiur
 import Ix.IxVM.ClaimHarness
 import Ix.AiurInvocation
 import Ix.IxVM.RecordSections
+import Ix.Meta
 
 /-! Real claim fixtures, plus independently specified evaluation inputs.
 Run through the Rust host. -/
@@ -247,7 +248,7 @@ def main (args : List String) : IO Unit := do
       let dir ← IO.FS.createTempDir
       pure (dir / "claims.ixt").toString
   IO.eprintln s!"[formal-aiur-tests] writing {path}"
-  let env ← get_env!
+  let env ← getCompileEnv #[`Init]
   let fixture ← loadIxonEnv ``Nat.add_comm env
   IO.FS.writeBinFile (path ++ ".ixe") (← IO.ofExcept (Ixon.serEnv fixture))
   IO.FS.writeBinFile (path ++ ".controller.ixe") (← IO.ofExcept (Ixon.serEnv (← IO.ofExcept controllerEnv)))

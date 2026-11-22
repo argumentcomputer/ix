@@ -4,7 +4,7 @@ public import Init.Data.String
 
 public section
 
-/-! The Ixon v4 primitives that Aiur artifacts are written with.
+/-! The Ixon primitives that Aiur artifacts are written with.
 
 The Aiur package does not depend on Ix, so it carries the few Ixon
 conventions its artifact grammar (`Aiur.Artifact`) needs:

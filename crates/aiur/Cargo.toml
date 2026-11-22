@@ -44,9 +44,5 @@ name = "trie_bench"
 required-features = ["stark"]
 
 [[example]]
-name = "u32_check"
-required-features = ["stark"]
-
-[[example]]
 name = "library_check"
 required-features = ["stark"]

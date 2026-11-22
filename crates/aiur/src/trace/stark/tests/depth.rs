@@ -76,7 +76,7 @@ fn honest_recursion_proves_through_every_slot_kind() {
   assert_eq!(fast.ranges.table(0)[1], 10);
   assert_eq!(fast.ranges.table(1)[0], 22);
 
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let converted = backend.witness(&record, &fast).unwrap();
   let direct = backend.generate(&record, entry, &[12]).unwrap();
   for (a, b) in converted.traces.iter().zip(&direct.traces) {
@@ -86,7 +86,7 @@ fn honest_recursion_proves_through_every_slot_kind() {
   backend.verify(entry, &[12], &record.output, &proof).unwrap();
   assert!(backend.verify(entry, &[12], &[146], &proof).is_err());
 
-  let batch = Backend::for_batch(&plan, parameters()).unwrap();
+  let batch = Backend::for_batch_below_floor(&plan, toy_parameters()).unwrap();
   let stage = batch.generate_stage_1(&record, entry, &[12]).unwrap();
   // A wrong depth word in a fib row breaks the balance.
   let ci = batch.names.iter().position(|n| n == "Depth::fib").unwrap();
@@ -136,7 +136,7 @@ fn misclassified_exact_slot_fails_population() {
   let plan = TracePlan::new(&program, trace).unwrap();
   let entry = "Depth::run";
   let record = program.execute(entry, vec![12]).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let errors = [
     plan.generate_reference(&record, entry, &[12], true).err(),
     plan.generate(&record, entry, &[12], true).err(),
@@ -156,7 +156,7 @@ fn invalid_gap_and_limb_bounds_are_rejected() {
 
   let (program, trace) = depth_fixture();
   let plan = TracePlan::new(&program, trace).unwrap();
-  let backend = Backend::new(&plan, parameters()).unwrap();
+  let backend = Backend::new_below_floor(&plan, toy_parameters()).unwrap();
   let entry = "Depth::run";
   let fib = program.callable_id("Depth::fib").unwrap();
 
@@ -191,7 +191,8 @@ fn invalid_gap_and_limb_bounds_are_rejected() {
 fn recursive_entry_claims_a_depth_word() {
   let (program, trace) = depth_fixture();
   let plan = TracePlan::new(&program, trace).unwrap();
-  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let backend =
+    Backend::for_batch_below_floor(&plan, toy_parameters()).unwrap();
   let entry = "Depth::fib";
   let record = program.execute(entry, vec![10]).unwrap();
   assert_eq!(record.output, [55]);
@@ -235,7 +236,8 @@ fn owned_heights_are_longest_paths_over_records() {
 fn deferred_heights_cross_records() {
   let (program, trace) = depth_fixture();
   let plan = TracePlan::new(&program, trace).unwrap();
-  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let backend =
+    Backend::for_batch_below_floor(&plan, toy_parameters()).unwrap();
   let owned = program.callable_id("Depth::owned").unwrap();
   let hints = program.prepare_hints(&[]).unwrap();
   let owners: [Vec<u64>; 2] = [vec![6, 3, 2, 1, 0], vec![5, 4]];
@@ -346,7 +348,8 @@ fn out_of_range_gap_limb_is_rejected_by_verifier() {
   use crate::trace::DepthSlot;
   let (program, trace) = depth_fixture();
   let plan = TracePlan::new(&program, trace).unwrap();
-  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let backend =
+    Backend::for_batch_below_floor(&plan, toy_parameters()).unwrap();
   let entry = "Depth::run";
   let record = program.execute(entry, vec![12]).unwrap();
   let output = record.output.clone();
@@ -399,51 +402,36 @@ fn out_of_range_gap_limb_is_rejected_by_verifier() {
 /// The row bound fires just above 2^39 rows and accepts just at or below it.
 #[test]
 fn row_bound_boundary() {
-  let (program, trace) = depth_fixture();
-  let plan = TracePlan::new(&program, trace).unwrap();
+  let (program, artifact) = fixture();
+  let plan = TracePlan::new(&program, activate(artifact)).unwrap();
   let backend = Backend::for_batch(&plan, parameters()).unwrap();
-  let entry = "Depth::run";
-  let record = program.execute(entry, vec![12]).unwrap();
-  let output = record.output.clone();
-  let stage = backend.generate_stage_1(&record, entry, &[12]).unwrap();
-  let proof = backend
-    .prove_batch_stage_1(
-      entry,
-      &[12],
-      &output,
-      stage,
-      1 << 8,
-      Retention::Retain,
-    )
-    .unwrap();
   let key =
     VerifyingKey::from_bytes(&backend.verifying_key_bytes().unwrap()).unwrap();
-  let claim = backend.claim(entry, &[12], &output).unwrap();
-  key.validate_preamble(&claim, &proof.preamble).unwrap();
-  let mut header = proof.preamble.headers[0].clone();
+  let claim = backend.claim("root", &[3], &[9]).unwrap();
   let max_log = u8::try_from(32 - parameters().log_blowup).unwrap();
   let mut rows = 0u128;
-  let mut logs = header.log_degrees.clone().into_iter();
-  let mut new_logs = vec![];
-  for (circuit, &on) in backend.system.circuits.iter().zip(&header.active) {
-    if !on {
-      continue;
-    }
-    let log = logs.next().unwrap();
-    let log = if circuit.preprocessed_height == 0 { max_log } else { log };
+  let mut log_degrees = vec![];
+  for circuit in &backend.system.circuits {
+    let log = if circuit.preprocessed_height == 0 {
+      max_log
+    } else {
+      u8::try_from(circuit.preprocessed_height.ilog2()).unwrap()
+    };
     rows += 1u128 << log;
-    new_logs.push(log);
+    log_degrees.push(log);
   }
-  header.log_degrees = new_logs;
-  let claims = header.claims.clone();
-  header.claims.clear();
+  let header = multi_stark::batch::ShardHeader {
+    active: vec![true; backend.system.circuits.len()],
+    stage_1_trace: backend.system.preprocessed_commit.clone().unwrap(),
+    log_degrees,
+    claims: vec![],
+  };
   let bound = 1u128 << 39;
   let at_bound = usize::try_from(bound / rows).unwrap();
   let preamble = |n: usize| {
-    let mut p = proof.preamble.clone();
-    p.headers = vec![header.clone(); n];
-    p.headers[0].claims = claims.clone();
-    p
+    let mut headers = vec![header.clone(); n];
+    headers[0].claims = vec![claim.clone()];
+    multi_stark::batch::BatchPreamble { headers, messages: vec![] }
   };
   key.validate_preamble(&claim, &preamble(at_bound)).unwrap();
   let error =

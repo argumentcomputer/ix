@@ -47,12 +47,14 @@ impl LeanIxonRawConst<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonRawConst<R> {
   /// Decode Ixon.RawConst from Lean pointer.
-  pub fn decode(&self) -> DecodedRawConst {
+  pub fn try_decode(&self) -> Result<DecodedRawConst, String> {
     let ctor = self.as_ctor();
-    DecodedRawConst {
-      addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
-      constant: LeanIxonConstant::new(ctor.get(1).to_owned_ref()).decode(),
-    }
+    Ok(DecodedRawConst {
+      addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array())
+        .try_decode()?,
+      constant: LeanIxonConstant::new(ctor.get(1).to_owned_ref())
+        .try_decode()?,
+    })
   }
 }
 
@@ -88,23 +90,24 @@ pub(crate) fn build_opt_original(
 }
 
 /// Decode `Option (Address × ConstantMeta)` from an object slot.
-pub(crate) fn decode_opt_original(
+pub(crate) fn try_decode_opt_original(
   obj: LeanBorrowed<'_>,
-) -> Option<(Address, ConstantMeta)> {
+) -> Result<Option<(Address, ConstantMeta)>, String> {
   if obj.is_scalar() {
-    return None;
+    return Ok(None);
   }
   let opt = obj.as_ctor();
   match opt.tag() {
-    0 => None,
+    0 => Ok(None),
     1 => {
       let pair = opt.get(0).as_ctor();
-      let addr =
-        LeanIxAddress::from_borrowed(pair.get(0).as_byte_array()).decode();
-      let meta = LeanIxonConstantMeta::new(pair.get(1).to_owned_ref()).decode();
-      Some((addr, meta))
+      let addr = LeanIxAddress::from_borrowed(pair.get(0).as_byte_array())
+        .try_decode()?;
+      let meta =
+        LeanIxonConstantMeta::new(pair.get(1).to_owned_ref()).try_decode()?;
+      Ok(Some((addr, meta)))
     },
-    tag => panic!("Invalid Option tag for original: {tag}"),
+    tag => Err(format!("Invalid Option tag for original: {tag}")),
   }
 }
 
@@ -147,16 +150,17 @@ impl LeanIxonRawNamed<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonRawNamed<R> {
   /// Decode Ixon.RawNamed from Lean pointer.
-  pub fn decode(&self) -> DecodedRawNamed {
+  pub fn try_decode(&self) -> Result<DecodedRawNamed, String> {
     let ctor = self.as_ctor();
-    DecodedRawNamed {
+    Ok(DecodedRawNamed {
       name: LeanIxName::new(ctor.get(0).to_owned_ref()).decode(),
-      addr: LeanIxAddress::from_borrowed(ctor.get(1).as_byte_array()).decode(),
+      addr: LeanIxAddress::from_borrowed(ctor.get(1).as_byte_array())
+        .try_decode()?,
       const_meta: LeanIxonConstantMeta::new(ctor.get(2).to_owned_ref())
-        .decode(),
-      original: decode_opt_original(ctor.get(3)),
+        .try_decode()?,
+      original: try_decode_opt_original(ctor.get(3))?,
       hints: decode_opt_hints(ctor.get(4)),
-    }
+    })
   }
 }
 
@@ -191,13 +195,14 @@ impl LeanIxonRawBlob<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonRawBlob<R> {
   /// Decode Ixon.RawBlob from Lean pointer.
-  pub fn decode(&self) -> DecodedRawBlob {
+  pub fn try_decode(&self) -> Result<DecodedRawBlob, String> {
     let ctor = self.as_ctor();
     let ba = ctor.get(1).as_byte_array();
-    DecodedRawBlob {
-      addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+    Ok(DecodedRawBlob {
+      addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array())
+        .try_decode()?,
       bytes: ba.as_bytes().to_vec(),
-    }
+    })
   }
 }
 
@@ -223,12 +228,13 @@ impl LeanIxonRawComm<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonRawComm<R> {
   /// Decode Ixon.RawComm from Lean pointer.
-  pub fn decode(&self) -> DecodedRawComm {
+  pub fn try_decode(&self) -> Result<DecodedRawComm, String> {
     let ctor = self.as_ctor();
-    DecodedRawComm {
-      addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
-      comm: LeanIxonComm::new(ctor.get(1).to_owned_ref()).decode(),
-    }
+    Ok(DecodedRawComm {
+      addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array())
+        .try_decode()?,
+      comm: LeanIxonComm::new(ctor.get(1).to_owned_ref()).try_decode()?,
+    })
   }
 }
 
@@ -258,12 +264,13 @@ impl LeanIxonRawNameEntry<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonRawNameEntry<R> {
   /// Decode Ixon.RawNameEntry from Lean pointer.
-  pub fn decode(&self) -> DecodedRawNameEntry {
+  pub fn try_decode(&self) -> Result<DecodedRawNameEntry, String> {
     let ctor = self.as_ctor();
-    DecodedRawNameEntry {
-      addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+    Ok(DecodedRawNameEntry {
+      addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array())
+        .try_decode()?,
       name: LeanIxName::new(ctor.get(1).to_owned_ref()).decode(),
-    }
+    })
   }
 }
 
@@ -284,22 +291,24 @@ fn build_opt_role_binding(binding: &Option<RoleBinding>) -> LeanOwned {
   }
 }
 
-fn decode_opt_role_binding(obj: LeanBorrowed<'_>) -> Option<RoleBinding> {
+fn try_decode_opt_role_binding(
+  obj: LeanBorrowed<'_>,
+) -> Result<Option<RoleBinding>, String> {
   if obj.is_scalar() {
-    return None;
+    return Ok(None);
   }
   let option = obj.as_ctor();
   match option.tag() {
-    0 => None,
+    0 => Ok(None),
     1 => {
       let value = option.get(0).as_ctor();
-      Some(RoleBinding {
+      Ok(Some(RoleBinding {
         address: LeanIxAddress::from_borrowed(value.get(0).as_byte_array())
-          .decode(),
+          .try_decode()?,
         bytes: value.get(1).as_byte_array().as_bytes().to_vec().into(),
-      })
+      }))
     },
-    tag => panic!("Invalid Option tag for role binding: {tag}"),
+    tag => Err(format!("Invalid Option tag for role binding: {tag}")),
   }
 }
 
@@ -394,7 +403,7 @@ impl LeanIxonRawEnv<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonRawEnv<R> {
   /// Decode Ixon.RawEnv from Lean pointer.
-  pub fn decode(&self) -> DecodedRawEnv {
+  pub fn try_decode(&self) -> Result<DecodedRawEnv, String> {
     let ctor = self.as_ctor();
     let consts_arr = ctor.get(0).as_array();
     let named_arr = ctor.get(1).as_array();
@@ -413,34 +422,54 @@ impl<R: LeanRef> LeanIxonRawEnv<R> {
       match opt.tag() {
         0 => None,
         1 => Some(
-          LeanIxAddress::from_borrowed(opt.get(0).as_byte_array()).decode(),
+          LeanIxAddress::from_borrowed(opt.get(0).as_byte_array())
+            .try_decode()?,
         ),
-        tag => panic!("Invalid Option tag for RawEnv.main: {tag}"),
+        tag => {
+          return Err(format!("Invalid Option tag for RawEnv.main: {tag}"));
+        },
       }
     };
 
-    DecodedRawEnv {
-      role_binding: decode_opt_role_binding(ctor.get(8)),
+    Ok(DecodedRawEnv {
+      role_binding: try_decode_opt_role_binding(ctor.get(8))?,
       consts: consts_arr
-        .map(|x| LeanIxonRawConst::new(x.to_owned_ref()).decode()),
+        .iter()
+        .map(|x| LeanIxonRawConst::new(x.to_owned_ref()).try_decode())
+        .collect::<Result<Vec<_>, _>>()?,
       named: named_arr
-        .map(|x| LeanIxonRawNamed::new(x.to_owned_ref()).decode()),
-      blobs: blobs_arr.map(|x| LeanIxonRawBlob::new(x.to_owned_ref()).decode()),
-      comms: comms_arr.map(|x| LeanIxonRawComm::new(x.to_owned_ref()).decode()),
+        .iter()
+        .map(|x| LeanIxonRawNamed::new(x.to_owned_ref()).try_decode())
+        .collect::<Result<Vec<_>, _>>()?,
+      blobs: blobs_arr
+        .iter()
+        .map(|x| LeanIxonRawBlob::new(x.to_owned_ref()).try_decode())
+        .collect::<Result<Vec<_>, _>>()?,
+      comms: comms_arr
+        .iter()
+        .map(|x| LeanIxonRawComm::new(x.to_owned_ref()).try_decode())
+        .collect::<Result<Vec<_>, _>>()?,
       names: names_arr
-        .map(|x| LeanIxonRawNameEntry::new(x.to_owned_ref()).decode()),
+        .iter()
+        .map(|x| LeanIxonRawNameEntry::new(x.to_owned_ref()).try_decode())
+        .collect::<Result<Vec<_>, _>>()?,
       main,
       assumptions: assumptions_arr
-        .map(|x| LeanIxAddress::from_borrowed(x.as_byte_array()).decode()),
-      anon_hints: hints_arr.map(|x| {
-        let pair = x.as_ctor();
-        let addr =
-          LeanIxAddress::from_borrowed(pair.get(0).as_byte_array()).decode();
-        let hint =
-          LeanIxReducibilityHints::new(pair.get(1).to_owned_ref()).decode();
-        (addr, hint)
-      }),
-    }
+        .iter()
+        .map(|x| LeanIxAddress::from_borrowed(x.as_byte_array()).try_decode())
+        .collect::<Result<Vec<_>, _>>()?,
+      anon_hints: hints_arr
+        .iter()
+        .map(|x| {
+          let pair = x.as_ctor();
+          let addr = LeanIxAddress::from_borrowed(pair.get(0).as_byte_array())
+            .try_decode()?;
+          let hint =
+            LeanIxReducibilityHints::new(pair.get(1).to_owned_ref()).decode();
+          Ok((addr, hint))
+        })
+        .collect::<Result<Vec<_>, String>>()?,
+    })
   }
 }
 
@@ -556,7 +585,10 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> Result<DecodedRawEnv, String> {
 pub extern "C" fn rs_ser_env(
   obj: LeanIxonRawEnv<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
-  let decoded = obj.decode();
+  let decoded = match obj.try_decode() {
+    Ok(d) => d,
+    Err(e) => return LeanExcept::error_string(&format!("rs_ser_env: {e}")),
+  };
   let env = decoded_to_ixon_env(&decoded);
   let mut buf = Vec::new();
   match env.put(&mut buf) {
@@ -577,7 +609,9 @@ pub extern "C" fn rs_ser_env(
 pub extern "C" fn rs_env_merkle_root(
   obj: LeanIxonRawEnv<LeanBorrowed<'_>>,
 ) -> LeanByteArray<LeanOwned> {
-  let decoded = obj.decode();
+  let Ok(decoded) = obj.try_decode() else {
+    return LeanByteArray::from_bytes(&[]);
+  };
   let env = decoded_to_ixon_env(&decoded);
   let mut addrs: Vec<Address> =
     env.consts.iter().map(|e| e.key().clone()).collect();
@@ -756,6 +790,6 @@ pub extern "C" fn rs_de_env_lazy(
 pub extern "C" fn rs_roundtrip_raw_env(
   obj: LeanIxonRawEnv<LeanBorrowed<'_>>,
 ) -> LeanIxonRawEnv<LeanOwned> {
-  let decoded = obj.decode();
+  let decoded = obj.try_decode().expect("valid RawEnv");
   LeanIxonRawEnv::build(&decoded)
 }

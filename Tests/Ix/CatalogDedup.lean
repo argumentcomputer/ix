@@ -62,10 +62,14 @@ private def dedupTest : IO (Bool × Nat × Nat × Option String) := do
   try
     let pieceA := (dir / "A.ixe").toString
     let pieceB := (dir / "B.ixe").toString
-    -- Two separate processes: nothing shared but the source tree.
-    if let .error e ← compilePiece exe fixtureA.toString pieceA then
+    -- Two separate processes run concurrently: nothing shared but the source tree.
+    let taskA ← IO.asTask (prio := .dedicated) (compilePiece exe fixtureA.toString pieceA)
+    let taskB ← IO.asTask (prio := .dedicated) (compilePiece exe fixtureB.toString pieceB)
+    let resA ← IO.wait taskA
+    let resB ← IO.wait taskB
+    if let .error e ← IO.ofExcept resA then
       return (false, 0, 0, some e)
-    if let .error e ← compilePiece exe fixtureB.toString pieceB then
+    if let .error e ← IO.ofExcept resB then
       return (false, 0, 0, some e)
     -- Assemble the self-contained .ixc dir via the CLI, then gate on
     -- the manifest through the in-process core (info/verify FFI) — no

@@ -101,7 +101,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     let backend = plan
       .as_ref()
-      .map(|plan| Backend::for_batch_verification(plan, Parameters::default()))
+      .map(|plan| Backend::for_statistics(plan, Parameters::default()))
       .transpose()?;
     let mut statistics = serde_json::Map::new();
     // Measurement aid (not a gate): with IXVM_FUNCTION_STATS set,
@@ -109,77 +109,116 @@ fn main() -> Result<(), Box<dyn Error>> {
     // hits of every function an accepted case called. A circuit's rows are the
     // sum of its member functions' rows. Circuit statistics are unchanged.
     let function_stats = std::env::var_os("IXVM_FUNCTION_STATS").is_some();
+    let collect_function_stats = function_stats && stats_path.is_some();
     let mut functions = serde_json::Map::new();
     let mut failed = Vec::new();
-    for case in cases {
-      let args = program.field().decode(&case.invocation.args)?;
-      let start = Instant::now();
-      let result = ixvm::prepare_streams(&program, &case.invocation.streams)?
-        .execute(&case.invocation.entry, args);
-      let seconds = start.elapsed().as_secs_f64();
-      if let (Some(backend), Ok(record)) = (&backend, &result)
-        && statistics
-          .insert(
-            case.label.clone(),
-            serde_json::to_value(backend.execution_statistics(record))?,
-          )
-          .is_some()
-      {
-        return Err(format!("duplicate case label: {}", case.label).into());
-      }
-      if function_stats
-        && stats_path.is_some()
-        && let Ok(record) = &result
-      {
-        let mut rows: std::collections::BTreeMap<usize, (u64, u64)> =
-          std::collections::BTreeMap::new();
-        for (key, output) in record.queries.iter() {
-          let entry = rows.entry(key.function).or_default();
-          entry.0 += 1;
-          entry.1 += output.multiplicity.saturating_sub(1);
-        }
-        let list: Vec<_> = rows
-          .into_iter()
-          .map(|(f, (r, h))| {
-            serde_json::json!({"name": program.callable_name(f).unwrap_or("?"),
-              "rows": r, "cache_hits": h})
-          })
-          .collect();
-        functions.insert(case.label.clone(), serde_json::Value::Array(list));
-      }
-      let error = result.as_ref().err().map(ToString::to_string);
-      let reached = match (&result, &case.exercises) {
-        (Ok(record), Some(name)) => record.queries.keys().any(|query| {
-          program.callable_name(query.function) == Some(name.as_str())
-        }),
-        _ => true,
-      };
-      // A witness that lacks data the program asks for stops execution before
-      // the logic under test: that is not a verdict unless the case names it.
-      let expected = match (&error, case.accept, &case.rejects_with) {
-        (None, accept, _) => accept && reached,
-        (Some(_), true, _) => false,
-        (Some(e), false, Some(reason)) => e.contains(reason.as_str()),
-        (Some(e), false, None) => !e.contains("missing hint"),
-      };
-      let verdict = match &error {
-        None => "accepted".to_owned(),
-        Some(e) => format!("rejected: {e}"),
-      };
-      if expected {
-        println!("{}: {verdict} ({seconds:.3}s)", case.label);
-      } else {
-        let wanted = match (case.accept, &case.rejects_with) {
-          (true, _) if !reached => format!(
-            "an acceptance calling {}",
-            case.exercises.as_deref().unwrap_or_default()
+    struct CaseOutcome {
+      label: String,
+      stats: Option<serde_json::Value>,
+      functions: Option<serde_json::Value>,
+      expected: bool,
+      line: String,
+    }
+    let run_case =
+      |case: &aiur::artifact::Case| -> Result<CaseOutcome, String> {
+        let args = program.field().decode(&case.invocation.args)?;
+        let start = Instant::now();
+        let result = ixvm::prepare_streams(&program, &case.invocation.streams)?
+          .execute(&case.invocation.entry, args);
+        let seconds = start.elapsed().as_secs_f64();
+        let stats = match (&backend, &result) {
+          (Some(backend), Ok(record)) => Some(
+            serde_json::to_value(backend.execution_statistics(record))
+              .map_err(|e| e.to_string())?,
           ),
-          (true, _) => "acceptance".to_owned(),
-          (false, Some(reason)) => format!("a rejection containing {reason:?}"),
-          (false, None) => "a rejection by the program".to_owned(),
+          _ => None,
         };
-        println!("FAILED {}: {verdict}; expected {wanted}", case.label);
-        failed.push(case.label);
+        let functions = if collect_function_stats {
+          result.as_ref().ok().map(|record| {
+          let mut rows: std::collections::BTreeMap<usize, (u64, u64)> =
+            std::collections::BTreeMap::new();
+          for (key, output) in record.queries.iter() {
+            let entry = rows.entry(key.function).or_default();
+            entry.0 += 1;
+            entry.1 += output.multiplicity.saturating_sub(1);
+          }
+          let list: Vec<_> = rows
+            .into_iter()
+            .map(|(f, (r, h))| {
+              serde_json::json!({"name": program.callable_name(f).unwrap_or("?"),
+                "rows": r, "cache_hits": h})
+            })
+            .collect();
+          serde_json::Value::Array(list)
+        })
+        } else {
+          None
+        };
+        let reached = match (&result, &case.exercises) {
+          (Ok(record), Some(name)) => record.queries.keys().any(|query| {
+            program.callable_name(query.function) == Some(name.as_str())
+          }),
+          _ => true,
+        };
+        let error = result.as_ref().err().map(ToString::to_string);
+        drop(result);
+        // A witness that lacks data the program asks for stops execution before
+        // the logic under test: that is not a verdict unless the case names it.
+        let expected = match (&error, case.accept, &case.rejects_with) {
+          (None, accept, _) => accept && reached,
+          (Some(_), true, _) => false,
+          (Some(e), false, Some(reason)) => e.contains(reason.as_str()),
+          (Some(e), false, None) => !e.contains("missing hint"),
+        };
+        let verdict = match &error {
+          None => "accepted".to_owned(),
+          Some(e) => format!("rejected: {e}"),
+        };
+        let line = if expected {
+          format!("{}: {verdict} ({seconds:.3}s)", case.label)
+        } else {
+          let wanted = match (case.accept, &case.rejects_with) {
+            (true, _) if !reached => format!(
+              "an acceptance calling {}",
+              case.exercises.as_deref().unwrap_or_default()
+            ),
+            (true, _) => "acceptance".to_owned(),
+            (false, Some(reason)) => {
+              format!("a rejection containing {reason:?}")
+            },
+            (false, None) => "a rejection by the program".to_owned(),
+          };
+          format!("FAILED {}: {verdict}; expected {wanted}", case.label)
+        };
+        Ok(CaseOutcome {
+          label: case.label.clone(),
+          stats,
+          functions,
+          expected,
+          line,
+        })
+      };
+    #[cfg(feature = "parallel")]
+    let outcomes: Vec<Result<CaseOutcome, String>> = {
+      use rayon::prelude::*;
+      cases.par_iter().map(run_case).collect()
+    };
+    #[cfg(not(feature = "parallel"))]
+    let outcomes: Vec<Result<CaseOutcome, String>> =
+      cases.iter().map(run_case).collect();
+    for outcome in outcomes {
+      let outcome = outcome?;
+      if let Some(stats) = outcome.stats
+        && statistics.insert(outcome.label.clone(), stats).is_some()
+      {
+        return Err(format!("duplicate case label: {}", outcome.label).into());
+      }
+      if let Some(list) = outcome.functions {
+        functions.insert(outcome.label.clone(), list);
+      }
+      println!("{}", outcome.line);
+      if !outcome.expected {
+        failed.push(outcome.label);
       }
     }
     if let Some(path) = stats_path {
@@ -218,8 +257,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         &program,
         package.trace.ok_or("statistics require an artifact with circuits")?,
       )?;
-      let backend =
-        Backend::for_batch_verification(&plan, Parameters::default())?;
+      let backend = Backend::for_statistics(&plan, Parameters::default())?;
       let report = serde_json::json!({"execution_statistics": backend.execution_statistics(&result), "execution_seconds": seconds});
       serde_json::to_writer(
         std::fs::File::create(format!("{path}.report.json"))?,
@@ -239,10 +277,16 @@ fn main() -> Result<(), Box<dyn Error>> {
   let before_setup = aiur::trace::stark::planning::resident_memory();
   let plan =
     TracePlan::new(&program, package.trace.ok_or("artifact has no circuits")?)?;
-  let backend = if mode == "verify" {
-    Backend::for_batch_verification(&plan, Parameters::default())?
-  } else {
-    Backend::for_batch_on_device(&plan, Parameters::default(), options.device)?
+  let backend = match mode {
+    "verify" => Backend::for_batch_verification(&plan, Parameters::default())?,
+    "plan" => {
+      Backend::for_planning(&plan, Parameters::default(), options.device)?
+    },
+    _ => Backend::for_batch_on_device(
+      &plan,
+      Parameters::default(),
+      options.device,
+    )?,
   };
   if mode == "verify" {
     let bytes = std::fs::read(path)?;

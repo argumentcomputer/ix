@@ -6,6 +6,7 @@ import Ix.IxVM.Consistency.Restrict
 import Ix.Cert.CompileCorrectProof
 import Ix.Cert.ReadingKeys
 import IxC.Kernel.Audit.Axioms
+import Tests.Ix.Kernel.ModelLaws
 
 /-!
 # End-to-end consistency corollaries, anti-vacuity, and compiler composition
@@ -42,6 +43,12 @@ into consumer-facing corollaries and verification checks:
      of `False`).
    * `consistentReadOver_no_alias_False` lifts that refutation directly to the
      `ConsistentReadOver` conclusion of `CircuitComposed`.
+   * `no_model_of_natRec_false_env`, `consistentReadOver_no_natRec_false`, and
+     `circuitComposed_no_natRec_false` lift the `Nat.rec` ι-reduction
+     anti-vacuity (`P := Nat.rec (fun _ => Prop) False (fun _ _ => T) 0; t : P`)
+     from `Tests.Ix.Kernel.ModelLaws` directly through `CircuitComposed`,
+     exercising `Model.iota_rule` in addition to `Model.defn_value` and
+     `Model.false_empty`.
 
 3. **Thin `compileCorrect` ↔ `ReadsIn` composition adapter**:
    * `selfHashed_of_compileReport` combines `Ix.Cert.compileAuthentic` with an
@@ -360,6 +367,239 @@ theorem consistentReadOver_no_alias_False (W : Type u) [SetTheory W]
   obtain ⟨M⟩ := hmodel W
   exact (no_model_of_alias_False W hfindClaimed hlpsP hciT htyT).false M
 
+private theorem find?_of_mem_nodup {env : Ix.Kernel.Env .anon}
+    (hnd : (env.consts.map (·.name)).Nodup) {ci : Ix.Kernel.ConstantInfo .anon}
+    (hci : ci ∈ env.consts) : env.find? ci.name = some ci := by
+  cases hf : env.find? ci.name with
+  | none =>
+    exfalso
+    unfold Ix.Kernel.Env.find? at hf
+    have hnone := List.find?_eq_none.mp hf ci hci
+    simp at hnone
+  | some ci' =>
+    have heq : ci' = ci := eq_of_name_eq hnd
+      (Ix.Kernel.Semantics.Env.find?_mem hf) hci (Ix.Kernel.Semantics.Env.find?_name hf)
+    rw [heq]
+
+open Ix.Kernel Ix.Kernel.SetTheory Ix.Kernel.SetModel Tests.Ix.Kernel.ModelLaws in
+/-- **Anti-vacuity (ι on `Nat.rec`)**: in any `SetTheory W`, no environment storing
+the pinned `Nat` block (`natRecA`, `natZeroA`, `natSuccA`), a proposition `kT : Prop`,
+a definition `P := Nat.rec.{1} (fun _ : Nat => Prop) False (fun _ _ => kT) 0`, and a
+constant of type `P` has an `Ix.Kernel.Model W`. -/
+theorem no_model_of_natRec_false_env (W : Type u) [SetTheory W] {env : Env .anon}
+    (hfR : env.find? natRecName = some natRecA)
+    (hfZ : env.find? natZeroName = some natZeroA)
+    (hfS : env.find? natSuccName = some natSuccA)
+    {kT : Key .anon} {ciT : ConstantInfo .anon}
+    (hfT : env.find? kT = some ciT) (hTty : ciT.toConstantVal.type = .sort .zero)
+    {cvP : ConstantVal .anon} {hint : ReducibilityHint} {a b c : BinderMeta}
+    (hfP : env.find? cvP.name = some (.defnInfo cvP (pValue kT a b c) hint))
+    {ciB : ConstantInfo .anon} (hciB : ciB ∈ env.consts)
+    (htyB : ciB.toConstantVal.type = .const cvP.name []) :
+    IsEmpty (Ix.Kernel.Model W env) := by
+  refine ⟨fun M => ?_⟩
+  obtain ⟨dR, mR₁, mR₂, sR₁, sR₂, mR₃, mR₄, e, t₁, t₂, l₁, l₂, l₃, cp, fi, kk, et, pb, rl₁, hRA⟩ :=
+    natRecA_shape
+  rw [hRA] at hfR
+  rw [natZeroA_shape] at hfZ
+  obtain ⟨mS, hSA⟩ := natSuccA_shape
+  rw [hSA] at hfS
+  have hTname : ciT.name = kT := Ix.Kernel.Semantics.Env.find?_name hfT
+  have hconst : ∀ {n : Key .anon} {ρ : BVarIdx → W} {X : W},
+      Denotes M.cval env φ1 ρ (.const n []) X → X = M.cval n φ1 :=
+    fun h => (den_const_nil h).1
+  obtain ⟨TZ, hTZ, hZmem⟩ := M.mem _ (mem_of_find hfZ) φ1 (fun _ => empty)
+  obtain ⟨hTZv, ciN, hfN, hpsN⟩ := den_const_nil hTZ
+  have hZ0 : M.cval natZeroName φ1 ∈ˢ M.cval natName φ1 := by rw [← hTZv]; exact hZmem
+  obtain ⟨TS, hTS, hSmem⟩ := M.mem _ (mem_of_find hfS) φ1 (fun _ => empty)
+  obtain ⟨AS, BS, rfl, hAS, hBS, hPS⟩ := den_pi_inv hTS
+  obtain rfl := hconst hAS
+  have hSN : ∀ n, n ∈ˢ M.cval natName φ1 → app (M.cval natSuccName φ1) n ∈ˢ M.cval natName φ1 := by
+    intro n hn
+    rw [← hconst (hBS n hn)]
+    exact app_mem_piR hSmem hn (fun hr x hx => by rw [← univ_zero]; exact hPS hr x hx)
+  obtain ⟨TT, hTT, hTmem⟩ := M.mem _ (mem_of_find hfT) φ1 (fun _ => empty)
+  rw [hTty] at hTT
+  have hTv : M.cval kT φ1 ∈ˢ (univ 0 : W) := by
+    have hTT' : TT = univ 0 := den_sort_inv hTT
+    rw [← hTname, ← hTT']; exact hTmem
+  have hval := M.defn_value _ _ hint (mem_of_find hfP) φ1 (fun _ => empty)
+  obtain ⟨F₁, L, hPv, hF₁, hL⟩ := den_app_inv hval
+  obtain ⟨F₂, Sv, rfl, hF₂, hSv⟩ := den_app_inv hF₁
+  obtain ⟨F₃, Fv, rfl, hF₃, hFv⟩ := den_app_inv hF₂
+  obtain ⟨Rv, Mv, rfl, hRv, hMv⟩ := den_app_inv hF₃
+  have hFv0 : Fv = empty := M.false_empty _ _ _ hFv
+  have hL0 : L = M.cval natZeroName φ1 := hconst (den_natLit_inv hL)
+  have hRv' : Rv = M.cval natRecName (Level.substFn φ1 [BasisDSL.uN] [.succ .zero]) := by
+    cases hRv with
+    | @const _ _ _ _ hf _ => obtain rfl := Option.some.inj (hfR.symm.trans hf); rfl
+  obtain ⟨happ, hmot⟩ := mot_facts (fun _ _ h => hconst h) hZ0 hMv
+  obtain ⟨TR, hTR, -⟩ := M.mem _ (mem_of_find hfR) φ1 (fun _ => empty)
+  obtain ⟨X₁, B₁, -, hX₁, hB₁, -⟩ := den_pi_inv hTR
+  have hMvX₁ : Mv ∈ˢ X₁ := hmot rfl _ _ _ hX₁
+  obtain ⟨X₂, B₂, -, hX₂, hB₂, -⟩ := den_pi_inv (hB₁ Mv hMvX₁)
+  have hFvX₂ : Fv ∈ˢ X₂ := by rw [hFv0]; exact zero_mem (fun _ _ h => hconst h) hZ0 happ hX₂
+  obtain ⟨X₃, _, -, hX₃, -, -⟩ := den_pi_inv (hB₂ Fv hFvX₂)
+  have hsucc := fun {ρ' : BVarIdx → W} {s₁ s₂ : BinderMeta} {X : W}
+      (hX : Denotes M.cval env φ1 (push Fv (push Mv ρ')) (succT s₁ s₂) X) =>
+    succ_mem (fun _ _ h => hconst h) hZ0 (fun _ _ h => hconst h) hSN (fun _ _ h => hconst h) hTv
+      happ hSv hX
+  have hSvX₃ : Sv ∈ˢ X₃ := hsucc hX₃
+  have hfits : Fits M.cval env φ1 (fun _ => empty)
+      ((recT dR mR₁ mR₂ sR₁ sR₂ mR₃ mR₄).instantiateLevelParams [BasisDSL.uN] [.param BasisDSL.uN])
+      [Mv, Fv, Sv] (push Sv (push Fv (push Mv (fun _ => empty))))
+      (.forallE (.const natName []) (.app (.bvar 3) (.bvar 0)) mR₄) := by
+    rw [instSelf1]
+    exact .cons hX₁ hMvX₁ (.cons hX₂ hFvX₂ (.cons hX₃ hSvX₃ .nil))
+  obtain ⟨H, hH, -, -, heq⟩ := M.iota_rule natRecName _ 3 3 _
+    ⟨natZeroName, 0, cp, fi, zeroRhs e t₁ t₂ l₁ l₂ l₃, kk, et, pb⟩ hfR (by simp)
+    ⟨natZeroName, [], .const natName []⟩ 0 0 hfZ
+    [.param BasisDSL.uN] φ1 (fun _ => empty) _ (fun _ => empty) [Mv, Fv, Sv] []
+    (.const natName []) _ _ mR₄ natName [] _ (M.cval natZeroName φ1) (M.cval natName φ1)
+    rfl rfl rfl (Denotes.const hfR rfl) hfits rfl (den_const_nil_intro hfN hpsN)
+    (den_const_nil_intro hfZ rfl) .nil hZ0 (fun _ => .nil) (fun _ => .nil)
+  have heq' : app (app (app (app (M.cval natRecName
+      (Level.substFn φ1 [BasisDSL.uN] [.param BasisDSL.uN])) Mv) Fv) Sv) (M.cval natZeroName φ1)
+      = app (app (app H Mv) Fv) Sv := heq
+  have hH' : Denotes M.cval env φ1 (fun _ => empty)
+      ((zeroRhs e t₁ t₂ l₁ l₂ l₃).instantiateLevelParams [BasisDSL.uN]
+        [.param BasisDSL.uN]) H := hH
+  rw [instSelf1] at hH'
+  obtain ⟨A₇, F₇, rfl, hA₇, hF₇, hP₇⟩ := den_lam_inv hH'
+  have hMv₇ : Mv ∈ˢ A₇ := hmot rfl _ _ _ hA₇
+  obtain ⟨A₈, F₈, hF₇e, hA₈, hF₈, hP₈⟩ := den_lam_inv (hF₇ Mv hMv₇)
+  have hFv₈ : Fv ∈ˢ A₈ := by rw [hFv0]; exact zero_mem (fun _ _ h => hconst h) hZ0 happ hA₈
+  obtain ⟨A₉, F₉, hF₈e, hA₉, hF₉, hP₉⟩ := den_lam_inv (hF₈ Fv hFv₈)
+  have hSv₉ : Sv ∈ˢ A₉ := hsucc hA₉
+  have hF₉e : F₉ Sv = Fv := den_bvar_inv (hF₉ Sv hSv₉)
+  have hr₉ : regime φ1 l₃.pw ≠ 0 := fun h =>
+    pt_ne_empty ((hP₉ h Sv hSv₉).symm.trans (hF₉e.trans hFv0))
+  have hr₈ : regime φ1 l₂.pw ≠ 0 := fun h =>
+    lamR_ne_pt hr₉ (hF₈e.symm.trans (hP₈ h Fv hFv₈))
+  have hr₇ : regime φ1 l₁.pw ≠ 0 := fun h =>
+    lamR_ne_pt hr₈ (hF₇e.symm.trans (hP₇ h Mv hMv₇))
+  have hH0 : app (app (app (lamR (regime φ1 l₁.pw) A₇ F₇) Mv) Fv) Sv = empty := by
+    rw [app_lamR_pos hr₇ hMv₇, hF₇e, app_lamR_pos hr₈ hFv₈, hF₈e, app_lamR_pos hr₉ hSv₉, hF₉e,
+      hFv0]
+  have hRR : M.cval natRecName (Level.substFn φ1 [BasisDSL.uN] [.succ .zero]) =
+      M.cval natRecName (Level.substFn φ1 [BasisDSL.uN] [.param BasisDSL.uN]) :=
+    M.cval_params _ _ hfR _ _ (fun p hp => by
+      simp only [ConstantInfo.toConstantVal, List.mem_singleton] at hp
+      subst hp
+      rfl)
+  have hP0 : M.cval cvP.name φ1 = empty := by
+    rw [hPv, hL0, hRv', hRR, heq', hH0]
+  obtain ⟨TB, hTB, hBmem⟩ := M.mem _ hciB φ1 (fun _ => empty)
+  have hTB2 : Denotes M.cval env φ1 (fun _ => empty) ciB.toConstantVal.type TB := hTB
+  rw [htyB] at hTB2
+  have hTB' : TB = M.cval cvP.name φ1 := hconst hTB2
+  rw [hTB', hP0] at hBmem
+  exact not_mem_empty _ hBmem
+
+/-- **Anti-vacuity (ι on `Nat.rec`) on `TableShape` + `ConsistentReadOver`**: in any
+`SetTheory W`, the claimed environment witnessed by `ConsistentReadOver` over a valid
+`TableShape` (which pins `BasisKind.natK`) cannot contain a proposition `kT : Prop`,
+a definition `P := Nat.rec.{1} (fun _ : Nat => Prop) False (fun _ _ => kT) 0` at a
+non-auxiliary key, and any claimed constant of type `P`. -/
+theorem consistentReadOver_no_natRec_false (W : Type u) [SetTheory W]
+    {calls : List (Call IxVM.F)} {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
+    {envT : Ix.Kernel.Env .anon} {seeds : List Address}
+    (hshape : TableShape.{u} t (fun _ => True) R envT)
+    (hcons : ConsistentReadOver.{u} calls t R envT seeds) :
+    ∃ (E₀ : Ixon.Env) (env : Ix.Kernel.Env .anon), LoadedBy calls E₀ ∧
+      ∀ (kT : Ix.Kernel.Key .anon) (ciT : Ix.Kernel.ConstantInfo .anon)
+        (cvP : Ix.Kernel.ConstantVal .anon) (hint : Ix.Kernel.ReducibilityHint)
+        (a b c : Ix.Kernel.BinderMeta) (ciB : Ix.Kernel.ConstantInfo .anon),
+        (∀ k d, kT ≠ .aux k d) →
+        env.find? kT = some ciT →
+        ciT.toConstantVal.type = .sort .zero →
+        (∀ k d, cvP.name ≠ .aux k d) →
+        env.find? cvP.name = some (.defnInfo cvP (Tests.Ix.Kernel.ModelLaws.pValue kT a b c) hint) →
+        ciB ∈ (claimedEnv env).consts →
+        ciB.toConstantVal.type = .const cvP.name [] →
+        False := by
+  obtain ⟨E₀, env, hload, hnodup, hsub, -, -, hmodel⟩ := hcons
+  have hNatMem : ∀ ci ∈ (Ix.Kernel.BasisKind.natK.declsA : List (Ix.Kernel.ConstantInfo .anon)),
+      ci ∈ env.consts := fun ci hci => hsub ci (hshape.pins .natK ci hci)
+  have hfindClaimedOfMem : ∀ {ci : Ix.Kernel.ConstantInfo .anon},
+      ci ∈ env.consts → (∀ k d, ci.name ≠ .aux k d) →
+      (claimedEnv env).find? ci.name = some ci := by
+    intro ci hci hna
+    rw [claimedEnv_find? (keptKey_of_not_aux hna)]
+    exact find?_of_mem_nodup hnodup hci
+  have hfR : (claimedEnv env).find? Ix.Kernel.natRecName = some Ix.Kernel.natRecA := by
+    have hmem : Ix.Kernel.natRecA ∈ env.consts :=
+      hNatMem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _
+        (List.mem_cons_of_mem _ (List.mem_singleton_self _))))
+    have hname : (Ix.Kernel.natRecA : Ix.Kernel.ConstantInfo .anon).name = Ix.Kernel.natRecName := by
+      obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hRA⟩ :=
+        Tests.Ix.Kernel.ModelLaws.natRecA_shape
+      rw [hRA]; rfl
+    rw [← hname]
+    exact hfindClaimedOfMem hmem (by rw [hname]; exact Tests.Ix.Kernel.ModelLaws.roleKey_ne_aux _)
+  have hfZ : (claimedEnv env).find? Ix.Kernel.natZeroName = some Ix.Kernel.natZeroA := by
+    have hmem : Ix.Kernel.natZeroA ∈ env.consts :=
+      hNatMem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))
+    have hname : (Ix.Kernel.natZeroA : Ix.Kernel.ConstantInfo .anon).name = Ix.Kernel.natZeroName := by
+      rw [Tests.Ix.Kernel.ModelLaws.natZeroA_shape]; rfl
+    rw [← hname]
+    exact hfindClaimedOfMem hmem (by rw [hname]; exact Tests.Ix.Kernel.ModelLaws.roleKey_ne_aux _)
+  have hfS : (claimedEnv env).find? Ix.Kernel.natSuccName = some Ix.Kernel.natSuccA := by
+    have hmem : Ix.Kernel.natSuccA ∈ env.consts :=
+      hNatMem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..)))
+    have hname : (Ix.Kernel.natSuccA : Ix.Kernel.ConstantInfo .anon).name = Ix.Kernel.natSuccName := by
+      obtain ⟨_, hSA⟩ := Tests.Ix.Kernel.ModelLaws.natSuccA_shape
+      rw [hSA]; rfl
+    rw [← hname]
+    exact hfindClaimedOfMem hmem (by rw [hname]; exact Tests.Ix.Kernel.ModelLaws.roleKey_ne_aux _)
+  refine ⟨E₀, env, hload, fun kT ciT cvP hint a b c ciB hTk hfT hTty hPk hfP hciB htyB => ?_⟩
+  have hfT' : (claimedEnv env).find? kT = some ciT := by
+    rw [claimedEnv_find? (keptKey_of_not_aux hTk)]; exact hfT
+  have hfP' : (claimedEnv env).find? cvP.name =
+      some (.defnInfo cvP (Tests.Ix.Kernel.ModelLaws.pValue kT a b c) hint) := by
+    rw [claimedEnv_find? (keptKey_of_not_aux hPk)]; exact hfP
+  obtain ⟨M⟩ := hmodel W
+  exact (no_model_of_natRec_false_env W hfR hfZ hfS hfT' hTty hfP' hciB htyB).false M
+
+/-- **Circuit-level `Nat.rec` ι anti-vacuity corollary of `circuitComposed`**: in any
+`SetTheory W`, for any accepted binding proof and in-scope typing proof sharing the
+table address `a` over a `SelfHashed` view, either the runs exhibited a
+`GenuineCollision` or the witnessed claimed environment cannot contain a proposition
+`kT : Prop`, a definition `P := Nat.rec.{1} (fun _ : Nat => Prop) False (fun _ _ => kT) 0`
+at a non-auxiliary key, and any claimed constant of type `P`. -/
+theorem circuitComposed_no_natRec_false (W : Type u) [SetTheory W] :
+    CircuitSound fun callsB dB =>
+      CircuitSound fun callsA dA =>
+        ∀ (bytesB : ByteArray) (spec a : Address), Claim.de bytesB = .ok (.binding spec a) →
+          packDigest (Address.blake3Pure bytesB) = dB →
+          ∀ (bytesA : ByteArray) (cA : Claim), Claim.de bytesA = .ok cA →
+            packDigest (Address.blake3Pure bytesA) = dA → InScopeTyping cA →
+            ∀ ctx, cA.context? = some ctx → ctx.binding = a →
+              ∀ (V : View) (seeds : List Address), ClaimSeeds cA V seeds → SelfHashed V →
+                GenuineCollision V (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
+                  ComposedWith.{u} (fun _ _ _ =>
+                    ∃ (E₀ : Ixon.Env) (env : Ix.Kernel.Env .anon), LoadedBy callsA E₀ ∧
+                      ∀ (kT : Ix.Kernel.Key .anon) (ciT : Ix.Kernel.ConstantInfo .anon)
+                        (cvP : Ix.Kernel.ConstantVal .anon) (hint : Ix.Kernel.ReducibilityHint)
+                        (a' b' c' : Ix.Kernel.BinderMeta) (ciB : Ix.Kernel.ConstantInfo .anon),
+                        (∀ k d, kT ≠ .aux k d) →
+                        env.find? kT = some ciT →
+                        ciT.toConstantVal.type = .sort .zero →
+                        (∀ k d, cvP.name ≠ .aux k d) →
+                        env.find? cvP.name =
+                          some (.defnInfo cvP (Tests.Ix.Kernel.ModelLaws.pValue kT a' b' c') hint) →
+                        ciB ∈ (claimedEnv env).consts →
+                        ciB.toConstantVal.type = .const cvP.name [] →
+                        False) callsB a := by
+  refine circuitSound_mono (fun callsB dB hA => ?_) circuitComposed_selfHashed.{u}
+  refine circuitSound_mono (fun callsA dA hSpec => ?_) hA
+  intro bytesB spec a deB dgB bytesA cA deA dgA hsc ctx hctx hba V seeds hs hV
+  rcases hSpec bytesB spec a deB dgB bytesA cA deA dgA hsc ctx hctx hba V seeds hs hV with
+    hCol | ⟨tb, t, R, envT, htb, hadm, hall, hloadB, hshape, hcons⟩
+  · exact Or.inl hCol
+  · exact Or.inr ⟨tb, t, R, envT, htb, hadm, hall, hloadB, hshape,
+      consistentReadOver_no_natRec_false W hshape hcons⟩
+
 /-! ## 3. Thin `compileCorrect` ↔ `ReadsIn` / `CircuitComposed` composition adapter -/
 
 /-- **A compiled artifact paired with an admitted role binding yields a `SelfHashed`
@@ -649,6 +889,9 @@ end IxVM.Refinement.Endpoint
 #guard_kernel_axioms IxVM.Refinement.Endpoint.badEnvFalse_no_model [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Endpoint.badEnvAliasFalse_no_model [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Endpoint.consistentReadOver_no_alias_False [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Endpoint.no_model_of_natRec_false_env [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Endpoint.consistentReadOver_no_natRec_false [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Endpoint.circuitComposed_no_natRec_false [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Endpoint.selfHashed_of_compileReport [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Endpoint.readsIn_agree_of_compat [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Endpoint.noCollision_agrees_with_view [propext, Classical.choice, Quot.sound]

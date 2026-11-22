@@ -159,11 +159,13 @@ def stringTests : TestSeq :=
   test "string lifecycle unicode" (stringLifecycle "café" == "éfac")
 
 /-! ## Alloc/drop stress tests
-    Builds and immediately drops N Lean objects in a loop. -/
+    Builds and immediately drops N Lean objects in a loop.
+    Under `IX_VALGRIND=1`, cap at 100x to skip the redundant 1000x loop. -/
 
-def allocDropTests : TestSeq :=
-  test "alloc/drop 100x" (allocDropLoop testStr 100 == testStr) ++
-  test "alloc/drop 1000x" (allocDropLoop testNum 1000 == testNum)
+def allocDropTests (valgrind : Bool := false) : TestSeq :=
+  let base := test "alloc/drop 100x" (allocDropLoop testStr 100 == testStr)
+  if valgrind then base
+  else base ++ test "alloc/drop 1000x" (allocDropLoop testNum 1000 == testNum)
 
 /-! ## Multi-threaded LeanShared tests
     These exercise lean_mark_mt + atomic refcounting on ix domain types
@@ -181,14 +183,15 @@ def mtTests : TestSeq :=
 
 /-! ## Property tests -/
 
-def propertyTests : TestSeq :=
-  checkIO "borrow→owned Name" (∀ n : Ix.Name, borrowToOwnedName n == n) ++
-  checkIO "clone always equal" (∀ n : Ix.Name, cloneAndCompare n == 1) ++
-  checkIO "roundtrip loop 3x" (∀ n : Ix.Name, roundtripLoop n 3 == n)
+def propertyTests (cfg : SlimCheck.Configuration := {}) : TestSeq :=
+  checkIO "borrow→owned Name" (∀ n : Ix.Name, borrowToOwnedName n == n) .done cfg ++
+  checkIO "clone always equal" (∀ n : Ix.Name, cloneAndCompare n == 1) .done cfg ++
+  checkIO "roundtrip loop 3x" (∀ n : Ix.Name, roundtripLoop n 3 == n) .done cfg
 
 /-! ## Test Suite -/
 
-public def suite : List TestSeq := [
+public def suiteWith (cfg : SlimCheck.Configuration := {}) (valgrind : Bool := false) :
+    List TestSeq := [
   borrowToOwnedTests,
   multiBorrowTests,
   ownedDropTests,
@@ -197,9 +200,11 @@ public def suite : List TestSeq := [
   persistentTests,
   cacheDedupTests,
   stringTests,
-  allocDropTests,
+  allocDropTests valgrind,
   mtTests,
-  propertyTests,
+  propertyTests cfg,
 ]
+
+public def suite : List TestSeq := suiteWith {} false
 
 end Tests.FFI.Refcount

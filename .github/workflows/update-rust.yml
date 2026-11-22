@@ -30,7 +30,8 @@ jobs:
       # sub-workspaces pin their own toolchains and are left alone. The PR is
       # opened with `GITHUB_TOKEN`, so a maintainer closes and reopens it to
       # run CI.
-      - uses: argumentcomputer/ci-workflows/.github/actions/rust-version@main
+      # Pinned commit from `argumentcomputer/ci-workflows@main` (no release tag).
+      - uses: argumentcomputer/ci-workflows/.github/actions/rust-version@2a6b43be08a6dab790e870c1717b79be2d6e70bc
         with:
           update-flake: 'true'
           pr: 'true'

@@ -2,7 +2,7 @@
   Ixon: Alpha-invariant serialization format for Lean constants.
 
   This host module reexports the pure types and anonymous codecs from
-  Ix.Ixon.Codec (Ixon v4: TagN integer encoding), and adds metadata, lazy
+  IxC.Ixon.Codec (Ixon v5: TagN integers and binder-data sections), and adds metadata, lazy
   records, environments, and hashing.
   The pure anonymous grammar is shared with the certified codec proofs.
 -/
@@ -1380,6 +1380,11 @@ def clearModels (env : Env) : Env :=
 def storeConst (env : Env) (addr : Address) (const : Constant) : Env :=
   { env.clearModels with consts := env.consts.insert addr (LazyConstant.ofConstant const) }
 
+/-- Store a constant without clearing derived prover-side model advice.
+    Safe when adding a non-inductive constant whose dependencies' models are already attached. -/
+def storeConstKeepModels (env : Env) (addr : Address) (const : Constant) : Env :=
+  { env with consts := env.consts.insert addr (LazyConstant.ofConstant const) }
+
 /-- Get a constant by address, materializing on demand. -/
 def getConst? (env : Env) (addr : Address) : Option Constant :=
   (env.consts.get? addr).bind LazyConstant.get?
@@ -1410,6 +1415,11 @@ def getName? (env : Env) (addr : Address) : Option Ix.Name :=
 def storeBlob (env : Env) (bytes : ByteArray) : Env × Address :=
   let addr := Address.admissionHash bytes
   ({ env.clearModels with blobs := env.blobs.insert addr bytes }, addr)
+
+/-- Store a blob without clearing derived prover-side model advice. -/
+def storeBlobKeepModels (env : Env) (bytes : ByteArray) : Env × Address :=
+  let addr := Address.admissionHash bytes
+  ({ env with blobs := env.blobs.insert addr bytes }, addr)
 
 /-- Get a blob by address. -/
 def getBlob? (env : Env) (addr : Address) : Option ByteArray :=
@@ -2456,6 +2466,53 @@ the {st.idx - start}-byte span at offset {start}"
     throw s!"serde gate ({label}): writer bytes differ from input in span \
 {start}..{st.idx}"
 
+/-- Pure span check matching `reserCheck`: require `frag` to reproduce
+    `bytes[start : endIdx]` identically. -/
+private def checkSpan (label : String) (bytes : ByteArray) (start endIdx : Nat)
+    (frag : ByteArray) : Except String Unit := do
+  if start + frag.size != endIdx then
+    throw s!"serde gate ({label}): writer produced {frag.size} bytes for \
+the {endIdx - start}-byte span at offset {start}"
+  unless fragMatchesAt bytes start frag do
+    throw s!"serde gate ({label}): writer bytes differ from input in span \
+{start}..{endIdx}"
+
+/-- Advance the read cursor by `len` bytes without copying, returning the
+    start offset or the same EOF error as `getBytes`. -/
+private def skipBytes (len : Nat) : GetM Nat := do
+  let st ← get
+  if st.idx + len <= st.bytes.size then
+    let start := st.idx
+    set { st with idx := st.idx + len }
+    return start
+  else throw s!"EOF: need {len} bytes at index {st.idx}, but size is {st.bytes.size}"
+
+private structure BlobEntrySpan where
+  eStart : Nat
+  addr : Address
+  len : UInt64
+  bodyStart : Nat
+  eEnd : Nat
+  deriving Inhabited
+
+private structure ConstEntrySpan where
+  eStart : Nat
+  addr : Address
+  len : UInt64
+  bodyStart : Nat
+  eEnd : Nat
+  deriving Inhabited
+
+private structure NamedEntrySpan where
+  eStart : Nat
+  nameIdx : UInt64
+  constRank : UInt64
+  hints : Option Lean.ReducibilityHints
+  metaOff : Nat
+  metaLen : Nat
+  eEnd : Nat
+  deriving Inhabited
+
 /-- Streaming counterpart of `deEnv` + `serEnv` roundtrip verification.
     See the section comment above. -/
 def getEnvVerifiedLazy : GetM LazyEnvParts := do
@@ -2498,61 +2555,116 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
     roleBinding
     assumptions := assumptionArr.foldl (·.insert ·) {}
   }
+  let backing := (← get).bytes
 
   -- Section 1: Blobs (hash-verified; ascending order is the writer's
   -- sort contract, asserted here since no whole-image compare runs).
   let s1Start := (← get).idx
   let numBlobs := (← getTagN 0).value
   reserCheck "§1 count" s1Start <| runPut (putTagN 0 0 numBlobs)
-  let mut prevBlobAddr : Option Address := none
+  let mut blobEntries : Array BlobEntrySpan := #[]
   for _ in [:numBlobs.toNat] do
     let eStart := (← get).idx
     let addr ← Serialize.get
     let len := (← getTagN 0).value
-    let bytes ← getBytes len.toNat
-    if Address.blake3 bytes != addr then
-      throw s!"Env.get: blob bytes hash mismatch for {reprStr (toString addr)}"
-    if let some prev := prevBlobAddr then
-      if !(compare prev addr).isLT then
-        throw "Env.get: §1 blobs not in strictly ascending address order"
-    prevBlobAddr := some addr
-    env := { env with blobs := env.blobs.insert addr bytes }
-    reserCheck "§1 blob" eStart <| runPut do
-      Serialize.put addr
-      putTagN 0 0 bytes.size.toUInt64
-      putBytes bytes
+    let bodyStart ← skipBytes len.toNat
+    let eEnd := bodyStart + len.toNat
+    blobEntries := blobEntries.push { eStart, addr, len, bodyStart, eEnd }
+  let verifyBlobRange (lo hi : Nat) : Except String (Array (Address × ByteArray)) := do
+    let mut out : Array (Address × ByteArray) := Array.emptyWithCapacity (hi - lo)
+    for i in [lo:hi] do
+      let e := blobEntries[i]!
+      let bytes := backing.extract e.bodyStart e.eEnd
+      if Address.blake3 bytes != e.addr then
+        throw s!"Env.get: blob bytes hash mismatch for {reprStr (toString e.addr)}"
+      if i > 0 then
+        let prev := blobEntries[i - 1]!.addr
+        if !(compare prev e.addr).isLT then
+          throw "Env.get: §1 blobs not in strictly ascending address order"
+      let frag := runPut do
+        Serialize.put e.addr
+        putTagN 0 0 bytes.size.toUInt64
+        putBytes bytes
+      checkSpan "§1 blob" backing e.eStart e.eEnd frag
+      out := out.push (e.addr, bytes)
+    return out
+  if blobEntries.size ≤ 256 then
+    match verifyBlobRange 0 blobEntries.size with
+    | .ok pairs =>
+      for (addr, bytes) in pairs do
+        env := { env with blobs := env.blobs.insert addr bytes }
+    | .error err => throw err
+  else
+    let blobChunkSize := Nat.max 256 ((blobEntries.size + 31) / 32)
+    let numBlobChunks := (blobEntries.size + blobChunkSize - 1) / blobChunkSize
+    let blobTasks := (Array.range numBlobChunks).map fun c =>
+      let lo := c * blobChunkSize
+      let hi := Nat.min ((c + 1) * blobChunkSize) blobEntries.size
+      Task.spawn fun _ => verifyBlobRange lo hi
+    for task in blobTasks do
+      match task.get with
+      | .ok pairs =>
+        for (addr, bytes) in pairs do
+          env := { env with blobs := env.blobs.insert addr bytes }
+      | .error err => throw err
 
-  -- Section 2: Consts. The body is parsed with the pure reader and
-  -- re-serialized with the pure writer (the gate's core), then retained
-  -- only as a zero-copy window.
+  -- Section 2: Consts. Scan framing offsets linearly, then verify BLAKE3,
+  -- ascending order, bounded decode and exact writer roundtrip in parallel
+  -- chunks, retaining only zero-copy windows.
   let s2Start := (← get).idx
   let numConsts := (← getTagN 0).value
   reserCheck "§2 count" s2Start <| runPut (putTagN 0 0 numConsts)
+  let mut constEntries : Array ConstEntrySpan := #[]
   let mut constOrder : Array Address := #[]
-  let backing := (← get).bytes
   for _ in [:numConsts.toNat] do
     let eStart := (← get).idx
     let addr ← Serialize.get
     let len := (← getTagN 0).value
-    let bodyStart := (← get).idx
-    let bytes ← getBytes len.toNat
-    if Address.blake3 bytes != addr then
-      throw s!"Env.get: const bytes hash mismatch for {reprStr (toString addr)}"
-    if let some prev := constOrder.back? then
-      if !(compare prev addr).isLT then
-        throw "Env.get: §2 constants not in strictly ascending address order"
+    let bodyStart ← skipBytes len.toNat
+    let eEnd := bodyStart + len.toNat
+    constEntries := constEntries.push { eStart, addr, len, bodyStart, eEnd }
     constOrder := constOrder.push addr
-    match Env.deConstantLoaded bytes with
-    | .ok constant =>
-      reserCheck "§2 const" eStart <| runPut do
-        Serialize.put addr
-        putTagN 0 0 len
-        putBytes (serConstant constant)
-      env := { env with
-        consts := env.consts.insert addr
-          (LazyConstant.ofSlice backing bodyStart len.toNat) }
-    | .error e =>
-      throw s!"Env.get: bad constant bytes for addr {reprStr (toString addr)}: {e}"
+  let verifyConstRange (lo hi : Nat) : Except String Unit := do
+    for i in [lo:hi] do
+      let e := constEntries[i]!
+      let body := backing.extract e.bodyStart e.eEnd
+      if Address.blake3 body != e.addr then
+        throw s!"Env.get: const bytes hash mismatch for {reprStr (toString e.addr)}"
+      if i > 0 then
+        let prev := constEntries[i - 1]!.addr
+        if !(compare prev e.addr).isLT then
+          throw "Env.get: §2 constants not in strictly ascending address order"
+      match Env.deConstantLoaded body with
+      | .ok constant =>
+        let frag := runPut do
+          Serialize.put e.addr
+          putTagN 0 0 e.len
+          putBytes (serConstant constant)
+        checkSpan "§2 const" backing e.eStart e.eEnd frag
+      | .error err =>
+        throw s!"Env.get: bad constant bytes for addr {reprStr (toString e.addr)}: {err}"
+  if constEntries.size ≤ 256 then
+    match verifyConstRange 0 constEntries.size with
+    | .ok () => pure ()
+    | .error err => throw err
+  else
+    let constChunkSize := Nat.max 256 ((constEntries.size + 31) / 32)
+    let numConstChunks := (constEntries.size + constChunkSize - 1) / constChunkSize
+    let constTasks := (Array.range numConstChunks).map fun c =>
+      let lo := c * constChunkSize
+      let hi := Nat.min ((c + 1) * constChunkSize) constEntries.size
+      Task.spawn fun _ => verifyConstRange lo hi
+    for task in constTasks do
+      match task.get with
+      | .ok () => pure ()
+      | .error err => throw err
+  for e in constEntries do
+    env := { env with
+      consts := env.consts.insert e.addr
+        (LazyConstant.ofSlice backing e.bodyStart e.len.toNat) }
+
+  let merkleTask := Task.spawn fun _ =>
+    (Ix.Merkle.merkleRootCanonical constOrder).getD Ix.Merkle.zeroAddress
 
   if let some m := main then
     if !env.consts.contains m then
@@ -2614,12 +2726,13 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
   let fileNameIdx : NameIndex := nameRev.zipIdx.foldl
     (fun acc (addr, i) => acc.insert addr i.toUInt64) {}
 
-  -- Section 5: Named — header fields eager, metadata parsed and
-  -- writer-checked transiently, retained as a window.
+  -- Section 5: Named — header fields scanned linearly, metadata parsed and
+  -- writer-checked transiently in parallel chunks, retained as windows.
   let s5Start := (← get).idx
   let numNamed := (← getTagN 0).value
   reserCheck "§5 count" s5Start <| runPut (putTagN 0 0 numNamed)
   let mut namedRows : Array NamedRow := #[]
+  let mut namedSpans : Array NamedEntrySpan := #[]
   let mut rowIdx : Std.HashMap Ix.Name Nat := {}
   let mut prevName : Option Ix.Name := none
   for _ in [:numNamed.toNat] do
@@ -2645,6 +2758,24 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
       throw s!"Env.get: §5 metadata blob needs {metaLen} bytes, have \
                {stBefore.bytes.size - stBefore.idx} — possibly a \
                pre-compact-keys .ixe; recompile it"
+    let metaOff := stBefore.idx
+    let eEnd := metaOff + metaLen
+    set { stBefore with idx := eEnd }
+    let name ← match namesLookup.get? nameAddr with
+      | some name => pure name
+      | none =>
+        throw s!"getEnv: named entry references unknown name address {reprStr (toString nameAddr)}"
+    if let some prev := prevName then
+      if !(compare prev name).isLT then
+        throw "serde gate (§5): named entries not in ascending name order"
+    prevName := some name
+    namedSpans := namedSpans.push { eStart, nameIdx, constRank, hints, metaOff, metaLen, eEnd }
+    rowIdx := rowIdx.insert name namedRows.size
+    namedRows := namedRows.push
+      { name, nameIdx, constRank, addr := constAddr, hints,
+        metaOff, metaLen }
+    env := { env with addrToName := env.addrToName.insert constAddr name }
+  let parseNamedMeta : GetM (ConstantMeta × Option (Address × ConstantMeta)) := do
     let constMeta ← getConstantMetaIndexed nameRev
     let origTag ← getU8
     let original ← match origTag with
@@ -2654,38 +2785,48 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
       let origMeta ← getConstantMetaIndexed nameRev
       pure (some (origAddr, origMeta))
     | x => throw s!"getEnv: Named.original: invalid tag {x}"
-    let stAfter ← get
-    if stAfter.idx - stBefore.idx != metaLen then
-      throw s!"Env.get: §5 metadata blob length mismatch (header says \
-               {metaLen}, parsed {stAfter.idx - stBefore.idx}) — possibly a \
-               pre-normal-levels .ixe; recompile it"
-    let name ← match namesLookup.get? nameAddr with
-      | some name => pure name
-      | none =>
-        throw s!"getEnv: named entry references unknown name address {reprStr (toString nameAddr)}"
-    if let some prev := prevName then
-      if !(compare prev name).isLT then
-        throw "serde gate (§5): named entries not in ascending name order"
-    prevName := some name
-    reserCheck "§5 named" eStart <| runPut do
-      putTagN 0 0 nameIdx
-      putTagN 0 0 constRank
-      putFusedOptHint hints
-      let blob := runPut do
-        putConstantMetaIndexed constMeta fileNameIdx
-        match original with
-        | none => putU8 0
-        | some (origAddr, origMeta) =>
-          putU8 1
-          Serialize.put origAddr
-          putConstantMetaIndexed origMeta fileNameIdx
-      putTagN 0 0 blob.size.toUInt64
-      putBytes blob
-    rowIdx := rowIdx.insert name namedRows.size
-    namedRows := namedRows.push
-      { name, nameIdx, constRank, addr := constAddr, hints,
-        metaOff := stBefore.idx, metaLen }
-    env := { env with addrToName := env.addrToName.insert constAddr name }
+    pure (constMeta, original)
+  let verifyNamedRange (lo hi : Nat) : Except String Unit := do
+    for i in [lo:hi] do
+      let s := namedSpans[i]!
+      let (constMeta, original) ← match parseNamedMeta.run { idx := s.metaOff, bytes := backing } with
+        | .ok pair stAfter =>
+          if stAfter.idx - s.metaOff != s.metaLen then
+            throw s!"Env.get: §5 metadata blob length mismatch (header says \
+                     {s.metaLen}, parsed {stAfter.idx - s.metaOff}) — possibly a \
+                     pre-normal-levels .ixe; recompile it"
+          pure pair
+        | .error err _ => throw err
+      let frag := runPut do
+        putTagN 0 0 s.nameIdx
+        putTagN 0 0 s.constRank
+        putFusedOptHint s.hints
+        let blob := runPut do
+          putConstantMetaIndexed constMeta fileNameIdx
+          match original with
+          | none => putU8 0
+          | some (origAddr, origMeta) =>
+            putU8 1
+            Serialize.put origAddr
+            putConstantMetaIndexed origMeta fileNameIdx
+        putTagN 0 0 blob.size.toUInt64
+        putBytes blob
+      checkSpan "§5 named" backing s.eStart s.eEnd frag
+  if namedSpans.size ≤ 256 then
+    match verifyNamedRange 0 namedSpans.size with
+    | .ok () => pure ()
+    | .error err => throw err
+  else
+    let namedChunkSize := Nat.max 256 ((namedSpans.size + 31) / 32)
+    let numNamedChunks := (namedSpans.size + namedChunkSize - 1) / namedChunkSize
+    let namedTasks := (Array.range numNamedChunks).map fun c =>
+      let lo := c * namedChunkSize
+      let hi := Nat.min ((c + 1) * namedChunkSize) namedSpans.size
+      Task.spawn fun _ => verifyNamedRange lo hi
+    for task in namedTasks do
+      match task.get with
+      | .ok () => pure ()
+      | .error err => throw err
 
   -- Section 6: Comms.
   let s6Start := (← get).idx
@@ -2705,8 +2846,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
       Serialize.put addr
       putComm comm
 
-  let computedRoot :=
-    (Ix.Merkle.merkleRootCanonical constOrder).getD Ix.Merkle.zeroAddress
+  let computedRoot := merkleTask.get
   if computedRoot != storedRoot then
     throw "Env.get: merkle root mismatch"
 
@@ -2722,28 +2862,84 @@ def deEnvVerifiedLazy (bytes : ByteArray) : Except String LazyEnvParts :=
   | .ok parts _ => .ok parts
   | .error e _ => .error e
 
+private def materializeNamedRange (parts : LazyEnvParts) (lo hi : Nat) :
+    Except String (Array (Ix.Name × Named)) := do
+  let mut out : Array (Ix.Name × Named) := Array.emptyWithCapacity (hi - lo)
+  for i in [lo:hi] do
+    let row := parts.namedRows[i]!
+    let named ← row.materialize parts.backing parts.nameRev
+    out := out.push (row.name, named)
+  return out
+
+private def spawnMaterializeNamedTasks (parts : LazyEnvParts) :
+    Array (Task (Except String (Array (Ix.Name × Named)))) :=
+  let rows := parts.namedRows
+  let chunkSize := Nat.max 256 ((rows.size + 31) / 32)
+  let numChunks := (rows.size + chunkSize - 1) / chunkSize
+  (Array.range numChunks).map fun c =>
+    let lo := c * chunkSize
+    let hi := Nat.min ((c + 1) * chunkSize) rows.size
+    Task.spawn fun _ => materializeNamedRange parts lo hi
+
+private def materializeConstRange (constArr : Array (Address × LazyConstant)) (lo hi : Nat) :
+    Except String (Array (Address × LazyConstant)) := do
+  let mut out : Array (Address × LazyConstant) := Array.emptyWithCapacity (hi - lo)
+  for i in [lo:hi] do
+    let (addr, lc) := constArr[i]!
+    match lc.get with
+    | .ok c => out := out.push (addr, { lc with cache := some c })
+    | .error e =>
+      throw s!"materializeAll: constant {reprStr (toString addr)}: {e}"
+  return out
+
 /-- Materialize every §5 row into `env.named` — the eager `deEnv` view,
     for consumers not yet converted to per-row streaming. -/
 def LazyEnvParts.materializeAllNamed (parts : LazyEnvParts) : Except String Env := do
-  let mut env := parts.env
-  for row in parts.namedRows do
-    let named ← row.materialize parts.backing parts.nameRev
-    env := { env with named := env.named.insert row.name named }
-  return env
+  let mut named := parts.env.named
+  if parts.namedRows.size ≤ 256 then
+    let entries ← materializeNamedRange parts 0 parts.namedRows.size
+    for (name, entry) in entries do
+      named := named.insert name entry
+  else
+    let tasks := spawnMaterializeNamedTasks parts
+    for task in tasks do
+      let entries ← task.get
+      for (name, entry) in entries do
+        named := named.insert name entry
+  return { parts.env with named }
 
 /-- Fully eager view: `materializeAllNamed` plus parsed-and-cached
     constants. Consumers that re-read constants repeatedly (the
     decompiler resolves its block `Muts` per projection) need the parse
     cached, or window re-parsing turns quadratic on big blocks. -/
 def LazyEnvParts.materializeAll (parts : LazyEnvParts) : Except String Env := do
-  let mut env ← parts.materializeAllNamed
-  let mut consts : Std.HashMap Address LazyConstant := {}
-  for (addr, lc) in env.consts do
-    match lc.get with
-    | .ok c => consts := consts.insert addr (LazyConstant.ofConstant c)
-    | .error e =>
-      throw s!"materializeAll: constant {reprStr (toString addr)}: {e}"
-  return { env with consts }
+  let constArr := parts.env.consts.toArray
+  if parts.namedRows.size ≤ 256 && constArr.size ≤ 256 then
+    let env ← parts.materializeAllNamed
+    let entries ← materializeConstRange constArr 0 constArr.size
+    let mut consts : Std.HashMap Address LazyConstant := {}
+    for (addr, lc) in entries do
+      consts := consts.insert addr lc
+    return { env with consts }
+  else
+    let namedTasks := spawnMaterializeNamedTasks parts
+    let constChunkSize := Nat.max 256 ((constArr.size + 31) / 32)
+    let numConstChunks := (constArr.size + constChunkSize - 1) / constChunkSize
+    let constTasks := (Array.range numConstChunks).map fun c =>
+      let lo := c * constChunkSize
+      let hi := Nat.min ((c + 1) * constChunkSize) constArr.size
+      Task.spawn fun _ => materializeConstRange constArr lo hi
+    let mut named := parts.env.named
+    for task in namedTasks do
+      let entries ← task.get
+      for (name, entry) in entries do
+        named := named.insert name entry
+    let mut consts : Std.HashMap Address LazyConstant := {}
+    for task in constTasks do
+      let entries ← task.get
+      for (addr, lc) in entries do
+        consts := consts.insert addr lc
+    return { parts.env with named, consts }
 
 /-- Serialize an Env to bytes. Fails when the env is not
     self-contained: §3 hints and §5 named entries are index-keyed on

@@ -80,7 +80,10 @@ def releaseAccepts (home : System.FilePath) : IO Unit := do
       policy refused it before the verifier ran:\n{out.stdout}\n{out.stderr}"
   IO.println "compression CLI: the release keys accept the formal backends"
 
-public def run : IO Unit := do
+/-- Host-only compression CLI checks (BN254 curve, setup, and proof rejection).
+Never invokes `FormalAggregate.context` or builds Mathlib/formal exporters, so
+`host-test-cli` stays strictly Mathlib-free on `ci-host`. -/
+public def runHost : IO Unit := do
   unless (← Ix.Cli.Compression.curve) == "bn254" do
     throw <| IO.userError "unexpected compression curve"
   for tag in ["IXCMP", "IXBN"] do
@@ -160,13 +163,22 @@ public def run : IO Unit := do
     rejects home #["verify", toString unknownAddr] "other than the"
     rejects home #["verify", toString unknownAddr, "--dev-srs"] "other than the"
     IO.println "compression CLI: BN254 setup and proof rejection checks passed"
-    -- Temporarily skipped on CI: regenerating bundled verifying keys (0.3) and
-    -- `Tests/Fixtures/Compression/nat-add-comm.ixon-proof` is deferred to the
-    -- certified compression and aggregation follow-up PR so keys are only
-    -- regenerated once after that backend lands.
-    -- releaseAccepts home
   finally
     IO.FS.removeDirAll home
+
+/-- Formal-artifact release-key acceptance check (`releaseAccepts`). Requires
+`IX_AIUR_ARTIFACT` / `IX_AGGR_ARTIFACT` (or formal `.ixa` exports) and belongs
+in formal CI (`ci:binding-proof` / `formal-check`), never on Mathlib-free
+`host-test-cli`. -/
+public def runRelease : IO Unit := do
+  let home ← IO.FS.createTempDir
+  try
+    releaseAccepts home
+  finally
+    IO.FS.removeDirAll home
+
+/-- Default entry used by `ci:cli` (`host-test-cli`): runs host-only checks. -/
+public def run : IO Unit := runHost
 
 end Tests.CompressionCli
 end
