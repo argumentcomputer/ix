@@ -102,7 +102,7 @@ jobs:
       # Lake and cargo artifacts live on the sticky disk; sccache serves the
       # workspace crates cargo rebuilds after every fresh checkout (see
       # ci.yml), under entries the native codegen flags keep apart from CI's.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@4a3bfc79f21a9b97e972e2ba75a2b0b1e9688670 # v2.7.1
         with:
           sccache: s3
           sticky_cache: |
@@ -116,7 +116,7 @@ jobs:
       - uses: $/.github/actions/setup-rust-toolchain
         with:
           use-github-cache: "false"
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@ba3fdfe5c4476c925da13bf11a005ddb47e47aee # v1.7.1
         with:
           auto-config: false
           build: true
@@ -143,7 +143,7 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@4a3bfc79f21a9b97e972e2ba75a2b0b1e9688670 # v2.7.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -154,7 +154,7 @@ jobs:
           fail-on-cache-miss: true
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Provision the toolchain so `ix` finds libleanshared (no package build).
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@ba3fdfe5c4476c925da13bf11a005ddb47e47aee # v1.7.1
         with:
           auto-config: false
           build: false
@@ -211,7 +211,7 @@ jobs:
       # The compile workspace's `.lake` persists on the sticky disk: its
       # Lake packages, the Mathlib oleans `cache get` fetched, and the env's
       # own build, so later runs replay instead of refetching and rebuilding.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@4a3bfc79f21a9b97e972e2ba75a2b0b1e9688670 # v2.7.1
         with:
           sticky_cache: |
             custom,path=${{ env.COMPILE_DIR }}/.lake
@@ -231,7 +231,7 @@ jobs:
       # for envs that import Mathlib (Mathlib, FLT) — the shared
       # Benchmarks/Compile package depends on mathlib, so without this
       # guard InitStd/Lean would download it for nothing.
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@ba3fdfe5c4476c925da13bf11a005ddb47e47aee # v1.7.1
         with:
           lake-package-directory: ${{ env.COMPILE_DIR }}
           auto-config: false
@@ -337,7 +337,7 @@ jobs:
       matrix:
         params: ${{ fromJson(needs.plan.outputs.matrix) }}
     steps:
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@4a3bfc79f21a9b97e972e2ba75a2b0b1e9688670 # v2.7.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -354,7 +354,7 @@ jobs:
       # Provision the toolchain so the staged binaries find libleanshared
       # (no package build). use-github-cache off: nothing to cache here, and
       # parallel matrix jobs share a key and would race the cache save.
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@ba3fdfe5c4476c925da13bf11a005ddb47e47aee # v1.7.1
         with:
           auto-config: false
           build: false

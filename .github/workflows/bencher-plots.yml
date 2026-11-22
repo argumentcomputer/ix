@@ -32,7 +32,7 @@ jobs:
     # CPU family as the benchmark builds.
     runs-on: runs-on=${{ github.run_id }}-sync-plots-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/spot=false/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     steps:
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@4a3bfc79f21a9b97e972e2ba75a2b0b1e9688670 # v2.7.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -48,12 +48,12 @@ jobs:
           fail-on-cache-miss: true
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Provision the toolchain so `ix` finds libleanshared (no build).
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@ba3fdfe5c4476c925da13bf11a005ddb47e47aee # v1.7.1
         with:
           auto-config: false
           build: false
           use-github-cache: false
-      - uses: bencherdev/bencher@f80847436d7157936b40525db4c2a1064124f04a # v0.6.13
+      - uses: bencherdev/bencher@b2484bc6734c8e6da4fad141bd13527a11da3988 # v0.6.17
       # Plot create/delete needs those permissions on the ix project: a
       # user-scoped `bencher_user_*` key (the report-upload token the bench
       # workflows use may be run-scoped and unable to manage plots).
