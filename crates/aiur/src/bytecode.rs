@@ -1,6 +1,6 @@
 //! Execution-only interchange format and its one-time validation/linking pass.
 use crate::{
-  field::{FieldBackend, NativeField, PrimeField, PrimeField64},
+  field::{FieldBackend, NativeField, PrimeField, PrimeField64, Word},
   value::IoType,
 };
 use serde::{Deserialize, Serialize};
@@ -118,8 +118,8 @@ pub enum Instruction<F = u64> {
   },
 }
 
-impl Instruction {
-  fn map_constants<F>(self, f: impl Fn(u64) -> F) -> Instruction<F> {
+impl<W> Instruction<W> {
+  fn map_constants<F>(self, f: impl Fn(W) -> F) -> Instruction<F> {
     match self {
       Self::Literal { dest, value } => {
         Instruction::Literal { dest, value: f(value) }
@@ -171,10 +171,10 @@ pub struct Function<F = u64> {
   pub code: Vec<Instruction<F>>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Table {
+pub struct Table<F = u64> {
   pub name: String,
   pub r#type: Type,
-  pub rows: Vec<Vec<u64>>,
+  pub rows: Vec<Vec<F>>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Map {
@@ -194,12 +194,12 @@ pub struct Entry {
   pub output: Option<IoType>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Program {
+pub struct Program<F = u64> {
   pub version: u32,
-  pub modulus: u64,
-  pub functions: Vec<Function>,
+  pub modulus: F,
+  pub functions: Vec<Function<F>>,
   pub enums: Vec<Enum>,
-  pub tables: Vec<Table>,
+  pub tables: Vec<Table<F>>,
   pub maps: Vec<Map>,
   pub entries: Vec<Entry>,
 }
@@ -231,6 +231,37 @@ impl Layout {
       },
     }
   }
+  /// Whether each word of a value of this layout is always below 2^32:
+  /// pointers (ROM addresses, below [`crate::budget::MAX_ROWS`]), enum tags,
+  /// and enum payload words that every constructor fills with one of those
+  /// or pads with zero. Values breaking this are not values of the layout.
+  pub(crate) fn narrow_words(&self, out: &mut Vec<bool>) {
+    match self {
+      Self::Field => out.push(false),
+      Self::Pointer => out.push(true),
+      Self::Tuple { items, .. } => {
+        for item in items {
+          item.narrow_words(out);
+        }
+      },
+      Self::Enum { constructors, payload, .. } => {
+        if constructors.len() > 1 {
+          out.push(true);
+        }
+        let start = out.len();
+        out.resize(start + payload, true);
+        let mut words = vec![];
+        for constructor in constructors {
+          words.clear();
+          constructor.narrow_words(&mut words);
+          for (out, &narrow) in out[start..].iter_mut().zip(&words) {
+            *out &= narrow;
+          }
+        }
+      },
+    }
+  }
+  #[inline]
   pub(crate) fn has_shape_checks(&self) -> bool {
     match self {
       Self::Field | Self::Pointer => false,
@@ -273,8 +304,10 @@ impl Layout {
       Self::Enum { constructors, .. } => {
         let (tag, payload) = if constructors.len() > 1 {
           (
-            usize::try_from(field.to_u64(words[0]))
+            field
+              .try_to_u64(words[0])
               .ok()
+              .and_then(|word| usize::try_from(word).ok())
               .ok_or("enum tag too large")?,
             &words[1..],
           )
@@ -405,12 +438,48 @@ mod layout_tests {
       );
     }
   }
+
+  #[test]
+  fn narrow_words_follow_pointers_tags_and_payload_positions() {
+    let ptr = || Type::Ptr { target: Box::new(Type::Field) };
+    let ctor = |fields: Vec<Type>| Constructor { name: "C".into(), fields };
+    let enums = vec![
+      Enum {
+        name: "Refs".into(),
+        constructors: vec![
+          ctor(vec![ptr()]),
+          ctor(vec![ptr(), ptr()]),
+          ctor(vec![]),
+        ],
+      },
+      Enum {
+        name: "Mixed".into(),
+        constructors: vec![ctor(vec![ptr(), ptr()]), ctor(vec![Type::Field])],
+      },
+      Enum { name: "Wrap".into(), constructors: vec![ctor(vec![ptr()])] },
+    ];
+    let words = |t: Type| {
+      let mut out = vec![];
+      t.layout(&enums, &mut vec![]).unwrap().narrow_words(&mut out);
+      out
+    };
+    let named = |name: &str| Type::Enum { name: name.into() };
+    assert_eq!(words(named("Refs")), [true, true, true]);
+    assert_eq!(words(named("Mixed")), [true, false, true]);
+    assert_eq!(words(named("Wrap")), [true]);
+    assert_eq!(
+      words(Type::Tuple {
+        items: vec![ptr(), Type::Field, named("Mixed"), named("Wrap")]
+      }),
+      [true, false, true, false, true, true]
+    );
+  }
 }
 
 /// Validated bytecode plus prebuilt indexes shared by all maps using a table.
 #[derive(Debug)]
 pub struct CheckedProgram<B: FieldBackend = PrimeField> {
-  pub(crate) program: std::sync::Arc<Program>,
+  pub(crate) program: std::sync::Arc<Program<B::Word>>,
   pub(crate) field: B,
   pub(crate) inputs: Vec<Layout>,
   pub(crate) outputs: Vec<Layout>,
@@ -427,16 +496,21 @@ pub struct CheckedProgram<B: FieldBackend = PrimeField> {
   /// Each function's SCC among the depth circuits of a trace plan, when
   /// execution records honest heights ([`CheckedProgram::track_depth`]).
   pub(crate) depth: Option<std::sync::Arc<[u32]>>,
+  /// Which functions' rows record their references, when any do
+  /// ([`CheckedProgram::record_refs`]).
+  pub(crate) refs: Option<std::sync::Arc<crate::refs::RefPlan>>,
+  #[cfg(feature = "native")]
+  pub(crate) native_fingerprint: std::sync::OnceLock<String>,
 }
 
 // Only globally immutable registers may be aliased. Inputs count as writes;
 // overwritten parameters, branch joins and simultaneous swaps stay explicit.
 // PCs and operation counts are retained in the linked interpreter bytecode.
-fn link_registers(
-  function: &Function,
+fn link_registers<B: FieldBackend>(
+  function: &Function<B::Word>,
   input: usize,
-  field: PrimeField,
-) -> (Function, Vec<(usize, u64)>) {
+  field: B,
+) -> (Function<B::Word>, Vec<(usize, B::Word)>) {
   let mut writes = vec![0usize; function.registers];
   writes[..input].fill(1);
   for op in &function.code {
@@ -536,7 +610,7 @@ pub(crate) struct ReturnPlan {
 // A copy/jump-only suffix has no observable work except its returned values.
 // Compose simultaneous copies backwards, retaining the original return PC and
 // logical instruction count. The serialized bytecode and hint PCs stay intact.
-fn return_plans(function: &Function) -> Vec<Option<ReturnPlan>> {
+fn return_plans<W>(function: &Function<W>) -> Vec<Option<ReturnPlan>> {
   let mut plans: Vec<Option<ReturnPlan>> = vec![None; function.code.len()];
   for (pc, op) in function.code.iter().enumerate().rev() {
     let next = match op {
@@ -581,10 +655,10 @@ pub(crate) struct Step {
   pub(crate) memory_type: usize,
 }
 
-fn execution_steps(
-  function: &Function,
+fn execution_steps<W: Word>(
+  function: &Function<W>,
   memory_ids: &HashMap<Type, usize>,
-  initial: &[(usize, u64)],
+  initial: &[(usize, W)],
 ) -> Vec<Step> {
   let mut steps: Vec<_> = (0..function.code.len())
     .map(|pc| Step {
@@ -629,7 +703,7 @@ fn execution_steps(
   steps
 }
 impl<B: FieldBackend> CheckedProgram<B> {
-  pub fn program(&self) -> &Program {
+  pub fn program(&self) -> &Program<B::Word> {
     &self.program
   }
   /// Record honest call heights for `trace`'s depth circuits (Track A, H1).
@@ -639,7 +713,7 @@ impl<B: FieldBackend> CheckedProgram<B> {
   /// requires a program prepared this way for the same trace.
   pub fn track_depth(
     &mut self,
-    trace: &crate::trace::TraceArtifact,
+    trace: &crate::trace::TraceArtifact<B::Word>,
   ) -> Result<(), String> {
     let sccs = crate::trace::depth::function_sccs(trace)?;
     if sccs.len() != self.program.functions.len() {
@@ -650,6 +724,11 @@ impl<B: FieldBackend> CheckedProgram<B> {
       .any(|&s| s != crate::trace::depth::NO_SCC)
       .then(|| sccs.into());
     Ok(())
+  }
+  /// Whether execution records call heights for depth circuits
+  /// ([`Self::track_depth`]).
+  pub fn records_depth(&self) -> bool {
+    self.depth.is_some()
   }
   pub fn field(&self) -> B {
     self.field
@@ -666,6 +745,9 @@ impl<B: FieldBackend> CheckedProgram<B> {
   /// of its flattened parameters.
   pub fn input_width(&self, id: usize) -> Option<usize> {
     self.inputs.get(id).map(Layout::width)
+  }
+  pub fn output_width(&self, id: usize) -> Option<usize> {
+    self.outputs.get(id).map(Layout::width)
   }
   pub fn callable_id(&self, name: &str) -> Option<usize> {
     (0..self.inputs.len()).find(|&id| self.callable_name(id) == Some(name))
@@ -692,7 +774,7 @@ fn unique<'a>(names: impl Iterator<Item = &'a str>) -> Result<(), String> {
   }
   Ok(())
 }
-impl Program {
+impl<W> Program<W> {
   /// Make execution check every equality assertion, including those exported
   /// with `runtime_check: false` (`constrain_eq!`). The circuit and the
   /// semantics enforce those assertions; ordinary execution omits them
@@ -714,7 +796,9 @@ impl Program {
     }
     enabled
   }
+}
 
+impl Program {
   pub fn check(self) -> Result<CheckedProgram, String> {
     let field = PrimeField::new(self.modulus)?;
     self.check_with(field)
@@ -727,8 +811,10 @@ impl Program {
   ) -> Result<CheckedProgram<NativeField<F>>, String> {
     self.check_with(NativeField::<F>::new())
   }
+}
 
-  pub fn check_with<B: FieldBackend>(
+impl<W: Word> Program<W> {
+  pub fn check_with<B: FieldBackend<Word = W>>(
     self,
     backend: B,
   ) -> Result<CheckedProgram<B>, String> {
@@ -743,7 +829,9 @@ impl Program {
         self.version
       ));
     }
-    let field = PrimeField::new(self.modulus)?;
+    if self.modulus < W::from(2) {
+      return Err("execution field modulus must be at least two".into());
+    }
     unique(
       self
         .functions
@@ -756,7 +844,9 @@ impl Program {
     unique(self.entries.iter().map(|e| e.name.as_str()))?;
     for decl in &self.enums {
       unique(decl.constructors.iter().map(|c| c.name.as_str()))?;
-      if decl.constructors.len() as u128 > u128::from(field.modulus()) {
+      let constructors = u64::try_from(decl.constructors.len())
+        .map_err(|error| format!("enum constructor count: {error}"))?;
+      if W::from(constructors) > backend.modulus() {
         return Err("enum tags do not fit in the field".into());
       }
       Type::Enum { name: decl.name.clone() }
@@ -799,27 +889,33 @@ impl Program {
         return Err("entry output description mismatch".into());
       }
     }
-    for table in &self.tables {
-      let layout = table.r#type.layout(&self.enums, &mut vec![])?;
-      if !layout.pointer_free() {
-        return Err("table contains pointers".into());
-      }
-      for row in &table.rows {
-        layout.validate(row, field)?;
-      }
-    }
     let tables = std::sync::Arc::new(
       self
         .tables
         .iter()
         .map(|table| {
+          let layout = table.r#type.layout(&self.enums, &mut vec![])?;
+          if !layout.pointer_free() {
+            return Err("table contains pointers".into());
+          }
           table
             .rows
             .iter()
-            .map(|row| backend.decode(row))
-            .collect::<Result<Vec<_>, _>>()
+            .map(|row| {
+              if row.len() != layout.width() {
+                return Err(
+                  "incorrect value width or noncanonical field element".into(),
+                );
+              }
+              let values = backend.decode_words(row).map_err(|_error| {
+                "incorrect value width or noncanonical field element".to_owned()
+              })?;
+              layout.validate(&values, backend)?;
+              Ok(values)
+            })
+            .collect::<Result<Vec<_>, String>>()
         })
-        .collect::<Result<Vec<_>, _>>()?,
+        .collect::<Result<Vec<_>, String>>()?,
     );
     let mut map_indexes = vec![None; self.tables.len()];
     for map in &self.maps {
@@ -847,7 +943,7 @@ impl Program {
         &inputs,
         &outputs,
         &self.enums,
-        field,
+        backend,
         &mut memory_layouts,
       )
       .map_err(|e| format!("{}: {e}", function.name))?;
@@ -873,7 +969,7 @@ impl Program {
       .map(|((f, input), inverses)| {
         let mut f = f.clone();
         dead_code::eliminate(&mut f, inverses);
-        link_registers(&f, input.width(), field)
+        link_registers(&f, input.width(), backend)
       })
       .unzip();
     let steps = execution_functions
@@ -887,7 +983,7 @@ impl Program {
       .map(|row| {
         row
           .into_iter()
-          .map(|(reg, value)| (reg, backend.from_u64(value)))
+          .map(|(reg, value)| (reg, backend.from_word(value)))
           .collect()
       })
       .collect();
@@ -901,7 +997,7 @@ impl Program {
         code: f
           .code
           .into_iter()
-          .map(|op| op.map_constants(|v| backend.from_u64(v)))
+          .map(|op| op.map_constants(|v| backend.from_word(v)))
           .collect(),
       })
       .collect();
@@ -920,6 +1016,9 @@ impl Program {
       execution_functions,
       initial_registers,
       depth: None,
+      refs: None,
+      #[cfg(feature = "native")]
+      native_fingerprint: std::sync::OnceLock::new(),
     })
   }
 }
@@ -928,7 +1027,7 @@ impl Program {
 /// bytecode and instruction sites intact for diagnostics and saved hint answers.
 /// Forget facts at every join; a zero denominator still fails only if executed.
 fn constant_divisions<B: FieldBackend>(
-  function: &Function,
+  function: &Function<B::Word>,
   field: B,
 ) -> Vec<Option<B::Element>> {
   let mut targets = vec![false; function.code.len()];
@@ -967,7 +1066,7 @@ fn constant_divisions<B: FieldBackend>(
             .copied()
             .flatten()
             .filter(|&x| field.contains(x))
-            .and_then(|x| field.inverse(field.from_u64(x)));
+            .and_then(|x| field.inverse(field.from_word(x)));
         }
         writes.push((*dest, None));
       },
@@ -996,14 +1095,14 @@ fn constant_divisions<B: FieldBackend>(
 // Intra-function control flow is forward-only; recursion uses an explicit VM
 // call stack. A forward dataflow pass checks initialization on every path.
 #[allow(clippy::too_many_arguments)]
-fn check_function(
-  f: &Function,
+fn check_function<B: FieldBackend>(
+  f: &Function<B::Word>,
   input: usize,
   output: usize,
   inputs: &[Layout],
   outputs: &[Layout],
   enums: &[Enum],
-  field: PrimeField,
+  field: B,
   layouts: &mut HashMap<Type, Layout>,
 ) -> Result<(), String> {
   if input > f.registers || f.code.is_empty() {

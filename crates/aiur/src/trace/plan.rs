@@ -382,9 +382,9 @@ impl<B: FieldBackend> Builder<B> {
     self.shared.insert(op, value);
     value
   }
-  fn expr(&mut self, p: &Polynomial) -> Value<B::Element> {
+  fn expr(&mut self, p: &Polynomial<B::Word>) -> Value<B::Element> {
     match p {
-      Polynomial::Const(v) => Value::Constant(self.field.from_u64(*v)),
+      Polynomial::Const(v) => Value::Constant(self.field.from_word(*v)),
       Polynomial::Var(i) => self.logical[*i],
       Polynomial::Add(xs) | Polynomial::Sub(xs) | Polynomial::Mul(xs) => {
         let a = self.expr(&xs[0]);
@@ -397,7 +397,7 @@ impl<B: FieldBackend> Builder<B> {
       },
     }
   }
-  fn exprs(&mut self, ps: &[Polynomial]) -> Vec<Value<B::Element>> {
+  fn exprs(&mut self, ps: &[Polynomial<B::Word>]) -> Vec<Value<B::Element>> {
     ps.iter().map(|p| self.expr(p)).collect()
   }
   fn assign(
@@ -417,7 +417,7 @@ impl<B: FieldBackend> Builder<B> {
 
 impl<B: FieldBackend> FillPlan<B> {
   pub(super) fn compile(
-    plan: &FunctionPlan,
+    plan: &FunctionPlan<B::Word>,
     callables: &FxHashMap<String, usize>,
     program: &CheckedProgram<B>,
   ) -> Self {
@@ -519,7 +519,7 @@ impl<B: FieldBackend> FillPlan<B> {
   pub(super) fn fill(
     &self,
     record: &Execution<B>,
-    query: (&[B::Element], crate::query::QueryOutputRef<'_, B::Element>),
+    query: (&crate::query::QueryTable<B>, usize),
     scratch: &mut Vec<B::Element>,
     buffer: &mut Vec<B::Element>,
     row: &mut [B::Element],
@@ -534,7 +534,7 @@ impl<B: FieldBackend> FillPlan<B> {
   pub(super) fn fill_into(
     &self,
     record: &Execution<B>,
-    query: (&[B::Element], crate::query::QueryOutputRef<'_, B::Element>),
+    query: (&crate::query::QueryTable<B>, usize),
     scratch: &mut Vec<B::Element>,
     buffer: &mut Vec<B::Element>,
     mut write: impl FnMut(usize, B::Element),
@@ -544,10 +544,8 @@ impl<B: FieldBackend> FillPlan<B> {
     // Every retained slot is an input/output or has one earlier producer.
     // Producers overwrite their spans; only inactive/partial producers
     // need zeroing. Unused scratch slots are never read by the live graph.
-    let (input, output) = query;
-    scratch[..self.inputs].copy_from_slice(input);
-    scratch[self.inputs..self.inputs + self.output]
-      .copy_from_slice(output.output);
+    let (table, row) = query;
+    table.read_row(row, &mut scratch[..self.inputs + self.output]);
     for k in &self.kernels {
       if k.guard.get(scratch) != field.one() {
         scratch[k.start..k.start + k.width].fill(field.zero());
@@ -596,9 +594,8 @@ impl<B: FieldBackend> FillPlan<B> {
             buffer.clear();
             buffer.extend(args.iter().map(|v| v.get(scratch)));
             if let Some(id) = table.lookup(buffer).1 {
-              scratch[k.start..k.start + k.width]
-                .copy_from_slice(table.output(id).output);
-            } else if k.width != 0 || !record.is_deferred(*callable, buffer) {
+              table.read_output(id, &mut scratch[k.start..k.start + k.width]);
+            } else {
               return Err("missing recorded callee".into());
             }
           }
@@ -607,14 +604,23 @@ impl<B: FieldBackend> FillPlan<B> {
           buffer.clear();
           buffer.extend(values.iter().map(|v| v.get(scratch)));
           scratch[k.start] = field.from_u64(
-            record.memory.address_of(buffer).ok_or("missing recorded store")?
-              as u64,
+            u64::try_from(
+              record
+                .memory
+                .address_of(buffer)
+                .ok_or("missing recorded store")?,
+            )
+            .map_err(|_error| "ROM address overflow")?,
           );
         },
         Node::Load { address, .. } => {
-          let address = usize::try_from(field.to_u64(address.get(scratch)))
-            .ok()
-            .ok_or("ROM address overflow")?;
+          let address = usize::try_from(
+            field
+              .try_to_u64(address.get(scratch))
+              .map_err(|_error| "ROM address overflow")?,
+          )
+          .ok()
+          .ok_or("ROM address overflow")?;
           let cell = &record
             .memory
             .get_by_width(k.width, address)
@@ -652,6 +658,116 @@ impl<B: FieldBackend> FillPlan<B> {
   }
 }
 
+impl<B: FieldBackend<Word = u64>> FillPlan<B> {
+  /// This plan in the stable description schema; `plan` is the function's
+  /// artifact plan, which names its hint sites.
+  pub(super) fn describe(
+    &self,
+    program: &CheckedProgram<B>,
+    plan: &FunctionPlan,
+  ) -> describe::FunctionDescription {
+    use super::describe::{
+      FunctionDescription, HintSite, KernelDescription, NodeDescription as N,
+      Operand, WriteDescription,
+    };
+    let field = self.field;
+    let op = |v: &Value<B::Element>| match v {
+      Value::Constant(c) => Operand::Const(field.to_u64(*c)),
+      Value::Slot(i) => Operand::Slot(*i),
+    };
+    let ops = |vs: &[Value<B::Element>]| vs.iter().map(op).collect::<Vec<_>>();
+    let functions = program.program.functions.len();
+    let kernels = self
+      .kernels
+      .iter()
+      .map(|k| {
+        let node = match &k.node {
+          Node::Arithmetic(Arithmetic::Add(a, b)) => {
+            N::Add { a: op(a), b: op(b) }
+          },
+          Node::Arithmetic(Arithmetic::Sub(a, b)) => {
+            N::Sub { a: op(a), b: op(b) }
+          },
+          Node::Arithmetic(Arithmetic::Mul(a, b)) => {
+            N::Mul { a: op(a), b: op(b) }
+          },
+          Node::Arithmetic(Arithmetic::Select(g, a, b)) => {
+            N::Select { guard: op(g), a: op(a), b: op(b) }
+          },
+          Node::Inverse(v) => N::Inverse { value: op(v) },
+          Node::Choice(tests) => {
+            N::Choice { tests: tests.iter().map(|t| ops(t)).collect() }
+          },
+          Node::Failure(xs) => N::Failure { differences: ops(xs) },
+          Node::Call { callable, args } if *callable >= functions => {
+            N::Map { map: callable - functions, args: ops(args) }
+          },
+          Node::Call { callable, args } => N::Call {
+            callee: program.program.functions[*callable].name.clone(),
+            args: ops(args),
+          },
+          Node::Store { values } => {
+            N::Store { width: values.len(), values: ops(values) }
+          },
+          Node::Load { address } => {
+            N::Load { width: k.width, address: op(address) }
+          },
+          Node::Hint { instruction, key } => {
+            let (channel, r#type, key_type) = plan
+              .steps
+              .iter()
+              .find_map(|step| match &step.action {
+                Action::Hint {
+                  instruction: i,
+                  channel,
+                  r#type,
+                  key_type,
+                  ..
+                } if i == instruction => {
+                  Some((channel.clone(), r#type.clone(), key_type.clone()))
+                },
+                _ => None,
+              })
+              .expect("a hint kernel comes from a hint step");
+            N::Hint {
+              site: HintSite {
+                function: plan.name.clone(),
+                instruction: *instruction,
+                channel,
+                r#type,
+                key_type,
+              },
+              key: ops(key),
+            }
+          },
+        };
+        KernelDescription {
+          guard: op(&k.guard),
+          start: k.start,
+          width: k.width,
+          node,
+        }
+      })
+      .collect();
+    FunctionDescription {
+      name: plan.name.clone(),
+      inputs: self.inputs,
+      outputs: self.output,
+      slots: self.scratch,
+      kernels,
+      writes: self
+        .writes
+        .iter()
+        .map(|w| WriteDescription {
+          guard: op(&w.guard),
+          column: w.column,
+          value: op(&w.value),
+        })
+        .collect(),
+    }
+  }
+}
+
 /// Device encoding of population plans for `stark::gpu`, whose CUDA
 /// interpreter (`cuda/population.cu`) mirrors [`FillPlan::fill_into`].
 #[cfg(feature = "cuda")]
@@ -668,6 +784,8 @@ pub(super) mod device {
   pub(crate) const OP_MAP: u32 = 7;
   pub(crate) const OP_CALL: u32 = 8;
   pub(crate) const OP_HINT: u32 = 9;
+  pub(crate) const OP_STORE: u32 = 10;
+  pub(crate) const OP_LOAD: u32 = 11;
   const CONSTANT: u32 = 0x8000_0000;
 
   /// Canonical field constants shared by every encoded plan of a program.
@@ -696,6 +814,14 @@ pub(super) mod device {
     Call(u32),
   }
 
+  /// A device lookup table: a function's recorded queries, or the ROM cells
+  /// of one width, in which stores and loads find their cells.
+  #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+  pub(crate) enum Source {
+    Function(usize),
+    Rom(usize),
+  }
+
   pub(crate) struct Encoded {
     pub code: Vec<u32>,
     pub scratch: u32,
@@ -703,14 +829,15 @@ pub(super) mod device {
     pub outputs: u32,
   }
 
-  impl<B: FieldBackend> FillPlan<B> {
+  impl<B: FieldBackend<Word = u64>> FillPlan<B> {
     /// The plan's kernels and column writes, writing physical `column`s, or
-    /// `None` when a kernel needs host-only state: memory, or a callable or
-    /// hint site without a device implementation.
+    /// `None` when a kernel needs a callable or hint site without a device
+    /// implementation. `rom(width)` is the lookup slot of that width's ROM.
     pub(crate) fn encode(
       &self,
       call: &mut impl FnMut(usize) -> Option<Target>,
       hint: &mut impl FnMut(usize) -> Option<u32>,
+      rom: &mut impl FnMut(usize) -> Option<u32>,
       column: &impl Fn(usize) -> usize,
       constants: &mut Constants,
     ) -> Option<Encoded> {
@@ -782,7 +909,18 @@ pub(super) mod device {
             }
             OP_HINT
           },
-          Node::Store { .. } | Node::Load { .. } => return None,
+          Node::Store { values } => {
+            body
+              .extend([rom(values.len())?, u32::try_from(values.len()).ok()?]);
+            for v in values {
+              body.push(word(v)?);
+            }
+            OP_STORE
+          },
+          Node::Load { address } => {
+            body.extend([rom(k.width)?, word(address)?]);
+            OP_LOAD
+          },
         };
         code.extend([
           op,

@@ -94,6 +94,20 @@ fn lanes_equal(lanes: &[u32; SLOTS], value: u32) -> u32 {
   mask
 }
 
+/// Hint that the line at `address` will be read soon.
+#[inline(always)]
+pub(crate) fn prefetch<T>(address: *const T) {
+  #[cfg(target_arch = "x86_64")]
+  // SAFETY: a prefetch is a hint that never dereferences `address` and so
+  // never faults, whatever it points to.
+  unsafe {
+    use std::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
+    _mm_prefetch::<_MM_HINT_T0>(address.cast());
+  }
+  #[cfg(not(target_arch = "x86_64"))]
+  let _ = address;
+}
+
 #[derive(Default)]
 pub(crate) struct RowIndex {
   // Zero-initialized words; bucket `b` starts at word `base + WORDS * b`.
@@ -143,13 +157,12 @@ impl RowIndex {
     Self { words, base, buckets, class, len: 0, grow_at: limit(class) }
   }
 
-  #[inline(always)]
-  pub(crate) fn len(&self) -> usize {
+  #[cfg(test)]
+  fn len(&self) -> usize {
     self.len
   }
 
   /// Bytes of the index's allocation.
-  #[cfg(test)]
   pub(crate) fn allocated_bytes(&self) -> usize {
     self.words.capacity() * size_of::<u32>()
   }
@@ -171,13 +184,11 @@ impl RowIndex {
   }
 
   /// The allocation [`Self::reserve`] would make for `entries`, if any.
-  #[cfg(test)]
   pub(crate) fn reservation(&self, entries: usize) -> Option<usize> {
     (entries > self.grow_at).then(|| bytes(buckets(Self::class_for(entries))))
   }
 
   /// Grow now so that `entries` fit without a later rehash.
-  #[cfg(test)]
   pub(crate) fn reserve(&mut self, entries: usize) {
     if entries > self.grow_at {
       self.rehash(Self::class_for(entries));
@@ -249,6 +260,18 @@ impl RowIndex {
         return None;
       }
       b = self.next(b);
+    }
+  }
+
+  /// Start loading the home bucket of `tag` into the cache, so a probe that
+  /// follows other work finds it there. A hint only: it reads nothing and
+  /// cannot fault.
+  #[inline(always)]
+  pub(crate) fn prefetch(&self, tag: u32) {
+    if self.buckets != 0 {
+      prefetch(
+        self.words[self.base..].as_ptr().wrapping_add(WORDS * self.home(tag)),
+      );
     }
   }
 

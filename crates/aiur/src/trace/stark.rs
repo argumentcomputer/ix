@@ -8,6 +8,7 @@
 //! acyclicity argument also needs every verifier to bound a batch's rows by
 //! [`MAX_BATCH_ROWS`].
 use super::{Polynomial, RangeCounts, Trace, TracePlan};
+use crate::shared::Shared;
 use crate::{
   Execution,
   field::{FieldBackend, NativeField, PrimeField},
@@ -22,6 +23,7 @@ use multi_stark::{
 };
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
+#[cfg(feature = "cuda")]
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,6 +31,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT_BACKEND_ID: AtomicU64 = AtomicU64::new(1);
 
 pub mod batch;
+#[cfg(feature = "cuda")]
+pub mod compiled;
 #[cfg(feature = "cuda")]
 mod gpu;
 mod grouping;
@@ -38,18 +42,24 @@ pub mod planning;
 mod profile;
 mod rom;
 mod statistics;
+pub mod streaming;
 mod tables;
 #[cfg(test)]
 mod tests;
+pub mod wide;
 mod witness;
-pub use batch::{StageOne, StreamPlan, VerifyingKey};
+#[cfg(test)]
+pub use batch::StageOne;
+pub use batch::{
+  ShardFeed, StreamPlan, Streamed, VerifyingKey, fri_parameter_bytes,
+};
 pub use rom::{RomLayout, rom_lanes};
 pub use statistics::{CircuitMeasurements, ExecutionStatistics};
 pub use witness::ValidatedRecord;
 
 /// Conversion at this concrete proving adapter only. The native configuration
 /// writes its existing field values directly into multi-stark's matrices.
-pub trait WitnessField: FieldBackend {
+pub trait WitnessField: FieldBackend<Word = u64> {
   fn into_stark(value: Self::Element) -> Val;
   /// The elements as Goldilocks words, not necessarily canonical; borrowed
   /// when the representation already is one.
@@ -166,7 +176,10 @@ pub struct CircuitStatistics {
 /// the compiler, circuit export and ordinary execution remain field generic.
 pub struct Backend<'p, 'a, B: WitnessField = PrimeField> {
   id: u64,
-  plan: &'p TracePlan<'a, B>,
+  plan: Shared<'p, TracePlan<'a, B>>,
+  /// Identifies the records prepared by this backend, whose placements and
+  /// device allocations are valid only here.
+  preparation_identity: std::sync::Arc<()>,
   system: System<GoldilocksBlake3Config>,
   key: ProverKey<GoldilocksBlake3Config>,
   names: Vec<String>,
@@ -234,9 +247,109 @@ fn degree(e: &Expr<Val>) -> usize {
   }
 }
 
+/// Match fixed domains, bound total unit lookup consumers below the
+/// characteristic and total rows by [`MAX_BATCH_ROWS`]. Root caps cover
+/// every active matrix, including height 1.
+fn check_system_shape(
+  system: &System<GoldilocksBlake3Config>,
+  parameters: Parameters,
+  active: &[bool],
+  degrees: &[u8],
+) -> Result<(), String> {
+  if active.len() != system.circuits.len() || !active.contains(&true) {
+    return Err("invalid circuit activation".into());
+  }
+  let mut degrees = degrees.iter();
+  let mut budget = 1u64; // one public root
+  let mut rows = 0u64;
+  for (circuit, &on) in system.circuits.iter().zip(active) {
+    if !on {
+      if circuit.preprocessed_height != 0 {
+        return Err("inactive fixed table".into());
+      }
+      continue;
+    }
+    let log = *degrees.next().ok_or("missing trace height")?;
+    // Goldilocks has 2-adicity 32. Include the commitment blowup.
+    if usize::from(log) + parameters.log_blowup > 32 {
+      return Err("trace domain exceeds Goldilocks capacity".into());
+    }
+    let height = 1u64 << log;
+    if circuit.preprocessed_height != 0
+      && circuit.preprocessed_height as u64 != height
+    {
+      return Err("fixed table height mismatch".into());
+    }
+    let weight = batch::circuit_row_weight(circuit);
+    rows = height
+      .checked_mul(weight)
+      .and_then(|w| rows.checked_add(w))
+      .filter(|&r| r <= MAX_BATCH_ROWS)
+      .ok_or("trace rows exceed the batch row bound (2^39)")?;
+    budget = height
+      .checked_mul(circuit.num_lookups.max(1) as u64)
+      .and_then(|n| budget.checked_add(n))
+      .filter(|&n| n < Val::ORDER_U64)
+      .ok_or("lookup count reaches field characteristic")?;
+  }
+  if degrees.next().is_some() {
+    return Err("extra trace heights".into());
+  }
+  Ok(())
+}
+
+/// Reject constraint degrees the blowup cannot hold (before `System::new`'s
+/// assertion), build the system, then group lookup messages wherever the
+/// circuit's quotient degree already suffices. Grouping reduces stage 2
+/// without making its FFTs or the quotient FFT larger, and is decided on the
+/// compiled (constant-folded) degrees.
+fn build_system(
+  inputs: Vec<CircuitInputs<Val>>,
+  names: &[String],
+  parameters: Parameters,
+  device: Option<i32>,
+) -> Result<
+  (System<GoldilocksBlake3Config>, ProverKey<GoldilocksBlake3Config>),
+  String,
+> {
+  let max_degree = (1 << parameters.log_blowup) + 1;
+  for (input, name) in inputs.iter().zip(names) {
+    let user_degree = input.constraints.iter().map(degree).max().unwrap_or(0);
+    let lookup_degree = input
+      .lookups
+      .iter()
+      .map(|l| {
+        (l.args.iter().map(degree).max().unwrap_or(0) + 1)
+          .max(degree(&l.multiplicity))
+      })
+      .max()
+      .unwrap_or(1);
+    if user_degree.max(lookup_degree) > max_degree {
+      return Err(format!(
+        "{name}: increase log_blowup for constraint degree {}",
+        user_degree.max(lookup_degree)
+      ));
+    }
+  }
+  let config = GoldilocksBlake3Config::with_device(
+    parameters.commitment(),
+    parameters.fri(),
+    device,
+  );
+  let (mut system, key) = System::new(config, inputs);
+  // Tune lookup group sizes against the FFT cost model within the blowup
+  // budget before exposing the system, compiling lookup plans, or exporting
+  // keys.
+  let blowup = 1usize << parameters.log_blowup;
+  for circuit in &mut system.circuits {
+    lookup_groups::retune(circuit, blowup, 2);
+  }
+  Ok((system, key))
+}
+
 impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   pub fn new(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::new_with_rom_layout(plan, parameters, RomLayout::Vectorized)
@@ -253,7 +366,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// Batch proofs close contiguous memory ranges through authenticated
   /// boundary messages. A standalone proof uses the original first-row rule.
   pub fn for_batch(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::for_batch_with_rom_layout(plan, parameters, RomLayout::Vectorized)
@@ -271,7 +384,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// Prover-only lookup settings must not affect these operations. Use the CPU
   /// host binary when verification must not initialize the CUDA backend.
   pub fn for_batch_verification(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::for_batch_verification_with_rom_layout(
@@ -333,7 +446,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// Explicit CUDA placement. CPU builds reject a requested device instead of
   /// silently running a different backend. Device placement does not change keys.
   pub fn for_batch_on_device(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     device: Option<i32>,
   ) -> Result<Self, String> {
@@ -370,7 +483,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// trust a key or proof from such a backend.
   #[doc(hidden)]
   pub fn for_batch_below_floor(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::for_batch_below_floor_with_rom_layout(
@@ -390,7 +503,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   fn with_memory_policy(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     segmented_memory: bool,
     rom_layout: RomLayout,
@@ -399,7 +512,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   fn build(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     segmented_memory: bool,
     rom_layout: RomLayout,
@@ -422,12 +535,34 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     #[cfg(feature = "cuda")]
     {
       backend.device_plans = gpu::DevicePlans::from_env(&backend)?;
+      if let Some(plans) = &backend.device_plans {
+        eprintln!("[aiur/gpu] {}", plans.summary(&backend));
+      }
     }
     Ok(backend)
   }
 
+  #[cfg(all(test, feature = "cuda"))]
+  fn build_with_lookup_policy(
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
+    parameters: Parameters,
+    segmented_memory: bool,
+    device: Option<i32>,
+    gpu_lookup_only: bool,
+  ) -> Result<Self, String> {
+    Self::assemble(
+      plan,
+      parameters,
+      segmented_memory,
+      RomLayout::Vectorized,
+      device,
+      gpu_lookup_only,
+      true,
+      true,
+    )
+  }
   fn assemble(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     segmented_memory: bool,
     rom_layout: RomLayout,
@@ -459,64 +594,43 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
           .into(),
       );
     }
+    let plan: Shared<'p, TracePlan<'a, B>> = plan.into();
     if plan.program.field.modulus() != Val::ORDER_U64 {
       return Err("multi-stark adapter requires the Goldilocks field".into());
     }
-    let rom = rom::Rom::new(plan, rom_layout);
+    let rom = rom::Rom::new(&plan, rom_layout);
     let mut inputs = vec![];
     let mut names = vec![];
-    let placements = grouping::build(plan, &rom, &mut inputs, &mut names)?;
+    let placements = grouping::build(&plan, &rom, &mut inputs, &mut names)?;
     let function_circuits = inputs.len();
     let tables = tables::fixed_tables(
-      plan,
+      &plan,
       &mut inputs,
       &mut names,
       parameters.log_blowup,
       commit,
     )?;
     rom.append_circuits(&mut inputs, &mut names, segmented_memory)?;
-    // Fail with an error before System::new's degree assertion. Grouping
-    // is tuned below using the backend's compiled (constant-folded) degrees.
-    let max_degree = (1 << parameters.log_blowup) + 1;
-    for (input, name) in inputs.iter().zip(&names) {
-      let user_degree = input.constraints.iter().map(degree).max().unwrap_or(0);
-      let lookup_degree = input
-        .lookups
-        .iter()
-        .map(|l| {
-          (l.args.iter().map(degree).max().unwrap_or(0) + 1)
-            .max(degree(&l.multiplicity))
-        })
-        .max()
-        .unwrap_or(1);
-      if user_degree.max(lookup_degree) > max_degree {
-        return Err(format!(
-          "{name}: increase log_blowup for constraint degree {}",
-          user_degree.max(lookup_degree)
-        ));
-      }
-    }
-    let config = GoldilocksBlake3Config::with_device(
-      parameters.commitment(),
-      parameters.fri(),
-      device,
-    );
-    let (mut system, key) = if commit {
-      System::new(config, inputs)
+    let (system, key) = if commit {
+      build_system(inputs, &names, parameters, device)?
     } else {
-      Self::compile_system_without_commit(
+      let config = GoldilocksBlake3Config::with_device(
+        parameters.commitment(),
+        parameters.fri(),
+        device,
+      );
+      let (mut system, key) = Self::compile_system_without_commit(
         config,
         inputs,
         function_circuits..function_circuits + tables.len(),
         &tables,
-      )?
+      )?;
+      let blowup = 1usize << parameters.log_blowup;
+      for circuit in &mut system.circuits {
+        lookup_groups::retune(circuit, blowup, 2);
+      }
+      (system, key)
     };
-    // Tune lookup group sizes against the FFT cost model within the blowup
-    // budget before exposing the system, compiling lookup plans, or exporting keys.
-    let blowup = 1usize << parameters.log_blowup;
-    for circuit in &mut system.circuits {
-      lookup_groups::retune(circuit, blowup, 2);
-    }
     let lookup_plans = if commit {
       system
         .circuits
@@ -542,6 +656,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     let backend = Self {
       id: NEXT_BACKEND_ID.fetch_add(1, Ordering::Relaxed),
       plan,
+      preparation_identity: std::sync::Arc::new(()),
       system,
       key,
       names,
@@ -743,6 +858,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Ok(self.witness_from_main(traces))
   }
 
+  #[cfg(test)]
   /// Build a stage-one witness with empty lookup buffers when only the
   /// stage-one commitment header is needed (for example, round one of a
   /// regenerated batch where `Stage1` is dropped immediately after hashing its
@@ -828,9 +944,24 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     let table_counts =
       (0..program.maps.len()).map(counts).collect::<Result<_, _>>()?;
     let mut table_counts: Vec<Vec<u64>> = table_counts;
+    self.add_range_counts(&mut table_counts, ranges)?;
+    if record.memory.iter().any(|entry| entry.multiplicity >= Val::ORDER_U64) {
+      return Err("ROM count reaches field characteristic".into());
+    }
+    Ok(table_counts)
+  }
+
+  /// Adds the depth range tables' uses `ranges` to fixed-table counts
+  /// `table_counts`, as [`Self::auxiliary_counts`] lays them out.
+  fn add_range_counts(
+    &self,
+    table_counts: &mut [Vec<u64>],
+    ranges: &RangeCounts,
+  ) -> Result<(), String> {
+    let functions = self.plan.program.program.functions.len();
     for (table, range) in self.plan.depth.tables.iter().enumerate() {
       let uses = ranges.table(table);
-      let counts = &mut table_counts[range.map - program.functions.len()];
+      let counts = &mut table_counts[range.map - functions];
       if uses.len() > counts.len() {
         return Err("depth range counts exceed their table".into());
       }
@@ -841,10 +972,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
           .ok_or("table count reaches field characteristic")?;
       }
     }
-    if record.memory.iter().any(|entry| entry.multiplicity >= Val::ORDER_U64) {
-      return Err("ROM count reaches field characteristic".into());
-    }
-    Ok(table_counts)
+    Ok(())
   }
 
   fn convert_traces(
@@ -981,57 +1109,9 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Ok((active, degrees))
   }
 
-  /// Match fixed domains, bound total unit lookup consumers below the
-  /// characteristic and total rows by [`MAX_BATCH_ROWS`]. Root caps cover
-  /// every active matrix, including height 1.
+  /// [`check_system_shape`] of this backend's system.
   fn check_shape(&self, active: &[bool], degrees: &[u8]) -> Result<(), String> {
-    if active.len() != self.system.circuits.len() || !active.contains(&true) {
-      return Err("invalid circuit activation".into());
-    }
-    let mut degrees = degrees.iter();
-    let mut budget = 1u64; // one public root
-    let mut rows = 0u64;
-    let rom_start = self.members.len() + self.tables.len();
-    for (ci, (circuit, &on)) in
-      self.system.circuits.iter().zip(active).enumerate()
-    {
-      if !on {
-        if circuit.preprocessed_height != 0 {
-          return Err("inactive fixed table".into());
-        }
-        continue;
-      }
-      let log = *degrees.next().ok_or("missing trace height")?;
-      // Goldilocks has 2-adicity 32. Include the commitment blowup.
-      if usize::from(log) + self.parameters.log_blowup > 32 {
-        return Err("trace domain exceeds Goldilocks capacity".into());
-      }
-      let height = 1u64 << log;
-      if circuit.preprocessed_height != 0
-        && circuit.preprocessed_height as u64 != height
-      {
-        return Err("fixed table height mismatch".into());
-      }
-      let weight = if ci >= rom_start {
-        self.rom.lanes_for_width(self.rom.widths[ci - rom_start]) as u64
-      } else {
-        1
-      };
-      rows = height
-        .checked_mul(weight)
-        .and_then(|w| rows.checked_add(w))
-        .filter(|&r| r <= MAX_BATCH_ROWS)
-        .ok_or("trace rows exceed the batch row bound (2^39)")?;
-      budget = height
-        .checked_mul(circuit.num_lookups.max(1) as u64)
-        .and_then(|n| budget.checked_add(n))
-        .filter(|&n| n < Val::ORDER_U64)
-        .ok_or("lookup count reaches field characteristic")?;
-    }
-    if degrees.next().is_some() {
-      return Err("extra trace heights".into());
-    }
-    Ok(())
+    check_system_shape(&self.system, self.parameters, active, degrees)
   }
 
   /// Prove an already prepared witness. A malformed witness may produce an

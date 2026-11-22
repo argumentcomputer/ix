@@ -1,9 +1,16 @@
-//! Background chunk allocation and prefaulting for append-only record stores
-//! ([`crate::chunks::Chunks`]).
+//! Allocations made and faulted in ahead of use by a background thread.
 //!
-//! A single idle-exiting worker thread allocates and touches one byte per page
-//! of the next full chunk while the executor fills the current chunk, hiding
-//! kernel page-fault latency off the execution critical path.
+//! Fresh anonymous memory is zeroed by the kernel on first write, one
+//! (transparent huge) page at a time. An execution that grows its record by
+//! gigabytes spends a large share of its time in those faults. A store that
+//! knows it will need another chunk asks for it here as soon as it starts
+//! the current one; the worker allocates it with the global allocator and
+//! writes one byte per page, so the faults happen off the executing thread.
+//!
+//! The worker allocates, so the allocator's own first touch of a fresh block
+//! happens there too. It exits once idle, which hands the allocator pages it
+//! owns back for reuse and purging when their blocks are freed elsewhere.
+
 use std::alloc::Layout;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -72,13 +79,13 @@ fn work(receiver: &Receiver<Job>) {
           Ok(job) => {
             drop(worker);
             job
-          },
+          }
           Err(_) => {
             *worker = None;
             return;
-          },
+          }
         }
-      },
+      }
       Err(RecvTimeoutError::Disconnected) => return,
     };
     run(&job);
@@ -105,7 +112,7 @@ fn run(job: &Job) {
         // SAFETY: allocated above with this layout and never handed out.
         unsafe { std::alloc::dealloc(ptr, job.layout) };
       }
-    },
+    }
     _ if ptr.is_null() => *state = State::Failed,
     _ => *state = State::Ready(ptr),
   }
@@ -145,7 +152,7 @@ impl<T> Pending<T> {
         // `Layout::array::<T>(self.capacity)`, as a vector of this capacity
         // would allocate, and ownership moves to the vector here.
         Ok(unsafe { Vec::from_raw_parts(ptr.cast::<T>(), 0, self.capacity) })
-      },
+      }
       State::Failed => Err(true),
       _ => Err(false),
     }

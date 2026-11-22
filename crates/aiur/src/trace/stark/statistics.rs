@@ -26,8 +26,7 @@ pub struct ExecutionStatistics {
 impl<B: WitnessField> Backend<'_, '_, B> {
   /// Raw unpadded heights and memoization counts in canonical circuit order.
   /// Fixed tables always use their full height and have no cache savings.
-  /// No witness matrices or proofs are allocated; pair with
-  /// [`Backend::for_statistics`] to also skip committing fixed tables.
+  /// No witness matrices or proofs are allocated.
   pub fn execution_statistics(
     &self,
     record: &Execution<B>,
@@ -50,7 +49,11 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     for &width in &self.rom.widths {
       let cells = record.memory.width_cells(width);
       hits.push(
-        (0..cells.len()).map(|i| cells.multiplicity(i).saturating_sub(1)).sum(),
+        (0..cells.len())
+          .map(|address| {
+            cells.get(address).expect("ROM row").multiplicity.saturating_sub(1)
+          })
+          .sum(),
       );
     }
     ExecutionStatistics {

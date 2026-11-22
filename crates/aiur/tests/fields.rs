@@ -23,6 +23,7 @@ impl std::fmt::Display for Small {
 #[derive(Clone, Copy, Debug)]
 struct SmallField;
 impl FieldBackend for SmallField {
+  type Word = u64;
   type Element = Small;
   fn modulus(self) -> u64 {
     97
@@ -30,7 +31,10 @@ impl FieldBackend for SmallField {
   fn from_u64(self, x: u64) -> Small {
     Small((x % 97) as u32)
   }
-  fn to_u64(self, x: Small) -> u64 {
+  fn from_word(self, x: u64) -> Small {
+    self.from_u64(x)
+  }
+  fn to_word(self, x: Small) -> u64 {
     u64::from(x.0)
   }
   fn add(self, a: Small, b: Small) -> Small {
@@ -73,7 +77,7 @@ fn program(
   serde_json::from_value(source).unwrap()
 }
 
-fn differential<B: FieldBackend>(field: B) {
+fn differential<B: FieldBackend<Word = u64>>(field: B) {
   let f = json!({"kind":"field"});
   let tuple = json!({"kind":"tuple", "items":[f,f,f,f]});
   let mut source = program(
@@ -280,7 +284,7 @@ fn multiplicities_remain_integers_above_the_field_order() {
 
 #[test]
 fn native_and_independent_fields_populate_the_same_trace() {
-  fn check<B: FieldBackend>(field: B) {
+  fn check<B: FieldBackend<Word = u64>>(field: B) {
     let f = json!({"kind":"field"});
     let source = program(
       field.modulus(),

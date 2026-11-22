@@ -6,9 +6,11 @@ pub mod artifact;
 pub mod budget;
 pub mod bytecode;
 mod chunks;
+mod prefetch;
 pub mod execute;
 mod ffi;
 pub mod field;
+pub mod field_word;
 #[cfg(feature = "function-profile")]
 pub mod function_profile;
 pub mod hints;
@@ -18,11 +20,15 @@ pub mod ixon;
 pub mod library;
 pub mod maps;
 pub mod memory;
-mod prefetch;
+#[cfg(feature = "native")]
+pub mod native;
 pub mod query;
+pub mod refs;
+pub mod shared;
 mod table;
 pub mod trace;
 pub mod value;
 
 pub use bytecode::Program;
 pub use execute::{Execution, ExecutionError, QueryInput, QueryOutput};
+pub use field_word::FieldWord;

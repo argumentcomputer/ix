@@ -85,6 +85,7 @@ impl Rom {
 
   /// Count active ROM entries in a populated trace matrix (summing active lanes
   /// across the contiguous active row prefix).
+  #[cfg(test)]
   pub(super) fn active_entries(
     &self,
     index: usize,
@@ -296,6 +297,77 @@ impl Rom {
     Ok(self.witness_with_active(record, index, min_height)?.0)
   }
 
+  /// Populate `rows` active ROM rows starting at `first_row` into `values`
+  /// (whose length must be at least `rows * width`), in parallel when large.
+  pub(super) fn populate_rows<B: WitnessField>(
+    &self,
+    record: &Execution<B>,
+    index: usize,
+    first_row: usize,
+    rows: usize,
+    values: &mut [Val],
+  ) {
+    if rows == 0 {
+      return;
+    }
+    let payload_width = self.widths[index];
+    let lanes = self.layout.lanes(payload_width);
+    let cells = record.memory.width_cells(payload_width);
+    let len = cells.len();
+    if lanes == 1 {
+      let width = payload_width + 3;
+      let active_values = &mut values[..rows * width];
+      let write_row = |(offset, row): (usize, &mut [Val])| {
+        let cell = cells.get(first_row + offset).expect("ROM cell");
+        row[0] = Val::from_u64(cell.multiplicity);
+        row[1] = Val::ONE;
+        row[2] = Val::from_usize(cell.address);
+        for (dest, &value) in row[3..].iter_mut().zip(cell.cell.value) {
+          *dest = B::into_stark(value);
+        }
+      };
+      #[cfg(feature = "parallel")]
+      if rows >= 256 {
+        active_values.par_chunks_mut(width).enumerate().for_each(write_row);
+      } else {
+        active_values.chunks_mut(width).enumerate().for_each(write_row);
+      }
+      #[cfg(not(feature = "parallel"))]
+      active_values.chunks_mut(width).enumerate().for_each(write_row);
+      return;
+    }
+
+    let stride = payload_width + 2;
+    let width = 1 + lanes * stride;
+    let active_values = &mut values[..rows * width];
+    let write_row = |(offset, row): (usize, &mut [Val])| {
+      let base_idx = (first_row + offset) * lanes;
+      let first_addr = cells.get(base_idx).expect("ROM cell").address;
+      row[0] = Val::from_usize(first_addr);
+      let active_in_row = (len - base_idx).min(lanes);
+      for lane in 0..active_in_row {
+        let cell = cells.get(base_idx + lane).expect("ROM cell");
+        debug_assert_eq!(cell.address, first_addr + lane);
+        let off = 1 + lane * stride;
+        row[off] = Val::from_u64(cell.multiplicity);
+        row[off + 1] = Val::ONE;
+        for (dest, &value) in
+          row[off + 2..off + 2 + payload_width].iter_mut().zip(cell.cell.value)
+        {
+          *dest = B::into_stark(value);
+        }
+      }
+    };
+    #[cfg(feature = "parallel")]
+    if rows >= 256 {
+      active_values.par_chunks_mut(width).enumerate().for_each(write_row);
+    } else {
+      active_values.chunks_mut(width).enumerate().for_each(write_row);
+    }
+    #[cfg(not(feature = "parallel"))]
+    active_values.chunks_mut(width).enumerate().for_each(write_row);
+  }
+
   /// Populate the ROM trace in parallel when large, returning both the padded
   /// matrix and the count of active rows (`0..active_rows`).
   pub(super) fn witness_with_active<B: WitnessField>(
@@ -306,63 +378,14 @@ impl Rom {
   ) -> Result<(RowMajorMatrix<Val>, usize), String> {
     let payload_width = self.widths[index];
     let lanes = self.layout.lanes(payload_width);
-    let cells = record.memory.width_cells(payload_width);
-    let len = cells.len();
-    if lanes == 1 {
-      let width = payload_width + 3;
-      let mut trace = empty_trace(len, width, min_height)?;
-      let active_values = &mut trace.values[..len * width];
-      let write_row = |(offset, row): (usize, &mut [Val])| {
-        let (address, multiplicity, values) = cells.rom_row(offset);
-        row[0] = Val::from_u64(multiplicity);
-        row[1] = Val::ONE;
-        row[2] = Val::from_usize(address);
-        for (dest, &value) in row[3..].iter_mut().zip(values) {
-          *dest = B::into_stark(value);
-        }
-      };
-      #[cfg(feature = "parallel")]
-      if len >= 256 {
-        active_values.par_chunks_mut(width).enumerate().for_each(write_row);
-      } else {
-        active_values.chunks_mut(width).enumerate().for_each(write_row);
-      }
-      #[cfg(not(feature = "parallel"))]
-      active_values.chunks_mut(width).enumerate().for_each(write_row);
-      return Ok((trace, len));
-    }
-
-    let stride = payload_width + 2;
-    let width = 1 + lanes * stride;
-    let active_rows = len.div_ceil(lanes);
-    let mut trace = empty_trace(active_rows, width, min_height)?;
-    let active_values = &mut trace.values[..active_rows * width];
-    let write_row = |(row_idx, row): (usize, &mut [Val])| {
-      let base_idx = row_idx * lanes;
-      let (first_addr, _, _) = cells.rom_row(base_idx);
-      row[0] = Val::from_usize(first_addr);
-      let active_in_row = (len - base_idx).min(lanes);
-      for lane in 0..active_in_row {
-        let (address, multiplicity, values) = cells.rom_row(base_idx + lane);
-        debug_assert_eq!(address, first_addr + lane);
-        let off = 1 + lane * stride;
-        row[off] = Val::from_u64(multiplicity);
-        row[off + 1] = Val::ONE;
-        for (dest, &value) in
-          row[off + 2..off + 2 + payload_width].iter_mut().zip(values)
-        {
-          *dest = B::into_stark(value);
-        }
-      }
-    };
-    #[cfg(feature = "parallel")]
-    if active_rows >= 256 {
-      active_values.par_chunks_mut(width).enumerate().for_each(write_row);
+    let len = record.memory.width_cells(payload_width).len();
+    let (width, active_rows) = if lanes == 1 {
+      (payload_width + 3, len)
     } else {
-      active_values.chunks_mut(width).enumerate().for_each(write_row);
-    }
-    #[cfg(not(feature = "parallel"))]
-    active_values.chunks_mut(width).enumerate().for_each(write_row);
+      (1 + lanes * (payload_width + 2), len.div_ceil(lanes))
+    };
+    let mut trace = empty_trace(active_rows, width, min_height)?;
+    self.populate_rows(record, index, 0, active_rows, &mut trace.values);
     Ok((trace, active_rows))
   }
 }

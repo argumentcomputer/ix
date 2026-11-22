@@ -5,10 +5,18 @@
 //! store stays small.
 //!
 //! A full chunk holds as many rows as fit a power of two bytes, not a power
-//! of two rows, so size-classed allocators hold it without rounding waste.
+//! of two rows. mimalloc rounds a block up to its size class (up to 25%
+//! above the request between powers of two) and packs whole blocks into its
+//! 512 KiB and 4 MiB pages, leaving the page's tail unused; with transparent
+//! huge pages that rounding and tail are resident although never written
+//! or charged. A power-of-two block is its own size class and divides its
+//! page, so a full chunk wastes less than one row.
 //!
 //! Once a store holds a full chunk of at least [`PREFETCH_BYTES`], it asks
 //! [`crate::prefetch`] for its next chunk while it fills the current one.
+//! That allocation is charged when requested and counts as capacity, so
+//! during execution a store may hold one chunk more than the bound above;
+//! [`Chunks::drop_prefetched`] restores it.
 use crate::budget::{Budget, BudgetError};
 use crate::prefetch::Pending;
 
@@ -109,13 +117,6 @@ impl<T: Copy> Chunks<T> {
     &self.chunks[chunk][at]
   }
 
-  #[inline(always)]
-  pub(crate) fn at_mut(&mut self, row: usize) -> &mut T {
-    debug_assert_eq!(self.stride, 1);
-    let (chunk, at) = self.locate(row);
-    &mut self.chunks[chunk][at]
-  }
-
   /// Make room for one more row, charging any allocation, so the next
   /// [`Self::push`] cannot fail.
   #[inline]
@@ -135,17 +136,19 @@ impl<T: Copy> Chunks<T> {
     Ok(())
   }
 
+  /// Start chunk `chunk`, taking the prefetched allocation if it is ready.
   #[cold]
   fn grow(&mut self, chunk: usize, budget: &Budget) -> Result<(), BudgetError> {
     let rows = if chunk == 0 { FIRST_ROWS.min(self.rows) } else { self.rows };
     let capacity = rows * self.stride;
-    budget.vector(&self.chunks, 1)?;
+    budget.vector(&mut self.chunks, 1)?;
     let prefetched = match &self.next {
       Some(next) if next.capacity() == capacity => match next.take() {
         Ok(values) => Some(values),
         Err(failed) => {
           if failed {
             self.next = None;
+            budget.release(capacity * size_of::<T>());
           }
           None
         },
@@ -176,13 +179,20 @@ impl<T: Copy> Chunks<T> {
     }
     if budget.reserve(bytes).is_ok() {
       self.next = Pending::new(capacity);
+      if self.next.is_none() {
+        budget.release(bytes);
+      }
     }
   }
 
-  /// Give up the prefetched chunk, if any: a finished record keeps only the
-  /// chunks it filled.
-  pub(crate) fn drop_prefetched(&mut self) {
-    self.next = None;
+  /// Give up the prefetched chunk, if any, and its charge: a finished
+  /// record keeps only the chunks it filled.
+  pub(crate) fn drop_prefetched(&mut self, budget: &Budget) {
+    if let Some(next) = self.next.take() {
+      let bytes = next.capacity() * size_of::<T>();
+      drop(next);
+      budget.release(bytes);
+    }
   }
 
   /// Append one row of `stride` values into room made by [`Self::reserve`].
@@ -210,6 +220,29 @@ impl<T: Copy> Chunks<T> {
     self.len += 1;
   }
 
+  /// Append a row of copies of `pad`, into room made by [`Self::reserve`],
+  /// and return it.
+  #[inline(always)]
+  pub(crate) fn push_row(&mut self, pad: T) -> &mut [T] {
+    let chunk = self.locate(self.len).0;
+    let last = &mut self.chunks[chunk];
+    debug_assert!(last.len() + self.stride <= last.capacity());
+    let end = last.len() + self.stride;
+    last.resize(end, pad);
+    self.len += 1;
+    &mut last[end - self.stride..]
+  }
+
+  /// Drop the last row, keeping its storage.
+  #[inline]
+  pub(crate) fn pop(&mut self) {
+    debug_assert!(self.len > 0);
+    self.len -= 1;
+    let chunk = self.locate(self.len).0;
+    let last = &mut self.chunks[chunk];
+    last.truncate(last.len() - self.stride);
+  }
+
   /// The chunks in order, each but the last holding
   /// [`Self::rows_per_chunk`] rows.
   #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
@@ -217,19 +250,17 @@ impl<T: Copy> Chunks<T> {
     &self.chunks
   }
 
-  #[cfg_attr(not(any(feature = "cuda", test)), allow(dead_code))]
+  #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
   pub(crate) fn rows_per_chunk(&self) -> usize {
     self.rows
   }
 
   /// Bytes of the live rows.
-  #[cfg(test)]
   pub(crate) fn payload_bytes(&self) -> usize {
     self.len * self.stride * size_of::<T>()
   }
 
-  /// Bytes allocated.
-  #[cfg(test)]
+  /// Bytes allocated, as charged.
   pub(crate) fn capacity_bytes(&self) -> usize {
     (self.chunks.iter().map(Vec::capacity).sum::<usize>()
       + self.next.as_ref().map_or(0, Pending::capacity))
@@ -268,16 +299,15 @@ mod tests {
     assert_eq!(rows.rows_per_chunk(), 10);
     assert_eq!(rows.payload_bytes(), 24_000);
     assert!(rows.capacity_bytes() - rows.payload_bytes() < 10 * 24 + 128 * 24);
-    assert!(
-      reservation.bytes() >= rows.capacity_bytes() + empty.capacity_bytes()
+    assert_eq!(
+      reservation.bytes(),
+      rows.capacity_bytes() + empty.capacity_bytes()
     );
   }
 
   #[test]
   fn rows_locate_by_division() {
-    for row_bytes in
-      [1, 8, 16, 24, 72, 88, 4096, 1 << 19, 1 << 20, (1 << 19) + 8]
-    {
+    for row_bytes in [1, 8, 16, 24, 72, 88, 4096, 1 << 19, 1 << 20, (1 << 19) + 8] {
       let rows = Chunks::<u8>::new(row_bytes, 1 << 19);
       assert_eq!(rows.rows_per_chunk(), ((1 << 19) / row_bytes).max(1));
       let n = rows.rows_per_chunk();
@@ -292,7 +322,7 @@ mod tests {
   }
 
   #[test]
-  fn prefetched_chunks_are_used_in_order() {
+  fn prefetched_chunks_are_charged_and_used_in_order() {
     let pool = RecordPool::new(1 << 26, 8);
     let reservation = pool.try_admit().unwrap().unwrap();
     let budget = Budget(Some(reservation.clone()));
@@ -301,6 +331,7 @@ mod tests {
     for i in 0..per_chunk * 9 + 3 {
       rows.reserve(&budget).unwrap();
       rows.push(&[i, !i]);
+      assert_eq!(reservation.bytes(), rows.capacity_bytes());
       if i % per_chunk == per_chunk / 2 {
         std::thread::sleep(std::time::Duration::from_millis(1));
       }

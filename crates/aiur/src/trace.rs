@@ -5,13 +5,14 @@
 //! hints. Constraints and exact integer message balance can be checked separately.
 use crate::bytecode::{CheckedProgram, Instruction, Type};
 use crate::execute::Execution;
-use crate::field::{FieldBackend, PrimeField};
+use crate::field::{FieldBackend, PrimeField, Word};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod depth;
+pub mod describe;
 mod plan;
 #[cfg(feature = "stark")]
 pub mod stark;
@@ -19,17 +20,59 @@ pub use depth::{DepthStatistics, RangeCounts, SccStatistics};
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Polynomial {
-  Const(u64),
-  Var(usize),
-  Add(Box<[Polynomial; 2]>),
-  Sub(Box<[Polynomial; 2]>),
-  Mul(Box<[Polynomial; 2]>),
+/// The maps device population evaluates, in the order of their kinds in
+/// `cuda/population.cu`.
+pub(crate) const DEVICE_MAPS: &[&str] = &[
+  "UInt8::from_field",
+  "UInt8::raw_bit_decomposition",
+  "UInt8::range_pair",
+  "UInt8::raw_xor",
+  "UInt8::raw_and",
+  "UInt8::raw_or",
+  "UInt8::raw_lt",
+  "UInt8::raw_add",
+  "UInt8::raw_sub",
+  "UInt8::raw_mul",
+  "UInt8::raw_xor_split4",
+  "UInt8::raw_xor_split7",
+  "UInt8::raw_sum_byte",
+];
+
+/// The hint channels device population evaluates, in the order of their
+/// kinds in `cuda/population.cu`.
+pub(crate) const DEVICE_HINTS: &[&str] =
+  &["u32.bytes", "u32.sub", "u32.add", "u32.add3", "u32.lt", "bytes_le"];
+
+/// Per function of `trace`: the other functions sharing its representative
+/// chip, in which a depth slot reading one of its rows also looks.
+pub fn lookup_aliases(trace: &TraceArtifact) -> Vec<Vec<usize>> {
+  trace
+    .functions
+    .iter()
+    .enumerate()
+    .map(|(f, function)| {
+      trace
+        .functions
+        .iter()
+        .enumerate()
+        .filter(|&(g, other)| g != f && other.chip == function.chip)
+        .map(|(g, _)| g)
+        .collect()
+    })
+    .collect()
 }
 
-impl Polynomial {
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Polynomial<F = u64> {
+  Const(F),
+  Var(usize),
+  Add(Box<[Polynomial<F>; 2]>),
+  Sub(Box<[Polynomial<F>; 2]>),
+  Mul(Box<[Polynomial<F>; 2]>),
+}
+
+impl<W: Word> Polynomial<W> {
   fn visit(&self, f: &mut impl FnMut(usize)) {
     match self {
       Self::Var(v) => f(*v),
@@ -40,7 +83,7 @@ impl Polynomial {
       },
     }
   }
-  fn validate<B: FieldBackend>(
+  pub fn validate<B: FieldBackend<Word = W>>(
     &self,
     width: usize,
     field: B,
@@ -59,9 +102,13 @@ impl Polynomial {
       _ => Ok(()),
     }
   }
-  fn eval<B: FieldBackend>(&self, row: &[B::Element], field: B) -> B::Element {
+  pub(crate) fn eval<B: FieldBackend<Word = W>>(
+    &self,
+    row: &[B::Element],
+    field: B,
+  ) -> B::Element {
     match self {
-      Self::Const(v) => field.from_u64(*v),
+      Self::Const(v) => field.from_word(*v),
       Self::Var(v) => row[*v],
       Self::Add(xs) => {
         field.add(xs[0].eval(row, field), xs[1].eval(row, field))
@@ -78,36 +125,36 @@ impl Polynomial {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
-pub enum Action {
+pub enum Action<F = u64> {
   Assign {
     dest: Vec<usize>,
-    values: Vec<Polynomial>,
+    values: Vec<Polynomial<F>>,
   },
   Inverse {
     dest: usize,
-    value: Polynomial,
+    value: Polynomial<F>,
   },
   Choose {
     dest: Vec<usize>,
-    tests: Vec<Vec<Polynomial>>,
+    tests: Vec<Vec<Polynomial<F>>>,
   },
   Failure {
     dest: Vec<usize>,
-    differences: Vec<Polynomial>,
+    differences: Vec<Polynomial<F>>,
   },
   Call {
     name: String,
-    args: Vec<Polynomial>,
+    args: Vec<Polynomial<F>>,
     dest: Vec<usize>,
   },
   Store {
     r#type: Type,
-    values: Vec<Polynomial>,
+    values: Vec<Polynomial<F>>,
     dest: usize,
   },
   Load {
     r#type: Type,
-    address: Polynomial,
+    address: Polynomial<F>,
     dest: Vec<usize>,
   },
   Hint {
@@ -116,12 +163,12 @@ pub enum Action {
     instruction: usize,
     r#type: Type,
     key_type: Type,
-    key: Vec<Polynomial>,
+    key: Vec<Polynomial<F>>,
     dest: Vec<usize>,
   },
 }
 
-impl Action {
+impl<W> Action<W> {
   fn dest(&self) -> &[usize] {
     match self {
       Self::Assign { dest, .. }
@@ -135,7 +182,7 @@ impl Action {
       },
     }
   }
-  fn expressions(&self) -> Vec<&Polynomial> {
+  fn expressions(&self) -> Vec<&Polynomial<W>> {
     match self {
       Self::Assign { values, .. } | Self::Store { values, .. } => {
         values.iter().collect()
@@ -151,51 +198,51 @@ impl Action {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct PopulationStep {
-  pub guard: Polynomial,
-  pub action: Action,
+pub struct PopulationStep<F = u64> {
+  pub guard: Polynomial<F>,
+  pub action: Action<F>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct ColumnWrite {
+pub struct ColumnWrite<F = u64> {
   pub column: usize,
   pub source: usize,
-  pub guard: Polynomial,
+  pub guard: Polynomial<F>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct FunctionPlan {
+pub struct FunctionPlan<F = u64> {
   pub name: String,
   pub chip: String,
   pub witnesses: usize,
   pub inputs: Vec<usize>,
   pub output: Vec<usize>,
-  pub steps: Vec<PopulationStep>,
-  pub writes: Vec<ColumnWrite>,
+  pub steps: Vec<PopulationStep<F>>,
+  pub writes: Vec<ColumnWrite<F>>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct Send {
+pub struct Send<F = u64> {
   pub channel: String,
-  pub args: Vec<Polynomial>,
+  pub args: Vec<Polynomial<F>>,
   pub result: Vec<usize>,
-  pub enable: Polynomial,
+  pub enable: Polynomial<F>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct MemoryLookup {
+pub struct MemoryLookup<F = u64> {
   pub r#type: Type,
-  pub address: Polynomial,
-  pub values: Vec<Polynomial>,
-  pub enable: Polynomial,
+  pub address: Polynomial<F>,
+  pub values: Vec<Polynomial<F>>,
+  pub enable: Polynomial<F>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct Chip {
+pub struct Chip<F = u64> {
   pub name: String,
   pub width: usize,
   /// The last physical column is the proved row-activation selector.
   pub activation: usize,
   pub inputs: Vec<usize>,
-  pub output: Vec<Polynomial>,
-  pub constraints: Vec<Polynomial>,
-  pub sends: Vec<Send>,
-  pub memory: Vec<MemoryLookup>,
+  pub output: Vec<Polynomial<F>>,
+  pub constraints: Vec<Polynomial<F>>,
+  pub sends: Vec<Send<F>>,
+  pub memory: Vec<MemoryLookup<F>>,
   /// How the depth pass (Track A, H1) extended this circuit. Absent for a
   /// hand-written circuit: no depth column and only plain slots.
   #[serde(default)]
@@ -235,50 +282,82 @@ pub struct ChipDepth {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct TraceArtifact {
+pub struct TraceArtifact<F = u64> {
   pub version: u32,
-  pub modulus: u64,
+  pub modulus: F,
   /// Bit widths of the gap limbs, low limb first (`[16, 8]`: gaps below
   /// `2^24`). Each width `w` has the fixed map `Depth::range{w}`.
   #[serde(default)]
   pub limbs: Vec<usize>,
-  pub functions: Vec<FunctionPlan>,
-  pub chips: Vec<Chip>,
+  pub functions: Vec<FunctionPlan<F>>,
+  pub chips: Vec<Chip<F>>,
   /// Physical function groups emitted by the Lean layout pass. Clearing this
   /// list selects the identical logical program with singleton circuits.
   #[serde(default)]
-  pub groups: Vec<FunctionGroup>,
+  pub groups: Vec<FunctionGroup<F>>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct GroupWrite {
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroupWrite<F = u64> {
   pub column: usize,
-  pub value: Polynomial,
+  pub value: Polynomial<F>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct GroupMember {
+pub struct GroupMember<F = u64> {
   pub name: String,
   pub columns: Vec<usize>,
   pub selector: usize,
-  pub writes: Vec<GroupWrite>,
+  pub writes: Vec<GroupWrite<F>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct GroupLookup {
-  pub enable: Polynomial,
-  pub args: Vec<Polynomial>,
+pub struct GroupLookup<F = u64> {
+  pub enable: Polynomial<F>,
+  pub args: Vec<Polynomial<F>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct FunctionGroup {
+pub struct FunctionGroup<F = u64> {
   pub name: String,
   pub width: usize,
-  pub activation: Polynomial,
-  pub constraints: Vec<Polynomial>,
-  pub receive: Vec<Polynomial>,
-  pub sends: Vec<GroupLookup>,
-  pub members: Vec<GroupMember>,
+  pub activation: Polynomial<F>,
+  pub constraints: Vec<Polynomial<F>>,
+  pub receive: Vec<Polynomial<F>>,
+  pub sends: Vec<GroupLookup<F>>,
+  pub members: Vec<GroupMember<F>>,
+}
+
+/// Where one function's logical columns land in its physical circuit. A
+/// physical row is the function's column writes through `columns`, then the
+/// `selector` set to one, then each group write in order (evaluated over the
+/// row written so far), then the multiplicity in the last column.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Placement<W = u64> {
+  pub grouped: bool,
+  /// Index among the function circuits, in [`Layout::circuits`] order.
+  pub circuit: usize,
+  pub columns: Vec<usize>,
+  pub selector: usize,
+  pub writes: Vec<GroupWrite<W>>,
+}
+
+/// The artifact source of one physical function circuit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FunctionCircuit {
+  /// An index into [`TraceArtifact::groups`].
+  Group(usize),
+  /// An index into [`TraceArtifact::chips`] of an ungrouped chip.
+  Chip(usize),
+}
+
+/// The certified physical placement of every chip: function circuits are
+/// emitted in chip order, a group at its first member chip.
+#[derive(Clone, Debug)]
+pub struct Layout<W = u64> {
+  /// By chip index.
+  pub placements: Vec<Placement<W>>,
+  pub circuits: Vec<FunctionCircuit>,
 }
 
 /// Height is explicit: a zero-column circuit can still provide a claim.
@@ -316,12 +395,12 @@ pub struct PopulationTimings {
 
 /// A checked plan is tied to the immutable checked execution program.
 pub struct TracePlan<'a, B: FieldBackend = PrimeField> {
-  program: &'a CheckedProgram<B>,
-  artifact: TraceArtifact,
+  program: crate::shared::Shared<'a, CheckedProgram<B>>,
+  artifact: TraceArtifact<B::Word>,
   callables: FxHashMap<String, usize>,
   members: Vec<usize>,
   fills: Vec<plan::FillPlan<B>>,
-  depth: depth::DepthPlan,
+  depth: depth::DepthPlan<B::Word>,
 }
 
 fn indices(xs: &[usize], width: usize) -> Result<(), String> {
@@ -334,9 +413,11 @@ fn indices(xs: &[usize], width: usize) -> Result<(), String> {
 
 impl<'a, B: FieldBackend> TracePlan<'a, B> {
   pub fn new(
-    program: &'a CheckedProgram<B>,
-    mut artifact: TraceArtifact,
+    program: impl Into<crate::shared::Shared<'a, CheckedProgram<B>>>,
+    mut artifact: TraceArtifact<B::Word>,
   ) -> Result<Self, String> {
+    let shared = program.into();
+    let program = &*shared;
     if artifact.version != 3 || artifact.modulus != program.field.modulus() {
       return Err("trace version or field mismatch".into());
     }
@@ -539,7 +620,172 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
           .into(),
       );
     }
-    Ok(Self { program, artifact, callables, members, fills, depth })
+    Ok(Self { program: shared, artifact, callables, members, fills, depth })
+  }
+
+  pub fn artifact(&self) -> &TraceArtifact<B::Word> {
+    &self.artifact
+  }
+
+  pub fn program(&self) -> &CheckedProgram<B> {
+    &self.program
+  }
+
+  /// The chip that represents each function, by function index.
+  pub fn function_chips(&self) -> &[usize] {
+    &self.members
+  }
+
+  pub fn callable_id(&self, name: &str) -> Option<usize> {
+    self.callables.get(name).copied()
+  }
+
+  /// Each depth range table's count-vector index and global callable index.
+  /// Global callable indices include functions before static maps.
+  pub fn depth_range_tables(
+    &self,
+  ) -> impl Iterator<Item = (usize, usize)> + '_ {
+    self
+      .depth
+      .tables
+      .iter()
+      .enumerate()
+      .map(|(index, table)| (index, table.map))
+  }
+
+  /// The ordinary Aiur call message, including a recursive entry's public
+  /// depth word. Its typed arguments and result are checked independently of
+  /// any execution record.
+  pub fn public_claim(
+    &self,
+    entry: &str,
+    args: &[B::Element],
+    output: &[B::Element],
+  ) -> Result<Vec<B::Element>, String> {
+    let id = self.program.entry(entry)?.function;
+    let chip = &self.artifact.chips[self.members[id]];
+    let (inputs, depth) = self.entry_args(id, args);
+    let field = self.program.field;
+    self.program.inputs[id].validate(inputs, field)?;
+    self.program.outputs[id].validate(output, field)?;
+    if chip.depth.column.is_some() && depth.is_none() {
+      return Err(format!(
+        "{entry} is recursive: its public claim needs a depth word after its arguments"
+      ));
+    }
+    if depth.is_some_and(|value| !field.valid(value)) {
+      return Err("noncanonical public depth word".into());
+    }
+    let callable = u64::try_from(self.callables[&chip.name])
+      .map_err(|error| format!("callable index: {error}"))?;
+    if !field.contains(B::Word::from(callable)) {
+      return Err("callable index reaches field characteristic".into());
+    }
+    let mut claim = Vec::with_capacity(
+      2 + inputs.len() + usize::from(depth.is_some()) + output.len(),
+    );
+    claim.extend([field.one(), field.from_u64(callable)]);
+    claim.extend_from_slice(inputs);
+    claim.extend(depth);
+    claim.extend_from_slice(output);
+    Ok(claim)
+  }
+
+  /// The physical placement of every chip, validated against the groups.
+  pub fn layout(&self) -> Result<Layout<B::Word>, String> {
+    let artifact = &self.artifact;
+    let mut grouped = FxHashMap::default();
+    for (gi, group) in artifact.groups.iter().enumerate() {
+      if group.members.len() < 2 || group.width >= u32::MAX as usize {
+        return Err("invalid function group size".into());
+      }
+      for member in &group.members {
+        if grouped.insert(member.name.as_str(), gi).is_some() {
+          return Err("function appears in multiple groups".into());
+        }
+      }
+    }
+    let mut placements: Vec<Option<Placement<B::Word>>> =
+      (0..artifact.chips.len()).map(|_| None).collect();
+    let mut circuits = vec![];
+    let mut emitted = vec![false; artifact.groups.len()];
+    for (ci, chip) in artifact.chips.iter().enumerate() {
+      if let Some(&gi) = grouped.get(chip.name.as_str()) {
+        if emitted[gi] {
+          continue;
+        }
+        emitted[gi] = true;
+        let group = &artifact.groups[gi];
+        for member in &group.members {
+          let original = artifact
+            .chips
+            .iter()
+            .position(|c| c.name == member.name)
+            .ok_or("unknown grouped function chip")?;
+          self.validate_member(
+            group.width,
+            member,
+            &artifact.chips[original],
+          )?;
+          placements[original] = Some(Placement {
+            grouped: true,
+            circuit: circuits.len(),
+            columns: member.columns.clone(),
+            selector: member.selector,
+            writes: member.writes.clone(),
+          });
+        }
+        circuits.push(FunctionCircuit::Group(gi));
+        continue;
+      }
+      if chip.width >= u32::MAX as usize {
+        return Err("too many circuit columns".into());
+      }
+      placements[ci] = Some(Placement {
+        grouped: false,
+        circuit: circuits.len(),
+        columns: (0..chip.width).collect(),
+        selector: chip.activation,
+        writes: vec![],
+      });
+      circuits.push(FunctionCircuit::Chip(ci));
+    }
+    if emitted.contains(&false) {
+      return Err("unknown function group members".into());
+    }
+    let placements = placements
+      .into_iter()
+      .map(|p| p.ok_or_else(|| "missing function placement".to_owned()))
+      .collect::<Result<_, _>>()?;
+    Ok(Layout { placements, circuits })
+  }
+
+  fn validate_member(
+    &self,
+    width: usize,
+    member: &GroupMember<B::Word>,
+    source: &Chip<B::Word>,
+  ) -> Result<(), String> {
+    if member.columns.len() != source.width
+      || member.selector >= width
+      || member.columns[source.activation] != member.selector
+    {
+      return Err("invalid grouped member layout".into());
+    }
+    let mut used = member.columns.clone();
+    used.sort_unstable();
+    used.dedup();
+    if used.len() != member.columns.len() || used.iter().any(|&c| c >= width) {
+      return Err("non-injective group column mapping".into());
+    }
+    for write in &member.writes {
+      if write.column >= width || used.contains(&write.column) {
+        return Err("group message column aliases a source column".into());
+      }
+      write.value.validate(width, self.program.field)?;
+      used.push(write.column);
+    }
+    Ok(())
   }
 
   /// Populate each original query once. Power-of-two padding remains all
@@ -638,6 +884,14 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       let size =
         matrix.height.checked_mul(matrix.width).ok_or("trace size overflow")?;
       matrix.values.try_reserve_exact(size).map_err(|e| e.to_string())?;
+      // Filled in parallel: a serial fill of the largest chips takes seconds.
+      #[cfg(feature = "parallel")]
+      {
+        use rayon::prelude::*;
+        let zero = self.program.field.zero();
+        matrix.values.par_extend((0..size).into_par_iter().map(|_| zero));
+      }
+      #[cfg(not(feature = "parallel"))]
       matrix.values.resize(size, self.program.field.zero());
       matrix.multiplicities.resize(matrix.height, 0);
     }
@@ -661,6 +915,12 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     let field = self.program.field;
     timings.bind_seconds = start.elapsed().as_secs_f64();
     let start = std::time::Instant::now();
+    #[cfg(feature = "parallel")]
+    if !reference {
+      let ranges = self.fill_parallel(record, &mut matrices)?;
+      timings.fill_seconds = start.elapsed().as_secs_f64();
+      return Ok(Trace { matrices, ranges });
+    }
     for (function, plan) in self.artifact.functions.iter().enumerate() {
       let table = &record.queries.tables[function];
       let matrix = &mut matrices[self.members[function]];
@@ -670,14 +930,14 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
         matrix.values[offset * matrix.width
           + self.artifact.chips[self.members[function]].activation] =
           field.one();
-        matrix.multiplicities[offset] = table.output(query).multiplicity;
+        matrix.multiplicities[offset] = table.count(query);
         if !reference {
           let row = &mut matrix.values
             [offset * matrix.width..(offset + 1) * matrix.width];
           self.fills[function]
             .fill(
               record,
-              (table.input(query), table.output(query)),
+              (table, query),
               &mut scratch,
               &mut buffer,
               row,
@@ -700,10 +960,10 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
         scratch.fill(field.zero());
         let input = table.input(query);
         let output = table.output(query);
-        for (&dest, &v) in plan.inputs.iter().zip(input) {
+        for (&dest, &v) in plan.inputs.iter().zip(input.iter()) {
           scratch[dest] = v;
         }
-        for (&dest, &v) in plan.output.iter().zip(output.output) {
+        for (&dest, &v) in plan.output.iter().zip(output.output.iter()) {
           scratch[dest] = v;
         }
         for (step_id, step) in plan.steps.iter().enumerate() {
@@ -757,7 +1017,9 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
                 // Independent reference population always uses
                 // the original table, never a host override.
                 let values = if let Some(map) = &table.static_map {
-                  map.binding.output(map.binding.row(&buffer)?)
+                  std::borrow::Cow::Borrowed(
+                    map.binding.output(map.binding.row(&buffer)?),
+                  )
                 } else {
                   if let Some(id) = table.lookup(&buffer).1 {
                     let answer = table.output(id);
@@ -765,15 +1027,11 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
                       return Err("pending recorded callee".into());
                     }
                     answer.output
-                  } else if dest.is_empty()
-                    && record.is_deferred(self.callables[name], &buffer)
-                  {
-                    &[]
                   } else {
                     return Err("missing recorded callee".into());
                   }
                 };
-                for (&d, &v) in dest.iter().zip(values) {
+                for (&d, &v) in dest.iter().zip(values.iter()) {
                   scratch[d] = v;
                 }
               },
@@ -790,10 +1048,13 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
                 );
               },
               Action::Load { address, dest, .. } => {
-                let address =
-                  usize::try_from(field.to_u64(address.eval(&scratch, field)))
-                    .ok()
-                    .ok_or("ROM address overflow")?;
+                let address = usize::try_from(
+                  field
+                    .try_to_u64(address.eval(&scratch, field))
+                    .map_err(|_error| "ROM address overflow")?,
+                )
+                .ok()
+                .ok_or("ROM address overflow")?;
                 let cell = &record
                   .memory
                   .get_by_width(dest.len(), address)
@@ -857,17 +1118,73 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     Ok(Trace { matrices, ranges })
   }
 
-  pub(crate) fn validate_record(
+  #[cfg(feature = "parallel")]
+  fn fill_parallel(
     &self,
     record: &Execution<B>,
-  ) -> Result<(), String> {
+    matrices: &mut [Matrix<B::Element>],
+  ) -> Result<RangeCounts, String> {
+    let field = self.program.field;
+    let mut offsets = vec![0usize; matrices.len()];
+    let mut ranges = RangeCounts::default();
+    for (function, plan) in self.artifact.functions.iter().enumerate() {
+      let chip = self.members[function];
+      let table = &record.queries.tables[function];
+      let matrix = &mut matrices[chip];
+      let start = offsets[chip];
+      let end = start + table.len();
+      let values = &mut matrix.values[start * matrix.width..end * matrix.width];
+      let counts = &mut matrix.multiplicities[start..end];
+      let init = || {
+        (vec![field.zero(); plan.witnesses], Vec::new(), RangeCounts::default())
+      };
+      let local = values
+        .par_chunks_mut(matrix.width)
+        .zip(counts.par_iter_mut())
+        .enumerate()
+        .try_fold(init, |mut state, (query, (row, count))| {
+          *count = table.count(query);
+          row[self.artifact.chips[chip].activation] = field.one();
+          self.fills[function]
+            .fill(
+              record,
+              (table, query),
+              &mut state.0,
+              &mut state.1,
+              row,
+            )
+            .and_then(|()| {
+              self.depth.fill(
+                chip,
+                record,
+                table.depth(query),
+                row,
+                field,
+                &mut state.1,
+                &mut state.2,
+              )
+            })
+            .map_err(|error| format!("{} query {query}: {error}", plan.name))?;
+          Ok::<_, String>(state)
+        })
+        .try_reduce(init, |mut left, right| {
+          left.2 = left.2.merge(right.2);
+          Ok(left)
+        })?;
+      ranges = ranges.merge(local.2);
+      offsets[chip] = end;
+    }
+    Ok(ranges)
+  }
+
+  fn validate_record_shape(&self, record: &Execution<B>) -> Result<(), String> {
     if !std::sync::Arc::ptr_eq(&record.hints.program, &self.program.program) {
       return Err("hint providers belong to another program".into());
     }
     if record.queries.tables.len() != self.program.inputs.len() {
       return Err("query record callable count mismatch".into());
     }
-    let validate_table = |(i, table): (usize, &crate::query::QueryTable<B>)| {
+    for (i, table) in record.queries.tables.iter().enumerate() {
       if table.widths()
         != (self.program.inputs[i].width(), self.program.outputs[i].width())
       {
@@ -887,7 +1204,7 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
           return Err("malformed static map counts".into());
         }
         // Inputs/results are borrowed from already validated tables.
-        return Ok(());
+        continue;
       }
       if table.static_map.is_some() {
         return Err("function record contains a static map".into());
@@ -897,48 +1214,56 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       {
         return Err("query record is missing depth heights".into());
       }
-      let depths = table.depths();
-      #[cfg(feature = "parallel")]
-      let bad_depth = if depths.len() >= 4096 {
-        depths.par_iter().any(|&d| !self.program.field.contains(d))
-      } else {
-        depths.iter().any(|&d| !self.program.field.contains(d))
-      };
-      #[cfg(not(feature = "parallel"))]
-      let bad_depth = depths.iter().any(|&d| !self.program.field.contains(d));
-      if bad_depth {
-        return Err("query record depth reaches field characteristic".into());
+      for row in 0..table.depths_len() {
+        let depth = table.depth(row);
+        if depth == u64::from(u32::MAX) {
+          return Err("query record depth overflows".into());
+        }
+        if !self.program.field.contains(B::Word::from(depth)) {
+          return Err("query record depth reaches field characteristic".into());
+        }
       }
-      let check_in =
-        !B::ALL_ELEMENTS_VALID || self.program.inputs[i].has_shape_checks();
-      let check_out =
-        !B::ALL_ELEMENTS_VALID || self.program.outputs[i].has_shape_checks();
-      let validate_row = |row: usize| -> Result<(), String> {
-        let output = table.output(row);
-        if output.multiplicity == 0 {
+    }
+    Ok(())
+  }
+
+  pub(crate) fn validate_record(
+    &self,
+    record: &Execution<B>,
+  ) -> Result<(), String> {
+    self.validate_record_shape(record)?;
+    let validate_table = |(i, table): (usize, &crate::query::QueryTable<B>)| {
+      if i >= self.program.program.functions.len() {
+        return Ok(());
+      }
+      let inputs = &self.program.inputs[i];
+      let outputs = &self.program.outputs[i];
+      // Without tags or padding to check, a row of every-valid elements at
+      // the layouts' widths is valid, so only the counts need reading.
+      if B::ALL_ELEMENTS_VALID
+        && !inputs.has_shape_checks()
+        && !outputs.has_shape_checks()
+      {
+        if table.widths() != (inputs.width(), outputs.width()) {
+          return Err(
+            "incorrect value width or noncanonical field element".into(),
+          );
+        }
+        if (0..table.len()).any(|row| table.count(row) == 0) {
           return Err("incomplete query record".into());
         }
-        if check_in {
-          self.program.inputs[i]
-            .validate(table.input(row), self.program.field)?;
-        }
-        if check_out {
-          self.program.outputs[i]
-            .validate(output.output, self.program.field)?;
-        }
-        Ok(())
-      };
-      #[cfg(feature = "parallel")]
-      if table.len() >= 4096 {
-        (0..table.len())
-          .into_par_iter()
-          .with_min_len(1024)
-          .try_for_each(validate_row)?;
-      } else {
-        (0..table.len()).try_for_each(validate_row)?;
+        return Ok(());
       }
-      #[cfg(not(feature = "parallel"))]
-      (0..table.len()).try_for_each(validate_row)?;
+      let mut buffer = vec![];
+      for row in 0..table.len() {
+        if table.count(row) == 0 {
+          return Err("incomplete query record".into());
+        }
+        self.program.inputs[i]
+          .validate(table.input_in(row, &mut buffer), self.program.field)?;
+        self.program.outputs[i]
+          .validate(table.output_in(row, &mut buffer), self.program.field)?;
+      }
       Ok::<_, String>(())
     };
     #[cfg(feature = "parallel")]
@@ -950,50 +1275,25 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       .try_for_each(validate_table)?;
     #[cfg(not(feature = "parallel"))]
     record.queries.tables.iter().enumerate().try_for_each(validate_table)?;
-    if record.memory.max_address().is_some_and(|max| {
-      max as u128 >= u128::from(self.program.field.modulus())
+    if record.memory.iter().any(|m| {
+      u64::try_from(m.address).map_or(true, |address| {
+        !self.program.field.contains(B::Word::from(address))
+      })
     }) {
       return Err("ROM exceeds field capacity".into());
     }
-    // Resolve every used ROM type once rather than hashing `Type` per cell,
-    // and skip element validation on plain-field layouts when every `B::Element`
-    // is canonical by representation.
-    let mut rom_layouts: Vec<Option<&crate::bytecode::Layout>> = Vec::new();
-    let mut needs_cell_validation = false;
-    for (type_id, ty) in record.memory.types_used() {
-      let layout = self
+    let validate_memory = |m: crate::memory::MemoryEntryRef<'_, B::Element>| {
+      self
         .program
         .memory_layouts
-        .get(ty)
-        .ok_or("unknown recorded ROM type")?;
-      if !B::ALL_ELEMENTS_VALID || layout.has_shape_checks() {
-        if rom_layouts.len() <= type_id {
-          rom_layouts.resize(type_id + 1, None);
-        }
-        rom_layouts[type_id] = Some(layout);
-        needs_cell_validation = true;
-      }
-    }
-    if needs_cell_validation {
-      let validate_cell = |index: usize| -> Result<(), String> {
-        let (type_id, words) = record.memory.cell_type_and_words(index);
-        if let Some(layout) = rom_layouts.get(type_id).copied().flatten() {
-          layout.validate(words, self.program.field)?;
-        }
-        Ok(())
-      };
-      #[cfg(feature = "parallel")]
-      if record.memory.len() >= 4096 {
-        (0..record.memory.len())
-          .into_par_iter()
-          .with_min_len(1024)
-          .try_for_each(validate_cell)?;
-      } else {
-        (0..record.memory.len()).try_for_each(validate_cell)?;
-      }
-      #[cfg(not(feature = "parallel"))]
-      (0..record.memory.len()).try_for_each(validate_cell)?;
-    }
+        .get(m.cell.r#type)
+        .ok_or("unknown recorded ROM type")?
+        .validate(m.cell.value, self.program.field)
+    };
+    #[cfg(feature = "parallel")]
+    record.memory.par_iter().try_for_each(validate_memory)?;
+    #[cfg(not(feature = "parallel"))]
+    record.memory.iter().try_for_each(validate_memory)?;
     Ok(())
   }
 
@@ -1038,7 +1338,7 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     self.program.inputs[id].validate(inputs, self.program.field)?;
     let table = &record.queries.tables[id];
     let query = table.lookup(inputs).1.ok_or("missing entry query")?;
-    if table.output(query).output != record.output {
+    if *table.output(query).output != *record.output {
       return Err("root output mismatch".into());
     }
     let chip = self.members[id];
@@ -1057,7 +1357,11 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     })
   }
 
-  fn claim(&self, chip: &Chip, row: &[B::Element]) -> Claim<B::Element> {
+  fn claim(
+    &self,
+    chip: &Chip<B::Word>,
+    row: &[B::Element],
+  ) -> Claim<B::Element> {
     Claim {
       channel: self.callables[&chip.name],
       args: chip.inputs.iter().map(|&i| row[i]).collect(),
@@ -1068,7 +1372,11 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
         .collect(),
     }
   }
-  fn send_claim(&self, send: &Send, row: &[B::Element]) -> Claim<B::Element> {
+  fn send_claim(
+    &self,
+    send: &Send<B::Word>,
+    row: &[B::Element],
+  ) -> Claim<B::Element> {
     Claim {
       channel: self.callables[&send.channel],
       args: send.args.iter().map(|p| p.eval(row, self.program.field)).collect(),
@@ -1141,10 +1449,13 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
           if cell.enable.eval(row, field) != field.one() {
             continue;
           }
-          let address =
-            usize::try_from(field.to_u64(cell.address.eval(row, field)))
-              .ok()
-              .ok_or("ROM address overflow")?;
+          let address = usize::try_from(
+            field
+              .try_to_u64(cell.address.eval(row, field))
+              .map_err(|_error| "ROM address overflow")?,
+          )
+          .ok()
+          .ok_or("ROM address overflow")?;
           let value = &record
             .memory
             .get_by_width(cell.values.len(), address)
