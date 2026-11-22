@@ -262,7 +262,6 @@
               pkgs.lib.genAttrs
                 [
                   "mathlib"
-                  "plausible"
                   "proofwidgets"
                   "LeanSearchClient"
                   "importGraph"
