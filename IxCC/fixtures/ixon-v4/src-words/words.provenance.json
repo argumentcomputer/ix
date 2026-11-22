@@ -1,0 +1,16 @@
+{"source_sha256":
+ "1daa0d246022fbe03d9f49944c53a16e5d02bff82770e0239729f7998b098480",
+ "producer_version": "4.34.1|0.0.1",
+ "producer":
+ "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
+ "named_env_sha256":
+ "144e115947f07c017a3d153be22e436562c34f76cbf18d81ae1642594a679029",
+ "files":
+ {"words.ixe":
+  "9c9b2557111d735c63a0fe69d6a304b439012df860b2c977a6b4aea1f7731862",
+  "words.equations.json":
+  "9d96a5903bc44cf31064dbf3953c3fc3e25b7a6b246a482048fe1bab685f82fe"},
+ "commands":
+ ["ix compile --no-build --consts <roots> --equations --word-equations --anon --out words.ixe Words.lean",
+  "ix compile --no-build --consts <roots> --equations --word-equations --out words.named.ixe Words.lean",
+  "ix addr-of --ixe words.named.ixe NAME, for every root and every name of the equations output"]}

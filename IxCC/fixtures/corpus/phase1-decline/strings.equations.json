@@ -1,0 +1,429 @@
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "Decline.lean",
+  "roots": [
+    {
+      "name": "Decline.stringLength",
+      "address": "1775b66ed633c8bf6c2bd867afaaec7e177bf0d0d6bcb2f9cd280334999ab732"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "Array.appendCore.loop",
+      "definition_address": "6f21a2adfd3ee079727d4fb8ce1fd77a4c4bf8f5814ee226491c6835cd3f1c02",
+      "equation": "Array.appendCore.loop.eq_def",
+      "equation_address": "16ffae5eec07c708dfa186df558b428e9654684eeba6e858a8417d62c694f193"
+    },
+    {
+      "definition": "Array.extract.loop",
+      "definition_address": "6f21a2adfd3ee079727d4fb8ce1fd77a4c4bf8f5814ee226491c6835cd3f1c02",
+      "equation": "Array.extract.loop.eq_def",
+      "equation_address": "16ffae5eec07c708dfa186df558b428e9654684eeba6e858a8417d62c694f193"
+    },
+    {
+      "definition": "Array.foldlM.loop",
+      "definition_address": "af2fa66d8bc8401c494f36971126e2cf0774bfd314f294ea279a223bdc95a206",
+      "equation": "Array.foldlM.loop.eq_def",
+      "equation_address": "64be2b610d75e72e41411dc659e894d16826af841180c9713d90e5a92fa860f8"
+    },
+    {
+      "definition": "Array.forIn'.loop",
+      "definition_address": "77514f94697c64182b7419681ef0ec79ba766f4710fee5487a0a3aac06965b69",
+      "equation": "Array.forIn'.loop.eq_def",
+      "equation_address": "4a7a7c36c92fe8b781f3dc235a957d4a0bb111640ef4db0129e2df60c0fb9f40"
+    },
+    {
+      "definition": "ByteArray.utf8Decode?.go",
+      "definition_address": "560672501983b1ef3066ceab712e886cc5c725ad45add12e94c6edccfa735034",
+      "equation": "ByteArray.utf8Decode?.go.eq_def",
+      "equation_address": "86b6223812efa969d765dee6ff4f3da3061c5814539726af7f6683a5c471fd8c"
+    },
+    {
+      "definition": "ByteArray.utf8Decode?.go._unary",
+      "definition_address": "4a9671c87c13f7e64917ecbb5a9bb5a1bbc0c905f2df9cdc27d6c7fabf4ad41f",
+      "equation": "ByteArray.utf8Decode?.go._unary.eq_def",
+      "equation_address": "cd30db36e8855db27c1026993c96b40a4b489b0f1f9dbc18dd57d8ef2cf003e2"
+    },
+    {
+      "definition": "ByteArray.utf8DecodeChar?",
+      "definition_address": "48da927fad6b64f9effa834d6ae165c584e8a221bf7cdc8869dd8322a211a656",
+      "equation": "ByteArray.utf8DecodeChar?.eq_def",
+      "equation_address": "0bc997c85ade4e25887171b30f9ee64cd7621d5f84dd04f60b232aae11b8c2d0"
+    },
+    {
+      "definition": "ByteArray.utf8DecodeChar?.assemble₂",
+      "definition_address": "5c0b82d97314981d55759353d49966eb14d42965938c17752e54c84f5cb2fb9e",
+      "equation": "ByteArray.utf8DecodeChar?.assemble₂.eq_def",
+      "equation_address": "70f7a9c60f682b94bf7ff03e4c76e3f3c60f7b746f26eb2fe5b5cd2d7dde2304"
+    },
+    {
+      "definition": "ByteArray.utf8DecodeChar?.assemble₃",
+      "definition_address": "b863af375208157e5de30a58a57f7f635af25f013bddae0aa67935a8b9441987",
+      "equation": "ByteArray.utf8DecodeChar?.assemble₃.eq_def",
+      "equation_address": "9b6f3760ed1699c0ee0c84c7c837ece5518083578a17f63c29ed8211c094b670"
+    },
+    {
+      "definition": "ByteArray.utf8DecodeChar?.assemble₄",
+      "definition_address": "96dbc9c2691c054074fa213ff9654026a45dd95bf9f90b23134e1cc0b809a6d7",
+      "equation": "ByteArray.utf8DecodeChar?.assemble₄.eq_def",
+      "equation_address": "84ab1da13bf9170e455e7f5c518ffcd9ed8db4926d5251b4e03d2a35f86c1da3"
+    },
+    {
+      "definition": "ByteArray.utf8DecodeChar?.parseFirstByte",
+      "definition_address": "2560bc6173fbfc166a8504e22e0043f108c44bef967d9176f4abed27e3110605",
+      "equation": "ByteArray.utf8DecodeChar?.parseFirstByte.eq_def",
+      "equation_address": "64e0bdef1194465107ddb188e560c98d9d8f36c7cda50a7adb7347a50c19e231"
+    },
+    {
+      "definition": "Char.utf8Size",
+      "definition_address": "8713fb91441f3f93ea786dc4cfb7064cd78ea940f47c4f89ee9dba9e6164d146",
+      "equation": "Char.utf8Size.eq_def",
+      "equation_address": "5c3e123c286d77716eb35928f06a1429b7f69f2a0c14d6eefe28d42a88cc3457"
+    },
+    {
+      "definition": "Int.natAbs",
+      "definition_address": "01e7c724508897e01e5d0b8f72e2cfa2607cea5ff0d352d008d0e7512aab2f46",
+      "equation": "Int.natAbs.eq_def",
+      "equation_address": "5b5b673756a8b9e09d0ffc1e3e38f89ad8cf7929261a0b575559736ec8fb549e"
+    },
+    {
+      "definition": "Lean.Name.sizeOf",
+      "definition_address": "77f9e7b3b038ef0f07a92dd7981eaa97cb4b749b75fe2ccc9ac197c3f22e1dda",
+      "equation": "Lean.Name.sizeOf.eq_def",
+      "equation_address": "b0ac7f3bc6816102a4fc8f40e88f327f8c247f6f56564c2e00fbdffb4ef03f7c"
+    },
+    {
+      "definition": "Lean.Omega.IntList.set",
+      "definition_address": "5a07c35d3738f07a30a7098ceb6f3edcf74b04334ce65037e5a984eecfc374d2",
+      "equation": "Lean.Omega.IntList.set.eq_def",
+      "equation_address": "501aa862a94c126fc62a3af9cd06cc8d7e705454fa68651e67e5283808baec40"
+    },
+    {
+      "definition": "List.append",
+      "definition_address": "bb94d9f9475ba141a037dddbc665e907506b87bfc7267d9e0f7ec173a21709df",
+      "equation": "List.append.eq_def",
+      "equation_address": "7f57f446c5e78764228f1e42cd3fa17f1742f246eb78d8e6ff9323879cecf6d1"
+    },
+    {
+      "definition": "List.concat",
+      "definition_address": "4f3e4cfe1582fc6b21ea1f49ab447a9a0be3c428946f7e8dd2244538bd6979f3",
+      "equation": "List.concat.eq_def",
+      "equation_address": "2cc0cb500125abd5a2cccbcdbecfe7c0152ea99c937cddcc0f54fdec20166712"
+    },
+    {
+      "definition": "List.decidableBAll",
+      "definition_address": "5a77fd0bf8d9c984d985c4cd89cd9dd49d1e2276c70d6fd6b4e7e765b5303e29",
+      "equation": "List.decidableBAll.eq_def",
+      "equation_address": "9ec74db2f707ba5071e9ae04f2057b74a26b699507f46e49563a7db2c1c05a7f"
+    },
+    {
+      "definition": "List.drop",
+      "definition_address": "bbd895ff207eed291a9716118aa12d43e4d1db96ff254138ecef1f07eea55d70",
+      "equation": "List.drop.eq_def",
+      "equation_address": "71c343cc77fe51c70c6eff2378004925e75d590974f04e71cbd9f072d5753d95"
+    },
+    {
+      "definition": "List.filter",
+      "definition_address": "b170640616cfda402ab8a358dbde5b5d2fc3236df995a3fb1f0449fe82117b6d",
+      "equation": "List.filter.eq_def",
+      "equation_address": "497c066c12632ce44d6ee23c7cb8d028b167f82de625067ca045ed6b1581c2a6"
+    },
+    {
+      "definition": "List.find?",
+      "definition_address": "4e5f2afa0adc61e1b1e875544d2f82408bf3deb10623d9e2c996c7c3d7f734aa",
+      "equation": "List.find?.eq_def",
+      "equation_address": "036aed6f4b84029c8ed03d95601b66ceb45e60f8177a32997b274128ef93fa4e"
+    },
+    {
+      "definition": "List.flatten",
+      "definition_address": "b75f797a6db81de727707edff629bcbd1d4e1bebf61d971c2789d2124ddf46cd",
+      "equation": "List.flatten.eq_def",
+      "equation_address": "c1b146fe009228aa812e60bd787a6e6972f58dd036fb616dee946dd134a5e195"
+    },
+    {
+      "definition": "List.foldl",
+      "definition_address": "675a38399f403c9e2a99b3400448aa57d5cece92ded7c17529c90f94f3fb890f",
+      "equation": "List.foldl.eq_def",
+      "equation_address": "33d5d7fe2b448ba2951042ece15c96da85895c17aff1b930d76c90cf69f5e583"
+    },
+    {
+      "definition": "List.foldlM",
+      "definition_address": "ceec44daeb036b58cfbad1afd047049d2640696f8f122f9b12f66a8d28f9c3fb",
+      "equation": "List.foldlM.eq_def",
+      "equation_address": "69752f1ecfbd6d2fabd543cce4217d9f967f081cfb1895104f6177976589ada5"
+    },
+    {
+      "definition": "List.foldr",
+      "definition_address": "b110c71e9db1a914f742b2e71358717c2e9ba59b532fc640c02420d2a7a27872",
+      "equation": "List.foldr.eq_def",
+      "equation_address": "8f9d25e95a303ed5e1131cdb87e0db7ac01ce38d5bb276600c4b4350d7f8de08"
+    },
+    {
+      "definition": "List.get",
+      "definition_address": "471be4072ee0692947c01cd2350b71a8124170e6fe30718120fe79de759621c8",
+      "equation": "List.get.eq_def",
+      "equation_address": "34aa78004dceeb418e389f7cc31622ea32d88401f62b9249d069bf07ad73a935"
+    },
+    {
+      "definition": "List.get!Internal",
+      "definition_address": "242d2d3faf9b0bc6799f80f47fc8657687f7d9805d93baf584eab7e97b465beb",
+      "equation": "List.get!Internal.eq_def",
+      "equation_address": "3ad7ca8a421e39df1ec18a89115c56dc28864123659ffea3e927f718e427d43f"
+    },
+    {
+      "definition": "List.get?Internal",
+      "definition_address": "31a0e1673e76861afd6772861d611d0808a0427404b893f14c0e14c8ed0fef99",
+      "equation": "List.get?Internal.eq_def",
+      "equation_address": "f5f977072b61d2adc098bdd6dd3d1bd27068d9eb2291eb6c258f70cd726a0c3c"
+    },
+    {
+      "definition": "List.getLast",
+      "definition_address": "85365d27bf31f53d61f94bf121db8925aa4be2ba9304fe7c0ada615ebc79f3dc",
+      "equation": "List.getLast.eq_def",
+      "equation_address": "7f6b69439b1f014f76938c91e5266653ed7c627381e95345e20db19884449838"
+    },
+    {
+      "definition": "List.hasDecEq",
+      "definition_address": "d527515f3a00689f9a9e9b21c26b8f7c364c4192b525b9a2d38973b0684d46f2",
+      "equation": "List.hasDecEq.eq_def",
+      "equation_address": "75a99829c51cccc66e7badee33fcd87499132f425803f08b4332b240b96efce8"
+    },
+    {
+      "definition": "List.length",
+      "definition_address": "a9f286f64c677e133822d2fd2167ca5c5ab29ae6a78fe1ac1f4eec8a452f56b2",
+      "equation": "List.length.eq_def",
+      "equation_address": "fe4d0d6303dbb39494786b0f495d44c67a077b38f6a325818a85039bfd11d0bc"
+    },
+    {
+      "definition": "List.map",
+      "definition_address": "41bc3fb2f4a64a6a3ef78acae0ce66cd937f5d9fd89293dd63c43b86f6c4c579",
+      "equation": "List.map.eq_def",
+      "equation_address": "6ea323f15cd044541d824400f7b68f507bbf088bed38b72426879dd05b355463"
+    },
+    {
+      "definition": "List.reverseAux",
+      "definition_address": "b2cb0a27e0aa3a957900d7a6242c312e852c586f0668d06ab5fd8bc83e8ce37f",
+      "equation": "List.reverseAux.eq_def",
+      "equation_address": "5148f95371dd4309ff667037a61d8ffcb03cc460fedf87119cb4bbb8109f6ad8"
+    },
+    {
+      "definition": "List.take",
+      "definition_address": "8dde6fba5b54b02e2871d8d2b3caee4a1a4da1c34a32c443a346a5408614e72f",
+      "equation": "List.take.eq_def",
+      "equation_address": "79ccc7be9c7c15da5ac65b0c95acfe1444cd8107be7c31973061bcc83cf905f4"
+    },
+    {
+      "definition": "List.toByteArray.loop",
+      "definition_address": "1f79571b2c56b52b6a195504bad9085731f727c5e9d101466bee28862a47f558",
+      "equation": "List.toByteArray.loop.eq_def",
+      "equation_address": "a2dabd85fcf324395765816a39f0f0a5042a059339f7c843486ee3ecfac90b0a"
+    },
+    {
+      "definition": "List.zipWith",
+      "definition_address": "913e5ceae4491f11d314a571dd065d0440a5e34e89e3ccb3b2ca3b8c7e663464",
+      "equation": "List.zipWith.eq_def",
+      "equation_address": "cd43538e16ef8d063dbb480efe45d5c7d05e1308ea81187ad1954434430a0a90"
+    },
+    {
+      "definition": "List.zipWithAll",
+      "definition_address": "a845b9d1c016bef71c13b3000c0ca90d804e65ab338db91c7042f2b03adcfded",
+      "equation": "List.zipWithAll.eq_def",
+      "equation_address": "051e70c0c5d71437b2db1ecd466607647bd43bb9df42f05ba76b4ef1dc9ea481"
+    },
+    {
+      "definition": "Nat.Internal.Linear.Expr.denote",
+      "definition_address": "7143221e0f0c781cab2840b67c3bf48a43942d652d081f403ae7c585bf4b635a",
+      "equation": "Nat.Internal.Linear.Expr.denote.eq_def",
+      "equation_address": "dee4af0915552a74ddcdd12e95965ac268e80caf1e6be7fa484ca6494dd5ba18"
+    },
+    {
+      "definition": "Nat.Internal.Linear.Expr.toPoly.go",
+      "definition_address": "ae7354686a04821fad096a90b66199f61f89d04fc6bd10e0860182f5870ddaee",
+      "equation": "Nat.Internal.Linear.Expr.toPoly.go.eq_def",
+      "equation_address": "6438bdcea4c802c8a35c7c17a6d9ccf3fcd064702726d26c632d617340970245"
+    },
+    {
+      "definition": "Nat.Internal.Linear.Poly.cancelAux",
+      "definition_address": "be0fe15cb51c5cb51f5347b5cb4d7f651665d29757324e77803e83912d0a6b19",
+      "equation": "Nat.Internal.Linear.Poly.cancelAux.eq_def",
+      "equation_address": "394c76c7c4e80c580540f33c71a027e4a1f6e3e2c7ef7dea92c715aeebc45e47"
+    },
+    {
+      "definition": "Nat.Internal.Linear.Poly.denote",
+      "definition_address": "9b11926ae123710e491631c8e46ac5efa47a5bc05794f72c39044c3e1c31606b",
+      "equation": "Nat.Internal.Linear.Poly.denote.eq_def",
+      "equation_address": "ba79a593f2946930e787528e7db2a7c8876169b49103e165b7fd975f93082010"
+    },
+    {
+      "definition": "Nat.Internal.Linear.Poly.insert",
+      "definition_address": "f6e0ea6f1b2c02c48a6fe38400b97cb5270fe858dd255835065ad207e766e043",
+      "equation": "Nat.Internal.Linear.Poly.insert.eq_def",
+      "equation_address": "c1bc10e53805f39750c10de1bb841b523b6114458a6db064c5ef75062c6632ac"
+    },
+    {
+      "definition": "Nat.Internal.Linear.Poly.norm.go",
+      "definition_address": "2f426fb82bc7a57656af00d6e2ee8b0b816f763e4ddf025a79e58d645447462a",
+      "equation": "Nat.Internal.Linear.Poly.norm.go.eq_def",
+      "equation_address": "8e26fbe5529cbb244b9482d83d28f17113e04ecb9dfc225f96d85917b38ea79b"
+    },
+    {
+      "definition": "Nat.add",
+      "definition_address": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4"
+    },
+    {
+      "definition": "Nat.beq",
+      "definition_address": "d3d8ff924af9dc4b5cd869760615b3e7ee80916bb617259d45890c69f4128337",
+      "equation": "Nat.beq.eq_def",
+      "equation_address": "9ac282a4ad68bf13a9138fbdc44c7cb161307ddba94ea3a73e86652682092134"
+    },
+    {
+      "definition": "Nat.bitwise",
+      "definition_address": "adaf32f49aa6fee4ac8b0742563494b381e0742d9ea685fe2456eb71b25fec08",
+      "equation": "Nat.bitwise.eq_def",
+      "equation_address": "4556e5eb40bab810041ef740101ad4a5c682f808129ae225358aba784f7fd87c"
+    },
+    {
+      "definition": "Nat.bitwise._unary",
+      "definition_address": "7aacf525b619c56858a4d2ce878a81f517c93b7388ccc3eb6bfb98cdc6e2868f",
+      "equation": "Nat.bitwise._unary.eq_def",
+      "equation_address": "1da3c270576c70b5869bf553a3ff5d3509469035158799636a502b388155c05f"
+    },
+    {
+      "definition": "Nat.ble",
+      "definition_address": "9e445b9d5f8252772347872e909b5db4e7eca7086cedf4fec6de840f6b7b5f92",
+      "equation": "Nat.ble.eq_def",
+      "equation_address": "235ab44718c8ecf20b3ceab949dfcfad022807cf7f1604d72ae42048c26e47e4"
+    },
+    {
+      "definition": "Nat.div.go",
+      "definition_address": "8bddd43d36af159f8f1c7edf477d9f0a06a26bfbecf5a198c0e9ec4ac370f6e6",
+      "equation": "Nat.div.go.eq_def",
+      "equation_address": "bac3ccdefe551ee2cfbcd41d660bf053f7746acbcfa484a072d2ff4e68e28986"
+    },
+    {
+      "definition": "Nat.div.inductionOn",
+      "definition_address": "d4f15deffb75126d869db61e1c2e6d8eab256ee069cf40c626ee613cc52e0768",
+      "equation": "Nat.div.inductionOn.eq_def",
+      "equation_address": "13ac67b821fbeee4357bac890296357f70b0aab819199a8ed398415d0bb42a55"
+    },
+    {
+      "definition": "Nat.div.inductionOn._unary",
+      "definition_address": "7ef3dfdc28fe225f1b39766322edd5b9482754ae14b41823b6bd85bd69e54f4c",
+      "equation": "Nat.div.inductionOn._unary.eq_def",
+      "equation_address": "5acfaa475b8d77a09b87bdb0c4cbfa9d10f057035af5b5d2f3c650c7cc2aad3e"
+    },
+    {
+      "definition": "Nat.gcd",
+      "definition_address": "aba94bfb41351d4db36172c379a512f04219ef21dc5454d71590967d4e8f913f",
+      "equation": "Nat.gcd.eq_def",
+      "equation_address": "1654f4cb51e193d1bf5f815dc6a1ea0fce1f54e87d4c67ab87555e98556622b1"
+    },
+    {
+      "definition": "Nat.gcd._unary",
+      "definition_address": "1323430f4729571e1c4508b37d31ff6f5da6b3298fdee8aaa6d9f95e1c445df2",
+      "equation": "Nat.gcd._unary.eq_def",
+      "equation_address": "3b7e0f59266e123b0f21ee1ee17846e059c1295013fe54fdcd5483d86a408e14"
+    },
+    {
+      "definition": "Nat.modCore.go",
+      "definition_address": "23036bf2103e4d2edd76b759cdceb07c059b7b78c6c8a6600b070590dc54a000",
+      "equation": "Nat.modCore.go.eq_def",
+      "equation_address": "4f4c23821fab10c2d3020c5805163a8efbd1d317be0dddffc7884ccc1ecb0d18"
+    },
+    {
+      "definition": "Nat.mul",
+      "definition_address": "373b7d74f6b40da11b7ed79603a45ec7011a8831b720b57d2efe92e82a3d57f0",
+      "equation": "Nat.mul.eq_def",
+      "equation_address": "2e64fe39a944df9f9d795cb840efa37ed024fa30f971e1f58c9cf321020f94c1"
+    },
+    {
+      "definition": "Nat.pow",
+      "definition_address": "5baaf05c969d2cf377312111be51bb64c600c13fa164ee722e92243b0f771bab",
+      "equation": "Nat.pow.eq_def",
+      "equation_address": "25ea7f65c5fc9991fafe55cfca743b5a38e57db0febca11d81c7eaf895a63b3b"
+    },
+    {
+      "definition": "Nat.shiftLeft",
+      "definition_address": "05bb657e8b9d5dc224e7ef3d53e54153ce3ac26da8d1f1b1d61069a3726566cd",
+      "equation": "Nat.shiftLeft.eq_def",
+      "equation_address": "dce69be8519f213784eb176a14d2c28730641a8832378fe5b123dc782d4b5b7a"
+    },
+    {
+      "definition": "Nat.shiftRight",
+      "definition_address": "25019ff485fcf5709597cd1e07fcc3ce796776ef3f715a6d187eb5831c63b4be",
+      "equation": "Nat.shiftRight.eq_def",
+      "equation_address": "c32dc1f78e978e09fbb614f99ddd392a7f1aff1571028e8a21d9b74c137242db"
+    },
+    {
+      "definition": "Nat.sub",
+      "definition_address": "03b3a041285b0fe202d90b227d405c4cec252df18ba7616acd6dae2792e672bb",
+      "equation": "Nat.sub.eq_def",
+      "equation_address": "832765d5edead81a6ce670de18784cdd6f9f58da57651b8a9c0da4b4977747b4"
+    },
+    {
+      "definition": "Nat.toDigitsCore",
+      "definition_address": "e86dac272aaac2bd8f41cdf3d428aeb535ce4088dff38a2a1f62a9f44cb355b5",
+      "equation": "Nat.toDigitsCore.eq_def",
+      "equation_address": "a7e10053d2950b9db87bb16fa5b2803f5db19d1de970c8e2f122ad86c1575a65"
+    },
+    {
+      "definition": "String.utf8EncodeChar",
+      "definition_address": "8493dbf4b9739fb0f509241bfde2eb1a8479ec7c5bd785aaf8211ba7850b7e14",
+      "equation": "String.utf8EncodeChar.eq_def",
+      "equation_address": "9a2ab6dc75ee03dd37423131d4d50353639508d77132b40630d4b615bca93f41"
+    },
+    {
+      "definition": "String.utf8EncodeCharFast",
+      "definition_address": "b8f02595382df820fc4de170aee63837e48b6085475ccf482d7fb016b9de1ef3",
+      "equation": "String.utf8EncodeCharFast.eq_def",
+      "equation_address": "afee664e2007a761f788c71ab209cf63a82f8cfbbd65b8664cce68d7dc41570f"
+    }
+  ],
+  "theorems": [
+    {
+      "kind": "word",
+      "subject": "UInt32.lor",
+      "subject_address": "5d9eae6e8ebb660d11244e97a693913c03897caa4b0647be62587a5e532ab488",
+      "theorem": "IxWordEquations.UInt32_lor",
+      "theorem_address": "7fe863fbee93adc2bce8c1c49fb55168883d6423565fc3b50bf0e0e851912ea8"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt32.ofNat",
+      "subject_address": "a3c473c618d4e1c54ef83fdc87e0775a6897a6f341ded5d76b9943fed6b0da07",
+      "theorem": "IxWordEquations.UInt32_ofNat",
+      "theorem_address": "261106e3334d2c3278ed0a2dbc2c86752a0780b682e268267ad9da98490e15b0"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt32.shiftLeft",
+      "subject_address": "4274fabf5e96ffdcf418545d58acde7b8733df4268b73758825c2e281f853c89",
+      "theorem": "IxWordEquations.UInt32_shiftLeft",
+      "theorem_address": "95be93f70ceb88474797e5d78c9155f4d7432328baa01a3894bf593ee593dcd6"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt8.land",
+      "subject_address": "6f7dd9c646effd8d4321f14fbeb8350862e8ce818caeb98c771d935b4ca9b88d",
+      "theorem": "IxWordEquations.UInt8_land",
+      "theorem_address": "fa4f055b99296aa5cb5994fa6afc50d5de92ec1c1692b3d9cb5018516f27e4e0"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt8.ofNat",
+      "subject_address": "b75e8ba5273021b9e05be4cf12a6a84306ec45e56cea662e2827ffae2877c3ee",
+      "theorem": "IxWordEquations.UInt8_ofNat",
+      "theorem_address": "c599a5c7467baec84e2709253279322427cb0ae75f3cca11fb8682628abae65e"
+    },
+    {
+      "kind": "word",
+      "subject": "UInt8.toUInt32",
+      "subject_address": "458d21951d68df8d39a5892e05ec2bd39d4e6a5856813a70e63b87c6da6f1f2b",
+      "theorem": "IxWordEquations.UInt8_toUInt32",
+      "theorem_address": "f1ac8ca9c29352cf2fbdc6a31ab539a5bc80607b6f75a2731b98f5202b13df3c"
+    }
+  ],
+  "failures": []
+}

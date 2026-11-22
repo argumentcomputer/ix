@@ -1,0 +1,1844 @@
+# IxCC roadmap
+
+Reworked 2026-11-10 around one goal, end-to-end certification for the x86
+and Aiur back ends grounded in Ixon and the certified kernel IxCK. This page
+owns priorities, delivery state, acceptance criteria and the decision
+register. [End-to-end certification](end-to-end.md) states the theorems the
+plan aims at; [compiler design](compiler-design.md) explains the
+architecture; [development and validation](development-plan.md) explains how
+to land a change; the [documentation guide](README.md) indexes contracts and
+evidence.
+
+[Workspaces and recovery](workspaces-and-recovery.md) records the recovery
+checkpoints. Their preservation does not select a
+new producer or close the implementation acceptance gates below.
+
+## Mission
+
+A generally useful compiler for Lean code, with certification that is
+end to end for both back ends, grounded in Ixon and IxCK, and hardened against
+dishonest input:
+- **x86-64**, with performance competitive with Lean → Clang: if the compiled
+  object returns `w` on first-order inputs, then `w` reads back as what the
+  claimed constant applied to the inputs denotes, in every model with the
+  kernel's laws of IxCK's reading of the closure of that constant and the
+  theorems its compilation used. Every other outcome is an
+  explicit resource failure (heap, stack, or `Nat` overflow until bignums
+  land) or a run that has not finished.
+- **Aiur**, first through a fixed evaluator circuit that runs IxCC's source
+  evaluator over a serialized image of the checked source program (built and
+  proved on the IxVM side), and later by per-program compilation: if the proof
+  verifies, the evaluated term denotes the readback of the evaluator's result
+  in every such model. This discharges the evaluation axioms that
+  `native_decide` and `bv_decide` emit.
+
+Both rest on one *spine* above the source evaluator: the Ixon bytes and a
+named constant, IxCK's model (with its laws) of the closure of that constant
+and the theorems the unfolding table names, the checked source program, and
+the source evaluator's meaning in that model
+([end-to-end certification](end-to-end.md#the-shared-spine)). Two links of the
+spine are premises about content addresses rather than IxCC theorems: that the
+closure has a model with the laws (restated on 2026-11-11 from "IxCK accepts
+the environment"), and that the checked source program is faithful to IxCK's
+reading of it, with typing derivations for what it runs. IxVM proofs (or a
+native kernel run) discharge them, and claims about the same seeds compose by
+aggregation; IxCC proves the rest: the source evaluator's soundness and
+progress for the kernel's models. Today's
+theorems are relative to the source evaluator on the source IxCC's front end
+built, with an escape when that source goes wrong; the spine is the critical
+path from there to the goal.
+
+Compiled programs are also to run as **standalone executables with no C in
+the trusted base**: IxCC writes the executable itself, and the start-up and
+system-call logic is self-hosted, a small proved machine-level layer generated
+from Lean with as much as possible of it Lean source compiled by IxCC
+([standalone executables](standalone-executables-design.md)).
+
+## Current state (2026-11-21)
+
+Tree: this branch (`ixcc-v5-prep` off `jcb/ixck-ixcc-merge`). Phase 1's scalar
+compiler, general plain-RC compiler (`Rt.Rc.Gen` + `Own.Plain.checkOwned`),
+closed-world defunctionalisation (P8), standalone executables (`--exe`,
+`--machine`), and the certified-kernel front end (`Src.KernelFront` with L3b
+limits) are implemented and proved relative to SrcEval; P1 relevance
+preservation (`run_live`, `sound_live_closed`) is proved; the grounding library
+(`IxCCGrounding`, SP-1) is in progress (47 of 52 committed corpus closures
+through the Pc family); the Aiur routes are not started in this tree.
+
+**Proved, relative to SrcEval** (`Recheck.sound`,
+[`Recheck/Proof/Soundness.lean`](../IxCC/Recheck/Proof/Soundness.lean); the
+byte-level `verifyBytes_*_sound` and their root-shape corollaries,
+[`CompileClaim/Proof.lean`](../IxCC/CompileClaim/Proof.lean);
+`Recheck.Proof.LiveClosed.sound_live_closed`): an accepted
+object refines SrcEval on the checked source `a.src`, unless that source goes
+wrong; at a claim's root on the immortal and zero-RC policies, the view
+rejects only a result off the root's declared shape
+([`Recheck/Proof/RootShape.lean`](../IxCC/Recheck/Proof/RootShape.lean)), and
+plain-RC roots read back constructor trees.
+6,531 exact axiom fences in `IxCCTests.Proofs` plus 450 in
+`IxCCGrounding/Fence.lean` across 16 required checks ([CI guide](ci.md)).
+
+**Landed since the 2026-11-09 review:**
+- the certified-kernel front end (`Src.KernelFront`, SP-N/HD-1) replaced the
+  erased checker (deleted), with role-bound ingress (`0xE5`), Stage A
+  re-derivation of annotations, L3b kernel limits (`IxCK.Host.Limits`), and
+  reached-only reading;
+- relevance preservation P1 is proved (`Src.Relevance.Proof.P1.Main.run_live`,
+  `Recheck.Proof.LiveClosed.sound_live_closed`), and `checkCanonical` covers
+  all twelve erased-position routes;
+- general plain-RC layouts (`Rt.Rc.Gen`, constructors up to 254 scanned fields)
+  and the proved ownership checker (`Own.Plain.checkOwned`, active on the
+  plain-RC verifier path behind `Anf.maxCapturedWork`) are landed;
+- closed-world defunctionalisation (P8), fixed-width words (`UInt8`–`UInt64`,
+  `USize`, F6w), standalone executables (`--exe`, `--machine`, with
+  `X86.Exe.Process.shell_sound` and test-shell native runs replacing the C
+  driver in gates), and bounded literal folding are landed;
+- the grounding library `IxCCGrounding` (SP-1) landed through step Pc (450
+  fences, 47 of 52 corpus closures including `fib`, `decide (fib 10 = 55)`,
+  word arithmetic, and `PUnit.casesOn`);
+- the conditional kernel bridge ([`Models/KernelBridge`](../../Models/KernelBridge/README.md),
+  32 fences) is gated (`lake run check-kernel-bridge`); the trust ledger pins
+  the 16 required checks, pure BLAKE3 (`blake3-pure`), the 100-file `IxCK`
+  closure (`ix-ck-kernel`), and an integrity rule;
+- **Pre-v5 cleanup (2026-11-21):** deleted dead `eqnBodyOf` (R2); introduced
+  unified contract mode accessors matching upstream `Ixon.Types.Modes` (R3);
+  retired IxCC's private v4 resource port (`V3.Resource`, `V3.Validate`,
+  `V3.Source`, `Src.Resource`, `Program.resource`, handoff fixtures; R9-ixcc);
+  retired the legacy Aiur model, vendored snapshot and `ixcc-aiur` check
+  (RL-3); retired the 18 obsolete pre-Gen RC proof modules (32 fences); widened
+  CI's `ixcc` filter in `.github/workflows/ci.yml` to cover `IxCK/Kernel/**`,
+  `IxCK/Host/**`, and `IxCK/Resource/**`.
+
+**Not proved** (the [certification design](certification-design.md#what-is-proved-today)
+lists the chain link by link): full SP-1 grounding beyond the Pc fragment
+(recursive/parameterised recursors, G4 widening, G5 progress, and a model of
+the laws outside `Laws678`); `SortAgree` for P1's closed narrowing; and the
+remaining `GoesWrong` escape until progress lands.
+
+**In this tree, on the compile and recheck path:** P8, closed-world
+defunctionalisation ([closures design](closures-design.md)), as the middle
+end's closures step after the certificate's steps: a program with no
+residual closure whose roots take their declared parameter counts passes it
+unchanged; otherwise each root whose Anf parameter count is not its declared
+count gets an entry at the declared count, and P8 removes every closure.
+`fir.closures` is unreachable after it. The end-to-end theorems hold on every
+input of exactly its root's declared count, and on every input of a program
+the step leaves unchanged (every program that compiled before the step was
+added with its roots at their declared counts), so they say what they said
+before for those programs ([closures design](closures-design.md#proof-obligation)).
+
+**Current integration surface:**
+
+| Component | Scope |
+| --- | --- |
+| Scalar & top-level compiler | Src-to-ELF recheck path (`Recheck.sound`, `sound_live_closed`), top-level `Compiler.compile` (`--rc auto\|on\|off`, `Compiler.compile_sound`), `CompileClaim` (`verifyProgram_*_sound`, `verifyBytes_*_sound`, `*_rootShape`), `Ring0` (`verifyRing0Sip_sound`), P8 defunctionalisation, certificate/artifact checks and native pipeline suites |
+| General plain RC | `Recheck.RcReplay` API (`RcReplay.run`, `RcReplay.sound`, `recycled_session`); general cell layouts (`Rt.Rc.Gen`, up to 254 scanned fields), ownership certificates admitted by the proved checker (`checkOwned` / `checkContractOwned`, within `Anf.maxCapturedWork`) and replayed exactly, SrcEval-relative object theorem, complete per-stage/native values, executed RC event counts and heap-failure/corruption controls |
+| [Ixon v4 ingress](ixon-v4.md) | ix's v4 codec with canonicity evidence, pure-BLAKE3 authentication, unified mode accessors, role-bound ingress (`0xE5`) with its role table authenticated and certified-kernel acceptance (`Src.KernelFront`, [byte contract](byte-contract.md)); private v4 resource port retired (R9-ixcc) |
+| Grounding library (`IxCCGrounding`) | SP-1 in progress: `rootSound_678AGpWP_of_check` over IxCK's model, 450 fences, 47 of 52 committed corpus closures through step Pc (`ixcc-grounding`) |
+| [x86 target model](x86-encoded-instructions.md) | Typed x86 AST and machine, E1 per-form encoder/decoder and execution laws, E2 [streams and ELF objects](x86-stream-objects.md), [stream checking](stream-checking.md), the [reference-model record](x86-reference-model.md) |
+| Standalone executables | `ixcc compile --exe` and `--machine`: static Linux x86-64 executables written by IxCC with no C, linker or driver; the shell proof (`X86.Exe.Process.shell_sound`) composes with the per-call theorems ([design](standalone-executables-design.md#x0-as-implemented)) |
+| Tools | Trust ledger (`check-trusted-externs`, 16 required checks; legacy Aiur retired by RL-3), build-graph manifest (`check-build-graph`), check helpers |
+
+### Earlier state, as recorded on 2026-11-09
+
+Phase 1's scalar pipeline is implemented: Src evaluation through checked
+erasure, middle-end transformations, register allocation and ELF emission.
+`Recheck.sound` covers objects accepted by `Recheck.run` under
+`X86.Driver.Ok`, relative to SrcEval. Its return clause allows source
+`GoesWrong`; safety requires excluding that case. The
+[correctness statement](compiler-design.md#correctness-statement) records the
+precise scope and native-model assumptions. Source adequacy against the
+certified kernel's model remains open.
+
+ix's [`Models/KernelBridge`](../../Models/KernelBridge/README.md) package does
+not close it. It proves a conditional simulation lemma: given a kernel
+environment storing the `Nat` basis and a user-supplied relation between Src
+constants and kernel terms, a successful `Src.run` on `Nat` literals is
+matched by kernel `Red` reduction of the related term, which then denotes the
+same literal in every model where it is readable and graded. Its environment
+and kernel term are not derived from a compile claim's environment or target,
+and the relation can be built only for definitions without type arguments,
+numerals, typeclass operations, `match` or recursion (of the 69 fixture roots
+surveyed in its README, only the identity `Abi.nat1`). Recursive
+programs need a denotational step for equation and csimp resolutions in place
+of kernel reduction.
+
+The actual scalar compiler entry point now has a composition theorem:
+`compile_parts` exposes successful ingress, production and certificate replay;
+`compiled_sound` derives the same SrcEval-relative object guarantees from
+successful `compile`. Its seven separate fences retain the existing native
+BLAKE3 dependency. This closes the entry-point composition gap, while source
+adequacy, source safety and the Phase 1.5 acceptance gates remain open.
+
+Lean 4.34.1 and Ixon v4 landed on October 3. Phase 1.5's later resource-checker
+and equation/profile-binding work remains unfinished. The consumer changes
+have been recovered into the integration tree; focused checks and all 14
+required local Nix checks passed on the earlier consumer/readback snapshot. No final
+replacement producer has been selected or
+refrozen. The latest retained contract-sensitive typing experiments fail the
+original acceptance gates on the `cold79` and `Q06` workloads (resource-checker
+inputs from the Phase 1.5 work; they are not kept in this repository); upstream
+compiler certification does not discharge those obligations. Phase 2
+groundwork now includes bounded
+constructor-result signature discovery, dynamic-header readback laws, and
+a promoted checked plain-RC compiler with size-class recycling and iterative
+release. `Recheck.RcReplay.sound` composes accepted replay through the actual
+Lir runtime and emitted object, relative to SrcEval and the existing driver
+and source `GoesWrong` contracts. Complete output ownership, public raw-word
+release and reentry on the reached heap have operation proofs. The focused
+compiled production gates pass, including 168 same-arena calls/drops with
+complete C/Lean values and all allocated addresses reclaimed. This is a
+bounded shared-constructor route, not general Phase 2 ownership optimization.
+The promoted proof/fence, trust/build-graph and all 16 required local Nix checks
+pass on the 2,343-file snapshot, including the ten required RC behavior
+commands. That local run with the existing store took 25m 02.062s; it does not establish
+hosted CI or cold-store timing. Final producer and fixture refreeze gates
+remain open.
+
+The later consumer regressions are installed and pass focused execution.
+The source suite now runs 8,529 assertions, including nine discriminating
+resource-bound `csimp` controls and pinned SrcEval step counts
+([source steps](source-steps.md)). The dated OS04 annotated/plain recursion
+records that once added Src/Fir/Own observations of an annotated recursive
+program were retired with the kernel front end's step 4 (2026-11-11, DO-18):
+they were unbound, and the `ix` of this repository cannot write a role-bound
+successor ([CI coverage record](ci.md)).
+
+The Lam suite additionally passes 134 evaluation-order assertions; its default
+run has 28,188 assertions. Sixteen synthetic cases pass actual
+table/relevance rechecking (without `checkCanonical`, which their placeholder
+types cannot satisfy), lazification and erasure before independently
+checking Src and Lam outcomes. They distinguish direct-case demand, strict
+wrappers and overapplication order, while retaining the separate resource
+profile compatibility and final producer obligations.
+
+The active goal combines Phase 1.5 completion with the first Phase 2
+slice: real `List.reverse` through checked plain reference counting,
+allocation/reclamation, the composed SrcEval-relative proof and native tests.
+Independent heap foundations can proceed alongside producer repairs; final
+real-source integration requires the reviewed producer and consumer gates.
+General K2/K3 coverage and ownership optimizations remain later Phase 2 work.
+
+The remaining combined acceptance gate is the Phase 1.5 resource and consumer gate
+at the October 9 selected cap of 500,000 charged steps per declaration/equation
+and depth 256, a reviewed final producer with
+reproducible fixture refreeze and verdict review, and complete proof/fence,
+trust, build-graph and Nix checks at that final integration head. Historical producer bytes still
+back the current RC fixture. Neither the bounded heap result nor upstream
+certification discharges those remaining obligations, so Phase 1.5 and the
+combined goal are not marked complete.
+
+Optimization toward the previous 100,000-step target remains follow-up work.
+Fresh validation admits the isolated Lean cold action at 438,235 steps, but
+full public Q06 still returns `Budget` at declaration 740 in both Lean and Rust.
+Repair at the selected 500,000 cap remains required. Historical failures and
+larger-budget diagnostics retain their original meaning, including the separate
+1,934,024-step Rust measurement of declaration 740. A subsequent diagnostic
+replays the actual Rust action with matching result and full checker state:
+it exhausts all 500,000 steps with depth fuel still available. No optimization
+has yet restored full Q06 acceptance.
+
+The September 29 reset, retired pipeline, Ixby backend and Stage2 fixture are
+preserved on `jcb/ixby-archive` of the pre-merge `argumentcomputer/Compilatr.ix`
+repository, with their former gates and measurements.
+
+The required surface includes pipeline suites, proof/fence and trust audits,
+corpus and deterministic-step checks, and x86 decoder/hardware checks. The
+[CI guide](ci.md) records their coverage and platform conditions. The checked-in
+pre-promotion inventory contains 4,367 exact axiom assertions. Promotion adds
+979 exact fences (923 base, eight release/reentry supplements and 48 restored
+earlier proof-gate assertions), totaling 5,346 while preserving every existing
+assertion. All 29 original Cfg pure examples and the 16 runtime/bridge cases
+with bounded timeout checks are also retained. The augmented complete proof
+aggregate and all16 required local Nix checks passed on the2337-file promotion
+snapshot in23m25.126s with the existing local store. The subsequent
+`tests-pipeline-rc` supplement adds four required modes for complete IR/native
+observations, actual RC event counts, object-only corruption and real-source
+heap exhaustion; all four passed in isolated staging before integration.
+Every later integration tree requires the same full validation surface.
+Final selected-budget producer acceptance/review/refreeze remains open; no
+hosted-CI or cold-store timing is claimed.
+
+## The fragment compiled and proved today
+
+- **Input.** An Ixon v4 closure, role-bound or not, and an unfolding table
+  (`eqn`, `csimp`, `case`, `inline`, `lazy`, `prim`, `opaqueByValue`).
+  Admission rejects `partial` and `unsafe` definitions, extern opaques and
+  relevant axioms; erasure declines string literals in relevant positions.
+  IxCC reads the role-bound envelopes this repository's `ix compile` writes,
+  with pinned identities from their role tables ([byte
+  contract](byte-contract.md)); every committed closure a compile path reads is
+  role-bound, written by this repository's `ix` ([corpus](corpus.md)).
+- **What ingress reads** (since 2026-11-12). Only the records its seeds
+  reach (`Src.Ingress.reach`: every root the sidecar names, not only the chosen
+  ones; the pinned identities; the resource context's addresses; the equation
+  theorems of the sidecar's proposals on reached subjects and the resource
+  equations, with their proofs), a theorem's proof only where an equation
+  theorem's closure reaches it; IxCC's consumer budget (depth 256 with a
+  `share` node a leaf, 4,096 entries per list) applies to those, so a record
+  nothing reaches (a structure's `mk.injEq`, a large proof a string function's
+  termination argument cites) no longer refuses the closure: a structure of
+  254 fields compiles again, and so do programs whose closures carry an
+  over-budget proof. Every record is still accepted by the certified kernel
+  and bounded in depth as stored (2,560, shares expanded; not the terms the
+  kernel builds) ([compile boundary](compile-boundary.md)). Before, from the
+  role-bound refreeze (2026-11-11), the decoder refused a whole closure for any
+  record over the budget. A claim is verified with the sidecar it was made with.
+- **`csimp` proposals** (a known gap, since 2026-11-12). A table entry may name
+  only a theorem ingress read with its proof, which is a theorem a sidecar
+  proposal names; the `ixcc/k1-equations/1` sidecar carries `eqn` proposals
+  only, so no `csimp` entry verifies from a sidecar (none did in practice: the
+  producer proposes only what the sidecar gives). The remedy: the sidecar
+  carries `csimp` proposals (`ix compile` exporting a `@[csimp]` theorem with
+  its two constants), which `Seeds.of` already takes as proof seeds.
+- **Long literal lists** (measured 2026-11-12, the same before and after the
+  change above). Lean refuses a list or array literal of 3,000 elements at its
+  default `maxRecDepth`; raised, it splits the literal with `let`s (51 deep),
+  and IxCC declines it, at 3,000 elements in the middle end (`anf.produce`: a
+  Lam global exceeds the node budget) and at 5,000 at `ingress: decode` (a list
+  over IxCC's 4,096-entry budget). An explicit chain `a :: b :: … :: []` of
+  3,000 or 5,000 elements is as deep as it is long (3,005 and 5,005 with
+  shares expanded) and is declined at `ingress: decode`: past IxCC's depth
+  budget (256, a `share` a leaf) and past the depth one record may have before
+  the kernel (2,560). Compiling such programs needs the kernel to walk deep
+  terms without overflowing its stack (the kernel package's work, "Hardening")
+  and IxCC's budgets to grow with it.
+
+- **Values.** `Nat`, exact above Lir and at run time a tagged word below
+  2^63 (a larger value is the resource failure `natOverflow`); constructors
+  of inductive types; □. Fixed-width integers are tagged words (erasure unboxes
+  a tower to its number). Stage W1 makes the word operations primitives
+  ([DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int), "Stage W1"): a
+  closure `ix compile` compiles with its defaults (a selected closure) runs them as
+  SrcEval's rule F6w, Lam's word primitive and Rt's proved tagged lowering; without
+  the word equations (`--no-equations`, `--no-word-equations`, a whole environment
+  without `--equations`) they run their reference bodies, as before W1 (`UInt8` to `UInt32` work,
+  every `UInt64` operation fails natively with `natOverflow`, since its body computes
+  modulo the `Nat` 2^64), and `ixcc compile` prints a `hint:` line saying so. Open:
+  measure the equations' cost on Init+Std and decide whether the default should cover a
+  whole-environment compile; and when string literals are admitted, `phase1-decline`'s
+  `panic` and `strings` (whose closures carry word equations for their `Char` and UTF-8
+  operations) become the first registered roots that run word primitives. A
+  program with a word entry is outside the landed grounded families (`noWord`); the
+  grounding's word case (step W) admits it in the word family
+  (`rootSound_678AGpW_of_check`), which holds on `grounding/words` and `src-words`. One limit stays after W1, by design: a `UInt64` is
+  native only below 2^63. A word is a tagged immediate, so a width-64 result at or
+  above 2^63 fails with `natOverflow`, as a `Nat` does. Stage W2 is planned to lift it
+  with raw unboxed words (direction chosen 2026-11-13): raw 64-bit words in registers
+  and frames, and a word that meets a uniform position boxed as a cell of one scalar
+  word. Its DR2 design section comes before any code. The comparisons (`decEq`,
+  `decLt`, `decLe`) stay reference bodies. Since 2026-11-13 `x < y` (and `>`) at
+  `x = 2^63 − 1` no longer fails, for `Nat` and every width: the shrink walk turns
+  `Nat.lt`'s `natBle (x + 1) y` into `natBlt x y`, which builds no `x + 1`
+  (`natBle m (y + 1)` has no simpler form and stays). There are no arrays, byte
+  arrays or strings.
+- **Higher-order code**: bounded inlining and specialisation (P3, P4)
+  remove what they can; the closures step (P8, Phase 2) turns any remaining
+  closure into a constructor cell and every unknown call into a call of a
+  dispatcher, so no program is declined for its closures (`fir.closures` is
+  unreachable).
+- **Memory.** Immortal cells, or the plain-RC route: shared constructors
+  with 1 to 254 scanned fields (no scalar fields yet), 71 size classes with
+  free lists, iterative release (`--rc auto|on|off`).
+- **Roots.** Level-monomorphic, at most five `Nat` parameters; results that
+  are `Nat` or enumerations (immortal and zero-RC policies) or first-order
+  constructor trees (plain RC). A compile claim covers root index 0.
+- **Internal tail calls.** The internal calling convention passes seven
+  arguments in registers and the rest on the stack, but a tail call passes at
+  most seven (the allocation validator's `convention` check: a tail call
+  reuses the caller's frame, which has no outgoing stack cells for it). So
+  `Fir.lower` keeps a call in tail position as a tail call only within seven
+  arguments, or when it calls its own function (a jump to the entry), and
+  lowers one of more as a call and a return (`Fir.Lower.tailCall`, since
+  2026-11-11; before, register allocation declined it, `alloc.fallback`). That
+  costs a frame per such call: a loop through one uses stack in every
+  iteration and a long enough one ends with the stack-exhaustion status
+  (status 2), never a different value. Erasure keeps every binder slot,
+  erased type and instance parameters included, so monad-transformer code has
+  functions of eight parameters (`StateT.bind`, `StateT.map`), and the
+  closures step's dispatchers call a closure's function in tail position: a
+  `StateT`-over-`Except` loop through the library's `StateT.bind`
+  (`fixtures/corpus/phase2-closures`, `Closures.stateLoop`) compiles this way
+  and uses 32 bytes of stack per iteration on the immortal route, 96 under
+  plain RC (its last case: 150 iterations end with the stack status in an
+  8 KiB stack); the same loop with the stack's `Monad` instance written for
+  it, `Closures.stateLoopSE`, has proper tail calls. K3 `rbmap` and
+  `const_fold` compile for the same reason. What removes the frame is proper
+  tail calls with stack-passed arguments (the caller's incoming argument area
+  must hold the callee's: a convention change in Xl's semantics, the
+  validator and stacking, with their proofs), or dropping the erased
+  parameters (P5), which brings `StateT.bind` to four.
+- **Evaluation order of a match.** Lean elaborates a `match` with a catch-all
+  through a sparse casesOn (`T…._sparseCasesOn_N`) whose arms are ordinary
+  arguments, and compiles it as a `cases`. Since 2026-11-12 the table gives
+  each one a `lazy` row, found by its shape (`Table.checkSparseCases`), so
+  only the chosen arm runs, as in Lean's code; before, every arm ran first,
+  which made K2 `queue` quadratic (598 s at 100,000 elements under plain RC;
+  now 0.10 s, and 4.65 s at 5,000,000 against Lean's 0.22 s, the rest a
+  constant factor of `List.rec` with closures) and made an unchosen arm's stack
+  or heap failure the program's (`fixtures/corpus/phase2-closures`, fixture
+  `sparse`; [performance/sparse-cases-2026-11-12](performance/sparse-cases-2026-11-12/README.md)).
+  **A known difference from Lean's cost model remains:** Lean's code
+  generator also inlines `@[inline]` definitions (such as `Option.elim`,
+  whose `none` value is an ordinary argument) and floats a pure `let` into
+  the one branch that uses it (LCNF's `floatLetIn`); IxCC does neither, and
+  its middle end cannot move a call that may not return into a branch, so
+  such a value is computed on every path (not measured). **A known cost of
+  the step model:** an argument of a sparse casesOn that is already a value (a
+  λ arm, a variable major) is passed by name too, and costs SrcEval one forced
+  slot per use (K3 `const_fold` +4.9 % charged steps at `n = 10`; its compiled
+  code is byte-identical). The remedy is the value-shaped exemption: pass such
+  arguments strictly, in `Lazify` (not marking them by name) and in erasure
+  (accepting a strict value at a `lazy` position) together. **Unchecked:** a
+  pinned `lazy` row may still stand beside an entry that replaces the
+  definition's body (`eqn`, `csimp`, `case`, `prim`); only a sparse casesOn's
+  row is refused there (`Table.lazyResolveOk`). No committed table has such a
+  pairing.
+- **Proved.** For an accepted certificate, the object refines SrcEval on the
+  checked source `a.src`, with the `GoesWrong` escape, under the x86, loader
+  and driver assumptions of the [trust ledger](trusted-extern-ledger.md); at
+  immortal and zero-RC claim roots the view case of the escape means a result
+  off the root's declared shape. The stuck and trap cases remain, and a
+  dishonest certificate can choose them.
+- **Not proved.** That `a.src` is the ingested program's meaning (S6), that
+  SrcEval agrees with the certified kernel's model (S8), that IxCC reads the
+  bytes as IxCK does. (IxCC's erased type checker, of which nothing was
+  proved, is deleted.) See the
+  [certification design](certification-design.md).
+
+## Plan
+
+Revised 2026-11-10. The goal is the one in [Mission](#mission). The plan has
+one critical path, the spine, and several tracks beside it.
+
+```text
+                  Ixon bytes + named constant + the table's theorems (the seeds)
+                                      │  (i) their closure has a model with the laws:
+                                      │      IxVM checkEnv claim on the seeds, or native run ── premise
+                                      │  IxCC reads the same bytes, same hash, same roles     ── SP-B
+                          checked source program (= the image, digest D)          ── EV-2
+                                      │  (ii) faithful to IxCK's reading, and typed:
+                                      │      lowering claim, or native check                 ── premise
+                                      │  valid table entries, primitives, readback            ── SP-0
+                                      │  SrcEval soundness + progress                         ── SP-A, SP-1
+            ┌─────────────────────────┴─────────────────────────┐
+   x86: proved pipeline, E1, E2/ELF                Aiur (i): evaluator circuit E over the image
+   (implemented; driver and ISA models             (IxVM side; IxCC owes EV-1, EV-2, the clauses)
+   to retire or prove: XB-1, XB-2)                 Aiur (ii): Fir → formal Aiur per program (AR-2, later)
+```
+
+The pipeline to x86 and its staged scope:
+
+```text
+Ixon v4 → Src (relevance-annotated kernel terms + unfolding table)
+        → Lam (erased λ-calculus)
+        → Anf (join points; shrink, inline, specialise; P8 defunctionalisation, in progress)
+        → Fir (first order, known calls only) → Own (explicit RC, borrow, reuse)
+        → Cfg (control-flow graph) → Lir (words, memory, runtime)
+        → Xv (x86 on virtual registers) → Xl (allocated) → typed x86 → E1 → E2/ELF
+```
+
+### Tracks
+
+- **The spine (SP), critical path.** Ground the source evaluator in IxCK:
+  byte compatibility first (SP-B: IxCC consumes exactly the bytes the kernel's
+  claims are about), then the conditional statement (SP-0), the typing-transport
+  question and an adequacy spike (SP-A), adequacy and progress on a first
+  fragment (SP-1), widening (SP-2), and the native discharge of the premises
+  (SP-N), whose kernel-based front end replaced the erased checker as the
+  only front end at the switch's step 3 (the owner's decision of
+  2026-11-11; the checker's code is deleted, step 4), with the kernel's blow-up on chains of `let` fixed
+  in the kernel package on this branch in parallel (landed). Kernel acceptance and the image's faithfulness are premises
+  that IxVM proofs (or a native kernel run) discharge, not IxCC theorems.
+  Designed in the [certification
+  design](certification-design.md#the-architecture-premises-discharged-by-proofs).
+- **The evaluator interface (EV), first.** What the Aiur evaluator route needs
+  from IxCC before any proof: step counts (EV-0), the evaluator contract
+  (EV-1), the image format with a deterministic producer and its interfaces
+  (EV-2). Designed in the [evaluator interface](evaluator-interface.md).
+- **The Aiur routes (AR).** AR-1, the evaluator circuit, is the IxVM
+  workstream's; AR-2, per-program compilation to formal Aiur, is research and
+  unscheduled ([end-to-end](end-to-end.md#aiur-form-ii-per-program-compilation-later)).
+- **The x86 back half (XB).** The C driver is off the execution path
+  (XB-1, the same work as IxOS-0; done with X1) and replace the instruction-set assumption
+  by agreement with the Sail model (XB-2, the [reference-model
+  route](x86-reference-model.md)).
+- **The native route's breadth (Phases 2–5).** Heap completion and closures,
+  data and roots, bignums, scale. No longer the spine; each phase lists what it
+  adds to the spine's obligations and what the Aiur routes get from it.
+- **Hardening (HD).** Resource bounds for the verifier, a property no
+  correctness theorem gives ([hardening design](hardening-design.md)).
+- **Repository and landing (RL).** Fixtures regenerated from this tree,
+  adaptation to the certified-IxVM work when it lands, the legacy Aiur code,
+  the pull request and the squash ([below](#repository-and-landing)).
+- **Side products.** Shape typing (CD2) for confinement without semantics and
+  for typing Fir for formal Aiur; stage L (CD3) for the bignum library and the
+  IxOS monitor. Neither grounds anything in IxCK.
+- **Resource soundness (RE).** What usage, ownership and locality
+  annotations guarantee, a theorem of its own that the kernel-model grounding
+  cannot supply: the resource checker's confirmed hole closed (RE-0), IxCC's
+  ownership checker verifying the annotations it acts on (RE-1, Phase 2), an
+  instrumented source evaluator and a first-fragment theorem (RE-2), widening
+  (RE-3) ([below](#resource-soundness)).
+- **Standalone executables (X).** Executables written by IxCC with no C
+  driver, C library or linker: a typed-x86 shell and the executable writer
+  (X0), proved (X0-P), the native gates moved off the C driver (X1, the
+  redefined XB-1), then effects in stages over one platform interface (X2 to
+  X5), and the IxOS tender as a second platform (X6)
+  ([below](#standalone-executables)).
+
+### Milestones
+
+Sizes are estimates, with their basis; calendar figures assume one
+experienced engineer per line of work. *Owner* is the default, subject to the
+[open decisions](#open-decisions).
+
+| Id | Content | Depends on | Exit test | Size [estimate] and basis | Owner | The neighbouring workstream can rely on |
+| --- | --- | --- | --- | --- | --- | --- |
+| RL-2 | Adapt to the certified-IxVM work when it lands: merge `main`, rename pass, re-recorded digests, inventories and ledger | that work landing | the root build and all 16 `ixcc-*` checks pass on the merge | days to two weeks: the last merge of `main` took about a day | IxCC | — |
+| SP-B | **Byte compatibility, the spine's first milestone**: IxCC consumes exactly the bytes the kernel's claims, and those of a consumer proving claims about role-bound environments, are about, identified by the same `(root, role table)` ([byte contract](byte-contract.md)). *Implemented:* role-bound envelopes read, the binding authenticated and decoded against the kernel's role vocabulary, the version read and kept; pinned identities from the role table; projection records accounted; role-bound fixtures whose root and role table equal the kernel's host statement; one hash, every address IxCC computes being pure BLAKE3, so the byte-level fences rest on the standard axioms only; the compile claim names the role table beside the root (validator 7; the former payload refused), on both sides of the codec; a registered role-bound family, a required gate; `ix compile` binds every role whose constant its artifact holds, including those only the certificates' closure brings in, so the kernel admits its role-bound output whole. every committed family refrozen in the role-bound form by the tree's own tools (`tools/regenerate.sh`, 2026-11-11), and `ix compile --unbound` removed (`ix compile` writes the role-bound envelope only, as on `main`). *Remaining:* none | — | a compile claim and a kernel claim about the same role-bound artifact name the same `(root, role table)`; the registered role-bound family passes `corpus check` and `tests-corpus` with the unbound family's results; byte-level fences on the standard axioms only (all three met) | under 2k lines: the reading 0.6k, the hash, the claim field and the gate about 0.6k (implemented); the refreeze, data | IxCC | IxCC reads the same bytes as its claims, under the same hash and role table |
+| EV-0 | SrcEval step counts (a counting twin of SrcEval; the clock is a depth bound): implemented ([source steps](source-steps.md): `src-steps`, pinned rows in `tests-src`, the tables of every committed family); the IxVM experiment's families wait for their closures | — | K1 tables and the IxVM experiment's families, reproducible | about 0.4k lines; days | IxCC | the common unit for its first measurement |
+| EV-1 | The evaluator contract, version 1: version, rule anchors, changelog, pin check; closed-term entry points | — | entries agree with `Src.run` on K1; an unversioned change fails the pin check | 0.3–0.6k lines and documents; weeks | IxCC | a frozen SrcEval to prove the circuit against, and a differential oracle |
+| EV-2 | The image, version 1, with shared subterms: format, deterministic producer, round trip, interfaces (role table, readback to Ixon, budgets) | EV-1 | theorems fenced; round trip over every committed closure in a gate; byte-identical images on two machines; digests committed | codec 0.5k, proofs 1–2k, interfaces 0.5–1.5k; 1–3 months (IxCC's Aiur wire format, 1.3k with proofs) | IxCC | a stable program identity and the circuit's input format |
+| SP-0 | The conditional statement: the claim also binds the image digest, so that the target and `D` fix the seeds; the laws as an explicit structure of hypotheses about a model (named as on the IxVM side); the faithfulness and typing clauses; soundness and progress as separate propositions; the conditional x86 and evaluator statements with both as explicit hypotheses; the table (`eqn`, `csimp` from `mem` and `eq_equality`; `case` from δ and ι), primitive, `let` and readback lemmas in every model with the laws | SP-B | the conditional statements fenced; role-bound K1 fixtures verify under the new claim format | 6–13k lines; 2–4 months (IxCK's reader 1.3k and IxCC's ingress 0.3k for the reading; the lemma estimates of the certification design; 2–4k more if the `Nat` operations' meaning must be derived on IxCC's side) | IxCC | IxCC reads the same bytes as its claims, under the same hash and role table; the `eqn`/`csimp` and primitive lemmas for its own discharge path |
+| SP-A | The typing-transport question is answered (2026-11-11: a model gives no typing for subterms, so typing derivations join premise (ii)); the spike: soundness on K1's `fib`, then `decide (fib 10 = 55)`, with the derivations from the kernel's runs | — | the spike theorem fenced or a stop report | 1–3 months | shared | whether SP-1 is engineering |
+| SP-1 | Soundness and progress on the first fragment, by a semantic relation indexed by the kernel's types, discharging SP-0's hypotheses ([certification design](certification-design.md#sp-1-adequacy-and-progress-on-the-first-fragment) compares it with a simulation by kernel reduction). **In progress** since 2026-11-11 as [the grounding library](certification-design.md#the-grounding-library-sp-1-in-progress) (`IxCCGrounding`, required check `ixcc-grounding`): G1a and G1b landed: soundness at a root on first-order arguments (`rootSound`, with `fib` and `decide (fib 10 = 55)` as instances), from checks run on the bytes, over every model with the laws as hypotheses, under `SitesOk`, F5's meaning proved by the generic `case` lemma; G2a landed: the direct route discharges the typing hypothesis at every site of both instances (`fibRoot`, `decideRoot` have none) and of every measured closure the check accepts (elsewhere it remains at the sites the direct route refuses); two laws (constructor canonicity, the projection of a constructor) restricted on 2026-11-11 to families that are not propositions, both false as first landed in a proof-irrelevant set model, and the laws not yet shown to have a model (canonicity scheduled by no one); G2b landed: ι and `Nat` arithmetic on literals in the conversion (`iota_rule` and `nat_accel` added to the laws the direct route rests on), string literals, `imax u u` in the level comparison, two fuel levels per nested argument, a renaming-tolerant `case` shape: on the corpus the direct route refuses 22 sites in four closures (262 before) and the check accepts 24 closures (22 before); G3's first step landed: the direct route's cost profiled and fixed (constants looked up in a table of the reading, a telescope's width costing no fuel): `sitesDirectB` on `tags125` 48.7 s instead of 624 s interpreted, all 418 of its sites accepted (171 before), `tests-grounding` 1.4 s instead of 5.4 s, and on the 49 closures that load the direct route refuses 21 sites in three; G3's parts A and B landed: recursors enter the checked set by class (`declOk` admits a class once its case of the fundamental lemma is proved; a new conjunct `recShape` checks each recursor's stored shape, its type a binder for every argument SrcEval takes), a recursor head in the relation, the landed root theorems kept as corollaries; G3's part C landed: the class of the built-in `Eq.rec` admitted, F3's meaning there proved from ι and the model's `Eq` law (a checked `EqRecBasis`: its type and rule as F3 reads them), so the check accepts 29 of the 49 closures that load (24 before); G3's part D, first step, landed: the field-less recursors without parameters (class `flat`, `Bool.rec`) admitted, F2's meaning there proved from ι and level-parameter irrelevance alone (canonicity only where such a recursor's constructor has level parameters, none measured; checked facts `RecTele`, `RecProg`, `RecCtorsRaw`), so the check accepts 31 of the 50 closures that load; G3's part E landed: the other recursors without parameters whose rule bodies name no constant (class `noParams`, `T16.rec`) admitted, F2's meaning there proved with the rule body evaluated through `eval`'s induction hypothesis (its model side, ι and β, from `iota_rule` alone, the constructor image moved by `cval_params` alone on every measured closure; the rule bodies' sites typed by the direct route inside the check, at the profiles where the major premise is in the graph regime, so that step takes the laws whole; checked facts `RecFields`, `RecBodies`, `RecSites`), so the check accepts 34 of the 50 closures that load (measured after ingress was changed to read only what the seeds reach); what remains: a model of the laws, `ResultTag` (a checked hypothesis that rejects some roots), and the rest of G3 (recursion, `Nat.rec`, whose rule body calls the recursor at an instance the fundamental lemma's `Ok` must admit, and recursors with parameters, `List.rec`, where F2 needs canonicity, then the rest of the recursors, and the rest of the residue: projections out of a bound variable, as recursion compiled through `brecOn` makes them, need a typing derivation or a model fact the laws do not state); a second family of root theorems landed on 2026-11-12 that names no canonicity law (`rootSound_noCanon` and its corollaries, over `LawsNoCanon`: δ, ι in #678's guarded form and level-parameter irrelevance, fields of #678's model, and the projection law and the `Nat` accelerations, not yet derived from it), for programs passing `noCanonB` (32 of the 34 accepted corpus closures); the copies of #678's fields that close that gap landed (`rootSound_678`, over `Laws678`); step A landed on 2026-11-13: `case` entries over level-polymorphic families, under a verified instance set (`rootSound_678A`, the family holding on 34 of the 34 accepted closures; level agreement is a checked restriction, not a law: [certification design](certification-design.md#the-grounding-library-sp-1-in-progress)); **open**: `instCheckB`'s cost is quadratic in the instance count (0.9 ms compiled on `tags125`, 170 ms interpreted on `phase1-decline/strings`, 138 instances, the reproducer), an index to be added before it runs in the verifier on hostile input; item 1a landed on 2026-11-13: no typing hypothesis (`rootSound_678G`: `SitesOkRes` from #678's `graded` field, a sixth field beside `Laws678`, and the decided `HeadRegimeRes` at the sites the direct route refuses; all 34 accepted closures); step C landed on 2026-11-13: a `let` in a run term, the correspondence with the stored ζ-reduct through a substitution (a dead `let`'s slot related to nothing; the instance walk reading `let`s; the direct route refusing at a `let`; 37 of the 50 corpus closures accepted, `fields254`, `machines`, `natural` added; `natural` outside 1a's family without a typing hypothesis, inside 1b's); **open**: deep `let`s (a `let` whose variable meets its copy only under a binder) are refused, in two shapes on the corpus: the closure a function returns (`λx. let y := …x…; λz. …y…z`; `arity` c597, `closures` c272), which a closure relation relating the captured environment in the body's context would admit, and the minor premises of a `match` (`let r := f n; match … with | … => …r…`; `closures` c19), which that does not (minors are applied at other clocks); step 1b landed on 2026-11-13: every run-term site typed from `graded` (`rootSound_678AG`: the head's type read through δ and β, `HeadRegime` decided once per maximal spine by `headRegimeSB`; no direct route at run-term sites, `RecSites` still with it; all 37 accepted closures, `natural` among them); **open** (non-linear steps that remain in that check): the profile enumeration, 2^parameters per constant, capped at `maxDirectParams` = 8 (fail closed), the list appends in the site walk (`spinesPs`, as `evalSites`), a λ head copying the outer arguments (`liftLooseBVars`, at most `headFuel` times per spine), the level substitution of the data per δ step (`Level.substPW` through the chain); its completeness limits are listed in the [certification design](certification-design.md#the-grounding-library-sp-1-in-progress); step Ap landed on 2026-11-13: `autoParam`/`optParam` binders in an `eqn` function's type, the check read on the reading retyped up to selector domains (`rootSound_678AGp_of_check`; six fields only, since the agreement needs `graded`; the six-field family on 42 of the 50 corpus closures, the `for`-loop closures added but `resource`, still refused at `caseRec`, `caseShape`); step E0 landed on 2026-11-13: a `case` entry whose recursor is of kind `empty` admitted (SrcEval traps there, so F5 is never asked and no shape is read; `resource`'s `Empty.casesOn`), the six-field family on 43 of the 50; step C's closure-capture shape of a deep `let` landed on 2026-11-13 (a `let` whose body is a λ holding the copy directly; `RelV.clo` relates a closure's environment at the members of its domain), `arity` in every family, the six-field family on 44; the minor-premise shape of a deep `let` (the witness shape) landed on 2026-11-13 (the copy under λs over closed constant domains each with a stored witness; `groundCheck` gains the conjunct `letWit`; no change to `RelV`), no closure moving between families (`closures`' root `knot` passes every decided hypothesis; `src-words` refused by `noWord` alone); 1b's η-short step landed on 2026-11-13 (a definition with no level parameter whose value has fewer λs than its arguments unfolds at the λs it has, the rest spliced; `closures`' ten spines at c38 read, `headRegimeSB` true there, no closure moving between families; a definition with level parameters applied so stays refused, a completeness limit); step Pc landed on 2026-11-13: a `case` entry whose recursor is of kind `subsingleton`, in the PUnit shape, at its ordinary instances (`rootSound_678AGpWP_of_check`: the word family's check with `caseRecP` and `caseShapeP`, and the decided instance condition `pcInstB`, which refuses an instance where the entry is a proposition; `closures` added, the Pc family on 47 of the 52 closures with `src-words`; the PUnit-shape clauses are restrictions the proof does not read); **open**: the proposition instance of a subsingleton recursor (SrcEval's subsingleton branch) is refused by the check, provable with no new assumption (major and constructor value both the proof point by `mem_univ_zero`, ι has no sort premise), about three days; that branch has no counterpart among the kernel's reduction rules for `PUnit.{0}` (`Red.rescueK` needs a syntactically zero result sort, the η rescue `capsNeverZero`), so it is justified by the model only; next, in order (decided 2026-11-13): recursors with parameters with recursion in rule bodies (level agreement by step A extended to recursor instances; no change to `selectRule`); then G4 (widening, which meets that shape as soon as recursors enter the checked set), G5 (progress) | SP-0, SP-A; the external dependencies of XK | both [exit tests](certification-design.md#the-first-grounded-fragment) | 14–30k lines; 6–12 months after SP-A (erasure's simulation, 10.1k) | shared, IxCC leading | the model fact that discharges an evaluation axiom, given the circuit's refinement and the two premises |
+| XK | **External dependencies of the spine** (none in this repository; listed for tracking): the IxVM consistency theorem's eight obligations proved; its claimed environment fixing kinds and values; its derivations exposed or the lowering claim proving typing; the rules' soundness over the public model; the projection of a constructor and the `Nat` operations on literals as public laws; constructor canonicity across parameters and levels (asked 2026-11-11; else a relation carrying types on IxCC's side); public level irrelevance; "the annotation pass preserves denotation"; the table restriction lemma | the certified-IxVM work | each stated on the kernel or IxVM side | theirs | kernel and IxVM workstreams | — |
+| SP-2 | Widening: `Quot`, nested inductives, strings, data primitives, plain-RC results, other roots | SP-1, the phases | per item | per item | IxCC | wider images |
+| SP-N | Native discharge of the premises, for x86 consumers without IxVM proofs: IxCK run natively (since 2026-11-11, existence by the logical entry on the closure of the seeds under the IxVM claim's table, DO-37, the kernel front end's KF-4), the image's faithfulness and typing discharged against IxCK's reading (DO-6), and the erased checker replaced by IxCK in the producer and on the native verifier path (decided 2026-11-14; in progress, as a kernel-based front end in new modules beside the existing one, designed in the [kernel front end](kernel-front-end-design.md); the switch in progress: its step 2, moving what is not typing out of the checker, and its step 3, the kernel front end the only front end, done 2026-11-11). Decided by the owner on 2026-11-11 ([decisions](kernel-front-end-design.md#decisions)): the switch proceeds now; the kernel's blow-up on chains of `let` is fixed in the kernel package on this branch, in parallel, and has landed (on a hostile `let` chain the kernel front end's acceptance took 52.2 s at 30 `let`s against the erased checker's 0.19 s, and takes 28 ms with the fix); the kernel's level walks on shared levels are memoised, and the level comparison itself (coNP-hard for levels with `imax`) stays exponential on some small constants until its planned call budget. the front end passes the artifact's own reducibility hints to the kernel's entry and reading (2026-11-12, as `ix check-lean` does: without them the kernel computes its own heights, and a one-line `rfl` proof Lean checks in a millisecond took time exponential in a literal's width; hints are advice, no theorem depends on them, and a hostile hint can make the kernel slow or decline, never accept something else). Working defaults, awaiting the owner's confirmation: IxCC's reading checked natively against IxCK's (DO-6 (c)), the kernel's tiered entry, the artifact's own prelude; unbound environments are refused, which follows from the switch | SP-B; SP-0 for the statement; for the switch's step 3, the role-bound refreeze (RL-1 phase 2, in progress); before the branch merges, the kernel's fix of its blow-up on `let` chains (KF-3, in parallel on this branch) | the x86 statement with both premises discharged in one native run; the erased checker deleted | 2–6k lines (built: about 1.5k; the switch deletes about 13.3k) | IxCC | — |
+| AR-1 | The evaluator circuit, its refinement of SrcEval, the lowering claim, aggregation | EV-1, EV-2 (unproved deployment); SP-0, SP-1 (proofs) | the IxVM workstream's | that workstream's estimates: the circuit 5–10k lines of formal Aiur, its refinement 10–25k, the lowering check 3–8k | IxVM workstream | — |
+| AR-2 | Fir → formal Aiur with a backward simulation, one object enumeration per program, small `Nat` below 2^56 | RL-2 (formal Aiur in this repository), a key-derivation story or a standalone customer; CD2 optional | K1 through per-program circuits | 8–15k lines for the `Nat` and tree fragment (a spike outside this tree; the IxVM side estimates 10–25k) | unassigned | — |
+| XB-1 | = IxOS-0, as redefined on 2026-11-14 (DO-34): IxCC-written executables replace the C runtime driver in the native gates, out of process, with no C and no in-process trampoline (X0 then X1 of [standalone executables](#standalone-executables)); first planned as a host loader calling an object's entries through a trampoline. Done with X1 | X0 | as X1 | as X0 and X1 | IxCC | — |
+| XB-2 | Agreement with the Sail x86 model (S0, S1, S2) | — | as in the [reference-model route](x86-reference-model.md) | research | IxCC | — |
+| HD-0 | A budget on a closure's typing; a required fuzzing check | — | the check required; typing bounded per closure | under 1k lines and the gate; weeks | IxCC | — |
+| HD-1 | Typing off the verifier path: the erased checker replaced by the certified kernel (decided 2026-11-14, done within SP-N) | SP-N | the verifier path and the producer call no erased-checker function | — | IxCC | — |
+| HD-2 | One work budget threaded through the verifier; a total-work theorem | SP-0 | the theorem fenced | 2–5k lines | IxCC | — |
+| HD-3 | No recursion over input-sized data; every entry point at the budgets on 2 MiB | — | the gate | 1–2k lines | IxCC | — |
+| RL-1 | Fixtures regenerated from this tree. Phase 1 (equations export, unbound envelope, a trial family): done. Phase 2: the role-bound refreeze by `tools/regenerate.sh` and commit-hash provenance replaced by descriptions: done (2026-11-11); before the merge, a final regeneration on the merged state, checked by `tools/regenerate.sh --check` | DO-15 to DO-20 | `corpus check` and the suites pass on every regenerated family; no tracked file cites a commit outside this repository or of this branch's history | phase 2 changes every closure, sidecar, census and manifest, the pinned tables and generated artifacts | IxCC | regenerable fixtures |
+| RL-3 | **Done (2026-11-21):** Retired the legacy Aiur model (`IxCC/Aiur`, about 5.8k lines) and the vendored snapshot (`IxCC/Vendor`, about 3.5k), tests, fences (301 assertions), tools, fixtures, the `ixcc-aiur` check (17 → 16 required checks), its ledger scopes and pins, and legacy docs | RL-2, DO-14 | all required checks pass without them | a deletion and inventory updates | IxCC | — |
+| RL-4 | The pull request, after the certified-IxVM work finalizes; the squash | RL-1 phase 2, RL-2 | review | — | IxCC | — |
+| Phase 2 | Heap completion (DR1) and closures (P8) | Phase 1.5's final producer for K0 | [Phase 2](#phase-2-heap-and-closures) | 25–50k lines (DR1 20–40k, P8 5–9k) | IxCC | nothing the evaluator needs |
+| Phase 3 | Data and interface (DR2–DR9, P9) | Phase 2 | [Phase 3](#phase-3-data-and-interface) | 30–60k lines (the DR items' estimates) | IxCC | the data primitives' meaning lemmas at the SrcEval level |
+| Phase 4 | Bignums | DR1–DR4 | [Phase 4](#phase-4-bignums) | 14–26k lines (bignum design) | IxCC | a shared `Nat` specification |
+| Phase 5 | Scale and usability | — | [Phase 5](#phase-5-scale-and-usability) | 8–16k lines | IxCC | — |
+| CD2 | Shape typing | — | as in [CD2](certification-design.md#cd2-source-safety-a-checked-shape-typing) | 5–7k lines | IxCC, when IxOS-4 or AR-2 needs it | — |
+| CD3 | Stage L translator | SP-0 | a K1 prototype | not estimated | IxCC, when Phase 4 or IxOS-4 needs it | — |
+
+**In parallel.** SP-B first; from the start also EV-0, EV-1 then EV-2; SP-0 once SP-B has fixed the bytes; SP-A; HD-0 and
+HD-3; RL-1; Phase 2's P8 milestone 1 and heap work. RL-2 interrupts whatever is
+running when the certified-IxVM work lands. SP-1 starts when SP-A has
+answered and SP-0 has stated what it must prove. The proposed order of priority is DO-7.
+
+### The spine and the IxVM workstream's requirements
+
+The IxVM workstream has stated what it needs from IxCC. Most of it is the
+spine or the evaluator interface:
+
+| What the IxVM workstream needs | Where in this plan |
+| --- | --- |
+| SrcEval as a normative, versioned semantics with executable entry points (first deployment) | EV-1 |
+| An image format with a deterministic producer and a round-trip theorem (first deployment) | EV-2 |
+| The interfaces: BLAKE3 addresses, pinned identities from the role binding, readback to an Ixon expression, budgets as constants, universe profiles (first deployment) | EV-2; the role-bound envelope and role table read in SP-B (implemented) |
+| SrcEval step counts for its first measurement | EV-0 |
+| The front-end clauses as a checklist another program can run, with the irrelevance clause stated against the kernel's typing judgement | the faithfulness premise: SP-0 defines the clauses (the irrelevance clause and its converse against the kernel's typing), the kernel circuit's lowering claim checks them; the [faithfulness](evaluator-interface.md#faithfulness) checklist |
+| Adequacy on a fragment with `Decidable` and proof fields, test `decide (fib 20 = 6765)` (its critical path) | SP-A, SP-1 |
+| `eqn` and `csimp` entries valid in the model, stated once for both sides | SP-0 |
+| The `Nat` primitives' meaning lemmas | SP-0; the data primitives' in Phase 3 and SP-2 |
+| Determinism of the producer, the table selection and the annotator | EV-2 |
+| Stored-value opaques kept separate from recorded interpretations | DC-2 |
+| Certificates for optimised images; a lowering to formal Aiur; kernel-evaluable checking paths | later: [evaluator interface](evaluator-interface.md#later), AR-2, D17 |
+
+It does not need the x86 back end, linking or the trust ledger, the compile
+claim, stage L or P8.
+
+### Phases
+
+| Phase | Deliverable | Closes with | State | Adds to the spine | Gives the Aiur routes |
+| --- | --- | --- | --- | --- | --- |
+| 0 | Reset and foundations: first gates back, the ix `eq_def` export, design notes (not kept in this repository), a declarative x86 instruction table with compact encodings, hardware-differential and decoder gates, first-wave fixtures, census, Lean/Clang measurement rows | — | Done | — | — |
+| 1 | Scalar vertical slice from real Lean source to certified ELF, with register allocation, loops and recursion (`fib`, `for` loops, Ackermann, `tak`, `gcd`) | K1 | Done: K1 certified relative to SrcEval | the first fragment's x86 exit test | — |
+| 1.5 | Reviewed resource checking, address-bound equation/profile selection and contract transport; assess upstream certification before the final producer repin | Existing K1 and annotated/plain fixtures | In progress | — | — |
+| 2 | Heap and closures: general RC (scalar fields, large objects, static objects, reset/reuse, `unique`/`borrow`, inline fast paths, the Own checker); P8 defunctionalisation; P5/P6 when measured | K0 (real `List.reverse`), K2 (lists), K3 (trees); `Decline.composeClosure` | In progress: the bounded plain-RC route and the `List.reverse` regression are implemented; P8 is on the compile and recheck path (the closures step), with `Decline.composeClosure` compiled and certified | nothing: every item is below SrcEval | nothing: the evaluator has closures natively and its own memory |
+| 3 | Data and interface: fixed-width integers and small `Int`, arrays and byte arrays with in-place update, strings, interpreted opaques, P9; the byte ABI, the claim's ABI descriptor, state-machine roots | K4 | Planned | new primitives and string rules: a new contract and image version, one meaning lemma each, new adequacy cases | the same meaning lemmas, stated at the SrcEval level, for a write-once-memory implementation |
+| 4 | Bignums: the limb library compiled by IxCC; large `Int` | K5 | Planned | nothing above SrcEval (`Nat` is exact there) | a shared `Nat` specification with the evaluator's in-circuit `Nat` |
+| 5 | Scale and usability: input-relative budgets, linear-time recheck passes, per-function rechecking and caching, diagnostics, library census | K6; a closure of at least 2,000 definitions | Planned | — | larger images |
+
+The 2026-11-09 table's track C (CD1–CD4) is replaced by the spine; CD2 and CD3
+are side products in the milestone table.
+
+### Benchmark rungs
+
+| Rung | Programs | State |
+| --- | --- | --- |
+| K0 | Real `List.reverse` on `List Nat` | Runs through the bounded plain-RC route ([`fixtures/rc/real-source`](../fixtures/rc/real-source/README.md)); final producer refreeze open |
+| K1 | `fib`, `sum-loop`, `ackermann`, `tak`, `gcd`, and `collatz`, `prime-count`, `even-odd`, `sfib` | Certified and measured |
+| K2 | `nqueens`, `queue`, `reverse`, `foldl`, `list-qsort` | Sources and twins in [`benchmarks/fixtures`](../benchmarks/fixtures/README.md); no frozen Ixon closures yet |
+| K3 | `rbmap`, `rbmap_checkpoint`, `const_fold`, `binarytrees` (total), `rbmap_fbip` with its annotated twin | As K2 |
+| K4 | `deriv` (`String`), `qsort` (`UInt32`, `Array`), `unionfind` (`Array`, `StateT`), `blake3` (`Blake3.Pure`), `hashmap`, `nat_repr` | Not started |
+| K5 | factorial, big Fibonacci, π digits, e digits | Not started |
+| K6 | `liasolver`, `parser`, a subset of the certified kernel (`Ix.Kernel.Level` first) | Not started |
+
+**Performance targets** are provisional and frozen per rung after first
+data:
+- K1: geomean ≤ 1.3× Lean → Clang and ≤ 1.5× idiomatic C at `-O2`;
+- K2/K3 plain sources: ≤ 1.2× Lean → Clang;
+- annotated twins: ≤ 1.0×;
+- K4: ≤ 1.3×;
+- K5 and K6: set after the first measurements;
+- no row above 2×;
+- ≤ 10 s to compile and check each suite program.
+
+### Phase 2: heap and closures
+
+- **Heap completion** ([DR1](data-and-roots-design.md#dr1-heap-completion)):
+  scalar fields, constructors beyond 31 fields and large objects, static
+  objects, reset/reuse with a uniqueness test, static reuse from `unique`
+  contracts, borrowed parameters, inline RC fast paths, and the proved Own
+  checker with the canonical plain producer as its fallback. Stage 1
+  (general cell layouts, the uniqueness test, the in-place reuse lemmas)
+  done: the pipeline emits the general runtime (`Rt.Rc.Gen`: allocation by
+  layout, `Gen.dec` as the one release) for constructors of 1 to 254
+  scanned fields, within +1.6 % of the bounded route's executed
+  instructions on every measured program; reuse of a unique cell in place
+  is proved to keep the heap invariant (`inPlace_ready`,
+  [DR1](data-and-roots-design.md#in-place-reuse)), but no pass emits a
+  reuse yet (stage 4, after stage 2's placement). Stage 2 (the proved Own
+  checker), two landings of three: the checker `Own.Plain.checkOwned` over
+  today's syntax with refinement, reclamation and canonical acceptance
+  proved; and the verifier switched to it: plain-RC certificate admission and
+  the program gate run the checker behind a captured-work budget
+  (`Anf.maxCapturedWork`), the Cfg activation layer is restated over its
+  typing context, and `Recheck.RcReplay.sound` keeps its statement, so the
+  verifier admits any placement the checker accepts
+  ([DR1, "The ownership checker"](data-and-roots-design.md#the-ownership-checker));
+  the producer still writes the canonical placement, and every registered
+  object and certificate is unchanged. Next: a liveness placement in the
+  producer. **Clean-up (done 2026-11-21):** the 18 proof modules reached only
+  by their fences—the allocation-cursor chain of `Cfg/Rc/Proof/Physical`
+  (`AllocationCursor`, `AllocationConsumed`, `AllocationInstruction`,
+  `AllocationSource`, `AllocationTokens`; 10 fence assertions), `BumpWrapper`
+  (1), `FusedSavedFrames` (3), `ReserveStorage` (1), `Return` (2),
+  `SavedCallers` with `SavedFrames` (5), and in `Physical/Bridge`
+  `BorrowedIncrement` (1), `FusedInstructions` (2), `FusedProjection` (1),
+  `ProjectionCfg` with `ProjectionIncrement`, `ProjectionStep` and
+  `ReadyInstructions` (6)—and their 32 fence assertions have been retired.
+  **Open for stage 3**
+  (inline fast paths): the general release executes up to 3 Lir steps (4
+  x86 instructions) more per freed cell than the bounded route's for
+  cells of fewer than three scanned fields, fewer for four or more (lists
+  +3.2 % steps, +4.8 % instructions; chains of one-field cells +10.5 %,
+  +10.9 %), from a branch for scalar-only cells and a reload of the class
+  byte; two cheaper variants (`asc`, `desc`) are measured but not proved
+  ([DR1, "The general release's cost"](data-and-roots-design.md#the-general-releases-cost)).
+- **P8** ([closures design](closures-design.md)): defunctionalisation,
+  dispatchers, the known-dispatch shrink rule, `Anf.Defun.correct`. Started
+  at the owner's request (2026-11-10) for the native route's generality,
+  although the evaluator route does not need it. On the compile and recheck
+  path as the closures step, with each root entered at its declared
+  parameter count; proved and composed into the end-to-end theorems on the
+  inputs they cover ([closures design](closures-design.md#proof-obligation)).
+  Open: the known-dispatch shrink rule (and the shrink after the pass that
+  waits for it), P9, and dispatchers past about 510 closure keys.
+- **P5 and P6** only where K2/K3 measurements show the need.
+- *For the spine:* nothing. Every item is below SrcEval.
+- *For the Aiur routes:* nothing; the evaluator has closures natively and its
+  own memory.
+- *Depends on:* Phase 1.5's final producer for the K0 refreeze.
+- *Exit:* K0 refrozen with the final producer; K2 and K3 frozen, compiled
+  under `--rc auto` and certified, measured against their targets, with the
+  annotated twins against the plain sources; `Decline.composeClosure` and the
+  new higher-order corpus roots of the closures design compile and certify.
+
+### Phase 3: data and interface
+
+- **Fixed width and small `Int`** ([DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)),
+  **arrays and byte arrays** ([DR3](data-and-roots-design.md#dr3-arrays-and-byte-arrays)),
+  **strings** ([DR4](data-and-roots-design.md#dr4-strings)),
+  **library structures and interpreted opaques** ([DR5](data-and-roots-design.md#dr5-library-structures-and-opaque-constants)).
+- **Roots**: the byte ABI ([DR6](data-and-roots-design.md#dr6-structured-roots-and-the-byte-abi)),
+  the claim's ABI descriptor ([DR7](data-and-roots-design.md#dr7-what-the-compile-claim-binds)),
+  monomorphic roots ([DR8](data-and-roots-design.md#dr8-universe-polymorphism-and-type-parameters-at-roots)),
+  state-machine roots ([DR9](data-and-roots-design.md#dr9-effects-and-io)).
+- **P9** and the flow oracle, if K4 shows dispatch cost.
+- *For the spine:* the new primitives and string rules are new SrcEval rules,
+  so a new version of the [evaluator contract](evaluator-interface.md) and the
+  image format, one meaning lemma per primitive (a conservativity lemma
+  against its reference body on `toList`), and new adequacy cases (SP-2). The
+  meaning lemmas are stated at the SrcEval level, independently of the x86
+  heap invariant.
+- *For the Aiur routes:* the same meaning lemmas, on which a write-once-memory
+  implementation of arrays and strings can rest as the x86 heap implementation
+  does. Without them an evaluator runs the reference bodies, which are
+  quadratic.
+- *For the x86 back end:* a new primitive's expansion is proved once, against
+  the heap-free core `Rt.Proof.PrimCore`, and each route's simulation follows
+  from the core by one lemma (`Rt.Proof.rhsSim_of_core`, the plain-RC bridge's
+  `rhsSim_of_core`), as the fixed-width words are
+  ([DR2, "Stage W1"](data-and-roots-design.md#dr2-fixed-width-integers-and-int)).
+  **Clean-up (open):** the 16 `Nat` primitives are still proved twice, once per
+  route (`Rt/Proof/Ops*.lean` and the bridge's `Scalar{Basic,Checked,Div,Call}.lean`,
+  the latter about 1,080 lines); restating Rt's per-primitive lemmas as core facts
+  would let the bridge's copies go (estimate: 300–500 lines restated, about 1,000
+  deleted; a landing of its own). Two points to design: the comparisons
+  (`natBeq`, `natBle`, `natBlt`) return a `Bool`, so the core needs a variant whose
+  result is one of the `Bool` words (`Tables.bools`); and `natPow` and `natGcd` call
+  runtime procedures, whose runs the core's `Star` must cover (a call that returns
+  to the same frame, as `procCall_sim` shows).
+- *Depends on:* Phase 2's scalar fields, large objects and uniqueness test;
+  P8 for library code over dictionaries.
+- *Exit:* K4 compiles, certifies and is measured; BLAKE3 passes its
+  known-answer vectors; a `ByteArray → ByteArray` root round-trips through
+  the driver; a state-machine session of 1,000 calls passes.
+
+### Phase 4: bignums
+
+- The limb library and the bignum representation ([bignum design](bignum-design.md)).
+- *For the spine:* nothing above SrcEval, where `Nat` is already exact.
+- *For the Aiur routes:* the evaluator has its own in-circuit `Nat`
+  arithmetic over its field; the library shares its specification with it,
+  and where possible its algorithms' proofs, rather than duplicating them.
+- *Depends on:* DR1–DR4; a proof route for the library's layer 3 (stage L, or
+  an explicit ledger assumption until then, as the design says).
+- *Exit:* K5 compiles, certifies and matches Lean; `natOverflow` is retired
+  with its gate map; the library theorems are fenced.
+
+### Phase 5: scale and usability
+
+- [Scale and usability](compiler-design.md#scale-and-usability).
+- *For the spine:* larger fragments and closures; the grounded theorem's
+  composition per function if per-function rechecking lands.
+- *Depends on:* nothing for budgets, linear passes and diagnostics;
+  per-function certificates for incremental rechecking.
+- *Exit:* K6 compiles and certifies; a closure of at least 2,000 definitions
+  compiles and rechecks with no budget refusal within a compile-time target
+  set after its first measurement; the library census is published.
+
+### Hardening
+
+Soundness against a dishonest certificate is what the theorems give once the
+spine removes the `GoesWrong` escape; resource bounds for the verifier are a
+separate property, planned in the [hardening design](hardening-design.md):
+HD-0 (a closure-wide typing budget and a fuzzing gate) now, HD-1 (typing off
+the verifier path) with SP-0, HD-2 (one work budget and a total-work theorem)
+and HD-3 (no recursion over input-sized data) after it. On the proof-system
+routes a hostile input costs the prover, not the verifier. IxCK's typing core
+was exponential on certain chains of `let` (fixed in the kernel: the cause was
+its universe levels), and still is on some universe-level comparisons (the
+comparison is coNP-hard for levels with `imax`); with the switch IxCC's
+verifier runs IxCK itself, so the kernel's planned call budget in that
+comparison is that verifier's guard.
+
+A known crash on hostile input remains (2026-11-12; HD-3's class). The
+envelope decodes every record with the kernel package's canonical decoder
+(`Ixon.Canonical.deConstant`) before any depth bound runs, and that decoder
+recurses natively on an expression's nesting: a record of unshared nesting
+within the 1 MiB record budget aborts `ixcc compile` and `ixcc check-cert`
+with a stack overflow, at about 30,000 levels on a 2 MiB stack and 100,000 on
+8 MiB (measured with `LEAN_STACK_SIZE_KB`; on this branch and on the tip
+before it alike), whether or not any root reaches the record. The kernel's
+own byte entry decoded the same way; since 2026-11-13 it scans each record's
+bytes for nesting before decoding and declines past its depth limit
+(`Ix.Kernel.Admission.decodeWithin`, `Limits.maxDepth`, 16,384), as do the
+root hosts' own record decoders. Since L3b `ixcc` runs itself again on a
+stack sized from the kernel's limits (`Limits.stackFor`: 256 MiB at the
+defaults; `IxCC/IxCC/Cli/Main.lean`), which holds a record of the 1 MiB budget
+at any nesting its bytes allow: such a record, added to `fib`'s closure, is
+refused by the envelope's depth bound (exit 1) with the re-execution and
+overflows the stack (a death by signal) with it turned off (`IXCC_REEXEC=0`)
+on 8 MiB (`tests-kernel-front`, `IxCCTests/KernelFront/Cli.lean`). **Open**:
+the proper fix, the kernel's byte scan (`Depth.within`) before the envelope's
+decoder, as the root's loaders run it; not in L3b because it changes IxCC's
+envelope reader and its refusals, which IxCC's own review and ledger cover,
+while the re-execution bounds the crash without changing what is read. The
+envelope's depth bound (`V3.withinKernelDepth`, 2,560) limits the records as
+stored, after that decoder, and not the terms the kernel builds while typing
+them; it comes before the kernel, so a record nested past it is IxCC's refusal
+(exit 1), not the kernel's decline by its depth limit (exit 6), which `ixcc`
+meets only under a lowered setting. **Open**: `ixcc`'s own limits (its
+decoder's caps, its consumer budget) are not settings yet; the kernel's are
+(`--max-*`, `IX_KERNEL_*`, `docs/kernel.md` of ix).
+
+Constant folding on hostile literals, closed (2026-11-13). The shrink walk
+folded a primitive on literals with `Lam.Prim.sem`, which computes `a ^ b` and
+`a * 2 ^ b` whatever their size, in the producer and in the verifier's replay
+alike. Through `ix compile` and `ixcc compile` (`fixtures/fold`, the commit
+before): an exponent past `2^32 − 1` (`1 ^ 2^32 + x`, `1 <<< 2^32 + x`, any
+base) aborted `ixcc compile` with `INTERNAL PANIC: Nat.pow exponent is too
+big` (exit 1, 0.24 s), and `ixcc check-cert` the same on a certificate for
+such a root; `1 <<< (2^32 − 1)` took 3.0 s and 2.2 GB; thirty-two folded
+squarings of `2^62` in `let`s, a 1.6 KB source, ran 526 s to a 24 GiB memory
+cap and were killed (twenty-four: 16.7 s, 851 MB). The certified kernel
+accepts these closures at ingress. Now the walk folds only within
+`Walk.foldable`'s bound (every operand below `2^1024`, a power or shift
+result too; [compiler design](compiler-design.md), P2's rules): every root of
+`fixtures/fold` compiles and rechecks in well under a second, and what the
+bound leaves runs natively (`natOverflow` past a native word). What the survey
+leaves open: the reference evaluators (SrcEval, and Lam, Anf, Fir and Own's
+`eval`) compute `Prim.sem` unbounded and abort the same way, off the compile
+and verifier paths; the test tools that run them on arguments the caller
+chooses (`src-steps CLOSURE --root NAME ARG…`, `tests-pipeline --level`)
+abort on such arguments and are left so ([CI](ci.md)); the certified kernel's
+own literal fast path (`natOpResult`, `shiftLeft` unbounded) is the kernel
+package's. Two observations outside IxCC: Lean 4.34.1's own code generator
+folds `Nat.shiftLeft` on literals without a bound, so `ix compile` aborts
+(`Nat.shiftl exponent is too big`) on a computable definition of that shape
+(the source is the user's own, not a verifier path; `fixtures/fold` marks its
+roots `noncomputable`); and `ix compile` cannot run under `ulimit -v`, which
+refuses its worker threads ("failed to create thread"), so a memory cap on it
+needs a cgroup (the kernel's limits work touches this).
+
+Known costs in the kernel on small hostile inputs (2026-11-12; reproducers in the kernel-robustness
+notes, `plans/kernel-robustness/NOTES.md` and `NEXT.md`):
+- fixed (2026-11-12): a `let` chain over one shared type (`let a(j+1) : Type := aj → aj`) was
+  quadratic in time and memory (27 s and 1.6 GB at 8,000 `let`s), and the kernel's acceptance of
+  a program applying `T k → E → E` to `fun x : T(k-1) => x` grew 6 to 9 times per doubling (6.5 s
+  at 2,000): the binder loops re-peeled each step's whole telescope and annotation rebuilt it
+  unshared. They now stop at a closed tail the memo holds: 0.9 s at 16,000 `let`s, 50 ms for the
+  program at 2,000 (`kernel-level-sharing` bounds the chains);
+- open: the same `let` chain at `Sort u` (`kl-probe chain param K`) stays quadratic, 8.8 s at
+  8,000 `let`s, and is declined at 16,000 by the level comparison's depth fuel (10,000): the
+  specification's `Level.simplify` does not merge `max u u`, so each step's simplified sort is a
+  DAG as deep as the chain and `leqCore` walks it. Nothing changes on our side; the level budget
+  bounds it;
+- open: a chain of λs over the previous value (`let a(j+1) : U(j+1) := fun _ : Prop => aj`, `lamlet`
+  in `kernel-level-sharing`): 0.7 s at 4,000 steps, 3.6 s at 8,000, 18.8 s at 16,000 (4.7 s at
+  4,000 before the stop), in `Level.zeronessOf` walking the ∀ rule's level of each step's type
+  with a per-call memo;
+- fixed (2026-11-13): nested head normalisation (`E_k = (λx. E_{k-1}) P L`) was cubic past about
+  8,000 levels (83 to 99 s at 32,000) because `Expr`'s 32-bit hash cycled along such a chain; the hash
+  is 64 bits in a word of its own (+17 to +20 % peak memory on Init+Std), and 32,000 levels take 35
+  to 49 ms (`kernel-depth` bounds them). A 48-bit hash in the packed word was rejected: its narrower
+  range fields cost seconds on our 254- and 255-field fixtures;
+- open: a bought collision between two different terms (about 2^32 hash evaluations) makes lookups
+  descend one into the other, quadratic in their depth: the depth limit (16,384) bounds the input's
+  terms, the typing core's fixed fuel (`checkFuel`) the terms it builds;
+- fixed (2026-11-13): the kernel's phase B spawned one task per 64 records, so the threads a run
+  could start grew with the input and a run under an address-space limit aborted creating one; the
+  tasks are bounded by a setting (`Limits.workers`), which no verdict depends on;
+- open: the depth stages skip a record whose bytes cannot reach the limit by two bounds that are
+  argued and tested (`kernel-depth` `bounds`), not proved; prove them, or remove the skip by
+  proving depth ≤ size where `Ix.Cert.Stream.closure_decodes` needs it;
+- open: bucket flooding of the kernel's memo maps, independent of the hash's width: R crafted terms
+  in one bucket cost Θ(R²) comparisons (16,384 literals in one bucket: 0.6 s against 1 ms; about
+  25 s at 10^5, extrapolated); remedies (a keyed hash, or a cap on bucket scans that declines) in
+  `docs/kernel.md`, "Running time"; none made.
+
+Known costs on hostile input in the plain-RC verifier (2026-11-12), beyond the
+ownership checker's own, which the captured-work budget bounds
+([DR1, "The ownership checker"](data-and-roots-design.md#the-ownership-checker)):
+- `Own.Plain.programDomain` and `contractProgramDomain`, the source-domain
+  check both ownership checks run before the checker, were quadratic: their
+  freshness and scope checks kept the scope and the function signatures as
+  lists. Fixed (2026-11-12): they run the same checks over sets
+  ([`Own/Plain/ScopeSet.lean`](../IxCC/Own/Plain/ScopeSet.lean): the scope a
+  `Src.NatSet`, a callee's arity read through `Fir.Program.fun?`), proved
+  equal to the list forms (`programDomain_eq_list`,
+  `contractProgramDomain_eq_list`), so the check is linear in the program it
+  reads up to a logarithm, about 0.75 µs per parameter on the build box.
+  Measured with functions of 2,049 parameters each, one process per run:
+  `programDomain` alone 8.4 ms before and 1.5 ms after for one function,
+  2.6 s and 0.38 s for 256, 14.7 s and 1.6 s for 1,024, 85.4 s and 6.6 s
+  for 4,096 (255 nodes each, 2²⁰ program nodes; 79 MB); the verifier's steps
+  from Fir (admission, `checkScopedProgram` and the lowering, each of which
+  runs the check) on 4,096 such functions whose bodies are `trap`, with a
+  certificate of no action, 267 s before and 33 s after (2.1 GB).
+- The total parameter count, closed (2026-11-12): `Anf.maxParamTotal` = 2²⁰ = 1,048,576
+  bounds the parameters of a program's functions and of the join points their bodies declare
+  (`Own.Plain.Certificate.paramTotal`). Parameters cost no Anf node, so the node budgets
+  (`Anf.maxGlobalNodes`, `maxProgramNodes`, `maxBackWork`) do not bound them: a function's
+  parameters are the λ-binders of one source term, held to about 2,048 by `Src.maxTermDepth` and
+  `Anf.maxLamDepth` (to about 230 in `ix`'s output of a Lean source, by the consumer's expression
+  depth of 256; an artifact written by hand can nest deeper through shares), and with one-node
+  functions the node budget allowed about 2³¹ in all, some 27 minutes for one run of
+  `programDomain`. Plain-RC admission (`Own.Plain.Certificate.admit`, `admitContract`) refuses
+  past the limit first, before it decodes the certificate, with `own.cert.params` (the total and
+  the limit); `Recheck.runWithContracts` refuses the same before its domain check, and
+  `CompileClaim.produce`'s zero-RC branch before it writes a claim. Acceptance is monotone in the
+  limit (`admit_params_mono`), and every run of the domain check in `RcReplay.runFront` judges a
+  program within it (`runFront_paramTotal`; `runWithContracts_paramTotal`). At the limit, on the build
+  box: one run of the domain check 0.76 s (512 functions of 2,048 parameters) to 0.93 s (64
+  functions each declaring 8 joins of 2,048), the plain-RC verifier's steps from Fir 3.9 s and
+  4.6 s; the count itself 1.4 ms. The registered corpus reaches 240 (`Closures.stateLoop`: 78
+  functions, 11,536 Anf nodes; no join with more than one parameter anywhere), the benchmark
+  closures 386 (`const_fold`): 4,369× and 2,716× below the limit. The producer is not expected to
+  reach the limit from an artifact, by an argument from the code, not a proof: after its
+  schedule's last `prune` every function but a root is reached by a call that passes exactly its
+  parameters, a call costs its arguments plus two Anf nodes, every join point the passes make
+  has one parameter (`Anf/Convert.lean`, `Anf/Walk.lean`; the other passes keep a join's arity),
+  so the total is at most the program's Anf nodes plus the roots' own parameters; and the
+  producer's own admission (`Src.admit`, 2²² runtime nodes) refuses larger sources first. Only a
+  certificate made by hand that omits `prune` (`Recheck.checkMidCert` does not require it)
+  reaches it. Measured end to end on such inputs (box evidence, not a test; the generator and
+  its scripts are kept with the heap stage 2 notes): a generated source of functions with 220
+  `Nat` parameters, each the value of an unused `let`, frozen to a 5.7 MB closure, and
+  certificates whose middle end is P1 and one shrink step. Every stage between ingress and
+  admission (the certificate's text, the front end, erasure, the middle end, P8, `Fir.lower`)
+  grows 1.4 to 2.2 times when the program doubles, from 524,277 parameters (2,398 functions) to
+  1,048,549 (4,793): together about 4 s at half the limit and 7 s at it; so the limit is checked
+  where the parameter total is first known and after linear work only. What it does not bound is
+  listed in the next items (the first of them fixed since).
+- The relevance check against the canonical annotator (Stage A,
+  `Recheck.checkCanonicalRelevance`: `Src.KernelFront.Kernel.annotateChecked`, the kernel
+  annotator and `checkReachedTypes`, rerun on the certificate's table and compared) was
+  superlinear in the reached source. It runs on the source program, before any Fir program
+  exists, on every `ixcc compile` and `check-cert` input (`Cli.checkText`, `check-cert`'s verifier,
+  which `compile` runs on the text it writes since the producer's read-back landed) and in the
+  claim verifiers (`CompileClaim.checkCertCanonicalRelevance`, Ring0), on both routes; the producer
+  runs the same annotator, so on such inputs a compile paid it twice. On the generated inputs (P
+  parameters per function, F functions reached): 11.0 s at (P, F) = (110, 2,398), 33.4 s at
+  (220, 2,398), 35.5 s at (110, 4,793), 102.8 s at (220, 4,793). Fixed (2026-11-13). The cause
+  (profiled, then confirmed by copies of the annotator with one change each): at every λ the
+  annotator asked the kernel about the rest of the λ's run (annotation, two inferences and a
+  reduction of the telescope of the remaining binders: F·P²), which also filled the
+  program-wide memo with the telescope's suffixes; and `Ctx.sortCond` kept the state from before
+  each of its calls for its failure branch, so the kernel copied that whole memo at its first
+  insertion (about one new type per function: F²·P). The annotator now asks once per maximal
+  run of λs, of the run's innermost body, and gives every λ of the run that condition (the Π
+  rule: the sort of `Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is), and
+  `sortCond` continues with the empty memo after a failed question. Tested equal to the former
+  definition, not proved equal: on every committed closure the kernel accepts (59 programs,
+  40,005 λ tags, 19,298 with a condition other than `never`), on adversarial runs (η-short
+  bodies, runs broken by a `let` or a β-redex, universe-polymorphic runs at `Sort u`,
+  `Sort (max u v)` both ways round and `imax`, an always-proof body, a λ inside a type, a run of
+  102 binders, a large eliminator's rules), on the erased-parameter programs and on the four
+  generated inputs: the same annotation everywhere (`IxCCTests/KernelFront/LamRuns.lean`).
+  Measured in one process each on the build box, on the kernel's telescope fix (which alone took
+  the first cell from 11.4 s to 9.9 s), the former definition against the new one: 9.9 s → 0.56 s
+  at (110, 2,398), 28.6 s → 1.02 s at (220, 2,398), 29.6 s → 1.08 s at (110, 4,793), 113.5 s →
+  2.18 s at (220, 4,793); what remains grows about as F·P (×1.8 when P doubles, ×1.9 when F
+  doubles, ×3.9 when both do). `check-cert` end to end on the last cell's zero-RC certificate:
+  16.5 s and 1.9 GB (104 s and 12.1 GB before). Over the committed closures the annotator takes
+  0.94 s against 2.99 s.
+- Open: the annotator's λ conditions rest on a fact about the kernel core's inference (the Π
+  rule's zero condition, above) that IxCC does not prove; the progress proof can discharge it on
+  the model's side. Recorded as the direction once binder data enters the record format with the
+  #678 ingest: reading each λ's condition from the datum the kernel's own annotation pass writes
+  and its inference validates (`BinderMeta.pw`, the zero condition of the binder's codomain) in
+  place of asking the kernel's inference.
+- `RcReplay`'s plain-RC back end after admission had a per-function quadratic term:
+  `Xv.Validate.program` on the canonical certificate of those inputs took 11.6 s at
+  (220, 2,398), 3.4 s at (110, 2,398) and 6.1 s at (110, 4,793), about F·P². The canonical map
+  drops each unused parameter at the return, so a function of P parameters has P `dec`
+  statements that no Anf node counts (`maxBackWork` sees one node), each a call made while up
+  to P values are live, and at every call the validator passed over its whole abstract state
+  twice: `AState.clearOutArgs` (forget the outgoing cells) and, through `define`,
+  `AState.forget` of the call's result (located by gdb samples of `check-cert` and counts: at
+  (110, 2,398), 264,551 calls over 29.9 million state entries and 271,763 definitions over 30.7
+  million). Fixed (2026-11-13): `checkBlock` walks a block on `Tracked`, the state with the
+  registers and the outgoing cells it may hold, so a definition forgets its register only when
+  it is listed and a call erases only the listed cells; the former walk is kept as
+  `checkBlockList` and proved equal (`checkBlock_eq_list`, `Xv/Validate/Proof/Tracked.lean`),
+  and tested against it on every corpus root's allocations and on generated Lir, with
+  certificates made wrong (`tests-own-owned`). On the build box, the probe's
+  `Validate.program` on the verifier's own inputs, the former walk against the new one in one
+  process: plain-RC route 3.07 → 0.82 s at (110, 2,398), 10.1 → 1.82 s at (220, 2,398), 5.87 →
+  1.59 s at (110, 4,793); the immortal route unchanged (0.25–1.37 s). What remains grows ×1.95
+  when F doubles and ×2.2 when P doubles on the plain-RC route (×2.7 on the immortal route).
+- Open: what remains superlinear in the allocation validator after that fix, measured on the
+  build box (probe `probe-h12`, modes `back`, `edges`, `residual`):
+  - A function's parameters are checked distinct by a list (`nodup`), quadratic in them:
+    23 ms and 84 ms over the 2,398 functions of 110 and 220 parameters; within the parameter
+    limit the sum of the squares can reach about 2³¹ (about 1.6 s at the measured rate).
+  - An edge binds its target's parameters over the whole state at the source's end
+    (`bindParams`, each held register tested against the parameter list) and checks the
+    target's certificate against the result (`le`): per edge about the state times the
+    parameters. On a synthetic join of K parameters reached from E arms that pass all K values:
+    2.6 ms at (E, K) = (64, 32), 6.4 ms at (64, 64), 17.8 ms at (64, 128), 34.6 ms at
+    (128, 128), 71.7 ms at (256, 128): linear in E, about K² per edge. By an argument, not a
+    check: where every block has an earlier predecessor a certificate's claims must hold on
+    that edge, so it cannot make the state larger than the honest one and the term is the
+    program's. The generated inputs have no edges.
+  - The tracked walk still passes over the whole state when a register it defines is already
+    listed, which happens only when a block's certificate claims a register before its
+    definition. Where every block has a predecessor earlier in the order and the program is
+    SSA, such a claim fails that predecessor's edge check before the block is walked. Cfg
+    numbers every forward edge upward and Xv is SSA, but neither is checked on the verifier's
+    path; the corpus suite counts no such scan (15,876 allocations, 15,552 of them with edited
+    certificates). Where the order does not hold (generated Lir with permuted labels: 29 such
+    walks in 3,656 allocations), a certificate can claim every register a block defines: on a
+    synthetic block of D definitions placed before its only predecessor, refused at that
+    predecessor's edge check, 13.5 ms at D = 500, 161 ms at 2,000, 564 ms at 4,000 and
+    2.05 s at 8,000 (honest certificate 0.9 ms to 15.6 ms); the former walk costs the same.
+    The certificate's limits admit it (8 fact entries per register mention), so it is bounded
+    only by the size of one block. Kept, so that the tracked walk stays equal to the former one:
+    refusing at such a definition would report a different error than the walk that goes on to
+    the predecessor's edge check.
+  - Candidate for a later landing, the cheapest check that excludes that layout: before the
+    walk, every block after the entry has a predecessor earlier in the order (one pass over
+    the edges), and every register is defined once (one pass over the definitions). With both,
+    a claim before a definition fails an earlier block's edge check before the defining block
+    is walked, so the scan cannot happen (the argument above, to be proved with the check). The
+    validator's own inputs satisfy both on the corpus (28,882 blocks: none without an earlier
+    predecessor, no register defined twice; the generated Lir with permuted labels has 398 of
+    4,055 blocks without one). What proving that the verifier's lowering always passes would
+    cost (estimates, not established): the order half builds on what exists, since `Rt.lower`
+    already refuses a Cfg function whose forward edges do not go upward (`misordered`,
+    `edgeOrder`) and `Cfg.Proof.Layout.lower_ordered` proves Cfg's lowering satisfies it;
+    carrying it through `Rt.lower`'s block chunks and pruning (`prune_sim` keeps the label
+    order) and through selection (block for block) is a few hundred lines. The defined-once
+    half is larger: it follows each pass's fresh-register supply (Cfg, `Rt.lower`'s `supply`,
+    selection's temporaries), or it can rest on the check and tests alone, refusing what the
+    check does not admit.
+- The back end's layout (`Backend.lay`: stacking and block layout) grew faster than linearly in
+  the function count: 0.36 s and 1.15 s on the immortal route at 2,398 and 4,793 functions,
+  16.7 s and 29.8 s on the plain-RC route. The cause was in stacking, not in layout:
+  `Stacking.run` read a callee's declared result count by converting the whole function array
+  to a list at every call (`resultsOf`, through the arity check) and every tail call
+  (`tailResults`, through the clobber check), O(F) per site, and placed functions and wrappers
+  by appending each to the list built so far (O(F²)). Fixed (2026-11-13): the array is read at
+  the callee's index and each placement is one pass, the first forms kept as
+  `resultsOfList`, `tailResultsList`, `placeExportsList` and `placeFuncsList` and proved equal
+  to the definitions (`Xv/Stacking/Proof/Linear.lean`), and tested against them on every
+  corpus root on both routes and on synthetic programs (`tests-own-owned`). On the build box,
+  the probe's `Backend.lay` on the verifier's own inputs, before and after: immortal route
+  309 → 48 ms at (P, F) = (110, 2,398), 289 → 46 ms at (220, 2,398), 857 → 92 ms at
+  (110, 4,793), 876 → 109 ms at (220, 4,793); plain-RC route 8.5 → 0.70 s at (110, 2,398),
+  16.3 → 1.37 s at (220, 2,398), 59.5 → 1.45 s at (110, 4,793). What remains grows about ×2
+  when F or P doubles, linearly in the functions and call sites: on the plain-RC route mostly
+  the clobber check's callee lists (`mayChange`, 0.3–0.6 s), the typed program's
+  well-formedness check (0.2–0.4 s) and emission (0.1–0.25 s); tunnelling and block layout
+  take under 20 ms in every cell.
+- The RC policy selection (`Own.Plain.selectRcPolicyForSrc`, through `enrichFirContracts`:
+  `progKeyContracts` and `progKeyResult` rebuilt `funList` and searched it once per function)
+  was quadratic in the function count: 0.12 s at 1,024 functions, 2.5 s at 4,096, 48.8 s at
+  16,384 and over 600 s at 65,536 on synthetic programs, 2.7 s to 12 s on the generated inputs'
+  2,398 and 4,793; its contract merges (`getD` index by index) were quadratic in a function's
+  parameters where its contracts are written. It runs in `--rc auto`'s producer and in the
+  zero-RC claim verifiers (`CompileClaim.verifyProgram`, Ring0) after `runWithContracts`, and the
+  contract-aware canonical map (`Program.canonicalForSrc`) runs the same enrichment. Fixed
+  (2026-11-13): the key index (`keyIndex`, each key to its first function in id order, built
+  once) and one-pass merges (`mergeContracts`, `keepContracts`), proved equal to the former
+  definition (`enrichFirContracts_eq_list`, `Recheck/Rc/Proof/KeyIndex.lean`) and tested against
+  it on every corpus root and synthetic programs (`tests-own-owned`). On the build box, the former
+  definition against the new one: 49.1 s → 18 ms at 16,384 functions, over 900 s → 98 ms at 65,536,
+  0.76 s at 262,144; 4,096 functions of 256 parameters with their contracts written 3.47 s → 74 ms,
+  512 of 2,048 parameters 5.17 s → 105 ms. Left as it is, bounded by the closure: the source's
+  resource pairs are searched once per function (`srcConstContracts`, `find?`), but ingress
+  validates them, one per definition of the closure.
+- The certificate text's limits (`Src.Hints.checkJsonText`: 64 MiB of text,
+  nesting 512, number tokens of 32 digits; the decoders' 4,096 frame slots,
+  ids up to 1,000,000 and 64 middle-end steps) applied only to certificates
+  read from text: the producers built theirs as values and the compile path
+  verified the value, so `ixcc compile` could write a certificate that
+  `ixcc check-cert` refused. It did on a registered input: `fixtures/rc/budget`'s
+  `fanUnder` under `--rc on` and `auto` (a plain-RC certificate nested 2,208
+  deep, from one `inc` per extra copy of `n` passed in a part of ten or
+  eleven calls). Fixed (2026-11-12): every producer reads its certificate back
+  from its file text through the verifier's reader (`Cert.readBack`), and
+  `ixcc compile` runs `check-cert`'s verifier on the text it writes and writes
+  exactly that text ([compile boundary](compile-boundary.md), "The certificate's
+  text"; `compileInput_text`, `producePlain_text`, `produceImmortal_text`). A
+  certificate past a limit now declines the compile with the limit's reason
+  (`--rc off`, `on`) or, from plain RC, falls back to the immortal policy
+  (`auto`). `fanUnder`'s roots call its fan functions in parts of two (nesting
+  410). Of the limits, two are reachable by the producer: the depth under plain
+  RC (`fixtures/rc/deep`'s `deep240`, 240 nested tests, nesting 726) and the
+  size in every mode (probes kept with the change's notes, not committed:
+  `FanBig56.lean`, 56 of the budget input's fan functions under one root, a
+  zero-RC certificate of 68,888,457 bytes; `Size100x80.lean`, 80 functions of
+  101 parameters each with a chain of 100 tests whose `k`-th leaf returns
+  parameter `k`, a plain-RC certificate of 73,006,286 bytes; each frozen with
+  `ix` through `IxCCTests.Corpus.rebuildFixture` and compiled with `ixcc compile
+  --rc off|on|auto --emit-cert`, then `ixcc check-cert`).
+- Open, not changed by that fix: the depth limit itself. A plain-RC
+  certificate's ownership code nests one level per binding, action and join
+  and two per `case`, below the middle end's own depth limit (`Anf.maxDepth`,
+  2,048), so a function whose canonical code nests past about 510 levels (a
+  chain of about 170 tests, or about 500 copies of a variable passed at one
+  point) is declined under `--rc on` and compiled under the immortal policy
+  under `auto`. The registered corpus's plain-RC certificates nest at most 410
+  (`fanUnder`; 121 on the corpus manifests, `Natural.fibMain`). What would lift
+  it: a flat encoding of the ownership code. The code mirrors the source's
+  control tree, which the decoder already walks in step (`Certificate.decode`,
+  fuel 4,096, the source within `Anf.maxDepth`), so the certificate need only
+  carry, per body, the actions and the joins' captured lists as one list in the
+  tree's preorder, which the decoder consumes as it walks the source: one
+  format version (`ixcc/own-plain/2`), its encoder and decoder, the decoder's
+  facts that admission's proofs use, and `tests-rc-certificate`'s codec tests;
+  the checker and everything after it read the decoded `Code` and do not
+  change. Merging a run of `inc`s of one variable into one `inc x n` (which the
+  format already has) would lift only the case of many copies.
+- Open: the command line's `--rc auto` verifies a plain-RC certificate twice:
+  `RcReplay.producePlain` runs `RcReplay.run` to decide between plain RC and
+  the fallback, and `compile` then runs `check-cert`'s verifier, the replay
+  included, on the text (before 2026-11-12 it ran `RcReplay.run` again on the
+  value). Deciding the fallback on `check-cert`'s verdict instead would save one
+  replay per automatic compile.
+- Open, not reached by any producer output found: the number-token limit
+  (32 digits: the certificate's numbers are indices, counts, offsets and bounds
+  below the program-size budgets, at most 7 digits; numerals of 40 to 60 digits
+  in a source never reach it; 5 digits on the corpus), the frame-slot limit
+  (4,096: linear scan reuses slots, so its count is the values spilled at once,
+  bounded by the values in scope, Anf depth 2,048 and the parameters, which
+  `ix`'s output holds to about 230; the all-slots fallback, a slot per value,
+  ran for no function of the corpus or of the probes; 240 on the corpus) and
+  the id limit (1,000,000: ids are dense, so it takes more than a million
+  reached constants or Anf globals; 1,540 on the corpus). If one is reached,
+  the compile declines (or falls back) with its reason, as for the others.
+- `RcReplay.runFront` runs the ownership check three times on the same map:
+  at admission (`Own.Plain.Certificate.admit`), in the program gate
+  (`checkScopedProgram`'s `checkProgram`) and in the lowering
+  (`Native.lower`'s `checkProgram`); the budget bounds each run, and the
+  proofs use each, but two of the runs could be read from the first.
+
+### Resource soundness
+
+Usage (`0 1 &`), ownership (`!`) and locality (`~`, `let borrow`)
+annotations are checked today by ix's resource checker, an executable
+analysis with no stated semantics and no soundness theorem; the kernel's model
+reads no contract; no IxCC theorem takes the checker's acceptance as a
+premise. IxCC re-checks erasure itself and gives the other annotations no
+run-time meaning yet, so nothing compiled depends on them. The owner decided
+(2026-11-14) that source annotations are untrusted hints, verified by IxCC's
+own ownership checker wherever the compiler acts on them, and that resource
+soundness is a theorem of its own about an instrumented source evaluator
+([resource soundness design](resource-soundness-design.md)).
+
+| Id | Content | Depends on | Exit test | Size [estimate] | State |
+| --- | --- | --- | --- | --- | --- |
+| RE-0 | Close the confirmed hole: result contracts re-labelled through a theorem the checker did not analyse and a cast | — | the relabelling programs refused, as regression tests | small | Done: the checker types theorem proofs and erased terms with contracts ([resource soundness](resource-soundness-design.md)) |
+| RE-1 | IxCC's ownership checker verifies written unique and borrow contracts at both ends (a unique parameter at every call, a unique result at every return, a borrow where it is used); in-place update only on verified uniqueness | Phase 2's ownership checker (DR1) | the relabelling programs get no in-place update even with the hole re-opened; annotated K2/K3 twins verified | 2–4k lines beyond the checker itself | Planned (Phase 2) |
+| RE-2 | An instrumented source evaluator (reference counts, regions, a use counter per binding) that refines SrcEval; a resource checker on the Src program actually evaluated; the property of each annotation, on a first-order fragment | EV-1 | the refinement and the properties fenced; verdicts compared with ix's checker on the ownership suite | 8–20k lines | Planned |
+| RE-3 | Widening: closures as cells, eliminators, recursion through equations, locality with tail calls | RE-2; P8 | per item | per item | Planned |
+
+*Depends on:* Phase 2 for RE-1; the evaluator contract (EV-1) for RE-2, which
+instruments it and checks the same Src program the spine grounds; not on the
+spine's adequacy work. For a source-level statement to survive the kernel's
+conversion, result contracts must become part of a type's identity, as input
+contracts already are: a decision for the kernel's owners (DO-24). *For the
+native route:* in-place update, elided reference counting and stack allocation
+only where RE-1 verified. *For the evaluator route:* write-once memory has
+nothing to optimise; the annotations mean something there only through RE-2.
+
+**Erased parameters: what a caller drops, the callee never reads (2026-11-12).**
+IxCC drops the argument of every parameter the callee's type writes erased
+(`0`), which is right only if the callee's run behaviour never reads it. Three
+routes broke this, each compiling to an object that returned a wrong
+constructor while SrcEval returned an irrelevant value (or got stuck):
+a definition's own value η-short under an erased parameter
+(`checkCanonical` compared the value's λs with the header by a truncating
+zip); a `csimp` redirect to a target whose type does not erase the parameter;
+and a special head whose type writes erased a position it reads (a `case`
+entry's minor, a recursor's minor, `Quot.mk`'s element) or a minor premise
+η-short over a constructor field written erased (C3 compared the minor's λs
+with the fields by a truncating zip). The first two, and the recursor, `Quot`
+and minor cases, were refused only by the certified kernel, because its
+conversion compares binder contracts (or a stored recursor's type must be the
+generated one); the format change (modes leave the term bytes) removes that,
+and an honest compile would then have been a miscompile. The `case` route
+needed no change to the kernel: a hand-made artifact whose casesOn-shaped
+definition writes `0` on a minor, in its type and its λ, is accepted by the
+certified kernel, gets a `case` entry from the table's scan, passes the
+byte-level verifiers' Stage A, and compiled to a wrong value. Now
+`checkCanonical` refuses the first two (the run body, or the redirect, must
+bind every parameter written erased with its class) and the special heads
+(no position a head reads, `Lam.Erase.headReads`, may be written erased), and
+C3 requires a minor to bind every field written erased; none of these relies on
+the kernel's contract comparison. Every registered root's status, object and
+certificate are unchanged. The invariant and its enforcement point per route
+are in [compiler design](compiler-design.md#relevance-and-erasure); the tests
+are in `tests-relevance` and `tests-recheck`. What remains unproved: these are
+checks with tests. The relevance proof (`Relevance.Proof.check_sound`) gives
+the tier-S facts erasure needs relative to SrcEval and nothing about the
+invariant; no theorem relates the annotation to the kernel's meaning (S6, S8
+in the [certification design](certification-design.md)); and the correctness
+statement does not bound a source that goes wrong (`Front.GoesWrong`, which
+includes a value no view reads), which is what each violation produced.
+
+**Constructor fields written erased under recursors, and the minors of mutual
+blocks (2026-11-13).** A seventh route: at the recursor of a mutual block's
+second inductive, C3 paired minor `j` with rule `j`, but such a recursor takes
+the minors of every constructor of the block and has rules only for its own
+inductive's, so C3 checked the wrong minors and not its own; an η-short minor
+over a field written erased compiled to an object returning constructor 0
+where the meaning is `c₁`, SrcEval returning the irrelevance marker (built
+below the kernel; today's kernel refuses a field written erased in a mutual
+block, at the constructor). C3 now pairs each rule with the minor it
+dispatches (`Check.ruleDispatch`, erasure's reading). A recursive field written
+erased, which a rule passes as the major of an induction hypothesis (SrcEval
+stuck there), is now refused by name by a forwarding clause in
+`checkCanonical` (`forwardsErased?`: a rule uses such a field only as its
+argument to the minor it dispatches, decided on the stored rule term). Under a
+single inductive C3's η-short clause at the hypothesis call already refused it;
+where the hypothesis is another member's recursor nothing did, and only
+erasure's decline of the sibling-calling rule kept the program from an object.
+Which check refuses which case: [compiler
+design](compiler-design.md#relevance-and-erasure); the seven routes:
+[certification design](certification-design.md#erased-positions-the-routes-found-and-what-closes-each).
+The tests are in `tests-recheck` (`ErasedBlocks`, on the new fixture
+`fixtures/ixon-v4/erased-blocks`). Open, from this work:
+- *The η-short side effect (conservative, kept).* C3's η-short clause also
+  applies at an induction-hypothesis call inside a rule, whose minors are the
+  rule's variables: so a reached recursor of an inductive with a recursive
+  constructor and with any constructor field written erased, recursive or not,
+  is refused (where its minors are relevant). The forwarding clause makes one
+  part of it redundant (a field written erased forwarded to a hypothesis is
+  refused by name) but not the rest: at a mutual block the user's call pairs
+  only the minors the called recursor's own rules dispatch, and the minors it
+  forwards to a sibling's hypothesis call (for the sibling's constructors) are
+  checked only at that call, by this clause, conservatively (whatever the user
+  passed). So it is not removable as it stands; removing it needs C3 at the
+  user's call to pair every minor with the block's constructor it is for (from
+  every recursor of the block), and the per-activation argument written down
+  (lemma P1's recursor case). The refusal of a non-recursive field written
+  erased in another constructor is by reading only.
+- *Rule shape.* IxCC never checks that a stored rule has the kernel's generated
+  shape; only the kernel does (`nativeRulesOk`), and it compares a rule's body
+  and its binders' types, not its binders' data. The forwarding clause is
+  decided on the rule as stored, so it does not depend on the shape; a proof
+  about rule bodies (P1) will need either a shape check of our own or the
+  kernel's check as a theorem.
+- *Capability gaps, not checks* (reproducers in `fixtures/ixon-v4/erased-blocks`):
+  honest nested recursors (`mainN`, `mainN1`, `mainR`) are stuck in SrcEval and
+  declined by erasure (`erase-minor`, "forwards a binder with another dispatch
+  (S25)"); the honest cross-member program (`mainM2`) is declined
+  (`erase-unbox-elim`, its first member a one-field structure), and a rule
+  that calls a sibling recursor was declined (`erase-modes`) in both programs
+  tried; a mutual `casesOn` gets no `case` entry ("mutual casesOn stays on δ").
+- *Not established.* Nested blocks with a field written erased through the
+  kernel (the byte-level plant was declined by the reader, "recursor whose
+  inductive block is not in the input", which the probe's own address remapping
+  may have caused); whether erasure declines every rule that calls a sibling
+  recursor (two programs); why honest nested runs are stuck in SrcEval (by
+  reading: `selectRule` requires the major's parameter count to equal the
+  recursor's, and an auxiliary recursor's major, a value of the container
+  type, has the container's parameter).
+
+**The relevance checks' facts as propositions (L1, 2026-11-13); relevance
+preservation (P1) next.** What the relevance checks decide is now proved from
+their acceptance, in `Src/Relevance/Proof/Canonical.lean`: tier C at every
+reached instance (`check_soundC`: C0 at λs and `let`s written erased, C1 at
+variables, C2 at constant heads and β-redexes, C3 at minors with each recursor
+rule paired with the minor it dispatches, `elimShape_recr_minors`, and at
+projections, C4, C5), and what `checkCanonical` decides (`checkCanonical_sound`:
+the canonical constant and constructor records, header agreement of run bodies
+and `csimp` redirects, the special heads' reads, the forwarding clause on the
+stored rule terms, canonical tags), with the three facts about positions
+written erased (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`).
+The closure loop's proof is now generic in the fact the term walk gives
+(`visit_specQ`, `loop_specQ`; `visit_spec` and `loop_spec` are its tier-S
+instances, statements unchanged). As first approved, one statement was false:
+`field_erased_dropped`, because the constructor record's predicate omitted the
+check's length of the classified telescope; a constructor declared with no
+fields whose type has one Π binder written erased refuted it (kept as an
+`example` in `IxCCTests/Fences/Erase.lean`), and the predicate now states that
+length. Not proved: that an accepted program's evaluation never yields the
+irrelevance marker at a position that is read. That is P1 (PLAN-2 §4.3, by
+induction on SrcEval's clocked definition, from L1 and tier S), the next step.
+Two findings of the probes constrain its statement: under a recursor rule
+(F2) a dropped field's slot holds the marker while the rule's field λ has the
+class of the field's type (relevant), so the invariant on environments must be
+per recursor activation (field slots follow the constructor's kept fields; the
+minor slots are the activation's, checked at the user's call and forwarded
+unchanged by hypothesis calls), not "every slot at a relevant binder is live";
+and IxCC never checks that a stored rule has the kernel's generated shape, so
+P1 may use only what the forwarding clause decides of the rule as stored
+(`ForwardOk`), or a shape check of our own.
+
+**Two more routes, found by writing P1's statement (2026-11-13).** C3 compares
+minors with constructors only at a saturated eliminator spine. An eliminator
+partially applied or bare, its minors supplied later at a variable head (the
+eighth route), or reached through a `csimp` redirect to a `case` key (the
+ninth), met no check, and an η-short minor over a field written erased
+compiled to an object returning constructor 0 where the program means
+constructor 1, SrcEval returning the marker. The eighth passes the certified
+kernel; `Recheck.run` accepted both; on the byte path only Stage A refused the
+eighth (next paragraph). So before this check the planned P1 was false for
+programs every check accepted. C3 now refuses such an eliminator away from a
+saturated spine (`Check.partialElim`, closing the eighth) and `checkCanonical`
+a `csimp` redirect to one (`redirectsErased?`, closing the ninth); the facts are
+in L1's module (`ElimC`'s shorter-spine clause, `TermC.const`,
+`Canonical.redirects`). [Certification design](certification-design.md#erased-positions-the-routes-found-and-what-closes-each)
+has the nine routes; P1's statements, checked against the evaluator on the
+erased-misuse programs and every registered root, come next.
+
+**A type at a data position, and the structure P1 reads (2026-11-13).** Writing
+P1's statements found a program of another class: `def main : E := Sort 0`
+(ill typed, below the kernel) passed every relevance check and `Recheck.run`,
+its object returned constructor 0 and SrcEval the marker (SrcEval evaluates a
+sort or Π to the marker, erasure to □). `Recheck.sound` does not assume the
+kernel's acceptance, so C7 now refuses a sort or a Π at a relevant position
+(`TermC` has no case for one); no committed closure holds one. The same
+statements needed six structural facts no relevance check decided, ensured
+until now by the kernel, ingress, the table's derivation or erasure (rule `j`
+for constructor `j`, the universe-argument counts and `Fin.mk`'s proof field by
+erasure alone, where it erased): `checkCanonical` now decides each
+(`Canonical.rules`, `univs`, `dense`, `ctorRecords`, `subsingletonFields`,
+`finProof`), so P1 rests on the relevance checks and its sort hypothesis; one
+constructor per inductive and index stays a hypothesis, discharged by
+`erase_progWF` under `Recheck.run`'s acceptance.
+[Certification design](certification-design.md#erased-positions-the-routes-found-and-what-closes-each)
+has the class and the six facts (a seventh, `subRecords`, came with the twelfth
+route, below). P1's statements on these checks come next.
+
+**The eleventh route: a special head over-applied (2026-11-13).** Stating P1's
+E7 case at a position written erased (the function value must ignore the
+argument) found that `readsErased?` compared a special head's positions written
+erased with those the head reads, not with its arity. `Quot.lift` reads only its
+function and its quotient, and its stored type is not checked on the recheck
+path, so below the kernel a `Quot.lift` with a seventh Π written erased,
+over-applied, passed every check and `Recheck.run`: its object returned `c₀`
+where the program means `c₂`, and SrcEval the marker. `readsAt` now reads every
+position at or past a special head's arity, and L1 gains `erased_lt_arity`
+(engineer PB; the other special heads, harmless or refused before, are asserted
+in `tests-recheck`'s `ErasedArity`).
+
+**P1's prefix lemmas and the front end's facts are proved (2026-11-13).**
+`eval_shielded_prefix` and `eval_erased_prefix` (`Src/Relevance/Proof/P1/Prefix.lean`: the value of a
+spine's prefix ignores an argument that is shielded or at a position written erased) and
+`front_accepted`, `shapeOk_of_run` (`Recheck/Proof/FrontAccepted.lean`), engineer PB's proofs on
+P1's definitions. P1's core is next; the narrowing of `Recheck.sound`'s escape is below.
+
+**L1's facts hold on the program SrcEval runs (2026-11-13).** `facts_modeEq`
+(`Src/Relevance/Proof/P1/Facts.lean`): when both relevance checks accept the
+installed program, P1's hypothesis `Facts` holds of its Lazify image, the
+program SrcEval runs. The relevance checks do not read application modes
+(`check_modeEq`), and `Canonical` carries over field by field
+(`canonical_modeEq`), both in `Src/Relevance/Proof/ModeEq.lean`. The only
+comparison of modes, `applyPis`'s loop test, can disagree only at a definition
+whose unfolding cycles; `tests-relevance` plants one. Engineers PE and PG did
+this work.
+
+**The twelfth route: a subsingleton eliminator without its constructor's
+record (2026-11-13).** P1's F3 case read false where a reached subsingleton
+recursor's rule-0 constructor has no constructor record, and a run reproduced
+it as a wrong-value route: below the kernel, a `Prop` inductive with large
+elimination over a field that is neither a proof nor an index (Lean's
+criterion, which only the kernel enforces) gets a subsingleton kind taking that
+field for a proof; F3 binds the marker for it, and with no record neither C3
+nor S4 reads the field, so a field written erased reached a relevant minor
+binder; `Recheck.run` accepted it, its object returned `c₀` where the program
+means `c₁`, and SrcEval the marker (engineers PF, by reading, and PJ, by run).
+`checkCanonical` now refuses a reached subsingleton eliminator whose rule-0
+constructor has no record (L1's `Canonical.subRecords`), which F3's and F5's
+proofs read; `tests-recheck`'s `Shape` asserts the route, the clause alone
+refusing it, and the kernel-faithful recursor refused by C6 or C1.
+[Certification design](certification-design.md#erased-positions-the-routes-found-and-what-closes-each)
+has the route.
+
+**`Recheck.sound`'s escape narrowed, under P1's root (2026-11-13).**
+`Front.goesWrong_live` and `sound_live` (`Recheck/Proof/Live.lean`, engineer PB's proofs) take P1's
+root as a hypothesis (`RunLiveStmt`, `Src/Relevance/Proof/P1/RunLive.lean`). Under `Recheck.run`'s
+acceptance and the run's sort events, the source goes wrong only by being stuck, by trapping, or by
+returning a `Live` value that the view rejects; it never goes wrong because of a marker.
+`run_live` has since been proved (next paragraph).
+
+**P1, relevance preservation, is proved (2026-11-13).** `Src/Relevance/Proof/P1/Main.lean` proves
+`preserve`, `pre_step`, `reads_live` and `run_live` from the 25 cases of the core. The last three
+are F3 (`Recr.lean`) and F5 (`CaseKey.lean`), engineer PJ's, and E7 (`App.lean`), engineer PR's,
+who also assembled the theorem. The theorems' hypotheses are L1's facts (`Facts`), one constructor per inductive
+and index (`ShapeOk`) and the run's sort events (`SortAgree`). `Recheck/Proof/LiveClosed.lean`
+gives `run_live` to the narrowing above (`Front.goesWrong_live_closed`, `sound_live_closed`): under
+`Recheck.run`'s acceptance and `Front.RunSortAgree`, the source goes wrong only by being stuck, by
+trapping, or by returning a value with no marker at a read position that the view rejects. One
+definition changed with the proof: `Reads` asks for the selected major at a recursor or a `case`
+key only at an ordinary kind, where the run forces one. Open: `SortAgree`, which typing should
+give and `tests-p1-twin` tests on every registered run, is not proved; the adequacy and mode
+theorems are other work.
+
+**Open capability item: no program with a constructor field written erased can
+be produced (since at least 2026-11-13).** The kernel annotator's constructor
+record keeps a field its type writes erased (`CtorRel` `keep`) while its
+parameter classes drop it (`ConstRel` `proof always` at that parameter), so
+`checkCanonical` calls every such annotation non-canonical and `produce`
+refuses the program; honest programs with such a field compile only with a
+hand-made certificate, and the byte-level verifiers' Stage A (equality with the
+annotator) refuses those. This is conservative, and it is what refused route 8
+on the byte path before its check: making the annotator canonical there would
+have opened that route on the byte path. Fixing the annotator is now safe
+(route 8 is refused by C3), and it is the order to keep: a capability widened
+only after the check that it needs.
+
+**No end-to-end test of contract-annotated recursive programs (since
+2026-11-11).** IxCC's path for them is: contracts written in the source, a
+resource context in the equations sidecar (the profile and the checked
+equation pairs of the annotated recursive definitions), the table selecting
+each annotated equation only against its checked pair, and the producer
+choosing plain RC or zero RC accordingly. No committed input takes that path:
+this repository's `ix compile` has never written a resource context or checked
+equation pairs (the producer that did is on the unmerged branch
+`jcb/usage-ownership`, preserved as
+`origin/jcb/compilatrix-resource-wip-2026-10-11`), so
+neither an annotated recursive fixture nor the dated one it replaced (an
+earlier producer's, unbound, which the kernel front end refuses) can be
+produced; `ix` refuses OS-04's annotated `len` at its resource admission. What
+still covers the pieces: the resource binding's checks and refusals on
+synthetic contexts (`tests-src`, `tests-own --only resource-records`), the
+resource checker on the role-bound `OS16-plain` closure (`tests-ixon-v3`), the
+non-recursive annotated fixtures through every Own level (`tests-own`), and
+the refusal tests with contracts written into programs in memory
+(`tests-pipeline`'s OS16-contract part, `rc-runtime`'s mixed-contract case),
+whose recheck-path replays still run. IxCC's private v4 resource context
+(`Src.Resource`, `Program.resource`, `Hints.resource`, `Ixon.V3.Resource`,
+`Ixon.V3.Validate`, `Ixon.V3.Source`) was retired ahead of the Ixon v5
+migration (2026-11-21, R9-ixcc); the producer's zero-RC choice on a heap
+program whose written contracts allow it is exercised on programs with
+binder contracts in memory.
+
+### Standalone executables
+
+Decided by the owner (2026-11-14): standalone executables are a target, with
+no C driver; the start-up logic is self-hosted. Until X1 a compiled object ran
+only inside a C runtime driver (364 lines of C, linked by the system linker,
+on the C library), modelled by the ledger assumption
+`x86-phase1-runtime-driver-model`; X0 and X1 replaced it with executables IxCC
+writes. The certified program stays pure; IxCC
+writes a static executable containing the object's text byte for byte, a small
+shell written as typed x86 in Lean and encoded by IxCC's own encoder, and a
+zero-filled segment for the stack and the region; the shell establishes the
+driver contract from the fixed layout. Effects come in stages over one
+platform interface (arguments, write, read, exit, clock), first as requests a
+state-machine root returns as data, later as calls to platform procedures
+treated as traced events; the system-call instruction lives only in platform
+code, never in compiled program text, so the same program text can run as a
+Linux process or under the IxOS tender
+([standalone executables design](standalone-executables-design.md)).
+
+| Id | Content | Depends on | Exit test | Size [estimate] | State |
+| --- | --- | --- | --- | --- | --- |
+| X0 | `ixcc compile --exe` for `Nat` roots (and results without fields): executable writer and checker, typed-x86 shell with the system call outside the program table, static layout with the driver contract proved; the shell ledgered (`x86-linux-exe-shell`). The per-call registers in the driver model move to X0-P | — | every corpus root of the fragment as an executable agrees with the manifest, SrcEval, ByteEval and the C driver, under a seccomp filter, with only `prctl`, `seccomp`, `write` and `exit` | 2–3.5k lines; 3–6 weeks (measured: 1.5k lines with tests) | Implemented ([as implemented](standalone-executables-design.md#x0-as-implemented)) |
+| X0-P | The shell proved; a return address and register file per call in `X86.Driver`; the `Nat` executable theorem; the driver-model assumption retired for executables | X0 | the theorem fenced | 3–6k lines; 2–4 months | Implemented for X2's machine shell: the shell theorem (`shell_sound`) and the executable theorems (`machine_exe_sound`, `Rc.machine_exe_sound`) fenced, against three platform specifications (the loader's post-state, the system calls, the processor, which promises nothing where the byte machine does not say what the processor does), a memory fault or divide error ending the process, and the environment they describe (no tracer, no inherited seccomp filter or supervisor, no outside writer, one thread); safety only, faults allowed anywhere; `--exe`'s parsing shell still ledgered ([design](standalone-executables-design.md#x0-p-the-shell-proved)) |
+| X1 | The redefined XB-1 and IxOS-0: IxCC-written test executables replace the C runtime driver in every native gate, out of process, with no trampoline and no C | X0 | the native suites pass with the C driver off the execution path and no C compiler in their inputs | 1–2k lines; 2–4 weeks after X0 | Implemented ([as implemented](standalone-executables-design.md#x1-as-implemented)): the C drivers are deleted; no gate runs a compiled program through C |
+| X1b | No C at all: the four remaining C test harnesses (linker acceptance of relocatable objects, unwinding, the processor differential) replaced by objects and executables IxCC writes; no C source in the tree and no C compiler in any check's inputs (decided 2026-11-11; [what each needs](standalone-executables-design.md#the-c-drivers-removed)) | X1 | the `x86-elf-object` and `x86-hardware` checks pass with no C compiler in their inputs, with the same assertions | not estimated | Planned, not urgent |
+| X2 | Numeric state machines: a generic request shell, parsing and rendering in Lean, the session theorem on `Nat` states | X0 (X0-P for the proof) | a 1,000-call session against Lean's interpreter; the theorem fenced | 2–4k lines | Implemented: `ixcc compile --exe --machine`, the `IxccExe` library, `fib` end to end, the session theorem fenced over the linked-object model, sessions of more than 1,400 calls agreeing with Lean's interpreter ([design](standalone-executables-design.md#x2-as-implemented)) |
+| X3 | Batch byte executables: arguments and input bytes in, output bytes and an exit code out | Phase 3 (DR2, DR3, DR6) | byte-identical to Lean-compiled executables over a corpus | 2–4k lines beyond the DR items | Planned |
+| X4 | Interactive executables: state-machine roots with heap states; platform interface version 1; a seccomp filter of exactly it | DR1, DR6, DR9 (a) | a 1,000-call session; the state-machine theorem fenced | 4–8k lines | Planned |
+| X5 | Lean `main : IO` over a recorded subset: traced events, platform calls, interpretations of `IO`, start-up logic in Lean | X4, DR2–DR5, P8, DC-2 | the benchmark fixtures' `main` functions compile unchanged and print what Lean's executables print | 10–25k lines (weak basis) | Research |
+| X6 | The platform interface implemented by the IxOS tender: one program text, two platforms | X4, IxOS-1 | the same outputs on both | with IxOS-2 | Planned |
+
+*Depends on:* nothing for X0 and X1; Phase 3 for X3; DR1, DR6 and DR9 for X4;
+the interpretation question (DC-2) and P8 for X5. *Composes with the spine:*
+the executable's statement replaces "the linked object returns `w`" by "the
+executable exits after writing `w`", and the driver model by the loader's
+post-state and the platform's system-call model. *X1, done:* every native suite
+ran both the C driver and the test executables, line by line, with no
+disagreement; then the C drivers, their pins and the C link paths went.
+
+*A possible later hardening of the machine shell (not part of X0-P, not
+planned):* an instruction certain to fault right after the `exit` block's
+`syscall` (today the block jumps back to itself), so that an `exit` that
+returns (under a tracer or an inherited seccomp filter, which the shell
+proof's environment assumption excludes) ends the trace instead of repeating
+the call. It would change the shell's bytes, so it needs its own proof
+update and artifact comparison.
+
+### Repository and landing
+
+- **RL-1, fixtures from this tree.** Every committed fixture is regenerated
+  by this repository's `ix`, role-bound, with no external producer
+  provenance (done 2026-11-11). One command does it, `tools/regenerate.sh`
+  ([corpus](corpus.md), "Refreezing"), and `tools/regenerate.sh --check`
+  says whether the committed fixtures are current and self-contained (no
+  commit or path outside the repository cited); it is run once more on the
+  final merged state before the merge (#678 changes the role table, so every
+  closure changes again). The closures grew: the selection adds recursors,
+  whole logical units and checker support (DO-20); equation counts grew; no
+  source, root, case, value or decline changed, except the boundary family's
+  field limit, restated at 49/50 fields (a defect since removed: "What
+  ingress reads" above; the family is back at 254/255 fields). The typing
+  bundles went with the erased checker, and IxCC's catalog support is retired
+  (DO-16). The unbound flag, with no user left, is removed: `ix compile` writes
+  the role-bound envelope only, as on `main`.
+- **RL-2, the certified-IxVM work.** It has priority and lands first; this
+  branch adapts to whatever it does: a second merge of `main`, the rename
+  pass, re-recorded digests, inventories and ledger, and the move to its formal
+  Aiur package as the Aiur target.
+- **RL-3, the legacy Aiur model (done 2026-11-21).** `IxCC/Aiur` (about 5.8k
+  lines) and the vendored snapshot (`IxCC/Vendor`, about 3.5k) modeled a
+  bytecode that neither Aiur route uses; the formal Aiur package supersedes or
+  contradicts all of it. Retired (DO-14): its tests, fences (301 assertions)
+  and tools, its fixtures, the `ixcc-aiur` check and its entry in the ledger's
+  required checks (17 → 16), the ledger's three Aiur scopes and their pins, the
+  build-graph inventories and the seven legacy `docs/aiur-*.md` documents.
+  The formal Aiur package is self-contained (Mathlib only, at the same
+  toolchain), so a later per-program backend (AR-2) would be a separate package
+  depending on it and on IxCC.
+- **RL-4, landing.** No pull request for this branch until the certified-IxVM
+  work finalizes. The branch is squashed when it lands, so nothing may depend
+  on the commit hashes of its history.
+
+### Flagship targets
+
+**The IxOS flagship: the monitor and driver compiled through `ixcc`.** IxOS runs
+admitted programs as software-isolated processes (SIPs) in Ring 0 and its
+monitor is itself Lean code compiled by IxCC. The monitor is a state-machine
+root (DR9), and a small ledgered *tender* performs privileged operations and
+the calls into SIP entries, because compiled code has no indirect calls
+(decision 4 of 2026-11-10; D20). IxOS-0 to IxOS-2 do not depend on the spine;
+IxOS-3 compiles the verifier as SP-0 leaves it; IxOS-4 depends on SP-1 (or CD2).
+
+| Step | Content | Prerequisites | Exit | State |
+| --- | --- | --- | --- | --- |
+| IxOS-0 | The platform interface and its Linux implementation as the reference host, with no in-process trampoline and no C: X0 and X1 of [standalone executables](#standalone-executables), extended by X4; the tender's implementation of the interface moves to IxOS-2 (X6). Redefined on 2026-11-14 (DO-34, also XB-1) from a host loader that mapped an object and called its entries through a ledgered trampoline in place of linking the C runtime driver | none | as X1 | In progress (X0 and X1 implemented; X4 planned) |
+| IxOS-1 | Fuel metering in prologues and at back edges with a new resource status; Ring-0 frame preservation on every outcome, not only on return | none | Fenced theorems; the session gate with fuel exhaustion | Planned |
+| IxOS-2 | A minimal monitor: SIP table, region allocation, request dispatch to the tender, admission by claim digest and external evidence | Phase 2 (P8, DR1), DR2, DR3, DR6, DR9 | The monitor's `step` certified; a host-harness session of SIP calls | Planned |
+| IxOS-3 | Admission inside the monitor: `CompileClaim.verifyBytes` compiled by IxCC | Phases 2–5 (bignums for 256-bit address comparisons, strings for certificate parsing, scale for the checker's closure); after SP-0, the verifier it compiles takes kernel acceptance as a premise | An IxCC-compiled `check-cert` agrees with the Lean-compiled one on every committed certificate and the hostile-input regressions | Planned |
+| IxOS-4 | Certification: confinement without the source-safety premise (SP-1's progress once its fragment covers the monitor, or CD2); CD3 on `step` and on `verifyBytes` | SP-1 or CD2; CD3 | "Admitted by the compiled monitor ⇒ accepted by the Lean verifier" as a theorem | Research |
+
+**The kernel flagship: the certified kernel compiled through `ixcc`** (native
+x86). Its steps do not depend on the spine except IxCK-3; whether this route
+also helps the IxVM workstream is not part of this plan.
+
+| Step | Content | Prerequisites | Exit | State |
+| --- | --- | --- | --- | --- |
+| IxCK-1 | `Ix.Kernel.Level` (`IxCK/Kernel/Level.lean`: fuelled, mutually recursive level comparison using `Int` offsets) | Phase 2, DR2 | Compiles, certifies, and agrees with the Lean-compiled functions on generated level pairs | Planned |
+| IxCK-2 | The checker, through the reference fold `checkDeclsPure` or the cached fold: records of closures, monad polymorphism, `HashMap`, `Array`, `ByteArray`, `UInt64`, `USize`, `Int`, strings, exact `Nat` | Phases 2–5; DR5's interpretation table, or IxCK without `mixHash` and `getNumBits` | Differential agreement with Lean-compiled IxCK on its smoke environment and claim fixtures; certified relative to SrcEval | Planned |
+| IxCK-3 | "The object accepts ⇒ `checkDecls` accepts" as a Lean theorem, then IxCK's soundness | CD3 at IxCK's scale, or SP-1 widened to IxCK's closure plus a reflection step with no design | The composed theorem fenced | Research |
+
+### Dependencies in brief
+
+```text
+SP-B → SP-0 → SP-1 → SP-2                  (the spine; SP-A in parallel, gates SP-1)
+SP-B → SP-N (the kernel front end, in progress); SP-0 → SP-N's statement
+premises (i), (ii): discharged by IxVM proofs (external) or by SP-N
+EV-0;  EV-1 → EV-2                         (no dependencies; first)
+EV-1, EV-2 → AR-1 deployment (IxVM side);  SP-0, SP-1 → AR-1 proofs
+SP-N → HD-1;  SP-0 → HD-2;  HD-0, HD-3: none
+SP-1 → the x86 and Aiur grounded statements
+Phase 1.5 → Phase 2 → Phase 3 → Phase 4;  Phase 3 → SP-2 (data primitives)
+CD2 → AR-2, IxOS-4;  SP-0 → CD3 → bignum layer 3, IxOS-4, IxCK-3
+Phase 2, Phase 3 → IxOS-2;  Phase 4, Phase 5 → IxOS-3, IxCK-2
+RL-1 phase 2, RL-2 → RL-4;  RL-2 → RL-3
+IxOS-0 (= XB-1), IxOS-1, XB-2: no prerequisites
+```
+
+### Phase 1.5 priorities after the certification work
+
+The upstream `jcb/ix-certify-compile` revision inspected on October 8 (a
+revision outside this repository's history) provides several distinct
+certification interfaces in `Ix/CompileCert`:
+
+| Route | Established interface | Remaining boundary |
+| --- | --- | --- |
+| W (`checkIndexed_sound`) | Exact admitted bytes correspond to independent source exports, with closed source, name-map and whole-block/group coverage | Syntactic association alone does not establish model pullback |
+| W+ (`checkIndexed'_sound`, `model_equations`, `model_statement`) | Changed declarations meet checked statement/equation obligations | Equation satisfaction alone does not establish a unique denotation or changed-block semantics |
+| S (`StrongCone.sound`) | For direct/raw cones, every strong target model induces a strong installed-source model with annotation/value pullback | Source normalization, projection receipts and the connection to SrcEval remain explicit |
+| S+a (`StrongCone'.sound`) | For supported changed-value cones, every strong target model induces a public installed-source value model, value pullback, capability laws and universal rule simulation | Excludes changed blocks, image recursors and type-row cases; does not supply the full annotation, tower or native-Nat model |
+
+These are per-input certificates with their stated premises. Upstream's full
+compiler proof through L4 and broader S coverage remain unfinished. Its export
+erases Lean metadata/binder information, so these results do not certify the
+resource contracts consumed here. The production dependency remains the
+codec-only pin documented in [Ixon v4](ixon-v4.md).
+
+The semantic statements quantify a set-theory model. Host Lean-environment
+capture, the intended export reading, accepted projection-lowering witnesses
+and correspondence to executed runtime remain explicit trust boundaries.
+
+1. **Reconcile the candidate before integration.** Record the exact source
+   revision, binary, libraries, toolchain, profiles, source cone, map, support
+   rows and artifact bytes. The inspected upstream working copy is older than
+   its bookmark; later status reports are not evidence about those checked-out
+   files. Keep compiler-output changes separate from checker-only changes.
+2. **Run a bounded certification pilot.** Exercise a consumer-relevant cone
+   through direct/raw S and, separately, changed-value S+a with its explicit
+   `--strong-changed` option. Check the exact theorem endpoint, a valid neighbor,
+   and corrupted map/type/value/support data; retain unsupported outcomes.
+   Use a separate validation target so the full kernel and its tests do not
+   enter the production codec dependency. This gates adoption of certification
+   interfaces; checker-only improvements retain their existing acceptance gates.
+3. **Finish the existing resource and consumer gates.** Validate the selected
+   500,000-step/depth-256 limits, all cast-bypass controls, Lean/Rust parity,
+   equation/profile bindings, and contract transport (D16), including the check
+   that an `eqn` entry does not drop contracts. W/S acceptance cannot replace
+   these checks. Reassess the stalled engine against the selected upstream
+   interfaces before choosing another optimization experiment.
+4. **Review, freeze and validate the combined result.** Perform the final
+   producer review, reproducible fixture refreeze, verdict review and complete
+   consumer proof/trust/Nix checks. Checker-only changes retain the existing
+   unannotated bytes; canonicalization/repacking changes require their own
+   recorded refreeze with source roots, oracle values and step counts checked.
+5. **Compare the semantic proof routes using the pilot.** The kernel-model
+   route (stage K) and per-program Lean theorem route (stage L) can now be
+   assessed against concrete upstream endpoints. Neither is selected or
+   complete; both still need a bridge from the admitted environment, selected
+   equations and relevant contracts to SrcEval. The first heap slice retains
+   the current SrcEval-relative statement while that stronger bridge is open.
+
+## Decisions
+
+The register has four parts: the standing design decisions; decisions taken
+with a date; decisions to confirm, where new information strains an earlier
+one; and open decisions. The plan above is written with each *default*; the
+owner settles the last two groups.
+
+### Standing design decisions
+
+| Decision | Summary |
+| --- | --- |
+| Source | Ixon (v4 since 2026-10-03) is the only input. Written contracts are lower bounds. The compiler honours them exactly, and may infer stronger guarantees (unique, local, borrowed, erased, one-shot) only when a proved checker certifies them; inferred facts never change Ixon bytes or addresses. |
+| Semantic anchor | Stated against the source evaluator today; the goal is every model with the kernel's laws of IxCK's reading of the closure of the target and the table's theorems, with that model's existence and the image's faithfulness and typing as premises discharged by proofs, and an accepted equation theorem holding in the model so that the replacements it justifies are sound ([certification design](certification-design.md)). |
+| Recursion and replacements | Compiled through kernel-checked equation theorems (`f.eq_def`, `@[csimp]`) collected in an unfolding table, not by recovering structure from `brecOn` or `WellFounded.fix`. `partial` and `unsafe` definitions are rejected; `implemented_by` compiles the reference body. |
+| Erasure | An untrusted relevance annotation. `Recheck.front` decides it with the structural checker (`Relevance.check`, proved in `Relevance.Proof.check_sound`, tier C in `check_soundC`) and with `Relevance.checkCanonical` (its facts: `checkCanonical_sound`), which re-derives each position's class from the declaration types and refuses an irrelevant tag it cannot justify. The byte-level verifiers (`CompileClaim.verifyBytes`, `Ring0Sip.verifyBytes`, `ixcc check-cert`) also re-run the kernel annotator (`inp.kernel.annotateChecked`) on the ingested program with `cert.table` and require the certificate's annotation to equal its output (`Recheck.checkCanonicalRelevance`); the program-level verifiers and `Recheck.run` do not. Neither `annotate` nor `checkCanonical` has a theorem; under the premise architecture the relevance clause is checked against the kernel's typing judgement by whoever holds the types, and these checks stay as IxCC's early refusals. |
+| Middle end | Clocked big-step semantics for functional IRs, with a fuel-indexed logical relation and heuristic-parametric passes. Forward simulations below. |
+| Ownership | Untrusted RC, borrow and reuse passes; one proved ownership checker; fallback to plain RC. Ixon resource admission is a diagnostic gate, not a proof premise. |
+| Backend | Rule-based selection with one lemma per rule; an untrusted linear-scan allocator with a proved validator; a private internal calling convention with SysV at exports; fall-through layout; the existing E1/E2/ELF. |
+| x86 trust | A declarative instruction table. Hardware-differential and XED/LLVM-MC gates first; the Sail agreement proof later. |
+| Runtime | Written in the compiler's own low-level IR and proved: an 8-byte header, single-threaded RC, size-class free lists, iterative free, tagged 63-bit small `Nat`. No C runtime and no GMP in the trusted base. |
+| Profiles | One production profile. Instrumentation, cost and space results are optional layers outside the core relations. |
+| Closures | Closed-world defunctionalisation in Anf (P8), after inlining and specialisation, with untrusted flow facts narrowing dispatch (P9). Fir stays first order; no closure objects, `pap`, `apply` or indirect calls ([closures design](closures-design.md)). |
+| Bignums | Decided by the owner on 2026-11-09: new Lean implementations of the standard multi-precision algorithms, each proved against `Nat` and compiled by IxCC; several references consulted, GMP for behaviour only ([bignum design](bignum-design.md)). |
+| Roots and effects | Roots stay level-monomorphic; structured data crosses the boundary as bytes; interacting programs are state machines driven by a host ([data, roots and effects](data-and-roots-design.md)). |
+
+### Decisions of 2026-11-10
+
+The owner settled four questions this plan had left open. Decisions 1, 2 and 4
+stand; decision 3 is contradicted by later analysis and is under review
+(DC-1).
+
+1. **Closures stay inside a program.** No closure crosses a program boundary
+   (a SIP boundary included), and higher-order libraries are compiled into
+   each program that uses them. Closed-world defunctionalisation is therefore
+   complete for every program IxCC compiles, and no code-pointer closure
+   representation is planned ([closures design](closures-design.md)).
+2. **Claims may carry interpretations of opaque constants.** A compile claim
+   may record a fixed meaning for an `@[extern]` opaque such as `mixHash` or
+   `System.Platform.getNumBits`, so `Std.HashMap` compiles from its Lean
+   definitions; the statement then holds relative to the recorded
+   interpretation ([DR5](data-and-roots-design.md#dr5-library-structures-and-opaque-constants)).
+   Its reading against the grounded statement is DC-2.
+3. **Stage L first** *(under review: DC-1; the plan is written with the
+   kernel-model route leading).* The proof-producing translator (CD3) was to
+   be built first and semantic adequacy (CD4) to be a research spike.
+4. **No indirect calls in compiled code.** Every call and jump IxCC emits is
+   direct; the IxOS monitor reaches SIP entries through a ledgered tender,
+   and no indirect-call row is added to the instruction table. The closure
+   design (dispatch by compare trees), the Ring-0 admission argument (no
+   indirect branch rows) and the IxOS flagship rely on this
+   ([Design decisions](compiler-design.md#design-decisions)).
+
+The owner also decided, on the same day:
+- **The goal**: end-to-end certification for both the Aiur and the x86 back
+  ends, grounded in Ixon and IxCK; a generally useful compiler; hardened
+  against dishonest input.
+- **Self-contained documents**: tracked documents cite only what is in this
+  repository; the pre-merge design notes are not imported.
+- **The certified-IxVM work has priority**: it lands first, and this branch
+  adapts to whatever it does; no pull request for this branch until it
+  finalizes.
+- **The squash**: this branch is squashed when it lands, so nothing may depend
+  on the commit hashes of its history.
+- **Fixtures from this tree**: every fixture is regenerated by this
+  repository's `ix`, with no external producer provenance. This settles three
+  questions of the regeneration work: the manifests' producer fields record
+  that the producer is this repository's `ix` and keep the binary digest as a
+  record, not a pin, with the regeneration gate as the provenance check (a
+  `corpus` tool change); the Ixon v4 fixture package is adopted from this
+  repository (six of its eleven files change, including the handoff
+  environment, and the `tests-ixon-v3` and `check-ixon-v3` baselines move);
+  and every commit-hash citation in a tracked file is replaced by a
+  description (RL-1).
+- **P8 now**: Phase 2's closures were started at the owner's request, for the
+  native route's generality, although the evaluator route does not need them.
+
+### Decisions of 2026-11-13 and 2026-11-14
+
+- **Byte compatibility first** (2026-11-13): byte compatibility between IxCC
+  and the kernel's artifacts is the spine's first milestone, and IxCC will read
+  role-bound environments. IxCC reads them (implemented: the
+  [byte contract](byte-contract.md) says which bytes and how they are
+  identified), and `ix compile --unbound` was a bridge, removed once the
+  fixtures were refrozen in the role-bound form (this settles DO-19; both done).
+- **Root arity** (2026-11-13, fixed 2026-11-14): a root is called with
+  exactly its declared parameter count, and the compiler makes its entry at
+  that count; the end-to-end theorems are stated for inputs of exactly that
+  count, and for every input of a program the closures step leaves unchanged.
+- **Source annotations are untrusted hints** (2026-11-14): IxCC's own
+  ownership checker, on IxCC's intermediate representation, is the soundness
+  basis for anything the compiler does with ownership: a unique parameter is
+  verified at every call and a unique result at every return, and a borrow and
+  a local value are verified where they are used, as erasure is re-checked
+  today. The source-level resource check stays as a front-end diagnostic. A
+  source uniqueness annotation selects in-place update only through that
+  verification, never by being trusted ([resource
+  soundness](resource-soundness-design.md#layer-1-annotations-are-untrusted-hints-ixccs-ownership-checker-verifies-them)).
+- **Resource soundness is its own theorem** (2026-11-14), with its own place in
+  the certification plan; the kernel-model grounding cannot supply it, since
+  the model sees no contracts. It is operational: for each annotation, a
+  usage-soundness property of an instrumented source evaluator (a heap with
+  reference counts, regions, and a use counter per binding), checked on the
+  program actually evaluated or compiled, starting with a first-order
+  fragment. On the route that runs the evaluator in a proof system, which has
+  no ownership level below it, this theorem is what gives annotations a
+  meaning ([resource soundness](resource-soundness-design.md#layer-2-a-source-level-resource-theorem)).
+
+### Further decisions of 2026-11-14
+
+- **Standalone executables**: a target, with no C driver; "we should be able
+  to self-host that logic" ([standalone
+  executables](standalone-executables-design.md); the track is
+  [above](#standalone-executables)).
+- **Exact root arity**: a root is called with exactly its declared number of
+  parameters, and the compiler generates the entry at that arity, as Lean's
+  own compiler does for exported functions. This supersedes "no longer than"
+  of 2026-11-13 and settles DO-23.
+- **The certified kernel as IxCC's type checker**: IxCC's erased type checker
+  is to be replaced by the certified kernel in both the producer (the
+  relevance annotator, early diagnostics) and the native verifier path, with
+  an enumerated ledger exception for the kernel's `implemented_by` sites, as
+  the native-discharge milestone (SP-N). This settles DC-4, and the checker's
+  part of DC-3: the checker is replaced rather than kept in untrusted
+  production, so there is one type checker, the proved one. Its design is a
+  separate kernel front-end document. Since the switch's step 3 (2026-11-11)
+  it is the only front end: every compile path's ingress is the kernel's
+  acceptance, the per-claim typing flag is gone, and the erased checker is
+  deleted (step 4).
+- **The standalone-executables design**: accepted as proposed, which settles
+  DO-28 to DO-36 as their defaults. "Self-host" means a pure certified program
+  plus a small machine-level layer that IxCC generates and later proves, never
+  C; a static layout; requests returned as data first and platform calls
+  later, over one platform interface; the system-call instruction only in
+  platform code; seccomp self-confinement on; an executable claim binds the
+  executable's hash, the platform and the shell version; XB-1 and IxOS-0 are
+  redefined as executables replacing the C driver; numeric state machines
+  before Phase 3; Lean `IO` through platform calls. The first executable
+  milestone (X0) is implemented.
+
+### The restatement of 2026-11-11
+
+What the certified IxVM work's typing claims conclude (a model of the claimed
+environment, not acceptance by a kernel entry; the closure of the claim's
+seeds, not an artifact; the default role table only) made the first premise
+the wrong shape. The plan above is restated on these lines
+([certification design](certification-design.md#the-restatement-of-2026-11-11)).
+
+**Settled by it** (follows from the facts, not a choice):
+- the first premise is the existence of a model, with the laws, of the
+  kernel's reading of the closure of the seeds; the seeds are the target and
+  every theorem the unfolding table names;
+- the pairing with an IxVM claim is by those seeds and the table, through one
+  `checkEnv` claim in the default context, not by `(H, ρ)`; a `checkEnv` over
+  a whole `ix compile` artifact is refused (it holds `partial` records), so it
+  is never the pairing;
+- IxCC's statements are over every public `Model` with the laws, not over the
+  kernel's internal invariant;
+- typing derivations of what the evaluator runs are part of the second premise
+  (a model gives no typing for subterms);
+- soundness and progress are separate obligations: the evaluator route needs
+  soundness, the x86 claim both;
+- images used to discharge a grounded claim carry no stored-value opaques
+  (agreed with the IxVM side: the public model keeps no value for an opaque),
+  which settles DC-2's stored-value part.
+
+**Opened by it**: DO-37 to DO-41 below.
+
+### The kernel front end's switch (2026-11-11)
+
+- **The switch proceeds now.** IxCC's front end moves to the certified
+  kernel on both the producer and the verifier path, and the erased checker
+  is deleted ([the switch](kernel-front-end-design.md#the-switch)), without
+  waiting for a work budget in the kernel's typing core. This replaces the
+  working default that held the switch on that budget.
+- **The kernel's blow-up on chains of `let` is fixed in the kernel package on
+  this branch**, in parallel with the switch (KF-3). The fix has landed (the
+  ∀ rule's universe level; 28 ms where it took 52 s at 30 `let`s). What
+  stays exposed since the switch's step 3 is a closure whose universe-level
+  comparison is exponential (it is coNP-hard for levels with `imax`; the
+  kernel's level walks on shared levels are memoised), which can hold the
+  byte-level verifiers as long as its author chooses; the planned guard is
+  a call budget in the kernel's level comparison (KF-3;
+  [resource bounds](kernel-front-end-design.md#resource-bounds),
+  [hardening](hardening-design.md#external-dependencies)).
+- **The fixtures were refrozen in the role-bound form** (RL-1 phase 2), and
+  the switch's step 3 followed (the kernel admits only role-bound
+  environments): the front end over the kernel is the only one; steps 4 and 5
+  (the deletion, the ledger) are next.
+
+What remains a working default, awaiting confirmation, is listed with the
+[kernel front end's decisions](kernel-front-end-design.md#decisions): the
+native check of the clauses (DO-6 (c)), the tiered entry and the artifact's
+own prelude. The closure run for premise (i) (DO-37) was decided the same
+day.
+
+### Decisions to confirm
+
+| Id | Question | Options | Default | Why | Cost to change later |
+| --- | --- | --- | --- | --- | --- |
+| DC-1 | The order of the certification routes (decision 3) | (a) stage L first, as decided; (b) the kernel-model route leads (SP-A, SP-1), stage L becomes a side product; (c) both at equal priority | (b) | Stage L relates the object to a host Lean function and does not ground anything in IxCK or apply to a term inside an environment; the IxVM workstream's critical path is adequacy | Low: stage L has not started; reverting later costs the spike's months |
+| DC-2 | How decision 2 reads against the grounded statement | (a) interpretations allowed in compile claims as statements relative to the interpretation, kept separate in table and image from evaluation through a stored value (`opaqueByValue`), and both excluded from the grounded statement; the evaluator route refuses both for discharging axioms; (b) add an opaque value law to IxCK and state grounded results over models restricted to it; (c) no interpretations: targets avoid opaques | (a); its stored-value part settled 2026-11-11 (no stored-value opaques in a grounded image, agreed with the IxVM side) | IxCK's model keeps no value equation for opaques, so neither kind holds in every model with the laws; an evaluation axiom must hold in every model, so a relative statement cannot discharge one | Low now (nothing implemented); meanwhile code that reaches an allowlisted opaque (today `Lean.opaqueId`) cannot be discharged; (b) later restricts every grounded statement that uses it |
+| DC-3 | IxCC's guarantees conditional on kernel acceptance supplied externally (an IxVM typing proof or a native IxCK run) and on faithfulness supplied by the party holding the kernel's reading, rather than on IxCC's own type checking; and then the per-claim typing flag and the erased type checker | (a) as stated, the flag removed from claims' meaning and the checker kept only in untrusted production (the relevance annotator, early diagnostics), off the verifier path; (b) as stated, the checker kept on the verifier path as an optional filter; (c) prove the erased checker sound instead | (a) for the guarantees; for the checker, **decided** 2026-11-14 under DC-4: replaced by the certified kernel, not kept in untrusted production | A soundness proof for 12,700 lines of checker costs about what IxCK's own verification cost, and acceptance is already proved for IxCK; typing dominates verification time (51.7 s of 51.8 s on the committed scalar closure) and is unbounded per closure | Medium: the byte-level Stage A re-derivation uses the checker's expressions and conversion, so retiring it means porting or dropping that check |
+| DC-4 (decided 2026-11-14: (a)) | Does IxCC obtain type information (for the relevance annotator, `checkCanonical` and the byte-level re-derivation) by calling the certified kernel instead of its own erased checker? | (a) call IxCK and delete the erased checker; (b) keep the erased checker in untrusted production only (DC-3's default) | **Decided** (2026-11-14): (a), in the producer and on the native verifier path, with an enumerated ledger exception for the kernel's `implemented_by` sites; in progress within SP-N; until the switch the erased checker stays as untrusted production code | One type checker instead of two, and the proved one; (a) deletes the erased checker rather than merely moving it off the verifier path | Medium: IxCC's dependency on IxCK grows beyond its codec, and IxCK's typing cost (its blow-up on chains of `let`) enters the producer |
+
+### Open decisions
+
+| Id | Question | Options | Default | Why | Cost to change later |
+| --- | --- | --- | --- | --- | --- |
+| DO-1 | Will IxCC co-own the adequacy spike on the `Decidable` fragment, ahead of stage L, and who works on it? | IxCC owns; IxVM owns; co-own | Co-own, ahead of stage L: IxCC owns the SrcEval side and the relation, the IxVM workstream the IxCK model facts it needs, with people on both; the spike runs `fib`, then `decide (fib 10 = 55)` so that the `Decidable` case is tested early | Both workstreams' critical path; each holds half of the expertise | Low |
+| DO-2 | Who owns the image format? | IxCC, IxVM reviewing; IxVM, IxCC reviewing | IxCC, as a module over `Src.Syntax` alone, versioned with SrcEval; the IxVM workstream reviews every version and owns the evaluator's reader | It serializes `Src.Program` and must change with it; a second reading of Src would diverge | Medium once images are in circuits: a format change is a new key's worth of work on the IxVM side |
+| DO-3 | Can the relevance clause be stated against the kernel's typing judgement, for an external checker to discharge? | yes; no (consumers re-derive the annotation with IxCC's annotator, which must then be specified) | Yes, in both directions ([CD1](certification-design.md#cd1-the-front-end-theorem)) | The party with the types can decide it; IxCC's own classifier has no theorem | Low |
+| DO-4 | Are SrcEval's `irr` decisions at concrete levels stable enough to freeze? | freeze version 1 now; wait for Phase 3 | Freeze version 1 for the Phase 1 fragment now; the mechanism is stable, the rule set is not: strings (E9), DR2's words and bounded-construction rule, DR3's arrays, DR5's interpretations and the stored-value opaque question (DC-2) come as later versions with a changelog | Nothing pending changes version 1's rules | Low: a version bump |
+| DO-5 | Data primitives' meaning lemmas at the SrcEval level, independent of the x86 heap invariant? | yes; per implementation | Yes, in a module below the runtime (DR3 and DR4 already plan conservativity lemmas against reference bodies, relative to SrcEval) | One specification for the x86 heap and a write-once memory | Low |
+| DO-6 | How is the image's faithfulness discharged, per route? | (a) the kernel circuit's lowering claim; (b) IxCC's ingress rebuilt on IxCK's reader, so one reading by construction; (c) a native check of the clauses against IxCK's reading | (a) on the evaluator route; on x86, (a) where the consumer aggregates with IxVM proofs, and on the native path (SP-N, in progress since the decision of 2026-11-14 to take type information from the kernel, DC-4) (c), the working default of the [kernel front end](kernel-front-end-design.md#decisions), awaiting the owner's confirmation; (b) was the earlier default. Since 2026-11-11, on every route the image is compared with the kernel reader's term (`let`s kept), and the premise includes typing derivations (DO-40) | (a) reuses what IxVM builds anyway. (b) and (c) both import IxCK's reader, widening IxCC's dependency on IxCK beyond its codec; given that, (b) leaves one reading on the verifier path where (c) keeps two and compares them; IxCC's own decoder stays in the untrusted producer | Medium: (b) rewrites the verifier's ingress over IxCK's regrouped blocks |
+| DO-7 | Priority, given limited capacity and the certified-IxVM work first | — | RL-2 when that work lands; then SP-B; EV-0 to EV-2; SP-0 and SP-A; SP-1; Phase 2 continuing at reduced pace (P8 milestone 1, heap completion); HD-0; RL-1 phase 2 when its decisions are taken; Phases 3–5, CD2 and CD3 when a consumer needs them | The spine and the IxVM interface are the goal's critical path; Phase 2 serves the native route's breadth | Low: an ordering |
+| DO-8 | Is per-program Aiur lowering on the plan before a key-derivation story exists? | schedule it; keep it designed and unscheduled | Unscheduled | A per-program key's provenance cannot be checked in a circuit today, so its claims would add per-program trust | Low |
+| DO-9 | The first grounded fragment's exit test | evaluator form; x86 form; both | Both: `decide (fib 20 = 6765)` through SrcEval on its image, and the K1 `fib` compile claim, then every K1 root | One test per route over the same spine | Low |
+| DO-10 | Does the metered verifier (HD-2) precede or follow the spine? | before SP-0; after SP-0 | HD-0 now; HD-1 with SP-N; HD-2 and HD-3 after SP-0 | SP-0 changes the verifier's front; the dominant unbounded cost (typing) leaves the verifier with it | Low |
+| DO-11 | How the compile claim binds what composition needs | new claim fields (root, role table, image digest); a companion claim | New fields in the compile claim (the role table: implemented in SP-B, validator 7; the image digest with SP-0); the certificate stays unbound, documented as affecting meaning until SP-0's table lemmas and SP-1's progress hold. Since 2026-11-11 the pairing is by the seeds (the target and the theorems `D` names) and the table, so `D` is what makes the claim pair; `env` (`H`) and `roleTable` (`ρ`) stay, meaning what IxCC read, and no field changes before `D` joins (DO-41) | Composition by aggregation needs the addresses in one claim | Medium: the claim codec is shared with ix |
+| DO-12 | What happens to `Models/KernelBridge`? | keep as a record; delete now; keep until SP-1 | Keep with its gate until SP-1, reuse its literal-denotation layer where useful, then remove | Its approach cannot reach recursion and is not the route | Low |
+| DO-13 | May evaluation axioms be discharged by reductions Lean's kernel lacks (δ by accepted equation theorems)? | yes; no | Yes: SP-0's lemma (from `mem` and `eq_equality`, with the theorem a seed) makes it sound in every model with the laws; the IxVM workstream's rules now have such a rule (an equation's proof rewrites its left side) | SrcEval recurses through equation theorems; without this the evaluator route covers no well-founded recursion | Low for IxCC; it is the IxVM workstream's rule |
+| DO-14 | The legacy Aiur model (`IxCC/Aiur`, about 5.8k lines; the vendored snapshot, about 3.5k) | retire; re-pin; keep | **Retired (2026-11-21, RL-3)** | The formal Aiur package supersedes or contradicts every part of it; neither route uses its bytecode | Low: a deletion; the one idea worth keeping (memory functionality from the memory polynomials) goes to formal Aiur's owners as a note |
+| DO-15 | IxCC's primitive table lacks this repository's `String.back` and has a `String.Legacy.back` that Lean 4.34.1 lacks | adopt this repository's table; keep IxCC's and retire the regeneration step | Adopt (follows from fixtures from this tree); moot once the certified kernel replaces the erased checker (DC-4, decided 2026-11-14) | One table, regenerable | Low |
+| DO-16 | The catalog fixtures cannot be regenerated: this repository's assembler takes only role-bound members | keep frozen with the pin described; an IxCC-side assembler; regenerate after SP-B | **Retired** (2026-11-11, the kernel front end's step 4): IxCC's catalog support (the reader, the validator-1 admission, its four fences, the catalog step of `ixcc-ixon-v3`, the two frozen catalogs and their tests) is deleted. Validator 1 certified erased typing, which the deleted checker gave; ix retired validator 1 (its readers refuse it), and nothing outside IxCC's own tool, tests and frozen catalogs read it. Reading catalogs again means building against ix's current validator | No new assembler to maintain | Low |
+| DO-17 | Does the fixture regeneration gate block CI? | blocking; a report | A report until this branch lands, blocking afterwards with the refreeze procedure documented (the certified-IxVM work lands first, so it is never blocked) | A blocking gate makes every `ix` change that alters these bytes refreeze IxCC in the same pull request | Low |
+| DO-18 | Dated records whose producing commits are not in this repository (the historical annotated-recursion ownership records) | keep, described; retire | **Retired** (2026-11-11, the kernel front end's step 4): the records were unbound, which the kernel front end refuses, and this repository's `ix` refuses their source (OS-04) at its resource admission and writes no resource profile or checked pair, so no role-bound successor exists; what they tested is in the [CI coverage record](ci.md) | They were evidence for a retained refusal boundary; their reading (the erased checker, the earlier annotator and ingress) is deleted | Low |
+| DO-19 | The unbound-envelope flag, or IxCC reading role-bound environments | — | **Closed** by the decision "byte compatibility first" (2026-11-13): IxCC reads role-bound envelopes (SP-B, implemented); `ix compile --unbound`, the committed fixtures' bridge, was removed once they were refrozen in the role-bound form (SP-B) | — | — |
+| DO-20 | The regenerated closures are larger (this repository's root selection adds recursors, whole logical units and checker support) | accept; add a plain-dependency closure to `ix` for IxCC | Accept | A second closure semantics in `ix` would be maintained for fixtures only; the larger closures pass ingestion and the suites unchanged | Low; kernel-evaluated recheck tests may slow |
+| DO-21 | Does the image the evaluator reads keep subterms shared? | a flat tree; a DAG with each distinct subterm once | The shared form for the evaluator, with the tree form as the specification of content | A flat image is about 6 times the closure for a small program and about 21 times for the one-megabyte closures, measured outside this tree, and a circuit hashes all it reads | Medium: a second canonical-order argument in the codec proofs |
+| DO-22 | Universe profiles in the image: one term per constant and profile, as the IxVM workstream asked, or Src's one level-polymorphic term with level-exact conditions | per profile; per constant | Per constant, the reader deciding the level conditions at concrete levels | Smaller; it is what SrcEval reads; the decision is one scan of a short list | Low before the format is frozen |
+| DO-23 (decided 2026-11-14: the entry is generated at the declared arity) | Are roots η-expanded to their declared type's arity? Under exploration | η-expand; keep roots as written, with the compiled arity pinned to the declared parameter count (2026-11-13) | Keep the pin until the exploration reports | The arity decision of 2026-11-13 already fixes what the theorems quantify over | Low |
+| DO-24 | Result contracts in a type's identity, so that a source-level resource statement survives the kernel's conversion (a decision for the kernel's owners, in IxCK and the IxVM kernel) | compare result contracts in conversion; forbid non-default result contracts wherever conversion can see them | Compare them in conversion, as input contracts already are | It closes the class of hole the resource checker's confirmed hole belongs to, as Idris 2 did for multiplicities; RE-1 does not need it | Medium for the kernels: a result contract on λ nodes, or λs checked against their expected ∀ |
+| DO-25 | When IxCC's ownership checker cannot verify a written contract on an internal function | refuse the program; compile as if the contract were absent | Refuse, with a diagnostic naming the contract (D16: contracts honoured exactly) | Dropping is sound for memory in a closed-world compile but silently discards what the source asked for | Low |
+| DO-26 | Which arguments an erased parameter erases (ix's checker erases wherever the head's type exposes an erased binder; IxCC only at constant and β-redex heads) | IxCC decides relevance from the head's type at every application; ix's checker grades erased only where IxCC erases | IxCC widens, with its relevance checker's rule extended | Erasing more evaluates less. Where IxCC erases today (constant and β-redex heads), that the callee never reads what the caller drops is IxCC's own check, not the kernel's: `checkCanonical`'s header agreement (a run body or a `csimp` redirect binds every parameter written erased) and its special-head rule (no position a head reads written erased), C3 (a minor binds every field written erased), and C2 at a β-redex, whose λs are the binders erasure reads ([resource soundness](#resource-soundness), 2026-11-12). The kernel compares binder contracts only until the format change, when it stops; widening to variable heads then needs its own check that a λ flowing into a parameter whose type writes `0` on an arrow binds it erased (decision 6 of the modes plan refuses such a `0` at first) | Low |
+| DO-27 | When the source-level resource theorem (RE-2) is scheduled | after EV-1, in parallel with RE-1; on demand, when a claim on the evaluator route first states a resource property | On demand, with RE-1 first | The native route's memory safety needs RE-1 only; on the evaluator route annotations optimise nothing | Low |
+| DO-28 (decided 2026-11-14: the default) | Does "self-host that logic" mean a pure certified program plus a small proved machine-level layer that IxCC generates from Lean, never C, with the system-call residue never compiled from Lean source? | yes; require the residue in Lean source too | Yes | The system-call instruction in compiled text would break Ring-0 admission; the residue is a few instructions per call, proved | Low |
+| DO-29 (decided 2026-11-14: the default) | Stack and region: a static zero-filled segment sized when the executable is written, or mapped at start-up | static; mapped | Static | No system call, strict confinement possible, the driver contract decidable on constants | Low: the mapped variant is three more calls and their model |
+| DO-30 (decided 2026-11-14: the default) | Effects: requests returned as data first, platform calls as traced events later, over one platform interface | as stated; platform calls only; requests only | As stated | Requests need nothing new in the pipeline; Lean `IO` needs platform calls | Low |
+| DO-31 (decided 2026-11-14: the default) | The system-call instruction only in platform code, as a platform-only row the program checker refuses | as stated; allow it in program text | As stated | Program text stays admissible under the IxOS tender's Ring-0 check | Low |
+| DO-32 (decided 2026-11-14: the default) | Executables confine themselves with seccomp (strict while the interface is `write`/`read`/`exit`, then a filter of exactly the interface) | on by default; off by default | On by default | The kernel interface after start becomes as small as the theorem's model | Low |
+| DO-33 (decided 2026-11-14: the default) | What an executable claim binds | the object's claim plus the executable's hash, platform, shell version, entry convention and layout; less | As stated; a verifier rebuilds the executable deterministically | Every input to the executable's bytes is bound | Medium: the claim codec is shared with ix |
+| DO-34 (decided 2026-11-14: the default) | Redefine XB-1 and IxOS-0 as IxCC-written executables replacing the C runtime driver, out of process, dropping the in-process trampoline | redefine; keep the host loader | Redefine | The trampoline is C or assembly in the Lean process, which the owner's decision excludes | Low |
+| DO-35 (decided 2026-11-14: the default) | Numeric state machines (X2) on today's fragment before Phase 3 | before; after | Before, if Phase 3 is more than about six months away | They need no heap across calls, so the session theorem is available early | Low |
+| DO-36 (decided 2026-11-14: the default) | Lean `IO` through platform calls with recorded interpretations, or by transforming `main` into a state machine | platform calls; a continuation-passing transformation | Platform calls; revisit if IxOS programs must never call out | Keeps ordinary Lean `main` unchanged; the transformation would need closures and a whole-program rewrite | Medium |
+| DO-37 (decided 2026-11-11: (a)) | How premise (i) is discharged natively | (a) the logical entry run on the closure of the seeds, under the IxVM claim's table and the committed prelude (KF-4); (b) the tiered whole-artifact acceptance, with three restriction lemmas (models, table and prelude, derivations) | (a) | One statement for both routes, no restriction lemmas; one more kernel run over a subset of the records already checked, and a ported closure walk (0.3–0.6k lines) | Low: (b) is lemmas, not behaviour; (a)'s code is small |
+| DO-38 (decided 2026-11-11: (c) preferred, which is also the IxVM side's preference, with (a) as the fallback; the artifact tables were measured to be restrictions of the default one on every committed role-bound closure) | How a compile claim's artifact table meets the IxVM claim's default table | (a) a restriction check plus a reading lemma beside the kernel's reader; (b) `ix compile` writes the default table into every artifact; (c) the IxVM side widens its theorem to every admitted table | (a), asking the kernel side for the lemma; (c) noted as the IxVM side's option | (a) changes no artifact; (b) makes every artifact carry every role's support and certificate closure (larger files, and the kernel must admit roles whose constants are absent); (c) is a change to their statement's scope | Low: the check is a pure function of two tables |
+| DO-39 (decided 2026-11-11: (a); the law is scheduled on the IxVM side, over all literals) | The `Nat` operations' meaning on literals | (a) a public law on the kernel side; (b) IxCC derives it from δ, ι and the role specifications, by induction | (a), with (b) as the fallback if the law is not scheduled before SP-1 | The kernel's internal invariant already carries the recurrences; a law is a small step there and serves IxVM's own discharge path; (b) costs IxCC 2–4k lines | Low |
+| DO-40 (decided 2026-11-11: (b), the working view on both sides) | Where the typing derivations of premise (ii) come from on the IxVM route | (a) the IxVM claim exposes its records over the kernel's rules for the claimed environment; (b) the lowering claim proves typing for the image's positions | (b), with (a) asked as well | The lowering claim already checks the relevance clause with the circuit's own inference, which is typing; (a) changes the consistency statement | Medium: it fixes what the lowering claim states |
+| DO-41 (decided 2026-11-11: (a)) | Do the compile claim's fields change? | (a) no change now; the image digest joins with SP-0 and with the target determines the seeds; (b) add the seeds' tree root or the kernel table's address now | (a) | `env` and `roleTable` keep a true meaning (what IxCC read); the seeds are a function of the target and `D`; a field added before the image exists would be unfilled | Medium: the claim codec is shared with ix |
+| DO-42 (open, 2026-11-12) | Should the compile output say whether a root is in the fragment where the certified statement names a value? A compiled object returns, and an `--exe` executable prints, whatever the object computes, with nothing saying so; the correctness statement's value clause allows any result when the source goes wrong (`Front.GoesWrong`, which includes SrcEval returning a value no view reads, as the miscompiles of the resource-soundness entry of 2026-11-12 did); today the grounding check is the only tool that says a program is in that fragment, and `ixcc compile` does not report it | report nothing (today); `ixcc compile` reports the grounding check's verdict per root; refuse outside the fragment | Open | The compile output could report the grounding check's verdict for each root, so a printed result says whether the statement names it | Low: a report, not a change to what is compiled |
+
+## Coordination
+
+- **The IxVM workstream.** It owns the evaluator circuit, its refinement of
+  SrcEval, the kernel circuit's lowering claim and the aggregation; IxCC owns
+  the evaluator contract, the image and its interfaces (DO-2), the
+  faithfulness and typing clauses, and soundness and progress (DO-1 for the
+  spike). IxVM's consistency theorem (an accepted claim's closure has a model;
+  today a reduction to eight per-layer obligations), which discharging premise
+  (i) by an IxVM proof relies on, and the fix to IxCK's typing core on chains
+  of `let`, are that workstream's, as are the external dependencies listed as
+  XK.
+- **ix / certify-compile.** Reconcile equation export, compiler hints and
+  source-contract transport with the new compiler passes and their closure,
+  changed-block and definition-group coverage requirements. Reproduce the
+  consumer's former recursor and proof-closure blockers on an identified
+  candidate before marking them resolved.
+- **Certified checker and model.** IxCK's public `Model`, with the laws the
+  certified IxVM work is adding to it, is the target of the grounded
+  statement; IxCC asks the kernel side for the laws and lemmas listed as XK.
+  Codec compatibility and the adopted Lean 4.34.1
+  toolchain already have their own pins; IxCC now imports IxCK's tiered
+  admission entry and executed typing core (the [kernel front
+  end](kernel-front-end-design.md)), recorded in the trust ledger with the
+  kernel's own `implemented_by` rulings as an enumerated exception.
+
+## Measurement
+
+The [benchmark design](benchmark-plan.md) defines comparison rules. The first
+rows are:
+- IxCC;
+- `lean-clang` (the same Lean source through Lean's bundled Clang at `-O3`);
+- `clang-idiomatic` (natural C or C++ twins).
+
+GCC, CompCert, CakeML, OCaml and Koka are reference rows. Correctness and
+deterministic step counts run in CI; timing runs locally with paired A/B
+sessions. [Historical reports](performance/README.md) are retained.

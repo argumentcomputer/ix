@@ -17,5 +17,11 @@ refs
 # (manifest + pieces + build cache) — never checked in.
 *.ixc/
 
+# Except IxCC's frozen fixtures (IxCC/fixtures, docs/corpus.md), which are
+# tracked .ixe closures and .ixc catalogs: a refreeze or a new corpus family
+# must not have its new files skipped by `git add` (and so by Nix).
+!/IxCC/fixtures/**/*.ixe
+!/IxCC/fixtures/**/*.ixc/
+
 # Python maintenance tools
 __pycache__/

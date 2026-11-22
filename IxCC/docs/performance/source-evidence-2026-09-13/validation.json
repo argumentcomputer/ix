@@ -1,0 +1,185 @@
+{
+  "checks": {
+    "assembly-scaling": {
+      "drv": "/nix/store/im5bq984lny2gak9g7j6dgirqbf5wkcz-assembly-scaling.drv",
+      "out": "/nix/store/bf4kvgdxd591rkqnrbhzljzdb5f2pmvd-assembly-scaling",
+      "status": "passed"
+    },
+    "benchmark-correctness-smoke": {
+      "drv": "/nix/store/2591jpyczl5gnp1ix0niqk6bq2pbpsfc-benchmark.drv",
+      "out": "/nix/store/7z7dww76s9qlshn7nh0plcmv80gvg2dw-benchmark",
+      "status": "passed"
+    },
+    "build": {
+      "drv": "/nix/store/3ih1w3780n0ss09xw7nfrk3anfvbjmcx-IxCC.drv",
+      "out": "/nix/store/g1in2asa35l5kgdhywb3ddhq5zk6rvka-IxCC",
+      "status": "passed"
+    },
+    "catalog-contact": {
+      "drv": "/nix/store/s7zl8kx7hfl7cvy56p8g5yklwgv24n3f-catalog-contact.drv",
+      "out": "/nix/store/db5gvivhh6x9qjrzqssrmwq0wjpp3nb3-catalog-contact",
+      "status": "passed"
+    },
+    "ci-workflow": {
+      "drv": "/nix/store/hfi3qb01cgsgj89i2by8hbgpnnkb3917-ci-workflow-check.drv",
+      "out": "/nix/store/ni3rawfal9z2qfj74a4zmgf4a05sl0ls-ci-workflow-check",
+      "status": "passed"
+    },
+    "compiler-scaling-correctness-smoke": {
+      "drv": "/nix/store/r3rsv34yw3dvpw7l0d400lkq5jbask9l-compiler-scaling.drv",
+      "out": "/nix/store/gjl874x69d08392zzdfq758m1bf22lqw-compiler-scaling",
+      "status": "passed"
+    },
+    "ixir2-identity": {
+      "drv": "/nix/store/36xhw1fi3hb7kfg9xngq9f2syq3b0086-ixir2-fixture.drv",
+      "out": "/nix/store/j7kn5jx7ik17wr3g7nf0f15zqym9gfpq-ixir2-fixture",
+      "status": "passed"
+    },
+    "native-graph": {
+      "drv": "/nix/store/bzpnkgvx781p5whs3l10xpf62f1ld3ms-native-graph.drv",
+      "out": "/nix/store/cwsn8f04qr2gvcwx33a76i0294b7ihq9-native-graph",
+      "status": "passed"
+    },
+    "native-sharing": {
+      "drv": "/nix/store/nfkr8axw1c0ym9wv0cfx47c43ava8kp4-native-sharing.drv",
+      "out": "/nix/store/4nxka53kxhvf63xd6rkl6ncxk0syb5d3-native-sharing",
+      "status": "passed"
+    },
+    "source-borrow": {
+      "drv": "/nix/store/z6dicbzy84nz4v299hpli97l073vjawp-source-borrow.drv",
+      "out": "/nix/store/k8hwq7kpi7jgn84nyy9pqzi5is9qc0pw-source-borrow",
+      "status": "passed"
+    },
+    "source-borrow-runtime": {
+      "drv": "/nix/store/7xn0686mvib6fkn77g0mi0z641pmp73h-source-borrow-runtime.drv",
+      "out": "/nix/store/3c57pgxpcf02ldzchg8zkwfzk86fbyf4-source-borrow-runtime",
+      "status": "passed"
+    },
+    "source-call-reuse": {
+      "drv": "/nix/store/brf1knfv896hjhpzy2j6n4a8acqk7fwb-source-call-reuse.drv",
+      "out": "/nix/store/7ndk59g6n4id0wfshfm6ny29x7j056m8-source-call-reuse",
+      "status": "passed"
+    },
+    "source-coverage": {
+      "drv": "/nix/store/bgx3ii7pyv426dkszkzsqgjd3i3s87mz-source-coverage.drv",
+      "out": "/nix/store/x5570bzbmf0f8lw6p9fga1vlsanw6223-source-coverage",
+      "status": "passed"
+    },
+    "source-evidence": {
+      "drv": "/nix/store/a4wzgbxkbl9c1dic22is7c142qhx7q49-source-evidence.drv",
+      "out": "/nix/store/r93q9fxwbprh1vk4g8zwypaxlwvnh7v9-source-evidence",
+      "status": "passed"
+    },
+    "source-modular": {
+      "drv": "/nix/store/nbl1mfw7jmskbydm755l1pa6q86l1sff-source-modular.drv",
+      "out": "/nix/store/67z822m6l5cbhnsllx35nb08vq1bjjrm-source-modular",
+      "status": "passed"
+    },
+    "source-native-allocating": {
+      "drv": "/nix/store/p52kq93l1l42ia1kqdi8zj4wj12fnpk2-source-native-allocating.drv",
+      "out": "/nix/store/2xbqglb4dzlyg545h9awhf7lsrspiyw2-source-native-allocating",
+      "status": "passed"
+    },
+    "source-native-captured-scalar": {
+      "drv": "/nix/store/v3v0iisi6ql347psbqln8nbyqkhndy5w-source-native-captured-scalar.drv",
+      "out": "/nix/store/i42nsdwfmbq1vmypq1p19w9ciw2792jk-source-native-captured-scalar",
+      "status": "passed"
+    },
+    "source-native-heap": {
+      "drv": "/nix/store/gi564xsj39z52haiahnvkvp130r144zv-source-native-heap.drv",
+      "out": "/nix/store/ryd1q4cz7gn1f9hmj8f0irv6cnfs50vi-source-native-heap",
+      "status": "passed"
+    },
+    "source-native-physical-scalar": {
+      "drv": "/nix/store/vxlahxcaw2yjd2giyiqc9h7ppdj1niih-source-native-physical-scalar.drv",
+      "out": "/nix/store/l01gdvrmhhdjb4lpa6gfwqh2a6jryv3s-source-native-physical-scalar",
+      "status": "passed"
+    },
+    "source-native-runtime": {
+      "drv": "/nix/store/rscyahy7ccqnjpzbw6q8cbhgg10xwihn-source-native-runtime.drv",
+      "out": "/nix/store/4c9zv40rd733526f6jnhykqdgpzcfk5b-source-native-runtime",
+      "status": "passed"
+    },
+    "source-native-scalar": {
+      "drv": "/nix/store/aamg1y0wzspzmq7fjf3w8q95841z7fn7-source-native-scalar.drv",
+      "out": "/nix/store/jahwqw6khz39hjnfhvccgrk53g6dh6h1-source-native-scalar",
+      "status": "passed"
+    },
+    "source-native-unique": {
+      "drv": "/nix/store/0saa0d18vdyg73li68bpa3qhbdvs39ba-source-native-unique.drv",
+      "out": "/nix/store/sgajapgfihvb34xy93s7r1qz6vcwdqcr-source-native-unique",
+      "status": "passed"
+    },
+    "source-native-upstream": {
+      "drv": "/nix/store/76pw7vlvdld44ins29505zxfy3b8s9ql-source-native-upstream.drv",
+      "out": "/nix/store/sl6w54r5ygmqmay7driid0cv95nsgq3z-source-native-upstream",
+      "status": "passed"
+    },
+    "source-recursion": {
+      "drv": "/nix/store/masb2fykawk9i3c2k5piqhfn3ifcabzy-source-recursion.drv",
+      "out": "/nix/store/xn6h4srn9qqyvzdd8slvcswn9dlgw4lm-source-recursion",
+      "status": "passed"
+    },
+    "source-space": {
+      "drv": "/nix/store/rfv4k26bbpvw72qf9kln94lqr5sfba43-source-space.drv",
+      "out": "/nix/store/lnr3bnwh34kjjyp282mjghfaqzxw26qb-source-space",
+      "status": "passed"
+    },
+    "source-unique-reuse": {
+      "drv": "/nix/store/5zrv0s6y7l254kfkb9xi0mf35640x2j5-source-unique-reuse.drv",
+      "out": "/nix/store/jq13hd57d8jsysiww3310nv6kvghf4dh-source-unique-reuse",
+      "status": "passed"
+    },
+    "tests": {
+      "drv": "/nix/store/dc81gn4cwgb0c6s24klys4ridc50552g-tests.drv",
+      "out": "/nix/store/jw1nkh3m5amcz8xxmwqclbj2z2pjr9s2-tests",
+      "status": "passed"
+    },
+    "trusted-extern-ledger": {
+      "drv": "/nix/store/wl4qld28wyazmggh84lxxbj14y9ivkf9-check-trusted-externs.drv",
+      "out": "/nix/store/7sibrhxjmn8b6bhmidg7bv888585wfw2-check-trusted-externs",
+      "status": "passed"
+    },
+    "x86-byte-execution": {
+      "drv": "/nix/store/w2jds8aidg4p5il6vw7kmbf0v84hvn89-check-x86-bytes.drv",
+      "out": "/nix/store/j5fpm5xrjmx1r2h0559vflrjz6gvinhl-check-x86-bytes",
+      "status": "passed"
+    },
+    "x86-elf-object": {
+      "drv": "/nix/store/159yrvd3jfbr5v19fymacscv23gsih2c-x86-object-fixture.drv",
+      "out": "/nix/store/gvqmw01nm8dsfmyzblwmhxqmffx4fn55-x86-object-fixture",
+      "status": "passed"
+    },
+    "x86-encoder-decoder": {
+      "drv": "/nix/store/7ln2gq4428cbigxprgdcng3p0ll18xw3-check-x86-encoder.drv",
+      "out": "/nix/store/d32303ymr79jr7jln1cimhzrr6xz9ci8-check-x86-encoder",
+      "status": "passed"
+    },
+    "x86-stream-objects": {
+      "drv": "/nix/store/6c4916cxc5zj64ln9l22fd3rfdblsf8j-check-x86-streams.drv",
+      "out": "/nix/store/w05s8jzvfn29g7m74qf860xvilli3qx1-check-x86-streams",
+      "status": "passed"
+    }
+  },
+  "checks_passed": 32,
+  "command": [
+    "nix",
+    "flake",
+    "check",
+    "--print-build-logs"
+  ],
+  "completed_utc": "2026-09-13T13:36:59.335276+00:00",
+  "cwd": "/home/jcb/projects/ix/IxCC",
+  "existing_modular_golden_and_rebuilt_baseline_bytes_exact": true,
+  "exit_code": 0,
+  "fence_sha256": "94865b0af769aceb956d4a7e500cf48dc3aee665e40698abc8dae62a31c514e1",
+  "format": "ixcc/source-evidence-validation/1",
+  "full_five_width_reference_precheck_passed": true,
+  "independent_preparation_gate_passed": true,
+  "ledger_sha256": "2848827943b04e1679dd54f63ff88e9325bd5334721bb90b073c363f8a925407",
+  "native_symbols_and_contracts_unchanged": true,
+  "preparation_cases": 38,
+  "preparation_file_mutations": 5,
+  "proof_fence_and_runtime_tests_passed": true,
+  "systems_scope": "x86_64-linux; other systems were not executed"
+}

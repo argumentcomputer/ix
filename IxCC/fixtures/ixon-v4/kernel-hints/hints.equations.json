@@ -1,0 +1,8 @@
+{"source": "KernelHints.lean",
+ "roots":
+ [{"name": "KernelHints.root",
+   "address":
+   "62aa7dda01bdca8c0dd9f34b5c0432dd3012bc10d4e33e4159e581ccfc2b743d"}],
+ "format": "ixcc/k1-equations/1",
+ "failures": [],
+ "equations": []}

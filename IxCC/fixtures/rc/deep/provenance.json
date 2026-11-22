@@ -1,0 +1,21 @@
+{"source_sha256":
+ {"consumer.equations.json":
+  "b201663eb5a31b616baed96fdbb64d74935325787fe71ab307ce23701d7d30bd",
+  "anonymous.ixe":
+  "cb70549b60ea0be6eed821b86dbeee63f75be8b10f5f180bb88927d73b51cb4c",
+  "Deep.lean":
+  "1d148c116885489cd969e9e0ef19b6b294ec5e87006cfef1268c23f27e2202d0"},
+ "source_path": "fixtures/rc/deep",
+ "regenerate":
+ "lake exe refreeze-ixon rc-deep --ix IX --ix-path FAKE (docs/corpus.md, Refreezing)",
+ "producer_version": "4.34.1|0.0.1",
+ "producer":
+ "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
+ "named_env_sha256":
+ "3fba5a03fb97526c2e4adfc5da5dd64174f6449e172a0b469c7e587276acb81c",
+ "lean_version":
+ "Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)\n",
+ "commands":
+ ["ix compile --no-build --consts <roots> --equations --anon --out anonymous.ixe --equations-out anonymous.equations.json fixtures/rc/deep/Deep.lean",
+  "ix compile --no-build --consts <roots> --equations --out named.ixe --equations-out named.equations.json fixtures/rc/deep/Deep.lean",
+  "ix addr-of --ixe named.ixe NAME, for every root, definition and equation"]}

@@ -1,0 +1,125 @@
+import IxCC.Recheck.Rc.Bytes
+import IxCC.Recheck.Rc.Proof.SourceSound
+import IxCC.Recheck.Rc.Proof.LoadedRun
+import IxCC.Recheck.Rc.Proof.Back
+
+set_option autoImplicit false
+namespace IxCC.Recheck.RcReplay
+open IxCC.Sem (Lang Obs)
+open IxCC.Lam.Erase.Proof (CheckedProgram)
+
+variable {cfg : Config} {P : Src.Program} {cert : Cert} {artifact : Artifact}
+
+theorem object_refines (accepted : run cfg P cert = .ok artifact)
+    (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size) :
+    Sem.RefinesOn (artifact.front.Covered cert) artifact.front.source (artifact.linked driver) :=
+  (front_refines_lir (run_parts accepted).1 (model := Recheck.model driver)
+    (X86.Driver.regionOk valid) (X86.Driver.lirRegion valid)).trans_refines
+    (back_refines accepted valid)
+
+theorem object_refines_traced (accepted : run cfg P cert = .ok artifact)
+    (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size) :
+    Sem.TRefinesOn (artifact.front.Covered cert) artifact.front.source (artifact.linked driver) :=
+  Sem.RefinesOn.ofPure (object_refines accepted driver valid)
+
+/-- The driver premise is inhabited for every object actually emitted by
+the accepted replay path, using the assembler's checked text bound. -/
+theorem driver_exists (accepted : run cfg P cert = .ok artifact) :
+    ∃ driver : X86.Driver, driver.Ok artifact.backend.encoded.text.size := by
+  obtain ⟨_, _, _, _, _, emitted, _⟩ := run_parts accepted
+  obtain ⟨input, emitted⟩ := Backend.emit_parts emitted
+  apply X86.Driver.exists_ok
+  rw [← emitted.encoded, emitted.stream.textLength]
+  exact emitted.stream.textBound
+
+/-- Complete soundness, safety and divergence clauses for the admitted heap
+fragment, preserving the existing source GoesWrong and driver contracts. -/
+theorem sound (accepted : run cfg P cert = .ok artifact)
+    (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
+    (input : Nat × List Nat) (covered : artifact.front.Covered cert input) :
+    (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
+      (∃ sourceClock value,
+        Lang.run (⟨artifact.front.src, artifact.front.checked⟩ : CheckedProgram)
+          input sourceClock = .ok value ∧
+        artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
+    (¬ artifact.front.GoesWrong input →
+      ∀ clock, ¬ (Lang.run (artifact.linked driver) input clock).GoesWrong) ∧
+    ((∀ clock, Lang.run (⟨artifact.front.src, artifact.front.checked⟩ : CheckedProgram)
+        input clock = .timeout) →
+      (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
+        ∃ clock resource, Lang.run (artifact.linked driver) input clock = .resource resource) :=
+  have refinement := object_refines accepted driver valid
+  ⟨fun _ _ success => Front.sound_of refinement covered success,
+    fun safe clock => Front.safe_of refinement covered safe clock,
+    fun diverging => Front.diverges_of refinement covered diverging⟩
+
+/-- The object refines the source from two call sites (`X86.LinkedAt`):
+`cx_init` under `driver`, the roots from a site `s` at which the contract is
+kept too; `object_refines` is the case `s = driver.site`. -/
+theorem object_refines_at (accepted : run cfg P cert = .ok artifact)
+    (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
+    (s : X86.Driver.Site) (validAt : (driver.withSite s).Ok artifact.backend.encoded.text.size) :
+    Sem.RefinesOn (artifact.front.Covered cert) artifact.front.source (artifact.linkedAt driver s) :=
+  (front_refines_lir (run_parts accepted).1 (model := Recheck.model driver)
+    (X86.Driver.regionOk valid) (X86.Driver.lirRegion valid)).trans_refines
+    (back_refines_at accepted valid validAt)
+
+/-- `sound` from two call sites; `sound` is the case `s = driver.site`. -/
+theorem sound_at (accepted : run cfg P cert = .ok artifact)
+    (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
+    (s : X86.Driver.Site) (validAt : (driver.withSite s).Ok artifact.backend.encoded.text.size)
+    (input : Nat × List Nat) (covered : artifact.front.Covered cert input) :
+    (∀ clock output, Lang.run (artifact.linkedAt driver s) input clock = .ok output →
+      (∃ sourceClock value,
+        Lang.run (⟨artifact.front.src, artifact.front.checked⟩ : CheckedProgram)
+          input sourceClock = .ok value ∧
+        artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
+    (¬ artifact.front.GoesWrong input →
+      ∀ clock, ¬ (Lang.run (artifact.linkedAt driver s) input clock).GoesWrong) ∧
+    ((∀ clock, Lang.run (⟨artifact.front.src, artifact.front.checked⟩ : CheckedProgram)
+        input clock = .timeout) →
+      (∀ clock, Lang.run (artifact.linkedAt driver s) input clock = .timeout) ∨
+        ∃ clock resource, Lang.run (artifact.linkedAt driver s) input clock = .resource resource) :=
+  have refinement := object_refines_at accepted driver valid s validAt
+  ⟨fun _ _ success => Front.sound_of refinement covered success,
+    fun safe clock => Front.safe_of refinement covered safe clock,
+    fun diverging => Front.diverges_of refinement covered diverging⟩
+
+theorem sound_bytes {bytes : List UInt8}
+    (accepted : (run cfg P cert).map Artifact.bytes = .ok bytes) :
+    ∃ artifact, run cfg P cert = .ok artifact ∧ artifact.bytes = bytes ∧
+      ∀ driver : X86.Driver, (artifact.linked driver).object.data.toList = bytes := by
+  cases result : run cfg P cert with
+  | error error => rw [result] at accepted; cases accepted
+  | ok artifact =>
+    rw [result] at accepted
+    simp only [Except.map, Except.ok.injEq] at accepted
+    exact ⟨artifact, rfl, accepted, fun _ => accepted⟩
+
+theorem compile_sound_linked (accepted : run cfg P cert = .ok artifact)
+    (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
+    {input : Nat × List Nat} (covered : artifact.front.Covered cert input) {clock : Nat}
+    {output : Option Obs} (success : Lang.run (artifact.linked driver) input clock = .ok output) :
+    (∃ sourceClock value,
+      Lang.run (⟨artifact.front.src, artifact.front.checked⟩ : CheckedProgram)
+        input sourceClock = .ok value ∧ artifact.front.view input.1 (Lang.obs value) = some output) ∨
+      artifact.front.GoesWrong input :=
+  (sound accepted driver valid input covered).1 clock output success
+
+theorem compile_safe_linked (accepted : run cfg P cert = .ok artifact)
+    (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
+    {input : Nat × List Nat} (covered : artifact.front.Covered cert input)
+    (safe : ¬ artifact.front.GoesWrong input) (clock : Nat) :
+    ¬ (Lang.run (artifact.linked driver) input clock).GoesWrong :=
+  (sound accepted driver valid input covered).2.1 safe clock
+
+theorem compile_diverges_linked (accepted : run cfg P cert = .ok artifact)
+    (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
+    {input : Nat × List Nat} (covered : artifact.front.Covered cert input)
+    (diverging : ∀ clock, Lang.run (⟨artifact.front.src, artifact.front.checked⟩ : CheckedProgram)
+      input clock = .timeout) :
+    (∀ clock, Lang.run (artifact.linked driver) input clock = .timeout) ∨
+      ∃ clock resource, Lang.run (artifact.linked driver) input clock = .resource resource :=
+  (sound accepted driver valid input covered).2.2 diverging
+
+end IxCC.Recheck.RcReplay

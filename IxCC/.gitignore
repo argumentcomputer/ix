@@ -1,0 +1,25 @@
+# Lean
+**/.lake
+
+# Rust
+**/target
+
+# Python inspection tools
+__pycache__/
+
+# Nix
+result*
+.direnv/
+
+# Scratch space: reference clones, experiments (untracked by design)
+scratchpad
+/refs/
+
+# Local plans, scratch programs, logs, and measurements
+/plans/
+
+# Retained benchmark bundles are addressed by digest in reviewed reports.
+/benchmarks/runs/
+
+# Local Claude Code state (agent worktrees)
+/.claude/

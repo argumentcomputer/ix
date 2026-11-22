@@ -1,0 +1,798 @@
+{
+  "format": "ixcc/corpus/1",
+  "family": "phase2-closures",
+  "description": "Higher-order workloads for P8 (docs/closures-design.md, Exit criteria): a closure that grows each iteration, dictionary-passing polymorphic recursion, a StateT-over-Except loop (with the library's bind, declined by register allocation, and with a bind written for the stack, within seven parameters), partial and over-application through a stored closure, and a fuel-indexed record of closures. Compiled through the closures step (the roots' entries and P8).",
+  "tier": "required",
+  "phase": 2,
+  "directory": "fixtures/corpus/phase2-closures",
+  "source_root": "fixtures/corpus/phase2-closures/src",
+  "lean": {
+    "version": "4.34.1",
+    "interpret": {
+      "args": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "{args}"
+      ],
+      "stdin": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "<",
+        "{ROOT ARGS lines}"
+      ]
+    }
+  },
+  "producer": {
+    "ix": "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
+    "ix_version": "4.34.1|0.0.1",
+    "anonymous": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ],
+    "named": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--out",
+      "{named}",
+      "--equations-out",
+      "{named-equations}",
+      "{src}"
+    ],
+    "address": [
+      "ix",
+      "addr-of",
+      "--ixe",
+      "{named}",
+      "{name}"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "closures",
+      "source": {
+        "path": "Closures.lean",
+        "sha256": "87d541d2bcb09d37568951c88abda481d9de0a4c29a5a0c1aba7b16909ae161d",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Closures.composeClosure",
+        "Closures.polyRec",
+        "Closures.stateLoop",
+        "Closures.stateLoopSE",
+        "Closures.storedApply",
+        "Closures.knot"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "closures.ixe",
+        "sha256": "f6569a6aa1ea3b603504a71b7d4974f42e9a70e29e27f5c6b282766b6e290b12",
+        "bytes": 281614
+      },
+      "equations": {
+        "path": "closures.equations.json",
+        "sha256": "c1b01984108ed794e762c9c9fb155ae2f6b07f14a662927f4d11e81f23f80be1",
+        "equations": 14,
+        "failures": 0
+      },
+      "named_env_sha256": "07a51879dde3582aa8e374921429dc7a2fd406b45dfdaddeabd46668385fb5b0",
+      "census": {
+        "path": "closures.census.json",
+        "sha256": "9e0aa6eee636fcd1bfdbb2bd4c247112ad9e629f50ace99fcadda3ec1f5ab495"
+      },
+      "roots": [
+        {
+          "name": "Closures.composeClosure",
+          "address": "e7037cdabfdf3423c812789879bff16a2121a5e0ee79c7099850f15f8989fa9d",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                5
+              ],
+              "value": "6"
+            },
+            {
+              "args": [
+                1,
+                5
+              ],
+              "value": "7"
+            },
+            {
+              "args": [
+                4,
+                3
+              ],
+              "value": "19"
+            },
+            {
+              "args": [
+                10,
+                0
+              ],
+              "value": "1024"
+            }
+          ]
+        },
+        {
+          "name": "Closures.polyRec",
+          "address": "589d2509c7b0abd1ae46e1a8d3585c3fc3597a49ef89fe807abafa21c2756a72",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                5
+              ],
+              "value": "6"
+            },
+            {
+              "args": [
+                1,
+                5
+              ],
+              "value": "12"
+            },
+            {
+              "args": [
+                3,
+                2
+              ],
+              "value": "24"
+            },
+            {
+              "args": [
+                6,
+                1
+              ],
+              "value": "128"
+            },
+            {
+              "args": [
+                10,
+                3
+              ],
+              "value": "4096"
+            }
+          ]
+        },
+        {
+          "name": "Closures.stateLoop",
+          "address": "1cb6d3d0318185b9b1e4b76e8c23925b0e5c5c070d1e7dc28c2fa2059b413a3c",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "The dispatcher of arity 1 calls StateT.bind, of eight parameters, in tail position: past the seven argument registers of a tail call, so Fir.lower makes it a call and a return (Fir.Lower.tailCall), and the loop uses a frame per iteration: 32 bytes on the immortal route (96 under plain RC). Closures.stateLoopSE is the same loop within the limit, with proper tail calls. The last two cases run in an 8 KiB stack (a 4 KiB budget) and a 1 MiB region (the loop allocates its closures, about 1 KB per iteration on the immortal route).",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                3,
+                10
+              ],
+              "value": "7"
+            },
+            {
+              "args": [
+                5,
+                7
+              ],
+              "value": "1007"
+            },
+            {
+              "args": [
+                10,
+                100
+              ],
+              "value": "21"
+            },
+            {
+              "args": [
+                20,
+                15
+              ],
+              "value": "1015"
+            },
+            {
+              "args": [
+                50,
+                100000000
+              ],
+              "value": "101",
+              "region": 1048576,
+              "stack": 8192,
+              "note": "50 iterations, 1.6 KB of frames, within the 4 KiB budget"
+            },
+            {
+              "args": [
+                150,
+                100000000
+              ],
+              "value": "301",
+              "fail": "stack",
+              "spurious": true,
+              "region": 1048576,
+              "stack": 8192,
+              "note": "150 iterations need 4.8 KB of frames, past the 4 KiB budget and the 120 iterations an 8 KiB native stack holds: the stack-exhaustion status, not a fault; spurious, since the source loop is iterative and the frames come from lowering a tail call of eight arguments as a call and a return"
+            }
+          ]
+        },
+        {
+          "name": "Closures.stateLoopSE",
+          "address": "6d60da8dc2da63d1337ab820bf9bd2b612e9376e69342213c3d0776ff251168f",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                3,
+                10
+              ],
+              "value": "7"
+            },
+            {
+              "args": [
+                5,
+                7
+              ],
+              "value": "1007"
+            },
+            {
+              "args": [
+                10,
+                100
+              ],
+              "value": "21"
+            },
+            {
+              "args": [
+                20,
+                15
+              ],
+              "value": "1015"
+            }
+          ]
+        },
+        {
+          "name": "Closures.storedApply",
+          "address": "203d548448ffb51a616fbeeb3316aefffcaee5c5297d5f946a4fe3596b2be65f",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                3
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                1,
+                3
+              ],
+              "value": "4"
+            },
+            {
+              "args": [
+                4,
+                2
+              ],
+              "value": "142"
+            },
+            {
+              "args": [
+                8,
+                5
+              ],
+              "value": "107"
+            }
+          ]
+        },
+        {
+          "name": "Closures.knot",
+          "address": "afa2e993e4eeef714ba8cca6cb899c3e78604175f6d2186094d2f5718d4fcf46",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": [
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "0"
+            },
+            {
+              "args": [
+                3,
+                2
+              ],
+              "value": "103"
+            },
+            {
+              "args": [
+                5,
+                3
+              ],
+              "value": "5"
+            },
+            {
+              "args": [
+                10,
+                4
+              ],
+              "value": "110"
+            },
+            {
+              "args": [
+                4,
+                9
+              ],
+              "value": "4"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sparse",
+      "source": {
+        "path": "Sparse.lean",
+        "sha256": "086771ce3497525f2cf528c6d4a9bfd157f75e9cbe97f1535806f2374434243d",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Sparse.minS",
+        "Sparse.minF",
+        "Sparse.minO",
+        "Sparse.minE",
+        "Sparse.minN",
+        "Sparse.minD",
+        "Sparse.minH",
+        "Sparse.sumS",
+        "Sparse.sumF",
+        "Sparse.minM"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "sparse.ixe",
+        "sha256": "945212cf0d57e6b29f572089beb065a9952533b0d98c42defc895c0ca10ca21c",
+        "bytes": 406046
+      },
+      "equations": {
+        "path": "sparse.equations.json",
+        "sha256": "6229b510e4639c8798bdeea70148eefa10dda778a6df140e856c01814dfe4da2",
+        "equations": 18,
+        "failures": 0
+      },
+      "named_env_sha256": "da287e3f380e21f1a829de5604cd6e8880f02cce051d7a52e4a1dd9b4ffc335d",
+      "census": {
+        "path": "sparse.census.json",
+        "sha256": "3af4a39904d456c9694e679872d01194b45ff4d0fb3de7a3ca58140b44a48306"
+      },
+      "roots": [
+        {
+          "name": "Sparse.minS",
+          "address": "8bfbe012fcf18d050cd93651fc9cfefd3b9ec7d3e5278d2a01adaf9007f77898",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "A list's [] arm and a catch-all (a sparse casesOn, by name): the arm is evaluated only when b = 0; at n = 2^62 the untaken arm would never return if it were evaluated",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                1,
+                10
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                0,
+                1000
+              ],
+              "value": "1000"
+            },
+            {
+              "args": [
+                1,
+                100000
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                1,
+                4611686018427387904
+              ],
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.minF",
+          "address": "e53db1fe65bf335b41b6d3933fa6389ea81e18af6e039e3305dc29cde7e9d408",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "The same match with both constructors named (List.casesOn): the control",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                1,
+                10
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                1,
+                100000
+              ],
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.minO",
+          "address": "3ea4f2d084f2aef61117871434dc0c5c135dd43321ec3a31d36554f3a2060682",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "Option's none arm and a catch-all",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                1,
+                10
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                1,
+                100000
+              ],
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.minE",
+          "address": "6a4d3a62a5aaa431dbbf62459b6bf475b6c6b799aebc1b49f81a8756bceadd8f",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "An enumeration's first constructor and a catch-all",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                1,
+                100000
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                2,
+                100000
+              ],
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.minN",
+          "address": "02038afe6ec8a3533ea9c6d7362d410c2e716f52f795681d0c15bf6c2b422aba",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "A nested pattern, as Queue.checkf's .queue [] xs: Pair.casesOn, then a sparse casesOn on the first field",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                1,
+                10
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                1,
+                100000
+              ],
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.minD",
+          "address": "dac2b321412c26269e9017e9856e5f575e4ebcaadd4b215f45578d1636b48a1f",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "The arm needs n frames of stack",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                0,
+                1000
+              ],
+              "value": "1000"
+            },
+            {
+              "args": [
+                1,
+                1000000
+              ],
+              "value": "1",
+              "region": 67108864,
+              "stack": 8388608,
+              "note": "the arm is not taken: 1, at the default executable layout (8 MiB stack, 64 MiB region); while the sparse casesOn had no lazy row, the arm ran first and exhausted the stack (status 2)"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.minH",
+          "address": "ba9b4a5ffb3663334ea4df345be3fa99c4ad47e892dcdc6955a7d25618a40886",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "The arm allocates n cells",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                0,
+                100
+              ],
+              "value": "100"
+            },
+            {
+              "args": [
+                1,
+                10000000
+              ],
+              "value": "1",
+              "region": 67108864,
+              "stack": 8388608,
+              "note": "the arm is not taken: 1, at the default executable layout (8 MiB stack, 64 MiB region); while the sparse casesOn had no lazy row, the arm ran first and exhausted the region (status 1)"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.sumS",
+          "address": "4a4500e2267bc9af1c3a11aa214ae7460476f3553b3908d1ea6f62ea08132ee6",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "The sum over i < n of minS b i: linear when b ≠ 0 (quadratic while the untaken arm ran)",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "45"
+            },
+            {
+              "args": [
+                0,
+                100
+              ],
+              "value": "4950"
+            },
+            {
+              "args": [
+                1,
+                100
+              ],
+              "value": "100"
+            },
+            {
+              "args": [
+                1,
+                200
+              ],
+              "value": "200"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.sumF",
+          "address": "9226b3290890c8b6124d3eeb5481e1ecde07caff291e6638a932ab49673bee4a",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "The same sum through minF: the control",
+          "cases": [
+            {
+              "args": [
+                0,
+                100
+              ],
+              "value": "4950"
+            },
+            {
+              "args": [
+                1,
+                200
+              ],
+              "value": "200"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.minM",
+          "address": "581bb23fcee7c8ea258238bf0d3c58c715bc4bb28019e421d1a22a3524988c5e",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "An ordinary function named as a sparse casesOn is (Sparse.mimic._sparseCasesOn_1): its arguments are evaluated first, by Lean and by IxCC, whose table gives it no lazy row",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                1,
+                10
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                1,
+                1000
+              ],
+              "value": "1"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

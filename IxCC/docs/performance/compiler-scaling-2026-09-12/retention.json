@@ -1,0 +1,13 @@
+{
+  "format": "ixcc/reference-retention/1",
+  "archive": "benchmarks/runs/847d192c5cb9793ca05ebdb43e1867b002da823acbc2feaf64b87029326cc9ea.tar.gz",
+  "sha256": "847d192c5cb9793ca05ebdb43e1867b002da823acbc2feaf64b87029326cc9ea",
+  "bytes": 314849251,
+  "retained_files": 36455,
+  "checksummed_files": 36454,
+  "archive_sha256_checked": true,
+  "all_file_checksums_passed": true,
+  "relocated_analysis_byte_exact": true,
+  "status": "passed",
+  "scope": "fresh extraction of the complete archive; every file checksum passed; relocated retained runner regenerated the report and summary byte for byte on the same host"
+}

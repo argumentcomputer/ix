@@ -1,0 +1,129 @@
+{
+  "all_frozen_source_files_unchanged_through_measurement": true,
+  "archive_inventory": {
+    "archive": {
+      "bytes": 108816226,
+      "sha256": "24360822bbae89e64c3fa4d0c8db285335cdc8532dc100ad90d894ab76c0aa93"
+    },
+    "archive_files_including_inventory": 388,
+    "archive_members_unchanged_after_replay": true,
+    "inventory_files_checked": 387,
+    "passed": true,
+    "replay": {
+      "passed": true,
+      "scope": "frozen source directory, retained seed, independent checker and persisted-only re-emission; not a compiler rebuild",
+      "seed_checked": true,
+      "source_files_checked": 778,
+      "source_sha256": "563e427a1fe4979bcb986e76b1bca91ce43de9bb571ce90a742d43a858422ab2",
+      "validation": {
+        "independent_corruptions": 184,
+        "native_calls": 759,
+        "objects": 23,
+        "passed": true,
+        "persisted_replays": 23
+      }
+    },
+    "replayed_from_extracted_archive": true
+  },
+  "axioms": {
+    "basis": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "new_native_symbols": 0,
+    "theorems": [
+      "Decode.decodeWindowAt_eq",
+      "Stream.checkPrepared_eq",
+      "Stream.checkIndexed_eq",
+      "Stream.checkIndexed_sound"
+    ]
+  },
+  "bounded_window_inputs": 131084,
+  "branch_objects": 50,
+  "byte_identical_repetitions": 3,
+  "code_identity_count": 636,
+  "complete_streams": 14,
+  "decoder_instruction_forms": 31921,
+  "final_ledger_nix_log_sha256": "ef1cbdb7830a410d2ad74f247ba9bd220153cf46cc539adb44b90897e98a9183",
+  "indexed_layout_cases": 38,
+  "join_native_mutations_per_worker": 3925,
+  "join_source_mutations_per_worker": 2700,
+  "nix_checks": [
+    "build",
+    "ci-workflow",
+    "trusted-extern-ledger",
+    "x86-encoder-decoder",
+    "x86-byte-execution",
+    "x86-stream-objects",
+    "x86-elf-object",
+    "source-coverage",
+    "source-recursion",
+    "source-call-reuse",
+    "source-space",
+    "source-modular",
+    "ixir2-identity",
+    "source-unique-reuse",
+    "source-native-unique",
+    "source-native-runtime",
+    "source-native-allocating",
+    "source-native-upstream",
+    "source-native-scalar",
+    "source-native-physical-scalar",
+    "source-native-heap",
+    "source-native-captured-scalar",
+    "source-borrow",
+    "source-borrow-runtime",
+    "tests",
+    "catalog-contact",
+    "benchmark-correctness-smoke",
+    "compiler-scaling-correctness-smoke",
+    "native-sharing",
+    "native-graph"
+  ],
+  "nix_log_sha256": "444968b8eb6248c4f6f616f9048efb6796e166324f4c7ac4c192c5e767b008dc",
+  "nix_passed": true,
+  "nix_system": "x86_64-linux",
+  "object_corruptions_and_truncations": 1010,
+  "patched_branches": 2000,
+  "reference": {
+    "independent_corruptions": 184,
+    "native_calls": 759,
+    "objects": 23,
+    "passed": true,
+    "persisted_replays": 23
+  },
+  "reference_specification_preserved_verbatim": true,
+  "relocation_cases": 10,
+  "source_directory_replay": {
+    "passed": true,
+    "scope": "frozen source directory, retained seed, independent checker and persisted-only re-emission; not a compiler rebuild",
+    "seed_checked": true,
+    "source_files_checked": 778,
+    "source_sha256": "563e427a1fe4979bcb986e76b1bca91ce43de9bb571ce90a742d43a858422ab2",
+    "validation": {
+      "independent_corruptions": 184,
+      "native_calls": 759,
+      "objects": 23,
+      "passed": true,
+      "persisted_replays": 23
+    }
+  },
+  "source_file_count": 778,
+  "stack_contracts": 6,
+  "stream_corruptions": 15,
+  "stream_runtime_object_steps": 6512,
+  "suite_source": {
+    "full_suite_source_commit": "7492eec2bd24e48ccf27d5069dfbde058135fdec",
+    "implementation_and_test_sources_unchanged_after_full_suite_started": true,
+    "later_changes": [
+      "docs/roadmap.md: added implementation overview",
+      "docs/trusted-externs.json: last_reviewed date only"
+    ],
+    "metadata_check": "nix build .#checks.x86_64-linux.trusted-extern-ledger --no-link --no-update-lock-file -L"
+  },
+  "unchanged_reviewed_report": {
+    "path": "fixtures/native-graph/expected-reference.json",
+    "sha256": "5e673508d30c6f46c504f013fb32cb9bec296da38fc4dfd6d689b3951b47ab2f"
+  }
+}

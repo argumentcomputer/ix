@@ -1,0 +1,21 @@
+{
+  "format": "ixcc/compiler-scaling-setup/1",
+  "scope": "probes before the frozen reference schedule; not reference samples",
+  "generator_worker": "reference/build/tools/compiler-scaling",
+  "generator_worker_sha256": "3a42d9602056296fcee04ee91e7eebf1ce59a68bd1912ede3d30e02e97086de7",
+  "allocation_256": "canonical source and compiler artifacts retained; about 21 CPU seconds for generation",
+  "allocation_512": {
+    "family": "allocations",
+    "size": 512,
+    "edited": false,
+    "stage": "canonical source construction",
+    "status": "process-cpu-limit",
+    "exit_code": 152,
+    "signal": 24,
+    "cpu_limit_seconds": 120,
+    "canonical_source_produced": false
+  },
+  "decision": "fixed full allocation family endpoint at size 128; compiler defaults unchanged",
+  "path_scope": "paths within the retained archive",
+  "raw_record": "reference/setup-diagnostics/setup.json"
+}

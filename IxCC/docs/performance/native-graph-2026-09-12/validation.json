@@ -1,0 +1,85 @@
+{
+  "all_frozen_source_files_unchanged_through_measurement": true,
+  "archive_inventory": {
+    "archive_bytes": 108763217,
+    "archive_sha256": "671c60a683ea13c5e31b57e41f4424aaffaf30fd8240492cb2fcbf0689686b96",
+    "files_checked": 383,
+    "inventory_sha256": "d384cf6013ded51a3ce8dc741e4358197ec2afa24d61417ff7fa1a834fb65c0f",
+    "passed": true
+  },
+  "axioms": "Graph.checkFunction and HeapGraph.checkCandidate_program: propext, Classical.choice, Quot.sound; existing physical/source/ownership/capacity fences unchanged",
+  "budget_checks": {
+    "cached_longer_path": "heap graph depth exceeds the consumer limit",
+    "depth": 127,
+    "edges": 210,
+    "exact_joins": 42,
+    "nodes": 169,
+    "rejections": 7,
+    "smaller_limits": [
+      {
+        "reason": "heap graph node count exceeds the consumer limit",
+        "resource": "nodes"
+      },
+      {
+        "reason": "heap graph edge count exceeds the consumer limit",
+        "resource": "edges"
+      },
+      {
+        "reason": "heap graph depth exceeds the consumer limit",
+        "resource": "depth"
+      }
+    ]
+  },
+  "byte_identical_repetitions": 3,
+  "cli_regression": "five-argument filenames graph/shared retain tree mode; six-argument graph/shared flags agree; named graph output matches the reviewed ELF",
+  "code_identity_count": 632,
+  "final_nix_checks": 30,
+  "graph_heap_admission_rejections": 18,
+  "graph_heap_certificate_checks": 1824,
+  "graph_heap_expansion_accepted": true,
+  "graph_heap_legacy_shared_artifact_identity": true,
+  "heap_each_mode": {
+    "elf_executions": 171,
+    "independent_corruptions": 182,
+    "native_calls": 774,
+    "persisted_replays": 9,
+    "physical_cases": 4,
+    "reload_rejections": 36,
+    "source_applications": 95,
+    "source_cases": 5
+  },
+  "join_native_mutations_per_reference_worker": 3925,
+  "join_source_mutations_per_reference_worker": 2700,
+  "legacy_heap_admission_rejections": 19,
+  "nix_log_sha256": "6655521c5ebde58b4c7918d486c8de2467467dd53216e7cc020bf3a0fe8f6e7d",
+  "nix_passed": true,
+  "nix_system": "x86_64-linux",
+  "reference": {
+    "independent_corruptions": 184,
+    "native_calls": 759,
+    "objects": 23,
+    "passed": true,
+    "persisted_replays": 23
+  },
+  "source_directory_replay": {
+    "passed": true,
+    "scope": "frozen source directory, retained seed, independent checker and persisted-only re-emission; not a compiler rebuild",
+    "seed_checked": true,
+    "source_files_checked": 769,
+    "source_sha256": "8916f81198a21d6d2c119aa5c20cb4596eba07a54909551597b571f7de4e9e9b",
+    "validation": {
+      "independent_corruptions": 184,
+      "native_calls": 759,
+      "objects": 23,
+      "passed": true,
+      "persisted_replays": 23
+    }
+  },
+  "source_file_count": 769,
+  "typed_join": {
+    "typed_join_contexts": 2,
+    "typed_join_executions": 4,
+    "typed_join_native_rejections": 48,
+    "typed_join_source_rejections": 29
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "format": "ixcc/corpus/1",
+  "family": "k1",
+  "description": "The K1 pack (phase1.md M0.2): the five first-rung scalar programs of K1.lean in one closure with their unfolding equations, and its admission census. The roots have no cases here; tests-src, tests-lam, tests-anf, tests-fir, tests-rt and tests-pipeline run them. Not among tests-corpus's registered families: this manifest makes the pack one `corpus rebuild` and `corpus check` (with its path).",
+  "tier": "required",
+  "phase": 1,
+  "directory": "fixtures/ixon-v4/k1",
+  "source_root": "IxCCTests/Fixtures",
+  "lean": {
+    "version": "4.34.1",
+    "interpret": {
+      "args": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "{args}"
+      ],
+      "stdin": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "<",
+        "{ROOT ARGS lines}"
+      ]
+    }
+  },
+  "producer": {
+    "ix": "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
+    "ix_version": "4.34.1|0.0.1",
+    "anonymous": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ],
+    "named": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--out",
+      "{named}",
+      "--equations-out",
+      "{named-equations}",
+      "{src}"
+    ],
+    "address": [
+      "ix",
+      "addr-of",
+      "--ixe",
+      "{named}",
+      "{name}"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "k1",
+      "source": {
+        "path": "K1.lean",
+        "sha256": "a69712c62e7ae65ccd0d874ffa793b7eb366fdb386c065dff56775abe9d1f3a5",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "K1.fib",
+        "K1.sumLoop",
+        "K1.ack",
+        "K1.tak",
+        "K1.gcd"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "k1.ixe",
+        "sha256": "c089fddcfb6ceb5207ebf27431b3b7e43d9a3246605cc15025a89e59901d623b",
+        "bytes": 2534271
+      },
+      "equations": {
+        "path": "equations.json",
+        "sha256": "d88626e0cb5aa2eb5ba689f6c724d0da847d2f22e0aa697cae83bc78b6d5a6eb",
+        "equations": 46,
+        "failures": 0
+      },
+      "named_env_sha256": "198b7d8d6c3e3e7be64a603f94b426adee89d873fcdf676d20ebbb71f49fa01d",
+      "census": {
+        "path": "census.json",
+        "sha256": "f1b8130fa762e198c1f4767be3ae689ac00068258e7d6ab8af6678409d5833c7"
+      },
+      "roots": [
+        {
+          "name": "K1.fib",
+          "address": "8fa2b0a45f209a79ba48a7dd59606257b44e358f04b0ce29856d6650ce0ea724",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": []
+        },
+        {
+          "name": "K1.sumLoop",
+          "address": "0a3a0402460e57cda66f055bceb69ce8a51fb0359a60406c5d900f23359d5555",
+          "params": 1,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": []
+        },
+        {
+          "name": "K1.ack",
+          "address": "739d8762afda939eb3293b0ee8fc06e3b4960ec13ead3b4f5e1e12b8bb0cda7f",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": []
+        },
+        {
+          "name": "K1.tak",
+          "address": "adc25602666f8402b986cdba49b0edec2efe00ccb757a187edfc06ac3b99b620",
+          "params": 4,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": []
+        },
+        {
+          "name": "K1.gcd",
+          "address": "6ae620c9935731c8f5a6a7ec7c587128ce094191b29c434b1748dcd5d8e8fd68",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "cases": []
+        }
+      ]
+    }
+  ]
+}
