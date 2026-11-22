@@ -35,7 +35,7 @@ private def compressedFixture : System.FilePath :=
 
 /-- The bundled release keys belong to the current formal backends.
 
-- `ix compress` without `--fixed-root` accepts the formal aggregation key: the
+- `ix compress` accepts the formal aggregation key: the
   release has a layout (`.ixl`) for it, and a formal statement carries the
   release's statement prefix, the checks it makes before proving. Another
   IxVM backend's statement is refused.
@@ -54,13 +54,13 @@ def releaseAccepts (home : System.FilePath) : IO Unit := do
   let claimCtx ← IO.ofExcept Ix.ClaimContext.ofDefaultTable
   let claim := Ix.Claim.checkEnv claimCtx testHash none
   Ix.Cli.Compression.checkReleaseStatement (Ix.Claim.ser claim)
-    (Ix.Cli.FormalAggregate.statementBytes ctx claim)
+    (Ix.Cli.FormalAggregate.statementBytes ctx.toKeys claim)
   let other := { ctx with
     allowed := Aggr.allowedBlob ctx.ixvm.key (ctx.ixvm.index + 1) ctx.aggr.key ctx.aggr.index }
   let refused ←
     try
       Ix.Cli.Compression.checkReleaseStatement (Ix.Claim.ser claim)
-        (Ix.Cli.FormalAggregate.statementBytes other claim)
+        (Ix.Cli.FormalAggregate.statementBytes other.toKeys claim)
       pure false
     catch _ => pure true
   unless refused do
@@ -83,7 +83,7 @@ def releaseAccepts (home : System.FilePath) : IO Unit := do
 public def run : IO Unit := do
   unless (← Ix.Cli.Compression.curve) == "bn254" do
     throw <| IO.userError "unexpected compression curve"
-  for tag in ["IXCMP", "IXBN"] do
+  for tag in ["IXCMP", "IXBN", "IXACG", "IXAUCH"] do
     unless Ix.Cli.Compression.isCompressed tag.toUTF8 do
       throw <| IO.userError s!"unrecognized compressed proof family: {tag}"
   let home ← IO.FS.createTempDir
@@ -105,6 +105,10 @@ public def run : IO Unit := do
     let otherAddr ← putProof home (Ixon.Proof.ser other)
     rejects home #["compress", toString old, "--groth16", "--plonk"]
       "choose at most one"
+    rejects home #["compress", toString old, "--aiur-chain", "missing-chain.json",
+      "--aiur-gl", "gl.ixa", "--dev-kzg-srs"] "cannot be combined"
+    rejects home #["verify", toString old, "--aiur-chain", "missing-chain.json"]
+      "requires --aggregate"
     rejects home #["prove", "--ixe", "missing.ixe", "--ixes", "missing.ixes",
       "--compress", "fri"] "unknown compression output"
     rejects home #["compress", toString old, "--dev-final-srs"]
@@ -115,6 +119,8 @@ public def run : IO Unit := do
     unless old != addr && native.claim == compressed.claim do
       throw <| IO.userError "compression must preserve claim identity and change proof identity"
     rejects home #["compress", toString old] setupError
+    rejects home #["compress", toString old, "--dev-kzg-srs", "--out", (home / "run").toString]
+      "formal aggregate root"
     rejects home #["compress", toString otherAddr, "--dev-kzg-srs", "--out", (home / "run").toString]
       "aggregate CheckEnv proof"
     unless !(← (home / "run").pathExists) do
