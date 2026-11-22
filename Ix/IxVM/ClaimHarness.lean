@@ -525,9 +525,11 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
       ++ customAxiomsOf ctx
     ioBuffer := addScopedEntries env (closureFromRoots env roots) ioBuffer
   | .eval ctx input output _ =>
+    -- `.eval` always validates the role binding (validator 3, ignoring `ctx.bindingAssumed`),
+    -- so its witness must always include role-binding evidence (`bindingRoots env false`).
     let roots := #[input, output]
       ++ Ix.primAddrSet.toArray.filter env.consts.contains
-      ++ bindingRoots env ctx.bindingAssumed
+      ++ bindingRoots env false
       ++ Ix.ClaimContext.userAxioms env
       ++ customAxiomsOf ctx
     ioBuffer := addScopedEntries env (closureFromRoots env roots) ioBuffer
