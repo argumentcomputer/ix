@@ -5,7 +5,7 @@ import Ix.Unsigned
 
 /-!
 `.ixes` manifest parser: the optional trailing sections (bisection tree,
-measured peaks) and the strict end-of-input check, on synthetic manifests
+measured peaks, measured records) and the strict end-of-input check, on synthetic manifests
 built byte by byte so no environment is needed.
 -/
 
@@ -82,6 +82,22 @@ public def suite : IO UInt32 := do
     (isErrorContaining (parseIxesManifest (recordsOnly ++ treeSection ++ ByteArray.mk #[2])) "presence tag")) && ok
   ok := (← expect "truncated peaks section is rejected"
     (isErrorContaining (parseIxesManifest (recordsOnly ++ treeSection ++ ByteArray.mk #[1] ++ u64 1)) "truncated")) && ok
+  -- 6. Measured records after the peaks; absent, they read as unmeasured.
+  if let .ok v := r3 then
+    ok := (← expect "no records section: records unmeasured"
+      (v.measuredRecordBytes == #[0, 0])) && ok
+  let withRecords := withPeaks ++ ByteArray.mk #[1] ++ u64 0 ++ u64 (40 * 2^30)
+  let r6 := parseIxesManifest withRecords
+  ok := (← expect "tree + peaks + records parse" r6.toBool) && ok
+  if let .ok v := r6 then
+    ok := (← expect "records read in id order"
+      (v.measuredRecordBytes == #[0, 40 * 2^30] && v.measuredPeakBytes == #[4096, 0])) && ok
+  ok := (← expect "zero records presence byte parses"
+    (parseIxesManifest (recordsOnly ++ ByteArray.mk #[0, 0, 0])).toBool) && ok
+  ok := (← expect "trailing byte after records is rejected"
+    (isErrorContaining (parseIxesManifest (withRecords ++ ByteArray.mk #[0])) "trailing")) && ok
+  ok := (← expect "bad records presence tag is rejected"
+    (isErrorContaining (parseIxesManifest (withPeaks ++ ByteArray.mk #[2])) "presence tag")) && ok
   pure (if ok then 0 else 1)
 
 end Tests.Ix.Ixes

@@ -201,6 +201,41 @@ public inductive AuxTie where
   | c : WrapC AuxTie → AuxTie
   | i : WrapI AuxTie → AuxTie
 
+/-- A structure nested through `List`: its projection functions are `.proj` at a
+member of a modeled block, which Lean's `infer_proj` types like any other. -/
+public structure NestS where
+  val : Nat
+  kids : List NestS
+
+-- A structure in a mutual block with an inductive, the shape of Lean's
+-- `Grind.Arith.Cutsat` constraints (a structure whose proof field is a mutual
+-- inductive).
+mutual
+  public structure MutS where
+    n : Nat
+    h : MutP
+  public inductive MutP where
+    | base : MutP
+    | step : MutS → MutP
+end
+
+-- A Prop-valued structure in a mutual block. Lean projects it at its proof
+-- field; IxVM refuses `.proj` at a modeled member whose sort can be zero.
+mutual
+  public structure MutPS : Prop where
+    h : MutPP
+  public inductive MutPP : Prop where
+    | base : MutPP
+    | step : MutPS → MutPP
+end
+
+public theorem mutPS_base : MutPS := ⟨.base⟩
+
+public theorem nestS_kids_mk : (NestS.mk 1 []).kids = [] := rfl
+
+-- Private: `MutS.n` is not exposed, so an exported theorem could not unfold it.
+theorem mutS_n_mk : (MutS.mk 3 .base).n = 3 := rfl
+
 public abbrev PredOver (α : Type) : Type := α → Prop
 
 public inductive HiddenIdx (α : Type) : PredOver α where

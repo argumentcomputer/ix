@@ -62,10 +62,6 @@ def caseInvocation (cases : FilePath) (label : String) : IO ByteArray := do
     | fail s!"{cases} has no accepted {label} case"
   return c.bytes
 
-/-- The BLAKE3 digest of an artifact, as `ix-prover` configurations name it. -/
-def artifactDigest (path : FilePath) : IO String :=
-  return toString (Address.blake3 (← IO.FS.readBinFile path))
-
 /-- `path` made absolute. -/
 def absolute (path : FilePath) : IO FilePath := do
   if path.isAbsolute then return path
