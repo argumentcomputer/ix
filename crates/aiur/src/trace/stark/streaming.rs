@@ -134,8 +134,10 @@ struct Member {
   end: usize,
 }
 
+/// An immutable execution validated for one backend and reused by its supplies.
 pub struct PreparedRecord<'r, B: WitnessField> {
   record: &'r Execution<B>,
+  backend_id: u64,
   counts: Vec<Vec<u64>>,
   members: Vec<Vec<Member>>,
   rows: Vec<usize>,
@@ -176,6 +178,13 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     record: &Execution<B>,
   ) -> Result<Vec<usize>, String> {
     self.plan.validate_record_shape(record)?;
+    self.validated_record_rows(record)
+  }
+
+  fn validated_record_rows(
+    &self,
+    record: &Execution<B>,
+  ) -> Result<Vec<usize>, String> {
     let mut rows = self
       .members
       .iter()
@@ -195,14 +204,11 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         .take(self.tables.len())
         .map(|c| c.preprocessed_height),
     );
-    rows.extend(
+    rows.extend(self.rom.widths.iter().map(|&width| {
       self
-        .system
-        .circuits
-        .iter()
-        .skip(rows.len())
-        .map(|c| record.memory.indices_for_width(c.main_width - 3).len()),
-    );
+        .rom
+        .row_count_for_entries(width, record.memory.width_cells(width).len())
+    }));
     Ok(rows)
   }
 
@@ -417,6 +423,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     }
     let mut coverage = vec![Vec::new(); rows.len()];
     let mut lookup_budget = 1u128;
+    let mut weighted_rows = 0u128;
     for shard in &layout.shards {
       if shard.circuits.len() != rows.len() {
         return Err("wrong layout circuit count".into());
@@ -446,8 +453,14 @@ impl<B: WitnessField> Backend<'_, '_, B> {
               .map_err(|e| format!("trace height: {e}"))?,
           );
         }
-        lookup_budget += slice.height as u128
-          * self.system.circuits[ci].num_lookups.max(1) as u128;
+        let circuit = &self.system.circuits[ci];
+        weighted_rows +=
+          slice.height as u128 * u128::from(batch::circuit_row_weight(circuit));
+        if weighted_rows > u128::from(MAX_BATCH_ROWS) {
+          return Err("batch rows exceed the row bound (2^39)".into());
+        }
+        lookup_budget +=
+          slice.height as u128 * circuit.num_lookups.max(1) as u128;
       }
       self.check_shape(&active, &degrees)?;
     }
@@ -600,9 +613,10 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let ranges = self.depth_ranges(record, |_| false)?;
     Ok(PreparedRecord {
       record,
+      backend_id: self.id,
       counts: self.auxiliary_counts(record, &ranges)?,
       members,
-      rows: self.record_rows(record)?,
+      rows: self.validated_record_rows(record)?,
       #[cfg(feature = "cuda")]
       device,
     })
@@ -613,16 +627,21 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     prepared: &PreparedRecord<'_, B>,
     shard: &ShardLayout,
   ) -> Result<PreparedWitness<Val>, String> {
-    self.timed_witness(prepared, shard).map(|(witness, _)| witness)
+    self.timed_witness(prepared, shard, false).map(|(witness, _)| witness)
   }
 
   fn timed_witness(
     &self,
     prepared: &PreparedRecord<'_, B>,
     shard: &ShardLayout,
+    header_only: bool,
   ) -> Result<(PreparedWitness<Val>, ShardTime), String> {
     let start = Instant::now();
-    self.plan.validate_record_shape(prepared.record)?;
+    // `prepare_incremental` validated the record against this backend's plan,
+    // and `prepared` borrows it immutably, so supplies need not revalidate.
+    if prepared.backend_id != self.id {
+      return Err("prepared record belongs to another prover backend".into());
+    }
     if shard.circuits.len() != self.system.circuits.len() {
       return Err("wrong shard circuit count".into());
     }
@@ -649,7 +668,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       .collect::<Result<Vec<_>, _>>()?;
     let (traces, circuits): (Vec<_>, Vec<_>) = populated.into_iter().unzip();
     let lookups = Instant::now();
-    let witness = if self.gpu_lookup_only {
+    let witness = if self.gpu_lookup_only || header_only {
       let lookups = traces
         .iter()
         .zip(&self.system.circuits)
@@ -785,7 +804,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       // batches' own durations are attributed to this circuit.
       #[cfg(feature = "parallel")]
       {
-        let busy = std::sync::atomic::AtomicU64::new(0);
+        let busy = AtomicU64::new(0);
         real.par_chunks_mut(width * 32).enumerate().try_for_each_init(
           Scratch::default,
           |scratch, (batch, cells)| {
@@ -795,7 +814,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
             }
             busy.fetch_add(
               u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX),
-              std::sync::atomic::Ordering::Relaxed,
+              Ordering::Relaxed,
             );
             Ok::<_, String>(())
           },
@@ -811,20 +830,14 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         }
       }
     } else if !self.fixed_circuit(ci) {
-      let bucket = prepared.record.memory.indices_for_width(width - 3);
-      for (&index, row) in bucket[slice.first..slice.first + slice.rows]
-        .iter()
-        .zip(values.chunks_mut(width))
-      {
-        let cell =
-          prepared.record.memory.get(index).ok_or("missing ROM entry")?;
-        row[0] = Val::from_u64(cell.multiplicity);
-        row[1] = Val::ONE;
-        row[2] = Val::from_usize(cell.address);
-        for (dest, &value) in row[3..].iter_mut().zip(cell.cell.value) {
-          *dest = B::into_stark(value);
-        }
-      }
+      let rom_index = ci - self.members.len() - self.tables.len();
+      self.rom.populate_rows(
+        prepared.record,
+        rom_index,
+        slice.first,
+        slice.rows,
+        &mut values,
+      );
     }
     time.fill = filling.elapsed();
     Ok(TraceSource::Host(RowMajorMatrix::new(values, width)))
@@ -894,6 +907,8 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     }
     let prepared = self.prepare_incremental(record, Some((entry, args)))?;
     let preparation_seconds = preparation.elapsed().as_secs_f64();
+    let regenerated = self.requires_regeneration(layout.shards.len())
+      || !matches!(retention, Retention::Retain);
     let times = std::sync::Mutex::new(Vec::new());
     let proving = Instant::now();
     let streamed = self.prove_streamed_scheduled(
@@ -907,8 +922,11 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       },
       feed,
       |round, shard| {
+        // Round one commits non-zero shards only to hash their headers when
+        // regenerating, dropping `Stage1` immediately; skip host lookups there.
+        let header_only = round == 0 && shard != 0 && regenerated;
         let (witness, time) =
-          self.timed_witness(&prepared, &layout.shards[shard])?;
+          self.timed_witness(&prepared, &layout.shards[shard], header_only)?;
         times
           .lock()
           .unwrap_or_else(|e| e.into_inner())

@@ -509,7 +509,6 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       .frames
       .last()
       .is_some_and(|parent| self.intra(parent.function, function_id));
-    let budget = &self.record.queries.budget;
     let table = &mut self.record.queries.tables[function_id];
     let (hash, found) = table.lookup(&self.arguments);
     if let Some(id) = found {
@@ -610,8 +609,6 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       }
       return Ok(());
     }
-    let simple_memo =
-      self.ownership.is_none() && self.record.deferred.is_none();
     let program = self.program;
     let field = program.field;
     let reg_lists = &self.dispatch.reg_lists;
@@ -620,7 +617,6 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
     enum StepExit<'a> {
       Return,
       CallMiss { callee: usize, hash: u64, dest: &'a [u32] },
-      CallFull { callee: usize, dest: &'a [u32], pc: usize, next: usize },
       Bytecode { pc: usize, next: usize, memory_type: usize, branch: usize },
     }
 
@@ -951,87 +947,73 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
               let args_len = *args_len as usize;
               let dest_regs = &reg_lists
                 [*dest_off as usize..*dest_off as usize + *dest_len as usize];
-              if simple_memo {
+              #[cfg(feature = "function-profile")]
+              if let Some(profile) = profile.as_deref_mut() {
+                profile.enter(callee);
+              }
+              let table = &mut tables[callee];
+              let (hash, found, unary_arg) = if args_len == 1 {
+                let arg = regs[reg_lists[args_off] as usize];
+                let (hash, found) = table.lookup(&[arg]);
+                (hash, found, Some(arg))
+              } else {
+                arguments.clear();
+                for &r in &reg_lists[args_off..args_off + args_len] {
+                  arguments.push(regs[r as usize]);
+                }
+                let (hash, found) = table.lookup(arguments);
+                (hash, found, None)
+              };
+              if let Some(id) = found {
+                if table.count(id) == 0 {
+                  return Err(site_error(
+                    program,
+                    cur_fn,
+                    step.pc,
+                    "recursive query is already being evaluated",
+                  ));
+                }
+                if table.bump(id).is_none() {
+                  return Err(ExecutionError {
+                    function: "<query>".into(),
+                    instruction: 0,
+                    resource: None,
+                    message: "query multiplicity overflow".into(),
+                  });
+                }
+                if sccs.is_some_and(|s| {
+                  let scc = s
+                    .get(callee)
+                    .copied()
+                    .unwrap_or(crate::trace::depth::NO_SCC);
+                  scc != crate::trace::depth::NO_SCC
+                    && s.get(cur_fn) == Some(&scc)
+                }) {
+                  let height = table.depth(id);
+                  frame.depth = frame.depth.max(height.saturating_add(1));
+                }
+                let output = table.output(id).output;
+                if let ([reg], [val]) = (dest_regs, output) {
+                  regs[*reg as usize] = *val;
+                } else {
+                  for (&reg, &val) in dest_regs.iter().zip(output) {
+                    regs[reg as usize] = val;
+                  }
+                }
                 #[cfg(feature = "function-profile")]
                 if let Some(profile) = profile.as_deref_mut() {
-                  profile.enter(callee);
+                  profile.exit(true);
                 }
-                let table = &mut tables[callee];
-                let (hash, found, unary_arg) = if args_len == 1 {
-                  let arg = regs[reg_lists[args_off] as usize];
-                  let (hash, found) = table.lookup(&[arg]);
-                  (hash, found, Some(arg))
-                } else {
-                  arguments.clear();
-                  for &r in &reg_lists[args_off..args_off + args_len] {
-                    arguments.push(regs[r as usize]);
-                  }
-                  let (hash, found) = table.lookup(arguments);
-                  (hash, found, None)
-                };
-                if let Some(id) = found {
-                  if table.count(id) == 0 {
-                    return Err(site_error(
-                      program,
-                      cur_fn,
-                      step.pc,
-                      "recursive query is already being evaluated",
-                    ));
-                  }
-                  if table.bump(id).is_none() {
-                    return Err(ExecutionError {
-                      function: "<query>".into(),
-                      instruction: 0,
-                      resource: None,
-                      message: "query multiplicity overflow".into(),
-                    });
-                  }
-                  if sccs.is_some_and(|s| {
-                    let scc = s
-                      .get(callee)
-                      .copied()
-                      .unwrap_or(crate::trace::depth::NO_SCC);
-                    scc != crate::trace::depth::NO_SCC
-                      && s.get(cur_fn) == Some(&scc)
-                  }) {
-                    let height = table.depth(id);
-                    frame.depth = frame.depth.max(height.saturating_add(1));
-                  }
-                  let output = table.output(id).output;
-                  if let ([reg], [val]) = (dest_regs, output) {
-                    regs[*reg as usize] = *val;
-                  } else {
-                    for (&reg, &val) in dest_regs.iter().zip(output) {
-                      regs[reg as usize] = val;
-                    }
-                  }
-                  #[cfg(feature = "function-profile")]
-                  if let Some(profile) = profile.as_deref_mut() {
-                    profile.exit(true);
-                  }
-                  cursor = step.next;
-                  continue;
-                }
-                if let Some(arg) = unary_arg {
-                  arguments.clear();
-                  arguments.push(arg);
-                }
-                frame.pc = step.pc + 1;
-                frame.cursor = step.next;
-                break StepExit::CallMiss { callee, hash, dest: dest_regs };
+                cursor = step.next;
+                continue;
               }
-              arguments.clear();
-              for &r in &reg_lists[args_off..args_off + args_len] {
-                arguments.push(regs[r as usize]);
+              if let Some(arg) = unary_arg {
+                arguments.clear();
+                arguments.push(arg);
               }
-              frame.pc = step.pc;
-              frame.cursor = cursor;
-              break StepExit::CallFull {
-                callee,
-                dest: dest_regs,
-                pc: step.pc,
-                next: step.next,
-              };
+              frame.pc = step.pc + 1;
+              frame.cursor = step.next;
+              break StepExit::CallMiss { callee, hash, dest: dest_regs };
             },
             dispatch::Action::Return { vals_off, vals_len } => {
               #[cfg(feature = "function-profile-ops")]
@@ -1080,21 +1062,6 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
         },
         StepExit::CallMiss { callee, hash, dest } => {
           self.start_frame(callee, hash, FrameDest::Compact(dest))?;
-        },
-        StepExit::CallFull { callee, dest, pc, next } => {
-          let output = self.request(callee, FrameDest::Compact(dest))?;
-          self.frames[frame_idx].pc = pc + 1;
-          self.frames[frame_idx].cursor = next;
-          if !matches!(output, Request::Started) {
-            if let Request::Cached(id) = output {
-              let output = self.record.queries.tables[callee].output(id).output;
-              self.frames[frame_idx].write_compact(dest, output);
-            }
-            #[cfg(feature = "function-profile")]
-            if let Some(profile) = &mut self.profile {
-              profile.exit(true);
-            }
-          }
         },
         StepExit::Bytecode { pc, next, memory_type, branch } => {
           let instruction = &program.execution_functions[cur_fn].code[pc];

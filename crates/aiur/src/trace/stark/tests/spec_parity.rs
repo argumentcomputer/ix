@@ -937,75 +937,119 @@ fn vectorized_rom_proves_verifies_and_rejects_tampering() {
     vk.verify(&[claim], &norm_proof).unwrap();
   }
 
-  // 2. Non-K-aligned multi-shard streaming (`[0, 10)` on shard 0 + `[10, 17)` on shard 1).
-  let (stream_prog, stream_art) = multi_width_rom_fixture(10, 7);
-  let stream_plan = TracePlan::new(&stream_prog, stream_art).unwrap();
-  let stream_backend = Backend::for_batch_with_rom_layout(
-    &stream_plan,
-    params,
-    RomLayout::Vectorized,
-  )
-  .unwrap();
-  let stream_hints = stream_prog.prepare_hints(&[]).unwrap();
-  let caller = stream_hints
-    .execute_partition(
-      Some(("driver", vec![g(5)])),
-      crate::execute::Partition {
-        function: 2,
-        owned: vec![],
-        memory_start: 0,
-        memory_end: 100,
-        heights: None,
-      },
-      None,
+  // 2a. Multi-shard incremental streaming matches `prove_batch_stage_1` byte-for-byte
+  //     on vectorized `<ROM:3>` (`n = 17` -> 3 rows: `[0..8)`, `[8..16)`, `[16..17)`).
+  {
+    let (stream_prog, stream_art) = multi_width_rom_fixture(17, 0);
+    let stream_plan = TracePlan::new(&stream_prog, stream_art).unwrap();
+    let stream_backend = Backend::for_batch_with_rom_layout(
+      &stream_plan,
+      params,
+      RomLayout::Vectorized,
     )
     .unwrap();
-  let owned_args: Vec<Vec<Val>> =
-    (0..7).map(|j| vec![g(5 + 1000 + j)]).collect();
-  let mut owner = stream_hints
-    .execute_partition(
-      None,
-      crate::execute::Partition {
-        function: 2,
-        owned: owned_args.clone(),
-        memory_start: 10,
-        memory_end: 100,
-        heights: None,
-      },
-      None,
-    )
-    .unwrap();
-  for a in &owned_args {
-    owner.absorb_deferred(2, a, 1).unwrap();
+    let rec = stream_prog.execute("driver", vec![g(5)]).unwrap();
+    let full =
+      stream_backend.generate_stage_1(&rec, "driver", &[g(5)]).unwrap();
+    for max_rows in [1usize, 2] {
+      let control = stream_backend
+        .prove_batch_stage_1(
+          "driver",
+          &[g(5)],
+          &[g(5)],
+          full.clone(),
+          max_rows,
+          multi_stark::batch::Retention::Regenerate,
+        )
+        .unwrap()
+        .to_bytes()
+        .unwrap();
+      let layout = stream_backend.uniform_layout(&rec, max_rows).unwrap();
+      for retention in [
+        multi_stark::batch::Retention::Retain,
+        multi_stark::batch::Retention::Regenerate,
+      ] {
+        let proof = stream_backend
+          .prove_incremental(
+            &rec,
+            "driver",
+            &[g(5)],
+            &[g(5)],
+            &layout,
+            retention,
+          )
+          .unwrap();
+        assert_eq!(
+          proof.to_bytes().unwrap(),
+          control,
+          "C6 incremental proof mismatch at max_rows={max_rows}, {retention:?}"
+        );
+      }
+    }
+
+    // 2b. Non-K-aligned multi-shard streaming (`[0, 10)` on shard 0 + `[10, 17)` on shard 1).
+    let rom3_ci =
+      stream_backend.members.len() + stream_backend.tables.len() + 1;
+    let stride = 3 + 2;
+    let rom3_width = 1 + 8 * stride;
+    let cells = rec.memory.width_cells(3);
+    assert_eq!(cells.len(), 17);
+    let fill_rom3_shard = |range: std::ops::Range<usize>| {
+      let count = range.len();
+      let active_rows = count.div_ceil(8);
+      let height = active_rows.next_power_of_two();
+      let mut values = Val::zero_vec(height * rom3_width);
+      for row_idx in 0..active_rows {
+        let base_idx = range.start + row_idx * 8;
+        let (first_addr, _, _) = cells.rom_row(base_idx);
+        let row = &mut values[row_idx * rom3_width..(row_idx + 1) * rom3_width];
+        row[0] = Val::from_usize(first_addr);
+        let active_in_row = (range.end - base_idx).min(8);
+        for lane in 0..active_in_row {
+          let (addr, mult, payload) = cells.rom_row(base_idx + lane);
+          debug_assert_eq!(addr, first_addr + lane);
+          let off = 1 + lane * stride;
+          row[off] = Val::from_u64(mult);
+          row[off + 1] = Val::ONE;
+          for (dest, &word) in row[off + 2..off + 5].iter_mut().zip(payload) {
+            *dest = word;
+          }
+        }
+      }
+      RowMajorMatrix::new(values, rom3_width)
+    };
+    let mut shard0 = full.clone();
+    shard0[rom3_ci] = fill_rom3_shard(0..10);
+    let mut shard1: Vec<RowMajorMatrix<Val>> = full
+      .iter()
+      .zip(&stream_backend.system.circuits)
+      .map(|(trace, circuit)| {
+        if circuit.preprocessed_height != 0 {
+          RowMajorMatrix::new(Val::zero_vec(trace.values.len()), trace.width)
+        } else {
+          RowMajorMatrix::new(vec![], trace.width)
+        }
+      })
+      .collect();
+    shard1[rom3_ci] = fill_rom3_shard(10..17);
+    let intervals = stream_backend.record_shape(&rec).unwrap().memory_intervals;
+    assert!(intervals.contains(&(3, 0, 17)));
+    let shard_traces = [shard0, shard1];
+    let streamed = stream_backend
+      .prove_streamed_stage_1(
+        "driver",
+        &[g(5)],
+        &[g(5)],
+        StreamPlan {
+          shards: 2,
+          memory_intervals: intervals,
+          retention: multi_stark::batch::Retention::Retain,
+        },
+        |i| Ok(shard_traces[i].clone()),
+      )
+      .unwrap();
+    stream_backend.verify_batch("driver", &[g(5)], &[g(5)], &streamed).unwrap();
   }
-  let mut intervals: Vec<_> = [
-    stream_backend.record_shape(&caller).unwrap(),
-    stream_backend.record_shape(&owner).unwrap(),
-  ]
-  .into_iter()
-  .flat_map(|s| s.memory_intervals)
-  .collect();
-  intervals.sort_unstable();
-  assert!(intervals.contains(&(3, 0, 10)));
-  assert!(intervals.contains(&(3, 10, 17)));
-  let shard_traces = [
-    stream_backend.generate_stage_1(&caller, "driver", &[g(5)]).unwrap(),
-    stream_backend.generate_record_stage_1(&owner).unwrap(),
-  ];
-  let streamed = stream_backend
-    .prove_streamed_stage_1(
-      "driver",
-      &[g(5)],
-      &[g(5)],
-      StreamPlan {
-        shards: 2,
-        memory_intervals: intervals,
-        retention: multi_stark::batch::Retention::Retain,
-      },
-      |i| Ok(shard_traces[i].clone()),
-    )
-    .unwrap();
-  stream_backend.verify_batch("driver", &[g(5)], &[g(5)], &streamed).unwrap();
 
   // 3. Five negative tamper tests on vectorized `<ROM:3>` (`K = 8`, `stride = 5`, `n = 10` -> 2 rows: 8 + 2).
   let (t_prog, t_art) = multi_width_rom_fixture(10, 0);

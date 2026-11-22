@@ -7,6 +7,68 @@ fn grouped() -> (CheckedProgram, TraceArtifact) {
 }
 
 #[test]
+fn prepared_records_reject_other_backends_and_survive_owner_moves() {
+  let (program, artifact) = grouped();
+  let plan = TracePlan::new(&program, artifact).unwrap();
+  let backend = host_lookups(&plan);
+  let other = host_lookups(&plan);
+  assert_eq!(
+    backend.verifying_key_bytes().unwrap(),
+    other.verifying_key_bytes().unwrap()
+  );
+  let record = program.execute("Grouped::run", vec![3]).unwrap();
+  let layout = backend.uniform_layout(&record, 2).unwrap();
+  let prepared =
+    backend.prepare_incremental(&record, Some(("Grouped::run", &[3]))).unwrap();
+  let error =
+    other.incremental_witness(&prepared, &layout.shards[0]).err().unwrap();
+  assert!(error.contains("another prover backend"), "{error}");
+  let backend = Box::new(backend);
+  for shard in &layout.shards {
+    let witness = backend.incremental_witness(&prepared, shard).unwrap();
+    assert_eq!(witness.traces.len(), backend.system.circuits.len());
+  }
+}
+
+#[test]
+fn prepared_records_reject_depths_outside_the_field() {
+  let (program, artifact) = depth::depth_fixture();
+  let plan = TracePlan::new(&program, artifact).unwrap();
+  let backend = host_lookups(&plan);
+  let mut record = program.execute("Depth::run", vec![12]).unwrap();
+  let function = program.callable_id("Depth::fib").unwrap();
+  let row = record.queries.tables[function].lookup(&[12]).1.unwrap();
+  record.queries.tables[function].set_depth(row, Val::ORDER_U64);
+  let error = backend.prepare_incremental(&record, None).err().unwrap();
+  assert!(error.contains("reaches field characteristic"), "{error}");
+}
+
+#[test]
+fn depth_preparation_matches_reference_across_row_batches() {
+  let (program, artifact) = depth::depth_fixture();
+  let plan = TracePlan::new(&program, artifact).unwrap();
+  let backend = host_lookups(&plan);
+  let entry = "Depth::fib";
+  let record = program.execute(entry, vec![4096]).unwrap();
+  let args = plan.public_args(&record, entry, &[4096]).unwrap();
+  let reference = plan.generate_reference(&record, entry, &args, true).unwrap();
+  assert_eq!(reference.ranges.table(0).iter().sum::<u64>(), 2 * 4095);
+  assert_eq!(reference.ranges.table(1).iter().sum::<u64>(), 2 * 4095);
+  let expected = backend.witness(&record, &reference).unwrap();
+  let layout = backend.uniform_layout(&record, 8192).unwrap();
+  assert_eq!(layout.shards.len(), 1);
+  let prepared =
+    backend.prepare_incremental(&record, Some((entry, &args))).unwrap();
+  let actual =
+    backend.incremental_witness(&prepared, &layout.shards[0]).unwrap();
+  for (expected, actual) in expected.traces.iter().zip(actual.traces) {
+    let actual = actual.materialize();
+    assert_eq!(expected.width, actual.width);
+    assert_eq!(expected.values, actual.values);
+  }
+}
+
+#[test]
 fn incremental_ranges_match_full_grouped_rows_and_proofs() {
   let (program, artifact) = grouped();
   let plan = TracePlan::new(&program, artifact).unwrap();
@@ -94,8 +156,10 @@ fn fixed_log_heights_prove_one_all_active_shard() {
   };
   assert!(header.active.iter().all(|&a| a));
   assert_eq!(header.log_degrees, logs);
-  let key =
-    VerifyingKey::from_bytes(&backend.verifying_key_bytes().unwrap()).unwrap();
+  let key = VerifyingKey::from_bytes_below_floor(
+    &backend.verifying_key_bytes().unwrap(),
+  )
+  .unwrap();
   let claims = [backend.claim(entry, &[3], &record.output).unwrap()];
   key.validate_preamble(&claims[0], &proof.preamble).unwrap();
   key.verify(&claims, &proof).unwrap();
@@ -274,13 +338,16 @@ fn packing_reduces_sparse_shards_and_checks_protocol_bounds() {
       },
     )
     .collect();
-  let last = rows.len() - 1;
-  rows[last] = 4096;
   let cost = |ci: usize, height: usize| {
     let c = &backend.system.circuits[ci];
     height as u128
       * (c.main_width + c.stage_2_width + 2 * c.quotient_degree()) as u128
   };
+  let tall = (0..rows.len())
+    .filter(|&ci| backend.system.circuits[ci].preprocessed_height == 0)
+    .min_by_key(|&ci| cost(ci, 1))
+    .unwrap();
+  rows[tall] = 4096;
   let limit = rows.iter().enumerate().map(|(ci, &n)| cost(ci, n.min(64))).sum();
   let packed = backend.packed_layout(&rows, &[], limit, None).unwrap();
   assert!(packed.shards.len() < 4096 / 64);
@@ -297,7 +364,7 @@ fn packing_reduces_sparse_shards_and_checks_protocol_bounds() {
   }
   assert_eq!(packed, backend.packed_layout(&rows, &[], limit, None).unwrap());
   assert!(backend.packed_layout(&rows, &[], 1, None).is_err());
-  backend.system.circuits[last].num_lookups = (Val::ORDER_U64 / 1024) as usize;
+  backend.system.circuits[tall].num_lookups = (Val::ORDER_U64 / 1024) as usize;
   assert!(backend.packed_layout(&rows, &[], limit, Some(64)).is_err());
 }
 

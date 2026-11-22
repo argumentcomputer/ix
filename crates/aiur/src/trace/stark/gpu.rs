@@ -212,7 +212,7 @@ impl Buffer {
     Ok(Self { device, pointer })
   }
   fn upload<T: Copy>(device: i32, data: &[T]) -> Result<Self, String> {
-    let buffer = Self::new(device, std::mem::size_of_val(data))?;
+    let buffer = Self::new(device, size_of_val(data))?;
     buffer.write(0, data)?;
     Ok(buffer)
   }
@@ -225,7 +225,7 @@ impl Buffer {
           self.device,
           self.pointer.cast::<u8>().add(offset).cast(),
           data.as_ptr().cast(),
-          std::mem::size_of_val(data),
+          size_of_val(data),
         )
       },
       "GPU population upload",
@@ -398,7 +398,7 @@ fn workspace_bytes(words: u64) -> u64 {
   unsafe { aiur_gpu_population_threads() }
     .saturating_mul(words.max(1))
     .saturating_mul(8)
-    .saturating_add(std::mem::size_of::<AiurPopulationError>() as u64)
+    .saturating_add(size_of::<AiurPopulationError>() as u64)
 }
 
 /// A launch's scratch and failure report, reused across tiles.
@@ -417,16 +417,12 @@ impl Workspace {
     let bytes = usize::try_from(capacity.saturating_mul(8))
       .map_err(|_| "population scratch size overflow")?;
     let scratch = Buffer::new(device, bytes)?;
-    let error =
-      Buffer::new(device, std::mem::size_of::<AiurPopulationError>())?;
+    let error = Buffer::new(device, size_of::<AiurPopulationError>())?;
     let mut status = std::ptr::null_mut();
     // SAFETY: the out-pointer is valid for writing.
     check(
       unsafe {
-        aiur_gpu_host_alloc(
-          std::mem::size_of::<AiurPopulationError>(),
-          &raw mut status,
-        )
+        aiur_gpu_host_alloc(size_of::<AiurPopulationError>(), &raw mut status)
       },
       "GPU population status allocation",
     )?;
@@ -463,7 +459,7 @@ pub(super) struct DevicePlans {
   /// Per function circuit: whether `AIUR_GPU_TRACE_CIRCUITS` admits it.
   selected: Vec<bool>,
   /// Compiled writers bound by `AIUR_GPU_TRACE=compiled`.
-  compiled: Option<Arc<super::compiled::Selection>>,
+  compiled: Option<Arc<compiled::Selection>>,
 }
 
 fn map_kind(name: &str) -> Option<u32> {
@@ -850,7 +846,7 @@ impl DevicePlans {
   ) -> Result<Option<Self>, String> {
     let mode = match std::env::var("AIUR_GPU_TRACE") {
       Err(std::env::VarError::NotPresent)
-        if backend.gpu_lookup_only && super::compiled::registered() =>
+        if backend.gpu_lookup_only && compiled::registered() =>
       {
         Ok("compiled".to_owned())
       },
@@ -873,7 +869,7 @@ impl DevicePlans {
           ));
         }
         let mut plans = Self::select(backend, allowlist()?.as_deref())?;
-        let selection = super::compiled::select(
+        let selection = compiled::select(
           backend,
           &mut plans.circuits,
           &mut plans.callees,
@@ -977,7 +973,7 @@ impl DevicePlans {
     })
   }
 
-  pub(super) fn compiled(&self) -> Option<&super::compiled::Selection> {
+  pub(super) fn compiled(&self) -> Option<&compiled::Selection> {
     self.compiled.as_deref()
   }
 }
@@ -1153,12 +1149,10 @@ impl Image {
     for &(table, _, _) in &self.callees {
       bytes += Self::index_slots(self.tables[table].count)? as u128 * 4;
     }
-    bytes += (self.callees.len() as u128
-      * std::mem::size_of::<AiurCallee>() as u128)
-      .max(8);
+    bytes +=
+      (self.callees.len() as u128 * size_of::<AiurCallee>() as u128).max(8);
     for circuit in self.circuits.iter().flatten() {
-      bytes +=
-        (circuit.members.len() * std::mem::size_of::<AiurFunction>()) as u128;
+      bytes += (circuit.members.len() * size_of::<AiurFunction>()) as u128;
     }
     u64::try_from(bytes).map_err(|_| "device record size overflow".into())
   }
@@ -1324,7 +1318,7 @@ pub(super) struct DeviceRecord {
   releasable: bool,
   /// Device bytes of the uploaded record.
   bytes: u64,
-  compiled: Option<Arc<super::compiled::Selection>>,
+  compiled: Option<Arc<compiled::Selection>>,
   /// Depth range-table uses of every real row of the device circuits,
   /// counted at upload.
   ranges: RangeCounts,

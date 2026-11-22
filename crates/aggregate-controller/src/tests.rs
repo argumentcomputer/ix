@@ -142,6 +142,7 @@ fn store_axiom(env: &ixon::Env, typ: Arc<Expr>, refs: Vec<Address>) -> Address {
     sharing: Vec::new(),
     refs,
     univs: Vec::new(),
+    binders: Vec::new(),
   };
   let mut bytes = Vec::new();
   constant.put(&mut bytes);

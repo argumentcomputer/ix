@@ -404,6 +404,12 @@ fn body(
           let _ = writeln!(s, "return Err(rt.fail({id}, {pc}, {message:?}));");
           terminated = true;
         },
+        NativeOp::PtrEq { dest, left, right } => {
+          let _ = writeln!(
+            s,
+            "r[{dest}] = fd.from_u64(u64::from(r[{left}] == r[{right}]));"
+          );
+        },
       }
       if terminated {
         break;

@@ -1,13 +1,10 @@
 //! Bounded trace shards and verifier-only keys. Function rows may be partitioned
 //! freely; memory rows remain consecutive and are closed by the batch preamble.
 use super::*;
-#[cfg(test)]
 use multi_stark::system::Circuit;
-#[cfg(all(feature = "cuda", test))]
-use multi_stark::witness::TraceSource;
 use multi_stark::{
   batch::{BatchMessage, Retention},
-  witness::PreparedWitness,
+  witness::{PreparedWitness, TraceSource},
 };
 #[cfg(all(feature = "cuda", test))]
 use std::sync::Arc;
@@ -562,12 +559,18 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     let mut headers: Vec<_> = (0..plan.shards).map(|_| None).collect();
     let mut retained: Vec<_> = (0..plan.shards).map(|_| None).collect();
     let mut lookup_budget = 1u128;
+    let mut weighted_rows = 0u128;
     for &(_, shard) in &order[..plan.shards] {
       let witness = supply(shard)?;
       self.check_prepared_shape(&witness)?;
       for (trace, circuit) in witness.traces.iter().zip(&self.system.circuits) {
+        weighted_rows +=
+          trace.height() as u128 * u128::from(circuit_row_weight(circuit));
         lookup_budget +=
           trace.height() as u128 * circuit.num_lookups.max(1) as u128;
+      }
+      if weighted_rows > u128::from(MAX_BATCH_ROWS) {
+        return Err("batch rows exceed the row bound (2^39)".into());
       }
       if lookup_budget >= u128::from(Val::ORDER_U64) {
         return Err("batch height/lookup budget exceeds field".into());
@@ -720,7 +723,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       if trace.width() != circuit.main_width || trace.width() == 0 {
         return Err("invalid main trace width".into());
       }
-      if let multi_stark::witness::TraceSource::Host(matrix) = trace
+      if let TraceSource::Host(matrix) = trace
         && !matrix.values.len().is_multiple_of(matrix.width)
       {
         return Err("partial main trace row".into());

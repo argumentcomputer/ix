@@ -139,7 +139,7 @@ impl<T: Copy> Chunks<T> {
   fn grow(&mut self, chunk: usize, budget: &Budget) -> Result<(), BudgetError> {
     let rows = if chunk == 0 { FIRST_ROWS.min(self.rows) } else { self.rows };
     let capacity = rows * self.stride;
-    budget.vector(&self.chunks, 1)?;
+    budget.vector(&mut self.chunks, 1)?;
     let prefetched = match &self.next {
       Some(next) if next.capacity() == capacity => match next.take() {
         Ok(values) => Some(values),
@@ -223,13 +223,11 @@ impl<T: Copy> Chunks<T> {
   }
 
   /// Bytes of the live rows.
-  #[cfg(test)]
   pub(crate) fn payload_bytes(&self) -> usize {
     self.len * self.stride * size_of::<T>()
   }
 
   /// Bytes allocated.
-  #[cfg(test)]
   pub(crate) fn capacity_bytes(&self) -> usize {
     (self.chunks.iter().map(Vec::capacity).sum::<usize>()
       + self.next.as_ref().map_or(0, Pending::capacity))

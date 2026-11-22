@@ -63,23 +63,25 @@ pub(super) fn variant<'a, T: LeanCtorLayout>(
   wrap: fn(LeanBorrowed<'a>) -> T,
   name: &str,
 ) -> Result<(usize, T), String> {
-  let (tag, objects) = if object.is_scalar() {
-    (object.unbox_usize(), None)
+  let tag = if object.is_scalar() {
+    object.unbox_usize()
   } else {
-    (usize::from(object.tag()), Some(object.as_ctor().num_objs()))
+    usize::from(object.tag())
   };
   let layout =
     T::LAYOUTS.get(tag).ok_or_else(|| format!("invalid {name} tag {tag}"))?;
-  match objects {
-    None if layout.num_obj == 0 => {},
-    None => return Err(format!("{name}: expected a constructor object")),
-    Some(found) if found == layout.num_obj => {},
-    Some(found) => {
+  if object.is_scalar() {
+    if layout.num_obj != 0 {
+      return Err(format!("{name}: expected a constructor object"));
+    }
+  } else {
+    let found = object.as_ctor().num_objs();
+    if found != layout.num_obj {
       return Err(format!(
         "{name}: expected {} object fields, found {found}",
         layout.num_obj
       ));
-    },
+    }
   }
   Ok((tag, wrap(object)))
 }
@@ -104,7 +106,7 @@ fn u64_nat(object: LeanBorrowed<'_>) -> Result<u64, String> {
   u64::try_from(nat(object)?).map_err(|e| e.to_string())
 }
 
-fn option<T>(
+pub(super) fn option<T>(
   object: LeanBorrowed<'_>,
   f: impl FnOnce(LeanBorrowed<'_>) -> Result<T, String>,
 ) -> Result<Option<T>, String> {

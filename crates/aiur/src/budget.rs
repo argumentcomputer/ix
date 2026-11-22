@@ -87,8 +87,8 @@ impl Budget {
         .saturating_add(additional)
         .max(values.capacity().saturating_mul(2))
         .max(8);
-      self.reserve(capacity.saturating_mul(std::mem::size_of::<T>()))?;
-      let old = values.capacity().saturating_mul(std::mem::size_of::<T>());
+      self.reserve(capacity.saturating_mul(size_of::<T>()))?;
+      let old = values.capacity().saturating_mul(size_of::<T>());
       values.reserve_exact(capacity - values.len());
       reservation.release(old);
     }
@@ -116,13 +116,24 @@ impl Budget {
   }
 
   /// Charge an index's next allocation, `growth` bytes if the coming insertion
-  /// grows it ([`crate::index::RowIndex::growth`]).
+  /// grows it ([`crate::index::RowIndex::growth`]), and release `old` bytes
+  /// when the returned guard drops after the rehash frees the old allocation.
   #[inline]
-  pub(crate) fn index(&self, growth: Option<usize>) -> Result<(), BudgetError> {
+  pub(crate) fn index(
+    &self,
+    growth: Option<usize>,
+    old: usize,
+  ) -> Result<ReplacedAllocation, BudgetError> {
     if let Some(bytes) = growth {
       self.reserve(bytes)?;
+      if old > 0 {
+        return Ok(ReplacedAllocation {
+          reservation: self.0.clone(),
+          bytes: old,
+        });
+      }
     }
-    Ok(())
+    Ok(ReplacedAllocation { reservation: None, bytes: 0 })
   }
 }
 

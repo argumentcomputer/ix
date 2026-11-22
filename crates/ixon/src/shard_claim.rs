@@ -312,8 +312,7 @@ pub fn owned_per_shard(
   env: &Env,
   shards: &[Vec<Address>],
 ) -> Result<Vec<Vec<Address>>, String> {
-  let mut shard_of: rustc_hash::FxHashMap<&Address, usize> =
-    rustc_hash::FxHashMap::default();
+  let mut shard_of: FxHashMap<&Address, usize> = FxHashMap::default();
   for (k, blocks) in shards.iter().enumerate() {
     for block in blocks {
       shard_of.insert(block, k);

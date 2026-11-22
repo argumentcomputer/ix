@@ -872,6 +872,7 @@ mod tests {
     let defn = Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Safe,
+      asserts: Default::default(),
       lvls: 0,
       typ: Arc::new(Expr::Sort(0)),
       value: Arc::new(Expr::Sort(0)),

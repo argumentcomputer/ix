@@ -133,6 +133,11 @@ pub enum NativeOp {
   Fail {
     message: String,
   },
+  PtrEq {
+    dest: usize,
+    left: usize,
+    right: usize,
+  },
 }
 
 impl<B: FieldBackend> CheckedProgram<B> {
@@ -264,6 +269,9 @@ impl<B: FieldBackend> CheckedProgram<B> {
             },
             I::Ret { value } => NativeOp::Return { values: value.clone() },
             I::Fail { message } => NativeOp::Fail { message: message.clone() },
+            I::PtrEq { dest, left, right } => {
+              NativeOp::PtrEq { dest: *dest, left: *left, right: *right }
+            },
           };
           let next = match op {
             NativeOp::Return { .. }
@@ -475,6 +483,12 @@ fn write_op(w: &mut Writer, op: &NativeOp) {
     NativeOp::Fail { message } => {
       w.u8(15);
       w.str(message);
+    },
+    NativeOp::PtrEq { dest, left, right } => {
+      w.u8(16);
+      w.usize(*dest);
+      w.usize(*left);
+      w.usize(*right);
     },
   }
 }

@@ -157,7 +157,7 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
             + b.counts.capacity_bytes()
         })
         .sum::<usize>()
-      + self.buckets.capacity() * std::mem::size_of::<Bucket<F>>();
+      + self.buckets.capacity() * size_of::<Bucket<F>>();
     let index = self.index.allocated_bytes();
     (payload, vectors, index)
   }
@@ -320,8 +320,10 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     bucket.indices.reserve(&self.budget)?;
     bucket.counts.reserve(&self.budget)?;
     self.slots.reserve(&self.budget)?;
-    self.budget.index(self.index.growth())?;
+    let old_index =
+      self.budget.index(self.index.growth(), self.index.charged_bytes())?;
     self.index.insert(tag(hash), offset_u32);
+    drop(old_index);
     bucket.words.push(words);
     bucket.indices.push(&[entry]);
     bucket.counts.push(&[0]);

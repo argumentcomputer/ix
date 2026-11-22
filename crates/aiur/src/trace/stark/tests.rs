@@ -1640,7 +1640,7 @@ fn gpu_population_proves_identically() {
     true,
   )
   .unwrap();
-  let plans = gpu::DevicePlans::new(&backend);
+  let plans = super::gpu::DevicePlans::new(&backend);
   let device_circuits: Vec<_> = plans
     .circuits
     .iter()
@@ -1707,7 +1707,7 @@ fn gpu_depth_population_proves_identically() {
     true,
   )
   .unwrap();
-  let plans = gpu::DevicePlans::new(&backend);
+  let plans = super::gpu::DevicePlans::new(&backend);
   let fib = backend.names.iter().position(|n| n == "Depth::fib").unwrap();
   assert!(plans.circuits[fib], "fib's gap slots run on the device");
   let entry = "Depth::run";

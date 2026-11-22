@@ -18,9 +18,9 @@ pub mod ixon;
 pub mod library;
 pub mod maps;
 pub mod memory;
-mod prefetch;
 #[cfg(feature = "native")]
 pub mod native;
+mod prefetch;
 pub mod query;
 pub mod shared;
 mod table;

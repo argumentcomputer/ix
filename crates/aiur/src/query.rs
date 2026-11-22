@@ -208,13 +208,15 @@ impl<B: FieldBackend> QueryTable<B> {
     if self.track_depth {
       self.budget.vector(&mut self.depths, 1)?;
     }
-    self.budget.index(self.index.growth())?;
+    let old_index =
+      self.budget.index(self.index.growth(), self.index.charged_bytes())?;
     self.rows.push_padded(args, self.field.zero());
     self.counts.push(0);
     if self.track_depth {
       self.depths.push(0);
     }
     self.index.insert(tag(hash), row_u32);
+    drop(old_index);
     if let [key] = args
       && let Ok(key) = usize::try_from(self.field.to_u64(*key))
     {
@@ -271,7 +273,7 @@ impl<B: FieldBackend> QueryTable<B> {
     let payload = self.rows.payload_bytes();
     let vectors = self.rows.capacity_bytes()
       + (self.counts.capacity() + self.depths.capacity()) * 8
-      + self.dense_index.capacity() * std::mem::size_of::<u32>()
+      + self.dense_index.capacity() * size_of::<u32>()
       + self.static_map.as_ref().map_or(0, |map| map.counts.len() * 8);
     let index = self.index.allocated_bytes();
     (payload, vectors, index)

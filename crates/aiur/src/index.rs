@@ -149,9 +149,14 @@ impl RowIndex {
   }
 
   /// Bytes of the index's allocation.
-  #[cfg(test)]
   pub(crate) fn allocated_bytes(&self) -> usize {
     self.words.capacity() * size_of::<u32>()
+  }
+
+  /// Bytes charged for the current index allocation.
+  #[inline(always)]
+  pub(crate) fn charged_bytes(&self) -> usize {
+    bytes(self.buckets)
   }
 
   /// The size class that holds `entries` without growing.

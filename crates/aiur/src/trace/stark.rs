@@ -252,7 +252,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   pub fn new_with_rom_layout(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     rom_layout: RomLayout,
   ) -> Result<Self, String> {
@@ -269,7 +269,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   pub fn for_batch_with_rom_layout(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     rom_layout: RomLayout,
   ) -> Result<Self, String> {
@@ -433,6 +433,26 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       backend.device_plans = gpu::DevicePlans::from_env(&backend)?;
     }
     Ok(backend)
+  }
+
+  #[cfg(all(test, feature = "cuda"))]
+  fn build_with_lookup_policy(
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
+    parameters: Parameters,
+    segmented_memory: bool,
+    device: Option<i32>,
+    gpu_lookup_only: bool,
+  ) -> Result<Self, String> {
+    Self::assemble(
+      plan,
+      parameters,
+      segmented_memory,
+      RomLayout::Vectorized,
+      device,
+      gpu_lookup_only,
+      true,
+      true,
+    )
   }
 
   fn assemble(
@@ -757,6 +777,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// stage-one commitment header is needed (for example, round one of a
   /// regenerated batch where `Stage1` is dropped immediately after hashing its
   /// header).
+  #[cfg(test)]
   fn header_only_witness_from_main(
     &self,
     traces: Vec<RowMajorMatrix<Val>>,
