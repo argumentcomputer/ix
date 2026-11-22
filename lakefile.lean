@@ -155,7 +155,7 @@ def isRustBuildInput (path : FilePath) : Bool :=
   !comps.contains "target" &&
     (path.fileName == some "Cargo.toml" ||
      match path.extension with
-     | some "rs" | some "cu" | some "c" | some "cpp" | some "h" | some "json" | some "bin" => true
+     | some "rs" | some "cu" | some "c" | some "cpp" | some "h" | some "json" | some "bin" | some "ixl" => true
      | _ => false)
 
 /-- Input trace for `buildRustStatic`: Rust sources, manifests, CUDA/C sources,

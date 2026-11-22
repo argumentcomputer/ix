@@ -2,7 +2,11 @@ name: CI Jobs
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # Include `edited` so retargeting a PR's base branch always re-evaluates
+    # `dorny/paths-filter` against the new base..head diff. Non-base edits are
+    # intentionally not short-circuited to `skipped`, because GitHub treats a
+    # skipped required check (`ci-gate`) as passing over a prior failure.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   # Pushes to main run build-only cache-warming steps so each sticky-disk
   # lineage keeps a fresh `main` snapshot (new PR branches fall back to
   # `main`'s snapshot) and the S3 `.ixa` artifact cache stays warm.
@@ -71,8 +75,11 @@ jobs:
               - 'c/**'
               - 'Aiur/c/**'
               - 'deny.toml'
+              - '.config/nextest.toml'
+              - 'rustfmt.toml'
               - '.github/valgrind.supp'
               - 'Tests/Fixtures/**'
+              - 'tools/gnark/**'
             gnark:
               - 'tools/gnark/**'
               - 'crates/proof-compression/src/pipeline/wrap/outer/**'
@@ -109,11 +116,83 @@ jobs:
               - 'IxVM/IxVM/Fixture.lean'
               - 'Scripts/SourceHygiene.lean'
               - 'Scripts/CheckCiFilters.lean'
+              - 'Scripts/FriSecurity.lean'
             kernel:
               - 'IxC/**'
               - 'Models/SetTheory/**'
               - 'Ix/Address/**'
               - 'Ix/Address.lean'
+              - 'Ix/Aiur/**'
+              - 'Ix/AssumptionTree.lean'
+              - 'Ix/CanonM.lean'
+              - 'Ix/Cert/**'
+              - 'Ix/Claim*.lean'
+              - 'Ix/Cli/Common.lean'
+              - 'Ix/Common.lean'
+              - 'Ix/Compile/**'
+              - 'Ix/CompileCert/**'
+              - 'Ix/CompileCertified.lean'
+              - 'Ix/CompileDriver.lean'
+              - 'Ix/CompileM.lean'
+              - 'Ix/CondenseM.lean'
+              - 'Ix/Environment.lean'
+              - 'Ix/EnvScope.lean'
+              - 'Ix/GraphM.lean'
+              - 'Ix/Ground.lean'
+              - 'Ix/HostAdmission.lean'
+              - 'Ix/HostAdmission/**'
+              - 'Ix/IndFlags.lean'
+              - 'Ix/Ixon/**'
+              - 'Ix/Ixon.lean'
+              - 'Ix/IxonContract.lean'
+              - 'Ix/IxonUniv.lean'
+              - 'Ix/KernelCheck/**'
+              - 'Ix/KernelDisplay/**'
+              - 'Ix/LeanExport.lean'
+              - 'Ix/LeanIngress/**'
+              - 'Ix/LeanIngress.lean'
+              - 'Ix/Merkle.lean'
+              - 'Ix/Meta.lean'
+              - 'Ix/Mutual.lean'
+              - 'Ix/RoleBinding/**'
+              - 'Ix/RoleEvidence.lean'
+              - 'Ix/SOrder.lean'
+              - 'Ix/SemanticContract.lean'
+              - 'Ix/Sharing/**'
+              - 'Ix/SpecDigest/**'
+              - 'Ix/SpecDigest.lean'
+              - 'Ix/Store.lean'
+              - 'Ix/Typing.lean'
+              - 'Ix/IxVM/Consistency/**'
+              - 'Ix/IxVM/ConsistencyAudit.lean'
+              - 'Ix/IxVM/ConsistencyModelAudit.lean'
+              - 'Ix/IxVM/PwHints.lean'
+              - 'Ix/IxVM/RecordSections.lean'
+              - 'Ix/IxVM/Refinement/Claim.lean'
+              - 'IxSharingVerify.lean'
+              - 'IxSharingVerify/**'
+              - 'Benchmarks/Kernel/**'
+              - 'Tests/Ix/Kernel/**'
+              - 'Tests/Ix/Cert/**'
+              - 'Tests/Fixtures/trust-surface/**'
+              - 'Tests/Fixtures/compile-correct-closure-manifest.txt'
+              - 'Tests/Fixtures/check-bytes-closure-manifest.txt'
+            refinement:
+              - 'Aiur/**'
+              - 'IxVM/**'
+              - 'MultiStark/**'
+              - 'IxVMRefinement/**'
+              - 'IxC/**'
+              - 'Ix/Aggr/**'
+              - 'Ix/Aiur/**'
+              - 'Ix/MultiStark/**'
+              - 'Ix/IxVM/Consistency/**'
+              - 'Ix/IxVM/ConsistencyAudit.lean'
+              - 'Ix/IxVM/ConsistencyModelAudit.lean'
+              - 'Ix/IxVM/Refinement/**'
+              - 'Ix/SpecDigest/**'
+              - 'Ix/SpecDigest.lean'
+              - 'Ix/CanonM.lean'
               - 'Ix/Cert/**'
               - 'Ix/Common.lean'
               - 'Ix/Compile/**'
@@ -127,48 +206,27 @@ jobs:
               - 'Ix/IndFlags.lean'
               - 'Ix/Ixon/**'
               - 'Ix/Ixon.lean'
+              - 'Ix/IxonContract.lean'
               - 'Ix/IxonUniv.lean'
-              - 'Ix/KernelDisplay/**'
               - 'Ix/LeanIngress/**'
               - 'Ix/LeanIngress.lean'
+              - 'Ix/Merkle.lean'
               - 'Ix/Mutual.lean'
               - 'Ix/RoleBinding/**'
               - 'Ix/RoleEvidence.lean'
-              - 'Ix/HostAdmission/**'
+              - 'Ix/SOrder.lean'
               - 'Ix/SemanticContract.lean'
-              - 'Ix/Sharing/**'
-              - 'Ix/SpecDigest/**'
-              - 'Ix/SpecDigest.lean'
-              - 'Ix/IxVM/Consistency/**'
-              - 'Ix/IxVM/ConsistencyAudit.lean'
-              - 'Ix/IxVM/ConsistencyModelAudit.lean'
-              - 'IxSharingVerify/**'
-              - 'Tests/Ix/Kernel/**'
-              - 'Tests/Ix/Cert/**'
-              - 'Tests/Fixtures/compile-correct-closure-manifest.txt'
-              - 'Tests/Fixtures/check-bytes-closure-manifest.txt'
-            refinement:
-              - 'Aiur/**'
-              - 'IxVM/**'
-              - 'MultiStark/**'
-              - 'IxVMRefinement/**'
-              - 'IxC/**'
-              - 'Ix/IxVM/Consistency/**'
-              - 'Ix/IxVM/ConsistencyAudit.lean'
-              - 'Ix/IxVM/ConsistencyModelAudit.lean'
-              - 'Ix/IxVM/Refinement/**'
-              - 'Ix/SpecDigest/**'
-              - 'Ix/SpecDigest.lean'
-              - 'Ix/Cert/**'
-              - 'Ix/Environment.lean'
-              - 'Ix/Ixon/**'
-              - 'Ix/Ixon.lean'
-              - 'Ix/RoleBinding/**'
+              - 'Ix/HostAdmission.lean'
               - 'Ix/HostAdmission/**'
+              - 'Ix/Sharing/**'
+              - 'Ix/Store.lean'
               - 'Ix/Claim*.lean'
               - 'Ix/AssumptionTree.lean'
               - 'Ix/Address/**'
               - 'Ix/Address.lean'
+              - 'IxSharingVerify.lean'
+              - 'IxSharingVerify/**'
+              - 'Tests/Ix/Kernel/ModelLaws.lean'
               - 'Tests/Fixtures/circuit-composed-closure-manifest.txt'
             formal:
               - 'Aiur/**'
@@ -176,21 +234,47 @@ jobs:
               - 'MultiStark/**'
               - 'IxVMRefinement/**'
               - 'IxC/**'
+              - 'Ix/Address/**'
+              - 'Ix/Address.lean'
+              - 'Ix/CanonM.lean'
+              - 'Ix/Cert/**'
+              - 'Ix/Common.lean'
               - 'Ix/IxVM/**'
               - 'Ix/Compile/**'
+              - 'Ix/CompileCert/**'
               - 'Ix/CompileM.lean'
               - 'Ix/CompileCertified.lean'
               - 'Ix/CompileDriver.lean'
+              - 'Ix/CondenseM.lean'
+              - 'Ix/Environment.lean'
+              - 'Ix/GraphM.lean'
+              - 'Ix/Ground.lean'
+              - 'Ix/IndFlags.lean'
               - 'Ix/Ixon/**'
               - 'Ix/Ixon.lean'
+              - 'Ix/IxonContract.lean'
+              - 'Ix/IxonUniv.lean'
+              - 'Ix/LeanIngress/**'
+              - 'Ix/LeanIngress.lean'
+              - 'Ix/Merkle.lean'
+              - 'Ix/Meta.lean'
+              - 'Ix/Mutual.lean'
               - 'Ix/Claim*.lean'
               - 'Ix/AssumptionTree.lean'
               - 'Ix/Aggr/**'
+              - 'Ix/Aiur/**'
+              - 'Ix/MultiStark/**'
               - 'Ix/Shard/**'
+              - 'Ix/Sharing/**'
               - 'Ix/RoleBinding/**'
+              - 'Ix/RoleEvidence.lean'
+              - 'Ix/SOrder.lean'
+              - 'Ix/SemanticContract.lean'
+              - 'Ix/HostAdmission.lean'
               - 'Ix/HostAdmission/**'
               - 'Ix/SpecDigest/**'
               - 'Ix/SpecDigest.lean'
+              - 'Ix/Store.lean'
               - 'Ix/Aiur*.lean'
               - 'Ix/Cli/Formal*.lean'
               - 'Ix/Cli/Prove*.lean'
@@ -201,9 +285,12 @@ jobs:
               - 'Ix/Cli/CodegenCmd.lean'
               - 'Scripts/CheckFormal.lean'
               - 'Tests/Formal*.lean'
+              - 'Tests/FormalChecks/**'
+              - 'Tests/Fixtures/MultiStark/**'
               - 'Tests/IxVMMain.lean'
               - 'Tests/Ix/IxVM/**'
               - 'Tests/Ix/Kernel/Arena.lean'
+              - 'Tests/Ix/Kernel/ModelLaws.lean'
               - 'Tests/Ix/InstanceSymbols.lean'
               - 'Tests/Ix/VMSource.lean'
               - 'Tests/Ix/IOIngress.lean'
@@ -329,8 +416,9 @@ jobs:
         with:
           persist-credentials: false
       # actionlint, shellcheck over composite action scripts, pinact (actions
-      # must be SHA-pinned with a matching version comment) and zizmor
-      - uses: argumentcomputer/ci-workflows/.github/actions/lint-workflows@main
+      # must be SHA-pinned with a matching version comment) and zizmor.
+      # Pinned commit from `argumentcomputer/ci-workflows@main` (no release tag).
+      - uses: argumentcomputer/ci-workflows/.github/actions/lint-workflows@2a6b43be08a6dab790e870c1717b79be2d6e70bc
 
   quick-checks:
     name: Toolchain sync
@@ -343,12 +431,12 @@ jobs:
           persist-credentials: false
       - name: Check Lean versions match across all workspaces
         run: |
-          diff lean-toolchain Benchmarks/Compile/lean-toolchain
-          diff lean-toolchain Aiur/lean-toolchain
-          diff lean-toolchain IxVM/lean-toolchain
-          diff lean-toolchain MultiStark/lean-toolchain
-          diff lean-toolchain IxC/lean-toolchain
-          diff lean-toolchain Models/SetTheory/lean-toolchain
+          checked=0
+          while IFS= read -r tc; do
+            diff -u lean-toolchain "$tc"
+            checked=$((checked + 1))
+          done < <(find . -name lean-toolchain -not -path './.lake/*' -not -path '*/.lake/*' -not -path './target/*' | sort)
+          test "$checked" -ge 10
 
   rust-test:
     name: Rust lint & tests
@@ -788,12 +876,15 @@ jobs:
         run: |
           lake -d IxC build --wfail
           lake -d Models/SetTheory build --wfail
-          lake build --wfail Ix.Cert.Audit kernel-layering kernel-trust-surface kernel-entry-cases kernel-meta-names
+          lake build --wfail \
+            Ix.Cert.Audit Ix.Cert.RuntimeAudit Ix.Ixon.BlockOrder.Audit IxSharingVerify \
+            kernel-layering kernel-trust-surface kernel-entry-cases kernel-meta-names
       - name: Check certified kernel, host audits, model, fences, entry cases and meta names
         if: needs.changes.outputs.is_push != 'true'
         run: |
           lake env lean --run Scripts/CheckCiFilters.lean
           lake run check-kernel --with-model
+          lake build --wfail Ix.Cert.Audit Ix.Cert.RuntimeAudit Ix.Ixon.BlockOrder.Audit IxSharingVerify
           pinned_cb=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' IxC/Kernel/Admission/ClosureManifest.lean)
           test -n "$pinned_cb"
           printf '%s  Tests/Fixtures/check-bytes-closure-manifest.txt\n' "$pinned_cb" | sha256sum -c -
@@ -804,8 +895,14 @@ jobs:
             IxC.Kernel.Audit.Roots \
             IxC.Kernel.Admission.Audit \
             Ix.Ixon.Authenticated.Audit \
+            Ix.Ixon.BlockOrder.Audit \
             Ix.HostAdmission.Audit \
-            Ix.Cert.ModuleAudit
+            Ix.Cert.ModuleAudit \
+            Ix.Cert.Audit \
+            Ix.Cert.RuntimeAudit \
+            IxSharingVerify.Audit.Statements \
+            IxSharingVerify.Audit.CompiledCode \
+            IxSharingVerify.Audit.SorryFrontier
           lake -d Models/SetTheory env leanchecker IxSetTheoryModel.Audit
 
   valgrind-ffi:
@@ -968,6 +1065,16 @@ jobs:
           auto-config: false
           use-github-cache: false
           use-mathlib-cache: true
+      - name: Ensure formal binaries and packages match revision
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          if [ "$(cat .lake/formal-build-revision 2>/dev/null || true)" != "$EXPECTED_SHA" ]; then
+            lake build --wfail \
+              aiur/Aiur aiur/axiom_sweep aiur/aiur_tests aiur/execution_tests \
+              aiur/trace_tests aiur/u32_tests ixvm/ixvm
+            cargo build --release --locked -p ixvm --features parallel --bin ixvm
+          fi
       - name: Check formal-only root modules
         run: lake run check-formal-modules --wfail
       - name: Run Aiur axiom sweep, unit tests and formal-package-tests
@@ -1030,6 +1137,8 @@ jobs:
             lake env leanchecker \
               IxVMRefinement.Endpoint.ComposedResidual \
               IxVMRefinement.Endpoint.ClosureAudit \
+              IxVMRefinement.Endpoint.ConsistencyCorollary \
+              IxVMRefinement.Endpoint.ComposedResidualAudit \
               Ix.IxVM.ConsistencyAudit \
               Ix.IxVM.ConsistencyModelAudit \
               Ix.IxVM.Refinement.Audit
@@ -1181,6 +1290,7 @@ jobs:
       - name: Run ci:binding-proof tier
         env:
           IX_AIUR_ARTIFACT: ${{ runner.temp }}/ci-artifacts/ixvm.ixa
+          IX_AGGR_ARTIFACT: ${{ runner.temp }}/ci-artifacts/aggregate.ixa
           IX_AIUR_HOST: ${{ runner.temp }}/ci-hosts/ixvm-proof
           IX_PROVER_HOST: ${{ runner.temp }}/ci-hosts/ix-prover
           IX_STARK_HOST: ${{ runner.temp }}/ci-hosts/stark-verifier

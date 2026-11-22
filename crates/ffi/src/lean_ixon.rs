@@ -100,7 +100,8 @@ fn trace_shard_max_cells() -> usize {
 }
 
 fn record_budget(max_ram_bytes: usize, cells: usize) -> usize {
-  max_ram_bytes.saturating_sub(2 * 8 * cells + (256 << 20))
+  let reserve = cells.saturating_mul(16).saturating_add(256usize << 20);
+  max_ram_bytes.saturating_sub(reserve)
 }
 
 fn record_share(max_ram_bytes: usize, cells: usize, in_flight: usize) -> usize {
@@ -311,8 +312,11 @@ pub extern "C" fn rs_shard_env_static(
     // The trace-shard prover: seed against one execution's record share,
     // computed as `ix prove --lanes` computes it.
     let cells = trace_shard_max_cells();
-    let budget = usize::try_from(ram_gib << 30).unwrap_or(usize::MAX);
-    let share = record_share(budget, cells, exec_ahead + 2);
+    let budget = usize::try_from(ram_gib)
+      .ok()
+      .and_then(|g| g.checked_shl(30))
+      .unwrap_or(usize::MAX);
+    let share = record_share(budget, cells, exec_ahead.saturating_add(2));
     let tenths =
       u32::try_from(share.saturating_mul(10) >> 30).unwrap_or(u32::MAX);
     let share_gib = f64::from(tenths) / 10.0;

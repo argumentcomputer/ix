@@ -2,7 +2,6 @@ rules:
   unpinned-uses:
     config:
       policies:
-        # Branch-tracking refs allowed by .github/pinact.yaml
-        "argumentcomputer/lean-update": ref-pin
-        "argumentcomputer/ci-workflows/*": ref-pin
+        # All actions (including internal argumentcomputer/* workflows with
+        # write permissions) must be pinned to a full 40-char commit SHA.
         "*": hash-pin

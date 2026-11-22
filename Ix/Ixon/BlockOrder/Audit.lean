@@ -44,7 +44,10 @@ computed_field, 5 ruled csimp — including 3 inlined ruled csimp lemmas surface
 by the logical-body scan) with no externs or unsafe primitives beyond
 `Ixon.Projection.Audit`, and removed `Classical.choice` from
 `recursorMotive_of_analyse`. -/
-/-- info: runtime closure of [Ixon.BlockOrder.checkRecord]: 177 compiled functions; inherited externs 45, implemented_by 0, unsafe 18, csimp 0; ruled computed_field 14, csimp 5 -/
+-- Hardened `Runtime.lean` (`reducedAritySource?` stripping `._at_.<caller>` plus
+-- `scanLogical` following `implemented_by` and `csimp` targets) resolves specialized
+-- kernel helpers and their ruled `computed_field` / `withExclusive` overrides.
+/-- info: runtime closure of [Ixon.BlockOrder.checkRecord]: 235 compiled functions; inherited externs 46, implemented_by 0, unsafe 36, csimp 0; ruled computed_field 29, implemented_by 1, csimp 5 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

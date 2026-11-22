@@ -2,7 +2,11 @@ name: Nix CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # Include `edited` so retargeting a PR's base branch always re-evaluates
+    # `dorny/paths-filter` against the new base..head diff. Non-base edits are
+    # intentionally not short-circuited to `skipped`, because GitHub treats a
+    # skipped required check (`nix-gate`) as passing over a prior failure.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   # Pushes to main keep the sticky disk's `main` snapshot and Cachix fresh.
   push:
     branches: [main]
@@ -119,15 +123,24 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
           github_access_token: ${{ github.token }}
-      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+      - name: Configure Cachix (read-only on PRs)
+        if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+        uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: argumentcomputer
+          skipPush: true
+      - name: Configure Cachix (push on main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
         with:
           name: argumentcomputer
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - uses: $/.github/actions/authenticate-github-fetches
       # Build all packages in one Nix invocation so independent Crane and Lake
-      # derivations execute in parallel.
+      # derivations execute in parallel. `cachix-action` above already configures
+      # the trusted substituter, so `--accept-flake-config` is never passed.
       - name: Build Nix packages
-        run: nix build .#default .#ix .#zkv-prover --no-link --print-build-logs --accept-flake-config
+        run: nix build .#default .#ix .#zkv-prover --no-link --print-build-logs
       - name: Smoke-test packaged ix CLI
         run: nix run .#ix -- --help
       # Sandboxed `ix-tests` runs only when Nix/manifest/lockfiles changed (or
@@ -135,9 +148,9 @@ jobs:
       # `host-test-primary` on ordinary PRs and pushes to main.
       - name: Run Nix flake check (ix-tests)
         if: needs.changes.outputs.run_flake_check == 'true'
-        run: nix flake check --print-build-logs --accept-flake-config
+        run: nix flake check --print-build-logs
       - name: Smoke-test development shell build
-        run: nix develop --accept-flake-config --command lake build
+        run: nix develop --command lake build
 
   check-results:
     name: Validate Nix results

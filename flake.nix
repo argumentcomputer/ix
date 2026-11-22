@@ -94,6 +94,7 @@
             fileset = pkgs.lib.fileset.unions [
               cargoSource
               compressionData
+              plonkSources
               ./Tests/Fixtures/ixon
               ./Tests/Fixtures/host-admission-v1
               ./Tests/Fixtures/role-binding-v2
@@ -261,6 +262,7 @@
               pkgs.lib.genAttrs
                 [
                   "mathlib"
+                  "plausible"
                   "proofwidgets"
                   "LeanSearchClient"
                   "importGraph"

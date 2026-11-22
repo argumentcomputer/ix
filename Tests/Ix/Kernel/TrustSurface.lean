@@ -54,23 +54,34 @@ list fails just as loudly as one in a bare file.
       equality goes through `@[csimp]` + `withPtrEq` with the redundancy
       proved (`Name.beqPtr_eq`).
 
-  IxC/Kernel/Key.lean           computed_field, ofReduceBool
+  IxC/Kernel/Key.lean           computed_field, ofReduceBool, sorryAx, trustCompiler
       A cached hash only (`Key.hashData`), as `Name`'s: the constant keys
       (input, role and derived) hash in O(1). Pointer equality goes
       through `@[csimp]` + `withPtrEq` with the redundancy proved
       (`Key.beqPtr_eq`).
-      NAMES ONLY: `ofReduceBool` and `ofReduceNat` are constructors of
-      `Role`, the roles of Lean's compiler-trust axioms `Lean.ofReduceBool`
-      and `Lean.ofReduceNat`, with their Lean names (`Role.leanName`). A
-      binding names them so that it can bind them as inert axioms
-      (`Role.inert`): the kernel declines their declarations (non-standard
-      axioms), IxVM refuses each as a claim's seed and refuses every use,
-      and nothing here evaluates natively.
+      NAMES ONLY: `ofReduceBool`, `ofReduceNat`, `sorryAx`, and
+      `trustCompiler` are constructors of `Role`, the roles of Lean's
+      non-standard/compiler-trust axioms, with their Lean names
+      (`Role.leanName`). A binding names them so that it can bind them as
+      inert axioms (`Role.inert`): the kernel declines their declarations
+      (non-standard axioms), IxVM refuses each as a claim's seed and
+      refuses every use, and nothing here evaluates natively.
 
-  IxC/Kernel/Roles.lean         ofReduceBool
-      NAMES ONLY, the same two `Role` constructors: their specification
+  IxC/Kernel/Roles.lean         ofReduceBool, sorryAx, trustCompiler
+      NAMES ONLY, the same `Role` constructors: their specification
       (`Role.spec`, an axiom of the stated type), the roles their types
-      mention (`Role.deps`) and `Role.inert`, which marks them inert.
+      mention (`Role.deps`), `installAnchors`, and `Role.inert`, which
+      marks them inert.
+
+  IxC/Kernel/Basis/Names.lean   sorryAx
+      NAME ONLY: `sorryAxName := roleKey .sorryAx` names the `Role.sorryAx`
+      key.
+
+  IxC/Kernel/Cached/Policy.lean sorryAx
+      NAME ONLY: looks up `Role.sorryAx` in the user-axiom policy filter.
+
+  IxC/Kernel/Admission.lean     sorryAx
+      NAME ONLY: lists `Role.sorryAx` in `userAxiomRoles`.
 
   IxC/Kernel/Exclusive.lean     unsafe, implemented_by
       `withExclusive`: defined as `k false` and `@[implemented_by]` the
@@ -86,6 +97,10 @@ list fails just as loudly as one in a bare file.
       (a `meta section`) and splice the resulting literals. Nothing here
       is in the binary; the literals are ordinary data the proofs consume.
 
+  IxC/Kernel/Audit/Axioms.lean  sorryAx
+      NAME ONLY: checks whether a declaration's dependency graph contains
+      Lean's `sorryAx` constant in the axiom audit engine.
+
   IxC/Kernel/Audit/ClosureManifest.lean  unsafe
       NAME ONLY: matches `Lean.DefinitionSafety.unsafe` when hashing a
       definition's safety tag into the SHA-256 closure manifest.
@@ -100,9 +115,14 @@ list fails just as loudly as one in a bare file.
       elaboration-time `RuntimeControls` negative-control fixtures verifying
       `checkRuntimeWith` rejects unruled escapes.
 
-  Ix/Cert/Compile.lean          ofReduceBool
-      NAME ONLY: matches `Ix.Kernel.Role.ofReduceBool` / `.ofReduceNat` when
-      classifying axiom roles in `roleRecordKind`.
+  Ix/Cert/Compile.lean          ofReduceBool, sorryAx, trustCompiler
+      NAME ONLY: matches `Ix.Kernel.Role.ofReduceBool` / `.ofReduceNat` /
+      `.sorryAx` / `.trustCompiler` when classifying axiom roles in
+      `roleRecordKind`.
+
+  Ix/Cert/LayoutExtra.lean      sorryAx
+      NAME ONLY: proof referencing the `Role.sorryAx` entry in a table of
+      role kinds.
 
   Ix/Address/Admission.lean     implemented_by
       The admission hash: `Address.admissionHash` is defined as pure
@@ -165,19 +185,24 @@ open Tests.Ix.Kernel.KernelLayout
 
 def tokens : List String :=
   ["unsafe", "unsafeCast", "ptrAddrUnsafe", "implemented_by", "computed_field", "native_decide",
-   "bv_decide", "ofReduceBool", "sorry", "lcProof", "extern", "axiom"]
+   "bv_decide", "ofReduceBool", "sorry", "sorryAx", "trustCompiler", "lcProof", "extern", "axiom"]
 
 def allow : List (String × List String) := [
   ("IxC/Kernel/Expr.lean", ["computed_field"]),
   ("IxC/Kernel/Name.lean", ["computed_field"]),
-  ("IxC/Kernel/Key.lean", ["computed_field", "ofReduceBool"]),
-  ("IxC/Kernel/Roles.lean", ["ofReduceBool"]),
+  ("IxC/Kernel/Key.lean", ["computed_field", "ofReduceBool", "sorryAx", "trustCompiler"]),
+  ("IxC/Kernel/Roles.lean", ["ofReduceBool", "sorryAx", "trustCompiler"]),
+  ("IxC/Kernel/Basis/Names.lean", ["sorryAx"]),
+  ("IxC/Kernel/Cached/Policy.lean", ["sorryAx"]),
+  ("IxC/Kernel/Admission.lean", ["sorryAx"]),
   ("IxC/Kernel/BasisGen.lean", ["unsafe", "implemented_by"]),
   ("IxC/Kernel/Exclusive.lean", ["unsafe", "implemented_by"]),
+  ("IxC/Kernel/Audit/Axioms.lean", ["sorryAx"]),
   ("IxC/Kernel/Audit/ClosureManifest.lean", ["unsafe"]),
   ("IxC/Kernel/Audit/Roots.lean", ["ptrAddrUnsafe"]),
   ("IxC/Kernel/Audit/Runtime.lean", ["unsafe", "implemented_by", "computed_field", "extern"]),
-  ("Ix/Cert/Compile.lean", ["ofReduceBool"]),
+  ("Ix/Cert/Compile.lean", ["ofReduceBool", "sorryAx", "trustCompiler"]),
+  ("Ix/Cert/LayoutExtra.lean", ["sorryAx"]),
   ("Ix/Address/Admission.lean", ["implemented_by"]),
   ("Ix/KernelDisplay/Peek.lean", ["unsafe", "unsafeCast"])]
 
@@ -321,12 +346,27 @@ def rawString (L : Lexer) (start : Nat) (close : String) (body limit : Nat) : Le
   blank start stop
   return stop
 
+/-- Whether the opening `"` at `pos` is immediately preceded (ignoring whitespace
+and already-blanked comments) by `'!'`, as in `s!"..."`, `s! "..."`, `m!"..."`,
+or `f!"..."`. -/
+def precededByBang (out : Array Char) (pos : Nat) : Bool := Id.run do
+  let mut k := pos
+  while k > 0 do
+    k := k - 1
+    let ch := out[k]!
+    if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' then
+      continue
+    return ch == '!'
+  return false
+
 mutual
 
 /-- `i` is just after the opening `"`. Returns the index after the closing
-`"`. Blanks the literal text; a `{...}` interpolation segment that closes on
-its line is left as code (the attempt is speculative). -/
-partial def string (L : Lexer) (i limit : Nat) : LexM Nat := do
+`"`. Blanks the literal text; in an interpolated string (`isInterp = true`,
+e.g. `s!"..."` or `s! "..."`), `{...}` interpolations may span multiple lines
+and are left as code; in a plain string, single-line `{...}` is still checked
+speculatively so unmatched braces never desynchronise across lines. -/
+partial def string (L : Lexer) (i limit : Nat) (isInterp : Bool) : LexM Nat := do
   let start := i
   let mut i := i
   while i < limit do
@@ -347,8 +387,8 @@ partial def string (L : Lexer) (i limit : Nat) : LexM Nat := do
       blank i (i + 1)
       return i + 1
     if c == '{' then
-      let eol := L.findChar '\n' i
-      let stop := match eol with | some e => min limit e | none => limit
+      let stop := if isInterp then limit else
+        match L.findChar '\n' i with | some e => min limit e | none => limit
       let saved ← get
       let j ← tryCatch (code L (i + 1) stop true) (fun _ => pure stop)
       if j < stop && L.src[j]! == '}' then
@@ -377,8 +417,9 @@ partial def code (L : Lexer) (i limit : Nat) (stopBrace : Bool) : LexM Nat := do
       blank i j; i := j
       continue
     if c == '"' then
+      let isInterp := precededByBang (← get) i
       blank i (i + 1)
-      i ← string L (i + 1) limit
+      i ← string L (i + 1) limit isInterp
       continue
     if c == 'r' && !L.identBefore i then
       if let some (close, body) := L.rawOpen i limit then
@@ -432,11 +473,28 @@ def wordHits (line : Array Char) (w : String) : List Nat := Id.run do
 
 def hasWord (line : Array Char) (w : String) : Bool := !(wordHits line w).isEmpty
 
-/-- `extern` inside a bracket on its line: after a `[` with no `]` between
-(upstream: after `@[`). -/
-def externHit (line : Array Char) : Bool :=
-  (wordHits line "extern").any fun q =>
-    (List.range q).any fun p => line[p]! == '[' && !((line.extract (p + 1) q).contains ']')
+/-- Line numbers where word-bounded `extern` occurs inside `[...]` brackets
+across the full comment/string-blanked source (covering single-line and
+multi-line `@[\n extern "sym"\n]` and `attribute [\n extern "sym"\n]`). -/
+def externHitLines (out : Array Char) : Array Nat := Id.run do
+  let n := out.size
+  let mut lineNo := 1
+  let mut bracketDepth : Nat := 0
+  let mut lines : Array Nat := #[]
+  for q in [0:n] do
+    let c := out[q]!
+    if c == '\n' then
+      lineNo := lineNo + 1
+    else if c == '[' then
+      bracketDepth := bracketDepth + 1
+    else if c == ']' then
+      if bracketDepth > 0 then bracketDepth := bracketDepth - 1
+    else if bracketDepth > 0 && c == 'e' && wordAt out q "extern" &&
+        (q == 0 || !isWordChar out[q - 1]!) &&
+        (q + 6 == n || !(out[q + 6]?.any isWordChar)) then
+      unless lines.contains lineNo do
+        lines := lines.push lineNo
+  return lines
 
 /-- An `axiom` declaration: at the start of the line after blanks,
 declaration modifiers and `@[…]` attributes, followed by a blank or the end
@@ -458,32 +516,35 @@ def axiomHit (line : Array Char) : Bool := Id.run do
       if j < n then
         i := skip (j + 1); more := true
     else
-      for m in ["private", "protected", "noncomputable", "unsafe", "partial"] do
+      for m in ["public", "private", "protected", "noncomputable", "unsafe", "partial", "meta", "scoped", "local"] do
         if !more && wordAt line i m && (line[i + m.length]?.any isPySpace) then
           i := skip (i + m.length); more := true
   return wordAt line i "axiom" && (i + 5 == n || (line[i + 5]?.any isPySpace))
 
-def tokenHit (line : Array Char) : String → Bool
+def tokenHit (externLines : Array Nat) (lineNo : Nat) (line : Array Char) : String → Bool
   | "ofReduceBool" => hasWord line "ofReduceBool" || hasWord line "ofReduceNat"
-  | "extern" => externHit line
+  | "extern" => externLines.contains lineNo
   | "axiom" => axiomHit line
   | tok => hasWord line tok
+
+/-- Scan raw Lean source text for compiler-escape occurrences. -/
+def scanSource (raw : String) (path : String) : Except String (Array (Nat × String × String)) := do
+  let out ← codeOnly raw path
+  let externLines := externHitLines out
+  let mut hits := #[]
+  let mut lineNo := 1
+  for line in (String.ofList out.toList).splitOn "\n" do
+    let chars := line.toList.toArray
+    for tok in tokens do
+      if tokenHit externLines lineNo chars tok then
+        hits := hits.push (lineNo, tok, pyStrip line.toList)
+    lineNo := lineNo + 1
+  return hits
 
 /-- The (line, token, text) occurrences the gate sees in one file. -/
 def scanFile (rel : String) : IO (Except String (Array (Nat × String × String))) := do
   let raw ← readText rel
-  match codeOnly raw rel with
-  | .error e => return .error e
-  | .ok out =>
-    let mut hits := #[]
-    let mut lineNo := 1
-    for line in (String.ofList out.toList).splitOn "\n" do
-      let chars := line.toList.toArray
-      for tok in tokens do
-        if tokenHit chars tok then
-          hits := hits.push (lineNo, tok, pyStrip line.toList)
-      lineNo := lineNo + 1
-    return .ok hits
+  return scanSource raw rel
 
 /-! ## The self-test
 
@@ -520,7 +581,32 @@ def pyLineCount (text : String) : Nat :=
 
 def pairLt (a b : Nat × String) : Bool := a.1 < b.1 || (a.1 == b.1 && a.2 < b.2)
 
+/-- Inline regression self-tests covering modifier-prefixed `axiom`, multi-line
+`@[extern]`, multi-line `s!"{...}"` interpolation, and `sorryAx`/`trustCompiler`. -/
+def extraSelftests : Except String Unit := do
+  let cases : List (String × String × Array (Nat × String)) := [
+    ("public axiom", "public axiom pwn : False\n", #[(1, "axiom")]),
+    ("meta axiom", "meta axiom pwn : False\n", #[(1, "axiom")]),
+    ("scoped axiom", "scoped axiom pwn : False\n", #[(1, "axiom")]),
+    ("local axiom", "local axiom pwn : False\n", #[(1, "axiom")]),
+    ("multiline extern", "@[\n  extern \"sym\"\n]\nopaque f : Nat\n", #[(2, "extern")]),
+    ("benign extern ident", "def extern : Nat := 0\n", #[]),
+    ("multiline s! interp", "def f := s!\"{\n  unsafeCast 0\n}\"\n", #[(2, "unsafeCast")]),
+    ("multiline s! spaced interp", "def f := s! \"{\n  unsafeCast 0\n}\"\n", #[(2, "unsafeCast")]),
+    ("sorryAx token", "def f := sorryAx\n", #[(1, "sorryAx")]),
+    ("trustCompiler token", "def f := Lean.trustCompiler\n", #[(1, "trustCompiler")])
+  ]
+  for (label, src, want) in cases do
+    let hits ← scanSource src s!"<selftest:{label}>"
+    let got := (hits.map fun (l, tok, _) => (l, tok)).qsort pairLt
+    let wantSorted := want.qsort pairLt
+    if got != wantSorted then
+      throw s!"{label}: expected {wantSorted.toList}, got {got.toList}"
+
 def selftest : IO UInt32 := do
+  if let .error e := extraSelftests then
+    IO.println s!"TRUST-SURFACE SELF-TEST FAIL - regression case failed: {e}"
+    return 1
   unless ← System.FilePath.pathExists lexerFixture do
     IO.println s!"TRUST-SURFACE SELF-TEST FAIL - {lexerFixture} is missing"
     return 1

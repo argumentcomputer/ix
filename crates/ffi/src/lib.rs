@@ -34,7 +34,7 @@ mod sha256;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-use lean_ffi::object::{LeanIOResult, LeanOwned};
+use lean_ffi::object::LeanOwned;
 
 unsafe extern "C" {
   fn lean_internal_set_thread_stack_size(size: usize);
@@ -42,15 +42,13 @@ unsafe extern "C" {
 
 /// Set the stack size (in bytes) for subsequently spawned Lean runtime threads,
 /// adapting the bare `void lean_internal_set_thread_stack_size(size_t)` runtime
-/// call to the `BaseIO Unit` ABI.
+/// call to the `BaseIO Unit` ABI (which returns `Unit` = `lean_box(0)`).
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_lean_set_thread_stack_size(
-  size: usize,
-) -> LeanIOResult<LeanOwned> {
+pub extern "C" fn rs_lean_set_thread_stack_size(size: usize) -> LeanOwned {
   unsafe {
     lean_internal_set_thread_stack_size(size);
   }
-  LeanIOResult::ok(LeanOwned::box_usize(0))
+  LeanOwned::box_usize(0)
 }
 
 #[cfg(test)]

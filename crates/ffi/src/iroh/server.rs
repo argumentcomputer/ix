@@ -12,23 +12,24 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
-use crate::iroh::common::{GetResponse, PutResponse, Request, Response};
+use crate::iroh::common::{
+  GetResponse, PutResponse, READ_SIZE_LIMIT, Request, Response,
+};
 
 // An example ALPN that we are using to communicate over the `Endpoint`
 const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
-// Maximum number of characters to read from the client. Connection automatically closed if this is exceeded
-const READ_SIZE_LIMIT: usize = 100_000_000;
 
 // Largely taken from https://github.com/n0-computer/iroh/blob/main/iroh/examples/listen.rs
 pub async fn serve() -> n0_error::Result<()> {
   // Initialize the subscriber with `RUST_LOG=info` to preserve some server logging
-  tracing_subscriber::registry()
+  let _ = tracing_subscriber::registry()
     .with(fmt::layer())
     .with(EnvFilter::new("info"))
-    .init();
+    .try_init();
   let secret_key = {
     let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes).expect("failed to generate random bytes");
+    getrandom::fill(&mut bytes)
+      .map_err(|e| n0_error::anyerr!("failed to generate random bytes: {e}"))?;
     SecretKey::from(bytes)
   };
   println!("public key: {}", secret_key.public());
@@ -65,7 +66,10 @@ pub async fn serve() -> n0_error::Result<()> {
     })
     .collect::<Vec<_>>()
     .join(",");
-  let relay_url = endpoint_addr.relay_urls().next().expect("missing relay");
+  let relay_url = endpoint_addr
+    .relay_urls()
+    .next()
+    .ok_or_else(|| n0_error::anyerr!("missing relay"))?;
   println!("endpoint relay server url: {relay_url}");
   println!("\nin a separate terminal run:");
 
@@ -107,13 +111,17 @@ pub async fn serve() -> n0_error::Result<()> {
       let (mut send, mut recv) = conn.accept_bi().await.anyerr()?;
       debug!("accepted bi stream, waiting for data...");
       let message = recv.read_to_end(READ_SIZE_LIMIT).await.anyerr()?;
-      let request = Request::from_bytes(&message);
+      let request =
+        Request::from_bytes(&message).map_err(|e| n0_error::anyerr!("{e}"))?;
 
       let response: Response = match request {
         Request::Put(put_request) => {
           let hash =
             blake3::hash(&put_request.bytes).to_hex().as_str().to_owned();
-          store_clone.lock().unwrap().insert(hash.clone(), put_request.bytes);
+          store_clone
+            .lock()
+            .map_err(|e| n0_error::anyerr!("store mutex poisoned: {e}"))?
+            .insert(hash.clone(), put_request.bytes);
           println!("received PUT request for bytes with hash {hash}");
           let message = format!("pinned hash {hash}\nat endpoint ID {me}");
           Response::Put(PutResponse { is_err: false, message, hash })
@@ -123,9 +131,10 @@ pub async fn serve() -> n0_error::Result<()> {
             "received GET request for bytes with hash {}",
             get_request.hash
           );
-          if let Some(bytes) =
-            store_clone.lock().unwrap().get(&get_request.hash)
-          {
+          let guard = store_clone
+            .lock()
+            .map_err(|e| n0_error::anyerr!("store mutex poisoned: {e}"))?;
+          if let Some(bytes) = guard.get(&get_request.hash) {
             let message =
               format!("retrieved bytes for hash {}", get_request.hash);
             Response::Get(GetResponse {
@@ -135,8 +144,10 @@ pub async fn serve() -> n0_error::Result<()> {
               bytes: bytes.clone(),
             })
           } else {
-            let message =
-              String::from("error: failed to retrieve bytes at {hash}");
+            let message = format!(
+              "error: failed to retrieve bytes at {}",
+              get_request.hash
+            );
             Response::Get(GetResponse {
               is_err: true,
               message,
@@ -147,7 +158,7 @@ pub async fn serve() -> n0_error::Result<()> {
         },
       };
 
-      let response_bytes = response.to_bytes();
+      let response_bytes = response.to_bytes().anyerr()?;
       println!("sending {} byte response", response_bytes.len());
       send.write_all(&response_bytes).await.anyerr()?;
       println!("response sent, finishing stream");

@@ -48,22 +48,27 @@ pub fn build_kvmap_array(kvmaps: &[KVMap]) -> LeanArray<LeanOwned> {
 }
 
 /// Decode KVMap (Array (Address × DataValue)).
-pub fn decode_ixon_kvmap(obj: LeanArray<LeanBorrowed<'_>>) -> KVMap {
+pub fn try_decode_ixon_kvmap(
+  obj: LeanArray<LeanBorrowed<'_>>,
+) -> Result<KVMap, String> {
   obj
     .iter()
     .map(|pair| {
       let pair_ctor = pair.as_ctor();
-      (
-        LeanIxAddress::from_borrowed(pair_ctor.get(0).as_byte_array()).decode(),
-        LeanIxonDataValue::new(pair_ctor.get(1).to_owned_ref()).decode(),
-      )
+      Ok((
+        LeanIxAddress::from_borrowed(pair_ctor.get(0).as_byte_array())
+          .try_decode()?,
+        LeanIxonDataValue::new(pair_ctor.get(1).to_owned_ref()).try_decode()?,
+      ))
     })
     .collect()
 }
 
 /// Decode Array KVMap.
-fn decode_kvmap_array(obj: LeanArray<LeanBorrowed<'_>>) -> Vec<KVMap> {
-  obj.map(|x| decode_ixon_kvmap(x.as_array()))
+fn try_decode_kvmap_array(
+  obj: LeanArray<LeanBorrowed<'_>>,
+) -> Result<Vec<KVMap>, String> {
+  obj.iter().map(|x| try_decode_ixon_kvmap(x.as_array())).collect()
 }
 
 // =============================================================================
@@ -71,8 +76,10 @@ fn decode_kvmap_array(obj: LeanArray<LeanBorrowed<'_>>) -> Vec<KVMap> {
 // =============================================================================
 
 /// Decode Array Address.
-fn decode_address_array(obj: LeanArray<LeanBorrowed<'_>>) -> Vec<Address> {
-  LeanIxAddress::decode_array(obj)
+fn try_decode_address_array(
+  obj: LeanArray<LeanBorrowed<'_>>,
+) -> Result<Vec<Address>, String> {
+  LeanIxAddress::try_decode_array(obj)
 }
 
 /// Build Array UInt64.
@@ -204,29 +211,34 @@ impl LeanIxonDataValue<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonDataValue<R> {
   /// Decode Ixon.DataValue.
-  pub fn decode(&self) -> IxonDataValue {
-    match self.as_ctor().tag() {
+  pub fn try_decode(&self) -> Result<IxonDataValue, String> {
+    Ok(match self.as_ctor().tag() {
       0 => IxonDataValue::OfString(
-        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+          .try_decode()?,
       ),
       1 => {
         let b = self.get_num_8(0) != 0;
         IxonDataValue::OfBool(b)
       },
       2 => IxonDataValue::OfName(
-        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+          .try_decode()?,
       ),
       3 => IxonDataValue::OfNat(
-        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+          .try_decode()?,
       ),
       4 => IxonDataValue::OfInt(
-        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+          .try_decode()?,
       ),
       5 => IxonDataValue::OfSyntax(
-        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+          .try_decode()?,
       ),
-      tag => panic!("Invalid Ixon.DataValue tag: {tag}"),
-    }
+      tag => return Err(format!("Invalid Ixon.DataValue tag: {tag}")),
+    })
   }
 }
 
@@ -301,14 +313,16 @@ impl LeanIxonExprMetaData<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonExprMetaData<R> {
   /// Decode Ixon.ExprMetaData from Lean pointer.
-  pub fn decode(&self) -> ExprMetaData {
+  pub fn try_decode(&self) -> Result<ExprMetaData, String> {
     // Leaf (tag 0, no fields) is represented as a scalar lean_box(0)
     if self.inner().is_scalar() {
       let tag = self.inner().as_raw() as usize >> 1;
-      assert_eq!(tag, 0, "Invalid scalar ExprMetaData tag: {}", tag);
-      return ExprMetaData::Leaf;
+      if tag != 0 {
+        return Err(format!("Invalid scalar ExprMetaData tag: {tag}"));
+      }
+      return Ok(ExprMetaData::Leaf);
     }
-    match self.as_ctor().tag() {
+    Ok(match self.as_ctor().tag() {
       1 => {
         // app: 0 obj fields, 2× u64 scalar
         let fun_ = self.get_num_64(0);
@@ -320,7 +334,7 @@ impl<R: LeanRef> LeanIxonExprMetaData<R> {
         // binder: 1 obj field (name), scalar (Lean ABI: u64s first, then u8):
         let name =
           LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
-            .decode();
+            .try_decode()?;
         let ty_child = self.get_num_64(0);
         let body_child = self.get_num_64(1);
         let info = LeanIxBinderInfo::from_u8(self.get_num_8(0));
@@ -331,7 +345,7 @@ impl<R: LeanRef> LeanIxonExprMetaData<R> {
         // letBinder: 1 obj field (name), 3× u64 scalar
         let name =
           LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
-            .decode();
+            .try_decode()?;
         let ty_child = self.get_num_64(0);
         let val_child = self.get_num_64(1);
         let body_child = self.get_num_64(2);
@@ -345,7 +359,7 @@ impl<R: LeanRef> LeanIxonExprMetaData<R> {
         // ref: 1 obj field (name), 0 scalar
         ExprMetaData::Ref {
           name: LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
-            .decode(),
+            .try_decode()?,
         }
       },
 
@@ -353,20 +367,20 @@ impl<R: LeanRef> LeanIxonExprMetaData<R> {
         // prj: 1 obj field (structName), 1× u64 scalar
         let struct_name =
           LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
-            .decode();
+            .try_decode()?;
         let child = self.get_num_64(0);
         ExprMetaData::Prj { struct_name, child }
       },
 
       6 => {
         // mdata: 1 obj field (mdata: Array KVMap), 1× u64 scalar
-        let mdata = decode_kvmap_array(self.get_obj(0).as_array());
+        let mdata = try_decode_kvmap_array(self.get_obj(0).as_array())?;
         let child = self.get_num_64(0);
         ExprMetaData::Mdata { mdata, child }
       },
 
-      tag => panic!("Invalid Ixon.ExprMetaData tag: {}", tag),
-    }
+      tag => return Err(format!("Invalid Ixon.ExprMetaData tag: {tag}")),
+    })
   }
 }
 
@@ -390,11 +404,13 @@ impl LeanIxonExprMetaArena<LeanOwned> {
 impl<R: LeanRef> LeanIxonExprMetaArena<R> {
   /// Decode Ixon.ExprMetaArena from Lean pointer.
   /// Single-field struct is unboxed — obj IS the Array directly.
-  pub fn decode(&self) -> ExprMeta {
+  pub fn try_decode(&self) -> Result<ExprMeta, String> {
     let arr = unsafe { LeanBorrowed::from_raw(self.as_raw()) }.as_array();
-    ExprMeta {
-      nodes: arr.map(|x| LeanIxonExprMetaData::new(x.to_owned_ref()).decode()),
-    }
+    let nodes = arr
+      .iter()
+      .map(|x| LeanIxonExprMetaData::new(x.to_owned_ref()).try_decode())
+      .collect::<Result<Vec<_>, _>>()?;
+    Ok(ExprMeta { nodes })
   }
 }
 
@@ -525,24 +541,26 @@ impl LeanIxonConstantMetaInfo<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonConstantMetaInfo<R> {
   /// Decode Ixon.ConstantMetaInfo from Lean pointer.
-  pub fn decode(&self) -> ConstantMetaInfo {
+  pub fn try_decode(&self) -> Result<ConstantMetaInfo, String> {
     // Empty (tag 0, no fields) is represented as a scalar lean_box(0)
     if self.inner().is_scalar() {
       let tag = self.inner().as_raw() as usize >> 1;
-      assert_eq!(tag, 0, "Invalid scalar ConstantMetaInfo tag: {}", tag);
-      return ConstantMetaInfo::Empty;
+      if tag != 0 {
+        return Err(format!("Invalid scalar ConstantMetaInfo tag: {tag}"));
+      }
+      return Ok(ConstantMetaInfo::Empty);
     }
-    match self.as_ctor().tag() {
+    Ok(match self.as_ctor().tag() {
       1 => {
         // defn: 6 obj fields, 2× u64 scalar
         let name =
           LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
-            .decode();
-        let lvls = decode_address_array(self.get_obj(1).as_array());
-        let all = decode_address_array(self.get_obj(2).as_array());
-        let ctx = decode_address_array(self.get_obj(3).as_array());
-        let arena =
-          LeanIxonExprMetaArena::new(self.get_obj(4).to_owned_ref()).decode();
+            .try_decode()?;
+        let lvls = try_decode_address_array(self.get_obj(1).as_array())?;
+        let all = try_decode_address_array(self.get_obj(2).as_array())?;
+        let ctx = try_decode_address_array(self.get_obj(3).as_array())?;
+        let arena = LeanIxonExprMetaArena::new(self.get_obj(4).to_owned_ref())
+          .try_decode()?;
         let type_root = self.get_num_64(0);
         let value_root = self.get_num_64(1);
         ConstantMetaInfo::Def {
@@ -560,10 +578,10 @@ impl<R: LeanRef> LeanIxonConstantMetaInfo<R> {
         // axio: 3 obj fields, 1× u64 scalar
         let name =
           LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
-            .decode();
-        let lvls = decode_address_array(self.get_obj(1).as_array());
-        let arena =
-          LeanIxonExprMetaArena::new(self.get_obj(2).to_owned_ref()).decode();
+            .try_decode()?;
+        let lvls = try_decode_address_array(self.get_obj(1).as_array())?;
+        let arena = LeanIxonExprMetaArena::new(self.get_obj(2).to_owned_ref())
+          .try_decode()?;
         let type_root = self.get_num_64(0);
         ConstantMetaInfo::Axio { name, lvls, arena, type_root }
       },
@@ -572,10 +590,10 @@ impl<R: LeanRef> LeanIxonConstantMetaInfo<R> {
         // quot: 3 obj fields, 1× u64 scalar
         let name =
           LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
-            .decode();
-        let lvls = decode_address_array(self.get_obj(1).as_array());
-        let arena =
-          LeanIxonExprMetaArena::new(self.get_obj(2).to_owned_ref()).decode();
+            .try_decode()?;
+        let lvls = try_decode_address_array(self.get_obj(1).as_array())?;
+        let arena = LeanIxonExprMetaArena::new(self.get_obj(2).to_owned_ref())
+          .try_decode()?;
         let type_root = self.get_num_64(0);
         ConstantMetaInfo::Quot { name, lvls, arena, type_root }
       },
@@ -584,13 +602,13 @@ impl<R: LeanRef> LeanIxonConstantMetaInfo<R> {
         // indc: 6 obj fields, 1× u64 scalar
         let name =
           LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
-            .decode();
-        let lvls = decode_address_array(self.get_obj(1).as_array());
-        let ctors = decode_address_array(self.get_obj(2).as_array());
-        let all = decode_address_array(self.get_obj(3).as_array());
-        let ctx = decode_address_array(self.get_obj(4).as_array());
-        let arena =
-          LeanIxonExprMetaArena::new(self.get_obj(5).to_owned_ref()).decode();
+            .try_decode()?;
+        let lvls = try_decode_address_array(self.get_obj(1).as_array())?;
+        let ctors = try_decode_address_array(self.get_obj(2).as_array())?;
+        let all = try_decode_address_array(self.get_obj(3).as_array())?;
+        let ctx = try_decode_address_array(self.get_obj(4).as_array())?;
+        let arena = LeanIxonExprMetaArena::new(self.get_obj(5).to_owned_ref())
+          .try_decode()?;
         let type_root = self.get_num_64(0);
         ConstantMetaInfo::Indc { name, lvls, ctors, all, ctx, arena, type_root }
       },
@@ -599,13 +617,13 @@ impl<R: LeanRef> LeanIxonConstantMetaInfo<R> {
         // ctor: 4 obj fields, 1× u64 scalar
         let name =
           LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
-            .decode();
-        let lvls = decode_address_array(self.get_obj(1).as_array());
+            .try_decode()?;
+        let lvls = try_decode_address_array(self.get_obj(1).as_array())?;
         let induct =
           LeanIxAddress::from_borrowed(self.get_obj(2).as_byte_array())
-            .decode();
-        let arena =
-          LeanIxonExprMetaArena::new(self.get_obj(3).to_owned_ref()).decode();
+            .try_decode()?;
+        let arena = LeanIxonExprMetaArena::new(self.get_obj(3).to_owned_ref())
+          .try_decode()?;
         let type_root = self.get_num_64(0);
         ConstantMetaInfo::Ctor { name, lvls, induct, arena, type_root }
       },
@@ -614,13 +632,13 @@ impl<R: LeanRef> LeanIxonConstantMetaInfo<R> {
         // recr: 7 obj fields, 1× u64 scalar
         let name =
           LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
-            .decode();
-        let lvls = decode_address_array(self.get_obj(1).as_array());
-        let rules = decode_address_array(self.get_obj(2).as_array());
-        let all = decode_address_array(self.get_obj(3).as_array());
-        let ctx = decode_address_array(self.get_obj(4).as_array());
-        let arena =
-          LeanIxonExprMetaArena::new(self.get_obj(5).to_owned_ref()).decode();
+            .try_decode()?;
+        let lvls = try_decode_address_array(self.get_obj(1).as_array())?;
+        let rules = try_decode_address_array(self.get_obj(2).as_array())?;
+        let all = try_decode_address_array(self.get_obj(3).as_array())?;
+        let ctx = try_decode_address_array(self.get_obj(4).as_array())?;
+        let arena = LeanIxonExprMetaArena::new(self.get_obj(5).to_owned_ref())
+          .try_decode()?;
         let rule_roots = decode_u64_array(self.get_obj(6).as_array());
         let type_root = self.get_num_64(0);
         ConstantMetaInfo::Rec {
@@ -640,14 +658,14 @@ impl<R: LeanRef> LeanIxonConstantMetaInfo<R> {
         let outer = self.get_obj(0).as_array();
         let mut all = Vec::with_capacity(outer.len());
         for i in 0..outer.len() {
-          all.push(decode_address_array(outer.get(i).as_array()));
+          all.push(try_decode_address_array(outer.get(i).as_array())?);
         }
         let aux_layout = decode_opt_aux_layout(self.get_obj(1));
         ConstantMetaInfo::Muts { all, aux_layout }
       },
 
-      tag => panic!("Invalid Ixon.ConstantMetaInfo tag: {}", tag),
-    }
+      tag => return Err(format!("Invalid Ixon.ConstantMetaInfo tag: {tag}")),
+    })
   }
 }
 
@@ -709,14 +727,14 @@ impl LeanIxonConstantMeta<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonConstantMeta<R> {
   /// Decode Ixon.ConstantMeta (wrapper) from Lean pointer.
-  pub fn decode(&self) -> ConstantMeta {
-    let info =
-      LeanIxonConstantMetaInfo::new(self.get_obj(0).to_owned_ref()).decode();
+  pub fn try_decode(&self) -> Result<ConstantMeta, String> {
+    let info = LeanIxonConstantMetaInfo::new(self.get_obj(0).to_owned_ref())
+      .try_decode()?;
     let meta_sharing = LeanIxonExpr::decode_array(&self.get_obj(1).as_array());
-    let meta_refs = decode_address_array(self.get_obj(2).as_array());
+    let meta_refs = try_decode_address_array(self.get_obj(2).as_array())?;
     let meta_univs = LeanIxonUniv::decode_array(&self.get_obj(3).as_array());
     let univ_patches = decode_univ_patch_array(self.get_obj(4).as_array());
-    ConstantMeta { info, meta_sharing, meta_refs, meta_univs, univ_patches }
+    Ok(ConstantMeta { info, meta_sharing, meta_refs, meta_univs, univ_patches })
   }
 }
 
@@ -759,11 +777,11 @@ impl LeanIxonNamed<LeanOwned> {
 impl<R: LeanRef> LeanIxonNamed<R> {
   /// Decode Ixon.Named. The `original` field may be a scalar-optimized
   /// `Option.none` or a boxed tag-1 ctor wrapping a `Prod`.
-  pub fn decode(&self) -> Named {
-    let addr =
-      LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode();
+  pub fn try_decode(&self) -> Result<Named, String> {
+    let addr = LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+      .try_decode()?;
     let meta =
-      LeanIxonConstantMeta::new(self.get_obj(1).to_owned_ref()).decode();
+      LeanIxonConstantMeta::new(self.get_obj(1).to_owned_ref()).try_decode()?;
     let original_obj = self.get_obj(2);
     let original: Option<(Address, ConstantMeta)> = if original_obj.is_scalar()
     {
@@ -775,12 +793,15 @@ impl<R: LeanRef> LeanIxonNamed<R> {
         1 => {
           let pair = opt.get(0).as_ctor();
           let orig_addr =
-            LeanIxAddress::from_borrowed(pair.get(0).as_byte_array()).decode();
-          let orig_meta =
-            LeanIxonConstantMeta::new(pair.get(1).to_owned_ref()).decode();
+            LeanIxAddress::from_borrowed(pair.get(0).as_byte_array())
+              .try_decode()?;
+          let orig_meta = LeanIxonConstantMeta::new(pair.get(1).to_owned_ref())
+            .try_decode()?;
           Some((orig_addr, orig_meta))
         },
-        tag => panic!("Invalid Option tag for Named.original: {tag}"),
+        tag => {
+          return Err(format!("Invalid Option tag for Named.original: {tag}"));
+        },
       }
     };
     let hints = super::env::decode_opt_hints(self.get_obj(3));
@@ -789,7 +810,7 @@ impl<R: LeanRef> LeanIxonNamed<R> {
     if let Some((orig_addr, orig_meta)) = original {
       named.set_original(orig_addr, orig_meta);
     }
-    named
+    Ok(named)
   }
 }
 
@@ -805,13 +826,13 @@ impl LeanIxonComm<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonComm<R> {
   /// Decode Ixon.Comm.
-  pub fn decode(&self) -> Comm {
-    Comm {
+  pub fn try_decode(&self) -> Result<Comm, String> {
+    Ok(Comm {
       secret: LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
-        .decode(),
+        .try_decode()?,
       payload: LeanIxAddress::from_borrowed(self.get_obj(1).as_byte_array())
-        .decode(),
-    }
+        .try_decode()?,
+    })
   }
 }
 
@@ -825,7 +846,7 @@ impl<R: LeanRef> LeanIxonComm<R> {
 pub extern "C" fn rs_roundtrip_ixon_data_value(
   obj: LeanIxonDataValue<LeanBorrowed<'_>>,
 ) -> LeanIxonDataValue<LeanOwned> {
-  let dv = obj.decode();
+  let dv = obj.try_decode().expect("valid DataValue");
   LeanIxonDataValue::build(&dv)
 }
 
@@ -835,7 +856,7 @@ pub extern "C" fn rs_roundtrip_ixon_data_value(
 pub extern "C" fn rs_roundtrip_ixon_comm(
   obj: LeanIxonComm<LeanBorrowed<'_>>,
 ) -> LeanIxonComm<LeanOwned> {
-  let comm = obj.decode();
+  let comm = obj.try_decode().expect("valid Comm");
   LeanIxonComm::build(&comm)
 }
 
@@ -845,7 +866,7 @@ pub extern "C" fn rs_roundtrip_ixon_comm(
 pub extern "C" fn rs_roundtrip_ixon_expr_meta_data(
   obj: LeanIxonExprMetaData<LeanBorrowed<'_>>,
 ) -> LeanIxonExprMetaData<LeanOwned> {
-  let node = obj.decode();
+  let node = obj.try_decode().expect("valid ExprMetaData");
   LeanIxonExprMetaData::build(&node)
 }
 
@@ -855,7 +876,7 @@ pub extern "C" fn rs_roundtrip_ixon_expr_meta_data(
 pub extern "C" fn rs_roundtrip_ixon_expr_meta_arena(
   obj: LeanIxonExprMetaArena<LeanBorrowed<'_>>,
 ) -> LeanIxonExprMetaArena<LeanOwned> {
-  let arena = obj.decode();
+  let arena = obj.try_decode().expect("valid ExprMetaArena");
   LeanIxonExprMetaArena::build(&arena)
 }
 
@@ -865,7 +886,7 @@ pub extern "C" fn rs_roundtrip_ixon_expr_meta_arena(
 pub extern "C" fn rs_roundtrip_ixon_constant_meta(
   obj: LeanIxonConstantMeta<LeanBorrowed<'_>>,
 ) -> LeanIxonConstantMeta<LeanOwned> {
-  let meta = obj.decode();
+  let meta = obj.try_decode().expect("valid ConstantMeta");
   LeanIxonConstantMeta::build(&meta)
 }
 
@@ -876,7 +897,7 @@ pub extern "C" fn rs_roundtrip_ixon_constant_meta(
 pub extern "C" fn rs_roundtrip_ixon_named(
   obj: LeanIxonNamed<LeanBorrowed<'_>>,
 ) -> LeanIxonNamed<LeanOwned> {
-  let named = obj.decode();
+  let named = obj.try_decode().expect("valid Named");
   let original = named.original().map(|(a, m)| (a, (*m).clone()));
   LeanIxonNamed::build(&named.addr, &named.meta(), &original, named.hints())
 }

@@ -56,15 +56,27 @@ extern "C" fn rs_iroh_put(
 
   let request =
     Request::Put(PutRequest { bytes: input_str.as_bytes().to_vec() });
-  let rt =
-    tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+  let rt = match tokio::runtime::Runtime::new() {
+    Ok(rt) => rt,
+    Err(err) => {
+      return LeanExcept::error_string(&format!(
+        "failed to create Tokio runtime: {err}"
+      ));
+    },
+  };
 
   match rt.block_on(client::connect(&node_id, &addrs, &relay_url, request)) {
     Ok(response) => match response {
-      Response::Put(put_response) => LeanExcept::ok(LeanPutResponse::mk(
-        &put_response.message,
-        &put_response.hash,
-      )),
+      Response::Put(put_response) => {
+        if put_response.is_err {
+          LeanExcept::error_string(&put_response.message)
+        } else {
+          LeanExcept::ok(LeanPutResponse::mk(
+            &put_response.message,
+            &put_response.hash,
+          ))
+        }
+      },
       _ => LeanExcept::error_string("error: incorrect server response"),
     },
     Err(err) => LeanExcept::error_string(&err.to_string()),
@@ -86,16 +98,28 @@ extern "C" fn rs_iroh_get(
 
   let request = Request::Get(GetRequest { hash: hash_str.clone() });
 
-  let rt =
-    tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+  let rt = match tokio::runtime::Runtime::new() {
+    Ok(rt) => rt,
+    Err(err) => {
+      return LeanExcept::error_string(&format!(
+        "failed to create Tokio runtime: {err}"
+      ));
+    },
+  };
 
   match rt.block_on(client::connect(&node_id, &addrs, &relay_url, request)) {
     Ok(response) => match response {
-      Response::Get(get_response) => LeanExcept::ok(LeanGetResponse::mk(
-        &get_response.message,
-        &get_response.hash,
-        &get_response.bytes,
-      )),
+      Response::Get(get_response) => {
+        if get_response.is_err {
+          LeanExcept::error_string(&get_response.message)
+        } else {
+          LeanExcept::ok(LeanGetResponse::mk(
+            &get_response.message,
+            &get_response.hash,
+            &get_response.bytes,
+          ))
+        }
+      },
       _ => LeanExcept::error_string("error: incorrect server response"),
     },
     Err(err) => LeanExcept::error_string(&err.to_string()),
@@ -105,8 +129,14 @@ extern "C" fn rs_iroh_get(
 /// `Iroh.Serve.serve' : Unit → Except String Unit`
 #[unsafe(no_mangle)]
 extern "C" fn rs_iroh_serve(_unit: LeanOwned) -> LeanExcept<LeanOwned> {
-  let rt =
-    tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+  let rt = match tokio::runtime::Runtime::new() {
+    Ok(rt) => rt,
+    Err(err) => {
+      return LeanExcept::error_string(&format!(
+        "failed to create Tokio runtime: {err}"
+      ));
+    },
+  };
 
   match rt.block_on(server::serve()) {
     Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),

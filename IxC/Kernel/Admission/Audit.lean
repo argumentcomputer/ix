@@ -160,11 +160,12 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- Normalized recursor analysis and the proved csimp replacement matching `IxC/Kernel/Audit/Roots.lean`
 -- move the byte-entry closure from 7067 compiled functions and 28 ruled csimps to 7114 and 29.
 -- Transitive logical-body `scanLogical` walk in `Runtime.lean` catches 3 multi-hop inlined ruled `@[csimp]`s (29 -> 32).
+-- Hardened `Runtime.lean` (`._at_` specialization resolution + target enqueueing) additionally surfaces all inlined ruled `@[computed_field]` `_override`s (`21 -> 29`) and `withExclusiveUnsafe` (`implemented_by 1`), with zero unruled findings.
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 7114 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 32 -/
+ Ix.Kernel.Admission.checkBytes]: 8137 compiled functions; inherited externs 114, implemented_by 0, unsafe 41, csimp 8; ruled computed_field 29, implemented_by 1, csimp 32 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
@@ -395,9 +396,7 @@ extern: its inherited externs went from 115 to 113. -/
  String.Internal.extract,
  String.Internal.posOf,
  String.Internal.offsetOfPos,
- String.Internal.length,
  String.Internal.pushn,
- ByteArray.mk,
  UInt32.decEq]
 ---
 info: Additional certified-entry unsafe: [] -/

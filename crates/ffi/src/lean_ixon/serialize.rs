@@ -42,7 +42,9 @@ pub extern "C" fn rs_eq_constant_serialization(
   constant_obj: LeanIxonConstant<LeanBorrowed<'_>>,
   bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
 ) -> bool {
-  let constant = constant_obj.decode();
+  let Ok(constant) = constant_obj.try_decode() else {
+    return false;
+  };
   let bytes_data = bytes_obj.as_bytes();
   let mut buf = Vec::with_capacity(bytes_data.len());
   constant.put(&mut buf);
@@ -76,7 +78,15 @@ pub extern "C" fn rs_eq_env_serialization(
   use ixon::env::Env;
 
   let debug = std::env::var("IX_DEBUG_SERDE").is_ok();
-  let decoded = raw_env_obj.decode();
+  let decoded = match raw_env_obj.try_decode() {
+    Ok(d) => d,
+    Err(e) => {
+      if debug {
+        eprintln!("[rs_eq_env_serialization] RawEnv decode failed: {e}");
+      }
+      return false;
+    },
+  };
   let bytes_data = bytes_obj.as_bytes();
 
   // Deserialize Lean's bytes using Rust's deserializer

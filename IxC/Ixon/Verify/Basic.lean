@@ -7,7 +7,6 @@ and the Ixon v4 (TagN) changes to that file at Ix revision
 -/
 
 import IxC.Ixon.Wire
-import Std.Tactic.BVDecide
 
 /-!
 # Proof-visible Ixon codecs

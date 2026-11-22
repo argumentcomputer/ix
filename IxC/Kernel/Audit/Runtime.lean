@@ -112,25 +112,47 @@ def isSpecSuffix (s : String) : Bool :=
 def isCompilerSuffix (s : String) : Bool :=
   s == "_redArg" || s == "_boxed" || s == "_impl" || isSpecSuffix s
 
-/-- The source declaration a compiler-generated auxiliary (`_redArg`, `_boxed`,
-`_impl`, `_spec_<n>`) was derived from. The code generator drops erased and
-unused parameters or boxes/specializes calls by moving or wrapping `f`'s body
-under a suffixed name, so a closure that reaches the auxiliary executes `f`'s
-code under another name. The walk visits `f` as well, where its `unsafe`,
-`implemented_by`, `csimp` and `partial` status is reported. -/
-def reducedAritySource? (env : Environment) : Name → Option Name
+/-- Prefix before the earliest `_at_` component in a specialized name
+(`Foo._at_.Caller.spec_0` → `some Foo`, handling nested `_at_`s). -/
+def stripAtPrefix? : Name → Option Name
+  | .str p "_at_" =>
+    match stripAtPrefix? p with
+    | some root => some root
+    | none => some p
+  | .str p _ => stripAtPrefix? p
+  | .num p _ => stripAtPrefix? p
+  | .anonymous => none
+
+/-- Strip trailing compiler-generated suffixes (`_redArg`, `_boxed`, `_impl`,
+`spec_<n>`, `_spec_<n>`) down to a declaration present in `env`. -/
+def stripSuffixesSource? (env : Environment) : Name → Option Name
   | .str source s =>
     if isCompilerSuffix s then
-      match reducedAritySource? env source with
+      match stripSuffixesSource? env source with
       | some root => some root
       | none => if env.contains source then some source else none
     else none
   | _ => none
 
+/-- The source declaration a compiler-generated auxiliary (`_redArg`, `_boxed`,
+`_impl`, `_spec_<n>`, `._at_.<caller>.spec_<n>`) was derived from. The code
+generator drops erased and unused parameters or boxes/specializes calls by
+moving or wrapping `f`'s body under a suffixed name, so a closure that reaches
+the auxiliary executes `f`'s code under another name. The walk visits `f` as
+well, where its `unsafe`, `implemented_by`, `csimp` and `partial` status is
+reported. -/
+def reducedAritySource? (env : Environment) (name : Name) : Option Name :=
+  match stripAtPrefix? name with
+  | some base =>
+    match stripSuffixesSource? env base with
+    | some root => some root
+    | none => if env.contains base then some base else none
+  | none => stripSuffixesSource? env name
+
 /-- Compiled code reachable through execution from `roots`. When `skipLogical`
 returns `true` for a constant (e.g. inherited runtime prefixes like `Init`/`Std`),
-its direct `implemented_by`/`csimp` status is still inspected, but the logical
-body walk does not recurse into its definition body. -/
+its direct `implemented_by`/`csimp` status is still inspected and targets are
+followed, but the logical body walk does not recurse into its definition body. -/
 partial def runtimeClosure (env : Environment) (roots : Array Name)
     (skipLogical : Name → Bool := fun _ => false) : RuntimeReport :=
   let csimpSources := csimpBySource env
@@ -141,52 +163,87 @@ partial def runtimeClosure (env : Environment) (roots : Array Name)
   let seenCSimp : NameSet :=
     report.csimp.foldl (fun s (n, _) => s.insert n) <|
       report.csimpTargets.foldl (fun s (n, _, _) => s.insert n) {}
-  let initTodo := report.visited.filter (!skipLogical ·)
-  let initQueued := initTodo.foldl (fun s n => s.insert n) {}
-  scanLogical csimpSources initTodo initQueued seenImpl seenCSimp report
+  let seenUnsafe : NameSet := report.unsafes.foldl (fun s n => s.insert n) {}
+  let seenExtern : NameSet := report.externs.foldl (fun s n => s.insert n) {}
+  let seenOpaque : NameSet := report.opaqueCode.foldl (fun s n => s.insert n) {}
+  let (initTodo, initQueued) : Array Name × NameSet :=
+    (report.visited ++ roots).foldl (init := (#[], {})) fun (todo, queued) n =>
+      if skipLogical n || queued.contains n then (todo, queued)
+      else (todo.push n, queued.insert n)
+  scanLogical csimpSources initTodo initQueued seenImpl seenCSimp seenUnsafe seenExtern seenOpaque report
 where
   /-- Walk project-level logical definition bodies from reached functions so that
-  `@[inline]` or auto-inlined `@[implemented_by]` and `@[csimp]` sources (even
-  behind multiple inlined wrapper definitions) cannot vanish from post-inlining
-  IR undetected. `queued` deduplicates at push time (`O(V + E)`). -/
+  `@[inline]` or auto-inlined `@[implemented_by]`, `@[csimp]`, `partial`, `unsafe`,
+  and `@[extern]` declarations (even behind multiple inlined wrapper definitions,
+  chains crossing inherited prefixes, or ruled targets) cannot vanish from
+  post-inlining IR undetected. `queued` deduplicates at push time (`O(V + E)`). -/
   scanLogical (csimpSources : NameMap (Array Compiler.CSimp.Entry))
-      (todo : Array Name) (queued seenImpl seenCSimp : NameSet)
-      (report : RuntimeReport) : RuntimeReport :=
-    match todo.back? with
-    | none => report
-    | some name =>
-      let todo := todo.pop
-      let (seenImpl, report) :=
-        if seenImpl.contains name then (seenImpl, report)
-        else match Compiler.getImplementedBy? env name with
-          | some target =>
-            (seenImpl.insert name,
-              { report with implementationsReached := report.implementationsReached.push (name, target) })
-          | none => (seenImpl, report)
-      let (seenCSimp, report) :=
-        if seenCSimp.contains name then (seenCSimp, report)
-        else match csimpSources.find? name with
-          | some entries =>
-            let report := entries.foldl (init := report) fun report e =>
-              { report with
-                csimpTargets := report.csimpTargets.push (e.fromDeclName, e.toDeclName, e.thmName) }
-            (seenCSimp.insert name, report)
-          | none => (seenCSimp, report)
+      (initTodo : Array Name) (initQueued initSeenImpl initSeenCSimp initSeenUnsafe initSeenExtern initSeenOpaque : NameSet)
+      (initReport : RuntimeReport) : RuntimeReport := Id.run do
+    let mut todo := initTodo
+    let mut queued := initQueued
+    let mut seenImpl := initSeenImpl
+    let mut seenCSimp := initSeenCSimp
+    let mut seenUnsafe := initSeenUnsafe
+    let mut seenExtern := initSeenExtern
+    let mut seenOpaque := initSeenOpaque
+    let mut report := initReport
+    while h : todo.size > 0 do
+      let name := todo.back
+      todo := todo.pop
+      if let some target := Compiler.getImplementedBy? env name then
+        unless queued.contains target do
+          todo := todo.push target
+          queued := queued.insert target
+        unless seenImpl.contains name do
+          seenImpl := seenImpl.insert name
+          report := { report with implementationsReached := report.implementationsReached.push (name, target) }
+      if let some entries := csimpSources.find? name then
+        for e in entries do
+          unless queued.contains e.toDeclName do
+            todo := todo.push e.toDeclName
+            queued := queued.insert e.toDeclName
+        unless seenCSimp.contains name do
+          seenCSimp := seenCSimp.insert name
+          for e in entries do
+            report := { report with
+              csimpTargets := report.csimpTargets.push (e.fromDeclName, e.toDeclName, e.thmName) }
       if skipLogical name then
-        scanLogical csimpSources todo queued seenImpl seenCSimp report
-      else
+        continue
+      if !seenUnsafe.contains name && (env.find? name).any (·.isUnsafe) then
+        seenUnsafe := seenUnsafe.insert name
+        report := { report with unsafes := report.unsafes.push name }
+      let isExt := match IR.findEnvDecl env name with
+        | some (.extern ..) => true
+        | _ => isExtern env name
+      if !seenExtern.contains name && isExt then
+        seenExtern := seenExtern.insert name
+        report := { report with externs := report.externs.push name }
+      let hasImpl := (Compiler.getImplementedBy? env name).isSome
+      if let some (.opaqueInfo _) := env.find? name then
+        let unsafeRec := name.str "_unsafe_rec"
+        let hasUnsafeRec := env.contains unsafeRec
+        let hasCompiledCode := match IR.findEnvDecl env name with
+          | some (.fdecl _ #[] _ (.ret .erased) _) => false
+          | some (.fdecl ..) => true
+          | _ => false
+        if !seenOpaque.contains name && !isExt && !hasImpl && (hasCompiledCode || hasUnsafeRec) then
+          seenOpaque := seenOpaque.insert name
+          report := { report with opaqueCode := report.opaqueCode.push name }
+        if hasUnsafeRec && !queued.contains unsafeRec then
+          todo := todo.push unsafeRec
+          queued := queued.insert unsafeRec
+      unless hasImpl do
         let val? := match env.find? name with
           | some (.defnInfo v) => some v.value
           | some (.opaqueInfo v) => some v.value
           | _ => none
-        match val? with
-        | none => scanLogical csimpSources todo queued seenImpl seenCSimp report
-        | some val =>
-          let (todo, queued) := val.getUsedConstants.foldl (init := (todo, queued))
-            fun (todo, queued) c =>
-              if queued.contains c then (todo, queued)
-              else (todo.push c, queued.insert c)
-          scanLogical csimpSources todo queued seenImpl seenCSimp report
+        if let some val := val? then
+          for c in val.getUsedConstants do
+            unless queued.contains c do
+              todo := todo.push c
+              queued := queued.insert c
+    return report
   go (targets : NameMap (Array Compiler.CSimp.Entry))
       (csimpSources : NameMap (Array Compiler.CSimp.Entry))
       (implementations : NameMap (Array Name))
@@ -374,28 +431,12 @@ def RuntimeRulings.admits (rulings : RuntimeRulings) (finding : Finding) :
     if partialIn env rulings.partialModules name then return some "partial"
     return none
 
-/-- Fail if any replaced or unchecked constant reached from `roots` lives
-outside the allowed module prefixes and no ruling admits it, or a root has
-no compiled code. -/
-def checkRuntimeWith (roots : Array Name) (prefixes : Array Name) (rulings : RuntimeRulings) :
-    CommandElabM Unit := do
-  let env ← getEnv
-  for root in roots do
-    unless env.contains root do throwError m!"required root is missing: {root}"
-    unless (IR.findEnvDecl env root).isSome || (Compiler.getImplementedBy? env root).isSome do
-      throwError m!"root has no compiled code: {root}"
-  let inherited (name : Name) : Bool := (moduleOf env name).any (underAny prefixes)
-  for s in rulings.assumed do
-    unless Compiler.getImplementedBy? env s.source == some s.target do
-      throwError m!"assumed substitution is not installed: {s.source} implemented_by {s.target}"
-    let own := (runtimeClosure env #[s.target]).externs.filter (!inherited ·) |>.qsort Name.lt
-    unless own == s.externs.qsort Name.lt do
-      throwError m!"assumed substitution {s.source}: {s.target} reaches the externs {own}, not {s.externs}"
-  let report := runtimeClosure env roots inherited
-  -- the substitution is applied where its implementation's primitives are reached
-  let applied := rulings.assumed.filter fun s =>
-    s.externs.any report.externs.contains || report.visited.contains s.target
-  let csimpSources := csimpBySource env
+/-- Collect all non-inherited findings from `report` and classify them as
+admitted (ruled) or unruled (flagged). -/
+def evaluateReport (inherited : Name → Bool) (rulings : RuntimeRulings)
+    (csimpSources : NameMap (Array Compiler.CSimp.Entry)) (report : RuntimeReport)
+    (initRuled : Array (String × Name) := #[]) :
+    CommandElabM (Array Name × Array (String × Name)) := do
   let findings := report.externs.map Finding.extern ++
     report.implementedBy.map (fun (name, target) => Finding.implementedBy name target) ++
     report.unsafes.map Finding.unsafe ++
@@ -405,7 +446,7 @@ def checkRuntimeWith (roots : Array Name) (prefixes : Array Name) (rulings : Run
     report.csimpTargets.map (fun (source, target, thm) => Finding.csimp source target thm) ++
     report.opaqueCode.map Finding.opaqueCode
   let mut flagged : Array Name := #[]
-  let mut ruled : Array (String × Name) := applied.map fun s => ("assumed", s.source)
+  let mut ruled : Array (String × Name) := initRuled
   for finding in findings do
     if inherited finding.anchor then continue
     match ← rulings.admits finding with
@@ -417,6 +458,36 @@ def checkRuntimeWith (roots : Array Name) (prefixes : Array Name) (rulings : Run
     if inherited source then continue
     if (← rulings.admits (.implementedBy source target)).isNone then
       unless flagged.contains source do flagged := flagged.push source
+  return (flagged, ruled)
+
+/-- Fail if any replaced or unchecked constant reached from `roots` lives
+outside the allowed module prefixes and no ruling admits it, or a root has
+no compiled code. -/
+def checkRuntimeWith (roots : Array Name) (prefixes : Array Name) (rulings : RuntimeRulings) :
+    CommandElabM Unit := do
+  let env ← getEnv
+  for root in roots do
+    unless env.contains root do throwError m!"required root is missing: {root}"
+    unless (IR.findEnvDecl env root).isSome || (Compiler.getImplementedBy? env root).isSome do
+      throwError m!"root has no compiled code: {root}"
+  let csimpSources := csimpBySource env
+  let inherited (name : Name) : Bool := (moduleOf env name).any (underAny prefixes)
+  for s in rulings.assumed do
+    unless Compiler.getImplementedBy? env s.source == some s.target do
+      throwError m!"assumed substitution is not installed: {s.source} implemented_by {s.target}"
+    let targetReport := runtimeClosure env #[s.target] inherited
+    let own := targetReport.externs.filter (!inherited ·) |>.qsort Name.lt
+    unless own == s.externs.qsort Name.lt do
+      throwError m!"assumed substitution {s.source}: {s.target} reaches the externs {own}, not {s.externs}"
+    let (targetFlagged, _) ← evaluateReport inherited rulings csimpSources targetReport
+    unless targetFlagged.isEmpty do
+      throwError m!"assumed substitution {s.source}: {s.target} reaches unruled execution replacements:\n{targetFlagged.qsort Name.lt}"
+  let report := runtimeClosure env roots inherited
+  -- the substitution is applied where its implementation's primitives are reached
+  let applied := rulings.assumed.filter fun s =>
+    s.externs.any report.externs.contains || report.visited.contains s.target
+  let (flagged, ruled) ← evaluateReport inherited rulings csimpSources report
+    (applied.map fun s => ("assumed", s.source))
   unless flagged.isEmpty do
     throwError m!"project-level execution replacements reached from {roots}:\n{flagged.qsort Name.lt}"
   let kinds := ruled.foldl (fun kinds (kind, _) => if kinds.contains kind then kinds else kinds.push kind) #[]
@@ -560,27 +631,27 @@ with
 def treeSize (n : Nat) : Nat := (Tree.node (.leaf n) (.leaf 0)).size
 
 /-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.treeSize]:
-[Ix.Kernel.Audit.RuntimeControls.Tree.casesOn,
- Ix.Kernel.Audit.RuntimeControls.Tree.leaf,
+[Ix.Kernel.Audit.RuntimeControls.Tree.leaf,
  Ix.Kernel.Audit.RuntimeControls.Tree.node,
  Ix.Kernel.Audit.RuntimeControls.Tree.size,
  Ix.Kernel.Audit.RuntimeControls.Tree.leaf._override,
- Ix.Kernel.Audit.RuntimeControls.Tree.node._override] -/
+ Ix.Kernel.Audit.RuntimeControls.Tree.node._override,
+ Ix.Kernel.Audit.RuntimeControls.Tree.size._override] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime #[``treeSize] #[`Init]
 
 /-- info: runtime closure of [Ix.Kernel.Audit.RuntimeControls.treeSize]: 5 compiled functions;
-inherited externs 1, implemented_by 0, unsafe 2, csimp 0; ruled computed_field 2 -/
+inherited externs 1, implemented_by 0, unsafe 3, csimp 0; ruled computed_field 3 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``treeSize] #[`Init] { computedFieldTypes := #[``Tree] }
 
 /-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.treeSize]:
-[Ix.Kernel.Audit.RuntimeControls.Tree.casesOn,
- Ix.Kernel.Audit.RuntimeControls.Tree.leaf,
+[Ix.Kernel.Audit.RuntimeControls.Tree.leaf,
  Ix.Kernel.Audit.RuntimeControls.Tree.node,
  Ix.Kernel.Audit.RuntimeControls.Tree.size,
  Ix.Kernel.Audit.RuntimeControls.Tree.leaf._override,
- Ix.Kernel.Audit.RuntimeControls.Tree.node._override] -/
+ Ix.Kernel.Audit.RuntimeControls.Tree.node._override,
+ Ix.Kernel.Audit.RuntimeControls.Tree.size._override] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``treeSize] #[`Init] { computedFieldTypes := #[``Nat] }
 
@@ -599,17 +670,17 @@ with
 def indexedTreeSize (n : Nat) : Nat := (IndexedTree.node (k := true) (.leaf n) (.leaf 0)).size
 
 /-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.indexedTreeSize]:
-[Ix.Kernel.Audit.RuntimeControls.IndexedTree.casesOn,
- Ix.Kernel.Audit.RuntimeControls.IndexedTree.leaf,
+[Ix.Kernel.Audit.RuntimeControls.IndexedTree.leaf,
  Ix.Kernel.Audit.RuntimeControls.IndexedTree.node,
  Ix.Kernel.Audit.RuntimeControls.IndexedTree.size,
  Ix.Kernel.Audit.RuntimeControls.IndexedTree.leaf._override,
- Ix.Kernel.Audit.RuntimeControls.IndexedTree.node._override] -/
+ Ix.Kernel.Audit.RuntimeControls.IndexedTree.node._override,
+ Ix.Kernel.Audit.RuntimeControls.IndexedTree.size._override] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime #[``indexedTreeSize] #[`Init]
 
 /-- info: runtime closure of [Ix.Kernel.Audit.RuntimeControls.indexedTreeSize]: 7 compiled functions;
-inherited externs 1, implemented_by 0, unsafe 2, csimp 0; ruled computed_field 2 -/
+inherited externs 1, implemented_by 0, unsafe 3, csimp 0; ruled computed_field 3 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``indexedTreeSize] #[`Init] { computedFieldTypes := #[``IndexedTree] }
 
@@ -733,8 +804,9 @@ run_cmd Ix.Kernel.Audit.checkRuntime #[``externOnly] #[`Init]
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime #[``externAndSubstitution] #[`Init]
 
--- Stacked compiler suffixes (`_redArg`, `_boxed`, `_impl`, `_spec_<n>`) resolve back to the
--- underlying declaration in the environment.
+-- Stacked compiler suffixes (`_redArg`, `_boxed`, `_impl`, `_spec_<n>`) and
+-- `._at_.<caller>.spec_<n>` specializations resolve back to the underlying
+-- declaration in the environment.
 run_cmd do
   let env ← Lean.getEnv
   let base := ``plainSquare
@@ -744,9 +816,95 @@ run_cmd do
     base.str "_impl",
     base.str "_spec_0",
     (base.str "_redArg").str "_boxed",
-    ((base.str "_impl").str "_redArg").str "_spec_12"
+    ((base.str "_impl").str "_redArg").str "_spec_12",
+    (((base.str "_at_").str "Caller").str "spec_0"),
+    (((((base.str "_at_").str "Caller").str "spec_0").str "_redArg").str "_boxed"),
+    (((((base.str "_redArg").str "_at_").str "A").str "B").str "spec_1")
   ] do
     unless Ix.Kernel.Audit.reducedAritySource? env suffixed == some base do
       Lean.throwError m!"expected {suffixed} to resolve to {base}"
+
+/-! ### Negative controls for H3, H4, H5 -/
+
+/-! H3: A project `@[csimp]` chaining off an inherited `Init` `@[csimp]` target
+(`List.length` → `List.lengthTR` → `altLengthTR`, inlined completely out of IR)
+must be caught even though `List.length` and `List.lengthTR` live in `Init`. -/
+section CSimpChainControl
+@[inline] def altLengthTR {α : Type u} (as : List α) : Nat := as.lengthTRAux 0
+theorem altLengthTR_eq : @List.lengthTR = @altLengthTR := rfl
+attribute [local csimp] altLengthTR_eq
+def callsListLength (xs : List Nat) : Nat := xs.length
+
+/-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.callsListLength]:
+[List.lengthTR] -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntime #[``callsListLength] #[`Init]
+end CSimpChainControl
+
+/-! H4: Both a polymorphic `partial def` specialized to `._at_.<caller>.spec_0`
+in IR and an `@[inline] partial def` folded out of IR are detected. -/
+partial def polyPartial [BEq α] (x y : α) : Bool :=
+  if x == y then true else polyPartial x x
+
+def callsPolyPartial (a b : Nat) : Bool := polyPartial a b
+
+/-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.callsPolyPartial]:
+[Ix.Kernel.Audit.RuntimeControls.polyPartial] -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntime #[``callsPolyPartial] #[`Init]
+
+@[inline] partial def inlinePartial (n : Nat) : Nat :=
+  if n > 10 then inlinePartial (n - 1) else n + 1
+
+def callsInlinePartial (_ : Nat) : Nat := inlinePartial 5
+
+/-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.callsInlinePartial]:
+[Ix.Kernel.Audit.RuntimeControls.inlinePartial] -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntime #[``callsInlinePartial] #[`Init]
+
+/-! H5: An unruled `@[inline, implemented_by ...]` hidden inside a ruled
+`@[csimp]` target, a ruled `implementations` target, a ruled `partial` body
+(`._unsafe_rec`), or a ruled `assumed` target is caught. -/
+@[inline] def sneakyImpl (n : Nat) : Nat := n + 99
+@[inline, implemented_by sneakyImpl] def sneakySpec (n : Nat) : Nat := n
+
+partial def ruledPartialWithSneaky (n : Nat) : Nat :=
+  if n > 10 then ruledPartialWithSneaky (n - 1) else sneakySpec n
+
+def callsRuledPartialWithSneaky (n : Nat) : Nat := ruledPartialWithSneaky n
+
+/-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.callsRuledPartialWithSneaky]:
+[Ix.Kernel.Audit.RuntimeControls.sneakySpec] -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``callsRuledPartialWithSneaky] #[`Init] { partialModules := #[`IxC.Kernel.Audit.Runtime] }
+
+def ruledCSimpSrc (n : Nat) : Nat := n
+@[inline] def ruledCSimpTgt (n : Nat) : Nat := sneakySpec n
+@[csimp] theorem ruledCSimp_eq : @ruledCSimpSrc = @ruledCSimpTgt := rfl
+def callsRuledCSimp (n : Nat) : Nat := ruledCSimpSrc n
+
+/-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.callsRuledCSimp]:
+[Ix.Kernel.Audit.RuntimeControls.sneakySpec] -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``callsRuledCSimp] #[`Init] { csimpModules := #[`IxC.Kernel.Audit] }
+
+unsafe def ruledImplTgt (n : Nat) : Nat := sneakySpec n
+@[implemented_by ruledImplTgt] def ruledImplSrc (n : Nat) : Nat := n
+def callsRuledImpl (n : Nat) : Nat := ruledImplSrc n
+
+/-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.callsRuledImpl]:
+[Ix.Kernel.Audit.RuntimeControls.sneakySpec] -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``callsRuledImpl] #[`Init] { implementations := #[(``ruledImplSrc, ``ruledImplTgt)] }
+
+def ruledAssumedTgt (n : Nat) : Nat := projectExtern (sneakySpec n)
+@[implemented_by ruledAssumedTgt] def ruledAssumedSrc (n : Nat) : Nat := n
+def callsRuledAssumed (n : Nat) : Nat := ruledAssumedSrc n
+
+/-- error: assumed substitution Ix.Kernel.Audit.RuntimeControls.ruledAssumedSrc: Ix.Kernel.Audit.RuntimeControls.ruledAssumedTgt reaches unruled execution replacements:
+[Ix.Kernel.Audit.RuntimeControls.sneakySpec] -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``callsRuledAssumed] #[`Init] { assumed := #[{ source := ``ruledAssumedSrc, target := ``ruledAssumedTgt, externs := #[``projectExtern] }] }
 
 end Ix.Kernel.Audit.RuntimeControls

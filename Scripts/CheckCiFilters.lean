@@ -140,7 +140,8 @@ def parseCiFilters (yaml : String) : Except String (Std.HashMap String (Array St
 /-- Top-level module prefixes belonging to this repository (external dependencies such as
 `Init`, `Std`, `Lean`, `Mathlib`, `Batteries`, `Blake3` are excluded). -/
 def projectRoots : List String :=
-  ["Ix", "IxC", "IxSharingVerify", "Aiur", "IxVM", "MultiStark", "IxVMRefinement", "Models"]
+  ["Ix", "IxC", "IxSharingVerify", "Aiur", "IxVM", "MultiStark", "IxVMRefinement",
+   "Models", "IxSetTheoryModel", "Tests"]
 
 /-- Nested workspace packages whose `M.X` modules live under `M/M/X.lean`. -/
 def nestedPackageRoots : List String :=
@@ -152,14 +153,91 @@ def isProjectModule (modName : String) : Bool :=
   projectRoots.contains head
 
 /-- Convert a project Lean module name (`A.B.C`) to its repository-relative `.lean` path,
-accounting for nested packages (`Aiur.X` → `Aiur/Aiur/X.lean`, etc.). -/
+accounting for nested packages (`Aiur.X` → `Aiur/Aiur/X.lean`,
+`IxSetTheoryModel.X` → `Models/SetTheory/IxSetTheoryModel/X.lean`, etc.). -/
 def moduleToSourcePath (modName : String) : String :=
   let parts := modName.splitOn "."
   let rel := "/".intercalate parts ++ ".lean"
   match parts.head? with
+  | some "IxSetTheoryModel" => "Models/SetTheory/" ++ rel
   | some root =>
     if nestedPackageRoots.contains root then root ++ "/" ++ rel else rel
   | none => rel
+
+/-- Extract all imported module names from a Lean source file's header (handling
+nested block comments `/- ... -/`, line comments `-- ...`, `module`,
+`public`/`private`/`meta`, `import all`, and multiple imports per line).
+Scans raw UTF-8 bytes and stops immediately at the first non-header token so
+multi-megabyte proof files are parsed in microseconds under `lean --run`. -/
+def parseLeanImports (src : String) : Array String := Id.run do
+  let bs := src.toUTF8
+  let n := bs.size
+  let isSpace (b : UInt8) : Bool := b == 32 || b == 9 || b == 10 || b == 13
+  let mut i := 0
+  let mut imports : Array String := #[]
+  let mut expectMod := false
+  while i < n do
+    let b := bs[i]!
+    if isSpace b then
+      i := i + 1
+    else if b == 47 && i + 1 < n && bs[i + 1]! == 45 then
+      -- Nested block comment `/- ... -/`
+      let mut depth := 1
+      i := i + 2
+      while i < n && depth > 0 do
+        if bs[i]! == 47 && i + 1 < n && bs[i + 1]! == 45 then
+          depth := depth + 1; i := i + 2
+        else if bs[i]! == 45 && i + 1 < n && bs[i + 1]! == 47 then
+          depth := depth - 1; i := i + 2
+        else
+          i := i + 1
+    else if b == 45 && i + 1 < n && bs[i + 1]! == 45 then
+      -- Line comment `-- ... \n`
+      i := i + 2
+      while i < n && bs[i]! != 10 do i := i + 1
+    else
+      -- Read next whitespace/comment-delimited token
+      let start := i
+      while i < n do
+        let c := bs[i]!
+        if isSpace c then break
+        if c == 47 && i + 1 < n && bs[i + 1]! == 45 then break
+        if c == 45 && i + 1 < n && bs[i + 1]! == 45 then break
+        i := i + 1
+      let tok := String.fromUTF8! (bs.extract start i)
+      if expectMod then
+        if tok == "all" then
+          continue
+        imports := imports.push tok
+        expectMod := false
+      else if tok == "module" || tok == "public" || tok == "private" || tok == "meta" then
+        continue
+      else if tok == "import" then
+        expectMod := true
+      else
+        -- Reached first declaration/body token after the import header.
+        break
+  return imports
+
+/-- Walk transitive project-local imports starting from `roots` using source files on disk.
+Returns sorted unique repository-relative `.lean` paths. -/
+def transitiveProjectPaths (roots : Array String) : IO (Array String) := do
+  let mut visited : Std.HashSet String := {}
+  let mut todo : Array String := roots
+  let mut paths : Array String := #[]
+  while h : todo.size > 0 do
+    let modName := todo.back
+    todo := todo.pop
+    if visited.contains modName || !isProjectModule modName then continue
+    visited := visited.insert modName
+    let p := moduleToSourcePath modName
+    if ← (System.FilePath.mk p).pathExists then
+      paths := paths.push p
+      let src ← IO.FS.readFile p
+      for imp in parseLeanImports src do
+        if isProjectModule imp && !visited.contains imp then
+          todo := todo.push imp
+  return paths.qsort (· < ·)
 
 /-- Extract all unique sorted project source paths referenced in a closure manifest file. -/
 def manifestProjectPaths (manifestText : String) : Array String := Id.run do
@@ -221,11 +299,21 @@ def selfCheck : IO Unit := do
     ("MultiStark.Basic", "MultiStark/MultiStark/Basic.lean"),
     ("IxVMRefinement.Endpoint.ComposedResidual", "IxVMRefinement/Endpoint/ComposedResidual.lean"),
     ("IxSharingVerify.CanonicalMeaning", "IxSharingVerify/CanonicalMeaning.lean"),
-    ("Models.SetTheory.IxSetTheoryModel.Carneiro", "Models/SetTheory/IxSetTheoryModel/Carneiro.lean")]
+    ("Models.SetTheory.IxSetTheoryModel.Carneiro", "Models/SetTheory/IxSetTheoryModel/Carneiro.lean"),
+    ("IxSetTheoryModel.Audit", "Models/SetTheory/IxSetTheoryModel/Audit.lean")]
   for (modName, want) in expectedPaths do
     let got := moduleToSourcePath modName
     unless got == want do
       throw <| IO.userError s!"self-test failed: moduleToSourcePath {modName} = {got}, expected {want}"
+  -- Lean import parser (handles comments, modifiers, single-line multi-import)
+  let sampleLean :=
+    "/- block comment import Fake.One -/\n" ++
+    "module public import Init.Core import Ix.HostAdmission -- import Fake.Two\n" ++
+    "private meta import all IxC.Kernel.Audit.Roots\n" ++
+    "def body := \"import Fake.Three\"\n"
+  let parsedImps := parseLeanImports sampleLean
+  unless parsedImps == #["Init.Core", "Ix.HostAdmission", "IxC.Kernel.Audit.Roots"] do
+    throw <| IO.userError s!"self-test failed: parseLeanImports = {parsedImps}"
   -- YAML filter parser
   let sampleYaml :=
     "      - uses: dorny/paths-filter@abc\n" ++
@@ -251,15 +339,74 @@ def requiredKernelFiles : Array String := #[
   "Ix/Address/Admission.lean",
   "Ix/KernelDisplay/Peek.lean"]
 
-/-- Required non-Lean security-critical files and the CI filter groups that must cover them. -/
+/-- Required non-Lean and key Lean security-critical files and the CI filter
+groups that must cover them. -/
 def requiredFilterCoverage : Array (String × String) := #[
+  (".config/nextest.toml", "rust"),
+  ("rustfmt.toml", "rust"),
   ("tools/gnark/circuit.go", "gnark"),
+  ("tools/gnark/circuit.go", "rust"),
   ("contracts/plonk/src/PlonkVerifier.sol", "contracts"),
   ("contracts/groth16/src/IxGroth16Verifier.sol", "contracts"),
   ("c/common.h", "rust"),
   ("c/common.h", "host"),
   ("Aiur/c/execution.c", "rust"),
-  ("Aiur/c/execution.c", "formal")]
+  ("Aiur/c/execution.c", "formal"),
+  ("Scripts/FriSecurity.lean", "host"),
+  ("Ix/Aiur/Parameters.lean", "formal"),
+  ("Ix/Aiur/Parameters.lean", "refinement"),
+  ("Ix/MultiStark/Wire.lean", "formal"),
+  ("Ix/MultiStark/Wire.lean", "refinement"),
+  ("Tests/FormalChecks/Common.lean", "formal"),
+  ("Tests/Fixtures/MultiStark/sample.bin", "formal"),
+  ("Tests/Ix/Kernel/ModelLaws.lean", "formal"),
+  ("Ix/HostAdmission.lean", "kernel"),
+  ("Ix/HostAdmission.lean", "refinement"),
+  ("Ix/HostAdmission.lean", "formal"),
+  ("IxSharingVerify.lean", "kernel"),
+  ("IxSharingVerify.lean", "refinement"),
+  ("Benchmarks/Kernel/CheckIxeEntry.lean", "kernel"),
+  ("Tests/Fixtures/trust-surface/lexer.lean", "kernel"),
+  ("Ix/Aggr/Verification.lean", "refinement"),
+  ("Ix/Compile/FrontEnd.lean", "refinement"),
+  ("Ix/CompileCert/Emission.lean", "refinement"),
+  ("Ix/LeanIngress/Expr.lean", "refinement"),
+  ("Ix/Sharing/Canon.lean", "refinement")]
+
+/-- `leanchecker` roots and formal-only modules whose entire transitive project
+import closure must be covered by the corresponding CI filter group. -/
+def transitiveImportChecks : Array (String × String × Array String) := #[
+  ("certified-kernel leanchecker roots", "kernel", #[
+    "IxC.Kernel.Audit.Roots",
+    "IxC.Kernel.Admission.Audit",
+    "Ix.Ixon.Authenticated.Audit",
+    "Ix.Ixon.BlockOrder.Audit",
+    "Ix.HostAdmission.Audit",
+    "Ix.Cert.ModuleAudit",
+    "Ix.Cert.Audit",
+    "Ix.Cert.RuntimeAudit",
+    "IxSharingVerify.Audit.Statements",
+    "IxSharingVerify.Audit.CompiledCode",
+    "IxSharingVerify.Audit.SorryFrontier",
+    "IxSetTheoryModel.Audit"]),
+  ("ixvm-refinement leanchecker roots", "refinement", #[
+    "IxVMRefinement.Endpoint.ComposedResidual",
+    "IxVMRefinement.Endpoint.ClosureAudit",
+    "IxVMRefinement.Endpoint.ConsistencyCorollary",
+    "IxVMRefinement.Endpoint.ComposedResidualAudit",
+    "Ix.IxVM.ConsistencyAudit",
+    "Ix.IxVM.ConsistencyModelAudit",
+    "Ix.IxVM.Refinement.Audit"]),
+  ("formal leanchecker roots and formal-only modules", "formal", #[
+    "Aiur.Audit",
+    "Ix.IxVM.ConsistencyAudit",
+    "Ix.IxVM.ConsistencyModelAudit",
+    "Ix.IxVM.Refinement.Audit",
+    "Tests.FormalPackageMain",
+    "Tests.Ix.InstanceSymbols",
+    "Tests.Ix.VMSource",
+    "Tests.Ix.IxVM.SafeReferencesWalk",
+    "Tests.Ix.Kernel.ModelLaws"])]
 
 /-- Closure manifests to verify: `(manifestPath, ciFilterName, required)`. -/
 def manifestChecks : Array (String × String × Bool) := #[
@@ -330,6 +477,19 @@ def run : IO UInt32 := do
         unless matchesAny globs p do
           IO.eprintln s!"[ci-filters] MISSING from '{filterName}:' filter (required non-Lean file): {p}"
           failures := failures + 1
+    -- Transitive Lean import closure of CI leanchecker roots and formal-only modules
+    for (label, filterName, roots) in transitiveImportChecks do
+      match filters[filterName]? with
+      | none =>
+        IO.eprintln s!"[ci-filters] missing '{filterName}:' filter group in {ciWorkflowPath} (needed for {label})"
+        failures := failures + 1
+      | some globs =>
+        let paths ← transitiveProjectPaths roots
+        checkedFiles := checkedFiles + paths.size
+        for p in paths do
+          unless matchesAny globs p do
+            IO.eprintln s!"[ci-filters] MISSING from '{filterName}:' filter ({label}): {p}"
+            failures := failures + 1
     if failures == 0 then
       IO.println s!"[ci-filters] OK: {checkedManifests} manifest(s), {checkedFiles} path checks passed against {ciWorkflowPath}."
       return 0
