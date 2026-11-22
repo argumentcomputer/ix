@@ -12,12 +12,17 @@ multi-stark = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 blake3 = { workspace = true }
+formal-generated = { path = "../formal-generated", optional = true }
 
 [features]
 default = []
 stark = ["aiur/stark"]
 parallel = ["stark", "aiur/parallel"]
 cuda = ["stark", "aiur/cuda"]
+# Link the compiled trace writers `lake build ix` generates for a CUDA build
+# (crates/formal-generated); select them with AIUR_GPU_TRACE=compiled.
+# Building them needs nvcc.
+compiled-trace = ["cuda", "formal-generated/cuda"]
 function-profile = ["aiur/function-profile"]
 function-profile-ops = ["function-profile", "aiur/function-profile-ops"]
 

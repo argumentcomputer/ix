@@ -275,7 +275,7 @@ fn main() -> Result<(), Box<dyn Error>> {
       program.field().decode(&package.address)?,
     )?;
     let mut queries: Vec<_> = result.queries.iter().collect();
-    queries.sort_by_key(|(key, _)| *key);
+    queries.sort_by(|(a, _), (b, _)| a.cmp(b));
     let output = args.get(3).ok_or("record requires an output path")?;
     let file = std::io::BufWriter::new(std::fs::File::create(output)?);
     serde_json::to_writer(

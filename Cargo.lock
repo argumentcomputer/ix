@@ -1992,6 +1992,19 @@ version = "0.1.0"
 dependencies = [
  "aiur",
  "blake3",
+ "formal-generated",
+ "multi-stark",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ixvm-native"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "formal-generated",
+ "ixvm",
  "multi-stark",
  "serde",
  "serde_json",
@@ -4000,6 +4013,19 @@ dependencies = [
  "serde",
  "serde_json",
  "stark-key",
+]
+
+[[package]]
+name = "stark-verifier-native"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "formal-generated",
+ "multi-stark",
+ "serde",
+ "serde_json",
+ "stark-key",
+ "stark-verifier",
 ]
 
 [[package]]
