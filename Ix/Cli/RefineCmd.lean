@@ -24,16 +24,15 @@ public section
 
 namespace Ix.Cli.RefineCmd
 
-/-- The per-leaf prover budget in GiB: `--max-ram G`, or 85% of the memory
-    this machine has available when omitted or `0`. -/
+/-- The per-leaf prover budget in GiB: `--max-ram G`, or the default host
+    budget (`MemTotal` less the 20% host reservation) when omitted or `0`. -/
 def resolveBudget (p : Cli.Parsed) : IO Nat := do
   if let some g := (p.flag? "max-ram").map (·.as! Nat) then
     if g > 0 then return g
-  let available := ((← FormalAiur.resources).getObjValAs? Nat "available_bytes").toOption.getD 0
-  let gib := available * 85 / 100 / 1024^3
+  let gib := (← FormalAiur.resources).budgetBytes.getD 0 / 1024^3
   if gib == 0 then
-    throw (IO.userError "cannot detect available memory; pass --max-ram G")
-  IO.println s!"[refine] budget {gib} GiB per leaf (detected: 85% of available memory)"
+    throw (IO.userError "cannot read MemTotal; pass --max-ram G")
+  IO.println s!"[refine] budget {gib} GiB per leaf (default: MemTotal less 20%)"
   return gib
 
 /-- The destination budget is per leaf, independent of execution concurrency. -/
@@ -81,9 +80,9 @@ def shardRefineCmd : Cli.Cmd := `[Cli|
     ixes       : String; "The source `.ixes` manifest (required)."
     out        : String; "Where to write the refined `.ixes` manifest (required). Written only when every selected leaf settles: any failure exits 1 and writes nothing, and the report lists every failed leaf."
     shards     : String; "Leaves to audit: `K`, `a-b`, or a comma list of those. Default: every leaf. Unselected leaves are carried over unchanged."
-    "max-ram"  : Nat;    "Per-leaf prover-RAM budget in GiB, the budget each leaf's proof will be planned against. Omitted or 0: 85% of this machine's available memory."
-    jobs       : Nat;    "Leaves executed at once (default: available cores). A shared memory pool bounds concurrent executions; each leaf is planned against the full --max-ram."
-    "exec-ram" : Nat;    "Shared execution-memory budget in GiB (default: 85% of available host memory), independent of the per-leaf --max-ram."
+    "max-ram"  : Nat;    "Per-leaf prover-RAM budget in GiB, the budget each leaf's proof will be planned against. Omitted or 0: MemTotal less 20%."
+    jobs       : Nat;    "Leaves executed at once (default 1; 0 uses available cores). Each is planned against the full --max-ram, so their executions must fit in memory together."
+    "exec-ram" : Nat;    "Shared execution-memory budget in GiB (default: MemTotal less 20%), independent of the per-leaf --max-ram."
     report     : String; "Write the ix-formal-run/1 report (per-leaf parts, status, plans) to this path."
     "no-index";          "Do not consult the shard-proof index (`~/.ix/cache/formal-shard-proofs`): execute and split leaves even when a verified proof of their claim exists."
 
@@ -105,13 +104,14 @@ def runShardClaimsCmd (p : Cli.Parsed) : IO UInt32 := do
   match (← Ix.Shard.loadEnvAndShards manifest ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) =>
-    let ownedAll := Ix.Shard.ownedConstsPer ixonEnv shards
+    let inert := IxVM.ClaimHarness.inertUsers ixonEnv
+    let ownedAll := Ix.Shard.ownedConstsPer ixonEnv shards inert
     let mut rows : Array Lean.Json := #[]
     let mut rc : UInt32 := 0
     for k in [0:shards.size] do
       let blocks := (shards[k]?).getD #[]
       let owned := (ownedAll[k]?).getD #[]
-      match Ix.Shard.Check.claimDigestOfOwned ixonEnv owned with
+      match Ix.Shard.Check.claimDigestOfOwned ixonEnv owned (inert := inert) with
       | .error e => IO.eprintln s!"shard {k}: {e}"; rc := 1
       | .ok d =>
         IO.println s!"{k} {d} {blocks.size} {owned.size}"

@@ -46,12 +46,6 @@ opaque rootRows (aggrArtifact : @& String) (invocation : @& ByteArray)
 opaque rootLayout (aggrArtifact rows : @& String)
   (headroom claimLen : UInt32) : IO ByteArray
 
-/-- Wrap the aggregate root `rawProof` once more and prove the wrap in the fixed
-shape of `layout`; returns the normalized proof bytes. -/
-@[extern "rs_compression_normalize_root"]
-opaque normalizeRoot (aggrArtifact : @& String) (invocation : @& ByteArray)
-  (rawProof layout : @& ByteArray) : IO ByteArray
-
 /-- Write the FRI worker's root input directory `dir` without compressing. -/
 @[extern "rs_compression_write_root"]
 opaque writeRoot (vk proof claim statement fixedRoot : @& ByteArray) (dir : @& String) : IO Unit
@@ -86,7 +80,8 @@ def cacheDir : IO System.FilePath := do
 
 -- Reserve the family prefix, including unknown versions, so they fail closed.
 def isCompressed (proof : ByteArray) : Bool :=
-  proof.extract 0 5 == "IXCMP".toUTF8 || proof.extract 0 4 == "IXBN".toUTF8
+  proof.extract 0 5 == "IXCMP".toUTF8 || proof.extract 0 4 == "IXBN".toUTF8 ||
+    proof.extract 0 5 == "IXACG".toUTF8 || proof.extract 0 6 == "IXAUCH".toUTF8
 
 def readProof (addr : Address) : IO Ixon.Proof := do
   let bytes ← StoreIO.toIO (Store.read addr)

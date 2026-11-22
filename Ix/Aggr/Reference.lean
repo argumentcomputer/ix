@@ -170,44 +170,48 @@ def buildAggrSlotSpecs (plan : Array ScheduledFold)
       }
   pure specs
 
-private def prepareOwnedShard (env : Ixon.Env) (owned : Array Address)
-    (assumeBinding : Bool := false) :
+private def prepareOwnedShard (env : Ixon.Env) (inert : Std.HashSet Address)
+    (owned : Array Address) (assumeBinding : Bool := false) :
     Except String PreparedShard := do
-  let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned assumeBinding
+  let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned assumeBinding inert
   let statement ← Aggr.CheckEnvTrees.ofClaim claim trees
   pure { claim, statement }
 
 /-- Reconstruct every shard statement after partitioning environment ownership
-in one pass. -/
+in one pass. The constants that use an inert axiom are computed once for every
+shard. -/
 def prepareShards (env : Ixon.Env) (shards : Array (Array Address))
     (shardIds : Array Nat := #[]) (assumeBinding : Bool := false) :
     Except String (Array PreparedShard) := do
-  let ownedAll := Ix.Shard.ownedConstsPer env shards
+  let inert := IxVM.ClaimHarness.inertUsers env
+  let ownedAll := Ix.Shard.ownedConstsPer env shards inert
   if ownedAll.size != shards.size then
     throw s!"internal: prepared ownership for {ownedAll.size} shards, expected {shards.size}"
   let mut prepared : Array PreparedShard := #[]
   for (owned, shard) in ownedAll.mapIdx fun shard owned => (owned, shard) do
     let originalShard := (shardIds[shard]?).getD shard
-    let item ← match prepareOwnedShard env owned assumeBinding with
+    let item ← match prepareOwnedShard env inert owned assumeBinding with
       | .error e => throw s!"prepare shard {originalShard}: {e}"
       | .ok item => pure item
     prepared := prepared.push item
   pure prepared
 
-private def shardStatement (env : Ixon.Env) (owned : Array Address)
-    (assumeBinding : Bool := false) :
+private def shardStatement (env : Ixon.Env) (inert : Std.HashSet Address)
+    (owned : Array Address) (assumeBinding : Bool := false) :
     Except String Aggr.CheckEnvTrees := do
-  let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned assumeBinding
+  let (claim, trees) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees env owned assumeBinding inert
   Aggr.CheckEnvTrees.ofClaim claim trees
 
 /-- Reproduce the flat/structural statement fold from a coverage-validated
-manifest. -/
-def expectedFromManifest (env : Ixon.Env)
+manifest: the statement of every slot of the fold plan, in plan order, the
+root last. -/
+def expectedSlotsFromManifest (env : Ixon.Env)
     (view : Ix.Shard.IxesManifestView) (structuralAbove : Nat)
     (assumeBinding : Bool := false) :
-    Except String Aggr.CheckEnvTrees := do
-  let (view, counts) ← view.pruneEmpty env
-  let owned := Ix.Shard.ownedConstsPer env view.shards
+    Except String (Array Aggr.CheckEnvTrees) := do
+  let inert := IxVM.ClaimHarness.inertUsers env
+  let (view, counts) ← view.pruneEmpty env inert
+  let owned := Ix.Shard.ownedConstsPer env view.shards inert
   let plan ← Aggr.Reference.schedulePlan view.aggregationTree.foldPlan
     counts structuralAbove
   let mut slots : Array Aggr.CheckEnvTrees := #[]
@@ -216,7 +220,7 @@ def expectedFromManifest (env : Ixon.Env)
     | .leaf shard =>
       let some shardOwned := owned[shard]?
         | throw s!"aggregate plan references missing shard {shard}"
-      slots := slots.push (← shardStatement env shardOwned assumeBinding)
+      slots := slots.push (← shardStatement env inert shardOwned assumeBinding)
     | .join left right =>
       let some leftStatement := slots[left]?
         | throw s!"aggregate plan references missing left slot {left}"
@@ -226,6 +230,14 @@ def expectedFromManifest (env : Ixon.Env)
         leftStatement.joinStructural rightStatement
       else
         leftStatement.join rightStatement
+  pure slots
+
+/-- The root statement of `expectedSlotsFromManifest`. -/
+def expectedFromManifest (env : Ixon.Env)
+    (view : Ix.Shard.IxesManifestView) (structuralAbove : Nat)
+    (assumeBinding : Bool := false) :
+    Except String Aggr.CheckEnvTrees := do
+  let slots ← expectedSlotsFromManifest env view structuralAbove assumeBinding
   let some root := slots.back? | throw "aggregate manifest produced no root"
   pure root
 

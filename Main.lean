@@ -1,4 +1,5 @@
 import Ix.Cli.AddrOfCmd
+import Ix.FormalCompiler
 import Ix.Cli.AggregateCmd
 import Ix.Cli.BenchReport
 import Ix.Cli.CheckCmd
@@ -15,8 +16,8 @@ import Ix.Cli.DiffCmd
 import Ix.Cli.MergeCmd
 import Ix.Cli.NameOfCmd
 import Ix.Cli.PackCmd
-import Ix.Cli.PrepareCmd
 import Ix.Cli.CompressCmd
+import Ix.Cli.AiurStages
 import Ix.Cli.ProveCmd
 import Ix.Cli.ProveBindingCmd
 import Ix.Cli.ShardCmd
@@ -25,6 +26,7 @@ import Ix.Cli.VerifyCmd
 import Ix.Cli.VerifyHostCmd
 import Ix.Cli.ServeCmd
 import Ix.Cli.ConnectCmd
+import Ix.Runtime.Allocator
 import Ix.Cli.TableAdmissionKernel
 import Ix
 
@@ -52,10 +54,9 @@ def ixCmd : Cli.Cmd := `[Cli|
     diffCmd;
     packCmd;
     treeCmd;
-    prepareCmd;
     proveCmd;
     proveBindingCmd;
-    compressCmd;
+    Ix.Cli.AiurStages.compressCmd;
     shardCmd;
     codegenCmd;
     verifyCmd;
@@ -67,6 +68,7 @@ def ixCmd : Cli.Cmd := `[Cli|
 ]
 
 def main (args : List String) : IO UInt32 := do
+  Ix.Runtime.configureAllocator ()
   if args.isEmpty then
     ixCmd.printHelp
     return 0
