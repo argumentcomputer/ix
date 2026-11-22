@@ -54,6 +54,16 @@ D18). -/
 lean_lib IxCCTests where
   roots := #[`IxCCTests]
 
+/- The grounding of SrcEval in the certified kernel's model
+(docs/certification-design.md, "The grounding library"): soundness of SrcEval
+in every model of the kernel's reading with the laws. It is the one library
+that imports the kernel's model (`IxC.Kernel.Denotes`); nothing in the
+production library or the shared program build imports it
+(`check-build-graph`). Built, with its axiom fence, and run on committed
+closures by the required check `ixcc-grounding`. -/
+lean_lib IxCCGrounding where
+  roots := #[`IxCCGrounding]
+
 /- Src: rules, the K1 table and runs, the native differential, pins,
 diagnostics and the bench-k1 entries. -/
 lean_exe «tests-src» where
@@ -239,6 +249,13 @@ annotation, the certificate and the object, on the committed role-bound
 closures, and the refusals; `diff` and `single` take any role-bound closure. -/
 lean_exe «tests-kernel-front» where
   root := `IxCCTests.KernelFront.Main
+
+/- The grounding check (`IxCCGrounding.Check`) on the committed closures of
+the grounding subjects, conjunct by conjunct, with negative controls that each
+falsify exactly one conjunct. Built and run by `ixcc-grounding`, not by the
+shared program build (`nix/sources.nix`). -/
+lean_exe «tests-grounding» where
+  root := `IxCCTests.Grounding.Main
 
 lean_exe «tests-ixon-v3» where
   root := `IxCCTests.IxonV3.Main

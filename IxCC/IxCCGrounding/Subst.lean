@@ -1,0 +1,571 @@
+import IxCCGrounding.Eqn
+import IxCCGrounding.Lift
+
+/-!
+# Substitution lemmas for `Denotes` (`IxCCGrounding.Subst`)
+
+What the generic `case` lemma needs of the kernel's model beyond its rules, all proved from
+`Denotes`'s rules (and, for level instantiation, `cval_params`):
+
+* **Environment agreement** (`den_agree`, in `IxCCGrounding.Lift`): a term denotes the same set in
+  two variable environments that agree on its loose variables (`looseIn`); a closed term denotes
+  the same set in every environment (`den_closed`).
+* **Lifting** (`den_lift`, in `IxCCGrounding.Lift`): a term lifted by `k` above `c` denotes in `ρ`
+  what the term denotes in `skipEnv ρ k c`, the environment that skips the `k` inserted indices;
+  with `pushAll`, skipping a block of bound sets (`skipEnv_pushAll`).
+* **Level instantiation**: the zero-ness datum under a substitution (`holds_substPW`);
+  instantiating a term at its own level parameters is the identity (`inst_self`); and a term
+  whose level parameters are among `ks` denotes at `ψ` what its instantiation by `us` denotes at
+  `φ`, when `ψ` agrees on `ks` with the assignment the instantiation induces (`den_inst`,
+  `fits_inst`).
+-/
+
+namespace IxCC.Grounding
+
+open Ix.Kernel
+open Ix.Kernel.SetTheory
+open Ix.Kernel.SetModel
+
+universe w
+
+/-! ## Syntax: loose variables, literal forms, environments -/
+
+/-- A variable loose in a term all of whose variables are below `n` is below `n`. -/
+theorem lt_of_bvarsLt : ∀ {n i : Nat} {e : KExpr}, bvarsLt n e = true → looseIn i e = true → i < n
+  | n, i, .bvar k, h, hi => by
+    simp only [bvarsLt, decide_eq_true_eq] at h; simp only [looseIn, beq_iff_eq] at hi; omega
+  | _, _, .app f a, h, hi => by
+    simp only [bvarsLt, Bool.and_eq_true] at h; simp only [looseIn, Bool.or_eq_true] at hi
+    rcases hi with hi | hi
+    · exact lt_of_bvarsLt h.1 hi
+    · exact lt_of_bvarsLt h.2 hi
+  | _, _, .lam d b _, h, hi => by
+    simp only [bvarsLt, Bool.and_eq_true] at h; simp only [looseIn, Bool.or_eq_true] at hi
+    rcases hi with hi | hi
+    · exact lt_of_bvarsLt h.1 hi
+    · have := lt_of_bvarsLt h.2 hi; omega
+  | _, _, .forallE d b _, h, hi => by
+    simp only [bvarsLt, Bool.and_eq_true] at h; simp only [looseIn, Bool.or_eq_true] at hi
+    rcases hi with hi | hi
+    · exact lt_of_bvarsLt h.1 hi
+    · have := lt_of_bvarsLt h.2 hi; omega
+  | _, _, .letE t v b _, h, hi => by
+    simp only [bvarsLt, Bool.and_eq_true] at h; simp only [looseIn, Bool.or_eq_true] at hi
+    rcases hi with (hi | hi) | hi
+    · exact lt_of_bvarsLt h.1.1 hi
+    · exact lt_of_bvarsLt h.1.2 hi
+    · have := lt_of_bvarsLt h.2 hi; omega
+  | _, _, .proj _ _ e, h, hi => by
+    simp only [bvarsLt] at h; simp only [looseIn] at hi; exact lt_of_bvarsLt h hi
+  | _, _, .fvar _ _, _, hi | _, _, .sort _, _, hi | _, _, .const _ _, _, hi
+  | _, _, .lit _, _, hi => by simp [looseIn] at hi
+
+/-- A lifted term has no loose variable among the inserted indices. -/
+theorem looseIn_lift (k : Nat) : ∀ (e : KExpr) (c i : Nat), c ≤ i → i < c + k →
+    looseIn i (e.liftLooseBVars k c) = false
+  | .bvar j, c, i, h1, h2 => by
+    simp only [Expr.liftLooseBVars]
+    split <;> simp [looseIn] <;> omega
+  | .app f a, c, i, h1, h2 => by
+    simp [Expr.liftLooseBVars, looseIn, looseIn_lift k f c i h1 h2, looseIn_lift k a c i h1 h2]
+  | .lam d b _, c, i, h1, h2 => by
+    simp [Expr.liftLooseBVars, looseIn, looseIn_lift k d c i h1 h2,
+      looseIn_lift k b (c + 1) (i + 1) (by omega) (by omega)]
+  | .forallE d b _, c, i, h1, h2 => by
+    simp [Expr.liftLooseBVars, looseIn, looseIn_lift k d c i h1 h2,
+      looseIn_lift k b (c + 1) (i + 1) (by omega) (by omega)]
+  | .letE t v b _, c, i, h1, h2 => by
+    simp [Expr.liftLooseBVars, looseIn, looseIn_lift k t c i h1 h2, looseIn_lift k v c i h1 h2,
+      looseIn_lift k b (c + 1) (i + 1) (by omega) (by omega)]
+  | .proj _ _ e, c, i, h1, h2 => by
+    simp [Expr.liftLooseBVars, looseIn, looseIn_lift k e c i h1 h2]
+  | .fvar _ _, _, _, _, _ | .sort _, _, _, _, _ | .const _ _, _, _, _, _ | .lit _, _, _, _, _ => by
+    simp [Expr.liftLooseBVars, looseIn]
+
+theorem not_looseIn_of_avoids {c j : Nat} {e : KExpr} (h : avoids c j e = true) {i : Nat}
+    (h1 : c ≤ i) (h2 : i < c + j) : looseIn i e = false := by
+  simp only [avoids, List.all_eq_true, List.mem_range, Bool.not_eq_eq_eq_not, Bool.not_true] at h
+  have := h (i - c) (by omega)
+  rwa [Nat.add_sub_cancel' h1] at this
+
+section Envs
+
+variable {V : Type w}
+
+theorem pushAll_cons (x : V) (xs : List V) (ρ : BVarIdx → V) :
+    pushAll (x :: xs) ρ = pushAll xs (push x ρ) := by
+  refine funext fun (i : Nat) => ?_
+  simp only [pushAll, List.reverse_cons, List.length_cons, List.getD_eq_getElem?_getD]
+  by_cases h : i < xs.length
+  · have h1 : i < xs.reverse.length := by simpa using h
+    rw [List.getElem?_append_left h1, List.getElem?_eq_getElem h1]
+    rfl
+  · have h1 : xs.reverse.length ≤ i := by simp; omega
+    rw [List.getElem?_append_right h1, List.getElem?_eq_none h1]
+    simp only [List.length_reverse, Option.getD_none]
+    by_cases h' : i = xs.length
+    · subst h'; simp [push]
+    · have h2 : [x].length ≤ i - xs.length := by simp; omega
+      rw [List.getElem?_eq_none h2]
+      simp only [Option.getD_none]
+      rw [show i - xs.length = (i - (xs.length + 1)) + 1 by omega]; rfl
+
+theorem pushAll_append (xs ys : List V) (ρ : BVarIdx → V) :
+    pushAll (xs ++ ys) ρ = pushAll ys (pushAll xs ρ) := by
+  induction xs generalizing ρ with
+  | nil => rw [List.nil_append, pushAll_nil]
+  | cons x xs ih => rw [List.cons_append, pushAll_cons, pushAll_cons, ih]
+
+theorem pushAll_offset : ∀ (xs : List V) (ρ : BVarIdx → V) (i : Nat),
+    pushAll xs ρ (i + xs.length) = ρ i
+  | [], ρ, i => by rw [pushAll_nil]; rfl
+  | x :: xs, ρ, i => by
+    rw [pushAll_cons, List.length_cons, show i + (xs.length + 1) = (i + 1) + xs.length by omega,
+      pushAll_offset xs]
+    rfl
+
+/-- The bound set `y`, read from under the sets `c`. -/
+theorem pushAll_at (a : List V) (y : V) (c : List V) (ρ : BVarIdx → V) :
+    pushAll (a ++ y :: c) ρ c.length = y := by
+  rw [pushAll_append, pushAll_cons, show c.length = 0 + c.length by omega, pushAll_offset]; rfl
+
+theorem skipEnv_zero (ρ : BVarIdx → V) (k : Nat) : skipEnv ρ k 0 = fun i => ρ (i + k) := by
+  funext i; simp [skipEnv]
+
+theorem skipEnv_pushAll_gen (k : Nat) : ∀ (c : List V) (E : BVarIdx → V) (d : Nat),
+    skipEnv (pushAll c E) k (c.length + d) = pushAll c (skipEnv E k d)
+  | [], E, d => by simp [pushAll_nil]
+  | z :: c, E, d => by
+    rw [pushAll_cons, pushAll_cons, List.length_cons, show c.length + 1 + d = c.length + (d + 1) by
+      omega, skipEnv_pushAll_gen k c, skipEnv_push]
+
+/-- **Skipping a block of bound sets**: the environment `a, b, c` read with the `b.length`
+indices above the innermost `c.length` skipped is the environment `a, c`. -/
+theorem skipEnv_pushAll (a b c : List V) (ρ : BVarIdx → V) :
+    skipEnv (pushAll (a ++ b ++ c) ρ) b.length c.length = pushAll (a ++ c) ρ := by
+  have h1 : pushAll (a ++ b ++ c) ρ = pushAll c (pushAll (a ++ b) ρ) := pushAll_append (a ++ b) c ρ
+  have h2 : pushAll (a ++ c) ρ = pushAll c (pushAll a ρ) := pushAll_append a c ρ
+  have h3 : skipEnv (pushAll (a ++ b) ρ) b.length 0 = pushAll a ρ := by
+    rw [skipEnv_zero]; funext i; rw [pushAll_append, pushAll_offset]
+  rw [h1, h2, ← h3, ← skipEnv_pushAll_gen]
+  rfl
+
+theorem skipEnv_skipEnv (E : BVarIdx → V) {a b c c' : Nat} (h1 : c ≤ c') (h2 : c' ≤ c + a) :
+    skipEnv (skipEnv E b c') a c = skipEnv E (a + b) c := by
+  refine funext fun (i : Nat) => ?_
+  simp only [skipEnv]
+  by_cases hi : i < c
+  · have h3 : i < c' := by omega
+    simp only [hi, h3, ↓reduceIte]
+  · have h3 : ¬ i + a < c' := by omega
+    simp only [hi, h3, ↓reduceIte, Nat.add_assoc]
+
+end Envs
+
+variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv}
+
+section Den
+
+variable {cval : KKey → (LevelParam → Nat) → V} {φ : LevelParam → Nat}
+
+/-- A closed term denotes the same set in every environment. -/
+theorem den_closed {ρ ρ' : BVarIdx → V} {e : KExpr} {X : V} (hc : bvarsLt 0 e = true)
+    (h : Denotes cval env φ ρ e X) : Denotes cval env φ ρ' e X :=
+  den_agree h fun i hi => absurd (lt_of_bvarsLt hc hi) (Nat.not_lt_zero i)
+
+/-- `Fits` at an environment that agrees on the telescope's loose variables. -/
+theorem fits_agree {ρ σ : BVarIdx → V} {T R : KExpr} {xs : List V}
+    (h : Fits cval env φ ρ T xs σ R) :
+    ∀ {ρ' : BVarIdx → V}, (∀ i, looseIn i T = true → ρ i = ρ' i) →
+      ∃ σ', Fits cval env φ ρ' T xs σ' R := by
+  induction h with
+  | nil => intro ρ' _; exact ⟨ρ', .nil⟩
+  | cons hA hx _ ih =>
+    intro ρ' hag
+    obtain ⟨σ', hf⟩ := ih (ρ' := push _ ρ') fun i hi => by
+      cases i with
+      | zero => rfl
+      | succ i => exact hag i (by simp [looseIn, hi])
+    exact ⟨σ', .cons (den_agree hA fun i hi => hag i (by simp [looseIn, hi])) hx hf⟩
+
+/-- A lifted term, read in an environment holding a block `b` of as many sets as the lift
+inserts, denotes what the term denotes without the block. -/
+theorem den_lift_block {a b c : List V} {ρ : BVarIdx → V} {e : KExpr} {X : V} :
+    Denotes cval env φ (pushAll (a ++ b ++ c) ρ) (e.liftLooseBVars b.length c.length) X ↔
+      Denotes cval env φ (pushAll (a ++ c) ρ) e X := by
+  rw [den_lift, skipEnv_pushAll]
+
+end Den
+
+/-! ## Level instantiation -/
+
+/-- **The zero-ness datum under a level substitution** reads the induced assignment. -/
+theorem holds_substPW (φ : LevelParam → Nat) (ks : List LevelParam) (vs : List Level)
+    (pw : PropWhen) : (Level.substPW ks vs pw).holds φ = pw.holds (Level.substFn φ ks vs) := by
+  unfold Level.substPW
+  cases pw with
+  | never => simp
+  | ifAllZero ps =>
+    rw [PropWhen.bindZ_ifAllZero, PropWhen.holds_bindZ_go, PropWhen.holds_ifAllZero]
+    congr 1
+    funext n
+    rw [holds_zeronessOf, Level.eval_subst_go]
+
+theorem subst_go_self : ∀ (ks : List LevelParam) (n : LevelParam),
+    Level.subst.go ks (ks.map .param) n = .param n
+  | [], _ => rfl
+  | k :: ks, n => by
+    simp only [List.map_cons, Level.subst.go]
+    split
+    · next h => rw [h]
+    · exact subst_go_self ks n
+
+theorem subst_self (ks : List LevelParam) : ∀ l : Level, Level.subst ks (ks.map .param) l = l
+  | .zero => rfl
+  | .succ l => by simp [Level.subst, subst_self ks l]
+  | .max a b => by simp [Level.subst, subst_self ks a, subst_self ks b]
+  | .imax a b => by simp [Level.subst, subst_self ks a, subst_self ks b]
+  | .param n => subst_go_self ks n
+
+theorem substPW_self (ks : List LevelParam) (pw : PropWhen) :
+    Level.substPW ks (ks.map .param) pw = pw :=
+  PropWhen.eq_of_holds fun φ => by rw [holds_substPW, Level.substFn_param_self]
+
+/-- **Instantiating a term at its own level parameters is the identity.** -/
+theorem inst_self (ks : List LevelParam) (e : KExpr) :
+    e.instantiateLevelParams ks (ks.map .param) = e := by
+  have hmap : ∀ vs : List Level, vs.map (Level.subst ks (ks.map .param)) = vs := fun vs => by
+    induction vs with
+    | nil => rfl
+    | cons v vs ih => simp [subst_self ks v, ih]
+  induction e with
+  | bvar => rfl
+  | fvar _ _ ih => simp [Expr.instantiateLevelParams, ih]
+  | sort u => simp [Expr.instantiateLevelParams, subst_self ks u]
+  | const n vs => simp [Expr.instantiateLevelParams, hmap]
+  | app f a ihf iha => simp [Expr.instantiateLevelParams, ihf, iha]
+  | lam t b m iht ihb => simp [Expr.instantiateLevelParams, iht, ihb, substPW_self]
+  | forallE t b m iht ihb => simp [Expr.instantiateLevelParams, iht, ihb, substPW_self]
+  | letE t v b _ iht ihv ihb => simp [Expr.instantiateLevelParams, iht, ihv, ihb]
+  | lit => rfl
+  | proj s i e ih => simp [Expr.instantiateLevelParams, ih]
+
+theorem inst_natLit (ks : List LevelParam) (us : List Level) (n : Nat) :
+    (natLitToConstructor (md := .anon) n).instantiateLevelParams ks us = natLitToConstructor n := by
+  cases n <;> simp [natLitToConstructor, Expr.instantiateLevelParams]
+
+theorem inst_strLit (ks : List LevelParam) (us : List Level) (s : String) :
+    (strLitToConstructor (md := .anon) s).instantiateLevelParams ks us = strLitToConstructor s := by
+  unfold strLitToConstructor
+  simp only [Expr.instantiateLevelParams, List.map_nil]
+  congr 1
+  generalize s.toList = l
+  induction l with
+  | nil => simp [Expr.instantiateLevelParams, Level.subst]
+  | cons c cs ih => simp [Expr.instantiateLevelParams, Level.subst, ih]
+
+theorem defined_natLit (ks : List LevelParam) (n : Nat) :
+    (natLitToConstructor (md := .anon) n).allLevelParamsDefined ks = true := by
+  cases n <;> simp [natLitToConstructor, Expr.allLevelParamsDefined]
+
+theorem defined_strLit (ks : List LevelParam) (s : String) :
+    (strLitToConstructor (md := .anon) s).allLevelParamsDefined ks = true := by
+  unfold strLitToConstructor
+  simp only [Expr.allLevelParamsDefined, List.all_nil, Bool.true_and]
+  generalize s.toList = l
+  induction l with
+  | nil => simp [Expr.allLevelParamsDefined, Level.allParamsDefined]
+  | cons c cs ih => simp [Expr.allLevelParamsDefined, Level.allParamsDefined, ih]
+
+theorem regime_congr {φ ψ : LevelParam → Nat} {pw pw' : PropWhen} (h : pw.holds φ = pw'.holds ψ) :
+    regime φ pw = regime ψ pw' := by
+  simp [regime, h]
+
+/-- **Level instantiation**: a term whose level parameters are among `ks`, denoting `X` at `ψ`,
+denotes `X` at `φ` once instantiated by `us`, when `ψ` agrees on `ks` with the assignment the
+instantiation induces. The constants inside are read at assignments that agree on their own
+parameters (`cval_params`). -/
+theorem den_inst_cv (M : Model V env) (hcv : CvalParams M) {ks : List LevelParam}
+    {us : List Level}
+    {φ ψ : LevelParam → Nat} (hψ : ∀ p ∈ ks, Level.substFn φ ks us p = ψ p)
+    {ρ : BVarIdx → V} {e : KExpr} {X : V} (h : Denotes M.cval env ψ ρ e X) :
+    e.allLevelParamsDefined ks = true →
+      Denotes M.cval env φ ρ (e.instantiateLevelParams ks us) X := by
+  induction h with
+  | bvar => intro _; exact .bvar
+  | @sort ρ u =>
+    intro hd
+    simp only [Expr.allLevelParamsDefined] at hd
+    have h1 := Denotes.sort (cval := M.cval) (env := env) (φ := φ) (ρ := ρ) (u := Level.subst ks us u)
+    rwa [Level.eval_subst, Level.eval_ext hd hψ] at h1
+  | @const ρ n vs ci hf hlen =>
+    intro hd
+    simp only [Expr.allLevelParamsDefined, List.all_eq_true] at hd
+    simp only [Expr.instantiateLevelParams]
+    have h1 := Denotes.const (cval := M.cval) (φ := φ) (ρ := ρ) (us := vs.map (Level.subst ks us)) hf
+      (by rw [List.length_map, hlen])
+    have heq : M.cval n (Level.substFn φ ci.toConstantVal.levelParams (vs.map (Level.subst ks us))) =
+        M.cval n (Level.substFn ψ ci.toConstantVal.levelParams vs) :=
+      hcv n ci hf _ _ fun p hp => by
+        rw [Level.substFn_map_subst hlen hp]
+        exact Level.substFn_ext hψ (fun u hu => hd u hu) hlen p hp
+    rwa [heq] at h1
+  | app _ _ ihf iha =>
+    intro hd
+    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hd
+    exact .app (ihf hd.1) (iha hd.2)
+  | @lam ρ ty body m A F _ _ hP ihA ihF =>
+    intro hd
+    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hd
+    have hr : regime φ (Level.substPW ks us m.pw) = regime ψ m.pw :=
+      regime_congr (by rw [holds_substPW]; exact PropWhen.holds_ext hd.2 hψ)
+    have h1 := Denotes.lam (cval := M.cval) (env := env) (φ := φ) (ρ := ρ)
+      (m := { m with pw := Level.substPW ks us m.pw }) (ihA hd.1.1) (fun x hx => ihF x hx hd.1.2)
+      (fun h0 => hP (by rw [← hr]; exact h0))
+    rw [show regime ψ m.pw = regime φ ({ m with pw := Level.substPW ks us m.pw } : BinderMeta).pw
+      from hr.symm]
+    exact h1
+  | @pi ρ ty body m A B _ _ hP ihA ihB =>
+    intro hd
+    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hd
+    have hr : regime φ (Level.substPW ks us m.pw) = regime ψ m.pw :=
+      regime_congr (by rw [holds_substPW]; exact PropWhen.holds_ext hd.2 hψ)
+    have h1 := Denotes.pi (cval := M.cval) (env := env) (φ := φ) (ρ := ρ)
+      (m := { m with pw := Level.substPW ks us m.pw }) (ihA hd.1.1) (fun x hx => ihB x hx hd.1.2)
+      (fun h0 => hP (by rw [← hr]; exact h0))
+    rw [show regime ψ m.pw = regime φ ({ m with pw := Level.substPW ks us m.pw } : BinderMeta).pw
+      from hr.symm]
+    exact h1
+  | proj_table ht _ ih =>
+    intro hd; simp only [Expr.allLevelParamsDefined] at hd; exact .proj_table ht (ih hd)
+  | proj_fst ht _ ih =>
+    intro hd; simp only [Expr.allLevelParamsDefined] at hd; exact .proj_fst ht (ih hd)
+  | proj_snd ht _ ih =>
+    intro hd; simp only [Expr.allLevelParamsDefined] at hd; exact .proj_snd ht (ih hd)
+  | @natLit ρ n X _ ih =>
+    intro _
+    have h1 := ih (defined_natLit ks n)
+    rw [inst_natLit] at h1
+    exact .natLit h1
+  | @strLit ρ s X _ ih =>
+    intro _
+    have h1 := ih (defined_strLit ks s)
+    rw [inst_strLit] at h1
+    exact .strLit h1
+
+/-- **Level instantiation at the induced assignment itself**: a term denoting `X` at the
+assignment an instantiation induces denotes `X` at `φ` once instantiated, whatever level
+parameters it names (no `allLevelParamsDefined`: a parameter outside `ks` is read at `φ` on both
+sides). The constants inside are read at assignments that agree on their own parameters
+(`cval_params`). -/
+theorem den_inst_exact_cv (M : Model V env) (hcv : CvalParams M) {ks : List LevelParam}
+    {us : List Level}
+    {φ : LevelParam → Nat} {ρ : BVarIdx → V} {e : KExpr} {X : V}
+    (h : Denotes M.cval env (Level.substFn φ ks us) ρ e X) :
+    Denotes M.cval env φ ρ (e.instantiateLevelParams ks us) X := by
+  generalize hψ : Level.substFn φ ks us = ψ at h
+  induction h with
+  | bvar => exact .bvar
+  | @sort ρ u =>
+    have h1 := Denotes.sort (cval := M.cval) (env := env) (φ := φ) (ρ := ρ) (u := Level.subst ks us u)
+    rwa [Level.eval_subst, hψ] at h1
+  | @const ρ n vs ci hf hlen =>
+    simp only [Expr.instantiateLevelParams]
+    have h1 := Denotes.const (cval := M.cval) (φ := φ) (ρ := ρ) (us := vs.map (Level.subst ks us)) hf
+      (by rw [List.length_map, hlen])
+    have heq : M.cval n (Level.substFn φ ci.toConstantVal.levelParams (vs.map (Level.subst ks us))) =
+        M.cval n (Level.substFn ψ ci.toConstantVal.levelParams vs) :=
+      hcv n ci hf _ _ fun p hp => by
+        rw [Level.substFn_map_subst hlen hp, hψ]
+    rwa [heq] at h1
+  | app _ _ ihf iha => exact .app ihf iha
+  | @lam ρ ty body m A F _ _ hP ihA ihF =>
+    have hr : regime φ (Level.substPW ks us m.pw) = regime ψ m.pw :=
+      regime_congr (by rw [holds_substPW, hψ])
+    have h1 := Denotes.lam (cval := M.cval) (env := env) (φ := φ) (ρ := ρ)
+      (m := { m with pw := Level.substPW ks us m.pw }) ihA (fun x hx => ihF x hx)
+      (fun h0 => hP (by rw [← hr]; exact h0))
+    rw [show regime ψ m.pw = regime φ ({ m with pw := Level.substPW ks us m.pw } : BinderMeta).pw
+      from hr.symm]
+    exact h1
+  | @pi ρ ty body m A B _ _ hP ihA ihB =>
+    have hr : regime φ (Level.substPW ks us m.pw) = regime ψ m.pw :=
+      regime_congr (by rw [holds_substPW, hψ])
+    have h1 := Denotes.pi (cval := M.cval) (env := env) (φ := φ) (ρ := ρ)
+      (m := { m with pw := Level.substPW ks us m.pw }) ihA (fun x hx => ihB x hx)
+      (fun h0 => hP (by rw [← hr]; exact h0))
+    rw [show regime ψ m.pw = regime φ ({ m with pw := Level.substPW ks us m.pw } : BinderMeta).pw
+      from hr.symm]
+    exact h1
+  | proj_table ht _ ih => exact .proj_table ht ih
+  | proj_fst ht _ ih => exact .proj_fst ht ih
+  | proj_snd ht _ ih => exact .proj_snd ht ih
+  | @natLit ρ n X _ ih =>
+    have h1 := ih
+    rw [inst_natLit] at h1
+    exact .natLit h1
+  | @strLit ρ s X _ ih =>
+    have h1 := ih
+    rw [inst_strLit] at h1
+    exact .strLit h1
+
+/-- `Fits` under level instantiation (`den_inst` at each domain). -/
+theorem fits_inst_cv (M : Model V env) (hcv : CvalParams M) {ks : List LevelParam}
+    {us : List Level}
+    {φ ψ : LevelParam → Nat} (hψ : ∀ p ∈ ks, Level.substFn φ ks us p = ψ p)
+    {ρ σ : BVarIdx → V} {T R : KExpr} {xs : List V} (h : Fits M.cval env ψ ρ T xs σ R) :
+    T.allLevelParamsDefined ks = true →
+      Fits M.cval env φ ρ (T.instantiateLevelParams ks us) xs σ (R.instantiateLevelParams ks us) := by
+  induction h with
+  | nil => intro _; exact .nil
+  | cons hA hx _ ih =>
+    intro hd
+    simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hd
+    simp only [Expr.instantiateLevelParams]
+    exact .cons (den_inst_cv M hcv hψ hA hd.1.1) hx (ih hd.1.2)
+
+/-- `den_inst_cv` over the laws (`Laws.cval_params` only). -/
+theorem den_inst (M : Model V env) (hL : LawsCore M) {ks : List LevelParam} {us : List Level}
+    {φ ψ : LevelParam → Nat} (hψ : ∀ p ∈ ks, Level.substFn φ ks us p = ψ p)
+    {ρ : BVarIdx → V} {e : KExpr} {X : V} (h : Denotes M.cval env ψ ρ e X) :
+    e.allLevelParamsDefined ks = true →
+      Denotes M.cval env φ ρ (e.instantiateLevelParams ks us) X :=
+  den_inst_cv M hL.cval_params hψ h
+
+/-- `den_inst_exact_cv` over the laws (`Laws.cval_params` only). -/
+theorem den_inst_exact (M : Model V env) (hL : LawsCore M) {ks : List LevelParam} {us : List Level}
+    {φ : LevelParam → Nat} {ρ : BVarIdx → V} {e : KExpr} {X : V}
+    (h : Denotes M.cval env (Level.substFn φ ks us) ρ e X) :
+    Denotes M.cval env φ ρ (e.instantiateLevelParams ks us) X :=
+  den_inst_exact_cv M hL.cval_params h
+
+/-- `fits_inst_cv` over the laws (`Laws.cval_params` only). -/
+theorem fits_inst (M : Model V env) (hL : LawsCore M) {ks : List LevelParam} {us : List Level}
+    {φ ψ : LevelParam → Nat} (hψ : ∀ p ∈ ks, Level.substFn φ ks us p = ψ p)
+    {ρ σ : BVarIdx → V} {T R : KExpr} {xs : List V} (h : Fits M.cval env ψ ρ T xs σ R) :
+    T.allLevelParamsDefined ks = true →
+      Fits M.cval env φ ρ (T.instantiateLevelParams ks us) xs σ (R.instantiateLevelParams ks us) :=
+  fits_inst_cv M hL.cval_params hψ h
+
+/-- **Uninstantiating a term at the induced assignment itself** (converse of `den_inst_exact_cv`,
+no `allLevelParamsDefined` and no `Nodup`): uses `M.cval_params` only. -/
+theorem den_uninst_exact_cv (M : Model V env) (hcv : CvalParams M) (ks : List LevelParam)
+    (us : List Level) (φ : LevelParam → Nat) :
+    ∀ (e : KExpr) (ρ : BVarIdx → V) (X : V),
+      Denotes M.cval env φ ρ (e.instantiateLevelParams ks us) X →
+      Denotes M.cval env (Level.substFn φ ks us) ρ e X := by
+  intro e
+  induction e with
+  | bvar i =>
+    intro ρ X h
+    simpa [Expr.instantiateLevelParams, den_bvar] using h
+  | fvar _ _ _ =>
+    intro ρ X h
+    cases h
+  | sort u =>
+    intro ρ X h
+    simp only [Expr.instantiateLevelParams, den_sort] at h
+    rw [Level.eval_subst] at h
+    exact den_sort.mpr h
+  | const n vs =>
+    intro ρ X h
+    simp only [Expr.instantiateLevelParams] at h
+    cases h with
+    | @const _ _ _ ci hf hlen =>
+      have hlen' : vs.length = ci.toConstantVal.levelParams.length := by simpa using hlen
+      have h1 := Denotes.const (cval := M.cval) (env := env) (φ := Level.substFn φ ks us)
+        (ρ := ρ) (us := vs) hf hlen'
+      have heq : M.cval n (Level.substFn (Level.substFn φ ks us) ci.toConstantVal.levelParams vs) =
+          M.cval n (Level.substFn φ ci.toConstantVal.levelParams (vs.map (Level.subst ks us))) :=
+        hcv n _ hf _ _ fun p hp => (Level.substFn_map_subst hlen' hp).symm
+      rwa [heq] at h1
+  | app f a ihf iha =>
+    intro ρ X h
+    simp only [Expr.instantiateLevelParams, den_app] at h
+    obtain ⟨F, A, hF, hA, rfl⟩ := h
+    exact .app (ihf ρ F hF) (iha ρ A hA)
+  | lam ty body m iht ihb =>
+    intro ρ X h
+    simp only [Expr.instantiateLevelParams, den_lam] at h
+    obtain ⟨Ad, F, hAd, hF, hP, rfl⟩ := h
+    have hr : regime φ (Level.substPW ks us m.pw) = regime (Level.substFn φ ks us) m.pw :=
+      regime_congr (holds_substPW φ ks us m.pw)
+    rw [hr]
+    exact .lam (iht ρ Ad hAd) (fun x hx => ihb (push x ρ) (F x) (hF x hx))
+      (fun h0 => hP (by rw [hr]; exact h0))
+  | forallE ty body m iht ihb =>
+    intro ρ X h
+    simp only [Expr.instantiateLevelParams, den_pi] at h
+    obtain ⟨Ad, B, hAd, hB, hP, rfl⟩ := h
+    have hr : regime φ (Level.substPW ks us m.pw) = regime (Level.substFn φ ks us) m.pw :=
+      regime_congr (holds_substPW φ ks us m.pw)
+    rw [hr]
+    exact .pi (iht ρ Ad hAd) (fun x hx => ihb (push x ρ) (B x) (hB x hx))
+      (fun h0 => hP (by rw [hr]; exact h0))
+  | letE _ _ _ _ _ _ _ =>
+    intro ρ X h
+    cases h
+  | lit l =>
+    intro ρ X h
+    cases l with
+    | natVal n =>
+      have h1 := den_inst_cv M hcv (ks := []) (us := []) (φ := Level.substFn φ ks us) (ψ := φ)
+        (fun _ hp => by simp at hp) (by cases h with | natLit h => exact h) (defined_natLit [] n)
+      rw [inst_natLit] at h1
+      exact .natLit h1
+    | strVal s =>
+      have h1 := den_inst_cv M hcv (ks := []) (us := []) (φ := Level.substFn φ ks us) (ψ := φ)
+        (fun _ hp => by simp at hp) (by cases h with | strLit h => exact h) (defined_strLit [] s)
+      rw [inst_strLit] at h1
+      exact .strLit h1
+  | proj s i e ih =>
+    intro ρ X h
+    simp only [Expr.instantiateLevelParams] at h
+    cases h with
+    | proj_table ht he => exact .proj_table ht (ih ρ _ he)
+    | proj_fst ht he => exact .proj_fst ht (ih ρ _ he)
+    | proj_snd ht he => exact .proj_snd ht (ih ρ _ he)
+
+/-- Two level lists satisfying `Level.EvalEqList` have the same length. -/
+theorem evalEqList_length {φ : LevelParam → Nat} :
+    ∀ {us vs : List Level}, Level.EvalEqList φ us vs → us.length = vs.length
+  | [], [], _ => rfl
+  | _ :: _, _ :: _, h => congrArg Nat.succ (evalEqList_length h.2)
+  | [], _ :: _, h | _ :: _, [], h => False.elim h
+
+/-- **Level instantiation congruence (`Red.iota`'s `Level.EvalEqList` premise)**: two level lists
+that evaluate alike at `φ` give the same denotation for any instantiated term, using
+`Level.substFn_congr` and `M.cval_params` only (no `allLevelParamsDefined`, no `Nodup`). -/
+theorem den_inst_evalEqList (M : Model V env) (hcv : CvalParams M) {ks : List LevelParam}
+    {us vs : List Level} {φ : LevelParam → Nat} (heq : Level.EvalEqList φ us vs)
+    {ρ : BVarIdx → V} {e : KExpr} {X : V}
+    (h : Denotes M.cval env φ ρ (e.instantiateLevelParams ks us) X) :
+    Denotes M.cval env φ ρ (e.instantiateLevelParams ks vs) X := by
+  have h1 := den_uninst_exact_cv M hcv ks us φ e ρ X h
+  rw [Level.substFn_congr heq] at h1
+  exact den_inst_exact_cv M hcv h1
+
+/-- **`Fits` under `Level.EvalEqList` (`Red.iota`'s premise)**: two level lists that evaluate alike
+at `φ` transport `Fits` across `instantiateLevelParams` directly via `Level.substFn_congr` and
+`M.cval_params` (no `allLevelParamsDefined`, no `Nodup`, no `CtorCanon`). -/
+theorem fits_inst_evalEqList (M : Model V env) (hcv : CvalParams M) {ks : List LevelParam}
+    {us vs : List Level} {φ : LevelParam → Nat} (heq : Level.EvalEqList φ us vs) :
+    ∀ {xs : List V} {T : KExpr} {ρ σ : BVarIdx → V} {R : KExpr},
+      Fits M.cval env φ ρ (T.instantiateLevelParams ks us) xs σ R →
+      ∃ R0 : KExpr, R = R0.instantiateLevelParams ks us ∧
+        Fits M.cval env φ ρ (T.instantiateLevelParams ks vs) xs σ (R0.instantiateLevelParams ks vs)
+  | [], T, _, _, _, h => by
+    generalize hT : T.instantiateLevelParams ks us = T' at h
+    cases h
+    exact ⟨T, hT.symm, .nil⟩
+  | _ :: xs, T, ρ, σ, R, h => by
+    cases T with
+    | forallE A B m =>
+      simp only [Expr.instantiateLevelParams] at h ⊢
+      cases h with
+      | cons hA hx hrest =>
+        obtain ⟨R0, rfl, hrest'⟩ := fits_inst_evalEqList M hcv heq hrest
+        exact ⟨R0, rfl, .cons (den_inst_evalEqList M hcv heq hA) hx hrest'⟩
+    | _ => simp [Expr.instantiateLevelParams] at h; cases h
+
+end IxCC.Grounding
