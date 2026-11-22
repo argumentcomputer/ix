@@ -311,7 +311,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "bignat"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/lean-ffi.git?rev=93c7e52952ae94546be08313f4ff3922984c84d5#93c7e52952ae94546be08313f4ff3922984c84d5"
+source = "git+https://github.com/argumentcomputer/lean-ffi.git?rev=18d03379aa14986d16640eaa2400b9164dbd1ead#18d03379aa14986d16640eaa2400b9164dbd1ead"
 dependencies = [
  "num-bigint 0.4.6",
 ]
@@ -962,7 +962,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2026,11 +2026,12 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 [[package]]
 name = "lean-ffi"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/lean-ffi.git?rev=93c7e52952ae94546be08313f4ff3922984c84d5#93c7e52952ae94546be08313f4ff3922984c84d5"
+source = "git+https://github.com/argumentcomputer/lean-ffi.git?rev=18d03379aa14986d16640eaa2400b9164dbd1ead#18d03379aa14986d16640eaa2400b9164dbd1ead"
 dependencies = [
  "bignat",
  "bindgen",
  "cc",
+ "clang-sys",
  "num-bigint 0.4.6",
 ]
 
@@ -2189,7 +2190,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=3515632f1dc1a5764b60fc0146ea2226bb6fc32d#3515632f1dc1a5764b60fc0146ea2226bb6fc32d"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=b32f5e6096d4fcf5c7cc14b557f120549c4b2b85#b32f5e6096d4fcf5c7cc14b557f120549c4b2b85"
 dependencies = [
  "bincode",
  "itertools 0.14.0",
@@ -3466,7 +3467,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3479,7 +3480,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3537,7 +3538,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3629,7 +3630,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b55fb86dfd3a2f5f76ea78310a88f96c4ea21a3031f8d212443d56123fd0521"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4675,7 +4676,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4810,15 +4811,6 @@ name = "windows-sys"
 version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
-dependencies = [
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.59.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets 0.52.6",
 ]
