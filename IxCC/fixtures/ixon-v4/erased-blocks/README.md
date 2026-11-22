@@ -19,5 +19,5 @@ clause of `checkCanonical`), and that the honest `mainB` compiles to `c₁`.
 
 `blocks.ixe` is the anonymous role-bound closure of the roots, `blocks.equations.json` its
 `ixcc/k1-equations/1` sidecar (the roots, no equations), from `lake exe pin-src-tables
---erased-blocks fixtures/ixon-v4/erased-blocks` with the ix of this repository (`tools/regenerate.sh`
+--erased-blocks fixtures/ixon-v4/erased-blocks` with the ix of this repository (`tools/Regenerate.lean`
 runs it); `blocks.provenance.json` records its version, the commands and the file hashes.

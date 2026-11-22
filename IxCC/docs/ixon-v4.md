@@ -35,7 +35,7 @@ Three ix sources matter, for three different things:
 The producer of the committed fixtures is the ix of this repository (`lake
 build ix`): `ix compile --equations` writes the role-bound closures and their
 unfolding equations ([corpus](corpus.md), "Refreezing";
-`tools/regenerate.sh --check` says whether they are current). The erased
+`lean --run IxCC/tools/Regenerate.lean --check` says whether they are current). The erased
 checker's typing bundles went with the checker. IxCC's catalog support
 (catalog-v2 admission under validator 1, which certified the erased checker's
 typing) is retired: ix retired validator 1, and reading catalogs again means

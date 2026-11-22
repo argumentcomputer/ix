@@ -441,7 +441,7 @@ replaces.
   machine. Record elapsed time and peak memory when a gate returns.
 - **Exact axiom fences:** a gate that covers a public theorem also restores
   that theorem's fence, and the coverage inventory records it.
-- **Hand-written expectations over regenerated artifacts:** `regenerate.sh
+- **Hand-written expectations over regenerated artifacts:** `tools/Regenerate.lean
   --check` compares only the files its tools write, so it does not see these
   expectations, which a change to code generation must update with the
   artifacts:

@@ -80,7 +80,7 @@ coverage inventory and the coverage-change record. During development:
 - After adding, changing or deleting a file the ledger's integrity rule
   covers (everything under `IxCC/`, `IxCCTests/`, `fixtures/`, `nix/`,
   `tools/` and the Lake files), re-record the pins with
-  `check-trusted-externs --record` and `tools/record-ledger-pins.jq`, review
+  `check-trusted-externs --record` and `tools/RecordLedgerPins.lean`, review
   the diff of `docs/trusted-externs.json` (trust ledger, "Routine updates"),
   then run `check-trusted-externs` and `check-tools-tests`.
 

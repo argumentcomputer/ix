@@ -194,7 +194,7 @@ to equal IxCC's. So the weekly Rust update (`update-rust.yml`, which runs
 is updated in the same pull request: "Routine updates" in
 [IxCC's ledger document](../IxCC/docs/trusted-extern-ledger.md) lists the
 fields and the commands (`check-trusted-externs --record`, then
-`tools/record-ledger-pins.jq`, from `IxCC/`).
+`tools/RecordLedgerPins.lean`, from `IxCC/`).
 
 The repository-wide tools treat `IxCC/` as follows:
 

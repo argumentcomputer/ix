@@ -184,7 +184,7 @@ always this repository's `ix` (`producerIx`), so nothing here is a pin and no
 binary is named (the Lake build is not reproducible, and the closures do not
 depend on the binary's bytes): `ix --version`, derived by `corpus rebuild`.
 Whether this repository's `ix` still writes these bytes is what the
-regeneration check answers (`tools/regenerate.sh`, `docs/corpus.md`). -/
+regeneration check answers (`tools/Regenerate.lean`, `docs/corpus.md`). -/
 structure Producer where
   ixVersion : String
   /-- The written resource profile the family is compiled under (`--profile`;

@@ -32,11 +32,11 @@ Licence: Apache-2.0 OR MIT (an original program).
 
 ## Regenerating
 
-[`tools/regenerate.sh`](../../../tools/regenerate.sh) regenerates it with the rest of the
+[`tools/Regenerate.lean`](../../../tools/Regenerate.lean) regenerates it with the rest of the
 committed fixtures ([Refreezing](../../../docs/corpus.md#refreezing)): it takes every
 `corpus.json` under `fixtures/`, so this family is never skipped. For this family alone: with
 this repository's `ix` built (`lake build ix` at the repository root, in its dev shell; the
-manifest records its version) and a directory `FAKE` holding the `lake` stand-in `regenerate.sh`
+manifest records its version) and a directory `FAKE` holding the `lake` stand-in `Regenerate.lean`
 writes (any stand-in that answers `lake env printenv LEAN_PATH` will do: the source imports only
 `Init`), from `IxCC/`:
 

@@ -37,7 +37,7 @@ agrees. Before the closures step was on the production path (closures
 milestone 3), the compiler declined most of these roots at
 `fir: fir.closures`, and `spin` and `main7` compiled at their stored arity.
 
-**How it was produced.** By [`tools/regenerate.sh`](../../../tools/regenerate.sh)
+**How it was produced.** By [`tools/Regenerate.lean`](../../../tools/Regenerate.lean)
 with the rest of the committed fixtures ([corpus guide](../../../docs/corpus.md),
 "Refreezing"), with the ix of this repository (its version is in
 `corpus.json`) and Lean 4.34.1 on `PATH`; for this family alone, from `IxCC/`:

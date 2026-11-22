@@ -75,12 +75,12 @@ Licence: Apache-2.0 OR MIT (original programs).
 
 ## Regenerating
 
-[`tools/regenerate.sh`](../../../tools/regenerate.sh) regenerates it with the
+[`tools/Regenerate.lean`](../../../tools/Regenerate.lean) regenerates it with the
 rest of the committed fixtures ([Refreezing](../../../docs/corpus.md#refreezing)).
 For this family alone: with the ix of this repository built at the repository
 root (`lake build ix`, in its dev shell; its version is in
 [`corpus.json`](corpus.json)), Lean 4.34.1 on `PATH`, and the `lake` stand-in
-`regenerate.sh` writes in `FAKE`, from `IxCC/`:
+`Regenerate.lean` writes in `FAKE`, from `IxCC/`:
 
 ```sh
 lake exe corpus rebuild fixtures/corpus/phase1-machines/corpus.json --ix ../.lake/build/bin/ix --ix-path FAKE

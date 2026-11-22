@@ -65,7 +65,7 @@ specialisation and inlining (`Recheck.compileInput`, and a compile claim that
 `verifyProgram` and `verifyBytes` accept), natively equal to the interpreter
 both ways.
 
-**How it was produced.** By [`tools/regenerate.sh`](../../../tools/regenerate.sh)
+**How it was produced.** By [`tools/Regenerate.lean`](../../../tools/Regenerate.lean)
 with the rest of the committed fixtures ([corpus guide](../../../docs/corpus.md),
 "Refreezing"): the ix of this repository (`lake build ix` at the repository
 root, in its dev shell; its version is in `corpus.json`) and Lean 4.34.1 on
@@ -75,7 +75,7 @@ root, in its dev shell; its version is in `corpus.json`) and Lean 4.34.1 on
 lake exe corpus rebuild fixtures/corpus/phase2-closures/corpus.json --ix ../.lake/build/bin/ix --ix-path DIR
 ```
 
-(`DIR` holds the `lake` stand-in `regenerate.sh` writes.) The rebuild runs, in
+(`DIR` holds the `lake` stand-in `Regenerate.lean` writes.) The rebuild runs, in
 `src/`, the commands the manifest records:
 
 ```sh

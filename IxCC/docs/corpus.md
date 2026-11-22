@@ -168,7 +168,7 @@ write the same closures). `check` protects what it always did: the committed
 bytes agree with the hashes the manifest records, the manifest is what a
 rebuild writes, and every closure is role-bound. Whether this repository's ix
 still writes the committed bytes is the regeneration check's question
-(`tools/regenerate.sh --check`, [Refreezing](#refreezing)).
+(`lean --run IxCC/tools/Regenerate.lean --check`, [Refreezing](#refreezing)).
 
 ## The suite: `lake exe tests-corpus`
 
@@ -278,8 +278,8 @@ producer changes nothing.
 
 ```sh
 # in ix's dev shell, anywhere in the repository
-IxCC/tools/regenerate.sh            # regenerate in place (a refreeze); then review the diff
-IxCC/tools/regenerate.sh --check    # regenerate into a scratch export of HEAD and compare
+lean --run IxCC/tools/Regenerate.lean            # regenerate in place (a refreeze); then review the diff
+lean --run IxCC/tools/Regenerate.lean --check    # regenerate into a scratch export of HEAD and compare
 ```
 
 It builds `ix` at the repository root with the root modules the fixtures' sources
@@ -320,7 +320,7 @@ runs, in this order:
 
 With `--check` it does this in a scratch export of `HEAD`, lists every file
 that differs, and scans the committed tree for commits and absolute paths in
-the fixtures, manifests, READMEs and generated modules (`tools/citations.sh
+the fixtures, manifests, READMEs and generated modules (`lean --run IxCC/tools/Citations.lean
 --fixtures`); it exits 0 only when nothing differs and nothing is cited. If
 the tables differ it stops there (the tools built from the checkout would be
 stale): regenerate in place. On a 64-core machine shared with other jobs it

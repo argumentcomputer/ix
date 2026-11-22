@@ -213,17 +213,15 @@ request:
 
 The mechanical fields (every integrity hash, the flake node revisions and the
 `ci_actions` commits) are re-recorded by the checker itself, which prints them
-as the tree stands (it never edits the ledger), and a `jq` program that merges
-them while keeping each object's order. From `IxCC/`, in ix's development
-shell:
+as the tree stands (it never edits the ledger), and a Lean script
+(`tools/RecordLedgerPins.lean`) that merges them while keeping each object's
+order. From `IxCC/`, in ix's development shell:
 
 ```sh
 lake build check-trusted-externs
 mkdir -p plans
 .lake/build/bin/check-trusted-externs --record > plans/ledger-pins.json
-jq --indent 2 --slurpfile pins plans/ledger-pins.json -f tools/record-ledger-pins.jq \
-  docs/trusted-externs.json > plans/trusted-externs.json
-mv plans/trusted-externs.json docs/trusted-externs.json
+lean --run tools/RecordLedgerPins.lean plans/ledger-pins.json docs/trusted-externs.json
 git diff docs/trusted-externs.json   # review every changed pin against the diff it records
 .lake/build/bin/check-trusted-externs
 ```

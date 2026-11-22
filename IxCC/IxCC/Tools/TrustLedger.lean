@@ -959,7 +959,7 @@ def auditLinkedFiles (nm : String) (paths : List FilePath) : IO Unit := do
   IO.println s!"link audit ok: {binaries.length} executables, {symbols} symbols, none of a Blake3 native backend"
 
 /-- The ledger's mechanical pins as the tree now stands, for review before
-they replace the recorded ones (`tools/record-ledger-pins.jq`): the hash of
+they replace the recorded ones (`tools/RecordLedgerPins.lean`): the hash of
 every file `integrity.rule` covers and of every listed or configured
 repository file, the revision of every `flake.lock` node, and the commit of
 every remote CI action. It never edits the ledger, and records nothing else:

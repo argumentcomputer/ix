@@ -523,7 +523,7 @@ experienced engineer per line of work. *Owner* is the default, subject to the
 | HD-1 | Typing off the verifier path: the erased checker replaced by the certified kernel (decided 2026-11-14, done within SP-N) | SP-N | the verifier path and the producer call no erased-checker function | — | IxCC | — |
 | HD-2 | One work budget threaded through the verifier; a total-work theorem | SP-0 | the theorem fenced | 2–5k lines | IxCC | — |
 | HD-3 | No recursion over input-sized data; every entry point at the budgets on 2 MiB | — | the gate | 1–2k lines | IxCC | — |
-| RL-1 | Fixtures regenerated from this tree. Phase 1 (equations export, unbound envelope, a trial family): done. Phase 2: the role-bound refreeze by `tools/regenerate.sh` and commit-hash provenance replaced by descriptions: done (2026-11-11); before the merge, a final regeneration on the merged state, checked by `tools/regenerate.sh --check` | DO-15 to DO-20 | `corpus check` and the suites pass on every regenerated family; no tracked file cites a commit outside this repository or of this branch's history | phase 2 changes every closure, sidecar, census and manifest, the pinned tables and generated artifacts | IxCC | regenerable fixtures |
+| RL-1 | Fixtures regenerated from this tree. Phase 1 (equations export, unbound envelope, a trial family): done. Phase 2: the role-bound refreeze by `tools/Regenerate.lean` (ported from `tools/regenerate.sh`) and commit-hash provenance replaced by descriptions: done (2026-11-11); before the merge, a final regeneration on the merged state, checked by `lean --run IxCC/tools/Regenerate.lean --check` | DO-15 to DO-20 | `corpus check` and the suites pass on every regenerated family; no tracked file cites a commit outside this repository or of this branch's history | phase 2 changes every closure, sidecar, census and manifest, the pinned tables and generated artifacts | IxCC | regenerable fixtures |
 | RL-3 | **Done (2026-11-21):** Retired the legacy Aiur model (`IxCC/Aiur`, about 5.8k lines) and the vendored snapshot (`IxCC/Vendor`, about 3.5k), tests, fences (301 assertions), tools, fixtures, the `ixcc-aiur` check (17 → 16 required checks), its ledger scopes and pins, and legacy docs | RL-2, DO-14 | all required checks pass without them | a deletion and inventory updates | IxCC | — |
 | RL-4 | The pull request, after the certified-IxVM work finalizes; the squash | RL-1 phase 2, RL-2 | review | — | IxCC | — |
 | Phase 2 | Heap completion (DR1) and closures (P8) | Phase 1.5's final producer for K0 | [Phase 2](#phase-2-heap-and-closures) | 25–50k lines (DR1 20–40k, P8 5–9k) | IxCC | nothing the evaluator needs |
@@ -1435,8 +1435,8 @@ update and artifact comparison.
 
 - **RL-1, fixtures from this tree.** Every committed fixture is regenerated
   by this repository's `ix`, role-bound, with no external producer
-  provenance (done 2026-11-11). One command does it, `tools/regenerate.sh`
-  ([corpus](corpus.md), "Refreezing"), and `tools/regenerate.sh --check`
+  provenance (done 2026-11-11). One command does it, `lean --run IxCC/tools/Regenerate.lean`
+  ([corpus](corpus.md), "Refreezing"), and `lean --run IxCC/tools/Regenerate.lean --check`
   says whether the committed fixtures are current and self-contained (no
   commit or path outside the repository cited); it is run once more on the
   final merged state before the merge (#678 changes the role table, so every

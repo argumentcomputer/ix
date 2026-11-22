@@ -9,7 +9,7 @@ project) and the `flake.lock` in it.
 
 `check-trusted-externs --record [--root DIR] [--repository-root DIR]
 [--flake-lock FILE]` prints the ledger's mechanical pins as the tree stands
-(`recordPins`) instead of auditing; `tools/record-ledger-pins.jq` merges them
+(`recordPins`) instead of auditing; `tools/RecordLedgerPins.lean` merges them
 into the ledger for review (docs/trusted-extern-ledger.md, "Routine
 updates").
 
