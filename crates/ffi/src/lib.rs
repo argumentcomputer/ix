@@ -21,8 +21,12 @@ pub mod lean_iroh;
 pub mod texray;
 pub mod unsigned;
 
+mod aiur_chain;
+mod aiur_compression;
+mod aiur_stages;
 pub mod catalog;
 mod compression;
+pub mod formal;
 pub mod lean_ixon;
 pub mod primitives;
 #[cfg(feature = "test-ffi")]
@@ -38,6 +42,25 @@ use lean_ffi::object::{LeanIOResult, LeanOwned};
 
 unsafe extern "C" {
   fn lean_internal_set_thread_stack_size(size: usize);
+  fn mi_option_set(option: core::ffi::c_int, value: core::ffi::c_long);
+}
+
+/// `mi_option_purge_delay` in mimalloc v3's `mi_option_t`. `libmimalloc-sys`
+/// does not export this constant.
+const MI_OPTION_PURGE_DELAY: core::ffi::c_int = 15;
+
+/// Make mimalloc return freed pages to the OS immediately. The default delay
+/// keeps a freed execution record resident for seconds after the record pool
+/// has released its budget, so RSS overruns the host budget by up to one
+/// record. An explicit `MIMALLOC_PURGE_DELAY` in the environment wins.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_configure_allocator() -> LeanIOResult<LeanOwned> {
+  if std::env::var_os("MIMALLOC_PURGE_DELAY").is_none() {
+    // SAFETY: mimalloc options are plain atomics that may be set at any time;
+    // the purge delay is read on every purge decision.
+    unsafe { mi_option_set(MI_OPTION_PURGE_DELAY, 0) };
+  }
+  LeanIOResult::ok(LeanOwned::box_usize(0))
 }
 
 /// Set the stack size (in bytes) for subsequently spawned Lean runtime threads,
@@ -47,6 +70,9 @@ unsafe extern "C" {
 pub extern "C" fn rs_lean_set_thread_stack_size(
   size: usize,
 ) -> LeanIOResult<LeanOwned> {
+  // SAFETY: a plain call into the Lean runtime with no Lean objects, which
+  // lean-ffi does not wrap; it only records the size used for threads the
+  // runtime spawns later.
   unsafe {
     lean_internal_set_thread_stack_size(size);
   }

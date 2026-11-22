@@ -26,11 +26,10 @@ pub extern "C" fn rs_refcount_borrow_to_owned_name(
 pub extern "C" fn rs_refcount_multi_borrow_name(
   name: LeanIxName<LeanBorrowed<'_>>,
 ) -> LeanString<LeanOwned> {
-  let ctor = name.as_ctor();
-  let _parent = ctor.get(0);
-  let s = ctor.get(1);
-  let _hash = ctor.get(2);
-  let s2 = ctor.get(1);
+  let _parent = name.get_obj(0);
+  let s = name.get_obj(1);
+  let _hash = name.get_obj(2);
+  let s2 = name.get_obj(1);
   let result = format!("{}|{}", s.as_string(), s2.as_string());
   LeanString::new(&result)
 }
