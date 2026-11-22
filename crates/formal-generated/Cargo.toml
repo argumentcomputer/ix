@@ -1,0 +1,27 @@
+[package]
+name = "formal-generated"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Generated native executors and CUDA trace writers of the formal Aiur programs"
+
+# `lake build ix` generates the sources from the certified programs into
+# `.lake/build/formal-generated` before Cargo runs. Without a feature the
+# crate is empty, so workspace builds need no generated sources.
+
+[features]
+# The native executors, from `.lake/build/formal-generated/native`.
+executors = []
+# Also the compiled CUDA trace writers, from
+# `.lake/build/formal-generated/cuda`, compiled with nvcc.
+cuda = ["executors", "aiur/cuda", "multi-stark/cuda", "dep:aiur-tracegen"]
+
+[dependencies]
+aiur = { path = "../aiur", features = ["native"] }
+multi-stark = { workspace = true }
+
+[build-dependencies]
+aiur-tracegen = { path = "../aiur-tracegen", optional = true }
+
+[lints]
+workspace = true
