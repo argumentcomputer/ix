@@ -232,7 +232,7 @@ theorem famRead_of_install {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
     lps := hlps
     tele := htc
     sort := hsort
-    isProp := by rw [hp]; rfl
+    isProp := by rw [hp]; exact (Ix.Kernel.Level.isEquiv_zero_beq_true _).symm
     kinds := by rw [hpk]; exact hK
     nodup := by rw [← hO.ctorNames]; exact hnd₀
     ctorFields := fun j c cA hc hcA => (hall j c cA hc hcA).1

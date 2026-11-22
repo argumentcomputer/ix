@@ -93,7 +93,7 @@ def read (t : RoleTable) (E : Ixon.Env) (order : List _root_.Address)
   (Admission.preflight limits records blobs).mapError Admission.Error.ofBytes
   (Admission.uniqueKeys records blobs).mapError Admission.Error.ofBytes
   (Admission.authenticate _root_.Address.admissionHash records blobs).mapError Admission.Error.ofBytes
-  let constants ← (Admission.decodeRecords limits records).mapError Admission.Error.ofBytes
+  let constants ← (Admission.decodeWithin limits records).mapError Admission.Error.ofBytes
   let hints := Ix.Cert.TableAdmission.hintsAt (Ix.Cert.TableAdmission.hintsProjAt E) E
   let cx := Admission.streamContext _root_.Address.admissionHash t pre constants blobs hints
   match Reader.readRecords cx pre.state constants.toArray with
@@ -130,13 +130,13 @@ private theorem read_spec {b : Binding} {t : RoleTable} {E : Ixon.Env}
           (Ix.Cert.recordsOf E order) (Ix.Cert.blobsOf E order) with
       | error e => simp [hpf, huq, hau, Except.mapError, bind, Except.bind] at h
       | ok _ =>
-        cases hdec : Admission.decodeRecords Ix.Cert.TableAdmission.admissionLimits
+        cases hdec : Admission.decodeWithin Ix.Cert.TableAdmission.admissionLimits
             (Ix.Cert.recordsOf E order) with
         | error e => simp [hpf, huq, hau, hdec, Except.mapError, bind, Except.bind] at h
         | ok constants =>
           have heq := recordsRead_decodedOf_coherent E order
             (fun a _ lc hget c hd => by rw [hcoherent a lc hget, hd]; rfl)
-            ((Admission.decodeRecords_ok_iff _ _ _).mp hdec)
+            ((Admission.decodeRecords_ok_iff _ _ _).mp (Admission.decodeWithin_decodeRecords hdec))
           subst constants
           cases hr : Reader.readRecords
               (Admission.streamContext _root_.Address.admissionHash t pre

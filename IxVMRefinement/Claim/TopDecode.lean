@@ -79,7 +79,18 @@ private theorem td_getScope_ok_inv {variant : UInt64} {bs : List UInt8} {i : Nat
   by_cases hc4 : (Claim.validatorForVariant variant == Claim.VALIDATOR_ERASED_LEAN &&
       valByte == Claim.VALIDATOR_ERASED_LEAN_RETIRED) = true
   · simp [hc4, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
-  · simp [hc4, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
+  simp only [hc4, Bool.false_eq_true, ↓reduceIte] at hok
+  by_cases hc5 : (Claim.validatorForVariant variant == Claim.VALIDATOR_COMPILE_V2 &&
+      valByte == Claim.VALIDATOR_COMPILE_V1_RETIRED) = true
+  · simp [hc5, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
+  simp only [hc5, Bool.false_eq_true, ↓reduceIte] at hok
+  by_cases hc6 : (valByte == Claim.VALIDATOR_RESOURCE_RETIRED) = true
+  · simp [hc6, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
+  simp only [hc6, Bool.false_eq_true, ↓reduceIte] at hok
+  by_cases hc7 : (valByte == Claim.VALIDATOR_ERASED_LEAN_MODES_RESERVED ||
+      valByte == Claim.VALIDATOR_COMPILE_V3_RESERVED) = true
+  · simp [hc7, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
+  · simp [hc7, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
 
 /-- A typing claim in scope is a `check` (variant `4`) or `checkEnv` (variant `5`) claim. -/
 private theorem td_getPayload_typing_variant {variant : UInt64} {valByte : UInt8}
@@ -130,7 +141,13 @@ private theorem td_getPayload_typing_variant {variant : UInt64} {valByte : UInt8
     rcases Ixon.Verify.TagN.bind_ok_inv hok with ⟨_, _, _, hok⟩
     obtain ⟨rfl, _⟩ := Ixon.Verify.TagN.pure_ok_inv hok
     cases hscope
-  simp [hv10, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
+  simp only [hv10, Bool.false_eq_true, ↓reduceIte] at hok
+  by_cases hv13 : (variant == Claim.VARIANT_COMPILE_CLAIM) = true
+  · simp only [hv13, ↓reduceIte, bind, EStateM.bind, pure, EStateM.pure] at hok
+    rcases Ixon.Verify.TagN.bind_ok_inv hok with ⟨_, _, _, hok⟩
+    obtain ⟨rfl, _⟩ := Ixon.Verify.TagN.pure_ok_inv hok
+    cases hscope
+  simp [hv13, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
 
 /-- **`KernelRoles::role_ctx_axioms` at a limit**: the empty user-axiom map, in both modes. -/
 private theorem td_role_ctx_axioms_lim_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}

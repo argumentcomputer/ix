@@ -25,8 +25,8 @@ theorem admitted_keepsPrelude {V : IxVM.Refinement.View} {b : Ix.Kernel.Admissio
   simp only [w.admitted, Except.mapError, Except.ok.injEq] at htable
   subst table
   obtain ⟨constants, hdecode, h⟩ := except_bind_ok.mp h
-  have hdecode' : Admission.decodeRecords w.limits (Ix.Cert.recordsOf w.env w.order) = .ok constants := by
-    cases hd : Admission.decodeRecords w.limits (Ix.Cert.recordsOf w.env w.order) with
+  have hdecode' : Admission.decodeWithin w.limits (Ix.Cert.recordsOf w.env w.order) = .ok constants := by
+    cases hd : Admission.decodeWithin w.limits (Ix.Cert.recordsOf w.env w.order) with
     | error e => simp [hd, Except.mapError] at hdecode
     | ok values =>
       simp only [hd, Except.mapError, Except.ok.injEq] at hdecode
@@ -36,7 +36,7 @@ theorem admitted_keepsPrelude {V : IxVM.Refinement.View} {b : Ix.Kernel.Admissio
     (fun a _ lc hget c hdec => by
       rw [w.coherent a lc hget, hdec]
       rfl)
-    ((Admission.decodeRecords_ok_iff _ _ _).mp hdecode')
+    ((Admission.decodeRecords_ok_iff _ _ _).mp (Admission.decodeWithin_decodeRecords hdecode'))
   subst constants
   obtain ⟨⟨ev, decls⟩, hstream, _⟩ := except_bind_ok.mp h
   unfold Admission.readStream at hstream
@@ -112,7 +112,8 @@ theorem admitted_bare_byteFacts {V : IxVM.Refinement.View} {b : Admission.Bindin
   cases authResult
   obtain ⟨_, _, h⟩ := except_bind_ok.mp h
   obtain ⟨constants, hdecode, _⟩ := except_bind_ok.mp h
-  have hreading := (Admission.decodeRecords_ok_iff _ _ _).mp (mapError_ok hdecode)
+  have hreading := (Admission.decodeRecords_ok_iff _ _ _).mp
+    (Admission.decodeWithin_decodeRecords (mapError_ok hdecode))
   have hconstants := recordsRead_decodedOf_coherent w.env w.order
     (fun a _ lc hget c hdec => by rw [w.coherent a lc hget, hdec]; rfl) hreading
   refine ⟨(Admission.preflight_ok_iff _ _ _).mp (mapError_ok hbatch),

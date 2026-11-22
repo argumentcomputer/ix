@@ -303,7 +303,7 @@ theorem nativeShape?_inv {nPd : Nat} {block : List KConstantInfo}
               injection h with h
               subst h
               refine ⟨caps₀, rest, cs, mI, rP, rules, rfl, hsp, hcnt, hnP, rfl, rfl,
-                hnbT, hnbR, hcs', ?_, rfl, ?_, fun _ => rfl⟩
+                hnbT, hnbR, hcs', ?_, (Level.isEquiv_zero_beq_true _).symm, ?_, fun _ => rfl⟩
               · intro c hc
                 obtain ⟨c₀, hc₀, rfl⟩ := List.mem_map.mp hc
                 exact ⟨(hcs' c₀ hc₀).2.1, (hcs' c₀ hc₀).2.2⟩
@@ -317,7 +317,7 @@ theorem nativeShape?_inv {nPd : Nat} {block : List KConstantInfo}
                 injection h with h
                 subst h
                 refine ⟨caps₀, rest, cs, mI, rP, rules, rfl, hsp, hcnt, hnP, rfl, rfl,
-                  hnbT, hnbR, hcs', ?_, rfl, ?_, ?_⟩
+                  hnbT, hnbR, hcs', ?_, (Level.isEquiv_zero_beq_true _).symm, ?_, ?_⟩
                 · intro c hc
                   obtain ⟨c₀, hc₀, rfl⟩ := List.mem_map.mp hc
                   exact ⟨(hcs' c₀ hc₀).2.1, (hcs' c₀ hc₀).2.2⟩
@@ -330,7 +330,7 @@ theorem nativeShape?_inv {nPd : Nat} {block : List KConstantInfo}
                 injection h with h
                 subst h
                 refine ⟨caps₀, rest, cs, mI, rP, rules, rfl, hsp, hcnt, hnP, rfl, rfl,
-                  hnbT, hnbR, hcs', ?_, rfl, ?_, fun _ => rfl⟩
+                  hnbT, hnbR, hcs', ?_, (Level.isEquiv_zero_beq_true _).symm, ?_, fun _ => rfl⟩
                 · intro c hc
                   obtain ⟨c₀, hc₀, rfl⟩ := List.mem_map.mp hc
                   exact ⟨(hcs' c₀ hc₀).2.1, (hcs' c₀ hc₀).2.2⟩

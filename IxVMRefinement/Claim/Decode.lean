@@ -985,7 +985,18 @@ private theorem getScope_ok_inv {variant : UInt64} {bs : List UInt8} {i : Nat}
   by_cases hc4 : (Claim.validatorForVariant variant == Claim.VALIDATOR_ERASED_LEAN &&
       valByte == Claim.VALIDATOR_ERASED_LEAN_RETIRED) = true
   · simp [hc4, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
-  · simp [hc4, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
+  simp only [hc4, Bool.false_eq_true, ↓reduceIte] at hok
+  by_cases hc5 : (Claim.validatorForVariant variant == Claim.VALIDATOR_COMPILE_V2 &&
+      valByte == Claim.VALIDATOR_COMPILE_V1_RETIRED) = true
+  · simp [hc5, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
+  simp only [hc5, Bool.false_eq_true, ↓reduceIte] at hok
+  by_cases hc6 : (valByte == Claim.VALIDATOR_RESOURCE_RETIRED) = true
+  · simp [hc6, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
+  simp only [hc6, Bool.false_eq_true, ↓reduceIte] at hok
+  by_cases hc7 : (valByte == Claim.VALIDATOR_ERASED_LEAN_MODES_RESERVED ||
+      valByte == Claim.VALIDATOR_COMPILE_V3_RESERVED) = true
+  · simp [hc7, bind, EStateM.bind, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
+  · simp [hc7, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
 
 private theorem getPayload_inScope_variant {variant : UInt64} {valByte : UInt8}
     {s : Ixon.GetState} {c : Claim} {st : Ixon.GetState}
@@ -1035,7 +1046,13 @@ private theorem getPayload_inScope_variant {variant : UInt64} {valByte : UInt8}
     rcases Ixon.Verify.TagN.bind_ok_inv hok with ⟨_, _, _, hok⟩
     obtain ⟨rfl, _⟩ := Ixon.Verify.TagN.pure_ok_inv hok
     cases hscope
-  simp [hv10, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
+  simp only [hv10, Bool.false_eq_true, ↓reduceIte] at hok
+  by_cases hv13 : (variant == Claim.VARIANT_COMPILE_CLAIM) = true
+  · simp only [hv13, ↓reduceIte, bind, EStateM.bind, pure, EStateM.pure] at hok
+    rcases Ixon.Verify.TagN.bind_ok_inv hok with ⟨_, _, _, hok⟩
+    obtain ⟨rfl, _⟩ := Ixon.Verify.TagN.pure_ok_inv hok
+    cases hscope
+  simp [hv13, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at hok
 
 private theorem load_role_ctx_validator_3_or_4
     {x_binding : SourceValue F} {valByte : UInt8} {x_axioms r : SourceValue F}

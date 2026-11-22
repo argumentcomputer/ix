@@ -298,7 +298,7 @@ theorem aliasInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTab
       isProp := by
         show p.isProp = _
         rw [hpEq]
-        rfl
+        exact (Ix.Kernel.Level.isEquiv_zero_beq_true _).symm
       kinds := by
         show Ix.Kernel.classifyFixKinds (m := Ix.Kernel.CheckM .anon) p.cvT.name
           p.cvT.levelParams p.nP p.nIdx ctorsA = .ok p.kinds
