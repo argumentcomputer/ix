@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-#define IX_PLONK_BN254_MAX_MSM_POINTS (UINT64_C(1) << 24)
+#define IX_PLONK_BN254_MAX_MSM_POINTS (UINT64_C(1) << 25)
 
 typedef struct { uint64_t limbs[4]; } ix_plonk_bn254_fr;
 typedef struct { uint64_t limbs[4]; } ix_plonk_bn254_fq;
@@ -117,7 +117,7 @@ int ix_plonk_bn254_fft(ix_plonk_bn254_context *context,
 /* Slots: L,R,O,Z,Qk_complete,Ql,Qr,Qm,Qo,S1,S2,S3,Qcp0,Pi0,... .
  * put accepts Lagrange/regular input, replaces the host slice with canonical/
  * regular coefficients synchronously, and retains a private device copy.
- * Sessions support n>=2 and m/n=4 or8, with m<=2^26 and <=16 commitments. */
+ * Sessions support n>=2 and m/n=4 or 8, with m<=2^27 and <=16 commitments. */
 int ix_plonk_bn254_quotient_begin(ix_plonk_bn254_context *context,
     const ix_plonk_bn254_quotient_config *config,
     ix_plonk_bn254_quotient *out, ix_plonk_bn254_error *error);
