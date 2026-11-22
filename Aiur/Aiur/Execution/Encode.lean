@@ -1,5 +1,7 @@
 import Aiur.Execution.Hints
 import Aiur.Ixon
+import Aiur.Ixon.Field
+import Std.Data.HashMap
 
 /-! Ixon encodings of execution bytecode and data hints. The grammar is
 documented with its Rust reader, `aiur::artifact`; `Aiur.Artifact` frames the
@@ -11,44 +13,65 @@ open Aiur.Ixon
 /-- The bytecode semantics version. Version 2 adds named hint channels. -/
 def bytecodeVersion : Nat := 2
 
-partial def putTy : Ty → PutM Unit
+def putTy : Ty → PutM Unit
   | .field => u8 0
-  | .tuple items => do u8 1; list items putTy
+  | .tuple items => do u8 1; list items.attach fun ⟨item, _⟩ => putTy item
   | .ptr type => do u8 2; putTy type
   | .enum name => do u8 3; str name
+termination_by type => sizeOf type
+decreasing_by
+  all_goals simp_wf
+  all_goals first
+    | omega
+    | (have := List.sizeOf_lt_of_mem ‹_›; omega)
 
-/-- Read a type written by `putTy`. -/
-partial def getTy : GetM Ty := do
-  match ← getTag "type" 4 with
-  | 0 => return .field
-  | 1 => return .tuple (← getArray getTy).toList
-  | 2 => return .ptr (← getTy)
-  | _ => return .enum (← getString)
+/-- `getTy` with a bound on the nesting depth. -/
+def getTyAux : Nat → GetM Ty
+  | 0 => fail "type nesting exceeds the input"
+  | fuel + 1 => do
+      match ← getTag "type" 4 with
+      | 0 => return .field
+      | 1 => return .tuple (← getArray (getTyAux fuel)).toList
+      | 2 => return .ptr (← getTyAux fuel)
+      | _ => return .enum (← getString)
 
-partial def putIOType : IOType → PutM Unit
+/-- Read a type written by `putTy`. Every nesting level reads a tag byte, so a
+depth bound of one more than the remaining bytes never binds. -/
+def getTy : GetM Ty := do getTyAux ((← remaining) + 1)
+
+def putIOType : IOType → PutM Unit
   | .field => u8 0
-  | .tuple items => do u8 1; list items putIOType
+  | .tuple items => do u8 1; list items.attach fun ⟨item, _⟩ => putIOType item
   | .array element length => do u8 2; putIOType element; nat length
   | .record name fields => do
       u8 3; str name
-      list fields fun (field, type) => do str field; putIOType type
+      list fields.attach fun ⟨(field, type), h⟩ => do str field; putIOType type
   | .enum name constructors => do
       u8 4; str name
-      list constructors fun (constructor, fields) => do str constructor; list fields putIOType
+      list constructors.attach fun ⟨(constructor, fields), h₁⟩ => do
+        str constructor; list fields.attach fun ⟨item, h₂⟩ => putIOType item
+termination_by type => sizeOf type
+decreasing_by
+  all_goals simp_wf
+  · have := List.sizeOf_lt_of_mem ‹_›; omega
+  · omega
+  · have := List.sizeOf_lt_of_mem h; simp at this; omega
+  · have := List.sizeOf_lt_of_mem h₁; have := List.sizeOf_lt_of_mem h₂; simp at *; omega
 
-private def putTests (encode : F → Nat) (tests : List (Register × F)) : PutM Unit :=
-  list tests fun (register, value) => do nat register; nat (encode value)
+private def putTestsWith (putScalar : Nat → PutM Unit) (encode : F → Nat)
+    (tests : List (Register × F)) : PutM Unit :=
+  list tests fun (register, value) => do nat register; putScalar (encode value)
 
-def putInstruction (encode : F → Nat) : Instruction F → PutM Unit
-  | .literal dest value => do u8 0; nat dest; nat (encode value)
+def putInstructionWith (putScalar : Nat → PutM Unit) (encode : F → Nat) : Instruction F → PutM Unit
+  | .literal dest value => do u8 0; nat dest; putScalar (encode value)
   | .copy dest source => do u8 1; nats dest; nats source
   | .neg dest source => do u8 2; nat dest; nat source
   | .binary dest op left right => do
       u8 3; nat dest
       u8 (match op with | .add => 0 | .sub => 1 | .mul => 2 | .div => 3)
       nat left; nat right
-  | .guard tests message => do u8 4; putTests encode tests; str message
-  | .branch tests target => do u8 5; putTests encode tests; nat target
+  | .guard tests message => do u8 4; putTestsWith putScalar encode tests; str message
+  | .branch tests target => do u8 5; putTestsWith putScalar encode tests; nat target
   | .jump target => do u8 6; nat target
   | .call function args dest => do u8 7; nat function; nats args; nats dest
   | .store type value dest => do u8 8; putTy type; nats value; nat dest
@@ -63,6 +86,9 @@ def putInstruction (encode : F → Nat) : Instruction F → PutM Unit
   | .fail message => do u8 13; str message
   | .ptrEq dest left right => do u8 14; nat dest; nat left; nat right
 
+def putInstruction (encode : F → Nat) : Instruction F → PutM Unit :=
+  putInstructionWith nat encode
+
 def putHint (encode : F → Nat) (entry : FlatHintEntry F) : PutM Unit := do
   str entry.channel
   putTy entry.type
@@ -75,27 +101,48 @@ them. -/
 def putHints (encode : F → Nat) (entries : Array (FlatHintEntry F)) : PutM Unit :=
   array entries (putHint encode)
 
-/-- The program section of an artifact. The Rust field backend supports
-primes fitting UInt64; the bytecode compiler itself is field-generic. -/
-def Export.putProgram (exported : Export F) (modulus : Nat) (encode : F → Nat) :
+/-- The distinct rows of `tables`, in the order the tables first name them,
+and each table's rows as indices into them. -/
+def rowPool (tables : List (List (List Nat))) : Array (List Nat) × List (List Nat) := Id.run do
+  let mut rows : Array (List Nat) := #[]
+  let mut index : Std.HashMap (List Nat) Nat := {}
+  let mut indices : Array (List Nat) := #[]
+  for table in tables do
+    let mut refs : Array Nat := #[]
+    for row in table do
+      match index[row]? with
+      | some i => refs := refs.push i
+      | none =>
+        refs := refs.push rows.size
+        index := index.insert row rows.size
+        rows := rows.push row
+    indices := indices.push refs.toList
+  return (rows, indices.toList)
+
+/-- The program section with an explicit scalar encoding. Counts, references
+and semantics versions retain their ordinary TagN representation. -/
+def Export.putProgramWithEncoding (exported : Export F) (encoding : FieldEncoding)
+    (modulus : Nat) (encode : F → Nat) :
     PutM Unit := do
-  if modulus < 2 || modulus ≥ 2^64 then throw "execution requires a prime modulus fitting UInt64"
   let code := exported.bytecode
   nat bytecodeVersion
-  nat modulus
+  encoding.putModulus modulus
+  let putScalar := encoding.putScalar modulus
   list code.functions fun fn => do
     str fn.name
     list fn.params putTy
     putTy fn.result
     nat fn.registers
-    array fn.code (putInstruction encode)
+    array fn.code (putInstructionWith putScalar encode)
   list code.enums fun decl => do
     str decl.name
     list decl.constructors fun c => do str c.name; list c.fields putTy
-  list code.tables fun table => do
+  let (rows, indices) := rowPool (code.tables.map fun table => table.rows.map (·.map encode))
+  array rows fun row => list row putScalar
+  list (code.tables.zip indices) fun (table, indices) => do
     str table.name
     putTy table.type
-    list table.rows fun row => nats (row.map encode)
+    nats indices
   list code.maps fun map => do
     str map.name
     list map.params putTy
@@ -109,5 +156,10 @@ def Export.putProgram (exported : Export F) (modulus : Nat) (encode : F → Nat)
     nat function
     list interface.inputs putIOType
     option interface.output putIOType
+
+/-- The version-two program section, with UInt64 field values. -/
+def Export.putProgram (exported : Export F) (modulus : Nat) (encode : F → Nat) :
+    PutM Unit :=
+  exported.putProgramWithEncoding .narrow modulus encode
 
 end Aiur.Execution

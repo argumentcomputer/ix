@@ -6,18 +6,48 @@ namespace Aiur.Optimized.Physical
 open Circuit
 variable {F : Type} [Field F] [DecidableEq F]
 
+/-- The shape a map's claims and calls carry: the declared parameter and result
+types with their layout widths. -/
+def mapShape (system : System F) (map : MapDecl) : List (Ty × Nat) × (Ty × Nat) :=
+  (map.params.map fun param => (param.2, width param.2), (map.result, width map.result))
+where width (type : Ty) : Nat := ((system.enums.layout type).toOption.map Layout.width).getD 0
+
+/-- Every map claim has the shape of a map declared under its channel, and every
+call to a declared map has that map's shape. Calls to chips are covered by
+`Erasure.Compatible`; type erasure leaves map calls typed. -/
+def MapShaped (system : System F) : Prop :=
+  (∀ claim ∈ system.mapClaims, ∃ map ∈ system.maps,
+    map.name = claim.channel ∧ Erasure.messageShape claim = mapShape system map) ∧
+  (∀ c ∈ system.chips, ∀ call ∈ c.sends, ∀ map ∈ system.maps, map.name = call.channel →
+    (call.args.map Erasure.shape, Erasure.shape call.result) = mapShape system map)
+
+instance (system : System F) : Decidable (MapShaped system) := by
+  unfold MapShaped; infer_instance
+
 /-- Erase static interfaces, then reuse the certified recursive partitioning
 pass. The original typed artifact remains the source-level proof interface. -/
 structure Prepared (artifact : Artifact F) where
   compatible : Erasure.Compatible artifact.system
   merged : Dedup.CheckedResult (Erasure.system artifact.system) artifact.entries
+  /-- Every merged chip is the renamed erased chip of the same name. The
+  deduplication certificate pins only the chips that renaming reaches; this
+  pins the rest, so static facts of the erased chips carry over to all of them. -/
+  faithful : ∀ chip ∈ merged.system.chips,
+    ((Erasure.system artifact.system).findChip? chip.name).map
+      (Chip.rename (Dedup.rename merged.representatives)) = some chip
+  mapShaped : MapShaped artifact.system
 
 def prepare (artifact : Artifact F) : Except String (Prepared artifact) := do
   if compatible : Erasure.Compatible artifact.system then
     let source := Erasure.system artifact.system
     let merged ← if artifact.config.deduplicate then Dedup.run source artifact.entries
       else Dedup.certify source artifact.entries (Dedup.identity source)
-    return ⟨compatible, merged⟩
+    if faithful : ∀ chip ∈ merged.system.chips,
+        (source.findChip? chip.name).map (Chip.rename (Dedup.rename merged.representatives)) = some chip then
+      if mapShaped : MapShaped artifact.system then
+        return ⟨compatible, merged, faithful, mapShaped⟩
+      else throw "map claims or map calls differ from their declared shapes"
+    else throw "deduplicated chips are not renamed source chips"
   else throw "physical circuit interfaces failed their type-erasure certificate"
 
 def Prepared.system {artifact : Artifact F} (prepared : Prepared artifact) : Circuit.System F :=

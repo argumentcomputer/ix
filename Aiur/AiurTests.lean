@@ -46,6 +46,9 @@ import AiurTests.Blake3Vectors
 import AiurTests.U8
 import AiurTests.U64
 import AiurTests.U32
+import AiurTests.Goldilocks
+import AiurTests.WideFieldEncoding
+import AiurTests.BN254
 import AiurTests.LibraryInterfaces
 import Mathlib.Algebra.Field.Rat
 import Mathlib.Algebra.Field.ZMod
@@ -235,5 +238,7 @@ def main : IO Unit := do
   AiurU8Tests.run
   AiurU64Tests.run
   AiurU32Tests.run
+  AiurGoldilocksTests.run
+  AiurWideFieldEncodingTests.run
   AiurOptimizedTests.run
   AiurMultiStarkSpecTests.run
