@@ -429,7 +429,7 @@ pub(super) fn constrain_pcs(
   // the out-of-domain evaluations. Both are folded once here; each query
   // then weights only its own opened row and pays one denominator product
   // per (matrix, point) instead of one per value. This is the in-circuit
-  // form of the hoisted alpha ladder in Plonky3's native FRI verifier
+  // form of the hoisted alpha powers in Plonky3's native FRI verifier
   // (PR #2015, commit a724a1aec0acab47384b34efc2a4d163e0351251); the
   // reduced value and the alpha index of every column are unchanged.
   let mut alpha_powers: BTreeMap<usize, Vec<Q>> = BTreeMap::new();

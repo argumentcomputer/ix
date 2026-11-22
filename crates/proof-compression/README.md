@@ -113,9 +113,10 @@ install it.
 ## Proving and verification
 
 `ix compress ROOT` and `ix prove ... --compress kzg|plonk|groth16` automatically
-normalize the aggregate root using the versioned
+normalize the formal aggregate root (an `IXAGGR2` proof) using the versioned
 [version 0.4 layout](verifying-keys/0.4/root-layout.ixl).
-`--fixed-root` is an optional layout override from `ix compress layout`. The
+`--fixed-root` is an optional layout override from `ix compress layout`, and
+`ix compress normalize` writes the root input directory without compressing. The
 default layout holds the roots of `Nat.add_comm`'s aggregate under all four
 root shapes (a wrapped leaf, ordinary and structural joins of wrapped leaves,
 and joins of raw leaves), which need the same heights, with one more doubling
@@ -125,8 +126,8 @@ aggregation key, BLAKE3
 `81e744bbeec1f680ae1ad845f19a722d9e17cf07d409e48ea4b22a56f2d6f32d`.
 The default rejects another backend key, and normalization rejects executions
 that exceed the fixed bounds before allocating traces. A larger supported
-layout is a new release profile; compression does not resize it per proof.
-The profile supplies normalization bounds, not a bundled compression verifier.
+layout is a new release; `ix compress layout` derives one when a release is
+cut, and compression never resizes it per proof.
 
 A layout file (`.ixl`, [`FixedRoot`](src/pipeline/root/fixed.rs)) is Ixon,
 written with `aiur::ixon`'s primitives, and its BLAKE3 digest is its identity;
