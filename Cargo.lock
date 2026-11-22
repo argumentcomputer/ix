@@ -75,6 +75,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "aiur-codegen"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+]
+
+[[package]]
+name = "aiur-codegen-tests"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "aiur-codegen",
+ "multi-stark",
+ "serde_json",
+]
+
+[[package]]
+name = "aiur-tracegen"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "blake3",
+ "serde_json",
+]
+
+[[package]]
+name = "aiur-tracegen-tests"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "aiur-tracegen",
+ "multi-stark",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1018,6 +1053,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "formal-generated"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "aiur-tracegen",
+ "multi-stark",
 ]
 
 [[package]]
