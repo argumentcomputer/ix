@@ -1,0 +1,705 @@
+{
+ "format": "ix-compression-l3-benchmark-v1",
+ "date_utc": "2026-11-17",
+ "base_revision": "4e27c5fcdaef0a7258e4e42693c695881a19e5e9",
+ "working_tree_modified": true,
+ "paths_note": "$DRIVER_DIR is the former single-process driver's run directory (untracked, under the measuring worktree's target/); its scripts are named here under the current naming (run-driver*.sh), and ix compress run-stages is the driver's current subcommand name.",
+ "path": "Mathlib, warm: normalized CompressWrap (m16384w64 v2) -> packed CompressGL (--gl-only) -> fixed-key narrow stage 1 (CompressNarrowFixed::step_v1, template v2, 1 shard) -> CompressFinalNarrow terminal -> gnark PLONK 2^25 on CUDA",
+ "command": "$DRIVER_DIR/run-driver.sh target/mathlib-compress/l3-2 (ROOT_DIR=target/mathlib-compress/raw-root), under target/heavy.lock in ixbench.slice",
+ "scope": "One warm run of ix compress run-stages (the ix before the 2026-11-17 performance changes) on the Mathlib raw root, L3 manifest $DRIVER_DIR/l3.json. Every check passed; the wrap, GL and narrow keys equal the pinned ones and the wrap, GL and narrow proofs equal those of the first (cold) run byte for byte.",
+ "hardware": {
+  "cpu": "Intel(R) Xeon(R) Platinum 8559C",
+  "logical_cpus_available": 32,
+  "gpu": null,
+  "thread_limits_overridden": false
+ },
+ "runs": [
+  "target/mathlib-compress/l3-2"
+ ],
+ "machine_state_before_each_run": [
+  null
+ ],
+ "stages": [
+  {
+   "stage": "wrap (CompressWrap m16384w64 v3)",
+   "hand_written": "wrap 25 s",
+   "witness_s": {
+    "median": 6.488,
+    "min": 6.488,
+    "max": 6.488,
+    "values": [
+     6.488
+    ]
+   },
+   "prove_s": {
+    "median": 3.409,
+    "min": 3.409,
+    "max": 3.409,
+    "values": [
+     3.409
+    ]
+   },
+   "verify_s": {
+    "median": 0.0,
+    "min": 0.0,
+    "max": 0.0,
+    "values": [
+     0.0
+    ]
+   },
+   "wait_s": {
+    "median": 0.0,
+    "min": 0.0,
+    "max": 0.0,
+    "values": [
+     0.0
+    ]
+   },
+   "other_s": {
+    "median": 0.323,
+    "min": 0.323,
+    "max": 0.323,
+    "values": [
+     0.323
+    ]
+   },
+   "total_s": {
+    "median": 10.22,
+    "min": 10.22,
+    "max": 10.22,
+    "values": [
+     10.22
+    ]
+   },
+   "exposed_s": {
+    "median": 10.222,
+    "min": 10.222,
+    "max": 10.222,
+    "values": [
+     10.222
+    ]
+   },
+   "process_wall_s": {
+    "median": 10.22,
+    "min": 10.22,
+    "max": 10.22,
+    "values": [
+     10.22
+    ]
+   },
+   "peak_rss_gb": {
+    "median": 17.982,
+    "min": 17.982,
+    "max": 17.982,
+    "values": [
+     17.982
+    ]
+   },
+   "peak_gpu_mib": {
+    "median": 54741,
+    "min": 54741,
+    "max": 54741,
+    "values": [
+     54741
+    ]
+   },
+   "proof_bytes": {
+    "median": 3376018,
+    "min": 3376018,
+    "max": 3376018,
+    "values": [
+     3376018
+    ]
+   }
+  },
+  {
+   "stage": "CompressGL packed (process)",
+   "hand_written": "FRI 94 s",
+   "witness_s": {
+    "median": 43.147,
+    "min": 43.147,
+    "max": 43.147,
+    "values": [
+     43.147
+    ]
+   },
+   "prove_s": {
+    "median": 35.641,
+    "min": 35.641,
+    "max": 35.641,
+    "values": [
+     35.641
+    ]
+   },
+   "verify_s": {
+    "median": 0.007,
+    "min": 0.007,
+    "max": 0.007,
+    "values": [
+     0.007
+    ]
+   },
+   "wait_s": {
+    "median": 5.635,
+    "min": 5.635,
+    "max": 5.635,
+    "values": [
+     5.635
+    ]
+   },
+   "other_s": {
+    "median": 4.99,
+    "min": 4.99,
+    "max": 4.99,
+    "values": [
+     4.99
+    ]
+   },
+   "total_s": {
+    "median": 83.785,
+    "min": 83.785,
+    "max": 83.785,
+    "values": [
+     83.785
+    ]
+   },
+   "exposed_s": {
+    "median": 79.197,
+    "min": 79.197,
+    "max": 79.197,
+    "values": [
+     79.197
+    ]
+   },
+   "process_wall_s": {
+    "median": 89.42,
+    "min": 89.42,
+    "max": 89.42,
+    "values": [
+     89.42
+    ]
+   },
+   "peak_rss_gb": {
+    "median": 146.052,
+    "min": 146.052,
+    "max": 146.052,
+    "values": [
+     146.052
+    ]
+   },
+   "peak_gpu_mib": {
+    "median": 54745,
+    "min": 54745,
+    "max": 54745,
+    "values": [
+     54745
+    ]
+   },
+   "proof_bytes": {
+    "median": 212701,
+    "min": 212701,
+    "max": 212701,
+    "values": [
+     212701
+    ]
+   }
+  },
+  {
+   "stage": "fixed-key narrow stage 1 (template v2, 1 shard)",
+   "hand_written": "first + recursive KZG 98 s",
+   "witness_s": {
+    "median": 6.882,
+    "min": 6.882,
+    "max": 6.882,
+    "values": [
+     6.882
+    ]
+   },
+   "prove_s": {
+    "median": 47.689,
+    "min": 47.689,
+    "max": 47.689,
+    "values": [
+     47.689
+    ]
+   },
+   "verify_s": {
+    "median": 0.002,
+    "min": 0.002,
+    "max": 0.002,
+    "values": [
+     0.002
+    ]
+   },
+   "wait_s": {
+    "median": 60.971,
+    "min": 60.971,
+    "max": 60.971,
+    "values": [
+     60.971
+    ]
+   },
+   "other_s": {
+    "median": 18.526,
+    "min": 18.526,
+    "max": 18.526,
+    "values": [
+     18.526
+    ]
+   },
+   "total_s": {
+    "median": 73.099,
+    "min": 73.099,
+    "max": 73.099,
+    "values": [
+     73.099
+    ]
+   },
+   "exposed_s": {
+    "median": 54.874,
+    "min": 54.874,
+    "max": 54.874,
+    "values": [
+     54.874
+    ]
+   },
+   "process_wall_s": {
+    "median": 134.07,
+    "min": 134.07,
+    "max": 134.07,
+    "values": [
+     134.07
+    ]
+   },
+   "peak_rss_gb": {
+    "median": 142.629,
+    "min": 142.629,
+    "max": 142.629,
+    "values": [
+     142.629
+    ]
+   },
+   "peak_gpu_mib": {
+    "median": 54745,
+    "min": 54745,
+    "max": 54745,
+    "values": [
+     54745
+    ]
+   },
+   "proof_bytes": {
+    "median": 3853,
+    "min": 3853,
+    "max": 3853,
+    "values": [
+     3853
+    ]
+   }
+  },
+  {
+   "stage": "terminal + PLONK 2^25 (CUDA)",
+   "hand_written": "PLONK ~36 s",
+   "witness_s": {
+    "median": 0.553,
+    "min": 0.553,
+    "max": 0.553,
+    "values": [
+     0.553
+    ]
+   },
+   "prove_s": {
+    "median": 22.939,
+    "min": 22.939,
+    "max": 22.939,
+    "values": [
+     22.939
+    ]
+   },
+   "verify_s": {
+    "median": 0.005,
+    "min": 0.005,
+    "max": 0.005,
+    "values": [
+     0.005
+    ]
+   },
+   "wait_s": {
+    "median": 121.41,
+    "min": 121.41,
+    "max": 121.41,
+    "values": [
+     121.41
+    ]
+   },
+   "other_s": {
+    "median": 12.923,
+    "min": 12.923,
+    "max": 12.923,
+    "values": [
+     12.923
+    ]
+   },
+   "total_s": {
+    "median": 36.42,
+    "min": 36.42,
+    "max": 36.42,
+    "values": [
+     36.42
+    ]
+   },
+   "exposed_s": {
+    "median": 23.763,
+    "min": 23.763,
+    "max": 23.763,
+    "values": [
+     23.763
+    ]
+   },
+   "process_wall_s": {
+    "median": 157.83,
+    "min": 157.83,
+    "max": 157.83,
+    "values": [
+     157.83
+    ]
+   },
+   "peak_rss_gb": {
+    "median": 142.629,
+    "min": 142.629,
+    "max": 142.629,
+    "values": [
+     142.629
+    ]
+   },
+   "peak_gpu_mib": {
+    "median": 54745,
+    "min": 54745,
+    "max": 54745,
+    "values": [
+     54745
+    ]
+   },
+   "proof_bytes": {
+    "median": 584,
+    "min": 584,
+    "max": 584,
+    "values": [
+     584
+    ]
+   }
+  }
+ ],
+ "end_to_end_s": {
+  "median": 168.056,
+  "min": 168.056,
+  "max": 168.056,
+  "values": [
+   168.056
+  ]
+ },
+ "process_sum_s": {
+  "median": 203.523,
+  "min": 203.523,
+  "max": 203.523,
+  "values": [
+   203.523
+  ]
+ },
+ "peak_gpu_mib": {
+  "median": 54745,
+  "min": 54745,
+  "max": 54745,
+  "values": [
+   54745
+  ]
+ },
+ "phases": {
+  "compress_gl": {
+   "execution": {
+    "median": 30.121,
+    "min": 30.121,
+    "max": 30.121,
+    "values": [
+     30.121
+    ]
+   },
+   "key": {
+    "median": 0.166,
+    "min": 0.166,
+    "max": 0.166,
+    "values": [
+     0.166
+    ]
+   },
+   "pcs_commit": {
+    "median": 14.766,
+    "min": 14.766,
+    "max": 14.766,
+    "values": [
+     14.766
+    ]
+   },
+   "pcs_open": {
+    "median": 9.335,
+    "min": 9.335,
+    "max": 9.335,
+    "values": [
+     9.335
+    ]
+   },
+   "prove": {
+    "median": 35.641,
+    "min": 35.641,
+    "max": 35.641,
+    "values": [
+     35.641
+    ]
+   },
+   "trace": {
+    "median": 12.86,
+    "min": 12.86,
+    "max": 12.86,
+    "values": [
+     12.86
+    ]
+   },
+   "verify": {
+    "median": 0.007,
+    "min": 0.007,
+    "max": 0.007,
+    "values": [
+     0.007
+    ]
+   }
+  },
+  "compress_gl_setup": {
+   "ready": {
+    "median": 4.588,
+    "min": 4.588,
+    "max": 4.588,
+    "values": [
+     4.588
+    ]
+   },
+   "srs": {
+    "median": 3.989,
+    "min": 3.989,
+    "max": 3.989,
+    "values": [
+     3.989
+    ]
+   },
+   "wait": {
+    "median": 5.635,
+    "min": 5.635,
+    "max": 5.635,
+    "values": [
+     5.635
+    ]
+   }
+  },
+  "narrow": {
+   "srs_load_seconds": {
+    "median": 0.001,
+    "min": 0.001,
+    "max": 0.001,
+    "values": [
+     0.001
+    ]
+   },
+   "fixed_commit_seconds": {
+    "median": 4.237,
+    "min": 4.237,
+    "max": 4.237,
+    "values": [
+     4.237
+    ]
+   },
+   "fixed_build_seconds": {
+    "median": 0.043,
+    "min": 0.043,
+    "max": 0.043,
+    "values": [
+     0.043
+    ]
+   },
+   "lean_layout_wait_seconds": null
+  },
+  "plonk": {
+   "execute": {
+    "median": 0.339,
+    "min": 0.339,
+    "max": 0.339,
+    "values": [
+     0.339
+    ]
+   },
+   "load": {
+    "median": 12.417,
+    "min": 12.417,
+    "max": 12.417,
+    "values": [
+     12.417
+    ]
+   },
+   "prove": {
+    "median": 22.939,
+    "min": 22.939,
+    "max": 22.939,
+    "values": [
+     22.939
+    ]
+   },
+   "scs_digest": {
+    "median": 0.0,
+    "min": 0.0,
+    "max": 0.0,
+    "values": [
+     0.0
+    ]
+   },
+   "setup": {
+    "median": 0.243,
+    "min": 0.243,
+    "max": 0.243,
+    "values": [
+     0.243
+    ]
+   },
+   "verify": {
+    "median": 0.005,
+    "min": 0.005,
+    "max": 0.005,
+    "values": [
+     0.005
+    ]
+   },
+   "wait": {
+    "median": 121.41,
+    "min": 121.41,
+    "max": 121.41,
+    "values": [
+     121.41
+    ]
+   },
+   "witness": {
+    "median": 0.214,
+    "min": 0.214,
+    "max": 0.214,
+    "values": [
+     0.214
+    ]
+   }
+  }
+ },
+ "baselines": {
+  "l3_sequential_2026_11_15_s": 209.7,
+  "l3_sequential_note": "target/e2e-l3/run (one run, before the export cache and pipelining): wrap 10.7, CompressGL 88.0, narrow 75.9 (19.7 s waiting for tiling_export2), PLONK 35.2",
+  "b0_s": 298.8,
+  "hand_written_warm_s": 403
+ },
+ "identities": {
+  "gl_key_blake3": [
+   "0b71c06784c5c76a1575c1a0893b280c6ad10425540acdaab5145457f9996df1"
+  ],
+  "narrow_key_blake3": [
+   "a955432ea0d2fb623ea02665951c7aef0eecc58f33ba5763eaf86df981b719b2"
+  ],
+  "root_key_blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+  "gl_artifact_blake3": "a05f4ee78f024e8aebfbbdd31a9c4ac9a974a6bcd1cb615b9bdd2eeea71b97ab",
+  "gl_proof_blake3": [
+   "194f857f8126ab1ffa5d3cd6870c1e5d25d6ca54a224063627f0ff4ed3ac984e"
+  ],
+  "plonk_verifying_key_sha256": [
+   "30dd3ee852f4fb3b56b3835e5b237d51eac5d53301d5b5ba3c7b5d2b9750e148"
+  ],
+  "terminal_constraints": 27611602,
+  "plonk_domain": 33554432,
+  "narrow_layout_source": {
+   "export_cache": {
+    "dir": "$DRIVER_DIR/cache-l3/exports/tiling2/d4fa9ab601dd3428fac7a3502db3255b885dcda1378ce16714c3f5a527f58832",
+    "exporter_id": "da720238e1542ada440420d838a6c718645806e284586db3ad44869d28b87fd2",
+    "hit": true
+   },
+   "exporter_ms": {
+    "check": 16047,
+    "fixed": 8870,
+    "lower": 189,
+    "parse": 1376,
+    "tables": 26192,
+    "total": 27757
+   },
+   "exporter_seconds": 12.417628701,
+   "exporter_wait_seconds": 12.417628701,
+   "input_format": "ix-tiling-v2-input-2",
+   "lean_exporter": true,
+   "lower_and_validate_seconds": 1.011744553,
+   "ready_after_seconds": 12.417628701
+  },
+  "narrow_fixed_commitment_cache_hit": [
+   true
+  ],
+  "tiling_export2_cache": [
+   null
+  ]
+ },
+ "binaries_sha256": {},
+ "cold_setup_times_s": {
+  "wrap": 51.396751074,
+  "gl": 78.097603744,
+  "export_narrow": 190.523464764,
+  "bootstrap_policy": 0.400218186,
+  "config_narrow": 2.401263973,
+  "narrow_bootstrap": 205.343365108,
+  "l3_policy": 0.522195095,
+  "narrow_l3": 173.010836528,
+  "terminal_config": 0.016461948,
+  "terminal_export": 165.379633274,
+  "terminal_stage": 0.999282668,
+  "plonk_export": 252.699557021,
+  "plonk_prepare": 284.685768491
+ },
+ "cold_setup_times_source": "target/e2e-l3/artifacts/setup-times.txt (setup.sh of the keys benchmarked)",
+ "cold_one_time_s": {
+  "source": "docs/aiur-compression-stage-study.md section 4 (target/e2e-l3/setup.sh, 2026-11-15), except export_cache_fill",
+  "narrow_program_export_lean": 197,
+  "terminal_export_lean": 168,
+  "bootstrap_narrow_proof_fixes_key": 86,
+  "plonk_compile": 45,
+  "plonk_srs_export": 19,
+  "plonk_setup_reused_lagrange": 92,
+  "first_plonk_key_load_writes_raw_key": 59,
+  "first_fixed_commitment_fills_cache_extra": 9.5,
+  "export_cache_fill": 25.5,
+  "export_cache_fill_note": "one tiling_export2 run through tiling-export-cached.sh (cache miss), 8.29 GB IXTLFX01 fixed matrix stored; a miss streams to the caller as before"
+ },
+ "root": {
+  "aggregate_proof_address": "e9ade9abe3a5d1d3ce47bceb74f06e7b206117a3b64e60253b81acdbf0b4ea42",
+  "ixvm_artifact_blake3": "5111b234907cf3ab87d43ac6673617c752b3a37fb0ca7485b60d9d7081f02576",
+  "aggr_artifact_blake3": "7d687ca0a7815bb5c4a68b94276fe797bb3a9f909b2da795267ac8ec9184c4d1",
+  "root_key_blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+  "root_key_matches_manifest_pin": true,
+  "ix_claim_blake3": "741234e5f796d90c339431ea7314283cd65852760a09c945862094ded0a132e0",
+  "root_claims_blake3": "2807e881173b385312ffcfa9dd04468fbb1e08fef2204ed4da2b415898a65d7f",
+  "root_proof_blake3": "dc57a2a16710de8923c574bc88a290fbc19359b8ac73c1654f46c833c6fe2bb4",
+  "root_proof_bytes": 5445326,
+  "trace_shards": 1,
+  "manifest_shards": 63,
+  "constants": 684697,
+  "export": "export_root expected target/mathlib-root/mathlib.ixe target/mathlib-root/mathlib-final.ixes; export_root extract <ixvm 5111b234> <aggr 7d687ca0> e9ade9ab... expected/ix-claim.bin raw-root ~/.ix/store (built from the proving tree's sources)"
+ },
+ "solidity": {
+  "verifier_call_gas": 285614,
+  "solidity_proof_bytes": 864,
+  "calldata_bytes": 1060,
+  "runtime_code_bytes": 7531,
+  "changed_statement_rejected": true,
+  "valid_proof_accepted": true,
+  "plonk_verifier_sol_sha256": "e8f62c3bc4c5c9e2be0d898fc9e5af63c6413a84c109f07558a1f6c269e13cc5"
+ },
+ "first_run_cold": {
+  "end_to_end_s": 195.4,
+  "cause": "PLONK proving key loaded cold (37.4 s instead of 9.6 s) under the GPU lock; narrow waited 36.6 s for the lock, CompressGL 27.7 s for memory",
+  "run": "target/mathlib-compress/bench-l3/run-1"
+ }
+}
