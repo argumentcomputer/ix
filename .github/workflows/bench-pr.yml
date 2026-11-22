@@ -3,67 +3,51 @@
 # The base is the PR's own base branch — main for an unstacked PR, the
 # parent PR's head for a stacked one — and the report is labelled with it.
 #
-#   !benchmark ([aiur-sharded-env] [ooc] [compile] [decompile] | all)
-#   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (case-insensitive, any registry env;
-#                                  #  defaults to every env for compile/decompile, InitStd
-#                                  #  for the rest)
-#   BENCH_CONSTS=Nat.gcd,Y        # bench exactly these constants on the per-constant
-#                                  #  backends (overrides the shared selection). Each name's
-#                                  #  env is found automatically — benchConstants entry first,
-#                                  #  else defining module, else Mathlib (FLT for FLT.* names)
-#                                  #  — so BENCH_ENVS is never required; a single-env
-#                                  #  BENCH_ENVS still forces placement
-#   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment
-#   BENCH_TRACE_SHARDS=<GiB>       # aiur prove (disabled): plan each constant's proof as trace shards
-#                                  #  within this per-constant RAM budget (0: detect) and
-#                                  #  report `ixvm-trace-shards`; a base checkout that
-#                                  #  predates the flag proves whole
+#   !benchmark ([ixvm [execute|prove|compress]] [ixvm-ooc] [compile] [decompile] | all) [fresh]
+#   BENCH_CONSTANTS=all            # constant rows: all (default), none, or comma names. A
+#                                  #  shared constant runs in its own env; any other name
+#                                  #  needs a single-env BENCH_ENVS naming where it lives
+#   BENCH_ENVS=InitStd,Mathlib     # env rows: all, none, or registry envs (case-insensitive;
+#                                  #  default InitStd)
 #   RUST_LOG=info                  # passthrough env (allowlisted)
-#   IX_COMPILE_EAGER=1             # compile-knob passthrough (also IX_COMPILE_DEMOTE /
-#                                  # IX_COMPILE_WORKERS): Rust compiler knobs for
-#                                  # older base checkouts; the certified default
-#                                  # does not use them.
+#   IX_COMPILE_DEMOTE=1            # compile-knob passthrough: a Rust compiler knob
+#                                  # for older base checkouts; the certified default
+#                                  # does not use it.
 #                                  # The `.ixe` and compile-row caches are keyed by
 #                                  # SHA alone, so a knob run on a commit already
 #                                  # benchmarked replays the cached row instead of
-#                                  # recompiling unless it also requests `fresh`
-#   IX_DECOMPILE_KENV_CLEAR_ENTRIES=0
-#                                  # decompile Pass 2 cache limit; 0 disables clearing
-#                                  # (default: 131072)
+#                                  # recompiling unless `fresh` is requested.
 #
-# Each backend runs its registry default mode:
-#   - aiur: disabled. Its per-constant proof pipeline ran on the retired
-#     legacy backend's `bench-typecheck`; a bare `!benchmark`, which
-#     requests it, is rejected until a formal Aiur pipeline replaces it.
-#   - aiur-sharded-env: `execute` — whole-env formal Aiur execution and
-#     proof planning over a sharded manifest (`ix check --ram-budget`).
-#   - ooc: `execute`.
+# A backend is required (`all` selects every one). A backend's rows are
+# constant rows (the shared constants, each in its env) and env rows (whole
+# envs); compile and decompile have env rows only:
+#   - ixvm execute (default): `ix check` per constant; env row: one
+#     `ix check --ixes` over the sharded env. `prove` adds proving and root
+#     verification per constant; `compress` also adds KZG compression and
+#     verification. Env rows stay execution-only.
+#   - ixvm-ooc: `ix check-lean` over each constant's closure; env row: the
+#     whole env.
 #   - compile: `ix compile <env>.lean` → `<env>.ixe`.
 #   - decompile: `ix decompile` over the compile run's fresh `.ixe`.
-# The bare `fresh` token skips the bencher fetch and prevents persistent
-# cached binaries, `.ixe` files, and compile rows from reaching measured jobs.
-# A cached head `ix` may bootstrap the canonical command parser, but the full
-# bundle is rebuilt before it is published. Both measured source trees are
-# rebuilt, while Cargo and package dependency caches remain available. Files
-# passed between jobs are run-scoped artifacts, so only products generated
-# during this workflow run reach a benchmark. Nothing in this workflow uploads
-# to bencher, so the canonical baseline is never touched.
+# Each matrix cell is (backend, env): the env's selected constant rows and,
+# if selected, its env row.
+# `fresh` bypasses Bencher and persistent benchmark-product caches. A cached
+# head `ix` can parse the command, but the measured binaries and `.ixe`
+# products are built in this run. Cargo and package dependency caches stay
+# enabled; run-scoped artifacts pass the products between jobs.
+# Nothing in this workflow uploads to bencher, so the canonical baseline is
+# never touched.
 #
 # For each matrix entry the job runs `ix bench run` twice: once on the PR
 # checkout, once for the base side. The base side comes from bencher.dev
-# (`ix bench fetch-main`) only on FULL coverage (and, for ooc, a cached
-# attribution CSV); anything less — base SHA not uploaded, partial
-# coverage, an ooc attribution cache miss, or `fresh` — triggers a full
+# (`ix bench fetch-main`) only on FULL coverage; anything less — base SHA
+# not uploaded, partial coverage, or `fresh` — triggers a full
 # local base-SHA rerun whose rows take priority over bencher's.
 #
-# Why two trigger stages: GitHub gives issue_comment runs read-only cache
-# access (anti-poisoning; no token permission can override it), so cache
-# saves would all fail. The issue_comment run therefore only checks the
-# commenter is an org MEMBER/OWNER and re-dispatches this same file as
-# workflow_dispatch, which is allowed to save caches. The MEMBER/OWNER command
-# explicitly authorizes that PR head to run in the cache-writing context.
-# Manual dispatch already requires repo write access and may intentionally
-# compare loose commits.
+# The issue_comment run only checks that the commenter is an org
+# MEMBER/OWNER and re-dispatches this file as workflow_dispatch on the PR
+# branch, so the run uses that branch's copy of this workflow and files its
+# sticky-disk snapshots under the branch instead of `main`.
 name: Benchmark pull requests
 
 on:
@@ -87,7 +71,7 @@ on:
         description: Full head SHA to benchmark
         required: true
       comment-body:
-        description: "The !benchmark command; single-line KEY=VALUE config, e.g. `!benchmark ooc BENCH_ENVS=InitStd,Mathlib`"
+        description: "The !benchmark command; single-line KEY=VALUE config, e.g. `!benchmark ixvm-ooc BENCH_ENVS=InitStd,Mathlib`"
         required: true
 
 run-name: "${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR #{0} (r8i.8xlarge)', inputs.pr) || 'Relay benchmark comment' }}"
@@ -95,6 +79,11 @@ run-name: "${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR 
 env:
   IX_BENCH_MACHINE: r8i.8xlarge
   BENCH_CACHE: runs-on-r8i.8xlarge-native-v1
+  # The compiled-program cache `ix check` loads the certified Aiur programs
+  # from. Both sides' programs share it (they are keyed by source and
+  # compiler); it travels with the binaries so no measured run compiles a
+  # program.
+  IX_AIUR_CACHE: ${{ github.workspace }}/.aiur-cache
 
 permissions:
   contents: read
@@ -120,11 +109,11 @@ jobs:
         id: comment-branch
       # Dispatched on the PR's branch, not the default branch: RunsOn files
       # each run's sticky-disk snapshot under its ref, so the build lands on
-      # the branch and only reads `main`'s (bench-main's) snapshot. A fork
-      # branch cannot be dispatched, and would write `main`'s otherwise.
+      # the branch and only reads `main`'s (bench-main's) snapshot.
       - name: Dispatch on the PR branch
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           COMMENT_BODY: ${{ github.event.comment.body }}
           PR_NUMBER: ${{ github.event.issue.number }}
           HEAD_REF: ${{ steps.comment-branch.outputs.head_ref }}
@@ -132,29 +121,30 @@ jobs:
           BASE_REF: ${{ steps.comment-branch.outputs.base_ref }}
           HEAD_SHA: ${{ steps.comment-branch.outputs.head_sha }}
         run: |
-          head_repo=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.head.repo.full_name')
-          if [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
-            printf '%s\n' "Benchmarks run on branches of this repository only; \`$head_repo\` is a fork." > comment-body.md
-            gh pr comment "$PR_NUMBER" --body-file comment-body.md
-            exit 1
-          fi
           gh workflow run bench-pr.yml \
-            --repo "$GITHUB_REPOSITORY" \
             --ref "$HEAD_REF" \
             -f pr="$PR_NUMBER" \
             -f base-sha="$BASE_SHA" \
             -f base-ref="$BASE_REF" \
             -f head-sha="$HEAD_SHA" \
             -f comment-body="$COMMENT_BODY"
+      - name: Report that the benchmark could not start
+        if: failure()
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          token: ${{ github.token }}
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ## ❌ Benchmark could not start
 
-  # Select or build the PR's `ix` once, then
-  # publish it as a run-scoped
-  # artifact for every later job. Normal runs may select a persistent
-  # head-SHA cache. A cached `ix` may bootstrap command parsing, but `fresh`
-  # replaces the full bundle before it is published to benchmark jobs.
+            See the [relay logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+
+  # Select or build the PR's `ix`, then publish a run-scoped artifact for
+  # later jobs. A cached binary may parse a fresh request, but the measured
+  # binary is rebuilt before publication.
   # Built on the selected RunsOn instance type, so both sides use the
-  # same native r8i codegen and benchmark testbed. The job ends by parsing
-  # the !benchmark command with the selected `ix bench ci parse`: the registry
+  # same native r8i codegen and benchmark testbed. The job parses the
+  # !benchmark command with the selected `ix bench ci parse`: the registry
   # lives in Lean, so the matrix can only be computed after a binary is
   # available.
   build:
@@ -193,7 +183,7 @@ jobs:
       # Lake and cargo artifacts live on the sticky disk; sccache serves the
       # workspace crates cargo rebuilds after every fresh checkout (see
       # ci.yml), under entries the native codegen flags keep apart from CI's.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -205,8 +195,7 @@ jobs:
         with:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ steps.target.outputs.revision }}
-      # A cache miss needs an `ix` before the command can be parsed. The
-      # remaining binaries are built after parsing, when `fresh` is known.
+      # A cache miss builds `ix` here, before the command can be parsed.
       - if: steps.bins.outputs.cache-hit != 'true'
         uses: $/.github/actions/setup-rust-toolchain
         with:
@@ -216,13 +205,13 @@ jobs:
         with:
           auto-config: false
           build: ${{ steps.bins.outputs.cache-hit != 'true' }}
-          build-args: ix
+          build-args: ix bench-ixvm
           use-github-cache: false
       - if: steps.bins.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.local/bin
-          cp .lake/build/bin/ix ~/.local/bin/
-          chmod +x ~/.local/bin/ix
+          cp .lake/build/bin/ix .lake/build/bin/bench-ixvm ~/.local/bin/
+          chmod +x ~/.local/bin/ix ~/.local/bin/bench-ixvm
       - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       # Parse the !benchmark command from an env var (never
       # inline-interpolated); unknown tokens fall off the allowlist.
@@ -231,8 +220,8 @@ jobs:
         env:
           COMMENT_BODY: ${{ inputs.comment-body }}
         run: ix bench ci parse
-      # On a cache hit, `ix` above is a control-plane bootstrap only. A fresh
-      # run replaces it before the bundle can reach any measured job.
+      # A fresh run can use cached `ix` for parsing only; measured jobs
+      # receive the binaries built from this checkout below.
       - if: steps.parse.outputs.fresh == '1' && steps.bins.outputs.cache-hit == 'true'
         uses: $/.github/actions/setup-rust-toolchain
         with:
@@ -241,26 +230,40 @@ jobs:
         uses: $/.github/actions/log-cpu
         with:
           label: Benchmark binary build CPU
-      - name: Build benchmark binaries
-        if: steps.parse.outputs.fresh == '1' || steps.bins.outputs.cache-hit != 'true'
+      - name: Build fresh benchmark binaries
+        if: steps.parse.outputs.fresh == '1'
         run: |
-          lake build ix
-          cp .lake/build/bin/ix ~/.local/bin/
-          chmod +x ~/.local/bin/ix
+          lake build ix bench-ixvm
+          cp .lake/build/bin/ix .lake/build/bin/bench-ixvm ~/.local/bin/
+          chmod +x ~/.local/bin/ix ~/.local/bin/bench-ixvm
       - if: steps.parse.outputs.fresh != '1' && steps.bins.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ steps.target.outputs.revision }}
+      # `lake build ix` fills IX_AIUR_CACHE only when it regenerates the
+      # native executors, so compile any program still missing here.
+      - name: Warm the compiled-program cache
+        run: .github/scripts/warm-aiur-cache ~/.local/bin/ix
+      # A stacked PR's base run restores this by the head SHA, like the
+      # bench-bins entry.
+      - if: steps.parse.outputs.fresh != '1'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.IX_AIUR_CACHE }}
+          key: ${{ env.BENCH_CACHE }}-bench-aiur-${{ steps.target.outputs.revision }}
       - name: Package run binaries
-        run: >-
-          tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar
-          ix
+        run: |
+          tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar ix bench-ixvm
+          tar -C "$IX_AIUR_CACHE" -cf benchmark-aiur-cache.tar .
       - name: Upload run binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: benchmark-binaries
-          path: benchmark-binaries.tar
+          path: |
+            benchmark-binaries.tar
+            benchmark-aiur-cache.tar
           if-no-files-found: error
           retention-days: 1
           overwrite: true
@@ -328,8 +331,8 @@ jobs:
   # One measured `ix compile` per requested env, before the benchmark
   # runs. It publishes the `.ixe` and compile row as one run-scoped artifact
   # so later jobs cannot accidentally select a persistent entry themselves.
-  # Normal runs may seed that artifact from the head-SHA caches; `fresh`
-  # always compiles it in this job.
+  # Normal runs can seed the artifact from head-SHA caches; fresh runs
+  # compile the env and measure its row here.
   compile:
     name: compile-${{ matrix.env }}
     needs: build
@@ -349,7 +352,7 @@ jobs:
           ref: ${{ needs.build.outputs.revision }}
           # The job runs PR code; never leave the token in .git.
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sticky_cache: |
             custom,path=Benchmarks/Compile/.lake
@@ -362,8 +365,7 @@ jobs:
         env:
           PTENV: ${{ needs.build.outputs.passthrough-env }}
         run: printf '%s\n' "$PTENV" | sed '/^[[:space:]]*$/d' >> "$GITHUB_ENV"
-      # A normal run can seed its run-scoped artifact from persistent caches.
-      # `fresh` skips both restores, so the decision below requires a compile.
+      # Fresh runs skip both restores, forcing a measured compile below.
       - name: Restore published .ixe
         if: needs.build.outputs.fresh != '1'
         id: pr-ixe
@@ -404,8 +406,9 @@ jobs:
       - name: Unpack run binaries
         if: steps.compile-source.outputs.rebuild == 'true'
         run: |
-          mkdir -p "$HOME/.local/bin"
+          mkdir -p "$HOME/.local/bin" "$IX_AIUR_CACHE"
           tar -C "$HOME/.local/bin" -xf benchmark-binaries.tar
+          tar -C "$IX_AIUR_CACHE" -xf benchmark-aiur-cache.tar
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Log compile CPU
         if: steps.compile-source.outputs.rebuild == 'true'
@@ -424,8 +427,8 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
-          # Mathlib oleans for every env that imports Mathlib (FLT does).
-          use-mathlib-cache: ${{ (matrix.env == 'Mathlib' || matrix.env == 'FLT') && 'true' || 'false' }}
+          # Mathlib oleans for the env that imports Mathlib.
+          use-mathlib-cache: ${{ matrix.env == 'Mathlib' && 'true' || 'false' }}
       # The measured compile resolves the env's imports from these oleans;
       # bench-main builds the same target before its measured compile.
       - name: Build env oleans
@@ -438,7 +441,9 @@ jobs:
         if: steps.compile-source.outputs.rebuild == 'true'
         env:
           COMPILE_ENV: ${{ matrix.env }}
-        run: ix bench run --backend compile --env "$COMPILE_ENV" --out compile.json
+        run: >-
+          "$GITHUB_WORKSPACE/.github/scripts/memory-cap"
+          ix bench run --backend compile --env "$COMPILE_ENV" --out compile.json
       # The compile row is measured here, not in the benchmark job that
       # renders it, so its host travels with the row: same cache entry and
       # run artifact below.
@@ -496,9 +501,10 @@ jobs:
         params: ${{ fromJSON(needs.build.outputs.matrix) }}
     env:
       BACKEND: ${{ matrix.params.backend }}
-      BENV: ${{ matrix.params.env }}
       MODE: ${{ matrix.params.mode }}
-      CONSTS: ${{ matrix.params.consts }}
+      BENV: ${{ matrix.params.env }}
+      CONSTANTS: ${{ matrix.params.constants }}
+      ENV_ROW: ${{ matrix.params['env-row'] }}
       LABEL: ${{ matrix.params.label }}
       BASE_SHA: ${{ inputs.base-sha }}
       BASE_REF: ${{ inputs.base-ref }}
@@ -507,7 +513,7 @@ jobs:
     steps:
       # sccache for the from-scratch base build below: its workspace crates
       # are what the base's own bench-main run compiled (see ci.yml).
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
@@ -539,8 +545,9 @@ jobs:
           name: benchmark-binaries
       - name: Place PR binaries
         run: |
-          mkdir -p .lake/build/bin
+          mkdir -p .lake/build/bin "$IX_AIUR_CACHE"
           tar -C .lake/build/bin -xf benchmark-binaries.tar
+          tar -C "$IX_AIUR_CACHE" -xf benchmark-aiur-cache.tar
           echo "$PWD/.lake/build/bin" >> "$GITHUB_PATH"
       - name: Log run CPU
         id: cpu
@@ -567,12 +574,14 @@ jobs:
       # the shared set (Ix/BenchConstants.lean), and pr.json's row names
       # become the canonical name list this run measures — the base-side
       # fetch below asks bencher for exactly those names.
+      # memory-cap runs it in a cgroup capped at the runner's RAM minus 15 GiB,
+      # swap off: an OOM kill lands on the measured tool, not `ix bench run`.
       - name: Run backend on PR → pr.json
         id: pr-run
         # Exit 3 = the kernel rejected a constant on the PR side (rows are
-        # on disk). Keep going: the compare table and PR comment must
+        # on disk). Keep going: the PR comment must
         # still show the ❌ row. The failure is re-raised at the end of
-        # the job, after the table upload.
+        # the job, after the results upload.
         continue-on-error: true
         run: |
           if [ "$BACKEND" = compile ]; then
@@ -582,10 +591,11 @@ jobs:
             cp "$GITHUB_WORKSPACE/compile.json" "$GITHUB_WORKSPACE/pr.json"
             exit 0
           fi
-          flags=""
-          [ -n "$CONSTS" ] && flags="$flags --consts $CONSTS"
-          ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
-            --ixe "$BENV.ixe" --out "$GITHUB_WORKSPACE/pr.json" $flags
+          rows=(--constants "$CONSTANTS")
+          [ "$ENV_ROW" = 1 ] || rows+=(--no-env-row)
+          "$GITHUB_WORKSPACE/.github/scripts/memory-cap" \
+            ix bench run --backend "$BACKEND" --mode "$MODE" --env "$BENV" "${rows[@]}" \
+            --ixe "$BENV.ixe" --out "$GITHUB_WORKSPACE/pr.json"
 
       # ---------- base side ----------
       # Try bencher.dev first (bench-main.yml uploads main's numbers).
@@ -593,7 +603,7 @@ jobs:
       #   3     = transient (base SHA not uploaded yet) — fall back to
       #           running the base SHA locally.
       #   other = permanent misconfiguration (e.g. no testbed for this
-      #           backend/mode) that a local run can never fix — fail
+      #           backend) that a local run can never fix — fail
       #           loudly instead of silently paying the fallback forever.
       # Partial miss (exit 0 with a non-empty missing.txt): bencher covers
       # some names but not all — typically constants this PR adds. Any
@@ -602,10 +612,15 @@ jobs:
       - name: Fetch main from bencher
         id: bencher
         run: |
-          # `fresh` skips bencher entirely — same as a full miss: no
-          # main.json, so the base run below supplies the whole base side.
           if [ "$FRESH" = 1 ]; then
             echo "source=base run @ ${BASE_SHA::7} (fresh — bencher bypassed)" >> "$GITHUB_OUTPUT"
+            echo "run-base=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Main tracks execution only, so its rows cannot supply proving
+          # or compression measurements for the base comparison.
+          if [ "$BACKEND" = ixvm ] && [ "$MODE" != execute ]; then
+            echo "source=base run @ ${BASE_SHA::7} (ixvm $MODE)" >> "$GITHUB_OUTPUT"
             echo "run-base=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -624,8 +639,8 @@ jobs:
           NAMES=$(jq -r 'keys | join(",")' "$GITHUB_WORKSPACE/pr.json" 2>/dev/null || true)
           set +e
           ix bench fetch-main \
-            --sha "$BASE_SHA" --backend "$BACKEND" --mode "$MODE" --env "$BENV" \
-            --consts "$NAMES" \
+            --sha "$BASE_SHA" --backend "$BACKEND" \
+            --rows "$NAMES" \
             --missing-out "$GITHUB_WORKSPACE/missing.txt" \
             --out "$GITHUB_WORKSPACE/main.json"
           rc=$?
@@ -642,19 +657,6 @@ jobs:
                echo "run-base=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::fetch-main: permanent config error (exit $rc) — check backendSpecs testbeds vs bench-main.yml"; exit "$rc" ;;
           esac
-      # Base-side attribution CSV for the ooc drill-down: bench-main cached
-      # the base SHA's CSV by (SHA, cell) — bencher itself stores metric
-      # rows only. Restored BEFORE the base-run decision so a miss can
-      # force one (ooc's base run is the cheapest backend; a re-run beats
-      # a silently absent drill-down).
-      - name: Restore base-side attribution CSV (ooc)
-        id: perconst
-        if: matrix.params.backend == 'ooc' && env.FRESH != '1'
-        continue-on-error: true
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: bench.json.perconst.csv
-          key: ${{ env.BENCH_CACHE }}-bench-perconst-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
       # The host that measured the base SHA's rows on main, recorded by
       # bench-main next to its bencher upload. Only a bencher-sourced base side
       # uses it; a base run in this job is labelled with this runner instead.
@@ -664,29 +666,19 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: bench-hardware.txt
-          key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
+          key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}
       # The final base-run decision — every base-side step gates on THIS
-      # step. A base run, whatever triggered it (bencher miss or partial,
-      # `fresh`, or an ooc attribution-CSV cache miss), is always a FULL
-      # rerun whose rows take priority over bencher's.
+      # step. A base run, whatever triggered it (a bencher miss or partial
+      # coverage), is always a FULL rerun whose rows take priority over
+      # bencher's.
       - name: Decide base run
         id: decide
         env:
           BENCHER_RUN_BASE: ${{ steps.bencher.outputs.run-base }}
           BENCHER_SOURCE: ${{ steps.bencher.outputs.source }}
-          PERCONST_HIT: ${{ steps.perconst.outputs.cache-hit }}
         run: |
-          rb="$BENCHER_RUN_BASE"
-          src="$BENCHER_SOURCE"
-          if [ "$BACKEND" = ooc ] \
-            && [ "$PERCONST_HIT" != "true" ] \
-            && [ "$rb" != true ]; then
-            echo "ooc attribution CSV not cached — full fresh base run"
-            rb=true
-            src="base run @ ${BASE_SHA::7} (ooc attribution cache miss)"
-          fi
-          echo "run-base=$rb" >> "$GITHUB_OUTPUT"
-          echo "source=$src" >> "$GITHUB_OUTPUT"
+          echo "run-base=$BENCHER_RUN_BASE" >> "$GITHUB_OUTPUT"
+          echo "source=$BENCHER_SOURCE" >> "$GITHUB_OUTPUT"
       - name: Checkout base (bencher data missing or partial)
         if: steps.decide.outputs.run-base == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -694,11 +686,10 @@ jobs:
           ref: ${{ env.BASE_SHA }}
           path: base
           persist-credentials: false
-      # A normal base rerun can restore the products bench-main cached when
-      # that SHA reached main. `fresh` skips both restores. The
-      # bench-bins-<sha> keys have two producers: bench-main's build job for
-      # main commits, and this workflow's build job for PR heads (so a
-      # stacked-PR base can hit the latter).
+      # A base rerun can restore the products bench-main cached when that SHA
+      # reached main. The bench-bins-<sha> keys have two producers:
+      # bench-main's build job for main commits, and this workflow's build job
+      # for PR heads (so a stacked-PR base can hit the latter).
       - name: Restore base binaries (bench-bins cache)
         if: steps.decide.outputs.run-base == 'true' && env.FRESH != '1'
         id: base-bins
@@ -706,6 +697,15 @@ jobs:
         with:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ env.BASE_SHA }}
+      # The base binaries' compiled programs, from the same producer as
+      # the bench-bins entry. They join the PR's programs in IX_AIUR_CACHE.
+      - name: Restore base programs (bench-aiur cache)
+        if: steps.decide.outputs.run-base == 'true' && env.FRESH != '1'
+        id: base-aiur
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.IX_AIUR_CACHE }}
+          key: ${{ env.BENCH_CACHE }}-bench-aiur-${{ env.BASE_SHA }}
       # Two producers compile the env at a given SHA: bench-main for main
       # commits, this workflow's compile job for PR heads. A stacked PR's
       # base is the latter, so both keys are tried from one step. This works
@@ -747,8 +747,8 @@ jobs:
             if [ "$BENV" != Mathlib ] || [ "$ixe" = true ]; then
               mkdir -p base/.lake/build/bin
               mv ~/.local/bin/ix base/.lake/build/bin/ 2>/dev/null || true
-              [ -x base/.lake/build/bin/ix ] \
-                && cached=true
+              mv ~/.local/bin/bench-ixvm base/.lake/build/bin/ 2>/dev/null || true
+              [ -x base/.lake/build/bin/ix ] && cached=true
             fi
           fi
           echo "cached=$cached" >> "$GITHUB_OUTPUT"
@@ -772,6 +772,17 @@ jobs:
         uses: $/.github/actions/log-cpu
         with:
           label: Base benchmark binary build CPU
+      # A base from before `bench-ixvm` has no such target; its ixvm constant
+      # rows then report no base column.
+      - name: Choose base targets
+        if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
+        id: base-targets
+        run: |
+          if grep -q 'lean_exe «bench-ixvm»' base/lakefile.lean; then
+            echo "args=ix bench-ixvm" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=ix" >> "$GITHUB_OUTPUT"
+          fi
       - name: Build base (ix)
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
@@ -779,9 +790,17 @@ jobs:
           lake-package-directory: base
           auto-config: false
           build: true
-          build-args: "ix"
+          build-args: ${{ steps.base-targets.outputs.args }}
           use-github-cache: false
-      # For a mathlib-importing env (Mathlib, FLT), the base-side compile
+      # The base `ix` loads its programs from IX_AIUR_CACHE too: a fresh base
+      # build fills it, and so does a cached base's bench-aiur entry, but a
+      # base cached before that entry existed has none. A base without
+      # `ix codegen --out` predates the in-process formal Aiur check, so its
+      # ixvm cells fail and report no base column.
+      - name: Warm the base programs
+        if: steps.decide.outputs.run-base == 'true' && steps.base-aiur.outputs.cache-hit != 'true'
+        run: .github/scripts/warm-aiur-cache base/.lake/build/bin/ix || echo "::warning::could not warm the base programs"
+      # For the mathlib-importing env (Mathlib), the base-side compile
       # resolves imports from the base tree's Benchmarks/Compile
       # subpackage — mathlib lives only there, so its cache fetch must run
       # from that directory. Compile runs need this even with cached
@@ -790,7 +809,7 @@ jobs:
       - name: Fetch base Mathlib oleans
         if: >-
           steps.decide.outputs.run-base == 'true' &&
-          (matrix.params.env == 'Mathlib' || matrix.params.env == 'FLT') &&
+          matrix.params.env == 'Mathlib' &&
           (matrix.params.backend == 'compile' || steps.base-src.outputs.cached != 'true')
         working-directory: base/Benchmarks/Compile
         run: |
@@ -802,11 +821,11 @@ jobs:
       # and every constant drops — the compare then shows a loud "base
       # produced no results" note instead of a silent all-n/a table.
       #
-      # Partial bencher miss: run just the uncovered names (via --consts).
-      # They are typically constants the PR itself adds; the PR's `ix`
-      # carries the PR's compiled-in constant set, so the base side
-      # selects them without any extra plumbing.
-      # Full miss: run the normal selection (or the BENCH_CONSTS override).
+      # The base side measures the same rows as the PR side (the cell's
+      # constants and, if selected, its env row); its rows take priority
+      # over bencher's.
+      # Like the PR side, the run goes through the PR head's memory-cap (the
+      # workspace root's checkout), never a script from the base tree.
       - name: Run backend on base → merge into main.json
         if: steps.decide.outputs.run-base == 'true'
         env:
@@ -815,21 +834,18 @@ jobs:
           if [ "$BASE_HAS_IXE" = true ]; then
             mv "$BENV.ixe" "base/$BENV.ixe"
           fi
-          flags=""
-          if [ -n "$CONSTS" ]; then
-            # BENCH_CONSTS override: the base side must measure the same
-            # explicit names, not the default selection.
-            flags="$flags --consts $CONSTS"
-          fi
+          args=(--constants "$CONSTANTS")
+          [ "$ENV_ROW" = 1 ] || args+=(--no-env-row)
           # A base-side failure must not fail the PR's job: whatever rows
           # landed get merged, and the table reports the rest.
           set +e
           # Cached base .ixe when the restore above hit; else the base run
           # compiles it fresh (no flag).
-          [ -f "base/$BENV.ixe" ] && flags="$flags --ixe base/$BENV.ixe"
-          ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
+          [ -f "base/$BENV.ixe" ] && args+=(--ixe "base/$BENV.ixe")
+          "$GITHUB_WORKSPACE/.github/scripts/memory-cap" \
+            ix bench run --backend "$BACKEND" --mode "$MODE" --env "$BENV" "${args[@]}" \
             --repo base \
-            --out "$GITHUB_WORKSPACE/base.json" $flags
+            --out "$GITHUB_WORKSPACE/base.json"
           echo "base-side ix bench run exit $?"
           set -e
           # The rerun's rows win; bencher-fetched rows only fill anything
@@ -844,39 +860,25 @@ jobs:
             else
               mv "$GITHUB_WORKSPACE/base.json" "$GITHUB_WORKSPACE/main.json"
             fi
-            # The ooc run writes a per-constant attribution CSV next to its
-            # results file; carry it to the base-side main.json so `ix bench
-            # compare` finds the pair and renders the drill-down (bencher
-            # cannot supply it — it stores metric rows only).
-            if [ -f "$GITHUB_WORKSPACE/base.json.perconst.csv" ]; then
-              mv "$GITHUB_WORKSPACE/base.json.perconst.csv" \
-                 "$GITHUB_WORKSPACE/main.json.perconst.csv"
-            fi
           fi
 
-      # ---------- compare ----------
-      # A base-run-produced attribution CSV (moved to main.json's side in
-      # the merge step) wins; the cached one only fills the gap.
-      - name: Place base-side attribution CSV
-        if: matrix.params.backend == 'ooc'
-        run: |
-          if [ ! -f "$GITHUB_WORKSPACE/main.json.perconst.csv" ] \
-            && [ -f bench.json.perconst.csv ]; then
-            mv bench.json.perconst.csv "$GITHUB_WORKSPACE/main.json.perconst.csv"
-          fi
-      - name: Build comparison table
+      # ---------- results ----------
+      # The cell's rows, both sides, and where they came from; `assemble`
+      # renders every cell into the one comment.
+      - name: Bundle cell results
+        if: always()
         env:
           RUN_HARDWARE: ${{ steps.cpu.outputs.summary }}
           BASE_SOURCE: ${{ steps.decide.outputs.source }}
           RUN_BASE: ${{ steps.decide.outputs.run-base }}
         run: |
-          mkdir -p out
-          ix bench compare \
-            --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
-            --base "$GITHUB_WORKSPACE/main.json" --pr "$GITHUB_WORKSPACE/pr.json" \
-            --base-source "$BASE_SOURCE" \
-            --base-label "${BASE_REF:-${BASE_SHA::7}}" \
-            --out "out/table-$LABEL.md"
+          cell="cells/$LABEL"
+          mkdir -p "$cell"
+          for side in main:base pr:pr; do
+            from="$GITHUB_WORKSPACE/${side%%:*}.json"
+            to="$cell/${side##*:}.json"
+            [ -f "$from" ] && cp "$from" "$to"
+          done
           # Label each side with the host that measured it. The PR compile
           # row comes from the compile job, and a bencher-sourced base side
           # from bench-main's run at the base SHA. Every other side ran here.
@@ -890,23 +892,24 @@ jobs:
           else
             base_hw=$(cat bench-hardware.txt 2>/dev/null || true)
           fi
-          {
-            echo
-            echo "- Base hardware ($BASE_SOURCE): ${base_hw:-not recorded}"
-            echo "- PR hardware: ${pr_hw:-not recorded}"
-          } >> "out/table-$LABEL.md"
-          cat "out/table-$LABEL.md"
+          jq -n --arg backend "$BACKEND" --arg env "$BENV" \
+            --arg source "$BASE_SOURCE" --arg base_hw "$base_hw" --arg pr_hw "$pr_hw" \
+            '{backend: $backend, env: $env, "base-source": $source,
+              "base-hardware": $base_hw, "pr-hardware": $pr_hw}' > "$cell/meta.json"
+          ix bench compare --backend "$BACKEND" --env "$BENV" \
+            --base "$cell/base.json" --pr "$cell/pr.json" \
+            --base-source "$BASE_SOURCE" --base-label "${BASE_REF:-${BASE_SHA::7}}"
 
-      - name: Upload table
+      - name: Upload cell results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: table-${{ env.LABEL }}
-          path: out/table-${{ env.LABEL }}.md
+          name: cell-${{ env.LABEL }}
+          path: cells
           if-no-files-found: warn
           overwrite: true
       # A PR-side rejection is a correctness regression: re-raise the run
-      # step's failure now that the table is uploaded, so the job goes red
+      # step's failure now that the results are uploaded, so the job goes red
       # while the comment still posts with the constant's ❌ row.
       - name: Fail on PR-side benchmark failure
         if: steps.pr-run.outcome != 'success'
@@ -914,21 +917,22 @@ jobs:
           echo "::error::ix bench run failed on the PR side (kernel rejection or empty run) — see the 'Run backend on PR' step"
           exit 1
 
-  # Assemble the comment body from the per-run tables. Deliberately
+  # Assemble the comment body from the per-cell results. Deliberately
   # UNPRIVILEGED: this job runs PR-built code (`ix bench report`), so it
   # must never receive write permissions. The posting job below only downloads
   # the finished body and never touches PR code.
   assemble:
     needs: [build, benchmark]
-    # Assemble even when benchmark runs failed — the tables carry the ❌
+    # Assemble even when benchmark runs failed — the results carry the ❌
     # rows. Only the build job must have succeeded (it made the binaries).
     if: always() && needs.build.result == 'success'
-    # The report command restores the build job's native r8i binary.
-    runs-on: runs-on=${{ github.run_id }}-assemble-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/spot=false/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
+    # The native r8i `ix`; every r8i size has the same CPU, so the smallest
+    # one runs it.
+    runs-on: runs-on=${{ github.run_id }}-assemble-${{ github.run_attempt }}/cpu=2/family=r8i/spot=false/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     permissions:
       contents: read
     steps:
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.build.outputs.revision }}
@@ -948,11 +952,11 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
-      - name: Download tables
+      - name: Download cell results
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          path: tables
-          pattern: table-*
+          path: cells
+          pattern: cell-*
           merge-multiple: true
       - name: Build comment body
         env:
@@ -961,10 +965,10 @@ jobs:
           BASE_SHA: ${{ inputs.base-sha }}
           BASE_REF: ${{ inputs.base-ref }}
         run: |
-          mkdir -p tables   # absent when no run uploaded a table
+          mkdir -p cells   # absent when no run uploaded results
           ix bench report \
-            --tables tables --summary "$SUMMARY" \
-            --head "$HEAD_SHA" \
+            --cells cells --summary "$SUMMARY" \
+            --head "$HEAD_SHA" --base-sha "$BASE_SHA" \
             --base-label "${BASE_REF:-${BASE_SHA::7}}" \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" \
             --run-id "${{ github.run_id }}" --out comment-body.md
