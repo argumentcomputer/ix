@@ -5,7 +5,9 @@ import Aiur.Trace.Export
 
 /-! Native BN254 execution and compiler trace fixture with recursion, fixed
 maps and ROM. The entry's result is `x + n + lookup(x)` for natural `n` and
-the two supported map keys. -/
+the two supported map keys. Using `n + (-1)` and `x - (-1)` (mod Fr) instead
+of literal steps `1` keeps `walk` out of countdown exemption so the depth
+column remains exercised by compiler and KZG forgery tests. -/
 
 namespace BN254TraceFixture
 open Aiur
@@ -27,7 +29,10 @@ module BN254Trace {
   fn walk(n: Field, x: Field) -> Field {
     match n {
       0 => x,
-      _ => walk(n - 1, x + 1),
+      _ => walk(
+        n + 21888242871839275222246405745257275088548364400416034343698204186575808495616,
+        x - 21888242871839275222246405745257275088548364400416034343698204186575808495616,
+      ),
     }
   }
   fn run(n: Field, x: Field) -> Field {

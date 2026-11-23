@@ -5,7 +5,9 @@ import Aiur.Trace.Export
 
 /-! Unequal recursive subcalls over BN254 require depth gaps and both of the
 production exporter's range tables. The public recursive entry also carries
-its authenticated depth word. -/
+its authenticated depth word. Adding `-1` (mod Fr) instead of subtracting a
+literal step `1` keeps `fib` out of countdown exemption so unequal subcalls
+retain depth gaps and both production range tables. -/
 
 namespace BN254GapFixture
 open Aiur
@@ -16,7 +18,11 @@ abbrev modulus := Library.Field.BN254.modulus
 def source : Modules.Program Nat := aiur⟦
 module BN254Gap {
   fn fib(n: Field) -> Field {
-    match n { 0 => 0, 1 => 1, _ => fib(n - 1) + fib(n - 2) }
+    match n {
+      0 => 0,
+      1 => 1,
+      _ => fib(n + 21888242871839275222246405745257275088548364400416034343698204186575808495616) + fib(n - 2),
+    }
   }
   fn run(n: Field, x: Field) -> Field { fib(n) + x }
 }
