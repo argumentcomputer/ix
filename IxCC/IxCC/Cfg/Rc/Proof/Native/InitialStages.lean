@@ -17,7 +17,7 @@ theorem accepted_source_entry {config : Rt.Config} {F : Fir.Program}
       funcs.length = P.base.size ∧
       ∀ (f : Nat) (words : List Lir.Word) (source : Lir.Frame),
         Lir.enter (sourceStage P (rawSource config P pairs) main) f words = some source →
-        ∃ target, Lir.enter lowered.runtime.program f words = some target ∧
+        ∃ target, Lir.enter (rawPublicProgram (layoutOf P) funcs main) f words = some target ∧
           ∀ (mem : X86.Memory) (context : Lir.Word),
             sourceStageRel config P pairs funcs main
               {mem, ctx := context, stack := [source]}
@@ -26,27 +26,25 @@ theorem accepted_source_entry {config : Rt.Config} {F : Fir.Program}
               Sem.Reaches (Lir.semStep (sourceStage P (rawSource config P pairs) main))
                 {mem, ctx := context, stack := [source]} clock outcome →
               outcome ≠ .stuck →
-              Sem.Reaches (Lir.semStep lowered.runtime.program)
+              Sem.Reaches (Lir.semStep (rawPublicProgram (layoutOf P) funcs main))
                 {mem, ctx := context, stack := [target]} clock outcome := by
-  obtain ⟨main, pairs, funcs, consuming, lowering, length, _, splitting⟩ := accepted_split accepted
+  obtain ⟨main, pairs, funcs, consuming, lowering, length, _, _⟩ := accepted_split accepted
   have pruning := source_raw_pruned lowering main
   have sourceSplitting := source_pruned_split lowering main
   have lock : Sem.LockStep
       (Lir.semStep (sourceStage P (rawSource config P pairs) main))
-      (Lir.semStep lowered.runtime.program) (sourceStageRel config P pairs funcs main) :=
-    pruning.lockStep.comp (sourceSplitting.lockStep.comp splitting.lockStep)
+      (Lir.semStep (rawPublicProgram (layoutOf P) funcs main)) (sourceStageRel config P pairs funcs main) :=
+    pruning.lockStep.comp sourceSplitting.lockStep
   refine ⟨main, pairs, funcs, consuming, lowering, length, ?_⟩
   intro f words source entered
   obtain ⟨pruned, enteredPruned, first⟩ := pruning.enter entered
-  obtain ⟨split, enteredSplit, second⟩ := sourceSplitting.enter enteredPruned
-  obtain ⟨target, enteredTarget, third⟩ := splitting.enter enteredSplit
+  obtain ⟨target, enteredTarget, second⟩ := sourceSplitting.enter enteredPruned
   refine ⟨target, enteredTarget, ?_⟩
   intro mem context
   have related : sourceStageRel config P pairs funcs main
       {mem, ctx := context, stack := [source]} {mem, ctx := context, stack := [target]} :=
     ⟨{mem, ctx := context, stack := [pruned]}, ⟨rfl, rfl, .cons first .nil⟩,
-      {mem, ctx := context, stack := [split]}, ⟨rfl, rfl, .cons second .nil⟩,
-      ⟨rfl, rfl, .cons third .nil⟩⟩
+      ⟨rfl, rfl, .cons second .nil⟩⟩
   exact ⟨related, fun _ _ reaches regular => lock.reaches reaches regular related⟩
 
 

@@ -31,7 +31,7 @@ theorem loaded_call_sim {cfg : Config} {P : Src.Program} {cert : Cert} {f : Fron
     (root fn : Nat) {sourceFunction : Fir.Fun}
     (sourceLookup : f.fir.fun? fn = some sourceFunction)
     (numbers : List Nat) (arity : numbers.length = sourceFunction.params.length) :
-    Sim (ViewedFirRel f root) Nat.succ
+    Sim (ViewedFirRel f root) (Cfg.Rc.Inline.inlineEntryClock f.lowered.program)
       (fun clock => Fir.run f.fir clock fn (Fir.litArgs numbers))
       (fun clock => (f.loaded model).call
         {fn, params := sourceFunction.params.length, ty := f.tys root} numbers clock) := by

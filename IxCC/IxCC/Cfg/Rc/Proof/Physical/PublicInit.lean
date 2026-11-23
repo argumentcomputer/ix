@@ -17,8 +17,12 @@ theorem accepted_init {config : Rt.Config} {F : Fir.Program}
   obtain ⟨main, pairs, funcs, _, _, _, _, _, _, length, program, init, _⟩ := Native.Spec.lower_parts native
   have lookup : original.program.funcs[original.init]? = some Rt.Procs.cxInit := by
     rw [program, init]
-    simp only [Lir.Program.splitCriticalEdges, Array.getElem?_map,
-      raw_init (l := layoutOf P) (funcs := funcs) length main, Option.map_some, cxInit_split]
+    have hge : (layoutOf P).sourceCount ≤ (layoutOf P).init := by
+      simp [layoutOf, Native.Layout.init, Native.Layout.incProc]; omega
+    have hinl : (inlinedProgram (layoutOf P) funcs main).funcs[(layoutOf P).init]? = some Rt.Procs.cxInit := by
+      rw [inlinedProgram, Inline.inlineProgram_get_ge _ _ hge]
+      exact raw_init (l := layoutOf P) (funcs := funcs) length main
+    simp only [Lir.Program.splitCriticalEdges, Array.getElem?_map, hinl, Option.map_some, cxInit_split]
   exact (assemble_existing original (layoutOf P) (Array.getElem?_eq_some_iff.mp lookup).1).trans lookup
 
 theorem initialize_heap {config : Rt.Config} {F : Fir.Program}

@@ -20,7 +20,8 @@ theorem accepted_drop_index {config : Rt.Config} {F : Fir.Program}
   obtain ⟨main, pairs, functions, _, _, _, _, _, _, length, program, _⟩ := Native.Spec.lower_parts native
   change original.program.funcs.size = _
   rw [program]
-  simp only [Lir.Program.splitCriticalEdges, Array.size_map, rawProgram, List.size_toArray,
+  simp only [Lir.Program.splitCriticalEdges, Array.size_map, inlinedProgram, Inline.inlineProgram,
+    Array.size_mapIdx, rawProgram, List.size_toArray,
     List.length_append, List.length_cons, List.length_nil, length, wrappers_length, procedures_length]
   simp [layoutOf, Layout.init, Layout.incProc]
   omega
@@ -58,18 +59,44 @@ theorem Returned.release_public {F : Fir.Program} {bodies : Src.NatMap Own.Plain
       Gen.ProtectedFrame returned.memory memory' context base returned.bump ∧
       Lir.eval {lowered.runtime.program with main := lowered.drop} clock
         [returned.word] returned.memory context = .ok ([1], memory') := by
-  let raw := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) lowered.drop
-  have index := accepted_drop_index accepted
-  have wrapper : raw.funcs[lowered.drop]? = some (Public.dropWrapper (layoutOf P).decProc) := by
-    rw [index]
-    exact source_stage_drop P _ lowered.drop
-  have runtime : raw.funcs[(layoutOf P).decProc]? = some Gen.dec :=
-    (source_stage_decrement_runtime P _ lowered.drop).2
+  obtain ⟨original, native, equal, _⟩ := Public.Spec.lower_parts accepted
+  obtain ⟨main, pairs', functions', _, _, _, _, _, _, length, program, _⟩ := Native.Spec.lower_parts native
+  have splitEq : lowered.runtime.program =
+      (Public.Spec.inlinedPublicProgram (layoutOf P) functions' main).splitCriticalEdges := by
+    rw [equal]
+    exact Public.Spec.assemble_split program
+  have split : Lir.ProgSim (Public.Spec.inlinedPublicProgram (layoutOf P) functions' main)
+      lowered.runtime.program
+      (Public.Spec.labels (Public.Spec.inlinedPublicProgram (layoutOf P) functions' main)) :=
+    splitEq ▸ Public.Spec.program_split _
+  have splitDrop : Lir.ProgSim (Public.Spec.inlinedPublicProgram (layoutOf P) functions' lowered.drop)
+      {lowered.runtime.program with main := lowered.drop}
+      (Public.Spec.labels (Public.Spec.inlinedPublicProgram (layoutOf P) functions' main)) :=
+    ⟨rfl, split.funcs⟩
+  let inl := Public.Spec.inlinedPublicProgram (layoutOf P) functions' lowered.drop
+  let arr := (inlinedProgram (layoutOf P) functions' lowered.drop).funcs
+  have dropSize : lowered.drop = arr.size := by
+    rw [equal]
+    change original.program.funcs.size = _
+    rw [program]
+    simp [arr, Lir.Program.splitCriticalEdges, inlinedProgram, Inline.inlineProgram, rawProgram]
+  have wrapper : inl.funcs[lowered.drop]? = some (Public.dropWrapper (layoutOf P).decProc) := by
+    change (arr.push (Public.dropWrapper (layoutOf P).decProc))[lowered.drop]? = _
+    rw [dropSize, Array.getElem?_push_size]
+  have runtime : inl.funcs[(layoutOf P).decProc]? = some Gen.dec := by
+    have hge : (layoutOf P).sourceCount ≤ (layoutOf P).decProc := by
+      simp [layoutOf, Layout.decProc, Layout.incProc]; omega
+    have hraw := raw_dec_proc (l := layoutOf P) (funcs := functions') length lowered.drop
+    have hinl : (inlinedProgram (layoutOf P) functions' lowered.drop).funcs[(layoutOf P).decProc]? = some Gen.dec := by
+      rw [inlinedProgram, Inline.inlineProgram_get_ge _ _ hge]
+      exact hraw
+    have hlt := (Array.getElem?_eq_some_iff.mp hinl).1
+    simpa [inl, Public.Spec.inlinedPublicProgram, Array.getElem?_push_lt hlt, Array.getElem?_eq_getElem hlt] using hinl
   obtain ⟨H', memory', slots', lists', clock, released, ready, frame, execution⟩ :=
     drop_top returned.state returned.represented wrapper runtime rfl
   refine ⟨H', memory', slots', lists', clock, released, ready, frame, ?_⟩
-  rw [admitted_root_eval_stages admission accepted lowered.drop clock [returned.word]
-    returned.memory context (by rw [execution]; intro impossible; cases impossible)]
+  rw [program_eval_transfer splitDrop clock [returned.word] returned.memory context
+    (by rw [execution]; intro impossible; cases impossible)]
   exact execution
 
 

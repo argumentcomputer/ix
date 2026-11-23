@@ -26,10 +26,10 @@ theorem loaded_run_sim {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front
     (region : Rt.Proof.RegionOk model.ctx model.size)
     (readable : Rt.Proof.LirRegion model.mem model.ctx model.size)
     (input : Nat × List Nat) :
-    Sim (ViewedFirRel f input.1) Nat.succ
+    Sim (ViewedFirRel f input.1) (Cfg.Rc.Inline.inlineEntryClock f.lowered.program)
       (Fir.firRun f.fir input) ((f.loaded model).run input) := by
   obtain ⟨root, numbers⟩ := input
-  change Sim (ViewedFirRel f root) Nat.succ (Fir.firRun f.fir (root, numbers))
+  change Sim (ViewedFirRel f root) (Cfg.Rc.Inline.inlineEntryClock f.lowered.program) (Fir.firRun f.fir (root, numbers))
     (fun clock => Rt.Loaded.run (f.loaded model) (root, numbers) clock)
   obtain ⟨_, _, _, _, _, _, checked⟩ := runFront_spec accepted
   have basic := (Cfg.Rc.checkScopedProgram_parts checked).1
@@ -67,7 +67,8 @@ theorem loaded_run_sim {cfg : Config} {P : Src.Program} {cert : Cert} {f : Front
           · simp only [empty, ↓reduceIte]
             exact Sim.okConst (erased_view f root)
           · simp only [empty, ↓reduceIte]
-            exact Sim.laterConst (f := Nat.succ) (erased_view f root) (fun _ h => by omega)
+            exact Sim.laterConst (f := Cfg.Rc.Inline.inlineEntryClock f.lowered.program)
+              (erased_view f root) (fun _ h => by simp [Cfg.Rc.Inline.inlineEntryClock] at h)
         · simp only [Sem.entryRun, exactArity, underapplied, ↓reduceIte]
           exact Sim.bindStuck (g := fun _ _ => .stuck)
             (loaded_call_sim accepted region readable root fn sourceLookup

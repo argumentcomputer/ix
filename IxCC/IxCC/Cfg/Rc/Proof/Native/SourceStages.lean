@@ -9,10 +9,9 @@ namespace IxCC.Cfg.Rc.Public.Spec
 open Native.Spec
 
 def sourceStageRel (config : Rt.Config) (P : Program) (pairs : List (Nat × Cfg.Fun))
-    (funcs : List Lir.Func) (main : Nat) (source target : Lir.State) : Prop :=
+    (_funcs : List Lir.Func) (_main : Nat) (source target : Lir.State) : Prop :=
   ∃ pruned, Lir.StateRel (sourcePruneLabels P pairs) source pruned ∧
-    ∃ split, Lir.StateRel (sourceSplitLabels config P pairs) pruned split ∧
-      Lir.StateRel (labels (rawPublicProgram (layoutOf P) funcs main)) split target
+    Lir.StateRel (sourceSplitLabels config P pairs) pruned target
 
 theorem accepted_source_stages {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Lowered}
@@ -23,18 +22,17 @@ theorem accepted_source_stages {config : Rt.Config} {F : Fir.Program}
         (List.range P.base.size) = .ok funcs ∧
       funcs.length = P.base.size ∧
       Sem.LockStep (Lir.semStep (sourceStage P (rawSource config P pairs) main))
-        (Lir.semStep lowered.runtime.program) (sourceStageRel config P pairs funcs main) := by
-  obtain ⟨main, pairs, funcs, consuming, lowering, length, _, split⟩ := accepted_split accepted
+        (Lir.semStep (rawPublicProgram (layoutOf P) funcs main)) (sourceStageRel config P pairs funcs main) := by
+  obtain ⟨main, pairs, funcs, consuming, lowering, length, _, _⟩ := accepted_split accepted
   refine ⟨main, pairs, funcs, consuming, lowering, length, ?_⟩
-  exact (source_raw_pruned lowering main).lockStep.comp
-    ((source_pruned_split lowering main).lockStep.comp split.lockStep)
+  exact (source_raw_pruned lowering main).lockStep.comp (source_pruned_split lowering main).lockStep
 
 theorem sourceStageRel_memory {config : Rt.Config} {P : Program}
     {pairs : List (Nat × Cfg.Fun)} {funcs : List Lir.Func} {main : Nat}
     {source target : Lir.State} (related : sourceStageRel config P pairs funcs main source target) :
     target.mem = source.mem ∧ target.ctx = source.ctx := by
-  obtain ⟨pruned, first, split, second, third⟩ := related
-  exact ⟨third.1.trans (second.1.trans first.1), third.2.1.trans (second.2.1.trans first.2.1)⟩
+  obtain ⟨pruned, first, second⟩ := related
+  exact ⟨second.1.trans first.1, second.2.1.trans first.2.1⟩
 
 
 

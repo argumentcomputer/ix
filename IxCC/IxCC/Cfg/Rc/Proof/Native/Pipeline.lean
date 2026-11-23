@@ -42,6 +42,9 @@ def rawProgram (l : Layout) (funcs : List Lir.Func) (main : Nat) : Lir.Program :
       [Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd]).toArray
     main }
 
+def inlinedProgram (l : Layout) (funcs : List Lir.Func) (main : Nat) : Lir.Program :=
+  Inline.inlineProgram l (rawProgram l funcs main)
+
 theorem lower_parts {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program} {lowered : Rt.Lowered}
     (accepted : Native.lower config F bodies P = .ok lowered) :
@@ -54,7 +57,7 @@ theorem lower_parts {config : Rt.Config} {F : Fir.Program}
       Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)
         (List.range P.base.size) = .ok funcs ∧
       funcs.length = P.base.size ∧
-      lowered.program = (rawProgram (layoutOf P) funcs main).splitCriticalEdges ∧
+      lowered.program = (inlinedProgram (layoutOf P) funcs main).splitCriticalEdges ∧
       lowered.init = (layoutOf P).init ∧
       lowered.natPow = (layoutOf P).init + 1 ∧
       lowered.natGcd = (layoutOf P).init + 2 ∧
@@ -68,7 +71,7 @@ theorem lower_parts {config : Rt.Config} {F : Fir.Program}
     let pairs ← consumeAll P
     let funcs ← (Rt.Lower.functions (tablesOf P pairs) (consumed P pairs)
       (rootsOf config P) (List.range P.base.size)).mapError Rt.Error.render
-    let program := (rawProgram (layoutOf P) funcs main).splitCriticalEdges
+    let program := (inlinedProgram (layoutOf P) funcs main).splitCriticalEdges
     program.check
     return {
       program, init := (layoutOf P).init, natPow := (layoutOf P).init + 1
@@ -105,7 +108,7 @@ theorem lower_parts {config : Rt.Config} {F : Fir.Program}
             | error e => rw [hf] at accepted; cases accepted
             | ok funcs =>
               simp only [hf, Except.mapError, bind, Except.bind] at accepted
-              cases hcheck : (rawProgram (layoutOf P) funcs main).splitCriticalEdges.check with
+              cases hcheck : (inlinedProgram (layoutOf P) funcs main).splitCriticalEdges.check with
               | error e => rw [hcheck] at accepted; cases accepted
               | ok u =>
                 cases u

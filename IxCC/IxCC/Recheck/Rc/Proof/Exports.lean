@@ -3,6 +3,7 @@ import IxCC.Recheck.Rc.Proof.FrontParts
 import IxCC.Recheck.Rc.Proof.Replay
 import IxCC.Cfg.Rc.Proof.Native.Public
 import IxCC.Cfg.Rc.Proof.Native.Consume
+import IxCC.Cfg.Rc.Proof.InlineSites
 import IxCC.Rt.Proof.Roots
 
 set_option autoImplicit false
@@ -24,8 +25,8 @@ private theorem consumed_params {P : Cfg.Rc.Program} {layout : Layout} {fd actua
 
 private theorem assembled_function {original : Rt.Lowered} {layout : Layout}
     {functions : List Lir.Func} {main f : Nat} {function : Lir.Func}
-    (program : original.program = (rawProgram layout functions main).splitCriticalEdges)
-    (lookup : (rawProgram layout functions main).funcs[f]? = some function) :
+    (program : original.program = (inlinedProgram layout functions main).splitCriticalEdges)
+    (lookup : (inlinedProgram layout functions main).funcs[f]? = some function) :
     (Cfg.Rc.Public.Spec.assemble original layout).runtime.program.funcs[f]? =
       some function.splitCriticalEdges := by
   have actual : original.program.funcs[f]? = some function.splitCriticalEdges := by
@@ -65,17 +66,24 @@ theorem public_root {config : Rt.Config} {F : Fir.Program}
   obtain ⟨params, conv⟩ := Rt.Proof.function_params loweredFunction
   have raw : (rawProgram (layoutOf P) functions main).funcs[fn]? = some function :=
     (raw_source main fn (by omega)).trans functionLookup
-  have final := assembled_function program raw
-  refine ⟨fd, function.splitCriticalEdges, fdLookup, final, ?_, ?_, ?_, ?_⟩
-  · exact (Rt.Proof.split_params_conv function).2.trans (conv.trans convention)
-  · rw [(Rt.Proof.split_params_conv function).1, params, consumed_params consumed]
+  have inlFn : (inlinedProgram (layoutOf P) functions main).funcs[fn]? =
+      some (Cfg.Rc.Inline.inlineFunc (layoutOf P) function) := by
+    have hlt : fn < (layoutOf P).sourceCount := range
+    rw [inlinedProgram, Cfg.Rc.Inline.inlineProgram_get_lt _ _ hlt, raw]; rfl
+  have final := assembled_function program inlFn
+  refine ⟨fd, (Cfg.Rc.Inline.inlineFunc (layoutOf P) function).splitCriticalEdges, fdLookup, final, ?_, ?_, ?_, ?_⟩
+  · exact (Rt.Proof.split_params_conv (Cfg.Rc.Inline.inlineFunc (layoutOf P) function)).2.trans (conv.trans convention)
+  · rw [(Rt.Proof.split_params_conv (Cfg.Rc.Inline.inlineFunc (layoutOf P) function)).1]
+    change function.params.length = fd.params.length
+    rw [params, consumed_params consumed]
   · change fn ≠ original.init
     rw [init]
     simp only [layoutOf, Layout.init, Layout.incProc]
     omega
   · change fn ≠ original.program.funcs.size
-    have splitLookup : original.program.funcs[fn]? = some function.splitCriticalEdges := by
-      rw [program]; simp [Lir.Program.splitCriticalEdges, raw]
+    have splitLookup : original.program.funcs[fn]? =
+        some (Cfg.Rc.Inline.inlineFunc (layoutOf P) function).splitCriticalEdges := by
+      rw [program]; simp [Lir.Program.splitCriticalEdges, inlFn]
     exact Nat.ne_of_lt (Array.getElem?_eq_some_iff.mp splitLookup).1
 
 theorem public_init {config : Rt.Config} {F : Fir.Program}
@@ -88,7 +96,13 @@ theorem public_init {config : Rt.Config} {F : Fir.Program}
   obtain ⟨main, pairs, functions, _, _, _, _, _, _, length, program,
     init, _⟩ := Cfg.Rc.Native.Spec.lower_parts native
   have raw := raw_init (l := layoutOf P) length main
-  have final := assembled_function program raw
+  have hge : (layoutOf P).sourceCount ≤ (layoutOf P).init := by
+    simp [layoutOf, Layout.init, Layout.incProc]; omega
+  have inlInit : (inlinedProgram (layoutOf P) functions main).funcs[(layoutOf P).init]? =
+      some Rt.Procs.cxInit := by
+    rw [inlinedProgram, Cfg.Rc.Inline.inlineProgram_get_ge _ _ hge]
+    exact raw
+  have final := assembled_function program inlInit
   refine ⟨Rt.Procs.cxInit.splitCriticalEdges, ?_, ?_, ?_, ?_⟩
   · change (Cfg.Rc.Public.Spec.assemble original (layoutOf P)).runtime.program.funcs[original.init]? = _
     rw [init]
@@ -97,7 +111,7 @@ theorem public_init {config : Rt.Config} {F : Fir.Program}
   · exact congrArg List.length (Rt.Proof.split_params_conv Rt.Procs.cxInit).1
   · change original.init ≠ original.program.funcs.size
     have splitLookup : original.program.funcs[(layoutOf P).init]? = some Rt.Procs.cxInit.splitCriticalEdges := by
-      rw [program]; simp [Lir.Program.splitCriticalEdges, raw]
+      rw [program]; simp [Lir.Program.splitCriticalEdges, inlInit]
     rw [init]
     exact Nat.ne_of_lt (Array.getElem?_eq_some_iff.mp splitLookup).1
 

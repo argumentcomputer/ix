@@ -27,10 +27,12 @@ theorem public_entry_eval_sim
     (heap : HeapState P pairs H addresses memory external values context base bump limit regionBytes slots lists) :
     let raw := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) root
     Sem.Sim (ReturnedOutput P pairs raw H addresses external context base limit regionBytes)
-      Nat.succ (fun clock => Fir.run F clock root logical)
-      (fun clock => Lir.eval {lowered.runtime.program with main := root} clock words memory context) :=
-  eval_transfer_sim (fun clock => admitted_root_eval_stages admission accepted root clock words memory context)
-    (entry_eval_sim admission sourceLookup den balance represented compatible arity heap)
+      (Inline.inlineEntryClock lowered.runtime.program)
+      (fun clock => Fir.run F clock root logical)
+      (fun clock => Lir.eval {lowered.runtime.program with main := root} clock words memory context) := by
+  have h1 := entry_eval_sim admission sourceLookup den balance represented compatible arity heap
+  have h2 := admitted_root_eval_stages admission accepted root words memory context
+  exact (Sem.Sim.comp (Lir.eval_mono _ words memory context) h1 h2).mono (by rintro a c ⟨b, hr, rfl⟩; exact hr)
 
 theorem public_entry_eval_refines
     (admission : CodeAdmission F bodies P config pairs functions)

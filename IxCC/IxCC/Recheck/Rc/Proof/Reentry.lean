@@ -45,7 +45,8 @@ theorem recycled_entry {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     (arity : numbers.length = source.params.length) :
     let raw := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) root
     Sem.Sim (ReturnedOutput P pairs raw H addresses external context base limit regionBytes)
-      Nat.succ (fun clock => Fir.run F clock root (Fir.litArgs numbers))
+      (Inline.inlineEntryClock lowered.runtime.program)
+      (fun clock => Fir.run F clock root (Fir.litArgs numbers))
       (fun clock => Lir.eval {lowered.runtime.program with main := root} clock words memory context) := by
   obtain ⟨ready, balance⟩ := heap.numeric_reentry numbers
   exact public_entry_eval_sim admission accepted sourceLookup (Own.dens_lits H numbers) balance
@@ -249,7 +250,8 @@ theorem RecycledPrefix.next_entry {F : Fir.Program} {bodies : Src.NatMap Own.Pla
     (arity : numbers.length = source.params.length) :
     let raw := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) root
     Sem.Sim (ReturnedOutput P pairs raw H' addresses' external context base limit regionBytes)
-      Nat.succ (fun clock => Fir.run F clock root (Fir.litArgs numbers))
+      (Inline.inlineEntryClock lowered.runtime.program)
+      (fun clock => Fir.run F clock root (Fir.litArgs numbers))
       (fun clock => Lir.eval {lowered.runtime.program with main := root} clock words memory' context) :=
   recycled_entry admission accepted trace.final_heapState sourceLookup encoded arity
 
