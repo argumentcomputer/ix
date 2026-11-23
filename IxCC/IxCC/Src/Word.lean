@@ -1,3 +1,5 @@
+import IxCC.BigNat.LimbOps
+
 /-! # Fixed-width words: widths, operations and their exact meaning
 
 The operations of `UInt8`, `UInt16`, `UInt32` and `UInt64` that IxCC treats as primitives
@@ -56,26 +58,51 @@ end Width
 
 /-- The operations of a width, as Lean 4.34.1 defines them: the arithmetic and bitwise
 operations, the three decisions (`decEq`, `decLt`, `decLe`, whose results are `Decidable`
-values), the conversions from and to `Nat`, and the conversions to another width
-(`UIntN.toUIntM`). -/
+values), the conversions from and to `Nat`, the conversions to another width
+(`UIntN.toUIntM`), and the 9 scalar 64-bit hardware limb-component operations
+(DR2 Stage W2 / `IxCC.BigNat.LimbOps`: lowered directly to `Lir.Stmt.limb` and `Lir.Rhs.bsr64`,
+with adjacent pairs fused into single hardware instructions with zero heap allocation). -/
 inductive WordOp where
   | add | sub | mul | div | mod | land | lor | xor | shiftLeft | shiftRight
   | complement | neg
   | decEq | decLt | decLe
   | ofNat | toNat
   | convert (to : Width)
+  -- Scalar 64-bit limb primitives (outside Stage W1 `ofWidth` / `primitives`):
+  | clz64
+  | mulWideLo | mulWideHi
+  | divWideQ | divWideR
+  | addCarryLo | addCarryOut
+  | subBorrowLo | subBorrowOut
   deriving DecidableEq, Repr, Inhabited, Hashable
 
 namespace WordOp
 
 def arity : WordOp → Nat
-  | .complement | .neg | .ofNat | .toNat | .convert _ => 1
+  | .complement | .neg | .ofNat | .toNat | .convert _ | .clz64 => 1
+  | .divWideQ | .divWideR | .addCarryLo | .addCarryOut | .subBorrowLo | .subBorrowOut => 3
   | _ => 2
 
-/-- Every operation of a width `w` (the conversions to the three other widths). -/
+/-- Whether the operation is one of the 9 scalar 64-bit limb-component primitives. -/
+def isLimb : WordOp → Bool
+  | .clz64 | .mulWideLo | .mulWideHi | .divWideQ | .divWideR
+  | .addCarryLo | .addCarryOut | .subBorrowLo | .subBorrowOut => true
+  | _ => false
+
+/-- The 9 scalar 64-bit limb-component operations. -/
+def limbOps : List WordOp :=
+  [.clz64, .mulWideLo, .mulWideHi, .divWideQ, .divWideR,
+   .addCarryLo, .addCarryOut, .subBorrowLo, .subBorrowOut]
+
+/-- Every Stage W1 operation of a width `w` (the conversions to the three other widths).
+Kept exact for `src-tables.tsv` and Stage W1 pin/rule checks. -/
 def ofWidth (w : Width) : List WordOp :=
   [.add, .sub, .mul, .div, .mod, .land, .lor, .xor, .shiftLeft, .shiftRight, .complement, .neg,
    .decEq, .decLt, .decLe, .ofNat, .toNat] ++ (Width.all.filter (· ≠ w)).map .convert
+
+/-- Every operation of width `w`, including the 64-bit scalar limb primitives at `.w64`. -/
+def allOfWidth (w : Width) : List WordOp :=
+  ofWidth w ++ if w == .w64 then limbOps else []
 
 /-- The Lean name of the operation's constant at width `w` (diagnostics and the pin table:
 `UInt64.add`, `UInt64.toUInt8`, …). -/
@@ -88,6 +115,15 @@ def leanName (w : Width) : WordOp → String
   | .decEq => s!"{w.name}.decEq" | .decLt => s!"{w.name}.decLt" | .decLe => s!"{w.name}.decLe"
   | .ofNat => s!"{w.name}.ofNat" | .toNat => s!"{w.name}.toNat"
   | .convert w' => s!"{w.name}.to{w'.name}"
+  | .clz64 => "IxCC.BigNat.clz64"
+  | .mulWideLo => "IxCC.BigNat.mulWide64.lo"
+  | .mulWideHi => "IxCC.BigNat.mulWide64.hi"
+  | .divWideQ => "IxCC.BigNat.divWide64.q"
+  | .divWideR => "IxCC.BigNat.divWide64.r"
+  | .addCarryLo => "IxCC.BigNat.addCarry64.lo"
+  | .addCarryOut => "IxCC.BigNat.addCarry64.carry"
+  | .subBorrowLo => "IxCC.BigNat.subBorrow64.lo"
+  | .subBorrowOut => "IxCC.BigNat.subBorrow64.borrow"
 
 /-- Whether the operation is a decision (its result a `Decidable` value). -/
 def isDecision : WordOp → Bool
@@ -146,6 +182,32 @@ def eval (w : Width) : WordOp → Nat → Nat → WordResult
   | .ofNat, a, _ => .word w (a % w.size)
   | .toNat, a, _ => .nat a
   | .convert w', a, _ => if w.bits ≤ w'.bits then .word w' a else .word w' (a % w'.size)
+  | .clz64, a, _ => .word w (if a == 0 then 64 else 63 - Nat.log2 a)
+  | .mulWideLo, a, b => .word w ((a * b) % w.size)
+  | .mulWideHi, a, b => .word w ((a * b) / w.size)
+  | .divWideQ, _, _ | .divWideR, _, _
+  | .addCarryLo, _, _ | .addCarryOut, _, _
+  | .subBorrowLo, _, _ | .subBorrowOut, _, _ => .word w 0
+
+/-- **The exact meaning** of ternary 64-bit limb-component operations on `Nat`s; `none` on
+`divWideQ`/`divWideR` when `hi ≥ d` (including `d = 0`, where x86 `div` traps) and on non-ternary
+operations. -/
+def eval3 (w : Width) : WordOp → Nat → Nat → Nat → Option WordResult
+  | .divWideQ, hi, lo, d => if hi < d then some (.word w ((hi * w.size + lo) / d)) else none
+  | .divWideR, hi, lo, d => if hi < d then some (.word w ((hi * w.size + lo) % d)) else none
+  | .addCarryLo, a, b, c =>
+    let cin := if c == 0 then 0 else 1
+    some (.word w ((a + b + cin) % w.size))
+  | .addCarryOut, a, b, c =>
+    let cin := if c == 0 then 0 else 1
+    some (.word w (if w.size ≤ a + b + cin then 1 else 0))
+  | .subBorrowLo, a, b, c =>
+    let bin := if c == 0 then 0 else 1
+    some (.word w (if a < b + bin then w.size + a - (b + bin) else a - (b + bin)))
+  | .subBorrowOut, a, b, c =>
+    let bin := if c == 0 then 0 else 1
+    some (.word w (if a < b + bin then 1 else 0))
+  | _, _, _, _ => none
 
 /-- **In range in, in range out**: every word result of an operation on words below `2^w` is
 below its own width's size (what the tagged lowering, and a raw representation later, need).
@@ -156,6 +218,7 @@ is in range. -/
 theorem eval_word_lt (w : Width) (op : WordOp) (a b : Nat) (ha : op = .ofNat ∨ a < w.size)
     (hb : b < w.size) (w' : Width) (n : Nat) (h : eval w op a b = .word w' n) : n < w'.size := by
   have hs := w.size_pos
+  have hge65 : 65 ≤ w.size := by cases w <;> decide
   have hpow : ∀ x, x < w.size → x < 2 ^ w.bits := fun _ hx => hx
   cases op
   case ofNat =>
@@ -185,7 +248,201 @@ theorem eval_word_lt (w : Width) (op : WordOp) (a b : Nat) (ha : op = .ofNat ∨
   · exact Nat.lt_of_le_of_lt (Nat.shiftRight_le _ _) ha
   · exact Nat.xor_lt_two_pow (hpow _ (Nat.sub_lt hs Nat.one_pos)) (hpow _ ha)
   · exact Nat.mod_lt _ hs
+  · split <;> omega
+  · exact Nat.mod_lt _ hs
+  · have hmul : a * b < w.size * w.size := by
+      have h1 : a * b ≤ (w.size - 1) * b := Nat.mul_le_mul_right b (by omega)
+      have h2 : (w.size - 1) * b ≤ (w.size - 1) * w.size :=
+        Nat.mul_le_mul_left (w.size - 1) (Nat.le_of_lt hb)
+      have h3 : (w.size - 1) * w.size + w.size = w.size * w.size := by
+        rw [Nat.sub_mul, Nat.one_mul]
+        have := Nat.le_mul_of_pos_left w.size hs
+        omega
+      omega
+    exact (Nat.div_lt_iff_lt_mul hs).2 hmul
+  · exact hs
+  · exact hs
+  · exact hs
+  · exact hs
+  · exact hs
+  · exact hs
+
+/-- **In range in, in range out** for ternary limb-component operations. -/
+theorem eval3_word_lt (w : Width) (op : WordOp) (a b c : Nat) (ha : a < w.size) (hb : b < w.size)
+    (hc : c < w.size) (w' : Width) (n : Nat) (h : eval3 w op a b c = some (.word w' n)) :
+    n < w'.size := by
+  have hs := w.size_pos
+  have hge2 : 2 ≤ w.size := by cases w <;> decide
+  cases op <;> simp only [eval3, Option.some.injEq, WordResult.word.injEq, reduceCtorEq] at h
+  case divWideQ =>
+    split at h
+    · rename_i hlt
+      simp only [Option.some.injEq, WordResult.word.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      have hd : 0 < c := by omega
+      rw [Nat.div_lt_iff_lt_mul hd]
+      have hle : (a + 1) * w.size ≤ c * w.size := Nat.mul_le_mul_right w.size hlt
+      rw [Nat.add_mul, Nat.one_mul] at hle
+      rw [Nat.mul_comm w.size c]
+      omega
+    · cases h
+  case divWideR =>
+    split at h
+    · rename_i hlt
+      simp only [Option.some.injEq, WordResult.word.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact Nat.lt_trans (Nat.mod_lt _ (by omega)) hc
+    · cases h
+  case addCarryLo =>
+    obtain ⟨rfl, rfl⟩ := h
+    exact Nat.mod_lt _ hs
+  case addCarryOut =>
+    obtain ⟨rfl, rfl⟩ := h
+    split <;> split <;> omega
+  case subBorrowLo =>
+    obtain ⟨rfl, rfl⟩ := h
+    split <;> split <;> omega
+  case subBorrowOut =>
+    obtain ⟨rfl, rfl⟩ := h
+    split <;> split <;> omega
 
 end WordOp
+
+/-! ## Hardware 64-bit Limb Primitives (`IxCC.BigNat.LimbOps`)
+
+The five user-level 64-bit hardware limb primitives pinned from `IxCC.BigNat.LimbOps`, their
+decomposition into scalar `WordOp` components (erased into `Prod.mk` and eliminated by `Anf.shrink`,
+then pair-fused directly onto single `Lir.Stmt.limb` / `Lir.Rhs.bsr64` instructions with zero heap
+allocation), and exact conservativity theorems against `IxCC.BigNat.LimbOps`. -/
+
+/-- The five 64-bit hardware limb primitives in `IxCC.BigNat.LimbOps`. -/
+inductive LimbOp where
+  | addCarry64
+  | subBorrow64
+  | mulWide64
+  | divWide64
+  | clz64
+  deriving DecidableEq, Repr, Inhabited, Hashable
+
+namespace LimbOp
+
+def all : List LimbOp := [.addCarry64, .subBorrow64, .mulWide64, .divWide64, .clz64]
+
+def leanName : LimbOp → String
+  | .addCarry64 => "IxCC.BigNat.addCarry64"
+  | .subBorrow64 => "IxCC.BigNat.subBorrow64"
+  | .mulWide64 => "IxCC.BigNat.mulWide64"
+  | .divWide64 => "IxCC.BigNat.divWide64"
+  | .clz64 => "IxCC.BigNat.clz64"
+
+/-- Full source-level arity (including `divWide64`'s proof argument `_h : hi < d`). -/
+def srcArity : LimbOp → Nat
+  | .addCarry64 => 3
+  | .subBorrow64 => 3
+  | .mulWide64 => 2
+  | .divWide64 => 4
+  | .clz64 => 1
+
+/-- The scalar `WordOp` component(s) that a `LimbOp` decomposes into. -/
+def components : LimbOp → WordOp × Option WordOp
+  | .addCarry64 => (.addCarryLo, some .addCarryOut)
+  | .subBorrow64 => (.subBorrowLo, some .subBorrowOut)
+  | .mulWide64 => (.mulWideLo, some .mulWideHi)
+  | .divWide64 => (.divWideQ, some .divWideR)
+  | .clz64 => (.clz64, none)
+
+/-- Whether the second component of a pair-returning limb op is a `Bool` (vs `UInt64`). -/
+def sndIsBool : LimbOp → Bool
+  | .addCarry64 | .subBorrow64 => true
+  | .mulWide64 | .divWide64 | .clz64 => false
+
+/-! ### Conservativity Theorems against `IxCC.BigNat.LimbOps` -/
+
+theorem clz64_conservative (x : UInt64) :
+    (WordOp.eval .w64 .clz64 x.toNat 0).val = (IxCC.BigNat.clz64 x).toNat := by
+  by_cases hx : x = 0
+  · subst hx; decide
+  · have hx0 : x.toNat ≠ 0 := fun h0 => hx (UInt64.toNat_inj.mp (by simpa using h0))
+    have hbeq : (x.toNat == 0) = false := beq_false_of_ne hx0
+    rw [IxCC.BigNat.clz64_toNat_of_ne_zero x hx]
+    simp only [WordOp.eval, WordResult.val, hbeq, Bool.false_eq_true, ↓reduceIte]
+
+theorem mulWide64_lo_conservative (a b : UInt64) :
+    (WordOp.eval .w64 .mulWideLo a.toNat b.toNat).val = (IxCC.BigNat.mulWide64 a b).1.toNat := by
+  unfold IxCC.BigNat.mulWide64
+  simp only [WordOp.eval, WordResult.val, Width.size, Width.bits, UInt64.toNat_ofNat']
+  exact (Nat.mod_mod_of_dvd _ (Nat.dvd_refl _)).symm
+
+theorem mulWide64_hi_conservative (a b : UInt64) :
+    (WordOp.eval .w64 .mulWideHi a.toNat b.toNat).val = (IxCC.BigNat.mulWide64 a b).2.toNat := by
+  unfold IxCC.BigNat.mulWide64
+  have ha := IxCC.BigNat.uint64_toNat_lt a
+  have hb := IxCC.BigNat.uint64_toNat_lt b
+  have hdiv : a.toNat * b.toNat / 2 ^ 64 < 2 ^ 64 := by
+    rw [Nat.div_lt_iff_lt_mul (Nat.two_pow_pos 64)]
+    have h1 : a.toNat * b.toNat ≤ (2 ^ 64 - 1) * (2 ^ 64 - 1) :=
+      Nat.mul_le_mul (by omega) (by omega)
+    omega
+  simp only [WordOp.eval, WordResult.val, Width.size, Width.bits, UInt64.toNat_ofNat']
+  exact (Nat.mod_eq_of_lt hdiv).symm
+
+theorem divWide64_q_conservative (hi lo d : UInt64) (h : hi < d) :
+    WordOp.eval3 .w64 .divWideQ hi.toNat lo.toNat d.toNat =
+      some (.word .w64 (IxCC.BigNat.divWide64 hi lo d h).1.toNat) := by
+  have hlt : hi.toNat < d.toNat := UInt64.lt_iff_toNat_lt.mp h
+  rw [IxCC.BigNat.divWide64_fst hi lo d h]
+  simp only [WordOp.eval3, Width.size, Width.bits, hlt, ↓reduceIte]
+
+theorem divWide64_r_conservative (hi lo d : UInt64) (h : hi < d) :
+    WordOp.eval3 .w64 .divWideR hi.toNat lo.toNat d.toNat =
+      some (.word .w64 (IxCC.BigNat.divWide64 hi lo d h).2.toNat) := by
+  have hlt : hi.toNat < d.toNat := UInt64.lt_iff_toNat_lt.mp h
+  rw [IxCC.BigNat.divWide64_snd hi lo d h]
+  simp only [WordOp.eval3, Width.size, Width.bits, hlt, ↓reduceIte]
+
+theorem addCarry64_lo_conservative (a b : UInt64) (c : Bool) :
+    WordOp.eval3 .w64 .addCarryLo a.toNat b.toNat c.toNat =
+      some (.word .w64 (IxCC.BigNat.addCarry64 a b c).1.toNat) := by
+  cases c <;>
+    simp [WordOp.eval3, IxCC.BigNat.addCarry64, Width.size, Width.bits]
+
+theorem addCarry64_out_conservative (a b : UInt64) (c : Bool) :
+    WordOp.eval3 .w64 .addCarryOut a.toNat b.toNat c.toNat =
+      some (.word .w64 (IxCC.BigNat.addCarry64 a b c).2.toNat) := by
+  cases c
+  · simp only [WordOp.eval3, IxCC.BigNat.addCarry64, Width.size, Width.bits, Bool.toNat_false,
+      beq_self_eq_true, ↓reduceIte, Nat.add_zero, Option.some.injEq, WordResult.word.injEq, true_and]
+    split <;> simp [*]
+  · simp only [WordOp.eval3, IxCC.BigNat.addCarry64, Width.size, Width.bits, Bool.toNat_true,
+      show (1 == 0) = false from rfl, Bool.false_eq_true, ↓reduceIte, Option.some.injEq,
+      WordResult.word.injEq, true_and]
+    split <;> simp [*]
+
+theorem subBorrow64_lo_conservative (a b : UInt64) (bIn : Bool) :
+    WordOp.eval3 .w64 .subBorrowLo a.toNat b.toNat bIn.toNat =
+      some (.word .w64 (IxCC.BigNat.subBorrow64 a b bIn).1.toNat) := by
+  have ha := IxCC.BigNat.uint64_toNat_lt a
+  have hb := IxCC.BigNat.uint64_toNat_lt b
+  cases bIn
+  · simp only [WordOp.eval3, IxCC.BigNat.subBorrow64, Width.size, Width.bits, Bool.toNat_false,
+      UInt64.toNat_ofNat', beq_self_eq_true, ↓reduceIte]
+    split <;> · congr 2; exact (Nat.mod_eq_of_lt (by omega)).symm
+  · simp only [WordOp.eval3, IxCC.BigNat.subBorrow64, Width.size, Width.bits, Bool.toNat_true,
+      UInt64.toNat_ofNat', show (1 == 0) = false from rfl, Bool.false_eq_true, ↓reduceIte]
+    split <;> · congr 2; exact (Nat.mod_eq_of_lt (by omega)).symm
+
+theorem subBorrow64_out_conservative (a b : UInt64) (bIn : Bool) :
+    WordOp.eval3 .w64 .subBorrowOut a.toNat b.toNat bIn.toNat =
+      some (.word .w64 (IxCC.BigNat.subBorrow64 a b bIn).2.toNat) := by
+  cases bIn
+  · simp only [WordOp.eval3, IxCC.BigNat.subBorrow64, Bool.toNat_false,
+      beq_self_eq_true, ↓reduceIte, Nat.add_zero, Option.some.injEq, WordResult.word.injEq, true_and]
+    split <;> simp [*]
+  · simp only [WordOp.eval3, IxCC.BigNat.subBorrow64, Bool.toNat_true,
+      show (1 == 0) = false from rfl, Bool.false_eq_true, ↓reduceIte, Option.some.injEq,
+      WordResult.word.injEq, true_and]
+    split <;> simp [*]
+
+end LimbOp
 
 end IxCC.Src

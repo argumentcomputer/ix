@@ -1,4 +1,5 @@
 import IxCC.Fir.Syntax
+import IxCC.Fir.Rep
 import IxCC.Anf.WellFormed
 import IxCC.Anf.Census
 

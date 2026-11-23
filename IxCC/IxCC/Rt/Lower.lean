@@ -1,4 +1,5 @@
 import IxCC.Cfg.WellFormed
+import IxCC.Fir.Rep
 import IxCC.Lir.SplitEdges
 import IxCC.Rt.Procs.Entry
 import IxCC.Rt.Procs.Nat
@@ -372,7 +373,32 @@ def checked64 (x : VReg) (r : Lir.Arg) : M Unit := do
   check .natOverflow fun ok bad => .br .ugt r (.imm 0x7fffffffffffffff) bad ok
   assign x (retag r)
 
-/-- A width-64 operation that can leave `[0, 2^63)`, on tagged operands. -/
+/-- Count leading zeros of an untagged 64-bit word `u` via `Lir.Rhs.bsr64`: returns `64` when
+`u = 0`, else `63 - bsr64 u` (retagged to `2r + 1` when `tagged = true`). -/
+def clz64Code (x : VReg) (u : Lir.Arg) (tagged : Bool) : M Unit := do
+  let zBlk ← newLabel
+  let nzBlk ← newLabel
+  let join ← newLabel
+  close (.br .eq u (.imm 0) (loc zBlk) (loc nzBlk))
+  put zBlk { term := .jump ⟨.loc join, [.imm (if tagged then 129 else 64)]⟩, cold := true }
+  let b ← freshReg
+  let r ← freshReg
+  if tagged then
+    let t ← freshReg
+    put nzBlk {
+      body := [.assign b (.bsr64 u), .assign r (.bin .sub .w64 (.imm 63) (.v b)),
+               .assign t (retag (.v r))]
+      term := .jump ⟨.loc join, [.v t]⟩
+    }
+  else
+    put nzBlk {
+      body := [.assign b (.bsr64 u), .assign r (.bin .sub .w64 (.imm 63) (.v b))]
+      term := .jump ⟨.loc join, [.v r]⟩
+    }
+  openAt join [x]
+
+/-- A width-64 operation that can leave `[0, 2^63)` (and the 9 scalar 64-bit limb-component
+primitives), on tagged operands (stage W1 / shared `PrimCore`). -/
 def word64 (f : FunId) (x : VReg) (op : Src.WordOp) (as : List Lir.Arg) : M Unit :=
   match op, as with
   | .add, [a, b] => do
@@ -398,6 +424,71 @@ def word64 (f : FunId) (x : VReg) (op : Src.WordOp) (as : List Lir.Arg) : M Unit
     let u ← bin .shr a (.imm 1)
     checked64 x (← bin .sub (.imm 0) u)
   | .ofNat, [a] => assign x (.arg a)
+  | .clz64, [a] => do
+    let u ← bin .shr a (.imm 1)
+    clz64Code x u true
+  | .mulWideLo, [a, b] => do
+    let u ← bin .shr a (.imm 1)
+    let v ← bin .shr b (.imm 1)
+    let lo ← freshReg
+    let hi ← freshReg
+    emit (.limb lo hi (.mulWide64 u v))
+    checked64 x (.v lo)
+  | .mulWideHi, [a, b] => do
+    let u ← bin .shr a (.imm 1)
+    let v ← bin .shr b (.imm 1)
+    let lo ← freshReg
+    let hi ← freshReg
+    emit (.limb lo hi (.mulWide64 u v))
+    checked64 x (.v hi)
+  | .divWideQ, [hi, lo, d] => do
+    let uhi ← bin .shr hi (.imm 1)
+    let ulo ← bin .shr lo (.imm 1)
+    let ud ← bin .shr d (.imm 1)
+    let q ← freshReg
+    let r ← freshReg
+    emit (.limb q r (.divWide64 uhi ulo ud))
+    checked64 x (.v q)
+  | .divWideR, [hi, lo, d] => do
+    let uhi ← bin .shr hi (.imm 1)
+    let ulo ← bin .shr lo (.imm 1)
+    let ud ← bin .shr d (.imm 1)
+    let q ← freshReg
+    let r ← freshReg
+    emit (.limb q r (.divWide64 uhi ulo ud))
+    checked64 x (.v r)
+  | .addCarryLo, [a, b, c] => do
+    let ua ← bin .shr a (.imm 1)
+    let ub ← bin .shr b (.imm 1)
+    let uc ← bin .shr c (.imm 1)
+    let s ← freshReg
+    let co ← freshReg
+    emit (.limb s co (.addCarry64 ua ub uc))
+    checked64 x (.v s)
+  | .addCarryOut, [a, b, c] => do
+    let ua ← bin .shr a (.imm 1)
+    let ub ← bin .shr b (.imm 1)
+    let uc ← bin .shr c (.imm 1)
+    let s ← freshReg
+    let co ← freshReg
+    emit (.limb s co (.addCarry64 ua ub uc))
+    assign x (retag (.v co))
+  | .subBorrowLo, [a, b, c] => do
+    let ua ← bin .shr a (.imm 1)
+    let ub ← bin .shr b (.imm 1)
+    let uc ← bin .shr c (.imm 1)
+    let d ← freshReg
+    let bo ← freshReg
+    emit (.limb d bo (.subBorrow64 ua ub uc))
+    checked64 x (.v d)
+  | .subBorrowOut, [a, b, c] => do
+    let ua ← bin .shr a (.imm 1)
+    let ub ← bin .shr b (.imm 1)
+    let uc ← bin .shr c (.imm 1)
+    let d ← freshReg
+    let bo ← freshReg
+    emit (.limb d bo (.subBorrow64 ua ub uc))
+    assign x (retag (.v bo))
   | op, _ => throw (.prim f (.word .w64 op))
 
 /-- The same operations below width 64, on tagged operands: a word congruent to the tagged
@@ -967,6 +1058,638 @@ def lower (cfg : Config) (P : Cfg.Program) : Except Error Lowered := do
   -- a function exported twice keeps its first name (one wrapper per function)
   let roots := named.map fun (f, s) => (f, (named.lookup f).getD s)
   let funcs ← functions (tables P) P roots (List.range P.size)
+  pure { program := { funcs := (funcs ++ [Procs.cxInit, Procs.natPow, Procs.natGcd]).toArray, main }
+         init := P.size, natPow := P.size + 1, natGcd := P.size + 2, roots }
+
+/-! ## DR2 Stage W2: Raw 64-bit `UInt64`, `box`/`unbox`, `nscalar > 0`, and Zero-Alloc Limb Fusion
+
+`Rt.lowerRep cfg cert P` lowers a `Cfg.Program` under a checked Stage W2 representation
+certificate `cert : Fir.Rep.Cert`:
+
+* Variables, parameters, join-point parameters, function returns, and constructor scalar-tail
+  fields annotated `.word` live as raw unboxed 64-bit words `[0, 2^64)` in registers and stack
+  slots — zero tagging, zero `natOverflow`.
+* Crossing `.word → .obj` (uniform/polymorphic positions) allocates a 1-scalar-word cell
+  `⟨nobj = 0, nscalar = 1, tag = 0⟩` (`box64`: 16 bytes, `scan = 0`, raw payload at `+8`).
+* Crossing `.obj → .word` runs `unbox64` (`if odd then w >>> 1 else load64 [w + 8]`), uniform
+  for both boxed 1-scalar-word cells and odd tagged immediates `< 2^63`.
+* Constructors with `CtorRep` scalar tails (`nscalar > 0`) emit `headerLow nobj 0 tag` and
+  `cellBytes (nobj + nscalar)`, storing raw 64-bit words directly in trailing slots.
+* Adjacent pairs of scalar limb-component ops (`mulWideLo`/`mulWideHi`, `divWideQ`/`divWideR`,
+  `addCarryLo`/`addCarryOut`, `subBorrowLo`/`subBorrowOut`) fuse directly into a single
+  `Lir.Stmt.limb r1 r2 op` with zero heap `Prod` allocation. -/
+
+namespace LowerRep
+
+open Lower
+
+/-- Allocate a 1-scalar-word boxed `UInt64` cell (`nobj = 0, nscalar = 1, tag = 0`, 16 bytes,
+`scan = 0`, raw 64-bit word at `+8`). Never fails with `natOverflow`. -/
+def box64 (x : VReg) (r : Lir.Arg) : M Unit := do
+  let rv ← if r == .v x then temp (.arg r) else pure r
+  assign x (.load .w64 .zero (ctxAt bumpOff))
+  let e ← freshReg
+  assign e (.addr (mem x (cellBytes 1)))
+  let l ← temp (.load .w64 .zero (ctxAt limitOff))
+  check .heap fun ok bad => .br .ugt (.v e) l bad ok
+  emit (.store .w64 (ctxAt bumpOff) (.v e))
+  emit (.store .w32 (mem x 0) (.imm (UInt64.ofNat (headerLow 0 0 0))))
+  emit (.store .w32 (mem x 4) (.imm (UInt64.ofNat immortalRc)))
+  emit (.store .w64 (mem x (fieldOffset 0)) rv)
+
+/-- Unbox a `.obj`/`.tobj` value into a raw 64-bit word: odd tagged immediate `2n + 1` becomes
+`w >>> 1`; even pointer to a 1-scalar-word cell loads `[w + 8]`. Works for ALL `[0, 2^64)`. -/
+def unbox64 (x : VReg) (a : Lir.Arg) : M Unit :=
+  match a with
+  | .imm w => assign x (.arg (.imm (w >>> 1)))
+  | .v y => do
+    let immBlk ← newLabel
+    let boxBlk ← newLabel
+    let join ← newLabel
+    close (.br .tz (.v y) (.imm 1) (loc boxBlk) (loc immBlk))
+    let rImm ← freshReg
+    put immBlk {
+      body := [.assign rImm (.bin .shr .w64 (.v y) (.imm 1))]
+      term := .jump ⟨.loc join, [.v rImm]⟩
+    }
+    let rBox ← freshReg
+    put boxBlk {
+      body := [.assign rBox (.load .w64 .zero (mem y (fieldOffset 0)))]
+      term := .jump ⟨.loc join, [.v rBox]⟩
+    }
+    openAt join [x]
+
+/-- Raw 64-bit unsigned division / remainder with `n / 0 = 0` and `n % 0 = n` over full `[0, 2^64)`. -/
+def divModRaw64 (x : VReg) (o : Lir.BinOp) (zero : Lir.Arg → Lir.Arg) (a b : Lir.Arg) : M Unit := do
+  let nz ← newLabel
+  let zBlk ← newLabel
+  let join ← newLabel
+  close (.br .eq b (.imm 0) (loc zBlk) (loc nz))
+  let q ← freshReg
+  put nz {
+    body := [.assign q (.bin o .w64 a b)]
+    term := .jump ⟨.loc join, [.v q]⟩
+  }
+  put zBlk { term := .jump ⟨.loc join, [zero a]⟩, cold := true }
+  openAt join [x]
+
+/-- Emit a raw 64-bit `UInt64` or hardware limb-component operation on raw 64-bit operands,
+producing a raw 64-bit result in `x` (zero tagging, zero `natOverflow`). -/
+def wordRaw64 (f : FunId) (x : VReg) (op : Src.WordOp) (as : List Lir.Arg) : M Unit :=
+  match op, as with
+  | .add, [a, b] => assign x (.bin .add .w64 a b)
+  | .sub, [a, b] => assign x (.bin .sub .w64 a b)
+  | .mul, [a, b] => assign x (.bin .mul .w64 a b)
+  | .div, [a, b] => divModRaw64 x .udiv (fun _ => .imm 0) a b
+  | .mod, [a, b] => divModRaw64 x .urem id a b
+  | .land, [a, b] => assign x (.bin .and .w64 a b)
+  | .lor, [a, b] => assign x (.bin .or .w64 a b)
+  | .xor, [a, b] => assign x (.bin .xor .w64 a b)
+  | .shiftLeft, [a, b] => do
+    let s ← bin .and b (.imm 63)
+    assign x (.bin .shl .w64 a s)
+  | .shiftRight, [a, b] => do
+    let s ← bin .and b (.imm 63)
+    assign x (.bin .shr .w64 a s)
+  | .complement, [a] => assign x (.bin .xor .w64 a (.imm 0xFFFFFFFFFFFFFFFF))
+  | .neg, [a] => assign x (.bin .sub .w64 (.imm 0) a)
+  | .ofNat, [a] => assign x (.arg a)
+  | .toNat, [a] => assign x (.arg a)
+  | .convert .w64, [a] => assign x (.arg a)
+  | .convert w', [a] => assign x (.bin .and .w64 a (.imm (UInt64.ofNat (w'.size - 1))))
+  | .clz64, [a] => clz64Code x a false
+  | .mulWideLo, [a, b] => do
+    let hi ← freshReg
+    emit (.limb x hi (.mulWide64 a b))
+  | .mulWideHi, [a, b] => do
+    let lo ← freshReg
+    emit (.limb lo x (.mulWide64 a b))
+  | .divWideQ, [hi, lo, d] => do
+    let r ← freshReg
+    emit (.limb x r (.divWide64 hi lo d))
+  | .divWideR, [hi, lo, d] => do
+    let q ← freshReg
+    emit (.limb q x (.divWide64 hi lo d))
+  | .addCarryLo, [a, b, c] => do
+    let co ← freshReg
+    emit (.limb x co (.addCarry64 a b c))
+  | .addCarryOut, [a, b, c] => do
+    let s ← freshReg
+    emit (.limb s x (.addCarry64 a b c))
+  | .subBorrowLo, [a, b, c] => do
+    let bo ← freshReg
+    emit (.limb x bo (.subBorrow64 a b c))
+  | .subBorrowOut, [a, b, c] => do
+    let d ← freshReg
+    emit (.limb d x (.subBorrow64 a b c))
+  | op, _ => throw (.prim f (.word .w64 op))
+
+/-- Deliver a raw 64-bit result `r` into destination variable `x` of representation `rx`. -/
+def finishRaw64 (x : VReg) (rx : Fir.Rep) (r : Lir.Arg) : M Unit :=
+  match rx with
+  | .word => assign x (.arg r)
+  | .obj => box64 x r
+  | .tobj => checked64 x r
+  | .erased => assign x (.arg r)
+
+/-- Evaluate operand `a` as a raw 64-bit word (unboxing/untagging as needed); `none` only for a
+`Nat` literal `≥ 2^64` (unless `reduceMod64 = true`, as for `UInt64.ofNat`). -/
+def operandRaw64 (f : FunId) (fc : Fir.Rep.FunCert) (a : Fir.Arg)
+    (reduceMod64 : Bool := false) : M (Option Lir.Arg) :=
+  match a with
+  | .var y =>
+    match fc.varRep y with
+    | .word => pure (some (.v y))
+    | .tobj => do pure (some (← bin .shr (.v y) (.imm 1)))
+    | .obj => do
+      let r ← freshReg
+      unbox64 r (.v y)
+      pure (some (.v r))
+    | .erased => pure (some (.v y))
+  | .lit (.nat n) =>
+    if reduceMod64 then pure (some (.imm (UInt64.ofNat (n % 2 ^ 64))))
+    else if n < 2 ^ 64 then pure (some (.imm (UInt64.ofNat n)))
+    else pure none
+  | .lit (.str _) => throw (.string f)
+  | .erased => pure (some (.imm 0))
+
+/-- Evaluate operand `a` at target representation `expected`, inserting `box64` or `unbox64`
+when crossing the `.word` ↔ `.obj` boundary. -/
+def operandAtRep (f : FunId) (fc : Fir.Rep.FunCert) (a : Fir.Arg) (expected : Fir.Rep) :
+    M (Option Lir.Arg) :=
+  match expected with
+  | .word => operandRaw64 f fc a false
+  | .tobj => do
+    match ← Lower.operand f a with
+    | some la => pure (some la)
+    | none => pure none
+  | .obj =>
+    match a with
+    | .var y =>
+      if fc.varRep y == .word then do
+        let b ← freshReg
+        box64 b (.v y)
+        pure (some (.v b))
+      else pure (some (.v y))
+    | .lit (.nat n) =>
+      if n < natLimit then pure (some (.imm (UInt64.ofNat (2 * n + 1))))
+      else if n < 2 ^ 64 then do
+        let b ← freshReg
+        box64 b (.imm (UInt64.ofNat n))
+        pure (some (.v b))
+      else pure none
+    | .lit (.str _) => throw (.string f)
+    | .erased => pure (some (.imm erasedWord))
+  | .erased => pure (some (.imm erasedWord))
+
+def operandsAtReps (f : FunId) (fc : Fir.Rep.FunCert) :
+    List Fir.Arg → List Fir.Rep → M (Option (List Lir.Arg))
+  | [], _ => pure (some [])
+  | a :: as, rs => do
+    let r := rs.headD .tobj
+    match ← operandAtRep f fc a r with
+    | none => pure none
+    | some la =>
+      match ← operandsAtReps f fc as rs.tail with
+      | none => pure none
+      | some las => pure (some (la :: las))
+
+def withOperandsAtReps (f : FunId) (fc : Fir.Rep.FunCert) (as : List Fir.Arg)
+    (rs : List Fir.Rep) (k : List Lir.Arg → M Unit) : M Bool := do
+  match ← operandsAtReps f fc as rs with
+  | some las => k las; pure true
+  | none => close (.fail .natOverflow); pure false
+
+/-- Evaluate a list of operands as raw 64-bit words. -/
+def operandsRaw64 (f : FunId) (fc : Fir.Rep.FunCert) (reduceMod64 : Bool) :
+    List Fir.Arg → M (Option (List Lir.Arg))
+  | [] => pure (some [])
+  | a :: as => do
+    match ← operandRaw64 f fc a reduceMod64 with
+    | none => pure none
+    | some la =>
+      match ← operandsRaw64 f fc false as with
+      | none => pure none
+      | some las => pure (some (la :: las))
+
+/-! ### Zero-Alloc Limb Pair Fusion -/
+
+/-- The four pair-returning hardware 64-bit limb primitives. -/
+inductive LimbPairKind where
+  | mulWide
+  | divWide
+  | addCarry
+  | subBorrow
+  deriving DecidableEq, Repr
+
+/-- Match two adjacent Cfg instructions computing both halves of the same 64-bit limb primitive
+on identical operands, binding distinct variables neither of which is read by the operands.
+Returns `(kind, r1_lo_or_q, r2_hi_or_r_or_carry, args)`. -/
+def matchLimbPair (i1 i2 : Cfg.Instr) :
+    Option (LimbPairKind × VReg × VReg × List Fir.Arg) :=
+  match i1, i2 with
+  | .bind x1 (.fir (.prim (.word .w64 o1) as1)),
+    .bind x2 (.fir (.prim (.word .w64 o2) as2)) =>
+    if x1 == x2 || as1 != as2 || as1.any (· == .var x1) then none
+    else match o1, o2, as1 with
+      | .mulWideLo, .mulWideHi, [_, _] => some (.mulWide, x1, x2, as1)
+      | .mulWideHi, .mulWideLo, [_, _] => some (.mulWide, x2, x1, as1)
+      | .divWideQ, .divWideR, [_, _, _] => some (.divWide, x1, x2, as1)
+      | .divWideR, .divWideQ, [_, _, _] => some (.divWide, x2, x1, as1)
+      | .addCarryLo, .addCarryOut, [_, _, _] => some (.addCarry, x1, x2, as1)
+      | .addCarryOut, .addCarryLo, [_, _, _] => some (.addCarry, x2, x1, as1)
+      | .subBorrowLo, .subBorrowOut, [_, _, _] => some (.subBorrow, x1, x2, as1)
+      | .subBorrowOut, .subBorrowLo, [_, _, _] => some (.subBorrow, x2, x1, as1)
+      | _, _, _ => none
+  | _, _ => none
+
+/-- Emit a single fused `Lir.Stmt.limb` instruction for a matched limb pair (zero heap allocation;
+when both destinations are `.word`, emits directly into `(r1, r2)` with zero moves). -/
+def emitLimbPair (f : FunId) (fc : Fir.Rep.FunCert) (kind : LimbPairKind)
+    (r1 r2 : VReg) (as : List Fir.Arg) : M Bool := do
+  match ← operandsRaw64 f fc false as with
+  | none => close (.fail .natOverflow); pure false
+  | some las =>
+    let op? : Option Lir.LimbOp := match kind, las with
+      | .mulWide, [a, b] => some (.mulWide64 a b)
+      | .divWide, [hi, lo, d] => some (.divWide64 hi lo d)
+      | .addCarry, [a, b, c] => some (.addCarry64 a b c)
+      | .subBorrow, [a, b, c] => some (.subBorrow64 a b c)
+      | _, _ => none
+    match op? with
+    | none => throw (.form f "limb pair arity mismatch")
+    | some lop =>
+      let rep1 := fc.varRep r1
+      let rep2 := fc.varRep r2
+      let t1 ← if rep1 == .word then pure r1 else freshReg
+      let t2 ← if rep2 == .word then pure r2 else freshReg
+      emit (.limb t1 t2 lop)
+      if rep1 != .word then finishRaw64 r1 rep1 (.v t1)
+      if rep2 != .word then finishRaw64 r2 rep2 (.v t2)
+      pure true
+
+/-! ### Stage W2 Primitives, Scalar-Tail Allocation & Projection -/
+
+/-- Whether a `Fir.Arg` is directly in `.word` representation (or a `< 2^64` literal). -/
+def isWordArg (fc : Fir.Rep.FunCert) : Fir.Arg → Bool
+  | .var y => fc.varRep y == .word
+  | .lit (.nat n) => decide (n < 2 ^ 64)
+  | _ => false
+
+/-- Whether a comparison's two arguments should be compared as raw 64-bit unsigned words. -/
+def cmpIsRaw64 (fc : Fir.Rep.FunCert) (a b : Fir.Arg) : Bool :=
+  (match a with | .var y => fc.varRep y == .word | .lit (.nat n) => decide (natLimit ≤ n ∧ n < 2 ^ 64) | _ => false) ||
+  (match b with | .var y => fc.varRep y == .word | .lit (.nat n) => decide (natLimit ≤ n ∧ n < 2 ^ 64) | _ => false)
+
+/-- Lower a primitive in Stage W2 (`Rt.lowerRep`). -/
+def primitiveRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert) (x : VReg)
+    (op : Lam.Prim) (as : List Fir.Arg) : M Bool := do
+  let rx := fc.varRep x
+  match op with
+  | .word .w64 wo =>
+    if wo.isDecision then throw (.prim f (.word .w64 wo))
+    match ← operandsRaw64 f fc (wo == .ofNat) as with
+    | none => close (.fail .natOverflow); pure false
+    | some las =>
+      match wo with
+      | .convert w' =>
+        if w' == .w64 then
+          match las with
+          | [a] => finishRaw64 x rx a; pure true
+          | _ => throw (.prim f (.word .w64 wo))
+        else
+          -- Narrowing `UInt64.toUInt8/16/32`: mask raw 64-bit value, retag if `.tobj`, NEVER overflows!
+          match las with
+          | [a] =>
+            let m ← bin .and a (.imm (UInt64.ofNat (w'.size - 1)))
+            match rx with
+            | .word => assign x (.arg m)
+            | .tobj => assign x (retag m)
+            | .obj => box64 x m
+            | .erased => assign x (.arg m)
+            pure true
+          | _ => throw (.prim f (.word .w64 wo))
+      | _ =>
+        if rx == .word then
+          wordRaw64 f x wo las; pure true
+        else
+          let tmp ← freshReg
+          wordRaw64 f tmp wo las
+          finishRaw64 x rx (.v tmp)
+          pure true
+  | .word w (.convert .w64) =>
+    -- Widening `UInt8/16/32.toUInt64`: always fits `[0, 2^32) ⊂ [0, 2^64)`, zero overflow!
+    match ← operandsRaw64 f fc false as with
+    | none => close (.fail .natOverflow); pure false
+    | some [a] => finishRaw64 x rx a; pure true
+    | some _ => throw (.prim f (.word w (.convert .w64)))
+  | .word w wo =>
+    if rx == .word then
+      -- Narrow word op producing a `.word` register: compute tagged then untag (or raw).
+      withOperands f as fun las => do
+        let tmp ← freshReg
+        Lower.word f tmp w wo las
+        assign x (.bin .shr .w64 (.v tmp) (.imm 1))
+    else if rx == .obj then
+      withOperands f as fun las => do
+        let tmp ← freshReg
+        Lower.word f tmp w wo las
+        assign x (.arg (.v tmp))
+    else
+      withOperands f as (Lower.word f x w wo)
+  | op =>
+    match compareOf op, as with
+    | some cond, [a, b] =>
+      if cmpIsRaw64 fc a b && isWordArg fc a && isWordArg fc b then
+        match ← operandsRaw64 f fc false [a, b] with
+        | none => close (.fail .natOverflow); pure false
+        | some [la, lb] =>
+          let some (t, e) := T.bools | throw (.noBool f)
+          assign x (.select cond .w64 la lb (.imm t) (.imm e))
+          pure true
+        | some _ => throw (.prim f op)
+      else
+        withOperands f [a, b] (Lower.primitive f T x op)
+    | _, _ =>
+      withOperands f as (Lower.primitive f T x op)
+
+/-- Stage W2 allocation supporting `CtorInfo.nscalar > 0` scalar tails (`headerLow nobj 0 tag`,
+`cellBytes (nobj + nscalar)`). -/
+def allocRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
+    (x : VReg) (c : Fir.CtorInfo) (as : List Fir.Arg) : M Bool := do
+  if isNatKey T c.key then throw (.layout f "a Nat constructor cell (Nat values are literals)")
+  let some baseInfo := Fir.CtorInfo.ofKey T.ctors c.key
+    | throw (.form f "allocation key outside the table")
+  let (nobj, nscalar, fieldReps) : Nat × Nat × List Fir.Rep := match cert.ctorRep? c.key with
+    | some cr =>
+      (cr.nobj, cr.nscalar, List.replicate cr.nobj cr.objRep ++ List.replicate cr.nscalar Fir.Rep.word)
+    | none =>
+      (c.nobj, c.nscalar, List.replicate c.nobj Fir.Rep.tobj ++ List.replicate c.nscalar Fir.Rep.word)
+  let totalArity := nobj + nscalar
+  if as.length != totalArity || totalArity != baseInfo.arity then
+    throw (.form f s!"an allocation of {as.length} fields for {totalArity}")
+  if baseInfo.tag > maxTag then throw (.layout f s!"constructor tag {baseInfo.tag} above {maxTag}")
+  if totalArity == 0 then
+    assign x (.arg (.imm (ctor0Word baseInfo.tag)))
+    pure true
+  else
+    if totalArity > maxFields then throw (.layout f s!"{totalArity} fields, above {maxFields}")
+    withOperandsAtReps f fc as fieldReps fun las => do
+      if las.any (· == .v x) then throw (.form f "an allocation reads the variable it defines")
+      assign x (.load .w64 .zero (ctxAt bumpOff))
+      let e ← freshReg
+      assign e (.addr (mem x (cellBytes totalArity)))
+      let l ← temp (.load .w64 .zero (ctxAt limitOff))
+      check .heap fun ok bad => .br .ugt (.v e) l bad ok
+      emit (.store .w64 (ctxAt bumpOff) (.v e))
+      emit (.store .w32 (mem x 0) (.imm (UInt64.ofNat (headerLow nobj 0 baseInfo.tag))))
+      emit (.store .w32 (mem x 4) (.imm (UInt64.ofNat immortalRc)))
+      las.zipIdx.forM fun (a, i) => emit (.store .w64 (mem x (fieldOffset i)) a)
+
+/-- Stage W2 projection supporting raw 64-bit scalar-tail fields (`i ≥ nobj`). -/
+def projRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
+    (x y : VReg) (c : Key.CtorKey) (i : Nat) : M Unit := do
+  if T.known.natSucc == some c then
+    if i == 0 then assign x (.bin .sub .w64 (.v y) (.imm 2))
+    else throw (.form f "a projection past the Nat successor's field")
+  else if T.known.natZero == some c then throw (.form f "a projection of Nat.zero")
+  else
+    match Fir.CtorInfo.ofKey T.ctors c with
+    | some info =>
+      if i < info.arity then
+        let fr := cert.fieldRep c i
+        let rx := fc.varRep x
+        if fr == .word && rx == .obj then
+          let tmp ← freshReg
+          assign tmp (.load .w64 .zero (mem y (fieldOffset i)))
+          box64 x (.v tmp)
+        else
+          assign x (.load .w64 .zero (mem y (fieldOffset i)))
+      else throw (.form f s!"field {i} of a constructor with {info.arity}")
+    | none => throw (.form f "a projection key outside the table")
+
+/-- Stage W2 single instruction lowering. -/
+def instrRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert) :
+    Cfg.Instr → M Bool
+  | .bind x (.fir (.arg a)) =>
+    withOperandsAtReps f fc [a] [fc.varRep x] fun
+      | [la] => assign x (.arg la)
+      | _ => pure ()
+  | .bind x (.fir (.prim op as)) => primitiveRep f T fc x op as
+  | .bind x (.fir (.call g as)) =>
+    let gc := cert.funCert g
+    withOperandsAtReps f fc as gc.params fun las => do
+      let rx := fc.varRep x
+      if gc.ret == .word && rx == .obj then
+        let tmp ← freshReg
+        emit (.call [tmp] g las)
+        box64 x (.v tmp)
+      else if gc.ret == .word && rx == .tobj then
+        let tmp ← freshReg
+        emit (.call [tmp] g las)
+        checked64 x (.v tmp)
+      else
+        emit (.call [x] g las)
+  | .bind _ (.fir (.ctor ..)) => throw (.form f "a Fir constructor in Cfg")
+  | .bind _ (.fir (.proj ..)) => throw (.form f "a Fir projection in Cfg")
+  | .bind x (.alloc c as _) => allocRep f T cert fc x c as
+  | .bind x (.proj y c i) => do projRep f T cert fc x y c i; pure true
+
+/-- Lower a block's instruction list with adjacent limb-pair fusion (`matchLimbPair`). -/
+def instrsRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert) :
+    List Cfg.Instr → M Bool
+  | [] => pure true
+  | [i] => instrRep f T cert fc i
+  | i1 :: i2 :: rest =>
+    match matchLimbPair i1 i2 with
+    | some (kind, r1, r2, as) => do
+      if ← emitLimbPair f fc kind r1 r2 as then instrsRep f T cert fc rest else pure false
+    | none => do
+      if ← instrRep f T cert fc i1 then instrsRep f T cert fc (i2 :: rest) else pure false
+
+/-! ### Stage W2 Edges, Switches, and Terminators -/
+
+/-- Pure operand lowering when no `box64`/`unbox64` side effects are required. -/
+def pureOperandAtRep (f : FunId) (fc : Fir.Rep.FunCert) (a : Fir.Arg) (expected : Fir.Rep) :
+    Except Error (Option (Option Lir.Arg)) :=
+  -- `some (some la)`: pure; `some none`: natOverflow; `none`: needs side-effecting coercion
+  match expected with
+  | .word =>
+    match a with
+    | .var y => if fc.varRep y == .word then pure (some (some (.v y))) else pure none
+    | .lit (.nat n) => if n < 2 ^ 64 then pure (some (some (.imm (UInt64.ofNat n)))) else pure (some none)
+    | .lit (.str _) => throw (.string f)
+    | .erased => pure (some (some (.imm 0)))
+  | .tobj => do pure (some (← Lower.operand f a))
+  | .obj =>
+    match a with
+    | .var y => if fc.varRep y == .word then pure none else pure (some (some (.v y)))
+    | .lit (.nat n) =>
+      if n < natLimit then pure (some (some (.imm (UInt64.ofNat (2 * n + 1)))))
+      else if n < 2 ^ 64 then pure none
+      else pure (some none)
+    | .lit (.str _) => throw (.string f)
+    | .erased => pure (some (some (.imm erasedWord)))
+  | .erased => pure (some (some (.imm erasedWord)))
+
+def pureOperandsAtReps (f : FunId) (fc : Fir.Rep.FunCert) :
+    List Fir.Arg → List Fir.Rep → Except Error (Option (Option (List Lir.Arg)))
+  | [], _ => pure (some (some []))
+  | a :: as, rs => do
+    match ← pureOperandAtRep f fc a (rs.headD .tobj) with
+    | none => pure none
+    | some none => pure (some none)
+    | some (some la) =>
+      match ← pureOperandsAtReps f fc as rs.tail with
+      | none => pure none
+      | some none => pure (some none)
+      | some (some las) => pure (some (some (la :: las)))
+
+/-- Lower a Cfg edge under Stage W2 representations, emitting a trampoline block only if an
+edge argument requires `box64` or `unbox64`. -/
+def edgeRep (f : FunId) (fc : Fir.Rep.FunCert) (blockReps : Src.NatMap (List Fir.Rep))
+    (src : Nat) (e : Cfg.Edge) : M PEdge := do
+  unless e.back == decide (e.target ≤ src) do throw (.edgeOrder f src)
+  let targetReps := blockReps.getD e.target (List.replicate e.args.length .tobj)
+  match ← pureOperandsAtReps f fc e.args targetReps with
+  | some (some las) => pure ⟨.blk e.target, las⟩
+  | some none => pure (loc (← coldBlock (.fail .natOverflow)))
+  | none =>
+    -- Side-effecting coercion (`box64`/`unbox64`): save open block, build trampoline, restore.
+    let saved ← get
+    let tramp ← newLabel
+    modify fun st => { st with cur := tramp, params := [], acc := [] }
+    let ok ← withOperandsAtReps f fc e.args targetReps fun las =>
+      close (.jump ⟨.blk e.target, las⟩)
+    let _ := ok
+    modify fun st => { st with cur := saved.cur, params := saved.params, acc := saved.acc }
+    pure (loc tramp)
+
+def switchAltRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert)
+    (blockReps : Src.NatMap (List Fir.Rep)) (src : Nat) (ke : Key.CtorKey × Cfg.Edge) :
+    M (KeyKind × PEdge) := do
+  let some kind := keyKind T ke.1 | throw (.switch f src "a key outside the constructor table")
+  pure (kind, ← edgeRep f fc blockReps src ke.2)
+
+def switchRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert)
+    (blockReps : Src.NatMap (List Fir.Rep)) (src : Nat) (x : VReg)
+    (alts : List (Key.CtorKey × Cfg.Edge)) (d : Option Cfg.Edge) : M Unit := do
+  let es ← alts.mapM (switchAltRep f T fc blockReps src)
+  let dd ← d.mapM (edgeRep f fc blockReps src)
+  let nats := es.filter (·.1.isNat)
+  if !nats.isEmpty then
+    unless nats.length == es.length do throw (.switch f src "Nat keys mixed with other keys")
+    natSwitch x es dd
+  else tagSwitch x es dd
+
+def fusedSwitchRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert)
+    (blockReps : Src.NatMap (List Fir.Rep)) (src : Nat) (c : Lir.Cond) (a b : Lir.Arg)
+    (alts : List (Key.CtorKey × Cfg.Edge)) (d : Option Cfg.Edge) : M Unit := do
+  let te ← (boolEdge alts d T.known.boolTrue).mapM (edgeRep f fc blockReps src)
+  let fe ← (boolEdge alts d T.known.boolFalse).mapM (edgeRep f fc blockReps src)
+  fusedClose c a b te fe
+
+def termRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
+    (blockReps : Src.NatMap (List Fir.Rep)) (src : Nat) : Cfg.Term → M Unit
+  | .jump e => do close (.jump (← edgeRep f fc blockReps src e))
+  | .switch x alts d => switchRep f T fc blockReps src x alts d
+  | .ret a => do
+    let _ ← withOperandsAtReps f fc [a] [fc.ret] fun
+      | [la] => close (.ret la)
+      | _ => pure ()
+  | .tcall g as => do
+    let gc := cert.funCert g
+    let _ ← withOperandsAtReps f fc as gc.params fun las => close (.tail g las)
+  | .trap => close .trap
+
+def fusedEndRep (f : FunId) (T : Tables) (fc : Fir.Rep.FunCert)
+    (blockReps : Src.NatMap (List Fir.Rep)) (src : Nat) (b : Cfg.Block)
+    (c : Lir.Cond) (a a' : Fir.Arg) : M Unit := do
+  let raw := cmpIsRaw64 fc a a' && isWordArg fc a && isWordArg fc a'
+  let args? ← if raw then operandsRaw64 f fc false [a, a'] else do pure (← Lower.operands f [a, a'])
+  match args? with
+  | some [la, la'] =>
+    match b.term with
+    | .switch _ alts d => fusedSwitchRep f T fc blockReps src c la la' alts d
+    | t => termRep f T {} fc blockReps src t
+  | _ => close (.fail .natOverflow)
+
+def blockCodeRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
+    (blockReps : Src.NatMap (List Fir.Rep)) (uses : Src.NatMap Nat) (src : Nat)
+    (b : Cfg.Block) : M Unit :=
+  match fusable T uses b with
+  | some (init, c, a, a') => do
+    if ← instrsRep f T cert fc init then fusedEndRep f T fc blockReps src b c a a'
+  | none => do
+    if ← instrsRep f T cert fc b.body then termRep f T cert fc blockReps src b.term
+
+def blockRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
+    (blockReps : Src.NatMap (List Fir.Rep)) (uses : Src.NatMap Nat) (src : Nat)
+    (entry : Bool) (b : Cfg.Block) : M Unit := do
+  openAt 0 (if entry then [] else b.params.map (·.1))
+  blockCodeRep f T cert fc blockReps uses src b
+
+def chunksRep (f : FunId) (T : Tables) (cert : Fir.Rep.Cert) (fc : Fir.Rep.FunCert)
+    (blockReps : Src.NatMap (List Fir.Rep)) (uses : Src.NatMap Nat) (merged : Bool) :
+    List (Cfg.Block × Nat) → VReg → Except Error (List (List PBlock) × VReg)
+  | [], fresh => pure ([], fresh)
+  | (b, i) :: bs, fresh => do
+    let ((), st) ← (blockRep f T cert fc blockReps uses i (merged && i == 0) b).run { fresh }
+    let blocks ← chunkBlocks f st
+    let (rest, fresh) ← chunksRep f T cert fc blockReps uses merged bs st.fresh
+    pure (blocks :: rest, fresh)
+
+def functionRawRep (T : Tables) (cert : Fir.Rep.Cert) (f : FunId) (fd : Cfg.Fun) :
+    Except Error (List VReg × List Lir.Block) := do
+  let some b0 := fd.blocks.head? | throw (.missingBlock f 0)
+  if let some b := misordered fd then throw (.edgeOrder f b)
+  let fc := cert.funCert f
+  let blockReps : Src.NatMap (List Fir.Rep) :=
+    Src.NatMap.ofDense (fd.blocks.map fun b => b.params.map fun (v, _) => fc.varRep v)
+  let merged := !(fd.blocks.any fun b => b.term.edges.any (·.target == 0))
+  let supply := max fd.vars (maxVar fd + 1)
+  let arity := b0.params.length
+  let (params, supply) :=
+    if merged then (b0.params.map (·.1), supply)
+    else ((List.range arity).map (supply + ·), supply + arity)
+  let uses := useCounts fd
+  let (cs, _) ← chunksRep f T cert fc blockReps uses merged fd.blocks.zipIdx supply
+  let (starts, _) := chunkStarts (if merged then 0 else 1) cs
+  let body ← resolveChunks f starts cs.zipIdx
+  let entry : List Lir.Block :=
+    if merged then [] else [{ term := .jump { target := starts.getD 0 1, args := params.map .v } }]
+  pure (params, entry ++ body)
+
+def functionRep (T : Tables) (cert : Fir.Rep.Cert) (f : FunId) (fd : Cfg.Fun)
+    (conv : Lir.Conv) : Except Error Lir.Func := do
+  let (params, raw) ← functionRawRep T cert f fd
+  let seen := reachable raw
+  unless reachClosed raw seen do throw (.internal f "a reached block has an unreached successor")
+  pure (Lir.Func.splitCriticalEdges
+    { name := s!"f{f}", params, results := 1, blocks := (pruneWith seen raw).toArray, conv })
+
+def functionsRep (T : Tables) (cert : Fir.Rep.Cert) (P : Cfg.Program)
+    (roots : List (FunId × String)) : List Nat → Except Error (List Lir.Func)
+  | [] => pure []
+  | f :: fs => do
+    let some fd := P.fun? f | throw (.missingFun f)
+    let conv := match roots.lookup f with
+      | some s => .sysvExport s
+      | none => .internal
+    pure ((← functionRep T cert f fd conv) :: (← functionsRep T cert P roots fs))
+
+end LowerRep
+
+open Lower LowerRep in
+/-- **DR2 Stage W2 lowering**: Cfg (immortal fragment) + checked `Fir.Rep.Cert` → Lir with raw
+64-bit `UInt64` registers, `box64`/`unbox64`, `CtorInfo.nscalar > 0` scalar tails, and
+zero-alloc hardware limb-pair fusion (`Lir.Stmt.limb`, `Lir.Rhs.bsr64`). -/
+def lowerRep (cfg : Config) (cert : Fir.Rep.Cert) (P : Cfg.Program) : Except Error Lowered := do
+  let some main := P.exports.head? | throw .noExports
+  if let some (f, _) := P.funs.toList.find? (P.size ≤ ·.1) then throw (.funRange f)
+  let named := P.exports.zipIdx.map fun (f, i) => (f, symbolOf ((cfg.names[i]?).getD s!"root{i}"))
+  let roots := named.map fun (f, s) => (f, (named.lookup f).getD s)
+  let funcs ← functionsRep (tables P) cert P roots (List.range P.size)
   pure { program := { funcs := (funcs ++ [Procs.cxInit, Procs.natPow, Procs.natGcd]).toArray, main }
          init := P.size, natPow := P.size + 1, natGcd := P.size + 2, roots }
 

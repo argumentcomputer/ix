@@ -46,6 +46,11 @@ def wordSem (w : Src.Width) (op : Src.WordOp) : List Nat → Option Src.PrimResu
     if op.arity != 2 || op.isDecision then none
     else if decide (a < w.size) && decide (b < w.size) then some (.nat (op.eval w a b).val)
     else none
+  | [a, b, c] =>
+    if op.arity != 3 || op.isDecision then none
+    else if decide (a < w.size) && decide (b < w.size) && decide (c < w.size) then
+      (op.eval3 w a b c).map fun r => .nat r.val
+    else none
   | _ => none
 
 /-- Src's `PrimOp`, one to one, plus operations only proved rewrites

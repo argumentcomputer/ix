@@ -131,4 +131,117 @@ def checkWord (cfg : Config) (p : Program) (f : CId) (w : Width) (op : WordOp) (
   unless ty.eqv expected do throw s!"word: the theorem does not state {op.leanName w}'s equation"
   checkAxiomClosure p thm
 
+/-! ## Hardware 64-bit limb primitive equations (`IxCC.BigNat.LimbOps`) -/
+
+private def app3 (f a b c : Term) : Term := app (app2 f a b) c
+private def app4 (f a b c d : Term) : Term := app (app3 f a b c) d
+
+/-- The syntactic theorem statement checked for a `LimbOp` pin against `IxCC.BigNat.LimbOps`. -/
+def limbEqnType (p : Program) (pins : Pinned.LimbPins) (op : LimbOp) : Option Term := do
+  let natC ← p.known.nat
+  let eqC ← p.known.eq
+  let boolC ← p.known.bool
+  let u64C ← pinnedId p (p.known.pins.wordTypes.lookup .w64)
+  let ofN ← wordOpId p .w64 .ofNat
+  let limbC ← pinnedId p (pins.op? op)
+  let natT : Term := .const natC []
+  let boolT : Term := .const boolC []
+  let u64T : Term := .const u64C []
+  let m : Term := .natLit (Width.size .w64)
+  let nop := fun (o : PrimOp) (a b : Term) => do
+    let c ← natOpId p o
+    pure (app2 (.const c []) a b)
+  let piNat := fun (body : Term) => Term.pi {} natT body
+  let piBool := fun (body : Term) => Term.pi {} boolT body
+  let of64 := fun (t : Term) => app (.const ofN []) t
+  match op with
+  | .clz64 =>
+    let log2C ← pinnedId p pins.natLog2
+    let condC ← pinnedId p pins.cond
+    let xm ← nop .mod (.var 0) m
+    let isZero ← nop .beq xm (.natLit 0)
+    let sub63 ← nop .sub (.natLit 63) (app (.const log2C []) xm)
+    let rhs := of64 (app4 (.const condC [.zero]) natT isZero (.natLit 64) sub63)
+    pure (piNat (eqT eqC u64T (app (.const limbC []) (of64 (.var 0))) rhs))
+  | .mulWide64 =>
+    let prodC ← pinnedId p pins.prodType
+    let prodMkC ← pinnedId p pins.prodMk
+    let pairT := app2 (.const prodC [.zero, .zero]) u64T u64T
+    let xm ← nop .mod (.var 1) m
+    let ym ← nop .mod (.var 0) m
+    let prod ← nop .mul xm ym
+    let lo := of64 (← nop .mod prod m)
+    let hi := of64 (← nop .div prod m)
+    let lhs := app2 (.const limbC []) (of64 (.var 1)) (of64 (.var 0))
+    let rhs := app4 (.const prodMkC [.zero, .zero]) u64T u64T lo hi
+    pure (piNat (piNat (eqT eqC pairT lhs rhs)))
+  | .divWide64 =>
+    let prodC ← pinnedId p pins.prodType
+    let prodMkC ← pinnedId p pins.prodMk
+    let natLeC ← pinnedId p p.known.pins.natLe
+    let succC ← p.known.natSucc
+    let pairT := app2 (.const prodC [.zero, .zero]) u64T u64T
+    -- Bound variables under `∀ hi lo d : Nat, ∀ h : Nat.le (Nat.succ (hi % 2^64)) (d % 2^64), ...`:
+    -- In `h`'s type (depth 3): hi = var 2, lo = var 1, d = var 0
+    -- In body (depth 4): hi = var 3, lo = var 2, d = var 1, h = var 0
+    let hiM0 ← nop .mod (.var 2) m
+    let dM0 ← nop .mod (.var 0) m
+    let bound := app2 (.const natLeC []) (app (.const succC []) hiM0) dM0
+    let hiM ← nop .mod (.var 3) m
+    let loM ← nop .mod (.var 2) m
+    let dM ← nop .mod (.var 1) m
+    let num ← nop .add (← nop .mul hiM m) loM
+    let q := of64 (← nop .div num dM)
+    let r := of64 (← nop .mod num dM)
+    let lhs := app4 (.const limbC []) (of64 (.var 3)) (of64 (.var 2)) (of64 (.var 1)) (.var 0)
+    let rhs := app4 (.const prodMkC [.zero, .zero]) u64T u64T q r
+    pure (piNat (piNat (piNat (.pi {} bound (eqT eqC pairT lhs rhs)))))
+  | .addCarry64 =>
+    let prodC ← pinnedId p pins.prodType
+    let prodMkC ← pinnedId p pins.prodMk
+    let b2nC ← pinnedId p pins.boolToNat
+    let pairT := app2 (.const prodC [.zero, .zero]) u64T boolT
+    let xm ← nop .mod (.var 2) m
+    let ym ← nop .mod (.var 1) m
+    let cn := app (.const b2nC []) (.var 0)
+    let sum ← nop .add (← nop .add xm ym) cn
+    let carry ← nop .ble m sum
+    let lhs := app3 (.const limbC []) (of64 (.var 2)) (of64 (.var 1)) (.var 0)
+    let rhs := app4 (.const prodMkC [.zero, .zero]) u64T boolT (of64 sum) carry
+    pure (piNat (piNat (piBool (eqT eqC pairT lhs rhs))))
+  | .subBorrow64 =>
+    let prodC ← pinnedId p pins.prodType
+    let prodMkC ← pinnedId p pins.prodMk
+    let b2nC ← pinnedId p pins.boolToNat
+    let condC ← pinnedId p pins.cond
+    let succC ← p.known.natSucc
+    let pairT := app2 (.const prodC [.zero, .zero]) u64T boolT
+    let xm ← nop .mod (.var 2) m
+    let ym ← nop .mod (.var 1) m
+    let bn := app (.const b2nC []) (.var 0)
+    let sub ← nop .add ym bn
+    let borrow ← nop .ble (app (.const succC []) xm) sub
+    let hiDiff ← nop .sub (← nop .add m xm) sub
+    let loDiff ← nop .sub xm sub
+    let diff := app4 (.const condC [.zero]) natT borrow hiDiff loDiff
+    let lhs := app3 (.const limbC []) (of64 (.var 2)) (of64 (.var 1)) (.var 0)
+    let rhs := app4 (.const prodMkC [.zero, .zero]) u64T boolT (of64 diff) borrow
+    pure (piNat (piNat (piBool (eqT eqC pairT lhs rhs))))
+
+/-- Check a hardware 64-bit limb primitive's pinned equation theorem (mirroring `checkWord`). -/
+def checkLimb (cfg : Config) (p : Program) (pins : Pinned.LimbPins) (f : CId) (op : LimbOp)
+    (thm : CId) : Except String Unit := do
+  unless cfg.words do throw "limb: fixed-width words are not enabled"
+  unless some (Pinned.addrNat (p.addr f)) == pins.op? op do
+    throw s!"limb: {op.leanName} address is not the pinned one"
+  let some expected := limbEqnType p pins op
+    | throw s!"limb: a constant the statement of {op.leanName} names is absent"
+  let some (.defn .thm .safe 0 ty _) := p.decl? thm
+    | throw "limb: the equation is not a safe level-monomorphic theorem"
+  if p.byStatement.contains thm then
+    throw "limb: the equation was read by its statement; its proof is not in the program"
+  unless ty.nodesLe maxTermNodes do throw "limb: the statement exceeds the node budget"
+  unless ty.eqv expected do throw s!"limb: the theorem does not state {op.leanName}'s equation"
+  checkAxiomClosure p thm
+
 end IxCC.Src.Table

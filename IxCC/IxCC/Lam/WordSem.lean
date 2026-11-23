@@ -31,7 +31,16 @@ theorem wordSem_ne_bool (w : Width) (op : WordOp) (ns : List Nat) (b : Bool) :
     split at h
     · cases h
     · split at h <;> cases h
-  | _ :: _ :: _ :: _ => simp [wordSem] at h
+  | [a, c, d] =>
+    simp only [wordSem] at h
+    split at h
+    · cases h
+    · split at h
+      · cases hr : op.eval3 w a c d with
+        | none => simp [hr] at h
+        | some r => simp [hr] at h
+      · cases h
+  | _ :: _ :: _ :: _ :: _ => simp [wordSem] at h
 
 /-- A binary word primitive's number: both arguments in range, `eval`'s result. -/
 theorem wordSem_two {w : Width} {op : WordOp} {p q n : Nat}
@@ -65,5 +74,71 @@ theorem wordSem_one {w : Width} {op : WordOp} {p n : Nat}
       simp only [Option.some.injEq, Src.PrimResult.nat.injEq] at h
       exact ⟨hne.1, hne.2, hr, h.symm⟩
     · cases h
+
+/-- A ternary limb-component word primitive's number: all three arguments in range and `eval3`'s
+result. -/
+theorem wordSem_three {w : Width} {op : WordOp} {a b c n : Nat}
+    (h : wordSem w op [a, b, c] = some (.nat n)) :
+    op.arity = 3 ∧ op.isDecision = false ∧ a < w.size ∧ b < w.size ∧ c < w.size ∧
+      ∃ r, op.eval3 w a b c = some r ∧ n = r.val := by
+  simp only [wordSem] at h
+  split at h
+  · cases h
+  · rename_i hne
+    simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, not_or, Decidable.not_not, Bool.not_eq_true] at hne
+    split at h
+    · rename_i hr
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hr
+      cases he : op.eval3 w a b c with
+      | none => simp [he] at h
+      | some r =>
+        simp only [he, Option.map_some, Option.some.injEq, Src.PrimResult.nat.injEq] at h
+        exact ⟨hne.1, hne.2, hr.1.1, hr.1.2, hr.2, r, rfl, h.symm⟩
+    · cases h
+
+/-- Every word primitive's result fits in 64 bits (`n < 2 ^ 64`). -/
+theorem wordSem_lt_u64 {w : Width} {op : WordOp} {ns : List Nat} {n : Nat}
+    (h : wordSem w op ns = some (.nat n)) : n < 2 ^ 64 := by
+  have hle64 : ∀ w' : Width, w'.size ≤ 2 ^ 64 := fun w' => by cases w' <;> decide
+  match ns with
+  | [] => simp [wordSem] at h
+  | [a] =>
+    obtain ⟨_, hdec, ha, rfl⟩ := wordSem_one h
+    cases hr : op.eval w a 0 with
+    | word w' m =>
+      have hm := WordOp.eval_word_lt w op a 0 ha w.size_pos w' m hr
+      exact Nat.lt_of_lt_of_le hm (hle64 w')
+    | nat m =>
+      cases op <;> simp [WordOp.eval] at hr
+      · subst hr
+        have ha' : a < w.size := ha.resolve_left (by simp)
+        exact Nat.lt_of_lt_of_le ha' (hle64 w)
+      · split at hr <;> cases hr
+    | dec d =>
+      cases op <;> simp [WordOp.eval] at hr <;> try simp [WordOp.isDecision] at hdec
+      split at hr <;> cases hr
+  | [a, b] =>
+    obtain ⟨_, hdec, ha, hb, rfl⟩ := wordSem_two h
+    cases hr : op.eval w a b with
+    | word w' m =>
+      have hm := WordOp.eval_word_lt w op a b (.inr ha) hb w' m hr
+      exact Nat.lt_of_lt_of_le hm (hle64 w')
+    | nat m =>
+      cases op <;> simp [WordOp.eval] at hr
+      · subst hr
+        exact Nat.lt_of_lt_of_le ha (hle64 w)
+      · split at hr <;> cases hr
+    | dec d =>
+      cases op <;> simp [WordOp.eval] at hr <;> try simp [WordOp.isDecision] at hdec
+      split at hr <;> cases hr
+  | [a, b, c] =>
+    obtain ⟨_, _, ha, hb, hc, r, hr, rfl⟩ := wordSem_three h
+    cases r with
+    | word w' m =>
+      have hm := WordOp.eval3_word_lt w op a b c ha hb hc w' m hr
+      exact Nat.lt_of_lt_of_le hm (hle64 w')
+    | nat m => cases op <;> simp [WordOp.eval3] at hr <;> (split at hr <;> cases hr)
+    | dec d => cases op <;> simp [WordOp.eval3] at hr <;> (split at hr <;> cases hr)
+  | _ :: _ :: _ :: _ :: _ => simp [wordSem] at h
 
 end IxCC.Lam

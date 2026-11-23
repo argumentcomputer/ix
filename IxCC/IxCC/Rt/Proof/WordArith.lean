@@ -300,6 +300,237 @@ theorem wideOfNat_word : natWord (WordOp.eval .w64 .ofNat p 0).val = some a := b
   rw [Nat.mod_eq_of_lt (by omega)]
   exact ha
 
+/-! ## Raw 64-bit arithmetic over full `[0, 2^64)` (DR2 Stage W2) -/
+
+theorem rawAdd_toNat {p q : Nat} {a b : Word} (ha : a.toNat = p) (hb : b.toNat = q) :
+    (a + b).toNat = (WordOp.eval .w64 .add p q).val := by
+  rw [UInt64.toNat_add, ha, hb]; rfl
+
+theorem rawSub_toNat {p q : Nat} {a b : Word} (ha : a.toNat = p) (hb : b.toNat = q) :
+    (a - b).toNat = (WordOp.eval .w64 .sub p q).val := by
+  rw [UInt64.toNat_sub, ha, hb]; rfl
+
+theorem rawMul_toNat {p q : Nat} {a b : Word} (ha : a.toNat = p) (hb : b.toNat = q) :
+    (a * b).toNat = (WordOp.eval .w64 .mul p q).val := by
+  rw [UInt64.toNat_mul, ha, hb]; rfl
+
+theorem rawDiv_toNat {p q : Nat} {a b : Word} (ha : a.toNat = p) (hb : b.toNat = q) :
+    (if b == 0 then (0 : Word) else a / b).toNat = (WordOp.eval .w64 .div p q).val := by
+  by_cases hq : b = 0
+  · subst hq
+    have hp0 : q = 0 := hb.symm
+    subst hp0
+    simp [WordOp.eval, Src.WordResult.val]
+  · have hne : (b == 0) = false := beq_false_of_ne hq
+    simp only [hne, Bool.false_eq_true, ↓reduceIte, UInt64.toNat_div, ha, hb]
+    rfl
+
+theorem rawMod_toNat {p q : Nat} {a b : Word} (ha : a.toNat = p) (hb : b.toNat = q) :
+    (if b == 0 then a else a % b).toNat = (WordOp.eval .w64 .mod p q).val := by
+  by_cases hq : b = 0
+  · subst hq
+    have hp0 : q = 0 := hb.symm
+    subst hp0
+    simp [ha, WordOp.eval, Src.WordResult.val]
+  · have hne : (b == 0) = false := beq_false_of_ne hq
+    simp only [hne, Bool.false_eq_true, ↓reduceIte, UInt64.toNat_mod, ha, hb]
+    rfl
+
+theorem rawLand_toNat {p q : Nat} {a b : Word} (ha : a.toNat = p) (hb : b.toNat = q) :
+    (a &&& b).toNat = (WordOp.eval .w64 .land p q).val := by
+  rw [UInt64.toNat_and, ha, hb]; rfl
+
+theorem rawLor_toNat {p q : Nat} {a b : Word} (ha : a.toNat = p) (hb : b.toNat = q) :
+    (a ||| b).toNat = (WordOp.eval .w64 .lor p q).val := by
+  rw [UInt64.toNat_or, ha, hb]; rfl
+
+theorem rawXor_toNat {p q : Nat} {a b : Word} (ha : a.toNat = p) (hb : b.toNat = q) :
+    (a ^^^ b).toNat = (WordOp.eval .w64 .xor p q).val := by
+  rw [UInt64.toNat_xor, ha, hb]; rfl
+
+theorem rawShl_toNat {p q : Nat} {a b : Word} (ha : a.toNat = p) (hb : b.toNat = q) :
+    (a <<< ((b &&& 63) &&& 63)).toNat = (WordOp.eval .w64 .shiftLeft p q).val := by
+  have hc : ((b &&& 63) &&& 63).toNat = q % 64 := by
+    rw [UInt64.toNat_and, UInt64.toNat_and, hb, show (UInt64.toNat 63) = 2 ^ 6 - 1 from rfl,
+      Nat.and_two_pow_sub_one_eq_mod, Nat.and_two_pow_sub_one_eq_mod]
+    omega
+  rw [UInt64.toNat_shiftLeft, ha, hc]
+  simp only [WordOp.eval, Src.WordResult.val, Width.bits, Width.size]
+  rw [Nat.mod_mod_of_dvd _ (by decide)]
+
+theorem rawShr_toNat {p q : Nat} {a b : Word} (ha : a.toNat = p) (hb : b.toNat = q) :
+    (a >>> ((b &&& 63) &&& 63)).toNat = (WordOp.eval .w64 .shiftRight p q).val := by
+  have hc : ((b &&& 63) &&& 63).toNat = q % 64 := by
+    rw [UInt64.toNat_and, UInt64.toNat_and, hb, show (UInt64.toNat 63) = 2 ^ 6 - 1 from rfl,
+      Nat.and_two_pow_sub_one_eq_mod, Nat.and_two_pow_sub_one_eq_mod]
+    omega
+  rw [UInt64.toNat_shiftRight, ha, hc]
+  simp only [WordOp.eval, Src.WordResult.val, Width.bits]
+  rw [Nat.mod_eq_of_lt (Nat.mod_lt q (by decide))]
+
+theorem rawComplement_toNat {p : Nat} {a : Word} (ha : a.toNat = p) :
+    (a ^^^ 0xFFFFFFFFFFFFFFFF).toNat = (WordOp.eval .w64 .complement p 0).val := by
+  rw [UInt64.toNat_xor, ha, show (UInt64.toNat 0xFFFFFFFFFFFFFFFF) = 2 ^ 64 - 1 from rfl,
+    Nat.xor_comm]
+  rfl
+
+theorem rawNeg_toNat {p : Nat} {a : Word} (ha : a.toNat = p) :
+    ((0 : Word) - a).toNat = (WordOp.eval .w64 .neg p 0).val := by
+  rw [UInt64.toNat_sub, ha]
+  simp only [UInt64.toNat_zero, Nat.add_zero, WordOp.eval, Src.WordResult.val, Width.size, Width.bits]
+
+theorem rawConvertNarrow_toNat {w' : Width} (hw' : w' ≠ .w64) {p : Nat} {a : Word}
+    (ha : a.toNat = p) :
+    (a &&& UInt64.ofNat (w'.size - 1)).toNat = (WordOp.eval .w64 (.convert w') p 0).val := by
+  have hle : ¬ (Width.bits .w64 ≤ w'.bits) := by
+    rcases narrow_cases hw' with rfl | rfl | rfl <;> decide
+  have hm : (UInt64.ofNat (w'.size - 1)).toNat = 2 ^ w'.bits - 1 := by
+    have := narrow_size hw'
+    exact toNat_ofNat_lt (by omega)
+  rw [UInt64.toNat_and, ha, hm, Nat.and_two_pow_sub_one_eq_mod]
+  simp only [WordOp.eval, hle, ↓reduceIte, Src.WordResult.val, Width.size]
+
+/-! ## Hardware 64-bit Limb Primitive Arithmetic (both raw `[0, 2^64)` and tagged W1) -/
+
+theorem rawClz64_zero : ((64 : Word).toNat) = (WordOp.eval .w64 .clz64 0 0).val := rfl
+
+theorem rawClz64_nz {p : Nat} {a : Word} (ha : a.toNat = p) (hnz : a ≠ 0) :
+    ((63 : Word) - UInt64.ofNat a.toNat.log2).toNat = (WordOp.eval .w64 .clz64 p 0).val := by
+  have hp0 : p ≠ 0 := fun h => hnz (UInt64.toNat_inj.mp (by rw [ha, h]; rfl))
+  have hbeq : (p == 0) = false := beq_false_of_ne hp0
+  have hlog : a.toNat.log2 < 64 := IxCC.BigNat.log2_uint64_lt_64 a
+  rw [ha] at hlog
+  have hof : (UInt64.ofNat a.toNat.log2).toNat = p.log2 := by
+    rw [ha]; exact toNat_ofNat_lt (by omega)
+  rw [UInt64.toNat_sub, hof, show (UInt64.toNat 63) = 63 from rfl]
+  simp only [WordOp.eval, Src.WordResult.val, hbeq, Bool.false_eq_true, ↓reduceIte]
+  omega
+
+theorem wideClz64_zero : natWord (WordOp.eval .w64 .clz64 0 0).val = some 129 := by
+  refine natWord_iff.2 ⟨by decide, rfl⟩
+
+theorem wideClz64_nz {p : Nat} {a : Word} (ha : a.toNat = p) (hnz : a ≠ 0) :
+    let r : Word := 63 - UInt64.ofNat a.toNat.log2
+    natWord (WordOp.eval .w64 .clz64 p 0).val = some (r + r + 1) := by
+  intro r
+  have hr := rawClz64_nz ha hnz
+  have hp0 : p ≠ 0 := fun h => hnz (UInt64.toNat_inj.mp (by rw [ha, h]; rfl))
+  have hbeq : (p == 0) = false := beq_false_of_ne hp0
+  have hlt : r.toNat < 2 ^ 63 := by
+    rw [hr]
+    simp only [WordOp.eval, Src.WordResult.val, hbeq, Bool.false_eq_true, ↓reduceIte]
+    omega
+  exact natWord_iff.2 ⟨by rw [← hr]; exact hlt, by rw [retag_toNat hlt, hr]⟩
+
+theorem rawMulWideLo_toNat {p q : Nat} {a b : Word} (ha : a.toNat = p) (hb : b.toNat = q) :
+    (a * b).toNat = (WordOp.eval .w64 .mulWideLo p q).val := by
+  rw [UInt64.toNat_mul, ha, hb]; rfl
+
+theorem rawMulWideHi_toNat {p q : Nat} {a b : Word} (ha : a.toNat = p) (hb : b.toNat = q) :
+    (UInt64.ofNat (a.toNat * b.toNat / 2 ^ 64)).toNat = (WordOp.eval .w64 .mulWideHi p q).val := by
+  have ha' := a.toNat_lt_size
+  have hb' := b.toNat_lt_size
+  simp only [UInt64.size] at ha' hb'
+  have hdiv : a.toNat * b.toNat / 2 ^ 64 < 2 ^ 64 := by
+    rw [Nat.div_lt_iff_lt_mul (Nat.two_pow_pos 64)]
+    have h1 := Nat.mul_le_mul (show a.toNat ≤ 2 ^ 64 - 1 by omega) (show b.toNat ≤ 2 ^ 64 - 1 by omega)
+    omega
+  rw [toNat_ofNat_lt hdiv, ha, hb]; rfl
+
+theorem rawDivWideQ_toNat {hi lo d : Nat} {whi wlo wd : Word}
+    (hhi : whi.toNat = hi) (hlo : wlo.toNat = lo) (hd : wd.toNat = d) (hlt : hi < d) :
+    (UInt64.ofNat ((whi.toNat * 2 ^ 64 + wlo.toNat) / wd.toNat)).toNat =
+      ((hi * Width.size .w64 + lo) / d) := by
+  have hlt' : whi < wd := UInt64.lt_iff_toNat_lt.mpr (by omega)
+  have hq := IxCC.BigNat.divWide64_div_lt whi wlo wd hlt'
+  rw [toNat_ofNat_lt hq, hhi, hlo, hd]; rfl
+
+theorem rawDivWideR_toNat {hi lo d : Nat} {whi wlo wd : Word}
+    (hhi : whi.toNat = hi) (hlo : wlo.toNat = lo) (hd : wd.toNat = d) (hlt : hi < d) :
+    (UInt64.ofNat ((whi.toNat * 2 ^ 64 + wlo.toNat) % wd.toNat)).toNat =
+      ((hi * Width.size .w64 + lo) % d) := by
+  have hdlt := wd.toNat_lt_size
+  simp only [UInt64.size] at hdlt
+  have hmod : (whi.toNat * 2 ^ 64 + wlo.toNat) % wd.toNat < 2 ^ 64 :=
+    Nat.lt_trans (Nat.mod_lt _ (by omega)) hdlt
+  rw [toNat_ofNat_lt hmod, hhi, hlo, hd]; rfl
+
+theorem rawAddCarryLo_toNat {p q c : Nat} {a b wc : Word}
+    (ha : a.toNat = p) (hb : b.toNat = q) (hc : wc.toNat = c) :
+    let cin : Nat := if wc == 0 then 0 else 1
+    (a + b + UInt64.ofNat cin).toNat = ((p + q + (if c == 0 then 0 else 1)) % Width.size .w64) := by
+  intro cin
+  have hcin : cin = if c == 0 then 0 else 1 := by
+    by_cases h0 : c = 0
+    · have hw0 : wc = 0 := UInt64.toNat_inj.mp (by rw [hc, h0]; rfl)
+      simp [cin, hw0, h0]
+    · have hw0 : wc ≠ 0 := fun h => h0 (by rw [← hc, h]; rfl)
+      simp [cin, beq_false_of_ne hw0, beq_false_of_ne h0]
+  have hcinlt : cin < 2 ^ 64 := by dsimp [cin]; split <;> decide
+  rw [UInt64.toNat_add, UInt64.toNat_add, toNat_ofNat_lt hcinlt, ha, hb, hcin]
+  simp only [Width.size, Width.bits]
+  rw [Nat.mod_add_mod]
+
+theorem rawAddCarryOut_toNat {p q c : Nat} {a b wc : Word}
+    (ha : a.toNat = p) (hb : b.toNat = q) (hc : wc.toNat = c) :
+    let cin : Nat := if wc == 0 then 0 else 1
+    ((if a.toNat + b.toNat + cin ≥ 2 ^ 64 then (1 : Word) else 0)).toNat =
+      (if Width.size .w64 ≤ p + q + (if c == 0 then 0 else 1) then 1 else 0) := by
+  intro cin
+  have hcin : cin = if c == 0 then 0 else 1 := by
+    by_cases h0 : c = 0
+    · have hw0 : wc = 0 := UInt64.toNat_inj.mp (by rw [hc, h0]; rfl)
+      simp [cin, hw0, h0]
+    · have hw0 : wc ≠ 0 := fun h => h0 (by rw [← hc, h]; rfl)
+      simp [cin, beq_false_of_ne hw0, beq_false_of_ne h0]
+  rw [ha, hb, hcin]
+  simp only [Width.size, Width.bits, ge_iff_le]
+  split <;> split <;> rfl
+
+theorem rawSubBorrowLo_toNat {p q c : Nat} {a b wc : Word}
+    (ha : a.toNat = p) (hb : b.toNat = q) (hc : wc.toNat = c) :
+    let bin : Nat := if wc == 0 then 0 else 1
+    (a - b - UInt64.ofNat bin).toNat =
+      (let b0 := if c == 0 then 0 else 1
+       if p < q + b0 then Width.size .w64 + p - (q + b0) else p - (q + b0)) := by
+  intro bin
+  have hbin : bin = if c == 0 then 0 else 1 := by
+    by_cases h0 : c = 0
+    · have hw0 : wc = 0 := UInt64.toNat_inj.mp (by rw [hc, h0]; rfl)
+      simp [bin, hw0, h0]
+    · have hw0 : wc ≠ 0 := fun h => h0 (by rw [← hc, h]; rfl)
+      simp [bin, beq_false_of_ne hw0, beq_false_of_ne h0]
+  have ha' := a.toNat_lt_size
+  have hb' := b.toNat_lt_size
+  simp only [UInt64.size] at ha' hb'
+  have hbinlt : bin < 2 ^ 64 := by dsimp [bin]; split <;> decide
+  rw [UInt64.toNat_sub, UInt64.toNat_sub, toNat_ofNat_lt hbinlt, ha, hb]
+  rw [ha] at ha'; rw [hb] at hb'
+  simp only [Width.size, Width.bits]
+  rw [← hbin]
+  have hble : bin ≤ 1 := by dsimp [bin]; split <;> decide
+  split <;> omega
+
+theorem rawSubBorrowOut_toNat {p q c : Nat} {a b wc : Word}
+    (ha : a.toNat = p) (hb : b.toNat = q) (hc : wc.toNat = c) :
+    let bin : Nat := if wc == 0 then 0 else 1
+    ((if a.toNat < b.toNat + bin then (1 : Word) else 0)).toNat =
+      (if p < q + (if c == 0 then 0 else 1) then 1 else 0) := by
+  intro bin
+  have hbin : bin = if c == 0 then 0 else 1 := by
+    by_cases h0 : c = 0
+    · have hw0 : wc = 0 := UInt64.toNat_inj.mp (by rw [hc, h0]; rfl)
+      simp [bin, hw0, h0]
+    · have hw0 : wc ≠ 0 := fun h => h0 (by rw [← hc, h]; rfl)
+      simp [bin, beq_false_of_ne hw0, beq_false_of_ne h0]
+  rw [ha, hb, hbin]
+  split <;> split <;> rfl
+
+theorem bit_word {b : Word} (h : b = 0 ∨ b = 1) : natWord b.toNat = some (b + b + 1) := by
+  rcases h with rfl | rfl
+  · exact natWord_iff.2 ⟨by decide, rfl⟩
+  · exact natWord_iff.2 ⟨by decide, rfl⟩
+
 end wide
 
 end IxCC.Rt.Proof

@@ -573,3 +573,57 @@ verbatim. -/
 
 /-- info: 'IxCC.Fir.lang_run' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Fir.lang_run
+
+/-! DR2 Stage W2: checked word representation soundness (`IxCC.Fir.Proof.Rep`),
+Lam ternary/64-bit word semantics, and zero-alloc limb erasure (`IxCC.Lam.Erase.Limb`). -/
+
+/-- info: 'IxCC.Lam.wordSem_three' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.wordSem_three
+
+/-- info: 'IxCC.Lam.wordSem_lt_u64' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.wordSem_lt_u64
+
+/-- info: 'IxCC.Lam.Erase.Limb.primResult_clz64' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Limb.primResult_clz64
+
+/-- info: 'IxCC.Lam.Erase.Limb.primResult_mulWideLo' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Limb.primResult_mulWideLo
+
+/-- info: 'IxCC.Lam.Erase.Limb.primResult_mulWideHi' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Limb.primResult_mulWideHi
+
+/-- info: 'IxCC.Lam.Erase.Limb.primResult_divWideQ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Limb.primResult_divWideQ
+
+/-- info: 'IxCC.Lam.Erase.Limb.primResult_divWideR' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Limb.primResult_divWideR
+
+/-- info: 'IxCC.Lam.Erase.Limb.primResult_addCarryLo' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Limb.primResult_addCarryLo
+
+/-- info: 'IxCC.Lam.Erase.Limb.primResult_addCarryOut' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Limb.primResult_addCarryOut
+
+/-- info: 'IxCC.Lam.Erase.Limb.primResult_subBorrowLo' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Limb.primResult_subBorrowLo
+
+/-- info: 'IxCC.Lam.Erase.Limb.primResult_subBorrowOut' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Limb.primResult_subBorrowOut
+
+/-- info: 'IxCC.Lam.Erase.Limb.primResult_wordToBool' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Limb.primResult_wordToBool
+
+/-- info: 'IxCC.Fir.Proof.Rep.checkRhs_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Rep.checkRhs_sound
+
+/-- info: 'IxCC.Fir.Proof.Rep.check_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Rep.check_sound
+
+/-- info: 'IxCC.Fir.Proof.Rep.run_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Rep.run_sound
+
+/-- info: 'IxCC.Fir.Proof.Rep.evalRepRhs_box_word' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Rep.evalRepRhs_box_word
+
+/-- info: 'IxCC.Fir.Proof.Rep.evalRepRhs_unbox_word' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Proof.Rep.evalRepRhs_unbox_word

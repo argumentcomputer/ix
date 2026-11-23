@@ -1,4 +1,5 @@
 import IxCC.Rt.Proof.Program
+import IxCC.Rt.Proof.LowerRep
 
 /-!
 # `Rt.lower_correct`

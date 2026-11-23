@@ -1698,4 +1698,90 @@ preserved verbatim. -/
 /-- info: 'IxCC.Rt.Proof.Mono.word'' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Rt.Proof.Mono.word'
 
+/-! DR2 Stage W2: hardware limb conservativity, tagged limb cores, and raw 64-bit Stage W2 proofs. -/
+
+/-- info: 'IxCC.Src.WordOp.eval3_word_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.WordOp.eval3_word_lt
+
+/-- info: 'IxCC.Src.LimbOp.clz64_conservative' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.LimbOp.clz64_conservative
+
+/-- info: 'IxCC.Src.LimbOp.mulWide64_lo_conservative' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.LimbOp.mulWide64_lo_conservative
+
+/-- info: 'IxCC.Src.LimbOp.mulWide64_hi_conservative' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.LimbOp.mulWide64_hi_conservative
+
+/-- info: 'IxCC.Src.LimbOp.divWide64_q_conservative' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.LimbOp.divWide64_q_conservative
+
+/-- info: 'IxCC.Src.LimbOp.divWide64_r_conservative' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.LimbOp.divWide64_r_conservative
+
+/-- info: 'IxCC.Src.LimbOp.addCarry64_lo_conservative' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.LimbOp.addCarry64_lo_conservative
+
+/-- info: 'IxCC.Src.LimbOp.addCarry64_out_conservative' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.LimbOp.addCarry64_out_conservative
+
+/-- info: 'IxCC.Src.LimbOp.subBorrow64_lo_conservative' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.LimbOp.subBorrow64_lo_conservative
+
+/-- info: 'IxCC.Src.LimbOp.subBorrow64_out_conservative' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.LimbOp.subBorrow64_out_conservative
+
+/-- info: 'IxCC.Rt.Proof.core_wordClz64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordClz64
+
+/-- info: 'IxCC.Rt.Proof.core_wordMulWideLo64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordMulWideLo64
+
+/-- info: 'IxCC.Rt.Proof.core_wordMulWideHi64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordMulWideHi64
+
+/-- info: 'IxCC.Rt.Proof.core_wordDivWideQ64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordDivWideQ64
+
+/-- info: 'IxCC.Rt.Proof.core_wordDivWideR64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordDivWideR64
+
+/-- info: 'IxCC.Rt.Proof.core_wordAddCarryLo64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordAddCarryLo64
+
+/-- info: 'IxCC.Rt.Proof.core_wordAddCarryOut64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordAddCarryOut64
+
+/-- info: 'IxCC.Rt.Proof.core_wordSubBorrowLo64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordSubBorrowLo64
+
+/-- info: 'IxCC.Rt.Proof.core_wordSubBorrowOut64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordSubBorrowOut64
+
+/-- info: 'IxCC.Rt.Proof.LowerRep.wordRaw64_core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.LowerRep.wordRaw64_core
+
+/-- info: 'IxCC.Rt.Proof.LowerRep.limbPairRaw_mulWide' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.LowerRep.limbPairRaw_mulWide
+
+/-- info: 'IxCC.Rt.Proof.LowerRep.limbPairRaw_divWide' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.LowerRep.limbPairRaw_divWide
+
+/-- info: 'IxCC.Rt.Proof.LowerRep.limbPairRaw_addCarry' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.LowerRep.limbPairRaw_addCarry
+
+/-- info: 'IxCC.Rt.Proof.LowerRep.limbPairRaw_subBorrow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.LowerRep.limbPairRaw_subBorrow
+
+/-- info: 'IxCC.Rt.Proof.LowerRep.box64_readback' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.LowerRep.box64_readback
+
+/-- info: 'IxCC.Rt.Proof.LowerRep.unbox64_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.LowerRep.unbox64_sound
+
+/-- info: 'IxCC.Rt.Proof.LowerRep.box64_alloc_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.LowerRep.box64_alloc_spec
+
+/-- info: 'IxCC.Rt.Proof.LowerRep.rawCmp_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.LowerRep.rawCmp_sound
+
 

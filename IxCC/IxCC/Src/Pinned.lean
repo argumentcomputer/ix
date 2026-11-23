@@ -474,4 +474,37 @@ def knownOk (p : Program) : Bool :=
   knownAt p pins.bitVecOfFin k.bitVecOfFin && knownAt p pins.finMk k.finMk &&
   k.wordCtors.all (fun (w, c) => knownAt p (pins.wordCtors.lookup w) (some c))
 
+/-! ## Hardware 64-bit limb primitive pins (`IxCC.BigNat.LimbOps`)
+
+Project-local pins for the five 64-bit hardware limb primitives (`addCarry64`, `subBorrow64`,
+`mulWide64`, `divWide64`, `clz64`) and `Prod.mk`. Because `IxCC.BigNat.LimbOps` is outside Lean's
+frozen `Init` `src-tables.tsv`, its content addresses are supplied per environment (e.g. from
+`ix compile` sidecar metadata) and validated syntactically against their stored equations by
+`Src.Table.checkLimb`. -/
+
+/-- Canonical Lean names of the five 64-bit hardware limb primitives. -/
+def limbOpNames : List (LimbOp × String) :=
+  LimbOp.all.map fun op => (op, op.leanName)
+
+/-- Optional pinned addresses (as 256-bit `Nat`s) for `IxCC.BigNat.LimbOps` and `Prod`. -/
+structure LimbPins where
+  ops : List (LimbOp × Nat) := []
+  prodType : Option Nat := none
+  prodMk : Option Nat := none
+  natLog2 : Option Nat := none
+  boolToNat : Option Nat := none
+  cond : Option Nat := none
+  deriving DecidableEq, Repr, Inhabited
+
+def LimbPins.op? (pins : LimbPins) (op : LimbOp) : Option Nat := pins.ops.lookup op
+
+/-- The hardware limb primitive pinned at `a`, if any. -/
+def limbAt? (pins : LimbPins) (a : Ixon.Address) : Option LimbOp :=
+  let n := addrNat a
+  (pins.ops.find? (·.2 == n)).map (·.1)
+
+/-- Resolve all pinned limb primitives present in program `p`. -/
+def resolveLimbPins (p : Program) (pins : LimbPins) : List (CId × LimbOp) :=
+  pins.ops.filterMap fun (op, n) => (p.lookup (addrOfNat n)).map (·, op)
+
 end IxCC.Src.Pinned

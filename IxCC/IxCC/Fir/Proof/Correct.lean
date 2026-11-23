@@ -1,4 +1,5 @@
 import IxCC.Fir.Proof.Sim
+import IxCC.Fir.Proof.Rep
 import IxCC.Anf.Proof.Lang
 import IxCC.Sem.TracedSim
 

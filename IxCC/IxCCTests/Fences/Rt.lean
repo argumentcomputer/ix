@@ -39,3 +39,17 @@ verbatim. -/
 
 /-- info: 'IxCC.Rt.readback_cell' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Rt.readback_cell
+
+/-! DR2 Stage W2 readback for raw 64-bit words, boxed 1-scalar-word cells, and `nscalar > 0` cells. -/
+
+/-- info: 'IxCC.Rt.readbackWord_raw' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.readbackWord_raw
+
+/-- info: 'IxCC.Rt.readbackWord_boxed_imm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.readbackWord_boxed_imm
+
+/-- info: 'IxCC.Rt.readbackWord_boxed_cell' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.readbackWord_boxed_cell
+
+/-- info: 'IxCC.Rt.readbackWord_scalarCell_words' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.readbackWord_scalarCell_words

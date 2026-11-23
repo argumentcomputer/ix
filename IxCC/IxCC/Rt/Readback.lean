@@ -148,4 +148,113 @@ theorem readback_cell {sig : Sig} {fuel : Nat} {m : X86.Memory} {i n tag : Nat} 
   conv => lhs; unfold readback
   simp [hw, hh, immortalHeader_scan hn ht, immortalHeader_tag hn ht, hc, hl, hpos]
 
+/-! ## DR2 Stage W2: Raw 64-bit Word & Scalar-Tail Readback
+
+Extends readback without altering Phase 1's `FoTy` (preserving all existing exhaustive matches):
+* `WordTy.word64`: raw unboxed 64-bit word `[0, 2^64)` observed directly as `Obs.word w`;
+* `WordTy.boxedWord64`: uniform `.obj` word (either odd tagged immediate `2n + 1` or even
+  pointer to a 1-scalar-word cell `⟨nobj = 0, nscalar = 1, tag = 0⟩` with raw payload at `+8`);
+* `WordTy.scalarCell tag nobj nscalar`: constructor cell with `nobj` object fields (read back at
+  `tys`) followed by `nscalar` raw 64-bit scalar fields (read back as `Obs.word`). -/
+
+/-- Stage W2 word-aware result shapes. -/
+inductive WordTy where
+  | word64
+  | boxedWord64
+  | scalarCell (tag : Nat) (objTys : List FoTy) (nscalar : Nat)
+  deriving DecidableEq, Repr, Inhabited
+
+/-- Read back a raw 64-bit word, a boxed 1-scalar-word cell, or a scalar-tail constructor cell. -/
+def readbackWord (sig : Sig) (fuel : Nat) (m : X86.Memory) : WordTy → Word → Option Obs
+  | .word64, w => some (.word w)
+  | .boxedWord64, w =>
+    if w &&& 1 == 1 then some (.word (w >>> 1))
+    else
+      match m.read64? w, m.read64? (w + 8) with
+      | .ok h, .ok v =>
+        let tag := ((h >>> 16) &&& 0xFFFF).toNat
+        let scan := (h &&& 0xFF).toNat
+        if tag == 0 && scan == 0 then some (.word v) else none
+      | _, _ => none
+  | .scalarCell tag objTys nscalar, w =>
+    if w &&& 1 == 1 then none
+    else
+      match m.read64? w with
+      | .error _ => none
+      | .ok h =>
+        let htag := ((h >>> 16) &&& 0xFFFF).toNat
+        let scan := (h &&& 0xFF).toNat
+        if htag == tag && scan == objTys.length && 0 < objTys.length + nscalar then
+          match objTys.zipIdx.mapM fun (t, j) =>
+            match m.read64? (w + UInt64.ofNat (8 + 8 * j)) with
+            | .ok v => readback sig fuel m t v
+            | .error _ => none with
+          | none => none
+          | some objObs =>
+            match (List.range nscalar).mapM fun k =>
+              match m.read64? (w + UInt64.ofNat (8 + 8 * (objTys.length + k))) with
+              | .ok v => some (Obs.word v)
+              | .error _ => none with
+            | none => none
+            | some scObs => some (.ctor tag (objObs ++ scObs))
+        else none
+
+/-- Observe a `cx_result` at a Stage W2 `WordTy`. -/
+def observeWord (sig : Sig) (fuel : Nat) (m : X86.Memory) (ty : WordTy) (status value : Word) :
+    Option (Sem.Result Obs) :=
+  match status.toNat with
+  | 0 => (readbackWord sig fuel m ty value).map .ok
+  | 1 => some (.resource .heap)
+  | 2 => some (.resource .stack)
+  | 3 => some (.resource .natOverflow)
+  | 4 => some .trap
+  | _ => none
+
+theorem readbackWord_raw {sig : Sig} {fuel : Nat} {m : X86.Memory} (w : Word) :
+    readbackWord sig fuel m .word64 w = some (.word w) := rfl
+
+theorem readbackWord_boxed_imm {sig : Sig} {fuel : Nat} {m : X86.Memory} {n : Nat} {w : Word}
+    (h : natWord n = some w) :
+    readbackWord sig fuel m .boxedWord64 w = some (.word (UInt64.ofNat n)) := by
+  have hw := natWord_toNat h
+  obtain ⟨h1, h2⟩ := odd_word hw
+  have hshift : w >>> 1 = UInt64.ofNat n := by
+    apply UInt64.toNat_inj.mp
+    rw [h2, UInt64.toNat_ofNat']
+    have hwlt := w.toNat_lt_size
+    simp only [UInt64.size] at hwlt
+    exact (Nat.mod_eq_of_lt (by omega)).symm
+  simp [readbackWord, h1, hshift]
+
+theorem readbackWord_boxed_cell {sig : Sig} {fuel : Nat} {m : X86.Memory} {w v : Word}
+    (hw : w &&& 1 ≠ 1) (hh : m.read64? w = .ok (immortalHeader 0 0))
+    (hv : m.read64? (w + 8) = .ok v) :
+    readbackWord sig fuel m .boxedWord64 w = some (.word v) := by
+  have hscan : ((immortalHeader 0 0) &&& 0xFF).toNat = 0 :=
+    immortalHeader_scan (by decide) (by decide)
+  have htag : (((immortalHeader 0 0) >>> 16) &&& 0xFFFF).toNat = 0 :=
+    immortalHeader_tag (by decide) (by decide)
+  simp [readbackWord, hw, hh, hv, hscan, htag]
+
+theorem readbackWord_scalarCell_words {sig : Sig} {fuel : Nat} {m : X86.Memory}
+    {tag nscalar : Nat} {w : Word} (hw : w &&& 1 ≠ 1)
+    (hh : m.read64? w = .ok (immortalHeader 0 tag))
+    (ht : tag ≤ maxTag) (hpos : 0 < nscalar) :
+    readbackWord sig fuel m (.scalarCell tag [] nscalar) w =
+      ((List.range nscalar).mapM fun k =>
+        match m.read64? (w + UInt64.ofNat (8 + 8 * k)) with
+        | .ok v => some (Obs.word v)
+        | .error _ => none).map (.ctor tag) := by
+  have hscan : ((immortalHeader 0 tag) &&& 0xFF).toNat = 0 :=
+    immortalHeader_scan (by decide) ht
+  have htag : (((immortalHeader 0 tag) >>> 16) &&& 0xFFFF).toNat = tag :=
+    immortalHeader_tag (by decide) ht
+  simp only [readbackWord, hw, beq_iff_eq, ↓reduceIte, hh, hscan, htag, beq_self_eq_true,
+    List.length_nil, Nat.zero_add, hpos, decide_true, Bool.and_self, List.zipIdx_nil,
+    List.mapM_nil, Option.pure_def, List.nil_append]
+  cases ((List.range nscalar).mapM fun k =>
+    match m.read64? (w + UInt64.ofNat (8 + 8 * k)) with
+    | .ok v => some (Obs.word v)
+    | .error _ => none) <;> rfl
+
 end IxCC.Rt

@@ -108,6 +108,7 @@ def suite (a : Assert) (o : Options) (tools : Option Native.Tools) : IO Unit := 
   part a s!"bench-k1 entries at Xv, Xl, typed x86, the byte machine{where_}" (Levels.benches a tools)
   part a s!"hand-written values at every level{where_}" (Levels.values a tools)
   part a "hardware limb primitives (mulWide64/divWide64/addCarry64/subBorrow64/bsr64/brOvf.mulOvf) at every level" (Levels.limbOps a)
+  part a s!"DR2 stage W2: raw 64-bit UInt64, box/unbox, nscalar>0, zero-alloc limb pairs, Blake3 kernel{where_}" (Levels.stageW2 a tools)
   part a s!"generated programs at every level{where_}" (Levels.generated a tools o.generated o.sample)
   if let some t := tools then
     part a "deep recursion on a mapped stack" (Levels.stacks a t)

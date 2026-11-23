@@ -153,6 +153,84 @@ def add (env : Lean.Environment) (eqs : List Equation) : IO Lean.Environment := 
       (← msgs.toList.mapM (·.toString))
   return s.commandState.env
 
+/-- Equations for the five 64-bit hardware limb primitives (`IxCC.BigNat.LimbOps`), matching
+`IxCC.Src.Table.limbEqnType`. -/
+def limbEquations : List Equation :=
+  let m := s!"(nat_lit {2 ^ 64})"
+  let xm := s!"(Nat.mod x {m})"
+  let ym := s!"(Nat.mod y {m})"
+  let him := s!"(Nat.mod hi {m})"
+  let lom := s!"(Nat.mod lo {m})"
+  let dm := s!"(Nat.mod d {m})"
+  let thm := fun (op : String) => (theoremNamespace ++ ".BigNat_" ++ op).toName
+  [ { operation := `IxCC.BigNat.clz64, theoremName := thm "clz64"
+      text := s!"theorem {thm "clz64"} (x : Nat) : IxCC.BigNat.clz64 (UInt64.ofNat x) = \
+        UInt64.ofNat (cond (Nat.beq {xm} (nat_lit 0)) (nat_lit 64) \
+          (Nat.sub (nat_lit 63) (Nat.log2 {xm}))) := by\n  \
+        unfold IxCC.BigNat.clz64\n  \
+        by_cases h : x % {2 ^ 64} = 0\n  \
+        · have h1 : UInt64.ofNat x = 0 := UInt64.toNat_inj.mp (by rw [UInt64.toNat_ofNat']; exact h)\n    \
+          have h2 : Nat.beq {xm} (nat_lit 0) = true := Nat.beq_eq.mpr h\n    \
+          rw [h2]; simp [h1]\n  \
+        · have h1 : UInt64.ofNat x ≠ 0 := fun e => h (by simpa [UInt64.toNat_ofNat'] using congrArg UInt64.toNat e)\n    \
+          have h2 : Nat.beq {xm} (nat_lit 0) = false := by\n      \
+            cases hb : Nat.beq {xm} (nat_lit 0)\n      \
+            · rfl\n      \
+            · exact absurd (Nat.beq_eq.mp hb) h\n    \
+          rw [h2]; simp [h1, UInt64.toNat_ofNat']; rfl\n" },
+    { operation := `IxCC.BigNat.mulWide64, theoremName := thm "mulWide64"
+      text := s!"theorem {thm "mulWide64"} (x y : Nat) : \
+        IxCC.BigNat.mulWide64 (UInt64.ofNat x) (UInt64.ofNat y) = \
+        Prod.mk (UInt64.ofNat (Nat.mod (Nat.mul {xm} {ym}) {m})) \
+          (UInt64.ofNat (Nat.div (Nat.mul {xm} {ym}) {m})) :=\n  rfl\n" },
+    { operation := `IxCC.BigNat.divWide64, theoremName := thm "divWide64"
+      text := s!"theorem {thm "divWide64"} (hi lo d : Nat) \
+        (h : Nat.le (Nat.succ {him}) {dm}) : \
+        IxCC.BigNat.divWide64 (UInt64.ofNat hi) (UInt64.ofNat lo) (UInt64.ofNat d) h = \
+        Prod.mk (UInt64.ofNat (Nat.div (Nat.add (Nat.mul {him} {m}) {lom}) {dm})) \
+          (UInt64.ofNat (Nat.mod (Nat.add (Nat.mul {him} {m}) {lom}) {dm})) :=\n  rfl\n" },
+    { operation := `IxCC.BigNat.addCarry64, theoremName := thm "addCarry64"
+      text := s!"theorem {thm "addCarry64"} (x y : Nat) (c : Bool) : \
+        IxCC.BigNat.addCarry64 (UInt64.ofNat x) (UInt64.ofNat y) c = \
+        Prod.mk (UInt64.ofNat (Nat.add (Nat.add {xm} {ym}) (Bool.toNat c))) \
+          (Nat.ble {m} (Nat.add (Nat.add {xm} {ym}) (Bool.toNat c))) := by\n  \
+        unfold IxCC.BigNat.addCarry64\n  \
+        apply Prod.ext\n  \
+        · rfl\n  \
+        · simp only [UInt64.toNat_ofNat']\n    \
+          by_cases h : {2 ^ 64} ≤ x % {2 ^ 64} + y % {2 ^ 64} + c.toNat\n    \
+          · have hb : Nat.ble {m} (Nat.add (Nat.add {xm} {ym}) (Bool.toNat c)) = true := Nat.ble_eq.mpr h\n      \
+            rw [hb]; simp [h]\n    \
+          · have hb : Nat.ble {m} (Nat.add (Nat.add {xm} {ym}) (Bool.toNat c)) = false := by\n        \
+              cases hq : Nat.ble {m} (Nat.add (Nat.add {xm} {ym}) (Bool.toNat c))\n        \
+              · rfl\n        \
+              · exact absurd (Nat.ble_eq.mp hq) h\n      \
+            rw [hb]; simp [h]\n" },
+    { operation := `IxCC.BigNat.subBorrow64, theoremName := thm "subBorrow64"
+      text := s!"theorem {thm "subBorrow64"} (x y : Nat) (b : Bool) : \
+        IxCC.BigNat.subBorrow64 (UInt64.ofNat x) (UInt64.ofNat y) b = \
+        Prod.mk (UInt64.ofNat (cond (Nat.ble (Nat.succ {xm}) (Nat.add {ym} (Bool.toNat b))) \
+          (Nat.sub (Nat.add {m} {xm}) (Nat.add {ym} (Bool.toNat b))) \
+          (Nat.sub {xm} (Nat.add {ym} (Bool.toNat b))))) \
+          (Nat.ble (Nat.succ {xm}) (Nat.add {ym} (Bool.toNat b))) := by\n  \
+        unfold IxCC.BigNat.subBorrow64\n  \
+        by_cases h : x % {2 ^ 64} < y % {2 ^ 64} + b.toNat\n  \
+        · have hb : Nat.ble (Nat.succ {xm}) (Nat.add {ym} (Bool.toNat b)) = true := Nat.ble_eq.mpr h\n    \
+          rw [hb]; simp [UInt64.toNat_ofNat', h]; rfl\n  \
+        · have hb : Nat.ble (Nat.succ {xm}) (Nat.add {ym} (Bool.toNat b)) = false := by\n      \
+            cases hq : Nat.ble (Nat.succ {xm}) (Nat.add {ym} (Bool.toNat b))\n      \
+            · rfl\n      \
+            · exact absurd (Nat.ble_eq.mp hq) h\n    \
+          rw [hb]; simp [UInt64.toNat_ofNat', h]; rfl\n" } ]
+
+/-- The five 64-bit limb primitive operations that have equations. -/
+def limbOperations : Lean.NameSet :=
+  limbEquations.foldl (fun s e => s.insert e.operation) {}
+
+/-- The limb equations to add for operations present in `ops` (and not already in `env`). -/
+def neededLimbFor (env : Lean.Environment) (ops : Lean.NameSet) : List Equation :=
+  limbEquations.filter fun e => ops.contains e.operation && !env.contains e.theoremName
+
 end Ix.Compile.WordEquations
 
 end

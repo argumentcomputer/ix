@@ -295,12 +295,70 @@ theorem Mono.divMod' (x : Nat) (o : Lir.BinOp) (zero : Lir.Arg → Lir.Arg) (a b
     | unfold temp
     | unfold bin)
 
+theorem Mono.clz64Code' (x : Nat) (u : Lir.Arg) (tagged : Bool) :
+    Mono (clz64Code x u tagged) := by
+  intro st v st' h hl ho
+  have hkey : ∀ (zArg : Lir.Arg) (nzBody : List Lir.Stmt) (nzArg : Lir.Arg) (f' : Nat), st.fresh ≤ f' →
+      let curBlk : PBlock :=
+        { params := st.params, body := st.acc.reverse,
+          term := .br .eq u (.imm 0) (loc st.next) (loc (st.next + 1)) }
+      let st₁ : St :=
+        { done := ((st.done.insert st.cur curBlk)
+            |>.insert st.next { term := .jump ⟨.loc (st.next + 2), [zArg]⟩, cold := true })
+            |>.insert (st.next + 1) { body := nzBody, term := .jump ⟨.loc (st.next + 2), [nzArg]⟩ },
+          cur := st.next + 2, params := [x], acc := [], next := st.next + 3, fresh := f' }
+      Grows st st₁ ∧ Labels st₁ ∧ Open st₁ := by
+    intro zArg nzBody nzArg f' hfr curBlk st₁
+    have hcur := hl.cur
+    dsimp only [st₁]
+    refine ⟨?_, ?_, ?_⟩
+    · refine ⟨Nat.le_add_right st.next 3, hfr, ?_, ?_⟩
+      · intro j bj hj
+        have hjlt := hl.done hj
+        have hjne : j ≠ st.cur := fun e => by subst e; rw [ho] at hj; cases hj
+        simp only [natMap_get?_insert]
+        rw [ite_eq_right (nat_ne_add_of_lt hjlt), ite_eq_right (Nat.ne_of_lt hjlt), ite_eq_right hjne]
+        exact hj
+      · intro _
+        refine .inr ⟨curBlk, ?_, rfl, List.prefix_refl _⟩
+        simp only [natMap_get?_insert]
+        rw [ite_eq_right (nat_ne_add_of_lt hcur), ite_eq_right (Nat.ne_of_lt hcur)]
+        simp only [↓reduceIte]
+    · refine ⟨Nat.lt_succ_self (st.next + 2), ?_⟩
+      intro j bj hj
+      dsimp only at hj ⊢
+      simp only [natMap_get?_insert] at hj
+      split at hj
+      · rename_i e; subst e; exact Nat.add_lt_add_left (by decide : 1 < 3) st.next
+      split at hj
+      · rename_i e; subst e; exact Nat.lt_add_of_pos_right (by decide : 0 < 3)
+      split at hj
+      · rename_i e; subst e; exact Nat.lt_of_lt_of_le hcur (Nat.le_add_right st.next 3)
+      exact Nat.lt_of_lt_of_le (hl.done hj) (Nat.le_add_right st.next 3)
+    · simp only [Open, natMap_get?_insert]
+      rw [ite_eq_right (nat_add_ne_add (by decide : 2 ≠ 1)),
+        ite_eq_right (Ne.symm (Nat.ne_of_lt (Nat.lt_add_of_pos_right (n := st.next) (by decide : 0 < 2)))),
+        ite_eq_right (Ne.symm (nat_ne_add_of_lt hcur))]
+      cases hq : st.done.get? (st.next + 2) with
+      | none => rfl
+      | some bj => exact absurd (hl.done hq) (Nat.not_lt.mpr (Nat.le_add_right st.next 2))
+  cases tagged <;>
+    (simp only [clz64Code, newLabel, close, openAt, put, freshReg, retag, StateT.run, bind,
+       StateT.bind, pure, StateT.pure, modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet,
+       MonadState.modifyGet, Except.bind, Except.pure, Except.ok.injEq, Prod.mk.injEq,
+       Bool.false_eq_true, ↓reduceIte] at h
+     obtain ⟨-, rfl⟩ := h
+     refine hkey _ _ _ _ ?_
+     dsimp only [Lir.VReg]
+     repeat (first | exact Nat.le_refl _ | apply Nat.le_succ_of_le))
+
 /-- A fixed-width word primitive's expansion (stage W1). -/
 theorem Mono.word' (f : Fir.FunId) (x : Nat) (w : Src.Width) (op : Src.WordOp) (las : List Lir.Arg) :
     Mono (Lower.word f x w op las) := by
   unfold Lower.word word64 wordNarrow wordCount checked64
   repeat (first
     | with_reducible exact Mono.divMod' _ _ _ _ _
+    | with_reducible exact Mono.clz64Code' _ _ _
     | with_reducible exact Mono.pure' _
     | with_reducible exact Mono.emit' _
     | with_reducible exact Mono.freshReg'

@@ -27,6 +27,7 @@ def lean8 : WordOp → UInt8 → UInt8 → Nat
   | .ofNat, a, _ => (UInt8.ofNat a.toNat).toNat | .toNat, a, _ => a.toNat
   | .convert .w8, a, _ => a.toNat | .convert .w16, a, _ => a.toUInt16.toNat
   | .convert .w32, a, _ => a.toUInt32.toNat | .convert .w64, a, _ => a.toUInt64.toNat
+  | _, _, _ => 0
 
 def lean16 : WordOp → UInt16 → UInt16 → Nat
   | .add, a, b => (a + b).toNat | .sub, a, b => (a - b).toNat | .mul, a, b => (a * b).toNat
@@ -39,6 +40,7 @@ def lean16 : WordOp → UInt16 → UInt16 → Nat
   | .ofNat, a, _ => (UInt16.ofNat a.toNat).toNat | .toNat, a, _ => a.toNat
   | .convert .w8, a, _ => a.toUInt8.toNat | .convert .w16, a, _ => a.toNat
   | .convert .w32, a, _ => a.toUInt32.toNat | .convert .w64, a, _ => a.toUInt64.toNat
+  | _, _, _ => 0
 
 def lean32 : WordOp → UInt32 → UInt32 → Nat
   | .add, a, b => (a + b).toNat | .sub, a, b => (a - b).toNat | .mul, a, b => (a * b).toNat
@@ -51,6 +53,7 @@ def lean32 : WordOp → UInt32 → UInt32 → Nat
   | .ofNat, a, _ => (UInt32.ofNat a.toNat).toNat | .toNat, a, _ => a.toNat
   | .convert .w8, a, _ => a.toUInt8.toNat | .convert .w16, a, _ => a.toUInt16.toNat
   | .convert .w32, a, _ => a.toNat | .convert .w64, a, _ => a.toUInt64.toNat
+  | _, _, _ => 0
 
 def lean64 : WordOp → UInt64 → UInt64 → Nat
   | .add, a, b => (a + b).toNat | .sub, a, b => (a - b).toNat | .mul, a, b => (a * b).toNat
@@ -63,6 +66,10 @@ def lean64 : WordOp → UInt64 → UInt64 → Nat
   | .ofNat, a, _ => (UInt64.ofNat a.toNat).toNat | .toNat, a, _ => a.toNat
   | .convert .w8, a, _ => a.toUInt8.toNat | .convert .w16, a, _ => a.toUInt16.toNat
   | .convert .w32, a, _ => a.toUInt32.toNat | .convert .w64, a, _ => a.toNat
+  | .clz64, a, _ => (IxCC.BigNat.clz64 a).toNat
+  | .mulWideLo, a, b => (IxCC.BigNat.mulWide64 a b).1.toNat
+  | .mulWideHi, a, b => (IxCC.BigNat.mulWide64 a b).2.toNat
+  | _, _, _ => 0
 
 /-- Boundary words at each width: `0`, `1`, small, around the shift widths, the top bit, the
 maximum. -/
@@ -243,6 +250,62 @@ example : (UInt64.ofNat (2 ^ 65 + 3)) = tower64 3 (Nat.le_of_ble_eq_true rfl) :=
 example : (UInt8.ofNat 300) = UInt8.ofBitVec (@BitVec.ofFin 8 (@Fin.mk 256 44 (by decide))) := by
   decide
 
+/-! ### Hardware limb primitives (`IxCC.BigNat.LimbOps`) against `WordOp.eval` / `WordOp.eval3` -/
+
+/-- Differential check of all 9 scalar limb-component `WordOp`s against `IxCC.BigNat.LimbOps`
+across full `[0, 2^64)` boundary inputs (`bnd64`). -/
+def checkLimbOps : Nat × List String := Id.run do
+  let mut n := 0
+  let mut bad : List String := []
+  for a in bnd64 do
+    n := n + 1
+    if (WordOp.eval .w64 .clz64 a.toNat 0).val != (IxCC.BigNat.clz64 a).toNat then
+      bad := bad ++ [s!"clz64 {a}"]
+    for b in bnd64 do
+      let (lo, hi) := IxCC.BigNat.mulWide64 a b
+      n := n + 2
+      if (WordOp.eval .w64 .mulWideLo a.toNat b.toNat).val != lo.toNat then
+        bad := bad ++ [s!"mulWideLo {a} {b}"]
+      if (WordOp.eval .w64 .mulWideHi a.toNat b.toNat).val != hi.toNat then
+        bad := bad ++ [s!"mulWideHi {a} {b}"]
+      for c in [false, true] do
+        let (alo, aco) := IxCC.BigNat.addCarry64 a b c
+        let (slo, sbo) := IxCC.BigNat.subBorrow64 a b c
+        n := n + 4
+        if WordOp.eval3 .w64 .addCarryLo a.toNat b.toNat c.toNat != some (.word .w64 alo.toNat) then
+          bad := bad ++ [s!"addCarryLo {a} {b} {c}"]
+        if WordOp.eval3 .w64 .addCarryOut a.toNat b.toNat c.toNat != some (.word .w64 aco.toNat) then
+          bad := bad ++ [s!"addCarryOut {a} {b} {c}"]
+        if WordOp.eval3 .w64 .subBorrowLo a.toNat b.toNat c.toNat != some (.word .w64 slo.toNat) then
+          bad := bad ++ [s!"subBorrowLo {a} {b} {c}"]
+        if WordOp.eval3 .w64 .subBorrowOut a.toNat b.toNat c.toNat != some (.word .w64 sbo.toNat) then
+          bad := bad ++ [s!"subBorrowOut {a} {b} {c}"]
+      for d in bnd64 do
+        if hlt : a < d then
+          let (q, r) := IxCC.BigNat.divWide64 a b d hlt
+          n := n + 2
+          if WordOp.eval3 .w64 .divWideQ a.toNat b.toNat d.toNat != some (.word .w64 q.toNat) then
+            bad := bad ++ [s!"divWideQ {a} {b} {d}"]
+          if WordOp.eval3 .w64 .divWideR a.toNat b.toNat d.toNat != some (.word .w64 r.toNat) then
+            bad := bad ++ [s!"divWideR {a} {b} {d}"]
+        else
+          n := n + 2
+          if (WordOp.eval3 .w64 .divWideQ a.toNat b.toNat d.toNat).isSome then
+            bad := bad ++ [s!"divWideQ precondition {a} {b} {d}"]
+          if (WordOp.eval3 .w64 .divWideR a.toNat b.toNat d.toNat).isSome then
+            bad := bad ++ [s!"divWideR precondition {a} {b} {d}"]
+  return (n, bad)
+
+#guard checkLimbOps.2.isEmpty
+
+/-- Kernel reduction of limb primitives on `kbnd64`. -/
+example : kbnd64.all (fun a =>
+    (WordOp.eval .w64 .clz64 a.toNat 0).val == (IxCC.BigNat.clz64 a).toNat &&
+    kbnd64.all fun b =>
+      (WordOp.eval .w64 .mulWideLo a.toNat b.toNat).val == (IxCC.BigNat.mulWide64 a b).1.toNat &&
+      (WordOp.eval .w64 .mulWideHi a.toNat b.toNat).val == (IxCC.BigNat.mulWide64 a b).2.toNat) = true := by
+  decide +kernel
+
 /-- `tests-src`: the same comparisons in the compiled test program, with Lean's C
 implementations, so a runtime that disagreed with the elaborator's evaluation is caught too. -/
 def run (a : Assert) : IO Unit := do
@@ -250,6 +313,9 @@ def run (a : Assert) : IO Unit := do
   expect a bad.isEmpty s!"words: {bad.length} of {n} comparisons disagree with Lean: {reprStr (bad.take 5)}"
   expect a ofNatOk "words: ofNat around every size"
   expectEq a n 8420 s!"words: {n} comparisons"
+  let (ln, lbad) := checkLimbOps
+  expect a lbad.isEmpty s!"words (limbs): {lbad.length} of {ln} limb checks failed: {reprStr (lbad.take 5)}"
+  expect a (ln > 3000) s!"words (limbs): checked {ln} limb cases"
   let (rn, rbad, withoutA, withoutB) := rangeCases
   expect a rbad.isEmpty s!"words: eval_word_lt's conclusion fails on {reprStr (rbad.take 5)}"
   expect a (withoutA > 0 && withoutB > 0)
