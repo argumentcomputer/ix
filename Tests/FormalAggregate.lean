@@ -165,30 +165,6 @@ private def bindingShapeCases (ctx : Keys) (dir : System.FilePath)
   let assumedCtx := { claimCtx with bindingAssumed := true }
   let assumedLeft : CheckEnvTrees := { left with ctx := assumedCtx }
   let assumedRight : CheckEnvTrees := { right with ctx := assumedCtx }
-  let binding := (← claimNode ctx (dir / "binding") .ixvm
-    (.binding claimCtx.spec claimCtx.binding) left).wrapper
-  let otherBinding := (← claimNode ctx (dir / "other-binding") .ixvm
-    (.binding claimCtx.spec (Address.blake3 "another binding".toUTF8)) left).wrapper
-  let ali ← node ctx (dir / "ali") .ixvm assumedLeft
-  let ari ← node ctx (dir / "ari") .ixvm assumedRight
-  let ala ← node ctx (dir / "ala") .aggr assumedLeft
-  let discharges : Array (String × Node × Ixon.Proof × CheckEnvTrees × Bool) := #[
-    ("shape 13 discharges an IxVM child's binding", ali, binding, left, true),
-    ("shape 13 discharges another claim set with the same binding proof", ari, binding, right, true),
-    ("shape 14 discharges an ix_aggr child's binding", ala, binding, left, true),
-    ("shape 13 rejects a child that validates its binding", li, binding, left, false),
-    ("shape 13 rejects a binding claim for another binding", ali, otherBinding, left, false),
-    ("shape 13 rejects an output that still assumes the binding", ali, binding, assumedLeft, false),
-    ("shape 13 rejects an output for other subjects", ali, binding, right, false)]
-  for (label, child, proof, output, accept) in discharges do
-    let s ← streamsDischarge ctx child proof output
-    let outBytes := Ix.Claim.ser output.claim
-    tests := tests.push (test ctx label outBytes s.toIOBuffer accept)
-    if accept then
-      streams := streams.push (Json.mkObj [("label", toJson label),
-        ("type", toJson "discharge"), ("shape", toJson (dischargeShapeCode child.kind)),
-        ("children", toJson #[← childJson child, ← wrapperJson .ixvm proof]),
-        ("output", toJson (hex outBytes)), ("entries", entriesJson s)])
   -- ── claims under different role bindings (shapes 15–16) ──
   -- `tableA` and `tableB` bind every role and differ only in `Nat.land`, so
   -- they have one literal class; `tableC` also rebinds `Char.ofNat`, a class
@@ -248,8 +224,14 @@ private def bindingShapeCases (ctx : Keys) (dir : System.FilePath)
     ("shape 13 rejects an output that still assumes the binding", ali, binding, assumedLeft, false),
     ("shape 13 rejects an output for other subjects", ali, binding, right, false)]
   for (label, child, proof, output, accept) in discharges do
-    tests := tests.push (test ctx label (Ix.Claim.ser output.claim)
-      (← dischargeAdvice ctx child proof output) accept)
+    let s ← streamsDischarge ctx child proof output
+    let outBytes := Ix.Claim.ser output.claim
+    tests := tests.push (test ctx label outBytes s.toIOBuffer accept)
+    if accept then
+      streams := streams.push (Json.mkObj [("label", toJson label),
+        ("type", toJson "discharge"), ("shape", toJson (dischargeShapeCode child.kind)),
+        ("children", toJson #[← childJson child, ← wrapperJson .ixvm proof]),
+        ("output", toJson (hex outBytes)), ("entries", entriesJson s)])
   let crossCases : Array (String × Node × Node × Array ByteArray × Ix.Claim × Bool) := #[
     ("shape 15 joins two claims of one literal class", childA, childB,
       #[ser memberA, ser memberB, tableA, tableB], crossAB.claim, true),

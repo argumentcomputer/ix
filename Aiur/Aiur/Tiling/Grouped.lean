@@ -624,14 +624,15 @@ theorem messages_ok (idOf : String → Nat) (idOk : ∀ x n, id x = .ok n → n 
           | nil => rfl
           | @cons s l ss ls head _ ih =>
               simp only [List.map_cons, ih]
-              split at head
-              · cases head
-              · rename_i callee hch
-                simp only [Except.ok.injEq] at head
-                subst head
-                have := idOk _ _ hch
-                subst this
-                simp [sendLookup, Bridge.CALL]
+              unfold Grouping.encodeSend at head
+              cases hch : id s.channel with
+              | error _ => simp [hch, bind, Except.bind] at head
+              | ok callee =>
+                  simp only [hch, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at head
+                  subst head
+                  have := idOk _ _ hch
+                  subst this
+                  simp [sendLookup, Bridge.CALL]
         · simp [List.map_map, Function.comp_def, memoryLookup, Bridge.ROM]
 
 /-- `Checked.packet_sound` without the memory part of `ValidRow`. -/
@@ -641,7 +642,7 @@ theorem packet_active (checked : Grouping.Checked sources id) (m : Grouping.Memb
     (act : checked.layout.activation.denote a = 1) (active : a m.selector = 1) :
     (∀ n ∈ checked.layout.members, a n.selector = Grouping.selected (some m.selector) n) ∧
     ∃ provided required, Grouping.messages id m.origin = .ok (provided, required) ∧
-      Grouping.SamePackets checked.layout a provided required (fun v => a (m.columns[v]?.getD 0)) := by
+      Grouping.SamePackets checked.layout m.slotMap a provided required (fun v => a (m.columns[v]?.getD 0)) := by
   obtain ⟨n, hn, _, selectors⟩ := checked.layout.select checked.certificate.shapes a valid act
   have sameSelector : n.selector = m.selector := by
     have h := selectors m hm
@@ -651,6 +652,10 @@ theorem packet_active (checked : Grouping.Checked sources id) (m : Grouping.Memb
   subst n
   refine ⟨selectors, ?_⟩
   have back := checked.layout.back_sound checked.certificate.shapes a valid (some m.selector) selectors
+  have on : a (m.columns[m.sourceSelector]?.getD 0) = 1 := by
+    simpa [← (checked.certificate.shapes m hm).1] using active
+  have origCons : Scalar.Circuit.Satisfies m.origin.constraints (fun v => a (m.columns[v]?.getD 0)) :=
+    checked.layout.selected_origin_constraints m hm a valid on
   have hc := checked.packets m hm
   unfold Grouping.Member.PacketCertificate at hc
   cases result : Grouping.messages id m.origin with
@@ -659,7 +664,98 @@ theorem packet_active (checked : Grouping.Checked sources id) (m : Grouping.Memb
       obtain ⟨provided, required⟩ := pair
       simp only [result] at hc
       refine ⟨provided, required, rfl, ?_⟩
-      simpa only [back, Grouping.Member.project, Scalar.Circuit.ArithExpr.denote] using hc.1.sound a
+      have hs := hc.1.sound a (by simpa [Grouping.Member.project, Scalar.Circuit.ArithExpr.denote] using origCons)
+      simpa only [back, Grouping.Member.project, Scalar.Circuit.ArithExpr.denote] using hs
+
+private theorem mapDomain_pairsLedger (xs : List (List F × F)) :
+    Finsupp.mapDomain trimZeros (pairsLedger xs) =
+      (xs.map fun x => Finsupp.single (trimZeros x.1) x.2).sum := by
+  induction xs with
+  | nil => simp [pairsLedger]
+  | cons x xs ih =>
+      simp only [pairsLedger, List.map_cons, List.sum_cons, Finsupp.mapDomain_add,
+        Finsupp.mapDomain_single] at ih ⊢
+      rw [ih]
+
+private theorem list_map_sum_range {α M : Type} [AddCommMonoid M] (xs : List α) (d : α) (f : α → M) :
+    ((List.range xs.length).map fun i => f (xs[i]?.getD d)).sum = (xs.map f).sum := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih =>
+      simp only [List.length_cons, List.range_succ_eq_map, List.map_cons, List.map_map,
+        Function.comp_def, List.getElem?_cons_zero, List.getElem?_cons_succ, Option.getD_some,
+        List.sum_cons, ih]
+
+private theorem list_sum_map_add {α M : Type} [AddCommMonoid M] (xs : List α) (f g : α → M) :
+    (xs.map fun x => f x + g x).sum = (xs.map f).sum + (xs.map g).sum := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih =>
+      simp only [List.map_cons, List.sum_cons, ih]
+      abel
+
+private theorem list_sum_ite_range {M : Type} [AddCommMonoid M] :
+    ∀ {m j : Nat}, j < m → (v : M) → ((List.range m).map fun s => if j == s then v else 0).sum = v
+  | 0, _, hj, _ => by omega
+  | m + 1, j, hj, v => by
+      rw [List.range_succ, List.map_append, List.sum_append, List.map_singleton, List.sum_singleton]
+      by_cases hjm : j = m
+      · subst hjm
+        have hzero : ((List.range j).map fun s => if j == s then v else 0).sum = 0 := by
+          apply List.sum_eq_zero
+          intro x hx
+          obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hx
+          have hlt := List.mem_range.mp hs
+          simp [show (j == s) = false from beq_false_of_ne (by omega)]
+        rw [hzero, zero_add]
+        simp
+      · have hlt : j < m := by omega
+        rw [list_sum_ite_range hlt v]
+        simp [show (j == m) = false from beq_false_of_ne hjm]
+
+private theorem sum_buckets_eq {M : Type} [AddCommMonoid M] (slotMap : Array Nat) :
+    ∀ (n m : Nat), (∀ k < n, Grouping.slotOf slotMap k < m) → (f : Nat → M) →
+      ((List.range m).map fun s => ((Grouping.bucketOf slotMap n s).map f).sum).sum =
+        ((List.range n).map f).sum
+  | 0, m, _, f => by
+      simp only [Grouping.bucketOf, List.range_zero, List.filter_nil, List.map_nil, List.sum_nil]
+      apply List.sum_eq_zero
+      intro x hx
+      obtain ⟨_, _, rfl⟩ := List.mem_map.mp hx
+      rfl
+  | n + 1, m, hbound, f => by
+      have hsub : ∀ k < n, Grouping.slotOf slotMap k < m := fun k hk => hbound k (by omega)
+      have hn : Grouping.slotOf slotMap n < m := hbound n (Nat.lt_succ_self n)
+      have hstep : ∀ s, ((Grouping.bucketOf slotMap (n + 1) s).map f).sum =
+          ((Grouping.bucketOf slotMap n s).map f).sum +
+            if Grouping.slotOf slotMap n == s then f n else 0 := fun s => by
+        unfold Grouping.bucketOf
+        rw [List.range_succ, List.filter_append, List.map_append, List.sum_append]
+        congr 1
+        by_cases h : (Grouping.slotOf slotMap n == s) = true
+        · simp [h]
+        · simp [h]
+      simp_rw [hstep]
+      rw [list_sum_map_add, sum_buckets_eq slotMap n m hsub f, list_sum_ite_range hn (f n),
+        List.range_succ, List.map_append, List.sum_append, List.map_singleton, List.sum_singleton]
+
+private theorem list_sum_eq_single_of_nodup {α M : Type} [AddCommMonoid M] :
+    ∀ {xs : List α}, xs.Nodup → ∀ {k : α}, k ∈ xs → ∀ {f : α → M},
+      (∀ x ∈ xs, x ≠ k → f x = 0) → (xs.map f).sum = f k
+  | [], _, _, hk, _, _ => by cases hk
+  | x :: xs, hnd, k, hk, f, hzero => by
+      obtain ⟨hx, hnd'⟩ := List.nodup_cons.mp hnd
+      simp only [List.map_cons, List.sum_cons]
+      rcases List.mem_cons.mp hk with rfl | hk'
+      · have hrest : (xs.map f).sum = 0 := by
+          apply List.sum_eq_zero
+          intro y hy
+          obtain ⟨z, hz, rfl⟩ := List.mem_map.mp hy
+          exact hzero z (List.mem_cons_of_mem _ hz) (fun heq => hx (heq ▸ hz))
+        rw [hrest, add_zero]
+      · have hne : x ≠ k := fun heq => hx (heq ▸ hk')
+        rw [hzero x (List.mem_cons_self ..) hne, zero_add]
+        exact list_sum_eq_single_of_nodup hnd' hk' (fun z hz => hzero z (List.mem_cons_of_mem _ hz))
 
 /-- The projected assignment of member `m`. -/
 def project (m : Grouping.Member F) (a : Var → F) : Var → F := fun v => a (m.columns[v]?.getD 0)
@@ -722,59 +818,95 @@ theorem group_row (idOf : String → Nat) (idOk : ∀ x n, id x = .ok n → n = 
     | succ i =>
         simp only [groupPairs, List.getD_cons_succ]
         rw [getD_map_default _ _ ⟨.const 0, []⟩ i (by simp [Scalar.Circuit.ArithExpr.denote])]
-        have := (packets.2 i).1
-        simpa [Grouping.Layout.slot, Grouping.lookupAt, Scalar.Circuit.ArithExpr.denote] using this
+        have h := packets.2.2 i
+        simp only [Grouping.bucketOf, List.range_zero, List.filter_nil] at h
+        simpa [Grouping.Layout.slot, Scalar.Circuit.ArithExpr.denote] using h.1
   · right
     obtain ⟨n, hn, active, _⟩ := g.select checked.certificate.shapes a valid on
     refine ⟨n, hn, valid, on, active, ?_⟩
     obtain ⟨_, provided, required, msgs, same⟩ := packet_active checked n hn a valid on active
     obtain ⟨recv, reqs⟩ := messages_ok idOf idOk msgs
     have sel : project n a n.origin.numVars = 1 := by rw [project_selector checked hn]; exact active
-    rw [lowerGroup_rowLedger, instLedger_pairs]
-    apply pairsLedger_trim
-    intro i
-    cases i with
-    | zero =>
-        simp only [groupPairs, instPairs, memberInst, List.getD_cons_zero, true_and]
-        rw [trim_of_words same.1, recv, ← receive_tuple idOf n.origin 0]
-        rfl
-    | succ i =>
-        simp only [groupPairs, instPairs, memberInst, List.getD_cons_succ]
-        rw [getD_map_default _ _ ⟨.const 0, []⟩ i (by simp [Scalar.Circuit.ArithExpr.denote])]
-        have target : (Activation.compile n.origin).sends.map
-              (fun s => (encode idOf (s.message (project n a)), s.enable.denote (project n a))) ++
-            (Activation.compile n.origin).memory.map (fun m =>
-              (encodeRom (m.address.denote (project n a),
-                m.value.map (Circuit.ArithExpr.denote (project n a))), m.enable.denote (project n a))) =
-            required.map fun l => (l.args.map (·.denote (project n a)), l.enable.denote (project n a)) := by
-          have := congrArg (List.map fun x : Scalar.Circuit.ArithExpr F × List (Scalar.Circuit.ArithExpr F) =>
-            (x.2.map (·.denote (project n a)), x.1.denote (project n a))) reqs
-          simp only [List.map_map, Function.comp_def, List.map_append] at this
-          rw [this]
-          simp only [Activation.compile, List.map_map, Function.comp_def]
-          congr 1
-          · apply List.map_congr_left; intro s _
-            refine Prod.ext ?_ ?_
-            · show encode idOf ((Activation.send n.origin.numVars s).message (project n a)) =
-                (sendLookup idOf s).tuple (project n a)
-              rw [send_tuple]; rfl
-            · exact Activation.polynomial_active _ _ _ sel
-          · apply List.map_congr_left; intro m _
-            refine Prod.ext ?_ ?_
-            · show encodeRom ((m.address.denote (project n a)),
-                  m.value.map (Circuit.ArithExpr.denote (project n a))) =
-                (memoryLookup m).tuple (project n a)
-              rw [memory_tuple]
-            · exact Activation.polynomial_active _ _ _ sel
-        rw [target, getD_map_default _ _ ⟨.const 0, []⟩ i (by simp [Scalar.Circuit.ArithExpr.denote])]
-        have h := same.2 i
-        refine ⟨?_, ?_⟩
-        · have := h.1
-          simp only [Grouping.Layout.slot, Grouping.lookupAt] at this
-          exact this
-        · have := trim_of_words h.2
-          simp only [Grouping.Layout.slot, Grouping.lookupAt] at this
-          exact this
+    rw [lowerGroup_rowLedger, instLedger_pairs, mapDomain_pairsLedger, mapDomain_pairsLedger]
+    simp only [groupPairs, instPairs, memberInst, List.map_cons, List.sum_cons]
+    congr 1
+    · rw [trim_of_words same.1, recv, ← receive_tuple idOf n.origin 0]
+      rfl
+    · have target : (Activation.compile n.origin).sends.map
+            (fun s => (encode idOf (s.message (project n a)), s.enable.denote (project n a))) ++
+          (Activation.compile n.origin).memory.map (fun m =>
+            (encodeRom (m.address.denote (project n a),
+              m.value.map (Circuit.ArithExpr.denote (project n a))), m.enable.denote (project n a))) =
+          required.map fun l => (l.args.map (·.denote (project n a)), l.enable.denote (project n a)) := by
+        have := congrArg (List.map fun x : Scalar.Circuit.ArithExpr F × List (Scalar.Circuit.ArithExpr F) =>
+          (x.2.map (·.denote (project n a)), x.1.denote (project n a))) reqs
+        simp only [List.map_map, Function.comp_def, List.map_append] at this
+        rw [this]
+        simp only [Activation.compile, List.map_map, Function.comp_def]
+        congr 1
+        · apply List.map_congr_left; intro s _
+          refine Prod.ext ?_ ?_
+          · show encode idOf ((Activation.send n.origin.numVars s).message (project n a)) =
+              (sendLookup idOf s).tuple (project n a)
+            rw [send_tuple]; rfl
+          · exact Activation.polynomial_active _ _ _ sel
+        · apply List.map_congr_left; intro m _
+          refine Prod.ext ?_ ?_
+          · show encodeRom ((m.address.denote (project n a)),
+                m.value.map (Circuit.ArithExpr.denote (project n a))) =
+              (memoryLookup m).tuple (project n a)
+            rw [memory_tuple]
+          · exact Activation.polynomial_active _ _ _ sel
+      rw [target, List.map_map, List.map_map]
+      simp only [Function.comp_def]
+      rw [← list_map_sum_range g.sends ⟨.const 0, []⟩
+            (fun s => Finsupp.single (trimZeros (s.args.map (·.denote a))) (s.enable.denote a))]
+      rw [← list_map_sum_range required ⟨.const 0, []⟩
+            (fun l => Finsupp.single (trimZeros (l.args.map (·.denote (project n a))))
+              (l.enable.denote (project n a)))]
+      rw [← sum_buckets_eq n.slotMap required.length g.sends.length same.2.1]
+      congr 1
+      apply List.map_congr_left
+      intro s _
+      have hs := same.2.2 s
+      have hnd : (Grouping.bucketOf n.slotMap required.length s).Nodup :=
+        List.Nodup.filter _ List.nodup_range
+      dsimp only at hs
+      generalize hB : Grouping.bucketOf n.slotMap required.length s = B at hs hnd ⊢
+      change Finsupp.single (trimZeros ((g.slot s).args.map (·.denote a))) ((g.slot s).enable.denote a) =
+        (B.map fun k => Finsupp.single
+          (trimZeros ((Grouping.lookupAt required k).args.map (·.denote (project n a))))
+          ((Grouping.lookupAt required k).enable.denote (project n a))).sum
+      cases B with
+      | nil =>
+          dsimp only at hs
+          simp [g, hs.1]
+      | cons k1 rest =>
+          cases rest with
+          | nil =>
+              dsimp only at hs
+              simp only [List.map_singleton, List.sum_singleton]
+              rw [show (g.slot s).enable.denote a = (Grouping.lookupAt required k1).enable.denote (project n a) from hs.1,
+                trim_of_words hs.2]
+              rfl
+          | cons k2 tail =>
+              dsimp only at hs
+              rcases hs with ⟨hen0, _, hall0⟩ | ⟨k, hk, hk1, hrest0, hen1, hargs⟩
+              · rw [show (g.slot s).enable.denote a = 0 from hen0, Finsupp.single_zero]
+                symm
+                apply List.sum_eq_zero
+                intro x hx
+                obtain ⟨k', hk', rfl⟩ := List.mem_map.mp hx
+                rw [show (Grouping.lookupAt required k').enable.denote (project n a) = 0 from hall0 k' hk']
+                exact Finsupp.single_zero _
+              · rw [list_sum_eq_single_of_nodup hnd hk (fun k' hk' hne => by
+                  rw [show (Grouping.lookupAt required k').enable.denote (project n a) = 0 from
+                    hrest0 k' hk' hne]
+                  exact Finsupp.single_zero _)]
+                rw [show (g.slot s).enable.denote a = 1 from hen1,
+                  show (Grouping.lookupAt required k).enable.denote (project n a) = 1 from hk1,
+                  trim_of_words hargs]
+                rfl
 
 end Groups
 
@@ -841,10 +973,13 @@ theorem group_inspect (plan : Grouping.Plan source id) (names : (circuitNames pl
       by_contra ne
       simp [Grouping.selected, ne] at h
     exact packed.checked.certificate.unique n hn m hm this.symm
-  have payload := packed.checked.certificate.payload_project m hm a valid selectors
   have on : project m a m.origin.numVars = 1 := by rw [project_selector packed.checked hm]; exact active
+  have origCons : Scalar.Circuit.Satisfies m.origin.constraints (fun v => a (m.columns[v]?.getD 0)) :=
+    packed.checked.layout.selected_origin_constraints m hm a valid
+      (by simpa [← (packed.checked.certificate.shapes m hm).1] using active)
+  have payload := packed.checked.certificate.payload_project m hm a valid selectors origCons
   have memValid : ((packed.checked.layout.view m).denote (Row.ofAssignment packed.checked.layout.name packed.checked.layout.width a).assignment).MemoryValid rom := by
-    rw [viewR m hm, payload, Grouping.ofChip_memory]
+    rw [viewR m hm, payload.memoryValid_iff rom, Grouping.ofChip_memory]
     intro l hl en
     have := memory _ (List.mem_map.mpr ⟨l, hl, rfl⟩)
     apply this
@@ -889,7 +1024,8 @@ theorem group_inspect (plan : Grouping.Plan source id) (names : (circuitNames pl
   unfold Grouping.Layout.inspectRow
   rw [if_pos ⟨Row.ofAssignment_length _ _ _, conR⟩, if_neg (by rw [actR]; exact one_ne_zero)]
   simp only [findM]
-  rw [if_pos validRow, viewR m hm, payload, Grouping.ofChip_root, Grouping.ofChip_requirements,
+  rw [if_pos validRow, viewR m hm, payload.root_eq, payload.requirements_eq,
+    Grouping.ofChip_root, Grouping.ofChip_requirements,
     Activation.requirements_active _ _ on]
   rfl
 

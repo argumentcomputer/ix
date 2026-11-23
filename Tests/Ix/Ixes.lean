@@ -76,8 +76,8 @@ public def suite : IO UInt32 := do
   if let .ok v := r4 then
     ok := (← expect "tree without peaks: zero peaks" (v.measuredPeakBytes == #[0, 0])) && ok
   -- 5. Strictness: anything after the last known section is an error.
-  ok := (← expect "trailing byte after peaks is rejected"
-    (isErrorContaining (parseIxesManifest (withPeaks ++ ByteArray.mk #[7])) "trailing")) && ok
+  ok := (← expect "trailing byte after peaks (absent records) is rejected"
+    (isErrorContaining (parseIxesManifest (withPeaks ++ ByteArray.mk #[0, 7])) "trailing")) && ok
   ok := (← expect "bad peaks presence tag is rejected"
     (isErrorContaining (parseIxesManifest (recordsOnly ++ treeSection ++ ByteArray.mk #[2])) "presence tag")) && ok
   ok := (← expect "truncated peaks section is rejected"

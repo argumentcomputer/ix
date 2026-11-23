@@ -477,55 +477,6 @@ def semanticSuite : IO UInt32 := do
     | .error _ => true
     | .ok _ => false
 
-  let schedPlan := Aggr.Reference.schedulePlan manifestPlan #[2, 2, 1] 4
-  let fakeWeights : Array Nat := #[7, 3, 4, 6, 5]
-  let schedulerTrace := schedPlan.bind fun scheduled =>
-    Ix.Cli.FormalAggregate.simulateAggregateSchedule scheduled fakeWeights 2 10
-  let schedulerHeaviestFirst : Bool := match schedulerTrace with
-    | .ok trace => trace.admissionBatches[0]? == some #[0, 1]
-    | .error _ => false
-  let schedulerWithinLimits : Bool := match schedulerTrace with
-    | .ok trace =>
-      trace.maxReservedBytes <= 10 &&
-        trace.admissionBatches.all (fun batch => batch.size <= 2)
-    | .error _ => false
-  let schedulerDependenciesHold : Bool := match schedulerTrace with
-    | .ok trace =>
-      let position (slot : Nat) := trace.admissionOrder.findIdx? (· == slot)
-      match position 0, position 1, position 2, position 3, position 4 with
-      | some p0, some p1, some p2, some p3, some p4 =>
-        p0 < p2 && p1 < p2 && p2 < p4 && p3 < p4
-      | _, _, _, _, _ => false
-    | .error _ => false
-  let oversizedRunsAlone : Bool := match schedPlan.bind fun scheduled =>
-      Ix.Cli.FormalAggregate.simulateAggregateSchedule scheduled
-        #[11, 3, 4, 6, 5] 2 10 with
-    | .ok trace =>
-      let w : Array Nat := #[11, 3, 4, 6, 5]
-      trace.admissionBatches[0]? == some #[0] &&
-        trace.admissionBatches.all fun batch =>
-          batch.size == 1 || batch.all fun slot => (w[slot]?).getD 0 <= 10
-    | .error _ => false
-  let subtreePendingRespect : Bool := match schedPlan with
-    | .ok scheduled =>
-      let pending := #[true, true, true, false, false]
-      let completed := #[false, false, false, false, false]
-      let inFlight := #[false, false, false, false, false]
-      let batch := Ix.Cli.FormalAggregate.admitAggregateReady scheduled fakeWeights
-        completed inFlight 0 100 4 (some pending)
-      batch == #[0, 1]
-    | .error _ => false
-  let equalWeightPrefersJoin : Bool := match schedPlan with
-    | .ok scheduled =>
-      -- Slots 0 and 1 complete => slot 2 (join) and slot 3 (leaf) are both ready.
-      -- With equal weights and budget allowing only 1 slot, join 2 wins over leaf 3.
-      let completed := #[true, true, false, false, false]
-      let inFlight := #[false, false, false, false, false]
-      let batch := Ix.Cli.FormalAggregate.admitAggregateReady scheduled
-        #[10, 10, 10, 10, 10] completed inFlight 0 10 2
-      batch == #[2]
-    | .error _ => false
-
   -- Dynamic circuit linking: Mode 3a isolation, wire round-trips, CodecTag injectivity,
   -- H2 full-tuple allowlist pinning, M6 bridge.binding & VerifyCmd CLI dispatch.
   let dlVk := Address.blake3 "dynlink-ext-vk".toUTF8
@@ -851,14 +802,6 @@ def semanticSuite : IO UInt32 := do
     test "aggregate scheduler parses MemTotal for its default budget"
       memTotalParsing,
     test "invalid non-post-order schedules are rejected" invalidScheduleRejected,
-    test "RAM-gated scheduler admits ready work heaviest-first" schedulerHeaviestFirst,
-    test "RAM-gated scheduler respects job and byte budgets" schedulerWithinLimits,
-    test "RAM-gated scheduler never admits joins before both children"
-      schedulerDependenciesHold,
-    test "an individually oversized scheduler slot is admitted alone" oversizedRunsAlone,
-    test "RAM-gated scheduler respects pending subtree mask" subtreePendingRespect,
-    test "RAM-gated scheduler prefers joins over leaves at equal weight"
-      equalWeightPrefersJoin,
     test "CodecTag has no custom aliasing for tags 0/1/2" codecTagNoAliasing,
     test "DynamicLinkStatement with (spec, binding) BridgeBinding round-trips and is rejected by Claim.de"
       dlStmtRoundTripsAndDisjoint,

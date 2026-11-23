@@ -69,9 +69,9 @@ def HintsResolve (replay : Replay F) (bytecode : Execution.Function F) : Prop :=
   ∀ step ∈ (planSteps replay).toList, Operation.Resolves (hintPCsOf bytecode) step.operation = true
 
 /-- The plan record `putFunctionOf` writes. -/
-def IPlan.of (fn : Function F) (replay : Replay F) (layout : LaidOutChip F)
+def IPlan.of (func : Function F) (replay : Replay F) (layout : LaidOutChip F)
     (representative : String) (bytecode : Execution.Function F) : IPlan F where
-  name := fn.name
+  name := func.name
   representative := representative
   roles := replay.degree.chip.roles.size
   inputs := replay.source.chip.inputs.flatMap WireValue.words
@@ -83,15 +83,15 @@ def IPlan.of (fn : Function F) (replay : Replay F) (layout : LaidOutChip F)
 /-- The checks `putFunctionOf` makes before writing: the replay reproduces the
 certified logical chip, column allocation and final chip, and its source has
 exactly as many hint sites as the bytecode has hint instructions. -/
-def planChecks (config : Config) (fn : Function F) (replay : Replay F) (layout : LaidOutChip F)
+def planChecks (config : Config) (func : Function F) (replay : Replay F) (layout : LaidOutChip F)
     (bytecode : Execution.Function F) : PoolM Unit := do
-  unless replay.degree.chip == layout.logical do throw s!"trace logical layout mismatch in {fn.name}"
-  unless replay.layout == layout.layout do throw s!"trace column allocation mismatch in {fn.name}"
+  unless replay.degree.chip == layout.logical do throw s!"trace logical layout mismatch in {func.name}"
+  unless replay.layout == layout.layout do throw s!"trace column allocation mismatch in {func.name}"
   unless replay.chip == layout.chip do
-    throw (if config.propagateValues then s!"trace final compaction mismatch in {fn.name}"
-      else s!"trace final layout mismatch in {fn.name}")
+    throw (if config.propagateValues then s!"trace final compaction mismatch in {func.name}"
+      else s!"trace final layout mismatch in {func.name}")
   unless replay.source.hints == (hintPCsOf bytecode).length do
-    throw s!"trace hint occurrence mismatch in {fn.name}"
+    throw s!"trace hint occurrence mismatch in {func.name}"
 
 theorem putOperation_eq (hintPCs : List Nat) (op : Trace.Operation F)
     (h : Operation.Resolves hintPCs op = true) :
@@ -129,11 +129,11 @@ private theorem forIn_yield_congr {α : Type} (xs : List α) (f g : α → PoolM
     | yield b => cases b; exact ih fun y hy => h y (List.mem_cons_of_mem _ hy)
 
 /-- `putFunctionOf` with its checks first and its records named. -/
-theorem putFunctionOf_unfold (config : Config) (fn : Function F) (replay : Replay F)
+theorem putFunctionOf_unfold (config : Config) (func : Function F) (replay : Replay F)
     (layout : LaidOutChip F) (representative : String) (bytecode : Execution.Function F) :
-    putFunctionOf encode config fn replay layout representative bytecode = (do
-      planChecks config fn replay layout bytecode
-      str fn.name
+    putFunctionOf encode config func replay layout representative bytecode = (do
+      planChecks config func replay layout bytecode
+      str func.name
       str representative
       nat replay.degree.chip.roles.size
       nats (replay.source.chip.inputs.flatMap WireValue.words)
@@ -151,13 +151,13 @@ theorem putFunctionOf_unfold (config : Config) (fn : Function F) (replay : Repla
     | (simp only [bind_assoc, pure_bind]; rfl)
     | rfl
 
-theorem planSteps_eq (fn : Function F) (replay : Replay F) (layout : LaidOutChip F)
+theorem planSteps_eq (func : Function F) (replay : Replay F) (layout : LaidOutChip F)
     (representative : String) (bytecode : Execution.Function F)
     (hints : HintsResolve replay bytecode) :
     (arrayP (planSteps replay) fun step => do
         putPolynomial encode (replay.source.chip.activation step.scope)
         putOperation encode (hintPCsOf bytecode) step.operation) =
-      listP (IPlan.of fn replay layout representative bytecode).steps
+      listP (IPlan.of func replay layout representative bytecode).steps
         (fun (guard, op) => do putPolynomial encode guard; putIOp encode op) := by
   simp only [arrayP, listP, IPlan.of, List.length_map, Array.length_toList, List.forIn_map]
   rw [← Array.forIn_toList]
@@ -165,13 +165,13 @@ theorem planSteps_eq (fn : Function F) (replay : Replay F) (layout : LaidOutChip
 
 /-- After its checks, the compiler's plan writer is `putIPlan` of
 `IPlan.of`, when every hint site resolves. -/
-theorem putFunctionOf_eq (config : Config) (fn : Function F) (replay : Replay F)
+theorem putFunctionOf_eq (config : Config) (func : Function F) (replay : Replay F)
     (layout : LaidOutChip F) (representative : String) (bytecode : Execution.Function F)
     (hints : HintsResolve replay bytecode) :
-    putFunctionOf encode config fn replay layout representative bytecode = (do
-      planChecks config fn replay layout bytecode
-      putIPlan encode (IPlan.of fn replay layout representative bytecode)) := by
-  rw [putFunctionOf_unfold, planSteps_eq encode fn replay layout representative bytecode hints]
+    putFunctionOf encode config func replay layout representative bytecode = (do
+      planChecks config func replay layout bytecode
+      putIPlan encode (IPlan.of func replay layout representative bytecode)) := by
+  rw [putFunctionOf_unfold, planSteps_eq encode func replay layout representative bytecode hints]
   rfl
 
 /-- `m` fails from every state. -/
@@ -215,10 +215,10 @@ private theorem forIn_fails {α : Type} (xs : List α) (f : α → PoolM PUnit) 
     · exact Fails.bind_right _ fun _ => ih mem
 
 /-- A hint site without a program counter makes `putFunctionOf` fail. -/
-theorem putFunctionOf_fails (config : Config) (fn : Function F) (replay : Replay F)
+theorem putFunctionOf_fails (config : Config) (func : Function F) (replay : Replay F)
     (layout : LaidOutChip F) (representative : String) (bytecode : Execution.Function F)
     (hints : ¬ HintsResolve replay bytecode) :
-    Fails (putFunctionOf encode config fn replay layout representative bytecode) := by
+    Fails (putFunctionOf encode config func replay layout representative bytecode) := by
   simp only [HintsResolve, not_forall, Bool.not_eq_true] at hints
   obtain ⟨step, mem, bad⟩ := hints
   have loop : Fails (arrayP (planSteps replay) fun step => do
@@ -235,30 +235,30 @@ theorem putFunctionOf_fails (config : Config) (fn : Function F) (replay : Replay
   exact loop.bind _
 
 /-- Every successful run of `putFunctionOf` resolves every hint site. -/
-theorem putFunctionOf_resolves (config : Config) (fn : Function F) (replay : Replay F)
+theorem putFunctionOf_resolves (config : Config) (func : Function F) (replay : Replay F)
     (layout : LaidOutChip F) (representative : String) (bytecode : Execution.Function F)
     (pool : NodePool) (bytes : ByteArray) (r : Unit × NodePool) (bytes' : ByteArray)
-    (ok : ((putFunctionOf encode config fn replay layout representative bytecode).run pool).run bytes =
+    (ok : ((putFunctionOf encode config func replay layout representative bytecode).run pool).run bytes =
       .ok r bytes') :
     HintsResolve replay bytecode := by
   refine Classical.byContradiction fun hints => ?_
-  obtain ⟨e, bytes'', h⟩ := putFunctionOf_fails encode config fn replay layout representative
+  obtain ⟨e, bytes'', h⟩ := putFunctionOf_fails encode config func replay layout representative
     bytecode hints pool bytes
   rw [ok] at h
   cases h
 
 /-- Every successful run of the compiler's plan writer is a run of the checks
 followed by `putIPlan` of `IPlan.of`, with the same bytes and pool. -/
-theorem putFunctionOf_ok (config : Config) (fn : Function F) (replay : Replay F)
+theorem putFunctionOf_ok (config : Config) (func : Function F) (replay : Replay F)
     (layout : LaidOutChip F) (representative : String) (bytecode : Execution.Function F)
     (pool : NodePool) (bytes : ByteArray) (r : Unit × NodePool) (bytes' : ByteArray)
-    (ok : ((putFunctionOf encode config fn replay layout representative bytecode).run pool).run bytes =
+    (ok : ((putFunctionOf encode config func replay layout representative bytecode).run pool).run bytes =
       .ok r bytes') :
-    ((planChecks config fn replay layout bytecode >>= fun _ =>
-        putIPlan encode (IPlan.of fn replay layout representative bytecode)).run pool).run bytes =
+    ((planChecks config func replay layout bytecode >>= fun _ =>
+        putIPlan encode (IPlan.of func replay layout representative bytecode)).run pool).run bytes =
       .ok r bytes' := by
-  rw [← putFunctionOf_eq encode config fn replay layout representative bytecode
-    (putFunctionOf_resolves encode config fn replay layout representative bytecode pool bytes r
+  rw [← putFunctionOf_eq encode config func replay layout representative bytecode
+    (putFunctionOf_resolves encode config func replay layout representative bytecode pool bytes r
       bytes' ok)]
   exact ok
 

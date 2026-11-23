@@ -184,7 +184,7 @@ theorem aggregateSource_core_helpers_present :
 Any edit to any module in `MultiStark.aggregateSource` changes this digest and forces an
 explicit audit review. -/
 def pinnedAggregateDigest : String :=
-  "f139da6033e78fdfea38119a64657dd2923aebc0c1ab95f3f96cef12af82e56e"
+  "a910aac9d383a31764e3ff2bc96355d1eebbc052b8e3563c1ad26bd7fb5c4b40"
 
 theorem aggregateDigest_eq : MultiStark.aggregateDigest = pinnedAggregateDigest := rfl
 

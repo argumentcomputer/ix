@@ -63,7 +63,7 @@ def runShardRefineCmd (p : Cli.Parsed) : IO UInt32 := do
   let selected ← match shards with
     | some s => pure (← IO.ofExcept (Ix.Shard.Check.parseShardSelection s)).size
     | none => pure view.shards.size
-  let concurrent := max 1 (min (← FormalAiur.jobCount p 0) selected)
+  let concurrent := max 1 (min (← FormalAiur.jobCount p) selected)
   let budget ← resolveBudget p
   let args := checkArgs ixePath manifest out shards ((p.flag? "report").map (·.as! String))
     budget concurrent (!p.hasFlag "no-index") ((p.flag? "exec-ram").map (·.as! Nat))
