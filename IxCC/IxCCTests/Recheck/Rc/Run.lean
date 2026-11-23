@@ -38,6 +38,7 @@ def verifyContractsAndPolicy : IO Unit := do
   let annotatedSrc : Src.Program :=
     { p.front.src with
       consts := p.front.src.consts.insert rootCId { rootEntry with decl := annotatedDecl } }
+  let canonicalOwn := Own.Plain.Program.canonicalForSrc p.front.src p.front.fir
   let contractOwn := Own.Plain.Program.canonicalForSrc annotatedSrc p.front.fir
   unless contractOwn.funParamModes rootFun == [.borrow, .unique] do
     throw (IO.userError
@@ -47,8 +48,12 @@ def verifyContractsAndPolicy : IO Unit := do
         { mode := .owned, kind := .unique true, rep := .tobj } ] do
     throw (IO.userError
       s!"canonicalForSrc PSigs mismatch: got {repr (contractOwn.funParamSigs rootFun)}")
-  unless Own.Plain.bodyMapEq contractOwn.bodies p.own.bodies do
+  unless Own.Plain.bodyMapEq contractOwn.bodies canonicalOwn.bodies do
     throw (IO.userError "canonicalForSrc bodies differ from canonical bodies")
+  unless Own.Plain.bodyMapEq p.own.bodies (Own.Plain.Live.liveMap p.front.fir) do
+    throw (IO.userError "produceWith did not emit liveness ownership bodies")
+  unless Own.Plain.checkOwned p.front.fir p.own.bodies do
+    throw (IO.userError "produceWith liveness bodies failed checkOwned")
   let pol ← IO.ofExcept ((Recheck.RcReplay.selectPolicy cfg input).mapError (·.message))
   unless pol == .plainRc do
     throw (IO.userError s!"reverseList selectPolicy expected .plainRc, got {repr pol}")

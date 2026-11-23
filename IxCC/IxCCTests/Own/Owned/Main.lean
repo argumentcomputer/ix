@@ -242,6 +242,8 @@ def fixed (t : Totals) : Totals := Id.run do
   let F := mkProg [0] (.ret (.var 0)) 1
   let two : Src.NatMap Code := Src.NatMap.ofList [(0, .act (.inc 0 2) (.act (.dec 0) (.act (.dec 0) (.ret (.var 0)))))]
   if checkOwned F two then t := t.fail "fixed: an increment by two is accepted"
+  for e in LiveTests.runChecks do
+    t := t.fail e
   return t
 
 def run (count cap : Nat) : IO UInt32 := do

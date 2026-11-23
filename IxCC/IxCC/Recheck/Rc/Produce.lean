@@ -1,5 +1,6 @@
 import IxCC.Recheck.Rc.Replay
 import IxCC.Recheck.Produce
+import IxCC.Own.Plain.Live
 
 set_option autoImplicit false
 
@@ -391,11 +392,25 @@ structure Produced where
   own : Own.Plain.Program
   alloc : List Xv.Alloc.Outcome
 
-/-- Finish a plain-RC (`ixcc/rc-cert/2`) certificate directly from an already-produced
-`ProducedFir` using `Own.Plain.Program.canonicalForSrc`. -/
-def finishPlainRcCert (cfg : Config) (front : ProducedFir) : Except Err Produced := do
-  let canonicalOwn := Own.Plain.Program.canonicalForSrc front.src front.fir
-  let ownJson := Own.Plain.Certificate.encode canonicalOwn.bodies
+/-- Fast pre-check that an encoded ownership certificate fits within the JSON
+text/depth/number limits (`Src.Hints.checkJsonText`), accounting for one enclosing
+array level of the `ixcc/rc-cert/2` envelope before lowering to the backend. -/
+def ownJsonFitsLimits (ownJson : Lean.Json) : Bool :=
+  let text := ownJson.compress
+  if text.utf8ByteSize > Src.Hints.maxJsonTextBytes then false
+  else
+    let scan := Src.Hints.scanJson text
+    scan.maxDepth + 1 ≤ Src.Hints.maxJsonDepth &&
+      scan.maxDigits ≤ Src.Hints.maxJsonDigits &&
+      !scan.expOrFrac
+
+/-- Finish a plain-RC (`ixcc/rc-cert/2`) certificate from an already-produced
+`ProducedFir` and a proposed `Own.Plain.Program`, passing through `Certificate.admit`
+(`checkOwned`, `capturedWork ≤ Anf.maxCapturedWork`, `paramTotal ≤ Anf.maxParamTotal`),
+RC lowering, backend allocation/layout, and `Cert.readBack`. -/
+def finishPlainRcWith (cfg : Config) (front : ProducedFir) (own : Own.Plain.Program)
+    (encoded? : Option Lean.Json := none) : Except Err Produced := do
+  let ownJson := encoded?.getD (Own.Plain.Certificate.encode own.bodies)
   let admittedOwn ← (Own.Plain.Certificate.admit front.fir ownJson).mapError fun message =>
     { stage := .cert, code := "own.plain", message }
   let some candidate := Cfg.Rc.generate front.fir admittedOwn.bodies |
@@ -423,7 +438,38 @@ def finishPlainRcCert (cfg : Config) (front : ProducedFir) : Except Err Produced
   -- the certificate as the verifier reads it: its file text, read back through `Cert.parse`
   -- (the ownership code was admitted above as a value; the read-back applies the text limits)
   let ⟨text, cert, read⟩ ← Cert.readBack { base, own := ownJson }
-  pure { cert, text, read, front, own := canonicalOwn, alloc := allocated.outcomes }
+  pure { cert, text, read, front, own, alloc := allocated.outcomes }
+
+/-- Finish a plain-RC (`ixcc/rc-cert/2`) certificate directly from an already-produced
+`ProducedFir`. Places ownership actions via the untrusted liveness producer
+(`Own.Plain.Live.liveMap`), gated by `Own.Plain.checkOwned`,
+`capturedWork ≤ Anf.maxCapturedWork`, JSON text/depth limits, and full `Cert.readBack`;
+if liveness placement is ever refused, falls back safely to the canonical placement
+(`Own.Plain.Program.canonicalForSrc`). -/
+def finishPlainRcCert (cfg : Config) (front : ProducedFir) : Except Err Produced := do
+  (Own.Plain.Certificate.checkParamTotal Anf.maxParamTotal front.fir).mapError fun message =>
+    { stage := .cert, code := "own.plain", message }
+  unless Own.Plain.programDomain front.fir && Own.Plain.checkBoolPins front.fir do
+    throw { stage := .cert, code := "own.plain",
+            message := "own.cert.check: ownership proposal or source domain refused" }
+  let enriched := Own.Plain.enrichFirContracts front.src front.fir
+  let liveOwn : Own.Plain.Program :=
+    { source := enriched, bodies := Own.Plain.Live.liveMap front.fir }
+  let liveAttempt : Except Err Produced := do
+    (Own.Plain.Certificate.checkBudget Anf.maxCapturedWork liveOwn.bodies).mapError fun message =>
+      { stage := .cert, code := "own.plain", message }
+    let ownJson := Own.Plain.Certificate.encode liveOwn.bodies
+    unless ownJsonFitsLimits ownJson do
+      throw { stage := .cert, code := "cert.parse",
+              message := "liveness ownership exceeds certificate text/depth limits" }
+    finishPlainRcWith cfg front liveOwn (some ownJson)
+  match liveAttempt with
+  | .ok produced => pure produced
+  | .error _ =>
+    let canonicalOwn : Own.Plain.Program :=
+      { source := enriched
+        bodies := enriched.funs.map fun fd => Own.Plain.lowerCode (fd.params.map (·.1)) [] fd.body }
+    finishPlainRcWith cfg front canonicalOwn none
 
 /-- Single-pass RC certificate producer with allocation outcomes and contract-aware
 `Own.Plain.Program`. -/

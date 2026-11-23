@@ -81,10 +81,11 @@ def verifyFree (cap : Nat) (before after : IxCCTests.Rt.Native.Line) : IO Unit :
     throw (IO.userError "invalid output-drop evidence")
   let some pre := before.dump | throw (IO.userError "missing live dump")
   let some post := after.dump | throw (IO.userError "missing reclaimed dump")
+  let used := (post.bump - post.start).toNat
   unless pre.base == post.base && pre.start == post.start && pre.bump == post.bump &&
-      post.bump == post.start + UInt64.ofNat cap && post.bytes.size == cap do
+      0 < used && used ≤ cap && used % 24 == 0 && post.bytes.size == used do
     throw (IO.userError "arena address/bump changed or dump incomplete")
-  let allowed := (List.range (cap / 24)).map fun i => post.start + UInt64.ofNat (24 * i)
+  let allowed := (List.range (used / 24)).map fun i => post.start + UInt64.ofNat (24 * i)
   let got ← IO.ofExcept (follow (post.memory (max 4096 (640 + cap))) allowed allowed.length after.value [])
   unless got.length == allowed.length && allowed.all got.contains do
     throw (IO.userError "not every allocated address was reclaimed exactly once")
@@ -158,6 +159,7 @@ def runShell (exe : FilePath) (root : String) (sig : Rt.Sig) (ty : Rt.FoTy) :
       "bounded actual cx_init arena contains expected high water"
     require (limit == base + size) "actual cx_init limit matches mapped region"
     let mut rows : Array IxCCTests.Rt.Native.Line := #[]
+    let highWaterRef ← IO.mkRef (none : Option Nat)
     for (n, seed) in inputs root do
       calls.modify (· + 1)
       let (r, result, ok) ← IxCCTests.Exe.Session.call s 1 [base, n, seed]
@@ -176,11 +178,20 @@ def runShell (exe : FilePath) (root : String) (sig : Rt.Sig) (ty : Rt.FoTy) :
       require (r == 0 && v == 1 && ok) "generated complete output-drop status and ABI"
       let post ← readRegion s base size
       require (post.ctx (-40) == bump) "release does not change bump"
-      -- all_reclaimed
-      require (bump == start + cap && cap % 24 == 0)
-        "same tight arena: bump stable at capacity without reinitialization"
+      -- all_reclaimed: high water fits within tight capacity and stays stable across all calls
+      let used := bump - start
+      let highWater ← match ← highWaterRef.get with
+        | none =>
+          require (0 < used && used ≤ cap && used % 24 == 0)
+            "same tight arena: first-call high water fits within capacity"
+          highWaterRef.set (some used)
+          pure used
+        | some hw =>
+          require (bump == start + hw)
+            "same tight arena: bump stable at high water without reinitialization"
+          pure hw
       require (post.ctx (-32) == base + size) "cx_init arena limit unchanged"
-      let cells := cap / 24
+      let cells := highWater / 24
       require (cells ≤ 4096) "bounded independent free-chain oracle"
       let mut seen : Array Bool := Array.replicate cells false
       let mut p := post.ctx 24

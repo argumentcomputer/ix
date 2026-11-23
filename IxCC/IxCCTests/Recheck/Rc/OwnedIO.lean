@@ -171,9 +171,9 @@ def admitAndRun (logs : FilePath) (label root : String) (fr : Front) (m : Src.Na
 
 /-! ## The tests -/
 
-/-- A correct placement other than the canonical one: refused by the old check, admitted, and its
-object (another than the canonical certificate's) returns every value; each case's heap high water
-is printed beside the canonical object's. -/
+/-- A correct placement other than the canonical one: refused by the old check, admitted, emitted
+by production `RcReplay.produce`, and its object (another than the canonical certificate's) returns
+every value; each case's heap high water is printed beside the canonical object's. -/
 def liveness (logs : FilePath) : IO Unit := do
   for root in roots do
     let fr ← front root
@@ -184,13 +184,18 @@ def liveness (logs : FilePath) : IO Unit := do
     let cert ← IO.ofExcept ((finishWith fr.cfg fr.front live).mapError (·.render))
     let artifact ← IO.ofExcept ((Recheck.RcReplay.run fr.cfg fr.input.program cert).mapError
       fun e => s!"{root}: the verifier refused the liveness placement: {e.render}")
-    let (_, canonicalArt) ← IO.ofExcept ((Recheck.RcReplay.produce (ReplayIO.config root) fr.input).mapError
+    let (_, prodArt) ← IO.ofExcept ((Recheck.RcReplay.produce (ReplayIO.config root) fr.input).mapError
       (·.render))
+    unless prodArt.backend.object == artifact.backend.object do
+      fail s!"{root}: production RcReplay.produce did not emit the liveness object"
+    let canonicalCert ← IO.ofExcept ((finishWith fr.cfg fr.front fr.canonical).mapError (·.render))
+    let canonicalArt ← IO.ofExcept ((Recheck.RcReplay.run fr.cfg fr.input.program canonicalCert).mapError
+      fun e => s!"{root}: the verifier refused the canonical placement: {e.render}")
     if canonicalArt.backend.object == artifact.backend.object then
       fail s!"{root}: the liveness certificate's object is the canonical certificate's"
     let liveHigh ← runNative logs s!"live-{root}" artifact (listCases root) (listWant root)
     let canonHigh ← runNative logs s!"canonical-{root}" canonicalArt (listCases root) (listWant root)
-    IO.println s!"PASS liveness placement {root}: refused by the old check, admitted, another object, {(listCases root).length} values; heap high water (bytes) {liveHigh}, canonical {canonHigh}"
+    IO.println s!"PASS liveness placement {root}: refused by the old check, admitted, emitted by produce, another object than canonical, {(listCases root).length} values; heap high water (bytes) {liveHigh}, canonical {canonHigh}"
 
 /-- Each kind of wrong placement is refused at admission with the checker's reason. -/
 def wrongPlacements : IO Unit := do
@@ -275,14 +280,17 @@ def budget (logs : FilePath) : IO Unit := do
     cmd := "sha256sum", args := #["--status", "--check", (budgetDir / "manifest.sha256").toString] }
   unless guard.exitCode == 0 do fail "RC budget input fixture identity changed"
   let limit := Anf.maxCapturedWork
-  -- past the limit
+  -- `fanOver`: canonical placement exceeds the captured-work budget; liveness shrinks join captures
+  -- below the budget, while both the explicit canonical certificate and a liveness-exceeding
+  -- synthetic FIR program are refused with `own.cert.budget`.
   let input ← budgetSource "fanOver"
   let cfg0 : Recheck.Config := { names := ["fanOver"] }
   let cfg := cfg0.forInput input
   let fr ← IO.ofExcept ((Recheck.RcReplay.produceFir cfg input).mapError (·.render))
-  let canonical := (Own.Plain.Program.canonicalForSrc fr.src fr.fir).bodies
+  let canonicalOwn := Own.Plain.Program.canonicalForSrc fr.src fr.fir
+  let canonical := canonicalOwn.bodies
   let work := Own.Plain.Certificate.capturedWork canonical
-  unless work > limit do fail s!"fanOver: captured work {work} is within the limit {limit}"
+  unless work > limit do fail s!"fanOver: canonical captured work {work} is within the limit {limit}"
   let .error want := Own.Plain.Certificate.checkBudget limit canonical | fail "fanOver: within budget"
   unless (want.splitOn s!"take {work} captured tokens").length > 1 &&
       (want.splitOn s!"past the limit {limit}").length > 1 do
@@ -293,34 +301,64 @@ def budget (logs : FilePath) : IO Unit := do
     | .error e =>
       unless e.stage == .cert && e.code == "own.plain" && e.message == want do
         fail s!"{label}: expected cert/own.plain: {want}, got {e.render}"
-  refusedWith "fanOver --rc on" ((Recheck.RcReplay.produce cfg0 input).map fun _ => ())
+  refusedWith "fanOver canonical finishPlainRcWith"
+    ((Recheck.RcReplay.finishPlainRcWith cfg fr canonicalOwn).map fun _ => ())
   let handMade ← IO.ofExcept ((finishWith cfg fr canonical).mapError (·.render))
-  refusedWith "fanOver hand-made certificate" ((Recheck.RcReplay.run cfg input.program handMade).map fun _ => ())
+  refusedWith "fanOver hand-made canonical certificate"
+    ((Recheck.RcReplay.run cfg input.program handMade).map fun _ => ())
+  -- Under liveness, `fanOver` drops the 2 dead captures per fan function and fits within `limit`.
+  let (overCert, overArt) ← IO.ofExcept ((Recheck.RcReplay.produce cfg0 input).mapError (·.render))
+  let overBodies ← IO.ofExcept (Own.Plain.Certificate.decode fr.fir overCert.own)
+  let overWork := Own.Plain.Certificate.capturedWork overBodies
+  unless overWork < work && overWork ≤ limit do
+    fail s!"fanOver: liveness captured work {overWork} did not shrink below canonical {work} and limit {limit}"
+  let _ ← runNative logs "budget-fanOver-live" overArt fanCases (fanWant "fanOver")
   match ← IO.ofExcept ((Recheck.RcReplay.produceAuto cfg0 input).mapError (·.render)) with
-  | .immortal _ artifact _ reason =>
-    unless reason.stage == .cert && reason.code == "own.plain" && reason.message == want do
-      fail s!"fanOver --rc auto: fell back for another reason: {reason.render}"
-    let some entry := artifact.roots.head? | fail "fanOver: missing root"
-    let some (sig, ty) := entry.ty | fail "fanOver: missing result signature"
-    let exe ← IxCCTests.Rt.Native.link { work := logs } "budget-fanOver-immortal" artifact.backend.object
-      entry.symbol
-    let rows ← IxCCTests.Rt.Native.run exe
-      { region := 131072, stack := 1048576, ty := some (sig, ty), dump := true } fanCases
-    for (args, row) in fanCases.zip rows do
-      unless row.status == 0 && row.ok && row.obs == some (Rt.renderObs (fanWant "fanOver" args)) do
-        fail s!"fanOver immortal {args}: native value differs"
-  | .plainRc .. | .zeroRc .. => fail "fanOver --rc auto: did not fall back to the immortal policy"
-  IO.println s!"PASS budget past the limit (fanOver, work {work} > {limit}): plain RC refused, hand-made certificate refused, auto immortal with the reason and correct values"
+  | .plainRc autoCert autoArt _ =>
+    unless autoCert.toText == overCert.toText && autoArt.backend.object == overArt.backend.object do
+      fail "fanOver --rc auto: .plainRc result differs from RcReplay.produce"
+  | .immortal _ _ _ reason =>
+    fail s!"fanOver --rc auto: unexpectedly fell back to immortal: {reason.render}"
+  | .zeroRc .. =>
+    fail "fanOver --rc auto: unexpectedly selected zeroRc"
+  match Own.Plain.Certificate.admit fr.fir overCert.own (overWork - 1) with
+  | .ok _ => fail "fanOver (liveness): admitted under a budget below its work"
+  | .error e => unless e.startsWith "own.cert.budget: " do fail s!"fanOver (liveness): budget {overWork - 1}: {e}"
+  -- Synthetic budget-exceeding program even under liveness: duplicate one fan function in `fr.fir`
+  -- so even `Live.liveMap`'s captured work exceeds `Anf.maxCapturedWork`.
+  let some fanFn := (List.range fr.fir.size).findSome? fun f => do
+    let fd ← fr.fir.fun? f
+    if fd.params.length ≥ 198 then some fd else none
+    | fail "fanOver: could not locate 198-param fan function"
+  let overLiveFir : Fir.Program :=
+    { fr.fir with funs := fr.fir.funs.insert fr.fir.size fanFn, size := fr.fir.size + 1 }
+  let overLiveBodies := Own.Plain.Live.liveMap overLiveFir
+  let overLiveWork := Own.Plain.Certificate.capturedWork overLiveBodies
+  unless overLiveWork > limit do
+    fail s!"fanOver+1: liveness captured work {overLiveWork} is still within limit {limit}"
+  match Own.Plain.Certificate.admit overLiveFir (Own.Plain.Certificate.encode overLiveBodies) with
+  | .ok _ => fail "fanOver+1: liveness certificate admitted past the budget"
+  | .error e => unless e.startsWith "own.cert.budget: " do fail s!"fanOver+1 admit: {e}"
+  match Recheck.RcReplay.finishPlainRcCert cfg { fr with fir := overLiveFir } with
+  | .ok _ => fail "fanOver+1: finishPlainRcCert accepted past the budget"
+  | .error e =>
+    unless e.stage == .cert && e.code == "own.plain" && e.message.startsWith "own.cert.budget: " do
+      fail s!"fanOver+1 finishPlainRcCert: expected cert/own.plain own.cert.budget, got {e.render}"
+  IO.println s!"PASS budget past the limit (fanOver canonical {work} > {limit}, fanOver+1 liveness {overLiveWork} > {limit}): refused by producer and verifier; liveness shrinks fanOver to {overWork} ≤ {limit} and runs cleanly"
   -- within the limit
   let input ← budgetSource "fanUnder"
   let cfg0 : Recheck.Config := { names := ["fanUnder"] }
   let cfg := cfg0.forInput input
   let (cert, artifact) ← IO.ofExcept ((Recheck.RcReplay.produce cfg0 input).mapError (·.render))
   let fr ← IO.ofExcept ((Recheck.RcReplay.produceFir cfg input).mapError (·.render))
+  let canonUnder := (Own.Plain.Program.canonicalForSrc fr.src fr.fir).bodies
+  let canonWork := Own.Plain.Certificate.capturedWork canonUnder
+  unless canonWork ≤ limit && canonWork + fanFunctions * (fanLeaves + 1) > limit do
+    fail s!"fanUnder: canonical captured work {canonWork} is not just within the limit {limit}"
   let bodies ← IO.ofExcept (Own.Plain.Certificate.decode fr.fir cert.own)
   let work := Own.Plain.Certificate.capturedWork bodies
-  unless work ≤ limit && work + fanFunctions * (fanLeaves + 1) > limit do
-    fail s!"fanUnder: captured work {work} is not just within the limit {limit}"
+  unless work ≤ canonWork && work ≤ limit do
+    fail s!"fanUnder: liveness captured work {work} exceeds canonical {canonWork} or limit {limit}"
   let _ ← runNative logs "budget-fanUnder" artifact fanCases (fanWant "fanUnder")
   match Own.Plain.Certificate.admit fr.fir cert.own (work - 1) with
   | .ok _ => fail "fanUnder: admitted under a budget below its work"
@@ -331,7 +369,7 @@ def budget (logs : FilePath) : IO Unit := do
     fail "fanUnder: refused at the default budget"
   unless Own.Plain.bodyMapEq p.bodies p'.bodies && Own.Plain.bodyMapEq p.bodies bodies do
     fail "fanUnder: admitted as different programs at two budgets"
-  IO.println s!"PASS budget within the limit (fanUnder, work {work} ≤ {limit}): compiles, verifies, {fanCases.length} values; refused at budget {work - 1}, the same program admitted at {work} and {limit}"
+  IO.println s!"PASS budget within the limit (fanUnder, liveness {work} ≤ canonical {canonWork} ≤ {limit}): compiles, verifies, {fanCases.length} values; refused at budget {work - 1}, the same program admitted at {work} and {limit}"
 
 /-! ## A join's captured list reordered -/
 
@@ -364,23 +402,24 @@ def capturedOrder (logs : FilePath) : IO Unit := do
   let mut done := false
   for (root, fr, cases, want) in programs do
     if done then break
-    let some m' := editMap fr.front.fir fr.canonical capturedReversed | continue
+    let live := IxCCTests.Own.Owned.liveMap fr.front.fir
+    let some m' := editMap fr.front.fir live capturedReversed | continue
     unless Own.Plain.checkOwned fr.front.fir m' do
       fail s!"{root}: a reordered captured list is refused by the checker"
     let cfg0 : Recheck.Config := { names := fr.cfg.names }
-    let (canonicalCert, canonicalArt) ← IO.ofExcept ((Recheck.RcReplay.produce cfg0 fr.input).mapError
+    let (prodCert, prodArt) ← IO.ofExcept ((Recheck.RcReplay.produce cfg0 fr.input).mapError
       (·.render))
-    let swapped := { canonicalCert with own := Own.Plain.Certificate.encode m' }
-    let withCanonicalDecisions ← match Recheck.RcReplay.run fr.cfg fr.input.program swapped with
+    let swapped := { prodCert with own := Own.Plain.Certificate.encode m' }
+    let withProdDecisions ← match Recheck.RcReplay.run fr.cfg fr.input.program swapped with
       | .ok art => do
-        let _ ← runNative logs s!"order-canonical-decisions-{root}" art cases want
-        pure s!"validated, object {if art.backend.object == canonicalArt.backend.object then "identical to" else "different from"} the canonical one, values right"
+        let _ ← runNative logs s!"order-prod-decisions-{root}" art cases want
+        pure s!"validated, object {if art.backend.object == prodArt.backend.object then "identical to" else "different from"} the liveness one, values right"
       | .error e => pure s!"refused at {e.stage.name}/{e.code}"
     let fresh ← IO.ofExcept ((finishWith fr.cfg fr.front m').mapError (·.render))
     let art ← IO.ofExcept ((Recheck.RcReplay.run fr.cfg fr.input.program fresh).mapError
       fun e => s!"{root}: the reordered map with its own decisions was refused: {e.render}")
     let _ ← runNative logs s!"order-fresh-decisions-{root}" art cases want
-    IO.println s!"PASS reordered captured list ({root}): admitted; with the canonical backend decisions {withCanonicalDecisions}; with its own decisions validated, object {if art.backend.object == canonicalArt.backend.object then "identical to" else "different from"} the canonical one, {cases.length} values right"
+    IO.println s!"PASS reordered captured list ({root}): admitted; with the liveness backend decisions {withProdDecisions}; with its own decisions validated, object {if art.backend.object == prodArt.backend.object then "identical to" else "different from"} the liveness one, {cases.length} values right"
     done := true
   unless done do fail "no program with a join capturing two or more variables"
 
