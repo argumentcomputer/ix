@@ -171,10 +171,8 @@
               (pkgs.lib.fileset.fromSource (lake2nix.cleanLakeSource ./.))
               ./IxC/lake-manifest.json
               ./IxC/lean-toolchain
-              # The pinned verifying keys `FormalAiurKeys` embeds, and the
-              # verify-path fingerprint checked by tests/tools.
+              # The pinned verifying keys `FormalAiurKeys` embeds.
               ./tools/formal-aiur.keys
-              ./tools/verify-path.fingerprint
             ];
           };
           lakeManifest = builtins.fromJSON (builtins.readFile ./lake-manifest.json);

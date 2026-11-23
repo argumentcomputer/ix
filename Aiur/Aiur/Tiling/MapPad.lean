@@ -170,7 +170,7 @@ theorem wide_heap_sound_insts_dup {source : Generic.Source F} {entries : List St
       simp only [tables]
       abel }
   obtain ⟨weighted, length, checked⟩ := W.checkMemo activated context'
-  exact ⟨valid, prepared.depth_grouped_activated_heap_sound compiled certified plan activated entry valid
+  exact ⟨valid, prepared.depth_grouped_activated_heap_sound_certified compiled certified plan activated entry valid
     signed rooted outside (length.trans capacity) characteristic checked arguments decoded⟩
 
 /-- `wide_heap_sound` with the selector-free map tables `mapAirsD`. -/

@@ -1166,7 +1166,7 @@ theorem grouped_heap_sound_insts {source : Generic.Source F} {entries : List Str
     have : (S ++ V).length ≤ sInsts.length + gInsts.length := by
       simp only [S, List.length_append, List.length_map]; omega
     omega
-  exact ⟨valid, prepared.depth_grouped_activated_heap_sound compiled certified plan activated entry valid
+  exact ⟨valid, prepared.depth_grouped_activated_heap_sound_certified compiled certified plan activated entry valid
     signed rooted outside total characteristic checked arguments decoded⟩
 
 

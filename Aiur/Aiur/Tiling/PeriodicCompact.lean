@@ -1226,7 +1226,7 @@ theorem narrow_heap_sound_compact {source : Generic.Source F} {entries : List St
         exact List.getElem_mem _
     balanced := wideBalanced }
   obtain ⟨weighted, length, checked⟩ := W.checkMemo activated context'
-  exact ⟨valid, prepared.depth_grouped_activated_heap_sound compiled certified plan activated entry valid
+  exact ⟨valid, prepared.depth_grouped_activated_heap_sound_certified compiled certified plan activated entry valid
     signed rooted outside ((length.trans (length_instancesU _ _ _ _).le).trans capacity) characteristic checked
     arguments decoded⟩
 

@@ -1153,11 +1153,12 @@ and the depth limbs of `cfg`. -/
 theorem section_reads {encoding : FieldEncoding} {modulus : Nat} {encode : F → Nat}
     (hcast : ∀ x, ((encode x : Nat) : F) = x) (hlt : ∀ x, encode x < modulus)
     {program : Program F} {artifact : Optimized.Artifact F} {physical : Physical.Prepared artifact}
-    {original : Execution.Bytecode F} {cfg : Depth.Config} {bytecode : Execution.Bytecode F}
+    {original : Execution.Bytecode F} {cfg : Depth.Config} {measures : Depth.Structural.Plan}
+    {bytecode : Execution.Bytecode F}
     {groups : List (String × List String)} {replays : Option (List (Except String (Replay F)))}
     {trace : ByteArray}
-    (h : exportTraceSection encoding modulus encode program artifact physical original cfg bytecode groups
-      replays = .ok trace) :
+    (h : exportTraceSection encoding modulus encode program artifact physical original cfg measures
+      bytecode groups replays = .ok trace) :
     ∃ t : ITrace F, Reads (getTrace (encoding == .wide) modulus) trace.data.toList t ∧
       (t.chips = ((Depth.system cfg physical.system).chips.zip physical.system.chips).map
         fun (c, src) => (IChip.ofChip c, IDepth.of cfg src)) ∧ t.limbs = cfg.limbs := by
@@ -1166,6 +1167,11 @@ theorem section_reads {encoding : FieldEncoding} {modulus : Nat} {encode : F →
   dsimp only at h
   obtain ⟨_, _, h⟩ := except_bind_ok' h
   obtain ⟨plan, _, h⟩ := except_bind_ok' h
+  split at h
+  case isFalse =>
+    obtain ⟨_, h, _⟩ := except_bind_ok' h
+    cases h
+  obtain ⟨_, _, h⟩ := except_bind_ok' h
   split at h
   case isFalse =>
     obtain ⟨_, h, _⟩ := except_bind_ok' h

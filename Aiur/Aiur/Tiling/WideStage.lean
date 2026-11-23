@@ -432,7 +432,7 @@ theorem wide_heap_sound_insts {source : Generic.Source F} {entries : List String
       simp only [tables]
       abel }
   obtain ⟨weighted, length, checked⟩ := W.checkMemo activated context'
-  exact ⟨valid, prepared.depth_grouped_activated_heap_sound compiled certified plan activated entry valid
+  exact ⟨valid, prepared.depth_grouped_activated_heap_sound_certified compiled certified plan activated entry valid
     signed rooted outside (length.trans capacity) characteristic checked arguments decoded⟩
 
 /-- **End to end, wide stage.** One table per unit (`unitAir`: the lowered,

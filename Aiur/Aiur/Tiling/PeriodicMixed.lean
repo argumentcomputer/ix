@@ -879,7 +879,7 @@ theorem mixed_heap_sound {source : Generic.Source F} {entries : List String}
   obtain ⟨weighted, length, checked⟩ := W.checkMemo activated context'
   have lenI : (NI ++ WI).length ≤ 2 ^ 39 := by
     rw [List.length_append, length_instancesU, length_mixedInsts]; exact capacity
-  exact ⟨valid, prepared.depth_grouped_activated_heap_sound compiled certified plan activated entry valid
+  exact ⟨valid, prepared.depth_grouped_activated_heap_sound_certified compiled certified plan activated entry valid
     signed rooted outside (length.trans lenI) characteristic checked arguments decoded⟩
 
 end Aiur.Tiling.Periodic

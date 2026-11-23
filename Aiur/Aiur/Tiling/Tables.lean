@@ -381,7 +381,7 @@ theorem narrow_heap_sound_tables {source : Generic.Source F} {entries : List Str
   obtain ⟨weighted, length, checked⟩ := System.checkMemo_of_tables plan activated idOf ok circuits
     fixedIn small sysBound tags lookups ids parts (Shaped.of_check shaped) romPacked context (Part.Request.of_check req) tall
     rows balanced enablesOk
-  exact prepared.depth_grouped_activated_heap_sound compiled certified plan activated entry valid
+  exact prepared.depth_grouped_activated_heap_sound_certified compiled certified plan activated entry valid
     signed rooted outside (length.trans capacity) characteristic checked arguments decoded
 
 end Aiur.Tiling

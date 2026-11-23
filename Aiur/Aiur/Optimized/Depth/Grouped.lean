@@ -108,6 +108,33 @@ theorem Prepared.depth_grouped_activated_heap_sound {source : Generic.Source F}
       outside bound characteristic checked)
     arguments decoded
 
+/-- Source evaluation from rows accepted by the grouped, activated memo checker
+over the certified depth pass with no exempt SCC (`Depth.Certified`), with at
+most `2^39` rows. -/
+theorem Prepared.depth_grouped_activated_heap_sound_certified {source : Generic.Source F}
+    {entries : List String} {specialized : Generic.Specialized source entries}
+    (compiled : GenericArtifact specialized) (prepared : Prepared compiled.artifact)
+    {cfg : Depth.Config} (certified : Depth.Certified cfg prepared.system)
+    (plan : Grouping.Plan (Depth.system cfg prepared.system) id)
+    (activated : plan.WellFormedActivation)
+    {name : String} (entry : name ∈ entries) {rom : WidthROM F} (valid : rom.Valid)
+    {args : List (SourceValue F)} {result : Value F} {wires : List (WireValue F)} {output : WireValue F}
+    (signed : Erasure.Signed compiled.system ⟨name, wires, output⟩)
+    {root : Message F}
+    (rooted : Depth.erase cfg root = Erasure.message compiled.system ⟨name, wires, output⟩)
+    (outside : root.channel ∉ cfg.names)
+    {rows : List (WeightedRow F)} (bound : rows.length ≤ 2 ^ 39)
+    (characteristic : ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → (n : F) ≠ 0)
+    (checked : plan.checkMemo (Erasure.rawROM rom) root rows = .ok ())
+    (arguments : DecodesValues specialized.program.enums wires (entryValues args))
+    (decoded : output.decode specialized.program.enums = some result) :
+    ∃ value heap, Generic.SourceSemantics.EvalFn source.world name args [] value heap ∧
+      Represents ((Erasure.typedROM compiled.system rom).decode specialized.program.enums)
+        heap value result :=
+  prepared.native_heap_sound compiled entry valid signed
+    (rooted ▸ Depth.plan_checkMemo_sound certified plan activated bound characteristic checked outside)
+    arguments decoded
+
 end Aiur.Optimized.Physical
 
 namespace Aiur.Modules

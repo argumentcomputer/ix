@@ -319,9 +319,7 @@ jobs:
               - 'Tests/Ix/IOIngress.lean'
               - 'Tests/AggrBindingReuse.lean'
               - 'tools/formal-aiur.keys'
-              - 'tools/verify-path.fingerprint'
               - 'tools/check-formal-keys.sh'
-              - 'tools/check-verify-path.sh'
               - 'tools/check-aiur-compression-fixtures.sh'
               - 'crates/**'
       - name: Resolve job plan

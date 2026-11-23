@@ -44,9 +44,10 @@ an exported map. -/
 theorem exportBytecode_spec {modulus : Nat} {program : Program F} {artifact : Artifact F}
     {physical : Physical.Prepared artifact} {exported : Execution.Export F}
     {replays : Option (List (Except String (Trace.Replay F)))} {cfg : Depth.Config}
-    {bytecode : Execution.Bytecode F}
-    (h : Trace.exportBytecode modulus program artifact physical exported replays = .ok (cfg, bytecode)) :
-    Trace.depthConfig modulus physical = .ok cfg ∧
+    {measures : Depth.Structural.Plan} {bytecode : Execution.Bytecode F}
+    (h : Trace.exportBytecode modulus program artifact physical exported replays =
+      .ok (cfg, measures, bytecode)) :
+    Trace.depthConfig modulus program physical = .ok (cfg, measures) ∧
       bytecode = Trace.depthBytecode cfg exported.bytecode ∧
       ∀ m ∈ program.maps, m.name ∈ exported.bytecode.maps.map (·.name) := by
   unfold Trace.exportBytecode at h
@@ -55,7 +56,7 @@ theorem exportBytecode_spec {modulus : Nat} {program : Program F} {artifact : Ar
   all_goals
     rename_i hcfg hmaps
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨rfl, rfl⟩ := h
+    obtain ⟨rfl, rfl, rfl⟩ := h
     refine ⟨hcfg, rfl, fun m hm => ?_⟩
     simp only [List.all_eq_true, List.any_eq_true, beq_iff_eq] at hmaps
     obtain ⟨x, hx, e⟩ := hmaps m hm
@@ -67,15 +68,15 @@ theorem exportPrepared_spec {encoding : FieldEncoding} {modulus : Nat} {encode :
     {replays : Option (List (Except String (Trace.Replay F)))} {trace : ByteArray}
     (h : Trace.exportPreparedPlanWithEncoding encoding modulus encode program artifact physical exported
       groups replays = .ok (exported', trace)) :
-    ∃ cfg, Trace.depthConfig modulus physical = .ok cfg ∧
+    ∃ cfg measures, Trace.depthConfig modulus program physical = .ok (cfg, measures) ∧
       exported'.bytecode = Trace.depthBytecode cfg exported.bytecode ∧
       ∀ m ∈ program.maps, m.name ∈ exported.bytecode.maps.map (·.name) := by
   unfold Trace.exportPreparedPlanWithEncoding at h
-  obtain ⟨⟨cfg, bytecode⟩, hb, h⟩ := except_bind_ok h
+  obtain ⟨⟨cfg, measures, bytecode⟩, hb, h⟩ := except_bind_ok h
   obtain ⟨_, _, h⟩ := except_bind_ok h
   cases h
   obtain ⟨hcfg, rfl, maps⟩ := exportBytecode_spec hb
-  exact ⟨cfg, hcfg, rfl, maps⟩
+  exact ⟨cfg, measures, hcfg, rfl, maps⟩
 
 omit [Field F] [DecidableEq F] in
 /-- `depthBytecode` keeps the original maps and adds the range map of every
@@ -127,9 +128,10 @@ names as the claim channels: the package is the compiler's export of
 theorem claimsIn_of_export {source : Generic.Source F} {entries : List String}
     {specialized : Generic.Specialized source entries} (compiled : GenericArtifact specialized)
     (prepared : Physical.Prepared compiled.artifact) {cfg : Depth.Config}
+    {measures : Depth.Structural.Plan}
     (certified : Depth.Certified cfg prepared.system) {encoding : FieldEncoding} {modulus : Nat}
     {encode : F → Nat} (hcast : ∀ x, ((encode x : Nat) : F) = x) (hlt : ∀ x, encode x < modulus)
-    (hcfg : Trace.depthConfig modulus prepared = .ok cfg)
+    (hcfg : Trace.depthConfig modulus compiled.inlined.program prepared = .ok (cfg, measures))
     {exported exported' : Execution.Export F} {groups : List (String × List String)}
     {replays : Option (List (Except String (Trace.Replay F)))} {trace bytes : ByteArray}
     {pkg : Package F}
@@ -139,7 +141,7 @@ theorem claimsIn_of_export {source : Generic.Source F} {entries : List String}
       .ok bytes)
     (decoded : decodeChecked modulus encode bytes = .ok pkg) :
     ∀ mc ∈ (Depth.system cfg prepared.system).mapClaims, mc.channel ∈ pkg.mapNames := by
-  obtain ⟨cfg', hcfg', bc, maps⟩ := exportPrepared_spec exportedOk
+  obtain ⟨cfg', measures', hcfg', bc, maps⟩ := exportPrepared_spec exportedOk
   rw [hcfg] at hcfg'
   cases hcfg'
   have program := program_of_decode hcast hlt written (decodePackage_of_checked decoded)
@@ -159,9 +161,10 @@ the package's map names. -/
 theorem ids_of_export {source : Generic.Source F} {entries : List String}
     {specialized : Generic.Specialized source entries} (compiled : GenericArtifact specialized)
     (prepared : Physical.Prepared compiled.artifact) {cfg : Depth.Config}
+    {measures : Depth.Structural.Plan}
     (certified : Depth.Certified cfg prepared.system) {encoding : FieldEncoding} {modulus : Nat}
     {encode : F → Nat} (hcast : ∀ x, ((encode x : Nat) : F) = x) (hlt : ∀ x, encode x < modulus)
-    (hcfg : Trace.depthConfig modulus prepared = .ok cfg)
+    (hcfg : Trace.depthConfig modulus compiled.inlined.program prepared = .ok (cfg, measures))
     {exported exported' : Execution.Export F} {groups : List (String × List String)}
     {replays : Option (List (Except String (Trace.Replay F)))} {trace bytes : ByteArray}
     {pkg : Package F}
@@ -189,7 +192,8 @@ returns its chips (`chips_of_decode`). -/
 theorem chips_of_export {encoding : FieldEncoding} {modulus : Nat} {encode : F → Nat}
     (hcast : ∀ x, ((encode x : Nat) : F) = x) (hlt : ∀ x, encode x < modulus)
     {program : Program F} {artifact : Artifact F} {prepared : Physical.Prepared artifact}
-    {cfg : Depth.Config} (hcfg : Trace.depthConfig modulus prepared = .ok cfg)
+    {cfg : Depth.Config} {measures : Depth.Structural.Plan}
+    (hcfg : Trace.depthConfig modulus program prepared = .ok (cfg, measures))
     {exported exported' : Execution.Export F} {groups : List (String × List String)}
     {replays : Option (List (Except String (Trace.Replay F)))} {trace bytes : ByteArray}
     {pkg : Package F}
@@ -200,7 +204,7 @@ theorem chips_of_export {encoding : FieldEncoding} {modulus : Nat} {encode : F �
     (decoded : decodeChecked modulus encode bytes = .ok pkg) :
     pkg.chips.toList = (Depth.system cfg prepared.system).chips.map IChip.ofChip := by
   unfold Trace.exportPreparedPlanWithEncoding at exportedOk
-  obtain ⟨⟨cfg', bytecode⟩, hb, h⟩ := except_bind_ok exportedOk
+  obtain ⟨⟨cfg', measures', bytecode⟩, hb, h⟩ := except_bind_ok exportedOk
   obtain ⟨trace', ht, h⟩ := except_bind_ok h
   cases h
   obtain ⟨hcfg', -, -⟩ := exportBytecode_spec hb
@@ -227,7 +231,8 @@ configuration `cfg` and `decodeChecked` accepted are `cfg.limbs`. -/
 theorem limbs_of_export {encoding : FieldEncoding} {modulus : Nat} {encode : F → Nat}
     (hcast : ∀ x, ((encode x : Nat) : F) = x) (hlt : ∀ x, encode x < modulus)
     {program : Program F} {artifact : Artifact F} {prepared : Physical.Prepared artifact}
-    {cfg : Depth.Config} (hcfg : Trace.depthConfig modulus prepared = .ok cfg)
+    {cfg : Depth.Config} {measures : Depth.Structural.Plan}
+    (hcfg : Trace.depthConfig modulus program prepared = .ok (cfg, measures))
     {exported exported' : Execution.Export F} {groups : List (String × List String)}
     {replays : Option (List (Except String (Trace.Replay F)))} {trace bytes : ByteArray}
     {pkg : Package F}
@@ -238,7 +243,7 @@ theorem limbs_of_export {encoding : FieldEncoding} {modulus : Nat} {encode : F �
     (decoded : decodeChecked modulus encode bytes = .ok pkg) :
     pkg.limbs = cfg.limbs := by
   unfold Trace.exportPreparedPlanWithEncoding at exportedOk
-  obtain ⟨⟨cfg', bytecode⟩, hb, h⟩ := except_bind_ok exportedOk
+  obtain ⟨⟨cfg', measures', bytecode⟩, hb, h⟩ := except_bind_ok exportedOk
   obtain ⟨trace', ht, h⟩ := except_bind_ok h
   cases h
   obtain ⟨hcfg', -, -⟩ := exportBytecode_spec hb
@@ -253,7 +258,8 @@ package that the compiler exported with depth configuration `cfg` and
 theorem checkIds_of_package {encoding : FieldEncoding} {modulus : Nat} {encode : F → Nat}
     (hcast : ∀ x, ((encode x : Nat) : F) = x) (hlt : ∀ x, encode x < modulus)
     {program : Program F} {artifact : Artifact F} {prepared : Physical.Prepared artifact}
-    {cfg : Depth.Config} (hcfg : Trace.depthConfig modulus prepared = .ok cfg)
+    {cfg : Depth.Config} {measures : Depth.Structural.Plan}
+    (hcfg : Trace.depthConfig modulus program prepared = .ok (cfg, measures))
     {exported exported' : Execution.Export F} {groups : List (String × List String)}
     {replays : Option (List (Except String (Trace.Replay F)))} {trace bytes : ByteArray}
     {pkg : Package F}
@@ -285,11 +291,12 @@ def ExportedIds {source : Generic.Source F} {entries : List String}
     (prepared : Physical.Prepared compiled.artifact) (cfg : Depth.Config) (callables : List String)
     (bound : Nat) (root : Message F) : Prop :=
   ∃ (encoding : FieldEncoding) (modulus : Nat) (encode : F → Nat)
+    (measures : Depth.Structural.Plan)
     (exported exported' : Execution.Export F) (groups : List (String × List String))
     (replays : Option (List (Except String (Trace.Replay F)))) (trace bytes : ByteArray)
     (pkg : Package F),
     (∀ x, ((encode x : Nat) : F) = x) ∧ (∀ x, encode x < modulus) ∧
-    Trace.depthConfig modulus prepared = .ok cfg ∧
+    Trace.depthConfig modulus compiled.inlined.program prepared = .ok (cfg, measures) ∧
     Trace.exportPreparedPlanWithEncoding encoding modulus encode compiled.inlined.program
       compiled.artifact prepared exported groups replays = .ok (exported', trace) ∧
     Ixon.run (Artifact.putPackageWithEncoding encoding exported' modulus encode (some trace)) =
@@ -307,7 +314,7 @@ theorem ExportedIds.ids {source : Generic.Source F} {entries : List String}
       ∀ y ∈ Bridge.channels (Depth.system cfg prepared.system) chips root,
         callables.idxOf x = callables.idxOf y → x = y) ∧
       ∀ x ∈ Bridge.channels (Depth.system cfg prepared.system) chips root, callables.idxOf x < bound := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, hcast, hlt, hcfg, exportedOk, written, decoded, rfl, checked⟩ := h
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hcast, hlt, hcfg, exportedOk, written, decoded, rfl, checked⟩ := h
   exact ids_of_export compiled prepared certified hcast hlt hcfg exportedOk written decoded sub
     (checkIds_of_package hcast hlt hcfg exportedOk written decoded checked)
 
