@@ -171,6 +171,8 @@ in
       launch tests-recheck-readback $bin/tests-recheck-readback
       launch tests-cert-text $bin/tests-cert-text
       launch tests-kernel-front $bin/tests-kernel-front
+      launch tests-soundness $bin/tests-soundness
+      launch tests-bignat $bin/tests-bignat
       launch src-artifacts $bin/gen-src-artifacts --check
       launch recheck-artifacts $bin/gen-recheck-artifacts --check
       launch corpus-kernel-artifacts $bin/corpus kernel-artifacts --check

@@ -478,11 +478,11 @@ def produceWith (cfg : Config) (input : Recheck.Input) : Except Err Produced := 
   let front ← produceFir cfg input
   finishPlainRcCert cfg front
 
-/-- Single-pass contract-aware RC producer and recheck runner. -/
+/-- Single-pass contract-aware RC producer, recheck runner, and Ixon v5 `DefAsserts` check. -/
 def produce (cfg : Config) (input : Recheck.Input) : Except Err (Cert × Artifact) := do
   let cfg := cfg.forInput input
   let p ← produceWith cfg input
-  let artifact ← run cfg input.program p.cert
+  let artifact ← DefAsserts.runRcWithReading cfg input.program input.kernel.rd p.cert
   return (p.cert, artifact)
 
 /-- Select the RC policy (`.zeroRc` vs `.plainRc`) for `input` after running the
@@ -504,20 +504,20 @@ inductive AutoCompiled where
   | immortal (cert : Recheck.Cert) (artifact : Recheck.Artifact) (alloc : List Xv.Alloc.Outcome)
       (reason : Err)
 
-/-- The immortal-backend certificate for an already-produced front end, and its
-recheck (`Recheck.run`). -/
+/-- The immortal-backend certificate for an already-produced front end, its
+recheck (`Recheck.run`), and decoded Ixon v5 `DefAsserts` enforcement. -/
 def produceImmortal (cfg : Config) (input : Recheck.Input) (front : ProducedFir) :
     Except Err (Recheck.Produced × Recheck.Artifact) := do
   let p ← finishZeroRcCert cfg front
-  let artifact ← Recheck.run cfg input.program p.cert
+  let artifact ← DefAsserts.runWithReading cfg input.program input.kernel.rd p.cert
   return (p, artifact)
 
-/-- The plain-RC certificate for an already-produced front end, and its replay
-(`RcReplay.run`). -/
+/-- The plain-RC certificate for an already-produced front end, its replay
+(`RcReplay.run`), and decoded Ixon v5 `DefAsserts` enforcement. -/
 def producePlain (cfg : Config) (input : Recheck.Input) (front : ProducedFir) :
     Except Err (Produced × Artifact) := do
   let p ← finishPlainRcCert cfg front
-  let artifact ← run cfg input.program p.cert
+  let artifact ← DefAsserts.runRcWithReading cfg input.program input.kernel.rd p.cert
   return (p, artifact)
 
 /-- Automatically select `.zeroRc` or `.plainRc` from `Own.Plain.selectRcPolicyForSrc`

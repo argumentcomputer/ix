@@ -250,6 +250,14 @@ closures, and the refusals; `diff` and `single` take any role-bound closure. -/
 lean_exe «tests-kernel-front» where
   root := `IxCCTests.KernelFront.Main
 
+/- Wave 1 soundness, anti-DoS, executable-shell hardening, and EM-0 DefAsserts controls. -/
+lean_exe «tests-soundness» where
+  root := `IxCCTests.Soundness.Main
+
+/- Pure-Lean BigNat differential fuzz suite against GMP-backed Nat (157,911 checks). -/
+lean_exe «tests-bignat» where
+  root := `IxCCTests.BigNat.DiffTest
+
 /- The grounding check (`IxCCGrounding.Check`) on the committed closures of
 the grounding subjects, conjunct by conjunct, with negative controls that each
 falsify exactly one conjunct. Built and run by `ixcc-grounding`, not by the

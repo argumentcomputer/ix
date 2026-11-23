@@ -310,19 +310,22 @@ def CliCert.ofText (text : String) : Except Err CliCert :=
   else .zeroRc <$> Cert.ofText text
 
 /-- **`check-cert`'s verifier**, on a certificate's text: the text read (`CliCert.ofText`), its
-relevance annotation checked to be the annotator's (Stage A, `checkCanonicalRelevance`), and the
-certificate replayed (`run`, or `RcReplay.run` for a plain-RC certificate). `compile` runs it on
-the text it is about to write, so a successful compile is one whose written certificate this
-accepts. -/
+relevance annotation checked to be the annotator's (Stage A, `checkCanonicalRelevance`), the
+certificate replayed (`run`, or `RcReplay.run` for a plain-RC certificate), and decoded Ixon v5
+`Definition.asserts` enforced (`DefAsserts.checkWithReading` / `checkRcWithReading`). `compile`
+runs it on the text it is about to write, so a successful compile is one whose written certificate
+this accepts. -/
 def checkText (cfg : Config) (inp : Input) (text : String) : Except Err (CliCert × Artifact) := do
   let cc ← CliCert.ofText text
   unless checkCanonicalRelevance cfg inp cc.base.table cc.base.relevance do
     throw { stage := .relevance, code := "relevance-canonical",
             message := "certificate relevance annotation does not match canonical annotator output" }
   match cc with
-  | .zeroRc cert => return (cc, ← run cfg inp.program cert)
+  | .zeroRc cert =>
+    let a ← DefAsserts.runWithReading cfg inp.program inp.kernel.rd cert
+    return (cc, a)
   | .plainRc cert =>
-    let rcArt ← RcReplay.run cfg inp.program cert
+    let rcArt ← DefAsserts.runRcWithReading cfg inp.program inp.kernel.rd cert
     return (cc, ← rcArt.toRecheckArtifact cert)
 
 /-- The certificate text `compile` writes under `--rc` mode `rc` (the producer's file text, read

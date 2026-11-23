@@ -457,13 +457,37 @@ def checkCertCanonicalRelevance (cfg : Recheck.Config) (inp : Recheck.Input)
     | .ok cert => Recheck.checkCanonicalRelevance cfg inp cert.base.table cert.base.relevance
     | .error _ => false
 
+/-- Verify that any decoded Ixon v5 `Definition.asserts` (`@[no_rc]`, `@[no_alloc]`,
+`@[bounded_stack]`) in `inp.kernel.rd` hold on the verified artifact (`EM-0`).
+Short-circuits when no constant in `inp.program` carries a non-default assertion. -/
+def checkCertDefAsserts (cfg : Recheck.Config) (inp : Recheck.Input)
+    (policy : CompilePolicy) (certText : String) : Bool :=
+  if (inp.kernel.rd.assertsMap inp.program).toList.isEmpty then true
+  else
+    match policy with
+    | .immortal | .zeroRc =>
+      match Recheck.Cert.ofText certText with
+      | .ok cert =>
+        match Recheck.run cfg inp.program cert with
+        | .ok a => (Recheck.DefAsserts.checkWithReading inp.kernel.rd a cert).isOk
+        | .error _ => false
+      | .error _ => false
+    | .plainRc =>
+      match Recheck.RcReplay.Cert.ofText certText with
+      | .ok cert =>
+        match Recheck.RcReplay.run cfg inp.program cert with
+        | .ok a => (Recheck.DefAsserts.checkRcWithReading inp.kernel.rd a cert).isOk
+        | .error _ => false
+      | .error _ => false
+
 /-- Verify a `CompileClaim` from raw `.ixe` environment bytes, sidecar equations
 JSON, and serialized certificate `certText`: the environment the bytes are has the
 claim's root and role table (`roleTable`, the binding hash of the role-bound
 envelope). Ingress (`Recheck.ingress`) runs the certified kernel's acceptance of
 the whole environment, so an unbound envelope, or any record the kernel does not
-accept, refuses the claim; and `checkCertCanonicalRelevance` validates canonical
-relevance (`Stage A`). -/
+accept, refuses the claim; `checkCertCanonicalRelevance` validates canonical
+relevance (`Stage A`); and `checkCertDefAsserts` enforces decoded Ixon v5
+`Definition.asserts` (`EM-0`). -/
 def verifyBytes (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
     (c : CompileClaim) (certText : String) : Bool :=
   let roots := selectTargetRoots cfg equations c.target
@@ -471,6 +495,7 @@ def verifyBytes (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.
   | .ok inp =>
     (inp.env.root == c.env && inp.env.bindingAddress == c.roleTable) &&
       checkCertCanonicalRelevance cfg inp c.policy certText &&
+      checkCertDefAsserts cfg inp c.policy certText &&
       verifyProgram cfg inp.program c certText
   | .error _ => false
 
@@ -528,7 +553,7 @@ def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMo
         return (claimOf .immortal root.params a.backend.object, p.text, a.backend.object)
   | .off | .immortal =>
     let p ← Recheck.produceWith cfg inp
-    let a ← Recheck.run cfg input.program p.cert
+    let a ← Recheck.DefAsserts.runWithReading cfg input.program input.kernel.rd p.cert
     let some root := a.roots.head?
       | throw { stage := .rt, code := "roots", message := "artifact has no root" }
     unless checkImmortalRoot a.src root do
@@ -537,6 +562,7 @@ def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMo
   | .zeroRc =>
     let p ← Recheck.produceWith cfg inp
     let a ← Recheck.runWithContracts cfg input.program p.cert
+    Recheck.DefAsserts.checkWithReading input.kernel.rd a p.cert
     unless Own.Plain.selectRcPolicyForSrc a.src a.front.fir == .zeroRc do
       throw { stage := .cert, code := "own.plain", message := "program does not select zeroRc policy" }
     let some root := a.roots.head?
@@ -547,7 +573,7 @@ def produce (cfg : Recheck.Config) (input : Recheck.Input) (mode : Compiler.RcMo
   | .on | .plainRc =>
     let cfg := cfg.forInput inp
     let p ← Recheck.RcReplay.produceWith cfg inp
-    let a ← Recheck.RcReplay.run cfg inp.program p.cert
+    let a ← Recheck.DefAsserts.runRcWithReading cfg inp.program input.kernel.rd p.cert
     let some root := a.roots.head?
       | throw { stage := .rt, code := "roots", message := "artifact has no root" }
     unless checkPlainRcRoot a.front.src root do

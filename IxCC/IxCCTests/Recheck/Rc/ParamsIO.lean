@@ -18,10 +18,10 @@ over it are made by hand:
   then lowered (`Cfg.Rc.generate`, `checkScopedProgram`, `Public.lower`); one parameter more
   refused with `own.cert.params`, the total and the limit; the over-limit function form admitted at
   a limit equal to its total (monotonicity, `admit_params_mono`); `ofTextContract` refuses too;
-* **a registered root** (`Closures.stateLoop`, the corpus's largest total, 240): its plain-RC
-  certificate refused by `admit` at a limit of 239 and admitted as the same program at 240 and at
-  the default; its zero-RC certificate refused by `runWithContracts` at 239 and accepted, with the
-  same object, at 240 and at the default. -/
+* **a registered root** (`Closures.stateLoop`, 132 parameters after P5 dead-parameter stripping):
+  its plain-RC certificate refused by `admit` at a limit of 131 and admitted as the same program
+  at 132 and at the default; its zero-RC certificate refused by `runWithContracts` at 131 and
+  accepted, with the same object, at 132 and at the default. -/
 
 set_option autoImplicit false
 namespace IxCCTests.Recheck.Rc.ParamsIO
@@ -111,9 +111,9 @@ def boundary : IO Unit := do
 
 def closuresDir : FilePath := "fixtures/corpus/phase2-closures"
 def rootName : String := "Closures.stateLoop"
-/-- Its parameter total (function parameters; it declares no join with parameters): the corpus's
-largest, which the docs cite. -/
-def rootTotal : Nat := 240
+/-- Its parameter total (function parameters; it declares no join with parameters), reduced from
+240 to 132 by P5 dead-parameter stripping and post-P8 closure optimization. -/
+def rootTotal : Nat := 132
 
 def registered : IO Unit := do
   let bytes ← IO.FS.readBinFile (closuresDir / "closures.ixe")

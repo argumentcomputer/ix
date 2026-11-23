@@ -506,6 +506,9 @@ import IxCC.Ring0
 import IxCC.Exe
 import IxCC.Src.KernelFront.Annotate
 import IxCC.Src.KernelFront.Proof
+import IxCC.Recheck.DefAsserts
+import IxCC.BigNat
+import IxCC.BigNat.Proof
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src
 front end (ingress, the checked unfolding table, SrcEval, relevance), global and

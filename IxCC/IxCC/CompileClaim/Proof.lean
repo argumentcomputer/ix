@@ -908,7 +908,7 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
-    obtain ⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, hprog⟩ := hver
+    obtain ⟨⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, _hdefAsserts⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
     have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
     obtain ⟨hdec, hacc, hfrom, htier, hrd, hfe, hingProg⟩ := Recheck.ingress_parts hing
@@ -1003,7 +1003,7 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
-    obtain ⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, hprog⟩ := hver
+    obtain ⟨⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, _hdefAsserts⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
     have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
     obtain ⟨hdec, hacc, hfrom, htier, hrd, hfe, hingProg⟩ := Recheck.ingress_parts hing
@@ -1096,7 +1096,7 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
   | error e => simp [hing] at hver
   | ok inp =>
     simp only [hing, Bool.and_eq_true] at hver
-    obtain ⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, hprog⟩ := hver
+    obtain ⟨⟨⟨⟨henv_b, hrole_b⟩, hcanonRel⟩, _hdefAsserts⟩, hprog⟩ := hver
     have henv : inp.env.root = c.env := eq_of_beq henv_b
     have hrole : inp.env.bindingAddress = c.roleTable := eq_of_beq hrole_b
     obtain ⟨hdec, hacc, hfrom, htier, hrd, hfe, hingProg⟩ := Recheck.ingress_parts hing

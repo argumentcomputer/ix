@@ -19,6 +19,7 @@ import IxCC.X86.ELFExamples
 import IxCCTests.Sem.Toy.Cases
 import IxCCTests.Sem.Toy.IO.Cases
 import IxCCTests.Fences
+import IxCCTests.Fences.BigNat
 import IxCCTests.Own.Plain.Suite
 import IxCCTests.Cfg.Rc.Proofs
 

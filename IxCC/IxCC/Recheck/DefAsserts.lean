@@ -395,6 +395,56 @@ def checkRcWithReading (rd : Src.KernelFront.Reading) (art : Recheck.RcReplay.Ar
     (cert : Recheck.RcReplay.Cert) (witness? : Option StackWitness := none) : Except Err Unit :=
   checkRcArtifact (rd.assertsMap art.front.src) art cert.base.frames witness?
 
+/-- Run `Recheck.run` and enforce decoded Ixon v5 `Definition.asserts` from `rd`. -/
+def runWithReading (cfg : Config) (P : Src.Program) (rd : Src.KernelFront.Reading)
+    (c : Cert) (witness? : Option StackWitness := none) : Except Err Artifact := do
+  let art ← Recheck.run cfg P c
+  checkWithReading rd art c witness?
+  pure art
+
+/-- Run `RcReplay.run` and enforce decoded Ixon v5 `Definition.asserts` from `rd`. -/
+def runRcWithReading (cfg : Config) (P : Src.Program) (rd : Src.KernelFront.Reading)
+    (c : RcReplay.Cert) (witness? : Option StackWitness := none) : Except Err RcReplay.Artifact := do
+  let art ← RcReplay.run cfg P c
+  checkRcWithReading rd art c witness?
+  pure art
+
+theorem runWithReading_ok {cfg : Config} {P : Src.Program} {rd : Src.KernelFront.Reading}
+    {c : Cert} {witness? : Option StackWitness} {art : Artifact}
+    (h : runWithReading cfg P rd c witness? = .ok art) :
+    Recheck.run cfg P c = .ok art ∧ checkWithReading rd art c witness? = .ok () := by
+  unfold runWithReading at h
+  simp only [bind, Except.bind] at h
+  cases hr : Recheck.run cfg P c with
+  | error e => simp [hr] at h
+  | ok a =>
+    simp only [hr] at h
+    cases hc : checkWithReading rd a c witness? with
+    | error e => simp [hc] at h
+    | ok u =>
+      cases u
+      simp only [hc, pure, Except.pure, Except.ok.injEq] at h
+      subst h
+      exact ⟨rfl, hc⟩
+
+theorem runRcWithReading_ok {cfg : Config} {P : Src.Program} {rd : Src.KernelFront.Reading}
+    {c : RcReplay.Cert} {witness? : Option StackWitness} {art : RcReplay.Artifact}
+    (h : runRcWithReading cfg P rd c witness? = .ok art) :
+    RcReplay.run cfg P c = .ok art ∧ checkRcWithReading rd art c witness? = .ok () := by
+  unfold runRcWithReading at h
+  simp only [bind, Except.bind] at h
+  cases hr : RcReplay.run cfg P c with
+  | error e => simp [hr] at h
+  | ok a =>
+    simp only [hr] at h
+    cases hc : checkRcWithReading rd a c witness? with
+    | error e => simp [hc] at h
+    | ok u =>
+      cases u
+      simp only [hc, pure, Except.pure, Except.ok.injEq] at h
+      subst h
+      exact ⟨rfl, hc⟩
+
 /-! ## Soundness proofs -/
 
 /-- If `checkReachClosed P f reach = true`, every `g` transitively reachable

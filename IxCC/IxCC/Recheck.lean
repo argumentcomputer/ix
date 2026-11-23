@@ -1,6 +1,7 @@
 import IxCC.Recheck.Err
 import IxCC.Recheck.Cert
 import IxCC.Recheck.Run
+import IxCC.Recheck.DefAsserts
 import IxCC.Recheck.Produce
 import IxCC.Recheck.Json
 import IxCC.Own.Plain.Certificate
@@ -111,11 +112,13 @@ def runWithContracts (cfg : Config) (P : Src.Program) (c : Cert)
   else
     throw { stage := .cert, code := "own.plain", message := "contract ownership domain check failed" }
 
-/-- Produce a certificate and recheck it with contract-aware `Own.Plain` verification. -/
+/-- Produce a certificate, recheck it with contract-aware `Own.Plain` verification,
+and enforce decoded Ixon v5 `Definition.asserts`. -/
 def compileInputWithContracts (cfg : Config) (inp : Input) : Except Err (Cert × Artifact) := do
   let cfg := cfg.forInput inp
   let c ← produce cfg inp
   let a ← runWithContracts cfg inp.program c
+  DefAsserts.checkWithReading inp.kernel.rd a c
   pure (c, a)
 
 /-- Ingress, `produce`, and contract-aware `runWithContracts`. -/

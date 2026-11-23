@@ -1,4 +1,5 @@
 import IxCC.Recheck.Run
+import IxCC.Recheck.DefAsserts
 import IxCC.Recheck.Json
 import IxCC.Ixon.V3.Env
 import IxCC.Src.Ingress
@@ -250,12 +251,12 @@ gives some. -/
 def Config.forInput (cfg : Config) (inp : Input) : Config :=
   if cfg.names.isEmpty then { cfg with names := inp.names } else cfg
 
-/-- The compiler on an ingested program: `produce`, then `run` on its
-certificate. -/
+/-- The compiler on an ingested program: `produce`, `run`, and decoded Ixon v5
+`DefAsserts` enforcement (`DefAsserts.runWithReading`). -/
 def compileInput (cfg : Config) (inp : Input) : Except Err (Cert × Artifact) := do
   let cfg := cfg.forInput inp
   let c ← produce cfg inp
-  let a ← run cfg inp.program c
+  let a ← DefAsserts.runWithReading cfg inp.program inp.kernel.rd c
   pure (c, a)
 
 /-- The configuration without the middle end's inline-round retry

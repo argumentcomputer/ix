@@ -44,10 +44,14 @@ everything before `Backend.finish`); `run` adds `Backend.finish`: the typed
 program's check, E1 encoding, E2's stream check and the ELF writer with its
 validator, each by its kernel-evaluable twin proved equal to the original
 (`Program.checkK`, `Stream.encodeK`, `ELF.writeCheckedK`). The whole path is
-written in kernel-evaluable style (persistent `NatMap`s, lists, structural
-recursion or fuel), and `decide +kernel` evaluates both functions on the K1
-artifacts (`IxCCTests.Recheck.Kernel`): `run`'s object bytes
-equal the native run's. -/
+written in kernel-evaluable style (persistent `NatMap`s, lists, structural recursion or fuel), and `decide +kernel`
+evaluates both functions on the K1 artifacts (`IxCCTests.Recheck.Kernel`): `run`'s
+object bytes equal the native run's. Decoded Ixon v5 `Definition.asserts`
+(`@[no_rc]`, `@[no_alloc]`, `@[bounded_stack]`) are enforced over the checked
+artifacts and frame layouts via `Recheck.DefAsserts.{checkWithReading,
+checkRcWithReading, runWithReading, runRcWithReading}` across `Cli.checkText`,
+`Recheck.compileInput`, `Recheck.compileInputWithContracts`,
+`RcReplay.{produce, produceImmortal, producePlain}`, and `CompileClaim`. -/
 
 namespace IxCC.Recheck
 

@@ -27,12 +27,12 @@ theorem compileInput_parts {cfg : Config} {inp : Input} {cert : Cert} {artifact 
   | error error => simp [produced] at accepted
   | ok candidate =>
     simp only [produced] at accepted
-    cases replayed : run (cfg.forInput inp) inp.program candidate with
+    cases replayed : DefAsserts.runWithReading (cfg.forInput inp) inp.program inp.kernel.rd candidate with
     | error error => simp [replayed] at accepted
     | ok actual =>
       simp only [replayed, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at accepted
       obtain ⟨rfl, rfl⟩ := accepted
-      exact ⟨rfl, replayed⟩
+      exact ⟨rfl, (DefAsserts.runWithReading_ok replayed).1⟩
 
 /-- **The producer's text is what was verified.** A successful `compileInput` produced a
 certificate file text (`produceWith`'s `text`) that the verifier's reader (`Cert.ofText`, the

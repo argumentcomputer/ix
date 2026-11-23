@@ -257,9 +257,14 @@ theorem compileInputWithContracts_parts {cfg : Config} {inp : Input} {cert : Cer
     cases replayed : runWithContracts (cfg.forInput inp) inp.program c with
     | error e => simp [replayed] at accepted
     | ok a =>
-      simp only [replayed, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at accepted
-      obtain ⟨rfl, rfl⟩ := accepted
-      exact ⟨rfl, replayed⟩
+      simp only [replayed] at accepted
+      cases hda : DefAsserts.checkWithReading inp.kernel.rd a c with
+      | error e => simp [hda] at accepted
+      | ok u =>
+        cases u
+        simp only [hda, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at accepted
+        obtain ⟨rfl, rfl⟩ := accepted
+        exact ⟨rfl, replayed⟩
 
 theorem compileWithContracts_parts {cfg : Config} {bytes : ByteArray} {equations : Lean.Json}
     {roots : List String} {cert : Cert} {artifact : Artifact}
@@ -410,12 +415,12 @@ theorem produceImmortal_parts {cfg : Recheck.Config} {inp : Recheck.Input}
   | error e => simp [hf] at h
   | ok p' =>
     simp only [hf] at h
-    cases hr : Recheck.run cfg inp.program p'.cert with
+    cases hr : Recheck.DefAsserts.runWithReading cfg inp.program inp.kernel.rd p'.cert with
     | error e => simp [hr] at h
     | ok a' =>
       simp only [hr, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
-      exact ⟨rfl, hr⟩
+      exact ⟨rfl, (Recheck.DefAsserts.runWithReading_ok hr).1⟩
 
 /-- What `RcReplay.producePlain` computed: the plain-RC certificate and its
 `RcReplay.run`. -/
@@ -431,12 +436,12 @@ theorem producePlain_parts {cfg : Recheck.Config} {inp : Recheck.Input}
   | error e => simp [hf] at h
   | ok p' =>
     simp only [hf] at h
-    cases hr : Recheck.RcReplay.run cfg inp.program p'.cert with
+    cases hr : Recheck.DefAsserts.runRcWithReading cfg inp.program inp.kernel.rd p'.cert with
     | error e => simp [hr] at h
     | ok a' =>
       simp only [hr, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
-      exact ⟨rfl, hr⟩
+      exact ⟨rfl, (Recheck.DefAsserts.runRcWithReading_ok hr).1⟩
 
 /-- **The immortal finisher's text is what was verified.** The zero-RC certificate file text
 `RcReplay.produceImmortal` produced (`finishZeroRcCert`'s `text`) is read by the verifier's
