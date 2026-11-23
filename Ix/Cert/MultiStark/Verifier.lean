@@ -3,16 +3,20 @@ import Ix.Cert.MultiStark.Wire
 import Ix.Cert.MultiStark.Transcript
 import Ix.Cert.MultiStark.Air
 import Ix.Cert.MultiStark.Preamble
-import CertiFriP3.Hashers
+import CertiFriP3.DomainSep
 import CertiFriP3.Pruned
+import CertiFri.TensorBatching
 import CertiFri.Verifier
 
-/-! # Executable Out-of-Circuit Certified Multi-STARK Verifier (`Ix.Cert.MultiStark.Verifier`)
+/-! # Executable Out-of-Circuit Certified Protocol `v6` Multi-STARK Verifier (`Ix.Cert.MultiStark.Verifier`)
 
-Mathlib-free executable verifier for `multi-stark` (`3515632f`) batch proofs built
-directly on `CertiFri.Fri.{shapeOk, verifyWith}` and `CertiFri.P3.prunedMmcs`.
+Mathlib-free executable verifier for `multi-stark` Protocol `v6` (`310c5a3f`, `Fp^3`,
+`FriBatching::Tensor`, native BLAKE3 `derive_key` domain separation) batch proofs built
+directly on `CertiFri.Fri.{shapeOk, inputChecks, commitChecks, foldChain, tensorOpeningTerm}`
+and `CertiFri.P3.{prunedMmcs, baseHasherSep, ext3HasherSep}`.
 
 Entrypoints:
+- `verifyFriTensorWith`: tensor-batched FRI verification (`FriBatching::Tensor`).
 - `verifyShard`: verifies one shard proof under the shared batch challenger and `(β, γ)`,
   returning the shard's LogUp residual (`intermediateAccumulators.back!`).
 - `verifyBatch`: verifies a full `BatchProof` against `StarkSystem`, checking preamble
@@ -33,17 +37,103 @@ def activeCircuitIndices (active : Array Bool) : Array Nat := Id.run do
   return out
 
 /-- Flatten an `OpenedRound` (`[matrix][point][col]`) into the linear `values` array
-expected by `CertiFri.Fri.verifyWith` and observed into the PCS transcript. -/
+expected by `CertiFri.Fri` and observed into the PCS transcript. -/
 private def pushOpenedRound (vals : Array EF) (round : OpenedRound) : Array EF :=
   round.foldl (init := vals) fun acc mat =>
     mat.foldl (init := acc) fun acc' pt =>
       pt.foldl (init := acc') fun acc'' v => acc''.push v
 
+/-- Annotate each `PointRef` in `Fri.pointRefs logBlowup shape` with its `pointIdx`
+and starting `valueOffset` in the flat `values` array. -/
+private def pointRefEntries (logBlowup : Nat) (shape : Fri.ClaimShape) :
+    List (Fri.PointRef × Nat × Nat) := Id.run do
+  let mut out : List (Fri.PointRef × Nat × Nat) := []
+  let mut ptIdx : Nat := 0
+  let mut valOff : Nat := 0
+  for p in Fri.pointRefs logBlowup shape do
+    out := out ++ [(p, ptIdx, valOff)]
+    ptIdx := ptIdx + 1
+    valOff := valOff + p.width
+  return out
+
+/-- Reduced opening for one height level under `FriBatching::Tensor`, accumulating
+`openWeights[oIdx] * tensorColAcc colWeights claimed opened * (z - x)⁻¹` in canonical
+`pointRefs` order (`Pcs.lean:442-498`, `CertiFri.Fri.tensorOpeningTerm`). -/
+private def reducedOpeningTensorLevel (sched : Fri.TensorSchedule EF) (x : EF)
+    (points values : Array EF) (rows : Array (Array (Array F)))
+    (levelPts : List (Fri.PointRef × Nat × Nat)) : EF :=
+  (levelPts.zipIdx).foldl (init := 0) fun acc ((p, pointIdx, valOff), oIdx) =>
+    let z := points.getD pointIdx 0
+    let claimed := values.extract valOff (valOff + p.width)
+    let opened := (rows.getD p.batch #[]).getD p.matrix #[]
+    let openW := sched.openWeights.getD oIdx 0
+    acc + Fri.tensorOpeningTerm sched.colWeights openW z x claimed opened
+
+/-- Per-query checks under `FriBatching::Tensor` (parity with `CertiFri.Fri.checkQuery`
+and `Pcs.lean:667-689`). -/
+private def checkQueryTensor (params : FriParams) (shape : Fri.ClaimShape)
+    (levelPts : Nat → List (Fri.PointRef × Nat × Nat))
+    (points values : Array EF)
+    (proof : FriProof F EF D (PrunedPaths D) (PrunedPaths D))
+    (ch : TensorFriChallenges EF) (t index : Nat) : Fri.QueryResult EF :=
+  let n := Fri.logMaxHeight params.logBlowup shape
+  let rounds := Fri.numRounds params shape
+  let rows := Fri.queryRows proof t
+  let ros := Array.ofFn (n := rounds + 1) fun j =>
+    reducedOpeningTensorLevel ch.schedule
+      (Fri.cosetPoint (F := F) n j.val (index >>> j.val))
+      points values rows (levelPts j.val)
+  let chain := Fri.foldChain (F := F) n ros (fun i => Fri.sibling proof i t) ch.betas index rounds
+  let distinct := (Fri.pointRefs params.logBlowup shape).zipIdx.all fun (p, pointIdx) =>
+    !(points.getD pointIdx 0 -
+      Fri.cosetPoint (F := F) n (n - p.logHeight) (index >>> (n - p.logHeight)) == 0)
+  let constOk := params.logFinalPolyLen != 0 || ros.getD rounds 0 == 0
+  let finalOk := chain.1 ==
+    CertiFri.horner proof.finalPoly
+      (ExtensionOps.embed (Fri.domainPoint (F := F) n rounds (index >>> rounds)))
+  { ok := distinct && constOk && finalOk, rows := chain.2 }
+
+/-- Full `FriBatching::Tensor` FRI verification given pre-derived `TensorFriChallenges`,
+reusing `CertiFri.Fri.{inputChecks, commitChecks, foldChain}` with domain-separated
+`prunedMmcs` (`baseHasherSep .v6Batch`, `ext3HasherSep .v6Batch`). -/
+def verifyFriTensorWith (inputMmcs : Mmcs F D) (friMmcs : Mmcs EF D)
+    (params : FriParams) (shape : Fri.ClaimShape) (commitments : Array D)
+    (points values : Array EF)
+    (proof : FriProof F EF D inputMmcs.MultiProof friMmcs.MultiProof)
+    (ch : TensorFriChallenges EF) : Bool :=
+  let n := Fri.logMaxHeight params.logBlowup shape
+  let rounds := Fri.numRounds params shape
+  let entries := pointRefEntries params.logBlowup shape
+  let levelArr := Array.ofFn (n := rounds + 1) fun j =>
+    entries.filter fun (p, _, _) => p.logHeight + j.val == n
+  let results := Array.ofFn (n := params.numQueries) fun t =>
+    let idx := ch.indices.getD t.val 0
+    let rows := Fri.queryRows proof t.val
+    let ros := Array.ofFn (n := rounds + 1) fun j =>
+      reducedOpeningTensorLevel ch.schedule
+        (Fri.cosetPoint (F := F) n j.val (idx >>> j.val))
+        points values rows (levelArr.getD j.val [])
+    let chain := Fri.foldChain (F := F) n ros (fun i => Fri.sibling proof i t.val) ch.betas idx rounds
+    let distinct := (Fri.pointRefs params.logBlowup shape).zipIdx.all fun (p, pointIdx) =>
+      !(points.getD pointIdx 0 -
+        Fri.cosetPoint (F := F) n (n - p.logHeight) (idx >>> (n - p.logHeight)) == 0)
+    let constOk := params.logFinalPolyLen != 0 || ros.getD rounds 0 == 0
+    let finalOk := chain.1 ==
+      CertiFri.horner proof.finalPoly
+        (ExtensionOps.embed (Fri.domainPoint (F := F) n rounds (idx >>> rounds)))
+    ({ ok := distinct && constOk && finalOk, rows := chain.2 } : Fri.QueryResult EF)
+  ch.powOk && ch.indices.size == params.numQueries
+    && (List.range params.numQueries).all (fun t => decide (ch.indices.getD t 0 < 2 ^ n))
+    && Fri.inputChecks inputMmcs params shape commitments proof.inputOpenings ch.indices
+    && results.all (·.ok)
+    && Fri.commitChecks friMmcs params.numQueries n rounds proof.commitPhaseCommits
+        proof.commitPhaseOpenings ch.indices (results.map (·.rows))
+
 /-- Build the `ClaimShape`, `commitments`, `points`, and `values` arrays matching
-`multi-stark/src/verifier.rs:362-461` (`stage1`, `stage2`, `quotient`, optional `preprocessed`).
+`multi-stark/src/verifier.rs` (`stage1`, `stage2`, `quotient`, optional `preprocessed`).
 All array accesses are bounds-checked via `arr[i]?` (no panicking `[i]!`).
 When `allowInactivePrep = false` (production default), inactive preprocessed circuits are
-rejected (matching `StarkVerifier.lean:470,484` and `batch.rs:283`). -/
+rejected (matching `StarkVerifier.lean` and `batch.rs`). -/
 def buildPcsInputsWithOpts? (sys : StarkSystem) (activeIndices : Array Nat) (proof : ShardProof)
     (zeta : EF) (allowInactivePrep : Bool := false) :
     Option (Fri.ClaimShape × Array D × Array EF × Array EF) := do
@@ -72,7 +162,7 @@ def buildPcsInputsWithOpts? (sys : StarkSystem) (activeIndices : Array Nat) (pro
     let c ← sys.circuits[ci]?
     let ld ← proof.logDegrees[pos]?
     let g : F := TwoAdicOps.twoAdicGenerator ld
-    let zetaNext := zeta.mul (GoldilocksExt.embed g)
+    let zetaNext := zeta.mul (GoldilocksExt3.embed g)
     let pts ← proof.stage1OpenedValues[pos]?
     if pts.size != 2 then none
     let p0 ← pts[0]?
@@ -87,7 +177,7 @@ def buildPcsInputsWithOpts? (sys : StarkSystem) (activeIndices : Array Nat) (pro
     let c ← sys.circuits[ci]?
     let ld ← proof.logDegrees[pos]?
     let g : F := TwoAdicOps.twoAdicGenerator ld
-    let zetaNext := zeta.mul (GoldilocksExt.embed g)
+    let zetaNext := zeta.mul (GoldilocksExt3.embed g)
     let pts ← proof.stage2OpenedValues[pos]?
     if pts.size != 2 then none
     let p0 ← pts[0]?
@@ -96,12 +186,12 @@ def buildPcsInputsWithOpts? (sys : StarkSystem) (activeIndices : Array Nat) (pro
     s2Shape := s2Shape ++ [{ logDegree := ld, width := c.stage2Width, numPoints := 2 }]
     points := points.push zeta |>.push zetaNext
 
-  -- Round 2: Quotient chunks (each active circuit opened at [ζ])
+  -- Round 2: Quotient chunks (each active circuit opened at [ζ], width = 3 * quotientDegree for Fp^3)
   for pos in [0:numActive] do
     let ci ← activeIndices[pos]?
     let c ← sys.circuits[ci]?
     let ld ← proof.logDegrees[pos]?
-    let qWidth := 2 * c.quotientDegree
+    let qWidth := 3 * c.quotientDegree
     let pts ← proof.quotientOpenedValues[pos]?
     if pts.size != 1 then none
     let p0 ← pts[0]?
@@ -119,13 +209,12 @@ def buildPcsInputsWithOpts? (sys : StarkSystem) (activeIndices : Array Nat) (pro
   values := pushOpenedRound values proof.stage2OpenedValues
   values := pushOpenedRound values proof.quotientOpenedValues
 
-  -- Round 3 (optional): Preprocessed traces in canonical slot order (`verifier.rs:399-441`)
+  -- Round 3 (optional): Preprocessed traces in canonical slot order
   match sys.preprocessedCommit, proof.preprocessedOpenedValues with
   | none, none => pure ()
   | some prepCap, some prepOpened =>
     if prepCap.size != 1 then none
     let prepRoot ← prepCap[0]?
-    -- Map canonical circuit index -> active position
     let mut activePos : Array (Option Nat) := Array.replicate sys.circuits.size none
     for pos in [0:numActive] do
       let ci ← activeIndices[pos]?
@@ -153,13 +242,10 @@ def buildPcsInputsWithOpts? (sys : StarkSystem) (activeIndices : Array Nat) (pro
           let p1 ← pts[1]?
           if p0.size != c.preprocessedWidth || p1.size != c.preprocessedWidth then none
           let g : F := TwoAdicOps.twoAdicGenerator ld
-          let zetaNext := zeta.mul (GoldilocksExt.embed g)
+          let zetaNext := zeta.mul (GoldilocksExt3.embed g)
           prepShape := prepShape ++ [{ logDegree := ld, width := c.preprocessedWidth, numPoints := 2 }]
           points := points.push zeta |>.push zetaNext
         | none =>
-          -- Production strictly rejects inactive preprocessed/fixed-table circuits
-          -- (parity with `StarkVerifier.lean:470,484` & `batch.rs:283`); raw `multi-stark`
-          -- test fixtures may opt in via `allowInactivePrep := true`.
           if !allowInactivePrep then none
           if pts.size != 1 then none
           let p0 ← pts[0]?
@@ -179,13 +265,12 @@ def buildPcsInputs? (sys : StarkSystem) (activeIndices : Array Nat) (proof : Sha
     (zeta : EF) : Option (Fri.ClaimShape × Array D × Array EF × Array EF) :=
   buildPcsInputsWithOpts? sys activeIndices proof zeta false
 
-/-- Verify one shard of a batch proof under the shared batch challenger state and `(β, γ)`.
-Returns the shard's final LogUp residual accumulator on acceptance.
+/-- Verify one shard of a Protocol `v6` batch proof under the shared batch challenger state
+and `(β, γ)`. Returns the shard's final LogUp residual accumulator on acceptance.
 When `allowInactivePrep = false` (production default), inactive preprocessed circuits are rejected. -/
 def verifyShardWithOpts (sys : StarkSystem) (header : ShardHeader) (shardIdx : Nat)
     (proof : ShardProof) (batchState : ChallengerState) (beta gamma : EF)
     (allowInactivePrep : Bool := false) : Option EF := do
-  -- Header ↔ proof structural agreement (`multi-stark/src/batch.rs:368-375`)
   if header.active != proof.active
       || header.stage1Trace != proof.commitments.stage1Trace
       || header.logDegrees != proof.logDegrees then
@@ -196,17 +281,17 @@ def verifyShardWithOpts (sys : StarkSystem) (header : ShardHeader) (shardIdx : N
 
   -- Per-shard Fiat–Shamir (`α_air`, `ζ`)
   let (alphaAir, zeta, postZeta) ← shardAirChallenges batchState shardIdx proof
-  if zeta == GoldilocksExt.zero then none
+  if zeta == GoldilocksExt3.zero then none
 
-  -- Build PCS inputs and run `CertiFri.Fri.{shapeOk, verifyWith}` with `prunedMmcs`
+  -- Build PCS inputs and run `verifyFriTensorWith` with `v6Batch` domain-separated `prunedMmcs`
   let (shape, commits, points, values) ←
     buildPcsInputsWithOpts? sys activeIndices proof zeta allowInactivePrep
   let friParams := sys.params.toFriParams
   if !Fri.shapeOk (F := F) friParams shape commits points values proof.openingProof then none
   let friCh ← shardFriChallenges postZeta friParams shape values proof.openingProof
-  let inputMmcs := prunedMmcs baseHasher
-  let friMmcs := prunedMmcs extHasher
-  if !Fri.verifyWith inputMmcs friMmcs friParams shape commits points values proof.openingProof friCh then
+  let inputMmcs := prunedMmcs (baseHasherSep .v6Batch)
+  let friMmcs := prunedMmcs (ext3HasherSep .v6Batch)
+  if !verifyFriTensorWith inputMmcs friMmcs friParams shape commits points values proof.openingProof friCh then
     none
 
   -- OOD AIR + LogUp constraint verification across all active circuits (all accesses bounds-checked)
@@ -246,9 +331,9 @@ def verifyShard (sys : StarkSystem) (header : ShardHeader) (shardIdx : Nat)
   verifyShardWithOpts sys header shardIdx proof batchState beta gamma false
 
 /-- Verify a full `BatchProof` against `sys`, returning the concatenated public claims
-on acceptance (`StarkVerifier.lean:974-988`). When `allowBelowFloor = false` and
-`allowInactivePrep = false` (production defaults), enforces both the full Aiur security
-floor and active-preprocessed-circuit parity; the waivers are strictly for test-harness fixtures. -/
+on acceptance. When `allowBelowFloor = false` and `allowInactivePrep = false`
+(production defaults), enforces both the full Aiur 128-bit security floor and
+active-preprocessed-circuit parity; the waivers are strictly for test-harness fixtures. -/
 def verifyBatchWithFloor (sys : StarkSystem) (batch : BatchProof)
     (maxLogDeg : Nat := 32 - sys.params.logBlowup)
     (allowBelowFloor : Bool := false)
@@ -263,12 +348,11 @@ def verifyBatchWithFloor (sys : StarkSystem) (batch : BatchProof)
     let residual ← verifyShardWithOpts sys h s p batchState beta gamma allowInactivePrep
     total := total.add residual
     allClaims := allClaims ++ h.claims
-  if total != GoldilocksExt.zero then none
+  if total != GoldilocksExt3.zero then none
   pure allClaims
 
 /-- Verify a full `BatchProof` against `sys` under production security-floor and
-active-preprocessed enforcement, returning the concatenated public claims on acceptance
-(`StarkVerifier.lean:974-988`). -/
+active-preprocessed enforcement, returning the concatenated public claims on acceptance. -/
 def verifyBatch (sys : StarkSystem) (batch : BatchProof)
     (maxLogDeg : Nat := 32 - sys.params.logBlowup) : Option (Array (Array F)) :=
   verifyBatchWithFloor sys batch maxLogDeg false false
@@ -287,7 +371,7 @@ def verifyBatchBytesWithFloor (vkBytes claimsBytes proofBytes : ByteArray)
   | _, _, _ => false
 
 /-- End-to-end production byte-level Multi-STARK batch verifier (`vkBytes`, `claimsBytes`, `proofBytes`),
-strictly enforcing the Aiur security floor and rejecting inactive preprocessed circuits. -/
+strictly enforcing the Aiur 128-bit security floor and rejecting inactive preprocessed circuits. -/
 def verifyBatchBytes (vkBytes claimsBytes proofBytes : ByteArray)
     (maxLogDeg? : Option Nat := none) : Bool :=
   verifyBatchBytesWithFloor vkBytes claimsBytes proofBytes maxLogDeg? false false

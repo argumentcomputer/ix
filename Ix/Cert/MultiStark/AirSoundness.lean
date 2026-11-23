@@ -172,20 +172,22 @@ theorem eval_isFirstPoly_on_domain {g : K} {ℓ : ℕ} (hg : IsPrimitiveRoot g (
     simp only [hi0, ↓reduceIte]
     rw [eval_isFirstPoly_off_domain ℓ hne, eval_vanishingPoly_eq_zero hg i, zero_mul]
 
-theorem isLastPoly_mul_sub {g : K} {ℓ : ℕ} (hg : IsPrimitiveRoot g (2 ^ ℓ)) :
-    isLastPoly ℓ g * (X - C g⁻¹) = vanishingPoly ℓ := by
-  unfold isLastPoly vanishingPoly
-  have hg_ne : g ≠ 0 := hg.ne_zero (by positivity)
-  have hginv_pow : (g⁻¹) ^ (2 ^ ℓ) = 1 := by rw [inv_pow, hg.pow_eq_one, inv_one]
-  -- Telescoping sum `(∑_{k < N} (g⁻¹)^(N-1-k) X^k) * (X - g⁻¹) = X^N - (g⁻¹)^N = X^N - 1`
-  have hgeom := geom_sum₂_mul X (C g⁻¹) (2 ^ ℓ)
-  have hpow : (C g⁻¹ : K[X]) ^ (2 ^ ℓ) = 1 := by
-    rw [← map_pow, hginv_pow, map_one]
-  rw [hpow] at hgeom
+private theorem geom_sum_last_generic {R : Type*} [CommRing R] {ginv : R} {N : ℕ}
+    (hpow : ginv ^ N = 1) :
+    (∑ k ∈ Finset.range N, C (ginv ^ (N - 1 - k)) * X ^ k) * (X - C ginv) = X ^ N - 1 := by
+  have hgeom := geom_sum₂_mul (X : R[X]) (C ginv) N
+  have hp : (C ginv : R[X]) ^ N = 1 := by
+    rw [← map_pow, hpow, map_one]
+  rw [hp] at hgeom
   rw [← hgeom]
   congr 1
   refine Finset.sum_congr rfl fun k _ => ?_
   rw [← map_pow, mul_comm]
+
+theorem isLastPoly_mul_sub {g : K} {ℓ : ℕ} (hg : IsPrimitiveRoot g (2 ^ ℓ)) :
+    isLastPoly ℓ g * (X - C g⁻¹) = vanishingPoly ℓ := by
+  unfold isLastPoly vanishingPoly
+  exact geom_sum_last_generic (by rw [inv_pow, hg.pow_eq_one, inv_one])
 
 theorem eval_isLastPoly_off_domain {g : K} {ℓ : ℕ} (hg : IsPrimitiveRoot g (2 ^ ℓ))
     {ζ : K} (hζ : ζ ≠ g⁻¹) :

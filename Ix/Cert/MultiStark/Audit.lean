@@ -11,7 +11,7 @@ zero `bv_decide`, zero custom axioms).
 
 -- Gap 1a: Goldilocks field model & WellFormed
 /--
-info: Ix.Cert.MultiStark.goldilocksFieldModel : CertiFri.Exec.FieldModel CertiFri.P3.Goldilocks CertiFri.P3.GoldilocksExt
+info: Ix.Cert.MultiStark.goldilocksFieldModel : CertiFri.Exec.FieldModel CertiFri.P3.Goldilocks CertiFri.P3.GoldilocksExt3
   Ix.Cert.MultiStark.K
 -/
 #guard_msgs in #check @Ix.Cert.MultiStark.goldilocksFieldModel
@@ -48,6 +48,12 @@ info: Ix.Cert.MultiStark.extHasher_hashRows_eq_pure : ∀ (row : Array CertiFri.
     { data := (Blake3.Pure.digest (CertiFri.P3.Hashers.extRowBytes row).data.toList).toArray }
 -/
 #guard_msgs in #check @Ix.Cert.MultiStark.extHasher_hashRows_eq_pure
+/--
+info: Ix.Cert.MultiStark.ext3Hasher_hashRows_eq_pure : ∀ (row : Array CertiFri.P3.GoldilocksExt3),
+  (CertiFri.P3.ext3Hasher.hashRows row).toBytes =
+    { data := (Blake3.Pure.digest (CertiFri.P3.Hashers.ext3RowBytes row).data.toList).toArray }
+-/
+#guard_msgs in #check @Ix.Cert.MultiStark.ext3Hasher_hashRows_eq_pure
 /-- info: 'Ix.Cert.MultiStark.blake3_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Ix.Cert.MultiStark.blake3_eq_pure
 /-- info: 'Ix.Cert.MultiStark.hashPair_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -56,6 +62,8 @@ info: Ix.Cert.MultiStark.extHasher_hashRows_eq_pure : ∀ (row : Array CertiFri.
 #guard_msgs in #print axioms Ix.Cert.MultiStark.baseHasher_hashRows_eq_pure
 /-- info: 'Ix.Cert.MultiStark.extHasher_hashRows_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Ix.Cert.MultiStark.extHasher_hashRows_eq_pure
+/-- info: 'Ix.Cert.MultiStark.ext3Hasher_hashRows_eq_pure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Ix.Cert.MultiStark.ext3Hasher_hashRows_eq_pure
 
 -- Gap 2: Shape-independent adaptive dynamic ROM & tightened round bounds
 /--
@@ -69,13 +77,13 @@ info: @Ix.Cert.MultiStark.fractionLE_projectQueryIndex : ∀ {M h : ℕ},
 /--
 info: @Ix.Cert.MultiStark.settles_of_depends_on_digests : ∀ {Msg : Type} {Chal : ℕ → Type} {T D : Type}
   [inst : DecidableEq (CertiFri.Oracle.FSQuery Msg Chal (CertiFri.Oracle.HashQuery T D))] {Msg₂ : Type}
-  (digestsOf : Msg → List D) (r : ℕ)
+  (digestsOf : ℕ → Msg → List D) (r : ℕ)
   (interp : CertiFri.Oracle.Log (CertiFri.Oracle.MerkleAnswer Msg Chal T D) → ℕ → Msg → Msg₂),
   (∀ (l₁ l₂ : CertiFri.Oracle.Log (CertiFri.Oracle.MerkleAnswer Msg Chal T D)) (j : ℕ) (m : Msg),
       r ≤ j → interp l₁ j m = interp l₂ j m) →
     (∀ (l₁ l₂ : CertiFri.Oracle.Log (CertiFri.Oracle.MerkleAnswer Msg Chal T D)) (j : ℕ) (m : Msg),
         j < r →
-          (∀ root ∈ digestsOf m,
+          (∀ root ∈ digestsOf j m,
               ∀ (dims : Array CertiFri.Dimensions) (index : ℕ) (rows : Array (Array T)),
                 CertiFri.Oracle.Opens l₁ root dims index rows ↔ CertiFri.Oracle.Opens l₂ root dims index rows) →
             interp l₁ j m = interp l₂ j m) →
@@ -86,8 +94,9 @@ info: @Ix.Cert.MultiStark.settles_of_depends_on_digests : ∀ {Msg : Type} {Chal
 info: @Ix.Cert.MultiStark.soundness_dynamic_rom : ∀ {Msg Msg₂ : Type} {Chal : ℕ → Type} {T D : Type}
   [inst : DecidableEq (CertiFri.Oracle.FSQuery Msg Chal (CertiFri.Oracle.HashQuery T D))]
   [inst_1 : (i : ℕ) → Fintype (Chal i)] [∀ (i : ℕ), Nonempty (Chal i)] [inst_3 : Fintype D] [Nonempty D] {α β : Type}
-  {r maxDigests : ℕ} {digestsOf : Msg → List D},
-  (∀ (m : Msg), (digestsOf m).length ≤ maxDigests) →
+  {r M : ℕ} {digestsOf : ℕ → Msg → List D},
+  (∀ (x : CertiFri.Oracle.FSQuery Msg Chal (CertiFri.Oracle.HashQuery T D)),
+      (CertiFri.Oracle.chalDigests digestsOf r x).length ≤ M) →
     ∀ {doomed : (i : ℕ) → CertiFri.Oracle.Transcript Msg₂ Chal i → Prop}
       {interp : CertiFri.Oracle.Log (CertiFri.Oracle.MerkleAnswer Msg Chal T D) → ℕ → Msg → Msg₂} {ε : ℕ → ℝ}
       {εmax : ℝ},
@@ -114,8 +123,7 @@ info: @Ix.Cert.MultiStark.soundness_dynamic_rom : ∀ {Msg Msg₂ : Type} {Chal 
                                     ¬CertiFri.Oracle.HasBad (CertiFri.Oracle.Hit digestsOf r) l' →
                                       ¬doomed r (CertiFri.Oracle.Transcript.mapIdx (interp l') out.2)) →
                             CertiFri.Oracle.OracleComp.prob E ((CertiFri.Oracle.fsExperiment r adv msgs).bind rest) [] ≤
-                              (↑Q + ↑r + ↑R) * εmax +
-                                (↑maxDigests * ↑r + 3) * (↑Q + ↑r + ↑R) * (↑Q + ↑r + ↑R - 1) / (2 * ↑(Fintype.card D))
+                              (↑Q + ↑r + ↑R) * εmax + ↑(max M 3 + 3) * (↑Q + ↑r + ↑R) ^ 2 / (4 * ↑(Fintype.card D))
 -/
 #guard_msgs in #check @Ix.Cert.MultiStark.soundness_dynamic_rom
 /--
@@ -185,16 +193,10 @@ info: @Ix.Cert.MultiStark.soundness_pruned_uniqueDecoding : ∀ {F EF D K : Type
         2 * δ + (1 / 2) ^ params.logBlowup ≤ 1 →
           ∀ {εmax : ℝ},
             ↑(CertiFri.Fri.claimRefs params.logBlowup shape).length *
-                    (2 ^ CertiFri.Fri.logMaxHeight params.logBlowup shape *
-                        (δ * 2 ^ CertiFri.Fri.logMaxHeight params.logBlowup shape + 1) +
-                      1) /
+                    ((1 + δ) * 2 ^ CertiFri.Fri.logMaxHeight params.logBlowup shape) /
                   ↑(Fintype.card K) ≤
                 εmax →
-              2 *
-                        (2 ^ CertiFri.Fri.logMaxHeight params.logBlowup shape *
-                            (δ * 2 ^ CertiFri.Fri.logMaxHeight params.logBlowup shape + 1) +
-                          1) /
-                      ↑(Fintype.card K) /
+              (1 + δ) * 2 ^ CertiFri.Fri.logMaxHeight params.logBlowup shape / ↑(Fintype.card K) /
                     2 ^ params.commitPowBits ≤
                   εmax →
                 (1 - δ) ^ params.numQueries / 2 ^ params.queryPowBits ≤ εmax →
@@ -226,15 +228,15 @@ info: @Ix.Cert.MultiStark.soundness_pruned_uniqueDecoding : ∀ {F EF D K : Type
                           (↑Q + (↑(CertiFri.Exec.modelParams m params shape wf).rounds + 2) +
                                 2 * ↑(CertiFri.Exec.modelParams m params shape wf).verifierQueries) *
                               εmax +
-                            ((↑(CertiFri.Exec.modelParams m params shape wf).batches + 1) *
-                                      (↑(CertiFri.Exec.modelParams m params shape wf).rounds + 2) +
+                            ↑(max
+                                      ((CertiFri.Exec.modelParams m params shape wf).batches +
+                                        (CertiFri.Exec.modelParams m params shape wf).rounds)
+                                      3 +
                                     3) *
-                                  (↑Q + (↑(CertiFri.Exec.modelParams m params shape wf).rounds + 2) +
-                                    2 * ↑(CertiFri.Exec.modelParams m params shape wf).verifierQueries) *
                                 (↑Q + (↑(CertiFri.Exec.modelParams m params shape wf).rounds + 2) +
-                                    2 * ↑(CertiFri.Exec.modelParams m params shape wf).verifierQueries -
-                                  1) /
-                              (2 * ↑(Fintype.card D))
+                                    2 * ↑(CertiFri.Exec.modelParams m params shape wf).verifierQueries) ^
+                                  2 /
+                              (4 * ↑(Fintype.card D))
 -/
 #guard_msgs in #check @Ix.Cert.MultiStark.soundness_pruned_uniqueDecoding
 /--
@@ -246,16 +248,10 @@ info: Ix.Cert.MultiStark.goldilocks_pruned_fri_soundness : ∀ (params : CertiFr
         2 * δ + (1 / 2) ^ params.logBlowup ≤ 1 →
           ∀ {εmax : ℝ},
             ↑(CertiFri.Fri.claimRefs params.logBlowup shape).length *
-                    (2 ^ CertiFri.Fri.logMaxHeight params.logBlowup shape *
-                        (δ * 2 ^ CertiFri.Fri.logMaxHeight params.logBlowup shape + 1) +
-                      1) /
+                    ((1 + δ) * 2 ^ CertiFri.Fri.logMaxHeight params.logBlowup shape) /
                   ↑(Fintype.card Ix.Cert.MultiStark.K) ≤
                 εmax →
-              2 *
-                        (2 ^ CertiFri.Fri.logMaxHeight params.logBlowup shape *
-                            (δ * 2 ^ CertiFri.Fri.logMaxHeight params.logBlowup shape + 1) +
-                          1) /
-                      ↑(Fintype.card Ix.Cert.MultiStark.K) /
+              (1 + δ) * 2 ^ CertiFri.Fri.logMaxHeight params.logBlowup shape / ↑(Fintype.card Ix.Cert.MultiStark.K) /
                     2 ^ params.commitPowBits ≤
                   εmax →
                 (1 - δ) ^ params.numQueries / 2 ^ params.queryPowBits ≤ εmax →
@@ -267,14 +263,14 @@ info: Ix.Cert.MultiStark.goldilocks_pruned_fri_soundness : ∀ (params : CertiFr
                     adv.QueryBound Q →
                       ∀
                         (attempt :
-                          A → Ix.Cert.MultiStark.PrunedAttempt CertiFri.P3.Goldilocks CertiFri.P3.GoldilocksExt D),
+                          A → Ix.Cert.MultiStark.PrunedAttempt CertiFri.P3.Goldilocks CertiFri.P3.GoldilocksExt3 D),
                         CertiFri.Oracle.OracleComp.prob
                             (fun res l =>
                               (∃ f,
                                   (∀
                                       (x :
                                         CertiFri.Oracle.FSQuery
-                                          (CertiFri.Exec.RawMsg CertiFri.P3.Goldilocks CertiFri.P3.GoldilocksExt D)
+                                          (CertiFri.Exec.RawMsg CertiFri.P3.Goldilocks CertiFri.P3.GoldilocksExt3 D)
                                           (CertiFri.PcsRbr.GrindChal (CertiFri.Exec.powBits params shape)
                                             (CertiFri.PcsRbr.Chal
                                               (CertiFri.Exec.modelParams Ix.Cert.MultiStark.goldilocksFieldModel params
@@ -311,41 +307,37 @@ info: Ix.Cert.MultiStark.goldilocks_pruned_fri_soundness : ∀ (params : CertiFr
                                   ↑(CertiFri.Exec.modelParams Ix.Cert.MultiStark.goldilocksFieldModel params shape
                                         ⋯).verifierQueries) *
                               εmax +
-                            ((↑(CertiFri.Exec.modelParams Ix.Cert.MultiStark.goldilocksFieldModel params shape
-                                              ⋯).batches +
-                                        1) *
-                                      (↑(CertiFri.Exec.modelParams Ix.Cert.MultiStark.goldilocksFieldModel params shape
-                                              ⋯).rounds +
-                                        2) +
+                            ↑(max
+                                      ((CertiFri.Exec.modelParams Ix.Cert.MultiStark.goldilocksFieldModel params shape
+                                            ⋯).batches +
+                                        (CertiFri.Exec.modelParams Ix.Cert.MultiStark.goldilocksFieldModel params shape
+                                            ⋯).rounds)
+                                      3 +
                                     3) *
-                                  (↑Q +
-                                      (↑(CertiFri.Exec.modelParams Ix.Cert.MultiStark.goldilocksFieldModel params shape
-                                              ⋯).rounds +
-                                        2) +
-                                    2 *
-                                      ↑(CertiFri.Exec.modelParams Ix.Cert.MultiStark.goldilocksFieldModel params shape
-                                            ⋯).verifierQueries) *
                                 (↑Q +
                                       (↑(CertiFri.Exec.modelParams Ix.Cert.MultiStark.goldilocksFieldModel params shape
                                               ⋯).rounds +
                                         2) +
                                     2 *
                                       ↑(CertiFri.Exec.modelParams Ix.Cert.MultiStark.goldilocksFieldModel params shape
-                                            ⋯).verifierQueries -
-                                  1) /
-                              (2 * ↑(Fintype.card D))
+                                            ⋯).verifierQueries) ^
+                                  2 /
+                              (4 * ↑(Fintype.card D))
 -/
 #guard_msgs in #check @Ix.Cert.MultiStark.goldilocks_pruned_fri_soundness
 /--
-info: @Ix.Cert.MultiStark.basePoly_of_eval_c1_zero : ∀ {P : Polynomial Ix.Cert.MultiStark.K} {d : ℕ},
+info: @Ix.Cert.MultiStark.basePoly_of_eval_c1_c2_zero : ∀ {P : Polynomial Ix.Cert.MultiStark.K} {d : ℕ},
   P.degree < ↑(d + 1) →
-    ∀ {B : Finset Ix.Cert.MultiStark.Fp},
+    ∀ {B : Finset CertiFri.P3.GoldilocksField},
       d + 1 ≤ B.card →
-        (∀ x ∈ B, (Polynomial.eval (Ix.Cert.MultiStark.K.embedHom x) P).c1 = 0) →
+        (∀ x ∈ B,
+            (Polynomial.eval (CertiFri.P3.Fp3Model.embedHom x) P).c1 = 0 ∧
+              (Polynomial.eval (CertiFri.P3.Fp3Model.embedHom x) P).c2 = 0) →
           Ix.Cert.MultiStark.polyC1 P = 0 ∧
-            P = Polynomial.map Ix.Cert.MultiStark.K.embedHom (Ix.Cert.MultiStark.polyC0 P)
+            Ix.Cert.MultiStark.polyC2 P = 0 ∧
+              P = Polynomial.map CertiFri.P3.Fp3Model.embedHom (Ix.Cert.MultiStark.polyC0 P)
 -/
-#guard_msgs in #check @Ix.Cert.MultiStark.basePoly_of_eval_c1_zero
+#guard_msgs (whitespace := lax) in #check @Ix.Cert.MultiStark.basePoly_of_eval_c1_c2_zero
 /-- info: 'Ix.Cert.MultiStark.soundness_pruned_uniqueDecoding' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms Ix.Cert.MultiStark.soundness_pruned_uniqueDecoding
 /-- info: 'Ix.Cert.MultiStark.goldilocks_pruned_fri_soundness' depends on axioms: [propext, Classical.choice, Quot.sound] -/

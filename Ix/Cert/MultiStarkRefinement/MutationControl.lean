@@ -62,15 +62,15 @@ theorem mutated_drop_ext_is_zero_fails_pin :
 def mutatedFinalCheck (_total : EF) : Bool := true
 
 /-- Certified final LogUp residual check used in `Ix.Cert.MultiStark.verifyBatch`. -/
-def certifiedFinalCheck (total : EF) : Bool := total == GoldilocksExt.zero
+def certifiedFinalCheck (total : EF) : Bool := total == GoldilocksExt3.zero
 
-/-- **Negative Control 2:** There exists a concrete nonzero LogUp residual (`⟨1, 0⟩`)
+/-- **Negative Control 2:** There exists a concrete nonzero LogUp residual (`⟨1, 0, 0⟩`)
 accepted by `mutatedFinalCheck` but rejected by `certifiedFinalCheck` (and hence by
 `Ix.Cert.MultiStark.verifyBatch`). -/
 theorem mutated_drop_ext_is_zero_unsound :
     ¬ (∀ total : EF, mutatedFinalCheck total = true → certifiedFinalCheck total = true) := by
   intro h
-  have hbad := h GoldilocksExt.one rfl
+  have hbad := h GoldilocksExt3.one rfl
   revert hbad
   decide
 

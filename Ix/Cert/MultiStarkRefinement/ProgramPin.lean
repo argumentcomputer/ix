@@ -272,9 +272,15 @@ def recursionCoreFunctions : List (String × String) :=
   , ("Transcript", "ch_sample_bits")
   , ("Transcript", "batch_fiat_shamir")
   , ("Transcript", "shard_fiat_shamir")
+  , ("StarkHash", "v6_merkle_leaf_cv")
+  , ("StarkHash", "v6_merkle_compress_cv")
+  , ("StarkHash", "v6_transcript_batch_cv")
+  , ("StarkHash", "b3_dk_hash")
   , ("StarkHash", "b3_rows")
   , ("StarkHash", "b3_to_digest")
   , ("Mmcs", "mmcs_verify_multi")
+  , ("Pcs", "eg3_inv_nonzero")
+  , ("Pcs", "tensor_weights")
   , ("Pcs", "rows_pop")
   , ("Pcs", "fri_fold2")
   , ("Pcs", "ro_fold_1pt")
@@ -340,7 +346,8 @@ theorem goldilocksLibrary_nonzero_inverses_pinned :
     goldilocksCoreFunctions.all (fun p =>
       hasModuleFunction Aiur.Library.Field.Goldilocks.declarations p.1 p.2) = true ∧
     fnHasCallsAndAsserts Aiur.Library.Field.Goldilocks.declarations "Goldilocks" "gl_inv_nonzero" [] 1 = true ∧
-    fnHasCallsAndAsserts Aiur.Library.Field.Goldilocks.declarations "Goldilocks" "eg_inv_nonzero" [] 1 = true ∧
+    fnHasCallsAndAsserts Aiur.Library.Field.Goldilocks.declarations "Goldilocks" "eg_inv_nonzero"
+      ["gl_inv_nonzero"] 0 = true ∧
     fnHasCallsAndAsserts Aiur.Library.Field.Goldilocks.declarations "Goldilocks" "eg_div_nonzero"
       ["eg_mul", "eg_inv_nonzero"] 0 = true := by
   decide
@@ -374,19 +381,20 @@ def rowsPopRequiredCalls : List String :=
 
 /-- Required calls inside `Pcs::finalize_buckets`. -/
 def finalizeBucketsRequiredCalls : List String :=
-  ["Goldilocks::eg_inverse", "Goldilocks::eg_inv_nonzero", "Goldilocks::eg_eq"]
+  ["eg3_inv_nonzero", "eg3_eq"]
 
 /-- AST-level pin predicate on any MultiStark verifier program: checks entry point, `verify_batch`,
-`verify_shard`, `assert_closure_pairs_n`, `assert_closure_widths_ok`, `Pcs::rows_pop`, and
-`Pcs::finalize_buckets` retain all mandatory subcalls and `assert_eq!` constraints. -/
+`verify_shard`, `assert_closure_pairs_n`, `assert_closure_widths_ok`, `Pcs::eg3_inv_nonzero`,
+`Pcs::rows_pop`, and `Pcs::finalize_buckets` retain all mandatory subcalls and `assert_eq!` constraints. -/
 def RecursionVerifierAstPinned {α : Type} (prog : Modules.Program α) : Bool :=
   fnHasCallsAndAsserts prog "MultiStark" "verify_multi_stark_proof" entryRequiredCalls 3 &&
   fnHasCallsAndAsserts prog "StarkVerifier" "verify_batch" verifyBatchRequiredCalls 6 &&
   fnHasCallsAndAsserts prog "StarkVerifier" "verify_shard" verifyShardRequiredCalls 17 &&
   fnHasCallsAndAsserts prog "StarkVerifier" "assert_closure_pairs_n" closurePairsNRequiredCalls 16 &&
   fnHasCallsAndAsserts prog "StarkVerifier" "assert_closure_widths_ok" closureWidthsOkRequiredCalls 1 &&
+  fnHasCallsAndAsserts prog "Pcs" "eg3_inv_nonzero" ["Goldilocks::eg_inv_nonzero"] 0 &&
   fnHasCallsAndAsserts prog "Pcs" "rows_pop" rowsPopRequiredCalls 1 &&
-  fnHasCallsAndAsserts prog "Pcs" "finalize_buckets" finalizeBucketsRequiredCalls 3
+  fnHasCallsAndAsserts prog "Pcs" "finalize_buckets" finalizeBucketsRequiredCalls 1
 
 /-- Kernel-checked AST pin of the deployed `MultiStark.recursionSource`. -/
 theorem recursionSource_ast_pinned :
@@ -437,6 +445,7 @@ theorem recursionProgram_ast_pinned :
   rw [findModuleFunction?_append_right _ _ "StarkVerifier" _ hdisj.2.1]
   rw [findModuleFunction?_append_right _ _ "Pcs" _ hdisj.2.2]
   rw [findModuleFunction?_append_right _ _ "Pcs" _ hdisj.2.2]
+  rw [findModuleFunction?_append_right _ _ "Pcs" _ hdisj.2.2]
   have hsrc := recursionSource_ast_pinned
   unfold RecursionVerifierAstPinned fnHasCallsAndAsserts at hsrc
   have h1 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
@@ -450,12 +459,14 @@ theorem recursionProgram_ast_pinned :
   have h5 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
     "StarkVerifier" "assert_closure_widths_ok" closureWidthsOkRequiredCalls 1
   have h6 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
-    "Pcs" "rows_pop" rowsPopRequiredCalls 1
+    "Pcs" "eg3_inv_nonzero" ["Goldilocks::eg_inv_nonzero"] 0
   have h7 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
-    "Pcs" "finalize_buckets" finalizeBucketsRequiredCalls 3
-  unfold fnHasCallsAndAsserts at h1 h2 h3 h4 h5 h6 h7
+    "Pcs" "rows_pop" rowsPopRequiredCalls 1
+  have h8 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.recursionSource
+    "Pcs" "finalize_buckets" finalizeBucketsRequiredCalls 1
+  unfold fnHasCallsAndAsserts at h1 h2 h3 h4 h5 h6 h7 h8
   unfold Modules.Program.toField
-  rw [h1, h2, h3, h4, h5, h6, h7]
+  rw [h1, h2, h3, h4, h5, h6, h7, h8]
   exact hsrc
 
 /-! ## 4. Public Digest Packing, Value Representations, and BLAKE3 Escape -/
@@ -547,9 +558,9 @@ theorem packDigest8_inj {a b : Address}
 def RepFp (x : CertiFri.P3.Goldilocks) (v : Aiur.SourceValue Fp) : Prop :=
   v = .field (baseToFp x)
 
-/-- Representation of a quadratic extension element `[Field; 2]` in `SourceValue Fp`. -/
-def RepExt (e : CertiFri.P3.GoldilocksExt) (v : Aiur.SourceValue Fp) : Prop :=
-  v = .tuple [.field (baseToFp e.c0), .field (baseToFp e.c1)]
+/-- Representation of a cubic extension element `[Field; 3]` in `SourceValue Fp`. -/
+def RepExt (e : CertiFri.P3.GoldilocksExt3) (v : Aiur.SourceValue Fp) : Prop :=
+  v = .tuple [.field (baseToFp e.c0), .field (baseToFp e.c1), .field (baseToFp e.c2)]
 
 /-- Representation of an 8-byte little-endian `UInt64::U64` (`[UInt8::U8; 8]`). -/
 def RepU64 (x : UInt64) (v : Aiur.SourceValue Fp) : Prop :=

@@ -1317,4 +1317,109 @@ theorem extHasher_hashRows_eq_pure (row : Array GoldilocksExt) :
       wordOrZero_flattenExtRow_even, wordOrZero_flattenExtRow_odd,
       wordOrZero_flattenExtRow_even, wordOrZero_flattenExtRow_odd]
 
+private def flattenExt3Row (row : Array GoldilocksExt3) : Array Goldilocks :=
+  (row.toList.flatMap fun e => [e.c0, e.c1, e.c2]).toArray
+
+private lemma ext3RowBytes_eq_rowBytes_flatten (row : Array GoldilocksExt3) :
+    Hashers.ext3RowBytes row = Hashers.rowBytes (flattenExt3Row row) := by
+  unfold Hashers.ext3RowBytes Hashers.rowBytes flattenExt3Row
+  have hfold : ∀ (l : List GoldilocksExt3) (acc : ByteArray),
+      l.foldl GoldilocksExt3.pushBytes acc =
+        (l.flatMap fun e => [e.c0, e.c1, e.c2]).foldl Goldilocks.pushBytes acc := by
+    intro l
+    induction l with
+    | nil => intro acc; rfl
+    | cons e es ih =>
+      intro acc
+      simp [List.foldl_cons, List.flatMap_cons, GoldilocksExt3.pushBytes, ih]
+  rw [← Array.foldl_toList, ← Array.foldl_toList, hfold]
+  rfl
+
+private lemma flattenExt3Row_size (row : Array GoldilocksExt3) :
+    (flattenExt3Row row).size = 3 * row.size := by
+  unfold flattenExt3Row
+  have h : ∀ l : List GoldilocksExt3, (l.flatMap fun e => [e.c0, e.c1, e.c2]).length = 3 * l.length := by
+    intro l; induction l with
+    | nil => rfl
+    | cons _ _ ih => simp [List.flatMap_cons, ih]; omega
+  simpa using h row.toList
+
+private lemma wordOrZero_flattenExt3Row (row : Array GoldilocksExt3) (k : Nat) :
+    Hashers.wordOrZero (flattenExt3Row row) k = Hashers.ext3WordOrZero row k := by
+  have hget : ∀ (l : List GoldilocksExt3) (k : Nat),
+      (l.flatMap fun e => [e.c0, e.c1, e.c2])[k]?.map (·.val) =
+        if k / 3 < l.length then
+          some (let e := l[k / 3]?.getD default
+                match k % 3 with | 0 => e.c0.val | 1 => e.c1.val | _ => e.c2.val)
+        else none := by
+    intro l
+    induction l with
+    | nil => intro k; simp
+    | cons e es ih =>
+      intro k
+      by_cases h3 : k < 3
+      · have hq : k / 3 = 0 := by omega
+        interval_cases k <;> simp [List.flatMap_cons, hq]
+      · have hge : k ≥ 3 := by omega
+        have hq : k / 3 = (k - 3) / 3 + 1 := by omega
+        have hr : k % 3 = (k - 3) % 3 := by omega
+        have hstep : (List.flatMap (fun e => [e.c0, e.c1, e.c2]) (e :: es))[k]? =
+            (List.flatMap (fun e => [e.c0, e.c1, e.c2]) es)[k - 3]? := by
+          simp only [List.flatMap_cons, List.cons_append, List.nil_append]
+          cases k with
+          | zero => omega
+          | succ k1 =>
+            cases k1 with
+            | zero => omega
+            | succ k2 =>
+              cases k2 with
+              | zero => omega
+              | succ k3 => rfl
+        rw [hstep, ih (k - 3)]
+        simp only [hq, hr, List.length_cons, Nat.add_lt_add_iff_right, List.getElem?_cons_succ]
+  unfold Hashers.wordOrZero Hashers.ext3WordOrZero
+  by_cases hk : k < (flattenExt3Row row).size
+  · have hq_lt : k / 3 < row.size := by rw [flattenExt3Row_size] at hk; omega
+    simp only [hk, ↓reduceDIte]
+    have hspec := hget row.toList k
+    have hlt : k / 3 < row.toList.length := by simpa using hq_lt
+    simp only [hlt, ↓reduceIte] at hspec
+    have hflat_lt : k < (row.toList.flatMap fun e => [e.c0, e.c1, e.c2]).length := by
+      simpa [flattenExt3Row] using hk
+    have helem : (row.toList.flatMap fun e => [e.c0, e.c1, e.c2])[k]? =
+        some (flattenExt3Row row)[k] := by
+      rw [List.getElem?_eq_getElem hflat_lt]; rfl
+    rw [helem] at hspec
+    have hval := Option.some.inj hspec
+    dsimp only at hval
+    simp only [Array.getElem?_eq_getElem hq_lt, Option.getD_some]
+    refine hval.trans ?_
+    have hm : k % 3 = 0 ∨ k % 3 = 1 ∨ k % 3 = 2 := by omega
+    rcases hm with h0 | h1 | h2
+    · simp [h0, List.getElem?_eq_getElem hlt]
+    · simp [h1, List.getElem?_eq_getElem hlt]
+    · simp [h2, List.getElem?_eq_getElem hlt]
+  · have hq_ge : row.size ≤ k / 3 := by rw [flattenExt3Row_size] at hk; omega
+    simp only [hk, ↓reduceDIte, Array.getElem?_eq_none hq_ge, Option.getD_none]
+    have hm : k % 3 = 0 ∨ k % 3 = 1 ∨ k % 3 = 2 := by omega
+    rcases hm with h0 | h1 | h2
+    · simp [h0]; rfl
+    · simp [h1]; rfl
+    · simp [h2]; rfl
+
+/-- `ext3Hasher.hashRows row` equals `Blake3.Pure.digest` of `Hashers.ext3RowBytes row`. -/
+theorem ext3Hasher_hashRows_eq_pure (row : Array GoldilocksExt3) :
+    (CertiFri.P3.ext3Hasher.hashRows row).toBytes =
+      ByteArray.mk (Blake3.Pure.digest (Hashers.ext3RowBytes row).data.toList).toArray := by
+  rw [ext3RowBytes_eq_rowBytes_flatten, ← baseHasher_hashRows_eq_pure]
+  unfold CertiFri.P3.ext3Hasher CertiFri.P3.baseHasher
+  dsimp only
+  rw [flattenExt3Row_size, show 8 * (3 * row.size) = 24 * row.size by omega]
+  congr 1
+  apply hashBlocks_congr
+  intro i _
+  unfold Hashers.ext3RowBlock Hashers.rowBlock
+  dsimp only
+  simp only [wordOrZero_flattenExt3Row]
+
 end Ix.Cert.MultiStark

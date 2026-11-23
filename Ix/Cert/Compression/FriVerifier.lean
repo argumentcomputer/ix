@@ -31,181 +31,158 @@ open Ix.Cert.Compression.Plonkish
 open Ix.Cert.Compression.Foreign
 open Ix.Cert.MultiStark (K)
 
-/-! ## 1. Quadratic Extension Field Gadgets (`QWire` in `PlonkishM GoldilocksF`) -/
+/-! ## 1. Cubic Extension Field Gadgets (`QWire` in `PlonkishM GoldilocksF`, `Fp[X]/(X^3 - X - 1)`) -/
 
-/-- A pair of `GoldilocksF` wires representing `c0 + c1 * u ∈ K = Fp[u]/(u^2 - 7)`. -/
-abbrev QWire : Type := Wire × Wire
+/-- A triple of `GoldilocksF` wires representing `c0 + c1 * X + c2 * X^2 ∈ K = Fp[X]/(X^3 - X - 1)`. -/
+abbrev QWire : Type := Wire × Wire × Wire
 
 /-- Interpret a `QWire` under a Goldilocks wire assignment `w : Wire → GoldilocksF`. -/
 def QWire.eval (w : Wire → GoldilocksF) (q : QWire) : K :=
-  ⟨w q.1, w q.2⟩
+  ⟨w q.1, w q.2.1, w q.2.2⟩
 
-/-- Quadratic extension addition in `PlonkishM GoldilocksF`. -/
+/-- Cubic extension addition in `PlonkishM GoldilocksF`. -/
 def qAdd (a b : QWire) : PlonkishM GoldilocksF QWire := do
   let c0 ← PlonkishM.add a.1 b.1
-  let c1 ← PlonkishM.add a.2 b.2
-  return (c0, c1)
+  let c1 ← PlonkishM.add a.2.1 b.2.1
+  let c2 ← PlonkishM.add a.2.2 b.2.2
+  return (c0, c1, c2)
 
-/-- Quadratic extension subtraction in `PlonkishM GoldilocksF`. -/
+/-- Cubic extension subtraction in `PlonkishM GoldilocksF`. -/
 def qSub (a b : QWire) : PlonkishM GoldilocksF QWire := do
   let c0 ← PlonkishM.sub a.1 b.1
-  let c1 ← PlonkishM.sub a.2 b.2
-  return (c0, c1)
+  let c1 ← PlonkishM.sub a.2.1 b.2.1
+  let c2 ← PlonkishM.sub a.2.2 b.2.2
+  return (c0, c1, c2)
 
-/-- Quadratic extension multiplication in `PlonkishM GoldilocksF` (`u^2 = 7`):
-`c0 = a0 * b0 + 7 * (a1 * b1)`, `c1 = a0 * b1 + a1 * b0`. -/
+/-- Cubic extension multiplication in `PlonkishM GoldilocksF` (`X^3 = X + 1`, `X^4 = X^2 + X`):
+- `c0 = a0 * b0 + a1 * b2 + a2 * b1`
+- `c1 = a0 * b1 + a1 * b0 + a1 * b2 + a2 * b1 + a2 * b2`
+- `c2 = a0 * b2 + a1 * b1 + a2 * b0 + a2 * b2`. -/
 def qMul (a b : QWire) : PlonkishM GoldilocksF QWire := do
-  let a0b0 ← PlonkishM.mul a.1 b.1
-  let a1b1 ← PlonkishM.mul a.2 b.2
-  let c0 ← PlonkishM.affine a0b0 a1b1 1 (7 : GoldilocksF) 0
-  let a0b1 ← PlonkishM.mul a.1 b.2
-  let a1b0 ← PlonkishM.mul a.2 b.1
-  let c1 ← PlonkishM.add a0b1 a1b0
-  return (c0, c1)
+  let w00 ← PlonkishM.mul a.1 b.1
+  let w01 ← PlonkishM.mul a.1 b.2.1
+  let w02 ← PlonkishM.mul a.1 b.2.2
+  let w10 ← PlonkishM.mul a.2.1 b.1
+  let w11 ← PlonkishM.mul a.2.1 b.2.1
+  let w12 ← PlonkishM.mul a.2.1 b.2.2
+  let w20 ← PlonkishM.mul a.2.2 b.1
+  let w21 ← PlonkishM.mul a.2.2 b.2.1
+  let w22 ← PlonkishM.mul a.2.2 b.2.2
+  let cross12 ← PlonkishM.add w12 w21
+  let c0 ← PlonkishM.add w00 cross12
+  let cross01 ← PlonkishM.add w01 w10
+  let c1a ← PlonkishM.add cross01 cross12
+  let c1 ← PlonkishM.add c1a w22
+  let cross02 ← PlonkishM.add w02 w11
+  let c2a ← PlonkishM.add cross02 w20
+  let c2 ← PlonkishM.add c2a w22
+  return (c0, c1, c2)
 
 /-- Constrain two `QWire`s to be equal in `K`. -/
 def qAssertEq (a b : QWire) : PlonkishM GoldilocksF Unit := do
   PlonkishM.assertEq a.1 b.1
-  PlonkishM.assertEq a.2 b.2
+  PlonkishM.assertEq a.2.1 b.2.1
+  PlonkishM.assertEq a.2.2 b.2.2
 
 /-- Constrain a `QWire` to equal `0 : K`. -/
 def qAssertZero (a : QWire) : PlonkishM GoldilocksF Unit := do
   PlonkishM.assertZero a.1
-  PlonkishM.assertZero a.2
+  PlonkishM.assertZero a.2.1
+  PlonkishM.assertZero a.2.2
 
 /-- Single Horner accumulation step `acc * alpha + term` in `PlonkishM GoldilocksF`. -/
 def qHornerStep (acc alpha term : QWire) : PlonkishM GoldilocksF QWire := do
   let prod ← qMul acc alpha
   qAdd prod term
 
-theorem qAdd_sound (a b : QWire) :
-    PlonkishM.Spec (qAdd a b) (fun res w => res.eval w = a.eval w + b.eval w) := by
-  intro c₀
-  dsimp only [qAdd, StateT.run, bind, StateT.bind, pure, StateT.pure]
-  have h1e := PlonkishM.add_extends a.1 b.1 c₀
-  have h1s := fun w => (PlonkishM.add_sound a.1 b.1 c₀ w).2
-  dsimp only [StateT.run] at h1e h1s
-  generalize hc1 : PlonkishM.add a.1 b.1 c₀ = r1 at h1e h1s ⊢
-  rcases r1 with ⟨w0, c1⟩; dsimp only at h1e h1s ⊢
-  have h2e := PlonkishM.add_extends a.2 b.2 c1
-  have h2s := fun w => (PlonkishM.add_sound a.2 b.2 c1 w).2
-  dsimp only [StateT.run] at h2e h2s
-  generalize hc2 : PlonkishM.add a.2 b.2 c1 = r2 at h2e h2s ⊢
-  rcases r2 with ⟨w1, c2⟩; dsimp only at h2e h2s ⊢
-  refine ⟨h1e.trans h2e, fun w hw => ?_⟩
-  have hw0 := h1s w (Circuit.ConstraintsHold.mono h2e hw)
-  have hw1 := h2s w hw
-  exact K.ext hw0 hw1
+private theorem add_spec (a b : Wire) :
+    PlonkishM.Spec (F := GoldilocksF) (PlonkishM.add a b) (fun res w => w res = w a + w b) := fun c =>
+  ⟨PlonkishM.add_extends a b c, fun w hw => (PlonkishM.add_sound a b c w).2 hw⟩
 
-theorem qSub_sound (a b : QWire) :
-    PlonkishM.Spec (qSub a b) (fun res w => res.eval w = a.eval w - b.eval w) := by
-  intro c₀
-  dsimp only [qSub, StateT.run, bind, StateT.bind, pure, StateT.pure]
-  have h1e := PlonkishM.sub_extends a.1 b.1 c₀
-  have h1s := fun w => (PlonkishM.sub_sound a.1 b.1 c₀ w).2
-  dsimp only [StateT.run] at h1e h1s
-  generalize hc1 : PlonkishM.sub a.1 b.1 c₀ = r1 at h1e h1s ⊢
-  rcases r1 with ⟨w0, c1⟩; dsimp only at h1e h1s ⊢
-  have h2e := PlonkishM.sub_extends a.2 b.2 c1
-  have h2s := fun w => (PlonkishM.sub_sound a.2 b.2 c1 w).2
-  dsimp only [StateT.run] at h2e h2s
-  generalize hc2 : PlonkishM.sub a.2 b.2 c1 = r2 at h2e h2s ⊢
-  rcases r2 with ⟨w1, c2⟩; dsimp only at h2e h2s ⊢
-  refine ⟨h1e.trans h2e, fun w hw => ?_⟩
-  have hw0 := h1s w (Circuit.ConstraintsHold.mono h2e hw)
-  have hw1 := h2s w hw
-  exact K.ext hw0 hw1
+private theorem sub_spec (a b : Wire) :
+    PlonkishM.Spec (F := GoldilocksF) (PlonkishM.sub a b) (fun res w => w res = w a - w b) := fun c =>
+  ⟨PlonkishM.sub_extends a b c, fun w hw => (PlonkishM.sub_sound a b c w).2 hw⟩
 
-theorem qMul_sound (a b : QWire) :
-    PlonkishM.Spec (qMul a b) (fun res w => res.eval w = a.eval w * b.eval w) := by
-  intro c₀
-  dsimp only [qMul, StateT.run, bind, StateT.bind, pure, StateT.pure]
-  have h1e := PlonkishM.mul_extends a.1 b.1 c₀
-  have h1s := fun w => (PlonkishM.mul_sound a.1 b.1 c₀ w).2
-  dsimp only [StateT.run] at h1e h1s
-  generalize hc1 : PlonkishM.mul a.1 b.1 c₀ = r1 at h1e h1s ⊢
-  rcases r1 with ⟨w00, c1⟩; dsimp only at h1e h1s ⊢
-  have h2e := PlonkishM.mul_extends a.2 b.2 c1
-  have h2s := fun w => (PlonkishM.mul_sound a.2 b.2 c1 w).2
-  dsimp only [StateT.run] at h2e h2s
-  generalize hc2 : PlonkishM.mul a.2 b.2 c1 = r2 at h2e h2s ⊢
-  rcases r2 with ⟨w11, c2⟩; dsimp only at h2e h2s ⊢
-  have h3e := PlonkishM.affine_extends w00 w11 1 (7 : GoldilocksF) 0 c2
-  have h3s := fun w => (PlonkishM.affine_sound w00 w11 1 (7 : GoldilocksF) 0 c2 w).2
-  dsimp only [StateT.run] at h3e h3s
-  generalize hc3 : PlonkishM.affine w00 w11 1 (7 : GoldilocksF) 0 c2 = r3 at h3e h3s ⊢
-  rcases r3 with ⟨wc0, c3⟩; dsimp only at h3e h3s ⊢
-  have h4e := PlonkishM.mul_extends a.1 b.2 c3
-  have h4s := fun w => (PlonkishM.mul_sound a.1 b.2 c3 w).2
-  dsimp only [StateT.run] at h4e h4s
-  generalize hc4 : PlonkishM.mul a.1 b.2 c3 = r4 at h4e h4s ⊢
-  rcases r4 with ⟨w01, c4⟩; dsimp only at h4e h4s ⊢
-  have h5e := PlonkishM.mul_extends a.2 b.1 c4
-  have h5s := fun w => (PlonkishM.mul_sound a.2 b.1 c4 w).2
-  dsimp only [StateT.run] at h5e h5s
-  generalize hc5 : PlonkishM.mul a.2 b.1 c4 = r5 at h5e h5s ⊢
-  rcases r5 with ⟨w10, c5⟩; dsimp only at h5e h5s ⊢
-  have h6e := PlonkishM.add_extends w01 w10 c5
-  have h6s := fun w => (PlonkishM.add_sound w01 w10 c5 w).2
-  dsimp only [StateT.run] at h6e h6s
-  generalize hc6 : PlonkishM.add w01 w10 c5 = r6 at h6e h6s ⊢
-  rcases r6 with ⟨wc1, c6⟩; dsimp only at h6e h6s ⊢
-  have e16 : c1.Extends c6 := h2e.trans (h3e.trans (h4e.trans (h5e.trans h6e)))
-  have e26 : c2.Extends c6 := h3e.trans (h4e.trans (h5e.trans h6e))
-  have e36 : c3.Extends c6 := h4e.trans (h5e.trans h6e)
-  have e46 : c4.Extends c6 := h5e.trans h6e
-  refine ⟨h1e.trans e16, fun w hw => ?_⟩
-  have hw00 := h1s w (Circuit.ConstraintsHold.mono e16 hw)
-  have hw11 := h2s w (Circuit.ConstraintsHold.mono e26 hw)
-  have hwc0 := h3s w (Circuit.ConstraintsHold.mono e36 hw)
-  have hw01 := h4s w (Circuit.ConstraintsHold.mono e46 hw)
-  have hw10 := h5s w (Circuit.ConstraintsHold.mono h6e hw)
-  have hwc1 := h6s w hw
-  apply K.ext
-  · show w wc0 = w a.1 * w b.1 + 7 * (w a.2 * w b.2)
-    rw [hwc0, hw00, hw11]; ring
-  · show w wc1 = w a.1 * w b.2 + w a.2 * w b.1
-    rw [hwc1, hw01, hw10]
+private theorem mul_spec (a b : Wire) :
+    PlonkishM.Spec (F := GoldilocksF) (PlonkishM.mul a b) (fun res w => w res = w a * w b) := fun c =>
+  ⟨PlonkishM.mul_extends a b c, fun w hw => (PlonkishM.mul_sound a b c w).2 hw⟩
 
-theorem qAssertEq_sound (a b : QWire) :
-    PlonkishM.Spec (qAssertEq a b) (fun _ w => a.eval w = b.eval w) := by
-  intro c₀
-  dsimp only [qAssertEq, StateT.run, bind, StateT.bind]
-  have h1e : c₀.Extends (PlonkishM.assertEq a.1 b.1 c₀).2 := PlonkishM.assertGate_extends _ c₀
-  have h1s := fun w => PlonkishM.assertEq_sound a.1 b.1 c₀ w
-  dsimp only [StateT.run] at h1e h1s
-  generalize hc1 : PlonkishM.assertEq a.1 b.1 c₀ = r1 at h1e h1s ⊢
-  rcases r1 with ⟨u1, c1⟩; dsimp only at h1e h1s ⊢
-  have h2e : c1.Extends (PlonkishM.assertEq a.2 b.2 c1).2 := PlonkishM.assertGate_extends _ c1
-  have h2s := fun w => PlonkishM.assertEq_sound a.2 b.2 c1 w
-  dsimp only [StateT.run] at h2e h2s
-  generalize hc2 : PlonkishM.assertEq a.2 b.2 c1 = r2 at h2e h2s ⊢
-  rcases r2 with ⟨u2, c2⟩; dsimp only at h2e h2s ⊢
-  refine ⟨h1e.trans h2e, fun w hw => ?_⟩
-  exact K.ext (h1s w (Circuit.ConstraintsHold.mono h2e hw)) (h2s w hw)
+private theorem assertEq_spec (a b : Wire) :
+    PlonkishM.Spec (F := GoldilocksF) (PlonkishM.assertEq a b) (fun _ w => w a = w b) := fun c =>
+  ⟨PlonkishM.assertGate_extends _ c, fun w hw => PlonkishM.assertEq_sound a b c w hw⟩
 
-theorem qAssertZero_sound (a : QWire) :
-    PlonkishM.Spec (qAssertZero a) (fun _ w => a.eval w = 0) := by
-  intro c₀
-  dsimp only [qAssertZero, StateT.run, bind, StateT.bind]
-  have h1e : c₀.Extends (PlonkishM.assertZero a.1 c₀).2 := PlonkishM.assertGate_extends _ c₀
-  have h1s := fun w => PlonkishM.assertZero_sound a.1 c₀ w
-  dsimp only [StateT.run] at h1e h1s
-  generalize hc1 : PlonkishM.assertZero a.1 c₀ = r1 at h1e h1s ⊢
-  rcases r1 with ⟨u1, c1⟩; dsimp only at h1e h1s ⊢
-  have h2e : c1.Extends (PlonkishM.assertZero a.2 c1).2 := PlonkishM.assertGate_extends _ c1
-  have h2s := fun w => PlonkishM.assertZero_sound a.2 c1 w
-  dsimp only [StateT.run] at h2e h2s
-  generalize hc2 : PlonkishM.assertZero a.2 c1 = r2 at h2e h2s ⊢
-  rcases r2 with ⟨u2, c2⟩; dsimp only at h2e h2s ⊢
-  refine ⟨h1e.trans h2e, fun w hw => ?_⟩
-  exact K.ext (h1s w (Circuit.ConstraintsHold.mono h2e hw)) (h2s w hw)
+private theorem assertZero_spec (a : Wire) :
+    PlonkishM.Spec (F := GoldilocksF) (PlonkishM.assertZero a) (fun _ w => w a = 0) := fun c =>
+  ⟨PlonkishM.assertGate_extends _ c, fun w hw => PlonkishM.assertZero_sound a c w hw⟩
 
 private theorem Spec.weaken {F α : Type} [Field F] {m : PlonkishM F α}
     {P Q : α → (Wire → F) → Prop} (h : PlonkishM.Spec m P)
     (hpq : ∀ a w, P a w → Q a w) : PlonkishM.Spec m Q := fun c =>
   let ⟨he, hs⟩ := h c
   ⟨he, fun w hw => hpq _ w (hs w hw)⟩
+
+theorem qAdd_sound (a b : QWire) :
+    PlonkishM.Spec (qAdd a b) (fun res w => res.eval w = a.eval w + b.eval w) :=
+  PlonkishM.Spec.bind (add_spec a.1 b.1) fun w0 =>
+    PlonkishM.Spec.bind (add_spec a.2.1 b.2.1) fun w1 =>
+      PlonkishM.Spec.bind (add_spec a.2.2 b.2.2) fun w2 =>
+        Spec.weaken (PlonkishM.Spec.pure (w0, w1, w2)) fun _ _ heq h2 h1 h0 => by
+          subst heq; exact CertiFri.P3.Fp3Model.ext h0 h1 h2
+
+theorem qSub_sound (a b : QWire) :
+    PlonkishM.Spec (qSub a b) (fun res w => res.eval w = a.eval w - b.eval w) :=
+  PlonkishM.Spec.bind (sub_spec a.1 b.1) fun w0 =>
+    PlonkishM.Spec.bind (sub_spec a.2.1 b.2.1) fun w1 =>
+      PlonkishM.Spec.bind (sub_spec a.2.2 b.2.2) fun w2 =>
+        Spec.weaken (PlonkishM.Spec.pure (w0, w1, w2)) fun _ _ heq h2 h1 h0 => by
+          subst heq; exact CertiFri.P3.Fp3Model.ext h0 h1 h2
+
+theorem qMul_sound (a b : QWire) :
+    PlonkishM.Spec (qMul a b) (fun res w => res.eval w = a.eval w * b.eval w) :=
+  PlonkishM.Spec.bind (mul_spec a.1 b.1) fun w00 =>
+    PlonkishM.Spec.bind (mul_spec a.1 b.2.1) fun w01 =>
+      PlonkishM.Spec.bind (mul_spec a.1 b.2.2) fun w02 =>
+        PlonkishM.Spec.bind (mul_spec a.2.1 b.1) fun w10 =>
+          PlonkishM.Spec.bind (mul_spec a.2.1 b.2.1) fun w11 =>
+            PlonkishM.Spec.bind (mul_spec a.2.1 b.2.2) fun w12 =>
+              PlonkishM.Spec.bind (mul_spec a.2.2 b.1) fun w20 =>
+                PlonkishM.Spec.bind (mul_spec a.2.2 b.2.1) fun w21 =>
+                  PlonkishM.Spec.bind (mul_spec a.2.2 b.2.2) fun w22 =>
+                    PlonkishM.Spec.bind (add_spec w12 w21) fun cross12 =>
+                      PlonkishM.Spec.bind (add_spec w00 cross12) fun c0 =>
+                        PlonkishM.Spec.bind (add_spec w01 w10) fun cross01 =>
+                          PlonkishM.Spec.bind (add_spec cross01 cross12) fun c1a =>
+                            PlonkishM.Spec.bind (add_spec c1a w22) fun c1 =>
+                              PlonkishM.Spec.bind (add_spec w02 w11) fun cross02 =>
+                                PlonkishM.Spec.bind (add_spec cross02 w20) fun c2a =>
+                                  PlonkishM.Spec.bind (add_spec c2a w22) fun c2 =>
+                                    Spec.weaken (PlonkishM.Spec.pure (c0, c1, c2)) fun _ w heq
+                                        hc2 hc2a hcr02 hc1 hc1a hcr01 hc0 hcr12
+                                        hw22 hw21 hw20 hw12 hw11 hw10 hw02 hw01 hw00 => by
+                                      subst heq
+                                      apply CertiFri.P3.Fp3Model.ext
+                                      · show w c0 = w a.1 * w b.1 + w a.2.1 * w b.2.2 + w a.2.2 * w b.2.1
+                                        rw [hc0, hw00, hcr12, hw12, hw21]; ring
+                                      · show w c1 = w a.1 * w b.2.1 + w a.2.1 * w b.1 +
+                                            w a.2.1 * w b.2.2 + w a.2.2 * w b.2.1 + w a.2.2 * w b.2.2
+                                        rw [hc1, hc1a, hcr01, hcr12, hw01, hw10, hw12, hw21, hw22]; ring
+                                      · show w c2 = w a.1 * w b.2.2 + w a.2.1 * w b.2.1 +
+                                            w a.2.2 * w b.1 + w a.2.2 * w b.2.2
+                                        rw [hc2, hc2a, hcr02, hw02, hw11, hw20, hw22]
+
+theorem qAssertEq_sound (a b : QWire) :
+    PlonkishM.Spec (qAssertEq a b) (fun _ w => a.eval w = b.eval w) :=
+  PlonkishM.Spec.bind (assertEq_spec a.1 b.1) fun _ =>
+    PlonkishM.Spec.bind (assertEq_spec a.2.1 b.2.1) fun _ =>
+      Spec.weaken (assertEq_spec a.2.2 b.2.2) fun _ _ h2 h1 h0 =>
+        CertiFri.P3.Fp3Model.ext h0 h1 h2
+
+theorem qAssertZero_sound (a : QWire) :
+    PlonkishM.Spec (qAssertZero a) (fun _ w => a.eval w = 0) :=
+  PlonkishM.Spec.bind (assertZero_spec a.1) fun _ =>
+    PlonkishM.Spec.bind (assertZero_spec a.2.1) fun _ =>
+      Spec.weaken (assertZero_spec a.2.2) fun _ _ h2 h1 h0 =>
+        CertiFri.P3.Fp3Model.ext h0 h1 h2
 
 theorem qHornerStep_sound (acc alpha term : QWire) :
     PlonkishM.Spec (qHornerStep acc alpha term)
@@ -490,31 +467,46 @@ private lemma publicInputs_blake3Call {F : Type} (inp out : List Wire) (c : Circ
 private lemma publicInputs_qAdd (a b : QWire) (c : Circuit GoldilocksF) :
     (qAdd a b c).2.publicInputs = c.publicInputs :=
   publicInputs_bind _ _ _ (publicInputs_add a.1 b.1 c) fun _ c1 =>
-    publicInputs_bind _ _ _ (publicInputs_add a.2 b.2 c1) fun _ _ => rfl
+    publicInputs_bind _ _ _ (publicInputs_add a.2.1 b.2.1 c1) fun _ c2 =>
+      publicInputs_bind _ _ _ (publicInputs_add a.2.2 b.2.2 c2) fun _ _ => rfl
 
 private lemma publicInputs_qSub (a b : QWire) (c : Circuit GoldilocksF) :
     (qSub a b c).2.publicInputs = c.publicInputs :=
   publicInputs_bind _ _ _ (publicInputs_sub a.1 b.1 c) fun _ c1 =>
-    publicInputs_bind _ _ _ (publicInputs_sub a.2 b.2 c1) fun _ _ => rfl
+    publicInputs_bind _ _ _ (publicInputs_sub a.2.1 b.2.1 c1) fun _ c2 =>
+      publicInputs_bind _ _ _ (publicInputs_sub a.2.2 b.2.2 c2) fun _ _ => rfl
 
 private lemma publicInputs_qMul (a b : QWire) (c : Circuit GoldilocksF) :
     (qMul a b c).2.publicInputs = c.publicInputs :=
   publicInputs_bind _ _ _ (publicInputs_mul a.1 b.1 c) fun _ c1 =>
-    publicInputs_bind _ _ _ (publicInputs_mul a.2 b.2 c1) fun _ c2 =>
-      publicInputs_bind _ _ _ (publicInputs_affine _ _ 1 7 0 c2) fun _ c3 =>
-        publicInputs_bind _ _ _ (publicInputs_mul a.1 b.2 c3) fun _ c4 =>
-          publicInputs_bind _ _ _ (publicInputs_mul a.2 b.1 c4) fun _ c5 =>
-            publicInputs_bind _ _ _ (publicInputs_add _ _ c5) fun _ _ => rfl
+    publicInputs_bind _ _ _ (publicInputs_mul a.1 b.2.1 c1) fun _ c2 =>
+      publicInputs_bind _ _ _ (publicInputs_mul a.1 b.2.2 c2) fun _ c3 =>
+        publicInputs_bind _ _ _ (publicInputs_mul a.2.1 b.1 c3) fun _ c4 =>
+          publicInputs_bind _ _ _ (publicInputs_mul a.2.1 b.2.1 c4) fun _ c5 =>
+            publicInputs_bind _ _ _ (publicInputs_mul a.2.1 b.2.2 c5) fun _ c6 =>
+              publicInputs_bind _ _ _ (publicInputs_mul a.2.2 b.1 c6) fun _ c7 =>
+                publicInputs_bind _ _ _ (publicInputs_mul a.2.2 b.2.1 c7) fun _ c8 =>
+                  publicInputs_bind _ _ _ (publicInputs_mul a.2.2 b.2.2 c8) fun _ c9 =>
+                    publicInputs_bind _ _ _ (publicInputs_add _ _ c9) fun _ c10 =>
+                      publicInputs_bind _ _ _ (publicInputs_add _ _ c10) fun _ c11 =>
+                        publicInputs_bind _ _ _ (publicInputs_add _ _ c11) fun _ c12 =>
+                          publicInputs_bind _ _ _ (publicInputs_add _ _ c12) fun _ c13 =>
+                            publicInputs_bind _ _ _ (publicInputs_add _ _ c13) fun _ c14 =>
+                              publicInputs_bind _ _ _ (publicInputs_add _ _ c14) fun _ c15 =>
+                                publicInputs_bind _ _ _ (publicInputs_add _ _ c15) fun _ c16 =>
+                                  publicInputs_bind _ _ _ (publicInputs_add _ _ c16) fun _ _ => rfl
 
 private lemma publicInputs_qAssertEq (a b : QWire) (c : Circuit GoldilocksF) :
     (qAssertEq a b c).2.publicInputs = c.publicInputs :=
   publicInputs_bind _ _ _ (publicInputs_assertEq a.1 b.1 c) fun _ c1 =>
-    publicInputs_assertEq a.2 b.2 c1
+    publicInputs_bind _ _ _ (publicInputs_assertEq a.2.1 b.2.1 c1) fun _ c2 =>
+      publicInputs_assertEq a.2.2 b.2.2 c2
 
 private lemma publicInputs_qAssertZero (a : QWire) (c : Circuit GoldilocksF) :
     (qAssertZero a c).2.publicInputs = c.publicInputs :=
   publicInputs_bind _ _ _ (publicInputs_assertZero a.1 c) fun _ c1 =>
-    publicInputs_assertZero a.2 c1
+    publicInputs_bind _ _ _ (publicInputs_assertZero a.2.1 c1) fun _ c2 =>
+      publicInputs_assertZero a.2.2 c2
 
 private lemma publicInputs_constrainFriFold (e0 e1 invX beta folded : QWire)
     (c : Circuit GoldilocksF) :

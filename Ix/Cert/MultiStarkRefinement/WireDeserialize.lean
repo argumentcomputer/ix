@@ -26,91 +26,71 @@ open Ix.Cert.MultiStark
 /-! ## 1. `SystemDeserialize::lookup_groups_count` & Circuit Width/Constraint Counts -/
 
 /-- Exact natural-number model of `SystemDeserialize::lookup_groups_count(n, rem, k)`
-(`SystemDeserialize.lean:220-228`). -/
+(`SystemDeserialize.lean:221-229`). -/
 def lookupGroupsCountModel : Nat → Nat → Nat → Nat
   | 0, _, _ => 0
-  | n + 1, 1, k => 1 + lookupGroupsCountModel n k k
-  | n + 1, rem, k => lookupGroupsCountModel n (rem - 1) k
+  | n + 1, 0, k => 1 + lookupGroupsCountModel n (k - 1) k
+  | n + 1, rem + 1, k => lookupGroupsCountModel n rem k
 
-/-- General recurrence for `lookupGroupsCountModel` when `1 ≤ rem ≤ k`:
-`lookupGroupsCountModel n rem k = (n + k - rem) / k` (i.e., `⌈(n - rem + 1) / k⌉` groups
-including the in-progress group once `rem` reaches `1`). Wait — check exact boundary!
-When `n = 0`: `0`.
-When `n = 1, rem = 1`: `1 + 0 = 1`.
-When `n = 1, rem = 2`: `lookupGroupsCountModel 0 1 k = 0`!
-Notice how `SystemDeserialize.lean:238` calls `lookup_groups_count(lcount, 1, k)` starting with `rem = 1`!
-Let's check:
-- `n = 0, rem = 1`: `0`
-- `n = 1, rem = 1`: `1 + f(0, k, k) = 1`
-- `n = 2, rem = 1, k = 2`: `1 + f(1, 2, 2) = 1 + f(0, 1, 2) = 1`
-- `n = 3, rem = 1, k = 2`: `1 + f(2, 2, 2) = 1 + f(1, 1, 2) = 1 + 1 + f(0, 2, 2) = 2`!
-Indeed! When `1 ≤ rem ≤ k`, `f(n, rem, k) = if n < rem then 0 else 1 + (n - rem) / k`! -/
+/-- General recurrence for `lookupGroupsCountModel` when `1 ≤ k` and `rem < k`:
+`lookupGroupsCountModel n rem k = if n ≤ rem then 0 else 1 + (n - rem - 1) / k`. -/
 theorem lookupGroupsCountModel_eq :
-    ∀ (n rem k : Nat), 1 ≤ rem → rem ≤ k →
-      lookupGroupsCountModel n rem k = if n < rem then 0 else 1 + (n - rem) / k := by
+    ∀ (n rem k : Nat), 1 ≤ k → rem < k →
+      lookupGroupsCountModel n rem k = if n ≤ rem then 0 else 1 + (n - rem - 1) / k := by
   intro n
   induction n with
   | zero =>
-    intro rem k hrem _
-    simp only [lookupGroupsCountModel]
-    have : 0 < rem := by omega
-    simp [this]
+    intro rem k _ _
+    simp [lookupGroupsCountModel]
   | succ n ih =>
-    intro rem k hrem hle
-    cases hrem1 : rem with
-    | zero => omega
+    intro rem k hk hlt
+    cases rem with
+    | zero =>
+      simp only [lookupGroupsCountModel]
+      rw [ih (k - 1) k hk (by omega)]
+      have hnotle : ¬ (n + 1 ≤ 0) := by omega
+      simp only [hnotle, ↓reduceIte, Nat.sub_zero, Nat.add_sub_cancel]
+      by_cases hnk : n ≤ k - 1
+      · simp only [hnk, ↓reduceIte]
+        have hdiv : n / k = 0 := Nat.div_eq_of_lt (by omega)
+        omega
+      · simp only [hnk, ↓reduceIte]
+        have hsub : n = (n - k) + k := by omega
+        have hsub2 : n - (k - 1) - 1 = n - k := by omega
+        rw [hsub2]
+        conv_rhs => rw [hsub, Nat.add_div_right _ (by omega)]
+        omega
     | succ r =>
-      cases r with
-      | zero =>
-        -- rem = 1
-        change 1 + lookupGroupsCountModel n k k = _
-        have hk1 : 1 ≤ k := by omega
-        rw [ih k k hk1 (le_refl k)]
-        have hnotlt : ¬ (n + 1 < 0 + 1) := by omega
-        simp only [hnotlt, ↓reduceIte, Nat.zero_add, Nat.add_sub_cancel]
-        by_cases hnk : n < k
-        · simp only [hnk, ↓reduceIte]
-          have hdiv : n / k = 0 := Nat.div_eq_of_lt hnk
-          omega
-        · simp only [hnk, ↓reduceIte]
-          have hsub : n = (n - k) + k := by omega
-          conv_rhs => rw [hsub, Nat.add_div_right _ (by omega)]
-          omega
-      | succ r' =>
-        -- rem = r' + 2 ≥ 2
-        simp only [lookupGroupsCountModel]
-        have hstep := ih (r' + 1) k (by omega) (by omega)
-        have hsub : r' + 1 + 1 - 1 = r' + 1 := by omega
-        rw [hsub, hstep]
-        by_cases hlt : n < r' + 1
-        · have hlt2 : n + 1 < r' + 1 + 1 := by omega
-          simp [hlt, hlt2]
-        · have hlt2 : ¬ (n + 1 < r' + 1 + 1) := by omega
-          have hdiff : n + 1 - (r' + 1 + 1) = n - (r' + 1) := by omega
-          simp [hlt, hlt2, hdiff]
+      simp only [lookupGroupsCountModel]
+      rw [ih r k hk (by omega)]
+      by_cases hnr : n ≤ r
+      · have hnr2 : n + 1 ≤ r + 1 := by omega
+        simp [hnr, hnr2]
+      · have hnr2 : ¬ (n + 1 ≤ r + 1) := by omega
+        simp [hnr, hnr2]
 
-/-- `SystemDeserialize::lookup_groups_count(lcount, 1, max(1, k))` equals
+/-- `SystemDeserialize::lookup_groups_count(lcount, 0, max(1, k))` equals
 `SysCircuit.logupGroupCount` identically! -/
 theorem lookup_groups_count_refines (c : SysCircuit) :
-    lookupGroupsCountModel c.lookups.size 1 (max 1 c.lookupGroupSize) = c.logupGroupCount := by
+    lookupGroupsCountModel c.lookups.size 0 (max 1 c.lookupGroupSize) = c.logupGroupCount := by
   have hk : 1 ≤ max 1 c.lookupGroupSize := le_max_left 1 _
-  rw [lookupGroupsCountModel_eq c.lookups.size 1 (max 1 c.lookupGroupSize) (le_refl 1) hk]
+  rw [lookupGroupsCountModel_eq c.lookups.size 0 (max 1 c.lookupGroupSize) hk (by omega)]
   unfold SysCircuit.logupGroupCount
   cases h : c.lookups.size with
   | zero =>
-    simp only [Nat.zero_lt_one, ↓reduceIte, zero_add]
+    simp only [Nat.le_refl, ↓reduceIte, zero_add]
     exact (Nat.div_eq_of_lt (by omega)).symm
   | succ m =>
-    have hnot : ¬ (m + 1 < 1) := by omega
-    simp only [hnot, ↓reduceIte, Nat.add_sub_cancel]
+    have hnot : ¬ (m + 1 ≤ 0) := by omega
+    simp only [hnot, ↓reduceIte, Nat.sub_zero, Nat.add_sub_cancel]
     have hEq : m + 1 + max 1 c.lookupGroupSize - 1 = m + max 1 c.lookupGroupSize := by omega
     rw [hEq, Nat.add_div_right _ (by omega)]
     omega
 
 /-- `SystemDeserialize::read_sys_circuit`'s `s2w` formula matches `SysCircuit.stage2Width`. -/
 theorem stage2_width_refines (c : SysCircuit) :
-    (let g := lookupGroupsCountModel c.lookups.size 1 (max 1 c.lookupGroupSize)
-     (if g == 0 then 1 else g) * 2) = c.stage2Width := by
+    (let g := lookupGroupsCountModel c.lookups.size 0 (max 1 c.lookupGroupSize)
+     (if g == 0 then 1 else g) * 3) = c.stage2Width := by
   rw [lookup_groups_count_refines]
   unfold SysCircuit.stage2Width
   cases hg : c.logupGroupCount with

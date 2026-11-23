@@ -92,7 +92,9 @@ preservation for Shape 18 Mode 3a). Full observation-level lowering of each indi
   Ix.Cert.Aggr.SecurityEnvelopeOk p ↔
     Ix.Cert.MultiStark.checkParams p = true ∧
       Aiur.meetsSecurityFloor (Ix.Cert.Aggr.toAiurParams p).1 (Ix.Cert.Aggr.toAiurParams p).2 = true ∧
-        Ix.Cert.Aggr.minProvableUdMillibits ≤ Ix.Cert.Aggr.udQueryMillibits p.logBlowup p.numQueries p.queryPowBits -/
+        Ix.Cert.Aggr.minProvableUdMillibits ≤ Ix.Cert.Aggr.udQueryMillibits p.logBlowup p.numQueries p.queryPowBits ∧
+          Ix.Cert.Aggr.minJohnson128Millibits ≤
+            Ix.Cert.Aggr.johnsonQueryMillibits p.logBlowup p.numQueries p.queryPowBits -/
 #guard_msgs (whitespace := lax) in #check @Ix.Cert.Aggr.securityEnvelopeOk_iff
 /-- info: Ix.Cert.Aggr.tree_rom_error_bound : ∀ (probs : List ℝ) {ε : ℝ}, (∀ p ∈ probs, p ≤ ε) → probs.sum ≤ ↑probs.length * ε -/
 #guard_msgs (whitespace := lax) in #check @Ix.Cert.Aggr.tree_rom_error_bound

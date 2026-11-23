@@ -513,17 +513,20 @@ theorem queryBound_restorePathsM (dims : Array Dimensions) (indices : Array ℕ)
 
 end RestoreM
 
-/-! ## 2. Base-Field Descent for Extracted Column Polynomials -/
+/-! ## 2. Base-Field Descent for Extracted Column Polynomials (`Fp^3`) -/
 
-/-- Projection of a `K`-polynomial `P` onto its base-field coordinates `P₀, P₁ : Fp[X]`,
-satisfying `P = map K.embedHom P₀ + C ⟨0, 1⟩ * map K.embedHom P₁`. -/
-noncomputable def polyC0 (P : K[X]) : Fp[X] :=
-  ∑ k ∈ P.support, Polynomial.monomial k (P.coeff k).c0
+/-- Projection of a `K`-polynomial `P` onto its base-field coordinates `P₀, P₁, P₂ : GoldilocksField[X]`,
+satisfying `P = map embedHom P₀ + C ⟨0, 1, 0⟩ * map embedHom P₁ + C ⟨0, 0, 1⟩ * map embedHom P₂`. -/
+noncomputable def polyC0 (P : K[X]) : GoldilocksField[X] :=
+  ∑ k ∈ P.support, Polynomial.monomial k (Fp3Model.c0 (P.coeff k))
 
-noncomputable def polyC1 (P : K[X]) : Fp[X] :=
-  ∑ k ∈ P.support, Polynomial.monomial k (P.coeff k).c1
+noncomputable def polyC1 (P : K[X]) : GoldilocksField[X] :=
+  ∑ k ∈ P.support, Polynomial.monomial k (Fp3Model.c1 (P.coeff k))
 
-@[simp] theorem coeff_polyC0 (P : K[X]) (k : ℕ) : (polyC0 P).coeff k = (P.coeff k).c0 := by
+noncomputable def polyC2 (P : K[X]) : GoldilocksField[X] :=
+  ∑ k ∈ P.support, Polynomial.monomial k (Fp3Model.c2 (P.coeff k))
+
+@[simp] theorem coeff_polyC0 (P : K[X]) (k : ℕ) : (polyC0 P).coeff k = Fp3Model.c0 (P.coeff k) := by
   unfold polyC0
   rw [Polynomial.finsetSum_coeff]
   simp only [Polynomial.coeff_monomial, Finset.sum_ite_eq']
@@ -531,7 +534,7 @@ noncomputable def polyC1 (P : K[X]) : Fp[X] :=
   · rfl
   · rw [Polynomial.notMem_support_iff.mp hk]; rfl
 
-@[simp] theorem coeff_polyC1 (P : K[X]) (k : ℕ) : (polyC1 P).coeff k = (P.coeff k).c1 := by
+@[simp] theorem coeff_polyC1 (P : K[X]) (k : ℕ) : (polyC1 P).coeff k = Fp3Model.c1 (P.coeff k) := by
   unfold polyC1
   rw [Polynomial.finsetSum_coeff]
   simp only [Polynomial.coeff_monomial, Finset.sum_ite_eq']
@@ -539,21 +542,43 @@ noncomputable def polyC1 (P : K[X]) : Fp[X] :=
   · rfl
   · rw [Polynomial.notMem_support_iff.mp hk]; rfl
 
-theorem eval_c1_eq_eval_polyC1 (P : K[X]) (x : Fp) :
-    (P.eval (K.embedHom x)).c1 = (polyC1 P).eval x := by
+@[simp] theorem coeff_polyC2 (P : K[X]) (k : ℕ) : (polyC2 P).coeff k = Fp3Model.c2 (P.coeff k) := by
+  unfold polyC2
+  rw [Polynomial.finsetSum_coeff]
+  simp only [Polynomial.coeff_monomial, Finset.sum_ite_eq']
+  split_ifs with hk
+  · rfl
+  · rw [Polynomial.notMem_support_iff.mp hk]; rfl
+
+theorem eval_c1_eq_eval_polyC1 (P : K[X]) (x : GoldilocksField) :
+    Fp3Model.c1 (P.eval (Fp3Model.embedHom x)) = (polyC1 P).eval x := by
   induction P using Polynomial.induction_on' with
   | add p q ihp ihq =>
     have hadd : polyC1 (p + q) = polyC1 p + polyC1 q := by
       ext k; simp
-    rw [eval_add, K.add_c1, ihp, ihq, hadd, eval_add]
+    rw [eval_add, Fp3Model.add_c1, ihp, ihq, hadd, eval_add]
   | monomial n a =>
-    have hmon : polyC1 (monomial n a) = monomial n a.c1 := by
+    have hmon : polyC1 (monomial n a) = monomial n (Fp3Model.c1 a) := by
       ext k
       simp only [coeff_polyC1, coeff_monomial]
       split_ifs <;> rfl
     rw [hmon, eval_monomial, eval_monomial, ← map_pow]
-    change a.c0 * 0 + a.c1 * x ^ n = a.c1 * x ^ n
-    ring
+    simp [Fp3Model.mul_c1, Fp3Model.embedHom_apply]
+
+theorem eval_c2_eq_eval_polyC2 (P : K[X]) (x : GoldilocksField) :
+    Fp3Model.c2 (P.eval (Fp3Model.embedHom x)) = (polyC2 P).eval x := by
+  induction P using Polynomial.induction_on' with
+  | add p q ihp ihq =>
+    have hadd : polyC2 (p + q) = polyC2 p + polyC2 q := by
+      ext k; simp
+    rw [eval_add, Fp3Model.add_c2, ihp, ihq, hadd, eval_add]
+  | monomial n a =>
+    have hmon : polyC2 (monomial n a) = monomial n (Fp3Model.c2 a) := by
+      ext k
+      simp only [coeff_polyC2, coeff_monomial]
+      split_ifs <;> rfl
+    rw [hmon, eval_monomial, eval_monomial, ← map_pow]
+    simp [Fp3Model.mul_c2, Fp3Model.embedHom_apply]
 
 theorem degree_polyC1_le (P : K[X]) : (polyC1 P).degree ≤ P.degree := by
   rw [Polynomial.degree_le_iff_coeff_zero]
@@ -561,33 +586,56 @@ theorem degree_polyC1_le (P : K[X]) : (polyC1 P).degree ≤ P.degree := by
   rw [coeff_polyC1, Polynomial.coeff_eq_zero_of_degree_lt hm]
   rfl
 
-/-- **Base-Field Descent Theorem:** If `P : K[X]` has degree `< d + 1` and `(P.eval (embedHom x)).c1 = 0`
-on a set `B : Finset Fp` of at least `d + 1` points, then `polyC1 P = 0`, so every coefficient of `P`
-lies in `Fp` (`∀ k, (P.coeff k).c1 = 0`) and `P = Polynomial.map K.embedHom (polyC0 P)`. -/
-theorem basePoly_of_eval_c1_zero {P : K[X]} {d : ℕ} (hdeg : P.degree < (d + 1 : ℕ))
-    {B : Finset Fp} (hcard : d + 1 ≤ B.card)
-    (heval : ∀ x ∈ B, (P.eval (K.embedHom x)).c1 = 0) :
-    polyC1 P = 0 ∧ P = Polynomial.map K.embedHom (polyC0 P) := by
+theorem degree_polyC2_le (P : K[X]) : (polyC2 P).degree ≤ P.degree := by
+  rw [Polynomial.degree_le_iff_coeff_zero]
+  intro m hm
+  rw [coeff_polyC2, Polynomial.coeff_eq_zero_of_degree_lt hm]
+  rfl
+
+/-- **Base-Field Descent Theorem (`Fp^3`):** If `P : K[X]` has degree `< d + 1` and
+`(P.eval (embedHom x)).c1 = 0 ∧ (P.eval (embedHom x)).c2 = 0` on a set `B : Finset GoldilocksField`
+of at least `d + 1` points, then `polyC1 P = 0` and `polyC2 P = 0`, so every coefficient of `P`
+lies in `Fp` and `P = Polynomial.map Fp3Model.embedHom (polyC0 P)`. -/
+theorem basePoly_of_eval_c1_c2_zero {P : K[X]} {d : ℕ} (hdeg : P.degree < (d + 1 : ℕ))
+    {B : Finset GoldilocksField} (hcard : d + 1 ≤ B.card)
+    (heval : ∀ x ∈ B, Fp3Model.c1 (P.eval (Fp3Model.embedHom x)) = 0 ∧
+      Fp3Model.c2 (P.eval (Fp3Model.embedHom x)) = 0) :
+    polyC1 P = 0 ∧ polyC2 P = 0 ∧ P = Polynomial.map Fp3Model.embedHom (polyC0 P) := by
   have hdeg1 : (polyC1 P).degree < (d + 1 : ℕ) := lt_of_le_of_lt (degree_polyC1_le P) hdeg
-  have hzero : polyC1 P = 0 := by
+  have hzero1 : polyC1 P = 0 := by
     by_contra hne
     have hroots : B ⊆ (polyC1 P).roots.toFinset := by
       intro x hx
       rw [Multiset.mem_toFinset, mem_roots hne, IsRoot.def, ← eval_c1_eq_eval_polyC1]
-      exact heval x hx
+      exact (heval x hx).1
     have hle1 := Finset.card_le_card hroots
     have hle2 := Multiset.toFinset_card_le (polyC1 P).roots
     have hle3 := Polynomial.card_roots' (polyC1 P)
     have hnat : (polyC1 P).natDegree < d + 1 := by
       rwa [Polynomial.degree_eq_natDegree hne, Nat.cast_lt] at hdeg1
     omega
-  refine ⟨hzero, ?_⟩
+  have hdeg2 : (polyC2 P).degree < (d + 1 : ℕ) := lt_of_le_of_lt (degree_polyC2_le P) hdeg
+  have hzero2 : polyC2 P = 0 := by
+    by_contra hne
+    have hroots : B ⊆ (polyC2 P).roots.toFinset := by
+      intro x hx
+      rw [Multiset.mem_toFinset, mem_roots hne, IsRoot.def, ← eval_c2_eq_eval_polyC2]
+      exact (heval x hx).2
+    have hle1 := Finset.card_le_card hroots
+    have hle2 := Multiset.toFinset_card_le (polyC2 P).roots
+    have hle3 := Polynomial.card_roots' (polyC2 P)
+    have hnat : (polyC2 P).natDegree < d + 1 := by
+      rwa [Polynomial.degree_eq_natDegree hne, Nat.cast_lt] at hdeg2
+    omega
+  refine ⟨hzero1, hzero2, ?_⟩
   apply Polynomial.ext
   intro k
   rw [Polynomial.coeff_map, coeff_polyC0]
-  have hc1 : (P.coeff k).c1 = 0 := by
-    rw [← coeff_polyC1, hzero, coeff_zero]
-  exact K.ext rfl hc1
+  have hc1 : Fp3Model.c1 (P.coeff k) = 0 := by
+    rw [← coeff_polyC1, hzero1, coeff_zero]
+  have hc2 : Fp3Model.c2 (P.coeff k) = 0 := by
+    rw [← coeff_polyC2, hzero2, coeff_zero]
+  exact Fp3Model.ext rfl hc1 hc2
 
 /-! ## 3. Pruned Path Restoration Under Entry Maps (`restorePaths_map`) -/
 
@@ -1427,17 +1475,15 @@ hypothesis (`2 * δ + (1 / 2) ^ logBlowup ≤ 1`), the probability that `Fri.ver
 `prunedMmcs` accepts an adversary's attempt while the committed claims fail at agreement
 `1 - δ` is at most:
 
-    N * εmax + ((batches + 1) * (rounds + 2) + 3) * N * (N - 1) / (2 * |D|),
+    N * εmax + (max (batches + rounds) 3 + 3) * N ^ 2 / (4 * |D|),
 
 where `N = Q + (rounds + 2) + 2 * P.verifierQueries`. -/
 theorem soundness_pruned_uniqueDecoding
     (hheight : params.logFinalHeight ≤ Fri.logMaxHeight params.logBlowup shape)
     {δ : ℝ} (hδ : 0 ≤ δ) (hrate : 2 * δ + (1 / 2) ^ params.logBlowup ≤ 1) {εmax : ℝ}
     (hα : ((Fri.claimRefs params.logBlowup shape).length : ℝ) *
-        ((2 : ℝ) ^ Fri.logMaxHeight params.logBlowup shape *
-          (δ * 2 ^ Fri.logMaxHeight params.logBlowup shape + 1) + 1) / Fintype.card K ≤ εmax)
-    (hβ : 2 * ((2 : ℝ) ^ Fri.logMaxHeight params.logBlowup shape *
-          (δ * 2 ^ Fri.logMaxHeight params.logBlowup shape + 1) + 1) / Fintype.card K /
+        ((1 + δ) * (2 : ℝ) ^ Fri.logMaxHeight params.logBlowup shape) / Fintype.card K ≤ εmax)
+    (hβ : ((1 + δ) * (2 : ℝ) ^ Fri.logMaxHeight params.logBlowup shape) / Fintype.card K /
         2 ^ params.commitPowBits ≤ εmax)
     (hq : (1 - δ) ^ params.numQueries / 2 ^ params.queryPowBits ≤ εmax)
     {A : Type*}
@@ -1455,13 +1501,11 @@ theorem soundness_pruned_uniqueDecoding
       (experimentPruned m params shape wf adv attempt) [] ≤
       (Q + ((Exec.modelParams m params shape wf).rounds + 2) +
           2 * (Exec.modelParams m params shape wf).verifierQueries) * εmax +
-        (((Exec.modelParams m params shape wf).batches + 1) *
-            ((Exec.modelParams m params shape wf).rounds + 2) + 3) *
+        ((max ((Exec.modelParams m params shape wf).batches +
+            (Exec.modelParams m params shape wf).rounds) 3 + 3 : ℕ) : ℝ) *
           (Q + ((Exec.modelParams m params shape wf).rounds + 2) +
-            2 * (Exec.modelParams m params shape wf).verifierQueries) *
-          (Q + ((Exec.modelParams m params shape wf).rounds + 2) +
-            2 * (Exec.modelParams m params shape wf).verifierQueries - 1) /
-          (2 * Fintype.card D) := by
+            2 * (Exec.modelParams m params shape wf).verifierQueries) ^ 2 /
+          (4 * Fintype.card D) := by
   set P := Exec.modelParams m params shape wf
   have hθ : 0 ≤ 1 - δ := by
     have hpow : (0 : ℝ) < (1 / 2 : ℝ) ^ params.logBlowup := by positivity
@@ -1472,9 +1516,9 @@ theorem soundness_pruned_uniqueDecoding
     unfold Fri.numRounds FriParams.logFinalHeight at *
     omega
   have hfinal : P.finalDegree = 2 ^ params.logFinalPolyLen := rfl
-  set c : ℝ := (2 : ℝ) ^ P.n * (δ * 2 ^ P.n + 1) + 1
+  set c : ℝ := (1 + δ) * (2 : ℝ) ^ P.n
   have hc_nonneg : 0 ≤ c := by positivity
-  -- Proximity gap bounds (unique decoding)
+  -- Proximity gap bounds (linear unique decoding)
   have hmca : ∀ j ≤ P.rounds,
       CurveMCA ((twoAdicDomain P.ω P.n j).image (P.shift * ·))
         (2 ^ (P.rounds - j) * P.finalDegree) (P.numClaims j) (1 - δ)
@@ -1512,12 +1556,16 @@ theorem soundness_pruned_uniqueDecoding
     gcongr
   have hstep : ∀ i < P.rounds,
       StepMCA (twoAdicDomain P.ω P.n i) (twoAdicDomain P.ω P.n (i + 1))
-        (2 ^ (P.rounds - (i + 1)) * P.finalDegree) (1 - δ) (2 * c / Fintype.card K) := by
+        (2 ^ (P.rounds - (i + 1)) * P.finalDegree) (1 - δ) (c / Fintype.card K) := by
     intro i hi
     have hcard : (twoAdicDomain P.ω P.n (i + 1)).card = 2 ^ (P.n - (i + 1)) :=
       card_twoAdicDomain P.prim (by have := P.rounds_le; omega)
-    have hle : ((twoAdicDomain P.ω P.n (i + 1)).card : ℝ) ≤ 2 ^ P.n := by
-      rw [hcard]; exact_mod_cast Nat.pow_le_pow_right two_pos (Nat.sub_le P.n (i + 1))
+    have hle : 2 * ((twoAdicDomain P.ω P.n (i + 1)).card : ℝ) ≤ 2 ^ P.n := by
+      rw [hcard]
+      have hsub : 2 * 2 ^ (P.n - (i + 1)) = 2 ^ (P.n - i) := by
+        have hpos : P.n - i = P.n - (i + 1) + 1 := by have := P.rounds_le; omega
+        rw [hpos, pow_succ']
+      exact_mod_cast (hsub ▸ Nat.pow_le_pow_right two_pos (Nat.sub_le P.n i))
     have hdist : 2 * (δ * (twoAdicDomain P.ω P.n (i + 1)).card) +
         (2 ^ (P.rounds - (i + 1)) * P.finalDegree : ℕ) ≤
         (twoAdicDomain P.ω P.n (i + 1)).card := by
@@ -1541,9 +1589,11 @@ theorem soundness_pruned_uniqueDecoding
     intro ro cc
     obtain ⟨bad, hbad, hok⟩ := hbase ro cc
     refine ⟨bad, hbad.trans ?_, hok⟩
-    have hle' : ((P.ldt.domain (i + 1)).card : ℝ) ≤ 2 ^ P.n := hle
-    dsimp only [c]
-    gcongr
+    have hmul : 2 * ((1 + δ) * ((twoAdicDomain P.ω P.n (i + 1)).card : ℝ)) ≤ c := by
+      dsimp only [c]
+      nlinarith
+    exact mul_le_mul_of_nonneg_right
+      (div_le_div_of_nonneg_right hmul (Nat.cast_nonneg _)) (Nat.cast_nonneg _)
   have hα' : (∑ j ∈ Finset.range (P.rounds + 1),
       ((P.numClaims j - 1 : ℕ) : ℝ) * c / Fintype.card K) / 2 ^ Exec.powBits params shape 0 ≤ εmax := by
     rw [Exec.powBits_zero, pow_zero, div_one, ← Finset.sum_div, ← Finset.sum_mul]
@@ -1554,7 +1604,7 @@ theorem soundness_pruned_uniqueDecoding
     calc _ ≤ ((Fri.claimRefs params.logBlowup shape).length : ℝ) * c / Fintype.card K := by gcongr
       _ ≤ εmax := hα
   have hβ' : ∀ i < P.rounds,
-      (2 * c / Fintype.card K) / 2 ^ Exec.powBits params shape (i + 1) ≤ εmax := by
+      (c / Fintype.card K) / 2 ^ Exec.powBits params shape (i + 1) ≤ εmax := by
     intro i hi
     rw [Exec.powBits_succ_of_lt params shape hi]
     exact hβ
@@ -1614,7 +1664,7 @@ theorem soundness_pruned_uniqueDecoding
           simp only [hinM, hcomM] at hrest2
           rw [hb_true] at hrest2
           exact ⟨hfail, P.accepts_of_outcome_verifyGrindView hrest2 hno⟩)
-  push_cast at hbound
+  push_cast at hbound ⊢
   exact hbound
 
 end SoundnessPruned

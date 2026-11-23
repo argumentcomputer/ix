@@ -69,9 +69,10 @@ theorem ch_sample_field_val {b : Fin 8 → UInt8} {a : Goldilocks}
   split_ifs at hsome with hlt
   · injection hsome with ha
     subst ha
-    unfold baseToFp Goldilocks.toNat
+    unfold baseToFp Goldilocks.toZMod
     dsimp only
     rw [bytes8ToUInt64_toNat, glValModel_eq_natCast]
+    rfl
 
 /-- Sponge refill equivalence: `Blake3::hash(input)` in `Transcript::ch_sample8` produces the
 exact 32-byte digest computed by `CertiFri.P3.blake3 input` (`ChallengerState.sampleWord`). -/
@@ -93,6 +94,13 @@ theorem starkHash_ext_rows_refines (row : Array GoldilocksExt) :
       ByteArray.mk (Blake3.Pure.digest (Hashers.extRowBytes row).data.toList).toArray :=
   Ix.Cert.MultiStark.extHasher_hashRows_eq_pure row
 
+/-- `StarkHash::b3_rows` on a flattened cubic extension-field row matches
+`CertiFri.P3.ext3Hasher.hashRows`. -/
+theorem starkHash_ext3_rows_refines (row : Array GoldilocksExt3) :
+    (CertiFri.P3.ext3Hasher.hashRows row).toBytes =
+      ByteArray.mk (Blake3.Pure.digest (Hashers.ext3RowBytes row).data.toList).toArray :=
+  Ix.Cert.MultiStark.ext3Hasher_hashRows_eq_pure row
+
 /-- `Mmcs::mmcs_compress` on two 32-byte digests `(left, right)` matches
 `CertiFri.P3.Blake3.hashPair left right` (`prunedMmcs` internal-node compression). -/
 theorem mmcs_compress_refines (left right : Digest) :
@@ -109,14 +117,15 @@ structure BatchTranscriptMatch (sys : StarkSystem) (batch : BatchProof)
     (batchState : ChallengerState) (beta gamma : EF) : Prop where
   batch_fs : batchChallenger sys batch.preamble = some (batchState, beta, gamma)
 
-/-- Per-shard transcript & PCS opening refinement invariant for shard `s`. -/
+/-- Per-shard transcript & PCS opening refinement invariant for shard `s` (Protocol `v6`,
+cubic extension `GoldilocksExt3`, `FriBatching::Tensor`, BLAKE3 `derive_key`). -/
 structure ShardTranscriptPcsMatch (sys : StarkSystem) (header : ShardHeader)
     (shardIdx : Nat) (proof : ShardProof) (batchState : ChallengerState) where
   alphaAir : EF
   zeta : EF
   postZeta : ChallengerState
   shard_fs : shardAirChallenges batchState shardIdx proof = some (alphaAir, zeta, postZeta)
-  zeta_ne_zero : zeta ≠ GoldilocksExt.zero
+  zeta_ne_zero : zeta ≠ GoldilocksExt3.zero
   shape : Fri.ClaimShape
   commits : Array D
   points : Array EF
@@ -125,10 +134,11 @@ structure ShardTranscriptPcsMatch (sys : StarkSystem) (header : ShardHeader)
     some (shape, commits, points, values)
   shape_ok : Fri.shapeOk (F := F) sys.params.toFriParams shape commits points values
     proof.openingProof = true
-  friCh : Fri.Challenges EF
+  friCh : TensorFriChallenges EF
   fri_fs : shardFriChallenges postZeta sys.params.toFriParams shape values proof.openingProof =
     some friCh
-  fri_verify : Fri.verifyWith (prunedMmcs baseHasher) (prunedMmcs extHasher)
+  fri_verify : verifyFriTensorWith (prunedMmcs (baseHasherSep .v6Batch))
+    (prunedMmcs (ext3HasherSep .v6Batch))
     sys.params.toFriParams shape commits points values proof.openingProof friCh = true
 
 end Ix.Cert.MultiStarkRefinement

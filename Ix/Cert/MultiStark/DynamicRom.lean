@@ -218,12 +218,12 @@ This works for ANY adaptive prover message type `Msg` whose `digestsOf m` extrac
 all dynamically committed roots (batch `stage1` roots, shard `stage2` roots,
 `quotient` roots, and FRI commit roots), without fixing `ClaimShape` in advance. -/
 theorem settles_of_depends_on_digests {Msg₂ : Type}
-    (digestsOf : Msg → List D) (r : ℕ)
+    (digestsOf : ℕ → Msg → List D) (r : ℕ)
     (interp : Log (MerkleAnswer Msg Chal T D) → ℕ → Msg → Msg₂)
     (hge : ∀ l₁ l₂ j m, r ≤ j → interp l₁ j m = interp l₂ j m)
     (hcongr : ∀ (l₁ l₂ : Log (MerkleAnswer Msg Chal T D)) (j : ℕ) (m : Msg),
       j < r →
-      (∀ root ∈ digestsOf m, ∀ dims index rows,
+      (∀ root ∈ digestsOf j m, ∀ dims index rows,
         Opens l₁ root dims index rows ↔ Opens l₂ root dims index rows) →
       interp l₁ j m = interp l₂ j m) :
     Settles interp (Hit digestsOf r) := by
@@ -258,7 +258,7 @@ omit [DecidableEq Msg] in
 /-- **Adaptive Dynamic-Shape ROM Soundness:**
 Given:
 - Any shape-independent challenge family `Chal : ℕ → Type`,
-- A digest extractor `digestsOf : Msg → List D` bounded by `maxDigests` per message,
+- A round-indexed digest extractor `digestsOf : ℕ → Msg → List D` bounded by `M` total digests per challenge query,
 - A round-by-round sound state function `doomed` over `r` rounds with per-round error `≤ εmax`,
 - A log interpretation `interp` settling on committed Merkle roots (`Settles interp (Hit digestsOf r)`),
 - An adversary `adv` (`QueryBound Q`) outputting adaptive proof data `a` and raw messages `msgs a`,
@@ -267,9 +267,10 @@ Given:
 any event `E` that implies `¬ doomed r (out.2.mapIdx (interp l'))` on hit-free logs
 occurs with probability at most:
 
-    (Q + r + R) * εmax + (maxDigests * r + 3) * (Q + r + R) * (Q + r + R - 1) / (2 * |D|). -/
-theorem soundness_dynamic_rom {α β : Type} {r maxDigests : ℕ}
-    {digestsOf : Msg → List D} (hK : ∀ m, (digestsOf m).length ≤ maxDigests)
+    (Q + r + R) * εmax + (max M 3 + 3) * (Q + r + R) ^ 2 / (4 * |D|). -/
+theorem soundness_dynamic_rom {α β : Type} {r M : ℕ}
+    {digestsOf : ℕ → Msg → List D}
+    (hM : ∀ (x : FSQuery Msg Chal (HashQuery T D)), (chalDigests digestsOf r x).length ≤ M)
     {doomed : ∀ i, Transcript Msg₂ Chal i → Prop}
     {interp : Log (MerkleAnswer Msg Chal T D) → ℕ → Msg → Msg₂}
     {ε : ℕ → ℝ} {εmax : ℝ}
@@ -286,11 +287,11 @@ theorem soundness_dynamic_rom {α β : Type} {r maxDigests : ℕ}
       ¬ doomed r (out.2.mapIdx (interp l'))) :
     prob E ((fsExperiment r adv msgs).bind rest) [] ≤
       (Q + r + R) * εmax +
-        (maxDigests * r + 3) * (Q + r + R) * (Q + r + R - 1) / (2 * Fintype.card D) := by
+        ((max M 3 + 3 : ℕ) : ℝ) * (Q + r + R) ^ 2 / (4 * Fintype.card D) := by
   have h1 := prob_fsExperiment_bind_interp_le hsound hε h0 hnil hset hadv msgs hrest hE
   have hqb : ((fsExperiment r adv msgs).bind rest).QueryBound (Q + r + R) :=
     (queryBound_fsExperiment (r := r) hadv msgs).bind hrest
-  have h2 := prob_hasBad_hit_le (digestsOf := digestsOf) (r := r) hK hqb
+  have h2 := prob_hasBad_hit_le (digestsOf := digestsOf) (r := r) hM hqb
   have hsplit : prob E ((fsExperiment r adv msgs).bind rest) [] ≤
       prob (fun b l => E b l ∧ ¬ HasBad (Hit digestsOf r) l)
         ((fsExperiment r adv msgs).bind rest) [] +
@@ -412,22 +413,24 @@ theorem fractionLE_air_alpha {cs : List K} (h : ∃ c ∈ cs, c ≠ 0) :
   rw [div_mul_cancel₀ _ card_K_real_ne_zero]
   exact_mod_cast card_horner_bad_le h
 
-/-- **Round 2a (coarse `ζ ∈ Fp`) as `FractionLE` (retained for compatibility):**
-At most a fraction `1 / Goldilocks.order` of challenges `ζ : K` land in the base field
-(`ζ.c1 = 0`). Prefer the tight `fractionLE_zeta_in_domain_or_shift` (`2 * |D| / |K|`). -/
+/-- **Round 2a (coarse `ζ ∈ Fp`) as `FractionLE`:**
+At most a fraction `1 / Goldilocks.order ^ 2` (`≈ 2^-128`) of challenges `ζ : K` land in the
+base field (`ζ.c1 = 0 ∧ ζ.c2 = 0`). Prefer the tight `fractionLE_zeta_in_domain_or_shift`
+(`2 * |D| / |K|`). -/
 theorem fractionLE_zeta_in_base :
-    FractionLE (fun ζ : K => ζ.c1 = 0) (1 / (CertiFri.P3.Goldilocks.order : ℝ)) := by
+    FractionLE (fun ζ : K => ζ.c1 = 0 ∧ ζ.c2 = 0)
+      (1 / ((CertiFri.P3.Goldilocks.order : ℝ) ^ 2)) := by
   classical
-  refine ⟨Finset.univ.filter fun ζ : K => ζ.c1 = 0, ?_,
+  refine ⟨Finset.univ.filter fun ζ : K => ζ.c1 = 0 ∧ ζ.c2 = 0, ?_,
     fun ζ hζ => by simp only [Finset.mem_filter, Finset.mem_univ, true_and]; exact hζ⟩
-  have h := prob_c1_eq_zero_eq
+  have h := prob_in_baseField_eq
   rw [div_eq_iff card_K_real_ne_zero] at h
   exact le_of_eq h
 
 /-- **Round 2a (tight `ζ ∈ D ∪ g⁻¹ • D`) as `FractionLE`:**
 For any finite LDE domain `D : Finset K` and nonzero shift `g : K`, at most a fraction
 `2 * |D| / |K|` of challenges `ζ : K` satisfy `ζ ∈ D ∨ ζ * g ∈ D`
-(`105` bits in Goldilocks `Fp2` at `|D| = 2^22`, vs `64` bits for `ζ.c1 = 0`). -/
+(`169` bits in Goldilocks `Fp^3` at `|D| = 2^22`, vs `128` bits for `ζ ∈ Fp`). -/
 theorem fractionLE_zeta_in_domain_or_shift (D : Finset K) {g : K} (hg : g ≠ 0) :
     FractionLE (fun ζ : K => ζ ∈ D ∨ ζ * g ∈ D)
       ((2 * D.card : ℝ) / Fintype.card K) := by
@@ -450,7 +453,7 @@ theorem fractionLE_ood_poly_root {P : K[X]} {d : ℕ} (hP : P ≠ 0) (hdeg : P.n
 
 /-- **Combined Round 2 (`ζ`) error bound:**
 Union of `ζ ∈ D ∨ ζ * g ∈ D` (losing `2 * |D| / |K|`) and `P.eval ζ = 0` (losing `d / |K|`),
-giving `(2 * |D| + d) / |K|` (`≈ 105` bits in `Fp2` for `|D| = 2^22`, vs `64` bits from `ζ.c1 = 0`). -/
+giving `(2 * |D| + d) / |K|` (`≈ 169` bits in `Fp^3` for `|D| = 2^22`, vs `128` bits from `ζ ∈ Fp`). -/
 theorem fractionLE_zeta_ood (D : Finset K) {g : K} (hg : g ≠ 0)
     {P : K[X]} {d : ℕ} (hP : P ≠ 0) (hdeg : P.natDegree ≤ d) :
     FractionLE (fun ζ : K => (ζ ∈ D ∨ ζ * g ∈ D) ∨ P.eval ζ = 0)

@@ -2,10 +2,11 @@ import Ix.Cert.MultiStark.Types
 
 /-! # Multi-STARK Binary Wire Decoders (`Ix.Cert.MultiStark.Wire`)
 
-Exact, Mathlib-free binary decoders matching:
-1. `StarkSystem.fromBytes` — `crates/stark-key/src/lib.rs` (v5 dense format)
+Exact, Mathlib-free binary decoders matching Protocol `v6` (`Fp^3`, `FriBatching::Tensor`):
+1. `StarkSystem.fromBytes` — `crates/stark-key/src/lib.rs` (v6 dense format, strict
+   `proto_ver == 6`, `ext_deg == 3`, `fri_batching == 1`, `vk_digest`, `lookup_prefix_len`)
 2. `BatchProof.fromBytes` — `multi-stark/src/{prover.rs,batch.rs}` (bincode v2 `LittleEndian + Fixint`,
-   strict canonical Goldilocks `< p`, strict `bool`/`Option` tag checks, exact EOF).
+   strict canonical Goldilocks `< p`, 3-limb `GoldilocksExt3`, strict `bool`/`Option` tag checks, exact EOF).
 -/
 
 namespace Ix.Cert.MultiStark
@@ -78,7 +79,8 @@ private def readCanonicalF : DecodeM F := do
 private def readEF : DecodeM EF := do
   let c0 ← readCanonicalF
   let c1 ← readCanonicalF
-  pure ⟨c0, c1⟩
+  let c2 ← readCanonicalF
+  pure ⟨c0, c1, c2⟩
 
 private def readArray (n : Nat) (f : DecodeM α) : DecodeM (Array α) := do
   let c ← get
@@ -104,27 +106,46 @@ private def ensureEOF : DecodeM Unit := do
   unless c.pos == c.bytes.size do
     throw s!"trailing bytes: {c.bytes.size - c.pos} unread at offset {c.pos}"
 
-/-! ## 1. Verifying-Key (`StarkSystem`) Decoder (v5 dense codec) -/
+/-! ## 1. Verifying-Key (`StarkSystem`) Decoder (Protocol `v6` dense codec) -/
 
-private def readGraphNode : DecodeM GraphNode := do
+private def readGraphNode (nodeIdx : Nat) : DecodeM GraphNode := do
   let tag ← readU8
   match tag.toNat with
   | 0 =>
     let v ← readU16LE
     pure (.const (Goldilocks.ofUInt64 (UInt64.ofNat v)))
   | 1 =>
-    let v ← readU64LE
-    pure (.const (Goldilocks.ofUInt64 v))
+    let v ← readCanonicalF
+    pure (.const v)
   | 2 =>
     let idx ← readU8
     pure (.publicInput idx.toNat)
   | 3 => pure .isFirstRow
   | 4 => pure .isLastRow
   | 5 => pure .isTransition
-  | 6 => pure (.add (← readU16LE) (← readU16LE))
-  | 7 => pure (.sub (← readU16LE) (← readU16LE))
-  | 8 => pure (.mul (← readU16LE) (← readU16LE))
-  | 9 => pure (.neg (← readU16LE))
+  | 6 =>
+    let a ← readU16LE
+    let b ← readU16LE
+    unless a < nodeIdx && b < nodeIdx do
+      throw s!"vk: add child out of topological order ({a}, {b}) at node {nodeIdx}"
+    pure (.add a b)
+  | 7 =>
+    let a ← readU16LE
+    let b ← readU16LE
+    unless a < nodeIdx && b < nodeIdx do
+      throw s!"vk: sub child out of topological order ({a}, {b}) at node {nodeIdx}"
+    pure (.sub a b)
+  | 8 =>
+    let a ← readU16LE
+    let b ← readU16LE
+    unless a < nodeIdx && b < nodeIdx do
+      throw s!"vk: mul child out of topological order ({a}, {b}) at node {nodeIdx}"
+    pure (.mul a b)
+  | 9 =>
+    let a ← readU16LE
+    unless a < nodeIdx do
+      throw s!"vk: neg child out of topological order ({a}) at node {nodeIdx}"
+    pure (.neg a)
   | t =>
     if 10 ≤ t && t ≤ 15 then
       let code := t - 10
@@ -145,7 +166,12 @@ private def readSysCircuit : DecodeM SysCircuit := do
   let maxConstraintDegree ← readU16LE
   let lookupGroupSize := (← readU8).toNat
   let nodeCount ← readU16LE
-  let nodes ← readArray nodeCount readGraphNode
+  let lookupPrefixLen ← readU16LE
+  unless lookupPrefixLen ≤ nodeCount do
+    throw s!"vk: lookup_prefix_len {lookupPrefixLen} exceeds node_count {nodeCount}"
+  let mut nodes := Array.mkEmpty nodeCount
+  for idx in [0:nodeCount] do
+    nodes := nodes.push (← readGraphNode idx)
   let zeroCount ← readU16LE
   let zeros ← readArray zeroCount readU16LE
   let lookupCount ← readU16LE
@@ -156,12 +182,23 @@ private def readSysCircuit : DecodeM SysCircuit := do
     pure { multiplicity, args }
   pure {
     mainWidth, preprocessedWidth, preprocessedHeight, maxConstraintDegree
-    lookupGroupSize, nodes, zeros, lookups
+    lookupGroupSize, lookupPrefixLen, nodes, zeros, lookups
   }
 
-/-- Decode a v5 Multi-STARK verifying key (`crates/stark-key/src/lib.rs`). -/
+/-- Decode a Protocol `v6` Multi-STARK verifying key (`crates/stark-key/src/lib.rs`,
+`SystemDeserialize.lean:319-348`). -/
 def StarkSystem.fromBytes (bytes : ByteArray) : Except String StarkSystem := do
   let (sys, _) ← (do
+    let protoVer ← readU16LE
+    unless protoVer == 6 do
+      throw s!"vk: only Protocol v6 is accepted, got {protoVer}"
+    let extDeg ← readU16LE
+    unless extDeg == 3 do
+      throw s!"vk: only Fp^3 cubic extension (degree 3) is accepted, got {extDeg}"
+    let friBatching ← readU16LE
+    unless friBatching == 1 do
+      throw s!"vk: only FriBatching::Tensor (tag 1) is accepted, got {friBatching}"
+    let vkDigest ← readDigest
     let params : StarkParams := {
       logBlowup := ← readU16LE
       capHeight := ← readU16LE
@@ -183,7 +220,7 @@ def StarkSystem.fromBytes (bytes : ByteArray) : Except String StarkSystem := do
       let idx ← readU16LE
       pure (if idx == 0xFFFF then none else some idx)
     ensureEOF
-    pure ({ params, circuits, preprocessedCommit, preprocessedIndices } : StarkSystem)
+    pure ({ vkDigest, params, circuits, preprocessedCommit, preprocessedIndices } : StarkSystem)
   ).run { bytes, pos := 0 }
   pure sys
 
@@ -211,7 +248,7 @@ private def readCommitPhaseStep : DecodeM (CommitPhaseStep EF (PrunedPaths D)) :
   pure { logArity, siblingValues, openingProof }
 
 private def readFriProof : DecodeM (FriProof F EF D (PrunedPaths D) (PrunedPaths D)) := do
-  -- Bincode layout of `p3_fri::TwoAdicFriPcsProof` / `FriProof` (mirrors `ProofDeserialize.lean:333-358`):
+  -- Bincode layout of `p3_fri::TwoAdicFriPcsProof` / `FriProof` (mirrors `ProofDeserialize.lean`):
   -- commit_phase_commits : Vec<MerkleCap> (for cap_height = 0 each cap has length 1)
   let commitCaps ← readVec readMerkleCap
   let mut commitPhaseCommits := Array.mkEmpty commitCaps.size
@@ -264,8 +301,8 @@ private def readBatchMessage : DecodeM BatchMessage := do
   let multiplicity ← readCanonicalF
   pure { args, multiplicity }
 
-/-- Decode a serialized `BatchProof` (`multi-stark/src/batch.rs:238-241`),
-enforcing strict canonical Goldilocks values, strict tags, and exact EOF. -/
+/-- Decode a serialized `BatchProof` (`multi-stark/src/batch.rs`),
+enforcing strict canonical Goldilocks values, 3-limb `GoldilocksExt3`, strict tags, and exact EOF. -/
 def BatchProof.fromBytes (bytes : ByteArray) : Except String BatchProof := do
   let (batch, _) ← (do
     let headers ← readVec readShardHeader

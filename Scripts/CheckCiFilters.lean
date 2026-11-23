@@ -8,6 +8,7 @@ project source file in the pinned SHA-256 definitional closure manifests, as wel
 manifest files themselves and the trust-surface root files fenced by `kernel-trust-surface`:
 
 * `Tests/Fixtures/circuit-composed-closure-manifest.txt` (required) → `refinement:` filter;
+* `Tests/Fixtures/security-128-closure-manifest.txt` (required) → `refinement:` filter;
 * `Tests/Fixtures/compile-correct-closure-manifest.txt` (checked when present) → `kernel:` filter;
 * `Tests/Fixtures/check-bytes-closure-manifest.txt` (checked when present) → `kernel:` filter;
 * `Ix/Address/Admission.lean` and `Ix/KernelDisplay/Peek.lean` → `kernel:` filter.
@@ -333,6 +334,15 @@ def selfCheck : IO Unit := do
       throw <| IO.userError s!"self-test failed: unexpected kernel globs: {parsed.getD "kernel" #[]}"
     unless parsed.getD "refinement" #[] == #["Aiur/**", "Ix/Ixon.lean"] do
       throw <| IO.userError s!"self-test failed: unexpected refinement globs: {parsed.getD "refinement" #[]}"
+  -- Manifest project path extraction (including 128-bit security audits)
+  let sampleManifest :=
+    "# definitional closure of Security128\n" ++
+    "T 0000 Ix.Cert.MultiStark.Security128Audit Ix.Cert.MultiStark.Security128.ud_160_pow20_query_error_le_128\n" ++
+    "D 0000 Ix.Aiur.Parameters Aiur.extensionDegreeV6\n" ++
+    "T 0000 Mathlib.Data.Real.Basic Real.add_comm\n"
+  let parsedManifest := manifestProjectPaths sampleManifest
+  unless parsedManifest == #["Ix/Aiur/Parameters.lean", "Ix/Cert/MultiStark/Security128Audit.lean"] do
+    throw <| IO.userError s!"self-test failed: manifestProjectPaths = {parsedManifest}"
 
 /-- Required trust-surface root files that must always trigger the `kernel:` CI job. -/
 def requiredKernelFiles : Array String := #[
@@ -344,6 +354,8 @@ groups that must cover them. -/
 def requiredFilterCoverage : Array (String × String) := #[
   (".config/nextest.toml", "rust"),
   ("rustfmt.toml", "rust"),
+  ("crates/stark-shrinker/Cargo.toml", "rust"),
+  ("crates/stark-shrinker/Cargo.toml", "cuda"),
   ("tools/gnark/circuit.go", "gnark"),
   ("tools/gnark/circuit.go", "rust"),
   ("contracts/plonk/src/PlonkVerifier.sol", "contracts"),
@@ -353,6 +365,7 @@ def requiredFilterCoverage : Array (String × String) := #[
   ("Aiur/c/execution.c", "rust"),
   ("Aiur/c/execution.c", "formal"),
   ("Scripts/FriSecurity.lean", "host"),
+  ("Scripts/FriSecurity.lean", "formal"),
   ("Ix/Aiur/Parameters.lean", "formal"),
   ("Ix/Aiur/Parameters.lean", "refinement"),
   ("Ix/MultiStark/Wire.lean", "formal"),
@@ -396,12 +409,26 @@ def transitiveImportChecks : Array (String × String × Array String) := #[
     "IxVMRefinement.Endpoint.ComposedResidualAudit",
     "Ix.IxVM.ConsistencyAudit",
     "Ix.IxVM.ConsistencyModelAudit",
-    "Ix.IxVM.Refinement.Audit"]),
+    "Ix.IxVM.Refinement.Audit",
+    "Ix.Cert.MultiStark.Security128Audit",
+    "Ix.Cert.Aggr.MonolithicRom",
+    "Ix.Cert.Aggr.Security128Audit",
+    "Ix.Cert.Compression.Bls12381.Audit",
+    "Ix.Cert.Compression.StarkShrinkerAudit",
+    "Ix.Cert.Compression.Security128Audit",
+    "Ix.Cert.Security128ClosureManifest"]),
   ("formal leanchecker roots and formal-only modules", "formal", #[
     "Aiur.Audit",
     "Ix.IxVM.ConsistencyAudit",
     "Ix.IxVM.ConsistencyModelAudit",
     "Ix.IxVM.Refinement.Audit",
+    "Ix.Cert.MultiStark.Security128Audit",
+    "Ix.Cert.Aggr.MonolithicRom",
+    "Ix.Cert.Aggr.Security128Audit",
+    "Ix.Cert.Compression.Bls12381.Audit",
+    "Ix.Cert.Compression.StarkShrinkerAudit",
+    "Ix.Cert.Compression.Security128Audit",
+    "Ix.Cert.Security128ClosureManifest",
     "Tests.FormalPackageMain",
     "Tests.Ix.InstanceSymbols",
     "Tests.Ix.VMSource",
@@ -411,6 +438,7 @@ def transitiveImportChecks : Array (String × String × Array String) := #[
 /-- Closure manifests to verify: `(manifestPath, ciFilterName, required)`. -/
 def manifestChecks : Array (String × String × Bool) := #[
   ("Tests/Fixtures/circuit-composed-closure-manifest.txt", "refinement", true),
+  ("Tests/Fixtures/security-128-closure-manifest.txt", "refinement", true),
   ("Tests/Fixtures/compile-correct-closure-manifest.txt", "kernel", true),
   ("Tests/Fixtures/check-bytes-closure-manifest.txt", "kernel", true)]
 

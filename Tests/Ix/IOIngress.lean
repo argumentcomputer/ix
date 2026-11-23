@@ -54,6 +54,9 @@ def otherChannels : List (String × Option (List String)) := [
   ("ixvm.io.info", some ["IxVMCompat::io_get_info"]),
   ("ixvm.io.claim", some ["KernelClaim::run_claim"]),
   ("ixvm.io.tag", some ["Ingress::load_constant_hint"]),
+  -- `Pcs::eg3_inv_nonzero` hints the Goldilocks base-field inverse of the cubic
+  -- norm and immediately enforces `assert_eq!(norm * ninv, 1)` (non-IO field witness).
+  ("goldilocks.inverse", some ["Pcs::eg3_inv_nonzero"]),
   -- `ix_aggr` locates every advice section by `(slot, key)`; the sections it
   -- reads are byte streams read through `StarkIO::read_byte_stream`.
   ("stark.io.info", none), ("stark.io.address", none), ("stark.io.digest", none)]

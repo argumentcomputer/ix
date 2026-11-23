@@ -173,74 +173,96 @@ theorem gl_inv_nonzero_spec {x iv : Fp} (h : x * iv = 1) :
     intro h0; subst h0; simp at h
   exact ⟨hx, eq_inv_of_mul_eq_one_right h⟩
 
-/-- Exact constraint specification of `Goldilocks::eg_inverse` (`Goldilocks.lean:78-85`):
-with `norm = a.c0^2 - 7 * a.c1^2` and `ninv` satisfying `gl_inverse` constraints for `norm`,
-`⟨a.c0 * ninv, (0 - a.c1) * ninv⟩ = a⁻¹` in `K = Fp[u] / (u^2 - 7)`. -/
+/-- Exact constraint specification of cubic adjugate/norm inversion in `K = Fp[X] / (X^3 - X - 1)`:
+with `norm = K.norm a` and `ninv` satisfying `gl_inverse` constraints for `norm`,
+`⟨a.adjugate.c0 * ninv, a.adjugate.c1 * ninv, a.adjugate.c2 * ninv⟩ = a⁻¹` in `K`. -/
 theorem eg_inverse_spec {a : K} {ninv : Fp}
     (h1 : K.norm a * (K.norm a * ninv - 1) = 0)
     (h2 : ninv * (K.norm a * ninv - 1) = 0) :
-    (⟨a.c0 * ninv, (0 - a.c1) * ninv⟩ : K) = a⁻¹ := by
+    (⟨a.adjugate.c0 * ninv, a.adjugate.c1 * ninv, a.adjugate.c2 * ninv⟩ : K) = a⁻¹ := by
   have hninv : ninv = (K.norm a)⁻¹ := gl_inverse_spec h1 h2
   subst hninv
-  apply K.ext
-  · rfl
-  · simp
+  let g : GoldilocksField := Fp3Model.norm a
+  change (⟨Fp3Model.c0 a.adjugate * g⁻¹, Fp3Model.c1 a.adjugate * g⁻¹,
+    Fp3Model.c2 a.adjugate * g⁻¹⟩ : K) = Fp3Model.inv a
+  unfold Fp3Model.inv
+  change _ = if g = 0 then 0 else Fp3Model.embedHom g⁻¹ * a.adjugate
+  by_cases hg : g = 0
+  · rw [ite_eq_left hg, hg, inv_zero]
+    ext <;> simp
+  · rw [ite_eq_right hg]
+    ext <;> simp only [Fp3Model.mul_c0, Fp3Model.mul_c1, Fp3Model.mul_c2,
+      Fp3Model.embedHom_apply, Fp3Model.embed_c0, Fp3Model.embed_c1, Fp3Model.embed_c2] <;> ring
 
-/-- Exact constraint specification of `Goldilocks::eg_inv_nonzero` (`Goldilocks.lean:87-92`):
+/-- Exact constraint specification of `Pcs::eg3_inv_nonzero` (`Pcs.lean:40-49`):
 `K.norm a * ninv = 1` strictly rejects `a = 0` and forces
-`⟨a.c0 * ninv, (0 - a.c1) * ninv⟩ = a⁻¹` in `K = Fp[u] / (u^2 - 7)`. -/
+`⟨a.adjugate.c0 * ninv, a.adjugate.c1 * ninv, a.adjugate.c2 * ninv⟩ = a⁻¹` in `K = Fp[X] / (X^3 - X - 1)`. -/
 theorem eg_inv_nonzero_spec {a : K} {ninv : Fp}
     (h : K.norm a * ninv = 1) :
-    a ≠ 0 ∧ (⟨a.c0 * ninv, (0 - a.c1) * ninv⟩ : K) = a⁻¹ := by
+    a ≠ 0 ∧ (⟨a.adjugate.c0 * ninv, a.adjugate.c1 * ninv, a.adjugate.c2 * ninv⟩ : K) = a⁻¹ := by
   obtain ⟨hnorm_ne, hninv⟩ := gl_inv_nonzero_spec h
   have ha_ne : a ≠ 0 := by
     intro h0; subst h0
-    apply hnorm_ne
-    show (0 : Fp) * 0 - 7 * (0 * 0) = 0
-    ring
+    exact hnorm_ne (by decide)
   refine ⟨ha_ne, ?_⟩
   subst hninv
-  apply K.ext
-  · rfl
-  · simp
+  let g : GoldilocksField := Fp3Model.norm a
+  have hg : g ≠ 0 := hnorm_ne
+  change (⟨Fp3Model.c0 a.adjugate * g⁻¹, Fp3Model.c1 a.adjugate * g⁻¹,
+    Fp3Model.c2 a.adjugate * g⁻¹⟩ : K) = Fp3Model.inv a
+  unfold Fp3Model.inv
+  change _ = if g = 0 then 0 else Fp3Model.embedHom g⁻¹ * a.adjugate
+  rw [ite_eq_right hg]
+  ext <;> simp only [Fp3Model.mul_c0, Fp3Model.mul_c1, Fp3Model.mul_c2,
+    Fp3Model.embedHom_apply, Fp3Model.embed_c0, Fp3Model.embed_c1, Fp3Model.embed_c2] <;> ring
 
-/-- Exact constraint specification of `Goldilocks::eg_div_nonzero` (`Goldilocks.lean:98-100`):
+/-- Exact constraint specification of `Pcs::eg3_div_nonzero` (`Pcs.lean:51-53`):
 `K.norm b * ninv = 1` strictly rejects `b = 0` and forces
-`a * ⟨b.c0 * ninv, (0 - b.c1) * ninv⟩ = a * b⁻¹` in `K`. -/
+`a * ⟨b.adjugate.c0 * ninv, b.adjugate.c1 * ninv, b.adjugate.c2 * ninv⟩ = a * b⁻¹` in `K`. -/
 theorem eg_div_nonzero_spec {a b : K} {ninv : Fp}
     (h : K.norm b * ninv = 1) :
-    b ≠ 0 ∧ a * (⟨b.c0 * ninv, (0 - b.c1) * ninv⟩ : K) = a * b⁻¹ := by
+    b ≠ 0 ∧ a * (⟨b.adjugate.c0 * ninv, b.adjugate.c1 * ninv, b.adjugate.c2 * ninv⟩ : K) = a * b⁻¹ := by
   obtain ⟨hb_ne, hinv⟩ := eg_inv_nonzero_spec h
   exact ⟨hb_ne, by rw [hinv]⟩
 
-/-- `Goldilocks::eg_add` refines `CertiFri.P3.GoldilocksExt.add` in `K`. -/
+/-- `Pcs::eg3_add` refines `CertiFri.P3.GoldilocksExt3.add` in `K`. -/
 theorem eg_add_refines (a b : EF) :
-    (⟨baseToFp a.c0 + baseToFp b.c0, baseToFp a.c1 + baseToFp b.c1⟩ : K) =
+    (⟨baseToFp a.c0 + baseToFp b.c0, baseToFp a.c1 + baseToFp b.c1,
+      baseToFp a.c2 + baseToFp b.c2⟩ : K) =
       extToModel (a.add b) :=
   (goldilocksExtRefines.map_add a b).symm
 
-/-- `Goldilocks::eg_sub` refines `CertiFri.P3.GoldilocksExt.sub` in `K`. -/
+/-- `Pcs::eg3_sub` refines `CertiFri.P3.GoldilocksExt3.sub` in `K`. -/
 theorem eg_sub_refines (a b : EF) :
-    (⟨baseToFp a.c0 - baseToFp b.c0, baseToFp a.c1 - baseToFp b.c1⟩ : K) =
+    (⟨baseToFp a.c0 - baseToFp b.c0, baseToFp a.c1 - baseToFp b.c1,
+      baseToFp a.c2 - baseToFp b.c2⟩ : K) =
       extToModel (a.sub b) :=
   (goldilocksExtRefines.map_sub a b).symm
 
-/-- `Goldilocks::eg_neg` refines `CertiFri.P3.GoldilocksExt.neg` in `K`. -/
+/-- `Pcs::eg3_neg` refines `CertiFri.P3.GoldilocksExt3.neg` in `K`. -/
 theorem eg_neg_refines (a : EF) :
-    (⟨0 - baseToFp a.c0, 0 - baseToFp a.c1⟩ : K) = extToModel a.neg := by
+    (⟨(0 : Fp) - baseToFp a.c0, (0 : Fp) - baseToFp a.c1, (0 : Fp) - baseToFp a.c2⟩ : K) =
+      extToModel a.neg := by
   have h : -(extToModel a) = extToModel a.neg := (goldilocksExtRefines.map_neg a).symm
   rw [← h]
-  apply K.ext <;> simp [extToModel]
+  ext <;> (simp only [extToModel, GoldilocksExt3.toModel, Fp3Model.neg_c0, Fp3Model.neg_c1,
+    Fp3Model.neg_c2, zero_sub]; rfl)
 
-/-- `Goldilocks::eg_mul` refines `CertiFri.P3.GoldilocksExt.mul` in `K`. -/
+/-- `Pcs::eg3_mul` refines `CertiFri.P3.GoldilocksExt3.mul` in `K`. -/
 theorem eg_mul_refines (a b : EF) :
-    (⟨baseToFp a.c0 * baseToFp b.c0 + 7 * (baseToFp a.c1 * baseToFp b.c1),
-      baseToFp a.c0 * baseToFp b.c1 + baseToFp a.c1 * baseToFp b.c0⟩ : K) =
+    (⟨baseToFp a.c0 * baseToFp b.c0 + baseToFp a.c1 * baseToFp b.c2 + baseToFp a.c2 * baseToFp b.c1,
+      baseToFp a.c0 * baseToFp b.c1 + baseToFp a.c1 * baseToFp b.c0 +
+        baseToFp a.c1 * baseToFp b.c2 + baseToFp a.c2 * baseToFp b.c1 + baseToFp a.c2 * baseToFp b.c2,
+      baseToFp a.c0 * baseToFp b.c2 + baseToFp a.c1 * baseToFp b.c1 +
+        baseToFp a.c2 * baseToFp b.c0 + baseToFp a.c2 * baseToFp b.c2⟩ : K) =
       extToModel (a.mul b) :=
   (goldilocksExtRefines.map_mul a b).symm
 
 private lemma extToModel_add (a b : EF) : extToModel (a.add b) = extToModel a + extToModel b :=
   goldilocksExtRefines.map_add a b
+
+private lemma extToModel_sub (a b : EF) : extToModel (a.sub b) = extToModel a - extToModel b :=
+  goldilocksExtRefines.map_sub a b
 
 private lemma extToModel_mul (a b : EF) : extToModel (a.mul b) = extToModel a * extToModel b :=
   goldilocksExtRefines.map_mul a b
@@ -248,15 +270,15 @@ private lemma extToModel_mul (a b : EF) : extToModel (a.mul b) = extToModel a * 
 private lemma extToModel_inv (a : EF) : extToModel a.inv = (extToModel a)⁻¹ :=
   goldilocksExtRefines.map_inv a
 
-/-- `Goldilocks::eg_div` refines `CertiFri.P3.GoldilocksExt.mul a b.inv` in `K`. -/
+/-- `Pcs::eg3_div_nonzero` refines `CertiFri.P3.GoldilocksExt3.mul a b.inv` in `K`. -/
 theorem eg_div_refines (a b : EF) :
     extToModel a * (extToModel b)⁻¹ = extToModel (a.mul b.inv) := by
   rw [extToModel_mul, extToModel_inv]
 
-/-- `Goldilocks::eg_eq` returns `1` iff the two `GoldilocksExt` elements are equal. -/
+/-- `Pcs::eg3_eq` returns `1` iff the two `GoldilocksExt3` elements are equal. -/
 theorem eg_eq_iff (a b : EF) :
-    isZeroFp (baseToFp a.c0 - baseToFp b.c0) * isZeroFp (baseToFp a.c1 - baseToFp b.c1) = 1 ↔
-      a = b := by
+    isZeroFp (baseToFp a.c0 - baseToFp b.c0) * isZeroFp (baseToFp a.c1 - baseToFp b.c1) *
+      isZeroFp (baseToFp a.c2 - baseToFp b.c2) = 1 ↔ a = b := by
   have h10 : (1 : Fp) ≠ 0 := by decide
   unfold isZeroFp
   constructor
@@ -264,35 +286,47 @@ theorem eg_eq_iff (a b : EF) :
     by_cases h0 : baseToFp a.c0 - baseToFp b.c0 = 0
     · simp only [h0, ↓reduceIte, one_mul] at h
       by_cases h1 : baseToFp a.c1 - baseToFp b.c1 = 0
-      · have hmod : extToModel a = extToModel b :=
-          K.ext (sub_eq_zero.mp h0) (sub_eq_zero.mp h1)
-        exact decide_eq_true_iff.mp ((goldilocksExtRefines.beq_iff a b).mpr hmod)
-      · simp only [h1, ↓reduceIte] at h; exact absurd h.symm h10
+      · simp only [h1, ↓reduceIte, one_mul] at h
+        by_cases h2 : baseToFp a.c2 - baseToFp b.c2 = 0
+        · have hmod : extToModel a = extToModel b := by
+            ext
+            · exact sub_eq_zero.mp h0
+            · exact sub_eq_zero.mp h1
+            · exact sub_eq_zero.mp h2
+          exact decide_eq_true_iff.mp ((goldilocksExtRefines.beq_iff a b).mpr hmod)
+        · simp only [h2, ↓reduceIte] at h; exact absurd h.symm h10
+      · simp only [h1, ↓reduceIte, zero_mul] at h; exact absurd h.symm h10
     · simp only [h0, ↓reduceIte, zero_mul] at h; exact absurd h.symm h10
   · rintro rfl
     simp
 
-/-- `StarkVerifier::ext_is_zero` returns `1` iff the extension element is `GoldilocksExt.zero`. -/
+/-- `StarkVerifier::ext_is_zero` returns `1` iff the extension element is `GoldilocksExt3.zero`. -/
 theorem ext_is_zero_iff (e : EF) :
-    isZeroFp (baseToFp e.c0) * isZeroFp (baseToFp e.c1) = 1 ↔ e = GoldilocksExt.zero := by
-  have hz0 : baseToFp GoldilocksExt.zero.c0 = 0 := by decide
-  have hz1 : baseToFp GoldilocksExt.zero.c1 = 0 := by decide
-  simpa [hz0, hz1] using eg_eq_iff e GoldilocksExt.zero
+    isZeroFp (baseToFp e.c0) * isZeroFp (baseToFp e.c1) * isZeroFp (baseToFp e.c2) = 1 ↔
+      e = GoldilocksExt3.zero := by
+  have hz0 : baseToFp GoldilocksExt3.zero.c0 = 0 := by decide
+  have hz1 : baseToFp GoldilocksExt3.zero.c1 = 0 := by decide
+  have hz2 : baseToFp GoldilocksExt3.zero.c2 = 0 := by decide
+  simpa [hz0, hz1, hz2] using eg_eq_iff e GoldilocksExt3.zero
 
-/-! ## 3. `StarkVerifier` Algebraic Helpers (`pair_mul`, `two_adic_gen`, `quotient_degree_of`, `ext_exp_pow2`, `from_ext_basis`) -/
+/-! ## 3. `StarkVerifier` Algebraic Helpers (`triple_mul`, `two_adic_gen`, `quotient_degree_of`, `ext_exp_pow2`, `from_ext_basis`) -/
 
-/-- `StarkVerifier::pair_mul` refines `Ix.Cert.MultiStark.pairMul` in `K × K`. -/
-theorem pair_mul_refines (a0 a1 b0 b1 : EF) :
-    let (r0, r1) := pairMul a0 a1 b0 b1
-    extToModel r0 = extToModel a0 * extToModel b0 + (⟨7, 0⟩ : K) * (extToModel a1 * extToModel b1) ∧
-    extToModel r1 = extToModel a0 * extToModel b1 + extToModel a1 * extToModel b0 := by
-  have h7 : extToModel (GoldilocksExt.embed GoldilocksExt.nonResidue) = ⟨7, 0⟩ := by
-    apply K.ext <;> decide
-  unfold pairMul
+/-- `StarkVerifier::triple_mul` refines `Ix.Cert.MultiStark.tripleMul` in `K × K × K`
+(modulo `X^3 - X - 1`). -/
+theorem triple_mul_refines (a0 a1 a2 b0 b1 b2 : EF) :
+    let (r0, r1, r2) := tripleMul a0 a1 a2 b0 b1 b2
+    extToModel r0 =
+      extToModel a0 * extToModel b0 + extToModel a1 * extToModel b2 + extToModel a2 * extToModel b1 ∧
+    extToModel r1 =
+      extToModel a0 * extToModel b1 + extToModel a1 * extToModel b0 +
+      extToModel a1 * extToModel b2 + extToModel a2 * extToModel b1 + extToModel a2 * extToModel b2 ∧
+    extToModel r2 =
+      extToModel a0 * extToModel b2 + extToModel a1 * extToModel b1 +
+      extToModel a2 * extToModel b0 + extToModel a2 * extToModel b2 := by
+  unfold tripleMul
   dsimp only
-  constructor
-  · rw [extToModel_add, extToModel_mul, extToModel_mul, extToModel_mul, h7]
-  · rw [extToModel_add, extToModel_mul, extToModel_mul]
+  simp only [extToModel_add, extToModel_sub, extToModel_mul]
+  refine ⟨by ring, by ring, by ring⟩
 
 /-- Repeated squaring starting from the primitive `2^32`-th root of unity (`1753635133440165772`),
 structurally recursive on the distance `32 - bits` for kernel reduction. -/
@@ -349,13 +383,16 @@ theorem ext_exp_pow2_refines :
     rw [← extToModel_mul]
     exact ext_exp_pow2_refines k (e.mul e)
 
-/-- `StarkVerifier::from_ext_basis(c0, c1)` refines `c0 + c1 * ⟨0, 1⟩` in `K`. -/
-theorem from_ext_basis_refines (c0 c1 : EF) :
-    extToModel c0 + extToModel c1 * (⟨0, 1⟩ : K) =
-      extToModel (c0.add (c1.mul ⟨Goldilocks.zero, Goldilocks.one⟩)) := by
-  have hu : extToModel ⟨Goldilocks.zero, Goldilocks.one⟩ = ⟨0, 1⟩ := by
-    apply K.ext <;> decide
-  rw [extToModel_add, extToModel_mul, hu]
+/-- `StarkVerifier::from_ext_basis(c0, c1, c2)` refines `c0 + c1 * ⟨0, 1, 0⟩ + c2 * ⟨0, 0, 1⟩` in `K`. -/
+theorem from_ext_basis_refines (c0 c1 c2 : EF) :
+    extToModel c0 + extToModel c1 * (⟨0, 1, 0⟩ : K) + extToModel c2 * (⟨0, 0, 1⟩ : K) =
+      extToModel (c0.add ((c1.mul ⟨Goldilocks.zero, Goldilocks.one, Goldilocks.zero⟩).add
+        (c2.mul ⟨Goldilocks.zero, Goldilocks.zero, Goldilocks.one⟩))) := by
+  have hx1 : extToModel ⟨Goldilocks.zero, Goldilocks.one, Goldilocks.zero⟩ = ⟨0, 1, 0⟩ := by
+    ext <;> decide
+  have hx2 : extToModel ⟨Goldilocks.zero, Goldilocks.zero, Goldilocks.one⟩ = ⟨0, 0, 1⟩ := by
+    ext <;> decide
+  rw [extToModel_add, extToModel_add, extToModel_mul, extToModel_mul, hx1, hx2, add_assoc]
 
 /-! ## 4. Algebraic Equivalences for Optimized PCS Operations (`rows_pop`, `fri_fold2`, `ro_fold`, `finalize_buckets`) -/
 
@@ -375,33 +412,37 @@ theorem goldilocks_inv_two : (2 : Fp) * (9223372034707292161 : Fp) = 1 := by
 theorem goldilocks_inv_two_eq : (9223372034707292161 : Fp) = (2 : Fp)⁻¹ :=
   eq_inv_of_mul_eq_one_right goldilocks_inv_two
 
-/-- Dividing an extension element `e : K` by an embedded base element `⟨s, 0⟩ : K` equals
+/-- Dividing an extension element `e : K` by an embedded base element `⟨s, 0, 0⟩ : K` equals
 componentwise multiplication by `s⁻¹ : Fp` (for every `s : Fp`, including `s = 0`).
 Certifies the base-inversion optimization in `Pcs::fri_fold2`. -/
 theorem eg_div_base_eq (e : K) (s : Fp) :
-    e * (⟨s, 0⟩ : K)⁻¹ = ⟨e.c0 * s⁻¹, e.c1 * s⁻¹⟩ := by
+    e * (⟨s, 0, 0⟩ : K)⁻¹ = ⟨e.c0 * s⁻¹, e.c1 * s⁻¹, e.c2 * s⁻¹⟩ := by
   by_cases hs : s = 0
   · subst hs
-    have hz : (⟨0, 0⟩ : K) = 0 := rfl
-    rw [hz, inv_zero, mul_zero, inv_zero, mul_zero, mul_zero]; rfl
-  · have hinv : (⟨s, 0⟩ : K)⁻¹ = ⟨s⁻¹, 0⟩ := by
+    change e * (0 : K)⁻¹ = ⟨Fp3Model.c0 e * (0 : GoldilocksField)⁻¹,
+      Fp3Model.c1 e * (0 : GoldilocksField)⁻¹, Fp3Model.c2 e * (0 : GoldilocksField)⁻¹⟩
+    simp only [inv_zero, mul_zero]; rfl
+  · have hinv : (⟨s, 0, 0⟩ : K)⁻¹ = ⟨s⁻¹, 0, 0⟩ := by
       symm
       apply eq_inv_of_mul_eq_one_right
-      apply K.ext
-      · change s * s⁻¹ + 7 * (0 * 0) = 1
+      ext
+      · change s * s⁻¹ + 0 * 0 + 0 * 0 = 1
         simp [mul_inv_cancel₀ hs]
-      · change s * 0 + 0 * s⁻¹ = 0
+      · change s * 0 + 0 * s⁻¹ + 0 * 0 + 0 * 0 + 0 * 0 = 0
+        ring
+      · change s * 0 + 0 * 0 + 0 * s⁻¹ + 0 * 0 = 0
         ring
     rw [hinv]
-    apply K.ext
-    · change e.c0 * s⁻¹ + 7 * (e.c1 * 0) = e.c0 * s⁻¹; ring
-    · change e.c0 * 0 + e.c1 * s⁻¹ = e.c1 * s⁻¹; ring
+    ext
+    · change e.c0 * s⁻¹ + e.c1 * 0 + e.c2 * 0 = e.c0 * s⁻¹; ring
+    · change e.c0 * 0 + e.c1 * s⁻¹ + e.c1 * 0 + e.c2 * 0 + e.c2 * 0 = e.c1 * s⁻¹; ring
+    · change e.c0 * 0 + e.c1 * 0 + e.c2 * s⁻¹ + e.c2 * 0 = e.c2 * s⁻¹; ring
 
 /-- Original tail-recursive `Pcs::ro_fold(px, pz, alpha, s, ap)` in `K`. -/
 def roFoldTail : List Fp → List K → K → K → K → K × K
   | [], _, _, s, ap => (s, ap)
   | x :: xs, z :: zs, alpha, s, ap =>
-    roFoldTail xs zs alpha (s + ap * (z - ⟨x, 0⟩)) (ap * alpha)
+    roFoldTail xs zs alpha (s + ap * (z - ⟨x, 0, 0⟩)) (ap * alpha)
   | _ :: _, [], _, s, ap => (s, ap)
 
 /-- Ascending Horner-from-tail `Pcs::ro_fold_1pt` / `ro_fold_2pt` in `K`. -/
@@ -409,7 +450,7 @@ def roFoldHorner : List Fp → List K → K → K × K
   | [], _, _ => (0, 1)
   | x :: xs, z :: zs, alpha =>
     let (s, pw) := roFoldHorner xs zs alpha
-    ((z - ⟨x, 0⟩) + alpha * s, alpha * pw)
+    ((z - ⟨x, 0, 0⟩) + alpha * s, alpha * pw)
   | _ :: _, [], _ => (0, 1)
 
 /-- `ro_fold_1pt` / `ro_fold_2pt` produces the exact same `(sum, ap * alpha^w)` as
@@ -425,7 +466,7 @@ theorem roFoldHorner_refines_tail :
     simp only [List.length_cons, Nat.succ.injEq] at hlen
     unfold roFoldHorner roFoldTail
     dsimp only
-    rw [roFoldHorner_refines_tail xs zs alpha (acc + ap * (z - ⟨x, 0⟩)) (ap * alpha) hlen]
+    rw [roFoldHorner_refines_tail xs zs alpha (acc + ap * (z - ⟨x, 0, 0⟩)) (ap * alpha) hlen]
     simp only [Prod.mk.injEq]
     constructor <;> ring
 

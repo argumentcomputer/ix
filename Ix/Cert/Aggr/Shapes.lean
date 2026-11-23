@@ -119,10 +119,10 @@ end
 
 /-- Required literal constants inside `Aggregation::aggr_assert_security_envelope`, pinning
 the fixed structural parameters (`0`, `1`), blowup bounds (`1..4`, `< 5`), PoW cap (`< 33`),
-conjectured floor (`219` / `220`), UD millibit table (`415`, `678`, `830`, `912`), and
-provable UD floor (`79999` / `80000`). -/
+conjectured floor (`219` / `220`), UD millibit table (`415`, `678`, `830`, `912`),
+provable UD floor (`79999` / `80000`), and finite-`m` Johnson 128-bit floor (`500`, `45`, `127999`). -/
 def securityEnvelopeRequiredLiterals : List Nat :=
-  [0, 1, 5, 33, 219, 415, 678, 830, 912, 79999]
+  [0, 1, 5, 33, 219, 415, 678, 830, 912, 79999, 500, 45, 127999]
 
 /-- Kernel-checked pin: `MultiStark::ix_aggr` in `MultiStark.aggregateSource` dispatches on the
 exact 19 literal shape codes `[0, 1, ..., 18]` matching `AggrShape.all.map AggrShape.code`. -/
@@ -184,7 +184,7 @@ theorem aggregateSource_core_helpers_present :
 Any edit to any module in `MultiStark.aggregateSource` changes this digest and forces an
 explicit audit review. -/
 def pinnedAggregateDigest : String :=
-  "a910aac9d383a31764e3ff2bc96355d1eebbc052b8e3563c1ad26bd7fb5c4b40"
+  "e5b75176ae7dae810b786abfb023defecb429cdb2247d86df693b3add90b3d24"
 
 theorem aggregateDigest_eq : MultiStark.aggregateDigest = pinnedAggregateDigest := rfl
 
@@ -205,13 +205,13 @@ including Mode 3a `aggr_linked_entry_addr` and `aggr_assert_linked_merge`), abse
 def AggregateProgramAstPinned {α : Type} (prog : Modules.Program α) : Bool :=
   fnHasCallsAndAsserts prog "MultiStark" "ix_aggr" ixAggrRequiredCalls 3 &&
   fnHasCallsAndAsserts prog "Aggregation" "aggr_parse_range"
-    ["Goldilocks::gl_lt_p"] 5 &&
+    ["Goldilocks::gl_lt_p"] 6 &&
   fnHasCallsAndAsserts prog "Aggregation" "aggr_range_root"
     ["StarkVerifier::assert_shard_count_ok", "StarkVerifier::assert_batch_bounds",
      "StarkVerifier::assert_closure_pairs", "StarkVerifier::assert_closure_widths_ok",
      "StarkVerifier::ext_is_zero"] 10 &&
   fnHasCallsAndAsserts prog "Aggregation" "aggr_assert_security_envelope"
-    ["UInt32::less_than_fields"] 10 &&
+    ["UInt32::less_than_fields"] 11 &&
   fnHasCallsAndAsserts prog "Aggregation" "aggr_assert_codec_arity"
     ["UInt64::eq", "Lists::length"] 4 &&
   fnHasCallsAndAsserts prog "Aggregation" "aggr_verify_bridge_cert"
@@ -288,14 +288,14 @@ theorem aggregateProgram_ast_pinned :
   have h1 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.aggregateSource
     "MultiStark" "ix_aggr" ixAggrRequiredCalls 3
   have h2 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.aggregateSource
-    "Aggregation" "aggr_parse_range" ["Goldilocks::gl_lt_p"] 5
+    "Aggregation" "aggr_parse_range" ["Goldilocks::gl_lt_p"] 6
   have h3 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.aggregateSource
     "Aggregation" "aggr_range_root"
     ["StarkVerifier::assert_shard_count_ok", "StarkVerifier::assert_batch_bounds",
      "StarkVerifier::assert_closure_pairs", "StarkVerifier::assert_closure_widths_ok",
      "StarkVerifier::ext_is_zero"] 10
   have h4 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.aggregateSource
-    "Aggregation" "aggr_assert_security_envelope" ["UInt32::less_than_fields"] 10
+    "Aggregation" "aggr_assert_security_envelope" ["UInt32::less_than_fields"] 11
   have h5 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.aggregateSource
     "Aggregation" "aggr_assert_codec_arity" ["UInt64::eq", "Lists::length"] 4
   have h6 := fnHasCallsAndAsserts_map (Nat.cast : Nat → Fp) MultiStark.aggregateSource
@@ -364,15 +364,26 @@ def minProvableUdMillibits : Nat := 80000
 def udQueryMillibits (logBlowup numQueries queryPowBits : Nat) : Nat :=
   udMillibitsPerQuery logBlowup * numQueries + 1000 * queryPowBits
 
+/-- Finite-`m` (`m = 16`, slack 45 millibits/query) Johnson query soundness floor enforced by
+Protocol `v6` (`Fp^3`) Shape 17: `128.000` bits (`128000` millibits). -/
+def minJohnson128Millibits : Nat := 128000
+
+/-- Finite-`m` (`m = 16`) Johnson query soundness in millibits:
+`(500 * logBlowup - 45) * numQueries + 1000 * queryPowBits`. -/
+def johnsonQueryMillibits (logBlowup numQueries queryPowBits : Nat) : Nat :=
+  (500 * logBlowup - 45) * numQueries + 1000 * queryPowBits
+
 /-- Exact arithmetic predicate enforced by `Aggregation::aggr_assert_security_envelope`
-(`Aggregation.lean`):
+(`Aggregation.lean`, Protocol `v6` `Fp^3`):
 - Fixed structural parameters: `capHeight = 0`, `logFinalPolyLen = 0`, `maxLogArity = 1`,
 - Blowup range: `1 ≤ logBlowup ≤ 4`,
 - Positive queries: `1 ≤ numQueries`,
 - Proof-of-work ceiling: `commitPowBits ≤ 32`, `queryPowBits ≤ 32`,
 - Conjectured ethSTARK security floor: `logBlowup * numQueries + queryPowBits ≥ 220`,
 - Explicit per-`logBlowup` provable UD query soundness floor:
-  `udQueryMillibits logBlowup numQueries queryPowBits ≥ 80000` (≥ 80 bits UD, and ≥ 96 bits Johnson). -/
+  `udQueryMillibits logBlowup numQueries queryPowBits ≥ 80000` (≥ 80 bits UD),
+- Explicit finite-`m` (`m = 16`) Johnson query soundness floor:
+  `johnsonQueryMillibits logBlowup numQueries queryPowBits ≥ 128000` (≥ 128 bits Johnson). -/
 def SecurityEnvelopeOk (p : StarkParams) : Prop :=
   p.capHeight = 0 ∧
   p.logFinalPolyLen = 0 ∧
@@ -382,7 +393,8 @@ def SecurityEnvelopeOk (p : StarkParams) : Prop :=
   p.commitPowBits ≤ Aiur.maxProofOfWorkBits ∧
   p.queryPowBits ≤ Aiur.maxProofOfWorkBits ∧
   Aiur.minConjecturedSecurityBits ≤ p.logBlowup * p.numQueries + p.queryPowBits ∧
-  minProvableUdMillibits ≤ udQueryMillibits p.logBlowup p.numQueries p.queryPowBits
+  minProvableUdMillibits ≤ udQueryMillibits p.logBlowup p.numQueries p.queryPowBits ∧
+  minJohnson128Millibits ≤ johnsonQueryMillibits p.logBlowup p.numQueries p.queryPowBits
 
 /-- Convert `StarkParams` to `(Aiur.CommitmentParameters, Aiur.FriParameters)`. -/
 def toAiurParams (p : StarkParams) : Aiur.CommitmentParameters × Aiur.FriParameters :=
@@ -392,43 +404,46 @@ def toAiurParams (p : StarkParams) : Aiur.CommitmentParameters × Aiur.FriParame
 /-- **Uniform Security Envelope Equivalence (`securityEnvelopeOk_iff`):**
 `SecurityEnvelopeOk p` holds iff `Ix.Cert.MultiStark.checkParams p = true`,
 `Aiur.meetsSecurityFloor (toAiurParams p).1 (toAiurParams p).2 = true`, AND
-provable unique-decoding query soundness meets the 80-bit floor! -/
+provable unique-decoding (80-bit) + finite-`m` Johnson (128-bit) query floors hold! -/
 theorem securityEnvelopeOk_iff (p : StarkParams) :
     SecurityEnvelopeOk p ↔
       Ix.Cert.MultiStark.checkParams p = true ∧
       Aiur.meetsSecurityFloor (toAiurParams p).1 (toAiurParams p).2 = true ∧
-      minProvableUdMillibits ≤ udQueryMillibits p.logBlowup p.numQueries p.queryPowBits := by
+      minProvableUdMillibits ≤ udQueryMillibits p.logBlowup p.numQueries p.queryPowBits ∧
+      minJohnson128Millibits ≤ johnsonQueryMillibits p.logBlowup p.numQueries p.queryPowBits := by
   unfold SecurityEnvelopeOk Ix.Cert.MultiStark.checkParams Ix.Cert.MultiStark.checkParamsWithFloor
     Ix.Cert.MultiStark.checkParamsStructural Aiur.meetsSecurityFloor Aiur.conjecturedSecurityBits
     toAiurParams Aiur.maxProofOfWorkBits Aiur.minConjecturedSecurityBits Aiur.minProvableUdBits
     Aiur.minJohnsonBits Aiur.johnsonMillibits Aiur.johnsonSlackMillibitsPerQuery
     Aiur.provableUdMillibits minProvableUdMillibits udQueryMillibits
+    minJohnson128Millibits johnsonQueryMillibits
   simp only [Bool.false_or, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, and_assoc]
   constructor
-  · rintro ⟨hc, hfl, hma, hlb1, hlb4, hnq, hcp, hqp, hsec, hud⟩
+  · rintro ⟨hc, hfl, hma, hlb1, hlb4, hnq, hcp, hqp, hsec, hud, hj⟩
     have hlbCases : p.logBlowup = 1 ∨ p.logBlowup = 2 ∨ p.logBlowup = 3 ∨ p.logBlowup = 4 := by
       omega
     have hmq : (match Aiur.minQueriesForLogBlowup p.logBlowup with
         | some minQ => decide (minQ ≤ p.numQueries) | none => false) = true := by
       rcases hlbCases with hlb | hlb | hlb | hlb <;>
-        (rw [hlb] at hsec hud ⊢; simp [udMillibitsPerQuery, Aiur.minQueriesForLogBlowup] at hud ⊢; omega)
+        (rw [hlb] at hsec hud hj ⊢;
+         simp [udMillibitsPerQuery, Aiur.minQueriesForLogBlowup] at hud hj ⊢; omega)
     have hud' : (match Option.map (fun rate => p.numQueries * rate + p.queryPowBits * 1000)
         (Aiur.udMillibitsPerQuery p.logBlowup) with
         | some udMb => decide (80 * 1000 ≤ udMb) | none => false) = true := by
       rcases hlbCases with hlb | hlb | hlb | hlb <;>
         (rw [hlb] at hud ⊢; simp [udMillibitsPerQuery, Aiur.udMillibitsPerQuery] at hud ⊢; omega)
-    have hj : 100 * 1000 ≤ (p.logBlowup * 500 - 45) * p.numQueries + p.queryPowBits * 1000 := by
+    have hj' : 128 * 1000 ≤ (p.logBlowup * 500 - 45) * p.numQueries + p.queryPowBits * 1000 := by
       rcases hlbCases with hlb | hlb | hlb | hlb <;>
-        (rw [hlb] at hsec hud ⊢; simp [udMillibitsPerQuery] at hud ⊢; omega)
+        (rw [hlb] at hj ⊢; omega)
     exact ⟨hc, hfl, hma, hlb1, hnq,
-      hc, hfl, hma, hlb1, hlb4, by omega, hcp, hqp, hmq, hsec, hud', hj,
-      hc, hfl, hma, hlb1, hlb4, by omega, hcp, hqp, hmq, hsec, hud', hj,
-      hud⟩
+      hc, hfl, hma, hlb1, hlb4, by omega, hcp, hqp, hmq, hsec, hud', hj',
+      hc, hfl, hma, hlb1, hlb4, by omega, hcp, hqp, hmq, hsec, hud', hj',
+      hud, hj⟩
   · rintro ⟨hc, hfl, hma, hlb1, hnq,
       _, _, _, _, hlb4, _, hcp, hqp, _, hsec, _, _,
       _, _, _, _, _, _, _, _, _, _, _, _,
-      hud⟩
-    exact ⟨hc, hfl, hma, hlb1, hlb4, hnq, hcp, hqp, hsec, hud⟩
+      hud, hj⟩
+    exact ⟨hc, hfl, hma, hlb1, hlb4, hnq, hcp, hqp, hsec, hud, hj⟩
 
 /-! ## 4. Real-Valued Multi-Node ROM Tree Soundness Union Bound -/
 

@@ -2,38 +2,36 @@ import CertiFriProofs.Theory.PcsRbr.Decode
 import CertiFriProofs.Exec.Extract
 import Ix.Cert.MultiStark.FieldModel
 
-/-! # Small-Height (`ℓ = 0`, `ℓ = 1`) and Off-Domain Tight Decoding (Gap 4a)
+/-! # Small-Height (`ℓ = 0`, `ℓ = 1`) and Off-Domain Tight Decoding (Protocol `v6`, `Fp^3`)
 
 CertiFRI's `CertiFri.DecodeMargin` loses `2` points to `B.erase z` on both sides
 (`D.card + d + 3 ≤ 2 * θ * D.card`), which degenerates to `θ = 1` (`δ = 0`) when a
 matrix has height `1` (`ℓ = 0`, LDE domain size `|D| = 4`, degree bound `d = 1`).
 
-In Multi-STARK, the OOD opening point `ζ` is sampled uniformly from the quadratic
-extension `K = Fp[u]/(u^2 - 7)` and every opening point is either `ζ` or `ζ · g`
-with `g ∈ Fp \ {0}`. Whenever `ζ ∉ Fp` (which fails with probability only `1 / |Fp|`),
-neither `ζ` nor `ζ · g` belongs to the base-field coset `D ⊆ Fp ⊆ K`.
+In Protocol `v6` Multi-STARK, the OOD opening point `ζ` is sampled uniformly from the cubic
+extension `K = Fp[X] / (X^3 - X - 1)` (`|K| = p^3 ≈ 2^192`) and every opening point is either
+`ζ` or `ζ · g` with `g ∈ Fp \ {0}`. Whenever `ζ ∉ Fp` (`ζ.c1 ≠ 0 ∨ ζ.c2 ≠ 0`, which fails
+with probability only `1 / |Fp|^2 ≈ 2^-128`), neither `ζ` nor `ζ · g` belongs to the
+base-field coset `D ⊆ Fp ⊆ K`.
 
 This module proves:
 1. `DecodeMarginOff`: when `z ∉ D`, no point is erased from `B`, tightening the
    unique-decoding margin to `D.card + d + 1 ≤ 2 * θ * D.card` (`2δ + ρ + 1/|D| ≤ 1`).
-   At `logBlowup = 2`, this immediately gives `δ ≤ 1/4` at `ℓ = 0` (`|D| = 4, d = 1`)
-   and `δ ≤ 5/16` at `ℓ = 1` (`|D| = 8, d = 2`)!
 2. `decodeOff` & `eval_decodeOff_of_claimsHoldOff`: off-domain extractor and
    extraction theorem for any `z ∉ D`.
-3. `not_mem_coset_of_c1_ne_zero`: `ζ.c1 ≠ 0` implies `ζ ∉ D` and `ζ · g ∉ D` for
-   every base-field coset `D ⊆ K.embedHom '' Set.univ` and `g ≠ 0` in `Fp`.
-4. `card_c1_eq_zero_div`: the probability that a uniformly sampled `ζ ∈ K` lands in
-   `Fp` (`ζ.c1 = 0`) is exact `1 / Goldilocks.order`.
-5. `degree_zero_extract_const`: for `ℓ = 0` (`d = 0`), a constant polynomial `C a`
-   uniquely decodes under `D.card + 1 ≤ 2 * θ * D.card` (`δ ≤ 3/8` at `logBlowup = 2`,
-   the full unique-decoding radius, and `δ ≤ 1/4` even at `logBlowup = 1`).
+3. `not_mem_baseCoset_of_not_base`: `ζ.c1 ≠ 0 ∨ ζ.c2 ≠ 0` implies `ζ ∉ D` and `ζ · g ∉ D`
+   for every base-field coset `D ⊆ Fp ⊆ K` and `g ≠ 0` in `Fp`.
+4. `card_in_baseField` & `prob_in_baseField_eq`: the probability that a uniformly sampled
+   `ζ ∈ K` lands in `Fp` (`ζ.c1 = 0 ∧ ζ.c2 = 0`) is exact `1 / Goldilocks.order ^ 2`.
+5. `card_zeta_in_domain_or_shift_le` & `prob_zeta_in_domain_or_shift_le`: tight
+   `2 * |D| / |K|` (`≈ 2^-169` for `|D| = 2^22` in `Fp^3`).
 
 Zero `sorry`, standard axioms only.
 -/
 
 namespace Ix.Cert.MultiStark
 
-open CertiFri Polynomial
+open CertiFri CertiFri.P3 Polynomial
 
 section OffDomain
 
@@ -150,55 +148,78 @@ end OffDomain
 
 section ExtensionOffDomain
 
-/-- An element `ζ : K` with `ζ.c1 ≠ 0` is not in the image of `K.embedHom : Fp →+* K`. -/
-theorem not_in_baseField_of_c1_ne_zero {ζ : K} (h : ζ.c1 ≠ 0) (x : Fp) :
-    ζ ≠ K.embedHom x := by
+/-- An element `ζ : K` with `ζ.c1 ≠ 0 ∨ ζ.c2 ≠ 0` is not in the image of `Fp3Model.embedHom`. -/
+theorem not_in_baseField_of_not_base {ζ : K} (h : ζ.c1 ≠ 0 ∨ ζ.c2 ≠ 0) (x : Fp) :
+    ζ ≠ Fp3Model.embedHom x := by
   intro heq
-  have := congrArg K.c1 heq
-  exact h this
+  rcases h with h1 | h2
+  · exact h1 (congrArg Fp3Model.c1 heq)
+  · exact h2 (congrArg Fp3Model.c2 heq)
 
-/-- Multiplying an off-base-field element `ζ` (`ζ.c1 ≠ 0`) by any nonzero base-field
-element `g ∈ Fp \ {0}` remains off the base field (`(ζ * embedHom g).c1 ≠ 0`). -/
-theorem mul_base_c1_ne_zero {ζ : K} (hζ : ζ.c1 ≠ 0) {g : Fp} (hg : g ≠ 0) :
-    (ζ * K.embedHom g).c1 ≠ 0 := by
-  show ζ.c0 * 0 + ζ.c1 * g ≠ 0
-  simp [hζ, hg]
+/-- Multiplying an off-base-field element `ζ` (`ζ.c1 ≠ 0 ∨ ζ.c2 ≠ 0`) by any nonzero base-field
+element `g ∈ Fp \ {0}` remains off the base field. -/
+theorem mul_base_not_base {ζ : K} (hζ : ζ.c1 ≠ 0 ∨ ζ.c2 ≠ 0) {g : Fp} (hg : g ≠ 0) :
+    (ζ * Fp3Model.embedHom g).c1 ≠ 0 ∨ (ζ * Fp3Model.embedHom g).c2 ≠ 0 := by
+  have hc1 : (ζ * Fp3Model.embedHom g).c1 = ζ.c1 * g := by
+    change ζ.c0 * 0 + ζ.c1 * g + ζ.c1 * 0 + ζ.c2 * 0 + ζ.c2 * 0 = ζ.c1 * g
+    ring
+  have hc2 : (ζ * Fp3Model.embedHom g).c2 = ζ.c2 * g := by
+    change ζ.c0 * 0 + ζ.c1 * 0 + ζ.c2 * g + ζ.c2 * 0 = ζ.c2 * g
+    ring
+  rw [hc1, hc2]
+  rcases hζ with h1 | h2
+  · exact Or.inl (mul_ne_zero h1 hg)
+  · exact Or.inr (mul_ne_zero h2 hg)
 
-/-- If every element of a coset `D ⊆ K` lies in the base field `Fp` (which holds for every
-Goldilocks two-adic LDE coset `shift * ω^i`), and `ζ.c1 ≠ 0`, then neither `ζ` nor `ζ * g`
-(for `g ∈ Fp \ {0}`) belongs to `D`. -/
-theorem not_mem_baseCoset_of_c1_ne_zero {D : Finset K}
-    (hD : ∀ x ∈ D, x.c1 = 0) {ζ : K} (hζ : ζ.c1 ≠ 0) :
-    ζ ∉ D ∧ ∀ g : Fp, g ≠ 0 → ζ * K.embedHom g ∉ D := by
-  refine ⟨fun hmem => hζ (hD ζ hmem), fun g hg hmem => mul_base_c1_ne_zero hζ hg (hD _ hmem)⟩
+/-- If every element of a coset `D ⊆ K` lies in the base field `Fp` (`c1 = 0 ∧ c2 = 0`),
+and `ζ.c1 ≠ 0 ∨ ζ.c2 ≠ 0`, then neither `ζ` nor `ζ * g` (for `g ∈ Fp \ {0}`) belongs to `D`. -/
+theorem not_mem_baseCoset_of_not_base {D : Finset K}
+    (hD : ∀ x ∈ D, x.c1 = 0 ∧ x.c2 = 0) {ζ : K} (hζ : ζ.c1 ≠ 0 ∨ ζ.c2 ≠ 0) :
+    ζ ∉ D ∧ ∀ g : Fp, g ≠ 0 → ζ * Fp3Model.embedHom g ∉ D := by
+  refine ⟨fun hmem => ?_, fun g hg hmem => ?_⟩
+  · have h0 := hD ζ hmem
+    rcases hζ with h1 | h2
+    · exact h1 h0.1
+    · exact h2 h0.2
+  · have h0 := hD _ hmem
+    rcases mul_base_not_base hζ hg with h1 | h2
+    · exact h1 h0.1
+    · exact h2 h0.2
 
-/-- Every element of a two-adic coset generated by base-field `shift` and `ω` has `c1 = 0`. -/
-theorem baseCoset_c1_eq_zero {shift ω : Fp} {n j : ℕ} {x : K}
-    (hx : x ∈ (CertiFri.twoAdicDomain (K.embedHom ω) n j).image (K.embedHom shift * ·)) :
-    x.c1 = 0 := by
+/-- Every element of a two-adic coset generated by base-field `shift` and `ω` has `c1 = 0 ∧ c2 = 0`. -/
+theorem baseCoset_c1_c2_eq_zero {shift ω : Fp} {n j : ℕ} {x : K}
+    (hx : x ∈ (CertiFri.twoAdicDomain (Fp3Model.embedHom ω) n j).image (Fp3Model.embedHom shift * ·)) :
+    x.c1 = 0 ∧ x.c2 = 0 := by
   rcases Finset.mem_image.mp hx with ⟨y, hy, rfl⟩
   unfold CertiFri.twoAdicDomain at hy
   rcases Finset.mem_image.mp hy with ⟨i, _, rfl⟩
-  rw [← map_pow, ← map_pow, ← map_mul]
-  rfl
+  let shift' : GoldilocksField := shift
+  let ω' : GoldilocksField := ω
+  have hpow : Fp3Model.embedHom shift' * (Fp3Model.embedHom ω' ^ 2 ^ j) ^ i =
+      Fp3Model.embedHom (shift' * (ω' ^ 2 ^ j) ^ i) := by
+    rw [← map_pow, ← map_pow, ← map_mul]
+  change (Fp3Model.embedHom shift' * (Fp3Model.embedHom ω' ^ 2 ^ j) ^ i).c1 = 0 ∧
+    (Fp3Model.embedHom shift' * (Fp3Model.embedHom ω' ^ 2 ^ j) ^ i).c2 = 0
+  rw [hpow]
+  exact ⟨rfl, rfl⟩
 
-/-- Exact fraction of `K` with `c1 = 0` is `1 / Goldilocks.order` (i.e. `1 / (2^64 - 2^32 + 1)`). -/
-theorem card_c1_eq_zero :
-    (Finset.univ.filter (fun z : K => z.c1 = 0)).card = CertiFri.P3.Goldilocks.order := by
-  have heq : (Finset.univ.filter (fun z : K => z.c1 = 0)) =
-      Finset.univ.image (fun x : Fp => K.embedHom x) := by
+/-- Exact cardinality of the base subfield `Fp ⊆ K` (`c1 = 0 ∧ c2 = 0`) is `Goldilocks.order`. -/
+theorem card_in_baseField :
+    (Finset.univ.filter (fun z : K => z.c1 = 0 ∧ z.c2 = 0)).card = CertiFri.P3.Goldilocks.order := by
+  have heq : (Finset.univ.filter (fun z : K => z.c1 = 0 ∧ z.c2 = 0)) =
+      Finset.univ.image (fun x : GoldilocksField => Fp3Model.embedHom x) := by
     ext z
     simp only [Finset.mem_filter, Finset.mem_univ, true_and, Finset.mem_image]
     constructor
-    · intro h; exact ⟨z.c0, K.ext rfl h.symm⟩
-    · rintro ⟨x, rfl⟩; rfl
-  rw [heq, Finset.card_image_of_injective _ K.embedHom.injective, Finset.card_univ, ZMod.card]
-  rfl
+    · intro ⟨h1, h2⟩; exact ⟨z.c0, Fp3Model.ext rfl h1.symm h2.symm⟩
+    · rintro ⟨x, rfl⟩; exact ⟨rfl, rfl⟩
+  rw [heq, Finset.card_image_of_injective _ Fp3Model.embedHom_injective, Finset.card_univ, ZMod.card]
 
-theorem prob_c1_eq_zero_eq :
-    ((Finset.univ.filter (fun z : K => z.c1 = 0)).card : ℝ) / Fintype.card K =
-      1 / (CertiFri.P3.Goldilocks.order : ℝ) := by
-  rw [card_c1_eq_zero, K.card_K]
+/-- Exact fraction of `K = Fp^3` lying in the base field `Fp` is `1 / Goldilocks.order ^ 2` (`≈ 2^-128`). -/
+theorem prob_in_baseField_eq :
+    ((Finset.univ.filter (fun z : K => z.c1 = 0 ∧ z.c2 = 0)).card : ℝ) / Fintype.card K =
+      1 / ((CertiFri.P3.Goldilocks.order : ℝ) ^ 2) := by
+  rw [card_in_baseField, K.card_K]
   have hp : (CertiFri.P3.Goldilocks.order : ℝ) ≠ 0 := by
     unfold CertiFri.P3.Goldilocks.order; norm_num
   push_cast
@@ -208,9 +229,8 @@ set_option linter.constructorNameAsVariable false in
 /-- **Tight off-domain cardinality bound (`ζ ∉ D ∪ g⁻¹ • D`):**
 For any finite evaluation domain `D : Finset K` and nonzero shift `g : K`,
 at most `2 * D.card` challenges `ζ ∈ K` satisfy `ζ ∈ D ∨ ζ * g ∈ D`.
-In Goldilocks `Fp2` (`|K| ≈ 2^128`) with `|D| = 2^22`, this yields
-`2 * |D| / |K| ≈ 2^-105` (`105` bits), improving on the coarse `ζ.c1 = 0` bound
-(`1 / p ≈ 2^-64`) by `+41` formal bits at zero runtime cost. -/
+In Goldilocks `Fp^3` (`|K| ≈ 2^192`) with `|D| = 2^22`, this yields
+`2 * |D| / |K| ≈ 2^-169` (`169` bits). -/
 theorem card_zeta_in_domain_or_shift_le (D : Finset K) {g : K} (hg : g ≠ 0) :
     (Finset.univ.filter (fun z : K => z ∈ D ∨ z * g ∈ D)).card ≤ 2 * D.card := by
   classical

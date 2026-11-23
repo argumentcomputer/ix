@@ -106,6 +106,7 @@ jobs:
               - 'crates/ixon/**'
               - 'crates/record-pool/**'
               - 'crates/stark-key/**'
+              - 'crates/stark-shrinker/**'
             host:
               - 'FormalAiurKeys.lean'
               - 'FormalCodegen.lean'
@@ -174,6 +175,7 @@ jobs:
               - 'Ix/SpecDigest.lean'
               - 'Ix/Store.lean'
               - 'Ix/Typing.lean'
+              - 'Ix/IxVM/ClaimSeeds.lean'
               - 'Ix/IxVM/Consistency/**'
               - 'Ix/IxVM/ConsistencyAudit.lean'
               - 'Ix/IxVM/ConsistencyModelAudit.lean'
@@ -197,6 +199,7 @@ jobs:
               - 'Ix/Aggr/**'
               - 'Ix/Aiur/**'
               - 'Ix/MultiStark/**'
+              - 'Ix/IxVM/ClaimSeeds.lean'
               - 'Ix/IxVM/Consistency/**'
               - 'Ix/IxVM/ConsistencyAudit.lean'
               - 'Ix/IxVM/ConsistencyModelAudit.lean'
@@ -240,6 +243,7 @@ jobs:
               - 'IxSharingVerify/**'
               - 'Tests/Ix/Kernel/ModelLaws.lean'
               - 'Tests/Fixtures/circuit-composed-closure-manifest.txt'
+              - 'Tests/Fixtures/security-128-closure-manifest.txt'
             formal:
               - 'Aiur/**'
               - 'IxVM/**'
@@ -305,6 +309,7 @@ jobs:
               - 'Ix/Cli/ClaimPolicy.lean'
               - 'Ix/Cli/CodegenCmd.lean'
               - 'Scripts/CheckFormal.lean'
+              - 'Scripts/FriSecurity.lean'
               - 'Tests/Formal*.lean'
               - 'Tests/FormalChecks/**'
               - 'Tests/VerifyPath.lean'
@@ -566,7 +571,7 @@ jobs:
       # Share a single Cargo target directory across all CUDA compile/link steps
       # so Plonky3, multi-stark, and CUDA kernels compile once instead of twice.
       - name: Compile CUDA Rust targets
-        run: cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda,ix-proof-compression/cuda,ixvm/cuda,stark-verifier/cuda,ix-prover/cuda
+        run: cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda,ix-proof-compression/cuda,ixvm/cuda,stark-verifier/cuda,ix-prover/cuda,stark-shrinker/cuda
       - name: Link separate Aiur CUDA hosts
         run: cargo build --release --locked -p ixvm -p stark-verifier -p ix-prover --features parallel,cuda --bin ixvm-proof --bin stark-verifier --bin ix-prover
       - name: Link a CUDA-enabled Lean executable
@@ -1021,7 +1026,7 @@ jobs:
       - name: Build formal packages, exporters and check drivers
         run: |
           lake build --wfail \
-            ix formal-aiur-tests formal-aggregate-tests formal-checks formal-package-tests \
+            ix fri-security formal-aiur-tests formal-aggregate-tests formal-checks formal-package-tests \
             aiur/Aiur ixvm/IxVM multiStark/MultiStark \
             aiur/aiur_tests aiur/execution_tests aiur/trace_tests \
             aiur/u32_tests aiur/library_tests aiur/grouping_example aiur/depth_example \
@@ -1107,12 +1112,14 @@ jobs:
         run: |
           if [ "$(cat .lake/formal-build-revision 2>/dev/null || true)" != "$EXPECTED_SHA" ]; then
             lake build --wfail \
-              aiur/Aiur aiur/axiom_sweep aiur/aiur_tests aiur/execution_tests \
+              fri-security aiur/Aiur aiur/axiom_sweep aiur/aiur_tests aiur/execution_tests \
               aiur/trace_tests aiur/u32_tests ixvm/ixvm
             cargo build --release --locked -p ixvm --features parallel --bin ixvm
           fi
-      - name: Check formal-only root modules
-        run: lake run check-formal-modules --wfail
+      - name: Check formal-only root modules and 128-bit fri-security gate
+        run: |
+          lake run check-formal-modules --wfail
+          lake env lean --run Scripts/CheckFormal.lean --self-test
       - name: Run Aiur axiom sweep, unit tests and formal-package-tests
         run: |
           lake env Aiur/.lake/build/bin/axiom_sweep Aiur
@@ -1173,13 +1180,20 @@ jobs:
             IxVMRefinement.Endpoint.Companions \
             Ix.IxVM.ConsistencyAudit Ix.IxVM.ConsistencyModelAudit Ix.IxVM.Refinement.Audit Ix.Cert.Compile \
             Ix.Cert.MultiStark.Audit Ix.Cert.MultiStarkRefinement.Audit \
-            Ix.Cert.Aggr.Audit Ix.Cert.Compression.Audit Ix.Cert.IxccAiur.Audit \
+            Ix.Cert.Aggr.Audit Ix.Cert.Aggr.MonolithicRom Ix.Cert.Compression.Audit \
+            Ix.Cert.Compression.Bls12381.Audit Ix.Cert.Compression.StarkShrinkerAudit \
+            Ix.Cert.IxccAiur.Audit \
+            Ix.Cert.MultiStark.Security128Audit Ix.Cert.Aggr.Security128Audit \
+            Ix.Cert.Compression.Security128Audit Ix.Cert.Security128ClosureManifest \
             Ix.Cert.RecordSectionsBridge
           if [ "$IS_PUSH" != "true" ]; then
             lake env lean --run Scripts/CheckCiFilters.lean
             pinned=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' IxVMRefinement/Endpoint/ClosureManifest.lean)
             test -n "$pinned"
             printf '%s  Tests/Fixtures/circuit-composed-closure-manifest.txt\n' "$pinned" | sha256sum -c -
+            pinned128=$(sed -n 's/^def pinnedDigest : String := "\([0-9a-f]\{64\}\)".*/\1/p' Ix/Cert/Security128ClosureManifest.lean)
+            test -n "$pinned128"
+            printf '%s  Tests/Fixtures/security-128-closure-manifest.txt\n' "$pinned128" | sha256sum -c -
             lake env leanchecker \
               IxVM.CompiledCert \
               IxVMRefinement.Endpoint.ComposedResidual \
@@ -1194,8 +1208,15 @@ jobs:
               Ix.Cert.MultiStark.Audit \
               Ix.Cert.MultiStarkRefinement.Audit \
               Ix.Cert.Aggr.Audit \
+              Ix.Cert.Aggr.MonolithicRom \
               Ix.Cert.Compression.Audit \
+              Ix.Cert.Compression.Bls12381.Audit \
+              Ix.Cert.Compression.StarkShrinkerAudit \
               Ix.Cert.IxccAiur.Audit \
+              Ix.Cert.MultiStark.Security128Audit \
+              Ix.Cert.Aggr.Security128Audit \
+              Ix.Cert.Compression.Security128Audit \
+              Ix.Cert.Security128ClosureManifest \
               Ix.Cert.RecordSectionsBridge
             tmp=$(mktemp -d)
             {

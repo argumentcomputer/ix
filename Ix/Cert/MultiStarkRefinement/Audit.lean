@@ -78,7 +78,8 @@ info: @Ix.Cert.MultiStarkRefinement.gl_inverse_spec : ∀ {x iv : Ix.Cert.MultiS
 /--
 info: @Ix.Cert.MultiStarkRefinement.eg_inverse_spec : ∀ {a : Ix.Cert.MultiStark.K} {ninv : Ix.Cert.MultiStark.Fp},
   a.norm * (a.norm * ninv - 1) = 0 →
-    ninv * (a.norm * ninv - 1) = 0 → { c0 := a.c0 * ninv, c1 := (0 - a.c1) * ninv } = a⁻¹
+    ninv * (a.norm * ninv - 1) = 0 →
+      { c0 := a.adjugate.c0 * ninv, c1 := a.adjugate.c1 * ninv, c2 := a.adjugate.c2 * ninv } = a⁻¹
 -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.MultiStarkRefinement.eg_inverse_spec
@@ -86,26 +87,36 @@ info: @Ix.Cert.MultiStarkRefinement.eg_inverse_spec : ∀ {a : Ix.Cert.MultiStar
 /--
 info: Ix.Cert.MultiStarkRefinement.ext_is_zero_iff : ∀ (e : Ix.Cert.MultiStark.EF),
   Ix.Cert.MultiStarkRefinement.isZeroFp (Ix.Cert.MultiStark.baseToFp e.c0) *
-        Ix.Cert.MultiStarkRefinement.isZeroFp (Ix.Cert.MultiStark.baseToFp e.c1) =
+          Ix.Cert.MultiStarkRefinement.isZeroFp (Ix.Cert.MultiStark.baseToFp e.c1) *
+        Ix.Cert.MultiStarkRefinement.isZeroFp (Ix.Cert.MultiStark.baseToFp e.c2) =
       1 ↔
-    e = CertiFri.P3.GoldilocksExt.zero
+    e = CertiFri.P3.GoldilocksExt3.zero
 -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.MultiStarkRefinement.ext_is_zero_iff
 
 /--
-info: Ix.Cert.MultiStarkRefinement.pair_mul_refines : ∀ (a0 a1 b0 b1 : Ix.Cert.MultiStark.EF),
-  match Ix.Cert.MultiStark.pairMul a0 a1 b0 b1 with
-  | (r0, r1) =>
+info: Ix.Cert.MultiStarkRefinement.triple_mul_refines : ∀ (a0 a1 a2 b0 b1 b2 : Ix.Cert.MultiStark.EF),
+  match Ix.Cert.MultiStark.tripleMul a0 a1 a2 b0 b1 b2 with
+  | (r0, r1, r2) =>
     Ix.Cert.MultiStark.extToModel r0 =
         Ix.Cert.MultiStark.extToModel a0 * Ix.Cert.MultiStark.extToModel b0 +
-          { c0 := 7, c1 := 0 } * (Ix.Cert.MultiStark.extToModel a1 * Ix.Cert.MultiStark.extToModel b1) ∧
+          Ix.Cert.MultiStark.extToModel a1 * Ix.Cert.MultiStark.extToModel b2 +
+          Ix.Cert.MultiStark.extToModel a2 * Ix.Cert.MultiStark.extToModel b1 ∧
       Ix.Cert.MultiStark.extToModel r1 =
-        Ix.Cert.MultiStark.extToModel a0 * Ix.Cert.MultiStark.extToModel b1 +
-          Ix.Cert.MultiStark.extToModel a1 * Ix.Cert.MultiStark.extToModel b0
+          Ix.Cert.MultiStark.extToModel a0 * Ix.Cert.MultiStark.extToModel b1 +
+            Ix.Cert.MultiStark.extToModel a1 * Ix.Cert.MultiStark.extToModel b0 +
+            Ix.Cert.MultiStark.extToModel a1 * Ix.Cert.MultiStark.extToModel b2 +
+            Ix.Cert.MultiStark.extToModel a2 * Ix.Cert.MultiStark.extToModel b1 +
+            Ix.Cert.MultiStark.extToModel a2 * Ix.Cert.MultiStark.extToModel b2 ∧
+        Ix.Cert.MultiStark.extToModel r2 =
+          Ix.Cert.MultiStark.extToModel a0 * Ix.Cert.MultiStark.extToModel b2 +
+            Ix.Cert.MultiStark.extToModel a1 * Ix.Cert.MultiStark.extToModel b1 +
+            Ix.Cert.MultiStark.extToModel a2 * Ix.Cert.MultiStark.extToModel b0 +
+            Ix.Cert.MultiStark.extToModel a2 * Ix.Cert.MultiStark.extToModel b2
 -/
 #guard_msgs (whitespace := lax) in
-#check @Ix.Cert.MultiStarkRefinement.pair_mul_refines
+#check @Ix.Cert.MultiStarkRefinement.triple_mul_refines
 
 /--
 info: Ix.Cert.MultiStarkRefinement.two_adic_gen_refines : ∀ (b : Fin 33),
@@ -139,7 +150,7 @@ info: @Ix.Cert.MultiStarkRefinement.rows_pop_canonical_eq : ∀ {x r : Fin 8 →
 
 /--
 info: Ix.Cert.MultiStarkRefinement.eg_div_base_eq : ∀ (e : Ix.Cert.MultiStark.K) (s : Ix.Cert.MultiStark.Fp),
-  e * { c0 := s, c1 := 0 }⁻¹ = { c0 := e.c0 * s⁻¹, c1 := e.c1 * s⁻¹ }
+  e * { c0 := s, c1 := 0, c2 := 0 }⁻¹ = { c0 := e.c0 * s⁻¹, c1 := e.c1 * s⁻¹, c2 := e.c2 * s⁻¹ }
 -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.MultiStarkRefinement.eg_div_base_eq
@@ -180,7 +191,7 @@ info: Ix.Cert.MultiStarkRefinement.bucket_finalize_distributes : ∀ (q0 q1 : Ix
 -- 3. Wire deserialization, transcript, MMCS, preamble bounds, and verifyBatch refinement
 /--
 info: Ix.Cert.MultiStarkRefinement.lookup_groups_count_refines : ∀ (c : Ix.Cert.MultiStark.SysCircuit),
-  Ix.Cert.MultiStarkRefinement.lookupGroupsCountModel c.lookups.size 1 (max 1 c.lookupGroupSize) = c.logupGroupCount
+  Ix.Cert.MultiStarkRefinement.lookupGroupsCountModel c.lookups.size 0 (max 1 c.lookupGroupSize) = c.logupGroupCount
 -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.MultiStarkRefinement.lookup_groups_count_refines
@@ -655,7 +666,7 @@ info: Ix.Cert.MultiStarkRefinement.goldilocksLibrary_nonzero_inverses_pinned : (
       "gl_inv_nonzero" [] 1 =
     true ∧
   Ix.Cert.MultiStarkRefinement.fnHasCallsAndAsserts Aiur.Library.Field.Goldilocks.declarations "Goldilocks"
-      "eg_inv_nonzero" [] 1 =
+      "eg_inv_nonzero" ["gl_inv_nonzero"] 0 =
     true ∧
   Ix.Cert.MultiStarkRefinement.fnHasCallsAndAsserts Aiur.Library.Field.Goldilocks.declarations "Goldilocks"
       "eg_div_nonzero" ["eg_mul", "eg_inv_nonzero"] 0 =
@@ -670,13 +681,15 @@ info: @Ix.Cert.MultiStarkRefinement.gl_inv_nonzero_spec : ∀ {x iv : Ix.Cert.Mu
 #check @Ix.Cert.MultiStarkRefinement.gl_inv_nonzero_spec
 /--
 info: @Ix.Cert.MultiStarkRefinement.eg_inv_nonzero_spec : ∀ {a : Ix.Cert.MultiStark.K} {ninv : Ix.Cert.MultiStark.Fp},
-  a.norm * ninv = 1 → a ≠ 0 ∧ { c0 := a.c0 * ninv, c1 := (0 - a.c1) * ninv } = a⁻¹
+  a.norm * ninv = 1 →
+    a ≠ 0 ∧ { c0 := a.adjugate.c0 * ninv, c1 := a.adjugate.c1 * ninv, c2 := a.adjugate.c2 * ninv } = a⁻¹
 -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.MultiStarkRefinement.eg_inv_nonzero_spec
 /--
 info: @Ix.Cert.MultiStarkRefinement.eg_div_nonzero_spec : ∀ {a b : Ix.Cert.MultiStark.K} {ninv : Ix.Cert.MultiStark.Fp},
-  b.norm * ninv = 1 → b ≠ 0 ∧ a * { c0 := b.c0 * ninv, c1 := (0 - b.c1) * ninv } = a * b⁻¹
+  b.norm * ninv = 1 →
+    b ≠ 0 ∧ a * { c0 := b.adjugate.c0 * ninv, c1 := b.adjugate.c1 * ninv, c2 := b.adjugate.c2 * ninv } = a * b⁻¹
 -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.MultiStarkRefinement.eg_div_nonzero_spec

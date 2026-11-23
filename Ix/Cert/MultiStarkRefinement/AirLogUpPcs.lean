@@ -573,7 +573,7 @@ theorem verifyShard_of_witness {sys : StarkSystem} {header : ShardHeader}
   have h2 : ((activeCircuitIndices proof.active).size == 0 ||
       proof.intermediateAccumulators.size != (activeCircuitIndices proof.active).size) = false := by
     simp [w.active_nonempty, w.accs_len]
-  have h3 : (w.transcript_pcs.zeta == GoldilocksExt.zero) = false :=
+  have h3 : (w.transcript_pcs.zeta == GoldilocksExt3.zero) = false :=
     beq_false_of_ne w.transcript_pcs.zeta_ne_zero
   have hpcs : buildPcsInputsWithOpts? sys (activeCircuitIndices proof.active) proof
       w.transcript_pcs.zeta false =
@@ -647,7 +647,7 @@ structure BatchVerifyWitness (sys : StarkSystem) (batch : BatchProof)
     ShardVerifyWitness sys batch.preamble.headers[s] s
       (batch.proofs[s]'(by rw [proofs_size]; exact hs))
       batchState beta gamma (residuals[s]'(by rw [residuals_size]; exact hs))
-  total_zero : (residuals.foldl GoldilocksExt.add msgAcc) = GoldilocksExt.zero
+  total_zero : (residuals.foldl GoldilocksExt3.add msgAcc) = GoldilocksExt3.zero
   claims_match : (batch.preamble.headers.foldl (fun acc h => acc ++ h.claims) #[]) = expectedClaims
 
 /-- **Batch Verifier Refinement (`verifyBatch_of_witness`):**
@@ -669,7 +669,7 @@ theorem verifyBatch_of_witness {sys : StarkSystem} {batch : BatchProof}
     simp [Std.Legacy.Range.size]
   rw [hrg.1, hrg.2.1, hrg.2.2, ← List.range_eq_range']
   set inv : Nat → EF × Array (Array F) := fun k =>
-    ((w.residuals.toList.take k).foldl GoldilocksExt.add w.msgAcc,
+    ((w.residuals.toList.take k).foldl GoldilocksExt3.add w.msgAcc,
      (headers.toList.take k).foldl (fun acc h => acc ++ h.claims) #[])
   have hinv0 : (w.msgAcc, (#[] : Array (Array F))) = inv 0 := rfl
   rw [hinv0, forIn_range_option_inv n inv]
@@ -677,7 +677,7 @@ theorem verifyBatch_of_witness {sys : StarkSystem} {batch : BatchProof}
       List.take_of_length_le (by simp [w.residuals_size, n, headers])
     have htakeH : headers.toList.take n = headers.toList :=
       List.take_of_length_le (by simp [n])
-    have ht : w.residuals.toList.foldl GoldilocksExt.add w.msgAcc = GoldilocksExt.zero := by
+    have ht : w.residuals.toList.foldl GoldilocksExt3.add w.msgAcc = GoldilocksExt3.zero := by
       have := w.total_zero
       rwa [← Array.foldl_toList] at this
     have hc : headers.toList.foldl (fun acc h => acc ++ h.claims) #[] = expectedClaims := by

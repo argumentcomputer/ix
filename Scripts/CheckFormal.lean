@@ -30,7 +30,7 @@ namespace CheckFormal
 open System
 
 def usage : String :=
-  "usage: lean --run Scripts/CheckFormal.lean [--dry-run | --self-test | --help]\n\n" ++
+  "usage: lean --run Scripts/CheckFormal.lean [--dry-run | --self-test | --security-128-gate | --help]\n\n" ++
   "Integration gate for IxVM, MultiStark, Aiur, and the ix CLI.\n" ++
   "Honors IX_TEST_OUTPUT_DIR, IX_TEST_CUDA, MULTI_STARK_CUDA_DEVICE,\n" ++
   "IX_AIUR_ARTIFACT, IX_RECURSION_ARTIFACT, and IX_AGGR_ARTIFACT."
@@ -39,6 +39,7 @@ inductive Mode where
   | run
   | dryRun
   | selfTest
+  | security128Gate
   | help
   deriving BEq, Repr
 
@@ -47,6 +48,7 @@ def parseArgs : List String → Except String Mode
   | ["--help"] | ["-h"] => .ok .help
   | ["--dry-run"] => .ok .dryRun
   | ["--self-test"] => .ok .selfTest
+  | ["--security-128-gate"] => .ok .security128Gate
   | other => .error s!"unexpected arguments: {" ".intercalate other}"
 
 /-- Return the value of an environment variable when it is set and non-empty,
@@ -124,7 +126,43 @@ inductive Step where
   | exec (cmd : String) (args : Array String) (env : Array (String × Option String))
   | parallel (substeps : Array (String × Array String × Array (String × Option String)))
   | proveAndVerify (proveLog : FilePath) (env : Array (String × Option String))
+  | security128Gate (env : Array (String × Option String))
   deriving BEq, Repr
+
+/-- Reference instance `(logTrace=20, columns=200, constraints=200, maxDegree=5,
+lookupRows=1048576, lookupWidth=10)` and positive/negative parameter controls
+exercised by the 128-bit `fri-security` gate: `(label, expectPass, cliArgs)`. -/
+def security128GateCases : Array (String × Bool × Array String) :=
+  let inst := "20,200,200,5,1048576,10"
+  #[
+    ("Fp3 v6 UD (2,160,0,20) 48B XOF >= 128b proven", true,
+      #["--instance", inst, "--extension-degree", "3", "--digest-bytes", "48",
+        "--parameters", "2,160,0,20", "--require-min-bits", "128", "--regime", "proven"]),
+    ("Fp3 v6 Johnson (2,128,0,20) 48B XOF >= 128b johnson", true,
+      #["--instance", inst, "--extension-degree", "3", "--digest-bytes", "48",
+        "--parameters", "2,128,0,20", "--require-min-bits", "128", "--regime", "johnson"]),
+    ("Fp3 v6 Johnson (2,118,0,20) 48B XOF >= 128b johnson", true,
+      #["--instance", inst, "--extension-degree", "3", "--digest-bytes", "48",
+        "--parameters", "2,118,0,20", "--require-min-bits", "128", "--regime", "johnson"]),
+    ("NEG: Fp2 (2,160,0,20) rejected at 128b proven", false,
+      #["--instance", inst, "--extension-degree", "2", "--digest-bytes", "48",
+        "--parameters", "2,160,0,20", "--require-min-bits", "128", "--regime", "proven"]),
+    ("NEG: Fp2 (2,160,0,20) rejected at 128b johnson", false,
+      #["--instance", inst, "--extension-degree", "2", "--digest-bytes", "48",
+        "--parameters", "2,160,0,20", "--require-min-bits", "128", "--regime", "johnson"]),
+    ("NEG: Fp3 v5 default (2,100,0,20) rejected at 128b proven", false,
+      #["--instance", inst, "--extension-degree", "3", "--digest-bytes", "48",
+        "--parameters", "2,100,0,20", "--require-min-bits", "128", "--regime", "proven"]),
+    ("NEG: Fp3 v5 default (2,100,0,20) rejected at 128b johnson", false,
+      #["--instance", inst, "--extension-degree", "3", "--digest-bytes", "48",
+        "--parameters", "2,100,0,20", "--require-min-bits", "128", "--regime", "johnson"]),
+    ("NEG: Fp3 deceptive (4,55,0,0) rejected at 128b proven", false,
+      #["--instance", inst, "--extension-degree", "3", "--digest-bytes", "48",
+        "--parameters", "4,55,0,0", "--require-min-bits", "128", "--regime", "proven"]),
+    ("NEG: Fp3 deceptive (4,55,0,0) rejected at 128b johnson", false,
+      #["--instance", inst, "--extension-degree", "3", "--digest-bytes", "48",
+        "--parameters", "4,55,0,0", "--require-min-bits", "128", "--regime", "johnson"])
+  ]
 
 /-- Construct the full ordered command plan for the formal gate. -/
 def buildPlan (cfg : EnvConfig) (formalTmp : FilePath) : Array Step := Id.run do
@@ -141,7 +179,7 @@ def buildPlan (cfg : EnvConfig) (formalTmp : FilePath) : Array Step := Id.run do
 
   unless cfg.skipBuild do
     steps := push "lake" #[
-      "build", "ix", "ixvm/ixvm", "multiStark/stark-export",
+      "build", "ix", "fri-security", "ixvm/ixvm", "multiStark/stark-export",
       "formal-aiur-tests", "formal-aggregate-tests", "formal-checks",
       "aiur/grouping_example", "aiur/depth_example", "aiur/Aiur.Library.U8Facts",
       "aiur/u32_tests", "aiur/library_tests"
@@ -152,6 +190,9 @@ def buildPlan (cfg : EnvConfig) (formalTmp : FilePath) : Array Step := Id.run do
       "--bin", "ixvm-proof", "--bin", "stark-verifier", "--bin", "ix-prover",
       "--example", "claim_fixture"
     ] env steps
+
+  -- 128-bit FRI security gate (positive Fp^3 profiles + sub-128-bit negative controls).
+  steps := steps.push (.security128Gate env)
 
   let aiurArt := match cfg.aiurArtifact with
     | some path => path
@@ -296,6 +337,10 @@ def formatStep : Step → String
     s!"{e} .lake/build/bin/ix prove Nat.add_comm > {log}; " ++
     s!"{e} .lake/build/bin/ix verify <last-line>; " ++
     s!"{eLookup} .lake/build/bin/ix verify <last-line>"
+  | .security128Gate env =>
+    let e := formatEnv env
+    let base := s!".lake/build/bin/fri-security --require-min-bits 128 ({security128GateCases.size} cases)"
+    if e.isEmpty then base else s!"{e} {base}"
 
 /-- Remove entries under Lean's `sysroot` from a colon-separated `LD_LIBRARY_PATH`.
 Running under an outer `lake env` prepends Lean's bundled `libLLVM` (built without
@@ -362,6 +407,30 @@ def runProveAndVerify (cwd : FilePath) (sysroot : String) (proveLog : FilePath)
   let rc2 ← IO.ofExcept (← IO.wait t2)
   return if rc1 != 0 then rc1 else rc2
 
+/-- Run the self-tested 128-bit `fri-security` gate (positive `Fp^3` profiles must exit 0;
+sub-128-bit `Fp^2`, `(2,100,0,20)`, and `(4,55,0,0)` controls must exit non-zero). -/
+def runSecurity128Gate (cwd : FilePath) (sysroot : String)
+    (env : Array (String × Option String)) : IO UInt32 := do
+  let binPath := cwd / ".lake" / "build" / "bin" / "fri-security"
+  let useBin ← binPath.pathExists
+  let (cmd, baseArgs) :=
+    if useBin then (binPath.toString, #[])
+    else ("lake", #["exe", "fri-security"])
+  let env ← sanitizeEnvForCmd sysroot cmd env
+  for (label, expectPass, cliArgs) in security128GateCases do
+    let out ← IO.Process.output {
+      cmd, args := baseArgs ++ cliArgs, cwd := some cwd, env
+    }
+    let passed := out.exitCode == 0
+    if passed != expectPass then
+      let want := if expectPass then "PASS (exit 0)" else "FAIL (non-zero exit)"
+      IO.eprintln s!"[check-formal:128b] MISMATCH for '{label}': expected {want}, got exit {out.exitCode}"
+      if !out.stdout.isEmpty then IO.eprintln out.stdout
+      if !out.stderr.isEmpty then IO.eprintln out.stderr
+      return 1
+  IO.println s!"[check-formal:128b] OK: {security128GateCases.size} 128-bit fri-security gate controls passed."
+  return 0
+
 def runStep (cwd : FilePath) (sysroot : String) : Step → IO UInt32
   | .exec cmd args env => runExec cwd sysroot cmd args env
   | .parallel substeps => do
@@ -373,6 +442,7 @@ def runStep (cwd : FilePath) (sysroot : String) : Step → IO UInt32
       if code != 0 && firstErr == 0 then firstErr := code
     return firstErr
   | .proveAndVerify proveLog env => runProveAndVerify cwd sysroot proveLog env
+  | .security128Gate env => runSecurity128Gate cwd sysroot env
 
 def prepareWorkDir (repoRoot : FilePath) (cfg : EnvConfig) : IO (FilePath × Bool) := do
   if let some outDir := cfg.outputDir then
@@ -397,6 +467,7 @@ def selfTest : IO Unit := do
   ensure ((parseArgs []).toOption == some .run) "default mode"
   ensure ((parseArgs ["--dry-run"]).toOption == some .dryRun) "dry-run mode"
   ensure ((parseArgs ["--self-test"]).toOption == some .selfTest) "self-test mode"
+  ensure ((parseArgs ["--security-128-gate"]).toOption == some .security128Gate) "security-128-gate mode"
   ensure ((parseArgs ["--help"]).toOption == some .help) "help mode"
   ensure ((parseArgs ["--bogus"]).toOption.isNone) "reject unknown flag"
   ensure (lastLine "line1\n/tmp/proof.bin\n" == "/tmp/proof.bin") "lastLine trailing newline"
@@ -427,8 +498,15 @@ def selfTest : IO Unit := do
       | .exec cmd args _ => pred cmd args
       | .parallel substeps => substeps.any fun (cmd, args, _) => pred cmd args
       | .proveAndVerify .. => false
-  ensure (cpuPlan.size == 11) s!"unexpected cpu plan length {cpuPlan.size}"
-  ensure (countSubsteps cpuPlan == 29) s!"unexpected cpu substep count {countSubsteps cpuPlan}"
+      | .security128Gate .. => false
+  let hasSecurity128Gate (plan : Array Step) : Bool :=
+    plan.any fun
+      | .security128Gate .. => true
+      | _ => false
+  ensure (cpuPlan.size == 12) s!"unexpected cpu plan length {cpuPlan.size}"
+  ensure (countSubsteps cpuPlan == 30) s!"unexpected cpu substep count {countSubsteps cpuPlan}"
+  ensure (hasSecurity128Gate cpuPlan) "cpu plan runs 128-bit fri-security gate"
+  ensure (hasSecurity128Gate skipPlan) "skipBuild plan still runs 128-bit fri-security gate"
   ensure (hasSubcmd cpuPlan fun cmd args =>
       cmd == ".lake/build/bin/formal-checks" && args.contains "checking")
     "cpu plan runs formal-checks checking gate"
@@ -459,6 +537,10 @@ def selfTest : IO Unit := do
     some "/usr/local/lib") "stripSysrootFromPath removes lean sysroot entries"
   ensure (stripSysrootFromPath "/opt/lean" "/opt/lean/lib/lean:/opt/lean/lib" == none)
     "stripSysrootFromPath unsets empty LD_LIBRARY_PATH"
+  let repoRoot ← findRepoRoot (← IO.currentDir)
+  let sysroot := (← Lean.findSysroot).toString
+  let gateRc ← runSecurity128Gate repoRoot sysroot #[]
+  ensure (gateRc == 0) s!"128-bit fri-security gate failed with exit code {gateRc}"
   IO.println "CheckFormal self-tests passed."
 
 end CheckFormal
@@ -474,6 +556,10 @@ def main (args : List String) : IO UInt32 := do
   | .ok .selfTest =>
     CheckFormal.selfTest
     return 0
+  | .ok .security128Gate =>
+    let repoRoot ← CheckFormal.findRepoRoot (← IO.currentDir)
+    let sysroot := (← Lean.findSysroot).toString
+    CheckFormal.runSecurity128Gate repoRoot sysroot #[]
   | .ok .dryRun =>
     let repoRoot ← CheckFormal.findRepoRoot (← IO.currentDir)
     let cfg ← CheckFormal.readEnvConfig

@@ -342,7 +342,7 @@ unique-decoding query soundness (`912 * 55 = 50160 < 80000`) and is REJECTED by 
 theorem negative_control_deceptive_high_blowup_envelope :
     ¬ SecurityEnvelopeOk deceptiveHighBlowupParams := by
   intro h
-  have hud := h.2.2.2.2.2.2.2.2.2
+  have hud := h.2.2.2.2.2.2.2.2.2.1
   unfold deceptiveHighBlowupParams minProvableUdMillibits udQueryMillibits udMillibitsPerQuery at hud
   simp at hud
 

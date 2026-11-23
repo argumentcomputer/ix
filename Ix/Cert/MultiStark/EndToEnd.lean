@@ -123,9 +123,9 @@ theorem ixvm_circuit_sound_of_extracted_trace
   exact hcirc compiled physical certified bits plan activated hvalid hrom_len d signed rooted
     outside (hlen ▸ hrows_len) hchecked arguments decoded
 
-/-- **Goldilocks Pruned-MMCS Concrete FRI Soundness Instantiation:**
+/-- **Goldilocks Pruned-MMCS Concrete FRI Soundness Instantiation (`Fp^3`):**
 Instantiates `soundness_pruned_uniqueDecoding` at the concrete Goldilocks
-quadratic-extension `goldilocksFieldModel` (`p = 2^64 - 2^32 + 1`, `K = Fp[u]/(u^2 - 7)`),
+cubic-extension `goldilocksFieldModel` (`p = 2^64 - 2^32 + 1`, `K = Fp[X]/(X^3 - X - 1)`),
 eliminating all abstract field-model hypotheses. -/
 theorem goldilocks_pruned_fri_soundness
     (params : CertiFri.FriParams) (shape : CertiFri.Fri.ClaimShape)
@@ -133,11 +133,9 @@ theorem goldilocks_pruned_fri_soundness
     (hheight : params.logFinalHeight ≤ CertiFri.Fri.logMaxHeight params.logBlowup shape)
     {δ : ℝ} (hδ : 0 ≤ δ) (hrate : 2 * δ + (1 / 2) ^ params.logBlowup ≤ 1) {εmax : ℝ}
     (hα : ((CertiFri.Fri.claimRefs params.logBlowup shape).length : ℝ) *
-        ((2 : ℝ) ^ CertiFri.Fri.logMaxHeight params.logBlowup shape *
-          (δ * 2 ^ CertiFri.Fri.logMaxHeight params.logBlowup shape + 1) + 1) /
+        ((1 + δ) * (2 : ℝ) ^ CertiFri.Fri.logMaxHeight params.logBlowup shape) /
         Fintype.card K ≤ εmax)
-    (hβ : 2 * ((2 : ℝ) ^ CertiFri.Fri.logMaxHeight params.logBlowup shape *
-          (δ * 2 ^ CertiFri.Fri.logMaxHeight params.logBlowup shape + 1) + 1) /
+    (hβ : ((1 + δ) * (2 : ℝ) ^ CertiFri.Fri.logMaxHeight params.logBlowup shape) /
         Fintype.card K / 2 ^ params.commitPowBits ≤ εmax)
     (hq : (1 - δ) ^ params.numQueries / 2 ^ params.queryPowBits ≤ εmax)
     {D : Type} [DecidableEq D] [Inhabited D] [Fintype D]
@@ -146,7 +144,7 @@ theorem goldilocks_pruned_fri_soundness
       (CertiFri.Exec.OracleAnswer (D := D) goldilocksFieldModel params shape
         (goldilocksWellFormed params shape hlog)) A}
     {Q : ℕ} (hadv : adv.QueryBound Q)
-    (attempt : A → PrunedAttempt CertiFri.P3.Goldilocks CertiFri.P3.GoldilocksExt D) :
+    (attempt : A → PrunedAttempt CertiFri.P3.Goldilocks CertiFri.P3.GoldilocksExt3 D) :
     CertiFri.Oracle.OracleComp.prob (fun res l =>
         (∃ f : ∀ x, CertiFri.Exec.OracleAnswer (D := D) goldilocksFieldModel params shape
             (goldilocksWellFormed params shape hlog) x,
@@ -170,19 +168,15 @@ theorem goldilocks_pruned_fri_soundness
           (goldilocksWellFormed params shape hlog)).rounds + 2) +
           2 * (CertiFri.Exec.modelParams goldilocksFieldModel params shape
             (goldilocksWellFormed params shape hlog)).verifierQueries) * εmax +
-        (((CertiFri.Exec.modelParams goldilocksFieldModel params shape
-            (goldilocksWellFormed params shape hlog)).batches + 1) *
-            ((CertiFri.Exec.modelParams goldilocksFieldModel params shape
-              (goldilocksWellFormed params shape hlog)).rounds + 2) + 3) *
+        ((max ((CertiFri.Exec.modelParams goldilocksFieldModel params shape
+            (goldilocksWellFormed params shape hlog)).batches +
+            (CertiFri.Exec.modelParams goldilocksFieldModel params shape
+              (goldilocksWellFormed params shape hlog)).rounds) 3 + 3 : ℕ) : ℝ) *
           (Q + ((CertiFri.Exec.modelParams goldilocksFieldModel params shape
             (goldilocksWellFormed params shape hlog)).rounds + 2) +
             2 * (CertiFri.Exec.modelParams goldilocksFieldModel params shape
-              (goldilocksWellFormed params shape hlog)).verifierQueries) *
-          (Q + ((CertiFri.Exec.modelParams goldilocksFieldModel params shape
-            (goldilocksWellFormed params shape hlog)).rounds + 2) +
-            2 * (CertiFri.Exec.modelParams goldilocksFieldModel params shape
-              (goldilocksWellFormed params shape hlog)).verifierQueries - 1) /
-          (2 * Fintype.card D) :=
+              (goldilocksWellFormed params shape hlog)).verifierQueries) ^ 2 /
+          (4 * Fintype.card D) :=
   soundness_pruned_uniqueDecoding goldilocksFieldModel params shape
     (goldilocksWellFormed params shape hlog) hheight hδ hrate hα hβ hq hadv attempt
 
