@@ -18,6 +18,13 @@ structure Counts where
   dynamicIncUnits : Nat := 0
   decAttempts : Nat := 0
   decCalls : Nat := 0
+  resetAttempts : Nat := 0
+  resetCalls : Nat := 0
+  resetUnique : Nat := 0
+  reuseAttempts : Nat := 0
+  reuseCalls : Nat := 0
+  reuseInPlace : Nat := 0
+  reuseFresh : Nat := 0
   frees : Nat := 0
   live : Nat := 0
   peakLive : Nat := 0
@@ -33,6 +40,8 @@ inductive Event where
   | alloc
   | inc (value : Own.RVal) (n : Nat)
   | dec
+  | reset
+  | reuse
   | other
 
 /-- The actual instruction and decoded marker determine the candidate event.
@@ -46,6 +55,11 @@ def event (P : Cfg.Rc.Program) : Cfg.State → Event
         | some (_, .inc x n) => .inc ((fr.env.get? x).getD .erased) n
         | some (_, .dec _) => .dec
         | none => .other
+      else if Cfg.Rc.isReuseOp P.base.size i then
+        match Cfg.Rc.decodeReset P.base.size i, Cfg.Rc.decodeReuse P.base.size i with
+        | some _, none => .reset
+        | none, some _ => .reuse
+        | _, _ => .other
       else match i with
         | .bind _ (.alloc ..) => .alloc
         | _ => .other
@@ -57,6 +71,8 @@ def attempt (e : Event) (c : Counts) : Counts :=
   | .alloc => { c with allocAttempts := c.allocAttempts + 1 }
   | .inc .. => { c with incAttempts := c.incAttempts + 1 }
   | .dec => { c with decAttempts := c.decAttempts + 1 }
+  | .reset => { c with resetAttempts := c.resetAttempts + 1 }
+  | .reuse => { c with reuseAttempts := c.reuseAttempts + 1 }
   | .other => c
 
 /-- Each pair is one actual dec's before/after cell. Only a count decrease,
@@ -66,6 +82,18 @@ def decCell (before after : Own.Cell) : Option Nat :=
   match before, after with
   | .live n .dyn _, .dead => if n > 0 then some 1 else none
   | .live n .dyn b, .live m .dyn b' => if b == b' && 0 < m && m < n then some 0 else none
+  | _, _ => none
+
+/-- Classify one existing-cell delta during a `reset`: unchanged, dead-field/shared-root/recycled
+`dec` (returning `freed`), or live-field `inc` on shared fallback (returning `dynIncs`). -/
+def resetCell (before after : Own.Cell) : Option (Nat × Nat) :=
+  if before == after then some (0, 0) else
+  match before, after with
+  | .live n .dyn _, .dead => if n > 0 then some (1, 0) else none
+  | .live n .dyn b, .live m .dyn b' =>
+    if b == b' && 0 < m && m < n then some (0, 0)
+    else if b == b' && n > 0 && m > n then some (0, m - n)
+    else none
   | _, _ => none
 
 def completed (e : Event) (before after : Own.Heap) (c : Counts) : Except String Counts := do
@@ -98,6 +126,52 @@ def completed (e : Event) (before after : Own.Heap) (c : Counts) : Except String
       let some count := decCell a b | throw "dec changed a body, revived a cell, or increased a count"
       freed := freed + count
     c := { c with decCalls := c.decCalls + 1, frees := c.frees + freed }
+  | .reset =>
+    unless before.size ≤ after.size && after.size ≤ before.size + 1 do
+      throw "reset transition changed heap size by more than one"
+    let shellAppended := after.size - before.size
+    if shellAppended == 1 then
+      let newCells := after.cells.extract before.size after.size
+      unless newCells.all (fun cell => match cell with
+          | .live 1 .dyn b => b.fields.all (fun v => v == .erased)
+          | _ => false) do
+        throw "reset unique transition did not append a fresh reset shell"
+    let mut freed := 0
+    let mut dynIncs := 0
+    for (a, b) in before.cells.toList.zip (after.cells.extract 0 before.size).toList do
+      let some (f, incN) := resetCell a b
+        | throw "reset performed an invalid cell transition"
+      freed := freed + f
+      dynIncs := dynIncs + incN
+    if shellAppended == 1 then
+      unless freed ≥ 1 && dynIncs == 0 do
+        throw "reset unique transition did not retire the unique cell or performed unexpected incs"
+    c := { c with
+      resetCalls := c.resetCalls + 1
+      resetUnique := c.resetUnique + shellAppended
+      allocations := c.allocations + shellAppended
+      frees := c.frees + freed
+      incUnits := c.incUnits + dynIncs
+      dynamicIncUnits := c.dynamicIncUnits + dynIncs }
+  | .reuse =>
+    unless after.size == before.size + 1 do
+      throw "reuse transition did not append exactly one cell"
+    let newCells := after.cells.extract before.size after.size
+    unless newCells.all (fun cell => match cell with | .live 1 .dyn _ => true | _ => false) do
+      throw "reuse transition did not produce a fresh unique dynamic cell"
+    let mut recycled := 0
+    for (a, b) in before.cells.toList.zip (after.cells.extract 0 before.size).toList do
+      if a != b then
+        match a, b with
+        | .live 1 .dyn _, .dead => recycled := recycled + 1
+        | _, _ => throw "reuse transition mutated a non-unique or non-recycled existing cell"
+    unless recycled ≤ 1 do throw "reuse transition recycled more than one cell"
+    c := { c with
+      reuseCalls := c.reuseCalls + 1
+      reuseInPlace := c.reuseInPlace + recycled
+      reuseFresh := c.reuseFresh + (1 - recycled)
+      allocations := c.allocations + 1
+      frees := c.frees + recycled }
   | .other => unless before == after do throw "unclassified instruction changed the heap"
   let live := liveCells after
   return { c with steps := c.steps + 1, live, peakLive := max c.peakLive live }
@@ -193,19 +267,26 @@ def run (logs : System.FilePath) : IO Unit := do
       let outputCells := if name == "sharedReverse" then 2 * n + 1 else n
       check (name ++ ": exact independently expected escaping cell count") (c.live == outputCells)
       check (name ++ ": successful operation attempts differ")
-        (c.allocAttempts == c.allocCalls && c.incAttempts == c.incCalls && c.decAttempts == c.decCalls)
+        (c.allocAttempts == c.allocCalls && c.incAttempts == c.incCalls &&
+          c.decAttempts == c.decCalls && c.resetAttempts == c.resetCalls &&
+          c.reuseAttempts == c.reuseCalls)
       check (name ++ ": dynamic event conservation")
         (c.allocations == c.frees + c.live && c.allocations == H.size && c.live == liveCells H)
       check (name ++ ": bounded actual allocation/RC/free work")
-        (c.allocations ≤ 4 * n + 2 && c.peakLive ≤ 4 * n + 2 &&
-          c.incUnits ≤ 128 * (n + 1) && c.decCalls ≤ 128 * (n + 1) && c.frees ≤ 4 * n + 2)
+        (c.allocations - c.resetUnique - c.reuseInPlace ≤ 4 * n + 2 && c.peakLive ≤ 4 * n + 2 &&
+          c.incUnits ≤ 128 * (n + 1) && c.decCalls ≤ 128 * (n + 1) &&
+          c.frees - c.resetUnique - c.reuseInPlace ≤ 4 * n + 2)
       if n > 0 then
-        check (name ++ ": RC operations really executed")
-          (c.allocations > 0 && c.incCalls > 0 && c.decCalls > 0)
+        check (name ++ ": RC/FBIP operations really executed")
+          (c.allocations > 0 && (c.incCalls > 0 || c.reuseInPlace > 0) &&
+            (c.decCalls > 0 || c.resetCalls > 0))
         if name != "sharedReverse" then
-          check (name ++ ": intermediate list cells actually freed") (c.frees ≥ n)
+          check (name ++ ": intermediate list cells actually recycled or freed") (c.frees ≥ n)
+        if name == "reverseList" then
+          check (name ++ ": Track A4 FBIP reuses list cells in place") (c.reuseInPlace ≥ n)
       if n ≥ 2 then
-        check (name ++ ": nonempty projected tail retains a dynamic cell") (c.dynamicIncUnits > 0)
+        check (name ++ ": nonempty projected tail retains a dynamic cell or reuses in place")
+          (c.dynamicIncUnits > 0 || (name != "sharedReverse" && c.reuseInPlace ≥ n))
       -- Clock refusals must agree exactly; no successful event is inferred
       -- from a step whose charge is refused at clock zero.
       for k in [0, 1, 2, 3] do
@@ -213,7 +294,7 @@ def run (logs : System.FilePath) : IO Unit := do
         let reference ← IO.lazyPure fun _ => Cfg.Rc.run P k root args
         check s!"{name}: exact bounded-clock differential {k}" (short == reference)
       report := report ++ [countsLine name n seed c]
-      IO.println s!"PASS counters {name} {n} {seed}: alloc={c.allocations}, inc={c.incUnits}, dec={c.decCalls}, free={c.frees}, live={c.live}, peak={c.peakLive}"
+      IO.println s!"PASS counters {name} {n} {seed}: alloc={c.allocations}, inc={c.incUnits}, dec={c.decCalls}, reset={c.resetCalls}, reuse={c.reuseInPlace}/{c.reuseCalls}, free={c.frees}, live={c.live}, peak={c.peakLive}"
   IO.FS.writeFile (logs / "counters.tsv") (String.intercalate "\n" report ++ "\n")
 
 end IxCCTests.Pipeline.Rc.Counters
