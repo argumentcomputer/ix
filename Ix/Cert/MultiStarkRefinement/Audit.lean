@@ -274,7 +274,7 @@ info: @Ix.Cert.MultiStarkRefinement.verifyBatch_of_witness : ∀ {sys : Ix.Cert.
 info: @Ix.Cert.MultiStarkRefinement.prepared_obs_of_extracted_trace : ∀ {program : Aiur.Modules.Program Ix.Cert.MultiStark.Fp}
   (prepared : Aiur.Modules.Prepared program) (compiled : Aiur.Optimized.ModulesArtifact prepared)
   (physical : Aiur.Optimized.Physical.Prepared compiled.circuit.artifact) {cfg : Aiur.Optimized.Depth.Config},
-  Aiur.Optimized.Depth.Certified cfg physical.system →
+  Aiur.Optimized.Physical.Prepared.DepthCertified compiled.circuit physical cfg →
     cfg.bits ≤ 24 →
       ∀ {id : String → Except String ℕ}
         (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id),
@@ -383,7 +383,7 @@ info: Ix.Cert.MultiStarkRefinement.recursionProgram_refines_multiStark_verify : 
   Ix.Cert.MultiStarkRefinement.RecursionSourceSound prepared →
     ∀ (compiled : Aiur.Optimized.ModulesArtifact prepared)
       (physical : Aiur.Optimized.Physical.Prepared compiled.circuit.artifact) {cfg : Aiur.Optimized.Depth.Config},
-      Aiur.Optimized.Depth.Certified cfg physical.system →
+      Aiur.Optimized.Physical.Prepared.DepthCertified compiled.circuit physical cfg →
         cfg.bits ≤ 24 →
           ∀ {id : String → Except String ℕ}
             (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id),
@@ -517,7 +517,7 @@ info: @Ix.Cert.MultiStarkRefinement.recursive_step_to_ixvm_circuit_sound : ∀
     ∀ {id : String → Except String ℕ} {specialized : Aiur.Generic.Specialized IxVM.source [IxVM.Refinement.verifyClaim]}
       (compiled : Aiur.Optimized.GenericArtifact specialized)
       (physical : Aiur.Optimized.Physical.Prepared compiled.artifact) {cfg : Aiur.Optimized.Depth.Config},
-      Aiur.Optimized.Depth.Certified cfg physical.system →
+      Aiur.Optimized.Physical.Prepared.DepthCertified compiled physical cfg →
         cfg.bits ≤ 24 →
           ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id),
             plan.WellFormedActivation →

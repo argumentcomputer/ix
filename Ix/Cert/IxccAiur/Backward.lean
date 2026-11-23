@@ -3457,7 +3457,8 @@ theorem lowered_circuit_sound {P : Fir.Program} {prog : Aiur.Generic.Program Nat
     (compiled : Aiur.Optimized.ModulesArtifact prepared)
     (physical : Aiur.Optimized.Physical.Prepared compiled.circuit.artifact)
     {cfg : Aiur.Optimized.Depth.Config}
-    (certified : Aiur.Optimized.Depth.Certified cfg physical.system)
+    (certified : Aiur.Optimized.Physical.Prepared.DepthCertified compiled.circuit physical cfg)
+    (bits : cfg.bits ≤ 24)
     (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id)
     (activated : plan.WellFormedActivation)
     {external : String}
@@ -3475,7 +3476,7 @@ theorem lowered_circuit_sound {P : Fir.Program} {prog : Aiur.Generic.Program Nat
       Aiur.Circuit.Erasure.message compiled.circuit.system ⟨entry.resolved.name, wires, output⟩)
     (outside : root.channel ∉ cfg.names)
     {rows : List (Aiur.Circuit.WeightedRow F)} (bound : rows.length ≤ 2 ^ 39)
-    (characteristic : ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → (n : F) ≠ 0)
+    (characteristic : ∀ n : Nat, 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → (n : F) ≠ 0)
     (checked : plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = .ok ())
     (arguments : Aiur.DecodesValues compiled.specialized.program.enums wires (Aiur.entryValues args))
     (decoded : output.decode compiled.specialized.program.enums = some result) :
@@ -3487,7 +3488,7 @@ theorem lowered_circuit_sound {P : Fir.Program} {prog : Aiur.Generic.Program Nat
       Aiur.Represents ((Aiur.Circuit.Erasure.typedROM compiled.circuit.system rom).decode
         compiled.specialized.program.enums) heap value result := by
   obtain ⟨value, heap, hevalMod, hrep⟩ :=
-    prepared.depth_grouped_activated_heap_sound compiled physical certified plan activated
+    prepared.depth_grouped_activated_heap_sound compiled physical certified bits plan activated
       selected valid signed rooted outside bound characteristic checked arguments decoded
   obtain ⟨entry', hsel', hevalFn⟩ := hevalMod
   rw [selected, Option.some.injEq] at hsel'
@@ -3498,7 +3499,7 @@ theorem lowered_circuit_sound {P : Fir.Program} {prog : Aiur.Generic.Program Nat
 
 /-- **End-to-End Certified Compilation Soundness over Goldilocks (`U32.Goldilocks.F`):**
 Discharges BOTH `FieldCompatible` (via `goldilocks_fieldCompatible`) and the depth-pass
-characteristic bound (via `cfg.bits ≤ 24`). -/
+characteristic bound (via `Depth.goldilocks_characteristic`). -/
 theorem lowered_circuit_sound_goldilocks {P : Fir.Program} {prog : Aiur.Generic.Program Nat}
     {moduleProg : Aiur.Modules.Program Aiur.Library.U32.Goldilocks.F}
     {id : String → Except String Nat}
@@ -3507,7 +3508,7 @@ theorem lowered_circuit_sound_goldilocks {P : Fir.Program} {prog : Aiur.Generic.
     (compiled : Aiur.Optimized.ModulesArtifact prepared)
     (physical : Aiur.Optimized.Physical.Prepared compiled.circuit.artifact)
     {cfg : Aiur.Optimized.Depth.Config}
-    (certified : Aiur.Optimized.Depth.Certified cfg physical.system)
+    (certified : Aiur.Optimized.Physical.Prepared.DepthCertified compiled.circuit physical cfg)
     (bits : cfg.bits ≤ 24)
     (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id)
     (activated : plan.WellFormedActivation)
@@ -3540,9 +3541,9 @@ theorem lowered_circuit_sound_goldilocks {P : Fir.Program} {prog : Aiur.Generic.
       VR P objQName bytesQName heap v value ∧
       Aiur.Represents ((Aiur.Circuit.Erasure.typedROM compiled.circuit.system rom).decode
         compiled.specialized.program.enums) heap value result :=
-  lowered_circuit_sound goldilocks_fieldCompatible prepared lw compiled physical certified plan
+  lowered_circuit_sound goldilocks_fieldCompatible prepared lw compiled physical certified bits plan
     activated selected hname hexp valid signed rooted outside bound
-    (Aiur.Optimized.Depth.goldilocks_bound bits) checked arguments decoded
+    Aiur.Optimized.Depth.goldilocks_characteristic checked arguments decoded
 
 end Headline
 

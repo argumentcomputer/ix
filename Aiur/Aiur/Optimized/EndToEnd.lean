@@ -25,11 +25,11 @@ The depth pass removes that hypothesis (`Optimized.Depth`, `Depth/Grouped.lean`)
 `Modules.Prepared.depth_grouped_activated_heap_sound` starts from acceptance of
 `Grouping.Plan.checkMemo` (`Grouping/Memo.lean`), the memo checker over the
 grouped, activated plan, built over the certified depth pass of the physical
-circuits, with at most `2^39` rows: `Depth.acyclic` proves every such memo graph
-acyclic, so it unfolds to the finite derivation the theorems here start from.
+circuits, with at most `2^39` rows: `Physical.Prepared.structural_memo_sound`
+gives the finite derivation the theorems here start from.
 The exporter emits the depth pass: `Trace.exportPreparedPlan` exports
 `Depth.system cfg physical.system`, refusing a configuration that is not
-`Depth.Certified` and a plan that is not `Plan.WellFormedActivation`, with gap
+`Physical.Prepared.DepthCertified` and a plan that is not `Plan.WellFormedActivation`, with gap
 limbs `[16, 8]` or none (`cfg.bits ≤ 24`). Both verifiers enforce the row bound
 over the whole batch: Rust's `check_shape` and `validate_preamble`
 (`MAX_BATCH_ROWS`), and in circuit `StarkVerifier::assert_batch_bounds`.

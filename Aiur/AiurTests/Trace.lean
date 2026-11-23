@@ -214,7 +214,7 @@ def run : IO Unit := do
     let (_, planPar) ← IO.ofExcept (Trace.exportPreparedPlanPar 97 ZMod.val compiled.circuit.inlined.program artifact physical exported)
     unless plan == planPar do
       throw (IO.userError "exportPreparedPlanPar output differs from exportPreparedPlan")
-    let cfg ← IO.ofExcept (Trace.depthConfig 97 physical)
+    let (cfg, _) ← IO.ofExcept (Trace.depthConfig 97 compiled.circuit.inlined.program physical)
     -- N9b: verify mutually-exclusive intra-SCC sends upgrade to `.exact` even
     -- without lookup merging, and mixed exclusive+co-firing chips upgrade the
     -- exclusive branch slot to `.exact` while keeping co-firing slots `.gap`.
@@ -302,7 +302,7 @@ def runPtrEq : IO Unit := do
   let (tracedPar, planPar) ← IO.ofExcept (Trace.exportPreparedPlanPar 97 ZMod.val prog artifact physical exported)
   unless traced == tracedPar && plan == planPar do
     throw (IO.userError "ptr_eq: exportPreparedPlanPar differed from exportPreparedPlan")
-  let cfg ← IO.ofExcept (Trace.depthConfig 97 physical)
+  let (cfg, _) ← IO.ofExcept (Trace.depthConfig 97 prog physical)
   let depthSystem := Optimized.Depth.system cfg physical.system
   let cases : List (String × Array Nat × Nat) := [
     ("same", #[7], 1),
@@ -340,7 +340,7 @@ def runSmallField : IO Unit := do
   let artifact := compiled.circuit.artifact
   let physical ← IO.ofExcept (Optimized.Physical.prepare artifact)
   let (traced, plan) ← IO.ofExcept (Trace.exportPreparedPlan 2 ZMod.val compiled.circuit.inlined.program artifact physical exported)
-  let cfg ← IO.ofExcept (Trace.depthConfig 2 physical)
+  let (cfg, _) ← IO.ofExcept (Trace.depthConfig 2 compiled.circuit.inlined.program physical)
   let depthSystem := Optimized.Depth.system cfg physical.system
   let cases : List (String × Array Nat) := [
     ("Extra::width_capacity", #[0]), ("Extra::width_capacity", #[1]),

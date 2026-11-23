@@ -78,7 +78,8 @@ theorem aggregated_root_sound
     (compiled : Aiur.Optimized.ModulesArtifact prepared)
     (physical : Aiur.Optimized.Physical.Prepared compiled.circuit.artifact)
     {cfg : Aiur.Optimized.Depth.Config}
-    (certified : Aiur.Optimized.Depth.Certified cfg physical.system) (bits : cfg.bits ≤ 24)
+    (certified : Aiur.Optimized.Physical.Prepared.DepthCertified compiled.circuit physical cfg)
+    (bits : cfg.bits ≤ 24)
     {id : String → Except String ℕ}
     (plan : Plan (Aiur.Optimized.Depth.system cfg physical.system) id)
     (activated : plan.WellFormedActivation)

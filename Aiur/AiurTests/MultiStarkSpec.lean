@@ -15,9 +15,8 @@ Cross-checks:
    `circuit.constraint_count` + `circuit.max_constraint_degree`) on the
    `crates/aiur/tests/fixtures/depth.ixa` program (verified symmetrically in
    `crates/aiur/src/trace/stark/tests/spec_parity.rs`).
-3. Executable `WS 2B-1` checkers (`Depth.certify`, `Depth.checkGoldilocks`,
-   `Depth.checkGoldilocksPlan`, `Grouping.checkPlanCertificate`,
-   `Plan.checkWellFormedActivation`).
+3. Executable `WS 2B-1` checkers (`Trace.depthConfig`, `Physical.Prepared.checkDepthPlan`,
+   `Grouping.checkPlanCertificate`, `Plan.checkWellFormedActivation`).
 -/
 
 namespace AiurMultiStarkSpecTests
@@ -64,19 +63,92 @@ private def checkMixedDegreeRetune : Bool :=
 
 #guard checkMixedDegreeRetune
 
-/-- Same source program as `Aiur/Examples/Depth.lean` (`crates/aiur/tests/fixtures/depth.ixa`). -/
+/-- Same source program as `Aiur/Examples/Depth.lean` (`crates/aiur/tests/fixtures/depth.ixa`):
+its recursions double their argument toward a target, which is neither structural nor a
+countdown, so no SCC is exempt from the depth word. -/
 private def depthFixtureProgram : Modules.Program Nat := aiur_modules% "
 module Depth {
   fn loop(x: Field) -> Field { loop(x) }
-  fn even(n: Field) -> Field { match n { 0 => 1, _ => odd(n - 1) } }
-  fn odd(n: Field) -> Field { match n { 0 => 0, _ => even(n - 1) } }
-  fn fib(n: Field) -> Field { match n { 0 => 0, 1 => 1, _ => fib(n - 1) + fib(n - 2) } }
-  fn run(n: Field) -> Field { even(n) + fib(n) }
-  fn owned(n: Field) -> () { match n { 0 => (), _ => link(n - 1) } }
-  fn link(n: Field) -> () { owned(n) }
-  fn top(n: Field) -> Field { let _unit = owned(n); n + 1 }
+  fn even(x: Field) -> Field { match x { 4096 => 1, _ => odd(x * 2) } }
+  fn odd(x: Field) -> Field { match x { 4096 => 0, _ => even(x * 2) } }
+  fn fib(x: Field) -> Field { match x { 4096 => 0, 2048 => 1, _ => fib(x * 2) + fib(x * 4) } }
+  fn run(x: Field) -> Field { even(x) + fib(x) }
+  fn owned(x: Field) -> () { match x { 64 => (), _ => link(x * 2) } }
+  fn link(x: Field) -> () { owned(x) }
+  fn top(x: Field) -> Field { let _unit = owned(x); x + 1 }
 }
 "
+
+/-- Recursion that needs no depth word (`Depth.Structural`), beside one that does:
+`length` descends on the structure of its argument, `countdown` moves a field argument down
+by a literal, and `doubling` does neither. -/
+private def exemptProgram : Modules.Program Nat := aiur_modules% "
+module Exempt {
+  enum List { Nil, Cons(Field, &List) }
+  fn length(p: &List) -> Field {
+    match *p { List::Nil => 0, List::Cons(_, tail) => 1 + length(tail) }
+  }
+  fn countdown(n: Field) -> Field { match n { 0 => 0, _ => countdown(n - 1) + 2 } }
+  fn doubling(x: Field) -> Field { match x { 64 => 0, _ => doubling(x * 2) + 1 } }
+  fn run(n: Field) -> Field {
+    length(&List::Cons(n, &List::Cons(n, &List::Nil))) + countdown(n) + doubling(n)
+  }
+}
+"
+
+/-- The planner gives structural and countdown recursion no depth word, keeps it for any other
+recursion, and both halves of the depth certificate accept the result. -/
+private def testExemptRecursion : IO Unit := do
+  let prepared ← IO.ofExcept (Modules.prepare (exemptProgram.toField GF) ["Exempt::run"])
+  let compiled ← IO.ofExcept prepared.compileOptimized
+  let physical ← IO.ofExcept (Physical.prepare compiled.circuit.artifact)
+  let program := compiled.circuit.inlined.program
+  let rep := physical.representative
+  let recursive := ["Exempt::length", "Exempt::countdown", "Exempt::doubling"]
+  -- Before `Depth.Structural.plan` all three are recursive circuits with a depth word.
+  let base := Depth.planPrepared physical (Trace.depthLimbs Library.U32.Goldilocks.modulus)
+  for name in recursive do
+    unless base.recursive (rep name) do
+      throw (IO.userError s!"Depth.Structural: {name} is not recursive in the base depth plan")
+  let (cfg, measures) ← IO.ofExcept
+    (Trace.depthConfig Library.U32.Goldilocks.modulus program physical)
+  unless Depth.Structural.certify cfg physical.system do
+    throw (IO.userError "Depth.Structural.certify rejected the exempt plan")
+  unless Depth.Structural.check cfg program rep measures do
+    throw (IO.userError "Depth.Structural.check rejected the exempt plan")
+  let depthSys := Depth.system cfg physical.system
+  let inputWords (system : Circuit.System GF) (name : String) : Option Nat :=
+    (system.findChip? name).map fun chip => (chip.inputs.flatMap WireValue.words).length
+  for (name, exempt) in [("Exempt::length", true), ("Exempt::countdown", true),
+      ("Exempt::doubling", false)] do
+    let chip := rep name
+    unless cfg.structural.contains chip == exempt && cfg.recursive chip == !exempt do
+      throw (IO.userError s!"Depth.Structural: wrong depth word decision for {name}: structural {cfg.structural.contains chip}, recursive {cfg.recursive chip}")
+    -- The depth word is one more input word of the compiled circuit.
+    let some before := inputWords physical.system chip
+      | throw (IO.userError s!"Depth.Structural: missing circuit {chip}")
+    unless inputWords depthSys chip == some (if exempt then before else before + 1) do
+      throw (IO.userError s!"Depth.Structural: wrong input width for {name}")
+  -- Calls into an exempt circuit are plain; the call into `doubling` keeps its depth word.
+  let runSlots := (cfg.plan (rep "Exempt::run")).slots
+  unless runSlots.count .external == 1 && runSlots.all (fun kind => kind == .plain || kind == .external) do
+    throw (IO.userError s!"Depth.Structural: unexpected slots in Exempt::run: {reprStr runSlots}")
+  unless (measures.lookup "Exempt::length").map (·.measure) == some (.parts [0]) &&
+      (measures.lookup "Exempt::countdown").map (·.measure) == some (.down 0) &&
+      (measures.lookup "Exempt::doubling").isNone do
+    throw (IO.userError s!"Depth.Structural: unexpected measures {reprStr measures}")
+  -- Neither half accepts `doubling` as exempt, under either field measure.
+  let forged : Depth.Config := { cfg with structural := rep "Exempt::doubling" :: cfg.structural }
+  if Depth.Structural.certify forged physical.system then
+    throw (IO.userError "Depth.Structural.certify accepted an exempt circuit with a depth word")
+  let unword (entry : String × Depth.ChipPlan) : String × Depth.ChipPlan :=
+    if entry.1 == rep "Exempt::doubling" then
+      (entry.1, { recursive := false, slots := entry.2.slots.map fun _ => .plain }) else entry
+  let plain : Depth.Config := { forged with plans := forged.plans.map unword }
+  for measure in [Depth.Structural.Measure.down 0, .up 0, .parts [0]] do
+    if Depth.Structural.check plain program rep (("Exempt::doubling", ⟨measure, 0⟩) :: measures) then
+      throw (IO.userError s!"Depth.Structural.check accepted doubling under {reprStr measure}")
+  IO.println "MultiStarkSpec Depth.Structural: structural and countdown recursion carry no depth word, doubling keeps it, forged exemptions rejected"
 
 private def depthFixtureEntries : List String :=
   ["Depth::run", "Depth::fib", "Depth::loop", "Depth::top"]
@@ -322,15 +394,16 @@ def testVectorizedRom : IO Unit := do
 def run : IO Unit := do
   testC7AndC2
   testVectorizedRom
+  testExemptRecursion
   let source := depthFixtureProgram.toField GF
   let prepared ← IO.ofExcept (Modules.prepare source depthFixtureEntries)
   let exported ← IO.ofExcept prepared.exportExecution
   let compiled ← IO.ofExcept prepared.compileOptimized
   let artifact := compiled.circuit.artifact
   let physical ← IO.ofExcept (Physical.prepare artifact)
-  let cfg ← IO.ofExcept (Trace.depthConfig Library.U32.Goldilocks.modulus physical)
-  unless Depth.checkGoldilocks cfg physical.system do
-    throw (IO.userError "WS 2B-1: Depth.checkGoldilocks rejected depth fixture")
+  let program := compiled.circuit.inlined.program
+  let (cfg, measures) ← IO.ofExcept
+    (Trace.depthConfig Library.U32.Goldilocks.modulus program physical)
   let bytecode := Trace.depthBytecode cfg exported.bytecode
   let depthSys := Depth.system cfg physical.system
   let callableNames := bytecode.functions.map (·.name) ++ bytecode.maps.map (·.name)
@@ -338,8 +411,8 @@ def run : IO Unit := do
     if callableNames.contains name then pure (callableNames.idxOf name)
     else throw s!"unknown callable {name}"
   let plan ← IO.ofExcept (Grouping.preparePlan depthSys idFn [])
-  unless Depth.checkGoldilocksPlan cfg physical.system plan do
-    throw (IO.userError "WS 2B-1: Depth.checkGoldilocksPlan rejected depth fixture plan")
+  unless physical.checkDepthPlan program cfg measures plan do
+    throw (IO.userError "WS 2B-1: Physical.Prepared.checkDepthPlan rejected depth fixture plan")
   unless plan.checkWellFormedActivation do
     throw (IO.userError "WS 2B-1: Plan.checkWellFormedActivation rejected depth fixture plan")
   let callableId (name : String) : Nat := callableNames.idxOf name
@@ -348,12 +421,12 @@ def run : IO Unit := do
   let summaries := lowered.map CompiledCircuit.summary
   unless summaries == expectedDepthFixtureSummaries do
     throw (IO.userError s!"WS 2B-2 depth.ixa parity mismatch!\nactual:\n{reprStr summaries}\nexpected:\n{reprStr expectedDepthFixtureSummaries}")
-  -- Also test a grouped layout (`even` + `odd`) through `lowerFullSystem` and `checkGoldilocksPlan`.
+  -- Also test a grouped layout (`even` + `odd`) through `lowerFullSystem` and `checkDepthPlan`.
   let groupChips := depthSys.chips.filter fun c => c.name == "Depth::even" || c.name == "Depth::odd"
   let checkedGroup ← IO.ofExcept (Grouping.compile "even_odd" idFn groupChips)
   let groupedPlan ← IO.ofExcept (Grouping.preparePlan depthSys idFn [⟨groupChips, checkedGroup⟩])
-  unless Depth.checkGoldilocksPlan cfg physical.system groupedPlan do
-    throw (IO.userError "WS 2B-1: Depth.checkGoldilocksPlan rejected grouped plan")
+  unless physical.checkDepthPlan program cfg measures groupedPlan do
+    throw (IO.userError "WS 2B-1: Physical.Prepared.checkDepthPlan rejected grouped plan")
   let groupedLowered := lowerFullSystem callableId groupedPlan fixedMaps [] 1 true
   let some eo := groupedLowered.find? (·.name == "even_odd")
     | throw (IO.userError "WS 2B-2: missing grouped even_odd circuit")

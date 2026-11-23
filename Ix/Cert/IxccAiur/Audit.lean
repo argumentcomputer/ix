@@ -380,7 +380,8 @@ info: @lowered_circuit_sound : ∀ {F : Type} [inst : Field F] [inst_1 : Decidab
       LoweredWorld P prog prepared.environment.source.world →
         ∀ (compiled : Aiur.Optimized.ModulesArtifact prepared)
           (physical : Aiur.Optimized.Physical.Prepared compiled.circuit.artifact) {cfg : Aiur.Optimized.Depth.Config},
-          Aiur.Optimized.Depth.Certified cfg physical.system →
+          Aiur.Optimized.Physical.Prepared.DepthCertified compiled.circuit physical cfg →
+            cfg.bits ≤ 24 →
             ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id),
               plan.WellFormedActivation →
                 ∀ {external : String}
@@ -402,7 +403,7 @@ info: @lowered_circuit_sound : ∀ {F : Type} [inst : Field F] [inst_1 : Decidab
                                       root.channel ∉ cfg.names →
                                         ∀ {rows : List (Aiur.Circuit.WeightedRow F)},
                                           rows.length ≤ 2 ^ 39 →
-                                            (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ cfg.bits → ↑n ≠ 0) →
+                                            (∀ (n : ℕ), 0 < n → n ≤ 2 ^ 39 * 2 ^ 24 → ↑n ≠ 0) →
                                               plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows =
                                                   Except.ok () →
                                                 Aiur.DecodesValues compiled.specialized.program.enums wires
@@ -431,7 +432,7 @@ info: @lowered_circuit_sound_goldilocks : ∀ {P : Program} {prog : Aiur.Generic
   LoweredWorld P prog prepared.environment.source.world →
     ∀ (compiled : Aiur.Optimized.ModulesArtifact prepared)
       (physical : Aiur.Optimized.Physical.Prepared compiled.circuit.artifact) {cfg : Aiur.Optimized.Depth.Config},
-      Aiur.Optimized.Depth.Certified cfg physical.system →
+      Aiur.Optimized.Physical.Prepared.DepthCertified compiled.circuit physical cfg →
         cfg.bits ≤ 24 →
           ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id),
             plan.WellFormedActivation →

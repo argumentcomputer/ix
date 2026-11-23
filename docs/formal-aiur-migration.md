@@ -58,9 +58,11 @@ activated circuits have a *finite* derivation of the claimed call
   circuits: a provided row `loop(0) = 42` balances `fn loop(x) { loop(x) }`
   although no evaluation returns 42. For circuits compiled with the certified
   call-depth pass (`Optimized.Depth`, emitted by `Trace.exportPreparedPlan`),
-  `Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks` proves every
-  memo graph with at most `2^39` rows acyclic (`Depth.acyclic`), discharging the
-  memo-acyclicity obligation.
+  `Modules.Prepared.depth_grouped_activated_heap_sound_goldilocks` gives the
+  entry claim of every memo graph with at most `2^39` rows a finite derivation
+  (`Physical.Prepared.depth_checkMemo_sound`, under
+  `Physical.Prepared.DepthCertified`), discharging the memo-acyclicity
+  obligation.
 - Trusted and unproved: the Rust lowering of the exported artifact into
   multi-stark circuits (`crates/aiur`: the CALL, ROM and memory-segment channel
   tags, activation times multiplicity, trace-shard segment boundaries, fixed

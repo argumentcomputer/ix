@@ -75,8 +75,8 @@ the kernel model (`Ix.Kernel.Model`), and the pure certified compiler
 (`Ix.Cert.compileReport`).  The following remain outside the formal theorem:
 * Rust lowering to Multi-STARK, STARK/FRI/LogUp cryptographic soundness,
   proof-compression circuits/keys, and the `aiur⟦⟧` DSL elaborators;
-* exporter runtime obligations (`Depth.Certified`, `WellFormedActivation`,
-  `cfg.bits ≤ 24`) and host `Claim.de`/Ixon codec parity with Rust;
+* exporter runtime obligations (`Physical.Prepared.DepthCertified`,
+  `WellFormedActivation`, `cfg.bits ≤ 24`) and host `Claim.de`/Ixon codec parity with Rust;
 * Rust BLAKE3 vs pure Lean `Address.blake3Pure` (`@[implemented_by]`);
 * post-compile binder-data section attachment (`Ix.CompileM.compileCertified` /
   `RecordSections`), which produces sectioned records whose content addresses

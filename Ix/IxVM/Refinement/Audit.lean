@@ -48,7 +48,8 @@ run_meta do
     (``IxVM.Refinement.SourceSound, [``IxVM.source, ``IxVM.Refinement.verifyClaim,
       ``Aiur.Generic.SourceSemantics.ObsFn, ``IxVM.Refinement.digestValue]),
     (``IxVM.Refinement.CircuitSound, [``IxVM.source, ``IxVM.Refinement.verifyClaim,
-      ``Aiur.Generic.Specialized, ``Aiur.Optimized.Depth.Certified, ``Aiur.Optimized.Depth.system,
+      ``Aiur.Generic.Specialized, ``Aiur.Optimized.Physical.Prepared.DepthCertified,
+      ``Aiur.Optimized.Depth.system,
       ``Aiur.Optimized.Grouping.Plan.checkMemo, ``IxVM.Refinement.digestValue,
       ``Aiur.Generic.SourceSemantics.CallsInROM]),
     (``IxVM.Refinement.CircuitSoundAssuming, [``IxVM.source, ``IxVM.Refinement.verifyClaim,
@@ -128,7 +129,7 @@ fun P =>
   ∀ {id : String → Except String ℕ} {specialized : Aiur.Generic.Specialized IxVM.source [IxVM.Refinement.verifyClaim]}
     (compiled : Aiur.Optimized.GenericArtifact specialized)
     (physical : Aiur.Optimized.Physical.Prepared compiled.artifact) {cfg : Aiur.Optimized.Depth.Config},
-    Aiur.Optimized.Depth.Certified cfg physical.system →
+    Aiur.Optimized.Physical.Prepared.DepthCertified compiled physical cfg →
       cfg.bits ≤ 24 →
         ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id),
           plan.WellFormedActivation →

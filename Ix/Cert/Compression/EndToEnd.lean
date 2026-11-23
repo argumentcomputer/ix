@@ -84,7 +84,7 @@ theorem compression_pipeline_sound
     (compiled : Aiur.Optimized.GenericArtifact specialized)
     (physical : Aiur.Optimized.Physical.Prepared compiled.artifact)
     {cfg : Aiur.Optimized.Depth.Config}
-    (certified : Aiur.Optimized.Depth.Certified cfg physical.system)
+    (certified : Aiur.Optimized.Physical.Prepared.DepthCertified compiled physical cfg)
     (bits : cfg.bits ≤ 24)
     (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id)
     (activated : plan.WellFormedActivation)
@@ -180,7 +180,7 @@ theorem compression_pipeline_folded_pairing_sound
     (compiled : Aiur.Optimized.GenericArtifact specialized)
     (physical : Aiur.Optimized.Physical.Prepared compiled.artifact)
     {cfg : Aiur.Optimized.Depth.Config}
-    (certified : Aiur.Optimized.Depth.Certified cfg physical.system)
+    (certified : Aiur.Optimized.Physical.Prepared.DepthCertified compiled physical cfg)
     (bits : cfg.bits ≤ 24)
     (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id)
     (activated : plan.WellFormedActivation)

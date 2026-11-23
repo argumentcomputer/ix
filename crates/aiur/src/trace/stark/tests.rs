@@ -1719,24 +1719,25 @@ fn gpu_depth_population_proves_identically() {
   let fib = backend.names.iter().position(|n| n == "Depth::fib").unwrap();
   assert!(plans.circuits[fib], "fib's gap slots run on the device");
   let entry = "Depth::run";
-  let record = program.execute(entry, vec![12]).unwrap();
+  let x = depth::at(12);
+  let record = program.execute(entry, vec![x]).unwrap();
   let output = record.output.clone();
   for rows in [4, 64] {
     backend.device_plans = None;
     let host = backend
       .prove_batch_stage_1(
         entry,
-        &[12],
+        &[x],
         &output,
-        backend.generate_stage_1(&record, entry, &[12]).unwrap(),
+        backend.generate_stage_1(&record, entry, &[x]).unwrap(),
         rows,
         Retention::Retain,
       )
       .unwrap();
     backend.device_plans = Some(gpu::DevicePlans::new(&backend));
-    let stage = backend.prepare_stage_1(&record, entry, &[12]).unwrap();
+    let stage = backend.prepare_stage_1(&record, entry, &[x]).unwrap();
     let device = backend
-      .prove_stage_one(entry, &[12], &output, stage, rows, Retention::Retain)
+      .prove_stage_one(entry, &[x], &output, stage, rows, Retention::Retain)
       .unwrap();
     assert_eq!(device.to_bytes().unwrap(), host.to_bytes().unwrap());
   }

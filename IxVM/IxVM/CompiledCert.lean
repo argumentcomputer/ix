@@ -21,8 +21,8 @@ Provides a kernel-checked compilation and exporter-safety certificate binding `I
    `Physical.Prepared` deduplicated circuit system, a `Depth.Config`, and a grouped
    `Grouping.Plan` certified exclusively by the sound boolean checkers:
    * `Aiur.Optimized.Grouping.checkPlanCertificate_sound` (`PlanCertificate`),
-   * `Aiur.Optimized.Depth.checkGoldilocksPlan_sound` (`Depth.Certified`, `cfg.bits ≤ 24`,
-     and `Plan.WellFormedActivation`), and
+   * `Aiur.Optimized.Physical.Prepared.checkDepthPlan_sound` (`Physical.Prepared.DepthCertified`,
+     `cfg.bits ≤ 24`, and `Plan.WellFormedActivation`), and
    * `Aiur.Optimized.Grouping.Plan.checkWellFormedActivation_sound`.
 3. **Observed headline instantiation (`CompiledCert.checkMemo_observed_sound`)**: instantiates
    `Aiur.Optimized.Physical.Prepared.depth_grouped_activated_native_heap_sound_goldilocks_observed`
@@ -33,7 +33,8 @@ Provides a kernel-checked compilation and exporter-safety certificate binding `I
    artifact bytes.
 5. **Compile-path transparency audit (`#audit_compile_opacity`)**: walks the kernel environment
    from `Aiur.Optimized.compile`, `Aiur.Optimized.Physical.prepare`,
-   `Aiur.Optimized.Depth.checkGoldilocksPlan`, `Aiur.Optimized.Grouping.checkPlanCertificate`,
+   `Aiur.Optimized.Physical.Prepared.checkDepthPlan`,
+   `Aiur.Optimized.Grouping.checkPlanCertificate`,
    `Aiur.Optimized.Grouping.Plan.checkWellFormedActivation`, `Aiur.Trace.exportPreparedPlan`,
    and `Aiur.Trace.exportPreparedPlanPar`, asserting zero `opaqueInfo` constants, zero `Aiur.*`
    `partial` definitions, zero `unsafe` constants, and zero trust escapes.
@@ -166,21 +167,25 @@ def ArtifactPin.matchesBytes (pin : ArtifactPin) (artifactBytes : ByteArray) : P
 `[IxVM.entry]` (`"IxVM::verify_claim"`).
 
 Every exporter side condition required by the Goldilocks observed headline theorem
-(`PlanCertificate`, `Depth.Certified`, `cfg.bits ≤ 24`, and `Plan.WellFormedActivation`) is
-witnessed exclusively through the sound executable checkers
-`Aiur.Optimized.Grouping.checkPlanCertificate` and `Aiur.Optimized.Depth.checkGoldilocksPlan`. -/
+(`PlanCertificate`, `Physical.Prepared.DepthCertified`, `cfg.bits ≤ 24`, and
+`Plan.WellFormedActivation`) is witnessed exclusively through the sound executable checkers
+`Aiur.Optimized.Grouping.checkPlanCertificate` and
+`Aiur.Optimized.Physical.Prepared.checkDepthPlan`; `measures` are the measures of the functions
+compiled to circuits without a depth word. -/
 structure CompiledCert (id : String → Except String Nat) where
   specialized : Generic.Specialized IxVM.source [IxVM.entry]
   compiled : Optimized.GenericArtifact specialized
   prepared : Physical.Prepared compiled.artifact
   cfg : Depth.Config
+  measures : Depth.Structural.Plan
   singles : List (Chip IxVM.F)
   groups : List (Grouping.Packed IxVM.F id)
   planCertChecked :
     checkPlanCertificate (Depth.system cfg prepared.system) singles groups = true
-  goldilocksPlanChecked :
-    checkGoldilocksPlan cfg prepared.system
-      ⟨singles, groups, checkPlanCertificate_sound planCertChecked⟩ = true
+  depthPlanChecked :
+    prepared.checkDepthPlan compiled.inlined.program cfg measures
+      (⟨singles, groups, checkPlanCertificate_sound planCertChecked⟩ :
+        Grouping.Plan (Depth.system cfg prepared.system) id) = true
   artifactPin : ArtifactPin
   digestMatch : artifactPin.programDigest = IxVM.programDigest
   versionMatch : artifactPin.planVersion = Trace.planVersion
@@ -199,16 +204,16 @@ theorem planCertificate (cert : CompiledCert id) :
     PlanCertificate (Depth.system cert.cfg cert.prepared.system) cert.singles cert.groups :=
   checkPlanCertificate_sound cert.planCertChecked
 
-/-- Combined exporter safety theorem: derives `Depth.Certified`, `cfg.bits ≤ 24`, and
-`plan.WellFormedActivation` directly from `checkGoldilocksPlan_sound`. -/
+/-- Combined exporter safety theorem: derives `Physical.Prepared.DepthCertified`,
+`cfg.bits ≤ 24`, and `plan.WellFormedActivation` directly from `checkDepthPlan_sound`. -/
 theorem safety (cert : CompiledCert id) :
-    Depth.Certified cert.cfg cert.prepared.system ∧
+    Physical.Prepared.DepthCertified cert.compiled cert.prepared cert.cfg ∧
       cert.cfg.bits ≤ 24 ∧
       cert.plan.WellFormedActivation :=
-  checkGoldilocksPlan_sound cert.goldilocksPlanChecked
+  Physical.Prepared.checkDepthPlan_sound cert.depthPlanChecked
 
 theorem depthCertified (cert : CompiledCert id) :
-    Depth.Certified cert.cfg cert.prepared.system :=
+    Physical.Prepared.DepthCertified cert.compiled cert.prepared cert.cfg :=
   cert.safety.1
 
 theorem bitsLe24 (cert : CompiledCert id) : cert.cfg.bits ≤ 24 :=
@@ -238,8 +243,8 @@ theorem programDigest_pinned (cert : CompiledCert id) :
 
 /-- **Headline Observed Soundness for Certified `IxVM.source`**:
 instantiates `Aiur.Optimized.Physical.Prepared.depth_grouped_activated_native_heap_sound_goldilocks_observed`
-at `IxVM.source` / `IxVM.entry`, discharging `Depth.Certified`, `cfg.bits ≤ 24`, and
-`Plan.WellFormedActivation` solely from `cert.planCertChecked` and `cert.goldilocksPlanChecked`. -/
+at `IxVM.source` / `IxVM.entry`, discharging `Physical.Prepared.DepthCertified`, `cfg.bits ≤ 24`,
+and `Plan.WellFormedActivation` solely from `cert.planCertChecked` and `cert.depthPlanChecked`. -/
 theorem checkMemo_observed_sound (cert : CompiledCert id)
     {rom : WidthROM IxVM.F} (valid : rom.Valid)
     {args : List (SourceValue IxVM.F)} {result : Value IxVM.F}
@@ -270,13 +275,13 @@ theorem specialize_circuit
         (compiled : GenericArtifact specialized)
         (prepared : Physical.Prepared compiled.artifact)
         {cfg : Depth.Config},
-        Depth.Certified cfg prepared.system →
+        Physical.Prepared.DepthCertified compiled prepared cfg →
         cfg.bits ≤ 24 →
         (plan : Grouping.Plan (Depth.system cfg prepared.system) id) →
         plan.WellFormedActivation → Prop}
     (hAll : ∀ {id} {specialized} (compiled : GenericArtifact specialized)
       (prepared : Physical.Prepared compiled.artifact) {cfg}
-      (hCert : Depth.Certified cfg prepared.system) (hBits : cfg.bits ≤ 24)
+      (hCert : Physical.Prepared.DepthCertified compiled prepared cfg) (hBits : cfg.bits ≤ 24)
       (plan : Grouping.Plan (Depth.system cfg prepared.system) id)
       (hAct : plan.WellFormedActivation),
       PropOf compiled prepared hCert hBits plan hAct)
@@ -289,7 +294,7 @@ theorem specialize_circuit
 /-- Executable builder constructing a certified `CompiledCert` for `IxVM.source` at `[IxVM.entry]`
 using `IxVM.functionGroups`, binding it by default (`packageArtifact := true`) to both the
 SHA-256 and BLAKE3 digests of the packaged `.ixa` artifact bytes. Fails closed unless both
-`checkPlanCertificate` and `checkGoldilocksPlan` return `true`. -/
+`checkPlanCertificate` and `Physical.Prepared.checkDepthPlan` return `true`. -/
 def build (groups : List (String × List String) := IxVM.functionGroups)
     (packageArtifact : Bool := true) :
     Except String (Σ id : String → Except String Nat, CompiledCert id) := do
@@ -297,7 +302,7 @@ def build (groups : List (String × List String) := IxVM.functionGroups)
   let specialized ← Generic.specialize IxVM.source [IxVM.entry]
   let compiled ← specialized.compileOptimized {}
   let prepared ← Physical.prepare compiled.artifact
-  let cfg ← Trace.depthConfig IxVM.modulus prepared
+  let (cfg, measures) ← Trace.depthConfig IxVM.modulus compiled.inlined.program prepared
   let bytecode := Trace.depthBytecode cfg exported.bytecode
   let system := Depth.system cfg prepared.system
   let callableNames := bytecode.functions.map (·.name) ++ bytecode.maps.map (·.name)
@@ -318,7 +323,7 @@ def build (groups : List (String × List String) := IxVM.functionGroups)
   let singles := system.chips.filter fun c => !groupedNames.contains c.name
   if hPlan : checkPlanCertificate system singles packed = true then
     let plan : Grouping.Plan system id := ⟨singles, packed, checkPlanCertificate_sound hPlan⟩
-    if hGold : checkGoldilocksPlan cfg prepared.system plan = true then
+    if hDepth : prepared.checkDepthPlan compiled.inlined.program cfg measures plan = true then
       let (artifactSha256, artifactBlake3) ← if packageArtifact then do
         let (exported', trace) ← Trace.exportPreparedPlan IxVM.modulus ZMod.val
           compiled.inlined.program compiled.artifact prepared exported groups
@@ -327,9 +332,9 @@ def build (groups : List (String × List String) := IxVM.functionGroups)
       else
         pure (none, none)
       return ⟨id, {
-        specialized, compiled, prepared, cfg, singles, groups := packed
+        specialized, compiled, prepared, cfg, measures, singles, groups := packed
         planCertChecked := hPlan
-        goldilocksPlanChecked := hGold
+        depthPlanChecked := hDepth
         artifactPin := {
           programDigest := IxVM.programDigest
           planVersion := Trace.planVersion
@@ -340,7 +345,7 @@ def build (groups : List (String × List String) := IxVM.functionGroups)
         versionMatch := rfl
       }⟩
     else
-      throw "IxVM.CompiledCert.build: checkGoldilocksPlan failed"
+      throw "IxVM.CompiledCert.build: Physical.Prepared.checkDepthPlan failed"
   else
     throw "IxVM.CompiledCert.build: checkPlanCertificate failed"
 
@@ -354,7 +359,7 @@ def buildWithArtifact (groups : List (String × List String) := IxVM.functionGro
   let specialized ← Generic.specialize IxVM.source [IxVM.entry]
   let compiled ← specialized.compileOptimized {}
   let prepared ← Physical.prepare compiled.artifact
-  let cfg ← Trace.depthConfig IxVM.modulus prepared
+  let (cfg, measures) ← Trace.depthConfig IxVM.modulus compiled.inlined.program prepared
   let bytecode := Trace.depthBytecode cfg exported.bytecode
   let system := Depth.system cfg prepared.system
   let callableNames := bytecode.functions.map (·.name) ++ bytecode.maps.map (·.name)
@@ -375,14 +380,14 @@ def buildWithArtifact (groups : List (String × List String) := IxVM.functionGro
   let singles := system.chips.filter fun c => !groupedNames.contains c.name
   if hPlan : checkPlanCertificate system singles packed = true then
     let plan : Grouping.Plan system id := ⟨singles, packed, checkPlanCertificate_sound hPlan⟩
-    if hGold : checkGoldilocksPlan cfg prepared.system plan = true then
+    if hDepth : prepared.checkDepthPlan compiled.inlined.program cfg measures plan = true then
       let (exported', trace) ← Trace.exportPreparedPlan IxVM.modulus ZMod.val
         compiled.inlined.program compiled.artifact prepared exported groups
       let pkg ← Artifact.package exported' IxVM.modulus ZMod.val (some trace)
       let cert : CompiledCert id := {
-        specialized, compiled, prepared, cfg, singles, groups := packed
+        specialized, compiled, prepared, cfg, measures, singles, groups := packed
         planCertChecked := hPlan
-        goldilocksPlanChecked := hGold
+        depthPlanChecked := hDepth
         artifactPin := {
           programDigest := IxVM.programDigest
           planVersion := Trace.planVersion
@@ -394,7 +399,7 @@ def buildWithArtifact (groups : List (String × List String) := IxVM.functionGro
       }
       return ⟨id, ⟨(cert, pkg), ⟨rfl, rfl⟩⟩⟩
     else
-      throw "IxVM.CompiledCert.buildWithArtifact: checkGoldilocksPlan failed"
+      throw "IxVM.CompiledCert.buildWithArtifact: Physical.Prepared.checkDepthPlan failed"
   else
     throw "IxVM.CompiledCert.buildWithArtifact: checkPlanCertificate failed"
 
@@ -447,7 +452,8 @@ private def bytecodeSerializerOpaques : List Name :=
 
 /-- Audit the definitional closure of the entire compilation, grouping, export, and 2B-1 certification
 pipeline (`Generic.specialize`, `Inlining.prepare`, `Optimized.compile`, `Physical.prepare`,
-`Grouping.compile`, `Grouping.preparePlan`, `checkGoldilocksPlan`, `checkPlanCertificate`,
+`Grouping.compile`, `Grouping.preparePlan`, `Physical.Prepared.checkDepthPlan`,
+`checkPlanCertificate`,
 `Plan.checkWellFormedActivation`, `Trace.exportPreparedPlan`, and `Trace.exportPreparedPlanPar`),
 failing the build if any logical `Aiur.*` opaque constant, any `Aiur.*` `partial` definition,
 any `unsafe` constant, or any trust escape is reachable. -/
@@ -460,7 +466,7 @@ elab "#audit_compile_opacity" : command => do
     ``Aiur.Optimized.Physical.prepare,
     ``Aiur.Optimized.Grouping.compile,
     ``Aiur.Optimized.Grouping.preparePlan,
-    ``Aiur.Optimized.Depth.checkGoldilocksPlan,
+    ``Aiur.Optimized.Physical.Prepared.checkDepthPlan,
     ``Aiur.Optimized.Grouping.checkPlanCertificate,
     ``Aiur.Optimized.Grouping.Plan.checkWellFormedActivation,
     ``Aiur.Trace.exportPreparedPlan,
