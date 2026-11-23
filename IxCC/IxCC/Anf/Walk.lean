@@ -179,6 +179,7 @@ structure Fires where
   projKnown : Nat := 0
   fold : Nat := 0
   knownCall : Nat := 0
+  knownDispatch : Nat := 0
   deadPap : Nat := 0
   beta : Nat := 0
   joinOnce : Nat := 0
@@ -222,13 +223,14 @@ structure Fires where
 namespace Fires
 
 def total (f : Fires) : Nat :=
-  f.copy + f.dead + f.projKnown + f.fold + f.knownCall + f.deadPap + f.beta + f.joinOnce +
+  f.copy + f.dead + f.projKnown + f.fold + f.knownCall + f.knownDispatch + f.deadPap + f.beta + f.joinOnce +
   f.joinSmall + f.deadJoin + f.caseKnown + f.caseOfCase + f.caseId + f.sameArms + f.inline +
   f.inlineCaf + f.redirect + f.pendInline
 
 def add (f g : Fires) : Fires :=
   { copy := f.copy + g.copy, dead := f.dead + g.dead, projKnown := f.projKnown + g.projKnown
     fold := f.fold + g.fold, knownCall := f.knownCall + g.knownCall
+    knownDispatch := f.knownDispatch + g.knownDispatch
     deadPap := f.deadPap + g.deadPap, beta := f.beta + g.beta, joinOnce := f.joinOnce + g.joinOnce
     joinSmall := f.joinSmall + g.joinSmall
     deadJoin := f.deadJoin + g.deadJoin, caseKnown := f.caseKnown + g.caseKnown
@@ -240,7 +242,7 @@ def add (f g : Fires) : Fires :=
 
 def render (f : Fires) : String :=
   let xs := [("copy", f.copy), ("dead", f.dead), ("projKnown", f.projKnown), ("fold", f.fold),
-    ("knownCall", f.knownCall), ("deadPap", f.deadPap), ("beta", f.beta),
+    ("knownCall", f.knownCall), ("knownDispatch", f.knownDispatch), ("deadPap", f.deadPap), ("beta", f.beta),
     ("joinOnce", f.joinOnce), ("joinSmall", f.joinSmall), ("deadJoin", f.deadJoin),
     ("caseKnown", f.caseKnown), ("caseOfCase", f.caseOfCase), ("caseId", f.caseId),
     ("sameArms", f.sameArms), ("inline", f.inline), ("inlineCaf", f.inlineCaf),
@@ -365,6 +367,34 @@ def bindAtoms : Bind → List Atom
   | .app f as => f :: as
   | .glob _ | .fn .. => []
 
+/-- Whether a global key is a P8 dispatcher. -/
+def isDispatchKey : Key.GKey → Bool
+  | .dispatch _ => true
+  | .const _ _ | .byName _ _ | .recStar _ _ | .wrapper _ _
+  | .spec _ _ | .worker _ _ | .lam _ _ | .entry _ _ => false
+
+/-- Whether a global definition is a P8 dispatcher body (key `.dispatch _`,
+taking a closure plus at least one argument, with body
+`case (var (ps.length - 1)) alts _`). Synthetic test globals that reuse
+`.dispatch _` as a dummy key on a non-dispatcher body are excluded. -/
+def isDispatchDef (gd : GDef) : Bool :=
+  isDispatchKey gd.key &&
+    match gd.body with
+    | .case (.var m) _ _ => decide (m > 0) && m + 1 == gd.ps.length
+    | _ => false
+
+/-- The work of scanning a dispatcher's alternatives when checking the
+known-dispatch rule. -/
+def dispScanCost (P : Program) (g : GlobalId) : Nat :=
+  match P.global? g with
+  | some gd =>
+    if isDispatchKey gd.key then
+      match gd.body with
+      | .case _ alts _ => alts.length
+      | _ => 0
+    else 0
+  | none => 0
+
 /-- An upper bound of the work one walk step on `e` does beyond a constant,
 counted up to `cap + 1`: resolving the atoms it reads (the environment is a
 list), looking a join point up by index (a jump, or a binding whose body is
@@ -388,6 +418,7 @@ def stepCost (C : Cfg) (env : Env) (here : Here) (e : Exp) (cap : Nat) : Nat :=
     | _ => 0
   let census := if C.shrink then
       e.nodesUpTo cap + here.d + (match e with
+        | .bind _ (.call g _) _ => dispScanCost C.prog g
         | .jump j _ => match env.jσ[j]? with
           | some (.mk _ _ _ _ _ b _) | some (.pend _ _ _ b) => b.nodesUpTo cap
           | none => 0
@@ -731,6 +762,23 @@ def fixedAt (r : Redirect) (d : Nat) (as : List Atom) : Bool :=
     (as.zipIdx.zip r.fixedArgs).all fun ((a, i), f) =>
       f.isNone || a == .var (d - 1 - i) || (f == some .box && a == .box)
 
+/-- Whether `b` (after leading ticks) starts with a dispatcher call on `.var 0`. -/
+def isDispHead (P : Program) (b : Exp) : Bool :=
+  match (stripTicks b).2 with
+  | .bind _ (.call g (.var 0 :: _)) _ =>
+    match P.global? g with
+    | some gd => isDispatchKey gd.key
+    | none => false
+  | _ => false
+
+/-- Whether `os` is a single operand known to hold a closure constructor. -/
+def knownClo (K : Lam.Known) (here : Here) : List Opd → Bool
+  | [o] =>
+    match known K here o with
+    | some (.clo .., _) => true
+    | _ => false
+  | _ => false
+
 /-- Field levels `d … d + n - 1`, in order. -/
 def fieldOpds (d n : Nat) : List Opd := (List.range n).map fun i => .lvl (d + i)
 
@@ -853,7 +901,25 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetMode → Bind → Exp �
             let k' ← after C fuel env body k
             return .tick (← walk { C with inline := [], redirect := none } fuel
               { σ := entsOf os.reverse } here gd.body k')
-          else emit (.call g (atoms here.d os)) none
+          else
+            let knownDisp := if C.shrink && isDispatchKey gd.key && os.length == gd.ps.length then
+                match gd.body, os with
+                | .case (.var m) alts dflt, fo :: _ =>
+                  if decide (m > 0) && m + 1 == gd.ps.length then
+                    match known K here fo with
+                    | some (c, fs) =>
+                      (select alts dflt c fs.length).map fun (isAlt, alt) =>
+                        ((if isAlt then entsOf fs.reverse else []) ++ entsOf os.reverse, alt)
+                    | none => none
+                  else none
+                | _, _ => none
+              else none
+            match knownDisp with
+            | some (σ', alt) => do
+              fire fun f => { f with knownDispatch := f.knownDispatch + 1, copied := f.copied + copyCost alt }
+              let k' ← after C fuel env body k
+              return .tick (← walk { C with inline := [], redirect := none } fuel { σ := σ' } here alt k')
+            | none => emit (.call g (atoms here.d os)) none
         | none => throw s!"walk: global {g} out of range"
     | .app f as => do
       let os ← resolveList env as
@@ -972,7 +1038,9 @@ def walkJump (C : Cfg) : Nat → Env → Here → Nat → List Atom → Kont →
     | some (.mk (some l) σj jσj n r b _) =>
       let (m, inner) := stripTicks b
       if C.shrink && !r && os.length == n &&
-          (b.nodesLe C.smallJoin || (n == 1 && b.headOcc 0 1 > 0)) then do
+          (b.nodesLe C.smallJoin || (n == 1 && b.headOcc 0 1 > 0) ||
+            (n == 1 && isDispHead C.prog b && knownClo C.prog.known here os &&
+              b.nodesLe C.caseOfCaseBound)) then do
         fire fun f => { f with joinSmall := f.joinSmall + 1, copied := f.copied + copyCost b }
         return .tick (← walk C fuel { σ := entsOf os.reverse ++ σj, jσ := jσj } here b k)
       let hit := if C.shrink && !r && n == 1 then

@@ -158,6 +158,8 @@ structure Ctx (n : Nat) : Prop where
   cglob : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → ∀ g,
     (C.prog.global? g).map (·.ps.length) = (P.global? g).map (·.ps.length)
   cbody : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → ∀ g, C.inline.contains g = true → C.prog.global? g = P.global? g
+  cdisp : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → C.shrink = true → ∀ g gd,
+    C.prog.global? g = some gd → Walk.isDispatchDef gd = true → P.global? g = some gd
   inl : ∀ C ρ ρ' prs ρ₂, Valid C ρ ρ' prs → Valid { C with inline := [], redirect := none } ρ₂ ρ' prs
   app : Rel.AppSim P Q (WV Q Valid Xc) n
   call : Rel.CallSim P Q (WV Q Valid Xc) n
@@ -185,6 +187,11 @@ theorem Ctx.vglob {ρ ρ' : List Val} (hV : VOk Q Valid Xc C ρ ρ') (g : Global
 theorem Ctx.vbody {ρ ρ' : List Val} (hV : VOk Q Valid Xc C ρ ρ') (g : GlobalId)
     (hin : C.inline.contains g = true) : C.prog.global? g = P.global? g := by
   cases hV with | mk hv _ => exact hctx.cbody _ _ _ _ hv g hin
+
+theorem Ctx.vdisp {ρ ρ' : List Val} (hV : VOk Q Valid Xc C ρ ρ') (hsh : C.shrink = true)
+    (g : GlobalId) (gd : GDef) (hgd : C.prog.global? g = some gd)
+    (hdk : Walk.isDispatchDef gd = true) : P.global? g = some gd := by
+  cases hV with | mk hv _ => exact hctx.cdisp _ _ _ _ hv hsh g gd hgd hdk
 
 /-- An inlined callee's body is walked under a valid configuration, for
 every source environment. -/

@@ -4,11 +4,12 @@ import IxCC.Anf.Proof.Pass.Closures
 /-! # The middle end with the closures step
 
 `anfOf c src lam` is the certificate's middle end (`Anf.Pipeline.run`) and
-then the closures step at the source roots' declared counts. It refines its
-Lam program on every covered input (`anfOf_refines`): on an input of exactly
-the declared count, through the step (`Anf.Pipeline.Proof.closures_correct`,
-whose premise `declaredCounts_exact` gives); on every input when the step
-left the certificate's program unchanged, by the middle end's theorem alone
+then the closures step at the source roots' declared counts (with any certified
+post-P8 optimization steps `c.mid.post`). It refines its Lam program on every
+covered input (`anfOf_refines`): on an input of exactly the declared count,
+through the step (`Anf.Pipeline.Proof.closures_correct`, whose premise
+`declaredCounts_exact` gives); on every input when the step left the
+certificate's program unchanged, by the middle end's theorem alone
 (`Anf.Pipeline.Proof.run_correct`). Its output is first order
 (`anfOf_firstOrder`), and it is exactly the certificate's program for every
 program `Fir.lower` accepted with its roots at their declared counts
@@ -19,21 +20,22 @@ set_option autoImplicit false
 
 namespace IxCC.Recheck
 
-theorem closuresOf_ok {src : Src.Program} {pre A : Anf.Program} (h : closuresOf src pre = .ok A) :
-    ∃ decl, declaredCounts src = some decl ∧ Anf.Pipeline.closures decl pre = .ok A := by
+theorem closuresOf_ok {src : Src.Program} {pre A : Anf.Program}
+    {post : Option Anf.Pipeline.PostCert} (h : closuresOf src pre post = .ok A) :
+    ∃ decl, declaredCounts src = some decl ∧ Anf.Pipeline.closures decl pre post = .ok A := by
   unfold closuresOf at h
   cases hd : declaredCounts src with
   | none => rw [hd] at h; cases h
   | some decl =>
     simp only [hd] at h
     refine ⟨decl, rfl, ?_⟩
-    cases hc : Anf.Pipeline.closures decl pre with
+    cases hc : Anf.Pipeline.closures decl pre post with
     | error e => rw [hc] at h; cases h
     | ok A' => rw [hc] at h; cases h; rfl
 
 theorem anfOf_ok {c : Cert} {src : Src.Program} {lam : Lam.Program} {A : Anf.Program}
     (h : anfOf c src lam = .ok A) :
-    ∃ pre, Anf.Pipeline.run c.mid lam = .ok pre ∧ closuresOf src pre = .ok A := by
+    ∃ pre, Anf.Pipeline.run c.mid lam = .ok pre ∧ closuresOf src pre c.mid.post = .ok A := by
   unfold anfOf at h
   obtain ⟨pre, hp, hc⟩ := Lam.ModesOk.bind_ok h
   refine ⟨pre, ?_, hc⟩

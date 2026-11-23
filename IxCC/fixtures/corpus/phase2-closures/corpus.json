@@ -249,11 +249,9 @@
                 100000000
               ],
               "value": "301",
-              "fail": "stack",
-              "spurious": true,
               "region": 1048576,
               "stack": 8192,
-              "note": "150 iterations need 4.8 KB of frames, past the 4 KiB budget and the 120 iterations an 8 KiB native stack holds: the stack-exhaustion status, not a fault; spurious, since the source loop is iterative and the frames come from lowering a tail call of eight arguments as a call and a return"
+              "note": "150 iterations on an 8 KiB native stack: P5 dead-parameter stripping shrinks StateT.bind below the 7-register tail-call limit so the iterative loop runs in constant stack"
             }
           ]
         },

@@ -229,9 +229,83 @@ def step? (j : Json) : Dec Anf.Pipeline.Step := do
   | [.str "prune"] => pure .prune
   | _ => throw s!"bad Anf step {j.compress}"
 
+def narrowAbs : Anf.Defun.Narrow.Abs → Json
+  | none => Json.null
+  | some ks => arr (ks.map nat)
+
+def narrowAbs? (j : Json) : Dec Anf.Defun.Narrow.Abs :=
+  match j with
+  | .null => pure none
+  | _ => some <$> listOf natKey? j
+
+def narrowCert (c : Anf.Defun.Narrow.Cert) : Json :=
+  arr [nat c.maxArms,
+    arr (c.params.map fun (g, ps) => arr [nat g, arr (ps.map narrowAbs)]),
+    arr (c.rets.map fun (g, r) => arr [nat g, narrowAbs r]),
+    arr (c.fields.map fun (i, fs) => arr [nat i, arr (fs.map narrowAbs)]),
+    arr (c.joins.map fun (g, js) => arr [nat g, arr (js.map fun ps => arr (ps.map narrowAbs))]),
+    arr (c.siteRets.map fun (g, rs) => arr [nat g, arr (rs.map narrowAbs)])]
+
+def narrowCert? (j : Json) : Dec Anf.Defun.Narrow.Cert := do
+  match ← getArr j with
+  | [ma, ps, rs, fs, js, srs] =>
+    let maxArms ← getNat ma
+    let params ← listOf (pair natKey? (listOf narrowAbs?)) ps
+    let rets ← listOf (pair natKey? narrowAbs?) rs
+    let fields ← listOf (pair natKey? (listOf narrowAbs?)) fs
+    let joins ← listOf (pair natKey? (listOf (listOf narrowAbs?))) js
+    let siteRets ← listOf (pair natKey? (listOf narrowAbs?)) srs
+    let c : Anf.Defun.Narrow.Cert := { maxArms, params, rets, fields, joins, siteRets }
+    unless Anf.Defun.Narrow.checkCert c do
+      throw "P9 flow certificate exceeds resource bounds"
+    return c
+  | _ => throw s!"bad P9 certificate {j.compress}"
+
+def postStep : Anf.Pipeline.PostStep → Json
+  | .shrink rounds => arr [str "P2", arr (rounds.map nat)]
+  | .inline r => arr [str "P3", arr (r.map fun (g, cs) => arr [nat g, arr (cs.map nat)])]
+  | .prune => arr [str "prune"]
+  | .narrow c => arr [str "P9", narrowCert c]
+  | .deadParam => arr [str "P5"]
+
+def postStep? (j : Json) : Dec Anf.Pipeline.PostStep := do
+  match ← getArr j with
+  | [.str "P2", rounds] =>
+    let c ← nats rounds
+    unless Anf.Shrink.checkCert c do
+      throw "post-P8 P2 shrink certificate exceeds round or global bounds"
+    return .shrink c
+  | [.str "P3", r] =>
+    let rd ← listOf (pair natKey? (listOf natKey?)) r
+    unless Anf.Inline.checkCert rd do
+      throw "post-P8 P3 inline certificate exceeds bounds or contains self-inlining"
+    return .inline rd
+  | [.str "prune"] => pure .prune
+  | [.str "P9", c] => .narrow <$> narrowCert? c
+  | [.str "P5"] => pure .deadParam
+  | _ => throw s!"bad post-P8 Anf step {j.compress}"
+
+def postCert (pc : Anf.Pipeline.PostCert) : Json :=
+  Json.mkObj [("base", nat pc.baseSize),
+    ("shrink", arr [nat pc.shrink.caseOfCase, nat pc.shrink.smallJoin]),
+    ("steps", arr (pc.steps.map postStep))]
+
+def postCert? (j : Json) : Dec Anf.Pipeline.PostCert := do
+  let baseSize ← natKey? (← field j "base")
+  let (caseOfCase, smallJoin) ← pair getNat getNat (← field j "shrink")
+  let shrink : Anf.Shrink.Params := { caseOfCase, smallJoin }
+  let steps ← listOf postStep? (← field j "steps")
+  let pc : Anf.Pipeline.PostCert := { baseSize, shrink, steps }
+  unless Anf.Pipeline.checkPostCert pc do
+    throw "post-P8 certificate exceeds resource bounds"
+  return pc
+
 def mid (c : Anf.Pipeline.Cert) : Json :=
-  Json.mkObj [("shrink", arr [nat c.shrink.caseOfCase, nat c.shrink.smallJoin]),
+  let base := [("shrink", arr [nat c.shrink.caseOfCase, nat c.shrink.smallJoin]),
     ("steps", arr (c.steps.map step))]
+  Json.mkObj (match c.post with
+    | none => base
+    | some pc => base ++ [("post", postCert pc)])
 
 def mid? (j : Json) : Dec Anf.Pipeline.Cert := do
   let (caseOfCase, smallJoin) ← pair getNat getNat (← field j "shrink")
@@ -241,7 +315,10 @@ def mid? (j : Json) : Dec Anf.Pipeline.Cert := do
   let steps ← listOf step? (← field j "steps")
   unless steps.length ≤ maxMidSteps do
     throw s!"middle-end step count {steps.length} exceeds maximum {maxMidSteps}"
-  return { shrink, steps }
+  let post ← match j.getObjVal? "post" with
+    | .ok pj => some <$> postCert? pj
+    | .error _ => pure none
+  return { shrink, steps, post }
 
 /-! ## The backend -/
 

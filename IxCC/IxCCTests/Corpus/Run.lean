@@ -408,10 +408,11 @@ judged by what the checker's walk derives from its certificate:
 * **Accepted, less optimised**, where it is the same program: on
   `Natural.onMessage` the walk without the pending entry refuses the rounds the
   entry gains, so that producer only counts fewer rounds, which the checker
-  replays alike; its claim verifies, plain RC with 6 closure keys, and (with
-  `--native`) its object as an executable gives the manifest's values. So a
-  producer gets nothing accepted that the checker does not derive itself, and
-  remains free to do less. -/
+  replays alike; P8 introduces 6 closure keys which post-P8 closure
+  optimisation collapses to zero heap allocations, so its zero-RC claim
+  verifies, and (with `--native`) its object as an executable gives the
+  manifest's values. So a producer gets nothing accepted that the checker does
+  not derive itself, and remains free to do less. -/
 def natural (a : Assert) (native : Option Rt.Native.Tools) : IO (Array String) := do
   let m ← Family.read "fixtures/corpus/phase1-machines/corpus.json"
   let some f := m.fixtures.find? (·.name == "natural")
@@ -492,30 +493,27 @@ def natural (a : Assert) (native : Option Rt.Native.Tools) : IO (Array String) :
       s!"{label}: the checker's replay of its middle end is not its program"
     match CompileClaim.produce (dev r.name) inp, RcReplay.produceFir (dev r.name) inp with
     | .ok (claim, cert, _), .ok front =>
-      expect a (claim.policy matches .plainRc && CompileClaim.verifyProgram cfg inp.program claim cert)
-        s!"{label}: its claim is not a verified plain-RC claim"
+      expect a (claim.policy matches .zeroRc && CompileClaim.verifyProgram cfg inp.program claim cert)
+        s!"{label}: its claim is not a verified zero-RC claim"
       let keys := front.anf.ctors.length -
         ((Anf.Pipeline.run front.mid front.lam).toOption.map (·.ctors.length)).getD front.anf.ctors.length
       expect a (keys == 6) s!"{label}: {keys} closure keys, expected 6"
-      match RcReplay.producePlain (dev r.name) inp front with
+      match RcReplay.produceImmortal (dev r.name) inp front with
       | .error e => expect a false s!"{label}: {e.render}"
-      | .ok (p, rc) =>
-        expect a (Ixon.Address.blake3Pure rc.backend.object == claim.elfHash) s!"{label}: another object than its claim's"
+      | .ok (_, art) =>
+        expect a (Ixon.Address.blake3Pure art.backend.object == claim.elfHash) s!"{label}: another object than its claim's"
         let mut n := 0
         if let some nt := native then
-          match RcReplay.Artifact.toRecheckArtifact p.cert rc with
-          | .error e => expect a false s!"{label}: {e.render}"
-          | .ok art =>
-            let exe := nt.work / "natural_off_onMessage_rc"
-            match ← IxCCTests.Exe.build exe art {} with
-            | .error e => expect a false s!"{label}: no executable: {e.render}"
-            | .ok () =>
-              for cs in r.cases do
-                let ex ← IxCCTests.Exe.run exe (cs.args.map toString)
-                expect a (ex.outcome == "ok" && some ex.obs == cs.sourceObs r)
-                  s!"{label} {cs.args}: {ex.outcome} {ex.obs}, expected {cs.sourceObs r}"
-                n := n + 1
-        out := out.push s!"{label}: the checker derives its middle end too; its plain-RC claim verified ({keys} \
+          let exe := nt.work / "natural_off_onMessage_zero"
+          match ← IxCCTests.Exe.build exe art {} with
+          | .error e => expect a false s!"{label}: no executable: {e.render}"
+          | .ok () =>
+            for cs in r.cases do
+              let ex ← IxCCTests.Exe.run exe (cs.args.map toString)
+              expect a (ex.outcome == "ok" && some ex.obs == cs.sourceObs r)
+                s!"{label} {cs.args}: {ex.outcome} {ex.obs}, expected {cs.sourceObs r}"
+              n := n + 1
+        out := out.push s!"{label}: the checker derives its middle end too; its zero-RC claim verified ({keys} \
           closure keys){if n > 0 then s!", its object as an executable gives the {n} cases' values" else ""}"
     | .error e, _ | _, .error e => expect a false s!"{label}: {e.render}"
   return out

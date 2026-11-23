@@ -44,6 +44,9 @@ structure Agree (P : Program) : Prop where
   size : P.size = P0.size
   arity : ∀ g, (P.global? g).map (·.ps.length) = (P0.global? g).map (·.ps.length)
   below : P.GlobalsBelow
+  disp : ∀ g gd, P0.global? g = some gd →
+    (∃ ar m alts dflt, gd.key = .dispatch ar ∧ gd.body = .case (.var m) alts dflt ∧ m > 0 ∧ m + 1 = gd.ps.length) →
+    P.global? g = some gd
 
 /-- `j` rounds (or the global itself once a round fails). -/
 def iter (gd : GDef) : Nat → GDef
@@ -58,10 +61,19 @@ def stage (cert : Cert) : Nat → Program
 variable {P0 p}
 
 theorem roundOr_walked (gd : GDef) : WalkProof.Walked (V P0 p) gd (roundOr P0 p gd) := by
-  unfold roundOr
-  split
-  · next gd' f h => exact WalkProof.walked_global h rfl
-  · exact ⟨rfl, .inl rfl⟩
+  unfold roundOr round
+  cases hd : Walk.isDispatchDef gd with
+  | true =>
+    simp only [↓reduceIte, pure, Except.pure]
+    exact ⟨rfl, .inl rfl⟩
+  | false =>
+    simp only [Bool.false_eq_true, ↓reduceIte]
+    split
+    · next gd' f h => exact WalkProof.walked_global h rfl
+    · exact ⟨rfl, .inl rfl⟩
+
+theorem roundOr_disp {gd : GDef} (hd : Walk.isDispatchDef gd = true) : roundOr P0 p gd = gd := by
+  simp [roundOr, round, hd, pure, Except.pure]
 
 theorem roundOr_ps (gd : GDef) : (roundOr P0 p gd).ps = gd.ps := (roundOr_walked gd).1
 
@@ -84,6 +96,24 @@ theorem roundOn_walkProg {sel : GlobalId → Bool} {P : Program} (h : Agree P0 P
   cknown C _ _ _ hV := by subst hV; exact h.known.symm
   cglob C _ _ _ hV g := by subst hV; exact (h.arity g).symm
   cbody C _ _ _ hV g hin := by subst hV; simp [cfg] at hin
+  cdisp C _ _ _ hV _ g gd hgd hdk := by
+    subst hV
+    simp only [Walk.isDispatchDef, Bool.and_eq_true] at hdk
+    obtain ⟨hkey, hbody⟩ := hdk
+    have har : ∃ ar, gd.key = .dispatch ar := by
+      cases hk : gd.key with
+      | dispatch ar => exact ⟨ar, rfl⟩
+      | const _ _ | byName _ _ | recStar _ _ | wrapper _ _
+      | spec _ _ | worker _ _ | lam _ _ | entry _ _ => simp [Walk.isDispatchKey, hk] at hkey
+    obtain ⟨ar, hkey'⟩ := har
+    cases hb : gd.body with
+    | bind _ _ _ | join _ _ _ _ | jump _ _ | ret _ | tick _ | trap => simp [hb] at hbody
+    | case x alts dflt =>
+      cases x with
+      | lit _ | box => simp [hb] at hbody
+      | var m =>
+        simp only [hb, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hbody
+        exact h.disp g gd hgd ⟨ar, m, alts, dflt, hkey', hb, hbody.1, hbody.2⟩
   inl C _ _ _ _ hV := by subst hV; rfl
   noRed C _ _ _ hV := by subst hV; rfl
 
@@ -107,9 +137,16 @@ theorem roundOn_agree {sel : GlobalId → Bool} {P : Program} (h : Agree P0 P) :
     split at hg
     · next hlt => exact hlt
     · cases hg
+  disp g gd hgd har := by
+    have hP := h.disp g gd hgd har
+    have hdk : Walk.isDispatchDef gd = true := by
+      obtain ⟨ar, m, alts, dflt, hkey, hbody, hm0, hm1⟩ := har
+      simp [Walk.isDispatchDef, Walk.isDispatchKey, hkey, hbody, hm0, hm1]
+    rw [roundOn_global, if_pos (h.below g gd hP), hP]
+    simp [roundOr_disp hdk]
 
 theorem agree_self (h0 : P0.GlobalsBelow) : Agree P0 P0 :=
-  ⟨rfl, rfl, rfl, fun _ => rfl, h0⟩
+  ⟨rfl, rfl, rfl, fun _ => rfl, h0, fun _ _ h _ => h⟩
 
 theorem stage_agree (h0 : P0.GlobalsBelow) {cert : Cert} : ∀ i, Agree P0 (stage P0 p cert i)
   | 0 => agree_self h0

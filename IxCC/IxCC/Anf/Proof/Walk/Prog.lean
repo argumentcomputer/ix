@@ -78,6 +78,8 @@ structure WalkProg : Prop where
   cglob : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → ∀ g,
     (C.prog.global? g).map (·.ps.length) = (P.global? g).map (·.ps.length)
   cbody : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → ∀ g, C.inline.contains g = true → C.prog.global? g = P.global? g
+  cdisp : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → C.shrink = true → ∀ g gd,
+    C.prog.global? g = some gd → Walk.isDispatchDef gd = true → P.global? g = some gd
   inl : ∀ C ρ ρ' prs ρ₂, Valid C ρ ρ' prs → Valid { C with inline := [], redirect := none } ρ₂ ρ' prs
   noRed : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → C.redirect = none
 
@@ -110,6 +112,7 @@ theorem WalkProg.hyp (H : WalkProg P Q Valid) : Hyp P Q Valid noXc where
   cknown := H.cknown
   cglob := H.cglob
   cbody := H.cbody
+  cdisp := H.cdisp
   inl := H.inl
   call n hlow g vs ws hvs := by
     cases hP : P.global? g with

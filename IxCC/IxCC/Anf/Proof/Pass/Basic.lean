@@ -59,7 +59,8 @@ theorem refines_of_globals {P Q : Program} (hroots : Q.roots = P.roots) (hknown 
     { roots := hroots, known := hknown
       globals := fun g gd h => ⟨gd, by rw [hg, h], rfl, .inl rfl⟩
       suffix := fun _ _ _ _ _ _ h _ _ => h, cknown := fun _ _ _ _ h => h.elim, cglob := fun _ _ _ _ h => h.elim
-      cbody := fun _ _ _ _ h => h.elim, inl := fun _ _ _ _ _ h => h.elim, noRed := fun _ _ _ _ h => h.elim }
+      cbody := fun _ _ _ _ h => h.elim, cdisp := fun _ _ _ _ h => h.elim
+      inl := fun _ _ _ _ _ h => h.elim, noRed := fun _ _ _ _ h => h.elim }
 
 end PassProof
 

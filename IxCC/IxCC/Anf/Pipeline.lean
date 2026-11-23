@@ -3,6 +3,8 @@ import IxCC.Anf.Shrink
 import IxCC.Anf.Inline
 import IxCC.Anf.Specialize
 import IxCC.Anf.Prune
+import IxCC.Anf.Defun
+import IxCC.Anf.Pipeline.PostCert
 
 /-! # The Phase 1 middle end
 
@@ -36,36 +38,13 @@ inductive Step where
   | prune
   deriving Inhabited
 
-/-- The middle end's certificate (the oracle decisions the Phase 1 passes read). -/
+/-- The middle end's certificate (the oracle decisions the Phase 1 passes read,
+plus optional post-P8 optimization decisions omitted for plain programs). -/
 structure Cert where
   shrink : Shrink.Params := {}
   steps : List Step := []
+  post : Option PostCert := none
   deriving Inhabited
-
-/-- The nodes of `P`'s globals, counting each up to what is left of
-`maxProgramNodes` and stopping once the total passes it. -/
-def programNodesUpTo : List (GlobalId × GDef) → Nat → Nat
-  | [], used => used
-  | (_, gd) :: rest, used =>
-    let used := used + gd.body.nodesUpTo (maxProgramNodes - used)
-    if used > maxProgramNodes then used else programNodesUpTo rest used
-
-/-- Refuse a program holding a global over `maxGlobalNodes` or deeper than
-`maxDepth`, more than `maxProgramNodes` nodes in all, or more back-end work
-than `maxBackWork`. The counts stop early and walk explicit worklists
-(`Exp.nodesUpTo`, `Exp.depthUpTo`), so the check is cheap and shallow whatever
-the program's size and depth. Inlining a callee doubles a mutually recursive
-pair each round with one firing, so the walk's budgets alone do not bound
-certificate rounds. -/
-def checkGlobalNodes (P : Program) : Except String Program :=
-  if !(P.globalList.all (fun (_, gd) => gd.body.nodesLe maxGlobalNodes) &&
-      programNodesUpTo P.globalList 0 ≤ maxProgramNodes) then
-    .error "middle end: a global or the program exceeds the node budget"
-  else if !(P.globalList.all fun (_, gd) => gd.body.depthUpTo maxDepth maxGlobalNodes ≤ maxDepth) then
-    .error "middle end: a global exceeds the depth budget"
-  else if backWork P > maxBackWork then
-    .error "middle end: the program exceeds the back end's work budget"
-  else .ok P
 
 /-- A step, then the size check (P2, P3 and P4 can grow the program; pruning
 only removes globals). -/
@@ -117,6 +96,9 @@ structure Trace where
   cert : Cert
   stages : List (String × Program)
   fires : Walk.Fires
+  /-- When `firstOrder P = false`, the producer's post-P8 output matching
+  `cert.post` (untrusted producer metadata; never recorded in `Cert`). -/
+  postOut : Option Program := none
 
 /-- The most steps a certificate may hold (the cap `Recheck.checkMidCert`
 applies to every certificate's middle end). -/
@@ -180,8 +162,19 @@ def produceOnce (B : Budgets := {}) (L : Lam.Program) : Except String Trace := d
       steps := steps.push (.shrink c); stages := stages.push ("P2", P)
   P := Prune.run P
   steps := steps.push .prune; stages := stages.push ("prune", P)
-  return { cert := { shrink := B.shrink.params, steps := steps.toList }
-           stages := stages.toList, fires }
+  let (post, postOut) : Option PostCert × Option Program :=
+    if firstOrder P then (none, none)
+    else match defun P with
+      | .ok Q8 =>
+        let (pc, Qout) := producePostBy B.shrink.params
+          (fun Q => match Shrink.produce B.shrink Q with
+            | .ok (c, Q', _) => .ok (c, Q')
+            | .error e => .error e)
+          P.size Q8
+        (some pc, some Qout)
+      | .error _ => (none, none)
+  return { cert := { shrink := B.shrink.params, steps := steps.toList, post }
+           stages := stages.toList, fires, postOut }
 
 /-- Run `attempt` with the inline-round retry if `retry`, and without it when
 that fails: a retried round's larger program may fail a budget checked later

@@ -185,6 +185,8 @@ theorem hyp : WalkProof.Hyp P Q (V P Q) (RwClo P Q) where
   cglob C ρ ρ' prs hv g := by rcases hv with rfl | ⟨D, -, -, -, rfl, -⟩ <;> rfl
   cbody C ρ ρ' prs hv g hin := by
     rcases hv with rfl | ⟨D, -, -, -, rfl, -⟩ <;> simp [Site.cfg] at hin
+  cdisp C ρ ρ' prs hv _ g gd hgd _ := by
+    rcases hv with rfl | ⟨D, -, -, -, rfl, -⟩ <;> exact hgd
   inl C ρ ρ' prs ρ₂ hv := by rcases hv with rfl | ⟨D, -, -, -, rfl, -⟩ <;> exact .inl rfl
   call n hlow g vs ws hvs := by
     cases hP : P.global? g with

@@ -187,14 +187,140 @@ theorem walkBind_call (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
         refine (SimUpTo.tick (eval_mono P vs.reverse [] gd.body) (eval_mono Q ρ' J' o) hin').congr
           (fun k => ?_) (fun k => eval_tick Q k ρ' J' o)
         rw [eval_bind, hsrc, bind_assoc', hP]
-        simp only [Result.ofOption, Result.bind_ok, callVal, hvl, if_true]
-      · -- kept
-        obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2
-        obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
-        refine emit_sim hctx hW h3 hV henv hJ hd hdj hnd hk ?_
-        refine ((hctx.call g (pw_of hvws)).strengthen (S := fun w => FactsOk Q Valid here.facts (w :: ρ'))
-          fun _ w _ => hf.push w).congr hsrc (fun k => ?_)
-        rw [evalBind_call, hd, Walk.atoms, opds_eval hws]; rfl
+        simp only [Result.ofOption, Result.bind_ok, callVal, hvl, ↓reduceIte]
+      · -- not inlined: known-dispatch or kept
+        split at h2
+        · -- known-dispatch
+          next σ' alt hkd =>
+          split at hkd
+          · next hcond =>
+            simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+            obtain ⟨⟨hsh, hdk⟩, hlen⟩ := hcond
+            cases hbody : gd.body with
+            | bind _ _ _ | join _ _ _ _ | jump _ _ | ret _ | tick _ | trap => simp [hbody] at hkd
+            | case x alts dflt =>
+              cases x with
+              | lit _ | box => simp [hbody] at hkd
+              | var m =>
+                cases os with
+                | nil => simp [hbody] at hkd
+                | cons fo osRest =>
+                  simp only [hbody] at hkd
+                  split at hkd
+                  · next hm =>
+                    have hdispDef : Walk.isDispatchDef gd = true := by
+                      simp [Walk.isDispatchDef, hdk, hbody, hm]
+                    have hgdP : gd = gdP := by
+                      have := hctx.vdisp hV hsh g gd hgd hdispDef
+                      rw [hP] at this; exact (Option.some.inj this).symm
+                    subst hgdP
+                    simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hm
+                    have hm' : m + 1 = gd.ps.length := hm.2
+                    cases hkn : Walk.known C.prog.known here fo with
+                    | none => rw [hkn] at hkd; cases hkd
+                    | some cfs =>
+                      obtain ⟨c0, fs⟩ := cfs
+                      rw [hkn] at hkd
+                      obtain ⟨⟨isAlt, alt0⟩, hsel, hpair⟩ := Option.map_eq_some_iff.1 hkd
+                      simp only [Prod.mk.injEq] at hpair
+                      obtain ⟨rfl, rfl⟩ := hpair
+                      have h' := run_fire_then h2
+                      obtain ⟨k', s2, h3, h4⟩ := Walk.run_bind_ok h'
+                      obtain ⟨o, s3, h5, h6⟩ := Walk.run_bind_ok h4
+                      obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h6
+                      have hk' := hW.after h3 ρ J ρ' J' live jlive SK hV henv hJ
+                        (hnd.bind_body true fun e => nomatch e) hk
+                      cases hws_eq : ws with
+                      | nil =>
+                        subst hws_eq
+                        simp [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff] at hws
+                      | cons fw wsRest =>
+                        subst hws_eq
+                        cases hvws with
+                        | cons hfw hvwsRest =>
+                          rename_i fv vsRest
+                          have hwsAll : (fo :: osRest).mapM (·.val ρ') = some (fw :: wsRest) := hws
+                          simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff,
+                            Option.pure_def, Option.some.injEq, List.cons.injEq] at hws
+                          obtain ⟨fw', hfo, wsRest', hwsRest, rfl, rfl⟩ := hws
+                          have hK : Q.known = C.prog.known := by rw [hctx.known, hctx.vknown hV]
+                          obtain ⟨wfs, hwfs, hwc⟩ := known_sound hK hf hkn hfo
+                          have hwc' : Val.asCtor P.known fw' = some (c0, wfs) := by rw [← hctx.known]; exact hwc
+                          have hvl : (fv :: vsRest).length = gd.ps.length := by
+                            rw [← (WVs.cons hfw hvwsRest).length, mapM_length hwsAll, hlen]
+                          have hvar : (Atom.var m).eval (fv :: vsRest).reverse = some fv := by
+                            have hrm : vsRest.reverse.length = m := by
+                              simp only [List.length_reverse]
+                              simp only [List.length_cons] at hvl
+                              omega
+                            simp [Atom.eval, List.reverse_cons, hrm]
+                          rcases Rel.asCtor_rel structural.toBase P.known hfw with hnone | ⟨c', vfs, wfs', hvc, hwc2, hfs⟩
+                          · refine (SimUpTo.tick (d := fun v k => (eval P k (v :: ρ) J body).bind fun x => SK x k)
+                              (eval_mono P (fv :: vsRest).reverse [] gd.body)
+                              (eval_mono Q ρ' J' o)
+                              ((SimUpTo.stuck _).congr (fun k => by
+                                rw [hbody, eval_case, hvar]
+                                simp [Result.ofOption, hnone]; rfl) (fun _ => rfl))).congr
+                              (fun k => ?_) (fun k => eval_tick Q k ρ' J' o)
+                            rw [eval_bind, hsrc, bind_assoc', hP]
+                            simp only [Result.ofOption, Result.bind_ok, callVal, hvl, ↓reduceIte]
+                          · rw [hwc'] at hwc2
+                            simp only [Option.some.injEq, Prod.mk.injEq] at hwc2
+                            obtain ⟨rfl, rfl⟩ := hwc2
+                            have hvfl : vfs.length = fs.length := by
+                              rw [← (of_pw hfs).length, mapM_length hwfs]
+                            rw [← hvfl] at hsel
+                            have henvos := WEnv.pushOpds (mapM_reverse hwsAll) (WVs.cons hfw hvwsRest).reverse
+                              (WEnv.nil (Q := Q) (Valid := Valid) (Xc := Xc)
+                                (C := { C with inline := [], redirect := none }) (ρ' := ρ'))
+                            simp only [List.append_nil, List.length_reverse] at henvos
+                            have hdisp_eq : ∀ k', eval P k' (fv :: vsRest).reverse [] gd.body =
+                                eval P k' ((if isAlt then vfs.reverse else []) ++ (fv :: vsRest).reverse) [] alt0 := by
+                              intro k'
+                              rw [hbody, eval_case, hvar]
+                              simp only [Result.ofOption, Result.bind_ok, hvc]
+                              exact (select_spec hsel).1
+                            cases isAlt with
+                            | true =>
+                              simp only [↓reduceIte] at h5 hdisp_eq
+                              have henvb := WEnv.pushOpds (mapM_reverse hwfs) (of_pw hfs).reverse henvos
+                              simp only [List.length_reverse] at henvb
+                              have hnd0 : NoDead (List.replicate fs.length true ++ List.replicate (fo :: osRest).length true) [] alt0 :=
+                                ⟨fun i hi => by
+                                  have hmem := List.mem_of_getElem? hi
+                                  simp at hmem,
+                                 fun j hj => by simp at hj⟩
+                              have hin' := hW.walk h5 (vfs.reverse ++ (fv :: vsRest).reverse) [] ρ' J' _ [] _
+                                (hctx.vinl (vfs.reverse ++ (fv :: vsRest).reverse) hV) henvb .nil hd hdj hf hnd0 hk'
+                              refine (SimUpTo.tick (eval_mono P (vfs.reverse ++ (fv :: vsRest).reverse) [] alt0)
+                                (eval_mono Q ρ' J' o) hin').congr (fun k => ?_) (fun k => eval_tick Q k ρ' J' o)
+                              rw [eval_bind, hsrc, bind_assoc', hP]
+                              simp only [Result.ofOption, Result.bind_ok, callVal, hvl, ↓reduceIte]
+                              cases k with
+                              | zero => rfl
+                              | succ k => simp only [later, hdisp_eq]
+                            | false =>
+                              simp only [Bool.false_eq_true, ↓reduceIte, List.nil_append] at h5 hdisp_eq
+                              have hnd0 : NoDead (List.replicate (fo :: osRest).length true) [] alt0 :=
+                                ⟨fun i hi => by simp [List.getElem?_replicate] at hi, fun j hj => by simp at hj⟩
+                              have hin' := hW.walk h5 (fv :: vsRest).reverse [] ρ' J' _ [] _
+                                (hctx.vinl (fv :: vsRest).reverse hV) henvos .nil hd hdj hf hnd0 hk'
+                              refine (SimUpTo.tick (eval_mono P (fv :: vsRest).reverse [] alt0)
+                                (eval_mono Q ρ' J' o) hin').congr (fun k => ?_) (fun k => eval_tick Q k ρ' J' o)
+                              rw [eval_bind, hsrc, bind_assoc', hP]
+                              simp only [Result.ofOption, Result.bind_ok, callVal, hvl, ↓reduceIte]
+                              cases k with
+                              | zero => rfl
+                              | succ k => simp only [later, hdisp_eq]
+                  · cases hkd
+          · cases hkd
+        · -- kept
+          obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2
+          obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h4
+          refine emit_sim hctx hW h3 hV henv hJ hd hdj hnd hk ?_
+          refine ((hctx.call g (pw_of hvws)).strengthen (S := fun w => FactsOk Q Valid here.facts (w :: ρ'))
+            fun _ w _ => hf.push w).congr hsrc (fun k => ?_)
+          rw [evalBind_call, hd, Walk.atoms, opds_eval hws]; rfl
     · exact absurd h2 (fun h => Walk.run_throw_ok h)
 
 end IxCC.Anf.WalkProof

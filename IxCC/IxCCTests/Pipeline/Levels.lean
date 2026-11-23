@@ -58,7 +58,7 @@ def assemble (name : String) (cert : Cert) (art : Artifact) : IO Compiled := do
   let anf ← IO.ofExcept (anfStages cert art.lam)
   let some (_, last) := anf.getLast? | throw (IO.userError s!"{name}: no Anf stage")
   -- the closures step, as `run` runs it: a stage of its own when it changed the program
-  let closed ← IO.ofExcept ((Recheck.closuresOf art.src last).mapError (·.render))
+  let closed ← IO.ofExcept ((Recheck.closuresOf art.src last cert.mid.post).mapError (·.render))
   let anf := if closed.beq last then anf else anf ++ [("P8", closed)]
   -- the replay ends where `run` ended
   unless closed.beq art.anf do throw (IO.userError s!"{name}: the replayed middle end differs from run's")

@@ -65,9 +65,11 @@ structure Budgets where
 def cfg (P : Program) (p : Params) : Walk.Cfg :=
   { prog := P, shrink := true, caseOfCaseBound := p.caseOfCase, smallJoin := p.smallJoin }
 
-/-- One round on one global. -/
+/-- One round on one global (P8 dispatchers are kept unchanged so that the
+known-dispatch shrink rule reads their exact bodies across rounds). -/
 def round (P : Program) (p : Params) (gd : GDef) : Except String (GDef × Walk.Fires) :=
-  (Walk.global (cfg P p) gd).run {}
+  if Walk.isDispatchDef gd then pure (gd, {})
+  else (Walk.global (cfg P p) gd).run {}
 
 /-- Exactly `n` rounds, starting with `work` already done by the step; the
 global and the step's work after them. A round is refused if it leaves the
@@ -151,7 +153,10 @@ def fixpoint (P : Program) (p : Params) (gd : GDef) :
 exactly `round`). -/
 def produceRound (force : Option Bool) (P : Program) (p : Params) (gd : GDef) :
     Except String (GDef × Walk.Fires) :=
-  (Walk.global { cfg P p with pendForce := force } gd).run {}
+  if Walk.isDispatchDef gd then
+    pure (gd, {})
+  else
+    (Walk.global { cfg P p with pendForce := force } gd).run {}
 
 /-- `fixpoint` within what the re-run (`rounds`) accepts, `work` being the
 step's work so far: the rounds stop, the last one uncounted, at a round that
@@ -189,5 +194,32 @@ def produce (B : Budgets) (P : Program) : Except String (Cert × Program × Walk
   let rounds : Src.NatMap Nat := Src.NatMap.ofList (rs.map fun (g, _, n, _) => (g, n))
   let cert := (List.range P.size).map fun g => rounds.getD g 0
   return (cert, P', rs.foldl (fun acc (_, _, _, f) => acc.add f) {})
+
+/-- Pure fixpoint loop using `round` (no `Array`, no `pendForce`, zero extra
+axioms), for post-P8 shrinking. -/
+def fixpointChecked (P : Program) (p : Params) (gd : GDef) :
+    Nat → Nat → Nat → GDef × Nat × Nat
+  | 0, n, work => (gd, n, work)
+  | budget + 1, n, work =>
+    match round P p gd with
+    | .error _ => (gd, n, work)
+    | .ok (gd', f) =>
+      if f.total == 0 then (gd, n, work)
+      else if gd'.body.nodesLe maxGlobalNodes && gd'.body.depthUpTo maxDepth maxGlobalNodes ≤ maxDepth &&
+          work + f.work ≤ maxStepWork then
+        fixpointChecked P p gd' budget (n + 1) (work + f.work)
+      else (gd, n, work)
+
+/-- Pure shrink producer using `round` (returns round counts per global and the
+shrunk program, without `Array` or `pendForce`). -/
+def shrinkChecked (p : Params) (maxRounds : Nat) (P : Program) : Cert × Program :=
+  let (rs, _) := P.globalList.foldl (init := ([], 0)) fun (rs, work) (g, gd) =>
+    let (gd', n, work) := fixpointChecked P p gd maxRounds 0 work
+    ((g, gd', n) :: rs, work)
+  let rs := rs.reverse
+  let P' := { P with globals := Src.NatMap.ofList (rs.map fun (g, gd, _) => (g, gd)) }
+  let rounds : Src.NatMap Nat := Src.NatMap.ofList (rs.map fun (g, _, n) => (g, n))
+  let cert := (List.range P.size).map fun g => rounds.getD g 0
+  (cert, P')
 
 end IxCC.Anf.Shrink

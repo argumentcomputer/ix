@@ -102,6 +102,7 @@ theorem round_refines (h0 : P.WF) {Q : Program} {f : Walk.Fires} (h : round P r 
       cknown := fun C _ _ _ hV => by rw [hV.1]
       cglob := fun C _ _ _ hV g => by rw [hV.1]
       cbody := fun C _ _ _ hV g _ => by rw [hV.1]
+      cdisp := fun C _ _ _ hV _ g gd hgd _ => by rw [← hV.1]; exact hgd
       inl := fun C _ _ _ _ hV => ⟨hV.1, rfl⟩
       noRed := fun C _ _ _ hV => hV.2 }⟩
 

@@ -78,6 +78,8 @@ structure Hyp : Prop where
   cglob : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → ∀ g,
     (C.prog.global? g).map (·.ps.length) = (P.global? g).map (·.ps.length)
   cbody : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → ∀ g, C.inline.contains g = true → C.prog.global? g = P.global? g
+  cdisp : ∀ C ρ ρ' prs, Valid C ρ ρ' prs → C.shrink = true → ∀ g gd,
+    C.prog.global? g = some gd → Walk.isDispatchDef gd = true → P.global? g = some gd
   inl : ∀ C ρ ρ' prs ρ₂, Valid C ρ ρ' prs → Valid { C with inline := [], redirect := none } ρ₂ ρ' prs
   call : ∀ n, Low P Q Valid Xc n → Rel.CallSim P Q (WV Q Valid Xc) n
   glob : ∀ n, Low P Q Valid Xc n → Rel.GlobSim P Q (WV Q Valid Xc) n
@@ -102,7 +104,7 @@ theorem levels (H : Hyp P Q Valid Xc) : ∀ n, ((∀ fuel, WalkAt P Q Valid Xc n
   have hglob := H.glob n hlow
   have hctx : Ctx P Q Valid Xc n :=
     { known := H.known, arity := H.arity, suffix := H.suffix, cknown := H.cknown, cglob := H.cglob
-      cbody := H.cbody, inl := H.inl, app := happ, call := hcall, glob := hglob
+      cbody := H.cbody, cdisp := H.cdisp, inl := H.inl, app := happ, call := hcall, glob := hglob
       red := H.red n hlow }
   exact ⟨⟨walkAt_all hctx (fun m hm => (hlow m hm).1),
     Rel.fund_step structural H.known (fun m hm => (hlow m hm).2.1) happ hcall hglob,

@@ -5,6 +5,7 @@ import IxCCTests.Anf.Generated
 import IxCCTests.Anf.KernelEval
 import IxCCTests.Anf.LeanRender
 import IxCCTests.Anf.Defun
+import IxCCTests.Anf.ClosuresOpt
 import IxCCTests.Anf.SuccBle
 import IxCCTests.Anf.FoldGuard
 
@@ -92,6 +93,8 @@ def main (args : List String) : IO UInt32 := do
       for line in ← Generated.run a 1000 do IO.println s!"    {line}"
     part a "P8 (defunctionalisation), Anf before against Anf after" do
       for line in ← Defun.run a 300 do IO.println s!"    {line}"
+    part a "post-P8 closure & dead-parameter optimisations (known-dispatch, P9, P5, PostCert)" do
+      for line in ← ClosuresOpt.run a do IO.println s!"    {line}"
     IO.println s!"tests-anf: {← a.get} assertions passed"
     return 0
   catch e =>

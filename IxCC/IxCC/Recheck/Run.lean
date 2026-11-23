@@ -208,7 +208,10 @@ def checkMidStep : Anf.Pipeline.Step → Bool
   | .prune => true
 
 def checkMidCert (m : Anf.Pipeline.Cert) : Except Err Unit :=
-  if !m.shrink.checkCert || m.steps.length > 64 || !m.steps.all checkMidStep then
+  let postOk := match m.post with
+    | none => true
+    | some pc => Anf.Pipeline.checkPostCert pc
+  if !m.shrink.checkCert || m.steps.length > 64 || !m.steps.all checkMidStep || !postOk then
     .error { stage := .anf, code := "anf.replay", message := "middle-end certificate exceeds resource bounds" }
   else
     .ok ()
@@ -318,10 +321,11 @@ def front (cfg : Config) (P : Src.Program) (c : Cert) :
 /-- The closures step (`Anf.Pipeline.closures`) on the middle end's program
 `pre`, at the source roots' declared counts (`declaredCounts`; a root with no
 declaration is refused, `anf.entry`). The producer calls it too. -/
-def closuresOf (src : Src.Program) (pre : Anf.Program) : Except Err Anf.Program :=
+def closuresOf (src : Src.Program) (pre : Anf.Program)
+    (post : Option Anf.Pipeline.PostCert := none) : Except Err Anf.Program :=
   match declaredCounts src with
   | none => throw { stage := .anf, code := "anf.entry", message := "a root has no declaration" }
-  | some decl => (Anf.Pipeline.closures decl pre).mapError Err.ofClosures
+  | some decl => (Anf.Pipeline.closures decl pre post).mapError Err.ofClosures
 
 /-- Lam to the Anf program Fir lowers: the certificate's middle end
 (`Anf.Pipeline.run`), then the closures step at the source roots' declared
@@ -329,7 +333,7 @@ counts (`closuresOf`). Every definition that replays the middle end calls it. -/
 def anfOf (c : Cert) (src : Src.Program) (lam : Lam.Program) : Except Err Anf.Program := do
   let pre ← (Anf.Pipeline.run c.mid lam).mapError fun msg =>
     { stage := .anf, code := "anf.replay", message := msg }
-  closuresOf src pre
+  closuresOf src pre c.mid.post
 
 /-- The producers' closures step (untrusted, as the rest of the producer): the
 step on the schedule's last program, as the replay runs it, and the
@@ -340,11 +344,21 @@ def produceClosures (src : Src.Program) (trace : Anf.Pipeline.Trace) :
     Except Err (Anf.Program × List (String × Anf.Program)) := do
   checkFnParams [] src
   let pre := ((trace.stages.getLast?).map (·.2)).getD default
-  let anf ← closuresOf src pre
-  let plain := match declaredCounts src with
-    | some decl => Anf.Pipeline.plain decl pre
-    | none => true
-  pure (anf, if plain then trace.stages else trace.stages ++ [("P8", anf)])
+  let decl ← match declaredCounts src with
+    | none => throw { stage := .anf, code := "anf.entry", message := "a root has no declaration" }
+    | some d => pure d
+  if Anf.Pipeline.plain decl pre then
+    pure (pre, trace.stages)
+  else
+    let anf ← match trace.postOut, trace.cert.post with
+      | some Qout, some pc =>
+        if Anf.Pipeline.rootsAgree decl pre && pre.size == pc.baseSize then
+          if Anf.firstOrder Qout then
+            (Anf.Pipeline.checkGlobalNodes Qout).mapError Err.ofClosures
+          else throw { stage := .anf, code := "anf.post", message := "residual closure" }
+        else closuresOf src pre trace.cert.post
+      | _, _ => closuresOf src pre trace.cert.post
+    pure (anf, trace.stages ++ [("P8", anf)])
 
 /-- Lam through Cfg on the certificate's middle-end decisions. -/
 def middle (c : Cert) (src : Src.Program) (lam : Lam.Program) :

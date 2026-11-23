@@ -190,4 +190,111 @@ def produce (B : Budgets) (P : Program) : Round :=
     -- at most the callees a certificate may list per caller (`checkCert`)
     if cs.isEmpty then none else some (f, cs.take maxCertCallees)
 
+/-! ## Post-P8 oracle (pure `NatMap`/`NatSet`, ignores outgoing edges from dispatchers) -/
+
+private structure TarjanSt where
+  index : Src.NatMap Nat := .leaf
+  low : Src.NatMap Nat := .leaf
+  onStack : Src.NatSet := .leaf
+  stack : List GlobalId := []
+  out : Src.NatSet := .leaf
+  next : Nat := 0
+
+private def popComp (v : GlobalId) :
+    List GlobalId → Src.NatSet → List GlobalId → List GlobalId × Src.NatSet × List GlobalId
+  | [], onS, acc => (acc, onS, [])
+  | x :: xs, onS, acc =>
+    let onS' := onS.erase x
+    let acc' := x :: acc
+    if x == v then (acc', onS', xs) else popComp v xs onS' acc'
+
+private def tarjanLoop (edges : Src.NatMap (List GlobalId)) :
+    Nat → List (GlobalId × List GlobalId) → TarjanSt → TarjanSt
+  | 0, _, st => st
+  | _, [], st => st
+  | fuel + 1, (v, w :: ws) :: rest, st =>
+    let st := if w == v then { st with out := st.out.insert v } else st
+    match st.index.get? w with
+    | none =>
+      let iw := st.next
+      let st' : TarjanSt :=
+        { st with
+          index := st.index.insert w iw
+          low := st.low.insert w iw
+          onStack := st.onStack.insert w
+          stack := w :: st.stack
+          next := iw + 1 }
+      tarjanLoop edges fuel ((w, edges.getD w []) :: (v, ws) :: rest) st'
+    | some iw =>
+      let st' :=
+        if st.onStack.contains w then
+          { st with low := st.low.insert v (min (st.low.getD v 0) iw) }
+        else st
+      tarjanLoop edges fuel ((v, ws) :: rest) st'
+  | fuel + 1, (v, []) :: rest, st =>
+    let lv := st.low.getD v 0
+    let st' :=
+      if lv == st.index.getD v 0 then
+        let (comp, onS, stk) := popComp v st.stack st.onStack []
+        let out' := if comp.length > 1 then comp.foldl (fun s x => s.insert x) st.out else st.out
+        { st with onStack := onS, stack := stk, out := out' }
+      else st
+    let st'' :=
+      match rest with
+      | (u, _) :: _ => { st' with low := st'.low.insert u (min (st'.low.getD u 0) lv) }
+      | [] => st'
+    tarjanLoop edges fuel rest st''
+
+/-- Globals on a direct cycle of the reference graph, ignoring outgoing edges
+from `.dispatch _` globals (so post-P8 recursors like `Tree.rec` / `Expr.rec`
+that only cycle through a mega-dispatcher are not blocked from inlining).
+Pure `NatMap`/`NatSet` (zero `Quot.sound` or `Classical.choice`). -/
+def directRecursive (P : Program) : Src.NatSet :=
+  let edges : Src.NatMap (List GlobalId) :=
+    Src.NatMap.ofList (P.globalList.map fun (g, gd) =>
+      (g, if Walk.isDispatchKey gd.key then [] else gd.body.refs))
+  let fuel := P.globalList.foldl (fun n (_, gd) => n + 2 * gd.body.refs.length + 2) 2
+  let st := P.globalList.foldl (init := ({} : TarjanSt)) fun st (root, _) =>
+    if st.index.contains root then st
+    else
+      let ir := st.next
+      let st0 : TarjanSt :=
+        { st with
+          index := st.index.insert root ir
+          low := st.low.insert root ir
+          onStack := st.onStack.insert root
+          stack := root :: st.stack
+          next := ir + 1 }
+      tarjanLoop edges fuel [(root, edges.getD root [])] st0
+  st.out
+
+/-- Whether the post-P8 oracle inlines `g`: never dispatchers, never directly
+recursive globals; inlines CAFs, wrappers, by-name variants, and small bodies
+(`≤ maxSize` nodes, including recursors and small lifted lambdas). -/
+def inlinablePostP8 (maxSize : Nat) (recs : Src.NatSet) (gd : GDef) (g : GlobalId) : Bool :=
+  !Walk.isDispatchKey gd.key &&
+  !recs.contains g &&
+  (gd.ps.isEmpty || gd.body.nodesLe maxSize ||
+    (match gd.key with
+     | .byName .. | .wrapper .. => true
+     | _ => false))
+
+/-- Pure post-P8 inline oracle (skips `.dispatch _` globals as both callers and
+callees, uses `directRecursive`, zero `HashSet`/`Quot.sound`). -/
+def producePostP8 (maxSize : Nat := 128) (P : Program) : Round :=
+  let recs := directRecursive P
+  let inl : Src.NatMap Bool :=
+    Src.NatMap.ofList (P.globalList.map fun (g, gd) => (g, inlinablePostP8 maxSize recs gd g))
+  P.globalList.filterMap fun (f, gd) =>
+    if Walk.isDispatchKey gd.key then none
+    else
+      let sites : Src.NatSet := gd.body.sites.foldl (fun s g => s.insert g) .leaf
+      let refs := (gd.body.refs.foldl (init := ((.leaf : Src.NatSet), ([] : List GlobalId)))
+        fun (seen, acc) g => if seen.contains g then (seen, acc) else (Src.NatSet.insert seen g, g :: acc)).2.reverse
+      let cs := refs.filter fun g =>
+        g != f && (match P.global? g with
+          | some gd' => inl.getD g false && (gd'.ps.isEmpty || sites.contains g)
+          | none => false)
+      if cs.isEmpty then none else some (f, cs.take maxCertCallees)
+
 end IxCC.Anf.Inline

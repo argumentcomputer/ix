@@ -5,6 +5,7 @@ import IxCC.Anf.Proof.Rel.Ident
 import IxCC.Anf.Proof.Pass.Shrink
 import IxCC.Anf.Proof.Pass.Inline
 import IxCC.Anf.Proof.Pass.Pipeline
+import IxCCTests.Fences.AnfClosuresOpt
 
 /-! Required axiom fences for the Anf proofs: clock monotonicity of
 Anf evaluation; ANF conversion (P1, Lam → Anf); the Anf-to-Anf relation, its
