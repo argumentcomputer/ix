@@ -223,7 +223,7 @@ pub struct ProverData {
   commitment: Commitment,
 }
 
-impl CoefficientData for ProverData {
+impl CoefficientData<super::Bn254> for ProverData {
   fn matrix(&self, index: usize) -> Option<&CommittedMatrix> {
     self.matrices.get(index)
   }
@@ -498,7 +498,9 @@ impl Pcs for PackedShplonkPcs {
   ) -> (Commitment, ProverData) {
     let matrices: Vec<_> = evaluations
       .into_iter()
-      .map(|(domain, matrix)| KzgPcs::interpolate_columns(domain, matrix))
+      .map(|(domain, matrix)| {
+        KzgPcs::<super::Bn254>::interpolate_columns(domain, matrix)
+      })
       .collect();
     let classes = vec![true; matrices.len()];
     let known =
@@ -515,7 +517,7 @@ impl Pcs for PackedShplonkPcs {
       quotients
         .into_iter()
         .map(|(domain, matrix, degree)| {
-          KzgPcs::interpolate_quotient(domain, matrix, degree)
+          KzgPcs::<super::Bn254>::interpolate_quotient(domain, matrix, degree)
         })
         .collect(),
       &next_rows,

@@ -5,7 +5,12 @@ use super::super::{
   storage::Manifest,
 };
 use crate::{
-  kzg::{KzgConfig, Scalar, compact::FixedProofCodec},
+  kzg::{
+    KzgConfig,
+    compact::FixedProofCodec,
+    curve::{Bn254, KzgCurve},
+    field::CurveScalar,
+  },
   recursive::native_verifier::{ClaimSchema, Plan},
 };
 #[cfg(test)]
@@ -18,7 +23,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 /// Check a first stage's manifest has a supported shape and claim rows, and
 /// return its largest partition height.
-fn check_manifest(manifest: &Manifest) -> Result<usize> {
+fn check_manifest<C: KzgCurve>(manifest: &Manifest<C>) -> Result<usize> {
   let count = manifest.heights.len();
   let height =
     *manifest.heights.iter().max().ok_or("empty recursive verifying key")?;
@@ -34,7 +39,8 @@ fn check_manifest(manifest: &Manifest) -> Result<usize> {
     return Err("unsupported partition verifying key".into());
   }
   let statement = statement::from_rows(&manifest.claims)?;
-  if manifest.claims != super::super::first::expected_claims(count, &statement)
+  if manifest.claims
+    != super::super::first::expected_claims::<C>(count, &statement)
   {
     return Err("claim rows differ from the statement and anchors".into());
   }
@@ -44,23 +50,23 @@ fn check_manifest(manifest: &Manifest) -> Result<usize> {
 /// The recursive stage's verifying key for a first stage with `manifest`'s
 /// shape and fixed setup `parts`, derived without a proof: `prove` builds the
 /// same plan and circuit from a loaded first stage.
-pub(in crate::pipeline) fn verifying_key(
-  manifest: &Manifest,
-  parts: Vec<FixedSetup>,
+pub(in crate::pipeline) fn verifying_key<C: KzgCurve>(
+  manifest: &Manifest<C>,
+  parts: Vec<FixedSetup<C>>,
   config: &SetupConfig,
-) -> Result<super::outer::VerifyingKey> {
+) -> Result<super::outer::VerifyingKey<C>> {
   frontend(manifest, parts, config)?.verifying_key(config)
 }
 
 /// The recursive stage's circuit for a first stage with `manifest`'s shape
 /// and fixed setup `parts`, as `prove` builds it from a loaded first stage.
-pub(in crate::pipeline) fn frontend(
-  manifest: &Manifest,
-  parts: Vec<FixedSetup>,
+pub(in crate::pipeline) fn frontend<C: KzgCurve>(
+  manifest: &Manifest<C>,
+  parts: Vec<FixedSetup<C>>,
   config: &SetupConfig,
-) -> Result<super::outer::Frontend> {
+) -> Result<super::outer::Frontend<C>> {
   let height = check_manifest(manifest)?;
-  let setup = config.for_stage(FIRST_SEED, height)?;
+  let setup = config.for_stage::<C>(FIRST_SEED, height)?;
   let system =
     inner_system(&setup, &manifest.widths, &manifest.heights, parts)?;
   let plan = super::super::lowering::recursive_plan(
@@ -102,11 +108,14 @@ fn load<T: DeserializeOwned>(
 }
 
 #[cfg(test)]
-pub(super) fn layout() -> crate::recursive::native_verifier::LayoutPolicy {
+pub(super) fn layout<C: KzgCurve>()
+-> crate::recursive::native_verifier::LayoutPolicy<C> {
   super::super::lowering::recursive_layout()
 }
 
-pub(super) fn claim_schema(claims: &[Vec<Scalar>]) -> Result<ClaimSchema> {
+pub(super) fn claim_schema<C: KzgCurve>(
+  claims: &[Vec<CurveScalar<C>>],
+) -> Result<ClaimSchema<C>> {
   let public =
     super::super::claims::ClaimTemplate::from_claims(claims, 18)?.locations;
   Ok(ClaimSchema::from_claims(claims, &public)?)
@@ -115,12 +124,12 @@ pub(super) fn claim_schema(claims: &[Vec<Scalar>]) -> Result<ClaimSchema> {
 /// The first stage's verifier system as the recursive stage verifies it:
 /// verifier-only parameters at the largest partition height, and each
 /// partition's fixed setup, checked against the staged dimensions.
-pub(super) fn inner_system(
-  setup: &SetupSource,
+pub(super) fn inner_system<C: KzgCurve>(
+  setup: &SetupSource<C>,
   widths: &[usize],
   heights: &[usize],
-  parts: Vec<FixedSetup>,
-) -> Result<System<KzgConfig>> {
+  parts: Vec<FixedSetup<C>>,
+) -> Result<System<KzgConfig<C>>> {
   let height = *heights.iter().max().ok_or("empty recursive verifying key")?;
   if parts.len() != heights.len()
     || widths.len() != heights.len()
@@ -139,10 +148,10 @@ pub(super) fn logs(heights: &[usize]) -> Vec<u8> {
   heights.iter().map(|h| u8::try_from(h.ilog2()).unwrap()).collect()
 }
 
-pub(super) struct Input {
-  pub(super) system: System<KzgConfig>,
-  pub(super) proof: Proof<KzgConfig>,
-  pub(super) claims: Vec<Vec<Scalar>>,
+pub(super) struct Input<C: KzgCurve = Bn254> {
+  pub(super) system: System<KzgConfig<C>>,
+  pub(super) proof: Proof<KzgConfig<C>>,
+  pub(super) claims: Vec<Vec<CurveScalar<C>>>,
   pub(super) logs: Vec<u8>,
   pub(super) proof_bytes: Vec<u8>,
   input_blake3: BTreeMap<String, String>,
@@ -151,8 +160,8 @@ pub(super) struct Input {
   load_seconds: f64,
 }
 
-impl Input {
-  fn plan(&self) -> Result<Plan<'_>> {
+impl<C: KzgCurve> Input<C> {
+  fn plan(&self) -> Result<Plan<'_, C>> {
     super::super::lowering::recursive_plan(
       &self.system,
       &self.logs,
@@ -171,7 +180,7 @@ impl Input {
   ) -> Result<Self> {
     let start = Instant::now();
     let mut input_blake3 = BTreeMap::new();
-    let manifest: Manifest = load(dir, "manifest.bin", &mut input_blake3)?;
+    let manifest: Manifest<C> = load(dir, "manifest.bin", &mut input_blake3)?;
     let count = manifest.heights.len();
     let height = check_manifest(&manifest)?;
     eprintln!("Loading authenticated verifier parameters and saved proof");
@@ -180,7 +189,7 @@ impl Input {
     } else {
       dir.to_path_buf()
     };
-    let setup = config.setup.for_stage(FIRST_SEED, height)?;
+    let setup = config.setup.for_stage::<C>(FIRST_SEED, height)?;
     setup.check_binding(dir, height, 2)?;
     let setup_id = setup.identity(height, 2)?;
     if read_recorded(dir, BINDING_FILE, &mut input_blake3)? != setup_id {
@@ -225,13 +234,13 @@ impl Input {
   }
 }
 
-pub(super) fn prove(
+pub(super) fn prove<C: KzgCurve>(
   dir: &Path,
   stage: &Path,
   config: &super::super::StageConfig,
 ) -> Result<()> {
   let start = Instant::now();
-  let input = Input::load(dir, config)?;
+  let input = Input::<C>::load(dir, config)?;
   let build_start = Instant::now();
   let plan = input.plan()?;
   let plan_identity = plan.identity();
@@ -244,7 +253,7 @@ pub(super) fn prove(
   let witness_seconds = witness_start.elapsed().as_secs_f64();
   let stats = built.circuit.stats();
   let result = serde_json::json!({
-    "curve": crate::kzg::curve::NAME,
+    "curve": C::NAME,
     "gates": stats.gates,
     "lookups": stats.lookups,
     "values": stats.values,
@@ -289,7 +298,7 @@ pub(super) fn prove(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::kzg::Srs;
+  use crate::kzg::{Scalar, Srs};
   use crate::pipeline::init_fri::INIT_PUBLIC_WORDS;
   use crate::pipeline::setup::SetupSource;
   use crate::recursive::native_verifier::LayoutPolicy;
@@ -347,8 +356,8 @@ mod tests {
 
   #[test]
   fn saved_plan_excludes_public_words_and_binds_constants_and_layout() {
-    let config = KzgConfig::new(
-      Arc::new(Srs::unsafe_dev_setup(8, b"saved-plan-fixture")),
+    let config = KzgConfig::<Bn254>::new(
+      Arc::new(Srs::<Bn254>::unsafe_dev_setup(8, b"saved-plan-fixture")),
       2,
     );
     let definition = CircuitInputs {
@@ -390,7 +399,7 @@ mod tests {
     assert_ne!(first.proof_bytes, second.proof_bytes);
     let identity = first.plan().unwrap().identity();
     assert_eq!(identity, second.plan().unwrap().identity());
-    let other = LayoutPolicy { max_table_height: 1 << 20, ..layout() };
+    let other = LayoutPolicy { max_table_height: 1 << 20, ..layout::<Bn254>() };
     assert_ne!(
       identity,
       Plan::new(
@@ -440,7 +449,7 @@ mod tests {
     )?;
     fs::write(root.join("setup-0.bin"), [0xff])?;
     let missing =
-      Input::load(&root, &crate::pipeline::StageConfig::development())
+      Input::<Bn254>::load(&root, &crate::pipeline::StageConfig::development())
         .err()
         .unwrap();
     assert_eq!(
@@ -449,18 +458,18 @@ mod tests {
     );
     fs::write(root.join(BINDING_FILE), [0; 32])?;
     let wrong =
-      Input::load(&root, &crate::pipeline::StageConfig::development())
+      Input::<Bn254>::load(&root, &crate::pipeline::StageConfig::development())
         .err()
         .unwrap();
     assert!(wrong.to_string().contains("mismatch"));
     fs::remove_file(root.join(BINDING_FILE))?;
     fs::write(
       root.join(BINDING_FILE),
-      SetupSource::development(FIRST_SEED, (1 << 24) - 1)?
+      SetupSource::<Bn254>::development(FIRST_SEED, (1 << 24) - 1)?
         .identity(1 << 24, 2)?,
     )?;
     let malformed =
-      Input::load(&root, &crate::pipeline::StageConfig::development())
+      Input::<Bn254>::load(&root, &crate::pipeline::StageConfig::development())
         .err()
         .unwrap();
     assert!(malformed.downcast_ref::<bincode::error::DecodeError>().is_some());

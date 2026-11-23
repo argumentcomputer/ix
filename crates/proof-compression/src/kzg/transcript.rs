@@ -1,19 +1,19 @@
-//! Fiat-Shamir transcripts over the selected KZG curve's scalar field.
+//! Fiat-Shamir transcripts over a KZG curve's scalar field.
 //!
 //! BLAKE3 samples hash the chain state and buffered canonical observations,
 //! reduce 64 XOF bytes little-endian into the scalar field, take 32 more
 //! bytes as the next state, and clear the buffer. Keccak-256 uses separate
 //! digest domains for its wide challenge and next state.
 
-use super::curve::Fr;
+use core::marker::PhantomData;
+
+use super::curve::{Bn254, KzgCurve};
+use super::field::CurveScalar;
+use super::pcs::KzgCommitment;
 use ark_ff::PrimeField;
 use ark_serialize::CanonicalSerialize;
-use tiny_keccak::{Hasher, Keccak};
-
 use multi_stark::traits::Transcript;
-
-use super::field::Scalar;
-use super::pcs::KzgCommitment;
+use tiny_keccak::{Hasher, Keccak};
 
 /// The hash and challenge expansion used by the native KZG verifier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,12 +24,12 @@ pub enum TranscriptKind {
 
 /// A native transcript whose hash is selected by the verifier configuration.
 #[derive(Clone)]
-pub enum KzgTranscript {
-  Blake3(Blake3Transcript),
-  Keccak256(Keccak256Transcript),
+pub enum KzgTranscript<C: KzgCurve = Bn254> {
+  Blake3(Blake3Transcript<C>),
+  Keccak256(Keccak256Transcript<C>),
 }
 
-impl KzgTranscript {
+impl<C: KzgCurve> KzgTranscript<C> {
   pub fn new(kind: TranscriptKind) -> Self {
     match kind {
       TranscriptKind::Blake3 => Self::Blake3(Blake3Transcript::new()),
@@ -60,36 +60,36 @@ impl KzgTranscript {
   }
 }
 
-impl Default for KzgTranscript {
+impl<C: KzgCurve> Default for KzgTranscript<C> {
   fn default() -> Self {
     Self::new(TranscriptKind::Blake3)
   }
 }
 
-impl Transcript for KzgTranscript {
-  type F = Scalar;
-  type Challenge = Scalar;
-  type Commitment = KzgCommitment;
+impl<C: KzgCurve> Transcript for KzgTranscript<C> {
+  type F = CurveScalar<C>;
+  type Challenge = CurveScalar<C>;
+  type Commitment = KzgCommitment<C>;
 
-  fn observe_field(&mut self, x: Scalar) {
+  fn observe_field(&mut self, x: CurveScalar<C>) {
     self.observe_canonical(&x.0);
   }
 
-  fn observe_field_slice(&mut self, xs: &[Scalar]) {
+  fn observe_field_slice(&mut self, xs: &[CurveScalar<C>]) {
     for x in xs {
       self.observe_field(*x);
     }
   }
 
-  fn observe_challenge(&mut self, x: Scalar) {
+  fn observe_challenge(&mut self, x: CurveScalar<C>) {
     self.observe_field(x);
   }
 
-  fn observe_commitment(&mut self, c: KzgCommitment) {
+  fn observe_commitment(&mut self, c: KzgCommitment<C>) {
     self.observe_canonical(&c.0);
   }
 
-  fn sample_challenge(&mut self) -> Scalar {
+  fn sample_challenge(&mut self) -> CurveScalar<C> {
     match self {
       Self::Blake3(t) => t.sample_challenge(),
       Self::Keccak256(t) => t.sample_challenge(),
@@ -99,16 +99,17 @@ impl Transcript for KzgTranscript {
 
 /// See the module docs.
 #[derive(Clone)]
-pub struct Blake3Transcript {
+pub struct Blake3Transcript<C: KzgCurve = Bn254> {
   state: [u8; 32],
   buffer: Vec<u8>,
+  _curve: PhantomData<C>,
 }
 
-impl Blake3Transcript {
+impl<C: KzgCurve> Blake3Transcript<C> {
   /// A fresh transcript. Domain separation and parameter binding are
   /// the configuration's job (it observes a seed right away).
   pub fn new() -> Self {
-    Self { state: [0; 32], buffer: Vec::new() }
+    Self { state: [0; 32], buffer: Vec::new(), _curve: PhantomData }
   }
 
   pub fn observe_bytes(&mut self, bytes: &[u8]) {
@@ -122,7 +123,7 @@ impl Blake3Transcript {
       .expect("serialization into a Vec cannot fail");
   }
 
-  fn squeeze(&mut self) -> Fr {
+  fn squeeze(&mut self) -> C::Fr {
     let mut hasher = blake3::Hasher::new();
     hasher.update(&self.state);
     hasher.update(&self.buffer);
@@ -131,45 +132,43 @@ impl Blake3Transcript {
     let mut wide = [0u8; 64];
     output.fill(&mut wide);
     output.fill(&mut self.state);
-    Fr::from_le_bytes_mod_order(&wide)
+    C::Fr::from_le_bytes_mod_order(&wide)
   }
 }
 
-impl Default for Blake3Transcript {
+impl<C: KzgCurve> Default for Blake3Transcript<C> {
   fn default() -> Self {
     Self::new()
   }
 }
 
-impl Transcript for Blake3Transcript {
-  type F = Scalar;
-  type Challenge = Scalar;
-  type Commitment = KzgCommitment;
+impl<C: KzgCurve> Transcript for Blake3Transcript<C> {
+  type F = CurveScalar<C>;
+  type Challenge = CurveScalar<C>;
+  type Commitment = KzgCommitment<C>;
 
-  fn observe_field(&mut self, x: Scalar) {
+  fn observe_field(&mut self, x: CurveScalar<C>) {
     self.observe_canonical(&x.0);
   }
 
-  fn observe_field_slice(&mut self, xs: &[Scalar]) {
+  fn observe_field_slice(&mut self, xs: &[CurveScalar<C>]) {
     for x in xs {
       self.observe_field(*x);
     }
   }
 
-  fn observe_challenge(&mut self, x: Scalar) {
+  fn observe_challenge(&mut self, x: CurveScalar<C>) {
     self.observe_field(x);
   }
 
-  fn observe_commitment(&mut self, c: KzgCommitment) {
+  fn observe_commitment(&mut self, c: KzgCommitment<C>) {
     self.observe_canonical(&c.0);
   }
 
-  fn sample_challenge(&mut self) -> Scalar {
-    Scalar(self.squeeze())
+  fn sample_challenge(&mut self) -> CurveScalar<C> {
+    CurveScalar(self.squeeze())
   }
 }
-
-const KECCAK256_DOMAIN: &[u8] = b"ix/kzg/bn254/keccak256/v1";
 
 fn keccak256(parts: &[&[u8]]) -> [u8; 32] {
   let mut hasher = Keccak::v256();
@@ -189,15 +188,16 @@ fn keccak256(parts: &[&[u8]]) -> [u8; 32] {
 /// the old state and the same observations, which are cleared afterwards.
 /// Canonical observations retain arkworks' compressed byte encoding.
 #[derive(Clone)]
-pub struct Keccak256Transcript {
+pub struct Keccak256Transcript<C: KzgCurve = Bn254> {
   state: [u8; 32],
   buffer: Vec<u8>,
+  _curve: PhantomData<C>,
 }
 
-impl Keccak256Transcript {
+impl<C: KzgCurve> Keccak256Transcript<C> {
   /// A fresh transcript. The configuration must observe its parameter seed.
   pub fn new() -> Self {
-    Self { state: [0; 32], buffer: Vec::new() }
+    Self { state: [0; 32], buffer: Vec::new(), _curve: PhantomData }
   }
 
   pub fn observe_bytes(&mut self, bytes: &[u8]) {
@@ -212,77 +212,83 @@ impl Keccak256Transcript {
   }
 
   fn digest(&self, counter: u8) -> [u8; 32] {
-    keccak256(&[KECCAK256_DOMAIN, &[counter], &self.state, &self.buffer])
+    keccak256(&[
+      C::KECCAK256_TRANSCRIPT_DOMAIN,
+      &[counter],
+      &self.state,
+      &self.buffer,
+    ])
   }
 
-  fn squeeze(&mut self) -> Fr {
+  fn squeeze(&mut self) -> C::Fr {
     let mut wide = [0u8; 64];
     wide[..32].copy_from_slice(&self.digest(0));
     wide[32..].copy_from_slice(&self.digest(1));
     self.state = self.digest(2);
     self.buffer.clear();
-    Fr::from_be_bytes_mod_order(&wide)
+    C::Fr::from_be_bytes_mod_order(&wide)
   }
 }
 
-impl Default for Keccak256Transcript {
+impl<C: KzgCurve> Default for Keccak256Transcript<C> {
   fn default() -> Self {
     Self::new()
   }
 }
 
-impl Transcript for Keccak256Transcript {
-  type F = Scalar;
-  type Challenge = Scalar;
-  type Commitment = KzgCommitment;
+impl<C: KzgCurve> Transcript for Keccak256Transcript<C> {
+  type F = CurveScalar<C>;
+  type Challenge = CurveScalar<C>;
+  type Commitment = KzgCommitment<C>;
 
-  fn observe_field(&mut self, x: Scalar) {
+  fn observe_field(&mut self, x: CurveScalar<C>) {
     self.observe_canonical(&x.0);
   }
 
-  fn observe_field_slice(&mut self, xs: &[Scalar]) {
+  fn observe_field_slice(&mut self, xs: &[CurveScalar<C>]) {
     for x in xs {
       self.observe_field(*x);
     }
   }
 
-  fn observe_challenge(&mut self, x: Scalar) {
+  fn observe_challenge(&mut self, x: CurveScalar<C>) {
     self.observe_field(x);
   }
 
-  fn observe_commitment(&mut self, c: KzgCommitment) {
+  fn observe_commitment(&mut self, c: KzgCommitment<C>) {
     self.observe_canonical(&c.0);
   }
 
-  fn sample_challenge(&mut self) -> Scalar {
-    Scalar(self.squeeze())
+  fn sample_challenge(&mut self) -> CurveScalar<C> {
+    CurveScalar(self.squeeze())
   }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::kzg::curve::Bls12381;
+  use crate::kzg::field::{Bls12381Scalar, Scalar};
   use ark_ff::BigInteger;
   use multi_stark::traits::Field;
   use num_bigint::BigUint;
 
-  #[test]
-  fn blake3_challenges_match_integer_reduction() {
-    let mut t = Blake3Transcript::new();
+  fn check_blake3_integer_reduction<C: KzgCurve>() {
+    let mut t = Blake3Transcript::<C>::new();
     t.observe_bytes(b"kzg-blake3-vector-v1");
-    t.observe_field(Scalar::from_u64(7));
+    t.observe_field(CurveScalar::<C>::from_u64(7));
     t.observe_bytes(&(0u8..160).collect::<Vec<_>>());
 
     let mut observed = b"kzg-blake3-vector-v1".to_vec();
     observed.extend(7u64.to_le_bytes());
     observed.extend([0; 24]);
     observed.extend(0u8..160);
-    let modulus = BigUint::from_bytes_le(&Fr::MODULUS.to_bytes_le());
+    let modulus = BigUint::from_bytes_le(&C::Fr::MODULUS.to_bytes_le());
     let mut state = [0u8; 32];
     for round in 0..3 {
       if round == 2 {
         t.observe_bytes(b"after-squeeze");
-        t.observe_field(Scalar::NEG_ONE);
+        t.observe_field(CurveScalar::<C>::NEG_ONE);
         observed.extend(b"after-squeeze");
         let mut field_bytes = (&modulus - 1u8).to_bytes_le();
         field_bytes.resize(32, 0);
@@ -302,14 +308,20 @@ mod tests {
     }
   }
 
+  #[test]
+  fn blake3_challenges_match_integer_reduction_for_both_curves() {
+    check_blake3_integer_reduction::<Bn254>();
+    check_blake3_integer_reduction::<Bls12381>();
+  }
+
   /// Slice observation must equal element-wise observation (trait
   /// contract).
   #[test]
   fn slice_observation_flat() {
     let xs = [Scalar::from_u64(5), Scalar::from_u64(6)];
-    let mut a = Blake3Transcript::new();
+    let mut a = Blake3Transcript::<Bn254>::new();
     a.observe_field_slice(&xs);
-    let mut b = Blake3Transcript::new();
+    let mut b = Blake3Transcript::<Bn254>::new();
     b.observe_field(xs[0]);
     b.observe_field(xs[1]);
     assert_eq!(a.sample_challenge(), b.sample_challenge());
@@ -332,9 +344,49 @@ mod tests {
   }
 
   #[test]
+  fn bls12_381_keccak_transcript_matches_independent_vectors() {
+    // PyCryptodome 3.23.0 Crypto.Hash.keccak, digest_bits=256, independently
+    // generates each digest from the documented concatenation. Challenges
+    // are int.from_bytes(digest0 + digest1, "big") % Fr::MODULUS; the field
+    // observations 7 and 42 are 32-byte little-endian canonical encodings.
+    let mut t = Keccak256Transcript::<Bls12381>::new();
+    t.observe_bytes(b"kzg-vector-v1");
+    t.observe_field(Bls12381Scalar::from_u64(7));
+    t.observe_bytes(&(0u8..160).collect::<Vec<_>>());
+
+    let vectors = [
+      (
+        "2e3429e71d42335d9ea681622711b7ef2468c1db8c0245dd805deed360bbcf25",
+        "c400066185add659881d303d8b0cd914429b2b1ba9e0addc4a50dacaf049d608",
+      ),
+      (
+        "1f261b89afb3b219e30be06c7518ccb5038337b3168ed83bdba29a36699b5c27",
+        "510f0c6412d976b7224d04cac918bd5fcbef2ca2dfe08f7aa371be709e9a71e5",
+      ),
+      (
+        "67e1777e4d2a526c9c905e84eaf3cc6b6e0764c42dc7bcff1c8e6dee350e6fdc",
+        "64c9ce0b0dc5ff29a58487ebd39827848fae8c0e46e7850c64e2e2f5cbbd2475",
+      ),
+    ];
+    for (round, (challenge, state)) in vectors.iter().enumerate() {
+      if round == 2 {
+        t.observe_bytes(b"after-squeeze");
+        t.observe_canonical(&ark_bls12_381::Fr::from(42u64));
+      }
+      assert_eq!(
+        hex(&t.sample_challenge().0.into_bigint().to_bytes_be()),
+        *challenge,
+        "round {round} challenge"
+      );
+      assert_eq!(hex(&t.state), *state, "round {round} state");
+      assert!(t.buffer.is_empty());
+    }
+  }
+
+  #[test]
   fn hash_kinds_and_expansion_domains_are_distinct() {
-    let mut blake3 = KzgTranscript::new(TranscriptKind::Blake3);
-    let mut keccak = KzgTranscript::new(TranscriptKind::Keccak256);
+    let mut blake3 = KzgTranscript::<Bn254>::new(TranscriptKind::Blake3);
+    let mut keccak = KzgTranscript::<Bn254>::new(TranscriptKind::Keccak256);
     assert_eq!(blake3.kind(), TranscriptKind::Blake3);
     assert_eq!(keccak.kind(), TranscriptKind::Keccak256);
     blake3.observe_bytes(b"same observations");
@@ -343,7 +395,7 @@ mod tests {
       assert_ne!(blake3.sample_challenge(), keccak.sample_challenge());
     }
 
-    let t = Keccak256Transcript::new();
+    let t = Keccak256Transcript::<Bn254>::new();
     assert_ne!(t.digest(0), t.digest(1));
     assert_ne!(t.digest(0), t.digest(2));
     assert_ne!(t.digest(1), t.digest(2));
@@ -354,8 +406,9 @@ mod tests {
   fn keccak_incremental_observations_are_equivalent() {
     let bytes: Vec<_> = (0u8..200).collect();
     let xs = [Scalar::from_u64(7), Scalar::from_u64(9)];
-    let mut whole = Keccak256Transcript::new();
-    let mut incremental = KzgTranscript::new(TranscriptKind::Keccak256);
+    let mut whole = Keccak256Transcript::<Bn254>::new();
+    let mut incremental =
+      KzgTranscript::<Bn254>::new(TranscriptKind::Keccak256);
     whole.observe_bytes(&bytes);
     for chunk in bytes.chunks(13) {
       incremental.observe_bytes(chunk);

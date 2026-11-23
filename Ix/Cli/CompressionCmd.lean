@@ -127,11 +127,35 @@ private def parametersDir : IO System.FilePath := do
 private def backendVk (p : Cli.Parsed) : IO ByteArray := do
   return (← FormalAggregate.aggrIdentity p (← FormalProver.Registry.new)).2.2.key
 
+private def resolveSetupCurve (p : Cli.Parsed) : Except String String := do
+  let hasBn := p.hasFlag "bn254"
+  let hasBls := p.hasFlag "bls12-381"
+  if hasBn && hasBls then
+    throw "choose at most one of --bn254 and --bls12-381"
+  let explicit? := (p.flag? "curve").map (·.as! String)
+  let normalized? ← match explicit? with
+    | none => pure none
+    | some "bn254" => pure (some "bn254")
+    | some "bls12-381" | some "bls12_381" => pure (some "bls12-381")
+    | some other =>
+      throw s!"unknown compression curve {other}: expected bn254 or bls12-381"
+  match hasBn, hasBls, normalized? with
+  | true, false, some "bls12-381" => throw "--bn254 conflicts with --curve bls12-381"
+  | false, true, some "bn254" => throw "--bls12-381 conflicts with --curve bn254"
+  | false, true, _ => pure "bls12-381"
+  | true, false, _ => pure "bn254"
+  | false, false, some c => pure c
+  | false, false, none => pure "bn254"
+  | true, true, _ => throw "choose at most one of --bn254 and --bls12-381"
+
 def runSetup (p : Cli.Parsed) : IO UInt32 := do
   try
+    let curve ← IO.ofExcept (resolveSetupCurve p)
     let devKzgSrs := p.hasFlag "dev-kzg-srs"
     if devKzgSrs then
       IO.eprintln "parameters: development setup, nothing to download"
+    else if curve == "bls12-381" then
+      IO.eprintln "parameters: BLS12-381 uses local Filecoin challenge_19 cache (IX_KZG_SRS_CACHE / IX_KZG_SRS_MANIFEST)"
     else if (← IO.getEnv "IX_KZG_SRS").isSome then
       IO.eprintln "parameters: IX_KZG_SRS is set and replaces the release SRS"
     else
@@ -144,8 +168,8 @@ def runSetup (p : Cli.Parsed) : IO UInt32 := do
         else
           IO.eprintln s!"parameters: downloading {ignitionUrl}/{file}"
           download s!"{ignitionUrl}/{file}" path
-    Compression.prepare (← backendVk p) (← Compression.cacheDir).toString
-      devKzgSrs (p.hasFlag "plonk")
+    Compression.prepareForCurve (← backendVk p) (← Compression.cacheDir).toString
+      curve devKzgSrs (p.hasFlag "plonk")
     return 0
   catch e =>
     IO.eprintln s!"compress setup: {e}"
@@ -153,12 +177,15 @@ def runSetup (p : Cli.Parsed) : IO UInt32 := do
 
 def setupCmd : Cli.Cmd := `[Cli|
   "setup" VIA runSetup;
-  "Prepare this machine for compression of the bundled version: download the released BN254 Ignition SRS (4.3 GB, public) into IX_PARAMS_DIR (default ~/.ix/compression/params) if missing and check it against its pin, then publish the fixed preprocessing of the first KZG stage and the recursive stage to the fixed cache, checking each derived key against its bundled pin. Present cache entries are only checked."
+  "Prepare this machine for compression: for BN254 (~100b classical / 0b PQ, Ignition SRS), download the released Ignition SRS (4.3 GB, public) into IX_PARAMS_DIR (default ~/.ix/compression/params) if missing and verify its pin; for BLS12-381 (~126–128b classical / 0b PQ, EIP-2537, Filecoin challenge_19 SRS), verify the local Filecoin cache; then publish fixed preprocessing to the fixed cache."
 
   FLAGS:
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "aggr-artifact-digest" : String; "Require the aggregation artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AGGR_ARTIFACT_DIGEST)."
-    "dev-kzg-srs"; "Prepare the known-trapdoor development setup instead of Ignition (not production-secure)."
+    "curve" : String; "Pairing curve backend: bn254 (default) or bls12-381."
+    "bn254"; "Prepare BN254 (~100b classical / 0b PQ, Ignition SRS)."
+    "bls12-381"; "Prepare BLS12-381 (~126–128b classical / 0b PQ, EIP-2537, Filecoin challenge_19 SRS)."
+    "dev-kzg-srs"; "Prepare the known-trapdoor development setup instead of ceremony parameters (not production-secure)."
     "plonk"; "Also build the PLONK circuit, keys and parameter exports into the PLONK cache."
 ]
 

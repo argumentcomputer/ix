@@ -77,7 +77,7 @@ impl Coefficients<'_> {
   pub fn evaluate(&self, x: Fr) -> Fr {
     match self {
       Self::Constant(value) => *value,
-      Self::Dense(values) => super::pcs::eval_poly(values, x),
+      Self::Dense(values) => super::pcs::eval_poly::<super::Bn254>(values, x),
     }
   }
 
@@ -98,7 +98,7 @@ impl Coefficients<'_> {
       if current.is_empty() {
         break;
       }
-      current = super::pcs::divide_by_linear_host(current, a);
+      current = super::pcs::divide_by_linear_host::<super::Bn254>(current, a);
     }
     current
   }
@@ -216,7 +216,7 @@ fn scatter_group_quotient(
           if current.is_empty() {
             break;
           }
-          current = super::pcs::divide_by_linear_host(current, a);
+          current = super::pcs::divide_by_linear_host::<super::Bn254>(current, a);
         }
         current
       })

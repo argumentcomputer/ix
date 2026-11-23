@@ -2,7 +2,7 @@
 //! fixed activation anchors, the rows' transport, and the rows a first-stage
 //! proof of a root statement exposes.
 use super::Result;
-use crate::kzg::Scalar;
+use crate::kzg::{curve::KzgCurve, field::CurveScalar};
 use multi_stark::{
   plonkish::MultiStarkCircuit,
   traits::{Algebra, Field},
@@ -121,16 +121,16 @@ impl ClaimTemplate<Val> {
   }
 }
 
-impl ClaimTemplate<Scalar> {
+impl<C: KzgCurve> ClaimTemplate<CurveScalar<C>> {
   pub(in crate::pipeline) fn recursive(count: usize) -> Self {
     Self {
       template: (0..=count)
         .map(|i| {
           vec![
-            Scalar::from_u8(super::lowering::RECURSIVE_NAMESPACE),
-            Scalar::ONE,
-            Scalar::from_usize(i),
-            Scalar::ZERO,
+            CurveScalar::<C>::from_u8(super::lowering::RECURSIVE_NAMESPACE),
+            CurveScalar::<C>::ONE,
+            CurveScalar::<C>::from_usize(i),
+            CurveScalar::<C>::ZERO,
           ]
         })
         .collect(),
@@ -181,35 +181,38 @@ pub(in crate::pipeline) fn decode_claims(
 /// The claims a first-stage proof of `count` partitions must expose, as the
 /// lowering derives them: the statement words, one activation anchor per table
 /// partition and the six fixed namespace anchors.
-pub(in crate::pipeline) fn first_claims(
+pub(in crate::pipeline) fn first_claims<C: KzgCurve>(
   count: usize,
   statement: &super::statement::Statement,
-) -> Vec<Vec<Scalar>> {
-  let namespace = Scalar::from_u8(super::lowering::FIRST_NAMESPACE);
+) -> Vec<Vec<CurveScalar<C>>> {
+  let namespace = CurveScalar::<C>::from_u8(super::lowering::FIRST_NAMESPACE);
   let mut expected: Vec<_> = std::iter::once(0)
     .chain(statement.iter().copied())
     .enumerate()
     .map(|(i, word)| {
       vec![
         namespace,
-        Scalar::ONE,
-        Scalar::from_usize(i),
-        Scalar::from_u64(word),
+        CurveScalar::<C>::ONE,
+        CurveScalar::<C>::from_usize(i),
+        CurveScalar::<C>::from_u64(word),
       ]
     })
     .collect();
   if count > 11 {
-    expected.extend(
-      (0..count - 10)
-        .map(|i| vec![namespace, Scalar::from_u8(3), Scalar::from_usize(i)]),
-    );
+    expected.extend((0..count - 10).map(|i| {
+      vec![
+        namespace,
+        CurveScalar::<C>::from_u8(3),
+        CurveScalar::<C>::from_usize(i),
+      ]
+    }));
   }
   expected.extend((0..6).map(|i| {
     vec![
       namespace,
-      Scalar::from_u8(4),
-      Scalar::from_u8(3),
-      Scalar::from_usize(i),
+      CurveScalar::<C>::from_u8(4),
+      CurveScalar::<C>::from_u8(3),
+      CurveScalar::<C>::from_usize(i),
     ]
   }));
   expected

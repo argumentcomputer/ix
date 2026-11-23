@@ -9,7 +9,10 @@ use super::{
   statement,
   wrap::{PreparedVerifyingKey, VerifyingKey},
 };
-use crate::kzg::{Srs, VerifierParams};
+use crate::kzg::{
+  Srs, VerifierParams,
+  curve::{Curve, KzgCurve},
+};
 
 /// Version of the bundled verifying keys and the layout they were derived for.
 const VERSION: &str = "0.4";
@@ -160,7 +163,7 @@ fn recursive_vk() -> Result<PreparedVerifyingKey> {
   Ok(prepared)
 }
 
-/// Verify a recursive KZG packet of `claim` under the release key.
+/// Verify a BN254 recursive KZG packet of `claim` under the release key.
 pub(super) fn verify_recursive(
   packet: &[u8],
   claim: &[u8],
@@ -177,10 +180,21 @@ pub(super) fn verify_recursive(
   Ok(SetupClass::Ignition)
 }
 
+/// Reject BLS12-381 recursive KZG packets when no explicit `--vk` is supplied.
+pub(super) fn verify_recursive_bls12_381(
+  packet: &[u8],
+  _claim: &[u8],
+) -> Result<SetupClass> {
+  let _id = packet.get(..32).ok_or("truncated compressed proof")?;
+  Err(
+    "BLS12-381 recursive KZG proofs have no bundled release verifying key yet; verify with --vk <vk.bin> --vk-digest <blake3>".into(),
+  )
+}
+
 /// Verify a recursive KZG packet under a verifying key the caller supplies
 /// with an independently trusted digest, against an independently expected
 /// statement.
-pub(super) fn verify_with_vk(
+pub(super) fn verify_with_vk_for<C: KzgCurve>(
   packet: &[u8],
   claim: &[u8],
   expected: &statement::Statement,
@@ -194,7 +208,7 @@ pub(super) fn verify_with_vk(
     );
   }
   statement::bind_claim(claim, expected)?;
-  let vk = VerifyingKey::from_bytes(vk)?;
+  let vk = VerifyingKey::<C>::from_bytes(vk)?;
   let setup = SetupClass::of(&vk.verifier_params()?);
   vk.check_setup_class(setup)?;
   if setup == SetupClass::Development && !allow_development {
@@ -204,21 +218,46 @@ pub(super) fn verify_with_vk(
   Ok(setup)
 }
 
+#[cfg(test)]
+pub(super) fn verify_with_vk(
+  packet: &[u8],
+  claim: &[u8],
+  expected: &statement::Statement,
+  vk: &[u8],
+  trusted_digest: &[u8; 32],
+  allow_development: bool,
+) -> Result<SetupClass> {
+  verify_with_vk_for::<crate::kzg::curve::Bn254>(
+    packet,
+    claim,
+    expected,
+    vk,
+    trusted_digest,
+    allow_development,
+  )
+}
+
 /// Whether a compression of a `root_vk` root under `setup` must produce the
-/// bundled keys: the root is this version's backend and the setup is Ignition.
-pub(super) fn bundled_for(root_vk: &[u8], setup: &super::SetupConfig) -> bool {
-  blake3::hash(root_vk).to_hex().as_str() == ROOT_VK_BLAKE3
+/// bundled keys: BN254, this version's backend, and Ignition.
+pub(super) fn bundled_for(
+  curve: Curve,
+  root_vk: &[u8],
+  setup: &super::SetupConfig,
+) -> bool {
+  curve == Curve::Bn254
+    && blake3::hash(root_vk).to_hex().as_str() == ROOT_VK_BLAKE3
     && setup.class() == SetupClass::Ignition
 }
 
-/// A recursive key proved for this version's backend under Ignition must be
-/// the bundled key.
+/// A recursive key proved for BN254 and this version's backend under Ignition
+/// must be the bundled key.
 pub(super) fn check_recursive_key(
+  curve: Curve,
   root_vk: &[u8],
   setup: &super::SetupConfig,
   vk: &[u8],
 ) -> Result<()> {
-  if bundled_for(root_vk, setup) && vk != RECURSIVE_VK {
+  if bundled_for(curve, root_vk, setup) && vk != RECURSIVE_VK {
     return Err(
       format!("recursive verifying key differs from version {VERSION}'s")
         .into(),
@@ -230,10 +269,14 @@ pub(super) fn check_recursive_key(
 /// Check a compression's statement belongs to the release when its recursive
 /// key is the release key.
 pub(super) fn check_statement(
+  curve: Curve,
   id: &[u8],
   words: &statement::Statement,
 ) -> Result<()> {
-  if id == decode(RECURSIVE_VK_ID)? && words[..10] != STATEMENT_PREFIX {
+  if curve == Curve::Bn254
+    && id == decode(RECURSIVE_VK_ID)?
+    && words[..10] != STATEMENT_PREFIX
+  {
     return Err(format!(
       "the version {VERSION} key compresses a different aggregation program than this build's backend"
     )

@@ -434,6 +434,7 @@ mod tests {
     assert!(admit_setup(SetupClass::Development, false).is_err());
     assert!(admit_setup(SetupClass::Development, true).is_ok());
     assert!(admit_setup(SetupClass::Groth16, true).is_err());
+    assert!(admit_setup(SetupClass::Filecoin, true).is_err());
   }
 
   #[test]

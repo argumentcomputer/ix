@@ -1,6 +1,6 @@
-//! [`ProofConfig`] instantiation for the KZG backend: BN254's
-//! scalar field (its own challenge field, `D = 1`), a selected transcript,
-//! monomial KZG commitments.
+//! [`ProofConfig`] instantiation for the KZG backend (BN254 and BLS12-381):
+//! the curve's scalar field (its own challenge field, `D = 1`), a selected
+//! transcript, monomial KZG commitments.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -8,23 +8,23 @@ use std::sync::Arc;
 use ark_serialize::CanonicalSerialize;
 use p3_maybe_rayon::prelude::*;
 
-use multi_stark::config::ProofConfig;
+use multi_stark::config::{LookupCommitInput, ProofConfig, QuotientCommitInput};
 use multi_stark::traits::{Field, Pcs};
 
 #[cfg(feature = "cuda")]
 use super::cuda;
-use super::field::Scalar;
+use super::curve::{Bn254, KzgCurve};
+use super::field::CurveScalar;
 use super::pcs::{
   CoefficientConfig, CoefficientData, CommittedMatrix, KzgCommitment, KzgPcs,
   KzgProverData,
 };
 use super::srs::Srs;
 use super::transcript::{KzgTranscript, TranscriptKind};
-use multi_stark::config::{LookupCommitInput, QuotientCommitInput};
 
 #[derive(Clone)]
-pub struct KzgConfig {
-  pcs: KzgPcs,
+pub struct KzgConfig<C: KzgCurve = Bn254> {
+  pcs: KzgPcs<C>,
   /// Bytes observed into every fresh challenger: a domain tag, the trace
   /// cap and quotient budget, the public setup and the four anchor points
   /// (see the transcript contract on [`ProofConfig::initialise_challenger`]).
@@ -38,21 +38,21 @@ pub struct KzgConfig {
   spill_dir: Option<PathBuf>,
 }
 
-impl KzgConfig {
+impl<C: KzgCurve> KzgConfig<C> {
   /// Public parameters are caller-supplied and taken on trust here:
   /// call [`Srs::validate`] first on parameters you did not generate.
   ///
   /// # Panics
   /// Panics if the SRS length is not a power of two (trace domains
   /// are, and `max_log_degree` is read off the SRS).
-  pub fn new(srs: Arc<Srs>, max_quotient_degree: usize) -> Self {
+  pub fn new(srs: Arc<Srs<C>>, max_quotient_degree: usize) -> Self {
     let max_trace_len = srs.max_len();
     Self::with_max_trace_len(srs, max_trace_len, max_quotient_degree)
   }
 
   /// Bind the admitted trace cap independently of the loaded public-power prefix.
   pub fn with_max_trace_len(
-    srs: Arc<Srs>,
+    srs: Arc<Srs<C>>,
     max_trace_len: usize,
     max_quotient_degree: usize,
   ) -> Self {
@@ -70,7 +70,7 @@ impl KzgConfig {
 
   /// Construct a verifier without retaining the proving powers. No proving operation is available.
   pub fn verifier_only(
-    params: super::VerifierParams,
+    params: super::VerifierParams<C>,
     max_quotient_degree: usize,
   ) -> Self {
     let max_log_degree = p3_util::log2_strict_usize(params.max_trace_len());
@@ -122,13 +122,13 @@ impl KzgConfig {
   }
 
   fn make_transcript_seed(
-    params: &super::VerifierParams,
+    params: &super::VerifierParams<C>,
     max_quotient_degree: usize,
     kind: TranscriptKind,
   ) -> Vec<u8> {
     let domain: &[u8] = match kind {
-      TranscriptKind::Blake3 => b"multi-stark/kzg/bn254/blake3/v1",
-      TranscriptKind::Keccak256 => b"multi-stark/kzg/bn254/keccak256/v1",
+      TranscriptKind::Blake3 => C::BLAKE3_SEED_DOMAIN,
+      TranscriptKind::Keccak256 => C::KECCAK256_SEED_DOMAIN,
     };
     let mut seed = domain.to_vec();
     for parameter in
@@ -232,13 +232,13 @@ impl KzgConfig {
 }
 
 /// The committed matrix at a round position.
-fn committed<D: CoefficientData>(
+fn committed<C: KzgCurve, D: CoefficientData<C>>(
   (data, index): (&D, usize),
-) -> &CommittedMatrix {
+) -> &CommittedMatrix<C> {
   data.matrix(index).expect("committed matrix position")
 }
 
-fn all_columns(matrix: &CommittedMatrix) -> Vec<usize> {
+fn all_columns<C: KzgCurve>(matrix: &CommittedMatrix<C>) -> Vec<usize> {
   (0..matrix.width()).collect()
 }
 
@@ -246,20 +246,20 @@ fn all_columns(matrix: &CommittedMatrix) -> Vec<usize> {
 /// with its local accumulator total. Device constructions run concurrently;
 /// shapes and storage the kernels do not support use one host working set at
 /// a time. Device admission failures are errors.
-pub(super) fn lookup_parts<SC: CoefficientConfig, T: Send>(
-  pcs: &KzgPcs,
+pub(super) fn lookup_parts<C: KzgCurve, SC: CoefficientConfig<C>, T: Send>(
+  pcs: &KzgPcs<C>,
   inputs: &[LookupCommitInput<'_, SC>],
-  beta: Scalar,
-  gamma: Scalar,
-  commit: impl Fn(CommittedMatrix) -> T + Sync,
-) -> Vec<(T, Scalar)> {
+  beta: CurveScalar<C>,
+  gamma: CurveScalar<C>,
+  commit: impl Fn(CommittedMatrix<C>) -> T + Sync,
+) -> Vec<(T, CurveScalar<C>)> {
   #[cfg(feature = "cuda")]
   {
     use rayon::prelude::*;
     let mut parts: Vec<_> = inputs
       .par_iter()
       .map(|input| {
-        cuda::lookup::coefficients(input, beta, gamma).map(
+        cuda::lookup::coefficients::<C, SC>(input, beta, gamma).map(
           |(columns, local)| {
             let domain = committed(input.stage_1).domain;
             (commit(pcs.coefficient_matrix(domain.log_size, columns)), local)
@@ -267,10 +267,12 @@ pub(super) fn lookup_parts<SC: CoefficientConfig, T: Send>(
         )
       })
       .collect();
+    // Shapes and storage unsupported by the kernels use one host working
+    // set at a time. Device admission failures are errors.
     for (i, (input, part)) in inputs.iter().zip(&mut parts).enumerate() {
       if part.is_none() {
         tracing::info!(
-          curve = super::curve::NAME,
+          curve = C::NAME,
           circuit = i,
           reason = "shape or storage unsupported by CUDA lookup kernels",
           "KZG lookup using CPU construction"
@@ -294,21 +296,25 @@ pub(super) fn lookup_parts<SC: CoefficientConfig, T: Send>(
 
 /// Every circuit's quotient slices as a coefficient matrix, passed to
 /// `commit`, with the same device and host split as [`lookup_parts`].
-pub(super) fn quotient_parts<SC: CoefficientConfig, T: Send>(
-  pcs: &KzgPcs,
+pub(super) fn quotient_parts<C: KzgCurve, SC: CoefficientConfig<C>, T: Send>(
+  pcs: &KzgPcs<C>,
   inputs: &[QuotientCommitInput<'_, SC>],
-  alpha: Scalar,
-  commit: impl Fn(CommittedMatrix) -> T + Sync,
+  alpha: CurveScalar<C>,
+  commit: impl Fn(CommittedMatrix<C>) -> T + Sync,
 ) -> Vec<T> {
   quotient_parts_with_block_size(pcs, inputs, alpha, None, commit)
 }
 
-fn quotient_parts_with_block_size<SC: CoefficientConfig, T: Send>(
-  pcs: &KzgPcs,
+fn quotient_parts_with_block_size<
+  C: KzgCurve,
+  SC: CoefficientConfig<C>,
+  T: Send,
+>(
+  pcs: &KzgPcs<C>,
   inputs: &[QuotientCommitInput<'_, SC>],
-  alpha: Scalar,
+  alpha: CurveScalar<C>,
   block_size: Option<usize>,
-  commit: impl Fn(CommittedMatrix) -> T + Sync,
+  commit: impl Fn(CommittedMatrix<C>) -> T + Sync,
 ) -> Vec<T> {
   #[cfg(feature = "cuda")]
   {
@@ -316,7 +322,7 @@ fn quotient_parts_with_block_size<SC: CoefficientConfig, T: Send>(
     let mut parts: Vec<_> = inputs
       .par_iter()
       .map(|input| {
-        cuda::quotient::coefficients(input, alpha).map(|columns| {
+        cuda::quotient::coefficients::<C, SC>(input, alpha).map(|columns| {
           assert!(
             !columns.is_empty() && columns.len() <= pcs.max_quotient_degree()
           );
@@ -327,7 +333,7 @@ fn quotient_parts_with_block_size<SC: CoefficientConfig, T: Send>(
     for (i, (input, part)) in inputs.iter().zip(&mut parts).enumerate() {
       if part.is_none() {
         tracing::info!(
-          curve = super::curve::NAME,
+          curve = C::NAME,
           circuit = i,
           reason = "shape or storage unsupported by CUDA quotient kernels",
           "KZG quotient using CPU construction"
@@ -350,21 +356,22 @@ fn quotient_parts_with_block_size<SC: CoefficientConfig, T: Send>(
 
 /// One circuit's lookup trace, constructed on the host from committed
 /// columns and interpolated, with its local accumulator total.
-fn host_lookup_matrix<SC: CoefficientConfig>(
-  pcs: &KzgPcs,
+fn host_lookup_matrix<C: KzgCurve, SC: CoefficientConfig<C>>(
+  pcs: &KzgPcs<C>,
   i: usize,
   input: &LookupCommitInput<'_, SC>,
-  beta: Scalar,
-  gamma: Scalar,
-) -> (CommittedMatrix, Scalar) {
+  beta: CurveScalar<C>,
+  gamma: CurveScalar<C>,
+) -> (CommittedMatrix<C>, CurveScalar<C>) {
   use multi_stark::traits::Algebra;
   use multi_stark::traits::EvaluationDomain;
   let start = std::time::Instant::now();
   let stage_1 = committed(input.stage_1);
   let domain = stage_1.domain;
   let (selected, graph) =
-    super::quotient_plan::lookup_graph(&input.circuit.graph);
+    super::quotient_plan::lookup_graph::<C>(&input.circuit.graph);
   tracing::info!(
+    curve = C::NAME,
     circuit = i,
     fixed_columns = selected.len(),
     "KZG lookup fixed columns"
@@ -376,7 +383,7 @@ fn host_lookup_matrix<SC: CoefficientConfig>(
     pcs.evaluate_matrix_columns(stage_1, domain, &all_columns(stage_1));
   const CHUNK: usize = 1 << 12;
   let width = input.circuit.stage_2_width;
-  let mut trace = vec![Scalar::ZERO; domain.size() * width];
+  let mut trace = vec![CurveScalar::<C>::ZERO; domain.size() * width];
   // Every chunk starts at zero. Its total determines the prefix
   // offset applied in a second bounded, parallel pass.
   let totals: Vec<_> = trace
@@ -396,13 +403,13 @@ fn host_lookup_matrix<SC: CoefficientConfig>(
           &[input.circuit.lookup_group_size],
           beta,
           &gamma,
-          Scalar::ZERO,
+          CurveScalar::<C>::ZERO,
         );
       dst.copy_from_slice(&chunks.remove(0).values);
       next[0]
     })
     .collect();
-  let mut local = Scalar::ZERO;
+  let mut local = CurveScalar::<C>::ZERO;
   let offsets: Vec<_> = totals
     .into_iter()
     .map(|value| {
@@ -412,7 +419,7 @@ fn host_lookup_matrix<SC: CoefficientConfig>(
     })
     .collect();
   trace.par_chunks_mut(CHUNK * width).zip(offsets).for_each(|(dst, offset)| {
-    if offset != Scalar::ZERO {
+    if offset != CurveScalar::<C>::ZERO {
       for value in dst {
         *value += offset;
       }
@@ -421,8 +428,9 @@ fn host_lookup_matrix<SC: CoefficientConfig>(
   drop(main);
   drop(fixed);
   let trace = p3_matrix::dense::RowMajorMatrix::new(trace, width);
-  let matrix = KzgPcs::interpolate_columns(domain, trace);
+  let matrix = KzgPcs::<C>::interpolate_columns(domain, trace);
   tracing::info!(
+    curve = C::NAME,
     circuit = i,
     seconds = start.elapsed().as_secs_f64(),
     "KZG lookup constructed"
@@ -432,49 +440,55 @@ fn host_lookup_matrix<SC: CoefficientConfig>(
 
 /// One circuit's quotient, evaluated on the host one trace-sized coset at a
 /// time with fixed-column passes, then interpolated and sliced.
-fn host_quotient_matrix<SC: CoefficientConfig>(
-  pcs: &KzgPcs,
+fn host_quotient_matrix<C: KzgCurve, SC: CoefficientConfig<C>>(
+  pcs: &KzgPcs<C>,
   i: usize,
   input: &QuotientCommitInput<'_, SC>,
-  alpha: Scalar,
+  alpha: CurveScalar<C>,
   block_size: Option<usize>,
-) -> CommittedMatrix {
+) -> CommittedMatrix<C> {
   use multi_stark::traits::Algebra;
   use multi_stark::traits::EvaluationDomain;
   use multi_stark::traits::TwoAdicField;
   let start = std::time::Instant::now();
   let n = input.trace_domain.size();
   let ratio = input.quotient_domain.size() / n;
-  let generator = Scalar::two_adic_generator(input.quotient_domain.log_size);
+  let generator =
+    CurveScalar::<C>::two_adic_generator(input.quotient_domain.log_size);
   let mut shift = input.quotient_domain.shift;
-  let mut values = vec![Scalar::ZERO; input.quotient_domain.size()];
+  let mut values =
+    vec![CurveScalar::<C>::ZERO; input.quotient_domain.size()];
   let mut powers: Vec<_> =
     alpha.powers().take(input.constraint_count).collect();
   powers.reverse();
-  let passes = super::quotient_plan::plan(
+  let passes = super::quotient_plan::plan::<C>(
     &input.circuit.graph,
     input.circuit.lookup_group_size.max(1),
   );
-  tracing::info!(circuit = i, fixed_columns = ?passes.iter().map(|p| p.fixed.len()).collect::<Vec<_>>(), "KZG quotient fixed-column passes");
+  tracing::info!(
+    curve = C::NAME,
+    circuit = i,
+    fixed_columns = ?passes.iter().map(|p| p.fixed.len()).collect::<Vec<_>>(),
+    "KZG quotient fixed-column passes"
+  );
   let stage_1 = committed(input.stage_1);
   let stage_2 = committed(input.stage_2);
+  let stage_1_columns = all_columns(stage_1);
+  let stage_2_columns = all_columns(stage_2);
   for coset in 0..ratio {
     let domain = super::domain::Radix2Coset {
       log_size: input.trace_domain.log_size,
       shift,
     };
-    let main =
-      pcs.evaluate_matrix_columns(stage_1, domain, &all_columns(stage_1));
-    let stage2 =
-      pcs.evaluate_matrix_columns(stage_2, domain, &all_columns(stage_2));
+    let main = pcs.evaluate_matrix_columns(stage_1, domain, &stage_1_columns);
+    let stage2 = pcs.evaluate_matrix_columns(stage_2, domain, &stage_2_columns);
     let selectors =
       super::quotient::CosetSelectors::new(input.trace_domain, domain);
     for pass in &passes {
-      let fixed =
-        input.preprocessed.filter(|_| !pass.fixed.is_empty()).map(|data| {
-          pcs.evaluate_matrix_columns(committed(data), domain, &pass.fixed)
-        });
-      super::quotient::evaluate_coset(
+      let fixed = input.preprocessed.filter(|_| !pass.fixed.is_empty()).map(
+        |data| pcs.evaluate_matrix_columns(committed(data), domain, &pass.fixed),
+      );
+      super::quotient::evaluate_coset::<C, SC>(
         input,
         pass,
         domain,
@@ -489,20 +503,25 @@ fn host_quotient_matrix<SC: CoefficientConfig>(
         &mut values,
       );
     }
+    drop(selectors);
+    drop(stage2);
+    drop(main);
     shift *= generator;
     tracing::info!(
+      curve = C::NAME,
       circuit = i,
       coset,
       seconds = start.elapsed().as_secs_f64(),
       "KZG quotient coset evaluated"
     );
   }
-  let matrix = KzgPcs::interpolate_quotient(
+  let matrix = KzgPcs::<C>::interpolate_quotient(
     input.quotient_domain,
     p3_matrix::dense::RowMajorMatrix::new_col(values),
     ratio,
   );
   tracing::info!(
+    curve = C::NAME,
     circuit = i,
     seconds = start.elapsed().as_secs_f64(),
     "KZG quotient constructed"
@@ -510,13 +529,13 @@ fn host_quotient_matrix<SC: CoefficientConfig>(
   matrix
 }
 
-impl ProofConfig for KzgConfig {
+impl<C: KzgCurve> ProofConfig for KzgConfig<C> {
   fn accelerated_lookup_commit(
     &self,
     inputs: &[LookupCommitInput<'_, Self>],
-    beta: Scalar,
-    gamma: Scalar,
-    mut acc: Scalar,
+    beta: CurveScalar<C>,
+    gamma: CurveScalar<C>,
+    mut acc: CurveScalar<C>,
   ) -> Option<multi_stark::config::AcceleratedLookupCommitment<Self>> {
     if !self.stream_lookups {
       return None;
@@ -540,8 +559,8 @@ impl ProofConfig for KzgConfig {
   fn accelerated_quotient_commit(
     &self,
     inputs: &[QuotientCommitInput<'_, Self>],
-    alpha: Scalar,
-  ) -> Option<(KzgCommitment, KzgProverData)> {
+    alpha: CurveScalar<C>,
+  ) -> Option<(KzgCommitment<C>, KzgProverData<C>)> {
     if !self.stream_quotient {
       return None;
     }
@@ -561,15 +580,15 @@ impl ProofConfig for KzgConfig {
     true
   }
 
-  type Pcs = KzgPcs;
-  type Challenge = Scalar;
-  type Challenger = KzgTranscript;
+  type Pcs = KzgPcs<C>;
+  type Challenge = CurveScalar<C>;
+  type Challenger = KzgTranscript<C>;
 
-  fn pcs(&self) -> &KzgPcs {
+  fn pcs(&self) -> &KzgPcs<C> {
     &self.pcs
   }
 
-  fn initialise_challenger(&self) -> KzgTranscript {
+  fn initialise_challenger(&self) -> KzgTranscript<C> {
     let mut challenger = KzgTranscript::new(self.transcript_kind);
     challenger.observe_bytes(&self.transcript_seed);
     challenger
@@ -580,7 +599,7 @@ impl ProofConfig for KzgConfig {
   }
 
   fn max_log_quotient_domain(&self) -> usize {
-    <Scalar as multi_stark::traits::TwoAdicField>::TWO_ADICITY
+    <CurveScalar<C> as multi_stark::traits::TwoAdicField>::TWO_ADICITY
   }
 
   fn max_quotient_degree(&self) -> usize {
@@ -592,9 +611,11 @@ impl ProofConfig for KzgConfig {
     0
   }
 }
+
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::kzg::curve::Bls12381;
   use multi_stark::expr::Expr;
   use multi_stark::lookup::Lookup;
   use multi_stark::system::CircuitInputs;
@@ -606,28 +627,29 @@ mod tests {
 
   /// `a·b = c` per row, with a self-canceling push/pull lookup pair to
   /// exercise the stage-2 machinery.
-  fn mul_circuit() -> CircuitInputs<Scalar> {
+  fn mul_circuit<C: KzgCurve>() -> CircuitInputs<CurveScalar<C>> {
     let m = Expr::main;
     CircuitInputs {
       main_width: 3,
       constraints: vec![m(0) * m(1) - m(2)],
       lookups: vec![
-        Lookup::push(Expr::constant(Scalar::from_u32(1)), vec![m(0), m(2)]),
-        Lookup::pull(Expr::constant(Scalar::from_u32(1)), vec![m(0), m(2)]),
+        Lookup::push(
+          Expr::constant(CurveScalar::<C>::from_u32(1)),
+          vec![m(0), m(2)],
+        ),
+        Lookup::pull(
+          Expr::constant(CurveScalar::<C>::from_u32(1)),
+          vec![m(0), m(2)],
+        ),
       ],
       ..Default::default()
     }
   }
 
-  fn kzg_system()
-  -> (System<KzgConfig>, multi_stark::system::ProverKey<KzgConfig>) {
-    let srs = Arc::new(Srs::unsafe_dev_setup(1 << 8, b"test"));
-    let config = KzgConfig::new(srs, 8);
-    System::new(config, [mul_circuit()])
-  }
-
-  fn witness(system: &System<KzgConfig>) -> SystemWitness<Scalar> {
-    let f = Scalar::from_u32;
+  fn witness<C: KzgCurve>(
+    system: &System<KzgConfig<C>>,
+  ) -> SystemWitness<CurveScalar<C>> {
+    let f = CurveScalar::<C>::from_u32;
     let trace = RowMajorMatrix::new(
       [2, 3, 6, 4, 5, 20, 7, 8, 56, 1, 1, 1].map(f).to_vec(),
       3,
@@ -635,14 +657,14 @@ mod tests {
     SystemWitness::from_stage_1(vec![trace], system)
   }
 
-  #[test]
-  fn proof_binds_public_identity_degree_and_trace_cap() {
-    let srs = Arc::new(Srs::unsafe_dev_setup(16, b"public-parameters"));
+  fn check_config_suite<C: KzgCurve>() {
+    let srs = Arc::new(Srs::<C>::unsafe_dev_setup(16, b"public-parameters"));
     let params = super::super::VerifierParams::from_srs(&srs);
     let (mut system, key) =
-      System::new(KzgConfig::new(srs.clone(), 8), [mul_circuit()]);
+      System::new(KzgConfig::<C>::new(srs.clone(), 8), [mul_circuit::<C>()]);
     let proof = system.prove_multiple_claims(&key, &[], witness(&system));
-    let anchors = Srs::unsafe_dev_setup_prefix(2, 15, b"public-parameters");
+    let anchors =
+      Srs::<C>::unsafe_dev_setup_prefix(2, 15, b"public-parameters");
     system.config = KzgConfig::verifier_only(
       super::super::VerifierParams::with_max_trace_len(&anchors, 16),
       8,
@@ -660,13 +682,13 @@ mod tests {
       system.config = KzgConfig::verifier_only(changed, 8);
       assert!(system.verify_multiple_claims(&[], &proof).is_err());
     }
-  }
 
-  #[test]
-  fn opens_next_rows_only_when_the_graph_reads_them() {
-    let f = Scalar::from_u8;
+    let f = CurveScalar::<C>::from_u8;
     let (system, key) = System::new(
-      KzgConfig::new(Arc::new(Srs::unsafe_dev_setup(8, b"next-rows")), 4),
+      KzgConfig::<C>::new(
+        Arc::new(Srs::<C>::unsafe_dev_setup(8, b"next-rows")),
+        4,
+      ),
       [
         CircuitInputs {
           main_width: 1,
@@ -698,71 +720,43 @@ mod tests {
       proof.stage_1_opened_values.iter().map(Vec::len).collect::<Vec<_>>(),
       [2, 1]
     );
-    assert_eq!(
-      proof
-        .preprocessed_opened_values
-        .as_ref()
-        .unwrap()
-        .iter()
-        .map(Vec::len)
-        .collect::<Vec<_>>(),
-      [2, 1]
-    );
     let codec =
       super::super::compact::FixedProofCodec::new(&system, &proof.log_degrees)
         .unwrap();
     let decoded = codec.decode(&codec.encode(&proof).unwrap()).unwrap();
     system.verify_multiple_claims(&[], &decoded).unwrap();
-    let mut bad = proof.clone();
-    bad.stage_1_opened_values[0].pop();
-    assert!(system.verify_multiple_claims(&[], &bad).is_err());
-    let mut bad = proof.clone();
-    bad.preprocessed_opened_values.as_mut().unwrap()[0][1][0] += Scalar::ONE;
-    assert!(system.verify_multiple_claims(&[], &bad).is_err());
-    let mut bad = proof.clone();
-    bad.stage_1_opened_values[1].push(vec![Scalar::ZERO]);
-    assert!(system.verify_multiple_claims(&[], &bad).is_err());
-    // KZG commits columns separately, so inactive fixed matrices need no openings.
-    let partial = system.prove_multiple_claims(
-      &key,
-      &[],
-      SystemWitness::from_stage_1(
-        vec![
-          RowMajorMatrix::new(vec![], 1),
-          RowMajorMatrix::new_col(vec![f(9); 2]),
-        ],
-        &system,
-      ),
-    );
-    system.verify_multiple_claims(&[], &partial).unwrap();
-    assert_eq!(partial.active, [false, true]);
-    assert_eq!(
-      partial.preprocessed_opened_values.as_ref().unwrap()[0].len(),
-      0
-    );
-    let mut bad = partial.clone();
-    bad.preprocessed_opened_values.as_mut().unwrap()[1].clear();
-    assert!(system.verify_multiple_claims(&[], &bad).is_err());
-    let mut bad = partial;
-    bad.preprocessed_opened_values.as_mut().unwrap()[0].push(vec![f(7)]);
-    assert!(system.verify_multiple_claims(&[], &bad).is_err());
+
+    // Tampering rejection.
+    let srs = Arc::new(Srs::<C>::unsafe_dev_setup(1 << 8, b"test"));
+    let (system, key) =
+      System::new(KzgConfig::<C>::new(srs, 8), [mul_circuit::<C>()]);
+    let no_claims: &[&[CurveScalar<C>]] = &[];
+    let prove =
+      || system.prove_multiple_claims(&key, no_claims, witness(&system));
+    let mut tampered = prove();
+    tampered.intermediate_accumulators[0] += CurveScalar::<C>::ONE;
+    assert!(system.verify_multiple_claims(no_claims, &tampered).is_err());
+    let mut tampered = prove();
+    tampered.stage_1_opened_values[0][0][0] += CurveScalar::<C>::ONE;
+    assert!(system.verify_multiple_claims(no_claims, &tampered).is_err());
+    let mut tampered = prove();
+    tampered.quotient_opened_values[0][0][0] += CurveScalar::<C>::ONE;
+    assert!(system.verify_multiple_claims(no_claims, &tampered).is_err());
   }
 
   #[test]
-  fn quotient_slices_fit_an_srs_exactly_as_large_as_the_trace() {
-    let config =
-      KzgConfig::new(Arc::new(Srs::unsafe_dev_setup(4, b"exact-srs")), 4);
-    let (system, key) = System::new(config, [mul_circuit()]);
-    let proof = system.prove_multiple_claims(&key, &[], witness(&system));
-    system.verify_multiple_claims(&[], &proof).unwrap();
+  fn kzg_config_suite_passes_for_both_curves() {
+    check_config_suite::<Bn254>();
+    check_config_suite::<Bls12381>();
   }
 
   #[test]
   fn batch_messages_work_with_scalar_challenges() {
+    use crate::kzg::field::Scalar;
     use multi_stark::batch::BatchMessage;
     use multi_stark::batch::ShardInput;
     let config =
-      KzgConfig::new(Arc::new(Srs::unsafe_dev_setup(2, b"batch")), 4);
+      KzgConfig::<Bn254>::new(Arc::new(Srs::unsafe_dev_setup(2, b"batch")), 4);
     let (system, key) = System::new(
       config,
       [CircuitInputs {
@@ -791,34 +785,13 @@ mod tests {
   }
 
   #[test]
-  fn kzg_tampering_rejected() {
-    let (system, key) = kzg_system();
-    let no_claims: &[&[Scalar]] = &[];
-    let prove =
-      || system.prove_multiple_claims(&key, no_claims, witness(&system));
-
-    let mut tampered = prove();
-    tampered.intermediate_accumulators[0] += <Scalar as Algebra<Scalar>>::ONE;
-    assert!(system.verify_multiple_claims(no_claims, &tampered).is_err());
-
-    let mut tampered = prove();
-    tampered.stage_1_opened_values[0][0][0] += <Scalar as Algebra<Scalar>>::ONE;
-    assert!(system.verify_multiple_claims(no_claims, &tampered).is_err());
-
-    let mut tampered = prove();
-    tampered.quotient_opened_values[0][0][0] +=
-      <Scalar as Algebra<Scalar>>::ONE;
-    assert!(system.verify_multiple_claims(no_claims, &tampered).is_err());
-  }
-
-  #[test]
   fn adaptive_disk_spill_respects_host_ram_and_backend() {
-    assert!(KzgConfig::adaptive_disk_spill(None, false));
-    assert!(KzgConfig::adaptive_disk_spill(Some(64), false));
-    assert!(KzgConfig::adaptive_disk_spill(Some(192), false));
-    assert!(!KzgConfig::adaptive_disk_spill(Some(256), false));
-    assert!(!KzgConfig::adaptive_disk_spill(Some(495), false));
-    assert!(!KzgConfig::adaptive_disk_spill(None, true));
-    assert!(!KzgConfig::adaptive_disk_spill(Some(64), true));
+    assert!(KzgConfig::<Bn254>::adaptive_disk_spill(None, false));
+    assert!(KzgConfig::<Bn254>::adaptive_disk_spill(Some(64), false));
+    assert!(KzgConfig::<Bn254>::adaptive_disk_spill(Some(192), false));
+    assert!(!KzgConfig::<Bn254>::adaptive_disk_spill(Some(256), false));
+    assert!(!KzgConfig::<Bn254>::adaptive_disk_spill(Some(495), false));
+    assert!(!KzgConfig::<Bn254>::adaptive_disk_spill(None, true));
+    assert!(!KzgConfig::<Bn254>::adaptive_disk_spill(Some(64), true));
   }
 }

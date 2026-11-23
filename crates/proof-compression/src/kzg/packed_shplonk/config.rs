@@ -134,7 +134,7 @@ impl ProofConfig for PackedShplonkConfig {
     if !self.stream_lookups {
       return None;
     }
-    let parts = crate::kzg::config::lookup_parts(
+    let parts = crate::kzg::config::lookup_parts::<crate::kzg::Bn254, _, _>(
       &self.pcs.base,
       inputs,
       beta,
@@ -160,7 +160,8 @@ impl ProofConfig for PackedShplonkConfig {
     if !self.stream_quotient {
       return None;
     }
-    let matrices = crate::kzg::config::quotient_parts(
+    let matrices =
+      crate::kzg::config::quotient_parts::<crate::kzg::Bn254, _, _>(
       &self.pcs.base,
       inputs,
       alpha,
@@ -177,7 +178,7 @@ impl ProofConfig for PackedShplonkConfig {
     let matrices: Vec<_> = evaluations
       .into_iter()
       .map(|(domain, trace)| {
-        KzgPcs::interpolate_columns(domain, trace.materialize())
+        KzgPcs::<crate::kzg::Bn254>::interpolate_columns(domain, trace.materialize())
       })
       .collect();
     let next_rows = self

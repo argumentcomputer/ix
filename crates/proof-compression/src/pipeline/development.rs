@@ -1,6 +1,7 @@
 //! Explicitly pinned, portable verifiers for locally generated final keys.
 use super::final_proof::{decode_hex, digest};
 use super::{FinalSystem, Result, SetupClass};
+use crate::kzg::curve::{Bls12381, Bn254, Curve, KzgCurve};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -14,12 +15,18 @@ pub(super) const FILE: &str = "development-verifier.json";
 const FORMAT: &str = "ix-development-verifier-v1";
 const MAX_BYTES: usize = 4 << 20;
 
+fn default_bn254() -> String {
+  Bn254::NAME.to_owned()
+}
+
 /// The caller authorizes this entire object by its BLAKE3 digest. A proof's
 /// embedded key identifier is never sufficient to authorize another circuit.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Verifier {
   format: String,
+  #[serde(default = "default_bn254")]
+  curve: String,
   system: FinalSystem,
   inner_setup: String,
   inner_vk_blake3: String,
@@ -32,7 +39,9 @@ pub(super) struct Verifier {
 
 impl Verifier {
   #[cfg(any(feature = "plonk", feature = "groth16"))]
-  pub(super) fn new(
+  #[allow(clippy::too_many_arguments)]
+  pub(super) fn new_for(
+    curve: Curve,
     system: FinalSystem,
     inner_vk: &Path,
     schema: &[u8],
@@ -43,6 +52,7 @@ impl Verifier {
   ) -> Result<Self> {
     let value = Self {
       format: FORMAT.into(),
+      curve: curve.as_str().into(),
       system,
       inner_setup: inner_setup.class().label().into(),
       inner_vk_blake3: blake3::hash(&fs::read(inner_vk)?).to_hex().to_string(),
@@ -56,9 +66,13 @@ impl Verifier {
     Ok(value)
   }
 
-  fn validate(&self) -> Result<()> {
+  fn validate(&self) -> Result<Curve> {
+    let curve = Curve::parse(&self.curve)?;
     if self.format != FORMAT
-      || !matches!(self.inner_setup.as_str(), "ignition" | "development")
+      || !matches!(
+        self.inner_setup.as_str(),
+        "ignition" | "filecoin" | "development"
+      )
       || self.system == FinalSystem::None
       || self.verifying_key.len() > 2 << 20
     {
@@ -72,13 +86,17 @@ impl Verifier {
     {
       return Err("development verifying key differs from its pin".into());
     }
+    let expected_anchor_bytes = match curve {
+      Curve::Bn254 => Bn254::PLONK_ANCHOR_BYTES,
+      Curve::Bls12381 => Bls12381::PLONK_ANCHOR_BYTES,
+    };
     match (&self.system, &self.plonk_srs_anchors) {
       (FinalSystem::Plonk, Some(anchors))
-        if decode_hex(anchors)?.len() == 320 => {},
+        if decode_hex(anchors)?.len() == expected_anchor_bytes => {},
       (FinalSystem::Groth16, None) => {},
       _ => return Err("development verifier setup anchors differ".into()),
     }
-    Ok(())
+    Ok(curve)
   }
 
   #[cfg(any(feature = "plonk", feature = "groth16"))]
@@ -134,14 +152,18 @@ pub fn verify_with_development_verifier(
     );
   }
   let verifier: Verifier = serde_json::from_slice(bundle)?;
-  verifier.validate()?;
+  let curve = verifier.validate()?;
   if proof.len() > (1 << 20) + 40 {
     return Err("development proof exceeds its size limit".into());
   }
-  let tag = match verifier.system {
-    FinalSystem::Plonk => super::plonk::PROOF_TAG,
-    FinalSystem::Groth16 => super::groth16::PROOF_TAG,
-    FinalSystem::None => {
+  let tag = match (curve, verifier.system) {
+    (Curve::Bn254, FinalSystem::Plonk) => super::plonk::PROOF_TAG,
+    (Curve::Bls12381, FinalSystem::Plonk) => super::plonk::BLS12_381_PROOF_TAG,
+    (Curve::Bn254, FinalSystem::Groth16) => super::groth16::PROOF_TAG,
+    (Curve::Bls12381, FinalSystem::Groth16) => {
+      super::groth16::BLS12_381_PROOF_TAG
+    },
+    (_, FinalSystem::None) => {
       return Err("development verifier has no final proof system".into());
     },
   };
@@ -160,7 +182,8 @@ pub fn verify_with_development_verifier(
   let _ = claim;
   let checked: Result<()> = match verifier.system {
     #[cfg(feature = "plonk")]
-    FinalSystem::Plonk => super::gnark::verify(
+    FinalSystem::Plonk => super::gnark::verify_for(
+      curve,
       &key,
       &key_hash,
       &packet[32..],
@@ -177,7 +200,8 @@ pub fn verify_with_development_verifier(
       Err("this ix was built without PLONK; rebuild with IX_PLONK=1".into())
     },
     #[cfg(feature = "groth16")]
-    FinalSystem::Groth16 => super::gnark::verify_groth16(
+    FinalSystem::Groth16 => super::gnark::verify_groth16_for(
+      curve,
       &key,
       &key_hash,
       &packet[32..],
@@ -224,6 +248,7 @@ mod tests {
     .unwrap();
     Verifier {
       format: FORMAT.into(),
+      curve: Bn254::NAME.into(),
       system,
       inner_setup: "ignition".into(),
       inner_vk_blake3: "00".repeat(32),

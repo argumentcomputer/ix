@@ -8,7 +8,10 @@ use aiur::{
     stark::{Backend, BatchProof, Parameters},
   },
 };
-use ix_proof_compression::pipeline::{self, FixedRoot};
+use ix_proof_compression::{
+  kzg::curve::Curve,
+  pipeline::{self, FixedRoot},
+};
 use lean_ffi::object::{
   LeanBorrowed, LeanByteArray, LeanIOResult, LeanOwned, LeanString,
 };
@@ -80,6 +83,60 @@ extern "C" fn rs_compression_run(
 }
 
 #[unsafe(no_mangle)]
+extern "C" fn rs_compression_run_for_curve(
+  vk: LeanByteArray<LeanBorrowed<'_>>,
+  proof: LeanByteArray<LeanBorrowed<'_>>,
+  claim: LeanByteArray<LeanBorrowed<'_>>,
+  statement: LeanByteArray<LeanBorrowed<'_>>,
+  fixed_root: LeanByteArray<LeanBorrowed<'_>>,
+  dir: LeanString<LeanBorrowed<'_>>,
+  cache_root: LeanString<LeanBorrowed<'_>>,
+  curve: LeanString<LeanBorrowed<'_>>,
+  dev_kzg_srs: bool,
+  dev_final_srs: bool,
+  final_proof: u8,
+  fresh: bool,
+) -> LeanIOResult<LeanOwned> {
+  let dir = dir.to_string();
+  let cache_root = cache_root.to_string();
+  let curve = match Curve::parse(&curve.to_string()) {
+    Ok(curve) => curve,
+    Err(error) => return LeanIOResult::error_string(&error),
+  };
+  let final_proof = match pipeline::FinalSystem::try_from(final_proof) {
+    Ok(system) => {
+      pipeline::FinalOptions { system, allow_development: dev_final_srs }
+    },
+    Err(error) => return LeanIOResult::error_string(error),
+  };
+  let fixed_root = optional(&fixed_root);
+  let result = pipeline::CompressConfig::from_env_for_curve(
+    curve,
+    std::path::Path::new(&cache_root),
+    dev_kzg_srs,
+    final_proof,
+  )
+  .and_then(|mut config| {
+    config.fresh = fresh;
+    pipeline::compress(
+      pipeline::CompressInput {
+        vk: vk.as_bytes(),
+        proof: proof.as_bytes(),
+        claim: claim.as_bytes(),
+        statement: statement.as_bytes(),
+        fixed_root: fixed_root.as_deref(),
+        out: std::path::Path::new(&dir),
+      },
+      &config,
+    )
+  });
+  match result {
+    Ok(bytes) => LeanIOResult::ok(LeanByteArray::from_bytes(bytes.as_slice())),
+    Err(e) => LeanIOResult::error_string(&e.to_string()),
+  }
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn rs_compression_verify(
   proof: LeanByteArray<LeanBorrowed<'_>>,
   claim: LeanByteArray<LeanBorrowed<'_>>,
@@ -126,6 +183,11 @@ extern "C" fn rs_compression_curve() -> LeanIOResult<LeanOwned> {
 }
 
 #[unsafe(no_mangle)]
+extern "C" fn rs_compression_curves() -> LeanIOResult<LeanOwned> {
+  LeanIOResult::ok(LeanString::new("bn254,bls12-381"))
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn rs_compression_setup(
   dev_kzg_srs: bool,
   dev_final_srs: bool,
@@ -139,6 +201,29 @@ extern "C" fn rs_compression_setup(
   };
   match pipeline::setup_description(dev_kzg_srs, final_proof) {
     Ok(description) => LeanIOResult::ok(LeanString::new(description)),
+    Err(e) => LeanIOResult::error_string(&e.to_string()),
+  }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_compression_setup_for_curve(
+  curve: LeanString<LeanBorrowed<'_>>,
+  dev_kzg_srs: bool,
+  dev_final_srs: bool,
+  final_proof: u8,
+) -> LeanIOResult<LeanOwned> {
+  let curve = match Curve::parse(&curve.to_string()) {
+    Ok(curve) => curve,
+    Err(error) => return LeanIOResult::error_string(&error),
+  };
+  let final_proof = match pipeline::FinalSystem::try_from(final_proof) {
+    Ok(system) => {
+      pipeline::FinalOptions { system, allow_development: dev_final_srs }
+    },
+    Err(error) => return LeanIOResult::error_string(error),
+  };
+  match pipeline::setup_description_for_curve(curve, dev_kzg_srs, final_proof) {
+    Ok(description) => LeanIOResult::ok(LeanString::new(&description)),
     Err(e) => LeanIOResult::error_string(&e.to_string()),
   }
 }
@@ -301,6 +386,41 @@ extern "C" fn rs_compression_prepare(
 ) -> LeanIOResult<LeanOwned> {
   let cache_root = cache_root.to_string();
   let result = pipeline::CompressConfig::from_env(
+    std::path::Path::new(&cache_root),
+    dev_kzg_srs,
+    pipeline::FinalOptions {
+      system: pipeline::FinalSystem::None,
+      allow_development: dev_kzg_srs,
+    },
+  )
+  .and_then(|config| {
+    pipeline::prepare(root_vk.as_bytes(), &config)?;
+    if plonk {
+      pipeline::prepare_plonk(&config)?;
+    }
+    Ok(())
+  });
+  match result {
+    Ok(()) => LeanIOResult::ok(LeanOwned::box_usize(0)),
+    Err(error) => LeanIOResult::error_string(&error.to_string()),
+  }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_compression_prepare_for_curve(
+  root_vk: LeanByteArray<LeanBorrowed<'_>>,
+  cache_root: LeanString<LeanBorrowed<'_>>,
+  curve: LeanString<LeanBorrowed<'_>>,
+  dev_kzg_srs: bool,
+  plonk: bool,
+) -> LeanIOResult<LeanOwned> {
+  let cache_root = cache_root.to_string();
+  let curve = match Curve::parse(&curve.to_string()) {
+    Ok(curve) => curve,
+    Err(error) => return LeanIOResult::error_string(&error),
+  };
+  let result = pipeline::CompressConfig::from_env_for_curve(
+    curve,
     std::path::Path::new(&cache_root),
     dev_kzg_srs,
     pipeline::FinalOptions {

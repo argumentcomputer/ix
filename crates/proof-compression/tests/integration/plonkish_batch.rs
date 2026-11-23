@@ -11,7 +11,7 @@ use multi_stark::plonkish::Assignment;
 use multi_stark::plonkish::Circuit;
 use multi_stark::system::System;
 use multi_stark::system::SystemWitness;
-use multi_stark::types::ExtVal;
+use multi_stark::types::ExtVal3;
 use multi_stark::types::Val;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 
@@ -60,7 +60,7 @@ fn multiple_shards_bind_the_shared_transcript_and_global_balance() {
     if !unbalanced {
       assert_ne!(
         *batch.proofs[0].intermediate_accumulators.last().unwrap(),
-        ExtVal::ZERO
+        ExtVal3::ZERO
       );
     }
     let mut b = CircuitBuilder::new();
@@ -98,7 +98,7 @@ fn multiple_shards_bind_the_shared_transcript_and_global_balance() {
     if !unbalanced {
       for shard in 0..2 {
         let mut bad = expanded.clone();
-        bad[shard].proof.intermediate_accumulators[0] += ExtVal::ONE;
+        bad[shard].proof.intermediate_accumulators[0] += ExtVal3::ONE;
         assert!(check(&bad).is_err());
       }
       let mut swapped = expanded.clone();
@@ -166,15 +166,15 @@ fn single_batch_binds_transcript_claims_messages_and_pcs() {
       let mut bad = expanded.clone();
       match attack {
         0 => bad.claims[0][1] += Val::ONE,
-        1 => bad.challenges[0] += ExtVal::ONE,
-        2 => bad.proof.intermediate_accumulators[0] += ExtVal::ONE,
-        3 => bad.proof.stage_1_opened_values[0][0][0] += ExtVal::ONE,
+        1 => bad.challenges[0] += ExtVal3::ONE,
+        2 => bad.proof.intermediate_accumulators[0] += ExtVal3::ONE,
+        3 => bad.proof.stage_1_opened_values[0][0][0] += ExtVal3::ONE,
         4 => bad.input_paths[0][0][0][0] ^= 1,
         5 => {
           bad.proof.opening_proof.commit_phase_openings[0].sibling_values[0]
-            [0] += ExtVal::ONE
+            [0] += ExtVal3::ONE
         },
-        6 => bad.proof.opening_proof.final_poly[0] += ExtVal::ONE,
+        6 => bad.proof.opening_proof.final_poly[0] += ExtVal3::ONE,
         _ => bad.fri_paths[0][0][0][0] ^= 1,
       }
       assert!(assign(&c, &inputs, &bad).is_err(), "attack {attack}");
@@ -241,7 +241,7 @@ fn single_batch_constrains_nonzero_residual_against_messages() {
   system.verify_batch(&batch).unwrap();
   assert_ne!(
     *batch.proofs[0].intermediate_accumulators.last().unwrap(),
-    ExtVal::ZERO
+    ExtVal3::ZERO
   );
   let shape = FixedPcsShape::new(&system, fixture::LOG_HEIGHT);
   let (c, i) = build_single_batch_verifier(&system, &shape, &[], &messages);
@@ -249,7 +249,7 @@ fn single_batch_constrains_nonzero_residual_against_messages() {
     expand_single_batch_witness(&system, &shape, &batch, &messages).unwrap();
   assign(&c, &i, &e).unwrap();
   let mut bad = e;
-  *bad.proof.intermediate_accumulators.last_mut().unwrap() = ExtVal::ZERO;
+  *bad.proof.intermediate_accumulators.last_mut().unwrap() = ExtVal3::ZERO;
   assert!(assign(&c, &i, &bad).is_err());
 }
 
@@ -260,7 +260,7 @@ fn compact_hash_batch_verification_can_be_proved() {
   use multi_stark::plonkish::CircuitBuilder;
   use multi_stark::types::CommitmentParameters;
   use multi_stark::types::FriParameters;
-  use multi_stark::types::GoldilocksBlake3Config;
+  use multi_stark::types::GoldilocksBlake3V6Config;
   let (inner, key) = System::new(fixture::config(), fixture::circuit_inputs());
   let claim = fixture::claim(fixture::Function::Odd, 19, true);
   let batch = inner.prove_batch(
@@ -309,7 +309,7 @@ fn compact_hash_batch_verification_can_be_proved() {
   for d in &mut defs {
     d.lookup_group_size = 3;
   }
-  let cfg = GoldilocksBlake3Config::new(
+  let cfg = GoldilocksBlake3V6Config::new(
     CommitmentParameters { log_blowup: 2, cap_height: 0 },
     FriParameters {
       log_final_poly_len: 0,

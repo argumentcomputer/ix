@@ -15,20 +15,21 @@ const UPLOAD_POINTS: usize = 1 << 18;
 #[cfg(test)]
 mod tests;
 
-pub(in crate::kzg) struct Owner {
+pub(in crate::kzg) struct Owner<C: KzgCurve> {
   id: u64,
-  srs: Arc<Srs>,
+  token: Arc<()>,
+  srs: Arc<Srs<C>>,
 }
 
-impl Owner {
-  pub(in crate::kzg) fn new(srs: Arc<Srs>) -> Arc<Self> {
+impl<C: KzgCurve> Owner<C> {
+  pub(in crate::kzg) fn new(srs: Arc<Srs<C>>) -> Arc<Self> {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     let id = NEXT
       .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| {
         id.checked_add(1)
       })
       .expect("SRS cache identity exhausted");
-    Arc::new(Self { id, srs })
+    Arc::new(Self { id, token: Arc::new(()), srs })
   }
 }
 
@@ -36,43 +37,8 @@ pub(in crate::kzg) fn enabled() -> bool {
   settings().srs_cache
 }
 
-unsafe extern "C" {
-  fn ix_kzg_srs_plan(
-    device: i32,
-    count: usize,
-    window: *mut u32,
-    persistent: *mut usize,
-    temporary: *mut usize,
-  ) -> i32;
-  fn ix_kzg_srs_upload(
-    device: i32,
-    input: *const c_void,
-    count: usize,
-    output: *mut *mut c_void,
-  ) -> i32;
-  fn ix_kzg_srs_destroy(device: i32, points: *mut c_void) -> i32;
-  fn ix_kzg_srs_workspace_create(
-    device: i32,
-    count: usize,
-    output: *mut *mut c_void,
-  ) -> i32;
-  fn ix_kzg_srs_workspace_destroy(device: i32, workspace: *mut c_void) -> i32;
-  fn ix_kzg_srs_msm(
-    device: i32,
-    workspace: *mut c_void,
-    points: *const c_void,
-    point_offset: usize,
-    output: *mut ProjectiveLimbs,
-    host: *const [u64; 4],
-    polynomial: *const c_void,
-    scalar_offset: usize,
-    count: usize,
-    normalization: *const [u64; 4],
-  ) -> i32;
-}
-
 struct Entry {
-  owner: Weak<Owner>,
+  owner: Weak<()>,
   id: u64,
   start: usize,
   count: usize,
@@ -82,14 +48,24 @@ struct Entry {
 }
 
 impl Entry {
-  fn contains(&self, owner: &Owner, start: usize, count: usize) -> bool {
+  fn contains<C: KzgCurve>(
+    &self,
+    owner: &Owner<C>,
+    start: usize,
+    count: usize,
+  ) -> bool {
     self.id == owner.id
       && start >= self.start
       && start - self.start <= self.count
       && count <= self.count - (start - self.start)
   }
 
-  fn overlaps(&self, owner: &Owner, start: usize, count: usize) -> bool {
+  fn overlaps<C: KzgCurve>(
+    &self,
+    owner: &Owner<C>,
+    start: usize,
+    count: usize,
+  ) -> bool {
     self.id == owner.id
       && self.start < start + count
       && start < self.start + self.count
@@ -103,7 +79,8 @@ struct Workspace {
 }
 
 #[derive(Default)]
-struct Cache {
+#[doc(hidden)]
+pub struct Cache {
   entries: Vec<Entry>,
   workspace: Option<Workspace>,
   clock: u64,
@@ -121,14 +98,15 @@ impl Cache {
     self.point_bytes() + self.workspace.as_ref().map_or(0, |w| w.bytes)
   }
 
-  fn evict(&mut self, device: &Device<'_>, index: usize) {
+  fn evict<C: KzgCurve>(&mut self, device: &Device<'_>, index: usize) {
     let entry = self.entries.swap_remove(index);
     check(
-      unsafe { ix_kzg_srs_destroy(device.id(), entry.pointer as *mut c_void) },
+      unsafe { C::ffi_srs_destroy(device.id(), entry.pointer as *mut c_void) },
       "SRS eviction",
     );
     self.evictions += 1;
     tracing::debug!(
+      curve = C::NAME,
       device = device.id(),
       owner = entry.id,
       start = entry.start,
@@ -137,11 +115,11 @@ impl Cache {
     );
   }
 
-  fn drop_workspace(&mut self, device: &Device<'_>) {
+  fn drop_workspace<C: KzgCurve>(&mut self, device: &Device<'_>) {
     if let Some(workspace) = self.workspace.take() {
       check(
         unsafe {
-          ix_kzg_srs_workspace_destroy(
+          C::ffi_srs_workspace_destroy(
             device.id(),
             workspace.pointer as *mut c_void,
           )
@@ -151,11 +129,11 @@ impl Cache {
     }
   }
 
-  fn purge(&mut self, device: &Device<'_>) {
+  fn purge<C: KzgCurve>(&mut self, device: &Device<'_>) {
     while let Some(index) =
       self.entries.iter().position(|entry| entry.owner.strong_count() == 0)
     {
-      self.evict(device, index);
+      self.evict::<C>(device, index);
     }
   }
 
@@ -169,27 +147,33 @@ impl Cache {
   }
 }
 
-fn caches() -> &'static [Mutex<Cache>] {
-  static CACHES: OnceLock<Vec<Mutex<Cache>>> = OnceLock::new();
-  CACHES.get_or_init(|| {
-    Devices::get().ids.iter().map(|_| Mutex::new(Cache::default())).collect()
+fn caches<C: KzgCurve>() -> &'static [Mutex<Cache>] {
+  C::srs_caches_slot().get_or_init(|| {
+    Devices::get::<C>()
+      .ids
+      .iter()
+      .map(|_| Mutex::new(Cache::default()))
+      .collect()
   })
 }
 
-pub(super) fn reclaimable(index: usize) -> usize {
-  caches()[index].lock().unwrap().bytes()
+pub(super) fn reclaimable<C: KzgCurve>(index: usize) -> usize {
+  caches::<C>()[index].lock().unwrap().bytes()
 }
 
 /// The caller owns the only operation lease; no cached native handle can be
 /// in use.
-pub(super) fn prepare_budget(device: &Device<'_>, required: usize) -> bool {
-  let mut cache = caches()[device.index].lock().unwrap();
-  cache.purge(device);
-  while device.budget() < required {
+pub(super) fn prepare_budget<C: KzgCurve>(
+  device: &Device<'_>,
+  required: usize,
+) -> bool {
+  let mut cache = caches::<C>()[device.index].lock().unwrap();
+  cache.purge::<C>(device);
+  while device.budget::<C>() < required {
     if let Some(index) = cache.oldest() {
-      cache.evict(device, index);
+      cache.evict::<C>(device, index);
     } else if cache.workspace.is_some() {
-      cache.drop_workspace(device);
+      cache.drop_workspace::<C>(device);
     } else {
       return false;
     }
@@ -203,9 +187,9 @@ struct Handles {
   workspace: usize,
 }
 
-fn prepare(
+fn prepare<C: KzgCurve>(
   device: &Device<'_>,
-  owner: &Arc<Owner>,
+  owner: &Arc<Owner<C>>,
   start: usize,
   count: usize,
 ) -> Handles {
@@ -214,7 +198,7 @@ fn prepare(
   let (mut window, mut persistent, mut temporary) = (0, 0, 0);
   check(
     unsafe {
-      ix_kzg_srs_plan(
+      C::ffi_srs_plan(
         device.id(),
         count,
         &mut window,
@@ -225,17 +209,17 @@ fn prepare(
     "MSM memory plan",
   );
   let point_bytes =
-    count.div_ceil(32).checked_mul(32 * DEVICE_AFFINE_BYTES).unwrap();
+    count.div_ceil(32).checked_mul(32 * C::DEVICE_AFFINE_BYTES).unwrap();
   let staging_bytes =
-    count.min(UPLOAD_POINTS).div_ceil(32) * 32 * size_of::<G1Affine>();
-  let mut cache = caches()[device.index].lock().unwrap();
-  cache.purge(device);
+    count.min(UPLOAD_POINTS).div_ceil(32) * 32 * size_of::<G1AffineOf<C>>();
+  let mut cache = caches::<C>()[device.index].lock().unwrap();
+  cache.purge::<C>(device);
   if cache
     .workspace
     .as_ref()
     .is_some_and(|workspace| workspace.window != window)
   {
-    cache.drop_workspace(device);
+    cache.drop_workspace::<C>(device);
   }
   loop {
     let hit = cache
@@ -248,21 +232,21 @@ fn prepare(
         .iter()
         .position(|entry| entry.overlaps(owner, start, count))
     {
-      cache.evict(device, index);
+      cache.evict::<C>(device, index);
       continue;
     }
     if hit.is_none() && cache.point_bytes() + point_bytes > LIMIT {
       let index = cache.oldest().expect("SRS chunk exceeds cache limit");
-      cache.evict(device, index);
+      cache.evict::<C>(device, index);
       continue;
     }
     let needed = temporary
       + HEADROOM
       + if hit.is_none() { point_bytes + staging_bytes } else { 0 }
       + if cache.workspace.is_none() { persistent } else { 0 };
-    if device.budget() < needed {
+    if device.budget::<C>() < needed {
       if let Some(index) = cache.oldest() {
-        cache.evict(device, index);
+        cache.evict::<C>(device, index);
         continue;
       }
       panic!("insufficient free VRAM for admitted cached MSM");
@@ -271,7 +255,7 @@ fn prepare(
       let mut pointer = std::ptr::null_mut();
       check(
         unsafe {
-          ix_kzg_srs_workspace_create(device.id(), count, &mut pointer)
+          C::ffi_srs_workspace_create(device.id(), count, &mut pointer)
         },
         "MSM workspace creation",
       );
@@ -292,7 +276,7 @@ fn prepare(
       let mut pointer = std::ptr::null_mut();
       check(
         unsafe {
-          ix_kzg_srs_upload(
+          C::ffi_srs_upload(
             device.id(),
             owner.srs.g1[start..].as_ptr().cast(),
             count,
@@ -302,9 +286,9 @@ fn prepare(
         "SRS cache upload",
       );
       cache.uploads += 1;
-      cache.upload_bytes += (count * size_of::<G1Affine>()) as u64;
+      cache.upload_bytes += (count * size_of::<G1AffineOf<C>>()) as u64;
       cache.entries.push(Entry {
-        owner: Arc::downgrade(owner),
+        owner: Arc::downgrade(&owner.token),
         id: owner.id,
         start,
         count,
@@ -315,11 +299,12 @@ fn prepare(
       cache.entries.len() - 1
     };
     assert!(
-      device.budget() >= temporary + HEADROOM,
+      device.budget::<C>() >= temporary + HEADROOM,
       "cached MSM free-memory recheck failed"
     );
     let entry = &cache.entries[index];
     tracing::debug!(
+      curve = C::NAME,
       device = device.id(),
       owner = owner.id,
       start,
@@ -342,17 +327,17 @@ fn prepare(
 }
 
 #[derive(Clone, Copy)]
-enum Scalars<'a> {
-  Host(&'a [Fr]),
+enum Scalars<'a, C: KzgCurve> {
+  Host(&'a [C::Fr]),
   Resident { pointer: usize, offset: usize, count: usize },
 }
 
-fn invoke(
+fn invoke<C: KzgCurve>(
   device: &Device<'_>,
   handles: &Handles,
-  scalars: Scalars<'_>,
-  normalization: Option<(Fr, Fr)>,
-) -> G1Projective {
+  scalars: Scalars<'_, C>,
+  normalization: Option<(C::Fr, C::Fr)>,
+) -> G1ProjectiveOf<C> {
   let (host, resident, scalar_offset, count) = match scalars {
     Scalars::Host(values) => {
       (values.as_ptr().cast(), std::ptr::null(), 0, values.len())
@@ -361,10 +346,10 @@ fn invoke(
       (std::ptr::null(), pointer as *const c_void, offset, count)
     },
   };
-  let mut output = [[0; FQ_LIMBS]; 3];
+  let mut output = [C::FqLimbs::default(); 3];
   check(
     unsafe {
-      ix_kzg_srs_msm(
+      C::ffi_srs_msm(
         device.id(),
         handles.workspace as *mut c_void,
         handles.points as *const c_void,
@@ -374,29 +359,29 @@ fn invoke(
         resident,
         scalar_offset,
         count,
-        normalization
-          .as_ref()
-          .map_or(std::ptr::null(), |(_, inverse)| &inverse.0.0),
+        normalization.as_ref().map_or(std::ptr::null(), |(_, inverse)| {
+          C::fr_mont_limbs_ref(inverse)
+        }),
       )
     },
     "cached SRS MSM",
   );
-  let result = projective(output);
+  let result = projective::<C>(output);
   normalization.map_or(result, |(scale, _)| result * scale)
 }
 
-pub(in crate::kzg) fn msm_columns(
-  owner: &Arc<Owner>,
+pub(in crate::kzg) fn msm_columns<C: KzgCurve>(
+  owner: &Arc<Owner<C>>,
   start: usize,
-  columns: &[(&[Fr], Option<&ResidentPolynomial>)],
-) -> Vec<G1Projective> {
+  columns: &[(&[C::Fr], Option<&ResidentPolynomial<C>>)],
+) -> Vec<G1ProjectiveOf<C>> {
   let count = columns.first().map_or(0, |(column, _)| column.len());
   assert!(columns.iter().all(|(column, _)| column.len() == count));
   assert!(start <= owner.srs.g1.len() && count <= owner.srs.g1.len() - start);
   if count == 0 {
-    return vec![G1Projective::zero(); columns.len()];
+    return vec![G1ProjectiveOf::<C>::zero(); columns.len()];
   }
-  let devices = Devices::get();
+  let devices = Devices::get::<C>();
   let limit = devices.chunk_points.min(MAX_CHUNK);
   let mut groups = vec![Vec::new(); devices.ids.len()];
   let mut host = Vec::new();
@@ -429,14 +414,14 @@ pub(in crate::kzg) fn msm_columns(
     .map(|(index, offset, length, group)| {
       let device = devices.acquire_at(index);
       let chunk = limit.min(
-        devices.potential_budget(index).saturating_sub(HEADROOM)
+        devices.potential_budget::<C>(index).saturating_sub(HEADROOM)
           / MSM_BYTES_PER_POINT,
       );
       assert!(chunk > 0, "insufficient free VRAM for KZG MSM");
-      let mut sums = vec![G1Projective::zero(); group.len()];
+      let mut sums = vec![G1ProjectiveOf::<C>::zero(); group.len()];
       for part in (offset..offset + length).step_by(chunk) {
         let length = (offset + length - part).min(chunk);
-        let handles = prepare(&device, owner, start + part, length);
+        let handles = prepare::<C>(&device, owner, start + part, length);
         for (&column, sum) in group.iter().zip(&mut sums) {
           let (coefficients, resident) = columns[column];
           let input = &coefficients[part..part + length];
@@ -447,25 +432,30 @@ pub(in crate::kzg) fn msm_columns(
               count: length,
             }
           });
-          *sum += invoke(&device, &handles, scalars, msm_normalization(input));
+          *sum += invoke::<C>(
+            &device,
+            &handles,
+            scalars,
+            msm_normalization::<C>(input),
+          );
         }
       }
       group.into_iter().zip(sums).collect::<Vec<_>>()
     })
     .collect();
-  let mut result = vec![G1Projective::zero(); columns.len()];
+  let mut result = vec![G1ProjectiveOf::<C>::zero(); columns.len()];
   for (column, point) in parts.into_iter().flatten() {
     result[column] += point;
   }
   result
 }
 
-pub(in crate::kzg) fn single_device_opening(
-  owner: &Arc<Owner>,
-  coefficients: &[Fr],
-  z: Fr,
-) -> Option<G1Projective> {
-  let devices = Devices::get();
+pub(in crate::kzg) fn single_device_opening<C: KzgCurve>(
+  owner: &Arc<Owner<C>>,
+  coefficients: &[C::Fr],
+  z: C::Fr,
+) -> Option<G1ProjectiveOf<C>> {
+  let devices = Devices::get::<C>();
   if devices.ids.len() != 1 || coefficients.len() < 2 {
     return None;
   }
@@ -475,38 +465,39 @@ pub(in crate::kzg) fn single_device_opening(
   let chunk = opening_chunk(
     coefficients.len(),
     devices.chunk_points.min(MAX_CHUNK),
-    devices.potential_budget(0),
+    devices.potential_budget::<C>(0),
   )?;
   let required = coefficients
     .len()
     .checked_mul(32)?
     .checked_add(HEADROOM)?
     .checked_add(chunk.checked_mul(MSM_BYTES_PER_POINT)?)?;
-  if !device.prepare_budget(required) {
+  if !device.prepare_budget::<C>(required) {
     return None;
   }
   let mut context = std::ptr::null_mut();
   check(
     unsafe {
-      ix_kzg_divide_resident(
+      C::ffi_divide_resident(
         device.id(),
         coefficients.as_ptr().cast(),
         coefficients.len(),
-        &z.0.0,
+        C::fr_mont_limbs_ref(&z),
         &mut context,
       )
     },
     "cached SRS opening division",
   );
-  let quotient = LeasedPolynomial { device: &device, context };
-  let mut result = G1Projective::zero();
+  let quotient =
+    LeasedPolynomial::<C> { device: &device, context, _curve: PhantomData };
+  let mut result = G1ProjectiveOf::<C>::zero();
   for offset in (0..count).step_by(chunk) {
     let count = (count - offset).min(chunk);
-    let mut samples = [Fr::ZERO; 128];
+    let mut samples = [C::FR_ZERO; 128];
     let normalization = if count >= 4096 {
       check(
         unsafe {
-          ix_kzg_polynomial_sample(
+          C::ffi_polynomial_sample(
             device.id(),
             quotient.context,
             offset,
@@ -516,12 +507,12 @@ pub(in crate::kzg) fn single_device_opening(
         },
         "cached SRS opening sample",
       );
-      sample_normalization(samples.into_iter())
+      sample_normalization::<C>(samples.into_iter())
     } else {
       None
     };
-    let handles = prepare(&device, owner, offset, count);
-    result += invoke(
+    let handles = prepare::<C>(&device, owner, offset, count);
+    result += invoke::<C>(
       &device,
       &handles,
       Scalars::Resident { pointer: quotient.context as usize, offset, count },

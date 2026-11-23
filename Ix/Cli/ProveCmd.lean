@@ -43,16 +43,21 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
     && !p.hasFlag "shard" && !p.hasFlag "shards" && !p.hasFlag "exec-only"
   let compress? ← match (p.flag? "compress").map (·.as! String) with
     | none =>
-      if p.hasFlag "dev-kzg-srs" || p.hasFlag "dev-final-srs" || p.hasFlag "compression-out" then
-        IO.eprintln "--dev-kzg-srs, --dev-final-srs and --compression-out require --compress"; return 1
+      if p.hasFlag "dev-kzg-srs" || p.hasFlag "dev-final-srs" || p.hasFlag "compression-out"
+          || p.hasFlag "curve" || p.hasFlag "bn254" || p.hasFlag "bls12-381" then
+        IO.eprintln "--dev-kzg-srs, --dev-final-srs, --compression-out, --curve, --bn254 and --bls12-381 require --compress"; return 1
       pure none
     | some output =>
       if !canCompress then
         IO.eprintln "--compress requires aggregating a whole environment (--ixe and --ixes)"; return 1
+      let curve ← match Ix.Cli.CompressCmd.resolveCurve p with
+        | .error e => IO.eprintln s!"--compress: {e}"; return 1
+        | .ok c => pure c
       match Ix.Cli.CompressCmd.finalOf output with
       | .error e => IO.eprintln s!"--compress: {e}"; return 1
       | .ok finalProof =>
         let opts : Ix.Cli.CompressCmd.Options := {
+          curve
           finalProof
           fresh
           out := (p.flag? "compression-out").map (·.as! String)
@@ -113,6 +118,9 @@ def proveCmd : Cli.Cmd := `[Cli|
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/formal-shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement. Aggregation always resumes this way."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."
     "compress" : String; "With --ixe and --ixes: compress the aggregate root to `kzg`, `plonk` or `groth16` and print the compressed proof's address after the root's. The setup is checked before proving."
+    "curve" : String; "With --compress: pairing curve backend `bn254` (~100b classical / 0b PQ, Ignition SRS) or `bls12-381` (~126–128b classical / 0b PQ, EIP-2537, Filecoin challenge_19 SRS)."
+    "bn254"; "With --compress: select BN254 (default, ~100b classical / 0b PQ, Ignition SRS)."
+    "bls12-381"; "With --compress: select BLS12-381 (~126–128b classical / 0b PQ, EIP-2537, Filecoin challenge_19 SRS)."
     "compression-out" : String; "With --compress: directory for compression stage files; --fresh replaces prior stages there."
     "dev-kzg-srs";      "With --compress: generate local development inner KZG parameters. Final Groth16/PLONK proofs also require --dev-final-srs."
     "dev-final-srs"; "With --compress groth16 or plonk: generate and cache local development final keys. With --dev-kzg-srs, no Ignition parameters are required."

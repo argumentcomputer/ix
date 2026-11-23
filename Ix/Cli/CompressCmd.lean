@@ -10,9 +10,10 @@ public import Ix.Cli.ClaimPolicy
 public section
 namespace Ix.Cli.CompressCmd
 
-/-- Selected compression output: the proof system after recursive KZG and the
-setup policy. -/
+/-- Selected compression output: the curve backend, the proof system after
+recursive KZG, and the setup policy. -/
 structure Options where
+  curve : String := "bn254"
   finalProof : UInt8 := 0
   devKzgSrs : Bool := false
   devFinalSrs : Bool := false
@@ -20,6 +21,29 @@ structure Options where
   rootVk : Option String := none
   fresh : Bool := false
   aiur : Option AiurCompression.Options := none
+
+/-- Resolve `--curve`, `--bn254`, and `--bls12-381` flags cleanly, rejecting
+conflicting or unknown curve selections. -/
+def resolveCurve (p : Cli.Parsed) : Except String String := do
+  let hasBn := p.hasFlag "bn254"
+  let hasBls := p.hasFlag "bls12-381"
+  if hasBn && hasBls then
+    throw "choose at most one of --bn254 and --bls12-381"
+  let explicit? := (p.flag? "curve").map (·.as! String)
+  let normalized? ← match explicit? with
+    | none => pure none
+    | some "bn254" => pure (some "bn254")
+    | some "bls12-381" | some "bls12_381" => pure (some "bls12-381")
+    | some other =>
+      throw s!"unknown compression curve {other}: expected bn254 or bls12-381"
+  match hasBn, hasBls, normalized? with
+  | true, false, some "bls12-381" => throw "--bn254 conflicts with --curve bls12-381"
+  | false, true, some "bn254" => throw "--bls12-381 conflicts with --curve bn254"
+  | false, true, _ => pure "bls12-381"
+  | true, false, _ => pure "bn254"
+  | false, false, some c => pure c
+  | false, false, none => pure "bn254"
+  | true, true, _ => throw "choose at most one of --bn254 and --bls12-381"
 
 private def outputDirectory (opts : Options) (addr : Address) : IO String := do
   match opts.out with
@@ -36,11 +60,11 @@ def finalOf : String → Except String UInt8
 /-- Check what can be checked before proving: the setup is configured and
 authenticates, and the options are consistent. Returns the setup description. -/
 def preflight (_p : Cli.Parsed) (opts : Options) : IO String := do
-  if opts.aiur.isSome && (opts.finalProof != 0 || opts.rootVk.isSome || opts.devFinalSrs) then
-    throw (IO.userError "Aiur compression currently produces KZG proofs; --plonk, --groth16, --root-vk and --dev-final-srs are incompatible")
+  if opts.aiur.isSome && (opts.finalProof != 0 || opts.rootVk.isSome || opts.devFinalSrs || opts.curve != "bn254") then
+    throw (IO.userError "Aiur compression currently produces BN254 KZG proofs; --bls12-381, --plonk, --groth16, --root-vk and --dev-final-srs are incompatible")
   if let some aiur := opts.aiur then
     let _ ← AiurCompression.preflightOptions aiur opts.devKzgSrs
-  Compression.describeSetup opts.devKzgSrs opts.devFinalSrs opts.finalProof
+  Compression.describeSetupForCurve opts.curve opts.devKzgSrs opts.devFinalSrs opts.finalProof
 
 /-- Refuse an input other than an uncompressed proof of a `CheckEnv` claim. -/
 private def checkInput (wrapper : Ixon.Proof) : IO Unit := do
@@ -82,7 +106,10 @@ private def compressProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proo
   -- pipeline refuses a `root/` whose key, statement or layout differ from
   -- this proof's.
   let normalized := System.FilePath.mk out / "root" / "root-proof.bin"
-  let root ← if !opts.fresh && (← normalized.pathExists) then do
+  let isolatedStage := match ← IO.getEnv "IX_COMPRESS_STAGE" with
+    | some s => !s.isEmpty
+    | none => false
+  let root ← if (!opts.fresh || isolatedStage) && (← normalized.pathExists) then do
       IO.eprintln s!"Reusing the normalized root in {normalized}."
       IO.FS.readBinFile normalized
     else do
@@ -90,8 +117,8 @@ private def compressProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proo
       FormalCompress.normalize p ctx wrapper layout
   Compression.releaseGpuMemory
   IO.eprintln s!"Compressing aggregate root {addr} with {setup}."
-  let proof ← Compression.compress vk root (Ix.Claim.ser wrapper.claim) statement
-    layout out (← Compression.cacheDir).toString
+  let proof ← Compression.compressForCurve vk root (Ix.Claim.ser wrapper.claim) statement
+    layout out (← Compression.cacheDir).toString opts.curve
     opts.devKzgSrs opts.devFinalSrs opts.finalProof opts.fresh
   let compressed : Ixon.Proof := { claim := wrapper.claim, proof }
   StoreIO.toIO (Store.write (Ixon.Proof.ser compressed))
@@ -110,10 +137,12 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
         AiurCompression.resetOutput (← outputDirectory {} addr)
     if p.hasFlag "plonk" && p.hasFlag "groth16" then
       throw <| IO.userError "choose at most one of --plonk and --groth16"
+    let curve ← IO.ofExcept (resolveCurve p)
     let finalProof : UInt8 := if p.hasFlag "groth16" then 2
       else if p.hasFlag "plonk" then 1 else 0
     let aiur ← if AiurCompression.selected p then some <$> AiurCompression.options p else pure none
     let opts : Options := {
+      curve
       finalProof
       fresh := p.hasFlag "fresh"
       devKzgSrs := p.hasFlag "dev-kzg-srs"
@@ -168,9 +197,12 @@ def compressCmd : Cli.Cmd := `[Cli|
     "max-ram" : Nat; "RAM budget in GiB for native root normalization; does not cap Aiur KZG workspaces (default MemTotal less 20%)."
     "gpu-device" : Nat; "Prove the normalized root on this CUDA device (requires a CUDA build)."
     "dev-kzg-srs"; "Generate local development parameters for inner KZG. With --groth16 or --plonk, also requires --dev-final-srs."
-    "dev-final-srs"; "Generate and cache local development Groth16 or PLONK keys for the selected inner verifier. With --dev-kzg-srs, no Ignition parameters are required."
-    "plonk"; "Add a final PLONK proof using the compiled curve and selected setup."
-    "groth16"; "Add a final BN254 Groth16 proof using prepared, independently admitted circuit keys."
+    "dev-final-srs"; "Generate and cache local development Groth16 or PLONK keys for the selected inner verifier. With --dev-kzg-srs, no ceremony parameters are required."
+    "curve" : String; "Pairing curve backend: bn254 (default, ~100b classical / 0b PQ, Ignition SRS) or bls12-381 (~126–128b classical / 0b PQ, EIP-2537, Filecoin challenge_19 SRS)."
+    "bn254"; "Use the BN254 pairing curve backend (default, ~100b classical / 0b PQ, Ignition SRS)."
+    "bls12-381"; "Use the BLS12-381 pairing curve backend (~126–128b classical / 0b PQ, EIP-2537, Filecoin challenge_19 SRS)."
+    "plonk"; "Add a final PLONK proof using the selected curve and setup."
+    "groth16"; "Add a final Groth16 proof using the selected curve and prepared, independently admitted circuit keys."
     "binding-env" : String; "An `.ixe` whose role binding is the claim's table, with the records it binds and its evidence theorems: the kernel admits the table over them (once per table; recorded in `~/.ix/cache/table-admission`)."
     "allow-custom-binding"; "Compress a claim relative to a role binding the kernel does not admit here, or to a literal class (outside the IxVM consistency theorem)."
     "allow-axioms"; "Compress a claim that depends on axioms beyond the standard three."

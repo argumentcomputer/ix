@@ -28,10 +28,10 @@ use ix_proof_compression::fri::{
 };
 use multi_stark::config::StarkGenericConfig;
 use multi_stark::plonkish::CircuitStats;
-use multi_stark::system::{Circuit, System};
+use multi_stark::system::{Circuit, System, compute_vk_digest};
 use multi_stark::traits::Field;
 use multi_stark::types::{
-  CommitmentParameters, FriParameters, GoldilocksBlake3Config, Val,
+  CommitmentParameters, ExtVal3, FriParameters, GoldilocksBlake3V6Config, Val,
 };
 use p3_field::PrimeField64;
 use std::{fs, path::Path, time::Instant};
@@ -136,8 +136,9 @@ fn with_queries(key: &VerifierKey, queries: usize) -> VerifierKey {
       max_constraint_degree: c.max_constraint_degree,
     })
     .collect();
+  let vk_digest = compute_vk_digest::<Val, ExtVal3>(&circuits);
   VerifierKey::new(System {
-    config: GoldilocksBlake3Config::new(
+    config: GoldilocksBlake3V6Config::new(
       CommitmentParameters {
         log_blowup: system.config.log_blowup(),
         cap_height: system.config.cap_height(),
@@ -147,6 +148,7 @@ fn with_queries(key: &VerifierKey, queries: usize) -> VerifierKey {
     preprocessed_indices: (0..circuits.len()).map(Some).collect(),
     circuits,
     preprocessed_commit: system.preprocessed_commit.clone(),
+    vk_digest,
   })
 }
 
@@ -276,12 +278,17 @@ fn main() -> Result<()> {
       plan.build(schema.clone(), ImplementationOptions::default())?;
     let source = circuit.stats();
     let layout = circuit.multi_stark_layout_with_max_height(1 << log_height)?;
-    let scalar = GoldilocksCircuit::estimate(&circuit);
+    let scalar =
+      GoldilocksCircuit::<ix_proof_compression::kzg::curve::Bn254>::estimate(
+        &circuit,
+      );
     let scalar_rows = scalar.gates + scalar.lookups + scalar.publics + 1;
     // `FRI_SIZING_LOWER` materializes the translated circuit and lays it
     // out as the first stage does, which costs tens of GiB at full size.
     let scalar_layout = if std::env::var_os("FRI_SIZING_LOWER").is_some() {
-      let translated = GoldilocksCircuit::new_preallocated(&circuit);
+      let translated = GoldilocksCircuit::<
+        ix_proof_compression::kzg::curve::Bn254,
+      >::new_preallocated(&circuit);
       let layout = translated
         .circuit
         .multi_stark_layout_with_max_height(1 << log_height)?;
@@ -338,7 +345,7 @@ mod tests {
     let x = Expr::main(0);
     let y = Expr::main(1);
     let (system, _) = System::new(
-      GoldilocksBlake3Config::new(
+      GoldilocksBlake3V6Config::new(
         CommitmentParameters { log_blowup: 2, cap_height: 0 },
         FriParameters {
           log_final_poly_len: 0,

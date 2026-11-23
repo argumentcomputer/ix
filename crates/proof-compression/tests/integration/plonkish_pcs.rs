@@ -7,7 +7,7 @@ use multi_stark::p3_field::PrimeCharacteristicRing;
 use multi_stark::p3_field::PrimeField64;
 use multi_stark::system::System;
 use multi_stark::system::SystemWitness;
-use multi_stark::types::ExtVal;
+use multi_stark::types::ExtVal3;
 use multi_stark::types::Val;
 use p3_symmetric::MerkleCap;
 
@@ -59,7 +59,7 @@ fn full_fixed_verifier_accepts_native_proofs_and_rejects_corruption() {
       let mut wrong = expanded.clone();
       match attack {
         0 => wrong.claims[0][2] += Val::ONE,
-        1 => wrong.proof.stage_1_opened_values[0][0][0] += ExtVal::ONE,
+        1 => wrong.proof.stage_1_opened_values[0][0][0] += ExtVal3::ONE,
         2 => {
           wrong.proof.opening_proof.input_openings[0].opened_values[0][0][0] +=
             Val::ONE
@@ -68,15 +68,15 @@ fn full_fixed_verifier_accepts_native_proofs_and_rejects_corruption() {
         4 => wrong.fri_paths[0][0][0][0] ^= 1,
         5 => {
           wrong.proof.opening_proof.commit_phase_openings[0].sibling_values
-            [0][0] += ExtVal::ONE
+            [0][0] += ExtVal3::ONE
         },
-        6 => wrong.proof.opening_proof.final_poly[0] += ExtVal::ONE,
-        7 => wrong.proof.intermediate_accumulators[0] += ExtVal::ONE,
+        6 => wrong.proof.opening_proof.final_poly[0] += ExtVal3::ONE,
+        7 => wrong.proof.intermediate_accumulators[0] += ExtVal3::ONE,
         8 => {
           wrong.proof.opening_proof.input_openings[3].opened_values[0][0][0] +=
             Val::ONE
         },
-        9 => wrong.challenges[3] += ExtVal::ONE,
+        9 => wrong.challenges[3] += ExtVal3::ONE,
         10 => {
           let root = &mut wrong.proof.opening_proof.commit_phase_commits[0];
           let mut digest = root.roots()[0];
@@ -90,7 +90,7 @@ fn full_fixed_verifier_accepts_native_proofs_and_rejects_corruption() {
             .commit_phase_openings
             .last_mut()
             .unwrap()
-            .sibling_values[3][0] += ExtVal::ONE;
+            .sibling_values[3][0] += ExtVal3::ONE;
         },
         _ => wrong.fri_paths[3].last_mut().unwrap()[0][0] ^= 1,
       }
@@ -122,7 +122,7 @@ fn full_verifier_adapter_rejects_malformed_fixed_shapes() {
         wrong.opening_proof.input_openings[0].opened_values.pop();
       },
       2 => wrong.opening_proof.commit_phase_openings[0].log_arity = 2,
-      3 => wrong.opening_proof.final_poly.push(ExtVal::ZERO),
+      3 => wrong.opening_proof.final_poly.push(ExtVal3::ZERO),
       4 => {
         wrong.opening_proof.input_openings[0]
           .opening_proof

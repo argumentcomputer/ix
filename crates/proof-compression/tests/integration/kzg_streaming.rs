@@ -73,10 +73,10 @@ fn streamed_lookup_proof_matches_dense_and_checkpoint_roundtrip() {
       .commit(vec![(system.config.pcs().natural_domain_for_degree(h), trace)]);
     let mut bytes = Vec::new();
     data.write_checkpoint(&mut bytes).unwrap();
-    let roundtrip = KzgProverData::read_checkpoint(bytes.as_slice()).unwrap();
-    assert!(KzgProverData::read_checkpoint(&bytes[..bytes.len() - 1]).is_err());
+    let roundtrip = KzgProverData::<ix_proof_compression::kzg::curve::Bn254>::read_checkpoint(bytes.as_slice()).unwrap();
+    assert!(KzgProverData::<ix_proof_compression::kzg::curve::Bn254>::read_checkpoint(&bytes[..bytes.len() - 1]).is_err());
     bytes.push(0);
-    assert!(KzgProverData::read_checkpoint(bytes.as_slice()).is_err());
+    assert!(KzgProverData::<ix_proof_compression::kzg::curve::Bn254>::read_checkpoint(bytes.as_slice()).is_err());
     parts.push(roundtrip);
     circuit.preprocessed = None;
   }

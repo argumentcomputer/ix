@@ -79,8 +79,12 @@ fn fixed_intervals_match_signed_boundaries_and_quotient_bits() {
     );
     for coefficient in coefficients {
       assert_eq!(
-        signed_scalar(coefficient),
-        scalar(&BigInt::from(coefficient))
+        signed_scalar::<Bn254>(coefficient),
+        scalar::<Bn254>(&BigInt::from(coefficient))
+      );
+      assert_eq!(
+        signed_scalar::<crate::kzg::curve::Bls12381>(coefficient),
+        scalar::<crate::kzg::curve::Bls12381>(&BigInt::from(coefficient))
       );
     }
   }

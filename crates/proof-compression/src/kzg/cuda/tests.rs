@@ -1,46 +1,40 @@
 use super::*;
+use crate::kzg::curve::{Bls12381, Bn254};
 use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ff::PrimeField;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 
 mod constraints;
 
-unsafe extern "C" {
-  fn ix_kzg_ntt_parameters(lg: u32, output: *mut [[u64; 4]; 3]) -> i32;
-  fn ix_kzg_field_conformance(
-    device: i32,
-    fq: *const [abi::FqLimbs; 32],
-    fr: *const [[u64; 4]; 32],
-    fq_output: *mut [abi::FqLimbs; 192],
-    fr_output: *mut [[u64; 4]; 192],
-  ) -> i32;
-}
-
-#[test]
-fn native_ntt_parameters_match_scalar_roots_without_large_allocations() {
-  use crate::kzg::Scalar;
+fn check_ntt_parameters<C: KzgCurve>() {
+  use crate::kzg::CurveScalar;
   use multi_stark::traits::TwoAdicField;
-  for lg in 0..=MAX_FFT_LOG {
+  for lg in 0..=C::MAX_FFT_LOG {
     let mut output = [[0; 4]; 3];
     let status =
-      unsafe { ix_kzg_ntt_parameters(u32::try_from(lg).unwrap(), &mut output) };
+      unsafe { C::ffi_ntt_parameters(u32::try_from(lg).unwrap(), &mut output) };
     assert_eq!(status, 0);
-    let [root, inverse, scale] =
-      output.map(|limbs| Fr::new_unchecked(BigInt(limbs)));
-    assert_eq!(root, Scalar::two_adic_generator(lg).0);
+    let [root, inverse, scale] = output.map(C::fr_from_mont_limbs_unchecked);
+    assert_eq!(root, CurveScalar::<C>::two_adic_generator(lg).0);
     assert_eq!(inverse, root.inverse().unwrap());
-    assert_eq!(scale, Fr::from(1u64 << lg).inverse().unwrap());
+    assert_eq!(scale, C::Fr::from(1u64 << lg).inverse().unwrap());
   }
   let mut output = [[0; 4]; 3];
   assert_eq!(
     unsafe {
-      ix_kzg_ntt_parameters(
-        u32::try_from(MAX_FFT_LOG).unwrap() + 1,
+      C::ffi_ntt_parameters(
+        u32::try_from(C::MAX_FFT_LOG).unwrap() + 1,
         &mut output,
       )
     },
     1
   );
+}
+
+#[test]
+fn native_ntt_parameters_match_scalar_roots_without_large_allocations() {
+  check_ntt_parameters::<Bn254>();
+  check_ntt_parameters::<Bls12381>();
 }
 
 fn field_inputs<F: PrimeField>() -> [F; 32] {
@@ -76,19 +70,17 @@ fn field_reference<F: PrimeField>(values: [F; 32]) -> Vec<F> {
     .collect()
 }
 
-#[test]
-#[ignore = "requires a CUDA GPU"]
-fn cuda_base_and_scalar_arithmetic_match_arkworks() {
-  let fq = field_inputs::<Fq>();
-  let fr = field_inputs::<Fr>();
-  let fq_input = fq.map(|v| v.0.0);
-  let fr_input = fr.map(|v| v.0.0);
-  let mut fq_output = [[0; FQ_LIMBS]; 192];
+fn check_field_conformance<C: KzgCurve>() {
+  let fq = field_inputs::<C::Fq>();
+  let fr = field_inputs::<C::Fr>();
+  let fq_input = fq.map(C::fq_to_mont_limbs);
+  let fr_input = fr.map(C::fr_mont_limbs);
+  let mut fq_output = [C::FqLimbs::default(); 192];
   let mut fr_output = [[0; 4]; 192];
-  let device = Devices::get().acquire();
+  let device = Devices::get::<C>().acquire();
   check(
     unsafe {
-      ix_kzg_field_conformance(
+      C::ffi_field_conformance(
         device.id(),
         &fq_input,
         &fr_input,
@@ -99,16 +91,28 @@ fn cuda_base_and_scalar_arithmetic_match_arkworks() {
     "field conformance",
   );
   assert_eq!(
-    fq_output.map(|v| Fq::new_unchecked(BigInt(v))).as_slice(),
+    fq_output.map(C::fq_from_mont_limbs_unchecked).as_slice(),
     field_reference(fq)
   );
   assert_eq!(
-    fr_output.map(|v| Fr::new_unchecked(BigInt(v))).as_slice(),
+    fr_output.map(C::fr_from_mont_limbs_unchecked).as_slice(),
     field_reference(fr)
   );
 }
 
-fn scalars(n: usize) -> Vec<Fr> {
+#[test]
+#[ignore = "requires a CUDA GPU"]
+fn cuda_base_and_scalar_arithmetic_match_arkworks() {
+  check_field_conformance::<Bn254>();
+}
+
+#[test]
+#[ignore = "requires a CUDA GPU"]
+fn cuda_bls12_381_base_and_scalar_arithmetic_match_arkworks() {
+  check_field_conformance::<Bls12381>();
+}
+
+fn scalars<C: KzgCurve>(n: usize) -> Vec<C::Fr> {
   (0..n)
     .map(|i| {
       let mut bytes = [0; 64];
@@ -116,34 +120,36 @@ fn scalars(n: usize) -> Vec<Fr> {
         .update(&(i as u64).to_le_bytes())
         .finalize_xof()
         .fill(&mut bytes);
-      Fr::from_le_bytes_mod_order(&bytes)
+      C::Fr::from_le_bytes_mod_order(&bytes)
     })
     .collect()
 }
 
-#[test]
-fn oversized_fft_domains_fail_before_allocation_or_device_access() {
-  let unsupported = MAX_FFT_LOG + 1;
-  assert!(
-    std::panic::catch_unwind(|| fft_columns(&[], unsupported, false, Fr::ONE))
-      .is_err()
-  );
+fn check_oversized_fft<C: KzgCurve>() {
+  let unsupported = C::MAX_FFT_LOG + 1;
   assert!(
     std::panic::catch_unwind(|| {
-      interpolate_columns(vec![], unsupported, Fr::ONE)
+      fft_columns::<C>(&[], unsupported, false, C::FR_ONE)
     })
     .is_err()
   );
   assert!(
-    std::panic::catch_unwind(|| fft_from(&[], unsupported, Fr::ONE)).is_err()
+    std::panic::catch_unwind(|| {
+      interpolate_columns::<C>(vec![], unsupported, C::FR_ONE)
+    })
+    .is_err()
   );
-  let shift = Fr::ONE.0.0;
-  let mut value = Fr::ZERO.0.0;
+  assert!(
+    std::panic::catch_unwind(|| fft_from::<C>(&[], unsupported, C::FR_ONE))
+      .is_err()
+  );
+  let shift = C::fr_mont_limbs(C::FR_ONE);
+  let mut value = C::fr_mont_limbs(C::FR_ZERO);
   let original = value;
   const INVALID_VALUE: i32 = 1;
   // Invalid domains must fail before the invalid ordinal is resolved.
   for lg in [u32::try_from(unsupported).unwrap(), u32::MAX] {
-    let code = unsafe { ix_kzg_fft(-1, &mut value, lg, false, &shift) };
+    let code = unsafe { C::ffi_fft(-1, &mut value, lg, false, &shift) };
     assert_eq!(code, INVALID_VALUE);
     let job = FftJob {
       input: &value,
@@ -152,21 +158,46 @@ fn oversized_fft_domains_fail_before_allocation_or_device_access() {
       input_count: 1,
       resident_output: std::ptr::null_mut(),
     };
-    let code = unsafe { ix_kzg_fft_batch(-1, &job, 1, lg, false, &shift, 1) };
+    let code = unsafe {
+      C::ffi_fft_batch(
+        -1,
+        std::ptr::from_ref(&job).cast(),
+        1,
+        lg,
+        false,
+        &shift,
+        1,
+      )
+    };
     assert_eq!(code, INVALID_VALUE);
     assert_eq!(value, original);
   }
 }
 
 #[test]
-fn projective_limb_transport_preserves_coordinates_and_infinity() {
-  let generator = G1Affine::generator();
-  for point in [generator, -generator, G1Affine::identity()] {
+fn oversized_fft_domains_fail_before_allocation_or_device_access() {
+  check_oversized_fft::<Bn254>();
+  check_oversized_fft::<Bls12381>();
+}
+
+fn check_projective_transport<C: KzgCurve>() {
+  let generator = G1AffineOf::<C>::generator();
+  for point in [generator, -generator, G1AffineOf::<C>::identity()] {
     let native = point.into_group();
-    let decoded = projective([native.x.0.0, native.y.0.0, native.z.0.0]);
+    let decoded = projective::<C>([
+      C::fq_to_mont_limbs(native.x),
+      C::fq_to_mont_limbs(native.y),
+      C::fq_to_mont_limbs(native.z),
+    ]);
     assert_eq!(decoded.into_affine(), point);
   }
-  assert!(projective([[0; FQ_LIMBS]; 3]).is_zero());
+  assert!(projective::<C>([C::FqLimbs::default(); 3]).is_zero());
+}
+
+#[test]
+fn projective_limb_transport_preserves_coordinates_and_infinity() {
+  check_projective_transport::<Bn254>();
+  check_projective_transport::<Bls12381>();
 }
 
 fn lease_devices() -> Devices {
@@ -189,7 +220,7 @@ fn device_leases_reject_reentrancy_and_release_on_unwind() {
       match entry {
         0 => drop(devices.acquire()),
         1 => drop(devices.acquire_at(1)),
-        2 => drop(quotient::acquire_columns(&mut [], &[], 0)),
+        2 => drop(quotient::acquire_columns::<Bn254>(&mut [], &[], 0)),
         _ => drop(devices.acquire_admitted(&[1], |_| true)),
       }
     });
@@ -287,28 +318,29 @@ fn opening_memory_admission_keeps_scratch_reserve() {
 
 #[test]
 fn normalization_samples_structured_columns_only() {
-  let structured = vec![Fr::from(19).inverse().unwrap(); 8192];
-  assert!(msm_normalization(&structured).is_some());
-  assert!(msm_normalization(&scalars(8192)).is_none());
-  assert!(msm_normalization(&vec![Fr::ONE; 8192]).is_none());
-  assert!(msm_normalization(&structured[..4095]).is_none());
+  let structured = vec![ark_bn254::Fr::from(19).inverse().unwrap(); 8192];
+  assert!(msm_normalization::<Bn254>(&structured).is_some());
+  assert!(msm_normalization::<Bn254>(&scalars::<Bn254>(8192)).is_none());
+  assert!(msm_normalization::<Bn254>(&vec![Bn254::FR_ONE; 8192]).is_none());
+  assert!(msm_normalization::<Bn254>(&structured[..4095]).is_none());
 }
 
 // The tests below need a visible CUDA GPU.
 
-#[test]
-#[ignore = "requires a CUDA GPU"]
-fn msm_handle_rejects_destruction_on_another_device() {
-  let points =
-    [G1Affine::generator(), -G1Affine::generator(), G1Affine::identity()];
-  let values = [Fr::ONE, Fr::from(2), Fr::from(3)];
-  let device = Devices::get().acquire();
-  let context = upload_msm_points(&device, &points);
-  assert_eq!(unsafe { ix_kzg_msm_destroy(-1, context.context) }, 1);
-  let mut output = [[0; FQ_LIMBS]; 3];
+fn check_msm_destroy_rejection<C: KzgCurve>() {
+  let points = [
+    G1AffineOf::<C>::generator(),
+    -G1AffineOf::<C>::generator(),
+    G1AffineOf::<C>::identity(),
+  ];
+  let values = [C::FR_ONE, C::Fr::from(2u64), C::Fr::from(3u64)];
+  let device = Devices::get::<C>().acquire();
+  let context = upload_msm_points::<C>(&device, &points);
+  assert_eq!(unsafe { C::ffi_msm_destroy(-1, context.context) }, 1);
+  let mut output = [C::FqLimbs::default(); 3];
   check(
     unsafe {
-      ix_kzg_msm_invoke(
+      C::ffi_msm_invoke(
         device.id(),
         context.context,
         &mut output,
@@ -319,56 +351,82 @@ fn msm_handle_rejects_destruction_on_another_device() {
     },
     "MSM after rejected destruction",
   );
-  assert_eq!(projective(output), G1Projective::msm(&points, &values).unwrap());
+  assert_eq!(
+    projective::<C>(output),
+    G1ProjectiveOf::<C>::msm(&points, &values).unwrap()
+  );
+}
+
+#[test]
+#[ignore = "requires a CUDA GPU"]
+fn msm_handle_rejects_destruction_on_another_device() {
+  check_msm_destroy_rejection::<Bn254>();
+}
+
+fn check_cuda_msm<C: KzgCurve>() {
+  let mut scalars = scalars::<C>(4099);
+  let mut points: Vec<_> = scalars
+    .iter()
+    .map(|&s| (G1AffineOf::<C>::generator() * s).into_affine())
+    .collect();
+  points[0] = G1AffineOf::<C>::zero();
+  points[1] = G1AffineOf::<C>::generator();
+  points[2] = -points[1];
+  points[4].infinity = true;
+  scalars[1] = C::FR_ONE;
+  scalars[2] = C::FR_ONE;
+  scalars[3] = C::FR_ZERO;
+  scalars[4] = -C::FR_ONE;
+  for n in [0, 1, 31, 32, 33, 257, 4099] {
+    assert_eq!(
+      msm_chunked::<C>(&points[..n], &scalars[..n], 257),
+      G1ProjectiveOf::<C>::msm(&points[..n], &scalars[..n]).unwrap()
+    );
+  }
+  assert!(
+    msm_chunked::<C>(&points, &vec![C::FR_ZERO; points.len()], 1024).is_zero()
+  );
+  assert!(msm_chunked::<C>(&points[1..3], &scalars[1..3], 1).is_zero());
 }
 
 #[test]
 #[ignore = "requires a CUDA GPU"]
 fn cuda_msm_matches_arkworks_with_chunks_and_exceptional_points() {
-  let mut scalars = scalars(4099);
-  let mut points: Vec<_> = scalars
-    .iter()
-    .map(|&s| (G1Affine::generator() * s).into_affine())
-    .collect();
-  points[0] = G1Affine::zero();
-  points[1] = G1Affine::generator();
-  points[2] = -points[1];
-  points[4].infinity = true;
-  scalars[1] = Fr::ONE;
-  scalars[2] = Fr::ONE;
-  scalars[3] = Fr::ZERO;
-  scalars[4] = -Fr::ONE;
-  for n in [0, 1, 31, 32, 33, 257, 4099] {
-    assert_eq!(
-      msm_chunked(&points[..n], &scalars[..n], 257),
-      G1Projective::msm(&points[..n], &scalars[..n]).unwrap()
-    );
-  }
-  assert!(msm_chunked(&points, &vec![Fr::ZERO; points.len()], 1024).is_zero());
-  assert!(msm_chunked(&points[1..3], &scalars[1..3], 1).is_zero());
+  check_cuda_msm::<Bn254>();
+}
+
+#[test]
+#[ignore = "requires a CUDA GPU"]
+fn cuda_bls12_381_msm_matches_arkworks_with_chunks_and_exceptional_points() {
+  check_cuda_msm::<Bls12381>();
 }
 
 #[test]
 #[ignore = "requires a CUDA GPU"]
 fn cuda_resident_msm_columns_match_arkworks() {
-  let input = scalars(4099);
-  let mut points: Vec<_> =
-    input.iter().map(|&s| (G1Affine::generator() * s).into_affine()).collect();
-  points[0] = G1Affine::zero();
+  let input = scalars::<Bn254>(4099);
+  let mut points: Vec<_> = input
+    .iter()
+    .map(|&s| (ark_bn254::G1Affine::generator() * s).into_affine())
+    .collect();
+  points[0] = ark_bn254::G1Affine::zero();
   let negative: Vec<_> = input.iter().map(|&s| -s).collect();
-  let zeros = vec![Fr::ZERO; input.len()];
-  let ones = vec![Fr::ONE; input.len()];
+  let zeros = vec![Bn254::FR_ZERO; input.len()];
+  let ones = vec![Bn254::FR_ONE; input.len()];
   let columns =
     [input.as_slice(), zeros.as_slice(), negative.as_slice(), ones.as_slice()];
-  let actual = msm_columns_chunked(&points, &columns, 257);
+  let actual = msm_columns_chunked::<Bn254>(&points, &columns, 257);
   for (actual, coefficients) in actual.iter().zip(columns) {
-    assert_eq!(*actual, G1Projective::msm(&points, coefficients).unwrap());
+    assert_eq!(
+      *actual,
+      ark_bn254::G1Projective::msm(&points, coefficients).unwrap()
+    );
   }
   assert!((actual[0] + actual[2]).is_zero());
   points[1] = -points[1];
   assert_eq!(
-    msm_chunked(&points, &input, 257),
-    G1Projective::msm(&points, &input).unwrap()
+    msm_chunked::<Bn254>(&points, &input, 257),
+    ark_bn254::G1Projective::msm(&points, &input).unwrap()
   );
 }
 
@@ -376,16 +434,18 @@ fn cuda_resident_msm_columns_match_arkworks() {
 #[ignore = "requires a CUDA GPU"]
 fn cuda_msm_normalizes_structured_columns() {
   let n = 65_537;
-  let seeds = scalars(17);
-  let mut basis: Vec<_> =
-    seeds.iter().map(|&s| (G1Affine::generator() * s).into_affine()).collect();
-  basis[0] = G1Affine::zero();
+  let seeds = scalars::<Bn254>(17);
+  let mut basis: Vec<_> = seeds
+    .iter()
+    .map(|&s| (ark_bn254::G1Affine::generator() * s).into_affine())
+    .collect();
+  basis[0] = ark_bn254::G1Affine::zero();
   let points: Vec<_> = (0..n).map(|i| basis[i % basis.len()]).collect();
-  let scale = Fr::from(19).inverse().unwrap();
+  let scale = ark_bn254::Fr::from(19).inverse().unwrap();
   let structured: Vec<_> = (0..n)
     .map(|i| {
       if i % 11 == 0 {
-        Fr::ZERO
+        Bn254::FR_ZERO
       } else if i % 257 == 0 {
         seeds[i % seeds.len()]
       } else if i % 7 == 0 {
@@ -395,32 +455,34 @@ fn cuda_msm_normalizes_structured_columns() {
       }
     })
     .collect();
-  let scaled: Vec<_> = structured.iter().map(|&s| s * Fr::from(7)).collect();
-  let random = scalars(n);
+  let scaled: Vec<_> =
+    structured.iter().map(|&s| s * ark_bn254::Fr::from(7)).collect();
+  let random = scalars::<Bn254>(n);
   let columns = [structured.as_slice(), scaled.as_slice(), random.as_slice()];
-  let actual = msm_columns_chunked(&points, &columns, 1 << 15);
+  let actual = msm_columns_chunked::<Bn254>(&points, &columns, 1 << 15);
   for (actual, coefficients) in actual.into_iter().zip(columns) {
-    assert_eq!(actual, G1Projective::msm(&points, coefficients).unwrap());
+    assert_eq!(
+      actual,
+      ark_bn254::G1Projective::msm(&points, coefficients).unwrap()
+    );
   }
 }
 
-#[test]
-#[ignore = "requires a CUDA GPU"]
-fn cuda_fft_matches_arkworks_on_subgroups_and_arbitrary_cosets() {
+fn check_cuda_fft<C: KzgCurve>() {
   for lg in [0, 1, 5, 10, 11, 16] {
-    for shift in [Fr::ONE, Fr::from(7), Fr::from(12345)] {
-      let domain = Radix2EvaluationDomain::<Fr>::new(1 << lg)
+    for shift in [C::FR_ONE, C::Fr::from(7u64), C::Fr::from(12345u64)] {
+      let domain = Radix2EvaluationDomain::<C::Fr>::new(1 << lg)
         .unwrap()
         .get_coset(shift)
         .unwrap();
-      let input = scalars(1 << lg);
+      let input = scalars::<C>(1 << lg);
       let mut actual = input.clone();
-      fft(&mut actual, false, shift);
+      fft::<C>(&mut actual, false, shift);
       assert_eq!(actual, domain.fft(&input), "forward lg={lg}");
-      fft(&mut actual, true, shift);
+      fft::<C>(&mut actual, true, shift);
       assert_eq!(actual, input, "inverse lg={lg}");
       let mut actual = input.clone();
-      fft(&mut actual, true, shift);
+      fft::<C>(&mut actual, true, shift);
       assert_eq!(actual, domain.ifft(&input), "inverse parity lg={lg}");
     }
   }
@@ -428,19 +490,31 @@ fn cuda_fft_matches_arkworks_on_subgroups_and_arbitrary_cosets() {
 
 #[test]
 #[ignore = "requires a CUDA GPU"]
+fn cuda_fft_matches_arkworks_on_subgroups_and_arbitrary_cosets() {
+  check_cuda_fft::<Bn254>();
+}
+
+#[test]
+#[ignore = "requires a CUDA GPU"]
+fn cuda_bls12_381_fft_matches_arkworks_on_subgroups_and_arbitrary_cosets() {
+  check_cuda_fft::<Bls12381>();
+}
+
+#[test]
+#[ignore = "requires a CUDA GPU"]
 fn cuda_fft_from_pads_without_mutating_coefficients() {
   for lg in [0, 1, 10, 16] {
     let size = 1 << lg;
-    let input = scalars(size);
+    let input = scalars::<Bn254>(size);
     let saved = input.clone();
     for count in [0, 1, size / 3, size] {
-      for shift in [Fr::ONE, Fr::from(7)] {
-        let domain = Radix2EvaluationDomain::<Fr>::new(size)
+      for shift in [Bn254::FR_ONE, ark_bn254::Fr::from(7)] {
+        let domain = Radix2EvaluationDomain::<ark_bn254::Fr>::new(size)
           .unwrap()
           .get_coset(shift)
           .unwrap();
         assert_eq!(
-          fft_from(&input[..count], lg, shift),
+          fft_from::<Bn254>(&input[..count], lg, shift),
           domain.fft(&input[..count])
         );
         assert_eq!(input, saved);
@@ -453,15 +527,14 @@ fn cuda_fft_from_pads_without_mutating_coefficients() {
 #[ignore = "requires a CUDA GPU"]
 fn cuda_fft_queues_reuse_resident_inputs_and_preserve_order() {
   let lg = 17;
-  let input = scalars(1 << lg);
-  let resident = retain(&input).expect("test requires resident VRAM budget");
-  let expected = Radix2EvaluationDomain::<Fr>::new(input.len())
+  let input = scalars::<Bn254>(1 << lg);
+  let resident =
+    retain::<Bn254>(&input).expect("test requires resident VRAM budget");
+  let expected = Radix2EvaluationDomain::<ark_bn254::Fr>::new(input.len())
     .unwrap()
-    .get_coset(Fr::from(7))
+    .get_coset(ark_bn254::Fr::from(7))
     .unwrap()
     .fft(&input);
-  // More jobs than queue slots forces buffer reuse; mixed inputs exercise both
-  // device affinity and host-only queues, with repeated immutable handles.
   let jobs: Vec<_> = (0..11)
     .map(|i| {
       (
@@ -471,38 +544,56 @@ fn cuda_fft_queues_reuse_resident_inputs_and_preserve_order() {
     })
     .collect();
   for _ in 0..2 {
-    let actual = fft_columns(&jobs, lg, false, Fr::from(7));
+    let actual = fft_columns::<Bn254>(&jobs, lg, false, ark_bn254::Fr::from(7));
     assert_eq!(actual.len(), jobs.len());
     assert!(actual.iter().all(|column| *column == expected));
   }
-  let points = [Fr::ZERO, Fr::from(7), Fr::ONE, Fr::from(7)];
-  let evaluations = evaluate_resident(&input, Some(&resident), &points);
+  let points = [
+    Bn254::FR_ZERO,
+    ark_bn254::Fr::from(7),
+    Bn254::FR_ONE,
+    ark_bn254::Fr::from(7),
+  ];
+  let evaluations =
+    evaluate_resident::<Bn254>(&input, Some(&resident), &points);
   for (z, actual) in points.into_iter().zip(evaluations) {
-    assert_eq!(actual, input.iter().rev().fold(Fr::ZERO, |acc, c| acc * z + c));
+    assert_eq!(
+      actual,
+      input.iter().rev().fold(Bn254::FR_ZERO, |acc, c| acc * z + c)
+    );
   }
   drop(resident);
-  assert_eq!(fft_columns(&[], lg, false, Fr::ONE), Vec::<Vec<Fr>>::new());
+  assert_eq!(
+    fft_columns::<Bn254>(&[], lg, false, Bn254::FR_ONE),
+    Vec::<Vec<ark_bn254::Fr>>::new()
+  );
 }
 
 #[test]
 #[ignore = "requires a CUDA GPU"]
 fn cuda_interpolation_retains_outputs_for_msm_and_cosets() {
   let count = 1 << 16;
-  let shift = Fr::from(7);
-  let domain =
-    Radix2EvaluationDomain::<Fr>::new(count).unwrap().get_coset(shift).unwrap();
-  let coefficients =
-    [scalars(count), vec![Fr::from(19).inverse().unwrap(); count]];
+  let shift = ark_bn254::Fr::from(7);
+  let domain = Radix2EvaluationDomain::<ark_bn254::Fr>::new(count)
+    .unwrap()
+    .get_coset(shift)
+    .unwrap();
+  let coefficients = [
+    scalars::<Bn254>(count),
+    vec![ark_bn254::Fr::from(19).inverse().unwrap(); count],
+  ];
   let inputs = coefficients.iter().map(|c| domain.fft(c)).collect();
-  let (actual, resident) = interpolate_columns(inputs, 16, shift);
+  let (actual, resident) = interpolate_columns::<Bn254>(inputs, 16, shift);
   assert_eq!(actual, coefficients);
   assert!(resident.iter().all(Option::is_some));
   let points: Vec<_> = (0..count)
     .map(|i| {
       if i % 257 == 0 {
-        G1Affine::zero()
+        ark_bn254::G1Affine::zero()
       } else {
-        (G1Affine::generator() * Fr::from((i % 31 + 1) as u64)).into_affine()
+        (ark_bn254::G1Affine::generator()
+          * ark_bn254::Fr::from((i % 31 + 1) as u64))
+        .into_affine()
       }
     })
     .collect();
@@ -511,34 +602,38 @@ fn cuda_interpolation_retains_outputs_for_msm_and_cosets() {
     .zip(&resident)
     .map(|(c, r)| (c.as_slice(), r.as_deref()))
     .collect();
-  let commitments = msm_columns_resident(&points, &inputs);
+  let commitments = msm_columns_resident::<Bn254>(&points, &inputs);
   for (column, commitment) in actual.iter().zip(commitments) {
-    assert_eq!(commitment, G1Projective::msm(&points, column).unwrap());
+    assert_eq!(
+      commitment,
+      ark_bn254::G1Projective::msm(&points, column).unwrap()
+    );
   }
-  let output = fft_columns(&inputs, 16, false, Fr::from(123));
-  let coset = Radix2EvaluationDomain::<Fr>::new(count)
+  let output =
+    fft_columns::<Bn254>(&inputs, 16, false, ark_bn254::Fr::from(123));
+  let coset = Radix2EvaluationDomain::<ark_bn254::Fr>::new(count)
     .unwrap()
-    .get_coset(Fr::from(123))
+    .get_coset(ark_bn254::Fr::from(123))
     .unwrap();
   for (column, output) in coefficients.iter().zip(output) {
     assert_eq!(output, coset.fft(column));
   }
 }
 
-#[test]
-#[ignore = "requires a CUDA GPU"]
-fn cuda_polynomial_division_matches_horner() {
+fn check_cuda_division<C: KzgCurve>() {
   for n in [0, 1, 2, 31, 32, 33, 1023, 1024, 1025, 65537] {
-    let coefficients = scalars(n);
-    for z in [Fr::ZERO, Fr::ONE, -Fr::ONE, Fr::from(918273)] {
-      let expected = coefficients.iter().rev().fold(Fr::ZERO, |v, c| v * z + c);
-      let quotient = divide(&coefficients, z);
+    let coefficients = scalars::<C>(n);
+    for z in [C::FR_ZERO, C::FR_ONE, -C::FR_ONE, C::Fr::from(918273u64)] {
+      let expected =
+        coefficients.iter().rev().fold(C::FR_ZERO, |v, c| v * z + c);
+      let quotient = divide::<C>(&coefficients, z);
       assert_eq!(quotient.len(), n.saturating_sub(1));
       if n >= 2 {
         assert_eq!(coefficients[0] + z * quotient[0], expected);
         for i in 1..n {
           assert_eq!(
-            quotient[i - 1] - z * quotient.get(i).copied().unwrap_or(Fr::ZERO),
+            quotient[i - 1]
+              - z * quotient.get(i).copied().unwrap_or(C::FR_ZERO),
             coefficients[i],
             "division n={n}, i={i}"
           );
@@ -550,26 +645,40 @@ fn cuda_polynomial_division_matches_horner() {
 
 #[test]
 #[ignore = "requires a CUDA GPU"]
+fn cuda_polynomial_division_matches_horner() {
+  check_cuda_division::<Bn254>();
+}
+
+#[test]
+#[ignore = "requires a CUDA GPU"]
+fn cuda_bls12_381_polynomial_division_matches_horner() {
+  check_cuda_division::<Bls12381>();
+}
+
+#[test]
+#[ignore = "requires a CUDA GPU"]
 fn cuda_polynomial_evaluates_all_points_in_order() {
-  let mut points = scalars(41);
+  let mut points = scalars::<Bn254>(41);
   points[..6].copy_from_slice(&[
-    Fr::ZERO,
-    Fr::ONE,
-    -Fr::ONE,
-    Fr::ONE,
-    Fr::ZERO,
-    Fr::from(918273),
+    Bn254::FR_ZERO,
+    Bn254::FR_ONE,
+    -Bn254::FR_ONE,
+    Bn254::FR_ONE,
+    Bn254::FR_ZERO,
+    ark_bn254::Fr::from(918273),
   ]);
   for n in [0, 1, 2, 31, 32, 33, 1023, 1024, 1025, 65_537] {
-    let coefficients = scalars(n);
+    let coefficients = scalars::<Bn254>(n);
     for count in [0, 1, 2, 3, 4, 7, 8, 41] {
       let points = &points[..count];
       let expected: Vec<_> = points
         .iter()
-        .map(|z| coefficients.iter().rev().fold(Fr::ZERO, |v, c| v * z + c))
+        .map(|z| {
+          coefficients.iter().rev().fold(Bn254::FR_ZERO, |v, c| v * z + c)
+        })
         .collect();
       assert_eq!(
-        evaluate_many(&coefficients, points),
+        evaluate_many::<Bn254>(&coefficients, points),
         expected,
         "n={n}, points={count}"
       );
@@ -577,9 +686,12 @@ fn cuda_polynomial_evaluates_all_points_in_order() {
   }
 }
 
-fn division_reference(coefficients: &[Fr], z: Fr) -> Vec<Fr> {
-  let mut quotient = vec![Fr::ZERO; coefficients.len().saturating_sub(1)];
-  let mut carry = Fr::ZERO;
+fn division_reference<C: KzgCurve>(
+  coefficients: &[C::Fr],
+  z: C::Fr,
+) -> Vec<C::Fr> {
+  let mut quotient = vec![C::FR_ZERO; coefficients.len().saturating_sub(1)];
+  let mut carry = C::FR_ZERO;
   for i in (1..coefficients.len()).rev() {
     carry = coefficients[i] + z * carry;
     quotient[i - 1] = carry;
@@ -587,47 +699,64 @@ fn division_reference(coefficients: &[Fr], z: Fr) -> Vec<Fr> {
   quotient
 }
 
-fn opening_points(count: usize) -> Vec<G1Affine> {
-  let mut point = G1Projective::zero();
+fn opening_points<C: KzgCurve>(count: usize) -> Vec<G1AffineOf<C>> {
+  let mut point = G1ProjectiveOf::<C>::zero();
   let basis: Vec<_> = (0..256)
     .map(|_| {
       let output = point;
-      point += G1Affine::generator();
+      point += G1AffineOf::<C>::generator();
       output
     })
     .collect();
-  let basis = G1Projective::normalize_batch(&basis);
+  let basis = G1ProjectiveOf::<C>::normalize_batch(&basis);
   crate::kzg::pcs::generate_buffer(count, |i| basis[i % basis.len()])
 }
 
-#[test]
-#[ignore = "requires a CUDA GPU"]
-fn cuda_resident_division_msm_matches_arkworks() {
+fn check_resident_division_msm<C: KzgCurve>() {
   for n in [0usize, 1, 2, 33, 4097, 65537] {
-    let points = opening_points(n.saturating_sub(1));
+    let points = opening_points::<C>(n.saturating_sub(1));
     for (coefficients, z) in [
-      (scalars(n), Fr::from(918273)),
-      (vec![Fr::from(19).inverse().unwrap(); n], Fr::ZERO),
-      (vec![Fr::ZERO; n], Fr::ONE),
+      (scalars::<C>(n), C::Fr::from(918273u64)),
+      (vec![C::Fr::from(19u64).inverse().unwrap(); n], C::FR_ZERO),
+      (vec![C::FR_ZERO; n], C::FR_ONE),
     ] {
-      let expected =
-        G1Projective::msm(&points, &division_reference(&coefficients, z))
-          .unwrap();
+      let expected = G1ProjectiveOf::<C>::msm(
+        &points,
+        &division_reference::<C>(&coefficients, z),
+      )
+      .unwrap();
       assert_eq!(
-        divide_and_msm_chunked(&points, &coefficients, z, 16385),
+        divide_and_msm_chunked::<C>(&points, &coefficients, z, 16385),
         Some(expected),
         "n={n}, z={z}"
       );
     }
   }
   assert!(
-    divide_and_msm_chunked(&opening_points(1), &[Fr::ONE; 2], Fr::ZERO, 0)
-      .is_none()
+    divide_and_msm_chunked::<C>(
+      &opening_points::<C>(1),
+      &[C::FR_ONE; 2],
+      C::FR_ZERO,
+      0
+    )
+    .is_none()
   );
   assert_eq!(
-    divide_and_msm(&opening_points(1), &[Fr::ONE; 2], Fr::ZERO),
-    Some(G1Projective::zero())
+    divide_and_msm::<C>(&opening_points::<C>(1), &[C::FR_ONE; 2], C::FR_ZERO),
+    Some(G1ProjectiveOf::<C>::zero())
   );
+}
+
+#[test]
+#[ignore = "requires a CUDA GPU"]
+fn cuda_resident_division_msm_matches_arkworks() {
+  check_resident_division_msm::<Bn254>();
+}
+
+#[test]
+#[ignore = "requires a CUDA GPU"]
+fn cuda_bls12_381_resident_division_msm_matches_arkworks() {
+  check_resident_division_msm::<Bls12381>();
 }
 
 /// Run `test` on its own thread and fail if it does not finish within the
@@ -646,19 +775,22 @@ fn with_deadline(seconds: u64, test: impl FnOnce() + Send + 'static) {
 #[test]
 #[ignore = "requires two CUDA GPUs; pass admission across resident columns on both"]
 fn pass_admission_binds_only_the_admitted_devices_residents() {
-  let devices = Devices::get();
+  let devices = Devices::get::<Bn254>();
   assert!(devices.ids.len() >= 2, "run with two devices selected");
-  let values = scalars(1 << 16);
-  // Reservations balance retained bytes across the devices.
-  let retained: Vec<_> =
-    (0..4).map(|_| retain(&values).expect("resident column")).collect();
-  let a: &ResidentPolynomial = &retained[0];
-  let b: &ResidentPolynomial = retained
+  let values = scalars::<Bn254>(1 << 16);
+  let retained: Vec<_> = (0..4)
+    .map(|_| retain::<Bn254>(&values).expect("resident column"))
+    .collect();
+  let a: &ResidentPolynomial<Bn254> = &retained[0];
+  let b: &ResidentPolynomial<Bn254> = retained
     .iter()
     .map(|r| &**r)
     .find(|r| r.reservation.index != a.reservation.index)
     .expect("retentions spread over two devices");
-  fn expect_device(all: &[quotient::PolynomialView<'_>], expected: usize) {
+  fn expect_device(
+    all: &[quotient::PolynomialView<'_, Bn254>],
+    expected: usize,
+  ) {
     let empty = quotient::Program {
       nodes: vec![],
       roots: vec![],
@@ -667,8 +799,9 @@ fn pass_admission_binds_only_the_admitted_devices_residents() {
       slots: 0,
     };
     let mut passes =
-      vec![passes::Pass::new(empty, all, &[], 0, Fr::ONE).expect("pass")];
-    let device = passes::admit(&mut passes, all, 1 << 20).expect("admitted");
+      vec![passes::Pass::new(empty, all, &[], 0, Bn254::FR_ONE).expect("pass")];
+    let device =
+      passes::admit::<Bn254>(&mut passes, all, 1 << 20).expect("admitted");
     assert_eq!(device.index, expected);
     for (column, (_, resident, _)) in passes[0].columns.iter().zip(all) {
       let local = resident.is_some_and(|r| r.reservation.index == expected);
@@ -691,24 +824,33 @@ fn concurrent_uncached_msm_completes() {
 fn concurrent_uncached_msm_body() {
   use std::sync::Barrier;
   configure(Settings { srs_cache: false, ..Settings::default() });
-  assert_eq!(Devices::get().ids.len(), 1, "run with one device selected");
+  assert_eq!(
+    Devices::get::<Bn254>().ids.len(),
+    1,
+    "run with one device selected"
+  );
   assert!(!srs_residency::enabled());
   let n = 1 << 20;
   let basis: Vec<_> = (1u64..=17)
-    .map(|i| (G1Affine::generator() * Fr::from(i)).into_affine())
+    .map(|i| {
+      (ark_bn254::G1Affine::generator() * ark_bn254::Fr::from(i)).into_affine()
+    })
     .collect();
   let points: Vec<_> = (0..n).map(|i| basis[i % basis.len()]).collect();
-  let scalars = vec![Fr::from(37); n];
-  assert!(msm_normalization(&scalars).is_some());
-  let expected = G1Projective::msm(&points, &scalars).unwrap();
+  let scalars = vec![ark_bn254::Fr::from(37); n];
+  assert!(msm_normalization::<Bn254>(&scalars).is_some());
+  let expected = ark_bn254::G1Projective::msm(&points, &scalars).unwrap();
   let start = Barrier::new(2);
   std::thread::scope(|scope| {
     let jobs: Vec<_> = (0..2)
       .map(|_| {
         scope.spawn(|| {
           start.wait();
-          assert_eq!(msm(&points, &scalars), expected);
-          assert_eq!(divide(&scalars, Fr::ZERO), scalars[..n - 1]);
+          assert_eq!(msm::<Bn254>(&points, &scalars), expected);
+          assert_eq!(
+            divide::<Bn254>(&scalars, Bn254::FR_ZERO),
+            scalars[..n - 1]
+          );
         })
       })
       .collect();
@@ -725,13 +867,13 @@ fn concurrent_shared_matrix_hydration_completes() {
 }
 
 fn concurrent_shared_matrix_hydration_body() {
-  use crate::kzg::{Scalar, domain::Radix2Coset, pcs::KzgProverData};
+  use crate::kzg::{CurveScalar, domain::Radix2Coset, pcs::KzgProverData};
   let n = 1 << 16;
-  let mut constant = vec![Fr::ZERO; n];
-  constant[0] = Fr::from(37);
-  let coefficients = vec![Fr::from(19); n];
-  let data = KzgProverData::coefficient_fixture(
-    Radix2Coset { log_size: 16, shift: Scalar(Fr::ONE) },
+  let mut constant = vec![Bn254::FR_ZERO; n];
+  constant[0] = ark_bn254::Fr::from(37);
+  let coefficients = vec![ark_bn254::Fr::from(19); n];
+  let data = KzgProverData::<Bn254>::coefficient_fixture(
+    Radix2Coset { log_size: 16, shift: CurveScalar(Bn254::FR_ONE) },
     vec![constant, coefficients.clone(), coefficients.clone()],
   );
   let matrix = &data.matrices[0];
@@ -740,12 +882,13 @@ fn concurrent_shared_matrix_hydration_body() {
   assert!(columns.iter().all(|view| std::ptr::eq(*view, columns[0])));
   let resident = columns[0];
   assert!(resident[0].is_none());
-  let z = Fr::from(7);
-  let expected = coefficients.iter().rev().fold(Fr::ZERO, |sum, c| sum * z + c);
+  let z = ark_bn254::Fr::from(7);
+  let expected =
+    coefficients.iter().rev().fold(Bn254::FR_ZERO, |sum, c| sum * z + c);
   for column in &resident[1..] {
     assert!(column.is_some(), "small resident fixture must fit");
     assert_eq!(
-      evaluate_resident(&coefficients, column.as_deref(), &[z]),
+      evaluate_resident::<Bn254>(&coefficients, column.as_deref(), &[z]),
       [expected]
     );
   }

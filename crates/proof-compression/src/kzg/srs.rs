@@ -5,7 +5,7 @@
 //! [`Srs::unsafe_dev_setup`] reveals its trapdoor and is only for tests.
 
 use super::curve::{
-  Fr, G1Affine, G1Projective, G2Affine, G2Projective, PairingCurve,
+  Bn254, G1AffineOf, G1ProjectiveOf, G2AffineOf, G2ProjectiveOf, KzgCurve,
 };
 use ark_ec::{
   AffineRepr, CurveGroup, PrimeGroup, VariableBaseMSM, pairing::Pairing,
@@ -15,12 +15,8 @@ use ark_serialize::CanonicalSerialize;
 use p3_maybe_rayon::prelude::*;
 use std::io::{self, Write};
 
+pub mod filecoin;
 pub mod gnark;
-
-const PUBLIC_SETUP_DOMAIN: &[u8] =
-  b"multi-stark/kzg/bn254/known-trapdoor-public-degree/v1";
-const DEV_TAU_DOMAIN: &[u8] = b"multi-stark/kzg/bn254/dev-srs";
-const VALIDATION_DOMAIN: &[u8] = b"multi-stark/kzg/bn254/srs-validate/v4";
 
 /// Identity and maximum polynomial degree of the complete public parameter set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,38 +26,47 @@ pub struct PublicSetup {
 }
 
 impl PublicSetup {
+  /// Derive the deterministic setup identity for a known-trapdoor dev SRS on BN254.
   pub fn known_trapdoor(max_degree: usize, seed: &[u8]) -> Self {
+    Self::known_trapdoor_for::<Bn254>(max_degree, seed)
+  }
+
+  /// Derive the deterministic setup identity for a known-trapdoor dev SRS on curve `C`.
+  pub fn known_trapdoor_for<C: KzgCurve>(
+    max_degree: usize,
+    seed: &[u8],
+  ) -> Self {
     assert!(max_degree >= 1 && max_degree.checked_add(1).is_some());
     let mut hash = blake3::Hasher::new();
-    hash.update(PUBLIC_SETUP_DOMAIN);
+    hash.update(C::PUBLIC_SETUP_DOMAIN);
     hash.update(&(max_degree as u64).to_le_bytes());
     hash.update(blake3::hash(seed).as_bytes());
     Self { max_degree, id: *hash.finalize().as_bytes() }
   }
 }
 
-/// The development trapdoor of `seed`.
-pub(super) fn dev_tau(seed: &[u8]) -> Fr {
+/// The development trapdoor of `seed` on curve `C`.
+pub(super) fn dev_tau<C: KzgCurve>(seed: &[u8]) -> C::Fr {
   let mut wide = [0u8; 64];
   blake3::Hasher::new()
-    .update(DEV_TAU_DOMAIN)
+    .update(C::DEV_TAU_DOMAIN)
     .update(seed)
     .finalize_xof()
     .fill(&mut wide);
-  Fr::from_le_bytes_mod_order(&wide)
+  C::Fr::from_le_bytes_mod_order(&wide)
 }
 
 /// `[G, τG, τ²G, …]` in G1 and `[H, τH]` in G2.
-pub struct Srs {
-  pub g1: Vec<G1Affine>,
-  pub g2: G2Affine,
-  pub tau_g2: G2Affine,
+pub struct Srs<C: KzgCurve = Bn254> {
+  pub g1: Vec<G1AffineOf<C>>,
+  pub g2: G2AffineOf<C>,
+  pub tau_g2: G2AffineOf<C>,
   pub public_setup: PublicSetup,
 }
 
-impl Srs {
+impl<C: KzgCurve> Srs<C> {
   /// Reuse or populate a shared cache directory holding one file per
-  /// prefix length and seed, so stages of different heights share one
+  /// curve, prefix length and seed, so stages of different heights share one
   /// trusted-local location.
   pub fn unsafe_dev_setup_prefix_in_cache_directory(
     max_len: usize,
@@ -69,7 +74,7 @@ impl Srs {
     seed: &[u8],
     directory: impl AsRef<std::path::Path>,
   ) -> io::Result<Self> {
-    super::dev_srs_cache::cached_in_directory(
+    super::dev_srs_cache::cached_in_directory::<C>(
       max_len,
       public_max_degree,
       seed,
@@ -79,9 +84,9 @@ impl Srs {
 
   /// Authenticate setup metadata independently before importing public powers.
   pub fn from_public_powers(
-    g1: Vec<G1Affine>,
-    g2: G2Affine,
-    tau_g2: G2Affine,
+    g1: Vec<G1AffineOf<C>>,
+    g2: G2AffineOf<C>,
+    tau_g2: G2AffineOf<C>,
     public_setup: PublicSetup,
   ) -> Result<Self, &'static str> {
     if g1.par_iter().any(|p| {
@@ -145,7 +150,7 @@ impl Srs {
       }
     }
     let mut writer = HashWriter(blake3::Hasher::new());
-    writer.0.update(VALIDATION_DOMAIN);
+    writer.0.update(C::VALIDATION_DOMAIN);
     writer.0.update(&self.public_setup.id);
     writer.0.update(&(self.public_setup.max_degree as u64).to_le_bytes());
     self.g1.serialize_compressed(&mut writer).expect("infallible hash writer");
@@ -156,14 +161,14 @@ impl Srs {
       .expect("infallible hash writer");
     let mut wide = [0u8; 64];
     writer.0.finalize_xof().fill(&mut wide);
-    let r = Fr::from_le_bytes_mod_order(&wide);
+    let r = C::Fr::from_le_bytes_mod_order(&wide);
     if r.is_zero() {
       return Err("zero parameter-validation challenge");
     }
 
     let concurrency = current_num_threads().div_ceil(8).min(4);
-    let mut low = G1Projective::zero();
-    let mut high = G1Projective::zero();
+    let mut low = G1ProjectiveOf::<C>::zero();
+    let mut high = G1ProjectiveOf::<C>::zero();
     for start in (0..self.g1.len() - 1).step_by(chunk * concurrency) {
       let end = (start + chunk * concurrency).min(self.g1.len() - 1);
       let parts: Vec<_> = self.g1[start..end]
@@ -180,8 +185,8 @@ impl Srs {
             })
             .collect();
           (
-            G1Projective::msm(points, &powers).expect("equal lengths"),
-            G1Projective::msm(
+            G1ProjectiveOf::<C>::msm(points, &powers).expect("equal lengths"),
+            G1ProjectiveOf::<C>::msm(
               &self.g1[offset + 1..offset + 1 + points.len()],
               &powers,
             )
@@ -195,7 +200,7 @@ impl Srs {
       }
     }
     // e(high, H) = e(low, τH)  ⇔  e(high, H)·e(−low, τH) = 1.
-    let check = PairingCurve::multi_pairing(
+    let check = C::PairingCurve::multi_pairing(
       [high.into_affine(), (-low).into_affine()],
       [self.g2, self.tau_g2],
     );
@@ -240,17 +245,18 @@ impl Srs {
     assert!(chunk > 0);
     assert!(max_len >= 2 && max_len.is_power_of_two());
     assert!(public_max_degree >= max_len - 1);
-    let public_setup = PublicSetup::known_trapdoor(public_max_degree, seed);
-    let tau = dev_tau(seed);
+    let public_setup =
+      PublicSetup::known_trapdoor_for::<C>(public_max_degree, seed);
+    let tau = dev_tau::<C>(seed);
 
-    let g1_gen = G1Projective::generator();
+    let g1_gen = G1ProjectiveOf::<C>::generator();
     // A bounded fixed-base table amortizes the generator multiplication across
     // powers without a table whose size grows with the SRS degree.
     let table = ark_ec::scalar_mul::BatchMulPreprocessing::new(
       g1_gen,
       max_len.min(1 << 12),
     );
-    let mut g1 = vec![G1Affine::identity(); max_len];
+    let mut g1 = vec![G1AffineOf::<C>::identity(); max_len];
     g1.par_chunks_mut(chunk).enumerate().for_each(|(i, dst)| {
       let mut acc = tau.pow([(i * chunk) as u64]);
       let scalars: Vec<_> = (0..dst.len())
@@ -262,7 +268,7 @@ impl Srs {
         .collect();
       dst.copy_from_slice(&table.batch_mul(&scalars));
     });
-    let g2_gen = G2Projective::generator();
+    let g2_gen = G2ProjectiveOf::<C>::generator();
     Self {
       g1,
       g2: g2_gen.into_affine(),
@@ -275,25 +281,19 @@ impl Srs {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::kzg::curve::Bls12381;
 
-  #[test]
-  fn development_powers_match_naive_at_chunk_boundaries() {
+  fn check_srs_suite<C: KzgCurve>() {
     let seed = b"chunk-powers";
     let chunk = 1 << 6;
-    let srs = Srs::unsafe_dev_setup_prefix_with_chunk(
+    let srs = Srs::<C>::unsafe_dev_setup_prefix_with_chunk(
       1 << 9,
       (1 << 9) - 1,
       seed,
       chunk,
     );
-    assert_eq!(srs.g1, Srs::unsafe_dev_setup(1 << 9, seed).g1);
-    let mut wide = [0u8; 64];
-    blake3::Hasher::new()
-      .update(DEV_TAU_DOMAIN)
-      .update(seed)
-      .finalize_xof()
-      .fill(&mut wide);
-    let tau = Fr::from_le_bytes_mod_order(&wide);
+    assert_eq!(srs.g1, Srs::<C>::unsafe_dev_setup(1 << 9, seed).g1);
+    let tau = dev_tau::<C>(seed);
     for i in [
       0,
       1,
@@ -307,18 +307,13 @@ mod tests {
     ] {
       assert_eq!(
         srs.g1[i],
-        (G1Projective::generator() * tau.pow([i as u64])).into_affine()
+        (G1ProjectiveOf::<C>::generator() * tau.pow([i as u64])).into_affine()
       );
     }
-  }
 
-  #[test]
-  fn validation_covers_chunk_boundaries() {
-    let chunk = 1 << 6;
-    let mut srs = Srs::unsafe_dev_setup(1 << 9, b"validation-chunks");
+    let mut srs = Srs::<C>::unsafe_dev_setup(1 << 9, b"validation-chunks");
     srs.validate().unwrap();
     srs.validate_with_chunk(chunk).unwrap();
-    // 512 / 64 = 8 chunks spans multiple chunks AND multiple outer batches.
     for index in [
       chunk - 1,
       chunk,
@@ -336,21 +331,23 @@ mod tests {
       );
       srs.g1[index] = saved;
     }
-  }
 
-  #[test]
-  fn corrupted_power_rejected() {
-    let mut srs = Srs::unsafe_dev_setup(1 << 5, b"validate-test");
-    srs.g1[7] =
-      (G1Projective::from(srs.g1[7]) + G1Projective::generator()).into_affine();
+    let mut srs = Srs::<C>::unsafe_dev_setup(1 << 5, b"validate-test");
+    srs.g1[7] = (G1ProjectiveOf::<C>::from(srs.g1[7])
+      + G1ProjectiveOf::<C>::generator())
+    .into_affine();
+    assert!(srs.validate().is_err());
+
+    let mut srs = Srs::<C>::unsafe_dev_setup(1 << 5, b"validate-test");
+    srs.tau_g2 = (G2ProjectiveOf::<C>::from(srs.tau_g2)
+      + G2ProjectiveOf::<C>::generator())
+    .into_affine();
     assert!(srs.validate().is_err());
   }
 
   #[test]
-  fn mismatched_tau_g2_rejected() {
-    let mut srs = Srs::unsafe_dev_setup(1 << 5, b"validate-test");
-    srs.tau_g2 = (G2Projective::from(srs.tau_g2) + G2Projective::generator())
-      .into_affine();
-    assert!(srs.validate().is_err());
+  fn srs_generation_and_validation_work_for_both_curves() {
+    check_srs_suite::<Bn254>();
+    check_srs_suite::<Bls12381>();
   }
 }

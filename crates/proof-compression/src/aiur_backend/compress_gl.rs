@@ -137,7 +137,7 @@ impl Capacity {
       return Err("execution exceeds the admitted trace capacity".into());
     }
     let source =
-      setup.for_stage(DEVELOPMENT_SEED, cap).map_err(|e| e.to_string())?;
+      setup.for_stage::<crate::kzg::Bn254>(DEVELOPMENT_SEED, cap).map_err(|e| e.to_string())?;
     let srs = source.srs(loaded_height, false).map_err(|e| e.to_string())?;
     Ok(
       KzgConfig::with_max_trace_len(Arc::new(srs), cap, self.quotient_degree)

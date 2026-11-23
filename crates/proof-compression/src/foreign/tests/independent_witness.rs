@@ -109,7 +109,7 @@ fn scheduled_translation_preserves_assignments_and_errors() {
   let scheduled = fixture.translate(64);
   assert_relation(&serial.circuit, &scheduled.circuit);
   assert_eq!(
-    GoldilocksCircuit::estimate(&fixture.circuit),
+    GoldilocksCircuit::<Bn254>::estimate(&fixture.circuit),
     scheduled.circuit.stats()
   );
   let expected = fixture.witness(&serial).generate().unwrap();
@@ -174,17 +174,18 @@ fn scheduled_translation_preserves_assignments_and_errors() {
 fn public_translation_activates_parallel_schedule() {
   // Large enough for several default-size chunks on the public path.
   let fixture = Fixture::new(2048);
-  let translated = GoldilocksCircuit::new_preallocated(&fixture.circuit);
+  let translated =
+    GoldilocksCircuit::<Bn254>::new_preallocated(&fixture.circuit);
   assert!(translated.circuit.stats().values > 2 << 16);
   assert_eq!(translated.inputs.scheduled(), cfg!(feature = "parallel"));
   assert!(!fixture.translate(0).inputs.scheduled());
   assert!(
-    !GoldilocksCircuit::new_with_expanded_hashes(&fixture.circuit)
+    !GoldilocksCircuit::<Bn254>::new_with_expanded_hashes(&fixture.circuit)
       .inputs
       .scheduled()
   );
-  let mut census = CircuitBuilder::counting();
-  let counted = GoldilocksCircuit::translate_with_chunk_size(
+  let mut census = CircuitBuilder::<Scalar>::counting();
+  let counted = GoldilocksCircuit::<Bn254>::translate_with_chunk_size(
     &fixture.circuit,
     &mut census,
     false,

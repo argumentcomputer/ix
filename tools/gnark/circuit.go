@@ -21,9 +21,13 @@ type wrapperCircuit struct {
 }
 
 func scalarBytes(api frontend.API, u *uints.BinaryField[uints.U32], v frontend.Variable) []uints.U8 {
+	return scalarBytesFor(api, u, v, scalarModulus())
+}
+
+func scalarBytesFor(api frontend.API, u *uints.BinaryField[uints.U32], v frontend.Variable, modulus *big.Int) []uints.U8 {
 	if constant, ok := api.Compiler().ConstantValue(v); ok {
 		var raw [32]byte
-		c := new(big.Int).Mod(constant, scalarModulus())
+		c := new(big.Int).Mod(constant, modulus)
 		c.FillBytes(raw[:])
 		for i, j := 0, 31; i < j; i, j = i+1, j-1 {
 			raw[i], raw[j] = raw[j], raw[i]
@@ -53,10 +57,13 @@ func littleEndian(api frontend.API, u *uints.BinaryField[uints.U32], bytes []uin
 }
 
 func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints.U32], encoded [][]uints.U8, publics []frontend.Variable) ([]frontend.Variable, *transcript) {
-	p := c.VK
+	return challengesFor(api, u, c.VK, c.Values, encoded, publics, scalarModulus())
+}
+
+func challengesFor(api frontend.API, u *uints.BinaryField[uints.U32], p *verifyingKey, values []frontend.Variable, encoded [][]uints.U8, publics []frontend.Variable, modulus *big.Int) ([]frontend.Variable, *transcript) {
 	seed, _ := unhex(p.Seed, -1)
 	t := newTranscript(api, u, seed)
-	field := func(v frontend.Variable) { t.observe(scalarBytes(api, u, v)) }
+	field := func(v frontend.Variable) { t.observe(scalarBytesFor(api, u, v, modulus)) }
 	circuits := len(p.Circuits)
 	commitment := func(round int) {
 		t.observe(constantU64(uint64(circuits)))
@@ -104,7 +111,7 @@ func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints
 	commitment(1)
 	accumulators := p.AccumulatorCount
 	for k := 0; k < accumulators; k++ {
-		field(c.Values[k])
+		field(values[k])
 	}
 	field(0)
 	ch[2] = t.sample()
@@ -116,7 +123,7 @@ func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints
 			t.observe(constantU64(uint64(circuit.LogDegree)))
 		}
 	}
-	for _, value := range c.Values[accumulators:] {
+	for _, value := range values[accumulators:] {
 		field(value)
 	}
 	ch[4] = t.sample()

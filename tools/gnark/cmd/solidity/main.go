@@ -1,7 +1,7 @@
-// Command solidity writes gnark's Solidity verifier for a serialized BN254
-// PLONK or Groth16 verifying key, such as a bundled release key. The export
-// options match the verifiers that key preparation writes beside each key, so
-// both sources are byte-identical for the same key.
+// Command solidity writes gnark's Solidity verifier for a serialized BN254 or
+// BLS12-381 PLONK or Groth16 verifying key, such as a bundled release key. The
+// export options match the verifiers that key preparation writes beside each
+// key, so both sources are byte-identical for the same key.
 package main
 
 import (
@@ -14,12 +14,15 @@ import (
 	"os"
 	"path/filepath"
 
+	g16bls "github.com/consensys/gnark/backend/groth16/bls12-381"
 	g16 "github.com/consensys/gnark/backend/groth16/bn254"
+	plonkbls "github.com/consensys/gnark/backend/plonk/bls12-381"
 	plonkbn254 "github.com/consensys/gnark/backend/plonk/bn254"
 	"github.com/consensys/gnark/backend/solidity"
 )
 
 func main() {
+	curve := flag.String("curve", "bn254", "curve of the key: bn254 or bls12-381")
 	system := flag.String("system", "plonk", "proof system of the key: plonk or groth16")
 	key := flag.String("key", "", "serialized gnark verifying key")
 	output := flag.String("out", "", "Solidity file to write")
@@ -28,19 +31,19 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := run(*system, *key, *output); err != nil {
+	if err := run(*curve, *system, *key, *output); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(system, keyPath, output string) error {
+func run(curve, system, keyPath, output string) error {
 	data, err := os.ReadFile(keyPath)
 	if err != nil {
 		return err
 	}
 	var source bytes.Buffer
-	switch system {
-	case "plonk":
+	switch curve + ":" + system {
+	case "bn254:plonk":
 		vk := new(plonkbn254.VerifyingKey)
 		if err := readExact(vk, data); err != nil {
 			return err
@@ -49,7 +52,16 @@ func run(system, keyPath, output string) error {
 			return fmt.Errorf("PLONK key has %d public inputs; Ix keys have two digest limbs", vk.NbPublicVariables)
 		}
 		err = vk.ExportSolidity(&source)
-	case "groth16":
+	case "bls12-381:plonk":
+		vk := new(plonkbls.VerifyingKey)
+		if err := readExact(vk, data); err != nil {
+			return err
+		}
+		if vk.NbPublicVariables != 2 {
+			return fmt.Errorf("PLONK key has %d public inputs; Ix keys have two digest limbs", vk.NbPublicVariables)
+		}
+		err = vk.ExportSolidity(&source)
+	case "bn254:groth16":
 		vk := new(g16.VerifyingKey)
 		if err := readExact(vk, data); err != nil {
 			return err
@@ -60,8 +72,17 @@ func run(system, keyPath, output string) error {
 		// Ix proves Groth16 commitments with SHA-256 hash-to-field; the
 		// exported verifier must hash them the same way.
 		err = vk.ExportSolidity(&source, solidity.WithHashToFieldFunction(sha256.New()), solidity.WithPragmaVersion("^0.8.28"))
+	case "bls12-381:groth16":
+		vk := new(g16bls.VerifyingKey)
+		if err := readExact(vk, data); err != nil {
+			return err
+		}
+		if commitments := len(vk.PublicAndCommitmentCommitted); commitments > 1 || len(vk.G1.K) != 3+commitments {
+			return fmt.Errorf("Groth16 key has an unsupported public-input or commitment schema")
+		}
+		err = vk.ExportSolidity(&source, solidity.WithHashToFieldFunction(sha256.New()), solidity.WithPragmaVersion("^0.8.28"))
 	default:
-		return fmt.Errorf("unknown proof system %q", system)
+		return fmt.Errorf("unknown curve/system %q:%q (expected curve bn254|bls12-381 and system plonk|groth16)", curve, system)
 	}
 	if err != nil {
 		return err

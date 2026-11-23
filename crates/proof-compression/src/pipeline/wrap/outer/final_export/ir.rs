@@ -1,21 +1,25 @@
 use super::*;
+use crate::kzg::{
+  curve::{Bn254, KzgCurve},
+  field::CurveScalar,
+};
 use std::{ops, sync::Mutex};
 
 const OUTER_IR_DOMAIN: &[u8] = b"ix/outer-ir/v1";
 
-fn serialize_scalar<S: serde::Serializer>(
-  value: &Scalar,
+fn serialize_scalar<C: KzgCurve, S: serde::Serializer>(
+  value: &CurveScalar<C>,
   serializer: S,
 ) -> std::result::Result<S::Ok, S::Error> {
   serializer.serialize_str(&scalar(*value))
 }
 
 #[derive(serde::Serialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
-pub(super) enum Instruction {
+#[serde(tag = "op", rename_all = "snake_case", bound = "")]
+pub(super) enum Instruction<C: KzgCurve = Bn254> {
   Constant {
     #[serde(serialize_with = "serialize_scalar")]
-    value: Scalar,
+    value: CurveScalar<C>,
   },
   Input {
     kind: &'static str,
@@ -38,12 +42,24 @@ pub(super) enum Instruction {
   },
 }
 
-#[derive(Default, serde::Serialize)]
-pub(super) struct Program {
-  pub nodes: Vec<Instruction>,
+#[derive(serde::Serialize)]
+#[serde(bound = "")]
+pub(super) struct Program<C: KzgCurve = Bn254> {
+  pub nodes: Vec<Instruction<C>>,
   pub assertions: Vec<usize>,
   pub coefficients: Vec<usize>,
   pub witnesses: Vec<usize>,
+}
+
+impl<C: KzgCurve> Default for Program<C> {
+  fn default() -> Self {
+    Self {
+      nodes: Vec::new(),
+      assertions: Vec::new(),
+      coefficients: Vec::new(),
+      witnesses: Vec::new(),
+    }
+  }
 }
 
 fn push_u32(out: &mut Vec<u8>, value: usize) {
@@ -58,7 +74,7 @@ fn push_u32_slice(out: &mut Vec<u8>, values: &[usize]) {
   }
 }
 
-impl Program {
+impl<C: KzgCurve> Program<C> {
   /// Canonical deterministic binary encoding shared with Go (`tools/gnark`)
   /// and Lean (`OuterIR`).
   pub(super) fn encode(&self) -> Vec<u8> {
@@ -125,29 +141,35 @@ impl Program {
   }
 }
 
-#[derive(Clone, Copy)]
-pub(super) enum Term<'a> {
-  Constant(Scalar),
-  Node(usize, &'a Mutex<Program>),
+pub(super) enum Term<'a, C: KzgCurve = Bn254> {
+  Constant(CurveScalar<C>),
+  Node(usize, &'a Mutex<Program<C>>),
 }
 
-impl<'a> Term<'a> {
+impl<C: KzgCurve> Clone for Term<'_, C> {
+  fn clone(&self) -> Self {
+    *self
+  }
+}
+impl<C: KzgCurve> Copy for Term<'_, C> {}
+
+impl<'a, C: KzgCurve> Term<'a, C> {
   fn input(
-    arena: &'a Mutex<Program>,
+    arena: &'a Mutex<Program<C>>,
     kind: &'static str,
     index: usize,
   ) -> Self {
     Self::push(arena, Instruction::Input { kind, index })
   }
 
-  fn push(arena: &'a Mutex<Program>, instruction: Instruction) -> Self {
+  fn push(arena: &'a Mutex<Program<C>>, instruction: Instruction<C>) -> Self {
     let mut program = arena.lock().unwrap();
     let id = program.nodes.len();
     program.nodes.push(instruction);
     Self::Node(id, arena)
   }
 
-  fn id(self, arena: &'a Mutex<Program>) -> usize {
+  fn id(self, arena: &'a Mutex<Program<C>>) -> usize {
     match self {
       Self::Node(id, owner) => {
         assert!(std::ptr::eq(owner, arena));
@@ -167,8 +189,8 @@ impl<'a> Term<'a> {
   fn binary(
     self,
     other: Self,
-    native: impl FnOnce(Scalar, Scalar) -> Scalar,
-    operation: impl FnOnce(usize, usize) -> Instruction,
+    native: impl FnOnce(CurveScalar<C>, CurveScalar<C>) -> CurveScalar<C>,
+    operation: impl FnOnce(usize, usize) -> Instruction<C>,
   ) -> Self {
     let arena = match (self, other) {
       (Self::Constant(a), Self::Constant(b)) => {
@@ -199,56 +221,56 @@ impl<'a> Term<'a> {
   }
 }
 
-impl From<Scalar> for Term<'_> {
-  fn from(value: Scalar) -> Self {
+impl<C: KzgCurve> From<CurveScalar<C>> for Term<'_, C> {
+  fn from(value: CurveScalar<C>) -> Self {
     Self::Constant(value)
   }
 }
-impl Algebra<Scalar> for Term<'_> {
-  const ZERO: Self = Self::Constant(Scalar::ZERO);
-  const ONE: Self = Self::Constant(Scalar::ONE);
+impl<C: KzgCurve> Algebra<CurveScalar<C>> for Term<'_, C> {
+  const ZERO: Self = Self::Constant(CurveScalar::<C>::ZERO);
+  const ONE: Self = Self::Constant(CurveScalar::<C>::ONE);
 }
-impl ops::Add for Term<'_> {
+impl<C: KzgCurve> ops::Add for Term<'_, C> {
   type Output = Self;
   fn add(self, rhs: Self) -> Self {
     self.binary(rhs, |a, b| a + b, |a, b| Instruction::Add { a, b })
   }
 }
-impl ops::Sub for Term<'_> {
+impl<C: KzgCurve> ops::Sub for Term<'_, C> {
   type Output = Self;
   fn sub(self, rhs: Self) -> Self {
     self.binary(rhs, |a, b| a - b, |a, b| Instruction::Sub { a, b })
   }
 }
-impl ops::Mul for Term<'_> {
+impl<C: KzgCurve> ops::Mul for Term<'_, C> {
   type Output = Self;
   fn mul(self, rhs: Self) -> Self {
     self.binary(rhs, |a, b| a * b, |a, b| Instruction::Mul { a, b })
   }
 }
-impl ops::Mul<Scalar> for Term<'_> {
+impl<C: KzgCurve> ops::Mul<CurveScalar<C>> for Term<'_, C> {
   type Output = Self;
-  fn mul(self, rhs: Scalar) -> Self {
+  fn mul(self, rhs: CurveScalar<C>) -> Self {
     self * Self::Constant(rhs)
   }
 }
-impl ops::Neg for Term<'_> {
+impl<C: KzgCurve> ops::Neg for Term<'_, C> {
   type Output = Self;
   fn neg(self) -> Self {
     Self::ZERO - self
   }
 }
-impl ops::AddAssign for Term<'_> {
+impl<C: KzgCurve> ops::AddAssign for Term<'_, C> {
   fn add_assign(&mut self, rhs: Self) {
     *self = *self + rhs;
   }
 }
-impl ops::SubAssign for Term<'_> {
+impl<C: KzgCurve> ops::SubAssign for Term<'_, C> {
   fn sub_assign(&mut self, rhs: Self) {
     *self = *self - rhs;
   }
 }
-impl ops::MulAssign for Term<'_> {
+impl<C: KzgCurve> ops::MulAssign for Term<'_, C> {
   fn mul_assign(&mut self, rhs: Self) {
     *self = *self * rhs;
   }
@@ -257,16 +279,16 @@ impl ops::MulAssign for Term<'_> {
 /// One entry of a claim row: a circuit constant or the index of a public
 /// scalar the verifier supplies.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::pipeline::wrap::outer) enum ClaimSlot {
-  Constant(Scalar),
+pub(in crate::pipeline::wrap::outer) enum ClaimSlot<C: KzgCurve = Bn254> {
+  Constant(CurveScalar<C>),
   Public(usize),
 }
 
-pub(super) fn build(
-  system: &System<KzgConfig>,
-  layout: &codegen::OpeningLayout,
-  claims: &[Vec<ClaimSlot>],
-) -> Result<Program> {
+pub(super) fn build<C: KzgCurve>(
+  system: &System<KzgConfig<C>>,
+  layout: &codegen::OpeningLayout<C>,
+  claims: &[Vec<ClaimSlot<C>>],
+) -> Result<Program<C>> {
   let circuits = system.circuits.len();
   if circuits != layout.accumulator_count + 1 {
     return Err("layout accumulator count differs from the system".into());
@@ -280,7 +302,7 @@ pub(super) fn build(
     })
     .max()
     .unwrap_or(0);
-  let arena = Mutex::new(Program::default());
+  let arena = Mutex::new(Program::<C>::default());
   let ch: [_; 6] = std::array::from_fn(|i| Term::input(&arena, "challenge", i));
   let values: Vec<_> =
     (0..layout.field_count).map(|i| Term::input(&arena, "value", i)).collect();
@@ -302,8 +324,10 @@ pub(super) fn build(
   // An inverse node enforces the forbidden-challenge rejection even if its output is unused.
   let _ = zeta.inverse();
   for (i, c) in system.circuits.iter().enumerate() {
-    let graph =
-      GraphProgram::compile(&c.graph, GraphInputs::for_circuit(system, i)?)?;
+    let graph = GraphProgram::<C>::compile(
+      &c.graph,
+      GraphInputs::for_circuit(system, i)?,
+    )?;
     let height = c.preprocessed_height;
     let domain = system.config.pcs().natural_domain_for_degree(height);
     let omega = domain.generator();
@@ -332,14 +356,14 @@ pub(super) fn build(
       zeta - Term::Constant(omega.inverse()),
     );
     let mut constraints = c.graph.constraint_values(&nodes);
-    let ext = multi_stark::system::extension_params::<KzgConfig>();
+    let ext = multi_stark::system::extension_params::<KzgConfig<C>>();
     if ext.degree != 1 {
       return Err(
         "PLONK scalar export requires a native-field KZG proof".into(),
       );
     }
-    let delta =
-      (next - accumulator) * (Scalar::from_usize(height) * omega).inverse();
+    let delta = (next - accumulator)
+      * (CurveScalar::<C>::from_usize(height) * omega).inverse();
     multi_stark::lookup::logup_constraint_values(
       &c.graph.lookups,
       &nodes,
@@ -348,7 +372,7 @@ pub(super) fn build(
       &cp,
       &[delta],
       last,
-      ext.w,
+      ext.modulus,
       ext.degree,
       c.lookup_group_size.max(1),
       &mut constraints,
@@ -394,20 +418,21 @@ pub(super) fn build(
 }
 
 #[cfg(test)]
-pub(super) fn parse_program_json(value: &serde_json::Value) -> Program {
-  use ark_bn254::Fr;
+pub(super) fn parse_program_json<C: KzgCurve>(
+  value: &serde_json::Value,
+) -> Program<C> {
   use ark_ff::PrimeField;
 
-  let parse_scalar = |s: &str| -> Scalar {
+  let parse_scalar = |s: &str| -> CurveScalar<C> {
     let hex_str = s.strip_prefix("0x").expect("0x prefix");
     assert_eq!(hex_str.len(), 64);
     let mut bytes = [0u8; 32];
     for (i, slot) in bytes.iter_mut().enumerate() {
       *slot = u8::from_str_radix(&hex_str[2 * i..2 * i + 2], 16).unwrap();
     }
-    let fr = Fr::from_be_bytes_mod_order(&bytes);
+    let fr = C::Fr::from_be_bytes_mod_order(&bytes);
     assert_eq!(fr.into_bigint().to_bytes_be(), bytes);
-    Scalar(fr)
+    CurveScalar::<C>(fr)
   };
   let usize_field = |obj: &serde_json::Value, key: &str| -> usize {
     usize::try_from(obj[key].as_u64().unwrap()).unwrap()
@@ -464,6 +489,7 @@ pub(super) fn parse_program_json(value: &serde_json::Value) -> Program {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::kzg::Scalar;
 
   const EMPTY_DIGEST: &str =
     "0x02d95030e924d62b65dcb11734967f540cddd90337d58184d90f02197df5a799";
@@ -494,7 +520,7 @@ mod tests {
 
   #[test]
   fn empty_program_encoding_and_digest() {
-    let program = Program::default();
+    let program = Program::<Bn254>::default();
     let encoded = program.encode();
     let mut expected = b"ix/outer-ir/v1".to_vec();
     expected.extend_from_slice(&[0u8; 16]);
@@ -596,7 +622,7 @@ mod tests {
       "../../../../../../../tools/gnark/testdata/bn254/vk.json"
     ))
     .unwrap();
-    let program = parse_program_json(&raw["program"]);
+    let program = parse_program_json::<Bn254>(&raw["program"]);
     assert_eq!(hex_json(&program.digest()), FIXTURE_VK_DIGEST);
     assert_eq!(raw["programDigest"].as_str().unwrap(), FIXTURE_VK_DIGEST);
   }

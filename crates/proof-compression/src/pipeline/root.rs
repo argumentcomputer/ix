@@ -15,7 +15,7 @@ use aiur::trace::stark::{
 };
 use multi_stark::batch::BatchProof;
 use multi_stark::plonkish::{CircuitBuilder, CircuitStats, Value};
-use multi_stark::types::GoldilocksBlake3Config;
+use multi_stark::types::GoldilocksBlake3V6Config;
 use multi_stark::types::Val;
 use p3_blake3::Blake3;
 use p3_field::{PrimeField64, TwoAdicField};
@@ -41,8 +41,11 @@ pub(super) fn verifier(
   )
 }
 
-fn config(key: &AiurVerifyingKey) -> GoldilocksBlake3Config {
-  GoldilocksBlake3Config::new(key.commitment_parameters(), key.fri_parameters())
+fn config(key: &AiurVerifyingKey) -> GoldilocksBlake3V6Config {
+  GoldilocksBlake3V6Config::new(
+    key.commitment_parameters(),
+    key.fri_parameters(),
+  )
 }
 
 /// Verify the root input in `dir`, build its FRI verifier circuit and check
@@ -57,7 +60,7 @@ pub(super) fn run(dir: &Path, out: &Path, prove: bool) -> Result<()> {
   let cp = native_key.commitment_parameters();
   let fp = native_key.fri_parameters();
   let bytes = fs::read(dir.join("root-proof.bin"))?;
-  let proof = BatchProof::<GoldilocksBlake3Config>::from_bytes(&bytes)?;
+  let proof = BatchProof::<GoldilocksBlake3V6Config>::from_bytes(&bytes)?;
   if proof.to_bytes()? != bytes {
     return Err("noncanonical proof transport".into());
   }
@@ -403,7 +406,7 @@ impl<'a> RootPlan<'a> {
       return Ok(*id);
     }
     let mut hash = blake3::Hasher::new();
-    hash.update(b"ix/aggregate-batch-plan/v1");
+    hash.update(b"ix/aggregate-batch-plan/v2");
     for id in ids {
       hash.update(&id);
     }
@@ -432,7 +435,7 @@ impl<'a> RootPlan<'a> {
       return Ok(*id);
     }
     let mut hash = blake3::Hasher::new();
-    hash.update(b"ix/aggregate-batch-build/v1");
+    hash.update(b"ix/aggregate-batch-build/v2");
     for id in ids {
       hash.update(&id);
     }

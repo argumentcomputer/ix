@@ -6,7 +6,7 @@ use multi_stark::p3_field::PrimeCharacteristicRing;
 use multi_stark::p3_field::PrimeField64;
 use multi_stark::system::System;
 use multi_stark::system::SystemWitness;
-use multi_stark::types::ExtVal;
+use multi_stark::types::ExtVal3;
 use multi_stark::types::Val;
 use p3_blake3::Blake3;
 use p3_symmetric::CryptographicHasher;
@@ -41,8 +41,8 @@ fn root_profile_constrains_sparse_mixed_height_grouped_proof_and_statement() {
   assert_eq!(verifier.inputs.shape.preprocessed, [2, 4]);
   assert_eq!(verifier.inputs.shape.widths[3], [11, 11]);
   assert_eq!(system.circuits[0].quotient_degree(), 4);
-  assert_eq!(system.circuits[0].stage_2_width, 4);
-  assert_eq!(system.circuits[2].stage_2_width, 2);
+  assert_eq!(system.circuits[0].stage_2_width, 6);
+  assert_eq!(system.circuits[2].stage_2_width, 3);
   println!("Root-profile circuit: {:?}", verifier.circuit.stats());
   for subject in [[0x5a; 32], [0xa5; 32]] {
     let claim = fixture::claim(subject);
@@ -91,11 +91,11 @@ fn root_profile_constrains_sparse_mixed_height_grouped_proof_and_statement() {
       match attack {
         0 => bad.proof.active.swap(1, 2),
         1 => bad.proof.log_degrees[2] += 1,
-        2 => bad.proof.stage_2_opened_values[0][0][3] += ExtVal::ONE,
-        3 => bad.proof.quotient_opened_values[0][0][7] += ExtVal::ONE,
+        2 => bad.proof.stage_2_opened_values[0][0][5] += ExtVal3::ONE,
+        3 => bad.proof.quotient_opened_values[0][0][11] += ExtVal3::ONE,
         4 => {
           bad.proof.preprocessed_opened_values.as_mut().unwrap()[1][1][10] +=
-            ExtVal::ONE
+            ExtVal3::ONE
         },
         5 => {
           bad.proof.opening_proof.input_openings[0].opened_values[0][2][0] +=
@@ -115,19 +115,19 @@ fn root_profile_constrains_sparse_mixed_height_grouped_proof_and_statement() {
         11 => bad.proof.opening_proof.query_pow_witness += Val::ONE,
         12 => {
           bad.proof.opening_proof.commit_phase_openings[2].sibling_values[0]
-            [0] += ExtVal::ONE
+            [0] += ExtVal3::ONE
         },
         13 => {
           bad.proof.opening_proof.commit_phase_openings[5].sibling_values[0]
-            [0] += ExtVal::ONE
+            [0] += ExtVal3::ONE
         },
         14 => {
           bad.proof.opening_proof.input_openings[0].opened_values[0][6][0] +=
             Val::ONE
         },
-        15 => bad.proof.intermediate_accumulators[2] += ExtVal::ONE,
-        16 => bad.proof.stage_1_opened_values[1][1][2] += ExtVal::ONE,
-        _ => bad.proof.opening_proof.final_poly[0] += ExtVal::ONE,
+        15 => bad.proof.intermediate_accumulators[2] += ExtVal3::ONE,
+        16 => bad.proof.stage_1_opened_values[1][1][2] += ExtVal3::ONE,
+        _ => bad.proof.opening_proof.final_poly[0] += ExtVal3::ONE,
       }
       assert!(!accepts(&verifier, &bad, subject), "accepted attack {attack}");
     }

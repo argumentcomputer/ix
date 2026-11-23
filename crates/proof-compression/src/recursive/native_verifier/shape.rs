@@ -18,7 +18,10 @@ impl Round {
     self as usize
   }
 
-  pub(super) fn commitment(self, proof: &Proof<KzgConfig>) -> &KzgCommitment {
+  pub(super) fn commitment<C: KzgCurve>(
+    self,
+    proof: &Proof<KzgConfig<C>>,
+  ) -> &KzgCommitment<C> {
     match self {
       Self::Fixed => {
         unreachable!("fixed points belong to the authenticated verifying key")
@@ -29,10 +32,10 @@ impl Round {
     }
   }
 
-  pub(super) fn openings(
+  pub(super) fn openings<C: KzgCurve>(
     self,
-    proof: &Proof<KzgConfig>,
-  ) -> Option<&[Vec<Vec<Scalar>>]> {
+    proof: &Proof<KzgConfig<C>>,
+  ) -> Option<&[Vec<Vec<CurveScalar<C>>>]> {
     match self {
       Self::Fixed => proof.preprocessed_opened_values.as_deref(),
       Self::Main => Some(&proof.stage_1_opened_values),
@@ -49,9 +52,9 @@ pub(super) struct MatrixShape {
 }
 
 impl MatrixShape {
-  pub(super) fn check_commitment(
+  pub(super) fn check_commitment<C: KzgCurve>(
     &self,
-    commitment: &KzgCommitment,
+    commitment: &KzgCommitment<C>,
   ) -> Result<(), String> {
     if commitment.0.len() != self.widths.len()
       || commitment
@@ -67,9 +70,9 @@ impl MatrixShape {
     Ok(())
   }
 
-  fn check_openings(
+  fn check_openings<C: KzgCurve>(
     &self,
-    openings: &[Vec<Vec<Scalar>>],
+    openings: &[Vec<Vec<CurveScalar<C>>>],
   ) -> Result<(), String> {
     if openings.len() != self.widths.len()
       || openings.iter().zip(&self.widths).zip(&self.opening_rows).any(
@@ -87,21 +90,22 @@ impl MatrixShape {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
-pub(super) struct Shape {
+#[serde(bound = "")]
+pub(super) struct Shape<C: KzgCurve = Bn254> {
   pub(super) logs: Vec<u8>,
   pub(super) rounds: [MatrixShape; 4],
-  pub(super) opening_generators: Vec<Scalar>,
+  pub(super) opening_generators: Vec<CurveScalar<C>>,
 }
 
-impl Shape {
+impl<C: KzgCurve> Shape<C> {
   pub(super) fn new(
-    vk: &InnerVerifyingKey<'_>,
+    vk: &InnerVerifyingKey<'_, C>,
     logs: &[u8],
   ) -> Result<Self, String> {
     if logs.is_empty() || logs.len() != vk.circuits.len() {
       return Err("trace logs must cover every circuit".into());
     }
-    if vk.max_log_degree > Scalar::TWO_ADICITY
+    if vk.max_log_degree > CurveScalar::<C>::TWO_ADICITY
       || vk.max_log_degree >= usize::BITS as usize
     {
       return Err("invalid maximum trace degree".into());
@@ -130,7 +134,9 @@ impl Shape {
       let quotient = (circuit.max_constraint_degree.max(2) - 1)
         .checked_next_power_of_two()
         .ok_or("quotient degree overflow")?;
-      if usize::from(log) + quotient.ilog2() as usize > Scalar::TWO_ADICITY {
+      if usize::from(log) + quotient.ilog2() as usize
+        > CurveScalar::<C>::TWO_ADICITY
+      {
         return Err("quotient domain exceeds scalar two-adicity".into());
       }
       let opens_next = |source| {
@@ -164,9 +170,9 @@ impl Shape {
       {
         for row in 0..rows {
           let g = if row == 0 {
-            Scalar::ONE
+            CurveScalar::<C>::ONE
           } else {
-            Scalar::two_adic_generator(usize::from(log))
+            CurveScalar::<C>::two_adic_generator(usize::from(log))
           };
           if !opening_generators.contains(&g) {
             opening_generators.push(g);
@@ -195,7 +201,7 @@ impl Shape {
       }
     }
     points
-      .checked_mul(G1_COMPRESSED_BYTES)
+      .checked_mul(C::G1_COMPRESSED_BYTES)
       .and_then(|bytes| {
         fields.checked_mul(32).and_then(|fields| bytes.checked_add(fields))
       })
@@ -205,13 +211,13 @@ impl Shape {
 
   pub(super) fn validate(
     &self,
-    proof: &Proof<KzgConfig>,
+    proof: &Proof<KzgConfig<C>>,
   ) -> Result<(), String> {
     if proof.active.len() != self.logs.len()
       || proof.active.iter().any(|&active| !active)
       || proof.log_degrees != self.logs
       || proof.intermediate_accumulators.len() != self.logs.len()
-      || proof.intermediate_accumulators.last() != Some(&Scalar::ZERO)
+      || proof.intermediate_accumulators.last() != Some(&CurveScalar::<C>::ZERO)
       || proof.opening_proof.0.len() != self.opening_generators.len()
     {
       return Err(
@@ -232,8 +238,8 @@ impl Shape {
   }
 }
 
-pub(super) fn validate_graph(
-  circuit: &multi_stark::system::Circuit<Scalar>,
+pub(super) fn validate_graph<C: KzgCurve>(
+  circuit: &multi_stark::system::Circuit<CurveScalar<C>>,
 ) -> Result<(), String> {
   let graph = &circuit.graph;
   if !(1..=multi_stark::lookup::MAX_LOOKUP_GROUP)

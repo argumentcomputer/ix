@@ -172,13 +172,16 @@ func appendU32LESlice(dst []byte, values []int) ([]byte, error) {
 }
 
 func (p *scalarProgram) encode() ([]byte, error) {
+	return p.encodeFor(scalarModulus())
+}
+
+func (p *scalarProgram) encodeFor(modulus *big.Int) ([]byte, error) {
 	out := make([]byte, 0, len(outerIRDomain)+16+len(p.Nodes)*9+(len(p.Assertions)+len(p.Coefficients)+len(p.Witnesses))*4)
 	out = append(out, outerIRDomain...)
 	var err error
 	if out, err = appendU32LE(out, len(p.Nodes)); err != nil {
 		return nil, err
 	}
-	modulus := scalarModulus()
 	for _, n := range p.Nodes {
 		switch n.Op {
 		case "constant":
@@ -252,7 +255,11 @@ func (p *scalarProgram) encode() ([]byte, error) {
 }
 
 func (p *scalarProgram) digest() ([32]byte, error) {
-	encoded, err := p.encode()
+	return p.digestFor(scalarModulus())
+}
+
+func (p *scalarProgram) digestFor(modulus *big.Int) ([32]byte, error) {
+	encoded, err := p.encodeFor(modulus)
 	if err != nil {
 		return [32]byte{}, err
 	}

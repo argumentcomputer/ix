@@ -4,15 +4,22 @@ use multi_stark::plonkish::Assignment;
 use multi_stark::plonkish::Witness;
 use shape::{Round, Shape};
 
-#[derive(Clone, Copy)]
-pub(super) enum PointSource {
-  Fixed(G1Affine),
+pub(super) enum PointSource<C: KzgCurve> {
+  Fixed(G1AffineOf<C>),
   Commitment { round: Round, matrix: usize, column: usize },
   Witness(usize),
 }
 
-impl PointSource {
-  fn value(self, proof: &Proof<KzgConfig>) -> G1Affine {
+impl<C: KzgCurve> Clone for PointSource<C> {
+  fn clone(&self) -> Self {
+    *self
+  }
+}
+
+impl<C: KzgCurve> Copy for PointSource<C> {}
+
+impl<C: KzgCurve> PointSource<C> {
+  fn value(self, proof: &Proof<KzgConfig<C>>) -> G1AffineOf<C> {
     match self {
       Self::Fixed(point) => point,
       Self::Commitment { round, matrix, column } => {
@@ -23,9 +30,9 @@ impl PointSource {
   }
 }
 
-pub(super) struct PointBinding {
-  pub(super) source: PointSource,
-  pub(super) point: PointInput,
+pub(super) struct PointBinding<C: KzgCurve> {
+  pub(super) source: PointSource<C>,
+  pub(super) point: PointInput<C>,
 }
 
 pub(super) enum ScalarSource {
@@ -35,7 +42,11 @@ pub(super) enum ScalarSource {
 }
 
 impl ScalarSource {
-  fn value(&self, proof: &Proof<KzgConfig>, claims: &[Vec<Scalar>]) -> Scalar {
+  fn value<C: KzgCurve>(
+    &self,
+    proof: &Proof<KzgConfig<C>>,
+    claims: &[Vec<CurveScalar<C>>],
+  ) -> CurveScalar<C> {
     match *self {
       Self::Accumulator(index) => proof.intermediate_accumulators[index],
       Self::Opening { round, matrix, row, column } => {
@@ -46,37 +57,37 @@ impl ScalarSource {
   }
 }
 
-pub(crate) struct Compiled {
-  pub circuit: Circuit<Scalar>,
-  pub bindings: Bindings,
+pub(crate) struct Compiled<C: KzgCurve = Bn254> {
+  pub circuit: Circuit<CurveScalar<C>>,
+  pub bindings: Bindings<C>,
 }
 
-pub(crate) struct Bindings {
+pub(crate) struct Bindings<C: KzgCurve = Bn254> {
   pub(super) identity: [u8; 32],
-  pub(super) shape: Shape,
-  pub(super) claims: ClaimSchema,
+  pub(super) shape: Shape<C>,
+  pub(super) claims: ClaimSchema<C>,
   pub(super) scalars: Vec<(Value, ScalarSource)>,
-  pub(super) points: Vec<PointBinding>,
-  pub(super) pairing_outputs: Vec<PointInput>,
-  pub(super) pairing_keys: Vec<G2Affine>,
+  pub(super) points: Vec<PointBinding<C>>,
+  pub(super) pairing_outputs: Vec<PointInput<C>>,
+  pub(super) pairing_keys: Vec<G2AffineOf<C>>,
   pub(super) msm_terms: Vec<usize>,
   #[cfg(test)]
   pub(super) terms: Vec<Vec<(usize, Value)>>,
 }
 
-pub(super) struct RequestInputs {
-  pub(super) inputs: Vec<(Value, Scalar)>,
+pub(super) struct RequestInputs<C: KzgCurve> {
+  pub(super) inputs: Vec<(Value, CurveScalar<C>)>,
   #[cfg(test)]
-  pub(super) points: Vec<G1Affine>,
+  pub(super) points: Vec<G1AffineOf<C>>,
 }
 
-impl Bindings {
+impl<C: KzgCurve> Bindings<C> {
   pub(super) fn request_inputs(
     &self,
     candidate_id: [u8; 32],
-    proof: &Proof<KzgConfig>,
-    claims: &[Vec<Scalar>],
-  ) -> Result<RequestInputs, String> {
+    proof: &Proof<KzgConfig<C>>,
+    claims: &[Vec<CurveScalar<C>>],
+  ) -> Result<RequestInputs<C>, String> {
     if candidate_id != self.identity {
       return Err(
         "request uses a different recursive frontend verifying key".into(),
@@ -118,10 +129,10 @@ impl Bindings {
   pub(crate) fn check(
     &self,
     candidate_id: [u8; 32],
-    proof: &Proof<KzgConfig>,
-    claims: &[Vec<Scalar>],
-    mut witness: Witness<'_, Scalar>,
-  ) -> Result<Assignment<Scalar>, Box<dyn std::error::Error>> {
+    proof: &Proof<KzgConfig<C>>,
+    claims: &[Vec<CurveScalar<C>>],
+    mut witness: Witness<'_, CurveScalar<C>>,
+  ) -> Result<Assignment<CurveScalar<C>>, Box<dyn std::error::Error>> {
     let request = self.request_inputs(candidate_id, proof, claims)?;
     for (handle, value) in request.inputs {
       witness.set(handle, value)?;
@@ -147,26 +158,37 @@ impl Bindings {
   }
 }
 
-fn pairing_points(
-  assignment: &Assignment<Scalar>,
-  pairing_outputs: &[PointInput],
-) -> Result<Vec<G1Affine>, Box<dyn std::error::Error>> {
+fn pairing_points<C: KzgCurve>(
+  assignment: &Assignment<CurveScalar<C>>,
+  pairing_outputs: &[PointInput<C>],
+) -> Result<Vec<G1AffineOf<C>>, Box<dyn std::error::Error>> {
   let mut outputs = vec![];
   for point in pairing_outputs {
-    let x = crate::recursive::native_field::fq_value(
-      &point.point.x.0.map(|v| assignment.value(v).unwrap()),
-    );
-    let y = crate::recursive::native_field::fq_value(
-      &point.point.y.0.map(|v| assignment.value(v).unwrap()),
-    );
-    let point = if assignment.value(point.infinity.value())? == Scalar::ONE {
-      if !x.is_zero() || !y.is_zero() {
-        return Err("noncanonical identity output".into());
-      }
-      G1Affine::identity()
-    } else {
-      G1Affine::new_unchecked(x, y)
-    };
+    let xs: Vec<_> = point
+      .point
+      .x
+      .limbs()
+      .iter()
+      .map(|&v| assignment.value(v).unwrap())
+      .collect();
+    let ys: Vec<_> = point
+      .point
+      .y
+      .limbs()
+      .iter()
+      .map(|&v| assignment.value(v).unwrap())
+      .collect();
+    let x = crate::recursive::native_field::fq_value::<C>(&xs);
+    let y = crate::recursive::native_field::fq_value::<C>(&ys);
+    let point =
+      if assignment.value(point.infinity.value())? == CurveScalar::<C>::ONE {
+        if !x.is_zero() || !y.is_zero() {
+          return Err("noncanonical identity output".into());
+        }
+        G1AffineOf::<C>::identity()
+      } else {
+        G1AffineOf::<C>::new_unchecked(x, y)
+      };
     if !point.is_on_curve() || !point.is_in_correct_subgroup_assuming_on_curve()
     {
       return Err("invalid recursive pairing output".into());
@@ -176,10 +198,10 @@ fn pairing_points(
   Ok(outputs)
 }
 
-pub(super) fn check_pairings(
-  assignment: &Assignment<Scalar>,
-  pairing_outputs: &[PointInput],
-  pairing_keys: &[G2Affine],
+pub(super) fn check_pairings<C: KzgCurve>(
+  assignment: &Assignment<CurveScalar<C>>,
+  pairing_outputs: &[PointInput<C>],
+  pairing_keys: &[G2AffineOf<C>],
 ) -> Result<(), Box<dyn std::error::Error>> {
   let outputs = pairing_points(assignment, pairing_outputs)?;
   let public_values = assignment.public_values();
@@ -187,7 +209,7 @@ pub(super) fn check_pairings(
     .len()
     .checked_sub(pairing::PUBLIC_VALUES)
     .ok_or("missing public pairing operands")?;
-  let public_outputs = pairing::decode(&public_values[public_start..])?;
+  let public_outputs = pairing::decode::<C>(&public_values[public_start..])?;
   if outputs != public_outputs {
     return Err(
       "public pairing operands differ from the constrained points".into(),
@@ -195,7 +217,7 @@ pub(super) fn check_pairings(
   }
   if outputs.len() != 2
     || pairing_keys.len() != 2
-    || !PairingCurve::multi_pairing(outputs, pairing_keys.iter().copied())
+    || !C::PairingCurve::multi_pairing(outputs, pairing_keys.iter().copied())
       .is_zero()
   {
     return Err("external opening pairing check failed".into());
@@ -204,10 +226,10 @@ pub(super) fn check_pairings(
 }
 
 #[cfg(test)]
-pub(super) fn check_msm_outputs(
-  assignment: &Assignment<Scalar>,
-  points: &[G1Affine],
-  pairing_outputs: &[PointInput],
+pub(super) fn check_msm_outputs<C: KzgCurve>(
+  assignment: &Assignment<CurveScalar<C>>,
+  points: &[G1AffineOf<C>],
+  pairing_outputs: &[PointInput<C>],
   terms: &[Vec<(usize, Value)>],
 ) -> Result<(), Box<dyn std::error::Error>> {
   let outputs = pairing_points(assignment, pairing_outputs)?;
@@ -216,7 +238,7 @@ pub(super) fn check_msm_outputs(
     let expected = terms
       .iter()
       .map(|&(id, scalar)| points[id] * assignment.value(scalar).unwrap().0)
-      .sum::<crate::kzg::curve::G1Projective>()
+      .sum::<crate::kzg::curve::G1ProjectiveOf<C>>()
       .into_affine();
     if *point != expected {
       return Err("MSM differs from native computation".into());

@@ -167,7 +167,7 @@ __global__ __launch_bounds__(128) void quotient_sweep(
 
 } // namespace
 
-IX_KZG_EXPORT int ix_kzg_quotient(
+IX_KZG_EXPORT int IX_KZG_SYM(quotient)(
     int device, const QuotientParameters* parameters,
     const QuotientColumn* columns, size_t column_count, size_t evaluation_columns,
     const QuotientInstruction* nodes, size_t node_count,
@@ -180,8 +180,7 @@ IX_KZG_EXPORT int ix_kzg_quotient(
         if (!parameters || !columns || !publics || !outputs || !coset_shifts || !inverse_vanishing)
             return cudaErrorInvalidValue;
         const auto p = *parameters;
-        if (p.trace_log < 10 || p.trace_log > p.quotient_log || p.quotient_log > 28
-            || p.quotient_log > KZG_MAX_FFT_LOG
+        if (p.trace_log < 10 || p.trace_log > p.quotient_log || p.quotient_log > KZG_MAX_FFT_LOG
             || !p.slots || !p.blocks || p.blocks > 256 || !p.group_size || p.group_size > 8
             || p.stage2_start >= column_count || public_count < 4)
             return cudaErrorInvalidValue;

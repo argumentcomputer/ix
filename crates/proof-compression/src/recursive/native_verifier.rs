@@ -1,8 +1,9 @@
 //! Fixed-verifying key ordinary KZG verification with publicly bound pairing inputs.
 use crate::{
   kzg::{
-    KzgCommitment, KzgConfig, Scalar,
-    curve::{Fq, G1_COMPRESSED_BYTES, G1Affine, G2Affine, PairingCurve},
+    KzgCommitment, KzgConfig, Srs,
+    curve::{Bn254, G1AffineOf, G2AffineOf, KzgCurve},
+    field::CurveScalar,
   },
   recursive::{
     native_curve::{Affine, PointInput},
@@ -48,29 +49,36 @@ type Commitment = Vec<Vec<usize>>;
 type Openings = Vec<Vec<Vec<Value>>>;
 
 /// A compiled circuit paired with one request's assignments and pairing outputs.
-pub struct Built {
-  pub circuit: Circuit<Scalar>,
-  pub inputs: Vec<(Value, Scalar)>,
+pub struct Built<C: KzgCurve = Bn254> {
+  pub circuit: Circuit<CurveScalar<C>>,
+  pub inputs: Vec<(Value, CurveScalar<C>)>,
   #[cfg(test)]
-  pub points: Vec<G1Affine>,
-  pub pairing_outputs: Vec<PointInput>,
-  pub pairing_keys: Vec<G2Affine>,
+  pub points: Vec<G1AffineOf<C>>,
+  pub pairing_outputs: Vec<PointInput<C>>,
+  pub pairing_keys: Vec<G2AffineOf<C>>,
   pub msm_terms: Vec<usize>,
   #[cfg(test)]
   pub terms: Vec<Vec<(usize, Value)>>,
 }
 
-#[derive(Clone, Copy)]
-pub struct InnerVerifyingKey<'a> {
-  pub circuits: &'a [multi_stark::system::Circuit<Scalar>],
-  pub fixed: &'a KzgCommitment,
+pub struct InnerVerifyingKey<'a, C: KzgCurve = Bn254> {
+  pub circuits: &'a [multi_stark::system::Circuit<CurveScalar<C>>],
+  pub fixed: &'a KzgCommitment<C>,
   pub transcript_seed: &'a [u8],
   pub transcript_kind: crate::kzg::TranscriptKind,
-  pub generator: G1Affine,
-  pub g2: G2Affine,
-  pub tau_g2: G2Affine,
+  pub generator: G1AffineOf<C>,
+  pub g2: G2AffineOf<C>,
+  pub tau_g2: G2AffineOf<C>,
   pub max_log_degree: usize,
 }
+
+impl<C: KzgCurve> Clone for InnerVerifyingKey<'_, C> {
+  fn clone(&self) -> Self {
+    *self
+  }
+}
+
+impl<C: KzgCurve> Copy for InnerVerifyingKey<'_, C> {}
 
 pub struct Counts {
   pub stats: CircuitStats,
@@ -86,16 +94,16 @@ pub struct PhaseCounts {
   pub stats: CircuitStats,
 }
 
-struct Construction {
-  context: Context,
-  pairing_outputs: Vec<PointInput>,
-  pairing_keys: Vec<G2Affine>,
+struct Construction<C: KzgCurve> {
+  context: Context<C>,
+  pairing_outputs: Vec<PointInput<C>>,
+  pairing_keys: Vec<G2AffineOf<C>>,
   terms: Vec<Vec<(usize, Value)>>,
   phases: Vec<PhaseCounts>,
 }
 
-impl Construction {
-  fn finish(self, plan: &Plan<'_>) -> Compiled {
+impl<C: KzgCurve> Construction<C> {
+  fn finish(self, plan: &Plan<'_, C>) -> Compiled<C> {
     Compiled {
       circuit: self.context.b.finish(),
       bindings: Bindings {
@@ -123,20 +131,20 @@ impl Construction {
   }
 }
 
-struct Context {
-  b: Builder,
-  f: FqGadget,
+struct Context<C: KzgCurve> {
+  b: Builder<C>,
+  f: FqGadget<C>,
   bytes: ByteGadgets,
   inputs: Vec<(Value, ScalarSource)>,
-  bases: Vec<Base>,
-  points: Vec<PointBinding>,
+  bases: Vec<Base<C>>,
+  points: Vec<PointBinding<C>>,
   point_ends: Vec<usize>,
-  encodings: Vec<[ByteValue; G1_COMPRESSED_BYTES]>,
+  encodings: Vec<Vec<ByteValue>>,
   scalar_encodings: BTreeMap<usize, [ByteValue; 32]>,
 }
-impl Context {
-  fn new(mut b: Builder) -> Self {
-    let f = FqGadget::new(&mut b);
+impl<C: KzgCurve> Context<C> {
+  fn new(mut b: Builder<C>) -> Self {
+    let f = FqGadget::<C>::new(&mut b);
     let bytes = ByteGadgets::new(&mut b);
     Self {
       b,
@@ -155,11 +163,11 @@ impl Context {
     self.inputs.push((v, source));
     v
   }
-  fn point(&mut self, source: PointSource) -> usize {
+  fn point(&mut self, source: PointSource<C>) -> usize {
     let id = self.points.len();
     let source = match source {
       PointSource::Fixed(value) if value.infinity => {
-        PointSource::Fixed(G1Affine::identity())
+        PointSource::Fixed(G1AffineOf::<C>::identity())
       },
       other => other,
     };
@@ -170,10 +178,10 @@ impl Context {
         x: self.f.constant(&mut self.b, value.x),
         y: self.f.constant(
           &mut self.b,
-          if value.infinity { Fq::from(0u8) } else { value.y },
+          if value.infinity { C::Fq::from(0u8) } else { value.y },
         ),
       };
-      let flag = self.b.constant(Scalar::from_bool(value.infinity));
+      let flag = self.b.constant(CurveScalar::<C>::from_bool(value.infinity));
       let infinity = self.b.assert_bool(flag);
       PointInput { point, infinity }
     } else {
@@ -182,7 +190,10 @@ impl Context {
     let encoded = if let Some(value) = fixed {
       let mut encoded = vec![];
       value.serialize_compressed(&mut encoded).unwrap();
-      std::array::from_fn(|i| self.bytes.constant(&mut self.b, encoded[i]))
+      encoded
+        .into_iter()
+        .map(|byte| self.bytes.constant(&mut self.b, byte))
+        .collect()
     } else {
       native_transcript::point_bytes(&mut self.b, &self.bytes, p)
     };
@@ -201,7 +212,7 @@ impl Context {
   fn seal_point_prefix(&mut self) -> bool {
     self.b.try_parallel_witness_prefix(std::mem::take(&mut self.point_ends))
   }
-  fn fixed_commitment(&mut self, c: &KzgCommitment) -> Commitment {
+  fn fixed_commitment(&mut self, c: &KzgCommitment<C>) -> Commitment {
     c.0
       .iter()
       .map(|row| {
@@ -257,7 +268,7 @@ impl Context {
     t.observe(&bytes);
   }
   fn observe_constant(&mut self, t: &mut Transcript, v: usize) {
-    let v = self.b.constant(Scalar::from_usize(v));
+    let v = self.b.constant(CurveScalar::<C>::from_usize(v));
     self.observe_scalar(t, v);
   }
   fn observe_commitment(&mut self, t: &mut Transcript, c: &Commitment) {
@@ -273,18 +284,21 @@ impl Context {
     t.sample(&mut self.b, &self.bytes)
   }
 }
-fn fp(
-  b: &mut Builder,
+fn fp<C: KzgCurve>(
+  b: &mut Builder<C>,
   gamma: Value,
   args: impl DoubleEndedIterator<Item = Value>,
 ) -> Value {
-  let mut acc = b.constant(Scalar::ZERO);
+  let mut acc = b.constant(CurveScalar::<C>::ZERO);
   for arg in args.rev() {
     acc = b.mul_add(acc, gamma, arg);
   }
   acc
 }
-fn combine(b: &mut Builder, terms: Vec<(usize, Value)>) -> Vec<(usize, Value)> {
+fn combine<C: KzgCurve>(
+  b: &mut Builder<C>,
+  terms: Vec<(usize, Value)>,
+) -> Vec<(usize, Value)> {
   let mut unique = BTreeMap::<usize, Value>::new();
   for (id, v) in terms {
     if let Some(old) = unique.get_mut(&id) {
@@ -298,13 +312,13 @@ fn combine(b: &mut Builder, terms: Vec<(usize, Value)>) -> Vec<(usize, Value)> {
 
 /// Compile the fixed verifier relation and bind one proof's witness inputs.
 /// Call [`Built::assign`] to check its constraints and deferred pairing.
-pub fn build(
-  system: &System<KzgConfig>,
-  srs: &crate::kzg::Srs,
-  proof: &Proof<KzgConfig>,
-  claims: &[Vec<Scalar>],
+pub fn build<C: KzgCurve>(
+  system: &System<KzgConfig<C>>,
+  srs: &Srs<C>,
+  proof: &Proof<KzgConfig<C>>,
+  claims: &[Vec<CurveScalar<C>>],
   public_locations: &[(usize, usize)],
-) -> Result<Built, String> {
+) -> Result<Built<C>, String> {
   let configured = system.config.pcs().verifier_params();
   if srs.g1.get(..2) != Some(configured.g1.as_slice())
     || srs.g2 != configured.g2
@@ -325,10 +339,10 @@ pub fn build(
 
 /// Count the ordinary wrapper constraints without retaining an IR or generating
 /// a witness. This measures a verifying key; it does not verify its proof or its SRS.
-pub fn count(
-  vk: &InnerVerifyingKey<'_>,
-  proof: &Proof<KzgConfig>,
-  claims: &[Vec<Scalar>],
+pub fn count<C: KzgCurve>(
+  vk: &InnerVerifyingKey<'_, C>,
+  proof: &Proof<KzgConfig<C>>,
+  claims: &[Vec<CurveScalar<C>>],
   public_locations: &[(usize, usize)],
 ) -> Result<Counts, String> {
   let plan = Plan::from_identity(
@@ -341,17 +355,17 @@ pub fn count(
   plan.count()
 }
 
-fn construct(
-  vk: &InnerVerifyingKey<'_>,
-  shape: &Shape,
-  claims: &ClaimSchema,
-  builder: Builder,
-) -> Result<Construction, String> {
+fn construct<C: KzgCurve>(
+  vk: &InnerVerifyingKey<'_, C>,
+  shape: &Shape<C>,
+  claims: &ClaimSchema<C>,
+  builder: Builder<C>,
+) -> Result<Construction<C>, String> {
   let circuits = vk.circuits;
   let quotients: Vec<_> =
     circuits.iter().map(|c| c.quotient_degree()).collect();
   let logs = &shape.logs;
-  let mut c = Context::new(builder);
+  let mut c = Context::<C>::new(builder);
   let fixed = c.fixed_commitment(vk.fixed);
   let main = c.commitment(Round::Main, &shape.rounds[Round::Main.index()]);
   let stage2 =
@@ -451,7 +465,7 @@ fn construct(
   c.observe_scalar(&mut t, beta);
   let gamma = c.sample(&mut t);
   c.observe_scalar(&mut t, gamma);
-  let mut initial_acc = c.b.constant(Scalar::ZERO);
+  let mut initial_acc = c.b.constant(CurveScalar::<C>::ZERO);
   for row in &claim_vars {
     let hash = fp(&mut c.b, gamma, row.iter().copied());
     let message = c.b.add(beta, hash);
@@ -478,7 +492,7 @@ fn construct(
       t.constant(&mut c.b, &c.bytes, &u64::from(log).to_le_bytes());
     }
   }
-  let mut batches: Vec<(Scalar, Vec<usize>, Vec<Value>)> = vec![];
+  let mut batches: Vec<(CurveScalar<C>, Vec<usize>, Vec<Value>)> = vec![];
   for (commit, openings) in rounds {
     for (i, rows) in openings.iter().enumerate() {
       for (row_index, row) in rows.iter().enumerate() {
@@ -486,9 +500,9 @@ fn construct(
           c.observe_scalar(&mut t, v);
         }
         let g = if row_index == 0 {
-          Scalar::ONE
+          CurveScalar::<C>::ONE
         } else {
-          Scalar::two_adic_generator(usize::from(logs[i]))
+          CurveScalar::<C>::two_adic_generator(usize::from(logs[i]))
         };
         let index = if let Some(index) =
           batches.iter().position(|(key, _, _)| *key == g)
@@ -515,10 +529,10 @@ fn construct(
   eprintln!("Transcript complete: {:?}", c.b.stats());
   let mut lhs = vec![];
   let mut rhs = vec![];
-  let mut r_power = c.b.constant(Scalar::ONE);
+  let mut r_power = c.b.constant(CurveScalar::<C>::ONE);
   for ((g, points, values), &witness) in batches.iter().zip(&witnesses) {
-    let mut v_power = c.b.constant(Scalar::ONE);
-    let mut y = c.b.constant(Scalar::ZERO);
+    let mut v_power = c.b.constant(CurveScalar::<C>::ONE);
+    let mut y = c.b.constant(CurveScalar::<C>::ZERO);
     for (&id, &value) in points.iter().zip(values) {
       let coefficient = c.b.mul(v_power, r_power);
       lhs.push((id, coefficient));
@@ -526,7 +540,7 @@ fn construct(
       v_power = c.b.mul(v_power, v);
     }
     let weighted_y = c.b.mul(y, r_power);
-    let minus_y = c.b.scale(weighted_y, Scalar::NEG_ONE);
+    let minus_y = c.b.scale(weighted_y, CurveScalar::<C>::NEG_ONE);
     lhs.push((generator, minus_y));
     let z = c.b.scale(zeta, *g);
     let coeff = c.b.mul(z, r_power);
@@ -537,16 +551,19 @@ fn construct(
   // All AIR roots and logUp constraints, in the native folding order.
   let mut acc = initial_acc;
   for (i, circuit) in circuits.iter().enumerate() {
-    let one = c.b.constant(Scalar::ONE);
+    let one = c.b.constant(CurveScalar::<C>::ONE);
     let mut z_n = zeta;
     for _ in 0..logs[i] {
       z_n = c.b.mul(z_n, z_n);
     }
     let vanishing = c.b.sub(z_n, one);
     let inv_vanishing = c.b.inverse(vanishing);
-    let g = Scalar::two_adic_generator(usize::from(logs[i]));
-    let transition =
-      c.b.affine([zeta, zeta], [Scalar::ONE, Scalar::ZERO], -g.inverse());
+    let g = CurveScalar::<C>::two_adic_generator(usize::from(logs[i]));
+    let transition = c.b.affine(
+      [zeta, zeta],
+      [CurveScalar::<C>::ONE, CurveScalar::<C>::ZERO],
+      -g.inverse(),
+    );
     let first_denom = c.b.sub(zeta, one);
     let inv_first = c.b.inverse(first_denom);
     let first = c.b.mul(vanishing, inv_first);
@@ -572,15 +589,17 @@ fn construct(
         Node::Add(a, b) => c.b.add(values[a.index()], values[b.index()]),
         Node::Sub(a, b) => c.b.sub(values[a.index()], values[b.index()]),
         Node::Mul(a, b) => c.b.mul(values[a.index()], values[b.index()]),
-        Node::Neg(a) => c.b.scale(values[a.index()], Scalar::NEG_ONE),
+        Node::Neg(a) => c.b.scale(values[a.index()], CurveScalar::<C>::NEG_ONE),
       };
       values.push(value);
     }
     let mut constraints: Vec<_> =
       circuit.graph.zeros.iter().map(|id| values[id.index()]).collect();
     let delta = c.b.sub(accs[i], acc);
-    let delta =
-      c.b.scale(delta, (Scalar::from_usize(1usize << logs[i]) * g).inverse());
+    let delta = c.b.scale(
+      delta,
+      (CurveScalar::<C>::from_usize(1usize << logs[i]) * g).inverse(),
+    );
     let injection = c.b.mul(last, delta);
     let groups: Vec<_> =
       circuit.graph.lookups.chunks(circuit.lookup_group_size.max(1)).collect();
@@ -610,7 +629,7 @@ fn construct(
       for &message in &messages {
         product = c.b.mul(product, message);
       }
-      let mut numerator = c.b.constant(Scalar::ZERO);
+      let mut numerator = c.b.constant(CurveScalar::<C>::ZERO);
       for (k, lookup) in group.iter().enumerate() {
         let mut term = values[lookup.multiplicity.index()];
         for (l, &message) in messages.iter().enumerate() {
@@ -626,11 +645,11 @@ fn construct(
     if constraints.len() != circuit.constraint_count() {
       return Err("constraint count mismatch".into());
     }
-    let mut composition = c.b.constant(Scalar::ZERO);
+    let mut composition = c.b.constant(CurveScalar::<C>::ZERO);
     for value in constraints {
       composition = c.b.mul_add(composition, alpha, value);
     }
-    let mut quotient = c.b.constant(Scalar::ZERO);
+    let mut quotient = c.b.constant(CurveScalar::<C>::ZERO);
     if quotient_open[i][0].len() != quotients[i] {
       return Err("quotient width mismatch".into());
     }
@@ -648,7 +667,7 @@ fn construct(
   keys.push(vk.g2);
   let rhs = rhs
     .into_iter()
-    .map(|(id, v)| (id, c.b.scale(v, Scalar::NEG_ONE)))
+    .map(|(id, v)| (id, c.b.scale(v, CurveScalar::<C>::NEG_ONE)))
     .collect();
   terms.push(combine(&mut c.b, rhs));
   keys.push(vk.tau_g2);
@@ -666,17 +685,18 @@ fn construct(
     );
     let point = point.canonical(&mut c.b, &c.f);
     let encoded = native_transcript::point_bytes(&mut c.b, &c.bytes, point);
-    for chunk in encoded.as_chunks::<{ pairing::POINT_LIMB_BYTES }>().0 {
-      let mut coefficient = Scalar::ONE;
+    #[allow(clippy::chunks_exact_to_as_chunks)]
+    for chunk in encoded.chunks_exact(C::POINT_LIMB_BYTES) {
+      let mut coefficient = CurveScalar::<C>::ONE;
       let terms: Vec<_> = chunk
         .iter()
         .map(|v| {
           let term = (coefficient, v.value());
-          coefficient *= Scalar::from_u16(256);
+          coefficient *= CurveScalar::<C>::from_u16(256);
           term
         })
         .collect();
-      let packed = c.b.linear_combination(&terms, Scalar::ZERO);
+      let packed = c.b.linear_combination(&terms, CurveScalar::<C>::ZERO);
       c.b.expose_public(packed);
     }
     outputs.push(point);
@@ -695,12 +715,12 @@ fn construct(
   })
 }
 
-impl Built {
+impl<C: KzgCurve> Built<C> {
   #[cfg(test)]
   pub fn check(
     &self,
   ) -> Result<
-    multi_stark::plonkish::Assignment<Scalar>,
+    multi_stark::plonkish::Assignment<CurveScalar<C>>,
     Box<dyn std::error::Error>,
   > {
     let assignment = self.assign()?;
@@ -717,7 +737,7 @@ impl Built {
   pub fn assign(
     &self,
   ) -> Result<
-    multi_stark::plonkish::Assignment<Scalar>,
+    multi_stark::plonkish::Assignment<CurveScalar<C>>,
     Box<dyn std::error::Error>,
   > {
     let mut w = self.circuit.witness();
@@ -733,30 +753,34 @@ impl Built {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::{foreign::KzgCircuitExt, kzg::Srs};
+  use crate::{
+    foreign::KzgCircuitExt,
+    kzg::{Srs, curve::Bls12381},
+  };
   use multi_stark::system::SystemWitness;
   use std::sync::Arc;
 
   #[test]
   fn complete_wrapper_fixture_and_changed_claim() {
-    wrapper_fixture(false);
+    wrapper_fixture::<Bn254>(false);
+    wrapper_fixture::<Bls12381>(false);
   }
 
   #[test]
   fn public_degree_wrapper_fixture_and_changed_claim() {
-    wrapper_fixture(true);
+    wrapper_fixture::<Bn254>(true);
+    wrapper_fixture::<Bls12381>(true);
   }
 
-  #[test]
-  fn constant_column_proof_has_canonical_identity_pairing_outputs() {
+  fn constant_column_fixture<C: KzgCurve>() {
     use multi_stark::{expr::Expr, system::CircuitInputs};
     use p3_matrix::dense::RowMajorMatrix;
-    let srs = Arc::new(Srs::unsafe_dev_setup_prefix(
+    let srs = Arc::new(Srs::<C>::unsafe_dev_setup_prefix(
       4,
       6,
       b"identity-wrapper-public-test",
     ));
-    let trace = RowMajorMatrix::new_col(vec![Scalar::from_u8(7); 4]);
+    let trace = RowMajorMatrix::new_col(vec![CurveScalar::<C>::from_u8(7); 4]);
     let (system, key) = System::new(
       KzgConfig::new(srs.clone(), 2),
       [CircuitInputs {
@@ -778,27 +802,38 @@ mod tests {
     for point in &built.pairing_outputs {
       assert_eq!(
         assignment.value(point.infinity.value()).unwrap(),
-        Scalar::ONE
+        CurveScalar::<C>::ONE
       );
       assert!(
         point
           .point
           .x
-          .0
-          .into_iter()
-          .chain(point.point.y.0)
-          .all(|v| assignment.value(v).unwrap() == Scalar::ZERO)
+          .limbs()
+          .iter()
+          .chain(point.point.y.limbs())
+          .all(|&v| assignment.value(v).unwrap() == CurveScalar::<C>::ZERO)
       );
     }
-    let expected = pairing::encode([G1Affine::identity(); 2]);
+    let expected = pairing::encode::<C>([G1AffineOf::<C>::identity(); 2]);
     assert_eq!(assignment.public_values(), expected);
-    assert_eq!(pairing::decode(&expected).unwrap(), [G1Affine::identity(); 2]);
+    assert_eq!(
+      pairing::decode::<C>(&expected).unwrap(),
+      [G1AffineOf::<C>::identity(); 2]
+    );
   }
 
-  fn wrapper_fixture(public_degree: bool) {
-    let mut b = Builder::new();
-    let table =
-      b.fixed_table("small", vec![vec![Scalar::ONE], vec![Scalar::TWO]]);
+  #[test]
+  fn constant_column_proof_has_canonical_identity_pairing_outputs() {
+    constant_column_fixture::<Bn254>();
+    constant_column_fixture::<Bls12381>();
+  }
+
+  fn wrapper_fixture<C: KzgCurve>(public_degree: bool) {
+    let mut b = Builder::<C>::new();
+    let table = b.fixed_table(
+      "small",
+      vec![vec![CurveScalar::<C>::ONE], vec![CurveScalar::<C>::TWO]],
+    );
     let x = b.input("x");
     for _ in 0..30 {
       b.lookup(table, &[x]);
@@ -807,16 +842,17 @@ mod tests {
     b.expose_public(square);
     let circuit = b.finish();
     let mut w = circuit.witness();
-    w.set(x, Scalar::TWO).unwrap();
+    w.set(x, CurveScalar::<C>::TWO).unwrap();
     let a = w.generate().unwrap();
-    let lowered =
-      circuit.lower_to_multi_stark_sharded(Scalar::from_u8(93), 32).unwrap();
+    let lowered = circuit
+      .lower_to_multi_stark_sharded(CurveScalar::<C>::from_u8(93), 32)
+      .unwrap();
     let claims = lowered.claims(a.public_values()).unwrap();
     let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
     let srs = if public_degree {
-      Srs::unsafe_dev_setup_prefix(32, 62, b"native-wrapper-public-test")
+      Srs::<C>::unsafe_dev_setup_prefix(32, 62, b"native-wrapper-public-test")
     } else {
-      Srs::unsafe_dev_setup(32, b"native-wrapper-test")
+      Srs::<C>::unsafe_dev_setup(32, b"native-wrapper-test")
     };
     let srs = Arc::new(srs);
     let (system, key) = System::new(
@@ -875,17 +911,16 @@ mod tests {
     );
     built.check().unwrap();
     let key = built.pairing_keys[1];
-    built.pairing_keys[1] =
-      (key * crate::kzg::curve::Fr::from(2u8)).into_affine();
+    built.pairing_keys[1] = (key * C::Fr::from(2u8)).into_affine();
     assert!(built.assign().is_err());
     built.pairing_keys[1] = key;
     let public = built.circuit.public_values()[0];
     let slot = built.inputs.iter().position(|&(v, _)| v == public).unwrap();
-    built.inputs[slot].1 += Scalar::ONE;
+    built.inputs[slot].1 += CurveScalar::<C>::ONE;
     assert!(built.check().is_err());
-    built.inputs[slot].1 -= Scalar::ONE;
+    built.inputs[slot].1 -= CurveScalar::<C>::ONE;
     let slot = built.inputs.len() - 2;
-    built.inputs[slot].1 += Scalar::ONE;
+    built.inputs[slot].1 += CurveScalar::<C>::ONE;
     assert!(built.check().is_err());
   }
 }

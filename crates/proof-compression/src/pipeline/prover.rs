@@ -1,9 +1,14 @@
 //! Partitioned KZG commitment, proving and verification.
 use super::{Result, storage};
+#[cfg(test)]
+use crate::kzg::Scalar;
 use crate::{
   foreign::KzgCircuitExt,
   kzg::{
-    KzgCommitment, KzgConfig, Scalar, compact::FixedProofCodec,
+    KzgCommitment, KzgConfig,
+    compact::FixedProofCodec,
+    curve::{Bn254, KzgCurve},
+    field::CurveScalar,
     pcs::KzgProverData,
   },
 };
@@ -27,51 +32,60 @@ use std::{
 
 /// Committed columns own their data, so the circuit and assignment can be
 /// released before allocating lookup and quotient working sets.
-pub(super) struct Committed {
-  system: System<KzgConfig>,
-  key: ProverKey<KzgConfig>,
-  stage: Stage1<KzgConfig>,
+pub(super) struct Committed<C: KzgCurve = Bn254> {
+  system: System<KzgConfig<C>>,
+  key: ProverKey<KzgConfig<C>>,
+  stage: Stage1<KzgConfig<C>>,
 }
 
-pub(super) struct Proved {
-  pub system: System<KzgConfig>,
-  pub proof: Proof<KzgConfig>,
-  pub codec: FixedProofCodec,
+pub(super) struct Proved<C: KzgCurve = Bn254> {
+  pub system: System<KzgConfig<C>>,
+  pub proof: Proof<KzgConfig<C>>,
+  pub codec: FixedProofCodec<C>,
   pub bytes: Vec<u8>,
   pub verify_seconds: f64,
 }
 
-trait PartitionSource: Sync {
-  fn compiled(&self) -> &MultiStarkCircuit<Scalar>;
+trait PartitionSource<C: KzgCurve>: Sync {
+  fn compiled(&self) -> &MultiStarkCircuit<CurveScalar<C>>;
   fn trace(
     &self,
     index: usize,
-  ) -> std::result::Result<p3_matrix::dense::RowMajorMatrix<Scalar>, String>;
+  ) -> std::result::Result<
+    p3_matrix::dense::RowMajorMatrix<CurveScalar<C>>,
+    String,
+  >;
 }
 
 #[cfg(test)]
-impl PartitionSource for &TraceShards<'_, Scalar> {
-  fn compiled(&self) -> &MultiStarkCircuit<Scalar> {
+impl<C: KzgCurve> PartitionSource<C> for &TraceShards<'_, CurveScalar<C>> {
+  fn compiled(&self) -> &MultiStarkCircuit<CurveScalar<C>> {
     TraceShards::compiled(self)
   }
 
   fn trace(
     &self,
     index: usize,
-  ) -> std::result::Result<p3_matrix::dense::RowMajorMatrix<Scalar>, String> {
+  ) -> std::result::Result<
+    p3_matrix::dense::RowMajorMatrix<CurveScalar<C>>,
+    String,
+  > {
     TraceShards::trace(self, index).map_err(|error| error.to_string())
   }
 }
 
-impl PartitionSource for super::lowering::Lowered {
-  fn compiled(&self) -> &MultiStarkCircuit<Scalar> {
+impl<C: KzgCurve> PartitionSource<C> for super::lowering::Lowered<C> {
+  fn compiled(&self) -> &MultiStarkCircuit<CurveScalar<C>> {
     &self.compiled
   }
 
   fn trace(
     &self,
     index: usize,
-  ) -> std::result::Result<p3_matrix::dense::RowMajorMatrix<Scalar>, String> {
+  ) -> std::result::Result<
+    p3_matrix::dense::RowMajorMatrix<CurveScalar<C>>,
+    String,
+  > {
     self
       .compiled
       .trace_shards(&self.assignment)
@@ -80,14 +94,14 @@ impl PartitionSource for super::lowering::Lowered {
   }
 }
 
-impl Committed {
+impl<C: KzgCurve> Committed<C> {
   /// Commit one partition at a time while taking ownership of `lowered`,
   /// dropping the compiled circuit and logical assignment immediately after
   /// the last partition's witness is materialized (before its KZG commit).
   #[tracing::instrument(level = "info", skip_all, name = "compression/prepare")]
   pub(super) fn prepare_owned(
-    config: KzgConfig,
-    lowered: super::lowering::Lowered,
+    config: KzgConfig<C>,
+    lowered: super::lowering::Lowered<C>,
     preprocessing: Option<&Path>,
     prefetch_bytes: usize,
   ) -> Result<Self> {
@@ -103,16 +117,16 @@ impl Committed {
   #[cfg(test)]
   #[tracing::instrument(level = "info", skip_all, name = "compression/prepare")]
   pub(super) fn prepare(
-    config: KzgConfig,
-    traces: &TraceShards<'_, Scalar>,
+    config: KzgConfig<C>,
+    traces: &TraceShards<'_, CurveScalar<C>>,
     preprocessing: Option<&Path>,
     prefetch_bytes: usize,
   ) -> Result<Self> {
     Self::prepare_source(config, traces, preprocessing, prefetch_bytes)
   }
 
-  fn prepare_source<S: PartitionSource>(
-    config: KzgConfig,
+  fn prepare_source<S: PartitionSource<C>>(
+    config: KzgConfig<C>,
     source: S,
     preprocessing: Option<&Path>,
     prefetch_bytes: usize,
@@ -171,7 +185,7 @@ impl Committed {
         dimensions.get(i + 1).is_some_and(|&(height, width)| {
           height
             .checked_mul(width)
-            .and_then(|values| values.checked_mul(size_of::<Scalar>()))
+            .and_then(|values| values.checked_mul(size_of::<CurveScalar<C>>()))
             .is_some_and(|bytes| bytes <= prefetch_bytes)
         });
       if can_prefetch {
@@ -311,6 +325,7 @@ impl Committed {
         circuits,
         preprocessed_commit: Some(fixed_commitment),
         preprocessed_indices: (0..count).map(Some).collect(),
+        vk_digest: [0u8; 32],
       },
       key: ProverKey { preprocessed_data: Some(fixed_data) },
       stage: Stage1 {
@@ -327,7 +342,10 @@ impl Committed {
     })
   }
 
-  pub(super) fn prove(self, claims: &[Vec<Scalar>]) -> Result<Proved> {
+  pub(super) fn prove(
+    self,
+    claims: &[Vec<CurveScalar<C>>],
+  ) -> Result<Proved<C>> {
     let Self { system, key, stage } = self;
     let logs = stage
       .log_degrees
@@ -363,13 +381,14 @@ impl Committed {
 
 /// A partition's circuit metadata and fixed commitment, as its
 /// `setup-{i}.bin` checkpoint records them.
-pub(super) type FixedSetup = (Circuit<Scalar>, KzgCommitment);
+pub(super) type FixedSetup<C = Bn254> =
+  (Circuit<CurveScalar<C>>, KzgCommitment<C>);
 
 /// Commit each fixed partition without allocating a witness.
-pub(super) fn fixed_setup(
-  config: &KzgConfig,
-  compiled: &MultiStarkCircuit<Scalar>,
-) -> Result<Vec<FixedSetup>> {
+pub(super) fn fixed_setup<C: KzgCurve>(
+  config: &KzgConfig<C>,
+  compiled: &MultiStarkCircuit<CurveScalar<C>>,
+) -> Result<Vec<FixedSetup<C>>> {
   (0..compiled.num_circuits())
     .map(|i| {
       #[cfg(not(feature = "cuda"))]
@@ -387,11 +406,11 @@ pub(super) fn fixed_setup(
 
 /// Commit each fixed partition without allocating a witness, writing its
 /// `setup-{i}.bin` and `fixed-{i}.bin` checkpoints into `dir`.
-pub(super) fn fixed_setup_in(
-  config: &KzgConfig,
-  compiled: &MultiStarkCircuit<Scalar>,
+pub(super) fn fixed_setup_in<C: KzgCurve>(
+  config: &KzgConfig<C>,
+  compiled: &MultiStarkCircuit<CurveScalar<C>>,
   dir: &Path,
-) -> Result<Vec<FixedSetup>> {
+) -> Result<Vec<FixedSetup<C>>> {
   (0..compiled.num_circuits())
     .map(|i| {
       #[cfg(not(feature = "cuda"))]
@@ -408,10 +427,10 @@ pub(super) fn fixed_setup_in(
 }
 
 /// The system of fixed partitions in canonical order under `config`.
-pub(super) fn fixed_system(
-  config: KzgConfig,
-  parts: Vec<FixedSetup>,
-) -> Result<System<KzgConfig>> {
+pub(super) fn fixed_system<C: KzgCurve>(
+  config: KzgConfig<C>,
+  parts: Vec<FixedSetup<C>>,
+) -> Result<System<KzgConfig<C>>> {
   let count = parts.len();
   let mut circuits = Vec::with_capacity(count);
   let mut fixed = KzgCommitment(vec![]);
@@ -427,25 +446,26 @@ pub(super) fn fixed_system(
     circuits,
     preprocessed_commit: Some(fixed),
     preprocessed_indices: (0..count).map(Some).collect(),
+    vk_digest: [0u8; 32],
   })
 }
 
 /// Commit each fixed partition without allocating a witness.
 #[cfg(test)]
-pub(super) fn setup(
-  config: KzgConfig,
-  compiled: &MultiStarkCircuit<Scalar>,
-) -> Result<System<KzgConfig>> {
+pub(super) fn setup<C: KzgCurve>(
+  config: KzgConfig<C>,
+  compiled: &MultiStarkCircuit<CurveScalar<C>>,
+) -> Result<System<KzgConfig<C>>> {
   let parts = fixed_setup(&config, compiled)?;
   fixed_system(config, parts)
 }
 
 #[cfg(not(feature = "cuda"))]
-fn compile_fixed_circuit(
-  config: &KzgConfig,
-  definition: &multi_stark::system::CircuitInputs<Scalar>,
-) -> Result<Circuit<Scalar>> {
-  let params = multi_stark::system::extension_params::<KzgConfig>();
+fn compile_fixed_circuit<C: KzgCurve>(
+  config: &KzgConfig<C>,
+  definition: &multi_stark::system::CircuitInputs<CurveScalar<C>>,
+) -> Result<Circuit<CurveScalar<C>>> {
+  let params = multi_stark::system::extension_params::<KzgConfig<C>>();
   let num_lookups = definition.lookups.len();
   let group_size = definition.lookup_group_size.max(1);
   if group_size > multi_stark::lookup::MAX_LOOKUP_GROUP {
@@ -500,11 +520,11 @@ fn compile_fixed_circuit(
 }
 
 #[cfg(not(feature = "cuda"))]
-fn fixed_partition_commitment_only(
-  config: &KzgConfig,
-  compiled: &MultiStarkCircuit<Scalar>,
+fn fixed_partition_commitment_only<C: KzgCurve>(
+  config: &KzgConfig<C>,
+  compiled: &MultiStarkCircuit<CurveScalar<C>>,
   index: usize,
-) -> Result<FixedSetup> {
+) -> Result<FixedSetup<C>> {
   let mut definition = compiled
     .kzg_circuit_input(
       index,
@@ -522,16 +542,16 @@ fn fixed_partition_commitment_only(
 }
 
 #[cfg(not(feature = "cuda"))]
-fn fixed_partition_checkpoint_only(
-  config: &KzgConfig,
-  compiled: &MultiStarkCircuit<Scalar>,
+fn fixed_partition_checkpoint_only<C: KzgCurve>(
+  config: &KzgConfig<C>,
+  compiled: &MultiStarkCircuit<CurveScalar<C>>,
   index: usize,
   dir: &Path,
-) -> Result<FixedSetup> {
+) -> Result<FixedSetup<C>> {
   let meta = dir.join(format!("setup-{index}.bin"));
   let fixed = dir.join(format!("fixed-{index}.bin"));
   if meta.exists() && fixed.exists() {
-    let (circuit, commitment): (Circuit<Scalar>, KzgCommitment) =
+    let (circuit, commitment): (Circuit<CurveScalar<C>>, KzgCommitment<C>) =
       storage::load(&meta)?;
     if compiled.trace_dimensions(index)
       != Some((circuit.preprocessed_height, circuit.main_width))
@@ -540,7 +560,7 @@ fn fixed_partition_checkpoint_only(
         "setup checkpoint dimensions differ from the compiled circuit".into(),
       );
     }
-    let data = read_checkpoint(&fixed)?;
+    let data = read_checkpoint::<C>(&fixed)?;
     let (actual, _) = KzgProverData::concatenate([data]);
     if actual != commitment {
       return Err(
@@ -575,12 +595,12 @@ fn fixed_partition_checkpoint_only(
   Ok((circuit, commitment))
 }
 
-fn fixed_partition(
-  config: &KzgConfig,
-  compiled: &MultiStarkCircuit<Scalar>,
+fn fixed_partition<C: KzgCurve>(
+  config: &KzgConfig<C>,
+  compiled: &MultiStarkCircuit<CurveScalar<C>>,
   index: usize,
   preprocessing: Option<&Path>,
-) -> Result<(Circuit<Scalar>, KzgProverData)> {
+) -> Result<(Circuit<CurveScalar<C>>, KzgProverData<C>)> {
   let paths = preprocessing.map(|dir| {
     (
       dir.join(format!("setup-{index}.bin")),
@@ -591,7 +611,7 @@ fn fixed_partition(
     && meta.exists()
     && fixed.exists()
   {
-    let (circuit, commitment): (Circuit<Scalar>, KzgCommitment) =
+    let (circuit, commitment): (Circuit<CurveScalar<C>>, KzgCommitment<C>) =
       storage::load(meta)?;
     if compiled.trace_dimensions(index)
       != Some((circuit.preprocessed_height, circuit.main_width))
@@ -600,7 +620,7 @@ fn fixed_partition(
         "setup checkpoint dimensions differ from the compiled circuit".into(),
       );
     }
-    let data = read_checkpoint(fixed)?;
+    let data = read_checkpoint::<C>(fixed)?;
     let (actual, data) = KzgProverData::concatenate([data]);
     if actual != commitment {
       return Err(
@@ -634,7 +654,7 @@ fn fixed_partition(
     };
     storage::persist(&temp, &fixed)?;
     storage::save(&meta, &(&circuit, &commitment))?;
-    let data = crate::kzg::pcs::KzgPcs::open_streamed_checkpoint(
+    let data = crate::kzg::pcs::KzgPcs::<C>::open_streamed_checkpoint(
       &fixed, domain, commitment, columns,
     )?;
     return Ok((circuit, data));
@@ -678,7 +698,7 @@ fn fixed_partition(
     storage::persist(&temp, &fixed)?;
     if !cfg!(feature = "cuda") {
       drop(data);
-      data = read_checkpoint(&fixed)?;
+      data = read_checkpoint::<C>(&fixed)?;
     }
     storage::save(
       &meta,
@@ -689,14 +709,14 @@ fn fixed_partition(
 }
 
 /// CUDA needs host coefficients; CPU proving can stream them from disk.
-fn read_checkpoint(path: &Path) -> Result<KzgProverData> {
+fn read_checkpoint<C: KzgCurve>(path: &Path) -> Result<KzgProverData<C>> {
   Ok(if cfg!(feature = "cuda") {
-    KzgProverData::read_checkpoint(BufReader::with_capacity(
+    KzgProverData::<C>::read_checkpoint(BufReader::with_capacity(
       1 << 20,
       File::open(path)?,
     ))?
   } else {
-    KzgProverData::read_checkpoint_file(path)?
+    KzgProverData::<C>::read_checkpoint_file(path)?
   })
 }
 

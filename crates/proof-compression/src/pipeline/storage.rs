@@ -1,6 +1,9 @@
 //! Stage output files: bincode metadata and atomic file publication.
 use super::fixed_cache::Shape;
-use crate::kzg::Scalar;
+use crate::kzg::{
+  curve::{Bn254, KzgCurve},
+  field::CurveScalar,
+};
 use multi_stark::plonkish::MultiStarkCircuit;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
@@ -15,18 +18,19 @@ pub(crate) type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 /// The shape and public claims of a stage's proof, which the next stage
 /// needs to rebuild the verifier.
 #[derive(serde::Serialize, serde::Deserialize)]
-pub(crate) struct Manifest {
+#[serde(bound = "")]
+pub(crate) struct Manifest<C: KzgCurve = Bn254> {
   pub(crate) widths: Vec<usize>,
   pub(crate) heights: Vec<usize>,
-  pub(crate) claims: Vec<Vec<Scalar>>,
+  pub(crate) claims: Vec<Vec<CurveScalar<C>>>,
 }
 
-impl Manifest {
+impl<C: KzgCurve> Manifest<C> {
   /// The manifest of a compiled circuit, checked against the shape of a
   /// restored fixed-preprocessing cache entry when there is one.
   pub(crate) fn for_compiled(
-    compiled: &MultiStarkCircuit<Scalar>,
-    claims: Vec<Vec<Scalar>>,
+    compiled: &MultiStarkCircuit<CurveScalar<C>>,
+    claims: Vec<Vec<CurveScalar<C>>>,
     cached: Option<&Shape>,
   ) -> Result<Self> {
     let mut manifest = Self { widths: vec![], heights: vec![], claims };

@@ -30,7 +30,7 @@ struct SrsMsmWorkspace {
 
 } // namespace
 
-extern "C" int ix_kzg_srs_plan(int device, size_t count, uint32_t* window,
+IX_KZG_EXPORT int IX_KZG_SYM(srs_plan)(int device, size_t count, uint32_t* window,
                                           size_t* persistent, size_t* temporary) {
     try {
         if (!count || count > (size_t(1) << 24) || !window || !persistent || !temporary)
@@ -54,7 +54,7 @@ extern "C" int ix_kzg_srs_plan(int device, size_t count, uint32_t* window,
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
 
-extern "C" int ix_kzg_srs_upload(int device, const ArkAffine* input,
+IX_KZG_EXPORT int IX_KZG_SYM(srs_upload)(int device, const ArkAffine* input,
                                             size_t count, void** output) {
     ProfileRange range("kzg/srs-cache-upload");
     try {
@@ -93,7 +93,7 @@ extern "C" int ix_kzg_srs_upload(int device, const ArkAffine* input,
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
 
-extern "C" int ix_kzg_srs_destroy(int device, void* pointer) {
+IX_KZG_EXPORT int IX_KZG_SYM(srs_destroy)(int device, void* pointer) {
     try {
         const auto& gpu = device_gpu(device);
         auto* points = static_cast<SrsPoints*>(pointer);
@@ -106,7 +106,7 @@ extern "C" int ix_kzg_srs_destroy(int device, void* pointer) {
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
 
-extern "C" int ix_kzg_srs_workspace_create(int device, size_t count, void** output) {
+IX_KZG_EXPORT int IX_KZG_SYM(srs_workspace_create)(int device, size_t count, void** output) {
     try {
         if (!output || !count || count > (size_t(1) << 24)) return cudaErrorInvalidValue;
         *output = new SrsMsmWorkspace(device_gpu(device), count);
@@ -115,7 +115,7 @@ extern "C" int ix_kzg_srs_workspace_create(int device, size_t count, void** outp
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
 
-extern "C" int ix_kzg_srs_workspace_destroy(int device, void* pointer) {
+IX_KZG_EXPORT int IX_KZG_SYM(srs_workspace_destroy)(int device, void* pointer) {
     try {
         const auto& gpu = device_gpu(device);
         auto* workspace = static_cast<SrsMsmWorkspace*>(pointer);
@@ -127,7 +127,7 @@ extern "C" int ix_kzg_srs_workspace_destroy(int device, void* pointer) {
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
 
-extern "C" int ix_kzg_srs_msm(int device, void* workspace_pointer,
+IX_KZG_EXPORT int IX_KZG_SYM(srs_msm)(int device, void* workspace_pointer,
     const void* points_pointer, size_t point_offset, point_t* output,
     const fr_t* host_scalars, const void* polynomial, size_t scalar_offset,
     size_t count, const fr_t* normalization) {

@@ -3,7 +3,7 @@ use crate::support::parity_algebra as adapter;
 
 use ix_proof_compression::fri::AlgebraicInputs;
 use ix_proof_compression::fri::AlgebraicOutputs;
-use ix_proof_compression::fri::QuadraticValue as Q;
+use ix_proof_compression::fri::CubicValue as E;
 use ix_proof_compression::fri::constrain_algebraic_checks;
 use multi_stark::config::StarkGenericConfig;
 use multi_stark::eval::VarValues;
@@ -11,7 +11,6 @@ use multi_stark::p3_field::BasedVectorSpace;
 use multi_stark::p3_field::Field;
 use multi_stark::p3_field::PrimeCharacteristicRing;
 use multi_stark::p3_field::TwoAdicField;
-use multi_stark::p3_field::extension::BinomiallyExtendable;
 use multi_stark::plonkish::Assignment;
 use multi_stark::plonkish::Circuit;
 use multi_stark::plonkish::CircuitBuilder;
@@ -19,22 +18,23 @@ use multi_stark::plonkish::WitnessError;
 use multi_stark::prover::Proof;
 use multi_stark::system::System;
 use multi_stark::system::SystemWitness;
+use multi_stark::traits::ExtensionModulus;
 use multi_stark::traits::Pcs;
-use multi_stark::types::ExtVal;
-use multi_stark::types::GoldilocksBlake3Config;
+use multi_stark::types::ExtVal3;
+use multi_stark::types::GoldilocksBlake3V6Config;
 use multi_stark::types::Val;
 use p3_commit::PolynomialSpace;
 
-fn value(assignment: &Assignment<Val>, wire: Q) -> ExtVal {
-  ExtVal::from_basis_coefficients_fn(|i| assignment.value(wire.0[i]).unwrap())
+fn value(assignment: &Assignment<Val>, wire: E) -> ExtVal3 {
+  ExtVal3::from_basis_coefficients_fn(|i| assignment.value(wire.0[i]).unwrap())
 }
 
 fn assignment(
   circuit: &Circuit<Val>,
   inputs: &AlgebraicInputs,
-  proof: &Proof<GoldilocksBlake3Config>,
+  proof: &Proof<GoldilocksBlake3V6Config>,
   claim: &[Val],
-  challenges: [ExtVal; 4],
+  challenges: [ExtVal3; 4],
 ) -> Result<Assignment<Val>, WitnessError> {
   let mut witness = circuit.witness();
   adapter::assign(&mut witness, inputs, proof, &[claim], challenges)?;
@@ -44,10 +44,10 @@ fn assignment(
 /// Native oracle using the same primitives as System::verify, independent
 /// of the gadget implementation. Compare every graph node and constraint.
 fn check_intermediates(
-  system: &System<GoldilocksBlake3Config>,
-  proof: &Proof<GoldilocksBlake3Config>,
+  system: &System<GoldilocksBlake3V6Config>,
+  proof: &Proof<GoldilocksBlake3V6Config>,
   claims: &[&[Val]],
-  challenges: [ExtVal; 4],
+  challenges: [ExtVal3; 4],
   outputs: &AlgebraicOutputs,
   assignment: &Assignment<Val>,
 ) {
@@ -56,7 +56,7 @@ fn check_intermediates(
     .iter()
     .map(|claim| {
       let fingerprint =
-        claim.iter().rev().fold(ExtVal::ZERO, |acc, &v| acc * gamma + v);
+        claim.iter().rev().fold(ExtVal3::ZERO, |acc, &v| acc * gamma + v);
       (beta + fingerprint).inverse()
     })
     .sum();
@@ -89,10 +89,10 @@ fn check_intermediates(
       domain.next_point(zeta).unwrap()
     );
     let next_acc = proof.intermediate_accumulators[i];
-    let publics: Vec<ExtVal> = [beta, gamma, acc, next_acc]
+    let publics: Vec<ExtVal3> = [beta, gamma, acc, next_acc]
       .iter()
       .flat_map(|v| v.as_basis_coefficients_slice())
-      .map(|&v: &Val| ExtVal::from(v))
+      .map(|&v: &Val| ExtVal3::from(v))
       .collect();
     let empty = [vec![], vec![]];
     let preprocessed = system.preprocessed_indices[i]
@@ -122,8 +122,8 @@ fn check_intermediates(
     }
     let g = Val::two_adic_generator(usize::from(parity::LOG_HEIGHT));
     let norm = (Val::from_usize(parity::HEIGHT) * g).inverse();
-    let delta = std::array::from_fn::<_, 2, _>(|k| {
-      (publics[6 + k] - publics[4 + k]) * norm
+    let delta = std::array::from_fn::<_, 3, _>(|k| {
+      (publics[9 + k] - publics[6 + k]) * norm
     });
     let mut constraints = circuit.graph.constraint_values(&nodes);
     multi_stark::lookup::logup_constraint_values(
@@ -134,8 +134,8 @@ fn check_intermediates(
       &publics,
       &delta,
       sels.is_last_row,
-      <Val as BinomiallyExtendable<2>>::W,
-      2,
+      ExtensionModulus::<Val>::CubicTrinomial,
+      3,
       circuit.lookup_group_size,
       &mut constraints,
     );
@@ -144,17 +144,21 @@ fn check_intermediates(
       assert_eq!(value(assignment, wire), native);
     }
     let composition =
-      constraints.into_iter().fold(ExtVal::ZERO, |acc, c| acc * alpha + c);
+      constraints.into_iter().fold(ExtVal3::ZERO, |acc, c| acc * alpha + c);
     assert_eq!(value(assignment, output.composition), composition);
-    let basis =
-      <ExtVal as BasedVectorSpace<Val>>::ith_basis_element(1).unwrap();
+    let basis1 =
+      <ExtVal3 as BasedVectorSpace<Val>>::ith_basis_element(1).unwrap();
+    let basis2 =
+      <ExtVal3 as BasedVectorSpace<Val>>::ith_basis_element(2).unwrap();
     let power = zeta.exp_power_of_2(usize::from(parity::LOG_HEIGHT));
-    let quotient: ExtVal = proof.quotient_opened_values[i][0]
-      .as_chunks::<2>()
+    let quotient: ExtVal3 = proof.quotient_opened_values[i][0]
+      .as_chunks::<3>()
       .0
       .iter()
       .zip(power.powers())
-      .map(|(chunk, power)| (chunk[0] + basis * chunk[1]) * power)
+      .map(|(chunk, power)| {
+        (chunk[0] + basis1 * chunk[1] + basis2 * chunk[2]) * power
+      })
       .sum();
     assert_eq!(value(assignment, output.quotient), quotient);
     assert_eq!(composition * sels.inv_vanishing, quotient);
@@ -163,10 +167,10 @@ fn check_intermediates(
 }
 
 #[test]
-fn quadratic_gadgets_match_native_arithmetic_and_reject_zero_inverse() {
+fn cubic_gadgets_match_native_arithmetic_and_reject_zero_inverse() {
   let mut builder = CircuitBuilder::<Val>::new();
-  let a = Q::input(&mut builder, "a");
-  let b = Q::input(&mut builder, "b");
+  let a = E::input(&mut builder, "a");
+  let b = E::input(&mut builder, "b");
   let sum = a.add(&mut builder, b);
   let difference = a.sub(&mut builder, b);
   let product = a.mul(&mut builder, b);
@@ -174,12 +178,18 @@ fn quadratic_gadgets_match_native_arithmetic_and_reject_zero_inverse() {
   let power = a.exp_power_of_2(&mut builder, 7);
   let circuit = builder.finish();
   for i in 0..32 {
-    let a_value =
-      ExtVal::from_basis_coefficients_slice(&[Val::from_u32(i), Val::ONE])
-        .unwrap();
-    let b_value =
-      ExtVal::from_basis_coefficients_slice(&[Val::from_u32(2 * i), -Val::ONE])
-        .unwrap();
+    let a_value = ExtVal3::from_basis_coefficients_slice(&[
+      Val::from_u32(i),
+      Val::ONE,
+      Val::from_u32(3 * i + 2),
+    ])
+    .unwrap();
+    let b_value = ExtVal3::from_basis_coefficients_slice(&[
+      Val::from_u32(2 * i),
+      -Val::ONE,
+      Val::from_u32(i + 5),
+    ])
+    .unwrap();
     let mut witness = circuit.witness();
     adapter::set_extension(&mut witness, a, a_value).unwrap();
     adapter::set_extension(&mut witness, b, b_value).unwrap();
@@ -191,8 +201,8 @@ fn quadratic_gadgets_match_native_arithmetic_and_reject_zero_inverse() {
     assert_eq!(value(&assignment, power), a_value.exp_power_of_2(7));
   }
   let mut witness = circuit.witness();
-  adapter::set_extension(&mut witness, a, ExtVal::ZERO).unwrap();
-  adapter::set_extension(&mut witness, b, ExtVal::ONE).unwrap();
+  adapter::set_extension(&mut witness, a, ExtVal3::ZERO).unwrap();
+  adapter::set_extension(&mut witness, b, ExtVal3::ONE).unwrap();
   assert!(matches!(witness.generate(), Err(WitnessError::HintFailed { .. })));
 }
 
@@ -267,7 +277,7 @@ fn parity_algebra_rejects_tampered_claim_openings_accumulators_and_challenges()
   }
   for i in 0..2 {
     let mut wrong = proof.clone();
-    wrong.intermediate_accumulators[i] += ExtVal::ONE;
+    wrong.intermediate_accumulators[i] += ExtVal3::ONE;
     assert!(assignment(&circuit, &inputs, &wrong, &claim, challenges).is_err());
     for kind in 0..4 {
       let mut wrong = proof.clone();
@@ -277,7 +287,7 @@ fn parity_algebra_rejects_tampered_claim_openings_accumulators_and_challenges()
         2 => &mut wrong.preprocessed_opened_values.as_mut().unwrap()[i][0],
         _ => &mut wrong.quotient_opened_values[i][0],
       };
-      row[0] += ExtVal::ONE;
+      row[0] += ExtVal3::ONE;
       assert!(
         assignment(&circuit, &inputs, &wrong, &claim, challenges).is_err(),
         "circuit {i}, kind {kind}"
@@ -286,18 +296,18 @@ fn parity_algebra_rejects_tampered_claim_openings_accumulators_and_challenges()
   }
   for i in 0..4 {
     let mut wrong = challenges;
-    wrong[i] += ExtVal::ONE;
+    wrong[i] += ExtVal3::ONE;
     assert!(assignment(&circuit, &inputs, &proof, &claim, wrong).is_err());
   }
   // The vanishing denominator must be nonzero, not an unconstrained hint.
   let mut on_domain = challenges;
-  on_domain[3] = ExtVal::ONE;
+  on_domain[3] = ExtVal3::ONE;
   assert!(assignment(&circuit, &inputs, &proof, &claim, on_domain).is_err());
   // Explicitly pin this milestone's security boundary: corrupted FRI
   // data is invisible to the algebraic gadget and needs the PCS
   // constraints. Native verification does reject the same corruption.
   let mut bad_fri = proof.clone();
-  bad_fri.opening_proof.final_poly[0] += ExtVal::ONE;
+  bad_fri.opening_proof.final_poly[0] += ExtVal3::ONE;
   assert!(system.verify(&claim, &bad_fri).is_err());
   assert!(assignment(&circuit, &inputs, &bad_fri, &claim, challenges).is_ok());
 }
@@ -315,19 +325,20 @@ fn algebra_rejects_zero_ood_challenge_with_satisfied_openings() {
   constrain_algebraic_checks(&mut builder, &system.circuits, &[1], &inputs);
   let circuit = builder.finish();
   let imaginary =
-    ExtVal::from_basis_coefficients_slice(&[Val::ZERO, Val::ONE]).unwrap();
+    ExtVal3::from_basis_coefficients_slice(&[Val::ZERO, Val::ONE, Val::ZERO])
+      .unwrap();
   for (zeta, valid) in [
-    (ExtVal::ZERO, false),
-    (ExtVal::ONE, false),
-    (ExtVal::from_u8(2), true),
+    (ExtVal3::ZERO, false),
+    (ExtVal3::ONE, false),
+    (ExtVal3::from_u8(2), true),
     (imaginary, true),
   ] {
     let mut witness = circuit.witness();
     let c = inputs.challenges;
     for (wire, value) in [
-      (c.beta, ExtVal::from_u8(3)),
-      (c.gamma, ExtVal::from_u8(5)),
-      (c.alpha, ExtVal::from_u8(7)),
+      (c.beta, ExtVal3::from_u8(3)),
+      (c.gamma, ExtVal3::from_u8(5)),
+      (c.alpha, ExtVal3::from_u8(7)),
       (c.zeta, zeta),
     ] {
       adapter::set_extension(&mut witness, wire, value).unwrap();
@@ -343,7 +354,7 @@ fn algebra_rejects_zero_ood_challenge_with_satisfied_openings() {
         .chain(&opening.quotient)
         .chain(std::iter::once(&opening.accumulator))
       {
-        adapter::set_extension(&mut witness, wire, ExtVal::ZERO).unwrap();
+        adapter::set_extension(&mut witness, wire, ExtVal3::ZERO).unwrap();
       }
     }
     let result = witness.generate();
@@ -467,7 +478,7 @@ fn algebra_handles_selectors_next_rows_no_lookups_and_multiple_quotient_slices()
   check_intermediates(&system, &proof, &[], challenges, &outputs, &assignment);
   // Exercise the non-leading quotient slice independently of the first.
   let mut wrong = proof.clone();
-  wrong.quotient_opened_values[0][0][2] += ExtVal::ONE;
+  wrong.quotient_opened_values[0][0][3] += ExtVal3::ONE;
   let mut witness = circuit.witness();
   adapter::assign(&mut witness, &inputs, &wrong, &[], challenges).unwrap();
   assert!(witness.generate().is_err());
@@ -486,7 +497,7 @@ fn grouped_logup_coordinates_match_native_for_full_and_partial_groups() {
     let x = Expr::main(0);
     let pair = vec![x.clone(), x.clone() * x.clone()];
     let (system, key) = System::new(
-      GoldilocksBlake3Config::new(
+      GoldilocksBlake3V6Config::new(
         CommitmentParameters { log_blowup: 4, cap_height: 0 },
         FriParameters {
           num_queries: 2,
@@ -537,11 +548,11 @@ fn grouped_logup_coordinates_match_native_for_full_and_partial_groups() {
       for column in 0..system.circuits[0].stage_2_width {
         // Only the first accumulator carries across rows. Other
         // next-row columns are authenticated by PCS, not logUp.
-        if point == 1 && column >= 2 {
+        if point == 1 && column >= 3 {
           continue;
         }
         let mut forged = proof.clone();
-        forged.stage_2_opened_values[0][point][column] += ExtVal::ONE;
+        forged.stage_2_opened_values[0][point][column] += ExtVal3::ONE;
         assert!(
           assignment(&circuit, &inputs, &forged, &claim, challenges).is_err(),
           "group {group}, point {point}, column {column}"

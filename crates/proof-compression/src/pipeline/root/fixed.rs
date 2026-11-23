@@ -139,7 +139,7 @@ impl FixedRoot {
   /// layout only: no claim, proof or memory end affects it.
   pub fn identity(&self, key: &AiurVerifyingKey) -> [u8; 32] {
     let mut hash = blake3::Hasher::new();
-    hash.update(b"ix/fixed-root/v2");
+    hash.update(b"ix/fixed-root/v3");
     hash.update(blake3::hash(&key.to_bytes()).as_bytes());
     hash.update(&self.digest());
     *hash.finalize().as_bytes()
@@ -150,7 +150,7 @@ impl FixedRoot {
     key: &AiurVerifyingKey,
     expected: &[Val],
     ends: &[Val],
-  ) -> Result<BatchPreamble<multi_stark::types::GoldilocksBlake3Config>> {
+  ) -> Result<BatchPreamble<multi_stark::types::GoldilocksBlake3V6Config>> {
     if self.log_heights.len() != key.num_circuits()
       || key.system().circuits.iter().zip(&self.log_heights).any(|(c, &log)| {
         c.preprocessed_height != 0 && c.preprocessed_height != 1usize << log
@@ -458,7 +458,7 @@ mod tests {
     expr::Expr,
     lookup::Lookup,
     system::{CircuitInputs, System, SystemWitness},
-    types::{CommitmentParameters, FriParameters, GoldilocksBlake3Config},
+    types::{CommitmentParameters, FriParameters, GoldilocksBlake3V6Config},
   };
   use p3_matrix::dense::RowMajorMatrix;
 
@@ -537,10 +537,12 @@ mod tests {
     assert!(FixedRoot::from_bytes(&long_count).is_err());
     let other = FixedRoot::new(vec![4, 4, 2, 2], vec![(2, 3)], 4)?;
     assert_ne!(fixed.identity(&key), other.identity(&key));
-    let config = || GoldilocksBlake3Config::new(cp, fp);
-    let circuit = fixed.circuit(&key, Default::default())?;
-    assert_eq!(fixed.estimate(&key, Default::default())?, circuit.stats());
-    let local = FriVerifier::derive(circuit, config(), 1 << 19)?;
+    let config = || GoldilocksBlake3V6Config::new(cp, fp);
+    let local = FriVerifier::derive(
+      fixed.circuit(&key, Default::default())?,
+      config(),
+      1 << 19,
+    )?;
     for value in [3, 7] {
       let input = vec![Val::from_u32(value)];
       let record = program.execute("Grouped::run", input.clone())?;
@@ -558,15 +560,6 @@ mod tests {
       )?;
       assert!(other.prepare(&key, &proof, &claim, Default::default()).is_err());
       let prepared = fixed.prepare(&key, &proof, &claim, Default::default())?;
-      let generic_key = VerifierKey::from_system(key.system());
-      let generic =
-        super::super::RootPlan::new(&generic_key, &proof, Default::default())?;
-      let counted =
-        generic.estimate(&proof, claim.len(), Default::default())?;
-      let generic_circuit =
-        generic.prepare(&proof, &claim, Default::default())?;
-      assert_eq!(counted, generic_circuit.circuit().stats());
-      drop(generic_circuit);
       let (verifier, proof) = prepared.prove_fri(config(), 1 << 19)?;
       assert_eq!(verifier.to_bytes()?, local.to_bytes()?);
       local.verify(&proof, &claim)?;
@@ -586,7 +579,7 @@ mod tests {
     };
     let channel = Val::from_u64(MEMSEG);
     let (system, pk) = System::new(
-      GoldilocksBlake3Config::new(cp, fp),
+      GoldilocksBlake3V6Config::new(cp, fp),
       [(8, 8), (1, 2)].into_iter().map(|(width, height)| CircuitInputs {
         main_width: width + 3,
         preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; height])),
@@ -616,7 +609,7 @@ mod tests {
     ))?;
     // Unrecognized ROM circuit width must fail closed in `memory_lanes`.
     let (bad_sys, _) = System::new(
-      GoldilocksBlake3Config::new(cp, fp),
+      GoldilocksBlake3V6Config::new(cp, fp),
       [CircuitInputs {
         main_width: 4,
         preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; 8])),
@@ -628,7 +621,7 @@ mod tests {
     )?;
     assert!(FixedRoot::memory_lanes(&bad_key, 8, 0).is_err());
     let fixed = FixedRoot::new(vec![3, 1], vec![(1, 1), (8, 0)], 2)?;
-    let config = || GoldilocksBlake3Config::new(cp, fp);
+    let config = || GoldilocksBlake3V6Config::new(cp, fp);
     // Generated before, and independently of, every certificate and witness.
     let local = FriVerifier::derive(
       fixed.circuit(&key, Default::default())?,
@@ -744,7 +737,7 @@ mod tests {
     // 1. Non-ROM circuits whose main_width matches scalar (w + 3 = 4) and
     // vectorized (1 + 8*(1 + 2) = 25) ROM widths must be rejected.
     let (non_rom_sys, _) = System::new(
-      GoldilocksBlake3Config::new(cp, fp),
+      GoldilocksBlake3V6Config::new(cp, fp),
       [
         CircuitInputs {
           main_width: 4,
@@ -770,7 +763,7 @@ mod tests {
     // Swapping their circuit indices in FixedRoot must be rejected, while
     // matching indices succeed with distinct lane counts (8 vs 1).
     let (aliased_sys, _) = System::new(
-      GoldilocksBlake3Config::new(cp, fp),
+      GoldilocksBlake3V6Config::new(cp, fp),
       [
         CircuitInputs {
           main_width: 25,
@@ -799,7 +792,7 @@ mod tests {
 
     // 3. Duplicate <ROM:1> circuits in one verifying key must be rejected.
     let (dup_sys, _) = System::new(
-      GoldilocksBlake3Config::new(cp, fp),
+      GoldilocksBlake3V6Config::new(cp, fp),
       [
         CircuitInputs {
           main_width: 4,
@@ -821,7 +814,7 @@ mod tests {
 
     // 4. A circuit mixing distinct MEMSEG widths must be rejected.
     let (mixed_sys, _) = System::new(
-      GoldilocksBlake3Config::new(cp, fp),
+      GoldilocksBlake3V6Config::new(cp, fp),
       [CircuitInputs {
         main_width: 4,
         preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; 4])),

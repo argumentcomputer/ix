@@ -1,4 +1,5 @@
-//! Bounded, synchronous KZG operations on the visible sppark devices.
+//! Bounded, synchronous KZG operations on the visible sppark devices for both
+//! BN254 (`libix_bn254_cuda.so`) and BLS12-381 (`libix_bls12_381_cuda.so`).
 //!
 //! With this feature compiled, every proving operation above the size
 //! thresholds in the prover runs on the devices; only tiny shapes and
@@ -8,14 +9,14 @@
 //! a device lease; leases are per thread and refuse reentrant acquisition so
 //! Rayon work stealing cannot deadlock a worker on its own device.
 
-use super::curve::{Fq, Fr, G1Affine, G1Projective};
-use abi::{DEVICE_AFFINE_BYTES, FQ_LIMBS, MAX_FFT_LOG, ProjectiveLimbs};
-use ark_ff::{AdditiveGroup, BigInt, Field, Zero};
+use super::curve::{G1AffineOf, G1ProjectiveOf, KzgCurve};
+use ark_ff::{Field, Zero};
 use blst as _;
 use rayon::prelude::*;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::ffi::c_void;
+use std::marker::PhantomData;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
 mod abi;
@@ -25,6 +26,11 @@ pub(super) mod quotient;
 pub(super) mod srs_residency;
 #[cfg(test)]
 mod tests;
+
+#[doc(hidden)]
+pub use abi::CudaCurve;
+#[doc(hidden)]
+pub use srs_residency::Cache as SrsCache;
 
 // Conservative bound for point storage, upload staging, scalars, signed
 // digits and sorting scratch. Buckets use separate headroom; Fq coordinate
@@ -98,7 +104,8 @@ pub fn settings() -> &'static Settings {
 }
 
 #[repr(C)]
-struct FftJob {
+#[doc(hidden)]
+pub struct FftJob {
   input: *const [u64; 4],
   resident_input: *const c_void,
   output: *mut [u64; 4],
@@ -106,116 +113,19 @@ struct FftJob {
   resident_output: *mut *mut c_void,
 }
 
-unsafe extern "C" {
-  fn ix_kzg_range_push(name: *const std::ffi::c_char);
-  fn ix_kzg_range_pop();
-  fn ix_kzg_fft_batch(
-    device: i32,
-    jobs: *const FftJob,
-    job_count: usize,
-    lg: u32,
-    inverse: bool,
-    shift: *const [u64; 4],
-    slots: usize,
-  ) -> i32;
-  fn ix_kzg_polynomial_upload(
-    device: i32,
-    input: *const [u64; 4],
-    count: usize,
-    output: *mut *mut c_void,
-  ) -> i32;
-  fn ix_kzg_polynomial_destroy(device: i32, pointer: *mut c_void) -> i32;
-
-  fn ix_kzg_devices(count: *mut i32) -> i32;
-  fn ix_kzg_device_ordinal(index: i32, ordinal: *mut i32) -> i32;
-  fn ix_kzg_memory(device: i32, free: *mut usize, total: *mut usize) -> i32;
-  fn ix_kzg_msm_create(
-    device: i32,
-    out: *mut *mut c_void,
-    points: *const c_void,
-    count: usize,
-  ) -> i32;
-  fn ix_kzg_msm_invoke(
-    device: i32,
-    context: *mut c_void,
-    out: *mut ProjectiveLimbs,
-    scalars: *const [u64; 4],
-    count: usize,
-    normalization: *const [u64; 4],
-  ) -> i32;
-  fn ix_kzg_msm_invoke_resident(
-    device: i32,
-    context: *mut c_void,
-    out: *mut ProjectiveLimbs,
-    polynomial: *const c_void,
-    offset: usize,
-    count: usize,
-    normalization: *const [u64; 4],
-  ) -> i32;
-  fn ix_kzg_msm_destroy(device: i32, context: *mut c_void) -> i32;
-  #[cfg(test)]
-  fn ix_kzg_fft(
-    device: i32,
-    values: *mut [u64; 4],
-    lg: u32,
-    inverse: bool,
-    shift: *const [u64; 4],
-  ) -> i32;
-  #[cfg(test)]
-  fn ix_kzg_fft_from(
-    device: i32,
-    input: *const [u64; 4],
-    input_count: usize,
-    output: *mut [u64; 4],
-    lg: u32,
-    inverse: bool,
-    shift: *const [u64; 4],
-  ) -> i32;
-  fn ix_kzg_evaluate_resident(
-    device: i32,
-    coefficients: *const [u64; 4],
-    resident: *const c_void,
-    count: usize,
-    points: *const [u64; 4],
-    point_count: usize,
-    results: *mut [u64; 4],
-  ) -> i32;
-  fn ix_kzg_divide(
-    device: i32,
-    input: *const [u64; 4],
-    output: *mut [u64; 4],
-    count: usize,
-    z: *const [u64; 4],
-  ) -> i32;
-  fn ix_kzg_divide_resident(
-    device: i32,
-    input: *const [u64; 4],
-    count: usize,
-    z: *const [u64; 4],
-    output: *mut *mut c_void,
-  ) -> i32;
-  fn ix_kzg_polynomial_sample(
-    device: i32,
-    polynomial: *const c_void,
-    offset: usize,
-    count: usize,
-    samples: *mut [u64; 4],
-  ) -> i32;
-}
-
 /// An NVTX range on the calling host thread, closed when dropped.
-pub(super) struct ProfileRange(std::marker::PhantomData<std::rc::Rc<()>>);
+pub(super) struct ProfileRange<C: KzgCurve>(PhantomData<(std::rc::Rc<()>, C)>);
 
-impl ProfileRange {
+impl<C: KzgCurve> ProfileRange<C> {
   pub(super) fn new(name: &std::ffi::CStr) -> Self {
-    unsafe { ix_kzg_range_push(name.as_ptr()) };
-    Self(std::marker::PhantomData)
+    unsafe { C::ffi_range_push(name.as_ptr()) };
+    Self(PhantomData)
   }
 }
 
-impl Drop for ProfileRange {
+impl<C: KzgCurve> Drop for ProfileRange<C> {
   fn drop(&mut self) {
-    unsafe { ix_kzg_range_pop() };
+    unsafe { C::ffi_range_pop() };
   }
 }
 
@@ -223,7 +133,8 @@ fn check(code: i32, operation: &str) {
   assert_eq!(code, 0, "KZG CUDA {operation} failed (CUDA status {code})");
 }
 
-struct Devices {
+#[doc(hidden)]
+pub struct Devices {
   ids: Vec<i32>,
   busy: Mutex<Vec<bool>>,
   available: Condvar,
@@ -232,31 +143,29 @@ struct Devices {
   resident_limits: Vec<usize>,
 }
 
-static DEVICES: OnceLock<Devices> = OnceLock::new();
-
 thread_local! {
   static DEVICE_LEASES: Cell<usize> = const { Cell::new(0) };
 }
 
 impl Devices {
-  fn potential_budget(&self, index: usize) -> usize {
+  fn potential_budget<C: KzgCurve>(&self, index: usize) -> usize {
     let (mut free, mut total) = (0, 0);
     check(
-      unsafe { ix_kzg_memory(self.ids[index], &mut free, &mut total) },
+      unsafe { C::ffi_memory(self.ids[index], &mut free, &mut total) },
       "memory query",
     );
     free
-      .saturating_add(srs_residency::reclaimable(index))
+      .saturating_add(srs_residency::reclaimable::<C>(index))
       .saturating_sub(vram_reserve(total))
   }
 
-  fn get() -> &'static Self {
-    DEVICES.get_or_init(|| {
-      abi::validate();
+  fn get<C: KzgCurve>() -> &'static Self {
+    C::devices_slot().get_or_init(|| {
+      abi::validate::<C>();
       let settings = settings();
       let mut count = 0;
       // The FFI writes one integer and initializes sppark's device registry.
-      check(unsafe { ix_kzg_devices(&mut count) }, "device discovery");
+      check(unsafe { C::ffi_devices(&mut count) }, "device discovery");
       assert!(
         count > 0,
         "the KZG CUDA backend requires a visible compatible CUDA GPU (compiled SM architectures: {}); build without the cuda feature for host execution",
@@ -267,7 +176,7 @@ impl Devices {
           let mut ordinal = -1;
           // Logical sppark indices need not match CUDA ordinals on mixed hosts.
           check(
-            unsafe { ix_kzg_device_ordinal(index, &mut ordinal) },
+            unsafe { C::ffi_device_ordinal(index, &mut ordinal) },
             "device ordinal",
           );
           ordinal
@@ -277,7 +186,11 @@ impl Devices {
         settings.devices.clone().unwrap_or_else(|| supported.clone());
       assert!(!ids.is_empty(), "at least one KZG CUDA device is required");
       for (i, &id) in ids.iter().enumerate() {
-        assert!(supported.contains(&id), "unsupported KZG CUDA ordinal {id}; compiled SM architectures: {}", env!("IX_KZG_CUDA_COMPILED_ARCHS"));
+        assert!(
+          supported.contains(&id),
+          "unsupported KZG CUDA ordinal {id}; compiled SM architectures: {}",
+          env!("IX_KZG_CUDA_COMPILED_ARCHS")
+        );
         assert!(!ids[..i].contains(&id), "duplicate KZG CUDA ordinal {id}");
       }
       let chunk_points = settings.msm_chunk_points;
@@ -285,7 +198,10 @@ impl Devices {
         .iter()
         .map(|&id| {
           let (mut free, mut total) = (0, 0);
-          check(unsafe { ix_kzg_memory(id, &mut free, &mut total) }, "memory query");
+          check(
+            unsafe { C::ffi_memory(id, &mut free, &mut total) },
+            "memory query",
+          );
           let reserve = vram_reserve(total);
           settings
             .resident_limit_bytes
@@ -294,7 +210,13 @@ impl Devices {
             .min(free.saturating_sub(reserve))
         })
         .collect();
-      tracing::info!(curve = super::curve::NAME, ?ids, chunk_points, ?resident_limits, "KZG sppark CUDA backend");
+      tracing::info!(
+        curve = C::NAME,
+        ?ids,
+        chunk_points,
+        ?resident_limits,
+        "KZG sppark CUDA backend"
+      );
       Devices {
         busy: Mutex::new(vec![false; ids.len()]),
         resident_bytes: Mutex::new(vec![0; ids.len()]),
@@ -356,13 +278,13 @@ impl Devices {
     None
   }
 
-  fn reserve(&self, bytes: usize) -> Option<Reservation> {
+  fn reserve<C: KzgCurve>(&self, bytes: usize) -> Option<Reservation<C>> {
     let mut retained = self.resident_bytes.lock().unwrap();
     let index = (0..self.ids.len())
       .filter(|&i| bytes <= self.resident_limits[i].saturating_sub(retained[i]))
       .min_by_key(|&i| retained[i])?;
     retained[index] += bytes;
-    Some(Reservation { index, bytes })
+    Some(Reservation { index, bytes, _curve: PhantomData })
   }
 }
 
@@ -370,13 +292,13 @@ struct Device<'a> {
   devices: &'a Devices,
   index: usize,
   // Thread-local accounting requires release on the acquiring thread.
-  _thread: std::marker::PhantomData<std::rc::Rc<()>>,
+  _thread: PhantomData<std::rc::Rc<()>>,
 }
 
 impl<'a> Device<'a> {
   fn new(devices: &'a Devices, index: usize) -> Self {
     DEVICE_LEASES.set(DEVICE_LEASES.get() + 1);
-    Self { devices, index, _thread: std::marker::PhantomData }
+    Self { devices, index, _thread: PhantomData }
   }
 
   fn assert_unleased() {
@@ -384,19 +306,19 @@ impl<'a> Device<'a> {
     assert_eq!(DEVICE_LEASES.get(), 0, "reentrant KZG device lease");
   }
 
-  fn prepare_budget(&self, required: usize) -> bool {
-    srs_residency::prepare_budget(self, required)
+  fn prepare_budget<C: KzgCurve>(&self, required: usize) -> bool {
+    srs_residency::prepare_budget::<C>(self, required)
   }
 
   fn id(&self) -> i32 {
     self.devices.ids[self.index]
   }
 
-  fn budget(&self) -> usize {
+  fn budget<C: KzgCurve>(&self) -> usize {
     let (mut free, mut total) = (0, 0);
     // The lease excludes other KZG operations on these sppark streams.
     check(
-      unsafe { ix_kzg_memory(self.id(), &mut free, &mut total) },
+      unsafe { C::ffi_memory(self.id(), &mut free, &mut total) },
       "memory query",
     );
     free.saturating_sub(vram_reserve(total))
@@ -411,54 +333,62 @@ impl Drop for Device<'_> {
   }
 }
 
-struct Reservation {
+struct Reservation<C: KzgCurve> {
   index: usize,
   bytes: usize,
+  _curve: PhantomData<C>,
 }
 
-impl Drop for Reservation {
+impl<C: KzgCurve> Drop for Reservation<C> {
   fn drop(&mut self) {
-    Devices::get().resident_bytes.lock().unwrap()[self.index] -= self.bytes;
+    Devices::get::<C>().resident_bytes.lock().unwrap()[self.index] -=
+      self.bytes;
   }
 }
 
 /// Immutable device coefficients; every native use holds this device's lease.
 /// Host coefficients remain the recovery source when the residency budget is
 /// full.
-pub(super) struct ResidentPolynomial {
-  reservation: Reservation,
+pub(super) struct ResidentPolynomial<C: KzgCurve> {
+  reservation: Reservation<C>,
   context: usize,
 }
 
-impl Drop for ResidentPolynomial {
+impl<C: KzgCurve> Drop for ResidentPolynomial<C> {
   fn drop(&mut self) {
-    let device = Devices::get().acquire_at(self.reservation.index);
+    let device = Devices::get::<C>().acquire_at(self.reservation.index);
     // Native destruction waits for all streams before the budget is returned.
     let code = unsafe {
-      ix_kzg_polynomial_destroy(device.id(), self.context as *mut c_void)
+      C::ffi_polynomial_destroy(device.id(), self.context as *mut c_void)
     };
     if code != 0 {
-      tracing::error!(code, "KZG resident polynomial destruction failed");
+      tracing::error!(
+        curve = C::NAME,
+        code,
+        "KZG resident polynomial destruction failed"
+      );
     }
   }
 }
 
-pub(super) fn retain(coefficients: &[Fr]) -> Option<Arc<ResidentPolynomial>> {
+pub(super) fn retain<C: KzgCurve>(
+  coefficients: &[C::Fr],
+) -> Option<Arc<ResidentPolynomial<C>>> {
   if coefficients.len() < 1 << 16 {
     return None;
   }
-  let devices = Devices::get();
+  let devices = Devices::get::<C>();
   let reservation =
-    devices.reserve(coefficients.len().checked_mul(32).unwrap())?;
+    devices.reserve::<C>(coefficients.len().checked_mul(32).unwrap())?;
   let device = devices.acquire_at(reservation.index);
-  if !device.prepare_budget(reservation.bytes + (1 << 30)) {
+  if !device.prepare_budget::<C>(reservation.bytes + (1 << 30)) {
     return None;
   }
   let mut context = std::ptr::null_mut();
   // The native handle owns immutable storage and synchronizes its upload.
   check(
     unsafe {
-      ix_kzg_polynomial_upload(
+      C::ffi_polynomial_upload(
         device.id(),
         coefficients.as_ptr().cast(),
         coefficients.len(),
@@ -473,20 +403,20 @@ pub(super) fn retain(coefficients: &[Fr]) -> Option<Arc<ResidentPolynomial>> {
 /// Assign resident inputs to their owning device, balancing host inputs
 /// across the remaining queues. Each queue has at most two full-size working
 /// buffers.
-pub(super) fn fft_columns(
-  inputs: &[(&[Fr], Option<&ResidentPolynomial>)],
+pub(super) fn fft_columns<C: KzgCurve>(
+  inputs: &[(&[C::Fr], Option<&ResidentPolynomial<C>>)],
   lg: usize,
   inverse: bool,
-  shift: Fr,
-) -> Vec<Vec<Fr>> {
-  assert!(lg <= MAX_FFT_LOG, "unsupported KZG CUDA FFT domain");
+  shift: C::Fr,
+) -> Vec<Vec<C::Fr>> {
+  assert!(lg <= C::MAX_FFT_LOG, "unsupported KZG CUDA FFT domain");
   assert!(!shift.is_zero());
   let count = 1usize << lg;
   assert!(inputs.iter().all(|(input, _)| input.len() <= count));
   if inputs.is_empty() {
     return vec![];
   }
-  let devices = Devices::get();
+  let devices = Devices::get::<C>();
   let mut groups = vec![Vec::new(); devices.ids.len()];
   for (column, (_, resident)) in inputs.iter().enumerate() {
     if let Some(resident) = resident {
@@ -508,12 +438,12 @@ pub(super) fn fft_columns(
       let started = std::time::Instant::now();
       let device = devices.acquire_at(index);
       let wait_seconds = started.elapsed().as_secs_f64();
-      device.prepare_budget(count * 32 * group.len().min(2) + (1 << 30));
-      let workspace = device.budget().saturating_sub(1 << 30);
+      device.prepare_budget::<C>(count * 32 * group.len().min(2) + (1 << 30));
+      let workspace = device.budget::<C>().saturating_sub(1 << 30);
       let slots = (workspace / (count * 32)).min(2).min(group.len());
       assert!(slots > 0, "insufficient free VRAM for KZG FFT queue");
       let mut outputs: Vec<_> =
-        group.iter().map(|_| Vec::<Fr>::with_capacity(count)).collect();
+        group.iter().map(|_| Vec::<C::Fr>::with_capacity(count)).collect();
       let jobs: Vec<_> = group
         .iter()
         .zip(&mut outputs)
@@ -534,13 +464,13 @@ pub(super) fn fft_columns(
       // successful call initializes every field in each output allocation.
       check(
         unsafe {
-          ix_kzg_fft_batch(
+          C::ffi_fft_batch(
             device.id(),
-            jobs.as_ptr(),
+            jobs.as_ptr().cast(),
             jobs.len(),
             u32::try_from(lg).expect("domain log size"),
             inverse,
-            &shift.0.0,
+            C::fr_mont_limbs_ref(&shift),
             slots,
           )
         },
@@ -550,6 +480,7 @@ pub(super) fn fft_columns(
         unsafe { output.set_len(count) };
       }
       tracing::debug!(
+        curve = C::NAME,
         device = device.id(),
         columns = jobs.len(),
         elements = count,
@@ -570,22 +501,22 @@ pub(super) fn fft_columns(
 
 /// Interpolate owned columns in place on the host while retaining admitted
 /// device outputs. A native queue owns unfinished outputs until it drains.
-pub(super) fn interpolate_columns(
-  columns: Vec<Vec<Fr>>,
+pub(super) fn interpolate_columns<C: KzgCurve>(
+  columns: Vec<Vec<C::Fr>>,
   lg: usize,
-  shift: Fr,
-) -> (Vec<Vec<Fr>>, Vec<Option<Arc<ResidentPolynomial>>>) {
-  assert!(lg <= MAX_FFT_LOG, "unsupported KZG CUDA FFT domain");
+  shift: C::Fr,
+) -> (Vec<Vec<C::Fr>>, Vec<Option<Arc<ResidentPolynomial<C>>>>) {
+  assert!(lg <= C::MAX_FFT_LOG, "unsupported KZG CUDA FFT domain");
   assert!(!shift.is_zero());
   let count = 1usize << lg;
-  let devices = Devices::get();
+  let devices = Devices::get::<C>();
   let mut groups: Vec<Vec<_>> =
     (0..devices.ids.len()).map(|_| Vec::new()).collect();
   let width = columns.len();
   for (column, values) in columns.into_iter().enumerate() {
     assert_eq!(values.len(), count);
     let reservation =
-      if count >= 1 << 16 { devices.reserve(count * 32) } else { None };
+      if count >= 1 << 16 { devices.reserve::<C>(count * 32) } else { None };
     let index = reservation.as_ref().map_or_else(
       || (0..groups.len()).min_by_key(|&i| groups[i].len()).unwrap(),
       |r| r.index,
@@ -604,8 +535,9 @@ pub(super) fn interpolate_columns(
       // the two transient slots, even though their lifetimes overlap.
       let retained =
         group.iter().filter(|(_, _, r)| r.is_some()).count() * bytes;
-      device.prepare_budget(retained + bytes * group.len().min(2) + (1 << 30));
-      let budget = device.budget().saturating_sub(1 << 30);
+      device
+        .prepare_budget::<C>(retained + bytes * group.len().min(2) + (1 << 30));
+      let budget = device.budget::<C>().saturating_sub(1 << 30);
       if retained + bytes > budget {
         for (_, _, reservation) in &mut group {
           *reservation = None;
@@ -633,18 +565,19 @@ pub(super) fn interpolate_columns(
         .collect();
       let started = std::time::Instant::now();
       let code = unsafe {
-        ix_kzg_fft_batch(
+        C::ffi_fft_batch(
           device.id(),
-          jobs.as_ptr(),
+          jobs.as_ptr().cast(),
           jobs.len(),
           u32::try_from(lg).expect("domain log size"),
           true,
-          &shift.0.0,
+          C::fr_mont_limbs_ref(&shift),
           slots,
         )
       };
       check(code, "interpolation queue");
       tracing::debug!(
+        curve = C::NAME,
         device = device.id(),
         columns = group.len(),
         elements = count,
@@ -679,34 +612,37 @@ pub(super) fn interpolate_columns(
   (outputs, residents)
 }
 
-pub(super) fn msm(points: &[G1Affine], scalars: &[Fr]) -> G1Projective {
-  msm_chunked(points, scalars, Devices::get().chunk_points)
+pub(super) fn msm<C: KzgCurve>(
+  points: &[G1AffineOf<C>],
+  scalars: &[C::Fr],
+) -> G1ProjectiveOf<C> {
+  msm_chunked::<C>(points, scalars, Devices::get::<C>().chunk_points)
 }
 
-fn msm_chunked(
-  points: &[G1Affine],
-  scalars: &[Fr],
+fn msm_chunked<C: KzgCurve>(
+  points: &[G1AffineOf<C>],
+  scalars: &[C::Fr],
   chunk_limit: usize,
-) -> G1Projective {
-  msm_columns_chunked(points, &[scalars], chunk_limit).remove(0)
+) -> G1ProjectiveOf<C> {
+  msm_columns_chunked::<C>(points, &[scalars], chunk_limit).remove(0)
 }
 
-pub(super) fn msm_columns(
-  points: &[G1Affine],
-  columns: &[&[Fr]],
-) -> Vec<G1Projective> {
-  msm_columns_chunked(points, columns, Devices::get().chunk_points)
+pub(super) fn msm_columns<C: KzgCurve>(
+  points: &[G1AffineOf<C>],
+  columns: &[&[C::Fr]],
+) -> Vec<G1ProjectiveOf<C>> {
+  msm_columns_chunked::<C>(points, columns, Devices::get::<C>().chunk_points)
 }
 
-pub(super) fn msm_columns_resident(
-  points: &[G1Affine],
-  columns: &[(&[Fr], Option<&ResidentPolynomial>)],
-) -> Vec<G1Projective> {
+pub(super) fn msm_columns_resident<C: KzgCurve>(
+  points: &[G1AffineOf<C>],
+  columns: &[(&[C::Fr], Option<&ResidentPolynomial<C>>)],
+) -> Vec<G1ProjectiveOf<C>> {
   assert!(columns.iter().all(|(c, _)| c.len() == points.len()));
   if points.is_empty() {
-    return vec![G1Projective::zero(); columns.len()];
+    return vec![G1ProjectiveOf::<C>::zero(); columns.len()];
   }
-  let devices = Devices::get();
+  let devices = Devices::get::<C>();
   let mut groups = vec![Vec::new(); devices.ids.len()];
   let mut host = Vec::new();
   for (i, (_, resident)) in columns.iter().enumerate() {
@@ -722,28 +658,28 @@ pub(super) fn msm_columns_resident(
     .filter(|(_, g)| !g.is_empty())
     .map(|(index, group)| {
       let device = devices.acquire_at(index);
-      device.prepare_budget(
+      device.prepare_budget::<C>(
         devices.chunk_points.min(points.len()) * MSM_BYTES_PER_POINT
           + (1 << 30),
       );
-      let chunk = devices
-        .chunk_points
-        .min(device.budget().saturating_sub(1 << 30) / MSM_BYTES_PER_POINT);
+      let chunk = devices.chunk_points.min(
+        device.budget::<C>().saturating_sub(1 << 30) / MSM_BYTES_PER_POINT,
+      );
       assert!(chunk > 0, "insufficient free VRAM for KZG MSM");
-      let mut sums = vec![G1Projective::zero(); group.len()];
+      let mut sums = vec![G1ProjectiveOf::<C>::zero(); group.len()];
       for (part, points) in points.chunks(chunk).enumerate() {
-        let resident_points = upload_msm_points(&device, points);
+        let resident_points = upload_msm_points::<C>(&device, points);
         let start = part * chunk;
         for (sum, &column) in sums.iter_mut().zip(&group) {
           let (coefficients, resident) = columns[column];
           let input = &coefficients[start..start + points.len()];
-          let normalization = msm_normalization(input);
-          let mut out = [[0; FQ_LIMBS]; 3];
+          let normalization = msm_normalization::<C>(input);
+          let mut out = [C::FqLimbs::default(); 3];
           // Resident coefficients are read-only. Normalization uses a
           // bounded temporary on the same device as this SRS chunk.
           check(
             unsafe {
-              ix_kzg_msm_invoke_resident(
+              C::ffi_msm_invoke_resident(
                 device.id(),
                 resident_points.context,
                 &mut out,
@@ -752,49 +688,51 @@ pub(super) fn msm_columns_resident(
                 points.len(),
                 normalization
                   .as_ref()
-                  .map_or(std::ptr::null(), |(_, inverse)| &inverse.0.0),
+                  .map_or(std::ptr::null(), |(_, inverse)| {
+                    C::fr_mont_limbs_ref(inverse)
+                  }),
               )
             },
             "resident scalar MSM",
           );
-          let point = projective(out);
+          let point = projective::<C>(out);
           *sum += normalization.map_or(point, |(scale, _)| point * scale);
         }
       }
       group.into_iter().zip(sums).collect::<Vec<_>>()
     })
     .collect();
-  let mut sums = vec![G1Projective::zero(); columns.len()];
+  let mut sums = vec![G1ProjectiveOf::<C>::zero(); columns.len()];
   for (i, point) in parts.into_iter().flatten() {
     sums[i] = point;
   }
   if !host.is_empty() {
     let inputs: Vec<_> = host.iter().map(|&i| columns[i].0).collect();
-    for (i, point) in host.into_iter().zip(msm_columns(points, &inputs)) {
+    for (i, point) in host.into_iter().zip(msm_columns::<C>(points, &inputs)) {
       sums[i] = point;
     }
   }
   sums
 }
 
-fn projective(limbs: ProjectiveLimbs) -> G1Projective {
-  G1Projective::new_unchecked(
-    Fq::new_unchecked(BigInt(limbs[0])),
-    Fq::new_unchecked(BigInt(limbs[1])),
-    Fq::new_unchecked(BigInt(limbs[2])),
+fn projective<C: KzgCurve>(limbs: [C::FqLimbs; 3]) -> G1ProjectiveOf<C> {
+  G1ProjectiveOf::<C>::new_unchecked(
+    C::fq_from_mont_limbs_unchecked(limbs[0]),
+    C::fq_from_mont_limbs_unchecked(limbs[1]),
+    C::fq_from_mont_limbs_unchecked(limbs[2]),
   )
 }
 
-fn upload_msm_points<'lease, 'devices>(
+fn upload_msm_points<'lease, 'devices, C: KzgCurve>(
   device: &'lease Device<'devices>,
-  points: &[G1Affine],
-) -> ResidentMsm<'lease, 'devices> {
+  points: &[G1AffineOf<C>],
+) -> ResidentMsm<'lease, 'devices, C> {
   let mut context = std::ptr::null_mut();
   // The layout-checked arkworks storage stays borrowed through the upload.
   // Native conversion preserves infinity without a polynomial-sized host copy.
   check(
     unsafe {
-      ix_kzg_msm_create(
+      C::ffi_msm_create(
         device.id(),
         &mut context,
         points.as_ptr().cast(),
@@ -804,32 +742,35 @@ fn upload_msm_points<'lease, 'devices>(
     "MSM point upload",
   );
   assert!(!context.is_null());
-  ResidentMsm { device, context }
+  ResidentMsm { device, context, _curve: PhantomData }
 }
 
-struct ResidentMsm<'lease, 'devices> {
+struct ResidentMsm<'lease, 'devices, C: KzgCurve> {
   device: &'lease Device<'devices>,
   context: *mut c_void,
+  _curve: PhantomData<C>,
 }
 
-impl Drop for ResidentMsm<'_, '_> {
+impl<C: KzgCurve> Drop for ResidentMsm<'_, '_, C> {
   fn drop(&mut self) {
     // The borrowed lease outlives the native points and bucket workspace.
-    unsafe { ix_kzg_msm_destroy(self.device.id(), self.context) };
+    unsafe { C::ffi_msm_destroy(self.device.id(), self.context) };
   }
 }
 
-fn msm_normalization(scalars: &[Fr]) -> Option<(Fr, Fr)> {
+fn msm_normalization<C: KzgCurve>(scalars: &[C::Fr]) -> Option<(C::Fr, C::Fr)> {
   if scalars.len() < 4096 {
     return None;
   }
-  sample_normalization(
+  sample_normalization::<C>(
     (0usize..128)
       .map(|i| scalars[i.wrapping_mul(0x9e37_79b9_7f4a_7c15) % scalars.len()]),
   )
 }
 
-fn sample_normalization(samples: impl Iterator<Item = Fr>) -> Option<(Fr, Fr)> {
+fn sample_normalization<C: KzgCurve>(
+  samples: impl Iterator<Item = C::Fr>,
+) -> Option<(C::Fr, C::Fr)> {
   let mut counts = HashMap::new();
   for value in samples {
     if !value.is_zero() {
@@ -838,7 +779,7 @@ fn sample_normalization(samples: impl Iterator<Item = Fr>) -> Option<(Fr, Fr)> {
   }
   let (scale, count) =
     counts.into_iter().max_by_key(|&(scale, count)| (count, scale))?;
-  if count < 16 || scale == Fr::ONE || scale == -Fr::ONE {
+  if count < 16 || scale == C::FR_ONE || scale == -C::FR_ONE {
     return None;
   }
   // Equal nonunit scalars overload one serial Pippenger bucket per window.
@@ -847,42 +788,43 @@ fn sample_normalization(samples: impl Iterator<Item = Fr>) -> Option<(Fr, Fr)> {
   Some((scale, scale.inverse().unwrap()))
 }
 
-fn msm_columns_chunked(
-  points: &[G1Affine],
-  columns: &[&[Fr]],
+fn msm_columns_chunked<C: KzgCurve>(
+  points: &[G1AffineOf<C>],
+  columns: &[&[C::Fr]],
   chunk_limit: usize,
-) -> Vec<G1Projective> {
+) -> Vec<G1ProjectiveOf<C>> {
   assert!(columns.iter().all(|column| column.len() == points.len()));
   if points.is_empty() || columns.is_empty() {
-    return vec![G1Projective::zero(); columns.len()];
+    return vec![G1ProjectiveOf::<C>::zero(); columns.len()];
   }
   assert!(chunk_limit > 0);
-  let devices = Devices::get();
+  let devices = Devices::get::<C>();
   let chunk = points.len().div_ceil(devices.ids.len()).min(chunk_limit).max(1);
   points
     .par_chunks(chunk)
     .enumerate()
     .map(|(chunk_index, points)| {
       let device = devices.acquire();
-      device.prepare_budget(points.len() * MSM_BYTES_PER_POINT + (1 << 30));
+      device
+        .prepare_budget::<C>(points.len() * MSM_BYTES_PER_POINT + (1 << 30));
       // The largest window uses < 1 GiB of buckets. Resident affine points,
       // scalars, signed digits and sorting scratch fit in 384 B/point.
       let admitted =
-        device.budget().saturating_sub(1 << 30) / MSM_BYTES_PER_POINT;
+        device.budget::<C>().saturating_sub(1 << 30) / MSM_BYTES_PER_POINT;
       assert!(admitted > 0, "insufficient free VRAM for KZG MSM");
-      let mut sums = vec![G1Projective::zero(); columns.len()];
+      let mut sums = vec![G1ProjectiveOf::<C>::zero(); columns.len()];
       for (part, points) in points.chunks(admitted).enumerate() {
         let start = chunk_index * chunk + part * admitted;
         let count = points.len();
-        let resident = upload_msm_points(&device, points);
+        let resident = upload_msm_points::<C>(&device, points);
         for (sum, column) in sums.iter_mut().zip(columns) {
           let input = &column[start..start + count];
-          let normalization = msm_normalization(input);
-          let mut out = [[0; FQ_LIMBS]; 3];
+          let normalization = msm_normalization::<C>(input);
+          let mut out = [C::FqLimbs::default(); 3];
           // The resident point chunk is immutable across all column calls.
           check(
             unsafe {
-              ix_kzg_msm_invoke(
+              C::ffi_msm_invoke(
                 device.id(),
                 resident.context,
                 &mut out,
@@ -890,12 +832,14 @@ fn msm_columns_chunked(
                 count,
                 normalization
                   .as_ref()
-                  .map_or(std::ptr::null(), |(_, inverse)| &inverse.0.0),
+                  .map_or(std::ptr::null(), |(_, inverse)| {
+                    C::fr_mont_limbs_ref(inverse)
+                  }),
               )
             },
             "MSM",
           );
-          let point = projective(out);
+          let point = projective::<C>(out);
           *sum += match normalization {
             Some((scale, _)) => point * scale,
             None => point,
@@ -905,7 +849,7 @@ fn msm_columns_chunked(
       sums
     })
     .reduce(
-      || vec![G1Projective::zero(); columns.len()],
+      || vec![G1ProjectiveOf::<C>::zero(); columns.len()],
       |mut sums, parts| {
         for (sum, part) in sums.iter_mut().zip(parts) {
           *sum += part;
@@ -916,10 +860,14 @@ fn msm_columns_chunked(
 }
 
 #[cfg(test)]
-pub(super) fn fft(values: &mut [Fr], inverse: bool, shift: Fr) {
+pub(super) fn fft<C: KzgCurve>(
+  values: &mut [C::Fr],
+  inverse: bool,
+  shift: C::Fr,
+) {
   assert!(values.len().is_power_of_two());
   assert!(
-    values.len().ilog2() as usize <= MAX_FFT_LOG,
+    values.len().ilog2() as usize <= C::MAX_FFT_LOG,
     "unsupported KZG CUDA FFT domain"
   );
   assert!(!shift.is_zero());
@@ -927,10 +875,11 @@ pub(super) fn fft(values: &mut [Fr], inverse: bool, shift: Fr) {
     return;
   }
   let started = std::time::Instant::now();
-  let device = Devices::get().acquire();
+  let device = Devices::get::<C>().acquire();
   let wait_seconds = started.elapsed().as_secs_f64();
   assert!(
-    device.prepare_budget(values.len().checked_mul(32).unwrap() + (1 << 30)),
+    device
+      .prepare_budget::<C>(values.len().checked_mul(32).unwrap() + (1 << 30)),
     "insufficient free VRAM for KZG FFT"
   );
   let shift = if inverse { shift.inverse().unwrap() } else { shift };
@@ -941,18 +890,19 @@ pub(super) fn fft(values: &mut [Fr], inverse: bool, shift: Fr) {
     // The asserted layout covers every byte of each field. The exclusive
     // slice remains borrowed until all native transfers have completed.
     unsafe {
-      ix_kzg_fft(
+      C::ffi_fft(
         device.id(),
         values.as_mut_ptr().cast(),
         values.len().ilog2(),
         inverse,
-        &shift.0.0,
+        C::fr_mont_limbs_ref(&shift),
       )
     },
     "FFT",
   );
   let cuda_seconds = started.elapsed().as_secs_f64();
   tracing::debug!(
+    curve = C::NAME,
     device = device.id(),
     elements = values.len(),
     wait_seconds,
@@ -962,29 +912,33 @@ pub(super) fn fft(values: &mut [Fr], inverse: bool, shift: Fr) {
 }
 
 #[cfg(test)]
-pub(super) fn fft_from(coefficients: &[Fr], lg: usize, shift: Fr) -> Vec<Fr> {
-  assert!(lg <= MAX_FFT_LOG, "unsupported KZG CUDA FFT domain");
+pub(super) fn fft_from<C: KzgCurve>(
+  coefficients: &[C::Fr],
+  lg: usize,
+  shift: C::Fr,
+) -> Vec<C::Fr> {
+  assert!(lg <= C::MAX_FFT_LOG, "unsupported KZG CUDA FFT domain");
   assert!(!shift.is_zero());
   let count = 1usize << lg;
   assert!(coefficients.len() <= count);
-  let device = Devices::get().acquire();
+  let device = Devices::get::<C>().acquire();
   assert!(
-    device.prepare_budget(count * 32 + (1 << 30)),
+    device.prepare_budget::<C>(count * 32 + (1 << 30)),
     "insufficient free VRAM for KZG FFT"
   );
-  let mut values = Vec::<Fr>::with_capacity(count);
+  let mut values = Vec::<C::Fr>::with_capacity(count);
   // Input limbs have the checked layout above. CUDA initializes the entire
   // output before its length is set; failure leaves an empty, droppable Vec.
   check(
     unsafe {
-      ix_kzg_fft_from(
+      C::ffi_fft_from(
         device.id(),
         coefficients.as_ptr().cast(),
         coefficients.len(),
         values.spare_capacity_mut().as_mut_ptr().cast(),
         u32::try_from(lg).expect("domain log size"),
         false,
-        &shift.0.0,
+        C::fr_mont_limbs_ref(&shift),
       )
     },
     "out-of-place FFT",
@@ -994,25 +948,28 @@ pub(super) fn fft_from(coefficients: &[Fr], lg: usize, shift: Fr) -> Vec<Fr> {
 }
 
 #[cfg(test)]
-pub(super) fn evaluate_many(coefficients: &[Fr], points: &[Fr]) -> Vec<Fr> {
-  evaluate_resident(coefficients, None, points)
+pub(super) fn evaluate_many<C: KzgCurve>(
+  coefficients: &[C::Fr],
+  points: &[C::Fr],
+) -> Vec<C::Fr> {
+  evaluate_resident::<C>(coefficients, None, points)
 }
 
-pub(super) fn evaluate_resident(
-  coefficients: &[Fr],
-  resident: Option<&ResidentPolynomial>,
-  points: &[Fr],
-) -> Vec<Fr> {
+pub(super) fn evaluate_resident<C: KzgCurve>(
+  coefficients: &[C::Fr],
+  resident: Option<&ResidentPolynomial<C>>,
+  points: &[C::Fr],
+) -> Vec<C::Fr> {
   if points.is_empty() {
     return vec![];
   }
   if coefficients.len() < 2 {
     return vec![
-      coefficients.first().copied().unwrap_or(Fr::ZERO);
+      coefficients.first().copied().unwrap_or(C::FR_ZERO);
       points.len()
     ];
   }
-  let devices = Devices::get();
+  let devices = Devices::get::<C>();
   let device = resident.map_or_else(
     || devices.acquire(),
     |r| devices.acquire_at(r.reservation.index),
@@ -1030,15 +987,15 @@ pub(super) fn evaluate_resident(
     .and_then(|bytes| bytes.checked_add(1 << 30))
     .expect("KZG evaluation size overflow");
   assert!(
-    device.prepare_budget(bytes),
+    device.prepare_budget::<C>(bytes),
     "insufficient free VRAM for KZG evaluation"
   );
-  let mut results = Vec::<Fr>::with_capacity(points.len());
+  let mut results = Vec::<C::Fr>::with_capacity(points.len());
   // Coefficients are immutable for the entire call. The resident handle is
   // tied to its owning device and results keep point order, with repeats.
   check(
     unsafe {
-      ix_kzg_evaluate_resident(
+      C::ffi_evaluate_resident(
         device.id(),
         coefficients.as_ptr().cast(),
         resident.map_or(std::ptr::null(), |r| r.context as *const c_void),
@@ -1054,28 +1011,32 @@ pub(super) fn evaluate_resident(
   results
 }
 
-pub(super) fn divide(coefficients: &[Fr], z: Fr) -> Vec<Fr> {
+pub(super) fn divide<C: KzgCurve>(
+  coefficients: &[C::Fr],
+  z: C::Fr,
+) -> Vec<C::Fr> {
   if coefficients.len() < 2 {
     return vec![];
   }
   // Parallel first-touch keeps page faults out of the pinned-ring download.
   let mut values =
-    super::pcs::generate_buffer(coefficients.len() - 1, |_| Fr::ZERO);
-  let device = Devices::get().acquire();
+    super::pcs::generate_buffer(coefficients.len() - 1, |_| C::FR_ZERO);
+  let device = Devices::get::<C>().acquire();
   assert!(
-    device
-      .prepare_budget(coefficients.len().checked_mul(32).unwrap() + (1 << 30)),
+    device.prepare_budget::<C>(
+      coefficients.len().checked_mul(32).unwrap() + (1 << 30)
+    ),
     "insufficient free VRAM for KZG division"
   );
   // The call synchronizes its copies and kernels before releasing buffers.
   check(
     unsafe {
-      ix_kzg_divide(
+      C::ffi_divide(
         device.id(),
         coefficients.as_ptr().cast(),
         values.as_mut_ptr().cast(),
         coefficients.len(),
-        &z.0.0,
+        C::fr_mont_limbs_ref(&z),
       )
     },
     "polynomial division",
@@ -1083,61 +1044,68 @@ pub(super) fn divide(coefficients: &[Fr], z: Fr) -> Vec<Fr> {
   values
 }
 
-pub(super) fn single_device_opening(
-  points: &[G1Affine],
-  coefficients: &[Fr],
-  z: Fr,
-) -> Option<G1Projective> {
+pub(super) fn single_device_opening<C: KzgCurve>(
+  points: &[G1AffineOf<C>],
+  coefficients: &[C::Fr],
+  z: C::Fr,
+) -> Option<G1ProjectiveOf<C>> {
   // A quotient on one card loses the multi-device MSM partitioning benefit.
-  if Devices::get().ids.len() != 1 {
+  if Devices::get::<C>().ids.len() != 1 {
     return None;
   }
-  divide_and_msm(points, coefficients, z)
+  divide_and_msm::<C>(points, coefficients, z)
 }
 
 /// Divide and commit without a polynomial-sized download or scalar re-upload.
 /// The quotient and its MSM scratch must fit together under one device lease.
-fn divide_and_msm(
-  points: &[G1Affine],
-  coefficients: &[Fr],
-  z: Fr,
-) -> Option<G1Projective> {
-  divide_and_msm_chunked(points, coefficients, z, Devices::get().chunk_points)
+fn divide_and_msm<C: KzgCurve>(
+  points: &[G1AffineOf<C>],
+  coefficients: &[C::Fr],
+  z: C::Fr,
+) -> Option<G1ProjectiveOf<C>> {
+  divide_and_msm_chunked::<C>(
+    points,
+    coefficients,
+    z,
+    Devices::get::<C>().chunk_points,
+  )
 }
 
-fn divide_and_msm_chunked(
-  points: &[G1Affine],
-  coefficients: &[Fr],
-  z: Fr,
+fn divide_and_msm_chunked<C: KzgCurve>(
+  points: &[G1AffineOf<C>],
+  coefficients: &[C::Fr],
+  z: C::Fr,
   chunk_limit: usize,
-) -> Option<G1Projective> {
+) -> Option<G1ProjectiveOf<C>> {
   assert_eq!(points.len(), coefficients.len().saturating_sub(1));
   if points.is_empty() {
-    return Some(G1Projective::zero());
+    return Some(G1ProjectiveOf::<C>::zero());
   }
-  let devices = Devices::get();
+  let devices = Devices::get::<C>();
   let device = devices.acquire();
-  device.prepare_budget(
+  device.prepare_budget::<C>(
     coefficients.len().checked_mul(32)?.checked_add(1 << 30)?.checked_add(
       chunk_limit.min(points.len()).checked_mul(MSM_BYTES_PER_POINT)?,
     )?,
   );
-  let chunk = opening_chunk(coefficients.len(), chunk_limit, device.budget())?;
+  let chunk =
+    opening_chunk(coefficients.len(), chunk_limit, device.budget::<C>())?;
   let mut context = std::ptr::null_mut();
   check(
     unsafe {
-      ix_kzg_divide_resident(
+      C::ffi_divide_resident(
         device.id(),
         coefficients.as_ptr().cast(),
         coefficients.len(),
-        &z.0.0,
+        C::fr_mont_limbs_ref(&z),
         &mut context,
       )
     },
     "resident polynomial division",
   );
-  let quotient = LeasedPolynomial { device: &device, context };
-  Some(commit_leased_quotient(&quotient, points, chunk))
+  let quotient =
+    LeasedPolynomial::<C> { device: &device, context, _curve: PhantomData };
+  Some(commit_leased_quotient::<C>(&quotient, points, chunk))
 }
 
 fn opening_chunk(
@@ -1150,20 +1118,20 @@ fn opening_chunk(
   (chunk > 0).then_some(chunk)
 }
 
-fn commit_leased_quotient(
-  quotient: &LeasedPolynomial<'_, '_>,
-  points: &[G1Affine],
+fn commit_leased_quotient<C: KzgCurve>(
+  quotient: &LeasedPolynomial<'_, '_, C>,
+  points: &[G1AffineOf<C>],
   chunk: usize,
-) -> G1Projective {
+) -> G1ProjectiveOf<C> {
   let device = quotient.device;
-  let mut result = G1Projective::zero();
+  let mut result = G1ProjectiveOf::<C>::zero();
   for (part, points) in points.chunks(chunk).enumerate() {
     let offset = part * chunk;
-    let mut samples = [Fr::ZERO; 128];
+    let mut samples = [C::FR_ZERO; 128];
     let normalization = if points.len() >= 4096 {
       check(
         unsafe {
-          ix_kzg_polynomial_sample(
+          C::ffi_polynomial_sample(
             device.id(),
             quotient.context,
             offset,
@@ -1173,46 +1141,51 @@ fn commit_leased_quotient(
         },
         "resident scalar sample",
       );
-      sample_normalization(samples.into_iter())
+      sample_normalization::<C>(samples.into_iter())
     } else {
       None
     };
-    let resident_points = upload_msm_points(device, points);
-    let mut out = [[0; FQ_LIMBS]; 3];
+    let resident_points = upload_msm_points::<C>(device, points);
+    let mut out = [C::FqLimbs::default(); 3];
     check(
       unsafe {
-        ix_kzg_msm_invoke_resident(
+        C::ffi_msm_invoke_resident(
           device.id(),
           resident_points.context,
           &mut out,
           quotient.context,
           offset,
           points.len(),
-          normalization
-            .as_ref()
-            .map_or(std::ptr::null(), |(_, inverse)| &inverse.0.0),
+          normalization.as_ref().map_or(std::ptr::null(), |(_, inverse)| {
+            C::fr_mont_limbs_ref(inverse)
+          }),
         )
       },
       "opening witness MSM",
     );
-    let point = projective(out);
+    let point = projective::<C>(out);
     result += normalization.map_or(point, |(scale, _)| point * scale);
   }
   result
 }
 
-struct LeasedPolynomial<'lease, 'devices> {
+struct LeasedPolynomial<'lease, 'devices, C: KzgCurve> {
   device: &'lease Device<'devices>,
   context: *mut c_void,
+  _curve: PhantomData<C>,
 }
 
-impl Drop for LeasedPolynomial<'_, '_> {
+impl<C: KzgCurve> Drop for LeasedPolynomial<'_, '_, C> {
   fn drop(&mut self) {
     // The existing lease covers destruction; reacquiring it would deadlock.
     let code =
-      unsafe { ix_kzg_polynomial_destroy(self.device.id(), self.context) };
+      unsafe { C::ffi_polynomial_destroy(self.device.id(), self.context) };
     if code != 0 {
-      tracing::error!(code, "KZG temporary polynomial destruction failed");
+      tracing::error!(
+        curve = C::NAME,
+        code,
+        "KZG temporary polynomial destruction failed"
+      );
     }
   }
 }

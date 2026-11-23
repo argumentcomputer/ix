@@ -3,9 +3,9 @@
 use p3_matrix::dense::RowMajorMatrix;
 use p3_maybe_rayon::prelude::*;
 
-use super::KzgConfig;
 use super::Radix2Coset;
-use super::Scalar;
+use super::curve::KzgCurve;
+use super::field::CurveScalar;
 use multi_stark::config::QuotientCommitInput;
 use multi_stark::eval::VarValues;
 use multi_stark::traits::Algebra;
@@ -19,21 +19,21 @@ const INV_SUB_BLOCK: usize = 1 << 12;
 ///
 /// # Panics
 /// Panics if any input is zero or if `values.len() != out.len()`.
-pub(super) fn batch_inverse_serial_scaled(
-  values: &[Scalar],
-  scale: Scalar,
-  out: &mut [Scalar],
+pub(super) fn batch_inverse_serial_scaled<C: KzgCurve>(
+  values: &[CurveScalar<C>],
+  scale: CurveScalar<C>,
+  out: &mut [CurveScalar<C>],
 ) {
   assert_eq!(values.len(), out.len());
   if values.is_empty() {
     return;
   }
-  let mut acc = Scalar::ONE;
+  let mut acc = CurveScalar::<C>::ONE;
   for (slot, &v) in out.iter_mut().zip(values) {
     *slot = acc;
     acc *= v;
   }
-  assert!(acc != Scalar::ZERO, "batch_inverse: zero input");
+  assert!(acc != CurveScalar::<C>::ZERO, "batch_inverse: zero input");
   let mut inv = acc.inverse() * scale;
   for i in (0..values.len()).rev() {
     out[i] *= inv;
@@ -43,17 +43,20 @@ pub(super) fn batch_inverse_serial_scaled(
 
 /// Serial Montgomery batch inversion into `out`: `out[i] = values[i]^{-1}`.
 #[allow(dead_code)]
-pub(super) fn batch_inverse_serial(values: &[Scalar], out: &mut [Scalar]) {
+pub(super) fn batch_inverse_serial<C: KzgCurve>(
+  values: &[CurveScalar<C>],
+  out: &mut [CurveScalar<C>],
+) {
   assert_eq!(values.len(), out.len());
   if values.is_empty() {
     return;
   }
-  let mut acc = Scalar::ONE;
+  let mut acc = CurveScalar::<C>::ONE;
   for (slot, &v) in out.iter_mut().zip(values) {
     *slot = acc;
     acc *= v;
   }
-  assert!(acc != Scalar::ZERO, "batch_inverse: zero input");
+  assert!(acc != CurveScalar::<C>::ZERO, "batch_inverse: zero input");
   let mut inv = acc.inverse();
   for i in (0..values.len()).rev() {
     out[i] *= inv;
@@ -69,26 +72,30 @@ pub(super) fn batch_inverse_serial(values: &[Scalar], out: &mut [Scalar]) {
 ///   `x_r - g^{-1} = g^{-1} · (x_{(r+1) mod n} - 1)`
 /// so `is_last_row(r) = g · is_first_row((r + 1) mod n)`, halving both batch
 /// inversions and selector memory.
-pub(super) struct CosetSelectors {
-  g: Scalar,
-  last: Scalar,
-  inv_vanishing: Scalar,
-  first_sel: Vec<Scalar>,
+pub(super) struct CosetSelectors<C: KzgCurve> {
+  g: CurveScalar<C>,
+  last: CurveScalar<C>,
+  inv_vanishing: CurveScalar<C>,
+  first_sel: Vec<CurveScalar<C>>,
 }
 
-impl CosetSelectors {
-  pub(super) fn new(trace_domain: Radix2Coset, domain: Radix2Coset) -> Self {
+impl<C: KzgCurve> CosetSelectors<C> {
+  pub(super) fn new(
+    trace_domain: Radix2Coset<C>,
+    domain: Radix2Coset<C>,
+  ) -> Self {
     let n = trace_domain.size();
-    assert_eq!(trace_domain.shift, Scalar::ONE);
+    assert_eq!(trace_domain.shift, CurveScalar::<C>::ONE);
     assert_eq!(domain.size(), n);
     let g = domain.generator();
     debug_assert_eq!(g, trace_domain.generator());
     let last = g.inverse();
-    let vanishing =
-      domain.shift.exp_power_of_2(trace_domain.log_size) - Scalar::ONE;
+    let vanishing = domain.shift.exp_power_of_2(trace_domain.log_size)
+      - CurveScalar::<C>::ONE;
     let inv_vanishing = vanishing.inverse();
 
-    let mut first_sel = super::pcs::generate_buffer(n, |_| Scalar::ZERO);
+    let mut first_sel =
+      super::pcs::generate_buffer(n, |_| CurveScalar::<C>::ZERO);
     let chunk_rows =
       n.div_ceil(current_num_threads().max(1) * 4).max(INV_SUB_BLOCK);
     first_sel.par_chunks_mut(chunk_rows).enumerate().for_each_init(
@@ -100,7 +107,7 @@ impl CosetSelectors {
         for sub_out in out.chunks_mut(INV_SUB_BLOCK) {
           denoms.clear();
           for _ in 0..sub_out.len() {
-            denoms.push(x - Scalar::ONE);
+            denoms.push(x - CurveScalar::<C>::ONE);
             x *= g;
           }
           batch_inverse_serial_scaled(denoms, vanishing, sub_out);
@@ -113,25 +120,28 @@ impl CosetSelectors {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn evaluate_coset<SC: super::pcs::CoefficientConfig>(
+pub(super) fn evaluate_coset<
+  C: KzgCurve,
+  SC: super::pcs::CoefficientConfig<C>,
+>(
   input: &QuotientCommitInput<'_, SC>,
-  pass: &super::quotient_plan::Pass,
-  domain: Radix2Coset,
-  selectors: &CosetSelectors,
-  powers: &[Scalar],
-  fixed: Option<&RowMajorMatrix<Scalar>>,
-  main: &RowMajorMatrix<Scalar>,
-  stage2: &RowMajorMatrix<Scalar>,
+  pass: &super::quotient_plan::Pass<C>,
+  domain: Radix2Coset<C>,
+  selectors: &CosetSelectors<C>,
+  powers: &[CurveScalar<C>],
+  fixed: Option<&RowMajorMatrix<CurveScalar<C>>>,
+  main: &RowMajorMatrix<CurveScalar<C>>,
+  stage2: &RowMajorMatrix<CurveScalar<C>>,
   coset: usize,
   ratio: usize,
   block_size: Option<usize>,
-  output: &mut [Scalar],
+  output: &mut [CurveScalar<C>],
 ) {
   if let Some(b) = block_size {
     assert!(b > 0);
   }
   let n = input.trace_domain.size();
-  assert_eq!(input.trace_domain.shift, Scalar::ONE);
+  assert_eq!(input.trace_domain.shift, CurveScalar::<C>::ONE);
   assert_eq!(domain.size(), n);
   assert_eq!(selectors.first_sel.len(), n);
   assert_eq!(output.len(), n * ratio);
@@ -141,9 +151,10 @@ pub(super) fn evaluate_coset<SC: super::pcs::CoefficientConfig>(
   let last = selectors.last;
   let inv_vanishing = selectors.inv_vanishing;
   let delta = (input.lookup_publics[3] - input.lookup_publics[2])
-    * (Scalar::from_usize(n) * input.trace_domain.generator()).inverse();
+    * (CurveScalar::<C>::from_usize(n) * input.trace_domain.generator())
+      .inverse();
   let circuit = input.circuit;
-  let ext = multi_stark::system::extension_params::<KzgConfig>();
+  let ext = multi_stark::system::extension_params::<SC>();
   let chunk_rows = block_size.unwrap_or_else(|| {
     n.div_ceil(current_num_threads().max(1) * 4).max(INV_SUB_BLOCK)
   });
@@ -198,7 +209,7 @@ pub(super) fn evaluate_coset<SC: super::pcs::CoefficientConfig>(
           .zeros
           .iter()
           .zip(&pass.weights)
-          .fold(Scalar::ZERO, |acc, (id, &weight)| {
+          .fold(CurveScalar::<C>::ZERO, |acc, (id, &weight)| {
             acc + graph[id.index()] * powers[weight]
           });
         for (group, lookups) in &pass.groups {
@@ -215,9 +226,9 @@ pub(super) fn evaluate_coset<SC: super::pcs::CoefficientConfig>(
             &[view.stage2[0][*group]],
             &[target],
             &input.lookup_publics,
-            &[if is_last_group { delta } else { Scalar::ZERO }],
+            &[if is_last_group { delta } else { CurveScalar::<C>::ZERO }],
             is_last_row,
-            ext.w,
+            ext.modulus,
             ext.degree,
             circuit.lookup_group_size.max(1),
             constraints,
@@ -234,19 +245,19 @@ pub(super) fn evaluate_coset<SC: super::pcs::CoefficientConfig>(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::kzg::curve::{Bls12381, Bn254};
 
-  #[test]
-  fn coset_selectors_match_pointwise_formulas() {
+  fn check_selectors<C: KzgCurve>() {
     for log_size in [0usize, 1, 4, 13] {
-      let trace = Radix2Coset { log_size, shift: Scalar::ONE };
+      let trace = Radix2Coset::<C> { log_size, shift: CurveScalar::<C>::ONE };
       let big = trace.create_disjoint_domain(1 << (log_size + 1));
       let generator = big.generator();
       for coset in 0..2 {
-        let domain = Radix2Coset {
+        let domain = Radix2Coset::<C> {
           log_size,
           shift: big.shift * generator.exp_u64(u64::try_from(coset).unwrap()),
         };
-        let sel = CosetSelectors::new(trace, domain);
+        let sel = CosetSelectors::<C>::new(trace, domain);
         let n = trace.size();
         let mut x = domain.shift;
         for row in 0..n {
@@ -260,5 +271,11 @@ mod tests {
         }
       }
     }
+  }
+
+  #[test]
+  fn coset_selectors_match_pointwise_formulas_for_both_curves() {
+    check_selectors::<Bn254>();
+    check_selectors::<Bls12381>();
   }
 }

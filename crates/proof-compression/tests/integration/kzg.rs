@@ -120,7 +120,10 @@ fn transcript_kinds_verify_compact_proofs_and_reject_tampering() {
     assert_eq!(codec.encode(&decoded).unwrap(), encoded);
 
     // A verifier built from the portable anchors alone accepts both forms.
-    let anchors = Srs::unsafe_dev_setup_prefix(2, 7, SEED);
+    let anchors =
+      Srs::<ix_proof_compression::kzg::curve::Bn254>::unsafe_dev_setup_prefix(
+        2, 7, SEED,
+      );
     let params = VerifierParams::with_max_trace_len(&anchors, 8);
     let parameters = params.to_bytes().unwrap();
     assert_eq!(
@@ -264,16 +267,127 @@ fn bn254_scalars_and_points_use_canonical_encodings() {
 
 #[test]
 fn portable_parameters_reject_inconsistent_anchors_and_extra_bytes() {
-  let mut srs = Srs::unsafe_dev_setup(8, SEED);
+  let mut srs =
+    Srs::<ix_proof_compression::kzg::curve::Bn254>::unsafe_dev_setup(8, SEED);
   let parameters = VerifierParams::from_srs(&srs).to_bytes().unwrap();
   let mut trailing = parameters.clone();
   trailing.push(0);
-  assert!(VerifierParams::from_bytes(&trailing).is_err());
   assert!(
-    VerifierParams::from_bytes(&parameters[..parameters.len() - 1]).is_err()
+    VerifierParams::<ix_proof_compression::kzg::curve::Bn254>::from_bytes(
+      &trailing
+    )
+    .is_err()
+  );
+  assert!(
+    VerifierParams::<ix_proof_compression::kzg::curve::Bn254>::from_bytes(
+      &parameters[..parameters.len() - 1]
+    )
+    .is_err()
   );
 
   srs.g1[1] = (srs.g1[1] + G1Affine::generator()).into_affine();
   let inconsistent = VerifierParams::from_srs(&srs).to_bytes().unwrap();
-  assert!(VerifierParams::from_bytes(&inconsistent).is_err());
+  assert!(
+    VerifierParams::<ix_proof_compression::kzg::curve::Bn254>::from_bytes(
+      &inconsistent
+    )
+    .is_err()
+  );
+}
+
+#[test]
+fn bls12_381_transcript_kinds_verify_compact_proofs_and_reject_tampering() {
+  use ix_proof_compression::kzg::{
+    curve::{Bls12381, KzgCurve},
+    field::CurveScalar,
+  };
+  type BlsScalar = CurveScalar<Bls12381>;
+  let bls_seed = b"bls12-381-kzg-integration";
+  let srs = Srs::<Bls12381>::unsafe_dev_setup(8, bls_seed);
+  srs.validate().unwrap();
+  let base = KzgConfig::<Bls12381>::new(Arc::new(srs), QUOTIENT_DEGREE);
+  let claims: [[BlsScalar; 3]; 2] = HEIGHTS.map(|height| {
+    let last = BlsScalar::from_usize(height - 1);
+    [BlsScalar::from_usize(height), last, last * last]
+  });
+  let refs: Vec<_> = claims.iter().map(|claim| claim.as_slice()).collect();
+  for kind in [TranscriptKind::Blake3, TranscriptKind::Keccak256] {
+    let (mut system, key) = System::new(
+      base.clone().with_transcript(kind),
+      HEIGHTS.map(|height| {
+        let x = Expr::main(0);
+        let square = Expr::main(1);
+        CircuitInputs {
+          main_width: 2,
+          preprocessed: Some(RowMajorMatrix::new(
+            (0..height)
+              .flat_map(|row| {
+                [
+                  BlsScalar::from_usize(row),
+                  BlsScalar::from_bool(row + 1 == height),
+                ]
+              })
+              .collect(),
+            2,
+          )),
+          constraints: vec![
+            x.clone() - Expr::preprocessed(0),
+            square.clone() - x.clone() * x.clone(),
+            Expr::IsTransition
+              * (Expr::main_next(0)
+                - x.clone()
+                - Expr::constant(BlsScalar::ONE)),
+          ],
+          lookups: vec![Lookup::pull(
+            Expr::preprocessed(1),
+            vec![Expr::constant(BlsScalar::from_usize(height)), x, square],
+          )],
+          ..Default::default()
+        }
+      }),
+    );
+    let traces = HEIGHTS
+      .map(|height| {
+        RowMajorMatrix::new(
+          (0..height)
+            .flat_map(|row| {
+              let x = BlsScalar::from_usize(row);
+              [x, x * x]
+            })
+            .collect(),
+          2,
+        )
+      })
+      .to_vec();
+    let proof = system.prove_multiple_claims(
+      &key,
+      &refs,
+      SystemWitness::from_stage_1(traces, &system),
+    );
+    drop(key);
+    system.verify_multiple_claims(&refs, &proof).unwrap();
+    let codec =
+      FixedProofCodec::<Bls12381>::new(&system, &proof.log_degrees).unwrap();
+    let encoded = codec.encode(&proof).unwrap();
+    assert_eq!(&encoded[..4], Bls12381::COMPACT_MAGIC);
+    let mut wrong_tag = encoded.clone();
+    wrong_tag[..4].copy_from_slice(b"KBN1");
+    assert!(codec.decode(&wrong_tag).is_err());
+    let decoded = codec.decode(&encoded).unwrap();
+    assert_eq!(codec.encode(&decoded).unwrap(), encoded);
+
+    let anchors = Srs::<Bls12381>::unsafe_dev_setup_prefix(2, 7, bls_seed);
+    let params = VerifierParams::<Bls12381>::with_max_trace_len(&anchors, 8);
+    let parameters = params.to_bytes().unwrap();
+    let params = VerifierParams::<Bls12381>::from_bytes(&parameters).unwrap();
+    system.config =
+      KzgConfig::<Bls12381>::verifier_only(params, QUOTIENT_DEGREE)
+        .with_transcript(kind);
+    system.verify_multiple_claims(&refs, &decoded).unwrap();
+
+    let mut bad_claims = claims;
+    bad_claims[0][2] += BlsScalar::ONE;
+    let bad_refs: Vec<_> = bad_claims.iter().map(|c| c.as_slice()).collect();
+    assert!(system.verify_multiple_claims(&bad_refs, &decoded).is_err());
+  }
 }

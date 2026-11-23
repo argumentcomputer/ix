@@ -110,12 +110,37 @@ def verifyProof (addr : Address) (wrapper : Ixon.Proof) (devSrs : Bool) (stateme
     IO.println s!"ok: development proof {addr} verifies claim {Address.blake3 claim} (not production-secure)"
   | "ignition" =>
     IO.println s!"ok: proof {addr} verifies claim {Address.blake3 claim} under the Aztec Ignition powers of tau"
+  | "filecoin" =>
+    IO.println s!"ok: BLS12-381 proof {addr} verifies claim {Address.blake3 claim} under the Filecoin powers of tau"
   | "groth16" =>
     IO.println s!"ok: Groth16 proof {addr} verifies claim {Address.blake3 claim} under the admitted circuit-specific setup"
   | _ =>
     throw <| IO.userError s!"unsupported compression setup: {setup}"
   IO.println statement
   return 0
+
+/-- Comma-separated KZG curves compiled into this executable: `"bn254,bls12-381"`. -/
+@[extern "rs_compression_curves"]
+opaque curves : IO String
+
+/-- Describe the selected curve's security profile and inner KZG setup, and
+validate the independent final-setup selection. -/
+@[extern "rs_compression_setup_for_curve"]
+opaque describeSetupForCurve (curve : @& String) (devKzgSrs devFinalSrs : Bool)
+  (finalProof : UInt8) : IO String
+
+/-- Curve-parameterized variant of `compress` supporting both `"bn254"` and
+`"bls12-381"`. -/
+@[extern "rs_compression_run_for_curve"]
+opaque compressForCurve (vk proof claim statement fixedRoot : @& ByteArray)
+  (dir cacheRoot curve : @& String)
+  (devKzgSrs devFinalSrs : Bool) (finalProof : UInt8) (fresh : Bool := false) : IO ByteArray
+
+/-- Curve-parameterized variant of `prepare` supporting both `"bn254"` and
+`"bls12-381"`. -/
+@[extern "rs_compression_prepare_for_curve"]
+opaque prepareForCurve (vk : @& ByteArray) (cacheRoot curve : @& String)
+  (devKzgSrs plonk : Bool) : IO Unit
 
 end Ix.Cli.Compression
 end

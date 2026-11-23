@@ -5,12 +5,12 @@ use super::quotient::{
   Column, Instruction, Lookup, PolynomialView, Program, allocation,
 };
 use super::*;
-use crate::kzg::{Scalar, pcs::CoefficientConfig};
+use crate::kzg::{field::CurveScalar, pcs::CoefficientConfig};
 use multi_stark::config::{LookupCommitInput, QuotientCommitInput};
 use multi_stark::traits::EvaluationDomain;
 
 #[repr(C, align(32))]
-struct NativePass {
+pub(super) struct NativePass {
   weight: [u64; 4],
   columns: *const Column,
   column_count: usize,
@@ -38,29 +38,30 @@ const _: () = {
   assert!(std::mem::offset_of!(NativePass, group) == 128);
 };
 
-pub(super) struct Pass {
+pub(super) struct Pass<C: KzgCurve> {
   program: Program,
   pub(super) columns: Vec<Column>,
   evaluated: usize,
   group: usize,
-  weight: Fr,
+  weight: C::Fr,
 }
 
-impl Pass {
+impl<C: KzgCurve> Pass<C> {
   pub(super) fn new(
     program: Program,
-    all: &[PolynomialView<'_>],
+    all: &[PolynomialView<'_, C>],
     extra: &[usize],
     group: usize,
-    weight: Fr,
+    weight: C::Fr,
   ) -> Option<Self> {
-    let (columns, evaluated) = quotient::pass_columns(all, &program, extra)?;
+    let (columns, evaluated) =
+      quotient::pass_columns::<C>(all, &program, extra)?;
     Some(Self { program, columns, evaluated, group, weight })
   }
 
   fn native(&self) -> NativePass {
     NativePass {
-      weight: self.weight.0.0,
+      weight: C::fr_mont_limbs(self.weight),
       columns: self.columns.as_ptr(),
       column_count: self.columns.len(),
       evaluated: self.evaluated,
@@ -78,49 +79,27 @@ impl Pass {
   }
 }
 
-unsafe extern "C" {
-  fn ix_kzg_lookup_passes(
-    device: i32,
-    parameters: *const lookup::Parameters,
-    passes: *const NativePass,
-    pass_count: usize,
-    outputs: *const *mut [u64; 4],
-    total: *mut [u64; 4],
-  ) -> i32;
-  fn ix_kzg_quotient_passes(
-    device: i32,
-    parameters: *const quotient::Parameters,
-    passes: *const NativePass,
-    pass_count: usize,
-    publics: *const [u64; 4],
-    public_count: usize,
-    shifts: *const [u64; 4],
-    inverse_vanishing: *const [u64; 4],
-    outputs: *const *mut [u64; 4],
-  ) -> i32;
-}
-
-fn memory_bound(
-  passes: &[Pass],
+fn memory_bound<C: KzgCurve>(
+  passes: &[Pass<C>],
   rows: usize,
   blocks: usize,
   extra_columns: usize,
   publics: usize,
 ) -> Option<usize> {
-  let max = |f: fn(&Pass) -> usize| passes.iter().map(f).max().unwrap_or(0);
+  let max = |f: fn(&Pass<C>) -> usize| passes.iter().map(f).max().unwrap_or(0);
   let evaluated = max(|p| p.evaluated);
   let slots = max(|p| p.program.slots.max(1));
   let elements = rows
     .checked_mul(evaluated.checked_add(extra_columns)?)?
     .checked_add(blocks.checked_mul(quotient::TILE)?.checked_mul(slots)?)?;
   [
-    allocation::<Fr>(elements)?,
+    allocation::<C::Fr>(elements)?,
     allocation::<Column>(max(|p| p.columns.len()))?,
     allocation::<Instruction>(max(|p| p.program.nodes.len()))?,
     allocation::<u32>(max(|p| p.program.roots.len()))?,
     allocation::<Lookup>(max(|p| p.program.lookups.len()))?,
     allocation::<u32>(max(|p| p.program.args.len()))?,
-    allocation::<Fr>(publics.checked_add(1)?)?,
+    allocation::<C::Fr>(publics.checked_add(1)?)?,
     quotient::HEADROOM,
   ]
   .into_iter()
@@ -131,31 +110,35 @@ fn memory_bound(
 /// their resident columns, and bind that device's residents into every
 /// pass. A pass reads the same columns as the dense working set, so the
 /// device choice follows the same admission rule.
-pub(super) fn admit(
-  passes: &mut [Pass],
-  all: &[PolynomialView<'_>],
+pub(super) fn admit<C: KzgCurve>(
+  passes: &mut [Pass<C>],
+  all: &[PolynomialView<'_, C>],
   bytes: usize,
 ) -> Option<Device<'static>> {
-  let Some(device) = quotient::acquire_device(all, bytes) else {
+  let Some(device) = quotient::acquire_device::<C>(all, bytes) else {
     tracing::info!(
+      curve = C::NAME,
       bytes,
-      budgets = ?quotient::device_budgets(),
+      budgets = ?quotient::device_budgets::<C>(),
       "KZG constraint passes not admitted"
     );
     return None;
   };
   for pass in passes {
-    quotient::bind_resident(&mut pass.columns, all, &device);
+    quotient::bind_resident::<C>(&mut pass.columns, all, &device);
   }
   Some(device)
 }
 
-pub(super) fn lookup_coefficients<SC: CoefficientConfig>(
+pub(super) fn lookup_coefficients<
+  C: KzgCurve,
+  SC: CoefficientConfig<C>,
+>(
   input: &LookupCommitInput<'_, SC>,
   parameters: &lookup::Parameters,
-  all: &[PolynomialView<'_>],
+  all: &[PolynomialView<'_, C>],
   widths: [usize; 3],
-) -> Option<(Vec<Vec<Fr>>, Scalar)> {
+) -> Option<(Vec<Vec<C::Fr>>, CurveScalar<C>)> {
   let rows = 1usize.checked_shl(parameters.trace_log)?;
   let group_size = parameters.group_size as usize;
   let graph = &input.circuit.graph;
@@ -166,26 +149,26 @@ pub(super) fn lookup_coefficients<SC: CoefficientConfig>(
   let mut passes: Vec<_> = (0..groups)
     .map(|group| {
       let start = group * group_size;
-      let program = quotient::encode_pass(
+      let program = quotient::encode_pass::<C>(
         graph,
         widths,
         0,
         &[],
         start..(start + group_size).min(graph.lookups.len()),
       )?;
-      Pass::new(program, all, &[], group, Fr::ONE)
+      Pass::new(program, all, &[], group, C::FR_ONE)
     })
     .collect::<Option<_>>()?;
-  let bytes = memory_bound(
+  let bytes = memory_bound::<C>(
     &passes,
     rows,
     parameters.blocks as usize,
     groups.checked_add(3)?,
     0,
   )?;
-  let device = admit(&mut passes, all, bytes)?;
+  let device = admit::<C>(&mut passes, all, bytes)?;
   let native: Vec<_> = passes.iter().map(Pass::native).collect();
-  let mut outputs = vec![vec![Fr::ZERO; rows]; groups];
+  let mut outputs = vec![vec![C::FR_ZERO; rows]; groups];
   let pointers: Vec<*mut [u64; 4]> =
     outputs.iter_mut().map(|v| v.as_mut_ptr().cast()).collect();
   let mut total = [0; 4];
@@ -194,10 +177,10 @@ pub(super) fn lookup_coefficients<SC: CoefficientConfig>(
   // drains.
   check(
     unsafe {
-      ix_kzg_lookup_passes(
+      C::ffi_lookup_passes(
         device.id(),
-        parameters,
-        native.as_ptr(),
+        std::ptr::from_ref(parameters).cast(),
+        native.as_ptr().cast(),
         native.len(),
         pointers.as_ptr(),
         &mut total,
@@ -206,6 +189,7 @@ pub(super) fn lookup_coefficients<SC: CoefficientConfig>(
     "lookup constraint passes",
   );
   tracing::info!(
+    curve = C::NAME,
     device = device.id(),
     rows,
     groups,
@@ -215,17 +199,20 @@ pub(super) fn lookup_coefficients<SC: CoefficientConfig>(
     seconds = started.elapsed().as_secs_f64(),
     "KZG lookup constructed in GPU passes"
   );
-  Some((outputs, Scalar(Fr::new_unchecked(BigInt(total)))))
+  Some((outputs, CurveScalar(C::fr_from_mont_limbs_unchecked(total))))
 }
 
-pub(super) fn quotient_coefficients<SC: CoefficientConfig>(
+pub(super) fn quotient_coefficients<
+  C: KzgCurve,
+  SC: CoefficientConfig<C>,
+>(
   input: &QuotientCommitInput<'_, SC>,
   parameters: &quotient::Parameters,
-  all: &[PolynomialView<'_>],
+  all: &[PolynomialView<'_, C>],
   widths: [usize; 3],
-  shifts: &[Fr],
-  inverse_vanishing: &[Fr],
-) -> Option<Vec<Vec<Fr>>> {
+  shifts: &[C::Fr],
+  inverse_vanishing: &[C::Fr],
+) -> Option<Vec<Vec<C::Fr>>> {
   if !(10..=27).contains(&input.trace_domain.log_size) {
     return None;
   }
@@ -235,18 +222,19 @@ pub(super) fn quotient_coefficients<SC: CoefficientConfig>(
   let groups = widths[2];
   let stage2 = widths[0].checked_add(widths[1])?;
   let count = graph.zeros.len().checked_add(groups)?;
-  let mut weight = Fr::ONE;
+  let mut weight = C::FR_ONE;
+  let alpha = C::fr_from_mont_limbs_unchecked(parameters.alpha);
   let mut weights: Vec<_> = (0..count)
     .map(|_| {
       let value = weight;
-      weight *= Fr::new_unchecked(BigInt(parameters.alpha));
+      weight *= alpha;
       value
     })
     .collect();
   weights.reverse();
   let mut passes = Vec::with_capacity(count);
   for (i, root) in graph.zeros.iter().enumerate() {
-    let program = quotient::encode_pass(
+    let program = quotient::encode_pass::<C>(
       graph,
       widths,
       input.lookup_publics.len(),
@@ -258,7 +246,7 @@ pub(super) fn quotient_coefficients<SC: CoefficientConfig>(
   for group in 0..groups {
     let start = group * parameters.group_size as usize;
     let end = (start + parameters.group_size as usize).min(graph.lookups.len());
-    let program = quotient::encode_pass(
+    let program = quotient::encode_pass::<C>(
       graph,
       widths,
       input.lookup_publics.len(),
@@ -274,16 +262,16 @@ pub(super) fn quotient_coefficients<SC: CoefficientConfig>(
       weights[graph.zeros.len() + group],
     )?);
   }
-  let bytes = memory_bound(
+  let bytes = memory_bound::<C>(
     &passes,
     rows,
     parameters.blocks as usize,
     ratio.checked_add(1)?,
     input.lookup_publics.len(),
   )?;
-  let device = admit(&mut passes, all, bytes)?;
+  let device = admit::<C>(&mut passes, all, bytes)?;
   let native: Vec<_> = passes.iter().map(Pass::native).collect();
-  let mut outputs = vec![vec![Fr::ZERO; rows]; ratio];
+  let mut outputs = vec![vec![C::FR_ZERO; rows]; ratio];
   let pointers: Vec<*mut [u64; 4]> =
     outputs.iter_mut().map(|v| v.as_mut_ptr().cast()).collect();
   let started = std::time::Instant::now();
@@ -291,10 +279,10 @@ pub(super) fn quotient_coefficients<SC: CoefficientConfig>(
   // fallback.
   check(
     unsafe {
-      ix_kzg_quotient_passes(
+      C::ffi_quotient_passes(
         device.id(),
-        parameters,
-        native.as_ptr(),
+        std::ptr::from_ref(parameters).cast(),
+        native.as_ptr().cast(),
         native.len(),
         input.lookup_publics.as_ptr().cast(),
         input.lookup_publics.len(),
@@ -306,6 +294,7 @@ pub(super) fn quotient_coefficients<SC: CoefficientConfig>(
     "quotient constraint passes",
   );
   tracing::info!(
+    curve = C::NAME,
     device = device.id(),
     rows,
     ratio,
@@ -321,17 +310,18 @@ pub(super) fn quotient_coefficients<SC: CoefficientConfig>(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::kzg::curve::{Bls12381, Bn254};
   use multi_stark::traits::Algebra;
 
   #[test]
   fn pass_abi_and_memory_arithmetic() {
     assert_eq!(size_of::<NativePass>(), 160);
     assert_eq!(std::mem::offset_of!(NativePass, group), 128);
-    assert!(memory_bound(&[], usize::MAX, 256, 4, 0).is_none());
+    assert!(memory_bound::<Bn254>(&[], usize::MAX, 256, 4, 0).is_none());
+    assert!(memory_bound::<Bls12381>(&[], usize::MAX, 256, 4, 0).is_none());
   }
 
-  #[test]
-  fn pruned_pass_contains_only_transitive_dependencies() {
+  fn check_pruned_pass<C: KzgCurve>() {
     use multi_stark::expr::{ColRef, RowOffset, Source};
     use multi_stark::graph::{ConstraintGraph, Node, NodeId};
     let graph = ConstraintGraph {
@@ -353,7 +343,7 @@ mod tests {
         }),
         Node::Mul(NodeId(0), NodeId(2)),
         Node::Add(NodeId(3), NodeId(1)),
-        Node::Const(Scalar::ONE),
+        Node::Const(CurveScalar::<C>::ONE),
       ],
       degrees: vec![1; 6],
       zeros: vec![NodeId(3), NodeId(4)],
@@ -364,23 +354,35 @@ mod tests {
       lookup_prefix_len: 6,
       max_constraint_degree: 2,
     };
-    let values = [Fr::ONE];
-    let all: Vec<PolynomialView<'_>> =
+    let values = [C::FR_ONE];
+    let all: Vec<PolynomialView<'_, C>> =
       (0..4).map(|_| (&values[..], None, false)).collect();
     let root =
-      quotient::encode_pass(&graph, [2, 1, 1], 0, &[NodeId(3)], 0..0).unwrap();
-    let root = Pass::new(root, &all, &[], usize::MAX, Fr::ONE).unwrap();
+      quotient::encode_pass::<C>(&graph, [2, 1, 1], 0, &[NodeId(3)], 0..0)
+        .unwrap();
+    let root = Pass::new(root, &all, &[], usize::MAX, C::FR_ONE).unwrap();
     assert_eq!(root.program.nodes.len(), 3);
     assert_eq!(root.evaluated, 2);
     let lookup =
-      quotient::encode_pass(&graph, [2, 1, 1], 0, &[], 0..1).unwrap();
-    let lookup = Pass::new(lookup, &all, &[3], 0, Fr::ONE).unwrap();
+      quotient::encode_pass::<C>(&graph, [2, 1, 1], 0, &[], 0..1).unwrap();
+    let lookup = Pass::new(lookup, &all, &[3], 0, C::FR_ONE).unwrap();
     assert_eq!(lookup.program.nodes.len(), 2);
     assert_eq!(lookup.evaluated, 2);
     assert!(
-      quotient::encode_pass(&graph, [2, 1, 1], 0, &[NodeId(9)], 0..0).is_none()
+      quotient::encode_pass::<C>(&graph, [2, 1, 1], 0, &[NodeId(9)], 0..0)
+        .is_none()
     );
-    assert!(quotient::encode_pass(&graph, [2, 1, 1], 0, &[], 0..2).is_none());
-    assert!(memory_bound(&[root], 1 << 27, 256, 3, 4).unwrap() < 22usize << 30);
+    assert!(
+      quotient::encode_pass::<C>(&graph, [2, 1, 1], 0, &[], 0..2).is_none()
+    );
+    assert!(
+      memory_bound::<C>(&[root], 1 << 27, 256, 3, 4).unwrap() < 22usize << 30
+    );
+  }
+
+  #[test]
+  fn pruned_pass_contains_only_transitive_dependencies() {
+    check_pruned_pass::<Bn254>();
+    check_pruned_pass::<Bls12381>();
   }
 }

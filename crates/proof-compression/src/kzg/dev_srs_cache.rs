@@ -1,11 +1,10 @@
 //! Bounded I/O for the trusted-local development SRS cache: a shared
-//! directory with one file per prefix length and seed. Files store
+//! directory with one file per curve, prefix length, and seed. Files store
 //! uncompressed points behind a BLAKE3 checksum; loading checks canonical
 //! coordinates, curve membership and the seed-dependent anchors, not the
 //! full subgroup and progression validation of an import.
 use super::curve::{
-  G1_UNCOMPRESSED_BYTES as G1_BYTES, G1Affine, G1Projective,
-  G2_UNCOMPRESSED_BYTES as G2_BYTES, G2Affine, G2Projective,
+  G1AffineOf, G1ProjectiveOf, G2AffineOf, G2ProjectiveOf, KzgCurve,
 };
 use super::srs::dev_tau;
 use super::{PublicSetup, Srs};
@@ -21,12 +20,11 @@ use std::{
   time::Instant,
 };
 
-const MAGIC: &[u8] = b"ix/bn254/dev-srs/v1\0";
 const BLOCK_POINTS: usize = 1 << 18;
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
-fn header(max_len: usize, seed: &[u8]) -> Vec<u8> {
-  let mut bytes = MAGIC.to_vec();
+fn header<C: KzgCurve>(max_len: usize, seed: &[u8]) -> Vec<u8> {
+  let mut bytes = C::DEV_SRS_CACHE_MAGIC.to_vec();
   bytes.extend_from_slice(&(max_len as u64).to_le_bytes());
   bytes.extend_from_slice(blake3::hash(seed).as_bytes());
   bytes
@@ -39,12 +37,12 @@ fn invalid(message: &str) -> io::Error {
 /// Reuse a cached prefix from `directory`, or generate and publish it. A
 /// damaged existing file is an error, never a silent regeneration; writes
 /// become visible atomically, so concurrent writers publish complete files.
-pub(super) fn cached_in_directory(
+pub(super) fn cached_in_directory<C: KzgCurve>(
   max_len: usize,
   public_max_degree: usize,
   seed: &[u8],
   directory: &Path,
-) -> io::Result<Srs> {
+) -> io::Result<Srs<C>> {
   let invalid_input =
     |message| io::Error::new(io::ErrorKind::InvalidInput, message);
   if max_len < 2 || !max_len.is_power_of_two() {
@@ -55,19 +53,21 @@ pub(super) fn cached_in_directory(
   {
     return Err(invalid_input("public degree is smaller than the G1 prefix"));
   }
-  let setup = PublicSetup::known_trapdoor(public_max_degree, seed);
-  let header = header(max_len, seed);
+  let setup = PublicSetup::known_trapdoor_for::<C>(public_max_degree, seed);
+  let header = header::<C>(max_len, seed);
   let path =
     directory.join(format!("{}.dev-srs", blake3::hash(&header).to_hex()));
   let start = Instant::now();
   match File::open(&path) {
     Ok(file) => {
-      let srs =
-        read_cache(file, &header, max_len, seed, setup).map_err(|error| {
+      let srs = read_cache::<C>(file, &header, max_len, seed, setup).map_err(
+        |error| {
           io::Error::new(error.kind(), format!("{}: {error}", path.display()))
-        })?;
+        },
+      )?;
       eprintln!(
-        "Loaded development SRS cache {} in {:?}",
+        "Loaded {} development SRS cache {} in {:?}",
+        C::NAME,
         path.display(),
         start.elapsed()
       );
@@ -75,10 +75,12 @@ pub(super) fn cached_in_directory(
     },
     Err(error) if error.kind() == io::ErrorKind::NotFound => {
       fs::create_dir_all(directory)?;
-      let srs = Srs::unsafe_dev_setup_prefix(max_len, public_max_degree, seed);
+      let srs =
+        Srs::<C>::unsafe_dev_setup_prefix(max_len, public_max_degree, seed);
       write_cache(&path, &header, &srs)?;
       eprintln!(
-        "Generated and cached development SRS {} in {:?}",
+        "Generated and cached {} development SRS {} in {:?}",
+        C::NAME,
         path.display(),
         start.elapsed()
       );
@@ -88,16 +90,18 @@ pub(super) fn cached_in_directory(
   }
 }
 
-fn read_cache(
+fn read_cache<C: KzgCurve>(
   mut file: File,
   expected_header: &[u8],
   max_len: usize,
   seed: &[u8],
   public_setup: PublicSetup,
-) -> io::Result<Srs> {
-  let g2_len = 2 * G2_BYTES;
+) -> io::Result<Srs<C>> {
+  let g1_bytes = C::G1_UNCOMPRESSED_BYTES;
+  let g2_bytes = C::G2_UNCOMPRESSED_BYTES;
+  let g2_len = 2 * g2_bytes;
   let expected_size = (max_len as u64)
-    .checked_mul(G1_BYTES as u64)
+    .checked_mul(g1_bytes as u64)
     .and_then(|n| n.checked_add((expected_header.len() + g2_len + 32) as u64))
     .ok_or_else(|| invalid("SRS cache length overflow"))?;
   if file.metadata()?.len() != expected_size {
@@ -114,19 +118,17 @@ fn read_cache(
   file.read_exact(&mut bytes)?;
   hasher.update(&bytes);
   let mut g2_points = bytes
-    .as_chunks::<G2_BYTES>()
-    .0
-    .iter()
+    .chunks_exact(g2_bytes)
     .map(|point| {
-      G2Affine::deserialize_uncompressed(point.as_slice())
+      G2AffineOf::<C>::deserialize_uncompressed(point)
         .map_err(|e| invalid(&e.to_string()))
     })
     .collect::<io::Result<Vec<_>>>()?
     .into_iter();
   let g2 = g2_points.next().expect("two anchors");
   let tau_g2 = g2_points.next().expect("two anchors");
-  let tau = dev_tau(seed);
-  let generator = G2Projective::generator();
+  let tau = dev_tau::<C>(seed);
+  let generator = G2ProjectiveOf::<C>::generator();
   if g2 != generator.into_affine() || tau_g2 != (generator * tau).into_affine()
   {
     return Err(invalid(
@@ -135,16 +137,16 @@ fn read_cache(
   }
   let mut g1 = Vec::new();
   g1.try_reserve_exact(max_len).map_err(io::Error::other)?;
-  bytes.resize(max_len.min(BLOCK_POINTS) * G1_BYTES, 0);
+  bytes.resize(max_len.min(BLOCK_POINTS) * g1_bytes, 0);
   while g1.len() < max_len {
     let count = (max_len - g1.len()).min(BLOCK_POINTS);
-    let block = &mut bytes[..count * G1_BYTES];
+    let block = &mut bytes[..count * g1_bytes];
     file.read_exact(block)?;
     hasher.update(block);
     let points = block
-      .par_chunks_exact(G1_BYTES)
+      .par_chunks_exact(g1_bytes)
       .map(|bytes| {
-        let point = G1Affine::deserialize_uncompressed_unchecked(bytes)
+        let point = G1AffineOf::<C>::deserialize_uncompressed_unchecked(bytes)
           .map_err(|e| invalid(&e.to_string()))?;
         if point.is_zero() || !point.is_on_curve() {
           return Err(invalid("invalid G1 point in development SRS cache"));
@@ -162,7 +164,7 @@ fn read_cache(
   if file.read(&mut [0])? != 0 {
     return Err(invalid("trailing bytes in SRS cache"));
   }
-  let generator = G1Projective::generator();
+  let generator = G1ProjectiveOf::<C>::generator();
   if g1[0] != generator.into_affine()
     || g1[1] != (generator * tau).into_affine()
     || g1[max_len - 1]
@@ -183,7 +185,12 @@ impl Drop for Temporary {
   }
 }
 
-fn write_cache(path: &Path, header: &[u8], srs: &Srs) -> io::Result<()> {
+fn write_cache<C: KzgCurve>(
+  path: &Path,
+  header: &[u8],
+  srs: &Srs<C>,
+) -> io::Result<()> {
+  let g1_bytes = C::G1_UNCOMPRESSED_BYTES;
   let (temporary, mut file) = loop {
     let temporary = path.with_extension(format!(
       "{}.{}.partial",
@@ -207,10 +214,10 @@ fn write_cache(path: &Path, header: &[u8], srs: &Srs) -> io::Result<()> {
   }
   file.write_all(&bytes)?;
   hasher.update(&bytes);
-  bytes.resize(srs.g1.len().min(BLOCK_POINTS) * G1_BYTES, 0);
+  bytes.resize(srs.g1.len().min(BLOCK_POINTS) * g1_bytes, 0);
   for points in srs.g1.chunks(BLOCK_POINTS) {
-    let block = &mut bytes[..points.len() * G1_BYTES];
-    block.par_chunks_exact_mut(G1_BYTES).zip(points.par_iter()).try_for_each(
+    let block = &mut bytes[..points.len() * g1_bytes];
+    block.par_chunks_exact_mut(g1_bytes).zip(points.par_iter()).try_for_each(
       |(bytes, point)| {
         point.serialize_uncompressed(bytes).map_err(|e| invalid(&e.to_string()))
       },
@@ -228,32 +235,40 @@ fn write_cache(path: &Path, header: &[u8], srs: &Srs) -> io::Result<()> {
 #[cfg(test)]
 mod directory_tests {
   use super::*;
+  use crate::kzg::curve::{Bls12381, Bn254};
   use crate::test_support::TempDir;
 
-  fn cache_path(directory: &Path, max_len: usize, seed: &[u8]) -> PathBuf {
+  fn cache_path<C: KzgCurve>(
+    directory: &Path,
+    max_len: usize,
+    seed: &[u8],
+  ) -> PathBuf {
     directory.join(format!(
       "{}.dev-srs",
-      blake3::hash(&header(max_len, seed)).to_hex()
+      blake3::hash(&header::<C>(max_len, seed)).to_hex()
     ))
   }
 
-  #[test]
-  fn cache_round_trip_and_key_separation() {
+  fn check_round_trip<C: KzgCurve>() {
     let directory = TempDir::new("dev-srs");
+    let g1_bytes = C::G1_UNCOMPRESSED_BYTES;
+    let g2_bytes = C::G2_UNCOMPRESSED_BYTES;
     for (size, seed) in [
       (2, b"first".as_slice()),
       (16, b"first"),
       (32, b"first"),
       (16, b"second"),
     ] {
-      let fresh = cached_in_directory(size, 63, seed, &directory).unwrap();
-      let cached = cached_in_directory(size, 63, seed, &directory).unwrap();
-      let expected = Srs::unsafe_dev_setup_prefix(size, 63, seed);
-      assert_eq!(expected.g1[0].uncompressed_size(), G1_BYTES);
-      assert_eq!(expected.g2.uncompressed_size(), G2_BYTES);
+      let fresh = cached_in_directory::<C>(size, 63, seed, &directory).unwrap();
+      let cached =
+        cached_in_directory::<C>(size, 63, seed, &directory).unwrap();
+      let expected = Srs::<C>::unsafe_dev_setup_prefix(size, 63, seed);
+      assert_eq!(expected.g1[0].uncompressed_size(), g1_bytes);
+      assert_eq!(expected.g2.uncompressed_size(), g2_bytes);
       assert_eq!(
-        fs::metadata(cache_path(&directory, size, seed)).unwrap().len(),
-        (header(size, seed).len() + size * G1_BYTES + 2 * G2_BYTES + 32) as u64
+        fs::metadata(cache_path::<C>(&directory, size, seed)).unwrap().len(),
+        (header::<C>(size, seed).len() + size * g1_bytes + 2 * g2_bytes + 32)
+          as u64
       );
       for actual in [fresh, cached] {
         assert_eq!(actual.g1, expected.g1);
@@ -264,50 +279,49 @@ mod directory_tests {
       }
     }
     assert_eq!(fs::read_dir(&directory).unwrap().count(), 4);
-    assert!(cached_in_directory(16, 14, b"first", &directory).is_err());
-  }
+    assert!(cached_in_directory::<C>(16, 14, b"first", &directory).is_err());
 
-  #[test]
-  fn damaged_cache_fails_without_regeneration() {
-    let directory = TempDir::new("dev-srs");
+    let dir2 = TempDir::new("dev-srs-damage");
     let seed = b"damage";
-    cached_in_directory(16, 15, seed, &directory).unwrap();
-    let path = cache_path(&directory, 16, seed);
+    cached_in_directory::<C>(16, 15, seed, &dir2).unwrap();
+    let path = cache_path::<C>(&dir2, 16, seed);
     let valid = fs::read(&path).unwrap();
     let mut variants = vec![
       valid[..valid.len() - 1].to_vec(),
       [valid.as_slice(), &[0]].concat(),
     ];
-    for offset in [0, MAGIC.len(), valid.len() - 1] {
+    for offset in [0, C::DEV_SRS_CACHE_MAGIC.len(), valid.len() - 1] {
       let mut damaged = valid.clone();
       damaged[offset] ^= 1;
       variants.push(damaged);
     }
-    // A valid but different interior point must still fail the checksum.
     let mut damaged = valid.clone();
-    let start = header(16, seed).len() + 2 * G2_BYTES;
-    let point = damaged[start + G1_BYTES..start + 2 * G1_BYTES].to_vec();
-    damaged[start + 7 * G1_BYTES..start + 8 * G1_BYTES].copy_from_slice(&point);
+    let start = header::<C>(16, seed).len() + 2 * g2_bytes;
+    let point = damaged[start + g1_bytes..start + 2 * g1_bytes].to_vec();
+    damaged[start + 7 * g1_bytes..start + 8 * g1_bytes].copy_from_slice(&point);
     variants.push(damaged);
     for damaged in variants {
       fs::write(&path, &damaged).unwrap();
-      assert!(cached_in_directory(16, 15, seed, &directory).is_err());
+      assert!(cached_in_directory::<C>(16, 15, seed, &dir2).is_err());
       assert_eq!(fs::read(&path).unwrap(), damaged);
     }
+
+    let dir3 = TempDir::new("dev-srs-seed");
+    let expected_header = header::<C>(16, b"expected");
+    let path = cache_path::<C>(&dir3, 16, b"expected");
+    write_cache::<C>(
+      &path,
+      &expected_header,
+      &Srs::<C>::unsafe_dev_setup_prefix(16, 15, b"different"),
+    )
+    .unwrap();
+    assert!(cached_in_directory::<C>(16, 15, b"expected", &dir3).is_err());
   }
 
   #[test]
-  fn cache_rejects_a_different_seed_even_with_valid_checksum() {
-    let directory = TempDir::new("dev-srs");
-    let expected_header = header(16, b"expected");
-    let path = cache_path(&directory, 16, b"expected");
-    write_cache(
-      &path,
-      &expected_header,
-      &Srs::unsafe_dev_setup_prefix(16, 15, b"different"),
-    )
-    .unwrap();
-    assert!(cached_in_directory(16, 15, b"expected", &directory).is_err());
+  fn cache_round_trip_and_damage_detection_for_both_curves() {
+    check_round_trip::<Bn254>();
+    check_round_trip::<Bls12381>();
   }
 
   #[test]
@@ -316,16 +330,26 @@ mod directory_tests {
     std::thread::scope(|scope| {
       for _ in 0..4 {
         scope.spawn(|| {
-          cached_in_directory(32, 31, b"concurrent", &directory).unwrap();
+          cached_in_directory::<Bn254>(32, 31, b"concurrent", &directory)
+            .unwrap();
+          cached_in_directory::<Bls12381>(32, 31, b"concurrent", &directory)
+            .unwrap();
         });
       }
     });
-    let actual =
-      cached_in_directory(32, 31, b"concurrent", &directory).unwrap();
+    let actual_bn =
+      cached_in_directory::<Bn254>(32, 31, b"concurrent", &directory).unwrap();
     assert_eq!(
-      actual.g1,
-      Srs::unsafe_dev_setup_prefix(32, 31, b"concurrent").g1
+      actual_bn.g1,
+      Srs::<Bn254>::unsafe_dev_setup_prefix(32, 31, b"concurrent").g1
     );
-    assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+    let actual_bls =
+      cached_in_directory::<Bls12381>(32, 31, b"concurrent", &directory)
+        .unwrap();
+    assert_eq!(
+      actual_bls.g1,
+      Srs::<Bls12381>::unsafe_dev_setup_prefix(32, 31, b"concurrent").g1
+    );
+    assert_eq!(fs::read_dir(&directory).unwrap().count(), 2);
   }
 }

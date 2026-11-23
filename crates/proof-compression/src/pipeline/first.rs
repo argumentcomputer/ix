@@ -6,7 +6,9 @@
 //! proof and the metadata the recursive stage verifies it with, plus the
 //! fixed-preprocessing checkpoints that populate the cross-run disk cache.
 use crate::fri::{VerifierLimits, VerifierPlan};
+#[cfg(test)]
 use crate::kzg::Scalar;
+use crate::kzg::{curve::KzgCurve, field::CurveScalar};
 use multi_stark::config::ProofConfig;
 #[cfg(test)]
 use multi_stark::plonkish::Assignment;
@@ -40,7 +42,7 @@ pub(super) use super::claims::first_claims as expected_claims;
 
 /// Translate, lower and prove the saved FRI proof in `fri`, writing the
 /// first KZG stage to `out`.
-pub(super) fn run(
+pub(super) fn run<C: KzgCurve>(
   fri: &Path,
   out: &Path,
   log_height: usize,
@@ -64,12 +66,12 @@ pub(super) fn run(
     fixture.claims,
   )?;
   assert_eq!(prepared.public_values(), fixture.public);
-  let public = super::stage::scalar_statement(&fixture.public);
+  let public = super::stage::scalar_statement::<C>(&fixture.public);
   drop(plan);
   drop(fixture.key);
   drop(fixture.proof);
   storage::release_host_memory();
-  let lowered = lowering::prepare_first(prepared, trace_height)?;
+  let lowered = lowering::prepare_first::<C>(prepared, trace_height)?;
   assert_eq!(lowered.assignment.public_values(), public);
   eprintln!(
     "Scalar translation and lowering of {} circuits: {:?}; {:?}",
@@ -78,12 +80,12 @@ pub(super) fn run(
     lowered.compiled.circuit().stats()
   );
   let height = max_height(&lowered.compiled)?;
-  let setup = config.setup.for_stage(FIRST_SEED, height)?;
+  let setup = config.setup.for_stage::<C>(FIRST_SEED, height)?;
   setup.bind_stage(out, height, 2)?;
-  let cache =
-    config.fixed_cache(out, &cache_identity(&plan_id, &setup, height)?);
+  let cache = config
+    .fixed_cache_for::<C>(out, &cache_identity(&plan_id, &setup, height)?);
   let cached = cache.restore(out)?;
-  let manifest = storage::Manifest::for_compiled(
+  let manifest = storage::Manifest::<C>::for_compiled(
     &lowered.compiled,
     lowered.compiled.claims(&public)?,
     cached.as_ref(),
@@ -96,10 +98,10 @@ pub(super) fn run(
 }
 
 /// The KZG configuration the first stage commits and proves under.
-fn proving_config(
-  setup: &SetupSource,
+fn proving_config<C: KzgCurve>(
+  setup: &SetupSource<C>,
   height: usize,
-) -> storage::Result<crate::kzg::KzgConfig> {
+) -> storage::Result<crate::kzg::KzgConfig<C>> {
   Ok(
     setup
       .config(height, 2, false)?
@@ -110,9 +112,9 @@ fn proving_config(
 
 /// The fixed-cache identity of a first stage proved for the FRI verifier
 /// plan `plan_id` under `setup` at trace height `height`.
-pub(super) fn cache_identity(
+pub(super) fn cache_identity<C: KzgCurve>(
   plan_id: &[u8; 32],
-  setup: &SetupSource,
+  setup: &SetupSource<C>,
   height: usize,
 ) -> storage::Result<Vec<u8>> {
   Ok([plan_id.as_slice(), &setup.identity(height, 2)?].concat())
@@ -120,15 +122,18 @@ pub(super) fn cache_identity(
 
 /// The first stage's fixed cache under `config`, at trace height
 /// `2^log_height`, for the FRI verifier plan `plan_id`.
-pub(super) fn fixed_cache(
+pub(super) fn fixed_cache<C: KzgCurve>(
   plan_id: &[u8; 32],
   log_height: usize,
   config: &super::SetupConfig,
   root: &Path,
 ) -> storage::Result<FixedCache> {
   let height = 1 << log_height;
-  let setup = config.for_stage(FIRST_SEED, height)?;
-  Ok(FixedCache::from_identity(root, &cache_identity(plan_id, &setup, height)?))
+  let setup = config.for_stage::<C>(FIRST_SEED, height)?;
+  Ok(FixedCache::from_identity_for::<C>(
+    root,
+    &cache_identity(plan_id, &setup, height)?,
+  ))
 }
 
 /// The first stage's fixed setup for the FRI stage `fri` at trace height
@@ -137,14 +142,14 @@ pub(super) fn fixed_cache(
 /// `run` stages and commits them. With `cache`, a fixed cache root, the
 /// fixed preprocessing comes from or is published to its entry, and the
 /// result says which, with the plan identity the entry is keyed by.
-pub(super) fn setup(
+pub(super) fn setup<C: KzgCurve>(
   fri: &super::FriVerifier,
   log_height: usize,
   config: &super::SetupConfig,
   cache: Option<&Path>,
 ) -> storage::Result<(
-  storage::Manifest,
-  Vec<FixedSetup>,
+  storage::Manifest<C>,
+  Vec<FixedSetup<C>>,
   Option<([u8; 32], super::fixed_cache::Prepared)>,
 )> {
   let plan = VerifierPlan::validate(
@@ -156,11 +161,12 @@ pub(super) fn setup(
   let plan_id = plan.identity(&schema)?;
   let circuit = FriConstruction::build(&plan, schema)?.circuit;
   drop(plan);
-  let (compiled, _inputs) = lowering::first_circuit(circuit, 1 << log_height)?;
+  let (compiled, _inputs) =
+    lowering::first_circuit::<C>(circuit, 1 << log_height)?;
   let height = max_height(&compiled)?;
-  let setup = config.for_stage(FIRST_SEED, height)?;
-  let public = super::stage::scalar_statement(&[Val::ZERO; 18]);
-  let manifest = storage::Manifest::for_compiled(
+  let setup = config.for_stage::<C>(FIRST_SEED, height)?;
+  let public = super::stage::scalar_statement::<C>(&[Val::ZERO; 18]);
+  let manifest = storage::Manifest::<C>::for_compiled(
     &compiled,
     compiled.claims(&public)?,
     None,
@@ -168,7 +174,7 @@ pub(super) fn setup(
   let config = proving_config(&setup, height)?;
   let (parts, prepared) = match cache {
     Some(root) => {
-      let cache = FixedCache::from_identity(
+      let cache = FixedCache::from_identity_for::<C>(
         root,
         &cache_identity(&plan_id, &setup, height)?,
       );
@@ -180,22 +186,24 @@ pub(super) fn setup(
   Ok((manifest, parts, prepared))
 }
 
-struct StageContext {
-  manifest: storage::Manifest,
-  setup: SetupSource,
+struct StageContext<C: KzgCurve> {
+  manifest: storage::Manifest<C>,
+  setup: SetupSource<C>,
   setup_id: [u8; 32],
   plan_id: [u8; 32],
   out: PathBuf,
   start: Instant,
 }
 
-fn validate_stage(
+fn validate_stage<C: KzgCurve>(
   dir: &Path,
-  compiled: &MultiStarkCircuit<Scalar>,
+  compiled: &MultiStarkCircuit<CurveScalar<C>>,
   cache: &FixedCache,
   config: &super::StageConfig,
-) -> storage::Result<(StageContext, crate::kzg::KzgConfig, PathBuf, usize)> {
-  let manifest: storage::Manifest = storage::load(&dir.join("manifest.bin"))?;
+) -> storage::Result<(StageContext<C>, crate::kzg::KzgConfig<C>, PathBuf, usize)>
+{
+  let manifest: storage::Manifest<C> =
+    storage::load(&dir.join("manifest.bin"))?;
   let count = manifest.heights.len();
   if count < MIN_PARTITIONS
     || manifest.widths.len() != count
@@ -204,7 +212,7 @@ fn validate_stage(
     return Err("unexpected trace layout".into());
   }
   let height = *manifest.heights.iter().max().ok_or("empty manifest")?;
-  if height > 1 << 28.min(Scalar::TWO_ADICITY - 1)
+  if height > 1 << 28.min(CurveScalar::<C>::TWO_ADICITY - 1)
     || manifest.heights.iter().any(|h| *h < 2 || !h.is_power_of_two())
   {
     return Err("unsupported trace height".into());
@@ -220,12 +228,12 @@ fn validate_stage(
     );
   }
   let statement = super::statement::from_rows(&manifest.claims)?;
-  if manifest.claims != expected_claims(count, &statement) {
+  if manifest.claims != expected_claims::<C>(count, &statement) {
     return Err(
       "staged claims differ from the statement and activation anchors".into(),
     );
   }
-  let setup = config.setup.for_stage(FIRST_SEED, height)?;
+  let setup = config.setup.for_stage::<C>(FIRST_SEED, height)?;
   setup.check_binding(dir, height, 2)?;
   let setup_id = setup.identity(height, 2)?;
   let plan_id: [u8; 32] = fs::read(dir.join("plan-id.bin"))?
@@ -239,7 +247,8 @@ fn validate_stage(
   let start = Instant::now();
   let prefetch_bytes = config.prefetch_bytes;
   let mut kzg_config = proving_config(&setup, height)?;
-  if let Some(spill_dir) = crate::kzg::KzgConfig::resolve_disk_spill_dir(&out)?
+  if let Some(spill_dir) =
+    crate::kzg::KzgConfig::<C>::resolve_disk_spill_dir(&out)?
   {
     kzg_config = kzg_config.with_disk_spill(spill_dir);
   }
@@ -254,10 +263,10 @@ fn validate_stage(
   ))
 }
 
-fn finalize_stage(
+fn finalize_stage<C: KzgCurve>(
   dir: &Path,
-  ctx: StageContext,
-  proved: prover::Proved,
+  ctx: StageContext<C>,
+  proved: prover::Proved<C>,
   cache: &FixedCache,
 ) -> storage::Result<()> {
   let StageContext { manifest, setup, setup_id, plan_id, out, start } = ctx;
@@ -269,7 +278,7 @@ fn finalize_stage(
   // identity need not be claim-independent. The label predates the Ignition
   // setup; the setup class is bound through the transcript seed.
   let mut instance = blake3::Hasher::new();
-  instance.update(b"init-fri-kzg-bn254/v1/development-srs/quotient2");
+  instance.update(C::FIRST_VK_LABEL);
   instance.update(system.config.transcript_seed());
   instance.update(&plan_id);
   instance.update(&fs::read(dir.join("manifest.bin"))?);
@@ -288,7 +297,7 @@ fn finalize_stage(
   let development = setup.class() == SetupClass::Development;
   let public_setup = system.config.pcs().public_setup();
   let evidence = serde_json::json!({
-    "curve": crate::kzg::curve::NAME,
+    "curve": C::NAME,
     "proof_bytes": bytes.len(),
     "packet_bytes": packet.len(),
     "trace_heights": manifest.heights,
@@ -304,7 +313,7 @@ fn finalize_stage(
   });
   fs::write(out.join("prove-report.json"), format!("{evidence}\n"))?;
   drop(output_span);
-  cache.publish(dir)?;
+  cache.publish::<C>(dir)?;
   eprintln!(
     "VERIFIED: proof_bytes={} packet_bytes={} verify_seconds={verify_seconds} total_seconds={} development_srs={development}",
     bytes.len(),
@@ -318,9 +327,9 @@ fn finalize_stage(
 /// together, verify the proof and write it with its packet. Fixed
 /// preprocessing comes from the cache when it holds this verifying key and is
 /// published to it after the proof verifies.
-fn prove(
+fn prove<C: KzgCurve>(
   dir: &Path,
-  lowered: Lowered,
+  lowered: Lowered<C>,
   cache: &FixedCache,
   config: &super::StageConfig,
 ) -> storage::Result<()> {
@@ -333,10 +342,10 @@ fn prove(
 }
 
 #[cfg(test)]
-fn prove_borrowed(
+fn prove_borrowed<C: KzgCurve>(
   dir: &Path,
-  compiled: &MultiStarkCircuit<Scalar>,
-  assignment: &Assignment<Scalar>,
+  compiled: &MultiStarkCircuit<CurveScalar<C>>,
+  assignment: &Assignment<CurveScalar<C>>,
   cache: &FixedCache,
   config: &super::StageConfig,
 ) -> storage::Result<()> {
@@ -356,6 +365,8 @@ fn prove_borrowed(
 #[cfg(test)]
 mod tests {
   use super::*;
+  #[cfg(test)]
+  use crate::kzg::curve::Bn254;
   use crate::test_support::TempDir;
   use multi_stark::plonkish::gadgets::ByteGadgets;
   use multi_stark::plonkish::gadgets::blake3;
@@ -433,7 +444,7 @@ mod tests {
   ) -> storage::Result<FixedCache> {
     fs::create_dir_all(dir)?;
     let height = max_height(compiled)?;
-    SetupSource::development(FIRST_SEED, height - 1)?
+    SetupSource::<Bn254>::development(FIRST_SEED, height - 1)?
       .bind_stage(dir, height, 2)?;
     fs::write(dir.join("plan-id.bin"), [0u8; 32])?;
     let cache = FixedCache::from_identity(cache_root, b"fixture-v1");

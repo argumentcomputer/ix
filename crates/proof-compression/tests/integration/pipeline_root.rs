@@ -3,16 +3,17 @@ use aiur::trace::stark::{
   BatchProof as AiurProof, VerifyingKey as AiurVerifyingKey,
 };
 use ix_proof_compression::kzg::Srs;
+use ix_proof_compression::kzg::curve::{Bls12381, Bn254};
 use ix_proof_compression::pipeline::{
   FixedRoot, FriVerifier, KzgVerifier, RecursiveVerifier, prepare_kzg,
-  prepare_recursive, prepare_root,
+  prepare_kzg_for, prepare_recursive, prepare_root,
 };
 use multi_stark::batch::ShardInput;
 use multi_stark::expr::Expr;
 use multi_stark::lookup::Lookup;
 use multi_stark::system::{CircuitInputs, System, SystemWitness};
 use multi_stark::types::{
-  CommitmentParameters, FriParameters, GoldilocksBlake3Config, Val,
+  CommitmentParameters, FriParameters, GoldilocksBlake3V6Config, Val,
 };
 use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
@@ -20,8 +21,8 @@ use stark_key::to_bytes;
 use std::sync::Arc;
 
 fn root_system() -> (
-  System<GoldilocksBlake3Config>,
-  multi_stark::system::ProverKey<GoldilocksBlake3Config>,
+  System<GoldilocksBlake3V6Config>,
+  multi_stark::system::ProverKey<GoldilocksBlake3V6Config>,
   CommitmentParameters,
   FriParameters,
 ) {
@@ -33,8 +34,8 @@ fn root_system() -> (
 fn root_system_with_blowup(
   log_blowup: usize,
 ) -> (
-  System<GoldilocksBlake3Config>,
-  multi_stark::system::ProverKey<GoldilocksBlake3Config>,
+  System<GoldilocksBlake3V6Config>,
+  multi_stark::system::ProverKey<GoldilocksBlake3V6Config>,
   CommitmentParameters,
   FriParameters,
 ) {
@@ -45,8 +46,8 @@ fn root_system_with(
   log_blowup: usize,
   num_queries: usize,
 ) -> (
-  System<GoldilocksBlake3Config>,
-  multi_stark::system::ProverKey<GoldilocksBlake3Config>,
+  System<GoldilocksBlake3V6Config>,
+  multi_stark::system::ProverKey<GoldilocksBlake3V6Config>,
   CommitmentParameters,
   FriParameters,
 ) {
@@ -61,7 +62,7 @@ fn root_system_with(
   // A small relation carrying the same 18-word shape as an aggregate call.
   // Its trusted key accepts any values; the caller selects the expected claim.
   let (system, pk) = System::new(
-    GoldilocksBlake3Config::new(cp, fp),
+    GoldilocksBlake3V6Config::new(cp, fp),
     [CircuitInputs {
       main_width: 19,
       preprocessed: Some(RowMajorMatrix::new_col(vec![Val::ZERO; 2])),
@@ -95,13 +96,13 @@ fn different_root_statements_and_trace_shard_counts() {
   let stage_fri_fp = FriParameters {
     log_final_poly_len: 0,
     max_log_arity: 1,
-    num_queries: 118,
+    num_queries: 135,
     commit_proof_of_work_bits: 0,
     query_proof_of_work_bits: 0,
   };
   for (seed, shards) in [(7, 1), (31, 2)] {
     let expected: Vec<_> = (0..18).map(|i| Val::from_u32(seed + i)).collect();
-    let inputs = |system: &System<GoldilocksBlake3Config>| {
+    let inputs = |system: &System<GoldilocksBlake3V6Config>| {
       (0..shards)
         .map(|i| {
           let mut row = expected.clone();
@@ -163,13 +164,13 @@ fn different_root_statements_and_trace_shard_counts() {
           .unwrap();
       assert!(
         insufficient
-          .prove_fri(GoldilocksBlake3Config::new(cp, fp), 1 << 16)
+          .prove_fri(GoldilocksBlake3V6Config::new(cp, fp), 1 << 16)
           .is_err()
       );
     }
     let (verifier, compressed) = stage
       .prove_fri(
-        GoldilocksBlake3Config::new(
+        GoldilocksBlake3V6Config::new(
           CommitmentParameters { log_blowup: 2, cap_height: 0 },
           stage_fri_fp,
         ),
@@ -178,6 +179,26 @@ fn different_root_statements_and_trace_shard_counts() {
       .unwrap();
     verifier.verify(&compressed, &expected).unwrap();
     assert!(verifier.verify(&compressed, &wrong).is_err());
+    if shards == 1 {
+      // Translate the compressed Protocol v6 (Fp^3) FRI proof into BOTH
+      // BN254 and BLS12-381 KZG stage-1 circuits and verify witness satisfaction.
+      let bn254 = prepare_kzg_for::<Bn254>(
+        &verifier,
+        &compressed,
+        &expected,
+        Default::default(),
+      )
+      .unwrap();
+      assert_eq!(bn254.public_values().len(), expected.len());
+      let bls = prepare_kzg_for::<Bls12381>(
+        &verifier,
+        &compressed,
+        &expected,
+        Default::default(),
+      )
+      .unwrap();
+      assert_eq!(bls.public_values().len(), expected.len());
+    }
   }
 }
 
@@ -190,7 +211,7 @@ fn shared_batch_root_preserves_single_batch_verifier_and_proof_bytes()
   };
   use multi_stark::plonkish::CircuitBuilder;
 
-  let (system, pk, cp, fp) = root_system_with(2, 118);
+  let (system, pk, cp, fp) = root_system_with(2, 135);
   let key =
     AiurVerifyingKey::from_bytes_below_floor(&to_bytes(&system, cp, fp))?;
   let expected: Vec<_> = (0..18).map(|i| Val::from_u32(41 + i)).collect();
@@ -259,7 +280,7 @@ fn shared_batch_root_preserves_single_batch_verifier_and_proof_bytes()
   drop(compiled);
   drop(assignment);
   let (reference, key) =
-    System::new(GoldilocksBlake3Config::new(cp, fp), definitions);
+    System::new(GoldilocksBlake3V6Config::new(cp, fp), definitions);
   let proof = reference.prove_multiple_claims(
     &key,
     &claims.iter().map(Vec::as_slice).collect::<Vec<_>>(),
@@ -270,7 +291,7 @@ fn shared_batch_root_preserves_single_batch_verifier_and_proof_bytes()
   drop(reference);
 
   let (verifier, proof) =
-    prepared.prove_fri(GoldilocksBlake3Config::new(cp, fp), 1 << 24)?;
+    prepared.prove_fri(GoldilocksBlake3V6Config::new(cp, fp), 1 << 24)?;
   type EncodedVerifier = (Vec<u8>, (Vec<Vec<Val>>, Vec<(usize, usize)>));
   let bytes = verifier.to_bytes()?;
   let ((key, (actual_template, locations)), consumed): (
@@ -406,7 +427,7 @@ fn complete_compression_chain() -> Result<(), Box<dyn std::error::Error>> {
   srs.validate()?;
   let fixed = FixedRoot::new(vec![1], vec![], 18)?;
   let config = || {
-    GoldilocksBlake3Config::new(
+    GoldilocksBlake3V6Config::new(
       CommitmentParameters { log_blowup: 2, cap_height: 0 },
       FriParameters { num_queries: 1, ..fp },
     )

@@ -1,9 +1,11 @@
 //! Affine arithmetic with constrained denominators and a complete final addition.
 use crate::kzg::{
-  Scalar,
-  curve::{Fq, G1Affine},
+  curve::{Bn254, G1AffineOf, KzgCurve},
+  field::CurveScalar,
 };
-use crate::recursive::native_field::{Builder, FqGadget, FqVar, L, fq_value};
+use crate::recursive::native_field::{
+  Builder, FqGadget, FqVar, fq_value, limb_count,
+};
 use ark_ec::{AdditiveGroup, AffineRepr};
 use ark_ff::Field;
 use multi_stark::{
@@ -11,38 +13,61 @@ use multi_stark::{
   traits::{Algebra, Field as NativeField},
 };
 
-#[derive(Clone, Copy)]
-pub struct Affine {
-  pub x: FqVar,
-  pub y: FqVar,
+pub struct Affine<C: KzgCurve = Bn254> {
+  pub x: FqVar<C>,
+  pub y: FqVar<C>,
 }
-#[derive(Clone, Copy)]
-pub struct PointInput {
-  pub point: Affine,
+
+impl<C: KzgCurve> Clone for Affine<C> {
+  fn clone(&self) -> Self {
+    *self
+  }
+}
+
+impl<C: KzgCurve> Copy for Affine<C> {}
+
+pub struct PointInput<C: KzgCurve = Bn254> {
+  pub point: Affine<C>,
   pub infinity: Bool,
 }
 
-impl Affine {
-  pub fn constant(b: &mut Builder, f: &FqGadget, p: G1Affine) -> Self {
+impl<C: KzgCurve> Clone for PointInput<C> {
+  fn clone(&self) -> Self {
+    *self
+  }
+}
+
+impl<C: KzgCurve> Copy for PointInput<C> {}
+
+impl<C: KzgCurve> Affine<C> {
+  pub fn constant(
+    b: &mut Builder<C>,
+    f: &FqGadget<C>,
+    p: G1AffineOf<C>,
+  ) -> Self {
     assert!(!p.infinity);
     Self { x: f.constant(b, p.x), y: f.constant(b, p.y) }
   }
-  pub fn select(b: &mut Builder, bit: Bool, yes: Self, no: Self) -> Self {
+  pub fn select(b: &mut Builder<C>, bit: Bool, yes: Self, no: Self) -> Self {
+    let yes_x = yes.x.limbs();
+    let no_x = no.x.limbs();
+    let yes_y = yes.y.limbs();
+    let no_y = no.y.limbs();
     Self {
-      x: FqVar(std::array::from_fn(|i| b.select(bit, yes.x.0[i], no.x.0[i]))),
-      y: FqVar(std::array::from_fn(|i| b.select(bit, yes.y.0[i], no.y.0[i]))),
+      x: FqVar::from_fn(|i| b.select(bit, yes_x[i], no_x[i])),
+      y: FqVar::from_fn(|i| b.select(bit, yes_y[i], no_y[i])),
     }
   }
-  pub fn on_curve(self, b: &mut Builder, f: &FqGadget) {
+  pub fn on_curve(self, b: &mut Builder<C>, f: &FqGadget<C>) {
     let xx = f.mul(b, self.x, self.x);
-    let coefficient = 3;
+    let coefficient = i8::try_from(C::CURVE_B).expect("small curve b");
     f.relation(b, &[(1, xx, self.x), (-1, self.y, self.y)], &[], coefficient);
   }
-  pub fn double(self, b: &mut Builder, f: &FqGadget) -> Self {
+  pub fn double(self, b: &mut Builder<C>, f: &FqGadget<C>) -> Self {
     let slope = f.hint_pure(b, "doubling slope", &[self.x, self.y], |v| {
       Ok(
         v[0].square()
-          * Fq::from(3u8)
+          * C::Fq::from(3u8)
           * (v[1].double().inverse().ok_or("zero doubling denominator")?),
       )
     });
@@ -64,7 +89,7 @@ impl Affine {
     );
     Self { x, y }
   }
-  pub fn add(self, b: &mut Builder, f: &FqGadget, rhs: Self) -> Self {
+  pub fn add(self, b: &mut Builder<C>, f: &FqGadget<C>, rhs: Self) -> Self {
     let inv = f.hint_pure(b, "addition inverse", &[rhs.x, self.x], |v| {
       (v[0] - v[1]).inverse().ok_or("exceptional affine addition".into())
     });
@@ -104,32 +129,37 @@ impl Affine {
   /// Equal inputs use doubling; opposite inputs have canonical zero coordinates.
   pub fn add_complete(
     self,
-    b: &mut Builder,
-    f: &FqGadget,
+    b: &mut Builder<C>,
+    f: &FqGadget<C>,
     rhs: Self,
-  ) -> PointInput {
+  ) -> PointInput<C> {
     let same_x = equal_flag(b, f, self.x, rhs.x);
     let same_y = equal_flag(b, f, self.y, rhs.y);
-    let g = G1Affine::generator();
+    let g = G1AffineOf::<C>::generator();
     let fallback_left = Self::constant(b, f, g);
     let fallback_right = Self::constant(b, f, (g + g).into());
     let left = Self::select(b, same_x, fallback_left, self);
     let right = Self::select(b, same_x, fallback_right, rhs);
     let ordinary = left.add(b, f, right);
     let doubled = self.double(b, f);
-    let zero = f.constant(b, Fq::from(0u8));
+    let zero = f.constant(b, C::Fq::from(0u8));
     let exceptional =
       Self::select(b, same_y, doubled, Self { x: zero, y: zero });
     let point = Self::select(b, same_x, exceptional, ordinary);
     let different_y = b.affine(
       [same_y.value(), same_y.value()],
-      [Scalar::NEG_ONE, Scalar::ZERO],
-      Scalar::ONE,
+      [CurveScalar::<C>::NEG_ONE, CurveScalar::<C>::ZERO],
+      CurveScalar::<C>::ONE,
     );
     let infinity = b.mul(same_x.value(), different_y);
     PointInput { point, infinity: b.assert_bool(infinity) }
   }
-  pub fn constant_mul(self, b: &mut Builder, f: &FqGadget, n: u64) -> Self {
+  pub fn constant_mul(
+    self,
+    b: &mut Builder<C>,
+    f: &FqGadget<C>,
+    n: u64,
+  ) -> Self {
     assert!(n > 0);
     let mut acc = self;
     for i in (0..63 - n.leading_zeros()).rev() {
@@ -140,26 +170,52 @@ impl Affine {
     }
     acc
   }
-  pub fn equal(self, b: &mut Builder, f: &FqGadget, rhs: Self) {
+  pub fn equal(self, b: &mut Builder<C>, f: &FqGadget<C>, rhs: Self) {
     f.equal(b, self.x, rhs.x);
     f.equal(b, self.y, rhs.y);
   }
 
-  /// BN254 G1 has cofactor one, so `on_curve` already proves membership.
-  pub fn subgroup(self, _b: &mut Builder, _f: &FqGadget) {}
+  /// Subgroup membership check. BN254 G1 has cofactor one so `on_curve`
+  /// suffices; BLS12-381 enforces the endomorphism criterion matching
+  /// `ark-bls12-381`'s native checker.
+  pub fn subgroup(self, b: &mut Builder<C>, f: &FqGadget<C>) {
+    if !C::HAS_COFACTOR {
+      return;
+    }
+    let xp = self.constant_mul(b, f, C::SUBGROUP_CHECK_SEED);
+    let inv = f.hint_pure(
+      b,
+      "reject exceptional subgroup point",
+      &[xp.x, self.x],
+      |v| (v[0] - v[1]).inverse().ok_or("exceptional subgroup point".into()),
+    );
+    f.relation(b, &[(1, xp.x, inv), (-1, self.x, inv)], &[], -1);
+    let x2p = xp.constant_mul(b, f, C::SUBGROUP_CHECK_SEED);
+    let beta =
+      f.constant(b, C::endo_beta().expect("cofactor curve has endo beta"));
+    f.relation(b, &[(1, beta, self.x)], &[(-1, x2p.x)], 0);
+    f.relation(b, &[], &[(1, self.y), (1, x2p.y)], 0);
+  }
 }
 
-fn equal_flag(b: &mut Builder, f: &FqGadget, lhs: FqVar, rhs: FqVar) -> Bool {
-  let deps: Vec<_> = lhs.0.into_iter().chain(rhs.0).collect();
-  let equal = b.hint("Fq equality", &deps, |v| {
-    Ok(Scalar::from_bool(fq_value(&v[..L]) == fq_value(&v[L..])))
+fn equal_flag<C: KzgCurve>(
+  b: &mut Builder<C>,
+  f: &FqGadget<C>,
+  lhs: FqVar<C>,
+  rhs: FqVar<C>,
+) -> Bool {
+  let l = limb_count::<C>();
+  let deps: Vec<_> = lhs.limbs().iter().chain(rhs.limbs()).copied().collect();
+  let equal = b.hint("Fq equality", &deps, move |v| {
+    Ok(CurveScalar::<C>::from_bool(
+      fq_value::<C>(&v[..l]) == fq_value::<C>(&v[l..]),
+    ))
   });
   let flag = b.assert_bool(equal);
-  let zero = b.constant(Scalar::ZERO);
-  let flag_fq =
-    FqVar(std::array::from_fn(|i| if i == 0 { equal } else { zero }));
+  let zero = b.constant(CurveScalar::<C>::ZERO);
+  let flag_fq = FqVar::from_fn(|i| if i == 0 { equal } else { zero });
   let inverse = f.hint_pure(b, "Fq equality inverse", &[lhs, rhs], |v| {
-    Ok((v[0] - v[1]).inverse().unwrap_or(Fq::from(0u8)))
+    Ok((v[0] - v[1]).inverse().unwrap_or(C::Fq::from(0u8)))
   });
   f.relation(b, &[(1, lhs, inverse), (-1, rhs, inverse)], &[(1, flag_fq)], -1);
   f.relation(b, &[(1, lhs, flag_fq), (-1, rhs, flag_fq)], &[], 0);
@@ -167,15 +223,15 @@ fn equal_flag(b: &mut Builder, f: &FqGadget, lhs: FqVar, rhs: FqVar) -> Bool {
   flag
 }
 
-impl PointInput {
-  pub fn new(b: &mut Builder, f: &FqGadget, name: &str) -> Self {
+impl<C: KzgCurve> PointInput<C> {
+  pub fn new(b: &mut Builder<C>, f: &FqGadget<C>, name: &str) -> Self {
     let point = Affine {
       x: f.input(b, &format!("{name}.x")),
       y: f.input(b, &format!("{name}.y")),
     };
     let flag = b.input(format!("{name}.infinity"));
     let infinity = b.assert_bool(flag);
-    for v in point.x.0.into_iter().chain(point.y.0) {
+    for &v in point.x.limbs().iter().chain(point.y.limbs()) {
       let zero = b.mul(v, flag);
       b.assert_zero(zero);
     }
@@ -185,11 +241,11 @@ impl PointInput {
     p.subgroup(b, f);
     result
   }
-  pub fn nonzero(self, b: &mut Builder, f: &FqGadget) -> Affine {
-    let g = Affine::constant(b, f, G1Affine::generator());
+  pub fn nonzero(self, b: &mut Builder<C>, f: &FqGadget<C>) -> Affine<C> {
+    let g = Affine::constant(b, f, G1AffineOf::<C>::generator());
     Affine::select(b, self.infinity, g, self.point)
   }
-  pub fn canonical(self, b: &mut Builder, f: &FqGadget) -> Self {
+  pub fn canonical(self, b: &mut Builder<C>, f: &FqGadget<C>) -> Self {
     let x = f.hint_pure(b, "output x", &[self.point.x], |v| Ok(v[0]));
     f.equal(b, x, self.point.x);
     f.canonical(b, x);
@@ -198,43 +254,60 @@ impl PointInput {
     f.canonical(b, y);
     Self { point: Affine { x, y }, infinity: self.infinity }
   }
-  pub fn inputs(self, p: G1Affine) -> Vec<(Value, Scalar)> {
-    let (x, y) =
-      if p.infinity { (Fq::from(0u8), Fq::from(0u8)) } else { (p.x, p.y) };
+  pub fn inputs(self, p: G1AffineOf<C>) -> Vec<(Value, CurveScalar<C>)> {
+    let (x, y) = if p.infinity {
+      (C::Fq::from(0u8), C::Fq::from(0u8))
+    } else {
+      (p.x, p.y)
+    };
     self
       .point
       .x
-      .0
-      .into_iter()
-      .zip(FqGadget::witness_values(x))
-      .chain(self.point.y.0.into_iter().zip(FqGadget::witness_values(y)))
-      .chain([(self.infinity.value(), Scalar::from_u8(u8::from(p.infinity)))])
+      .limbs()
+      .iter()
+      .copied()
+      .zip(FqGadget::<C>::witness_values(x))
+      .chain(
+        self
+          .point
+          .y
+          .limbs()
+          .iter()
+          .copied()
+          .zip(FqGadget::<C>::witness_values(y)),
+      )
+      .chain([(
+        self.infinity.value(),
+        CurveScalar::<C>::from_u8(u8::from(p.infinity)),
+      )])
       .collect()
   }
 }
 
 #[cfg(test)]
-fn check_operation(operation: &str) -> Result<(), Box<dyn std::error::Error>> {
-  use crate::kzg::curve::Fr;
+fn check_operation<C: KzgCurve>(
+  operation: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
   use ark_ec::CurveGroup;
-  let mut b = Builder::new();
-  let f = FqGadget::new(&mut b);
-  let p = PointInput::new(&mut b, &f, "point");
-  let g = G1Affine::generator();
+  let mut b = Builder::<C>::new();
+  let f = FqGadget::<C>::new(&mut b);
+  let p = PointInput::<C>::new(&mut b, &f, "point");
+  let g = G1AffineOf::<C>::generator();
   let a = p.nonzero(&mut b, &f);
   match operation {
     "native-subgroup" => {},
     "native-double" => {
       let out = a.double(&mut b, &f);
       let expected =
-        Affine::constant(&mut b, &f, (g * Fr::from(2u8)).into_affine());
+        Affine::constant(&mut b, &f, (g * C::Fr::from(2u8)).into_affine());
       out.equal(&mut b, &f, expected);
     },
     "native-add" => {
-      let rhs = Affine::constant(&mut b, &f, (g * Fr::from(7u8)).into_affine());
+      let rhs =
+        Affine::constant(&mut b, &f, (g * C::Fr::from(7u8)).into_affine());
       let out = a.add(&mut b, &f, rhs);
       let expected =
-        Affine::constant(&mut b, &f, (g * Fr::from(8u8)).into_affine());
+        Affine::constant(&mut b, &f, (g * C::Fr::from(8u8)).into_affine());
       out.equal(&mut b, &f, expected);
     },
     _ => return Err("unknown native operation".into()),
@@ -251,13 +324,13 @@ fn check_operation(operation: &str) -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::kzg::curve::Fr;
+  use crate::kzg::curve::Bls12381;
   use ark_ec::CurveGroup;
-  #[test]
-  fn subgroup_infinity_and_reject_invalid_points() {
-    let mut b = Builder::new();
-    let f = FqGadget::new(&mut b);
-    let p = PointInput::new(&mut b, &f, "p");
+
+  fn test_subgroup_infinity_and_reject_invalid_points<C: KzgCurve>() {
+    let mut b = Builder::<C>::new();
+    let f = FqGadget::<C>::new(&mut b);
+    let p = PointInput::<C>::new(&mut b, &f, "p");
     let c = b.finish();
     let run = |point| {
       let mut w = c.witness();
@@ -267,48 +340,75 @@ mod tests {
       w.generate()
     };
     for n in [0u64, 1, 2, 123456789, u64::MAX] {
-      let point = (G1Affine::generator() * Fr::from(n)).into_affine();
+      let point = (G1AffineOf::<C>::generator() * C::Fr::from(n)).into_affine();
       run(point).unwrap();
       run(-point).unwrap();
     }
+    if C::HAS_COFACTOR {
+      let torsion =
+        G1AffineOf::<C>::new_unchecked(C::Fq::from(0u8), C::Fq::from(2u8));
+      assert!(torsion.is_on_curve());
+      assert!(!torsion.is_in_correct_subgroup_assuming_on_curve());
+      assert!(run(torsion).is_err());
+      let mut checked = 0;
+      for x in 1..100u64 {
+        if let Some(point) =
+          G1AffineOf::<C>::get_point_from_x_unchecked(C::Fq::from(x), false)
+          && !point.is_in_correct_subgroup_assuming_on_curve()
+        {
+          assert!(run(point).is_err());
+          checked += 1;
+          if checked == 8 {
+            break;
+          }
+        }
+      }
+      assert_eq!(checked, 8);
+    }
     assert!(
-      run(G1Affine::new_unchecked(Fq::from(7u8), Fq::from(9u8))).is_err()
+      run(G1AffineOf::<C>::new_unchecked(C::Fq::from(7u8), C::Fq::from(9u8)))
+        .is_err()
     );
   }
 
   #[test]
-  fn rejects_coordinate_aliases_and_invalid_infinity() {
+  fn subgroup_infinity_and_reject_invalid_points() {
+    test_subgroup_infinity_and_reject_invalid_points::<Bn254>();
+    test_subgroup_infinity_and_reject_invalid_points::<Bls12381>();
+  }
+
+  fn test_rejects_coordinate_aliases_and_invalid_infinity<C: KzgCurve>() {
     use crate::recursive::native_field::{W, modulus, scalar};
     use ark_ff::{BigInteger, PrimeField};
     use num_bigint::BigUint;
 
-    let mut b = Builder::new();
-    let f = FqGadget::new(&mut b);
-    let p = PointInput::new(&mut b, &f, "p");
+    let mut b = Builder::<C>::new();
+    let f = FqGadget::<C>::new(&mut b);
+    let p = PointInput::<C>::new(&mut b, &f, "p");
     let c = b.finish();
-    let generator = G1Affine::generator();
+    let generator = G1AffineOf::<C>::generator();
     let radix_mask = (BigUint::from(1u8) << W) - 1u8;
     for coordinate in [p.point.x, p.point.y] {
-      let value = if coordinate.0[0] == p.point.x.0[0] {
+      let value = if coordinate.limbs()[0] == p.point.x.limbs()[0] {
         generator.x
       } else {
         generator.y
       };
-      let alias =
-        modulus() + BigUint::from_bytes_le(&value.into_bigint().to_bytes_le());
+      let alias = modulus::<C>()
+        + BigUint::from_bytes_le(&value.into_bigint().to_bytes_le());
       let mut w = c.witness();
       for (handle, mut value) in p.inputs(generator) {
-        if let Some(i) = coordinate.0.iter().position(|&v| v == handle) {
-          value = scalar(&((&alias >> (W * i)) & &radix_mask));
+        if let Some(i) = coordinate.limbs().iter().position(|&v| v == handle) {
+          value = scalar::<C>(&((&alias >> (W * i)) & &radix_mask));
         }
         w.set(handle, value).unwrap();
       }
       assert!(w.generate().is_err());
     }
     for (point, flag) in [
-      (generator, Scalar::ONE),
-      (generator, Scalar::TWO),
-      (G1Affine::identity(), Scalar::ZERO),
+      (generator, CurveScalar::<C>::ONE),
+      (generator, CurveScalar::<C>::TWO),
+      (G1AffineOf::<C>::identity(), CurveScalar::<C>::ZERO),
     ] {
       let mut w = c.witness();
       for (handle, value) in p.inputs(point) {
@@ -318,41 +418,59 @@ mod tests {
       assert!(w.generate().is_err());
     }
   }
+
   #[test]
-  fn affine_operations() {
-    for operation in ["native-add", "native-double"] {
-      check_operation(operation).unwrap();
-    }
+  fn rejects_coordinate_aliases_and_invalid_infinity() {
+    test_rejects_coordinate_aliases_and_invalid_infinity::<Bn254>();
+    test_rejects_coordinate_aliases_and_invalid_infinity::<Bls12381>();
   }
 
   #[test]
-  fn complete_add_equal_opposite_and_distinct_points() {
-    let mut b = Builder::new();
-    let f = FqGadget::new(&mut b);
-    let left = PointInput::new(&mut b, &f, "left");
-    let right = PointInput::new(&mut b, &f, "right");
+  fn affine_operations() {
+    for operation in ["native-subgroup", "native-add", "native-double"] {
+      check_operation::<Bn254>(operation).unwrap();
+      check_operation::<Bls12381>(operation).unwrap();
+    }
+  }
+
+  fn test_complete_add<C: KzgCurve>() {
+    let mut b = Builder::<C>::new();
+    let f = FqGadget::<C>::new(&mut b);
+    let left = PointInput::<C>::new(&mut b, &f, "left");
+    let right = PointInput::<C>::new(&mut b, &f, "right");
     let lhs = left.nonzero(&mut b, &f);
     let rhs = right.nonzero(&mut b, &f);
     let result = lhs.add_complete(&mut b, &f, rhs);
     let result = result.canonical(&mut b, &f);
     let c = b.finish();
-    let p = G1Affine::generator();
-    for q in [p, -p, (p * Fr::from(7u8)).into_affine()] {
+    let p = G1AffineOf::<C>::generator();
+    for q in [p, -p, (p * C::Fr::from(7u8)).into_affine()] {
       let mut w = c.witness();
       for (v, n) in left.inputs(p).into_iter().chain(right.inputs(q)) {
         w.set(v, n).unwrap();
       }
       let a = w.generate().unwrap();
-      let x = fq_value(&result.point.x.0.map(|v| a.value(v).unwrap()));
-      let y = fq_value(&result.point.y.0.map(|v| a.value(v).unwrap()));
-      let actual = if a.value(result.infinity.value()).unwrap() == Scalar::ONE {
-        assert_eq!(x, Fq::from(0u8));
-        assert_eq!(y, Fq::from(0u8));
-        G1Affine::identity()
-      } else {
-        G1Affine::new_unchecked(x, y)
-      };
+      let xs: Vec<_> =
+        result.point.x.limbs().iter().map(|&v| a.value(v).unwrap()).collect();
+      let ys: Vec<_> =
+        result.point.y.limbs().iter().map(|&v| a.value(v).unwrap()).collect();
+      let x = fq_value::<C>(&xs);
+      let y = fq_value::<C>(&ys);
+      let actual =
+        if a.value(result.infinity.value()).unwrap() == CurveScalar::<C>::ONE {
+          assert_eq!(x, C::Fq::from(0u8));
+          assert_eq!(y, C::Fq::from(0u8));
+          G1AffineOf::<C>::identity()
+        } else {
+          G1AffineOf::<C>::new_unchecked(x, y)
+        };
       assert_eq!(actual, (p + q).into_affine());
     }
+  }
+
+  #[test]
+  fn complete_add_equal_opposite_and_distinct_points() {
+    test_complete_add::<Bn254>();
+    test_complete_add::<Bls12381>();
   }
 }

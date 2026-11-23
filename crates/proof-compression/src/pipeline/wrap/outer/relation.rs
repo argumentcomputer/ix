@@ -1,7 +1,10 @@
 //! Shared verifier layouts, graph validation and native differential vectors.
 use super::*;
-use crate::kzg::curve::{Fq, G1Affine, G1Projective};
-use ark_ec::{AffineRepr, CurveGroup};
+use crate::kzg::{
+  curve::{Bn254, G1AffineOf, G1ProjectiveOf, KzgCurve},
+  field::CurveScalar,
+};
+use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, PrimeField, Zero};
 use multi_stark::{
   config::ProofConfig,
@@ -28,22 +31,21 @@ pub(super) fn hex_json(bytes: &[u8]) -> String {
   format!("0x{}", hex(bytes))
 }
 
-pub(super) fn scalar(value: Scalar) -> String {
+pub(super) fn scalar<C: KzgCurve>(value: CurveScalar<C>) -> String {
   hex_json(&value.0.into_bigint().to_bytes_be())
 }
 
-pub(super) fn fq(value: Fq) -> Vec<u8> {
+pub(super) fn fq<C: KzgCurve>(value: C::Fq) -> Vec<u8> {
   value.into_bigint().to_bytes_be()
 }
 
-pub(super) fn g1(point: G1Affine) -> Vec<u8> {
-  if point.is_zero() {
-    return vec![0; 64];
-  }
-  [fq(point.x), fq(point.y)].concat()
+pub(super) fn g1<C: KzgCurve>(point: G1AffineOf<C>) -> Vec<u8> {
+  C::encode_g1_evm(point)
 }
 
-pub(super) fn proof_points(proof: &Proof<KzgConfig>) -> Vec<G1Affine> {
+pub(super) fn proof_points<C: KzgCurve>(
+  proof: &Proof<KzgConfig<C>>,
+) -> Vec<G1AffineOf<C>> {
   [
     &proof.commitments.stage_1_trace,
     &proof.commitments.stage_2_trace,
@@ -73,8 +75,8 @@ pub(super) struct GraphInputs {
 }
 
 impl GraphInputs {
-  pub(super) fn for_circuit(
-    system: &System<KzgConfig>,
+  pub(super) fn for_circuit<C: KzgCurve>(
+    system: &System<KzgConfig<C>>,
     index: usize,
   ) -> Result<Self> {
     let count = system.circuits.len();
@@ -112,8 +114,8 @@ impl GraphInputs {
 
 /// Validated arithmetic with variable references resolved into opening windows.
 #[derive(Clone, Copy)]
-pub(super) enum GraphInstruction {
-  Constant(Scalar),
+pub(super) enum GraphInstruction<C: KzgCurve = Bn254> {
+  Constant(CurveScalar<C>),
   Opening { matrix: usize, offset: usize },
   Public(usize),
   First,
@@ -125,13 +127,13 @@ pub(super) enum GraphInstruction {
   Neg(usize),
 }
 
-pub(super) struct GraphProgram {
-  pub(super) instructions: Vec<GraphInstruction>,
+pub(super) struct GraphProgram<C: KzgCurve = Bn254> {
+  pub(super) instructions: Vec<GraphInstruction<C>>,
 }
 
-impl GraphProgram {
+impl<C: KzgCurve> GraphProgram<C> {
   pub(super) fn compile(
-    graph: &ConstraintGraph<Scalar>,
+    graph: &ConstraintGraph<CurveScalar<C>>,
     inputs: GraphInputs,
   ) -> Result<Self> {
     if inputs.public_count != 4 {
@@ -197,7 +199,9 @@ impl GraphProgram {
   }
 
   #[cfg(any(feature = "plonk", feature = "groth16"))]
-  pub(super) fn evaluate<A: Algebra<Scalar> + Copy + From<Scalar>>(
+  pub(super) fn evaluate<
+    A: Algebra<CurveScalar<C>> + Copy + From<CurveScalar<C>>,
+  >(
     &self,
     opening: impl Fn(usize, usize) -> A,
     publics: &[A],
@@ -224,16 +228,16 @@ impl GraphProgram {
   }
 }
 
-struct Batch {
-  z: Scalar,
-  commitments: Vec<G1Affine>,
-  values: Vec<Scalar>,
+struct Batch<C: KzgCurve> {
+  z: CurveScalar<C>,
+  commitments: Vec<G1AffineOf<C>>,
+  values: Vec<CurveScalar<C>>,
 }
 
-pub(super) fn diagnostics(
-  system: &System<KzgConfig>,
-  proof: &Proof<KzgConfig>,
-  claims: &[Vec<Scalar>],
+pub(super) fn diagnostics<C: KzgCurve>(
+  system: &System<KzgConfig<C>>,
+  proof: &Proof<KzgConfig<C>>,
+  claims: &[Vec<CurveScalar<C>>],
 ) -> Result<Json> {
   let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
   system
@@ -242,17 +246,17 @@ pub(super) fn diagnostics(
   let mut t = system.config.initialise_challenger();
   system.observe_shape(&mut t);
   for &active in &proof.active {
-    t.observe_field(Scalar::from_bool(active));
+    t.observe_field(CurveScalar::<C>::from_bool(active));
   }
   t.observe_commitment(
     system.preprocessed_commit.clone().ok_or("missing fixed commitment")?,
   );
   t.observe_commitment(proof.commitments.stage_1_trace.clone());
   for &log in &proof.log_degrees {
-    t.observe_field(Scalar::from_u8(log));
+    t.observe_field(CurveScalar::<C>::from_u8(log));
   }
-  observe_claims::<KzgConfig>(&mut t, &refs);
-  let (beta, gamma) = sample_lookup_challenges::<KzgConfig>(&mut t);
+  observe_claims::<KzgConfig<C>>(&mut t, &refs);
+  let (beta, gamma) = sample_lookup_challenges::<KzgConfig<C>>(&mut t);
   let mut accumulator = claims
     .iter()
     .map(|row| {
@@ -260,10 +264,10 @@ pub(super) fn diagnostics(
         + row
           .iter()
           .rev()
-          .fold(Scalar::ZERO, |acc, value| acc * gamma + *value))
+          .fold(CurveScalar::<C>::ZERO, |acc, value| acc * gamma + *value))
       .inverse()
     })
-    .fold(Scalar::ZERO, |a, b| a + b);
+    .fold(CurveScalar::<C>::ZERO, |a, b| a + b);
   let public_accumulator = accumulator;
   t.observe_commitment(proof.commitments.stage_2_trace.clone());
   for &a in &proof.intermediate_accumulators {
@@ -287,7 +291,7 @@ pub(super) fn diagnostics(
       t.observe_canonical(&u64::from(log));
     }
   }
-  let mut batches: Vec<Batch> = vec![];
+  let mut batches: Vec<Batch<C>> = vec![];
   for (commit, values) in &rounds {
     for (i, rows) in values.iter().enumerate() {
       let domain = system
@@ -319,14 +323,14 @@ pub(super) fn diagnostics(
   if batches.len() != proof.opening_proof.0.len() {
     return Err("opening count mismatch".into());
   }
-  let mut left = G1Projective::zero();
-  let mut right = G1Projective::zero();
-  let mut rp = Scalar::ONE;
+  let mut left = G1ProjectiveOf::<C>::zero();
+  let mut right = G1ProjectiveOf::<C>::zero();
+  let mut rp = CurveScalar::<C>::ONE;
   let generator = system.config.pcs().verifier_params().g1[0];
   for (batch, witness) in batches.iter().zip(&proof.opening_proof.0) {
-    let mut folded = G1Projective::zero();
-    let mut y = Scalar::ZERO;
-    let mut vp = Scalar::ONE;
+    let mut folded = G1ProjectiveOf::<C>::zero();
+    let mut y = CurveScalar::<C>::ZERO;
+    let mut vp = CurveScalar::<C>::ONE;
     for (c, value) in batch.commitments.iter().zip(&batch.values) {
       folded += *c * vp.0;
       y += *value * vp;
@@ -359,9 +363,9 @@ pub(super) fn diagnostics(
     let mut values = vec![];
     c.graph.sweep(&view, &mut values);
     let mut constraints = c.graph.constraint_values(&values);
-    let ext = multi_stark::system::extension_params::<KzgConfig>();
+    let ext = multi_stark::system::extension_params::<KzgConfig<C>>();
     let delta = (next - accumulator)
-      * (Scalar::from_usize(n) * domain.generator()).inverse();
+      * (CurveScalar::<C>::from_usize(n) * domain.generator()).inverse();
     multi_stark::lookup::logup_constraint_values(
       &c.graph.lookups,
       &values,
@@ -370,20 +374,20 @@ pub(super) fn diagnostics(
       &publics,
       &[delta],
       sels.is_last_row,
-      ext.w,
+      ext.modulus,
       ext.degree,
       c.lookup_group_size.max(1),
       &mut constraints,
     );
     let composition = constraints
       .into_iter()
-      .fold(Scalar::ZERO, |acc, value| acc * alpha + value);
+      .fold(CurveScalar::<C>::ZERO, |acc, value| acc * alpha + value);
     let zn = zeta.exp_power_of_2(usize::from(proof.log_degrees[i]));
     let quotient = proof.quotient_opened_values[i][0]
       .iter()
       .zip(zn.powers())
       .map(|(&value, power)| value * power)
-      .fold(Scalar::ZERO, |a, b| a + b);
+      .fold(CurveScalar::<C>::ZERO, |a, b| a + b);
     if composition * sels.inv_vanishing != quotient {
       return Err("diagnostic quotient mismatch".into());
     }
@@ -394,8 +398,8 @@ pub(super) fn diagnostics(
   Ok(json!({
     "challenges": ([beta, gamma, alpha, zeta, v, r].map(scalar)),
     "publicAccumulator": scalar(public_accumulator),
-    "outerL": hex_json(&g1(left.into_affine())),
-    "outerR": hex_json(&g1(right.into_affine())),
+    "outerL": hex_json(&g1::<C>(left.into_affine())),
+    "outerR": hex_json(&g1::<C>(right.into_affine())),
     "compositions": compositions,
     "quotients": quotients,
   }))

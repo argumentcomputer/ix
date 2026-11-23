@@ -141,7 +141,7 @@ impl PackedCapacity {
   ) -> Result<PackedShplonkConfig, String> {
     let cap = self.cap()?;
     let source =
-      setup.for_stage(PACKED_SETUP_SEED, cap).map_err(|e| e.to_string())?;
+      setup.for_stage::<crate::kzg::Bn254>(PACKED_SETUP_SEED, cap).map_err(|e| e.to_string())?;
     let srs = source.srs(cap, false).map_err(|e| e.to_string())?;
     Ok(PackedShplonkConfig::with_max_trace_len(
       Arc::new(srs),

@@ -11,6 +11,7 @@ use super::{
   setup::{SetupClass, SetupConfig},
   stage, statement, storage, verifying_keys, wrap,
 };
+use crate::kzg::curve::{Bls12381, Bn254, Curve, KzgCurve};
 use std::{
   ffi::{OsStr, OsString},
   fs,
@@ -103,6 +104,7 @@ fn takes_value(arg: &OsStr) -> bool {
     arg.to_str(),
     Some(
       "--out"
+        | "--curve"
         | "--root-vk"
         | "--fixed-root"
         | "--aiur-artifact"
@@ -281,6 +283,8 @@ pub struct CompressInput<'a> {
 
 /// Everything the stages read besides their input directories.
 pub struct CompressConfig {
+  /// Pairing curve backend (`Curve::Bn254` or `Curve::Bls12381`).
+  pub curve: Curve,
   pub setup: SetupConfig,
   /// Fixed preprocessing shared between runs, keyed by format and stage
   /// verifying key.
@@ -300,21 +304,38 @@ pub struct CompressConfig {
 }
 
 impl CompressConfig {
-  /// The configuration `ix compress` runs with. `development_kzg` selects local
-  /// inner KZG parameters independently of `final_proof.allow_development`.
+  /// The configuration `ix compress` runs with on BN254. See
+  /// [`Self::from_env_for_curve`] for multi-curve selection.
+  pub fn from_env(
+    cache_root: &Path,
+    development_kzg: bool,
+    final_proof: FinalOptions,
+  ) -> Result<Self> {
+    Self::from_env_for_curve(
+      Curve::Bn254,
+      cache_root,
+      development_kzg,
+      final_proof,
+    )
+  }
+
+  /// The configuration `ix compress` runs with for `curve` (`Curve::Bn254` or
+  /// `Curve::Bls12381`). `development_kzg` selects local inner KZG parameters
+  /// independently of `final_proof.allow_development`.
   /// Development inner KZG requires development final keys; the two setups
   /// are generated and cached independently.
   /// Cross-run caches live under `cache_root` unless
   /// `IX_KZG_FIXED_CACHE` or `IX_KZG_SRS_CACHE` name other directories; the
   /// setup, prefetch budget (`IX_KZG_PREFETCH_GIB`) and CUDA settings
   /// (`IX_KZG_CUDA_*`, `IX_KZG_MSM_CHUNK_POINTS`) come from the environment.
-  pub fn from_env(
+  pub fn from_env_for_curve(
+    curve: Curve,
     cache_root: &Path,
     development_kzg: bool,
     final_proof: FinalOptions,
   ) -> Result<Self> {
     final_proof.validate_setup(development_kzg)?;
-    let mut setup = SetupConfig::from_env(development_kzg)?;
+    let mut setup = SetupConfig::from_env_for_curve(curve, development_kzg)?;
     if let SetupConfig::Development { cache_directory: directory @ None } =
       &mut setup
     {
@@ -326,6 +347,7 @@ impl CompressConfig {
       Err(error) => return Err(error.into()),
     };
     Ok(Self {
+      curve,
       setup,
       fixed_cache: std::env::var_os("IX_KZG_FIXED_CACHE")
         .map_or_else(|| cache_root.join("fixed-preprocessing"), PathBuf::from),
@@ -343,6 +365,18 @@ impl CompressConfig {
 
   /// Reject unsupported combinations before any checkpoint is written.
   fn validate(&self) -> Result<()> {
+    match (self.curve, &self.setup) {
+      (Curve::Bn254, SetupConfig::Filecoin { .. }) => {
+        return Err(
+          "Filecoin challenge_19 SRS is BLS12-381 only; pass --bls12-381"
+            .into(),
+        );
+      },
+      (Curve::Bls12381, SetupConfig::Ignition { .. }) => {
+        return Err("Ignition SRS is BN254 only; pass --bn254".into());
+      },
+      _ => {},
+    }
     let final_proof = self.final_proof;
     final_proof
       .validate_setup(self.setup.class() == SetupClass::Development)?;
@@ -358,7 +392,7 @@ impl CompressConfig {
         );
       },
       FinalSystem::Groth16 => {
-        groth16::preflight(final_proof.allow_development)?
+        groth16::preflight_for(self.curve, final_proof.allow_development)?
       },
       _ => {},
     }
@@ -370,7 +404,8 @@ impl CompressConfig {
     }
     let _ = isolate_stages_from_env()?;
     let _ = requested_stage_from_env()?;
-    let _ = crate::kzg::KzgConfig::resolve_disk_spill_dir(Path::new("."))?;
+    let _ =
+      crate::kzg::KzgConfig::<Bn254>::resolve_disk_spill_dir(Path::new("."))?;
     Ok(())
   }
 }
@@ -462,7 +497,7 @@ impl StageConfig {
     }
   }
 
-  pub(super) fn fixed_cache(
+  pub(super) fn fixed_cache_for<C: KzgCurve>(
     &self,
     stage: &Path,
     vk: &[u8],
@@ -471,7 +506,7 @@ impl StageConfig {
       .fixed_cache_root
       .clone()
       .unwrap_or_else(|| stage.join("kzg/fixed-cache"));
-    fixed_cache::FixedCache::from_identity(&root, vk)
+    fixed_cache::FixedCache::from_identity_for::<C>(&root, vk)
   }
 
   #[cfg(test)]
@@ -591,7 +626,7 @@ pub fn compress(
   if config.final_proof.system == FinalSystem::Groth16
     && !config.final_proof.allow_development
   {
-    groth16::check_statement(&words)?;
+    groth16::check_statement_for(config.curve, &words)?;
   }
   let requested_stage = requested_stage_from_env()?;
   let files = root_files(input.vk, input.proof, &words, input.fixed_root)?;
@@ -637,9 +672,23 @@ fn run_single_stage(
   config: &CompressConfig,
   words: &statement::Statement,
 ) -> Result<()> {
+  match config.curve {
+    Curve::Bn254 => run_single_stage_for::<Bn254>(out, target, config, words),
+    Curve::Bls12381 => {
+      run_single_stage_for::<Bls12381>(out, target, config, words)
+    },
+  }
+}
+
+fn run_single_stage_for<C: KzgCurve>(
+  out: &Path,
+  target: Stage,
+  config: &CompressConfig,
+  words: &statement::Statement,
+) -> Result<()> {
   let root = out.join(ROOT);
   let root_vk = fs::read(root.join("root-vk.bin"))?;
-  let bundled = verifying_keys::bundled_for(&root_vk, &config.setup);
+  let bundled = verifying_keys::bundled_for(C::CURVE, &root_vk, &config.setup);
   let mut checkpoints = Checkpoints { out, rerun: true, runner: None };
   match target {
     Stage::Fri => {
@@ -658,8 +707,10 @@ fn run_single_stage(
       checkpoints.stage(
         Stage::FirstKzg.as_str(),
         &tracing::info_span!("compression/kzg"),
-        |dir| first::run(&fri, dir, verifying_keys::FIRST_LOG_HEIGHT, &stage),
-        |dir| wrap::check_first(dir, words, &stage),
+        |dir| {
+          first::run::<C>(&fri, dir, verifying_keys::FIRST_LOG_HEIGHT, &stage)
+        },
+        |dir| wrap::check_first::<C>(dir, words, &stage),
       )?;
     },
     Stage::FinalKzg => {
@@ -670,8 +721,8 @@ fn run_single_stage(
       checkpoints.stage(
         Stage::FinalKzg.as_str(),
         &tracing::info_span!("compression/wrap"),
-        |dir| wrap::run(&first, dir, &stage),
-        |dir| check_final(dir, words, &config.setup, &root_vk),
+        |dir| wrap::run::<C>(&first, dir, &stage),
+        |dir| check_final::<C>(dir, words, &config.setup, &root_vk),
       )?;
     },
     Stage::Plonk => {
@@ -683,9 +734,9 @@ fn run_single_stage(
       checkpoints.stage(
         Stage::Plonk.as_str(),
         &tracing::info_span!("compression/plonk"),
-        |dir| prove_plonk(&final_dir, dir, words, config),
+        |dir| prove_plonk::<C>(&final_dir, dir, words, config),
         |dir| {
-          plonk::check_stage(
+          plonk::check_stage_for::<C>(
             dir,
             words,
             &config.setup,
@@ -706,9 +757,9 @@ fn run_single_stage(
       checkpoints.stage(
         Stage::Groth16.as_str(),
         &tracing::info_span!("compression/groth16"),
-        |dir| prove_groth16(&final_dir, dir, words, config),
+        |dir| prove_groth16::<C>(&final_dir, dir, words, config),
         |dir| {
-          groth16::check_stage(
+          groth16::check_stage_for::<C>(
             dir,
             words,
             final_proof.allow_development,
@@ -730,9 +781,20 @@ fn run_stages(
   config: &CompressConfig,
   words: &statement::Statement,
 ) -> Result<Vec<u8>> {
+  match config.curve {
+    Curve::Bn254 => run_stages_for::<Bn254>(checkpoints, config, words),
+    Curve::Bls12381 => run_stages_for::<Bls12381>(checkpoints, config, words),
+  }
+}
+
+fn run_stages_for<C: KzgCurve>(
+  checkpoints: &mut Checkpoints<'_>,
+  config: &CompressConfig,
+  words: &statement::Statement,
+) -> Result<Vec<u8>> {
   let root = checkpoints.out.join(ROOT);
   let root_vk = fs::read(root.join("root-vk.bin"))?;
-  let bundled = verifying_keys::bundled_for(&root_vk, &config.setup);
+  let bundled = verifying_keys::bundled_for(C::CURVE, &root_vk, &config.setup);
   let fri = checkpoints.stage(
     Stage::Fri.as_str(),
     &tracing::info_span!("compression/fri"),
@@ -747,29 +809,29 @@ fn run_stages(
   let first = checkpoints.stage(
     Stage::FirstKzg.as_str(),
     &tracing::info_span!("compression/kzg"),
-    |dir| first::run(&fri, dir, verifying_keys::FIRST_LOG_HEIGHT, &stage),
-    |dir| wrap::check_first(dir, words, &stage),
+    |dir| first::run::<C>(&fri, dir, verifying_keys::FIRST_LOG_HEIGHT, &stage),
+    |dir| wrap::check_first::<C>(dir, words, &stage),
   )?;
   let final_dir = checkpoints.stage(
     Stage::FinalKzg.as_str(),
     &tracing::info_span!("compression/wrap"),
-    |dir| wrap::run(&first, dir, &stage),
-    |dir| check_final(dir, words, &config.setup, &root_vk),
+    |dir| wrap::run::<C>(&first, dir, &stage),
+    |dir| check_final::<C>(dir, words, &config.setup, &root_vk),
   )?;
   drop(stage);
   let final_proof = config.final_proof;
   let dir = match final_proof.system {
     FinalSystem::None => {
-      let mut proof = super::PROOF_TAG.to_vec();
+      let mut proof = C::RECURSIVE_PROOF_TAG.to_vec();
       proof.extend(fs::read(final_dir.join("kzg/packet.bin"))?);
       return Ok(proof);
     },
     FinalSystem::Plonk => checkpoints.stage(
       Stage::Plonk.as_str(),
       &tracing::info_span!("compression/plonk"),
-      |dir| prove_plonk(&final_dir, dir, words, config),
+      |dir| prove_plonk::<C>(&final_dir, dir, words, config),
       |dir| {
-        plonk::check_stage(
+        plonk::check_stage_for::<C>(
           dir,
           words,
           &config.setup,
@@ -783,9 +845,9 @@ fn run_stages(
     FinalSystem::Groth16 => checkpoints.stage(
       Stage::Groth16.as_str(),
       &tracing::info_span!("compression/groth16"),
-      |dir| prove_groth16(&final_dir, dir, words, config),
+      |dir| prove_groth16::<C>(&final_dir, dir, words, config),
       |dir| {
-        groth16::check_stage(
+        groth16::check_stage_for::<C>(
           dir,
           words,
           final_proof.allow_development,
@@ -867,8 +929,9 @@ fn check_fri(
   root: &Path,
 ) -> Result<()> {
   let fixture = init_fri::load(dir)?;
-  let actual =
-    statement::from_scalars(&stage::scalar_statement(&fixture.public))?;
+  let actual = statement::from_scalars(&stage::scalar_statement::<Bn254>(
+    &fixture.public,
+  ))?;
   if actual != *words {
     return Err("FRI proof proves another statement".into());
   }
@@ -888,22 +951,22 @@ fn check_fri(
 /// The recursive verifying key is admitted by the setup, is the bundled key
 /// for this version's backend under Ignition, and verifies the recursive
 /// packet for the expected statement.
-fn check_final(
+fn check_final<C: KzgCurve>(
   dir: &Path,
   words: &statement::Statement,
   setup: &SetupConfig,
   root_vk: &[u8],
 ) -> Result<()> {
   let bytes = fs::read(dir.join("vk.bin"))?;
-  verifying_keys::check_recursive_key(root_vk, setup, &bytes)?;
-  let vk = wrap::VerifyingKey::from_bytes(&bytes)?;
+  verifying_keys::check_recursive_key(C::CURVE, root_vk, setup, &bytes)?;
+  let vk = wrap::VerifyingKey::<C>::from_bytes(&bytes)?;
   vk.check_setup_class(setup.class())?;
   vk.verify(&fs::read(dir.join("kzg/packet.bin"))?, words)?;
-  verifying_keys::check_statement(&vk.id(), words)
+  verifying_keys::check_statement(C::CURVE, &vk.id(), words)
 }
 
 #[cfg(feature = "plonk")]
-fn prove_plonk(
+fn prove_plonk<C: KzgCurve>(
   final_dir: &Path,
   out: &Path,
   words: &statement::Statement,
@@ -911,7 +974,7 @@ fn prove_plonk(
 ) -> Result<()> {
   let verifier = final_dir.join("vk.bin");
   let trusted = blake3::hash(&fs::read(&verifier)?).to_hex();
-  plonk::wrap_packet(
+  plonk::wrap_packet_for::<C>(
     &verifier,
     &final_dir.join("kzg/packet.bin"),
     trusted.as_str(),
@@ -924,7 +987,8 @@ fn prove_plonk(
 }
 
 #[cfg(not(feature = "plonk"))]
-fn prove_plonk(
+#[allow(clippy::extra_unused_type_parameters)]
+fn prove_plonk<C: KzgCurve>(
   _final_dir: &Path,
   _out: &Path,
   _words: &statement::Statement,
@@ -934,7 +998,7 @@ fn prove_plonk(
 }
 
 #[cfg(feature = "groth16")]
-fn prove_groth16(
+fn prove_groth16<C: KzgCurve>(
   final_dir: &Path,
   out: &Path,
   words: &statement::Statement,
@@ -942,7 +1006,7 @@ fn prove_groth16(
 ) -> Result<()> {
   let verifier = final_dir.join("vk.bin");
   let trusted = blake3::hash(&fs::read(&verifier)?).to_hex();
-  groth16::wrap_packet(
+  groth16::wrap_packet_for::<C>(
     &verifier,
     &final_dir.join("kzg/packet.bin"),
     trusted.as_str(),
@@ -955,7 +1019,8 @@ fn prove_groth16(
 }
 
 #[cfg(not(feature = "groth16"))]
-fn prove_groth16(
+#[allow(clippy::extra_unused_type_parameters)]
+fn prove_groth16<C: KzgCurve>(
   _final_dir: &Path,
   _out: &Path,
   _words: &statement::Statement,

@@ -3,7 +3,11 @@ use super::{Result, stage::Prepared};
 use crate::{
   foreign::{GoldilocksCircuit, GoldilocksInputs},
   fri::{self, VerifierInputs, VerifierKey, VerifierPlan},
-  kzg::{KzgConfig, Scalar},
+  kzg::{
+    KzgConfig,
+    curve::{Bn254, KzgCurve},
+    field::CurveScalar,
+  },
 };
 use multi_stark::{
   plonkish::{Assignment, Circuit, MultiStarkCircuit},
@@ -41,23 +45,26 @@ pub(in crate::pipeline) fn fri_definitions(
 }
 
 #[tracing::instrument(level = "info", skip_all, name = "compression/lower")]
-pub(in crate::pipeline) fn lower_first(
-  circuit: Circuit<Scalar>,
+pub(in crate::pipeline) fn lower_first<C: KzgCurve>(
+  circuit: Circuit<CurveScalar<C>>,
   height: usize,
   table_height: usize,
-) -> Result<MultiStarkCircuit<Scalar>> {
+) -> Result<MultiStarkCircuit<CurveScalar<C>>> {
   Ok(
     circuit
-      .lower_to_multi_stark_sharded(Scalar::from_u8(FIRST_NAMESPACE), height)?
+      .lower_to_multi_stark_sharded(
+        CurveScalar::<C>::from_u8(FIRST_NAMESPACE),
+        height,
+      )?
       .merge_table_traces(table_height)?,
   )
 }
 
 #[tracing::instrument(level = "info", skip_all, name = "compression/lower")]
-pub(in crate::pipeline) fn lower_recursive(
-  circuit: Circuit<Scalar>,
+pub(in crate::pipeline) fn lower_recursive<C: KzgCurve>(
+  circuit: Circuit<CurveScalar<C>>,
   max_height: usize,
-) -> Result<MultiStarkCircuit<Scalar>> {
+) -> Result<MultiStarkCircuit<CurveScalar<C>>> {
   let height = circuit.multi_stark_layout()?.main_height;
   if height > max_height.min(RECURSIVE_HEIGHT) {
     return Err(
@@ -65,7 +72,10 @@ pub(in crate::pipeline) fn lower_recursive(
     );
   }
   let compiled = circuit
-    .lower_to_multi_stark_sharded(Scalar::from_u8(RECURSIVE_NAMESPACE), height)?
+    .lower_to_multi_stark_sharded(
+      CurveScalar::<C>::from_u8(RECURSIVE_NAMESPACE),
+      height,
+    )?
     .merge_table_traces(height)?;
   if compiled.num_circuits() != 2 || compiled.main_heights() != [height] {
     return Err("expected one computation trace and one merged table".into());
@@ -84,18 +94,18 @@ pub(in crate::pipeline) fn max_height<F: Field>(
 }
 
 /// Owns the frontend allocations until commitment has copied their columns.
-pub(in crate::pipeline) struct Lowered {
-  pub(in crate::pipeline) compiled: MultiStarkCircuit<Scalar>,
-  pub(in crate::pipeline) assignment: Assignment<Scalar>,
+pub(in crate::pipeline) struct Lowered<C: KzgCurve = Bn254> {
+  pub(in crate::pipeline) compiled: MultiStarkCircuit<CurveScalar<C>>,
+  pub(in crate::pipeline) assignment: Assignment<CurveScalar<C>>,
 }
 
-impl Lowered {
+impl<C: KzgCurve> Lowered<C> {
   pub(in crate::pipeline) fn commit(
     self,
-    config: KzgConfig,
+    config: KzgConfig<C>,
     preprocessing: Option<&Path>,
     prefetch_bytes: usize,
-  ) -> Result<super::prover::Committed> {
+  ) -> Result<super::prover::Committed<C>> {
     super::prover::Committed::prepare_owned(
       config,
       self,
@@ -134,7 +144,7 @@ impl FriConstruction {
     self,
     plan: &VerifierPlan<'_>,
     proof: &multi_stark::prover::Proof<
-      multi_stark::types::GoldilocksBlake3Config,
+      multi_stark::types::GoldilocksBlake3V6Config,
     >,
     claims: Vec<Vec<Val>>,
   ) -> Result<Prepared<Val>> {
@@ -181,18 +191,18 @@ pub(in crate::pipeline) fn fri_profile(
 }
 
 #[tracing::instrument(level = "info", skip_all, name = "compression/translate")]
-pub(in crate::pipeline) fn translate(
+pub(in crate::pipeline) fn translate<C: KzgCurve>(
   source: &Circuit<Val>,
-) -> GoldilocksCircuit {
-  GoldilocksCircuit::new_preallocated(source)
+) -> GoldilocksCircuit<C> {
+  GoldilocksCircuit::<C>::new_preallocated(source)
 }
 
 #[tracing::instrument(level = "info", skip_all, name = "compression/witness")]
-pub(in crate::pipeline) fn assign_foreign(
+pub(in crate::pipeline) fn assign_foreign<C: KzgCurve>(
   inputs: &GoldilocksInputs,
-  circuit: &Circuit<Scalar>,
+  circuit: &Circuit<CurveScalar<C>>,
   assignment: &Assignment<Val>,
-) -> Result<Assignment<Scalar>> {
+) -> Result<Assignment<CurveScalar<C>>> {
   let mut witness = circuit.witness();
   inputs.assign(assignment, &mut witness)?;
   Ok(witness.generate()?)
@@ -200,22 +210,22 @@ pub(in crate::pipeline) fn assign_foreign(
 
 /// The first KZG stage's lowered circuit for a FRI verifier circuit, with the
 /// inputs that carry a source assignment into it.
-pub(in crate::pipeline) fn first_circuit(
+pub(in crate::pipeline) fn first_circuit<C: KzgCurve>(
   source: Circuit<Val>,
   height: usize,
-) -> Result<(MultiStarkCircuit<Scalar>, GoldilocksInputs)> {
-  let translated = translate(&source);
+) -> Result<(MultiStarkCircuit<CurveScalar<C>>, GoldilocksInputs)> {
+  let translated = translate::<C>(&source);
   drop(source);
   let compiled = lower_first(translated.circuit, height, TABLE_HEIGHT)?;
   Ok((compiled, translated.inputs))
 }
 
-pub(in crate::pipeline) fn prepare_first(
+pub(in crate::pipeline) fn prepare_first<C: KzgCurve>(
   prepared: Prepared<Val>,
   height: usize,
-) -> Result<Lowered> {
+) -> Result<Lowered<C>> {
   let Prepared { circuit, assignment: source_assignment } = prepared;
-  let translated = translate(&circuit);
+  let translated = translate::<C>(&circuit);
   drop(circuit);
   let assignment = assign_foreign(
     &translated.inputs,
@@ -228,20 +238,20 @@ pub(in crate::pipeline) fn prepare_first(
   Ok(Lowered { compiled, assignment })
 }
 
-pub(in crate::pipeline) fn recursive_layout()
--> crate::recursive::native_verifier::LayoutPolicy {
+pub(in crate::pipeline) fn recursive_layout<C: KzgCurve>()
+-> crate::recursive::native_verifier::LayoutPolicy<C> {
   crate::recursive::native_verifier::LayoutPolicy {
-    namespace: Scalar::from_u8(RECURSIVE_NAMESPACE),
+    namespace: CurveScalar::<C>::from_u8(RECURSIVE_NAMESPACE),
     max_computation_height: RECURSIVE_HEIGHT,
     max_table_height: RECURSIVE_HEIGHT,
   }
 }
 
-pub(in crate::pipeline) fn recursive_plan<'a>(
-  system: &'a multi_stark::system::System<KzgConfig>,
+pub(in crate::pipeline) fn recursive_plan<'a, C: KzgCurve>(
+  system: &'a multi_stark::system::System<KzgConfig<C>>,
   logs: &[u8],
-  schema: crate::recursive::native_verifier::ClaimSchema,
-) -> Result<crate::recursive::native_verifier::Plan<'a>> {
+  schema: crate::recursive::native_verifier::ClaimSchema<C>,
+) -> Result<crate::recursive::native_verifier::Plan<'a, C>> {
   Ok(crate::recursive::native_verifier::Plan::new(
     system,
     logs,

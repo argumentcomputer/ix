@@ -1,5 +1,5 @@
 //! Final PLONK proofs under the release key, and authenticated parameter
-//! interchange.
+//! interchange for BN254 and BLS12-381.
 #[cfg(feature = "plonk")]
 use super::final_proof::{claim_digest, sha256};
 #[cfg(feature = "plonk")]
@@ -14,6 +14,9 @@ use super::{Result, setup::SetupClass};
 #[cfg(feature = "plonk")]
 use super::{gnark, verifying_keys};
 #[cfg(feature = "plonk")]
+use crate::kzg::curve::Curve;
+use crate::kzg::curve::{Bls12381, Bn254, KzgCurve};
+#[cfg(feature = "plonk")]
 use ark_ff::{BigInteger, PrimeField};
 #[cfg(feature = "plonk")]
 use sha2::{Digest, Sha256};
@@ -25,13 +28,20 @@ use std::path::Path;
 #[cfg(feature = "plonk")]
 use std::path::PathBuf;
 
-pub(super) const PROOF_TAG: &[u8; 8] = b"IXBN\0\0\0\x02";
+pub(super) const PROOF_TAG: &[u8; 8] = Bn254::PLONK_PROOF_TAG;
+pub(super) const BLS12_381_PROOF_TAG: &[u8; 8] = Bls12381::PLONK_PROOF_TAG;
 const MAX_PROOF_BYTES: usize = 1 << 20;
-#[cfg(feature = "plonk")]
-const FINAL_SRS_SEED: &[u8] = b"ix/bn254-plonk/srs/v1";
 
 #[cfg(feature = "plonk")]
-fn setup_identity(config: &SetupConfig) -> [u8; 32] {
+const fn final_srs_seed(curve: Curve) -> &'static [u8] {
+  match curve {
+    Curve::Bn254 => b"ix/bn254-plonk/srs/v1",
+    Curve::Bls12381 => b"ix/bls-plonk/srs/v1",
+  }
+}
+
+#[cfg(feature = "plonk")]
+fn setup_identity<C: KzgCurve>(config: &SetupConfig) -> [u8; 32] {
   match config {
     SetupConfig::Ignition { .. } => {
       verifying_keys::ignition_parameters()
@@ -39,18 +49,28 @@ fn setup_identity(config: &SetupConfig) -> [u8; 32] {
         .public_setup
         .id
     },
-    SetupConfig::Development { .. } => *blake3::hash(FINAL_SRS_SEED).as_bytes(),
+    SetupConfig::Filecoin { .. } => {
+      crate::kzg::srs::filecoin::filecoin_setup_id()
+    },
+    SetupConfig::Development { .. } => {
+      *blake3::hash(final_srs_seed(C::CURVE)).as_bytes()
+    },
   }
 }
 
 #[cfg(feature = "plonk")]
-fn anchors(config: &SetupConfig, domain: usize) -> Result<crate::kzg::Srs> {
+fn anchors<C: KzgCurve>(
+  config: &SetupConfig,
+  domain: usize,
+) -> Result<crate::kzg::Srs<C>> {
   let size = parameter_size(config, domain)?;
   let height = match config {
     SetupConfig::Ignition { .. } => domain,
-    SetupConfig::Development { .. } => size.loaded_powers().next_power_of_two(),
+    SetupConfig::Filecoin { .. } | SetupConfig::Development { .. } => {
+      size.loaded_powers().next_power_of_two()
+    },
   };
-  config.for_stage(FINAL_SRS_SEED, height)?.srs(2, true)
+  config.for_stage::<C>(final_srs_seed(C::CURVE), height)?.srs(2, true)
 }
 
 #[cfg(feature = "plonk")]
@@ -83,23 +103,8 @@ fn final_setup(
 }
 
 #[cfg(feature = "plonk")]
-fn encode_g2(point: crate::kzg::curve::G2Affine) -> Vec<u8> {
-  let mut bytes = Vec::new();
-  for value in [point.x.c0, point.x.c1, point.y.c0, point.y.c1] {
-    bytes.extend(value.into_bigint().to_bytes_be());
-  }
-  bytes
-}
-
-#[cfg(feature = "plonk")]
-fn anchor_encoding(srs: &crate::kzg::Srs) -> Vec<u8> {
-  let mut bytes = Vec::new();
-  for value in [srs.g1[0].x, srs.g1[0].y] {
-    bytes.extend(value.into_bigint().to_bytes_be());
-  }
-  bytes.extend(encode_g2(srs.g2));
-  bytes.extend(encode_g2(srs.tau_g2));
-  bytes
+fn anchor_encoding<C: KzgCurve>(srs: &crate::kzg::Srs<C>) -> Vec<u8> {
+  C::encode_plonk_anchors(&srs.g1[0], &srs.g2, &srs.tau_g2)
 }
 
 #[cfg(not(feature = "plonk"))]
@@ -110,11 +115,26 @@ pub(super) fn verify(packet: &[u8], _claim: &[u8]) -> Result<SetupClass> {
   Err("PLONK proofs are verified by gnark, and this ix was built without PLONK; rebuild with IX_PLONK=1".into())
 }
 
+pub(super) fn verify_bls12_381(
+  packet: &[u8],
+  _claim: &[u8],
+) -> Result<SetupClass> {
+  if packet.len() <= 32 || packet.len() > MAX_PROOF_BYTES + 32 {
+    return Err("invalid PLONK packet length".into());
+  }
+  if !cfg!(feature = "plonk") {
+    return Err("PLONK proofs are verified by gnark, and this ix was built without PLONK; rebuild with IX_PLONK=1".into());
+  }
+  Err(
+    "BLS12-381 PLONK proofs have no bundled release verifying key yet; verify with --dev-verifier <development-verifier.json> --dev-verifier-digest <blake3>".into(),
+  )
+}
+
 /// Verify the PLONK stage in `dir`: its envelope must name the stage's
 /// verifying key, independently pinned by the release or the prepared circuit,
 /// and verify for `expected` under the separately selected final setup.
 #[cfg(feature = "plonk")]
-pub(super) fn check_stage(
+pub(super) fn check_stage_for<C: KzgCurve>(
   dir: &Path,
   expected: &statement::Statement,
   setup: &SetupConfig,
@@ -125,7 +145,7 @@ pub(super) fn check_stage(
 ) -> Result<()> {
   let envelope = fs::read(dir.join("proof.envelope.bin"))?;
   let packet = envelope
-    .strip_prefix(PROOF_TAG.as_slice())
+    .strip_prefix(C::PLONK_PROOF_TAG.as_slice())
     .ok_or("not a PLONK proof envelope")?;
   if packet.len() <= 32 || packet.len() > MAX_PROOF_BYTES + 32 {
     return Err("invalid PLONK packet length".into());
@@ -135,22 +155,24 @@ pub(super) fn check_stage(
   if Sha256::digest(&key).as_slice() != id {
     return Err("PLONK proof names another verifying key".into());
   }
-  if bundled && !development {
+  if bundled && !development && C::CURVE == Curve::Bn254 {
     if id != digest(verifying_keys::PLONK_VK_SHA256)? {
       return Err("PLONK verifying key differs from the bundled key".into());
     }
-    return gnark::verify(
+    return gnark::verify_for(
+      C::CURVE,
       &key,
       &id,
       &packet[32..],
       &claim_digest(expected)?,
-      &anchor_encoding(&anchors(setup, 2)?),
+      &anchor_encoding(&anchors::<C>(setup, 2)?),
     );
   }
-  let schema = super::final_proof::description(verifier, expected, setup)?;
+  let schema =
+    super::final_proof::description_for::<C>(verifier, expected, setup)?;
   let outer_setup = final_setup(setup, development, cache_root);
   let (_cache, metadata) =
-    prepare_artifacts(&schema, &outer_setup, cache_root)?;
+    prepare_artifacts_for::<C>(&schema, &outer_setup, cache_root)?;
   let expected_key = &metadata
     .files
     .get("verifying-key.bin")
@@ -159,10 +181,13 @@ pub(super) fn check_stage(
   if id != digest(expected_key)? {
     return Err("PLONK stage uses another prepared circuit key".into());
   }
-  let anchors =
-    anchor_encoding(&anchors(&outer_setup, usize::try_from(metadata.domain)?)?);
+  let anchors = anchor_encoding(&anchors::<C>(
+    &outer_setup,
+    usize::try_from(metadata.domain)?,
+  )?);
   if development {
-    super::development::Verifier::new(
+    super::development::Verifier::new_for(
+      C::CURVE,
       super::FinalSystem::Plonk,
       verifier,
       &schema,
@@ -173,11 +198,19 @@ pub(super) fn check_stage(
     )?
     .check_saved(dir)?;
   }
-  gnark::verify(&key, &id, &packet[32..], &claim_digest(expected)?, &anchors)
+  gnark::verify_for(
+    C::CURVE,
+    &key,
+    &id,
+    &packet[32..],
+    &claim_digest(expected)?,
+    &anchors,
+  )
 }
 
 #[cfg(not(feature = "plonk"))]
-pub(super) fn check_stage(
+#[allow(clippy::extra_unused_type_parameters)]
+pub(super) fn check_stage_for<C: KzgCurve>(
   _dir: &Path,
   _expected: &statement::Statement,
   _setup: &SetupConfig,
@@ -204,7 +237,7 @@ pub(super) fn verify(packet: &[u8], claim: &[u8]) -> Result<SetupClass> {
   if Sha256::digest(verifying_keys::PLONK_VK).as_slice() != id {
     return Err("bundled PLONK verifying key differs from its pin".into());
   }
-  let anchors = anchor_encoding(&verifying_keys::ignition_anchors()?);
+  let anchors = anchor_encoding::<Bn254>(&verifying_keys::ignition_anchors()?);
   gnark::verify(
     verifying_keys::PLONK_VK,
     &id,
@@ -228,7 +261,26 @@ pub fn export(
   out: &Path,
   setup: &SetupConfig,
 ) -> Result<()> {
-  wrap::final_export(verifier, packet, trusted_digest, expected, out, setup)
+  export_for::<Bn254>(verifier, packet, trusted_digest, expected, out, setup)
+}
+
+#[cfg(any(feature = "plonk", feature = "groth16"))]
+pub fn export_for<C: KzgCurve>(
+  verifier: &Path,
+  packet: &Path,
+  trusted_digest: &str,
+  expected: &[u64; statement::WORDS],
+  out: &Path,
+  setup: &SetupConfig,
+) -> Result<()> {
+  wrap::final_export::<C>(
+    verifier,
+    packet,
+    trusted_digest,
+    expected,
+    out,
+    setup,
+  )
 }
 
 /// Write the first `domain + 3` powers of the selected final PLONK setup,
@@ -239,62 +291,101 @@ pub fn export_parameters(
   path: &Path,
   config: &SetupConfig,
 ) -> Result<()> {
-  let size = parameter_size(config, domain)?;
-  if let SetupConfig::Ignition { srs } = config {
-    let mut count = [0; 4];
-    fs::File::open(srs)?.read_exact(&mut count)?;
-    size.check_capacity(
-      u32::from_be_bytes(count) as usize,
-      verifying_keys::ignition_parameters()?.public_setup.max_degree,
-    )?;
-  }
+  export_parameters_for::<Bn254>(domain, path, config)
+}
+
+#[cfg(feature = "plonk")]
+fn export_bn254_ignition_parameters(
+  size: super::plonk_limits::ParameterSize,
+  path: &Path,
+  srs_path: &Path,
+  config: &SetupConfig,
+) -> Result<()> {
+  let mut count_bytes = [0; 4];
+  fs::File::open(srs_path)?.read_exact(&mut count_bytes)?;
+  let parameters = verifying_keys::ignition_parameters()?;
+  size.check_capacity(
+    u32::from_be_bytes(count_bytes) as usize,
+    parameters.public_setup.max_degree,
+  )?;
   let count = size.opening_powers();
-  let manifest = setup_identity(config);
-  let (srs, public_setup) = match config {
-    SetupConfig::Ignition { srs } => {
-      let parameters = verifying_keys::ignition_parameters()?;
-      let powers = crate::kzg::srs::gnark::load_exact(
-        srs,
-        count,
-        parameters.public_setup,
-      )?;
-      if powers.g1[..2] != parameters.g1
-        || powers.g2 != parameters.g2
-        || powers.tau_g2 != parameters.tau_g2
-      {
-        return Err(
-          "PLONK powers differ from the released Ignition anchors".into(),
-        );
-      }
-      (powers, parameters.public_setup)
-    },
-    SetupConfig::Development { .. } => {
-      let prefix = count.next_power_of_two();
-      let source = config.for_stage(FINAL_SRS_SEED, prefix)?;
-      let mut srs = source.srs(prefix, false)?;
-      srs.g1.truncate(count);
-      (
-        crate::kzg::srs::gnark::Powers {
-          g1: srs.g1,
-          g2: srs.g2,
-          tau_g2: srs.tau_g2,
-        },
-        srs.public_setup,
-      )
-    },
-  };
+  let manifest = setup_identity::<Bn254>(config);
+  let powers = crate::kzg::srs::gnark::load_exact(
+    srs_path,
+    count,
+    parameters.public_setup,
+  )?;
+  if powers.g1[..2] != parameters.g1
+    || powers.g2 != parameters.g2
+    || powers.tau_g2 != parameters.tau_g2
+  {
+    return Err("PLONK powers differ from the released Ignition anchors".into());
+  }
+  let public_setup = parameters.public_setup;
   let temporary = storage::temporary_path(path);
   if let Some(parent) = path.parent() {
     fs::create_dir_all(parent)?;
   }
   let mut out = std::io::BufWriter::new(fs::File::create(&temporary)?);
-  out.write_all(b"IXBPSR01")?;
+  out.write_all(Bn254::PLONK_SRS_MAGIC)?;
   out.write_all(&public_setup.id)?;
   out.write_all(&(public_setup.max_degree as u64).to_le_bytes())?;
   out.write_all(&manifest)?;
   out.write_all(&(count as u64).to_le_bytes())?;
-  out.write_all(&encode_g2(srs.g2))?;
-  out.write_all(&encode_g2(srs.tau_g2))?;
+  out.write_all(&Bn254::encode_g2_vk(&powers.g2))?;
+  out.write_all(&Bn254::encode_g2_vk(&powers.tau_g2))?;
+  for point in &powers.g1[..count] {
+    out.write_all(&point.x.into_bigint().to_bytes_be())?;
+    out.write_all(&point.y.into_bigint().to_bytes_be())?;
+  }
+  out.flush()?;
+  drop(out);
+  storage::persist(&temporary, path)?;
+  let digest = blake3::Hash::from_bytes(storage::blake3_file(path)?);
+  let receipt = serde_json::json!({
+    "format": Bn254::PLONK_SRS_FORMAT, "blake3": digest.to_hex().as_str(),
+    "setupId": blake3::Hash::from_bytes(public_setup.id).to_hex().as_str(),
+    "publicMaxDegree": public_setup.max_degree, "powers": count,
+    "setupClass": config.class().label(),
+    "setupIdentity": blake3::Hash::from_bytes(manifest).to_hex().as_str(),
+  });
+  storage::write_atomic(
+    &path.with_extension("json"),
+    &serde_json::to_vec_pretty(&receipt)?,
+  )?;
+  Ok(())
+}
+
+#[cfg(feature = "plonk")]
+pub fn export_parameters_for<C: KzgCurve>(
+  domain: usize,
+  path: &Path,
+  config: &SetupConfig,
+) -> Result<()> {
+  let size = parameter_size(config, domain)?;
+  if let SetupConfig::Ignition { srs } = config {
+    if C::CURVE != Curve::Bn254 {
+      return Err("Ignition setup is only valid for BN254 PLONK".into());
+    }
+    return export_bn254_ignition_parameters(size, path, srs, config);
+  }
+  let count = size.opening_powers();
+  let prefix = size.loaded_powers().next_power_of_two();
+  let manifest = setup_identity::<C>(config);
+  let source = config.for_stage::<C>(final_srs_seed(C::CURVE), prefix)?;
+  let srs = source.srs(prefix, false)?;
+  let temporary = storage::temporary_path(path);
+  if let Some(parent) = path.parent() {
+    fs::create_dir_all(parent)?;
+  }
+  let mut out = std::io::BufWriter::new(fs::File::create(&temporary)?);
+  out.write_all(C::PLONK_SRS_MAGIC)?;
+  out.write_all(&srs.public_setup.id)?;
+  out.write_all(&(srs.public_setup.max_degree as u64).to_le_bytes())?;
+  out.write_all(&manifest)?;
+  out.write_all(&(count as u64).to_le_bytes())?;
+  out.write_all(&C::encode_g2_vk(&srs.g2))?;
+  out.write_all(&C::encode_g2_vk(&srs.tau_g2))?;
   for point in &srs.g1[..count] {
     out.write_all(&point.x.into_bigint().to_bytes_be())?;
     out.write_all(&point.y.into_bigint().to_bytes_be())?;
@@ -304,9 +395,9 @@ pub fn export_parameters(
   storage::persist(&temporary, path)?;
   let digest = blake3::Hash::from_bytes(storage::blake3_file(path)?);
   let receipt = serde_json::json!({
-    "format": "ix-bn254-plonk-srs-export-v2", "blake3": digest.to_hex().as_str(),
-    "setupId": blake3::Hash::from_bytes(public_setup.id).to_hex().as_str(),
-    "publicMaxDegree": public_setup.max_degree, "powers": count,
+    "format": C::PLONK_SRS_FORMAT, "blake3": digest.to_hex().as_str(),
+    "setupId": blake3::Hash::from_bytes(srs.public_setup.id).to_hex().as_str(),
+    "publicMaxDegree": srs.public_setup.max_degree, "powers": count,
     "setupClass": config.class().label(),
     "setupIdentity": blake3::Hash::from_bytes(manifest).to_hex().as_str(),
   });
@@ -331,15 +422,18 @@ struct ParameterReceipt {
 }
 
 #[cfg(feature = "plonk")]
-fn cached_parameters(
+fn cached_parameters_for<C: KzgCurve>(
   domain: usize,
   root: &Path,
   config: &SetupConfig,
 ) -> Result<(PathBuf, String)> {
-  let manifest = setup_identity(config);
-  let anchors = anchors(config, domain)?;
+  let manifest = setup_identity::<C>(config);
+  let anchors = anchors::<C>(config, domain)?;
   let mut identity = blake3::Hasher::new();
   identity.update(b"ix/plonk-parameter-export/v2");
+  if C::CURVE != Curve::Bn254 {
+    identity.update(C::NAME.as_bytes());
+  }
   identity.update(config.class().label().as_bytes());
   identity.update(&anchors.public_setup.id);
   identity.update(&manifest);
@@ -347,10 +441,10 @@ fn cached_parameters(
   let path = root.join(identity.finalize().to_hex().as_str()).join("srs.bin");
   let receipt_path = path.with_extension("json");
   if !receipt_path.try_exists()? {
-    export_parameters(domain, &path, config)?;
+    export_parameters_for::<C>(domain, &path, config)?;
   }
   let receipt: ParameterReceipt = load_json(&receipt_path)?;
-  if receipt.format != "ix-bn254-plonk-srs-export-v2"
+  if receipt.format != C::PLONK_SRS_FORMAT
     || receipt.setup_class != config.class().label()
     || digest(&receipt.setup_id)? != anchors.public_setup.id
     || digest(&receipt.setup_identity)? != manifest
@@ -362,7 +456,7 @@ fn cached_parameters(
   }
   let mut header = [0u8; 88];
   fs::File::open(&path)?.read_exact(&mut header)?;
-  if &header[..8] != b"IXBPSR01"
+  if &header[..8] != C::PLONK_SRS_MAGIC
     || header[8..40] != anchors.public_setup.id
     || u64::from_le_bytes(header[40..48].try_into()?)
       != u64::try_from(receipt.public_max_degree)?
@@ -424,7 +518,15 @@ pub(super) fn proving_backend() -> Result<gnark::Backend> {
 }
 
 #[cfg(feature = "plonk")]
-fn prepare_artifacts(
+pub(super) fn proving_backend_for(curve: Curve) -> Result<gnark::Backend> {
+  match curve {
+    Curve::Bn254 => proving_backend(),
+    Curve::Bls12381 => Ok(gnark::Backend::Cpu),
+  }
+}
+
+#[cfg(feature = "plonk")]
+fn prepare_artifacts_for<C: KzgCurve>(
   schema: &[u8],
   setup: &SetupConfig,
   cache_root: &Path,
@@ -433,10 +535,13 @@ fn prepare_artifacts(
   // The Go sources and module pins compile the circuit and serialize its keys.
   let mut identity = blake3::Hasher::new();
   identity.update(b"ix/plonk-circuit-cache/v3");
+  if C::CURVE != Curve::Bn254 {
+    identity.update(C::NAME.as_bytes());
+  }
   identity.update(env!("IX_GNARK_SOURCE_BLAKE3").as_bytes());
   identity.update(setup.class().label().as_bytes());
   identity.update(schema_hash.as_bytes());
-  identity.update(&setup_identity(setup));
+  identity.update(&setup_identity::<C>(setup));
   let dir =
     cache_root.join("circuits").join(identity.finalize().to_hex().as_str());
   fs::create_dir_all(&dir)?;
@@ -452,7 +557,7 @@ fn prepare_artifacts(
     metadata
   } else {
     storage::write_atomic(&dir.join("vk.json"), schema)?;
-    let info = gnark::compile(schema, &dir.join("circuit.bin"))?;
+    let info = gnark::compile_for(C::CURVE, schema, &dir.join("circuit.bin"))?;
     let metadata = gnark::Manifest {
       inner_vk_sha256: schema_hash,
       srs_blake3: String::new(),
@@ -482,10 +587,16 @@ fn prepare_artifacts(
   }
   parameter_size(setup, domain)?;
   if !metadata.keys_ready {
-    let (srs, receipt) =
-      cached_parameters(domain, &cache_root.join("parameters"), setup)?;
+    let (srs, receipt) = cached_parameters_for::<C>(
+      domain,
+      &cache_root.join("parameters"),
+      setup,
+    )?;
     let mut identity = Sha256::new();
-    identity.update(setup_identity(setup));
+    if C::CURVE != Curve::Bn254 {
+      identity.update(C::NAME.as_bytes());
+    }
+    identity.update(setup_identity::<C>(setup));
     identity.update(domain.to_le_bytes());
     identity.update(receipt.as_bytes());
     let lagrange_root =
@@ -496,7 +607,7 @@ fn prepare_artifacts(
     let cached_lagrange = lagrange_metadata.is_file();
     let lagrange_hash = if cached_lagrange {
       let saved: gnark::Artifact = load_json(&lagrange_metadata)?;
-      if saved.bytes != 64 * metadata.domain {
+      if saved.bytes != 2 * (C::FQ_BYTES as u64) * metadata.domain {
         return Err("Lagrange cache identity differs".into());
       }
       digest(&saved.sha256)?;
@@ -504,20 +615,23 @@ fn prepare_artifacts(
     } else {
       String::new()
     };
-    gnark::prepare(&gnark::Preparation {
-      schema,
-      circuit: &dir.join("circuit.bin"),
-      circuit_hash: metadata
-        .files
-        .get("circuit.bin")
-        .ok_or("missing circuit hash")?,
-      domain: metadata.domain,
-      srs: &srs,
-      srs_digest: &receipt,
-      lagrange: &lagrange,
-      lagrange_digest: &lagrange_hash,
-      output: &dir,
-    })?;
+    gnark::prepare_for(
+      C::CURVE,
+      &gnark::Preparation {
+        schema,
+        circuit: &dir.join("circuit.bin"),
+        circuit_hash: metadata
+          .files
+          .get("circuit.bin")
+          .ok_or("missing circuit hash")?,
+        domain: metadata.domain,
+        srs: &srs,
+        srs_digest: &receipt,
+        lagrange: &lagrange,
+        lagrange_digest: &lagrange_hash,
+        output: &dir,
+      },
+    )?;
     if !cached_lagrange {
       storage::write_atomic(
         &lagrange_metadata,
@@ -554,10 +668,20 @@ pub fn derive_verifying_key(
   setup: &SetupConfig,
   cache_root: &Path,
 ) -> Result<Vec<u8>> {
-  let vk = wrap::VerifyingKey::from_bytes(recursive_vk)?;
+  derive_verifying_key_for::<Bn254>(recursive_vk, prefix, setup, cache_root)
+}
+
+#[cfg(feature = "plonk")]
+pub fn derive_verifying_key_for<C: KzgCurve>(
+  recursive_vk: &[u8],
+  prefix: &[u64; 10],
+  setup: &SetupConfig,
+  cache_root: &Path,
+) -> Result<Vec<u8>> {
+  let vk = wrap::VerifyingKey::<C>::from_bytes(recursive_vk)?;
   vk.check_setup_class(setup.class())?;
   let schema = wrap::final_description(&vk, prefix)?;
-  let (dir, metadata) = prepare_artifacts(&schema, setup, cache_root)?;
+  let (dir, metadata) = prepare_artifacts_for::<C>(&schema, setup, cache_root)?;
   let key = fs::read(dir.join("verifying-key.bin"))?;
   let recorded = &metadata
     .files
@@ -575,7 +699,7 @@ pub fn derive_verifying_key(
 /// directory `out`. Compiled circuits, keys and parameter
 /// exports are cached under `cache_root`.
 #[cfg(feature = "plonk")]
-pub(super) fn wrap_packet(
+pub(super) fn wrap_packet_for<C: KzgCurve>(
   verifier: &Path,
   packet: &Path,
   trusted_digest: &str,
@@ -589,13 +713,13 @@ pub(super) fn wrap_packet(
   statement::from_claims_bytes(&statement::to_claims_bytes(expected))?;
   let expected_digest = claim_digest(expected)?;
   let outer_setup = final_setup(setup, development, cache_root);
-  let backend = proving_backend()?;
+  let backend = proving_backend_for(C::CURVE)?;
   fs::create_dir_all(out)?;
   if fs::read_dir(out)?.next().is_some() {
     return Err("PLONK output directory must be empty".into());
   }
   let input = out.join("input");
-  wrap::final_export(
+  wrap::final_export::<C>(
     verifier,
     packet,
     trusted_digest,
@@ -603,15 +727,18 @@ pub(super) fn wrap_packet(
     &input,
     setup,
   )?;
-  let schema = super::final_proof::description(verifier, expected, setup)?;
+  let schema =
+    super::final_proof::description_for::<C>(verifier, expected, setup)?;
   if fs::read(input.join("vk.json"))? != schema {
     return Err(
       "PLONK witness export differs from the expected verifier".into(),
     );
   }
-  let (cache, metadata) = prepare_artifacts(&schema, &outer_setup, cache_root)?;
+  let (cache, metadata) =
+    prepare_artifacts_for::<C>(&schema, &outer_setup, cache_root)?;
   let started = Instant::now();
-  let mut prover = gnark::Prover::open(&cache, &metadata, backend)?;
+  let mut prover =
+    gnark::Prover::open_for(C::CURVE, &cache, &metadata, backend)?;
   let load_seconds = started.elapsed().as_secs_f64();
   let witness = fs::read(input.join("witness.json"))?;
   let started = Instant::now();
@@ -626,9 +753,12 @@ pub(super) fn wrap_packet(
     .sha256;
   let key_id = digest(key_hash)?;
   let key_bytes = fs::read(&key)?;
-  let anchors =
-    anchor_encoding(&anchors(&outer_setup, usize::try_from(metadata.domain)?)?);
-  gnark::verify(
+  let anchors = anchor_encoding(&anchors::<C>(
+    &outer_setup,
+    usize::try_from(metadata.domain)?,
+  )?);
+  gnark::verify_for(
+    C::CURVE,
     &key_bytes,
     &key_id,
     &proof.native,
@@ -638,7 +768,7 @@ pub(super) fn wrap_packet(
   if proof.native.is_empty() || proof.native.len() > MAX_PROOF_BYTES {
     return Err("invalid native PLONK proof length".into());
   }
-  let mut envelope = PROOF_TAG.to_vec();
+  let mut envelope = C::PLONK_PROOF_TAG.to_vec();
   envelope.extend(key_id);
   envelope.extend(&proof.native);
   storage::write_atomic(&out.join("proof.bin"), &proof.native)?;
@@ -651,11 +781,12 @@ pub(super) fn wrap_packet(
   storage::write_atomic(
     &out.join("report.json"),
     &serde_json::to_vec_pretty(
-      &serde_json::json!({"backend":match backend { gnark::Backend::Cpu => "cpu", gnark::Backend::Cuda { .. } => "cuda" },"setup":outer_setup.class().label(),"innerSetup":setup.class().label(),"loadSeconds":load_seconds,"proveSeconds":prove_seconds,"verifyingKeySHA256":key_hash,"solidityBytes":proof.solidity.len()}),
+      &serde_json::json!({"curve":C::NAME,"backend":match backend { gnark::Backend::Cpu => "cpu", gnark::Backend::Cuda { .. } => "cuda" },"setup":outer_setup.class().label(),"innerSetup":setup.class().label(),"loadSeconds":load_seconds,"proveSeconds":prove_seconds,"verifyingKeySHA256":key_hash,"solidityBytes":proof.solidity.len()}),
     )?,
   )?;
   if development {
-    super::development::Verifier::new(
+    super::development::Verifier::new_for(
+      C::CURVE,
       super::FinalSystem::Plonk,
       verifier,
       &schema,
@@ -724,24 +855,53 @@ mod tests {
     let temporary = crate::test_support::TempDir::new("plonk-parameters");
     let setup = SetupConfig::Development { cache_directory: None };
     let root = temporary.join("parameters");
-    let (path, checksum) = cached_parameters(8, &root, &setup)?;
-    let (again, same_checksum) = cached_parameters(8, &root, &setup)?;
+    let (path, checksum) = cached_parameters_for::<Bn254>(8, &root, &setup)?;
+    let (again, same_checksum) =
+      cached_parameters_for::<Bn254>(8, &root, &setup)?;
     assert_eq!((path.clone(), checksum), (again, same_checksum));
     let receipt: ParameterReceipt = load_json(&path.with_extension("json"))?;
     assert_eq!(receipt.setup_class, "development");
     assert_eq!(receipt.powers, 11);
-    assert_eq!(digest(&receipt.setup_id)?, anchors(&setup, 8)?.public_setup.id);
+    assert_eq!(
+      digest(&receipt.setup_id)?,
+      anchors::<Bn254>(&setup, 8)?.public_setup.id
+    );
     let mut corrupted = fs::read(&path)?;
     corrupted[8] ^= 1;
     fs::write(&path, corrupted)?;
-    assert!(cached_parameters(8, &root, &setup).is_err());
+    assert!(cached_parameters_for::<Bn254>(8, &root, &setup).is_err());
+    Ok(())
+  }
+
+  #[test]
+  #[cfg(feature = "plonk")]
+  fn bls12_381_development_parameters_export_and_cache() -> Result<()> {
+    let temporary =
+      crate::test_support::TempDir::new("bls12-381-plonk-parameters");
+    let setup = SetupConfig::Development { cache_directory: None };
+    let root = temporary.join("parameters");
+    let (path, checksum) = cached_parameters_for::<Bls12381>(8, &root, &setup)?;
+    let (again, same_checksum) =
+      cached_parameters_for::<Bls12381>(8, &root, &setup)?;
+    assert_eq!((path.clone(), checksum), (again, same_checksum));
+    let receipt: ParameterReceipt = load_json(&path.with_extension("json"))?;
+    assert_eq!(receipt.format, Bls12381::PLONK_SRS_FORMAT);
+    assert_eq!(receipt.setup_class, "development");
+    assert_eq!(receipt.powers, 11);
+    let bytes = fs::read(&path)?;
+    assert_eq!(&bytes[..8], Bls12381::PLONK_SRS_MAGIC);
+    // 88 header + 2 * 96 G2 + 11 * 96 G1
+    assert_eq!(bytes.len(), 88 + 2 * 96 + 11 * 96);
+    assert_eq!(anchor_encoding(&anchors::<Bls12381>(&setup, 8)?).len(), 240);
     Ok(())
   }
 
   #[test]
   fn plonk_packets_are_tagged_and_bounded() {
     assert_eq!(PROOF_TAG, b"IXBN\0\0\0\x02");
+    assert_eq!(BLS12_381_PROOF_TAG, b"IXCMP\0\0\x05");
     assert!(verify(&[0; 32], b"claim").is_err());
+    assert!(verify_bls12_381(&[0; 32], b"claim").is_err());
   }
 
   #[test]

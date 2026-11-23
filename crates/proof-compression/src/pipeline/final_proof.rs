@@ -84,12 +84,12 @@ impl FinalOptions {
 /// Reconstruct the final circuit from the authenticated inner key and expected
 /// program prefix, independently of any saved final proof or witness.
 #[cfg(any(feature = "plonk", feature = "groth16"))]
-pub(super) fn description(
+pub(super) fn description_for<C: crate::kzg::curve::KzgCurve>(
   verifier: &Path,
   expected: &statement::Statement,
   setup: &super::SetupConfig,
 ) -> Result<Vec<u8>> {
-  let vk = super::wrap::VerifyingKey::from_bytes(&fs::read(verifier)?)?;
+  let vk = super::wrap::VerifyingKey::<C>::from_bytes(&fs::read(verifier)?)?;
   vk.check_setup_class(setup.class())?;
   super::wrap::final_description(&vk, &expected[..10])
 }

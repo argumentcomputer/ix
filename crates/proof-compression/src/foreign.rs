@@ -4,7 +4,12 @@
 use num_bigint::{BigInt, BigUint, Sign};
 use p3_field::PrimeField64;
 
+#[cfg(test)]
 use crate::kzg::field::Scalar;
+use crate::kzg::{
+  curve::{Bn254, KzgCurve},
+  field::CurveScalar,
+};
 use multi_stark::plonkish::Assignment;
 use multi_stark::plonkish::Circuit;
 use multi_stark::plonkish::CircuitBuilder;
@@ -29,30 +34,30 @@ const P: u64 = <Val as PrimeField64>::ORDER_U64;
 mod interval;
 mod quotient;
 
-pub trait KzgCircuitExt {
+pub trait KzgCircuitExt<C: KzgCurve = Bn254> {
   fn kzg_circuit_inputs(
     &self,
     max_trace_len: usize,
     quotient_budget: usize,
-  ) -> Result<Vec<CircuitInputs<Scalar>>, LoweringError>;
+  ) -> Result<Vec<CircuitInputs<CurveScalar<C>>>, LoweringError>;
   fn kzg_circuit_input(
     &self,
     index: usize,
     max_trace_len: usize,
     quotient_budget: usize,
-  ) -> Result<Option<CircuitInputs<Scalar>>, LoweringError>;
+  ) -> Result<Option<CircuitInputs<CurveScalar<C>>>, LoweringError>;
 }
-impl KzgCircuitExt for MultiStarkCircuit<Scalar> {
+impl<C: KzgCurve> KzgCircuitExt<C> for MultiStarkCircuit<CurveScalar<C>> {
   /// Minimize KZG commitment/evaluation bytes by choosing lookup groups per
   /// trace, within the supplied trace cap and quotient budget.
   fn kzg_circuit_inputs(
     &self,
     max_trace_len: usize,
     quotient_budget: usize,
-  ) -> Result<Vec<CircuitInputs<Scalar>>, LoweringError> {
+  ) -> Result<Vec<CircuitInputs<CurveScalar<C>>>, LoweringError> {
     let mut inputs = self.circuit_inputs();
     for input in &mut inputs {
-      tune_kzg_input(input, max_trace_len, quotient_budget)?;
+      tune_kzg_input::<C>(input, max_trace_len, quotient_budget)?;
     }
     Ok(inputs)
   }
@@ -63,17 +68,17 @@ impl KzgCircuitExt for MultiStarkCircuit<Scalar> {
     index: usize,
     max_trace_len: usize,
     quotient_budget: usize,
-  ) -> Result<Option<CircuitInputs<Scalar>>, LoweringError> {
+  ) -> Result<Option<CircuitInputs<CurveScalar<C>>>, LoweringError> {
     let Some(mut input) = self.circuit_input(index) else {
       return Ok(None);
     };
-    tune_kzg_input(&mut input, max_trace_len, quotient_budget)?;
+    tune_kzg_input::<C>(&mut input, max_trace_len, quotient_budget)?;
     Ok(Some(input))
   }
 }
 
-fn tune_kzg_input(
-  input: &mut CircuitInputs<Scalar>,
+fn tune_kzg_input<C: KzgCurve>(
+  input: &mut CircuitInputs<CurveScalar<C>>,
   max_trace_len: usize,
   quotient_budget: usize,
 ) -> Result<(), LoweringError> {
@@ -85,14 +90,9 @@ fn tune_kzg_input(
   if fixed.height() > max_trace_len {
     return Err(LoweringError::InvalidTraceHeight);
   }
-  let graph = input
-    .compile_graph(&ExtensionParams {
-      degree: 1,
-      w: Scalar::ZERO,
-      karatsuba: false,
-    })
-    .expect("valid lowering");
-  let commitment_bytes = crate::kzg::curve::G1_COMPRESSED_BYTES;
+  let graph =
+    input.compile_graph(&ExtensionParams::base()).expect("valid lowering");
+  let commitment_bytes = C::G1_COMPRESSED_BYTES;
   let best = (1..=MAX_LOOKUP_GROUP)
     .filter_map(|group| {
       let degree = graph
@@ -113,8 +113,8 @@ fn tune_kzg_input(
   Ok(())
 }
 /// A fixed translation. Public values retain their original order and canonical encoding.
-pub struct GoldilocksCircuit {
-  pub circuit: Circuit<Scalar>,
+pub struct GoldilocksCircuit<C: KzgCurve = Bn254> {
+  pub circuit: Circuit<CurveScalar<C>>,
   pub inputs: GoldilocksInputs,
 }
 
@@ -139,17 +139,16 @@ fn signed(value: Val) -> i128 {
   if n > P / 2 { i128::from(n) - i128::from(P) } else { i128::from(n) }
 }
 
-fn scalar(n: &BigInt) -> Scalar {
+fn scalar<C: KzgCurve>(n: &BigInt) -> CurveScalar<C> {
   let (sign, limbs) = n.to_u64_digits();
-  let radix = Scalar::from_u64(u64::MAX) + Scalar::ONE;
-  let v = limbs
-    .iter()
-    .rev()
-    .fold(Scalar::ZERO, |a, &b| a * radix + Scalar::from_u64(b));
+  let radix = CurveScalar::<C>::from_u64(u64::MAX) + CurveScalar::<C>::ONE;
+  let v = limbs.iter().rev().fold(CurveScalar::<C>::ZERO, |a, &b| {
+    a * radix + CurveScalar::<C>::from_u64(b)
+  });
   if sign == Sign::Minus { -v } else { v }
 }
 
-fn integer(value: Scalar) -> BigInt {
+fn integer<C: KzgCurve>(value: CurveScalar<C>) -> BigInt {
   let bytes: Vec<_> =
     value.canonical_limbs_le().into_iter().flat_map(u64::to_le_bytes).collect();
   BigInt::from_biguint(Sign::Plus, BigUint::from_bytes_le(&bytes))
@@ -197,8 +196,8 @@ fn boolean_gate(gate: &Gate<Val>) -> bool {
       == [Val::ONE, Val::NEG_ONE, Val::ZERO, Val::ZERO, Val::ZERO]
 }
 
-fn signed_scalar(n: i128) -> Scalar {
-  let value = Scalar::from_u64(
+fn signed_scalar<C: KzgCurve>(n: i128) -> CurveScalar<C> {
+  let value = CurveScalar::<C>::from_u64(
     u64::try_from(n.unsigned_abs()).expect("signed Goldilocks coefficient"),
   );
   if n < 0 { -value } else { value }
@@ -348,14 +347,14 @@ fn extract_u20_limb(words: [u64; 4], i: usize) -> u64 {
 /// Range checks use one shared 20-bit table. Rounding up the bit count remains
 /// sound: even the largest gate and quotient products (`<= 7 * 20 = 140` bits)
 /// satisfy `2^140 * P < 2^204 < Fr`.
-fn range(
-  b: &mut CircuitBuilder<Scalar>,
+fn range<C: KzgCurve>(
+  b: &mut CircuitBuilder<CurveScalar<C>>,
   table: Table,
   value: Value,
   bits: usize,
 ) {
   if bits == 0 {
-    let zero = b.constant(Scalar::ZERO);
+    let zero = b.constant(CurveScalar::<C>::ZERO);
     b.assert_equal(value, zero);
     return;
   }
@@ -365,47 +364,59 @@ fn range(
   }
   match bits.div_ceil(RANGE_BITS) {
     1 => b.lookup(table, &[value]),
-    2 => range_limbs::<2>(b, table, value),
-    3 => range_limbs::<3>(b, table, value),
-    4 => range_limbs::<4>(b, table, value),
-    5 => range_limbs::<5>(b, table, value),
-    6 => range_limbs::<6>(b, table, value),
-    7 => range_limbs::<7>(b, table, value),
+    2 => range_limbs::<C, 2>(b, table, value),
+    3 => range_limbs::<C, 3>(b, table, value),
+    4 => range_limbs::<C, 4>(b, table, value),
+    5 => range_limbs::<C, 5>(b, table, value),
+    6 => range_limbs::<C, 6>(b, table, value),
+    7 => range_limbs::<C, 7>(b, table, value),
     _ => panic!("Goldilocks range exceeds quotient bound"),
   }
 }
 
-fn range_limbs<const N: usize>(
-  b: &mut CircuitBuilder<Scalar>,
+fn range_limbs<C: KzgCurve, const N: usize>(
+  b: &mut CircuitBuilder<CurveScalar<C>>,
   table: Table,
   value: Value,
 ) {
   let limbs = b.hint_many_pure::<N>("integer limbs", &[value], |v| {
     let words = v[0].canonical_limbs_le();
-    Ok(std::array::from_fn(|i| Scalar::from_u64(extract_u20_limb(words, i))))
+    Ok(std::array::from_fn(|i| {
+      CurveScalar::<C>::from_u64(extract_u20_limb(words, i))
+    }))
   });
   for limb in limbs {
     b.lookup(table, &[limb]);
   }
-  let radix = Scalar::from_u32(1 << RANGE_BITS);
-  let mut coefficient = Scalar::ONE;
+  let radix = CurveScalar::<C>::from_u32(1 << RANGE_BITS);
+  let mut coefficient = CurveScalar::<C>::ONE;
   let mut acc = limbs[0];
   for &limb in &limbs[1..N - 1] {
     coefficient *= radix;
-    acc = b.affine([acc, limb], [Scalar::ONE, coefficient], Scalar::ZERO);
+    acc = b.affine(
+      [acc, limb],
+      [CurveScalar::<C>::ONE, coefficient],
+      CurveScalar::<C>::ZERO,
+    );
   }
   coefficient *= radix;
   b.constrain_gate(
     [acc, limbs[N - 1], value],
-    [Scalar::ZERO, Scalar::ONE, coefficient, -Scalar::ONE, Scalar::ZERO],
+    [
+      CurveScalar::<C>::ZERO,
+      CurveScalar::<C>::ONE,
+      coefficient,
+      -CurveScalar::<C>::ONE,
+      CurveScalar::<C>::ZERO,
+    ],
   );
 }
 
 /// Canonical Goldilocks check (`value < 2^64 - 2^32 + 1`): decomposes `value`
 /// into exact 32-bit `lo = lo0 + 2^20·lo1` and `hi = hi0 + 2^20·hi1` with
 /// `lo0, hi0 ∈ u20` and `lo1, hi1 ∈ u12`, then enforces `hi = 0xffffffff ⇒ lo = 0`.
-fn canonical(
-  b: &mut CircuitBuilder<Scalar>,
+fn canonical<C: KzgCurve>(
+  b: &mut CircuitBuilder<CurveScalar<C>>,
   u20: Table,
   u12: Table,
   value: Value,
@@ -415,16 +426,17 @@ fn canonical(
       let x = v[0].canonical_low_u64();
       let lo = x & u64::from(u32::MAX);
       let hi = x >> 32;
-      let delta = Scalar::from_u64(hi) - Scalar::from_u32(u32::MAX);
+      let delta =
+        CurveScalar::<C>::from_u64(hi) - CurveScalar::<C>::from_u32(u32::MAX);
       let (inv, max_hi) = match delta.try_inverse() {
-        Some(inv) => (inv, Scalar::ZERO),
-        None => (Scalar::ZERO, Scalar::ONE),
+        Some(inv) => (inv, CurveScalar::<C>::ZERO),
+        None => (CurveScalar::<C>::ZERO, CurveScalar::<C>::ONE),
       };
       Ok([
-        Scalar::from_u64(lo & RANGE_MASK),
-        Scalar::from_u64((lo >> RANGE_BITS) & CANONICAL_HIGH_MASK),
-        Scalar::from_u64(hi & RANGE_MASK),
-        Scalar::from_u64((hi >> RANGE_BITS) & CANONICAL_HIGH_MASK),
+        CurveScalar::<C>::from_u64(lo & RANGE_MASK),
+        CurveScalar::<C>::from_u64((lo >> RANGE_BITS) & CANONICAL_HIGH_MASK),
+        CurveScalar::<C>::from_u64(hi & RANGE_MASK),
+        CurveScalar::<C>::from_u64((hi >> RANGE_BITS) & CANONICAL_HIGH_MASK),
         inv,
         max_hi,
       ])
@@ -433,17 +445,25 @@ fn canonical(
   b.lookup(u12, &[lo1]);
   b.lookup(u20, &[hi0]);
   b.lookup(u12, &[hi1]);
-  let radix = Scalar::from_u32(1 << RANGE_BITS);
-  let lo = b.affine([lo0, lo1], [Scalar::ONE, radix], Scalar::ZERO);
-  let hi = b.affine([hi0, hi1], [Scalar::ONE, radix], Scalar::ZERO);
+  let radix = CurveScalar::<C>::from_u32(1 << RANGE_BITS);
+  let lo = b.affine(
+    [lo0, lo1],
+    [CurveScalar::<C>::ONE, radix],
+    CurveScalar::<C>::ZERO,
+  );
+  let hi = b.affine(
+    [hi0, hi1],
+    [CurveScalar::<C>::ONE, radix],
+    CurveScalar::<C>::ZERO,
+  );
   b.constrain_gate(
     [lo, hi, value],
     [
-      Scalar::ZERO,
-      Scalar::ONE,
-      Scalar::from_u64(1 << 32),
-      -Scalar::ONE,
-      Scalar::ZERO,
+      CurveScalar::<C>::ZERO,
+      CurveScalar::<C>::ONE,
+      CurveScalar::<C>::from_u64(1 << 32),
+      -CurveScalar::<C>::ONE,
+      CurveScalar::<C>::ZERO,
     ],
   );
   // x < 0xffffffff00000001 iff the high word is not 0xffffffff or lo = 0.
@@ -451,23 +471,29 @@ fn canonical(
   b.constrain_gate(
     [hi, inv, max_hi],
     [
-      Scalar::ONE,
-      Scalar::ZERO,
-      -Scalar::from_u32(u32::MAX),
-      Scalar::ONE,
-      -Scalar::ONE,
+      CurveScalar::<C>::ONE,
+      CurveScalar::<C>::ZERO,
+      -CurveScalar::<C>::from_u32(u32::MAX),
+      CurveScalar::<C>::ONE,
+      -CurveScalar::<C>::ONE,
     ],
   );
-  let zero = b.constant(Scalar::ZERO);
+  let zero = b.constant(CurveScalar::<C>::ZERO);
   b.constrain_gate(
     [max_hi, lo, zero],
-    [Scalar::ONE, Scalar::ZERO, Scalar::ZERO, Scalar::ZERO, Scalar::ZERO],
+    [
+      CurveScalar::<C>::ONE,
+      CurveScalar::<C>::ZERO,
+      CurveScalar::<C>::ZERO,
+      CurveScalar::<C>::ZERO,
+      CurveScalar::<C>::ZERO,
+    ],
   );
 }
 
-impl GoldilocksCircuit {
+impl<C: KzgCurve> GoldilocksCircuit<C> {
   pub fn new(source: &Circuit<Val>) -> Self {
-    let mut b = CircuitBuilder::<Scalar>::new();
+    let mut b = CircuitBuilder::<CurveScalar<C>>::new();
     let inputs = Self::translate(source, &mut b, false);
     Self { circuit: b.finish(), inputs }
   }
@@ -476,7 +502,7 @@ impl GoldilocksCircuit {
   /// during large translations. This runs the translation twice.
   pub fn new_preallocated(source: &Circuit<Val>) -> Self {
     let stats = Self::estimate(source);
-    let mut b = CircuitBuilder::<Scalar>::new();
+    let mut b = CircuitBuilder::<CurveScalar<C>>::new();
     b.reserve(stats);
     let inputs = Self::translate(source, &mut b, false);
     debug_assert_eq!(b.stats(), stats);
@@ -486,14 +512,14 @@ impl GoldilocksCircuit {
   /// Exact translated frontend counts without storing the expanded circuit.
   /// Retains a wire mapping and range bounds proportional to source values.
   pub fn estimate(source: &Circuit<Val>) -> CircuitStats {
-    let mut b = CircuitBuilder::<Scalar>::counting();
+    let mut b = CircuitBuilder::<CurveScalar<C>>::counting();
     Self::translate(source, &mut b, false);
     b.stats()
   }
 
   /// Count the scalar translation with generic hash gates, without storing it.
   pub fn estimate_with_expanded_hashes(source: &Circuit<Val>) -> CircuitStats {
-    let mut b = CircuitBuilder::<Scalar>::counting();
+    let mut b = CircuitBuilder::<CurveScalar<C>>::counting();
     Self::translate(source, &mut b, true);
     b.stats()
   }
@@ -501,14 +527,14 @@ impl GoldilocksCircuit {
   /// Expand compact hash calls only after translating the surrounding
   /// Goldilocks arithmetic. The original hash bytes remain constrained.
   pub fn new_with_expanded_hashes(source: &Circuit<Val>) -> Self {
-    let mut b = CircuitBuilder::<Scalar>::new();
+    let mut b = CircuitBuilder::<CurveScalar<C>>::new();
     let inputs = Self::translate(source, &mut b, true);
     Self { circuit: b.finish(), inputs }
   }
 
   fn translate(
     source: &Circuit<Val>,
-    b: &mut CircuitBuilder<Scalar>,
+    b: &mut CircuitBuilder<CurveScalar<C>>,
     expand_hashes: bool,
   ) -> GoldilocksInputs {
     Self::translate_with_chunk_size(source, b, expand_hashes, 1 << 16)
@@ -516,7 +542,7 @@ impl GoldilocksCircuit {
 
   pub(super) fn translate_with_chunk_size(
     source: &Circuit<Val>,
-    b: &mut CircuitBuilder<Scalar>,
+    b: &mut CircuitBuilder<CurveScalar<C>>,
     expand_hashes: bool,
     chunk_size: usize,
   ) -> GoldilocksInputs {
@@ -527,16 +553,16 @@ impl GoldilocksCircuit {
 
   fn translate_inner(
     source: &Circuit<Val>,
-    b: &mut CircuitBuilder<Scalar>,
+    b: &mut CircuitBuilder<CurveScalar<C>>,
     expand_hashes: bool,
     chunk_size: usize,
-    mut input: impl FnMut(&mut CircuitBuilder<Scalar>, usize) -> Value,
+    mut input: impl FnMut(&mut CircuitBuilder<CurveScalar<C>>, usize) -> Value,
   ) -> GoldilocksInputs {
     let mut chunks =
       (cfg!(feature = "parallel") && chunk_size > 0 && !expand_hashes)
         .then(Vec::new);
     let record_chunk =
-      |b: &CircuitBuilder<Scalar>, chunks: &mut Option<Vec<usize>>| {
+      |b: &CircuitBuilder<CurveScalar<C>>, chunks: &mut Option<Vec<usize>>| {
         if let Some(ends) = chunks {
           let end = b.stats().values;
           if end - ends.last().copied().unwrap_or(0) >= chunk_size {
@@ -546,12 +572,14 @@ impl GoldilocksCircuit {
       };
     let range_table = b.fixed_table(
       "u20",
-      (0..1u32 << RANGE_BITS).map(|v| vec![Scalar::from_u32(v)]).collect(),
+      (0..1u32 << RANGE_BITS)
+        .map(|v| vec![CurveScalar::<C>::from_u32(v)])
+        .collect(),
     );
     let canonical_high_table = b.fixed_table(
       "u12",
       (0..1u32 << CANONICAL_HIGH_BITS)
-        .map(|v| vec![Scalar::from_u32(v)])
+        .map(|v| vec![CurveScalar::<C>::from_u32(v)])
         .collect(),
     );
     let mut bounds = vec![P - 1; source.num_values()];
@@ -591,7 +619,7 @@ impl GoldilocksCircuit {
     }
     drop(table_bounds);
     {
-      for (hash_input, hash_output) in source.blake3_calls() {
+      for (_, hash_input, hash_output) in source.blake3_domain_calls() {
         for value in hash_input.iter().chain(hash_output) {
           bounds[value.index()] = bounds[value.index()].min(255);
           checked[value.index()] = true;
@@ -606,7 +634,7 @@ impl GoldilocksCircuit {
         let n = value.as_canonical_u64();
         bounds[i] = n;
         checked[i] = true;
-        wires.push(b.constant(Scalar::from_u64(n)));
+        wires.push(b.constant(CurveScalar::<C>::from_u64(n)));
         inputs.push(false);
       } else {
         // Acyclic arithmetic with no modular wrap derives a range from
@@ -649,7 +677,7 @@ impl GoldilocksCircuit {
             .map(|row| {
               row
                 .iter()
-                .map(|v| Scalar::from_u64(v.as_canonical_u64()))
+                .map(|v| CurveScalar::<C>::from_u64(v.as_canonical_u64()))
                 .collect()
             })
             .collect(),
@@ -665,22 +693,23 @@ impl GoldilocksCircuit {
     {
       if expand_hashes {
         use multi_stark::plonkish::gadgets::ByteGadgets;
-        use multi_stark::plonkish::gadgets::blake3;
+        use multi_stark::plonkish::gadgets::blake3_domain;
         let bytes = ByteGadgets::new(b);
-        for (hash_input, hash_output) in source.blake3_calls() {
+        for (domain, hash_input, hash_output) in source.blake3_domain_calls() {
           let input: Vec<_> = hash_input
             .iter()
             .map(|v| bytes.constrain_byte(b, wires[v.index()]))
             .collect();
-          let digest = blake3(b, &bytes, &input);
+          let digest = blake3_domain(b, &bytes, domain, &input);
           for (actual, expected) in digest.iter().zip(*hash_output) {
             b.assert_equal(actual.value(), wires[expected.index()]);
           }
         }
       } else {
         b.enable_compact_blake3();
-        for (hash_input, hash_output) in source.blake3_calls() {
-          b.constrain_blake3(
+        for (domain, hash_input, hash_output) in source.blake3_domain_calls() {
+          b.constrain_blake3_domain(
+            domain,
             hash_input.iter().map(|v| wires[v.index()]).collect(),
             &(*hash_output).map(|v| wires[v.index()]),
           );
@@ -722,31 +751,33 @@ impl GoldilocksCircuit {
   pub fn assign(
     &self,
     source: &Assignment<Val>,
-    witness: &mut Witness<'_, Scalar>,
+    witness: &mut Witness<'_, CurveScalar<C>>,
   ) -> Result<(), WitnessError> {
     self.inputs.assign(source, witness)
   }
 }
 
 impl GoldilocksInputs {
-  pub fn assign(
+  pub fn assign<C: KzgCurve>(
     &self,
     source: &Assignment<Val>,
-    witness: &mut Witness<'_, Scalar>,
+    witness: &mut Witness<'_, CurveScalar<C>>,
   ) -> Result<(), WitnessError> {
     let values = source.values(self.source_owner)?;
     for (i, &input) in self.is_input.iter().enumerate() {
       if input {
-        witness
-          .set(self.wires[i], Scalar::from_u64(values[i].as_canonical_u64()))?;
+        witness.set(
+          self.wires[i],
+          CurveScalar::<C>::from_u64(values[i].as_canonical_u64()),
+        )?;
       }
     }
     Ok(())
   }
 }
 
-fn constrain_gate(
-  b: &mut CircuitBuilder<Scalar>,
+fn constrain_gate<C: KzgCurve>(
+  b: &mut CircuitBuilder<CurveScalar<C>>,
   table: Table,
   gate: &Gate<Val>,
   wires: &[Value],
@@ -772,7 +803,7 @@ fn constrain_gate(
   };
   let hint = quotient::QuotientHint::from_limbs(coefficients, offset);
   let [qm, qa, qb, qc, k] = coefficients.map(signed_scalar);
-  let k_plus_offset = k + Scalar::from_limbs_le(offset.0);
+  let k_plus_offset = k + CurveScalar::<C>::from_limbs_le(offset.0);
   let [quotient, t1] =
     b.hint_many_pure::<2>("Goldilocks quotient", &values, move |v| {
       let q = hint.evaluate(v)?;
@@ -782,11 +813,17 @@ fn constrain_gate(
   range(b, table, quotient, bits);
   b.constrain_gate(
     [values[0], values[1], t1],
-    [qm, qa, qb, -Scalar::ONE, k_plus_offset],
+    [qm, qa, qb, -CurveScalar::<C>::ONE, k_plus_offset],
   );
   b.constrain_gate(
     [t1, values[2], quotient],
-    [Scalar::ZERO, Scalar::ONE, qc, -Scalar::from_u64(P), Scalar::ZERO],
+    [
+      CurveScalar::<C>::ZERO,
+      CurveScalar::<C>::ONE,
+      qc,
+      -CurveScalar::<C>::from_u64(P),
+      CurveScalar::<C>::ZERO,
+    ],
   );
 }
 
@@ -837,14 +874,26 @@ mod tests {
       }
       b.expose_public(output);
       let source = b.finish();
-      let regular = GoldilocksCircuit::new(&source);
-      let reserved = GoldilocksCircuit::new_preallocated(&source);
-      assert_eq!(GoldilocksCircuit::estimate(&source), regular.circuit.stats());
+      let regular = GoldilocksCircuit::<Bn254>::new(&source);
+      let reserved = GoldilocksCircuit::<Bn254>::new_preallocated(&source);
+      assert_eq!(
+        GoldilocksCircuit::<Bn254>::estimate(&source),
+        regular.circuit.stats()
+      );
       assert_eq!(regular.circuit.stats(), reserved.circuit.stats());
       assert_eq!(
-        GoldilocksCircuit::estimate_with_expanded_hashes(&source),
-        GoldilocksCircuit::new_with_expanded_hashes(&source).circuit.stats()
+        GoldilocksCircuit::<Bn254>::estimate_with_expanded_hashes(&source),
+        GoldilocksCircuit::<Bn254>::new_with_expanded_hashes(&source)
+          .circuit
+          .stats()
       );
+      let bls_regular =
+        GoldilocksCircuit::<crate::kzg::curve::Bls12381>::new(&source);
+      assert_eq!(
+        GoldilocksCircuit::<crate::kzg::curve::Bls12381>::estimate(&source),
+        bls_regular.circuit.stats()
+      );
+      assert_eq!(bls_regular.circuit.stats(), regular.circuit.stats());
       for (a, b) in regular.circuit.gates().iter().zip(reserved.circuit.gates())
       {
         assert_eq!(a.coefficients, b.coefficients);
@@ -872,7 +921,7 @@ mod tests {
       let out = b.select(bit_handle, yes, no);
       b.expose_public(out);
       let source = b.finish();
-      let mapped = GoldilocksCircuit::new(&source);
+      let mapped = GoldilocksCircuit::<Bn254>::new(&source);
       if maximum == 255 {
         assert_eq!(mapped.circuit.stats().lookups, 2);
         assert_eq!(mapped.circuit.stats().gates, source.stats().gates + 1);
@@ -918,7 +967,7 @@ mod tests {
     let y = b.affine([x, x], [Val::from_u8(15), Val::ZERO], Val::from_u8(3));
     b.expose_public(y);
     let source = b.finish();
-    let mapped = GoldilocksCircuit::new(&source);
+    let mapped = GoldilocksCircuit::<Bn254>::new(&source);
     assert_eq!(mapped.circuit.stats().lookups, 0);
     for bit in [0, 1] {
       let mut witness = source.witness();
@@ -964,7 +1013,7 @@ mod tests {
         b.assert_equal(y, byte);
       }
       let source = b.finish();
-      let mapped = GoldilocksCircuit::new(&source);
+      let mapped = GoldilocksCircuit::<Bn254>::new(&source);
       if bounded {
         assert_eq!(mapped.circuit.stats().lookups, 1);
       }
@@ -994,7 +1043,7 @@ mod tests {
     let result = b.sub(product, x);
     b.expose_public(result);
     let source = b.finish();
-    let mapped = GoldilocksCircuit::new(&source);
+    let mapped = GoldilocksCircuit::<Bn254>::new(&source);
     for (a, c) in
       [(0, 0), (1, 2), (P - 1, P - 1), (P - 1, 2), (1 << 63, 1 << 63)]
     {
@@ -1097,7 +1146,7 @@ mod tests {
     );
     b.expose_public(product);
     let source = b.finish();
-    let mapped = GoldilocksCircuit::new(&source);
+    let mapped = GoldilocksCircuit::<Bn254>::new(&source);
     let mut witness = source.witness();
     witness.set(x, Val::from_u8(15)).unwrap();
     witness.set(y, Val::from_u8(13)).unwrap();
@@ -1113,17 +1162,118 @@ mod tests {
 
   #[test]
   fn lookup_tuning_respects_the_quotient_budget() {
-    let mut b = CircuitBuilder::<Scalar>::new();
+    fn check<C: KzgCurve>() {
+      let mut b = CircuitBuilder::<CurveScalar<C>>::new();
+      let x = b.input("x");
+      let y = b.mul(x, x);
+      b.expose_public(y);
+      let compiled =
+        b.finish().lower_to_multi_stark(CurveScalar::<C>::from_u8(1)).unwrap();
+      let height = compiled.main_height();
+      let tuned = compiled.kzg_circuit_inputs(height, 4).unwrap();
+      assert_eq!(tuned[0].lookup_group_size, 4);
+      assert!(matches!(
+        compiled.kzg_circuit_inputs(height, 1),
+        Err(LoweringError::QuotientBudgetTooSmall)
+      ));
+    }
+    check::<Bn254>();
+    check::<crate::kzg::curve::Bls12381>();
+  }
+
+  #[test]
+  fn bls12_381_modular_arithmetic_and_canonical_boundaries() {
+    use crate::kzg::curve::Bls12381;
+    type BlsScalar = CurveScalar<Bls12381>;
+    let mut b = CircuitBuilder::<Val>::new();
     let x = b.input("x");
-    let y = b.mul(x, x);
-    b.expose_public(y);
-    let compiled = b.finish().lower_to_multi_stark(Scalar::from_u8(1)).unwrap();
-    let height = compiled.main_height();
-    let tuned = compiled.kzg_circuit_inputs(height, 4).unwrap();
-    assert_eq!(tuned[0].lookup_group_size, 4);
-    assert!(matches!(
-      compiled.kzg_circuit_inputs(height, 1),
-      Err(LoweringError::QuotientBudgetTooSmall)
-    ));
+    let y = b.input("y");
+    let product = b.mul(x, y);
+    let result = b.sub(product, x);
+    b.expose_public(result);
+    let source = b.finish();
+    let mapped = GoldilocksCircuit::<Bls12381>::new(&source);
+    for (a, c) in [(0, 0), (1, 2), (P - 1, P - 1), (P - 1, 2)] {
+      let mut witness = source.witness();
+      witness.set(x, Val::from_u64(a)).unwrap();
+      witness.set(y, Val::from_u64(c)).unwrap();
+      let assignment = witness.generate().unwrap();
+      let mut witness = mapped.circuit.witness();
+      mapped.assign(&assignment, &mut witness).unwrap();
+      let output = witness.generate().unwrap();
+      assert_eq!(
+        output.public_values(),
+        &[BlsScalar::from_u64(
+          assignment.public_values()[0].as_canonical_u64()
+        )]
+      );
+    }
+    let mut witness = mapped.circuit.witness();
+    for (i, &is_input) in mapped.inputs.is_input.iter().enumerate() {
+      if is_input {
+        let value =
+          if i == x.index() { BlsScalar::from_u64(P) } else { BlsScalar::ZERO };
+        witness.set(mapped.inputs.wires[i], value).unwrap();
+      }
+    }
+    assert!(witness.generate().is_err());
+  }
+
+  #[test]
+  fn domain_separated_blake3_translates_compact_and_expanded_for_both_curves() {
+    use crate::kzg::curve::Bls12381;
+    use multi_stark::plonkish::gadgets::{
+      Blake3Domain, ByteGadgets, blake3_domain,
+    };
+
+    let mut b = CircuitBuilder::<Val>::new();
+    b.enable_compact_blake3();
+    let bytes = ByteGadgets::new(&mut b);
+    let input: Vec<_> =
+      (0..16).map(|i| bytes.input(&mut b, &format!("b{i}"))).collect();
+    for domain in [Blake3Domain::MerkleLeaf, Blake3Domain::TranscriptSingle] {
+      let digest = blake3_domain(&mut b, &bytes, domain, &input);
+      for byte in digest {
+        b.expose_public(byte.value());
+      }
+    }
+    let source = b.finish();
+    let msg: Vec<u8> = (0..16).map(|i| i * 9 + 3).collect();
+    let mut w = source.witness();
+    for (wire, &byte) in input.iter().zip(&msg) {
+      w.set(wire.value(), Val::from_u8(byte)).unwrap();
+    }
+    let assignment = w.generate().unwrap();
+    let expected: Vec<u8> = [
+      Blake3Domain::MerkleLeaf.hash_bytes(&msg),
+      Blake3Domain::TranscriptSingle.hash_bytes(&msg),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    assert_eq!(
+      assignment.public_values(),
+      expected.iter().map(|&x| Val::from_u8(x)).collect::<Vec<_>>()
+    );
+
+    fn check_curve<C: KzgCurve>(
+      source: &Circuit<Val>,
+      assignment: &Assignment<Val>,
+      expected: &[u8],
+    ) {
+      let expected_scalars: Vec<_> =
+        expected.iter().map(|&x| CurveScalar::<C>::from_u8(x)).collect();
+      for mapped in [
+        GoldilocksCircuit::<C>::new_preallocated(source),
+        GoldilocksCircuit::<C>::new_with_expanded_hashes(source),
+      ] {
+        let mut w = mapped.circuit.witness();
+        mapped.assign(assignment, &mut w).unwrap();
+        let out = w.generate().unwrap();
+        assert_eq!(out.public_values(), expected_scalars);
+      }
+    }
+    check_curve::<Bn254>(&source, &assignment, &expected);
+    check_curve::<Bls12381>(&source, &assignment, &expected);
   }
 }

@@ -4,7 +4,7 @@
 use super::quotient::{self, Column, Instruction, Lookup, Program, allocation};
 use super::*;
 use crate::kzg::{
-  field::Scalar,
+  field::CurveScalar,
   pcs::{CoefficientConfig, CommittedMatrix},
 };
 use multi_stark::config::LookupCommitInput;
@@ -27,25 +27,7 @@ const _: () = {
   assert!(std::mem::offset_of!(Parameters, blocks) == 76);
 };
 
-unsafe extern "C" {
-  fn ix_kzg_lookup(
-    device: i32,
-    parameters: *const Parameters,
-    columns: *const Column,
-    column_count: usize,
-    evaluation_columns: usize,
-    nodes: *const Instruction,
-    node_count: usize,
-    lookups: *const Lookup,
-    lookup_count: usize,
-    args: *const u32,
-    arg_count: usize,
-    outputs: *const *mut [u64; 4],
-    total: *mut [u64; 4],
-  ) -> i32;
-}
-
-fn memory_bound(
+fn memory_bound<C: KzgCurve>(
   program: &Program,
   n: usize,
   groups: usize,
@@ -60,39 +42,47 @@ fn memory_bound(
       blocks.checked_mul(quotient::TILE)?.checked_mul(program.slots.max(1))?,
     )?;
   [
-    allocation::<Fr>(elements)?,
+    allocation::<C::Fr>(elements)?,
     allocation::<Instruction>(program.nodes.len())?,
     allocation::<Lookup>(program.lookups.len())?,
     allocation::<u32>(program.args.len())?,
     allocation::<Column>(columns)?,
-    allocation::<Fr>(1)?,
+    allocation::<C::Fr>(1)?,
     quotient::HEADROOM,
   ]
   .into_iter()
   .try_fold(0usize, usize::checked_add)
 }
 
-pub(in crate::kzg) fn coefficients<SC: CoefficientConfig>(
+pub(in crate::kzg) fn coefficients<
+  C: KzgCurve,
+  SC: CoefficientConfig<C>,
+>(
   input: &LookupCommitInput<'_, SC>,
-  beta: Scalar,
-  gamma: Scalar,
-) -> Option<(Vec<Vec<Fr>>, Scalar)> {
-  coefficients_with_mode(input, beta, gamma, settings().passes)
+  beta: CurveScalar<C>,
+  gamma: CurveScalar<C>,
+) -> Option<(Vec<Vec<C::Fr>>, CurveScalar<C>)> {
+  coefficients_with_mode::<C, SC>(input, beta, gamma, settings().passes)
 }
 
-pub(super) fn coefficients_with_mode<SC: CoefficientConfig>(
+pub(super) fn coefficients_with_mode<
+  C: KzgCurve,
+  SC: CoefficientConfig<C>,
+>(
   input: &LookupCommitInput<'_, SC>,
-  beta: Scalar,
-  gamma: Scalar,
+  beta: CurveScalar<C>,
+  gamma: CurveScalar<C>,
   mode: PassMode,
-) -> Option<(Vec<Vec<Fr>>, Scalar)> {
+) -> Option<(Vec<Vec<C::Fr>>, CurveScalar<C>)> {
   let main = quotient::matrix(input.stage_1)?;
   let fixed = match input.preprocessed {
     Some(data) => Some(quotient::matrix(data)?),
     None => None,
   };
   let trace = main.domain();
-  if trace.shift != Scalar::ONE || !(10..=27).contains(&trace.log_size) {
+  if trace.shift != CurveScalar::<C>::ONE
+    || !(10..=27).contains(&trace.log_size)
+  {
     return None;
   }
   let n = 1usize.checked_shl(u32::try_from(trace.log_size).ok()?)?;
@@ -107,11 +97,12 @@ pub(super) fn coefficients_with_mode<SC: CoefficientConfig>(
   {
     return None;
   }
-  let program = quotient::encode_lookup(&circuit.graph, widths)?;
+  let program = quotient::encode_lookup::<C>(&circuit.graph, widths)?;
   if program.lookups.is_empty() {
-    return Some((vec![vec![Fr::ZERO; n]], Scalar::ZERO));
+    return Some((vec![vec![C::FR_ZERO; n]], CurveScalar::<C>::ZERO));
   }
-  let all_columns = quotient::views([fixed, Some(main)].into_iter().flatten())?;
+  let all_columns =
+    quotient::views::<C>([fixed, Some(main)].into_iter().flatten())?;
   if all_columns
     .iter()
     .any(|(column, _, _)| column.is_empty() || column.len() > n)
@@ -120,25 +111,28 @@ pub(super) fn coefficients_with_mode<SC: CoefficientConfig>(
   }
   let evaluated =
     all_columns.iter().filter(|(_, _, constant)| !constant).count();
-  let bytes = memory_bound(&program, n, groups, all_columns.len(), evaluated)?;
+  let bytes =
+    memory_bound::<C>(&program, n, groups, all_columns.len(), evaluated)?;
   let parameters = Parameters {
-    beta: beta.0.0.0,
-    gamma: gamma.0.0.0,
+    beta: C::fr_mont_limbs(beta.0),
+    gamma: C::fr_mont_limbs(gamma.0),
     trace_log: u32::try_from(trace.log_size).ok()?,
     slots: u32::try_from(program.slots.max(1)).ok()?,
     group_size: u32::try_from(group_size).ok()?,
     blocks: u32::try_from(n.div_ceil(quotient::TILE).min(quotient::MAX_BLOCKS))
       .ok()?,
   };
-  let run_passes =
-    || passes::lookup_coefficients(input, &parameters, &all_columns, widths);
+  let run_passes = || {
+    passes::lookup_coefficients::<C, SC>(input, &parameters, &all_columns, widths)
+  };
   if mode == PassMode::Force {
     return Some(run_passes().expect(
       "forced KZG lookup passes are unsupported or no selected device admits them",
     ));
   }
-  let mut columns = quotient::column_descriptors(&all_columns);
-  let device = quotient::acquire_columns(&mut columns, &all_columns, bytes);
+  let mut columns = quotient::column_descriptors::<C>(&all_columns);
+  let device =
+    quotient::acquire_columns::<C>(&mut columns, &all_columns, bytes);
   if device.is_none()
     && mode == PassMode::Fallback
     && let Some(output) = run_passes()
@@ -148,10 +142,10 @@ pub(super) fn coefficients_with_mode<SC: CoefficientConfig>(
   let device = device.unwrap_or_else(|| {
     panic!(
       "KZG lookup of {n} rows needs {bytes} bytes and no selected device admits it (budgets {:?}); lower IX_KZG_CUDA_RESIDENT_GIB or the chunk size",
-      quotient::device_budgets()
+      quotient::device_budgets::<C>()
     )
   });
-  let mut outputs: Vec<_> = (0..groups).map(|_| vec![Fr::ZERO; n]).collect();
+  let mut outputs: Vec<_> = (0..groups).map(|_| vec![C::FR_ZERO; n]).collect();
   let output_pointers: Vec<*mut [u64; 4]> =
     outputs.iter_mut().map(|values| values.as_mut_ptr().cast()).collect();
   let mut total = [0; 4];
@@ -159,15 +153,15 @@ pub(super) fn coefficients_with_mode<SC: CoefficientConfig>(
   // The native job synchronizes every transfer before borrowed buffers expire.
   check(
     unsafe {
-      ix_kzg_lookup(
+      C::ffi_lookup(
         device.id(),
-        &parameters,
-        columns.as_ptr(),
+        std::ptr::from_ref(&parameters).cast(),
+        columns.as_ptr().cast(),
         columns.len(),
         evaluated,
-        program.nodes.as_ptr(),
+        program.nodes.as_ptr().cast(),
         program.nodes.len(),
-        program.lookups.as_ptr(),
+        program.lookups.as_ptr().cast(),
         program.lookups.len(),
         program.args.as_ptr(),
         program.args.len(),
@@ -178,6 +172,7 @@ pub(super) fn coefficients_with_mode<SC: CoefficientConfig>(
     "resident lookup",
   );
   tracing::info!(
+    curve = C::NAME,
     device = device.id(),
     rows = n,
     groups,
@@ -186,5 +181,5 @@ pub(super) fn coefficients_with_mode<SC: CoefficientConfig>(
     seconds = started.elapsed().as_secs_f64(),
     "KZG lookup constructed on device"
   );
-  Some((outputs, Scalar(Fr::new_unchecked(BigInt(total)))))
+  Some((outputs, CurveScalar(C::fr_from_mont_limbs_unchecked(total))))
 }

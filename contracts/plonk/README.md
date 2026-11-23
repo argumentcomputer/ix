@@ -1,16 +1,18 @@
 # ix PLONK Solidity adapter
 
 `IxPlonkVerifier` binds a caller-supplied expected claim digest to two
-little-endian 128-bit public inputs and calls a fixed gnark verifier address.
-The gnark key fixes the complete wrapper circuit, including both inner pairing
-obligations. BN254 uses Ethereum's BN254 precompiles.
+little-endian 128-bit public inputs and calls a fixed gnark verifier address
+pinned by its `codehash`. The gnark key fixes the complete wrapper circuit,
+including both inner pairing obligations. BLS12-381 uses Pectra EIP-2537
+precompiles; BN254 uses Ethereum's BN254 precompiles.
 
-`src/PlonkVerifier.sol` is gnark's own Solidity export of the bundled release
-key, `crates/proof-compression/verifying-keys/0.4/plonk-verifying-key.bin`.
-Regenerate it from the repository root whenever that key changes:
+`src/PlonkVerifier.sol` is gnark's own Solidity export of the bundled BN254
+release key, `crates/proof-compression/verifying-keys/0.4/plonk-verifying-key.bin`.
+Regenerate it (or export a BLS12-381 key with `-curve bls12-381`) from the
+repository root whenever a key changes:
 
 ```sh
-go -C tools/gnark run ./cmd/solidity -system plonk \
+go -C tools/gnark run ./cmd/solidity -curve bn254 -system plonk \
   -key ../../crates/proof-compression/verifying-keys/0.4/plonk-verifying-key.bin \
   -out ../../contracts/plonk/src/PlonkVerifier.sol
 ```

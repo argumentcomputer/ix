@@ -14,9 +14,9 @@ use std::{
   sync::atomic::{AtomicU64, Ordering},
 };
 
-use super::curve::Fr;
+use super::curve::{Bn254, KzgCurve};
 #[cfg(not(feature = "cuda"))]
-use super::{domain::Radix2Coset, field::Scalar};
+use super::{domain::Radix2Coset, field::CurveScalar};
 use crate::pipeline::storage::{fadvise_dontneed, fadvise_sequential};
 use ark_ff::{BigInt, PrimeField, Zero};
 use ark_serialize::SerializationError;
@@ -29,12 +29,21 @@ const RAYON_HASH_THRESHOLD: usize = 128 << 10;
 
 #[cfg(not(feature = "cuda"))]
 const _: () = {
-  assert!(size_of::<Fr>() == size_of::<[u64; 4]>());
-  assert!(align_of::<Fr>() == align_of::<[u64; 4]>());
-  assert!(std::mem::offset_of!(Fr, 0) == 0);
+  use super::curve::{Bls12381, bls12_381};
+  use super::field::{Bls12381Scalar, Scalar};
+  assert!(size_of::<ark_bn254::Fr>() == size_of::<[u64; 4]>());
+  assert!(align_of::<ark_bn254::Fr>() == align_of::<[u64; 4]>());
+  assert!(std::mem::offset_of!(ark_bn254::Fr, 0) == 0);
   assert!(std::mem::offset_of!(BigInt<4>, 0) == 0);
-  assert!(size_of::<Scalar>() == size_of::<Fr>());
-  assert!(align_of::<Scalar>() == align_of::<Fr>());
+  assert!(size_of::<Scalar>() == size_of::<ark_bn254::Fr>());
+  assert!(align_of::<Scalar>() == align_of::<ark_bn254::Fr>());
+
+  assert!(size_of::<bls12_381::Fr>() == size_of::<[u64; 4]>());
+  assert!(align_of::<bls12_381::Fr>() == align_of::<[u64; 4]>());
+  assert!(std::mem::offset_of!(bls12_381::Fr, 0) == 0);
+  assert!(size_of::<Bls12381Scalar>() == size_of::<bls12_381::Fr>());
+  assert!(align_of::<Bls12381Scalar>() == align_of::<bls12_381::Fr>());
+  let _ = Bls12381;
 };
 
 #[inline]
@@ -121,9 +130,9 @@ pub(super) enum DiskFormat {
 
 #[cfg(not(feature = "cuda"))]
 #[inline]
-fn fr_slice_as_bytes(values: &[Fr]) -> &[u8] {
-  // SAFETY: Compile-time layout assertions above verify `Fr` has exact size
-  // and alignment of `[u64; 4]` with no padding bytes.
+fn fr_slice_as_bytes<C: KzgCurve>(values: &[C::Fr]) -> &[u8] {
+  // SAFETY: Compile-time layout assertions above verify `C::Fr` has exact size
+  // and alignment of `[u64; 4]` with no padding bytes for every sealed KzgCurve.
   unsafe {
     std::slice::from_raw_parts(
       values.as_ptr().cast::<u8>(),
@@ -147,12 +156,12 @@ fn limbs_slice_as_bytes_mut(values: &mut [[u64; 4]]) -> &mut [u8] {
 
 /// Ephemeral unlinked process-local spill of a stage-1 trace's natural-domain
 /// evaluations in raw Montgomery limb format, consumed once by lookup
-/// construction to avoid redundant forward BN254 FFTs and dropped immediately.
+/// construction to avoid redundant forward FFTs and dropped immediately.
 #[cfg(not(feature = "cuda"))]
 #[allow(dead_code)]
-pub(super) struct SpilledEvaluations {
+pub(super) struct SpilledEvaluations<C: KzgCurve = Bn254> {
   file: DiskFile,
-  domain: Radix2Coset,
+  domain: Radix2Coset<C>,
   width: usize,
   len: usize,
   digest: blake3::Hash,
@@ -160,11 +169,11 @@ pub(super) struct SpilledEvaluations {
 
 #[cfg(not(feature = "cuda"))]
 #[allow(dead_code)]
-impl SpilledEvaluations {
+impl<C: KzgCurve> SpilledEvaluations<C> {
   pub(super) fn spill(
     spill_dir: &Path,
-    domain: Radix2Coset,
-    matrix: &RowMajorMatrix<Scalar>,
+    domain: Radix2Coset<C>,
+    matrix: &RowMajorMatrix<CurveScalar<C>>,
   ) -> std::io::Result<Self> {
     let mut disk = DiskFile::temporary(spill_dir)?;
     let values = &matrix.values;
@@ -178,13 +187,13 @@ impl SpilledEvaluations {
         )
       })?;
     let mut hasher = blake3::Hasher::new();
-    // SAFETY: `Scalar` is `#[repr(transparent)]` over `Fr`.
+    // SAFETY: `CurveScalar<C>` is `#[repr(transparent)]` over `C::Fr`.
     let frs = unsafe {
-      std::slice::from_raw_parts(values.as_ptr().cast::<Fr>(), values.len())
+      std::slice::from_raw_parts(values.as_ptr().cast::<C::Fr>(), values.len())
     };
     let mut offset = 0u64;
     for chunk in frs.chunks(CHUNK) {
-      let bytes = fr_slice_as_bytes(chunk);
+      let bytes = fr_slice_as_bytes::<C>(chunk);
       update_hash(&mut hasher, bytes);
       disk.file_mut().write_all(bytes)?;
       let len = u64::try_from(bytes.len()).expect("chunk fits u64");
@@ -201,17 +210,17 @@ impl SpilledEvaluations {
     })
   }
 
-  pub(super) fn domain(&self) -> Radix2Coset {
+  pub(super) fn domain(&self) -> Radix2Coset<C> {
     self.domain
   }
 
   pub(super) fn load(
     mut self,
-  ) -> Result<RowMajorMatrix<Scalar>, SerializationError> {
+  ) -> Result<RowMajorMatrix<CurveScalar<C>>, SerializationError> {
     let file = self.file.file_mut();
     fadvise_sequential(file);
     file.seek(SeekFrom::Start(0))?;
-    let mut out: Vec<Scalar> = Vec::new();
+    let mut out: Vec<CurveScalar<C>> = Vec::new();
     out
       .try_reserve_exact(self.len)
       .map_err(|_error| SerializationError::InvalidData)?;
@@ -233,10 +242,10 @@ impl SpilledEvaluations {
         .try_for_each(|(dst, src)| {
           for (slot, &limbs) in dst.iter_mut().zip(src) {
             let value = BigInt(limbs);
-            if value >= Fr::MODULUS {
+            if value >= C::Fr::MODULUS {
               return Err(SerializationError::InvalidData);
             }
-            slot.write(Scalar(Fr::new_unchecked(value)));
+            slot.write(CurveScalar(C::fr_from_mont_limbs_unchecked(limbs)));
           }
           Ok::<_, SerializationError>(())
         })?;
@@ -251,14 +260,14 @@ impl SpilledEvaluations {
   }
 }
 
-pub(super) enum Column {
+pub(super) enum Column<C: KzgCurve = Bn254> {
   /// A constant polynomial, still bound to its full trace domain.
   Constant {
-    value: Fr,
+    value: C::Fr,
     len: usize,
   },
   Resident {
-    values: Arc<Vec<Fr>>,
+    values: Arc<Vec<C::Fr>>,
     range: Range<usize>,
   },
   Disk {
@@ -271,8 +280,8 @@ pub(super) enum Column {
   },
 }
 
-impl From<Vec<Fr>> for Column {
-  fn from(values: Vec<Fr>) -> Self {
+impl<C: KzgCurve> From<Vec<C::Fr>> for Column<C> {
+  fn from(values: Vec<C::Fr>) -> Self {
     if values.iter().skip(1).all(Zero::is_zero) {
       return Self::Constant {
         value: values.first().copied().unwrap_or_default(),
@@ -284,11 +293,11 @@ impl From<Vec<Fr>> for Column {
   }
 }
 
-impl Column {
+impl<C: KzgCurve> Column<C> {
   /// Host coefficients of a resident column; compact constant and
   /// disk-backed columns return `None` and are read through [`Self::visit`]
   /// or [`Self::load`].
-  pub(super) fn resident(&self) -> Option<&[Fr]> {
+  pub(super) fn resident(&self) -> Option<&[C::Fr]> {
     match self {
       Self::Resident { values, range } => Some(&values[range.clone()]),
       Self::Constant { .. } | Self::Disk { .. } => None,
@@ -299,7 +308,7 @@ impl Column {
   /// is the one-element slice of its constant term. Disk-backed columns
   /// return `None`.
   #[cfg(feature = "cuda")]
-  pub(super) fn host_coefficients(&self) -> Option<&[Fr]> {
+  pub(super) fn host_coefficients(&self) -> Option<&[C::Fr]> {
     match self {
       Self::Constant { value, .. } => Some(std::slice::from_ref(value)),
       _ => self.resident(),
@@ -320,7 +329,7 @@ impl Column {
         value: if range.start == 0 && !range.is_empty() {
           *value
         } else {
-          Fr::default()
+          C::Fr::default()
         },
         len: range.len(),
       },
@@ -387,7 +396,7 @@ impl Column {
   pub(super) fn spill_to_disk(
     file: &Arc<Mutex<DiskFile>>,
     offset: &mut u64,
-    coeffs: &[Fr],
+    coeffs: &[C::Fr],
   ) -> std::io::Result<Self> {
     Self::spill_to_disk_with_chunk(file, offset, coeffs, CHUNK)
   }
@@ -400,7 +409,7 @@ impl Column {
   pub(super) fn spill_to_disk_with_chunk(
     file: &Arc<Mutex<DiskFile>>,
     offset: &mut u64,
-    coeffs: &[Fr],
+    coeffs: &[C::Fr],
     chunk: usize,
   ) -> std::io::Result<Self> {
     assert!(chunk > 0);
@@ -427,7 +436,7 @@ impl Column {
     let mut hasher = blake3::Hasher::new();
     let mut pos = start;
     for part in coeffs.chunks(chunk) {
-      let bytes = fr_slice_as_bytes(part);
+      let bytes = fr_slice_as_bytes::<C>(part);
       update_hash(&mut hasher, bytes);
       guard.file_mut().write_all(bytes)?;
       let len = u64::try_from(bytes.len()).expect("chunk fits u64");
@@ -456,13 +465,13 @@ impl Column {
   /// closed. The file must already be trusted when first indexed.
   pub(super) fn visit(
     &self,
-    mut visit: impl FnMut(usize, &[Fr]),
+    mut visit: impl FnMut(usize, &[C::Fr]),
   ) -> Result<(), SerializationError> {
     match self {
       Self::Constant { value, len } => {
-        let mut values = vec![Fr::default(); CHUNK.min(*len)];
+        let mut values = vec![C::Fr::default(); CHUNK.min(*len)];
         for start in (0..*len).step_by(CHUNK) {
-          values[0] = if start == 0 { *value } else { Fr::default() };
+          values[0] = if start == 0 { *value } else { C::Fr::default() };
           visit(start, &values[..CHUNK.min(len - start)]);
         }
       },
@@ -474,7 +483,7 @@ impl Column {
         let file = guard.file_mut();
         file.seek(SeekFrom::Start(*offset))?;
         let chunk_elems = chunk.min(*len);
-        let mut values = vec![Fr::default(); chunk_elems];
+        let mut values = vec![C::Fr::default(); chunk_elems];
         let mut hash = blake3::Hasher::new();
         let mut pos = *offset;
         match format {
@@ -499,7 +508,7 @@ impl Column {
                     let limbs: [u64; 4] = std::array::from_fn(|i| {
                       u64::from_le_bytes(chunk.as_chunks::<8>().0[i])
                     });
-                    *slot = Fr::from_bigint(BigInt(limbs))
+                    *slot = C::Fr::from_bigint(BigInt(limbs))
                       .ok_or(SerializationError::InvalidData)?;
                   }
                   Ok::<_, SerializationError>(())
@@ -526,10 +535,10 @@ impl Column {
                 .try_for_each(|(dst, src)| {
                   for (slot, &limbs) in dst.iter_mut().zip(src) {
                     let value = BigInt(limbs);
-                    if value >= Fr::MODULUS {
+                    if value >= C::Fr::MODULUS {
                       return Err(SerializationError::InvalidData);
                     }
-                    *slot = Fr::new_unchecked(value);
+                    *slot = C::fr_from_mont_limbs_unchecked(limbs);
                   }
                   Ok::<_, SerializationError>(())
                 })?;
@@ -545,7 +554,7 @@ impl Column {
     Ok(())
   }
 
-  pub(super) fn load(&self) -> Result<Cow<'_, [Fr]>, SerializationError> {
+  pub(super) fn load(&self) -> Result<Cow<'_, [C::Fr]>, SerializationError> {
     if let Self::Resident { values, range } = self {
       return Ok(Cow::Borrowed(&values[range.clone()]));
     }
@@ -558,15 +567,15 @@ impl Column {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::kzg::curve::Bls12381;
 
-  #[test]
-  fn constant_polynomials_preserve_length_slices_and_chunk_offsets() {
+  fn check_constants<C: KzgCurve>() {
     for len in [0, 1, CHUNK - 1, CHUNK, CHUNK + 3] {
-      let mut expected = vec![Fr::default(); len];
+      let mut expected = vec![C::Fr::default(); len];
       if len != 0 {
-        expected[0] = Fr::from(7u8);
+        expected[0] = C::Fr::from(7u8);
       }
-      let column = Column::from(expected.clone());
+      let column = Column::<C>::from(expected.clone());
       assert!(matches!(column, Column::Constant { .. }));
       assert_eq!(column.len(), len);
       assert_eq!(column.load().unwrap().as_ref(), expected);
@@ -586,23 +595,28 @@ mod tests {
       }
     }
     assert!(matches!(
-      Column::from(vec![Fr::default(), Fr::from(1u8)]),
+      Column::<C>::from(vec![C::Fr::default(), C::Fr::from(1u8)]),
       Column::Resident { .. }
     ));
   }
 
-  #[cfg(not(feature = "cuda"))]
   #[test]
-  fn raw_montgomery_spill_roundtrips_and_detects_corruption() {
+  fn constant_polynomials_preserve_length_slices_and_chunk_offsets() {
+    check_constants::<Bn254>();
+    check_constants::<Bls12381>();
+  }
+
+  #[cfg(not(feature = "cuda"))]
+  fn check_raw_montgomery_spill<C: KzgCurve>() {
     use ark_ff::Field;
     let dir = crate::test_support::TempDir::new("raw-mont-spill");
     let spill_dir = dir.join("spill");
     let file = Arc::new(Mutex::new(DiskFile::temporary(&spill_dir).unwrap()));
-    let coeffs: Vec<Fr> = (0..CHUNK + 17)
-      .map(|i| Fr::from(u64::try_from(i).unwrap() + 3).square())
+    let coeffs: Vec<C::Fr> = (0..CHUNK + 17)
+      .map(|i| C::Fr::from(u64::try_from(i).unwrap() + 3).square())
       .collect();
     let mut offset = 0u64;
-    let col = Column::spill_to_disk(&file, &mut offset, &coeffs).unwrap();
+    let col = Column::<C>::spill_to_disk(&file, &mut offset, &coeffs).unwrap();
     assert_eq!(offset, u64::try_from(coeffs.len() * 32).unwrap());
     assert_eq!(col.load().unwrap().as_ref(), coeffs.as_slice());
 
@@ -619,16 +633,24 @@ mod tests {
     assert!(col.load().is_err());
 
     // Verify SpilledEvaluations roundtrips a multi-column matrix identically.
-    let domain = Radix2Coset { log_size: 4, shift: Scalar(Fr::ONE) };
+    let domain =
+      Radix2Coset::<C> { log_size: 4, shift: CurveScalar(C::FR_ONE) };
     let matrix = RowMajorMatrix::new(
       (0..16 * 3)
-        .map(|i| Scalar(Fr::from(u64::try_from(i * 13 + 7).unwrap())))
+        .map(|i| CurveScalar(C::Fr::from(u64::try_from(i * 13 + 7).unwrap())))
         .collect(),
       3,
     );
     let spilled =
-      SpilledEvaluations::spill(&spill_dir, domain, &matrix).unwrap();
+      SpilledEvaluations::<C>::spill(&spill_dir, domain, &matrix).unwrap();
     assert_eq!(spilled.domain(), domain);
     assert_eq!(spilled.load().unwrap(), matrix);
+  }
+
+  #[cfg(not(feature = "cuda"))]
+  #[test]
+  fn raw_montgomery_spill_roundtrips_and_detects_corruption() {
+    check_raw_montgomery_spill::<Bn254>();
+    check_raw_montgomery_spill::<Bls12381>();
   }
 }
